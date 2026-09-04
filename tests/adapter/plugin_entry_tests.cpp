@@ -22,6 +22,7 @@ std::vector<astrabot::debug::LifecycleTrace> gLifecycleTraces;
 
 edict_t gFakeEntity{};
 char gFakeInfoBuffer[256]{};
+int gRunPlayerMoveCalls = 0;
 
 enginefuncs_t* gHookEngineFunctions = nullptr;
 DLL_FUNCTIONS* gHookDllFunctions = nullptr;
@@ -127,6 +128,17 @@ int captureGetPlayerUserId(edict_t* /* entity */) {
 
 void captureServerCommand(char* /* command */) {}
 void captureServerExecute() {}
+void captureRunPlayerMove(
+    edict_t* /* entity */,
+    const float* /* viewAngles */,
+    float /* forwardMove */,
+    float /* sideMove */,
+    float /* upMove */,
+    unsigned short /* buttons */,
+    byte /* impulse */,
+    byte /* msec */) {
+    ++gRunPlayerMoveCalls;
+}
 
 int sentinelEntityApi2(DLL_FUNCTIONS* /* table */, int* /* version */) {
     return 17;
@@ -158,6 +170,7 @@ struct Fixture {
         engine.pfnGetPlayerUserId = &captureGetPlayerUserId;
         engine.pfnServerCommand = &captureServerCommand;
         engine.pfnServerExecute = &captureServerExecute;
+        engine.pfnRunPlayerMove = &captureRunPlayerMove;
         dll.pfnClientConnect = &captureClientConnect;
         dll.pfnClientPutInServer = &captureClientPutInServer;
         dll.pfnClientDisconnect = &captureClientDisconnect;
@@ -177,6 +190,7 @@ void resetAdapter() {
     gLogLines.clear();
     gTraceLines.clear();
     gLifecycleTraces.clear();
+    gRunPlayerMoveCalls = 0;
 }
 
 void query(Fixture& fixture) {
@@ -261,6 +275,13 @@ void testAttachValidationIsRollbackSafe() {
     enginefuncs_t noUserId = fixture.engine;
     noUserId.pfnGetPlayerUserId = nullptr;
     gHookEngineFunctions = &noUserId;
+    assert(Meta_Attach(PT_ANYTIME, &fixture.callbacks, &fixture.globals, &fixture.gameDll) == 0);
+    assertCallbacksEqual(fixture.callbacks, before);
+    gHookEngineFunctions = &fixture.engine;
+
+    enginefuncs_t noRunPlayerMove = fixture.engine;
+    noRunPlayerMove.pfnRunPlayerMove = nullptr;
+    gHookEngineFunctions = &noRunPlayerMove;
     assert(Meta_Attach(PT_ANYTIME, &fixture.callbacks, &fixture.globals, &fixture.gameDll) == 0);
     assertCallbacksEqual(fixture.callbacks, before);
     gHookEngineFunctions = &fixture.engine;
@@ -404,6 +425,7 @@ void testEmptyHookTablesAndInterfaceChecks() {
     assert(engineTable.pfnCmd_Argc ==
            &astrabot::adapter::metamod::commandArgcHook);
     assert(engineTable.pfnClientCommand == nullptr);
+    assert(engineTable.pfnRunPlayerMove == nullptr);
     assert(engineTable.pfnTime == nullptr);
 }
 

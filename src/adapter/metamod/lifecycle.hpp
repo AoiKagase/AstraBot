@@ -7,6 +7,7 @@
 // Core or host headers.
 #include "adapter/metamod/plugin_entry.hpp"
 #include "adapter/metamod/fake_client.hpp"
+#include "adapter/metamod/movement.hpp"
 
 #include "adapter/cstrike/join_state.hpp"
 #include "adapter/cstrike/messages.hpp"
@@ -32,6 +33,11 @@ public:
     void serverDeactivate() noexcept;
     void clientDisconnect(edict_t* entity) noexcept;
     void startFrame() noexcept;
+    MovementResult submitCommand(
+        core::PlayerId player,
+        core::MapGeneration mapGeneration,
+        core::TickId tick,
+        const core::BotCommand& command) noexcept;
 
     void messageBegin(
         int messageDestination,
@@ -58,6 +64,12 @@ public:
     }
     void setJoinTraceSink(debug::JoinTraceSink sink) noexcept {
         joinTraceSink_ = sink;
+    }
+    void setMovementTraceSink(debug::MovementTraceSink sink) noexcept {
+        movement_.setTraceSink(sink);
+    }
+    void setMovementClockForTest(MovementCoordinator::ClockNow now) noexcept {
+        movement_.setClockForTest(now);
     }
 
     host::PlayerRegistry& registry() noexcept { return registry_; }
@@ -89,6 +101,7 @@ private:
     host::PlayerRegistry registry_{};
     host::BotAgentRegistry agents_{};
     FakeClientCoordinator fakeClient_{};
+    MovementCoordinator movement_{};
     enginefuncs_t* engineFunctions_{nullptr};
     mutil_funcs_t* utilityFunctions_{nullptr};
     DLL_FUNCTIONS* gameDllFunctions_{nullptr};

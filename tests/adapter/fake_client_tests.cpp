@@ -69,6 +69,15 @@ int captureGetPlayerUserId(edict_t* entity);
 void captureServerCommand(char* command);
 void captureServerExecute();
 void captureEngineClientCommand(edict_t* entity, char* format, ...);
+void captureRunPlayerMove(
+    edict_t* entity,
+    const float* viewAngles,
+    float forwardMove,
+    float sideMove,
+    float upMove,
+    unsigned short buttons,
+    byte impulse,
+    byte msec);
 
 struct Fixture {
     mutil_funcs_t utility{};
@@ -111,6 +120,7 @@ struct Fixture {
         engine.pfnServerCommand = &captureServerCommand;
         engine.pfnServerExecute = &captureServerExecute;
         engine.pfnClientCommand = &captureEngineClientCommand;
+        engine.pfnRunPlayerMove = &captureRunPlayerMove;
         dll.pfnClientConnect = &captureClientConnect;
         dll.pfnClientPutInServer = &captureClientPutInServer;
         dll.pfnClientDisconnect = &captureClientDisconnect;
@@ -214,6 +224,16 @@ void captureEngineClientCommand(
     ...) {
     ++gEngineClientCommandCalls;
 }
+
+void captureRunPlayerMove(
+    edict_t* /* entity */,
+    const float* /* viewAngles */,
+    float /* forwardMove */,
+    float /* sideMove */,
+    float /* upMove */,
+    unsigned short /* buttons */,
+    byte /* impulse */,
+    byte /* msec */) {}
 
 void captureHookTables(
     plid_t /* pluginId */,

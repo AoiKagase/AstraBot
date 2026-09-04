@@ -61,4 +61,12 @@ void emitJoin(const JoinTrace& trace, JoinTraceSink sink) noexcept {
     }
 }
 
+void emitMovement(
+    const MovementTrace& trace,
+    MovementTraceSink sink) noexcept {
+    if (sink != nullptr) {
+        sink(trace);
+    }
+}
+
 } // namespace astrabot::debug

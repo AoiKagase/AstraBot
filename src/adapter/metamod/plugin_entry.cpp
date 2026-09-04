@@ -45,6 +45,7 @@ bool hasRequiredUtilityTable(const mutil_funcs_t* utilityFunctions) noexcept {
 bool hasRequiredFakeClientEngine(const enginefuncs_t* engineFunctions) noexcept {
     return engineFunctions != nullptr &&
            engineFunctions->pfnIndexOfEdict != nullptr &&
+           engineFunctions->pfnRunPlayerMove != nullptr &&
            engineFunctions->pfnCreateFakeClient != nullptr &&
            engineFunctions->pfnGetInfoKeyBuffer != nullptr &&
            engineFunctions->pfnSetClientKeyValue != nullptr &&

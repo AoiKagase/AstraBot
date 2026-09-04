@@ -92,6 +92,47 @@ struct JoinTrace {
 
 using JoinTraceSink = void (*)(const JoinTrace& trace) noexcept;
 
+enum class MovementTraceOutcome : std::uint8_t {
+    None = 0,
+    Queued,
+    Dispatched,
+    Rejected,
+};
+
+enum class MovementTraceError : std::uint8_t {
+    None = 0,
+    NotConfigured,
+    MapInactive,
+    MapGenerationMismatch,
+    InvalidPlayer,
+    QueueOccupied,
+    RegistryRejected,
+    NotJoined,
+    MissingEntity,
+    NotConnected,
+    DeadPlayer,
+    ButtonOutOfRange,
+    NoFrameDelta,
+    DispatchTooEarly,
+    EngineUnavailable,
+    MappingMismatch,
+};
+
+struct MovementTrace {
+    MovementTraceOutcome outcome{MovementTraceOutcome::None};
+    MovementTraceError error{MovementTraceError::None};
+    astrabot::core::MapGeneration map{};
+    astrabot::core::PlayerId player{};
+    astrabot::core::TickId commandTick{};
+    astrabot::core::TickId dispatchTick{};
+    std::uint8_t originalMsec{0};
+    std::uint64_t frameDeltaUs{0};
+    std::uint8_t engineMsec{0};
+    bool engineCall{false};
+};
+
+using MovementTraceSink = void (*)(const MovementTrace& trace) noexcept;
+
 const char* attachedIdentityLine() noexcept;
 void emitAttached(TraceSink sink) noexcept;
 void emitLifecycle(
@@ -106,5 +147,8 @@ void emitFakeClient(
 void emitJoin(
     const JoinTrace& trace,
     JoinTraceSink sink) noexcept;
+void emitMovement(
+    const MovementTrace& trace,
+    MovementTraceSink sink) noexcept;
 
 } // namespace astrabot::debug

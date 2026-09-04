@@ -153,6 +153,7 @@ if(ASTRABOT_BUILD_METAMOD)
         src/adapter/metamod/fake_client.cpp
         src/adapter/metamod/plugin_entry.cpp
         src/adapter/metamod/lifecycle.cpp
+        src/adapter/metamod/movement.cpp
         src/debug/host_trace.cpp
     )
     target_compile_features(astrabot_mm PRIVATE cxx_std_17)
@@ -238,6 +239,7 @@ if(ASTRABOT_BUILD_TESTS)
             src/adapter/metamod/fake_client.cpp
             src/adapter/metamod/plugin_entry.cpp
             src/adapter/metamod/lifecycle.cpp
+            src/adapter/metamod/movement.cpp
             src/debug/host_trace.cpp
         )
         target_compile_features(astrabot_adapter_entry_tests PRIVATE cxx_std_17)
@@ -260,12 +262,38 @@ if(ASTRABOT_BUILD_TESTS)
             COMMAND astrabot_adapter_entry_tests
         )
 
+        add_executable(astrabot_movement_tests
+            tests/adapter/movement_tests.cpp
+            src/adapter/metamod/movement.cpp
+            src/debug/host_trace.cpp
+        )
+        target_compile_features(astrabot_movement_tests PRIVATE cxx_std_17)
+        target_link_libraries(astrabot_movement_tests PRIVATE astrabot_core)
+        target_include_directories(astrabot_movement_tests
+            PRIVATE
+                ${CMAKE_CURRENT_SOURCE_DIR}/src
+        )
+        target_include_directories(astrabot_movement_tests SYSTEM PRIVATE
+            ${_astrabot_metamod_sdk_include_dirs}
+        )
+        set_target_properties(astrabot_movement_tests PROPERTIES
+            CXX_EXTENSIONS OFF
+        )
+        astrabot_enable_warnings(astrabot_movement_tests LEGACY_SDK)
+        astrabot_enable_metamod_compatibility(astrabot_movement_tests)
+
+        add_test(
+            NAME astrabot.adapter.movement
+            COMMAND astrabot_movement_tests
+        )
+
         add_executable(astrabot_fake_client_tests
             tests/adapter/fake_client_tests.cpp
             src/adapter/cstrike/join_state.cpp
             src/adapter/cstrike/messages.cpp
             src/adapter/metamod/fake_client.cpp
             src/adapter/metamod/lifecycle.cpp
+            src/adapter/metamod/movement.cpp
             src/adapter/metamod/plugin_entry.cpp
             src/debug/host_trace.cpp
         )

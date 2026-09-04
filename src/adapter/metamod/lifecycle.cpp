@@ -52,9 +52,11 @@ void LifecycleCoordinator::configure(
         gameDllFunctions,
         &registry_,
         &agents_);
+    movement_.configure(engineFunctions, &registry_);
 }
 
 void LifecycleCoordinator::reset() noexcept {
+    movement_.reset();
     fakeClient_.reset();
     agents_.reset();
     registry_.reset();
@@ -80,12 +82,14 @@ void LifecycleCoordinator::serverActivate(int clientMax) noexcept {
             ? host::LifecycleResult::rejected(host::HostError::InvalidLifecycle)
             : registry_.activateMap(static_cast<std::uint16_t>(clientMax));
     if (result.changed()) {
+        movement_.resetMap();
         fakeClient_.queuePrimaryCreate();
     }
     emit(host::LifecycleEventKind::MapActivated, result);
 }
 
 void LifecycleCoordinator::serverDeactivate() noexcept {
+    movement_.resetMap();
     const cstrike::JoinAction joinAction =
         joinState_.cancel(cstrike::JoinError::MapDeactivated);
     handleJoinAction(joinAction);
@@ -110,6 +114,15 @@ void LifecycleCoordinator::clientDisconnect(edict_t* entity) noexcept {
     }
 
     const int index = engineFunctions_->pfnIndexOfEdict(entity);
+    const host::PlayerId disconnectedPlayer =
+        index >= 1 && index <= static_cast<int>(host::kMaxClientSlots)
+            ? registry_.currentPlayer(static_cast<std::uint16_t>(index))
+            : host::PlayerId::invalid();
+    movement_.forget(disconnectedPlayer);
+    if (joinState_.active() &&
+        joinState_.player().slot == static_cast<std::uint16_t>(index)) {
+        movement_.forget(joinState_.player());
+    }
     if (index >= 1 && index <= static_cast<int>(host::kMaxClientSlots) &&
         joinState_.active() &&
         joinState_.player().slot == static_cast<std::uint16_t>(index)) {
@@ -140,6 +153,7 @@ void LifecycleCoordinator::startFrame() noexcept {
     if (!result.changed()) {
         return;
     }
+    movement_.beginFrame();
 
     const FakeClientResult fakeClientResult =
         fakeClient_.processPrimaryCreate();
@@ -167,6 +181,53 @@ void LifecycleCoordinator::startFrame() noexcept {
             joinState_.commandCompleted(dispatched);
         handleJoinAction(completion);
     }
+
+    (void)movement_.dispatchAtFrameEnd(
+        joinState_.phase(),
+        fakeClient_.activePlayer(),
+        fakeClient_.activeEntity(),
+        registry_.mapGeneration(),
+        registry_.currentTick());
+}
+
+MovementResult LifecycleCoordinator::submitCommand(
+    core::PlayerId player,
+    core::MapGeneration mapGeneration,
+    core::TickId tick,
+    const core::BotCommand& command) noexcept {
+    if (joinState_.phase() != cstrike::JoinPhase::Joined) {
+        return movement_.rejectIngress(
+            MovementError::NotJoined,
+            player,
+            mapGeneration,
+            tick,
+            command.msec);
+    }
+    if (fakeClient_.activeEntity() == nullptr) {
+        return movement_.rejectIngress(
+            MovementError::MissingEntity,
+            player,
+            mapGeneration,
+            tick,
+            command.msec);
+    }
+    if (fakeClient_.activePlayer() != player) {
+        return movement_.rejectIngress(
+            MovementError::MappingMismatch,
+            player,
+            mapGeneration,
+            tick,
+            command.msec);
+    }
+    if (fakeClient_.activeEntity()->v.deadflag != DEAD_NO) {
+        return movement_.rejectIngress(
+            MovementError::DeadPlayer,
+            player,
+            mapGeneration,
+            tick,
+            command.msec);
+    }
+    return movement_.submit(player, mapGeneration, tick, command);
 }
 
 void LifecycleCoordinator::messageBegin(
