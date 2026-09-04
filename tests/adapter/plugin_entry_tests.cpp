@@ -20,6 +20,9 @@ std::vector<std::string> gLogLines;
 std::vector<std::string> gTraceLines;
 std::vector<astrabot::debug::LifecycleTrace> gLifecycleTraces;
 
+edict_t gFakeEntity{};
+char gFakeInfoBuffer[256]{};
+
 enginefuncs_t* gHookEngineFunctions = nullptr;
 DLL_FUNCTIONS* gHookDllFunctions = nullptr;
 NEW_DLL_FUNCTIONS* gHookNewDllFunctions = nullptr;
@@ -69,6 +72,32 @@ int captureIndexOfEdict(const edict_t* entity) {
     return entity == gDisconnectEntity ? 1 : 0;
 }
 
+edict_t* captureCreateFakeClient(const char* /* name */) {
+    return &gFakeEntity;
+}
+
+char* captureGetInfoKeyBuffer(edict_t* /* entity */) {
+    return gFakeInfoBuffer;
+}
+
+void captureSetClientKeyValue(
+    int /* clientIndex */, char* /* infoBuffer */, char* /* key */, char* /* value */) {}
+
+void captureRemoveEntity(edict_t* /* entity */) {}
+
+qboolean captureCallGameEntity(
+    plid_t /* pluginId */, const char* /* entityName */, entvars_t* /* variables */) {
+    return 1;
+}
+
+qboolean captureClientConnect(
+    edict_t* /* entity */, const char* /* name */, const char* /* address */, char /* rejectReason */[128]) {
+    return 1;
+}
+
+void captureClientPutInServer(edict_t* /* entity */) {}
+void captureClientDisconnect(edict_t* /* entity */) {}
+
 int sentinelEntityApi2(DLL_FUNCTIONS* /* table */, int* /* version */) {
     return 17;
 }
@@ -89,7 +118,15 @@ struct Fixture {
     Fixture() {
         utility.pfnLogConsole = &captureLogConsole;
         utility.pfnGetHookTables = &captureHookTables;
+        utility.pfnCallGameEntity = &captureCallGameEntity;
+        engine.pfnCreateFakeClient = &captureCreateFakeClient;
         engine.pfnIndexOfEdict = &captureIndexOfEdict;
+        engine.pfnGetInfoKeyBuffer = &captureGetInfoKeyBuffer;
+        engine.pfnSetClientKeyValue = &captureSetClientKeyValue;
+        engine.pfnRemoveEntity = &captureRemoveEntity;
+        dll.pfnClientConnect = &captureClientConnect;
+        dll.pfnClientPutInServer = &captureClientPutInServer;
+        dll.pfnClientDisconnect = &captureClientDisconnect;
         gameDll.dllapi_table = &dll;
         gameDll.newapi_table = &newDll;
         callbacks.pfnGetEntityAPI2 = &sentinelEntityApi2;

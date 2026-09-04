@@ -48,4 +48,11 @@ void emitLifecycle(
     });
 }
 
+void emitFakeClient(
+    const FakeClientTrace& trace, FakeClientTraceSink sink) noexcept {
+    if (sink != nullptr) {
+        sink(trace);
+    }
+}
+
 } // namespace astrabot::debug

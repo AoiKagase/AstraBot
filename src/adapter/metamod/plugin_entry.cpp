@@ -41,6 +41,29 @@ bool hasRequiredUtilityTable(const mutil_funcs_t* utilityFunctions) noexcept {
            utilityFunctions->pfnGetHookTables != nullptr;
 }
 
+bool hasRequiredFakeClientEngine(const enginefuncs_t* engineFunctions) noexcept {
+    return engineFunctions != nullptr &&
+           engineFunctions->pfnIndexOfEdict != nullptr &&
+           engineFunctions->pfnCreateFakeClient != nullptr &&
+           engineFunctions->pfnGetInfoKeyBuffer != nullptr &&
+           engineFunctions->pfnSetClientKeyValue != nullptr &&
+           engineFunctions->pfnRemoveEntity != nullptr;
+}
+
+bool hasRequiredFakeClientGameDll(
+    const DLL_FUNCTIONS* gameDllFunctions) noexcept {
+    return gameDllFunctions != nullptr &&
+           gameDllFunctions->pfnClientConnect != nullptr &&
+           gameDllFunctions->pfnClientPutInServer != nullptr &&
+           gameDllFunctions->pfnClientDisconnect != nullptr;
+}
+
+bool hasRequiredFakeClientUtility(
+    const mutil_funcs_t* utilityFunctions) noexcept {
+    return utilityFunctions != nullptr &&
+           utilityFunctions->pfnCallGameEntity != nullptr;
+}
+
 void logAttachedIdentity(const char* line) noexcept {
     if (gpMetaUtilFuncs != nullptr && gpMetaUtilFuncs->pfnLogConsole != nullptr) {
         gpMetaUtilFuncs->pfnLogConsole(PLID, "%s", line);
@@ -121,7 +144,10 @@ C_DLLEXPORT FORCE_STACK_ALIGN int Meta_Attach(
         engineFunctions->pfnIndexOfEdict == nullptr ||
         hookDllFunctions == nullptr || hookNewDllFunctions == nullptr ||
         hookDllFunctions != gameDllFunctions->dllapi_table ||
-        hookNewDllFunctions != gameDllFunctions->newapi_table) {
+        hookNewDllFunctions != gameDllFunctions->newapi_table ||
+        !hasRequiredFakeClientEngine(engineFunctions) ||
+        !hasRequiredFakeClientGameDll(gameDllFunctions->dllapi_table) ||
+        !hasRequiredFakeClientUtility(gpMetaUtilFuncs)) {
         return 0;
     }
 
@@ -139,7 +165,9 @@ C_DLLEXPORT FORCE_STACK_ALIGN int Meta_Attach(
     gpMetaGlobals = metaGlobals;
     gpGamedllFuncs = gameDllFunctions;
     astrabot::adapter::metamod::lifecycleCoordinator().configure(
-        engineFunctions);
+        engineFunctions,
+        gpMetaUtilFuncs,
+        gameDllFunctions->dllapi_table);
 
     astrabot::debug::emitAttached(&logAttachedIdentity);
     return 1;

@@ -18,11 +18,22 @@ void markIgnored() noexcept {
 
 } // namespace
 
-void LifecycleCoordinator::configure(enginefuncs_t* engineFunctions) noexcept {
+void LifecycleCoordinator::configure(
+    enginefuncs_t* engineFunctions,
+    mutil_funcs_t* utilityFunctions,
+    DLL_FUNCTIONS* gameDllFunctions) noexcept {
     engineFunctions_ = engineFunctions;
+    fakeClient_.configure(
+        engineFunctions,
+        utilityFunctions,
+        gameDllFunctions,
+        &registry_,
+        &agents_);
 }
 
 void LifecycleCoordinator::reset() noexcept {
+    fakeClient_.reset();
+    agents_.reset();
     registry_.reset();
     engineFunctions_ = nullptr;
     traceSink_ = nullptr;
@@ -33,11 +44,16 @@ void LifecycleCoordinator::serverActivate(int clientMax) noexcept {
         clientMax < 1 || clientMax > host::kMaxClientSlots
             ? host::LifecycleResult::rejected(host::HostError::InvalidLifecycle)
             : registry_.activateMap(static_cast<std::uint16_t>(clientMax));
+    if (result.changed()) {
+        fakeClient_.queuePrimaryCreate();
+    }
     emit(host::LifecycleEventKind::MapActivated, result);
 }
 
 void LifecycleCoordinator::serverDeactivate() noexcept {
     const host::LifecycleResult result = registry_.deactivateMap();
+    fakeClient_.resetMap();
+    agents_.clearMappings();
     emit(host::LifecycleEventKind::MapDeactivated, result);
 }
 
@@ -55,12 +71,31 @@ void LifecycleCoordinator::clientDisconnect(edict_t* entity) noexcept {
         index < 1 || index > static_cast<int>(host::kMaxClientSlots)
             ? host::LifecycleResult::rejected(host::HostError::InvalidPlayer)
             : registry_.disconnectSlot(static_cast<std::uint16_t>(index));
+    if (result.changed()) {
+        agents_.unbind(result.event.player);
+    }
     emit(host::LifecycleEventKind::PlayerDisconnected, result);
 }
 
 void LifecycleCoordinator::startFrame() noexcept {
     const host::LifecycleResult result = registry_.startFrame();
     emit(host::LifecycleEventKind::FrameStarted, result);
+    if (!result.changed()) {
+        return;
+    }
+
+    const FakeClientResult fakeClientResult =
+        fakeClient_.processPrimaryCreate();
+    if (fakeClientResult.playerRegistration.changed()) {
+        emit(
+            host::LifecycleEventKind::PlayerConnected,
+            fakeClientResult.playerRegistration);
+    }
+    if (fakeClientResult.playerRollback.changed()) {
+        emit(
+            host::LifecycleEventKind::PlayerDisconnected,
+            fakeClientResult.playerRollback);
+    }
 }
 
 void LifecycleCoordinator::emit(

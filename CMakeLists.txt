@@ -54,6 +54,7 @@ endfunction()
 add_library(astrabot_core STATIC
     src/core/command.cpp
     src/core/identity.cpp
+    src/host/bot_agents.cpp
     src/host/game_host.cpp
     src/host/player_registry.cpp
 )
@@ -147,6 +148,7 @@ if(ASTRABOT_BUILD_METAMOD)
     endforeach()
 
     add_library(astrabot_mm SHARED
+        src/adapter/metamod/fake_client.cpp
         src/adapter/metamod/plugin_entry.cpp
         src/adapter/metamod/lifecycle.cpp
         src/debug/host_trace.cpp
@@ -210,9 +212,25 @@ if(ASTRABOT_BUILD_TESTS)
         COMMAND astrabot_player_registry_tests
     )
 
+    add_executable(astrabot_bot_agents_tests
+        tests/host/bot_agents_tests.cpp
+    )
+    target_link_libraries(astrabot_bot_agents_tests PRIVATE astrabot_core)
+    target_compile_features(astrabot_bot_agents_tests PRIVATE cxx_std_17)
+    set_target_properties(astrabot_bot_agents_tests PROPERTIES
+        CXX_EXTENSIONS OFF
+    )
+    astrabot_enable_warnings(astrabot_bot_agents_tests)
+
+    add_test(
+        NAME astrabot.bot_agents
+        COMMAND astrabot_bot_agents_tests
+    )
+
     if(ASTRABOT_BUILD_METAMOD)
         add_executable(astrabot_adapter_entry_tests
             tests/adapter/plugin_entry_tests.cpp
+            src/adapter/metamod/fake_client.cpp
             src/adapter/metamod/plugin_entry.cpp
             src/adapter/metamod/lifecycle.cpp
             src/debug/host_trace.cpp
@@ -234,6 +252,32 @@ if(ASTRABOT_BUILD_TESTS)
         add_test(
             NAME astrabot.adapter.entry
             COMMAND astrabot_adapter_entry_tests
+        )
+
+        add_executable(astrabot_fake_client_tests
+            tests/adapter/fake_client_tests.cpp
+            src/adapter/metamod/fake_client.cpp
+            src/adapter/metamod/lifecycle.cpp
+            src/adapter/metamod/plugin_entry.cpp
+            src/debug/host_trace.cpp
+        )
+        target_compile_features(astrabot_fake_client_tests PRIVATE cxx_std_17)
+        target_link_libraries(astrabot_fake_client_tests PRIVATE astrabot_core)
+        target_include_directories(astrabot_fake_client_tests
+            PRIVATE
+                ${CMAKE_CURRENT_SOURCE_DIR}/src
+            SYSTEM PRIVATE
+                ${_astrabot_metamod_sdk_include_dirs}
+        )
+        set_target_properties(astrabot_fake_client_tests PROPERTIES
+            CXX_EXTENSIONS OFF
+        )
+        astrabot_enable_warnings(astrabot_fake_client_tests LEGACY_SDK)
+        astrabot_enable_metamod_compatibility(astrabot_fake_client_tests)
+
+        add_test(
+            NAME astrabot.fake_client
+            COMMAND astrabot_fake_client_tests
         )
     endif()
 endif()

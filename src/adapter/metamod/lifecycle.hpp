@@ -6,15 +6,20 @@
 // This header is adapter-private.  SDK types must not cross into portable
 // Core or host headers.
 #include "adapter/metamod/plugin_entry.hpp"
+#include "adapter/metamod/fake_client.hpp"
 
 #include "debug/host_trace.hpp"
+#include "host/bot_agents.hpp"
 #include "host/player_registry.hpp"
 
 namespace astrabot::adapter::metamod {
 
 class LifecycleCoordinator final {
 public:
-    void configure(enginefuncs_t* engineFunctions) noexcept;
+    void configure(
+        enginefuncs_t* engineFunctions,
+        mutil_funcs_t* utilityFunctions,
+        DLL_FUNCTIONS* gameDllFunctions) noexcept;
     void reset() noexcept;
 
     void serverActivate(int clientMax) noexcept;
@@ -25,9 +30,15 @@ public:
     void setTraceSink(debug::LifecycleTraceSink sink) noexcept {
         traceSink_ = sink;
     }
+    void setFakeClientTraceSink(debug::FakeClientTraceSink sink) noexcept {
+        fakeClient_.setTraceSink(sink);
+    }
 
     host::PlayerRegistry& registry() noexcept { return registry_; }
     const host::PlayerRegistry& registry() const noexcept { return registry_; }
+    host::BotAgentRegistry& agents() noexcept { return agents_; }
+    const host::BotAgentRegistry& agents() const noexcept { return agents_; }
+    FakeClientCoordinator& fakeClient() noexcept { return fakeClient_; }
 
 private:
     void emit(
@@ -37,6 +48,8 @@ private:
         host::TickId attemptedTick = host::TickId::invalid()) noexcept;
 
     host::PlayerRegistry registry_{};
+    host::BotAgentRegistry agents_{};
+    FakeClientCoordinator fakeClient_{};
     enginefuncs_t* engineFunctions_{nullptr};
     debug::LifecycleTraceSink traceSink_{nullptr};
 };
