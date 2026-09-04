@@ -158,8 +158,9 @@ if(ASTRABOT_BUILD_METAMOD)
     target_include_directories(astrabot_mm
         PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/src
-        SYSTEM PRIVATE
-            ${_astrabot_metamod_sdk_include_dirs}
+    )
+    target_include_directories(astrabot_mm SYSTEM PRIVATE
+        ${_astrabot_metamod_sdk_include_dirs}
     )
     set_target_properties(astrabot_mm PROPERTIES
         CXX_EXTENSIONS OFF
@@ -240,8 +241,9 @@ if(ASTRABOT_BUILD_TESTS)
         target_include_directories(astrabot_adapter_entry_tests
             PRIVATE
                 ${CMAKE_CURRENT_SOURCE_DIR}/src
-            SYSTEM PRIVATE
-                ${_astrabot_metamod_sdk_include_dirs}
+        )
+        target_include_directories(astrabot_adapter_entry_tests SYSTEM PRIVATE
+            ${_astrabot_metamod_sdk_include_dirs}
         )
         set_target_properties(astrabot_adapter_entry_tests PROPERTIES
             CXX_EXTENSIONS OFF
@@ -266,8 +268,9 @@ if(ASTRABOT_BUILD_TESTS)
         target_include_directories(astrabot_fake_client_tests
             PRIVATE
                 ${CMAKE_CURRENT_SOURCE_DIR}/src
-            SYSTEM PRIVATE
-                ${_astrabot_metamod_sdk_include_dirs}
+        )
+        target_include_directories(astrabot_fake_client_tests SYSTEM PRIVATE
+            ${_astrabot_metamod_sdk_include_dirs}
         )
         set_target_properties(astrabot_fake_client_tests PROPERTIES
             CXX_EXTENSIONS OFF

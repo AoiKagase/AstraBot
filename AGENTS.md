@@ -1,5 +1,44 @@
 # Agent Instructions
 
+## Confirmed Windows build method
+
+- The confirmed compiler environment is Visual Studio 2026 Community:
+  `C:\Program Files\Microsoft Visual Studio\18\Community\Common7\Tools\VsDevCmd.bat`.
+- CMake 3.31.4 in this environment does not provide a Visual Studio 2026
+  generator. Do not use the default Visual Studio 2019 generator and do not
+  reuse a build directory configured with a different generator.
+- Use `NMake Makefiles` inside one `VsDevCmd.bat` environment. NMake is a
+  single-configuration generator, so set `-DCMAKE_BUILD_TYPE` at configure
+  time; `--config Release` does not select the configuration. The repository's
+  assert-based CTest binaries must use `Debug`; Release defines `NDEBUG` and
+  turns their `/W4 /WX` unused-variable diagnostics into build failures.
+- Portable Core/host builds use the x64 environment and the adapter uses the
+  GoldSrc-compatible x86 environment. The adapter must use the pinned SDK
+  checkout at `H:\sourcecode\003.Game\amxmodx\metamod-p` with SHA
+  `7ec9b014f8c0a947a724644aebe34eb33706e44b`.
+- Run these commands from the repository root. Keep the portable and adapter
+  build directories separate:
+
+```powershell
+# Portable x64 configure, build, and Debug tests
+rtk powershell -NoProfile -Command '$vs = "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\Tools\VsDevCmd.bat"; cmd /c ("call ""$vs"" -arch=x64 -host_arch=x64 && cmake -S . -B build-portable-test -G ""NMake Makefiles"" -DCMAKE_BUILD_TYPE=Debug -DASTRABOT_BUILD_METAMOD=OFF -DASTRABOT_BUILD_TESTS=ON -DASTRABOT_WARNINGS_AS_ERRORS=ON && cmake --build build-portable-test && ctest --test-dir build-portable-test --output-on-failure")'
+
+# Metamod-P x86 configure, build, and Debug tests
+rtk powershell -NoProfile -Command '$vs = "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\Tools\VsDevCmd.bat"; cmd /c ("call ""$vs"" -arch=x86 -host_arch=x64 && cmake -S . -B build-metamod-x86-test -G ""NMake Makefiles"" -DCMAKE_BUILD_TYPE=Debug -DASTRABOT_BUILD_METAMOD=ON -DASTRABOT_BUILD_TESTS=ON -DASTRABOT_WARNINGS_AS_ERRORS=ON -DASTRABOT_METAMOD_SDK_ROOT=H:\sourcecode\003.Game\amxmodx\metamod-p && cmake --build build-metamod-x86-test && ctest --test-dir build-metamod-x86-test --output-on-failure")'
+
+# Metamod-P x86 Release adapter artifact (tests stay disabled)
+rtk powershell -NoProfile -Command '$vs = "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\Tools\VsDevCmd.bat"; cmd /c ("call ""$vs"" -arch=x86 -host_arch=x64 && cmake -S . -B build-metamod-x86-release -G ""NMake Makefiles"" -DCMAKE_BUILD_TYPE=Release -DASTRABOT_BUILD_METAMOD=ON -DASTRABOT_BUILD_TESTS=OFF -DASTRABOT_WARNINGS_AS_ERRORS=ON -DASTRABOT_METAMOD_SDK_ROOT=H:\sourcecode\003.Game\amxmodx\metamod-p && cmake --build build-metamod-x86-release")'
+
+# x86 export verification (run in the same VS developer environment)
+rtk powershell -NoProfile -Command '$vs = "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\Tools\VsDevCmd.bat"; cmd /c ("call ""$vs"" -arch=x86 -host_arch=x64 && dumpbin /exports build-metamod-x86-release\astrabot_mm.dll")'
+```
+
+The adapter export check must find exactly these undecorated names:
+`Meta_Query`, `Meta_Attach`, `Meta_Detach`, `GetEntityAPI2`, and
+`GetEngineFunctions`. Linux `-m32` and live-server validation remain
+post-Finish checks and must not be started before the project-wide Finish
+decision.
+
 ## FocalSpan and completion workflow
 
 FocalSpan is part of the standard workflow for every implementation or source
