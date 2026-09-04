@@ -2,6 +2,7 @@
 // Copyright (c) 2026 AstraBot contributors.
 
 #include "adapter/metamod/plugin_entry.hpp"
+#include "adapter/metamod/lifecycle.hpp"
 
 #include "debug/host_trace.hpp"
 
@@ -13,8 +14,16 @@
 
 namespace {
 
+using astrabot::host::LifecycleEventKind;
+
 std::vector<std::string> gLogLines;
 std::vector<std::string> gTraceLines;
+std::vector<astrabot::debug::LifecycleTrace> gLifecycleTraces;
+
+enginefuncs_t* gHookEngineFunctions = nullptr;
+DLL_FUNCTIONS* gHookDllFunctions = nullptr;
+NEW_DLL_FUNCTIONS* gHookNewDllFunctions = nullptr;
+const edict_t* gDisconnectEntity = nullptr;
 
 void captureLogConsole(plid_t /* pluginId */, const char* format, ...) {
     assert(format != nullptr);
@@ -35,6 +44,31 @@ void captureTraceLine(const char* line) noexcept {
     }
 }
 
+void captureLifecycleTrace(
+    const astrabot::debug::LifecycleTrace& trace) noexcept {
+    gLifecycleTraces.push_back(trace);
+}
+
+void captureHookTables(
+    plid_t /* pluginId */,
+    enginefuncs_t** engineFunctions,
+    DLL_FUNCTIONS** dllFunctions,
+    NEW_DLL_FUNCTIONS** newDllFunctions) {
+    if (engineFunctions != nullptr) {
+        *engineFunctions = gHookEngineFunctions;
+    }
+    if (dllFunctions != nullptr) {
+        *dllFunctions = gHookDllFunctions;
+    }
+    if (newDllFunctions != nullptr) {
+        *newDllFunctions = gHookNewDllFunctions;
+    }
+}
+
+int captureIndexOfEdict(const edict_t* entity) {
+    return entity == gDisconnectEntity ? 1 : 0;
+}
+
 int sentinelEntityApi2(DLL_FUNCTIONS* /* table */, int* /* version */) {
     return 17;
 }
@@ -50,13 +84,19 @@ struct Fixture {
     NEW_DLL_FUNCTIONS newDll{};
     gamedll_funcs_t gameDll{};
     META_FUNCTIONS callbacks{};
+    enginefuncs_t engine{};
 
     Fixture() {
         utility.pfnLogConsole = &captureLogConsole;
+        utility.pfnGetHookTables = &captureHookTables;
+        engine.pfnIndexOfEdict = &captureIndexOfEdict;
         gameDll.dllapi_table = &dll;
         gameDll.newapi_table = &newDll;
         callbacks.pfnGetEntityAPI2 = &sentinelEntityApi2;
         callbacks.pfnGetEngineFunctions = &sentinelEngineFunctions;
+        gHookEngineFunctions = &engine;
+        gHookDllFunctions = &dll;
+        gHookNewDllFunctions = &newDll;
     }
 };
 
@@ -64,6 +104,7 @@ void resetAdapter() {
     assert(Meta_Detach(PT_ANYTIME, PNL_NULL) != 0);
     gLogLines.clear();
     gTraceLines.clear();
+    gLifecycleTraces.clear();
 }
 
 void query(Fixture& fixture) {
@@ -147,6 +188,19 @@ void testAttachValidationIsRollbackSafe() {
     assert(Meta_Query(interfaceVersion, &pluginInfo, &noLogger) != 0);
     assert(Meta_Attach(PT_ANYTIME, &fixture.callbacks, &fixture.globals, &fixture.gameDll) == 0);
     assertCallbacksEqual(fixture.callbacks, before);
+
+    enginefuncs_t noIndex = fixture.engine;
+    noIndex.pfnIndexOfEdict = nullptr;
+    gHookEngineFunctions = &noIndex;
+    assert(Meta_Attach(PT_ANYTIME, &fixture.callbacks, &fixture.globals, &fixture.gameDll) == 0);
+    assertCallbacksEqual(fixture.callbacks, before);
+    gHookEngineFunctions = &fixture.engine;
+
+    DLL_FUNCTIONS unrelatedDll{};
+    gHookDllFunctions = &unrelatedDll;
+    assert(Meta_Attach(PT_ANYTIME, &fixture.callbacks, &fixture.globals, &fixture.gameDll) == 0);
+    assertCallbacksEqual(fixture.callbacks, before);
+    gHookDllFunctions = &fixture.dll;
     assert(gLogLines.empty());
 }
 
@@ -208,8 +262,18 @@ void testEmptyHookTablesAndInterfaceChecks() {
     assert(wrongEntityVersion == INTERFACE_VERSION);
     assert(entityMismatch.pfnStartFrame == entityTable.pfnStartFrame);
     assert(GetEntityAPI2(&entityTable, &entityVersion) != 0);
-    const DLL_FUNCTIONS emptyEntityTable{};
-    assert(std::memcmp(&entityTable, &emptyEntityTable, sizeof(entityTable)) == 0);
+    assert(entityTable.pfnServerActivate ==
+           &astrabot::adapter::metamod::serverActivateHook);
+    assert(entityTable.pfnServerDeactivate ==
+           &astrabot::adapter::metamod::serverDeactivateHook);
+    assert(entityTable.pfnClientDisconnect ==
+           &astrabot::adapter::metamod::clientDisconnectHook);
+    assert(entityTable.pfnStartFrame ==
+           &astrabot::adapter::metamod::startFrameHook);
+    assert(entityTable.pfnGameInit == nullptr);
+    assert(entityTable.pfnClientConnect == nullptr);
+    assert(entityTable.pfnThink == nullptr);
+    assert(entityTable.pfnPlayerPreThink == nullptr);
 
     enginefuncs_t engineTable{};
     engineTable.pfnTime = reinterpret_cast<decltype(engineTable.pfnTime)>(1);
@@ -226,14 +290,88 @@ void testEmptyHookTablesAndInterfaceChecks() {
     assert(std::memcmp(&engineTable, &emptyEngineTable, sizeof(engineTable)) == 0);
 }
 
+void testLifecycleHooksAndCoordinatorCleanup() {
+    resetAdapter();
+    Fixture fixture{};
+    query(fixture);
+    assert(Meta_Attach(PT_ANYTIME, &fixture.callbacks, &fixture.globals, &fixture.gameDll) != 0);
+
+    DLL_FUNCTIONS hooks{};
+    int interfaceVersion = INTERFACE_VERSION;
+    assert(GetEntityAPI2(&hooks, &interfaceVersion) != 0);
+    assert(hooks.pfnServerActivate != nullptr);
+    assert(hooks.pfnServerDeactivate != nullptr);
+    assert(hooks.pfnClientDisconnect != nullptr);
+    assert(hooks.pfnStartFrame != nullptr);
+    assert(hooks.pfnGameInit == nullptr);
+    assert(hooks.pfnClientConnect == nullptr);
+    assert(hooks.pfnThink == nullptr);
+    assert(hooks.pfnPlayerPreThink == nullptr);
+
+    astrabot::adapter::metamod::setLifecycleTraceSink(&captureLifecycleTrace);
+    gLifecycleTraces.clear();
+
+    fixture.globals.mres = MRES_SUPERCEDE;
+    hooks.pfnServerActivate(nullptr, 0, 32);
+    assert(fixture.globals.mres == MRES_IGNORED);
+    assert(astrabot::adapter::metamod::lifecycleCoordinator().registry().isMapActive());
+
+    fixture.globals.mres = MRES_SUPERCEDE;
+    hooks.pfnStartFrame();
+    assert(fixture.globals.mres == MRES_IGNORED);
+    assert(astrabot::adapter::metamod::lifecycleCoordinator().registry().currentTick() ==
+           astrabot::core::TickId{1});
+
+    const auto connected =
+        astrabot::adapter::metamod::lifecycleCoordinator().registry().registerPlayer(1);
+    assert(connected);
+    edict_t entity{};
+    gDisconnectEntity = &entity;
+    fixture.globals.mres = MRES_SUPERCEDE;
+    hooks.pfnClientDisconnect(&entity);
+    assert(fixture.globals.mres == MRES_IGNORED);
+    assert(!astrabot::adapter::metamod::lifecycleCoordinator().registry().isConnected(1));
+
+    fixture.globals.mres = MRES_SUPERCEDE;
+    hooks.pfnServerDeactivate();
+    assert(fixture.globals.mres == MRES_IGNORED);
+    assert(!astrabot::adapter::metamod::lifecycleCoordinator().registry().isMapActive());
+
+    fixture.globals.mres = MRES_SUPERCEDE;
+    hooks.pfnServerDeactivate();
+    assert(fixture.globals.mres == MRES_IGNORED);
+
+    assert(gLifecycleTraces.size() == 4);
+    assert(gLifecycleTraces[0].kind == LifecycleEventKind::MapActivated);
+    assert(gLifecycleTraces[0].accepted);
+    assert(gLifecycleTraces[0].sequence == 1);
+    assert(gLifecycleTraces[1].kind == LifecycleEventKind::FrameStarted);
+    assert(gLifecycleTraces[1].tick == astrabot::core::TickId{1});
+    assert(gLifecycleTraces[1].sequence == 2);
+    assert(gLifecycleTraces[2].kind == LifecycleEventKind::PlayerDisconnected);
+    assert(gLifecycleTraces[2].sequence == 4);
+    assert(gLifecycleTraces[3].kind == LifecycleEventKind::MapDeactivated);
+    assert(gLifecycleTraces[3].sequence == 5);
+
+    Meta_Detach(PT_ANYTIME, PNL_COMMAND);
+    assert(!astrabot::adapter::metamod::lifecycleCoordinator().registry().isMapActive());
+    assert(astrabot::adapter::metamod::lifecycleCoordinator().registry().eventSequence() == 0);
+    assert(astrabot::adapter::metamod::lifecycleCoordinator().registry().mapGeneration() ==
+           astrabot::core::MapGeneration::invalid());
+    gDisconnectEntity = nullptr;
+}
+
 void testTraceSink() {
     gTraceLines.clear();
+    gLifecycleTraces.clear();
     astrabot::debug::emitAttached(&captureTraceLine);
     assert(gTraceLines.size() == 1);
     assert(gTraceLines.front() ==
            "astrabot version=0.1.0 adapter=metamod-p interface=5:13 outcome=attached");
+    assert(gLifecycleTraces.empty());
     astrabot::debug::emitAttached(nullptr);
     assert(gTraceLines.size() == 1);
+    assert(gLifecycleTraces.empty());
 }
 
 } // namespace
@@ -243,6 +381,7 @@ int main() {
     testAttachValidationIsRollbackSafe();
     testSuccessfulAttachDoubleAttachAndDetach();
     testEmptyHookTablesAndInterfaceChecks();
+    testLifecycleHooksAndCoordinatorCleanup();
     testTraceSink();
     return 0;
 }

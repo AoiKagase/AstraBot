@@ -3,6 +3,7 @@
 
 #include "adapter/metamod/plugin_entry.hpp"
 
+#include "adapter/metamod/lifecycle.hpp"
 #include "debug/host_trace.hpp"
 
 #include <cstring>
@@ -36,7 +37,8 @@ bool hasRequiredGameDllTables(const gamedll_funcs_t* gameDllFunctions) noexcept 
 
 bool hasRequiredUtilityTable(const mutil_funcs_t* utilityFunctions) noexcept {
     return utilityFunctions != nullptr &&
-           utilityFunctions->pfnLogConsole != nullptr;
+           utilityFunctions->pfnLogConsole != nullptr &&
+           utilityFunctions->pfnGetHookTables != nullptr;
 }
 
 void logAttachedIdentity(const char* line) noexcept {
@@ -102,11 +104,24 @@ C_DLLEXPORT FORCE_STACK_ALIGN int Meta_Attach(
     META_FUNCTIONS* functionTable,
     meta_globals_t* metaGlobals,
     gamedll_funcs_t* gameDllFunctions) {
-    // The pinned Meta_Attach ABI has no enginefuncs_t/globalvars_t argument;
-    // the engine table is validated by GetEngineFunctions below.
+    // The pinned Meta_Attach ABI has no enginefuncs_t argument.  Metamod-P
+    // supplies the live engine table through the pinned utility callback.
     if (gState.attached || !gState.queried || functionTable == nullptr ||
         metaGlobals == nullptr || !hasRequiredGameDllTables(gameDllFunctions) ||
         !hasRequiredUtilityTable(gpMetaUtilFuncs)) {
+        return 0;
+    }
+
+    enginefuncs_t* engineFunctions = nullptr;
+    DLL_FUNCTIONS* hookDllFunctions = nullptr;
+    NEW_DLL_FUNCTIONS* hookNewDllFunctions = nullptr;
+    gpMetaUtilFuncs->pfnGetHookTables(
+        PLID, &engineFunctions, &hookDllFunctions, &hookNewDllFunctions);
+    if (engineFunctions == nullptr ||
+        engineFunctions->pfnIndexOfEdict == nullptr ||
+        hookDllFunctions == nullptr || hookNewDllFunctions == nullptr ||
+        hookDllFunctions != gameDllFunctions->dllapi_table ||
+        hookNewDllFunctions != gameDllFunctions->newapi_table) {
         return 0;
     }
 
@@ -123,6 +138,8 @@ C_DLLEXPORT FORCE_STACK_ALIGN int Meta_Attach(
     gState.previousEngineFunctions = previousEngineFunctions;
     gpMetaGlobals = metaGlobals;
     gpGamedllFuncs = gameDllFunctions;
+    astrabot::adapter::metamod::lifecycleCoordinator().configure(
+        engineFunctions);
 
     astrabot::debug::emitAttached(&logAttachedIdentity);
     return 1;
@@ -130,6 +147,7 @@ C_DLLEXPORT FORCE_STACK_ALIGN int Meta_Attach(
 
 C_DLLEXPORT FORCE_STACK_ALIGN int Meta_Detach(
     PLUG_LOADTIME /* now */, PL_UNLOAD_REASON /* reason */) {
+    astrabot::adapter::metamod::lifecycleCoordinator().reset();
     if (gState.attached && gState.functionTable != nullptr) {
         gState.functionTable->pfnGetEntityAPI2 = gState.previousEntityApi2;
         gState.functionTable->pfnGetEngineFunctions =
@@ -151,6 +169,13 @@ C_DLLEXPORT FORCE_STACK_ALIGN int GetEntityAPI2(
 
     const DLL_FUNCTIONS emptyHookTable{};
     std::memcpy(functionTable, &emptyHookTable, sizeof(emptyHookTable));
+    functionTable->pfnServerActivate =
+        &astrabot::adapter::metamod::serverActivateHook;
+    functionTable->pfnServerDeactivate =
+        &astrabot::adapter::metamod::serverDeactivateHook;
+    functionTable->pfnClientDisconnect =
+        &astrabot::adapter::metamod::clientDisconnectHook;
+    functionTable->pfnStartFrame = &astrabot::adapter::metamod::startFrameHook;
     return 1;
 }
 

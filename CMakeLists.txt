@@ -43,6 +43,7 @@ function(astrabot_enable_metamod_compatibility target)
         # defaults.  Keep this compatibility scope on adapter targets only.
         target_compile_options(${target} PRIVATE
             /Zc:strictStrings-
+            /wd4005
             /wd4302
             /wd4311
             /wd4459
@@ -54,6 +55,7 @@ add_library(astrabot_core STATIC
     src/core/command.cpp
     src/core/identity.cpp
     src/host/game_host.cpp
+    src/host/player_registry.cpp
 )
 
 target_compile_features(astrabot_core PUBLIC cxx_std_17)
@@ -146,6 +148,7 @@ if(ASTRABOT_BUILD_METAMOD)
 
     add_library(astrabot_mm SHARED
         src/adapter/metamod/plugin_entry.cpp
+        src/adapter/metamod/lifecycle.cpp
         src/debug/host_trace.cpp
     )
     target_compile_features(astrabot_mm PRIVATE cxx_std_17)
@@ -192,10 +195,26 @@ if(ASTRABOT_BUILD_TESTS)
         COMMAND astrabot_portable_contract_tests
     )
 
+    add_executable(astrabot_player_registry_tests
+        tests/host/player_registry_tests.cpp
+    )
+    target_link_libraries(astrabot_player_registry_tests PRIVATE astrabot_core)
+    target_compile_features(astrabot_player_registry_tests PRIVATE cxx_std_17)
+    set_target_properties(astrabot_player_registry_tests PROPERTIES
+        CXX_EXTENSIONS OFF
+    )
+    astrabot_enable_warnings(astrabot_player_registry_tests)
+
+    add_test(
+        NAME astrabot.player_registry
+        COMMAND astrabot_player_registry_tests
+    )
+
     if(ASTRABOT_BUILD_METAMOD)
         add_executable(astrabot_adapter_entry_tests
             tests/adapter/plugin_entry_tests.cpp
             src/adapter/metamod/plugin_entry.cpp
+            src/adapter/metamod/lifecycle.cpp
             src/debug/host_trace.cpp
         )
         target_compile_features(astrabot_adapter_entry_tests PRIVATE cxx_std_17)

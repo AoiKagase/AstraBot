@@ -21,4 +21,31 @@ void emitAttached(TraceSink sink) noexcept {
     }
 }
 
+void emitLifecycle(
+    astrabot::host::LifecycleEventKind attemptedKind,
+    const astrabot::host::LifecycleResult& result,
+    astrabot::host::MapGeneration currentMap,
+    astrabot::host::PlayerId attemptedPlayer,
+    astrabot::host::TickId attemptedTick,
+    LifecycleTraceSink sink) noexcept {
+    if (sink == nullptr || (result.event.sequence == 0 && result.isNoOp())) {
+        return;
+    }
+
+    const astrabot::host::LifecycleEvent& event = result.event;
+    const astrabot::host::PlayerId player =
+        result.event.sequence != 0 ? event.player : attemptedPlayer;
+    sink({
+        result.event.sequence != 0 ? event.kind : attemptedKind,
+        result.error,
+        result.event.sequence != 0 ? event.map : currentMap,
+        player.slot,
+        player.generation,
+        result.event.sequence != 0 ? event.tick : attemptedTick,
+        event.sequence,
+        result.accepted,
+        result.changed(),
+    });
+}
+
 } // namespace astrabot::debug

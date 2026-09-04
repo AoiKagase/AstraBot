@@ -11,6 +11,7 @@ namespace astrabot::host {
 
 using core::BotCommand;
 using core::BotAgentId;
+using core::Generation;
 using core::MapGeneration;
 using core::PlayerId;
 using core::TickId;
@@ -28,6 +29,7 @@ enum class HostError : std::uint8_t {
     StaleTick,
     DuplicateTick,
     InvalidCommand,
+    FrameNotStarted,
     Rejected,
     Unsupported,
 };
@@ -38,6 +40,13 @@ enum class LifecycleEventKind : std::uint8_t {
     MapDeactivated,
     PlayerConnected,
     PlayerDisconnected,
+    FrameStarted,
+};
+
+enum class LifecycleChange : std::uint8_t {
+    None = 0,
+    StateChanged,
+    NoOp,
 };
 
 struct LifecycleEvent {
@@ -45,21 +54,32 @@ struct LifecycleEvent {
     EventSequence sequence{0};
     MapGeneration map{};
     PlayerId player{};
+    TickId tick{};
 };
 
 struct LifecycleResult {
     LifecycleEvent event{};
     HostError error{HostError::None};
     bool accepted{false};
+    LifecycleChange change{LifecycleChange::None};
 
     static constexpr LifecycleResult acceptedEvent(LifecycleEvent value) noexcept {
-        return {value, HostError::None, true};
+        return {value, HostError::None, true, LifecycleChange::StateChanged};
+    }
+    static constexpr LifecycleResult acceptedNoOp() noexcept {
+        return {{}, HostError::None, true, LifecycleChange::NoOp};
     }
     static constexpr LifecycleResult rejected(HostError reason) noexcept {
-        return {{}, reason, false};
+        return {{}, reason, false, LifecycleChange::None};
     }
 
     constexpr bool succeeded() const noexcept { return accepted && error == HostError::None; }
+    constexpr bool changed() const noexcept {
+        return succeeded() && change == LifecycleChange::StateChanged;
+    }
+    constexpr bool isNoOp() const noexcept {
+        return succeeded() && change == LifecycleChange::NoOp;
+    }
     constexpr explicit operator bool() const noexcept { return succeeded(); }
 };
 
