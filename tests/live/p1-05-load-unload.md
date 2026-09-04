@@ -1,7 +1,7 @@
 # P1-05 live load/join/unload evidence
 
 This checklist is post-Finish validation only. It must not be used to move the
-project-wide Phase 1 Finish gate forward. P1-05 covers the message-driven join
+project-wide Finish gate forward. P1-05 covers the message-driven join
 state machine and does not include FakeClient movement or navigation.
 
 ## Pinned inputs

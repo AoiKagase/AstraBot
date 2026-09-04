@@ -37,7 +37,7 @@ The adapter export check must find exactly these undecorated names:
 `Meta_Query`, `Meta_Attach`, `Meta_Detach`, `GetEntityAPI2`, and
 `GetEngineFunctions`. Linux `-m32` and live-server validation remain
 post-Finish checks and must not be started before the project-wide Finish
-decision.
+decision, which is only made after every project plan is complete.
 
 ## FocalSpan and completion workflow
 
@@ -70,13 +70,15 @@ After implementation and verification:
 
 ## Finish gate and post-Finish validation
 
-Treat `Finish` as an explicit phase state, not as a synonym for every possible
-platform or live-environment check.
+Treat `Finish` as an explicit project-wide state, not as a synonym for a phase
+completion or every possible platform or live-environment check.
 
 - Linux builds and real-device/live-server validation must not be started
-  before `Finish` has been explicitly confirmed for the phase.
-- Determine and record `Finish` from the phase's implementation, applicable
-  portable/target verification, and required documentation evidence first.
+  before `Finish` has been explicitly confirmed for the entire project.
+- Determine and record `Finish` only after every plan in every project phase has
+  completed its implementation, applicable verification, and required
+  documentation evidence. Completing an individual phase or plan never sets
+  `Finish`.
 - After `Finish` is confirmed, run the Linux build and real-device/live-server
   checks as post-Finish validation, and report their results separately.
 - If post-Finish validation fails, record the follow-up or reopened work

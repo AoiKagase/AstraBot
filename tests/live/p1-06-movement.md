@@ -5,7 +5,8 @@ submission and simple movement. It is not a Finish gate for P1-06.
 
 ## Scope
 
-- GoldSrc x86 only; no Linux or live-server check before the Phase 1 Finish.
+- GoldSrc x86 only; no Linux or live-server check before the project-wide
+  Finish.
 - P1-06 covers one accepted `BotCommand` per player/tick and its conversion
   to the original Metamod-P engine `pfnRunPlayerMove` table entry.
 - Planner, Nav, combat, ReAPI, AMXX, and multi-bot scheduling are out of scope.
@@ -23,7 +24,7 @@ submission and simple movement. It is not a Finish gate for P1-06.
 ## Post-Finish Linux check
 
 Run the documented `-m32` adapter build and CTest only after the project-wide
-Phase 1 Finish is explicitly confirmed.
+Finish is explicitly confirmed.
 
 | Check | Evidence | Result |
 | --- | --- | --- |

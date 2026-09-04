@@ -3,7 +3,7 @@
 
 # P1-04 FakeClient allocation and mapping live acceptance
 
-This scenario is run only after all Phase 1 plans are complete and the
+This scenario is run only after all project plans are complete and the
 project-wide `Finish` state has been explicitly confirmed.  Linux `-m32`
 builds and live-server validation are post-Finish checks; they are not part of
 the P1-04 pre-Finish implementation gate.
