@@ -56,15 +56,15 @@ void LifecycleCoordinator::configure(
 }
 
 void LifecycleCoordinator::reset() noexcept {
+    const host::PlayerId activePlayer = fakeClient_.activePlayer();
+    const bool hadActiveClient = activePlayer.isValid() &&
+                                  fakeClient_.activeEntity() != nullptr;
     movement_.reset();
-    fakeClient_.reset();
-    agents_.reset();
-    registry_.reset();
+    // Detach must invalidate adapter state before calling the original
+    // GameDLL disconnect callback.  The callback must never observe a live
+    // join, decoder fragment, command context, or pending cleanup.
     messageDecoder_.reset();
     joinState_.reset();
-    engineFunctions_ = nullptr;
-    utilityFunctions_ = nullptr;
-    gameDllFunctions_ = nullptr;
     activeJoinEntity_ = nullptr;
     commandContextActive_ = false;
     cleanupPending_ = false;
@@ -72,8 +72,36 @@ void LifecycleCoordinator::reset() noexcept {
     commandArgv0_ = {};
     commandArgv1_ = {};
     commandArgs_ = {};
+    if (hadActiveClient) {
+        const bool mappingPresent = agents_.findByPlayer(activePlayer).isValid();
+        (void)agents_.unbind(activePlayer);
+        (void)registry_.disconnectPlayer(activePlayer);
+        const bool cleaned = fakeClient_.cleanupActiveDirect(true);
+        emitRemoval(
+            cleaned ? debug::RemovalOutcome::Cleaned
+                    : debug::RemovalOutcome::Rejected,
+            cleaned ? debug::RemovalError::None
+                    : debug::RemovalError::DirectCleanupFailed,
+            activePlayer,
+            mappingPresent,
+            true);
+        if (cleaned) {
+            ++status_.cleanupCompletions;
+        } else {
+            status_.lastRemovalError = debug::RemovalError::DirectCleanupFailed;
+            fakeClient_.forget(activePlayer);
+        }
+    }
+    fakeClient_.reset();
+    agents_.reset();
+    registry_.reset();
+    engineFunctions_ = nullptr;
+    utilityFunctions_ = nullptr;
+    gameDllFunctions_ = nullptr;
+    status_ = {};
     traceSink_ = nullptr;
     joinTraceSink_ = nullptr;
+    removalTraceSink_ = nullptr;
 }
 
 void LifecycleCoordinator::serverActivate(int clientMax) noexcept {
@@ -82,6 +110,10 @@ void LifecycleCoordinator::serverActivate(int clientMax) noexcept {
             ? host::LifecycleResult::rejected(host::HostError::InvalidLifecycle)
             : registry_.activateMap(static_cast<std::uint16_t>(clientMax));
     if (result.changed()) {
+        ++status_.mapActivations;
+        if (status_.mapActivations > 1U) {
+            ++status_.mapReplays;
+        }
         movement_.resetMap();
         fakeClient_.queuePrimaryCreate();
     }
@@ -93,10 +125,14 @@ void LifecycleCoordinator::serverDeactivate() noexcept {
     const cstrike::JoinAction joinAction =
         joinState_.cancel(cstrike::JoinError::MapDeactivated);
     handleJoinAction(joinAction);
+    joinState_.reset();
     messageDecoder_.reset();
     commandContextActive_ = false;
     cleanupPending_ = false;
     pendingCleanupError_ = cstrike::JoinError::None;
+    commandArgv0_ = {};
+    commandArgv1_ = {};
+    commandArgs_ = {};
     activeJoinEntity_ = nullptr;
     const host::LifecycleResult result = registry_.deactivateMap();
     fakeClient_.resetMap();
@@ -114,37 +150,112 @@ void LifecycleCoordinator::clientDisconnect(edict_t* entity) noexcept {
     }
 
     const int index = engineFunctions_->pfnIndexOfEdict(entity);
+    const host::PlayerId activePlayer = fakeClient_.activePlayer();
+    const bool wasActiveClient =
+        activePlayer.isValid() && index >= 1 &&
+        index <= static_cast<int>(host::kMaxClientSlots) &&
+        activePlayer.slot == static_cast<std::uint16_t>(index);
     const host::PlayerId disconnectedPlayer =
         index >= 1 && index <= static_cast<int>(host::kMaxClientSlots)
             ? registry_.currentPlayer(static_cast<std::uint16_t>(index))
             : host::PlayerId::invalid();
+
+    // Clear all adapter-owned per-client state before acknowledging the
+    // registry transition.  Keep FakeClient's mapping until that transition
+    // so acknowledgeDisconnect() remains the single normal cleanup path.
     movement_.forget(disconnectedPlayer);
-    if (joinState_.active() &&
-        joinState_.player().slot == static_cast<std::uint16_t>(index)) {
+    const bool joinMatches =
+        joinState_.player().isValid() && index >= 1 &&
+        joinState_.player().slot == static_cast<std::uint16_t>(index);
+    if (joinMatches && joinState_.active()) {
         movement_.forget(joinState_.player());
-    }
-    if (index >= 1 && index <= static_cast<int>(host::kMaxClientSlots) &&
-        joinState_.active() &&
-        joinState_.player().slot == static_cast<std::uint16_t>(index)) {
         const cstrike::JoinAction joinAction =
             joinState_.cancel(cstrike::JoinError::Disconnected);
-        handleJoinAction(joinAction);
-        activeJoinEntity_ = nullptr;
-        fakeClient_.forget(joinState_.player());
+        emitJoin(joinAction);
     }
+    if (joinMatches) {
+        joinState_.reset();
+        activeJoinEntity_ = nullptr;
+    }
+    messageDecoder_.reset();
+    commandContextActive_ = false;
+    cleanupPending_ = false;
+    pendingCleanupError_ = cstrike::JoinError::None;
+    commandArgv0_ = {};
+    commandArgv1_ = {};
+    commandArgs_ = {};
     const host::LifecycleResult result =
         index < 1 || index > static_cast<int>(host::kMaxClientSlots)
             ? host::LifecycleResult::rejected(host::HostError::InvalidPlayer)
             : registry_.disconnectSlot(static_cast<std::uint16_t>(index));
     if (result.changed()) {
         agents_.unbind(result.event.player);
-        fakeClient_.forget(result.event.player);
+        fakeClient_.acknowledgeDisconnect(result.event.player);
         if (activeJoinEntity_ != nullptr &&
             joinState_.player() == result.event.player) {
             activeJoinEntity_ = nullptr;
         }
+        if (wasActiveClient) {
+            ++status_.cleanupCompletions;
+            emitRemoval(
+                debug::RemovalOutcome::Cleaned,
+                debug::RemovalError::None,
+                result.event.player,
+                false,
+                false);
+        }
     }
     emit(host::LifecycleEventKind::PlayerDisconnected, result);
+}
+
+RemovalResult LifecycleCoordinator::removeActive() noexcept {
+    const host::PlayerId player = fakeClient_.activePlayer();
+    if (!player.isValid() || fakeClient_.activeEntity() == nullptr) {
+        return {
+            debug::RemovalOutcome::NoOp,
+            debug::RemovalError::None,
+            {},
+            true,
+            false};
+    }
+    if (fakeClient_.removalPending()) {
+        return {
+            debug::RemovalOutcome::NoOp,
+            debug::RemovalError::None,
+            player,
+            true,
+            false};
+    }
+
+    movement_.forget(player);
+    if (joinState_.active()) {
+        const cstrike::JoinAction action =
+            joinState_.cancel(cstrike::JoinError::Disconnected);
+        emitJoin(action);
+    }
+    messageDecoder_.reset();
+    commandContextActive_ = false;
+    cleanupPending_ = false;
+    pendingCleanupError_ = cstrike::JoinError::None;
+    commandArgv0_ = {};
+    commandArgv1_ = {};
+    commandArgs_ = {};
+
+    ++status_.removalRequests;
+    const RemovalResult requested = fakeClient_.requestRemoval();
+    if (requested.succeeded()) {
+        status_.lastRemovalError = debug::RemovalError::None;
+        return requested;
+    }
+
+    status_.lastRemovalError = requested.error;
+    cleanupActiveAfterRemoval(requested, player);
+    return requested;
+}
+
+void LifecycleCoordinator::queuePrimaryCreate(
+    cstrike::JoinRequest request) noexcept {
+    fakeClient_.queuePrimaryCreate(request);
 }
 
 void LifecycleCoordinator::startFrame() noexcept {
@@ -157,6 +268,10 @@ void LifecycleCoordinator::startFrame() noexcept {
 
     const FakeClientResult fakeClientResult =
         fakeClient_.processPrimaryCreate();
+    if (fakeClientResult.changed ||
+        fakeClientResult.error != debug::FakeClientError::None) {
+        ++status_.createAttempts;
+    }
     if (fakeClientResult.playerRegistration.changed()) {
         emit(
             host::LifecycleEventKind::PlayerConnected,
@@ -387,6 +502,56 @@ void LifecycleCoordinator::handleJoinAction(
         activeJoinEntity_ = nullptr;
         fakeClient_.forget(joinState_.player());
     }
+}
+
+void LifecycleCoordinator::cleanupActiveAfterRemoval(
+    const RemovalResult& result,
+    host::PlayerId player) noexcept {
+    const host::BotAgentBinding mapping = agents_.findByPlayer(player);
+    const bool mappingPresent = mapping.isValid();
+    (void)agents_.unbind(player);
+    (void)registry_.disconnectPlayer(player);
+    const bool cleaned = fakeClient_.cleanupActiveDirect(true);
+    if (cleaned) {
+        ++status_.cleanupCompletions;
+        emitRemoval(
+            debug::RemovalOutcome::Cleaned,
+            result.error,
+            player,
+            mappingPresent,
+            true);
+    } else {
+        fakeClient_.forget(player);
+        status_.lastRemovalError = debug::RemovalError::DirectCleanupFailed;
+        emitRemoval(
+            debug::RemovalOutcome::Rejected,
+            debug::RemovalError::DirectCleanupFailed,
+            player,
+            mappingPresent,
+            true);
+    }
+    activeJoinEntity_ = nullptr;
+    joinState_.reset();
+}
+
+void LifecycleCoordinator::emitRemoval(
+    debug::RemovalOutcome outcome,
+    debug::RemovalError error,
+    host::PlayerId player,
+    bool mappingPresent,
+    bool entityPresent) noexcept {
+    debug::emitRemoval(
+        {
+            outcome,
+            error,
+            registry_.mapGeneration(),
+            player,
+            registry_.currentTick(),
+            registry_.eventSequence(),
+            mappingPresent,
+            entityPresent,
+        },
+        removalTraceSink_);
 }
 
 void LifecycleCoordinator::cleanupFailedJoin(

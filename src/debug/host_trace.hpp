@@ -92,6 +92,38 @@ struct JoinTrace {
 
 using JoinTraceSink = void (*)(const JoinTrace& trace) noexcept;
 
+enum class RemovalOutcome : std::uint8_t {
+    None = 0,
+    NoOp,
+    KickQueued,
+    Cleaned,
+    Rejected,
+};
+
+enum class RemovalError : std::uint8_t {
+    None = 0,
+    NotConfigured,
+    NoActiveClient,
+    AlreadyPending,
+    InvalidUserId,
+    KickUnavailable,
+    CommandBuildFailed,
+    DirectCleanupFailed,
+};
+
+struct RemovalTrace {
+    RemovalOutcome outcome{RemovalOutcome::None};
+    RemovalError error{RemovalError::None};
+    astrabot::host::MapGeneration map{};
+    astrabot::host::PlayerId player{};
+    astrabot::host::TickId tick{};
+    astrabot::host::EventSequence sequence{0};
+    bool mappingPresent{false};
+    bool entityPresent{false};
+};
+
+using RemovalTraceSink = void (*)(const RemovalTrace& trace) noexcept;
+
 enum class MovementTraceOutcome : std::uint8_t {
     None = 0,
     Queued,
@@ -147,6 +179,9 @@ void emitFakeClient(
 void emitJoin(
     const JoinTrace& trace,
     JoinTraceSink sink) noexcept;
+void emitRemoval(
+    const RemovalTrace& trace,
+    RemovalTraceSink sink) noexcept;
 void emitMovement(
     const MovementTrace& trace,
     MovementTraceSink sink) noexcept;

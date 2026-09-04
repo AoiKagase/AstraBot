@@ -20,6 +20,15 @@
 
 namespace astrabot::adapter::metamod {
 
+struct LifecycleStatus {
+    std::uint32_t mapActivations{0};
+    std::uint32_t mapReplays{0};
+    std::uint32_t createAttempts{0};
+    std::uint32_t removalRequests{0};
+    std::uint32_t cleanupCompletions{0};
+    debug::RemovalError lastRemovalError{debug::RemovalError::None};
+};
+
 class LifecycleCoordinator final {
 public:
     void configure(
@@ -33,6 +42,8 @@ public:
     void serverDeactivate() noexcept;
     void clientDisconnect(edict_t* entity) noexcept;
     void startFrame() noexcept;
+    RemovalResult removeActive() noexcept;
+    void queuePrimaryCreate(cstrike::JoinRequest request) noexcept;
     MovementResult submitCommand(
         core::PlayerId player,
         core::MapGeneration mapGeneration,
@@ -65,6 +76,10 @@ public:
     void setJoinTraceSink(debug::JoinTraceSink sink) noexcept {
         joinTraceSink_ = sink;
     }
+    void setRemovalTraceSink(debug::RemovalTraceSink sink) noexcept {
+        removalTraceSink_ = sink;
+        fakeClient_.setRemovalTraceSink(sink);
+    }
     void setMovementTraceSink(debug::MovementTraceSink sink) noexcept {
         movement_.setTraceSink(sink);
     }
@@ -82,6 +97,7 @@ public:
     const cstrike::MessageDecoder& messageDecoder() const noexcept {
         return messageDecoder_;
     }
+    LifecycleStatus status() const noexcept { return status_; }
 
 private:
     void emit(
@@ -93,6 +109,15 @@ private:
     void handleMessage(const cstrike::MessageEvent& event) noexcept;
     void handleJoinAction(const cstrike::JoinAction& action) noexcept;
     void cleanupFailedJoin(cstrike::JoinError error) noexcept;
+    void cleanupActiveAfterRemoval(
+        const RemovalResult& result,
+        host::PlayerId player) noexcept;
+    void emitRemoval(
+        debug::RemovalOutcome outcome,
+        debug::RemovalError error,
+        host::PlayerId player,
+        bool mappingPresent,
+        bool entityPresent) noexcept;
     bool dispatchMenu(std::uint8_t selection) noexcept;
     static void onMessage(
         void* context,
@@ -111,11 +136,13 @@ private:
     bool commandContextActive_{false};
     bool cleanupPending_{false};
     cstrike::JoinError pendingCleanupError_{cstrike::JoinError::None};
+    LifecycleStatus status_{};
     std::array<char, 16> commandArgv0_{};
     std::array<char, 16> commandArgv1_{};
     std::array<char, 16> commandArgs_{};
     debug::LifecycleTraceSink traceSink_{nullptr};
     debug::JoinTraceSink joinTraceSink_{nullptr};
+    debug::RemovalTraceSink removalTraceSink_{nullptr};
 };
 
 LifecycleCoordinator& lifecycleCoordinator() noexcept;

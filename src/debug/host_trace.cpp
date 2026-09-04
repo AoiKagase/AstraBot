@@ -61,6 +61,14 @@ void emitJoin(const JoinTrace& trace, JoinTraceSink sink) noexcept {
     }
 }
 
+void emitRemoval(
+    const RemovalTrace& trace,
+    RemovalTraceSink sink) noexcept {
+    if (sink != nullptr && trace.outcome != RemovalOutcome::NoOp) {
+        sink(trace);
+    }
+}
+
 void emitMovement(
     const MovementTrace& trace,
     MovementTraceSink sink) noexcept {

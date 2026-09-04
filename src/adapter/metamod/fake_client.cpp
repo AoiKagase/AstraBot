@@ -23,7 +23,9 @@ void FakeClientCoordinator::queuePrimaryCreate() noexcept {
     if (primaryQueued_) {
         return;
     }
-    queuePrimaryCreate({cstrike::Team::Terrorist, 1});
+    // Keep the last explicitly selected request across map teardown.  The
+    // member is initialized to the backwards-compatible T/1 default.
+    primaryQueued_ = true;
 }
 
 void FakeClientCoordinator::queuePrimaryCreate(
@@ -52,6 +54,7 @@ void FakeClientCoordinator::reset() noexcept {
     players_ = nullptr;
     agents_ = nullptr;
     traceSink_ = nullptr;
+    removalTraceSink_ = nullptr;
     resetMap();
 }
 
@@ -59,6 +62,7 @@ void FakeClientCoordinator::resetMap() noexcept {
     primaryQueued_ = false;
     attempted_ = false;
     operationActive_ = false;
+    removalPending_ = false;
     activeEntity_ = nullptr;
     activePlayer_ = {};
 }
@@ -253,6 +257,97 @@ void FakeClientCoordinator::forget(host::PlayerId player) noexcept {
     if (player.isValid() && activePlayer_ == player) {
         activeEntity_ = nullptr;
         activePlayer_ = {};
+        removalPending_ = false;
+        attempted_ = false;
+    }
+}
+
+RemovalResult FakeClientCoordinator::requestRemoval() noexcept {
+    if (activeEntity_ == nullptr || !activePlayer_.isValid()) {
+        return {
+            debug::RemovalOutcome::NoOp,
+            debug::RemovalError::None,
+            {},
+            true,
+            false};
+    }
+    if (removalPending_) {
+        return {
+            debug::RemovalOutcome::NoOp,
+            debug::RemovalError::None,
+            activePlayer_,
+            true,
+            false};
+    }
+    if (!configured()) {
+        emitRemoval(
+            debug::RemovalOutcome::Rejected,
+            debug::RemovalError::NotConfigured,
+            activePlayer_,
+            true,
+            true);
+        return {
+            debug::RemovalOutcome::Rejected,
+            debug::RemovalError::NotConfigured,
+            activePlayer_,
+            false,
+            false};
+    }
+
+    debug::RemovalError error = debug::RemovalError::None;
+    if (!issueKick(activeEntity_, error)) {
+        emitRemoval(
+            debug::RemovalOutcome::Rejected,
+            error,
+            activePlayer_,
+            true,
+            true);
+        return {
+            debug::RemovalOutcome::Rejected,
+            error,
+            activePlayer_,
+            false,
+            false};
+    }
+
+    removalPending_ = true;
+    emitRemoval(
+        debug::RemovalOutcome::KickQueued,
+        debug::RemovalError::None,
+        activePlayer_,
+        true,
+        true);
+    return {
+        debug::RemovalOutcome::KickQueued,
+        debug::RemovalError::None,
+        activePlayer_,
+        true,
+        true};
+}
+
+bool FakeClientCoordinator::cleanupActiveDirect(bool connected) noexcept {
+    if (activeEntity_ == nullptr || !activePlayer_.isValid()) {
+        return false;
+    }
+    if (engineFunctions_ == nullptr || engineFunctions_->pfnRemoveEntity == nullptr ||
+        (connected &&
+         (gameDllFunctions_ == nullptr ||
+          gameDllFunctions_->pfnClientDisconnect == nullptr))) {
+        return false;
+    }
+    const host::PlayerId player = activePlayer_;
+    cleanup(activeEntity_, connected);
+    acknowledgeDisconnect(player);
+    return true;
+}
+
+void FakeClientCoordinator::acknowledgeDisconnect(
+    host::PlayerId player) noexcept {
+    if (player.isValid() && activePlayer_ == player) {
+        activeEntity_ = nullptr;
+        activePlayer_ = {};
+        removalPending_ = false;
+        attempted_ = false;
     }
 }
 
@@ -262,7 +357,8 @@ bool FakeClientCoordinator::kickAndCleanup(host::PlayerId player) noexcept {
     }
 
     edict_t* entity = activeEntity_;
-    const bool kicked = issueKick(entity);
+    debug::RemovalError error = debug::RemovalError::None;
+    const bool kicked = issueKick(entity, error);
     if (!kicked) {
         cleanup(entity, true);
     }
@@ -307,16 +403,21 @@ void FakeClientCoordinator::cleanup(edict_t* entity, bool connected) noexcept {
     }
 }
 
-bool FakeClientCoordinator::issueKick(edict_t* entity) noexcept {
+bool FakeClientCoordinator::issueKick(
+    edict_t* entity,
+    debug::RemovalError& error) noexcept {
+    error = debug::RemovalError::None;
     if (entity == nullptr || engineFunctions_ == nullptr ||
         engineFunctions_->pfnGetPlayerUserId == nullptr ||
         engineFunctions_->pfnServerCommand == nullptr ||
         engineFunctions_->pfnServerExecute == nullptr) {
+        error = debug::RemovalError::KickUnavailable;
         return false;
     }
 
     const int userId = engineFunctions_->pfnGetPlayerUserId(entity);
     if (userId <= 0) {
+        error = debug::RemovalError::InvalidUserId;
         return false;
     }
 
@@ -338,6 +439,7 @@ bool FakeClientCoordinator::issueKick(edict_t* entity) noexcept {
         value /= 10;
     }
     if (digitCount == 0U || length + digitCount + 2U >= sizeof(command)) {
+        error = debug::RemovalError::CommandBuildFailed;
         return false;
     }
     while (digitCount > 0U) {
@@ -348,6 +450,33 @@ bool FakeClientCoordinator::issueKick(edict_t* entity) noexcept {
     engineFunctions_->pfnServerCommand(command);
     engineFunctions_->pfnServerExecute();
     return true;
+}
+
+void FakeClientCoordinator::emitRemoval(
+    debug::RemovalOutcome outcome,
+    debug::RemovalError error,
+    host::PlayerId player,
+    bool mappingPresent,
+    bool entityPresent) noexcept {
+    const host::MapGeneration map =
+        players_ == nullptr ? host::MapGeneration::invalid() :
+                              players_->mapGeneration();
+    const host::TickId tick =
+        players_ == nullptr ? host::TickId::invalid() : players_->currentTick();
+    const host::EventSequence sequence =
+        players_ == nullptr ? 0 : players_->eventSequence();
+    debug::emitRemoval(
+        {
+            outcome,
+            error,
+            map,
+            player,
+            tick,
+            sequence,
+            mappingPresent,
+            entityPresent,
+        },
+        removalTraceSink_);
 }
 
 } // namespace astrabot::adapter::metamod

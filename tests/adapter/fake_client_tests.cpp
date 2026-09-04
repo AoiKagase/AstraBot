@@ -14,17 +14,21 @@
 namespace {
 
 using astrabot::adapter::metamod::FakeClientResult;
+using astrabot::adapter::metamod::RemovalResult;
 using astrabot::core::BotAgentId;
 using astrabot::debug::FakeClientError;
 using astrabot::debug::FakeClientStage;
+using astrabot::debug::RemovalOutcome;
 
 struct Fixture;
 Fixture* gFixture = nullptr;
 std::vector<astrabot::debug::FakeClientTrace> gFakeTraces;
 std::vector<astrabot::debug::JoinTrace> gJoinTraces;
+std::vector<astrabot::debug::RemovalTrace> gRemovalTraces;
 enginefuncs_t* gEngineHooks = nullptr;
 int gGameDllCommandCalls = 0;
 int gEngineClientCommandCalls = 0;
+int gRunPlayerMoveCalls = 0;
 int gLastCommandArgc = 0;
 std::string gLastCommandArgv0;
 std::string gLastCommandArgv1;
@@ -233,7 +237,9 @@ void captureRunPlayerMove(
     float /* upMove */,
     unsigned short /* buttons */,
     byte /* impulse */,
-    byte /* msec */) {}
+    byte /* msec */) {
+    ++gRunPlayerMoveCalls;
+}
 
 void captureHookTables(
     plid_t /* pluginId */,
@@ -251,6 +257,10 @@ void captureFakeTrace(const astrabot::debug::FakeClientTrace& trace) noexcept {
 
 void captureJoinTrace(const astrabot::debug::JoinTrace& trace) noexcept {
     gJoinTraces.push_back(trace);
+}
+
+void captureRemovalTrace(const astrabot::debug::RemovalTrace& trace) noexcept {
+    gRemovalTraces.push_back(trace);
 }
 
 void attach(Fixture& fixture) {
@@ -271,6 +281,7 @@ void detach() {
     gFixture = nullptr;
     gEngineHooks = nullptr;
     gFakeTraces.clear();
+    gRemovalTraces.clear();
 }
 
 void activate(Fixture& fixture) {
@@ -665,6 +676,272 @@ void testJoinTimeoutCleanup() {
     detach();
 }
 
+void testExplicitRemovalKickAndDisconnectAcknowledge() {
+    Fixture fixture{};
+    activate(fixture);
+    const FakeClientResult created =
+        astrabot::adapter::metamod::lifecycleCoordinator().fakeClient().create(
+            "AstraBot-Remove");
+    assert(created.succeeded());
+
+    auto& coordinator = astrabot::adapter::metamod::lifecycleCoordinator();
+    coordinator.setRemovalTraceSink(&captureRemovalTrace);
+    gRemovalTraces.clear();
+
+    const RemovalResult queued = coordinator.removeActive();
+    assert(queued.succeeded());
+    assert(queued.outcome == RemovalOutcome::KickQueued);
+    assert(fixture.serverCommandCalls == 1);
+    assert(fixture.serverExecuteCalls == 1);
+    assert(fixture.lastServerCommand == "kick #1\n");
+    assert(coordinator.fakeClient().removalPending());
+    assert(coordinator.registry().isConnected(1));
+    assert(gRemovalTraces.size() == 1);
+
+    const RemovalResult repeated = coordinator.removeActive();
+    assert(repeated.succeeded());
+    assert(repeated.outcome == RemovalOutcome::NoOp);
+    assert(fixture.serverCommandCalls == 1);
+    assert(fixture.serverExecuteCalls == 1);
+    assert(gRemovalTraces.size() == 1);
+
+    coordinator.clientDisconnect(&fixture.entity);
+    assert(!coordinator.registry().isConnected(1));
+    assert(coordinator.agents().mappingCount() == 0);
+    assert(coordinator.fakeClient().activeEntity() == nullptr);
+    assert(!coordinator.fakeClient().removalPending());
+    assert(gRemovalTraces.size() == 2);
+    coordinator.clientDisconnect(&fixture.entity);
+    assert(gRemovalTraces.size() == 2);
+    detach();
+}
+
+void testRemovalCancelsJoinBeforeKick() {
+    Fixture fixture{};
+    activate(fixture);
+    gGameDllCommandCalls = 0;
+    const FakeClientResult created =
+        astrabot::adapter::metamod::lifecycleCoordinator().fakeClient().create(
+            "AstraBot-JoiningRemove");
+    assert(created.succeeded());
+
+    auto& coordinator = astrabot::adapter::metamod::lifecycleCoordinator();
+    assert(coordinator.requestJoin(
+                       {astrabot::adapter::cstrike::Team::Terrorist, 1})
+               .changed);
+    assert(coordinator.joinState().active());
+
+    const RemovalResult result = coordinator.removeActive();
+    assert(result.succeeded());
+    assert(coordinator.joinState().phase() ==
+           astrabot::adapter::cstrike::JoinPhase::Cancelled);
+    assert(coordinator.fakeClient().removalPending());
+    assert(coordinator.fakeClient().activeEntity() != nullptr);
+
+    coordinator.startFrame();
+    assert(gGameDllCommandCalls == 0);
+    coordinator.clientDisconnect(&fixture.entity);
+    assert(coordinator.fakeClient().activeEntity() == nullptr);
+    assert(coordinator.agents().mappingCount() == 0);
+    detach();
+}
+
+void testRemovalFallbackCleansInvalidUserId() {
+    Fixture fixture{};
+    fixture.userId = 0;
+    activate(fixture);
+    const FakeClientResult created =
+        astrabot::adapter::metamod::lifecycleCoordinator().fakeClient().create(
+            "AstraBot-FallbackRemove");
+    assert(created.succeeded());
+
+    auto& coordinator = astrabot::adapter::metamod::lifecycleCoordinator();
+    coordinator.setRemovalTraceSink(&captureRemovalTrace);
+    gRemovalTraces.clear();
+
+    const RemovalResult result = coordinator.removeActive();
+    assert(!result.succeeded());
+    assert(result.error == astrabot::debug::RemovalError::InvalidUserId);
+    assert(fixture.serverCommandCalls == 0);
+    assert(fixture.serverExecuteCalls == 0);
+    assert(fixture.disconnectCalls == 1);
+    assert(fixture.removeCalls == 1);
+    assert(coordinator.agents().mappingCount() == 0);
+    assert(!coordinator.registry().isConnected(1));
+    assert(coordinator.fakeClient().activeEntity() == nullptr);
+    assert(gRemovalTraces.size() == 2);
+    assert(coordinator.status().lastRemovalError ==
+           astrabot::debug::RemovalError::InvalidUserId);
+    detach();
+}
+
+void testMapDeactivateReplaysPrimaryCreate() {
+    Fixture fixture{};
+    attach(fixture);
+    auto& coordinator = astrabot::adapter::metamod::lifecycleCoordinator();
+    coordinator.serverActivate(32);
+    coordinator.startFrame();
+    const astrabot::core::MapGeneration firstMap =
+        coordinator.registry().mapGeneration();
+    const astrabot::core::PlayerId firstPlayer =
+        coordinator.fakeClient().activePlayer();
+    assert(firstPlayer.isValid());
+    assert(coordinator.joinState().active());
+    assert(coordinator.status().mapActivations == 1U);
+    assert(coordinator.status().mapReplays == 0U);
+    assert(coordinator.status().createAttempts == 1U);
+
+    coordinator.serverDeactivate();
+    assert(!coordinator.registry().isMapActive());
+    assert(coordinator.fakeClient().activeEntity() == nullptr);
+    assert(coordinator.agents().mappingCount() == 0);
+    assert(coordinator.joinState().phase() ==
+           astrabot::adapter::cstrike::JoinPhase::Idle);
+
+    coordinator.serverActivate(32);
+    coordinator.startFrame();
+    assert(coordinator.registry().mapGeneration() != firstMap);
+    assert(coordinator.fakeClient().activePlayer().isValid());
+    assert(coordinator.fakeClient().activePlayer().generation !=
+           firstPlayer.generation);
+    assert(fixture.createCalls == 2);
+    assert(coordinator.joinState().active());
+    assert(coordinator.status().mapActivations == 2U);
+    assert(coordinator.status().mapReplays == 1U);
+    assert(coordinator.status().createAttempts == 2U);
+    detach();
+}
+
+void testMapReplayPreservesExplicitCounterTerroristRequest() {
+    Fixture fixture{};
+    attach(fixture);
+    auto& coordinator = astrabot::adapter::metamod::lifecycleCoordinator();
+    coordinator.queuePrimaryCreate(
+        {astrabot::adapter::cstrike::Team::CounterTerrorist, 3});
+
+    coordinator.serverActivate(32);
+    coordinator.startFrame();
+    assert(coordinator.joinState().request().team ==
+           astrabot::adapter::cstrike::Team::CounterTerrorist);
+    assert(coordinator.joinState().request().classNumber == 3U);
+
+    coordinator.serverDeactivate();
+    coordinator.serverActivate(32);
+    coordinator.startFrame();
+    assert(coordinator.joinState().request().team ==
+           astrabot::adapter::cstrike::Team::CounterTerrorist);
+    assert(coordinator.joinState().request().classNumber == 3U);
+    detach();
+}
+
+void testExternalDisconnectResetsJoinedState() {
+    Fixture fixture{};
+    activate(fixture);
+    auto& coordinator = astrabot::adapter::metamod::lifecycleCoordinator();
+    const FakeClientResult created = coordinator.fakeClient().create(
+        "AstraBot-DisconnectJoined");
+    assert(created.succeeded());
+    assert(coordinator.requestJoin(
+                       {astrabot::adapter::cstrike::Team::Terrorist, 1})
+               .changed);
+    enginefuncs_t hooks{};
+    int engineVersion = ENGINE_INTERFACE_VERSION;
+    assert(GetEngineFunctions(&hooks, &engineVersion) != 0);
+    sendVguiMenu(hooks, 11, &fixture.entity, 2, 0x0001);
+    coordinator.startFrame();
+    sendVguiMenu(hooks, 11, &fixture.entity, 26, 0x0001);
+    coordinator.startFrame();
+    sendTeamInfo(hooks, 13, 1, "TERRORIST");
+    assert(coordinator.joinState().phase() ==
+           astrabot::adapter::cstrike::JoinPhase::Joined);
+
+    coordinator.clientDisconnect(&fixture.entity);
+    assert(coordinator.joinState().phase() ==
+           astrabot::adapter::cstrike::JoinPhase::Idle);
+    assert(!coordinator.messageDecoder().active());
+    assert(coordinator.fakeClient().activeEntity() == nullptr);
+    detach();
+}
+
+void testRemovalStopsPendingMovement() {
+    Fixture fixture{};
+    activate(fixture);
+    auto& coordinator = astrabot::adapter::metamod::lifecycleCoordinator();
+    enginefuncs_t hooks{};
+    int engineVersion = ENGINE_INTERFACE_VERSION;
+    assert(GetEngineFunctions(&hooks, &engineVersion) != 0);
+    gEngineHooks = &hooks;
+    gGameDllCommandCalls = 0;
+    gRunPlayerMoveCalls = 0;
+
+    const FakeClientResult created =
+        coordinator.fakeClient().create("AstraBot-MovementRemove");
+    assert(created.succeeded());
+    assert(coordinator.requestJoin(
+                       {astrabot::adapter::cstrike::Team::Terrorist, 1})
+               .changed);
+    sendVguiMenu(hooks, 11, &fixture.entity, 2, 0x0001);
+    coordinator.startFrame();
+    sendVguiMenu(hooks, 11, &fixture.entity, 26, 0x0001);
+    coordinator.startFrame();
+    sendTeamInfo(hooks, 13, 1, "TERRORIST");
+    assert(coordinator.joinState().phase() ==
+           astrabot::adapter::cstrike::JoinPhase::Joined);
+
+    coordinator.startFrame();
+    astrabot::core::BotCommand command =
+        astrabot::core::BotCommand::neutral(100);
+    command.movement.forward = 100.0F;
+    const auto queued = coordinator.submitCommand(
+        created.player,
+        coordinator.registry().mapGeneration(),
+        coordinator.registry().currentTick(),
+        command);
+    assert(queued.queued());
+    const RemovalResult removed = coordinator.removeActive();
+    assert(removed.succeeded());
+    coordinator.startFrame();
+    assert(gRunPlayerMoveCalls == 0);
+    coordinator.clientDisconnect(&fixture.entity);
+    detach();
+}
+
+void testRepeatedCreateAfterDisconnectUpdatesGeneration() {
+    Fixture fixture{};
+    activate(fixture);
+    auto& coordinator = astrabot::adapter::metamod::lifecycleCoordinator();
+    const FakeClientResult first =
+        coordinator.fakeClient().create("AstraBot-Reuse-1");
+    assert(first.succeeded());
+    coordinator.clientDisconnect(&fixture.entity);
+    const FakeClientResult second =
+        coordinator.fakeClient().create("AstraBot-Reuse-2");
+    assert(second.succeeded());
+    assert(second.player.slot == first.player.slot);
+    assert(second.player.generation != first.player.generation);
+    assert(second.agent != first.agent);
+    coordinator.clientDisconnect(&fixture.entity);
+    detach();
+}
+
+void testDetachDirectlyCleansActiveEntityOnce() {
+    Fixture fixture{};
+    activate(fixture);
+    auto& coordinator = astrabot::adapter::metamod::lifecycleCoordinator();
+    const FakeClientResult created =
+        coordinator.fakeClient().create("AstraBot-Detach");
+    assert(created.succeeded());
+    assert(Meta_Detach(PT_ANYTIME, PNL_COMMAND) != 0);
+    assert(fixture.disconnectCalls == 1);
+    assert(fixture.removeCalls == 1);
+    assert(coordinator.registry().eventSequence() == 0);
+    assert(Meta_Detach(PT_ANYTIME, PNL_COMMAND) != 0);
+    assert(fixture.disconnectCalls == 1);
+    assert(fixture.removeCalls == 1);
+    gFixture = nullptr;
+    gEngineHooks = nullptr;
+}
+
 } // namespace
 
 int main() {
@@ -677,5 +954,14 @@ int main() {
     testJoinFailureCleanupAndCommandContextReentry();
     testCounterTerroristPrimaryJoinRequest();
     testJoinTimeoutCleanup();
+    testExplicitRemovalKickAndDisconnectAcknowledge();
+    testRemovalCancelsJoinBeforeKick();
+    testRemovalFallbackCleansInvalidUserId();
+    testMapDeactivateReplaysPrimaryCreate();
+    testMapReplayPreservesExplicitCounterTerroristRequest();
+    testExternalDisconnectResetsJoinedState();
+    testRemovalStopsPendingMovement();
+    testRepeatedCreateAfterDisconnectUpdatesGeneration();
+    testDetachDirectlyCleansActiveEntityOnce();
     return 0;
 }

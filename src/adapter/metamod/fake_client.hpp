@@ -31,6 +31,18 @@ struct FakeClientResult {
     }
 };
 
+struct RemovalResult {
+    debug::RemovalOutcome outcome{debug::RemovalOutcome::None};
+    debug::RemovalError error{debug::RemovalError::None};
+    host::PlayerId player{};
+    bool accepted{false};
+    bool changed{false};
+
+    constexpr bool succeeded() const noexcept {
+        return accepted && error == debug::RemovalError::None;
+    }
+};
+
 class FakeClientCoordinator final {
 public:
     void configure(
@@ -59,10 +71,17 @@ public:
         return activeJoinRequest_;
     }
     void forget(host::PlayerId player) noexcept;
+    RemovalResult requestRemoval() noexcept;
+    bool cleanupActiveDirect(bool connected) noexcept;
+    bool removalPending() const noexcept { return removalPending_; }
+    void acknowledgeDisconnect(host::PlayerId player) noexcept;
     bool kickAndCleanup(host::PlayerId player) noexcept;
 
     void setTraceSink(debug::FakeClientTraceSink sink) noexcept {
         traceSink_ = sink;
+    }
+    void setRemovalTraceSink(debug::RemovalTraceSink sink) noexcept {
+        removalTraceSink_ = sink;
     }
 
 private:
@@ -75,12 +94,14 @@ private:
     bool primaryQueued_{false};
     bool attempted_{false};
     bool operationActive_{false};
+    bool removalPending_{false};
     cstrike::JoinRequest primaryJoinRequest_{
         cstrike::Team::Terrorist,
         1};
     cstrike::JoinRequest activeJoinRequest_{
         cstrike::Team::Terrorist,
         1};
+    debug::RemovalTraceSink removalTraceSink_{nullptr};
     edict_t* activeEntity_{nullptr};
     host::PlayerId activePlayer_{};
 
@@ -98,7 +119,13 @@ private:
     bool configured() const noexcept;
     static bool copyName(const char* source, char* destination, std::uint16_t capacity) noexcept;
     void cleanup(edict_t* entity, bool connected) noexcept;
-    bool issueKick(edict_t* entity) noexcept;
+    bool issueKick(edict_t* entity, debug::RemovalError& error) noexcept;
+    void emitRemoval(
+        debug::RemovalOutcome outcome,
+        debug::RemovalError error,
+        host::PlayerId player,
+        bool mappingPresent,
+        bool entityPresent) noexcept;
 };
 
 } // namespace astrabot::adapter::metamod
