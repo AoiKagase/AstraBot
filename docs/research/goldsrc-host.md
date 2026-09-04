@@ -13,8 +13,8 @@ callはserver main thread上のadapterに閉じ込める。
 |---|---|---|
 | Metamod plugin entry | `meta_api.h`, `META_FUNCTIONS` | `Meta_Query`, `Meta_Attach`, `Meta_Detach`, `GetEntityAPI2`, `GetEngineFunctions`。Metamod-Pのstub登録例は[`stub_plugin/meta_api.cpp`](https://github.com/Bots-United/metamod-p/blob/7ec9b014f8c0a947a724644aebe34eb33706e44b/stub_plugin/meta_api.cpp#L41-L124)。 |
 | GameDLL hooks | `dllapi.h`, `DLL_FUNCTIONS` | `pfnClientDisconnect`, `pfnServerActivate`, `pfnServerDeactivate`, `pfnStartFrame`; join観測にはGameDLL/engine message hook。 |
-| Engine calls | `engine_api.h`, `enginefuncs_t` | `pfnCreateFakeClient`, `pfnGetInfoKeyBuffer`, `pfnSetClientKeyValue`, `pfnRunPlayerMove`, `pfnClientCommand`（または同等のfake-client command dispatch）、`pfnServerCommand`/`pfnServerExecute`。 |
-| GameDLL dispatch | Metamod macros/utilities | `MUTIL_CallGameEntity(PLID, "player", &ent->v)`, `MDLL_ClientConnect`, `MDLL_ClientPutInServer`。 |
+| Engine calls/hooks | `engine_api.h`, `enginefuncs_t` | Calls: `pfnCreateFakeClient`, `pfnGetInfoKeyBuffer`, `pfnSetClientKeyValue`, `pfnRunPlayerMove`, `pfnServerCommand`/`pfnServerExecute`. Hooks: `pfnCmd_Args`, `pfnCmd_Argv`, `pfnCmd_Argc` to supply the current fake command context. |
+| GameDLL dispatch | Metamod macros/utilities | `MUTIL_CallGameEntity(PLID, "player", &ent->v)`, `MDLL_ClientConnect`, `MDLL_ClientPutInServer`, and `MDLL_ClientCommand` for a fake client's parsed command. |
 | Identity | HLSDK entity helpers | `ENTINDEX(edict)`はslot lookupにだけ使い、Coreには`PlayerId{slot,generation}`を渡す。raw `edict_t *`を保持するのはadapterだけ。 |
 
 Metamod interface versionは対象Metamod-P snapshotの`META_INTERFACE_VERSION "5:13"`
@@ -39,10 +39,18 @@ Metamod interface versionは対象Metamod-P snapshotの`META_INTERFACE_VERSION "
 
 ## Join commandの境界
 
-`pfnClientCommand`はengineがclientへ表示するcommandと、fake clientがGameDLLへ送る
-commandを混同しやすい。実装時はYaPBの`issueCommand`/hooked command pathを固定SHAで
-追跡し、GameDLL `ClientCommand`がfake entityをcurrent command contextとして処理する
-ことをlive testする。Phase 0では独自のvarargs trampolineをproduction化しない。
+`pfnClientCommand`をFakeClientに呼んではならない。これはserverからreal clientへ
+commandを送るengine APIであり、YaPBのcurrent hookもclient DLLを持たないBotへの呼出し
+はcrash要因としてsupercedeする（[`linkage.cpp`](https://github.com/yapb/yapb/blob/4967a220ba3a58c461ee1cef8b6fb37c6fd93b5e/src/linkage.cpp#L30-L68)）。
+
+FakeClientが`menuselect`等をGameDLLへ発行する最小pathは、commandを独自にtokenizeし、
+その処理中だけ`pfnCmd_Args`/`pfnCmd_Argv`/`pfnCmd_Argc` hookがtokenを返すようにして、
+`MDLL_ClientCommand(fakeEntity)`を呼ぶことである。YaPBの具体例は
+[`Game::prepareBotArgs`](https://github.com/yapb/yapb/blob/4967a220ba3a58c461ee1cef8b6fb37c6fd93b5e/src/engine.cpp#L529-L580)と
+[`linkage.cpp`のCmd_Arg hooks](https://github.com/yapb/yapb/blob/4967a220ba3a58c461ee1cef8b6fb37c6fd93b5e/src/linkage.cpp#L806-L870)。AstraBot実装ではRAII/guardでcurrent fake command contextをmain threadに限定し、
+nested/reentrant dispatchをrejectまたはstack化し、終了時に必ずclearする。tokenizer、quote、
+semicolon、empty argumentをunit testし、GameDLL `ClientCommand`が対象entity/contextを
+正しく処理することをlive testする。
 
 ## ReGameDLLとVanillaの分離
 

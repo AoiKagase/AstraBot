@@ -97,10 +97,13 @@ implementation review.  Metamod-P/HLSDK headers are adapter-private.
 - **Goal:** select team and class based on actual menu messages.
 - **Files/modules:** `adapter/cstrike/messages.*`, `join_state.*`, message fixtures.
 - **Implementation outline:** adapt `VGUIMenu`, `ShowMenu`, `TeamInfo` to value
-  events; send bounded `menuselect` commands through the verified fake-client
-  command context; retry/timeout/kick with reason codes.
+  events; tokenize bounded `menuselect` commands; guard the main-thread fake
+  command context; make `pfnCmd_Args`/`pfnCmd_Argv`/`pfnCmd_Argc` return its
+  values while `MDLL_ClientCommand(fakeEntity)` runs; retry/timeout/kick with
+  reason codes.  Never call `pfnClientCommand` on a FakeClient.
 - **Dependencies:** P1-04; captured ReGameDLL join message fixtures.
-- **Tests:** old text menu, VGUI menu, team full/stacked, already assigned,
+- **Tests:** tokenizer quotes/semicolons/empty args, nested/reentrant context,
+  old text menu, VGUI menu, team full/stacked, already assigned,
   out-of-order/duplicate messages, timeout and disconnect.
 - **Acceptance:** live T and CT cases reach confirmed joined state; no fixed delay
   is used as the success signal; failure leaves no agent/entity mapping.

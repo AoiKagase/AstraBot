@@ -42,7 +42,7 @@ is part of AstraBot.
 
 | Source | Paths and symbols inspected |
 |---|---|
-| YaPB | `CMakeLists.txt` C++ standard; `src/engine.cpp::Game::createFakeClient`; `src/manager.cpp::BotManager::execGameEntity`, `BotManager::create`, `Bot::Bot`, `Bot::startGame`; `src/botlib.cpp::Bot::runMovement`; `src/linkage.cpp` client/server lifecycle hooks; `src/message.cpp` menu state; `src/graph.cpp`, `navigate.cpp`, `planner.cpp`, `practice.cpp`, `tasks.cpp`, `combat.cpp`, `vision.cpp`, `sounds.cpp`, `control.cpp` |
+| YaPB | `CMakeLists.txt` C++ standard; `src/engine.cpp::Game::createFakeClient`, `Game::prepareBotArgs`; `src/manager.cpp::BotManager::execGameEntity`, `BotManager::create`, `Bot::Bot`, `Bot::startGame`; `src/botlib.cpp::Bot::runMovement`; `src/linkage.cpp` client/server lifecycle and `Cmd_Arg*` hooks; `src/message.cpp` menu state; `src/graph.cpp`, `navigate.cpp`, `planner.cpp`, `practice.cpp`, `tasks.cpp`, `combat.cpp`, `vision.cpp`, `sounds.cpp`, `control.cpp` |
 | SyPB | `Project SyPB/SyPB_API/source/base.cpp` native table and `MF_AddNatives`; `Project SyPB/SwNPC/source/api.cpp` and `base.cpp` |
 | CS-EBOT | `source/navigate.cpp::FindGoalZombie`, path cost functions, `FindPath`, `CheckStuck`; `source/basecode.cpp::IsEnemyReachable`, movement scheduling; `source/waypoint.cpp` |
 | RealBot | `NodeMachine.{h,cpp}`, `NodeDataTypes.h`, `bot_navigate.cpp`, `bot.cpp`; node/experience persistence, player observation, danger/contact update and path cost |
