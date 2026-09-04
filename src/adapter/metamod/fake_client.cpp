@@ -19,6 +19,19 @@ struct OperationGuard final {
 
 } // namespace
 
+void FakeClientCoordinator::queuePrimaryCreate() noexcept {
+    if (primaryQueued_) {
+        return;
+    }
+    queuePrimaryCreate({cstrike::Team::Terrorist, 1});
+}
+
+void FakeClientCoordinator::queuePrimaryCreate(
+    cstrike::JoinRequest request) noexcept {
+    primaryJoinRequest_ = request;
+    primaryQueued_ = true;
+}
+
 void FakeClientCoordinator::configure(
     enginefuncs_t* engineFunctions,
     mutil_funcs_t* utilityFunctions,
@@ -46,6 +59,8 @@ void FakeClientCoordinator::resetMap() noexcept {
     primaryQueued_ = false;
     attempted_ = false;
     operationActive_ = false;
+    activeEntity_ = nullptr;
+    activePlayer_ = {};
 }
 
 FakeClientResult FakeClientCoordinator::processPrimaryCreate() noexcept {
@@ -53,10 +68,17 @@ FakeClientResult FakeClientCoordinator::processPrimaryCreate() noexcept {
         return FakeClientResult::noOp();
     }
     primaryQueued_ = false;
-    return create(kDefaultFakeName);
+    return create(kDefaultFakeName, primaryJoinRequest_);
 }
 
 FakeClientResult FakeClientCoordinator::create(const char* name) noexcept {
+    return create(name, {cstrike::Team::Terrorist, 1});
+}
+
+FakeClientResult FakeClientCoordinator::create(
+    const char* name,
+    cstrike::JoinRequest request) noexcept {
+    activeJoinRequest_ = request;
     if (players_ == nullptr || !players_->isMapActive()) {
         return rejected(debug::FakeClientError::NotMapActive);
     }
@@ -167,6 +189,8 @@ FakeClientResult FakeClientCoordinator::create(const char* name) noexcept {
     result.playerRegistration = registration;
     result.accepted = true;
     result.changed = true;
+    activeEntity_ = entity;
+    activePlayer_ = result.player;
     trace(
         debug::FakeClientStage::Published,
         debug::FakeClientError::None,
@@ -225,6 +249,27 @@ bool FakeClientCoordinator::configured() const noexcept {
            gameDllFunctions_->pfnClientDisconnect != nullptr;
 }
 
+void FakeClientCoordinator::forget(host::PlayerId player) noexcept {
+    if (player.isValid() && activePlayer_ == player) {
+        activeEntity_ = nullptr;
+        activePlayer_ = {};
+    }
+}
+
+bool FakeClientCoordinator::kickAndCleanup(host::PlayerId player) noexcept {
+    if (!player.isValid() || activePlayer_ != player || activeEntity_ == nullptr) {
+        return false;
+    }
+
+    edict_t* entity = activeEntity_;
+    const bool kicked = issueKick(entity);
+    if (!kicked) {
+        cleanup(entity, true);
+    }
+    forget(player);
+    return kicked;
+}
+
 bool FakeClientCoordinator::copyName(
     const char* source, char* destination, std::uint16_t capacity) noexcept {
     if (source == nullptr || destination == nullptr || capacity < 2U) {
@@ -260,6 +305,49 @@ void FakeClientCoordinator::cleanup(edict_t* entity, bool connected) noexcept {
     if (engineFunctions_ != nullptr && engineFunctions_->pfnRemoveEntity != nullptr) {
         engineFunctions_->pfnRemoveEntity(entity);
     }
+}
+
+bool FakeClientCoordinator::issueKick(edict_t* entity) noexcept {
+    if (entity == nullptr || engineFunctions_ == nullptr ||
+        engineFunctions_->pfnGetPlayerUserId == nullptr ||
+        engineFunctions_->pfnServerCommand == nullptr ||
+        engineFunctions_->pfnServerExecute == nullptr) {
+        return false;
+    }
+
+    const int userId = engineFunctions_->pfnGetPlayerUserId(entity);
+    if (userId <= 0) {
+        return false;
+    }
+
+    char command[32]{};
+    const char prefix[] = "kick #";
+    std::uint16_t length = 0;
+    for (const char character : prefix) {
+        if (character == '\0') {
+            break;
+        }
+        command[length++] = character;
+    }
+
+    char digits[12]{};
+    std::uint16_t digitCount = 0;
+    int value = userId;
+    while (value > 0 && digitCount < sizeof(digits)) {
+        digits[digitCount++] = static_cast<char>('0' + (value % 10));
+        value /= 10;
+    }
+    if (digitCount == 0U || length + digitCount + 2U >= sizeof(command)) {
+        return false;
+    }
+    while (digitCount > 0U) {
+        command[length++] = digits[--digitCount];
+    }
+    command[length++] = '\n';
+    command[length] = '\0';
+    engineFunctions_->pfnServerCommand(command);
+    engineFunctions_->pfnServerExecute();
+    return true;
 }
 
 } // namespace astrabot::adapter::metamod

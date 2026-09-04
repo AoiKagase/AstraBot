@@ -55,4 +55,10 @@ void emitFakeClient(
     }
 }
 
+void emitJoin(const JoinTrace& trace, JoinTraceSink sink) noexcept {
+    if (sink != nullptr && trace.changed) {
+        sink(trace);
+    }
+}
+
 } // namespace astrabot::debug

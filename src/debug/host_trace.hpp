@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include "adapter/cstrike/join_state.hpp"
 #include "host/game_host.hpp"
 
 #include <cstdint>
@@ -72,6 +73,25 @@ struct FakeClientTrace {
 
 using FakeClientTraceSink = void (*)(const FakeClientTrace& trace) noexcept;
 
+struct JoinTrace {
+    astrabot::adapter::cstrike::JoinPhase phase{
+        astrabot::adapter::cstrike::JoinPhase::Idle};
+    astrabot::adapter::cstrike::JoinError error{
+        astrabot::adapter::cstrike::JoinError::None};
+    astrabot::host::MapGeneration map{};
+    astrabot::host::PlayerId player{};
+    astrabot::adapter::cstrike::Team team{
+        astrabot::adapter::cstrike::Team::Terrorist};
+    std::uint8_t classNumber{0};
+    astrabot::host::TickId tick{};
+    astrabot::host::EventSequence sequence{0};
+    std::uint8_t attempts{0};
+    bool accepted{false};
+    bool changed{false};
+};
+
+using JoinTraceSink = void (*)(const JoinTrace& trace) noexcept;
+
 const char* attachedIdentityLine() noexcept;
 void emitAttached(TraceSink sink) noexcept;
 void emitLifecycle(
@@ -83,5 +103,8 @@ void emitLifecycle(
     LifecycleTraceSink sink) noexcept;
 void emitFakeClient(
     const FakeClientTrace& trace, FakeClientTraceSink sink) noexcept;
+void emitJoin(
+    const JoinTrace& trace,
+    JoinTraceSink sink) noexcept;
 
 } // namespace astrabot::debug

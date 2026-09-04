@@ -21,6 +21,15 @@ using astrabot::debug::FakeClientStage;
 struct Fixture;
 Fixture* gFixture = nullptr;
 std::vector<astrabot::debug::FakeClientTrace> gFakeTraces;
+std::vector<astrabot::debug::JoinTrace> gJoinTraces;
+enginefuncs_t* gEngineHooks = nullptr;
+int gGameDllCommandCalls = 0;
+int gEngineClientCommandCalls = 0;
+int gLastCommandArgc = 0;
+std::string gLastCommandArgv0;
+std::string gLastCommandArgv1;
+std::string gLastCommandArgs;
+bool gReentrantDispatchResult = true;
 
 void captureLogConsole(plid_t /* pluginId */, const char* format, ...) {
     assert(format != nullptr);
@@ -51,6 +60,15 @@ qboolean captureClientConnect(
     char rejectReason[128]);
 void captureClientPutInServer(edict_t* entity);
 void captureClientDisconnect(edict_t* entity);
+void captureClientCommand(edict_t* entity);
+int captureGetUserMsgID(
+    plid_t pluginId,
+    const char* messageName,
+    int* size);
+int captureGetPlayerUserId(edict_t* entity);
+void captureServerCommand(char* command);
+void captureServerExecute();
+void captureEngineClientCommand(edict_t* entity, char* format, ...);
 
 struct Fixture {
     mutil_funcs_t utility{};
@@ -72,20 +90,31 @@ struct Fixture {
     int disconnectCalls{0};
     int removeCalls{0};
     int setKeyCalls{0};
+    int userId{1};
+    int serverCommandCalls{0};
+    int serverExecuteCalls{0};
+    std::string lastServerCommand;
+    bool reenterCommand{false};
 
     Fixture() {
         gFixture = this;
         utility.pfnLogConsole = &captureLogConsole;
         utility.pfnGetHookTables = &captureHookTables;
         utility.pfnCallGameEntity = &captureCallGameEntity;
+        utility.pfnGetUserMsgID = &captureGetUserMsgID;
         engine.pfnCreateFakeClient = &captureCreateFakeClient;
         engine.pfnIndexOfEdict = &captureIndexOfEdict;
         engine.pfnGetInfoKeyBuffer = &captureGetInfoKeyBuffer;
         engine.pfnSetClientKeyValue = &captureSetClientKeyValue;
         engine.pfnRemoveEntity = &captureRemoveEntity;
+        engine.pfnGetPlayerUserId = &captureGetPlayerUserId;
+        engine.pfnServerCommand = &captureServerCommand;
+        engine.pfnServerExecute = &captureServerExecute;
+        engine.pfnClientCommand = &captureEngineClientCommand;
         dll.pfnClientConnect = &captureClientConnect;
         dll.pfnClientPutInServer = &captureClientPutInServer;
         dll.pfnClientDisconnect = &captureClientDisconnect;
+        dll.pfnClientCommand = &captureClientCommand;
         gameDll.dllapi_table = &dll;
         gameDll.newapi_table = &newDll;
     }
@@ -131,6 +160,61 @@ void captureClientDisconnect(edict_t* /* entity */) {
     ++gFixture->disconnectCalls;
 }
 
+void captureClientCommand(edict_t* /* entity */) {
+    ++gGameDllCommandCalls;
+    if (gEngineHooks == nullptr) {
+        return;
+    }
+    if (gFixture->reenterCommand) {
+        gReentrantDispatchResult =
+            astrabot::adapter::metamod::lifecycleCoordinator()
+                .dispatchMenuForTest(1);
+    }
+    gLastCommandArgc = gEngineHooks->pfnCmd_Argc();
+    gLastCommandArgv0 = gEngineHooks->pfnCmd_Argv(0);
+    gLastCommandArgv1 = gEngineHooks->pfnCmd_Argv(1);
+    gLastCommandArgs = gEngineHooks->pfnCmd_Args();
+}
+
+int captureGetUserMsgID(
+    plid_t /* pluginId */,
+    const char* messageName,
+    int* size) {
+    if (size != nullptr) {
+        *size = -1;
+    }
+    if (messageName == nullptr) {
+        return 0;
+    }
+    if (std::strcmp(messageName, "VGUIMenu") == 0) {
+        return 11;
+    }
+    if (std::strcmp(messageName, "ShowMenu") == 0) {
+        return 12;
+    }
+    if (std::strcmp(messageName, "TeamInfo") == 0) {
+        return 13;
+    }
+    return 0;
+}
+
+int captureGetPlayerUserId(edict_t* /* entity */) {
+    return gFixture->userId;
+}
+
+void captureServerCommand(char* command) {
+    ++gFixture->serverCommandCalls;
+    gFixture->lastServerCommand = command == nullptr ? "" : command;
+}
+void captureServerExecute() { ++gFixture->serverExecuteCalls; }
+
+void captureEngineClientCommand(
+    edict_t* /* entity */,
+    char* /* format */,
+    ...) {
+    ++gEngineClientCommandCalls;
+}
+
 void captureHookTables(
     plid_t /* pluginId */,
     enginefuncs_t** engineFunctions,
@@ -143,6 +227,10 @@ void captureHookTables(
 
 void captureFakeTrace(const astrabot::debug::FakeClientTrace& trace) noexcept {
     gFakeTraces.push_back(trace);
+}
+
+void captureJoinTrace(const astrabot::debug::JoinTrace& trace) noexcept {
+    gJoinTraces.push_back(trace);
 }
 
 void attach(Fixture& fixture) {
@@ -161,6 +249,7 @@ void attach(Fixture& fixture) {
 void detach() {
     assert(Meta_Detach(PT_ANYTIME, PNL_COMMAND) != 0);
     gFixture = nullptr;
+    gEngineHooks = nullptr;
     gFakeTraces.clear();
 }
 
@@ -338,6 +427,224 @@ void testMissingFunctionIsRejectedWithoutEngineCall() {
     detach();
 }
 
+void sendVguiMenu(
+    enginefuncs_t& hooks,
+    int messageId,
+    edict_t* recipient,
+    int menuType,
+    int validSlots) {
+    hooks.pfnMessageBegin(0, messageId, nullptr, recipient);
+    hooks.pfnWriteByte(menuType);
+    hooks.pfnWriteShort(validSlots);
+    hooks.pfnWriteChar(-1);
+    hooks.pfnWriteByte(0);
+    hooks.pfnWriteString("");
+    hooks.pfnMessageEnd();
+}
+
+void sendTeamInfo(enginefuncs_t& hooks, int messageId, int slot, const char* team) {
+    hooks.pfnMessageBegin(0, messageId, nullptr, nullptr);
+    hooks.pfnWriteByte(slot);
+    hooks.pfnWriteString(team);
+    hooks.pfnMessageEnd();
+}
+
+void testMessageDrivenJoinAndCommandContext() {
+    Fixture fixture{};
+    activate(fixture);
+    astrabot::adapter::metamod::lifecycleCoordinator().setJoinTraceSink(
+        &captureJoinTrace);
+    gJoinTraces.clear();
+    enginefuncs_t hooks{};
+    int engineVersion = ENGINE_INTERFACE_VERSION;
+    assert(GetEngineFunctions(&hooks, &engineVersion) != 0);
+    gEngineHooks = &hooks;
+    gGameDllCommandCalls = 0;
+    gEngineClientCommandCalls = 0;
+    gLastCommandArgc = 0;
+    gLastCommandArgv0.clear();
+    gLastCommandArgv1.clear();
+    gLastCommandArgs.clear();
+    gReentrantDispatchResult = true;
+
+    const FakeClientResult created =
+        astrabot::adapter::metamod::lifecycleCoordinator().fakeClient().create(
+            "AstraBot-Join");
+    assert(created.succeeded());
+    assert(astrabot::adapter::metamod::lifecycleCoordinator().requestJoin(
+                {astrabot::adapter::cstrike::Team::Terrorist, 1})
+               .changed);
+    assert(astrabot::adapter::metamod::lifecycleCoordinator().joinState().phase() ==
+           astrabot::adapter::cstrike::JoinPhase::WaitingTeamMenu);
+    assert(astrabot::adapter::metamod::lifecycleCoordinator().joinState().player().slot == 1);
+
+    sendVguiMenu(hooks, 11, &fixture.entity, 2, 0x0001);
+    assert(!astrabot::adapter::metamod::lifecycleCoordinator().messageDecoder().active());
+    assert(astrabot::adapter::metamod::lifecycleCoordinator().messageDecoder().lastError() ==
+           astrabot::adapter::cstrike::MessageDecodeError::None);
+    assert(astrabot::adapter::metamod::lifecycleCoordinator().messageDecoder().lastEvent().recipientSlot == 1);
+    assert(astrabot::adapter::metamod::lifecycleCoordinator().joinState().pendingSelection());
+    assert(astrabot::adapter::metamod::lifecycleCoordinator().joinState().phase() ==
+           astrabot::adapter::cstrike::JoinPhase::WaitingTeamMenu);
+    astrabot::adapter::metamod::lifecycleCoordinator().startFrame();
+    assert(gGameDllCommandCalls == 1);
+    assert(gEngineClientCommandCalls == 0);
+    assert(gLastCommandArgc == 2);
+    assert(gLastCommandArgv0 == "menuselect");
+    assert(gLastCommandArgv1 == "1");
+    assert(gLastCommandArgs == "1");
+
+    sendVguiMenu(hooks, 11, &fixture.entity, 26, 0x0001);
+    astrabot::adapter::metamod::lifecycleCoordinator().startFrame();
+    assert(gGameDllCommandCalls == 2);
+    sendTeamInfo(hooks, 13, 1, "TERRORIST");
+    assert(astrabot::adapter::metamod::lifecycleCoordinator().joinState().phase() ==
+           astrabot::adapter::cstrike::JoinPhase::Joined);
+    assert(astrabot::adapter::metamod::lifecycleCoordinator().agents().mappingCount() == 1);
+    assert(gJoinTraces.size() >= 6U);
+    const std::size_t joinTraceCount = gJoinTraces.size();
+    detach();
+    assert(gJoinTraces.size() == joinTraceCount);
+    assert(astrabot::adapter::metamod::lifecycleCoordinator().joinState().phase() ==
+           astrabot::adapter::cstrike::JoinPhase::Idle);
+    assert(astrabot::adapter::metamod::lifecycleCoordinator().fakeClient().activeEntity() ==
+           nullptr);
+}
+
+void testJoinFailureCleanupAndCommandContextReentry() {
+    Fixture fixture{};
+    activate(fixture);
+    enginefuncs_t hooks{};
+    int engineVersion = ENGINE_INTERFACE_VERSION;
+    assert(GetEngineFunctions(&hooks, &engineVersion) != 0);
+    gEngineHooks = &hooks;
+    gGameDllCommandCalls = 0;
+    gEngineClientCommandCalls = 0;
+    gReentrantDispatchResult = true;
+
+    const FakeClientResult created =
+        astrabot::adapter::metamod::lifecycleCoordinator().fakeClient().create(
+            "AstraBot-Failure");
+    assert(created.succeeded());
+    fixture.reenterCommand = true;
+    assert(astrabot::adapter::metamod::lifecycleCoordinator().requestJoin(
+                {astrabot::adapter::cstrike::Team::Terrorist, 1})
+               .changed);
+
+    sendVguiMenu(hooks, 11, &fixture.entity, 2, 0x0001);
+    astrabot::adapter::metamod::lifecycleCoordinator().startFrame();
+    assert(gGameDllCommandCalls == 1);
+    assert(!gReentrantDispatchResult);
+    assert(gEngineClientCommandCalls == 0);
+    assert(gLastCommandArgc == 2);
+    assert(gLastCommandArgv0 == "menuselect");
+    assert(gLastCommandArgv1 == "1");
+    assert(gLastCommandArgs == "1");
+    assert(astrabot::adapter::metamod::lifecycleCoordinator().joinState().phase() ==
+           astrabot::adapter::cstrike::JoinPhase::WaitingClassMenu);
+
+    sendVguiMenu(hooks, 11, &fixture.entity, 26, 0x0000);
+    assert(astrabot::adapter::metamod::lifecycleCoordinator().joinState().phase() ==
+           astrabot::adapter::cstrike::JoinPhase::Failed);
+    assert(fixture.serverCommandCalls == 1);
+    assert(fixture.serverExecuteCalls == 1);
+    assert(fixture.lastServerCommand == "kick #1\n");
+    assert(!astrabot::adapter::metamod::lifecycleCoordinator().registry().isConnected(1));
+    assert(astrabot::adapter::metamod::lifecycleCoordinator().agents().mappingCount() == 0);
+    assert(astrabot::adapter::metamod::lifecycleCoordinator().fakeClient().activeEntity() == nullptr);
+    assert(gEngineClientCommandCalls == 0);
+    detach();
+
+    Fixture fallbackFixture{};
+    activate(fallbackFixture);
+    const FakeClientResult fallbackCreated =
+        astrabot::adapter::metamod::lifecycleCoordinator().fakeClient().create(
+            "AstraBot-Fallback");
+    assert(fallbackCreated.succeeded());
+    fallbackFixture.userId = 0;
+    assert(astrabot::adapter::metamod::lifecycleCoordinator().requestJoin(
+                {astrabot::adapter::cstrike::Team::Terrorist, 1})
+               .changed);
+    sendVguiMenu(
+        hooks,
+        11,
+        &fallbackFixture.entity,
+        2,
+        0x0001);
+    astrabot::adapter::metamod::lifecycleCoordinator().startFrame();
+    sendVguiMenu(
+        hooks,
+        11,
+        &fallbackFixture.entity,
+        26,
+        0x0000);
+    assert(fallbackFixture.serverCommandCalls == 0);
+    assert(fallbackFixture.disconnectCalls == 1);
+    assert(fallbackFixture.removeCalls == 1);
+    assert(astrabot::adapter::metamod::lifecycleCoordinator().agents().mappingCount() == 0);
+    detach();
+}
+
+void testCounterTerroristPrimaryJoinRequest() {
+    Fixture fixture{};
+    attach(fixture);
+    DLL_FUNCTIONS entityHooks{};
+    int entityVersion = INTERFACE_VERSION;
+    assert(GetEntityAPI2(&entityHooks, &entityVersion) != 0);
+    enginefuncs_t engineHooks{};
+    int engineVersion = ENGINE_INTERFACE_VERSION;
+    assert(GetEngineFunctions(&engineHooks, &engineVersion) != 0);
+    gEngineHooks = &engineHooks;
+    gGameDllCommandCalls = 0;
+
+    astrabot::adapter::metamod::lifecycleCoordinator().fakeClient().queuePrimaryCreate(
+        {astrabot::adapter::cstrike::Team::CounterTerrorist, 2});
+    entityHooks.pfnServerActivate(nullptr, 0, 32);
+    entityHooks.pfnStartFrame();
+    assert(astrabot::adapter::metamod::lifecycleCoordinator().joinState().request().team ==
+           astrabot::adapter::cstrike::Team::CounterTerrorist);
+    assert(astrabot::adapter::metamod::lifecycleCoordinator().joinState().request().classNumber ==
+           2U);
+
+    sendVguiMenu(engineHooks, 11, &fixture.entity, 2, 0x0002);
+    astrabot::adapter::metamod::lifecycleCoordinator().startFrame();
+    assert(gGameDllCommandCalls == 1);
+    assert(gLastCommandArgv1 == "2");
+
+    sendVguiMenu(engineHooks, 11, &fixture.entity, 27, 0x0002);
+    astrabot::adapter::metamod::lifecycleCoordinator().startFrame();
+    assert(gGameDllCommandCalls == 2);
+    assert(gLastCommandArgv1 == "2");
+    sendTeamInfo(engineHooks, 13, 1, "CT");
+    assert(astrabot::adapter::metamod::lifecycleCoordinator().joinState().phase() ==
+           astrabot::adapter::cstrike::JoinPhase::Joined);
+    detach();
+}
+
+void testJoinTimeoutCleanup() {
+    Fixture fixture{};
+    activate(fixture);
+    const FakeClientResult created =
+        astrabot::adapter::metamod::lifecycleCoordinator().fakeClient().create(
+            "AstraBot-Timeout");
+    assert(created.succeeded());
+    assert(astrabot::adapter::metamod::lifecycleCoordinator().requestJoin(
+                {astrabot::adapter::cstrike::Team::Terrorist, 1})
+               .changed);
+    for (int frame = 0; frame < 128; ++frame) {
+        astrabot::adapter::metamod::lifecycleCoordinator().startFrame();
+    }
+    assert(astrabot::adapter::metamod::lifecycleCoordinator().joinState().phase() ==
+           astrabot::adapter::cstrike::JoinPhase::Failed);
+    assert(astrabot::adapter::metamod::lifecycleCoordinator().joinState().error() ==
+           astrabot::adapter::cstrike::JoinError::Timeout);
+    assert(fixture.serverCommandCalls == 1);
+    assert(fixture.serverExecuteCalls == 1);
+    assert(!astrabot::adapter::metamod::lifecycleCoordinator().registry().isConnected(1));
+    assert(astrabot::adapter::metamod::lifecycleCoordinator().agents().mappingCount() == 0);
+    detach();
+}
+
 } // namespace
 
 int main() {
@@ -346,5 +653,9 @@ int main() {
     testInputAndCapacityRejection();
     testFirstFrameBootstrapAndCleanup();
     testMissingFunctionIsRejectedWithoutEngineCall();
+    testMessageDrivenJoinAndCommandContext();
+    testJoinFailureCleanupAndCommandContextReentry();
+    testCounterTerroristPrimaryJoinRequest();
+    testJoinTimeoutCleanup();
     return 0;
 }

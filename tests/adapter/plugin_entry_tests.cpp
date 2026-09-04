@@ -97,6 +97,36 @@ qboolean captureClientConnect(
 
 void captureClientPutInServer(edict_t* /* entity */) {}
 void captureClientDisconnect(edict_t* /* entity */) {}
+void captureClientCommand(edict_t* /* entity */) {}
+
+int captureGetUserMsgID(
+    plid_t /* pluginId */,
+    const char* messageName,
+    int* size) {
+    if (size != nullptr) {
+        *size = -1;
+    }
+    if (messageName == nullptr) {
+        return 0;
+    }
+    if (std::strcmp(messageName, "VGUIMenu") == 0) {
+        return 11;
+    }
+    if (std::strcmp(messageName, "ShowMenu") == 0) {
+        return 12;
+    }
+    if (std::strcmp(messageName, "TeamInfo") == 0) {
+        return 13;
+    }
+    return 0;
+}
+
+int captureGetPlayerUserId(edict_t* /* entity */) {
+    return 1;
+}
+
+void captureServerCommand(char* /* command */) {}
+void captureServerExecute() {}
 
 int sentinelEntityApi2(DLL_FUNCTIONS* /* table */, int* /* version */) {
     return 17;
@@ -119,14 +149,19 @@ struct Fixture {
         utility.pfnLogConsole = &captureLogConsole;
         utility.pfnGetHookTables = &captureHookTables;
         utility.pfnCallGameEntity = &captureCallGameEntity;
+        utility.pfnGetUserMsgID = &captureGetUserMsgID;
         engine.pfnCreateFakeClient = &captureCreateFakeClient;
         engine.pfnIndexOfEdict = &captureIndexOfEdict;
         engine.pfnGetInfoKeyBuffer = &captureGetInfoKeyBuffer;
         engine.pfnSetClientKeyValue = &captureSetClientKeyValue;
         engine.pfnRemoveEntity = &captureRemoveEntity;
+        engine.pfnGetPlayerUserId = &captureGetPlayerUserId;
+        engine.pfnServerCommand = &captureServerCommand;
+        engine.pfnServerExecute = &captureServerExecute;
         dll.pfnClientConnect = &captureClientConnect;
         dll.pfnClientPutInServer = &captureClientPutInServer;
         dll.pfnClientDisconnect = &captureClientDisconnect;
+        dll.pfnClientCommand = &captureClientCommand;
         gameDll.dllapi_table = &dll;
         gameDll.newapi_table = &newDll;
         callbacks.pfnGetEntityAPI2 = &sentinelEntityApi2;
@@ -216,6 +251,33 @@ void testAttachValidationIsRollbackSafe() {
     noNewDllTable.newapi_table = nullptr;
     assert(Meta_Attach(PT_ANYTIME, &fixture.callbacks, &fixture.globals, &noNewDllTable) == 0);
     assertCallbacksEqual(fixture.callbacks, before);
+
+    auto* const savedUserMessageLookup = fixture.utility.pfnGetUserMsgID;
+    fixture.utility.pfnGetUserMsgID = nullptr;
+    assert(Meta_Attach(PT_ANYTIME, &fixture.callbacks, &fixture.globals, &fixture.gameDll) == 0);
+    assertCallbacksEqual(fixture.callbacks, before);
+    fixture.utility.pfnGetUserMsgID = savedUserMessageLookup;
+
+    enginefuncs_t noUserId = fixture.engine;
+    noUserId.pfnGetPlayerUserId = nullptr;
+    gHookEngineFunctions = &noUserId;
+    assert(Meta_Attach(PT_ANYTIME, &fixture.callbacks, &fixture.globals, &fixture.gameDll) == 0);
+    assertCallbacksEqual(fixture.callbacks, before);
+    gHookEngineFunctions = &fixture.engine;
+
+    enginefuncs_t noServerCommand = fixture.engine;
+    noServerCommand.pfnServerCommand = nullptr;
+    gHookEngineFunctions = &noServerCommand;
+    assert(Meta_Attach(PT_ANYTIME, &fixture.callbacks, &fixture.globals, &fixture.gameDll) == 0);
+    assertCallbacksEqual(fixture.callbacks, before);
+    gHookEngineFunctions = &fixture.engine;
+
+    enginefuncs_t noServerExecute = fixture.engine;
+    noServerExecute.pfnServerExecute = nullptr;
+    gHookEngineFunctions = &noServerExecute;
+    assert(Meta_Attach(PT_ANYTIME, &fixture.callbacks, &fixture.globals, &fixture.gameDll) == 0);
+    assertCallbacksEqual(fixture.callbacks, before);
+    gHookEngineFunctions = &fixture.engine;
 
     assert(Meta_Detach(PT_ANYTIME, PNL_NULL) != 0);
     mutil_funcs_t noLogger = fixture.utility;
@@ -323,8 +385,26 @@ void testEmptyHookTablesAndInterfaceChecks() {
     assert(wrongEngineVersion == ENGINE_INTERFACE_VERSION);
     assert(engineMismatch.pfnTime == engineTable.pfnTime);
     assert(GetEngineFunctions(&engineTable, &engineVersion) != 0);
-    const enginefuncs_t emptyEngineTable{};
-    assert(std::memcmp(&engineTable, &emptyEngineTable, sizeof(engineTable)) == 0);
+    assert(engineTable.pfnMessageBegin ==
+           &astrabot::adapter::metamod::messageBeginHook);
+    assert(engineTable.pfnMessageEnd ==
+           &astrabot::adapter::metamod::messageEndHook);
+    assert(engineTable.pfnWriteByte ==
+           &astrabot::adapter::metamod::writeByteHook);
+    assert(engineTable.pfnWriteChar ==
+           &astrabot::adapter::metamod::writeCharHook);
+    assert(engineTable.pfnWriteShort ==
+           &astrabot::adapter::metamod::writeShortHook);
+    assert(engineTable.pfnWriteString ==
+           &astrabot::adapter::metamod::writeStringHook);
+    assert(engineTable.pfnCmd_Args ==
+           &astrabot::adapter::metamod::commandArgsHook);
+    assert(engineTable.pfnCmd_Argv ==
+           &astrabot::adapter::metamod::commandArgvHook);
+    assert(engineTable.pfnCmd_Argc ==
+           &astrabot::adapter::metamod::commandArgcHook);
+    assert(engineTable.pfnClientCommand == nullptr);
+    assert(engineTable.pfnTime == nullptr);
 }
 
 void testLifecycleHooksAndCoordinatorCleanup() {

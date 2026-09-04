@@ -16,13 +16,36 @@ void markIgnored() noexcept {
     }
 }
 
+void copyCommandWord(
+    std::array<char, 16>& destination,
+    const char* source) noexcept {
+    destination = {};
+    if (source == nullptr) {
+        return;
+    }
+    std::uint16_t index = 0;
+    while (index + 1U < destination.size() && source[index] != '\0') {
+        destination[index] = source[index];
+        ++index;
+    }
+}
+
+struct CommandContextGuard final {
+    bool& active;
+    ~CommandContextGuard() { active = false; }
+};
+
 } // namespace
 
 void LifecycleCoordinator::configure(
     enginefuncs_t* engineFunctions,
     mutil_funcs_t* utilityFunctions,
-    DLL_FUNCTIONS* gameDllFunctions) noexcept {
+    DLL_FUNCTIONS* gameDllFunctions,
+    cstrike::UserMessageIds userMessageIds) noexcept {
     engineFunctions_ = engineFunctions;
+    utilityFunctions_ = utilityFunctions;
+    gameDllFunctions_ = gameDllFunctions;
+    messageDecoder_.configure(userMessageIds, &LifecycleCoordinator::onMessage, this);
     fakeClient_.configure(
         engineFunctions,
         utilityFunctions,
@@ -35,8 +58,20 @@ void LifecycleCoordinator::reset() noexcept {
     fakeClient_.reset();
     agents_.reset();
     registry_.reset();
+    messageDecoder_.reset();
+    joinState_.reset();
     engineFunctions_ = nullptr;
+    utilityFunctions_ = nullptr;
+    gameDllFunctions_ = nullptr;
+    activeJoinEntity_ = nullptr;
+    commandContextActive_ = false;
+    cleanupPending_ = false;
+    pendingCleanupError_ = cstrike::JoinError::None;
+    commandArgv0_ = {};
+    commandArgv1_ = {};
+    commandArgs_ = {};
     traceSink_ = nullptr;
+    joinTraceSink_ = nullptr;
 }
 
 void LifecycleCoordinator::serverActivate(int clientMax) noexcept {
@@ -51,6 +86,14 @@ void LifecycleCoordinator::serverActivate(int clientMax) noexcept {
 }
 
 void LifecycleCoordinator::serverDeactivate() noexcept {
+    const cstrike::JoinAction joinAction =
+        joinState_.cancel(cstrike::JoinError::MapDeactivated);
+    handleJoinAction(joinAction);
+    messageDecoder_.reset();
+    commandContextActive_ = false;
+    cleanupPending_ = false;
+    pendingCleanupError_ = cstrike::JoinError::None;
+    activeJoinEntity_ = nullptr;
     const host::LifecycleResult result = registry_.deactivateMap();
     fakeClient_.resetMap();
     agents_.clearMappings();
@@ -67,12 +110,26 @@ void LifecycleCoordinator::clientDisconnect(edict_t* entity) noexcept {
     }
 
     const int index = engineFunctions_->pfnIndexOfEdict(entity);
+    if (index >= 1 && index <= static_cast<int>(host::kMaxClientSlots) &&
+        joinState_.active() &&
+        joinState_.player().slot == static_cast<std::uint16_t>(index)) {
+        const cstrike::JoinAction joinAction =
+            joinState_.cancel(cstrike::JoinError::Disconnected);
+        handleJoinAction(joinAction);
+        activeJoinEntity_ = nullptr;
+        fakeClient_.forget(joinState_.player());
+    }
     const host::LifecycleResult result =
         index < 1 || index > static_cast<int>(host::kMaxClientSlots)
             ? host::LifecycleResult::rejected(host::HostError::InvalidPlayer)
             : registry_.disconnectSlot(static_cast<std::uint16_t>(index));
     if (result.changed()) {
         agents_.unbind(result.event.player);
+        fakeClient_.forget(result.event.player);
+        if (activeJoinEntity_ != nullptr &&
+            joinState_.player() == result.event.player) {
+            activeJoinEntity_ = nullptr;
+        }
     }
     emit(host::LifecycleEventKind::PlayerDisconnected, result);
 }
@@ -96,6 +153,116 @@ void LifecycleCoordinator::startFrame() noexcept {
             host::LifecycleEventKind::PlayerDisconnected,
             fakeClientResult.playerRollback);
     }
+
+    if (fakeClientResult.succeeded() && fakeClientResult.changed) {
+        (void)requestJoin(fakeClient_.activeJoinRequest());
+    }
+
+    const cstrike::JoinAction frameAction =
+        joinState_.onFrame(registry_.currentTick());
+    handleJoinAction(frameAction);
+    if (frameAction.kind == cstrike::JoinActionKind::SendMenuSelect) {
+        const bool dispatched = dispatchMenu(frameAction.selection);
+        const cstrike::JoinAction completion =
+            joinState_.commandCompleted(dispatched);
+        handleJoinAction(completion);
+    }
+}
+
+void LifecycleCoordinator::messageBegin(
+    int /* messageDestination */,
+    int messageType,
+    const float* /* origin */,
+    edict_t* recipient) noexcept {
+    std::uint16_t recipientSlot = 0;
+    if (recipient != nullptr && engineFunctions_ != nullptr &&
+        engineFunctions_->pfnIndexOfEdict != nullptr) {
+        const int index = engineFunctions_->pfnIndexOfEdict(recipient);
+        if (index >= 1 && index <= static_cast<int>(host::kMaxClientSlots)) {
+            recipientSlot = static_cast<std::uint16_t>(index);
+        }
+    }
+    messageDecoder_.begin(messageType, recipientSlot);
+}
+
+void LifecycleCoordinator::messageEnd() noexcept {
+    messageDecoder_.end();
+}
+
+void LifecycleCoordinator::writeByte(int value) noexcept {
+    messageDecoder_.writeByte(value);
+}
+
+void LifecycleCoordinator::writeChar(int value) noexcept {
+    messageDecoder_.writeChar(value);
+}
+
+void LifecycleCoordinator::writeShort(int value) noexcept {
+    messageDecoder_.writeShort(value);
+}
+
+void LifecycleCoordinator::writeString(const char* value) noexcept {
+    messageDecoder_.writeString(value);
+}
+
+const char* LifecycleCoordinator::commandArgs() noexcept {
+    if (commandContextActive_) {
+        if (gpMetaGlobals != nullptr) {
+            gpMetaGlobals->mres = MRES_SUPERCEDE;
+        }
+        return commandArgs_.data();
+    }
+    markIgnored();
+    return "";
+}
+
+const char* LifecycleCoordinator::commandArgv(int index) noexcept {
+    if (commandContextActive_) {
+        if (gpMetaGlobals != nullptr) {
+            gpMetaGlobals->mres = MRES_SUPERCEDE;
+        }
+        if (index == 0) {
+            return commandArgv0_.data();
+        }
+        if (index == 1) {
+            return commandArgv1_.data();
+        }
+        return "";
+    }
+    markIgnored();
+    return "";
+}
+
+int LifecycleCoordinator::commandArgc() noexcept {
+    if (commandContextActive_) {
+        if (gpMetaGlobals != nullptr) {
+            gpMetaGlobals->mres = MRES_SUPERCEDE;
+        }
+        return 2;
+    }
+    markIgnored();
+    return 0;
+}
+
+cstrike::JoinAction LifecycleCoordinator::requestJoin(
+    cstrike::JoinRequest request) noexcept {
+    const host::PlayerId player = fakeClient_.activePlayer();
+    activeJoinEntity_ = fakeClient_.activeEntity();
+    const cstrike::JoinAction action = joinState_.begin(
+        player,
+        registry_.mapGeneration(),
+        request,
+        registry_.currentTick());
+    if (action.error == cstrike::JoinError::AlreadyJoining) {
+        return action;
+    }
+    handleJoinAction(action);
+    return action;
+}
+
+bool LifecycleCoordinator::dispatchMenuForTest(
+    std::uint8_t selection) noexcept {
+    return dispatchMenu(selection);
 }
 
 void LifecycleCoordinator::emit(
@@ -110,6 +277,105 @@ void LifecycleCoordinator::emit(
         attemptedPlayer,
         attemptedTick,
         traceSink_);
+}
+
+void LifecycleCoordinator::emitJoin(const cstrike::JoinAction& action) noexcept {
+    if (!action.changed) {
+        return;
+    }
+    const cstrike::JoinRequest request = joinState_.request();
+    debug::emitJoin(
+        {
+            joinState_.phase(),
+            joinState_.error(),
+            joinState_.map(),
+            joinState_.player(),
+            request.team,
+            request.classNumber,
+            registry_.currentTick(),
+            registry_.eventSequence(),
+            joinState_.attempts(),
+            action.kind != cstrike::JoinActionKind::Failed &&
+                action.kind != cstrike::JoinActionKind::Cancelled,
+            action.changed,
+        },
+        joinTraceSink_);
+}
+
+void LifecycleCoordinator::handleMessage(
+    const cstrike::MessageEvent& event) noexcept {
+    const cstrike::JoinAction action =
+        joinState_.onMessage(event, registry_.currentTick());
+    handleJoinAction(action);
+}
+
+void LifecycleCoordinator::handleJoinAction(
+    const cstrike::JoinAction& action) noexcept {
+    if (!action.changed) {
+        return;
+    }
+    emitJoin(action);
+    if (action.kind == cstrike::JoinActionKind::Failed) {
+        if (commandContextActive_) {
+            cleanupPending_ = true;
+            pendingCleanupError_ = action.error;
+        } else {
+            cleanupFailedJoin(action.error);
+        }
+    } else if (action.kind == cstrike::JoinActionKind::Cancelled) {
+        activeJoinEntity_ = nullptr;
+        fakeClient_.forget(joinState_.player());
+    }
+}
+
+void LifecycleCoordinator::cleanupFailedJoin(
+    cstrike::JoinError /* error */) noexcept {
+    const host::PlayerId player = joinState_.player();
+    if (!player.isValid()) {
+        activeJoinEntity_ = nullptr;
+        cleanupPending_ = false;
+        pendingCleanupError_ = cstrike::JoinError::None;
+        return;
+    }
+
+    agents_.unbind(player);
+    registry_.disconnectPlayer(player);
+    fakeClient_.kickAndCleanup(player);
+    activeJoinEntity_ = nullptr;
+    cleanupPending_ = false;
+    pendingCleanupError_ = cstrike::JoinError::None;
+}
+
+bool LifecycleCoordinator::dispatchMenu(std::uint8_t selection) noexcept {
+    if (commandContextActive_ || activeJoinEntity_ == nullptr ||
+        gameDllFunctions_ == nullptr ||
+        gameDllFunctions_->pfnClientCommand == nullptr || selection == 0U ||
+        selection > 9U) {
+        return false;
+    }
+
+    copyCommandWord(commandArgv0_, "menuselect");
+    commandArgv1_ = {};
+    commandArgv1_[0] = static_cast<char>('0' + selection);
+    commandArgs_ = {};
+    commandArgs_[0] = commandArgv1_[0];
+    commandContextActive_ = true;
+    {
+        CommandContextGuard guard{commandContextActive_};
+        gameDllFunctions_->pfnClientCommand(activeJoinEntity_);
+    }
+    if (cleanupPending_) {
+        cleanupFailedJoin(pendingCleanupError_);
+    }
+    return true;
+}
+
+void LifecycleCoordinator::onMessage(
+    void* context,
+    const cstrike::MessageEvent& event) noexcept {
+    if (context != nullptr) {
+        static_cast<LifecycleCoordinator*>(context)->handleMessage(event);
+    }
 }
 
 LifecycleCoordinator& lifecycleCoordinator() noexcept {
@@ -140,6 +406,52 @@ void clientDisconnectHook(edict_t* entity) {
 void startFrameHook() {
     gCoordinator.startFrame();
     markIgnored();
+}
+
+void messageBeginHook(
+    int messageDestination,
+    int messageType,
+    const float* origin,
+    edict_t* recipient) {
+    gCoordinator.messageBegin(messageDestination, messageType, origin, recipient);
+    markIgnored();
+}
+
+void messageEndHook() {
+    gCoordinator.messageEnd();
+    markIgnored();
+}
+
+void writeByteHook(int value) {
+    gCoordinator.writeByte(value);
+    markIgnored();
+}
+
+void writeCharHook(int value) {
+    gCoordinator.writeChar(value);
+    markIgnored();
+}
+
+void writeShortHook(int value) {
+    gCoordinator.writeShort(value);
+    markIgnored();
+}
+
+void writeStringHook(const char* value) {
+    gCoordinator.writeString(value);
+    markIgnored();
+}
+
+const char* commandArgsHook() {
+    return gCoordinator.commandArgs();
+}
+
+const char* commandArgvHook(int index) {
+    return gCoordinator.commandArgv(index);
+}
+
+int commandArgcHook() {
+    return gCoordinator.commandArgc();
 }
 
 } // namespace astrabot::adapter::metamod

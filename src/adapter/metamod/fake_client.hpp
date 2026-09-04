@@ -7,6 +7,7 @@
 // Core or host headers.
 #include "adapter/metamod/plugin_entry.hpp"
 
+#include "adapter/cstrike/join_state.hpp"
 #include "debug/host_trace.hpp"
 #include "host/bot_agents.hpp"
 #include "host/player_registry.hpp"
@@ -41,9 +42,24 @@ public:
     void reset() noexcept;
     void resetMap() noexcept;
 
-    void queuePrimaryCreate() noexcept { primaryQueued_ = true; }
+    void queuePrimaryCreate() noexcept;
+    void queuePrimaryCreate(cstrike::JoinRequest request) noexcept;
     FakeClientResult processPrimaryCreate() noexcept;
     FakeClientResult create(const char* name) noexcept;
+    FakeClientResult create(
+        const char* name,
+        cstrike::JoinRequest request) noexcept;
+
+    edict_t* activeEntity() const noexcept { return activeEntity_; }
+    host::PlayerId activePlayer() const noexcept { return activePlayer_; }
+    cstrike::JoinRequest primaryJoinRequest() const noexcept {
+        return primaryJoinRequest_;
+    }
+    cstrike::JoinRequest activeJoinRequest() const noexcept {
+        return activeJoinRequest_;
+    }
+    void forget(host::PlayerId player) noexcept;
+    bool kickAndCleanup(host::PlayerId player) noexcept;
 
     void setTraceSink(debug::FakeClientTraceSink sink) noexcept {
         traceSink_ = sink;
@@ -59,6 +75,14 @@ private:
     bool primaryQueued_{false};
     bool attempted_{false};
     bool operationActive_{false};
+    cstrike::JoinRequest primaryJoinRequest_{
+        cstrike::Team::Terrorist,
+        1};
+    cstrike::JoinRequest activeJoinRequest_{
+        cstrike::Team::Terrorist,
+        1};
+    edict_t* activeEntity_{nullptr};
+    host::PlayerId activePlayer_{};
 
     void trace(
         debug::FakeClientStage stage,
@@ -74,6 +98,7 @@ private:
     bool configured() const noexcept;
     static bool copyName(const char* source, char* destination, std::uint16_t capacity) noexcept;
     void cleanup(edict_t* entity, bool connected) noexcept;
+    bool issueKick(edict_t* entity) noexcept;
 };
 
 } // namespace astrabot::adapter::metamod

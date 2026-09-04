@@ -38,7 +38,8 @@ bool hasRequiredGameDllTables(const gamedll_funcs_t* gameDllFunctions) noexcept 
 bool hasRequiredUtilityTable(const mutil_funcs_t* utilityFunctions) noexcept {
     return utilityFunctions != nullptr &&
            utilityFunctions->pfnLogConsole != nullptr &&
-           utilityFunctions->pfnGetHookTables != nullptr;
+           utilityFunctions->pfnGetHookTables != nullptr &&
+           utilityFunctions->pfnGetUserMsgID != nullptr;
 }
 
 bool hasRequiredFakeClientEngine(const enginefuncs_t* engineFunctions) noexcept {
@@ -47,7 +48,10 @@ bool hasRequiredFakeClientEngine(const enginefuncs_t* engineFunctions) noexcept 
            engineFunctions->pfnCreateFakeClient != nullptr &&
            engineFunctions->pfnGetInfoKeyBuffer != nullptr &&
            engineFunctions->pfnSetClientKeyValue != nullptr &&
-           engineFunctions->pfnRemoveEntity != nullptr;
+           engineFunctions->pfnRemoveEntity != nullptr &&
+           engineFunctions->pfnGetPlayerUserId != nullptr &&
+           engineFunctions->pfnServerCommand != nullptr &&
+           engineFunctions->pfnServerExecute != nullptr;
 }
 
 bool hasRequiredFakeClientGameDll(
@@ -55,13 +59,31 @@ bool hasRequiredFakeClientGameDll(
     return gameDllFunctions != nullptr &&
            gameDllFunctions->pfnClientConnect != nullptr &&
            gameDllFunctions->pfnClientPutInServer != nullptr &&
-           gameDllFunctions->pfnClientDisconnect != nullptr;
+           gameDllFunctions->pfnClientDisconnect != nullptr &&
+           gameDllFunctions->pfnClientCommand != nullptr;
 }
 
 bool hasRequiredFakeClientUtility(
     const mutil_funcs_t* utilityFunctions) noexcept {
     return utilityFunctions != nullptr &&
            utilityFunctions->pfnCallGameEntity != nullptr;
+}
+
+bool resolveUserMessageIds(
+    mutil_funcs_t* utilityFunctions,
+    astrabot::adapter::cstrike::UserMessageIds& ids) noexcept {
+    if (utilityFunctions == nullptr ||
+        utilityFunctions->pfnGetUserMsgID == nullptr) {
+        return false;
+    }
+    int messageSize = 0;
+    ids.vguiMenu = utilityFunctions->pfnGetUserMsgID(
+        PLID, "VGUIMenu", &messageSize);
+    ids.showMenu = utilityFunctions->pfnGetUserMsgID(
+        PLID, "ShowMenu", &messageSize);
+    ids.teamInfo = utilityFunctions->pfnGetUserMsgID(
+        PLID, "TeamInfo", &messageSize);
+    return ids.valid();
 }
 
 void logAttachedIdentity(const char* line) noexcept {
@@ -151,6 +173,11 @@ C_DLLEXPORT FORCE_STACK_ALIGN int Meta_Attach(
         return 0;
     }
 
+    astrabot::adapter::cstrike::UserMessageIds userMessageIds{};
+    if (!resolveUserMessageIds(gpMetaUtilFuncs, userMessageIds)) {
+        return 0;
+    }
+
     const GETENTITYAPI2_FN previousEntityApi2 = functionTable->pfnGetEntityAPI2;
     const GET_ENGINE_FUNCTIONS_FN previousEngineFunctions =
         functionTable->pfnGetEngineFunctions;
@@ -167,7 +194,8 @@ C_DLLEXPORT FORCE_STACK_ALIGN int Meta_Attach(
     astrabot::adapter::metamod::lifecycleCoordinator().configure(
         engineFunctions,
         gpMetaUtilFuncs,
-        gameDllFunctions->dllapi_table);
+        gameDllFunctions->dllapi_table,
+        userMessageIds);
 
     astrabot::debug::emitAttached(&logAttachedIdentity);
     return 1;
@@ -219,5 +247,23 @@ C_DLLEXPORT FORCE_STACK_ALIGN int GetEngineFunctions(
 
     const enginefuncs_t emptyHookTable{};
     std::memcpy(engineFunctions, &emptyHookTable, sizeof(emptyHookTable));
+    engineFunctions->pfnMessageBegin =
+        &astrabot::adapter::metamod::messageBeginHook;
+    engineFunctions->pfnMessageEnd =
+        &astrabot::adapter::metamod::messageEndHook;
+    engineFunctions->pfnWriteByte =
+        &astrabot::adapter::metamod::writeByteHook;
+    engineFunctions->pfnWriteChar =
+        &astrabot::adapter::metamod::writeCharHook;
+    engineFunctions->pfnWriteShort =
+        &astrabot::adapter::metamod::writeShortHook;
+    engineFunctions->pfnWriteString =
+        &astrabot::adapter::metamod::writeStringHook;
+    engineFunctions->pfnCmd_Args =
+        &astrabot::adapter::metamod::commandArgsHook;
+    engineFunctions->pfnCmd_Argv =
+        &astrabot::adapter::metamod::commandArgvHook;
+    engineFunctions->pfnCmd_Argc =
+        &astrabot::adapter::metamod::commandArgcHook;
     return 1;
 }

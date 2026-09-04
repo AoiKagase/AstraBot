@@ -148,6 +148,8 @@ if(ASTRABOT_BUILD_METAMOD)
     endforeach()
 
     add_library(astrabot_mm SHARED
+        src/adapter/cstrike/join_state.cpp
+        src/adapter/cstrike/messages.cpp
         src/adapter/metamod/fake_client.cpp
         src/adapter/metamod/plugin_entry.cpp
         src/adapter/metamod/lifecycle.cpp
@@ -231,6 +233,8 @@ if(ASTRABOT_BUILD_TESTS)
     if(ASTRABOT_BUILD_METAMOD)
         add_executable(astrabot_adapter_entry_tests
             tests/adapter/plugin_entry_tests.cpp
+            src/adapter/cstrike/join_state.cpp
+            src/adapter/cstrike/messages.cpp
             src/adapter/metamod/fake_client.cpp
             src/adapter/metamod/plugin_entry.cpp
             src/adapter/metamod/lifecycle.cpp
@@ -258,6 +262,8 @@ if(ASTRABOT_BUILD_TESTS)
 
         add_executable(astrabot_fake_client_tests
             tests/adapter/fake_client_tests.cpp
+            src/adapter/cstrike/join_state.cpp
+            src/adapter/cstrike/messages.cpp
             src/adapter/metamod/fake_client.cpp
             src/adapter/metamod/lifecycle.cpp
             src/adapter/metamod/plugin_entry.cpp
@@ -281,6 +287,26 @@ if(ASTRABOT_BUILD_TESTS)
         add_test(
             NAME astrabot.fake_client
             COMMAND astrabot_fake_client_tests
+        )
+
+        add_executable(astrabot_cstrike_join_tests
+            tests/adapter/join_state_tests.cpp
+            src/adapter/cstrike/join_state.cpp
+            src/adapter/cstrike/messages.cpp
+        )
+        target_compile_features(astrabot_cstrike_join_tests PRIVATE cxx_std_17)
+        target_include_directories(astrabot_cstrike_join_tests
+            PRIVATE
+                ${CMAKE_CURRENT_SOURCE_DIR}/src
+        )
+        set_target_properties(astrabot_cstrike_join_tests PROPERTIES
+            CXX_EXTENSIONS OFF
+        )
+        astrabot_enable_warnings(astrabot_cstrike_join_tests)
+
+        add_test(
+            NAME astrabot.cstrike.join
+            COMMAND astrabot_cstrike_join_tests
         )
     endif()
 endif()
