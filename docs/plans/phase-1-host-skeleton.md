@@ -38,7 +38,8 @@ implementation review.  Metamod-P/HLSDK headers are adapter-private.
 - **Implementation outline:** define generation-safe IDs, explicit `TickId`,
   bounded movement/view/buttons command values and typed lifecycle result/error.
   Add MPL SPDX headers.  Do not include any SDK header in portable targets.
-- **Dependencies:** pinned compiler/CMake policy and license inventory decision.
+- **Dependencies:** [pinned compiler/CMake and combined-binary policy](../toolchain-policy.md)
+  and [license inventory](../research/license-matrix.md).
 - **Tests:** value equality/order, generation mismatch, command bounds/defaults;
   compile a translation unit that includes every portable public header.
 - **Acceptance:** Windows and Linux CI configure/build/test; include graph proves

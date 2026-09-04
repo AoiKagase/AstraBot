@@ -6,11 +6,15 @@ Original AstraBot source files are intended to be licensed under the Mozilla
 Public License 2.0.  See `LICENSE`.  No Exhibit B “Incompatible With Secondary
 Licenses” notice is applied by this repository.
 
-Phase 0 contains documentation and license metadata only.  It does not contain
-YaPB, SyPB, CS-EBOT, RealBot, ReGameDLL_CS, Valve HL1 SDK, ReHLDS, Metamod-P,
-ReAPI, AMX Mod X, SQLite, or other upstream source code.  Research documents may
-name short symbols and facts and link to exact upstream commits as evidence.
-Those references do not grant additional rights to upstream material.
+Phase 0 contained documentation and license metadata only.  P1-01 adds original
+portable Core/host contract sources, and P1-02 adds original adapter source.
+This repository still does not contain YaPB, SyPB, CS-EBOT, RealBot,
+ReGameDLL_CS, Valve HL1 SDK, ReHLDS, Metamod-P, ReAPI, AMX Mod X, SQLite, or
+other upstream source code.  P1-02's adapter build references a separately
+checked-out, pinned Metamod-P/HLSDK SDK; those headers are not vendored here.
+Research documents may name short symbols and facts and link to exact upstream
+commits as evidence.  Those references do not grant additional rights to
+upstream material.
 
 The engineering policy is:
 

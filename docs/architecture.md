@@ -32,8 +32,9 @@ Model              + Route queries  snapshots
               DecisionResult + BotCommand
 ```
 
-No production API or source directory is introduced in Phase 0.  Names below
-are design contracts for later phases.
+Phase 0 introduced no production source.  P1-01 introduces only the portable
+Core/host value contracts; names below remain deliberately small design
+contracts for later phases.
 
 ## A / B / C comparison
 
@@ -101,6 +102,12 @@ The exact FakeClient state machine is fixed in
 standard Metamod-P path; ReGameDLL is the first tested GameDLL, not a type system
 dependency.  Vanilla support is feasible through the same public path but
 remains “likely, needs live proof,” not a completed feature.
+
+P1-01 fixes the portable surface to generation-safe IDs, explicit simulation
+ticks, bounded `BotCommand` values, lifecycle results/errors, simulation time,
+and command submission.  These headers use only fixed-width C++17 values.  SDK
+headers and concrete engine/GameDLL objects begin in a later adapter target and
+cannot be included by `src/core` or `src/host`.
 
 ## Navigation contract
 
@@ -276,7 +283,7 @@ observed cleanup.
 | **Likely correct but needs proof** | Vanilla GameDLL can be added through standard host hooks; proposed scheduler rates meet 16-Bot budget; ReGameDLL is the first practical live target; public message/entity observation is sufficient for later gameplay features. |
 | **Needs modification** | `.nav` “ladder data” becomes adapter/BSP enrichment; SQLite changes from assumed first choice to Phase 9 recommendation behind a port; ReAPI is optional, not Phase 1-required; MPL is file-level policy with a separate Metamod combined-binary license gate. |
 | **Incorrect** | RealBot already separates human and Bot learning; RealBot is a NavMesh example; `.nav` loading alone yields ladders; ReGameDLL nav source can be treated as cleanly MIT solely from the root license. |
-| **Deferred decision** | nav generation, stronger BSP parser, final schema/tables and WAL mode, exact public AMXX ABI, worker threading, advanced planner/learning, binary release legal determination. |
+| **Deferred decision** | nav generation, stronger BSP parser, final schema/tables and WAL mode, exact public AMXX ABI, worker threading, advanced planner/learning. |
 
 ## Changes from v0.2
 
@@ -287,7 +294,7 @@ observed cleanup.
 | Ladder moves out of serialized Nav. | v5 file contains no ladder record; loader calls live `BuildLadders`. | [Nav decision](research/nav-extraction.md#executive-decision). | Synthetic enrichment test in Phase 2; live discovery/traversal in Phase 3. |
 | “Human movement learning” → all-client observation in RealBot. | Source loop has no actor-kind test. | [RealBot analysis](research/realbot-learning.md#what-changes-through-play). | AstraBot event schema must record actor provenance explicitly. |
 | ReAPI-first host → standard Metamod-P lifecycle with optional ReGame capability. | FakeClient/join/movement need only standard interfaces; reduces Vanilla/Core coupling. | [Host validation](research/goldsrc-host.md). | Phase 1 is smaller; richer ReGame events can be added later. |
-| MPL-only wording → MPL-authored files plus combined-runtime release gate. | Metamod-P is GPL-2.0/GPL-2.0-or-later and its FAQ treats plugins as GPL. | [License matrix](research/license-matrix.md). | Keep all source/notices available; legal/distribution review before binary release. |
+| MPL-only wording → MPL-authored files plus a fixed conservative combined-runtime policy. | Metamod-P is GPL-2.0/GPL-2.0-or-later and its FAQ treats plugins as GPL. | [License matrix](research/license-matrix.md) and [toolchain policy](toolchain-policy.md). | Treat `astrabot_mm` as GPL-2.0-or-later-compatible for distribution planning, preserve MPL/SDK notices, and block release until exact dependency review. |
 | SQLite assumed → SQLite recommended, persistence port undecided until Phase 9. | Deployment is feasible, but measurements/schema/release packaging are future work. | Persistence comparison above; AMXX bundles SQLite statically as feasibility evidence. | No DB/build dependency in early phases. |
 
 ## Answers to the 13 Phase 0 questions
@@ -324,7 +331,9 @@ observed cleanup.
 11. **MPL-2.0維持のupstream扱い:** YaPB/CS-EBOT are reference-only by default
     despite permissive/file licenses; GPL/custom/mixed sources are reference-only
     + independent implementation; Metamod/HLSDK official headers are isolated
-    and the combined binary has a separate release/license gate.
+    and the combined binary is planned under the conservative
+    GPL-2.0-or-later-compatible policy recorded in
+    [toolchain-policy.md](toolchain-policy.md), pending exact release inventory.
 12. **Phase 1–3最大risk:** Phase 1 is exact FakeClient join/cleanup across
     server variants; Phase 2 is safe/compatible parsing plus license provenance;
     Phase 3 is corridor-to-motor traversal under ladders/dynamic blockers/stuck
@@ -342,7 +351,7 @@ observed cleanup.
 - Phase 3 gate: live movement matrix defined in
   [the Phase 3 plan](plans/phase-3-nav-movement.md).
 
-The next implementation session should begin with Phase 1 task 1: create only
-the portable Core value/command contracts and a minimal Metamod-P load/unload
-adapter skeleton, plus an offline fake-host test and load trace.  Do not begin
-Nav, planning, DB, AMXX, or combat in that task.
+P1-01 begins with the portable Core value/command contracts and host port only.
+The next task is the Metamod-P load/unload adapter skeleton, plus an offline
+fake-host test and load trace.  Do not begin Nav, planning, DB, AMXX, or combat
+in P1-01.

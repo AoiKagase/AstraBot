@@ -8,16 +8,21 @@ or plugin-linking rule is unclear.  Evidence is frozen in
 ## Decision
 
 AstraBot-authored files use MPL-2.0 without the Exhibit B incompatibility notice.
-No upstream implementation is copied in Phase 0.  GPL, custom-SDK, mixed-origin,
-and ambiguous units are **reference-only + independent implementation**.
+No upstream implementation is copied in Phase 0 or P1-01.  GPL, custom-SDK,
+mixed-origin, and ambiguous units are **reference-only + independent
+implementation**.
 
-MPL-2.0 can remain the file-level license for original AstraBot sources, but the
-eventual Metamod runtime cannot be advertised as “MPL-only.”  Metamod's own header
-is GPL-2.0-or-later and its FAQ says plugins generally need to be GPL.  Before a
-binary release, the project must confirm the Larger Work/Secondary License route,
-publish all required Corresponding Source, reproduce notices, and obtain legal
-review if distribution terms remain material.  Keeping the optional AMXX/ReAPI
-bridge in a separate binary narrows this issue; it does not waive it.
+The combined-binary policy is now fixed for Phase 1: a future `astrabot_mm`
+plugin compiled with Metamod-P/HLSDK must not be advertised as “MPL-only.”
+Metamod-P's own header is GPL-2.0-or-later and its FAQ says plugins generally
+need to be GPL.  The conservative operational treatment is a
+GPL-2.0-or-later-compatible distribution model for that combined runtime,
+while preserving MPL notices on AstraBot files and all applicable SDK/upstream
+notices.  Before a binary release, the exact compiled dependency inventory,
+Larger Work/Secondary License route, Corresponding Source, and notices must be
+reviewed and recorded.  This remains an engineering gate, not legal advice.
+Keeping the optional AMXX/ReAPI bridge in a separate binary narrows this issue;
+it does not waive it.
 
 ## Matrix
 
@@ -58,3 +63,6 @@ Before the first distributable binary:
 - confirm whether the Valve SDK license must accompany the package;
 - keep AMXX and ReAPI optional and independently removable;
 - rerun this matrix against the exact dependency SHAs used by the build.
+
+The Phase 1 toolchain and binary policy is recorded in
+[toolchain-policy.md](../toolchain-policy.md).
