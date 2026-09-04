@@ -29,6 +29,20 @@ After implementation and verification:
    report the commit hash, verification results, and any remaining acceptance
    work.
 
+## Finish gate and post-Finish validation
+
+Treat `Finish` as an explicit phase state, not as a synonym for every possible
+platform or live-environment check.
+
+- Linux builds and real-device/live-server validation must not be started
+  before `Finish` has been explicitly confirmed for the phase.
+- Determine and record `Finish` from the phase's implementation, applicable
+  portable/target verification, and required documentation evidence first.
+- After `Finish` is confirmed, run the Linux build and real-device/live-server
+  checks as post-Finish validation, and report their results separately.
+- If post-Finish validation fails, record the follow-up or reopened work
+  explicitly; do not silently present the phase as fully accepted.
+
 If FocalSpan is unavailable, cannot update, or cannot provide the required
 context, report the blocker and do not claim the implementation is complete
 without explicit user approval for an exception. Preserve unrelated user
