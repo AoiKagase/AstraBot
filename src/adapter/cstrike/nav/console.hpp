@@ -23,6 +23,7 @@ struct MotionTrace {
     core::TickId commandTick{}, dispatchTick{};
     std::uint64_t intentAgeUs{}, missedDecisions{}, queued{}, dispatched{}, rejected{}, sequence{};
     std::uint64_t useGuardChecks{};
+    std::uint64_t contactGuardQueries{};
 };
 class NavConsole final : public nav::runtime::IWorldQueries {
 public:
@@ -70,6 +71,7 @@ private:
         nav::runtime::MovementSnapshot observation{};
         core::BotCommand command{};
         std::optional<Segment> segment{};
+        std::optional<nav::local::DoorContact> contact{};
     };
     metamod::MovementCoordinator* movement_{}; // Owned by the containing lifecycle coordinator.
     std::optional<nav::local::Walk> walk_{};
@@ -78,6 +80,8 @@ private:
     std::optional<PendingMotion> pendingMotion_{};
     std::optional<nav::local::Binding> neutralBinding_{};
     core::TickId requestTick_{};
+    core::TickId guardTick_{};
+    std::uint32_t guardQueries_{};
     std::uint64_t intentWallAgeUs_{};
     MotionTrace motionTrace_{};
     std::array<MotionTrace,motionHistoryLimit> motionHistory_{};

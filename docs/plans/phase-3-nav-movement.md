@@ -138,10 +138,12 @@ Unit/simulation passes never substitute for live observations.
   - [ ] Add ordinary door use/wait, stairs, wall avoidance and narrow-passage
     speed/lateral correction.
     Grounded stair probes and fake-engine ascent/descent now have
-    [offline evidence](../reports/p3-03-stairs.md); door/wall/narrow behavior remains.
+    [offline evidence](../reports/p3-03-stairs.md).
     [Use-door host integration](../reports/p3-03-door-host.md) now has offline
-    passage/timeout/dispatch-guard evidence. Touch-door contact, wall avoidance
-    and narrow-passage control remain open.
+    passage/timeout/dispatch-guard evidence, and
+    [touch-door contact](../reports/p3-03-touch-doors.md) has bounded approach,
+    contact and arrival evidence. Wall avoidance and narrow-passage control
+    remain open.
 - **Tests:** corridor/same-area supported arrival, ceiling, stairs, door failure,
   unsafe drop, zero/long delta, low/normal/high FPS, 120 ms stale intent,
   rejected command and repeated button edges.

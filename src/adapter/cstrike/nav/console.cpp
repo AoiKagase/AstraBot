@@ -68,6 +68,7 @@ void NavConsole::invalidate(nav::runtime::SessionReason reason) noexcept {
 void NavConsole::reset() noexcept {
     invalidate(nav::runtime::SessionReason::Cancelled); engine_=nullptr; utility_=nullptr; globals_=nullptr;
     movement_=nullptr; neutralBinding_.reset(); motionTrace_={}; motionCount_=motionNext_=0; motionSequence_=0;
+    guardTick_={}; guardQueries_=0;
 }
 nav::diagnostics::NavError NavConsole::publish(core::MapGeneration map,
     std::shared_ptr<const nav::model::NavMeshSnapshot> mesh) noexcept {

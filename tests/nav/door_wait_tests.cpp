@@ -63,6 +63,17 @@ void finiteWait() {
         assert(stoppedClock.update(observation(11,now)).reason==DoorWaitReason::InvalidInput);
     }
 }
+void passiveTouch() {
+    for(bool allowed : {false,true}) {
+        DoorWait door(binding(),100); auto f=observation();
+        f.passive=true; f.useView.reset(); f.observed.door->canUse=false; f.observed.door->canTouch=allowed;
+        auto d=door.update(f); neutral(d);
+        if(!allowed) { assert(d.reason==DoorWaitReason::Unusable); continue; }
+        assert(d.state==DoorWaitState::Waiting);
+        f.requested.tick={11}; f.observed.stamp=f.requested; f.nowUs=100;
+        d=door.update(f); assert(d.reason==DoorWaitReason::TimedOut); neutral(d);
+    }
+}
 void invalidEvidence() {
     for(int mode=0;mode<16;++mode) {
         DoorWait door(binding(),1000000); auto f=observation();
@@ -118,4 +129,4 @@ void retirement() {
     DoorWait ready(binding(),1000000); assert(ready.abort().terminalEvent);
 }
 }
-int main() { opensAndPressReplay(); finiteWait(); invalidEvidence(); retirement(); }
+int main() { opensAndPressReplay(); finiteWait(); passiveTouch(); invalidEvidence(); retirement(); }

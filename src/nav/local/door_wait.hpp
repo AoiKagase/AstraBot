@@ -17,6 +17,7 @@ struct DoorWaitFeedback {
     // Host proves this view selects the observed usable door within use range.
     // A classname/spawnflag or an unverified geometric direction is insufficient.
     std::optional<core::IntentVector> useView{};
+    bool passive{}; // A trusted touch controller owns approach/contact; never emits Use.
 };
 struct DoorWaitDecision {
     DoorWaitState state{DoorWaitState::Ready};
@@ -27,6 +28,7 @@ struct DoorWaitDecision {
 // One attempt per binding. A blocked usable door emits one Press intent; later
 // updates are neutral. Dropped presses are not retried. Clear only authorizes a
 // new ground/clearance inspection by Walk, never translation or route arrival.
+// Passive touch attempts start the same finite clock without a Use request.
 // The owner must abort on actor death/disconnect or route/map invalidation.
 class DoorWait final {
 public:

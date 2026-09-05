@@ -11,7 +11,8 @@ namespace {
 class DecisionQueries final : public runtime::IWorldQueries {
 public:
     DecisionQueries(runtime::IWorldQueries& port, const query::NavSpatialIndex& index,
-                    double tolerance) noexcept : port_(port), index_(index), tolerance_(tolerance) {}
+                    double tolerance, std::uint32_t reserved, std::uint32_t maximum) noexcept
+        : issued(reserved), port_(port), index_(index), tolerance_(tolerance), maximum_(maximum) {}
     model::NavAreaId source{}, target{};
     bool restrictAreas{}, offCorridor{};
     std::uint32_t issued{};
@@ -23,8 +24,16 @@ public:
             runtime::WorldQueryResult invalid; invalid.stamp=q.stamp; invalid.kind=q.kind;
             invalid.error=runtime::QueryError::InvalidResult; return invalid;
         }
-        ++issued;
-        auto r=port_.query(q);
+        if(issued==maximum_) {
+            runtime::WorldQueryResult exhausted; exhausted.stamp=q.stamp; exhausted.kind=q.kind;
+            exhausted.error=runtime::QueryError::BudgetExceeded; return exhausted;
+        }
+        auto wire=q; wire.stamp.ordinal=++issued;
+        auto r=port_.query(wire);
+        // Map a validated wire stamp back to a helper's local ordinal. Each
+        // additional inspection reuses only ground, never an engine ordinal.
+        if(r.stamp==wire.stamp) r.stamp=q.stamp;
+        else { r.error=runtime::QueryError::InvalidResult; }
         if(q.kind==runtime::QueryKind::SweptHull && r.stamp==q.stamp && r.kind==q.kind &&
            r.error==runtime::QueryError::None && r.hull && !r.hull->startSolid &&
            std::isfinite(r.hull->fraction) && r.hull->fraction>=0 && r.hull->fraction<1 &&
@@ -43,6 +52,7 @@ private:
     runtime::IWorldQueries& port_;
     const query::NavSpatialIndex& index_;
     double tolerance_{};
+    std::uint32_t maximum_{};
     runtime::QueryRequest request_{};
     std::optional<runtime::WorldQueryResult> cached_{};
 };
@@ -64,7 +74,7 @@ Walk::Walk(Binding b, std::shared_ptr<const corridor::Corridor> c, model::NavVec
 WalkDecision Walk::finish(WalkDecision out, WalkState state, WalkReason reason) noexcept {
     if(door_ && door_->state()==DoorWaitState::Waiting) (void)door_->abort();
     out.terminalEvent=state_==WalkState::Running;
-    state_=state; reason_=reason; out.state=state; out.reason=reason; out.intent={};
+    state_=state; reason_=reason; out.state=state; out.reason=reason; out.intent={}; out.contact.reset();
     if(primitive_.state()==PrimitiveState::Running) {
         if(state==WalkState::Failed)
             out.primitiveEvent=primitive_.update({out.binding,out.tick,Progress::Failed,{},std::nullopt,false}).event;
@@ -79,6 +89,7 @@ WalkDecision Walk::abort() noexcept {
     out.accepted=true; return finish(out,WalkState::Aborted,WalkReason::Cancelled);
 }
 WalkDecision Walk::updateDoor(WalkDecision out, const runtime::MovementSnapshot& s,
+    const query::NavSpatialIndex& index, core::MapGeneration indexMap,
     runtime::IWorldQueries& port, model::NavVector3 end, std::uint64_t nowUs) noexcept {
     if(out.queries>=limits_.probe.maxQueries) {
         out.probeReason=ProbeReason::BudgetExceeded;
@@ -94,10 +105,13 @@ WalkDecision Walk::updateDoor(WalkDecision out, const runtime::MovementSnapshot&
             out.doorReason=DoorWaitReason::Reblocked;
             return finish(out,WalkState::Failed,WalkReason::DoorBlocked);
         }
-        door_.emplace(out.binding,limits_.doorTimeoutUs);
+        touch_=r.door && r.door->canTouch && !r.door->canUse && limits_.touchTimeoutUs;
+        door_.emplace(out.binding,touch_ ? limits_.touchTimeoutUs:limits_.doorTimeoutUs);
         doorStart_=*s.position; doorEnd_=end;
+        contactSent_=false;
     }
     DoorWaitFeedback f{out.binding,q.stamp,r,nowUs,{}};
+    f.passive=touch_;
     if(r.door && r.door->useView) {
         const auto v=*r.door->useView; f.useView=core::IntentVector{v.x,v.y,v.z};
     }
@@ -111,11 +125,56 @@ WalkDecision Walk::updateDoor(WalkDecision out, const runtime::MovementSnapshot&
         lastDoorId_=doorId_; doorId_=0; door_.reset();
         // Clearance alone cannot advance a corridor or move. Next decision
         // repeats the full measured ground/segment inspection.
+    } else if(touch_ && !contactSent_) return approachDoor(out,s,index,indexMap,port,r);
+    return out;
+}
+WalkDecision Walk::approachDoor(WalkDecision out, const runtime::MovementSnapshot& s,
+    const query::NavSpatialIndex& index, core::MapGeneration indexMap,
+    runtime::IWorldQueries& port, const runtime::WorldQueryResult& r) noexcept {
+    const auto fail=[&] { return finish(out,WalkState::Failed,WalkReason::DoorBlocked); };
+    if(!r.door || !r.door->canTouch || !r.hull || r.hull->startSolid || !r.hull->end.isFinite() ||
+       !r.hull->normal.isFinite() || !std::isfinite(r.hull->fraction) || r.hull->fraction<0 || r.hull->fraction>=1)
+        return fail();
+    const double dx=double(doorEnd_.x)-s.position->x,dy=double(doorEnd_.y)-s.position->y;
+    const double length=std::hypot(dx,dy);
+    if(length<=0 || length>limits_.probe.maxDistance || std::abs(double(doorEnd_.z)-s.position->z)>0.1) return fail();
+    const double ux=dx/length,uy=dy/length;
+    const auto hit=r.hull->end;
+    const double hx=double(hit.x)-s.position->x,hy=double(hit.y)-s.position->y;
+    const double distance=hx*ux+hy*uy;
+    if(distance<0 || distance>length || std::abs(hx*uy-hy*ux)>0.01 ||
+       std::abs(double(hit.z)-s.position->z)>0.1 ||
+       std::abs(distance-length*r.hull->fraction)>0.02 ||
+       r.hull->normal.x*ux+r.hull->normal.y*uy> -0.7 || std::abs(r.hull->normal.z)>0.2) return fail();
+    if(distance<=0.125) {
+        if(!s.elapsedUs) return fail();
+        // One measured-frame pulse, never cached translation. Host requires
+        // a fresh same-door collision within 0.125 and caps actual travel at .75.
+        out.intent.direction={ux,uy,0};
+        out.intent.speed=(std::min)(400.0,500000.0/double(s.elapsedUs));
+        out.contact=DoorContact{doorId_,{inward(s.position->x+ux*0.75,s.position->x),
+            inward(s.position->y+uy*0.75,s.position->y),s.position->z}};
+        contactSent_=true; doorStart_=*s.position; return out;
     }
+    if(out.samples>=limits_.probe.maxSamples || out.queries>=limits_.probe.maxQueries) {
+        out.probeReason=ProbeReason::BudgetExceeded; return fail();
+    }
+    auto budget=limits_.probe;
+    budget.maxQueries=limits_.probe.maxQueries-out.queries+1; // ground is an exact cache hit
+    budget.maxSamples-=out.samples;
+    const auto travel=(std::min)(distance-0.0625,double(budget.maxSamples)*budget.sampleSpacing);
+    const auto x=inward(s.position->x+ux*travel,s.position->x),y=inward(s.position->y+uy*travel,s.position->y);
+    const auto probe=GroundProbe::inspect(s,binding_.routeGeneration,out.support->area,x,y,index,indexMap,port,budget);
+    out.queries+=probe.queries ? probe.queries-1:0; out.samples+=probe.samples; out.steps+=probe.steps;
+    out.probeReason=probe.reason;
+    if(!probe) return fail();
+    out.target=probe.target; out.intent.direction={ux,uy,0};
+    out.intent.speed=(std::min)(limits_.speed,std::hypot(double(x)-s.position->x,double(y)-s.position->y)/0.120);
     return out;
 }
 WalkDecision Walk::update(const runtime::MovementSnapshot& s, const query::NavSpatialIndex& index,
-                         core::MapGeneration indexMap, runtime::IWorldQueries& port, std::uint64_t nowUs) noexcept {
+                         core::MapGeneration indexMap, runtime::IWorldQueries& port, std::uint64_t nowUs,
+                         std::uint32_t reservedQueries) noexcept {
     WalkDecision out; out.binding=binding_; out.binding.step=cursor_.index(); out.tick=s.tick;
     out.state=state_; out.reason=reason_;
     if(state_!=WalkState::Running) return out;
@@ -134,8 +193,13 @@ WalkDecision Walk::update(const runtime::MovementSnapshot& s, const query::NavSp
        !std::isfinite(limits_.arrivalTolerance) || limits_.arrivalTolerance<=0 ||
        !std::isfinite(limits_.crossingMargin) || limits_.crossingMargin<=0 || limits_.lookAhead==0)
         return finish(out,WalkState::Failed,WalkReason::InvalidInput);
-    DecisionQueries queries(port,index,limits_.probe.navTolerance);
-    const auto ground=GroundProbe::locate(s,binding_.routeGeneration,index,indexMap,queries,limits_.probe);
+    if(reservedQueries>=limits_.probe.maxQueries) {
+        out.queries=reservedQueries; out.probeReason=ProbeReason::BudgetExceeded;
+        return finish(out,WalkState::Failed,WalkReason::ProbeFailed);
+    }
+    auto probeLimits=limits_.probe; probeLimits.maxQueries-=reservedQueries;
+    DecisionQueries queries(port,index,limits_.probe.navTolerance,reservedQueries,limits_.probe.maxQueries);
+    const auto ground=GroundProbe::locate(s,binding_.routeGeneration,index,indexMap,queries,probeLimits);
     out.queries=queries.issued; out.probeReason=ground.reason;
     if(!ground) return finish(out,WalkState::Failed,WalkReason::ProbeFailed);
     out.support=ground.target;
@@ -147,9 +211,16 @@ WalkDecision Walk::update(const runtime::MovementSnapshot& s, const query::NavSp
     const auto area=ground.target->area;
     if(door_) {
         const auto dx=double(s.position->x)-doorStart_.x, dy=double(s.position->y)-doorStart_.y;
-        if(std::hypot(dx,dy)>0.5 || std::abs(double(s.position->z)-doorStart_.z)>limits_.probe.supportTolerance)
+        if(((!touch_ || contactSent_) && std::hypot(dx,dy)>(touch_ ? 0.75:0.5)) ||
+           std::abs(double(s.position->z)-doorStart_.z)>limits_.probe.supportTolerance)
             return finish(out,WalkState::Failed,WalkReason::DoorBlocked);
-        return updateDoor(out,s,port,doorEnd_,nowUs);
+        queries.source=area; queries.target=area; queries.restrictAreas=true;
+        if(!cursor_.exhausted()) {
+            const auto& t=corridor_->transitions()[cursor_.index()];
+            if(area!=t.edge.source && area!=t.edge.target) return finish(out,WalkState::Failed,WalkReason::OffCorridor);
+            queries.source=t.edge.source; queries.target=t.edge.target;
+        } else if(area!=corridor_->goal()) return finish(out,WalkState::Failed,WalkReason::OffCorridor);
+        return updateDoor(out,s,index,indexMap,queries,doorEnd_,nowUs);
     }
     auto aim=goal_;
     queries.source=area; queries.target=area; queries.restrictAreas=true;
@@ -218,16 +289,16 @@ WalkDecision Walk::update(const runtime::MovementSnapshot& s, const query::NavSp
     // double-precision distance budget (notably on diagonal segments).
     const float x=inward(s.position->x+dx*fraction,s.position->x);
     const float y=inward(s.position->y+dy*fraction,s.position->y);
-    const auto probe=GroundProbe::inspect(s,binding_.routeGeneration,area,x,y,index,indexMap,queries,limits_.probe);
+    const auto probe=GroundProbe::inspect(s,binding_.routeGeneration,area,x,y,index,indexMap,queries,probeLimits);
     out.queries=queries.issued; out.samples=probe.samples; out.steps=probe.steps; out.probeReason=probe.reason;
     if(!probe) {
         if(!queries.offCorridor && probe.reason==ProbeReason::Blocked && queries.blocked && limits_.doorTimeoutUs)
-            return updateDoor(out,s,port,queries.blocked->end,nowUs);
+            return updateDoor(out,s,index,indexMap,queries,queries.blocked->end,nowUs);
         // A tall door may make a future floor probe start solid before its
         // horizontal sweep. Current ground is already verified; only a typed
         // door hit can enter stationary waiting. A gap still fails closed.
         if(!queries.offCorridor && probe.reason==ProbeReason::NoSupport && limits_.doorTimeoutUs)
-            return updateDoor(out,s,port,{x,y,s.position->z},nowUs);
+            return updateDoor(out,s,index,indexMap,queries,{x,y,s.position->z},nowUs);
         return finish(out,WalkState::Failed,queries.offCorridor ? WalkReason::OffCorridor:WalkReason::ProbeFailed);
     }
     out.target=probe.target;

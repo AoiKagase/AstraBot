@@ -53,6 +53,8 @@ bool gStairCeiling=false;
 edict_t gNavDoor{}, gNavCompetitor{};
 bool gDoorActive=false, gDoorOpen=false, gDoorLocked=false, gDoorAmbiguous=false, gDoorLoop=false;
 int gDoorUses=0, gDoorScans=0;
+int gTouchContacts=0;
+constexpr float doorPlane=83.96875f; // GoldSrc collision epsilon keeps the hull outside the brush.
 std::uint64_t gDoorOpenAtUs=0;
 float supportHeight(float x) { return x+16>100 ? gStairHeight:0; }
 void captureNavHull(const float* start, const float* end, int ignoreMonsters, int hull, edict_t* actor, TraceResult* result) {
@@ -84,9 +86,9 @@ void captureNavHull(const float* start, const float* end, int ignoreMonsters, in
     if(gHullMode==1) result->fAllSolid=1;
     if(gHullMode==2) result->flFraction=0.5f;
     if(gHullMode==3) result->flFraction=2;
-    if(gDoorActive && !gDoorOpen && start[0]<=84 && end[0]>=84 && end[0]>start[0]) {
-        result->flFraction=(84-start[0])/(end[0]-start[0]);
-        result->vecEndPos=Vector(84,start[1]+(end[1]-start[1])*result->flFraction,
+    if(gDoorActive && !gDoorOpen && start[0]<=doorPlane && end[0]>=doorPlane && end[0]>start[0]) {
+        result->flFraction=(doorPlane-start[0])/(end[0]-start[0]);
+        result->vecEndPos=Vector(doorPlane,start[1]+(end[1]-start[1])*result->flFraction,
             start[2]+(end[2]-start[2])*result->flFraction);
         result->vecPlaneNormal=Vector(-1,0,0); result->pHit=&gNavDoor;
     }
@@ -306,7 +308,7 @@ edict_t* captureDoorSphere(edict_t* previous,const float* origin,float radius) {
 }
 void configureDoor(Fixture& fixture) {
     gDoorActive=true; gDoorOpen=gDoorLocked=gDoorAmbiguous=gDoorLoop=false;
-    gDoorUses=gDoorScans=0; gDoorOpenAtUs=0; gNavDoor={}; gNavCompetitor={};
+    gDoorUses=gDoorScans=gTouchContacts=0; gDoorOpenAtUs=0; gNavDoor={}; gNavCompetitor={};
     gNavDoor.serialnumber=7; gNavDoor.v.classname=10; gNavDoor.v.spawnflags=1<<8;
     gNavDoor.v.absmin=Vector(100,0,0); gNavDoor.v.size=Vector(4,100,72);
     fixture.engineGlobals.maxEntities=128;
@@ -463,6 +465,13 @@ void captureRunPlayerMove(
         const double dt=double(msec)/1000;
         entity->v.origin.x+=static_cast<float>((forwardMove*std::cos(yaw)+sideMove*std::sin(yaw))*dt);
         entity->v.origin.y+=static_cast<float>((forwardMove*std::sin(yaw)-sideMove*std::cos(yaw))*dt);
+        if(gDoorActive && !gDoorOpen && entity->v.origin.x>=doorPlane &&
+           forwardMove*std::cos(yaw)+sideMove*std::sin(yaw)>0) {
+            assert(owner.navConsole().motionTrace().decision.contact && buttons==0);
+            entity->v.origin.x=doorPlane; ++gTouchContacts;
+            if(!gDoorLocked && !(gNavDoor.v.spawnflags&(1<<8)) && gNavDoor.v.targetname==0)
+                gDoorOpenAtUs=gNavClockUs+120000;
+        }
         entity->v.origin.z=supportHeight(entity->v.origin.x)+36;
         entity->v.v_angle=Vector(viewAngles[0],viewAngles[1],viewAngles[2]);
         if(gInjectNavDuplicate) {
@@ -876,6 +885,57 @@ void testNavDoors() {
         if(mode>=3 && mode<=6) assert(changed);
         if(mode==3 || mode==4) assert(guardRejected);
         const auto presses=gDoorUses; navFrame(fixture,us); navFrame(fixture,us); assert(gDoorUses==presses);
+        gDoorActive=false; gDoorOpenAtUs=0; gSimulateNav=false; detach();
+    }
+}
+void testNavTouchDoors() {
+    using namespace astrabot;
+    for(int mode=0;mode<9;++mode) for(std::uint64_t us : {8000U,16000U,100000U}) {
+        Fixture fixture{}; configureDoor(fixture); enginefuncs_t hooks{}; prepareNavWalk(fixture,hooks);
+        auto& owner=adapter::metamod::lifecycleCoordinator(); auto& console=owner.navConsole();
+        gNavDoor.v.spawnflags=0; gNavDoor.v.solid=SOLID_BSP; gDoorLocked=mode==1;
+        if(mode==5) gNavDoor.v.targetname=12; // requires another activator; never touch on speculation
+        runNav({"astrabot_goto","2"});
+        bool terminal=false,pulse=false,rejected=false; std::uint64_t started=0,nextFrameUs=us;
+        for(int frame=0;frame<2000;++frame) {
+            const auto traces=gHullCalls; const auto guards=console.motionTrace().contactGuardQueries;
+            const auto actualUs=nextFrameUs; nextFrameUs=us; navFrame(fixture,actualUs);
+            const auto& t=console.motionTrace(); const auto& d=t.decision;
+            rejected=rejected || motionReason(adapter::cstrike::MotionReason::DoorChanged);
+            if(d.doorState==nav::local::DoorWaitState::Waiting && !started) started=gNavClockUs;
+            const auto added=t.contactGuardQueries-guards;
+            assert(added<=1 && d.queries<=21 && d.samples<=4);
+            if(d.tick==owner.registry().currentTick()) assert(d.queries==static_cast<unsigned>(gHullCalls-traces));
+            else assert(static_cast<unsigned>(gHullCalls-traces)==added);
+            if(t.event==adapter::cstrike::MotionEvent::Queued && d.contact &&
+               std::hypot(t.command.movement.forward,t.command.movement.side)>0) {
+                assert(!pulse); pulse=true;
+                assert(fixture.entity.v.origin.x<doorPlane && doorPlane-fixture.entity.v.origin.x<=0.125f);
+                if(mode==2) ++gNavDoor.serialnumber;
+                if(mode==3) gNavDoor.v.targetname=12;
+                if(mode==4) runNav({"astrabot_nav_cancel"});
+                if(mode==6) nextFrameUs=160000; // queued contact expires; it must not be retried
+                if(mode==7) nextFrameUs=1000; // actual pulse would not reach the contact plane
+                if(mode==8) fixture.entity.v.flags&=~FL_ONGROUND;
+            }
+            if(d.state!=nav::local::WalkState::Running) {
+                terminal=true;
+                if(mode==0) assert(d.state==nav::local::WalkState::Arrived && gTouchContacts==1);
+                else {
+                    assert(d.state==nav::local::WalkState::Failed || d.state==nav::local::WalkState::Aborted);
+                    assert(gTouchContacts==(mode==1 ? 1:0));
+                    if(mode==1) {
+                        assert(d.doorReason==nav::local::DoorWaitReason::TimedOut && started);
+                        assert(gNavClockUs-started>=3000000 && gNavClockUs-started<=3000000+us+40000);
+                    }
+                }
+                break;
+            }
+        }
+        assert(terminal && gDoorUses==0);
+        if(mode!=5) assert(pulse);
+        if(mode==2 || mode==3 || mode==7) assert(rejected);
+        const auto contacts=gTouchContacts; navFrame(fixture,us); navFrame(fixture,us); assert(gTouchContacts==contacts);
         gDoorActive=false; gDoorOpenAtUs=0; gSimulateNav=false; detach();
     }
 }
@@ -1497,6 +1557,7 @@ int main() {
     testNavWalkArrival();
     testNavStairs();
     testNavDoors();
+    testNavTouchDoors();
     testNavWalkCancellationAndGuards();
     testJoinFailureCleanupAndCommandContextReentry();
     testCounterTerroristPrimaryJoinRequest();

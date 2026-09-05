@@ -13,6 +13,11 @@ struct WalkLimits {
     double speed{}, arrivalTolerance{}, crossingMargin{};
     std::size_t lookAhead{};
     std::uint64_t doorTimeoutUs{}; // Zero disables door handling. Host supplies a finite profile.
+    std::uint64_t touchTimeoutUs{}; // Includes the supported approach, one contact attempt and waiting.
+};
+struct DoorContact {
+    std::uint64_t id{};
+    model::NavVector3 end{}; // Bounded trace endpoint, not an ordinary clear movement segment.
 };
 struct WalkDecision {
     WalkState state{WalkState::Running};
@@ -28,17 +33,20 @@ struct WalkDecision {
     std::optional<DoorWaitState> doorState{};
     DoorWaitReason doorReason{DoorWaitReason::None};
     std::uint64_t doorId{};
+    std::optional<DoorContact> contact{}; // Single-frame pulse; host must revalidate before dispatch.
 };
 // One owned route, synchronous decision seam. Caller schedules decisions and
 // invalidates on route replacement; this class never submits a host command.
 // A projected endpoint is not arrival: only later measured support advances.
+// reservedQueries are same-tick host guard queries already issued (ordinals
+// 1..reservedQueries). They count toward the returned total and fixed budget.
 class Walk final {
 public:
     Walk(Binding, std::shared_ptr<const corridor::Corridor>, model::NavVector3 goal,
          WalkLimits) noexcept;
     WalkDecision update(const runtime::MovementSnapshot&, const query::NavSpatialIndex&,
                         core::MapGeneration indexMap, runtime::IWorldQueries&,
-                        std::uint64_t nowUs=0) noexcept;
+                        std::uint64_t nowUs=0, std::uint32_t reservedQueries=0) noexcept;
     WalkDecision abort() noexcept;
     WalkState state() const noexcept { return state_; }
     std::size_t step() const noexcept { return cursor_.index(); }
@@ -55,8 +63,13 @@ private:
     std::optional<DoorWait> door_{};
     model::NavVector3 doorStart_{}, doorEnd_{};
     std::uint64_t doorId_{}, lastDoorId_{};
+    bool touch_{}, contactSent_{};
     WalkDecision updateDoor(WalkDecision, const runtime::MovementSnapshot&,
-        runtime::IWorldQueries&, model::NavVector3 end, std::uint64_t nowUs) noexcept;
+        const query::NavSpatialIndex&, core::MapGeneration, runtime::IWorldQueries&,
+        model::NavVector3 end, std::uint64_t nowUs) noexcept;
+    WalkDecision approachDoor(WalkDecision, const runtime::MovementSnapshot&,
+        const query::NavSpatialIndex&, core::MapGeneration, runtime::IWorldQueries&,
+        const runtime::WorldQueryResult&) noexcept;
     WalkDecision finish(WalkDecision, WalkState, WalkReason) noexcept;
 };
 }

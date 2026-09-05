@@ -48,6 +48,10 @@ DoorWaitDecision DoorWait::update(const DoorWaitFeedback& f) noexcept {
     // 'open' is fresh swept passage clearance, never a toggle-state guess.
     if(door.open) return finish(DoorWaitState::Clear,DoorWaitReason::None);
     if(state_==DoorWaitState::Waiting) return {state_,DoorWaitReason::None,true,false,{}};
+    if(f.passive && door.canTouch && !door.canUse) {
+        startedUs_=f.nowUs; doorId_=door.id; state_=DoorWaitState::Waiting;
+        return {state_,DoorWaitReason::None,true,false,{}};
+    }
     if(!door.canUse) return finish(DoorWaitState::Failed,DoorWaitReason::Unusable);
     MovementIntent intent; intent.view=f.useView; intent.use=ActionRequest::Press;
     if(!intent.view || !core::Motor::valid(intent) ||

@@ -97,7 +97,11 @@ nav::runtime::WorldQueryResult queryNavWorld(enginefuncs_t* engine, edict_t* ent
             }
             if(hit.pHit!=door) return r;
             const auto view=doorUseView(engine,entity,id,maxEntities);
-            r.door=DoorObservation{id,false,view.has_value(),view}; return r;
+            const bool touch=door->v.solid==SOLID_BSP && door->v.targetname==0 &&
+                !(static_cast<unsigned>(door->v.spawnflags)&((1U<<8)|(1U<<31)));
+            r.door=DoorObservation{id,false,view.has_value(),view,touch};
+            r.hull=HullObservation{hit.flFraction,value(hit.vecEndPos),value(hit.vecPlaneNormal),false};
+            return r;
         }
         if(q.kind==QueryKind::SweptHull) r.hull=HullObservation{hit.flFraction,value(hit.vecEndPos),value(hit.vecPlaneNormal),solid};
         else r.clearance=ClearanceObservation{!solid && hit.flFraction==1};

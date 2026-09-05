@@ -1,5 +1,8 @@
 # P3-03 Use-door host integration
 
+Subsequent [touch-door work](p3-03-touch-doors.md) adds contact-based activation.
+The remaining-touch statements below describe this historical Use-door boundary.
+
 Ordinary use-only `func_door` / `func_door_rotating` observations now connect
 DoorWait to Walk and the queued host movement path. This is offline evidence for
 Use doors. Touch-to-open doors, wall avoidance and narrow-passage control remain

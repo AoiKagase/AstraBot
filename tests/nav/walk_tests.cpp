@@ -76,7 +76,7 @@ struct World final : runtime::IWorldQueries {
 struct Trace { std::size_t step; local::WalkState state; local::PrimitiveEvent event; model::NavVector3 position; };
 struct DoorWorld final : runtime::IWorldQueries {
     World world;
-    bool open{}, stale{}, missingFloor{}, throws{};
+    bool open{}, stale{}, missingFloor{}, throws{}, touch{};
     std::uint64_t id{42};
     explicit DoorWorld(const std::vector<route_test::Area>& areas):world(areas) {}
     runtime::WorldQueryResult query(const runtime::QueryRequest& q) override {
@@ -86,6 +86,11 @@ struct DoorWorld final : runtime::IWorldQueries {
             if(throws) throw std::runtime_error("door unavailable");
             runtime::WorldQueryResult r; r.stamp=q.stamp; r.kind=q.kind; r.error=runtime::QueryError::None;
             r.door=runtime::DoorObservation{id,open,true,model::NavVector3{0,0,0}};
+            if(touch) {
+                r.door->canUse=false; r.door->canTouch=true; r.door->useView.reset();
+                r.hull=runtime::HullObservation{(83.96875f-q.start.x)/(q.end.x-q.start.x),
+                    {83.96875f,q.start.y,q.start.z},{-1,0,0},false};
+            }
             if(stale) ++r.stamp.ordinal;
             return r;
         }
@@ -131,6 +136,31 @@ void doors() {
         if(mode==7) assert(d.state==local::WalkState::Failed && d.doorReason==local::DoorWaitReason::Reblocked);
         else assert(d.state==local::WalkState::Running && d.intent.speed>0 && d.intent.use==local::ActionRequest::None);
     }
+}
+void touchAndReservedQueries() {
+    auto areas=zigzag(); Fixture f(areas,1,2); auto s=actor(); auto profile=limits;
+    profile.probe.maxQueries=21; profile.doorTimeoutUs=1000000; profile.touchTimeoutUs=3000000;
+    DoorWorld world(areas); world.touch=true; world.missingFloor=true;
+    local::Walk walk(binding(),f.corridor,{150,50,0},profile);
+    int contacts=0; bool arrived=false;
+    for(std::uint64_t tick=1;tick<200;++tick) {
+        s.tick={tick};
+        // Reserve ordinal 1 as though the host just guarded a queued contact.
+        runtime::QueryRequest guard{{s.agent,s.actor,s.map,s.tick,binding().routeGeneration,1},runtime::QueryKind::Door};
+        world.world.calls.push_back(guard);
+        const auto before=world.world.calls.size()-1;
+        const auto d=walk.update(s,*f.index,s.map,world,tick*40000,1);
+        assert(d.queries==world.world.calls.size()-before && d.queries<=21 && d.samples<=4);
+        assert(d.state==local::WalkState::Running || d.state==local::WalkState::Arrived);
+        assert(d.intent.use==local::ActionRequest::None);
+        if(d.contact) { assert(++contacts==1); s.position->x=83.96875f; world.open=true; }
+        else s.position->x+=static_cast<float>(d.intent.direction.x*d.intent.speed*0.040);
+        if(d.state==local::WalkState::Arrived) { arrived=true; break; }
+    }
+    assert(arrived && contacts==1);
+    s=actor(); DoorWorld empty(areas); local::Walk exhausted(binding(),f.corridor,{150,50,0},profile);
+    const auto d=exhausted.update(s,*f.index,s.map,empty,0,21);
+    assert(d.state==local::WalkState::Failed && d.probeReason==local::ProbeReason::BudgetExceeded && empty.world.calls.empty());
 }
 std::vector<Trace> simulate(const std::vector<route_test::Area>& areas, std::uint32_t start,
     std::uint32_t goalArea, model::NavVector3 from, model::NavVector3 goal, std::uint64_t frameUs) {
@@ -273,4 +303,4 @@ void invalidAndBudgets() {
     assert(sameHint.update(s,*same.index,s.map,hinted).reason==local::WalkReason::UnsupportedTraversal);
 }
 }
-int main() { arrivals(); stops(); measuredCompletion(); invalidAndBudgets(); doors(); }
+int main() { arrivals(); stops(); measuredCompletion(); invalidAndBudgets(); doors(); touchAndReservedQueries(); }

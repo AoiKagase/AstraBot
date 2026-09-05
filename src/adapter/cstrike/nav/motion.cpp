@@ -11,7 +11,7 @@
 #endif
 namespace astrabot::adapter::cstrike {
 namespace {
-constexpr nav::local::WalkLimits walkLimits{{21,4,48,16,18,18,64,4,18,0.7},160,1,1,3,1000000};
+constexpr nav::local::WalkLimits walkLimits{{21,4,48,16,18,18,64,4,18,0.7},160,1,1,3,1000000,3000000};
 std::uint64_t add(std::uint64_t a,std::uint64_t b) noexcept {
     const auto maximum=(std::numeric_limits<std::uint64_t>::max)();
     return b>maximum-a ? maximum:a+b;
@@ -63,7 +63,7 @@ void NavConsole::printMotion() noexcept {
     const auto target=d.target ? d.target->origin:nav::model::NavVector3{};
     char text[1280]{};
     std::snprintf(text,sizeof(text),
-        "walk actor=%u:%u map=%u route=%llu step=%zu tick=%llu state=%s reason=%u probe=%u event=%u motion_reason=%u corridor=%u transport=%u command_tick=%llu dispatch_tick=%llu age_us=%llu speed=%.6g direction=(%.6g,%.6g) target_present=%u target=(%.6g,%.6g,%.6g) support=%u queries=%u samples=%u step_probes=%u queued=%llu dispatched=%llu rejected=%llu missed=%llu history=%zu omitted=%llu edge=%u:%u command=(%.6g,%.6g,%u) door=%llu door_state=%u door_reason=%u use_checks=%llu",
+        "walk actor=%u:%u map=%u route=%llu step=%zu tick=%llu state=%s reason=%u probe=%u event=%u motion_reason=%u corridor=%u transport=%u command_tick=%llu dispatch_tick=%llu age_us=%llu speed=%.6g direction=(%.6g,%.6g) target_present=%u target=(%.6g,%.6g,%.6g) support=%u queries=%u samples=%u step_probes=%u queued=%llu dispatched=%llu rejected=%llu missed=%llu history=%zu omitted=%llu edge=%u:%u command=(%.6g,%.6g,%u) door=%llu door_state=%u door_reason=%u use_checks=%llu contact_pulse=%u contact_guards=%llu",
         unsigned(d.binding.actor.slot),unsigned(d.binding.actor.generation.value),unsigned(d.binding.map.value),
         static_cast<unsigned long long>(d.binding.routeGeneration),d.binding.step,static_cast<unsigned long long>(d.tick.value),
         walkState(d.state),unsigned(d.reason),unsigned(d.probeReason),unsigned(motionTrace_.event),unsigned(motionTrace_.reason),
@@ -79,7 +79,8 @@ void NavConsole::printMotion() noexcept {
         motionTrace_.selectedEdge ? unsigned(motionTrace_.selectedEdge->target.value):0U,
         double(motionTrace_.command.movement.forward),double(motionTrace_.command.movement.side),unsigned(motionTrace_.command.msec),
         static_cast<unsigned long long>(d.doorId),d.doorState ? unsigned(*d.doorState):0U,unsigned(d.doorReason),
-        static_cast<unsigned long long>(motionTrace_.useGuardChecks));
+        static_cast<unsigned long long>(motionTrace_.useGuardChecks),unsigned(d.contact.has_value()),
+        static_cast<unsigned long long>(motionTrace_.contactGuardQueries));
     line(text);
 }
 void NavConsole::clearPending() noexcept {
@@ -135,6 +136,7 @@ void NavConsole::startMotion(const nav::runtime::MovementSnapshot& s) noexcept {
 }
 void NavConsole::beforeDispatch(metamod::LifecycleCoordinator& owner) noexcept {
     observe(owner);
+    if(guardTick_!=owner.registry().currentTick()) { guardTick_=owner.registry().currentTick(); guardQueries_=0; }
     if(!pendingMotion_ || !movement_) return;
     const auto s=snapshot(owner);
     const auto& pending=*pendingMotion_;
@@ -150,7 +152,7 @@ void NavConsole::beforeDispatch(metamod::LifecycleCoordinator& owner) noexcept {
         const double speed=std::hypot(double(m.forward),double(m.side));
         const auto delta=movement_->frameDeltaUs();
         const auto msec=std::clamp(delta/1000+(delta%1000>=500 ? 1U:0U),std::uint64_t{1},std::uint64_t{255});
-        if(speed>double(*s.speedLimit)+0.001 || (speed>0 && (!pending.segment ||
+        if(speed>double(*s.speedLimit)+0.001 || (speed>0 && !pending.contact && (!pending.segment ||
            !segmentAllows(pending.segment->start,pending.segment->end,*s.position,speed*double(msec)/1000))))
             reason=MotionReason::Deviation;
     }
@@ -158,6 +160,49 @@ void NavConsole::beforeDispatch(metamod::LifecycleCoordinator& owner) noexcept {
         motionTrace_.commandTick=pending.tick; motionTrace_.dispatchTick=s.tick;
         clearPending(); if(pump_) pump_->submissionRejected();
         motionTrace_.rejected=add(motionTrace_.rejected,1); recordMotion(MotionEvent::Rejected,reason);
+        return;
+    }
+    if(pending.contact) {
+        const auto contact=*pending.contact; const auto queued=pending.tick;
+        const auto command=pending.command;
+        bool valid=false;
+        if(!guardQueries_) {
+            ++guardQueries_; motionTrace_.contactGuardQueries=add(motionTrace_.contactGuardQueries,1);
+            nav::runtime::QueryRequest q{{s.agent,s.actor,s.map,s.tick,pending.binding.routeGeneration,1},
+                nav::runtime::QueryKind::Door,*s.position,contact.end,s.hull,walkLimits.probe.navTolerance,contact.id};
+            inRequest_=true;
+            const auto result=queryNavWorld(engine_,owner.fakeClient().activeEntity(),index_.get(),q,
+                globals_ ? globals_->maxEntities:0);
+            inRequest_=false;
+            if(deferredInvalidation_) {
+                const auto why=*deferredInvalidation_; deferredInvalidation_.reset(); invalidate(why); return;
+            }
+            if(result.error==nav::runtime::QueryError::None && result.door && result.door->id==contact.id &&
+               result.door->canTouch && !result.door->open && result.hull && !result.hull->startSolid) {
+                const double dx=double(contact.end.x)-s.position->x,dy=double(contact.end.y)-s.position->y;
+                const auto& h=*result.hull;
+                const double length=std::hypot(dx,dy),distance=std::hypot(double(h.end.x)-s.position->x,double(h.end.y)-s.position->y);
+                const auto delta=movement_->frameDeltaUs();
+                const auto msec=std::clamp(delta/1000+(delta%1000>=500 ? 1U:0U),std::uint64_t{1},std::uint64_t{255});
+                const double speed=std::hypot(command.movement.forward,command.movement.side);
+                const double travel=speed*double(msec)/1000;
+                constexpr double radians=3.14159265358979323846/180;
+                const double yaw=command.view.yaw*radians;
+                const double vx=command.movement.forward*std::cos(yaw)+command.movement.side*std::sin(yaw);
+                const double vy=command.movement.forward*std::sin(yaw)-command.movement.side*std::cos(yaw);
+                valid=length>0 && length<=0.751 && distance<=0.125 && h.fraction>=0 && h.fraction<1 &&
+                    travel>=distance+0.001 && travel<=0.75 && command.buttons==0 && command.movement.up==0 &&
+                    std::abs(double(h.end.z)-s.position->z)<=0.1 && std::abs(double(contact.end.z)-s.position->z)<=0.1 &&
+                    std::abs((double(h.end.x)-s.position->x)*dy-(double(h.end.y)-s.position->y)*dx)/length<=0.01 &&
+                    std::abs(distance-length*h.fraction)<=0.02 && h.normal.x*dx/length+h.normal.y*dy/length<= -0.7 &&
+                    std::abs(h.normal.z)<=0.2 && speed>0 && (vx*dx+vy*dy)/(speed*length)>0.999;
+            }
+        }
+        if(!valid) {
+            motionTrace_.commandTick=queued; motionTrace_.dispatchTick=s.tick;
+            clearPending(); if(pump_) pump_->submissionRejected();
+            motionTrace_.rejected=add(motionTrace_.rejected,1); recordMotion(MotionEvent::Rejected,MotionReason::DoorChanged);
+        }
         return;
     }
     if((pending.command.buttons&static_cast<core::ButtonMask>(core::Button::Use))!=0) {
@@ -226,7 +271,8 @@ void NavConsole::moveFrame(metamod::LifecycleCoordinator& owner) noexcept {
     if(schedule.decisionDue) {
         queryingEntity_=owner.fakeClient().activeEntity(); inRequest_=true;
         const auto index=index_; // pins navigation across synchronous host reentry
-        const auto decision=walk_->update(s,*index,navigation_.map,*this,pump_->timeUs());
+        const auto reserved=guardTick_==s.tick ? guardQueries_:0;
+        const auto decision=walk_->update(s,*index,navigation_.map,*this,pump_->timeUs(),reserved);
         inRequest_=false; queryingEntity_=nullptr;
         if(deferredInvalidation_) {
             const auto reason=*deferredInvalidation_; deferredInvalidation_.reset(); invalidate(reason); return;
@@ -245,7 +291,9 @@ void NavConsole::moveFrame(metamod::LifecycleCoordinator& owner) noexcept {
 }
 void NavConsole::submitMotion(const nav::runtime::MovementSnapshot& s,metamod::LifecycleCoordinator& owner,
     const core::MovementIntent& intent,bool firstFrame,std::uint64_t age) noexcept {
-    const auto command=core::Motor::command(intent,{s.view->x,s.view->y,s.view->z},*s.speedLimit,s.elapsedUs,firstFrame);
+    const auto contact=firstFrame ? motionTrace_.decision.contact:std::nullopt;
+    const auto effective=motionTrace_.decision.contact && !firstFrame ? core::MovementIntent{}:intent;
+    const auto command=core::Motor::command(effective,{s.view->x,s.view->y,s.view->z},*s.speedLimit,s.elapsedUs,firstFrame);
     if(!command) {
         if(pump_) pump_->submissionRejected();
         motionTrace_.rejected=add(motionTrace_.rejected,1); recordMotion(MotionEvent::Rejected,MotionReason::MotorRejected); return;
@@ -256,7 +304,7 @@ void NavConsole::submitMotion(const nav::runtime::MovementSnapshot& s,metamod::L
     motionTrace_.transportError=result.error;
     if(result.queued()) {
         pendingMotion_=PendingMotion{motionTrace_.decision.binding,s.tick,nav::local::IntentPump::maxIntentAgeUs-age,
-            s,*command.command,segment_};
+            s,*command.command,segment_,contact};
         motionTrace_.queued=add(motionTrace_.queued,1); recordMotion(MotionEvent::Queued);
     } else {
         if(pump_) pump_->submissionRejected();
