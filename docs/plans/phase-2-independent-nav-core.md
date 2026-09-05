@@ -2,6 +2,11 @@
 
 ## Goal
 
+Status (2026-09-05): P2-01 through P2-08 completed and the Phase 2 offline gate
+passed. See [the evidence report](../reports/phase-2-offline-gate.md).
+This is not project-wide Finish; Linux/live validation remains deferred.
+P2-08 is delivered on its feature branch; merging it to main is separate.
+
 Without GoldSrc or a server process, load defensively parsed Counter-Strike
 `.nav` versions 1–5, expose immutable area/connection metadata, perform pure
 nearest-area/connectivity queries and deterministic A*, reject malformed input,

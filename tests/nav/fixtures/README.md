@@ -88,3 +88,30 @@ including link values, component costs and metrics against a serial result.
 Test-only thread-local allocation injection sweeps six composition allocation
 sites and four route sites (complete and opt-in partial). Prior graphs/routes
 remain unchanged and all failures lack a published value.
+
+# P2-08 reproducible evidence
+
+evidence/fixture.hpp independently writes ten minimal/full v1-v5 fixtures and
+records each wire-field span during encoding. Full files contain two original
+2-by-2 areas at (0,0,0) and (3,0,4), eight directional connections, two hiding
+spots and approaches, and two encounters/spots (v1/v2 encounter records are
+consumed and discarded). v5 has opaque Place bytes FF 41; v4/v5 BSP size is the
+synthetic value123. Static route1->2 costs5 in every full version; direction0
+wins the four equal-cost parallel edges. Minimal route1->1 costs0.
+
+evidence-manifest.json freezes all ten SHA-256/length pairs, metadata and route
+expectations. tools/verify-nav-evidence.ps1 exports these files under the selected
+build directory and checks hashes with tools/check-nav-manifest.ps1. No binaries,
+SDK source, map assets or real BSP fingerprints are committed.
+
+evidence/scene.hpp supplies original sloped/stacked patches for linear-query and
+Dijkstra comparisons, and 128/1024-area benchmark inputs. The oracle reads only
+these original descriptions, never production graph/index/projection data.
+The benchmark inputs use a separate 1MiB input /1024-area profile; fuzz retains
+its approved 64KiB /128-area profile. All nested total limits remain4096 and
+snapshot logical bytes remain4MiB.
+
+Fixed corruptions and seeded mutations are described in ../corpus/README.md.
+The Phase 2 gate report is docs/reports/phase-2-offline-gate.md.
+Real-file/pinned-server comparison was not performed: no lawfully usable real
+NAV and associated pinned-tool output was supplied.

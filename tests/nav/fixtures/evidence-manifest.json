@@ -1,0 +1,296 @@
+{
+  "schema": 1,
+  "provenance": "Independently authored synthetic NAV bytes; no Valve/ReGameDLL source or map assets.",
+  "generator": "tests/nav/evidence/fixture.hpp (v1), scene.hpp (v1)",
+  "fixtures": [
+    {
+      "name": "v1-full.nav",
+      "bytes": 312,
+      "sha256": "88282c9568658e2e611e83bfc1ba80ecb925a3fcf33cf1d5dfee18ecbc943ea6",
+      "version": 1,
+      "profile": "full",
+      "areas": 2,
+      "connections": 8,
+      "hiding": 2,
+      "approaches": 2,
+      "wireEncounters": 2,
+      "retainedEncounters": 0,
+      "wireEncounterSpots": 2,
+      "retainedEncounterSpots": 0,
+      "places": [],
+      "bspSize": null,
+      "expectedRoute": {
+        "areas": [
+          1,
+          2
+        ],
+        "total": 5,
+        "selectedStaticDirection": 0
+      }
+    },
+    {
+      "name": "v1-minimal.nav",
+      "bytes": 71,
+      "sha256": "b98de8d3b18492dafa297898dcc90b490b079a62f8b2b5435d637df7d6c0a701",
+      "version": 1,
+      "profile": "minimal",
+      "areas": 1,
+      "connections": 0,
+      "hiding": 0,
+      "approaches": 0,
+      "wireEncounters": 0,
+      "retainedEncounters": 0,
+      "wireEncounterSpots": 0,
+      "retainedEncounterSpots": 0,
+      "places": [],
+      "bspSize": null,
+      "expectedRoute": {
+        "areas": [
+          1
+        ],
+        "total": 0,
+        "selectedStaticDirection": null
+      }
+    },
+    {
+      "name": "v2-full.nav",
+      "bytes": 322,
+      "sha256": "1a9bc9702cb9adeb814e90a880ee950e1e75f3f8f7ad5c735e5b88a480b16844",
+      "version": 2,
+      "profile": "full",
+      "areas": 2,
+      "connections": 8,
+      "hiding": 2,
+      "approaches": 2,
+      "wireEncounters": 2,
+      "retainedEncounters": 0,
+      "wireEncounterSpots": 2,
+      "retainedEncounterSpots": 0,
+      "places": [],
+      "bspSize": null,
+      "expectedRoute": {
+        "areas": [
+          1,
+          2
+        ],
+        "total": 5,
+        "selectedStaticDirection": 0
+      }
+    },
+    {
+      "name": "v2-minimal.nav",
+      "bytes": 71,
+      "sha256": "f1f0927f0598c404315dcf7c160a83781cf4329e028437f6b2414adaa258bda5",
+      "version": 2,
+      "profile": "minimal",
+      "areas": 1,
+      "connections": 0,
+      "hiding": 0,
+      "approaches": 0,
+      "wireEncounters": 0,
+      "retainedEncounters": 0,
+      "wireEncounterSpots": 0,
+      "retainedEncounterSpots": 0,
+      "places": [],
+      "bspSize": null,
+      "expectedRoute": {
+        "areas": [
+          1
+        ],
+        "total": 0,
+        "selectedStaticDirection": null
+      }
+    },
+    {
+      "name": "v3-full.nav",
+      "bytes": 256,
+      "sha256": "aedd0b173d4917e3505d64cc6e0843c12e79e35e1ce2c6580bc9d1cc2c88e54d",
+      "version": 3,
+      "profile": "full",
+      "areas": 2,
+      "connections": 8,
+      "hiding": 2,
+      "approaches": 2,
+      "wireEncounters": 2,
+      "retainedEncounters": 2,
+      "wireEncounterSpots": 2,
+      "retainedEncounterSpots": 2,
+      "places": [],
+      "bspSize": null,
+      "expectedRoute": {
+        "areas": [
+          1,
+          2
+        ],
+        "total": 5,
+        "selectedStaticDirection": 0
+      }
+    },
+    {
+      "name": "v3-minimal.nav",
+      "bytes": 71,
+      "sha256": "ff6fb79c6f5595da127df9f1cb502711143df5b290df633fa08dee5442ead635",
+      "version": 3,
+      "profile": "minimal",
+      "areas": 1,
+      "connections": 0,
+      "hiding": 0,
+      "approaches": 0,
+      "wireEncounters": 0,
+      "retainedEncounters": 0,
+      "wireEncounterSpots": 0,
+      "retainedEncounterSpots": 0,
+      "places": [],
+      "bspSize": null,
+      "expectedRoute": {
+        "areas": [
+          1
+        ],
+        "total": 0,
+        "selectedStaticDirection": null
+      }
+    },
+    {
+      "name": "v4-full.nav",
+      "bytes": 260,
+      "sha256": "89cf8da1110503b558bb45b4595954f960ff0943beb065a403633bda30c29348",
+      "version": 4,
+      "profile": "full",
+      "areas": 2,
+      "connections": 8,
+      "hiding": 2,
+      "approaches": 2,
+      "wireEncounters": 2,
+      "retainedEncounters": 2,
+      "wireEncounterSpots": 2,
+      "retainedEncounterSpots": 2,
+      "places": [],
+      "bspSize": 123,
+      "expectedRoute": {
+        "areas": [
+          1,
+          2
+        ],
+        "total": 5,
+        "selectedStaticDirection": 0
+      }
+    },
+    {
+      "name": "v4-minimal.nav",
+      "bytes": 75,
+      "sha256": "93e0c1d5368fc1aa64f02c797af8765973d1dca28b2bc70b57a64deb17644e93",
+      "version": 4,
+      "profile": "minimal",
+      "areas": 1,
+      "connections": 0,
+      "hiding": 0,
+      "approaches": 0,
+      "wireEncounters": 0,
+      "retainedEncounters": 0,
+      "wireEncounterSpots": 0,
+      "retainedEncounterSpots": 0,
+      "places": [],
+      "bspSize": 123,
+      "expectedRoute": {
+        "areas": [
+          1
+        ],
+        "total": 0,
+        "selectedStaticDirection": null
+      }
+    },
+    {
+      "name": "v5-full.nav",
+      "bytes": 271,
+      "sha256": "b359e2d3073abb95d02a545070acaed7440d25defcdc1324493d97ee2f519f3d",
+      "version": 5,
+      "profile": "full",
+      "areas": 2,
+      "connections": 8,
+      "hiding": 2,
+      "approaches": 2,
+      "wireEncounters": 2,
+      "retainedEncounters": 2,
+      "wireEncounterSpots": 2,
+      "retainedEncounterSpots": 2,
+      "places": [
+        "ff41"
+      ],
+      "bspSize": 123,
+      "expectedRoute": {
+        "areas": [
+          1,
+          2
+        ],
+        "total": 5,
+        "selectedStaticDirection": 0
+      }
+    },
+    {
+      "name": "v5-minimal.nav",
+      "bytes": 79,
+      "sha256": "88547db1214326da1034e2fdccee8796ec4cb1d9f2da0045a23bc0f867d7a044",
+      "version": 5,
+      "profile": "minimal",
+      "areas": 1,
+      "connections": 0,
+      "hiding": 0,
+      "approaches": 0,
+      "wireEncounters": 0,
+      "retainedEncounters": 0,
+      "wireEncounterSpots": 0,
+      "retainedEncounterSpots": 0,
+      "places": [],
+      "bspSize": 123,
+      "expectedRoute": {
+        "areas": [
+          1
+        ],
+        "total": 0,
+        "selectedStaticDirection": null
+      }
+    }
+  ],
+  "benchmarks": [
+    {
+      "name": "scene-1024.nav",
+      "bytes": 69964,
+      "sha256": "a938156df3af2ad40e8b41bd84af04747031652ad2108a9fd65783dc37cb23f7",
+      "version": 1,
+      "areas": 1024,
+      "connections": 2384,
+      "generator": "scene(n): reverse wire order, 2x2 patches, directed +1/+4/backward-on-multiples-of-3",
+      "route": {
+        "start": 1,
+        "goal": 1024,
+        "expectedStatus": "Complete"
+      }
+    },
+    {
+      "name": "scene-128.nav",
+      "bytes": 8736,
+      "sha256": "489f72c602405824c9f74cf7ac52423412c08527cb42da1d48dc1e6c3ffe645e",
+      "version": 1,
+      "areas": 128,
+      "connections": 293,
+      "generator": "scene(n): reverse wire order, 2x2 patches, directed +1/+4/backward-on-multiples-of-3",
+      "route": {
+        "start": 1,
+        "goal": 128,
+        "expectedStatus": "Complete"
+      }
+    }
+  ],
+  "corruption": {
+    "prefixCases": 1788,
+    "rules": "Every scalar/string prefix; every float NaN/+Inf; count caps; identity/references; directions; Place strings/index; trailing; boundaries and decode/semantic/trailing precedence."
+  },
+  "fuzz": {
+    "seed": "0xA208",
+    "prng": "xorshift32 (13,17,5)",
+    "caseSeed": "0xA208 xor ((index+1)*0x9E3779B9 modulo 2^32)",
+    "smoke": 10000,
+    "long": 100000
+  },
+  "realNavComparison": "Not performed; no lawful real NAV plus pinned-tool output provided."
+}
