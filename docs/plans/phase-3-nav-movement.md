@@ -15,7 +15,8 @@ control of a human implicitly; ambiguous or invalid actor selection fails.
 
 Follow [the architecture contract](../architecture.md#phase-3-local-navigation-decision-2026-09-05)
 and [real NAV protocol](../research/real-nav-compatibility.md).
-**Finish is not declared here.** No Linux or live checks run in this session.
+**Finish is not declared here.** Linux x86 offline builds/tests run before
+Finish; real-device/live checks remain post-Finish.
 The old plan's live-only Phase 3 completion conflicts with AGENTS.md's Finish
 gate: distinguish implementation/applicable offline verification complete from
 live accepted. All project plans must complete implementation, applicable
@@ -101,8 +102,10 @@ Unit/simulation passes never substitute for live observations.
   - [x] Derive directed overlap portals, hull shrink, support heights, external
     entry/exit and deterministic constrained look-ahead.
     See [corridor evidence](../reports/p3-02-corridor.md); world probes remain required.
-  - [ ] Add primitive lifecycle/dispatch skeleton retaining selected link identity;
+  - [x] Add primitive lifecycle/dispatch skeleton retaining selected link identity;
     unknown kinds and unsupported Drop fail explicitly.
+    See [lifecycle evidence](../reports/p3-02-corridor.md); motion controllers and
+    session/host integration belong to subsequent slices.
 - **Tests:** straight/L/zigzag/sloped/unequal/reversed/degenerate edges, no overlap,
   narrow clearance, jitter and parallel edges; enter once, terminal once, abort.
 - **Live validation:** post-Finish inspect portals/targets against geometry.
@@ -299,5 +302,7 @@ complete. Dust/dust2 load/query/route comparisons pass after the zero-ID and
 nullable-Approach correction. Compatibility is partially validated, with its
 remaining rows explicitly recorded. The portable session slice is also implemented.
 Console goto/status/cancel integration also has offline adapter evidence.
-Next is the existing P3-02 corridor/portal slice. Real compatibility remains
+P3-02 corridor/portals and primitive lifecycle now have Windows/Linux x86 offline
+evidence. Next is P3-03 bounded grounded-area/clearance queries, then Walk/motor.
+Real compatibility remains
 partial; no new numbering or Finish declaration.

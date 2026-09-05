@@ -100,6 +100,7 @@ if(MSVC)
 endif()
 
 add_library(astrabot_nav STATIC
+    src/nav/local/primitive.cpp
     src/nav/corridor/corridor.cpp
     src/debug/nav_command.cpp
     src/nav/runtime/route_session.cpp
@@ -311,6 +312,11 @@ if(ASTRABOT_BUILD_TESTS)
     file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/long-fuzz/CTestTestfile.cmake"
         CONTENT "add_test(astrabot.nav.fuzz.long \"$<TARGET_FILE:astrabot_nav_fuzz_tests>\" --cases 100000)\nset_tests_properties(astrabot.nav.fuzz.long PROPERTIES TIMEOUT 600)\n")
     if(NOT ASTRABOT_NAV_ASAN)
+    add_executable(astrabot_nav_primitive_tests tests/nav/primitive_tests.cpp)
+    target_link_libraries(astrabot_nav_primitive_tests PRIVATE astrabot_nav)
+    astrabot_enable_warnings(astrabot_nav_primitive_tests)
+    add_test(NAME astrabot.nav.primitive COMMAND astrabot_nav_primitive_tests)
+    set_tests_properties(astrabot.nav.primitive PROPERTIES TIMEOUT 30)
     add_executable(astrabot_nav_corridor_tests tests/nav/corridor_tests.cpp)
     target_link_libraries(astrabot_nav_corridor_tests PRIVATE astrabot_nav)
     astrabot_enable_warnings(astrabot_nav_corridor_tests)

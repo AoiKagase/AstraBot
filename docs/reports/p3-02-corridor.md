@@ -33,4 +33,34 @@ jitter/replay, same-area exhaustion, external ownership and parallel identity.
 
 No adapter or movement commands, real input writes, live server or Finish
 decision. P3-01 real-file compatibility remains partially validated. Hosted CI
-for this branch is not yet run. The primitive lifecycle slice follows separately.
+for this branch is not yet run.
+
+## Primitive lifecycle slice (2026-09-06)
+
+Implemented `nav/local/primitive.*` as one value-owned instance per transition.
+Enter is accepted once; completion/failure/abort emits exactly one terminal
+event. Existing Walk/Crouch/Jump/Ladder tags are retained; unknown tags and Drop
+produce explicit UnsupportedTraversal failures. This is lifecycle dispatch,
+not implementation of those motion controllers.
+
+Updates are bound to agent/player generation/map/route generation/step and a
+strictly later tick. Rejected updates and all terminal results return neutral
+intent, clearing action requests. Running feedback validates finite direction,
+speed [0,400], lateral correction [-1,1], optional view and action vocabulary.
+The future motor still clamps to observed speed and command constraints.
+Completion needs trusted controller feedback with verified selected-target
+support. These values do not perform world queries or establish live arrival.
+The session owner must abort on invalidation and create the next lifecycle.
+
+Tests cover enter/terminal once, duplicate/stale updates, actor/map/route/step
+identity, abort, missing/wrong support, controller failure, unknown/Drop tags,
+external link ownership, invalid intents, and exact two-pass corridor-to-
+lifecycle/cursor replay. Final Windows x86 Debug /W4 /WX: 22/22 CTest plus
+fixture/manifest verification. WSL Debian 13 GCC 14.2 -m32 Debug warnings-as-
+errors: 21/21. Production changes are SDK-free Nav modules only; Core command
+types/constants are consumed as headers without adding a reverse dependency.
+
+P3-02's two implementation/offline slices are complete. P3-03 owns wiring into
+RouteSession/host, world probes, Walk, scheduling and motor commands. No runtime
+motion, adapter change, live acceptance, real compatibility upgrade or Finish
+is claimed. Hosted CI and main integration for this branch remain pending.

@@ -1,22 +1,15 @@
 # State
 
-Status: in_progress
-Active: P3-02 corridor/portals and primitive lifecycle; codex/p302-corridor.
-Scope: portable x86 only; no adapter/motor/live execution. Use existing P3 plan.
-Tests first: corridor geometry, selected-edge identity, bounds, replay and cursor.
-Next: implement corridor, Windows/Linux tests, commit; then lifecycle slice.
-
-Previous status: complete
-Task: P3-01 console goto/status/cancel slice (no movement)
-Branch: codex/p301-nav-console, base main 03ee7d9 (integration complete).
-Plan: docs/plans/phase-3-nav-movement.md, existing P3-01 console checklist.
-Implemented: explicit bounded NAV load, managed actor selection,
-ground trace plus containing query, RouteSession lifecycle, bounded console trace.
-Portable20/20 and adapter24/24 tests pass on x86; Release six exports verified.
-Core/Nav STL debug ABI aligned; SDK macro collisions isolated.
-User approved six exports including GiveFnptrsToDll. Bootstrap table used for
-Metamod-tracked registration; incorrect hook-table registration is regression-tested.
-Report: docs/reports/p3-01-nav-console.md.
-Next: P3-02 corridor/portals. Real NAV provenance/detail acceptance remains partial.
-Main baseline x86 verification passed. FocalSpan queried in this worktree.
-No subagents, Linux, live server, real input writes or Finish.
+Status: complete
+Task: P3-02 corridor/portals and primitive lifecycle (two offline slices).
+Branch: codex/p302-corridor, base main c259bed. Not merged or pushed.
+Plan: docs/plans/phase-3-nav-movement.md, existing P3-02 checklists.
+Implemented: immutable selected-edge portals, hull shrink, per-side support,
+bounded constrained look-ahead/cursor; value-owned primitive enter/update/abort,
+exactly-once outcomes, generation/tick validation, neutral terminal intents.
+Verification: Windows x86 Debug 22/22 plus fixture/manifest checks;
+WSL Debian 13 GCC14 -m32 Debug 21/21. Warnings-as-errors on both.
+Report: docs/reports/p3-02-corridor.md. Corridor commit: 8dcffd9.
+Next: P3-03 grounded/clearance queries, Walk/motor and host integration.
+No subagents, real input writes, adapter change, live server or Finish.
+Real NAV provenance/detail acceptance remains partial; hosted branch CI pending.
