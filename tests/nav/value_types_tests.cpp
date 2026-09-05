@@ -3,6 +3,7 @@
 
 #include "nav/diagnostics/error.hpp"
 #include "nav/model/value_types.hpp"
+#include "nav/model/connection.hpp"
 
 #include <cassert>
 #include <limits>
@@ -84,6 +85,20 @@ int main() {
         std::make_unique<int>(42));
     assert(owned && **owned.value == 42);
     testNavAreaIdValues();
+    using namespace astrabot::nav::model;
+    constexpr NavConnection defaultEdge{NavAreaId{42U}};
+    static_assert(defaultEdge.traversal == NavTraversalKind::Walk);
+    assert(defaultEdge.target == NavAreaId{42U});
+    for (const auto kind : {NavTraversalKind::Walk, NavTraversalKind::Crouch,
+                            NavTraversalKind::Jump, NavTraversalKind::Ladder,
+                            NavTraversalKind::Drop}) {
+        const NavConnection edge{NavAreaId{43U}, kind};
+        assert(isKnownTraversalKind(edge.traversal));
+        assert(edge.traversal == kind && edge.target == NavAreaId{43U});
+    }
+    for (unsigned value = 5U; value <= 255U; ++value) {
+        assert(!isKnownTraversalKind(static_cast<NavTraversalKind>(value)));
+    }
     testFiniteGeometry();
     testReadResultInvariants();
     return 0;

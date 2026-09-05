@@ -102,6 +102,13 @@ tests/nav/corpus/*        malformed mutations and fuzz seeds
 
 ### P2-06 — Connectivity and deterministic A*
 
+Pre-A* connection contract: cardinal buckets now hold `NavConnection` values
+(`target`, `traversal`) rather than bare IDs. See
+[the traversal contract](../superpowers/specs/2026-09-05-pre-astar-traversal-design.md).
+Search must preserve the chosen directed edge (including its source area and
+cardinal direction), not just a parent area ID, and expose that edge to its pure
+cost policy and route result. Unknown traversal kinds must fail closed.
+
 - **Goal:** return an observable area corridor and cost evidence.
 - **Files/modules:** graph query, A* search record, route/cost result.
 - **Implementation outline:** query-local open/closed/parent/g/f state, stable
@@ -116,6 +123,12 @@ tests/nav/corpus/*        malformed mutations and fuzz seeds
   epsilon and stable tie order in tests.
 
 ### P2-07 — Traversal enrichment and synthetic ladder route
+
+Keep enrichment separate from file-derived cardinal connections. Validate
+`isKnownTraversalKind` when accepting supplied links; reject unsupported kinds
+without publishing a partial graph. Do not cast raw area attributes or approach
+traversal bytes to the runtime enum. Preserve selected-link identity/provenance
+when composing routes; do not merge distinct links merely by endpoint pair.
 
 - **Goal:** prove non-file traversal data composes without GameDLL types.
 - **Files/modules:** `nav/enrichment/traversal_link`, snapshot composition.

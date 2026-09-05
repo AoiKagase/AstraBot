@@ -4,6 +4,7 @@
 #pragma once
 
 #include "nav/model/value_types.hpp"
+#include "nav/model/connection.hpp"
 
 #include <array>
 #include <cstdint>
@@ -50,7 +51,7 @@ struct NavAreaRecord final {
     NavAreaId id{};
     std::uint8_t attributes{0};
     NavExtent extent{};
-    std::array<std::vector<NavAreaId>, 4> connections{};
+    std::array<std::vector<NavConnection>, 4> connections{};
     std::vector<NavHidingSpot> hidingSpots{};
     std::vector<NavApproachRecord> approaches{};
     std::vector<NavEncounterRecord> encounters{};

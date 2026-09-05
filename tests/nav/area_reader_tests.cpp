@@ -190,13 +190,16 @@ void testV1AreaBaseAndConnections() {
     assert(area.extent.northEastZ == 7.0F);
     assert(area.extent.southWestZ == 8.0F);
     assert(area.connections[0].size() == 1U);
-    assert(area.connections[0][0] == NavAreaId{10U});
+    assert(area.connections[0][0].target == NavAreaId{10U});
     assert(area.connections[1].size() == 2U);
-    assert(area.connections[1][0] == NavAreaId{20U});
-    assert(area.connections[1][1] == NavAreaId{21U});
+    assert(area.connections[1][0].target == NavAreaId{20U});
+    assert(area.connections[1][1].target == NavAreaId{21U});
     assert(area.connections[2].empty());
     assert(area.connections[3].size() == 1U);
-    assert(area.connections[3][0] == NavAreaId{40U});
+    assert(area.connections[3][0].target == NavAreaId{40U});
+    for (const auto& direction : area.connections)
+        for (const auto& edge : direction)
+            assert(edge.traversal == astrabot::nav::model::NavTraversalKind::Walk);
 }
 
 void testV1AreaBaseTruncation() {

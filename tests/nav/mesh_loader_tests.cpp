@@ -93,6 +93,55 @@ void bad(const std::vector<std::uint8_t> &b, diagnostics::NavErrorKind k, std::u
     assert(r.error.field == field);
 }
 
+void traversalDecodeAndBudget() {
+    using K = diagnostics::NavErrorKind;
+    for (unsigned version = 1; version <= 5; ++version) {
+        auto b = fixture(version);
+        const std::size_t header = version == 5 ? 22U : version == 4 ? 16U : 12U;
+        const auto areaBytes = b.size() - header;
+        // One directed connection in each cardinal bucket, all to area 8.
+        for (std::size_t direction = 4; direction-- > 0;) {
+            const auto count = header + 37U + direction * 4U;
+            set(b, count, 1);
+            b.insert(b.begin() + static_cast<std::ptrdiff_t>(count + 4U), {8, 0, 0, 0});
+        }
+        const auto secondStart = b.size();
+        auto second = fixture(version);
+        b.insert(b.end(), second.end() - static_cast<std::ptrdiff_t>(areaBytes), second.end());
+        set(b, header - 4U, 2);
+        set(b, secondStart, 8);
+        auto l = limits();
+        l.maxSnapshotBytes = sizeof(model::NavMeshSnapshot) + 2 * sizeof(model::NavAreaRecord) +
+                             4 * sizeof(model::NavConnection);
+        if (version == 5)
+            l.maxSnapshotBytes += sizeof(std::string) + 2;
+        auto result = load(b, l);
+        assert(result);
+        const auto& areas = (*result.value)->areas();
+        for (const auto& direction : areas[0].connections) {
+            assert(direction.size() == 1);
+            assert(direction[0].target == model::NavAreaId{8});
+            assert(direction[0].traversal == model::NavTraversalKind::Walk);
+        }
+        for (const auto& direction : areas[1].connections)
+            assert(direction.empty()); // No inferred reverse edges.
+        assert(areas[0].attributes == 0xFF); // Raw bytes do not override Walk.
+        --l.maxSnapshotBytes;
+        auto rejected = load(b, l);
+        assert(!rejected && !rejected.value && rejected.error.kind == K::CountLimitExceeded);
+        bool success = false;
+        for (std::size_t n = 0; n < 256; ++n) {
+            failAfter = n;
+            auto attempt = load(b);
+            failAfter = std::numeric_limits<std::size_t>::max();
+            if (attempt) { success = true; break; }
+            assert(!attempt.value && attempt.error.kind == K::AllocationFailure);
+        }
+        assert(success);
+        assert(areas[0].connections[0][0].target == model::NavAreaId{8});
+    }
+}
+
 void tacticalAndConnections() {
     using K = diagnostics::NavErrorKind;
     using F = diagnostics::NavField;
@@ -329,6 +378,7 @@ int main() {
     l.areas.maxAreas = 0;
     assert(load(b, l).error.kind == K::CountLimitExceeded);
     assert(io::NavMeshLoader::load({nullptr, 1}, limits()).error.kind == K::InvalidInput);
+    traversalDecodeAndBudget();
     tacticalAndConnections();
     legacyAndLimits();
 }

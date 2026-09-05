@@ -43,7 +43,7 @@ NavError DecodeContext::observe(std::size_t offset, NavRecord record, NavField f
         width = 1;
         break;
     case NavField::ConnectionCount:
-        width = sizeof(model::NavAreaId);
+        width = sizeof(model::NavConnection);
         break;
     case NavField::HidingSpotCount:
         width = sizeof(model::NavHidingSpot);

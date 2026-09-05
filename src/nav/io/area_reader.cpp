@@ -156,7 +156,8 @@ ReadResult<NavAreaBlock> NavAreaReader::readTracked(
                     if (!connectionId) {
                         return ReadResult<NavAreaBlock>::failure(connectionId.error);
                     }
-                    area.connections[direction].push_back(model::NavAreaId{*connectionId.value});
+                    area.connections[direction].push_back(
+                        model::NavConnection{model::NavAreaId{*connectionId.value}});
                 }
             }
 
