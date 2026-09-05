@@ -12,7 +12,8 @@
 #endif
 namespace astrabot::adapter::cstrike {
 namespace {
-constexpr nav::local::WalkLimits walkLimits{{21,4,48,16,18,18,64,4,18,0.7},160,1,1,3,1000000,3000000,12,8,40,25,{120000,400000,3000000}};
+constexpr nav::local::WalkLimits walkLimits{{21,4,48,16,18,18,64,4,18,0.7},160,1,1,3,1000000,3000000,12,8,40,25,{120000,400000,3000000},
+    {{{-16,-16,-36},{16,16,36}},{{-16,-16,-18},{16,16,18}},1000000}};
 std::uint64_t add(std::uint64_t a,std::uint64_t b) noexcept {
     const auto maximum=(std::numeric_limits<std::uint64_t>::max)();
     return b>maximum-a ? maximum:a+b;
@@ -90,6 +91,12 @@ void NavConsole::printMotion() noexcept {
         d.blocker && d.blocker->player ? unsigned(d.blocker->player->slot):0U,
         d.blocker && d.blocker->player ? unsigned(d.blocker->player->generation.value):0U);
     line(text);
+    if(d.posture || d.constraintReason!=nav::local::ConstraintReason::None) {
+        char posture[128]{};
+        std::snprintf(posture,sizeof(posture),"walk posture_present=%u posture=%u posture_reason=%u constraint_reason=%u duck=%u",
+            unsigned(d.posture.has_value()),d.posture ? unsigned(*d.posture):0U,unsigned(d.postureReason),unsigned(d.constraintReason),unsigned(d.intent.duck));
+        line(posture);
+    }
 }
 void NavConsole::clearPending() noexcept {
     if(current_->pendingMotion_ && movement_)
@@ -97,10 +104,12 @@ void NavConsole::clearPending() noexcept {
     current_->pendingMotion_.reset();
 }
 void NavConsole::stopMotion() noexcept {
+    current_->neutralDuck_=current_->motionTrace_.decision.intent.duck==core::ActionRequest::Hold;
     if(current_->walk_ || current_->pendingMotion_) current_->neutralBinding_=current_->motionTrace_.decision.binding;
     clearPending();
     if(current_->walk_ && current_->walk_->state()==nav::local::WalkState::Running) {
         current_->motionTrace_.decision=current_->walk_->abort(); recordMotion(MotionEvent::Cancelled,MotionReason::Cancelled);
+        current_->neutralDuck_=current_->motionTrace_.decision.intent.duck==core::ActionRequest::Hold;
     }
     current_->walk_.reset(); current_->pump_.reset(); current_->segment_.reset(); current_->intentWallAgeUs_=0;
 }
@@ -169,6 +178,23 @@ void NavConsole::beforeDispatch(metamod::LifecycleCoordinator& owner) noexcept {
         clearPending(); if(current_->pump_) current_->pump_->submissionRejected();
         current_->motionTrace_.rejected=add(current_->motionTrace_.rejected,1); recordMotion(MotionEvent::Rejected,reason);
         return;
+    }
+    if(s.ducked==true && (pending.command.buttons&static_cast<core::ButtonMask>(core::Button::Duck))==0) {
+        const auto queued=pending.tick;
+        auto center=*s.position;
+        center.z+=s.hull->minimum.z-walkLimits.crouch.standing.minimum.z;
+        const nav::runtime::QueryRequest q{{s.agent,s.actor,s.map,s.tick,pending.binding.routeGeneration,++current_->guardQueries_},
+            nav::runtime::QueryKind::Clearance,center,center,walkLimits.crouch.standing};
+        inRequest_=true;
+        const auto result=queryNavWorld(engine_,owner.entityFor(current_->actor),index_.get(),q,globals_ ? globals_->maxEntities:0);
+        inRequest_=false;
+        if(deferredInvalidation_) { (void)applyDeferredInvalidation(); return; }
+        if(result.error!=nav::runtime::QueryError::None || !result.clearance || !result.clearance->clear) {
+            current_->motionTrace_.commandTick=queued; current_->motionTrace_.dispatchTick=s.tick;
+            clearPending(); if(current_->pump_) current_->pump_->submissionRejected();
+            current_->motionTrace_.rejected=add(current_->motionTrace_.rejected,1);
+            recordMotion(MotionEvent::Rejected,MotionReason::PostureChanged); return;
+        }
     }
     if(pending.contact) {
         const auto contact=*pending.contact; const auto queued=pending.tick;
@@ -272,7 +298,9 @@ void NavConsole::moveFrame(metamod::LifecycleCoordinator& owner) noexcept {
         }
         if(!s.elapsedUs || !s.tick.isAfter(current_->motionTrace_.commandTick)) return;
         current_->motionTrace_.decision.binding=*current_->neutralBinding_; current_->neutralBinding_.reset();
-        submitMotion(s,owner,{},true,0); return;
+        core::MovementIntent neutral;
+        if(current_->neutralDuck_ || s.ducked==true) neutral.duck=core::ActionRequest::Hold;
+        submitMotion(s,owner,neutral,true,0); return;
     }
     if(inRequest_ || !current_->walk_ || !current_->pump_ || !movement_ || !current_->session_ || !current_->session_->executable() ||
        current_->walk_->state()!=nav::local::WalkState::Running) return;
@@ -318,7 +346,10 @@ void NavConsole::moveFrame(metamod::LifecycleCoordinator& owner) noexcept {
 void NavConsole::submitMotion(const nav::runtime::MovementSnapshot& s,metamod::LifecycleCoordinator& owner,
     const core::MovementIntent& intent,bool firstFrame,std::uint64_t age) noexcept {
     const auto contact=firstFrame ? current_->motionTrace_.decision.contact:std::nullopt;
-    const auto effective=current_->motionTrace_.decision.contact && !firstFrame ? core::MovementIntent{}:intent;
+    auto effective=current_->motionTrace_.decision.contact && !firstFrame ? core::MovementIntent{}:intent;
+    if(!firstFrame && effective.duck==core::ActionRequest::Release)
+        effective.duck=s.ducked==true ? core::ActionRequest::Hold:core::ActionRequest::None;
+    if(s.ducked==true && effective.duck==core::ActionRequest::None) effective.duck=core::ActionRequest::Hold;
     const auto command=core::Motor::command(effective,{s.view->x,s.view->y,s.view->z},*s.speedLimit,s.elapsedUs,firstFrame);
     if(!command) {
         if(current_->pump_) current_->pump_->submissionRejected();

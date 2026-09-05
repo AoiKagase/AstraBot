@@ -480,6 +480,15 @@ point, takeoff/landing region, required speed and facing. Populate only facts
 needed and verified for the supported primitive. A future GapJump state machine
 can use those constraints without changing A* or treating a link as a jump button.
 
+Crouch now gates Walk before translation using observed duck/hull state, then
+uses the same measured floor, swept hull and supported portal advancement.
+Source/target crouch hints hold the posture across the boundary; a clear next
+area releases only after a fresh standing-hull check and observed standing.
+The host rechecks headroom before dispatching release. Cached intents and safe
+stops retain duck while the actor is ducked; a neutral stop means zero movement,
+not an unsafe forced stand under a ceiling. Arrival in a crouch-required goal
+retains duck. See [crouch integration evidence](reports/p3-05-crouch-walk.md).
+
 Ladder links reuse `sourceId/generation/linkId`, direction, entry/exit and BSP
 fingerprint. P3-06 adapter discovery owns geometry/facing/contact facts; local
 ladder state owns climb/exit/abort. Re-acquire requires a fresh same-generation

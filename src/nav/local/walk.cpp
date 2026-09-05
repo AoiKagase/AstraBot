@@ -115,7 +115,9 @@ WalkDecision Walk::abort() noexcept {
     WalkDecision out; out.binding=binding_; out.binding.step=cursor_.index(); out.tick=tick_;
     out.state=state_; out.reason=reason_;
     if(state_!=WalkState::Running) return out;
-    out.accepted=true; return finish(out,WalkState::Aborted,WalkReason::Cancelled);
+    out.accepted=true; out=finish(out,WalkState::Aborted,WalkReason::Cancelled);
+    if(crouch_) out.intent.duck=crouch_->abort().intent.duck;
+    return out;
 }
 WalkDecision Walk::updateDoor(WalkDecision out, const runtime::MovementSnapshot& s,
     const query::NavSpatialIndex& index, core::MapGeneration indexMap,
@@ -204,6 +206,13 @@ WalkDecision Walk::approachDoor(WalkDecision out, const runtime::MovementSnapsho
 WalkDecision Walk::update(const runtime::MovementSnapshot& s, const query::NavSpatialIndex& index,
                          core::MapGeneration indexMap, runtime::IWorldQueries& port, std::uint64_t nowUs,
                          std::uint32_t reservedQueries) noexcept {
+    auto out=updateMotion(s,index,indexMap,port,nowUs,reservedQueries);
+    out.intent.duck=postureAction_; out.posture=posture_; out.postureReason=postureReason_;
+    if((!out.accepted || out.terminalEvent) && s.ducked==true) out.intent.duck=ActionRequest::Hold;
+    return out;
+}
+WalkDecision Walk::updateMotion(const runtime::MovementSnapshot& s,const query::NavSpatialIndex& index,
+    core::MapGeneration indexMap,runtime::IWorldQueries& port,std::uint64_t nowUs,std::uint32_t reservedQueries) noexcept {
     WalkDecision out; out.binding=binding_; out.binding.step=cursor_.index(); out.tick=s.tick;
     out.state=state_; out.reason=reason_;
     if(state_!=WalkState::Running) return out;
@@ -250,8 +259,24 @@ WalkDecision Walk::update(const runtime::MovementSnapshot& s, const query::NavSp
     const auto goalMatch=index.containing(goal_,limits_.probe.navTolerance);
     if(!goalMatch || !*goalMatch.value || (**goalMatch.value).areaId!=corridor_->goal())
         return finish(out,WalkState::Failed,WalkReason::InvalidGoal);
-    if(corridor_->transitions().empty() && corridor_->startAttributes()!=0)
+    auto hints=constraints(model::NavTraversalKind::Walk,corridor_->startAttributes(),0);
+    if(!cursor_.exhausted()) {
+        const auto& t=corridor_->transitions()[cursor_.index()];
+        hints=constraints(t.edge.traversal,t.sourceAttributes,t.targetAttributes);
+        if(t.edge.external) hints.reason=ConstraintReason::UnsupportedTraversal;
+    } else if(!corridor_->transitions().empty())
+        hints=constraints(model::NavTraversalKind::Walk,0,corridor_->transitions().back().targetAttributes);
+    out.constraintReason=hints.reason;
+    if(!hints || hints.kind==model::NavTraversalKind::Jump ||
+       (hints.kind==model::NavTraversalKind::Crouch && !limits_.crouch.transitionTimeoutUs))
         return finish(out,WalkState::Failed,WalkReason::UnsupportedTraversal);
+    if(limits_.crouch.transitionTimeoutUs) {
+        if(!crouch_) crouch_.emplace(binding_,limits_.crouch);
+        const auto pose=crouch_->update(s,hints.kind==model::NavTraversalKind::Crouch,nowUs,queries,out.queries,limits_.probe.maxQueries);
+        out.queries=queries.issued; posture_=pose.state; postureReason_=pose.reason; postureAction_=pose.intent.duck;
+        if(pose.terminalEvent) return finish(out,WalkState::Failed,WalkReason::PostureFailed);
+        if(!pose.movementAllowed) return out;
+    }
     const auto area=ground.target->area;
     if(door_) {
         const auto dx=double(s.position->x)-doorStart_.x, dy=double(s.position->y)-doorStart_.y;
@@ -270,9 +295,6 @@ WalkDecision Walk::update(const runtime::MovementSnapshot& s, const query::NavSp
     queries.source=area; queries.target=area; queries.restrictAreas=true;
     if(!cursor_.exhausted()) {
         const auto& t=corridor_->transitions()[cursor_.index()];
-        if(t.edge.external || t.edge.traversal!=model::NavTraversalKind::Walk ||
-           t.sourceAttributes!=0 || t.targetAttributes!=0)
-            return finish(out,WalkState::Failed,WalkReason::UnsupportedTraversal);
         if(area!=t.edge.source && area!=t.edge.target)
             return finish(out,WalkState::Failed,WalkReason::OffCorridor);
         if(primitive_.state()==PrimitiveState::Idle) {

@@ -65,6 +65,7 @@ int gSteeringMode=-1;
 edict_t gWallWorld{};
 edict_t gNavPlayer{};
 bool gPlayerObstacle=false;
+bool gSimulateCrouch=false, gCrouchCeiling=false, gCloseHeadroom=false;
 constexpr float doorPlane=83.96875f; // GoldSrc collision epsilon keeps the hull outside the brush.
 std::uint64_t gDoorOpenAtUs=0;
 float supportHeight(float x) { return x+16>100 ? gStairHeight:0; }
@@ -78,6 +79,9 @@ void captureNavHull(const float* start, const float* end, int ignoreMonsters, in
             gInvalidateActor,astrabot::nav::runtime::SessionReason::Cancelled);
     }
     *result={}; result->flFraction=1; result->vecEndPos=Vector(end[0],end[1],end[2]);
+    if(gSimulateCrouch && hull==1 && (gCloseHeadroom || (gCrouchCeiling && end[0]+16>100 && end[0]-16<200)) && end[2]+36>48) {
+        result->fStartSolid=1; return;
+    }
     const float minimumZ=hull==3 ? -18.0f:-36.0f;
     const float floor=supportHeight(end[0]);
     if(ignoreMonsters==1) {
@@ -479,7 +483,15 @@ void captureRunPlayerMove(
         astrabot::core::BotCommand c{{viewAngles[0],viewAngles[1],viewAngles[2]},
             {forwardMove,sideMove,upMove},buttons,impulse,msec};
         gNavMoves.push_back(c); assert(c.validate());
-        assert((buttons==0 || (gDoorActive && buttons==IN_USE)) && impulse==0 && upMove==0 && entity->v.deadflag==DEAD_NO);
+        assert((buttons==0 || (gDoorActive && buttons==IN_USE) || (gSimulateCrouch && buttons==IN_DUCK)) && impulse==0 && upMove==0 && entity->v.deadflag==DEAD_NO);
+        if(gSimulateCrouch) {
+            const bool duck=(buttons&IN_DUCK)!=0;
+            if(!duck && (entity->v.flags&FL_DUCKING)) {
+                assert(!gCloseHeadroom && !(gCrouchCeiling && entity->v.origin.x+16>100 && entity->v.origin.x-16<200));
+            }
+            if(duck) entity->v.flags|=FL_DUCKING; else entity->v.flags&=~FL_DUCKING;
+            entity->v.mins.z=duck ? -18.0f:-36.0f; entity->v.maxs.z=duck ? 18.0f:36.0f;
+        }
         if(buttons==IN_USE) {
             assert(forwardMove==0 && sideMove==0 && !gDoorAmbiguous);
             // Independently emulate the pinned player's sphere/direction test;
@@ -507,7 +519,7 @@ void captureRunPlayerMove(
             if(!gDoorLocked && !(gNavDoor.v.spawnflags&(1<<8)) && gNavDoor.v.targetname==0)
                 gDoorOpenAtUs=gNavClockUs+120000;
         }
-        entity->v.origin.z=supportHeight(entity->v.origin.x)+36;
+        entity->v.origin.z=supportHeight(entity->v.origin.x)-entity->v.mins.z;
         if(gSteeringMode>=0) {
             const auto h=steering_fixture::sweep(gSteeringMode,{oldOrigin.x,oldOrigin.y,oldOrigin.z},
                 {entity->v.origin.x,entity->v.origin.y,entity->v.origin.z});
@@ -1003,6 +1015,56 @@ void testMultipleNavSessions() {
         }
         assert(!gClientMoves.empty());
         gSimulateNav=false; detach();
+    }
+}
+void testNavCrouchCrossing() {
+    using namespace astrabot;
+    for(std::uint64_t us : {8000U,16000U,100000U}) for(int mode=0;mode<4;++mode) {
+        Fixture fixture{}; enginefuncs_t hooks{}; prepareNavWalk(fixture,hooks);
+        auto& owner=adapter::metamod::lifecycleCoordinator(); auto& console=owner.navConsole();
+        route_test::Area a{1,{{0,0,0},{100,100,0},0,0}},b{2,{{100,0,0},{200,100,0},0,0}},
+            c{3,{{200,0,0},{300,100,0},0,0}};
+        a.targets[1]={2}; b.targets[1]={3}; b.attributes=1;
+        assert(console.publish(owner.registry().mapGeneration(),route_test::snapshot({a,b,c})).isNone());
+        gSimulateCrouch=gCrouchCeiling=true; gCloseHeadroom=false;
+        runNav({"astrabot_goto","3"});
+        bool lowered=false,finished=false,closed=false,releaseRejected=false;
+        for(int frame=0;frame<2000;++frame) {
+            const auto before=gHullCalls;
+            navFrame(fixture,us);
+            const auto& d=console.motionTrace().decision;
+            assert(d.queries<=21 && d.samples<=4 && gHullCalls-before<=21);
+            if(fixture.entity.v.flags&FL_DUCKING) lowered=true;
+            if(mode==1 && lowered && fixture.entity.v.origin.x>120) {
+                const auto position=fixture.entity.v.origin;
+                runNav({"astrabot_nav_cancel"}); navFrame(fixture,us); navFrame(fixture,us);
+                assert(fixture.entity.v.origin.x==position.x && (fixture.entity.v.flags&FL_DUCKING));
+                assert(!gNavMoves.empty() && gNavMoves.back().movement==core::Movement{} && gNavMoves.back().buttons==IN_DUCK);
+                finished=true; break;
+            }
+            if((mode==2 || mode==3) && !closed && d.intent.duck==core::ActionRequest::Release &&
+               console.motionTrace().event==adapter::cstrike::MotionEvent::Queued) {
+                closed=true; gCloseHeadroom=true; navFrame(fixture,us);
+                assert(fixture.entity.v.flags&FL_DUCKING);
+                for(std::size_t i=0;i<console.motionHistoryCount();++i)
+                    releaseRejected=releaseRejected || console.motionHistory(i)->reason==adapter::cstrike::MotionReason::PostureChanged;
+                if(mode==2) gCloseHeadroom=false;
+            }
+            if(d.state==nav::local::WalkState::Failed) {
+                assert(mode==3 && d.reason==nav::local::WalkReason::PostureFailed && d.postureReason==nav::local::CrouchReason::TimedOut);
+                assert(fixture.entity.v.flags&FL_DUCKING); finished=true; break;
+            }
+            if(d.state==nav::local::WalkState::Arrived) {
+                assert(mode==0 || mode==2); assert(!(fixture.entity.v.flags&FL_DUCKING));
+                assert(std::hypot(fixture.entity.v.origin.x-217,fixture.entity.v.origin.y-50)<=1.01f);
+                finished=true; break;
+            }
+        }
+        assert(lowered && finished);
+        if(mode==2 || mode==3) {
+            assert(closed && releaseRejected);
+        }
+        gSimulateCrouch=gCrouchCeiling=gCloseHeadroom=false; gSimulateNav=false; detach();
     }
 }
 void testNavAutomaticReplan() {
@@ -1961,6 +2023,7 @@ int main() {
     testMultipleClientDetach();
     testNavPlayers();
     testNavAutomaticReplan();
+    testNavCrouchCrossing();
     testNavWalkCancellationAndGuards();
     testJoinFailureCleanupAndCommandContextReentry();
     testCounterTerroristPrimaryJoinRequest();

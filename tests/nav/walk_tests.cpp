@@ -69,6 +69,8 @@ struct World final : runtime::IWorldQueries {
             if(mode==4) r.floor->height=-32;
         } else if(q.kind==runtime::QueryKind::SweptHull) {
             r.hull=runtime::HullObservation{mode==1 ? 0.5f:1,q.end,{0,0,0},false};
+        } else if(q.kind==runtime::QueryKind::Clearance) {
+            r.clearance=runtime::ClearanceObservation{true};
         } else assert(false);
         return r;
     }
@@ -277,6 +279,39 @@ void measuredCompletion() {
     d=walk.update(s,*f.index,s.map,world);
     assert(d.state==local::WalkState::Failed && d.probeReason==local::ProbeReason::NoSupport);
 }
+void crouchCrossing() {
+    for(int mode=0;mode<3;++mode) {
+        auto a=square(1,0,0),b=square(2,100,0),c=square(3,200,0);
+        a.targets[1]={2}; b.targets[1]={3};
+        if(mode==0) b.attributes=1;
+        if(mode==1) a.attributes=1;
+        if(mode==2) a.attributes=8;
+        const std::vector<route_test::Area> areas{a,b,c};
+        Fixture f(areas,1,mode==1 ? 1:3); World world(areas); auto s=actor(); s.ducked=false;
+        auto profile=limits; profile.probe.maxQueries=21;
+        profile.crouch={{{-16,-16,-36},{16,16,36}},{{-16,-16,-18},{16,16,18}},1000000};
+        const model::NavVector3 goal{mode==1 ? 50.0f:217.0f,50,0};
+        local::Walk walk(binding(),f.corridor,goal,profile); bool arrived=false,ducked=false;
+        for(std::uint64_t tick=1;tick<500;++tick) {
+            s.tick={tick}; const auto before=world.calls.size();
+            const auto d=walk.update(s,*f.index,s.map,world,tick*40000);
+            assert(d.queries==world.calls.size()-before && d.queries<=21 && d.samples<=4);
+            assert(d.state==local::WalkState::Running || d.state==local::WalkState::Arrived);
+            if(d.state==local::WalkState::Arrived) {
+                assert(d.support && d.support->area.value==(mode==1 ? 1U:3U));
+                assert(s.ducked==(mode==1)); arrived=true; break;
+            }
+            const auto command=core::Motor::command(d.intent,{},250,40000,true); assert(command);
+            const bool duck=(command.command->buttons&static_cast<core::ButtonMask>(core::Button::Duck))!=0;
+            s.ducked=duck; s.hull=duck ? profile.crouch.crouched:profile.crouch.standing;
+            s.position->z=-s.hull->minimum.z; ducked=ducked || duck;
+            assert(command.command->buttons==(duck ? static_cast<core::ButtonMask>(core::Button::Duck):0U));
+            s.position->x+=static_cast<float>(command.command->movement.forward*0.04);
+            s.position->y-=static_cast<float>(command.command->movement.side*0.04);
+        }
+        assert(arrived && ducked==(mode!=2));
+    }
+}
 void invalidAndBudgets() {
     auto areas=zigzag(); Fixture f(areas,1,2); auto s=actor(); World world(areas);
     auto bad=limits; bad.probe.maxQueries=2;
@@ -303,4 +338,4 @@ void invalidAndBudgets() {
     assert(sameHint.update(s,*same.index,s.map,hinted).reason==local::WalkReason::UnsupportedTraversal);
 }
 }
-int main() { arrivals(); stops(); measuredCompletion(); invalidAndBudgets(); doors(); touchAndReservedQueries(); }
+int main() { arrivals(); stops(); measuredCompletion(); invalidAndBudgets(); doors(); touchAndReservedQueries(); crouchCrossing(); }

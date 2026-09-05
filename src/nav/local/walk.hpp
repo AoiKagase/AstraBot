@@ -4,11 +4,13 @@
 #include "nav/local/primitive.hpp"
 #include "nav/local/door_wait.hpp"
 #include "nav/local/blocker_wait.hpp"
+#include "nav/local/crouch.hpp"
+#include "nav/local/traversal_constraints.hpp"
 
 namespace astrabot::nav::local {
 enum class WalkState { Running, Arrived, Failed, Aborted };
 enum class WalkReason { None, InvalidInput, StaleTick, InvalidActor, StaleNavigation,
-    UnsupportedTraversal, InvalidGoal, OffCorridor, InvalidPortal, ProbeFailed, Cancelled, DoorBlocked, DynamicBlocked };
+    UnsupportedTraversal, InvalidGoal, OffCorridor, InvalidPortal, ProbeFailed, Cancelled, DoorBlocked, DynamicBlocked, PostureFailed };
 struct WalkLimits {
     GroundProbeLimits probe{};
     double speed{}, arrivalTolerance{}, crossingMargin{};
@@ -18,6 +20,7 @@ struct WalkLimits {
     double sideProbeDistance{}, narrowMargin{}, narrowSpeed{}; // Zero side distance disables steering.
     std::uint32_t maxAvoidanceDecisions{};
     BlockerLimits blocker{}; // Zero timeout disables reactive player handling.
+    CrouchLimits crouch{}; // Zero timeout keeps special traversal disabled.
 };
 struct DoorContact {
     std::uint64_t id{};
@@ -43,6 +46,9 @@ struct WalkDecision {
     BlockerAction blockerAction{BlockerAction::Neutral};
     BlockerReason blockerReason{BlockerReason::None};
     std::optional<runtime::BlockerObservation> blocker{};
+    std::optional<CrouchState> posture{};
+    CrouchReason postureReason{CrouchReason::None};
+    ConstraintReason constraintReason{ConstraintReason::None};
 };
 // One owned route, synchronous decision seam. Caller schedules decisions and
 // invalidates on route replacement; this class never submits a host command.
@@ -76,6 +82,12 @@ private:
     int avoidSide_{};
     std::uint32_t avoidDecisions_{};
     std::optional<BlockerWait> blocker_{};
+    std::optional<Crouch> crouch_{};
+    ActionRequest postureAction_{ActionRequest::None};
+    std::optional<CrouchState> posture_{};
+    CrouchReason postureReason_{CrouchReason::None};
+    WalkDecision updateMotion(const runtime::MovementSnapshot&,const query::NavSpatialIndex&,
+        core::MapGeneration,runtime::IWorldQueries&,std::uint64_t,std::uint32_t) noexcept;
     WalkDecision updateDoor(WalkDecision, const runtime::MovementSnapshot&,
         const query::NavSpatialIndex&, core::MapGeneration, runtime::IWorldQueries&,
         model::NavVector3 end, std::uint64_t nowUs) noexcept;

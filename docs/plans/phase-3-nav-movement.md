@@ -197,9 +197,9 @@ synthetic navigation passes; live acceptance remains post-Finish.
 ## P3-05 — Crouch and Simple Jump primitives
 
 [Constraint/posture foundation](../reports/p3-05-crouch-foundation.md) adds
-typed hint interpretation and a bounded observed-hull posture gate. Walk/host
-integration, supported crossing and Simple Jump remain; neither implementation
-checklist below is complete yet.
+typed hint interpretation and a bounded observed-hull posture gate.
+[Crouch Walk/host integration](../reports/p3-05-crouch-walk.md) now verifies
+supported crossing, headroom-safe release and cancellation. Simple Jump remains.
 
 - **Goal:** execute verified transitions without per-frame state in A*.
 - **Why now:** lifecycle and clearance/ground facts exist.
@@ -207,7 +207,7 @@ checklist below is complete yet.
 - **Interfaces:** selected edge plus supported area hints/local constraints;
   takeoff/landing/speed/facing only as needed and typed terminal outcome.
 - **Implementation outline / commit slices:**
-  - [ ] Interpret supported crouch/jump/no-jump constraints; add crouch hold/cross/
+  - [x] Interpret supported crouch/jump/no-jump constraints; add crouch hold/cross/
     headroom-safe release and explicit unknown/contradictory failure.
   - [ ] Add Simple Jump approach/align/accelerate/takeoff/airborne/land/recover,
     single press edge, timeout and cooldown.
