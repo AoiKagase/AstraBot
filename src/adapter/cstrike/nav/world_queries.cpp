@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 #include <cmath>
+#include <limits>
 #include "adapter/cstrike/nav/world_queries.hpp"
 
 namespace astrabot::adapter::cstrike {
@@ -36,28 +37,38 @@ nav::runtime::WorldQueryResult queryNavWorld(enginefuncs_t* engine, edict_t* ent
         return r;
     }
     if(q.kind!=QueryKind::GroundedArea && q.kind!=QueryKind::Floor) return r;
-    if(!engine->pfnTraceLine) return r;
+    if(!engine->pfnTraceHull || !q.hull || hullIndex(*q.hull)<0) return r;
+    if(!std::isfinite(q.navTolerance) || q.navTolerance<0) { r.error=QueryError::InvalidResult; return r; }
     auto start=q.start, end=q.end;
     float feet=0;
     if(q.kind==QueryKind::GroundedArea) {
-        if(!index || !q.hull || !q.hull->minimum.isFinite() || !q.hull->maximum.isFinite()) return r;
+        if(!index) return r;
         feet=q.start.z+q.hull->minimum.z;
-        start.z=feet+2; end={q.start.x,q.start.y,feet-4};
+        start.z=q.start.z+2; end={q.start.x,q.start.y,q.start.z-4};
+    } else {
+        // Floor requests use feet heights; TraceHull consumes actor origins.
+        const double top=double(start.z)-q.hull->minimum.z, bottom=double(end.z)-q.hull->minimum.z;
+        if(std::abs(top)>(std::numeric_limits<float>::max)() || std::abs(bottom)>(std::numeric_limits<float>::max)()) {
+            r.error=QueryError::InvalidResult; return r;
+        }
+        start.z=static_cast<float>(top); end.z=static_cast<float>(bottom);
     }
     if(!start.isFinite() || !end.isFinite() || start.x!=end.x || start.y!=end.y || start.z<=end.z) {
         r.error=QueryError::InvalidResult; return r;
     }
     const float a[]{start.x,start.y,start.z}, b[]{end.x,end.y,end.z};
-    TraceResult hit{}; engine->pfnTraceLine(a,b,1,entity,&hit);
+    // Static hull support includes the footprint on a stair tread. Player
+    // bodies are not floor proof. Each request issues exactly one engine trace.
+    TraceResult hit{}; engine->pfnTraceHull(a,b,1,hullIndex(*q.hull),entity,&hit);
     if(!valid(hit)) { r.error=QueryError::InvalidResult; return r; }
     r.error=QueryError::None;
     if(hit.fAllSolid || hit.fStartSolid || hit.flFraction==1) return r;
     if(std::abs(hit.vecEndPos.x-start.x)>0.001f || std::abs(hit.vecEndPos.y-start.y)>0.001f ||
        hit.vecEndPos.z>start.z || hit.vecEndPos.z<end.z) { r.error=QueryError::InvalidResult; return r; }
-    const FloorObservation floor{hit.vecEndPos.z,value(hit.vecPlaneNormal),true};
+    const FloorObservation floor{hit.vecEndPos.z+q.hull->minimum.z,value(hit.vecPlaneNormal),true};
     if(q.kind==QueryKind::Floor) { r.floor=floor; return r; }
     if(floor.normal.z<0.7f || std::abs(floor.height-feet)>4) return r;
-    const auto match=index->containing({q.start.x,q.start.y,floor.height},2);
+    const auto match=index->containing({q.start.x,q.start.y,floor.height},q.navTolerance);
     if(!match || !*match.value) return r;
     r.ground=GroundedAreaObservation{(**match.value).areaId,floor}; return r;
 }

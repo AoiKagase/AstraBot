@@ -47,7 +47,7 @@ ProbeResult probe(const runtime::MovementSnapshot& s, std::uint64_t generation,
         ->std::optional<runtime::WorldQueryResult> {
         if(!start.isFinite() || !end.isFinite()) { result.reason=ProbeReason::InvalidInput; return {}; }
         if(result.queries==limits.maxQueries) { result.reason=ProbeReason::BudgetExceeded; return {}; }
-        runtime::QueryRequest q{{s.agent,s.actor,s.map,s.tick,generation,++result.queries},kind,start,end,s.hull};
+        runtime::QueryRequest q{{s.agent,s.actor,s.map,s.tick,generation,++result.queries},kind,start,end,s.hull,limits.navTolerance};
         try {
             auto reply=port.query(q);
             if(!(reply.stamp==q.stamp) || reply.kind!=kind) result.reason=ProbeReason::StaleQuery;
@@ -56,6 +56,22 @@ ProbeResult probe(const runtime::MovementSnapshot& s, std::uint64_t generation,
             else return reply;
         } catch(...) { result.reason=ProbeReason::QueryFailed; }
         return {};
+    };
+    bool stairCandidate=false;
+    const auto clearance=[&](model::NavVector3 a,model::NavVector3 b) {
+        stairCandidate=false;
+        auto sweep=fetch(runtime::QueryKind::SweptHull,a,b);
+        if(!sweep) return false;
+        if(!sweep->hull) { result.reason=ProbeReason::InvalidResult; return false; }
+        const auto& hit=*sweep->hull;
+        if(!std::isfinite(hit.fraction) || hit.fraction<0 || hit.fraction>1 || !hit.end.isFinite() || !hit.normal.isFinite())
+            result.reason=ProbeReason::InvalidResult;
+        else if(hit.startSolid) result.reason=ProbeReason::Blocked;
+        else if(hit.fraction<1) { result.reason=ProbeReason::Blocked; stairCandidate=true; }
+        else if(std::abs(double(hit.end.x)-b.x)>0.001 || std::abs(double(hit.end.y)-b.y)>0.001 ||
+                std::abs(double(hit.end.z)-b.z)>0.001) result.reason=ProbeReason::InvalidResult;
+        else { result.reason=ProbeReason::None; return true; }
+        return false;
     };
     auto ground=fetch(runtime::QueryKind::GroundedArea,*s.position,*s.position);
     if(!ground) return result;
@@ -91,15 +107,21 @@ ProbeResult probe(const runtime::MovementSnapshot& s, std::uint64_t generation,
         const double originZ=double(next.height)-s.hull->minimum.z;
         if(!representable(originZ)) return fail(ProbeReason::InvalidInput);
         const model::NavVector3 destination{tx,ty,static_cast<float>(originZ)};
-        auto sweep=fetch(runtime::QueryKind::SweptHull,position,destination);
-        if(!sweep) return result;
-        if(!sweep->hull) return fail(ProbeReason::InvalidResult);
-        const auto& hit=*sweep->hull;
-        if(!std::isfinite(hit.fraction) || hit.fraction<0 || hit.fraction>1 || !hit.end.isFinite() || !hit.normal.isFinite())
-            return fail(ProbeReason::InvalidResult);
-        if(hit.startSolid || hit.fraction<1) return fail(ProbeReason::Blocked);
-        if(std::abs(double(hit.end.x)-destination.x)>0.001 || std::abs(double(hit.end.y)-destination.y)>0.001 ||
-           std::abs(double(hit.end.z)-destination.z)>0.001) return fail(ProbeReason::InvalidResult);
+        if(!clearance(position,destination)) {
+            // Only a well-formed collision across a measured height change can
+            // become a stair candidate. Unknown/start-solid/flat obstructions stop.
+            if(!stairCandidate || next.height==floor.height) return result;
+            const bool rising=next.height>floor.height;
+            const std::uint32_t extra=rising ? 3U:2U;
+            if(extra>limits.maxQueries-result.queries) return fail(ProbeReason::BudgetExceeded);
+            const double liftedZ=double(position.z)+(rising ? limits.maxStepUp:0);
+            if(!representable(liftedZ)) return fail(ProbeReason::InvalidInput);
+            const model::NavVector3 lifted{position.x,position.y,static_cast<float>(liftedZ)};
+            const model::NavVector3 across{tx,ty,lifted.z};
+            if((rising && !clearance(position,lifted)) || !clearance(lifted,across) || !clearance(across,destination))
+                return result;
+            ++result.steps;
+        }
         position=destination; floor=next; area=(**match.value).areaId; ++result.samples;
     }
     result.target=GroundedTarget{position,area,floor}; return result;

@@ -164,6 +164,7 @@ void NavConsole::execute(NavCommand command,metamod::LifecycleCoordinator& owner
     stopMotion();
     queryingEntity_=owner.fakeClient().activeEntity();
     nav::runtime::RouteOptions options; options.limits={100000,256*mib};
+    options.groundNavTolerance=18; // Observed hull support may straddle one ordinary stair riser.
     auto navigation=navigation_;
     if(!navigation.graph) navigation.map=s.map;
     inRequest_=true;

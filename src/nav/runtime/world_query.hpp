@@ -22,6 +22,7 @@ struct QueryRequest {
     QueryKind kind{QueryKind::GroundedArea};
     model::NavVector3 start{}, end{};
     std::optional<HullDimensions> hull{};
+    double navTolerance{2}; // GroundedArea: explicit NAV/observed-floor height allowance.
 };
 struct FloorObservation { float height{}; model::NavVector3 normal{}; bool supported{}; };
 struct GroundedAreaObservation {

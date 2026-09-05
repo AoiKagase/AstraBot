@@ -88,9 +88,48 @@ void failures() {
     assert(local::GroundProbe::inspect(actor(),7,{1},52,50,*index(),{3},p,limits).reason==local::ProbeReason::StaleNavigation);
     assert(p.calls.empty());
 }
+struct Stairs final : runtime::IWorldQueries {
+    float from{}, to{16}; int block{}, stale{};
+    std::vector<runtime::QueryRequest> calls;
+    runtime::WorldQueryResult query(const runtime::QueryRequest& q) override {
+        calls.push_back(q); assert(q.stamp.ordinal==calls.size() && q.navTolerance==18);
+        runtime::WorldQueryResult r; r.stamp=q.stamp; r.kind=q.kind; r.error=runtime::QueryError::None;
+        if(q.kind==runtime::QueryKind::GroundedArea) r.ground=runtime::GroundedAreaObservation{model::NavAreaId{1},runtime::FloorObservation{from,{0,0,1},true}};
+        else if(q.kind==runtime::QueryKind::Floor) r.floor=runtime::FloorObservation{to,{0,0,1},true};
+        else {
+            r.hull=runtime::HullObservation{1,q.end,{0,0,0},false};
+            if(q.stamp.ordinal==3 || q.stamp.ordinal==static_cast<std::uint32_t>(block)) r.hull->fraction=0.5f;
+            if(q.stamp.ordinal==static_cast<std::uint32_t>(stale)) ++r.stamp.tick.value;
+        }
+        return r;
+    }
+};
+void stairProbes() {
+    auto l=limits; l.navTolerance=18;
+    const auto run=[&](Stairs& p, local::GroundProbeLimits allowance) {
+        auto s=actor(); s.position->z=p.from+36;
+        return local::GroundProbe::inspect(s,7,{1},36,50,*index(),s.map,p,allowance);
+    };
+    Stairs up; const auto r=run(up,l);
+    assert(r && r.steps==1 && r.queries==6 && r.samples==1 && r.target->origin.z==52);
+    assert(up.calls[3].end==model::NavVector3({20,50,54}));
+    assert(up.calls[4].start==up.calls[3].end && up.calls[4].end==model::NavVector3({36,50,54}));
+    assert(up.calls[5].end==model::NavVector3({36,50,52}));
+    Stairs down; down.from=16; down.to=0;
+    Stairs boundary; boundary.to=18; assert(run(boundary,l));
+    const auto d=run(down,l); assert(d && d.steps==1 && d.queries==5 && d.target->origin.z==36);
+    for(int ordinal : {4,5,6}) { Stairs p; p.block=ordinal;
+        const auto failure=run(p,l); assert(!failure && failure.reason==local::ProbeReason::Blocked && failure.steps==0);
+        assert(failure.queries==static_cast<std::uint32_t>(ordinal)); }
+    Stairs stale; stale.stale=4; assert(run(stale,l).reason==local::ProbeReason::StaleQuery);
+    Stairs budget; auto small=l; small.maxQueries=5;
+    const auto exhausted=run(budget,small); assert(exhausted.reason==local::ProbeReason::BudgetExceeded && exhausted.queries==3);
+    Stairs flat; flat.to=0; assert(run(flat,l).reason==local::ProbeReason::Blocked && flat.calls.size()==3);
+    Stairs high; high.to=19; assert(run(high,l).reason==local::ProbeReason::InvalidResult && high.calls.size()==2);
+}
 }
 int main() {
-    successReplayAndFloors(); failures();
+    successReplayAndFloors(); failures(); stairProbes();
     Script port; auto s=actor(); auto l=limits; l.maxQueries=1; l.maxSamples=0;
     const auto located=local::GroundProbe::locate(s,7,*index(),s.map,port,l);
     assert(located && located.queries==1 && located.samples==0 && located.target->area==model::NavAreaId{1});

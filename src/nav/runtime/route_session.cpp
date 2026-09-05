@@ -103,8 +103,10 @@ SessionUpdate RouteSession::request(const MovementSnapshot& s, model::NavAreaId 
     if (!goal.isValid() || !graph_->find(goal)) return fail(SessionReason::InvalidGoal);
     if (s.grounded!=true) return fail(SessionReason::UnknownGround);
     if (!options.maxWorldQueries) return fail(SessionReason::QueryBudgetExceeded);
+    if(!std::isfinite(options.groundNavTolerance) || options.groundNavTolerance<0)
+        return fail(SessionReason::InvalidSnapshot);
     const QueryRequest request{{s.agent,s.actor,s.map,s.tick,trace_.routeGeneration,1},
-        QueryKind::GroundedArea,*s.position,*s.position,s.hull};
+        QueryKind::GroundedArea,*s.position,*s.position,s.hull,options.groundNavTolerance};
     try {
         const auto reply=port.query(request);
         if (!(reply.stamp==request.stamp) || reply.kind!=request.kind) return fail(SessionReason::StaleQuery);

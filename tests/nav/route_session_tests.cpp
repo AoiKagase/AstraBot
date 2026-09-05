@@ -93,10 +93,23 @@ void externalOwnership() {
           edge.external->linkId==9 && edge.external->entry.z==0 && edge.external->exit.z==10);
     check(saved.route->total==12 && edge.traversal==model::NavTraversalKind::Ladder);
 }
+void groundTolerance() {
+    const auto s=snapshot(); FakeQueries port; RouteSession session(s.agent,s.actor,s.map);
+    RouteOptions options; options.limits={3,1000000};
+    check(session.request(s,{2},graph(),port,options).accepted && port.last.navTolerance==2);
+    options.groundNavTolerance=18;
+    check(session.request(s,{2},graph(),port,options).accepted && port.last.navTolerance==18);
+    const auto calls=port.calls;
+    for(double tolerance : {-1.0,std::numeric_limits<double>::infinity(),std::numeric_limits<double>::quiet_NaN()}) {
+        options.groundNavTolerance=tolerance;
+        check(session.request(s,{2},graph(),port,options).reason==SessionReason::InvalidSnapshot && port.calls==calls);
+    }
+}
 int main() {
     try {
         consoleValues();
         externalOwnership();
+        groundTolerance();
         auto s=snapshot(); auto g=graph(); FakeQueries port;
         RouteSession session(s.agent,s.actor,s.map);
         RouteOptions options; options.limits={3,1000000};

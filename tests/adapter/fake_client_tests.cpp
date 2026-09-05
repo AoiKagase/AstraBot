@@ -48,10 +48,32 @@ void captureGround(const float*, const float* end, int, edict_t*, TraceResult* r
 }
 
 int gHullKind=-1, gHullCalls=0, gHullMode=0;
-void captureNavHull(const float*, const float* end, int ignoreMonsters, int hull, edict_t* actor, TraceResult* result) {
-    assert(ignoreMonsters==0 && actor!=nullptr);
+float gStairHeight=0;
+bool gStairCeiling=false;
+float supportHeight(float x) { return x+16>100 ? gStairHeight:0; }
+void captureNavHull(const float* start, const float* end, int ignoreMonsters, int hull, edict_t* actor, TraceResult* result) {
+    assert((ignoreMonsters==0 || ignoreMonsters==1) && actor!=nullptr);
     gHullKind=hull; ++gHullCalls;
     *result={}; result->flFraction=1; result->vecEndPos=Vector(end[0],end[1],end[2]);
+    const float minimumZ=hull==3 ? -18.0f:-36.0f;
+    const float floor=supportHeight(end[0]);
+    if(ignoreMonsters==1) {
+        if(!gGroundMissing && end[2]+minimumZ<floor) {
+            if(start[2]+minimumZ<floor) result->fStartSolid=1;
+            else {
+                result->flFraction=(start[2]+minimumZ-floor)/(start[2]-end[2]);
+                result->vecEndPos.z=floor-minimumZ; result->vecPlaneNormal=Vector(0,0,1);
+            }
+        }
+        if(gInvalidateDuringGround)
+            astrabot::adapter::metamod::lifecycleCoordinator().navConsole().invalidate(
+                astrabot::nav::runtime::SessionReason::MapChanged);
+        return;
+    }
+    if(end[2]+minimumZ<floor || (start[0]!=end[0] && start[2]+minimumZ<floor) ||
+       (gStairCeiling && end[2]>start[2] && start[0]==end[0])) {
+        result->flFraction=0.5f; result->vecPlaneNormal=Vector(-1,0,0);
+    }
     if(gHullMode==1) result->fAllSolid=1;
     if(gHullMode==2) result->flFraction=0.5f;
     if(gHullMode==3) result->flFraction=2;
@@ -355,6 +377,7 @@ void captureRunPlayerMove(
         const double dt=double(msec)/1000;
         entity->v.origin.x+=static_cast<float>((forwardMove*std::cos(yaw)+sideMove*std::sin(yaw))*dt);
         entity->v.origin.y+=static_cast<float>((forwardMove*std::sin(yaw)-sideMove*std::cos(yaw))*dt);
+        entity->v.origin.z=supportHeight(entity->v.origin.x)+36;
         entity->v.v_angle=Vector(viewAngles[0],viewAngles[1],viewAngles[2]);
         if(gInjectNavDuplicate) {
             gInjectNavDuplicate=false;
@@ -618,6 +641,7 @@ void prepareNavWalk(Fixture& fixture,enginefuncs_t& hooks) {
     owner.setMovementClockForTest(&navNow); gSimulateNav=true; gNavMoves.clear();
     owner.setMovementTraceSink(&navTransportTrace); gNavTransportTraces.clear();
     gGroundMissing=false; gHullMode=0; gInvalidateDuringGround=gInvalidateDuringHull=false;
+    gStairHeight=0; gStairCeiling=false;
     int version=ENGINE_INTERFACE_VERSION; assert(GetEngineFunctions(&hooks,&version)); gEngineHooks=&hooks;
     assert(owner.fakeClient().create("AstraBot-Walk").succeeded());
     assert(owner.requestJoin({astrabot::adapter::cstrike::Team::Terrorist,1}).changed);
@@ -667,7 +691,7 @@ void testNavWalkArrival() {
                     static_cast<unsigned long long>(us),unsigned(t.decision.reason),unsigned(t.decision.probeReason),unsigned(t.reason));
                 assert(false);
             }
-            assert(t.decision.queries<=9 && t.decision.samples<=4 && console.motionHistoryCount()<=console.motionHistoryLimit);
+            assert(t.decision.queries<=21 && t.decision.samples<=4 && console.motionHistoryCount()<=console.motionHistoryLimit);
             if(t.event==adapter::cstrike::MotionEvent::Dispatched) assert(t.dispatchTick.isAfter(t.commandTick));
             if(t.decision.state==nav::local::WalkState::Arrived) { arrived=true; break; }
         }
@@ -681,6 +705,39 @@ void testNavWalkArrival() {
         const auto count=gNavMoves.size(); navFrame(fixture,us); navFrame(fixture,us); assert(gNavMoves.size()==count);
         if(goal[0]=='4' && us==8000) assert(console.motionHistoryCount()==console.motionHistoryLimit);
         gSimulateNav=false; detach();
+    }
+}
+void testNavStairs() {
+    using namespace astrabot;
+    for(int mode=0;mode<4;++mode) for(std::uint64_t us : {8000U,16000U,100000U}) {
+        Fixture fixture{}; enginefuncs_t hooks{}; prepareNavWalk(fixture,hooks);
+        auto& owner=adapter::metamod::lifecycleCoordinator(); auto& console=owner.navConsole();
+        gStairHeight=mode==3 ? 19.0f:16.0f; gStairCeiling=mode==2;
+        route_test::Area a{1,{{0,0,0},{100,100,0},0,0}},
+            b{2,{{100,0,gStairHeight},{200,100,gStairHeight},gStairHeight,gStairHeight}};
+        a.targets[1]={2}; b.targets[3]={1};
+        assert(console.publish(owner.registry().mapGeneration(),route_test::snapshot({a,b})).isNone());
+        const bool descending=mode==1;
+        fixture.entity.v.origin=descending ? Vector(150,50,52):Vector(50,50,36);
+        runNav({"astrabot_goto",descending ? "1":"2"});
+        bool terminal=false, stepped=false;
+        for(int i=0;i<1000;++i) {
+            const auto traces=gHullCalls;
+            navFrame(fixture,us); const auto& d=console.motionTrace().decision;
+            stepped=stepped || d.steps>0; assert(d.queries<=21);
+            if(d.tick==owner.registry().currentTick()) assert(d.queries==static_cast<unsigned>(gHullCalls-traces));
+            else assert(gHullCalls==traces);
+            if(d.state!=nav::local::WalkState::Running) {
+                terminal=true;
+                if(mode<2) assert(d.state==nav::local::WalkState::Arrived && d.support && d.support->floor.height==(descending ? 0:16));
+                else assert(d.state==nav::local::WalkState::Failed && fixture.entity.v.origin.x<84);
+                break;
+            }
+        }
+        assert(terminal); if(mode==0) assert(stepped);
+        const auto count=gNavMoves.size(); navFrame(fixture,us); navFrame(fixture,us);
+        for(auto i=count;i<gNavMoves.size();++i) assert(gNavMoves[i].movement==core::Movement{});
+        gSimulateNav=false; gStairHeight=0; gStairCeiling=false; detach();
     }
 }
 void testNavWalkCancellationAndGuards() {
@@ -729,7 +786,7 @@ void testNavWalkCancellationAndGuards() {
         } else if(mode==12) {
             const auto hulls=gHullCalls; navFrame(fixture,120000);
             assert(gNavMoves.size()==count+1 && !motionReason(adapter::cstrike::MotionReason::StaleCommand));
-            assert(gHullCalls-hulls<=4 && console.motionTrace().missedDecisions>=1);
+            assert(gHullCalls-hulls<=21 && console.motionTrace().missedDecisions>=1);
         } else if(mode==13) {
             gDeactivateDuringMove=true; navFrame(fixture);
             assert(gNavMoves.size()==count+1 && !console.trace());
@@ -1298,6 +1355,7 @@ int main() {
     testMissingFunctionIsRejectedWithoutEngineCall();
     testMessageDrivenJoinAndCommandContext();
     testNavWalkArrival();
+    testNavStairs();
     testNavWalkCancellationAndGuards();
     testJoinFailureCleanupAndCommandContextReentry();
     testCounterTerroristPrimaryJoinRequest();

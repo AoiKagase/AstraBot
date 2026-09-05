@@ -171,7 +171,7 @@ WalkDecision Walk::update(const runtime::MovementSnapshot& s, const query::NavSp
     const float x=inward(s.position->x+dx*fraction,s.position->x);
     const float y=inward(s.position->y+dy*fraction,s.position->y);
     const auto probe=GroundProbe::inspect(s,binding_.routeGeneration,area,x,y,index,indexMap,queries,limits_.probe);
-    out.queries=queries.issued; out.samples=probe.samples; out.probeReason=probe.reason;
+    out.queries=queries.issued; out.samples=probe.samples; out.steps=probe.steps; out.probeReason=probe.reason;
     if(!probe) return finish(out,WalkState::Failed,queries.offCorridor ? WalkReason::OffCorridor:WalkReason::ProbeFailed);
     out.target=probe.target;
     // Even a full 120 ms fresh-intent hold cannot pass the inspected endpoint.

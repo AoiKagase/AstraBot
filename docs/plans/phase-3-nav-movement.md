@@ -137,6 +137,8 @@ Unit/simulation passes never substitute for live observations.
     [the host integration report](../reports/p3-03-walk-host.md).
   - [ ] Add ordinary door use/wait, stairs, wall avoidance and narrow-passage
     speed/lateral correction.
+    Grounded stair probes and fake-engine ascent/descent now have
+    [offline evidence](../reports/p3-03-stairs.md); door/wall/narrow behavior remains.
 - **Tests:** corridor/same-area supported arrival, ceiling, stairs, door failure,
   unsafe drop, zero/long delta, low/normal/high FPS, 120 ms stale intent,
   rejected command and repeated button edges.

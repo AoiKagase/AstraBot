@@ -20,7 +20,7 @@ struct ProbeResult {
     runtime::QueryStamp stamp{}; // Batch identity; ordinal 0, queries counts issued ordinals.
     ProbeReason reason{ProbeReason::None};
     std::optional<GroundedTarget> target{};
-    std::uint32_t queries{}, samples{};
+    std::uint32_t queries{}, samples{}, steps{};
     explicit operator bool() const noexcept { return reason==ProbeReason::None && target.has_value(); }
 };
 // Offline value seam; synchronous, no retained host pointer and no motor command.

@@ -10,7 +10,7 @@
 #endif
 namespace astrabot::adapter::cstrike {
 namespace {
-constexpr nav::local::WalkLimits walkLimits{{9,4,48,16,18,18,64,4,2,0.7},160,1,1,3};
+constexpr nav::local::WalkLimits walkLimits{{21,4,48,16,18,18,64,4,18,0.7},160,1,1,3};
 std::uint64_t add(std::uint64_t a,std::uint64_t b) noexcept {
     const auto maximum=(std::numeric_limits<std::uint64_t>::max)();
     return b>maximum-a ? maximum:a+b;
@@ -62,7 +62,7 @@ void NavConsole::printMotion() noexcept {
     const auto target=d.target ? d.target->origin:nav::model::NavVector3{};
     char text[1024]{};
     std::snprintf(text,sizeof(text),
-        "walk actor=%u:%u map=%u route=%llu step=%zu tick=%llu state=%s reason=%u probe=%u event=%u motion_reason=%u corridor=%u transport=%u command_tick=%llu dispatch_tick=%llu age_us=%llu speed=%.6g direction=(%.6g,%.6g) target_present=%u target=(%.6g,%.6g,%.6g) support=%u queries=%u samples=%u queued=%llu dispatched=%llu rejected=%llu missed=%llu history=%zu omitted=%llu edge=%u:%u command=(%.6g,%.6g,%u)",
+        "walk actor=%u:%u map=%u route=%llu step=%zu tick=%llu state=%s reason=%u probe=%u event=%u motion_reason=%u corridor=%u transport=%u command_tick=%llu dispatch_tick=%llu age_us=%llu speed=%.6g direction=(%.6g,%.6g) target_present=%u target=(%.6g,%.6g,%.6g) support=%u queries=%u samples=%u step_probes=%u queued=%llu dispatched=%llu rejected=%llu missed=%llu history=%zu omitted=%llu edge=%u:%u command=(%.6g,%.6g,%u)",
         unsigned(d.binding.actor.slot),unsigned(d.binding.actor.generation.value),unsigned(d.binding.map.value),
         static_cast<unsigned long long>(d.binding.routeGeneration),d.binding.step,static_cast<unsigned long long>(d.tick.value),
         walkState(d.state),unsigned(d.reason),unsigned(d.probeReason),unsigned(motionTrace_.event),unsigned(motionTrace_.reason),
@@ -70,7 +70,7 @@ void NavConsole::printMotion() noexcept {
         static_cast<unsigned long long>(motionTrace_.commandTick.value),static_cast<unsigned long long>(motionTrace_.dispatchTick.value),
         static_cast<unsigned long long>(motionTrace_.intentAgeUs),d.intent.speed,d.intent.direction.x,d.intent.direction.y,
         unsigned(d.target.has_value()),double(target.x),double(target.y),double(target.z),
-        d.support ? unsigned(d.support->area.value):0U,d.queries,d.samples,
+        d.support ? unsigned(d.support->area.value):0U,d.queries,d.samples,d.steps,
         static_cast<unsigned long long>(motionTrace_.queued),static_cast<unsigned long long>(motionTrace_.dispatched),
         static_cast<unsigned long long>(motionTrace_.rejected),static_cast<unsigned long long>(motionTrace_.missedDecisions),
         motionCount_,static_cast<unsigned long long>(motionSequence_-motionCount_),

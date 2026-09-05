@@ -22,7 +22,7 @@ struct WalkDecision {
     PrimitiveEvent primitiveEvent{PrimitiveEvent::None};
     std::optional<GroundedTarget> support{}, target{};
     ProbeReason probeReason{ProbeReason::None};
-    std::uint32_t queries{}, samples{};
+    std::uint32_t queries{}, samples{}, steps{};
 };
 // One owned route, synchronous decision seam. Caller schedules decisions and
 // invalidates on route replacement; this class never submits a host command.

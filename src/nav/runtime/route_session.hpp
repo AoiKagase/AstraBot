@@ -22,6 +22,7 @@ struct RouteOptions {
     std::uint32_t maxWorldQueries{1};
     bool diagnosticPartial{false};
     query::NavRoutePolicy policy{}; // Pure policy context borrowed only during request().
+    double groundNavTolerance{2};
 };
 struct DecisionTrace {
     core::BotAgentId agent{};
