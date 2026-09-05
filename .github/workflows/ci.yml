@@ -36,4 +36,36 @@ jobs:
             build-nav-x86-asan/Testing/Temporary/
             build-nav-x86-asan/fuzz-artifacts/
             build-nav-x86-asan/long-fuzz/
-  # Linux validation is intentionally deferred until project-wide Finish.
+  linux-x86:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install x86 compiler and runtime libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends gcc-multilib g++-multilib
+      - name: Configure Linux x86 Debug portable targets
+        run: >-
+          cmake -S . -B build-linux-x86 -G "Unix Makefiles"
+          -DCMAKE_BUILD_TYPE=Debug
+          -DCMAKE_CXX_COMPILER=g++
+          -DCMAKE_CXX_FLAGS=-m32
+          -DCMAKE_EXE_LINKER_FLAGS=-m32
+          -DCMAKE_SHARED_LINKER_FLAGS=-m32
+          -DASTRABOT_BUILD_METAMOD=OFF
+          -DASTRABOT_BUILD_TESTS=ON
+          -DASTRABOT_BUILD_NAV_INSPECTOR=ON
+          -DASTRABOT_WARNINGS_AS_ERRORS=ON
+      - name: Build Linux x86 portable targets
+        run: cmake --build build-linux-x86 --parallel 2
+      - name: Test Linux x86 portable targets
+        run: ctest --test-dir build-linux-x86 --output-on-failure --timeout 60
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nav-linux-x86-evidence
+          path: |
+            build-linux-x86/Testing/Temporary/
+            build-linux-x86/fuzz-artifacts/
+  # Live HLDS/ReHLDS validation remains deferred until project-wide Finish.

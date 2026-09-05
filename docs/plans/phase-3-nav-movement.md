@@ -232,15 +232,15 @@ Unit/simulation passes never substitute for live observations.
 
 - **Goal:** reproducible scenario/budget evidence with separate gate statuses.
 - **Why now:** implemented/offline-tested must not imply live accepted.
-- **Files/modules:** replay, tests/live/nav manifests, Phase 3 report; CI changes
-  only under the Linux policy condition below.
+- **Files/modules:** replay, tests/live/nav manifests, Phase 3 report and ongoing
+  Linux x86 build/portable-test CI below.
 - **Interfaces:** environment/map/NAV hashes, actor count/start/goal/expected
   result, route/portal/primitive/command/reason trace.
 - **Implementation outline / commit slices:**
   - [ ] Complete offline matrix and finite trace/replan/time budgets; document
     every pending live row and missing real-file prerequisite.
-  - [ ] Consolidate conditional Linux CI restoration below.
-  - [ ] After project-wide Finish, run live/Linux gates, record exact results
+  - [ ] Consolidate ongoing Linux x86 CI evidence below.
+  - [ ] After project-wide Finish, run live gates including Linux HLDS/ReHLDS, record exact results
     and reopen failed work explicitly.
 - **Tests:** clean-map/map-change replay for every row, finite budgets, synthetic
   scheduling at 1/8/16 actors (not proof of live capability).
@@ -250,28 +250,24 @@ Unit/simulation passes never substitute for live observations.
   pending rows; live accepted needs observed passes for every required live row.
   Unavailable scenarios remain unverified, never waived.
 - **Dependencies:** P3-01–P3-07 applicable evidence; real NAV/runtime for live;
-  every project plan and explicit Finish before Linux/live execution.
+  every project plan and explicit Finish before live execution. Linux x86
+  build/portable-test CI runs independently of Finish.
 - **Risks:** Finish/live circular wording, tool availability, manual evidence gaps.
 - **Deferred work:** combat/tactics/learning and automatic deployment.
 
 ## Linux decision and ordering
 
-**Recommendation:** restore SDK-free Linux portable/Nav CI within existing
-P3-01 compatibility work once inspector/contracts exist, rather than defer
-compiler differences to final acceptance. P3-08 consolidates the evidence.
+**Approved policy (2026-09-06):** Windows and Linux targets are 32-bit/x86.
+SDK-free Linux x86 builds and portable/Nav CTest run on every GitHub Actions
+push and pull request, before and after Finish. The Ubuntu GCC job installs
+gcc-multilib/g++-multilib, sets `-m32`, Debug, tests ON, Metamod OFF and
+warnings-as-errors ON, and uses CMake directly. Existing Windows jobs remain.
+P3-08 consolidates actual CI evidence; adding a job is not a hosted pass.
 
-This is a **proposed policy change**, not execution permission. Explicitly revise
-AGENTS.md and matching active policy/CI documentation to allow pre-Finish offline
-Linux portable checks first. This session leaves AGENTS.md and active CI unchanged.
-Until revised, Linux remains post-Finish; the Phase 2 report is historical evidence.
-
-After that revision, add Ubuntu GCC/Clang Debug jobs: configure Ninja/Makefiles,
-tests ON, Metamod OFF, warnings-as-errors ON, build and CTest including all Nav
-tests. Use CMake directly, not Windows-only VsDevCmd scripts; provide equivalent
-portable manifest/hash checks. Hosted success requires actual job evidence.
-Then consider x86 Metamod under separately authorized policy: pinned SDK,
-multilib, -m32, ELF/export/ABI checks. Live always remains post-Finish unless an
-explicit later policy decision changes it. No implicit exception is made here.
+Linux real-device/live HLDS/ReHLDS validation remains strictly post-Finish.
+Offline CI success does not establish live acceptance. Linux Metamod SDK/ELF
+integration is outside this portable job; historical reports retain their
+original verification scope.
 
 ## Post-Finish acceptance matrix
 

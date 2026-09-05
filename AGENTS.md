@@ -41,9 +41,16 @@ The adapter export check must find exactly these undecorated names:
 `Meta_Query`, `Meta_Attach`, `Meta_Detach`, `GetEntityAPI2`,
 `GetEngineFunctions`, and `GiveFnptrsToDll`. The sixth export is the user-approved
 engine bootstrap for Metamod-managed command registration (2026-09-05).
-Linux `-m32` and live-server validation remain
-post-Finish checks and must not be started before the project-wide Finish
-decision, which is only made after every project plan is complete.
+
+## Linux x86 CI and live validation
+
+- Windows and Linux targets are 32-bit/x86, including portable tools and tests.
+- Linux x86 builds and SDK-free portable tests run on every GitHub Actions push
+  and pull request, independently of project-wide Finish. Use GCC with `-m32`
+  and `gcc-multilib` / `g++-multilib`, Debug, tests ON, Metamod OFF and
+  warnings-as-errors ON. CMake's 32-bit target check remains enabled.
+- Linux real-device/live HLDS or ReHLDS validation remains post-Finish. Offline
+  CI success never establishes live acceptance or declares Finish.
 
 ## FocalSpan and completion workflow
 
@@ -79,14 +86,15 @@ After implementation and verification:
 Treat `Finish` as an explicit project-wide state, not as a synonym for a phase
 completion or every possible platform or live-environment check.
 
-- Linux builds and real-device/live-server validation must not be started
-  before `Finish` has been explicitly confirmed for the entire project.
+- Linux x86 build/portable-test CI runs continuously before and after Finish.
+  Real-device/live-server validation, including Linux HLDS/ReHLDS, must not be
+  started before `Finish` has been explicitly confirmed for the entire project.
 - Determine and record `Finish` only after every plan in every project phase has
   completed its implementation, applicable verification, and required
   documentation evidence. Completing an individual phase or plan never sets
   `Finish`.
-- After `Finish` is confirmed, run the Linux build and real-device/live-server
-  checks as post-Finish validation, and report their results separately.
+- After `Finish` is confirmed, run real-device/live-server checks as post-Finish
+  validation and report their results separately from offline build/test CI.
 - If post-Finish validation fails, record the follow-up or reopened work
   explicitly; do not silently present the phase as fully accepted.
 
