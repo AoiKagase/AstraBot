@@ -162,12 +162,13 @@ Portable controller foundation: [blocker wait report](../reports/p3-04-blocker-w
 Expiry, stable PlayerId priority and a non-renewable attempt deadline have
 synthetic coverage. [Reactive Walk/host integration](../reports/p3-04-reactive-walk.md)
 now observes players and performs bounded yield/inspected avoidance. Automatic
-replan consumption and per-actor navigation integration remain; both checklist
-slices stay open.
+replan consumption remains open.
 
 The [per-player host seam](../reports/p3-04-player-host.md) now isolates entity,
-join, message decoding and dispatch with two-client synthetic tests. Per-actor
-NavConsole routing is still needed before simultaneous navigation acceptance.
+join, message decoding and dispatch with two-client synthetic tests. The
+[per-player NAV sessions](../reports/p3-04-multi-nav.md) share immutable navigation
+and isolate routes, motion, pending commands and bounded histories. Two-client
+synthetic navigation passes; live acceptance remains post-Finish.
 
 - **Goal:** bounded deterministic yield/avoid/replan without static mesh mutation.
 - **Why now:** local blockers must not become permanent Nav facts.
@@ -178,7 +179,7 @@ NavConsole routing is still needed before simultaneous navigation acceptance.
 - **Implementation outline / commit slices:**
   - [ ] Add reactive clearance-based side/yield, stable ID tie-break, expiry and
     door/obstacle invalidation; no trajectory prediction.
-  - [ ] Before two-AstraBot acceptance, replace active-primary assumptions with
+  - [x] Before two-AstraBot acceptance, replace active-primary assumptions with
     per-player entity/join/dispatch validation in a separate narrow commit.
 - **Tests:** head-on/same-direction/immobile players, door reopen, expiry, replay,
   capability absent/present; two clients with different join states, slot reuse,

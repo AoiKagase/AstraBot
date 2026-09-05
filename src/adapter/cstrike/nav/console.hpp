@@ -31,24 +31,33 @@ public:
     void configure(enginefuncs_t*, mutil_funcs_t*, globalvars_t*) noexcept;
     void reset() noexcept;
     void invalidate(nav::runtime::SessionReason) noexcept;
+    void invalidateActor(core::PlayerId,nav::runtime::SessionReason) noexcept;
     void observe(metamod::LifecycleCoordinator&) noexcept;
     void beforeDispatch(metamod::LifecycleCoordinator&) noexcept;
+    void beforeDispatch(metamod::LifecycleCoordinator&,core::PlayerId) noexcept;
     std::optional<MotionTrace> dispatchTicket() const noexcept {
-        return pendingMotion_ ? std::optional<MotionTrace>{motionTrace_}:std::nullopt;
+        return current_->pendingMotion_ ? std::optional<MotionTrace>{current_->motionTrace_}:std::nullopt;
     }
+    std::optional<MotionTrace> dispatchTicket(core::PlayerId) const noexcept;
     void afterDispatch(const metamod::MovementResult&, core::TickId,const std::optional<MotionTrace>&) noexcept;
+    void afterDispatch(core::PlayerId,const metamod::MovementResult&,core::TickId,const std::optional<MotionTrace>&) noexcept;
     void moveFrame(metamod::LifecycleCoordinator&) noexcept;
+    void moveFrame(metamod::LifecycleCoordinator&,core::PlayerId) noexcept;
     void execute(NavCommand, metamod::LifecycleCoordinator&) noexcept;
     // Publication binds an independently obtained immutable mesh to the current map.
     nav::diagnostics::NavError publish(core::MapGeneration,
         std::shared_ptr<const nav::model::NavMeshSnapshot>) noexcept;
-    const nav::runtime::DecisionTrace* trace() const noexcept { return session_ ? &session_->trace():nullptr; }
-    const MotionTrace& motionTrace() const noexcept { return motionTrace_; }
+    const nav::runtime::DecisionTrace* trace() const noexcept { return current_->session_ ? &current_->session_->trace():nullptr; }
+    const nav::runtime::DecisionTrace* trace(core::PlayerId) const noexcept;
+    const MotionTrace& motionTrace() const noexcept { return current_->motionTrace_; }
+    const MotionTrace* motionTrace(core::PlayerId) const noexcept;
     static constexpr std::size_t motionHistoryLimit=128;
-    std::size_t motionHistoryCount() const noexcept { return motionCount_; }
+    std::size_t motionHistoryCount() const noexcept { return current_->motionCount_; }
+    std::size_t motionHistoryCount(core::PlayerId) const noexcept;
     const MotionTrace* motionHistory(std::size_t index) const noexcept {
-        return index<motionCount_ ? &motionHistory_[(motionNext_+motionHistoryLimit-motionCount_+index)%motionHistoryLimit]:nullptr;
+        return index<current_->motionCount_ ? &current_->motionHistory_[(current_->motionNext_+motionHistoryLimit-current_->motionCount_+index)%motionHistoryLimit]:nullptr;
     }
+    const MotionTrace* motionHistory(core::PlayerId,std::size_t) const noexcept;
     nav::runtime::WorldQueryResult query(const nav::runtime::QueryRequest&) override;
 private:
     nav::runtime::MovementSnapshot snapshot(metamod::LifecycleCoordinator&) noexcept;
@@ -61,6 +70,9 @@ private:
     void clearPending() noexcept;
     void recordMotion(MotionEvent, MotionReason=MotionReason::None) noexcept;
     void printMotion() noexcept;
+    void invalidateCurrent(nav::runtime::SessionReason) noexcept;
+    bool applyDeferredInvalidation() noexcept;
+    bool selectActor(core::PlayerId) noexcept;
     void submitMotion(const nav::runtime::MovementSnapshot&,metamod::LifecycleCoordinator&,
         const core::MovementIntent&,bool firstFrame,std::uint64_t age) noexcept;
     struct Segment { nav::model::NavVector3 start{}, end{}; };
@@ -74,6 +86,8 @@ private:
         std::optional<nav::local::DoorContact> contact{};
     };
     metamod::MovementCoordinator* movement_{}; // Owned by the containing lifecycle coordinator.
+    struct ActorState {
+    core::PlayerId actor{};
     std::optional<nav::local::Walk> walk_{};
     std::optional<nav::local::IntentPump> pump_{};
     std::optional<Segment> segment_{};
@@ -87,14 +101,29 @@ private:
     std::array<MotionTrace,motionHistoryLimit> motionHistory_{};
     std::size_t motionNext_{}, motionCount_{};
     std::uint64_t motionSequence_{};
+    std::optional<nav::runtime::RouteSession> session_{};
+    };
+    // Fixed slot capacity, lazy allocation, stable addresses through reentrant
+    // invalidation/reset. Mesh, graph and index remain shared across all actors.
+    ActorState idle_{};
+    std::array<std::unique_ptr<ActorState>,host::kMaxClientSlots> actors_{};
+    ActorState* current_{&idle_};
+    struct ActorScope {
+        ActorState*& current;
+        ActorState* previous;
+        ActorScope(ActorState*& slot,ActorState* actor) noexcept : current(slot),previous(slot) { current=actor; }
+        ~ActorScope() { current=previous; }
+    };
+    ActorState* findActor(core::PlayerId) noexcept;
+    const ActorState* findActor(core::PlayerId) const noexcept;
     enginefuncs_t* engine_{};
     mutil_funcs_t* utility_{};
     globalvars_t* globals_{};
     nav::runtime::NavigationSnapshot navigation_{};
     std::shared_ptr<const nav::query::NavSpatialIndex> index_{};
-    std::optional<nav::runtime::RouteSession> session_{};
     bool inRequest_{};
     std::optional<nav::runtime::SessionReason> deferredInvalidation_{};
+    bool deferredAll_{}, deferredReset_{};
     edict_t* queryingEntity_{}; // borrowed only for synchronous request
     const host::PlayerRegistry* queryingPlayers_{};
     const metamod::LifecycleCoordinator* queryingOwner_{};

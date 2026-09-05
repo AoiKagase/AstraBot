@@ -546,15 +546,18 @@ Portable navigation is per `PlayerId` plus map generation. It must never know
 states, each retaining its own `FakeClientCoordinator`, join and message decoder.
 PlayerId/map/edict serial identify the mapped entity; submit and dispatch use
 that actor's state and consume only its queue. Primary convenience APIs remain
-for bootstrap. The debug NavConsole still requires a unique managed actor and
-must gain explicit per-actor sessions before simultaneous navigation acceptance.
+for bootstrap. NavConsole shares immutable map navigation and owns per-player
+route, Walk, IntentPump, queue and bounded history state. Debug goto/status/cancel
+accept `slot:generation`; omission requires exactly one managed actor. Individual
+retirement preserves other sessions, while map publication invalidates all.
+See [per-player NAV evidence](reports/p3-04-multi-nav.md) for synthetic two-lane
+navigation, generation reuse and reentrant invalidation coverage.
 
 P3-01/P3-03 initially use one actor. The P3-04 adapter change has synthetic
 two-client creation, interleaved menu, join/dispatch, removal/reuse and map-change
 coverage; see [the host seam report](reports/p3-04-player-host.md). Synthetic
 commands establish isolation, not simultaneous live navigation. Two-AstraBot
-live acceptance and P3-08 8/16-Bot loads still require per-actor navigation
-integration and post-Finish live evidence.
+live acceptance and P3-08 8/16-Bot loads still require post-Finish live evidence.
 
 A future event consumer can subscribe to terminal primitive outcome carrying
 actor kind/ID, map fingerprint/generation, route generation, selected edge and

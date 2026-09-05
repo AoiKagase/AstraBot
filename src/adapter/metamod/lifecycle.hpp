@@ -48,6 +48,7 @@ public:
     FakeClientResult createBot(const char*, cstrike::JoinRequest) noexcept;
     edict_t* entityFor(core::PlayerId) const noexcept;
     core::PlayerId playerForEntity(edict_t*) const noexcept;
+    bool removalPending(core::PlayerId) const noexcept;
     void queuePrimaryCreate(cstrike::JoinRequest request) noexcept;
     MovementResult submitCommand(
         core::PlayerId player,

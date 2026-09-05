@@ -52,6 +52,9 @@ void captureGround(const float*, const float* end, int, edict_t*, TraceResult* r
 }
 
 int gHullKind=-1, gHullCalls=0, gHullMode=0;
+std::map<edict_t*,unsigned> gActorHullCalls;
+edict_t* gInvalidateFromActor=nullptr;
+astrabot::core::PlayerId gInvalidateActor{};
 float gStairHeight=0;
 bool gStairCeiling=false;
 edict_t gNavDoor{}, gNavCompetitor{};
@@ -68,6 +71,12 @@ float supportHeight(float x) { return x+16>100 ? gStairHeight:0; }
 void captureNavHull(const float* start, const float* end, int ignoreMonsters, int hull, edict_t* actor, TraceResult* result) {
     assert((ignoreMonsters==0 || ignoreMonsters==1) && actor!=nullptr);
     gHullKind=hull; ++gHullCalls;
+    ++gActorHullCalls[actor];
+    if(actor==gInvalidateFromActor) {
+        gInvalidateFromActor=nullptr;
+        astrabot::adapter::metamod::lifecycleCoordinator().navConsole().invalidateActor(
+            gInvalidateActor,astrabot::nav::runtime::SessionReason::Cancelled);
+    }
     *result={}; result->flFraction=1; result->vecEndPos=Vector(end[0],end[1],end[2]);
     const float minimumZ=hull==3 ? -18.0f:-36.0f;
     const float floor=supportHeight(end[0]);
@@ -465,7 +474,8 @@ void captureRunPlayerMove(
     if(gFixture->multiClient) gClientMoves.push_back({entity,forwardMove});
     if(gSimulateNav) {
         auto& owner=astrabot::adapter::metamod::lifecycleCoordinator();
-        assert(owner.registry().currentTick().isAfter(owner.navConsole().motionTrace().commandTick));
+        const auto* actorTrace=owner.navConsole().motionTrace(owner.playerForEntity(entity));
+        assert(actorTrace && owner.registry().currentTick().isAfter(actorTrace->commandTick));
         astrabot::core::BotCommand c{{viewAngles[0],viewAngles[1],viewAngles[2]},
             {forwardMove,sideMove,upMove},buttons,impulse,msec};
         gNavMoves.push_back(c); assert(c.validate());
@@ -492,7 +502,7 @@ void captureRunPlayerMove(
         entity->v.origin.y+=static_cast<float>((forwardMove*std::sin(yaw)-sideMove*std::cos(yaw))*dt);
         if(gDoorActive && !gDoorOpen && entity->v.origin.x>=doorPlane &&
            forwardMove*std::cos(yaw)+sideMove*std::sin(yaw)>0) {
-            assert(owner.navConsole().motionTrace().decision.contact && buttons==0);
+            assert(actorTrace->decision.contact && buttons==0);
             entity->v.origin.x=doorPlane; ++gTouchContacts;
             if(!gDoorLocked && !(gNavDoor.v.spawnflags&(1<<8)) && gNavDoor.v.targetname==0)
                 gDoorOpenAtUs=gNavClockUs+120000;
@@ -900,6 +910,100 @@ void testMultipleManagedClients() {
     const auto beforeMap=gClientMoves.size(); owner.serverDeactivate(); frame();
     assert(gClientMoves.size()==beforeMap && !owner.entityFor(first.player) && owner.agents().mappingCount()==0);
     detach();
+}
+void testMultipleNavSessions() {
+    using namespace astrabot;
+    for(std::uint64_t us : {8000U,16000U,100000U}) for(int mode=0;mode<6;++mode) {
+        Fixture fixture{}; fixture.multiClient=true; fixture.engine.pfnPEntityOfEntIndex=&captureDoorEntity;
+        enginefuncs_t hooks{}; prepareNavWalk(fixture,hooks);
+        auto& owner=adapter::metamod::lifecycleCoordinator(); auto& console=owner.navConsole();
+        const auto first=owner.fakeClient().activePlayer();
+        fixture.createSecond=true;
+        const auto second=owner.createBot("AstraBot-OtherLane",{adapter::cstrike::Team::Terrorist,1});
+        assert(second.succeeded());
+        sendVguiMenu(hooks,11,&fixture.secondEntity,2,1); navFrame(fixture);
+        sendVguiMenu(hooks,11,&fixture.secondEntity,26,1); navFrame(fixture);
+        sendTeamInfo(hooks,13,2,"TERRORIST");
+        assert(owner.joinState(second.player)->phase()==adapter::cstrike::JoinPhase::Joined);
+        fixture.secondEntity.v=fixture.entity.v; fixture.secondEntity.v.origin=Vector(50,250,36);
+        route_test::Area a{1,{{0,0,0},{100,100,0},0,0}},b{2,{{100,0,0},{200,100,0},0,0}},
+            c{3,{{0,200,0},{100,300,0},0,0}},d{4,{{100,200,0},{200,300,0},0,0}};
+        a.targets[1]={2}; c.targets[1]={4};
+        assert(console.publish(owner.registry().mapGeneration(),route_test::snapshot({a,b,c,d})).isNone());
+        const auto one="1:"+std::to_string(first.generation.value);
+        const auto two="2:"+std::to_string(second.player.generation.value);
+        runNav({"astrabot_goto","2",one.c_str()}); runNav({"astrabot_goto","4",two.c_str()});
+        assert(console.trace(first)->state==nav::runtime::SessionState::Ready);
+        assert(console.trace(second.player)->state==nav::runtime::SessionState::Ready);
+        gClientMoves.clear(); navFrame(fixture,us);
+        const auto firstSequence=console.motionTrace(first)->sequence,secondSequence=console.motionTrace(second.player)->sequence;
+        // Ambiguous, malformed and stale selectors must not retire either pending command.
+        runNav({"astrabot_nav_cancel"}); runNav({"astrabot_goto","1","1:0"});
+        runNav({"astrabot_nav_cancel","2:999"}); runNav({"astrabot_nav_cancel","2:1:1"});
+        assert(console.motionTrace(first)->sequence==firstSequence && console.motionTrace(second.player)->sequence==secondSequence);
+        if(mode==1) runNav({"astrabot_nav_cancel",one.c_str()});
+        if(mode==2) owner.clientDisconnect(&fixture.secondEntity);
+        if(mode==5) {
+            gInvalidateFromActor=&fixture.entity; gInvalidateActor=second.player;
+            runNav({"astrabot_goto","2",one.c_str()});
+            assert(!gInvalidateFromActor && !console.trace(second.player));
+            assert(console.trace(first)->state==nav::runtime::SessionState::Ready);
+        }
+        if(mode==3) {
+            owner.serverDeactivate(); const auto moves=gClientMoves.size(); navFrame(fixture,us);
+            assert(gClientMoves.size()==moves && !console.trace(first) && !console.trace(second.player));
+            gSimulateNav=false; detach(); continue;
+        }
+        const float stoppedX=mode==1 ? fixture.entity.v.origin.x:fixture.secondEntity.v.origin.x;
+        bool arrived=false;
+        for(int frame=0;frame<2000;++frame) {
+            const auto firstHulls=gActorHullCalls[&fixture.entity],secondHulls=gActorHullCalls[&fixture.secondEntity];
+            navFrame(fixture,us);
+            for(const auto player : {first,second.player}) {
+                const auto* t=console.motionTrace(player); assert(t);
+                assert(t->decision.queries<=21 && t->decision.samples<=4);
+                if(t->decision.tick==owner.registry().currentTick()) {
+                    const auto queries=player==first ? gActorHullCalls[&fixture.entity]-firstHulls:
+                        gActorHullCalls[&fixture.secondEntity]-secondHulls;
+                    assert(t->decision.queries==queries);
+                }
+                assert(console.motionHistoryCount(player)<=console.motionHistoryLimit);
+                for(std::size_t i=0;i<console.motionHistoryCount(player);++i)
+                    assert(console.motionHistory(player,i)->decision.binding.actor==player);
+            }
+            assert(std::abs(fixture.entity.v.origin.y-50)<0.01f && std::abs(fixture.secondEntity.v.origin.y-250)<0.01f);
+            const bool oneArrived=console.motionTrace(first)->decision.state==nav::local::WalkState::Arrived;
+            const bool twoArrived=console.motionTrace(second.player)->decision.state==nav::local::WalkState::Arrived;
+            if((mode==1 || oneArrived) && (mode==2 || mode==5 || twoArrived)) { arrived=true; break; }
+        }
+        assert(arrived);
+        if(mode!=1) assert(std::abs(fixture.entity.v.origin.x-117)<=1.01f);
+        if(mode!=2 && mode!=5) assert(std::abs(fixture.secondEntity.v.origin.x-117)<=1.01f);
+        if(mode==1) assert(fixture.entity.v.origin.x==stoppedX);
+        if(mode==2 || mode==5) assert(fixture.secondEntity.v.origin.x==stoppedX);
+        if(mode==4) {
+            owner.clientDisconnect(&fixture.secondEntity); ++fixture.secondEntity.serialnumber;
+            const auto replacement=owner.createBot("AstraBot-NewGeneration",{adapter::cstrike::Team::Terrorist,1});
+            assert(replacement.succeeded() && replacement.player.generation!=second.player.generation);
+            runNav({"astrabot_goto","4",two.c_str()}); assert(!console.trace(replacement.player));
+            sendVguiMenu(hooks,11,&fixture.secondEntity,2,1); navFrame(fixture);
+            sendVguiMenu(hooks,11,&fixture.secondEntity,26,1); navFrame(fixture);
+            sendTeamInfo(hooks,13,2,"TERRORIST");
+            fixture.secondEntity.v.origin=Vector(50,250,36);
+            const auto fresh="2:"+std::to_string(replacement.player.generation.value);
+            runNav({"astrabot_goto","4",fresh.c_str()});
+            assert(!console.motionTrace(second.player) && console.trace(replacement.player)->state==nav::runtime::SessionState::Ready);
+            assert(console.motionHistoryCount(replacement.player)<console.motionHistoryLimit);
+            for(int frame=0;frame<2000 && console.motionTrace(replacement.player)->decision.state!=nav::local::WalkState::Arrived;++frame)
+                navFrame(fixture,us);
+            assert(console.motionTrace(replacement.player)->decision.state==nav::local::WalkState::Arrived);
+            for(std::size_t i=0;i<console.motionHistoryCount(replacement.player);++i)
+                assert(console.motionHistory(replacement.player,i)->decision.binding.actor==replacement.player);
+            assert(std::abs(fixture.entity.v.origin.x-117)<=1.01f);
+        }
+        assert(!gClientMoves.empty());
+        gSimulateNav=false; detach();
+    }
 }
 void testNavPlayers() {
     using namespace astrabot;
@@ -1789,6 +1893,7 @@ int main() {
     testNavSteering();
     testNavPlayerQueries();
     testMultipleManagedClients();
+    testMultipleNavSessions();
     testMultipleClientDetach();
     testNavPlayers();
     testNavWalkCancellationAndGuards();

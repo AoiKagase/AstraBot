@@ -33,6 +33,65 @@ std::string_view bounded(const char* text,std::size_t max) noexcept {
     std::size_t n=0; while(n<=max && text[n]) ++n;
     return n>max ? std::string_view{}:std::string_view{text,n};
 }
+std::optional<core::PlayerId> parsePlayer(std::string_view text) noexcept {
+    const auto colon=text.find(':');
+    if(colon==std::string_view::npos) return {};
+    const auto slot=debug::parseNavGoal(text.substr(0,colon));
+    const auto generation=debug::parseNavGoal(text.substr(colon+1));
+    if(!slot || !generation || slot->value>host::kMaxClientSlots) return {};
+    return core::PlayerId{static_cast<std::uint16_t>(slot->value),{generation->value}};
+}
+}
+NavConsole::ActorState* NavConsole::findActor(core::PlayerId player) noexcept {
+    if(!player.isValid() || player.slot>actors_.size()) return nullptr;
+    auto* actor=actors_[player.slot-1U].get();
+    return actor && actor->actor==player ? actor:nullptr;
+}
+const NavConsole::ActorState* NavConsole::findActor(core::PlayerId player) const noexcept {
+    if(!player.isValid() || player.slot>actors_.size()) return nullptr;
+    const auto* actor=actors_[player.slot-1U].get();
+    return actor && actor->actor==player ? actor:nullptr;
+}
+bool NavConsole::selectActor(core::PlayerId player) noexcept {
+    if(inRequest_ || !player.isValid() || player.slot>actors_.size()) return false;
+    auto& actor=actors_[player.slot-1U];
+    try { if(!actor) actor=std::make_unique<ActorState>(); } catch(...) { line("nav error=AllocationFailure"); return false; }
+    current_=actor.get();
+    if(current_->actor!=player) {
+        invalidateCurrent(nav::runtime::SessionReason::Disconnected);
+        *current_=ActorState{}; current_->actor=player;
+    }
+    return true;
+}
+const nav::runtime::DecisionTrace* NavConsole::trace(core::PlayerId player) const noexcept {
+    const auto* actor=findActor(player); return actor && actor->session_ ? &actor->session_->trace():nullptr;
+}
+const MotionTrace* NavConsole::motionTrace(core::PlayerId player) const noexcept {
+    const auto* actor=findActor(player); return actor ? &actor->motionTrace_:nullptr;
+}
+std::size_t NavConsole::motionHistoryCount(core::PlayerId player) const noexcept {
+    const auto* actor=findActor(player); return actor ? actor->motionCount_:0;
+}
+const MotionTrace* NavConsole::motionHistory(core::PlayerId player,std::size_t index) const noexcept {
+    const auto* actor=findActor(player);
+    return actor && index<actor->motionCount_ ? &actor->motionHistory_[(actor->motionNext_+motionHistoryLimit-actor->motionCount_+index)%motionHistoryLimit]:nullptr;
+}
+std::optional<MotionTrace> NavConsole::dispatchTicket(core::PlayerId player) const noexcept {
+    const auto* actor=findActor(player);
+    return actor && actor->pendingMotion_ ? std::optional<MotionTrace>{actor->motionTrace_}:std::nullopt;
+}
+void NavConsole::beforeDispatch(metamod::LifecycleCoordinator& owner,core::PlayerId player) noexcept {
+    auto* actor=findActor(player); if(!actor) return;
+    ActorScope scope(current_,actor); beforeDispatch(owner);
+}
+void NavConsole::afterDispatch(core::PlayerId player,const metamod::MovementResult& result,core::TickId tick,
+    const std::optional<MotionTrace>& ticket) noexcept {
+    auto* actor=findActor(player); if(!actor) return;
+    ActorScope scope(current_,actor); afterDispatch(result,tick,ticket);
+}
+void NavConsole::moveFrame(metamod::LifecycleCoordinator& owner,core::PlayerId player) noexcept {
+    auto* actor=findActor(player); if(!actor) return;
+    ActorScope scope(current_,actor); moveFrame(owner);
 }
 void NavConsole::configure(enginefuncs_t* engine,mutil_funcs_t* utility,globalvars_t* globals) noexcept {
     engine_=engine; utility_=utility; globals_=globals;
@@ -54,25 +113,47 @@ void NavConsole::printUpdate(const nav::runtime::SessionUpdate& update) noexcept
         char text[96]{}; std::snprintf(text,sizeof(text),"nav rejected reason=%u",unsigned(update.reason)); line(text);
     }
 }
-void NavConsole::invalidate(nav::runtime::SessionReason reason) noexcept {
+void NavConsole::invalidateCurrent(nav::runtime::SessionReason reason) noexcept {
     clearPending();
-    if(inRequest_) { deferredInvalidation_=reason; return; }
     stopMotion();
-    if(session_) {
-        auto update=session_->cancel();
+    if(current_->session_) {
+        auto update=current_->session_->cancel();
         for(std::size_t i=0;i<update.count;++i) update.events[i].reason=reason;
         printUpdate(update);
     }
-    session_.reset(); navigation_={}; index_.reset(); queryingEntity_=nullptr; queryingPlayers_=nullptr; queryingOwner_=nullptr;
+    current_->session_.reset();
+}
+void NavConsole::invalidateActor(core::PlayerId player,nav::runtime::SessionReason reason) noexcept {
+    auto* actor=findActor(player); if(!actor) return;
+    if(inRequest_ && current_==actor) { clearPending(); deferredInvalidation_=reason; return; }
+    ActorScope scope(current_,actor); invalidateCurrent(reason);
+}
+void NavConsole::invalidate(nav::runtime::SessionReason reason) noexcept {
+    for(auto& actor:actors_) if(actor) {
+        ActorScope scope(current_,actor.get());
+        if(inRequest_) clearPending(); else invalidateCurrent(reason);
+    }
+    if(inRequest_) { deferredInvalidation_=reason; deferredAll_=true; return; }
+    navigation_={}; index_.reset(); queryingEntity_=nullptr; queryingPlayers_=nullptr; queryingOwner_=nullptr;
+}
+bool NavConsole::applyDeferredInvalidation() noexcept {
+    if(!deferredInvalidation_) return false;
+    const auto reason=*deferredInvalidation_; const bool all=deferredAll_, resetPending=deferredReset_;
+    deferredInvalidation_.reset(); deferredAll_=deferredReset_=false;
+    if(all) invalidate(reason); else invalidateCurrent(reason);
+    if(resetPending) reset();
+    return true;
 }
 void NavConsole::reset() noexcept {
+    if(inRequest_) { invalidate(nav::runtime::SessionReason::Cancelled); deferredReset_=true; return; }
     invalidate(nav::runtime::SessionReason::Cancelled); engine_=nullptr; utility_=nullptr; globals_=nullptr;
-    movement_=nullptr; neutralBinding_.reset(); motionTrace_={}; motionCount_=motionNext_=0; motionSequence_=0;
-    guardTick_={}; guardQueries_=0;
+    movement_=nullptr;
+    for(auto& actor:actors_) if(actor) *actor=ActorState{};
+    idle_=ActorState{}; current_=&idle_;
 }
 nav::diagnostics::NavError NavConsole::publish(core::MapGeneration map,
     std::shared_ptr<const nav::model::NavMeshSnapshot> mesh) noexcept {
-    if(inRequest_) { deferredInvalidation_=nav::runtime::SessionReason::GoalReplaced;
+    if(inRequest_) { deferredInvalidation_=nav::runtime::SessionReason::GoalReplaced; deferredAll_=true;
         return {nav::diagnostics::NavErrorKind::InvalidInput}; }
     invalidate(nav::runtime::SessionReason::GoalReplaced);
     if (!map.isValid()) return {nav::diagnostics::NavErrorKind::InvalidInput};
@@ -106,16 +187,17 @@ bool NavConsole::load(const char* path,core::MapGeneration map) noexcept {
 }
 nav::runtime::MovementSnapshot NavConsole::snapshot(metamod::LifecycleCoordinator& owner) noexcept {
     nav::runtime::MovementSnapshot s;
-    auto& registry=owner.registry(); auto& fake=owner.fakeClient();
-    s.actor=fake.activePlayer(); s.agent=owner.agents().findByPlayer(s.actor).agent;
+    auto& registry=owner.registry();
+    s.actor=current_->actor; s.agent=owner.agents().findByPlayer(s.actor).agent;
     s.map=registry.mapGeneration(); s.tick=registry.currentTick();
     if(globals_ && std::isfinite(globals_->frametime) && globals_->frametime>=0 && globals_->frametime<=60)
         s.elapsedUs=static_cast<std::uint64_t>(double(globals_->frametime)*1000000.0);
     s.connected=s.actor.isValid() && registry.currentPlayer(s.actor.slot)==s.actor;
-    s.joined=owner.joinState().phase()==JoinPhase::Joined && owner.joinState().player()==s.actor;
-    auto* entity=fake.activeEntity();
+    const auto* join=owner.joinState(s.actor);
+    s.joined=join && join->phase()==JoinPhase::Joined && join->player()==s.actor;
+    auto* entity=owner.entityFor(s.actor);
     if (!entity || entity->free || !engine_ || !engine_->pfnIndexOfEdict ||
-        engine_->pfnIndexOfEdict(entity)!=s.actor.slot || owner.agents().mappingCount()!=1 || fake.removalPending()) return s;
+        engine_->pfnIndexOfEdict(entity)!=s.actor.slot || !s.agent.isValid() || owner.removalPending(s.actor)) return s;
     s.kind=(entity->v.flags&FL_FAKECLIENT) ? nav::runtime::ActorKind::ManagedBot:nav::runtime::ActorKind::Human;
     const auto& v=entity->v;
     s.alive=v.deadflag==DEAD_NO; s.grounded=(v.flags&FL_ONGROUND)!=0; s.ducked=(v.flags&FL_DUCKING)!=0;
@@ -128,42 +210,63 @@ nav::runtime::MovementSnapshot NavConsole::snapshot(metamod::LifecycleCoordinato
 }
 void NavConsole::observe(metamod::LifecycleCoordinator& owner) noexcept {
     if(inRequest_) return;
-    if(session_ && session_->executable()) {
-        printUpdate(session_->observe(snapshot(owner)));
-        if(!session_->executable()) stopMotion();
+    if(current_->session_ && current_->session_->executable()) {
+        printUpdate(current_->session_->observe(snapshot(owner)));
+        if(!current_->session_->executable()) stopMotion();
     }
 }
 void NavConsole::execute(NavCommand command,metamod::LifecycleCoordinator& owner) noexcept {
     if(inRequest_) return;
     if(!engine_ || !engine_->pfnCmd_Argc || !engine_->pfnCmd_Argv) return;
     const int expected=(command==NavCommand::Load || command==NavCommand::GoTo) ? 2:1;
-    if(engine_->pfnCmd_Argc()!=expected) { line("nav error=InvalidArguments"); return; }
+    const auto argc=engine_->pfnCmd_Argc();
+    if(argc!=expected && (command==NavCommand::Load || argc!=expected+1)) { line("nav error=InvalidArguments"); return; }
+    if(command==NavCommand::Load) {
+        if(!owner.registry().isMapActive()) { line("nav error=NoActiveMap"); return; }
+        const auto path=bounded(engine_->pfnCmd_Argv(1),1024);
+        if(path.empty()) { line("nav error=InvalidPath"); return; }
+        (void)load(path.data(),owner.registry().mapGeneration()); return;
+    }
+    if(command==NavCommand::GoTo && !owner.registry().isMapActive()) { line("nav error=NoActiveMap"); return; }
+    core::PlayerId player{};
+    if(argc==expected+1) {
+        const auto requested=parsePlayer(bounded(engine_->pfnCmd_Argv(expected),24));
+        if(!requested || owner.registry().currentPlayer(requested->slot)!=*requested ||
+           !owner.agents().findByPlayer(*requested).isValid() || !owner.entityFor(*requested)) {
+            line("nav error=InvalidActorArgument expected=slot:generation"); return;
+        }
+        player=*requested;
+    } else {
+        for(std::uint16_t slot=1;slot<=owner.registry().clientMax();++slot) {
+            const auto candidate=owner.registry().currentPlayer(slot);
+            if(!owner.agents().findByPlayer(candidate).isValid()) continue;
+            if(player.isValid()) { line("nav error=NoUniqueJoinedManagedActor specify=slot:generation"); return; }
+            player=candidate;
+        }
+        if(!player.isValid()) { line("nav state=Idle"); return; }
+    }
+    if(!selectActor(player)) return;
     if(command==NavCommand::Status) {
         observe(owner);
-        if(session_) debug::printNavTrace(session_->trace(),&sink,this); else line("nav state=Idle");
+        if(current_->session_) debug::printNavTrace(current_->session_->trace(),&sink,this); else line("nav state=Idle");
         printMotion();
         return;
     }
     if(command==NavCommand::Cancel) {
         stopMotion();
-        if(session_) printUpdate(session_->cancel()); else line("nav state=Idle"); return;
+        if(current_->session_) printUpdate(current_->session_->cancel()); else line("nav state=Idle"); return;
     }
     if(!owner.registry().isMapActive()) { line("nav error=NoActiveMap"); return; }
-    if(command==NavCommand::Load) {
-        const auto path=bounded(engine_->pfnCmd_Argv(1),1024);
-        if(path.empty()) { line("nav error=InvalidPath"); return; }
-        (void)load(path.data(),owner.registry().mapGeneration()); return;
-    }
     const auto goal=debug::parseNavGoal(bounded(engine_->pfnCmd_Argv(1),10));
     if(!goal) { line("nav error=InvalidGoalArgument"); return; }
     const auto s=snapshot(owner);
     if(s.kind!=nav::runtime::ActorKind::ManagedBot || !s.agent.isValid() || s.connected!=true || s.joined!=true) {
         observe(owner); line("nav error=NoUniqueJoinedManagedActor"); return;
     }
-    if(!session_ || session_->trace().actor!=s.actor || session_->trace().agent!=s.agent || session_->trace().map!=s.map)
-        session_.emplace(s.agent,s.actor,s.map);
+    if(!current_->session_ || current_->session_->trace().actor!=s.actor || current_->session_->trace().agent!=s.agent || current_->session_->trace().map!=s.map)
+        current_->session_.emplace(s.agent,s.actor,s.map);
     stopMotion();
-    queryingEntity_=owner.fakeClient().activeEntity();
+    queryingEntity_=owner.entityFor(current_->actor);
     queryingPlayers_=&owner.registry();
     queryingOwner_=&owner;
     nav::runtime::RouteOptions options; options.limits={100000,256*mib};
@@ -171,21 +274,21 @@ void NavConsole::execute(NavCommand command,metamod::LifecycleCoordinator& owner
     auto navigation=navigation_;
     if(!navigation.graph) navigation.map=s.map;
     inRequest_=true;
-    auto update=session_->request(s,*goal,navigation,*this,options);
+    auto update=current_->session_->request(s,*goal,navigation,*this,options);
     inRequest_=false;
     queryingEntity_=nullptr; queryingPlayers_=nullptr; queryingOwner_=nullptr;
     if(deferredInvalidation_) {
-        const auto reason=*deferredInvalidation_; deferredInvalidation_.reset();
+        const auto reason=*deferredInvalidation_;
         for(std::size_t i=0;i<update.count;++i) {
             update.events[i].reason=reason;
             update.events[i].state=nav::runtime::SessionState::Cancelled;
             update.events[i].terminal=true;
         }
         printUpdate(update);
-        invalidate(reason); return;
+        (void)applyDeferredInvalidation(); return;
     }
     printUpdate(update);
-    if(session_ && session_->executable()) startMotion(s);
+    if(current_->session_ && current_->session_->executable()) startMotion(s);
 }
 nav::runtime::WorldQueryResult NavConsole::query(const nav::runtime::QueryRequest& request) {
     const NavPlayerResolver resolver{queryingOwner_,[](const void* context,edict_t* entity) noexcept {

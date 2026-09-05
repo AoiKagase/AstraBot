@@ -63,6 +63,9 @@ const cstrike::JoinState* LifecycleCoordinator::joinState(core::PlayerId player)
     const auto* client=findClient(player);
     return client && client->join.player()==player ? &client->join:nullptr;
 }
+bool LifecycleCoordinator::removalPending(core::PlayerId player) const noexcept {
+    const auto* client=findClient(player); return client && client->fake.removalPending();
+}
 void LifecycleCoordinator::configure(enginefuncs_t* engine,mutil_funcs_t* utility,
     DLL_FUNCTIONS* game,cstrike::UserMessageIds ids) noexcept {
     engineFunctions_=engine; utilityFunctions_=utility; gameDllFunctions_=game;
@@ -139,7 +142,7 @@ void LifecycleCoordinator::clientDisconnect(edict_t* entity) noexcept {
     }
     movement_.forget(player);
     if(client) {
-        if(client==&clients_[0]) navConsole_.invalidate(nav::runtime::SessionReason::Disconnected);
+        navConsole_.invalidateActor(player,nav::runtime::SessionReason::Disconnected);
         emitJoin(*client,client->join.cancel(cstrike::JoinError::Disconnected));
         client->join.reset(); client->decoder.reset(); client->cleanupPending=false;
         client->cleanupError=cstrike::JoinError::None;
@@ -180,7 +183,7 @@ RemovalResult LifecycleCoordinator::remove(core::PlayerId player) noexcept {
     if(!client) return {debug::RemovalOutcome::NoOp,debug::RemovalError::None,{},true,false};
     if(client->fake.removalPending()) return {debug::RemovalOutcome::NoOp,debug::RemovalError::None,player,true,false};
     movement_.forget(player);
-    if(client==&clients_[0]) navConsole_.invalidate(nav::runtime::SessionReason::Disconnected);
+    navConsole_.invalidateActor(player,nav::runtime::SessionReason::Disconnected);
     emitJoin(*client,client->join.cancel(cstrike::JoinError::Disconnected));
     client->decoder.reset(); client->cleanupPending=false; client->cleanupError=cstrike::JoinError::None;
     if(commandPlayer_==player) {
@@ -213,22 +216,25 @@ void LifecycleCoordinator::startFrame() noexcept {
             if(client.join.player()==player) handleJoinAction(client,client.join.commandCompleted(dispatched));
         }
     }
-    navConsole_.beforeDispatch(*this);
-    const auto ticket=navConsole_.dispatchTicket();
+    for(auto& client:clients_) navConsole_.beforeDispatch(*this,client.fake.activePlayer());
     for(auto& client:clients_) {
         if(!registry_.isMapActive() || registry_.mapGeneration()!=map || registry_.currentTick()!=tick) return;
         const auto player=client.fake.activePlayer(); if(!player.isValid()) continue;
+        const auto ticket=navConsole_.dispatchTicket(player);
         const auto moved=movement_.dispatchAtFrameEnd(client.join.phase(),player,client.fake.entityFor(player),map,tick);
-        if(&client==&clients_[0]) navConsole_.afterDispatch(moved,tick,ticket);
+        navConsole_.afterDispatch(player,moved,tick,ticket);
     }
-    navConsole_.moveFrame(*this);
+    for(auto& client:clients_) {
+        if(!registry_.isMapActive() || registry_.mapGeneration()!=map || registry_.currentTick()!=tick) return;
+        navConsole_.moveFrame(*this,client.fake.activePlayer());
+    }
 }
 MovementResult LifecycleCoordinator::submitCommand(core::PlayerId player,core::MapGeneration map,
     core::TickId tick,const core::BotCommand& command) noexcept {
     const auto* client=findClient(player);
     const auto reject=[&](MovementError error) { return movement_.rejectIngress(error,player,map,tick,command.msec); };
     if(!client) return reject(MovementError::MappingMismatch);
-    if(client->join.player()!=player || client->join.phase()!=cstrike::JoinPhase::Joined) return reject(MovementError::NotJoined);
+    if(client->fake.removalPending() || client->join.player()!=player || client->join.phase()!=cstrike::JoinPhase::Joined) return reject(MovementError::NotJoined);
     auto* entity=client->fake.entityFor(player);
     if(!entity) return reject(MovementError::MissingEntity);
     if(entity->v.deadflag!=DEAD_NO) return reject(MovementError::DeadPlayer);
