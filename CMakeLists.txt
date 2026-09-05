@@ -75,6 +75,7 @@ astrabot_enable_warnings(astrabot_core)
 add_library(astrabot_nav STATIC
     src/nav/model/value_types.cpp
     src/nav/io/byte_reader.cpp
+    src/nav/io/nav_reader.cpp
 )
 
 target_compile_features(astrabot_nav PUBLIC cxx_std_17)
@@ -285,6 +286,25 @@ if(ASTRABOT_BUILD_TESTS)
     add_test(
         NAME astrabot.nav.byte_reader
         COMMAND astrabot_nav_byte_reader_tests
+    )
+
+    add_executable(astrabot_nav_reader_tests
+        tests/nav/nav_reader_tests.cpp
+    )
+    target_link_libraries(astrabot_nav_reader_tests PRIVATE astrabot_nav)
+    target_compile_features(astrabot_nav_reader_tests PRIVATE cxx_std_17)
+    target_include_directories(astrabot_nav_reader_tests
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+    set_target_properties(astrabot_nav_reader_tests PROPERTIES
+        CXX_EXTENSIONS OFF
+    )
+    astrabot_enable_warnings(astrabot_nav_reader_tests)
+
+    add_test(
+        NAME astrabot.nav.reader
+        COMMAND astrabot_nav_reader_tests
     )
 
     if(ASTRABOT_BUILD_METAMOD)

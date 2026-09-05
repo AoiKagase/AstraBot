@@ -21,6 +21,7 @@ enum class NavErrorKind : std::uint8_t {
     DanglingReference,
     InvalidGeometry,
     TrailingData,
+    AllocationFailure,
 };
 
 enum class NavRecord : std::uint8_t {
