@@ -20,6 +20,7 @@ JumpFeedback feedback(runtime::MovementSnapshot s,std::uint64_t time) {
     JumpFeedback f; f.binding=binding; f.movement=s; f.nowUs=time;
     JumpInspection proof; proof.stamp={s.agent,s.actor,s.map,s.tick,binding.routeGeneration,0}; proof.queries=5;
     proof.origin=*s.position; proof.hull=*s.hull; proof.takeoff=plan.takeoff; proof.landing=plan.landing;
+    proof.step=binding.step; proof.velocity=*s.velocity;
     const auto area=model::NavAreaId{s.position->x<100 ? 1U:2U};
     if(s.grounded==true) proof.support=GroundedTarget{*s.position,area,{0,{0,0,1},true}};
     proof.approach=GroundedTarget{plan.takeoff,{1},{0,{0,0,1},true}};
@@ -124,5 +125,18 @@ void failures() {
     s.tick={4}; auto f=feedback(s,120000+limits.takeoffTimeoutUs); f.dispatch=JumpDispatch{binding,p,{4},true};
     assert(noTakeoff.update(f).reason==JumpReason::TakeoffTimeout);
 }
+void accelerationRequiresLaunchProofBeforePress() {
+    SimpleJump jump(binding,plan,limits); auto s=actor(); s.velocity=model::NavVector3{};
+    for(std::uint64_t tick=1;tick<=3;++tick) {
+        s.tick={tick}; auto f=feedback(s,tick*40000);
+        f.inspection->flightClear.reset(); f.inspection->landingClear.reset(); f.inspection->velocity.reset();
+        const auto d=jump.update(f); assert(d.accepted && d.intent.jump!=ActionRequest::Press);
+        if(tick==3) assert(d.state==JumpState::Accelerate && d.intent.speed>0);
+    }
+    s.tick={4}; s.velocity=model::NavVector3{120,0,0}; auto f=feedback(s,160000);
+    f.inspection->velocity.reset();
+    const auto d=jump.update(f);
+    assert(d.state==JumpState::Failed && d.reason==JumpReason::Blocked && d.intent.jump!=ActionRequest::Press);
 }
-int main() { physics(); failures(); }
+}
+int main() { physics(); failures(); accelerationRequiresLaunchProofBeforePress(); }

@@ -58,7 +58,8 @@ JumpDecision SimpleJump::update(const JumpFeedback& f) noexcept {
     const auto* proof=f.inspection ? &*f.inspection:nullptr;
     if(proof && (proof->stamp.agent!=s.agent || proof->stamp.actor!=s.actor || proof->stamp.map!=s.map ||
        proof->stamp.tick!=s.tick || proof->stamp.routeGeneration!=binding_.routeGeneration || proof->stamp.ordinal ||
-       !proof->queries || proof->queries>limits_.maxQueries || proof->origin!=*s.position ||
+       proof->step!=binding_.step || !proof->queries || proof->queries>limits_.maxQueries || proof->origin!=*s.position ||
+       (proof->velocity && *proof->velocity!=*s.velocity) ||
        proof->hull.minimum!=s.hull->minimum || proof->hull.maximum!=s.hull->maximum ||
        proof->takeoff!=plan_.takeoff || proof->landing!=plan_.landing))
         return fail(JumpReason::StaleInspection);
@@ -118,10 +119,11 @@ JumpDecision SimpleJump::update(const JumpFeedback& f) noexcept {
         return out;
     }
     if(!aligned) { state_=JumpState::Align; out.state=state_; return out; }
-    if(proof->takeoffClear!=true || proof->flightClear!=true || proof->landingClear!=true) return fail(JumpReason::Blocked);
+    if(proof->takeoffClear!=true) return fail(JumpReason::Blocked);
     const double speed=s.velocity->x*ux+s.velocity->y*uy;
     const double lateral=std::abs(s.velocity->x*uy-s.velocity->y*ux);
     if(speed>=limits_.minimumSpeed && speed<=limits_.maximumSpeed && speed<=*s.speedLimit && lateral<=limits_.minimumSpeed*0.1) {
+        if(!proof->velocity || proof->flightClear!=true || proof->landingClear!=true) return fail(JumpReason::Blocked);
         flightSpeed_=speed; pressTick_=s.tick; phaseUs_=f.nowUs; state_=JumpState::Takeoff;
         out.state=state_; out.pressTick=pressTick_; out.intent.jump=ActionRequest::Press; return moving(flightSpeed_);
     }

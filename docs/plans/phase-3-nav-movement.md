@@ -201,8 +201,11 @@ typed hint interpretation and a bounded observed-hull posture gate.
 [Crouch Walk/host integration](../reports/p3-05-crouch-walk.md) now verifies
 supported crossing, headroom-safe release and cancellation. Simple Jump remains.
 The [Simple Jump controller](../reports/p3-05-simple-jump-controller.md) now has
-an independent lifecycle/dispatch/landing test seam; proof generation and
-Walk/host integration are still required before checking its implementation slice.
+an independent lifecycle/dispatch/landing test seam. The
+[launch inspector](../reports/p3-05-jump-inspection.md) now generates bounded
+support and flight-query evidence for an explicit ballistic model. Transition
+geometry, host physics and Walk/dispatch integration are still required before
+checking its implementation slice.
 
 - **Goal:** execute verified transitions without per-frame state in A*.
 - **Why now:** lifecycle and clearance/ground facts exist.

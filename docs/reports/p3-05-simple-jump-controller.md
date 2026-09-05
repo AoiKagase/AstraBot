@@ -3,6 +3,9 @@
 Built from `c65bed9` on `codex/p305-simple-jump`. The Simple Jump checklist is
 still open: this boundary implements its portable controller, not host routing.
 
+Follow-up: [bounded launch inspection](p3-05-jump-inspection.md) now produces
+world-query evidence for an explicit flight model. Host routing remains pending.
+
 SimpleJump owns Approach, Align, Accelerate, Takeoff, Airborne, Recover,
 Complete/Failed/Aborted states. An explicit source/target, takeoff/landing origin,
 bounded speed/position/facing profile and finite phase timeouts are required.

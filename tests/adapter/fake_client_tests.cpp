@@ -14,6 +14,7 @@
 #include "adapter/metamod/plugin_entry.hpp"
 #include "adapter/cstrike/nav/world_queries.hpp"
 #include "nav/local/ground_probe.hpp"
+#include "nav/local/jump_probe.hpp"
 
 #include <cassert>
 #include <cstdarg>
@@ -123,6 +124,39 @@ void captureNavHull(const float* start, const float* end, int ignoreMonsters, in
         result->vecEndPos=Vector(h.end.x,h.end.y,h.end.z); result->vecPlaneNormal=Vector(h.normal.x,h.normal.y,h.normal.z);
         if(h.fraction<1) result->pHit=gPlayerObstacle ? &gNavPlayer:&gWallWorld;
     }
+}
+void testNavJumpProbeWorldQueries() {
+    using namespace astrabot;
+    using namespace astrabot::nav;
+    enginefuncs_t engine{}; edict_t entity{}; engine.pfnTraceHull=&captureNavHull;
+    const auto idx=query::NavSpatialIndex::build(route_test::snapshot({
+        {1,{{0,0,0},{99,100,0},0,0},{}},{2,{{100,0,0},{200,100,0},0,0},{}}}),{2,3,1000000}); assert(idx);
+    struct Port final : runtime::IWorldQueries {
+        enginefuncs_t* engine{}; edict_t* entity{}; const query::NavSpatialIndex* index{};
+        unsigned calls{};
+        runtime::WorldQueryResult query(const runtime::QueryRequest& q) override {
+            assert(q.stamp.ordinal==++calls);
+            return adapter::cstrike::queryNavWorld(engine,entity,index,q);
+        }
+    } port;
+    port.engine=&engine; port.entity=&entity; port.index=idx.value->get();
+    const local::Binding binding{{1},{2,{3}},{4},5,6};
+    runtime::MovementSnapshot s; s.agent=binding.agent; s.actor=binding.actor; s.map=binding.map; s.tick={10};
+    s.kind=runtime::ActorKind::ManagedBot; s.connected=s.alive=s.joined=s.grounded=true; s.ducked=false;
+    s.position=model::NavVector3{50,50,36}; s.velocity=model::NavVector3{120,0,0}; s.view=model::NavVector3{};
+    s.hull=runtime::HullDimensions{{-16,-16,-36},{16,16,36}}; s.speedLimit=250.0f;
+    const local::JumpPlan plan{{1},{2},{50,50,36},{124,50,36},0,2};
+    const local::JumpLimits motion{120,100,180,16,16,5,96,32,4,21,2000000,200000,1500000,200000};
+    const auto run=[&] {
+        return local::JumpProbe::launch(s,binding,plan,motion,{binding,s.tick,800,268.3281573},
+            {21,8,0.1,2,2},**idx.value,binding.map,port);
+    };
+    gHullMode=0; gHullCalls=0; auto proof=run();
+    assert(proof && proof.queries==19 && gHullCalls==19 && gHullKind==1);
+    port.calls=0; gHullMode=1; proof=run();
+    assert(!proof && !proof.inspection && proof.reason==local::JumpProbeReason::Blocked && port.calls==4);
+    port.calls=0; gHullMode=0; engine.pfnTraceHull=nullptr; proof=run();
+    assert(!proof && proof.reason==local::JumpProbeReason::QueryFailed && port.calls==1);
 }
 void testNavWorldQueries() {
     using namespace astrabot::nav;
@@ -2005,6 +2039,7 @@ int main() {
     _CrtSetReportFile(_CRT_ASSERT,_CRTDBG_FILE_STDERR);
 #endif
     testNavWorldQueries();
+    testNavJumpProbeWorldQueries();
     testDoorObservationContracts();
     testSuccessfulCreationAndOpaquePrivateData();
     testFailureRollback();

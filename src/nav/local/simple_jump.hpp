@@ -25,9 +25,11 @@ struct JumpLimits {
 // This controller validates ownership/geometry; it does not manufacture proof.
 struct JumpInspection {
     runtime::QueryStamp stamp{}; // Batch ordinal zero.
+    std::size_t step{};
     std::uint32_t queries{};
     model::NavVector3 origin{};
     runtime::HullDimensions hull{};
+    std::optional<model::NavVector3> velocity{}; // Required for launch clearance.
     std::optional<GroundedTarget> support{}, approach{};
     std::optional<bool> approachClear{}, takeoffClear{}, flightClear{}, landingClear{};
     model::NavVector3 takeoff{}, landing{};
