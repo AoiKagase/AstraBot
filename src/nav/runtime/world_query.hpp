@@ -31,6 +31,9 @@ struct GroundedAreaObservation {
 };
 struct HullObservation { float fraction{}; model::NavVector3 end{}, normal{}; bool startSolid{}; };
 struct ClearanceObservation { bool clear{}; };
+// id includes entity generation within the stamped map. 'open' means the
+// requested swept passage is physically clear, not an inferred toggle state.
+// canUse requires adapter proof of player-use capability and target selection.
 struct DoorObservation { std::uint64_t id{}; bool open{}, canUse{}; };
 enum class BlockerKind { Unknown, Teammate, Enemy, Geometry, Other };
 struct BlockerObservation { std::uint64_t id{}; BlockerKind kind{BlockerKind::Unknown}; };

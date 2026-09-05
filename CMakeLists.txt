@@ -102,6 +102,7 @@ endif()
 
 add_library(astrabot_nav STATIC
     src/nav/local/walk.cpp
+    src/nav/local/door_wait.cpp
     src/nav/local/intent_pump.cpp
     src/nav/local/ground_probe.cpp
     src/nav/local/primitive.cpp
@@ -330,6 +331,11 @@ if(ASTRABOT_BUILD_TESTS)
     target_link_libraries(astrabot_nav_walk_tests PRIVATE astrabot_nav astrabot_core)
     astrabot_enable_warnings(astrabot_nav_walk_tests)
     add_test(NAME astrabot.nav.walk COMMAND astrabot_nav_walk_tests)
+
+    add_executable(astrabot_nav_door_wait_tests tests/nav/door_wait_tests.cpp)
+    target_link_libraries(astrabot_nav_door_wait_tests PRIVATE astrabot_nav astrabot_core)
+    astrabot_enable_warnings(astrabot_nav_door_wait_tests)
+    add_test(NAME astrabot.nav.door_wait COMMAND astrabot_nav_door_wait_tests)
     set_tests_properties(astrabot.nav.walk PROPERTIES TIMEOUT 30)
     add_executable(astrabot_nav_ground_probe_tests tests/nav/ground_probe_tests.cpp)
     target_link_libraries(astrabot_nav_ground_probe_tests PRIVATE astrabot_nav)

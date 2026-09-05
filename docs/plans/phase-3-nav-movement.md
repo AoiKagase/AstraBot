@@ -139,6 +139,8 @@ Unit/simulation passes never substitute for live observations.
     speed/lateral correction.
     Grounded stair probes and fake-engine ascent/descent now have
     [offline evidence](../reports/p3-03-stairs.md); door/wall/narrow behavior remains.
+    The [portable door wait lifecycle](../reports/p3-03-door-wait.md) has offline
+    evidence; adapter observations and Walk door passage integration remain open.
 - **Tests:** corridor/same-area supported arrival, ceiling, stairs, door failure,
   unsafe drop, zero/long delta, low/normal/high FPS, 120 ms stale intent,
   rejected command and repeated button edges.
