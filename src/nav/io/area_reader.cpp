@@ -4,6 +4,7 @@
 #include "nav/io/area_reader.hpp"
 
 #include <new>
+#include <stdexcept>
 #include <utility>
 
 namespace astrabot::nav::io {
@@ -28,6 +29,8 @@ ReadResult<NavAreaBlock> NavAreaReader::read(
             NavError{NavErrorKind::CountLimitExceeded, 0U, NavRecord::Area, NavField::AreaCount});
     }
 
+    NavError allocationContext{
+        NavErrorKind::AllocationFailure, 0U, NavRecord::Area, NavField::AreaCount};
     try {
         NavAreaBlock block{};
         block.areas.reserve(areaCount);
@@ -133,6 +136,11 @@ ReadResult<NavAreaBlock> NavAreaReader::read(
                                  NavField::ConnectionCount});
                 }
 
+                allocationContext = NavError{
+                    NavErrorKind::AllocationFailure,
+                    static_cast<std::uint64_t>(countOffset),
+                    NavRecord::Connection,
+                    NavField::ConnectionCount};
                 area.connections[direction].reserve(*connectionCount.value);
                 totalConnections += *connectionCount.value;
                 for (std::uint32_t connectionIndex = 0U;
@@ -161,6 +169,11 @@ ReadResult<NavAreaBlock> NavAreaReader::read(
                              NavRecord::HidingSpot,
                              NavField::HidingSpotCount});
             }
+            allocationContext = NavError{
+                NavErrorKind::AllocationFailure,
+                static_cast<std::uint64_t>(hidingCountOffset),
+                NavRecord::HidingSpot,
+                NavField::HidingSpotCount};
             area.hidingSpots.reserve(*hidingCount.value);
             totalHidingSpots += *hidingCount.value;
             for (std::uint8_t hidingIndex = 0U;
@@ -220,6 +233,11 @@ ReadResult<NavAreaBlock> NavAreaReader::read(
                              NavRecord::Approach,
                              NavField::ApproachCount});
             }
+            allocationContext = NavError{
+                NavErrorKind::AllocationFailure,
+                static_cast<std::uint64_t>(approachCountOffset),
+                NavRecord::Approach,
+                NavField::ApproachCount};
             area.approaches.reserve(*approachCount.value);
             totalApproaches += *approachCount.value;
             for (std::uint8_t approachIndex = 0U;
@@ -273,7 +291,15 @@ ReadResult<NavAreaBlock> NavAreaReader::read(
                              NavRecord::Encounter,
                              NavField::EncounterCount});
             }
-            area.encounters.reserve(*encounterCount.value);
+            if (version != model::NavVersion::V1 &&
+                version != model::NavVersion::V2) {
+                allocationContext = NavError{
+                    NavErrorKind::AllocationFailure,
+                    static_cast<std::uint64_t>(encounterCountOffset),
+                    NavRecord::Encounter,
+                    NavField::EncounterCount};
+                area.encounters.reserve(*encounterCount.value);
+            }
             totalEncounters += *encounterCount.value;
 
             const auto readEncounterVector = [&reader]() -> ReadResult<model::NavVector3> {
@@ -394,6 +420,11 @@ ReadResult<NavAreaBlock> NavAreaReader::read(
                                  NavRecord::Encounter,
                                  NavField::EncounterSpotCount});
                 }
+                allocationContext = NavError{
+                    NavErrorKind::AllocationFailure,
+                    static_cast<std::uint64_t>(spotCountOffset),
+                    NavRecord::Encounter,
+                    NavField::EncounterSpotCount};
                 encounter.spots.reserve(*spotCount.value);
                 totalEncounterSpots += *spotCount.value;
                 for (std::uint8_t spotIndex = 0U;
@@ -431,8 +462,9 @@ ReadResult<NavAreaBlock> NavAreaReader::read(
         block.bytesConsumed = reader.offset();
         return ReadResult<NavAreaBlock>::success(std::move(block));
     } catch (const std::bad_alloc&) {
-        return ReadResult<NavAreaBlock>::failure(
-            NavError{NavErrorKind::AllocationFailure, 0U, NavRecord::Area, NavField::AreaCount});
+        return ReadResult<NavAreaBlock>::failure(allocationContext);
+    } catch (const std::length_error&) {
+        return ReadResult<NavAreaBlock>::failure(allocationContext);
     }
 }
 

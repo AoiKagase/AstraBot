@@ -6,11 +6,57 @@
 #include "nav/model/area_records.hpp"
 
 #include <cassert>
+#include <cstddef>
+#include <cstdlib>
 #include <cstring>
 #include <cstdint>
+#include <new>
 #include <optional>
 #include <utility>
 #include <vector>
+
+namespace {
+
+constexpr std::size_t kTestAllocationFailureThreshold = 16U * 1024U * 1024U;
+
+void* allocateForAreaReaderTest(std::size_t size) {
+    if (size > kTestAllocationFailureThreshold) {
+        throw std::bad_alloc{};
+    }
+    void* result = std::malloc(size == 0U ? 1U : size);
+    if (result == nullptr) {
+        throw std::bad_alloc{};
+    }
+    return result;
+}
+
+} // namespace
+
+_Ret_notnull_ _Post_writable_byte_size_(size)
+void* operator new(std::size_t size) {
+    return allocateForAreaReaderTest(size);
+}
+
+_Ret_notnull_ _Post_writable_byte_size_(size)
+void* operator new[](std::size_t size) {
+    return allocateForAreaReaderTest(size);
+}
+
+void operator delete(void* pointer) noexcept {
+    std::free(pointer);
+}
+
+void operator delete[](void* pointer) noexcept {
+    std::free(pointer);
+}
+
+void operator delete(void* pointer, std::size_t) noexcept {
+    std::free(pointer);
+}
+
+void operator delete[](void* pointer, std::size_t) noexcept {
+    std::free(pointer);
+}
 
 namespace {
 
@@ -44,6 +90,16 @@ void appendF32LE(std::vector<std::uint8_t>& bytes, float value) {
     std::uint32_t raw = 0U;
     std::memcpy(&raw, &value, sizeof(raw));
     appendU32LE(bytes, raw);
+}
+
+void overwriteU32LE(
+    std::vector<std::uint8_t>& bytes,
+    std::size_t offset,
+    std::uint32_t value) {
+    bytes[offset] = static_cast<std::uint8_t>(value & 0xFFU);
+    bytes[offset + 1U] = static_cast<std::uint8_t>((value >> 8U) & 0xFFU);
+    bytes[offset + 2U] = static_cast<std::uint8_t>((value >> 16U) & 0xFFU);
+    bytes[offset + 3U] = static_cast<std::uint8_t>((value >> 24U) & 0xFFU);
 }
 
 NavAreaReadLimits normalLimits() {
@@ -438,6 +494,124 @@ void testEncounterLimits() {
     assert(result.error.field == NavField::EncounterSpotCount);
 }
 
+void testGlobalLimitsAndTransactionalFailures() {
+    const std::vector<std::uint8_t> base = makeV1BasePayload();
+
+    const auto zeroArea = NavAreaReader::read(
+        ByteView{base.data(), base.size()}, NavVersion::V1, 0U, normalLimits());
+    assert(!zeroArea);
+    assert(!zeroArea.value.has_value());
+    assert(zeroArea.error.kind == NavErrorKind::InvalidValue);
+    assert(zeroArea.error.offset == 0U);
+    assert(zeroArea.error.field == NavField::AreaCount);
+
+    const auto tooManyAreas = NavAreaReader::read(
+        ByteView{base.data(), base.size()}, NavVersion::V1, 2U, normalLimits());
+    assert(!tooManyAreas);
+    assert(!tooManyAreas.value.has_value());
+    assert(tooManyAreas.error.kind == NavErrorKind::CountLimitExceeded);
+    assert(tooManyAreas.error.offset == 0U);
+    assert(tooManyAreas.error.field == NavField::AreaCount);
+
+    NavAreaReadLimits noConnections = normalLimits();
+    noConnections.maxConnectionsPerDirection = 0U;
+    auto result = NavAreaReader::read(
+        ByteView{base.data(), base.size()}, NavVersion::V1, 1U, noConnections);
+    assert(!result);
+    assert(result.error.kind == NavErrorKind::CountLimitExceeded);
+    assert(result.error.offset == 37U);
+    assert(result.error.field == NavField::ConnectionCount);
+
+    NavAreaReadLimits noTotalConnections = normalLimits();
+    noTotalConnections.maxTotalConnections = 0U;
+    result = NavAreaReader::read(
+        ByteView{base.data(), base.size()}, NavVersion::V1, 1U, noTotalConnections);
+    assert(!result);
+    assert(result.error.kind == NavErrorKind::CountLimitExceeded);
+    assert(result.error.offset == 37U);
+    assert(result.error.field == NavField::ConnectionCount);
+
+    const std::vector<std::uint8_t> hiding = makeV1HidingApproachPayload();
+    NavAreaReadLimits noHiding = normalLimits();
+    noHiding.maxHidingSpotsPerArea = 0U;
+    result = NavAreaReader::read(
+        ByteView{hiding.data(), hiding.size()}, NavVersion::V1, 1U, noHiding);
+    assert(!result);
+    assert(result.error.kind == NavErrorKind::CountLimitExceeded);
+    assert(result.error.offset == 69U);
+    assert(result.error.field == NavField::HidingSpotCount);
+
+    NavAreaReadLimits noTotalHiding = normalLimits();
+    noTotalHiding.maxTotalHidingSpots = 0U;
+    result = NavAreaReader::read(
+        ByteView{hiding.data(), hiding.size()}, NavVersion::V1, 1U, noTotalHiding);
+    assert(!result);
+    assert(result.error.kind == NavErrorKind::CountLimitExceeded);
+    assert(result.error.offset == 69U);
+    assert(result.error.field == NavField::HidingSpotCount);
+
+    NavAreaReadLimits noApproaches = normalLimits();
+    noApproaches.maxApproachesPerArea = 0U;
+    result = NavAreaReader::read(
+        ByteView{hiding.data(), hiding.size()}, NavVersion::V1, 1U, noApproaches);
+    assert(!result);
+    assert(result.error.kind == NavErrorKind::CountLimitExceeded);
+    assert(result.error.offset == 82U);
+    assert(result.error.field == NavField::ApproachCount);
+
+    NavAreaReadLimits noTotalApproaches = normalLimits();
+    noTotalApproaches.maxTotalApproaches = 0U;
+    result = NavAreaReader::read(
+        ByteView{hiding.data(), hiding.size()}, NavVersion::V1, 1U, noTotalApproaches);
+    assert(!result);
+    assert(result.error.kind == NavErrorKind::CountLimitExceeded);
+    assert(result.error.offset == 82U);
+    assert(result.error.field == NavField::ApproachCount);
+
+    const auto invalidBytes = NavAreaReader::read(
+        ByteView{nullptr, 1U}, NavVersion::V1, 1U, normalLimits());
+    assert(!invalidBytes);
+    assert(!invalidBytes.value.has_value());
+    assert(invalidBytes.error.kind == NavErrorKind::InvalidInput);
+    assert(invalidBytes.error.offset == 0U);
+    assert(invalidBytes.error.field == NavField::AreaId);
+
+    std::vector<std::uint8_t> nonFinite = base;
+    overwriteU32LE(nonFinite, 5U, 0x7FC00000U);
+    const auto nonFiniteResult = NavAreaReader::read(
+        ByteView{nonFinite.data(), nonFinite.size()}, NavVersion::V1, 1U, normalLimits());
+    assert(!nonFiniteResult);
+    assert(!nonFiniteResult.value.has_value());
+    assert(nonFiniteResult.error.kind == NavErrorKind::NonFiniteFloat);
+    assert(nonFiniteResult.error.offset == 5U);
+    assert(nonFiniteResult.error.field == NavField::NorthWestExtent);
+
+    const auto secondAreaFailure = NavAreaReader::read(
+        ByteView{base.data(), base.size()}, NavVersion::V1, 2U,
+        NavAreaReadLimits{
+            2U, 2U, 2U, 2U, 2U, 2U, 8U, 4U, 4U, 4U, 4U,
+        });
+    assert(!secondAreaFailure);
+    assert(!secondAreaFailure.value.has_value());
+    assert(secondAreaFailure.error.kind == NavErrorKind::EndOfInput);
+    assert(secondAreaFailure.error.offset == base.size());
+    assert(secondAreaFailure.error.record == astrabot::nav::diagnostics::NavRecord::Area);
+    assert(secondAreaFailure.error.field == NavField::AreaId);
+    std::vector<std::uint8_t> allocationFailurePayload = base;
+    overwriteU32LE(allocationFailurePayload, 37U, 5000000U);
+    NavAreaReadLimits allocationLimits = normalLimits();
+    allocationLimits.maxConnectionsPerDirection = 5000000U;
+    allocationLimits.maxTotalConnections = 5000000U;
+    const auto allocationResult = NavAreaReader::read(
+        ByteView{allocationFailurePayload.data(), allocationFailurePayload.size()},
+        NavVersion::V1, 1U, allocationLimits);
+    assert(!allocationResult);
+    assert(!allocationResult.value.has_value());
+    assert(allocationResult.error.kind == NavErrorKind::AllocationFailure);
+    assert(allocationResult.error.offset == 37U);
+    assert(allocationResult.error.field == NavField::ConnectionCount);
+}
+
 } // namespace
 
 int main() {
@@ -452,5 +626,6 @@ int main() {
     testV4AndV5PlaceEntries();
     testEncounterAndPlaceTruncation();
     testEncounterLimits();
+    testGlobalLimitsAndTransactionalFailures();
     return 0;
 }
