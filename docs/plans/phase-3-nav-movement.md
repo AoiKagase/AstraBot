@@ -1,7 +1,8 @@
 # Phase 3 plan — Nav movement
 
-Status: planning revision 2026-09-05, audited base `b49f4da`. Production
-implementation has not started. Existing **P3-01 through P3-08** are retained;
+Status: planning revision 2026-09-05, audited base `b49f4da`. The P3-01
+inspector slice is implemented; see [evidence](../reports/p3-01-nav-inspector.md).
+Existing **P3-01 through P3-08** are retained;
 unnumbered checklist items are commit slices, not new task IDs.
 
 ## Goal and authority
@@ -64,7 +65,7 @@ Unit/simulation passes never substitute for live observations.
   planned RouteSession/MovementSnapshot/query-result/DecisionTrace; reuse
   PlayerId/MapGeneration/TickId and owned selected edges.
 - **Implementation outline / commit slices:**
-  - [ ] Add bounded SDK-free read-only inspector with synthetic CLI/metadata tests,
+  - [x] Add bounded SDK-free read-only inspector with synthetic CLI/metadata tests,
     using the profile and report contract in the compatibility protocol.
   - [ ] Compare lawful local real bytes to independent expected data; record
     load/nearest/route and unchanged hashes. Without a file, keep this sub-gate pending.
@@ -292,7 +293,9 @@ Tactical Planner/Combat AI, Experience DB and crowd/prediction are deferred.
 
 ## Recommended next session
 
-Implement only **the first P3-01 slice: bounded read-only NAV inspector and
-synthetic tests**. Use a lawful file if supplied, preserving independent
-comparison. No new numbering, locomotion, multi-Bot refactor, Linux execution
-or server startup belongs to that first commit.
+The first P3-01 slice (bounded read-only NAV inspector and synthetic tests) is
+complete. Supplied dust/dust2 files expose a zero HidingSpotId rejection; real
+compatibility remains blocked as recorded in the evidence report. Resolve that
+sub-gate through independent format evidence and reviewed regression tests, or
+continue the independent portable session slice while preserving its pending
+status. No new numbering, implicit parser relaxation or Finish declaration.

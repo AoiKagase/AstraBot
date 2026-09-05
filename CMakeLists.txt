@@ -12,6 +12,7 @@ option(ASTRABOT_BUILD_METAMOD "Build the Metamod-P adapter" OFF)
 option(ASTRABOT_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" ON)
 option(ASTRABOT_NAV_ASAN "Build dedicated Nav evidence tests with MSVC AddressSanitizer" OFF)
 option(ASTRABOT_BUILD_NAV_BENCHMARK "Build non-gating Nav microbenchmark" OFF)
+option(ASTRABOT_BUILD_NAV_INSPECTOR "Build read-only SDK-free NAV inspector" OFF)
 if(ASTRABOT_NAV_ASAN)
     if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "MSVC" OR NOT WIN32 OR
        NOT ASTRABOT_BUILD_TESTS OR ASTRABOT_BUILD_METAMOD)
@@ -131,6 +132,13 @@ if(ASTRABOT_BUILD_NAV_BENCHMARK)
     astrabot_nav_sanitize(astrabot_nav_benchmark)
 endif()
 
+if(ASTRABOT_BUILD_NAV_INSPECTOR)
+    add_executable(astrabot_nav_inspect tools/nav-inspect.cpp tools/nav_inspection.cpp)
+    target_link_libraries(astrabot_nav_inspect PRIVATE astrabot_nav)
+    astrabot_enable_warnings(astrabot_nav_inspect)
+    astrabot_nav_sanitize(astrabot_nav_inspect)
+endif()
+
 if(ASTRABOT_BUILD_METAMOD)
     if(NOT CMAKE_SIZEOF_VOID_P EQUAL 4)
         message(FATAL_ERROR
@@ -244,6 +252,21 @@ endif()
 
 if(ASTRABOT_BUILD_TESTS)
     enable_testing()
+    if(ASTRABOT_BUILD_NAV_INSPECTOR)
+        add_executable(astrabot_nav_inspection_tests tests/nav/inspection_tests.cpp tools/nav_inspection.cpp)
+        target_link_libraries(astrabot_nav_inspection_tests PRIVATE astrabot_nav)
+        astrabot_enable_warnings(astrabot_nav_inspection_tests)
+        astrabot_nav_sanitize(astrabot_nav_inspection_tests)
+        add_test(NAME astrabot.nav.inspection COMMAND astrabot_nav_inspection_tests
+            "${CMAKE_CURRENT_BINARY_DIR}/inspection-fixtures")
+        set_tests_properties(astrabot.nav.inspection PROPERTIES TIMEOUT 60)
+        add_test(NAME astrabot.nav.inspection_cli COMMAND ${CMAKE_COMMAND}
+            "-DINSPECTOR=$<TARGET_FILE:astrabot_nav_inspect>"
+            "-DFIXTURES=$<TARGET_FILE:astrabot_nav_inspection_tests>"
+            "-DDIRECTORY=${CMAKE_CURRENT_BINARY_DIR}/inspection-cli-fixtures"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/nav/inspection_cli.cmake")
+        set_tests_properties(astrabot.nav.inspection_cli PROPERTIES TIMEOUT 60)
+    endif()
     add_executable(astrabot_nav_corruption_tests tests/nav/corruption_tests.cpp)
     target_link_libraries(astrabot_nav_corruption_tests PRIVATE astrabot_nav)
     astrabot_enable_warnings(astrabot_nav_corruption_tests)

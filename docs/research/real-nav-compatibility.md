@@ -4,6 +4,13 @@ Date: 2026-09-05. Audited source: `b49f4da6e20beec43aa1c47678725eb1865aacf6`.
 Result: **Not yet validated**. This is a read-only integration protocol, not a
 claim that synthetic fixtures establish real-map compatibility.
 
+Implementation update (2026-09-05): the inspector and synthetic tests now exist.
+User-supplied local dust/dust2 NAVs were inspected and rejected by the existing
+zero HidingSpotId rule. See [the inspector report](../reports/p3-01-nav-inspector.md)
+for exact offsets, unchanged hashes, remaining comparisons and the user's
+AstraBot-optimized new-generation direction. The original audit inventory below
+describes the pre-implementation state, not current asset availability.
+
 ## Available evidence and limits
 
 The repository has no tracked real NAV. The local NAV files found under this
@@ -27,7 +34,7 @@ Real compatibility therefore remains a **manual integration prerequisite**.
 
 Plan an original SDK-free `tools/nav-inspect.cpp`, linked only to `astrabot_nav`,
 with a conditional CMake executable and `tests/nav/inspection_tests.cpp`.
-These are proposed files; the tool does not exist in this planning commit.
+These files are now implemented by the first P3-01 slice.
 It accepts an explicit local NAV path, optional BSP path and limits profile;
 opens inputs read-only; never copies, repairs or reserializes the input.
 An operator may redirect its report to a chosen local output file.
@@ -100,7 +107,8 @@ and trailing-data rejection are additional real-file compatibility probes.
   the result to that fixture and generator, not universal NAV interoperability.
 - **Partially validated:** real bytes load but independent expectations, BSP
   binding or requested query comparisons are incomplete; enumerate missing rows.
-- **Not yet validated:** no lawful real fixture inspected (current state).
+- **Not yet validated:** no lawful real fixture inspected, or inspection failed
+  before compatibility comparisons could complete (current state: load rejected).
 
 Missing real bytes do not prevent portable contract/unit development. They block
 the P3-01 compatibility sub-gate and any claim of real-map readiness. Runtime
