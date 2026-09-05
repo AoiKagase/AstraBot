@@ -2,6 +2,10 @@ cmake_minimum_required(VERSION 3.20)
 
 project(AstraBot VERSION 0.1.0 LANGUAGES CXX)
 
+if(NOT CMAKE_SIZEOF_VOID_P EQUAL 4)
+    message(FATAL_ERROR "AstraBot requires an x86 (32-bit) target. Use a fresh build directory and the x86 compiler environment.")
+endif()
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)

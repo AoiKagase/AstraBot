@@ -10,7 +10,7 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-      - name: Portable x64 Debug contracts and seeded fuzz smoke
+      - name: Portable x86 Debug contracts and seeded fuzz smoke
         shell: pwsh
         run: ./tools/verify-nav-evidence.ps1 -Mode Debug
       - uses: actions/upload-artifact@v4
@@ -18,8 +18,8 @@ jobs:
         with:
           name: nav-debug-evidence
           path: |
-            build-portable-test/Testing/Temporary/
-            build-portable-test/fuzz-artifacts/
+            build-portable-x86-test/Testing/Temporary/
+            build-portable-x86-test/fuzz-artifacts/
   nav-asan:
     runs-on: windows-2022
     timeout-minutes: 25
@@ -33,7 +33,7 @@ jobs:
         with:
           name: nav-asan-evidence
           path: |
-            build-nav-asan/Testing/Temporary/
-            build-nav-asan/fuzz-artifacts/
-            build-nav-asan/long-fuzz/
+            build-nav-x86-asan/Testing/Temporary/
+            build-nav-x86-asan/fuzz-artifacts/
+            build-nav-x86-asan/long-fuzz/
   # Linux validation is intentionally deferred until project-wide Finish.

@@ -12,16 +12,20 @@
   time; `--config Release` does not select the configuration. The repository's
   assert-based CTest binaries must use `Debug`; Release defines `NDEBUG` and
   turns their `/W4 /WX` unused-variable diagnostics into build failures.
-- Portable Core/host builds use the x64 environment and the adapter uses the
+- All targets, including portable Core/host, tools and tests, use the
   GoldSrc-compatible x86 environment. The adapter must use the pinned SDK
   checkout at `H:\sourcecode\003.Game\amxmodx\metamod-p` with SHA
   `7ec9b014f8c0a947a724644aebe34eb33706e44b`.
 - Run these commands from the repository root. Keep the portable and adapter
   build directories separate:
 
+All produced binaries are x86. `-host_arch=x64` selects the compiler host only;
+`-arch=x86` selects the output target. Never reuse the historical x64 portable
+build directories. CMake rejects 64-bit targets, including portable tests/tools.
+
 ```powershell
-# Portable x64 configure, build, and Debug tests
-rtk powershell -NoProfile -Command '$vs = "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\Tools\VsDevCmd.bat"; cmd /c ("call ""$vs"" -arch=x64 -host_arch=x64 && cmake -S . -B build-portable-test -G ""NMake Makefiles"" -DCMAKE_BUILD_TYPE=Debug -DASTRABOT_BUILD_METAMOD=OFF -DASTRABOT_BUILD_TESTS=ON -DASTRABOT_WARNINGS_AS_ERRORS=ON && cmake --build build-portable-test && ctest --test-dir build-portable-test --output-on-failure")'
+# Portable x86 configure, build, and Debug tests
+rtk powershell -NoProfile -Command '$vs = "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\Tools\VsDevCmd.bat"; cmd /c ("call ""$vs"" -arch=x86 -host_arch=x64 && cmake -S . -B build-portable-x86-test -G ""NMake Makefiles"" -DCMAKE_BUILD_TYPE=Debug -DASTRABOT_BUILD_METAMOD=OFF -DASTRABOT_BUILD_TESTS=ON -DASTRABOT_WARNINGS_AS_ERRORS=ON && cmake --build build-portable-x86-test && ctest --test-dir build-portable-x86-test --output-on-failure")'
 
 # Metamod-P x86 configure, build, and Debug tests
 rtk powershell -NoProfile -Command '$vs = "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\Tools\VsDevCmd.bat"; cmd /c ("call ""$vs"" -arch=x86 -host_arch=x64 && cmake -S . -B build-metamod-x86-test -G ""NMake Makefiles"" -DCMAKE_BUILD_TYPE=Debug -DASTRABOT_BUILD_METAMOD=ON -DASTRABOT_BUILD_TESTS=ON -DASTRABOT_WARNINGS_AS_ERRORS=ON -DASTRABOT_METAMOD_SDK_ROOT=H:\sourcecode\003.Game\amxmodx\metamod-p && cmake --build build-metamod-x86-test && ctest --test-dir build-metamod-x86-test --output-on-failure")'

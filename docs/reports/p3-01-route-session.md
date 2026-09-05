@@ -47,6 +47,25 @@ arrival checks and command dispatch belong to subsequent slices.
 
 ## Verification
 
+### x86 correction (2026-09-05)
+
+The user clarified that all AstraBot builds are x86-only, including portable
+tools/tests. The earlier x64 run below is historical evidence, not the target
+acceptance run. AGENTS.md, the evidence script and CI now select x86 and separate
+`build-portable-x86-test`, `build-portable-x86-analyze`, `build-nav-x86-asan`
+directories. The compiler host can remain x64. CMake rejects 64-bit targets;
+reconfiguring the old x64 cache confirmed that rejection.
+
+Windows x86 NMake Debug with `/W4 /WX` and inspector ON: **20/20 PASS**
+(10.93 seconds). All ten fixture hashes, 2,457 exact rejection cases plus
+limit boundaries, and four manifest regressions passed. PE headers of all
+generated executables report `IMAGE_FILE_MACHINE_I386` (0x14c).
+An existing graph-test optional index comparison needed explicitly unsigned
+`std::size_t` expectations to pass x86 warnings-as-errors; validation was not
+weakened. x86 Analyze/ASan and hosted CI were not run in this correction.
+
+### Historical x64 run
+
 Windows x64 Visual Studio 2026, NMake, Debug, `/W4 /WX`, Metamod OFF,
 tests and NAV inspector ON. Run `tools/verify-nav-evidence.ps1 -Mode Debug`.
 CTest includes `astrabot.nav.session` alongside the existing portable tests.

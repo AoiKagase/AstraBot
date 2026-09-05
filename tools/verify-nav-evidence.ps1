@@ -17,19 +17,19 @@ if (-not $VsDevCmd) {
 }
 if (-not (Test-Path -LiteralPath $VsDevCmd)) { throw 'VsDevCmd missing' }
 $directory = switch ($Mode) {
-    Debug { 'build-portable-test' }
-    Analyze { 'build-portable-analyze' }
-    Asan { 'build-nav-asan' }
+    Debug { 'build-portable-x86-test' }
+    Analyze { 'build-portable-x86-analyze' }
+    Asan { 'build-nav-x86-asan' }
 }
 $extra = '-DASTRABOT_NAV_ASAN=OFF'
 if ($Mode -eq 'Analyze') { $extra += ' "-DCMAKE_CXX_FLAGS=/EHsc /analyze"' }
 if ($Mode -eq 'Asan') { $extra = '-DASTRABOT_NAV_ASAN=ON' }
 Push-Location $repo
 try {
-    $command = 'call "' + $VsDevCmd + '" -arch=x64 -host_arch=x64 && ' +
+    $command = 'call "' + $VsDevCmd + '" -arch=x86 -host_arch=x64 && ' +
         'cmake -S . -B ' + $directory + ' -G "NMake Makefiles" -DCMAKE_BUILD_TYPE=Debug ' +
         '-DASTRABOT_BUILD_METAMOD=OFF -DASTRABOT_BUILD_TESTS=ON ' +
-        '-DASTRABOT_WARNINGS_AS_ERRORS=ON -DASTRABOT_BUILD_NAV_BENCHMARK=ON ' + $extra +
+        '-DASTRABOT_WARNINGS_AS_ERRORS=ON -DASTRABOT_BUILD_NAV_BENCHMARK=ON -DASTRABOT_BUILD_NAV_INSPECTOR=ON ' + $extra +
         ' && cmake --build ' + $directory +
         ' && ctest --test-dir ' + $directory + ' --output-on-failure' +
         ' && ' + $directory + '\astrabot_nav_corruption_tests.exe ' + $directory + '\evidence-fixtures'

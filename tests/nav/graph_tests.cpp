@@ -175,7 +175,7 @@ int main() {
     assert(graph->edgeBegin(0) == 0 && graph->edgeEnd(0) == 2);
     assert(graph->edgeBegin(1) == graph->edgeEnd(1));
     assert(graph->targetIndex(0) == 1 && graph->targetIndex(1) == 1);
-    assert(graph->find({10}) == 0 && graph->find({20}) == 1);
+    assert(graph->find({10}) == std::size_t{0} && graph->find({20}) == std::size_t{1});
     assert(!graph->find({0}) && !graph->find({11}) && !graph->find({30}));
     assert(snap->areas()[0].id == model::NavAreaId{20});
     assert(&graph->area(0) == &snap->areas()[1]);
