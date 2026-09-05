@@ -196,6 +196,11 @@ synthetic navigation passes; live acceptance remains post-Finish.
 
 ## P3-05 — Crouch and Simple Jump primitives
 
+[Constraint/posture foundation](../reports/p3-05-crouch-foundation.md) adds
+typed hint interpretation and a bounded observed-hull posture gate. Walk/host
+integration, supported crossing and Simple Jump remain; neither implementation
+checklist below is complete yet.
+
 - **Goal:** execute verified transitions without per-frame state in A*.
 - **Why now:** lifecycle and clearance/ground facts exist.
 - **Files/modules:** local traversal interpretation/states, simulation/action trace.

@@ -1,24 +1,26 @@
 ﻿# State
 
 Status: in_progress
-Goal: entire Phase 3; P3-03/P3-04 implementation slices have offline evidence.
-Main: 4e6a7d2 in .worktrees/main-integration, clean; not pushed.
-Current branch: codex/p304-bounded-replan, based on 7a0ef6c; not merged/pushed.
-Current boundary: one bounded automatic retry per actor/explicit goal on fresh
-observed dynamic timeout. One directed-edge fact expires in1s; consume on later
-tick, retain attempt count through route replacement, no automatic retry after
-failure/expiry. Existing RouteSession fixed limits/allowPartial=false remain.
-Explicit goal/cancel and identity/map invalidation retire pending state.
-Report: docs/reports/p3-04-bounded-replan.md.
-Verification: Windows x86 NMake Debug adapter+portable35/35 PASS; WSL Debian
-GCC -m32 Debug portable30/30 PASS. Release x86 DLL/six exports PASS. Werror.
-Portable tests cover directed detour/cost, expiry, identity, budget/external
-provenance and graph immutability. Adapter8/16/100ms scenarios cover arrival,
-blocked replacement, Unreachable, pending cancellation and expired pending fact.
-P3-04 implementation checks are marked with offline evidence; live is post-Finish.
-Next: P3-05 supported crouch/jump constraints and primitives, followed by P3-06
-ladder discovery/lifecycle, P3-07 dispatched-progress finite recovery, P3-08 matrix.
-Graph reachability alone does not guarantee locally executable geometry.
-Keep goal active. No subagents, live server or project-wide Finish.
-Real NAV compatibility remains partial; no real input writes or Git additions.
+Goal: entire Phase 3. P3-03/P3-04 implementation checks have offline evidence.
+Main: 4e6a7d2 in .worktrees/main-integration, clean; no push.
+Current branch: codex/p305-crouch, based on d2461d1; not merged/pushed.
+Current boundary: portable constraints and crouch posture gate foundation.
+New files: src/nav/local/traversal_constraints.hpp, crouch.hpp/cpp,
+tests/nav/crouch_tests.cpp. Report: docs/reports/p3-05-crouch-foundation.md.
+Hints verified from manifest-pinned ReGameDLL nav.h in original Phase0 temp
+checkout. Crouch1/Jump2/Precise4/NoJump8; conflicting/unknown/unsupported fail.
+Posture waits for actual hull/duck observations; standing release uses stamped
+headroom clearance at preserved foot position. Low ceiling holds duck at zero
+motion with finite timeout; no arrival/path permission is inferred.
+Verification: Windows x86 NMake Debug adapter+portable36/36 PASS; WSL Debian
+GCC -m32 Debug portable31/31 PASS; Release x86 DLL/six exports PASS. Werror.
+P3-05 checklists remain open: foundation is not connected to Walk or host yet.
+Next: integrate Crouch gate/constraints with measured Walk ground/portal crossing,
+shared21-query budget, Hold on cached movement, observed hull transitions and
+safe cancellation/release. Existing Walk still rejects special hints.
+Then Simple Jump approach/align/accelerate/takeoff/airborne/land/cooldown;
+P3-06 ladder discovery/lifecycle, P3-07 finite recovery, P3-08 offline matrix.
+P3-04 has one automatic replan per explicit goal with1s directed-edge exclusion.
+Keep goal active. No subagents/live server/project-wide Finish.
+Real NAV compatibility remains partial; real NAV/BSP inputs are read-only.
 Preserve untracked .focalspan.json and .serena/. Hosted CI pending.

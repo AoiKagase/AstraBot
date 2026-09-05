@@ -104,6 +104,7 @@ add_library(astrabot_nav STATIC
     src/nav/local/walk.cpp
     src/nav/local/door_wait.cpp
     src/nav/local/blocker_wait.cpp
+    src/nav/local/crouch.cpp
     src/nav/local/intent_pump.cpp
     src/nav/local/ground_probe.cpp
     src/nav/local/primitive.cpp
@@ -342,6 +343,10 @@ if(ASTRABOT_BUILD_TESTS)
     astrabot_enable_warnings(astrabot_nav_door_wait_tests)
     add_test(NAME astrabot.nav.door_wait COMMAND astrabot_nav_door_wait_tests)
     add_executable(astrabot_nav_blocker_wait_tests tests/nav/blocker_wait_tests.cpp)
+    add_executable(astrabot_nav_crouch_tests tests/nav/crouch_tests.cpp)
+    target_link_libraries(astrabot_nav_crouch_tests PRIVATE astrabot_nav astrabot_core)
+    astrabot_enable_warnings(astrabot_nav_crouch_tests)
+    add_test(NAME astrabot.nav.crouch COMMAND astrabot_nav_crouch_tests)
     target_link_libraries(astrabot_nav_blocker_wait_tests PRIVATE astrabot_nav astrabot_core)
     astrabot_enable_warnings(astrabot_nav_blocker_wait_tests)
     add_test(NAME astrabot.nav.blocker_wait COMMAND astrabot_nav_blocker_wait_tests)
