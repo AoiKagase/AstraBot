@@ -1,6 +1,12 @@
 # State
 
-Status: complete
+Status: in_progress
+Active: P3-02 corridor/portals and primitive lifecycle; codex/p302-corridor.
+Scope: portable x86 only; no adapter/motor/live execution. Use existing P3 plan.
+Tests first: corridor geometry, selected-edge identity, bounds, replay and cursor.
+Next: implement corridor, Windows/Linux tests, commit; then lifecycle slice.
+
+Previous status: complete
 Task: P3-01 console goto/status/cancel slice (no movement)
 Branch: codex/p301-nav-console, base main 03ee7d9 (integration complete).
 Plan: docs/plans/phase-3-nav-movement.md, existing P3-01 console checklist.

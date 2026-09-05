@@ -98,8 +98,9 @@ Unit/simulation passes never substitute for live observations.
 - **Interfaces:** RouteSession, corridor transition, MovementIntent, value-owned
   enter/update/complete/failed/abort lifecycle.
 - **Implementation outline / commit slices:**
-  - [ ] Derive directed overlap portals, hull shrink, support heights, external
+  - [x] Derive directed overlap portals, hull shrink, support heights, external
     entry/exit and deterministic constrained look-ahead.
+    See [corridor evidence](../reports/p3-02-corridor.md); world probes remain required.
   - [ ] Add primitive lifecycle/dispatch skeleton retaining selected link identity;
     unknown kinds and unsupported Drop fail explicitly.
 - **Tests:** straight/L/zigzag/sloped/unequal/reversed/degenerate edges, no overlap,
