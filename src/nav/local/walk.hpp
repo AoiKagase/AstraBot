@@ -3,11 +3,12 @@
 #include "nav/local/ground_probe.hpp"
 #include "nav/local/primitive.hpp"
 #include "nav/local/door_wait.hpp"
+#include "nav/local/blocker_wait.hpp"
 
 namespace astrabot::nav::local {
 enum class WalkState { Running, Arrived, Failed, Aborted };
 enum class WalkReason { None, InvalidInput, StaleTick, InvalidActor, StaleNavigation,
-    UnsupportedTraversal, InvalidGoal, OffCorridor, InvalidPortal, ProbeFailed, Cancelled, DoorBlocked };
+    UnsupportedTraversal, InvalidGoal, OffCorridor, InvalidPortal, ProbeFailed, Cancelled, DoorBlocked, DynamicBlocked };
 struct WalkLimits {
     GroundProbeLimits probe{};
     double speed{}, arrivalTolerance{}, crossingMargin{};
@@ -16,6 +17,7 @@ struct WalkLimits {
     std::uint64_t touchTimeoutUs{}; // Includes the supported approach, one contact attempt and waiting.
     double sideProbeDistance{}, narrowMargin{}, narrowSpeed{}; // Zero side distance disables steering.
     std::uint32_t maxAvoidanceDecisions{};
+    BlockerLimits blocker{}; // Zero timeout disables reactive player handling.
 };
 struct DoorContact {
     std::uint64_t id{};
@@ -38,6 +40,9 @@ struct WalkDecision {
     std::optional<DoorContact> contact{}; // Single-frame pulse; host must revalidate before dispatch.
     double leftClearance{}, rightClearance{};
     bool narrow{}, avoiding{};
+    BlockerAction blockerAction{BlockerAction::Neutral};
+    BlockerReason blockerReason{BlockerReason::None};
+    std::optional<runtime::BlockerObservation> blocker{};
 };
 // One owned route, synchronous decision seam. Caller schedules decisions and
 // invalidates on route replacement; this class never submits a host command.
@@ -70,6 +75,7 @@ private:
     bool touch_{}, contactSent_{};
     int avoidSide_{};
     std::uint32_t avoidDecisions_{};
+    std::optional<BlockerWait> blocker_{};
     WalkDecision updateDoor(WalkDecision, const runtime::MovementSnapshot&,
         const query::NavSpatialIndex&, core::MapGeneration, runtime::IWorldQueries&,
         model::NavVector3 end, std::uint64_t nowUs) noexcept;

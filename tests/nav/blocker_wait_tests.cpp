@@ -59,6 +59,13 @@ void priorityAndClear() {
     f.observed.blocker=runtime::BlockerObservation{0,runtime::BlockerKind::Geometry,{}};
     assert(geometry.update(f).action==BlockerAction::InspectAvoidance);
     assert(geometry.abort().terminalEvent && !geometry.fact(0));
+    BlockerWait verified(b,{120,200,1000});
+    assert(verified.update(feedback(b,1,0)).accepted);
+    assert(verified.clear(b,{2},999).action==BlockerAction::ReinspectPassage);
+    assert(!verified.clear(b,{3},1000).accepted);
+    BlockerWait deadline(b,{120,200,1000});
+    assert(deadline.update(feedback(b,1,0)).accepted);
+    assert(deadline.clear(b,{2},1000).reason==BlockerReason::TimedOut);
 }
 void invalidations() {
     for(int mode=0;mode<11;++mode) {

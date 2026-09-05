@@ -16,25 +16,36 @@ std::optional<runtime::BlockerObservation> BlockerWait::fact(std::uint64_t nowUs
         return {};
     return fact_;
 }
-BlockerDecision BlockerWait::update(const BlockerFeedback& f) noexcept {
-    if(terminal_) return {};
+std::optional<BlockerDecision> BlockerWait::begin(Binding b, core::TickId tick, std::uint64_t nowUs) noexcept {
+    if(terminal_) return BlockerDecision{};
     if(!binding_.agent.isValid() || !binding_.actor.isValid() || !binding_.map.isValid() ||
        !binding_.routeGeneration || !limits_.factLifetimeUs || !limits_.yieldUs ||
        limits_.yieldUs>=limits_.timeoutUs || limits_.factLifetimeUs>limits_.timeoutUs)
         return finish(BlockerAction::Replan,BlockerReason::InvalidInput);
+    if(b.agent!=binding_.agent || b.actor!=binding_.actor || b.map!=binding_.map ||
+       b.routeGeneration!=binding_.routeGeneration || b.step!=binding_.step)
+        return finish(BlockerAction::Aborted,BlockerReason::InvalidBinding);
+    if(!tick.isValid() || (tick_.isValid() && !tick.isAfter(tick_)))
+        return BlockerDecision{BlockerAction::Neutral,BlockerReason::StaleTick,false,false};
+    if(started_ && nowUs<=lastUs_)
+        return finish(BlockerAction::Replan,BlockerReason::InvalidInput);
+    tick_=tick; lastUs_=nowUs;
+    if(started_ && nowUs-startedUs_>=limits_.timeoutUs)
+        return finish(BlockerAction::Replan,BlockerReason::TimedOut);
+    return {};
+}
+BlockerDecision BlockerWait::clear(Binding b, core::TickId tick, std::uint64_t nowUs) noexcept {
+    if(const auto rejected=begin(b,tick,nowUs)) return *rejected;
+    return finish(BlockerAction::ReinspectPassage,BlockerReason::None);
+}
+BlockerDecision BlockerWait::update(const BlockerFeedback& f) noexcept {
+    // Validate query ownership before any state transition or tick acceptance.
     const auto& b=f.binding;
     const auto& q=f.requested;
-    if(b.agent!=binding_.agent || b.actor!=binding_.actor || b.map!=binding_.map ||
-       b.routeGeneration!=binding_.routeGeneration || b.step!=binding_.step ||
-       q.agent!=b.agent || q.actor!=b.actor || q.map!=b.map || q.routeGeneration!=b.routeGeneration)
+    if(terminal_) return {};
+    if(q.agent!=b.agent || q.actor!=b.actor || q.map!=b.map || q.routeGeneration!=b.routeGeneration)
         return finish(BlockerAction::Aborted,BlockerReason::InvalidBinding);
-    if(!q.tick.isValid() || (tick_.isValid() && !q.tick.isAfter(tick_)))
-        return {BlockerAction::Neutral,BlockerReason::StaleTick,false,false};
-    if(started_ && f.nowUs<=lastUs_)
-        return finish(BlockerAction::Replan,BlockerReason::InvalidInput);
-    tick_=q.tick; lastUs_=f.nowUs;
-    if(started_ && f.nowUs-startedUs_>=limits_.timeoutUs)
-        return finish(BlockerAction::Replan,BlockerReason::TimedOut);
+    if(const auto rejected=begin(b,q.tick,f.nowUs)) return *rejected;
     const auto& r=f.observed;
     if(!q.ordinal || !(r.stamp==q))
         return finish(BlockerAction::Replan,BlockerReason::InvalidObservation);
@@ -48,7 +59,7 @@ BlockerDecision BlockerWait::update(const BlockerFeedback& f) noexcept {
         return finish(BlockerAction::Replan,BlockerReason::InvalidObservation);
     const auto& obstacle=*r.blocker;
     const bool player=obstacle.kind==runtime::BlockerKind::Teammate ||
-        obstacle.kind==runtime::BlockerKind::Enemy;
+        obstacle.kind==runtime::BlockerKind::Enemy || obstacle.kind==runtime::BlockerKind::Player;
     if((obstacle.kind!=runtime::BlockerKind::Geometry && !player &&
         obstacle.kind!=runtime::BlockerKind::Other) ||
        (!obstacle.id && obstacle.kind!=runtime::BlockerKind::Geometry) ||

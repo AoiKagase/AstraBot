@@ -57,6 +57,8 @@ int gDoorUses=0, gDoorScans=0;
 int gTouchContacts=0;
 int gSteeringMode=-1;
 edict_t gWallWorld{};
+edict_t gNavPlayer{};
+bool gPlayerObstacle=false;
 constexpr float doorPlane=83.96875f; // GoldSrc collision epsilon keeps the hull outside the brush.
 std::uint64_t gDoorOpenAtUs=0;
 float supportHeight(float x) { return x+16>100 ? gStairHeight:0; }
@@ -103,7 +105,7 @@ void captureNavHull(const float* start, const float* end, int ignoreMonsters, in
         const auto h=steering_fixture::sweep(gSteeringMode,{start[0],start[1],start[2]},{end[0],end[1],end[2]});
         result->flFraction=h.fraction; result->fStartSolid=h.startSolid;
         result->vecEndPos=Vector(h.end.x,h.end.y,h.end.z); result->vecPlaneNormal=Vector(h.normal.x,h.normal.y,h.normal.z);
-        if(h.fraction<1) result->pHit=&gWallWorld;
+        if(h.fraction<1) result->pHit=gPlayerObstacle ? &gNavPlayer:&gWallWorld;
     }
 }
 void testNavWorldQueries() {
@@ -299,10 +301,11 @@ edict_t* captureCreateFakeClient(const char* /* name */) {
 
 int captureIndexOfEdict(const edict_t* entity) {
     if(entity==&gNavDoor) return 40;
+    if(entity==&gNavPlayer) return 2;
     return entity == &gFixture->entity ? gFixture->index : 0;
 }
 edict_t* captureDoorEntity(int index) {
-    return index==40 ? &gNavDoor:index==gFixture->index ? &gFixture->entity:nullptr;
+    return index==40 ? &gNavDoor:index==gFixture->index ? &gFixture->entity:index==2 ? &gNavPlayer:nullptr;
 }
 const char* captureDoorString(int index) {
     return index==10 ? "func_door":index==11 ? "func_door_rotating":"unknown";
@@ -768,6 +771,79 @@ void prepareNavWalk(Fixture& fixture,enginefuncs_t& hooks) {
         c{3,{{100,100,0},{200,200,0},0,0}}, d{4,{{200,100,0},{300,200,0},0,0}};
     a.targets[1]={2}; b.targets[2]={3}; c.targets[1]={4};
     assert(owner.navConsole().publish(owner.registry().mapGeneration(),route_test::snapshot({a,b,c,d})).isNone());
+}
+void testNavPlayerQueries() {
+    using namespace astrabot;
+    Fixture fixture{};
+    fixture.engine.pfnPEntityOfEntIndex=&captureDoorEntity;
+    gNavPlayer={}; gNavPlayer.v.flags=FL_CLIENT; gNavPlayer.v.solid=SOLID_SLIDEBOX; gNavPlayer.serialnumber=17;
+    gPlayerObstacle=true; gSteeringMode=1;
+    host::PlayerRegistry players; assert(players.activateMap(32));
+    assert(players.registerPlayer(1)); assert(players.registerPlayer(2)); assert(players.startFrame());
+    nav::runtime::QueryRequest q{{{1},players.currentPlayer(1),players.mapGeneration(),players.currentTick(),1,1},
+        nav::runtime::QueryKind::Blocker,{50,50,36},{98,50,36},nav::runtime::HullDimensions{{-16,-16,-36},{16,16,36}}};
+    const auto call=[&](const host::PlayerRegistry* registry) {
+        return adapter::cstrike::queryNavWorld(&fixture.engine,&fixture.entity,nullptr,q,64,registry);
+    };
+    auto r=call(&players);
+    assert(r.blocker && r.blocker->kind==nav::runtime::BlockerKind::Player && r.blocker->player==players.currentPlayer(2));
+    const auto oldId=r.blocker->id;
+    const auto oldGeneration=r.blocker->player->generation.value;
+    assert(players.disconnectSlot(2)); assert(players.registerPlayer(2)); ++gNavPlayer.serialnumber;
+    r=call(&players); assert(r.blocker && r.blocker->id!=oldId && r.blocker->player->generation.value!=oldGeneration);
+    r=call(nullptr); assert(r.blocker && r.blocker->kind==nav::runtime::BlockerKind::Other && !r.blocker->player);
+    assert(players.disconnectSlot(2)); r=call(&players);
+    assert(r.blocker && r.blocker->kind==nav::runtime::BlockerKind::Other && !r.blocker->player);
+    ++q.stamp.actor.generation.value; r=call(&players); assert(r.error==nav::runtime::QueryError::InvalidResult && !r.blocker);
+    q.stamp.actor=players.currentPlayer(1); ++q.stamp.map.value;
+    r=call(&players); assert(r.error==nav::runtime::QueryError::InvalidResult && !r.blocker);
+    q.stamp.map=players.mapGeneration(); ++q.stamp.tick.value;
+    r=call(&players); assert(r.error==nav::runtime::QueryError::InvalidResult && !r.blocker);
+    q.stamp.tick=players.currentTick(); fixture.engine.pfnPEntityOfEntIndex=nullptr;
+    assert(call(&players).error==nav::runtime::QueryError::Unavailable);
+    gNavPlayer.free=true; assert(!call(&players).blocker);
+    gNavPlayer={}; gPlayerObstacle=false; gSteeringMode=-1;
+}
+void testNavPlayers() {
+    using namespace astrabot;
+    for(std::uint64_t us : {8000U,16000U,100000U}) for(int mode=0;mode<5;++mode) {
+        Fixture fixture{}; enginefuncs_t hooks{};
+        fixture.engineGlobals.maxEntities=128;
+        if(mode!=4) fixture.engine.pfnPEntityOfEntIndex=&captureDoorEntity;
+        prepareNavWalk(fixture,hooks);
+        auto& owner=adapter::metamod::lifecycleCoordinator(); auto& console=owner.navConsole();
+        if(mode!=3) assert(owner.registry().registerPlayer(2));
+        gNavPlayer={}; gNavPlayer.v.flags=FL_CLIENT; gNavPlayer.v.solid=SOLID_SLIDEBOX; gNavPlayer.serialnumber=23;
+        gPlayerObstacle=true; gSteeringMode=mode==1 ? 2:1;
+        runNav({"astrabot_goto","2"});
+        const auto start=gNavClockUs; bool finished=false,avoided=false,observed=false,cleared=false;
+        for(int frame=0;frame<1600;++frame) {
+            if(mode==2 && gNavClockUs-start>=300000) gSteeringMode=-1;
+            const auto before=gHullCalls; navFrame(fixture,us);
+            const auto& d=console.motionTrace().decision;
+            if(d.tick==owner.registry().currentTick()) assert(d.queries==unsigned(gHullCalls-before) && d.queries<=21);
+            observed=observed || d.blocker.has_value(); avoided=avoided || d.avoiding;
+            cleared=cleared || d.blockerAction==nav::local::BlockerAction::ReinspectPassage;
+            if(d.blocker) assert(d.blocker->kind==(mode==3 ? nav::runtime::BlockerKind::Other:nav::runtime::BlockerKind::Player));
+            if(d.state!=nav::local::WalkState::Running) {
+                if(d.state!=(mode==1 || mode==4 ? nav::local::WalkState::Failed:nav::local::WalkState::Arrived))
+                    std::fprintf(stderr,"host player mode=%d us=%llu state=%u reason=%u probe=%u blocker=%u pos=(%.3f,%.3f)\n",
+                        mode,static_cast<unsigned long long>(us),unsigned(d.state),unsigned(d.reason),unsigned(d.probeReason),
+                        unsigned(d.blockerReason),fixture.entity.v.origin.x,fixture.entity.v.origin.y);
+                assert(d.state==(mode==1 || mode==4 ? nav::local::WalkState::Failed:nav::local::WalkState::Arrived));
+                if(mode==1) assert(d.reason==nav::local::WalkReason::DynamicBlocked && d.blockerReason==nav::local::BlockerReason::TimedOut);
+                if(mode==4) assert(d.reason==nav::local::WalkReason::DynamicBlocked && d.blockerReason==nav::local::BlockerReason::Unavailable);
+                finished=true; break;
+            }
+        }
+        assert(finished);
+        if(mode!=4) assert(observed);
+        if(mode==0 || mode==3) assert(avoided && cleared);
+        runNav({"astrabot_nav_status"});
+        bool diagnostic=false; for(const auto& line:gNavOutput) diagnostic=diagnostic || line.find("blocker_action=")!=std::string::npos;
+        assert(diagnostic);
+        gPlayerObstacle=false; gSteeringMode=-1; gSimulateNav=false; detach();
+    }
 }
 void awaitMovingQueue(Fixture& fixture) {
     auto& nav=astrabot::adapter::metamod::lifecycleCoordinator().navConsole();
@@ -1601,6 +1677,8 @@ int main() {
     testNavDoors();
     testNavTouchDoors();
     testNavSteering();
+    testNavPlayerQueries();
+    testNavPlayers();
     testNavWalkCancellationAndGuards();
     testJoinFailureCleanupAndCommandContextReentry();
     testCounterTerroristPrimaryJoinRequest();

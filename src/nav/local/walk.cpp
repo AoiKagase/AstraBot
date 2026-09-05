@@ -101,6 +101,7 @@ Walk::Walk(Binding b, std::shared_ptr<const corridor::Corridor> c, model::NavVec
 
 WalkDecision Walk::finish(WalkDecision out, WalkState state, WalkReason reason) noexcept {
     if(door_ && door_->state()==DoorWaitState::Waiting) (void)door_->abort();
+    if(blocker_) { (void)blocker_->abort(); blocker_.reset(); }
     out.terminalEvent=state_==WalkState::Running;
     state_=state; reason_=reason; out.state=state; out.reason=reason; out.intent={}; out.contact.reset();
     if(primitive_.state()==PrimitiveState::Running) {
@@ -226,6 +227,10 @@ WalkDecision Walk::update(const runtime::MovementSnapshot& s, const query::NavSp
         limits_.narrowMargin>limits_.sideProbeDistance || limits_.sideProbeDistance>limits_.probe.maxDistance ||
         !std::isfinite(limits_.narrowSpeed) || limits_.narrowSpeed<=0 || limits_.narrowSpeed>limits_.speed ||
         !limits_.maxAvoidanceDecisions))) return finish(out,WalkState::Failed,WalkReason::InvalidInput);
+    if(limits_.blocker.timeoutUs && (!limits_.blocker.factLifetimeUs || !limits_.blocker.yieldUs ||
+       limits_.blocker.yieldUs>=limits_.blocker.timeoutUs ||
+       limits_.blocker.factLifetimeUs>limits_.blocker.timeoutUs || limits_.sideProbeDistance<=0))
+        return finish(out,WalkState::Failed,WalkReason::InvalidInput);
     if(reservedQueries>=limits_.probe.maxQueries) {
         out.queries=reservedQueries; out.probeReason=ProbeReason::BudgetExceeded;
         return finish(out,WalkState::Failed,WalkReason::ProbeFailed);
@@ -236,6 +241,12 @@ WalkDecision Walk::update(const runtime::MovementSnapshot& s, const query::NavSp
     out.queries=queries.issued; out.probeReason=ground.reason;
     if(!ground) return finish(out,WalkState::Failed,WalkReason::ProbeFailed);
     out.support=ground.target;
+    const auto clearBlocker=[&] {
+        const auto d=blocker_->clear(out.binding,s.tick,nowUs);
+        out.blockerAction=d.action; out.blockerReason=d.reason;
+        blocker_.reset(); avoidSide_=0; avoidDecisions_=0;
+        return d.action==BlockerAction::ReinspectPassage;
+    };
     const auto goalMatch=index.containing(goal_,limits_.probe.navTolerance);
     if(!goalMatch || !*goalMatch.value || (**goalMatch.value).areaId!=corridor_->goal())
         return finish(out,WalkState::Failed,WalkReason::InvalidGoal);
@@ -272,6 +283,10 @@ WalkDecision Walk::update(const runtime::MovementSnapshot& s, const query::NavSp
             return out; // lifecycle entry has its own tick, with no movement yet
         }
         if(area==t.edge.target && inside(t.targetExtent,*s.position,*s.hull)) {
+            if(blocker_) {
+                if(!clearBlocker()) return finish(out,WalkState::Failed,WalkReason::DynamicBlocked);
+                return out; // Measured passage progress retires its old portal fact first.
+            }
             Feedback f{out.binding,s.tick,Progress::Complete,{},area,true};
             const auto completed=primitive_.update(f);
             if(!completed.accepted || completed.state!=PrimitiveState::Complete ||
@@ -310,8 +325,13 @@ WalkDecision Walk::update(const runtime::MovementSnapshot& s, const query::NavSp
     } else {
         if(area!=corridor_->goal()) return finish(out,WalkState::Failed,WalkReason::OffCorridor);
         if(std::hypot(double(goal_.x)-s.position->x,double(goal_.y)-s.position->y)<=limits_.arrivalTolerance &&
-           std::abs(double(goal_.z)-ground.target->floor.height)<=limits_.probe.navTolerance)
+           std::abs(double(goal_.z)-ground.target->floor.height)<=limits_.probe.navTolerance) {
+            if(blocker_) {
+                if(!clearBlocker()) return finish(out,WalkState::Failed,WalkReason::DynamicBlocked);
+                return out;
+            }
             return finish(out,WalkState::Arrived,WalkReason::None);
+        }
     }
     const double dx=double(aim.x)-s.position->x, dy=double(aim.y)-s.position->y;
     const double distance=std::hypot(dx,dy);
@@ -359,25 +379,47 @@ WalkDecision Walk::update(const runtime::MovementSnapshot& s, const query::NavSp
                 runtime::QueryKind::Blocker,*s.position,{x,y,s.position->z},s.hull};
             runtime::WorldQueryResult r;
             try { r=queries.query(q); } catch(...) {}
-            if(r.stamp==q.stamp && r.kind==q.kind && r.error==runtime::QueryError::None && r.blocker &&
-               r.blocker->kind==runtime::BlockerKind::Geometry) {
+            const bool classified=r.stamp==q.stamp && r.kind==q.kind &&
+                r.error==runtime::QueryError::None && r.blocker;
+            const bool dynamic=classified && (r.blocker->kind==runtime::BlockerKind::Player ||
+                r.blocker->kind==runtime::BlockerKind::Teammate || r.blocker->kind==runtime::BlockerKind::Enemy ||
+                r.blocker->kind==runtime::BlockerKind::Other);
+            if(limits_.blocker.timeoutUs && (dynamic || blocker_ || r.error!=runtime::QueryError::None ||
+               !(r.stamp==q.stamp) || r.kind!=q.kind)) {
+                if(!blocker_) blocker_.emplace(out.binding,limits_.blocker);
+                const auto d=blocker_->update({out.binding,q.stamp,r,nowUs});
+                out.blockerAction=d.action; out.blockerReason=d.reason; out.blocker=blocker_->fact(nowUs);
+                if(d.action==BlockerAction::Replan || d.action==BlockerAction::Aborted)
+                    return finish(out,WalkState::Failed,WalkReason::DynamicBlocked);
+                if(d.action!=BlockerAction::InspectAvoidance) return out;
+            }
+            if(classified && (r.blocker->kind==runtime::BlockerKind::Geometry || blocker_)) {
+                const auto noSide=[&] {
+                    if(blocker_) { out.blockerAction=BlockerAction::Yield; return out; }
+                    return finish(out,WalkState::Failed,WalkReason::ProbeFailed);
+                };
+                if(blocker_ && avoidDecisions_>=limits_.maxAvoidanceDecisions) return noSide();
                 if(avoidDecisions_>=limits_.maxAvoidanceDecisions || out.samples>=limits_.probe.maxSamples ||
                    out.queries>=limits_.probe.maxQueries) return finish(out,WalkState::Failed,WalkReason::ProbeFailed);
                 if(!avoidSide_) avoidSide_=out.rightClearance>=out.leftClearance ? 1:-1;
                 ++avoidDecisions_;
                 const double free=avoidSide_>0 ? out.rightClearance:out.leftClearance;
-                if(free<=1) return finish(out,WalkState::Failed,WalkReason::ProbeFailed);
+                if(free<=1) return noSide();
                 x=inward(s.position->x+avoidSide_*uy*(free-1),s.position->x);
                 y=inward(s.position->y-avoidSide_*ux*(free-1),s.position->y);
                 constrain(x,y);
                 if(std::hypot(double(x)-s.position->x,double(y)-s.position->y)<0.1)
-                    return finish(out,WalkState::Failed,WalkReason::ProbeFailed);
+                    return noSide();
                 auto budget=limits_.probe; budget.maxQueries=limits_.probe.maxQueries-out.queries+1;
                 budget.maxSamples-=out.samples;
                 const auto alternate=GroundProbe::inspect(s,binding_.routeGeneration,area,x,y,index,indexMap,queries,budget);
                 out.queries=queries.issued; out.samples+=alternate.samples; out.steps+=alternate.steps;
                 out.probeReason=alternate.reason;
-                if(!alternate) return finish(out,WalkState::Failed,WalkReason::ProbeFailed);
+                if(!alternate) {
+                    if(!queries.offCorridor && (alternate.reason==ProbeReason::Blocked || alternate.reason==ProbeReason::NoSupport))
+                        return noSide();
+                    return finish(out,WalkState::Failed,WalkReason::ProbeFailed);
+                }
                 out.target=alternate.target; out.avoiding=true;
                 const double length=std::hypot(double(x)-s.position->x,double(y)-s.position->y);
                 out.intent.direction={(double(x)-s.position->x)/length,(double(y)-s.position->y)/length,0};
@@ -394,6 +436,10 @@ WalkDecision Walk::update(const runtime::MovementSnapshot& s, const query::NavSp
         return finish(out,WalkState::Failed,queries.offCorridor ? WalkReason::OffCorridor:WalkReason::ProbeFailed);
     }
     out.target=probe.target;
+    if(blocker_) {
+        if(!clearBlocker()) return finish(out,WalkState::Failed,WalkReason::DynamicBlocked);
+        return out; // Complete verified passage invalidates the fact; translation waits for a new decision.
+    }
     avoidSide_=0; avoidDecisions_=0;
     // Even a full 120 ms fresh-intent hold cannot pass the inspected endpoint.
     const double inspected=std::hypot(double(x)-s.position->x,double(y)-s.position->y);

@@ -41,7 +41,7 @@ struct DoorObservation {
     std::optional<model::NavVector3> useView{}; // Verified player-use pitch/yaw/roll, degrees.
     bool canTouch{}; // Ordinary untargeted, non-use-only door; not proof that a master is unlocked.
 };
-enum class BlockerKind { Unknown, Teammate, Enemy, Geometry, Other };
+enum class BlockerKind { Unknown, Teammate, Enemy, Geometry, Other, Player };
 struct BlockerObservation {
     std::uint64_t id{};
     BlockerKind kind{BlockerKind::Unknown};

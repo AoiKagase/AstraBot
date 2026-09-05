@@ -160,7 +160,10 @@ Unit/simulation passes never substitute for live observations.
 
 Portable controller foundation: [blocker wait report](../reports/p3-04-blocker-wait.md).
 Expiry, stable PlayerId priority and a non-renewable attempt deadline have
-synthetic coverage. Walk/host integration and both checklist slices remain open.
+synthetic coverage. [Reactive Walk/host integration](../reports/p3-04-reactive-walk.md)
+now observes players and performs bounded yield/inspected avoidance. Automatic
+replan consumption and the separate multi-client seam remain; both checklist
+slices stay open.
 
 - **Goal:** bounded deterministic yield/avoid/replan without static mesh mutation.
 - **Why now:** local blockers must not become permanent Nav facts.

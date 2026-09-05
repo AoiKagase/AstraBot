@@ -31,6 +31,9 @@ public:
     BlockerWait(Binding binding, BlockerLimits limits) noexcept
         : binding_(binding), limits_(limits) {}
     BlockerDecision update(const BlockerFeedback&) noexcept;
+    // Trusted controller has just completed full ground/segment inspection.
+    // This does not issue or fabricate a world-query stamp and never moves.
+    BlockerDecision clear(Binding, core::TickId, std::uint64_t nowUs) noexcept;
     BlockerDecision abort() noexcept;
     std::optional<runtime::BlockerObservation> fact(std::uint64_t nowUs) const noexcept;
 private:
@@ -41,5 +44,6 @@ private:
     bool started_{}, terminal_{};
     std::optional<runtime::BlockerObservation> fact_{};
     BlockerDecision finish(BlockerAction, BlockerReason) noexcept;
+    std::optional<BlockerDecision> begin(Binding, core::TickId, std::uint64_t) noexcept;
 };
 }

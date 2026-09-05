@@ -69,7 +69,8 @@ std::optional<nav::model::NavVector3> doorUseView(enginefuncs_t* e,edict_t* acto
     return {};
 }
 nav::runtime::WorldQueryResult queryNavWorld(enginefuncs_t* engine, edict_t* entity,
-    const nav::query::NavSpatialIndex* index, const nav::runtime::QueryRequest& q,int maxEntities) noexcept {
+    const nav::query::NavSpatialIndex* index, const nav::runtime::QueryRequest& q,int maxEntities,
+    const host::PlayerRegistry* players) noexcept {
     using namespace nav::runtime;
     WorldQueryResult r; r.stamp=q.stamp; r.kind=q.kind;
     if(!engine || !entity || entity->free) return r;
@@ -89,10 +90,32 @@ nav::runtime::WorldQueryResult queryNavWorld(enginefuncs_t* engine, edict_t* ent
             const int slot=engine->pfnIndexOfEdict(hit.pHit);
             const auto* name=engine->pfnSzFromIndex ? engine->pfnSzFromIndex(hit.pHit->v.classname):nullptr;
             const bool wall=name && (!std::strcmp(name,"func_wall") || !std::strcmp(name,"func_wall_toggle"));
-            // World BSP or a recognized wall BSP solid. Actors and unknown hit types
-            // are left for the reactive blocker controller, never guessed walls.
+            // World BSP or a recognized wall BSP solid; never classify an actor as a wall.
             if(slot==0 || (slot>0 && slot<maxEntities && hit.pHit->v.solid==SOLID_BSP && wall)) {
                 r.blocker=BlockerObservation{static_cast<std::uint64_t>(slot),BlockerKind::Geometry};
+            } else if(slot>0 && slot<maxEntities && hit.pHit!=entity &&
+                      (hit.pHit->v.flags&(FL_CLIENT|FL_FAKECLIENT)) && hit.pHit->v.solid==SOLID_SLIDEBOX) {
+                if(!engine->pfnPEntityOfEntIndex) { r.error=QueryError::Unavailable; return r; }
+                auto* obstacle=hit.pHit;
+                const auto serial=obstacle->serialnumber;
+                if(engine->pfnPEntityOfEntIndex(slot)!=obstacle || obstacle->free || obstacle->serialnumber!=serial) {
+                    r.error=QueryError::InvalidResult; return r;
+                }
+                const auto id=(std::uint64_t(static_cast<std::uint32_t>(serial))<<32)|static_cast<std::uint32_t>(slot);
+                // A public player hit without a registry identity is still a
+                // dynamic obstacle. It supplies no team or reciprocal priority.
+                r.blocker=BlockerObservation{id,BlockerKind::Other,{}};
+                if(players) {
+                    if(!players->isMapActive() || players->mapGeneration()!=q.stamp.map ||
+                       players->currentTick()!=q.stamp.tick || players->currentPlayer(q.stamp.actor.slot)!=q.stamp.actor ||
+                       engine->pfnIndexOfEdict(entity)!=q.stamp.actor.slot) {
+                        r.blocker.reset(); r.error=QueryError::InvalidResult; return r;
+                    }
+                    if(slot<=players->clientMax()) {
+                        const auto player=players->currentPlayer(static_cast<std::uint16_t>(slot));
+                        if(player.isValid()) r.blocker=BlockerObservation{id,BlockerKind::Player,player};
+                    }
+                }
             }
             return r;
         }
