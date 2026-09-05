@@ -200,6 +200,9 @@ synthetic navigation passes; live acceptance remains post-Finish.
 typed hint interpretation and a bounded observed-hull posture gate.
 [Crouch Walk/host integration](../reports/p3-05-crouch-walk.md) now verifies
 supported crossing, headroom-safe release and cancellation. Simple Jump remains.
+The [Simple Jump controller](../reports/p3-05-simple-jump-controller.md) now has
+an independent lifecycle/dispatch/landing test seam; proof generation and
+Walk/host integration are still required before checking its implementation slice.
 
 - **Goal:** execute verified transitions without per-frame state in A*.
 - **Why now:** lifecycle and clearance/ground facts exist.
