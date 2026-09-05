@@ -139,7 +139,9 @@ void assertTruncatedField(
     std::size_t length,
     std::uint64_t offset,
     NavField field) {
-    const std::vector<std::uint8_t> truncated(bytes.begin(), bytes.begin() + length);
+    assert(length <= bytes.size());
+    auto truncated = bytes;
+    truncated.resize(length);
     const auto result = NavFileReader::readHeader(
         ByteView{truncated.data(), truncated.size()}, normalLimits());
     assert(!result);

@@ -24,10 +24,16 @@ void *allocate(std::size_t size) {
     return p;
 }
 } // namespace
-_Ret_notnull_ _Post_writable_byte_size_(size) void *operator new(std::size_t size) {
+#ifdef _MSC_VER
+_Ret_notnull_ _Post_writable_byte_size_(size)
+#endif
+void *operator new(std::size_t size) {
     return allocate(size);
 }
-_Ret_notnull_ _Post_writable_byte_size_(size) void *operator new[](std::size_t size) {
+#ifdef _MSC_VER
+_Ret_notnull_ _Post_writable_byte_size_(size)
+#endif
+void *operator new[](std::size_t size) {
     return allocate(size);
 }
 void operator delete(void *p) noexcept { std::free(p); }

@@ -32,12 +32,16 @@ void* allocateForAreaReaderTest(std::size_t size) {
 
 } // namespace
 
+#ifdef _MSC_VER
 _Ret_notnull_ _Post_writable_byte_size_(size)
+#endif
 void* operator new(std::size_t size) {
     return allocateForAreaReaderTest(size);
 }
 
+#ifdef _MSC_VER
 _Ret_notnull_ _Post_writable_byte_size_(size)
+#endif
 void* operator new[](std::size_t size) {
     return allocateForAreaReaderTest(size);
 }
