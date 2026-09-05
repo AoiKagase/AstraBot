@@ -1,6 +1,6 @@
 # P2-06 — Immutable connectivity and deterministic A*
 
-Status: design recorded for written-spec review; implementation has not started.
+Status: written spec approved by the user; implementation has not started.
 Base: `6ea1e29` on `codex/p206-route-search`.
 
 The user approved the proposed design and explicitly selected opt-in partial
