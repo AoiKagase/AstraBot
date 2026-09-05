@@ -1,6 +1,6 @@
 # State
 
-Status: verifying
+Status: complete
 Milestone: P2-06
 Task: P206-T4
 
@@ -28,22 +28,28 @@ Done:
 - T4 integration tests/evidence complete: two threads x 100 full-result comparisons,
   const publication, snapshot lifetime and same-snapshot P2-05 endpoint composition.
 - T4 tests were initial-green; production code required no change.
+- T4 committed4eaaf95; task review approved. Final whole-branch review of
+  6ea1e29..4eaaf95 approved with no Critical/Important/Minor findings.
 
 Next:
-- Controller dispatches final whole-branch review; retain verifying until its outcome.
-- Read .superpowers/sdd/2026-09-05-p206-route-search/progress.md for live agent IDs.
-- Read only active task and relevant source; update this checkpoint after each task.
+- Await the user's next instruction. Keep codex/p206-route-search and this worktree.
+- Main merge, remote operations and P2-07 are not part of this completed task.
+- Local review evidence is preserved under build-portable-test/p206-review-evidence/;
+  no live subagents remain. Approved spec contains durable completion evidence.
 
 Blocked:
-- None technically; final whole-branch review is pending, not yet accepted.
+- None within P2-06 scope. Project-wide Finish is not declared.
 
 Verified:
 - FocalSpan ready/fresh before planning; queried existing graph dependencies.
 - T1 baseline10/10; graph Debug/analyze11/11, SAL fix focused MSVC and native
-  Windows MinGW graph checks passed. Evidence in ignored task-1-report.md.
+  Windows MinGW graph checks passed. Evidence retained in local review archive.
 - T4 canonical portable x64 Debug12/12 (0.37 sec) and separate MSVC /analyze12/12
   (0.73 sec), both exit 0; no compiler/analyzer warnings/errors. Generated flags
   retain /W4 /WX and Nav PUBLIC _ITERATOR_DEBUG_LEVEL=0. Actual command output,
-  FocalSpan and scoped commit evidence are in ignored task-4-report.md.
+  FocalSpan and scoped commit evidence are in archived task-4-report.md.
+- Parent independently reran both canonical configure/build/CTest commands on
+  4eaaf95: Debug12/12 (0.57 sec), analyze12/12 (0.58 sec), both exit0. Final
+  review checked these logs/configuration and found no in-scope blocker.
 - Preserve older worktrees and local FocalSpan/Serena files. Keep the Nav public
   _ITERATOR_DEBUG_LEVEL=0 definition. Linux/live checks remain post-Finish only.

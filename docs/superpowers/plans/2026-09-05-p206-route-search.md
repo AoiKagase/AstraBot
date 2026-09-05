@@ -304,7 +304,10 @@ T1-T3 completion/approvals are recorded in STATE (T3 commit `29d159a`). T4 added
 tests were initial-green with no production change: canonical Debug12/12 (0.37
 seconds), separate /analyze12/12 (0.73 seconds), both exit 0. See the approved
 spec's P206-T4 verification evidence and ignored task-4-report.md for exact output.
-T4 tests/evidence are complete; final whole-branch review belongs to the controller.
+T4 and final whole-branch reviews approved all changes through4eaaf95, with no
+remaining findings. Parent fresh canonical Debug/analyze runs both passed12/12.
+STATE is complete; branch/worktree remain unmerged. Local reports are preserved
+under build-portable-test/p206-review-evidence/ (ignored).
 
 ## Plan self-review
 

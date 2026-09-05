@@ -1,13 +1,12 @@
 # P2-06 — Immutable connectivity and deterministic A*
 
-Status: written spec approved; T1-T4 implementation/tests/evidence recorded;
-controller final whole-branch review pending (STATE: verifying).
+Status: P2-06 complete; T1-T4 and final whole-branch review approved.
 Base: `6ea1e29` on `codex/p206-route-search`.
 
 The user approved the proposed design and explicitly selected opt-in partial
 routes on expansion-limit termination. This document makes its boundary and
-observable rules concrete. Completion evidence below does not declare final
-whole-branch acceptance or project-wide Finish.
+observable rules concrete. Completion evidence below records P2-06 acceptance,
+not project-wide Finish or live movement acceptance.
 
 ## Scope and architecture
 
@@ -189,9 +188,31 @@ failure was observed or claimed. Existing allocation-failure sweeps still report
 four graph allocation sites, two query-preparation sites, and two reconstruction
 sites for routes with corridors; exact query bytes are 792 for four vertices.
 
-The scoped completion commit is `docs: record nav route search verification`;
-its hash, post-commit status and full command output are recorded in the ignored
-`.superpowers/sdd/2026-09-05-p206-route-search/task-4-report.md`. T4 integration
-verification/evidence is complete; STATE remains **verifying** for controller
-final whole-branch review. Linux/live validation, main merge, remote operations
-and project-wide Finish were not performed or declared.
+The scoped integration commit is `4eaaf95 docs: record nav route search verification`.
+Full local command output and review reports are retained in the ignored
+`build-portable-test/p206-review-evidence/` archive. Linux/live validation, main
+merge, remote operations and project-wide Finish were not performed or declared.
+
+## Final whole-branch acceptance
+
+All four task reviews approved their scoped implementation and quality. The T1
+SAL annotation finding was fixed in `648f7ce` and its scoped re-review passed.
+The independent final review of `6ea1e29..4eaaf95` found no Critical, Important or
+Minor issues, with no deferred or parked findings. The parent independently ran
+the same canonical configure/build/CTest commands on `4eaaf95`: Debug12/12
+(0.57 seconds) and separate analyze12/12 (0.58 seconds), both exit 0. The final
+completion commit changes only STATE and documentation; code/tests remain those
+reviewed and verified. Branch `codex/p206-route-search` and its worktree remain
+available; main stays at `6ea1e29`.
+
+Evidence limits remain explicit: the concurrent regression is not a race-detector
+run or exhaustive schedule exploration; caller-supplied heuristic admissibility
+and purity remain preconditions. Unknown traversal is covered by the production
+validation helper, while current loader-derived end-to-end fixtures use Walk.
+
+Controller process decisions: task headings were aligned with the brief extraction
+tool without changing P206 task IDs or behavior; subagents inherited the model
+under the tool's no-unsolicited-override rule; empty-input coverage preserves null
+rejection and a valid edgeless singleton rather than inventing a zero-area snapshot.
+If these interpretations need revision, the impact is respectively tool headings,
+execution cost, or graph-input tests, not a silent change to the loader contract.
