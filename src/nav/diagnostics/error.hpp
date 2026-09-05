@@ -37,6 +37,7 @@ enum class NavRecord : std::uint8_t {
     Approach,
     Encounter,
     TraversalLink,
+    Graph,
 };
 
 enum class NavField : std::uint8_t {
@@ -70,6 +71,8 @@ enum class NavField : std::uint8_t {
     EncounterSpotId,
     EncounterSpotT,
     Place,
+    GraphBytes,
+    GraphTraversal,
 };
 
 struct NavError final {

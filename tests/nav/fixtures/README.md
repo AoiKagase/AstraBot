@@ -35,3 +35,15 @@ NavMeshLoader. Stacked floors, 64 varied patches and a fixed LCG seed 12345 prov
 repeatable query coverage. The oracle evaluates four bilinear weights directly
 and linearly scans fixture descriptions; it does not call production projection,
 index traversal or production fixture generators. No upstream code/assets are used.
+
+# P2-06 route fixtures
+
+route_fixture.hpp independently serializes tiny v1 NAV records: magic/version/area
+count, ID, zero attributes, eight extent floats, four cardinal connection lists,
+zero hiding and approach bytes, and a zero uint32 encounter count. Integer fields
+use local little-endian shifts and floats use memcpy of their bits. The checked
+loader validates these original area IDs/extents/targets with explicit small
+limits. No upstream source or assets are used. graph_tests.cpp supplies unsorted
+IDs and target lists, distinct cardinal edges, a singleton, and precision/extreme
+coordinate cases. Empty means null graph input or no outgoing edges, not a valid
+zero-area NAV file; the loader continues to reject zero areas.

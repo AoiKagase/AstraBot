@@ -73,6 +73,7 @@ set_target_properties(astrabot_core PROPERTIES
 astrabot_enable_warnings(astrabot_core)
 
 add_library(astrabot_nav STATIC
+    src/nav/query/graph.cpp
     src/nav/query/spatial_index.cpp
     src/nav/query/geometry.cpp
     src/nav/io/decode_context.cpp
@@ -217,6 +218,10 @@ endif()
 if(ASTRABOT_BUILD_TESTS)
     enable_testing()
     find_package(Threads REQUIRED)
+    add_executable(astrabot_nav_graph_tests tests/nav/graph_tests.cpp)
+    target_link_libraries(astrabot_nav_graph_tests PRIVATE astrabot_nav)
+    astrabot_enable_warnings(astrabot_nav_graph_tests)
+    add_test(NAME astrabot.nav.graph COMMAND astrabot_nav_graph_tests)
     add_executable(astrabot_nav_spatial_tests tests/nav/spatial_index_tests.cpp)
     target_link_libraries(astrabot_nav_spatial_tests PRIVATE astrabot_nav Threads::Threads)
     astrabot_enable_warnings(astrabot_nav_spatial_tests)
