@@ -4,6 +4,7 @@
 #include <fstream>
 #include <string_view>
 #include "adapter/cstrike/nav/console.hpp"
+#include "adapter/cstrike/nav/world_queries.hpp"
 #include "adapter/metamod/lifecycle.hpp"
 #include "debug/nav_command.hpp"
 #include "nav/io/mesh_loader.hpp"
@@ -171,25 +172,10 @@ void NavConsole::execute(NavCommand command,metamod::LifecycleCoordinator& owner
     printUpdate(update);
 }
 nav::runtime::WorldQueryResult NavConsole::query(const nav::runtime::QueryRequest& request) {
-    nav::runtime::WorldQueryResult result;
-    result.stamp=request.stamp; result.kind=request.kind;
-    if (!index_ || !engine_ || !engine_->pfnTraceLine || !queryingEntity_ || !request.hull ||
-        request.kind!=nav::runtime::QueryKind::GroundedArea) return result;
-    const float feet=request.start.z+request.hull->minimum.z;
-    if (!std::isfinite(feet)) return result;
-    const float start[]{request.start.x,request.start.y,feet+2};
-    const float end[]{request.start.x,request.start.y,feet-4};
-    TraceResult hit{}; engine_->pfnTraceLine(start,end,1,queryingEntity_,&hit);
-    if(deferredInvalidation_) return result;
-    result.error=nav::runtime::QueryError::None;
-    if(hit.fAllSolid || hit.fStartSolid || !std::isfinite(hit.flFraction) || hit.flFraction<0 || hit.flFraction>=1 ||
-        !std::isfinite(hit.vecPlaneNormal.z) || hit.vecPlaneNormal.z<0.7f ||
-        !std::isfinite(hit.vecEndPos.z) || std::abs(hit.vecEndPos.z-feet)>4) return result;
-    // Only a containing area at the observed support height; no geometric nearest fallback.
-    const auto match=index_->containing({request.start.x,request.start.y,hit.vecEndPos.z},2);
-    if(!match || !*match.value) return result;
-    result.ground=nav::runtime::GroundedAreaObservation{(**match.value).areaId,
-        nav::runtime::FloorObservation{hit.vecEndPos.z,{hit.vecPlaneNormal.x,hit.vecPlaneNormal.y,hit.vecPlaneNormal.z},true}};
+    auto result=queryNavWorld(engine_,queryingEntity_,index_.get(),request);
+    if(deferredInvalidation_) {
+        result={}; result.stamp=request.stamp; result.kind=request.kind;
+    }
     return result;
 }
 }

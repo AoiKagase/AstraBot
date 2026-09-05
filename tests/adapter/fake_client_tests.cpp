@@ -10,6 +10,8 @@
 #include "adapter/metamod/fake_client.hpp"
 #include "adapter/metamod/lifecycle.hpp"
 #include "adapter/metamod/plugin_entry.hpp"
+#include "adapter/cstrike/nav/world_queries.hpp"
+#include "nav/local/ground_probe.hpp"
 
 #include <cassert>
 #include <cstdarg>
@@ -40,6 +42,61 @@ void captureGround(const float*, const float* end, int, edict_t*, TraceResult* r
     if(gInvalidateDuringGround)
         astrabot::adapter::metamod::lifecycleCoordinator().navConsole().invalidate(
             astrabot::nav::runtime::SessionReason::MapChanged);
+}
+
+int gHullKind=-1, gHullCalls=0, gHullMode=0;
+void captureNavHull(const float*, const float* end, int ignoreMonsters, int hull, edict_t* actor, TraceResult* result) {
+    assert(ignoreMonsters==0 && actor!=nullptr);
+    gHullKind=hull; ++gHullCalls;
+    *result={}; result->flFraction=1; result->vecEndPos=Vector(end[0],end[1],end[2]);
+    if(gHullMode==1) result->fAllSolid=1;
+    if(gHullMode==2) result->flFraction=0.5f;
+    if(gHullMode==3) result->flFraction=2;
+}
+void testNavWorldQueries() {
+    using namespace astrabot::nav;
+    enginefuncs_t engine{}; edict_t entity{};
+    engine.pfnTraceLine=&captureGround; engine.pfnTraceHull=&captureNavHull;
+    auto mesh=route_test::snapshot({{1,{{0,0,0},{100,100,0},0,0},{}}});
+    auto idx=query::NavSpatialIndex::build(mesh,{1,1,1000000}); assert(idx);
+    runtime::QueryRequest q{{{1},{2,{3}},{4},{5},6,1},runtime::QueryKind::SweptHull,
+        {20,50,36},{36,50,36},runtime::HullDimensions{{-16,-16,-36},{16,16,36}}};
+    const auto call=[&] { return astrabot::adapter::cstrike::queryNavWorld(&engine,&entity,idx.value->get(),q); };
+    gHullMode=0; gHullCalls=0;
+    auto r=call(); assert(r.error==runtime::QueryError::None && r.hull && r.hull->fraction==1);
+    assert(r.stamp==q.stamp && gHullKind==1 && gHullCalls==1);
+    q.hull=runtime::HullDimensions{{-16,-16,-18},{16,16,18}};
+    r=call(); assert(r.hull && gHullKind==3);
+    q.hull->maximum.x=17;
+    r=call(); assert(r.error==runtime::QueryError::Unavailable && gHullCalls==2);
+    q.hull=runtime::HullDimensions{{-16,-16,-36},{16,16,36}};
+    gHullMode=1; r=call(); assert(r.hull && r.hull->startSolid);
+    q.kind=runtime::QueryKind::Clearance; r=call(); assert(r.clearance && !r.clearance->clear);
+    gHullMode=2; r=call(); assert(r.clearance && !r.clearance->clear);
+    gHullMode=0; r=call(); assert(r.clearance && r.clearance->clear);
+    gHullMode=3; r=call(); assert(r.error==runtime::QueryError::InvalidResult);
+    gHullMode=0; q.kind=runtime::QueryKind::Floor; q.start={20,50,18}; q.end={20,50,-64};
+    r=call(); assert(r.floor && r.floor->supported && r.floor->height==0);
+    q.end.x=21; assert(call().error==runtime::QueryError::InvalidResult); q.end.x=20;
+    q.kind=runtime::QueryKind::Door; assert(call().error==runtime::QueryError::Unavailable);
+    struct Port final : runtime::IWorldQueries {
+        enginefuncs_t* engine; edict_t* entity; const query::NavSpatialIndex* index;
+        Port(enginefuncs_t* e,edict_t* a,const query::NavSpatialIndex* i):engine(e),entity(a),index(i) {}
+        runtime::WorldQueryResult query(const runtime::QueryRequest& request) override {
+            return astrabot::adapter::cstrike::queryNavWorld(engine,entity,index,request);
+        }
+    } port(&engine,&entity,idx.value->get());
+    runtime::MovementSnapshot s; s.agent={1}; s.actor={2,{3}}; s.map={4}; s.tick={5};
+    s.kind=runtime::ActorKind::ManagedBot; s.connected=true; s.alive=true; s.joined=true; s.grounded=true;
+    s.position=model::NavVector3{20,50,36}; s.hull=q.hull;
+    const local::GroundProbeLimits limits{5,2,32,16,18,18,64,4,2,0.7};
+    auto probe=local::GroundProbe::inspect(s,6,{1},52,50,**idx.value,s.map,port,limits);
+    assert(probe && probe.queries==5 && probe.target->origin.z==36);
+    gHullMode=1;
+    probe=local::GroundProbe::inspect(s,6,{1},52,50,**idx.value,s.map,port,limits);
+    assert(!probe && probe.reason==local::ProbeReason::Blocked && probe.queries==3);
+    gHullMode=0; engine.pfnTraceHull=nullptr; q.kind=runtime::QueryKind::SweptHull;
+    assert(call().error==runtime::QueryError::Unavailable);
 }
 
 namespace {
@@ -1056,6 +1113,7 @@ int main() {
     _CrtSetReportMode(_CRT_ASSERT,_CRTDBG_MODE_FILE);
     _CrtSetReportFile(_CRT_ASSERT,_CRTDBG_FILE_STDERR);
 #endif
+    testNavWorldQueries();
     testSuccessfulCreationAndOpaquePrivateData();
     testFailureRollback();
     testInputAndCapacityRejection();

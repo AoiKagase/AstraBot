@@ -100,6 +100,7 @@ if(MSVC)
 endif()
 
 add_library(astrabot_nav STATIC
+    src/nav/local/ground_probe.cpp
     src/nav/local/primitive.cpp
     src/nav/corridor/corridor.cpp
     src/debug/nav_command.cpp
@@ -232,6 +233,7 @@ if(ASTRABOT_BUILD_METAMOD)
         src/adapter/metamod/fake_client.cpp
         src/adapter/metamod/plugin_entry.cpp
         src/adapter/cstrike/nav/console.cpp
+        src/adapter/cstrike/nav/world_queries.cpp
         src/adapter/metamod/lifecycle.cpp
         src/adapter/metamod/movement.cpp
         src/debug/host_trace.cpp
@@ -312,6 +314,11 @@ if(ASTRABOT_BUILD_TESTS)
     file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/long-fuzz/CTestTestfile.cmake"
         CONTENT "add_test(astrabot.nav.fuzz.long \"$<TARGET_FILE:astrabot_nav_fuzz_tests>\" --cases 100000)\nset_tests_properties(astrabot.nav.fuzz.long PROPERTIES TIMEOUT 600)\n")
     if(NOT ASTRABOT_NAV_ASAN)
+    add_executable(astrabot_nav_ground_probe_tests tests/nav/ground_probe_tests.cpp)
+    target_link_libraries(astrabot_nav_ground_probe_tests PRIVATE astrabot_nav)
+    astrabot_enable_warnings(astrabot_nav_ground_probe_tests)
+    add_test(NAME astrabot.nav.ground_probe COMMAND astrabot_nav_ground_probe_tests)
+    set_tests_properties(astrabot.nav.ground_probe PROPERTIES TIMEOUT 30)
     add_executable(astrabot_nav_primitive_tests tests/nav/primitive_tests.cpp)
     target_link_libraries(astrabot_nav_primitive_tests PRIVATE astrabot_nav)
     astrabot_enable_warnings(astrabot_nav_primitive_tests)
@@ -484,6 +491,7 @@ if(ASTRABOT_BUILD_TESTS)
             src/adapter/metamod/fake_client.cpp
             src/adapter/metamod/plugin_entry.cpp
             src/adapter/cstrike/nav/console.cpp
+            src/adapter/cstrike/nav/world_queries.cpp
             src/adapter/metamod/lifecycle.cpp
             src/adapter/metamod/movement.cpp
             src/debug/host_trace.cpp
@@ -539,6 +547,7 @@ if(ASTRABOT_BUILD_TESTS)
             src/adapter/cstrike/messages.cpp
             src/adapter/metamod/fake_client.cpp
             src/adapter/cstrike/nav/console.cpp
+            src/adapter/cstrike/nav/world_queries.cpp
             src/adapter/metamod/lifecycle.cpp
             src/adapter/metamod/movement.cpp
             src/adapter/metamod/plugin_entry.cpp

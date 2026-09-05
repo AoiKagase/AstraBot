@@ -124,8 +124,9 @@ Unit/simulation passes never substitute for live observations.
 - **Interfaces:** timestamped hull/floor/door results, MovementIntent, fresh
   BotCommand through existing host submission.
 - **Implementation outline / commit slices:**
-  - [ ] Add bounded grounded-area/clearance queries, stacked-floor distinction,
+  - [x] Add bounded grounded-area/clearance queries, stacked-floor distinction,
     unsafe-drop rejection and scripted replay values.
+    See [ground/clearance evidence](../reports/p3-03-ground-clearance.md).
   - [ ] Add Walk/motor, 25 Hz decisions plus per-frame commands, later-tick
     dispatch and stale-intent stop; implement observability now.
   - [ ] Add ordinary door use/wait, stairs, wall avoidance and narrow-passage
@@ -303,6 +304,7 @@ nullable-Approach correction. Compatibility is partially validated, with its
 remaining rows explicitly recorded. The portable session slice is also implemented.
 Console goto/status/cancel integration also has offline adapter evidence.
 P3-02 corridor/portals and primitive lifecycle now have Windows/Linux x86 offline
-evidence. Next is P3-03 bounded grounded-area/clearance queries, then Walk/motor.
+evidence and are integrated into main. P3-03 bounded grounded-area/clearance
+queries now have offline evidence; next is the existing Walk/motor slice.
 Real compatibility remains
 partial; no new numbering or Finish declaration.
