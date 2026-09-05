@@ -1,6 +1,6 @@
 # AstraBot validated architecture
 
-Status: Phase 0 decision record, 2026-09-04.  This document supersedes design
+Status: Phase 0 decision record, with Phase 3 planning addendum 2026-09-05. This document supersedes design
 v0.2 where they conflict; the two original inputs remain unchanged as historical
 hypotheses.  Evidence is pinned in [the source manifest](research/source-manifest.md).
 
@@ -131,6 +131,10 @@ ladder enrichment offline; Phase 3 is the first live ladder-discovery/traversal
 gate.  Area-center chains are debug output only, not final movement paths.
 
 ## Corridor and local steering boundary
+
+The [Phase 3 contract below](#phase-3-local-navigation-decision-2026-09-05)
+refines this section's implementation order and scheduling. Existing Phase 3
+task IDs remain authoritative.
 
 The global planner chooses a sequence of traversable area edges.  A corridor
 builder derives shared-edge/portal constraints and traversal annotations.  Local
@@ -355,3 +359,198 @@ P1-01 begins with the portable Core value/command contracts and host port only.
 The next task is the Metamod-P load/unload adapter skeleton, plus an offline
 fake-host test and load trace.  Do not begin Nav, planning, DB, AMXX, or combat
 in P1-01.
+
+## Phase 3 local navigation decision (2026-09-05)
+
+Planning only; no Phase 3 source exists yet. Audited base: `b49f4da`.
+Task ownership is in [the existing plan](plans/phase-3-nav-movement.md);
+real-byte readiness is in [the compatibility protocol](research/real-nav-compatibility.md).
+
+### Alternatives and selected boundary
+
+| Approach | Cost / consequence | Decision |
+|---|---|---|
+| Put movement in the GoldSrc adapter | Small initial seam, engine-bound state and difficult replay | Reject |
+| Portable corridor + LocalNavigator + small explicit primitive state | Value snapshots, deterministic tests, separate motion lifecycle | Select |
+| General plugin/behavior graph for arbitrary traversal | Extra registry, serialization and extension framework before use cases | Defer |
+
+```text
+NavMeshSnapshot + map-generation TraversalEnrichment
+                    |
+NavGraph / NavRouteSearch -> owned NavRouteResult (selected edges)
+                    |
+RouteSession -> Corridor / transition constraints
+                    |
+LocalNavigator -> MotionPrimitive state -> MovementIntent
+                    |
+portable Motor translation -> BotCommand
+                    |
+IGameHost / GoldSrc adapter -> validated RunPlayerMove
+                    ^
+MovementSnapshot + bounded value query results
+```
+
+The names introduced below are planned internal contracts, not implemented
+headers or a stable AMXX ABI. Reuse `NavRouteResult`, `NavRouteStep`,
+`NavTraversalKind`, `NavTraversalLink`, `PlayerId`, `MapGeneration`,
+`TickId` and `BotCommand`; do not introduce a duplicate NavRoute model.
+A* stays synchronous and bounded, with no per-frame motor state or hidden traces.
+
+### Ownership and input/output values
+
+- **RouteSession** owns an immutable mesh/graph reference, copied route result,
+  actor/map/route generations, goal, cursor and terminal reason. Retain selected
+  edges including external link identity; never recover an edge by area IDs alone.
+- **MovementSnapshot** contains actor/map/tick, explicit elapsed simulation time,
+  position, velocity, view, grounded/ducked/alive/joined state, hull dimensions,
+  movement speed limit and ladder contact facts. Unknown facts are explicit,
+  not zero-valued proof of ground or clearance.
+- **World query port** returns swept-hull fraction/end/normal, floor height/
+  normal, clearance, door/use capability and blocker value ID/class. Requests and
+  replies carry actor/map/tick and a bounded request ordinal. Reject stale or
+  budget-exhausted results; never retain an adapter pointer or call an SDK API.
+- **Corridor transition** owns from/to, selected edge identity, portal bounds,
+  source/target support height and traversal constraints. Walk portals are shared
+  cardinal boundary overlap, shrunk by hull clearance. Test slope and vertical
+  discontinuity with ground probes. No overlap or exhausted clearance yields
+  `InvalidPortal`; an external link uses its entry/exit plus verified probes.
+- **MovementIntent** expresses world-space desired direction/speed, bounded
+  lateral correction, desired view and action requests (duck/jump/use). Optional
+  wall normal and clearance come from observations. Thus narrow-edge control
+  can add corrections without replacing a target-point-only API.
+- **Motor** transforms desired velocity into view-relative forward/side/up,
+  clamps each command component to the existing 400-unit contract and observed
+  player speed, validates finite angles/buttons, and emits fresh commands.
+  Button press/hold/release belongs to primitive state; never replay a jump edge
+  merely because steering reused an intent.
+- **DecisionTrace** reports actor/map/tick/route generation, current/goal area,
+  ordered route/step, traversal/link, primitive/state, local target, desired
+  speed/lateral correction, stuck state/reason, recovery attempt, replan reason,
+  arrival/terminal state and command submission result. Bound/rate-limit sinks;
+  preserve terminal events and reasons.
+
+GoldSrc entity pointers, entvars, CBasePlayer/CBaseEntity, ReAPI concrete types,
+Metamod globals and engine globals stay wholly inside `src/adapter`.
+Doors/player facts are short-lived overlays, not mutations of the mesh.
+No new World Model, Experience database or public plugin registry is required.
+
+### Traversal and primitive lifecycle
+
+NavMesh describes connectivity. Traversal describes how a selected directed
+edge is crossed. A primitive controls per-tick execution. The existing enum
+already has Walk/Crouch/Jump/Ladder/Drop; raw NAV attributes and approach bytes
+are different metadata. File cardinal edges currently default to Walk.
+P3-05 interprets supported movement attributes and local probes; NoJump or
+unknown/contradictory constraints fail closed with a typed reason.
+
+Use a small value-owned tagged state, not an inheritance/plugin framework:
+`enter -> update -> Running | Complete | Failed`, with `abort` from any running
+state. Enter initializes once per transition; terminal outcome is emitted once.
+Abort clears requested action edges and hands a safe neutral/stop intent to the
+motor while the actor remains valid; lifecycle removal invalidates the session
+rather than sending commands to a dead/disconnected actor.
+
+| Primitive | Minimum states and completion |
+|---|---|
+| Walk | follow portal/look-ahead; complete on validated target-area/support crossing |
+| Crouch | approach, clearance check, hold duck, cross, release when headroom permits |
+| Simple Jump | approach, align, accelerate, takeoff edge, airborne, land, recover; require landing in the intended support/area |
+| Ladder | approach, align, acquire contact, climb up/down, exit, verify support; bounded timeout, falling-off failure and at most one validated re-acquire |
+| Drop | vocabulary reserved; unsupported transition in Phase 3, never Walk fallback |
+
+Simple Jump is a locally verified small transition, not general gap solving or
+automatic duck-jump search. Preserve a transition constraint slot for approach
+point, takeoff/landing region, required speed and facing. Populate only facts
+needed and verified for the supported primitive. A future GapJump state machine
+can use those constraints without changing A* or treating a link as a jump button.
+
+Ladder links reuse `sourceId/generation/linkId`, direction, entry/exit and BSP
+fingerprint. P3-06 adapter discovery owns geometry/facing/contact facts; local
+ladder state owns climb/exit/abort. Re-acquire requires a fresh same-generation
+contact/clearance check; failure exits to recovery, never an infinite Walk retry.
+
+### Route status, arrival and invalidation
+
+`NavRouteStatus` is exactly Complete, Unreachable, ExpansionLimit. There is no
+separate Partial enum; only opt-in ExpansionLimit can own a partial corridor.
+Default goto uses `allowPartial=false`: only Complete starts movement.
+ExpansionLimit with an opt-in prefix is diagnostic-only in Phase 3; stop and
+report it, optionally request one bounded larger-budget replan. Unreachable has
+no executable corridor. Parser/query errors are separate failures.
+
+Complete means graph reachability, not arrival. Arrival requires the requested
+goal area plus grounded/appropriate support confirmation; a ladder exit or jump
+must finish its primitive. Same-area requests perform that check before success.
+A partial endpoint is never goal arrival. Stale actor/map generation, goal
+replacement, death, disconnect or map change aborts the active primitive and
+invalidates pending local facts. New sessions use a new route generation.
+
+### Steering, stuck and recovery scope
+
+Phase 3 includes portal following, speed/turn/strafe control, wall clearance,
+grounded stairs, ordinary door use/wait, clearance-based narrow passages and
+bounded reactive player/dynamic-blocker yield. It excludes advanced wall-edge
+balancing, crowd planning and predictive obstacle trajectories.
+
+Stuck detection requires a movement command actually dispatched, expected
+progress in the active primitive, insufficient projected corridor progress and
+displacement over an explicit duration. Include oscillation and alignment;
+exclude deliberate waiting, airborne/ladder-specific expected pauses and rejected
+commands. Keep DoorBlocked, PlayerBlocked, GeometryBlocked, TraversalFailed and
+Unknown distinct, without guessing a cause absent observations.
+
+Initial deterministic recovery bounds for tests: one 500 ms no-progress window
+for Walk (1000 ms for slow crouch), then wait up to 250 ms, one clearance-checked
+sidestep up to 250 ms, one reverse/realign up to 250 ms, one replan, then abort if
+the new route again fails. Primitive-specific timeouts are separate. Choose the
+side by clearance, then stable actor ID on ties. Reset only on measured progress
+or explicit new goal, not on target jitter; carry the attempt budget through
+replans so replanning cannot evade termination. These are initial configuration
+values, logged and tested, not live-tuned performance claims.
+
+### Scheduling and command transport
+
+The existing `LifecycleCoordinator::startFrame` dispatches queued commands
+through `MovementCoordinator`; dispatch requires a later TickId than submission.
+`quantizeMsec` rounds measured adapter frame duration and clamps to 1..255 ms;
+it does not use caller msec as the movement duration. Preserve this contract.
+
+Select **25 Hz LocalNavigator/primitive decisions** (40 ms target period) and
+**one fresh motor command per eligible server frame**, consuming the latest valid
+intent. Submit after that frame's dispatch for the next frame; never submit and
+force dispatch at the same tick. Motor updates edge/hold expiry every frame.
+Do not simply send a 40 ms intent once every 40 ms: the existing pump would use
+only one frame's measured msec and under-drive movement.
+
+Use explicit elapsed time, at most one local update per server frame, no catch-up
+burst; below 25 FPS update once per frame and record missed deadlines. Stale
+intent over 120 ms stops locomotion, releases actions and requests a reasoned
+refresh. Replay recorded adapter elapsed time/results; Core reads no wall clock.
+Map generation resets all timing state.
+
+Replan on goal/map/route invalidation, confirmed blocked portal or bounded
+recovery, not every frame. Coalesce reasons; initial minimum interval 200 ms and
+at most one query per actor per local tick with finite expansion/memory limits.
+While invalidated, stop; cooldown never authorizes use of an invalid route.
+Record budget/deadline misses; tune using post-Finish evidence.
+
+### Multi-Bot seam and future events
+
+Portable navigation is per `PlayerId` plus map generation. It must never know
+`primary fake client`. Current `FakeClientCoordinator` retains one active entity,
+`LifecycleCoordinator::submitCommand` checks it, and dispatch passes the same
+entity/join state for all pending slots. Slot arrays are not multi-Bot support.
+
+P3-01/P3-03 initially use one actor. P3-04 may test independent actor sessions
+with fake snapshots, but two-AstraBot live acceptance and P3-08 8/16-Bot loads
+require a narrow adapter change: generation-validated PlayerId-to-entity and
+per-player join/command dispatch at those exact seams. Keep it a separately
+reviewable commit inside P3-04, with two-client isolation/removal/reuse tests;
+do not refactor the entire host in this planning session.
+
+A future event consumer can subscribe to terminal primitive outcome carrying
+actor kind/ID, map fingerprint/generation, route generation, selected edge and
+external link identity (if present), from/to, times and typed success/failure.
+Static edges use source/target/cardinal direction plus map identity, not a
+fabricated link ID. Phase 3 emits debug outcomes only; no successRate, learning,
+adaptive costs, demonstration capture or persistence is introduced.

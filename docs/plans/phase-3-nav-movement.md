@@ -1,172 +1,298 @@
 # Phase 3 plan — Nav movement
 
-## Goal
+Status: planning revision 2026-09-05, audited base `b49f4da`. Production
+implementation has not started. Existing **P3-01 through P3-08** are retained;
+unnumbered checklist items are commit slices, not new task IDs.
 
-On the pinned live server, an operator command such as
-`astrabot_goto <area-id>` resolves the Bot's current area, computes an observable
-area corridor, builds portal/traversal constraints, and uses local steering plus
-the Phase 1 motor to reach the goal.  Acceptance covers floor, doorway, stairs,
-narrow passage, crouch, jump, ladder, player blocking, dynamic obstacle, stuck
-detection and recovery.  Area-center chaining is not an accepted controller.
+## Goal and authority
+
+An operator-only `astrabot_goto <area-id>` selects the managed actor, resolves
+its grounded current area, computes an owned selected-edge route and follows
+portals through Local Navigation / primitives / GoldSrc commands to the goal.
+Initially the server-console command targets the single managed Bot. Never take
+control of a human implicitly; ambiguous or invalid actor selection fails.
+
+Follow [the architecture contract](../architecture.md#phase-3-local-navigation-decision-2026-09-05)
+and [real NAV protocol](../research/real-nav-compatibility.md).
+**Finish is not declared here.** No Linux or live checks run in this session.
+The old plan's live-only Phase 3 completion conflicts with AGENTS.md's Finish
+gate: distinguish implementation/applicable offline verification complete from
+live accepted. All project plans must complete implementation, applicable
+verification and documentation before a separate project-wide Finish decision.
+Pending post-Finish rows never become passes because offline work is complete.
 
 ## Planned modules
 
-```text
-src/nav/corridor/*             area edges to portals/traversal constraints
-src/nav/local/*                short-horizon steering and movement state
-src/nav/runtime/*              grounded queries and dynamic overlay
-src/adapter/cstrike/nav/*      ladder/entity/door/trace adaptation
-src/debug/nav_command.*        goto/status/route debug surface
-tests/nav/simulation/*         deterministic fake-query scenarios
-tests/live/nav/*               map scenario manifest and evidence
-```
+| Location | Responsibility |
+|---|---|
+| `tools/nav-inspect.cpp`, `tests/nav/inspection_tests.cpp` | read-only loader/index/graph/search inspection |
+| `src/nav/runtime/route_session.*`, `movement_snapshot.hpp` | actor/map/route generation, goal/status/cancel, movement/query values |
+| `src/nav/corridor/*` | selected-edge portals, constraints and cursor |
+| `src/nav/local/*` | LocalNavigator, primitive tagged state, steering/recovery |
+| `src/core/motor.*` | MovementIntent to bounded BotCommand |
+| `src/adapter/cstrike/nav/*` | ground/clearance/door/ladder value observations |
+| `src/debug/nav_command.*` | operator parsing/status/trace |
+| `tests/nav/simulation/*`, `tests/live/nav/*` | offline replay and post-Finish scenario evidence |
 
-## Commit-sized tasks
+These are proposed files. Portable targets must remain SDK-free. The adapter
+currently links only `astrabot_core`; runtime integration must explicitly add
+`astrabot_nav` and update adapter test linkage, without reversing dependencies.
 
-### P3-01 — Observable goto request and runtime route session
+## Common commit and verification protocol
 
-- **Goal:** connect a debug goal to Phase 2 route output without movement policy.
-- **Files/modules:** debug command parser, route-session state/result trace.
-- **Implementation outline:** authorize/validate Bot and area ID, snapshot map/
-  overlay/experience, locate current area, run A*, publish corridor/cost/reason;
-  cancel on agent/map generation change.
-- **Dependencies:** Phase 1 complete; Phase 2 immutable queries complete.
-- **Tests:** invalid caller/Bot/area, no route, same area, goal replacement,
-  disconnect/map change and deterministic trace.
-- **Acceptance:** live command prints current/goal IDs, ordered edges, costs and
-  failure reason; it does not yet claim movement.
-- **Risk:** debug command becoming public AMXX ABI.  Keep it operator-only and
-  explicitly unstable in Phase 3.
+Each unchecked slice normally means one independently reviewable commit:
+confirm checkout/status, FocalSpan status/update/query; add focused failing
+tests; implement only that slice; run appropriate Windows Debug checks;
+review diff, update FocalSpan, stage explicit paths, check cached diff and commit.
+A multi-slice task is not complete after its first commit.
 
-### P3-02 — Corridor portal extraction and look-ahead target
+Portable baseline:
+`rtk proxy powershell -NoProfile -File tools/verify-nav-evidence.ps1 -Mode Debug`.
+Register new test executables with CTest. Adapter slices use pinned x86 NMake
+Debug build/tests from AGENTS.md; changed adapter linkage/exports also require
+Release/export verification. Preserve the five undecorated exports.
+Unit/simulation passes never substitute for live observations.
 
-- **Goal:** replace center chains with geometric corridor constraints.
-- **Files/modules:** shared-edge/portal builder, corridor cursor, simulation tests.
-- **Implementation outline:** derive overlap portal for each directed floor edge,
-  shrink by Bot clearance, retain traversal annotations, compute deterministic
-  look-ahead/string-pull target constrained inside portals; center fallback is an
-  explicit diagnostic failure mode only.
-- **Dependencies:** P3-01.
-- **Tests:** straight/L/zigzag corridors, unequal/sloped areas, narrow portal,
-  reversed edge, degeneracy, stable target under small position changes.
-- **Acceptance:** route visualization distinguishes areas, portals and steering
-  target; fixtures prove target is not simply each area center.
-- **Risk:** old meshes with imperfect overlaps.  Return typed `InvalidPortal` and
-  replan/fail safely; do not silently walk through walls.
+## P3-01 — Compatibility prerequisite, contracts and observable goto session
 
-### P3-03 — Grounded floor, door, stairs and narrow-passage steering
+- **Goal:** real-file inspection plus portable observable route sessions, before movement.
+- **Why now:** synthetic correctness does not prove real compatibility; every
+  controller needs actor identity, route status and cancellation.
+- **Files/modules:** inspector/tests/CMake, runtime contracts, debug command,
+  lifecycle/Nav linkage and compatibility report.
+- **Interfaces:** existing NavMeshLoader/NavSpatialIndex/NavGraph/NavRouteSearch;
+  planned RouteSession/MovementSnapshot/query-result/DecisionTrace; reuse
+  PlayerId/MapGeneration/TickId and owned selected edges.
+- **Implementation outline / commit slices:**
+  - [ ] Add bounded SDK-free read-only inspector with synthetic CLI/metadata tests,
+    using the profile and report contract in the compatibility protocol.
+  - [ ] Compare lawful local real bytes to independent expected data; record
+    load/nearest/route and unchanged hashes. Without a file, keep this sub-gate pending.
+  - [ ] Add portable session/snapshot/query contracts and fake-host tests; default
+    allowPartial=false and keep ExpansionLimit prefixes diagnostic-only.
+  - [ ] Wire console goto/status/cancel to the managed actor and route result,
+    with explicit Nav linkage and offline adapter tests.
+- **Tests:** metadata, missing/oversized/corrupt input, limits, no input writes;
+  invalid actor/area, same area, Complete/Unreachable/ExpansionLimit with/without
+  prefix, goal replacement, stale actor/map/query, disconnect.
+- **Live validation:** post-Finish command prints current/goal, edges/cost/status;
+  this task alone claims no motion.
+- **Acceptance criteria:** inspector tests pass; real compatibility separately
+  records its actual status; sessions cannot execute partial/unreachable routes;
+  console behavior has offline adapter evidence.
+- **Dependencies:** Phase 2 offline PASS and Phase 1 host identity/transport.
+- **Risks:** fixture rights, wire assumptions, absent grounded queries, public ABI.
+- **Deferred work:** movement, stable AMXX API, live ladder discovery, learning.
 
-- **Goal:** traverse the common movement matrix with adapter queries.
-- **Files/modules:** local controller, `nearestGrounded`, clearance/floor probes,
-  motor intent translation.
-- **Implementation outline:** fixed-rate steering, desired velocity/view,
-  look-ahead clearance, step/floor continuity, door use/wait state, speed/strafe
-  control and corridor containment.  All traces return value results.
-- **Dependencies:** P3-02 and Phase 1 command pump.
-- **Tests:** fake-query floor/step/drop/door/narrow scenarios, tick replay, trace
-  budget and stale query result.
-- **Acceptance:** live Bot reaches selected areas across open floor, a doorway,
-  stairs and a narrow passage without center-chain behavior or forbidden drops.
-- **Risk:** map geometry and tick-rate sensitivity.  Record position/portal/
-  command per tick and test at low/normal/high server FPS.
+## P3-02 — Corridor, primitive lifecycle and look-ahead
 
-### P3-04 — Player blocking and dynamic obstacle overlay
+- **Goal:** usable transition constraints instead of area-center chains.
+- **Why now:** all motion states share targeting and selected-edge identity.
+- **Files/modules:** corridor builder/cursor, local motion primitive contracts,
+  simulation tests and CMake.
+- **Interfaces:** RouteSession, corridor transition, MovementIntent, value-owned
+  enter/update/complete/failed/abort lifecycle.
+- **Implementation outline / commit slices:**
+  - [ ] Derive directed overlap portals, hull shrink, support heights, external
+    entry/exit and deterministic constrained look-ahead.
+  - [ ] Add primitive lifecycle/dispatch skeleton retaining selected link identity;
+    unknown kinds and unsupported Drop fail explicitly.
+- **Tests:** straight/L/zigzag/sloped/unequal/reversed/degenerate edges, no overlap,
+  narrow clearance, jitter and parallel edges; enter once, terminal once, abort.
+- **Live validation:** post-Finish inspect portals/targets against geometry.
+- **Acceptance criteria:** targets stay inside constraints; InvalidPortal is typed;
+  no silent center fallback; exact replay and no SDK headers.
+- **Dependencies:** P3-01 session slice; real-file sub-gate can remain independent.
+- **Risks:** imperfect real overlaps and unsafe external endpoints.
+- **Deferred work:** spline optimization, generic traversal plugin framework.
 
-- **Goal:** avoid/yield/replan without writing dynamic facts into static Nav.
-- **Files/modules:** short-lived traversal overlay, neighbour observation,
-  avoidance/yield policy.
-- **Implementation outline:** classify teammate/enemy/other blocker, predict
-  short-horizon occupancy, choose bounded side/yield behavior, expire facts, and
-  invalidate/replan when a door/breakable/moving obstruction closes a portal.
-- **Dependencies:** P3-03.
-- **Tests:** head-on/same-direction/intersecting teammates, immobile blocker,
-  semiclip capability, door closes/reopens, overlay expiry and deterministic
-  priority tie-break.
-- **Acceptance:** two live Bots do not deadlock in the chosen narrow scenario;
-  a dynamic obstacle causes a reasoned wait/avoid/replan and recovery.
-- **Risk:** oscillation between symmetric agents.  Stable priority uses IDs plus
-  time-bounded ownership/yield, with starvation telemetry.
+## P3-03 — Walk, grounded steering and GoldSrc motor bridge
 
-### P3-05 — Crouch and jump traversal states
+- **Goal:** first end-to-end single-Bot Walk with ground/door/stair clearance.
+- **Why now:** supplies the observation/movement seams for special traversals.
+- **Files/modules:** local controller, motor, adapter ground/clearance/door queries,
+  lifecycle integration and movement/simulation tests.
+- **Interfaces:** timestamped hull/floor/door results, MovementIntent, fresh
+  BotCommand through existing host submission.
+- **Implementation outline / commit slices:**
+  - [ ] Add bounded grounded-area/clearance queries, stacked-floor distinction,
+    unsafe-drop rejection and scripted replay values.
+  - [ ] Add Walk/motor, 25 Hz decisions plus per-frame commands, later-tick
+    dispatch and stale-intent stop; implement observability now.
+  - [ ] Add ordinary door use/wait, stairs, wall avoidance and narrow-passage
+    speed/lateral correction.
+- **Tests:** corridor/same-area supported arrival, ceiling, stairs, door failure,
+  unsafe drop, zero/long delta, low/normal/high FPS, 120 ms stale intent,
+  rejected command and repeated button edges.
+- **Live validation:** post-Finish spawn/goto/floor/stairs/door/narrow passage;
+  capture portal/command/arrival at multiple FPS.
+- **Acceptance criteria:** simulation reaches supported goal; unknown clearance
+  stops; no center shortcut; preserve one queued command and later-tick dispatch.
+- **Dependencies:** P3-02 and Phase 1 transport; live also requires real NAV and Finish.
+- **Risks:** command msec uses measured frame time, not local decision duration;
+  avoid under-driving at 25 Hz or catch-up bursts.
+- **Deferred work:** advanced edge balance, general jumps, per-frame A*.
 
-- **Goal:** execute annotated transitions without contaminating A* with motor state.
-- **Files/modules:** local traversal state machine, movement action flags.
-- **Implementation outline:** approach/alignment, precondition/clearance check,
-  press/hold/release crouch or jump, success/failure/timeout, cooldown and replan.
-- **Dependencies:** P3-03; can proceed in parallel with P3-04 after P3-03.
-- **Tests:** crouch-only portal, jump/duck-jump, low ceiling, missed jump, timeout,
-  repeated button edge semantics.
-- **Acceptance:** pinned live scenarios reach the far area and trace transition,
-  command flags, completion or typed recovery reason.
-- **Risk:** `.nav` attributes describe areas rather than an exact takeoff point.
-  Local probes and scenario-specific acceptance are required.
+## P3-04 — Reactive blockers, overlay and necessary multi-Bot seam
 
-### P3-06 — Live ladder enrichment and ladder state machine
+- **Goal:** bounded deterministic yield/avoid/replan without static mesh mutation.
+- **Why now:** local blockers must not become permanent Nav facts.
+- **Files/modules:** expiring overlay, local avoidance, fake-client/lifecycle/
+  movement identity seams and adapter tests.
+- **Interfaces:** blocker value ID/class, expiring portal facts, stable actor
+  priority; adapter-only generation-validated PlayerId-to-entity resolution.
+- **Implementation outline / commit slices:**
+  - [ ] Add reactive clearance-based side/yield, stable ID tie-break, expiry and
+    door/obstacle invalidation; no trajectory prediction.
+  - [ ] Before two-AstraBot acceptance, replace active-primary assumptions with
+    per-player entity/join/dispatch validation in a separate narrow commit.
+- **Tests:** head-on/same-direction/immobile players, door reopen, expiry, replay,
+  capability absent/present; two clients with different join states, slot reuse,
+  removal/map change and no cross-actor command.
+- **Live validation:** post-Finish two-Bot doorway; 8/16-Bot rows remain blocked
+  until the adapter mapping change is verified.
+- **Acceptance criteria:** finite wait/avoid/replan, stable priority, immutable
+  mesh, two-client isolation; synthetic actors are not live multi-Bot proof.
+- **Dependencies:** P3-03 and per-actor portable sessions.
+- **Risks:** symmetry/starvation and single-client lifecycle assumptions.
+- **Deferred work:** broad host rewrite, crowd AI, obstacle prediction, combat.
 
-- **Goal:** discover map ladders outside `.nav` and traverse one in each direction.
-- **Files/modules:** `adapter/cstrike/nav/ladder_scanner`, immutable enrichment,
-  local ladder controller.
-- **Implementation outline:** enumerate/classify `func_ladder` on map activation,
-  derive bounds/facing through adapter traces, link validated nearby areas,
-  publish map-generation enrichment; implement approach, mount, align, ascend/
-  descend, dismount, timeout.  Never expose entity pointers.
-- **Dependencies:** Phase 2 enrichment contract; P3-03.
-- **Tests:** synthetic adapter entities/traces, multiple/invalid/unlinked ladders,
-  map-generation cleanup, up/down route and state replay.
-- **Acceptance:** live scan reports reproducible ladder/link facts; the Bot reaches
-  both endpoints up and down; map change invalidates old enrichment.
-- **Risk:** ladder facing/top exits require geometry traces and differ by map.
-  Keep failed links observable and do not invent a serialized ladder record.
+## P3-05 — Crouch and Simple Jump primitives
 
-### P3-07 — Progress/oscillation stuck detection and recovery ladder
+- **Goal:** execute verified transitions without per-frame state in A*.
+- **Why now:** lifecycle and clearance/ground facts exist.
+- **Files/modules:** local traversal interpretation/states, simulation/action trace.
+- **Interfaces:** selected edge plus supported area hints/local constraints;
+  takeoff/landing/speed/facing only as needed and typed terminal outcome.
+- **Implementation outline / commit slices:**
+  - [ ] Interpret supported crouch/jump/no-jump constraints; add crouch hold/cross/
+    headroom-safe release and explicit unknown/contradictory failure.
+  - [ ] Add Simple Jump approach/align/accelerate/takeoff/airborne/land/recover,
+    single press edge, timeout and cooldown.
+- **Tests:** crouch, low ceiling, NoJump conflict, blocked takeoff, missed/wrong
+  landing support, airborne timeout, repeated tick, abort/release.
+- **Live validation:** post-Finish pinned crouch/small jump with command edges and landing.
+- **Acceptance criteria:** completion needs movement snapshot evidence; unsupported
+  transitions fail deterministically; no link-to-jump-button shortcut.
+- **Dependencies:** P3-03; P3-04 not required for isolated primitive tests.
+- **Risks:** area hints do not supply reliable takeoff points.
+- **Deferred work:** GapJump/LongJump/duck-jump search, air-control planning, learning.
 
-- **Goal:** detect lack of corridor progress and recover finitely.
-- **Files/modules:** progress history, recovery policy, replan reasons/counters.
-- **Implementation outline:** sample projected corridor progress, displacement,
-  velocity-goal alignment and oscillation; escalate bounded wait → side step →
-  backoff/realign → overlay invalidation/replan → abort.  Reset only on measured
-  progress or route generation change.
-- **Dependencies:** P3-04–P3-06.
-- **Tests:** stationary collision, oscillating doorway, teammate clears, permanent
-  block, ladder timeout, false-positive slow crouch, maximum recovery attempts.
-- **Acceptance:** live forced-stuck case is detected within documented bound,
-  recovers or aborts without infinite input, and emits exact replan reason.
-- **Risk:** false positives and command thrashing.  State-specific thresholds are
-  configuration values captured in the decision trace.
+## P3-06 — Ladder enrichment and first-class motion
 
-### P3-08 — Live scenario matrix, budgets and gate report
+- **Goal:** generation-bound host ladder links plus distinct up/down traversal.
+- **Why now:** P2-07 proves synthetic connectivity only.
+- **Files/modules:** adapter ladder_scanner, local ladder state, enrichment/tests.
+- **Interfaces:** existing NavTraversalLink identity/fingerprint/direction/points;
+  value bounds/facing/contact and freshness.
+- **Implementation outline / commit slices:**
+  - [ ] Independently enumerate func_ladder and trace endpoints/facing; publish
+    immutable same-map enrichment or explicit discovery failure.
+  - [ ] Add approach/align/contact/climb-up or down/exit/support, abort/fall
+    detection and at most one fresh clearance-checked re-acquire.
+- **Tests:** absent/invalid/unlinked/multiple ladders, fingerprint/generation,
+  up/down, wrong contact, fall, timeout and bounded retry.
+- **Live validation:** post-Finish reproducible scan/mount/climb/dismount both
+  directions, then map-change invalidation.
+- **Acceptance criteria:** selected link identity survives through outcomes;
+  unsupported geometry is explicit; no Walk fallback or serialized ladder invention.
+- **Dependencies:** P3-03, P3-02 lifecycle and P2-07 enrichment.
+- **Risks:** top exits/facing need real trace evidence.
+- **Deferred work:** BSP ladder extraction, learned ladders, boosts.
 
-- **Goal:** prove end-to-end correctness and measure likely hot paths.
-- **Files/modules:** scenario manifest, operator commands, trace assertions,
-  benchmark/report documentation.
-- **Implementation outline:** choose redistributable/local map locations with
-  coordinates/area IDs and hashes; automate setup where safe; collect route,
-  portal, steering, trace counts/time, A* expansions, replan/recovery results at
-  multiple server FPS and 1/8/16 Bot scheduling load.
-- **Dependencies:** P3-07.
-- **Tests:** repeat every scenario from clean map start and after map change;
-  deterministic simulation replay for each failure found live.
-- **Acceptance:** all required matrix rows below have pass evidence; no unbounded
-  trace/replan spike; failures retain logs and do not get relabeled as passes.
-- **Risk:** map/server acceptance is hard to automate.  Keep manual observations
-  separate from unit/simulation results and pin the entire environment.
+## P3-07 — Progress-aware stuck detection and finite recovery
 
-## Acceptance matrix
+- **Goal:** distinguish intentional waiting from failed commanded progress.
+- **Why now:** primitives/blockers now supply expected progress and reasons.
+- **Files/modules:** local history/recovery, trace/replan counters.
+- **Interfaces:** dispatched-command feedback, expected primitive progress,
+  projected progress, typed cause and carried attempt budget.
+- **Implementation outline / commit slices:**
+  - [ ] Add windowed displacement/progress/oscillation checks, state-specific
+    pauses/timeouts and cause classification.
+  - [ ] Add finite wait/sidestep/reverse-realign/replan/abort using architecture
+    bounds; carry recovery attempts across replans.
+- **Tests:** collision/oscillation, slow crouch, deliberate yield, rejected command,
+  transient/permanent block, ladder fall, Unknown cause, target jitter,
+  replan budget evasion and terminal-event uniqueness.
+- **Live validation:** post-Finish forced stuck/transient block/ladder timeout;
+  record detection time and finite recover-or-abort.
+- **Acceptance criteria:** no random button spam; repeatable decisions/reasons;
+  bounded termination across replans; reset on progress/new explicit goal only.
+- **Dependencies:** P3-04, P3-05, P3-06.
+- **Risks:** false positives; do not invent causes without observations.
+- **Deferred work:** adaptive thresholds, success rates, Experience storage.
+
+## P3-08 — Offline gate, portability and post-Finish acceptance
+
+- **Goal:** reproducible scenario/budget evidence with separate gate statuses.
+- **Why now:** implemented/offline-tested must not imply live accepted.
+- **Files/modules:** replay, tests/live/nav manifests, Phase 3 report; CI changes
+  only under the Linux policy condition below.
+- **Interfaces:** environment/map/NAV hashes, actor count/start/goal/expected
+  result, route/portal/primitive/command/reason trace.
+- **Implementation outline / commit slices:**
+  - [ ] Complete offline matrix and finite trace/replan/time budgets; document
+    every pending live row and missing real-file prerequisite.
+  - [ ] Consolidate conditional Linux CI restoration below.
+  - [ ] After project-wide Finish, run live/Linux gates, record exact results
+    and reopen failed work explicitly.
+- **Tests:** clean-map/map-change replay for every row, finite budgets, synthetic
+  scheduling at 1/8/16 actors (not proof of live capability).
+- **Live validation:** all rows below at low/normal/high FPS, 1/8/16 Bots after
+  P3-04 mapping, with pinned environment.
+- **Acceptance criteria:** offline status needs applicable tests plus documented
+  pending rows; live accepted needs observed passes for every required live row.
+  Unavailable scenarios remain unverified, never waived.
+- **Dependencies:** P3-01–P3-07 applicable evidence; real NAV/runtime for live;
+  every project plan and explicit Finish before Linux/live execution.
+- **Risks:** Finish/live circular wording, tool availability, manual evidence gaps.
+- **Deferred work:** combat/tactics/learning and automatic deployment.
+
+## Linux decision and ordering
+
+**Recommendation:** restore SDK-free Linux portable/Nav CI within existing
+P3-01 compatibility work once inspector/contracts exist, rather than defer
+compiler differences to final acceptance. P3-08 consolidates the evidence.
+
+This is a **proposed policy change**, not execution permission. Explicitly revise
+AGENTS.md and matching active policy/CI documentation to allow pre-Finish offline
+Linux portable checks first. This session leaves AGENTS.md and active CI unchanged.
+Until revised, Linux remains post-Finish; the Phase 2 report is historical evidence.
+
+After that revision, add Ubuntu GCC/Clang Debug jobs: configure Ninja/Makefiles,
+tests ON, Metamod OFF, warnings-as-errors ON, build and CTest including all Nav
+tests. Use CMake directly, not Windows-only VsDevCmd scripts; provide equivalent
+portable manifest/hash checks. Hosted success requires actual job evidence.
+Then consider x86 Metamod under separately authorized policy: pinned SDK,
+multilib, -m32, ELF/export/ABI checks. Live always remains post-Finish unless an
+explicit later policy decision changes it. No implicit exception is made here.
+
+## Post-Finish acceptance matrix
 
 | Scenario | Required evidence |
 |---|---|
-| Floor | stable corridor progress and goal-area arrival |
-| Doorway | valid portal, no wall clipping, open/use/wait state as applicable |
-| Stairs | grounded continuity and arrival at elevation |
-| Narrow passage | clearance-respecting steering, no center oscillation |
-| Crouch | correct hold/release and far-area arrival |
-| Jump | aligned action, landing/progress or bounded typed failure |
-| Ladder | live-discovered enrichment; mount/travel/dismount up and down |
-| Player blocking | deterministic yield/avoid; no two-Bot deadlock |
-| Dynamic obstacle | overlay invalidation and wait/avoid/replan reason |
-| Stuck recovery | bounded detection/escalation and recover-or-abort result |
+| Spawn/goto | managed identity/joined/current area/goal |
+| Floor/doorway | valid portal, supported progress, use/wait, arrival |
+| Stairs | ground continuity and elevated supported arrival |
+| Narrow passage | clearance, speed/lateral adjustment, no oscillation |
+| Crouch | hold/release/headroom and far-area arrival |
+| Simple Jump | single takeoff, airborne, supported landing or bounded failure |
+| Ladder | discovered link, up/down mount/climb/dismount, abort/re-acquire bound |
+| Player/dynamic blocker | deterministic yield, expiry and finite replan |
+| Stuck | dispatched movement, failed expected progress, finite recovery/abort |
+| Partial/unreachable | diagnostic result, no false arrival or unsafe execution |
+| Map change | old actor/map/link/route invalidated; no stale commands |
 
-For every row, record map/nav hash, start/goal areas, corridor/portals, command
-ticks, route/component cost, replans/reasons, final area and elapsed server time.
-Phase 3 passes only when these are live results; offline simulation is necessary
-regression coverage but not a substitute.
+Record map/NAV/environment hashes, start/goal, ordered selected edges, portals/
+target, traversal/primitive, commands, replan reasons, arrival/time/budgets.
+Failures retain logs/replays. GapJump/LongJump/EdgeTraverse/Boost, advanced
+wall-edge balance, demonstration learning, RL/LLM, trajectory imitation,
+Tactical Planner/Combat AI, Experience DB and crowd/prediction are deferred.
+
+## Recommended next session
+
+Implement only **the first P3-01 slice: bounded read-only NAV inspector and
+synthetic tests**. Use a lawful file if supplied, preserving independent
+comparison. No new numbering, locomotion, multi-Bot refactor, Linux execution
+or server startup belongs to that first commit.

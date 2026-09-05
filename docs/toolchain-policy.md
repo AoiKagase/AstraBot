@@ -33,8 +33,10 @@ final legal determination about every possible linkage or distribution form.
 - C++17 is required, CMake extensions are disabled, and the standard library
   is the only portable-target dependency.
 - The supported baseline is GCC 11 or newer on Linux, Clang 11 or newer on
-  Linux/Windows, and MSVC 19.30 or newer on Windows.  CI uses Ubuntu 22.04
-  and Windows Server 2022 toolchains.
+  Linux/Windows, and MSVC 19.30 or newer on Windows. As of 2026-09-05 active CI
+  uses Windows Server 2022 only; Linux execution remains deferred by AGENTS.md
+  until project-wide Finish. The Phase 3 plan proposes an explicit policy
+  revision for earlier portable/Nav CI; that proposal is not active permission.
 - Portable public headers use fixed-width value types and do not include
   GoldSrc, Metamod-P, ReAPI, ReGameDLL, or AMX Mod X headers.  No engine
   pointer or global state crosses the host boundary.
