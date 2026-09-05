@@ -157,6 +157,17 @@ void testNavJumpProbeWorldQueries() {
     assert(!proof && !proof.inspection && proof.reason==local::JumpProbeReason::Blocked && port.calls==4);
     port.calls=0; gHullMode=0; engine.pfnTraceHull=nullptr; proof=run();
     assert(!proof && proof.reason==local::JumpProbeReason::QueryFailed && port.calls==1);
+    engine.pfnTraceHull=&captureNavHull; port.calls=0; gHullCalls=0;
+    const local::GroundProbeLimits ground{21,4,48,16,18,18,64,4,2,0.7};
+    proof=local::JumpProbe::prepare(s,binding,plan,motion,ground,**idx.value,binding.map,port);
+    assert(proof && proof.queries==4 && gHullCalls==4 && !proof.inspection->flightClear);
+    port.calls=0; gHullCalls=0; s.position=plan.landing;
+    proof=local::JumpProbe::land(s,binding,plan,motion,ground,**idx.value,binding.map,port);
+    assert(proof && proof.queries==1 && gHullCalls==1 && proof.inspection->support->area==plan.target);
+    port.calls=0; gGroundMissing=true;
+    proof=local::JumpProbe::land(s,binding,plan,motion,ground,**idx.value,binding.map,port);
+    assert(!proof && proof.reason==local::JumpProbeReason::NoSupport && port.calls==1);
+    gGroundMissing=false;
 }
 void testNavWorldQueries() {
     using namespace astrabot::nav;

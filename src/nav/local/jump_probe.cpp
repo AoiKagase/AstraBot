@@ -17,6 +17,117 @@ bool positive(double n) noexcept { return std::isfinite(n) && n>0; }
 bool representable(double n) noexcept {
     return std::isfinite(n) && std::abs(n)<=(std::numeric_limits<float>::max)();
 }
+// Maps a GroundProbe's local ordinals into the enclosing decision budget.
+// Stale replies cannot become current merely by reversing the ordinal mapping.
+class PreparationQueries final : public runtime::IWorldQueries {
+public:
+    PreparationQueries(runtime::IWorldQueries& port,const query::NavSpatialIndex& index,
+        model::NavAreaId source,double tolerance,std::uint32_t& issued) noexcept
+        : port_(port),index_(index),source_(source),tolerance_(tolerance),issued_(issued) {}
+    runtime::WorldQueryResult query(const runtime::QueryRequest& request) override {
+        auto actual=request; actual.stamp.ordinal=++issued_;
+        auto reply=port_.query(actual);
+        if(!(reply.stamp==actual.stamp)) { reply.stamp={}; return reply; }
+        reply.stamp=request.stamp;
+        if(reply.error==runtime::QueryError::None && reply.kind==runtime::QueryKind::Floor && reply.floor) {
+            const auto match=index_.containing({request.start.x,request.start.y,reply.floor->height},tolerance_);
+            if(!match || !*match.value || (**match.value).areaId!=source_) reply.floor.reset();
+        }
+        return reply;
+    }
+private:
+    runtime::IWorldQueries& port_;
+    const query::NavSpatialIndex& index_;
+    model::NavAreaId source_;
+    double tolerance_;
+    std::uint32_t& issued_;
+};
+JumpProbeReason preparationReason(ProbeReason reason) noexcept {
+    switch(reason) {
+    case ProbeReason::None: return JumpProbeReason::None;
+    case ProbeReason::StaleNavigation: return JumpProbeReason::StaleNavigation;
+    case ProbeReason::BudgetExceeded: return JumpProbeReason::BudgetExceeded;
+    case ProbeReason::StaleQuery: return JumpProbeReason::StaleQuery;
+    case ProbeReason::QueryFailed: return JumpProbeReason::QueryFailed;
+    case ProbeReason::InvalidResult: return JumpProbeReason::InvalidResult;
+    case ProbeReason::NoSupport: case ProbeReason::UnsafeDrop: return JumpProbeReason::NoSupport;
+    case ProbeReason::NoArea: case ProbeReason::WrongStartArea: return JumpProbeReason::WrongArea;
+    case ProbeReason::Blocked: return JumpProbeReason::Blocked;
+    default: return JumpProbeReason::InvalidInput;
+    }
+}
+}
+JumpProbeResult JumpProbe::land(const runtime::MovementSnapshot& s,Binding binding,
+    JumpPlan plan,JumpLimits motion,GroundProbeLimits limits,const query::NavSpatialIndex& index,
+    core::MapGeneration indexMap,runtime::IWorldQueries& port) noexcept {
+    JumpProbeResult result;
+    const auto fail=[&](JumpProbeReason reason) { result.reason=reason; return result; };
+    if(s.agent!=binding.agent || s.actor!=binding.actor || s.map!=binding.map || s.ducked!=false ||
+       !plan.takeoff.isFinite() || !plan.landing.isFinite() || !plan.target.isValid() ||
+       !positive(motion.landingRadius) || !positive(motion.supportTolerance) ||
+       !limits.maxQueries || limits.maxQueries>21 || limits.maxQueries>motion.maxQueries)
+        return fail(JumpProbeReason::InvalidInput);
+    const auto support=GroundProbe::locate(s,binding.routeGeneration,index,indexMap,port,limits);
+    result.queries=support.queries;
+    if(!support) return fail(preparationReason(support.reason));
+    if(support.target->area!=plan.target) return fail(JumpProbeReason::WrongArea);
+    if(distance(*s.position,plan.landing)>motion.landingRadius ||
+       std::abs(double(s.position->z)-plan.landing.z)>motion.supportTolerance)
+        return fail(JumpProbeReason::CannotLand);
+    JumpInspection proof; proof.stamp=support.stamp; proof.step=binding.step; proof.queries=result.queries;
+    proof.origin=*s.position; proof.hull=*s.hull; proof.support=support.target;
+    proof.takeoff=plan.takeoff; proof.landing=plan.landing;
+    result.inspection=proof; result.touchdown=*s.position; return result;
+}
+JumpProbeResult JumpProbe::prepare(const runtime::MovementSnapshot& s,Binding binding,
+    JumpPlan plan,JumpLimits motion,GroundProbeLimits limits,const query::NavSpatialIndex& index,
+    core::MapGeneration indexMap,runtime::IWorldQueries& port) noexcept {
+    JumpProbeResult result;
+    const auto fail=[&](JumpProbeReason reason) { result.reason=reason; result.inspection.reset(); return result; };
+    if(s.agent!=binding.agent || s.actor!=binding.actor || s.map!=binding.map || s.ducked!=false ||
+       !s.position || !s.position->isFinite() || !plan.takeoff.isFinite() || !plan.landing.isFinite() ||
+       !plan.source.isValid() || !plan.target.isValid() || plan.source==plan.target ||
+       !positive(motion.takeoffRadius) || !positive(motion.approachSpeed) || !positive(motion.maximumSpeed) ||
+       motion.approachSpeed>motion.maximumSpeed || motion.maximumSpeed>400 ||
+       !positive(motion.maximumDistance) || !positive(limits.maxDistance) ||
+       !limits.maxQueries || limits.maxQueries>21 || limits.maxQueries>motion.maxQueries)
+        return fail(JumpProbeReason::InvalidInput);
+    if(!constraints(model::NavTraversalKind::Jump,plan.sourceAttributes,plan.targetAttributes))
+        return fail(JumpProbeReason::UnsupportedConstraints);
+    const double length=distance(plan.takeoff,plan.landing),range=distance(*s.position,plan.takeoff);
+    if(length<=0 || length>motion.maximumDistance) return fail(JumpProbeReason::InvalidInput);
+    const auto support=GroundProbe::locate(s,binding.routeGeneration,index,indexMap,port,limits);
+    result.queries=support.queries;
+    if(!support) return fail(preparationReason(support.reason));
+    if(support.target->area!=plan.source) return fail(JumpProbeReason::WrongArea);
+    double x=0,y=0;
+    if(range>motion.takeoffRadius) {
+        const double scale=(std::min)(1.0,limits.maxDistance/range);
+        x=s.position->x+(double(plan.takeoff.x)-s.position->x)*scale;
+        y=s.position->y+(double(plan.takeoff.y)-s.position->y)*scale;
+    } else {
+        const double ux=(double(plan.landing.x)-plan.takeoff.x)/length,uy=(double(plan.landing.y)-plan.takeoff.y)/length;
+        const double px=double(s.position->x)-plan.takeoff.x,py=double(s.position->y)-plan.takeoff.y;
+        const double along=px*ux+py*uy,side=px*uy-py*ux;
+        const double remaining=std::sqrt((std::max)(0.0,motion.takeoffRadius*motion.takeoffRadius-side*side))-along;
+        const double travel=(std::min)({motion.approachSpeed*0.120,(std::max)(0.0,remaining),limits.maxDistance});
+        // A clipped probe cannot authorize the controller's longer cached command.
+        if(travel+0.001<(std::min)(motion.approachSpeed*0.120,(std::max)(0.0,remaining)))
+            return fail(JumpProbeReason::BudgetExceeded);
+        x=s.position->x+ux*travel; y=s.position->y+uy*travel;
+    }
+    if(!representable(x) || !representable(y)) return fail(JumpProbeReason::InvalidInput);
+    if(result.queries>=limits.maxQueries) return fail(JumpProbeReason::BudgetExceeded);
+    PreparationQueries queries(port,index,plan.source,limits.navTolerance,result.queries);
+    limits.maxQueries-=result.queries;
+    const auto path=GroundProbe::inspect(s,binding.routeGeneration,plan.source,static_cast<float>(x),static_cast<float>(y),
+        index,indexMap,queries,limits);
+    if(!path) return fail(preparationReason(path.reason));
+    if(path.target->area!=plan.source) return fail(JumpProbeReason::WrongArea);
+    JumpInspection proof; proof.stamp=support.stamp; proof.step=binding.step; proof.queries=result.queries;
+    proof.origin=*s.position; proof.hull=*s.hull; proof.support=support.target; proof.approach=path.target;
+    proof.takeoff=plan.takeoff; proof.landing=plan.landing; proof.approachClear=proof.takeoffClear=true;
+    result.inspection=proof; return result;
 }
 JumpProbeResult JumpProbe::launch(const runtime::MovementSnapshot& s,Binding binding,
     JumpPlan plan,JumpLimits motion,JumpPhysics physics,JumpProbeLimits limits,

@@ -107,6 +107,7 @@ add_library(astrabot_nav STATIC
     src/nav/local/crouch.cpp
     src/nav/local/simple_jump.cpp
     src/nav/local/jump_probe.cpp
+    src/nav/local/jump_geometry.cpp
     src/nav/local/intent_pump.cpp
     src/nav/local/ground_probe.cpp
     src/nav/local/primitive.cpp
@@ -354,6 +355,10 @@ if(ASTRABOT_BUILD_TESTS)
     target_link_libraries(astrabot_nav_jump_probe_tests PRIVATE astrabot_nav astrabot_core)
     astrabot_enable_warnings(astrabot_nav_jump_probe_tests)
     add_test(NAME astrabot.nav.jump_probe COMMAND astrabot_nav_jump_probe_tests)
+    add_executable(astrabot_nav_jump_geometry_tests tests/nav/jump_geometry_tests.cpp)
+    target_link_libraries(astrabot_nav_jump_geometry_tests PRIVATE astrabot_nav astrabot_core)
+    astrabot_enable_warnings(astrabot_nav_jump_geometry_tests)
+    add_test(NAME astrabot.nav.jump_geometry COMMAND astrabot_nav_jump_geometry_tests)
     target_link_libraries(astrabot_nav_crouch_tests PRIVATE astrabot_nav astrabot_core)
     astrabot_enable_warnings(astrabot_nav_crouch_tests)
     add_test(NAME astrabot.nav.crouch COMMAND astrabot_nav_crouch_tests)

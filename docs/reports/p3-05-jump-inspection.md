@@ -4,6 +4,9 @@ Built from integrated main `3f85e3f` on `codex/p305-jump-inspection`.
 P3-05's Simple Jump checklist remains open. This slice adds world-query launch
 inspection; it does not yet enable Jump in Walk or the host command dispatcher.
 
+Follow-up: [transition geometry and grounded inspection](p3-05-jump-transition.md)
+adds portal-derived candidates and approach/acceleration/landing observations.
+
 `JumpProbe::launch` requires a current actor/map/route/step/tick-bound
 `JumpPhysics` input with explicit gravity and vertical impulse. Its model is
 constant gravity and constant horizontal velocity. It never infers these values

@@ -28,6 +28,17 @@ struct JumpProbeResult {
 };
 class JumpProbe final {
 public:
+    // Grounded landing/recovery observation; no commanded or NAV-only arrival.
+    static JumpProbeResult land(const runtime::MovementSnapshot&, Binding,
+        JumpPlan, JumpLimits, GroundProbeLimits,
+        const query::NavSpatialIndex&, core::MapGeneration indexMap,
+        runtime::IWorldQueries&) noexcept;
+    // Ground-only approach/acceleration proof. It never grants flight clearance.
+    // The next command's maximum 120ms translation is supported and source-bound.
+    static JumpProbeResult prepare(const runtime::MovementSnapshot&, Binding,
+        JumpPlan, JumpLimits, GroundProbeLimits,
+        const query::NavSpatialIndex&, core::MapGeneration indexMap,
+        runtime::IWorldQueries&) noexcept;
     // Launch-only: measured velocity must already meet the SimpleJump profile.
     // Each ordinal is unique; a failure discards all partial clearance evidence.
     // At most 21 queries and 8 segments, with no retries or budget expansion.

@@ -203,8 +203,10 @@ supported crossing, headroom-safe release and cancellation. Simple Jump remains.
 The [Simple Jump controller](../reports/p3-05-simple-jump-controller.md) now has
 an independent lifecycle/dispatch/landing test seam. The
 [launch inspector](../reports/p3-05-jump-inspection.md) now generates bounded
-support and flight-query evidence for an explicit ballistic model. Transition
-geometry, host physics and Walk/dispatch integration are still required before
+support and flight-query evidence for an explicit ballistic model.
+[Transition geometry and ground preparation](../reports/p3-05-jump-transition.md)
+now connect the selected portal to that lifecycle in offline tests. Host physics
+and Walk/dispatch integration are still required before
 checking its implementation slice.
 
 - **Goal:** execute verified transitions without per-frame state in A*.
