@@ -16,7 +16,7 @@ using diagnostics::ReadResult;
 
 ReadResult<NavAreaBlock> NavAreaReader::read(
     ByteView bytes,
-    model::NavVersion,
+    model::NavVersion version,
     std::uint32_t areaCount,
     const NavAreaReadLimits& limits) noexcept {
     if (areaCount == 0U) {
@@ -34,6 +34,8 @@ ReadResult<NavAreaBlock> NavAreaReader::read(
         ByteReader reader(bytes);
 
         std::uint64_t totalConnections = 0U;
+        std::uint64_t totalHidingSpots = 0U;
+        std::uint64_t totalApproaches = 0U;
         for (std::uint32_t areaIndex = 0U; areaIndex < areaCount; ++areaIndex) {
             model::NavAreaRecord area{};
 
@@ -141,6 +143,118 @@ ReadResult<NavAreaBlock> NavAreaReader::read(
                     }
                     area.connections[direction].push_back(model::NavAreaId{*connectionId.value});
                 }
+            }
+
+            const std::size_t hidingCountOffset = reader.offset();
+            const ReadResult<std::uint8_t> hidingCount = reader.readU8(
+                NavRecord::HidingSpot, NavField::HidingSpotCount);
+            if (!hidingCount) {
+                return ReadResult<NavAreaBlock>::failure(hidingCount.error);
+            }
+            if (*hidingCount.value > limits.maxHidingSpotsPerArea ||
+                totalHidingSpots + *hidingCount.value > limits.maxTotalHidingSpots) {
+                return ReadResult<NavAreaBlock>::failure(
+                    NavError{NavErrorKind::CountLimitExceeded,
+                             static_cast<std::uint64_t>(hidingCountOffset),
+                             NavRecord::HidingSpot,
+                             NavField::HidingSpotCount});
+            }
+            area.hidingSpots.reserve(*hidingCount.value);
+            totalHidingSpots += *hidingCount.value;
+            for (std::uint8_t hidingIndex = 0U;
+                 hidingIndex < *hidingCount.value;
+                 ++hidingIndex) {
+                model::NavHidingSpot hidingSpot{};
+                if (version != model::NavVersion::V1) {
+                    const ReadResult<std::uint32_t> hidingId = reader.readU32LE(
+                        NavRecord::HidingSpot, NavField::HidingSpotId);
+                    if (!hidingId) {
+                        return ReadResult<NavAreaBlock>::failure(hidingId.error);
+                    }
+                    hidingSpot.id = *hidingId.value;
+                }
+
+                const ReadResult<float> hidingX = reader.readF32LE(
+                    NavRecord::HidingSpot, NavField::RawBytes);
+                if (!hidingX) {
+                    return ReadResult<NavAreaBlock>::failure(hidingX.error);
+                }
+                hidingSpot.position.x = *hidingX.value;
+                const ReadResult<float> hidingY = reader.readF32LE(
+                    NavRecord::HidingSpot, NavField::RawBytes);
+                if (!hidingY) {
+                    return ReadResult<NavAreaBlock>::failure(hidingY.error);
+                }
+                hidingSpot.position.y = *hidingY.value;
+                const ReadResult<float> hidingZ = reader.readF32LE(
+                    NavRecord::HidingSpot, NavField::RawBytes);
+                if (!hidingZ) {
+                    return ReadResult<NavAreaBlock>::failure(hidingZ.error);
+                }
+                hidingSpot.position.z = *hidingZ.value;
+
+                if (version != model::NavVersion::V1) {
+                    const ReadResult<std::uint8_t> hidingFlags = reader.readU8(
+                        NavRecord::HidingSpot, NavField::HidingSpotFlags);
+                    if (!hidingFlags) {
+                        return ReadResult<NavAreaBlock>::failure(hidingFlags.error);
+                    }
+                    hidingSpot.flags = *hidingFlags.value;
+                }
+                area.hidingSpots.push_back(std::move(hidingSpot));
+            }
+
+            const std::size_t approachCountOffset = reader.offset();
+            const ReadResult<std::uint8_t> approachCount = reader.readU8(
+                NavRecord::Approach, NavField::ApproachCount);
+            if (!approachCount) {
+                return ReadResult<NavAreaBlock>::failure(approachCount.error);
+            }
+            if (*approachCount.value > limits.maxApproachesPerArea ||
+                totalApproaches + *approachCount.value > limits.maxTotalApproaches) {
+                return ReadResult<NavAreaBlock>::failure(
+                    NavError{NavErrorKind::CountLimitExceeded,
+                             static_cast<std::uint64_t>(approachCountOffset),
+                             NavRecord::Approach,
+                             NavField::ApproachCount});
+            }
+            area.approaches.reserve(*approachCount.value);
+            totalApproaches += *approachCount.value;
+            for (std::uint8_t approachIndex = 0U;
+                 approachIndex < *approachCount.value;
+                 ++approachIndex) {
+                model::NavApproachRecord approach{};
+                const ReadResult<std::uint32_t> here = reader.readU32LE(
+                    NavRecord::Approach, NavField::ApproachAreaId);
+                if (!here) {
+                    return ReadResult<NavAreaBlock>::failure(here.error);
+                }
+                approach.here = model::NavAreaId{*here.value};
+                const ReadResult<std::uint32_t> previous = reader.readU32LE(
+                    NavRecord::Approach, NavField::ApproachAreaId);
+                if (!previous) {
+                    return ReadResult<NavAreaBlock>::failure(previous.error);
+                }
+                approach.previous = model::NavAreaId{*previous.value};
+                const ReadResult<std::uint8_t> previousToHere = reader.readU8(
+                    NavRecord::Approach, NavField::ApproachTraversal);
+                if (!previousToHere) {
+                    return ReadResult<NavAreaBlock>::failure(previousToHere.error);
+                }
+                approach.previousToHereHow = *previousToHere.value;
+                const ReadResult<std::uint32_t> next = reader.readU32LE(
+                    NavRecord::Approach, NavField::ApproachAreaId);
+                if (!next) {
+                    return ReadResult<NavAreaBlock>::failure(next.error);
+                }
+                approach.next = model::NavAreaId{*next.value};
+                const ReadResult<std::uint8_t> hereToNext = reader.readU8(
+                    NavRecord::Approach, NavField::ApproachTraversal);
+                if (!hereToNext) {
+                    return ReadResult<NavAreaBlock>::failure(hereToNext.error);
+                }
+                approach.hereToNextHow = *hereToNext.value;
+                area.approaches.push_back(std::move(approach));
             }
 
             block.areas.push_back(std::move(area));

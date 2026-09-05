@@ -74,15 +74,18 @@ std::vector<std::uint8_t> makeV1BasePayload() {
     appendU32LE(bytes, 1U);
     appendU32LE(bytes, 40U);
 
+    appendU8(bytes, 0U);
+    appendU8(bytes, 0U);
     return bytes;
 }
 
 void assertTruncatedAt(
     const std::vector<std::uint8_t>& bytes,
+    NavVersion version,
     std::size_t offset,
     NavField field) {
     const auto result = NavAreaReader::read(
-        ByteView{bytes.data(), offset}, NavVersion::V1, 1U, normalLimits());
+        ByteView{bytes.data(), offset}, version, 1U, normalLimits());
     assert(!result);
     assert(!result.value.has_value());
     assert(result.error.kind == NavErrorKind::EndOfInput);
@@ -157,7 +160,101 @@ void testV1AreaBaseTruncation() {
         {65U, NavField::ConnectionAreaId},
     };
     for (const auto& field : fields) {
-        assertTruncatedAt(bytes, field.first, field.second);
+        assertTruncatedAt(bytes, NavVersion::V1, field.first, field.second);
+    }
+}
+
+std::vector<std::uint8_t> makeV1HidingApproachPayload() {
+    std::vector<std::uint8_t> bytes = makeV1BasePayload();
+    bytes.resize(bytes.size() - 2U);
+    appendU8(bytes, 1U);
+    appendF32LE(bytes, 9.0F);
+    appendF32LE(bytes, 10.0F);
+    appendF32LE(bytes, 11.0F);
+    appendU8(bytes, 1U);
+    appendU32LE(bytes, 7U);
+    appendU32LE(bytes, 6U);
+    appendU8(bytes, 0xA1U);
+    appendU32LE(bytes, 8U);
+    appendU8(bytes, 0xB2U);
+    return bytes;
+}
+
+std::vector<std::uint8_t> makeV2HidingPayload() {
+    std::vector<std::uint8_t> bytes = makeV1BasePayload();
+    bytes.resize(bytes.size() - 2U);
+    appendU8(bytes, 1U);
+    appendU32LE(bytes, 101U);
+    appendF32LE(bytes, 1.5F);
+    appendF32LE(bytes, 2.5F);
+    appendF32LE(bytes, 3.5F);
+    appendU8(bytes, 0x03U);
+    appendU8(bytes, 0U);
+    return bytes;
+}
+
+void testV1HidingAndApproach() {
+    const std::vector<std::uint8_t> bytes = makeV1HidingApproachPayload();
+    const auto result = NavAreaReader::read(
+        ByteView{bytes.data(), bytes.size()}, NavVersion::V1, 1U, normalLimits());
+    assert(result);
+    assert(result.value->bytesConsumed == bytes.size());
+    const auto& area = result.value->areas.front();
+    assert(area.hidingSpots.size() == 1U);
+    assert(!area.hidingSpots[0].id.has_value());
+    assert(!area.hidingSpots[0].flags.has_value());
+    assert((area.hidingSpots[0].position == astrabot::nav::model::NavVector3{9.0F, 10.0F, 11.0F}));
+    assert(area.approaches.size() == 1U);
+    assert(area.approaches[0].here == NavAreaId{7U});
+    assert(area.approaches[0].previous == NavAreaId{6U});
+    assert(area.approaches[0].previousToHereHow == 0xA1U);
+    assert(area.approaches[0].next == NavAreaId{8U});
+    assert(area.approaches[0].hereToNextHow == 0xB2U);
+}
+
+void testV2Hiding() {
+    const std::vector<std::uint8_t> bytes = makeV2HidingPayload();
+    const auto result = NavAreaReader::read(
+        ByteView{bytes.data(), bytes.size()}, NavVersion::V2, 1U, normalLimits());
+    assert(result);
+    assert(result.value->bytesConsumed == bytes.size());
+    const auto& hiding = result.value->areas.front().hidingSpots.front();
+    assert(hiding.id.has_value() && *hiding.id == 101U);
+    assert((hiding.position == astrabot::nav::model::NavVector3{1.5F, 2.5F, 3.5F}));
+    assert(hiding.flags.has_value() && *hiding.flags == 0x03U);
+    assert(result.value->areas.front().approaches.empty());
+}
+
+void testHidingAndApproachTruncation() {
+    const std::vector<std::uint8_t> v1 = makeV1HidingApproachPayload();
+    const std::vector<std::pair<std::size_t, NavField>> v1Fields{
+        {69U, NavField::HidingSpotCount},
+        {70U, NavField::RawBytes},
+        {74U, NavField::RawBytes},
+        {78U, NavField::RawBytes},
+        {82U, NavField::ApproachCount},
+        {83U, NavField::ApproachAreaId},
+        {87U, NavField::ApproachAreaId},
+        {91U, NavField::ApproachTraversal},
+        {92U, NavField::ApproachAreaId},
+        {96U, NavField::ApproachTraversal},
+    };
+    for (const auto& field : v1Fields) {
+        assertTruncatedAt(v1, NavVersion::V1, field.first, field.second);
+    }
+
+    const std::vector<std::uint8_t> v2 = makeV2HidingPayload();
+    const std::vector<std::pair<std::size_t, NavField>> v2Fields{
+        {69U, NavField::HidingSpotCount},
+        {70U, NavField::HidingSpotId},
+        {74U, NavField::RawBytes},
+        {78U, NavField::RawBytes},
+        {82U, NavField::RawBytes},
+        {86U, NavField::HidingSpotFlags},
+        {87U, NavField::ApproachCount},
+    };
+    for (const auto& field : v2Fields) {
+        assertTruncatedAt(v2, NavVersion::V2, field.first, field.second);
     }
 }
 
@@ -167,5 +264,8 @@ int main() {
     testPublicAreaRecordContract();
     testV1AreaBaseAndConnections();
     testV1AreaBaseTruncation();
+    testV1HidingAndApproach();
+    testV2Hiding();
+    testHidingAndApproachTruncation();
     return 0;
 }
