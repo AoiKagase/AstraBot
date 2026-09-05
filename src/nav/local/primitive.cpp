@@ -8,20 +8,6 @@ namespace {
 bool finite(query::NavQueryPoint p) noexcept {
     return std::isfinite(p.x) && std::isfinite(p.y) && std::isfinite(p.z);
 }
-bool action(ActionRequest a) noexcept {
-    switch(a) {
-    case ActionRequest::None: case ActionRequest::Press: case ActionRequest::Hold: case ActionRequest::Release:
-        return true;
-    default: return false;
-    }
-}
-bool valid(const MovementIntent& i) noexcept {
-    if(!finite(i.direction) || !std::isfinite(i.speed) || i.speed<0 || i.speed>core::kMaxMovement ||
-       !std::isfinite(i.lateralCorrection) || std::abs(i.lateralCorrection)>1 ||
-       (i.view && !finite(*i.view)) || !action(i.duck) || !action(i.jump) || !action(i.use)) return false;
-    const double norm=i.direction.x*i.direction.x+i.direction.y*i.direction.y+i.direction.z*i.direction.z;
-    return norm<=1.000001 && (i.speed==0 || norm>0);
-}
 bool same(const Binding& a, const Binding& b) noexcept {
     return a.agent==b.agent && a.actor==b.actor && a.map==b.map &&
            a.routeGeneration==b.routeGeneration && a.step==b.step;
@@ -64,7 +50,7 @@ PrimitiveUpdate Primitive::update(const Feedback& feedback) noexcept {
             return finish(PrimitiveState::Failed,PrimitiveEvent::Failed,PrimitiveReason::MissingSupport);
         return finish(PrimitiveState::Complete,PrimitiveEvent::Complete,PrimitiveReason::None);
     case Progress::Running:
-        if(!valid(feedback.intent))
+        if(!core::Motor::valid(feedback.intent))
             return finish(PrimitiveState::Failed,PrimitiveEvent::Failed,PrimitiveReason::InvalidIntent);
         return {true,PrimitiveEvent::None,state_,PrimitiveReason::None,feedback.intent};
     default:

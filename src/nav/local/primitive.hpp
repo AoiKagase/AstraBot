@@ -1,18 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 #pragma once
 #include "core/identity.hpp"
+#include "core/motor.hpp"
 #include "nav/corridor/corridor.hpp"
 
 namespace astrabot::nav::local {
-enum class ActionRequest { None, Press, Hold, Release };
-struct MovementIntent {
-    // Direction length <= 1 (zero only at zero speed), speed [0,400]; lateral
-    // correction [-1,1]. Motor must also clamp to observed actor limits.
-    query::NavQueryPoint direction{};
-    double speed{}, lateralCorrection{};
-    std::optional<query::NavQueryPoint> view{};
-    ActionRequest duck{}, jump{}, use{};
-};
+using ActionRequest = core::ActionRequest;
+using MovementIntent = core::MovementIntent;
 struct Binding {
     core::BotAgentId agent{};
     core::PlayerId actor{};

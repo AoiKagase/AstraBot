@@ -99,7 +99,7 @@ void badInputs() {
         if(mode==4) f.progress=static_cast<Progress>(255);
         if(mode==5) f.intent.lateralCorrection=1.1;
         if(mode==6) f.intent.speed=401;
-        if(mode==7) f.intent.view=query::NavQueryPoint{0,0,std::numeric_limits<double>::quiet_NaN()};
+        if(mode==7) f.intent.view=astrabot::core::IntentVector{0,0,std::numeric_limits<double>::quiet_NaN()};
         if(mode==8) f.intent.speed=1; // nonzero speed needs a direction
         const auto r=q.update(f); assert(r.event==PrimitiveEvent::Failed && neutral(r.intent));
         assert(r.reason==(mode==4 ? PrimitiveReason::InvalidFeedback:PrimitiveReason::InvalidIntent));

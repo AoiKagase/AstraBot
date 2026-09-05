@@ -1,7 +1,14 @@
 # State
 
-Status: complete
-Task: P3-02 main integration and first P3-03 ground/clearance query slice.
+Status: in_progress
+Goal: entire Phase 3; current slice P3-03 Walk/motor and scheduling.
+Current branch: codex/p303-walk-motor, based on 1c112ca (ground queries).
+Current boundary: Core motor/MovementIntent, Nav aliases, 25 Hz IntentPump and tests
+implemented; Windows x86 adapter+portable29/29 and WSL Linux x86 portable24/24 PASS.
+Report: docs/reports/p3-03-motor-pump.md. Motor/pump commit boundary ready.
+Next: Walk controller + console/adapter integration and simulation. Do not mark
+P3-03 Walk/motor checkbox complete yet. Keep full Phase3 goal active.
+Prior task: P3-02 main integration and first P3-03 ground/clearance query slice.
 Main: fast-forward integrated P3-02 at 5a34298; main not pushed.
 Branch: codex/p303-ground-clearance, base main 5a34298. Not merged or pushed.
 Plan: docs/plans/phase-3-nav-movement.md, existing P3-03 first checklist only.

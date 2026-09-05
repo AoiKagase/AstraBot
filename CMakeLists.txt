@@ -75,6 +75,7 @@ function(astrabot_enable_metamod_compatibility target)
 endfunction()
 
 add_library(astrabot_core STATIC
+    src/core/motor.cpp
     src/core/command.cpp
     src/core/identity.cpp
     src/host/bot_agents.cpp
@@ -100,6 +101,7 @@ if(MSVC)
 endif()
 
 add_library(astrabot_nav STATIC
+    src/nav/local/intent_pump.cpp
     src/nav/local/ground_probe.cpp
     src/nav/local/primitive.cpp
     src/nav/corridor/corridor.cpp
@@ -314,6 +316,14 @@ if(ASTRABOT_BUILD_TESTS)
     file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/long-fuzz/CTestTestfile.cmake"
         CONTENT "add_test(astrabot.nav.fuzz.long \"$<TARGET_FILE:astrabot_nav_fuzz_tests>\" --cases 100000)\nset_tests_properties(astrabot.nav.fuzz.long PROPERTIES TIMEOUT 600)\n")
     if(NOT ASTRABOT_NAV_ASAN)
+    add_executable(astrabot_nav_intent_pump_tests tests/nav/intent_pump_tests.cpp)
+    target_link_libraries(astrabot_nav_intent_pump_tests PRIVATE astrabot_nav astrabot_core)
+    astrabot_enable_warnings(astrabot_nav_intent_pump_tests)
+    add_test(NAME astrabot.nav.intent_pump COMMAND astrabot_nav_intent_pump_tests)
+    add_executable(astrabot_motor_tests tests/motor_tests.cpp)
+    target_link_libraries(astrabot_motor_tests PRIVATE astrabot_core)
+    astrabot_enable_warnings(astrabot_motor_tests)
+    add_test(NAME astrabot.motor COMMAND astrabot_motor_tests)
     add_executable(astrabot_nav_ground_probe_tests tests/nav/ground_probe_tests.cpp)
     target_link_libraries(astrabot_nav_ground_probe_tests PRIVATE astrabot_nav)
     astrabot_enable_warnings(astrabot_nav_ground_probe_tests)
