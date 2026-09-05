@@ -6,7 +6,7 @@
 namespace astrabot::nav::local {
 enum class DoorWaitState { Ready, Waiting, Clear, Failed, Aborted };
 enum class DoorWaitReason { None, InvalidInput, InvalidBinding, StaleTick,
-    InvalidObservation, Unusable, Replaced, TimedOut, Cancelled };
+    InvalidObservation, Unusable, Replaced, TimedOut, Cancelled, Reblocked };
 struct DoorWaitFeedback {
     Binding binding{};
     runtime::QueryStamp requested{};

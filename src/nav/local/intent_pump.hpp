@@ -26,6 +26,7 @@ public:
     PumpOutput take() noexcept;
     void stop(PumpReason reason=PumpReason::MissingIntent) noexcept;
     void submissionRejected() noexcept { stop(PumpReason::SubmissionRejected); }
+    std::uint64_t timeUs() const noexcept { return timeUs_; }
 private:
     Binding binding_{};
     core::TickId tick_{};

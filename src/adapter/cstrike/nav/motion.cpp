@@ -5,12 +5,13 @@
 #include <limits>
 #include "adapter/cstrike/nav/console.hpp"
 #include "adapter/metamod/lifecycle.hpp"
+#include "adapter/cstrike/nav/world_queries.hpp"
 #ifdef snprintf
 #undef snprintf
 #endif
 namespace astrabot::adapter::cstrike {
 namespace {
-constexpr nav::local::WalkLimits walkLimits{{21,4,48,16,18,18,64,4,18,0.7},160,1,1,3};
+constexpr nav::local::WalkLimits walkLimits{{21,4,48,16,18,18,64,4,18,0.7},160,1,1,3,1000000};
 std::uint64_t add(std::uint64_t a,std::uint64_t b) noexcept {
     const auto maximum=(std::numeric_limits<std::uint64_t>::max)();
     return b>maximum-a ? maximum:a+b;
@@ -60,9 +61,9 @@ void NavConsole::printMotion() noexcept {
     if(!motionTrace_.decision.binding.routeGeneration) return;
     const auto& d=motionTrace_.decision;
     const auto target=d.target ? d.target->origin:nav::model::NavVector3{};
-    char text[1024]{};
+    char text[1280]{};
     std::snprintf(text,sizeof(text),
-        "walk actor=%u:%u map=%u route=%llu step=%zu tick=%llu state=%s reason=%u probe=%u event=%u motion_reason=%u corridor=%u transport=%u command_tick=%llu dispatch_tick=%llu age_us=%llu speed=%.6g direction=(%.6g,%.6g) target_present=%u target=(%.6g,%.6g,%.6g) support=%u queries=%u samples=%u step_probes=%u queued=%llu dispatched=%llu rejected=%llu missed=%llu history=%zu omitted=%llu edge=%u:%u command=(%.6g,%.6g,%u)",
+        "walk actor=%u:%u map=%u route=%llu step=%zu tick=%llu state=%s reason=%u probe=%u event=%u motion_reason=%u corridor=%u transport=%u command_tick=%llu dispatch_tick=%llu age_us=%llu speed=%.6g direction=(%.6g,%.6g) target_present=%u target=(%.6g,%.6g,%.6g) support=%u queries=%u samples=%u step_probes=%u queued=%llu dispatched=%llu rejected=%llu missed=%llu history=%zu omitted=%llu edge=%u:%u command=(%.6g,%.6g,%u) door=%llu door_state=%u door_reason=%u use_checks=%llu",
         unsigned(d.binding.actor.slot),unsigned(d.binding.actor.generation.value),unsigned(d.binding.map.value),
         static_cast<unsigned long long>(d.binding.routeGeneration),d.binding.step,static_cast<unsigned long long>(d.tick.value),
         walkState(d.state),unsigned(d.reason),unsigned(d.probeReason),unsigned(motionTrace_.event),unsigned(motionTrace_.reason),
@@ -76,7 +77,9 @@ void NavConsole::printMotion() noexcept {
         motionCount_,static_cast<unsigned long long>(motionSequence_-motionCount_),
         motionTrace_.selectedEdge ? unsigned(motionTrace_.selectedEdge->source.value):0U,
         motionTrace_.selectedEdge ? unsigned(motionTrace_.selectedEdge->target.value):0U,
-        double(motionTrace_.command.movement.forward),double(motionTrace_.command.movement.side),unsigned(motionTrace_.command.msec));
+        double(motionTrace_.command.movement.forward),double(motionTrace_.command.movement.side),unsigned(motionTrace_.command.msec),
+        static_cast<unsigned long long>(d.doorId),d.doorState ? unsigned(*d.doorState):0U,unsigned(d.doorReason),
+        static_cast<unsigned long long>(motionTrace_.useGuardChecks));
     line(text);
 }
 void NavConsole::clearPending() noexcept {
@@ -155,6 +158,28 @@ void NavConsole::beforeDispatch(metamod::LifecycleCoordinator& owner) noexcept {
         motionTrace_.commandTick=pending.tick; motionTrace_.dispatchTick=s.tick;
         clearPending(); if(pump_) pump_->submissionRejected();
         motionTrace_.rejected=add(motionTrace_.rejected,1); recordMotion(MotionEvent::Rejected,reason);
+        return;
+    }
+    if((pending.command.buttons&static_cast<core::ButtonMask>(core::Button::Use))!=0) {
+        // A queued press must still select the same generation at dispatch.
+        // No NAV query ordinal is consumed: this bounded, trace-free selection
+        // guard is counted separately and executes at most once per frame.
+        const auto expected=pending.command.view;
+        const auto queued=pending.tick;
+        inRequest_=true;
+        const auto view=doorUseView(engine_,owner.fakeClient().activeEntity(),
+            motionTrace_.decision.doorId,globals_ ? globals_->maxEntities:0);
+        inRequest_=false;
+        if(deferredInvalidation_) {
+            const auto why=*deferredInvalidation_; deferredInvalidation_.reset(); invalidate(why); return;
+        }
+        motionTrace_.useGuardChecks=add(motionTrace_.useGuardChecks,1);
+        if(!view || std::abs(double(view->x)-expected.pitch)>0.01 ||
+           std::abs(double(view->y)-expected.yaw)>0.01 || std::abs(double(view->z)-expected.roll)>0.01) {
+            motionTrace_.commandTick=queued; motionTrace_.dispatchTick=s.tick;
+            clearPending(); if(pump_) pump_->submissionRejected();
+            motionTrace_.rejected=add(motionTrace_.rejected,1); recordMotion(MotionEvent::Rejected,MotionReason::DoorChanged);
+        }
     }
 }
 void NavConsole::afterDispatch(const metamod::MovementResult& result,core::TickId tick,
@@ -201,7 +226,7 @@ void NavConsole::moveFrame(metamod::LifecycleCoordinator& owner) noexcept {
     if(schedule.decisionDue) {
         queryingEntity_=owner.fakeClient().activeEntity(); inRequest_=true;
         const auto index=index_; // pins navigation across synchronous host reentry
-        const auto decision=walk_->update(s,*index,navigation_.map,*this);
+        const auto decision=walk_->update(s,*index,navigation_.map,*this,pump_->timeUs());
         inRequest_=false; queryingEntity_=nullptr;
         if(deferredInvalidation_) {
             const auto reason=*deferredInvalidation_; deferredInvalidation_.reset(); invalidate(reason); return;

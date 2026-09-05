@@ -74,6 +74,64 @@ struct World final : runtime::IWorldQueries {
     }
 };
 struct Trace { std::size_t step; local::WalkState state; local::PrimitiveEvent event; model::NavVector3 position; };
+struct DoorWorld final : runtime::IWorldQueries {
+    World world;
+    bool open{}, stale{}, missingFloor{}, throws{};
+    std::uint64_t id{42};
+    explicit DoorWorld(const std::vector<route_test::Area>& areas):world(areas) {}
+    runtime::WorldQueryResult query(const runtime::QueryRequest& q) override {
+        if(q.kind==runtime::QueryKind::Door) {
+            assert(!world.calls.empty() && q.stamp.ordinal==world.calls.back().stamp.ordinal+1);
+            world.calls.push_back(q);
+            if(throws) throw std::runtime_error("door unavailable");
+            runtime::WorldQueryResult r; r.stamp=q.stamp; r.kind=q.kind; r.error=runtime::QueryError::None;
+            r.door=runtime::DoorObservation{id,open,true,model::NavVector3{0,0,0}};
+            if(stale) ++r.stamp.ordinal;
+            return r;
+        }
+        auto r=world.query(q);
+        if(!open && q.end.x>=84 && q.kind==runtime::QueryKind::SweptHull)
+            r.hull=runtime::HullObservation{0.5f,q.end,{-1,0,0},false};
+        if(!open && missingFloor && q.start.x>=84 && q.kind==runtime::QueryKind::Floor) r.floor.reset();
+        return r;
+    }
+};
+void doors() {
+    auto areas=zigzag(); Fixture f(areas,1,2);
+    for(int mode=0;mode<8;++mode) {
+        DoorWorld world(areas); auto s=actor(); auto profile=limits; profile.doorTimeoutUs=100000;
+        world.missingFloor=mode==1; world.stale=mode==4; world.throws=mode==5;
+        if(mode==6) profile.probe.maxQueries=7;
+        local::Walk walk(binding(),f.corridor,{150,50,0},profile);
+        assert(walk.update(s,*f.index,s.map,world,0).state==local::WalkState::Running);
+        ++s.tick.value;
+        auto d=walk.update(s,*f.index,s.map,world,40000);
+        assert(d.queries<=profile.probe.maxQueries);
+        if(mode==4 || mode==5 || mode==6) {
+            assert(d.state==local::WalkState::Failed && d.reason==local::WalkReason::DoorBlocked);
+            if(mode==6) assert(d.probeReason==local::ProbeReason::BudgetExceeded && d.queries==7);
+            continue;
+        }
+        assert(d.state==local::WalkState::Running && d.intent.use==local::ActionRequest::Press && d.intent.speed==0);
+        const auto count=world.world.calls.size();
+        assert(!walk.update(s,*f.index,s.map,world,50000).accepted && world.world.calls.size()==count);
+        ++s.tick.value; if(mode==3) ++world.id;
+        d=walk.update(s,*f.index,s.map,world,mode==2 ? 140000:80000);
+        assert(d.intent.use==local::ActionRequest::None && d.intent.speed==0 && d.queries==2);
+        if(mode==2 || mode==3) {
+            assert(d.state==local::WalkState::Failed && d.reason==local::WalkReason::DoorBlocked);
+            assert(d.doorReason==(mode==2 ? local::DoorWaitReason::TimedOut:local::DoorWaitReason::Replaced));
+            continue;
+        }
+        world.open=true; ++s.tick.value;
+        d=walk.update(s,*f.index,s.map,world,100000);
+        assert(d.doorState==local::DoorWaitState::Clear && d.state==local::WalkState::Running && d.intent.speed==0);
+        if(mode==7) world.open=false;
+        ++s.tick.value; d=walk.update(s,*f.index,s.map,world,120000);
+        if(mode==7) assert(d.state==local::WalkState::Failed && d.doorReason==local::DoorWaitReason::Reblocked);
+        else assert(d.state==local::WalkState::Running && d.intent.speed>0 && d.intent.use==local::ActionRequest::None);
+    }
+}
 std::vector<Trace> simulate(const std::vector<route_test::Area>& areas, std::uint32_t start,
     std::uint32_t goalArea, model::NavVector3 from, model::NavVector3 goal, std::uint64_t frameUs) {
     Fixture f(areas,start,goalArea); World world(areas); auto s=actor(from); s.elapsedUs=frameUs;
@@ -215,4 +273,4 @@ void invalidAndBudgets() {
     assert(sameHint.update(s,*same.index,s.map,hinted).reason==local::WalkReason::UnsupportedTraversal);
 }
 }
-int main() { arrivals(); stops(); measuredCompletion(); invalidAndBudgets(); }
+int main() { arrivals(); stops(); measuredCompletion(); invalidAndBudgets(); doors(); }

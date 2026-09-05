@@ -1,6 +1,8 @@
 # P3-03 portable door wait boundary
 
-This boundary implements the SDK-free `DoorWait` lifecycle only. The existing
+This historical boundary implements the SDK-free `DoorWait` lifecycle only.
+The subsequent [Use-door host integration](p3-03-door-host.md) connects it to Walk.
+At the portable boundary, the existing
 P3-03 ordinary door/stairs/wall/narrow checklist remains open. Walk and the
 adapter do not invoke this controller yet; `QueryKind::Door` is still unavailable
 from the adapter. This is not end-to-end door passage evidence.

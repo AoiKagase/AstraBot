@@ -50,6 +50,10 @@ void captureGround(const float*, const float* end, int, edict_t*, TraceResult* r
 int gHullKind=-1, gHullCalls=0, gHullMode=0;
 float gStairHeight=0;
 bool gStairCeiling=false;
+edict_t gNavDoor{}, gNavCompetitor{};
+bool gDoorActive=false, gDoorOpen=false, gDoorLocked=false, gDoorAmbiguous=false, gDoorLoop=false;
+int gDoorUses=0, gDoorScans=0;
+std::uint64_t gDoorOpenAtUs=0;
 float supportHeight(float x) { return x+16>100 ? gStairHeight:0; }
 void captureNavHull(const float* start, const float* end, int ignoreMonsters, int hull, edict_t* actor, TraceResult* result) {
     assert((ignoreMonsters==0 || ignoreMonsters==1) && actor!=nullptr);
@@ -58,6 +62,9 @@ void captureNavHull(const float* start, const float* end, int ignoreMonsters, in
     const float minimumZ=hull==3 ? -18.0f:-36.0f;
     const float floor=supportHeight(end[0]);
     if(ignoreMonsters==1) {
+        if(gDoorActive && !gDoorOpen && end[0]+16>=100 && end[0]-16<=104 && start[2]<108) {
+            result->fStartSolid=1; return;
+        }
         if(!gGroundMissing && end[2]+minimumZ<floor) {
             if(start[2]+minimumZ<floor) result->fStartSolid=1;
             else {
@@ -77,6 +84,12 @@ void captureNavHull(const float* start, const float* end, int ignoreMonsters, in
     if(gHullMode==1) result->fAllSolid=1;
     if(gHullMode==2) result->flFraction=0.5f;
     if(gHullMode==3) result->flFraction=2;
+    if(gDoorActive && !gDoorOpen && start[0]<=84 && end[0]>=84 && end[0]>start[0]) {
+        result->flFraction=(84-start[0])/(end[0]-start[0]);
+        result->vecEndPos=Vector(84,start[1]+(end[1]-start[1])*result->flFraction,
+            start[2]+(end[2]-start[2])*result->flFraction);
+        result->vecPlaneNormal=Vector(-1,0,0); result->pHit=&gNavDoor;
+    }
     if(gInvalidateDuringHull)
         astrabot::adapter::metamod::lifecycleCoordinator().navConsole().invalidate(
             astrabot::nav::runtime::SessionReason::MapChanged);
@@ -106,7 +119,7 @@ void testNavWorldQueries() {
     gHullMode=0; q.kind=runtime::QueryKind::Floor; q.start={20,50,18}; q.end={20,50,-64};
     r=call(); assert(r.floor && r.floor->supported && r.floor->height==0);
     q.end.x=21; assert(call().error==runtime::QueryError::InvalidResult); q.end.x=20;
-    q.kind=runtime::QueryKind::Door; assert(call().error==runtime::QueryError::Unavailable);
+    q.kind=runtime::QueryKind::Door; r=call(); assert(r.error==runtime::QueryError::None && !r.door);
     struct Port final : runtime::IWorldQueries {
         enginefuncs_t* engine; edict_t* entity; const query::NavSpatialIndex* index;
         Port(enginefuncs_t* e,edict_t* a,const query::NavSpatialIndex* i):engine(e),entity(a),index(i) {}
@@ -273,7 +286,65 @@ edict_t* captureCreateFakeClient(const char* /* name */) {
 }
 
 int captureIndexOfEdict(const edict_t* entity) {
+    if(entity==&gNavDoor) return 40;
     return entity == &gFixture->entity ? gFixture->index : 0;
+}
+edict_t* captureDoorEntity(int index) {
+    return index==40 ? &gNavDoor:index==gFixture->index ? &gFixture->entity:nullptr;
+}
+const char* captureDoorString(int index) {
+    return index==10 ? "func_door":index==11 ? "func_door_rotating":"unknown";
+}
+edict_t* captureDoorSphere(edict_t* previous,const float* origin,float radius) {
+    ++gDoorScans; assert(radius==64);
+    if(gDoorLoop) return &gFixture->entity;
+    if(gDoorAmbiguous) return &gNavCompetitor;
+    if(previous==&gNavDoor) return nullptr;
+    if(!previous) return &gFixture->entity;
+    const double dx=102.0-origin[0],dy=50.0-origin[1],dz=36.0-origin[2];
+    return std::sqrt(dx*dx+dy*dy+dz*dz)<=radius ? &gNavDoor:nullptr;
+}
+void configureDoor(Fixture& fixture) {
+    gDoorActive=true; gDoorOpen=gDoorLocked=gDoorAmbiguous=gDoorLoop=false;
+    gDoorUses=gDoorScans=0; gDoorOpenAtUs=0; gNavDoor={}; gNavCompetitor={};
+    gNavDoor.serialnumber=7; gNavDoor.v.classname=10; gNavDoor.v.spawnflags=1<<8;
+    gNavDoor.v.absmin=Vector(100,0,0); gNavDoor.v.size=Vector(4,100,72);
+    fixture.engineGlobals.maxEntities=128;
+    fixture.engine.pfnPEntityOfEntIndex=&captureDoorEntity;
+    fixture.engine.pfnSzFromIndex=&captureDoorString;
+    fixture.engine.pfnFindEntityInSphere=&captureDoorSphere;
+}
+void testDoorObservationContracts() {
+    using namespace astrabot;
+    Fixture fixture{}; configureDoor(fixture);
+    fixture.entity.v.origin=Vector(50,50,36); fixture.entity.v.view_ofs=Vector(0,0,28);
+    nav::runtime::QueryRequest q{{{1},{1,{1}},{1},{1},1,1},nav::runtime::QueryKind::Door,
+        {50,50,36},{98,50,36},nav::runtime::HullDimensions{{-16,-16,-36},{16,16,36}}};
+    const auto query=[&] { return adapter::cstrike::queryNavWorld(&fixture.engine,&fixture.entity,nullptr,q,128); };
+    auto r=query(); assert(r.door && !r.door->open && r.door->canUse && r.door->useView);
+    const auto id=r.door->id; assert(id==((std::uint64_t{7}<<32)|40));
+    const double pitch=std::atan2(28.0,52.0)*180/3.14159265358979323846;
+    assert(std::abs(r.door->useView->x-pitch)<0.001 && r.door->useView->y==0);
+    for(int mode=0;mode<7;++mode) {
+        const auto saved=fixture.entity.v.origin; const auto oldSize=gNavDoor.v.size;
+        if(mode==0) fixture.entity.v.origin.x=0; // outside 64-unit use search
+        if(mode==1) gDoorAmbiguous=true;
+        if(mode==2) gDoorLoop=true;
+        if(mode==3) gNavDoor.free=1;
+        if(mode==4) gNavDoor.v.size.x=-1;
+        if(mode==5) gNavDoor.v.spawnflags=0;
+        if(mode==6) gNavDoor.serialnumber=8;
+        assert(!adapter::cstrike::doorUseView(&fixture.engine,&fixture.entity,id,128));
+        fixture.entity.v.origin=saved; gNavDoor.v.size=oldSize; gNavDoor.free=0;
+        gNavDoor.v.spawnflags=1<<8; gNavDoor.serialnumber=7; gDoorAmbiguous=gDoorLoop=false;
+    }
+    assert(!adapter::cstrike::doorUseView(&fixture.engine,&fixture.entity,id,40));
+    q.doorId=id; gDoorOpen=true; r=query(); assert(r.door && r.door->open && !r.door->canUse);
+    ++gNavDoor.serialnumber; assert(!query().door);
+    gNavDoor.serialnumber=7; gDoorOpen=false; gNavDoor.v.classname=11;
+    r=query(); assert(r.door && r.door->canUse); // ordinary rotating use door
+    gNavDoor.v.classname=12; assert(!query().door);
+    gDoorActive=false; gDoorOpenAtUs=0;
 }
 
 char* captureGetInfoKeyBuffer(edict_t* /* entity */) {
@@ -372,7 +443,22 @@ void captureRunPlayerMove(
         astrabot::core::BotCommand c{{viewAngles[0],viewAngles[1],viewAngles[2]},
             {forwardMove,sideMove,upMove},buttons,impulse,msec};
         gNavMoves.push_back(c); assert(c.validate());
-        assert(buttons==0 && impulse==0 && upMove==0 && entity->v.deadflag==DEAD_NO);
+        assert((buttons==0 || (gDoorActive && buttons==IN_USE)) && impulse==0 && upMove==0 && entity->v.deadflag==DEAD_NO);
+        if(buttons==IN_USE) {
+            assert(forwardMove==0 && sideMove==0 && !gDoorAmbiguous);
+            // Independently emulate the pinned player's sphere/direction test;
+            // do not call the production selector to justify its own output.
+            const double px=102.0-entity->v.origin.x,py=50.0-entity->v.origin.y,pz=36.0-entity->v.origin.z;
+            assert(std::sqrt(px*px+py*py+pz*pz)<=64);
+            const double dx=px-entity->v.view_ofs.x,dy=py-entity->v.view_ofs.y,dz=pz-entity->v.view_ofs.z;
+            constexpr double radians=3.14159265358979323846/180;
+            const double pitch=viewAngles[0]*radians,yaw=viewAngles[1]*radians;
+            const double dot=(dx*std::cos(pitch)*std::cos(yaw)+dy*std::cos(pitch)*std::sin(yaw)-dz*std::sin(pitch)) /
+                std::sqrt(dx*dx+dy*dy+dz*dz);
+            assert(dot>0.7 && (gNavDoor.v.spawnflags&(1<<8)));
+            ++gDoorUses;
+            if(!gDoorLocked) gDoorOpenAtUs=gNavClockUs+120000;
+        }
         const double yaw=double(viewAngles[1])*3.14159265358979323846/180;
         const double dt=double(msec)/1000;
         entity->v.origin.x+=static_cast<float>((forwardMove*std::cos(yaw)+sideMove*std::sin(yaw))*dt);
@@ -633,6 +719,7 @@ void sendTeamInfo(enginefuncs_t& hooks, int messageId, int slot, const char* tea
 
 void navFrame(Fixture& fixture,std::uint64_t us=16000) {
     gNavClockUs+=us; fixture.engineGlobals.frametime=static_cast<float>(us)/1000000.0f;
+    if(gDoorOpenAtUs && gNavClockUs>=gDoorOpenAtUs) { gDoorOpen=true; gDoorOpenAtUs=0; }
     astrabot::adapter::metamod::lifecycleCoordinator().startFrame();
 }
 void prepareNavWalk(Fixture& fixture,enginefuncs_t& hooks) {
@@ -738,6 +825,58 @@ void testNavStairs() {
         const auto count=gNavMoves.size(); navFrame(fixture,us); navFrame(fixture,us);
         for(auto i=count;i<gNavMoves.size();++i) assert(gNavMoves[i].movement==core::Movement{});
         gSimulateNav=false; gStairHeight=0; gStairCeiling=false; detach();
+    }
+}
+void testNavDoors() {
+    using namespace astrabot;
+    for(int mode=0;mode<9;++mode) for(std::uint64_t us : {8000U,16000U,100000U}) {
+        Fixture fixture{}; configureDoor(fixture);
+        enginefuncs_t hooks{}; prepareNavWalk(fixture,hooks);
+        auto& owner=adapter::metamod::lifecycleCoordinator(); auto& console=owner.navConsole();
+        fixture.entity.v.view_ofs=Vector(0,0,28);
+        gDoorLocked=mode==1; gDoorAmbiguous=mode==2; gDoorLoop=mode==8;
+        if(mode==7) gNavDoor.v.spawnflags=0; // touch-only cannot be invented as Use capability
+        runNav({"astrabot_goto","2"});
+        bool terminal=false,queuedPress=false,waiting=false,changed=false,guardRejected=false;
+        std::uint64_t firstWait=0;
+        for(int frame=0;frame<2000;++frame) {
+            const auto traces=gHullCalls,scans=gDoorScans;
+            navFrame(fixture,us);
+            guardRejected=guardRejected || motionReason(adapter::cstrike::MotionReason::DoorChanged);
+            const auto& t=console.motionTrace(); const auto& d=t.decision;
+            assert(d.queries<=21 && gDoorScans-scans<=66);
+            if(d.tick==owner.registry().currentTick()) assert(d.queries==static_cast<unsigned>(gHullCalls-traces));
+            else assert(gHullCalls==traces);
+            if(d.doorState==nav::local::DoorWaitState::Waiting) {
+                waiting=true; if(!firstWait) firstWait=gNavClockUs;
+                assert(d.intent.speed==0 && fixture.entity.v.origin.x<84.001f);
+            }
+            if(t.event==adapter::cstrike::MotionEvent::Queued && t.command.buttons==IN_USE) {
+                assert(!queuedPress); queuedPress=true;
+                if(mode==3) { ++gNavDoor.serialnumber; changed=true; }
+                if(mode==4) { gDoorAmbiguous=true; changed=true; }
+                if(mode==5) { runNav({"astrabot_nav_cancel"}); changed=true; }
+                if(mode==6) { fixture.entity.v.deadflag=DEAD_DEAD; changed=true; }
+            }
+            if(d.state!=nav::local::WalkState::Running) {
+                terminal=true;
+                if(mode==0) assert(d.state==nav::local::WalkState::Arrived && gDoorUses==1 && waiting);
+                else {
+                    assert(d.state==nav::local::WalkState::Failed || d.state==nav::local::WalkState::Aborted);
+                    assert(gDoorUses==(mode==1 ? 1:0));
+                    if(mode==1 || mode==4) {
+                        assert(d.doorReason==nav::local::DoorWaitReason::TimedOut);
+                        assert(gNavClockUs-firstWait>=1000000 && gNavClockUs-firstWait<=1000000+us+40000);
+                    }
+                }
+                break;
+            }
+        }
+        assert(terminal);
+        if(mode>=3 && mode<=6) assert(changed);
+        if(mode==3 || mode==4) assert(guardRejected);
+        const auto presses=gDoorUses; navFrame(fixture,us); navFrame(fixture,us); assert(gDoorUses==presses);
+        gDoorActive=false; gDoorOpenAtUs=0; gSimulateNav=false; detach();
     }
 }
 void testNavWalkCancellationAndGuards() {
@@ -1348,6 +1487,7 @@ int main() {
     _CrtSetReportFile(_CRT_ASSERT,_CRTDBG_FILE_STDERR);
 #endif
     testNavWorldQueries();
+    testDoorObservationContracts();
     testSuccessfulCreationAndOpaquePrivateData();
     testFailureRollback();
     testInputAndCapacityRejection();
@@ -1356,6 +1496,7 @@ int main() {
     testMessageDrivenJoinAndCommandContext();
     testNavWalkArrival();
     testNavStairs();
+    testNavDoors();
     testNavWalkCancellationAndGuards();
     testJoinFailureCleanupAndCommandContextReentry();
     testCounterTerroristPrimaryJoinRequest();

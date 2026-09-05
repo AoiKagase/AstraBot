@@ -11,7 +11,7 @@ namespace astrabot::adapter::cstrike {
 enum class NavCommand { Load, GoTo, Status, Cancel };
 enum class MotionEvent { None, Decision, Queued, Dispatched, Rejected, Cancelled };
 enum class MotionReason { None, InvalidCorridor, InvalidGoal, MissingObservation,
-    StaleCommand, Deviation, MotorRejected, TransportRejected, Cancelled };
+    StaleCommand, Deviation, MotorRejected, TransportRejected, Cancelled, DoorChanged };
 struct MotionTrace {
     nav::local::WalkDecision decision{};
     std::optional<nav::query::NavDirectedEdge> selectedEdge{};
@@ -22,6 +22,7 @@ struct MotionTrace {
     metamod::MovementError transportError{metamod::MovementError::None};
     core::TickId commandTick{}, dispatchTick{};
     std::uint64_t intentAgeUs{}, missedDecisions{}, queued{}, dispatched{}, rejected{}, sequence{};
+    std::uint64_t useGuardChecks{};
 };
 class NavConsole final : public nav::runtime::IWorldQueries {
 public:

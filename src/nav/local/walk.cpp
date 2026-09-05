@@ -15,6 +15,7 @@ public:
     model::NavAreaId source{}, target{};
     bool restrictAreas{}, offCorridor{};
     std::uint32_t issued{};
+    std::optional<runtime::QueryRequest> blocked{};
     runtime::WorldQueryResult query(const runtime::QueryRequest& q) override {
         if(q.kind==runtime::QueryKind::GroundedArea && cached_) {
             if(q.stamp==request_.stamp && q.start==request_.start && q.end==request_.end)
@@ -24,6 +25,10 @@ public:
         }
         ++issued;
         auto r=port_.query(q);
+        if(q.kind==runtime::QueryKind::SweptHull && r.stamp==q.stamp && r.kind==q.kind &&
+           r.error==runtime::QueryError::None && r.hull && !r.hull->startSolid &&
+           std::isfinite(r.hull->fraction) && r.hull->fraction>=0 && r.hull->fraction<1 &&
+           r.hull->end.isFinite() && r.hull->normal.isFinite()) blocked=q;
         if(q.kind==runtime::QueryKind::GroundedArea) { request_=q; cached_=r; }
         if(restrictAreas && q.kind==runtime::QueryKind::Floor && r.stamp==q.stamp &&
            r.kind==q.kind && r.error==runtime::QueryError::None && r.floor && r.floor->supported) {
@@ -57,6 +62,7 @@ Walk::Walk(Binding b, std::shared_ptr<const corridor::Corridor> c, model::NavVec
     : binding_(b), corridor_(std::move(c)), cursor_(corridor_), goal_(goal), limits_(limits) {}
 
 WalkDecision Walk::finish(WalkDecision out, WalkState state, WalkReason reason) noexcept {
+    if(door_ && door_->state()==DoorWaitState::Waiting) (void)door_->abort();
     out.terminalEvent=state_==WalkState::Running;
     state_=state; reason_=reason; out.state=state; out.reason=reason; out.intent={};
     if(primitive_.state()==PrimitiveState::Running) {
@@ -72,8 +78,44 @@ WalkDecision Walk::abort() noexcept {
     if(state_!=WalkState::Running) return out;
     out.accepted=true; return finish(out,WalkState::Aborted,WalkReason::Cancelled);
 }
+WalkDecision Walk::updateDoor(WalkDecision out, const runtime::MovementSnapshot& s,
+    runtime::IWorldQueries& port, model::NavVector3 end, std::uint64_t nowUs) noexcept {
+    if(out.queries>=limits_.probe.maxQueries) {
+        out.probeReason=ProbeReason::BudgetExceeded;
+        return finish(out,WalkState::Failed,WalkReason::DoorBlocked);
+    }
+    runtime::QueryRequest q{{s.agent,s.actor,s.map,s.tick,binding_.routeGeneration,++out.queries},
+        runtime::QueryKind::Door,*s.position,end,s.hull,limits_.probe.navTolerance,doorId_};
+    runtime::WorldQueryResult r;
+    try { r=port.query(q); } catch(...) {}
+    if(!door_) {
+        if(r.stamp==q.stamp && r.kind==q.kind && r.error==runtime::QueryError::None &&
+           r.door && r.door->id==lastDoorId_ && lastDoorId_) {
+            out.doorReason=DoorWaitReason::Reblocked;
+            return finish(out,WalkState::Failed,WalkReason::DoorBlocked);
+        }
+        door_.emplace(out.binding,limits_.doorTimeoutUs);
+        doorStart_=*s.position; doorEnd_=end;
+    }
+    DoorWaitFeedback f{out.binding,q.stamp,r,nowUs,{}};
+    if(r.door && r.door->useView) {
+        const auto v=*r.door->useView; f.useView=core::IntentVector{v.x,v.y,v.z};
+    }
+    const auto decision=door_->update(f);
+    out.doorState=decision.state; out.doorReason=decision.reason;
+    if(r.stamp==q.stamp && r.kind==q.kind && r.error==runtime::QueryError::None && r.door) doorId_=r.door->id;
+    out.doorId=doorId_; out.intent=decision.intent;
+    if(decision.state==DoorWaitState::Failed || decision.state==DoorWaitState::Aborted)
+        return finish(out,WalkState::Failed,WalkReason::DoorBlocked);
+    if(decision.state==DoorWaitState::Clear) {
+        lastDoorId_=doorId_; doorId_=0; door_.reset();
+        // Clearance alone cannot advance a corridor or move. Next decision
+        // repeats the full measured ground/segment inspection.
+    }
+    return out;
+}
 WalkDecision Walk::update(const runtime::MovementSnapshot& s, const query::NavSpatialIndex& index,
-                         core::MapGeneration indexMap, runtime::IWorldQueries& port) noexcept {
+                         core::MapGeneration indexMap, runtime::IWorldQueries& port, std::uint64_t nowUs) noexcept {
     WalkDecision out; out.binding=binding_; out.binding.step=cursor_.index(); out.tick=s.tick;
     out.state=state_; out.reason=reason_;
     if(state_!=WalkState::Running) return out;
@@ -103,6 +145,12 @@ WalkDecision Walk::update(const runtime::MovementSnapshot& s, const query::NavSp
     if(corridor_->transitions().empty() && corridor_->startAttributes()!=0)
         return finish(out,WalkState::Failed,WalkReason::UnsupportedTraversal);
     const auto area=ground.target->area;
+    if(door_) {
+        const auto dx=double(s.position->x)-doorStart_.x, dy=double(s.position->y)-doorStart_.y;
+        if(std::hypot(dx,dy)>0.5 || std::abs(double(s.position->z)-doorStart_.z)>limits_.probe.supportTolerance)
+            return finish(out,WalkState::Failed,WalkReason::DoorBlocked);
+        return updateDoor(out,s,port,doorEnd_,nowUs);
+    }
     auto aim=goal_;
     queries.source=area; queries.target=area; queries.restrictAreas=true;
     if(!cursor_.exhausted()) {
@@ -172,7 +220,16 @@ WalkDecision Walk::update(const runtime::MovementSnapshot& s, const query::NavSp
     const float y=inward(s.position->y+dy*fraction,s.position->y);
     const auto probe=GroundProbe::inspect(s,binding_.routeGeneration,area,x,y,index,indexMap,queries,limits_.probe);
     out.queries=queries.issued; out.samples=probe.samples; out.steps=probe.steps; out.probeReason=probe.reason;
-    if(!probe) return finish(out,WalkState::Failed,queries.offCorridor ? WalkReason::OffCorridor:WalkReason::ProbeFailed);
+    if(!probe) {
+        if(!queries.offCorridor && probe.reason==ProbeReason::Blocked && queries.blocked && limits_.doorTimeoutUs)
+            return updateDoor(out,s,port,queries.blocked->end,nowUs);
+        // A tall door may make a future floor probe start solid before its
+        // horizontal sweep. Current ground is already verified; only a typed
+        // door hit can enter stationary waiting. A gap still fails closed.
+        if(!queries.offCorridor && probe.reason==ProbeReason::NoSupport && limits_.doorTimeoutUs)
+            return updateDoor(out,s,port,{x,y,s.position->z},nowUs);
+        return finish(out,WalkState::Failed,queries.offCorridor ? WalkReason::OffCorridor:WalkReason::ProbeFailed);
+    }
     out.target=probe.target;
     // Even a full 120 ms fresh-intent hold cannot pass the inspected endpoint.
     const double inspected=std::hypot(double(x)-s.position->x,double(y)-s.position->y);

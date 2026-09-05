@@ -23,6 +23,7 @@ struct QueryRequest {
     model::NavVector3 start{}, end{};
     std::optional<HullDimensions> hull{};
     double navTolerance{2}; // GroundedArea: explicit NAV/observed-floor height allowance.
+    std::uint64_t doorId{}; // Door: zero discovers the hit; nonzero revalidates this generation.
 };
 struct FloorObservation { float height{}; model::NavVector3 normal{}; bool supported{}; };
 struct GroundedAreaObservation {
@@ -34,7 +35,11 @@ struct ClearanceObservation { bool clear{}; };
 // id includes entity generation within the stamped map. 'open' means the
 // requested swept passage is physically clear, not an inferred toggle state.
 // canUse requires adapter proof of player-use capability and target selection.
-struct DoorObservation { std::uint64_t id{}; bool open{}, canUse{}; };
+struct DoorObservation {
+    std::uint64_t id{};
+    bool open{}, canUse{};
+    std::optional<model::NavVector3> useView{}; // Verified player-use pitch/yaw/roll, degrees.
+};
 enum class BlockerKind { Unknown, Teammate, Enemy, Geometry, Other };
 struct BlockerObservation { std::uint64_t id{}; BlockerKind kind{BlockerKind::Unknown}; };
 struct WorldQueryResult {

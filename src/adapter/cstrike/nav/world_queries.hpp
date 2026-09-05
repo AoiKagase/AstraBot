@@ -9,5 +9,10 @@ namespace astrabot::adapter::cstrike {
 // this synchronous call. Budget and ordinal/freshness checks belong to the
 // portable query owner. No entity or engine pointer escapes into the result.
 nav::runtime::WorldQueryResult queryNavWorld(enginefuncs_t*, edict_t*,
-    const nav::query::NavSpatialIndex*, const nav::runtime::QueryRequest&) noexcept;
+    const nav::query::NavSpatialIndex*, const nav::runtime::QueryRequest&, int maxEntities=0) noexcept;
+// Public-entvars-only selection proof; at most 33 sphere enumeration calls
+// (32 candidates plus the terminator). Unknown competing entities reject Use.
+// Also used immediately before dispatching a queued Use press.
+std::optional<nav::model::NavVector3> doorUseView(enginefuncs_t*, edict_t*,
+    std::uint64_t doorId, int maxEntities) noexcept;
 }

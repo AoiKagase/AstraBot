@@ -185,7 +185,7 @@ void NavConsole::execute(NavCommand command,metamod::LifecycleCoordinator& owner
     if(session_ && session_->executable()) startMotion(s);
 }
 nav::runtime::WorldQueryResult NavConsole::query(const nav::runtime::QueryRequest& request) {
-    auto result=queryNavWorld(engine_,queryingEntity_,index_.get(),request);
+    auto result=queryNavWorld(engine_,queryingEntity_,index_.get(),request,globals_ ? globals_->maxEntities:0);
     if(deferredInvalidation_) {
         result={}; result.stamp=request.stamp; result.kind=request.kind;
     }
