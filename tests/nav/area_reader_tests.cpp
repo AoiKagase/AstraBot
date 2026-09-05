@@ -28,6 +28,11 @@ void appendU8(std::vector<std::uint8_t>& bytes, std::uint8_t value) {
     bytes.push_back(value);
 }
 
+void appendU16LE(std::vector<std::uint8_t>& bytes, std::uint16_t value) {
+    bytes.push_back(static_cast<std::uint8_t>(value & 0xFFU));
+    bytes.push_back(static_cast<std::uint8_t>((value >> 8U) & 0xFFU));
+}
+
 void appendU32LE(std::vector<std::uint8_t>& bytes, std::uint32_t value) {
     bytes.push_back(static_cast<std::uint8_t>(value & 0xFFU));
     bytes.push_back(static_cast<std::uint8_t>((value >> 8U) & 0xFFU));
@@ -76,6 +81,7 @@ std::vector<std::uint8_t> makeV1BasePayload() {
 
     appendU8(bytes, 0U);
     appendU8(bytes, 0U);
+    appendU32LE(bytes, 0U);
     return bytes;
 }
 
@@ -166,7 +172,7 @@ void testV1AreaBaseTruncation() {
 
 std::vector<std::uint8_t> makeV1HidingApproachPayload() {
     std::vector<std::uint8_t> bytes = makeV1BasePayload();
-    bytes.resize(bytes.size() - 2U);
+    bytes.resize(bytes.size() - 6U);
     appendU8(bytes, 1U);
     appendF32LE(bytes, 9.0F);
     appendF32LE(bytes, 10.0F);
@@ -177,12 +183,13 @@ std::vector<std::uint8_t> makeV1HidingApproachPayload() {
     appendU8(bytes, 0xA1U);
     appendU32LE(bytes, 8U);
     appendU8(bytes, 0xB2U);
+    appendU32LE(bytes, 0U);
     return bytes;
 }
 
 std::vector<std::uint8_t> makeV2HidingPayload() {
     std::vector<std::uint8_t> bytes = makeV1BasePayload();
-    bytes.resize(bytes.size() - 2U);
+    bytes.resize(bytes.size() - 6U);
     appendU8(bytes, 1U);
     appendU32LE(bytes, 101U);
     appendF32LE(bytes, 1.5F);
@@ -190,6 +197,7 @@ std::vector<std::uint8_t> makeV2HidingPayload() {
     appendF32LE(bytes, 3.5F);
     appendU8(bytes, 0x03U);
     appendU8(bytes, 0U);
+    appendU32LE(bytes, 0U);
     return bytes;
 }
 
@@ -258,6 +266,178 @@ void testHidingAndApproachTruncation() {
     }
 }
 
+std::vector<std::uint8_t> makeV1LegacyEncounterPayload() {
+    std::vector<std::uint8_t> bytes = makeV1BasePayload();
+    bytes.resize(bytes.size() - 4U);
+    appendU32LE(bytes, 1U);
+    appendU32LE(bytes, 7U);
+    appendU32LE(bytes, 6U);
+    for (float value = 1.0F; value <= 6.0F; value += 1.0F) {
+        appendF32LE(bytes, value);
+    }
+    appendU8(bytes, 1U);
+    appendF32LE(bytes, 12.0F);
+    appendF32LE(bytes, 13.0F);
+    appendF32LE(bytes, 14.0F);
+    appendF32LE(bytes, 0.5F);
+    appendU8(bytes, 0xEEU);
+    return bytes;
+}
+
+std::vector<std::uint8_t> makeV3EncounterPayload() {
+    std::vector<std::uint8_t> bytes = makeV1BasePayload();
+    bytes.resize(bytes.size() - 4U);
+    appendU32LE(bytes, 1U);
+    appendU32LE(bytes, 7U);
+    appendU8(bytes, 1U);
+    appendU32LE(bytes, 8U);
+    appendU8(bytes, 2U);
+    appendU8(bytes, 2U);
+    appendU32LE(bytes, 201U);
+    appendU8(bytes, 0x11U);
+    appendU32LE(bytes, 202U);
+    appendU8(bytes, 0x22U);
+    return bytes;
+}
+
+std::vector<std::uint8_t> makeV4EmptyEncounterPayload() {
+    std::vector<std::uint8_t> bytes = makeV1BasePayload();
+    return bytes;
+}
+
+std::vector<std::uint8_t> makeV5PlacePayload() {
+    std::vector<std::uint8_t> bytes = makeV4EmptyEncounterPayload();
+    appendU16LE(bytes, 4U);
+    return bytes;
+}
+
+void testV1LegacyEncounterIsConsumedButNotPublished() {
+    const std::vector<std::uint8_t> bytes = makeV1LegacyEncounterPayload();
+    const auto result = NavAreaReader::read(
+        ByteView{bytes.data(), bytes.size()}, NavVersion::V1, 1U, normalLimits());
+    assert(result);
+    assert(result.value->bytesConsumed == bytes.size() - 1U);
+    assert(result.value->areas.front().encounters.empty());
+    assert(bytes[result.value->bytesConsumed] == 0xEEU);
+}
+
+void testV3Encounter() {
+    const std::vector<std::uint8_t> bytes = makeV3EncounterPayload();
+    const auto result = NavAreaReader::read(
+        ByteView{bytes.data(), bytes.size()}, NavVersion::V3, 1U, normalLimits());
+    assert(result);
+    assert(result.value->bytesConsumed == bytes.size());
+    const auto& encounter = result.value->areas.front().encounters.front();
+    assert(encounter.from == NavAreaId{7U});
+    assert(encounter.fromDirection == 1U);
+    assert(encounter.to == NavAreaId{8U});
+    assert(encounter.toDirection == 2U);
+    assert(encounter.spots.size() == 2U);
+    assert(encounter.spots[0].hidingSpotId == 201U);
+    assert(encounter.spots[0].t == 0x11U);
+    assert(encounter.spots[1].hidingSpotId == 202U);
+    assert(encounter.spots[1].t == 0x22U);
+}
+
+void testV4AndV5PlaceEntries() {
+    const std::vector<std::uint8_t> v4 = makeV4EmptyEncounterPayload();
+    const auto v4Result = NavAreaReader::read(
+        ByteView{v4.data(), v4.size()}, NavVersion::V4, 1U, normalLimits());
+    assert(v4Result);
+    assert(!v4Result.value->areas.front().place.has_value());
+    assert(v4Result.value->bytesConsumed == v4.size());
+
+    const std::vector<std::uint8_t> v5 = makeV5PlacePayload();
+    const auto v5Result = NavAreaReader::read(
+        ByteView{v5.data(), v5.size()}, NavVersion::V5, 1U, normalLimits());
+    assert(v5Result);
+    assert(v5Result.value->areas.front().place.has_value());
+    assert(*v5Result.value->areas.front().place == 4U);
+    assert(v5Result.value->bytesConsumed == v5.size());
+}
+
+void testEncounterAndPlaceTruncation() {
+    const std::vector<std::uint8_t> legacy = makeV1LegacyEncounterPayload();
+    const std::vector<std::pair<std::size_t, NavField>> legacyFields{
+        {71U, NavField::EncounterCount},
+        {75U, NavField::EncounterAreaId},
+        {79U, NavField::EncounterAreaId},
+        {83U, NavField::RawBytes},
+        {87U, NavField::RawBytes},
+        {91U, NavField::RawBytes},
+        {95U, NavField::RawBytes},
+        {99U, NavField::RawBytes},
+        {103U, NavField::RawBytes},
+        {107U, NavField::EncounterSpotCount},
+        {108U, NavField::RawBytes},
+        {112U, NavField::RawBytes},
+        {116U, NavField::RawBytes},
+        {120U, NavField::RawBytes},
+    };
+    for (const auto& field : legacyFields) {
+        assertTruncatedAt(legacy, NavVersion::V1, field.first, field.second);
+    }
+
+    const std::vector<std::uint8_t> modern = makeV3EncounterPayload();
+    const std::vector<std::pair<std::size_t, NavField>> modernFields{
+        {71U, NavField::EncounterCount},
+        {75U, NavField::EncounterAreaId},
+        {79U, NavField::EncounterDirection},
+        {80U, NavField::EncounterAreaId},
+        {84U, NavField::EncounterDirection},
+        {85U, NavField::EncounterSpotCount},
+        {86U, NavField::EncounterSpotId},
+        {90U, NavField::EncounterSpotT},
+        {91U, NavField::EncounterSpotId},
+        {95U, NavField::EncounterSpotT},
+    };
+    for (const auto& field : modernFields) {
+        assertTruncatedAt(modern, NavVersion::V3, field.first, field.second);
+    }
+
+    const std::vector<std::uint8_t> place = makeV5PlacePayload();
+    assertTruncatedAt(place, NavVersion::V5, 75U, NavField::Place);
+}
+
+void testEncounterLimits() {
+    const std::vector<std::uint8_t> modern = makeV3EncounterPayload();
+    NavAreaReadLimits noAreaEncounters = normalLimits();
+    noAreaEncounters.maxEncountersPerArea = 0U;
+    auto result = NavAreaReader::read(
+        ByteView{modern.data(), modern.size()}, NavVersion::V3, 1U, noAreaEncounters);
+    assert(!result);
+    assert(result.error.kind == NavErrorKind::CountLimitExceeded);
+    assert(result.error.offset == 71U);
+    assert(result.error.field == NavField::EncounterCount);
+
+    NavAreaReadLimits noTotalEncounters = normalLimits();
+    noTotalEncounters.maxTotalEncounters = 0U;
+    result = NavAreaReader::read(
+        ByteView{modern.data(), modern.size()}, NavVersion::V3, 1U, noTotalEncounters);
+    assert(!result);
+    assert(result.error.kind == NavErrorKind::CountLimitExceeded);
+    assert(result.error.offset == 71U);
+    assert(result.error.field == NavField::EncounterCount);
+
+    NavAreaReadLimits oneSpot = normalLimits();
+    oneSpot.maxEncounterSpotsPerPath = 1U;
+    result = NavAreaReader::read(
+        ByteView{modern.data(), modern.size()}, NavVersion::V3, 1U, oneSpot);
+    assert(!result);
+    assert(result.error.kind == NavErrorKind::CountLimitExceeded);
+    assert(result.error.offset == 85U);
+    assert(result.error.field == NavField::EncounterSpotCount);
+
+    NavAreaReadLimits oneTotalSpot = normalLimits();
+    oneTotalSpot.maxTotalEncounterSpots = 1U;
+    result = NavAreaReader::read(
+        ByteView{modern.data(), modern.size()}, NavVersion::V3, 1U, oneTotalSpot);
+    assert(!result);
+    assert(result.error.kind == NavErrorKind::CountLimitExceeded);
+    assert(result.error.offset == 85U);
+    assert(result.error.field == NavField::EncounterSpotCount);
+}
+
 } // namespace
 
 int main() {
@@ -267,5 +447,10 @@ int main() {
     testV1HidingAndApproach();
     testV2Hiding();
     testHidingAndApproachTruncation();
+    testV1LegacyEncounterIsConsumedButNotPublished();
+    testV3Encounter();
+    testV4AndV5PlaceEntries();
+    testEncounterAndPlaceTruncation();
+    testEncounterLimits();
     return 0;
 }

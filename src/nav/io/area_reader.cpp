@@ -36,6 +36,8 @@ ReadResult<NavAreaBlock> NavAreaReader::read(
         std::uint64_t totalConnections = 0U;
         std::uint64_t totalHidingSpots = 0U;
         std::uint64_t totalApproaches = 0U;
+        std::uint64_t totalEncounters = 0U;
+        std::uint64_t totalEncounterSpots = 0U;
         for (std::uint32_t areaIndex = 0U; areaIndex < areaCount; ++areaIndex) {
             model::NavAreaRecord area{};
 
@@ -255,6 +257,173 @@ ReadResult<NavAreaBlock> NavAreaReader::read(
                 }
                 approach.hereToNextHow = *hereToNext.value;
                 area.approaches.push_back(std::move(approach));
+            }
+
+            const std::size_t encounterCountOffset = reader.offset();
+            const ReadResult<std::uint32_t> encounterCount = reader.readU32LE(
+                NavRecord::Encounter, NavField::EncounterCount);
+            if (!encounterCount) {
+                return ReadResult<NavAreaBlock>::failure(encounterCount.error);
+            }
+            if (*encounterCount.value > limits.maxEncountersPerArea ||
+                totalEncounters + *encounterCount.value > limits.maxTotalEncounters) {
+                return ReadResult<NavAreaBlock>::failure(
+                    NavError{NavErrorKind::CountLimitExceeded,
+                             static_cast<std::uint64_t>(encounterCountOffset),
+                             NavRecord::Encounter,
+                             NavField::EncounterCount});
+            }
+            area.encounters.reserve(*encounterCount.value);
+            totalEncounters += *encounterCount.value;
+
+            const auto readEncounterVector = [&reader]() -> ReadResult<model::NavVector3> {
+                model::NavVector3 vector{};
+                const ReadResult<float> x = reader.readF32LE(
+                    NavRecord::Encounter, NavField::RawBytes);
+                if (!x) {
+                    return ReadResult<model::NavVector3>::failure(x.error);
+                }
+                vector.x = *x.value;
+                const ReadResult<float> y = reader.readF32LE(
+                    NavRecord::Encounter, NavField::RawBytes);
+                if (!y) {
+                    return ReadResult<model::NavVector3>::failure(y.error);
+                }
+                vector.y = *y.value;
+                const ReadResult<float> z = reader.readF32LE(
+                    NavRecord::Encounter, NavField::RawBytes);
+                if (!z) {
+                    return ReadResult<model::NavVector3>::failure(z.error);
+                }
+                vector.z = *z.value;
+                return ReadResult<model::NavVector3>::success(vector);
+            };
+
+            for (std::uint32_t encounterIndex = 0U;
+                 encounterIndex < *encounterCount.value;
+                 ++encounterIndex) {
+                if (version == model::NavVersion::V1 ||
+                    version == model::NavVersion::V2) {
+                    const ReadResult<std::uint32_t> from = reader.readU32LE(
+                        NavRecord::Encounter, NavField::EncounterAreaId);
+                    if (!from) {
+                        return ReadResult<NavAreaBlock>::failure(from.error);
+                    }
+                    const ReadResult<std::uint32_t> to = reader.readU32LE(
+                        NavRecord::Encounter, NavField::EncounterAreaId);
+                    if (!to) {
+                        return ReadResult<NavAreaBlock>::failure(to.error);
+                    }
+                    const ReadResult<model::NavVector3> fromEndpoint = readEncounterVector();
+                    if (!fromEndpoint) {
+                        return ReadResult<NavAreaBlock>::failure(fromEndpoint.error);
+                    }
+                    const ReadResult<model::NavVector3> toEndpoint = readEncounterVector();
+                    if (!toEndpoint) {
+                        return ReadResult<NavAreaBlock>::failure(toEndpoint.error);
+                    }
+
+                    const std::size_t spotCountOffset = reader.offset();
+                    const ReadResult<std::uint8_t> spotCount = reader.readU8(
+                        NavRecord::Encounter, NavField::EncounterSpotCount);
+                    if (!spotCount) {
+                        return ReadResult<NavAreaBlock>::failure(spotCount.error);
+                    }
+                    if (*spotCount.value > limits.maxEncounterSpotsPerPath ||
+                        totalEncounterSpots + *spotCount.value > limits.maxTotalEncounterSpots) {
+                        return ReadResult<NavAreaBlock>::failure(
+                            NavError{NavErrorKind::CountLimitExceeded,
+                                     static_cast<std::uint64_t>(spotCountOffset),
+                                     NavRecord::Encounter,
+                                     NavField::EncounterSpotCount});
+                    }
+                    totalEncounterSpots += *spotCount.value;
+                    for (std::uint8_t spotIndex = 0U;
+                         spotIndex < *spotCount.value;
+                         ++spotIndex) {
+                        const ReadResult<model::NavVector3> spotPosition = readEncounterVector();
+                        if (!spotPosition) {
+                            return ReadResult<NavAreaBlock>::failure(spotPosition.error);
+                        }
+                        const ReadResult<float> spotT = reader.readF32LE(
+                            NavRecord::Encounter, NavField::RawBytes);
+                        if (!spotT) {
+                            return ReadResult<NavAreaBlock>::failure(spotT.error);
+                        }
+                    }
+                    continue;
+                }
+
+                model::NavEncounterRecord encounter{};
+                const ReadResult<std::uint32_t> from = reader.readU32LE(
+                    NavRecord::Encounter, NavField::EncounterAreaId);
+                if (!from) {
+                    return ReadResult<NavAreaBlock>::failure(from.error);
+                }
+                encounter.from = model::NavAreaId{*from.value};
+                const ReadResult<std::uint8_t> fromDirection = reader.readU8(
+                    NavRecord::Encounter, NavField::EncounterDirection);
+                if (!fromDirection) {
+                    return ReadResult<NavAreaBlock>::failure(fromDirection.error);
+                }
+                encounter.fromDirection = *fromDirection.value;
+                const ReadResult<std::uint32_t> to = reader.readU32LE(
+                    NavRecord::Encounter, NavField::EncounterAreaId);
+                if (!to) {
+                    return ReadResult<NavAreaBlock>::failure(to.error);
+                }
+                encounter.to = model::NavAreaId{*to.value};
+                const ReadResult<std::uint8_t> toDirection = reader.readU8(
+                    NavRecord::Encounter, NavField::EncounterDirection);
+                if (!toDirection) {
+                    return ReadResult<NavAreaBlock>::failure(toDirection.error);
+                }
+                encounter.toDirection = *toDirection.value;
+
+                const std::size_t spotCountOffset = reader.offset();
+                const ReadResult<std::uint8_t> spotCount = reader.readU8(
+                    NavRecord::Encounter, NavField::EncounterSpotCount);
+                if (!spotCount) {
+                    return ReadResult<NavAreaBlock>::failure(spotCount.error);
+                }
+                if (*spotCount.value > limits.maxEncounterSpotsPerPath ||
+                    totalEncounterSpots + *spotCount.value > limits.maxTotalEncounterSpots) {
+                    return ReadResult<NavAreaBlock>::failure(
+                        NavError{NavErrorKind::CountLimitExceeded,
+                                 static_cast<std::uint64_t>(spotCountOffset),
+                                 NavRecord::Encounter,
+                                 NavField::EncounterSpotCount});
+                }
+                encounter.spots.reserve(*spotCount.value);
+                totalEncounterSpots += *spotCount.value;
+                for (std::uint8_t spotIndex = 0U;
+                     spotIndex < *spotCount.value;
+                     ++spotIndex) {
+                    model::NavEncounterSpot spot{};
+                    const ReadResult<std::uint32_t> spotId = reader.readU32LE(
+                        NavRecord::Encounter, NavField::EncounterSpotId);
+                    if (!spotId) {
+                        return ReadResult<NavAreaBlock>::failure(spotId.error);
+                    }
+                    spot.hidingSpotId = *spotId.value;
+                    const ReadResult<std::uint8_t> spotT = reader.readU8(
+                        NavRecord::Encounter, NavField::EncounterSpotT);
+                    if (!spotT) {
+                        return ReadResult<NavAreaBlock>::failure(spotT.error);
+                    }
+                    spot.t = *spotT.value;
+                    encounter.spots.push_back(spot);
+                }
+                area.encounters.push_back(std::move(encounter));
+            }
+
+            if (version == model::NavVersion::V5) {
+                const ReadResult<std::uint16_t> place = reader.readU16LE(
+                    NavRecord::Area, NavField::Place);
+                if (!place) {
+                    return ReadResult<NavAreaBlock>::failure(place.error);
+                }
+                area.place = *place.value;
             }
 
             block.areas.push_back(std::move(area));
