@@ -1,6 +1,7 @@
 # P2-05 spatial queries — design for review
 
-Status: proposed, not approved for implementation.
+Status: proceeding under the user's next-task instruction; the user explicitly
+selected XY clamp plus interpolated height as the distance contract.
 Base: main f510dca (P2-04), merged portable Debug CTest 8/8 passed.
 
 ## Goal and alternatives
@@ -14,7 +15,7 @@ size configuration and each area appears in one leaf. A uniform grid needs cell
 size and multi-cell duplication caps. A linear scan is simple but provides no
 spatial acceleration; retain it only as the independent test oracle.
 
-## Distance decision requiring review
+## Confirmed distance contract
 
 Recommended geometry contract: clamp the query X/Y into the area's rectangle,
 evaluate the surface Z by bilinear interpolation at that X/Y, then rank candidates
@@ -85,7 +86,7 @@ allocation failure AllocationFailure. Failed construction publishes no index.
   storage, O(log N) recursion, O(N log-squared N) construction worst case.
 - Query traversal is allocation-free and uses balanced recursion. Prune by
   conservative AABB lower bounds; prune only on strict greater-than so equal
-  distances can still improve the ID tie-break. Visit equal-bound children
+  distances can still improve the ID tie-break. Visit children
   by stored child order. Filters and final ranking are always evaluated on
   individual projected points.
 - Query state is local; concurrent const queries never modify snapshot or index.

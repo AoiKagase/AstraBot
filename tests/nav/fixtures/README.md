@@ -27,3 +27,11 @@ hiding ID 101 and owner references; connection fixtures use areas 7 and 8.
 Mutation offsets are hand-counted, not computed by the production reader.
 Legacy v1/v2 encounter endpoints are intentionally unresolved because those
 discarded records are outside snapshot semantic validation.
+# P2-05 geometry/query fixtures
+
+geometry_tests.cpp uses original literal rectangles, a z=x slope and a bilinear
+saddle. spatial_index_tests.cpp serializes original v1 area-only records through
+NavMeshLoader. Stacked floors, 64 varied patches and a fixed LCG seed 12345 provide
+repeatable query coverage. The oracle evaluates four bilinear weights directly
+and linearly scans fixture descriptions; it does not call production projection,
+index traversal or production fixture generators. No upstream code/assets are used.

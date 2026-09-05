@@ -73,6 +73,8 @@ set_target_properties(astrabot_core PROPERTIES
 astrabot_enable_warnings(astrabot_core)
 
 add_library(astrabot_nav STATIC
+    src/nav/query/spatial_index.cpp
+    src/nav/query/geometry.cpp
     src/nav/io/decode_context.cpp
     src/nav/io/mesh_loader.cpp
     src/nav/model/mesh_validator.cpp
@@ -214,6 +216,15 @@ endif()
 
 if(ASTRABOT_BUILD_TESTS)
     enable_testing()
+    find_package(Threads REQUIRED)
+    add_executable(astrabot_nav_spatial_tests tests/nav/spatial_index_tests.cpp)
+    target_link_libraries(astrabot_nav_spatial_tests PRIVATE astrabot_nav Threads::Threads)
+    astrabot_enable_warnings(astrabot_nav_spatial_tests)
+    add_test(NAME astrabot.nav.spatial COMMAND astrabot_nav_spatial_tests)
+    add_executable(astrabot_nav_geometry_tests tests/nav/geometry_tests.cpp)
+    target_link_libraries(astrabot_nav_geometry_tests PRIVATE astrabot_nav)
+    astrabot_enable_warnings(astrabot_nav_geometry_tests)
+    add_test(NAME astrabot.nav.geometry COMMAND astrabot_nav_geometry_tests)
     add_executable(astrabot_nav_mesh_tests tests/nav/mesh_loader_tests.cpp)
     target_link_libraries(astrabot_nav_mesh_tests PRIVATE astrabot_nav)
     astrabot_enable_warnings(astrabot_nav_mesh_tests)
