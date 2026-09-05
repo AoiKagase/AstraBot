@@ -71,8 +71,9 @@ Unit/simulation passes never substitute for live observations.
     load/nearest/route and unchanged hashes. Without a file, keep this sub-gate pending.
     Dust/dust2 now pass these offline comparisons; full compatibility remains
     partial pending provenance/detail rows in [the follow-up report](../reports/p3-01-real-nav-compatibility.md).
-  - [ ] Add portable session/snapshot/query contracts and fake-host tests; default
+  - [x] Add portable session/snapshot/query contracts and fake-host tests; default
     allowPartial=false and keep ExpansionLimit prefixes diagnostic-only.
+    See [portable session evidence](../reports/p3-01-route-session.md).
   - [ ] Wire console goto/status/cancel to the managed actor and route result,
     with explicit Nav linkage and offline adapter tests.
 - **Tests:** metadata, missing/oversized/corrupt input, limits, no input writes;
@@ -298,5 +299,6 @@ Tactical Planner/Combat AI, Experience DB and crowd/prediction are deferred.
 The first P3-01 slice (bounded read-only NAV inspector and synthetic tests) is
 complete. Dust/dust2 load/query/route comparisons pass after the zero-ID and
 nullable-Approach correction. Compatibility is partially validated, with its
-remaining rows explicitly recorded. Continue the independent portable session
-slice while preserving that status. No new numbering or Finish declaration.
+remaining rows explicitly recorded. The portable session slice is also implemented.
+Continue console goto/status/cancel integration with explicit Nav linkage and
+offline adapter tests. No new numbering or Finish declaration.

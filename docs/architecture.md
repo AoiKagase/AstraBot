@@ -362,7 +362,9 @@ in P1-01.
 
 ## Phase 3 local navigation decision (2026-09-05)
 
-Planning only; no Phase 3 source exists yet. Audited base: `b49f4da`.
+The inspector and portable session contracts are implemented. Movement and
+adapter integration below remain planned. Audited planning base: `b49f4da`.
+See [session evidence](reports/p3-01-route-session.md) for the implemented boundary.
 Task ownership is in [the existing plan](plans/phase-3-nav-movement.md);
 real-byte readiness is in [the compatibility protocol](research/real-nav-compatibility.md).
 
@@ -390,8 +392,9 @@ IGameHost / GoldSrc adapter -> validated RunPlayerMove
 MovementSnapshot + bounded value query results
 ```
 
-The names introduced below are planned internal contracts, not implemented
-headers or a stable AMXX ABI. Reuse `NavRouteResult`, `NavRouteStep`,
+The names introduced below are internal contracts, not a stable AMXX ABI.
+Session/snapshot/query headers exist in `src/nav/runtime`; subsequent movement
+contracts remain planned. Reuse `NavRouteResult`, `NavRouteStep`,
 `NavTraversalKind`, `NavTraversalLink`, `PlayerId`, `MapGeneration`,
 `TickId` and `BotCommand`; do not introduce a duplicate NavRoute model.
 A* stays synchronous and bounded, with no per-frame motor state or hidden traces.

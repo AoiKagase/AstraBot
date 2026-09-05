@@ -92,6 +92,7 @@ set_target_properties(astrabot_core PROPERTIES
 astrabot_enable_warnings(astrabot_core)
 
 add_library(astrabot_nav STATIC
+    src/nav/runtime/route_session.cpp
     src/nav/query/route_search.cpp
     src/nav/query/graph.cpp
     src/nav/query/spatial_index.cpp
@@ -298,6 +299,11 @@ if(ASTRABOT_BUILD_TESTS)
     file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/long-fuzz/CTestTestfile.cmake"
         CONTENT "add_test(astrabot.nav.fuzz.long \"$<TARGET_FILE:astrabot_nav_fuzz_tests>\" --cases 100000)\nset_tests_properties(astrabot.nav.fuzz.long PROPERTIES TIMEOUT 600)\n")
     if(NOT ASTRABOT_NAV_ASAN)
+    add_executable(astrabot_nav_session_tests tests/nav/route_session_tests.cpp)
+    target_link_libraries(astrabot_nav_session_tests PRIVATE astrabot_nav)
+    astrabot_enable_warnings(astrabot_nav_session_tests)
+    add_test(NAME astrabot.nav.session COMMAND astrabot_nav_session_tests)
+    set_tests_properties(astrabot.nav.session PROPERTIES TIMEOUT 30)
     find_package(Threads REQUIRED)
     add_executable(astrabot_nav_enrichment_tests tests/nav/enrichment_tests.cpp)
     target_link_libraries(astrabot_nav_enrichment_tests PRIVATE astrabot_nav Threads::Threads)
