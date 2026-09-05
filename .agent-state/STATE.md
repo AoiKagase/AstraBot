@@ -1,27 +1,24 @@
 ﻿# State
 
 Status: in_progress
-Goal: entire Phase 3; P3-03 has offline implementation evidence.
-Main: fast-forward integrated 1df97cd -> 4e6a7d2 on user request; not pushed.
-Main worktree: .worktrees/main-integration (clean).
-Current branch: codex/p304-multi-nav, based on 4e6a7d2; next boundary not merged.
-Current boundary: per-player NAV sessions share immutable navigation and isolate
-RouteSession/Walk/IntentPump/pending commands/guards/history in up to32 slots.
-Commands use optional slot:generation, required for multiple managed actors.
-Generation reuse resets actor state; cancel/disconnect is actor-specific;
-map publication/reset invalidates all. Synchronous query invalidation is deferred
-without deleting active actor storage. Removal-pending ingress is rejected.
-Report: docs/reports/p3-04-multi-nav.md.
-Verification: Windows x86 NMake Debug adapter+portable34/34 PASS; expanded
-fake-client regression rerun PASS after adding slot reuse/reentry assertions.
-WSL Debian GCC -m32 Debug portable29/29 PASS. Release x86 DLL/six exports PASS.
-All warnings-as-errors. Two independent lanes at8/16/100ms cover arrival,
-cancel/disconnect/map invalidation, stale/ambiguous selectors, query/history
-isolation, slot reuse and cross-actor invalidation during query.
-Next: bounded automatic replan consumption with expiring edge facts and carried
-attempts. DynamicBlocked/Replan currently stops the host. P3-04 reactive
-checklist remains open; per-player host/navigation implementation slice checked.
-Then P3-05 crouch/jump, P3-06 ladders, P3-07 finite recovery, P3-08 offline matrix.
+Goal: entire Phase 3; P3-03/P3-04 implementation slices have offline evidence.
+Main: 4e6a7d2 in .worktrees/main-integration, clean; not pushed.
+Current branch: codex/p304-bounded-replan, based on 7a0ef6c; not merged/pushed.
+Current boundary: one bounded automatic retry per actor/explicit goal on fresh
+observed dynamic timeout. One directed-edge fact expires in1s; consume on later
+tick, retain attempt count through route replacement, no automatic retry after
+failure/expiry. Existing RouteSession fixed limits/allowPartial=false remain.
+Explicit goal/cancel and identity/map invalidation retire pending state.
+Report: docs/reports/p3-04-bounded-replan.md.
+Verification: Windows x86 NMake Debug adapter+portable35/35 PASS; WSL Debian
+GCC -m32 Debug portable30/30 PASS. Release x86 DLL/six exports PASS. Werror.
+Portable tests cover directed detour/cost, expiry, identity, budget/external
+provenance and graph immutability. Adapter8/16/100ms scenarios cover arrival,
+blocked replacement, Unreachable, pending cancellation and expired pending fact.
+P3-04 implementation checks are marked with offline evidence; live is post-Finish.
+Next: P3-05 supported crouch/jump constraints and primitives, followed by P3-06
+ladder discovery/lifecycle, P3-07 dispatched-progress finite recovery, P3-08 matrix.
+Graph reachability alone does not guarantee locally executable geometry.
 Keep goal active. No subagents, live server or project-wide Finish.
-Real NAV compatibility remains partial. No real input writes or Git additions.
-Preserve untracked .focalspan.json and .serena/. Hosted CI for this branch pending.
+Real NAV compatibility remains partial; no real input writes or Git additions.
+Preserve untracked .focalspan.json and .serena/. Hosted CI pending.

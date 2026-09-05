@@ -1005,6 +1005,70 @@ void testMultipleNavSessions() {
         gSimulateNav=false; detach();
     }
 }
+void testNavAutomaticReplan() {
+    using namespace astrabot;
+    for(std::uint64_t us : {8000U,16000U,100000U}) for(int mode=0;mode<5;++mode) {
+        Fixture fixture{}; fixture.engine.pfnPEntityOfEntIndex=&captureDoorEntity;
+        fixture.engineGlobals.maxEntities=128;
+        enginefuncs_t hooks{}; prepareNavWalk(fixture,hooks);
+        auto& owner=adapter::metamod::lifecycleCoordinator(); auto& console=owner.navConsole();
+        const auto player=owner.fakeClient().activePlayer();
+        gNavPlayer={}; gNavPlayer.v.flags=FL_CLIENT; gNavPlayer.v.solid=SOLID_SLIDEBOX; gNavPlayer.serialnumber=23;
+        assert(owner.registry().registerPlayer(2)); gPlayerObstacle=true; gSteeringMode=4;
+        route_test::Area a{1,{{0,0,0},{100,100,0},0,0}},b{2,{{100,0,0},{200,100,0},0,0}},
+            c{3,{{0,100,0},{100,200,0},0,0}},d{4,{{100,100,0},{200,200,0},0,0}};
+        a.targets[1]={2}; if(mode!=2) a.targets[2]={3}; c.targets[1]={4}; d.targets[0]={2};
+        assert(console.publish(owner.registry().mapGeneration(),route_test::snapshot({a,b,c,d})).isNone());
+        runNav({"astrabot_goto","2"});
+        bool pending=false,finished=false;
+        float expectedGoalY=50;
+        for(int frame=0;frame<2000;++frame) {
+            navFrame(fixture,us);
+            assert(console.replan(player)->attempts()<=1);
+            assert(console.trace()->routeGeneration<=2);
+            if(console.replan(player)->state()==nav::runtime::ReplanState::Pending) {
+                assert(!pending); pending=true;
+                expectedGoalY=std::clamp(fixture.entity.v.origin.y,17.0f,83.0f);
+                assert(console.motionTrace().decision.reason==nav::local::WalkReason::DynamicBlocked);
+                assert(console.trace()->routeGeneration==1);
+                if(mode==3) {
+                    runNav({"astrabot_nav_cancel"}); navFrame(fixture,us);
+                    assert(console.replan(player)->attempts()==0 && console.trace()->routeGeneration==1);
+                    finished=true; break;
+                }
+                if(mode==4) {
+                    navFrame(fixture,nav::runtime::ReplanAttempt::factLifetimeUs);
+                    assert(console.replan(player)->state()==nav::runtime::ReplanState::Expired);
+                    assert(console.replan(player)->attempts()==0 && console.trace()->routeGeneration==1);
+                    finished=true; break;
+                }
+            }
+            if(console.trace()->routeGeneration==2) {
+                assert(pending && console.replan(player)->attempts()==1);
+                if(mode==2) {
+                    assert(console.trace()->reason==nav::runtime::SessionReason::Unreachable);
+                    assert(!console.trace()->route || console.trace()->route->steps.empty());
+                    finished=true; break;
+                }
+                assert(console.trace()->route && console.trace()->route->areas==std::vector<nav::model::NavAreaId>({{1},{3},{4},{2}}));
+                assert(console.trace()->route->total==300);
+                if(mode==1) gSteeringMode=2; // replacement route is blocked too
+                if(mode==1 && console.replan(player)->state()==nav::runtime::ReplanState::Exhausted) { finished=true; break; }
+                if(mode==0 && console.motionTrace().decision.state==nav::local::WalkState::Arrived) { finished=true; break; }
+            }
+        }
+        if(!finished) std::fprintf(stderr,"replan mode=%d us=%llu generation=%llu walk=%u reason=%u state=%u pos=(%.3f,%.3f)\n",mode,
+            static_cast<unsigned long long>(us),static_cast<unsigned long long>(console.trace()->routeGeneration),
+            unsigned(console.motionTrace().decision.state),unsigned(console.motionTrace().decision.reason),unsigned(console.replan(player)->state()),
+            fixture.entity.v.origin.x,fixture.entity.v.origin.y);
+        assert(pending && finished);
+        if(mode==0) assert(std::hypot(fixture.entity.v.origin.x-117,fixture.entity.v.origin.y-expectedGoalY)<=1.01f);
+        const auto generation=console.trace()->routeGeneration;
+        for(int i=0;i<20;++i) navFrame(fixture,us);
+        assert(console.trace()->routeGeneration==generation);
+        gPlayerObstacle=false; gSteeringMode=-1; gSimulateNav=false; detach();
+    }
+}
 void testNavPlayers() {
     using namespace astrabot;
     for(std::uint64_t us : {8000U,16000U,100000U}) for(int mode=0;mode<5;++mode) {
@@ -1896,6 +1960,7 @@ int main() {
     testMultipleNavSessions();
     testMultipleClientDetach();
     testNavPlayers();
+    testNavAutomaticReplan();
     testNavWalkCancellationAndGuards();
     testJoinFailureCleanupAndCommandContextReentry();
     testCounterTerroristPrimaryJoinRequest();

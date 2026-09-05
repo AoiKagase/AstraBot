@@ -161,8 +161,10 @@ Unit/simulation passes never substitute for live observations.
 Portable controller foundation: [blocker wait report](../reports/p3-04-blocker-wait.md).
 Expiry, stable PlayerId priority and a non-renewable attempt deadline have
 synthetic coverage. [Reactive Walk/host integration](../reports/p3-04-reactive-walk.md)
-now observes players and performs bounded yield/inspected avoidance. Automatic
-replan consumption remains open.
+now observes players and performs bounded yield/inspected avoidance. The
+[bounded replan report](../reports/p3-04-bounded-replan.md) covers one automatic
+retry with a one-second directed-edge exclusion and a carried attempt budget.
+Both implementation slices have offline evidence; live acceptance is post-Finish.
 
 The [per-player host seam](../reports/p3-04-player-host.md) now isolates entity,
 join, message decoding and dispatch with two-client synthetic tests. The
@@ -177,7 +179,7 @@ synthetic navigation passes; live acceptance remains post-Finish.
 - **Interfaces:** blocker value ID/class, expiring portal facts, stable actor
   priority; adapter-only generation-validated PlayerId-to-entity resolution.
 - **Implementation outline / commit slices:**
-  - [ ] Add reactive clearance-based side/yield, stable ID tie-break, expiry and
+  - [x] Add reactive clearance-based side/yield, stable ID tie-break, expiry and
     door/obstacle invalidation; no trajectory prediction.
   - [x] Before two-AstraBot acceptance, replace active-primary assumptions with
     per-player entity/join/dispatch validation in a separate narrow commit.

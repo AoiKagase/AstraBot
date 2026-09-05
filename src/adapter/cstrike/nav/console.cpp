@@ -114,6 +114,7 @@ void NavConsole::printUpdate(const nav::runtime::SessionUpdate& update) noexcept
     }
 }
 void NavConsole::invalidateCurrent(nav::runtime::SessionReason reason) noexcept {
+    current_->replan_={};
     clearPending();
     stopMotion();
     if(current_->session_) {
@@ -212,7 +213,7 @@ void NavConsole::observe(metamod::LifecycleCoordinator& owner) noexcept {
     if(inRequest_) return;
     if(current_->session_ && current_->session_->executable()) {
         printUpdate(current_->session_->observe(snapshot(owner)));
-        if(!current_->session_->executable()) stopMotion();
+        if(!current_->session_->executable()) { current_->replan_={}; stopMotion(); }
     }
 }
 void NavConsole::execute(NavCommand command,metamod::LifecycleCoordinator& owner) noexcept {
@@ -249,10 +250,11 @@ void NavConsole::execute(NavCommand command,metamod::LifecycleCoordinator& owner
     if(command==NavCommand::Status) {
         observe(owner);
         if(current_->session_) debug::printNavTrace(current_->session_->trace(),&sink,this); else line("nav state=Idle");
-        printMotion();
+        printMotion(); printReplan();
         return;
     }
     if(command==NavCommand::Cancel) {
+        current_->replan_={};
         stopMotion();
         if(current_->session_) printUpdate(current_->session_->cancel()); else line("nav state=Idle"); return;
     }
@@ -266,15 +268,20 @@ void NavConsole::execute(NavCommand command,metamod::LifecycleCoordinator& owner
     if(!current_->session_ || current_->session_->trace().actor!=s.actor || current_->session_->trace().agent!=s.agent || current_->session_->trace().map!=s.map)
         current_->session_.emplace(s.agent,s.actor,s.map);
     stopMotion();
+    current_->replan_={}; current_->navigationTimeUs_=0; current_->navigationTimeTick_=s.tick;
+    nav::runtime::RouteOptions options; options.limits={100000,256*mib};
+    options.groundNavTolerance=18;
+    requestRoute(s,*goal,owner,options);
+}
+void NavConsole::requestRoute(const nav::runtime::MovementSnapshot& s,nav::model::NavAreaId goal,
+    metamod::LifecycleCoordinator& owner,const nav::runtime::RouteOptions& options) noexcept {
     queryingEntity_=owner.entityFor(current_->actor);
     queryingPlayers_=&owner.registry();
     queryingOwner_=&owner;
-    nav::runtime::RouteOptions options; options.limits={100000,256*mib};
-    options.groundNavTolerance=18; // Observed hull support may straddle one ordinary stair riser.
     auto navigation=navigation_;
     if(!navigation.graph) navigation.map=s.map;
     inRequest_=true;
-    auto update=current_->session_->request(s,*goal,navigation,*this,options);
+    auto update=current_->session_->request(s,goal,navigation,*this,options);
     inRequest_=false;
     queryingEntity_=nullptr; queryingPlayers_=nullptr; queryingOwner_=nullptr;
     if(deferredInvalidation_) {
@@ -289,6 +296,35 @@ void NavConsole::execute(NavCommand command,metamod::LifecycleCoordinator& owner
     }
     printUpdate(update);
     if(current_->session_ && current_->session_->executable()) startMotion(s);
+}
+void NavConsole::printReplan() noexcept {
+    char text[512]{};
+    const auto fact=current_->replan_.snapshot(navigation_.map,current_->navigationTimeUs_);
+    const auto& edge=fact.blocked;
+    std::snprintf(text,sizeof(text),"nav replan_actor=%u:%u state=%u attempts=%u max_attempts=%u fact_lifetime_us=%llu reason=%s edge=%u:%u direction=%u link=%llu:%llu:%llu",
+        unsigned(current_->actor.slot),unsigned(current_->actor.generation.value),unsigned(current_->replan_.state()),
+        current_->replan_.attempts(),nav::runtime::ReplanAttempt::maxAttempts,
+        static_cast<unsigned long long>(nav::runtime::ReplanAttempt::factLifetimeUs),
+        current_->replan_.state()==nav::runtime::ReplanState::Idle ? "None":"DynamicObstacle",
+        edge ? edge->source.value:0U,edge ? edge->target.value:0U,edge ? unsigned(edge->direction):0U,
+        static_cast<unsigned long long>(edge && edge->external ? edge->external->sourceId:0),
+        static_cast<unsigned long long>(edge && edge->external ? edge->external->generation:0),
+        static_cast<unsigned long long>(edge && edge->external ? edge->external->linkId:0));
+    line(text);
+}
+bool NavConsole::runReplan(metamod::LifecycleCoordinator& owner) noexcept {
+    if(current_->replan_.state()!=nav::runtime::ReplanState::Pending) return false;
+    const auto s=snapshot(owner);
+    if(!s.tick.isAfter(current_->motionTrace_.decision.tick)) return true;
+    const auto policy=current_->replan_.consume(current_->motionTrace_.decision.binding,s.tick,current_->navigationTimeUs_);
+    printReplan();
+    if(!policy || !current_->session_ || !current_->session_->executable()) return true;
+    const auto goal=current_->session_->trace().goal;
+    stopMotion();
+    nav::runtime::RouteOptions options; options.limits={100000,256*mib};
+    options.groundNavTolerance=18; options.policy=policy->policy();
+    requestRoute(s,goal,owner,options);
+    return true;
 }
 nav::runtime::WorldQueryResult NavConsole::query(const nav::runtime::QueryRequest& request) {
     const NavPlayerResolver resolver{queryingOwner_,[](const void* context,edict_t* entity) noexcept {

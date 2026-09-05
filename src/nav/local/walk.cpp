@@ -389,6 +389,9 @@ WalkDecision Walk::update(const runtime::MovementSnapshot& s, const query::NavSp
                 if(!blocker_) blocker_.emplace(out.binding,limits_.blocker);
                 const auto d=blocker_->update({out.binding,q.stamp,r,nowUs});
                 out.blockerAction=d.action; out.blockerReason=d.reason; out.blocker=blocker_->fact(nowUs);
+                // Timeout retires the wait's cached fact. A current, stamped
+                // observation can still justify one expiring route exclusion.
+                if(d.reason==BlockerReason::TimedOut && dynamic) out.blocker=r.blocker;
                 if(d.action==BlockerAction::Replan || d.action==BlockerAction::Aborted)
                     return finish(out,WalkState::Failed,WalkReason::DynamicBlocked);
                 if(d.action!=BlockerAction::InspectAvoidance) return out;

@@ -439,6 +439,17 @@ Metamod globals and engine globals stay wholly inside `src/adapter`.
 Doors/player facts are short-lived overlays, not mutations of the mesh.
 No new World Model, Experience database or public plugin registry is required.
 
+The P3-04 host consumes a dynamic-blocker timeout only with a fresh stamped
+observation and a selected directed edge. It queues one automatic replan for a
+later tick, excluding that edge for one second through a borrowed pure cost
+policy. Static identity uses source/target/direction; external edges retain
+source/generation/link/direction identity. Ordinary distance and external-link
+costs remain intact. Each actor's explicit goal has at most one automatic retry,
+carried across route replacement; failed/expired requests do not self-retry.
+Cancellation and actor/map invalidation clear pending facts. The attempt and
+fact-lifetime limits and DynamicObstacle reason are printed in diagnostics.
+See [bounded replan evidence](reports/p3-04-bounded-replan.md).
+
 ### Traversal and primitive lifecycle
 
 NavMesh describes connectivity. Traversal describes how a selected directed

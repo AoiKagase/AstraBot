@@ -13,7 +13,8 @@ inline astrabot::nav::runtime::HullObservation sweep(int mode,astrabot::nav::mod
         if(b.y>52) { h.fraction=(52-a.y)/(b.y-a.y); h.normal={0,-1,0}; }
         if(b.y<48) { h.fraction=(48-a.y)/(b.y-a.y); h.normal={0,1,0}; }
     } else {
-        const float low[]{74,mode==2 ? -100.0f:28.0f},high[]{112,mode==2 ? 200.0f:72.0f};
+        const float low[]{mode==4 ? 90.0f:74.0f,mode==2 || mode==4 ? -100.0f:28.0f},
+            high[]{112,mode==2 ? 200.0f:mode==4 ? 90.0f:72.0f};
         const float p[]{a.x,a.y},d[]{b.x-a.x,b.y-a.y};
         double enter=0,leave=1; int axis=-1; float normal=0; bool misses=false;
         for(int i=0;i<2;++i) {

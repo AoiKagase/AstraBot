@@ -260,6 +260,11 @@ void NavConsole::afterDispatch(const metamod::MovementResult& result,core::TickI
 void NavConsole::moveFrame(metamod::LifecycleCoordinator& owner) noexcept {
     observe(owner);
     if(inRequest_ || !movement_) return;
+    if(owner.registry().currentTick().isAfter(current_->navigationTimeTick_)) {
+        current_->navigationTimeTick_=owner.registry().currentTick();
+        current_->navigationTimeUs_=add(current_->navigationTimeUs_,movement_->frameDeltaUs());
+    }
+    if(runReplan(owner)) return;
     if(current_->neutralBinding_) {
         const auto s=snapshot(owner);
         if(!ready(s) || s.actor!=current_->neutralBinding_->actor || s.agent!=current_->neutralBinding_->agent || s.map!=current_->neutralBinding_->map) {
@@ -289,6 +294,19 @@ void NavConsole::moveFrame(metamod::LifecycleCoordinator& owner) noexcept {
         current_->segment_=decision.target && s.position ? std::optional<Segment>{{*s.position,decision.target->origin}}:std::nullopt;
         current_->intentWallAgeUs_=0;
         recordMotion(MotionEvent::Decision);
+        if(decision.terminalEvent && decision.reason==nav::local::WalkReason::DynamicBlocked &&
+           decision.blockerAction==nav::local::BlockerAction::Replan &&
+           decision.blockerReason==nav::local::BlockerReason::TimedOut && decision.blocker &&
+           decision.blocker->id && current_->motionTrace_.selectedEdge) {
+            const auto& blocker=*decision.blocker;
+            const bool player=blocker.kind==nav::runtime::BlockerKind::Player ||
+                blocker.kind==nav::runtime::BlockerKind::Teammate || blocker.kind==nav::runtime::BlockerKind::Enemy;
+            if((player && blocker.player && blocker.player->isValid() && !blocker.player->sameSlot(s.actor)) ||
+               (blocker.kind==nav::runtime::BlockerKind::Other && !blocker.player)) {
+                (void)current_->replan_.schedule(decision.binding,*current_->motionTrace_.selectedEdge,s.tick,current_->navigationTimeUs_);
+                printReplan();
+            }
+        }
         if(!current_->pump_->publish(decision.binding,s.tick,decision.intent)) return;
     }
     const auto output=current_->pump_->take();

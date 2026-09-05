@@ -2,6 +2,7 @@
 #pragma once
 #include "adapter/metamod/plugin_entry.hpp"
 #include "nav/runtime/route_session.hpp"
+#include "nav/runtime/replan.hpp"
 #include "nav/query/spatial_index.hpp"
 #include "nav/local/walk.hpp"
 #include "nav/local/intent_pump.hpp"
@@ -49,6 +50,9 @@ public:
         std::shared_ptr<const nav::model::NavMeshSnapshot>) noexcept;
     const nav::runtime::DecisionTrace* trace() const noexcept { return current_->session_ ? &current_->session_->trace():nullptr; }
     const nav::runtime::DecisionTrace* trace(core::PlayerId) const noexcept;
+    const nav::runtime::ReplanAttempt* replan(core::PlayerId player) const noexcept {
+        const auto* actor=findActor(player); return actor ? &actor->replan_:nullptr;
+    }
     const MotionTrace& motionTrace() const noexcept { return current_->motionTrace_; }
     const MotionTrace* motionTrace(core::PlayerId) const noexcept;
     static constexpr std::size_t motionHistoryLimit=128;
@@ -70,6 +74,10 @@ private:
     void clearPending() noexcept;
     void recordMotion(MotionEvent, MotionReason=MotionReason::None) noexcept;
     void printMotion() noexcept;
+    void printReplan() noexcept;
+    bool runReplan(metamod::LifecycleCoordinator&) noexcept;
+    void requestRoute(const nav::runtime::MovementSnapshot&,nav::model::NavAreaId,
+        metamod::LifecycleCoordinator&,const nav::runtime::RouteOptions&) noexcept;
     void invalidateCurrent(nav::runtime::SessionReason) noexcept;
     bool applyDeferredInvalidation() noexcept;
     bool selectActor(core::PlayerId) noexcept;
@@ -97,6 +105,9 @@ private:
     core::TickId guardTick_{};
     std::uint32_t guardQueries_{};
     std::uint64_t intentWallAgeUs_{};
+    nav::runtime::ReplanAttempt replan_{};
+    std::uint64_t navigationTimeUs_{};
+    core::TickId navigationTimeTick_{};
     MotionTrace motionTrace_{};
     std::array<MotionTrace,motionHistoryLimit> motionHistory_{};
     std::size_t motionNext_{}, motionCount_{};
