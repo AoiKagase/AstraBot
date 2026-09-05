@@ -80,6 +80,21 @@ enum class NavField : std::uint8_t {
     RouteCost,
     RouteHeuristic,
     RouteBytes,
+    LinkCount,
+    LinkWorkingBytes,
+    LinkFingerprint,
+    LinkSourceId,
+    LinkGeneration,
+    LinkId,
+    LinkFrom,
+    LinkTo,
+    LinkTraversal,
+    LinkDirection,
+    LinkEntry,
+    LinkExit,
+    LinkCost,
+    LinkGenerationConflict,
+    LinkConflict,
 };
 
 struct NavError final {

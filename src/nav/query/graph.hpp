@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 #pragma once
 #include "nav/diagnostics/error.hpp"
+#include "nav/enrichment/traversal_link.hpp"
 #include "nav/model/mesh_snapshot.hpp"
 #include "nav/query/geometry.hpp"
 #include <memory>
@@ -14,12 +15,21 @@ struct NavDirectedEdge {
     model::NavAreaId source{}, target{};
     std::uint8_t direction{0};
     model::NavTraversalKind traversal{model::NavTraversalKind::Walk};
+    // Owned provenance; cardinal direction is meaningful only when absent.
+    std::optional<enrichment::NavTraversalLink> external{};
 };
 class NavGraph final {
   public:
     static diagnostics::ReadResult<std::shared_ptr<const NavGraph>>
     build(std::shared_ptr<const model::NavMeshSnapshot> snapshot,
           const NavGraphLimits &limits) noexcept;
+    // Caller must bind expectedFingerprint to snapshot. No hash computation.
+    static diagnostics::ReadResult<std::shared_ptr<const NavGraph>>
+    compose(std::shared_ptr<const model::NavMeshSnapshot> snapshot,
+            const enrichment::NavMapFingerprint &expectedFingerprint,
+            const enrichment::NavTraversalLinkSet &links,
+            const NavGraphLimits &limits,
+            const enrichment::NavEnrichmentLimits &enrichmentLimits) noexcept;
     std::size_t areaCount() const noexcept { return vertices_.size(); }
     std::size_t edgeCount() const noexcept { return edges_.size(); }
     std::size_t logicalBytes() const noexcept { return logicalBytes_; }
@@ -35,6 +45,12 @@ class NavGraph final {
     std::size_t targetIndex(std::size_t edgeIndex) const noexcept { return edges_[edgeIndex].target; }
 
   private:
+    static diagnostics::ReadResult<std::shared_ptr<const NavGraph>>
+    buildImpl(std::shared_ptr<const model::NavMeshSnapshot> snapshot,
+              const NavGraphLimits &limits,
+              const enrichment::NavMapFingerprint *expected,
+              const enrichment::NavTraversalLinkSet *links,
+              const enrichment::NavEnrichmentLimits &enrichmentLimits) noexcept;
     NavGraph() noexcept = default;
     NavGraph(const NavGraph &) = delete;
     NavGraph &operator=(const NavGraph &) = delete;

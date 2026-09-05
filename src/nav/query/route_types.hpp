@@ -18,6 +18,8 @@ struct NavHeuristicContext {
     double geometricDistance;
 };
 struct NavRoutePolicy {
+    // A custom cost replaces the entire standard cost, including any external
+    // link additionalCost. Link metadata is available through context.edge.
     // Callbacks must be pure. A custom cost defaults to h=0; an explicit
     // heuristic must be admissible, finite, nonnegative and zero at the goal.
     // Inconsistent admissible heuristics are supported by reopening vertices.

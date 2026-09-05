@@ -67,3 +67,24 @@ Releasing the index leaves the graph usable; releasing the graph destroys the
 snapshot while the returned route retains its own corridor/edge/cost evidence.
 Compile-time assertions enforce const graph publication and area/edge access.
 No public point-search API, mutable snapshot or upstream fixture is introduced.
+
+# P2-07 traversal enrichment fixtures
+
+enrichment_tests.cpp uses route_fixture.hpp to encode independently authored v1
+areas in wire order 2,1,3. All have XY extents (0,0)-(2,2), at flat Z=10,0,20.
+There are no serialized ladders: external links are ordinary test-owned C++
+values, with entry/exit (1,1,0)/(1,1,10), source/generation=1 and distinct IDs.
+The synthetic fingerprint is byte 0x42 followed by 31 zero bytes; it is not
+claimed to be the hash of a real BSP. No upstream source, map or hash is used.
+
+Hand-derived expected costs: centers distance10, upward extra2 => total12;
+reverse extra5 => total15; two upward links => total24. Parallel links preserve
+IDs, zero-extra static ties select the static connection first, and custom
+components (1,3,4,5) total13 without implicit extra addition. All point axes,
+identity/payload fields, wrong fingerprints, mixed generations and ordered
+multiple diagnostics are exercised. Identity-conflict equality treats signed
+zero numerically. Two synchronized threads each compare 100 complete results
+including link values, component costs and metrics against a serial result.
+Test-only thread-local allocation injection sweeps six composition allocation
+sites and four route sites (complete and opt-in partial). Prior graphs/routes
+remain unchanged and all failures lack a published value.

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 #include "nav/query/graph.hpp"
 #include "nav/query/detail/route_budget.hpp"
+#include "nav/enrichment/detail/validation.hpp"
 #include <algorithm>
 #include <limits>
 #include <new>
@@ -21,6 +22,24 @@ std::optional<std::size_t> NavGraph::find(model::NavAreaId id) const noexcept {
 diagnostics::ReadResult<std::shared_ptr<const NavGraph>>
 NavGraph::build(std::shared_ptr<const model::NavMeshSnapshot> snapshot,
                 const NavGraphLimits &limits) noexcept {
+    return buildImpl(std::move(snapshot), limits, nullptr, nullptr, {});
+}
+
+diagnostics::ReadResult<std::shared_ptr<const NavGraph>>
+NavGraph::compose(std::shared_ptr<const model::NavMeshSnapshot> snapshot,
+                  const enrichment::NavMapFingerprint &expected,
+                  const enrichment::NavTraversalLinkSet &links,
+                  const NavGraphLimits &limits,
+                  const enrichment::NavEnrichmentLimits &enrichmentLimits) noexcept {
+    return buildImpl(std::move(snapshot), limits, &expected, &links, enrichmentLimits);
+}
+
+diagnostics::ReadResult<std::shared_ptr<const NavGraph>>
+NavGraph::buildImpl(std::shared_ptr<const model::NavMeshSnapshot> snapshot,
+                    const NavGraphLimits &limits,
+                    const enrichment::NavMapFingerprint *expected,
+                    const enrichment::NavTraversalLinkSet *links,
+                    const enrichment::NavEnrichmentLimits &enrichmentLimits) noexcept {
     using Result = diagnostics::ReadResult<std::shared_ptr<const NavGraph>>;
     using K = diagnostics::NavErrorKind;
     using F = diagnostics::NavField;
@@ -44,6 +63,15 @@ NavGraph::build(std::shared_ptr<const model::NavMeshSnapshot> snapshot,
             }
         }
     }
+    if (links) {
+        auto e = enrichment::detail::workingBudget(areaCount, links->links.size(), enrichmentLimits);
+        if (!e.isNone()) return Result::failure(e);
+        e = detail::charge(edgeCount, links->links.size(), 1, limits.maxEdges);
+        if (!e.isNone()) {
+            e.field = F::ConnectionCount;
+            return Result::failure(e);
+        }
+    }
     // Preflight the complete logical total before any allocation. Arithmetic
     // overflow takes precedence over the final byte cap.
     std::size_t bytes = sizeof(NavGraph);
@@ -56,6 +84,10 @@ NavGraph::build(std::shared_ptr<const model::NavMeshSnapshot> snapshot,
     if (bytes > limits.maxGraphBytes)
         return Result::failure(detail::graphError(K::CountLimitExceeded));
     try {
+        if (links) {
+            error = enrichment::detail::validate(*snapshot, *expected, *links);
+            if (!error.isNone()) return Result::failure(error);
+        }
         std::shared_ptr<NavGraph> graph(new NavGraph);
         graph->snapshot_ = std::move(snapshot);
         graph->logicalBytes_ = bytes;
@@ -77,7 +109,6 @@ NavGraph::build(std::shared_ptr<const model::NavMeshSnapshot> snapshot,
         graph->edges_.reserve(edgeCount);
         for (auto &vertex : graph->vertices_) {
             const auto &area = graph->snapshot_->areas()[vertex.snapshotIndex];
-            vertex.begin = graph->edges_.size();
             for (std::uint8_t direction = 0; direction < 4; ++direction) {
                 for (const auto &connection : area.connections[direction]) {
                     const auto target = graph->find(connection.target);
@@ -88,12 +119,28 @@ NavGraph::build(std::shared_ptr<const model::NavMeshSnapshot> snapshot,
                                              connection.traversal}, *target});
                 }
             }
-            vertex.end = graph->edges_.size();
-            std::sort(graph->edges_.begin() + static_cast<std::ptrdiff_t>(vertex.begin),
-                      graph->edges_.end(), [](const Edge &a, const Edge &b) {
-                          return std::tie(a.selected.direction, a.selected.target, a.selected.traversal) <
-                                 std::tie(b.selected.direction, b.selected.target, b.selected.traversal);
-                      });
+        }
+        if (links) {
+            for (const auto &link : links->links) {
+                const auto target = graph->find(link.to); // validated above
+                graph->edges_.push_back({{link.from, link.to, 0, link.traversal, link}, *target});
+            }
+        }
+        std::sort(graph->edges_.begin(), graph->edges_.end(), [](const Edge &a, const Edge &b) {
+            const auto &x = a.selected; const auto &y = b.selected;
+            if (x.source != y.source) return x.source < y.source;
+            if (x.external.has_value() != y.external.has_value()) return !x.external;
+            if (x.external) return enrichment::detail::identity(*x.external) <
+                                   enrichment::detail::identity(*y.external);
+            return std::tie(x.direction, x.target, x.traversal) <
+                   std::tie(y.direction, y.target, y.traversal);
+        });
+        std::size_t cursor = 0;
+        for (auto &vertex : graph->vertices_) {
+            vertex.begin = cursor;
+            const auto id = graph->snapshot_->areas()[vertex.snapshotIndex].id;
+            while (cursor < graph->edges_.size() && graph->edges_[cursor].selected.source == id) ++cursor;
+            vertex.end = cursor;
         }
         return Result::success(std::move(graph));
     } catch (const std::bad_alloc &) {

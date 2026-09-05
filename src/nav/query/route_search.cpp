@@ -202,7 +202,8 @@ NavRouteSearch::search(const NavGraph &graph, const NavRouteRequest &request,
                 activeField = F::RouteCost;
                 const auto decision = policy.cost
                     ? policy.cost({edge, graph.area(vertex), graph.area(next), geometric}, policy.context)
-                    : NavCostDecision{false, {geometric, 0, 0, 0}};
+                    : NavCostDecision{false, {geometric,
+                        edge.external ? edge.external->additionalCost : 0, 0, 0}};
                 if (decision.blocked)
                     continue;
                 double total = 0;

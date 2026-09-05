@@ -124,6 +124,12 @@ cost policy and route result. Unknown traversal kinds must fail closed.
 
 ### P2-07 — Traversal enrichment and synthetic ladder route
 
+Implementation evidence and API contract:
+`docs/superpowers/specs/2026-09-05-p207-traversal-enrichment-design.md`.
+Caller-supplied BSP SHA-256 equality, source-generation isolation, immutable
+composition and selected-link evidence are covered by the dedicated enrichment
+test target. Live discovery/movement remain out of scope.
+
 Keep enrichment separate from file-derived cardinal connections. Validate
 `isKnownTraversalKind` when accepting supplied links; reject unsupported kinds
 without publishing a partial graph. Do not cast raw area attributes or approach
