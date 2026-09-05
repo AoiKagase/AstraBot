@@ -54,6 +54,10 @@ bool hasInternalNul(ByteView bytes) noexcept {
 diagnostics::ReadResult<NavFileHeader> NavFileReader::readHeader(
     ByteView bytes,
     const NavReadLimits& limits) noexcept {
+    return readTracked(bytes,limits,nullptr);
+}
+diagnostics::ReadResult<NavFileHeader> NavFileReader::readTracked(
+    ByteView bytes, const NavReadLimits& limits, detail::DecodeContext* context) noexcept {
     NavError allocationContext = error(
         NavErrorKind::AllocationFailure,
         0U,
@@ -61,7 +65,7 @@ diagnostics::ReadResult<NavFileHeader> NavFileReader::readHeader(
         NavField::None);
 
     try {
-        ByteReader reader(bytes);
+        ByteReader reader(bytes,context);
         NavFileHeader header{};
 
         const std::size_t magicOffset = reader.offset();
@@ -154,7 +158,7 @@ diagnostics::ReadResult<NavFileHeader> NavFileReader::readHeader(
                 if (totalPlaceBytes > limits.maxTotalPlaceBytes ||
                     *placeLength.value > limits.maxTotalPlaceBytes - totalPlaceBytes) {
                     return ReadResult<NavFileHeader>::failure(error(
-                        NavErrorKind::AllocationFailure,
+                        context ? NavErrorKind::CountLimitExceeded : NavErrorKind::AllocationFailure,
                         placeLengthOffset,
                         NavRecord::PlaceDictionary,
                         NavField::PlaceText));

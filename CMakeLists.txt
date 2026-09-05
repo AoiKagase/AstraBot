@@ -73,6 +73,9 @@ set_target_properties(astrabot_core PROPERTIES
 astrabot_enable_warnings(astrabot_core)
 
 add_library(astrabot_nav STATIC
+    src/nav/io/decode_context.cpp
+    src/nav/io/mesh_loader.cpp
+    src/nav/model/mesh_validator.cpp
     src/nav/model/value_types.cpp
     src/nav/io/byte_reader.cpp
     src/nav/io/nav_reader.cpp
@@ -80,6 +83,12 @@ add_library(astrabot_nav STATIC
 )
 
 target_compile_features(astrabot_nav PUBLIC cxx_std_17)
+if(MSVC)
+    # Debug STL proxy allocation occurs inside noexcept vector constructors/moves.
+    # Disable that instrumentation consistently across Nav's public STL ABI so
+    # allocation failures can reach the loader's typed diagnostics.
+    target_compile_definitions(astrabot_nav PUBLIC _ITERATOR_DEBUG_LEVEL=0)
+endif()
 target_include_directories(astrabot_nav
     PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/src
@@ -205,6 +214,10 @@ endif()
 
 if(ASTRABOT_BUILD_TESTS)
     enable_testing()
+    add_executable(astrabot_nav_mesh_tests tests/nav/mesh_loader_tests.cpp)
+    target_link_libraries(astrabot_nav_mesh_tests PRIVATE astrabot_nav)
+    astrabot_enable_warnings(astrabot_nav_mesh_tests)
+    add_test(NAME astrabot.nav.mesh COMMAND astrabot_nav_mesh_tests)
 
     add_executable(astrabot_portable_contract_tests
         tests/portable_contracts.cpp

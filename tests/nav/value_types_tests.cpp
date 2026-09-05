@@ -6,6 +6,7 @@
 
 #include <cassert>
 #include <limits>
+#include <memory>
 
 namespace {
 
@@ -79,6 +80,9 @@ void testReadResultInvariants() {
 } // namespace
 
 int main() {
+    auto owned = astrabot::nav::diagnostics::ReadResult<std::unique_ptr<int>>::success(
+        std::make_unique<int>(42));
+    assert(owned && **owned.value == 42);
     testNavAreaIdValues();
     testFiniteGeometry();
     testReadResultInvariants();

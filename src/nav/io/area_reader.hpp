@@ -40,6 +40,11 @@ public:
         model::NavVersion version,
         std::uint32_t areaCount,
         const NavAreaReadLimits& limits) noexcept;
+private:
+    friend class NavMeshLoader;
+    static diagnostics::ReadResult<NavAreaBlock> readTracked(
+        ByteView bytes, model::NavVersion version, std::uint32_t areaCount,
+        const NavAreaReadLimits& limits, detail::DecodeContext* context) noexcept;
 };
 
 } // namespace astrabot::nav::io

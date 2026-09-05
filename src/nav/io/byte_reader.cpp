@@ -2,6 +2,7 @@
 // Copyright (c) 2026 AstraBot contributors.
 
 #include "nav/io/byte_reader.hpp"
+#include "nav/io/decode_context.hpp"
 
 #include <cmath>
 #include <cstring>
@@ -13,6 +14,14 @@ using diagnostics::NavError;
 using diagnostics::NavErrorKind;
 
 ByteReader::ByteReader(ByteView bytes) noexcept : bytes_(bytes) {}
+ByteReader::ByteReader(ByteView bytes, detail::DecodeContext* context) noexcept
+    : bytes_(bytes), context_(context) {}
+NavError ByteReader::observe(NavRecord record, NavField field, std::uint32_t value) noexcept {
+    if (!context_) return {};
+    auto result=context_->observe(offset_,record,field,value);
+    if (!result.isNone()) result.offset=static_cast<std::uint64_t>(offset_);
+    return result;
+}
 
 ReadResult<ByteView> ByteReader::availableBytes(
     std::size_t length,
@@ -62,6 +71,8 @@ ReadResult<std::uint8_t> ByteReader::readU8(
     }
 
     const std::uint8_t value = bytes.value->data[0];
+    const auto error = observe(record,field,value);
+    if (!error.isNone()) return ReadResult<std::uint8_t>::failure(error);
     consume(1U);
     return ReadResult<std::uint8_t>::success(value);
 }
@@ -88,6 +99,8 @@ ReadResult<std::uint16_t> ByteReader::readU16LE(
     }
 
     const std::uint16_t value = decodeU16LE(*bytes.value);
+    const auto error = observe(record,field,value);
+    if (!error.isNone()) return ReadResult<std::uint16_t>::failure(error);
     consume(2U);
     return ReadResult<std::uint16_t>::success(value);
 }
@@ -101,6 +114,8 @@ ReadResult<std::uint32_t> ByteReader::readU32LE(
     }
 
     const std::uint32_t value = decodeU32LE(*bytes.value);
+    const auto error = observe(record,field,value);
+    if (!error.isNone()) return ReadResult<std::uint32_t>::failure(error);
     consume(4U);
     return ReadResult<std::uint32_t>::success(value);
 }
@@ -121,6 +136,8 @@ ReadResult<float> ByteReader::readF32LE(
             NavError{NavErrorKind::NonFiniteFloat, static_cast<std::uint64_t>(offset_), record, field});
     }
 
+    const auto error = observe(record,field,raw);
+    if (!error.isNone()) return ReadResult<float>::failure(error);
     consume(4U);
     return ReadResult<float>::success(value);
 }

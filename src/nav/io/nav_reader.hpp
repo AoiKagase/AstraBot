@@ -22,6 +22,10 @@ public:
     static diagnostics::ReadResult<model::NavFileHeader> readHeader(
         ByteView bytes,
         const NavReadLimits& limits) noexcept;
+private:
+    friend class NavMeshLoader;
+    static diagnostics::ReadResult<model::NavFileHeader> readTracked(
+        ByteView bytes, const NavReadLimits& limits, detail::DecodeContext* context) noexcept;
 };
 
 } // namespace astrabot::nav::io

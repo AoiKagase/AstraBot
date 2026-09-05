@@ -5,6 +5,8 @@
 
 #include <cstdint>
 #include <optional>
+#include <utility>
+#include <type_traits>
 
 namespace astrabot::nav::diagnostics {
 
@@ -94,8 +96,8 @@ struct ReadResult final {
     std::optional<T> value{};
     NavError error{};
 
-    static ReadResult success(T result) noexcept {
-        return {std::optional<T>{result}, NavError{}};
+    static ReadResult success(T result) noexcept(std::is_nothrow_move_constructible_v<T>) {
+        return {std::optional<T>{std::move(result)}, NavError{}};
     }
 
     static ReadResult failure(NavError reason) noexcept {

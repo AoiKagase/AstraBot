@@ -20,6 +20,11 @@ ReadResult<NavAreaBlock> NavAreaReader::read(
     model::NavVersion version,
     std::uint32_t areaCount,
     const NavAreaReadLimits& limits) noexcept {
+    return readTracked(bytes,version,areaCount,limits,nullptr);
+}
+ReadResult<NavAreaBlock> NavAreaReader::readTracked(
+    ByteView bytes, model::NavVersion version, std::uint32_t areaCount,
+    const NavAreaReadLimits& limits, detail::DecodeContext* context) noexcept {
     if (areaCount == 0U) {
         return ReadResult<NavAreaBlock>::failure(
             NavError{NavErrorKind::InvalidValue, 0U, NavRecord::Area, NavField::AreaCount});
@@ -34,7 +39,7 @@ ReadResult<NavAreaBlock> NavAreaReader::read(
     try {
         NavAreaBlock block{};
         block.areas.reserve(areaCount);
-        ByteReader reader(bytes);
+        ByteReader reader(bytes,context);
 
         std::uint64_t totalConnections = 0U;
         std::uint64_t totalHidingSpots = 0U;

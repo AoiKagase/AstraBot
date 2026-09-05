@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <cstdint>
 
+namespace astrabot::nav::detail { struct DecodeContext; }
 namespace astrabot::nav::io {
 
 using diagnostics::NavField;
@@ -49,8 +50,13 @@ public:
         NavField field = NavField::RawBytes) noexcept;
 
 private:
+    friend class NavFileReader;
+    friend class NavAreaReader;
+    ByteReader(ByteView bytes, detail::DecodeContext* context) noexcept;
     ByteView bytes_{};
     std::size_t offset_{0};
+    detail::DecodeContext* context_{nullptr};
+    diagnostics::NavError observe(NavRecord record, NavField field, std::uint32_t value) noexcept;
 
     ReadResult<ByteView> availableBytes(
         std::size_t length,
