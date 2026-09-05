@@ -53,7 +53,10 @@ Windows portable-only 26/26 plus fixture/manifest verification, and Linux
 portable 25/25 passed. Hosted CI for this branch is pending. No real map input
 is modified or added to Git.
 
-## Remaining acceptance
+## Remaining acceptance at this boundary
+
+Host wiring subsequently landed in [the host report](p3-03-walk-host.md).
+The following records what remained when this controller boundary was verified.
 
 The console/adapter still does not drive Walk. Next: wire decisions and motor
 submission after dispatch; cancel queued navigation commands on replacement;

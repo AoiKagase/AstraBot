@@ -127,12 +127,14 @@ Unit/simulation passes never substitute for live observations.
   - [x] Add bounded grounded-area/clearance queries, stacked-floor distinction,
     unsafe-drop rejection and scripted replay values.
     See [ground/clearance evidence](../reports/p3-03-ground-clearance.md).
-  - [ ] Add Walk/motor, 25 Hz decisions plus per-frame commands, later-tick
+  - [x] Add Walk/motor, 25 Hz decisions plus per-frame commands, later-tick
     dispatch and stale-intent stop; implement observability now.
     Motor and intent-pump components are implemented and tested in
     [their report](../reports/p3-03-motor-pump.md). The portable Walk controller
     and scripted arrival simulation are implemented in
-    [Walk evidence](../reports/p3-03-walk-controller.md). Host wiring is still open.
+    [Walk evidence](../reports/p3-03-walk-controller.md). Host wiring and
+    fake-engine arrival/dispatch evidence are in
+    [the host integration report](../reports/p3-03-walk-host.md).
   - [ ] Add ordinary door use/wait, stairs, wall avoidance and narrow-passage
     speed/lateral correction.
 - **Tests:** corridor/same-area supported arrival, ceiling, stairs, door failure,
@@ -309,6 +311,7 @@ remaining rows explicitly recorded. The portable session slice is also implement
 Console goto/status/cancel integration also has offline adapter evidence.
 P3-02 corridor/portals and primitive lifecycle now have Windows/Linux x86 offline
 evidence and are integrated into main. P3-03 bounded grounded-area/clearance
-queries now have offline evidence; next is the existing Walk/motor slice.
+queries and Walk/motor host integration now have offline evidence; next is
+the existing ordinary door/stairs/wall/narrow-passage slice.
 Real compatibility remains
 partial; no new numbering or Finish declaration.

@@ -53,6 +53,8 @@ public:
     void reset() noexcept;
     void resetMap() noexcept;
     void forget(core::PlayerId player) noexcept;
+    bool cancel(core::PlayerId, core::MapGeneration, core::TickId commandTick) noexcept;
+    std::uint64_t frameDeltaUs() const noexcept { return frameDeltaUs_; }
 
     MovementResult submit(
         core::PlayerId player,
@@ -116,7 +118,7 @@ private:
         core::TickId commandTick,
         core::TickId dispatchTick,
         std::uint8_t originalMsec,
-        bool engineCall) noexcept;
+        bool engineCall, std::optional<std::uint64_t> dispatchDelta=std::nullopt) noexcept;
 
     enginefuncs_t* engineFunctions_{nullptr};
     host::PlayerRegistry* registry_{nullptr};

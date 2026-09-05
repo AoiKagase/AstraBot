@@ -42,6 +42,13 @@ void MovementCoordinator::forget(core::PlayerId player) noexcept {
     }
 }
 
+bool MovementCoordinator::cancel(core::PlayerId player, core::MapGeneration map, core::TickId tick) noexcept {
+    if(!player.isValid() || player.slot>host::kMaxClientSlots) return false;
+    auto& pending=pending_[static_cast<std::size_t>(player.slot-1U)];
+    if(!pending || pending->player!=player || pending->mapGeneration!=map || pending->commandTick!=tick) return false;
+    pending.reset(); return true;
+}
+
 MovementResult MovementCoordinator::submit(
     core::PlayerId player,
     core::MapGeneration mapGeneration,
@@ -268,7 +275,8 @@ MovementResult MovementCoordinator::dispatchOne(
             pending.command.msec);
     }
 
-    const std::uint8_t engineMsec = quantizeMsec(frameDeltaUs_);
+    const auto dispatchDelta=frameDeltaUs_; // callbacks may reset the map clock
+    const std::uint8_t engineMsec = quantizeMsec(dispatchDelta);
     const float viewAngles[3]{
         pending.command.view.pitch,
         pending.command.view.yaw,
@@ -290,7 +298,7 @@ MovementResult MovementCoordinator::dispatchOne(
         pending.commandTick,
         dispatchTick,
         pending.command.msec,
-        true);
+        true,dispatchDelta);
     return MovementResult{MovementOutcome::Dispatched, MovementError::None, std::nullopt};
 }
 
@@ -320,7 +328,8 @@ void MovementCoordinator::emit(
     core::TickId commandTick,
     core::TickId dispatchTick,
     std::uint8_t originalMsec,
-    bool engineCall) noexcept {
+    bool engineCall, std::optional<std::uint64_t> dispatchDelta) noexcept {
+    const auto delta=dispatchDelta.value_or(frameDeltaUs_);
     const debug::MovementTrace trace{
         outcome,
         error,
@@ -329,8 +338,8 @@ void MovementCoordinator::emit(
         commandTick,
         dispatchTick,
         originalMsec,
-        frameDeltaUs_,
-        engineCall ? quantizeMsec(frameDeltaUs_) : 0U,
+        delta,
+        engineCall ? quantizeMsec(delta) : 0U,
         engineCall};
     debug::emitMovement(trace, traceSink_);
 }

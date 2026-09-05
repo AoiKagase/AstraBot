@@ -53,6 +53,7 @@ void LifecycleCoordinator::configure(
         &registry_,
         &agents_);
     movement_.configure(engineFunctions, &registry_);
+    navConsole_.bindMovement(&movement_);
 }
 
 void LifecycleCoordinator::reset() noexcept {
@@ -301,13 +302,17 @@ void LifecycleCoordinator::startFrame() noexcept {
         handleJoinAction(completion);
     }
 
-    (void)movement_.dispatchAtFrameEnd(
+    navConsole_.beforeDispatch(*this);
+    const auto navTicket=navConsole_.dispatchTicket();
+    const auto dispatchTick=registry_.currentTick();
+    const auto movementResult=movement_.dispatchAtFrameEnd(
         joinState_.phase(),
         fakeClient_.activePlayer(),
         fakeClient_.activeEntity(),
         registry_.mapGeneration(),
         registry_.currentTick());
-    navConsole_.observe(*this);
+    navConsole_.afterDispatch(movementResult,dispatchTick,navTicket);
+    navConsole_.moveFrame(*this);
 }
 
 MovementResult LifecycleCoordinator::submitCommand(

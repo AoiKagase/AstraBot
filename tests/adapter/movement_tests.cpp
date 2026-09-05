@@ -189,6 +189,18 @@ void testOneCallAndPendingClear() {
     assert(duplicate.registryResult->error == astrabot::host::HostError::DuplicateTick);
     assert(gCalls.size() == 1);
 }
+void testExactPendingCancellation() {
+    Fixture f; f.armAndAdvance(10000);
+    const auto tick=f.registry.currentTick();
+    assert(f.movement.submit(f.player,f.map,tick,f.command()).queued());
+    assert(!f.movement.cancel(f.player,f.map,TickId{tick.value+1}));
+    assert(!f.movement.cancel(f.player,MapGeneration{f.map.value+1},tick));
+    auto reused=f.player; ++reused.generation.value;
+    assert(!f.movement.cancel(reused,f.map,tick));
+    assert(f.movement.cancel(f.player,f.map,tick));
+    assert(!f.movement.cancel(f.player,f.map,tick));
+    assert(f.dispatch().outcome==MovementOutcome::None && gCalls.empty());
+}
 
 void testSubmissionRejectionAndGenerationChecks() {
     Fixture fixture{};
@@ -282,6 +294,7 @@ int main() {
     testMsecQuantizationAndAbiConversion();
     testClockArmAndBoundaryClamp();
     testOneCallAndPendingClear();
+    testExactPendingCancellation();
     testSubmissionRejectionAndGenerationChecks();
     testDispatchGuardsAndCleanup();
     testEngineUnavailableAndTraceUniqueness();

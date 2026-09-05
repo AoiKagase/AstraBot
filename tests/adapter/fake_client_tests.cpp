@@ -2,6 +2,8 @@
 // Copyright (c) 2026 AstraBot contributors.
 
 #include <fstream>
+#include <cmath>
+#include <chrono>
 #include <iterator>
 #ifdef _MSC_VER
 #include <crtdbg.h>
@@ -27,6 +29,7 @@ std::vector<std::string> gNavArgs;
 std::vector<std::string> gNavOutput;
 bool gGroundMissing=false;
 bool gInvalidateDuringGround=false;
+bool gInvalidateDuringHull=false;
 void captureAddCommand(char* name, void(*callback)()) { gNavCommands[name]=callback; }
 void unexpectedHookRegistration(char*, void(*)()) { std::abort(); }
 int captureArgc() { return static_cast<int>(gNavArgs.size()); }
@@ -52,6 +55,9 @@ void captureNavHull(const float*, const float* end, int ignoreMonsters, int hull
     if(gHullMode==1) result->fAllSolid=1;
     if(gHullMode==2) result->flFraction=0.5f;
     if(gHullMode==3) result->flFraction=2;
+    if(gInvalidateDuringHull)
+        astrabot::adapter::metamod::lifecycleCoordinator().navConsole().invalidate(
+            astrabot::nav::runtime::SessionReason::MapChanged);
 }
 void testNavWorldQueries() {
     using namespace astrabot::nav;
@@ -117,6 +123,17 @@ enginefuncs_t* gEngineHooks = nullptr;
 int gGameDllCommandCalls = 0;
 int gEngineClientCommandCalls = 0;
 int gRunPlayerMoveCalls = 0;
+bool gSimulateNav=false;
+bool gInjectNavDuplicate=false;
+bool gDeactivateDuringMove=false;
+bool gReplaceDuringMove=false;
+std::vector<astrabot::debug::MovementTrace> gNavTransportTraces;
+void navTransportTrace(const astrabot::debug::MovementTrace& t) noexcept { gNavTransportTraces.push_back(t); }
+std::uint64_t gNavClockUs=1000000;
+std::vector<astrabot::core::BotCommand> gNavMoves;
+std::chrono::steady_clock::time_point navNow() noexcept {
+    return std::chrono::steady_clock::time_point(std::chrono::microseconds(gNavClockUs));
+}
 int gLastCommandArgc = 0;
 std::string gLastCommandArgv0;
 std::string gLastCommandArgv1;
@@ -218,6 +235,7 @@ struct Fixture {
         engine.pfnCmd_Argc = &captureArgc;
         engine.pfnCmd_Argv = &captureArgv;
         engine.pfnTraceLine = &captureGround;
+        engine.pfnTraceHull = &captureNavHull;
         dll.pfnClientConnect = &captureClientConnect;
         dll.pfnClientPutInServer = &captureClientPutInServer;
         dll.pfnClientDisconnect = &captureClientDisconnect;
@@ -323,15 +341,29 @@ void captureEngineClientCommand(
 }
 
 void captureRunPlayerMove(
-    edict_t* /* entity */,
-    const float* /* viewAngles */,
-    float /* forwardMove */,
-    float /* sideMove */,
-    float /* upMove */,
-    unsigned short /* buttons */,
-    byte /* impulse */,
-    byte /* msec */) {
+    edict_t* entity, const float* viewAngles, float forwardMove, float sideMove, float upMove,
+    unsigned short buttons, byte impulse, byte msec) {
     ++gRunPlayerMoveCalls;
+    if(gSimulateNav) {
+        auto& owner=astrabot::adapter::metamod::lifecycleCoordinator();
+        assert(owner.registry().currentTick().isAfter(owner.navConsole().motionTrace().commandTick));
+        astrabot::core::BotCommand c{{viewAngles[0],viewAngles[1],viewAngles[2]},
+            {forwardMove,sideMove,upMove},buttons,impulse,msec};
+        gNavMoves.push_back(c); assert(c.validate());
+        assert(buttons==0 && impulse==0 && upMove==0 && entity->v.deadflag==DEAD_NO);
+        const double yaw=double(viewAngles[1])*3.14159265358979323846/180;
+        const double dt=double(msec)/1000;
+        entity->v.origin.x+=static_cast<float>((forwardMove*std::cos(yaw)+sideMove*std::sin(yaw))*dt);
+        entity->v.origin.y+=static_cast<float>((forwardMove*std::sin(yaw)-sideMove*std::cos(yaw))*dt);
+        entity->v.v_angle=Vector(viewAngles[0],viewAngles[1],viewAngles[2]);
+        if(gInjectNavDuplicate) {
+            gInjectNavDuplicate=false;
+            assert(owner.submitCommand(owner.fakeClient().activePlayer(),owner.registry().mapGeneration(),
+                owner.registry().currentTick(),astrabot::core::BotCommand::neutral(1)).queued());
+        }
+        if(gDeactivateDuringMove) { gDeactivateDuringMove=false; owner.serverDeactivate(); }
+        if(gReplaceDuringMove) { gReplaceDuringMove=false; runNav({"astrabot_goto","1"}); }
+    }
 }
 
 void captureHookTables(
@@ -574,6 +606,151 @@ void sendTeamInfo(enginefuncs_t& hooks, int messageId, int slot, const char* tea
     hooks.pfnWriteByte(slot);
     hooks.pfnWriteString(team);
     hooks.pfnMessageEnd();
+}
+
+void navFrame(Fixture& fixture,std::uint64_t us=16000) {
+    gNavClockUs+=us; fixture.engineGlobals.frametime=static_cast<float>(us)/1000000.0f;
+    astrabot::adapter::metamod::lifecycleCoordinator().startFrame();
+}
+void prepareNavWalk(Fixture& fixture,enginefuncs_t& hooks) {
+    activate(fixture);
+    auto& owner=astrabot::adapter::metamod::lifecycleCoordinator();
+    owner.setMovementClockForTest(&navNow); gSimulateNav=true; gNavMoves.clear();
+    owner.setMovementTraceSink(&navTransportTrace); gNavTransportTraces.clear();
+    gGroundMissing=false; gHullMode=0; gInvalidateDuringGround=gInvalidateDuringHull=false;
+    int version=ENGINE_INTERFACE_VERSION; assert(GetEngineFunctions(&hooks,&version)); gEngineHooks=&hooks;
+    assert(owner.fakeClient().create("AstraBot-Walk").succeeded());
+    assert(owner.requestJoin({astrabot::adapter::cstrike::Team::Terrorist,1}).changed);
+    sendVguiMenu(hooks,11,&fixture.entity,2,1); navFrame(fixture);
+    sendVguiMenu(hooks,11,&fixture.entity,26,1); navFrame(fixture);
+    sendTeamInfo(hooks,13,1,"TERRORIST");
+    assert(owner.joinState().phase()==astrabot::adapter::cstrike::JoinPhase::Joined);
+    fixture.entity.v.flags=FL_ONGROUND|FL_FAKECLIENT; fixture.entity.v.deadflag=DEAD_NO;
+    fixture.entity.v.origin=Vector(50,50,36); fixture.entity.v.v_angle=Vector(0,90,0);
+    fixture.entity.v.mins=Vector(-16,-16,-36); fixture.entity.v.maxs=Vector(16,16,36); fixture.entity.v.maxspeed=250;
+    route_test::Area a{1,{{0,0,0},{100,100,0},0,0}}, b{2,{{100,0,0},{200,100,0},0,0}},
+        c{3,{{100,100,0},{200,200,0},0,0}}, d{4,{{200,100,0},{300,200,0},0,0}};
+    a.targets[1]={2}; b.targets[2]={3}; c.targets[1]={4};
+    assert(owner.navConsole().publish(owner.registry().mapGeneration(),route_test::snapshot({a,b,c,d})).isNone());
+}
+void awaitMovingQueue(Fixture& fixture) {
+    auto& nav=astrabot::adapter::metamod::lifecycleCoordinator().navConsole();
+    for(int i=0;i<20;++i) {
+        navFrame(fixture);
+        const auto& t=nav.motionTrace();
+        if(t.event==astrabot::adapter::cstrike::MotionEvent::Queued &&
+           std::hypot(t.command.movement.forward,t.command.movement.side)>0) return;
+    }
+    assert(false && "Walk did not queue movement");
+}
+bool motionReason(astrabot::adapter::cstrike::MotionReason reason) {
+    auto& nav=astrabot::adapter::metamod::lifecycleCoordinator().navConsole();
+    for(std::size_t i=0;i<nav.motionHistoryCount();++i) if(nav.motionHistory(i)->reason==reason) return true;
+    return false;
+}
+void testNavWalkArrival() {
+    using namespace astrabot;
+    for(std::uint64_t us : {8000U,16000U,100000U}) for(const char* goal : {"1","2","3","4"}) {
+        Fixture fixture{}; enginefuncs_t hooks{}; prepareNavWalk(fixture,hooks);
+        auto& owner=adapter::metamod::lifecycleCoordinator(); auto& console=owner.navConsole();
+        runNav({"astrabot_goto",goal}); assert(console.trace()->state==nav::runtime::SessionState::Ready);
+        const auto requestTick=owner.registry().currentTick();
+        const auto sequence=console.motionTrace().sequence;
+        for(int i=0;i<3;++i) runNav({"astrabot_nav_status"});
+        assert(console.motionTrace().sequence==sequence && gNavMoves.empty());
+        bool arrived=false;
+        for(int frame=0;frame<2000;++frame) {
+            navFrame(fixture,us);
+            const auto& t=console.motionTrace();
+            if(t.decision.state==nav::local::WalkState::Failed || t.decision.state==nav::local::WalkState::Aborted) {
+                std::fprintf(stderr,"host Walk failure goal=%s frame_us=%llu reason=%u probe=%u motion=%u\n",goal,
+                    static_cast<unsigned long long>(us),unsigned(t.decision.reason),unsigned(t.decision.probeReason),unsigned(t.reason));
+                assert(false);
+            }
+            assert(t.decision.queries<=9 && t.decision.samples<=4 && console.motionHistoryCount()<=console.motionHistoryLimit);
+            if(t.event==adapter::cstrike::MotionEvent::Dispatched) assert(t.dispatchTick.isAfter(t.commandTick));
+            if(t.decision.state==nav::local::WalkState::Arrived) { arrived=true; break; }
+        }
+        assert(arrived && owner.registry().currentTick().isAfter(requestTick));
+        const auto& position=fixture.entity.v.origin;
+        const float expectedX=goal[0]=='1' ? 50.0f:goal[0]=='4' ? 217.0f:117.0f;
+        const float expectedY=goal[0]<'3' ? 50.0f:117.0f;
+        assert(std::hypot(position.x-expectedX,position.y-expectedY)<=1.01f);
+        assert(console.motionTrace().decision.support && console.motionTrace().decision.support->area.value==unsigned(goal[0]-'0'));
+        navFrame(fixture,us); assert(!gNavMoves.empty() && gNavMoves.back().movement==core::Movement{});
+        const auto count=gNavMoves.size(); navFrame(fixture,us); navFrame(fixture,us); assert(gNavMoves.size()==count);
+        if(goal[0]=='4' && us==8000) assert(console.motionHistoryCount()==console.motionHistoryLimit);
+        gSimulateNav=false; detach();
+    }
+}
+void testNavWalkCancellationAndGuards() {
+    using namespace astrabot;
+    for(int mode=0;mode<15;++mode) {
+        Fixture fixture{}; enginefuncs_t hooks{}; prepareNavWalk(fixture,hooks);
+        auto& owner=adapter::metamod::lifecycleCoordinator(); auto& console=owner.navConsole();
+        runNav({"astrabot_goto","4"}); awaitMovingQueue(fixture);
+        const auto count=gNavMoves.size(); const auto position=fixture.entity.v.origin;
+        if(mode==0) {
+            runNav({"astrabot_nav_cancel"}); navFrame(fixture); assert(gNavMoves.size()==count);
+            navFrame(fixture); assert(gNavMoves.size()==count+1 && gNavMoves.back().movement==core::Movement{});
+            navFrame(fixture); assert(gNavMoves.size()==count+1 && fixture.entity.v.origin.x==position.x);
+        } else if(mode==1) {
+            const auto generation=console.trace()->routeGeneration;
+            runNav({"astrabot_goto","1"}); assert(console.trace()->routeGeneration==generation+1);
+            navFrame(fixture); assert(gNavMoves.size()==count); navFrame(fixture);
+            assert(fixture.entity.v.origin.x==position.x && fixture.entity.v.origin.y==position.y);
+        } else if(mode==2 || mode==3) {
+            navFrame(fixture,mode==2 ? 120001:0); assert(gNavMoves.size()==count);
+            assert(motionReason(adapter::cstrike::MotionReason::StaleCommand));
+        } else if(mode==4) {
+            fixture.entity.v.origin.y+=20; navFrame(fixture); assert(gNavMoves.size()==count);
+            assert(motionReason(adapter::cstrike::MotionReason::Deviation));
+        } else if(mode==5 || mode==6) {
+            if(mode==5) fixture.entity.v.deadflag=DEAD_DEAD; else fixture.entity.v.flags&=~FL_ONGROUND;
+            navFrame(fixture); assert(gNavMoves.size()==count);
+        } else if(mode==7) {
+            fixture.engine.pfnRunPlayerMove=nullptr; navFrame(fixture); assert(gNavMoves.size()==count);
+            assert(motionReason(adapter::cstrike::MotionReason::TransportRejected));
+        } else if(mode==8) {
+            gInvalidateDuringHull=true;
+            for(int i=0;i<6 && console.trace();++i) navFrame(fixture);
+            assert(!console.trace()); gInvalidateDuringHull=false;
+            const auto before=gNavMoves.size(); navFrame(fixture); navFrame(fixture);
+            for(auto i=before;i<gNavMoves.size();++i) assert(gNavMoves[i].movement==core::Movement{});
+        } else if(mode==9) {
+            owner.serverDeactivate(); navFrame(fixture); assert(gNavMoves.size()==count && !console.trace());
+        } else if(mode==10) {
+            owner.clientDisconnect(&fixture.entity); navFrame(fixture); assert(gNavMoves.size()==count && !console.trace());
+        } else if(mode==11) {
+            gInjectNavDuplicate=true; navFrame(fixture);
+            assert(console.motionTrace().event==adapter::cstrike::MotionEvent::Rejected &&
+                console.motionTrace().transportError==adapter::metamod::MovementError::QueueOccupied);
+            navFrame(fixture); assert(gNavMoves.back().movement==core::Movement{});
+        } else if(mode==12) {
+            const auto hulls=gHullCalls; navFrame(fixture,120000);
+            assert(gNavMoves.size()==count+1 && !motionReason(adapter::cstrike::MotionReason::StaleCommand));
+            assert(gHullCalls-hulls<=4 && console.motionTrace().missedDecisions>=1);
+        } else if(mode==13) {
+            gDeactivateDuringMove=true; navFrame(fixture);
+            assert(gNavMoves.size()==count+1 && !console.trace());
+            assert(console.motionTrace().event==adapter::cstrike::MotionEvent::Dispatched);
+            assert(console.motionTrace().dispatchTick.isAfter(console.motionTrace().commandTick));
+            assert(gNavTransportTraces.back().engineMsec==16 && gNavTransportTraces.back().frameDeltaUs==16000);
+            navFrame(fixture); assert(gNavMoves.size()==count+1);
+        } else {
+            const auto generation=console.trace()->routeGeneration;
+            gReplaceDuringMove=true; navFrame(fixture);
+            assert(console.trace()->routeGeneration==generation+1 && console.trace()->goal.value==1);
+            assert(console.motionTrace().decision.binding.routeGeneration==generation+1);
+            assert(console.motionHistoryCount()==1 && console.motionHistory(0)->event==adapter::cstrike::MotionEvent::Dispatched);
+            assert(console.motionHistory(0)->decision.binding.routeGeneration==generation);
+            runNav({"astrabot_nav_status"}); navFrame(fixture); navFrame(fixture);
+            assert(console.motionTrace().decision.state==nav::local::WalkState::Arrived);
+            for(std::size_t i=1;i<console.motionHistoryCount();++i)
+                assert(console.motionHistory(i)->sequence>console.motionHistory(i-1)->sequence);
+        }
+        gSimulateNav=false; detach();
+    }
 }
 
 void testMessageDrivenJoinAndCommandContext() {
@@ -1120,6 +1297,8 @@ int main() {
     testFirstFrameBootstrapAndCleanup();
     testMissingFunctionIsRejectedWithoutEngineCall();
     testMessageDrivenJoinAndCommandContext();
+    testNavWalkArrival();
+    testNavWalkCancellationAndGuards();
     testJoinFailureCleanupAndCommandContextReentry();
     testCounterTerroristPrimaryJoinRequest();
     testJoinTimeoutCleanup();

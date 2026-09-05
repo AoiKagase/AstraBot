@@ -236,6 +236,7 @@ if(ASTRABOT_BUILD_METAMOD)
         src/adapter/metamod/fake_client.cpp
         src/adapter/metamod/plugin_entry.cpp
         src/adapter/cstrike/nav/console.cpp
+        src/adapter/cstrike/nav/motion.cpp
         src/adapter/cstrike/nav/world_queries.cpp
         src/adapter/metamod/lifecycle.cpp
         src/adapter/metamod/movement.cpp
@@ -507,6 +508,7 @@ if(ASTRABOT_BUILD_TESTS)
             src/adapter/metamod/fake_client.cpp
             src/adapter/metamod/plugin_entry.cpp
             src/adapter/cstrike/nav/console.cpp
+            src/adapter/cstrike/nav/motion.cpp
             src/adapter/cstrike/nav/world_queries.cpp
             src/adapter/metamod/lifecycle.cpp
             src/adapter/metamod/movement.cpp
@@ -563,6 +565,7 @@ if(ASTRABOT_BUILD_TESTS)
             src/adapter/cstrike/messages.cpp
             src/adapter/metamod/fake_client.cpp
             src/adapter/cstrike/nav/console.cpp
+            src/adapter/cstrike/nav/motion.cpp
             src/adapter/cstrike/nav/world_queries.cpp
             src/adapter/metamod/lifecycle.cpp
             src/adapter/metamod/movement.cpp

@@ -55,7 +55,9 @@ void NavConsole::printUpdate(const nav::runtime::SessionUpdate& update) noexcept
     }
 }
 void NavConsole::invalidate(nav::runtime::SessionReason reason) noexcept {
+    clearPending();
     if(inRequest_) { deferredInvalidation_=reason; return; }
+    stopMotion();
     if(session_) {
         auto update=session_->cancel();
         for(std::size_t i=0;i<update.count;++i) update.events[i].reason=reason;
@@ -65,9 +67,12 @@ void NavConsole::invalidate(nav::runtime::SessionReason reason) noexcept {
 }
 void NavConsole::reset() noexcept {
     invalidate(nav::runtime::SessionReason::Cancelled); engine_=nullptr; utility_=nullptr; globals_=nullptr;
+    movement_=nullptr; neutralBinding_.reset(); motionTrace_={}; motionCount_=motionNext_=0; motionSequence_=0;
 }
 nav::diagnostics::NavError NavConsole::publish(core::MapGeneration map,
     std::shared_ptr<const nav::model::NavMeshSnapshot> mesh) noexcept {
+    if(inRequest_) { deferredInvalidation_=nav::runtime::SessionReason::GoalReplaced;
+        return {nav::diagnostics::NavErrorKind::InvalidInput}; }
     invalidate(nav::runtime::SessionReason::GoalReplaced);
     if (!map.isValid()) return {nav::diagnostics::NavErrorKind::InvalidInput};
     const auto index=nav::query::NavSpatialIndex::build(mesh,{100000,199999,256*mib});
@@ -122,7 +127,10 @@ nav::runtime::MovementSnapshot NavConsole::snapshot(metamod::LifecycleCoordinato
 }
 void NavConsole::observe(metamod::LifecycleCoordinator& owner) noexcept {
     if(inRequest_) return;
-    if(session_ && session_->executable()) printUpdate(session_->observe(snapshot(owner)));
+    if(session_ && session_->executable()) {
+        printUpdate(session_->observe(snapshot(owner)));
+        if(!session_->executable()) stopMotion();
+    }
 }
 void NavConsole::execute(NavCommand command,metamod::LifecycleCoordinator& owner) noexcept {
     if(inRequest_) return;
@@ -132,9 +140,11 @@ void NavConsole::execute(NavCommand command,metamod::LifecycleCoordinator& owner
     if(command==NavCommand::Status) {
         observe(owner);
         if(session_) debug::printNavTrace(session_->trace(),&sink,this); else line("nav state=Idle");
+        printMotion();
         return;
     }
     if(command==NavCommand::Cancel) {
+        stopMotion();
         if(session_) printUpdate(session_->cancel()); else line("nav state=Idle"); return;
     }
     if(!owner.registry().isMapActive()) { line("nav error=NoActiveMap"); return; }
@@ -151,6 +161,7 @@ void NavConsole::execute(NavCommand command,metamod::LifecycleCoordinator& owner
     }
     if(!session_ || session_->trace().actor!=s.actor || session_->trace().agent!=s.agent || session_->trace().map!=s.map)
         session_.emplace(s.agent,s.actor,s.map);
+    stopMotion();
     queryingEntity_=owner.fakeClient().activeEntity();
     nav::runtime::RouteOptions options; options.limits={100000,256*mib};
     auto navigation=navigation_;
@@ -170,6 +181,7 @@ void NavConsole::execute(NavCommand command,metamod::LifecycleCoordinator& owner
         invalidate(reason); return;
     }
     printUpdate(update);
+    if(session_ && session_->executable()) startMotion(s);
 }
 nav::runtime::WorldQueryResult NavConsole::query(const nav::runtime::QueryRequest& request) {
     auto result=queryNavWorld(engine_,queryingEntity_,index_.get(),request);
