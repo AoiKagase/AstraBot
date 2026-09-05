@@ -24,6 +24,7 @@ enum class NavErrorKind : std::uint8_t {
     InvalidGeometry,
     TrailingData,
     AllocationFailure,
+    PolicyFailure,
 };
 
 enum class NavRecord : std::uint8_t {
@@ -38,6 +39,7 @@ enum class NavRecord : std::uint8_t {
     Encounter,
     TraversalLink,
     Graph,
+    Route,
 };
 
 enum class NavField : std::uint8_t {
@@ -73,6 +75,11 @@ enum class NavField : std::uint8_t {
     Place,
     GraphBytes,
     GraphTraversal,
+    RouteStart,
+    RouteGoal,
+    RouteCost,
+    RouteHeuristic,
+    RouteBytes,
 };
 
 struct NavError final {
