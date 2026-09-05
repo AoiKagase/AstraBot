@@ -62,7 +62,8 @@ public:
         const char* name,
         cstrike::JoinRequest request) noexcept;
 
-    edict_t* activeEntity() const noexcept { return activeEntity_; }
+    edict_t* activeEntity() const noexcept { return entityFor(activePlayer_); }
+    edict_t* entityFor(host::PlayerId) const noexcept;
     host::PlayerId activePlayer() const noexcept { return activePlayer_; }
     cstrike::JoinRequest primaryJoinRequest() const noexcept {
         return primaryJoinRequest_;
@@ -74,6 +75,7 @@ public:
     RemovalResult requestRemoval() noexcept;
     bool cleanupActiveDirect(bool connected) noexcept;
     bool removalPending() const noexcept { return removalPending_; }
+    bool operationActive() const noexcept { return operationActive_; }
     void acknowledgeDisconnect(host::PlayerId player) noexcept;
     bool kickAndCleanup(host::PlayerId player) noexcept;
 
@@ -104,6 +106,9 @@ private:
     debug::RemovalTraceSink removalTraceSink_{nullptr};
     edict_t* activeEntity_{nullptr};
     host::PlayerId activePlayer_{};
+    host::MapGeneration activeMap_{};
+    int activeSerial_{};
+    bool sameEntity() const noexcept;
 
     void trace(
         debug::FakeClientStage stage,

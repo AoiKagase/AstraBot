@@ -277,11 +277,11 @@ void NavConsole::moveFrame(metamod::LifecycleCoordinator& owner) noexcept {
     if(!schedule.accepted) { stopMotion(); return; }
     intentWallAgeUs_=add(intentWallAgeUs_,movement_->frameDeltaUs());
     if(schedule.decisionDue) {
-        queryingEntity_=owner.fakeClient().activeEntity(); queryingPlayers_=&owner.registry(); inRequest_=true;
+        queryingEntity_=owner.fakeClient().activeEntity(); queryingPlayers_=&owner.registry(); queryingOwner_=&owner; inRequest_=true;
         const auto index=index_; // pins navigation across synchronous host reentry
         const auto reserved=guardTick_==s.tick ? guardQueries_:0;
         const auto decision=walk_->update(s,*index,navigation_.map,*this,pump_->timeUs(),reserved);
-        inRequest_=false; queryingEntity_=nullptr; queryingPlayers_=nullptr;
+        inRequest_=false; queryingEntity_=nullptr; queryingPlayers_=nullptr; queryingOwner_=nullptr;
         if(deferredInvalidation_) {
             const auto reason=*deferredInvalidation_; deferredInvalidation_.reset(); invalidate(reason); return;
         }

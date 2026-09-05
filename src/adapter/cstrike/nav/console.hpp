@@ -97,5 +97,6 @@ private:
     std::optional<nav::runtime::SessionReason> deferredInvalidation_{};
     edict_t* queryingEntity_{}; // borrowed only for synchronous request
     const host::PlayerRegistry* queryingPlayers_{};
+    const metamod::LifecycleCoordinator* queryingOwner_{};
 };
 }

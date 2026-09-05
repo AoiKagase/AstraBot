@@ -69,6 +69,8 @@ public:
         std::uint8_t originalMsec) noexcept;
 
     void beginFrame() noexcept;
+    // Dispatch only this player's slot. Caller supplies its freshly resolved
+    // generation/serial-validated entity and own join phase; other queues remain.
     MovementResult dispatchAtFrameEnd(
         cstrike::JoinPhase joinPhase,
         core::PlayerId activePlayer,

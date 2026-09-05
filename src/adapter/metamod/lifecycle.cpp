@@ -37,360 +37,224 @@ struct CommandContextGuard final {
 
 } // namespace
 
-void LifecycleCoordinator::configure(
-    enginefuncs_t* engineFunctions,
-    mutil_funcs_t* utilityFunctions,
-    DLL_FUNCTIONS* gameDllFunctions,
-    cstrike::UserMessageIds userMessageIds) noexcept {
-    engineFunctions_ = engineFunctions;
-    utilityFunctions_ = utilityFunctions;
-    gameDllFunctions_ = gameDllFunctions;
-    messageDecoder_.configure(userMessageIds, &LifecycleCoordinator::onMessage, this);
-    fakeClient_.configure(
-        engineFunctions,
-        utilityFunctions,
-        gameDllFunctions,
-        &registry_,
-        &agents_);
-    movement_.configure(engineFunctions, &registry_);
+LifecycleCoordinator::ClientState* LifecycleCoordinator::findClient(core::PlayerId player) noexcept {
+    if(!player.isValid()) return nullptr;
+    for(auto& client:clients_) if(client.fake.activePlayer()==player) return &client;
+    return nullptr;
+}
+const LifecycleCoordinator::ClientState* LifecycleCoordinator::findClient(core::PlayerId player) const noexcept {
+    if(!player.isValid()) return nullptr;
+    for(const auto& client:clients_) if(client.fake.activePlayer()==player) return &client;
+    return nullptr;
+}
+edict_t* LifecycleCoordinator::entityFor(core::PlayerId player) const noexcept {
+    const auto* client=findClient(player);
+    return client ? client->fake.entityFor(player):nullptr;
+}
+core::PlayerId LifecycleCoordinator::playerForEntity(edict_t* entity) const noexcept {
+    if(!entity) return {};
+    for(const auto& client:clients_) {
+        const auto player=client.fake.activePlayer();
+        if(player.isValid() && client.fake.entityFor(player)==entity) return player;
+    }
+    return {};
+}
+const cstrike::JoinState* LifecycleCoordinator::joinState(core::PlayerId player) const noexcept {
+    const auto* client=findClient(player);
+    return client && client->join.player()==player ? &client->join:nullptr;
+}
+void LifecycleCoordinator::configure(enginefuncs_t* engine,mutil_funcs_t* utility,
+    DLL_FUNCTIONS* game,cstrike::UserMessageIds ids) noexcept {
+    engineFunctions_=engine; utilityFunctions_=utility; gameDllFunctions_=game;
+    messageDecoder_.configure(ids,&LifecycleCoordinator::onMessage,this);
+    activeDecoder_=&messageDecoder_;
+    for(auto& client:clients_) {
+        client.fake.configure(engine,utility,game,&registry_,&agents_);
+        client.decoder.configure(ids,&LifecycleCoordinator::onMessage,this);
+    }
+    movement_.configure(engine,&registry_);
     navConsole_.bindMovement(&movement_);
 }
-
 void LifecycleCoordinator::reset() noexcept {
-    navConsole_.reset();
-    const host::PlayerId activePlayer = fakeClient_.activePlayer();
-    const bool hadActiveClient = activePlayer.isValid() &&
-                                  fakeClient_.activeEntity() != nullptr;
-    movement_.reset();
-    // Detach must invalidate adapter state before calling the original
-    // GameDLL disconnect callback.  The callback must never observe a live
-    // join, decoder fragment, command context, or pending cleanup.
-    messageDecoder_.reset();
-    joinState_.reset();
-    activeJoinEntity_ = nullptr;
-    commandContextActive_ = false;
-    cleanupPending_ = false;
-    pendingCleanupError_ = cstrike::JoinError::None;
-    commandArgv0_ = {};
-    commandArgv1_ = {};
-    commandArgs_ = {};
-    if (hadActiveClient) {
-        const bool mappingPresent = agents_.findByPlayer(activePlayer).isValid();
-        (void)agents_.unbind(activePlayer);
-        (void)registry_.disconnectPlayer(activePlayer);
-        const bool cleaned = fakeClient_.cleanupActiveDirect(true);
-        emitRemoval(
-            cleaned ? debug::RemovalOutcome::Cleaned
-                    : debug::RemovalOutcome::Rejected,
-            cleaned ? debug::RemovalError::None
-                    : debug::RemovalError::DirectCleanupFailed,
-            activePlayer,
-            mappingPresent,
-            true);
-        if (cleaned) {
-            ++status_.cleanupCompletions;
-        } else {
-            status_.lastRemovalError = debug::RemovalError::DirectCleanupFailed;
-            fakeClient_.forget(activePlayer);
-        }
+    navConsole_.reset(); movement_.reset();
+    commandContextActive_=false; commandPlayer_={};
+    commandArgv0_={}; commandArgv1_={}; commandArgs_={};
+    messageDecoder_.reset(); activeDecoder_=&messageDecoder_;
+    // Retire every actor's portable state before any external disconnect callback.
+    for(auto& client:clients_) {
+        client.join.reset(); client.decoder.reset(); client.cleanupPending=false;
+        client.cleanupError=cstrike::JoinError::None;
+        const auto player=client.fake.activePlayer();
+        if(player.isValid()) { (void)agents_.unbind(player); (void)registry_.disconnectPlayer(player); }
     }
-    fakeClient_.reset();
-    agents_.reset();
-    registry_.reset();
-    engineFunctions_ = nullptr;
-    utilityFunctions_ = nullptr;
-    gameDllFunctions_ = nullptr;
-    status_ = {};
-    traceSink_ = nullptr;
-    joinTraceSink_ = nullptr;
-    removalTraceSink_ = nullptr;
+    for(auto& client:clients_) {
+        const auto player=client.fake.activePlayer();
+        if(player.isValid()) (void)client.fake.cleanupActiveDirect(true);
+        client.fake.reset();
+    }
+    agents_.reset(); registry_.reset();
+    engineFunctions_=nullptr; utilityFunctions_=nullptr; gameDllFunctions_=nullptr;
+    status_={}; traceSink_=nullptr; joinTraceSink_=nullptr; removalTraceSink_=nullptr;
 }
-
 void LifecycleCoordinator::serverActivate(int clientMax) noexcept {
-    const host::LifecycleResult result =
-        clientMax < 1 || clientMax > host::kMaxClientSlots
-            ? host::LifecycleResult::rejected(host::HostError::InvalidLifecycle)
-            : registry_.activateMap(static_cast<std::uint16_t>(clientMax));
-    if (result.changed()) {
+    const auto result=clientMax<1 || clientMax>host::kMaxClientSlots
+        ? host::LifecycleResult::rejected(host::HostError::InvalidLifecycle)
+        : registry_.activateMap(static_cast<std::uint16_t>(clientMax));
+    if(result.changed()) {
         ++status_.mapActivations;
-        if (status_.mapActivations > 1U) {
-            ++status_.mapReplays;
-        }
-        movement_.resetMap();
-        fakeClient_.queuePrimaryCreate();
+        if(status_.mapActivations>1) ++status_.mapReplays;
+        movement_.resetMap(); clients_[0].fake.queuePrimaryCreate();
     }
-    emit(host::LifecycleEventKind::MapActivated, result);
+    emit(host::LifecycleEventKind::MapActivated,result);
 }
-
 void LifecycleCoordinator::serverDeactivate() noexcept {
-    navConsole_.invalidate(nav::runtime::SessionReason::MapChanged);
-    movement_.resetMap();
-    const cstrike::JoinAction joinAction =
-        joinState_.cancel(cstrike::JoinError::MapDeactivated);
-    handleJoinAction(joinAction);
-    joinState_.reset();
-    messageDecoder_.reset();
-    commandContextActive_ = false;
-    cleanupPending_ = false;
-    pendingCleanupError_ = cstrike::JoinError::None;
-    commandArgv0_ = {};
-    commandArgv1_ = {};
-    commandArgs_ = {};
-    activeJoinEntity_ = nullptr;
-    const host::LifecycleResult result = registry_.deactivateMap();
-    fakeClient_.resetMap();
+    navConsole_.invalidate(nav::runtime::SessionReason::MapChanged); movement_.resetMap();
+    for(auto& client:clients_) {
+        const auto action=client.join.cancel(cstrike::JoinError::MapDeactivated);
+        emitJoin(client,action);
+        client.join.reset(); client.decoder.reset(); client.cleanupPending=false;
+        client.cleanupError=cstrike::JoinError::None;
+    }
+    messageDecoder_.reset(); activeDecoder_=&messageDecoder_;
+    commandContextActive_=false; commandPlayer_={};
+    commandArgv0_={}; commandArgv1_={}; commandArgs_={};
+    const auto result=registry_.deactivateMap();
+    for(auto& client:clients_) client.fake.resetMap();
     agents_.clearMappings();
-    emit(host::LifecycleEventKind::MapDeactivated, result);
+    emit(host::LifecycleEventKind::MapDeactivated,result);
 }
-
 void LifecycleCoordinator::clientDisconnect(edict_t* entity) noexcept {
-    if (entity == nullptr || engineFunctions_ == nullptr ||
-        engineFunctions_->pfnIndexOfEdict == nullptr) {
-        const host::LifecycleResult result =
-            host::LifecycleResult::rejected(host::HostError::InvalidPlayer);
-        emit(host::LifecycleEventKind::PlayerDisconnected, result);
-        return;
+    if(!entity || !engineFunctions_ || !engineFunctions_->pfnIndexOfEdict) {
+        emit(host::LifecycleEventKind::PlayerDisconnected,host::LifecycleResult::rejected(host::HostError::InvalidPlayer)); return;
     }
-
-    const int index = engineFunctions_->pfnIndexOfEdict(entity);
-    const host::PlayerId activePlayer = fakeClient_.activePlayer();
-    const bool wasActiveClient =
-        activePlayer.isValid() && index >= 1 &&
-        index <= static_cast<int>(host::kMaxClientSlots) &&
-        activePlayer.slot == static_cast<std::uint16_t>(index);
-    const host::PlayerId disconnectedPlayer =
-        index >= 1 && index <= static_cast<int>(host::kMaxClientSlots)
-            ? registry_.currentPlayer(static_cast<std::uint16_t>(index))
-            : host::PlayerId::invalid();
-
-    // Clear all adapter-owned per-client state before acknowledging the
-    // registry transition.  Keep FakeClient's mapping until that transition
-    // so acknowledgeDisconnect() remains the single normal cleanup path.
-    movement_.forget(disconnectedPlayer);
-    if (wasActiveClient) navConsole_.invalidate(nav::runtime::SessionReason::Disconnected);
-    const bool joinMatches =
-        joinState_.player().isValid() && index >= 1 &&
-        joinState_.player().slot == static_cast<std::uint16_t>(index);
-    if (joinMatches && joinState_.active()) {
-        movement_.forget(joinState_.player());
-        const cstrike::JoinAction joinAction =
-            joinState_.cancel(cstrike::JoinError::Disconnected);
-        emitJoin(joinAction);
+    const int index=engineFunctions_->pfnIndexOfEdict(entity);
+    if(index<1 || index>host::kMaxClientSlots) {
+        emit(host::LifecycleEventKind::PlayerDisconnected,host::LifecycleResult::rejected(host::HostError::InvalidPlayer)); return;
     }
-    if (joinMatches) {
-        joinState_.reset();
-        activeJoinEntity_ = nullptr;
+    const auto player=registry_.currentPlayer(static_cast<std::uint16_t>(index));
+    auto* client=findClient(player);
+    // A reused edict or a foreign entity must not disconnect the mapped actor.
+    if(client && client->fake.entityFor(player)!=entity) {
+        emit(host::LifecycleEventKind::PlayerDisconnected,host::LifecycleResult::rejected(host::HostError::InvalidPlayer)); return;
     }
-    messageDecoder_.reset();
-    commandContextActive_ = false;
-    cleanupPending_ = false;
-    pendingCleanupError_ = cstrike::JoinError::None;
-    commandArgv0_ = {};
-    commandArgv1_ = {};
-    commandArgs_ = {};
-    const host::LifecycleResult result =
-        index < 1 || index > static_cast<int>(host::kMaxClientSlots)
-            ? host::LifecycleResult::rejected(host::HostError::InvalidPlayer)
-            : registry_.disconnectSlot(static_cast<std::uint16_t>(index));
-    if (result.changed()) {
-        agents_.unbind(result.event.player);
-        fakeClient_.acknowledgeDisconnect(result.event.player);
-        if (activeJoinEntity_ != nullptr &&
-            joinState_.player() == result.event.player) {
-            activeJoinEntity_ = nullptr;
-        }
-        if (wasActiveClient) {
-            ++status_.cleanupCompletions;
-            emitRemoval(
-                debug::RemovalOutcome::Cleaned,
-                debug::RemovalError::None,
-                result.event.player,
-                false,
-                false);
-        }
-    }
-    emit(host::LifecycleEventKind::PlayerDisconnected, result);
-}
-
-RemovalResult LifecycleCoordinator::removeActive() noexcept {
-    const host::PlayerId player = fakeClient_.activePlayer();
-    if (!player.isValid() || fakeClient_.activeEntity() == nullptr) {
-        return {
-            debug::RemovalOutcome::NoOp,
-            debug::RemovalError::None,
-            {},
-            true,
-            false};
-    }
-    if (fakeClient_.removalPending()) {
-        return {
-            debug::RemovalOutcome::NoOp,
-            debug::RemovalError::None,
-            player,
-            true,
-            false};
-    }
-
     movement_.forget(player);
-    navConsole_.invalidate(nav::runtime::SessionReason::Disconnected);
-    if (joinState_.active()) {
-        const cstrike::JoinAction action =
-            joinState_.cancel(cstrike::JoinError::Disconnected);
-        emitJoin(action);
+    if(client) {
+        if(client==&clients_[0]) navConsole_.invalidate(nav::runtime::SessionReason::Disconnected);
+        emitJoin(*client,client->join.cancel(cstrike::JoinError::Disconnected));
+        client->join.reset(); client->decoder.reset(); client->cleanupPending=false;
+        client->cleanupError=cstrike::JoinError::None;
     }
-    messageDecoder_.reset();
-    commandContextActive_ = false;
-    cleanupPending_ = false;
-    pendingCleanupError_ = cstrike::JoinError::None;
-    commandArgv0_ = {};
-    commandArgv1_ = {};
-    commandArgs_ = {};
-
-    ++status_.removalRequests;
-    const RemovalResult requested = fakeClient_.requestRemoval();
-    if (requested.succeeded()) {
-        status_.lastRemovalError = debug::RemovalError::None;
-        return requested;
+    if(commandPlayer_==player) {
+        commandContextActive_=false; commandPlayer_={};
+        commandArgv0_={}; commandArgv1_={}; commandArgs_={};
     }
-
-    status_.lastRemovalError = requested.error;
-    cleanupActiveAfterRemoval(requested, player);
-    return requested;
+    const auto result=registry_.disconnectSlot(static_cast<std::uint16_t>(index));
+    if(result.changed()) {
+        (void)agents_.unbind(player);
+        if(client) {
+            client->fake.acknowledgeDisconnect(player); ++status_.cleanupCompletions;
+            emitRemoval(debug::RemovalOutcome::Cleaned,debug::RemovalError::None,player,false,false);
+        }
+    }
+    emit(host::LifecycleEventKind::PlayerDisconnected,result);
 }
-
-void LifecycleCoordinator::queuePrimaryCreate(
-    cstrike::JoinRequest request) noexcept {
-    fakeClient_.queuePrimaryCreate(request);
-}
-
-void LifecycleCoordinator::startFrame() noexcept {
-    const host::LifecycleResult result = registry_.startFrame();
-    emit(host::LifecycleEventKind::FrameStarted, result);
-    if (!result.changed()) {
-        return;
-    }
-    movement_.beginFrame();
-
-    const FakeClientResult fakeClientResult =
-        fakeClient_.processPrimaryCreate();
-    if (fakeClientResult.changed ||
-        fakeClientResult.error != debug::FakeClientError::None) {
+FakeClientResult LifecycleCoordinator::createBot(const char* name,cstrike::JoinRequest request) noexcept {
+    if(commandContextActive_) return {debug::FakeClientError::Reentrant,{}};
+    for(const auto& client:clients_) if(client.fake.operationActive()) return {debug::FakeClientError::Reentrant,{}};
+    for(auto& client:clients_) {
+        if(client.fake.activePlayer().isValid()) continue;
+        client.fake.resetMap(); client.join.reset(); client.decoder.reset();
+        client.cleanupPending=false; client.cleanupError=cstrike::JoinError::None;
+        const auto result=client.fake.create(name,request);
         ++status_.createAttempts;
+        if(result.playerRegistration.changed()) emit(host::LifecycleEventKind::PlayerConnected,result.playerRegistration);
+        if(result.playerRollback.changed()) emit(host::LifecycleEventKind::PlayerDisconnected,result.playerRollback);
+        if(result.succeeded()) (void)requestJoin(result.player,request);
+        return result;
     }
-    if (fakeClientResult.playerRegistration.changed()) {
-        emit(
-            host::LifecycleEventKind::PlayerConnected,
-            fakeClientResult.playerRegistration);
+    return {debug::FakeClientError::AlreadyCreated,{}};
+}
+RemovalResult LifecycleCoordinator::removeActive() noexcept { return remove(clients_[0].fake.activePlayer()); }
+RemovalResult LifecycleCoordinator::remove(core::PlayerId player) noexcept {
+    auto* client=findClient(player);
+    if(!client) return {debug::RemovalOutcome::NoOp,debug::RemovalError::None,{},true,false};
+    if(client->fake.removalPending()) return {debug::RemovalOutcome::NoOp,debug::RemovalError::None,player,true,false};
+    movement_.forget(player);
+    if(client==&clients_[0]) navConsole_.invalidate(nav::runtime::SessionReason::Disconnected);
+    emitJoin(*client,client->join.cancel(cstrike::JoinError::Disconnected));
+    client->decoder.reset(); client->cleanupPending=false; client->cleanupError=cstrike::JoinError::None;
+    if(commandPlayer_==player) {
+        commandContextActive_=false; commandPlayer_={}; commandArgv0_={}; commandArgv1_={}; commandArgs_={};
     }
-    if (fakeClientResult.playerRollback.changed()) {
-        emit(
-            host::LifecycleEventKind::PlayerDisconnected,
-            fakeClientResult.playerRollback);
+    ++status_.removalRequests;
+    const auto result=client->fake.requestRemoval();
+    status_.lastRemovalError=result.error;
+    if(!result.succeeded()) cleanupActiveAfterRemoval(*client,result,player);
+    return result;
+}
+void LifecycleCoordinator::queuePrimaryCreate(cstrike::JoinRequest request) noexcept { clients_[0].fake.queuePrimaryCreate(request); }
+void LifecycleCoordinator::startFrame() noexcept {
+    const auto result=registry_.startFrame(); emit(host::LifecycleEventKind::FrameStarted,result);
+    if(!result.changed()) return;
+    movement_.beginFrame();
+    const auto map=registry_.mapGeneration(); const auto tick=registry_.currentTick();
+    const auto created=clients_[0].fake.processPrimaryCreate();
+    if(created.changed || created.error!=debug::FakeClientError::None) ++status_.createAttempts;
+    if(created.playerRegistration.changed()) emit(host::LifecycleEventKind::PlayerConnected,created.playerRegistration);
+    if(created.playerRollback.changed()) emit(host::LifecycleEventKind::PlayerDisconnected,created.playerRollback);
+    if(created.succeeded() && created.changed) (void)requestJoin(created.player,clients_[0].fake.activeJoinRequest());
+    for(auto& client:clients_) {
+        if(!registry_.isMapActive() || registry_.mapGeneration()!=map || registry_.currentTick()!=tick) return;
+        const auto player=client.fake.activePlayer();
+        if(!player.isValid()) continue;
+        const auto action=client.join.onFrame(tick); handleJoinAction(client,action);
+        if(action.kind==cstrike::JoinActionKind::SendMenuSelect && client.fake.activePlayer()==player) {
+            const bool dispatched=dispatchMenu(client,action.selection);
+            if(client.join.player()==player) handleJoinAction(client,client.join.commandCompleted(dispatched));
+        }
     }
-
-    if (fakeClientResult.succeeded() && fakeClientResult.changed) {
-        (void)requestJoin(fakeClient_.activeJoinRequest());
-    }
-
-    const cstrike::JoinAction frameAction =
-        joinState_.onFrame(registry_.currentTick());
-    handleJoinAction(frameAction);
-    if (frameAction.kind == cstrike::JoinActionKind::SendMenuSelect) {
-        const bool dispatched = dispatchMenu(frameAction.selection);
-        const cstrike::JoinAction completion =
-            joinState_.commandCompleted(dispatched);
-        handleJoinAction(completion);
-    }
-
     navConsole_.beforeDispatch(*this);
-    const auto navTicket=navConsole_.dispatchTicket();
-    const auto dispatchTick=registry_.currentTick();
-    const auto movementResult=movement_.dispatchAtFrameEnd(
-        joinState_.phase(),
-        fakeClient_.activePlayer(),
-        fakeClient_.activeEntity(),
-        registry_.mapGeneration(),
-        registry_.currentTick());
-    navConsole_.afterDispatch(movementResult,dispatchTick,navTicket);
+    const auto ticket=navConsole_.dispatchTicket();
+    for(auto& client:clients_) {
+        if(!registry_.isMapActive() || registry_.mapGeneration()!=map || registry_.currentTick()!=tick) return;
+        const auto player=client.fake.activePlayer(); if(!player.isValid()) continue;
+        const auto moved=movement_.dispatchAtFrameEnd(client.join.phase(),player,client.fake.entityFor(player),map,tick);
+        if(&client==&clients_[0]) navConsole_.afterDispatch(moved,tick,ticket);
+    }
     navConsole_.moveFrame(*this);
 }
-
-MovementResult LifecycleCoordinator::submitCommand(
-    core::PlayerId player,
-    core::MapGeneration mapGeneration,
-    core::TickId tick,
-    const core::BotCommand& command) noexcept {
-    if (joinState_.phase() != cstrike::JoinPhase::Joined) {
-        return movement_.rejectIngress(
-            MovementError::NotJoined,
-            player,
-            mapGeneration,
-            tick,
-            command.msec);
+MovementResult LifecycleCoordinator::submitCommand(core::PlayerId player,core::MapGeneration map,
+    core::TickId tick,const core::BotCommand& command) noexcept {
+    const auto* client=findClient(player);
+    const auto reject=[&](MovementError error) { return movement_.rejectIngress(error,player,map,tick,command.msec); };
+    if(!client) return reject(MovementError::MappingMismatch);
+    if(client->join.player()!=player || client->join.phase()!=cstrike::JoinPhase::Joined) return reject(MovementError::NotJoined);
+    auto* entity=client->fake.entityFor(player);
+    if(!entity) return reject(MovementError::MissingEntity);
+    if(entity->v.deadflag!=DEAD_NO) return reject(MovementError::DeadPlayer);
+    return movement_.submit(player,map,tick,command);
+}
+void LifecycleCoordinator::messageBegin(int,int messageType,const float*,edict_t* recipient) noexcept {
+    messageMap_=registry_.mapGeneration();
+    for(std::uint16_t i=1;i<=host::kMaxClientSlots;++i) messagePlayers_[i-1U]=registry_.currentPlayer(i);
+    std::uint16_t slot=0;
+    if(recipient && engineFunctions_ && engineFunctions_->pfnIndexOfEdict) {
+        const int index=engineFunctions_->pfnIndexOfEdict(recipient);
+        if(index>=1 && index<=host::kMaxClientSlots) slot=static_cast<std::uint16_t>(index);
     }
-    if (fakeClient_.activeEntity() == nullptr) {
-        return movement_.rejectIngress(
-            MovementError::MissingEntity,
-            player,
-            mapGeneration,
-            tick,
-            command.msec);
-    }
-    if (fakeClient_.activePlayer() != player) {
-        return movement_.rejectIngress(
-            MovementError::MappingMismatch,
-            player,
-            mapGeneration,
-            tick,
-            command.msec);
-    }
-    if (fakeClient_.activeEntity()->v.deadflag != DEAD_NO) {
-        return movement_.rejectIngress(
-            MovementError::DeadPlayer,
-            player,
-            mapGeneration,
-            tick,
-            command.msec);
-    }
-    return movement_.submit(player, mapGeneration, tick, command);
+    auto* client=findClient(registry_.currentPlayer(slot));
+    // Per-client decoders preserve interleaved ShowMenu fragments. Broadcast
+    // TeamInfo uses the shared decoder and is routed by its playerSlot at end.
+    const bool matched=client && client->fake.entityFor(client->fake.activePlayer())==recipient;
+    activeDecoder_=matched ? &client->decoder:&messageDecoder_;
+    if(recipient && !matched) slot=0;
+    activeDecoder_->begin(messageType,slot);
 }
-
-void LifecycleCoordinator::messageBegin(
-    int /* messageDestination */,
-    int messageType,
-    const float* /* origin */,
-    edict_t* recipient) noexcept {
-    std::uint16_t recipientSlot = 0;
-    if (recipient != nullptr && engineFunctions_ != nullptr &&
-        engineFunctions_->pfnIndexOfEdict != nullptr) {
-        const int index = engineFunctions_->pfnIndexOfEdict(recipient);
-        if (index >= 1 && index <= static_cast<int>(host::kMaxClientSlots)) {
-            recipientSlot = static_cast<std::uint16_t>(index);
-        }
-    }
-    messageDecoder_.begin(messageType, recipientSlot);
-}
-
-void LifecycleCoordinator::messageEnd() noexcept {
-    messageDecoder_.end();
-}
-
-void LifecycleCoordinator::writeByte(int value) noexcept {
-    messageDecoder_.writeByte(value);
-}
-
-void LifecycleCoordinator::writeChar(int value) noexcept {
-    messageDecoder_.writeChar(value);
-}
-
-void LifecycleCoordinator::writeShort(int value) noexcept {
-    messageDecoder_.writeShort(value);
-}
-
-void LifecycleCoordinator::writeString(const char* value) noexcept {
-    messageDecoder_.writeString(value);
-}
-
+void LifecycleCoordinator::messageEnd() noexcept { if(activeDecoder_) activeDecoder_->end(); }
+void LifecycleCoordinator::writeByte(int v) noexcept { if(activeDecoder_) activeDecoder_->writeByte(v); }
+void LifecycleCoordinator::writeChar(int v) noexcept { if(activeDecoder_) activeDecoder_->writeChar(v); }
+void LifecycleCoordinator::writeShort(int v) noexcept { if(activeDecoder_) activeDecoder_->writeShort(v); }
+void LifecycleCoordinator::writeString(const char* v) noexcept { if(activeDecoder_) activeDecoder_->writeString(v); }
 const char* LifecycleCoordinator::commandArgs() noexcept {
     if (commandContextActive_) {
         if (gpMetaGlobals != nullptr) {
@@ -430,27 +294,17 @@ int LifecycleCoordinator::commandArgc() noexcept {
     return 0;
 }
 
-cstrike::JoinAction LifecycleCoordinator::requestJoin(
-    cstrike::JoinRequest request) noexcept {
-    const host::PlayerId player = fakeClient_.activePlayer();
-    activeJoinEntity_ = fakeClient_.activeEntity();
-    const cstrike::JoinAction action = joinState_.begin(
-        player,
-        registry_.mapGeneration(),
-        request,
-        registry_.currentTick());
-    if (action.error == cstrike::JoinError::AlreadyJoining) {
-        return action;
-    }
-    handleJoinAction(action);
+cstrike::JoinAction LifecycleCoordinator::requestJoin(cstrike::JoinRequest request) noexcept {
+    return requestJoin(clients_[0].fake.activePlayer(),request);
+}
+cstrike::JoinAction LifecycleCoordinator::requestJoin(core::PlayerId player,cstrike::JoinRequest request) noexcept {
+    auto* client=findClient(player);
+    if(!client || !client->fake.entityFor(player)) return cstrike::JoinAction::failed(cstrike::JoinError::InvalidPlayer);
+    const auto action=client->join.begin(player,registry_.mapGeneration(),request,registry_.currentTick());
+    if(action.error!=cstrike::JoinError::AlreadyJoining) handleJoinAction(*client,action);
     return action;
 }
-
-bool LifecycleCoordinator::dispatchMenuForTest(
-    std::uint8_t selection) noexcept {
-    return dispatchMenu(selection);
-}
-
+bool LifecycleCoordinator::dispatchMenuForTest(std::uint8_t selection) noexcept { return dispatchMenu(clients_[0],selection); }
 void LifecycleCoordinator::emit(
     host::LifecycleEventKind attemptedKind,
     const host::LifecycleResult& result,
@@ -465,85 +319,40 @@ void LifecycleCoordinator::emit(
         traceSink_);
 }
 
-void LifecycleCoordinator::emitJoin(const cstrike::JoinAction& action) noexcept {
-    if (!action.changed) {
-        return;
-    }
-    const cstrike::JoinRequest request = joinState_.request();
-    debug::emitJoin(
-        {
-            joinState_.phase(),
-            joinState_.error(),
-            joinState_.map(),
-            joinState_.player(),
-            request.team,
-            request.classNumber,
-            registry_.currentTick(),
-            registry_.eventSequence(),
-            joinState_.attempts(),
-            action.kind != cstrike::JoinActionKind::Failed &&
-                action.kind != cstrike::JoinActionKind::Cancelled,
-            action.changed,
-        },
-        joinTraceSink_);
+void LifecycleCoordinator::emitJoin(const ClientState& client,const cstrike::JoinAction& action) noexcept {
+    if(!action.changed) return;
+    const auto& join=client.join; const auto request=join.request();
+    debug::emitJoin({join.phase(),join.error(),join.map(),join.player(),request.team,request.classNumber,
+        registry_.currentTick(),registry_.eventSequence(),join.attempts(),
+        action.kind!=cstrike::JoinActionKind::Failed && action.kind!=cstrike::JoinActionKind::Cancelled,
+        action.changed},joinTraceSink_);
 }
-
-void LifecycleCoordinator::handleMessage(
-    const cstrike::MessageEvent& event) noexcept {
-    const cstrike::JoinAction action =
-        joinState_.onMessage(event, registry_.currentTick());
-    handleJoinAction(action);
+void LifecycleCoordinator::handleMessage(const cstrike::MessageEvent& event) noexcept {
+    const auto slot=event.kind==cstrike::MessageKind::TeamInfo ? event.playerSlot:event.recipientSlot;
+    if(slot<1 || slot>host::kMaxClientSlots || messageMap_!=registry_.mapGeneration() ||
+       messagePlayers_[slot-1U]!=registry_.currentPlayer(slot)) return;
+    auto* client=findClient(registry_.currentPlayer(slot));
+    if(!client || !client->fake.entityFor(client->fake.activePlayer())) return;
+    handleJoinAction(*client,client->join.onMessage(event,registry_.currentTick()));
 }
-
-void LifecycleCoordinator::handleJoinAction(
-    const cstrike::JoinAction& action) noexcept {
-    if (!action.changed) {
-        return;
-    }
-    emitJoin(action);
-    if (action.kind == cstrike::JoinActionKind::Failed) {
-        if (commandContextActive_) {
-            cleanupPending_ = true;
-            pendingCleanupError_ = action.error;
-        } else {
-            cleanupFailedJoin(action.error);
-        }
-    } else if (action.kind == cstrike::JoinActionKind::Cancelled) {
-        activeJoinEntity_ = nullptr;
-        fakeClient_.forget(joinState_.player());
+void LifecycleCoordinator::handleJoinAction(ClientState& client,const cstrike::JoinAction& action) noexcept {
+    if(!action.changed) return;
+    emitJoin(client,action);
+    if(action.kind==cstrike::JoinActionKind::Failed) {
+        if(commandContextActive_) { client.cleanupPending=true; client.cleanupError=action.error; }
+        else cleanupFailedJoin(client,action.error);
     }
 }
-
-void LifecycleCoordinator::cleanupActiveAfterRemoval(
-    const RemovalResult& result,
-    host::PlayerId player) noexcept {
-    const host::BotAgentBinding mapping = agents_.findByPlayer(player);
-    const bool mappingPresent = mapping.isValid();
-    (void)agents_.unbind(player);
-    (void)registry_.disconnectPlayer(player);
-    const bool cleaned = fakeClient_.cleanupActiveDirect(true);
-    if (cleaned) {
-        ++status_.cleanupCompletions;
-        emitRemoval(
-            debug::RemovalOutcome::Cleaned,
-            result.error,
-            player,
-            mappingPresent,
-            true);
-    } else {
-        fakeClient_.forget(player);
-        status_.lastRemovalError = debug::RemovalError::DirectCleanupFailed;
-        emitRemoval(
-            debug::RemovalOutcome::Rejected,
-            debug::RemovalError::DirectCleanupFailed,
-            player,
-            mappingPresent,
-            true);
-    }
-    activeJoinEntity_ = nullptr;
-    joinState_.reset();
+void LifecycleCoordinator::cleanupActiveAfterRemoval(ClientState& client,const RemovalResult& result,host::PlayerId player) noexcept {
+    const bool mapping=agents_.findByPlayer(player).isValid();
+    (void)agents_.unbind(player); (void)registry_.disconnectPlayer(player);
+    const bool cleaned=client.fake.cleanupActiveDirect(true);
+    if(cleaned) ++status_.cleanupCompletions;
+    else { client.fake.forget(player); status_.lastRemovalError=debug::RemovalError::DirectCleanupFailed; }
+    emitRemoval(cleaned ? debug::RemovalOutcome::Cleaned:debug::RemovalOutcome::Rejected,
+        cleaned ? result.error:debug::RemovalError::DirectCleanupFailed,player,mapping,true);
+    client.join.reset(); client.decoder.reset();
 }
-
 void LifecycleCoordinator::emitRemoval(
     debug::RemovalOutcome outcome,
     debug::RemovalError error,
@@ -564,48 +373,26 @@ void LifecycleCoordinator::emitRemoval(
         removalTraceSink_);
 }
 
-void LifecycleCoordinator::cleanupFailedJoin(
-    cstrike::JoinError /* error */) noexcept {
-    const host::PlayerId player = joinState_.player();
-    if (!player.isValid()) {
-        activeJoinEntity_ = nullptr;
-        cleanupPending_ = false;
-        pendingCleanupError_ = cstrike::JoinError::None;
-        return;
+void LifecycleCoordinator::cleanupFailedJoin(ClientState& client,cstrike::JoinError) noexcept {
+    const auto player=client.join.player();
+    if(player.isValid()) {
+        movement_.forget(player); (void)agents_.unbind(player); (void)registry_.disconnectPlayer(player);
+        (void)client.fake.kickAndCleanup(player);
     }
-
-    agents_.unbind(player);
-    registry_.disconnectPlayer(player);
-    fakeClient_.kickAndCleanup(player);
-    activeJoinEntity_ = nullptr;
-    cleanupPending_ = false;
-    pendingCleanupError_ = cstrike::JoinError::None;
+    client.cleanupPending=false; client.cleanupError=cstrike::JoinError::None;
 }
-
-bool LifecycleCoordinator::dispatchMenu(std::uint8_t selection) noexcept {
-    if (commandContextActive_ || activeJoinEntity_ == nullptr ||
-        gameDllFunctions_ == nullptr ||
-        gameDllFunctions_->pfnClientCommand == nullptr || selection == 0U ||
-        selection > 9U) {
-        return false;
-    }
-
-    copyCommandWord(commandArgv0_, "menuselect");
-    commandArgv1_ = {};
-    commandArgv1_[0] = static_cast<char>('0' + selection);
-    commandArgs_ = {};
-    commandArgs_[0] = commandArgv1_[0];
-    commandContextActive_ = true;
-    {
-        CommandContextGuard guard{commandContextActive_};
-        gameDllFunctions_->pfnClientCommand(activeJoinEntity_);
-    }
-    if (cleanupPending_) {
-        cleanupFailedJoin(pendingCleanupError_);
-    }
+bool LifecycleCoordinator::dispatchMenu(ClientState& client,std::uint8_t selection) noexcept {
+    const auto player=client.join.player(); auto* entity=client.fake.entityFor(player);
+    if(commandContextActive_ || !entity || !gameDllFunctions_ || !gameDllFunctions_->pfnClientCommand ||
+       selection==0 || selection>9) return false;
+    copyCommandWord(commandArgv0_,"menuselect");
+    commandArgv1_={}; commandArgv1_[0]=static_cast<char>('0'+selection);
+    commandArgs_={}; commandArgs_[0]=commandArgv1_[0]; commandPlayer_=player; commandContextActive_=true;
+    { CommandContextGuard guard{commandContextActive_}; gameDllFunctions_->pfnClientCommand(entity); }
+    commandPlayer_={};
+    for(auto& pending:clients_) if(pending.cleanupPending) cleanupFailedJoin(pending,pending.cleanupError);
     return true;
 }
-
 void LifecycleCoordinator::onMessage(
     void* context,
     const cstrike::MessageEvent& event) noexcept {

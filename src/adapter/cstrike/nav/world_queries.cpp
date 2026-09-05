@@ -70,7 +70,7 @@ std::optional<nav::model::NavVector3> doorUseView(enginefuncs_t* e,edict_t* acto
 }
 nav::runtime::WorldQueryResult queryNavWorld(enginefuncs_t* engine, edict_t* entity,
     const nav::query::NavSpatialIndex* index, const nav::runtime::QueryRequest& q,int maxEntities,
-    const host::PlayerRegistry* players) noexcept {
+    const host::PlayerRegistry* players,NavPlayerResolver resolver) noexcept {
     using namespace nav::runtime;
     WorldQueryResult r; r.stamp=q.stamp; r.kind=q.kind;
     if(!engine || !entity || entity->free) return r;
@@ -111,9 +111,15 @@ nav::runtime::WorldQueryResult queryNavWorld(enginefuncs_t* engine, edict_t* ent
                        engine->pfnIndexOfEdict(entity)!=q.stamp.actor.slot) {
                         r.blocker.reset(); r.error=QueryError::InvalidResult; return r;
                     }
-                    if(slot<=players->clientMax()) {
-                        const auto player=players->currentPlayer(static_cast<std::uint16_t>(slot));
-                        if(player.isValid()) r.blocker=BlockerObservation{id,BlockerKind::Player,player};
+                    if(slot<=players->clientMax() && resolver.resolve) {
+                        const auto player=resolver.resolve(resolver.context,obstacle);
+                        if(player.isValid()) {
+                            if(player!=players->currentPlayer(static_cast<std::uint16_t>(slot)) ||
+                               obstacle->free || obstacle->serialnumber!=serial) {
+                                r.blocker.reset(); r.error=QueryError::InvalidResult; return r;
+                            }
+                            r.blocker=BlockerObservation{id,BlockerKind::Player,player};
+                        }
                     }
                 }
             }

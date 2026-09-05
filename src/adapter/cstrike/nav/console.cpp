@@ -63,7 +63,7 @@ void NavConsole::invalidate(nav::runtime::SessionReason reason) noexcept {
         for(std::size_t i=0;i<update.count;++i) update.events[i].reason=reason;
         printUpdate(update);
     }
-    session_.reset(); navigation_={}; index_.reset(); queryingEntity_=nullptr; queryingPlayers_=nullptr;
+    session_.reset(); navigation_={}; index_.reset(); queryingEntity_=nullptr; queryingPlayers_=nullptr; queryingOwner_=nullptr;
 }
 void NavConsole::reset() noexcept {
     invalidate(nav::runtime::SessionReason::Cancelled); engine_=nullptr; utility_=nullptr; globals_=nullptr;
@@ -165,6 +165,7 @@ void NavConsole::execute(NavCommand command,metamod::LifecycleCoordinator& owner
     stopMotion();
     queryingEntity_=owner.fakeClient().activeEntity();
     queryingPlayers_=&owner.registry();
+    queryingOwner_=&owner;
     nav::runtime::RouteOptions options; options.limits={100000,256*mib};
     options.groundNavTolerance=18; // Observed hull support may straddle one ordinary stair riser.
     auto navigation=navigation_;
@@ -172,7 +173,7 @@ void NavConsole::execute(NavCommand command,metamod::LifecycleCoordinator& owner
     inRequest_=true;
     auto update=session_->request(s,*goal,navigation,*this,options);
     inRequest_=false;
-    queryingEntity_=nullptr; queryingPlayers_=nullptr;
+    queryingEntity_=nullptr; queryingPlayers_=nullptr; queryingOwner_=nullptr;
     if(deferredInvalidation_) {
         const auto reason=*deferredInvalidation_; deferredInvalidation_.reset();
         for(std::size_t i=0;i<update.count;++i) {
@@ -187,7 +188,10 @@ void NavConsole::execute(NavCommand command,metamod::LifecycleCoordinator& owner
     if(session_ && session_->executable()) startMotion(s);
 }
 nav::runtime::WorldQueryResult NavConsole::query(const nav::runtime::QueryRequest& request) {
-    auto result=queryNavWorld(engine_,queryingEntity_,index_.get(),request,globals_ ? globals_->maxEntities:0,queryingPlayers_);
+    const NavPlayerResolver resolver{queryingOwner_,[](const void* context,edict_t* entity) noexcept {
+        return context ? static_cast<const metamod::LifecycleCoordinator*>(context)->playerForEntity(entity):core::PlayerId{};
+    }};
+    auto result=queryNavWorld(engine_,queryingEntity_,index_.get(),request,globals_ ? globals_->maxEntities:0,queryingPlayers_,resolver);
     if(deferredInvalidation_) {
         result={}; result.stamp=request.stamp; result.kind=request.kind;
     }

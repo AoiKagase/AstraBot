@@ -28,6 +28,9 @@
 std::map<std::string, void(*)()> gNavCommands;
 std::vector<std::string> gNavArgs;
 std::vector<std::string> gNavOutput;
+std::vector<std::pair<edict_t*,std::string>> gClientCommands;
+std::vector<std::pair<edict_t*,float>> gClientMoves;
+std::vector<edict_t*> gClientRemovals;
 bool gGroundMissing=false;
 bool gInvalidateDuringGround=false;
 bool gInvalidateDuringHull=false;
@@ -247,6 +250,8 @@ struct Fixture {
     enginefuncs_t engine{};
     globalvars_t engineGlobals{};
     edict_t entity{};
+    edict_t secondEntity{};
+    bool multiClient=false, createSecond=false;
     char infoBuffer[256]{};
     int index{1};
     bool createReturnsNull{false};
@@ -296,16 +301,18 @@ struct Fixture {
 
 edict_t* captureCreateFakeClient(const char* /* name */) {
     ++gFixture->createCalls;
-    return gFixture->createReturnsNull ? nullptr : &gFixture->entity;
+    return gFixture->createReturnsNull ? nullptr : gFixture->createSecond ? &gFixture->secondEntity:&gFixture->entity;
 }
 
 int captureIndexOfEdict(const edict_t* entity) {
     if(entity==&gNavDoor) return 40;
     if(entity==&gNavPlayer) return 2;
+    if(entity==&gFixture->secondEntity) return 2;
     return entity == &gFixture->entity ? gFixture->index : 0;
 }
 edict_t* captureDoorEntity(int index) {
-    return index==40 ? &gNavDoor:index==gFixture->index ? &gFixture->entity:index==2 ? &gNavPlayer:nullptr;
+    return index==40 ? &gNavDoor:index==gFixture->index ? &gFixture->entity:
+        index==2 ? (gFixture->multiClient ? &gFixture->secondEntity:&gNavPlayer):nullptr;
 }
 const char* captureDoorString(int index) {
     return index==10 ? "func_door":index==11 ? "func_door_rotating":"unknown";
@@ -371,8 +378,9 @@ void captureSetClientKeyValue(
     ++gFixture->setKeyCalls;
 }
 
-void captureRemoveEntity(edict_t* /* entity */) {
+void captureRemoveEntity(edict_t* entity) {
     ++gFixture->removeCalls;
+    if(gFixture->multiClient) { gClientRemovals.push_back(entity); entity->free=true; }
 }
 
 qboolean captureCallGameEntity(
@@ -393,7 +401,7 @@ void captureClientDisconnect(edict_t* /* entity */) {
     ++gFixture->disconnectCalls;
 }
 
-void captureClientCommand(edict_t* /* entity */) {
+void captureClientCommand(edict_t* entity) {
     ++gGameDllCommandCalls;
     if (gEngineHooks == nullptr) {
         return;
@@ -407,6 +415,7 @@ void captureClientCommand(edict_t* /* entity */) {
     gLastCommandArgv0 = gEngineHooks->pfnCmd_Argv(0);
     gLastCommandArgv1 = gEngineHooks->pfnCmd_Argv(1);
     gLastCommandArgs = gEngineHooks->pfnCmd_Args();
+    if(gFixture->multiClient) gClientCommands.push_back({entity,gLastCommandArgv1});
 }
 
 int captureGetUserMsgID(
@@ -431,7 +440,8 @@ int captureGetUserMsgID(
     return 0;
 }
 
-int captureGetPlayerUserId(edict_t* /* entity */) {
+int captureGetPlayerUserId(edict_t* entity) {
+    if(gFixture->multiClient && entity==&gFixture->secondEntity) return 2;
     return gFixture->userId;
 }
 
@@ -452,6 +462,7 @@ void captureRunPlayerMove(
     edict_t* entity, const float* viewAngles, float forwardMove, float sideMove, float upMove,
     unsigned short buttons, byte impulse, byte msec) {
     ++gRunPlayerMoveCalls;
+    if(gFixture->multiClient) gClientMoves.push_back({entity,forwardMove});
     if(gSimulateNav) {
         auto& owner=astrabot::adapter::metamod::lifecycleCoordinator();
         assert(owner.registry().currentTick().isAfter(owner.navConsole().motionTrace().commandTick));
@@ -683,7 +694,7 @@ void testInputAndCapacityRejection() {
         astrabot::adapter::metamod::lifecycleCoordinator().fakeClient().create(
             "AstraBot");
     assert(occupied.error == FakeClientError::SlotOccupied);
-    assert(occupiedFixture.removeCalls == 1);
+    assert(occupiedFixture.removeCalls == 0);
     assert(astrabot::adapter::metamod::lifecycleCoordinator().agents().mappingCount() == 0);
     detach();
 }
@@ -780,19 +791,25 @@ void testNavPlayerQueries() {
     gPlayerObstacle=true; gSteeringMode=1;
     host::PlayerRegistry players; assert(players.activateMap(32));
     assert(players.registerPlayer(1)); assert(players.registerPlayer(2)); assert(players.startFrame());
+    struct Mapping { core::PlayerId player{}; int serial{}; } mapping{players.currentPlayer(2),17};
+    const adapter::cstrike::NavPlayerResolver resolver{&mapping,[](const void* context,edict_t* entity) noexcept {
+        const auto& value=*static_cast<const Mapping*>(context);
+        return entity==&gNavPlayer && entity->serialnumber==value.serial ? value.player:core::PlayerId{};
+    }};
     nav::runtime::QueryRequest q{{{1},players.currentPlayer(1),players.mapGeneration(),players.currentTick(),1,1},
         nav::runtime::QueryKind::Blocker,{50,50,36},{98,50,36},nav::runtime::HullDimensions{{-16,-16,-36},{16,16,36}}};
     const auto call=[&](const host::PlayerRegistry* registry) {
-        return adapter::cstrike::queryNavWorld(&fixture.engine,&fixture.entity,nullptr,q,64,registry);
+        return adapter::cstrike::queryNavWorld(&fixture.engine,&fixture.entity,nullptr,q,64,registry,resolver);
     };
     auto r=call(&players);
     assert(r.blocker && r.blocker->kind==nav::runtime::BlockerKind::Player && r.blocker->player==players.currentPlayer(2));
     const auto oldId=r.blocker->id;
     const auto oldGeneration=r.blocker->player->generation.value;
     assert(players.disconnectSlot(2)); assert(players.registerPlayer(2)); ++gNavPlayer.serialnumber;
+    mapping={players.currentPlayer(2),gNavPlayer.serialnumber};
     r=call(&players); assert(r.blocker && r.blocker->id!=oldId && r.blocker->player->generation.value!=oldGeneration);
     r=call(nullptr); assert(r.blocker && r.blocker->kind==nav::runtime::BlockerKind::Other && !r.blocker->player);
-    assert(players.disconnectSlot(2)); r=call(&players);
+    assert(players.disconnectSlot(2)); mapping.player={}; r=call(&players);
     assert(r.blocker && r.blocker->kind==nav::runtime::BlockerKind::Other && !r.blocker->player);
     ++q.stamp.actor.generation.value; r=call(&players); assert(r.error==nav::runtime::QueryError::InvalidResult && !r.blocker);
     q.stamp.actor=players.currentPlayer(1); ++q.stamp.map.value;
@@ -803,6 +820,86 @@ void testNavPlayerQueries() {
     assert(call(&players).error==nav::runtime::QueryError::Unavailable);
     gNavPlayer.free=true; assert(!call(&players).blocker);
     gNavPlayer={}; gPlayerObstacle=false; gSteeringMode=-1;
+}
+void testMultipleManagedClients() {
+    using namespace astrabot;
+    using namespace adapter::cstrike;
+    Fixture fixture{}; fixture.multiClient=true; fixture.engine.pfnPEntityOfEntIndex=&captureDoorEntity;
+    fixture.entity.serialnumber=11; fixture.secondEntity.serialnumber=22;
+    activate(fixture); auto& owner=adapter::metamod::lifecycleCoordinator();
+    enginefuncs_t hooks{}; int version=ENGINE_INTERFACE_VERSION;
+    assert(GetEngineFunctions(&hooks,&version)); gEngineHooks=&hooks;
+    owner.setMovementClockForTest(&navNow); gSimulateNav=false;
+    gClientCommands.clear(); gClientMoves.clear(); gClientRemovals.clear();
+    const auto first=owner.createBot("AstraBot-One",{Team::Terrorist,1}); assert(first.succeeded());
+    fixture.createSecond=true;
+    const auto second=owner.createBot("AstraBot-Two",{Team::CounterTerrorist,2}); assert(second.succeeded());
+    assert(first.player.slot==1 && second.player.slot==2 && first.agent!=second.agent);
+    const auto duplicate=owner.createBot("AstraBot-Duplicate",{Team::Terrorist,1});
+    assert(duplicate.error==FakeClientError::SlotOccupied && fixture.removeCalls==0);
+    assert(owner.entityFor(first.player)==&fixture.entity && owner.entityFor(second.player)==&fixture.secondEntity);
+    assert(owner.playerForEntity(&fixture.secondEntity)==second.player && owner.agents().mappingCount()==2);
+    const auto frame=[&] { navFrame(fixture,16000); };
+    const auto fragment=[&](edict_t* recipient,int slots,int more,const char* text) {
+        hooks.pfnMessageBegin(MSG_ONE,12,nullptr,recipient); hooks.pfnWriteShort(slots);
+        hooks.pfnWriteChar(-1); hooks.pfnWriteByte(more); hooks.pfnWriteString(text); hooks.pfnMessageEnd();
+    };
+    // Only the addressed client consumes its menu and confirmation.
+    fragment(&fixture.entity,1,1,"#Team_"); fragment(&fixture.secondEntity,2,1,"#Team_");
+    fragment(&fixture.entity,1,0,"Select");
+    assert(!owner.joinState(second.player)->pendingSelection()); frame();
+    assert(gClientCommands.size()==1 && gClientCommands.back().first==&fixture.entity && gClientCommands.back().second=="1");
+    assert(owner.joinState(second.player)->phase()==JoinPhase::WaitingTeamMenu);
+    sendVguiMenu(hooks,11,&fixture.entity,26,1); frame(); sendTeamInfo(hooks,13,1,"TERRORIST");
+    assert(owner.joinState(first.player)->phase()==JoinPhase::Joined);
+    core::BotCommand one=core::BotCommand::neutral(1),two=one;
+    one.movement.forward=17; two.movement.forward=53;
+    const auto map=owner.registry().mapGeneration();
+    assert(owner.submitCommand(first.player,map,owner.registry().currentTick(),one).queued());
+    assert(owner.submitCommand(second.player,map,owner.registry().currentTick(),two).error==adapter::metamod::MovementError::NotJoined);
+    frame(); assert(gClientMoves.size()==1 && gClientMoves.back().first==&fixture.entity && gClientMoves.back().second==17);
+    fragment(&fixture.secondEntity,2,0,"Select"); frame();
+    assert(gClientCommands.back().first==&fixture.secondEntity && gClientCommands.back().second=="2");
+    sendVguiMenu(hooks,11,&fixture.secondEntity,27,2); frame(); sendTeamInfo(hooks,13,2,"CT");
+    assert(owner.joinState(second.player)->phase()==JoinPhase::Joined && owner.joinState(first.player)->phase()==JoinPhase::Joined);
+    gClientMoves.clear();
+    assert(owner.submitCommand(second.player,map,owner.registry().currentTick(),two).queued());
+    assert(owner.submitCommand(first.player,map,owner.registry().currentTick(),one).queued());
+    frame(); assert(gClientMoves.size()==2);
+    assert(gClientMoves[0].first==&fixture.entity && gClientMoves[0].second==17);
+    assert(gClientMoves[1].first==&fixture.secondEntity && gClientMoves[1].second==53);
+    // A dead/reused secondary actor cannot consume or redirect the primary queue.
+    gClientMoves.clear();
+    assert(owner.submitCommand(second.player,map,owner.registry().currentTick(),two).queued());
+    assert(owner.submitCommand(first.player,map,owner.registry().currentTick(),one).queued());
+    fixture.secondEntity.v.deadflag=DEAD_DEAD; frame();
+    assert(gClientMoves.size()==1 && gClientMoves[0].first==&fixture.entity);
+    fixture.secondEntity.v.deadflag=DEAD_NO;
+    assert(owner.submitCommand(second.player,map,owner.registry().currentTick(),two).queued());
+    ++fixture.secondEntity.serialnumber; assert(!owner.entityFor(second.player));
+    const auto moves=gClientMoves.size(); frame(); assert(gClientMoves.size()==moves);
+    owner.clientDisconnect(&fixture.secondEntity); // stale identity cannot disconnect a mapped generation
+    assert(owner.registry().currentPlayer(2)==second.player);
+    const auto removes=fixture.removeCalls, kicks=fixture.serverCommandCalls;
+    assert(!owner.remove(second.player).succeeded());
+    assert(fixture.removeCalls==removes && fixture.serverCommandCalls==kicks);
+    assert(owner.entityFor(first.player)==&fixture.entity && owner.joinState(first.player)->phase()==JoinPhase::Joined);
+    const auto replacement=owner.createBot("AstraBot-Replacement",{Team::Terrorist,1}); assert(replacement.succeeded());
+    assert(replacement.player.slot==2 && replacement.player.generation!=second.player.generation);
+    assert(!owner.entityFor(second.player) && owner.entityFor(replacement.player)==&fixture.secondEntity);
+    assert(owner.submitCommand(second.player,map,owner.registry().currentTick(),two).rejected());
+    hooks.pfnMessageBegin(MSG_ALL,13,nullptr,nullptr);
+    owner.clientDisconnect(&fixture.secondEntity);
+    ++fixture.secondEntity.serialnumber;
+    const auto fresh=owner.createBot("AstraBot-Fresh",{Team::Terrorist,1}); assert(fresh.succeeded());
+    hooks.pfnWriteByte(2); hooks.pfnWriteString("CT"); hooks.pfnMessageEnd();
+    assert(owner.joinState(fresh.player)->phase()==JoinPhase::WaitingTeamMenu && !owner.joinState(fresh.player)->teamConfirmed());
+    owner.clientDisconnect(&fixture.secondEntity);
+    assert(owner.entityFor(first.player)==&fixture.entity && owner.agents().mappingCount()==1);
+    assert(owner.submitCommand(first.player,map,owner.registry().currentTick(),one).queued());
+    const auto beforeMap=gClientMoves.size(); owner.serverDeactivate(); frame();
+    assert(gClientMoves.size()==beforeMap && !owner.entityFor(first.player) && owner.agents().mappingCount()==0);
+    detach();
 }
 void testNavPlayers() {
     using namespace astrabot;
@@ -824,7 +921,8 @@ void testNavPlayers() {
             if(d.tick==owner.registry().currentTick()) assert(d.queries==unsigned(gHullCalls-before) && d.queries<=21);
             observed=observed || d.blocker.has_value(); avoided=avoided || d.avoiding;
             cleared=cleared || d.blockerAction==nav::local::BlockerAction::ReinspectPassage;
-            if(d.blocker) assert(d.blocker->kind==(mode==3 ? nav::runtime::BlockerKind::Other:nav::runtime::BlockerKind::Player));
+            // A registry-only synthetic entry has no managed entity binding.
+            if(d.blocker) assert(d.blocker->kind==nav::runtime::BlockerKind::Other && !d.blocker->player);
             if(d.state!=nav::local::WalkState::Running) {
                 if(d.state!=(mode==1 || mode==4 ? nav::local::WalkState::Failed:nav::local::WalkState::Arrived))
                     std::fprintf(stderr,"host player mode=%d us=%llu state=%u reason=%u probe=%u blocker=%u pos=(%.3f,%.3f)\n",
@@ -844,6 +942,18 @@ void testNavPlayers() {
         assert(diagnostic);
         gPlayerObstacle=false; gSteeringMode=-1; gSimulateNav=false; detach();
     }
+}
+void testMultipleClientDetach() {
+    using namespace astrabot;
+    Fixture fixture{}; fixture.multiClient=true; fixture.engine.pfnPEntityOfEntIndex=&captureDoorEntity;
+    activate(fixture); auto& owner=adapter::metamod::lifecycleCoordinator();
+    gClientRemovals.clear();
+    assert(owner.createBot("AstraBot-One",{adapter::cstrike::Team::Terrorist,1}).succeeded());
+    fixture.createSecond=true;
+    assert(owner.createBot("AstraBot-Two",{adapter::cstrike::Team::CounterTerrorist,1}).succeeded());
+    detach();
+    assert(gClientRemovals.size()==2 && gClientRemovals[0]==&fixture.entity && gClientRemovals[1]==&fixture.secondEntity);
+    assert(fixture.disconnectCalls==2 && fixture.removeCalls==2);
 }
 void awaitMovingQueue(Fixture& fixture) {
     auto& nav=astrabot::adapter::metamod::lifecycleCoordinator().navConsole();
@@ -1678,6 +1788,8 @@ int main() {
     testNavTouchDoors();
     testNavSteering();
     testNavPlayerQueries();
+    testMultipleManagedClients();
+    testMultipleClientDetach();
     testNavPlayers();
     testNavWalkCancellationAndGuards();
     testJoinFailureCleanupAndCommandContextReentry();

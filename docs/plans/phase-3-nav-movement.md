@@ -162,8 +162,12 @@ Portable controller foundation: [blocker wait report](../reports/p3-04-blocker-w
 Expiry, stable PlayerId priority and a non-renewable attempt deadline have
 synthetic coverage. [Reactive Walk/host integration](../reports/p3-04-reactive-walk.md)
 now observes players and performs bounded yield/inspected avoidance. Automatic
-replan consumption and the separate multi-client seam remain; both checklist
+replan consumption and per-actor navigation integration remain; both checklist
 slices stay open.
+
+The [per-player host seam](../reports/p3-04-player-host.md) now isolates entity,
+join, message decoding and dispatch with two-client synthetic tests. Per-actor
+NavConsole routing is still needed before simultaneous navigation acceptance.
 
 - **Goal:** bounded deterministic yield/avoid/replan without static mesh mutation.
 - **Why now:** local blockers must not become permanent Nav facts.

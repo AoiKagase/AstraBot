@@ -287,6 +287,19 @@ void testEngineUnavailableAndTraceUniqueness() {
     assert(gTraces.back().error == MovementError::EngineUnavailable);
     assert(!gTraces.back().engineCall);
 }
+void testIndependentPlayerQueues() {
+    Fixture fixture{}; fixture.armAndAdvance(16000);
+    const auto second=fixture.registry.registerPlayer(2).event.player;
+    edict_t other{}; auto command=fixture.command(); command.movement.forward=25;
+    const auto tick=fixture.registry.currentTick();
+    assert(fixture.movement.submit(second,fixture.map,tick,command).queued());
+    assert(fixture.movement.submit(fixture.player,fixture.map,tick,fixture.command()).queued());
+    assert(fixture.movement.dispatchAtFrameEnd(JoinPhase::WaitingTeamMenu,fixture.player,&fixture.entity,fixture.map,{2}).error==MovementError::NotJoined);
+    assert(gCalls.empty());
+    assert(fixture.movement.dispatchAtFrameEnd(JoinPhase::Joined,second,&other,fixture.map,{2}).dispatched());
+    assert(gCalls.size()==1 && gCalls.front().entity==&other && gCalls.front().forward==25);
+    assert(fixture.dispatch().outcome==MovementOutcome::None);
+}
 
 } // namespace
 
@@ -298,5 +311,6 @@ int main() {
     testSubmissionRejectionAndGenerationChecks();
     testDispatchGuardsAndCleanup();
     testEngineUnavailableAndTraceUniqueness();
+    testIndependentPlayerQueues();
     return 0;
 }

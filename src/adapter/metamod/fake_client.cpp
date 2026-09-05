@@ -65,6 +65,7 @@ void FakeClientCoordinator::resetMap() noexcept {
     removalPending_ = false;
     activeEntity_ = nullptr;
     activePlayer_ = {};
+    activeMap_ = {}; activeSerial_=0;
 }
 
 FakeClientResult FakeClientCoordinator::processPrimaryCreate() noexcept {
@@ -122,7 +123,8 @@ FakeClientResult FakeClientCoordinator::create(
     }
     const auto slot = static_cast<std::uint16_t>(index);
     if (players_->isConnected(slot)) {
-        cleanup(entity, false);
+        // The engine returned an occupied slot; ownership was never acquired.
+        // Removing this edict could destroy another managed or human player.
         return rejected(debug::FakeClientError::SlotOccupied,
                         debug::FakeClientStage::RolledBack);
     }
@@ -195,6 +197,7 @@ FakeClientResult FakeClientCoordinator::create(
     result.changed = true;
     activeEntity_ = entity;
     activePlayer_ = result.player;
+    activeMap_=registration.event.map; activeSerial_=entity->serialnumber;
     trace(
         debug::FakeClientStage::Published,
         debug::FakeClientError::None,
@@ -253,9 +256,24 @@ bool FakeClientCoordinator::configured() const noexcept {
            gameDllFunctions_->pfnClientDisconnect != nullptr;
 }
 
+bool FakeClientCoordinator::sameEntity() const noexcept {
+    auto* entity=activeEntity_; auto* engine=engineFunctions_;
+    const auto player=activePlayer_; const auto map=activeMap_; const auto serial=activeSerial_;
+    if(!entity || entity->free || entity->serialnumber!=serial || !engine || !engine->pfnIndexOfEdict ||
+       engine->pfnIndexOfEdict(entity)!=player.slot ||
+       (engine->pfnPEntityOfEntIndex && engine->pfnPEntityOfEntIndex(player.slot)!=entity)) return false;
+    return activeEntity_==entity && activePlayer_==player && activeMap_==map && activeSerial_==serial &&
+        !entity->free && entity->serialnumber==serial;
+}
+edict_t* FakeClientCoordinator::entityFor(host::PlayerId player) const noexcept {
+    if(!player.isValid() || player!=activePlayer_ || !players_ || !players_->isMapActive() ||
+       players_->mapGeneration()!=activeMap_ || players_->currentPlayer(player.slot)!=player || !sameEntity()) return nullptr;
+    return players_ && players_->isMapActive() && players_->mapGeneration()==activeMap_ &&
+        players_->currentPlayer(player.slot)==player ? activeEntity_:nullptr;
+}
 void FakeClientCoordinator::forget(host::PlayerId player) noexcept {
     if (player.isValid() && activePlayer_ == player) {
-        activeEntity_ = nullptr;
+        activeEntity_ = nullptr; activeMap_={}; activeSerial_=0;
         activePlayer_ = {};
         removalPending_ = false;
         attempted_ = false;
@@ -279,6 +297,7 @@ RemovalResult FakeClientCoordinator::requestRemoval() noexcept {
             true,
             false};
     }
+    if(!sameEntity()) return {debug::RemovalOutcome::Rejected,debug::RemovalError::DirectCleanupFailed,activePlayer_,false,false};
     if (!configured()) {
         emitRemoval(
             debug::RemovalOutcome::Rejected,
@@ -294,8 +313,11 @@ RemovalResult FakeClientCoordinator::requestRemoval() noexcept {
             false};
     }
 
+    const auto requestedPlayer=activePlayer_;
+    removalPending_=true; // Publish before synchronous ServerExecute can disconnect it.
     debug::RemovalError error = debug::RemovalError::None;
     if (!issueKick(activeEntity_, error)) {
+        if(activePlayer_==requestedPlayer) removalPending_=false;
         emitRemoval(
             debug::RemovalOutcome::Rejected,
             error,
@@ -310,23 +332,22 @@ RemovalResult FakeClientCoordinator::requestRemoval() noexcept {
             false};
     }
 
-    removalPending_ = true;
     emitRemoval(
         debug::RemovalOutcome::KickQueued,
         debug::RemovalError::None,
-        activePlayer_,
+        requestedPlayer,
         true,
         true);
     return {
         debug::RemovalOutcome::KickQueued,
         debug::RemovalError::None,
-        activePlayer_,
+        requestedPlayer,
         true,
         true};
 }
 
 bool FakeClientCoordinator::cleanupActiveDirect(bool connected) noexcept {
-    if (activeEntity_ == nullptr || !activePlayer_.isValid()) {
+    if (!sameEntity() || !activePlayer_.isValid()) {
         return false;
     }
     if (engineFunctions_ == nullptr || engineFunctions_->pfnRemoveEntity == nullptr ||
@@ -344,7 +365,7 @@ bool FakeClientCoordinator::cleanupActiveDirect(bool connected) noexcept {
 void FakeClientCoordinator::acknowledgeDisconnect(
     host::PlayerId player) noexcept {
     if (player.isValid() && activePlayer_ == player) {
-        activeEntity_ = nullptr;
+        activeEntity_ = nullptr; activeMap_={}; activeSerial_=0;
         activePlayer_ = {};
         removalPending_ = false;
         attempted_ = false;
@@ -352,7 +373,7 @@ void FakeClientCoordinator::acknowledgeDisconnect(
 }
 
 bool FakeClientCoordinator::kickAndCleanup(host::PlayerId player) noexcept {
-    if (!player.isValid() || activePlayer_ != player || activeEntity_ == nullptr) {
+    if (!player.isValid() || activePlayer_ != player || !sameEntity()) {
         return false;
     }
 
@@ -394,11 +415,12 @@ void FakeClientCoordinator::cleanup(edict_t* entity, bool connected) noexcept {
     if (entity == nullptr) {
         return;
     }
+    const auto serial=entity->serialnumber;
     if (connected && gameDllFunctions_ != nullptr &&
         gameDllFunctions_->pfnClientDisconnect != nullptr) {
         gameDllFunctions_->pfnClientDisconnect(entity);
     }
-    if (engineFunctions_ != nullptr && engineFunctions_->pfnRemoveEntity != nullptr) {
+    if (!entity->free && entity->serialnumber==serial && engineFunctions_ != nullptr && engineFunctions_->pfnRemoveEntity != nullptr) {
         engineFunctions_->pfnRemoveEntity(entity);
     }
 }

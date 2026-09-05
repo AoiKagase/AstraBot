@@ -542,16 +542,19 @@ Record budget/deadline misses; tune using post-Finish evidence.
 ### Multi-Bot seam and future events
 
 Portable navigation is per `PlayerId` plus map generation. It must never know
-`primary fake client`. Current `FakeClientCoordinator` retains one active entity,
-`LifecycleCoordinator::submitCommand` checks it, and dispatch passes the same
-entity/join state for all pending slots. Slot arrays are not multi-Bot support.
+`primary fake client`. `LifecycleCoordinator` now owns a bounded set of client
+states, each retaining its own `FakeClientCoordinator`, join and message decoder.
+PlayerId/map/edict serial identify the mapped entity; submit and dispatch use
+that actor's state and consume only its queue. Primary convenience APIs remain
+for bootstrap. The debug NavConsole still requires a unique managed actor and
+must gain explicit per-actor sessions before simultaneous navigation acceptance.
 
-P3-01/P3-03 initially use one actor. P3-04 may test independent actor sessions
-with fake snapshots, but two-AstraBot live acceptance and P3-08 8/16-Bot loads
-require a narrow adapter change: generation-validated PlayerId-to-entity and
-per-player join/command dispatch at those exact seams. Keep it a separately
-reviewable commit inside P3-04, with two-client isolation/removal/reuse tests;
-do not refactor the entire host in this planning session.
+P3-01/P3-03 initially use one actor. The P3-04 adapter change has synthetic
+two-client creation, interleaved menu, join/dispatch, removal/reuse and map-change
+coverage; see [the host seam report](reports/p3-04-player-host.md). Synthetic
+commands establish isolation, not simultaneous live navigation. Two-AstraBot
+live acceptance and P3-08 8/16-Bot loads still require per-actor navigation
+integration and post-Finish live evidence.
 
 A future event consumer can subscribe to terminal primitive outcome carrying
 actor kind/ID, map fingerprint/generation, route generation, selected edge and

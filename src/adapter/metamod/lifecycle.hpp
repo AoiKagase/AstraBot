@@ -44,6 +44,10 @@ public:
     void clientDisconnect(edict_t* entity) noexcept;
     void startFrame() noexcept;
     RemovalResult removeActive() noexcept;
+    RemovalResult remove(core::PlayerId) noexcept;
+    FakeClientResult createBot(const char*, cstrike::JoinRequest) noexcept;
+    edict_t* entityFor(core::PlayerId) const noexcept;
+    core::PlayerId playerForEntity(edict_t*) const noexcept;
     void queuePrimaryCreate(cstrike::JoinRequest request) noexcept;
     MovementResult submitCommand(
         core::PlayerId player,
@@ -66,20 +70,21 @@ public:
     int commandArgc() noexcept;
 
     cstrike::JoinAction requestJoin(cstrike::JoinRequest request) noexcept;
+    cstrike::JoinAction requestJoin(core::PlayerId, cstrike::JoinRequest) noexcept;
     bool dispatchMenuForTest(std::uint8_t selection) noexcept;
 
     void setTraceSink(debug::LifecycleTraceSink sink) noexcept {
         traceSink_ = sink;
     }
     void setFakeClientTraceSink(debug::FakeClientTraceSink sink) noexcept {
-        fakeClient_.setTraceSink(sink);
+        for(auto& client:clients_) client.fake.setTraceSink(sink);
     }
     void setJoinTraceSink(debug::JoinTraceSink sink) noexcept {
         joinTraceSink_ = sink;
     }
     void setRemovalTraceSink(debug::RemovalTraceSink sink) noexcept {
         removalTraceSink_ = sink;
-        fakeClient_.setRemovalTraceSink(sink);
+        for(auto& client:clients_) client.fake.setRemovalTraceSink(sink);
     }
     void setMovementTraceSink(debug::MovementTraceSink sink) noexcept {
         movement_.setTraceSink(sink);
@@ -92,27 +97,37 @@ public:
     const host::PlayerRegistry& registry() const noexcept { return registry_; }
     host::BotAgentRegistry& agents() noexcept { return agents_; }
     const host::BotAgentRegistry& agents() const noexcept { return agents_; }
-    FakeClientCoordinator& fakeClient() noexcept { return fakeClient_; }
-    cstrike::JoinState& joinState() noexcept { return joinState_; }
-    const cstrike::JoinState& joinState() const noexcept { return joinState_; }
+    FakeClientCoordinator& fakeClient() noexcept { return clients_[0].fake; }
+    cstrike::JoinState& joinState() noexcept { return clients_[0].join; }
+    const cstrike::JoinState& joinState() const noexcept { return clients_[0].join; }
+    const cstrike::JoinState* joinState(core::PlayerId) const noexcept;
     const cstrike::MessageDecoder& messageDecoder() const noexcept {
-        return messageDecoder_;
+        return activeDecoder_ ? *activeDecoder_:messageDecoder_;
     }
     LifecycleStatus status() const noexcept { return status_; }
     cstrike::NavConsole& navConsole() noexcept { return navConsole_; }
 
 private:
+    struct ClientState {
+        FakeClientCoordinator fake{};
+        cstrike::JoinState join{};
+        cstrike::MessageDecoder decoder{};
+        bool cleanupPending{};
+        cstrike::JoinError cleanupError{cstrike::JoinError::None};
+    };
+    ClientState* findClient(core::PlayerId) noexcept;
+    const ClientState* findClient(core::PlayerId) const noexcept;
     void emit(
         host::LifecycleEventKind attemptedKind,
         const host::LifecycleResult& result,
         host::PlayerId attemptedPlayer = host::PlayerId::invalid(),
         host::TickId attemptedTick = host::TickId::invalid()) noexcept;
-    void emitJoin(const cstrike::JoinAction& action) noexcept;
+    void emitJoin(const ClientState&, const cstrike::JoinAction& action) noexcept;
     void handleMessage(const cstrike::MessageEvent& event) noexcept;
-    void handleJoinAction(const cstrike::JoinAction& action) noexcept;
-    void cleanupFailedJoin(cstrike::JoinError error) noexcept;
+    void handleJoinAction(ClientState&, const cstrike::JoinAction& action) noexcept;
+    void cleanupFailedJoin(ClientState&, cstrike::JoinError error) noexcept;
     void cleanupActiveAfterRemoval(
-        const RemovalResult& result,
+        ClientState&, const RemovalResult& result,
         host::PlayerId player) noexcept;
     void emitRemoval(
         debug::RemovalOutcome outcome,
@@ -120,25 +135,25 @@ private:
         host::PlayerId player,
         bool mappingPresent,
         bool entityPresent) noexcept;
-    bool dispatchMenu(std::uint8_t selection) noexcept;
+    bool dispatchMenu(ClientState&, std::uint8_t selection) noexcept;
     static void onMessage(
         void* context,
         const cstrike::MessageEvent& event) noexcept;
 
     host::PlayerRegistry registry_{};
     host::BotAgentRegistry agents_{};
-    FakeClientCoordinator fakeClient_{};
+    std::array<ClientState,host::kMaxClientSlots> clients_{};
     MovementCoordinator movement_{};
     cstrike::NavConsole navConsole_{};
     enginefuncs_t* engineFunctions_{nullptr};
     mutil_funcs_t* utilityFunctions_{nullptr};
     DLL_FUNCTIONS* gameDllFunctions_{nullptr};
     cstrike::MessageDecoder messageDecoder_{};
-    cstrike::JoinState joinState_{};
-    edict_t* activeJoinEntity_{nullptr};
+    cstrike::MessageDecoder* activeDecoder_{};
+    core::MapGeneration messageMap_{};
+    std::array<core::PlayerId,host::kMaxClientSlots> messagePlayers_{};
     bool commandContextActive_{false};
-    bool cleanupPending_{false};
-    cstrike::JoinError pendingCleanupError_{cstrike::JoinError::None};
+    core::PlayerId commandPlayer_{};
     LifecycleStatus status_{};
     std::array<char, 16> commandArgv0_{};
     std::array<char, 16> commandArgv1_{};

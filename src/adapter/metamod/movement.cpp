@@ -165,24 +165,12 @@ MovementResult MovementCoordinator::dispatchAtFrameEnd(
     edict_t* entity,
     core::MapGeneration mapGeneration,
     core::TickId dispatchTick) noexcept {
-    MovementResult lastResult{};
-    bool dispatchedAny = false;
-    for (auto& pending : pending_) {
-        if (!pending.has_value()) {
-            continue;
-        }
-        const PendingCommand command = *pending;
-        pending.reset();
-        lastResult = dispatchOne(
-            command,
-            joinPhase,
-            activePlayer,
-            entity,
-            mapGeneration,
-            dispatchTick);
-        dispatchedAny = true;
-    }
-    return dispatchedAny ? lastResult : MovementResult{};
+    if(!activePlayer.isValid() || activePlayer.slot>host::kMaxClientSlots) return {};
+    auto& pending=pending_[activePlayer.slot-1U];
+    if(!pending) return {};
+    const PendingCommand command=*pending;
+    pending.reset();
+    return dispatchOne(command,joinPhase,activePlayer,entity,mapGeneration,dispatchTick);
 }
 
 MovementResult MovementCoordinator::dispatchOne(
@@ -242,7 +230,7 @@ MovementResult MovementCoordinator::dispatchOne(
             pending.commandTick,
             pending.command.msec);
     }
-    if (entity == nullptr) {
+    if (entity == nullptr || entity->free) {
         return reject(
             MovementError::MissingEntity,
             pending.player,
