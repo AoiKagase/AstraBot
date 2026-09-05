@@ -28,6 +28,8 @@ struct AdapterState {
 };
 
 AdapterState gState{};
+enginefuncs_t gPluginEngine{};
+globalvars_t* gEngineGlobals{};
 
 bool hasRequiredGameDllTables(const gamedll_funcs_t* gameDllFunctions) noexcept {
     return gameDllFunctions != nullptr &&
@@ -98,6 +100,8 @@ void resetState() noexcept {
     gpMetaGlobals = nullptr;
     gpGamedllFuncs = nullptr;
     gpMetaUtilFuncs = nullptr;
+    gPluginEngine = {};
+    gEngineGlobals = nullptr;
 }
 
 } // namespace
@@ -117,6 +121,12 @@ plugin_info_t Plugin_info = {
 meta_globals_t* gpMetaGlobals = nullptr;
 gamedll_funcs_t* gpGamedllFuncs = nullptr;
 mutil_funcs_t* gpMetaUtilFuncs = nullptr;
+
+extern "C" void WINAPI GiveFnptrsToDll(enginefuncs_t* engine, globalvars_t* globals) {
+    if (gState.attached) return;
+    gPluginEngine = engine && globals ? *engine : enginefuncs_t{};
+    gEngineGlobals = engine && globals ? globals : nullptr;
+}
 
 C_DLLEXPORT FORCE_STACK_ALIGN int Meta_Query(
     char* interfaceVersion,
@@ -153,6 +163,8 @@ C_DLLEXPORT FORCE_STACK_ALIGN int Meta_Attach(
     // The pinned Meta_Attach ABI has no enginefuncs_t argument.  Metamod-P
     // supplies the live engine table through the pinned utility callback.
     if (gState.attached || !gState.queried || functionTable == nullptr ||
+        !gEngineGlobals || !gPluginEngine.pfnAddServerCommand ||
+        !gPluginEngine.pfnCmd_Argc || !gPluginEngine.pfnCmd_Argv ||
         metaGlobals == nullptr || !hasRequiredGameDllTables(gameDllFunctions) ||
         !hasRequiredUtilityTable(gpMetaUtilFuncs)) {
         return 0;
@@ -197,6 +209,10 @@ C_DLLEXPORT FORCE_STACK_ALIGN int Meta_Attach(
         gpMetaUtilFuncs,
         gameDllFunctions->dllapi_table,
         userMessageIds);
+    // The bootstrap table contains Metamod's command-registration wrapper.
+    // GetHookTables returns a different table that bypasses unload tracking.
+    astrabot::adapter::metamod::lifecycleCoordinator().navConsole().configure(
+        &gPluginEngine, gpMetaUtilFuncs, gEngineGlobals);
 
     astrabot::debug::emitAttached(&logAttachedIdentity);
     return 1;

@@ -38,8 +38,10 @@ rtk powershell -NoProfile -Command '$vs = "C:\Program Files\Microsoft Visual Stu
 ```
 
 The adapter export check must find exactly these undecorated names:
-`Meta_Query`, `Meta_Attach`, `Meta_Detach`, `GetEntityAPI2`, and
-`GetEngineFunctions`. Linux `-m32` and live-server validation remain
+`Meta_Query`, `Meta_Attach`, `Meta_Detach`, `GetEntityAPI2`,
+`GetEngineFunctions`, and `GiveFnptrsToDll`. The sixth export is the user-approved
+engine bootstrap for Metamod-managed command registration (2026-09-05).
+Linux `-m32` and live-server validation remain
 post-Finish checks and must not be started before the project-wide Finish
 decision, which is only made after every project plan is complete.
 

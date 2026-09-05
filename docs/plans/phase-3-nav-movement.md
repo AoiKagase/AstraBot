@@ -35,9 +35,9 @@ Pending post-Finish rows never become passes because offline work is complete.
 | `src/debug/nav_command.*` | operator parsing/status/trace |
 | `tests/nav/simulation/*`, `tests/live/nav/*` | offline replay and post-Finish scenario evidence |
 
-These are proposed files. Portable targets must remain SDK-free. The adapter
-currently links only `astrabot_core`; runtime integration must explicitly add
-`astrabot_nav` and update adapter test linkage, without reversing dependencies.
+Unimplemented modules remain proposed. Portable targets remain SDK-free. The
+console adapter and its tests now link `astrabot_core` and `astrabot_nav`, without
+reversing dependencies. Core and Nav share their MSVC STL ABI setting.
 
 ## Common commit and verification protocol
 
@@ -51,7 +51,7 @@ Portable baseline:
 `rtk proxy powershell -NoProfile -File tools/verify-nav-evidence.ps1 -Mode Debug`.
 Register new test executables with CTest. Adapter slices use pinned x86 NMake
 Debug build/tests from AGENTS.md; changed adapter linkage/exports also require
-Release/export verification. Preserve the five undecorated exports.
+Release/export verification. Preserve the six undecorated exports in AGENTS.md, including the approved engine bootstrap.
 Unit/simulation passes never substitute for live observations.
 
 ## P3-01 — Compatibility prerequisite, contracts and observable goto session
@@ -74,8 +74,9 @@ Unit/simulation passes never substitute for live observations.
   - [x] Add portable session/snapshot/query contracts and fake-host tests; default
     allowPartial=false and keep ExpansionLimit prefixes diagnostic-only.
     See [portable session evidence](../reports/p3-01-route-session.md).
-  - [ ] Wire console goto/status/cancel to the managed actor and route result,
+  - [x] Wire console goto/status/cancel to the managed actor and route result,
     with explicit Nav linkage and offline adapter tests.
+    See [console evidence](../reports/p3-01-nav-console.md); no motion is issued.
 - **Tests:** metadata, missing/oversized/corrupt input, limits, no input writes;
   invalid actor/area, same area, Complete/Unreachable/ExpansionLimit with/without
   prefix, goal replacement, stale actor/map/query, disconnect.
@@ -300,5 +301,6 @@ The first P3-01 slice (bounded read-only NAV inspector and synthetic tests) is
 complete. Dust/dust2 load/query/route comparisons pass after the zero-ID and
 nullable-Approach correction. Compatibility is partially validated, with its
 remaining rows explicitly recorded. The portable session slice is also implemented.
-Continue console goto/status/cancel integration with explicit Nav linkage and
-offline adapter tests. No new numbering or Finish declaration.
+Console goto/status/cancel integration also has offline adapter evidence.
+Next is the existing P3-02 corridor/portal slice. Real compatibility remains
+partial; no new numbering or Finish declaration.

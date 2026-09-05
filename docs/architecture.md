@@ -362,9 +362,11 @@ in P1-01.
 
 ## Phase 3 local navigation decision (2026-09-05)
 
-The inspector and portable session contracts are implemented. Movement and
-adapter integration below remain planned. Audited planning base: `b49f4da`.
+The inspector, portable session and console adapter integration are implemented.
+Movement below remains planned. Audited planning base: `b49f4da`.
 See [session evidence](reports/p3-01-route-session.md) for the implemented boundary.
+See [console evidence](reports/p3-01-nav-console.md) for operator commands,
+grounded queries and the approved six-export engine bootstrap.
 Task ownership is in [the existing plan](plans/phase-3-nav-movement.md);
 real-byte readiness is in [the compatibility protocol](research/real-nav-compatibility.md).
 

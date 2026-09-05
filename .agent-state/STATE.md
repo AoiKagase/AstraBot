@@ -1,21 +1,16 @@
 # State
 
 Status: complete
-Milestone: Phase 2 offline complete (P2-01 through P2-08)
-Task: P208 verified delivery (containing commit); preserve worktree
-Goal: reproducible bounded Nav evidence; no subagents.
-Branch: codex/p208-nav-evidence, base main 4fcc3fe.
-Spec: docs/superpowers/specs/2026-09-05-p208-nav-evidence-design.md
-Plan: docs/superpowers/plans/2026-09-05-p208-nav-evidence.md
-
-Done: independent fixtures/corruption/fuzz/oracles, hashes, benchmark, Windows CI.
-Report: docs/reports/phase-2-offline-gate.md
-Verified: Debug16/16, analyze16/16, dedicated ASan3/3 and long100000 cases;
-2465 exact rejections/1788 prefixes, 9216 query comparisons/1024 Dijkstra pairs.
-Manifest/replay/negative checks passed. Inline self-review; no production fix.
-Next: Phase 2 offline complete; retain worktree/branch and await user instruction.
-No main merge or remote CI run; real NAV comparison not performed (optional).
-Project-wide Finish has NOT been declared; Linux/live remain deferred.
-Blocked: none.
-Constraints: no main merge/remotes/Linux/live; preserve other worktrees and
-local FocalSpan/Serena files. No subagents. Keep _ITERATOR_DEBUG_LEVEL=0.
+Task: P3-01 console goto/status/cancel slice (no movement)
+Branch: codex/p301-nav-console, base main 03ee7d9 (integration complete).
+Plan: docs/plans/phase-3-nav-movement.md, existing P3-01 console checklist.
+Implemented: explicit bounded NAV load, managed actor selection,
+ground trace plus containing query, RouteSession lifecycle, bounded console trace.
+Portable20/20 and adapter24/24 tests pass on x86; Release six exports verified.
+Core/Nav STL debug ABI aligned; SDK macro collisions isolated.
+User approved six exports including GiveFnptrsToDll. Bootstrap table used for
+Metamod-tracked registration; incorrect hook-table registration is regression-tested.
+Report: docs/reports/p3-01-nav-console.md.
+Next: P3-02 corridor/portals. Real NAV provenance/detail acceptance remains partial.
+Main baseline x86 verification passed. FocalSpan queried in this worktree.
+No subagents, Linux, live server, real input writes or Finish.

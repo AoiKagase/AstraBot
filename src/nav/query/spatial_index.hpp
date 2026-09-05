@@ -32,7 +32,7 @@ class NavSpatialIndex final {
     NavQueryResult nearestGeometry(model::NavVector3 point, NavQueryLimits limits) const noexcept;
 
   private:
-    static constexpr std::size_t absent = std::numeric_limits<std::size_t>::max();
+    static constexpr std::size_t absent = (std::numeric_limits<std::size_t>::max)();
     struct Node final {
         std::array<double, 3> low{}, high{};
         std::size_t left{absent}, right{absent}, area{absent};

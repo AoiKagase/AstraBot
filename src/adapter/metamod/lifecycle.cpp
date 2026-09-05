@@ -56,6 +56,7 @@ void LifecycleCoordinator::configure(
 }
 
 void LifecycleCoordinator::reset() noexcept {
+    navConsole_.reset();
     const host::PlayerId activePlayer = fakeClient_.activePlayer();
     const bool hadActiveClient = activePlayer.isValid() &&
                                   fakeClient_.activeEntity() != nullptr;
@@ -121,6 +122,7 @@ void LifecycleCoordinator::serverActivate(int clientMax) noexcept {
 }
 
 void LifecycleCoordinator::serverDeactivate() noexcept {
+    navConsole_.invalidate(nav::runtime::SessionReason::MapChanged);
     movement_.resetMap();
     const cstrike::JoinAction joinAction =
         joinState_.cancel(cstrike::JoinError::MapDeactivated);
@@ -164,6 +166,7 @@ void LifecycleCoordinator::clientDisconnect(edict_t* entity) noexcept {
     // registry transition.  Keep FakeClient's mapping until that transition
     // so acknowledgeDisconnect() remains the single normal cleanup path.
     movement_.forget(disconnectedPlayer);
+    if (wasActiveClient) navConsole_.invalidate(nav::runtime::SessionReason::Disconnected);
     const bool joinMatches =
         joinState_.player().isValid() && index >= 1 &&
         joinState_.player().slot == static_cast<std::uint16_t>(index);
@@ -228,6 +231,7 @@ RemovalResult LifecycleCoordinator::removeActive() noexcept {
     }
 
     movement_.forget(player);
+    navConsole_.invalidate(nav::runtime::SessionReason::Disconnected);
     if (joinState_.active()) {
         const cstrike::JoinAction action =
             joinState_.cancel(cstrike::JoinError::Disconnected);
@@ -303,6 +307,7 @@ void LifecycleCoordinator::startFrame() noexcept {
         fakeClient_.activeEntity(),
         registry_.mapGeneration(),
         registry_.currentTick());
+    navConsole_.observe(*this);
 }
 
 MovementResult LifecycleCoordinator::submitCommand(

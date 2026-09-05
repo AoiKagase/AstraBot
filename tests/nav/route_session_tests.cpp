@@ -2,6 +2,8 @@
 #include "nav/runtime/route_session.hpp"
 #include "route_fixture.hpp"
 #include "nav/enrichment/traversal_link.hpp"
+#include "debug/nav_command.hpp"
+#include <string>
 #include <iostream>
 #include <limits>
 #include <stdexcept>
@@ -9,6 +11,24 @@ using namespace astrabot;
 using namespace nav;
 using namespace runtime;
 void check(bool yes) { if (!yes) throw std::runtime_error("route session check failed"); }
+void collect(void* ctx,const char* line) noexcept {
+    static_cast<std::vector<std::string>*>(ctx)->emplace_back(line);
+}
+void consoleValues() {
+    check(debug::parseNavGoal("4294967295")->value==4294967295U);
+    for(const char* bad:{"","0","-1","+1","1 ","1;quit","4294967296","12345678901"})
+        check(!debug::parseNavGoal(bad));
+    auto result=std::make_shared<query::NavRouteResult>();
+    result->status=query::NavRouteStatus::Complete; result->total=1.25;
+    result->steps.resize(70);
+    runtime::DecisionTrace trace; trace.route=result; trace.state=runtime::SessionState::Ready;
+    std::vector<std::string> first,second;
+    debug::printNavTrace(trace,&collect,&first); debug::printNavTrace(trace,&collect,&second);
+    check(first==second && first.size()==66);
+    check(first[0].find("arrival=unverified")!=std::string::npos);
+    check(first[1].find("omitted=6")!=std::string::npos && first[1].find("cost=1.25")!=std::string::npos);
+    for(const auto& line:first) check(line.size()<512);
+}
 struct FakeQueries final : IWorldQueries {
     unsigned calls{};
     QueryRequest last{};
@@ -75,6 +95,7 @@ void externalOwnership() {
 }
 int main() {
     try {
+        consoleValues();
         externalOwnership();
         auto s=snapshot(); auto g=graph(); FakeQueries port;
         RouteSession session(s.agent,s.actor,s.map);

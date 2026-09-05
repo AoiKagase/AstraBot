@@ -94,8 +94,13 @@ set_target_properties(astrabot_core PROPERTIES
     VISIBILITY_INLINES_HIDDEN YES
 )
 astrabot_enable_warnings(astrabot_core)
+if(MSVC)
+    # Core and Nav are linked into the same adapter; their STL ABI must agree.
+    target_compile_definitions(astrabot_core PUBLIC _ITERATOR_DEBUG_LEVEL=0)
+endif()
 
 add_library(astrabot_nav STATIC
+    src/debug/nav_command.cpp
     src/nav/runtime/route_session.cpp
     src/nav/query/route_search.cpp
     src/nav/query/graph.cpp
@@ -224,12 +229,13 @@ if(ASTRABOT_BUILD_METAMOD)
         src/adapter/cstrike/messages.cpp
         src/adapter/metamod/fake_client.cpp
         src/adapter/metamod/plugin_entry.cpp
+        src/adapter/cstrike/nav/console.cpp
         src/adapter/metamod/lifecycle.cpp
         src/adapter/metamod/movement.cpp
         src/debug/host_trace.cpp
     )
     target_compile_features(astrabot_mm PRIVATE cxx_std_17)
-    target_link_libraries(astrabot_mm PRIVATE astrabot_core)
+    target_link_libraries(astrabot_mm PRIVATE astrabot_core astrabot_nav)
     target_include_directories(astrabot_mm
         PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/src
@@ -247,6 +253,7 @@ if(ASTRABOT_BUILD_METAMOD)
         POSITION_INDEPENDENT_CODE ON
     )
     if(WIN32)
+        target_sources(astrabot_mm PRIVATE src/adapter/metamod/astrabot.def)
         set_target_properties(astrabot_mm PROPERTIES SUFFIX ".dll")
     elseif(UNIX)
         set_target_properties(astrabot_mm PROPERTIES SUFFIX ".so")
@@ -464,12 +471,13 @@ if(ASTRABOT_BUILD_TESTS)
             src/adapter/cstrike/messages.cpp
             src/adapter/metamod/fake_client.cpp
             src/adapter/metamod/plugin_entry.cpp
+            src/adapter/cstrike/nav/console.cpp
             src/adapter/metamod/lifecycle.cpp
             src/adapter/metamod/movement.cpp
             src/debug/host_trace.cpp
         )
         target_compile_features(astrabot_adapter_entry_tests PRIVATE cxx_std_17)
-        target_link_libraries(astrabot_adapter_entry_tests PRIVATE astrabot_core)
+        target_link_libraries(astrabot_adapter_entry_tests PRIVATE astrabot_core astrabot_nav)
         target_include_directories(astrabot_adapter_entry_tests
             PRIVATE
                 ${CMAKE_CURRENT_SOURCE_DIR}/src
@@ -518,13 +526,14 @@ if(ASTRABOT_BUILD_TESTS)
             src/adapter/cstrike/join_state.cpp
             src/adapter/cstrike/messages.cpp
             src/adapter/metamod/fake_client.cpp
+            src/adapter/cstrike/nav/console.cpp
             src/adapter/metamod/lifecycle.cpp
             src/adapter/metamod/movement.cpp
             src/adapter/metamod/plugin_entry.cpp
             src/debug/host_trace.cpp
         )
         target_compile_features(astrabot_fake_client_tests PRIVATE cxx_std_17)
-        target_link_libraries(astrabot_fake_client_tests PRIVATE astrabot_core)
+        target_link_libraries(astrabot_fake_client_tests PRIVATE astrabot_core astrabot_nav)
         target_include_directories(astrabot_fake_client_tests
             PRIVATE
                 ${CMAKE_CURRENT_SOURCE_DIR}/src

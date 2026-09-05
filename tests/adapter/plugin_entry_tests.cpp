@@ -128,6 +128,9 @@ int captureGetPlayerUserId(edict_t* /* entity */) {
 
 void captureServerCommand(char* /* command */) {}
 void captureServerExecute() {}
+void captureAddCommand(char*, void(*)()) {}
+int captureArgc() { return 0; }
+const char* captureArgv(int) { return ""; }
 void captureRunPlayerMove(
     edict_t* /* entity */,
     const float* /* viewAngles */,
@@ -156,6 +159,7 @@ struct Fixture {
     gamedll_funcs_t gameDll{};
     META_FUNCTIONS callbacks{};
     enginefuncs_t engine{};
+    globalvars_t engineGlobals{};
 
     Fixture() {
         utility.pfnLogConsole = &captureLogConsole;
@@ -171,6 +175,9 @@ struct Fixture {
         engine.pfnServerCommand = &captureServerCommand;
         engine.pfnServerExecute = &captureServerExecute;
         engine.pfnRunPlayerMove = &captureRunPlayerMove;
+        engine.pfnAddServerCommand = &captureAddCommand;
+        engine.pfnCmd_Argc = &captureArgc;
+        engine.pfnCmd_Argv = &captureArgv;
         dll.pfnClientConnect = &captureClientConnect;
         dll.pfnClientPutInServer = &captureClientPutInServer;
         dll.pfnClientDisconnect = &captureClientDisconnect;
@@ -194,6 +201,7 @@ void resetAdapter() {
 }
 
 void query(Fixture& fixture) {
+    GiveFnptrsToDll(&fixture.engine,&fixture.engineGlobals);
     char interfaceVersion[] = META_INTERFACE_VERSION;
     plugin_info_t* pluginInfo = nullptr;
     assert(Meta_Query(interfaceVersion, &pluginInfo, &fixture.utility) != 0);
@@ -248,6 +256,14 @@ void testAttachValidationIsRollbackSafe() {
 
     query(fixture);
     const META_FUNCTIONS before = fixture.callbacks;
+
+    GiveFnptrsToDll(nullptr,nullptr);
+    assert(Meta_Attach(PT_ANYTIME,&fixture.callbacks,&fixture.globals,&fixture.gameDll)==0);
+    assertCallbacksEqual(fixture.callbacks,before);
+    auto noConsole=fixture.engine; noConsole.pfnAddServerCommand=nullptr;
+    GiveFnptrsToDll(&noConsole,&fixture.engineGlobals);
+    assert(Meta_Attach(PT_ANYTIME,&fixture.callbacks,&fixture.globals,&fixture.gameDll)==0);
+    GiveFnptrsToDll(&fixture.engine,&fixture.engineGlobals);
 
     assert(Meta_Attach(PT_ANYTIME, nullptr, &fixture.globals, &fixture.gameDll) == 0);
     assertCallbacksEqual(fixture.callbacks, before);

@@ -11,6 +11,7 @@
 
 #include "adapter/cstrike/join_state.hpp"
 #include "adapter/cstrike/messages.hpp"
+#include "adapter/cstrike/nav/console.hpp"
 #include "debug/host_trace.hpp"
 #include "host/bot_agents.hpp"
 #include "host/player_registry.hpp"
@@ -98,6 +99,7 @@ public:
         return messageDecoder_;
     }
     LifecycleStatus status() const noexcept { return status_; }
+    cstrike::NavConsole& navConsole() noexcept { return navConsole_; }
 
 private:
     void emit(
@@ -127,6 +129,7 @@ private:
     host::BotAgentRegistry agents_{};
     FakeClientCoordinator fakeClient_{};
     MovementCoordinator movement_{};
+    cstrike::NavConsole navConsole_{};
     enginefuncs_t* engineFunctions_{nullptr};
     mutil_funcs_t* utilityFunctions_{nullptr};
     DLL_FUNCTIONS* gameDllFunctions_{nullptr};

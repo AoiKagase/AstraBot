@@ -1,6 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 // Copyright (c) 2026 AstraBot contributors.
 
+#include <fstream>
+#include <iterator>
+#ifdef _MSC_VER
+#include <crtdbg.h>
+#endif
+
 #include "adapter/metamod/fake_client.hpp"
 #include "adapter/metamod/lifecycle.hpp"
 #include "adapter/metamod/plugin_entry.hpp"
@@ -10,6 +16,31 @@
 #include <cstring>
 #include <string>
 #include <vector>
+#include <map>
+#include "../nav/route_fixture.hpp"
+#include "../nav/evidence/fixture.hpp"
+
+std::map<std::string, void(*)()> gNavCommands;
+std::vector<std::string> gNavArgs;
+std::vector<std::string> gNavOutput;
+bool gGroundMissing=false;
+bool gInvalidateDuringGround=false;
+void captureAddCommand(char* name, void(*callback)()) { gNavCommands[name]=callback; }
+void unexpectedHookRegistration(char*, void(*)()) { std::abort(); }
+int captureArgc() { return static_cast<int>(gNavArgs.size()); }
+const char* captureArgv(int i) { return gNavArgs.at(static_cast<std::size_t>(i)).c_str(); }
+void runNav(std::initializer_list<const char*> args) {
+    gNavArgs.assign(args.begin(),args.end());
+    gNavCommands.at(gNavArgs[0])();
+}
+void captureGround(const float*, const float* end, int, edict_t*, TraceResult* result) {
+    *result={}; result->flFraction=0.5f;
+    if(gGroundMissing) result->flFraction=1;
+    result->vecEndPos=Vector(end[0],end[1],0); result->vecPlaneNormal=Vector(0,0,1);
+    if(gInvalidateDuringGround)
+        astrabot::adapter::metamod::lifecycleCoordinator().navConsole().invalidate(
+            astrabot::nav::runtime::SessionReason::MapChanged);
+}
 
 namespace {
 
@@ -40,7 +71,7 @@ void captureLogConsole(plid_t /* pluginId */, const char* format, ...) {
     assert(std::strcmp(format, "%s") == 0);
     va_list arguments;
     va_start(arguments, format);
-    (void)va_arg(arguments, const char*);
+    gNavOutput.emplace_back(va_arg(arguments, const char*));
     va_end(arguments);
 }
 
@@ -91,6 +122,7 @@ struct Fixture {
     gamedll_funcs_t gameDll{};
     META_FUNCTIONS callbacks{};
     enginefuncs_t engine{};
+    globalvars_t engineGlobals{};
     edict_t entity{};
     char infoBuffer[256]{};
     int index{1};
@@ -125,6 +157,10 @@ struct Fixture {
         engine.pfnServerExecute = &captureServerExecute;
         engine.pfnClientCommand = &captureEngineClientCommand;
         engine.pfnRunPlayerMove = &captureRunPlayerMove;
+        engine.pfnAddServerCommand = &captureAddCommand;
+        engine.pfnCmd_Argc = &captureArgc;
+        engine.pfnCmd_Argv = &captureArgv;
+        engine.pfnTraceLine = &captureGround;
         dll.pfnClientConnect = &captureClientConnect;
         dll.pfnClientPutInServer = &captureClientPutInServer;
         dll.pfnClientDisconnect = &captureClientDisconnect;
@@ -264,6 +300,9 @@ void captureRemovalTrace(const astrabot::debug::RemovalTrace& trace) noexcept {
 }
 
 void attach(Fixture& fixture) {
+    GiveFnptrsToDll(&fixture.engine,&fixture.engineGlobals);
+    // The hook table must never be used for plugin command registration.
+    fixture.engine.pfnAddServerCommand=&unexpectedHookRegistration;
     char interfaceVersion[] = META_INTERFACE_VERSION;
     plugin_info_t* pluginInfo = nullptr;
     assert(Meta_Query(interfaceVersion, &pluginInfo, &fixture.utility) != 0);
@@ -534,6 +573,74 @@ void testMessageDrivenJoinAndCommandContext() {
     assert(astrabot::adapter::metamod::lifecycleCoordinator().agents().mappingCount() == 1);
     assert(gJoinTraces.size() >= 6U);
     const std::size_t joinTraceCount = gJoinTraces.size();
+    // Server commands use only the managed joined actor and never emit movement.
+    auto& nav=astrabot::adapter::metamod::lifecycleCoordinator().navConsole();
+    const auto map=astrabot::adapter::metamod::lifecycleCoordinator().registry().mapGeneration();
+    route_test::Area a{1,{{0,0,0},{2,2,0},0,0}}, b{2,{{3,0,0},{5,2,0},0,0}};
+    a.targets[1]={2};
+    assert(nav.publish(map,route_test::snapshot({a,b})).isNone());
+    fixture.entity.v.origin=Vector(1,1,36);
+    fixture.entity.v.mins=Vector(-16,-16,-36); fixture.entity.v.maxs=Vector(16,16,36);
+    fixture.entity.v.flags |= FL_ONGROUND | FL_FAKECLIENT;
+    fixture.entity.v.deadflag=DEAD_NO;
+    const auto moves=gRunPlayerMoveCalls;
+    runNav({"astrabot_goto","2"});
+    assert(nav.trace() && nav.trace()->state==astrabot::nav::runtime::SessionState::Ready);
+    assert(nav.trace()->route->total==3 && nav.trace()->route->steps.size()==1);
+    const auto generation=nav.trace()->routeGeneration;
+    runNav({"astrabot_goto","-1"});
+    runNav({"astrabot_goto","4294967296"});
+    runNav({"astrabot_goto","2","extra"});
+    assert(nav.trace()->routeGeneration==generation);
+    runNav({"astrabot_nav_status"});
+    assert(!gNavOutput.empty() && gRunPlayerMoveCalls==moves);
+    runNav({"astrabot_nav_cancel"});
+    assert(nav.trace()->state==astrabot::nav::runtime::SessionState::Cancelled);
+    runNav({"astrabot_goto","1"});
+    assert(nav.trace()->state==astrabot::nav::runtime::SessionState::Ready);
+    fixture.entity.v.deadflag=DEAD_DEAD;
+    astrabot::adapter::metamod::lifecycleCoordinator().startFrame();
+    assert(nav.trace()->reason==astrabot::nav::runtime::SessionReason::Dead);
+    fixture.entity.v.deadflag=DEAD_NO;
+    fixture.entity.v.flags &= ~FL_FAKECLIENT;
+    runNav({"astrabot_goto","2"});
+    assert(nav.trace()->state!=astrabot::nav::runtime::SessionState::Ready);
+    fixture.entity.v.flags |= FL_FAKECLIENT;
+    gGroundMissing=true;
+    runNav({"astrabot_goto","2"});
+    assert(nav.trace()->reason==astrabot::nav::runtime::SessionReason::UnknownGround);
+    gGroundMissing=false;
+    fixture.entity.v.origin=Vector(4,1,36);
+    runNav({"astrabot_goto","1"});
+    assert(nav.trace()->reason==astrabot::nav::runtime::SessionReason::Unreachable);
+    fixture.entity.v.origin=Vector(1,1,36);
+    const auto bytes=evidence::fixture(5,false).bytes;
+    {
+        std::ofstream file("nav-console-fixture.nav",std::ios::binary);
+        file.rdbuf()->sputn(reinterpret_cast<const char*>(bytes.data()),static_cast<std::streamsize>(bytes.size()));
+        assert(file.good());
+    }
+    runNav({"astrabot_nav_load","nav-console-fixture.nav"});
+    runNav({"astrabot_goto","1"});
+    assert(nav.trace()->state==astrabot::nav::runtime::SessionState::Ready);
+    {
+        std::ifstream file("nav-console-fixture.nav",std::ios::binary);
+        std::vector<std::uint8_t> after{std::istreambuf_iterator<char>(file),{}};
+        assert(after==bytes);
+    }
+    runNav({"astrabot_nav_load","nav-console-no-such-file.nav"});
+    runNav({"astrabot_goto","1"});
+    assert(nav.trace()->reason==astrabot::nav::runtime::SessionReason::MissingGraph);
+    assert(nav.publish(map,route_test::snapshot({a,b})).isNone());
+    runNav({"astrabot_goto","2"});
+    gInvalidateDuringGround=true;
+    runNav({"astrabot_goto","1"});
+    assert(!nav.trace());
+    gInvalidateDuringGround=false;
+    assert(nav.publish(map,route_test::snapshot({a,b})).isNone());
+    runNav({"astrabot_goto","2"});
+    astrabot::adapter::metamod::lifecycleCoordinator().clientDisconnect(&fixture.entity);
+    assert(!nav.trace());
     detach();
     assert(gJoinTraces.size() == joinTraceCount);
     assert(astrabot::adapter::metamod::lifecycleCoordinator().joinState().phase() ==
@@ -945,6 +1052,10 @@ void testDetachDirectlyCleansActiveEntityOnce() {
 } // namespace
 
 int main() {
+#ifdef _MSC_VER
+    _CrtSetReportMode(_CRT_ASSERT,_CRTDBG_MODE_FILE);
+    _CrtSetReportFile(_CRT_ASSERT,_CRTDBG_FILE_STDERR);
+#endif
     testSuccessfulCreationAndOpaquePrivateData();
     testFailureRollback();
     testInputAndCapacityRejection();
