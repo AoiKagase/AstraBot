@@ -93,11 +93,21 @@ int main(int argc, char** argv) {
         const auto good = read(nav);
         auto zeroId = evidence::fixture(5, true);
         for (const auto& span : zeroId.spans) {
-            if (span.field == evidence::F::HidingSpotId) {
+            if ((span.field == evidence::F::HidingSpotId || span.field == evidence::F::EncounterSpotId) &&
+                zeroId.bytes[span.offset] == 101)
+                evidence::set(zeroId.bytes, span, 0);
+        }
+        write(nav, zeroId.bytes);
+        std::ostringstream zeroReport;
+        check(inspect::run(options, profile, zeroReport) == 0);
+        check(read(nav) == zeroId.bytes);
+        for (const auto& span : zeroId.spans) {
+            if (span.field == evidence::F::HidingSpotId && zeroId.bytes[span.offset] == 102) {
                 evidence::set(zeroId.bytes, span, 0);
                 write(nav, zeroId.bytes);
                 std::ostringstream out;
                 check(inspect::run(options, profile, out) != 0);
+                contains(out.str(), "kind=DuplicateId\n");
                 contains(out.str(), "record=HidingSpot\n");
                 contains(out.str(), "field=HidingSpotId\n");
                 contains(out.str(), "offset=" + std::to_string(span.offset));

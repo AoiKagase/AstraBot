@@ -1,13 +1,16 @@
 # Real NAV compatibility prerequisite
 
 Date: 2026-09-05. Audited source: `b49f4da6e20beec43aa1c47678725eb1865aacf6`.
-Result: **Not yet validated**. This is a read-only integration protocol, not a
+Result: **Partially validated** for supplied dust/dust2 v5 files; see
+[the follow-up evidence](../reports/p3-01-real-nav-compatibility.md).
+This is a read-only integration protocol, not a
 claim that synthetic fixtures establish real-map compatibility.
 
 Implementation update (2026-09-05): the inspector and synthetic tests now exist.
-User-supplied local dust/dust2 NAVs were inspected and rejected by the existing
-zero HidingSpotId rule. See [the inspector report](../reports/p3-01-nav-inspector.md)
-for exact offsets, unchanged hashes, remaining comparisons and the user's
+The initial inspection rejected zero HidingSpotId; the follow-up resolves that
+policy conflict and nullable Approach references. See the follow-up above for
+successful load/query/route comparisons and [the inspector report](../reports/p3-01-nav-inspector.md)
+for historical failure offsets and the user's
 AstraBot-optimized new-generation direction. The original audit inventory below
 describes the pre-implementation state, not current asset availability.
 
@@ -108,7 +111,7 @@ and trailing-data rejection are additional real-file compatibility probes.
 - **Partially validated:** real bytes load but independent expectations, BSP
   binding or requested query comparisons are incomplete; enumerate missing rows.
 - **Not yet validated:** no lawful real fixture inspected, or inspection failed
-  before compatibility comparisons could complete (current state: load rejected).
+  before compatibility comparisons could complete.
 
 Missing real bytes do not prevent portable contract/unit development. They block
 the P3-01 compatibility sub-gate and any claim of real-map readiness. Runtime

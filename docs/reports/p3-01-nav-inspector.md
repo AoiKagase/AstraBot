@@ -1,5 +1,9 @@
 # P3-01 first slice: read-only NAV inspector
 
+Historical first-slice evidence. The zero-ID load blocker described here is
+resolved by [the real NAV follow-up](p3-01-real-nav-compatibility.md); use that
+report for current compatibility status and test results.
+
 Date: 2026-09-05. Base: `0e8ab96`. Branch: `codex/p301-nav-inspector`.
 Status: inspector implementation and applicable Windows offline tests complete.
 P3-01 as a whole remains open. Real NAV compatibility is **not validated**:

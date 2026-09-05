@@ -32,9 +32,7 @@ diagnostics::NavError validateMesh(const model::NavFileHeader &header,
                 at.kind = NavErrorKind::DuplicateId;
             break;
         case NavField::HidingSpotId:
-            if (v == 0)
-                at.kind = NavErrorKind::InvalidValue;
-            else if (!seenHiding.insert(v).second)
+            if (!seenHiding.insert(v).second)
                 at.kind = NavErrorKind::DuplicateId;
             break;
         case NavField::NorthWestExtent:
@@ -60,6 +58,9 @@ diagnostics::NavError validateMesh(const model::NavFileHeader &header,
                 at.kind = NavErrorKind::InvalidValue;
             break;
         case NavField::ApproachAreaId:
+            if (v != 0 && !allAreas.count(v))
+                at.kind = NavErrorKind::DanglingReference;
+            break;
         case NavField::EncounterAreaId:
             if (v == 0)
                 at.kind = NavErrorKind::InvalidValue;
@@ -67,9 +68,7 @@ diagnostics::NavError validateMesh(const model::NavFileHeader &header,
                 at.kind = NavErrorKind::DanglingReference;
             break;
         case NavField::EncounterSpotId:
-            if (v == 0)
-                at.kind = NavErrorKind::InvalidValue;
-            else if (!allHiding.count(v))
+            if (!allHiding.count(v))
                 at.kind = NavErrorKind::DanglingReference;
             break;
         case NavField::EncounterDirection:

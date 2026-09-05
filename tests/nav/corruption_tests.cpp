@@ -94,8 +94,8 @@ void corruptions(const Fixture& f, unsigned version) {
         }
         K kind = K::None; std::uint32_t replacement = 0;
         switch (s.field) {
-        case F::Magic: case F::AreaId: case F::HidingSpotId:
-        case F::ApproachAreaId: kind = K::InvalidValue; break;
+        case F::Magic: case F::AreaId: kind = K::InvalidValue; break;
+        case F::ApproachAreaId: replacement = 999; kind = K::DanglingReference; break;
         case F::Version: replacement = 6; kind = K::UnsupportedValue; break;
         case F::AreaCount: case F::ConnectionCount: case F::HidingSpotCount:
         case F::ApproachCount: case F::EncounterCount: case F::EncounterSpotCount:

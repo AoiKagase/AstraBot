@@ -43,7 +43,7 @@ inline std::string snapshotState(const nav::model::NavMeshSnapshot& mesh) {
         for (const auto& s : a.hidingSpots) {
             check(s.id.has_value() == (version >= 2) &&
                   s.flags.has_value() == (version >= 2), "hiding version");
-            if (s.id) check(*s.id != 0 && hidingIds.insert(*s.id).second, "unique hiding");
+            if (s.id) check(hidingIds.insert(*s.id).second, "unique hiding");
         }
     }
     const auto reference = [&ids](nav::model::NavAreaId id) {
@@ -79,7 +79,8 @@ inline std::string snapshotState(const nav::model::NavMeshSnapshot& mesh) {
         }
         put(a.approaches.size());
         for (const auto& p : a.approaches) {
-            reference(p.here); reference(p.previous); reference(p.next);
+            for (auto id : {p.here, p.previous, p.next})
+                if (id.value != 0) reference(id);
             put(p.here.value); put(p.previous.value); put(p.next.value);
             put(unsigned(p.previousToHereHow)); put(unsigned(p.hereToNextHow));
         }
@@ -91,7 +92,7 @@ inline std::string snapshotState(const nav::model::NavMeshSnapshot& mesh) {
             put(e.from.value); put(e.to.value); put(unsigned(e.fromDirection));
             put(unsigned(e.toDirection)); put(e.spots.size()); spots += e.spots.size();
             for (const auto& s : e.spots) {
-                check(s.hidingSpotId != 0 && hidingIds.count(s.hidingSpotId) == 1, "spot reference");
+                check(hidingIds.count(s.hidingSpotId) == 1, "spot reference");
                 put(s.hidingSpotId); put(unsigned(s.t));
             }
         }

@@ -69,6 +69,8 @@ Unit/simulation passes never substitute for live observations.
     using the profile and report contract in the compatibility protocol.
   - [ ] Compare lawful local real bytes to independent expected data; record
     load/nearest/route and unchanged hashes. Without a file, keep this sub-gate pending.
+    Dust/dust2 now pass these offline comparisons; full compatibility remains
+    partial pending provenance/detail rows in [the follow-up report](../reports/p3-01-real-nav-compatibility.md).
   - [ ] Add portable session/snapshot/query contracts and fake-host tests; default
     allowPartial=false and keep ExpansionLimit prefixes diagnostic-only.
   - [ ] Wire console goto/status/cancel to the managed actor and route result,
@@ -294,8 +296,7 @@ Tactical Planner/Combat AI, Experience DB and crowd/prediction are deferred.
 ## Recommended next session
 
 The first P3-01 slice (bounded read-only NAV inspector and synthetic tests) is
-complete. Supplied dust/dust2 files expose a zero HidingSpotId rejection; real
-compatibility remains blocked as recorded in the evidence report. Resolve that
-sub-gate through independent format evidence and reviewed regression tests, or
-continue the independent portable session slice while preserving its pending
-status. No new numbering, implicit parser relaxation or Finish declaration.
+complete. Dust/dust2 load/query/route comparisons pass after the zero-ID and
+nullable-Approach correction. Compatibility is partially validated, with its
+remaining rows explicitly recorded. Continue the independent portable session
+slice while preserving that status. No new numbering or Finish declaration.

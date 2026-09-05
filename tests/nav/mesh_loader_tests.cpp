@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 #include "nav/io/decode_context.hpp"
 #include "nav/io/mesh_loader.hpp"
+#include "evidence/fixture.hpp"
 #include <cassert>
 #include <cstdio>
 #include <cstdlib>
@@ -142,6 +143,58 @@ void traversalDecodeAndBudget() {
     }
 }
 
+void zeroIdentityCompatibility() {
+    using K = diagnostics::NavErrorKind;
+    using F = diagnostics::NavField;
+    for (unsigned version = 1; version <= 5; ++version) {
+        auto fixture = evidence::fixture(version, true);
+        for (const auto& span : fixture.spans) {
+            if (span.field == F::ApproachAreaId)
+                evidence::set(fixture.bytes, span, 0);
+            if (span.field == F::HidingSpotId && fixture.bytes[span.offset] == 101)
+                evidence::set(fixture.bytes, span, 0);
+            if (span.field == F::EncounterSpotId && fixture.bytes[span.offset] == 101)
+                evidence::set(fixture.bytes, span, 0);
+        }
+        const auto result = evidence::load(fixture.bytes);
+        if (!result) {
+            std::fprintf(stderr, "v%u zero identity/reference rejected: kind=%u field=%u offset=%llu\n",
+                version, unsigned(result.error.kind), unsigned(result.error.field),
+                static_cast<unsigned long long>(result.error.offset));
+            std::exit(1);
+        }
+        const auto& area = (*result.value)->areas().front();
+        assert(area.hidingSpots.front().id.has_value() == (version >= 2));
+        if (version >= 2) assert(*area.hidingSpots.front().id == 0);
+        assert(area.approaches.front().here.value == 0);
+        assert(area.approaches.front().previous.value == 0);
+        assert(area.approaches.front().next.value == 0);
+        if (version >= 3) assert(area.encounters.front().spots.front().hidingSpotId == 0);
+        for (const auto& span : fixture.spans) {
+            if (span.field == F::HidingSpotId && fixture.bytes[span.offset] == 102) {
+                auto duplicate = fixture.bytes;
+                evidence::set(duplicate, span, 0);
+                bad(duplicate, K::DuplicateId, span.offset, F::HidingSpotId);
+            }
+            if (span.field == F::ApproachAreaId) {
+                auto missing = fixture.bytes;
+                evidence::set(missing, span, 999);
+                bad(missing, K::DanglingReference, span.offset, F::ApproachAreaId);
+            }
+        }
+        if (version >= 3) {
+            auto absent = evidence::fixture(version, true);
+            for (const auto& span : absent.spans) {
+                if (span.field == F::EncounterSpotId) {
+                    auto bytes = absent.bytes;
+                    evidence::set(bytes, span, 0);
+                    bad(bytes, K::DanglingReference, span.offset, F::EncounterSpotId);
+                }
+            }
+        }
+    }
+}
+
 void tacticalAndConnections() {
     using K = diagnostics::NavErrorKind;
     using F = diagnostics::NavField;
@@ -176,7 +229,8 @@ void tacticalAndConnections() {
         set(b, o, 99);
         bad(b, K::DanglingReference, o, o < 100 ? F::ApproachAreaId : F::EncounterAreaId);
         set(b, o, 0);
-        bad(b, K::InvalidValue, o, o < 100 ? F::ApproachAreaId : F::EncounterAreaId);
+        if (o < 100) assert(load(b));
+        else bad(b, K::InvalidValue, o, F::EncounterAreaId);
     }
     b = original;
     set(b, 113, 999);
@@ -189,7 +243,7 @@ void tacticalAndConnections() {
     bad(b, K::UnsupportedValue, 111, F::EncounterDirection);
     b = original;
     set(b, 66, 0);
-    bad(b, K::InvalidValue, 66, F::HidingSpotId);
+    bad(b, K::DanglingReference, 113, F::EncounterSpotId);
     // Exact logical budget, including each nested object, succeeds at equality.
     auto l = limits();
     l.maxSnapshotBytes = sizeof(model::NavMeshSnapshot) + sizeof(model::NavAreaRecord) +
@@ -378,6 +432,7 @@ int main() {
     l.areas.maxAreas = 0;
     assert(load(b, l).error.kind == K::CountLimitExceeded);
     assert(io::NavMeshLoader::load({nullptr, 1}, limits()).error.kind == K::InvalidInput);
+    zeroIdentityCompatibility();
     traversalDecodeAndBudget();
     tacticalAndConnections();
     legacyAndLimits();

@@ -266,6 +266,15 @@ if(ASTRABOT_BUILD_TESTS)
             "-DDIRECTORY=${CMAKE_CURRENT_BINARY_DIR}/inspection-cli-fixtures"
             -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/nav/inspection_cli.cmake")
         set_tests_properties(astrabot.nav.inspection_cli PROPERTIES TIMEOUT 60)
+        if(WIN32)
+            add_test(NAME astrabot.nav.real_checker COMMAND ${CMAKE_COMMAND}
+                "-DINSPECTOR=$<TARGET_FILE:astrabot_nav_inspect>"
+                "-DFIXTURES=$<TARGET_FILE:astrabot_nav_inspection_tests>"
+                "-DCHECKER=${CMAKE_CURRENT_SOURCE_DIR}/tools/check-real-nav.ps1"
+                "-DDIRECTORY=${CMAKE_CURRENT_BINARY_DIR}/real-checker-fixtures"
+                -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/nav/real_nav_checker.cmake")
+            set_tests_properties(astrabot.nav.real_checker PROPERTIES TIMEOUT 60)
+        endif()
     endif()
     add_executable(astrabot_nav_corruption_tests tests/nav/corruption_tests.cpp)
     target_link_libraries(astrabot_nav_corruption_tests PRIVATE astrabot_nav)

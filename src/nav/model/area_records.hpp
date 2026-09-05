@@ -21,12 +21,14 @@ enum class NavCardinalDirection : std::uint8_t {
 };
 
 struct NavHidingSpot final {
+    // v1 has no serialized ID; v2+ may contain any uint32 ID, including zero.
     std::optional<std::uint32_t> id{};
     NavVector3 position{};
     std::optional<std::uint8_t> flags{};
 };
 
 struct NavApproachRecord final {
+    // Zero is an absent reference for each approach endpoint, not an area ID.
     NavAreaId here{};
     NavAreaId previous{};
     NavAreaId next{};
@@ -35,6 +37,7 @@ struct NavApproachRecord final {
 };
 
 struct NavEncounterSpot final {
+    // Zero refers to the hiding spot with ID zero; it is not an absent reference.
     std::uint32_t hidingSpotId{0};
     std::uint8_t t{0};
 };
