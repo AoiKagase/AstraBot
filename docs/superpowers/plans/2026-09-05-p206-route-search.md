@@ -69,7 +69,7 @@ FocalSpan and STATE/task checkboxes, explicitly stage its listed paths, run
 Do not commit local index/configuration or the ignored helper. No new approval is
 needed between the tasks once execution is selected unless a contract must change.
 
-### P206-T1: Bounded immutable graph
+### Task 1: P206-T1 — Bounded immutable graph
 
 **Files:** graph.hpp/.cpp, detail/route_budget.hpp, graph_tests.cpp,
 route_fixture.hpp, diagnostics/error.hpp, fixtures/README.md, CMakeLists.txt.
@@ -104,13 +104,13 @@ Index accessors require valid indices from this graph. Private storage comprises
 snapshot ownership, a vertex vector (snapshot index, center, edge range) and an
 edge vector (selected edge, target vertex). No mutable public accessors/constructor.
 
-- [ ] Add the fixture helper `route_test::Area` with id, extent and four target-ID
+- [x] Add the fixture helper `route_test::Area` with id, extent and four target-ID
   vectors, plus `snapshot(const std::vector<Area>&)`. Encode v1 header, area ID,
   attribute 0, eight extent floats, four connection counts/IDs, hiding count byte
   0, approach count byte 0 and encounter count uint32 0. Use checked loader limits
   large enough for these tiny tests. Generate little-endian fields locally using
   shifts and memcpy for float bits, as existing spatial tests do. Record provenance.
-- [ ] Register `astrabot_nav_graph_tests` / `astrabot.nav.graph`; run VERIFY baseline
+- [x] Register `astrabot_nav_graph_tests` / `astrabot.nav.graph`; run VERIFY baseline
   before adding tests (expected 10 tests), then compile failing graph API assertions.
 
 ```cpp
@@ -126,22 +126,22 @@ assert((*r.value)->edgeBegin(1) == (*r.value)->edgeEnd(1));
 Here area10 has target 20 in north and east; area20 has no outgoing edges, and
 both have valid unit-square extents. Declare those fixture values in the test.
 
-- [ ] Implement checked accounting with `count > (SIZE_MAX-used)/elementSize`
+- [x] Implement checked accounting with `count > (SIZE_MAX-used)/elementSize`
   before multiplication; report OffsetOverflow first, then CountLimitExceeded if
   the checked sum exceeds the cap. Test helpers directly with SIZE_MAX so overflow
   coverage requires no huge allocations. Charge graph object and both vectors'
   logical elements, not the already-owned snapshot. Validate all traversal kinds
   via a small internal edge-validation helper also exercised for unknown enum bytes;
   do not expose a mutable snapshot or external enrichment API just for testing.
-- [ ] Canonicalize vertices with ID comparator, binary-search target indices and
+- [x] Canonicalize vertices with ID comparator, binary-search target indices and
   sort each range by direction/target/traversal. Compute midpoint XY in double and
   center Z as four quarter-weighted corners (do not narrow midpoint to float).
-- [ ] Run VERIFY for empty/null input, preserved wire order, lifetime after caller
+- [x] Run VERIFY for empty/null input, preserved wire order, lifetime after caller
   releases snapshot, two direction-distinct edges, count/byte exact boundaries,
   arithmetic overflow and unknown traversal rejection. Expected 11 tests total.
-- [ ] Commit `feat: add immutable bounded nav graph` using this task's explicit files.
+- [x] Commit `feat: add immutable bounded nav graph` using this task's explicit files.
 
-### P206-T2: Complete routes, cost evidence and stable A*
+### Task 2: P206-T2 — Complete routes, cost evidence and stable A*
 
 **Files:** route_types.hpp, route_search.hpp/.cpp, detail/indexed_heap.hpp,
 route_search_tests.cpp, diagnostics/error.hpp, CMakeLists.txt.
@@ -199,7 +199,7 @@ endpoint, cost, heuristic and budget fields without changing old enum values.
 Use UnsupportedValue for unknown traversal, InvalidInput for missing endpoint,
 InvalidValue for bad numeric policy output, offset zero for runtime diagnostics.
 
-- [ ] Register `astrabot_nav_route_tests` / `astrabot.nav.route`, linked with
+- [x] Register `astrabot_nav_route_tests` / `astrabot.nav.route`, linked with
   astrabot_nav and Threads::Threads. Write red tests through the API above:
 
 ```cpp
@@ -212,34 +212,34 @@ assert(r.value->metrics.expansions == 0);
 
 `graph` is a T1-loaded fixture containing area 1; also request absent/zero IDs and
 reverse-only routes and assert typed error versus Unreachable respectively.
-- [ ] Add internal query records with infinite initial g, cached h, absent parent
+- [x] Add internal query records with infinite initial g, cached h, absent parent
   edge, retained components, closed flag and heap position. Preflight record,
   heap-index, corridor and step maximum storage before allocating. Charge result
   and query control objects once. Handle vector max_size/length errors safely.
-- [ ] Implement standard cost, custom-cost zero heuristic, explicit custom
+- [x] Implement standard cost, custom-cost zero heuristic, explicit custom
   heuristic and finite/negative/overflow checks. Validate heuristic goal zero even
   for start==goal. Cache heuristic on discovery; callbacks receive immutable areas.
-- [ ] Implement heap comparator `(f,h,area ID)`, strict-g relaxation and reopening.
+- [x] Implement heap comparator `(f,h,area ID)`, strict-g relaxation and reopening.
   Store component evidence when assigning parent; never call cost on reconstruction.
   Reconstruct backwards with at most areaCount vertices, reverse, and accumulate
   totals in forward order. No per-edge traversal overwrites or reverse inference.
-- [ ] Fix deterministic diamond: edges 1->2,1->3,2->4,3->4 all custom cost 1, h=0;
+- [x] Fix deterministic diamond: edges 1->2,1->3,2->4,3->4 all custom cost 1, h=0;
   require IDs 1,2,4, total 2 and identical full metrics over 100 runs and reordered
   input records/connections. Test source/target shared in north/east with different
   policy costs; selected direction and callback context must match result evidence.
-- [ ] Test inconsistent admissible heuristic: S->A=3, S->B=1, B->A=1, A->G=10;
+- [x] Test inconsistent admissible heuristic: S->A=3, S->B=1, B->A=1, A->G=10;
   h(S)=0,h(A)=0,h(B)=5,h(G)=0. Expect A reopened once, route S,B,A,G, total 12.
   Also block B->A and require S,A,G total 13; verify zero-cost cycle termination.
-- [ ] Test components (distance=1,traversal=2,danger=4,experience=8) on each of two
+- [x] Test components (distance=1,traversal=2,danger=4,experience=8) on each of two
   selected edges: totals 2/4/8/16, overall 30, callback invoked only on expansion.
   Run VERIFY; expected 12 CTest entries. Commit `feat: add deterministic nav A star search`.
 
-### P206-T3: Expansion limits, opt-in partials and failure atomicity
+### Task 3: P206-T3 — Expansion limits, opt-in partials and failure atomicity
 
 **Files:** route_search.cpp, detail/route_budget.hpp, route_search_tests.cpp,
 graph_tests.cpp; public types remain those defined in T2.
 
-- [ ] Write red assertions for zero cap and start!=goal:
+- [x] Write red assertions for zero cap and start!=goal:
 
 ```cpp
 auto r = NavRouteSearch::search(*graph, {{1}, {4}, {0, 100000}, true});
@@ -251,53 +251,60 @@ assert(r.value->metrics.expansions == 0);
 Repeat with allowPartial=false and assert empty areas/steps. A one-edge goal
 completes with cap 1; an exhausted disconnected frontier is Unreachable even at
 the cap. Detect goal before cap, but do not complete merely on discovery.
-- [ ] Implement cap termination in this order: frontier empty, goal at top,
+- [x] Implement cap termination in this order: frontier empty, goal at top,
   expansion budget, expand. Count examinedEdges per visited outgoing edge,
   relaxations per strict improvement, reopens only when improving a closed vertex,
   peakOpen including start. Use checked metric increments if size_t can overflow.
-- [ ] Select partial from discovered finite-g records by geometric goal distance,
+- [x] Select partial from discovered finite-g records by geometric goal distance,
   g and ID, independent of custom h. Test each tie level with explicit center
   coordinates and policy tables, both open/closed candidates and a goal discovered
   but not yet popped. Do not return partials for Unreachable or typed errors.
-- [ ] Test stale descendant g: S->A=3,S->B=1,A->D=1,B->A=1,D->G=100;
+- [x] Test stale descendant g: S->A=3,S->B=1,A->D=1,B->A=1,D->G=100;
   h(S)=0,h(A)=0,h(D)=0,h(B)=5,h(G)=0. Stop after expanding S,A,D,B (cap 4).
   Place D closest to G; expect partial S,B,A,D with returned total 3, even though
   D's stored ranking g remains 4 until propagation. Include the allowed discovered
   G in ranking: block D->G in this fixture so G is not discovered; retain a separate
   unblocked complete-route test. This fixes reconstruction evidence versus stale g.
-- [ ] Sweep failAfter through graph construction and every query allocation until
+- [x] Sweep failAfter through graph construction and every query allocation until
   success, using the existing spatial-test global-new pattern. Enable injection
   only around tested calls; keep previous graph/route alive and recheck afterwards.
   Assert AllocationFailure and absent value at every failed allocation. Also throw
   bad_alloc and a nonallocation exception from both callbacks. Parallel tests run
   with fail injection disabled to avoid a shared fail counter data race.
-- [ ] Test NaN, infinities, negatives, component/g/f overflow, nonzero goal heuristic,
+- [x] Test NaN, infinities, negatives, component/g/f overflow, nonzero goal heuristic,
   graph/query exact logical bytes and one-byte-under, and checked size overflow
   without large allocation. Never treat malformed output as a blocked edge.
-- [ ] Run VERIFY and commit `test: harden nav route limits and failure atomicity`.
+- [x] Run VERIFY and commit `test: harden nav route limits and failure atomicity`.
 
-### P206-T4: Integration evidence and completion checkpoint
+### Task 4: P206-T4 — Integration evidence and completion checkpoint
 
 **Files:** route_search_tests.cpp, fixtures/README.md, approved spec completion
 evidence section, this plan's checkboxes and .agent-state/STATE.md.
 
-- [ ] Add repeat/concurrency assertions using separate requests/results and pure
+- [x] Add repeat/concurrency assertions using separate requests/results and pure
   policy contexts, for example launch two std::threads searching opposite requests
   over the same graph, join and compare each result to its serial baseline. Repeat
   at least 100 queries per worker. Include full edge identity and metrics comparisons.
-- [ ] Assert ownership after original input bytes and caller snapshot reference
+- [x] Assert ownership after original input bytes and caller snapshot reference
   are destroyed; graph still works. Use compile-time type assertions for const
   graph publication and graph area access. Compose one P2-05 endpoint lookup with
   search over the same retained snapshot, without adding a new public point API.
-- [ ] Run VERIFY and `VERIFY -Analyze` (expand VERIFY to the command above). Require
+- [x] Run VERIFY and `VERIFY -Analyze` (expand VERIFY to the command above). Require
   12/12 tests in each configuration. Inspect actual compiler/analyzer output.
-- [ ] Review staged/source diff for all spec sections, placeholders, accidental
+- [x] Review staged/source diff for all spec sections, placeholders, accidental
   scope, SDK leakage and debug artifacts. Refresh FocalSpan, query graph/search
   symbols, explicitly stage only intended files and run cached diff check.
-- [ ] Record real red/green and final verification evidence; set STATE complete
-  only when all tasks pass. Commit `docs: record nav route search verification`.
-- [ ] Check `rtk git log -1 --oneline`, `rtk git status --short --branch` and report
+- [x] Record real red/green and final verification evidence; retain STATE verifying
+  pending controller final whole-branch review (explicit T4 dispatch boundary).
+  Commit `docs: record nav route search verification`.
+- [x] Check `rtk git log -1 --oneline`, `rtk git status --short --branch` and report
   commit hashes, CTest/analyzer results and remaining post-Finish acceptance.
+
+T1-T3 completion/approvals are recorded in STATE (T3 commit `29d159a`). T4 added
+tests were initial-green with no production change: canonical Debug12/12 (0.37
+seconds), separate /analyze12/12 (0.73 seconds), both exit 0. See the approved
+spec's P206-T4 verification evidence and ignored task-4-report.md for exact output.
+T4 tests/evidence are complete; final whole-branch review belongs to the controller.
 
 ## Plan self-review
 

@@ -1,14 +1,17 @@
 // SPDX-License-Identifier: MPL-2.0
 #include "nav/query/route_search.hpp"
+#include "nav/query/spatial_index.hpp"
 #include "nav/query/detail/route_budget.hpp"
 #include "route_fixture.hpp"
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <limits>
 #include <new>
 #include <stdexcept>
+#include <thread>
 #include <type_traits>
 #ifdef _MSC_VER
 #include <crtdbg.h>
@@ -502,6 +505,109 @@ void sameRoute(const NavRouteResult &a, const NavRouteResult &b) {
         sameComponents(x.components, y.components);
     }
 }
+// Catches query state leaking between searches that share a graph. Different
+// directions and pure per-worker costs expose parent-edge/component contamination.
+void concurrentSearches() {
+    assert(failAfter == noFailure && !probeAllocations);
+    auto a = area(1), b = area(2, 3, 4), c = area(3, 6, 8);
+    a.targets[0] = {2}; a.targets[1] = {2};
+    b.targets[1] = {3}; b.targets[3] = {1};
+    c.targets[0] = {2}; c.targets[3] = {2};
+    const auto g = graph({c, a, b});
+    struct PurePolicy { std::uint8_t direction; NavCostComponents components; };
+    const std::array<PurePolicy, 2> contexts{{{1, {1, 2, 4, 8}}, {3, {2, 4, 8, 16}}}};
+    const auto cost = [](const NavCostContext &ctx, const void *p) -> NavCostDecision {
+        const auto &state = *static_cast<const PurePolicy *>(p);
+        return {false, ctx.edge.direction == state.direction ? state.components
+                                                             : NavCostComponents{100, 0, 0, 0}};
+    };
+    const std::array<NavRouteRequest, 2> requests{request(1, 3), request(3, 1)};
+    std::array<NavRouteResult, 2> serial;
+    for (std::size_t i = 0; i < serial.size(); ++i) {
+        const auto r = NavRouteSearch::search(*g, requests[i], {&contexts[i], cost, nullptr});
+        assert(r && r.value->status == NavRouteStatus::Complete);
+        serial[i] = *r.value;
+        metrics(serial[i], 2, 4, 3, 0, 1);
+        for (const auto &step : serial[i].steps) {
+            assert(step.edge.direction == contexts[i].direction);
+            sameComponents(step.components, contexts[i].components);
+            assert(step.total == (i == 0 ? 15 : 30));
+        }
+    }
+    corridor(serial[0], {{1}, {2}, {3}}, 30);
+    corridor(serial[1], {{3}, {2}, {1}}, 60);
+    sameComponents(serial[0].components, {2, 4, 8, 16});
+    sameComponents(serial[1].components, {4, 8, 16, 32});
+
+    constexpr std::size_t runs = 100;
+    std::array<std::vector<NavRouteResult>, 2> results;
+    for (auto &workerResults : results) workerResults.reserve(runs);
+    std::atomic<unsigned> ready{0};
+    const auto worker = [&](std::size_t index, NavRouteRequest req, PurePolicy context) {
+        ready.fetch_add(1, std::memory_order_release);
+        while (ready.load(std::memory_order_acquire) != 2) std::this_thread::yield();
+        for (std::size_t run = 0; run < runs; ++run) {
+            auto r = NavRouteSearch::search(*g, req, {&context, cost, nullptr});
+            assert(r);
+            results[index].push_back(std::move(*r.value));
+        }
+    };
+    std::thread forward(worker, 0, requests[0], contexts[0]);
+    std::thread reverse(worker, 1, requests[1], contexts[1]);
+    forward.join(); reverse.join();
+    for (std::size_t i = 0; i < results.size(); ++i) {
+        assert(results[i].size() == runs);
+        for (const auto &r : results[i]) sameRoute(r, serial[i]);
+    }
+    assert(failAfter == noFailure && !probeAllocations);
+    std::puts("concurrent routes: 2 workers x 100; full routes/edges/components/metrics match serial; failpoint disabled");
+}
+// Catches borrowed snapshot storage and mismatched graph/index endpoint identity.
+// The fixture helper destroys its original NAV byte vector before returning.
+void snapshotLifetimeAndSpatialComposition() {
+    std::shared_ptr<const NavGraph> g;
+    std::shared_ptr<const NavSpatialIndex> index;
+    std::weak_ptr<const model::NavMeshSnapshot> lifetime;
+    {
+        auto a = area(1), b = area(2, 3, 4), c = area(3, 6, 8);
+        a.targets[1] = {2}; b.targets[1] = {3};
+        const auto snapshot = route_test::snapshot({c, a, b});
+        lifetime = snapshot;
+        const auto builtGraph = NavGraph::build(snapshot, {3, 2, 1000000});
+        const auto builtIndex = NavSpatialIndex::build(snapshot, {3, 5, 1000000});
+        assert(builtGraph && builtIndex);
+        g = *builtGraph.value; index = *builtIndex.value;
+        assert(&g->area(*g->find({1})) == &snapshot->areas()[1]);
+    } // Caller snapshot and both build results are destroyed.
+    assert(!lifetime.expired() && lifetime.use_count() == 2);
+    const auto start = index->containing({1, 1, 0}, 0);
+    const auto outside = index->containing({9, 1, 8}, 0);
+    assert(start && *start.value && outside && !*outside.value);
+    const auto goal = index->nearestGeometry({9, 1, 8}, {1, 0});
+    assert(goal && *goal.value);
+    assert((*start.value)->areaId == model::NavAreaId{1});
+    assert((*goal.value)->areaId == model::NavAreaId{3});
+    assert((*goal.value)->distanceSquared == 1);
+    NavRouteRequest req{(*start.value)->areaId, (*goal.value)->areaId, {2, 1000000}, false};
+    auto route = NavRouteSearch::search(*g, req);
+    assert(route && route.value->status == NavRouteStatus::Complete);
+    corridor(*route.value, {{1}, {2}, {3}}, 10);
+    metrics(*route.value, 2, 2, 2, 0, 1);
+    sameComponents(route.value->components, {10, 0, 0, 0});
+    for (const auto &step : route.value->steps) {
+        assert(step.edge.direction == 1 && step.total == 5);
+        sameComponents(step.components, {5, 0, 0, 0});
+    }
+    const auto saved = *route.value;
+    index.reset();
+    assert(!lifetime.expired() && lifetime.use_count() == 1);
+    route = NavRouteSearch::search(*g, req);
+    assert(route); sameRoute(*route.value, saved);
+    g.reset();
+    assert(lifetime.expired());
+    sameRoute(*route.value, saved); // Result owns its corridor and cost evidence.
+    std::puts("snapshot lifetime: caller/bytes destroyed; containing+nearest compose; graph retains snapshot; route survives graph");
+}
 void queryByteBoundaries() {
     // Locate the exact logical threshold without coupling tests to private
     // Record padding. It is invariant under route length/status and policy.
@@ -733,6 +839,14 @@ int main() {
 #endif
     static_assert(noexcept(NavRouteSearch::search(std::declval<const NavGraph &>(), {})));
     static_assert(std::is_same_v<decltype(NavCostContext::source), const model::NavAreaRecord &>);
+    static_assert(std::is_same_v<decltype(NavGraph::build(nullptr, {})),
+                  diagnostics::ReadResult<std::shared_ptr<const NavGraph>>>);
+    static_assert(std::is_same_v<decltype(std::declval<NavGraph &>().area(0)),
+                  const model::NavAreaRecord &>);
+    static_assert(std::is_same_v<decltype(std::declval<const NavGraph &>().area(0)),
+                  const model::NavAreaRecord &>);
+    static_assert(std::is_same_v<decltype(std::declval<const NavGraph &>().edge(0)),
+                  const NavDirectedEdge &>);
     trivialAndDirected();
     deterministicDiamond();
     selectedEvidence();
@@ -746,6 +860,8 @@ int main() {
     staleAncestorEvidence();
     queryByteBoundaries();
     allocationFailureSweeps();
+    concurrentSearches();
+    snapshotLifetimeAndSpatialComposition();
     callbackFailureStages();
     numericFailureStages();
     metricSizeBoundaries();

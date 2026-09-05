@@ -1,11 +1,13 @@
 # P2-06 — Immutable connectivity and deterministic A*
 
-Status: written spec approved by the user; implementation has not started.
+Status: written spec approved; T1-T4 implementation/tests/evidence recorded;
+controller final whole-branch review pending (STATE: verifying).
 Base: `6ea1e29` on `codex/p206-route-search`.
 
 The user approved the proposed design and explicitly selected opt-in partial
 routes on expansion-limit termination. This document makes its boundary and
-observable rules concrete. It does not declare implementation or acceptance.
+observable rules concrete. Completion evidence below does not declare final
+whole-branch acceptance or project-wide Finish.
 
 ## Scope and architecture
 
@@ -152,3 +154,44 @@ only intended files, check the staged diff, commit and verify hash/status.
 P2-07 enrichment, P2-08 fuzzing, movement, Linux/live validation, main merge and
 remote operations are excluded. Preserve existing worktrees and untracked local
 FocalSpan/Serena data. This task does not declare the project-wide Finish gate.
+
+## P206-T4 verification evidence — 2026-09-05
+
+Verified in `H:/sourcecode/003.Game/amxmodx/AstraBot/.worktrees/p206-route-search`
+on the reviewed T1-T3 source at `29d159a`, with T4 additions confined to tests and
+documentation. Controller review approvals for T1-T3 are retained in STATE.
+
+| Contract | Evidence |
+| --- | --- |
+| Graph ownership, canonical directed identity, center geometry and bounds | `graph_tests.cpp`; route tests retain graph/snapshot/previous results through allocation sweeps. |
+| Costs, heuristic, complete routes and deterministic queue behavior | `deterministicDiamond`, `selectedEvidence`, `heapOrderingAndDecreaseKey`, `reopeningAndBlocking`, `zeroCyclesAndCustomDefault`. |
+| Termination, partial ranking, budgets and transactional diagnostics | `capPrecedence`, `partialRanking`, `staleAncestorEvidence`, `queryByteBoundaries`, `allocationFailureSweeps`, `callbackFailureStages`, `numericFailureStages`, `metricSizeBoundaries`. |
+| Concurrent independence and externally composed endpoints | `concurrentSearches`: two synchronized threads, 100 searches each, pure separate policy contexts, full result comparison against hand-checked serial baselines. `snapshotLifetimeAndSpatialComposition`: containing/nearest endpoints from the same retained snapshot, graph and route lifetime assertions; compile-time const publication/access checks. |
+
+Canonical commands (the existing external helper was read only; cwd above):
+
+```powershell
+rtk proxy powershell -NoProfile -File H:/sourcecode/003.Game/amxmodx/AstraBot/.worktrees/p205-spatial-queries/build-portable-test/verify.ps1
+rtk proxy powershell -NoProfile -File H:/sourcecode/003.Game/amxmodx/AstraBot/.worktrees/p205-spatial-queries/build-portable-test/verify.ps1 -Analyze
+```
+
+Both commands exited 0. Portable x64 Debug passed 12/12 (CTest 0.37 seconds);
+the separate MSVC `/analyze` build passed 12/12 (0.73 seconds). Actual compiler
+and analyzer output contained no warnings/errors. Generated flags retain `/W4
+/WX` and the Nav PUBLIC `_ITERATOR_DEBUG_LEVEL=0` setting; the second build adds
+`/analyze` in `build-portable-analyze`. The route test's output in both
+`Testing/Temporary/LastTest.log` files confirms the 2 x 100 full-result comparisons
+and snapshot/endpoint composition cases ran with the allocation failpoint disabled.
+
+T4 regression tests were **initial-green** against existing production code on
+their first Debug execution. No missing behavior, production correction or RED
+failure was observed or claimed. Existing allocation-failure sweeps still report
+four graph allocation sites, two query-preparation sites, and two reconstruction
+sites for routes with corridors; exact query bytes are 792 for four vertices.
+
+The scoped completion commit is `docs: record nav route search verification`;
+its hash, post-commit status and full command output are recorded in the ignored
+`.superpowers/sdd/2026-09-05-p206-route-search/task-4-report.md`. T4 integration
+verification/evidence is complete; STATE remains **verifying** for controller
+final whole-branch review. Linux/live validation, main merge, remote operations
+and project-wide Finish were not performed or declared.

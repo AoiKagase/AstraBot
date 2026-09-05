@@ -47,3 +47,23 @@ limits. No upstream source or assets are used. graph_tests.cpp supplies unsorted
 IDs and target lists, distinct cardinal edges, a singleton, and precision/extreme
 coordinate cases. Empty means null graph input or no outgoing edges, not a valid
 zero-area NAV file; the loader continues to reject zero areas.
+
+route_search_tests.cpp uses the same independent builder for deterministic
+diamonds, directional parallel edges, reopening, cycles, partial ranking and
+allocation-failure scenarios. Its integration fixture has three flat areas at
+XY origins (0,0), (3,0), (6,0), Z values 0/4/8 and 2-by-2 extents. Consecutive
+centers are exactly 5 units apart. The bidirectional variant includes north/east
+and north/west parallel edges: two synchronized workers each perform 100 opposite
+searches with separate requests, results and pure policy contexts. Hand-checked
+serial corridors cost 30/60; every concurrent result must match all selected edge
+fields, per-edge/component totals and all five metrics. Allocation probing and
+failure injection remain disabled throughout the threaded test.
+
+The lifetime variant builds a graph and P2-05 spatial index from one snapshot in
+wire order 3,1,2. The builder's original bytes and caller snapshot are destroyed
+before containing(1,1,0) selects area 1 and explicit nearestGeometry(9,1,8) selects
+area 3 at distance 1. Their IDs compose a route 1,2,3 with geometric cost 10.
+Releasing the index leaves the graph usable; releasing the graph destroys the
+snapshot while the returned route retains its own corridor/edge/cost evidence.
+Compile-time assertions enforce const graph publication and area/edge access.
+No public point-search API, mutable snapshot or upstream fixture is introduced.
