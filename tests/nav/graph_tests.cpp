@@ -3,10 +3,14 @@
 #include "nav/query/detail/route_budget.hpp"
 #include "route_fixture.hpp"
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
 #include <limits>
 #include <new>
 #include <type_traits>
+#ifdef _MSC_VER
+#include <crtdbg.h>
+#endif
 
 namespace {
 std::size_t failAfter = std::numeric_limits<std::size_t>::max();
@@ -42,7 +46,115 @@ void operator delete[](void *p, std::size_t) noexcept { std::free(p); }
 using namespace astrabot::nav;
 using query::NavGraph;
 using K = diagnostics::NavErrorKind;
+namespace {
+void chargeBoundaries() {
+    const auto maximum = std::numeric_limits<std::size_t>::max();
+    const auto checkFailure = [](std::size_t before, std::size_t count,
+                                 std::size_t size, std::size_t cap, K kind) {
+        auto used = before;
+        const auto e = query::detail::charge(used, count, size, cap);
+        assert((e == diagnostics::NavError{kind, 0, diagnostics::NavRecord::Graph,
+                                         diagnostics::NavField::GraphBytes}));
+        assert(used == before);
+    };
+    // Addition and multiplication boundaries, including arithmetic precedence
+    // over a zero cap. None of these tests allocates count-sized storage.
+    checkFailure(0, maximum / 2 + 1, 2, maximum, K::OffsetOverflow);
+    checkFailure(0, maximum / 2 + 1, 2, 0, K::OffsetOverflow);
+    checkFailure(maximum - 3, 2, 2, maximum, K::OffsetOverflow);
+    checkFailure(maximum, 1, 1, 0, K::OffsetOverflow);
+    checkFailure(7, 0, 8, 6, K::CountLimitExceeded);
+    checkFailure(7, maximum, 0, 6, K::CountLimitExceeded);
+    checkFailure(7, 2, 4, 14, K::CountLimitExceeded);
+    std::size_t used = 1;
+    assert(query::detail::charge(used, maximum / 2, 2, maximum).isNone());
+    assert(used == maximum);
+    assert(query::detail::charge(used, 0, maximum, maximum).isNone());
+    assert(query::detail::charge(used, maximum, 0, maximum).isNone() && used == maximum);
+    used = 7;
+    assert(query::detail::charge(used, 2, 4, 15).isNone() && used == 15);
+}
+void constructionShapeSweeps() {
+    const model::NavExtent extent{{0, 0, 0}, {2, 2, 0}, 0, 0};
+    std::vector<route_test::Area> dense;
+    for (std::uint32_t id = 1; id <= 16; ++id) {
+        route_test::Area a{id, extent};
+        for (auto &direction : a.targets)
+            for (std::uint32_t target = 16; target != 0; --target)
+                if (target != id) direction.push_back(target);
+        dense.push_back(std::move(a));
+    }
+    // The independent loader requires at least one area; exercise no-edge
+    // construction with a valid disconnected snapshot instead of zero areas.
+    for (const auto &areas : {std::vector<route_test::Area>{{1, extent}, {2, extent}},
+                              std::vector<route_test::Area>{{1, extent}}, dense}) {
+        auto snap = route_test::snapshot(areas);
+        const auto published = NavGraph::build(snap, {16, 1024, 1000000});
+        assert(published);
+        const auto previous = *published.value;
+        const auto exact = previous->logicalBytes();
+        const auto count = previous->areaCount(), edges = previous->edgeCount();
+        const auto checkRetained = [&] {
+            assert(failAfter == std::numeric_limits<std::size_t>::max());
+            assert(previous->logicalBytes() == exact && previous->areaCount() == count);
+            assert(previous->edgeCount() == edges && snap->areas().size() == count);
+            for (std::size_t i = 0; i < count; ++i) {
+                assert(&previous->area(i) == &snap->areas()[i]);
+                assert(previous->find(snap->areas()[i].id) == i);
+                assert(previous->center(i).x == 1 && previous->center(i).y == 1);
+                for (auto edge = previous->edgeBegin(i); edge < previous->edgeEnd(i); ++edge) {
+                    const auto &e = previous->edge(edge);
+                    assert(e.source == snap->areas()[i].id);
+                    assert(previous->area(previous->targetIndex(edge)).id == e.target);
+                    assert(e.direction == (edge - previous->edgeBegin(i)) / (count - 1));
+                    auto target = (edge - previous->edgeBegin(i)) % (count - 1) + 1;
+                    if (target >= e.source.value) ++target; // loader forbids self edges
+                    assert(e.target.value == target);
+                }
+            }
+            if (edges != 0) assert(snap->areas()[0].connections[0][0].target == model::NavAreaId{16});
+        };
+        assert(NavGraph::build(snap, {count, edges, exact}));
+        failAfter = 0;
+        const auto under = NavGraph::build(snap, {count, edges, exact - 1});
+        // Preflight must reject without consuming the first allocation.
+        assert(failAfter == 0);
+        failAfter = std::numeric_limits<std::size_t>::max();
+        assert(!under && !under.value);
+        assert((under.error == diagnostics::NavError{K::CountLimitExceeded, 0,
+                diagnostics::NavRecord::Graph, diagnostics::NavField::GraphBytes}));
+        bool succeeded = false;
+        for (std::size_t n = 0; n < 64; ++n) {
+            failAfter = n;
+            const auto attempt = NavGraph::build(snap, {count, edges, exact});
+            const auto remaining = failAfter;
+            failAfter = std::numeric_limits<std::size_t>::max();
+            checkRetained();
+            if (attempt) {
+                assert(remaining == 0 && n >= 2);
+                assert((*attempt.value)->logicalBytes() == exact);
+                assert((*attempt.value)->areaCount() == count && (*attempt.value)->edgeCount() == edges);
+                std::printf("graph shape %zu areas/%zu edges: exact bytes %zu; %zu OOM sites then success\n",
+                            count, edges, exact, n);
+                succeeded = true; break;
+            }
+            assert(!attempt.value);
+            assert((attempt.error == diagnostics::NavError{K::AllocationFailure, 0,
+                    diagnostics::NavRecord::Graph, diagnostics::NavField::GraphBytes}));
+        }
+        assert(succeeded);
+    }
+}
+} // namespace
 int main() {
+#ifdef _MSC_VER
+    _set_error_mode(_OUT_TO_STDERR);
+    _CrtSetReportMode(_CRT_ASSERT, _CRTDBG_MODE_FILE);
+    _CrtSetReportFile(_CRT_ASSERT, _CRTDBG_FILE_STDERR);
+    _CrtSetReportMode(_CRT_ERROR, _CRTDBG_MODE_FILE);
+    _CrtSetReportFile(_CRT_ERROR, _CRTDBG_FILE_STDERR);
+    _set_abort_behavior(0, _WRITE_ABORT_MSG | _CALL_REPORTFAULT);
+#endif
     static_assert(!std::is_default_constructible_v<NavGraph>);
     static_assert(std::is_same_v<decltype(NavGraph::build(nullptr, {})),
                   diagnostics::ReadResult<std::shared_ptr<const NavGraph>>>);
@@ -142,4 +254,6 @@ int main() {
         assert(error.kind == (kind <= 4 ? K::None : K::UnsupportedValue));
         assert(error.offset == 0);
     }
+    chargeBoundaries();
+    constructionShapeSweeps();
 }

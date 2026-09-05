@@ -189,9 +189,13 @@ NavRouteSearch::search(const NavGraph &graph, const NavRouteRequest &request,
             query.open.pop();
             auto &current = query.records[vertex];
             current.closed = true;
-            ++result.metrics.expansions;
+            error = detail::incrementRouteMetric(result.metrics.expansions);
+            if (!error.isNone())
+                return Result::failure(error);
             for (auto edgeIndex = graph.edgeBegin(vertex); edgeIndex < graph.edgeEnd(vertex); ++edgeIndex) {
-                ++result.metrics.examinedEdges;
+                error = detail::incrementRouteMetric(result.metrics.examinedEdges);
+                if (!error.isNone())
+                    return Result::failure(error);
                 const auto &edge = graph.edge(edgeIndex);
                 const auto next = graph.targetIndex(edgeIndex);
                 const auto geometric = distance(graph.center(vertex), graph.center(next));
@@ -221,10 +225,14 @@ NavRouteSearch::search(const NavGraph &graph, const NavRouteRequest &request,
                 neighbor.parentEdge = edgeIndex;
                 neighbor.components = decision.components;
                 neighbor.edgeTotal = total;
-                ++result.metrics.relaxations;
+                error = detail::incrementRouteMetric(result.metrics.relaxations);
+                if (!error.isNone())
+                    return Result::failure(error);
                 if (neighbor.closed) {
                     neighbor.closed = false;
-                    ++result.metrics.reopens;
+                    error = detail::incrementRouteMetric(result.metrics.reopens);
+                    if (!error.isNone())
+                        return Result::failure(error);
                 }
                 activeField = F::RouteBytes;
                 query.open.improve(next);

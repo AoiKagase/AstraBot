@@ -21,6 +21,17 @@ inline diagnostics::NavError charge(std::size_t &used, std::size_t count,
     used = total;
     return {};
 }
+// Event counts can outgrow the number of vertices/edges when vertices reopen.
+// Reuse the checked arithmetic, but do not report a graph byte diagnostic for
+// a route metric. No public metric field exists, so the field is unspecified.
+inline diagnostics::NavError incrementRouteMetric(std::size_t &value) noexcept {
+    auto error = charge(value, 1, 1, std::numeric_limits<std::size_t>::max());
+    if (!error.isNone()) {
+        error.record = diagnostics::NavRecord::Route;
+        error.field = diagnostics::NavField::None;
+    }
+    return error;
+}
 inline diagnostics::NavError validateEdge(model::NavTraversalKind traversal) noexcept {
     if (!model::isKnownTraversalKind(traversal))
         return graphError(diagnostics::NavErrorKind::UnsupportedValue,
