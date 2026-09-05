@@ -74,7 +74,7 @@ nav::runtime::WorldQueryResult queryNavWorld(enginefuncs_t* engine, edict_t* ent
     WorldQueryResult r; r.stamp=q.stamp; r.kind=q.kind;
     if(!engine || !entity || entity->free) return r;
     if(!q.start.isFinite() || !q.end.isFinite()) { r.error=QueryError::InvalidResult; return r; }
-    if(q.kind==QueryKind::SweptHull || q.kind==QueryKind::Clearance || q.kind==QueryKind::Door) {
+    if(q.kind==QueryKind::SweptHull || q.kind==QueryKind::Clearance || q.kind==QueryKind::Door || q.kind==QueryKind::Blocker) {
         if(!engine->pfnTraceHull || !q.hull) return r;
         const int hull=hullIndex(*q.hull); if(hull<0) return r;
         const float start[]{q.start.x,q.start.y,q.start.z}, end[]{q.end.x,q.end.y,q.end.z};
@@ -84,6 +84,18 @@ nav::runtime::WorldQueryResult queryNavWorld(enginefuncs_t* engine, edict_t* ent
         if(!valid(hit)) { r.error=QueryError::InvalidResult; return r; }
         r.error=QueryError::None;
         const bool solid=hit.fStartSolid || hit.fAllSolid;
+        if(q.kind==QueryKind::Blocker) {
+            if(solid || hit.flFraction==1 || !hit.pHit || hit.pHit->free || !engine->pfnIndexOfEdict) return r;
+            const int slot=engine->pfnIndexOfEdict(hit.pHit);
+            const auto* name=engine->pfnSzFromIndex ? engine->pfnSzFromIndex(hit.pHit->v.classname):nullptr;
+            const bool wall=name && (!std::strcmp(name,"func_wall") || !std::strcmp(name,"func_wall_toggle"));
+            // World BSP or a recognized wall BSP solid. Actors and unknown hit types
+            // are left for the reactive blocker controller, never guessed walls.
+            if(slot==0 || (slot>0 && slot<maxEntities && hit.pHit->v.solid==SOLID_BSP && wall)) {
+                r.blocker=BlockerObservation{static_cast<std::uint64_t>(slot),BlockerKind::Geometry};
+            }
+            return r;
+        }
         if(q.kind==QueryKind::Door) {
             if(solid) return r;
             edict_t* door=q.doorId ? findDoor(engine,q.doorId,maxEntities):hit.pHit;

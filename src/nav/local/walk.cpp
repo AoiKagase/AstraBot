@@ -66,6 +66,34 @@ float inward(double value, float origin) noexcept {
         return std::nextafter(rounded,origin);
     return rounded;
 }
+ProbeReason sides(const runtime::MovementSnapshot& s, std::uint64_t generation,
+    double ux,double uy,double range,std::uint32_t maximum,runtime::IWorldQueries& port,WalkDecision& out) noexcept {
+    if(out.queries>maximum || maximum-out.queries<2) return ProbeReason::BudgetExceeded;
+    for(int side=0;side<2;++side) {
+        const double sign=side==0 ? -1.0:1.0;
+        const model::NavVector3 end{inward(s.position->x+sign*uy*range,s.position->x),
+            inward(s.position->y-sign*ux*range,s.position->y),s.position->z};
+        if(!end.isFinite()) return ProbeReason::InvalidInput;
+        runtime::QueryRequest q{{s.agent,s.actor,s.map,s.tick,generation,++out.queries},
+            runtime::QueryKind::SweptHull,*s.position,end,s.hull};
+        runtime::WorldQueryResult r;
+        try { r=port.query(q); } catch(...) { return ProbeReason::QueryFailed; }
+        if(!(r.stamp==q.stamp) || r.kind!=q.kind) return ProbeReason::StaleQuery;
+        if(r.error==runtime::QueryError::BudgetExceeded) return ProbeReason::BudgetExceeded;
+        if(r.error!=runtime::QueryError::None || !r.hull) return ProbeReason::QueryFailed;
+        const auto& h=*r.hull;
+        if(!std::isfinite(h.fraction) || h.fraction<0 || h.fraction>1 || !h.end.isFinite() || !h.normal.isFinite())
+            return ProbeReason::InvalidResult;
+        if(h.startSolid) return ProbeReason::Blocked;
+        const double dx=double(end.x)-s.position->x,dy=double(end.y)-s.position->y;
+        if(std::abs(double(h.end.x)-s.position->x-dx*h.fraction)>0.01 ||
+           std::abs(double(h.end.y)-s.position->y-dy*h.fraction)>0.01 ||
+           std::abs(double(h.end.z)-s.position->z)>0.01) return ProbeReason::InvalidResult;
+        const auto clearance=std::hypot(dx,dy)*h.fraction;
+        if(side==0) out.leftClearance=clearance; else out.rightClearance=clearance;
+    }
+    return ProbeReason::None;
+}
 }
 Walk::Walk(Binding b, std::shared_ptr<const corridor::Corridor> c, model::NavVector3 goal,
            WalkLimits limits) noexcept
@@ -193,6 +221,11 @@ WalkDecision Walk::update(const runtime::MovementSnapshot& s, const query::NavSp
        !std::isfinite(limits_.arrivalTolerance) || limits_.arrivalTolerance<=0 ||
        !std::isfinite(limits_.crossingMargin) || limits_.crossingMargin<=0 || limits_.lookAhead==0)
         return finish(out,WalkState::Failed,WalkReason::InvalidInput);
+    if(!std::isfinite(limits_.sideProbeDistance) || limits_.sideProbeDistance<0 ||
+       (limits_.sideProbeDistance>0 && (!std::isfinite(limits_.narrowMargin) || limits_.narrowMargin<=0 ||
+        limits_.narrowMargin>limits_.sideProbeDistance || limits_.sideProbeDistance>limits_.probe.maxDistance ||
+        !std::isfinite(limits_.narrowSpeed) || limits_.narrowSpeed<=0 || limits_.narrowSpeed>limits_.speed ||
+        !limits_.maxAvoidanceDecisions))) return finish(out,WalkState::Failed,WalkReason::InvalidInput);
     if(reservedQueries>=limits_.probe.maxQueries) {
         out.queries=reservedQueries; out.probeReason=ProbeReason::BudgetExceeded;
         return finish(out,WalkState::Failed,WalkReason::ProbeFailed);
@@ -244,7 +277,7 @@ WalkDecision Walk::update(const runtime::MovementSnapshot& s, const query::NavSp
             if(!completed.accepted || completed.state!=PrimitiveState::Complete ||
                !cursor_.advance(out.binding.step,area,true))
                 return finish(out,WalkState::Failed,WalkReason::InvalidPortal);
-            out.primitiveEvent=completed.event; primitive_=Primitive{};
+            out.primitiveEvent=completed.event; primitive_=Primitive{}; avoidSide_=0; avoidDecisions_=0;
             return out; // at most one measured transition per decision
         }
         auto reference=*s.position;
@@ -287,11 +320,70 @@ WalkDecision Walk::update(const runtime::MovementSnapshot& s, const query::NavSp
     const double fraction=std::min(1.0,limits_.probe.maxDistance/distance);
     // Round toward the observed origin so a float endpoint cannot extend the
     // double-precision distance budget (notably on diagonal segments).
-    const float x=inward(s.position->x+dx*fraction,s.position->x);
-    const float y=inward(s.position->y+dy*fraction,s.position->y);
+    float x=inward(s.position->x+dx*fraction,s.position->x);
+    float y=inward(s.position->y+dy*fraction,s.position->y);
+    const double ux=dx/distance,uy=dy/distance;
+    const auto constrain=[&](float& tx,float& ty) {
+        if(!cursor_.exhausted()) {
+            const auto& t=corridor_->transitions()[cursor_.index()];
+            if(t.edge.direction==1 || t.edge.direction==3)
+                ty=static_cast<float>(std::clamp(double(ty),(std::max)(t.sourceLow.y,t.targetLow.y),(std::min)(t.sourceHigh.y,t.targetHigh.y)));
+            else tx=static_cast<float>(std::clamp(double(tx),(std::max)(t.sourceLow.x,t.targetLow.x),(std::min)(t.sourceHigh.x,t.targetHigh.x)));
+        }
+    };
+    double speedLimit=limits_.speed;
+    if(limits_.sideProbeDistance>0) {
+        out.probeReason=sides(s,binding_.routeGeneration,ux,uy,limits_.sideProbeDistance,
+            limits_.probe.maxQueries,queries,out);
+        if(out.probeReason!=ProbeReason::None) return finish(out,WalkState::Failed,WalkReason::ProbeFailed);
+        const auto margin=(std::min)(out.leftClearance,out.rightClearance);
+        out.narrow=margin<limits_.narrowMargin;
+        if(out.narrow) {
+            speedLimit=limits_.narrowSpeed+(limits_.speed-limits_.narrowSpeed)*margin/limits_.narrowMargin;
+            const double lateral=std::clamp((out.rightClearance-out.leftClearance)/2,-4.0,4.0)*
+                (std::min)(1.0,distance*fraction/limits_.sideProbeDistance);
+            const double forward=std::sqrt((std::max)(0.0,distance*distance*fraction*fraction-lateral*lateral));
+            x=inward(s.position->x+ux*forward+uy*lateral,s.position->x);
+            y=inward(s.position->y+uy*forward-ux*lateral,s.position->y);
+            constrain(x,y);
+        }
+    }
+    probeLimits.maxQueries=limits_.probe.maxQueries-out.queries+1; // same-decision ground cache
+    queries.blocked.reset(); // Side obstructions are not the forward obstruction.
     const auto probe=GroundProbe::inspect(s,binding_.routeGeneration,area,x,y,index,indexMap,queries,probeLimits);
     out.queries=queries.issued; out.samples=probe.samples; out.steps=probe.steps; out.probeReason=probe.reason;
     if(!probe) {
+        if(limits_.sideProbeDistance>0 && !queries.offCorridor &&
+           (probe.reason==ProbeReason::Blocked || probe.reason==ProbeReason::NoSupport) && out.queries<limits_.probe.maxQueries) {
+            runtime::QueryRequest q{{s.agent,s.actor,s.map,s.tick,binding_.routeGeneration,++out.queries},
+                runtime::QueryKind::Blocker,*s.position,{x,y,s.position->z},s.hull};
+            runtime::WorldQueryResult r;
+            try { r=queries.query(q); } catch(...) {}
+            if(r.stamp==q.stamp && r.kind==q.kind && r.error==runtime::QueryError::None && r.blocker &&
+               r.blocker->kind==runtime::BlockerKind::Geometry) {
+                if(avoidDecisions_>=limits_.maxAvoidanceDecisions || out.samples>=limits_.probe.maxSamples ||
+                   out.queries>=limits_.probe.maxQueries) return finish(out,WalkState::Failed,WalkReason::ProbeFailed);
+                if(!avoidSide_) avoidSide_=out.rightClearance>=out.leftClearance ? 1:-1;
+                ++avoidDecisions_;
+                const double free=avoidSide_>0 ? out.rightClearance:out.leftClearance;
+                if(free<=1) return finish(out,WalkState::Failed,WalkReason::ProbeFailed);
+                x=inward(s.position->x+avoidSide_*uy*(free-1),s.position->x);
+                y=inward(s.position->y-avoidSide_*ux*(free-1),s.position->y);
+                constrain(x,y);
+                if(std::hypot(double(x)-s.position->x,double(y)-s.position->y)<0.1)
+                    return finish(out,WalkState::Failed,WalkReason::ProbeFailed);
+                auto budget=limits_.probe; budget.maxQueries=limits_.probe.maxQueries-out.queries+1;
+                budget.maxSamples-=out.samples;
+                const auto alternate=GroundProbe::inspect(s,binding_.routeGeneration,area,x,y,index,indexMap,queries,budget);
+                out.queries=queries.issued; out.samples+=alternate.samples; out.steps+=alternate.steps;
+                out.probeReason=alternate.reason;
+                if(!alternate) return finish(out,WalkState::Failed,WalkReason::ProbeFailed);
+                out.target=alternate.target; out.avoiding=true;
+                const double length=std::hypot(double(x)-s.position->x,double(y)-s.position->y);
+                out.intent.direction={(double(x)-s.position->x)/length,(double(y)-s.position->y)/length,0};
+                out.intent.speed=(std::min)(limits_.narrowSpeed,length/0.120); return out;
+            }
+        }
         if(!queries.offCorridor && probe.reason==ProbeReason::Blocked && queries.blocked && limits_.doorTimeoutUs)
             return updateDoor(out,s,index,indexMap,queries,queries.blocked->end,nowUs);
         // A tall door may make a future floor probe start solid before its
@@ -302,11 +394,19 @@ WalkDecision Walk::update(const runtime::MovementSnapshot& s, const query::NavSp
         return finish(out,WalkState::Failed,queries.offCorridor ? WalkReason::OffCorridor:WalkReason::ProbeFailed);
     }
     out.target=probe.target;
+    avoidSide_=0; avoidDecisions_=0;
     // Even a full 120 ms fresh-intent hold cannot pass the inspected endpoint.
     const double inspected=std::hypot(double(x)-s.position->x,double(y)-s.position->y);
     if(inspected==0) return finish(out,WalkState::Failed,WalkReason::InvalidPortal);
     out.intent.direction={(double(x)-s.position->x)/inspected,(double(y)-s.position->y)/inspected,0};
-    out.intent.speed=std::min(limits_.speed,inspected/0.120);
+    out.intent.speed=std::min(speedLimit,inspected/0.120);
+    const double forward=(double(x)-s.position->x)*ux+(double(y)-s.position->y)*uy;
+    const double lateral=(double(x)-s.position->x)*uy-(double(y)-s.position->y)*ux;
+    if(out.narrow && forward>0 && std::abs(lateral)>0.001 && std::abs(lateral)<=forward) {
+        constexpr double degrees=180/3.14159265358979323846;
+        out.intent.direction={ux,uy,0}; out.intent.lateralCorrection=lateral/forward;
+        out.intent.view=core::IntentVector{0,std::atan2(uy,ux)*degrees,0};
+    }
     if(primitive_.state()==PrimitiveState::Running) {
         const auto update=primitive_.update({out.binding,s.tick,Progress::Running,out.intent,area,true});
         if(!update.accepted) return finish(out,WalkState::Failed,WalkReason::InvalidPortal);

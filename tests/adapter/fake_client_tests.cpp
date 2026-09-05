@@ -22,6 +22,7 @@
 #include <vector>
 #include <map>
 #include "../nav/route_fixture.hpp"
+#include "../nav/steering_fixture.hpp"
 #include "../nav/evidence/fixture.hpp"
 
 std::map<std::string, void(*)()> gNavCommands;
@@ -54,6 +55,8 @@ edict_t gNavDoor{}, gNavCompetitor{};
 bool gDoorActive=false, gDoorOpen=false, gDoorLocked=false, gDoorAmbiguous=false, gDoorLoop=false;
 int gDoorUses=0, gDoorScans=0;
 int gTouchContacts=0;
+int gSteeringMode=-1;
+edict_t gWallWorld{};
 constexpr float doorPlane=83.96875f; // GoldSrc collision epsilon keeps the hull outside the brush.
 std::uint64_t gDoorOpenAtUs=0;
 float supportHeight(float x) { return x+16>100 ? gStairHeight:0; }
@@ -64,6 +67,7 @@ void captureNavHull(const float* start, const float* end, int ignoreMonsters, in
     const float minimumZ=hull==3 ? -18.0f:-36.0f;
     const float floor=supportHeight(end[0]);
     if(ignoreMonsters==1) {
+        if(gSteeringMode==3 && end[1]<45) { result->flFraction=1; return; }
         if(gDoorActive && !gDoorOpen && end[0]+16>=100 && end[0]-16<=104 && start[2]<108) {
             result->fStartSolid=1; return;
         }
@@ -95,6 +99,12 @@ void captureNavHull(const float* start, const float* end, int ignoreMonsters, in
     if(gInvalidateDuringHull)
         astrabot::adapter::metamod::lifecycleCoordinator().navConsole().invalidate(
             astrabot::nav::runtime::SessionReason::MapChanged);
+    if(gSteeringMode>=0) {
+        const auto h=steering_fixture::sweep(gSteeringMode,{start[0],start[1],start[2]},{end[0],end[1],end[2]});
+        result->flFraction=h.fraction; result->fStartSolid=h.startSolid;
+        result->vecEndPos=Vector(h.end.x,h.end.y,h.end.z); result->vecPlaneNormal=Vector(h.normal.x,h.normal.y,h.normal.z);
+        if(h.fraction<1) result->pHit=&gWallWorld;
+    }
 }
 void testNavWorldQueries() {
     using namespace astrabot::nav;
@@ -463,6 +473,7 @@ void captureRunPlayerMove(
         }
         const double yaw=double(viewAngles[1])*3.14159265358979323846/180;
         const double dt=double(msec)/1000;
+        const auto oldOrigin=entity->v.origin;
         entity->v.origin.x+=static_cast<float>((forwardMove*std::cos(yaw)+sideMove*std::sin(yaw))*dt);
         entity->v.origin.y+=static_cast<float>((forwardMove*std::sin(yaw)-sideMove*std::cos(yaw))*dt);
         if(gDoorActive && !gDoorOpen && entity->v.origin.x>=doorPlane &&
@@ -473,6 +484,11 @@ void captureRunPlayerMove(
                 gDoorOpenAtUs=gNavClockUs+120000;
         }
         entity->v.origin.z=supportHeight(entity->v.origin.x)+36;
+        if(gSteeringMode>=0) {
+            const auto h=steering_fixture::sweep(gSteeringMode,{oldOrigin.x,oldOrigin.y,oldOrigin.z},
+                {entity->v.origin.x,entity->v.origin.y,entity->v.origin.z});
+            assert(h.fraction==1 && !h.startSolid);
+        }
         entity->v.v_angle=Vector(viewAngles[0],viewAngles[1],viewAngles[2]);
         if(gInjectNavDuplicate) {
             gInjectNavDuplicate=false;
@@ -937,6 +953,32 @@ void testNavTouchDoors() {
         if(mode==2 || mode==3 || mode==7) assert(rejected);
         const auto contacts=gTouchContacts; navFrame(fixture,us); navFrame(fixture,us); assert(gTouchContacts==contacts);
         gDoorActive=false; gDoorOpenAtUs=0; gSimulateNav=false; detach();
+    }
+}
+void testNavSteering() {
+    using namespace astrabot;
+    for(int mode=0;mode<4;++mode) for(std::uint64_t us : {8000U,16000U,100000U}) {
+        Fixture fixture{}; enginefuncs_t hooks{}; prepareNavWalk(fixture,hooks); gSteeringMode=mode;
+        if(mode==0) fixture.entity.v.origin.y=49;
+        auto& owner=adapter::metamod::lifecycleCoordinator(); auto& console=owner.navConsole();
+        runNav({"astrabot_goto","2"});
+        bool terminal=false,narrow=false,corrected=false,avoided=false;
+        for(int frame=0;frame<4000;++frame) {
+            const auto traces=gHullCalls; navFrame(fixture,us); const auto& d=console.motionTrace().decision;
+            assert(d.queries<=21 && d.samples<=4);
+            if(d.tick==owner.registry().currentTick()) assert(d.queries==static_cast<unsigned>(gHullCalls-traces));
+            else assert(gHullCalls==traces);
+            narrow=narrow || d.narrow; corrected=corrected || std::abs(d.intent.lateralCorrection)>0.001; avoided=avoided || d.avoiding;
+            if(d.state!=nav::local::WalkState::Running) {
+                terminal=true;
+                if(mode<2) assert(d.state==nav::local::WalkState::Arrived);
+                else assert(d.state==nav::local::WalkState::Failed && d.intent.speed==0);
+                break;
+            }
+        }
+        assert(terminal); if(mode==0) assert(narrow && corrected); if(mode==1) assert(avoided);
+        navFrame(fixture,us); navFrame(fixture,us);
+        gSteeringMode=-1; gSimulateNav=false; detach();
     }
 }
 void testNavWalkCancellationAndGuards() {
@@ -1558,6 +1600,7 @@ int main() {
     testNavStairs();
     testNavDoors();
     testNavTouchDoors();
+    testNavSteering();
     testNavWalkCancellationAndGuards();
     testJoinFailureCleanupAndCommandContextReentry();
     testCounterTerroristPrimaryJoinRequest();

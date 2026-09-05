@@ -135,15 +135,15 @@ Unit/simulation passes never substitute for live observations.
     [Walk evidence](../reports/p3-03-walk-controller.md). Host wiring and
     fake-engine arrival/dispatch evidence are in
     [the host integration report](../reports/p3-03-walk-host.md).
-  - [ ] Add ordinary door use/wait, stairs, wall avoidance and narrow-passage
+  - [x] Add ordinary door use/wait, stairs, wall avoidance and narrow-passage
     speed/lateral correction.
     Grounded stair probes and fake-engine ascent/descent now have
     [offline evidence](../reports/p3-03-stairs.md).
     [Use-door host integration](../reports/p3-03-door-host.md) now has offline
     passage/timeout/dispatch-guard evidence, and
     [touch-door contact](../reports/p3-03-touch-doors.md) has bounded approach,
-    contact and arrival evidence. Wall avoidance and narrow-passage control
-    remain open.
+    contact and arrival evidence. [Wall avoidance and narrow-passage control](../reports/p3-03-wall-narrow.md)
+    now have portable/fake-engine evidence. Live acceptance remains post-Finish.
 - **Tests:** corridor/same-area supported arrival, ceiling, stairs, door failure,
   unsafe drop, zero/long delta, low/normal/high FPS, 120 ms stale intent,
   rejected command and repeated button edges.
@@ -317,8 +317,9 @@ nullable-Approach correction. Compatibility is partially validated, with its
 remaining rows explicitly recorded. The portable session slice is also implemented.
 Console goto/status/cancel integration also has offline adapter evidence.
 P3-02 corridor/portals and primitive lifecycle now have Windows/Linux x86 offline
-evidence and are integrated into main. P3-03 bounded grounded-area/clearance
-queries and Walk/motor host integration now have offline evidence; next is
-the existing ordinary door/stairs/wall/narrow-passage slice.
+evidence and are integrated into main. P3-03 grounded queries, Walk/motor/host,
+stairs, use/touch doors, wall avoidance and narrow-passage control now have offline
+implementation evidence. Next is P3-04 reactive blockers/overlay expiry and the
+actual per-player adapter seam. P3-03 live acceptance remains post-Finish.
 Real compatibility remains
 partial; no new numbering or Finish declaration.

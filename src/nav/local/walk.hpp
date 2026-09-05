@@ -14,6 +14,8 @@ struct WalkLimits {
     std::size_t lookAhead{};
     std::uint64_t doorTimeoutUs{}; // Zero disables door handling. Host supplies a finite profile.
     std::uint64_t touchTimeoutUs{}; // Includes the supported approach, one contact attempt and waiting.
+    double sideProbeDistance{}, narrowMargin{}, narrowSpeed{}; // Zero side distance disables steering.
+    std::uint32_t maxAvoidanceDecisions{};
 };
 struct DoorContact {
     std::uint64_t id{};
@@ -34,6 +36,8 @@ struct WalkDecision {
     DoorWaitReason doorReason{DoorWaitReason::None};
     std::uint64_t doorId{};
     std::optional<DoorContact> contact{}; // Single-frame pulse; host must revalidate before dispatch.
+    double leftClearance{}, rightClearance{};
+    bool narrow{}, avoiding{};
 };
 // One owned route, synchronous decision seam. Caller schedules decisions and
 // invalidates on route replacement; this class never submits a host command.
@@ -64,6 +68,8 @@ private:
     model::NavVector3 doorStart_{}, doorEnd_{};
     std::uint64_t doorId_{}, lastDoorId_{};
     bool touch_{}, contactSent_{};
+    int avoidSide_{};
+    std::uint32_t avoidDecisions_{};
     WalkDecision updateDoor(WalkDecision, const runtime::MovementSnapshot&,
         const query::NavSpatialIndex&, core::MapGeneration, runtime::IWorldQueries&,
         model::NavVector3 end, std::uint64_t nowUs) noexcept;
