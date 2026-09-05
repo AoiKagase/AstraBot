@@ -34,7 +34,7 @@ inline std::string snapshotState(const nav::model::NavMeshSnapshot& mesh) {
     for (const auto& s : h.places) {
         check(!s.empty() && s.size() < 256 && s.find('\0') == std::string::npos, "Place bytes");
         placeBytes += s.size() + 1; put(s.size());
-        for (unsigned char c : s) put(unsigned(c));
+        for (char c : s) put(static_cast<unsigned>(static_cast<unsigned char>(c)));
     }
     check(placeBytes <= 16384, "Place aggregate"); logical += placeBytes;
     std::set<std::uint32_t> ids, hidingIds;
