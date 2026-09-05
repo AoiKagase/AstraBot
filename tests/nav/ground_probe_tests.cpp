@@ -89,4 +89,15 @@ void failures() {
     assert(p.calls.empty());
 }
 }
-int main() { successReplayAndFloors(); failures(); }
+int main() {
+    successReplayAndFloors(); failures();
+    Script port; auto s=actor(); auto l=limits; l.maxQueries=1; l.maxSamples=0;
+    const auto located=local::GroundProbe::locate(s,7,*index(),s.map,port,l);
+    assert(located && located.queries==1 && located.samples==0 && located.target->area==model::NavAreaId{1});
+    port.calls.clear(); port.height=100; s.position->z=136;
+    const auto upper=local::GroundProbe::locate(s,7,*index(),s.map,port,l);
+    assert(upper && upper.target->area==model::NavAreaId{2} && port.calls.size()==1);
+    port.calls.clear(); l.maxQueries=0;
+    assert(local::GroundProbe::locate(s,7,*index(),s.map,port,l).reason==local::ProbeReason::BudgetExceeded);
+    assert(port.calls.empty());
+}

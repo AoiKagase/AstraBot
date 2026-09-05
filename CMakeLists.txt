@@ -101,6 +101,7 @@ if(MSVC)
 endif()
 
 add_library(astrabot_nav STATIC
+    src/nav/local/walk.cpp
     src/nav/local/intent_pump.cpp
     src/nav/local/ground_probe.cpp
     src/nav/local/primitive.cpp
@@ -324,6 +325,11 @@ if(ASTRABOT_BUILD_TESTS)
     target_link_libraries(astrabot_motor_tests PRIVATE astrabot_core)
     astrabot_enable_warnings(astrabot_motor_tests)
     add_test(NAME astrabot.motor COMMAND astrabot_motor_tests)
+    add_executable(astrabot_nav_walk_tests tests/nav/walk_tests.cpp)
+    target_link_libraries(astrabot_nav_walk_tests PRIVATE astrabot_nav astrabot_core)
+    astrabot_enable_warnings(astrabot_nav_walk_tests)
+    add_test(NAME astrabot.nav.walk COMMAND astrabot_nav_walk_tests)
+    set_tests_properties(astrabot.nav.walk PROPERTIES TIMEOUT 30)
     add_executable(astrabot_nav_ground_probe_tests tests/nav/ground_probe_tests.cpp)
     target_link_libraries(astrabot_nav_ground_probe_tests PRIVATE astrabot_nav)
     astrabot_enable_warnings(astrabot_nav_ground_probe_tests)

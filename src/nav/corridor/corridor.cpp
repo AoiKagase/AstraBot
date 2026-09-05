@@ -98,6 +98,7 @@ BuildResult Corridor::build(const query::NavGraph& graph, const query::NavRouteR
         std::shared_ptr<Corridor> result(new Corridor);
         result->transitions_.reserve(count);
         result->start_=route.areas.front(); result->goal_=route.areas.back();
+        result->startAttributes_=graph.area(*graph.find(result->start_)).attributes;
         result->logicalBytes_=sizeof(Corridor)+count*sizeof(Transition);
         for(;index<count;++index) {
             const auto& edge=route.steps[index].edge;

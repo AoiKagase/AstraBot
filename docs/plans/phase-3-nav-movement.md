@@ -130,7 +130,9 @@ Unit/simulation passes never substitute for live observations.
   - [ ] Add Walk/motor, 25 Hz decisions plus per-frame commands, later-tick
     dispatch and stale-intent stop; implement observability now.
     Motor and intent-pump components are implemented and tested in
-    [their report](../reports/p3-03-motor-pump.md). Walk/host wiring is still open.
+    [their report](../reports/p3-03-motor-pump.md). The portable Walk controller
+    and scripted arrival simulation are implemented in
+    [Walk evidence](../reports/p3-03-walk-controller.md). Host wiring is still open.
   - [ ] Add ordinary door use/wait, stairs, wall avoidance and narrow-passage
     speed/lateral correction.
 - **Tests:** corridor/same-area supported arrival, ceiling, stairs, door failure,

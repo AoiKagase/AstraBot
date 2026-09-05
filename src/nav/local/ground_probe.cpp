@@ -20,15 +20,14 @@ ProbeReason floorReason(const runtime::FloorObservation& f, double minimumNormal
     const double n=double(f.normal.x)*f.normal.x+double(f.normal.y)*f.normal.y+double(f.normal.z)*f.normal.z;
     return n>=0.99 && n<=1.01 ? ProbeReason::None:ProbeReason::InvalidResult;
 }
-}
-ProbeResult GroundProbe::inspect(const runtime::MovementSnapshot& s, std::uint64_t generation,
+ProbeResult probe(const runtime::MovementSnapshot& s, std::uint64_t generation,
     model::NavAreaId currentArea, float x, float y, const query::NavSpatialIndex& index, core::MapGeneration indexMap,
-    runtime::IWorldQueries& port, GroundProbeLimits limits) noexcept {
+    runtime::IWorldQueries& port, GroundProbeLimits limits, bool locateOnly) noexcept {
     ProbeResult result;
     result.stamp={s.agent,s.actor,s.map,s.tick,generation,0};
     const auto fail=[&](ProbeReason reason) { result.reason=reason; result.target.reset(); return result; };
     if(!s.agent.isValid() || !s.actor.isValid() || !s.map.isValid() || !s.tick.isValid() || !generation ||
-       !currentArea.isValid() || s.kind!=runtime::ActorKind::ManagedBot || s.connected!=true ||
+       (!locateOnly && !currentArea.isValid()) || s.kind!=runtime::ActorKind::ManagedBot || s.connected!=true ||
        s.alive!=true || s.joined!=true || !s.position || !s.position->isFinite() || !s.hull || !valid(*s.hull) ||
        !std::isfinite(x) || !std::isfinite(y)) return fail(ProbeReason::InvalidInput);
     if(indexMap!=s.map) return fail(ProbeReason::StaleNavigation);
@@ -40,7 +39,7 @@ ProbeResult GroundProbe::inspect(const runtime::MovementSnapshot& s, std::uint64
     if(s.grounded!=true) return fail(ProbeReason::NoSupport);
     const double dx=double(x)-s.position->x, dy=double(y)-s.position->y;
     const double distance=std::hypot(dx,dy);
-    const double count=std::max(1.0,std::ceil(distance/limits.sampleSpacing));
+    const double count=locateOnly ? 0.0:std::max(1.0,std::ceil(distance/limits.sampleSpacing));
     if(distance>limits.maxDistance || count>limits.maxSamples || limits.maxQueries<1 ||
        count>(limits.maxQueries-1)/2) return fail(ProbeReason::BudgetExceeded);
     const auto samples=static_cast<std::uint32_t>(count);
@@ -66,7 +65,9 @@ ProbeResult GroundProbe::inspect(const runtime::MovementSnapshot& s, std::uint64
     if(reason!=ProbeReason::None) return fail(reason);
     const double feet=double(s.position->z)+s.hull->minimum.z;
     if(std::abs(double(floor.height)-feet)>limits.supportTolerance) return fail(ProbeReason::NoSupport);
-    if(!ground->ground->area || *ground->ground->area!=currentArea) return fail(ProbeReason::WrongStartArea);
+    if(!ground->ground->area || !ground->ground->area->isValid()) return fail(ProbeReason::NoArea);
+    if(!locateOnly && *ground->ground->area!=currentArea) return fail(ProbeReason::WrongStartArea);
+    currentArea=*ground->ground->area;
     auto match=index.containing({s.position->x,s.position->y,floor.height},limits.navTolerance);
     if(!match || !*match.value || (**match.value).areaId!=currentArea) return fail(ProbeReason::NoArea);
     auto position=*s.position;
@@ -102,5 +103,17 @@ ProbeResult GroundProbe::inspect(const runtime::MovementSnapshot& s, std::uint64
         position=destination; floor=next; area=(**match.value).areaId; ++result.samples;
     }
     result.target=GroundedTarget{position,area,floor}; return result;
+}
+}
+ProbeResult GroundProbe::locate(const runtime::MovementSnapshot& s, std::uint64_t generation,
+    const query::NavSpatialIndex& index, core::MapGeneration indexMap,
+    runtime::IWorldQueries& port, GroundProbeLimits limits) noexcept {
+    return probe(s,generation,{},s.position ? s.position->x:0,s.position ? s.position->y:0,
+                 index,indexMap,port,limits,true);
+}
+ProbeResult GroundProbe::inspect(const runtime::MovementSnapshot& s, std::uint64_t generation,
+    model::NavAreaId currentArea, float x, float y, const query::NavSpatialIndex& index,
+    core::MapGeneration indexMap, runtime::IWorldQueries& port, GroundProbeLimits limits) noexcept {
+    return probe(s,generation,currentArea,x,y,index,indexMap,port,limits,false);
 }
 }

@@ -29,6 +29,11 @@ struct ProbeResult {
 // continuous support between samples; swept hulls only prove collision clearance.
 class GroundProbe final {
 public:
+    // One measured ground query, validated against containing NAV at the floor.
+    // No expected-area assumption: the actor may just have crossed a portal.
+    static ProbeResult locate(const runtime::MovementSnapshot&, std::uint64_t routeGeneration,
+        const query::NavSpatialIndex&, core::MapGeneration indexMap,
+        runtime::IWorldQueries&, GroundProbeLimits) noexcept;
     static ProbeResult inspect(const runtime::MovementSnapshot&, std::uint64_t routeGeneration,
         model::NavAreaId currentArea, float targetX, float targetY,
         const query::NavSpatialIndex&, core::MapGeneration indexMap,

@@ -11,6 +11,7 @@ struct Area {
     std::uint32_t id;
     model::NavExtent extent;
     std::array<std::vector<std::uint32_t>, 4> targets{};
+    std::uint8_t attributes{};
 };
 inline std::shared_ptr<const model::NavMeshSnapshot> snapshot(const std::vector<Area> &areas) {
     std::vector<std::uint8_t> bytes;
@@ -24,7 +25,7 @@ inline std::shared_ptr<const model::NavMeshSnapshot> snapshot(const std::vector<
     append(static_cast<std::uint32_t>(areas.size()));
     for (const auto &area : areas) {
         append(area.id);
-        bytes.push_back(0);
+        bytes.push_back(area.attributes);
         const auto &e = area.extent;
         for (float f : {e.northWest.x, e.northWest.y, e.northWest.z, e.southEast.x,
                         e.southEast.y, e.southEast.z, e.northEastZ, e.southWestZ}) {
