@@ -42,7 +42,13 @@ struct DoorObservation {
     bool canTouch{}; // Ordinary untargeted, non-use-only door; not proof that a master is unlocked.
 };
 enum class BlockerKind { Unknown, Teammate, Enemy, Geometry, Other };
-struct BlockerObservation { std::uint64_t id{}; BlockerKind kind{BlockerKind::Unknown}; };
+struct BlockerObservation {
+    std::uint64_t id{};
+    BlockerKind kind{BlockerKind::Unknown};
+    // Player classifications require adapter-validated registry identity. Entity
+    // serial/index IDs alone must not be converted to a PlayerId in portable Nav.
+    std::optional<core::PlayerId> player{};
+};
 struct WorldQueryResult {
     QueryStamp stamp{};
     QueryKind kind{QueryKind::GroundedArea};

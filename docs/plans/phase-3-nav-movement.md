@@ -158,6 +158,10 @@ Unit/simulation passes never substitute for live observations.
 
 ## P3-04 — Reactive blockers, overlay and necessary multi-Bot seam
 
+Portable controller foundation: [blocker wait report](../reports/p3-04-blocker-wait.md).
+Expiry, stable PlayerId priority and a non-renewable attempt deadline have
+synthetic coverage. Walk/host integration and both checklist slices remain open.
+
 - **Goal:** bounded deterministic yield/avoid/replan without static mesh mutation.
 - **Why now:** local blockers must not become permanent Nav facts.
 - **Files/modules:** expiring overlay, local avoidance, fake-client/lifecycle/
