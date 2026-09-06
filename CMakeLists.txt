@@ -338,6 +338,23 @@ if(ASTRABOT_BUILD_TESTS)
     file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/long-fuzz/CTestTestfile.cmake"
         CONTENT "add_test(astrabot.nav.fuzz.long \"$<TARGET_FILE:astrabot_nav_fuzz_tests>\" --cases 100000)\nset_tests_properties(astrabot.nav.fuzz.long PROPERTIES TIMEOUT 600)\n")
     if(NOT ASTRABOT_NAV_ASAN)
+    find_package(Python3 3.9 REQUIRED COMPONENTS Interpreter)
+    add_executable(astrabot_nav_replay tests/nav/simulation/replay.cpp)
+    target_include_directories(astrabot_nav_replay PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests/nav")
+    target_link_libraries(astrabot_nav_replay PRIVATE astrabot_nav astrabot_core)
+    astrabot_enable_warnings(astrabot_nav_replay)
+    set_property(TARGET astrabot_nav_replay APPEND PROPERTY LINK_DEPENDS
+        "${CMAKE_CURRENT_BINARY_DIR}/CMakeCache.txt" "${CMAKE_CURRENT_SOURCE_DIR}/CMakeLists.txt")
+    add_test(NAME astrabot.nav.movement_checker COMMAND "${Python3_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/nav/simulation/checker_tests.py")
+    add_test(NAME astrabot.nav.movement_replay COMMAND "${Python3_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tools/check-movement-evidence.py" run
+        --manifest "${CMAKE_CURRENT_SOURCE_DIR}/tests/nav/simulation/scenarios.json"
+        --producer portable --executable "$<TARGET_FILE:astrabot_nav_replay>"
+        --build-dir "${CMAKE_CURRENT_BINARY_DIR}"
+        --output "${CMAKE_CURRENT_BINARY_DIR}/movement-evidence/portable.json")
+    set_tests_properties(astrabot.nav.movement_checker PROPERTIES TIMEOUT 30)
+    set_tests_properties(astrabot.nav.movement_replay PROPERTIES TIMEOUT 240)
     add_executable(astrabot_ladder_tests tests/nav/ladder_tests.cpp)
     target_link_libraries(astrabot_ladder_tests PRIVATE astrabot_nav astrabot_core)
     astrabot_enable_warnings(astrabot_ladder_tests)
@@ -692,11 +709,20 @@ if(ASTRABOT_BUILD_TESTS)
         )
         astrabot_enable_warnings(astrabot_fake_client_tests LEGACY_SDK)
         astrabot_enable_metamod_compatibility(astrabot_fake_client_tests)
+        set_property(TARGET astrabot_fake_client_tests APPEND PROPERTY LINK_DEPENDS
+            "${CMAKE_CURRENT_BINARY_DIR}/CMakeCache.txt" "${CMAKE_CURRENT_SOURCE_DIR}/CMakeLists.txt")
 
         add_test(
             NAME astrabot.fake_client
             COMMAND astrabot_fake_client_tests
         )
+        add_test(NAME astrabot.nav.host_movement_replay COMMAND "${Python3_EXECUTABLE}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tools/check-movement-evidence.py" run
+            --manifest "${CMAKE_CURRENT_SOURCE_DIR}/tests/nav/simulation/scenarios.json"
+            --producer adapter --executable "$<TARGET_FILE:astrabot_fake_client_tests>"
+            --build-dir "${CMAKE_CURRENT_BINARY_DIR}"
+            --output "${CMAKE_CURRENT_BINARY_DIR}/movement-evidence/adapter.json")
+        set_tests_properties(astrabot.nav.host_movement_replay PROPERTIES TIMEOUT 240)
 
         add_executable(astrabot_cstrike_join_tests
             tests/adapter/join_state_tests.cpp

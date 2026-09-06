@@ -10,6 +10,9 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
       - name: Portable x86 Debug contracts and seeded fuzz smoke
         shell: pwsh
         run: ./tools/verify-nav-evidence.ps1 -Mode Debug
@@ -20,6 +23,7 @@ jobs:
           path: |
             build-portable-x86-test/Testing/Temporary/
             build-portable-x86-test/fuzz-artifacts/
+            build-portable-x86-test/movement-evidence/
   nav-asan:
     runs-on: windows-2022
     timeout-minutes: 25
@@ -68,4 +72,5 @@ jobs:
           path: |
             build-linux-x86/Testing/Temporary/
             build-linux-x86/fuzz-artifacts/
+            build-linux-x86/movement-evidence/
   # Live HLDS/ReHLDS validation remains deferred until project-wide Finish.

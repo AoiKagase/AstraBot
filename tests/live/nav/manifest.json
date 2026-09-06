@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "gate": "post-Finish",
+  "status": "Not yet validated",
+  "finishConfirmed": false,
+  "environments": ["Windows x86 HLDS", "Windows x86 ReHLDS", "Linux x86 HLDS", "Linux x86 ReHLDS"],
+  "fpsBands": ["low", "normal", "high"],
+  "botCounts": [1, 8, 16],
+  "scenarios": [
+    "spawn-goto", "floor-doorway", "stairs-up-down", "narrow-passage",
+    "crouch-release", "simple-jump", "ladder-up-down", "dynamic-blocker",
+    "stuck-recovery", "partial-unreachable", "map-change"
+  ],
+  "prerequisites": {
+    "projectWideFinish": "Not confirmed; every phase and plan must be assessed separately",
+    "runtime": "Exact server, GameDLL, Metamod-P, plugin set and physics/cvars not pinned for live validation",
+    "assets": "Lawful BSP/NAV paths, SHA-256 and scenario start/goal positions not supplied for all rows",
+    "realNav": "Partially validated for named dust/dust2 v5 files only; provenance/detail/other-version comparisons remain"
+  },
+  "results": []
+}

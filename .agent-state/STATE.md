@@ -1,39 +1,36 @@
 # State
 
-Status: complete — P3-08 planning only; implementation not started.
-Goal: plan the existing P3-08 offline evidence and separate acceptance gates.
-Branch: codex/p307-progress-recovery. No push or merge authorized.
-Report: docs/reports/p3-07-progress-recovery.md.
-Plan: docs/plans/phase-3-nav-movement.md, P3-08 execution plan (2026-09-06).
+Status: complete — P3-08 implementation and applicable offline verification.
+Goal: approved P3-08 reproducible movement evidence with separate gate states.
+Branch: codex/p308-offline-gate; dedicated .worktrees/p308-offline-gate.
+Plan: docs/plans/phase-3-nav-movement.md, existing P3-08.
+Report: docs/reports/p3-08-offline-gate.md.
 
-Planning base: db146e4. Four ordered, unnumbered implementation slices:
-evidence contract/first replay; full scenario and map-change matrix;
-1/8/16-actor scheduling and finite budgets; CI/report/live prerequisites.
-No source/tests/CI implementation or live execution in this planning change.
-Planning verification: existing report/test/CI contracts and Markdown diff review.
-P3-07 evidence below is historical, not a fresh P3-08 verification run.
+Portable 90 + fake-host 186 declared rows, each run twice with ordered traces.
+Frame intervals 8/16/100 ms; actor matrices 1/8/16, specialized host rows 1.
+Measured starts/goals, typed terminals, commands/receipts, query/replan/time
+budgets, history/trace limits and source/build/fixture hashes. Python 3.9+
+standard-library checker rejects malformed, missing, stale and false success.
+No production navigation, public API or DLL export changes.
 
-Actor/goal-owned Recovery survives route replacement. Only actual dispatch
-receipts accumulate Walk 500ms / crouch 1000ms windows. Corridor-forward and
-displacement high-water observations avoid both oscillation evasion and false
-stuck during legitimate lateral avoidance. Wait/side/reverse stages are 250ms;
-movement cannot dispatch past its stage deadline. One replan, then finite abort.
-No unsupported obstacle inference or fabricated edge exclusions.
-Ground recovery shares the 21-query limit and existing transport guards.
-Cancellation, explicit goal reset, typed causes and terminal uniqueness tested.
+Verification 2026-09-06:
+- Windows x86 portable Debug/WX, inspector ON: 41/41.
+- Windows x86 Metamod Debug/WX: 47/47.
+- WSL Debian Linux x86 GCC -m32 Debug: 40/40.
+- Final input/log/review refinements: affected tests Windows 2/2 and 5/5;
+  Linux 2/2. Independent review findings resolved; final diff checked.
+- MSVC 19.51.36256.0; GCC 14.2.0.
+- SDK SHA 7ec9b014f8c0a947a724644aebe34eb33706e44b.
 
-Verification on 2026-09-06:
-- Windows x86 Metamod Debug /W4 /WX: 44/44.
-- Windows x86 portable Debug /W4 /WX: 36/36 (inspection tools OFF).
-- Linux x86 GCC -m32 Debug: 38/38 (Debian WSL).
-- Windows x86 Release: built, PE32 x86 and exact six exports verified.
-- SDK SHA: 7ec9b014f8c0a947a724644aebe34eb33706e44b.
-Synthetic permanent stalls abort in 1.984/2.016/2.400 seconds at 8/16/100ms
-frames; transient stalls arrive in 3.424/3.424/3.800 seconds.
+Observed hosted baseline: run 34023536620 on db146e4, all three jobs success.
+This P3-08 branch's hosted run awaits separately authorized push/PR.
+Real NAV remains Partially validated (provenance/detail/other-version gaps).
+Live remains Not yet validated; tests/live/nav/manifest.json lists pending rows.
+No project-wide Finish or live HLDS/ReHLDS execution. Assess all remaining
+project plans before a separate explicit Finish decision.
 
-P3-08 remains next. This is not project-wide Finish or real-map/live acceptance.
-No live HLDS/ReHLDS checks before explicit project-wide Finish.
-No subagents used. FocalSpan mandatory; graph was consulted but trails HEAD.
-
-Preserve unrelated AGENTS.md/.gitignore edits and untracked tool configs.
-Exclude .focalspan/ and .focalspan.json from commits. No memory edits authorized.
+Preserve branch/worktree and unrelated root AGENTS.md/.gitignore/tool edits.
+No push, merge, cleanup or memory update performed or authorized.
+FocalSpan and graph consulted; graph misses new unindexed test functions,
+so scoped source review and executable verification supplied the evidence.
+Implemented through bounded subagents with parent progress reporting.

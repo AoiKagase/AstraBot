@@ -1,0 +1,751 @@
+{
+  "schemaVersion": 1,
+  "seed": 308,
+  "producers": {
+    "portable": {
+      "fixtureFiles": [
+        "tests/nav/simulation/replay.cpp",
+        "tests/nav/route_fixture.hpp"
+      ],
+      "cases": [
+        {
+          "scenario": "floor-arrival",
+          "frameUs": [
+            8000,
+            16000,
+            100000
+          ],
+          "actors": [
+            1,
+            8,
+            16
+          ],
+          "variants": {
+            "clean": "arrived",
+            "map-change": "cancelled-fresh-arrived"
+          },
+          "maxFrames": 1250,
+          "maxQueriesPerActorFrame": 21,
+          "maxReplans": 0,
+          "traceLimit": 50000,
+          "terminalOutcomes": {
+            "clean": {
+              "default": "Arrived"
+            },
+            "map-change": {
+              "default": "Arrived"
+            }
+          }
+        },
+        {
+          "scenario": "crouch-walk-release",
+          "frameUs": [
+            8000,
+            16000,
+            100000
+          ],
+          "actors": [
+            1,
+            8,
+            16
+          ],
+          "variants": {
+            "clean": "arrived",
+            "map-change": "cancelled-fresh-arrived"
+          },
+          "maxFrames": 1250,
+          "maxQueriesPerActorFrame": 21,
+          "maxReplans": 0,
+          "traceLimit": 50000,
+          "terminalOutcomes": {
+            "clean": {
+              "default": "Arrived"
+            },
+            "map-change": {
+              "default": "Arrived"
+            }
+          }
+        },
+        {
+          "scenario": "blocked-floor",
+          "frameUs": [
+            8000,
+            16000,
+            100000
+          ],
+          "actors": [
+            1,
+            8,
+            16
+          ],
+          "variants": {
+            "clean": "probe-failed",
+            "map-change": "cancelled-fresh-arrived"
+          },
+          "maxFrames": 1250,
+          "maxQueriesPerActorFrame": 21,
+          "maxReplans": 0,
+          "traceLimit": 50000,
+          "terminalOutcomes": {
+            "clean": {
+              "default": "ProbeFailed"
+            },
+            "map-change": {
+              "default": "Arrived"
+            }
+          }
+        },
+        {
+          "scenario": "partial-non-execution",
+          "frameUs": [
+            8000,
+            16000,
+            100000
+          ],
+          "actors": [
+            1,
+            8,
+            16
+          ],
+          "variants": {
+            "clean": "partial-non-execution",
+            "map-change": "cancelled-fresh-non-execution"
+          },
+          "maxFrames": 1250,
+          "maxQueriesPerActorFrame": 21,
+          "maxReplans": 0,
+          "traceLimit": 50000,
+          "terminalOutcomes": {
+            "clean": {
+              "default": "ExpansionLimit"
+            },
+            "map-change": {
+              "default": "ExpansionLimit"
+            }
+          }
+        },
+        {
+          "scenario": "unreachable-non-execution",
+          "frameUs": [
+            8000,
+            16000,
+            100000
+          ],
+          "actors": [
+            1,
+            8,
+            16
+          ],
+          "variants": {
+            "clean": "unreachable-non-execution",
+            "map-change": "cancelled-fresh-non-execution"
+          },
+          "maxFrames": 1250,
+          "maxQueriesPerActorFrame": 21,
+          "maxReplans": 0,
+          "traceLimit": 50000,
+          "terminalOutcomes": {
+            "clean": {
+              "default": "Unreachable"
+            },
+            "map-change": {
+              "default": "Unreachable"
+            }
+          }
+        }
+      ]
+    },
+    "adapter": {
+      "fixtureFiles": [
+        "tests/adapter/fake_client_tests.cpp",
+        "tests/adapter/p308_host_matrix.hpp",
+        "tests/adapter/ladder_probe_tests.cpp",
+        "tests/nav/route_fixture.hpp",
+        "tests/nav/steering_fixture.hpp"
+      ],
+      "cases": [
+        {
+          "scenario": "host-simultaneous",
+          "frameUs": [
+            8000,
+            16000,
+            100000
+          ],
+          "actors": [
+            1,
+            8,
+            16
+          ],
+          "variants": {
+            "clean": "Arrived",
+            "map-change": "Arrived"
+          },
+          "maxFrames": 4096,
+          "maxQueriesPerActorFrame": 21,
+          "maxReplans": 2,
+          "traceLimit": 32768,
+          "terminalOutcomes": {
+            "clean": {
+              "default": "Arrived"
+            },
+            "map-change": {
+              "default": "Arrived"
+            }
+          }
+        },
+        {
+          "scenario": "host-staggered",
+          "frameUs": [
+            8000,
+            16000,
+            100000
+          ],
+          "actors": [
+            1,
+            8,
+            16
+          ],
+          "variants": {
+            "clean": "Arrived",
+            "map-change": "Arrived"
+          },
+          "maxFrames": 4096,
+          "maxQueriesPerActorFrame": 21,
+          "maxReplans": 2,
+          "traceLimit": 32768,
+          "terminalOutcomes": {
+            "clean": {
+              "default": "Arrived"
+            },
+            "map-change": {
+              "default": "Arrived"
+            }
+          }
+        },
+        {
+          "scenario": "host-blocked-actor",
+          "frameUs": [
+            8000,
+            16000,
+            100000
+          ],
+          "actors": [
+            1,
+            8,
+            16
+          ],
+          "variants": {
+            "clean": "FailedWithPeerArrival",
+            "map-change": "FailedWithPeerArrival"
+          },
+          "maxFrames": 4096,
+          "maxQueriesPerActorFrame": 21,
+          "maxReplans": 2,
+          "traceLimit": 32768,
+          "terminalOutcomes": {
+            "clean": {
+              "default": "Arrived",
+              "1": "Failed"
+            },
+            "map-change": {
+              "default": "Arrived",
+              "1": "Failed"
+            }
+          }
+        },
+        {
+          "scenario": "host-cancel",
+          "frameUs": [
+            8000,
+            16000,
+            100000
+          ],
+          "actors": [
+            1,
+            8,
+            16
+          ],
+          "variants": {
+            "clean": "CancelledWithPeerArrival",
+            "map-change": "CancelledWithPeerArrival"
+          },
+          "maxFrames": 4096,
+          "maxQueriesPerActorFrame": 21,
+          "maxReplans": 2,
+          "traceLimit": 32768,
+          "terminalOutcomes": {
+            "clean": {
+              "default": "Arrived",
+              "1": "Aborted"
+            },
+            "map-change": {
+              "default": "Arrived",
+              "1": "Aborted"
+            }
+          }
+        },
+        {
+          "scenario": "host-slot-reuse",
+          "frameUs": [
+            8000,
+            16000,
+            100000
+          ],
+          "actors": [
+            1,
+            8,
+            16
+          ],
+          "variants": {
+            "clean": "ReusedAndArrived",
+            "map-change": "ReusedAndArrived"
+          },
+          "maxFrames": 4096,
+          "maxQueriesPerActorFrame": 21,
+          "maxReplans": 2,
+          "traceLimit": 32768,
+          "terminalOutcomes": {
+            "clean": {
+              "default": "Arrived"
+            },
+            "map-change": {
+              "default": "Arrived"
+            }
+          }
+        },
+        {
+          "scenario": "host-door-use",
+          "frameUs": [
+            8000,
+            16000,
+            100000
+          ],
+          "actors": [
+            1
+          ],
+          "variants": {
+            "clean": "Arrived",
+            "map-change": "Arrived"
+          },
+          "maxFrames": 4096,
+          "maxQueriesPerActorFrame": 21,
+          "maxReplans": 2,
+          "traceLimit": 32768,
+          "terminalOutcomes": {
+            "clean": {
+              "default": "Arrived"
+            },
+            "map-change": {
+              "default": "Arrived"
+            }
+          }
+        },
+        {
+          "scenario": "host-door-touch",
+          "frameUs": [
+            8000,
+            16000,
+            100000
+          ],
+          "actors": [
+            1
+          ],
+          "variants": {
+            "clean": "Arrived",
+            "map-change": "Arrived"
+          },
+          "maxFrames": 4096,
+          "maxQueriesPerActorFrame": 21,
+          "maxReplans": 2,
+          "traceLimit": 32768,
+          "terminalOutcomes": {
+            "clean": {
+              "default": "Arrived"
+            },
+            "map-change": {
+              "default": "Arrived"
+            }
+          }
+        },
+        {
+          "scenario": "host-door-timeout",
+          "frameUs": [
+            8000,
+            16000,
+            100000
+          ],
+          "actors": [
+            1
+          ],
+          "variants": {
+            "clean": "Failed",
+            "map-change": "Failed"
+          },
+          "maxFrames": 4096,
+          "maxQueriesPerActorFrame": 21,
+          "maxReplans": 2,
+          "traceLimit": 32768,
+          "terminalOutcomes": {
+            "clean": {
+              "default": "Failed"
+            },
+            "map-change": {
+              "default": "Failed"
+            }
+          }
+        },
+        {
+          "scenario": "host-stairs-up",
+          "frameUs": [
+            8000,
+            16000,
+            100000
+          ],
+          "actors": [
+            1
+          ],
+          "variants": {
+            "clean": "Arrived",
+            "map-change": "Arrived"
+          },
+          "maxFrames": 4096,
+          "maxQueriesPerActorFrame": 21,
+          "maxReplans": 2,
+          "traceLimit": 32768,
+          "terminalOutcomes": {
+            "clean": {
+              "default": "Arrived"
+            },
+            "map-change": {
+              "default": "Arrived"
+            }
+          }
+        },
+        {
+          "scenario": "host-stairs-down",
+          "frameUs": [
+            8000,
+            16000,
+            100000
+          ],
+          "actors": [
+            1
+          ],
+          "variants": {
+            "clean": "Arrived",
+            "map-change": "Arrived"
+          },
+          "maxFrames": 4096,
+          "maxQueriesPerActorFrame": 21,
+          "maxReplans": 2,
+          "traceLimit": 32768,
+          "terminalOutcomes": {
+            "clean": {
+              "default": "Arrived"
+            },
+            "map-change": {
+              "default": "Arrived"
+            }
+          }
+        },
+        {
+          "scenario": "host-narrow",
+          "frameUs": [
+            8000,
+            16000,
+            100000
+          ],
+          "actors": [
+            1
+          ],
+          "variants": {
+            "clean": "Arrived",
+            "map-change": "Arrived"
+          },
+          "maxFrames": 4096,
+          "maxQueriesPerActorFrame": 21,
+          "maxReplans": 2,
+          "traceLimit": 32768,
+          "terminalOutcomes": {
+            "clean": {
+              "default": "Arrived"
+            },
+            "map-change": {
+              "default": "Arrived"
+            }
+          }
+        },
+        {
+          "scenario": "host-crouch-release",
+          "frameUs": [
+            8000,
+            16000,
+            100000
+          ],
+          "actors": [
+            1
+          ],
+          "variants": {
+            "clean": "Arrived",
+            "map-change": "Arrived"
+          },
+          "maxFrames": 4096,
+          "maxQueriesPerActorFrame": 21,
+          "maxReplans": 2,
+          "traceLimit": 32768,
+          "terminalOutcomes": {
+            "clean": {
+              "default": "Arrived"
+            },
+            "map-change": {
+              "default": "Arrived"
+            }
+          }
+        },
+        {
+          "scenario": "host-jump",
+          "frameUs": [
+            8000,
+            16000,
+            100000
+          ],
+          "actors": [
+            1
+          ],
+          "variants": {
+            "clean": "Arrived",
+            "map-change": "Arrived"
+          },
+          "maxFrames": 4096,
+          "maxQueriesPerActorFrame": 21,
+          "maxReplans": 2,
+          "traceLimit": 32768,
+          "terminalOutcomes": {
+            "clean": {
+              "default": "Arrived"
+            },
+            "map-change": {
+              "default": "Arrived"
+            }
+          }
+        },
+        {
+          "scenario": "host-jump-failed",
+          "frameUs": [
+            8000,
+            16000,
+            100000
+          ],
+          "actors": [
+            1
+          ],
+          "variants": {
+            "clean": "Failed",
+            "map-change": "Failed"
+          },
+          "maxFrames": 4096,
+          "maxQueriesPerActorFrame": 21,
+          "maxReplans": 2,
+          "traceLimit": 32768,
+          "terminalOutcomes": {
+            "clean": {
+              "default": "Failed"
+            },
+            "map-change": {
+              "default": "Failed"
+            }
+          }
+        },
+        {
+          "scenario": "host-stuck-transient",
+          "frameUs": [
+            8000,
+            16000,
+            100000
+          ],
+          "actors": [
+            1
+          ],
+          "variants": {
+            "clean": "Arrived",
+            "map-change": "Arrived"
+          },
+          "maxFrames": 4096,
+          "maxQueriesPerActorFrame": 21,
+          "maxReplans": 2,
+          "traceLimit": 32768,
+          "terminalOutcomes": {
+            "clean": {
+              "default": "Arrived"
+            },
+            "map-change": {
+              "default": "Arrived"
+            }
+          }
+        },
+        {
+          "scenario": "host-ladder-up",
+          "frameUs": [
+            8000,
+            16000,
+            100000
+          ],
+          "actors": [
+            1
+          ],
+          "variants": {
+            "clean": "Arrived",
+            "map-change": "Arrived"
+          },
+          "maxFrames": 4096,
+          "maxQueriesPerActorFrame": 21,
+          "maxReplans": 2,
+          "traceLimit": 32768,
+          "terminalOutcomes": {
+            "clean": {
+              "default": "Arrived"
+            },
+            "map-change": {
+              "default": "Arrived"
+            }
+          }
+        },
+        {
+          "scenario": "host-ladder-down",
+          "frameUs": [
+            8000,
+            16000,
+            100000
+          ],
+          "actors": [
+            1
+          ],
+          "variants": {
+            "clean": "Arrived",
+            "map-change": "Arrived"
+          },
+          "maxFrames": 4096,
+          "maxQueriesPerActorFrame": 21,
+          "maxReplans": 2,
+          "traceLimit": 32768,
+          "terminalOutcomes": {
+            "clean": {
+              "default": "Arrived"
+            },
+            "map-change": {
+              "default": "Arrived"
+            }
+          }
+        },
+        {
+          "scenario": "host-ladder-failed-dismount",
+          "frameUs": [
+            8000,
+            16000,
+            100000
+          ],
+          "actors": [
+            1
+          ],
+          "variants": {
+            "clean": "Failed",
+            "map-change": "Failed"
+          },
+          "maxFrames": 4096,
+          "maxQueriesPerActorFrame": 21,
+          "maxReplans": 2,
+          "traceLimit": 32768,
+          "terminalOutcomes": {
+            "clean": {
+              "default": "Failed"
+            },
+            "map-change": {
+              "default": "Failed"
+            }
+          }
+        },
+        {
+          "scenario": "host-player-transient",
+          "frameUs": [
+            8000,
+            16000,
+            100000
+          ],
+          "actors": [
+            1
+          ],
+          "variants": {
+            "clean": "Arrived",
+            "map-change": "Arrived"
+          },
+          "maxFrames": 4096,
+          "maxQueriesPerActorFrame": 21,
+          "maxReplans": 2,
+          "traceLimit": 32768,
+          "terminalOutcomes": {
+            "clean": {
+              "default": "Arrived"
+            },
+            "map-change": {
+              "default": "Arrived"
+            }
+          }
+        },
+        {
+          "scenario": "host-player-permanent",
+          "frameUs": [
+            8000,
+            16000,
+            100000
+          ],
+          "actors": [
+            1
+          ],
+          "variants": {
+            "clean": "Failed",
+            "map-change": "Failed"
+          },
+          "maxFrames": 4096,
+          "maxQueriesPerActorFrame": 21,
+          "maxReplans": 2,
+          "traceLimit": 32768,
+          "terminalOutcomes": {
+            "clean": {
+              "default": "Failed"
+            },
+            "map-change": {
+              "default": "Failed"
+            }
+          }
+        },
+        {
+          "scenario": "host-unreachable",
+          "frameUs": [
+            8000,
+            16000,
+            100000
+          ],
+          "actors": [
+            1
+          ],
+          "variants": {
+            "clean": "UnreachableThenArrived",
+            "map-change": "UnreachableThenArrived"
+          },
+          "maxFrames": 4096,
+          "maxQueriesPerActorFrame": 21,
+          "maxReplans": 2,
+          "traceLimit": 32768,
+          "terminalOutcomes": {
+            "clean": {
+              "default": "Arrived"
+            },
+            "map-change": {
+              "default": "Arrived"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

@@ -73,6 +73,7 @@ int gSteeringMode=-1;
 edict_t gWallWorld{};
 edict_t gNavPlayer{};
 bool gPlayerObstacle=false;
+bool gMatrixPlayer=false;
 bool gSimulateCrouch=false, gCrouchCeiling=false, gCloseHeadroom=false;
 bool gSimulateJump=false, gMissJump=false, gWrongJumpLanding=false;
 cvar_t gJumpGravity{},gJumpHeight{};
@@ -256,6 +257,7 @@ int gEngineClientCommandCalls = 0;
 int gRunPlayerMoveCalls = 0;
 bool gSimulateNav=false;
 bool gFreezeNav=false;
+edict_t* gFrozenActor=nullptr;
 std::array<std::uint64_t,6> gRecoveryMotionUs{};
 bool gSimulateLadder=false;
 bool gInjectNavDuplicate=false;
@@ -333,6 +335,12 @@ struct Fixture {
     globalvars_t engineGlobals{};
     edict_t entity{};
     edict_t secondEntity{};
+    std::array<edict_t,14> matrixEntities{};
+    unsigned matrixSlot=0;
+    edict_t* matrixEntity(unsigned slot) {
+        assert(slot>=1 && slot<=16);
+        return slot==1 ? &entity:slot==2 ? &secondEntity:&matrixEntities[slot-3];
+    }
     bool multiClient=false, createSecond=false;
     char infoBuffer[256]{};
     int index{1};
@@ -383,16 +391,21 @@ struct Fixture {
 
 edict_t* captureCreateFakeClient(const char* /* name */) {
     ++gFixture->createCalls;
+    if(gFixture->matrixSlot) return gFixture->matrixEntity(gFixture->matrixSlot);
     return gFixture->createReturnsNull ? nullptr : gFixture->createSecond ? &gFixture->secondEntity:&gFixture->entity;
 }
 
 int captureIndexOfEdict(const edict_t* entity) {
+    if(gFixture->matrixSlot) for(unsigned slot=1;slot<=16;++slot)
+        if(entity==gFixture->matrixEntity(slot)) return static_cast<int>(slot);
     if(entity==&gNavDoor) return 40;
     if(entity==&gNavPlayer) return 2;
     if(entity==&gFixture->secondEntity) return 2;
     return entity == &gFixture->entity ? gFixture->index : 0;
 }
 edict_t* captureDoorEntity(int index) {
+    if(gMatrixPlayer && index==2) return &gNavPlayer;
+    if(gFixture->matrixSlot && index>=1 && index<=16) return gFixture->matrixEntity(static_cast<unsigned>(index));
     return index==40 ? &gNavDoor:index==gFixture->index ? &gFixture->entity:
         index==2 ? (gFixture->multiClient ? &gFixture->secondEntity:&gNavPlayer):nullptr;
 }
@@ -525,6 +538,7 @@ int captureGetUserMsgID(
 }
 
 int captureGetPlayerUserId(edict_t* entity) {
+    if(gFixture->matrixSlot) return captureIndexOfEdict(entity);
     if(gFixture->multiClient && entity==&gFixture->secondEntity) return 2;
     return gFixture->userId;
 }
@@ -599,7 +613,7 @@ void captureRunPlayerMove(
             entity->v.fuser2=1315.789429f;
         }
         double vx=forwardMove*std::cos(yaw)+sideMove*std::sin(yaw),vy=forwardMove*std::sin(yaw)-sideMove*std::cos(yaw);
-        if(gFreezeNav) vx=vy=0;
+        if(gFreezeNav || entity==gFrozenActor) vx=vy=0;
         if(gSimulateJump && !(entity->v.flags&FL_ONGROUND)) { vx=entity->v.velocity.x; vy=entity->v.velocity.y; }
         entity->v.origin.x+=static_cast<float>(vx*dt); entity->v.origin.y+=static_cast<float>(vy*dt);
         if(gDoorActive && !gDoorOpen && entity->v.origin.x>=doorPlane &&
@@ -885,8 +899,9 @@ void navFrame(Fixture& fixture,std::uint64_t us=16000) {
     if(gDoorOpenAtUs && gNavClockUs>=gDoorOpenAtUs) { gDoorOpen=true; gDoorOpenAtUs=0; }
     astrabot::adapter::metamod::lifecycleCoordinator().startFrame();
 }
-void prepareNavWalk(Fixture& fixture,enginefuncs_t& hooks) {
-    activate(fixture);
+void prepareNavWalk(Fixture& fixture,enginefuncs_t& hooks,std::uint64_t us=16000,bool freshMap=false) {
+    if(freshMap) assert(astrabot::adapter::metamod::lifecycleCoordinator().registry().activateMap(32));
+    else activate(fixture);
     auto& owner=astrabot::adapter::metamod::lifecycleCoordinator();
     owner.setMovementClockForTest(&navNow); gSimulateNav=true; gNavMoves.clear();
     owner.setMovementTraceSink(&navTransportTrace); gNavTransportTraces.clear();
@@ -895,8 +910,8 @@ void prepareNavWalk(Fixture& fixture,enginefuncs_t& hooks) {
     int version=ENGINE_INTERFACE_VERSION; assert(GetEngineFunctions(&hooks,&version)); gEngineHooks=&hooks;
     assert(owner.fakeClient().create("AstraBot-Walk").succeeded());
     assert(owner.requestJoin({astrabot::adapter::cstrike::Team::Terrorist,1}).changed);
-    sendVguiMenu(hooks,11,&fixture.entity,2,1); navFrame(fixture);
-    sendVguiMenu(hooks,11,&fixture.entity,26,1); navFrame(fixture);
+    sendVguiMenu(hooks,11,&fixture.entity,2,1); navFrame(fixture,us);
+    sendVguiMenu(hooks,11,&fixture.entity,26,1); navFrame(fixture,us);
     sendTeamInfo(hooks,13,1,"TERRORIST");
     assert(owner.joinState().phase()==astrabot::adapter::cstrike::JoinPhase::Joined);
     fixture.entity.v.flags=FL_ONGROUND|FL_FAKECLIENT; fixture.entity.v.deadflag=DEAD_NO;
@@ -2328,16 +2343,20 @@ void testDetachDirectlyCleansActiveEntityOnce() {
     gEngineHooks = nullptr;
 }
 
+#include "p308_host_matrix.hpp"
+
 } // namespace
 
 void testLadderPublication();
-int main() {
+int main(int argc,char** argv) {
     testLadderPublication();
 #ifdef _MSC_VER
     _CrtSetReportMode(_CRT_ASSERT,_CRTDBG_MODE_FILE);
     _CrtSetReportFile(_CRT_ASSERT,_CRTDBG_FILE_STDERR);
     _set_abort_behavior(0,_WRITE_ABORT_MSG|_CALL_REPORTFAULT);
 #endif
+    if(argc==3 && std::strcmp(argv[1],"--p308-output")==0) return runP308HostMatrix(argv[2]);
+    assert(argc==1);
     testNavWorldQueries();
     testNavJumpProbeWorldQueries();
     testDoorObservationContracts();

@@ -326,9 +326,10 @@ guards, and measured post-landing approach remain pending.
 - **Interfaces:** environment/map/NAV hashes, actor count/start/goal/expected
   result, route/portal/primitive/command/reason trace.
 - **Implementation outline / commit slices:**
-  - [ ] Complete offline matrix and finite trace/replan/time budgets; document
+  - [x] Complete offline matrix and finite trace/replan/time budgets; document
     every pending live row and missing real-file prerequisite.
-  - [ ] Consolidate ongoing Linux x86 CI evidence below.
+  - [x] Consolidate ongoing Linux x86 CI evidence below; observed baseline and
+    pending P3-08 hosted run are distinguished in the report.
   - [ ] After project-wide Finish, run live gates including Linux HLDS/ReHLDS, record exact results
     and reopen failed work explicitly.
 - **Tests:** clean-map/map-change replay for every row, finite budgets, synthetic
@@ -346,8 +347,13 @@ guards, and measured post-landing approach remain pending.
 
 ### Execution plan (2026-09-06, checkout `db146e4`)
 
-Planning only: all slices below remain unimplemented by this revision. Keep
-P3-08 as the existing task; these are ordered commit slices, not new task IDs.
+Implementation and applicable offline gates are complete; see the
+[P3-08 report](../reports/p3-08-offline-gate.md) for actual results and the
+separate pending hosted/real-NAV/live statuses. The following is the approved
+execution contract, now checked against implementation. These remain commit
+slices within P3-08, not new task IDs. The shared checker/manifest/producer
+contract is committed atomically so no intermediate revision claims missing
+producer rows as passing.
 P3-07's [report](../reports/p3-07-progress-recovery.md) records Windows adapter
 44/44, portable 36/36 with inspector OFF, and WSL Linux 38/38. These are prior
 results, not a fresh P3-08 run or hosted GitHub Actions evidence. Use the same
@@ -355,58 +361,58 @@ explicit inspector option when comparing future portable test inventories.
 
 **Slice: evidence contract and first end-to-end replay**
 
-- [ ] Add a versioned, original synthetic scenario manifest under
+- [x] Add a versioned, original synthetic scenario manifest under
   `tests/nav/simulation/`, a bounded replay test registered in CMake, and an
   evidence checker/runner under `tools/`. Reuse the existing route, Walk,
   Motor and intent-pump APIs and fake-engine test seams; do not duplicate the
   production controller or introduce a public Bot API.
-- [ ] Start with spawn/goto and supported floor arrival at 8/16/100 ms frames.
+- [x] Start with spawn/goto and supported floor arrival at 8/16/100 ms frames.
   The fixture must advance observations from dispatched commands; expected
   outcomes and limits are authored independently of the controller output.
   Repeat the same fixture/seed twice and compare ordered semantic traces.
-- [ ] Record schema version, scenario ID, source revision/dirty state, build
+- [x] Record schema version, scenario ID, source revision/dirty state, build
   options/toolchain/architecture, fixture hash, seed, actor/start/goal, frame
   schedule, expected outcome and limits. Results include ordered selected
   edges, portal/target, primitive, actual commands/receipts, typed reasons,
   replan counts, simulated duration, query counts and terminal outcome.
   Exclude wall-clock timing from deterministic trace comparison.
-- [ ] Reject malformed/duplicate/missing rows, incompatible schema, wrong
+- [x] Reject malformed/duplicate/missing rows, incompatible schema, wrong
   fixture hash, missing terminal results, trace truncation and budget overruns.
   Exercise both valid evidence and deliberately rejected evidence in tests.
   Keep the existing Phase 2 fixture manifest and its schema unchanged.
 
 **Slice: complete the scenario and invalidation matrix**
 
-- [ ] Map every row of the acceptance matrix below to named portable and/or
+- [x] Map every row of the acceptance matrix below to named portable and/or
   fake-host tests and machine-readable outcomes. Add only missing coverage:
   use/touch door passage and timeout, ascending/descending stairs, narrow
   clearance, crouch release, successful/failed Jump, up/down Ladder and
   failed dismount, transient/permanent blockers, transient/permanent stuck,
   and partial/unreachable non-execution. Include a supported mixed-primitive
   route to verify ownership, button release and transition completion.
-- [ ] Run clean-map and mid-scenario map-change variants at 8/16/100 ms;
+- [x] Run clean-map and mid-scenario map-change variants at 8/16/100 ms;
   cancellation must invalidate old actors, routes, links, queries and queued
   commands. Verify no old command dispatch and successful fresh-map reuse.
   Expected failure/cancellation is a passing test only when it matches the
   independently declared typed outcome, never an arrival substitute.
-- [ ] Keep bounded failure traces/replay inputs and identify the first divergent
+- [x] Keep bounded failure traces/replay inputs and identify the first divergent
   event. The portable subset must remain SDK-free; adapter dispatch evidence
   runs in the pinned Windows x86 fake-host build.
 
 **Slice: actor scaling and finite resource budgets**
 
-- [ ] Exercise 1/8/16 synthetic actors at all three frame intervals, including
+- [x] Exercise 1/8/16 synthetic actors at all three frame intervals, including
   simultaneous goals, staggered completion, one blocked actor, cancellation,
   slot reuse and map change. Verify per-actor route/recovery/history/command
   isolation, continued progress for unblocked actors and deterministic repeat.
   Extend fixed-size fake-host fixtures only as needed to represent these actors.
-- [ ] Assert existing per-frame query and dispatch limits using actual query
+- [x] Assert existing per-frame query and dispatch limits using actual query
   calls and dispatch receipts, including same-frame guards. Ground recovery's
   21-query limit is not a universal ladder/discovery cap: derive each subsystem
   limit from its existing contract and record both per-actor and total counts.
   Check 25 Hz decision scheduling, later-tick dispatch, one queued command,
   stale-intent rejection and bounded history/trace storage.
-- [ ] Set explicit per-scenario simulated-time/frame/replan limits before runs,
+- [x] Set explicit per-scenario simulated-time/frame/replan limits before runs,
   derived from existing primitive deadlines and scheduler slack. Preserve
   P3-04/P3-07 attempt ownership across replacement routes; repeated replans,
   oscillation or neutral waits must not renew a finite attempt indefinitely.
@@ -416,26 +422,26 @@ explicit inspector option when comparing future portable test inventories.
 
 **Slice: reproducible gates, CI evidence and pending live manifests**
 
-- [ ] Run Windows x86 portable and Metamod Debug CTest with warnings-as-errors
+- [x] Run Windows x86 portable and Metamod Debug CTest with warnings-as-errors
   using AGENTS.md; explicitly enable the NAV inspector for comparable portable
   inventories. Run SDK-free Linux x86 GCC `-m32` Debug locally where available.
   If adapter code/linkage/exports change, also build Release with tests OFF and
   verify PE32 and exactly the six required exports. Record SDK SHA and commands.
-- [ ] Integrate the portable evidence checker into the existing Windows/Linux
+- [x] Integrate the portable evidence checker into the existing Windows/Linux
   CI jobs without requiring proprietary assets. Preserve existing ASan/fuzz
   gates; upload replay/results on failure as well as success. Separate local
   WSL results from hosted job results. Record hosted run URL, job, tested SHA,
   build options, outcome and artifact identity only when actually observable;
   missing access/run evidence stays pending. Do not push or trigger remote
   workflows merely to manufacture a hosted pass.
-- [ ] Add `tests/live/nav/` manifests/checklists and
+- [x] Add `tests/live/nav/` manifests/checklists and
   `docs/reports/p3-08-offline-gate.md`. Cross-reference every scenario and its
   offline evidence, with separate offline, real-NAV, hosted-CI and live states.
   Live rows cover Windows/Linux HLDS/ReHLDS, low/normal/high FPS and 1/8/16
   Bots; record exact versions/plugins/physics/cvars, environment and map/NAV
   hashes, starts/goals and expected results when available. Missing prerequisites
   have explicit reasons and remain **Not yet validated**.
-- [ ] Carry forward the real-NAV report's remaining provenance, independent
+- [x] Carry forward the real-NAV report's remaining provenance, independent
   record-detail and other-version prerequisites. Synthetic scenarios cannot
   close them. Update current next-step text and state without rewriting prior
   reports' historical validation claims.
@@ -486,9 +492,11 @@ Tactical Planner/Combat AI, Experience DB and crowd/prediction are deferred.
 
 ## Recommended next session
 
-P3-07 implementation and applicable offline verification are recorded at
-`db146e4`. Next is P3-08's evidence-contract/first-replay slice above, followed
-by scenario coverage, actor/budget checks and consolidated gate evidence.
-This planning revision does not start implementation. Real NAV compatibility
-remains partially validated; live acceptance stays post-Finish. No new task
-number or project-wide Finish declaration is introduced.
+P3-08 implementation and applicable offline verification are complete:
+Windows x86 portable 41/41, Metamod 47/47, Linux x86 40/40. See the
+[gate report](../reports/p3-08-offline-gate.md) for 90 portable and 186 host
+replay rows and the retained regression suite. The P3-07 hosted CI baseline
+has observed success; this P3-08 commit's hosted run still awaits a separately
+authorized push/PR. Real NAV compatibility remains partially validated.
+Assess the remaining project plans before a separate explicit Finish decision;
+then execute pending live manifests. No Finish or live acceptance is declared.
