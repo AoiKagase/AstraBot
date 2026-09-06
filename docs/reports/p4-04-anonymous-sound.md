@@ -1,7 +1,8 @@
 # P4-04 — Anonymous sound observations
 
-Status: implementation and pre-merge gates complete; main integration pending.
+Status: implementation and applicable offline gates complete, including merged main.
 Base main: `a4f7c50`. Branch: `codex/p404-anonymous-sound`.
+Implementation commit: `837e0d3`, fast-forwarded to main and verified there.
 
 ## Contract and implementation
 
@@ -89,17 +90,20 @@ engine trace is used by sound processing.
 
 | Gate | Pre-merge | Merged main |
 |---|---|---|
-| Windows x86 portable Debug /WX, inspector ON | 46/46 passed, 32.40s | pending |
-| Windows x86 Metamod Debug /WX, inspector ON | 56/56 passed | pending |
-| Linux x86 portable Debug /WX, inspector ON | 45/45 passed, 24.05s | pending |
-| Release PE32/x86, exactly six exports | passed: machine 14C, magic 10B, six names | pending |
+| Windows x86 portable Debug /WX, inspector ON | 46/46 passed, 32.40s | 46/46 passed, 29.34s |
+| Windows x86 Metamod Debug /WX, inspector ON | 56/56 passed | 56/56 passed, 50.36s |
+| Linux x86 portable Debug /WX, inspector ON | 45/45 passed, 24.05s | 45/45 passed, 17.82s |
+| Release PE32/x86, exactly six exports | passed: machine 14C, magic 10B, six names | passed: same format and six names |
 
 The required exports are GetEngineFunctions, GetEntityAPI2, GiveFnptrsToDll,
 Meta_Attach, Meta_Detach and Meta_Query. SoundMemoryModel measured 39,656 bytes
 on Windows x86 and 35,420 bytes on Linux x86; both visited at most 512 entries.
+Main Release DLL SHA256:
+`071c8b8d3e20c190ca10d45906a3ff758eeaf68d8f8d50764eab25ed27cb5339`.
 
 Logs: each worktree's `build-*-x86-test/Testing/Temporary/LastTest.log`.
 Graph returned no usable function/flow/test context, so actual source and tests
-were reviewed. FocalSpan was queried before editing and must be updated after gates.
+were reviewed. FocalSpan was queried before editing and updated after gates on
+the dedicated worktree and main. Final plan/report/STATE changes are documentation only.
 Live audio coverage/tuning remains post-Finish acceptance. P4-05 through P4-09
 remain pending; neither P4 completion nor project-wide Finish is declared here.
