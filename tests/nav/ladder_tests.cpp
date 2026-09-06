@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 #include "nav/local/ladder.hpp"
 #include "nav/local/ladder_physics.hpp"
+#include "nav/local/ladder_exit.hpp"
+#include "route_fixture.hpp"
 #include <cassert>
 #include <cmath>
 #include <utility>
@@ -137,11 +139,15 @@ void climbingAndObservedExit() {
         // Scripted trusted observation of a detached actor at the target. This
         // tests lifecycle acceptance, not a claim of simulated host dismount.
         s.tick={6}; s.position=p.end; s.ladder->touching=false;
-        d=ladder.update(feedback(ladder,p,s,240000)); assert(d.state==LadderState::Support && !d.terminalEvent);
-        s.tick={7}; d=ladder.update(feedback(ladder,p,s,280000)); assert(d.state==LadderState::Support && !d.terminalEvent);
+        f=feedback(ladder,p,s,240000); f.inspection->exitIntent=core::MovementIntent{};
+        d=ladder.update(f); assert(d.state==LadderState::Exit && !d.terminalEvent);
+        s.tick={7}; f=feedback(ladder,p,s,280000); f.inspection->exitIntent=core::MovementIntent{};
+        d=ladder.update(f); assert(d.state==LadderState::Exit && !d.terminalEvent);
         s.tick={8}; s.grounded=true;
-        d=ladder.update(feedback(ladder,p,s,320000)); assert(d.state==LadderState::Complete && d.terminalEvent && d.intent.speed==0);
-        assert(!ladder.abort().terminalEvent && !ladder.update(feedback(ladder,p,s,320000)).terminalEvent);
+        d=ladder.update(feedback(ladder,p,s,320000)); assert(d.state==LadderState::Support && !d.terminalEvent);
+        s.tick={9}; d=ladder.update(feedback(ladder,p,s,360000));
+        assert(d.state==LadderState::Complete && d.terminalEvent && d.intent.speed==0);
+        assert(!ladder.abort().terminalEvent && !ladder.update(feedback(ladder,p,s,360000)).terminalEvent);
     }
 }
 void failuresAndReacquire() {
@@ -204,5 +210,32 @@ void observedModeHandoff() {
     s.tick={4}; s.position->z=80; s.ladder->touching=false;
     assert(wrong.update(feedback(wrong,p,s,160000,true)).reason==LadderReason::WrongContact);
 }
+void upperExitCandidate() {
+    const LadderAirPhysics physics{800,10,1,250,2000};
+    for(bool across:{false,true}) {
+        auto p=plan(); if(!across) { p.end.x=-33; p.link.exit.x=-33; }
+        const float left=across ? 20.0f:-100.0f,right=across ? 100.0f:-20.0f;
+        const auto mesh=route_test::snapshot({{1,{{-100,0,0},{-20,64,0},0,0}},
+            {2,{{left,0,128},{right,64,128},128,128}}});
+        const auto built=query::NavSpatialIndex::build(mesh,{100,199,100000}); assert(built);
+        auto s=actor(p); s.position=p.dismount; s.grounded=false;
+        for(const auto msec:std::array<std::uint8_t,3>{8,16,100}) {
+            const auto r=planUpperLadderExit(p,s,true,164.5,physics,msec,**built.value,s.map);
+            assert(r && r.value->columnCount>0 && r.value->columnCount<=18 && r.value->simulatedFrames<=256);
+            assert(r.value->command.msec==msec && r.value->command.view.pitch==-45);
+            assert(r.value->command.buttons==static_cast<core::ButtonMask>(core::Button::Forward));
+            assert(r.value->landing.x>=left && r.value->landing.x<=right && r.value->landing.z==164);
+            for(unsigned i=0;i<r.value->columnCount;++i) {
+                const auto& c=r.value->columns[i]; assert(c.bottom.isFinite() && c.top.isFinite());
+                assert(c.bottom.x==c.top.x && c.bottom.y==c.top.y && c.bottom.z<=c.top.z);
+            }
+        }
+        assert(planUpperLadderExit(p,s,true,164.5,physics,0,**built.value,s.map).reason==LadderExitReason::InvalidInput);
+        assert(planUpperLadderExit(p,s,true,164.5,physics,16,**built.value,{99}).reason==LadderExitReason::StaleNavigation);
+        assert(planUpperLadderExit(p,s,false,164.5,physics,16,**built.value,s.map).reason==LadderExitReason::NoLanding);
+        p.link.direction=enrichment::NavLinkDirection::Down;
+        assert(planUpperLadderExit(p,s,true,164.5,physics,16,**built.value,s.map).reason==LadderExitReason::Unsupported);
+    }
 }
-int main() { directionalMotor(); physicalProjection(); airborneProjection(); climbingAndObservedExit(); failuresAndReacquire(); observedModeHandoff(); }
+}
+int main() { directionalMotor(); physicalProjection(); airborneProjection(); climbingAndObservedExit(); failuresAndReacquire(); observedModeHandoff(); upperExitCandidate(); }

@@ -299,8 +299,49 @@ void testLadderFrame() {
         }
     }
 }
+void testUpperExitFrame() {
+    for(const auto exit:{LadderExit::SameFace,LadderExit::AcrossTop}) {
+        const auto index=setup(LadderFace::MinX,exit); auto e=engine();
+        nav::enrichment::NavMapFingerprint fingerprint{};
+        const auto batch=discoverLadderLinks({&e,nullptr,mapNow},{1},*index,{1},fingerprint,9,2); assert(batch);
+        const auto bound=bindLadderPlan({&e,nullptr,mapNow},{1},fingerprint,*batch.value,batch.value->links.links.front(),2); assert(bound);
+        nav::runtime::MovementSnapshot s; s.agent=frameBinding.agent; s.actor=frameBinding.actor; s.map={1}; s.tick={6};
+        s.kind=nav::runtime::ActorKind::ManagedBot; s.connected=s.joined=s.alive=true; s.grounded=s.ducked=false;
+        s.position=bound.value->plan.dismount; s.position->z-=1;
+        s.velocity=s.view=V{}; s.hull=nav::runtime::HullDimensions{{-16,-16,-36},{16,16,36}}; s.speedLimit=250.0f;
+        const auto reset=[&]() {
+            traces=fault=faultAt=0; activeMap={1}; frameCurrent=true; ladderEntity.serialnumber=7;
+            actorEntity={}; actorEntity.serialnumber=8; auto& v=actorEntity.v;
+            v.flags=FL_FAKECLIENT; v.movetype=MOVETYPE_FLY; v.maxspeed=250; v.friction=1;
+            v.origin=Vector(s.position->x,s.position->y,s.position->z); v.mins=Vector(-16,-16,-36); v.maxs=Vector(16,16,36);
+            const float values[]{800,10,320,2000};
+            for(unsigned i=0;i<4;++i) { frameCvars[i]={}; frameCvars[i].value=values[i]; }
+        };
+        const auto inspect=[&](unsigned budget,std::uint8_t msec,unsigned at=0,int mode=0) {
+            reset(); faultAt=at; fault=mode;
+            return inspectLadderFrame({{&e,nullptr,mapNow},nullptr,currentFrame},&actorEntity,frameBinding,s,*bound.value,
+                bound.value->plan.end,*index,{1},3,budget,{},msec);
+        };
+        for(const auto msec:std::array<std::uint8_t,3>{8,16,100}) {
+            const auto r=inspect(21,msec);
+            assert(r && r.queries<=21 && r.value->upperExit && r.value->inspection.exitIntent && r.value->prediction);
+            assert(r.value->prediction->command.msec==msec && r.value->inspection.exitIntent->forward==core::ActionRequest::Hold);
+            assert(!r.value->inspection.support); // Future landing is never published as current support.
+        }
+        const auto good=inspect(21,16); assert(good); const auto count=good.queries;
+        for(unsigned budget=0;budget<count;++budget) {
+            const auto r=inspect(budget,16); assert(!r && !r.value && r.queries==budget && r.reason==LadderFrameReason::BudgetExceeded);
+        }
+        for(unsigned at=1;at<=count;++at) for(int mode:{1,2,12,14,16}) {
+            const auto r=inspect(21,16,at,mode); assert(!r && !r.value && r.queries==at);
+        }
+        assert(inspect(21,16,5,5).reason==LadderFrameReason::Blocked);
+        assert(inspect(21,16,count,10).reason==LadderFrameReason::NoSupport);
+    }
+}
 void testLadderDiscovery() {
     testLadderFrame();
+    testUpperExitFrame();
     const auto index=setup(LadderFace::MinX,LadderExit::AcrossTop); auto e=engine();
     nav::enrichment::NavMapFingerprint fingerprint{}; fingerprint[0]=0x7a;
     auto batch=discoverLadderLinks({&e,nullptr,mapNow},{1},*index,{1},fingerprint,9,2);

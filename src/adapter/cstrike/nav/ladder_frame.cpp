@@ -14,7 +14,7 @@ bool same(V a,V b) noexcept {
 LadderFrameResult inspectLadderFrame(LadderFrameWorld w,edict_t* actor,nav::local::Binding binding,
     const nav::runtime::MovementSnapshot& s,const BoundLadderPlan& bound,V target,
     const nav::query::NavSpatialIndex& index,core::MapGeneration indexMap,int maximum,std::uint32_t budget,
-    std::optional<core::BotCommand> command) noexcept {
+    std::optional<core::BotCommand> command,std::optional<std::uint8_t> upperExitMsec) noexcept {
     LadderFrameResult result;
     const auto& p=bound.passage; const auto& link=bound.plan.link; auto* e=w.ladder.engine;
     const auto fail=[&](LadderFrameReason reason) { result.reason=reason; return result; };
@@ -23,7 +23,8 @@ LadderFrameResult inspectLadderFrame(LadderFrameWorld w,edict_t* actor,nav::loca
        s.kind!=nav::runtime::ActorKind::ManagedBot || s.connected!=true || s.joined!=true || s.alive!=true ||
        !s.position || !s.position->isFinite() || !s.velocity || !s.velocity->isFinite() || !s.view || !s.view->isFinite() ||
        !s.hull || s.hull->minimum!=V{-16,-16,-36} || s.hull->maximum!=V{16,16,36} || !s.grounded || s.ducked!=false ||
-       !s.speedLimit || !std::isfinite(*s.speedLimit) || *s.speedLimit<=0 || !target.isFinite() || budget>(command ? 7U:4U) ||
+       !s.speedLimit || !std::isfinite(*s.speedLimit) || *s.speedLimit<=0 || !target.isFinite() ||
+       (command && upperExitMsec) || budget>(upperExitMsec ? 21U:command ? 7U:4U) ||
        std::hypot(double(target.x)-s.position->x,double(target.y)-s.position->y)>96 ||
        std::abs(double(target.z)-s.position->z)>4100 ||
        maximum<1 || maximum>8192 || binding.actor.slot>=maximum || p.map!=binding.map || indexMap!=binding.map ||
@@ -117,12 +118,19 @@ LadderFrameResult inspectLadderFrame(LadderFrameWorld w,edict_t* actor,nav::loca
            std::abs(double(face.vecPlaneNormal.y)-p.normal.y)>0.001 ||
            std::abs(double(face.vecPlaneNormal.z)-p.normal.z)>0.001) return fail(LadderFrameReason::WrongFace);
     }
-    V from=*s.position,to=target;
-    if(*s.grounded) { from.z+=0.05f; to.z+=0.05f; }
-    TraceResult path{};
-    if(!trace(from,to,-1,path)) return result;
-    if(path.fStartSolid || path.fAllSolid || path.flFraction!=1) return fail(LadderFrameReason::Blocked);
-    q.pathClear=true;
+    if(upperExitMsec) {
+        const auto exit=nav::local::planUpperLadderExit(bound.plan,s,touching,double(p.candidate.maximum.z)+36,
+            *initialPhysics,*upperExitMsec,index,indexMap);
+        if(!exit) { result.exitReason=exit.reason; return fail(LadderFrameReason::NoExit); }
+        observation.upperExit=exit.value; command=exit.value->command;
+    } else {
+        V from=*s.position,to=target;
+        if(*s.grounded) { from.z+=0.05f; to.z+=0.05f; }
+        TraceResult path{};
+        if(!trace(from,to,-1,path)) return result;
+        if(path.fStartSolid || path.fAllSolid || path.flFraction!=1) return fail(LadderFrameReason::Blocked);
+        q.pathClear=true;
+    }
     if(*s.grounded) {
         V high=*s.position,low=high; high.z+=0.05f; low.z-=4;
         TraceResult floor{};
@@ -189,6 +197,26 @@ LadderFrameResult inspectLadderFrame(LadderFrameWorld w,edict_t* actor,nav::loca
             predicted.velocity.z=0; predicted.floorCollision=true;
         }
         observation.prediction=predicted;
+    }
+    if(observation.upperExit) {
+        const auto& exit=*observation.upperExit;
+        for(unsigned i=0;i<exit.columnCount;++i) {
+            TraceResult column{};
+            if(!trace(exit.columns[i].bottom,exit.columns[i].top,-1,column)) return result;
+            if(column.fStartSolid || column.fAllSolid || column.flFraction!=1) return fail(LadderFrameReason::Blocked);
+        }
+        auto top=exit.landing,bottom=exit.landing; top.z+=0.05f; bottom.z-=4;
+        TraceResult floor{};
+        if(!trace(top,bottom,-1,floor)) return result;
+        auto* world=e->pfnPEntityOfEntIndex(0);
+        if(!fresh()) return result;
+        const auto n=value(floor.vecPlaneNormal);
+        if(!world || world->free || floor.pHit!=world || floor.fStartSolid || floor.fAllSolid || floor.flFraction==1 ||
+           std::abs(n.x)>0.001f || std::abs(n.y)>0.001f || std::abs(n.z-1)>0.001f ||
+           std::abs(double(floor.vecEndPos.z)-exit.landing.z)>0.05) return fail(LadderFrameReason::NoSupport);
+        const auto area=index.containing({exit.landing.x,exit.landing.y,floor.vecEndPos.z-36},2);
+        if(!area || !area.value->has_value() || (**area.value).areaId!=link.to) return fail(LadderFrameReason::NoSupport);
+        q.pathClear=true; q.exitIntent=exit.intent; // Only after the entire candidate and actual command passed.
     }
     if(!fresh()) return result;
     q.queries=result.queries; result.reason=LadderFrameReason::None; result.value=observation; return result;

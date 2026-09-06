@@ -140,10 +140,12 @@ LadderDecision Ladder::update(const LadderFeedback& f) noexcept {
     }
     if(state_==LadderState::Exit) {
         if(f.nowUs-phaseUs_>=limits_.exitTimeoutUs) return fail(LadderReason::Timeout);
-        if(std::abs(double(s.position->z)-plan_.end.z)>limits_.heightTolerance) return fail(LadderReason::WrongLanding);
-        if(distance(*s.position,plan_.end)<=limits_.positionTolerance) return transition(LadderState::Support);
+        const double relativeHeight=double(s.position->z)-plan_.end.z;
+        if(relativeHeight< -limits_.heightTolerance || relativeHeight>(up ? 96:limits_.heightTolerance)) return fail(LadderReason::WrongLanding);
+        if(s.grounded==true && std::abs(relativeHeight)<=limits_.heightTolerance &&
+           distance(*s.position,plan_.end)<=limits_.positionTolerance) return transition(LadderState::Support);
         if(proof->pathClear!=true) return fail(LadderReason::Blocked);
-        if(*f.climbing) {
+        if(*f.climbing || s.ladder->touching || (up && s.grounded!=true)) {
             if(!proof->exitIntent || !core::Motor::valid(*proof->exitIntent) || active(proof->exitIntent->jump) ||
                active(proof->exitIntent->duck) || active(proof->exitIntent->use)) return fail(LadderReason::MissingObservation);
             out.intent=*proof->exitIntent; return out;

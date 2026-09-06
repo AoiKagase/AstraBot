@@ -103,6 +103,7 @@ endif()
 add_library(astrabot_nav STATIC
     src/nav/local/ladder.cpp
     src/nav/local/ladder_physics.cpp
+    src/nav/local/ladder_exit.cpp
     src/nav/io/map_fingerprint.cpp
     src/nav/local/walk.cpp
     src/nav/local/walk_jump.cpp
@@ -575,7 +576,7 @@ if(ASTRABOT_BUILD_TESTS)
             src/adapter/cstrike/nav/ladder_discovery.cpp
         )
         target_compile_features(astrabot_ladder_scanner_tests PRIVATE cxx_std_17)
-        target_link_libraries(astrabot_ladder_scanner_tests PRIVATE astrabot_nav)
+        target_link_libraries(astrabot_ladder_scanner_tests PRIVATE astrabot_nav astrabot_core)
         target_include_directories(astrabot_ladder_scanner_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
         target_include_directories(astrabot_ladder_scanner_tests SYSTEM PRIVATE ${_astrabot_metamod_sdk_include_dirs})
         set_target_properties(astrabot_ladder_scanner_tests PROPERTIES CXX_EXTENSIONS OFF)

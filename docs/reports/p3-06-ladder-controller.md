@@ -168,3 +168,40 @@ seven queries, invalid contents, wrong support and blocked slide. Windows x86
 Debug43/43 passed and Release/six exports passed. Portable sources are unchanged.
 The newly added code-review-graph instruction was checked, but its MCP tools
 are not callable in this session; review used FocalSpan and the focused Git diff.
+
+## Upper exit candidate and world approval
+
+`planUpperLadderExit` now forecasts release above the model's upper standing-hull
+contact boundary and a controlled air approach to the selected target area.
+It uses the actual first command duration and forecasts that fixed duration for
+at most2 seconds/256 frames. Forward -45-degree ladder input supplies the lift;
+air wishes alternate60 degrees while cancelling lateral momentum. This is a
+bounded candidate policy, not a claim about arbitrary future frame-time changes.
+
+The forecast is partitioned into boxes whose XY spans do not exceed31 units.
+Up to four vertical standing-hull sweeps cover each entire box because the hull
+width is32; vertical travel is covered continuously. At most18 columns are
+produced, with no expansion/retry. Excess per-frame XY displacement, excessive
+rise (96 units above target support), missing target-area landing or exhausted
+bounds reject the candidate. This profile handles the tested same-face/across-top
+fixtures, not arbitrary irregular ladder tops or elevated destination floors.
+
+The frame observer's upper-exit request generates the candidate internally,
+checks its actual first command, every column and the actual flat world landing
+floor/NAV area under the existing21-query cap. Only then does it publish a current
+`exitIntent`; a predicted landing never becomes current support. The controller
+permits the bounded upper flight height and requires approved input while airborne.
+Support begins after actual grounding at the endpoint, and Complete still waits
+for observed mode/contact detachment and target support.
+
+Both same-face and across-top candidates/world checks pass at8/16/100ms. Tests
+exercise every smaller query budget, stale actor/map/link/cvars at every query,
+blocked clearance and wrong landing support. Windows x86 Debug43/43 and Linux
+x86 Debug37/37 passed; the final host contact-boundary adjustment also passed
+the adapter target. Release build/six exports are verified.
+
+Remaining: lower-exit policy, post-landing ground approach, Walk ownership/cursor
+and host dispatch wiring, including preserving25Hz decision cadence while
+revalidating held intents at each actual engine frame. A reforecast alone is not
+proof that a held command equals a newly generated first command. No live
+acceptance, P3-06 completion or Finish is claimed.

@@ -251,6 +251,9 @@ publication and entity checks. This binding does not renew clearance evidence.
 Current-frame inspection now measures selected-model contact, face, path and
 world support under a four-trace cap with actor/route/tick freshness checks.
 Host dispatch wiring and physical exit control remain pending.
+Upper exit now forecasts same-face/across-top flight and approves an exit intent
+only after bounded world columns and target-floor checks. Lower exit policy,
+post-landing approach and actual host dispatch/cursor integration remain pending.
 Standard-CS ladder/air prediction now models button projection, floor kick,
 gravity and air wish-component limits. A bounded exit mode handoff tolerates
 the engine's one-update FLY lag while still requiring detached target support.
