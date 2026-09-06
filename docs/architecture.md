@@ -97,6 +97,10 @@ See [P4-02 contract](plans/p4-02-visual-memory.md) and
 [verification](reports/p4-02-visual-memory.md). Sound and NAV belief diffusion
 remain later work.
 
+The [Phase 4 implementation plan](plans/phase-4-perception-world-model.md)
+records completed P4-01/02 and the approved P4-03 through P4-09 sequence,
+commit checklists, offline gates and separate post-Finish acceptance.
+
 ## Host boundary contract
 
 An `IGameHost`-equivalent port provides:
