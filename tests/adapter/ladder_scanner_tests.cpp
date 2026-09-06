@@ -66,4 +66,5 @@ void failures() {
     assert(scanLadderCandidates(&e,{1},5,8192,129).reason==LadderScanReason::InvalidInput);
 }
 }
-int main() { scans(); failures(); }
+void testLadderProbe();
+int main() { scans(); failures(); testLadderProbe(); }

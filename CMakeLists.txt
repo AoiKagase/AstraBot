@@ -552,7 +552,9 @@ if(ASTRABOT_BUILD_TESTS)
     if(ASTRABOT_BUILD_METAMOD)
         add_executable(astrabot_ladder_scanner_tests
             tests/adapter/ladder_scanner_tests.cpp
+            tests/adapter/ladder_probe_tests.cpp
             src/adapter/cstrike/nav/ladder_scanner.cpp
+            src/adapter/cstrike/nav/ladder_probe.cpp
         )
         target_compile_features(astrabot_ladder_scanner_tests PRIVATE cxx_std_17)
         target_link_libraries(astrabot_ladder_scanner_tests PRIVATE astrabot_nav)

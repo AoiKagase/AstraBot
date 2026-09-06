@@ -237,6 +237,9 @@ implementation results; live physics acceptance remains post-Finish.
 bounded public-entity enumeration and generation-stamped value results.
 Facing/endpoint traces, fingerprint-bound publication and motion remain pending;
 candidate AABBs alone are not traversal proof.
+[Measured passage inspection](../reports/p3-06-ladder-passage.md) now checks
+an explicit face/exit with model contact, world support, NAV binding and bounded
+clearance traces. Whole-map publication and first-class motion remain pending.
 
 - **Goal:** generation-bound host ladder links plus distinct up/down traversal.
 - **Why now:** P2-07 proves synthetic connectivity only.
