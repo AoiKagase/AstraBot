@@ -550,6 +550,19 @@ if(ASTRABOT_BUILD_TESTS)
     )
 
     if(ASTRABOT_BUILD_METAMOD)
+        add_executable(astrabot_ladder_scanner_tests
+            tests/adapter/ladder_scanner_tests.cpp
+            src/adapter/cstrike/nav/ladder_scanner.cpp
+        )
+        target_compile_features(astrabot_ladder_scanner_tests PRIVATE cxx_std_17)
+        target_link_libraries(astrabot_ladder_scanner_tests PRIVATE astrabot_nav)
+        target_include_directories(astrabot_ladder_scanner_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+        target_include_directories(astrabot_ladder_scanner_tests SYSTEM PRIVATE ${_astrabot_metamod_sdk_include_dirs})
+        set_target_properties(astrabot_ladder_scanner_tests PROPERTIES CXX_EXTENSIONS OFF)
+        astrabot_enable_warnings(astrabot_ladder_scanner_tests LEGACY_SDK)
+        astrabot_enable_metamod_compatibility(astrabot_ladder_scanner_tests)
+        add_test(NAME astrabot.adapter.ladder_scanner COMMAND astrabot_ladder_scanner_tests)
+
         add_executable(astrabot_adapter_entry_tests
             tests/adapter/plugin_entry_tests.cpp
             src/adapter/cstrike/join_state.cpp

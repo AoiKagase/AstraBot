@@ -233,6 +233,11 @@ implementation results; live physics acceptance remains post-Finish.
 
 ## P3-06 — Ladder enrichment and first-class motion
 
+[Candidate discovery foundation](../reports/p3-06-ladder-candidates.md) adds
+bounded public-entity enumeration and generation-stamped value results.
+Facing/endpoint traces, fingerprint-bound publication and motion remain pending;
+candidate AABBs alone are not traversal proof.
+
 - **Goal:** generation-bound host ladder links plus distinct up/down traversal.
 - **Why now:** P2-07 proves synthetic connectivity only.
 - **Files/modules:** adapter ladder_scanner, local ladder state, enrichment/tests.
