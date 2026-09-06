@@ -4,7 +4,7 @@ Status: in_progress
 Goal: entire Phase 3; never mark complete for a slice or merge.
 Main: 8aa1610, fast-forward integrated in .worktrees/main-integration, not pushed.
 Current branch: codex/p306-ladder-host-binding.
-Current boundary: frame-bound public host physics and velocity-component clamps.
+Current boundary: actual-command frame prediction, floor point and flat-floor slide.
 Reports: docs/reports/p3-06-ladder-publication.md and p3-06-ladder-controller.md.
 Discovery/publication through 8984b15 preserves immutable fingerprint-bound links.
 Portable controller adds up/down states, directional buttons, finite reacquire,
@@ -28,11 +28,20 @@ models actual command msec, gravity and30 wish-component cap; no collision model
 These predictors require host-supplied verified physics and clearance sweeps.
 Frame observer now supplies effective gravity, air acceleration, friction, minimum
 server/player maxspeed and maxvelocity; rejects changing cvars and punch/frozen/train.
-Air step applies half/final-gravity component clamps. Floor-point solidity for
-the downward ladder kick still needs its own measured observation.
+Air step applies half/final-gravity component clamps. Downward floor-point solidity
+now measured for command proof. Full exit policy/trajectory and host wiring pending.
 Top exit requires clearing hull-expanded model height; position tolerance alone
 can stop inside the ladder. Account for real CS air acceleration/landing geometry.
 After P3-06: P3-07 finite recovery and P3-08 cross-primitive offline matrix.
 No subagents. All binaries x86. No live server or project-wide Finish.
 Real NAV compatibility partial; real NAV/BSP read-only. No push authorized.
 Preserve untracked .focalspan.json and .serena/; do not stage them.
+External development-tool setup appeared during this slice: AGENTS.md/.gitignore
+changes and many untracked tool configs. Preserve all; do not include in commits.
+New AGENTS code-review-graph MCP tools are not exposed in this session; fallback
+focused diff review plus FocalSpan used. No exception approval needed for fallback.
+Optional command to inspectLadderFrame requires explicit budget up to7 (default
+observation still4). Measures floor-point contents, predicts ladder/air velocity,
+sweeps exact msec displacement and at most one flat world-floor slide.
+Predicted collision is never observed arrival. Touching outside-NAV shaft floor
+produces no NAV support, not a made-up area ID. Walls/slopes/second hits rejected.

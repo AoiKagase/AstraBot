@@ -13,7 +13,8 @@ bool same(V a,V b) noexcept {
 }
 LadderFrameResult inspectLadderFrame(LadderFrameWorld w,edict_t* actor,nav::local::Binding binding,
     const nav::runtime::MovementSnapshot& s,const BoundLadderPlan& bound,V target,
-    const nav::query::NavSpatialIndex& index,core::MapGeneration indexMap,int maximum,std::uint32_t budget) noexcept {
+    const nav::query::NavSpatialIndex& index,core::MapGeneration indexMap,int maximum,std::uint32_t budget,
+    std::optional<core::BotCommand> command) noexcept {
     LadderFrameResult result;
     const auto& p=bound.passage; const auto& link=bound.plan.link; auto* e=w.ladder.engine;
     const auto fail=[&](LadderFrameReason reason) { result.reason=reason; return result; };
@@ -22,7 +23,7 @@ LadderFrameResult inspectLadderFrame(LadderFrameWorld w,edict_t* actor,nav::loca
        s.kind!=nav::runtime::ActorKind::ManagedBot || s.connected!=true || s.joined!=true || s.alive!=true ||
        !s.position || !s.position->isFinite() || !s.velocity || !s.velocity->isFinite() || !s.view || !s.view->isFinite() ||
        !s.hull || s.hull->minimum!=V{-16,-16,-36} || s.hull->maximum!=V{16,16,36} || !s.grounded || s.ducked!=false ||
-       !s.speedLimit || !std::isfinite(*s.speedLimit) || *s.speedLimit<=0 || !target.isFinite() || budget>4 ||
+       !s.speedLimit || !std::isfinite(*s.speedLimit) || *s.speedLimit<=0 || !target.isFinite() || budget>(command ? 7U:4U) ||
        std::hypot(double(target.x)-s.position->x,double(target.y)-s.position->y)>96 ||
        std::abs(double(target.z)-s.position->z)>4100 ||
        maximum<1 || maximum>8192 || binding.actor.slot>=maximum || p.map!=binding.map || indexMap!=binding.map ||
@@ -134,8 +135,60 @@ LadderFrameResult inspectLadderFrame(LadderFrameWorld w,edict_t* actor,nav::loca
             return fail(LadderFrameReason::NoSupport);
         const float height=floor.vecEndPos.z-36;
         const auto area=index.containing({s.position->x,s.position->y,height},2);
-        if(!area || !area.value->has_value()) return fail(LadderFrameReason::NoSupport);
-        q.support=nav::local::GroundedTarget{*s.position,(**area.value).areaId,{height,n,true}};
+        if(!area) return fail(LadderFrameReason::NoSupport);
+        if(!area.value->has_value()) {
+            // A ladder shaft may be outside NAV while the hull rests on world
+            // geometry. Preserve absent NAV support; never assign the target ID.
+            if(!touching) return fail(LadderFrameReason::NoSupport);
+        } else q.support=nav::local::GroundedTarget{*s.position,(**area.value).areaId,{height,n,true}};
+    }
+    if(command) {
+        V displacement{},velocity{};
+        const double dt=double(command->msec)/1000;
+        if(touching) {
+            if(!e->pfnPointContents) return fail(LadderFrameReason::Unavailable);
+            if(!fresh()) return result;
+            if(result.queries>=budget) return fail(LadderFrameReason::BudgetExceeded);
+            const float point[]{s.position->x,s.position->y,s.position->z-37};
+            ++result.queries; const int contents=e->pfnPointContents(point);
+            if(!fresh()) return result;
+            if(contents!=CONTENTS_SOLID && contents!=CONTENTS_EMPTY) return fail(LadderFrameReason::InvalidTrace);
+            observation.floorPointSolid=contents==CONTENTS_SOLID;
+            const auto predicted=nav::local::ladderVelocity(*command,p.normal,initialPhysics->maximumSpeed,*observation.floorPointSolid);
+            if(!predicted) return fail(LadderFrameReason::InvalidInput);
+            velocity=*predicted;
+            displacement={static_cast<float>(velocity.x*dt),static_cast<float>(velocity.y*dt),static_cast<float>(velocity.z*dt)};
+        } else {
+            if(*s.grounded) return fail(LadderFrameReason::InvalidInput); // Ground WALK has a separate controller/guard.
+            const auto predicted=nav::local::ladderAirStep(*command,*s.velocity,*initialPhysics);
+            if(!predicted) return fail(LadderFrameReason::InvalidInput);
+            displacement=predicted->displacement; velocity=predicted->velocity;
+        }
+        LadderCommandPrediction predicted; predicted.command=*command; predicted.velocity=velocity;
+        V start=*s.position;
+        if(*s.grounded) start.z+=0.05f;
+        const V end{start.x+displacement.x,start.y+displacement.y,start.z+displacement.z};
+        TraceResult motion{};
+        if(!trace(start,end,-1,motion)) return result;
+        if(motion.fStartSolid || motion.fAllSolid) return fail(LadderFrameReason::Blocked);
+        predicted.endpoint=value(motion.vecEndPos);
+        if(motion.flFraction<1) {
+            const auto n=value(motion.vecPlaneNormal); auto* world=e->pfnPEntityOfEntIndex(0);
+            if(!fresh()) return result;
+            if(!world || world->free || motion.pHit!=world || displacement.z>=0 ||
+               std::abs(n.x)>0.001f || std::abs(n.y)>0.001f || std::abs(n.z-1)>0.001f)
+                return fail(LadderFrameReason::Blocked);
+            V raised=predicted.endpoint; raised.z+=0.05f;
+            const double remaining=1-double(motion.flFraction);
+            const V slide{static_cast<float>(raised.x+displacement.x*remaining),
+                static_cast<float>(raised.y+displacement.y*remaining),raised.z};
+            TraceResult rest{};
+            if(!trace(raised,slide,-1,rest)) return result;
+            if(rest.fStartSolid || rest.fAllSolid || rest.flFraction!=1) return fail(LadderFrameReason::Blocked);
+            predicted.endpoint={rest.vecEndPos.x,rest.vecEndPos.y,motion.vecEndPos.z};
+            predicted.velocity.z=0; predicted.floorCollision=true;
+        }
+        observation.prediction=predicted;
     }
     if(!fresh()) return result;
     q.queries=result.queries; result.reason=LadderFrameReason::None; result.value=observation; return result;

@@ -72,7 +72,7 @@ Inspection does not invent an exit intent or renew the entire discovery batch.
 Fixtures test grounded/airborne observations, all exhausted budgets, per-trace
 actor/map/ladder mutation, bad traces, wrong face, blockage, unsupported floor,
 stale tick and missing ownership evidence. The four-query contact-plus-support
-case also rejects a floor outside NAV.
+case preserves absent NAV support in the shaft instead of assigning an area.
 Frame-inspection verification: Windows x86 NMake Debug /W4 /WX, 43/43 CTest
 passed; x86 Release build and exact six exports passed. Linux portable source
 files are unchanged by this adapter slice.
@@ -136,5 +136,35 @@ Tests cover cvar/actor-physics mutation after every trace, entity gravity scalin
 server maxspeed below player maxspeed, invalid cvars, punch/freeze rejection and
 velocity clamping. Windows x86 Debug43/43 passed; the Linux x86 ladder target
 passed after rebuilding the modified portable library. Release build/six exports
-remain verified. This does not yet supply floor-point solidity for the ladder
-kick, the exit trajectory's clearance, or dispatch authorization.
+remain verified. Full exit trajectory planning and dispatch authorization remain
+pending; the following command inspection supplies one-frame evidence.
+
+## Actual-command frame inspection
+
+An optional owned BotCommand now adds a bounded prediction to inspectLadderFrame.
+The default observation remains four queries. A caller requesting command proof
+must explicitly budget up to seven queries (within the existing21 host guard
+ceiling); exhaustion never retries or increases that budget. Attached commands
+measure actual world point contents one unit below the standing feet for the
+ladder's floor kick. Detached airborne commands use the current air physics,
+including the FLY-to-WALK handoff. Detached ground WALK is left to its own guard.
+
+The exact command-duration displacement is hull-swept while ignoring only the
+actor. A single flat world-floor collision may be followed by a second horizontal
+sweep for the remaining frame time, with predicted vertical velocity clipped to
+zero. Walls, ceilings, dynamic collision support, slopes and further collisions
+are rejected by this profile. A0.05-unit lift disambiguates floor contact; the
+reported floor-collision endpoint retains the measured floor height.
+
+A touching actor's measured world floor may lie outside NAV. In that case the
+packet has no NAV support; it never substitutes the selected target area. This
+allows inspection in the shaft while the controller still requires real target
+NAV support and detachment before completion. Prediction is not an observation
+of arrival and does not create an exit intent or advance a cursor.
+
+Independent box/point fixtures cover upward motion, detached airborne motion,
+the lower outward kick and floor slide, every lower budget, mutation after all
+seven queries, invalid contents, wrong support and blocked slide. Windows x86
+Debug43/43 passed and Release/six exports passed. Portable sources are unchanged.
+The newly added code-review-graph instruction was checked, but its MCP tools
+are not callable in this session; review used FocalSpan and the focused Git diff.

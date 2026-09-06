@@ -11,11 +11,18 @@ struct LadderFrameWorld {
 };
 enum class LadderFrameReason { None, InvalidInput, Unavailable, StaleWorld,
     StaleActor, BudgetExceeded, InvalidTrace, WrongFace, NoSupport, Blocked };
+struct LadderCommandPrediction {
+    core::BotCommand command{};
+    nav::model::NavVector3 endpoint{},velocity{};
+    bool floorCollision{}; // Predicted, never an observed route-completion fact.
+};
 struct LadderFrameObservation {
     nav::local::LadderInspection inspection{};
     nav::runtime::LadderContact contact{};
     bool climbing{}; // Observed MOVETYPE_FLY, not inferred from overlap.
     nav::local::LadderAirPhysics physics{};
+    std::optional<bool> floorPointSolid{};
+    std::optional<LadderCommandPrediction> prediction{};
 };
 struct LadderFrameResult {
     LadderFrameReason reason{LadderFrameReason::InvalidInput};
@@ -25,9 +32,11 @@ struct LadderFrameResult {
 };
 // Synchronous current-frame observation only. Four traces maximum, no allocation.
 // Caller supplies a just-bound plan and controller target. Does not produce an
-// exit intent, predict a dismount, dispatch movement or advance the route.
+// exit intent, dispatch movement or advance the route. Optional command proof
+// adds floor-point contents and actual-frame displacement/flat-floor slide
+// sweeps; caller explicitly supplies up to7 queries instead of observation's4.
 LadderFrameResult inspectLadderFrame(LadderFrameWorld,edict_t*,nav::local::Binding,
     const nav::runtime::MovementSnapshot&,const BoundLadderPlan&,nav::model::NavVector3 target,
     const nav::query::NavSpatialIndex&,core::MapGeneration indexMap,int maxEntities,
-    std::uint32_t maxQueries=4) noexcept;
+    std::uint32_t maxQueries=4,std::optional<core::BotCommand> command={}) noexcept;
 }

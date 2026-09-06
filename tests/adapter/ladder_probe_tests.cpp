@@ -95,6 +95,14 @@ void traceHull(const float* a,const float* b,int ignore,int hull,edict_t* ignore
     for(const auto& floor:floors) boxTrace(a,b,floor,1,&worldEntity,*t);
     inject(a,b,t);
 }
+int pointContents(const float* point) {
+    ++traces; TraceResult dummy{}; inject(point,point,&dummy);
+    if(traces==faultAt && fault==3) return 0;
+    for(const auto& floor:floors) if(point[0]>floor.low.x && point[0]<floor.high.x &&
+        point[1]>floor.low.y && point[1]<floor.high.y && point[2]>floor.low.z && point[2]<floor.high.z)
+        return CONTENTS_SOLID;
+    return CONTENTS_EMPTY;
+}
 std::shared_ptr<const nav::query::NavSpatialIndex> setup(LadderFace face,LadderExit exit) {
     ladderEntity={}; ladderEntity.serialnumber=7; ladderEntity.v.classname=1;
     ladderEntity.v.model=2; ladderEntity.v.modelindex=1; ladderEntity.v.skin=CONTENTS_LADDER;
@@ -119,7 +127,8 @@ std::shared_ptr<const nav::query::NavSpatialIndex> setup(LadderFace face,LadderE
 }
 enginefuncs_t engine() {
     enginefuncs_t e{}; e.pfnPEntityOfEntIndex=entityAt; e.pfnIndexOfEdict=indexOf; e.pfnSzFromIndex=classname;
-    e.pfnTraceModel=traceModel; e.pfnTraceHull=traceHull; e.pfnCVarGetPointer=frameCvar; return e;
+    e.pfnTraceModel=traceModel; e.pfnTraceHull=traceHull; e.pfnCVarGetPointer=frameCvar;
+    e.pfnPointContents=pointContents; return e;
 }
 constexpr LadderCandidate candidate{(std::uint64_t{7}<<32)|1,{0,0,0},{8,64,128}};
 }
@@ -240,8 +249,8 @@ void testLadderFrame() {
         assert(inspectLadderFrame(world,&actorEntity,frameBinding,s,*bound.value,{origin.x+97,origin.y,origin.z},
             *index,{1},3).reason==LadderFrameReason::InvalidInput && traces==0);
         if(grounded) {
-            // Four-query path: contact + face + sweep + support. The projected
-            // floor is outside NAV here and must never become target support.
+            // World support can exist outside NAV in the shaft. Its absence
+            // from the NAV packet must never turn into target-area support.
             s.position=V{bound.value->plan.mount.x,bound.value->plan.mount.y,36};
             const auto inspectMount=[&](unsigned budget) {
                 resetActor(); actorEntity.v.origin=Vector(s.position->x,s.position->y,s.position->z);
@@ -250,7 +259,43 @@ void testLadderFrame() {
             for(unsigned budget=0;budget<4;++budget) {
                 const auto r=inspectMount(budget); assert(!r && r.queries==budget && r.reason==LadderFrameReason::BudgetExceeded);
             }
-            const auto r=inspectMount(4); assert(!r && r.queries==4 && r.reason==LadderFrameReason::NoSupport);
+            const auto r=inspectMount(4); assert(r && r.queries==4 && !r.value->inspection.support);
+            floors[0].high.x=100; // Independent world floor extends under shaft; NAV does not.
+            core::BotCommand down; down.msec=16; down.movement.forward=-200;
+            down.buttons=static_cast<core::ButtonMask>(core::Button::Back);
+            const auto inspectCommand=[&](unsigned budget,unsigned at=0,int mode=0) {
+                resetActor(); actorEntity.v.origin=Vector(s.position->x,s.position->y,s.position->z);
+                faultAt=at; fault=mode;
+                return inspectLadderFrame(world,&actorEntity,frameBinding,s,*bound.value,*s.position,*index,{1},3,budget,down);
+            };
+            const auto command=inspectCommand(7);
+            assert(command && command.queries==7 && command.value->floorPointSolid==true && command.value->prediction);
+            const auto& prediction=*command.value->prediction;
+            assert(prediction.floorCollision && std::abs(prediction.endpoint.x-(s.position->x-3.2f))<0.001f);
+            assert(prediction.endpoint.z==36 && prediction.velocity.z==0 && prediction.velocity.x==-200);
+            assert(!command.value->inspection.support); // Predicted floor collision is not observed arrival.
+            for(unsigned budget=0;budget<7;++budget) {
+                const auto shortBudget=inspectCommand(budget);
+                assert(!shortBudget && shortBudget.reason==LadderFrameReason::BudgetExceeded && shortBudget.queries==budget);
+            }
+            for(unsigned at=1;at<=7;++at) for(int mode:{1,2,12,14,16}) {
+                const auto stale=inspectCommand(7,at,mode); assert(!stale && !stale.value && stale.queries==at);
+            }
+            assert(inspectCommand(7,5,3).reason==LadderFrameReason::InvalidTrace);
+            assert(inspectCommand(7,6,10).reason==LadderFrameReason::Blocked);
+            assert(inspectCommand(7,7,5).reason==LadderFrameReason::Blocked);
+        } else {
+            resetActor(); core::BotCommand up; up.msec=16; up.movement.forward=200;
+            up.buttons=static_cast<core::ButtonMask>(core::Button::Forward);
+            auto command=inspectLadderFrame(world,&actorEntity,frameBinding,s,*bound.value,*s.position,*index,{1},3,7,up);
+            assert(command && command.queries==5 && command.value->floorPointSolid==false);
+            assert(command.value->prediction && std::abs(command.value->prediction->endpoint.z-83.2f)<0.001f);
+            resetActor(); s.position=V{-15,32,168}; s.velocity=V{0,0,200};
+            actorEntity.v.origin=Vector(-15,32,168); actorEntity.v.velocity=Vector(0,0,200);
+            command=inspectLadderFrame(world,&actorEntity,frameBinding,s,*bound.value,*s.position,*index,{1},3,7,up);
+            assert(command && !command.value->contact.touching && command.value->climbing && command.queries==3);
+            assert(command.value->prediction && std::abs(command.value->prediction->endpoint.z-171.0976f)<0.001f);
+            assert(!command.value->floorPointSolid.has_value());
         }
     }
 }
