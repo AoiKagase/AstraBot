@@ -1,10 +1,17 @@
 # State
 
-Status: complete — P3-07 implementation and offline verification.
-Goal: approved P3-07 progress-aware stuck detection and finite recovery.
+Status: complete — P3-08 planning only; implementation not started.
+Goal: plan the existing P3-08 offline evidence and separate acceptance gates.
 Branch: codex/p307-progress-recovery. No push or merge authorized.
 Report: docs/reports/p3-07-progress-recovery.md.
-Plan: docs/plans/phase-3-nav-movement.md, P3-07.
+Plan: docs/plans/phase-3-nav-movement.md, P3-08 execution plan (2026-09-06).
+
+Planning base: db146e4. Four ordered, unnumbered implementation slices:
+evidence contract/first replay; full scenario and map-change matrix;
+1/8/16-actor scheduling and finite budgets; CI/report/live prerequisites.
+No source/tests/CI implementation or live execution in this planning change.
+Planning verification: existing report/test/CI contracts and Markdown diff review.
+P3-07 evidence below is historical, not a fresh P3-08 verification run.
 
 Actor/goal-owned Recovery survives route replacement. Only actual dispatch
 receipts accumulate Walk 500ms / crouch 1000ms windows. Corridor-forward and

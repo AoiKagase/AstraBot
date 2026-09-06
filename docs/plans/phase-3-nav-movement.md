@@ -344,6 +344,110 @@ guards, and measured post-landing approach remain pending.
 - **Risks:** Finish/live circular wording, tool availability, manual evidence gaps.
 - **Deferred work:** combat/tactics/learning and automatic deployment.
 
+### Execution plan (2026-09-06, checkout `db146e4`)
+
+Planning only: all slices below remain unimplemented by this revision. Keep
+P3-08 as the existing task; these are ordered commit slices, not new task IDs.
+P3-07's [report](../reports/p3-07-progress-recovery.md) records Windows adapter
+44/44, portable 36/36 with inspector OFF, and WSL Linux 38/38. These are prior
+results, not a fresh P3-08 run or hosted GitHub Actions evidence. Use the same
+explicit inspector option when comparing future portable test inventories.
+
+**Slice: evidence contract and first end-to-end replay**
+
+- [ ] Add a versioned, original synthetic scenario manifest under
+  `tests/nav/simulation/`, a bounded replay test registered in CMake, and an
+  evidence checker/runner under `tools/`. Reuse the existing route, Walk,
+  Motor and intent-pump APIs and fake-engine test seams; do not duplicate the
+  production controller or introduce a public Bot API.
+- [ ] Start with spawn/goto and supported floor arrival at 8/16/100 ms frames.
+  The fixture must advance observations from dispatched commands; expected
+  outcomes and limits are authored independently of the controller output.
+  Repeat the same fixture/seed twice and compare ordered semantic traces.
+- [ ] Record schema version, scenario ID, source revision/dirty state, build
+  options/toolchain/architecture, fixture hash, seed, actor/start/goal, frame
+  schedule, expected outcome and limits. Results include ordered selected
+  edges, portal/target, primitive, actual commands/receipts, typed reasons,
+  replan counts, simulated duration, query counts and terminal outcome.
+  Exclude wall-clock timing from deterministic trace comparison.
+- [ ] Reject malformed/duplicate/missing rows, incompatible schema, wrong
+  fixture hash, missing terminal results, trace truncation and budget overruns.
+  Exercise both valid evidence and deliberately rejected evidence in tests.
+  Keep the existing Phase 2 fixture manifest and its schema unchanged.
+
+**Slice: complete the scenario and invalidation matrix**
+
+- [ ] Map every row of the acceptance matrix below to named portable and/or
+  fake-host tests and machine-readable outcomes. Add only missing coverage:
+  use/touch door passage and timeout, ascending/descending stairs, narrow
+  clearance, crouch release, successful/failed Jump, up/down Ladder and
+  failed dismount, transient/permanent blockers, transient/permanent stuck,
+  and partial/unreachable non-execution. Include a supported mixed-primitive
+  route to verify ownership, button release and transition completion.
+- [ ] Run clean-map and mid-scenario map-change variants at 8/16/100 ms;
+  cancellation must invalidate old actors, routes, links, queries and queued
+  commands. Verify no old command dispatch and successful fresh-map reuse.
+  Expected failure/cancellation is a passing test only when it matches the
+  independently declared typed outcome, never an arrival substitute.
+- [ ] Keep bounded failure traces/replay inputs and identify the first divergent
+  event. The portable subset must remain SDK-free; adapter dispatch evidence
+  runs in the pinned Windows x86 fake-host build.
+
+**Slice: actor scaling and finite resource budgets**
+
+- [ ] Exercise 1/8/16 synthetic actors at all three frame intervals, including
+  simultaneous goals, staggered completion, one blocked actor, cancellation,
+  slot reuse and map change. Verify per-actor route/recovery/history/command
+  isolation, continued progress for unblocked actors and deterministic repeat.
+  Extend fixed-size fake-host fixtures only as needed to represent these actors.
+- [ ] Assert existing per-frame query and dispatch limits using actual query
+  calls and dispatch receipts, including same-frame guards. Ground recovery's
+  21-query limit is not a universal ladder/discovery cap: derive each subsystem
+  limit from its existing contract and record both per-actor and total counts.
+  Check 25 Hz decision scheduling, later-tick dispatch, one queued command,
+  stale-intent rejection and bounded history/trace storage.
+- [ ] Set explicit per-scenario simulated-time/frame/replan limits before runs,
+  derived from existing primitive deadlines and scheduler slack. Preserve
+  P3-04/P3-07 attempt ownership across replacement routes; repeated replans,
+  oscillation or neutral waits must not renew a finite attempt indefinitely.
+  Use the P3-07 measured table as a regression reference, not a live SLA.
+  Report wall-clock measurements with environment details separately; actor
+  scaling and timing are synthetic evidence, not proof of live server capacity.
+
+**Slice: reproducible gates, CI evidence and pending live manifests**
+
+- [ ] Run Windows x86 portable and Metamod Debug CTest with warnings-as-errors
+  using AGENTS.md; explicitly enable the NAV inspector for comparable portable
+  inventories. Run SDK-free Linux x86 GCC `-m32` Debug locally where available.
+  If adapter code/linkage/exports change, also build Release with tests OFF and
+  verify PE32 and exactly the six required exports. Record SDK SHA and commands.
+- [ ] Integrate the portable evidence checker into the existing Windows/Linux
+  CI jobs without requiring proprietary assets. Preserve existing ASan/fuzz
+  gates; upload replay/results on failure as well as success. Separate local
+  WSL results from hosted job results. Record hosted run URL, job, tested SHA,
+  build options, outcome and artifact identity only when actually observable;
+  missing access/run evidence stays pending. Do not push or trigger remote
+  workflows merely to manufacture a hosted pass.
+- [ ] Add `tests/live/nav/` manifests/checklists and
+  `docs/reports/p3-08-offline-gate.md`. Cross-reference every scenario and its
+  offline evidence, with separate offline, real-NAV, hosted-CI and live states.
+  Live rows cover Windows/Linux HLDS/ReHLDS, low/normal/high FPS and 1/8/16
+  Bots; record exact versions/plugins/physics/cvars, environment and map/NAV
+  hashes, starts/goals and expected results when available. Missing prerequisites
+  have explicit reasons and remain **Not yet validated**.
+- [ ] Carry forward the real-NAV report's remaining provenance, independent
+  record-detail and other-version prerequisites. Synthetic scenarios cannot
+  close them. Update current next-step text and state without rewriting prior
+  reports' historical validation claims.
+
+**Completion gates:** pre-Finish implementation/applicable offline verification
+requires all four slices, reproducible pass/rejection checks, the final diff,
+FocalSpan refresh and explicit-path commits. Hosted CI and real-NAV gaps must
+retain their actual status and follow-up conditions. No live row runs here.
+Project-wide Finish requires a separate explicit all-phase decision; after it,
+execute the live manifests, retain observations and reopen failures. Offline
+completion never checks off the existing post-Finish execution item above.
+
 ## Linux decision and ordering
 
 **Approved policy (2026-09-06):** Windows and Linux targets are 32-bit/x86.
@@ -382,15 +486,9 @@ Tactical Planner/Combat AI, Experience DB and crowd/prediction are deferred.
 
 ## Recommended next session
 
-The first P3-01 slice (bounded read-only NAV inspector and synthetic tests) is
-complete. Dust/dust2 load/query/route comparisons pass after the zero-ID and
-nullable-Approach correction. Compatibility is partially validated, with its
-remaining rows explicitly recorded. The portable session slice is also implemented.
-Console goto/status/cancel integration also has offline adapter evidence.
-P3-02 corridor/portals and primitive lifecycle now have Windows/Linux x86 offline
-evidence and are integrated into main. P3-03 grounded queries, Walk/motor/host,
-stairs, use/touch doors, wall avoidance and narrow-passage control now have offline
-implementation evidence. Next is P3-04 reactive blockers/overlay expiry and the
-actual per-player adapter seam. P3-03 live acceptance remains post-Finish.
-Real compatibility remains
-partial; no new numbering or Finish declaration.
+P3-07 implementation and applicable offline verification are recorded at
+`db146e4`. Next is P3-08's evidence-contract/first-replay slice above, followed
+by scenario coverage, actor/budget checks and consolidated gate evidence.
+This planning revision does not start implementation. Real NAV compatibility
+remains partially validated; live acceptance stays post-Finish. No new task
+number or project-wide Finish declaration is introduced.
