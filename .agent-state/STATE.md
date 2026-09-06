@@ -1,24 +1,23 @@
 # State
-Status: P4-07 implemented; all pre-merge gates passed; integration pending.
-Main: .worktrees/main-integration at3f9af62, P4-06 complete.
-Dedicated: codex/p407-nav-distribution, .worktrees/p407-nav-distribution.
+Status: P4-07 complete; P4-08 and09 pending. P4 goal remains active.
+Main: .worktrees/main-integration, implementation5fb6000 from3f9af62.
+Dedicated: codex/p407-nav-distribution, .worktrees/p407-nav-distribution retained.
 Plan: docs/plans/phase-4-perception-world-model.md.
 Report: docs/reports/p4-07-nav-distribution.md.
-Next: FocalSpan, review/commit, ff-only main and all gates again, report/plan/STATE commit.
-Pre-merge: Windows50/63, Linux49, Release PE32/six exports passed.
-P4-08 and09 remain pending.
+Next: P4-08 dedicated branch/worktree from current main; Graph/FocalSpan then
+inspect TeamRoster, WorldSnapshot and operator command contracts before editing.
 
-WorldModel owns canonical visual/sound reducers; legacy APIs alias same memory.
-StartFrame withdraws publication, revalidates, decays, sorts inputs, publishes.
-Fixed32 visual+1024 sound inputs; no extra engine traces.
-P4-07: exact sorted destination aggregation, top32+unknown,200ms steps,
-256 connections/32 mappings/2048 job visits per frame, persistent fairness cursor.
-Read-only topology built at NAV publication; immediate candidate retirement.
-Targeted8/8 passed1.33s. WorldModel890104 bytes, DistributionModel1761384 bytes.
-Following P4-06 gate evidence is historical:
-Pre-merge Windows49/61, Linux48 passed. Merged ad010bc: Windows49/61,
-Linux48 passed. Main Release PE32/x86, exactly6 exports; DLL SHA256:
-7685064f68709ae3836a7145bd754ee5bc05a0665baa952ceabc61e2d6c5e014.
+WorldModel owns canonical memories and candidate distributions. New
+WorldSnapshot distributions[i] corresponds to visual->memories[i], borrowed const.
+DistributionTopology builds sorted unique destination lists on NAV publication.
+200ms exact contribution merging, top32+unknown,256 connections/frame,
+32 mappings/frame,2048 active job visits/frame; persistent round-robin cursor.
+NAV retirement withdraws public candidates immediately. No extra engine traces.
+Fixed x86 sizes: WorldModel890104, DistributionModel1761384 bytes.
+Targeted8/8 passed. Pre-merge Windows50/63/Linux49 passed; main same totals.
+Main ReleasePE32/x86/exact6exports; DLL SHA256:
+da6c13464e3856a895624ee625b79997495252a1dc0dba9636a9efd0d626dc7b.
+Linux iterator sign conversion fixed and gates repeated; fixture dangling edge fixed.
 Graph lacked useful function coverage; source fallback. FocalSpan updated.
 
 No subagents, push, cleanup, project-wide Finish or live HLDS/ReHLDS checks.

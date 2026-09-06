@@ -1,6 +1,6 @@
 # P4-07 — NAV候補位置分布
 
-Status: 実装・全事前gate通過。main統合後gateは未完了。
+Status: 実装・全事前gate・main統合後gate完了。
 Base: main `3f9af62`。専用branch `codex/p407-nav-distribution`。
 Plan: [P4計画](../plans/phase-4-perception-world-model.md#p4-07--nav上の候補位置分布)。
 
@@ -52,6 +52,10 @@ Linuxのsign-conversionエラーはiterator差分型への明示変換で修正�
 最大遅延診断へ含める補強とともに全gateを再実行した。
 最終事前gate: Windows portable50/50 (31.69s)、Metamod63/63 (55.04s)、
 Linux portable49/49 (21.41s)。Release PE32/x86・指定6 exportsのみ。
-main統合commit・統合後gateは続いて記録する。
+実装commit `5fb6000`をmainへff-only統合し、全gateを再実行した。
+main: Windows portable50/50 (31.30s)、Metamod63/63 (53.78s)、
+Linux portable49/49 (19.30s)。Releaseは14C/x86、10B/PE32、指定6 exportのみ。
+`GetEngineFunctions`, `GetEntityAPI2`, `GiveFnptrsToDll`, `Meta_Attach`, `Meta_Detach`, `Meta_Query`。
+DLL SHA256: `da6c13464e3856a895624ee625b79997495252a1dc0dba9636a9efd0d626dc7b`。
 Graphは対象関数を収録せずsource fallback、FocalSpanでNAV所有／query契約を確認した。
 実機対応や敵の実際の移動分布への適合は未検証。P4-08・09は未完了、Finishは宣言しない。

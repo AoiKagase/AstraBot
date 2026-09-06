@@ -4,7 +4,7 @@ Status: P4-01・P4-02は実装と適用可能なオフライン検証を完了�
 `5c3a0be`へ統合済み。P4-03も`3251106`でmainへ統合し、統合後の全gateを完了。
 P4-04も`837e0d3`でmainへ統合し、統合後の全gateを完了。
 P4-05も`d7228ab`でmainへ統合し、統合後の全gateを完了。
-P4-06は実装・オフライン検証完了。P4-07〜P4-09は承認済み計画であり、実装未着手。
+P4-06・07は実装・オフライン検証完了。P4-08・09は承認済み計画であり、実装未着手。
 この文書の作成は後続項目の実装完了を意味しない。
 
 P3と同じく、番号付き項目は作業単位、番号なしチェックリストは独立して
@@ -185,22 +185,24 @@ push、ブランチ削除、worktree削除は行わない。FocalSpanのロー�
 - **Risks:** source別時刻の混同、古いcached batchの再取り込み、snapshot寿命。
 - **Deferred / live validation:** 戦闘・Planner接続は後続Phase。実機時系列はpost-Finish。
 
-## P4-07 — NAV上の候補位置分布
+## P4-07 — NAV上の候補位置分布（完了）
 
 - **Goal:** 見失った相手の候補Area分布を、最終確認位置と併せて提供する。
 - **Why now:** 有効期限・出所が確立した記憶を入力にして、不確実性を表現する。
 - **Files/modules:** World ModelのNAV連携、既存NavSpatialIndex／NavGraph、候補分布と有限scheduler。
 - **Interfaces:** マップ世代付きread-only NAV snapshot、最大32 Areaの重み、unknownMass、更新時刻・遅延。
 - **Implementation outline / commit slices:**
-  - [ ] 移動セッション内部に依存せずNAV snapshotを渡し、最終確認位置をAreaへ対応付ける。
+  - [x] 移動セッション内部に依存せずNAV snapshotを渡し、最終確認位置をAreaへ対応付ける。
     NAVなし・対応Areaなしでは位置を保持し、分布は利用不可とする。
-  - [ ] 200ms刻みの離散拡散を実装する。重みの半分を現在Areaへ残し、残りを既知の有向接続先へ等分する。
+  - [x] 200ms刻みの離散拡散を実装する。重みの半分を現在Areaへ残し、残りを既知の有向接続先へ等分する。
     出口がなければ全量保持する。対象の実速度や動的障害物を知っているとは扱わない。
-  - [ ] 1対象最大32 Areaとし、省略した重みをunknownMassへ移す。
+  - [x] 1対象最大32 Areaとし、省略した重みをunknownMassへ移す。
     残った候補を勝手に確信度1.0へ正規化しない。安定したID順で同点を解決する。
-  - [ ] 全体最大256接続/frame、公平な観測者／対象間の繰り越しを実装する。
+  - [x] 全体最大256接続/frame、公平な観測者／対象間の繰り越しを実装する。
     未完了更新は公開せず、更新時刻と遅延を報告する。期限切れジョブは破棄する。
-  - [ ] 再視認で観測Areaへ戻し、記憶失効・NAV差し替え・ラウンド変更で退役させる。
+  - [x] 再視認で観測Areaへ戻し、記憶失効・NAV差し替え・ラウンド変更で退役させる。
+- **Evidence:** [検証報告](../reports/p4-07-nav-distribution.md)。main統合後Windows portable50/50、
+  Metamod63/63、Linux portable49/49、Release PE32/x86と指定6 export。
 - **Tests:** 分岐、循環、一方通行、孤立Area、NAVなし、候補切り詰め、予算超過、再視認、NAV差し替え。
 - **Acceptance criteria:** 決定的に動作し、既知重みと不明重みの合計を維持する。
   未視認の現在位置を照会しない。確信度と位置分布の重みを混同しない。
@@ -278,6 +280,6 @@ P4-01・02の完了状態は再定義しないが、後続変更時には回帰�
 
 ## Recommended next session
 
-次は**P4-07の全スライス**。この計画を読み、mainと指示の現状、WorldSnapshotとread-only NAVの
-契約を確認して専用worktreeで開始する。P4-08以降を先取りして実装しない。
+次は**P4-08の全スライス**。この計画を読み、mainと指示の現状、所属・WorldSnapshot・operator
+commandの契約を確認して専用worktreeで開始する。P4-09を先取りして実装しない。
 各完了項目に報告書リンクを追加し、このファイルのチェックとSTATEを更新する。
