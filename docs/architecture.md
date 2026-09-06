@@ -101,6 +101,11 @@ The [Phase 4 implementation plan](plans/phase-4-perception-world-model.md)
 records completed P4-01/02 and the approved P4-03 through P4-09 sequence,
 commit checklists, offline gates and separate post-Finish acceptance.
 
+The [Phase 5 Combat Baseline plan](plans/phase-5-combat-baseline.md) defines
+the next SDK-free combat boundary over the observer-specific World Model.
+Combat implementation, offline evidence, and post-Finish live acceptance are
+not yet complete; this plan does not change the current production source.
+
 ## Host boundary contract
 
 An `IGameHost`-equivalent port provides:
