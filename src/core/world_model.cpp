@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 #include "core/world_model.hpp"
 #include <algorithm>
+#include <cmath>
 #include <tuple>
 
 namespace astrabot::core::world {
@@ -15,6 +16,7 @@ bool sameStamp(const p::Stamp& a,const p::Stamp& b) noexcept {
 }
 }
 void WorldModel::reset() noexcept {
+    clearDistributions();
     beginUpdate(); visual_.reset(); sounds_.reset(); frame_ = {}; queues_ = {}; diagnostics_ = {};
 }
 void WorldModel::beginUpdate() noexcept {
@@ -82,16 +84,54 @@ bool WorldModel::publish(SourceQueueDiagnostics queues) noexcept {
         } else (void)reject(ref.visual ? WorldReason::VisualRejected : WorldReason::SoundRejected);
         i = end;
     }
+    for (std::size_t row=0;row<distributions_.size();++row) {
+        const auto* memory=visual_.latest(frame_.players[row].player);
+        for (auto& entry:distributions_[row]) {
+            if(!entry.target.isValid()) continue;
+            bool retained=false;
+            if(memory && entry.observer==memory->stamp.observer)
+                for(std::size_t i=0;i<memory->count;++i)
+                    retained=retained || (entry.target==memory->memories[i].target && sameId(entry.identity,memory->memories[i].identity));
+            if (!retained) entry={};
+            else entry.value.delayMicros=frame_.timeMicros-entry.value.updatedMicros;
+        }
+    }
     queues_ = queues; collecting_ = false; published_ = true; ++diagnostics_.publications; return true;
 }
 void WorldModel::forget(PlayerId player) noexcept { visual_.forget(player); sounds_.forget(player); }
-void WorldModel::beginRound(p::RoundGeneration round) noexcept { beginUpdate(); visual_.beginRound(round); sounds_.beginRound(round); }
+void WorldModel::beginRound(p::RoundGeneration round) noexcept { beginUpdate(); clearDistributions(); visual_.beginRound(round); sounds_.beginRound(round); }
+void WorldModel::clearDistributions() noexcept {
+    for (auto& row : distributions_) for (auto& entry : row) if(entry.target.isValid()) entry = {};
+}
+bool WorldModel::setDistribution(PlayerId observer,PlayerId target,const p::ObservationIdentity& id,const PositionDistribution& value) noexcept {
+    if (!published_) return false;
+    if (value.count>value.areas.size() || !value.navRevision || value.updatedMicros>frame_.timeMicros ||
+        !std::isfinite(value.unknownMass) || value.unknownMass<0) return false;
+    double total=value.unknownMass;
+    for(std::size_t i=0;i<value.count;++i) {
+        if(!value.areas[i].area || !std::isfinite(value.areas[i].weight) || value.areas[i].weight<0 ||
+            (i && value.areas[i-1].area>=value.areas[i].area)) return false;
+        total+=value.areas[i].weight;
+    }
+    if(value.available ? std::abs(total-1)>1e-9 : value.count!=0 || total!=0) return false;
+    const auto* memory = visual_.latest(observer); if (!memory) return false;
+    for (std::size_t i=0;i<memory->count;++i) if (memory->memories[i].target == target && sameId(memory->memories[i].identity,id)) {
+        auto& entry=distributions_[observer.slot-1U][target.slot-1U];
+        entry = {observer,target,id,value}; entry.value.delayMicros=frame_.timeMicros-value.updatedMicros; return true;
+    }
+    return false;
+}
 std::optional<WorldSnapshot> WorldModel::latest(PlayerId player) const noexcept {
     if (!published_) return std::nullopt;
     const auto* visual = visual_.latest(player); const auto* sounds = sounds_.latest(player);
     if (!visual || !sounds || !sameStamp(visual->stamp,sounds->stamp) || visual->stamp.map != frame_.map ||
         visual->stamp.round != frame_.round || visual->stamp.tick != frame_.tick || visual->stamp.timeMicros != frame_.timeMicros) return std::nullopt;
     WorldSnapshot snapshot{visual->stamp,visual,sounds,0,0,0,queues_};
+    for (std::size_t i=0;i<visual->count;++i) {
+        const auto& memory = visual->memories[i];
+        const auto& entry = distributions_[player.slot-1U][memory.target.slot-1U];
+        if (entry.observer == player && entry.target == memory.target && sameId(entry.identity,memory.identity)) snapshot.distributions[i] = &entry.value;
+    }
     for (std::size_t i=0;i<visual->count;++i) snapshot.oldestVisualAgeMicros = (std::max)(snapshot.oldestVisualAgeMicros,frame_.timeMicros-visual->memories[i].lastSeenMicros);
     for (std::size_t i=0;i<sounds->count;++i) {
         const auto& id = sounds->sounds[i].observation.identity;

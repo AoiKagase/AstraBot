@@ -34,7 +34,9 @@ bool NavConsole::publishLadders(std::istream& bsp,LadderWorld world,core::MapGen
             {100000,1000000,256U*1024*1024},{2048,256U*1024*1024});
         if(!graph) { line("nav ladders=GraphFailure"); return false; }
         if(deferredInvalidation_ || world.currentMap(world.context)!=map) { line("nav ladders=StaleMap"); return false; }
-        navigation_={map,*graph.value}; ladders_=result.value;
+        const auto distribution=nav::query::DistributionTopology::build(map,*graph.value,index);
+        if(!distribution) { line("nav ladders=DistributionAllocationFailure"); return false; }
+        navigation_={map,*graph.value}; distributionTopology_=distribution; ladders_=result.value;
         char digest[65]{};
         for(std::size_t i=0;i<32;++i) { digest[2*i]="0123456789abcdef"[(*fingerprint.fingerprint)[i]>>4]; digest[2*i+1]="0123456789abcdef"[(*fingerprint.fingerprint)[i]&15]; }
         char text[280]{}; std::snprintf(text,sizeof(text),"nav ladders=Ready candidates=%u passages=%zu links=%zu queries=%u generation=%llu bsp_bytes=%llu bsp_sha256=%s",

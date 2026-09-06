@@ -4,6 +4,7 @@
 #include "nav/runtime/route_session.hpp"
 #include "nav/runtime/replan.hpp"
 #include "nav/query/spatial_index.hpp"
+#include "nav/query/distribution.hpp"
 #include "nav/local/walk.hpp"
 #include "nav/local/intent_pump.hpp"
 #include "adapter/metamod/movement.hpp"
@@ -38,6 +39,7 @@ struct MotionTrace {
 class NavConsole final : public nav::runtime::IWorldQueries {
 public:
     void bindMovement(metamod::MovementCoordinator* movement) noexcept { movement_=movement; }
+    void bindWorld(core::world::WorldModel* world) noexcept { world_=world; }
     void configure(enginefuncs_t*, mutil_funcs_t*, globalvars_t*) noexcept;
     void reset() noexcept;
     void invalidate(nav::runtime::SessionReason) noexcept;
@@ -61,6 +63,9 @@ public:
     // graph (or invalidated navigation), never a partially enriched graph.
     bool publishLadders(std::istream&,LadderWorld,core::MapGeneration,int maxEntities) noexcept;
     const LadderDiscovery* ladders() const noexcept { return ladders_.get(); }
+    std::shared_ptr<const nav::query::DistributionTopology> distributionTopology() const noexcept {
+        return inRequest_ || deferredInvalidation_ ? nullptr : distributionTopology_;
+    }
     const nav::runtime::DecisionTrace* trace() const noexcept { return current_->session_ ? &current_->session_->trace():nullptr; }
     const nav::runtime::DecisionTrace* trace(core::PlayerId) const noexcept;
     const nav::runtime::ReplanAttempt* replan(core::PlayerId player) const noexcept {
@@ -127,6 +132,7 @@ private:
         std::optional<core::BotCommand>,std::optional<std::uint8_t>,bool) noexcept;
     void reportLadderTransport(const nav::local::WalkDecision&,core::TickId,core::TickId,bool) noexcept;
     metamod::MovementCoordinator* movement_{}; // Owned by the containing lifecycle coordinator.
+    core::world::WorldModel* world_{}; // Withdraw candidate distributions when NAV is retired.
     struct ActorState {
     core::PlayerId actor{};
     std::optional<nav::local::Walk> walk_{};
@@ -168,6 +174,7 @@ private:
     globalvars_t* globals_{};
     nav::runtime::NavigationSnapshot navigation_{};
     std::shared_ptr<const nav::query::NavSpatialIndex> index_{};
+    std::shared_ptr<const nav::query::DistributionTopology> distributionTopology_{};
     std::shared_ptr<const nav::model::NavMeshSnapshot> mesh_{};
     std::shared_ptr<const LadderDiscovery> ladders_{};
     std::uint64_t ladderGeneration_{};

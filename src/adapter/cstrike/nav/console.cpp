@@ -132,12 +132,13 @@ void NavConsole::invalidateActor(core::PlayerId player,nav::runtime::SessionReas
     ActorScope scope(current_,actor); invalidateCurrent(reason);
 }
 void NavConsole::invalidate(nav::runtime::SessionReason reason) noexcept {
+    if(world_) world_->clearDistributions();
     for(auto& actor:actors_) if(actor) {
         ActorScope scope(current_,actor.get());
         if(inRequest_) clearPending(); else invalidateCurrent(reason);
     }
     if(inRequest_) { deferredInvalidation_=reason; deferredAll_=true; return; }
-    navigation_={}; index_.reset(); mesh_.reset(); ladders_.reset(); queryingEntity_=nullptr; queryingPlayers_=nullptr; queryingOwner_=nullptr;
+    navigation_={}; index_.reset(); distributionTopology_.reset(); mesh_.reset(); ladders_.reset(); queryingEntity_=nullptr; queryingPlayers_=nullptr; queryingOwner_=nullptr;
 }
 bool NavConsole::applyDeferredInvalidation() noexcept {
     if(!deferredInvalidation_) return false;
@@ -150,7 +151,7 @@ bool NavConsole::applyDeferredInvalidation() noexcept {
 void NavConsole::reset() noexcept {
     if(inRequest_) { invalidate(nav::runtime::SessionReason::Cancelled); deferredReset_=true; return; }
     invalidate(nav::runtime::SessionReason::Cancelled); engine_=nullptr; utility_=nullptr; globals_=nullptr;
-    movement_=nullptr;
+    movement_=nullptr; world_=nullptr;
     for(auto& actor:actors_) if(actor) *actor=ActorState{};
     idle_=ActorState{}; current_=&idle_;
 }
@@ -164,6 +165,8 @@ nav::diagnostics::NavError NavConsole::publish(core::MapGeneration map,
     if(!index) return index.error;
     const auto graph=nav::query::NavGraph::build(mesh,{100000,1000000,256*mib});
     if(!graph) return graph.error;
+    distributionTopology_=nav::query::DistributionTopology::build(map,*graph.value,*index.value);
+    if(!distributionTopology_) return {nav::diagnostics::NavErrorKind::AllocationFailure};
     index_=*index.value; mesh_=std::move(mesh); navigation_={map,*graph.value}; return {};
 }
 bool NavConsole::load(const char* path,core::MapGeneration map,metamod::LifecycleCoordinator& owner) noexcept {

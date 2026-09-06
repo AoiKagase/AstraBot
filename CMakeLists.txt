@@ -105,6 +105,7 @@ if(MSVC)
 endif()
 
 add_library(astrabot_nav STATIC
+    src/nav/query/distribution.cpp
     src/nav/local/recovery.cpp
     src/nav/local/ladder.cpp
     src/nav/local/ladder_physics.cpp
@@ -301,6 +302,10 @@ endif()
 
 if(ASTRABOT_BUILD_TESTS)
     enable_testing()
+    add_executable(astrabot_distribution_tests tests/nav/distribution_tests.cpp)
+    target_link_libraries(astrabot_distribution_tests PRIVATE astrabot_nav astrabot_core)
+    astrabot_enable_warnings(astrabot_distribution_tests)
+    add_test(NAME astrabot.nav.distribution COMMAND astrabot_distribution_tests)
     add_executable(astrabot_world_model_tests tests/world_model_tests.cpp)
     target_link_libraries(astrabot_world_model_tests PRIVATE astrabot_core)
     astrabot_enable_warnings(astrabot_world_model_tests)
@@ -753,6 +758,7 @@ if(ASTRABOT_BUILD_TESTS)
         add_test(NAME astrabot.adapter.sound COMMAND astrabot_fake_client_tests --p404-tests)
         add_test(NAME astrabot.adapter.visual_effects COMMAND astrabot_fake_client_tests --p405-tests)
         add_test(NAME astrabot.adapter.world_model COMMAND astrabot_fake_client_tests --p406-tests)
+        add_test(NAME astrabot.adapter.distribution COMMAND astrabot_fake_client_tests --p407-tests)
         set_tests_properties(astrabot.adapter.visual_effects PROPERTIES TIMEOUT 60)
         set_tests_properties(astrabot.adapter.sound PROPERTIES TIMEOUT 60)
         set_tests_properties(astrabot.adapter.perception_identity PROPERTIES TIMEOUT 60)

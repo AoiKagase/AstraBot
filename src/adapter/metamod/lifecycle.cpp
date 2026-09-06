@@ -84,8 +84,10 @@ void LifecycleCoordinator::configure(enginefuncs_t* engine,mutil_funcs_t* utilit
     }
     movement_.configure(engine,&registry_);
     navConsole_.bindMovement(&movement_);
+    navConsole_.bindWorld(&world_);
 }
 void LifecycleCoordinator::reset() noexcept {
+    distributions_.reset();
     world_.reset();
     visualEffects_.reset();
     sound_.reset();
@@ -128,6 +130,7 @@ void LifecycleCoordinator::serverActivate(int clientMax) noexcept {
     emit(host::LifecycleEventKind::MapActivated,result);
 }
 void LifecycleCoordinator::serverDeactivate() noexcept {
+    distributions_.reset();
     world_.reset();
     visualEffects_.reset();
     sound_.reset();
@@ -265,8 +268,10 @@ void LifecycleCoordinator::startFrame() noexcept {
             (std::numeric_limits<float>::quiet_NaN)());
         if(registry_.isMapActive() && registry_.mapGeneration()==map && registry_.currentTick()==tick) {
             sound_.frame(*this,engineGlobals_ ? engineGlobals_->time : (std::numeric_limits<float>::quiet_NaN)());
-            if(registry_.isMapActive() && registry_.mapGeneration()==map && registry_.currentTick()==tick)
+            if(registry_.isMapActive() && registry_.mapGeneration()==map && registry_.currentTick()==tick) {
                 (void)world_.publish({sound_.diagnostics().queued,sound_.diagnostics().overflow});
+                distributions_.update(world_,navConsole_.distributionTopology());
+            }
         }
     }
 }

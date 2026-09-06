@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 #pragma once
 #include "core/sound_memory.hpp"
+#include "core/position_distribution.hpp"
 #include <optional>
 
 namespace astrabot::core::world {
@@ -18,6 +19,8 @@ struct WorldSnapshot {
     const SoundSnapshot* sounds{};
     std::uint64_t oldestVisualAgeMicros{}, oldestSoundAgeMicros{}, maxReceiptDelayMicros{};
     SourceQueueDiagnostics queues{};
+    // Parallel to visual->memories; null means no matching completed distribution.
+    std::array<const PositionDistribution*,perception::kCandidateCapacity> distributions{};
 };
 // Single owner of canonical memories. Snapshots borrow these memories until the
 // next mutation; they contain no privileged engine geometry or sound emitter ID.
@@ -39,6 +42,9 @@ public:
     void forget(PlayerId) noexcept;
     void beginRound(perception::RoundGeneration) noexcept;
     std::optional<WorldSnapshot> latest(PlayerId) const noexcept;
+    const MemoryFrame* publishedFrame() const noexcept { return published_ ? &frame_ : nullptr; }
+    bool setDistribution(PlayerId,PlayerId,const perception::ObservationIdentity&,const PositionDistribution&) noexcept;
+    void clearDistributions() noexcept;
     const WorldDiagnostics& diagnostics() const noexcept { return diagnostics_; }
     const VisualMemoryModel& visual() const noexcept { return visual_; }
     const SoundMemoryModel& sounds() const noexcept { return sounds_; }
@@ -54,6 +60,8 @@ private:
     bool equal(InputRef,InputRef) const noexcept;
     VisualMemoryModel visual_{};
     SoundMemoryModel sounds_{};
+    struct DistributionEntry { PlayerId observer{}, target{}; perception::ObservationIdentity identity{}; PositionDistribution value{}; };
+    std::array<std::array<DistributionEntry,32>,32> distributions_{};
     MemoryFrame frame_{};
     std::array<perception::ObservationBatch,visionCapacity> visionInputs_{};
     std::array<SoundInput,soundCapacity> soundInputs_{};

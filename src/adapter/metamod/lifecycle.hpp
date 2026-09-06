@@ -114,6 +114,7 @@ public:
     cstrike::NavConsole& navConsole() noexcept { return navConsole_; }
     const cstrike::VisionAdapter& vision() const noexcept { return vision_; }
     const core::world::WorldModel& world() const noexcept { return world_; }
+    const nav::query::DistributionModel& distributions() const noexcept { return distributions_; }
     const cstrike::SoundAdapter& sound() const noexcept { return sound_; }
     void soundPrecache(int,const char*,std::uint16_t) noexcept;
     void rejectSoundHook() noexcept { sound_.rejectHook(); }
@@ -171,6 +172,7 @@ private:
     MovementCoordinator movement_{};
     cstrike::NavConsole navConsole_{};
     core::world::WorldModel world_{};
+    nav::query::DistributionModel distributions_{};
     cstrike::VisionAdapter vision_{world_.visualReducer()};
     cstrike::SoundAdapter sound_{world_.soundReducer()};
     cstrike::VisualEffects visualEffects_{};
