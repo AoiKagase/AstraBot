@@ -73,8 +73,30 @@ scoped source/diff inspection supplement executable verification.
 
 ## Post-merge verification
 
-Pending: fast-forward into main and rerun the complete verification matrix.
-This report does not yet claim post-merge acceptance.
+Implementation commit `3b9923e` was fast-forwarded from the dedicated branch
+into `.worktrees/main-integration` main. The complete matrix was then freshly
+configured, built and tested in that main worktree:
+
+| Gate on merged main | Result |
+|---|---|
+| Windows portable Debug | 43/43 passed, 35.82s |
+| Windows Metamod Debug | 51/51 passed, 59.91s |
+| Linux portable Debug | 42/42 passed, 20.11s |
+| Windows Metamod Release | Build passed, PE32/x86, exactly six required exports |
+
+Retained main-worktree logs are `build-portable-x86-test/p402-ctest.log`,
+`build-metamod-x86-test/p402-ctest.log`, `build-linux-x86-test/p402-ctest.log`,
+`build-metamod-x86-release/p402-headers.log` and
+`build-metamod-x86-release/p402-exports.log`.
+Merged Release DLL SHA-256:
+`b7713aa2e32faf9f351d21da48b5c3882fced9bff919966bb167a31d81026b6e`.
+The main Debug full-capacity timing sample was 41,692us per 100 frames, with
+the same 49,888-byte fixed model. These timings remain diagnostic samples.
+
+The final evidence commit changes only this report and task state; tested
+source, tests and build configuration remain exactly those in `3b9923e`.
+Original root modifications and local tool files were preserved. No push,
+branch deletion or worktree cleanup was performed.
 
 ## Remaining acceptance
 
