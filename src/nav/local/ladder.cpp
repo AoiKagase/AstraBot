@@ -59,8 +59,15 @@ LadderDecision Ladder::update(const LadderFeedback& f) noexcept {
        !s.hull || s.hull->minimum!=model::NavVector3{-16,-16,-36} || s.hull->maximum!=model::NavVector3{16,16,36} ||
        !s.grounded || s.ducked!=false || !s.speedLimit || !positive(*s.speedLimit) || !s.ladder || !f.climbing)
         return fail(LadderReason::MissingObservation);
+    // MOVETYPE_FLY belongs to the preceding PM update. At the measured exit,
+    // contact may already be gone before the next update resets it to WALK.
+    // This bounded handoff is not permission to complete or issue exit motion.
+    const bool exitHandoff=state_==LadderState::Exit || state_==LadderState::Support ||
+        ((state_==LadderState::ClimbUp || state_==LadderState::ClimbDown) &&
+         distance(*s.position,plan_.dismount)<=limits_.shaftTolerance &&
+         std::abs(double(s.position->z)-plan_.dismount.z)<=limits_.positionTolerance);
     if(s.ladder->sourceId!=l.sourceId || s.ladder->generation!=l.generation || s.ladder->linkId!=l.linkId ||
-       (*f.climbing && !s.ladder->touching)) return fail(LadderReason::WrongContact);
+       (*f.climbing && !s.ladder->touching && !exitHandoff)) return fail(LadderReason::WrongContact);
     const auto* proof=f.inspection ? &*f.inspection:nullptr;
     if(!proof || proof->stamp.agent!=s.agent || proof->stamp.actor!=s.actor || proof->stamp.map!=s.map || proof->stamp.tick!=s.tick ||
        proof->stamp.routeGeneration!=binding_.routeGeneration || proof->stamp.ordinal || proof->step!=binding_.step ||

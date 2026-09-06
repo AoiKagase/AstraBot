@@ -4,14 +4,13 @@ Status: in_progress
 Goal: entire Phase 3; never mark complete for a slice or merge.
 Main: 8aa1610, fast-forward integrated in .worktrees/main-integration, not pushed.
 Current branch: codex/p306-ladder-host-binding.
-Current boundary: bounded current-frame Ladder inspection after selected-link binding.
+Current boundary: standard-CS ladder/air prediction and bounded exit mode handoff.
 Reports: docs/reports/p3-06-ladder-publication.md and p3-06-ladder-controller.md.
 Discovery/publication through 8984b15 preserves immutable fingerprint-bound links.
 Portable controller adds up/down states, directional buttons, finite reacquire,
 fresh inspection binding, and target support plus actual detachment before Complete.
-Verification: frame inspection Windows x86 Debug43/43 PASS and Release6 exports PASS.
-Portable controller at main: WSL GCC -m32 Debug37/37 PASS including final Support
-change. Subsequent binding changes are adapter-only; Linux portable sources unchanged.
+Verification: physics Windows x86 Debug43/43 PASS and Linux -m32 Debug37/37 PASS;
+final mode-handoff regression separately tested on both platforms; Release6 exports.
 Tests model standard-CS vertical projection only; scripted detachment is not a
 physical dismount simulation. inspectLadderFrame now produces bounded observation
 under a required current actor/route/tick callback; host wiring/exitIntent pending.
@@ -22,8 +21,11 @@ Frame observer caps4 traces: model overlap/face, path, optional world support/NA
 Each query guards identity and exact snapshot physics; unsupported water/basevelocity.
 Next: wire current inspection callback and solve verified dismount control,
 then guarded host dispatch and cursor advance. Do not fake attached analog exit.
-MOVETYPE_FLY can outlast contact until the next PM step. Current controller rejects
-that pair; integration must explicitly handle physical detachment before dispatch.
+MOVETYPE_FLY can outlast contact until the next PM step. Controller now tolerates
+that pair at bounded exit only, still waits for real detachment plus support.
+ladderVelocity models button projection and outward floor kick. ladderAirStep
+models actual command msec, gravity and30 wish-component cap; no collision model.
+These predictors require host-supplied verified physics and clearance sweeps.
 Top exit requires clearing hull-expanded model height; position tolerance alone
 can stop inside the ladder. Account for real CS air acceleration/landing geometry.
 After P3-06: P3-07 finite recovery and P3-08 cross-primitive offline matrix.

@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 #include "nav/local/ladder.hpp"
+#include "nav/local/ladder_physics.hpp"
 #include <cassert>
 #include <cmath>
 #include <utility>
+#include <limits>
 using namespace astrabot;
 using namespace astrabot::nav;
 using namespace astrabot::nav::local;
@@ -46,6 +48,58 @@ void directionalMotor() {
     c=core::Motor::command(intent,{},250,16000,true); assert(c && c.command->buttons==static_cast<core::ButtonMask>(core::Button::Back));
     c=core::Motor::command(intent,{},0,16000,true); assert(c && c.command->buttons==0 && c.command->movement==core::Movement{});
     intent.speed=0; assert(!core::Motor::valid(intent)); intent.back=core::ActionRequest::Release; assert(core::Motor::valid(intent));
+}
+void physicalProjection() {
+    const auto close=[](double a,double b) { return std::abs(a-b)<0.001; };
+    core::BotCommand c; c.msec=16; c.movement.forward=250;
+    assert(ladderVelocity(c,{-1,0,0},250,false)==model::NavVector3{}); // Analog alone does not climb.
+    c.buttons=static_cast<core::ButtonMask>(core::Button::Forward);
+    for(const auto n:{model::NavVector3{-1,0,0},{1,0,0},{0,-1,0},{0,1,0}}) {
+        c.view.yaw=static_cast<float>(std::atan2(-n.y,-n.x)*180/3.14159265358979323846);
+        c.view.pitch=0;
+        auto v=ladderVelocity(c,n,250,false); assert(v && close(v->x,0) && close(v->y,0) && close(v->z,200));
+        c.view.pitch=-45; v=ladderVelocity(c,n,250,false); assert(v && close(v->z,282.84271247));
+        c.view.pitch=45; v=ladderVelocity(c,n,250,false); assert(v && close(v->z,0));
+        c.view.pitch=0; c.buttons=static_cast<core::ButtonMask>(core::Button::Back);
+        v=ladderVelocity(c,n,100,true); assert(v && close(v->x,200*n.x) && close(v->y,200*n.y) && close(v->z,-100));
+        c.buttons=static_cast<core::ButtonMask>(core::Button::Forward);
+    }
+    c.view={0,45,0}; auto v=ladderVelocity(c,{-1,0,0},250,false);
+    assert(v && close(v->x,0) && close(v->y,141.42135624) && close(v->z,141.42135624));
+    c.buttons=static_cast<core::ButtonMask>(core::Button::Jump); assert(!ladderVelocity(c,{-1,0,0},250,false));
+    c.buttons=0; assert(!ladderVelocity(c,{1,0,1},250,false));
+    assert(!ladderVelocity(c,{-1,0,0},0,false)); c.msec=121; assert(!ladderVelocity(c,{-1,0,0},250,false));
+}
+void airborneProjection() {
+    const LadderAirPhysics physics{800,10,1,250};
+    const auto close=[](double a,double b) { return std::abs(a-b)<0.001; };
+    for(const auto msec:{8,16,100}) {
+        core::BotCommand c; c.msec=static_cast<std::uint8_t>(msec); c.movement.forward=250;
+        const auto r=ladderAirStep(c,{0,0,200},physics); assert(r);
+        const double dt=double(msec)/1000,expected=msec==8 ? 20:30;
+        assert(close(r->velocity.x,expected) && r->velocity.y==0 && close(r->velocity.z,200-800*dt));
+        assert(close(r->displacement.x,expected*dt) && close(r->displacement.z,200*dt-400*dt*dt));
+        auto v=r->velocity;
+        for(int i=0;i<4;++i) { const auto next=ladderAirStep(c,v,physics); assert(next); v=next->velocity; }
+        assert(close(v.x,30)); // Holding forward does not acquire250 air speed.
+        c.movement.forward=0; c.movement.side=-250;
+        const auto side=ladderAirStep(c,{100,0,0},physics); assert(side && side->velocity.x==100 && close(side->velocity.y,expected));
+        c.movement.side=0; c.movement.forward=250;
+        const auto fast=ladderAirStep(c,{100,0,0},physics); assert(fast && fast->velocity.x==100);
+    }
+    core::BotCommand c; c.msec=16; c.movement.forward=500; c.view.yaw=90;
+    const auto limited=ladderAirStep(c,{}, {800,10,1,20}); assert(limited && close(limited->velocity.y,3.2));
+    for(int mode=0;mode<7;++mode) {
+        auto p=physics; auto command=c; model::NavVector3 v{};
+        if(mode==0) p.gravity=0;
+        if(mode==1) p.airAcceleration=-1;
+        if(mode==2) p.friction=(std::numeric_limits<double>::quiet_NaN)();
+        if(mode==3) command.msec=0;
+        if(mode==4) command.movement.up=1;
+        if(mode==5) command.buttons=static_cast<core::ButtonMask>(core::Button::Jump);
+        if(mode==6) v.x=(std::numeric_limits<float>::infinity)();
+        assert(!ladderAirStep(command,v,p));
+    }
 }
 void climbingAndObservedExit() {
     for(bool up:{false,true}) for(std::uint64_t us:{8000U,16000U,100000U}) {
@@ -130,5 +184,22 @@ void failuresAndReacquire() {
         else assert(d.state==LadderState::Support && !d.terminalEvent); // Must detach even with verified ground.
     }
 }
+void observedModeHandoff() {
+    for(bool up:{false,true}) {
+        const auto p=plan(up); Ladder ladder(binding,p); auto s=actor(p); enter(ladder,p,s);
+        s.tick={4}; s.position=p.dismount; s.ladder->touching=false;
+        auto d=ladder.update(feedback(ladder,p,s,160000,true));
+        assert(d.state==LadderState::Exit && d.intent.speed==0 && !d.terminalEvent);
+        s.tick={5}; s.position=p.end; s.grounded=true;
+        d=ladder.update(feedback(ladder,p,s,200000,true)); assert(d.state==LadderState::Support && !d.terminalEvent);
+        s.tick={6}; d=ladder.update(feedback(ladder,p,s,240000,true));
+        assert(d.state==LadderState::Support && d.intent.speed==0 && !d.terminalEvent);
+        s.tick={7}; d=ladder.update(feedback(ladder,p,s,280000,false));
+        assert(d.state==LadderState::Complete && d.terminalEvent);
+    }
+    const auto p=plan(); Ladder wrong(binding,p); auto s=actor(p); enter(wrong,p,s);
+    s.tick={4}; s.position->z=80; s.ladder->touching=false;
+    assert(wrong.update(feedback(wrong,p,s,160000,true)).reason==LadderReason::WrongContact);
 }
-int main() { directionalMotor(); climbingAndObservedExit(); failuresAndReacquire(); }
+}
+int main() { directionalMotor(); physicalProjection(); airborneProjection(); climbingAndObservedExit(); failuresAndReacquire(); observedModeHandoff(); }

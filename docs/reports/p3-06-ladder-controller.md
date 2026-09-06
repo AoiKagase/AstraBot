@@ -83,3 +83,36 @@ detachment can change model overlap before that field returns to WALK. Controlle
 integration must handle this transition explicitly, not equate overlap with mode.
 Physical exit planning remains required, especially clearing the upper hull
 boundary and crossing to measured support with real CS air acceleration.
+
+## Standard-CS movement prediction and exit mode handoff
+
+`ladderVelocity` predicts standing ladder button projection against a measured
+vertical face, including the independent 200-unit outward kick when the floor
+point is solid and input points away from the ladder. Analog movement alone is
+not a climb command. Looking upward at -45 degrees can produce approximately
+282.84 vertical units/s at the200 base speed; this is distinct from the controller's
+current slower alignment profile. The caller must prove contact, face and floor
+point solidity before using this prediction.
+
+`ladderAirStep` predicts one collision-free airborne WALK command using actual
+rounded command milliseconds (1..120), supplied gravity/airacceleration/friction/
+maxspeed, and the30-unit wish-direction component cap. It preserves pre-existing
+horizontal velocity and uses half-gravity displacement/full-gravity velocity.
+Neither helper performs a sweep, authenticates host cvars, chooses an exit route
+or models a collision/landing. Jump/duck/use, water and basevelocity are outside
+this profile. The formulas were independently implemented from the pinned
+ReGameDLL PM_LadderMove/PM_AirAccelerate/PM_PlayerMove behavior; no upstream code
+was copied.
+
+The controller now permits observed FLY-without-overlap only in Exit/Support or
+within the tightly bounded shaft exit handoff. That transient observation emits
+no completion; target support and mode/contact detachment are still mandatory.
+The same mismatch in the middle of a climb still fails with WrongContact.
+This fixes mode observation latency, not the still-pending physical exit planner.
+
+Tests cover four face orientations, up/down/floor kick, angle projection,
+8/16/100ms gravity/air acceleration, speed limits, preservation of existing
+velocity, invalid parameters, and both-direction mode handoffs. Full Windows
+x86 Debug43/43 and Linux x86 Debug37/37 passed before the final handoff regression;
+that regression separately passed on both platforms. Release6 exports
+remain unchanged. No live acceptance or P3-06 completion is claimed.

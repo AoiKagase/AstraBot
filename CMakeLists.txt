@@ -102,6 +102,7 @@ endif()
 
 add_library(astrabot_nav STATIC
     src/nav/local/ladder.cpp
+    src/nav/local/ladder_physics.cpp
     src/nav/io/map_fingerprint.cpp
     src/nav/local/walk.cpp
     src/nav/local/walk_jump.cpp
