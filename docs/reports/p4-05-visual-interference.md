@@ -1,7 +1,8 @@
 # P4-05 — Visual interference
 
-Status: implementation and pre-merge gates complete; main integration pending.
+Status: implementation and applicable offline gates complete, including merged main.
 Base main2818a3a; branch codex/p405-visual-interference.
+Implementation d7228ab was fast-forwarded to main and verified there.
 No live acceptance or project-wide Finish is declared.
 
 ## Source-backed input contract (recorded before implementation)
@@ -62,12 +63,19 @@ flash state was retired. The production schedule and acceptance were not relaxed
 
 | Gate | Pre-merge | Merged main |
 |---|---|---|
-| Windows x86 portable Debug /WX, inspector ON | 48/48 passed,30.44s | pending |
-| Windows x86 Metamod Debug /WX, inspector ON | 59/59 passed,52.62s | pending |
-| Linux x86 portable Debug /WX, inspector ON | 47/47 passed,18.92s | pending |
-| Release PE32/x86, exactly six exports | passed | pending |
+| Windows x86 portable Debug /WX, inspector ON | 48/48 passed,30.44s | 48/48 passed |
+| Windows x86 Metamod Debug /WX, inspector ON | 59/59 passed,52.62s | 59/59 passed,49.40s |
+| Linux x86 portable Debug /WX, inspector ON | 47/47 passed,18.92s | 47/47 passed,23.60s |
+| Release PE32/x86, exactly six exports | passed | passed |
+
+Release machine14C, optional magic10B. Export names: GetEngineFunctions,
+GetEntityAPI2, GiveFnptrsToDll, Meta_Attach, Meta_Detach, Meta_Query, exactly6.
+Main DLL SHA256:
+`6c8a9e8ce50df2e324087b77c1e2060e6dddeccb91e8a5d5e07f8e73556ddd28`.
 
 Graph returned no usable call/test relationships; actual sources/tests were
 reviewed. FocalSpan was initialized and queried before changes. Full gate logs
-will be in each worktree's build-*-x86-test/Testing/Temporary/LastTest.log.
+are in each worktree's build-*-x86-test/Testing/Temporary/LastTest.log.
+FocalSpan was updated after verification in both worktrees. Final report/plan/STATE
+changes are documentation only; source was held fixed throughout full gates.
 Live render equivalence, event coverage and tuning remain post-Finish acceptance.
