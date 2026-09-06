@@ -116,3 +116,25 @@ velocity, invalid parameters, and both-direction mode handoffs. Full Windows
 x86 Debug43/43 and Linux x86 Debug37/37 passed before the final handoff regression;
 that regression separately passed on both platforms. Release6 exports
 remain unchanged. No live acceptance or P3-06 completion is claimed.
+
+## Host physics binding
+
+The current-frame observer now requires public `sv_gravity`, `sv_airaccelerate`,
+`sv_maxspeed` and `sv_maxvelocity` values, effective entity gravity (zero means1),
+entity friction, and the minimum server/player maxspeed. It returns those values
+with the same stamped observation and rechecks them around every trace. Missing,
+nonfinite, unsupported or changing values discard the whole observation; no
+default server cvars are invented. Nonzero punch angles, frozen/on-train state
+and observer mode are rejected because they alter the assumed command physics.
+
+Air prediction now applies the public maximum velocity component clamp at the
+half-gravity and final-gravity stages, matching the inspected PM_CheckVelocity
+call sites. The ReHLDS SV_RunCmd movement input binding was also inspected at
+revision `6266cd23faee4a6e9cf3974f9605b2cadd86f0a4`; no code was copied.
+
+Tests cover cvar/actor-physics mutation after every trace, entity gravity scaling,
+server maxspeed below player maxspeed, invalid cvars, punch/freeze rejection and
+velocity clamping. Windows x86 Debug43/43 passed; the Linux x86 ladder target
+passed after rebuilding the modified portable library. Release build/six exports
+remain verified. This does not yet supply floor-point solidity for the ladder
+kick, the exit trajectory's clearance, or dispatch authorization.

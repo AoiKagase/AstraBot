@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 #pragma once
 #include "adapter/cstrike/nav/ladder_discovery.hpp"
+#include "nav/local/ladder_physics.hpp"
 namespace astrabot::adapter::cstrike {
 struct LadderFrameWorld {
     LadderWorld ladder{};
@@ -14,6 +15,7 @@ struct LadderFrameObservation {
     nav::local::LadderInspection inspection{};
     nav::runtime::LadderContact contact{};
     bool climbing{}; // Observed MOVETYPE_FLY, not inferred from overlap.
+    nav::local::LadderAirPhysics physics{};
 };
 struct LadderFrameResult {
     LadderFrameReason reason{LadderFrameReason::InvalidInput};

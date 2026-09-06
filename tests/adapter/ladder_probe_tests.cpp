@@ -8,6 +8,7 @@
 #include <cassert>
 #include <cmath>
 #include <limits>
+#include <cstring>
 #ifdef ASTRABOT_LADDER_HOST_TESTS
 #include "adapter/cstrike/nav/console.hpp"
 #include <sstream>
@@ -18,6 +19,12 @@ namespace {
 using V=nav::model::NavVector3;
 edict_t ladderEntity{},worldEntity{},actorEntity{};
 bool frameCurrent{true};
+cvar_t frameCvars[4]{};
+cvar_t* frameCvar(const char* name) {
+    const char* names[]{"sv_gravity","sv_airaccelerate","sv_maxspeed","sv_maxvelocity"};
+    for(unsigned i=0;i<4;++i) if(std::strcmp(name,names[i])==0) return &frameCvars[i];
+    return nullptr;
+}
 constexpr nav::local::Binding frameBinding{{1},{2,{3}},{1},4,5};
 bool currentFrame(const void*,nav::local::Binding b,core::TickId t) noexcept {
     return frameCurrent && b.agent==frameBinding.agent && b.actor==frameBinding.actor &&
@@ -70,6 +77,11 @@ void inject(const float* a,const float* b,TraceResult* t) {
     if(fault==13) ++actorEntity.serialnumber;
     if(fault==14) frameCurrent=false;
     if(fault==15) actorEntity.v.movetype=MOVETYPE_WALK;
+    if(fault==16) frameCvars[0].value+=1;
+    if(fault==17) frameCvars[1].value+=1;
+    if(fault==18) frameCvars[2].value=100;
+    if(fault==19) frameCvars[3].value+=1;
+    if(fault==20) actorEntity.v.friction=0.5f;
 #ifdef ASTRABOT_LADDER_HOST_TESTS
     if(fault==11 && publishing) publishing->invalidate(nav::runtime::SessionReason::Cancelled);
 #endif
@@ -107,7 +119,7 @@ std::shared_ptr<const nav::query::NavSpatialIndex> setup(LadderFace face,LadderE
 }
 enginefuncs_t engine() {
     enginefuncs_t e{}; e.pfnPEntityOfEntIndex=entityAt; e.pfnIndexOfEdict=indexOf; e.pfnSzFromIndex=classname;
-    e.pfnTraceModel=traceModel; e.pfnTraceHull=traceHull; return e;
+    e.pfnTraceModel=traceModel; e.pfnTraceHull=traceHull; e.pfnCVarGetPointer=frameCvar; return e;
 }
 constexpr LadderCandidate candidate{(std::uint64_t{7}<<32)|1,{0,0,0},{8,64,128}};
 }
@@ -183,10 +195,12 @@ void testLadderFrame() {
         const V origin=grounded ? bound.value->plan.start:V{bound.value->plan.mount.x,bound.value->plan.mount.y,80};
         const auto resetActor=[&]() {
             actorEntity={}; actorEntity.serialnumber=8; frameCurrent=true; traces=fault=faultAt=0; activeMap={1};
+            const float values[]{800,10,320,2000};
+            for(unsigned i=0;i<4;++i) { frameCvars[i]={}; frameCvars[i].value=values[i]; }
             ladderEntity.serialnumber=7;
             auto& v=actorEntity.v; v.flags=FL_FAKECLIENT|(grounded ? FL_ONGROUND:0);
             v.origin=Vector(origin.x,origin.y,origin.z); v.mins=Vector(-16,-16,-36); v.maxs=Vector(16,16,36);
-            v.movetype=grounded ? MOVETYPE_WALK:MOVETYPE_FLY; v.maxspeed=250;
+            v.movetype=grounded ? MOVETYPE_WALK:MOVETYPE_FLY; v.maxspeed=250; v.friction=1;
         };
         resetActor();
         nav::runtime::MovementSnapshot s; s.agent=frameBinding.agent; s.actor=frameBinding.actor; s.map={1}; s.tick={6};
@@ -197,17 +211,23 @@ void testLadderFrame() {
         const auto ok=run(4); assert(ok && ok.queries==3 && traces==3);
         assert(ok.value->climbing==!grounded && ok.value->contact.touching==!grounded);
         assert(ok.value->inspection.support.has_value()==grounded && ok.value->inspection.pathClear==true);
+        assert(ok.value->physics.gravity==800 && ok.value->physics.maximumSpeed==250 && ok.value->physics.maximumVelocity==2000);
         assert(!ok.value->inspection.exitIntent && ok.value->inspection.stamp.tick==s.tick);
         for(unsigned budget=0;budget<3;++budget) {
             resetActor(); const auto r=run(budget);
             assert(!r && !r.value && r.reason==LadderFrameReason::BudgetExceeded && r.queries==budget);
         }
-        for(unsigned at=1;at<=3;++at) for(int mode:{1,2,3,7,12,13,14}) {
+        for(unsigned at=1;at<=3;++at) for(int mode:{1,2,3,7,12,13,14,16,17,18,19,20}) {
             resetActor(); faultAt=at; fault=mode; const auto r=run(4);
             assert(!r && !r.value && r.queries==at && traces==at);
         }
         resetActor(); s.tick={7}; assert(run(4).reason==LadderFrameReason::StaleActor && traces==0); s.tick={6};
         resetActor(); actorEntity.v.basevelocity.x=1; assert(run(4).reason==LadderFrameReason::StaleActor && traces==0);
+        resetActor(); actorEntity.v.punchangle.x=1; assert(run(4).reason==LadderFrameReason::StaleActor && traces==0);
+        resetActor(); actorEntity.v.flags|=FL_FROZEN; assert(run(4).reason==LadderFrameReason::StaleActor && traces==0);
+        resetActor(); frameCvars[0].value=0; assert(run(4).reason==LadderFrameReason::Unavailable && traces==0);
+        resetActor(); frameCvars[2].value=120; actorEntity.v.gravity=0.5f;
+        const auto scaled=run(4); assert(scaled && scaled.value->physics.gravity==400 && scaled.value->physics.maximumSpeed==120);
         resetActor(); assert(run(5).reason==LadderFrameReason::InvalidInput && traces==0);
         if(!grounded) {
             resetActor(); faultAt=2; fault=6; assert(run(4).reason==LadderFrameReason::WrongFace);

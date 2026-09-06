@@ -5,7 +5,7 @@
 #include <optional>
 namespace astrabot::nav::local {
 struct LadderAirPhysics {
-    double gravity{},airAcceleration{},friction{},maximumSpeed{};
+    double gravity{},airAcceleration{},friction{},maximumSpeed{},maximumVelocity{};
 };
 struct LadderAirStep {
     model::NavVector3 displacement{},velocity{};

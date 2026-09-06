@@ -30,13 +30,15 @@ std::optional<model::NavVector3> ladderVelocity(const core::BotCommand& c,model:
 }
 std::optional<LadderAirStep> ladderAirStep(const core::BotCommand& c,model::NavVector3 v,LadderAirPhysics p) noexcept {
     if(!commandValid(c) || !v.isFinite() || !positive(p.gravity,4000) || !positive(p.airAcceleration,1000) ||
-       !positive(p.friction,10) || !positive(p.maximumSpeed,2000) ||
+       !positive(p.friction,10) || !positive(p.maximumSpeed,2000) || !positive(p.maximumVelocity,10000) ||
        std::abs(v.x)>10000 || std::abs(v.y)>10000 || std::abs(v.z)>10000) return {};
     const double yaw=c.view.yaw*radians,dt=double(c.msec)/1000;
     const double x=c.movement.forward*std::cos(yaw)+c.movement.side*std::sin(yaw);
     const double y=c.movement.forward*std::sin(yaw)-c.movement.side*std::cos(yaw);
     const double magnitude=std::hypot(x,y),wish=(std::min)(magnitude,p.maximumSpeed);
-    double vx=v.x,vy=v.y;
+    const auto clamp=[&](double value) { return std::clamp(value,-p.maximumVelocity,p.maximumVelocity); };
+    double vx=clamp(v.x),vy=clamp(v.y);
+    const double halfZ=clamp(v.z-0.5*p.gravity*dt);
     if(magnitude>0) {
         const double nx=x/magnitude,ny=y/magnitude;
         const double available=(std::min)(wish,30.0)-(vx*nx+vy*ny);
@@ -44,8 +46,8 @@ std::optional<LadderAirStep> ladderAirStep(const core::BotCommand& c,model::NavV
         vx+=nx*add; vy+=ny*add;
     }
     LadderAirStep result;
-    result.displacement={static_cast<float>(vx*dt),static_cast<float>(vy*dt),static_cast<float>((v.z-0.5*p.gravity*dt)*dt)};
-    result.velocity={static_cast<float>(vx),static_cast<float>(vy),static_cast<float>(v.z-p.gravity*dt)};
+    result.displacement={static_cast<float>(vx*dt),static_cast<float>(vy*dt),static_cast<float>(halfZ*dt)};
+    result.velocity={static_cast<float>(clamp(vx)),static_cast<float>(clamp(vy)),static_cast<float>(clamp(halfZ-0.5*p.gravity*dt))};
     if(!result.displacement.isFinite() || !result.velocity.isFinite()) return {};
     return result;
 }

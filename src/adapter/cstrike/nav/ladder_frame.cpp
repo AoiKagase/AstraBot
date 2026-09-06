@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 #include "adapter/cstrike/nav/ladder_frame.hpp"
+#include <algorithm>
 #include <cmath>
 #include <limits>
 namespace astrabot::adapter::cstrike {
@@ -28,14 +29,43 @@ LadderFrameResult inspectLadderFrame(LadderFrameWorld w,edict_t* actor,nav::loca
        link.sourceId!=ladderSourceId || !link.generation || !link.linkId || link.traversal!=nav::model::NavTraversalKind::Ladder)
         return result;
     if(!e || !w.current || !w.ladder.currentMap || !e->pfnTraceModel || !e->pfnTraceHull ||
-       !e->pfnPEntityOfEntIndex || !e->pfnIndexOfEdict || !e->pfnSzFromIndex) return fail(LadderFrameReason::Unavailable);
+       !e->pfnPEntityOfEntIndex || !e->pfnIndexOfEdict || !e->pfnSzFromIndex || !e->pfnCVarGetPointer)
+        return fail(LadderFrameReason::Unavailable);
     const int serial=actor->serialnumber,mode=actor->v.movetype;
     if(mode!=MOVETYPE_WALK && mode!=MOVETYPE_FLY) return result;
+    const auto physics=[&]() -> std::optional<nav::local::LadderAirPhysics> {
+        const char* names[]{"sv_gravity","sv_airaccelerate","sv_maxspeed","sv_maxvelocity"};
+        double values[4]{};
+        const cvar_t* cvars[4]{};
+        for(unsigned i=0;i<4;++i) {
+            const auto* cvar=e->pfnCVarGetPointer(names[i]);
+            if(!cvar || !std::isfinite(cvar->value) || cvar->value<=0) return {};
+            values[i]=cvar->value;
+            cvars[i]=cvar;
+        }
+        for(unsigned i=0;i<4;++i) if(cvars[i]->value!=values[i]) return {};
+        const double gravity=values[0]*(actor->v.gravity==0 ? 1:actor->v.gravity);
+        const double speed=(std::min)(values[2],double(actor->v.maxspeed));
+        if(!std::isfinite(gravity) || gravity<=0 || gravity>4000 || values[1]>1000 || speed<=0 || speed>2000 ||
+           !std::isfinite(actor->v.friction) || actor->v.friction<=0 || actor->v.friction>10 || values[3]>10000) return {};
+        return nav::local::LadderAirPhysics{gravity,values[1],actor->v.friction,speed,values[3]};
+    };
+    const float actorGravity=actor->v.gravity,actorFriction=actor->v.friction;
+    const auto initialPhysics=physics();
+    if(!initialPhysics) return fail(LadderFrameReason::Unavailable);
     const auto fresh=[&]() {
+        const auto current=physics();
+        if(!current || current->gravity!=initialPhysics->gravity || current->airAcceleration!=initialPhysics->airAcceleration ||
+           current->friction!=initialPhysics->friction || current->maximumSpeed!=initialPhysics->maximumSpeed ||
+           current->maximumVelocity!=initialPhysics->maximumVelocity) {
+            result.reason=LadderFrameReason::StaleActor; return false;
+        }
         if(!ladderPassageCurrent(w.ladder,p,maximum)) { result.reason=LadderFrameReason::StaleWorld; return false; }
         if(!w.current(w.context,binding,s.tick) || actor->free || actor->serialnumber!=serial ||
            e->pfnPEntityOfEntIndex(binding.actor.slot)!=actor || e->pfnIndexOfEdict(actor)!=binding.actor.slot ||
            actor->v.deadflag!=DEAD_NO || !(actor->v.flags&FL_FAKECLIENT) ||
+           (actor->v.flags&(FL_FROZEN|FL_ONTRAIN)) || actor->v.iuser1!=0 || value(actor->v.punchangle)!=V{} ||
+           actor->v.gravity!=actorGravity || actor->v.friction!=actorFriction ||
            bool(actor->v.flags&FL_ONGROUND)!=*s.grounded || (actor->v.flags&FL_DUCKING) ||
            actor->v.movetype!=mode || actor->v.waterlevel!=0 || (actor->v.flags&FL_WATERJUMP) ||
            value(actor->v.basevelocity)!=V{} || value(actor->v.origin)!=*s.position || value(actor->v.velocity)!=*s.velocity ||
@@ -65,7 +95,7 @@ LadderFrameResult inspectLadderFrame(LadderFrameWorld w,edict_t* actor,nav::loca
         }
         return true;
     };
-    LadderFrameObservation observation; auto& q=observation.inspection;
+    LadderFrameObservation observation; observation.physics=*initialPhysics; auto& q=observation.inspection;
     q.stamp={s.agent,s.actor,s.map,s.tick,binding.routeGeneration,0}; q.step=binding.step;
     q.sourceId=link.sourceId; q.generation=link.generation; q.linkId=link.linkId;
     q.origin=*s.position; q.velocity=*s.velocity; q.hull=*s.hull; q.target=target;

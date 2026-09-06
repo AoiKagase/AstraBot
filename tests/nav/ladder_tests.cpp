@@ -71,7 +71,7 @@ void physicalProjection() {
     assert(!ladderVelocity(c,{-1,0,0},0,false)); c.msec=121; assert(!ladderVelocity(c,{-1,0,0},250,false));
 }
 void airborneProjection() {
-    const LadderAirPhysics physics{800,10,1,250};
+    const LadderAirPhysics physics{800,10,1,250,2000};
     const auto close=[](double a,double b) { return std::abs(a-b)<0.001; };
     for(const auto msec:{8,16,100}) {
         core::BotCommand c; c.msec=static_cast<std::uint8_t>(msec); c.movement.forward=250;
@@ -88,7 +88,10 @@ void airborneProjection() {
         const auto fast=ladderAirStep(c,{100,0,0},physics); assert(fast && fast->velocity.x==100);
     }
     core::BotCommand c; c.msec=16; c.movement.forward=500; c.view.yaw=90;
-    const auto limited=ladderAirStep(c,{}, {800,10,1,20}); assert(limited && close(limited->velocity.y,3.2));
+    const auto limited=ladderAirStep(c,{}, {800,10,1,20,2000}); assert(limited && close(limited->velocity.y,3.2));
+    c.msec=100; c.movement.forward=0;
+    const auto clamped=ladderAirStep(c,{1000,0,1000},{800,10,1,250,100});
+    assert((clamped && clamped->displacement==model::NavVector3{10,0,10} && clamped->velocity==model::NavVector3{100,0,60}));
     for(int mode=0;mode<7;++mode) {
         auto p=physics; auto command=c; model::NavVector3 v{};
         if(mode==0) p.gravity=0;
