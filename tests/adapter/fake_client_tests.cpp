@@ -2344,6 +2344,7 @@ void testDetachDirectlyCleansActiveEntityOnce() {
 }
 
 #include "p308_host_matrix.hpp"
+#include "p401_vision_tests.hpp"
 
 } // namespace
 
@@ -2356,6 +2357,7 @@ int main(int argc,char** argv) {
     _set_abort_behavior(0,_WRITE_ABORT_MSG|_CALL_REPORTFAULT);
 #endif
     if(argc==3 && std::strcmp(argv[1],"--p308-output")==0) return runP308HostMatrix(argv[2]);
+    if(argc==2 && std::strcmp(argv[1],"--p401-tests")==0) { p401::run(); return 0; }
     assert(argc==1);
     testNavWorldQueries();
     testNavJumpProbeWorldQueries();

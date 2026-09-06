@@ -75,6 +75,7 @@ function(astrabot_enable_metamod_compatibility target)
 endfunction()
 
 add_library(astrabot_core STATIC
+    src/core/perception.cpp
     src/core/motor.cpp
     src/core/command.cpp
     src/core/identity.cpp
@@ -244,6 +245,7 @@ if(ASTRABOT_BUILD_METAMOD)
     endforeach()
 
     add_library(astrabot_mm SHARED
+        src/adapter/cstrike/vision.cpp
         src/adapter/cstrike/join_state.cpp
         src/adapter/cstrike/messages.cpp
         src/adapter/metamod/fake_client.cpp
@@ -292,6 +294,10 @@ endif()
 
 if(ASTRABOT_BUILD_TESTS)
     enable_testing()
+    add_executable(astrabot_perception_tests tests/perception_tests.cpp)
+    target_link_libraries(astrabot_perception_tests PRIVATE astrabot_core)
+    astrabot_enable_warnings(astrabot_perception_tests)
+    add_test(NAME astrabot.perception COMMAND astrabot_perception_tests)
     if(ASTRABOT_BUILD_NAV_INSPECTOR)
         add_executable(astrabot_nav_inspection_tests tests/nav/inspection_tests.cpp tools/nav_inspection.cpp)
         target_link_libraries(astrabot_nav_inspection_tests PRIVATE astrabot_nav)
@@ -609,6 +615,7 @@ if(ASTRABOT_BUILD_TESTS)
         add_test(NAME astrabot.adapter.ladder_scanner COMMAND astrabot_ladder_scanner_tests)
 
         add_executable(astrabot_adapter_entry_tests
+            src/adapter/cstrike/vision.cpp
             tests/adapter/plugin_entry_tests.cpp
             src/adapter/cstrike/join_state.cpp
             src/adapter/cstrike/messages.cpp
@@ -674,6 +681,7 @@ if(ASTRABOT_BUILD_TESTS)
         )
 
         add_executable(astrabot_fake_client_tests
+            src/adapter/cstrike/vision.cpp
             tests/adapter/fake_client_tests.cpp
             tests/adapter/ladder_probe_tests.cpp
             src/adapter/cstrike/join_state.cpp
@@ -696,6 +704,8 @@ if(ASTRABOT_BUILD_TESTS)
         )
         target_compile_features(astrabot_fake_client_tests PRIVATE cxx_std_17)
         target_compile_definitions(astrabot_fake_client_tests PRIVATE ASTRABOT_LADDER_HOST_TESTS)
+        add_test(NAME astrabot.adapter.vision COMMAND astrabot_fake_client_tests --p401-tests)
+        set_tests_properties(astrabot.adapter.vision PROPERTIES TIMEOUT 60)
         target_link_libraries(astrabot_fake_client_tests PRIVATE astrabot_core astrabot_nav)
         target_include_directories(astrabot_fake_client_tests
             PRIVATE

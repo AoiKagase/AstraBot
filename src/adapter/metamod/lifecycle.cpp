@@ -4,6 +4,7 @@
 #include "adapter/metamod/lifecycle.hpp"
 
 #include <cstdint>
+#include <limits>
 
 namespace astrabot::adapter::metamod {
 namespace {
@@ -67,8 +68,9 @@ bool LifecycleCoordinator::removalPending(core::PlayerId player) const noexcept 
     const auto* client=findClient(player); return client && client->fake.removalPending();
 }
 void LifecycleCoordinator::configure(enginefuncs_t* engine,mutil_funcs_t* utility,
-    DLL_FUNCTIONS* game,cstrike::UserMessageIds ids) noexcept {
+    DLL_FUNCTIONS* game,cstrike::UserMessageIds ids,globalvars_t* globals) noexcept {
     engineFunctions_=engine; utilityFunctions_=utility; gameDllFunctions_=game;
+    engineGlobals_=globals;
     messageDecoder_.configure(ids,&LifecycleCoordinator::onMessage,this);
     activeDecoder_=&messageDecoder_;
     for(auto& client:clients_) {
@@ -79,6 +81,7 @@ void LifecycleCoordinator::configure(enginefuncs_t* engine,mutil_funcs_t* utilit
     navConsole_.bindMovement(&movement_);
 }
 void LifecycleCoordinator::reset() noexcept {
+    vision_.reset();
     navConsole_.reset(); movement_.reset();
     commandContextActive_=false; commandPlayer_={};
     commandArgv0_={}; commandArgv1_={}; commandArgs_={};
@@ -97,6 +100,7 @@ void LifecycleCoordinator::reset() noexcept {
     }
     agents_.reset(); registry_.reset();
     engineFunctions_=nullptr; utilityFunctions_=nullptr; gameDllFunctions_=nullptr;
+    engineGlobals_=nullptr;
     status_={}; traceSink_=nullptr; joinTraceSink_=nullptr; removalTraceSink_=nullptr;
 }
 void LifecycleCoordinator::serverActivate(int clientMax) noexcept {
@@ -104,6 +108,7 @@ void LifecycleCoordinator::serverActivate(int clientMax) noexcept {
         ? host::LifecycleResult::rejected(host::HostError::InvalidLifecycle)
         : registry_.activateMap(static_cast<std::uint16_t>(clientMax));
     if(result.changed()) {
+        vision_.reset();
         ++status_.mapActivations;
         if(status_.mapActivations>1) ++status_.mapReplays;
         movement_.resetMap(); clients_[0].fake.queuePrimaryCreate();
@@ -111,6 +116,7 @@ void LifecycleCoordinator::serverActivate(int clientMax) noexcept {
     emit(host::LifecycleEventKind::MapActivated,result);
 }
 void LifecycleCoordinator::serverDeactivate() noexcept {
+    vision_.reset();
     navConsole_.invalidate(nav::runtime::SessionReason::MapChanged); movement_.resetMap();
     for(auto& client:clients_) {
         const auto action=client.join.cancel(cstrike::JoinError::MapDeactivated);
@@ -140,6 +146,7 @@ void LifecycleCoordinator::clientDisconnect(edict_t* entity) noexcept {
     if(client && client->fake.entityFor(player)!=entity) {
         emit(host::LifecycleEventKind::PlayerDisconnected,host::LifecycleResult::rejected(host::HostError::InvalidPlayer)); return;
     }
+    vision_.forget(player);
     movement_.forget(player);
     if(client) {
         navConsole_.invalidateActor(player,nav::runtime::SessionReason::Disconnected);
@@ -182,6 +189,7 @@ RemovalResult LifecycleCoordinator::remove(core::PlayerId player) noexcept {
     auto* client=findClient(player);
     if(!client) return {debug::RemovalOutcome::NoOp,debug::RemovalError::None,{},true,false};
     if(client->fake.removalPending()) return {debug::RemovalOutcome::NoOp,debug::RemovalError::None,player,true,false};
+    vision_.forget(player);
     movement_.forget(player);
     navConsole_.invalidateActor(player,nav::runtime::SessionReason::Disconnected);
     emitJoin(*client,client->join.cancel(cstrike::JoinError::Disconnected));
@@ -228,6 +236,9 @@ void LifecycleCoordinator::startFrame() noexcept {
         if(!registry_.isMapActive() || registry_.mapGeneration()!=map || registry_.currentTick()!=tick) return;
         navConsole_.moveFrame(*this,client.fake.activePlayer());
     }
+    if(registry_.isMapActive() && registry_.mapGeneration()==map && registry_.currentTick()==tick)
+        vision_.frame(*this,engineFunctions_,engineGlobals_ ? engineGlobals_->time :
+            (std::numeric_limits<float>::quiet_NaN)());
 }
 MovementResult LifecycleCoordinator::submitCommand(core::PlayerId player,core::MapGeneration map,
     core::TickId tick,const core::BotCommand& command) noexcept {

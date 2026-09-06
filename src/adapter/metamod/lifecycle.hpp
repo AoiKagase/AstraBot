@@ -11,6 +11,7 @@
 
 #include "adapter/cstrike/join_state.hpp"
 #include "adapter/cstrike/messages.hpp"
+#include "adapter/cstrike/vision.hpp"
 #include "adapter/cstrike/nav/console.hpp"
 #include "debug/host_trace.hpp"
 #include "host/bot_agents.hpp"
@@ -36,7 +37,8 @@ public:
         enginefuncs_t* engineFunctions,
         mutil_funcs_t* utilityFunctions,
         DLL_FUNCTIONS* gameDllFunctions,
-        cstrike::UserMessageIds userMessageIds) noexcept;
+        cstrike::UserMessageIds userMessageIds,
+        globalvars_t* engineGlobals = nullptr) noexcept;
     void reset() noexcept;
 
     void serverActivate(int clientMax) noexcept;
@@ -107,6 +109,7 @@ public:
     }
     LifecycleStatus status() const noexcept { return status_; }
     cstrike::NavConsole& navConsole() noexcept { return navConsole_; }
+    const cstrike::VisionAdapter& vision() const noexcept { return vision_; }
 
 private:
     struct ClientState {
@@ -146,7 +149,9 @@ private:
     std::array<ClientState,host::kMaxClientSlots> clients_{};
     MovementCoordinator movement_{};
     cstrike::NavConsole navConsole_{};
+    cstrike::VisionAdapter vision_{};
     enginefuncs_t* engineFunctions_{nullptr};
+    globalvars_t* engineGlobals_{nullptr};
     mutil_funcs_t* utilityFunctions_{nullptr};
     DLL_FUNCTIONS* gameDllFunctions_{nullptr};
     cstrike::MessageDecoder messageDecoder_{};

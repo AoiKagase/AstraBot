@@ -208,7 +208,8 @@ C_DLLEXPORT FORCE_STACK_ALIGN int Meta_Attach(
         engineFunctions,
         gpMetaUtilFuncs,
         gameDllFunctions->dllapi_table,
-        userMessageIds);
+        userMessageIds,
+        gEngineGlobals);
     // The bootstrap table contains Metamod's command-registration wrapper.
     // GetHookTables returns a different table that bypasses unload tracking.
     astrabot::adapter::metamod::lifecycleCoordinator().navConsole().configure(
