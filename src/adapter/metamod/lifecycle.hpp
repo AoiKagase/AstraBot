@@ -13,6 +13,7 @@
 #include "adapter/cstrike/messages.hpp"
 #include "adapter/cstrike/vision.hpp"
 #include "adapter/cstrike/sound.hpp"
+#include "adapter/cstrike/visual_effects.hpp"
 #include "adapter/cstrike/nav/console.hpp"
 #include "debug/host_trace.hpp"
 #include "host/bot_agents.hpp"
@@ -115,7 +116,10 @@ public:
     void soundPrecache(int,const char*,std::uint16_t) noexcept;
     void rejectSoundHook() noexcept { sound_.rejectHook(); }
     void emitSound(const edict_t*,const float*,int,const char*,float,float,int,int,bool) noexcept;
-    void playbackEvent(int,const edict_t*,std::uint16_t,float,const float*) noexcept;
+    void playbackEvent(int,const edict_t*,std::uint16_t,float,const float*,const float* = nullptr,float = 0,float = 0,int = 0,int = 0,int = 0,int = 0) noexcept;
+    const cstrike::VisualEffects& visualEffects() const noexcept { return visualEffects_; }
+    bool flashCapability() const noexcept { return perceptionMessageIds_.screenFade > 0; }
+    bool smokeCapability() const noexcept { return sound_.events().supports(cstrike::EventKind::Smoke); }
     const core::perception::TeamRoster& teams() const noexcept { return teams_; }
     core::perception::RoundGeneration round() const noexcept { return round_; }
     struct PerceptionIdentityDiagnostics {
@@ -165,6 +169,8 @@ private:
     cstrike::NavConsole navConsole_{};
     cstrike::VisionAdapter vision_{};
     cstrike::SoundAdapter sound_{};
+    cstrike::VisualEffects visualEffects_{};
+    bool advanceVisualEffects() noexcept;
     core::perception::TeamRoster teams_{};
     core::perception::RoundGeneration round_{1};
     PerceptionIdentityDiagnostics identityDiagnostics_{};

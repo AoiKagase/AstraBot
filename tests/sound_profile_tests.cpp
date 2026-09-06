@@ -31,10 +31,12 @@ int main() {
     assert(catalog.find(413) == a::EventKind::Unknown);
     assert(catalog.bind(413,"events/ak47.sc") == a::EventBinding::Conflict);
     assert(catalog.bind(5,"events/createsmoke.sc") == a::EventBinding::Registered && catalog.find(5) == a::EventKind::Smoke);
+    assert(catalog.supports(a::EventKind::Smoke));
     assert(catalog.bind(6,"events/unknown.sc") == a::EventBinding::Unsupported);
     assert(catalog.bind(0,"events/ak47.sc") == a::EventBinding::Invalid);
     assert(catalog.bind(7,nullptr) == a::EventBinding::Invalid);
     catalog.reset(); assert(catalog.find(413) == a::EventKind::Unknown);
+    assert(!catalog.supports(a::EventKind::Smoke));
     for (std::uint16_t i=1; i<=a::EventCatalog::capacity; ++i) assert(catalog.bind(i,"events/ak47.sc") == a::EventBinding::Registered);
     assert(catalog.bind(999,"events/ak47.sc") == a::EventBinding::Full);
 }

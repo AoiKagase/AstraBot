@@ -1,32 +1,29 @@
 # State
-Status: P4-04 complete; P4-05 through P4-09 pending. P4 goal remains active.
+Status: P4-05 pre-merge gates passed; P4-06 through P4-09 pending.
 Goal: complete approved P4; no project-wide Finish or live checks.
-Main: .worktrees/main-integration, implementation837e0d3 (base a4f7c50).
-Dedicated branch/worktree codex/p404-anonymous-sound retained.
+Branch/worktree: codex/p405-visual-interference, .worktrees/p405-visual-interference.
+Base main2818a3a; main remains in .worktrees/main-integration.
 Plan: docs/plans/phase-4-perception-world-model.md.
-Report: docs/reports/p4-04-anonymous-sound.md.
-Next: P4-05, new dedicated branch/worktree from current main. Read its complete
-plan, source smoke event/ScreenFade path and settings before implementation.
+Report: docs/reports/p4-05-visual-interference.md.
 
-P4-04: SDK-free anonymous sound memory,256-unit regions,0.5/3s original-time
-decay; queue256,32 events/frame,32 receivers,16 retained each. Emission-time
-listener snapshots/epochs prevent queued revival. No added engine trace.
-Dynamic precache mapping, pre/post hook revision/serial validation, six exports.
-Clock recovery preserves Core time/sequence guards. See source capability table.
-Pre-merge Windows46/56, Linux45; merged main Windows46/56, Linux45 all passed.
-Main Metamod50.36s, portable29.34s, Linux17.82s. Release PE32/x86 exactly6 exports.
-Main DLL SHA256 071c8b8d3e20c190ca10d45906a3ff758eeaf68d8f8d50764eab25ed27cb5339.
-Final verification commit changes plan/report/STATE only.
+P4-05: SDK-free Adapter VisualEffects,32 smoke/32 flash,115-unit radius/22s
+configurable defaults; ScreenFade7-field validation, optional capability lookup;
+initial createsmoke.sc only (i2=1,b2=0,null invoker,flags0/FEV_RELIABLE).
+Recurring particle events i2=4 excluded. White flags0 nonzero alpha fades only.
+Vision samples check effects before/after trace; effect revision changes discard
+new scan while old memory decays. Clock recovery retains original deadlines.
+Targeted model/decoder/adapter and P4-01 through04 regressions passed7/7.
+New tests cover1/8/16 observers x8/16/100ms, overflow, head/body, reentrant effects,
+flash retirement, original memory timestamps. Reborn vision waits existing phase.
+Pre-merge: Windows portable48/48, Metamod59/59, Linux47/47, Release PE32/six exports.
+Next: final diff/FocalSpan update, explicit stage+commit; ff-only main,
+all gates again; docs/plan/STATE completion commit; then new P4-06 worktree.
+Do not edit tracked files during full replay gates (source dirty state is checked).
 
 SDK7ec9b014f8c0a947a724644aebe34eb33706e44b;
 ReGameDLL_CS679973265e1ac99a43193119e0da212ee568f5f9 (MIT).
-PM_PlaySound footstep coverage and HE TE_EXPLOSION remain unsupported/unproven.
-No inferred sound or emitter identity is exported to Core. P4-05 reuses the
-createsmoke.sc mapping; P4-04 does not implement smoke visibility effects.
-Graph lacked usable call/test context; source fallback used. FocalSpan updated.
-
+Source event/setting table recorded before implementation in report.
+Graph lacked useful context; source fallback used. FocalSpan initialized/queried.
 No subagents, push or cleanup. Preserve root codex/p307-progress-recovery edits.
 Never stage local .focalspan index/config. Every shell command starts with rtk.
 Capture and poll long command sessions including commits; verify exit codes.
-Do not edit tracked files during full gates: P3 replay checks source dirty state.
-Use ff-only main integration then rerun every gate for each remaining P4 item.

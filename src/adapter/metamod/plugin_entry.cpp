@@ -89,6 +89,9 @@ bool resolveUserMessageIds(
     ids.teamInfo = utilityFunctions->pfnGetUserMsgID(
         PLID, "TeamInfo", &messageSize);
     ids.hltv = utilityFunctions->pfnGetUserMsgID(PLID, "HLTV", &messageSize);
+    ids.screenFade = utilityFunctions->pfnGetUserMsgID(PLID, "ScreenFade", &messageSize);
+    if (ids.screenFade == ids.vguiMenu || ids.screenFade == ids.showMenu ||
+        ids.screenFade == ids.teamInfo || ids.screenFade == ids.hltv) ids.screenFade = 0;
     return ids.valid();
 }
 

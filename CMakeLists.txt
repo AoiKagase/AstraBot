@@ -247,6 +247,7 @@ if(ASTRABOT_BUILD_METAMOD)
     endforeach()
 
     add_library(astrabot_mm SHARED
+        src/adapter/cstrike/visual_effects.cpp
         src/adapter/cstrike/sound.cpp
         src/adapter/cstrike/sound_profile.cpp
         src/adapter/metamod/sound_hooks.cpp
@@ -299,6 +300,14 @@ endif()
 
 if(ASTRABOT_BUILD_TESTS)
     enable_testing()
+    add_executable(astrabot_screen_fade_tests tests/screen_fade_tests.cpp src/adapter/cstrike/messages.cpp)
+    target_link_libraries(astrabot_screen_fade_tests PRIVATE astrabot_core)
+    astrabot_enable_warnings(astrabot_screen_fade_tests)
+    add_test(NAME astrabot.screen_fade COMMAND astrabot_screen_fade_tests)
+    add_executable(astrabot_visual_effects_tests tests/visual_effects_tests.cpp src/adapter/cstrike/visual_effects.cpp)
+    target_link_libraries(astrabot_visual_effects_tests PRIVATE astrabot_core)
+    astrabot_enable_warnings(astrabot_visual_effects_tests)
+    add_test(NAME astrabot.visual_effects COMMAND astrabot_visual_effects_tests)
     add_executable(astrabot_sound_profile_tests tests/sound_profile_tests.cpp src/adapter/cstrike/sound_profile.cpp)
     target_link_libraries(astrabot_sound_profile_tests PRIVATE astrabot_core)
     astrabot_enable_warnings(astrabot_sound_profile_tests)
@@ -636,6 +645,7 @@ if(ASTRABOT_BUILD_TESTS)
         add_test(NAME astrabot.adapter.ladder_scanner COMMAND astrabot_ladder_scanner_tests)
 
         add_executable(astrabot_adapter_entry_tests
+            src/adapter/cstrike/visual_effects.cpp
             src/adapter/cstrike/sound.cpp
             src/adapter/cstrike/sound_profile.cpp
             src/adapter/metamod/sound_hooks.cpp
@@ -705,6 +715,7 @@ if(ASTRABOT_BUILD_TESTS)
         )
 
         add_executable(astrabot_fake_client_tests
+            src/adapter/cstrike/visual_effects.cpp
             src/adapter/cstrike/sound.cpp
             src/adapter/cstrike/sound_profile.cpp
             src/adapter/metamod/sound_hooks.cpp
@@ -735,6 +746,8 @@ if(ASTRABOT_BUILD_TESTS)
         add_test(NAME astrabot.adapter.visual_memory COMMAND astrabot_fake_client_tests --p402-tests)
         add_test(NAME astrabot.adapter.perception_identity COMMAND astrabot_fake_client_tests --p403-tests)
         add_test(NAME astrabot.adapter.sound COMMAND astrabot_fake_client_tests --p404-tests)
+        add_test(NAME astrabot.adapter.visual_effects COMMAND astrabot_fake_client_tests --p405-tests)
+        set_tests_properties(astrabot.adapter.visual_effects PROPERTIES TIMEOUT 60)
         set_tests_properties(astrabot.adapter.sound PROPERTIES TIMEOUT 60)
         set_tests_properties(astrabot.adapter.perception_identity PROPERTIES TIMEOUT 60)
         set_tests_properties(astrabot.adapter.visual_memory PROPERTIES TIMEOUT 60)

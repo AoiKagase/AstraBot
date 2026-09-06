@@ -50,6 +50,8 @@ public:
         if (!current(request.stamp.observer,request.stamp) || !current(request.target,request.stamp))
             return p::Reason::StaleIdentity;
         if (!p::finite(request.start) || !p::finite(request.end)) return p::Reason::InvalidGeometry;
+        const auto effect = owner.visualEffects().blocked(request.stamp.observer,request.start,request.end);
+        if (effect != p::Reason::None) return effect;
         const float start[]{static_cast<float>(request.start.x),static_cast<float>(request.start.y),static_cast<float>(request.start.z)};
         const float end[]{static_cast<float>(request.end.x),static_cast<float>(request.end.y),static_cast<float>(request.end.z)};
         for (int i=0; i<3; ++i)
@@ -64,6 +66,8 @@ public:
         engine.pfnTraceLine(start,end,0,observer,&result); // collide with players and glass
         if (!current(request.stamp.observer,request.stamp) || !current(request.target,request.stamp))
             return p::Reason::StaleIdentity;
+        const auto afterEffect = owner.visualEffects().blocked(request.stamp.observer,request.start,request.end);
+        if (afterEffect != p::Reason::None) return afterEffect;
         if (!std::isfinite(result.flFraction) || result.flFraction < 0 || result.flFraction > 1 ||
             !p::finite(point(result.vecEndPos)) ||
             (result.fStartSolid != 0 && result.fStartSolid != 1) ||
@@ -185,13 +189,14 @@ void VisionAdapter::frame(metamod::LifecycleCoordinator& owner, enginefuncs_t* e
             sample.alive = sample.alive && join && join->phase() == JoinPhase::Joined;
             if (sample.alive) sample.agent = binding.agent;
         }
-        if (!sample.alive) continue;
+        if (!sample.alive) { owner.visualEffects_.forget(player); continue; }
         sample.eye = eye(entity);
         sample.center = {double(entity->v.origin.x)+(double(entity->v.mins.x)+entity->v.maxs.x)/2,
             double(entity->v.origin.y)+(double(entity->v.mins.y)+entity->v.maxs.y)/2,
             double(entity->v.origin.z)+(double(entity->v.mins.z)+entity->v.maxs.z)/2};
         sample.forward = forward(entity->v.v_angle);
     }
+    const auto effectsRevision = owner.visualEffects().revision();
     vision_.update(input,queries);
     // Engine callbacks may retire a different candidate/observer while tracing.
     // Revalidate before consumers can read any publication from this frame.
@@ -214,6 +219,11 @@ void VisionAdapter::frame(metamod::LifecycleCoordinator& owner, enginefuncs_t* e
         memory_.invalidate(core::world::MemoryReason::InvalidFrame); return;
     }
     if (!memory_.advance(memoryFrame)) return;
+    if (owner.visualEffects().revision() != effectsRevision) {
+        // An effect arriving after an earlier successful sample invalidates this
+        // scan's evidence; existing visual memory still decays above.
+        vision_.reset(); return;
+    }
     for (const auto& player : memoryFrame.players) {
         if (!player.eligible || !player.agent.isValid()) continue;
         const auto* batch = vision_.latest(player.player);

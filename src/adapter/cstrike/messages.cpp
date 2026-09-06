@@ -180,6 +180,8 @@ void MessageDecoder::begin(
         kind_ = MessageKind::TeamInfo;
     } else if (messageType > 0 && messageType == ids_.hltv) {
         kind_ = MessageKind::Hltv;
+    } else if (messageType > 0 && messageType == ids_.screenFade) {
+        kind_ = MessageKind::ScreenFade;
     } else {
         kind_ = MessageKind::None;
         lastError_ = MessageDecodeError::UnknownMessage;
@@ -248,6 +250,15 @@ void MessageDecoder::write(FieldKind expected, int value) noexcept {
     }
 
     switch (kind_) {
+    case MessageKind::ScreenFade:
+        if (fieldIndex_ < 3) {
+            if (value < -32768 || value > 65535) { fail(MessageDecodeError::InvalidShape); return; }
+            event_.fadeTimesFlags[fieldIndex_] = static_cast<std::uint16_t>(value);
+        } else {
+            if (value < 0 || value > 255) { fail(MessageDecodeError::InvalidShape); return; }
+            event_.fadeColor[fieldIndex_-3U] = static_cast<std::uint8_t>(value);
+        }
+        break;
     case MessageKind::Hltv:
         if (value < 0 || value > 255) { fail(MessageDecodeError::InvalidShape); return; }
         event_.hltv[fieldIndex_] = static_cast<std::uint8_t>(value);
@@ -308,6 +319,7 @@ void MessageDecoder::writeText(const char* value) noexcept {
 }
 
 bool MessageDecoder::expects(FieldKind expected) const noexcept {
+    if (kind_ == MessageKind::ScreenFade) return fieldIndex_ < 7 && expected == (fieldIndex_ < 3 ? FieldKind::Short : FieldKind::Byte);
     if (kind_ == MessageKind::Hltv) return fieldIndex_ < 2 && expected == FieldKind::Byte;
     if (kind_ == MessageKind::VguiMenu) {
         static constexpr FieldKind fields[] = {
@@ -343,6 +355,8 @@ bool MessageDecoder::expects(FieldKind expected) const noexcept {
 
 bool MessageDecoder::complete() const noexcept {
     switch (kind_) {
+    case MessageKind::ScreenFade:
+        return fieldIndex_ == 7;
     case MessageKind::Hltv:
         return fieldIndex_ == 2;
     case MessageKind::VguiMenu:

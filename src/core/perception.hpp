@@ -20,7 +20,8 @@ struct VisionSettings {
 };
 enum class Reason : std::uint8_t {
     None, InvalidSettings, InvalidFrame, StaleIdentity, InvalidGeometry,
-    OutOfRange, OutsideFov, Occluded, MissingEngine, InvalidTrace, Count
+    OutOfRange, OutsideFov, Occluded, MissingEngine, InvalidTrace,
+    SmokeOccluded, FlashBlind, EffectsOverflow, Count
 };
 struct Stamp {
     BotAgentId agent{};

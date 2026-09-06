@@ -19,6 +19,7 @@ enum class MessageKind : std::uint8_t {
     ShowMenu,
     TeamInfo,
     Hltv,
+    ScreenFade,
 };
 
 struct UserMessageIds {
@@ -26,6 +27,7 @@ struct UserMessageIds {
     int showMenu{0};
     int teamInfo{0};
     int hltv{0}; // Optional capability, discovered from the GameDLL.
+    int screenFade{0};
 
     constexpr bool valid() const noexcept {
         return vguiMenu > 0 && showMenu > 0 && teamInfo > 0;
@@ -41,6 +43,8 @@ struct MessageEvent {
     std::uint8_t menuType{0};
     std::uint8_t needMore{0};
     std::array<std::uint8_t,2> hltv{};
+    std::array<std::uint16_t,3> fadeTimesFlags{};
+    std::array<std::uint8_t,4> fadeColor{};
     std::array<char, kMaxMessageTextBytes + 1U> text{};
 };
 

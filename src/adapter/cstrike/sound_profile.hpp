@@ -15,6 +15,10 @@ public:
     void reset() noexcept { entries_ = {}; count_ = 0; }
     EventBinding bind(std::uint16_t,const char*) noexcept;
     EventKind find(std::uint16_t) const noexcept;
+    bool supports(EventKind kind) const noexcept {
+        for (std::size_t i=0;i<count_;++i) if (entries_[i].kind == kind && !entries_[i].conflict) return true;
+        return false;
+    }
     std::size_t size() const noexcept { return count_; }
 private:
     struct Entry { std::uint16_t index{}; EventKind kind{}; bool conflict{}; std::array<char,64> name{}; };

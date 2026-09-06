@@ -535,6 +535,7 @@ int captureGetUserMsgID(
         return 13;
     }
     if (std::strcmp(messageName, "HLTV") == 0) return 14;
+    if (std::strcmp(messageName, "ScreenFade") == 0) return 15;
     return 0;
 }
 
@@ -2351,6 +2352,7 @@ void testDetachDirectlyCleansActiveEntityOnce() {
 #include "p402_memory_tests.hpp"
 #include "p403_identity_tests.hpp"
 #include "p404_sound_tests.hpp"
+#include "p405_effect_tests.hpp"
 
 } // namespace
 
@@ -2367,6 +2369,7 @@ int main(int argc,char** argv) {
     if(argc==2 && std::strcmp(argv[1],"--p402-tests")==0) { p402::run(); return 0; }
     if(argc==2 && std::strcmp(argv[1],"--p403-tests")==0) { p403::run(); return 0; }
     if(argc==2 && std::strcmp(argv[1],"--p404-tests")==0) { p404::run(); return 0; }
+    if(argc==2 && std::strcmp(argv[1],"--p405-tests")==0) { p405::run(); return 0; }
     assert(argc==1);
     testNavWorldQueries();
     testNavJumpProbeWorldQueries();

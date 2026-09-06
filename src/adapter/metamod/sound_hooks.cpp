@@ -44,8 +44,8 @@ void ambient(edict_t* emitter,float* origin,const char* sample,float volume,floa
     if (finish(Call::Ambient) && emitted()) lifecycleCoordinator().emitSound(emitter,origin,0,sample,volume,attenuation,flags,pitch,true);
     ignored();
 }
-void playback(int flags,const edict_t* invoker,unsigned short event,float delay,float* origin,float*,float,float,int,int,int,int) {
-    if (finish(Call::Playback) && emitted()) lifecycleCoordinator().playbackEvent(flags,invoker,event,delay,origin);
+void playback(int flags,const edict_t* invoker,unsigned short event,float delay,float* origin,float* angles,float f1,float f2,int i1,int i2,int b1,int b2) {
+    if (finish(Call::Playback) && emitted()) lifecycleCoordinator().playbackEvent(flags,invoker,event,delay,origin,angles,f1,f2,i1,i2,b1,b2);
     ignored();
 }
 }
