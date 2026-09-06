@@ -1,0 +1,135 @@
+{
+  "schemaVersion": 1,
+  "seed": 409,
+  "settings": {
+    "visualRetentionUs": 5000000,
+    "soundRetentionUs": 3000000,
+    "reportRetentionUs": 5000000,
+    "reportFreshnessUs": 500000,
+    "distributionStepUs": 200000,
+    "smokeRadius": 115,
+    "smokeRetentionUs": 22000000
+  },
+  "producers": {
+    "portable": {
+      "fixtureFiles": [
+        "tests/perception/replay.cpp",
+        "tests/perception/evidence.hpp",
+        "tests/nav/route_fixture.hpp",
+        "tools/check-perception-evidence.py"
+      ],
+      "cases": [
+        {
+          "scenario": "timeline",
+          "actors": [
+            1,
+            8,
+            16
+          ],
+          "frameUs": [
+            8000,
+            16000,
+            100000
+          ],
+          "nav": [
+            false,
+            true
+          ]
+        }
+      ]
+    },
+    "adapter": {
+      "fixtureFiles": [
+        "tests/adapter/fake_client_tests.cpp",
+        "tests/adapter/p409_replay.hpp",
+        "tests/adapter/p401_vision_tests.hpp",
+        "tests/adapter/p404_sound_tests.hpp",
+        "tests/adapter/p405_effect_tests.hpp",
+        "tests/adapter/p406_world_tests.hpp",
+        "tests/adapter/p408_report_tests.hpp",
+        "tests/perception/evidence.hpp",
+        "tools/check-perception-evidence.py"
+      ],
+      "cases": [
+        {
+          "scenario": "hooks",
+          "actors": [
+            1,
+            8,
+            16
+          ],
+          "frameUs": [
+            8000,
+            16000,
+            100000
+          ],
+          "nav": [
+            false
+          ]
+        },
+        {
+          "scenario": "arrival",
+          "actors": [
+            1
+          ],
+          "frameUs": [
+            8000,
+            16000,
+            100000
+          ],
+          "nav": [
+            true
+          ]
+        },
+        {
+          "scenario": "recovery",
+          "actors": [
+            1
+          ],
+          "frameUs": [
+            8000,
+            16000,
+            100000
+          ],
+          "nav": [
+            true
+          ]
+        }
+      ]
+    }
+  },
+  "inputs": {
+    "timeline": [
+      "sight:x100 except receiver2",
+      "100ms:occluded",
+      "100ms:anonymous footstep region0",
+      "explicit report from1 then100ms:delivery",
+      "80x1ms:dense NAV fairness",
+      "2500ms:half",
+      "5000ms:expired",
+      "resee:x210",
+      "round increment",
+      "target generation increment and old batch replay",
+      "map increment"
+    ],
+    "hooks": [
+      "sight:x100",
+      "report from1",
+      "266 distinct footsteps x100+i/4",
+      "smoke and all observers flash",
+      "hidden target x4000;160 frames",
+      "23s:expired",
+      "x210;10x100ms:resee",
+      "round increment",
+      "disconnect target and reuse slot",
+      "map deactivate"
+    ],
+    "motion": [
+      "goto4 with footsteps every frame",
+      "visibility alternates200ms",
+      "optional freeze700ms",
+      "8s simulated motion",
+      "10 stopped frames"
+    ]
+  }
+}

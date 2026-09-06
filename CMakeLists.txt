@@ -390,6 +390,20 @@ if(ASTRABOT_BUILD_TESTS)
         CONTENT "add_test(astrabot.nav.fuzz.long \"$<TARGET_FILE:astrabot_nav_fuzz_tests>\" --cases 100000)\nset_tests_properties(astrabot.nav.fuzz.long PROPERTIES TIMEOUT 600)\n")
     if(NOT ASTRABOT_NAV_ASAN)
     find_package(Python3 3.9 REQUIRED COMPONENTS Interpreter)
+    add_executable(astrabot_perception_replay tests/perception/replay.cpp)
+    target_include_directories(astrabot_perception_replay PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests/nav")
+    target_link_libraries(astrabot_perception_replay PRIVATE astrabot_nav astrabot_core)
+    astrabot_enable_warnings(astrabot_perception_replay)
+    set_property(TARGET astrabot_perception_replay APPEND PROPERTY LINK_DEPENDS
+        "${CMAKE_CURRENT_BINARY_DIR}/CMakeCache.txt" "${CMAKE_CURRENT_SOURCE_DIR}/CMakeLists.txt"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tools/check-perception-evidence.py" "${CMAKE_CURRENT_SOURCE_DIR}/tests/perception/scenarios.json")
+    add_test(NAME astrabot.perception.replay COMMAND "${Python3_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tools/check-perception-evidence.py" run
+        --manifest "${CMAKE_CURRENT_SOURCE_DIR}/tests/perception/scenarios.json"
+        --producer portable --executable "$<TARGET_FILE:astrabot_perception_replay>"
+        --build-dir "${CMAKE_CURRENT_BINARY_DIR}"
+        --output "${CMAKE_CURRENT_BINARY_DIR}/perception-evidence/portable.json")
+    set_tests_properties(astrabot.perception.replay PROPERTIES TIMEOUT 420)
     add_executable(astrabot_nav_replay tests/nav/simulation/replay.cpp)
     target_include_directories(astrabot_nav_replay PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests/nav")
     target_link_libraries(astrabot_nav_replay PRIVATE astrabot_nav astrabot_core)
@@ -765,6 +779,15 @@ if(ASTRABOT_BUILD_TESTS)
         add_test(NAME astrabot.adapter.world_model COMMAND astrabot_fake_client_tests --p406-tests)
         add_test(NAME astrabot.adapter.distribution COMMAND astrabot_fake_client_tests --p407-tests)
         add_test(NAME astrabot.adapter.team_reports COMMAND astrabot_fake_client_tests --p408-tests)
+        set_property(TARGET astrabot_fake_client_tests APPEND PROPERTY LINK_DEPENDS
+            "${CMAKE_CURRENT_SOURCE_DIR}/tools/check-perception-evidence.py" "${CMAKE_CURRENT_SOURCE_DIR}/tests/perception/scenarios.json")
+        add_test(NAME astrabot.adapter.perception_replay COMMAND "${Python3_EXECUTABLE}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tools/check-perception-evidence.py" run
+            --manifest "${CMAKE_CURRENT_SOURCE_DIR}/tests/perception/scenarios.json"
+            --producer adapter --executable "$<TARGET_FILE:astrabot_fake_client_tests>"
+            --build-dir "${CMAKE_CURRENT_BINARY_DIR}"
+            --output "${CMAKE_CURRENT_BINARY_DIR}/perception-evidence/adapter.json")
+        set_tests_properties(astrabot.adapter.perception_replay PROPERTIES TIMEOUT 420)
         set_tests_properties(astrabot.adapter.visual_effects PROPERTIES TIMEOUT 60)
         set_tests_properties(astrabot.adapter.sound PROPERTIES TIMEOUT 60)
         set_tests_properties(astrabot.adapter.perception_identity PROPERTIES TIMEOUT 60)

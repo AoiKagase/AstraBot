@@ -24,6 +24,7 @@ jobs:
             build-portable-x86-test/Testing/Temporary/
             build-portable-x86-test/fuzz-artifacts/
             build-portable-x86-test/movement-evidence/
+            build-portable-x86-test/perception-evidence/
   nav-asan:
     runs-on: windows-2022
     timeout-minutes: 25
@@ -73,4 +74,5 @@ jobs:
             build-linux-x86/Testing/Temporary/
             build-linux-x86/fuzz-artifacts/
             build-linux-x86/movement-evidence/
+            build-linux-x86/perception-evidence/
   # Live HLDS/ReHLDS validation remains deferred until project-wide Finish.
