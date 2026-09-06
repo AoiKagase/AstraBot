@@ -1,6 +1,6 @@
 # P4-06 — 観測統合とWorldSnapshot
 
-Status: 実装・全事前gate通過。main統合後検証は未完了。
+Status: 実装・全事前gate・main統合後gate完了。
 Base: main `abad680`。専用branch `codex/p406-world-snapshot`。
 Plan: [P4計画](../plans/phase-4-perception-world-model.md#p4-06--観測統合とworldsnapshot)。
 
@@ -43,7 +43,11 @@ MemoryFrameで無効化と減衰を行い、視認と匿名音をstageして最�
 
 事前gate: Windows portable49/49 (29.55s)、Metamod61/61 (49.23s)、
 Linux portable48/48 (19.90s)。Release DLLは14C/x86、10B/PE32、指定6 exportのみ。
-mainへのff-only統合後、同じ全gateを再実行して結果を記録する。
+実装commit `ad010bc`をmainへff-only統合後、全gateを再実行した。
+Windows portable49/49 (29.99s)、Metamod61/61 (49.27s)、Linux portable48/48 (18.18s)。
+main Releaseは14C/x86、10B/PE32、以下の指定6 exportのみを確認した。
+`GetEngineFunctions`, `GetEntityAPI2`, `GiveFnptrsToDll`, `Meta_Attach`, `Meta_Detach`, `Meta_Query`。
+DLL SHA256: `7685064f68709ae3836a7145bd754ee5bc05a0665baa952ceabc61e2d6c5e014`。
 Graphは変更関数を収録できずsource fallbackを使用。FocalSpanでowner／取り込み契約を照会。
 SDK pin `7ec9b014f8c0a947a724644aebe34eb33706e44b`、DLL export変更なし。
 サブエージェント、push、削除、実機HLDS／ReHLDS検証は実行しない。
