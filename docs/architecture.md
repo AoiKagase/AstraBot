@@ -86,6 +86,17 @@ Future source direction is `src/core`, `world`, `perception`, `nav`,
 `src/adapter`.  This is a one-way compile dependency: adapters depend on Core
 contracts, Core never depends on adapters.
 
+P4-02 implements the first World Model slice as
+`core::world::VisualMemoryModel`. `VisionAdapter::memory()` exposes a const model;
+`latest(PlayerId)` is a read-only view valid until the next model mutation (copy
+the value when retaining it). The model consumes only public visible observation
+batches and geometry-free lifecycle identities after vision revalidation. Every
+valid frame decays remembered positions over five seconds, without extrapolating
+or reading hidden positions. This is all-player memory, not enemy selection.
+See [P4-02 contract](plans/p4-02-visual-memory.md) and
+[verification](reports/p4-02-visual-memory.md). Sound and NAV belief diffusion
+remain later work.
+
 ## Host boundary contract
 
 An `IGameHost`-equivalent port provides:

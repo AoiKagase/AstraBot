@@ -187,6 +187,8 @@ void movementCoexistence() {
         if (owner.navConsole().motionTrace().decision.state == nav::local::WalkState::Arrived) break;
     }
     assert(observed && gRunPlayerMoveCalls > moves);
+    const auto* memory = owner.vision().memory().latest(observer);
+    assert(memory && memory->count == 1);
     assert(owner.vision().observations().diagnostics(observer)->updates > 1);
     assert(owner.navConsole().motionTrace().decision.state == nav::local::WalkState::Arrived);
     gSimulateNav = false; detach();

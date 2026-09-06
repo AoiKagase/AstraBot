@@ -82,9 +82,11 @@ public:
 };
 }
 void VisionAdapter::reset() noexcept {
+    ++revision_; memory_.reset();
     roster_ = {}; vision_.reset(); map_ = {}; error_ = p::Reason::None;
 }
 void VisionAdapter::forget(core::PlayerId player) noexcept {
+    ++revision_; memory_.forget(player);
     vision_.forget(player);
     if (player.isValid() && player.slot <= roster_.size() && roster_[player.slot-1U].player == player)
         roster_[player.slot-1U] = {};
@@ -95,15 +97,18 @@ void VisionAdapter::frame(metamod::LifecycleCoordinator& owner, enginefuncs_t* e
     if (!registry.isMapActive()) { reset(); return; }
     if (map_ != registry.mapGeneration()) { reset(); map_ = registry.mapGeneration(); }
     if (!engine || !engine->pfnPEntityOfEntIndex || !engine->pfnIndexOfEdict) {
+        memory_.invalidate(core::world::MemoryReason::MissingEngine);
         vision_.reset(); error_ = p::Reason::MissingEngine; return;
     }
     const double micros = double(time)*1000000;
     if (!std::isfinite(micros) || micros < 0 || micros >= 18446744073709551616.0) {
+        memory_.invalidate(core::world::MemoryReason::InvalidFrame);
         vision_.reset(); error_ = p::Reason::InvalidFrame; return;
     }
     p::InputFrame input{};
     input.map = map_; input.tick = registry.currentTick(); input.timeMicros = static_cast<std::uint64_t>(micros);
     Queries queries(owner,*engine);
+    const auto revision = revision_;
     for (std::uint16_t slot=1; slot<=registry.clientMax(); ++slot) {
         const auto i = static_cast<std::size_t>(slot-1U);
         auto* entity = engine->pfnPEntityOfEntIndex(slot);
@@ -114,6 +119,7 @@ void VisionAdapter::frame(metamod::LifecycleCoordinator& owner, enginefuncs_t* e
         const auto prior = roster_[i];
         if (prior.player.isValid() && (!valid || prior.entity != entity || prior.serial != entity->serialnumber || prior.player != player)) {
             vision_.forget(prior.player);
+            memory_.forget(prior.player);
             // Never steal lifecycle ownership of a managed bot.
             if (!managed && player == prior.player) {
                 (void)registry.disconnectPlayer(player); player = {};
@@ -150,11 +156,29 @@ void VisionAdapter::frame(metamod::LifecycleCoordinator& owner, enginefuncs_t* e
     vision_.update(input,queries);
     // Engine callbacks may retire a different candidate/observer while tracing.
     // Revalidate before consumers can read any publication from this frame.
+    core::world::MemoryFrame memoryFrame{};
+    memoryFrame.map = input.map; memoryFrame.tick = input.tick; memoryFrame.timeMicros = input.timeMicros;
     for (const auto& sample : input.players) {
         if (!sample.player.isValid()) continue;
         const p::Stamp stamp{{},sample.player,input.map,input.tick,input.timeMicros};
-        if (!queries.current(sample.player,stamp)) vision_.forget(sample.player);
+        if (!queries.current(sample.player,stamp)) {
+            vision_.forget(sample.player); memory_.forget(sample.player);
+        } else {
+            memoryFrame.players[sample.player.slot-1U] = {sample.player,sample.agent,sample.alive};
+        }
     }
     error_ = vision_.frameReason();
+    // A lifecycle callback may have reset/retired data during any engine query.
+    if (revision_ != revision) return;
+    if (error_ == p::Reason::InvalidFrame || error_ == p::Reason::InvalidSettings) {
+        memory_.invalidate(core::world::MemoryReason::InvalidFrame); return;
+    }
+    if (!memory_.advance(memoryFrame)) return;
+    for (const auto& player : memoryFrame.players) {
+        if (!player.eligible || !player.agent.isValid()) continue;
+        const auto* batch = vision_.latest(player.player);
+        // Cached publications are not new evidence. Decay still ran above.
+        if (batch && batch->stamp.tick == input.tick) (void)memory_.observe(*batch);
+    }
 }
 } // namespace astrabot::adapter::cstrike

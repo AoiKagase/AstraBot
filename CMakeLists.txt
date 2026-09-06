@@ -75,6 +75,7 @@ function(astrabot_enable_metamod_compatibility target)
 endfunction()
 
 add_library(astrabot_core STATIC
+    src/core/visual_memory.cpp
     src/core/perception.cpp
     src/core/motor.cpp
     src/core/command.cpp
@@ -294,6 +295,10 @@ endif()
 
 if(ASTRABOT_BUILD_TESTS)
     enable_testing()
+    add_executable(astrabot_visual_memory_tests tests/visual_memory_tests.cpp)
+    target_link_libraries(astrabot_visual_memory_tests PRIVATE astrabot_core)
+    astrabot_enable_warnings(astrabot_visual_memory_tests)
+    add_test(NAME astrabot.visual_memory COMMAND astrabot_visual_memory_tests)
     add_executable(astrabot_perception_tests tests/perception_tests.cpp)
     target_link_libraries(astrabot_perception_tests PRIVATE astrabot_core)
     astrabot_enable_warnings(astrabot_perception_tests)
@@ -705,6 +710,8 @@ if(ASTRABOT_BUILD_TESTS)
         target_compile_features(astrabot_fake_client_tests PRIVATE cxx_std_17)
         target_compile_definitions(astrabot_fake_client_tests PRIVATE ASTRABOT_LADDER_HOST_TESTS)
         add_test(NAME astrabot.adapter.vision COMMAND astrabot_fake_client_tests --p401-tests)
+        add_test(NAME astrabot.adapter.visual_memory COMMAND astrabot_fake_client_tests --p402-tests)
+        set_tests_properties(astrabot.adapter.visual_memory PROPERTIES TIMEOUT 60)
         set_tests_properties(astrabot.adapter.vision PROPERTIES TIMEOUT 60)
         target_link_libraries(astrabot_fake_client_tests PRIVATE astrabot_core astrabot_nav)
         target_include_directories(astrabot_fake_client_tests
