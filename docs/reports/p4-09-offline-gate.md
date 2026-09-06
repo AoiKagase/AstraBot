@@ -1,6 +1,6 @@
 # P4-09 — Phase 4 offline integration gate
 
-Status: 実装・最終版の全事前gate完了。main統合後gateは未完了。
+Status: P4-01〜09の実装・適用可能なオフライン検証完了。P4-09のmain統合後全gateも完了。
 Base main `cedbfdc`。専用branch `codex/p409-offline-gate`。
 Plan: [P4計画](../plans/phase-4-perception-world-model.md)。
 
@@ -83,7 +83,41 @@ Linux x86で940,696／1,470,560 bytes。共有NAV topology／allocator／process
 最終版（独立音checkpoint、順序・出所・配信先検査を含む）の事前gate:
 Windows portable52/52 (156.36s)、Metamod67/67 (212.90s)、Linux51/51 (99.67s)通過。
 Releaseはmachine14C／magic10B (PE32)、GetEngineFunctions、GetEntityAPI2、GiveFnptrsToDll、
-Meta_Attach、Meta_Detach、Meta_Queryの指定6 exportのみ。mainへfast-forward後、全gateを再実行する。
+Meta_Attach、Meta_Detach、Meta_Queryの指定6 exportのみ。
+
+## main統合後の最終検証と完了判定
+
+実装コミット`17ae95a6b364e1b1d53b5f50305936966d9dc75f`をmainへfast-forwardした。
+全証跡のcontextはこのrevision、dirty=falseであることを確認した。
+以下をmain上で再実行し、ソースを固定したまま通過した。
+
+| Gate | main結果 |
+|---|---|
+| Windows x86 portable Debug /WX・inspector ON | 52/52、153.70s |
+| Windows x86 Metamod Debug /WX・inspector ON | 67/67、195.62s |
+| Linux x86 portable Debug・warnings-as-errors・inspector ON | 51/51、91.23s |
+| Release DLL | PE32、machine14C、magic10B、指定6 exportのみ |
+
+main DLL SHA256:
+`624df77ad6df0abf456629ba86995bba68c75a2036f58b3df64f0dbb90040f7d`。
+P4-09はproduction sourceを変更しないため、P4-08のmain artifactと同一hashである。
+全CTestのログは各`build-*-x86-test/Testing/Temporary/LastTest.log`。
+統合証跡は`build-portable-x86-test/perception-evidence/portable.json`、
+`build-metamod-x86-test/perception-evidence/adapter.json`、
+`build-linux-x86-test/perception-evidence/portable.json`と隣接raw／logに保持する。
+この後の完了記録コミットは文書3ファイルのみで、検証したコードを変更しない。
+
+mainの実測最大値: Core/NAVは16入力処理／frame、256接続／frame、35分布job visit／frame、
+元観測からの最大受信遅延300,000µs。密なNAVの最大処理遅延は4,700,000µsで、
+完了済み分布を保持しつつ古い記憶は既定期限で失効する。Windows／Linuxで同じ値を確認した。
+Fake-engineは516入力処理、512受聴検査、8視認trace／frame、受信遅延最大800,000µs。
+全値は既定の有限予算内であり、実機性能測定ではない。
+
+完了監査ではP4-01〜08の各報告・実装・Core/Adapter CTest登録、P4-09の6スライス、
+独立音→報告の知識差、全33条件の独立プロセス一致と破損拒否、既存移動回帰を確認した。
+Graphは新規関係の十分な証拠を提供しなかったためsource/diffを確認し、両worktreeでFocalSpanを更新した。
+専用branch・worktreeは保持し、rootのP3-07系未コミット変更を保護した。
+P4の適用可能なオフライン作業を完了とし、下記実機受入は引き続き未完了とする。
 
 ## 残る受入
 
