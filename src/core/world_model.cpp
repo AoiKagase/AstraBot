@@ -16,6 +16,7 @@ bool sameStamp(const p::Stamp& a,const p::Stamp& b) noexcept {
 }
 }
 void WorldModel::reset() noexcept {
+    reports_.reset();
     clearDistributions();
     beginUpdate(); visual_.reset(); sounds_.reset(); frame_ = {}; queues_ = {}; diagnostics_ = {};
 }
@@ -26,10 +27,12 @@ void WorldModel::beginUpdate() noexcept {
 bool WorldModel::reject(WorldReason reason) noexcept {
     diagnostics_.reason = reason; ++diagnostics_.rejected[static_cast<std::size_t>(reason)]; return false;
 }
-bool WorldModel::advance(const MemoryFrame& frame) noexcept {
+bool WorldModel::advance(const MemoryFrame& frame,const p::TeamRoster& teams) noexcept {
     beginUpdate();
     const bool visual = visual_.advance(frame), sounds = sounds_.advance(frame);
-    if (!visual || !sounds) {
+    const bool reports=reports_.advance(frame,teams);
+    if (!visual || !sounds || !reports) {
+        reports_.invalidate();
         visual_.invalidate(MemoryReason::InvalidFrame); sounds_.invalidate(SoundReason::InvalidFrame);
         return reject(WorldReason::InvalidFrame);
     }
@@ -84,6 +87,9 @@ bool WorldModel::publish(SourceQueueDiagnostics queues) noexcept {
         } else (void)reject(ref.visual ? WorldReason::VisualRejected : WorldReason::SoundRejected);
         i = end;
     }
+    // TeamReport is the final source in observation-ID order. Its private FIFO
+    // is allocated monotonically at explicit send, with receivers in slot order.
+    reports_.deliver();
     for (std::size_t row=0;row<distributions_.size();++row) {
         const auto* memory=visual_.latest(frame_.players[row].player);
         for (auto& entry:distributions_[row]) {
@@ -98,8 +104,8 @@ bool WorldModel::publish(SourceQueueDiagnostics queues) noexcept {
     }
     queues_ = queues; collecting_ = false; published_ = true; ++diagnostics_.publications; return true;
 }
-void WorldModel::forget(PlayerId player) noexcept { visual_.forget(player); sounds_.forget(player); }
-void WorldModel::beginRound(p::RoundGeneration round) noexcept { beginUpdate(); clearDistributions(); visual_.beginRound(round); sounds_.beginRound(round); }
+void WorldModel::forget(PlayerId player) noexcept { visual_.forget(player); sounds_.forget(player); reports_.forget(player); }
+void WorldModel::beginRound(p::RoundGeneration round) noexcept { beginUpdate(); clearDistributions(); visual_.beginRound(round); sounds_.beginRound(round); reports_.beginRound(round); }
 void WorldModel::clearDistributions() noexcept {
     for (auto& row : distributions_) for (auto& entry : row) if(entry.target.isValid()) entry = {};
 }
@@ -127,6 +133,12 @@ std::optional<WorldSnapshot> WorldModel::latest(PlayerId player) const noexcept 
     if (!visual || !sounds || !sameStamp(visual->stamp,sounds->stamp) || visual->stamp.map != frame_.map ||
         visual->stamp.round != frame_.round || visual->stamp.tick != frame_.tick || visual->stamp.timeMicros != frame_.timeMicros) return std::nullopt;
     WorldSnapshot snapshot{visual->stamp,visual,sounds,0,0,0,queues_};
+    snapshot.reports=reports_.latest(player);
+    if(snapshot.reports) for(std::size_t i=0;i<snapshot.reports->count;++i) {
+        const auto& report=snapshot.reports->reports[i].report;
+        snapshot.oldestReportAgeMicros=(std::max)(snapshot.oldestReportAgeMicros,frame_.timeMicros-report.origin.observedMicros);
+        snapshot.maxReceiptDelayMicros=(std::max)(snapshot.maxReceiptDelayMicros,report.identity.receivedMicros-report.origin.observedMicros);
+    }
     for (std::size_t i=0;i<visual->count;++i) {
         const auto& memory = visual->memories[i];
         const auto& entry = distributions_[player.slot-1U][memory.target.slot-1U];
@@ -139,5 +151,16 @@ std::optional<WorldSnapshot> WorldModel::latest(PlayerId player) const noexcept 
         snapshot.maxReceiptDelayMicros = (std::max)(snapshot.maxReceiptDelayMicros,id.receivedMicros-id.observedMicros);
     }
     return snapshot;
+}
+std::optional<KnownPosition> WorldSnapshot::known(PlayerId target) const noexcept {
+    if(visual) for(std::size_t i=0;i<visual->count;++i) {
+        const auto& memory=visual->memories[i];
+        if(memory.target==target) return KnownPosition{memory.lastKnownPosition,memory.confidence,p::ObservationSource::Vision,memory.identity,{}};
+    }
+    if(reports) for(std::size_t i=0;i<reports->count;++i) {
+        const auto& memory=reports->reports[i];
+        if(memory.report.target==target) return KnownPosition{memory.report.position,memory.confidence,p::ObservationSource::TeamReport,memory.report.origin,memory.report.reporter};
+    }
+    return std::nullopt;
 }
 }

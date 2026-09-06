@@ -3,13 +3,14 @@
 #include "adapter/metamod/plugin_entry.hpp"
 #include "core/perception.hpp"
 #include "core/visual_memory.hpp"
+#include "core/world_model.hpp"
 
 namespace astrabot::adapter::metamod { class LifecycleCoordinator; }
 namespace astrabot::adapter::cstrike {
 // Engine pointers/serials and unobserved geometry stay inside this adapter.
 class VisionAdapter final {
 public:
-    explicit VisionAdapter(core::world::VisualMemoryModel& memory) noexcept : memory_(memory) {}
+    explicit VisionAdapter(core::world::WorldModel& world) noexcept : world_(world),memory_(world.visualReducer()) {}
     void reset() noexcept;
     void forget(core::PlayerId) noexcept;
     void beginRound(core::perception::RoundGeneration) noexcept;
@@ -27,6 +28,7 @@ private:
     };
     std::array<EntityBinding, core::perception::kPlayerCapacity> roster_{};
     core::perception::Vision vision_{};
+    core::world::WorldModel& world_;
     core::world::VisualMemoryModel& memory_;
     std::uint64_t revision_{};
     core::MapGeneration map_{};

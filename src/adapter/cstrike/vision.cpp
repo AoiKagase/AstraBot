@@ -93,7 +93,7 @@ void VisionAdapter::reset() noexcept {
     roster_ = {}; vision_.reset(); map_ = {}; error_ = p::Reason::None;
 }
 void VisionAdapter::forget(core::PlayerId player) noexcept {
-    ++revision_; memory_.forget(player);
+    ++revision_; memory_.forget(player); world_.forgetReports(player);
     vision_.forget(player);
     // Keep the serial binding as a tombstone until authoritative reuse. Clearing
     // it here would let a delayed message rediscover the same disconnected edict.
@@ -129,11 +129,11 @@ bool VisionAdapter::synchronize(metamod::LifecycleCoordinator& owner, enginefunc
         const bool managed = owner.agents().findByPlayer(player).isValid();
         const auto prior = roster_[i];
         if (prior.player.isValid() && !player.isValid() && valid && prior.entity == entity && prior.serial == entity->serialnumber) {
-            vision_.forget(prior.player); memory_.forget(prior.player); owner.teams_.forget(prior.player);
+            vision_.forget(prior.player); memory_.forget(prior.player); world_.forgetReports(prior.player); owner.teams_.forget(prior.player);
             continue;
         }
         if (prior.player.isValid() && (!valid || prior.entity != entity || prior.serial != entity->serialnumber || prior.player != player)) {
-            vision_.forget(prior.player); memory_.forget(prior.player); owner.teams_.forget(prior.player);
+            vision_.forget(prior.player); memory_.forget(prior.player); world_.forgetReports(prior.player); owner.teams_.forget(prior.player);
             if (!managed && player == prior.player) { (void)registry.disconnectPlayer(player); player = {}; }
             roster_[i] = valid ? EntityBinding{} : prior;
         }
@@ -207,7 +207,7 @@ void VisionAdapter::frame(metamod::LifecycleCoordinator& owner, enginefuncs_t* e
         if (!sample.player.isValid()) continue;
         const p::Stamp stamp{{},sample.player,input.map,input.tick,input.timeMicros,input.round};
         if (!queries.current(sample.player,stamp)) {
-            vision_.forget(sample.player); memory_.forget(sample.player);
+            vision_.forget(sample.player); memory_.forget(sample.player); world_.forgetReports(sample.player);
         } else {
             memoryFrame.players[sample.player.slot-1U] = {sample.player,sample.agent,sample.alive};
         }
@@ -218,7 +218,7 @@ void VisionAdapter::frame(metamod::LifecycleCoordinator& owner, enginefuncs_t* e
     if (error_ == p::Reason::InvalidFrame || error_ == p::Reason::InvalidSettings) {
         memory_.invalidate(core::world::MemoryReason::InvalidFrame); return;
     }
-    if (!owner.world_.advance(memoryFrame)) return;
+    if (!owner.world_.advance(memoryFrame,owner.teams())) return;
     if (owner.visualEffects().revision() != effectsRevision) {
         // An effect arriving after an earlier successful sample invalidates this
         // scan's evidence; existing visual memory still decays above.

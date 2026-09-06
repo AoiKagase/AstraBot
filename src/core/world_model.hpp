@@ -2,6 +2,7 @@
 #pragma once
 #include "core/sound_memory.hpp"
 #include "core/position_distribution.hpp"
+#include "core/team_reports.hpp"
 #include <optional>
 
 namespace astrabot::core::world {
@@ -13,6 +14,13 @@ struct WorldDiagnostics {
     std::size_t staged{}, frameProcessed{};
 };
 struct SourceQueueDiagnostics { std::size_t soundPending{}; std::uint64_t soundOverflow{}; };
+struct KnownPosition {
+    perception::Point position{};
+    double confidence{};
+    perception::ObservationSource source{};
+    perception::ObservationIdentity origin{};
+    PlayerId reporter{};
+};
 struct WorldSnapshot {
     perception::Stamp stamp{};
     const MemorySnapshot* visual{};
@@ -21,6 +29,9 @@ struct WorldSnapshot {
     SourceQueueDiagnostics queues{};
     // Parallel to visual->memories; null means no matching completed distribution.
     std::array<const PositionDistribution*,perception::kCandidateCapacity> distributions{};
+    const ReportSnapshot* reports{};
+    std::uint64_t oldestReportAgeMicros{};
+    std::optional<KnownPosition> known(PlayerId target) const noexcept;
 };
 // Single owner of canonical memories. Snapshots borrow these memories until the
 // next mutation; they contain no privileged engine geometry or sound emitter ID.
@@ -32,7 +43,7 @@ public:
     WorldModel& operator=(const WorldModel&) = delete;
     void reset() noexcept;
     void beginUpdate() noexcept; // Retire the prior publication before callbacks.
-    bool advance(const MemoryFrame&) noexcept; // Invalidation and decay before staging.
+    bool advance(const MemoryFrame&,const perception::TeamRoster& = {}) noexcept; // Invalidation and decay before staging.
     bool stage(const perception::ObservationBatch&) noexcept;
     bool stage(PlayerId,const perception::SoundObservation&) noexcept;
     bool publish(SourceQueueDiagnostics = {}) noexcept;
@@ -48,6 +59,14 @@ public:
     const WorldDiagnostics& diagnostics() const noexcept { return diagnostics_; }
     const VisualMemoryModel& visual() const noexcept { return visual_; }
     const SoundMemoryModel& sounds() const noexcept { return sounds_; }
+    const TeamReportModel& reports() const noexcept { return reports_; }
+    ReportResult requestReport(PlayerId reporter,PlayerId target,std::uint64_t now,
+        const std::array<bool,32>& eligibility,const perception::TeamRoster& teams) noexcept {
+        if(!published_) return {ReportReason::NotReady,0};
+        return reports_.send(visual_,reporter,target,now,eligibility,teams);
+    }
+    void forgetReports(PlayerId player) noexcept { reports_.forget(player); }
+    void invalidateReports() noexcept { reports_.invalidate(); }
     // Wiring for privileged adapters; LifecycleCoordinator exposes only const WorldModel.
     VisualMemoryModel& visualReducer() noexcept { return visual_; }
     SoundMemoryModel& soundReducer() noexcept { return sounds_; }
@@ -60,6 +79,7 @@ private:
     bool equal(InputRef,InputRef) const noexcept;
     VisualMemoryModel visual_{};
     SoundMemoryModel sounds_{};
+    TeamReportModel reports_{};
     struct DistributionEntry { PlayerId observer{}, target{}; perception::ObservationIdentity identity{}; PositionDistribution value{}; };
     std::array<std::array<DistributionEntry,32>,32> distributions_{};
     MemoryFrame frame_{};

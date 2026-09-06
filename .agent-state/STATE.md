@@ -1,11 +1,16 @@
 # State
-Status: P4-07 complete; P4-08 and09 pending. P4 goal remains active.
-Main: .worktrees/main-integration, implementation5fb6000 from3f9af62.
-Dedicated: codex/p407-nav-distribution, .worktrees/p407-nav-distribution retained.
+Status: P4-08 implemented; all pre-merge gates passed; integration pending.
+Main: .worktrees/main-integration at853cf13; P4-07 complete.
+Dedicated: codex/p408-team-reports, .worktrees/p408-team-reports.
 Plan: docs/plans/phase-4-perception-world-model.md.
-Report: docs/reports/p4-07-nav-distribution.md.
-Next: P4-08 dedicated branch/worktree from current main; Graph/FocalSpan then
-inspect TeamRoster, WorldSnapshot and operator command contracts before editing.
+Report: docs/reports/p4-08-team-reports.md.
+Next: FocalSpan, review/commit, main ff-only, all gates again, report/plan/STATE commit.
+Pre-merge Windows51/65, Linux50 passed; Release PE32/x86/six exports.
+P4-08: explicit report function/operator command, original sight<=500ms,
+same-team managed receivers only,32x31 records,256 queue/32 deliveries per frame.
+Provenance retained,0.5/5s original-time decay, epoch guards for queued+held reports.
+WorldSnapshot reports and direct-first known(target). Initial Windows10/10/Linux1/1.
+P4-09 remains pending. Following P4-07 evidence is historical.
 
 WorldModel owns canonical memories and candidate distributions. New
 WorldSnapshot distributions[i] corresponds to visual->memories[i], borrowed const.

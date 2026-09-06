@@ -229,6 +229,42 @@ RemovalResult LifecycleCoordinator::remove(core::PlayerId player) noexcept {
     return result;
 }
 void LifecycleCoordinator::queuePrimaryCreate(cstrike::JoinRequest request) noexcept { clients_[0].fake.queuePrimaryCreate(request); }
+core::world::ReportResult LifecycleCoordinator::report(core::PlayerId reporter,core::PlayerId target) noexcept {
+    using Reason=core::world::ReportReason;
+    const auto* published=world_.publishedFrame();
+    if(reporting_ || !published || !engineGlobals_ || !registry_.isMapActive() ||
+        published->map!=registry_.mapGeneration() || published->round!=round_ || published->tick!=registry_.currentTick()) return {Reason::NotReady,0};
+    reporting_=true; CommandContextGuard guard{reporting_};
+    const auto frame=*published;
+    const double micros=static_cast<double>(engineGlobals_->time)*1000000;
+    if(!std::isfinite(micros) || micros<0 || micros>=18446744073709551616.0) { world_.invalidateReports(); return {Reason::InvalidTime,0}; }
+    std::array<edict_t*,32> entities{}; std::array<int,32> serials{}; std::array<bool,32> eligible{};
+    for(std::size_t i=0;i<frame.players.size();++i) {
+        const auto& player=frame.players[i];
+        if(!player.eligible || !player.player.isValid() || registry_.currentPlayer(player.player.slot)!=player.player) continue;
+        auto* entity=player.agent.isValid() ? entityFor(player.player):
+            engineFunctions_ && engineFunctions_->pfnPEntityOfEntIndex ? engineFunctions_->pfnPEntityOfEntIndex(player.player.slot):nullptr;
+        if(!entity) continue;
+        if(!player.agent.isValid() && !vision_.bound(player.player,engineFunctions_)) continue;
+        entities[i]=entity; serials[i]=entity->serialnumber;
+    }
+    if(!world_.publishedFrame() || !registry_.isMapActive() || registry_.mapGeneration()!=frame.map ||
+        registry_.currentTick()!=frame.tick || round_!=frame.round) return {Reason::NotReady,0};
+    if(!engineGlobals_ || static_cast<double>(engineGlobals_->time)*1000000!=micros) {
+        world_.invalidateReports(); return {Reason::InvalidTime,0};
+    }
+    // Recheck identities and lifecycle flags after all engine callbacks. No positions are read.
+    for(std::size_t i=0;i<frame.players.size();++i) {
+        const auto& player=frame.players[i]; const auto* entity=entities[i];
+        const auto* join=player.agent.isValid() ? joinState(player.player):nullptr;
+        eligible[i]=entity && !entity->free && entity->serialnumber==serials[i] &&
+            registry_.currentPlayer(player.player.slot)==player.player && entity->v.deadflag==DEAD_NO &&
+            std::isfinite(entity->v.health) && entity->v.health>0 && entity->v.iuser1==0 && !(entity->v.flags&FL_SPECTATOR) &&
+            (!player.agent.isValid() || (join && join->phase()==cstrike::JoinPhase::Joined && !removalPending(player.player)));
+        if(!eligible[i]) world_.forgetReports(player.player);
+    }
+    return world_.requestReport(reporter,target,static_cast<std::uint64_t>(micros),eligible,teams_);
+}
 void LifecycleCoordinator::startFrame() noexcept {
     world_.beginUpdate();
     const auto result=registry_.startFrame(); emit(host::LifecycleEventKind::FrameStarted,result);

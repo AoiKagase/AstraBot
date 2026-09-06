@@ -13,7 +13,7 @@
 #include <istream>
 namespace astrabot::adapter::metamod { class LifecycleCoordinator; }
 namespace astrabot::adapter::cstrike {
-enum class NavCommand { Load, GoTo, Status, Cancel };
+enum class NavCommand { Load, GoTo, Status, Cancel, Report };
 enum class MotionEvent { None, Decision, Queued, Dispatched, Rejected, Cancelled };
 enum class MotionReason { None, InvalidCorridor, InvalidGoal, MissingObservation,
     StaleCommand, Deviation, MotorRejected, TransportRejected, Cancelled, DoorChanged, PostureChanged, JumpChanged, LadderChanged };

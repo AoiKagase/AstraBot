@@ -28,6 +28,7 @@ void loadCommand() { run(NavCommand::Load); }
 void gotoCommand() { run(NavCommand::GoTo); }
 void statusCommand() { run(NavCommand::Status); }
 void cancelCommand() { run(NavCommand::Cancel); }
+void reportCommand() { run(NavCommand::Report); }
 std::string_view bounded(const char* text,std::size_t max) noexcept {
     if (!text) return {};
     std::size_t n=0; while(n<=max && text[n]) ++n;
@@ -98,10 +99,12 @@ void NavConsole::configure(enginefuncs_t* engine,mutil_funcs_t* utility,globalva
     if (!engine_ || !engine_->pfnAddServerCommand || !engine_->pfnCmd_Argc || !engine_->pfnCmd_Argv) return;
     static char loadName[]="astrabot_nav_load",gotoName[]="astrabot_goto";
     static char statusName[]="astrabot_nav_status",cancelName[]="astrabot_nav_cancel";
+    static char reportName[]="astrabot_report";
     engine_->pfnAddServerCommand(loadName,&loadCommand);
     engine_->pfnAddServerCommand(gotoName,&gotoCommand);
     engine_->pfnAddServerCommand(statusName,&statusCommand);
     engine_->pfnAddServerCommand(cancelName,&cancelCommand);
+    engine_->pfnAddServerCommand(reportName,&reportCommand);
 }
 void NavConsole::sink(void* ctx,const char* text) noexcept { static_cast<NavConsole*>(ctx)->line(text); }
 void NavConsole::line(const char* text) noexcept {
@@ -225,6 +228,15 @@ void NavConsole::observe(metamod::LifecycleCoordinator& owner) noexcept {
 void NavConsole::execute(NavCommand command,metamod::LifecycleCoordinator& owner) noexcept {
     if(inRequest_) return;
     if(!engine_ || !engine_->pfnCmd_Argc || !engine_->pfnCmd_Argv) return;
+    if(command==NavCommand::Report) {
+        if(engine_->pfnCmd_Argc()!=3) { line("report error=InvalidArguments expected=reporter_slot:generation target_slot:generation"); return; }
+        const auto reporter=parsePlayer(bounded(engine_->pfnCmd_Argv(1),24));
+        const auto target=parsePlayer(bounded(engine_->pfnCmd_Argv(2),24));
+        if(!reporter || !target) { line("report error=InvalidActorArgument expected=slot:generation"); return; }
+        const auto result=owner.report(*reporter,*target); char text[128]{};
+        std::snprintf(text,sizeof(text),"report status=%s recipients=%zu",core::world::reportReasonName(result.reason),result.recipients);
+        line(text); return;
+    }
     const int expected=(command==NavCommand::Load || command==NavCommand::GoTo) ? 2:1;
     const auto argc=engine_->pfnCmd_Argc();
     if(argc!=expected && (command==NavCommand::Load || argc!=expected+1)) { line("nav error=InvalidArguments"); return; }
