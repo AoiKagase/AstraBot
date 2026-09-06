@@ -7,14 +7,14 @@ enum class LadderState { Approach, Align, Contact, ClimbUp, ClimbDown, Exit, Sup
     Reacquire, Complete, Failed, Aborted };
 enum class LadderReason { None, InvalidInput, InvalidActor, StaleTick, MissingObservation,
     StaleInspection, WrongContact, MissingSupport, Blocked, Timeout, Fall,
-    ReacquireExhausted, WrongLanding, Cancelled };
+    ReacquireExhausted, WrongLanding, Cancelled, MissingDispatch, DispatchRejected, StaleDispatch };
 struct LadderPlan {
     enrichment::NavTraversalLink link{};
     model::NavVector3 start{},end{},mount{},dismount{},normal{};
 };
 struct LadderLimits {
     double approachSpeed{80},positionTolerance{1},heightTolerance{4},facingDegrees{5},
-        shaftTolerance{8},maximumHeight{4096},maximumApproach{96},maximumFallSpeed{260};
+        shaftTolerance{8},maximumHeight{4096},maximumApproach{96},maximumFallSpeed{260},lowerExitHeight{8};
     std::uint32_t maxQueries{21};
     std::uint64_t approachTimeoutUs{3000000},contactTimeoutUs{1000000},climbTimeoutUs{30000000},
         exitTimeoutUs{2000000},supportTimeoutUs{500000},reacquireTimeoutUs{500000};
@@ -40,6 +40,18 @@ struct LadderFeedback {
     // Independently observed engine ladder movement mode, not model overlap.
     std::optional<bool> climbing{};
 };
+struct LadderObservation {
+    LadderPlan plan{};
+    LadderInspection inspection{};
+    runtime::LadderContact contact{};
+    bool climbing{};
+};
+struct LadderDispatch {
+    Binding binding{};
+    std::uint64_t sourceId{},generation{},linkId{};
+    core::TickId commandTick{},dispatchTick{};
+    bool dispatched{};
+};
 struct LadderDecision {
     LadderState state{LadderState::Approach};
     LadderReason reason{LadderReason::None};
@@ -47,12 +59,14 @@ struct LadderDecision {
     MovementIntent intent{};
     enrichment::NavTraversalLink link{};
     unsigned reacquires{};
+    core::TickId pressTick{};
 };
 class Ladder final {
 public:
     Ladder(Binding binding,LadderPlan plan,LadderLimits limits={}) noexcept : binding_(binding),plan_(plan),limits_(limits) {}
     LadderDecision update(const LadderFeedback&) noexcept;
     LadderDecision abort() noexcept;
+    bool reportJumpDispatch(const LadderDispatch&) noexcept;
     LadderState state() const noexcept { return state_; }
     // Exact endpoint to inspect from the current actor origin for this state.
     model::NavVector3 target(model::NavVector3 origin) const noexcept;
@@ -62,6 +76,9 @@ private:
     core::TickId tick_{};
     std::uint64_t lastUs_{},startedUs_{},phaseUs_{},climbUs_{};
     bool started_{},climbStarted_{}; unsigned reacquires_{};
+    core::TickId pressTick_{};
+    std::optional<LadderDispatch> dispatch_{};
+    bool dispatchSeen_{},jumpDispatched_{};
     LadderDecision result(LadderReason=LadderReason::None) const noexcept;
     LadderDecision finish(LadderState,LadderReason) noexcept;
 };

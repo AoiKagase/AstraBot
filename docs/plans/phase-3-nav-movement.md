@@ -259,8 +259,11 @@ gravity and air wish-component limits. A bounded exit mode handoff tolerates
 the engine's one-update FLY lag while still requiring detached target support.
 Lower host exit requests now verify either a grounded floor kick or an airborne
 jump dismount and bounded landing trajectory. Jump replaces velocity with270
-along the ladder normal and switches to WALK. Controller one-shot jump dispatch,
-earlier lower exit entry and post-landing approach remain to be integrated.
+along the ladder normal and switches to WALK. The controller starts lower exit
+8 units above the endpoint, accepts one stamped jump dispatch result, and never
+reissues the jump. Walk now owns the ladder state and advances the selected step
+only after observed detached target support. Host motion wiring, actual-frame
+guards, and measured post-landing approach remain pending.
 
 - **Goal:** generation-bound host ladder links plus distinct up/down traversal.
 - **Why now:** P2-07 proves synthetic connectivity only.

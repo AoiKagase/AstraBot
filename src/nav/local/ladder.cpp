@@ -20,13 +20,19 @@ model::NavVector3 Ladder::target(model::NavVector3 origin) const noexcept {
     return plan_.dismount;
 }
 LadderDecision Ladder::result(LadderReason reason) const noexcept {
-    LadderDecision out; out.state=state_; out.reason=reason; out.link=plan_.link; out.reacquires=reacquires_;
+    LadderDecision out; out.state=state_; out.reason=reason; out.link=plan_.link; out.reacquires=reacquires_; out.pressTick=pressTick_;
     out.intent.forward=out.intent.back=out.intent.jump=out.intent.duck=out.intent.use=ActionRequest::Release; return out;
 }
 LadderDecision Ladder::finish(LadderState state,LadderReason reason) noexcept {
     const bool first=!terminal(state_); state_=state; auto out=result(reason); out.accepted=out.terminalEvent=first; return out;
 }
 LadderDecision Ladder::abort() noexcept { return terminal(state_) ? result():finish(LadderState::Aborted,LadderReason::Cancelled); }
+bool Ladder::reportJumpDispatch(const LadderDispatch& d) noexcept {
+    if(state_!=LadderState::Exit || !pressTick_.isValid() || dispatchSeen_ || !same(d.binding,binding_) ||
+       d.sourceId!=plan_.link.sourceId || d.generation!=plan_.link.generation || d.linkId!=plan_.link.linkId ||
+       d.commandTick!=pressTick_ || d.dispatchTick<pressTick_ || (d.dispatched && !d.dispatchTick.isAfter(pressTick_))) return false;
+    dispatch_=d; dispatchSeen_=true; return true;
+}
 LadderDecision Ladder::update(const LadderFeedback& f) noexcept {
     if(terminal(state_)) return result();
     const auto fail=[&](LadderReason r) { return finish(LadderState::Failed,r); };
@@ -42,6 +48,7 @@ LadderDecision Ladder::update(const LadderFeedback& f) noexcept {
        !positive(limits_.approachSpeed) || limits_.approachSpeed>200 || !positive(limits_.positionTolerance) ||
        !positive(limits_.heightTolerance) || !positive(limits_.facingDegrees) || limits_.facingDegrees>45 ||
        !positive(limits_.shaftTolerance) || !positive(limits_.maximumHeight) || !positive(limits_.maximumApproach) ||
+       !positive(limits_.lowerExitHeight) || limits_.lowerExitHeight>32 ||
        !positive(limits_.maximumFallSpeed) || !limits_.maxQueries || limits_.maxQueries>21 || !limits_.approachTimeoutUs || !limits_.contactTimeoutUs ||
        !limits_.climbTimeoutUs || !limits_.exitTimeoutUs || !limits_.supportTimeoutUs || !limits_.reacquireTimeoutUs ||
        (up ? plan_.end.z<=plan_.start.z:plan_.end.z>=plan_.start.z) || std::abs(double(plan_.end.z)-plan_.start.z)>limits_.maximumHeight ||
@@ -83,6 +90,12 @@ LadderDecision Ladder::update(const LadderFeedback& f) noexcept {
             std::abs(double(s.position->z)-36-p.floor.height)<=limits_.heightTolerance;
     };
     auto out=result(); out.accepted=true;
+    if(dispatch_) {
+        const auto d=*dispatch_; dispatch_.reset();
+        if(s.tick<d.dispatchTick) return fail(LadderReason::StaleDispatch);
+        if(!d.dispatched) return fail(LadderReason::DispatchRejected);
+        jumpDispatched_=true;
+    }
     const auto transition=[&](LadderState state) { state_=state; phaseUs_=f.nowUs; out.state=state; out.reacquires=reacquires_; return out; };
     const double yaw=std::atan2(-plan_.normal.y,-plan_.normal.x)*180/3.14159265358979323846;
     const auto move=[&](model::NavVector3 destination) {
@@ -122,7 +135,8 @@ LadderDecision Ladder::update(const LadderFeedback& f) noexcept {
     if(state_==LadderState::ClimbUp || state_==LadderState::ClimbDown) {
         if(distance(*s.position,plan_.mount)>limits_.shaftTolerance) return fail(LadderReason::WrongContact);
         const double remaining=(up ? 1:-1)*(double(plan_.dismount.z)-s.position->z);
-        if(remaining<=limits_.positionTolerance && remaining>=-limits_.heightTolerance) return transition(LadderState::Exit);
+        if(remaining<=(up ? limits_.positionTolerance:limits_.lowerExitHeight) && remaining>=-limits_.heightTolerance)
+            return transition(LadderState::Exit);
         if(remaining< -limits_.heightTolerance) return fail(LadderReason::WrongLanding);
         if(!*f.climbing || !s.ladder->touching) {
             if(reacquires_) return fail(LadderReason::ReacquireExhausted);
@@ -141,15 +155,26 @@ LadderDecision Ladder::update(const LadderFeedback& f) noexcept {
     if(state_==LadderState::Exit) {
         if(f.nowUs-phaseUs_>=limits_.exitTimeoutUs) return fail(LadderReason::Timeout);
         const double relativeHeight=double(s.position->z)-plan_.end.z;
-        if(relativeHeight< -limits_.heightTolerance || relativeHeight>(up ? 96:limits_.heightTolerance)) return fail(LadderReason::WrongLanding);
+        if(relativeHeight< -limits_.heightTolerance || relativeHeight>(up ? 96:limits_.lowerExitHeight)) return fail(LadderReason::WrongLanding);
+        if(pressTick_.isValid() && !jumpDispatched_) {
+            if(!s.ladder->touching) return fail(LadderReason::MissingDispatch);
+            return out; // Pending dispatch cannot cause a second jump request.
+        }
         if(s.grounded==true && std::abs(relativeHeight)<=limits_.heightTolerance &&
            distance(*s.position,plan_.end)<=limits_.positionTolerance) return transition(LadderState::Support);
         if(proof->pathClear!=true) return fail(LadderReason::Blocked);
-        if(*f.climbing || s.ladder->touching || (up && s.grounded!=true)) {
-            if(!proof->exitIntent || !core::Motor::valid(*proof->exitIntent) || active(proof->exitIntent->jump) ||
+        if(*f.climbing || s.ladder->touching || s.grounded!=true) {
+            if(pressTick_.isValid() && s.ladder->touching) return out; // Release and await actual detachment.
+            if(!proof->exitIntent || !core::Motor::valid(*proof->exitIntent) ||
                active(proof->exitIntent->duck) || active(proof->exitIntent->use)) return fail(LadderReason::MissingObservation);
+            if(active(proof->exitIntent->jump)) {
+                if(proof->exitIntent->jump!=ActionRequest::Press || pressTick_.isValid() || !s.ladder->touching || s.grounded!=false)
+                    return fail(LadderReason::MissingObservation);
+                pressTick_=s.tick; out.pressTick=pressTick_;
+            }
             out.intent=*proof->exitIntent; return out;
         }
+        if(!supported(l.to)) return fail(LadderReason::MissingSupport);
         return move(plan_.end);
     }
     if(state_==LadderState::Support) {

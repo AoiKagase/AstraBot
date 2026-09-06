@@ -8,11 +8,12 @@
 #include "nav/local/traversal_constraints.hpp"
 #include "nav/local/jump_geometry.hpp"
 #include "nav/local/jump_probe.hpp"
+#include "nav/local/ladder.hpp"
 
 namespace astrabot::nav::local {
 enum class WalkState { Running, Arrived, Failed, Aborted };
 enum class WalkReason { None, InvalidInput, StaleTick, InvalidActor, StaleNavigation,
-    UnsupportedTraversal, InvalidGoal, OffCorridor, InvalidPortal, ProbeFailed, Cancelled, DoorBlocked, DynamicBlocked, PostureFailed, JumpFailed };
+    UnsupportedTraversal, InvalidGoal, OffCorridor, InvalidPortal, ProbeFailed, Cancelled, DoorBlocked, DynamicBlocked, PostureFailed, JumpFailed, LadderFailed };
 struct WalkJumpLimits { JumpLimits motion{}; JumpGeometryLimits geometry{}; JumpProbeLimits flight{}; };
 struct WalkLimits {
     GroundProbeLimits probe{};
@@ -25,6 +26,7 @@ struct WalkLimits {
     BlockerLimits blocker{}; // Zero timeout disables reactive player handling.
     CrouchLimits crouch{}; // Zero timeout keeps special traversal disabled.
     std::optional<WalkJumpLimits> jump{}; // Requires explicit current host physics as well.
+    std::optional<LadderLimits> ladder{};
 };
 struct DoorContact {
     std::uint64_t id{};
@@ -60,6 +62,10 @@ struct WalkDecision {
     std::optional<JumpPlan> jumpPlan{};
     std::optional<JumpPhysics> jumpPhysics{};
     core::TickId jumpPressTick{};
+    std::optional<LadderState> ladderState{};
+    LadderReason ladderReason{LadderReason::None};
+    std::optional<LadderPlan> ladderPlan{};
+    core::TickId ladderPressTick{};
 };
 // One owned route, synchronous decision seam. Caller schedules decisions and
 // invalidates on route replacement; this class never submits a host command.
@@ -73,9 +79,12 @@ public:
     WalkDecision update(const runtime::MovementSnapshot&, const query::NavSpatialIndex&,
                         core::MapGeneration indexMap, runtime::IWorldQueries&,
                         std::uint64_t nowUs=0, std::uint32_t reservedQueries=0,
-                        std::optional<JumpPhysics> physics={}) noexcept;
+                        std::optional<JumpPhysics> physics={},std::optional<LadderObservation> ladder={}) noexcept;
     // Only the first result for this step's exact Press command is consumed.
     bool reportJumpDispatch(const JumpDispatch&) noexcept;
+    bool reportLadderDispatch(const LadderDispatch&) noexcept;
+    std::optional<enrichment::NavTraversalLink> selectedLadderLink() const noexcept;
+    model::NavVector3 ladderTarget(const LadderPlan&,model::NavVector3 origin) const noexcept;
     WalkDecision abort() noexcept;
     WalkState state() const noexcept { return state_; }
     std::size_t step() const noexcept { return cursor_.index(); }
@@ -107,10 +116,14 @@ private:
     core::TickId jumpPressTick_{};
     bool jumpDispatchSeen_{};
     std::optional<std::size_t> completedJumpStep_{};
+    std::optional<Ladder> ladder_{};
+    std::optional<LadderPlan> ladderPlan_{};
+    WalkDecision updateLadder(WalkDecision,const runtime::MovementSnapshot&,const query::NavSpatialIndex&,
+        std::uint64_t,std::uint32_t,const std::optional<LadderObservation>&) noexcept;
     WalkDecision updateJump(WalkDecision,const runtime::MovementSnapshot&,const query::NavSpatialIndex&,
         core::MapGeneration,runtime::IWorldQueries&,std::uint64_t,std::uint32_t,std::optional<JumpPhysics>) noexcept;
     WalkDecision updateMotion(const runtime::MovementSnapshot&,const query::NavSpatialIndex&,
-        core::MapGeneration,runtime::IWorldQueries&,std::uint64_t,std::uint32_t,std::optional<JumpPhysics>) noexcept;
+        core::MapGeneration,runtime::IWorldQueries&,std::uint64_t,std::uint32_t,std::optional<JumpPhysics>,std::optional<LadderObservation>) noexcept;
     WalkDecision updateDoor(WalkDecision, const runtime::MovementSnapshot&,
         const query::NavSpatialIndex&, core::MapGeneration, runtime::IWorldQueries&,
         model::NavVector3 end, std::uint64_t nowUs) noexcept;

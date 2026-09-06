@@ -2,6 +2,8 @@
 #include "nav/local/ladder.hpp"
 #include "nav/local/ladder_physics.hpp"
 #include "nav/local/ladder_exit.hpp"
+#include "nav/local/walk.hpp"
+#include "nav/query/route_search.hpp"
 #include "route_fixture.hpp"
 #include <cassert>
 #include <cmath>
@@ -232,6 +234,122 @@ void observedModeHandoff() {
     s.tick={4}; s.position->z=80; s.ladder->touching=false;
     assert(wrong.update(feedback(wrong,p,s,160000,true)).reason==LadderReason::WrongContact);
 }
+void earlyLowerExit() {
+    const auto p=plan(false); Ladder ladder(binding,p); auto s=actor(p); enter(ladder,p,s);
+    s.position=p.dismount; s.position->z+=8; s.tick={4};
+    const auto d=ladder.update(feedback(ladder,p,s,160000,true));
+    if(d.state!=LadderState::Exit) { std::fprintf(stderr,"lower exit starts too late for airborne dismount\n"); std::exit(1); }
+    assert(!d.terminalEvent && d.intent.speed==0);
+}
+void jumpDispatchLifecycle() {
+    for(int mode=0;mode<5;++mode) {
+        const auto p=plan(false); Ladder ladder(binding,p); auto s=actor(p); enter(ladder,p,s);
+        s.position=p.dismount; s.position->z+=8; s.tick={4};
+        assert(ladder.update(feedback(ladder,p,s,160000,true)).state==LadderState::Exit);
+        s.tick={5}; auto f=feedback(ladder,p,s,200000,true); f.inspection->exitIntent=MovementIntent{};
+        f.inspection->exitIntent->jump=ActionRequest::Press;
+        const auto press=ladder.update(f);
+        if(press.intent.jump!=ActionRequest::Press) { std::fprintf(stderr,"verified ladder jump was not requested\n"); std::exit(1); }
+        assert(press.pressTick==s.tick && !press.terminalEvent);
+        LadderDispatch sent{binding,p.link.sourceId,p.link.generation,p.link.linkId,s.tick,{6},mode!=1};
+        auto wrong=sent; ++wrong.linkId; assert(!ladder.reportJumpDispatch(wrong));
+        wrong=sent; ++wrong.binding.routeGeneration; assert(!ladder.reportJumpDispatch(wrong));
+        wrong=sent; wrong.commandTick={4}; assert(!ladder.reportJumpDispatch(wrong));
+        if(mode!=2) { assert(ladder.reportJumpDispatch(sent)); assert(!ladder.reportJumpDispatch(sent)); }
+        s.tick={6}; s.position->x-=5; s.ladder->touching=false;
+        f=feedback(ladder,p,s,240000,false); f.inspection->exitIntent=MovementIntent{};
+        if(mode==3) f.inspection->exitIntent->jump=ActionRequest::Press;
+        auto d=ladder.update(f);
+        if(mode==1 || mode==2 || mode==3) {
+            assert(d.terminalEvent && d.intent.jump==ActionRequest::Release);
+            assert(d.reason==(mode==1 ? LadderReason::DispatchRejected:mode==2 ? LadderReason::MissingDispatch:LadderReason::MissingObservation));
+            assert(!ladder.abort().terminalEvent); continue;
+        }
+        assert(d.state==LadderState::Exit && d.intent.jump!=ActionRequest::Press && !d.terminalEvent);
+        if(mode==4) { assert(ladder.abort().terminalEvent); assert(!ladder.reportJumpDispatch(sent)); continue; }
+        s.tick={7}; s.position=p.end; s.grounded=true;
+        assert(ladder.update(feedback(ladder,p,s,280000)).state==LadderState::Support);
+        s.tick={8}; d=ladder.update(feedback(ladder,p,s,320000));
+        assert(d.state==LadderState::Complete && d.terminalEvent && d.link.linkId==p.link.linkId);
+    }
+    const auto p=plan(false); Ladder waiting(binding,p); auto s=actor(p); enter(waiting,p,s);
+    s.tick={4}; s.position=p.dismount; s.position->z+=8;
+    assert(waiting.update(feedback(waiting,p,s,160000,true)).state==LadderState::Exit);
+    s.tick={5}; auto f=feedback(waiting,p,s,200000,true); f.inspection->exitIntent=MovementIntent{};
+    f.inspection->exitIntent->jump=ActionRequest::Press;
+    assert(waiting.update(f).intent.jump==ActionRequest::Press);
+    s.tick={6}; f=feedback(waiting,p,s,240000,true); f.inspection->exitIntent=MovementIntent{};
+    f.inspection->exitIntent->jump=ActionRequest::Press;
+    auto d=waiting.update(f); assert(d.state==LadderState::Exit && d.intent.jump==ActionRequest::Release && !d.terminalEvent);
+    s.tick={7}; f=feedback(waiting,p,s,2160000,true);
+    d=waiting.update(f); assert(d.reason==LadderReason::Timeout && d.terminalEvent);
+    assert(!waiting.reportJumpDispatch({binding,p.link.sourceId,p.link.generation,p.link.linkId,{5},{6},true}));
+}
+void walkOwnsLadder() {
+    for(bool up:{false,true}) {
+    auto p=plan(up); p.start.x=up ? -49.0f:49.0f; p.link.entry.x=p.start.x;
+    p.end.x=up ? 49.0f:-49.0f; p.link.exit.x=p.end.x;
+    auto b=binding; b.step=0;
+    const auto mesh=route_test::snapshot({{1,{{-100,0,0},{-20,64,0},0,0}},
+        {2,{{20,0,128},{100,64,128},128,128}}});
+    const enrichment::NavMapFingerprint fp{};
+    const auto graph=query::NavGraph::compose(mesh,fp,{fp,{p.link}},{2,1,100000},{1,100000}); assert(graph);
+    const auto route=query::NavRouteSearch::search(**graph.value,{p.link.from,p.link.to,{2,100000},false}); assert(route);
+    const auto corridor=corridor::Corridor::build(**graph.value,*route.value,{16,16},{1,100000,1}); assert(corridor);
+    const auto index=query::NavSpatialIndex::build(mesh,{2,3,100000}); assert(index);
+    struct NoQueries final : runtime::IWorldQueries {
+        unsigned count{};
+        runtime::WorldQueryResult query(const runtime::QueryRequest&) override { ++count; return {}; }
+    } world;
+    WalkLimits limits{{21,4,48,16,18,18,64,4,2,0.7},120,1,1,3}; limits.ladder=LadderLimits{};
+    Walk walk(b,corridor.value,{p.end.x,p.end.y,p.end.z-36},limits);
+    auto s=actor(p);
+    const auto packet=[&](bool climbing) {
+        Ladder reference(b,p); auto f=feedback(reference,p,s,s.tick.value*40000);
+        f.inspection->step=0; f.inspection->target=walk.ladderTarget(p,*s.position);
+        return LadderObservation{p,*f.inspection,*s.ladder,climbing};
+    };
+    auto observation=packet(false);
+    auto d=walk.update(s,**index.value,s.map,world,40000,0,{},observation);
+    if(d.ladderState!=LadderState::Align) { std::fprintf(stderr,"Walk did not enter selected ladder\n"); std::exit(1); }
+    assert(d.primitiveEvent==PrimitiveEvent::Entered && walk.step()==0 && world.count==0 && !d.terminalEvent);
+    assert(walk.selectedLadderLink()->linkId==p.link.linkId);
+    s.tick={2}; d=walk.update(s,**index.value,s.map,world,80000,0,{},packet(false)); assert(d.ladderState==LadderState::Contact);
+    s.tick={3}; s.position=p.mount; s.grounded=false; s.ladder->touching=true;
+    d=walk.update(s,**index.value,s.map,world,120000,0,{},packet(true)); assert(d.ladderState==(up ? LadderState::ClimbUp:LadderState::ClimbDown));
+    s.tick={4}; s.position=p.dismount; if(!up) s.position->z+=8;
+    d=walk.update(s,**index.value,s.map,world,160000,0,{},packet(true)); assert(d.ladderState==LadderState::Exit && walk.step()==0);
+    s.tick={5}; observation=packet(true); observation.inspection.exitIntent=MovementIntent{};
+    if(!up) observation.inspection.exitIntent->jump=ActionRequest::Press;
+    d=walk.update(s,**index.value,s.map,world,200000,0,{},observation);
+    if(!up) {
+        assert(d.ladderPressTick==s.tick && d.intent.jump==ActionRequest::Press);
+        const LadderDispatch sent{b,p.link.sourceId,p.link.generation,p.link.linkId,s.tick,{6},true};
+        assert(walk.reportLadderDispatch(sent)); assert(!walk.reportLadderDispatch(sent));
+    }
+    assert(walk.step()==0); // A predicted exit and successful dispatch cannot advance the route.
+    s.tick={6}; s.position=p.end; s.grounded=true; s.ladder->touching=false;
+    d=walk.update(s,**index.value,s.map,world,240000,0,{},packet(false)); assert(d.ladderState==LadderState::Support && walk.step()==0);
+    s.tick={7}; d=walk.update(s,**index.value,s.map,world,280000,0,{},packet(false));
+    assert(d.ladderState==LadderState::Complete && d.primitiveEvent==PrimitiveEvent::Complete && walk.step()==1);
+    assert(d.state==WalkState::Running && !d.terminalEvent && d.intent.jump==ActionRequest::Release && !walk.selectedLadderLink());
+    const auto replay=walk.update(s,**index.value,s.map,world,280000,0,{},packet(false));
+    assert(!replay.accepted && walk.step()==1 && world.count==0);
+    for(int mode=0;mode<7;++mode) {
+        auto profile=limits; if(mode==6) profile.ladder.reset();
+        Walk invalid(b,corridor.value,{p.end.x,p.end.y,p.end.z-36},profile); s=actor(p);
+        auto input=packet(false); input.inspection.target=p.start;
+        if(mode==0) ++input.plan.link.linkId;
+        if(mode==1) input.plan.link.additionalCost+=1;
+        if(mode==2) input.inspection.queries=22;
+        if(mode==3) input.inspection.stamp.tick={2};
+        if(mode==4) ++input.contact.generation;
+        const auto failure=invalid.update(s,**index.value,s.map,world,40000,0,{},mode==5 ? std::optional<LadderObservation>{}:input);
+        assert(failure.terminalEvent && failure.state==WalkState::Failed && invalid.step()==0 && world.count==0);
+        assert(failure.intent.speed==0 && !invalid.abort().terminalEvent);
+    }
+    }
+}
 void jumpExitCandidate() {
     const LadderAirPhysics physics{800,10,1,250,2000};
     const auto mesh=route_test::snapshot({{1,{{-100,0,0},{-20,64,0},0,0}},
@@ -280,4 +398,4 @@ void upperExitCandidate() {
     }
 }
 }
-int main() { directionalMotor(); physicalProjection(); airborneProjection(); jumpingOffLadder(); climbingAndObservedExit(); failuresAndReacquire(); observedModeHandoff(); upperExitCandidate(); jumpExitCandidate(); }
+int main() { directionalMotor(); physicalProjection(); airborneProjection(); jumpingOffLadder(); climbingAndObservedExit(); failuresAndReacquire(); observedModeHandoff(); upperExitCandidate(); jumpExitCandidate(); earlyLowerExit(); jumpDispatchLifecycle(); walkOwnsLadder(); }

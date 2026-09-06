@@ -107,6 +107,7 @@ add_library(astrabot_nav STATIC
     src/nav/io/map_fingerprint.cpp
     src/nav/local/walk.cpp
     src/nav/local/walk_jump.cpp
+    src/nav/local/walk_ladder.cpp
     src/nav/local/door_wait.cpp
     src/nav/local/blocker_wait.cpp
     src/nav/local/crouch.cpp

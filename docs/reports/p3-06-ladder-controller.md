@@ -247,3 +247,41 @@ controller jump acceptance with one-shot dispatch feedback, post-landing ground
 approach, Walk ownership/cursor advancement, and actual-frame guarded dispatch.
 The controller still rejects jump until that dispatch contract is connected.
 P3-06 remains open; project-wide Finish and live validation remain unclaimed.
+
+## Walk ownership and one-shot jump dispatch
+
+Lower exit now starts8 units above the selected endpoint (explicit bounded
+profile, configurable up to32), allowing airborne jump departure before the
+shaft floor is reached. A fresh approved Press is accepted once. The controller
+records its command tick and requires the matching actor/map/route/step/link
+dispatch result, including the actual later dispatch tick. Duplicate/wrong
+results are rejected. While waiting it releases Jump; detached movement without
+dispatch evidence fails, and a still-attached actor times out without another
+jump. Rejected transport produces a typed terminal failure. Lower airborne exit
+also requires a fresh air intent, never an analog-ground fallback.
+
+Walk now optionally owns a Ladder and an exact immutable LadderPlan. Its input
+is a value-only current LadderObservation from a trusted host observer. Every
+selected external-link field and every bound geometry field must remain equal.
+Observation costs plus reserved host queries cannot exceed21. Ladder state,
+reason, plan and jump press tick are carried in WalkDecision. The explicit
+reportLadderDispatch seam forwards only to the active owned controller.
+
+Observed Complete updates the primitive and advances exactly the active cursor
+once, using verified target support. It does not declare the entire route
+Arrived; ordinary final-area movement remains separate. Abort releases Jump and
+directional buttons. Invalid initial observations are rejected before primitive
+entry. Scripted trusted observations test both directions, jump dispatch,
+support-before-advance, stale ticks, changed link identity/cost, budgets, missing
+observations and disabled profiles. They are ownership/lifecycle tests and do
+not claim physical simulation or live acceptance.
+
+The host still has to enable this profile and supply observations, preserve
+decision cadence while guarding the actual queued command, and forward transport
+feedback. Integration must also verify published ladder endpoints satisfy the
+Corridor hull-inset constraint: fixture endpoints only13 units inside a NAV edge
+cannot form a standing-hull corridor. Do not loosen that constraint to pass.
+Measured post-landing approach and host E2E evidence remain outstanding.
+Windows x86 Debug43/43 and Linux x86 Debug37/37 passed, followed by targeted
+ladder tests on both platforms for the final primitive-entry ordering change.
+Release x86 build and the exact six exports passed.

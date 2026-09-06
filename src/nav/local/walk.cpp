@@ -108,6 +108,10 @@ WalkDecision Walk::finish(WalkDecision out, WalkState state, WalkReason reason) 
         (void)jump_->abort(); jump_.reset(); jumpPlan_.reset(); jumpPhysics_.reset(); jumpDispatch_.reset();
         out.intent.jump=ActionRequest::Release;
     }
+    if(ladder_) {
+        (void)ladder_->abort(); ladder_.reset(); ladderPlan_.reset();
+        out.intent.jump=out.intent.forward=out.intent.back=ActionRequest::Release;
+    }
     if(primitive_.state()==PrimitiveState::Running) {
         if(state==WalkState::Failed)
             out.primitiveEvent=primitive_.update({out.binding,out.tick,Progress::Failed,{},std::nullopt,false}).event;
@@ -209,15 +213,15 @@ WalkDecision Walk::approachDoor(WalkDecision out, const runtime::MovementSnapsho
 }
 WalkDecision Walk::update(const runtime::MovementSnapshot& s, const query::NavSpatialIndex& index,
                          core::MapGeneration indexMap, runtime::IWorldQueries& port, std::uint64_t nowUs,
-                         std::uint32_t reservedQueries,std::optional<JumpPhysics> physics) noexcept {
-    auto out=updateMotion(s,index,indexMap,port,nowUs,reservedQueries,physics);
+                         std::uint32_t reservedQueries,std::optional<JumpPhysics> physics,std::optional<LadderObservation> ladder) noexcept {
+    auto out=updateMotion(s,index,indexMap,port,nowUs,reservedQueries,physics,ladder);
     out.intent.duck=postureAction_; out.posture=posture_; out.postureReason=postureReason_;
     if((!out.accepted || out.terminalEvent) && s.ducked==true) out.intent.duck=ActionRequest::Hold;
     return out;
 }
 WalkDecision Walk::updateMotion(const runtime::MovementSnapshot& s,const query::NavSpatialIndex& index,
     core::MapGeneration indexMap,runtime::IWorldQueries& port,std::uint64_t nowUs,std::uint32_t reservedQueries,
-    std::optional<JumpPhysics> physics) noexcept {
+    std::optional<JumpPhysics> physics,std::optional<LadderObservation> ladder) noexcept {
     WalkDecision out; out.binding=binding_; out.binding.step=cursor_.index(); out.tick=s.tick;
     out.state=state_; out.reason=reason_;
     if(state_!=WalkState::Running) return out;
@@ -245,6 +249,7 @@ WalkDecision Walk::updateMotion(const runtime::MovementSnapshot& s,const query::
        limits_.blocker.yieldUs>=limits_.blocker.timeoutUs ||
        limits_.blocker.factLifetimeUs>limits_.blocker.timeoutUs || limits_.sideProbeDistance<=0))
         return finish(out,WalkState::Failed,WalkReason::InvalidInput);
+    if(ladder_ || selectedLadderLink()) return updateLadder(out,s,index,nowUs,reservedQueries,ladder);
     if(jump_ || (!cursor_.exhausted() && constraints(corridor_->transitions()[cursor_.index()].edge.traversal,
         corridor_->transitions()[cursor_.index()].sourceAttributes,
         corridor_->transitions()[cursor_.index()].targetAttributes).kind==model::NavTraversalKind::Jump))
