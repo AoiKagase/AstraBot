@@ -1,6 +1,6 @@
 # P4-08 — 明示的な味方報告
 
-Status: 実装・全事前gate通過。main統合後gateは未完了。
+Status: 実装・全事前gate・main統合後gate完了。
 Base: main `853cf13`。専用branch `codex/p408-team-reports`。
 Plan: [P4計画](../plans/phase-4-perception-world-model.md#p4-08--明示的な味方報告)。
 
@@ -54,7 +54,10 @@ Fake-engine: operator command、座標入力拒否、報告後にだけ伝聞が
 年齢／遅延公開とtrace不増加の追加確認後、対象4/4 (0.49s)も通過した。
 全事前gate: Windows portable51/51 (29.65s)、Metamod65/65 (55.03s)、
 Linux portable50/50 (19.71s)、Release PE32/x86と指定6 exportを確認した。
-main統合後gateは続いて記録する。
+mainへ `f68da7c` をfast-forward統合後、Windows portable51/51 (30.72s)、
+Metamod65/65、Linux portable50/50 (19.62s)が通過した。
+Release DLLはPE32/x86、指定6 exportのみ。SHA256:
+`624df77ad6df0abf456629ba86995bba68c75a2036f58b3df64f0dbb90040f7d`。
 
 Graphは対象関数を収録できずsource fallback。FocalSpanで所属・観測ID・operator経路を確認した。
 実機consoleと配信の確認はpost-Finish受入として未完了。P4-09は未完了。
