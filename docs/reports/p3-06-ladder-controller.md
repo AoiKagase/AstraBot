@@ -53,3 +53,33 @@ integration remain pending. Adapter tests cover both directions, ownership
 mismatches, corrupt publication shape/duplicates/endpoints and entity replacement.
 Binding verification: Windows x86 Debug 43/43 CTest, Release build and six exports
 passed. These adapter-only additions do not change the Linux portable sources.
+
+## Current-frame inspection
+
+`inspectLadderFrame` produces a current LadderInspection, selected-model contact
+and separately observed MOVETYPE_FLY. A mandatory host callback validates
+actor/agent/route/step/tick ownership. Each trace also rechecks map, ladder
+identity/model/bounds, actor edict/serial and exact origin/velocity/view/hull,
+movement mode, ground/duck flags and maxspeed. Water/basevelocity and nonstandard
+movement modes are unsupported. A failure returns no observation.
+
+The bound is four traces: standing-hull model overlap, point-model face normal
+when touching, standing-hull path sweep ignoring only the actor, and a measured
+world-BSP floor bound to containing NAV when grounded. A sweep spans at most
+96 horizontal units and 4100 vertical units. Lower budgets stop without retry.
+Inspection does not invent an exit intent or renew the entire discovery batch.
+
+Fixtures test grounded/airborne observations, all exhausted budgets, per-trace
+actor/map/ladder mutation, bad traces, wrong face, blockage, unsupported floor,
+stale tick and missing ownership evidence. The four-query contact-plus-support
+case also rejects a floor outside NAV.
+Frame-inspection verification: Windows x86 NMake Debug /W4 /WX, 43/43 CTest
+passed; x86 Release build and exact six exports passed. Linux portable source
+files are unchanged by this adapter slice.
+
+The host still must wire its registry/route callback and dispatch guards. The
+engine's MOVETYPE_FLY is an observation from the preceding movement update;
+detachment can change model overlap before that field returns to WALK. Controller
+integration must handle this transition explicitly, not equate overlap with mode.
+Physical exit planning remains required, especially clearing the upper hull
+boundary and crossing to measured support with real CS air acceleration.

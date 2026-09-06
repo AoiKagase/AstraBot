@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 #include "adapter/cstrike/nav/ladder_probe.hpp"
 #include "adapter/cstrike/nav/ladder_discovery.hpp"
+#include "adapter/cstrike/nav/ladder_frame.hpp"
 #include "nav/query/graph.hpp"
 #include "../nav/route_fixture.hpp"
 #include <algorithm>
@@ -15,7 +16,13 @@ using namespace astrabot;
 using namespace astrabot::adapter::cstrike;
 namespace {
 using V=nav::model::NavVector3;
-edict_t ladderEntity{},worldEntity{};
+edict_t ladderEntity{},worldEntity{},actorEntity{};
+bool frameCurrent{true};
+constexpr nav::local::Binding frameBinding{{1},{2,{3}},{1},4,5};
+bool currentFrame(const void*,nav::local::Binding b,core::TickId t) noexcept {
+    return frameCurrent && b.agent==frameBinding.agent && b.actor==frameBinding.actor &&
+        b.map==frameBinding.map && b.routeGeneration==4 && b.step==5 && t==core::TickId{6};
+}
 core::MapGeneration activeMap{1};
 unsigned traces{},faultAt{};
 int fault{};
@@ -24,8 +31,8 @@ NavConsole* publishing{};
 #endif
 struct Box { V low,high; } floors[2];
 core::MapGeneration mapNow(const void*) noexcept { return activeMap; }
-edict_t* entityAt(int n) { return n==1 ? &ladderEntity:n==0 ? &worldEntity:nullptr; }
-int indexOf(const edict_t* e) { return e==&ladderEntity ? 1:0; }
+edict_t* entityAt(int n) { return n==1 ? &ladderEntity:n==0 ? &worldEntity:n==2 ? &actorEntity:nullptr; }
+int indexOf(const edict_t* e) { return e==&ladderEntity ? 1:e==&actorEntity ? 2:0; }
 const char* classname(int n) { return n==1 ? "func_ladder":n==2 ? "*1":nullptr; }
 // Independent slab intersection, including Minkowski expansion for engine hull1.
 void boxTrace(const float* a,const float* b,Box box,int hull,edict_t* hit,TraceResult& out) {
@@ -59,6 +66,10 @@ void inject(const float* a,const float* b,TraceResult* t) {
     if(fault==8) ladderEntity.v.absmax.z+=1;
     if(fault==9) ++ladderEntity.v.modelindex;
     if(fault==10) t->pHit=&ladderEntity;
+    if(fault==12) actorEntity.v.origin.x+=1;
+    if(fault==13) ++actorEntity.serialnumber;
+    if(fault==14) frameCurrent=false;
+    if(fault==15) actorEntity.v.movetype=MOVETYPE_WALK;
 #ifdef ASTRABOT_LADDER_HOST_TESTS
     if(fault==11 && publishing) publishing->invalidate(nav::runtime::SessionReason::Cancelled);
 #endif
@@ -68,7 +79,7 @@ void traceModel(const float* a,const float* b,int hull,edict_t* e,TraceResult* t
     boxTrace(a,b,{{0,0,0},{8,64,128}},hull,e,*t); inject(a,b,t);
 }
 void traceHull(const float* a,const float* b,int ignore,int hull,edict_t* ignored,TraceResult* t) {
-    assert(ignore==0 && hull==1 && !ignored); begin(b,t);
+    assert(ignore==0 && hull==1 && (!ignored || ignored==&actorEntity)); begin(b,t);
     for(const auto& floor:floors) boxTrace(a,b,floor,1,&worldEntity,*t);
     inject(a,b,t);
 }
@@ -161,7 +172,70 @@ void testLadderProbe() {
     r=inspectLadderPassage({&e,nullptr,mapNow},{1},candidate,LadderFace::MinX,LadderExit::AcrossTop,*index,{1},2);
     assert(!r && r.reason==LadderProbeReason::Unavailable && traces==0);
 }
+void testLadderFrame() {
+    for(bool grounded:{false,true}) {
+        const auto index=setup(LadderFace::MinX,LadderExit::AcrossTop); auto e=engine();
+        nav::enrichment::NavMapFingerprint fingerprint{};
+        const auto batch=discoverLadderLinks({&e,nullptr,mapNow},{1},*index,{1},fingerprint,9,2);
+        assert(batch);
+        const auto bound=bindLadderPlan({&e,nullptr,mapNow},{1},fingerprint,*batch.value,batch.value->links.links.front(),2);
+        assert(bound);
+        const V origin=grounded ? bound.value->plan.start:V{bound.value->plan.mount.x,bound.value->plan.mount.y,80};
+        const auto resetActor=[&]() {
+            actorEntity={}; actorEntity.serialnumber=8; frameCurrent=true; traces=fault=faultAt=0; activeMap={1};
+            ladderEntity.serialnumber=7;
+            auto& v=actorEntity.v; v.flags=FL_FAKECLIENT|(grounded ? FL_ONGROUND:0);
+            v.origin=Vector(origin.x,origin.y,origin.z); v.mins=Vector(-16,-16,-36); v.maxs=Vector(16,16,36);
+            v.movetype=grounded ? MOVETYPE_WALK:MOVETYPE_FLY; v.maxspeed=250;
+        };
+        resetActor();
+        nav::runtime::MovementSnapshot s; s.agent=frameBinding.agent; s.actor=frameBinding.actor; s.map={1}; s.tick={6};
+        s.kind=nav::runtime::ActorKind::ManagedBot; s.connected=s.joined=s.alive=true; s.grounded=grounded; s.ducked=false;
+        s.position=origin; s.velocity=s.view=V{}; s.hull=nav::runtime::HullDimensions{{-16,-16,-36},{16,16,36}}; s.speedLimit=250.0f;
+        const LadderFrameWorld world{{&e,nullptr,mapNow},nullptr,currentFrame};
+        const auto run=[&](unsigned budget) { return inspectLadderFrame(world,&actorEntity,frameBinding,s,*bound.value,origin,*index,{1},3,budget); };
+        const auto ok=run(4); assert(ok && ok.queries==3 && traces==3);
+        assert(ok.value->climbing==!grounded && ok.value->contact.touching==!grounded);
+        assert(ok.value->inspection.support.has_value()==grounded && ok.value->inspection.pathClear==true);
+        assert(!ok.value->inspection.exitIntent && ok.value->inspection.stamp.tick==s.tick);
+        for(unsigned budget=0;budget<3;++budget) {
+            resetActor(); const auto r=run(budget);
+            assert(!r && !r.value && r.reason==LadderFrameReason::BudgetExceeded && r.queries==budget);
+        }
+        for(unsigned at=1;at<=3;++at) for(int mode:{1,2,3,7,12,13,14}) {
+            resetActor(); faultAt=at; fault=mode; const auto r=run(4);
+            assert(!r && !r.value && r.queries==at && traces==at);
+        }
+        resetActor(); s.tick={7}; assert(run(4).reason==LadderFrameReason::StaleActor && traces==0); s.tick={6};
+        resetActor(); actorEntity.v.basevelocity.x=1; assert(run(4).reason==LadderFrameReason::StaleActor && traces==0);
+        resetActor(); assert(run(5).reason==LadderFrameReason::InvalidInput && traces==0);
+        if(!grounded) {
+            resetActor(); faultAt=2; fault=6; assert(run(4).reason==LadderFrameReason::WrongFace);
+            resetActor(); faultAt=2; fault=15; assert(run(4).reason==LadderFrameReason::StaleActor);
+        } else {
+            resetActor(); faultAt=3; fault=10; assert(run(4).reason==LadderFrameReason::NoSupport);
+        }
+        resetActor(); faultAt=grounded ? 2:3; fault=5; assert(run(4).reason==LadderFrameReason::Blocked);
+        resetActor();
+        assert(inspectLadderFrame(world,&actorEntity,frameBinding,s,*bound.value,{origin.x+97,origin.y,origin.z},
+            *index,{1},3).reason==LadderFrameReason::InvalidInput && traces==0);
+        if(grounded) {
+            // Four-query path: contact + face + sweep + support. The projected
+            // floor is outside NAV here and must never become target support.
+            s.position=V{bound.value->plan.mount.x,bound.value->plan.mount.y,36};
+            const auto inspectMount=[&](unsigned budget) {
+                resetActor(); actorEntity.v.origin=Vector(s.position->x,s.position->y,s.position->z);
+                return inspectLadderFrame(world,&actorEntity,frameBinding,s,*bound.value,*s.position,*index,{1},3,budget);
+            };
+            for(unsigned budget=0;budget<4;++budget) {
+                const auto r=inspectMount(budget); assert(!r && r.queries==budget && r.reason==LadderFrameReason::BudgetExceeded);
+            }
+            const auto r=inspectMount(4); assert(!r && r.queries==4 && r.reason==LadderFrameReason::NoSupport);
+        }
+    }
+}
 void testLadderDiscovery() {
+    testLadderFrame();
     const auto index=setup(LadderFace::MinX,LadderExit::AcrossTop); auto e=engine();
     nav::enrichment::NavMapFingerprint fingerprint{}; fingerprint[0]=0x7a;
     auto batch=discoverLadderLinks({&e,nullptr,mapNow},{1},*index,{1},fingerprint,9,2);

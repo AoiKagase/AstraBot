@@ -249,6 +249,7 @@ if(ASTRABOT_BUILD_METAMOD)
         src/adapter/cstrike/nav/jump_motion.cpp
         src/adapter/cstrike/nav/ladder_scanner.cpp
         src/adapter/cstrike/nav/ladder_probe.cpp
+        src/adapter/cstrike/nav/ladder_frame.cpp
         src/adapter/cstrike/nav/ladder_discovery.cpp
         src/adapter/cstrike/nav/ladder_publication.cpp
         src/adapter/cstrike/nav/world_queries.cpp
@@ -569,6 +570,7 @@ if(ASTRABOT_BUILD_TESTS)
             tests/adapter/ladder_probe_tests.cpp
             src/adapter/cstrike/nav/ladder_scanner.cpp
             src/adapter/cstrike/nav/ladder_probe.cpp
+            src/adapter/cstrike/nav/ladder_frame.cpp
             src/adapter/cstrike/nav/ladder_discovery.cpp
         )
         target_compile_features(astrabot_ladder_scanner_tests PRIVATE cxx_std_17)
@@ -591,6 +593,7 @@ if(ASTRABOT_BUILD_TESTS)
             src/adapter/cstrike/nav/jump_motion.cpp
             src/adapter/cstrike/nav/ladder_scanner.cpp
             src/adapter/cstrike/nav/ladder_probe.cpp
+            src/adapter/cstrike/nav/ladder_frame.cpp
             src/adapter/cstrike/nav/ladder_discovery.cpp
             src/adapter/cstrike/nav/ladder_publication.cpp
             src/adapter/cstrike/nav/world_queries.cpp
@@ -654,6 +657,7 @@ if(ASTRABOT_BUILD_TESTS)
             src/adapter/cstrike/nav/jump_motion.cpp
             src/adapter/cstrike/nav/ladder_scanner.cpp
             src/adapter/cstrike/nav/ladder_probe.cpp
+            src/adapter/cstrike/nav/ladder_frame.cpp
             src/adapter/cstrike/nav/ladder_discovery.cpp
             src/adapter/cstrike/nav/ladder_publication.cpp
             src/adapter/cstrike/nav/world_queries.cpp
