@@ -1,5 +1,12 @@
 # State
-Status: P4-05 complete; P4-06 through P4-09 pending. P4 goal remains active.
+Status: P4-06 implemented, full pre-merge gates passed; integration pending.
+Current: .worktrees/p406-world-snapshot, codex/p406-world-snapshot from abad680.
+Current report: docs/reports/p4-06-world-snapshot.md.
+WorldModel owns canonical visual/sound reducers. Fixed32 visual+1024 sound inputs.
+Initial Metamod60/60; additional Core+fake-engine world tests2/2 passed.
+Pre-merge: Windows49/61, Linux48 all passed; Release PE32/x86 and six exports.
+Next: FocalSpan update, explicit commit, main ff-only, repeat all gates, report commit.
+P4-07 through09 remain pending. The following P4-05 evidence is historical.
 Goal: complete approved P4; no project-wide Finish or live checks.
 Main worktree: .worktrees/main-integration; implementation d7228ab, base2818a3a.
 Dedicated branch/worktree codex/p405-visual-interference retained.

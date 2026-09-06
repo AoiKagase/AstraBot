@@ -14,6 +14,7 @@
 #include "adapter/cstrike/vision.hpp"
 #include "adapter/cstrike/sound.hpp"
 #include "adapter/cstrike/visual_effects.hpp"
+#include "core/world_model.hpp"
 #include "adapter/cstrike/nav/console.hpp"
 #include "debug/host_trace.hpp"
 #include "host/bot_agents.hpp"
@@ -112,6 +113,7 @@ public:
     LifecycleStatus status() const noexcept { return status_; }
     cstrike::NavConsole& navConsole() noexcept { return navConsole_; }
     const cstrike::VisionAdapter& vision() const noexcept { return vision_; }
+    const core::world::WorldModel& world() const noexcept { return world_; }
     const cstrike::SoundAdapter& sound() const noexcept { return sound_; }
     void soundPrecache(int,const char*,std::uint16_t) noexcept;
     void rejectSoundHook() noexcept { sound_.rejectHook(); }
@@ -130,6 +132,7 @@ public:
 
 private:
     friend class cstrike::VisionAdapter;
+    friend class cstrike::SoundAdapter;
     struct ClientState {
         FakeClientCoordinator fake{};
         cstrike::JoinState join{};
@@ -167,8 +170,9 @@ private:
     std::array<ClientState,host::kMaxClientSlots> clients_{};
     MovementCoordinator movement_{};
     cstrike::NavConsole navConsole_{};
-    cstrike::VisionAdapter vision_{};
-    cstrike::SoundAdapter sound_{};
+    core::world::WorldModel world_{};
+    cstrike::VisionAdapter vision_{world_.visualReducer()};
+    cstrike::SoundAdapter sound_{world_.soundReducer()};
     cstrike::VisualEffects visualEffects_{};
     bool advanceVisualEffects() noexcept;
     core::perception::TeamRoster teams_{};

@@ -218,7 +218,7 @@ void VisionAdapter::frame(metamod::LifecycleCoordinator& owner, enginefuncs_t* e
     if (error_ == p::Reason::InvalidFrame || error_ == p::Reason::InvalidSettings) {
         memory_.invalidate(core::world::MemoryReason::InvalidFrame); return;
     }
-    if (!memory_.advance(memoryFrame)) return;
+    if (!owner.world_.advance(memoryFrame)) return;
     if (owner.visualEffects().revision() != effectsRevision) {
         // An effect arriving after an earlier successful sample invalidates this
         // scan's evidence; existing visual memory still decays above.
@@ -228,7 +228,7 @@ void VisionAdapter::frame(metamod::LifecycleCoordinator& owner, enginefuncs_t* e
         if (!player.eligible || !player.agent.isValid()) continue;
         const auto* batch = vision_.latest(player.player);
         // Cached publications are not new evidence. Decay still ran above.
-        if (batch && batch->stamp.tick == input.tick) (void)memory_.observe(*batch);
+        if (batch && batch->stamp.tick == input.tick) (void)owner.world_.stage(*batch);
     }
 }
 } // namespace astrabot::adapter::cstrike

@@ -75,6 +75,7 @@ function(astrabot_enable_metamod_compatibility target)
 endfunction()
 
 add_library(astrabot_core STATIC
+    src/core/world_model.cpp
     src/core/sound_memory.cpp
     src/core/visual_memory.cpp
     src/core/perception.cpp
@@ -300,6 +301,10 @@ endif()
 
 if(ASTRABOT_BUILD_TESTS)
     enable_testing()
+    add_executable(astrabot_world_model_tests tests/world_model_tests.cpp)
+    target_link_libraries(astrabot_world_model_tests PRIVATE astrabot_core)
+    astrabot_enable_warnings(astrabot_world_model_tests)
+    add_test(NAME astrabot.world_model COMMAND astrabot_world_model_tests)
     add_executable(astrabot_screen_fade_tests tests/screen_fade_tests.cpp src/adapter/cstrike/messages.cpp)
     target_link_libraries(astrabot_screen_fade_tests PRIVATE astrabot_core)
     astrabot_enable_warnings(astrabot_screen_fade_tests)
@@ -747,6 +752,7 @@ if(ASTRABOT_BUILD_TESTS)
         add_test(NAME astrabot.adapter.perception_identity COMMAND astrabot_fake_client_tests --p403-tests)
         add_test(NAME astrabot.adapter.sound COMMAND astrabot_fake_client_tests --p404-tests)
         add_test(NAME astrabot.adapter.visual_effects COMMAND astrabot_fake_client_tests --p405-tests)
+        add_test(NAME astrabot.adapter.world_model COMMAND astrabot_fake_client_tests --p406-tests)
         set_tests_properties(astrabot.adapter.visual_effects PROPERTIES TIMEOUT 60)
         set_tests_properties(astrabot.adapter.sound PROPERTIES TIMEOUT 60)
         set_tests_properties(astrabot.adapter.perception_identity PROPERTIES TIMEOUT 60)

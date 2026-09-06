@@ -13,6 +13,7 @@ struct SoundAdapterDiagnostics {
 // Exact emitter/listener positions and engine identity stay in this adapter.
 class SoundAdapter final {
 public:
+    explicit SoundAdapter(core::world::SoundMemoryModel& memory) noexcept : memory_(memory) {}
     static constexpr std::size_t queueCapacity = 256, eventsPerFrame = 32;
     void reset() noexcept;
     void beginMap(core::MapGeneration) noexcept;
@@ -54,7 +55,7 @@ private:
     void capture(metamod::LifecycleCoordinator&,float,Key,core::perception::SoundKind) noexcept;
     void clearQueue() noexcept;
     EventCatalog events_{};
-    core::world::SoundMemoryModel memory_{};
+    core::world::SoundMemoryModel& memory_;
     core::MapGeneration map_{};
     core::perception::RoundGeneration round_{1};
     std::array<Listener,core::perception::kPlayerCapacity> listeners_{};

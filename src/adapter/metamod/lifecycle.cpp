@@ -86,6 +86,7 @@ void LifecycleCoordinator::configure(enginefuncs_t* engine,mutil_funcs_t* utilit
     navConsole_.bindMovement(&movement_);
 }
 void LifecycleCoordinator::reset() noexcept {
+    world_.reset();
     visualEffects_.reset();
     sound_.reset();
     vision_.reset();
@@ -127,6 +128,7 @@ void LifecycleCoordinator::serverActivate(int clientMax) noexcept {
     emit(host::LifecycleEventKind::MapActivated,result);
 }
 void LifecycleCoordinator::serverDeactivate() noexcept {
+    world_.reset();
     visualEffects_.reset();
     sound_.reset();
     vision_.reset();
@@ -225,6 +227,7 @@ RemovalResult LifecycleCoordinator::remove(core::PlayerId player) noexcept {
 }
 void LifecycleCoordinator::queuePrimaryCreate(cstrike::JoinRequest request) noexcept { clients_[0].fake.queuePrimaryCreate(request); }
 void LifecycleCoordinator::startFrame() noexcept {
+    world_.beginUpdate();
     const auto result=registry_.startFrame(); emit(host::LifecycleEventKind::FrameStarted,result);
     if(!result.changed()) return;
     movement_.beginFrame();
@@ -260,8 +263,11 @@ void LifecycleCoordinator::startFrame() noexcept {
         (void)advanceVisualEffects();
         vision_.frame(*this,engineFunctions_,engineGlobals_ ? engineGlobals_->time :
             (std::numeric_limits<float>::quiet_NaN)());
-        if(registry_.isMapActive() && registry_.mapGeneration()==map && registry_.currentTick()==tick)
+        if(registry_.isMapActive() && registry_.mapGeneration()==map && registry_.currentTick()==tick) {
             sound_.frame(*this,engineGlobals_ ? engineGlobals_->time : (std::numeric_limits<float>::quiet_NaN)());
+            if(registry_.isMapActive() && registry_.mapGeneration()==map && registry_.currentTick()==tick)
+                (void)world_.publish({sound_.diagnostics().queued,sound_.diagnostics().overflow});
+        }
     }
 }
 void LifecycleCoordinator::soundPrecache(int type,const char* name,std::uint16_t index) noexcept {
@@ -415,6 +421,7 @@ void LifecycleCoordinator::handleMessage(const cstrike::MessageEvent& event) noe
             return;
         }
         ++round_.value; lastRoundTime_ = time; lastRoundTick_ = registry_.currentTick();
+        world_.beginRound(round_);
         ++identityDiagnostics_.rounds; vision_.beginRound(round_);
         sound_.beginRound(round_);
         (void)advanceVisualEffects();

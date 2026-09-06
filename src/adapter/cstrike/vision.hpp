@@ -9,6 +9,7 @@ namespace astrabot::adapter::cstrike {
 // Engine pointers/serials and unobserved geometry stay inside this adapter.
 class VisionAdapter final {
 public:
+    explicit VisionAdapter(core::world::VisualMemoryModel& memory) noexcept : memory_(memory) {}
     void reset() noexcept;
     void forget(core::PlayerId) noexcept;
     void beginRound(core::perception::RoundGeneration) noexcept;
@@ -26,7 +27,7 @@ private:
     };
     std::array<EntityBinding, core::perception::kPlayerCapacity> roster_{};
     core::perception::Vision vision_{};
-    core::world::VisualMemoryModel memory_{};
+    core::world::VisualMemoryModel& memory_;
     std::uint64_t revision_{};
     core::MapGeneration map_{};
     core::perception::Reason error_{core::perception::Reason::None};

@@ -131,12 +131,7 @@ void SoundAdapter::frame(metamod::LifecycleCoordinator& owner,float time) noexce
     diagnostics_.frameEvents = diagnostics_.frameAudienceChecks = 0;
     if (!synchronize(owner)) return;
     std::uint64_t now{}; if (!timestamp(time,now)) return;
-    core::world::MemoryFrame frame{};
-    frame.map = map_; frame.round = round_; frame.tick = owner.registry().currentTick(); frame.timeMicros = now;
-    for (std::size_t i=0; i<listeners_.size(); ++i) {
-        const auto& listener = listeners_[i]; frame.players[i] = {listener.player,listener.agent,listener.player.isValid()};
-    }
-    if (!memory_.advance(frame)) { diagnostics_.retired += count_; clearQueue(); return; }
+    if (!owner.world_.collectingAt(map_,round_,owner.registry().currentTick(),now)) { diagnostics_.retired += count_; clearQueue(); return; }
     while (count_ != 0 && diagnostics_.frameEvents < eventsPerFrame) {
         auto& pending = queue_[head_];
         if (pending.identity.observedMicros > now) break;
@@ -154,7 +149,7 @@ void SoundAdapter::frame(metamod::LifecycleCoordinator& owner,float time) noexce
                     ++diagnostics_.recipientRejected; continue;
                 }
                 if (soundAudible(pending.source,heard.position,pending.volume,pending.attenuation))
-                    (void)memory_.observe(heard.player,observation);
+                    (void)owner.world_.stage(heard.player,observation);
             }
         }
         head_ = (head_+1)%queue_.size(); --count_;
