@@ -43,6 +43,11 @@ bool VisionSettings::valid() const noexcept {
 void Vision::reset() noexcept {
     states_ = {}; generations_ = {}; map_ = {}; tick_ = {}; timeMicros_ = 0; cursor_ = 0;
     frameUpdates_ = 0; frameReason_ = Reason::None; ++revision_;
+    round_ = {1}; // Keep source sequence across transient resets within a map.
+}
+void Vision::beginRound(RoundGeneration round) noexcept {
+    if (!round.isValid() || round.value <= round_.value) return;
+    states_ = {}; round_ = round; ++revision_;
 }
 void Vision::forget(PlayerId player) noexcept {
     ++revision_; // Cancels synchronous in-flight publication, too.
@@ -71,13 +76,15 @@ void Vision::update(const InputFrame& input, IVisibilityQueries& queries) noexce
     InputFrame frame = input;
     frameUpdates_ = 0; frameReason_ = Reason::None;
     if (!settings_.valid()) { reset(); frameReason_ = Reason::InvalidSettings; return; }
-    if (!frame.map.isValid() || !frame.tick.isValid() ||
+    if (!frame.map.isValid() || !frame.tick.isValid() || !frame.round.isValid() ||
+        (frame.map == map_ && frame.round.value < round_.value) ||
         (map_.isValid() && (frame.map.value < map_.value ||
          (frame.map == map_ && (frame.tick.value <= tick_.value || frame.timeMicros < timeMicros_))))) {
         frameReason_ = Reason::InvalidFrame;
         return; // Replayed input cannot overwrite a newer batch.
     }
     if (frame.map != map_) reset();
+    beginRound(frame.round);
     map_ = frame.map; tick_ = frame.tick; timeMicros_ = frame.timeMicros;
     // A newer tick cannot make a retired slot generation current again.
     // Keep high-water generations through forget/death until map retirement.
@@ -125,7 +132,11 @@ void Vision::update(const InputFrame& input, IVisibilityQueries& queries) noexce
         if (frameUpdates_ == kBotsPerFrame) { ++state.diagnostics.deferredFrames; continue; }
         const auto& observer = frame.players[index];
         ObservationBatch batch{};
-        batch.stamp = {observer.agent, observer.player, frame.map, frame.tick, frame.timeMicros};
+        batch.stamp = {observer.agent, observer.player, frame.map, frame.tick, frame.timeMicros,frame.round};
+        if (sequence_ == (std::numeric_limits<std::uint64_t>::max)()) {
+            frameReason_ = Reason::InvalidFrame; return;
+        }
+        batch.identity = {frame.map,frame.round,ObservationSource::Vision,++sequence_,frame.timeMicros,frame.timeMicros};
         Diagnostics d{};
         count(d,frameReason_);
         d.latenessMicros = frame.timeMicros-state.nextMicros;

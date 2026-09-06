@@ -110,8 +110,16 @@ public:
     LifecycleStatus status() const noexcept { return status_; }
     cstrike::NavConsole& navConsole() noexcept { return navConsole_; }
     const cstrike::VisionAdapter& vision() const noexcept { return vision_; }
+    const core::perception::TeamRoster& teams() const noexcept { return teams_; }
+    core::perception::RoundGeneration round() const noexcept { return round_; }
+    struct PerceptionIdentityDiagnostics {
+        std::uint64_t teamUpdates{}, teamChanges{}, rejectedTeams{}, rounds{}, duplicateRounds{}, rejectedRounds{};
+        bool roundNotificationAvailable{};
+    };
+    const PerceptionIdentityDiagnostics& perceptionIdentityDiagnostics() const noexcept { return identityDiagnostics_; }
 
 private:
+    friend class cstrike::VisionAdapter;
     struct ClientState {
         FakeClientCoordinator fake{};
         cstrike::JoinState join{};
@@ -150,13 +158,22 @@ private:
     MovementCoordinator movement_{};
     cstrike::NavConsole navConsole_{};
     cstrike::VisionAdapter vision_{};
+    core::perception::TeamRoster teams_{};
+    core::perception::RoundGeneration round_{1};
+    PerceptionIdentityDiagnostics identityDiagnostics_{};
+    core::TickId lastRoundTick_{};
+    double lastRoundTime_{-1};
     enginefuncs_t* engineFunctions_{nullptr};
     globalvars_t* engineGlobals_{nullptr};
     mutil_funcs_t* utilityFunctions_{nullptr};
     DLL_FUNCTIONS* gameDllFunctions_{nullptr};
     cstrike::MessageDecoder messageDecoder_{};
+    cstrike::UserMessageIds perceptionMessageIds_{};
     cstrike::MessageDecoder* activeDecoder_{};
     core::MapGeneration messageMap_{};
+    core::perception::RoundGeneration messageRound_{};
+    int messageDestination_{};
+    bool messageHasRecipient_{};
     std::array<core::PlayerId,host::kMaxClientSlots> messagePlayers_{};
     bool commandContextActive_{false};
     core::PlayerId commandPlayer_{};

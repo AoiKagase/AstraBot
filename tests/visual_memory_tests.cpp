@@ -18,6 +18,8 @@ p::ObservationBatch batch(const w::MemoryFrame& f, std::uint16_t observer=1, std
     p::ObservationBatch b{};
     const auto& owner = f.players[observer-1U];
     b.stamp = {owner.agent,owner.player,f.map,f.tick,f.timeMicros};
+    b.stamp.round = f.round;
+    b.identity = {f.map,f.round,p::ObservationSource::Vision,f.tick.value*32+observer,f.timeMicros,f.timeMicros};
     b.count = 1; b.observations[0] = {f.players[target-1U].player,{100,1,64}};
     return b;
 }
@@ -92,6 +94,29 @@ void malformedAndClock() {
     w::VisualMemoryModel zero({0}); assert(!zero.advance(f));
     assert(zero.diagnostics().reason == w::MemoryReason::InvalidSettings);
 }
+void roundAndProvenance() {
+    w::VisualMemoryModel m; auto f = frame(); assert(m.advance(f));
+    const auto old = batch(f); assert(m.observe(old));
+    m.beginRound({2}); assert(!m.latest(player(1)) && !m.observe(old));
+    f.round = {2}; advance(m,f,100);
+    assert(m.latest(player(1))->count == 0 && !m.observe(old));
+    auto b = batch(f); b.stamp.round = {1}; assert(!m.observe(b));
+    b = batch(f); b.identity.round = {1}; assert(!m.observe(b));
+    b = batch(f); b.identity.source = p::ObservationSource::Sound; assert(!m.observe(b));
+    b = batch(f); --b.identity.observedMicros; assert(!m.observe(b));
+    b = batch(f); ++b.identity.receivedMicros; assert(!m.observe(b));
+    b = batch(f); assert(m.observe(b));
+    const auto remembered = m.latest(player(1))->memories[0];
+    assert(remembered.identity.sequence == b.identity.sequence && remembered.identity.round == f.round);
+    advance(m,f,1); auto repeated = batch(f); repeated.identity.sequence = b.identity.sequence;
+    assert(!m.observe(repeated));
+    assert(m.latest(player(1))->memories[0].identity.observedMicros == remembered.lastSeenMicros);
+    m.beginRound({2}); // Duplicate invalidation must not erase this round.
+    assert(m.latest(player(1))->count == 1);
+    auto rollback = f; ++rollback.tick.value; rollback.round = {1};
+    assert(!m.advance(rollback) && !m.latest(player(1)));
+    advance(m,f,1); assert(m.latest(player(1))->count == 0 && !m.observe(old));
+}
 void capacityAndBudget() {
     const auto start = std::chrono::steady_clock::now();
     w::VisualMemoryModel m; auto f = frame();
@@ -111,4 +136,4 @@ void capacityAndBudget() {
               << " us; model bytes: " << sizeof(m) << '\n';
 }
 }
-int main() { decayAndReacquire(); invalidAndRetired(); malformedAndClock(); capacityAndBudget(); }
+int main() { decayAndReacquire(); invalidAndRetired(); malformedAndClock(); roundAndProvenance(); capacityAndBudget(); }

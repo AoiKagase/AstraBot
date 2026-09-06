@@ -4,6 +4,7 @@ namespace p401 {
 namespace p = astrabot::core::perception;
 edict_t human{}, wall{}, door{};
 unsigned traceCalls{}, mode{};
+void (*extraTrace)(){};
 edict_t* indexed(int slot) {
     if (slot == 32) return &human;
     return slot >= 1 && slot <= 16 ? gFixture->matrixEntity(static_cast<unsigned>(slot)) : nullptr;
@@ -33,6 +34,7 @@ void trace(const float* start,const float* end,int flags,edict_t* observer,Trace
     if (mode == 10) astrabot::adapter::metamod::lifecycleCoordinator().serverDeactivate();
     if (mode == 11) ++human.serialnumber;
     if (mode == 12) observer->v.health = 0;
+    if (extraTrace) extraTrace();
 }
 void step(Fixture& fixture,float dt=0.1f) {
     traceCalls = 0; fixture.engineGlobals.time += dt;
@@ -47,6 +49,7 @@ void setup(Fixture& fixture,enginefuncs_t& hooks,unsigned actors) {
     fixture.engine.pfnPEntityOfEntIndex = &indexed;
     fixture.engine.pfnTraceLine = &trace;
     human = {}; mode = 0; traceCalls = 0;
+    extraTrace = nullptr;
     for (unsigned slot=1; slot<=16; ++slot) fixture.matrixEntity(slot)->free = 1;
     activate(fixture);
     int version = ENGINE_INTERFACE_VERSION;

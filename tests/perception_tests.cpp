@@ -25,6 +25,22 @@ InputFrame frame() {
     return f;
 }
 void advance(InputFrame& f, std::uint64_t dt=100000) { ++f.tick.value; f.timeMicros += dt; }
+void roundIdentity() {
+    auto f = frame(); Vision v; Port port; v.update(f,port);
+    const auto observer = f.players[0].player;
+    const auto old = *v.latest(observer);
+    assert(old.identity.validAt(f.timeMicros) && old.identity.round == f.round);
+    v.beginRound({2}); assert(!v.latest(observer));
+    advance(f); v.update(f,port); assert(!v.latest(observer) && v.frameReason() == Reason::InvalidFrame);
+    f.round = {2}; v.update(f,port); assert(v.latest(observer));
+    const auto current = *v.latest(observer);
+    assert(current.identity.round == f.round && current.identity.sequence > old.identity.sequence);
+    v.beginRound({2}); assert(v.latest(observer)->identity.sequence == current.identity.sequence);
+    advance(f,1); v.update(f,port);
+    assert(v.latest(observer)->identity.sequence == current.identity.sequence);
+    advance(f); v.update(f,port);
+    assert(v.latest(observer)->identity.sequence > current.identity.sequence);
+}
 void geometryAndPublication() {
     auto f = frame(); Vision v; Port p;
     v.update(f,p);
@@ -155,4 +171,4 @@ void scheduling() {
         assert(batch->observations[i].target == f.players[i+1].player);
 }
 }
-int main() { geometryAndPublication(); invalidation(); scheduling(); }
+int main() { geometryAndPublication(); invalidation(); scheduling(); roundIdentity(); }

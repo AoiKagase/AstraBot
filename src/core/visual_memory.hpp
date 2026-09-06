@@ -14,12 +14,14 @@ struct MemoryFrame {
     TickId tick{};
     std::uint64_t timeMicros{};
     std::array<MemoryPlayer, perception::kPlayerCapacity> players{};
+    perception::RoundGeneration round{1};
 };
 struct VisualMemory {
     PlayerId target{};
     perception::Point lastKnownPosition{};
     std::uint64_t lastSeenMicros{};
     double confidence{};
+    perception::ObservationIdentity identity{};
 };
 struct MemorySnapshot {
     perception::Stamp stamp{}; // Owner/map and most recent decay frame.
@@ -28,7 +30,7 @@ struct MemorySnapshot {
 };
 enum class MemoryReason : std::uint8_t {
     None, InvalidSettings, InvalidFrame, StaleIdentity, InvalidBatch, DuplicateBatch,
-    StaleBatch, MissingEngine
+    StaleBatch, MissingEngine, RoundChanged
 };
 struct MemoryDiagnostics {
     MemoryReason reason{};
@@ -40,6 +42,7 @@ class VisualMemoryModel final {
 public:
     explicit VisualMemoryModel(MemorySettings settings = {}) noexcept : settings_(settings) {}
     void reset() noexcept;
+    void beginRound(perception::RoundGeneration) noexcept;
     // Clears knowledge while retaining temporal/generation high-water marks.
     void invalidate(MemoryReason) noexcept;
     void forget(PlayerId) noexcept;
@@ -50,7 +53,7 @@ public:
     const MemorySnapshot* latest(PlayerId) const noexcept;
     const MemoryDiagnostics& diagnostics() const noexcept { return diagnostics_; }
 private:
-    struct State { MemorySnapshot snapshot{}; TickId consumed{}; };
+    struct State { MemorySnapshot snapshot{}; TickId consumed{}; std::uint64_t sequence{}; };
     void reject(MemoryReason) noexcept;
     MemorySettings settings_{};
     MemoryFrame frame_{};

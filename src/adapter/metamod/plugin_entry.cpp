@@ -86,6 +86,7 @@ bool resolveUserMessageIds(
         PLID, "ShowMenu", &messageSize);
     ids.teamInfo = utilityFunctions->pfnGetUserMsgID(
         PLID, "TeamInfo", &messageSize);
+    ids.hltv = utilityFunctions->pfnGetUserMsgID(PLID, "HLTV", &messageSize);
     return ids.valid();
 }
 

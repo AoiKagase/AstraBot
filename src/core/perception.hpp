@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 #pragma once
 #include "core/identity.hpp"
+#include "core/perception_identity.hpp"
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -27,6 +28,7 @@ struct Stamp {
     MapGeneration map{};
     TickId tick{};
     std::uint64_t timeMicros{};
+    RoundGeneration round{1};
 };
 struct VisibleObservation {
     PlayerId target{};
@@ -36,6 +38,7 @@ struct ObservationBatch {
     Stamp stamp{};
     std::array<VisibleObservation, kCandidateCapacity> observations{};
     std::size_t count{};
+    ObservationIdentity identity{}; // One immutable source event per published scan.
 };
 // Diagnostics contain no hidden positions or rejected target identities.
 struct Diagnostics {
@@ -57,6 +60,7 @@ struct InputFrame {
     TickId tick{};
     std::uint64_t timeMicros{};
     std::array<PlayerSample, kPlayerCapacity> players{}; // slot - 1
+    RoundGeneration round{1};
 };
 struct SightRequest {
     Stamp stamp{};
@@ -73,6 +77,7 @@ class Vision final {
 public:
     explicit Vision(VisionSettings settings = {}) noexcept : settings_(settings) {}
     void reset() noexcept;
+    void beginRound(RoundGeneration) noexcept;
     void forget(PlayerId) noexcept;
     void update(const InputFrame&, IVisibilityQueries&) noexcept;
     const ObservationBatch* latest(PlayerId) const noexcept;
@@ -96,5 +101,7 @@ private:
     std::uint64_t timeMicros_{}, revision_{};
     std::size_t cursor_{}, frameUpdates_{};
     Reason frameReason_{Reason::None};
+    RoundGeneration round_{1};
+    std::uint64_t sequence_{};
 };
 } // namespace astrabot::core::perception

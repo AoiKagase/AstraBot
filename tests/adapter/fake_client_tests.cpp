@@ -534,6 +534,7 @@ int captureGetUserMsgID(
     if (std::strcmp(messageName, "TeamInfo") == 0) {
         return 13;
     }
+    if (std::strcmp(messageName, "HLTV") == 0) return 14;
     return 0;
 }
 
@@ -1260,6 +1261,7 @@ void testNavRecoveryCancellation() {
 void testNavAutomaticReplan() {
     using namespace astrabot;
     for(std::uint64_t us : {8000U,16000U,100000U}) for(int mode=0;mode<5;++mode) {
+        gNavPlayer = {}; // No connected player from the previous fixture epoch.
         Fixture fixture{}; fixture.engine.pfnPEntityOfEntIndex=&captureDoorEntity;
         fixture.engineGlobals.maxEntities=128;
         enginefuncs_t hooks{}; prepareNavWalk(fixture,hooks);
@@ -1324,6 +1326,7 @@ void testNavAutomaticReplan() {
 void testNavPlayers() {
     using namespace astrabot;
     for(std::uint64_t us : {8000U,16000U,100000U}) for(int mode=0;mode<5;++mode) {
+        gNavPlayer = {}; // Registration below belongs to this fixture only.
         Fixture fixture{}; enginefuncs_t hooks{};
         fixture.engineGlobals.maxEntities=128;
         if(mode!=4) fixture.engine.pfnPEntityOfEntIndex=&captureDoorEntity;
@@ -2346,6 +2349,7 @@ void testDetachDirectlyCleansActiveEntityOnce() {
 #include "p308_host_matrix.hpp"
 #include "p401_vision_tests.hpp"
 #include "p402_memory_tests.hpp"
+#include "p403_identity_tests.hpp"
 
 } // namespace
 
@@ -2360,6 +2364,7 @@ int main(int argc,char** argv) {
     if(argc==3 && std::strcmp(argv[1],"--p308-output")==0) return runP308HostMatrix(argv[2]);
     if(argc==2 && std::strcmp(argv[1],"--p401-tests")==0) { p401::run(); return 0; }
     if(argc==2 && std::strcmp(argv[1],"--p402-tests")==0) { p402::run(); return 0; }
+    if(argc==2 && std::strcmp(argv[1],"--p403-tests")==0) { p403::run(); return 0; }
     assert(argc==1);
     testNavWorldQueries();
     testNavJumpProbeWorldQueries();

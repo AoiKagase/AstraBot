@@ -24,7 +24,7 @@ P308HostResult p308HostRun(unsigned actors,std::uint64_t us,unsigned mode,bool m
     // reuses the same edict slots with fresh registry/map identities.
     for(unsigned epoch=0;epoch<(mapChange ? 2U:1U);++epoch) {
         fixture.matrixSlot=1;
-        for(unsigned slot=1;slot<=actors;++slot) { fixture.matrixEntity(slot)->free=0; if(epoch) ++fixture.matrixEntity(slot)->serialnumber; }
+        for(unsigned slot=1;slot<=actors;++slot) { fixture.matrixEntity(slot)->free=slot==1 ? 0:1; if(epoch) ++fixture.matrixEntity(slot)->serialnumber; }
         fixture.engine.pfnPEntityOfEntIndex=&captureDoorEntity;
         gDoorActive=false; gDoorOpenAtUs=0; gSteeringMode=-1; gSimulateCrouch=gCrouchCeiling=false;
         gSimulateJump=gMissJump=gSimulateLadder=false;
@@ -41,6 +41,7 @@ P308HostResult p308HostRun(unsigned actors,std::uint64_t us,unsigned mode,bool m
         std::vector<core::PlayerId> players{owner.fakeClient().activePlayer()};
         for(unsigned slot=2;slot<=actors;++slot) {
             fixture.matrixSlot=slot;
+            fixture.matrixEntity(slot)->free=0; // FakeClient allocation begins here.
             const auto created=owner.createBot("AstraBot-Matrix",{adapter::cstrike::Team::Terrorist,1});
             assert(created.succeeded()); players.push_back(created.player);
             auto* entity=fixture.matrixEntity(slot);

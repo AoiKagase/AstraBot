@@ -11,6 +11,9 @@ class VisionAdapter final {
 public:
     void reset() noexcept;
     void forget(core::PlayerId) noexcept;
+    void beginRound(core::perception::RoundGeneration) noexcept;
+    bool synchronize(metamod::LifecycleCoordinator&, enginefuncs_t*) noexcept;
+    bool bound(core::PlayerId, enginefuncs_t*) const noexcept;
     void frame(metamod::LifecycleCoordinator&, enginefuncs_t*, float engineTime) noexcept;
     const core::perception::Vision& observations() const noexcept { return vision_; }
     const core::world::VisualMemoryModel& memory() const noexcept { return memory_; }

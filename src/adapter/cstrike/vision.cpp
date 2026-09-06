@@ -36,7 +36,10 @@ public:
     bool current(core::PlayerId player, const p::Stamp& stamp) const noexcept {
         if (!player.isValid() || player.slot > entities.size()) return false;
         const auto& b = entities[player.slot-1U];
+        const auto* member = owner.teams().find(player);
+        if (member && member->team == p::Team::Spectator) return false;
         return owner.registry().isMapActive() && owner.registry().mapGeneration() == stamp.map &&
+            owner.round() == stamp.round &&
             owner.registry().currentTick() == stamp.tick && b.player == player &&
             owner.registry().currentPlayer(player.slot) == player && alive(b.entity) &&
             b.entity->serialnumber == b.serial && engine.pfnPEntityOfEntIndex &&
@@ -88,15 +91,67 @@ void VisionAdapter::reset() noexcept {
 void VisionAdapter::forget(core::PlayerId player) noexcept {
     ++revision_; memory_.forget(player);
     vision_.forget(player);
-    if (player.isValid() && player.slot <= roster_.size() && roster_[player.slot-1U].player == player)
-        roster_[player.slot-1U] = {};
+    // Keep the serial binding as a tombstone until authoritative reuse. Clearing
+    // it here would let a delayed message rediscover the same disconnected edict.
+}
+void VisionAdapter::beginRound(p::RoundGeneration round) noexcept {
+    ++revision_; vision_.beginRound(round); memory_.beginRound(round);
+}
+bool VisionAdapter::bound(core::PlayerId player, enginefuncs_t* engine) const noexcept {
+    if (!player.isValid() || player.slot > roster_.size() || !engine || !engine->pfnPEntityOfEntIndex) return false;
+    const auto& binding = roster_[player.slot-1U];
+    return binding.player == player && connected(binding.entity) && binding.entity->serialnumber == binding.serial &&
+        engine->pfnPEntityOfEntIndex(player.slot) == binding.entity;
+}
+bool VisionAdapter::synchronize(metamod::LifecycleCoordinator& owner, enginefuncs_t* engine) noexcept {
+    auto& registry = owner.registry();
+    if (!registry.isMapActive()) { reset(); owner.teams_.clear(); return false; }
+    if (map_ != registry.mapGeneration()) {
+        reset(); map_ = registry.mapGeneration();
+        if (owner.teams_.activate(map_)) {
+            owner.round_ = {1}; owner.lastRoundTick_ = {}; owner.lastRoundTime_ = -1;
+        }
+    }
+    if (!engine || !engine->pfnPEntityOfEntIndex || !engine->pfnIndexOfEdict) return false;
+    const auto revision = revision_;
+    bool creating = false;
+    for (const auto& client : owner.clients_) creating = creating || client.fake.operationActive();
+    for (std::uint16_t slot=1; slot<=registry.clientMax(); ++slot) {
+        const auto i = static_cast<std::size_t>(slot-1U);
+        auto* entity = engine->pfnPEntityOfEntIndex(slot);
+        const bool valid = connected(entity) && engine->pfnIndexOfEdict(entity) == slot;
+        if (revision != revision_ || !registry.isMapActive() || registry.mapGeneration() != map_) return false;
+        auto player = registry.currentPlayer(slot);
+        const bool managed = owner.agents().findByPlayer(player).isValid();
+        const auto prior = roster_[i];
+        if (prior.player.isValid() && !player.isValid() && valid && prior.entity == entity && prior.serial == entity->serialnumber) {
+            vision_.forget(prior.player); memory_.forget(prior.player); owner.teams_.forget(prior.player);
+            continue;
+        }
+        if (prior.player.isValid() && (!valid || prior.entity != entity || prior.serial != entity->serialnumber || prior.player != player)) {
+            vision_.forget(prior.player); memory_.forget(prior.player); owner.teams_.forget(prior.player);
+            if (!managed && player == prior.player) { (void)registry.disconnectPlayer(player); player = {}; }
+            roster_[i] = valid ? EntityBinding{} : prior;
+        }
+        if (!valid || (managed && (owner.entityFor(player) != entity || owner.removalPending(player)))) continue;
+        if (!player.isValid()) {
+            // ClientPutInServer can emit TeamInfo before FakeClient registration.
+            // Never steal the slot from an in-flight creation transaction.
+            if (creating) continue;
+            const auto registered = registry.registerPlayer(slot);
+            if (!registered) continue;
+            player = registered.event.player;
+        }
+        roster_[i] = {entity,entity->serialnumber,player};
+        (void)owner.teams_.bind(map_,player);
+    }
+    return true;
 }
 void VisionAdapter::frame(metamod::LifecycleCoordinator& owner, enginefuncs_t* engine, float time) noexcept {
     error_ = p::Reason::None;
     auto& registry = owner.registry();
     if (!registry.isMapActive()) { reset(); return; }
-    if (map_ != registry.mapGeneration()) { reset(); map_ = registry.mapGeneration(); }
-    if (!engine || !engine->pfnPEntityOfEntIndex || !engine->pfnIndexOfEdict) {
+    if (!synchronize(owner,engine)) {
         memory_.invalidate(core::world::MemoryReason::MissingEngine);
         vision_.reset(); error_ = p::Reason::MissingEngine; return;
     }
@@ -107,6 +162,7 @@ void VisionAdapter::frame(metamod::LifecycleCoordinator& owner, enginefuncs_t* e
     }
     p::InputFrame input{};
     input.map = map_; input.tick = registry.currentTick(); input.timeMicros = static_cast<std::uint64_t>(micros);
+    input.round = owner.round();
     Queries queries(owner,*engine);
     const auto revision = revision_;
     for (std::uint16_t slot=1; slot<=registry.clientMax(); ++slot) {
@@ -116,31 +172,14 @@ void VisionAdapter::frame(metamod::LifecycleCoordinator& owner, enginefuncs_t* e
         const auto binding = owner.agents().findByPlayer(player);
         const bool managed = binding.isValid();
         const bool valid = connected(entity) && engine->pfnIndexOfEdict(entity) == slot;
-        const auto prior = roster_[i];
-        if (prior.player.isValid() && (!valid || prior.entity != entity || prior.serial != entity->serialnumber || prior.player != player)) {
-            vision_.forget(prior.player);
-            memory_.forget(prior.player);
-            // Never steal lifecycle ownership of a managed bot.
-            if (!managed && player == prior.player) {
-                (void)registry.disconnectPlayer(player); player = {};
-            }
-            roster_[i] = {};
-        }
         if (!valid) continue;
         if (managed && (owner.entityFor(player) != entity || owner.removalPending(player))) continue;
-        if (!player.isValid()) {
-            // Perception discovers only observation-eligible foreign players.
-            // A dormant/dead slot is not evidence of a newly joined player and
-            // must not preempt another subsystem's pending registration.
-            if (!alive(entity)) continue;
-            const auto registered = registry.registerPlayer(slot);
-            if (!registered) continue;
-            player = registered.event.player;
-        }
-        roster_[i] = {entity,entity->serialnumber,player};
+        if (!bound(player,engine)) continue;
         queries.entities[i] = {entity,entity->serialnumber,player};
         auto& sample = input.players[i];
         sample.player = player; sample.alive = alive(entity);
+        const auto* member = owner.teams().find(player);
+        if (member && member->team == p::Team::Spectator) sample.alive = false;
         if (managed) {
             const auto* join = owner.joinState(player);
             sample.alive = sample.alive && join && join->phase() == JoinPhase::Joined;
@@ -158,9 +197,10 @@ void VisionAdapter::frame(metamod::LifecycleCoordinator& owner, enginefuncs_t* e
     // Revalidate before consumers can read any publication from this frame.
     core::world::MemoryFrame memoryFrame{};
     memoryFrame.map = input.map; memoryFrame.tick = input.tick; memoryFrame.timeMicros = input.timeMicros;
+    memoryFrame.round = input.round;
     for (const auto& sample : input.players) {
         if (!sample.player.isValid()) continue;
-        const p::Stamp stamp{{},sample.player,input.map,input.tick,input.timeMicros};
+        const p::Stamp stamp{{},sample.player,input.map,input.tick,input.timeMicros,input.round};
         if (!queries.current(sample.player,stamp)) {
             vision_.forget(sample.player); memory_.forget(sample.player);
         } else {

@@ -5,6 +5,8 @@
 
 #include <cstdint>
 #include <limits>
+#include <cmath>
+#include <cstring>
 
 namespace astrabot::adapter::metamod {
 namespace {
@@ -72,6 +74,8 @@ void LifecycleCoordinator::configure(enginefuncs_t* engine,mutil_funcs_t* utilit
     engineFunctions_=engine; utilityFunctions_=utility; gameDllFunctions_=game;
     engineGlobals_=globals;
     messageDecoder_.configure(ids,&LifecycleCoordinator::onMessage,this);
+    perceptionMessageIds_ = ids;
+    identityDiagnostics_.roundNotificationAvailable = ids.hltv > 0;
     activeDecoder_=&messageDecoder_;
     for(auto& client:clients_) {
         client.fake.configure(engine,utility,game,&registry_,&agents_);
@@ -82,6 +86,7 @@ void LifecycleCoordinator::configure(enginefuncs_t* engine,mutil_funcs_t* utilit
 }
 void LifecycleCoordinator::reset() noexcept {
     vision_.reset();
+    teams_ = {}; round_ = {1}; identityDiagnostics_ = {}; lastRoundTick_ = {}; lastRoundTime_ = -1;
     navConsole_.reset(); movement_.reset();
     commandContextActive_=false; commandPlayer_={};
     commandArgv0_={}; commandArgv1_={}; commandArgs_={};
@@ -109,6 +114,7 @@ void LifecycleCoordinator::serverActivate(int clientMax) noexcept {
         : registry_.activateMap(static_cast<std::uint16_t>(clientMax));
     if(result.changed()) {
         vision_.reset();
+        (void)teams_.activate(registry_.mapGeneration()); round_ = {1}; lastRoundTick_ = {}; lastRoundTime_ = -1;
         ++status_.mapActivations;
         if(status_.mapActivations>1) ++status_.mapReplays;
         movement_.resetMap(); clients_[0].fake.queuePrimaryCreate();
@@ -117,6 +123,7 @@ void LifecycleCoordinator::serverActivate(int clientMax) noexcept {
 }
 void LifecycleCoordinator::serverDeactivate() noexcept {
     vision_.reset();
+    teams_.clear();
     navConsole_.invalidate(nav::runtime::SessionReason::MapChanged); movement_.resetMap();
     for(auto& client:clients_) {
         const auto action=client.join.cancel(cstrike::JoinError::MapDeactivated);
@@ -147,6 +154,7 @@ void LifecycleCoordinator::clientDisconnect(edict_t* entity) noexcept {
         emit(host::LifecycleEventKind::PlayerDisconnected,host::LifecycleResult::rejected(host::HostError::InvalidPlayer)); return;
     }
     vision_.forget(player);
+    teams_.forget(player);
     movement_.forget(player);
     if(client) {
         navConsole_.invalidateActor(player,nav::runtime::SessionReason::Disconnected);
@@ -190,6 +198,7 @@ RemovalResult LifecycleCoordinator::remove(core::PlayerId player) noexcept {
     if(!client) return {debug::RemovalOutcome::NoOp,debug::RemovalError::None,{},true,false};
     if(client->fake.removalPending()) return {debug::RemovalOutcome::NoOp,debug::RemovalError::None,player,true,false};
     vision_.forget(player);
+    teams_.forget(player);
     movement_.forget(player);
     navConsole_.invalidateActor(player,nav::runtime::SessionReason::Disconnected);
     emitJoin(*client,client->join.cancel(cstrike::JoinError::Disconnected));
@@ -251,8 +260,11 @@ MovementResult LifecycleCoordinator::submitCommand(core::PlayerId player,core::M
     if(entity->v.deadflag!=DEAD_NO) return reject(MovementError::DeadPlayer);
     return movement_.submit(player,map,tick,command);
 }
-void LifecycleCoordinator::messageBegin(int,int messageType,const float*,edict_t* recipient) noexcept {
+void LifecycleCoordinator::messageBegin(int destination,int messageType,const float*,edict_t* recipient) noexcept {
+    if (messageType > 0 && (messageType == perceptionMessageIds_.teamInfo || messageType == perceptionMessageIds_.hltv))
+        (void)vision_.synchronize(*this,engineFunctions_);
     messageMap_=registry_.mapGeneration();
+    messageRound_=round_; messageDestination_=destination; messageHasRecipient_=recipient != nullptr;
     for(std::uint16_t i=1;i<=host::kMaxClientSlots;++i) messagePlayers_[i-1U]=registry_.currentPlayer(i);
     std::uint16_t slot=0;
     if(recipient && engineFunctions_ && engineFunctions_->pfnIndexOfEdict) {
@@ -345,10 +357,49 @@ void LifecycleCoordinator::emitJoin(const ClientState& client,const cstrike::Joi
         action.changed},joinTraceSink_);
 }
 void LifecycleCoordinator::handleMessage(const cstrike::MessageEvent& event) noexcept {
+    if (!registry_.isMapActive() || messageMap_ != registry_.mapGeneration() || messageRound_ != round_) return;
+    if (event.kind == cstrike::MessageKind::Hltv) {
+        if (messageHasRecipient_ || messageDestination_ != MSG_SPEC || event.hltv[0] != 0 || event.hltv[1] != 0 ||
+            !engineGlobals_ || !std::isfinite(engineGlobals_->time) || engineGlobals_->time < 0 ||
+            round_.value == (std::numeric_limits<std::uint64_t>::max)()) {
+            ++identityDiagnostics_.rejectedRounds; return;
+        }
+        // The wire event has no sequence number. Identical notifications at the
+        // same simulation time or in the same host frame are one round boundary.
+        const double time = engineGlobals_->time;
+        if (lastRoundTime_ >= 0 && (time <= lastRoundTime_ || lastRoundTick_ == registry_.currentTick())) {
+            if (time < lastRoundTime_) ++identityDiagnostics_.rejectedRounds;
+            else ++identityDiagnostics_.duplicateRounds;
+            return;
+        }
+        ++round_.value; lastRoundTime_ = time; lastRoundTick_ = registry_.currentTick();
+        ++identityDiagnostics_.rounds; vision_.beginRound(round_);
+        messageDecoder_.reset();
+        for (auto& client : clients_) client.decoder.reset();
+        return;
+    }
     const auto slot=event.kind==cstrike::MessageKind::TeamInfo ? event.playerSlot:event.recipientSlot;
     if(slot<1 || slot>host::kMaxClientSlots || messageMap_!=registry_.mapGeneration() ||
        messagePlayers_[slot-1U]!=registry_.currentPlayer(slot)) return;
     auto* client=findClient(registry_.currentPlayer(slot));
+    if (event.kind == cstrike::MessageKind::TeamInfo) {
+        const auto player = registry_.currentPlayer(slot);
+        const bool current = client ? client->fake.entityFor(player) != nullptr && !client->fake.removalPending() : vision_.bound(player,engineFunctions_);
+        if (!current) {
+            teams_.forget(player); vision_.forget(player); ++identityDiagnostics_.rejectedTeams; return;
+        }
+        if (!teams_.bind(registry_.mapGeneration(),player)) { ++identityDiagnostics_.rejectedTeams; return; }
+        using Team = core::perception::Team;
+        const auto* name = event.text.data();
+        const auto team = std::strcmp(name,"TERRORIST") == 0 ? Team::Terrorist :
+            std::strcmp(name,"CT") == 0 ? Team::CounterTerrorist :
+            std::strcmp(name,"SPECTATOR") == 0 ? Team::Spectator : Team::Unknown;
+        const auto previous = teams_.find(player)->team;
+        (void)teams_.update(registry_.mapGeneration(),player,team); ++identityDiagnostics_.teamUpdates;
+        if (previous != team) { ++identityDiagnostics_.teamChanges; vision_.forget(player); }
+        // Team changes after joining are affiliation events, not join failures.
+        if (client && client->join.phase() == cstrike::JoinPhase::Joined) return;
+    }
     if(!client || !client->fake.entityFor(client->fake.activePlayer())) return;
     handleJoinAction(*client,client->join.onMessage(event,registry_.currentTick()));
 }

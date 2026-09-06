@@ -11,6 +11,12 @@ void VisualMemoryModel::reset() noexcept {
 void VisualMemoryModel::reject(MemoryReason reason) noexcept {
     diagnostics_.reason = reason; ++diagnostics_.rejected;
 }
+void VisualMemoryModel::beginRound(perception::RoundGeneration round) noexcept {
+    if (!round.isValid() || round.value <= frame_.round.value) return;
+    for (const auto& state : states_) diagnostics_.retired += state.snapshot.count;
+    states_ = {}; ready_ = false; frame_.round = round;
+    diagnostics_.reason = MemoryReason::RoundChanged;
+}
 void VisualMemoryModel::invalidate(MemoryReason reason) noexcept {
     for (const auto& state : states_) diagnostics_.retired += state.snapshot.count;
     states_ = {}; ready_ = false; reject(reason);
@@ -42,7 +48,8 @@ bool VisualMemoryModel::advance(const MemoryFrame& input) noexcept {
     diagnostics_.frameVisits = 0; diagnostics_.frameObservations = 0;
     diagnostics_.reason = MemoryReason::None;
     if (!settings_.valid()) { invalidate(MemoryReason::InvalidSettings); return false; }
-    if (!input.map.isValid() || !input.tick.isValid() ||
+    if (!input.map.isValid() || !input.tick.isValid() || !input.round.isValid() ||
+        (input.map == frame_.map && input.round.value < frame_.round.value) ||
         (frame_.map.isValid() && (input.map.value < frame_.map.value ||
          (input.map == frame_.map && (input.tick.value <= frame_.tick.value ||
                                       input.timeMicros < frame_.timeMicros))))) {
@@ -52,6 +59,7 @@ bool VisualMemoryModel::advance(const MemoryFrame& input) noexcept {
         for (const auto& state : states_) diagnostics_.retired += state.snapshot.count;
         states_ = {}; generations_ = {};
     }
+    else beginRound(input.round);
     frame_ = input; ready_ = true; ++diagnostics_.frames;
     for (std::size_t i=0; i<frame_.players.size(); ++i) {
         auto& p = frame_.players[i];
@@ -69,7 +77,7 @@ bool VisualMemoryModel::advance(const MemoryFrame& input) noexcept {
             diagnostics_.retired += snapshot.count; state = {};
         }
         if (!owner.eligible || !owner.agent.isValid()) continue;
-        snapshot.stamp = {owner.agent,owner.player,frame_.map,frame_.tick,frame_.timeMicros};
+        snapshot.stamp = {owner.agent,owner.player,frame_.map,frame_.tick,frame_.timeMicros,frame_.round};
         std::size_t kept = 0;
         for (std::size_t i=0; i<snapshot.count; ++i) {
             auto memory = snapshot.memories[i]; ++diagnostics_.frameVisits;
@@ -92,13 +100,20 @@ bool VisualMemoryModel::observe(const perception::ObservationBatch& batch) noexc
     }
     auto& state = states_[stamp.observer.slot-1U];
     auto& snapshot = state.snapshot;
-    if (snapshot.stamp.observer != stamp.observer || snapshot.stamp.agent != stamp.agent || stamp.map != frame_.map) {
+    if (snapshot.stamp.observer != stamp.observer || snapshot.stamp.agent != stamp.agent || stamp.map != frame_.map || stamp.round != frame_.round) {
         reject(MemoryReason::StaleIdentity); return false;
     }
     if (stamp.tick == state.consumed) { reject(MemoryReason::DuplicateBatch); return false; }
     if (stamp.tick != frame_.tick || stamp.timeMicros != frame_.timeMicros) {
         reject(MemoryReason::StaleBatch); return false;
     }
+    const auto& identity = batch.identity;
+    if (!identity.validAt(frame_.timeMicros) || identity.map != frame_.map || identity.round != frame_.round ||
+        identity.source != perception::ObservationSource::Vision || identity.observedMicros != stamp.timeMicros ||
+        identity.receivedMicros != frame_.timeMicros) {
+        reject(MemoryReason::InvalidBatch); return false;
+    }
+    if (identity.sequence <= state.sequence) { reject(MemoryReason::StaleBatch); return false; }
     // Validate the whole batch before changing any remembered position.
     std::array<bool, perception::kPlayerCapacity> seen{};
     for (std::size_t i=0; i<batch.count; ++i) {
@@ -113,12 +128,13 @@ bool VisualMemoryModel::observe(const perception::ObservationBatch& batch) noexc
         seen[index] = true;
     }
     state.consumed = stamp.tick;
+    state.sequence = identity.sequence;
     for (std::size_t i=0; i<batch.count; ++i) {
         const auto& observation = batch.observations[i];
         std::size_t index = 0;
         while (index < snapshot.count && snapshot.memories[index].target != observation.target) ++index;
         if (index == snapshot.count) ++snapshot.count; // At most 31 distinct eligible non-owner slots.
-        snapshot.memories[index] = {observation.target,observation.position,stamp.timeMicros,1.0};
+        snapshot.memories[index] = {observation.target,observation.position,identity.observedMicros,1.0,identity};
         ++diagnostics_.updates; ++diagnostics_.frameObservations;
     }
     return true;

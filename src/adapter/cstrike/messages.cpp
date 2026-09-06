@@ -172,12 +172,14 @@ void MessageDecoder::begin(
     }
     resetCurrent();
 
-    if (messageType == ids_.vguiMenu) {
+    if (messageType > 0 && messageType == ids_.vguiMenu) {
         kind_ = MessageKind::VguiMenu;
-    } else if (messageType == ids_.showMenu) {
+    } else if (messageType > 0 && messageType == ids_.showMenu) {
         kind_ = MessageKind::ShowMenu;
-    } else if (messageType == ids_.teamInfo) {
+    } else if (messageType > 0 && messageType == ids_.teamInfo) {
         kind_ = MessageKind::TeamInfo;
+    } else if (messageType > 0 && messageType == ids_.hltv) {
+        kind_ = MessageKind::Hltv;
     } else {
         kind_ = MessageKind::None;
         lastError_ = MessageDecodeError::UnknownMessage;
@@ -246,6 +248,10 @@ void MessageDecoder::write(FieldKind expected, int value) noexcept {
     }
 
     switch (kind_) {
+    case MessageKind::Hltv:
+        if (value < 0 || value > 255) { fail(MessageDecodeError::InvalidShape); return; }
+        event_.hltv[fieldIndex_] = static_cast<std::uint8_t>(value);
+        break;
     case MessageKind::VguiMenu:
         if (fieldIndex_ == 0U) {
             event_.menuType = static_cast<std::uint8_t>(value);
@@ -268,6 +274,7 @@ void MessageDecoder::write(FieldKind expected, int value) noexcept {
         break;
     case MessageKind::TeamInfo:
         if (fieldIndex_ == 0U) {
+            if (value < 1 || value > 32) { fail(MessageDecodeError::InvalidShape); return; }
             event_.playerSlot = static_cast<std::uint16_t>(value);
         }
         break;
@@ -301,6 +308,7 @@ void MessageDecoder::writeText(const char* value) noexcept {
 }
 
 bool MessageDecoder::expects(FieldKind expected) const noexcept {
+    if (kind_ == MessageKind::Hltv) return fieldIndex_ < 2 && expected == FieldKind::Byte;
     if (kind_ == MessageKind::VguiMenu) {
         static constexpr FieldKind fields[] = {
             FieldKind::Byte,
@@ -335,6 +343,8 @@ bool MessageDecoder::expects(FieldKind expected) const noexcept {
 
 bool MessageDecoder::complete() const noexcept {
     switch (kind_) {
+    case MessageKind::Hltv:
+        return fieldIndex_ == 2;
     case MessageKind::VguiMenu:
         return fieldIndex_ == kVguiMenuFields;
     case MessageKind::ShowMenu:

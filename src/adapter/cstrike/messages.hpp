@@ -18,12 +18,14 @@ enum class MessageKind : std::uint8_t {
     VguiMenu,
     ShowMenu,
     TeamInfo,
+    Hltv,
 };
 
 struct UserMessageIds {
     int vguiMenu{0};
     int showMenu{0};
     int teamInfo{0};
+    int hltv{0}; // Optional capability, discovered from the GameDLL.
 
     constexpr bool valid() const noexcept {
         return vguiMenu > 0 && showMenu > 0 && teamInfo > 0;
@@ -38,6 +40,7 @@ struct MessageEvent {
     std::int16_t displayTime{0};
     std::uint8_t menuType{0};
     std::uint8_t needMore{0};
+    std::array<std::uint8_t,2> hltv{};
     std::array<char, kMaxMessageTextBytes + 1U> text{};
 };
 
