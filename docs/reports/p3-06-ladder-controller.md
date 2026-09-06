@@ -36,3 +36,20 @@ Verification: Windows x86 NMake Debug /W4 /WX, 43/43 CTest passed. Linux x86
 GCC -m32 Debug portable tests passed 37/37. Windows x86 Release build and exact
 six DLL exports also passed. No live
 server, Finish decision or new real-NAV compatibility claim is included.
+
+## Selected-link host binding
+
+`bindLadderPlan` now maps an exact route link to its owned discovery passage and
+portable plan. It checks the current map, publication fingerprint/generation,
+all selected-link fields, pair direction and endpoint correspondence, and current
+entity/model/bounds identity. Up/down swap start/end and mount/dismount while
+retaining the measured outward normal. Malformed pair counts, duplicate IDs,
+changed route-link data and stale entities return typed failure with no plan.
+Work is bounded to 2048 link comparisons with no traces or allocations.
+
+This is identity binding only. It neither refreshes passage clearance nor
+dispatches movement; the host inspection, physical dismount planner and route
+integration remain pending. Adapter tests cover both directions, ownership
+mismatches, corrupt publication shape/duplicates/endpoints and entity replacement.
+Binding verification: Windows x86 Debug 43/43 CTest, Release build and six exports
+passed. These adapter-only additions do not change the Linux portable sources.

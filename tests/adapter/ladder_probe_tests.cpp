@@ -181,11 +181,45 @@ void testLadderDiscovery() {
         assert(up.sourceId==ladderSourceId && up.generation==9 && up.entry.z==0 && up.exit.z==128);
         assert(up.direction==nav::enrichment::NavLinkDirection::Up && down.direction==nav::enrichment::NavLinkDirection::Down);
         assert(ladderPassageCurrent({&e,nullptr,mapNow},batch.value->passages[i],2));
+        const auto before=traces;
+        const auto a=bindLadderPlan({&e,nullptr,mapNow},{1},fingerprint,*batch.value,up,2);
+        const auto b=bindLadderPlan({&e,nullptr,mapNow},{1},fingerprint,*batch.value,down,2);
+        assert(a && b && traces==before);
+        assert(a.value->plan.start==b.value->plan.end && a.value->plan.end==b.value->plan.start);
+        assert(a.value->plan.mount==b.value->plan.dismount && a.value->plan.dismount==b.value->plan.mount);
+        assert(a.value->plan.normal==b.value->plan.normal && a.value->plan.link.linkId==up.linkId);
+        assert(a.value->passage.entityId==candidate.entityId);
     }
+    for(int mode=0;mode<9;++mode) {
+        auto selected=batch.value->links.links.front();
+        if(mode==0) ++selected.sourceId;
+        if(mode==1) ++selected.generation;
+        if(mode==2) selected.linkId=999999;
+        if(mode==3) selected.entry.x+=1;
+        if(mode==4) selected.exit.z+=1;
+        if(mode==5) selected.from={999};
+        if(mode==6) selected.direction=nav::enrichment::NavLinkDirection::Down;
+        if(mode==7) selected.traversal=nav::model::NavTraversalKind::Walk;
+        if(mode==8) selected.additionalCost=1;
+        const auto r=bindLadderPlan({&e,nullptr,mapNow},{1},fingerprint,*batch.value,selected,2);
+        assert(!r && !r.value);
+        assert(r.reason==(mode<2 ? LadderBindingReason::WrongPublication:
+            mode==2 ? LadderBindingReason::MissingLink:LadderBindingReason::ChangedLink));
+    }
+    auto damaged=*batch.value; damaged.links.links.pop_back();
+    const auto selected=batch.value->links.links.front();
+    assert(bindLadderPlan({&e,nullptr,mapNow},{1},fingerprint,damaged,selected,2).reason==LadderBindingReason::InvalidInput);
+    damaged=*batch.value; damaged.links.links[1]=selected;
+    assert(bindLadderPlan({&e,nullptr,mapNow},{1},fingerprint,damaged,selected,2).reason==LadderBindingReason::ChangedLink);
+    damaged=*batch.value; damaged.passages[0].bottom.origin.x+=1;
+    assert(bindLadderPlan({&e,nullptr,mapNow},{1},fingerprint,damaged,selected,2).reason==LadderBindingReason::ChangedLink);
+    assert(bindLadderPlan({&e,nullptr,mapNow},{2},fingerprint,*batch.value,selected,2).reason==LadderBindingReason::WrongPublication);
     auto other=fingerprint; ++other[0];
+    assert(bindLadderPlan({&e,nullptr,mapNow},{1},other,*batch.value,selected,2).reason==LadderBindingReason::WrongPublication);
     assert(!nav::query::NavGraph::compose(mesh,other,batch.value->links,{100,2048,1000000},{2048,1000000}));
     const auto old=batch.value;
     ++ladderEntity.serialnumber;
+    assert(bindLadderPlan({&e,nullptr,mapNow},{1},fingerprint,*old,selected,2).reason==LadderBindingReason::StaleWorld);
     assert(!ladderPassageCurrent({&e,nullptr,mapNow},old->passages[0],2));
     assert(old->passages[0].entityId==candidate.entityId);
     for(unsigned budget:{0U,1U,11U}) {

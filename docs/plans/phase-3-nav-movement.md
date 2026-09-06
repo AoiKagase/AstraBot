@@ -246,6 +246,8 @@ implementation slice has offline evidence; first-class motion remains pending.
 bounded up/down lifecycle and explicit directional buttons. Fresh host inspection,
 validated dismount control and guarded route dispatch remain unimplemented;
 the second checkbox stays open.
+The host can now bind an exact selected link to an owned up/down plan after
+publication and entity checks. This binding does not renew clearance evidence.
 
 - **Goal:** generation-bound host ladder links plus distinct up/down traversal.
 - **Why now:** P2-07 proves synthetic connectivity only.
