@@ -76,6 +76,15 @@ void physics() {
     }
 }
 void failures() {
+    for(bool dispatched : {false,true}) {
+        SimpleJump jump(binding,plan,limits); auto s=actor(); const auto p=press(jump,s);
+        s.tick={4}; auto f=feedback(s,160000);
+        f.dispatch=JumpDispatch{binding,p,p,dispatched};
+        const auto d=jump.update(f);
+        assert(d.state==JumpState::Failed && d.terminalEvent);
+        assert(d.reason==(dispatched ? JumpReason::StaleDispatch:JumpReason::DispatchRejected));
+        assert(d.intent.speed==0 && d.intent.jump==ActionRequest::Release);
+    }
     for(int mode=0;mode<10;++mode) {
         SimpleJump jump(binding,plan,limits); auto s=actor(); const auto p=press(jump,s);
         s.tick={4}; s.grounded=false; s.position->z=45;

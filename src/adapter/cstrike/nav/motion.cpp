@@ -7,6 +7,7 @@
 #include "adapter/cstrike/nav/console.hpp"
 #include "adapter/metamod/lifecycle.hpp"
 #include "adapter/cstrike/nav/world_queries.hpp"
+#include "adapter/cstrike/nav/jump_motion.hpp"
 #ifdef snprintf
 #undef snprintf
 #endif
@@ -18,9 +19,9 @@ std::uint64_t add(std::uint64_t a,std::uint64_t b) noexcept {
     const auto maximum=(std::numeric_limits<std::uint64_t>::max)();
     return b>maximum-a ? maximum:a+b;
 }
-bool ready(const nav::runtime::MovementSnapshot& s) noexcept {
+bool ready(const nav::runtime::MovementSnapshot& s,bool airborne=false) noexcept {
     return s.kind==nav::runtime::ActorKind::ManagedBot && s.connected==true && s.alive==true &&
-        s.joined==true && s.grounded==true && s.position && s.position->isFinite() &&
+        s.joined==true && (s.grounded==true || (airborne && s.grounded==false)) && s.position && s.position->isFinite() &&
         s.view && s.view->isFinite() && s.hull && s.hull->minimum.isFinite() && s.hull->maximum.isFinite() &&
         s.speedLimit && std::isfinite(*s.speedLimit) && *s.speedLimit>=0;
 }
@@ -97,6 +98,14 @@ void NavConsole::printMotion() noexcept {
             unsigned(d.posture.has_value()),d.posture ? unsigned(*d.posture):0U,unsigned(d.postureReason),unsigned(d.constraintReason),unsigned(d.intent.duck));
         line(posture);
     }
+    if(d.jumpState) {
+        char jump[384]{};
+        std::snprintf(jump,sizeof(jump),"jump state=%u reason=%u probe=%u geometry=%u press_tick=%llu gravity=%.6g impulse=%.6g guard_queries=%llu profile=standard-cs",
+            unsigned(*d.jumpState),unsigned(d.jumpReason),unsigned(d.jumpProbeReason),unsigned(d.jumpGeometryReason),
+            static_cast<unsigned long long>(d.jumpPressTick.value),d.jumpPhysics ? d.jumpPhysics->gravity:0,
+            d.jumpPhysics ? d.jumpPhysics->verticalImpulse:0,static_cast<unsigned long long>(current_->motionTrace_.jumpGuardQueries));
+        line(jump);
+    }
 }
 void NavConsole::clearPending() noexcept {
     if(current_->pendingMotion_ && movement_)
@@ -148,7 +157,8 @@ void NavConsole::startMotion(const nav::runtime::MovementSnapshot& s) noexcept {
         static_cast<float>(std::clamp(double(s.position->y),lowY,highY)),0};
     const auto floor=nav::query::projectToArea(e,xy);
     const nav::model::NavVector3 goal{xy.x,xy.y,static_cast<float>(floor.z)};
-    current_->walk_.emplace(current_->motionTrace_.decision.binding,corridor.value,goal,walkLimits);
+    auto profile=walkLimits; profile.jump=jumpLimits;
+    current_->walk_.emplace(current_->motionTrace_.decision.binding,corridor.value,goal,profile);
     current_->pump_.emplace(current_->motionTrace_.decision.binding); current_->intentWallAgeUs_=0; current_->neutralBinding_.reset();
 }
 void NavConsole::beforeDispatch(metamod::LifecycleCoordinator& owner) noexcept {
@@ -159,7 +169,8 @@ void NavConsole::beforeDispatch(metamod::LifecycleCoordinator& owner) noexcept {
     const auto& pending=*current_->pendingMotion_;
     MotionReason reason=MotionReason::None;
     const auto elapsed=(std::max)(s.elapsedUs,movement_->frameDeltaUs());
-    if(!ready(s) || s.actor!=pending.binding.actor || s.agent!=pending.binding.agent || s.map!=pending.binding.map ||
+    const bool stationary=pending.command.movement==core::Movement{} && pending.command.buttons==0;
+    if(!ready(s,pending.jump.has_value() || stationary) || s.actor!=pending.binding.actor || s.agent!=pending.binding.agent || s.map!=pending.binding.map ||
        !s.tick.isAfter(pending.tick) || s.hull->minimum!=pending.observation.hull->minimum ||
        s.hull->maximum!=pending.observation.hull->maximum) reason=MotionReason::MissingObservation;
     else if(!s.elapsedUs || !movement_->frameDeltaUs() || elapsed>pending.remainingFreshUs)
@@ -169,14 +180,31 @@ void NavConsole::beforeDispatch(metamod::LifecycleCoordinator& owner) noexcept {
         const double speed=std::hypot(double(m.forward),double(m.side));
         const auto delta=movement_->frameDeltaUs();
         const auto msec=std::clamp(delta/1000+(delta%1000>=500 ? 1U:0U),std::uint64_t{1},std::uint64_t{255});
-        if(speed>double(*s.speedLimit)+0.001 || (speed>0 && !pending.contact && (!pending.segment ||
+        if(speed>double(*s.speedLimit)+0.001 || (speed>0 && !pending.jump && !pending.contact && (!pending.segment ||
            !segmentAllows(pending.segment->start,pending.segment->end,*s.position,speed*double(msec)/1000))))
             reason=MotionReason::Deviation;
     }
     if(reason!=MotionReason::None) {
+        if(current_->walk_ && (pending.command.buttons&static_cast<core::ButtonMask>(core::Button::Jump)))
+            (void)current_->walk_->reportJumpDispatch({pending.binding,pending.tick,s.tick,false});
         current_->motionTrace_.commandTick=pending.tick; current_->motionTrace_.dispatchTick=s.tick;
         clearPending(); if(current_->pump_) current_->pump_->submissionRejected();
         current_->motionTrace_.rejected=add(current_->motionTrace_.rejected,1); recordMotion(MotionEvent::Rejected,reason);
+        return;
+    }
+    if(pending.jump) {
+        const auto queued=pending.tick; const auto binding=pending.binding;
+        const bool press=(pending.command.buttons&static_cast<core::ButtonMask>(core::Button::Jump))!=0;
+        inRequest_=true; queryingEntity_=owner.entityFor(current_->actor); queryingPlayers_=&owner.registry(); queryingOwner_=&owner;
+        const auto guarded=guardJump(owner,s,pending);
+        inRequest_=false; queryingEntity_=nullptr; queryingPlayers_=nullptr; queryingOwner_=nullptr;
+        if(deferredInvalidation_) { (void)applyDeferredInvalidation(); return; }
+        if(guarded!=MotionReason::None) {
+            if(press && current_->walk_) (void)current_->walk_->reportJumpDispatch({binding,queued,s.tick,false});
+            current_->motionTrace_.commandTick=queued; current_->motionTrace_.dispatchTick=s.tick;
+            clearPending(); if(current_->pump_) current_->pump_->submissionRejected();
+            current_->motionTrace_.rejected=add(current_->motionTrace_.rejected,1); recordMotion(MotionEvent::Rejected,guarded);
+        }
         return;
     }
     if(s.ducked==true && (pending.command.buttons&static_cast<core::ButtonMask>(core::Button::Duck))==0) {
@@ -270,6 +298,8 @@ void NavConsole::afterDispatch(const metamod::MovementResult& result,core::TickI
         b.routeGeneration==current.routeGeneration;
     const auto saved=current_->motionTrace_;
     if(!sameRoute) current_->motionTrace_=*ticket; // reentrant goto must not receive old-route feedback
+    if(sameRoute && current_->walk_ && (ticket->command.buttons&static_cast<core::ButtonMask>(core::Button::Jump)))
+        (void)current_->walk_->reportJumpDispatch({b,ticket->commandTick,tick,result.dispatched()});
     if(current_->pendingMotion_ && current_->pendingMotion_->tick==ticket->commandTick && current_->pendingMotion_->binding.actor==b.actor &&
        current_->pendingMotion_->binding.map==b.map && current_->pendingMotion_->binding.routeGeneration==b.routeGeneration)
         current_->pendingMotion_.reset();
@@ -293,7 +323,7 @@ void NavConsole::moveFrame(metamod::LifecycleCoordinator& owner) noexcept {
     if(runReplan(owner)) return;
     if(current_->neutralBinding_) {
         const auto s=snapshot(owner);
-        if(!ready(s) || s.actor!=current_->neutralBinding_->actor || s.agent!=current_->neutralBinding_->agent || s.map!=current_->neutralBinding_->map) {
+        if(!ready(s,true) || s.actor!=current_->neutralBinding_->actor || s.agent!=current_->neutralBinding_->agent || s.map!=current_->neutralBinding_->map) {
             current_->neutralBinding_.reset(); return;
         }
         if(!s.elapsedUs || !s.tick.isAfter(current_->motionTrace_.commandTick)) return;
@@ -313,7 +343,9 @@ void NavConsole::moveFrame(metamod::LifecycleCoordinator& owner) noexcept {
         queryingEntity_=owner.entityFor(current_->actor); queryingPlayers_=&owner.registry(); queryingOwner_=&owner; inRequest_=true;
         const auto index=index_; // pins navigation across synchronous host reentry
         const auto reserved=current_->guardTick_==s.tick ? current_->guardQueries_:0;
-        const auto decision=current_->walk_->update(s,*index,navigation_.map,*this,current_->pump_->timeUs(),reserved);
+        auto binding=current_->motionTrace_.decision.binding; binding.step=current_->walk_->step();
+        const auto physics=standardJumpPhysics(engine_,queryingEntity_,binding,s.tick);
+        const auto decision=current_->walk_->update(s,*index,navigation_.map,*this,current_->pump_->timeUs(),reserved,physics);
         inRequest_=false; queryingEntity_=nullptr; queryingPlayers_=nullptr; queryingOwner_=nullptr;
         if(deferredInvalidation_) {
             (void)applyDeferredInvalidation(); return;
@@ -338,7 +370,7 @@ void NavConsole::moveFrame(metamod::LifecycleCoordinator& owner) noexcept {
         if(!current_->pump_->publish(decision.binding,s.tick,decision.intent)) return;
     }
     const auto output=current_->pump_->take();
-    if(!output.emit || !ready(s)) return;
+    if(!output.emit || !ready(s,current_->motionTrace_.decision.jumpState.has_value())) return;
     const auto age=(std::max)(output.intentAgeUs,current_->intentWallAgeUs_);
     if(age>nav::local::IntentPump::maxIntentAgeUs) { current_->pump_->stop(nav::local::PumpReason::StaleIntent); return; }
     submitMotion(s,owner,output.intent,output.firstFrame,age);
@@ -347,6 +379,10 @@ void NavConsole::submitMotion(const nav::runtime::MovementSnapshot& s,metamod::L
     const core::MovementIntent& intent,bool firstFrame,std::uint64_t age) noexcept {
     const auto contact=firstFrame ? current_->motionTrace_.decision.contact:std::nullopt;
     auto effective=current_->motionTrace_.decision.contact && !firstFrame ? core::MovementIntent{}:intent;
+    const auto& decision=current_->motionTrace_.decision;
+    if(s.grounded==true && (decision.jumpState==nav::local::JumpState::Airborne || decision.jumpState==nav::local::JumpState::Recover)) {
+        effective={}; effective.jump=core::ActionRequest::Release;
+    }
     if(!firstFrame && effective.duck==core::ActionRequest::Release)
         effective.duck=s.ducked==true ? core::ActionRequest::Hold:core::ActionRequest::None;
     if(s.ducked==true && effective.duck==core::ActionRequest::None) effective.duck=core::ActionRequest::Hold;
@@ -362,8 +398,12 @@ void NavConsole::submitMotion(const nav::runtime::MovementSnapshot& s,metamod::L
     if(result.queued()) {
         current_->pendingMotion_=PendingMotion{current_->motionTrace_.decision.binding,s.tick,nav::local::IntentPump::maxIntentAgeUs-age,
             s,*command.command,current_->segment_,contact};
+        if(decision.jumpState && decision.jumpPlan && decision.jumpPhysics)
+            current_->pendingMotion_->jump=JumpTicket{*decision.jumpPlan,*decision.jumpPhysics,*decision.jumpState,decision.jumpPressTick};
         current_->motionTrace_.queued=add(current_->motionTrace_.queued,1); recordMotion(MotionEvent::Queued);
     } else {
+        if(current_->walk_ && (command.command->buttons&static_cast<core::ButtonMask>(core::Button::Jump)))
+            (void)current_->walk_->reportJumpDispatch({decision.binding,s.tick,s.tick,false});
         if(current_->pump_) current_->pump_->submissionRejected();
         current_->motionTrace_.rejected=add(current_->motionTrace_.rejected,1);
         recordMotion(MotionEvent::Rejected,MotionReason::TransportRejected);

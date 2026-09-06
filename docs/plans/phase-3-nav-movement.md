@@ -207,9 +207,10 @@ support and flight-query evidence for an explicit ballistic model.
 [Transition geometry and ground preparation](../reports/p3-05-jump-transition.md)
 now connect the selected portal to that lifecycle in offline tests.
 [Walk-owned Jump](../reports/p3-05-jump-walk.md) adds selected-step ownership,
-dispatch feedback and cooldown-gated cursor advancement. Host physics and
-guarded adapter dispatch integration are still required before
-checking its implementation slice.
+dispatch feedback and cooldown-gated cursor advancement.
+[Guarded host integration](../reports/p3-05-jump-host.md) connects the public
+standard-CS physics profile and actual dispatch results. These are offline
+implementation results; live physics acceptance remains post-Finish.
 
 - **Goal:** execute verified transitions without per-frame state in A*.
 - **Why now:** lifecycle and clearance/ground facts exist.
@@ -219,7 +220,7 @@ checking its implementation slice.
 - **Implementation outline / commit slices:**
   - [x] Interpret supported crouch/jump/no-jump constraints; add crouch hold/cross/
     headroom-safe release and explicit unknown/contradictory failure.
-  - [ ] Add Simple Jump approach/align/accelerate/takeoff/airborne/land/recover,
+  - [x] Add Simple Jump approach/align/accelerate/takeoff/airborne/land/recover,
     single press edge, timeout and cooldown.
 - **Tests:** crouch, low ceiling, NoJump conflict, blocked takeoff, missed/wrong
   landing support, airborne timeout, repeated tick, abort/release.

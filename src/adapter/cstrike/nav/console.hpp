@@ -12,7 +12,7 @@ namespace astrabot::adapter::cstrike {
 enum class NavCommand { Load, GoTo, Status, Cancel };
 enum class MotionEvent { None, Decision, Queued, Dispatched, Rejected, Cancelled };
 enum class MotionReason { None, InvalidCorridor, InvalidGoal, MissingObservation,
-    StaleCommand, Deviation, MotorRejected, TransportRejected, Cancelled, DoorChanged, PostureChanged };
+    StaleCommand, Deviation, MotorRejected, TransportRejected, Cancelled, DoorChanged, PostureChanged, JumpChanged };
 struct MotionTrace {
     nav::local::WalkDecision decision{};
     std::optional<nav::query::NavDirectedEdge> selectedEdge{};
@@ -25,6 +25,7 @@ struct MotionTrace {
     std::uint64_t intentAgeUs{}, missedDecisions{}, queued{}, dispatched{}, rejected{}, sequence{};
     std::uint64_t useGuardChecks{};
     std::uint64_t contactGuardQueries{};
+    std::uint64_t jumpGuardQueries{};
 };
 class NavConsole final : public nav::runtime::IWorldQueries {
 public:
@@ -84,6 +85,12 @@ private:
     void submitMotion(const nav::runtime::MovementSnapshot&,metamod::LifecycleCoordinator&,
         const core::MovementIntent&,bool firstFrame,std::uint64_t age) noexcept;
     struct Segment { nav::model::NavVector3 start{}, end{}; };
+    struct JumpTicket {
+        nav::local::JumpPlan plan{};
+        nav::local::JumpPhysics physics{};
+        nav::local::JumpState state{nav::local::JumpState::Approach};
+        core::TickId pressTick{};
+    };
     struct PendingMotion {
         nav::local::Binding binding{};
         core::TickId tick{};
@@ -92,7 +99,9 @@ private:
         core::BotCommand command{};
         std::optional<Segment> segment{};
         std::optional<nav::local::DoorContact> contact{};
+        std::optional<JumpTicket> jump{};
     };
+    MotionReason guardJump(metamod::LifecycleCoordinator&,const nav::runtime::MovementSnapshot&,const PendingMotion&) noexcept;
     metamod::MovementCoordinator* movement_{}; // Owned by the containing lifecycle coordinator.
     struct ActorState {
     core::PlayerId actor{};

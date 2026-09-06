@@ -73,7 +73,8 @@ JumpDecision SimpleJump::update(const JumpFeedback& f) noexcept {
     if(state_==JumpState::Takeoff && f.dispatch) {
         const auto& dispatch=*f.dispatch;
         if(!same(dispatch.binding,binding_) || dispatch.commandTick!=pressTick_ ||
-           !dispatch.dispatchTick.isAfter(pressTick_) || s.tick<dispatch.dispatchTick) return fail(JumpReason::StaleDispatch);
+           dispatch.dispatchTick<pressTick_ || (dispatch.dispatched && !dispatch.dispatchTick.isAfter(pressTick_)) ||
+           s.tick<dispatch.dispatchTick) return fail(JumpReason::StaleDispatch);
         if(!dispatch.dispatched) return fail(JumpReason::DispatchRejected);
         dispatched_=true;
     }

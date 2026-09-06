@@ -15,6 +15,7 @@
 #include "adapter/cstrike/nav/world_queries.hpp"
 #include "nav/local/ground_probe.hpp"
 #include "nav/local/jump_probe.hpp"
+#include "adapter/cstrike/nav/jump_motion.hpp"
 
 #include <cassert>
 #include <cstdarg>
@@ -67,6 +68,14 @@ edict_t gWallWorld{};
 edict_t gNavPlayer{};
 bool gPlayerObstacle=false;
 bool gSimulateCrouch=false, gCrouchCeiling=false, gCloseHeadroom=false;
+bool gSimulateJump=false, gMissJump=false, gWrongJumpLanding=false;
+cvar_t gJumpGravity{},gJumpHeight{};
+bool gMissingJumpGravity=false,gMissingJumpHeight=false;
+cvar_t* captureJumpCvar(const char* name) {
+    if(!std::strcmp(name,"sv_gravity")) return gMissingJumpGravity ? nullptr:&gJumpGravity;
+    if(!std::strcmp(name,"mp_jump_height")) return gMissingJumpHeight ? nullptr:&gJumpHeight;
+    return nullptr;
+}
 constexpr float doorPlane=83.96875f; // GoldSrc collision epsilon keeps the hull outside the brush.
 std::uint64_t gDoorOpenAtUs=0;
 float supportHeight(float x) { return x+16>100 ? gStairHeight:0; }
@@ -105,6 +114,12 @@ void captureNavHull(const float* start, const float* end, int ignoreMonsters, in
     if(end[2]+minimumZ<floor || (start[0]!=end[0] && start[2]+minimumZ<floor) ||
        (gStairCeiling && end[2]>start[2] && start[0]==end[0])) {
         result->flFraction=0.5f; result->vecPlaneNormal=Vector(-1,0,0);
+        if(gSimulateJump && end[2]<start[2] && start[2]+minimumZ>=floor) {
+            result->flFraction=(start[2]+minimumZ-floor)/(start[2]-end[2]);
+            result->vecEndPos=Vector(start[0]+(end[0]-start[0])*result->flFraction,
+                start[1]+(end[1]-start[1])*result->flFraction,floor-minimumZ);
+            result->vecPlaneNormal=Vector(0,0,1);
+        }
     }
     if(gHullMode==1) result->fAllSolid=1;
     if(gHullMode==2) result->flFraction=0.5f;
@@ -528,7 +543,8 @@ void captureRunPlayerMove(
         astrabot::core::BotCommand c{{viewAngles[0],viewAngles[1],viewAngles[2]},
             {forwardMove,sideMove,upMove},buttons,impulse,msec};
         gNavMoves.push_back(c); assert(c.validate());
-        assert((buttons==0 || (gDoorActive && buttons==IN_USE) || (gSimulateCrouch && buttons==IN_DUCK)) && impulse==0 && upMove==0 && entity->v.deadflag==DEAD_NO);
+        assert((buttons==0 || (gDoorActive && buttons==IN_USE) || (gSimulateCrouch && buttons==IN_DUCK) ||
+            (gSimulateJump && buttons==IN_JUMP)) && impulse==0 && upMove==0 && entity->v.deadflag==DEAD_NO);
         if(gSimulateCrouch) {
             const bool duck=(buttons&IN_DUCK)!=0;
             if(!duck && (entity->v.flags&FL_DUCKING)) {
@@ -555,8 +571,14 @@ void captureRunPlayerMove(
         const double yaw=double(viewAngles[1])*3.14159265358979323846/180;
         const double dt=double(msec)/1000;
         const auto oldOrigin=entity->v.origin;
-        entity->v.origin.x+=static_cast<float>((forwardMove*std::cos(yaw)+sideMove*std::sin(yaw))*dt);
-        entity->v.origin.y+=static_cast<float>((forwardMove*std::sin(yaw)-sideMove*std::cos(yaw))*dt);
+        if(gSimulateJump && buttons==IN_JUMP && !gMissJump) {
+            assert(entity->v.flags&FL_ONGROUND); assert(entity->v.fuser2<=0);
+            entity->v.flags&=~FL_ONGROUND; entity->v.velocity.z=static_cast<float>(std::sqrt(1600*double(gJumpHeight.value)));
+            entity->v.fuser2=1315.789429f;
+        }
+        double vx=forwardMove*std::cos(yaw)+sideMove*std::sin(yaw),vy=forwardMove*std::sin(yaw)-sideMove*std::cos(yaw);
+        if(gSimulateJump && !(entity->v.flags&FL_ONGROUND)) { vx=entity->v.velocity.x; vy=entity->v.velocity.y; }
+        entity->v.origin.x+=static_cast<float>(vx*dt); entity->v.origin.y+=static_cast<float>(vy*dt);
         if(gDoorActive && !gDoorOpen && entity->v.origin.x>=doorPlane &&
            forwardMove*std::cos(yaw)+sideMove*std::sin(yaw)>0) {
             assert(actorTrace->decision.contact && buttons==0);
@@ -564,7 +586,19 @@ void captureRunPlayerMove(
             if(!gDoorLocked && !(gNavDoor.v.spawnflags&(1<<8)) && gNavDoor.v.targetname==0)
                 gDoorOpenAtUs=gNavClockUs+120000;
         }
-        entity->v.origin.z=supportHeight(entity->v.origin.x)-entity->v.mins.z;
+        if(gSimulateJump && !(entity->v.flags&FL_ONGROUND)) {
+            const double gravity=gJumpGravity.value*(entity->v.gravity==0 ? 1:entity->v.gravity);
+            entity->v.origin.z+=static_cast<float>(entity->v.velocity.z*dt-0.5*gravity*dt*dt);
+            entity->v.velocity.z-=static_cast<float>(gravity*dt);
+            if(entity->v.origin.z<=36) {
+                entity->v.origin.z=36; entity->v.velocity.z=0; entity->v.flags|=FL_ONGROUND;
+                if(gWrongJumpLanding) entity->v.origin.x=50;
+            }
+        } else entity->v.origin.z=supportHeight(entity->v.origin.x)-entity->v.mins.z;
+        if(gSimulateJump) {
+            entity->v.velocity.x=static_cast<float>(vx); entity->v.velocity.y=static_cast<float>(vy);
+            entity->v.fuser2=(std::max)(0.0f,entity->v.fuser2-msec); entity->v.oldbuttons=buttons;
+        }
         if(gSteeringMode>=0) {
             const auto h=steering_fixture::sweep(gSteeringMode,{oldOrigin.x,oldOrigin.y,oldOrigin.z},
                 {entity->v.origin.x,entity->v.origin.y,entity->v.origin.z});
@@ -1244,6 +1278,87 @@ bool motionReason(astrabot::adapter::cstrike::MotionReason reason) {
     auto& nav=astrabot::adapter::metamod::lifecycleCoordinator().navConsole();
     for(std::size_t i=0;i<nav.motionHistoryCount();++i) if(nav.motionHistory(i)->reason==reason) return true;
     return false;
+}
+void testStandardJumpPhysics() {
+    using namespace astrabot;
+    enginefuncs_t engine{}; engine.pfnCVarGetPointer=&captureJumpCvar; edict_t entity{}; entity.v.movetype=MOVETYPE_WALK;
+    const nav::local::Binding binding{{1},{2,{3}},{4},5,6};
+    gJumpGravity.value=800; gJumpHeight.value=45; gMissingJumpGravity=gMissingJumpHeight=false;
+    auto p=adapter::cstrike::standardJumpPhysics(&engine,&entity,binding,{7});
+    assert(p && p->gravity==800 && std::abs(p->verticalImpulse-std::sqrt(72000.0))<0.001 && p->binding.step==6);
+    entity.v.gravity=0.5f; p=adapter::cstrike::standardJumpPhysics(&engine,&entity,binding,{7}); assert(p && p->gravity==400);
+    entity.v.gravity=0; gJumpHeight.value=64; p=adapter::cstrike::standardJumpPhysics(&engine,&entity,binding,{7}); assert(p && p->verticalImpulse==320);
+    gMissingJumpHeight=true; p=adapter::cstrike::standardJumpPhysics(&engine,&entity,binding,{7}); assert(p && p->verticalImpulse<269);
+    gMissingJumpHeight=false; gJumpHeight.value=45;
+    for(int mode=0;mode<4;++mode) {
+        entity.v.movetype=MOVETYPE_WALK; entity.v.waterlevel=0; entity.v.basevelocity=Vector(0,0,0); gMissingJumpGravity=false;
+        if(mode==0) gMissingJumpGravity=true;
+        if(mode==1) entity.v.waterlevel=1;
+        if(mode==2) entity.v.basevelocity.x=1;
+        if(mode==3) entity.v.movetype=MOVETYPE_FLY;
+        assert(!adapter::cstrike::standardJumpPhysics(&engine,&entity,binding,{7}));
+    }
+    gMissingJumpGravity=false;
+}
+void testNavJumpHost() {
+    using namespace astrabot;
+    for(bool multiple : {false,true}) for(int mode=0;mode<=10;++mode) for(std::uint64_t us : {8000U,16000U,100000U}) {
+        if(multiple && mode) continue;
+        Fixture fixture{}; fixture.engine.pfnCVarGetPointer=&captureJumpCvar;
+        gJumpGravity.value=800; gJumpHeight.value=45; gMissingJumpGravity=gMissingJumpHeight=false;
+        enginefuncs_t hooks{}; prepareNavWalk(fixture,hooks);
+        fixture.entity.v.movetype=MOVETYPE_WALK; fixture.entity.v.velocity=Vector(0,0,0);
+        auto& owner=adapter::metamod::lifecycleCoordinator(); auto& console=owner.navConsole();
+        route_test::Area a{1,{{0,0,0},{100,100,0},0,0}},b{2,{{100,0,0},{200,100,0},0,0},{},2},
+            c{3,{{200,0,0},{300,100,0},0,0}};
+        a.targets[1]={2}; if(multiple) b.targets[1]={3};
+        assert(console.publish(owner.registry().mapGeneration(),route_test::snapshot(multiple ?
+            std::vector<route_test::Area>{a,b,c}:std::vector<route_test::Area>{a,b})).isNone());
+        gSimulateJump=true; gMissJump=mode==2; gWrongJumpLanding=mode==3;
+        runNav({"astrabot_goto",multiple ? "3":"2"});
+        bool injected=false,done=false;
+        for(int frame=0;frame<2000;++frame) {
+            const auto& pending=console.motionTrace();
+            const bool press=pending.event==adapter::cstrike::MotionEvent::Queued &&
+                (pending.command.buttons&static_cast<core::ButtonMask>(core::Button::Jump));
+            if(press && !injected) {
+                injected=true;
+                if(mode==1) gHullMode=2;
+                if(mode==5) gInvalidateDuringHull=true;
+                if(mode==6) fixture.entity.v.velocity.x=0;
+                if(mode==7) gJumpGravity.value=600;
+                if(mode==8) fixture.entity.v.fuser2=200;
+                if(mode==9) fixture.entity.v.waterlevel=1;
+            }
+            if(!(fixture.entity.v.flags&FL_ONGROUND)) {
+                if(mode==4) {
+                    runNav({"astrabot_nav_cancel"}); navFrame(fixture,us); navFrame(fixture,us);
+                    assert(console.motionTrace().decision.state==nav::local::WalkState::Aborted);
+                    assert(!gNavMoves.empty() && gNavMoves.back().buttons==0 && gNavMoves.back().movement==core::Movement{});
+                    done=true; break;
+                }
+                if(mode==10) gHullMode=2;
+            }
+            const auto before=gHullCalls; navFrame(fixture,us); assert(gHullCalls-before<=21);
+            const auto& trace=console.motionTrace();
+            if(trace.decision.state==nav::local::WalkState::Arrived) { assert(mode==0); done=true; break; }
+            if(trace.decision.state==nav::local::WalkState::Failed || trace.decision.state==nav::local::WalkState::Aborted) {
+                if(mode==0) std::fprintf(stderr,"host jump failed us=%llu frame=%d reason=%u jump=%u probe=%u motion=%u pos=(%.3f,%.3f,%.3f)\n",
+                    static_cast<unsigned long long>(us),frame,unsigned(trace.decision.reason),unsigned(trace.decision.jumpReason),
+                    unsigned(trace.decision.jumpProbeReason),unsigned(trace.reason),fixture.entity.v.origin.x,fixture.entity.v.origin.y,fixture.entity.v.origin.z);
+                assert(mode!=0); done=true; break;
+            }
+        }
+        assert(done && injected);
+        unsigned presses=0; for(const auto& command:gNavMoves) if(command.buttons&static_cast<core::ButtonMask>(core::Button::Jump)) ++presses;
+        if(mode==0) {
+            assert(presses==(multiple ? 2U:1U) && console.motionTrace().jumpGuardQueries>0);
+            assert(std::abs(fixture.entity.v.origin.x-(multiple ? 217.0f:117.0f))<=1.01f);
+        } else if(mode==2 || mode==3 || mode==4 || mode==10) assert(presses==1);
+        else assert(presses==0);
+        gSimulateJump=gMissJump=gWrongJumpLanding=false; gSimulateNav=false;
+        gHullMode=0; gInvalidateDuringHull=false; detach();
+    }
 }
 void testNavWalkArrival() {
     using namespace astrabot;
@@ -2059,6 +2174,8 @@ int main() {
     testMissingFunctionIsRejectedWithoutEngineCall();
     testMessageDrivenJoinAndCommandContext();
     testNavWalkArrival();
+    testStandardJumpPhysics();
+    testNavJumpHost();
     testNavStairs();
     testNavDoors();
     testNavTouchDoors();
