@@ -1,36 +1,32 @@
 # State
 
-Status: P3-06 implementation and offline verification complete.
-Goal: P3-06 (user /goal). Completion requires a successful commit of this state.
-Branch: codex/p306-ladder-host-binding. No push or merge authorized.
-Reports: docs/reports/p3-06-ladder-host.md and p3-06-ladder-controller.md.
+Status: complete — P3-07 implementation and offline verification.
+Goal: approved P3-07 progress-aware stuck detection and finite recovery.
+Branch: codex/p307-progress-recovery. No push or merge authorized.
+Report: docs/reports/p3-07-progress-recovery.md.
+Plan: docs/plans/phase-3-nav-movement.md, P3-07.
 
-Immutable fingerprint/generation-bound discovery and publication, measured
-passage binding, owned Walk ladder controller and NavConsole dispatch are
-connected. Approach/align/contact/up/down/exit/support, finite abort/fall/retry,
-one-shot lower airborne Jump and actual detached support-before-cursor-advance
-are implemented. Jump replaces velocity with270 outward; it does not add a
-regular vertical jump impulse. Grounded jump remains unsupported; floor kick
-has separate proof. Standard-CS reference679973265e1ac99a43193119e0da212ee568f5f9.
+Actor/goal-owned Recovery survives route replacement. Only actual dispatch
+receipts accumulate Walk 500ms / crouch 1000ms windows. Corridor-forward and
+displacement high-water observations avoid both oscillation evasion and false
+stuck during legitimate lateral avoidance. Wait/side/reverse stages are 250ms;
+movement cannot dispatch past its stage deadline. One replan, then finite abort.
+No unsupported obstacle inference or fabricated edge exclusions.
+Ground recovery shares the 21-query limit and existing transport guards.
+Cancellation, explicit goal reset, typed causes and terminal uniqueness tested.
 
-Published endpoints satisfy standing-hull Corridor inset. Ground paths have
-measured floor samples, allowing a bounded upper-lip model capture only for
-the exact mount. Outside-NAV floor is never fabricated as NAV support.
-Guard and observation budgets are shared (21/frame); guards validate actual
-rounded command duration and exact current-frame motion. Deferred invalidation,
-replaced ladder and cancellation prevent stale sends.
+Verification on 2026-09-06:
+- Windows x86 Metamod Debug /W4 /WX: 44/44.
+- Windows x86 portable Debug /W4 /WX: 36/36 (inspection tools OFF).
+- Linux x86 GCC -m32 Debug: 38/38 (Debian WSL).
+- Windows x86 Release: built, PE32 x86 and exact six exports verified.
+- SDK SHA: 7ec9b014f8c0a947a724644aebe34eb33706e44b.
+Synthetic permanent stalls abort in 1.984/2.016/2.400 seconds at 8/16/100ms
+frames; transient stalls arrive in 3.424/3.424/3.800 seconds.
 
-Windows x86 Debug43/43 and Linux x86 Debug37/37 passed. Release x86 and exact
-six exports passed. Host independent synthetic fixtures reach the goal up/down
-at8/16/100 ms, send exactly one lower Jump and measure actual query count<=21.
-Queued Jump is blocked on replacement before/during tracing and cancellation.
-Ground proof tests cover per-query staleness, missing floor and short budgets.
+P3-08 remains next. This is not project-wide Finish or real-map/live acceptance.
+No live HLDS/ReHLDS checks before explicit project-wide Finish.
+No subagents used. FocalSpan mandatory; graph was consulted but trails HEAD.
 
-P3-06 offline implementation is complete. This is not project-wide Finish or
-real-map/live acceptance. P3-07/P3-08 are outside this goal; no live HLDS/ReHLDS
-checks before explicit Finish. No subagents used. All binaries are x86.
-
-Preserve unrelated AGENTS.md/.gitignore edits and untracked tool configs;
-exclude .focalspan/ and .focalspan.json from commits. FocalSpan is mandatory.
-Graph is stale at0eee09c; focused diffs/source and direct tests provided review
-evidence. No memory edits authorized.
+Preserve unrelated AGENTS.md/.gitignore edits and untracked tool configs.
+Exclude .focalspan/ and .focalspan.json from commits. No memory edits authorized.

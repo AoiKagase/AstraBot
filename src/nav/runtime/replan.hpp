@@ -22,15 +22,26 @@ public:
     };
     bool schedule(local::Binding binding,query::NavDirectedEdge edge,core::TickId tick,
                   std::uint64_t nowUs) noexcept {
+        return scheduleFact(binding,edge,tick,nowUs);
+    }
+    // Lack of progress alone is not evidence that an edge is impassable.
+    bool scheduleRecovery(local::Binding binding,core::TickId tick,std::uint64_t nowUs) noexcept {
+        return scheduleFact(binding,std::nullopt,tick,nowUs);
+    }
+    bool isRecovery() const noexcept { return recovery_; }
+private:
+    bool scheduleFact(local::Binding binding,std::optional<query::NavDirectedEdge> edge,core::TickId tick,
+                      std::uint64_t nowUs) noexcept {
         if(state_==ReplanState::Pending) return false;
         if(attempts_) { state_=ReplanState::Exhausted; return false; }
         if(!binding.agent.isValid() || !binding.actor.isValid() || !binding.map.isValid() ||
-           !binding.routeGeneration || !tick.isValid() || !edge.source.isValid() || !edge.target.isValid()) {
+           !binding.routeGeneration || !tick.isValid() || (edge && (!edge->source.isValid() || !edge->target.isValid()))) {
             state_=ReplanState::Invalid; return false;
         }
-        binding_=binding; edge_=edge; tick_=tick; observedUs_=nowUs; state_=ReplanState::Pending;
+        binding_=binding; edge_=edge; tick_=tick; observedUs_=nowUs; state_=ReplanState::Pending; recovery_=!edge;
         return true;
     }
+public:
     std::optional<PolicySnapshot> consume(local::Binding binding,core::TickId tick,std::uint64_t nowUs) noexcept {
         if(state_!=ReplanState::Pending) return {};
         if(binding.agent!=binding_.agent || binding.actor!=binding_.actor || binding.map!=binding_.map ||
@@ -59,6 +70,7 @@ private:
     core::TickId tick_{};
     std::uint64_t observedUs_{};
     unsigned attempts_{};
+    bool recovery_{};
     ReplanState state_{ReplanState::Idle};
 };
 }

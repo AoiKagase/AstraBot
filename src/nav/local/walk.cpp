@@ -99,6 +99,18 @@ Walk::Walk(Binding b, std::shared_ptr<const corridor::Corridor> c, model::NavVec
            WalkLimits limits) noexcept
     : binding_(b), corridor_(std::move(c)), cursor_(corridor_), goal_(goal), limits_(limits) {}
 
+StuckCause observedStuckCause(const WalkDecision& d) noexcept {
+    if(d.reason==WalkReason::JumpFailed || d.reason==WalkReason::LadderFailed || d.reason==WalkReason::PostureFailed)
+        return StuckCause::TraversalFailed;
+    if(d.reason==WalkReason::DoorBlocked && d.doorId) return StuckCause::DoorBlocked;
+    if(d.blocker && d.blocker->player && d.blocker->player->isValid() &&
+       (d.blocker->kind==runtime::BlockerKind::Player || d.blocker->kind==runtime::BlockerKind::Teammate ||
+        d.blocker->kind==runtime::BlockerKind::Enemy)) return StuckCause::PlayerBlocked;
+    if(d.probeReason==ProbeReason::Blocked || (d.blocker && d.blocker->kind==runtime::BlockerKind::Geometry))
+        return StuckCause::GeometryBlocked;
+    return StuckCause::Unknown;
+}
+
 WalkDecision Walk::finish(WalkDecision out, WalkState state, WalkReason reason) noexcept {
     if(door_ && door_->state()==DoorWaitState::Waiting) (void)door_->abort();
     if(blocker_) { (void)blocker_->abort(); blocker_.reset(); }
@@ -218,6 +230,68 @@ WalkDecision Walk::update(const runtime::MovementSnapshot& s, const query::NavSp
     out.intent.duck=postureAction_; out.posture=posture_; out.postureReason=postureReason_;
     if((!out.accepted || out.terminalEvent) && s.ducked==true) out.intent.duck=ActionRequest::Hold;
     return out;
+}
+WalkDecision Walk::recover(const runtime::MovementSnapshot& s,const query::NavSpatialIndex& index,
+    core::MapGeneration indexMap,runtime::IWorldQueries& port,const RecoveryDecision& recovery,std::uint32_t reserved) noexcept {
+    WalkDecision out; out.binding=binding_; out.binding.step=cursor_.index(); out.tick=s.tick;
+    out.state=state_; out.reason=reason_; out.recovery=recovery;
+    out.posture=posture_; out.postureReason=postureReason_;
+    const auto retainDuck=[&](WalkDecision d) { if(s.ducked==true) d.intent.duck=ActionRequest::Hold; return d; };
+    if(state_!=WalkState::Running) return retainDuck(out);
+    if(s.agent!=binding_.agent || s.actor!=binding_.actor || s.map!=binding_.map || s.map!=indexMap ||
+       s.kind!=runtime::ActorKind::ManagedBot || s.connected!=true || s.alive!=true || s.joined!=true)
+        return retainDuck(finish(out,WalkState::Aborted,WalkReason::InvalidActor));
+    if(!s.tick.isValid() || (tick_.isValid() && !s.tick.isAfter(tick_))) return retainDuck(out);
+    tick_=s.tick; out.accepted=true;
+    if(recovery.state==RecoveryState::Replan || recovery.state==RecoveryState::Aborted)
+        return retainDuck(finish(out,WalkState::Failed,recovery.state==RecoveryState::Replan ? WalkReason::RecoveryReplan:WalkReason::Stuck));
+    if(recovery.state==RecoveryState::Wait) { recoverySide_=0; return retainDuck(out); }
+    if(recovery.state!=RecoveryState::Sidestep && recovery.state!=RecoveryState::Reverse) return retainDuck(out);
+    // Specialized traversal owns its own pauses/timeouts. Never synthesize a
+    // ground recovery while attached, airborne, entering posture, or at a door.
+    if(!corridor_ || ladder_ || jump_ || door_ || s.grounded!=true || !s.position || !s.hull ||
+       !s.position->isFinite() || reserved>=limits_.probe.maxQueries) return retainDuck(out);
+    DecisionQueries queries(port,index,limits_.probe.navTolerance,reserved,limits_.probe.maxQueries);
+    auto budget=limits_.probe; budget.maxQueries-=reserved;
+    const auto ground=GroundProbe::locate(s,binding_.routeGeneration,index,indexMap,queries,budget);
+    out.queries=queries.issued; out.probeReason=ground.reason; out.support=ground.target;
+    if(!ground) return retainDuck(out);
+    const auto area=ground.target->area;
+    queries.source=queries.target=area; queries.restrictAreas=true;
+    const model::NavExtent* extent=nullptr;
+    if(!cursor_.exhausted()) {
+        const auto& t=corridor_->transitions()[cursor_.index()];
+        if(area==t.edge.source) extent=&t.sourceExtent;
+        else if(area==t.edge.target) extent=&t.targetExtent;
+        else return retainDuck(out);
+    } else {
+        if(area!=corridor_->goal()) return retainDuck(out);
+        if(!corridor_->transitions().empty()) extent=&corridor_->transitions().back().targetExtent;
+        else return retainDuck(out); // No retained extent to prove a hull-safe same-area detour.
+    }
+    const auto& forward=recovery.forward;
+    const double length=std::hypot(forward.x,forward.y);
+    if(!std::isfinite(length) || length<0.99 || length>1.01) return retainDuck(out);
+    double ux=-forward.x,uy=-forward.y;
+    const double distance=(std::min)(12.0,limits_.probe.maxDistance);
+    if(recovery.state==RecoveryState::Sidestep) {
+        out.probeReason=sides(s,binding_.routeGeneration,forward.x,forward.y,distance,limits_.probe.maxQueries,queries,out);
+        out.queries=queries.issued;
+        if(out.probeReason!=ProbeReason::None) return retainDuck(out);
+        if(!recoverySide_) recoverySide_=out.rightClearance==out.leftClearance ? (s.actor.slot%2 ? 1:-1):
+            (out.rightClearance>out.leftClearance ? 1:-1);
+        ux=recoverySide_*forward.y; uy=-recoverySide_*forward.x;
+    }
+    const auto x=inward(s.position->x+ux*distance,s.position->x),y=inward(s.position->y+uy*distance,s.position->y);
+    if(extent && !inside(*extent,{x,y,s.position->z},*s.hull)) return retainDuck(out);
+    budget.maxQueries=limits_.probe.maxQueries-out.queries+1;
+    const auto probe=GroundProbe::inspect(s,binding_.routeGeneration,area,x,y,index,indexMap,queries,budget);
+    out.queries=queries.issued; out.samples=probe.samples; out.steps=probe.steps; out.probeReason=probe.reason;
+    if(!probe || probe.target->area!=area) return retainDuck(out);
+    out.target=probe.target; out.intent.direction={ux,uy,0};
+    out.intent.speed=(std::min)(40.0,distance/0.120);
+    out.intent.view=core::IntentVector{0,std::atan2(forward.y,forward.x)*180/3.14159265358979323846,0};
+    return retainDuck(out);
 }
 WalkDecision Walk::updateMotion(const runtime::MovementSnapshot& s,const query::NavSpatialIndex& index,
     core::MapGeneration indexMap,runtime::IWorldQueries& port,std::uint64_t nowUs,std::uint32_t reservedQueries,
@@ -384,6 +458,7 @@ WalkDecision Walk::updateMotion(const runtime::MovementSnapshot& s,const query::
     float x=inward(s.position->x+dx*fraction,s.position->x);
     float y=inward(s.position->y+dy*fraction,s.position->y);
     const double ux=dx/distance,uy=dy/distance;
+    out.progressDirection={ux,uy,0};
     const auto constrain=[&](float& tx,float& ty) {
         if(!cursor_.exhausted()) {
             const auto& t=corridor_->transitions()[cursor_.index()];

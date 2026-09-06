@@ -101,6 +101,7 @@ if(MSVC)
 endif()
 
 add_library(astrabot_nav STATIC
+    src/nav/local/recovery.cpp
     src/nav/local/ladder.cpp
     src/nav/local/ladder_physics.cpp
     src/nav/local/ladder_exit.cpp
@@ -392,6 +393,10 @@ if(ASTRABOT_BUILD_TESTS)
     add_test(NAME astrabot.nav.blocker_wait COMMAND astrabot_nav_blocker_wait_tests)
     add_executable(astrabot_nav_reactive_tests tests/nav/reactive_tests.cpp)
     add_executable(astrabot_nav_replan_tests tests/nav/replan_tests.cpp)
+    add_executable(astrabot_nav_recovery_tests tests/nav/recovery_tests.cpp)
+    target_link_libraries(astrabot_nav_recovery_tests PRIVATE astrabot_nav astrabot_core)
+    astrabot_enable_warnings(astrabot_nav_recovery_tests)
+    add_test(NAME astrabot.nav.recovery COMMAND astrabot_nav_recovery_tests)
     target_link_libraries(astrabot_nav_replan_tests PRIVATE astrabot_nav astrabot_core)
     astrabot_enable_warnings(astrabot_nav_replan_tests)
     add_test(NAME astrabot.nav.replan COMMAND astrabot_nav_replan_tests)

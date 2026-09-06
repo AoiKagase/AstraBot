@@ -299,9 +299,9 @@ guards, and measured post-landing approach remain pending.
 - **Interfaces:** dispatched-command feedback, expected primitive progress,
   projected progress, typed cause and carried attempt budget.
 - **Implementation outline / commit slices:**
-  - [ ] Add windowed displacement/progress/oscillation checks, state-specific
+  - [x] Add windowed displacement/progress/oscillation checks, state-specific
     pauses/timeouts and cause classification.
-  - [ ] Add finite wait/sidestep/reverse-realign/replan/abort using architecture
+  - [x] Add finite wait/sidestep/reverse-realign/replan/abort using architecture
     bounds; carry recovery attempts across replans.
 - **Tests:** collision/oscillation, slow crouch, deliberate yield, rejected command,
   transient/permanent block, ladder fall, Unknown cause, target jitter,
@@ -313,6 +313,9 @@ guards, and measured post-landing approach remain pending.
 - **Dependencies:** P3-04, P3-05, P3-06.
 - **Risks:** false positives; do not invent causes without observations.
 - **Deferred work:** adaptive thresholds, success rates, Experience storage.
+- **Offline evidence:** [P3-07 progress recovery](../reports/p3-07-progress-recovery.md).
+  Synthetic host scenarios and portable replay cover the implementation;
+  forced live stuck/block/ladder acceptance remains post-Finish.
 
 ## P3-08 — Offline gate, portability and post-Finish acceptance
 

@@ -115,6 +115,8 @@ void NavConsole::printUpdate(const nav::runtime::SessionUpdate& update) noexcept
 }
 void NavConsole::invalidateCurrent(nav::runtime::SessionReason reason) noexcept {
     current_->replan_={};
+    current_->recovery_={};
+    current_->recoveryReplan_=false;
     clearPending();
     stopMotion();
     if(current_->session_) {
@@ -256,6 +258,8 @@ void NavConsole::execute(NavCommand command,metamod::LifecycleCoordinator& owner
     }
     if(command==NavCommand::Cancel) {
         current_->replan_={};
+        current_->recovery_={};
+        current_->recoveryReplan_=false;
         stopMotion();
         if(current_->session_) printUpdate(current_->session_->cancel()); else line("nav state=Idle"); return;
     }
@@ -270,6 +274,8 @@ void NavConsole::execute(NavCommand command,metamod::LifecycleCoordinator& owner
         current_->session_.emplace(s.agent,s.actor,s.map);
     stopMotion();
     current_->replan_={}; current_->navigationTimeUs_=0; current_->navigationTimeTick_=s.tick;
+    current_->recovery_={};
+    current_->recoveryReplan_=false;
     nav::runtime::RouteOptions options; options.limits={100000,256*mib};
     options.groundNavTolerance=18;
     requestRoute(s,*goal,owner,options);
@@ -306,7 +312,7 @@ void NavConsole::printReplan() noexcept {
         unsigned(current_->actor.slot),unsigned(current_->actor.generation.value),unsigned(current_->replan_.state()),
         current_->replan_.attempts(),nav::runtime::ReplanAttempt::maxAttempts,
         static_cast<unsigned long long>(nav::runtime::ReplanAttempt::factLifetimeUs),
-        current_->replan_.state()==nav::runtime::ReplanState::Idle ? "None":"DynamicObstacle",
+        current_->replan_.state()==nav::runtime::ReplanState::Idle ? "None":(current_->replan_.isRecovery() ? "Stuck":"DynamicObstacle"),
         edge ? edge->source.value:0U,edge ? edge->target.value:0U,edge ? unsigned(edge->direction):0U,
         static_cast<unsigned long long>(edge && edge->external ? edge->external->sourceId:0),
         static_cast<unsigned long long>(edge && edge->external ? edge->external->generation:0),
@@ -319,7 +325,16 @@ bool NavConsole::runReplan(metamod::LifecycleCoordinator& owner) noexcept {
     if(!s.tick.isAfter(current_->motionTrace_.decision.tick)) return true;
     const auto policy=current_->replan_.consume(current_->motionTrace_.decision.binding,s.tick,current_->navigationTimeUs_);
     printReplan();
-    if(!policy || !current_->session_ || !current_->session_->executable()) return true;
+    if(!policy || !current_->session_ || !current_->session_->executable()) {
+        if(current_->recoveryReplan_) {
+            current_->motionTrace_.decision.recovery=current_->recovery_.abort(nav::local::StuckCause::Unknown);
+            current_->motionTrace_.decision.reason=nav::local::WalkReason::Stuck;
+            current_->motionTrace_.decision.terminalEvent=false; // The retiring Walk already emitted its terminal event.
+            recordMotion(MotionEvent::Decision);
+        }
+        return true;
+    }
+    current_->recovery_.replanned();
     const auto goal=current_->session_->trace().goal;
     stopMotion();
     nav::runtime::RouteOptions options; options.limits={100000,256*mib};

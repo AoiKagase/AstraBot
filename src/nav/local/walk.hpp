@@ -9,11 +9,12 @@
 #include "nav/local/jump_geometry.hpp"
 #include "nav/local/jump_probe.hpp"
 #include "nav/local/ladder.hpp"
+#include "nav/local/recovery.hpp"
 
 namespace astrabot::nav::local {
 enum class WalkState { Running, Arrived, Failed, Aborted };
 enum class WalkReason { None, InvalidInput, StaleTick, InvalidActor, StaleNavigation,
-    UnsupportedTraversal, InvalidGoal, OffCorridor, InvalidPortal, ProbeFailed, Cancelled, DoorBlocked, DynamicBlocked, PostureFailed, JumpFailed, LadderFailed };
+    UnsupportedTraversal, InvalidGoal, OffCorridor, InvalidPortal, ProbeFailed, Cancelled, DoorBlocked, DynamicBlocked, PostureFailed, JumpFailed, LadderFailed, Stuck, RecoveryReplan };
 struct WalkJumpLimits { JumpLimits motion{}; JumpGeometryLimits geometry{}; JumpProbeLimits flight{}; };
 struct WalkLimits {
     GroundProbeLimits probe{};
@@ -33,12 +34,14 @@ struct DoorContact {
     model::NavVector3 end{}; // Bounded trace endpoint, not an ordinary clear movement segment.
 };
 struct WalkDecision {
+    RecoveryDecision recovery{};
     WalkState state{WalkState::Running};
     WalkReason reason{WalkReason::None};
     bool accepted{}, terminalEvent{};
     Binding binding{};
     core::TickId tick{};
     MovementIntent intent{};
+    core::IntentVector progressDirection{}; // Selected corridor direction before lateral steering.
     PrimitiveEvent primitiveEvent{PrimitiveEvent::None};
     std::optional<GroundedTarget> support{}, target{};
     ProbeReason probeReason{ProbeReason::None};
@@ -67,6 +70,7 @@ struct WalkDecision {
     std::optional<LadderPlan> ladderPlan{};
     core::TickId ladderPressTick{};
 };
+StuckCause observedStuckCause(const WalkDecision&) noexcept;
 // One owned route, synchronous decision seam. Caller schedules decisions and
 // invalidates on route replacement; this class never submits a host command.
 // A projected endpoint is not arrival: only later measured support advances.
@@ -86,6 +90,8 @@ public:
     std::optional<enrichment::NavTraversalLink> selectedLadderLink() const noexcept;
     model::NavVector3 ladderTarget(const LadderPlan&,model::NavVector3 origin) const noexcept;
     WalkDecision abort() noexcept;
+    WalkDecision recover(const runtime::MovementSnapshot&,const query::NavSpatialIndex&,
+        core::MapGeneration,runtime::IWorldQueries&,const RecoveryDecision&,std::uint32_t reservedQueries=0) noexcept;
     WalkState state() const noexcept { return state_; }
     std::size_t step() const noexcept { return cursor_.index(); }
 private:
@@ -103,6 +109,7 @@ private:
     std::uint64_t doorId_{}, lastDoorId_{};
     bool touch_{}, contactSent_{};
     int avoidSide_{};
+    int recoverySide_{};
     std::uint32_t avoidDecisions_{};
     std::optional<BlockerWait> blocker_{};
     std::optional<Crouch> crouch_{};

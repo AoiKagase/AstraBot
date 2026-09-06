@@ -312,6 +312,48 @@ void crouchCrossing() {
         assert(arrived && ducked==(mode!=2));
     }
 }
+void recoverySafety() {
+    const auto areas=zigzag(); Fixture f(areas,1,2);
+    for(int mode=0;mode<7;++mode) {
+        World world(areas); auto s=actor();
+        auto profile=limits; profile.probe.maxQueries=21;
+        local::Walk walk(binding(),f.corridor,{117,50,0},profile);
+        local::RecoveryDecision r; r.state=local::RecoveryState::Sidestep; r.forward={1,0,0};
+        if(mode==1) world.mode=3; // Missing future floor.
+        if(mode==2) world.mode=5; // Stale stamped response.
+        if(mode==3) s.grounded=false;
+        if(mode==4) s.position=nav::model::NavVector3{20,80,36}; // Hull cannot fit the detour.
+        if(mode==5) r.state=local::RecoveryState::Reverse;
+        if(mode==6) world.mode=1; // Swept hull collision.
+        const auto d=walk.recover(s,*f.index,s.map,world,r);
+        assert(d.queries==world.calls.size() && d.queries<=21 && d.samples<=4);
+        assert(d.intent.jump==core::ActionRequest::None && d.intent.use==core::ActionRequest::None);
+        if(mode==0 || mode==5) {
+            assert(d.target && d.intent.speed>0 && d.target->area==model::NavAreaId{1});
+            if(mode==0) assert(d.intent.direction.y==1); // Stable even actor chooses left on tie.
+            else assert(d.intent.direction.x==-1);
+        } else assert(!d.target && d.intent.speed==0);
+        ++s.tick.value;
+        r.state=local::RecoveryState::Aborted;
+        assert(walk.recover(s,*f.index,s.map,world,r).terminalEvent);
+        ++s.tick.value; assert(!walk.recover(s,*f.index,s.map,world,r).terminalEvent);
+    }
+    World world(areas); auto s=actor(); local::Walk walk(binding(),f.corridor,{117,50,0},limits);
+    local::RecoveryDecision r; r.state=local::RecoveryState::Reverse; r.forward={1,0,0};
+    const auto d=walk.recover(s,*f.index,s.map,world,r,limits.probe.maxQueries);
+    assert(world.calls.empty() && !d.target && d.intent.speed==0);
+    local::WalkDecision cause;
+    assert(local::observedStuckCause(cause)==local::StuckCause::Unknown);
+    cause.reason=local::WalkReason::DoorBlocked; cause.doorId=42;
+    assert(local::observedStuckCause(cause)==local::StuckCause::DoorBlocked);
+    cause={}; cause.probeReason=local::ProbeReason::Blocked;
+    assert(local::observedStuckCause(cause)==local::StuckCause::GeometryBlocked);
+    cause={}; cause.reason=local::WalkReason::LadderFailed; cause.ladderReason=local::LadderReason::Fall;
+    assert(local::observedStuckCause(cause)==local::StuckCause::TraversalFailed);
+    cause={}; cause.blocker.emplace(); cause.blocker->kind=runtime::BlockerKind::Player;
+    cause.blocker->player=core::PlayerId{5,{6}};
+    assert(local::observedStuckCause(cause)==local::StuckCause::PlayerBlocked);
+}
 void invalidAndBudgets() {
     auto areas=zigzag(); Fixture f(areas,1,2); auto s=actor(); World world(areas);
     auto bad=limits; bad.probe.maxQueries=2;
@@ -338,4 +380,4 @@ void invalidAndBudgets() {
     assert(sameHint.update(s,*same.index,s.map,hinted).reason==local::WalkReason::UnsupportedTraversal);
 }
 }
-int main() { arrivals(); stops(); measuredCompletion(); invalidAndBudgets(); doors(); touchAndReservedQueries(); crouchCrossing(); }
+int main() { arrivals(); stops(); measuredCompletion(); invalidAndBudgets(); doors(); touchAndReservedQueries(); crouchCrossing(); recoverySafety(); }

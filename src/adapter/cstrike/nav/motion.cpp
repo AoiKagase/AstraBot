@@ -49,6 +49,7 @@ const char* walkState(nav::local::WalkState state) noexcept {
 }
 }
 void NavConsole::recordMotion(MotionEvent event,MotionReason reason) noexcept {
+    if(event==MotionEvent::Rejected) current_->recovery_.pause(current_->motionTrace_.decision.binding);
     if(event==MotionEvent::Decision) current_->motionTrace_.selectedEdge.reset();
     if(current_->session_ && current_->session_->trace().route && current_->session_->trace().routeGeneration==current_->motionTrace_.decision.binding.routeGeneration &&
        current_->motionTrace_.decision.binding.step<current_->session_->trace().route->steps.size())
@@ -63,6 +64,14 @@ void NavConsole::recordMotion(MotionEvent event,MotionReason reason) noexcept {
 void NavConsole::printMotion() noexcept {
     if(!current_->motionTrace_.decision.binding.routeGeneration) return;
     const auto& d=current_->motionTrace_.decision;
+    if(d.recovery.cause!=nav::local::StuckCause::None) {
+        const auto& r=d.recovery;
+        char recovery[512]{};
+        std::snprintf(recovery,sizeof(recovery),"recovery state=%u cause=%u symptom=%u attempts=%u commanded_us=%llu deadline_us=%llu displacement=%.6g projected=%.6g travel=%.6g windows_us=(500000,1000000) stage_us=250000",
+            unsigned(r.state),unsigned(r.cause),unsigned(r.symptom),r.attempts,
+            static_cast<unsigned long long>(r.commandedUs),static_cast<unsigned long long>(r.deadlineUs),r.displacement,r.projected,r.travel);
+        line(recovery);
+    }
     const auto target=d.target ? d.target->origin:nav::model::NavVector3{};
     char text[1536]{};
     std::snprintf(text,sizeof(text),
@@ -169,6 +178,7 @@ void NavConsole::startMotion(const nav::runtime::MovementSnapshot& s) noexcept {
     const nav::model::NavVector3 goal{xy.x,xy.y,static_cast<float>(floor.z)};
     auto profile=walkLimits; profile.jump=jumpLimits; profile.ladder=nav::local::LadderLimits{};
     current_->walk_.emplace(current_->motionTrace_.decision.binding,corridor.value,goal,profile);
+    (void)current_->recovery_.bindRoute(current_->motionTrace_.decision.binding);
     current_->pump_.emplace(current_->motionTrace_.decision.binding); current_->intentWallAgeUs_=0; current_->neutralBinding_.reset();
 }
 void NavConsole::beforeDispatch(metamod::LifecycleCoordinator& owner) noexcept {
@@ -177,6 +187,9 @@ void NavConsole::beforeDispatch(metamod::LifecycleCoordinator& owner) noexcept {
     if(!current_->pendingMotion_ || !movement_) return;
     const auto s=snapshot(owner);
     const auto& pending=*current_->pendingMotion_;
+    current_->motionTrace_.dispatchOrigin=s.position;
+    const auto duration=movement_->frameDeltaUs();
+    current_->motionTrace_.dispatchDurationUs=1000*std::clamp(duration/1000+(duration%1000>=500 ? 1U:0U),std::uint64_t{1},std::uint64_t{255});
     MotionReason reason=MotionReason::None;
     const auto elapsed=(std::max)(s.elapsedUs,movement_->frameDeltaUs());
     const bool stationary=pending.command.movement==core::Movement{} && pending.command.buttons==0;
@@ -184,6 +197,9 @@ void NavConsole::beforeDispatch(metamod::LifecycleCoordinator& owner) noexcept {
        !s.tick.isAfter(pending.tick) || s.hull->minimum!=pending.observation.hull->minimum ||
        s.hull->maximum!=pending.observation.hull->maximum) reason=MotionReason::MissingObservation;
     else if(!s.elapsedUs || !movement_->frameDeltaUs() || elapsed>pending.remainingFreshUs)
+        reason=MotionReason::StaleCommand;
+    else if(current_->motionTrace_.decision.recovery.deadlineUs &&
+        add(add(current_->navigationTimeUs_,elapsed),current_->motionTrace_.dispatchDurationUs)>current_->motionTrace_.decision.recovery.deadlineUs)
         reason=MotionReason::StaleCommand;
     else {
         const auto& m=pending.command.movement;
@@ -324,6 +340,17 @@ void NavConsole::afterDispatch(const metamod::MovementResult& result,core::TickI
     const auto saved=current_->motionTrace_;
     if(!sameRoute) current_->motionTrace_=*ticket; // reentrant goto must not receive old-route feedback
     if(sameRoute) reportLadderTransport(ticket->decision,ticket->commandTick,tick,result.dispatched());
+    if(sameRoute && ticket->dispatchOrigin) {
+        const auto& d=ticket->decision;
+        auto expected=nav::local::ExpectedProgress::Pause;
+        if(d.state==nav::local::WalkState::Running && !d.jumpState && !d.ladderState && !d.doorState && !d.contact &&
+           d.blockerAction!=nav::local::BlockerAction::Yield && d.intent.speed>0 &&
+           (ticket->command.movement.forward!=0 || ticket->command.movement.side!=0))
+            expected=(ticket->command.buttons&static_cast<core::ButtonMask>(core::Button::Duck)) ?
+                nav::local::ExpectedProgress::Crouch:nav::local::ExpectedProgress::Walk;
+        (void)current_->recovery_.report({b,ticket->commandTick,tick,*ticket->dispatchOrigin,d.progressDirection,
+            ticket->dispatchDurationUs,expected,result.dispatched()});
+    }
     if(sameRoute && current_->walk_ && (ticket->command.buttons&static_cast<core::ButtonMask>(core::Button::Jump)))
         (void)current_->walk_->reportJumpDispatch({b,ticket->commandTick,tick,result.dispatched()});
     if(current_->pendingMotion_ && current_->pendingMotion_->tick==ticket->commandTick && current_->pendingMotion_->binding.actor==b.actor &&
@@ -370,16 +397,39 @@ void NavConsole::moveFrame(metamod::LifecycleCoordinator& owner) noexcept {
         const auto index=index_; // pins navigation across synchronous host reentry
         const auto reserved=current_->guardTick_==s.tick ? current_->guardQueries_:0;
         auto binding=current_->motionTrace_.decision.binding; binding.step=current_->walk_->step();
-        const auto physics=standardJumpPhysics(engine_,queryingEntity_,binding,s.tick);
-        const auto ladder=observeLadder(owner,s,binding,reserved);
-        const auto decision=current_->walk_->update(s,*index,navigation_.map,*this,current_->pump_->timeUs(),reserved,physics,ladder);
+        const auto recovery=s.position ? current_->recovery_.observe(binding,s.tick,current_->navigationTimeUs_,*s.position):current_->recovery_.decision();
+        nav::local::WalkDecision decision;
+        if(recovery.state==nav::local::RecoveryState::Monitoring) {
+            const auto physics=standardJumpPhysics(engine_,queryingEntity_,binding,s.tick);
+            const auto ladder=observeLadder(owner,s,binding,reserved);
+            decision=current_->walk_->update(s,*index,navigation_.map,*this,current_->pump_->timeUs(),reserved,physics,ladder);
+            decision.recovery=recovery;
+        } else decision=current_->walk_->recover(s,*index,navigation_.map,*this,recovery,reserved);
         inRequest_=false; queryingEntity_=nullptr; queryingPlayers_=nullptr; queryingOwner_=nullptr;
         if(deferredInvalidation_) {
             (void)applyDeferredInvalidation(); return;
         }
+        if(decision.terminalEvent && decision.state==nav::local::WalkState::Failed &&
+           recovery.state==nav::local::RecoveryState::Monitoring) {
+            decision.recovery.state=nav::local::RecoveryState::Aborted;
+            decision.recovery.cause=nav::local::observedStuckCause(decision);
+            decision.recovery.terminalEvent=true;
+        }
         current_->motionTrace_.decision=decision; current_->motionTrace_.missedDecisions=add(current_->motionTrace_.missedDecisions,schedule.missedDeadlines);
         current_->segment_=decision.target && s.position ? std::optional<Segment>{{*s.position,decision.target->origin}}:std::nullopt;
         current_->intentWallAgeUs_=0;
+        if(recovery.measuredProgress && current_->recoveryReplan_) {
+            current_->replan_={}; current_->recoveryReplan_=false;
+        }
+        if(decision.terminalEvent && decision.reason==nav::local::WalkReason::RecoveryReplan) {
+            current_->recoveryReplan_=current_->replan_.scheduleRecovery(decision.binding,s.tick,current_->navigationTimeUs_);
+            if(!current_->recoveryReplan_) {
+                decision.recovery=current_->recovery_.abort(decision.recovery.cause);
+                decision.reason=nav::local::WalkReason::Stuck;
+                current_->motionTrace_.decision=decision;
+            }
+            printReplan();
+        }
         recordMotion(MotionEvent::Decision);
         if(decision.terminalEvent && decision.reason==nav::local::WalkReason::DynamicBlocked &&
            decision.blockerAction==nav::local::BlockerAction::Replan &&

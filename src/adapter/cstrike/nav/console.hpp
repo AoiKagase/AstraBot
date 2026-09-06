@@ -17,6 +17,8 @@ enum class MotionEvent { None, Decision, Queued, Dispatched, Rejected, Cancelled
 enum class MotionReason { None, InvalidCorridor, InvalidGoal, MissingObservation,
     StaleCommand, Deviation, MotorRejected, TransportRejected, Cancelled, DoorChanged, PostureChanged, JumpChanged, LadderChanged };
 struct MotionTrace {
+    std::optional<nav::model::NavVector3> dispatchOrigin{};
+    std::uint64_t dispatchDurationUs{};
     nav::local::WalkDecision decision{};
     std::optional<nav::query::NavDirectedEdge> selectedEdge{};
     core::BotCommand command{}; // Queued command; msec is a hint, transport measures dispatch.
@@ -138,6 +140,8 @@ private:
     std::uint32_t guardQueries_{};
     std::uint64_t intentWallAgeUs_{};
     nav::runtime::ReplanAttempt replan_{};
+    nav::local::Recovery recovery_{};
+    bool recoveryReplan_{};
     std::uint64_t navigationTimeUs_{};
     core::TickId navigationTimeTick_{};
     MotionTrace motionTrace_{};

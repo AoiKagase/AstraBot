@@ -255,6 +255,8 @@ int gGameDllCommandCalls = 0;
 int gEngineClientCommandCalls = 0;
 int gRunPlayerMoveCalls = 0;
 bool gSimulateNav=false;
+bool gFreezeNav=false;
+std::array<std::uint64_t,6> gRecoveryMotionUs{};
 bool gSimulateLadder=false;
 bool gInjectNavDuplicate=false;
 bool gDeactivateDuringMove=false;
@@ -552,6 +554,12 @@ void captureRunPlayerMove(
         astrabot::core::BotCommand c{{viewAngles[0],viewAngles[1],viewAngles[2]},
             {forwardMove,sideMove,upMove},buttons,impulse,msec};
         gNavMoves.push_back(c); assert(c.validate());
+        if(forwardMove!=0 || sideMove!=0) {
+            const auto state=actorTrace->decision.recovery.state;
+            gRecoveryMotionUs[static_cast<std::size_t>(state)]+=std::uint64_t(msec)*1000;
+            assert(state!=astrabot::nav::local::RecoveryState::Wait && state!=astrabot::nav::local::RecoveryState::Replan &&
+                state!=astrabot::nav::local::RecoveryState::Aborted);
+        }
         if(gSimulateLadder) {
             simulateLadderMotion(*entity,c);
             entity->v.v_angle=Vector(viewAngles[0],viewAngles[1],viewAngles[2]);
@@ -591,6 +599,7 @@ void captureRunPlayerMove(
             entity->v.fuser2=1315.789429f;
         }
         double vx=forwardMove*std::cos(yaw)+sideMove*std::sin(yaw),vy=forwardMove*std::sin(yaw)-sideMove*std::cos(yaw);
+        if(gFreezeNav) vx=vy=0;
         if(gSimulateJump && !(entity->v.flags&FL_ONGROUND)) { vx=entity->v.velocity.x; vy=entity->v.velocity.y; }
         entity->v.origin.x+=static_cast<float>(vx*dt); entity->v.origin.y+=static_cast<float>(vy*dt);
         if(gDoorActive && !gDoorOpen && entity->v.origin.x>=doorPlane &&
@@ -1160,6 +1169,79 @@ void testNavCrouchCrossing() {
         gSimulateCrouch=gCrouchCeiling=gCloseHeadroom=false; gSimulateNav=false; detach();
     }
 }
+void testNavProgressRecovery() {
+    using namespace astrabot;
+    for(std::uint64_t us : {8000U,16000U,100000U}) for(int mode=0;mode<2;++mode) {
+        Fixture fixture{}; enginefuncs_t hooks{}; prepareNavWalk(fixture,hooks);
+        auto& owner=adapter::metamod::lifecycleCoordinator(); auto& console=owner.navConsole();
+        runNav({"astrabot_goto","4"}); gFreezeNav=true; gRecoveryMotionUs={};
+        bool waiting=false;
+        std::uint64_t detectedAt=0,finishedAt=0;
+        for(std::uint64_t elapsed=0;elapsed<8000000;elapsed+=us) {
+            if(mode==1 && elapsed>=700000) gFreezeNav=false;
+            const auto queries=gHullCalls; navFrame(fixture,us);
+            assert(gHullCalls-queries<=21);
+            waiting|=console.motionTrace().decision.recovery.state==nav::local::RecoveryState::Wait;
+            if(waiting && !detectedAt) detectedAt=elapsed+us;
+            if(!finishedAt && console.trace()->routeGeneration==2 &&
+               console.motionTrace().decision.state!=nav::local::WalkState::Running) finishedAt=elapsed+us;
+        }
+        assert(waiting);
+        assert(detectedAt<=700000+us && finishedAt>detectedAt);
+        if(mode==0) assert(finishedAt<=3000000);
+        assert(console.motionTrace().dispatched>0);
+        assert(console.motionTrace().decision.state==(mode==0 ? nav::local::WalkState::Failed:nav::local::WalkState::Arrived));
+        assert(console.trace()->routeGeneration==2);
+        assert(gRecoveryMotionUs[static_cast<std::size_t>(nav::local::RecoveryState::Sidestep)]>0);
+        assert(gRecoveryMotionUs[static_cast<std::size_t>(nav::local::RecoveryState::Sidestep)]<=250000);
+        assert(gRecoveryMotionUs[static_cast<std::size_t>(nav::local::RecoveryState::Reverse)]<=250000);
+        if(mode==0) {
+            assert(console.motionTrace().decision.recovery.state==nav::local::RecoveryState::Aborted);
+            assert(console.motionTrace().decision.recovery.attempts==1);
+            assert(console.motionTrace().decision.recovery.cause==nav::local::StuckCause::Unknown);
+        }
+        unsigned terminalEvents=0;
+        for(std::size_t i=0;i<console.motionHistoryCount();++i) {
+            const auto* trace=console.motionHistory(i);
+            if(trace->event==adapter::cstrike::MotionEvent::Decision && trace->decision.terminalEvent) ++terminalEvents;
+        }
+        assert(terminalEvents==1);
+        std::printf("P3-07 mode=%d frame_us=%llu detected_us=%llu terminal_us=%llu side_us=%llu reverse_us=%llu\n",mode,
+            static_cast<unsigned long long>(us),static_cast<unsigned long long>(detectedAt),static_cast<unsigned long long>(finishedAt),
+            static_cast<unsigned long long>(gRecoveryMotionUs[static_cast<std::size_t>(nav::local::RecoveryState::Sidestep)]),
+            static_cast<unsigned long long>(gRecoveryMotionUs[static_cast<std::size_t>(nav::local::RecoveryState::Reverse)]));
+        const auto count=gNavMoves.size();
+        for(int i=0;i<20;++i) navFrame(fixture,us);
+        assert(gNavMoves.size()==count);
+        if(mode==0) {
+            gFreezeNav=false;
+            runNav({"astrabot_goto","4"});
+            for(std::uint64_t elapsed=0;elapsed<5000000;elapsed+=us) navFrame(fixture,us);
+            assert(console.motionTrace().decision.state==nav::local::WalkState::Arrived);
+            assert(console.motionTrace().decision.recovery.attempts==0);
+        }
+        gFreezeNav=false; gSimulateNav=false; detach();
+    }
+}
+void testNavRecoveryCancellation() {
+    using namespace astrabot;
+    for(auto stage:{nav::local::RecoveryState::Wait,nav::local::RecoveryState::Sidestep,nav::local::RecoveryState::Replan}) {
+        Fixture fixture{}; enginefuncs_t hooks{}; prepareNavWalk(fixture,hooks);
+        auto& owner=adapter::metamod::lifecycleCoordinator(); auto& console=owner.navConsole();
+        runNav({"astrabot_goto","4"}); gFreezeNav=true; bool reached=false;
+        for(int i=0;i<200;++i) {
+            navFrame(fixture);
+            if(console.motionTrace().decision.recovery.state==stage) { reached=true; break; }
+        }
+        assert(reached); const auto count=gNavMoves.size();
+        runNav({"astrabot_nav_cancel"}); gFreezeNav=false;
+        for(int i=0;i<30;++i) navFrame(fixture);
+        assert(console.replan(owner.fakeClient().activePlayer())->attempts()==0);
+        for(std::size_t i=count;i<gNavMoves.size();++i) assert(gNavMoves[i].movement==core::Movement{});
+        assert(console.trace()->routeGeneration==1);
+        gSimulateNav=false; detach();
+    }
+}
 void testNavAutomaticReplan() {
     using namespace astrabot;
     for(std::uint64_t us : {8000U,16000U,100000U}) for(int mode=0;mode<5;++mode) {
@@ -1609,7 +1691,12 @@ void testNavSteering() {
             narrow=narrow || d.narrow; corrected=corrected || std::abs(d.intent.lateralCorrection)>0.001; avoided=avoided || d.avoiding;
             if(d.state!=nav::local::WalkState::Running) {
                 terminal=true;
-                if(mode<2) assert(d.state==nav::local::WalkState::Arrived);
+                if(mode<2) {
+                    if(d.state!=nav::local::WalkState::Arrived) std::fprintf(stderr,"steering mode=%d us=%llu reason=%u recovery=%u projected=%g pos=(%g,%g)\n",mode,
+                        static_cast<unsigned long long>(us),unsigned(d.reason),unsigned(d.recovery.state),d.recovery.projected,
+                        double(fixture.entity.v.origin.x),double(fixture.entity.v.origin.y));
+                    assert(d.state==nav::local::WalkState::Arrived);
+                }
                 else assert(d.state==nav::local::WalkState::Failed && d.intent.speed==0);
                 break;
             }
@@ -2249,6 +2336,7 @@ int main() {
 #ifdef _MSC_VER
     _CrtSetReportMode(_CRT_ASSERT,_CRTDBG_MODE_FILE);
     _CrtSetReportFile(_CRT_ASSERT,_CRTDBG_FILE_STDERR);
+    _set_abort_behavior(0,_WRITE_ABORT_MSG|_CALL_REPORTFAULT);
 #endif
     testNavWorldQueries();
     testNavJumpProbeWorldQueries();
@@ -2273,6 +2361,8 @@ int main() {
     testMultipleClientDetach();
     testNavPlayers();
     testNavAutomaticReplan();
+    testNavProgressRecovery();
+    testNavRecoveryCancellation();
     testNavCrouchCrossing();
     testNavWalkCancellationAndGuards();
     testJoinFailureCleanupAndCommandContextReentry();
