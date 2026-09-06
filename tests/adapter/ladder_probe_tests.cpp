@@ -1,10 +1,16 @@
 // SPDX-License-Identifier: MPL-2.0
 #include "adapter/cstrike/nav/ladder_probe.hpp"
+#include "adapter/cstrike/nav/ladder_discovery.hpp"
+#include "nav/query/graph.hpp"
 #include "../nav/route_fixture.hpp"
 #include <algorithm>
 #include <cassert>
 #include <cmath>
 #include <limits>
+#ifdef ASTRABOT_LADDER_HOST_TESTS
+#include "adapter/cstrike/nav/console.hpp"
+#include <sstream>
+#endif
 using namespace astrabot;
 using namespace astrabot::adapter::cstrike;
 namespace {
@@ -13,6 +19,9 @@ edict_t ladderEntity{},worldEntity{};
 core::MapGeneration activeMap{1};
 unsigned traces{},faultAt{};
 int fault{};
+#ifdef ASTRABOT_LADDER_HOST_TESTS
+NavConsole* publishing{};
+#endif
 struct Box { V low,high; } floors[2];
 core::MapGeneration mapNow(const void*) noexcept { return activeMap; }
 edict_t* entityAt(int n) { return n==1 ? &ladderEntity:n==0 ? &worldEntity:nullptr; }
@@ -50,6 +59,9 @@ void inject(const float* a,const float* b,TraceResult* t) {
     if(fault==8) ladderEntity.v.absmax.z+=1;
     if(fault==9) ++ladderEntity.v.modelindex;
     if(fault==10) t->pHit=&ladderEntity;
+#ifdef ASTRABOT_LADDER_HOST_TESTS
+    if(fault==11 && publishing) publishing->invalidate(nav::runtime::SessionReason::Cancelled);
+#endif
 }
 void traceModel(const float* a,const float* b,int hull,edict_t* e,TraceResult* t) {
     assert(e==&ladderEntity && (hull==0 || hull==1)); begin(b,t);
@@ -149,3 +161,78 @@ void testLadderProbe() {
     r=inspectLadderPassage({&e,nullptr,mapNow},{1},candidate,LadderFace::MinX,LadderExit::AcrossTop,*index,{1},2);
     assert(!r && r.reason==LadderProbeReason::Unavailable && traces==0);
 }
+void testLadderDiscovery() {
+    const auto index=setup(LadderFace::MinX,LadderExit::AcrossTop); auto e=engine();
+    nav::enrichment::NavMapFingerprint fingerprint{}; fingerprint[0]=0x7a;
+    auto batch=discoverLadderLinks({&e,nullptr,mapNow},{1},*index,{1},fingerprint,9,2);
+    assert(batch && batch.candidates==1 && batch.queries==traces && !batch.value->passages.empty());
+    assert(batch.value->links.fingerprint==fingerprint && batch.value->generation==9);
+    std::vector<route_test::Area> areas;
+    for(unsigned i=0;i<2;++i) {
+        const auto& f=floors[i]; const float z=f.high.z;
+        areas.push_back({i+1,{{f.low.x,f.low.y,z},{f.high.x,f.high.y,z},z,z}});
+    }
+    const auto mesh=route_test::snapshot(areas);
+    const auto graph=nav::query::NavGraph::compose(mesh,fingerprint,batch.value->links,{100,2048,1000000},{2048,1000000});
+    assert(graph && (*graph.value)->edgeCount()==batch.value->passages.size()*2);
+    for(std::size_t i=0;i<batch.value->passages.size();++i) {
+        const auto& up=batch.value->links.links[2*i]; const auto& down=batch.value->links.links[2*i+1];
+        assert(up.from==down.to && up.to==down.from && up.linkId+1==down.linkId);
+        assert(up.sourceId==ladderSourceId && up.generation==9 && up.entry.z==0 && up.exit.z==128);
+        assert(up.direction==nav::enrichment::NavLinkDirection::Up && down.direction==nav::enrichment::NavLinkDirection::Down);
+        assert(ladderPassageCurrent({&e,nullptr,mapNow},batch.value->passages[i],2));
+    }
+    auto other=fingerprint; ++other[0];
+    assert(!nav::query::NavGraph::compose(mesh,other,batch.value->links,{100,2048,1000000},{2048,1000000}));
+    const auto old=batch.value;
+    ++ladderEntity.serialnumber;
+    assert(!ladderPassageCurrent({&e,nullptr,mapNow},old->passages[0],2));
+    assert(old->passages[0].entityId==candidate.entityId);
+    for(unsigned budget:{0U,1U,11U}) {
+        (void)setup(LadderFace::MinX,LadderExit::AcrossTop);
+        batch=discoverLadderLinks({&e,nullptr,mapNow},{1},*index,{1},fingerprint,9,2,{budget,1024});
+        assert(!batch && !batch.value && batch.reason==LadderDiscoveryReason::BudgetExceeded && traces<=budget);
+    }
+    (void)setup(LadderFace::MinX,LadderExit::AcrossTop);
+    batch=discoverLadderLinks({&e,nullptr,mapNow},{1},*index,{1},fingerprint,9,2,{12288,0});
+    assert(!batch && batch.reason==LadderDiscoveryReason::BudgetExceeded);
+    const nav::query::NavSpatialIndex empty;
+    batch=discoverLadderLinks({&e,nullptr,mapNow},{1},empty,{1},fingerprint,9,2);
+    assert(!batch && batch.reason==LadderDiscoveryReason::UnlinkedCandidate && !batch.value);
+    (void)setup(LadderFace::MinX,LadderExit::AcrossTop); fault=1; faultAt=12;
+    batch=discoverLadderLinks({&e,nullptr,mapNow},{1},*index,{1},fingerprint,9,2);
+    assert(!batch && !batch.value);
+    (void)setup(LadderFace::MinX,LadderExit::AcrossTop); ladderEntity.free=1;
+    batch=discoverLadderLinks({&e,nullptr,mapNow},{1},*index,{1},fingerprint,10,2,{0,0});
+    assert(batch && batch.value->passages.empty() && batch.value->links.links.empty() && batch.queries==0);
+}
+#ifdef ASTRABOT_LADDER_HOST_TESTS
+void testLadderPublication() {
+    (void)setup(LadderFace::MinX,LadderExit::AcrossTop); auto e=engine();
+    std::vector<route_test::Area> areas;
+    for(unsigned i=0;i<2;++i) {
+        const auto& f=floors[i]; const float z=f.high.z;
+        areas.push_back({i+1,{{f.low.x,f.low.y,z},{f.high.x,f.high.y,z},z,z}});
+    }
+    const auto mesh=route_test::snapshot(areas);
+    NavConsole console; console.configure(&e,nullptr,nullptr);
+    assert(console.publish({1},mesh).isNone());
+    const LadderWorld world{&e,nullptr,mapNow};
+    std::istringstream bsp("abc");
+    assert(console.publishLadders(bsp,world,{1},2) && console.ladders());
+    const auto first=*console.ladders();
+    assert(!first.links.links.empty() && first.links.fingerprint[0]==0xba);
+    std::istringstream second("abc");
+    assert(console.publishLadders(second,world,{1},2));
+    assert(console.ladders()->generation>first.generation && first.links.fingerprint==console.ladders()->links.fingerprint);
+    std::istringstream broken("abc"); broken.setstate(std::ios::badbit);
+    assert(!console.publishLadders(broken,world,{1},2) && !console.ladders());
+    (void)setup(LadderFace::MinX,LadderExit::AcrossTop); fault=11; faultAt=12; publishing=&console;
+    std::istringstream stale("abc");
+    assert(!console.publishLadders(stale,world,{1},2) && !console.ladders());
+    publishing=nullptr; fault=faultAt=0;
+    std::istringstream retired("abc");
+    assert(!console.publishLadders(retired,world,{1},2)); // Deferred invalidation retired NAV too.
+    assert(first.links.links.front().generation==first.generation); // Old owned evidence remains immutable.
+}
+#endif

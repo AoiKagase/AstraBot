@@ -7,6 +7,8 @@
 #include "nav/local/walk.hpp"
 #include "nav/local/intent_pump.hpp"
 #include "adapter/metamod/movement.hpp"
+#include "adapter/cstrike/nav/ladder_discovery.hpp"
+#include <istream>
 namespace astrabot::adapter::metamod { class LifecycleCoordinator; }
 namespace astrabot::adapter::cstrike {
 enum class NavCommand { Load, GoTo, Status, Cancel };
@@ -49,6 +51,10 @@ public:
     // Publication binds an independently obtained immutable mesh to the current map.
     nav::diagnostics::NavError publish(core::MapGeneration,
         std::shared_ptr<const nav::model::NavMeshSnapshot>) noexcept;
+    // The caller supplies the current map's BSP bytes. Failure leaves a native
+    // graph (or invalidated navigation), never a partially enriched graph.
+    bool publishLadders(std::istream&,LadderWorld,core::MapGeneration,int maxEntities) noexcept;
+    const LadderDiscovery* ladders() const noexcept { return ladders_.get(); }
     const nav::runtime::DecisionTrace* trace() const noexcept { return current_->session_ ? &current_->session_->trace():nullptr; }
     const nav::runtime::DecisionTrace* trace(core::PlayerId) const noexcept;
     const nav::runtime::ReplanAttempt* replan(core::PlayerId player) const noexcept {
@@ -69,7 +75,8 @@ private:
     void printUpdate(const nav::runtime::SessionUpdate&) noexcept;
     void line(const char*) noexcept;
     static void sink(void*,const char*) noexcept;
-    bool load(const char*,core::MapGeneration) noexcept;
+    bool load(const char*,core::MapGeneration,metamod::LifecycleCoordinator&) noexcept;
+    void loadCurrentLadders(metamod::LifecycleCoordinator&) noexcept;
     void startMotion(const nav::runtime::MovementSnapshot&) noexcept;
     void stopMotion() noexcept;
     void clearPending() noexcept;
@@ -142,6 +149,9 @@ private:
     globalvars_t* globals_{};
     nav::runtime::NavigationSnapshot navigation_{};
     std::shared_ptr<const nav::query::NavSpatialIndex> index_{};
+    std::shared_ptr<const nav::model::NavMeshSnapshot> mesh_{};
+    std::shared_ptr<const LadderDiscovery> ladders_{};
+    std::uint64_t ladderGeneration_{};
     bool inRequest_{};
     std::optional<nav::runtime::SessionReason> deferredInvalidation_{};
     bool deferredAll_{}, deferredReset_{};

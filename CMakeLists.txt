@@ -101,6 +101,7 @@ if(MSVC)
 endif()
 
 add_library(astrabot_nav STATIC
+    src/nav/io/map_fingerprint.cpp
     src/nav/local/walk.cpp
     src/nav/local/walk_jump.cpp
     src/nav/local/door_wait.cpp
@@ -245,6 +246,10 @@ if(ASTRABOT_BUILD_METAMOD)
         src/adapter/cstrike/nav/console.cpp
         src/adapter/cstrike/nav/motion.cpp
         src/adapter/cstrike/nav/jump_motion.cpp
+        src/adapter/cstrike/nav/ladder_scanner.cpp
+        src/adapter/cstrike/nav/ladder_probe.cpp
+        src/adapter/cstrike/nav/ladder_discovery.cpp
+        src/adapter/cstrike/nav/ladder_publication.cpp
         src/adapter/cstrike/nav/world_queries.cpp
         src/adapter/metamod/lifecycle.cpp
         src/adapter/metamod/movement.cpp
@@ -326,6 +331,10 @@ if(ASTRABOT_BUILD_TESTS)
     file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/long-fuzz/CTestTestfile.cmake"
         CONTENT "add_test(astrabot.nav.fuzz.long \"$<TARGET_FILE:astrabot_nav_fuzz_tests>\" --cases 100000)\nset_tests_properties(astrabot.nav.fuzz.long PROPERTIES TIMEOUT 600)\n")
     if(NOT ASTRABOT_NAV_ASAN)
+    add_executable(astrabot_map_fingerprint_tests tests/nav/map_fingerprint_tests.cpp)
+    target_link_libraries(astrabot_map_fingerprint_tests PRIVATE astrabot_nav)
+    astrabot_enable_warnings(astrabot_map_fingerprint_tests)
+    add_test(NAME astrabot.nav.map_fingerprint COMMAND astrabot_map_fingerprint_tests)
     add_executable(astrabot_nav_intent_pump_tests tests/nav/intent_pump_tests.cpp)
     target_link_libraries(astrabot_nav_intent_pump_tests PRIVATE astrabot_nav astrabot_core)
     astrabot_enable_warnings(astrabot_nav_intent_pump_tests)
@@ -555,6 +564,7 @@ if(ASTRABOT_BUILD_TESTS)
             tests/adapter/ladder_probe_tests.cpp
             src/adapter/cstrike/nav/ladder_scanner.cpp
             src/adapter/cstrike/nav/ladder_probe.cpp
+            src/adapter/cstrike/nav/ladder_discovery.cpp
         )
         target_compile_features(astrabot_ladder_scanner_tests PRIVATE cxx_std_17)
         target_link_libraries(astrabot_ladder_scanner_tests PRIVATE astrabot_nav)
@@ -574,6 +584,10 @@ if(ASTRABOT_BUILD_TESTS)
             src/adapter/cstrike/nav/console.cpp
             src/adapter/cstrike/nav/motion.cpp
             src/adapter/cstrike/nav/jump_motion.cpp
+            src/adapter/cstrike/nav/ladder_scanner.cpp
+            src/adapter/cstrike/nav/ladder_probe.cpp
+            src/adapter/cstrike/nav/ladder_discovery.cpp
+            src/adapter/cstrike/nav/ladder_publication.cpp
             src/adapter/cstrike/nav/world_queries.cpp
             src/adapter/metamod/lifecycle.cpp
             src/adapter/metamod/movement.cpp
@@ -626,12 +640,17 @@ if(ASTRABOT_BUILD_TESTS)
 
         add_executable(astrabot_fake_client_tests
             tests/adapter/fake_client_tests.cpp
+            tests/adapter/ladder_probe_tests.cpp
             src/adapter/cstrike/join_state.cpp
             src/adapter/cstrike/messages.cpp
             src/adapter/metamod/fake_client.cpp
             src/adapter/cstrike/nav/console.cpp
             src/adapter/cstrike/nav/motion.cpp
             src/adapter/cstrike/nav/jump_motion.cpp
+            src/adapter/cstrike/nav/ladder_scanner.cpp
+            src/adapter/cstrike/nav/ladder_probe.cpp
+            src/adapter/cstrike/nav/ladder_discovery.cpp
+            src/adapter/cstrike/nav/ladder_publication.cpp
             src/adapter/cstrike/nav/world_queries.cpp
             src/adapter/metamod/lifecycle.cpp
             src/adapter/metamod/movement.cpp
@@ -639,6 +658,7 @@ if(ASTRABOT_BUILD_TESTS)
             src/debug/host_trace.cpp
         )
         target_compile_features(astrabot_fake_client_tests PRIVATE cxx_std_17)
+        target_compile_definitions(astrabot_fake_client_tests PRIVATE ASTRABOT_LADDER_HOST_TESTS)
         target_link_libraries(astrabot_fake_client_tests PRIVATE astrabot_core astrabot_nav)
         target_include_directories(astrabot_fake_client_tests
             PRIVATE

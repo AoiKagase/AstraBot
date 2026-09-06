@@ -235,11 +235,13 @@ implementation results; live physics acceptance remains post-Finish.
 
 [Candidate discovery foundation](../reports/p3-06-ladder-candidates.md) adds
 bounded public-entity enumeration and generation-stamped value results.
-Facing/endpoint traces, fingerprint-bound publication and motion remain pending;
-candidate AABBs alone are not traversal proof.
+Candidate AABBs alone are not traversal proof.
 [Measured passage inspection](../reports/p3-06-ladder-passage.md) now checks
 an explicit face/exit with model contact, world support, NAV binding and bounded
-clearance traces. Whole-map publication and first-class motion remain pending.
+clearance traces.
+[Fingerprint-bound host publication](../reports/p3-06-ladder-publication.md)
+now connects bounded whole-map inspection to immutable up/down links. The first
+implementation slice has offline evidence; first-class motion remains pending.
 
 - **Goal:** generation-bound host ladder links plus distinct up/down traversal.
 - **Why now:** P2-07 proves synthetic connectivity only.
@@ -247,7 +249,7 @@ clearance traces. Whole-map publication and first-class motion remain pending.
 - **Interfaces:** existing NavTraversalLink identity/fingerprint/direction/points;
   value bounds/facing/contact and freshness.
 - **Implementation outline / commit slices:**
-  - [ ] Independently enumerate func_ladder and trace endpoints/facing; publish
+  - [x] Independently enumerate func_ladder and trace endpoints/facing; publish
     immutable same-map enrichment or explicit discovery failure.
   - [ ] Add approach/align/contact/climb-up or down/exit/support, abort/fall
     detection and at most one fresh clearance-checked re-acquire.

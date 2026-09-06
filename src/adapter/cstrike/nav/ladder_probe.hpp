@@ -20,6 +20,8 @@ struct LadderEndpoint {
 struct LadderPassage {
     core::MapGeneration map{};
     std::uint64_t entityId{};
+    LadderCandidate candidate{};
+    int modelIndex{},modelName{};
     LadderFace face{};
     LadderExit exit{};
     nav::model::NavVector3 normal{}, lowContact{}, highContact{};
@@ -38,4 +40,6 @@ struct LadderProbeResult {
 LadderProbeResult inspectLadderPassage(LadderWorld,core::MapGeneration,
     const LadderCandidate&,LadderFace,LadderExit,const nav::query::NavSpatialIndex&,
     core::MapGeneration indexMap,int maxEntities,std::uint32_t maxQueries=12) noexcept;
+// Identity/model/bounds freshness only; does not renew support/clearance proof.
+bool ladderPassageCurrent(LadderWorld,const LadderPassage&,int maxEntities) noexcept;
 }

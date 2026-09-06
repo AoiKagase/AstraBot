@@ -2,6 +2,7 @@
 // Copyright (c) 2026 AstraBot contributors.
 
 #include <fstream>
+#include <filesystem>
 #include <cmath>
 #include <chrono>
 #include <iterator>
@@ -390,6 +391,8 @@ edict_t* captureDoorEntity(int index) {
 const char* captureDoorString(int index) {
     return index==10 ? "func_door":index==11 ? "func_door_rotating":"unknown";
 }
+void captureLadderDirectory(char* directory) { constexpr char path[]="nav-ladder-test"; std::memcpy(directory,path,sizeof(path)); }
+const char* captureLadderMapString(int index) { return index==20 ? "p306_fixture":"unknown"; }
 edict_t* captureDoorSphere(edict_t* previous,const float* origin,float radius) {
     ++gDoorScans; assert(radius==64);
     if(gDoorLoop) return &gFixture->entity;
@@ -1629,6 +1632,10 @@ void testNavWalkCancellationAndGuards() {
 
 void testMessageDrivenJoinAndCommandContext() {
     Fixture fixture{};
+    fixture.engine.pfnGetGameDir=&captureLadderDirectory;
+    fixture.engine.pfnSzFromIndex=&captureLadderMapString;
+    fixture.engine.pfnPEntityOfEntIndex=&captureDoorEntity;
+    fixture.engineGlobals.mapname=20; fixture.engineGlobals.maxEntities=3;
     activate(fixture);
     astrabot::adapter::metamod::lifecycleCoordinator().setJoinTraceSink(
         &captureJoinTrace);
@@ -1728,7 +1735,18 @@ void testMessageDrivenJoinAndCommandContext() {
         file.rdbuf()->sputn(reinterpret_cast<const char*>(bytes.data()),static_cast<std::streamsize>(bytes.size()));
         assert(file.good());
     }
+    std::filesystem::create_directories("nav-ladder-test/maps");
+    const std::string bspBytes(123,'x'); // Matches this synthetic NAV's BSP size.
+    {
+        std::ofstream file("nav-ladder-test/maps/p306_fixture.bsp",std::ios::binary);
+        assert(file.rdbuf()->sputn(bspBytes.data(),static_cast<std::streamsize>(bspBytes.size()))==static_cast<std::streamsize>(bspBytes.size()));
+    }
     runNav({"astrabot_nav_load","nav-console-fixture.nav"});
+    assert(nav.ladders() && nav.ladders()->links.links.empty());
+    {
+        std::ifstream file("nav-ladder-test/maps/p306_fixture.bsp",std::ios::binary);
+        const std::string after{std::istreambuf_iterator<char>(file),{}}; assert(after==bspBytes);
+    }
     runNav({"astrabot_goto","1"});
     assert(nav.trace()->state==astrabot::nav::runtime::SessionState::Ready);
     {
@@ -1736,6 +1754,13 @@ void testMessageDrivenJoinAndCommandContext() {
         std::vector<std::uint8_t> after{std::istreambuf_iterator<char>(file),{}};
         assert(after==bytes);
     }
+    {
+        std::ofstream file("nav-ladder-test/maps/p306_fixture.bsp",std::ios::binary);
+        file << bspBytes << 'x'; assert(file.good());
+    }
+    runNav({"astrabot_nav_load","nav-console-fixture.nav"});
+    assert(!nav.ladders());
+    assert(std::find(gNavOutput.begin(),gNavOutput.end(),"nav ladders=BspSizeMismatch")!=gNavOutput.end());
     runNav({"astrabot_nav_load","nav-console-no-such-file.nav"});
     runNav({"astrabot_goto","1"});
     assert(nav.trace()->reason==astrabot::nav::runtime::SessionReason::MissingGraph);
@@ -2159,7 +2184,9 @@ void testDetachDirectlyCleansActiveEntityOnce() {
 
 } // namespace
 
+void testLadderPublication();
 int main() {
+    testLadderPublication();
 #ifdef _MSC_VER
     _CrtSetReportMode(_CRT_ASSERT,_CRTDBG_MODE_FILE);
     _CrtSetReportFile(_CRT_ASSERT,_CRTDBG_FILE_STDERR);

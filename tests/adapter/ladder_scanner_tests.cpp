@@ -67,4 +67,5 @@ void failures() {
 }
 }
 void testLadderProbe();
-int main() { scans(); failures(); testLadderProbe(); }
+void testLadderDiscovery();
+int main() { scans(); failures(); testLadderProbe(); testLadderDiscovery(); }

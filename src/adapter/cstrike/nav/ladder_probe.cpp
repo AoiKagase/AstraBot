@@ -28,7 +28,7 @@ public:
         if(world.engine->pfnIndexOfEdict(e)!=static_cast<int>(slot) || !name || std::strcmp(name,"func_ladder") ||
            !model || model[0]!='*' || model[1]<'0' || model[1]>'9' ||
            e->v.modelindex<=0 || e->v.modelindex>=512 || e->v.skin!=CONTENTS_LADDER ||
-           (entity && (e->v.modelindex!=modelIndex || e->v.model!=modelName)) ||
+           (modelIndex && (e->v.modelindex!=modelIndex || e->v.model!=modelName)) ||
            static_cast<std::uint32_t>(e->serialnumber)!=serial || e->free ||
            value(e->v.absmin)!=candidate.minimum || value(e->v.absmax)!=candidate.maximum ||
            e->v.angles.x!=0 || e->v.angles.y!=0 || e->v.angles.z!=0 ||
@@ -139,6 +139,15 @@ LadderProbeResult inspectLadderPassage(LadderWorld world,core::MapGeneration map
     auto from=p.bottom.origin,to=p.top.origin; from.z+=0.05f; to.z+=0.05f;
     if(!probe.contact(p.mount) || !probe.contact({p.dismount.x,p.dismount.y,p.dismount.z-18})) return probe.result;
     if(!probe.clear(from,p.mount) || !probe.clear(p.mount,p.dismount) || !probe.clear(p.dismount,to)) return probe.result;
+    p.candidate=c; p.modelIndex=probe.modelIndex; p.modelName=probe.modelName;
     probe.result.reason=LadderProbeReason::None; probe.result.passage=p; return probe.result;
+}
+bool ladderPassageCurrent(LadderWorld world,const LadderPassage& p,int maximum) noexcept {
+    const auto slot=static_cast<std::uint32_t>(p.entityId);
+    if(!world.engine || !world.currentMap || !world.engine->pfnPEntityOfEntIndex || !world.engine->pfnIndexOfEdict ||
+       !world.engine->pfnSzFromIndex || !p.map.isValid() || maximum<1 || maximum>8192 || !slot ||
+       slot>=static_cast<std::uint32_t>(maximum) || p.entityId!=p.candidate.entityId || p.modelIndex<=0 || p.modelIndex>=512) return false;
+    Probe probe{world,p.map,p.candidate,maximum,0}; probe.modelIndex=p.modelIndex; probe.modelName=p.modelName;
+    return probe.fresh();
 }
 }

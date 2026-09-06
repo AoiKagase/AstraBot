@@ -135,7 +135,7 @@ void NavConsole::invalidate(nav::runtime::SessionReason reason) noexcept {
         if(inRequest_) clearPending(); else invalidateCurrent(reason);
     }
     if(inRequest_) { deferredInvalidation_=reason; deferredAll_=true; return; }
-    navigation_={}; index_.reset(); queryingEntity_=nullptr; queryingPlayers_=nullptr; queryingOwner_=nullptr;
+    navigation_={}; index_.reset(); mesh_.reset(); ladders_.reset(); queryingEntity_=nullptr; queryingPlayers_=nullptr; queryingOwner_=nullptr;
 }
 bool NavConsole::applyDeferredInvalidation() noexcept {
     if(!deferredInvalidation_) return false;
@@ -160,11 +160,11 @@ nav::diagnostics::NavError NavConsole::publish(core::MapGeneration map,
     if (!map.isValid()) return {nav::diagnostics::NavErrorKind::InvalidInput};
     const auto index=nav::query::NavSpatialIndex::build(mesh,{100000,199999,256*mib});
     if(!index) return index.error;
-    const auto graph=nav::query::NavGraph::build(std::move(mesh),{100000,1000000,256*mib});
+    const auto graph=nav::query::NavGraph::build(mesh,{100000,1000000,256*mib});
     if(!graph) return graph.error;
-    index_=*index.value; navigation_={map,*graph.value}; return {};
+    index_=*index.value; mesh_=std::move(mesh); navigation_={map,*graph.value}; return {};
 }
-bool NavConsole::load(const char* path,core::MapGeneration map) noexcept {
+bool NavConsole::load(const char* path,core::MapGeneration map,metamod::LifecycleCoordinator& owner) noexcept {
     invalidate(nav::runtime::SessionReason::GoalReplaced);
     try {
         std::ifstream input(path,std::ios::binary|std::ios::ate);
@@ -183,7 +183,8 @@ bool NavConsole::load(const char* path,core::MapGeneration map) noexcept {
                 unsigned(error.kind),unsigned(error.record),unsigned(error.field),static_cast<unsigned long long>(error.offset));
             line(text); return false;
         }
-        line("nav load=Ready profile=compatibility-v1 input_limit=67108864 areas_limit=100000 memory_limit=268435456"); return true;
+        line("nav load=Ready profile=compatibility-v1 input_limit=67108864 areas_limit=100000 memory_limit=268435456");
+        loadCurrentLadders(owner); return true;
     } catch(...) { line("nav load=AllocationOrInputFailure"); return false; }
 }
 nav::runtime::MovementSnapshot NavConsole::snapshot(metamod::LifecycleCoordinator& owner) noexcept {
@@ -226,7 +227,7 @@ void NavConsole::execute(NavCommand command,metamod::LifecycleCoordinator& owner
         if(!owner.registry().isMapActive()) { line("nav error=NoActiveMap"); return; }
         const auto path=bounded(engine_->pfnCmd_Argv(1),1024);
         if(path.empty()) { line("nav error=InvalidPath"); return; }
-        (void)load(path.data(),owner.registry().mapGeneration()); return;
+        (void)load(path.data(),owner.registry().mapGeneration(),owner); return;
     }
     if(command==NavCommand::GoTo && !owner.registry().isMapActive()) { line("nav error=NoActiveMap"); return; }
     core::PlayerId player{};
