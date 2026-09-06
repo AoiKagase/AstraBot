@@ -20,4 +20,9 @@ std::optional<model::NavVector3> ladderVelocity(const core::BotCommand&,
 // sweep the displacement and verify the supplied current physics parameters.
 std::optional<LadderAirStep> ladderAirStep(const core::BotCommand&,
     model::NavVector3 velocity,LadderAirPhysics) noexcept;
+// Jump while touching a verified ladder in the air switches to WALK and
+// replaces velocity with270 along the face normal, then runs air physics.
+// Requires current airborne contact; grounded jumps need ground friction/move.
+std::optional<LadderAirStep> ladderJumpAirStep(const core::BotCommand&,
+    model::NavVector3 outwardNormal,LadderAirPhysics) noexcept;
 }

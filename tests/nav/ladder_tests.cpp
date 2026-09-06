@@ -7,6 +7,8 @@
 #include <cmath>
 #include <utility>
 #include <limits>
+#include <cstdio>
+#include <cstdlib>
 using namespace astrabot;
 using namespace astrabot::nav;
 using namespace astrabot::nav::local;
@@ -105,6 +107,26 @@ void airborneProjection() {
         if(mode==6) v.x=(std::numeric_limits<float>::infinity)();
         assert(!ladderAirStep(command,v,p));
     }
+}
+void jumpingOffLadder() {
+    const LadderAirPhysics physics{800,10,1,250,2000};
+    for(const auto normal:std::array<model::NavVector3,4>{{{-1,0,0},{1,0,0},{0,-1,0},{0,1,0}}})
+        for(const auto msec:{8,16,100}) {
+            core::BotCommand command; command.msec=static_cast<std::uint8_t>(msec);
+            command.buttons=static_cast<core::ButtonMask>(core::Button::Jump);
+            const auto r=ladderJumpAirStep(command,normal,physics);
+            if(!r) { std::fprintf(stderr,"missing airborne ladder jump prediction\n"); std::exit(1); }
+            const double dt=double(msec)/1000;
+            assert(std::abs(r->velocity.x-270*normal.x)<0.001 && std::abs(r->velocity.y-270*normal.y)<0.001);
+            assert(std::abs(r->velocity.z+800*dt)<0.001);
+            assert(std::abs(r->displacement.x-270*normal.x*dt)<0.001 && std::abs(r->displacement.z+400*dt*dt)<0.001);
+            command.buttons=0; assert(!ladderJumpAirStep(command,normal,physics));
+            command.buttons=static_cast<core::ButtonMask>(core::Button::Jump)|static_cast<core::ButtonMask>(core::Button::Duck);
+            assert(!ladderJumpAirStep(command,normal,physics));
+        }
+    core::BotCommand command; command.msec=16; command.buttons=static_cast<core::ButtonMask>(core::Button::Jump);
+    assert(!ladderJumpAirStep(command,{0,0,1},physics));
+    assert(!ladderJumpAirStep(command,{},physics));
 }
 void climbingAndObservedExit() {
     for(bool up:{false,true}) for(std::uint64_t us:{8000U,16000U,100000U}) {
@@ -210,6 +232,26 @@ void observedModeHandoff() {
     s.tick={4}; s.position->z=80; s.ladder->touching=false;
     assert(wrong.update(feedback(wrong,p,s,160000,true)).reason==LadderReason::WrongContact);
 }
+void jumpExitCandidate() {
+    const LadderAirPhysics physics{800,10,1,250,2000};
+    const auto mesh=route_test::snapshot({{1,{{-100,0,0},{-20,64,0},0,0}},
+        {2,{{-100,0,128},{-32,64,128},128,128}}});
+    const auto built=query::NavSpatialIndex::build(mesh,{100,199,100000}); assert(built);
+    for(bool up:{false,true}) {
+        auto p=plan(up); p.end.x=up ? -49.0f:-33.0f; p.link.exit.x=p.end.x;
+        auto s=actor(p); s.position=p.dismount; s.position->z+=8; s.grounded=false;
+        for(const auto msec:std::array<std::uint8_t,3>{8,16,100}) {
+            const auto r=planJumpLadderExit(p,s,true,physics,msec,**built.value,s.map);
+            if(!r) { std::fprintf(stderr,"missing ladder jump exit candidate\n"); std::exit(1); }
+            assert(r.value->intent.jump==ActionRequest::Press && r.value->command.buttons==static_cast<core::ButtonMask>(core::Button::Jump));
+            assert(r.value->landing.x>=-100 && r.value->landing.x<=(up ? -32:-20) && r.value->landing.z==p.end.z);
+            assert(r.value->columnCount<=18 && r.value->simulatedFrames<=256);
+        }
+        s.grounded=true; assert(!planJumpLadderExit(p,s,true,physics,16,**built.value,s.map)); s.grounded=false;
+        assert(!planJumpLadderExit(p,s,true,physics,0,**built.value,s.map));
+        assert(planJumpLadderExit(p,s,true,physics,16,**built.value,{99}).reason==LadderExitReason::StaleNavigation);
+    }
+}
 void upperExitCandidate() {
     const LadderAirPhysics physics{800,10,1,250,2000};
     for(bool across:{false,true}) {
@@ -238,4 +280,4 @@ void upperExitCandidate() {
     }
 }
 }
-int main() { directionalMotor(); physicalProjection(); airborneProjection(); climbingAndObservedExit(); failuresAndReacquire(); observedModeHandoff(); upperExitCandidate(); }
+int main() { directionalMotor(); physicalProjection(); airborneProjection(); jumpingOffLadder(); climbingAndObservedExit(); failuresAndReacquire(); observedModeHandoff(); upperExitCandidate(); jumpExitCandidate(); }

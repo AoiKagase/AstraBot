@@ -28,4 +28,10 @@ struct LadderExitResult {
 LadderExitResult planUpperLadderExit(const LadderPlan&,const runtime::MovementSnapshot&,
     bool touching,double releaseZ,LadderAirPhysics,std::uint8_t commandMsec,
     const query::NavSpatialIndex&,core::MapGeneration indexMap) noexcept;
+// Airborne-only outward jump (when touching) followed by monotonic outward air
+// flight. Uses the same forecast bounds. Host must verify first-frame model
+// release and every world column/landing; this function cannot authorize input.
+LadderExitResult planJumpLadderExit(const LadderPlan&,const runtime::MovementSnapshot&,
+    bool touching,LadderAirPhysics,std::uint8_t commandMsec,
+    const query::NavSpatialIndex&,core::MapGeneration indexMap) noexcept;
 }

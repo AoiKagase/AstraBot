@@ -3,9 +3,10 @@
 #include <algorithm>
 #include <cmath>
 namespace astrabot::nav::local {
-LadderExitResult planUpperLadderExit(const LadderPlan& p,const runtime::MovementSnapshot& s,bool touching,
+namespace {
+LadderExitResult planExit(const LadderPlan& p,const runtime::MovementSnapshot& s,bool touching,
     double releaseZ,LadderAirPhysics physics,std::uint8_t msec,const query::NavSpatialIndex& index,
-    core::MapGeneration indexMap) noexcept {
+    core::MapGeneration indexMap,bool jumping) noexcept {
     LadderExitResult result;
     const auto fail=[&](LadderExitReason reason) { result.reason=reason; return result; };
     if(!s.map.isValid() || !s.tick.isValid() || !s.position || !s.position->isFinite() || !s.velocity || !s.velocity->isFinite() ||
@@ -13,10 +14,11 @@ LadderExitResult planUpperLadderExit(const LadderPlan& p,const runtime::Movement
        s.ducked!=false || !p.end.isFinite() || !p.normal.isFinite() || p.normal.z!=0 ||
        std::abs(double(p.normal.x)*p.normal.x+double(p.normal.y)*p.normal.y-1)>0.001 ||
        !std::isfinite(releaseZ) || releaseZ<p.end.z || releaseZ>double(p.end.z)+96 || !msec || msec>120 ||
-       std::abs(double(s.position->z)-p.end.z)>96 ||
+       (jumping && s.grounded!=false) || std::abs(double(s.position->z)-p.end.z)>96 ||
        std::hypot(double(s.position->x)-p.end.x,double(s.position->y)-p.end.y)>96) return result;
     if(s.map!=indexMap) return fail(LadderExitReason::StaleNavigation);
-    if(p.link.traversal!=model::NavTraversalKind::Ladder || p.link.direction!=enrichment::NavLinkDirection::Up ||
+    if(p.link.traversal!=model::NavTraversalKind::Ladder ||
+       (p.link.direction!=enrichment::NavLinkDirection::Up && (!jumping || p.link.direction!=enrichment::NavLinkDirection::Down)) ||
        !p.link.to.isValid()) return fail(LadderExitReason::Unsupported);
     core::BotCommand neutral; neutral.msec=msec;
     if(!ladderAirStep(neutral,*s.velocity,physics)) return result;
@@ -40,7 +42,9 @@ LadderExitResult planUpperLadderExit(const LadderPlan& p,const runtime::Movement
     constexpr double pi=3.14159265358979323846;
     for(unsigned frame=0;frame<256 && (frame+1)*unsigned(msec)<=2000;++frame) {
         MovementIntent intent;
-        if(attached) {
+        if(attached && jumping) {
+            intent.jump=ActionRequest::Press;
+        } else if(attached) {
             intent.view=core::IntentVector{-45,std::atan2(-p.normal.y,-p.normal.x)*180/pi,0};
             intent.direction={-p.normal.x,-p.normal.y,0}; intent.speed=(std::min)(physics.maximumSpeed,200.0);
             intent.forward=ActionRequest::Hold;
@@ -62,7 +66,11 @@ LadderExitResult planUpperLadderExit(const LadderPlan& p,const runtime::Movement
         if(!motor) return result;
         if(frame==0) { candidate.intent=intent; candidate.command=*motor.command; }
         model::NavVector3 displacement{};
-        if(attached) {
+        if(attached && jumping) {
+            const auto step=ladderJumpAirStep(*motor.command,p.normal,physics);
+            if(!step) return result;
+            displacement=step->displacement; velocity=step->velocity; attached=false;
+        } else if(attached) {
             const auto v=ladderVelocity(*motor.command,p.normal,physics.maximumSpeed,false);
             if(!v || v->z<=0) return fail(LadderExitReason::Unsupported);
             velocity=*v; const double dt=double(msec)/1000;
@@ -74,6 +82,8 @@ LadderExitResult planUpperLadderExit(const LadderPlan& p,const runtime::Movement
         }
         model::NavVector3 next{position.x+displacement.x,position.y+displacement.y,position.z+displacement.z};
         if(!next.isFinite() || double(next.z)-p.end.z>96) return fail(LadderExitReason::Unsupported);
+        if(jumping && displacement.x*p.normal.x+displacement.y*p.normal.y<0)
+            return fail(LadderExitReason::Unsupported); // No forecasted re-entry into the ladder face.
         const bool landing=!attached && displacement.z<0 && position.z>=p.end.z && next.z<=p.end.z;
         if(landing) {
             const double fraction=(double(position.z)-p.end.z)/-displacement.z;
@@ -103,5 +113,15 @@ LadderExitResult planUpperLadderExit(const LadderPlan& p,const runtime::Movement
         }
     }
     return fail(LadderExitReason::NoLanding);
+}
+}
+LadderExitResult planUpperLadderExit(const LadderPlan& p,const runtime::MovementSnapshot& s,bool touching,
+    double releaseZ,LadderAirPhysics physics,std::uint8_t msec,const query::NavSpatialIndex& index,
+    core::MapGeneration indexMap) noexcept {
+    return planExit(p,s,touching,releaseZ,physics,msec,index,indexMap,false);
+}
+LadderExitResult planJumpLadderExit(const LadderPlan& p,const runtime::MovementSnapshot& s,bool touching,
+    LadderAirPhysics physics,std::uint8_t msec,const query::NavSpatialIndex& index,core::MapGeneration indexMap) noexcept {
+    return planExit(p,s,touching,p.end.z,physics,msec,index,indexMap,true);
 }
 }

@@ -205,3 +205,45 @@ and host dispatch wiring, including preserving25Hz decision cadence while
 revalidating held intents at each actual engine frame. A reforecast alone is not
 proof that a held command equals a newly generated first command. No live
 acceptance, P3-06 completion or Finish is claimed.
+
+## Lower exit and jump dismount candidates
+
+The user identified jump as another ladder dismount mechanism. The clean tracked
+`regamedll/pm_shared/pm_shared.cpp` at the locally verified ReGameDLL revision
+`679973265e1ac99a43193119e0da212ee568f5f9` confirms that `PM_LadderMove` responds
+to IN_JUMP by switching to WALK and replacing velocity with270 along the ladder
+face normal. `PM_PlayerMove` skips the ordinary PM_Jump launch when a ladder was
+found this frame. This is not a vertical ground jump. Behavior was independently
+implemented; no upstream code was copied.
+
+`ladderJumpAirStep` models that airborne launch followed by same-frame air
+acceleration and gravity. Grounded jump is explicitly unsupported here because
+it uses the ground friction/movement branch. `planJumpLadderExit` forecasts a
+bounded jump/air landing using the existing18-column,2-second/256-frame ceiling.
+Outward progress must remain monotonic so the forecast cannot assume away ladder
+re-entry. Host validation checks the actual first command, model detachment at
+its predicted endpoint, all world columns, and the target NAV/world landing floor.
+An insufficient frame duration to clear model contact is rejected. Actual command
+prediction alone never publishes an exit intent or advances a cursor.
+
+The explicit frame exit request now selects upper rise for an Up link, lower
+floor kick for a grounded Down link, and jump/air for an airborne Down link.
+The floor kick requires measured solid foot-point contents plus an actual flat
+floor at the predicted slide endpoint. Both lower policies stay within21 queries
+and preserve missing current NAV support inside the shaft. A predicted landing
+is never substituted for observed support. Upper jump candidates can be modeled
+portably where geometry allows; the current host upper profile still uses rise
+because a normal-only jump does not supply height to reach an upper platform.
+
+Tests cover four outward jump normals,8/16/100ms, lower jump and floor-kick
+candidates, missing floor-point solidity, predicted contact retention, all smaller
+query budgets, stale identity/physics at every query, blocked columns, and wrong
+landing support. These are offline model/trace fixtures, not live acceptance.
+Windows x86 Debug43/43 and Linux x86 Debug37/37 passed. The x86 Release adapter
+build and exact six undecorated exports passed as well.
+
+Remaining integration includes earlier lower exit entry (before bottom contact),
+controller jump acceptance with one-shot dispatch feedback, post-landing ground
+approach, Walk ownership/cursor advancement, and actual-frame guarded dispatch.
+The controller still rejects jump until that dispatch contract is connected.
+P3-06 remains open; project-wide Finish and live validation remain unclaimed.

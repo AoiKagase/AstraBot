@@ -28,6 +28,15 @@ std::optional<model::NavVector3> ladderVelocity(const core::BotCommand& c,model:
     return model::NavVector3{static_cast<float>(-n.y*tangent+n.x*kick),
         static_cast<float>(n.x*tangent+n.y*kick),static_cast<float>(-speed*std::sin(pitch)-into)};
 }
+std::optional<LadderAirStep> ladderJumpAirStep(const core::BotCommand& c,model::NavVector3 n,LadderAirPhysics physics) noexcept {
+    constexpr auto jump=static_cast<core::ButtonMask>(core::Button::Jump);
+    if(!(c.buttons&jump) || !n.isFinite() || n.z!=0 ||
+       std::abs(double(n.x)*n.x+double(n.y)*n.y-1)>0.001) return {};
+    auto airborne=c; airborne.buttons=static_cast<core::ButtonMask>(c.buttons&~jump);
+    // PM_LadderMove replaces, rather than adds to, the prior climb velocity.
+    // PM_PlayerMove skips PM_Jump when a ladder was found this frame.
+    return ladderAirStep(airborne,{270*n.x,270*n.y,0},physics);
+}
 std::optional<LadderAirStep> ladderAirStep(const core::BotCommand& c,model::NavVector3 v,LadderAirPhysics p) noexcept {
     if(!commandValid(c) || !v.isFinite() || !positive(p.gravity,4000) || !positive(p.airAcceleration,1000) ||
        !positive(p.friction,10) || !positive(p.maximumSpeed,2000) || !positive(p.maximumVelocity,10000) ||

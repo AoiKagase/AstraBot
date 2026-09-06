@@ -9,6 +9,8 @@
 #include <cmath>
 #include <limits>
 #include <cstring>
+#include <cstdio>
+#include <cstdlib>
 #ifdef ASTRABOT_LADDER_HOST_TESTS
 #include "adapter/cstrike/nav/console.hpp"
 #include <sstream>
@@ -290,6 +292,13 @@ void testLadderFrame() {
             auto command=inspectLadderFrame(world,&actorEntity,frameBinding,s,*bound.value,*s.position,*index,{1},3,7,up);
             assert(command && command.queries==5 && command.value->floorPointSolid==false);
             assert(command.value->prediction && std::abs(command.value->prediction->endpoint.z-83.2f)<0.001f);
+            resetActor(); core::BotCommand jump; jump.msec=16; jump.buttons=static_cast<core::ButtonMask>(core::Button::Jump);
+            const auto leap=inspectLadderFrame(world,&actorEntity,frameBinding,s,*bound.value,*s.position,*index,{1},3,7,jump);
+            if(!leap) { std::fprintf(stderr,"host rejected airborne ladder jump\n"); std::exit(1); }
+            assert(leap.value->prediction && !leap.value->floorPointSolid && !leap.value->inspection.exitIntent);
+            assert(std::abs(leap.value->prediction->endpoint.x-(s.position->x-4.32f))<0.001f);
+            assert(std::abs(leap.value->prediction->endpoint.z-79.8976f)<0.001f);
+            assert(leap.value->prediction->velocity.x==-270 && std::abs(leap.value->prediction->velocity.z+12.8f)<0.001f);
             resetActor(); s.position=V{-15,32,168}; s.velocity=V{0,0,200};
             actorEntity.v.origin=Vector(-15,32,168); actorEntity.v.velocity=Vector(0,0,200);
             command=inspectLadderFrame(world,&actorEntity,frameBinding,s,*bound.value,*s.position,*index,{1},3,7,up);
@@ -339,9 +348,74 @@ void testUpperExitFrame() {
         assert(inspect(21,16,count,10).reason==LadderFrameReason::NoSupport);
     }
 }
+void testLowerExitFrame() {
+    const auto index=setup(LadderFace::MinX,LadderExit::AcrossTop); auto e=engine();
+    nav::enrichment::NavMapFingerprint fingerprint{};
+    const auto batch=discoverLadderLinks({&e,nullptr,mapNow},{1},*index,{1},fingerprint,9,2); assert(batch);
+    const auto selected=std::find_if(batch.value->links.links.begin(),batch.value->links.links.end(),
+        [](const auto& l) { return l.direction==nav::enrichment::NavLinkDirection::Down; });
+    assert(selected!=batch.value->links.links.end());
+    const auto bound=bindLadderPlan({&e,nullptr,mapNow},{1},fingerprint,*batch.value,*selected,2); assert(bound);
+    nav::runtime::MovementSnapshot s; s.agent=frameBinding.agent; s.actor=frameBinding.actor; s.map={1}; s.tick={6};
+    s.kind=nav::runtime::ActorKind::ManagedBot; s.connected=s.joined=s.alive=s.grounded=true; s.ducked=false;
+    s.position=bound.value->plan.dismount; s.velocity=s.view=V{};
+    s.hull=nav::runtime::HullDimensions{{-16,-16,-36},{16,16,36}}; s.speedLimit=250.0f;
+    floors[0].high.x=100; // Actual world floor under the shaft; NAV stays immutable.
+    const auto inspect=[&](unsigned budget,std::uint8_t msec,unsigned at=0,int mode=0) {
+        traces=fault=faultAt=0; activeMap={1}; frameCurrent=true; ladderEntity.serialnumber=7;
+        actorEntity={}; actorEntity.serialnumber=8; auto& v=actorEntity.v;
+        v.flags=FL_FAKECLIENT|(*s.grounded ? FL_ONGROUND:0); v.movetype=MOVETYPE_FLY; v.maxspeed=250; v.friction=1;
+        v.origin=Vector(s.position->x,s.position->y,s.position->z); v.mins=Vector(-16,-16,-36); v.maxs=Vector(16,16,36);
+        const float values[]{800,10,320,2000};
+        for(unsigned i=0;i<4;++i) { frameCvars[i]={}; frameCvars[i].value=values[i]; }
+        faultAt=at; fault=mode;
+        return inspectLadderFrame({{&e,nullptr,mapNow},nullptr,currentFrame},&actorEntity,frameBinding,s,*bound.value,
+            bound.value->plan.end,*index,{1},3,budget,{},msec);
+    };
+    for(const auto msec:std::array<std::uint8_t,3>{8,16,100}) {
+        const auto r=inspect(21,msec);
+        if(!r) { std::fprintf(stderr,"lower exit rejected: reason=%d queries=%u\n",int(r.reason),r.queries); std::exit(1); }
+        assert(r && r.value->inspection.exitIntent && r.value->prediction && !r.value->upperExit);
+        assert(r.value->inspection.exitIntent->back==core::ActionRequest::Hold && r.value->floorPointSolid==true);
+        assert(r.value->prediction->floorCollision && r.value->prediction->velocity.x==-200);
+        assert(std::abs(r.value->prediction->endpoint.x-(s.position->x-0.2f*msec))<0.001f);
+        assert(!r.value->inspection.support); // Predicted endpoint is not current NAV support.
+    }
+    const auto good=inspect(21,16); assert(good); const auto count=good.queries;
+    for(unsigned budget=0;budget<count;++budget) {
+        const auto r=inspect(budget,16); assert(!r && !r.value && r.queries==budget && r.reason==LadderFrameReason::BudgetExceeded);
+    }
+    for(unsigned at=1;at<=count;++at) for(int mode:{1,2,12,14,16}) {
+        const auto r=inspect(21,16,at,mode); assert(!r && !r.value && r.queries==at);
+    }
+    assert(inspect(21,16,count,10).reason==LadderFrameReason::NoSupport);
+    assert(!inspect(21,0));
+    floors[0].high.x=-20; // Hull overlap is not solid foot-point proof for a kick.
+    assert(!inspect(21,16));
+    s.grounded=false; s.position->z+=8;
+    for(const auto msec:std::array<std::uint8_t,3>{8,16,100}) {
+        const auto r=inspect(21,msec);
+        if(!r) { std::fprintf(stderr,"host rejected lower jump exit candidate\n"); std::exit(1); }
+        assert(r.value->inspection.exitIntent && r.value->inspection.exitIntent->jump==core::ActionRequest::Press);
+        assert(r.value->prediction && r.value->prediction->command.buttons==static_cast<core::ButtonMask>(core::Button::Jump));
+        assert(!r.value->inspection.support && !r.value->floorPointSolid);
+    }
+    const auto leap=inspect(21,16); assert(leap && leap.value->jumpExit); const auto leapCount=leap.queries;
+    for(unsigned budget=0;budget<leapCount;++budget) {
+        const auto r=inspect(budget,16); assert(!r && !r.value && r.queries==budget && r.reason==LadderFrameReason::BudgetExceeded);
+    }
+    for(unsigned at=1;at<=leapCount;++at) for(int mode:{1,2,12,14,16}) {
+        const auto r=inspect(21,16,at,mode); assert(!r && !r.value && r.queries==at);
+    }
+    assert(inspect(21,16,4,5).reason==LadderFrameReason::NoExit); // Predicted release still touches the model.
+    assert(inspect(21,16,5,5).reason==LadderFrameReason::Blocked);
+    assert(inspect(21,16,leapCount,10).reason==LadderFrameReason::NoSupport);
+    assert(!inspect(21,1)); // Too short to clear model contact; no repeated jump assumption.
+}
 void testLadderDiscovery() {
     testLadderFrame();
     testUpperExitFrame();
+    testLowerExitFrame();
     const auto index=setup(LadderFace::MinX,LadderExit::AcrossTop); auto e=engine();
     nav::enrichment::NavMapFingerprint fingerprint{}; fingerprint[0]=0x7a;
     auto batch=discoverLadderLinks({&e,nullptr,mapNow},{1},*index,{1},fingerprint,9,2);

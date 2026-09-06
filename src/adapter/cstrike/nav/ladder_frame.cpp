@@ -14,7 +14,7 @@ bool same(V a,V b) noexcept {
 LadderFrameResult inspectLadderFrame(LadderFrameWorld w,edict_t* actor,nav::local::Binding binding,
     const nav::runtime::MovementSnapshot& s,const BoundLadderPlan& bound,V target,
     const nav::query::NavSpatialIndex& index,core::MapGeneration indexMap,int maximum,std::uint32_t budget,
-    std::optional<core::BotCommand> command,std::optional<std::uint8_t> upperExitMsec) noexcept {
+    std::optional<core::BotCommand> command,std::optional<std::uint8_t> exitMsec) noexcept {
     LadderFrameResult result;
     const auto& p=bound.passage; const auto& link=bound.plan.link; auto* e=w.ladder.engine;
     const auto fail=[&](LadderFrameReason reason) { result.reason=reason; return result; };
@@ -24,7 +24,7 @@ LadderFrameResult inspectLadderFrame(LadderFrameWorld w,edict_t* actor,nav::loca
        !s.position || !s.position->isFinite() || !s.velocity || !s.velocity->isFinite() || !s.view || !s.view->isFinite() ||
        !s.hull || s.hull->minimum!=V{-16,-16,-36} || s.hull->maximum!=V{16,16,36} || !s.grounded || s.ducked!=false ||
        !s.speedLimit || !std::isfinite(*s.speedLimit) || *s.speedLimit<=0 || !target.isFinite() ||
-       (command && upperExitMsec) || budget>(upperExitMsec ? 21U:command ? 7U:4U) ||
+       (command && exitMsec) || budget>(exitMsec ? 21U:command ? 7U:4U) ||
        std::hypot(double(target.x)-s.position->x,double(target.y)-s.position->y)>96 ||
        std::abs(double(target.z)-s.position->z)>4100 ||
        maximum<1 || maximum>8192 || binding.actor.slot>=maximum || p.map!=binding.map || indexMap!=binding.map ||
@@ -118,11 +118,34 @@ LadderFrameResult inspectLadderFrame(LadderFrameWorld w,edict_t* actor,nav::loca
            std::abs(double(face.vecPlaneNormal.y)-p.normal.y)>0.001 ||
            std::abs(double(face.vecPlaneNormal.z)-p.normal.z)>0.001) return fail(LadderFrameReason::WrongFace);
     }
-    if(upperExitMsec) {
-        const auto exit=nav::local::planUpperLadderExit(bound.plan,s,touching,double(p.candidate.maximum.z)+36,
-            *initialPhysics,*upperExitMsec,index,indexMap);
+    const bool jumpExit=exitMsec && link.direction==nav::enrichment::NavLinkDirection::Down && !*s.grounded;
+    const bool lowerExit=exitMsec && link.direction==nav::enrichment::NavLinkDirection::Down && !jumpExit;
+    std::optional<core::MovementIntent> lowerIntent;
+    if(lowerExit) {
+        const auto& end=bound.plan.end; const auto& normal=bound.plan.normal;
+        const double dx=double(end.x)-s.position->x,dy=double(end.y)-s.position->y;
+        // Standard CS only kicks outward when the foot point is solid. A
+        // downward button supplies this motion; analog walking cannot detach.
+        if(!touching || !*s.grounded || !*exitMsec || *exitMsec>120 ||
+           std::abs(double(s.position->z)-end.z)>0.05 || target!=end ||
+           dx*normal.x+dy*normal.y<=0 || std::abs(dx*normal.y-dy*normal.x)>1)
+            return fail(LadderFrameReason::NoExit);
+        core::MovementIntent intent;
+        intent.view=core::IntentVector{0,std::atan2(-normal.y,-normal.x)*180/3.14159265358979323846,0};
+        intent.direction={-normal.x,-normal.y,0}; intent.speed=(std::min)(initialPhysics->maximumSpeed,200.0);
+        intent.back=core::ActionRequest::Hold;
+        const auto motor=core::Motor::command(intent,{},static_cast<float>(initialPhysics->maximumSpeed),
+            std::uint64_t(*exitMsec)*1000,true);
+        if(!motor) return fail(LadderFrameReason::NoExit);
+        lowerIntent=intent; command=motor.command;
+    }
+    if(exitMsec && !lowerExit) {
+        const auto exit=jumpExit ? nav::local::planJumpLadderExit(bound.plan,s,touching,*initialPhysics,*exitMsec,index,indexMap):
+            nav::local::planUpperLadderExit(bound.plan,s,touching,double(p.candidate.maximum.z)+36,
+                *initialPhysics,*exitMsec,index,indexMap);
         if(!exit) { result.exitReason=exit.reason; return fail(LadderFrameReason::NoExit); }
-        observation.upperExit=exit.value; command=exit.value->command;
+        if(jumpExit) observation.jumpExit=exit.value; else observation.upperExit=exit.value;
+        command=exit.value->command;
     } else {
         V from=*s.position,to=target;
         if(*s.grounded) { from.z+=0.05f; to.z+=0.05f; }
@@ -153,7 +176,12 @@ LadderFrameResult inspectLadderFrame(LadderFrameWorld w,edict_t* actor,nav::loca
     if(command) {
         V displacement{},velocity{};
         const double dt=double(command->msec)/1000;
-        if(touching) {
+        if(touching && (command->buttons&static_cast<core::ButtonMask>(core::Button::Jump))) {
+            if(*s.grounded) return fail(LadderFrameReason::InvalidInput);
+            const auto predicted=nav::local::ladderJumpAirStep(*command,p.normal,*initialPhysics);
+            if(!predicted) return fail(LadderFrameReason::InvalidInput);
+            displacement=predicted->displacement; velocity=predicted->velocity;
+        } else if(touching) {
             if(!e->pfnPointContents) return fail(LadderFrameReason::Unavailable);
             if(!fresh()) return result;
             if(result.queries>=budget) return fail(LadderFrameReason::BudgetExceeded);
@@ -162,6 +190,7 @@ LadderFrameResult inspectLadderFrame(LadderFrameWorld w,edict_t* actor,nav::loca
             if(!fresh()) return result;
             if(contents!=CONTENTS_SOLID && contents!=CONTENTS_EMPTY) return fail(LadderFrameReason::InvalidTrace);
             observation.floorPointSolid=contents==CONTENTS_SOLID;
+            if(lowerExit && !*observation.floorPointSolid) return fail(LadderFrameReason::NoExit);
             const auto predicted=nav::local::ladderVelocity(*command,p.normal,initialPhysics->maximumSpeed,*observation.floorPointSolid);
             if(!predicted) return fail(LadderFrameReason::InvalidInput);
             velocity=*predicted;
@@ -198,8 +227,35 @@ LadderFrameResult inspectLadderFrame(LadderFrameWorld w,edict_t* actor,nav::loca
         }
         observation.prediction=predicted;
     }
-    if(observation.upperExit) {
-        const auto& exit=*observation.upperExit;
+    if(lowerIntent) {
+        const auto& predicted=*observation.prediction;
+        if(!predicted.floorCollision || std::abs(double(predicted.endpoint.z)-bound.plan.end.z)>0.05)
+            return fail(LadderFrameReason::NoExit);
+        // Verify actual world support at the predicted endpoint, including a
+        // slide beyond the initial collision. Prediction never becomes support.
+        auto high=predicted.endpoint,low=high; high.z+=0.05f; low.z-=4;
+        TraceResult floor{};
+        if(!trace(high,low,-1,floor)) return result;
+        auto* world=e->pfnPEntityOfEntIndex(0);
+        if(!fresh()) return result;
+        const auto n=value(floor.vecPlaneNormal);
+        if(!world || world->free || floor.pHit!=world || floor.fStartSolid || floor.fAllSolid || floor.flFraction==1 ||
+           std::abs(n.x)>0.001f || std::abs(n.y)>0.001f || std::abs(n.z-1)>0.001f ||
+           std::abs(double(floor.vecEndPos.z)-bound.plan.end.z)>0.05)
+            return fail(LadderFrameReason::NoSupport);
+        q.exitIntent=*lowerIntent;
+    }
+    if(observation.jumpExit && touching) {
+        // The forecast assumes air motion after the first command. Prove its
+        // endpoint has left the selected model rather than forecasting through
+        // another automatic ladder acquisition on the next PM update.
+        const auto endpoint=observation.prediction->endpoint;
+        TraceResult released{};
+        if(!trace(endpoint,endpoint,1,released)) return result;
+        if(released.fStartSolid || released.fAllSolid || released.flFraction!=1) return fail(LadderFrameReason::NoExit);
+    }
+    if(observation.upperExit || observation.jumpExit) {
+        const auto& exit=observation.jumpExit ? *observation.jumpExit:*observation.upperExit;
         for(unsigned i=0;i<exit.columnCount;++i) {
             TraceResult column{};
             if(!trace(exit.columns[i].bottom,exit.columns[i].top,-1,column)) return result;
