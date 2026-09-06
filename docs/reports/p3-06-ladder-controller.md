@@ -1,5 +1,10 @@
 # P3-06 portable ladder controller
 
+Current status: the [host integration report](p3-06-ladder-host.md) describes
+the completed host connection and its offline evidence. The sections below
+record the successive implementation slices; their pending-work statements
+describe those earlier checkpoints, not the current implementation.
+
 This slice implements the portable Approach/Align/Contact/ClimbUp/ClimbDown/
 Exit/Support lifecycle, abort/fall/timeouts and at most one fresh-clearance
 re-acquisition. P3-06 first-class host motion remains incomplete.

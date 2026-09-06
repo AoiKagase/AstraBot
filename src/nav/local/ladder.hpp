@@ -28,6 +28,8 @@ struct LadderInspection {
     runtime::HullDimensions hull{};
     std::optional<bool> pathClear{};
     std::optional<GroundedTarget> support{};
+    std::optional<runtime::FloorObservation> worldFloor{};
+    std::optional<bool> groundPathClear{};
     // Fresh clearance-approved mode-specific exit control from the host planner.
     // Analog walking must not be substituted while ladder mode is active.
     std::optional<MovementIntent> exitIntent{};

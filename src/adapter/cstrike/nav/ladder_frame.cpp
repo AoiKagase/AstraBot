@@ -14,8 +14,9 @@ bool same(V a,V b) noexcept {
 LadderFrameResult inspectLadderFrame(LadderFrameWorld w,edict_t* actor,nav::local::Binding binding,
     const nav::runtime::MovementSnapshot& s,const BoundLadderPlan& bound,V target,
     const nav::query::NavSpatialIndex& index,core::MapGeneration indexMap,int maximum,std::uint32_t budget,
-    std::optional<core::BotCommand> command,std::optional<std::uint8_t> exitMsec) noexcept {
+    std::optional<core::BotCommand> command,std::optional<std::uint8_t> exitMsec,bool groundPath) noexcept {
     LadderFrameResult result;
+    const bool suppliedCommand=command.has_value();
     const auto& p=bound.passage; const auto& link=bound.plan.link; auto* e=w.ladder.engine;
     const auto fail=[&](LadderFrameReason reason) { result.reason=reason; return result; };
     if(!actor || !binding.agent.isValid() || !binding.actor.isValid() || !binding.map.isValid() ||
@@ -24,7 +25,8 @@ LadderFrameResult inspectLadderFrame(LadderFrameWorld w,edict_t* actor,nav::loca
        !s.position || !s.position->isFinite() || !s.velocity || !s.velocity->isFinite() || !s.view || !s.view->isFinite() ||
        !s.hull || s.hull->minimum!=V{-16,-16,-36} || s.hull->maximum!=V{16,16,36} || !s.grounded || s.ducked!=false ||
        !s.speedLimit || !std::isfinite(*s.speedLimit) || *s.speedLimit<=0 || !target.isFinite() ||
-       (command && exitMsec) || budget>(exitMsec ? 21U:command ? 7U:4U) ||
+       (groundPath && (command || exitMsec || s.grounded!=true)) ||
+       (command && exitMsec && command->msec!=*exitMsec) || budget>((exitMsec || groundPath) ? 21U:command ? 7U:4U) ||
        std::hypot(double(target.x)-s.position->x,double(target.y)-s.position->y)>96 ||
        std::abs(double(target.z)-s.position->z)>4100 ||
        maximum<1 || maximum>8192 || binding.actor.slot>=maximum || p.map!=binding.map || indexMap!=binding.map ||
@@ -137,12 +139,12 @@ LadderFrameResult inspectLadderFrame(LadderFrameWorld w,edict_t* actor,nav::loca
         const auto motor=core::Motor::command(intent,{},static_cast<float>(initialPhysics->maximumSpeed),
             std::uint64_t(*exitMsec)*1000,true);
         if(!motor) return fail(LadderFrameReason::NoExit);
-        lowerIntent=intent; command=motor.command;
+        lowerIntent=intent; if(!command) command=motor.command;
     }
     if(exitMsec && !lowerExit) {
-        const auto exit=jumpExit ? nav::local::planJumpLadderExit(bound.plan,s,touching,*initialPhysics,*exitMsec,index,indexMap):
+        const auto exit=jumpExit ? nav::local::planJumpLadderExit(bound.plan,s,touching,*initialPhysics,*exitMsec,index,indexMap,command):
             nav::local::planUpperLadderExit(bound.plan,s,touching,double(p.candidate.maximum.z)+36,
-                *initialPhysics,*exitMsec,index,indexMap);
+                *initialPhysics,*exitMsec,index,indexMap,command);
         if(!exit) { result.exitReason=exit.reason; return fail(LadderFrameReason::NoExit); }
         if(jumpExit) observation.jumpExit=exit.value; else observation.upperExit=exit.value;
         command=exit.value->command;
@@ -165,13 +167,50 @@ LadderFrameResult inspectLadderFrame(LadderFrameWorld w,edict_t* actor,nav::loca
            n.z<0.7f || std::abs(double(n.x)*n.x+double(n.y)*n.y+double(n.z)*n.z-1)>0.02)
             return fail(LadderFrameReason::NoSupport);
         const float height=floor.vecEndPos.z-36;
+        q.worldFloor=nav::runtime::FloorObservation{height,n,true};
         const auto area=index.containing({s.position->x,s.position->y,height},2);
         if(!area) return fail(LadderFrameReason::NoSupport);
         if(!area.value->has_value()) {
             // A ladder shaft may be outside NAV while the hull rests on world
             // geometry. Preserve absent NAV support; never assign the target ID.
-            if(!touching) return fail(LadderFrameReason::NoSupport);
+            if(!touching && !groundPath) return fail(LadderFrameReason::NoSupport);
         } else q.support=nav::local::GroundedTarget{*s.position,(**area.value).areaId,{height,n,true}};
+    }
+    if(groundPath) {
+        if(touching || !q.worldFloor || std::abs(q.worldFloor->normal.x)>0.001f ||
+           std::abs(q.worldFloor->normal.y)>0.001f || std::abs(q.worldFloor->normal.z-1)>0.001f ||
+           std::abs(double(target.z)-s.position->z)>0.051) return fail(LadderFrameReason::NoSupport);
+        const double range=std::hypot(double(target.x)-s.position->x,double(target.y)-s.position->y);
+        const auto samples=(std::max)(1U,static_cast<unsigned>(std::ceil(range/16)));
+        if(samples>6) return fail(LadderFrameReason::InvalidInput);
+        for(unsigned i=1;i<=samples;++i) {
+            const double fraction=double(i)/samples;
+            V high{static_cast<float>(s.position->x+(double(target.x)-s.position->x)*fraction),
+                static_cast<float>(s.position->y+(double(target.y)-s.position->y)*fraction),s.position->z+0.05f};
+            auto low=high; low.z-=4.05f; TraceResult floor{};
+            if(!trace(high,low,-1,floor)) return result;
+            auto* world=e->pfnPEntityOfEntIndex(0); if(!fresh()) return result;
+            const auto n=value(floor.vecPlaneNormal);
+            // The last short approach to the upper mount crosses the lip.
+            // Require a clear shallow descent into this exact model; absence
+            // of floor alone never grants permission to walk into a void.
+            if(i==samples && target==bound.plan.mount && link.direction==nav::enrichment::NavLinkDirection::Down &&
+               floor.flFraction==1 && !floor.fStartSolid && !floor.fAllSolid) {
+                TraceResult capture{};
+                if(!trace(low,low,1,capture)) return result;
+                if(capture.pHit!=ladder || (!capture.fStartSolid && !capture.fAllSolid)) return fail(LadderFrameReason::NoSupport);
+                continue;
+            }
+            if(!world || world->free || floor.pHit!=world || floor.fStartSolid || floor.fAllSolid || floor.flFraction==1 ||
+               std::abs(n.x)>0.001f || std::abs(n.y)>0.001f || std::abs(n.z-1)>0.001f ||
+               std::abs(double(floor.vecEndPos.z)-s.position->z)>0.05) return fail(LadderFrameReason::NoSupport);
+            const auto area=index.containing({high.x,high.y,floor.vecEndPos.z-36},2);
+            if(!area || (area.value->has_value() && (**area.value).areaId!=link.from && (**area.value).areaId!=link.to) ||
+               (i==samples && (target==bound.plan.end || target==bound.plan.start) &&
+                (!area.value->has_value() || (**area.value).areaId!=(target==bound.plan.end ? link.to:link.from))))
+                return fail(LadderFrameReason::NoSupport);
+        }
+        q.groundPathClear=true;
     }
     if(command) {
         V displacement{},velocity{};
@@ -243,7 +282,7 @@ LadderFrameResult inspectLadderFrame(LadderFrameWorld w,edict_t* actor,nav::loca
            std::abs(n.x)>0.001f || std::abs(n.y)>0.001f || std::abs(n.z-1)>0.001f ||
            std::abs(double(floor.vecEndPos.z)-bound.plan.end.z)>0.05)
             return fail(LadderFrameReason::NoSupport);
-        q.exitIntent=*lowerIntent;
+        if(!suppliedCommand) q.exitIntent=*lowerIntent;
     }
     if(observation.jumpExit && touching) {
         // The forecast assumes air motion after the first command. Prove its
@@ -272,7 +311,8 @@ LadderFrameResult inspectLadderFrame(LadderFrameWorld w,edict_t* actor,nav::loca
            std::abs(double(floor.vecEndPos.z)-exit.landing.z)>0.05) return fail(LadderFrameReason::NoSupport);
         const auto area=index.containing({exit.landing.x,exit.landing.y,floor.vecEndPos.z-36},2);
         if(!area || !area.value->has_value() || (**area.value).areaId!=link.to) return fail(LadderFrameReason::NoSupport);
-        q.pathClear=true; q.exitIntent=exit.intent; // Only after the entire candidate and actual command passed.
+        q.pathClear=true;
+        if(!suppliedCommand) q.exitIntent=exit.intent; // Generated input only, after full candidate verification.
     }
     if(!fresh()) return result;
     q.queries=result.queries; result.reason=LadderFrameReason::None; result.value=observation; return result;

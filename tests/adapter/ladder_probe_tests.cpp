@@ -3,6 +3,8 @@
 #include "adapter/cstrike/nav/ladder_discovery.hpp"
 #include "adapter/cstrike/nav/ladder_frame.hpp"
 #include "nav/query/graph.hpp"
+#include "nav/query/route_search.hpp"
+#include "nav/corridor/corridor.hpp"
 #include "../nav/route_fixture.hpp"
 #include <algorithm>
 #include <cassert>
@@ -20,6 +22,7 @@ using namespace astrabot::adapter::cstrike;
 namespace {
 using V=nav::model::NavVector3;
 edict_t ladderEntity{},worldEntity{},actorEntity{};
+edict_t* motionActor{};
 bool frameCurrent{true};
 cvar_t frameCvars[4]{};
 cvar_t* frameCvar(const char* name) {
@@ -51,14 +54,14 @@ void boxTrace(const float* a,const float* b,Box box,int hull,edict_t* hit,TraceR
     for(int axis=0;axis<3;++axis) {
         inside=inside && a[axis]>lo[axis] && a[axis]<hi[axis];
         const double delta=double(b[axis])-a[axis];
-        if(delta==0) { if(a[axis]<lo[axis] || a[axis]>hi[axis]) return; continue; }
+        if(delta==0) { if(a[axis]<=lo[axis] || a[axis]>=hi[axis]) return; continue; }
         double first=(lo[axis]-a[axis])/delta,last=(hi[axis]-a[axis])/delta;
         float sign=-1; if(first>last) { std::swap(first,last); sign=1; }
         if(first>enter) { enter=first; normal=Vector(0,0,0); normal[axis]=sign; }
         leave=(std::min)(leave,last); if(enter>leave) return;
     }
     if(inside) { out.fStartSolid=out.fAllSolid=1; out.flFraction=0; out.vecEndPos=Vector(a[0],a[1],a[2]); out.pHit=hit; return; }
-    if(enter<0 || enter>out.flFraction || enter>1 || leave<0) return;
+    if(enter<0 || enter>out.flFraction || enter>1 || leave<=0) return;
     out.flFraction=static_cast<float>(enter); out.pHit=hit; out.vecPlaneNormal=normal;
     out.vecEndPos=Vector(a[0]+(b[0]-a[0])*out.flFraction,a[1]+(b[1]-a[1])*out.flFraction,a[2]+(b[2]-a[2])*out.flFraction);
 }
@@ -93,7 +96,7 @@ void traceModel(const float* a,const float* b,int hull,edict_t* e,TraceResult* t
     boxTrace(a,b,{{0,0,0},{8,64,128}},hull,e,*t); inject(a,b,t);
 }
 void traceHull(const float* a,const float* b,int ignore,int hull,edict_t* ignored,TraceResult* t) {
-    assert(ignore==0 && hull==1 && (!ignored || ignored==&actorEntity)); begin(b,t);
+    assert((ignore==0 || ignore==1) && hull==1 && (!ignored || ignored==&actorEntity || ignored==motionActor)); begin(b,t);
     for(const auto& floor:floors) boxTrace(a,b,floor,1,&worldEntity,*t);
     inject(a,b,t);
 }
@@ -346,6 +349,13 @@ void testUpperExitFrame() {
         }
         assert(inspect(21,16,5,5).reason==LadderFrameReason::Blocked);
         assert(inspect(21,16,count,10).reason==LadderFrameReason::NoSupport);
+        reset(); core::BotCommand held; held.msec=16; held.view.pitch=-44;
+        held.buttons=static_cast<core::ButtonMask>(core::Button::Forward); held.movement.forward=200;
+        const auto guarded=inspectLadderFrame({{&e,nullptr,mapNow},nullptr,currentFrame},&actorEntity,frameBinding,s,*bound.value,
+            bound.value->plan.end,*index,{1},3,21,held,std::uint8_t{16});
+        if(!guarded) { std::fprintf(stderr,"exit forecast cannot validate held first command: %d exit=%d queries=%u\n",int(guarded.reason),int(guarded.exitReason),guarded.queries); std::exit(1); }
+        assert(guarded.value->prediction && guarded.value->prediction->command.view.pitch==-44);
+        assert(!guarded.value->inspection.exitIntent); // Guarding existing input cannot authorize a different regenerated intent.
     }
 }
 void testLowerExitFrame() {
@@ -411,6 +421,29 @@ void testLowerExitFrame() {
     assert(inspect(21,16,5,5).reason==LadderFrameReason::Blocked);
     assert(inspect(21,16,leapCount,10).reason==LadderFrameReason::NoSupport);
     assert(!inspect(21,1)); // Too short to clear model contact; no repeated jump assumption.
+    floors[0].high.x=100; s.grounded=true; s.position=V{-19,32,36};
+    // Detached and outside NAV, but standing on a measured world floor.
+    actorEntity.v.flags=FL_FAKECLIENT|FL_ONGROUND; actorEntity.v.movetype=MOVETYPE_WALK;
+    actorEntity.v.origin=Vector(-19,32,36); fault=faultAt=traces=0;
+    const auto approach=inspectLadderFrame({{&e,nullptr,mapNow},nullptr,currentFrame},&actorEntity,frameBinding,s,*bound.value,
+        bound.value->plan.end,*index,{1},3,21,{},{},true);
+    if(!approach) { std::fprintf(stderr,"measured outside-NAV exit approach unavailable\n"); std::exit(1); }
+    assert(approach.value->inspection.worldFloor && approach.value->inspection.groundPathClear==true);
+    assert(!approach.value->inspection.support && !approach.value->inspection.exitIntent && !approach.value->contact.touching);
+    const auto groundCount=approach.queries;
+    const auto savedLadder=ladderEntity;
+    const auto groundProof=[&](unsigned budget,unsigned injectAt,int injected) {
+        ladderEntity=savedLadder; activeMap={1}; fault=injected; faultAt=injectAt; traces=0;
+        return inspectLadderFrame({{&e,nullptr,mapNow},nullptr,currentFrame},&actorEntity,frameBinding,s,*bound.value,
+            bound.value->plan.end,*index,{1},3,budget,{},{},true);
+    };
+    for(unsigned budget=0;budget<groundCount;++budget) {
+        const auto limited=groundProof(budget,0,0);
+        assert(!limited && limited.queries<=budget);
+    }
+    for(unsigned at=1;at<=groundCount;++at) for(int change:{1,2}) assert(!groundProof(21,at,change));
+    assert(groundProof(21,groundCount,10).reason==LadderFrameReason::NoSupport);
+    assert(groundProof(21,0,0));
 }
 void testLadderDiscovery() {
     testLadderFrame();
@@ -429,6 +462,9 @@ void testLadderDiscovery() {
     const auto mesh=route_test::snapshot(areas);
     const auto graph=nav::query::NavGraph::compose(mesh,fingerprint,batch.value->links,{100,2048,1000000},{2048,1000000});
     assert(graph && (*graph.value)->edgeCount()==batch.value->passages.size()*2);
+    const auto route=nav::query::NavRouteSearch::search(**graph.value,{{1},{2},{2,100000},false}); assert(route);
+    const auto corridor=nav::corridor::Corridor::build(**graph.value,*route.value,{16,16},{1,100000,100});
+    if(!corridor) { std::fprintf(stderr,"published ladder endpoints cannot form standing corridor\n"); std::exit(1); }
     for(std::size_t i=0;i<batch.value->passages.size();++i) {
         const auto& up=batch.value->links.links[2*i]; const auto& down=batch.value->links.links[2*i+1];
         assert(up.from==down.to && up.to==down.from && up.linkId+1==down.linkId);
@@ -522,5 +558,76 @@ void testLadderPublication() {
     std::istringstream retired("abc");
     assert(!console.publishLadders(retired,world,{1},2)); // Deferred invalidation retired NAV too.
     assert(first.links.links.front().generation==first.generation); // Old owned evidence remains immutable.
+}
+// Independent fixture; never calls the production movement predictor.
+void invalidateLadderMotionFixture(bool duringTrace) {
+    if(duringTrace) { fault=2; faultAt=traces+1; }
+    else ++ladderEntity.serialnumber;
+}
+unsigned ladderMotionQueryCount() { return traces; }
+void simulateLadderMotion(edict_t& actor,const core::BotCommand& command) {
+    const double dt=command.msec/1000.0,rad=3.14159265358979323846/180;
+    const double yaw=command.view.yaw*rad,pitch=command.view.pitch*rad;
+    float from[]{actor.v.origin.x,actor.v.origin.y,actor.v.origin.z};
+    TraceResult contact{}; contact.flFraction=1;
+    boxTrace(from,from,{{0,0,0},{8,64,128}},1,&ladderEntity,contact);
+    double vx=actor.v.velocity.x,vy=actor.v.velocity.y,vz=actor.v.velocity.z;
+    bool air=false;
+    if(contact.fStartSolid) {
+        actor.v.movetype=MOVETYPE_FLY;
+        if(command.buttons&IN_JUMP) {
+            actor.v.movetype=MOVETYPE_WALK; vx=-270; vy=0; vz=0; air=true;
+        } else {
+            const double speed=(command.buttons&IN_FORWARD ? 200:0)-(command.buttons&IN_BACK ? 200:0);
+            vx=0; vy=speed*std::cos(pitch)*std::sin(yaw);
+            vz=speed*(std::cos(pitch)*std::cos(yaw)-std::sin(pitch));
+        }
+        actor.v.flags&=~FL_ONGROUND;
+    } else {
+        actor.v.movetype=MOVETYPE_WALK; air=!(actor.v.flags&FL_ONGROUND);
+        if(!air) {
+            vx=command.movement.forward*std::cos(yaw)+command.movement.side*std::sin(yaw);
+            vy=command.movement.forward*std::sin(yaw)-command.movement.side*std::cos(yaw); vz=0;
+        }
+    }
+    if(air) {
+        const double wx=command.movement.forward*std::cos(yaw)+command.movement.side*std::sin(yaw);
+        const double wy=command.movement.forward*std::sin(yaw)-command.movement.side*std::cos(yaw);
+        const double length=std::hypot(wx,wy);
+        if(length>0) {
+            const double wish=(std::min)(length,250.0);
+            const double add=(std::max)(0.0,(std::min)(10*wish*dt,(std::min)(wish,30.0)-(vx*wx+vy*wy)/length));
+            vx+=add*wx/length; vy+=add*wy/length;
+        }
+        vz-=400*dt;
+    }
+    float to[]{float(from[0]+vx*dt),float(from[1]+vy*dt),float(from[2]+vz*dt)};
+    TraceResult hit{}; hit.flFraction=1; hit.vecEndPos=Vector(to[0],to[1],to[2]);
+    for(const auto& floor:floors)
+        if(from[2]>floor.high.z+36.001f || to[2]<from[2]) boxTrace(from,to,floor,1,&worldEntity,hit);
+    actor.v.origin=hit.vecEndPos;
+    if(air) vz-=400*dt;
+    if(hit.flFraction<1 && hit.vecPlaneNormal.z>0.7) { vz=0; actor.v.flags|=FL_ONGROUND; }
+    actor.v.velocity=Vector(float(vx),float(vy),float(vz)); actor.v.oldbuttons=command.buttons;
+    if(actor.v.flags&FL_ONGROUND) {
+        const float p[]{actor.v.origin.x,actor.v.origin.y,actor.v.origin.z+0.05f};
+        const float below[]{p[0],p[1],p[2]-0.1f}; TraceResult floor{}; floor.flFraction=1;
+        for(const auto& box:floors) boxTrace(p,below,box,1,&worldEntity,floor);
+        if(floor.flFraction==1) actor.v.flags&=~FL_ONGROUND;
+    }
+}
+std::shared_ptr<const nav::model::NavMeshSnapshot> configureLadderMotionFixture(enginefuncs_t& e,edict_t* actor,core::MapGeneration map,bool down) {
+    (void)setup(LadderFace::MinX,down ? LadderExit::SameFace:LadderExit::AcrossTop); activeMap=map; motionActor=actor;
+    e.pfnPEntityOfEntIndex=[](int slot) -> edict_t* { return slot==0 ? &worldEntity:slot==1 ? motionActor:slot==40 ? &ladderEntity:nullptr; };
+    e.pfnIndexOfEdict=[](const edict_t* value) { return value==motionActor ? 1:value==&ladderEntity ? 40:0; };
+    e.pfnSzFromIndex=classname; e.pfnTraceModel=traceModel; e.pfnTraceHull=traceHull;
+    e.pfnPointContents=pointContents; e.pfnCVarGetPointer=frameCvar;
+    const float values[]{800,10,320,2000}; for(unsigned i=0;i<4;++i) { frameCvars[i]={}; frameCvars[i].value=values[i]; }
+    std::vector<route_test::Area> areas;
+    for(unsigned i=0;i<2;++i) {
+        const auto& f=floors[i]; const float z=f.high.z;
+        areas.push_back({i+1,{{f.low.x,f.low.y,z},{f.high.x,f.high.y,z},z,z}});
+    }
+    return route_test::snapshot(areas);
 }
 #endif

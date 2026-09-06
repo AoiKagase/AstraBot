@@ -233,6 +233,12 @@ implementation results; live physics acceptance remains post-Finish.
 
 ## P3-06 — Ladder enrichment and first-class motion
 
+Implementation and applicable offline verification are complete. See the
+[host motion report](../reports/p3-06-ladder-host.md) for guarded runtime
+dispatch, measured approach, both-direction arrival and one-shot jump evidence.
+Project-wide Finish and post-Finish live acceptance remain separate.
+The following paragraphs preserve the earlier slice checkpoints.
+
 [Candidate discovery foundation](../reports/p3-06-ladder-candidates.md) adds
 bounded public-entity enumeration and generation-stamped value results.
 Candidate AABBs alone are not traversal proof.
@@ -273,7 +279,7 @@ guards, and measured post-landing approach remain pending.
 - **Implementation outline / commit slices:**
   - [x] Independently enumerate func_ladder and trace endpoints/facing; publish
     immutable same-map enrichment or explicit discovery failure.
-  - [ ] Add approach/align/contact/climb-up or down/exit/support, abort/fall
+  - [x] Add approach/align/contact/climb-up or down/exit/support, abort/fall
     detection and at most one fresh clearance-checked re-acquire.
 - **Tests:** absent/invalid/unlinked/multiple ladders, fingerprint/generation,
   up/down, wrong contact, fall, timeout and bounded retry.

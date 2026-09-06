@@ -13,6 +13,7 @@ struct LadderExitCandidate {
     model::NavVector3 landing{};
     std::array<LadderClearanceColumn,18> columns{};
     std::uint32_t columnCount{},simulatedFrames{};
+    bool suppliedFirstCommand{}; // intent is not an authorization when true.
 };
 struct LadderExitResult {
     LadderExitReason reason{LadderExitReason::InvalidInput};
@@ -27,11 +28,11 @@ struct LadderExitResult {
 // landing floor and revalidate physics/ownership before dispatching anything.
 LadderExitResult planUpperLadderExit(const LadderPlan&,const runtime::MovementSnapshot&,
     bool touching,double releaseZ,LadderAirPhysics,std::uint8_t commandMsec,
-    const query::NavSpatialIndex&,core::MapGeneration indexMap) noexcept;
+    const query::NavSpatialIndex&,core::MapGeneration indexMap,std::optional<core::BotCommand> firstCommand={}) noexcept;
 // Airborne-only outward jump (when touching) followed by monotonic outward air
 // flight. Uses the same forecast bounds. Host must verify first-frame model
 // release and every world column/landing; this function cannot authorize input.
 LadderExitResult planJumpLadderExit(const LadderPlan&,const runtime::MovementSnapshot&,
     bool touching,LadderAirPhysics,std::uint8_t commandMsec,
-    const query::NavSpatialIndex&,core::MapGeneration indexMap) noexcept;
+    const query::NavSpatialIndex&,core::MapGeneration indexMap,std::optional<core::BotCommand> firstCommand={}) noexcept;
 }

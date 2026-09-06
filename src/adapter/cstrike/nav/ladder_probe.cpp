@@ -78,6 +78,11 @@ public:
         auto area=index.containing({out.origin.x,out.origin.y,out.origin.z-36},2);
         if(!area || !area.value->has_value()) return fail(LadderProbeReason::NoArea);
         out.area=(**area.value).areaId;
+        for(float x:{-16.0f,16.0f}) for(float y:{-16.0f,16.0f}) {
+            const auto corner=index.containing({out.origin.x+x,out.origin.y+y,out.origin.z-36},2);
+            if(!corner || !corner.value->has_value() || (**corner.value).areaId!=out.area)
+                return fail(LadderProbeReason::NoArea);
+        }
         // A small lift avoids a contact-plane startSolid ambiguity while retaining
         // the measured floor origin in the packet.
         auto raised=out.origin; raised.z+=0.05f;
@@ -126,9 +131,11 @@ LadderProbeResult inspectLadderPassage(LadderWorld world,core::MapGeneration map
         }
         if(sample==2) p.highContact=hit;
     }
-    const V bottom{p.lowContact.x+p.normal.x*33,p.lowContact.y+p.normal.y*33,0};
+    // Reserve a standing-hull inset beyond the near ladder-side NAV boundary.
+    // Corner containment below remains authoritative for narrower NAV geometry.
+    const V bottom{p.lowContact.x+p.normal.x*49,p.lowContact.y+p.normal.y*49,0};
     const float sign=exit==LadderExit::SameFace ? 1.0f:-1.0f;
-    const V top{p.highContact.x+p.normal.x*33*sign,p.highContact.y+p.normal.y*33*sign,0};
+    const V top{p.highContact.x+p.normal.x*49*sign,p.highContact.y+p.normal.y*49*sign,0};
     if(!probe.endpoint(bottom,c.minimum.z-64,c.minimum.z+18,index,p.bottom) ||
        !probe.endpoint(top,c.maximum.z-18,c.maximum.z+18,index,p.top)) return probe.result;
     if(p.top.origin.z<=p.bottom.origin.z || p.top.area==p.bottom.area) {

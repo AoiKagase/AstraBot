@@ -6,7 +6,7 @@ namespace astrabot::nav::local {
 namespace {
 LadderExitResult planExit(const LadderPlan& p,const runtime::MovementSnapshot& s,bool touching,
     double releaseZ,LadderAirPhysics physics,std::uint8_t msec,const query::NavSpatialIndex& index,
-    core::MapGeneration indexMap,bool jumping) noexcept {
+    core::MapGeneration indexMap,bool jumping,std::optional<core::BotCommand> firstCommand) noexcept {
     LadderExitResult result;
     const auto fail=[&](LadderExitReason reason) { result.reason=reason; return result; };
     if(!s.map.isValid() || !s.tick.isValid() || !s.position || !s.position->isFinite() || !s.velocity || !s.velocity->isFinite() ||
@@ -14,7 +14,7 @@ LadderExitResult planExit(const LadderPlan& p,const runtime::MovementSnapshot& s
        s.ducked!=false || !p.end.isFinite() || !p.normal.isFinite() || p.normal.z!=0 ||
        std::abs(double(p.normal.x)*p.normal.x+double(p.normal.y)*p.normal.y-1)>0.001 ||
        !std::isfinite(releaseZ) || releaseZ<p.end.z || releaseZ>double(p.end.z)+96 || !msec || msec>120 ||
-       (jumping && s.grounded!=false) || std::abs(double(s.position->z)-p.end.z)>96 ||
+       (firstCommand && firstCommand->msec!=msec) || (jumping && s.grounded!=false) || std::abs(double(s.position->z)-p.end.z)>96 ||
        std::hypot(double(s.position->x)-p.end.x,double(s.position->y)-p.end.y)>96) return result;
     if(s.map!=indexMap) return fail(LadderExitReason::StaleNavigation);
     if(p.link.traversal!=model::NavTraversalKind::Ladder ||
@@ -62,11 +62,12 @@ LadderExitResult planExit(const LadderPlan& p,const runtime::MovementSnapshot& s
             }
             intent.view=core::IntentVector{0,0,0};
         }
-        const auto motor=core::Motor::command(intent,{},static_cast<float>(physics.maximumSpeed),std::uint64_t(msec)*1000,true);
+        auto motor=core::Motor::command(intent,{},static_cast<float>(physics.maximumSpeed),std::uint64_t(msec)*1000,true);
         if(!motor) return result;
-        if(frame==0) { candidate.intent=intent; candidate.command=*motor.command; }
+        if(frame==0 && firstCommand) motor.command=firstCommand;
+        if(frame==0) { candidate.suppliedFirstCommand=firstCommand.has_value(); candidate.intent=firstCommand ? MovementIntent{}:intent; candidate.command=*motor.command; }
         model::NavVector3 displacement{};
-        if(attached && jumping) {
+        if(attached && (motor.command->buttons&static_cast<core::ButtonMask>(core::Button::Jump))) {
             const auto step=ladderJumpAirStep(*motor.command,p.normal,physics);
             if(!step) return result;
             displacement=step->displacement; velocity=step->velocity; attached=false;
@@ -117,11 +118,12 @@ LadderExitResult planExit(const LadderPlan& p,const runtime::MovementSnapshot& s
 }
 LadderExitResult planUpperLadderExit(const LadderPlan& p,const runtime::MovementSnapshot& s,bool touching,
     double releaseZ,LadderAirPhysics physics,std::uint8_t msec,const query::NavSpatialIndex& index,
-    core::MapGeneration indexMap) noexcept {
-    return planExit(p,s,touching,releaseZ,physics,msec,index,indexMap,false);
+    core::MapGeneration indexMap,std::optional<core::BotCommand> firstCommand) noexcept {
+    return planExit(p,s,touching,releaseZ,physics,msec,index,indexMap,false,firstCommand);
 }
 LadderExitResult planJumpLadderExit(const LadderPlan& p,const runtime::MovementSnapshot& s,bool touching,
-    LadderAirPhysics physics,std::uint8_t msec,const query::NavSpatialIndex& index,core::MapGeneration indexMap) noexcept {
-    return planExit(p,s,touching,p.end.z,physics,msec,index,indexMap,true);
+    LadderAirPhysics physics,std::uint8_t msec,const query::NavSpatialIndex& index,core::MapGeneration indexMap,
+    std::optional<core::BotCommand> firstCommand) noexcept {
+    return planExit(p,s,touching,p.end.z,physics,msec,index,indexMap,true,firstCommand);
 }
 }

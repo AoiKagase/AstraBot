@@ -43,11 +43,15 @@ struct LadderFrameResult {
 // Alternatively exitMsec requests an upper rise candidate, a lower grounded
 // floor kick, or a lower airborne jump/air candidate. Checks every clearance
 // column, first-command release and landing floor within21 total queries. Only a
-// fully verified result supplies exitIntent. Explicit command and exit request
-// are mutually exclusive. Future frames still require fresh dispatch guards.
+// fully verified generated candidate supplies exitIntent. Supplying a command
+// with exitMsec verifies that exact first command (matching duration) but never
+// grants a new exitIntent. Ground-path mode instead measures level support at
+// <=16-unit intervals, with a measured shallow model capture at an upper mount.
+// Ground-path mode cannot be combined with either command or exit requests.
+// Future frames still require fresh dispatch guards.
 LadderFrameResult inspectLadderFrame(LadderFrameWorld,edict_t*,nav::local::Binding,
     const nav::runtime::MovementSnapshot&,const BoundLadderPlan&,nav::model::NavVector3 target,
     const nav::query::NavSpatialIndex&,core::MapGeneration indexMap,int maxEntities,
     std::uint32_t maxQueries=4,std::optional<core::BotCommand> command={},
-    std::optional<std::uint8_t> exitMsec={}) noexcept;
+    std::optional<std::uint8_t> exitMsec={},bool groundPath=false) noexcept;
 }

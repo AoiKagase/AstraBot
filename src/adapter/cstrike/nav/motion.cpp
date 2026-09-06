@@ -106,6 +106,16 @@ void NavConsole::printMotion() noexcept {
             d.jumpPhysics ? d.jumpPhysics->verticalImpulse:0,static_cast<unsigned long long>(current_->motionTrace_.jumpGuardQueries));
         line(jump);
     }
+    if(d.ladderState) {
+        char ladder[384]{};
+        const auto* link=d.ladderPlan ? &d.ladderPlan->link:nullptr;
+        std::snprintf(ladder,sizeof(ladder),"ladder state=%u reason=%u source=%llu generation=%llu link=%llu press_tick=%llu bind=%u frame=%u guard_queries=%llu profile=standard-cs",
+            unsigned(*d.ladderState),unsigned(d.ladderReason),static_cast<unsigned long long>(link ? link->sourceId:0),
+            static_cast<unsigned long long>(link ? link->generation:0),static_cast<unsigned long long>(link ? link->linkId:0),
+            static_cast<unsigned long long>(d.ladderPressTick.value),unsigned(current_->motionTrace_.ladderBindingReason),
+            unsigned(current_->motionTrace_.ladderFrameReason),static_cast<unsigned long long>(current_->motionTrace_.ladderGuardQueries));
+        line(ladder);
+    }
 }
 void NavConsole::clearPending() noexcept {
     if(current_->pendingMotion_ && movement_)
@@ -157,7 +167,7 @@ void NavConsole::startMotion(const nav::runtime::MovementSnapshot& s) noexcept {
         static_cast<float>(std::clamp(double(s.position->y),lowY,highY)),0};
     const auto floor=nav::query::projectToArea(e,xy);
     const nav::model::NavVector3 goal{xy.x,xy.y,static_cast<float>(floor.z)};
-    auto profile=walkLimits; profile.jump=jumpLimits;
+    auto profile=walkLimits; profile.jump=jumpLimits; profile.ladder=nav::local::LadderLimits{};
     current_->walk_.emplace(current_->motionTrace_.decision.binding,corridor.value,goal,profile);
     current_->pump_.emplace(current_->motionTrace_.decision.binding); current_->intentWallAgeUs_=0; current_->neutralBinding_.reset();
 }
@@ -170,7 +180,7 @@ void NavConsole::beforeDispatch(metamod::LifecycleCoordinator& owner) noexcept {
     MotionReason reason=MotionReason::None;
     const auto elapsed=(std::max)(s.elapsedUs,movement_->frameDeltaUs());
     const bool stationary=pending.command.movement==core::Movement{} && pending.command.buttons==0;
-    if(!ready(s,pending.jump.has_value() || stationary) || s.actor!=pending.binding.actor || s.agent!=pending.binding.agent || s.map!=pending.binding.map ||
+    if(!ready(s,pending.jump.has_value() || pending.ladder.has_value() || stationary) || s.actor!=pending.binding.actor || s.agent!=pending.binding.agent || s.map!=pending.binding.map ||
        !s.tick.isAfter(pending.tick) || s.hull->minimum!=pending.observation.hull->minimum ||
        s.hull->maximum!=pending.observation.hull->maximum) reason=MotionReason::MissingObservation;
     else if(!s.elapsedUs || !movement_->frameDeltaUs() || elapsed>pending.remainingFreshUs)
@@ -180,16 +190,31 @@ void NavConsole::beforeDispatch(metamod::LifecycleCoordinator& owner) noexcept {
         const double speed=std::hypot(double(m.forward),double(m.side));
         const auto delta=movement_->frameDeltaUs();
         const auto msec=std::clamp(delta/1000+(delta%1000>=500 ? 1U:0U),std::uint64_t{1},std::uint64_t{255});
-        if(speed>double(*s.speedLimit)+0.001 || (speed>0 && !pending.jump && !pending.contact && (!pending.segment ||
+        if(speed>double(*s.speedLimit)+0.001 || (speed>0 && !pending.jump && !pending.ladder && !pending.contact && (!pending.segment ||
            !segmentAllows(pending.segment->start,pending.segment->end,*s.position,speed*double(msec)/1000))))
             reason=MotionReason::Deviation;
     }
     if(reason!=MotionReason::None) {
+        if(pending.ladder) reportLadderTransport(current_->motionTrace_.decision,pending.tick,s.tick,false);
         if(current_->walk_ && (pending.command.buttons&static_cast<core::ButtonMask>(core::Button::Jump)))
             (void)current_->walk_->reportJumpDispatch({pending.binding,pending.tick,s.tick,false});
         current_->motionTrace_.commandTick=pending.tick; current_->motionTrace_.dispatchTick=s.tick;
         clearPending(); if(current_->pump_) current_->pump_->submissionRejected();
         current_->motionTrace_.rejected=add(current_->motionTrace_.rejected,1); recordMotion(MotionEvent::Rejected,reason);
+        return;
+    }
+    if(pending.ladder) {
+        const auto queued=pending.tick;
+        inRequest_=true;
+        const auto guarded=guardLadder(owner,s,pending);
+        inRequest_=false;
+        if(deferredInvalidation_) { (void)applyDeferredInvalidation(); return; }
+        if(guarded!=MotionReason::None) {
+            reportLadderTransport(current_->motionTrace_.decision,queued,s.tick,false);
+            current_->motionTrace_.commandTick=queued; current_->motionTrace_.dispatchTick=s.tick;
+            clearPending(); if(current_->pump_) current_->pump_->submissionRejected();
+            current_->motionTrace_.rejected=add(current_->motionTrace_.rejected,1); recordMotion(MotionEvent::Rejected,guarded);
+        }
         return;
     }
     if(pending.jump) {
@@ -298,6 +323,7 @@ void NavConsole::afterDispatch(const metamod::MovementResult& result,core::TickI
         b.routeGeneration==current.routeGeneration;
     const auto saved=current_->motionTrace_;
     if(!sameRoute) current_->motionTrace_=*ticket; // reentrant goto must not receive old-route feedback
+    if(sameRoute) reportLadderTransport(ticket->decision,ticket->commandTick,tick,result.dispatched());
     if(sameRoute && current_->walk_ && (ticket->command.buttons&static_cast<core::ButtonMask>(core::Button::Jump)))
         (void)current_->walk_->reportJumpDispatch({b,ticket->commandTick,tick,result.dispatched()});
     if(current_->pendingMotion_ && current_->pendingMotion_->tick==ticket->commandTick && current_->pendingMotion_->binding.actor==b.actor &&
@@ -345,7 +371,8 @@ void NavConsole::moveFrame(metamod::LifecycleCoordinator& owner) noexcept {
         const auto reserved=current_->guardTick_==s.tick ? current_->guardQueries_:0;
         auto binding=current_->motionTrace_.decision.binding; binding.step=current_->walk_->step();
         const auto physics=standardJumpPhysics(engine_,queryingEntity_,binding,s.tick);
-        const auto decision=current_->walk_->update(s,*index,navigation_.map,*this,current_->pump_->timeUs(),reserved,physics);
+        const auto ladder=observeLadder(owner,s,binding,reserved);
+        const auto decision=current_->walk_->update(s,*index,navigation_.map,*this,current_->pump_->timeUs(),reserved,physics,ladder);
         inRequest_=false; queryingEntity_=nullptr; queryingPlayers_=nullptr; queryingOwner_=nullptr;
         if(deferredInvalidation_) {
             (void)applyDeferredInvalidation(); return;
@@ -370,7 +397,7 @@ void NavConsole::moveFrame(metamod::LifecycleCoordinator& owner) noexcept {
         if(!current_->pump_->publish(decision.binding,s.tick,decision.intent)) return;
     }
     const auto output=current_->pump_->take();
-    if(!output.emit || !ready(s,current_->motionTrace_.decision.jumpState.has_value())) return;
+    if(!output.emit || !ready(s,current_->motionTrace_.decision.jumpState.has_value() || current_->motionTrace_.decision.ladderState.has_value())) return;
     const auto age=(std::max)(output.intentAgeUs,current_->intentWallAgeUs_);
     if(age>nav::local::IntentPump::maxIntentAgeUs) { current_->pump_->stop(nav::local::PumpReason::StaleIntent); return; }
     submitMotion(s,owner,output.intent,output.firstFrame,age);
@@ -400,8 +427,16 @@ void NavConsole::submitMotion(const nav::runtime::MovementSnapshot& s,metamod::L
             s,*command.command,current_->segment_,contact};
         if(decision.jumpState && decision.jumpPlan && decision.jumpPhysics)
             current_->pendingMotion_->jump=JumpTicket{*decision.jumpPlan,*decision.jumpPhysics,*decision.jumpState,decision.jumpPressTick};
+        if(decision.ladderState && decision.ladderPlan) {
+            auto& pending=*current_->pendingMotion_; pending.ladder=decision.ladderPlan; pending.ladderState=*decision.ladderState;
+            pending.ladderPressTick=decision.ladderPressTick;
+            // Guard the target associated with the issued state/intent. A state
+            // transition's neutral command can use the newly active target.
+            pending.ladderTarget=current_->walk_ ? current_->walk_->ladderTarget(*decision.ladderPlan,*s.position):decision.ladderPlan->end;
+        }
         current_->motionTrace_.queued=add(current_->motionTrace_.queued,1); recordMotion(MotionEvent::Queued);
     } else {
+        reportLadderTransport(decision,s.tick,s.tick,false);
         if(current_->walk_ && (command.command->buttons&static_cast<core::ButtonMask>(core::Button::Jump)))
             (void)current_->walk_->reportJumpDispatch({decision.binding,s.tick,s.tick,false});
         if(current_->pump_) current_->pump_->submissionRejected();

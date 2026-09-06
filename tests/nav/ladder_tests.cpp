@@ -163,11 +163,13 @@ void climbingAndObservedExit() {
         // Scripted trusted observation of a detached actor at the target. This
         // tests lifecycle acceptance, not a claim of simulated host dismount.
         s.tick={6}; s.position=p.end; s.ladder->touching=false;
+        s.velocity->z=-280; // Validated exit arcs exceed the climb-loss threshold.
         f=feedback(ladder,p,s,240000); f.inspection->exitIntent=core::MovementIntent{};
         d=ladder.update(f); assert(d.state==LadderState::Exit && !d.terminalEvent);
         s.tick={7}; f=feedback(ladder,p,s,280000); f.inspection->exitIntent=core::MovementIntent{};
         d=ladder.update(f); assert(d.state==LadderState::Exit && !d.terminalEvent);
         s.tick={8}; s.grounded=true;
+        s.velocity->z=0;
         d=ladder.update(feedback(ladder,p,s,320000)); assert(d.state==LadderState::Support && !d.terminalEvent);
         s.tick={9}; d=ladder.update(feedback(ladder,p,s,360000));
         assert(d.state==LadderState::Complete && d.terminalEvent && d.intent.speed==0);
@@ -285,6 +287,23 @@ void jumpDispatchLifecycle() {
     d=waiting.update(f); assert(d.reason==LadderReason::Timeout && d.terminalEvent);
     assert(!waiting.reportJumpDispatch({binding,p.link.sourceId,p.link.generation,p.link.linkId,{5},{6},true}));
 }
+void measuredExitApproach() {
+    for(int mode=0;mode<3;++mode) {
+        const auto p=plan(false); Ladder ladder(binding,p); auto s=actor(p); enter(ladder,p,s);
+        s.tick={4}; s.position=p.dismount;
+        assert(ladder.update(feedback(ladder,p,s,160000,true)).state==LadderState::Exit);
+        s.tick={5}; s.position=model::NavVector3{-19,32,36}; s.grounded=true; s.ladder->touching=false;
+        auto f=feedback(ladder,p,s,200000); f.inspection->support.reset();
+        f.inspection->worldFloor=runtime::FloorObservation{0,{0,0,1},true}; f.inspection->groundPathClear=true;
+        if(mode==1) f.inspection->groundPathClear.reset();
+        if(mode==2) f.inspection->worldFloor->height=20;
+        const auto d=ladder.update(f);
+        if(mode==0) {
+            if(d.terminalEvent || d.intent.speed<=0) { std::fprintf(stderr,"measured exit approach rejected outside NAV\n"); std::exit(1); }
+            assert(d.state==LadderState::Exit && d.intent.direction.x<0);
+        } else assert(d.terminalEvent && d.intent.speed==0 && d.reason==LadderReason::MissingSupport);
+    }
+}
 void walkOwnsLadder() {
     for(bool up:{false,true}) {
     auto p=plan(up); p.start.x=up ? -49.0f:49.0f; p.link.entry.x=p.start.x;
@@ -398,4 +417,4 @@ void upperExitCandidate() {
     }
 }
 }
-int main() { directionalMotor(); physicalProjection(); airborneProjection(); jumpingOffLadder(); climbingAndObservedExit(); failuresAndReacquire(); observedModeHandoff(); upperExitCandidate(); jumpExitCandidate(); earlyLowerExit(); jumpDispatchLifecycle(); walkOwnsLadder(); }
+int main() { directionalMotor(); physicalProjection(); airborneProjection(); jumpingOffLadder(); climbingAndObservedExit(); failuresAndReacquire(); observedModeHandoff(); upperExitCandidate(); jumpExitCandidate(); earlyLowerExit(); jumpDispatchLifecycle(); walkOwnsLadder(); measuredExitApproach(); }

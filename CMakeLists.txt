@@ -250,6 +250,7 @@ if(ASTRABOT_BUILD_METAMOD)
         src/adapter/cstrike/nav/console.cpp
         src/adapter/cstrike/nav/motion.cpp
         src/adapter/cstrike/nav/jump_motion.cpp
+        src/adapter/cstrike/nav/ladder_motion.cpp
         src/adapter/cstrike/nav/ladder_scanner.cpp
         src/adapter/cstrike/nav/ladder_probe.cpp
         src/adapter/cstrike/nav/ladder_frame.cpp
@@ -594,6 +595,7 @@ if(ASTRABOT_BUILD_TESTS)
             src/adapter/cstrike/nav/console.cpp
             src/adapter/cstrike/nav/motion.cpp
             src/adapter/cstrike/nav/jump_motion.cpp
+            src/adapter/cstrike/nav/ladder_motion.cpp
             src/adapter/cstrike/nav/ladder_scanner.cpp
             src/adapter/cstrike/nav/ladder_probe.cpp
             src/adapter/cstrike/nav/ladder_frame.cpp
@@ -658,6 +660,7 @@ if(ASTRABOT_BUILD_TESTS)
             src/adapter/cstrike/nav/console.cpp
             src/adapter/cstrike/nav/motion.cpp
             src/adapter/cstrike/nav/jump_motion.cpp
+            src/adapter/cstrike/nav/ladder_motion.cpp
             src/adapter/cstrike/nav/ladder_scanner.cpp
             src/adapter/cstrike/nav/ladder_probe.cpp
             src/adapter/cstrike/nav/ladder_frame.cpp

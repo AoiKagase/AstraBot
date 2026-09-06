@@ -104,7 +104,10 @@ LadderDecision Ladder::update(const LadderFeedback& f) noexcept {
             out.intent.speed=(std::min)({limits_.approachSpeed,double(*s.speedLimit),range/0.120}); }
         return out;
     };
-    if(s.velocity->z< -limits_.maximumFallSpeed) return fail(LadderReason::Fall);
+    // A verified exit arc can descend faster than the climb-loss threshold.
+    // Exit still requires fresh bounded landing proof below on every update.
+    if(s.velocity->z< -limits_.maximumFallSpeed &&
+       (state_!=LadderState::Exit || s.ladder->touching || !proof->exitIntent)) return fail(LadderReason::Fall);
     if(climbStarted_ && f.nowUs-climbUs_>=limits_.climbTimeoutUs &&
        (state_==LadderState::ClimbUp || state_==LadderState::ClimbDown || state_==LadderState::Reacquire)) return fail(LadderReason::Timeout);
     if(state_==LadderState::Approach || state_==LadderState::Align) {
@@ -174,7 +177,11 @@ LadderDecision Ladder::update(const LadderFeedback& f) noexcept {
             }
             out.intent=*proof->exitIntent; return out;
         }
-        if(!supported(l.to)) return fail(LadderReason::MissingSupport);
+        const auto* floor=proof->worldFloor ? &*proof->worldFloor:nullptr;
+        if(proof->groundPathClear!=true || !floor || !floor->supported || !std::isfinite(floor->height) ||
+           !floor->normal.isFinite() || std::abs(floor->normal.x)>0.001f || std::abs(floor->normal.y)>0.001f ||
+           std::abs(floor->normal.z-1)>0.001f || std::abs(double(s.position->z)-36-floor->height)>0.05)
+            return fail(LadderReason::MissingSupport);
         return move(plan_.end);
     }
     if(state_==LadderState::Support) {

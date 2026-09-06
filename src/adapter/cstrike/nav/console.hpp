@@ -8,13 +8,14 @@
 #include "nav/local/intent_pump.hpp"
 #include "adapter/metamod/movement.hpp"
 #include "adapter/cstrike/nav/ladder_discovery.hpp"
+#include "adapter/cstrike/nav/ladder_frame.hpp"
 #include <istream>
 namespace astrabot::adapter::metamod { class LifecycleCoordinator; }
 namespace astrabot::adapter::cstrike {
 enum class NavCommand { Load, GoTo, Status, Cancel };
 enum class MotionEvent { None, Decision, Queued, Dispatched, Rejected, Cancelled };
 enum class MotionReason { None, InvalidCorridor, InvalidGoal, MissingObservation,
-    StaleCommand, Deviation, MotorRejected, TransportRejected, Cancelled, DoorChanged, PostureChanged, JumpChanged };
+    StaleCommand, Deviation, MotorRejected, TransportRejected, Cancelled, DoorChanged, PostureChanged, JumpChanged, LadderChanged };
 struct MotionTrace {
     nav::local::WalkDecision decision{};
     std::optional<nav::query::NavDirectedEdge> selectedEdge{};
@@ -28,6 +29,9 @@ struct MotionTrace {
     std::uint64_t useGuardChecks{};
     std::uint64_t contactGuardQueries{};
     std::uint64_t jumpGuardQueries{};
+    std::uint64_t ladderGuardQueries{};
+    LadderBindingReason ladderBindingReason{LadderBindingReason::None};
+    LadderFrameReason ladderFrameReason{LadderFrameReason::None};
 };
 class NavConsole final : public nav::runtime::IWorldQueries {
 public:
@@ -107,8 +111,19 @@ private:
         std::optional<Segment> segment{};
         std::optional<nav::local::DoorContact> contact{};
         std::optional<JumpTicket> jump{};
+        std::optional<nav::local::LadderPlan> ladder{};
+        nav::local::LadderState ladderState{nav::local::LadderState::Approach};
+        core::TickId ladderPressTick{};
+        nav::model::NavVector3 ladderTarget{};
     };
     MotionReason guardJump(metamod::LifecycleCoordinator&,const nav::runtime::MovementSnapshot&,const PendingMotion&) noexcept;
+    MotionReason guardLadder(metamod::LifecycleCoordinator&,const nav::runtime::MovementSnapshot&,const PendingMotion&) noexcept;
+    std::optional<nav::local::LadderObservation> observeLadder(metamod::LifecycleCoordinator&,
+        const nav::runtime::MovementSnapshot&,nav::local::Binding,std::uint32_t) noexcept;
+    LadderFrameResult inspectOwnedLadder(metamod::LifecycleCoordinator&,const nav::runtime::MovementSnapshot&,
+        nav::local::Binding,const BoundLadderPlan&,nav::model::NavVector3,std::uint32_t,
+        std::optional<core::BotCommand>,std::optional<std::uint8_t>,bool) noexcept;
+    void reportLadderTransport(const nav::local::WalkDecision&,core::TickId,core::TickId,bool) noexcept;
     metamod::MovementCoordinator* movement_{}; // Owned by the containing lifecycle coordinator.
     struct ActorState {
     core::PlayerId actor{};

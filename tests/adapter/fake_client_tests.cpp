@@ -24,10 +24,15 @@
 #include <string>
 #include <vector>
 #include <map>
+#include <sstream>
 #include "../nav/route_fixture.hpp"
 #include "../nav/steering_fixture.hpp"
 #include "../nav/evidence/fixture.hpp"
 
+std::shared_ptr<const astrabot::nav::model::NavMeshSnapshot> configureLadderMotionFixture(enginefuncs_t&,edict_t*,astrabot::core::MapGeneration,bool);
+void simulateLadderMotion(edict_t&,const astrabot::core::BotCommand&);
+void invalidateLadderMotionFixture(bool);
+unsigned ladderMotionQueryCount();
 std::map<std::string, void(*)()> gNavCommands;
 std::vector<std::string> gNavArgs;
 std::vector<std::string> gNavOutput;
@@ -250,6 +255,7 @@ int gGameDllCommandCalls = 0;
 int gEngineClientCommandCalls = 0;
 int gRunPlayerMoveCalls = 0;
 bool gSimulateNav=false;
+bool gSimulateLadder=false;
 bool gInjectNavDuplicate=false;
 bool gDeactivateDuringMove=false;
 bool gReplaceDuringMove=false;
@@ -546,6 +552,11 @@ void captureRunPlayerMove(
         astrabot::core::BotCommand c{{viewAngles[0],viewAngles[1],viewAngles[2]},
             {forwardMove,sideMove,upMove},buttons,impulse,msec};
         gNavMoves.push_back(c); assert(c.validate());
+        if(gSimulateLadder) {
+            simulateLadderMotion(*entity,c);
+            entity->v.v_angle=Vector(viewAngles[0],viewAngles[1],viewAngles[2]);
+            return;
+        }
         assert((buttons==0 || (gDoorActive && buttons==IN_USE) || (gSimulateCrouch && buttons==IN_DUCK) ||
             (gSimulateJump && buttons==IN_JUMP)) && impulse==0 && upMove==0 && entity->v.deadflag==DEAD_NO);
         if(gSimulateCrouch) {
@@ -1361,6 +1372,54 @@ void testNavJumpHost() {
         else assert(presses==0);
         gSimulateJump=gMissJump=gWrongJumpLanding=false; gSimulateNav=false;
         gHullMode=0; gInvalidateDuringHull=false; detach();
+    }
+}
+void testNavLadderHost() {
+    using namespace astrabot;
+    for(bool down:{false,true}) for(std::uint64_t us:{8000U,16000U,100000U}) for(unsigned fault=0;fault<4;++fault) {
+    if(fault && (!down || us!=16000)) continue;
+    Fixture fixture{}; enginefuncs_t hooks{};
+    fixture.engineGlobals.maxEntities=128;
+    (void)configureLadderMotionFixture(fixture.engine,&fixture.entity,{},down);
+    prepareNavWalk(fixture,hooks);
+    auto& owner=adapter::metamod::lifecycleCoordinator(); auto& console=owner.navConsole();
+    const auto mesh=configureLadderMotionFixture(fixture.engine,&fixture.entity,owner.registry().mapGeneration(),down);
+    fixture.entity.v.origin=Vector(-49,32,down ? 164.0f:36.0f); fixture.entity.v.velocity=Vector(0,0,0);
+    fixture.entity.v.movetype=MOVETYPE_WALK; fixture.entity.v.friction=1;
+    assert(console.publish(owner.registry().mapGeneration(),mesh).isNone());
+    std::istringstream bsp("abc");
+    const adapter::cstrike::LadderWorld world{&fixture.engine,&owner,[](const void* context) noexcept {
+        return static_cast<const adapter::metamod::LifecycleCoordinator*>(context)->registry().mapGeneration(); }};
+    assert(console.publishLadders(bsp,world,owner.registry().mapGeneration(),128));
+    gSimulateLadder=true;
+    runNav({"astrabot_goto",down ? "1":"2"});
+    bool climbed=false,exited=false,injected=false;
+    for(unsigned i=0;i<1200;++i) {
+        const auto queriesBefore=ladderMotionQueryCount();
+        navFrame(fixture,us);
+        if(ladderMotionQueryCount()-queriesBefore>21) {
+            std::fprintf(stderr,"ladder budget actual=%u down=%d us=%llu frame=%u state=%u recorded=%u\n",ladderMotionQueryCount()-queriesBefore,down,static_cast<unsigned long long>(us),i,unsigned(console.motionTrace().decision.ladderState.value_or(nav::local::LadderState::Failed)),console.motionTrace().decision.queries); std::exit(1);
+        }
+        const auto state=console.motionTrace().decision.ladderState;
+        climbed=climbed || state==(down ? nav::local::LadderState::ClimbDown:nav::local::LadderState::ClimbUp);
+        exited=exited || state==nav::local::LadderState::Exit;
+        if(fault && !injected && (console.motionTrace().command.buttons&IN_JUMP)) {
+            injected=true;
+            if(fault<3) invalidateLadderMotionFixture(fault==2);
+            else console.invalidate(nav::runtime::SessionReason::Cancelled);
+        }
+        if(console.motionTrace().decision.state!=nav::local::WalkState::Running) break;
+    }
+    const auto& d=console.motionTrace().decision;
+    if(!fault && d.state!=nav::local::WalkState::Arrived) {
+        std::fprintf(stderr,"direction=%d us=%llu position=%.3f %.3f %.3f\n",down,static_cast<unsigned long long>(us),fixture.entity.v.origin.x,fixture.entity.v.origin.y,fixture.entity.v.origin.z);
+        std::fprintf(stderr,"host ladder not connected: walk=%u reason=%u ladder=%u bind=%u frame=%u flags=%d\n",unsigned(d.state),unsigned(d.reason),unsigned(d.ladderReason),unsigned(console.motionTrace().ladderBindingReason),unsigned(console.motionTrace().ladderFrameReason),fixture.entity.v.flags); std::exit(1);
+    }
+    assert(climbed && exited && console.motionTrace().dispatched>0);
+    const auto jumps=std::count_if(gNavMoves.begin(),gNavMoves.end(),[](const auto& c) { return (c.buttons&IN_JUMP)!=0; });
+    assert(jumps==(!fault && down ? 1:0));
+    if(fault) { assert(injected && d.state!=nav::local::WalkState::Arrived); }
+    gSimulateLadder=false; gSimulateNav=false; detach();
     }
 }
 void testNavWalkArrival() {
@@ -2203,6 +2262,7 @@ int main() {
     testNavWalkArrival();
     testStandardJumpPhysics();
     testNavJumpHost();
+    testNavLadderHost();
     testNavStairs();
     testNavDoors();
     testNavTouchDoors();
