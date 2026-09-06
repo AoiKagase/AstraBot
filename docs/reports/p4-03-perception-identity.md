@@ -1,6 +1,7 @@
 # P4-03 — 所属・ラウンド・観測識別
 
-Status: 実装・事前検証完了。main統合と統合後検証は未実施。P4全体・プロジェクト全体のFinishではない。
+Status: 実装と適用可能なオフライン検証を完了。main統合後も全gateを確認済み。
+P4全体・プロジェクト全体のFinishではない。
 
 ## Contract
 
@@ -50,7 +51,9 @@ HLTVのwire形式にイベント連番はない。同一host frameまたは同�
 ## Verification
 
 専用ブランチは`codex/p403-perception-identity`、基準mainは`c2ca0f9`。
-基礎型の先行コミットは`223d716`。最終実装とmain統合後の証跡は検証終了後に追記する。
+基礎型の先行コミットは`223d716`、Adapter統合は`3251106`。
+mainを`c2ca0f9`から`3251106`へfast-forwardし、統合後もこの実装コミットを検証した。
+最終の計画・報告・STATE更新は文書だけの差分として確認する。
 
 - Portable: 世代／退役／map、未知所属、チーム変更、古いround、source・時刻・連番の不正、
   同一batchと一時リセット、全32×31記憶予算。
@@ -63,13 +66,19 @@ HLTVのwire形式にイベント連番はない。同一host frameまたは同�
 
 | Gate | Pre-merge | Merged main |
 |---|---|---|
-| Windows x86 portable Debug /WX, inspector ON | 44/44 passed | pending |
-| Windows x86 Metamod Debug /WX, inspector ON | 53/53 passed, 52.10s | pending |
-| Linux x86 portable Debug /WX, inspector ON | 43/43 passed, 15.18s | pending |
-| Windows Release PE32/x86, six exports | passed: machine 14C, magic 10B, exactly six names | pending |
+| Windows x86 portable Debug /WX, inspector ON | 44/44 passed | 44/44 passed |
+| Windows x86 Metamod Debug /WX, inspector ON | 53/53 passed, 52.10s | 53/53 passed, 52.00s |
+| Linux x86 portable Debug /WX, inspector ON | 43/43 passed, 15.18s | 43/43 passed, 21.84s |
+| Windows Release PE32/x86, six exports | passed: machine 14C, magic 10B, exactly six names | passed: same format and six names |
 
 指定exportは`GetEngineFunctions`, `GetEntityAPI2`, `GiveFnptrsToDll`,
 `Meta_Attach`, `Meta_Detach`, `Meta_Query`の6件。
+main Release DLL SHA256:
+`352743dad41bcb078b0116f9a107376ec5512b3d4fa664cdc2d1bc467dc0d79d`。
+
+途中のmain検証では、検証中の報告書編集によってclean/dirtyの証跡不一致を検出した。
+報告書編集を戻し、cleanな`3251106`でMetamod全53件を再実行して上表の結果を確定した。
+証跡の検査条件を緩めたり、失敗した実行を合格として扱ったりしていない。
 
 ログは各worktreeの`build-*-x86-test/Testing/Temporary/LastTest.log`。
 VisualMemoryModelの実測サイズはWindows x86で98,024 bytes、Linux x86で89,948 bytes。
