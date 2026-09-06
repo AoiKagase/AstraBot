@@ -1,7 +1,10 @@
 # Phase 3 plan — Nav movement
 
-Status: planning revision 2026-09-05, audited base `b49f4da`. The P3-01
-inspector slice is implemented; see [evidence](../reports/p3-01-nav-inspector.md).
+Status (2026-09-06): P3-01 through P3-08 implementation and applicable offline
+verification are complete at `b9149c0`; see the
+[completion/readiness audit](../reports/phase-3-completion-audit.md).
+Real-NAV compatibility remains partial; live readiness has open prerequisites
+and project-wide Finish is not confirmed.
 Existing **P3-01 through P3-08** are retained;
 unnumbered checklist items are commit slices, not new task IDs.
 
@@ -495,8 +498,11 @@ Tactical Planner/Combat AI, Experience DB and crowd/prediction are deferred.
 P3-08 implementation and applicable offline verification are complete:
 Windows x86 portable 41/41, Metamod 47/47, Linux x86 40/40. See the
 [gate report](../reports/p3-08-offline-gate.md) for 90 portable and 186 host
-replay rows and the retained regression suite. The P3-07 hosted CI baseline
-has observed success; this P3-08 commit's hosted run still awaits a separately
-authorized push/PR. Real NAV compatibility remains partially validated.
-Assess the remaining project plans before a separate explicit Finish decision;
-then execute pending live manifests. No Finish or live acceptance is declared.
+replay rows and the retained regression suite. The
+[completion/readiness audit](../reports/phase-3-completion-audit.md) confirms
+hosted run 34026542865 passed at `b9149c0`, including Windows/Linux portable and
+ASan/long fuzz. Real NAV compatibility remains partially validated. Prepare
+the missing runtime/assets, live actor-control and complete evidence-capture
+path, and row-level acceptance inputs. Assess the remaining project phases
+before a separate explicit Finish decision; only then execute the pending live
+matrix. No Finish or live acceptance is declared.

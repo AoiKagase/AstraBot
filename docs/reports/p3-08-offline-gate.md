@@ -5,6 +5,12 @@ Implementation base: `51be514` (P3-08 approved plan), on
 it does not change production navigation, public interfaces or adapter exports.
 Project-wide Finish is not declared and no live server was started.
 
+Follow-up (2026-09-06): the [Phase 3 completion/readiness audit](phase-3-completion-audit.md)
+confirms hosted run 34026542865 passed for the committed implementation
+`b9149c0`. The pending-hosted statements below record the implementation-time
+snapshot; the audit supplies the later job/log/artifact evidence and current
+live-readiness gaps. Real-NAV/live/Finish are not promoted by that CI pass.
+
 ## Evidence contract
 
 `tests/nav/simulation/scenarios.json` owns the finite expected matrix. The

@@ -1,7 +1,8 @@
 # Phase 1 toolchain and combined-binary policy
 
-Status: P1-01 decision, 2026-09-04.  This is an engineering and distribution
-policy, not legal advice.
+Status: P1-01 decision, 2026-09-04; build/ABI policy synchronized with the
+approved 2026-09-05/06 AGENTS.md decisions during the Phase 3 completion audit.
+This is an engineering and distribution policy, not legal advice.
 
 ## Combined-binary decision
 
@@ -33,10 +34,10 @@ final legal determination about every possible linkage or distribution form.
 - C++17 is required, CMake extensions are disabled, and the standard library
   is the only portable-target dependency.
 - The supported baseline is GCC 11 or newer on Linux, Clang 11 or newer on
-  Linux/Windows, and MSVC 19.30 or newer on Windows. As of 2026-09-05 active CI
-  uses Windows Server 2022 only; Linux execution remains deferred by AGENTS.md
-  until project-wide Finish. The Phase 3 plan proposes an explicit policy
-  revision for earlier portable/Nav CI; that proposal is not active permission.
+  Linux/Windows, and MSVC 19.30 or newer on Windows. All targets are x86.
+  Windows and Linux x86 portable CI runs on push/pull request independently of
+  Finish. Linux uses GCC `-m32`, Debug, tests ON, Metamod OFF and warnings as
+  errors. Real-device/live-server validation remains strictly post-Finish.
 - Portable public headers use fixed-width value types and do not include
   GoldSrc, Metamod-P, ReAPI, ReGameDLL, or AMX Mod X headers.  No engine
   pointer or global state crosses the host boundary.
@@ -60,12 +61,14 @@ final legal determination about every possible linkage or distribution form.
   `src/core` or `src/host`.
 - The adapter artifact names are `astrabot_mm.dll` on Windows and
   `astrabot_mm.so` on Linux.  Its public export contract is limited to
-  `Meta_Query`, `Meta_Attach`, `Meta_Detach`, `GetEntityAPI2`, and
-  `GetEngineFunctions`.
-- GoldSrc/Metamod-P is an x86 ABI target.  The adapter configure step rejects
-  64-bit builds; use a 32-bit Visual Studio/Win32 environment on Windows or
-  `-m32` on Linux.  Portable Core builds are not subject to this adapter-only
-  restriction.
+  `Meta_Query`, `Meta_Attach`, `Meta_Detach`, `GetEntityAPI2`,
+  `GetEngineFunctions`, and `GiveFnptrsToDll`. The sixth undecorated export is
+  the approved Metamod-managed engine bootstrap.
+- GoldSrc/Metamod-P and all portable Core/Nav/tools/tests target x86. CMake
+  rejects 64-bit targets. Use the x86 VS developer environment with separate
+  NMake Debug/Release directories on Windows and `-m32` on Linux; follow
+  [AGENTS.md](../AGENTS.md) for the confirmed commands. Assert-based tests use
+  Debug; the Release adapter build disables tests.
 - P1-02's combined-binary treatment remains the conservative
   GPL-2.0-or-later-compatible policy above; a binary release still requires
   the exact dependency inventory, corresponding source, and notices review.
