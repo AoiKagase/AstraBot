@@ -14,6 +14,9 @@ struct MovementIntent {
     double speed{}, lateralCorrection{};
     std::optional<IntentVector> view{};
     ActionRequest duck{}, jump{}, use{};
+    // Explicit buttons for modes that read buttons rather than analog movement.
+    // Never inferred for ordinary Walk.
+    ActionRequest forward{}, back{};
 };
 enum class MotorError { None, InvalidIntent, InvalidObservation, NoElapsedTime };
 struct MotorResult {
@@ -36,7 +39,10 @@ inline bool Motor::valid(const MovementIntent& i) noexcept {
         a==ActionRequest::Hold || a==ActionRequest::Release; };
     if(!finite(i.direction) || !std::isfinite(i.speed) || i.speed<0 || i.speed>kMaxMovement ||
        !std::isfinite(i.lateralCorrection) || std::abs(i.lateralCorrection)>1 ||
-       (i.view && !finite(*i.view)) || !action(i.duck) || !action(i.jump) || !action(i.use)) return false;
+       (i.view && !finite(*i.view)) || !action(i.duck) || !action(i.jump) || !action(i.use) ||
+       !action(i.forward) || !action(i.back)) return false;
+    const auto moving=[](ActionRequest a) { return a==ActionRequest::Press || a==ActionRequest::Hold; };
+    if((moving(i.forward) && moving(i.back)) || ((moving(i.forward) || moving(i.back)) && i.speed==0)) return false;
     const double n=i.direction.x*i.direction.x+i.direction.y*i.direction.y+i.direction.z*i.direction.z;
     return n<=1.000001 && (i.speed==0 || n>0);
 }

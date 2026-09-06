@@ -242,6 +242,10 @@ clearance traces.
 [Fingerprint-bound host publication](../reports/p3-06-ladder-publication.md)
 now connects bounded whole-map inspection to immutable up/down links. The first
 implementation slice has offline evidence; first-class motion remains pending.
+[Portable ladder controller](../reports/p3-06-ladder-controller.md) now provides
+bounded up/down lifecycle and explicit directional buttons. Fresh host inspection,
+validated dismount control and guarded route dispatch remain unimplemented;
+the second checkbox stays open.
 
 - **Goal:** generation-bound host ladder links plus distinct up/down traversal.
 - **Why now:** P2-07 proves synthetic connectivity only.

@@ -27,6 +27,7 @@ MotorResult Motor::command(const MovementIntent& intent, ViewAngles observed, fl
             result.buttons|=static_cast<ButtonMask>(button);
     };
     set(intent.duck,Button::Duck); set(intent.jump,Button::Jump); set(intent.use,Button::Use);
+    if(speed>0) { set(intent.forward,Button::Forward); set(intent.back,Button::Back); }
     const auto rounded=frameUs>=255000 ? 255 : std::max<std::uint64_t>(1,(frameUs+500)/1000);
     result.msec=static_cast<std::uint8_t>(rounded);
     return {result,MotorError::None};

@@ -101,6 +101,7 @@ if(MSVC)
 endif()
 
 add_library(astrabot_nav STATIC
+    src/nav/local/ladder.cpp
     src/nav/io/map_fingerprint.cpp
     src/nav/local/walk.cpp
     src/nav/local/walk_jump.cpp
@@ -331,6 +332,10 @@ if(ASTRABOT_BUILD_TESTS)
     file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/long-fuzz/CTestTestfile.cmake"
         CONTENT "add_test(astrabot.nav.fuzz.long \"$<TARGET_FILE:astrabot_nav_fuzz_tests>\" --cases 100000)\nset_tests_properties(astrabot.nav.fuzz.long PROPERTIES TIMEOUT 600)\n")
     if(NOT ASTRABOT_NAV_ASAN)
+    add_executable(astrabot_ladder_tests tests/nav/ladder_tests.cpp)
+    target_link_libraries(astrabot_ladder_tests PRIVATE astrabot_nav astrabot_core)
+    astrabot_enable_warnings(astrabot_ladder_tests)
+    add_test(NAME astrabot.nav.ladder COMMAND astrabot_ladder_tests)
     add_executable(astrabot_map_fingerprint_tests tests/nav/map_fingerprint_tests.cpp)
     target_link_libraries(astrabot_map_fingerprint_tests PRIVATE astrabot_nav)
     astrabot_enable_warnings(astrabot_map_fingerprint_tests)
