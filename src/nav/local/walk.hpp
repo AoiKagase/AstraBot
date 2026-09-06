@@ -6,11 +6,14 @@
 #include "nav/local/blocker_wait.hpp"
 #include "nav/local/crouch.hpp"
 #include "nav/local/traversal_constraints.hpp"
+#include "nav/local/jump_geometry.hpp"
+#include "nav/local/jump_probe.hpp"
 
 namespace astrabot::nav::local {
 enum class WalkState { Running, Arrived, Failed, Aborted };
 enum class WalkReason { None, InvalidInput, StaleTick, InvalidActor, StaleNavigation,
-    UnsupportedTraversal, InvalidGoal, OffCorridor, InvalidPortal, ProbeFailed, Cancelled, DoorBlocked, DynamicBlocked, PostureFailed };
+    UnsupportedTraversal, InvalidGoal, OffCorridor, InvalidPortal, ProbeFailed, Cancelled, DoorBlocked, DynamicBlocked, PostureFailed, JumpFailed };
+struct WalkJumpLimits { JumpLimits motion{}; JumpGeometryLimits geometry{}; JumpProbeLimits flight{}; };
 struct WalkLimits {
     GroundProbeLimits probe{};
     double speed{}, arrivalTolerance{}, crossingMargin{};
@@ -21,6 +24,7 @@ struct WalkLimits {
     std::uint32_t maxAvoidanceDecisions{};
     BlockerLimits blocker{}; // Zero timeout disables reactive player handling.
     CrouchLimits crouch{}; // Zero timeout keeps special traversal disabled.
+    std::optional<WalkJumpLimits> jump{}; // Requires explicit current host physics as well.
 };
 struct DoorContact {
     std::uint64_t id{};
@@ -49,6 +53,13 @@ struct WalkDecision {
     std::optional<CrouchState> posture{};
     CrouchReason postureReason{CrouchReason::None};
     ConstraintReason constraintReason{ConstraintReason::None};
+    std::optional<JumpState> jumpState{};
+    JumpReason jumpReason{JumpReason::None};
+    JumpProbeReason jumpProbeReason{JumpProbeReason::None};
+    JumpGeometryReason jumpGeometryReason{JumpGeometryReason::None};
+    std::optional<JumpPlan> jumpPlan{};
+    std::optional<JumpPhysics> jumpPhysics{};
+    core::TickId jumpPressTick{};
 };
 // One owned route, synchronous decision seam. Caller schedules decisions and
 // invalidates on route replacement; this class never submits a host command.
@@ -61,7 +72,10 @@ public:
          WalkLimits) noexcept;
     WalkDecision update(const runtime::MovementSnapshot&, const query::NavSpatialIndex&,
                         core::MapGeneration indexMap, runtime::IWorldQueries&,
-                        std::uint64_t nowUs=0, std::uint32_t reservedQueries=0) noexcept;
+                        std::uint64_t nowUs=0, std::uint32_t reservedQueries=0,
+                        std::optional<JumpPhysics> physics={}) noexcept;
+    // Only the first result for this step's exact Press command is consumed.
+    bool reportJumpDispatch(const JumpDispatch&) noexcept;
     WalkDecision abort() noexcept;
     WalkState state() const noexcept { return state_; }
     std::size_t step() const noexcept { return cursor_.index(); }
@@ -86,8 +100,17 @@ private:
     ActionRequest postureAction_{ActionRequest::None};
     std::optional<CrouchState> posture_{};
     CrouchReason postureReason_{CrouchReason::None};
+    std::optional<SimpleJump> jump_{};
+    std::optional<JumpPlan> jumpPlan_{};
+    std::optional<JumpPhysics> jumpPhysics_{};
+    std::optional<JumpDispatch> jumpDispatch_{};
+    core::TickId jumpPressTick_{};
+    bool jumpDispatchSeen_{};
+    std::optional<std::size_t> completedJumpStep_{};
+    WalkDecision updateJump(WalkDecision,const runtime::MovementSnapshot&,const query::NavSpatialIndex&,
+        core::MapGeneration,runtime::IWorldQueries&,std::uint64_t,std::uint32_t,std::optional<JumpPhysics>) noexcept;
     WalkDecision updateMotion(const runtime::MovementSnapshot&,const query::NavSpatialIndex&,
-        core::MapGeneration,runtime::IWorldQueries&,std::uint64_t,std::uint32_t) noexcept;
+        core::MapGeneration,runtime::IWorldQueries&,std::uint64_t,std::uint32_t,std::optional<JumpPhysics>) noexcept;
     WalkDecision updateDoor(WalkDecision, const runtime::MovementSnapshot&,
         const query::NavSpatialIndex&, core::MapGeneration, runtime::IWorldQueries&,
         model::NavVector3 end, std::uint64_t nowUs) noexcept;

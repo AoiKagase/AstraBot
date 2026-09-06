@@ -102,6 +102,7 @@ endif()
 
 add_library(astrabot_nav STATIC
     src/nav/local/walk.cpp
+    src/nav/local/walk_jump.cpp
     src/nav/local/door_wait.cpp
     src/nav/local/blocker_wait.cpp
     src/nav/local/crouch.cpp
@@ -359,6 +360,10 @@ if(ASTRABOT_BUILD_TESTS)
     target_link_libraries(astrabot_nav_jump_geometry_tests PRIVATE astrabot_nav astrabot_core)
     astrabot_enable_warnings(astrabot_nav_jump_geometry_tests)
     add_test(NAME astrabot.nav.jump_geometry COMMAND astrabot_nav_jump_geometry_tests)
+    add_executable(astrabot_nav_jump_walk_tests tests/nav/jump_walk_tests.cpp)
+    target_link_libraries(astrabot_nav_jump_walk_tests PRIVATE astrabot_nav astrabot_core)
+    astrabot_enable_warnings(astrabot_nav_jump_walk_tests)
+    add_test(NAME astrabot.nav.jump_walk COMMAND astrabot_nav_jump_walk_tests)
     target_link_libraries(astrabot_nav_crouch_tests PRIVATE astrabot_nav astrabot_core)
     astrabot_enable_warnings(astrabot_nav_crouch_tests)
     add_test(NAME astrabot.nav.crouch COMMAND astrabot_nav_crouch_tests)

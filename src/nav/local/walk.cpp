@@ -104,6 +104,10 @@ WalkDecision Walk::finish(WalkDecision out, WalkState state, WalkReason reason) 
     if(blocker_) { (void)blocker_->abort(); blocker_.reset(); }
     out.terminalEvent=state_==WalkState::Running;
     state_=state; reason_=reason; out.state=state; out.reason=reason; out.intent={}; out.contact.reset();
+    if(jump_) {
+        (void)jump_->abort(); jump_.reset(); jumpPlan_.reset(); jumpPhysics_.reset(); jumpDispatch_.reset();
+        out.intent.jump=ActionRequest::Release;
+    }
     if(primitive_.state()==PrimitiveState::Running) {
         if(state==WalkState::Failed)
             out.primitiveEvent=primitive_.update({out.binding,out.tick,Progress::Failed,{},std::nullopt,false}).event;
@@ -205,14 +209,15 @@ WalkDecision Walk::approachDoor(WalkDecision out, const runtime::MovementSnapsho
 }
 WalkDecision Walk::update(const runtime::MovementSnapshot& s, const query::NavSpatialIndex& index,
                          core::MapGeneration indexMap, runtime::IWorldQueries& port, std::uint64_t nowUs,
-                         std::uint32_t reservedQueries) noexcept {
-    auto out=updateMotion(s,index,indexMap,port,nowUs,reservedQueries);
+                         std::uint32_t reservedQueries,std::optional<JumpPhysics> physics) noexcept {
+    auto out=updateMotion(s,index,indexMap,port,nowUs,reservedQueries,physics);
     out.intent.duck=postureAction_; out.posture=posture_; out.postureReason=postureReason_;
     if((!out.accepted || out.terminalEvent) && s.ducked==true) out.intent.duck=ActionRequest::Hold;
     return out;
 }
 WalkDecision Walk::updateMotion(const runtime::MovementSnapshot& s,const query::NavSpatialIndex& index,
-    core::MapGeneration indexMap,runtime::IWorldQueries& port,std::uint64_t nowUs,std::uint32_t reservedQueries) noexcept {
+    core::MapGeneration indexMap,runtime::IWorldQueries& port,std::uint64_t nowUs,std::uint32_t reservedQueries,
+    std::optional<JumpPhysics> physics) noexcept {
     WalkDecision out; out.binding=binding_; out.binding.step=cursor_.index(); out.tick=s.tick;
     out.state=state_; out.reason=reason_;
     if(state_!=WalkState::Running) return out;
@@ -240,6 +245,10 @@ WalkDecision Walk::updateMotion(const runtime::MovementSnapshot& s,const query::
        limits_.blocker.yieldUs>=limits_.blocker.timeoutUs ||
        limits_.blocker.factLifetimeUs>limits_.blocker.timeoutUs || limits_.sideProbeDistance<=0))
         return finish(out,WalkState::Failed,WalkReason::InvalidInput);
+    if(jump_ || (!cursor_.exhausted() && constraints(corridor_->transitions()[cursor_.index()].edge.traversal,
+        corridor_->transitions()[cursor_.index()].sourceAttributes,
+        corridor_->transitions()[cursor_.index()].targetAttributes).kind==model::NavTraversalKind::Jump))
+        return updateJump(out,s,index,indexMap,port,nowUs,reservedQueries,physics);
     if(reservedQueries>=limits_.probe.maxQueries) {
         out.queries=reservedQueries; out.probeReason=ProbeReason::BudgetExceeded;
         return finish(out,WalkState::Failed,WalkReason::ProbeFailed);
@@ -264,8 +273,13 @@ WalkDecision Walk::updateMotion(const runtime::MovementSnapshot& s,const query::
         const auto& t=corridor_->transitions()[cursor_.index()];
         hints=constraints(t.edge.traversal,t.sourceAttributes,t.targetAttributes);
         if(t.edge.external) hints.reason=ConstraintReason::UnsupportedTraversal;
-    } else if(!corridor_->transitions().empty())
-        hints=constraints(model::NavTraversalKind::Walk,0,corridor_->transitions().back().targetAttributes);
+    } else if(!corridor_->transitions().empty()) {
+        auto attributes=corridor_->transitions().back().targetAttributes;
+        // The last transition's jump was observed through landing and cooldown.
+        // Finishing the goal inside that same area must not launch a second jump.
+        if(completedJumpStep_ && *completedJumpStep_+1==cursor_.index()) attributes=static_cast<std::uint8_t>(attributes&~2U);
+        hints=constraints(model::NavTraversalKind::Walk,0,attributes);
+    }
     out.constraintReason=hints.reason;
     if(!hints || hints.kind==model::NavTraversalKind::Jump ||
        (hints.kind==model::NavTraversalKind::Crouch && !limits_.crouch.transitionTimeoutUs))

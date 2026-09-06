@@ -3,6 +3,9 @@
 Built from `9d39854` on `codex/p305-jump-transition`. The Simple Jump checklist
 remains open until Walk/host dispatch integration is implemented and verified.
 
+Follow-up: [Walk-owned Jump](p3-05-jump-walk.md) now connects the portable route
+owner, dispatch feedback and cooldown-gated cursor advancement. Host remains.
+
 `JumpGeometry::derive` selects exactly `binding.step` from an immutable validated
 corridor. A native directed portal with supported Jump hints is required; other
 steps, external links, NoJump/duck-jump/unknown hints and down-jump geometry cannot

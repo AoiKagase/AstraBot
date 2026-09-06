@@ -205,8 +205,10 @@ an independent lifecycle/dispatch/landing test seam. The
 [launch inspector](../reports/p3-05-jump-inspection.md) now generates bounded
 support and flight-query evidence for an explicit ballistic model.
 [Transition geometry and ground preparation](../reports/p3-05-jump-transition.md)
-now connect the selected portal to that lifecycle in offline tests. Host physics
-and Walk/dispatch integration are still required before
+now connect the selected portal to that lifecycle in offline tests.
+[Walk-owned Jump](../reports/p3-05-jump-walk.md) adds selected-step ownership,
+dispatch feedback and cooldown-gated cursor advancement. Host physics and
+guarded adapter dispatch integration are still required before
 checking its implementation slice.
 
 - **Goal:** execute verified transitions without per-frame state in A*.

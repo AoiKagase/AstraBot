@@ -3,9 +3,17 @@
 Status: in_progress
 Goal: entire Phase 3. P3-03/P3-04 implementation checks have offline evidence.
 Main: 3f85e3f, fast-forward merged in .worktrees/main-integration; clean, not pushed.
-Current branch: codex/p305-jump-transition, based on 9d39854; not merged/pushed.
-Current boundary: selected-step geometry plus approach/acceleration/landing probes.
-Report: docs/reports/p3-05-jump-transition.md.
+Current branch: codex/p305-jump-walk, based on ebe2000; not merged/pushed.
+Current boundary: Walk owns Jump lifecycle, dispatch feedback and corridor advance.
+Report: docs/reports/p3-05-jump-walk.md.
+WalkLimits has optional WalkJumpLimits; Walk::update takes optional current
+JumpPhysics as its final argument. reportJumpDispatch consumes only the first
+result for the active step's exact Press tick. WalkDecision carries Jump state,
+reason, probe/geometry failures, plan, physics and press tick for host tickets.
+walk_jump.cpp handles support/flight queries with host reservations included.
+Only measured landing plus cooldown advances the cursor; final consumed Jump
+hint is cleared for goal finishing only. Consecutive jumps retire old Press ticks.
+An enabled crouch gate confirms standing before initial Jump entry.
 JumpGeometry derives from exactly binding.step of the immutable Corridor; full
 takeoff/landing circles plus actual hull/margin must fit their respective areas.
 JumpProbe::prepare uses source-bound GroundProbe movement and globally unique
@@ -16,15 +24,17 @@ three support queries, two stationary sweeps and up to eight paired flight sweep
 Hard maximum21 queries; no retries; stale/malformed/missing data discard all proof.
 SimpleJump launch proof now binds step and observed velocity. Acceleration does
 not require flight proof until observed launch speed is reached; Press does.
-The complete portable query/controller pipeline is exercised offline. Walk/host
-physics, guarded dispatch and route advancement after cooldown remain pending.
+The complete portable Walk/Jump pipeline is exercised with the25Hz IntentPump.
+Host physics and guarded adapter dispatch remain pending.
 The host still rejects Jump hints; P3-05 Simple Jump checklist stays open.
-Verification: Windows x86 NMake Debug adapter+portable39/39 PASS; WSL Debian
-GCC -m32 Debug portable34/34 PASS; Release x86 DLL/six exports PASS. Werror.
-Four-direction8/16/100ms pipeline, selected nonzero step, external rejection,
-region/height limits, stale helper ordinals, blocked/source-escape/budget failures.
-Native queryNavWorld preparation/landing tests added and fake-client rerun PASS.
-Next: establish host physics and connect Walk/host dispatch with landing cooldown.
+Verification: Windows x86 NMake Debug adapter+portable40/40 PASS; WSL Debian
+GCC -m32 Debug portable35/35 PASS; Release x86 DLL/six exports PASS. Werror.
+Final Press identity cleanup: Jump/Walk test rebuilt/rerun PASS both platforms.
+Single Jump and two consecutive Jumps then ordinary Walk at8/16/100ms,25Hz pump;
+dispatch identity/rejection/missing/stale, invalid actor/physics, wrong landing,
+budget saturation, abort/release, standing clearance wait/timeout are covered.
+Next: establish host physics and connect guarded adapter dispatch. The optional
+Walk Jump profile remains unset by the host, so production still rejects Jump.
 Inspected seams: MovementSnapshot has velocity/hull but no gravity/jump physics;
 adapter/cstrike/nav/motion.cpp ready() and segmentAllows() assume grounded Walk.
 Use an explicit bounded physics input before predicting flight. Preserve existing
