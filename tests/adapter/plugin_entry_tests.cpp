@@ -354,7 +354,12 @@ void testSuccessfulAttachDoubleAttachAndDetach() {
     assert(fixture.callbacks.pfnGetEntityAPI2_Post == before.pfnGetEntityAPI2_Post);
     assert(fixture.callbacks.pfnGetNewDLLFunctions == before.pfnGetNewDLLFunctions);
     assert(fixture.callbacks.pfnGetNewDLLFunctions_Post == before.pfnGetNewDLLFunctions_Post);
-    assert(fixture.callbacks.pfnGetEngineFunctions_Post == before.pfnGetEngineFunctions_Post);
+    assert(fixture.callbacks.pfnGetEngineFunctions_Post != nullptr);
+    assert(fixture.callbacks.pfnGetEngineFunctions_Post != before.pfnGetEngineFunctions_Post);
+    enginefuncs_t soundHooks{}; int soundVersion = ENGINE_INTERFACE_VERSION;
+    assert(fixture.callbacks.pfnGetEngineFunctions_Post(&soundHooks,&soundVersion));
+    assert(soundHooks.pfnPrecacheEvent && soundHooks.pfnEmitSound && soundHooks.pfnEmitAmbientSound && soundHooks.pfnPlaybackEvent);
+    assert(!soundHooks.pfnTraceLine && !soundHooks.pfnRunPlayerMove && !soundHooks.pfnMessageBegin);
     assert(gpMetaGlobals == &fixture.globals);
     assert(gpGamedllFuncs == &fixture.gameDll);
     assert(gLogLines.size() == 1);

@@ -85,6 +85,7 @@ void LifecycleCoordinator::configure(enginefuncs_t* engine,mutil_funcs_t* utilit
     navConsole_.bindMovement(&movement_);
 }
 void LifecycleCoordinator::reset() noexcept {
+    sound_.reset();
     vision_.reset();
     teams_ = {}; round_ = {1}; identityDiagnostics_ = {}; lastRoundTick_ = {}; lastRoundTime_ = -1;
     navConsole_.reset(); movement_.reset();
@@ -114,6 +115,7 @@ void LifecycleCoordinator::serverActivate(int clientMax) noexcept {
         : registry_.activateMap(static_cast<std::uint16_t>(clientMax));
     if(result.changed()) {
         vision_.reset();
+        sound_.beginMap(registry_.mapGeneration());
         (void)teams_.activate(registry_.mapGeneration()); round_ = {1}; lastRoundTick_ = {}; lastRoundTime_ = -1;
         ++status_.mapActivations;
         if(status_.mapActivations>1) ++status_.mapReplays;
@@ -122,6 +124,7 @@ void LifecycleCoordinator::serverActivate(int clientMax) noexcept {
     emit(host::LifecycleEventKind::MapActivated,result);
 }
 void LifecycleCoordinator::serverDeactivate() noexcept {
+    sound_.reset();
     vision_.reset();
     teams_.clear();
     navConsole_.invalidate(nav::runtime::SessionReason::MapChanged); movement_.resetMap();
@@ -155,6 +158,7 @@ void LifecycleCoordinator::clientDisconnect(edict_t* entity) noexcept {
     }
     vision_.forget(player);
     teams_.forget(player);
+    sound_.forget(player);
     movement_.forget(player);
     if(client) {
         navConsole_.invalidateActor(player,nav::runtime::SessionReason::Disconnected);
@@ -198,6 +202,7 @@ RemovalResult LifecycleCoordinator::remove(core::PlayerId player) noexcept {
     if(!client) return {debug::RemovalOutcome::NoOp,debug::RemovalError::None,{},true,false};
     if(client->fake.removalPending()) return {debug::RemovalOutcome::NoOp,debug::RemovalError::None,player,true,false};
     vision_.forget(player);
+    sound_.forget(player);
     teams_.forget(player);
     movement_.forget(player);
     navConsole_.invalidateActor(player,nav::runtime::SessionReason::Disconnected);
@@ -245,9 +250,23 @@ void LifecycleCoordinator::startFrame() noexcept {
         if(!registry_.isMapActive() || registry_.mapGeneration()!=map || registry_.currentTick()!=tick) return;
         navConsole_.moveFrame(*this,client.fake.activePlayer());
     }
-    if(registry_.isMapActive() && registry_.mapGeneration()==map && registry_.currentTick()==tick)
+    if(registry_.isMapActive() && registry_.mapGeneration()==map && registry_.currentTick()==tick) {
         vision_.frame(*this,engineFunctions_,engineGlobals_ ? engineGlobals_->time :
             (std::numeric_limits<float>::quiet_NaN)());
+        if(registry_.isMapActive() && registry_.mapGeneration()==map && registry_.currentTick()==tick)
+            sound_.frame(*this,engineGlobals_ ? engineGlobals_->time : (std::numeric_limits<float>::quiet_NaN)());
+    }
+}
+void LifecycleCoordinator::soundPrecache(int type,const char* name,std::uint16_t index) noexcept {
+    sound_.precache(type,name,index);
+}
+void LifecycleCoordinator::emitSound(const edict_t* emitter,const float* origin,int channel,const char* sample,
+    float volume,float attenuation,int flags,int pitch,bool ambient) noexcept {
+    sound_.emit(*this,engineGlobals_ ? engineGlobals_->time : (std::numeric_limits<float>::quiet_NaN)(),
+        emitter,origin,channel,sample,volume,attenuation,flags,pitch,ambient);
+}
+void LifecycleCoordinator::playbackEvent(int flags,const edict_t* invoker,std::uint16_t event,float delay,const float* origin) noexcept {
+    sound_.playback(*this,engineGlobals_ ? engineGlobals_->time : (std::numeric_limits<float>::quiet_NaN)(),flags,invoker,event,delay,origin);
 }
 MovementResult LifecycleCoordinator::submitCommand(core::PlayerId player,core::MapGeneration map,
     core::TickId tick,const core::BotCommand& command) noexcept {
@@ -374,6 +393,7 @@ void LifecycleCoordinator::handleMessage(const cstrike::MessageEvent& event) noe
         }
         ++round_.value; lastRoundTime_ = time; lastRoundTick_ = registry_.currentTick();
         ++identityDiagnostics_.rounds; vision_.beginRound(round_);
+        sound_.beginRound(round_);
         messageDecoder_.reset();
         for (auto& client : clients_) client.decoder.reset();
         return;
@@ -386,7 +406,7 @@ void LifecycleCoordinator::handleMessage(const cstrike::MessageEvent& event) noe
         const auto player = registry_.currentPlayer(slot);
         const bool current = client ? client->fake.entityFor(player) != nullptr && !client->fake.removalPending() : vision_.bound(player,engineFunctions_);
         if (!current) {
-            teams_.forget(player); vision_.forget(player); ++identityDiagnostics_.rejectedTeams; return;
+            teams_.forget(player); vision_.forget(player); sound_.forget(player); ++identityDiagnostics_.rejectedTeams; return;
         }
         if (!teams_.bind(registry_.mapGeneration(),player)) { ++identityDiagnostics_.rejectedTeams; return; }
         using Team = core::perception::Team;
@@ -396,7 +416,7 @@ void LifecycleCoordinator::handleMessage(const cstrike::MessageEvent& event) noe
             std::strcmp(name,"SPECTATOR") == 0 ? Team::Spectator : Team::Unknown;
         const auto previous = teams_.find(player)->team;
         (void)teams_.update(registry_.mapGeneration(),player,team); ++identityDiagnostics_.teamUpdates;
-        if (previous != team) { ++identityDiagnostics_.teamChanges; vision_.forget(player); }
+        if (previous != team) { ++identityDiagnostics_.teamChanges; vision_.forget(player); sound_.forget(player); }
         // Team changes after joining are affiliation events, not join failures.
         if (client && client->join.phase() == cstrike::JoinPhase::Joined) return;
     }

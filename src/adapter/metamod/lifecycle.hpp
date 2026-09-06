@@ -12,6 +12,7 @@
 #include "adapter/cstrike/join_state.hpp"
 #include "adapter/cstrike/messages.hpp"
 #include "adapter/cstrike/vision.hpp"
+#include "adapter/cstrike/sound.hpp"
 #include "adapter/cstrike/nav/console.hpp"
 #include "debug/host_trace.hpp"
 #include "host/bot_agents.hpp"
@@ -110,6 +111,11 @@ public:
     LifecycleStatus status() const noexcept { return status_; }
     cstrike::NavConsole& navConsole() noexcept { return navConsole_; }
     const cstrike::VisionAdapter& vision() const noexcept { return vision_; }
+    const cstrike::SoundAdapter& sound() const noexcept { return sound_; }
+    void soundPrecache(int,const char*,std::uint16_t) noexcept;
+    void rejectSoundHook() noexcept { sound_.rejectHook(); }
+    void emitSound(const edict_t*,const float*,int,const char*,float,float,int,int,bool) noexcept;
+    void playbackEvent(int,const edict_t*,std::uint16_t,float,const float*) noexcept;
     const core::perception::TeamRoster& teams() const noexcept { return teams_; }
     core::perception::RoundGeneration round() const noexcept { return round_; }
     struct PerceptionIdentityDiagnostics {
@@ -158,6 +164,7 @@ private:
     MovementCoordinator movement_{};
     cstrike::NavConsole navConsole_{};
     cstrike::VisionAdapter vision_{};
+    cstrike::SoundAdapter sound_{};
     core::perception::TeamRoster teams_{};
     core::perception::RoundGeneration round_{1};
     PerceptionIdentityDiagnostics identityDiagnostics_{};

@@ -4,6 +4,7 @@
 #include "adapter/metamod/plugin_entry.hpp"
 
 #include "adapter/metamod/lifecycle.hpp"
+#include "adapter/metamod/sound_hooks.hpp"
 #include "debug/host_trace.hpp"
 
 #include <cstring>
@@ -25,6 +26,7 @@ struct AdapterState {
     META_FUNCTIONS* functionTable{nullptr};
     GETENTITYAPI2_FN previousEntityApi2{nullptr};
     GET_ENGINE_FUNCTIONS_FN previousEngineFunctions{nullptr};
+    GET_ENGINE_FUNCTIONS_FN previousEngineFunctionsPost{nullptr};
 };
 
 AdapterState gState{};
@@ -195,14 +197,17 @@ C_DLLEXPORT FORCE_STACK_ALIGN int Meta_Attach(
     const GETENTITYAPI2_FN previousEntityApi2 = functionTable->pfnGetEntityAPI2;
     const GET_ENGINE_FUNCTIONS_FN previousEngineFunctions =
         functionTable->pfnGetEngineFunctions;
+    const auto previousEngineFunctionsPost = functionTable->pfnGetEngineFunctions_Post;
 
     functionTable->pfnGetEntityAPI2 = &GetEntityAPI2;
     functionTable->pfnGetEngineFunctions = &GetEngineFunctions;
+    functionTable->pfnGetEngineFunctions_Post = &astrabot::adapter::metamod::soundEngineFunctionsPost;
 
     gState.attached = true;
     gState.functionTable = functionTable;
     gState.previousEntityApi2 = previousEntityApi2;
     gState.previousEngineFunctions = previousEngineFunctions;
+    gState.previousEngineFunctionsPost = previousEngineFunctionsPost;
     gpMetaGlobals = metaGlobals;
     gpGamedllFuncs = gameDllFunctions;
     astrabot::adapter::metamod::lifecycleCoordinator().configure(
@@ -227,6 +232,7 @@ C_DLLEXPORT FORCE_STACK_ALIGN int Meta_Detach(
         gState.functionTable->pfnGetEntityAPI2 = gState.previousEntityApi2;
         gState.functionTable->pfnGetEngineFunctions =
             gState.previousEngineFunctions;
+        gState.functionTable->pfnGetEngineFunctions_Post = gState.previousEngineFunctionsPost;
     }
     resetState();
     return 1;
@@ -266,6 +272,7 @@ C_DLLEXPORT FORCE_STACK_ALIGN int GetEngineFunctions(
 
     const enginefuncs_t emptyHookTable{};
     std::memcpy(engineFunctions, &emptyHookTable, sizeof(emptyHookTable));
+    astrabot::adapter::metamod::installSoundPreHooks(*engineFunctions);
     engineFunctions->pfnMessageBegin =
         &astrabot::adapter::metamod::messageBeginHook;
     engineFunctions->pfnMessageEnd =

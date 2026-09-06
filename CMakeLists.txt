@@ -75,6 +75,7 @@ function(astrabot_enable_metamod_compatibility target)
 endfunction()
 
 add_library(astrabot_core STATIC
+    src/core/sound_memory.cpp
     src/core/visual_memory.cpp
     src/core/perception.cpp
     src/core/motor.cpp
@@ -246,6 +247,9 @@ if(ASTRABOT_BUILD_METAMOD)
     endforeach()
 
     add_library(astrabot_mm SHARED
+        src/adapter/cstrike/sound.cpp
+        src/adapter/cstrike/sound_profile.cpp
+        src/adapter/metamod/sound_hooks.cpp
         src/adapter/cstrike/vision.cpp
         src/adapter/cstrike/join_state.cpp
         src/adapter/cstrike/messages.cpp
@@ -295,6 +299,14 @@ endif()
 
 if(ASTRABOT_BUILD_TESTS)
     enable_testing()
+    add_executable(astrabot_sound_profile_tests tests/sound_profile_tests.cpp src/adapter/cstrike/sound_profile.cpp)
+    target_link_libraries(astrabot_sound_profile_tests PRIVATE astrabot_core)
+    astrabot_enable_warnings(astrabot_sound_profile_tests)
+    add_test(NAME astrabot.sound_profile COMMAND astrabot_sound_profile_tests)
+    add_executable(astrabot_sound_memory_tests tests/sound_memory_tests.cpp)
+    target_link_libraries(astrabot_sound_memory_tests PRIVATE astrabot_core)
+    astrabot_enable_warnings(astrabot_sound_memory_tests)
+    add_test(NAME astrabot.sound_memory COMMAND astrabot_sound_memory_tests)
     add_executable(astrabot_perception_identity_tests tests/perception_identity_tests.cpp)
     target_link_libraries(astrabot_perception_identity_tests PRIVATE astrabot_core)
     astrabot_enable_warnings(astrabot_perception_identity_tests)
@@ -624,6 +636,9 @@ if(ASTRABOT_BUILD_TESTS)
         add_test(NAME astrabot.adapter.ladder_scanner COMMAND astrabot_ladder_scanner_tests)
 
         add_executable(astrabot_adapter_entry_tests
+            src/adapter/cstrike/sound.cpp
+            src/adapter/cstrike/sound_profile.cpp
+            src/adapter/metamod/sound_hooks.cpp
             src/adapter/cstrike/vision.cpp
             tests/adapter/plugin_entry_tests.cpp
             src/adapter/cstrike/join_state.cpp
@@ -690,6 +705,9 @@ if(ASTRABOT_BUILD_TESTS)
         )
 
         add_executable(astrabot_fake_client_tests
+            src/adapter/cstrike/sound.cpp
+            src/adapter/cstrike/sound_profile.cpp
+            src/adapter/metamod/sound_hooks.cpp
             src/adapter/cstrike/vision.cpp
             tests/adapter/fake_client_tests.cpp
             tests/adapter/ladder_probe_tests.cpp
@@ -716,6 +734,8 @@ if(ASTRABOT_BUILD_TESTS)
         add_test(NAME astrabot.adapter.vision COMMAND astrabot_fake_client_tests --p401-tests)
         add_test(NAME astrabot.adapter.visual_memory COMMAND astrabot_fake_client_tests --p402-tests)
         add_test(NAME astrabot.adapter.perception_identity COMMAND astrabot_fake_client_tests --p403-tests)
+        add_test(NAME astrabot.adapter.sound COMMAND astrabot_fake_client_tests --p404-tests)
+        set_tests_properties(astrabot.adapter.sound PROPERTIES TIMEOUT 60)
         set_tests_properties(astrabot.adapter.perception_identity PROPERTIES TIMEOUT 60)
         set_tests_properties(astrabot.adapter.visual_memory PROPERTIES TIMEOUT 60)
         set_tests_properties(astrabot.adapter.vision PROPERTIES TIMEOUT 60)

@@ -2350,6 +2350,7 @@ void testDetachDirectlyCleansActiveEntityOnce() {
 #include "p401_vision_tests.hpp"
 #include "p402_memory_tests.hpp"
 #include "p403_identity_tests.hpp"
+#include "p404_sound_tests.hpp"
 
 } // namespace
 
@@ -2365,6 +2366,7 @@ int main(int argc,char** argv) {
     if(argc==2 && std::strcmp(argv[1],"--p401-tests")==0) { p401::run(); return 0; }
     if(argc==2 && std::strcmp(argv[1],"--p402-tests")==0) { p402::run(); return 0; }
     if(argc==2 && std::strcmp(argv[1],"--p403-tests")==0) { p403::run(); return 0; }
+    if(argc==2 && std::strcmp(argv[1],"--p404-tests")==0) { p404::run(); return 0; }
     assert(argc==1);
     testNavWorldQueries();
     testNavJumpProbeWorldQueries();
