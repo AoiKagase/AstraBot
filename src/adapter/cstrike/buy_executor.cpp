@@ -67,6 +67,8 @@ bool BuyExecutionAdapter::alreadyOwned(
     using core::economy::PurchaseItem;
     switch (item) {
     case PurchaseItem::Rifle:
+        return inventory.primary != core::economy::WeaponKind::Smg &&
+               inventory.hasUsablePrimary();
     case PurchaseItem::Galil:
     case PurchaseItem::Famas:
     case PurchaseItem::Smg:

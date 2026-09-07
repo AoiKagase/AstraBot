@@ -130,6 +130,13 @@ void testRoleAwarePlanAndAffordableFallbacks() {
     assert(!hasItem(preserved, e::PurchaseItem::Rifle));
     assert(!hasItem(preserved, e::PurchaseItem::Pistol));
     assert(preserved.preservedPrimary && preserved.preservedSecondary);
+
+    input = snapshot();
+    input.members[0].equipment.primary = e::WeaponKind::Smg;
+    const auto upgraded = planner.buildPlan(input, 0);
+    assert(upgraded.valid());
+    assert(hasItem(upgraded, e::PurchaseItem::Rifle));
+    assert(!upgraded.preservedPrimary);
 }
 
 void testTeamKitAndUtilityCoordination() {
@@ -258,6 +265,18 @@ void testExecutionVerifiesInventoryAndUsesBoundedFallback() {
     assert(result.attempts == 2 && result.fulfilledRequests == 1);
     assert(operations.calls[0] == e::PurchaseItem::Awp);
     assert(operations.calls[1] == e::PurchaseItem::Rifle);
+
+    e::EquipmentSnapshot smgInventory{};
+    smgInventory.primary = e::WeaponKind::Smg;
+    auto upgradePlan = simplePlan(0);
+    upgradePlan.requests[0].item = e::PurchaseItem::Rifle;
+    FakeBuyOperations upgradeOperations;
+    upgradeOperations.inventory = smgInventory;
+    const auto upgradeResult = executor.execute(
+        upgradePlan, context(smgInventory), upgradeOperations);
+    assert(upgradeResult.accepted && upgradeResult.completed);
+    assert(upgradeResult.attempts == 1);
+    assert(upgradeOperations.calls[0] == e::PurchaseItem::Rifle);
 
     auto stale = context();
     stale.round = {8};

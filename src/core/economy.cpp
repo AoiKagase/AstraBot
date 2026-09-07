@@ -325,8 +325,11 @@ BuyPlan BuyPlanner::buildPlan(const TeamEconomySnapshot& snapshot,
         plan.preservedArmor = true;
     }
 
+    const bool fullBuyPrimaryUpgrade =
+        decision.strategy == BuyStrategy::FullBuy &&
+        member.equipment.primary == WeaponKind::Smg;
     if (economyBuy && decision.strategy != BuyStrategy::PistolRound &&
-        !member.equipment.hasUsablePrimary()) {
+        (!member.equipment.hasUsablePrimary() || fullBuyPrimaryUpgrade)) {
         std::array<PurchaseItem, kMaxFallbacks> fallbacks{};
         std::size_t fallbackCount = 0;
         PurchaseItem primary = PurchaseItem::Rifle;
