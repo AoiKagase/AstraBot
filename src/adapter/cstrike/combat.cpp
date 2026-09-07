@@ -22,6 +22,8 @@ WeaponConversionError mapError(core::combat::WeaponValidationError error) noexce
         return WeaponConversionError::DuplicateWeapon;
     case Error::ImpossibleAmmo:
         return WeaponConversionError::ImpossibleAmmo;
+    case Error::InvalidReloadThreshold:
+        return WeaponConversionError::InvalidReloadThreshold;
     }
     return WeaponConversionError::InvalidInventory;
 }
@@ -36,9 +38,11 @@ WeaponConversionResult toWeaponSnapshot(const WeaponObservation& observation) no
     snapshot.tick = observation.tick;
     snapshot.observedMicros = observation.observedMicros;
     snapshot.active = {observation.activeWeapon};
+    snapshot.activeClass = observation.activeClass;
     snapshot.ownedCount = observation.ownedCount;
     snapshot.clipAmmo = observation.clipAmmo;
     snapshot.reserveAmmo = observation.reserveAmmo;
+    snapshot.reloadClipThreshold = observation.reloadClipThreshold;
     snapshot.reloading = observation.reloading;
     snapshot.canReload = observation.canReload;
     snapshot.canSwitch = observation.canSwitch;

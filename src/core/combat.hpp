@@ -45,6 +45,7 @@ enum class WeaponValidationError : std::uint8_t {
     InvalidInventory,
     DuplicateWeapon,
     ImpossibleAmmo,
+    InvalidReloadThreshold,
 };
 
 struct WeaponValidation {
@@ -63,10 +64,21 @@ struct WeaponSnapshot {
     std::uint64_t observedMicros{0};
 
     WeaponId active{};
+    enum class WeaponClass : std::uint8_t {
+        Unknown = 0,
+        Rifle,
+        SMG,
+        Pistol,
+        Sniper,
+    };
+    WeaponClass activeClass{WeaponClass::Unknown};
     std::array<WeaponId, kMaxOwnedWeapons> owned{};
     std::size_t ownedCount{0};
     std::int32_t clipAmmo{0};
     std::int32_t reserveAmmo{0};
+    // Zero means empty-only reload policy. Non-zero values request reload
+    // when the active clip is at or below this configured threshold.
+    std::int32_t reloadClipThreshold{0};
     bool reloading{false};
     bool canReload{false};
     bool canSwitch{false};
@@ -130,6 +142,13 @@ struct FirePlan {
     static constexpr FirePlan fullAuto() noexcept { return {FirePattern::FullAuto, 0}; }
 
     bool valid() const noexcept;
+
+    friend constexpr bool operator==(FirePlan left, FirePlan right) noexcept {
+        return left.pattern == right.pattern && left.burstShots == right.burstShots;
+    }
+    friend constexpr bool operator!=(FirePlan left, FirePlan right) noexcept {
+        return !(left == right);
+    }
 };
 
 enum class CombatReason : std::uint8_t {
@@ -163,6 +182,7 @@ enum class CombatReason : std::uint8_t {
     HostRejected,
     InvalidVisibility,
     DuplicateAttack,
+    DuplicateAction,
 };
 
 enum class CombatInputError : std::uint8_t {
@@ -204,6 +224,7 @@ struct DecisionValidation {
         UnexpectedFirePlan,
         InvalidFirePlan,
         MissingAttackButton,
+        MissingReloadButton,
         InvalidSelectedWeapon,
         InvalidKnowledge,
         UnsupportedFireMode,
@@ -262,6 +283,14 @@ struct AttackLifecycleState {
     BotAgentId agent{};
     TickId lastFireTick{};
     std::uint64_t lastFireMicros{0};
+    TickId lastActionTick{};
+    CombatAction lastAction{CombatAction::NoOp};
+    PlayerId cadenceTarget{};
+    WeaponId cadenceWeapon{};
+    FirePlan cadencePlan{};
+    std::uint8_t cadenceShotsFired{0};
+    std::uint64_t cadencePauseUntilMicros{0};
+    bool cadenceActive{false};
     bool attackHeld{false};
     bool initialized{false};
 
@@ -284,9 +313,9 @@ CombatDecision selectTarget(const CombatInput& input) noexcept;
 // only tracks; it never emits an attack input or a fire mode.
 CombatDecision aimTarget(const CombatInput& input) noexcept;
 
-// Authorizes one deterministic DirectFire pulse from a P5-03 aim decision.
+// Authorizes one deterministic combat action from a P5-03 aim decision.
 // The lifecycle state is explicit so repeated input frames cannot create
-// duplicate attacks through hidden shared state.
+// duplicate attacks, reloads, or weapon switches through hidden shared state.
 FireAuthorization authorizeFire(
     const CombatInput& input,
     const CombatDecision& aim,

@@ -339,6 +339,177 @@ bool inspectReport(const CombatInput& input, const world::ReportMemory& memory,
     return true;
 }
 
+constexpr double kMediumCombatRange = 512.0;
+constexpr double kLongCombatRange = 1024.0;
+constexpr double kPoorAimErrorDegrees = 8.0;
+constexpr std::uint8_t kFullAutoQualityThreshold = 60;
+constexpr std::uint8_t kMaxFullAutoShots = kMaxBurstShots;
+constexpr std::uint64_t kBurstPauseMicros = 100'000;
+
+using WeaponClass = WeaponSnapshot::WeaponClass;
+
+bool currentVisionThreat(const CombatInput& input,
+                         const CombatDecision& aim) noexcept {
+    if (aim.action != CombatAction::Track ||
+        aim.source != perception::ObservationSource::Vision || !aim.target.isValid()) {
+        return false;
+    }
+    const auto* visual = currentVisualFor(input, aim.target);
+    return visual != nullptr && input.world.relation(input.team, aim.target) ==
+                                      perception::Relation::Opponent;
+}
+
+bool targetDistanceAndAimError(const CombatInput& input, PlayerId target,
+                               double& distance, double& aimError) noexcept {
+    const auto* visual = currentVisualFor(input, target);
+    if (visual == nullptr) return false;
+
+    const double dx = visual->lastKnownPosition.x - input.eye.x;
+    const double dy = visual->lastKnownPosition.y - input.eye.y;
+    const double dz = visual->lastKnownPosition.z - input.eye.z;
+    distance = std::hypot(std::hypot(dx, dy), dz);
+    if (!std::isfinite(distance) || distance <= 0.0 ||
+        !calculateAngularError(input.eye, visual->lastKnownPosition, input.view, aimError)) {
+        return false;
+    }
+    return true;
+}
+
+FirePlan boundedBurst(std::uint8_t requested, std::int32_t clipAmmo) noexcept {
+    const auto available = static_cast<std::uint8_t>(std::min(
+        std::max(clipAmmo, 0), static_cast<std::int32_t>(kMaxBurstShots)));
+    const auto shots = std::min(requested, available);
+    return shots >= 2U ? FirePlan::burst(shots) : FirePlan::tap();
+}
+
+FirePlan chooseFirePlan(const CombatInput& input, PlayerId target) noexcept {
+    double distance = 0.0;
+    double aimError = 0.0;
+    if (!targetDistanceAndAimError(input, target, distance, aimError) ||
+        input.weapon.clipAmmo <= 0) {
+        return FirePlan::tap();
+    }
+
+    const auto quality = input.difficulty.decisionQuality;
+    const bool poorAim = aimError > kPoorAimErrorDegrees;
+    switch (input.weapon.activeClass) {
+    case WeaponClass::Rifle:
+        if (distance >= kLongCombatRange || poorAim) return FirePlan::tap();
+        if (distance >= kMediumCombatRange || quality < kFullAutoQualityThreshold) {
+            return boundedBurst(3, input.weapon.clipAmmo);
+        }
+        return input.weapon.clipAmmo >= 2 ? FirePlan::fullAuto() : FirePlan::tap();
+    case WeaponClass::SMG:
+        if (distance >= kLongCombatRange || poorAim) return FirePlan::tap();
+        if (distance >= kMediumCombatRange || quality < kFullAutoQualityThreshold) {
+            return boundedBurst(5, input.weapon.clipAmmo);
+        }
+        return input.weapon.clipAmmo >= 2 ? FirePlan::fullAuto() : FirePlan::tap();
+    case WeaponClass::Pistol:
+    case WeaponClass::Sniper:
+    case WeaponClass::Unknown:
+        return FirePlan::tap();
+    }
+    return FirePlan::tap();
+}
+
+WeaponId preferredSwitchWeapon(const WeaponSnapshot& weapon) noexcept {
+    WeaponId selected{};
+    for (std::size_t i = 0; i < weapon.ownedCount; ++i) {
+        const auto candidate = weapon.owned[i];
+        if (!candidate.isValid() || candidate == weapon.active) continue;
+        if (!selected.isValid() || candidate < selected) selected = candidate;
+    }
+    return selected;
+}
+
+CombatDecision acceptedReload(const CombatInput& input) noexcept {
+    auto decision = validNoOp(input, CombatReason::Accepted);
+    decision.action = CombatAction::Reload;
+    decision.buttons = static_cast<ButtonMask>(Button::Reload);
+    return decision;
+}
+
+CombatDecision acceptedSwitch(const CombatInput& input, WeaponId weapon) noexcept {
+    auto decision = validNoOp(input, CombatReason::Accepted);
+    decision.action = CombatAction::SwitchWeapon;
+    decision.selectedWeapon = weapon;
+    return decision;
+}
+
+void clearCadence(AttackLifecycleState& state) noexcept {
+    state.cadenceTarget = {};
+    state.cadenceWeapon = {};
+    state.cadencePlan = FirePlan::tap();
+    state.cadenceShotsFired = 0;
+    state.cadencePauseUntilMicros = 0;
+    state.cadenceActive = false;
+    state.attackHeld = false;
+}
+
+void markAction(AttackLifecycleState& state, const CombatInput& input,
+                CombatAction action) noexcept {
+    state.map = input.map;
+    state.round = input.round;
+    state.player = input.player;
+    state.agent = input.agent;
+    state.lastActionTick = input.tick;
+    state.lastAction = action;
+    state.initialized = true;
+}
+
+std::uint8_t cadenceLimit(const FirePlan& plan) noexcept {
+    switch (plan.pattern) {
+    case FirePattern::Burst:
+        return plan.burstShots;
+    case FirePattern::FullAuto:
+        return kMaxFullAutoShots;
+    case FirePattern::Tap:
+        return 1;
+    }
+    return 1;
+}
+
+std::optional<CombatDecision> planWeaponAction(
+    const CombatInput& input, const CombatDecision& aim,
+    AttackLifecycleState& state) noexcept {
+    if (input.weapon.reloading) {
+        clearCadence(state);
+        if (aim.action == CombatAction::Track && aim.validateForP5()) {
+            return suppressedTrack(input, aim, CombatReason::Reloading);
+        }
+        return validNoOp(input, CombatReason::Reloading);
+    }
+
+    const bool threat = currentVisionThreat(input, aim);
+    if (input.weapon.clipAmmo <= input.weapon.reloadClipThreshold &&
+        input.weapon.reserveAmmo > 0 && input.weapon.canReload &&
+        (input.weapon.clipAmmo == 0 || !threat)) {
+        clearCadence(state);
+        return acceptedReload(input);
+    }
+
+    if (input.weapon.clipAmmo <= 0 && input.weapon.reserveAmmo <= 0) {
+        const auto candidate = preferredSwitchWeapon(input.weapon);
+        if (input.weapon.canSwitch && candidate.isValid()) {
+            clearCadence(state);
+            return acceptedSwitch(input, candidate);
+        }
+        clearCadence(state);
+        return validNoOp(input, CombatReason::NoUsableWeapon);
+    }
+
+    if (input.weapon.clipAmmo <= 0 && input.weapon.reserveAmmo > 0 &&
+        !input.weapon.canReload) {
+        const auto candidate = preferredSwitchWeapon(input.weapon);
+        if (input.weapon.canSwitch && candidate.isValid()) {
+            clearCadence(state);
+            return acceptedSwitch(input, candidate);
+        }
+    }
+    return std::nullopt;
+}
+
 CombatReason rejectionReason(CombatInputError error) noexcept {
     switch (error) {
     case CombatInputError::None:
@@ -386,6 +557,9 @@ WeaponValidation WeaponSnapshot::validate() const noexcept {
     if (clipAmmo < 0 || clipAmmo > kMaxAmmo || reserveAmmo < 0 || reserveAmmo > kMaxAmmo) {
         return {WeaponValidationError::ImpossibleAmmo};
     }
+    if (reloadClipThreshold < 0 || reloadClipThreshold > kMaxAmmo) {
+        return {WeaponValidationError::InvalidReloadThreshold};
+    }
 
     bool activeOwned = false;
     for (std::size_t i = 0; i < ownedCount; ++i) {
@@ -422,8 +596,11 @@ bool WeaponSnapshot::owns(WeaponId weapon) const noexcept {
 bool operator==(const WeaponSnapshot& left, const WeaponSnapshot& right) noexcept {
     if (left.map != right.map || left.round != right.round || left.tick != right.tick ||
         left.observedMicros != right.observedMicros || left.active != right.active ||
+        left.activeClass != right.activeClass ||
         left.ownedCount != right.ownedCount || left.clipAmmo != right.clipAmmo ||
-        left.reserveAmmo != right.reserveAmmo || left.reloading != right.reloading ||
+        left.reserveAmmo != right.reserveAmmo ||
+        left.reloadClipThreshold != right.reloadClipThreshold ||
+        left.reloading != right.reloading ||
         left.canReload != right.canReload || left.canSwitch != right.canSwitch ||
         left.primaryAttackReadyMicros != right.primaryAttackReadyMicros) {
         return false;
@@ -501,6 +678,10 @@ DecisionValidation CombatDecision::validate() const noexcept {
             return {DecisionValidation::Error::MissingAttackButton};
         }
     } else {
+        if (action == CombatAction::Reload &&
+            (buttons & static_cast<ButtonMask>(Button::Reload)) == 0U) {
+            return {DecisionValidation::Error::MissingReloadButton};
+        }
         if (fireMode.has_value()) {
             return {DecisionValidation::Error::UnexpectedFireMode};
         }
@@ -697,61 +878,86 @@ FireAuthorization authorizeFire(const CombatInput& input,
         return result;
     }
     if (!input.alive) {
+        clearCadence(result.nextState);
         result.decision = validNoOp(input, CombatReason::Dead);
         return result;
     }
     if (result.nextState.initialized &&
-        result.nextState.lastFireTick == input.tick) {
-        result.decision = validNoOp(input, CombatReason::DuplicateAttack);
-        result.nextState.attackHeld = false;
+        result.nextState.lastActionTick == input.tick) {
+        const auto duplicateReason = result.nextState.lastAction == CombatAction::Fire
+                                          ? CombatReason::DuplicateAttack
+                                          : CombatReason::DuplicateAction;
+        clearCadence(result.nextState);
+        result.decision = validNoOp(input, duplicateReason);
         return result;
     }
+
+    if (const auto weaponAction = planWeaponAction(input, aim, result.nextState);
+        weaponAction.has_value()) {
+        result.decision = *weaponAction;
+        if (result.decision.action == CombatAction::Reload ||
+            result.decision.action == CombatAction::SwitchWeapon) {
+            if (!result.decision.validateForP5()) {
+                clearCadence(result.nextState);
+                result.decision = validNoOp(input, CombatReason::InvalidInput);
+                return result;
+            }
+            markAction(result.nextState, input, result.decision.action);
+        }
+        return result;
+    }
+
     if (aim.action == CombatAction::NoOp) {
+        clearCadence(result.nextState);
         result.decision = aim;
         return result;
     }
     if (aim.action != CombatAction::Track || aim.inputTick != input.tick ||
         aim.validUntilMicros != input.timeMicros ||
         !aim.validateForP5()) {
+        clearCadence(result.nextState);
         result.decision = validNoOp(input, CombatReason::InvalidInput);
         return result;
     }
     if (aim.reason == CombatReason::ReactionDelay) {
+        clearCadence(result.nextState);
         result.decision = suppressedTrack(input, aim, CombatReason::ReactionDelay);
         return result;
     }
     if (aim.reason != CombatReason::Accepted ||
         aim.source != perception::ObservationSource::Vision ||
         !aim.target.isValid()) {
+        clearCadence(result.nextState);
         result.decision = validNoOp(input, CombatReason::InvalidVisibility);
         return result;
     }
 
     const auto* visual = currentVisualFor(input, aim.target);
     if (visual == nullptr) {
+        clearCadence(result.nextState);
         result.decision = validNoOp(input, CombatReason::InvalidVisibility);
         return result;
     }
     const auto relation = input.world.relation(input.team, aim.target);
     if (relation == perception::Relation::Unknown) {
+        clearCadence(result.nextState);
         result.decision = validNoOp(input, CombatReason::UnknownRelation);
         return result;
     }
     if (relation != perception::Relation::Opponent) {
+        clearCadence(result.nextState);
         result.decision = validNoOp(input, CombatReason::Ally);
         return result;
     }
     if (input.timeMicros <
         reactionReadyAt(visual->identity.observedMicros,
                         input.difficulty.reactionDelayMicros)) {
+        clearCadence(result.nextState);
         result.decision = suppressedTrack(input, aim, CombatReason::ReactionDelay);
         return result;
     }
-    if (input.weapon.reloading) {
-        result.decision = suppressedTrack(input, aim, CombatReason::Reloading);
-        return result;
-    }
     if (input.weapon.clipAmmo <= 0) {
+        clearCadence(result.nextState);
         result.decision = suppressedTrack(input, aim, CombatReason::EmptyClip);
         return result;
     }
@@ -760,10 +966,47 @@ FireAuthorization authorizeFire(const CombatInput& input,
         return result;
     }
 
+    if (result.nextState.cadenceActive &&
+        (result.nextState.cadenceTarget != aim.target ||
+         result.nextState.cadenceWeapon != input.weapon.active)) {
+        clearCadence(result.nextState);
+    }
+    if (result.nextState.cadenceActive &&
+        result.nextState.cadencePauseUntilMicros > input.timeMicros) {
+        result.decision = suppressedTrack(input, aim, CombatReason::Cooldown);
+        return result;
+    }
+    if (result.nextState.cadenceActive &&
+        result.nextState.cadencePauseUntilMicros != 0 &&
+        result.nextState.cadencePauseUntilMicros <= input.timeMicros) {
+        clearCadence(result.nextState);
+    }
+
+    FirePlan plan = result.nextState.cadenceActive
+                        ? result.nextState.cadencePlan
+                        : chooseFirePlan(input, aim.target);
+    if (!plan.valid()) {
+        clearCadence(result.nextState);
+        plan = FirePlan::tap();
+    }
+    if (result.nextState.cadenceActive && plan.pattern == FirePattern::Burst &&
+        result.nextState.cadenceShotsFired >= plan.burstShots) {
+        clearCadence(result.nextState);
+        plan = chooseFirePlan(input, aim.target);
+    }
+    if (result.nextState.cadenceActive && plan.pattern == FirePattern::Burst) {
+        const auto remaining = static_cast<std::uint8_t>(
+            plan.burstShots - result.nextState.cadenceShotsFired);
+        if (input.weapon.clipAmmo < remaining) {
+            clearCadence(result.nextState);
+            plan = boundedBurst(remaining, input.weapon.clipAmmo);
+        }
+    }
+
     auto decision = aim;
     decision.action = CombatAction::Fire;
     decision.fireMode = FireMode::DirectFire;
-    decision.firePlan = FirePlan::tap();
+    decision.firePlan = plan;
     decision.buttons = static_cast<ButtonMask>(Button::Attack);
     decision.selectedWeapon = input.weapon.active;
     decision.source = perception::ObservationSource::Vision;
@@ -774,19 +1017,35 @@ FireAuthorization authorizeFire(const CombatInput& input,
     decision.inputTick = input.tick;
     decision.validUntilMicros = input.timeMicros;
     if (!decision.validateForP5()) {
+        clearCadence(result.nextState);
         result.decision = validNoOp(input, CombatReason::InvalidInput);
         return result;
     }
 
     result.decision = decision;
-    result.nextState.map = input.map;
-    result.nextState.round = input.round;
-    result.nextState.player = input.player;
-    result.nextState.agent = input.agent;
+    markAction(result.nextState, input, CombatAction::Fire);
     result.nextState.lastFireTick = input.tick;
     result.nextState.lastFireMicros = input.timeMicros;
-    result.nextState.attackHeld = false;
-    result.nextState.initialized = true;
+    if (plan.pattern == FirePattern::Burst || plan.pattern == FirePattern::FullAuto) {
+        if (!result.nextState.cadenceActive) {
+            result.nextState.cadenceTarget = aim.target;
+            result.nextState.cadenceWeapon = input.weapon.active;
+            result.nextState.cadencePlan = plan;
+            result.nextState.cadenceShotsFired = 0;
+            result.nextState.cadencePauseUntilMicros = 0;
+            result.nextState.cadenceActive = true;
+        }
+        ++result.nextState.cadenceShotsFired;
+        if (result.nextState.cadenceShotsFired >= cadenceLimit(plan)) {
+            const auto maximum = (std::numeric_limits<std::uint64_t>::max)();
+            result.nextState.cadencePauseUntilMicros =
+                input.timeMicros > maximum - kBurstPauseMicros
+                    ? maximum
+                    : input.timeMicros + kBurstPauseMicros;
+        }
+    } else {
+        clearCadence(result.nextState);
+    }
     return result;
 }
 

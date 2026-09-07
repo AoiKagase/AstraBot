@@ -23,11 +23,13 @@ a::WeaponObservation weaponObservation() {
     observation.tick = {11};
     observation.observedMicros = 1100000;
     observation.activeWeapon = 5;
+    observation.activeClass = c::WeaponSnapshot::WeaponClass::Rifle;
     observation.owned[0] = 5;
     observation.owned[1] = 7;
     observation.ownedCount = 2;
     observation.clipAmmo = 12;
     observation.reserveAmmo = 48;
+    observation.reloadClipThreshold = 3;
     observation.canReload = true;
     observation.canSwitch = true;
     observation.primaryAttackReadyMicros = 1100100;
@@ -65,6 +67,8 @@ void testAdapterConversion() {
     assert(converted.snapshot.owns(c::WeaponId{7}));
     assert(converted.snapshot.clipAmmo == 12);
     assert(converted.snapshot.reserveAmmo == 48);
+    assert(converted.snapshot.activeClass == c::WeaponSnapshot::WeaponClass::Rifle);
+    assert(converted.snapshot.reloadClipThreshold == 3);
     assert(converted.snapshot.canReload);
     assert(converted.snapshot.canSwitch);
 
@@ -79,6 +83,13 @@ void testAdapterConversion() {
     const auto impossible = a::toWeaponSnapshot(invalid);
     assert(!impossible);
     assert(impossible.error == a::WeaponConversionError::ImpossibleAmmo);
+
+    invalid = weaponObservation();
+    invalid.reloadClipThreshold = c::kMaxAmmo + 1;
+    const auto invalidThreshold = a::toWeaponSnapshot(invalid);
+    assert(!invalidThreshold);
+    assert(invalidThreshold.error ==
+           a::WeaponConversionError::InvalidReloadThreshold);
 
     invalid = weaponObservation();
     invalid.activeWeapon = 0;

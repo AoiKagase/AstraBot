@@ -1,7 +1,7 @@
 # Phase 5 plan — Combat Baseline
 
-Status: P5-01, P5-02, and P5-03 are implemented; P5-04 is in progress;
-P5-05 through P5-07 are planned.  This document is the single authoritative
+Status: P5-01 through P5-05 are implemented; P5-06 and P5-07 are planned.
+This document is the single authoritative
 Phase 5 plan.  Phase 5 completion is not project-wide Finish, and real
 HLDS/ReHLDS combat acceptance remains a post-Finish activity.
 

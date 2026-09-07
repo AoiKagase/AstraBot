@@ -19,10 +19,13 @@ struct WeaponObservation {
     core::TickId tick{};
     std::uint64_t observedMicros{0};
     std::uint16_t activeWeapon{0};
+    core::combat::WeaponSnapshot::WeaponClass activeClass{
+        core::combat::WeaponSnapshot::WeaponClass::Unknown};
     std::array<std::uint16_t, core::combat::kMaxOwnedWeapons> owned{};
     std::size_t ownedCount{0};
     std::int32_t clipAmmo{0};
     std::int32_t reserveAmmo{0};
+    std::int32_t reloadClipThreshold{0};
     bool reloading{false};
     bool canReload{false};
     bool canSwitch{false};
@@ -36,6 +39,7 @@ enum class WeaponConversionError : std::uint8_t {
     DuplicateWeapon,
     InvalidActiveWeapon,
     ImpossibleAmmo,
+    InvalidReloadThreshold,
 };
 
 struct WeaponConversionResult {

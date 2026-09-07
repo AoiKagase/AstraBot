@@ -624,6 +624,24 @@ if(ASTRABOT_BUILD_TESTS)
         COMMAND astrabot_combat_fire_tests
     )
 
+    add_executable(astrabot_combat_weapon_tests
+        tests/combat_weapon_tests.cpp
+    )
+    target_link_libraries(astrabot_combat_weapon_tests PRIVATE astrabot_core)
+    target_compile_features(astrabot_combat_weapon_tests PRIVATE cxx_std_17)
+    target_include_directories(astrabot_combat_weapon_tests
+        PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+    set_target_properties(astrabot_combat_weapon_tests PROPERTIES
+        CXX_EXTENSIONS OFF
+    )
+    astrabot_enable_warnings(astrabot_combat_weapon_tests)
+
+    add_test(
+        NAME astrabot.combat.weapon_handling
+        COMMAND astrabot_combat_weapon_tests
+    )
+
     add_executable(astrabot_player_registry_tests
         tests/host/player_registry_tests.cpp
     )
