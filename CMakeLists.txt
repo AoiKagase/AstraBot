@@ -76,6 +76,7 @@ endfunction()
 
 add_library(astrabot_core STATIC
     src/core/action_planner.cpp
+    src/core/tactical_planner.cpp
     src/core/combat.cpp
     src/core/team_reports.cpp
     src/core/world_model.cpp
@@ -696,6 +697,24 @@ if(ASTRABOT_BUILD_TESTS)
     add_test(
         NAME astrabot.action_planner
         COMMAND astrabot_action_planner_tests
+    )
+
+    add_executable(astrabot_tactical_planner_tests
+        tests/tactical_planner_tests.cpp
+    )
+    target_link_libraries(astrabot_tactical_planner_tests PRIVATE astrabot_core)
+    target_compile_features(astrabot_tactical_planner_tests PRIVATE cxx_std_17)
+    target_include_directories(astrabot_tactical_planner_tests
+        PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+    set_target_properties(astrabot_tactical_planner_tests PROPERTIES
+        CXX_EXTENSIONS OFF
+    )
+    astrabot_enable_warnings(astrabot_tactical_planner_tests)
+
+    add_test(
+        NAME astrabot.tactical_planner
+        COMMAND astrabot_tactical_planner_tests
     )
 
     add_executable(astrabot_player_registry_tests

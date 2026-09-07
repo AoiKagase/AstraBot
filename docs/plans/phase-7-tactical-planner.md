@@ -109,6 +109,17 @@ Entry player dies → Support reevaluates
 Record the result as:
 
 ```text
-Phase 7 Offline: PASS / FAIL
-```
+Phase 7 Offline: PASS
 
+The P7 gate passed on the implementation tree after the tactical-planner
+focused test and the canonical verification run:
+
+- Windows portable x86 Debug: 58/58 tests passed.
+- Windows Metamod-P x86 Debug: 76/76 tests passed.
+- Windows Metamod-P x86 Release: adapter artifact and the six required
+  undecorated exports passed.
+- The focused P7 scenario test passed before the canonical run.
+
+This is offline evidence only. Live HLDS/ReHLDS and real-device acceptance
+remain post-Finish validation.
+```
