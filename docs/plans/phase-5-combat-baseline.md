@@ -57,6 +57,7 @@ cooldowns.
 
 - one action: `NoOp`, `Track`, `Fire`, `Reload`, or `SwitchWeapon`;
 - an optional generation-safe target `PlayerId`;
+- an optional `combat::FireMode` when the action is `Fire`;
 - bounded view angles and the command button mask;
 - an optional selected weapon value;
 - the source, age, and confidence of the knowledge used for the decision;
@@ -69,6 +70,26 @@ through the existing `(PlayerId, TickId, BotCommand)` host path.  The existing
 represented by a value-level selection request and is translated by the
 adapter; no new DLL export or AMXX/ReAPI public surface is added.
 
+### Fire-mode extension point
+
+`combat::FireMode` is a small SDK-independent value enum carried by a future
+fire decision so the action contract can distinguish the reason for firing:
+
+- `DirectFire`: the only mode implemented by P5; it requires a current valid
+  direct visual observation of the same target.
+- `Wallbang`: reserved for a future belief-based decision.  It may use only
+  observer-owned `VisualMemory` / `EnemyBelief`, last-known position,
+  confidence, age, penetration possibility, weapon penetration, friendly-fire
+  risk, and expected damage as value evidence.  It must not read hidden engine
+  positions, and anonymous sound alone must never authorize a player-specific
+  wallbang.
+- `SuppressiveFire`: reserved for a future non-player-specific suppression
+  policy; it is not implemented by P5.
+
+P5 must emit `DirectFire` for every accepted `Fire` decision and reject the two
+reserved modes as unsupported.  This extension point adds no penetration,
+material, wall-geometry, or damage system ahead of the phase that needs it.
+
 ### Knowledge policy
 
 - `ObservationSource::Vision` can identify an opponent when its identity,
@@ -77,7 +98,7 @@ adapter; no new DLL export or AMXX/ReAPI public surface is added.
   preparation, but never upgrades a report into direct current visibility.
 - `ObservationSource::Sound` is anonymous.  It can influence a future
   investigation decision, but it cannot identify a player or authorize aim at
-  or fire on a specific player.
+  or fire on a specific player, including a future `Wallbang` decision.
 - `Relation::Self`, `Ally`, and `Unknown` are never valid fire targets.
   Unknown team state fails closed rather than being treated as hostile.
 - Stale visual memory and team reports may support `Track`, subject to their
@@ -100,7 +121,9 @@ create additional P5 task numbers.
 ### P5-01 — Combat contracts and weapon observation
 
 - Define `WeaponId`, `WeaponSnapshot`, `CombatInput`, `CombatDecision`, action
-  kinds, reason values, and bounded difficulty settings in SDK-free Core.
+  kinds, `FireMode` (`DirectFire`, `Wallbang`, `SuppressiveFire`), reason
+  values, and bounded difficulty settings in SDK-free Core.  Only
+  `DirectFire` is accepted by P5.
 - Define the adapter capability/value conversion for active weapon, inventory,
   ammunition, reload state, attack timing, and switch availability.
 - Reject stale actor/map/round/tick values, invalid weapon state, non-finite
@@ -131,9 +154,10 @@ create additional P5 task numbers.
 
 ### P5-04 — Fire gate and attack lifecycle
 
-- Permit `Fire` only for an alive Bot with a valid current visual target,
-  matching map/round/generation, usable active weapon, available ammunition,
-  and an elapsed primary-attack cooldown.
+- Permit `Fire(DirectFire)` only for an alive Bot with a valid current visual
+  target, matching map/round/generation, usable active weapon, available
+  ammunition, and an elapsed primary-attack cooldown.  `Wallbang` and
+  `SuppressiveFire` remain explicitly unsupported and cannot weaken this gate.
 - Suppress fire for allies, unknown relations, stale-only knowledge, invalid
   visibility provenance, reloading, empty clip, invalid weapon state, and
   rejected or stale host ticks.
@@ -184,8 +208,9 @@ create additional P5 task numbers.
 P5 implementation is ready for its offline gate only when:
 
 1. Every decision is derived from immutable value inputs and has a typed reason.
-2. No anonymous sound, stale-only memory, unknown team, or ally state can
-   authorize a player-specific shot.
+2. P5 `DirectFire` requires current valid direct vision; no anonymous sound,
+   stale-only memory, unknown team, or ally state can authorize a player-
+   specific shot.  Reserved future modes are not accepted by P5.
 3. Angles, timing, ammo, reload, switching, and button transitions are finite,
    bounded, deterministic, and generation-safe.
 4. The adapter is the only owner of engine/weapon objects and no new binary
@@ -201,6 +226,8 @@ P5 implementation is ready for its offline gate only when:
 - Navigation goals, movement replacement, path cost, or team role selection.
 - Grenade selection/throwing, bomb objectives, damage learning, recoil model,
   hit prediction, or persistent Experience storage.
+- Wallbang penetration calculation, material/geometry classification, and
+  suppressive-fire policy; these are future `FireMode` consumers only.
 - Hidden enemy positions, engine-complete target state, or automatic sound
   source identification.
 - AMXX/ReAPI public API additions and third-party GameDLL private integration.
