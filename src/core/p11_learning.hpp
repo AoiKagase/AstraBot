@@ -88,6 +88,7 @@ private:
 
 struct OpponentObservation final {
     PlayerId player{};
+    MapGeneration map{};
     perception::RoundGeneration round{};
     TickId tick{};
     std::uint32_t area{0};
@@ -103,6 +104,7 @@ struct OpponentObservation final {
 
 struct OpponentProfile final {
     PlayerId player{};
+    MapGeneration map{};
     perception::RoundGeneration round{};
     double aggression{0.0};
     double rushProbability{0.0};
@@ -120,6 +122,7 @@ enum class OpponentProfileUpdateReason : std::uint8_t {
     None = 0,
     Accepted,
     InvalidObservation,
+    WrongMap,
     WrongRound,
     CapacityExceeded,
 };
@@ -135,15 +138,21 @@ struct OpponentProfileUpdate final {
 
 class OpponentProfileModel final {
 public:
+    // Profiles live for the active map session only. Persistent Experience is
+    // intentionally a separate model and is not part of this lifecycle.
+    bool beginMap(MapGeneration map) noexcept;
     bool beginRound(perception::RoundGeneration round) noexcept;
     void reset() noexcept;
+    void forget(PlayerId player) noexcept;
     OpponentProfileUpdate observe(const OpponentObservation& observation) noexcept;
     const OpponentProfile* find(PlayerId player) const noexcept;
     std::size_t size() const noexcept { return count_; }
+    MapGeneration map() const noexcept { return map_; }
     perception::RoundGeneration round() const noexcept { return round_; }
 
 private:
     std::array<OpponentProfile, kMaxOpponentProfiles> profiles_{};
+    MapGeneration map_{};
     perception::RoundGeneration round_{};
     std::size_t count_{0};
 };

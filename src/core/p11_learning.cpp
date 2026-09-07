@@ -113,7 +113,7 @@ double ContextualDangerModel::risk(const ContextualDangerKey& key) const noexcep
 }
 
 bool OpponentObservation::valid() const noexcept {
-    return player.isValid() && round.isValid() && tick.isValid() && area != 0U &&
+    return player.isValid() && map.isValid() && round.isValid() && tick.isValid() && area != 0U &&
            validWeapon(weapon) && finiteNonNegative(aggression) && aggression <= 1.0 &&
            finiteNonNegative(rushProbability) && rushProbability <= 1.0 &&
            finiteNonNegative(campProbability) && campProbability <= 1.0 &&
@@ -121,30 +121,54 @@ bool OpponentObservation::valid() const noexcept {
 }
 
 bool OpponentProfile::valid() const noexcept {
-    return player.isValid() && round.isValid() && finiteNonNegative(aggression) &&
+    return player.isValid() && map.isValid() && round.isValid() && finiteNonNegative(aggression) &&
            aggression <= 1.0 && finiteNonNegative(rushProbability) && rushProbability <= 1.0 &&
            finiteNonNegative(campProbability) && campProbability <= 1.0 &&
            finiteNonNegative(rotationSpeed) && rotationSpeed <= 1.0 &&
            validWeapon(preferredWeapon) && observations <= 1'000'000U;
 }
 
-bool OpponentProfileModel::beginRound(perception::RoundGeneration round) noexcept {
-    if (!round.isValid() || (round_.isValid() && round.value <= round_.value)) return false;
-    round_ = round;
+bool OpponentProfileModel::beginMap(MapGeneration map) noexcept {
+    if (!map.isValid() || (map_.isValid() && map.value <= map_.value)) return false;
+    map_ = map;
+    round_ = {};
     profiles_ = {};
     count_ = 0;
     return true;
 }
 
+bool OpponentProfileModel::beginRound(perception::RoundGeneration round) noexcept {
+    if (!round.isValid() || (round_.isValid() && round.value <= round_.value)) return false;
+    round_ = round;
+    return true;
+}
+
 void OpponentProfileModel::reset() noexcept {
     profiles_ = {};
+    map_ = {};
     round_ = {};
     count_ = 0;
+}
+
+void OpponentProfileModel::forget(PlayerId player) noexcept {
+    if (!player.isValid()) return;
+    for (std::size_t i = 0; i < count_; ++i) {
+        if (profiles_[i].player != player) continue;
+        for (std::size_t next = i + 1; next < count_; ++next) {
+            profiles_[next - 1] = profiles_[next];
+        }
+        profiles_[count_ - 1] = {};
+        --count_;
+        return;
+    }
 }
 
 OpponentProfileUpdate OpponentProfileModel::observe(
     const OpponentObservation& observation) noexcept {
     if (!observation.valid()) return {OpponentProfileUpdateReason::InvalidObservation, false};
+    if (!map_.isValid() || observation.map != map_) {
+        return {OpponentProfileUpdateReason::WrongMap, false};
+    }
     if (!round_.isValid() || observation.round != round_) {
         return {OpponentProfileUpdateReason::WrongRound, false};
     }
@@ -159,6 +183,7 @@ OpponentProfileUpdate OpponentProfileModel::observe(
         if (count_ >= profiles_.size()) return {OpponentProfileUpdateReason::CapacityExceeded, false};
         profile = &profiles_[count_++];
         profile->player = observation.player;
+        profile->map = observation.map;
         profile->round = observation.round;
     }
     const auto next = (std::min)(1'000'000U, profile->observations + 1U);
