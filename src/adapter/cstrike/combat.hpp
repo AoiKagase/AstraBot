@@ -54,4 +54,42 @@ struct WeaponConversionResult {
 
 WeaponConversionResult toWeaponSnapshot(const WeaponObservation& observation) noexcept;
 
+// This DTO is the adapter's boundary for one observer frame. It intentionally
+// contains only value contracts; the adapter may fill it from edict_t, CS
+// private data, or decoded messages without exposing those sources to Core.
+struct CombatObservation {
+    core::MapGeneration map{};
+    core::perception::RoundGeneration round{};
+    core::TickId tick{};
+    std::uint64_t timeMicros{0};
+    core::PlayerId player{};
+    core::BotAgentId agent{};
+    bool alive{false};
+    core::perception::Team team{core::perception::Team::Unknown};
+    core::perception::Point eye{};
+    core::ViewAngles view{};
+    core::world::WorldSnapshot world{};
+    core::combat::DifficultySettings difficulty{};
+    WeaponObservation weapon{};
+};
+
+enum class CombatConversionError : std::uint8_t {
+    None = 0,
+    InvalidWeaponObservation,
+    InvalidCombatInput,
+};
+
+struct CombatInputConversionResult {
+    core::combat::CombatInput input{};
+    CombatConversionError error{CombatConversionError::None};
+    bool accepted{false};
+
+    constexpr explicit operator bool() const noexcept {
+        return accepted && error == CombatConversionError::None;
+    }
+};
+
+CombatInputConversionResult toCombatInput(
+    const CombatObservation& observation) noexcept;
+
 } // namespace astrabot::adapter::cstrike

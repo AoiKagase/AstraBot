@@ -77,4 +77,10 @@ void emitMovement(
     }
 }
 
+void emitCombat(const CombatTrace& trace, CombatTraceSink sink) noexcept {
+    if (sink != nullptr) {
+        sink(trace);
+    }
+}
+
 } // namespace astrabot::debug

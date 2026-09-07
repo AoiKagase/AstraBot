@@ -4,6 +4,7 @@
 #pragma once
 
 #include "adapter/cstrike/join_state.hpp"
+#include "core/combat.hpp"
 #include "host/game_host.hpp"
 
 #include <cstdint>
@@ -148,6 +149,8 @@ enum class MovementTraceError : std::uint8_t {
     DispatchTooEarly,
     EngineUnavailable,
     MappingMismatch,
+    WeaponSelectionUnavailable,
+    WeaponSelectionRejected,
 };
 
 struct MovementTrace {
@@ -164,6 +167,37 @@ struct MovementTrace {
 };
 
 using MovementTraceSink = void (*)(const MovementTrace& trace) noexcept;
+
+// Adapter-owned, value-only combat observability. This deliberately records
+// provenance and acceptance facts, never entity pointers or hidden positions.
+struct CombatTrace {
+    astrabot::core::MapGeneration map{};
+    astrabot::core::perception::RoundGeneration round{};
+    astrabot::core::PlayerId player{};
+    astrabot::core::BotAgentId agent{};
+    astrabot::core::PlayerId target{};
+    astrabot::core::perception::ObservationSource source{
+        astrabot::core::perception::ObservationSource::Unknown};
+    std::uint64_t targetAgeMicros{0};
+    astrabot::core::combat::CombatAction action{
+        astrabot::core::combat::CombatAction::NoOp};
+    astrabot::core::combat::CombatReason reason{
+        astrabot::core::combat::CombatReason::None};
+    astrabot::core::combat::WeaponId activeWeapon{};
+    std::int32_t clipAmmo{0};
+    std::int32_t reserveAmmo{0};
+    bool reloading{false};
+    bool cooldownReady{false};
+    std::uint64_t cooldownRemainingMicros{0};
+    astrabot::core::TickId inputTick{};
+    std::uint64_t sequence{0};
+    MovementTraceError transportError{MovementTraceError::None};
+    astrabot::host::HostError hostError{astrabot::host::HostError::None};
+    bool commandBuilt{false};
+    bool commandAccepted{false};
+};
+
+using CombatTraceSink = void (*)(const CombatTrace& trace) noexcept;
 
 const char* attachedIdentityLine() noexcept;
 void emitAttached(TraceSink sink) noexcept;
@@ -185,5 +219,6 @@ void emitRemoval(
 void emitMovement(
     const MovementTrace& trace,
     MovementTraceSink sink) noexcept;
+void emitCombat(const CombatTrace& trace, CombatTraceSink sink) noexcept;
 
 } // namespace astrabot::debug

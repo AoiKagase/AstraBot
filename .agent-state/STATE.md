@@ -1,5 +1,5 @@
 # State
-Status: complete — P4-01 through P4-09 and P5-04 implementation with applicable offline gates.
+Status: complete — P4-01 through P4-09 and P5-01 through P5-07 implementation with the Phase 5 offline gate.
 P5-04 base: main `41a5a10db6561eac688cf477c2656d6a0ba8b4c7`; dedicated branch/worktree:
 `codex/p5-04-directfire` / `.worktrees/p5-04-directfire`.
 P5-04 evidence: `docs/reports/p5-04-fire-gate.md`; DirectFire authorization is Core-only,

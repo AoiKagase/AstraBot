@@ -1,6 +1,6 @@
 # Phase 5 plan — Combat Baseline
 
-Status: P5-01 through P5-05 are implemented; P5-06 and P5-07 are planned.
+Status: P5-01 through P5-07 are implemented; the Phase 5 offline gate has passed.
 This document is the single authoritative
 Phase 5 plan.  Phase 5 completion is not project-wide Finish, and real
 HLDS/ReHLDS combat acceptance remains a post-Finish activity.
@@ -172,7 +172,7 @@ task numbers.
 - Preserve the fire cadence contract (`Tap`, `Burst`, `FullAuto`) for the
   later fire lifecycle; aim alone never emits an attack button.
 
-### P5-04 — DirectFire authorization and attack lifecycle (In progress)
+### P5-04 — DirectFire authorization and attack lifecycle (Implemented)
 
 Permit `Fire(DirectFire)` only when all of the following hold:
 
@@ -206,7 +206,7 @@ Required focused cases are current visibility, lost visibility, stale memory,
 incomplete reaction, no ammunition, cooldown, invalid weapon state, ally
 crossing the fire line, and repeated ticks.
 
-### P5-05 — Fire cadence, reload, and weapon switching (Planned)
+### P5-05 — Fire cadence, reload, and weapon switching (Implemented)
 
 #### Fire cadence
 
@@ -245,7 +245,7 @@ Required focused cases are burst count, cooldown, deterministic cadence,
 visibility interruption, empty clip, zero reserve, threat-time reload
 suppression, stale weapon state, and unusable active-weapon switching.
 
-### P5-06 — Command composition, adapter, host, and observability (Planned)
+### P5-06 — Command composition, adapter, host, and observability (Implemented)
 
 - Convert standard CS weapon and player observations into value contracts
   without leaking `edict_t`, `entvars_t`, GameDLL private data, ReAPI types, or
@@ -261,7 +261,7 @@ suppression, stale weapon state, and unusable active-weapon switching.
   weapon state, cooldown result, and command acceptance; never log raw pointers
   or hidden target state.
 
-### P5-07 — Scenario tests and Phase 5 offline gate (Planned)
+### P5-07 — Scenario tests and Phase 5 offline gate (Implemented)
 
 The minimum portable/fake-host scenario is:
 

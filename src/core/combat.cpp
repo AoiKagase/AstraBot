@@ -447,6 +447,12 @@ void clearCadence(AttackLifecycleState& state) noexcept {
     state.attackHeld = false;
 }
 
+void clearReaction(AttackLifecycleState& state) noexcept {
+    state.reactionTarget = {};
+    state.reactionStartedMicros = 0;
+    state.reactionActive = false;
+}
+
 void markAction(AttackLifecycleState& state, const CombatInput& input,
                 CombatAction action) noexcept {
     state.map = input.map;
@@ -475,6 +481,7 @@ std::optional<CombatDecision> planWeaponAction(
     AttackLifecycleState& state) noexcept {
     if (input.weapon.reloading) {
         clearCadence(state);
+        clearReaction(state);
         if (aim.action == CombatAction::Track && aim.validateForP5()) {
             return suppressedTrack(input, aim, CombatReason::Reloading);
         }
@@ -486,6 +493,7 @@ std::optional<CombatDecision> planWeaponAction(
         input.weapon.reserveAmmo > 0 && input.weapon.canReload &&
         (input.weapon.clipAmmo == 0 || !threat)) {
         clearCadence(state);
+        clearReaction(state);
         return acceptedReload(input);
     }
 
@@ -493,9 +501,11 @@ std::optional<CombatDecision> planWeaponAction(
         const auto candidate = preferredSwitchWeapon(input.weapon);
         if (input.weapon.canSwitch && candidate.isValid()) {
             clearCadence(state);
+            clearReaction(state);
             return acceptedSwitch(input, candidate);
         }
         clearCadence(state);
+        clearReaction(state);
         return validNoOp(input, CombatReason::NoUsableWeapon);
     }
 
@@ -504,6 +514,7 @@ std::optional<CombatDecision> planWeaponAction(
         const auto candidate = preferredSwitchWeapon(input.weapon);
         if (input.weapon.canSwitch && candidate.isValid()) {
             clearCadence(state);
+            clearReaction(state);
             return acceptedSwitch(input, candidate);
         }
     }
@@ -677,10 +688,20 @@ DecisionValidation CombatDecision::validate() const noexcept {
         if ((buttons & static_cast<ButtonMask>(Button::Attack)) == 0U) {
             return {DecisionValidation::Error::MissingAttackButton};
         }
+        if ((buttons & static_cast<ButtonMask>(Button::Reload)) != 0U) {
+            return {DecisionValidation::Error::UnexpectedReloadButton};
+        }
     } else {
+        if ((buttons & static_cast<ButtonMask>(Button::Attack)) != 0U) {
+            return {DecisionValidation::Error::UnexpectedAttackButton};
+        }
         if (action == CombatAction::Reload &&
             (buttons & static_cast<ButtonMask>(Button::Reload)) == 0U) {
             return {DecisionValidation::Error::MissingReloadButton};
+        }
+        if (action != CombatAction::Reload &&
+            (buttons & static_cast<ButtonMask>(Button::Reload)) != 0U) {
+            return {DecisionValidation::Error::UnexpectedReloadButton};
         }
         if (fireMode.has_value()) {
             return {DecisionValidation::Error::UnexpectedFireMode};
@@ -879,6 +900,7 @@ FireAuthorization authorizeFire(const CombatInput& input,
     }
     if (!input.alive) {
         clearCadence(result.nextState);
+        clearReaction(result.nextState);
         result.decision = validNoOp(input, CombatReason::Dead);
         return result;
     }
@@ -888,6 +910,7 @@ FireAuthorization authorizeFire(const CombatInput& input,
                                           ? CombatReason::DuplicateAttack
                                           : CombatReason::DuplicateAction;
         clearCadence(result.nextState);
+        clearReaction(result.nextState);
         result.decision = validNoOp(input, duplicateReason);
         return result;
     }
@@ -909,6 +932,7 @@ FireAuthorization authorizeFire(const CombatInput& input,
 
     if (aim.action == CombatAction::NoOp) {
         clearCadence(result.nextState);
+        clearReaction(result.nextState);
         result.decision = aim;
         return result;
     }
@@ -916,18 +940,16 @@ FireAuthorization authorizeFire(const CombatInput& input,
         aim.validUntilMicros != input.timeMicros ||
         !aim.validateForP5()) {
         clearCadence(result.nextState);
+        clearReaction(result.nextState);
         result.decision = validNoOp(input, CombatReason::InvalidInput);
         return result;
     }
-    if (aim.reason == CombatReason::ReactionDelay) {
-        clearCadence(result.nextState);
-        result.decision = suppressedTrack(input, aim, CombatReason::ReactionDelay);
-        return result;
-    }
-    if (aim.reason != CombatReason::Accepted ||
+    if ((aim.reason != CombatReason::Accepted &&
+         aim.reason != CombatReason::ReactionDelay) ||
         aim.source != perception::ObservationSource::Vision ||
         !aim.target.isValid()) {
         clearCadence(result.nextState);
+        clearReaction(result.nextState);
         result.decision = validNoOp(input, CombatReason::InvalidVisibility);
         return result;
     }
@@ -935,29 +957,45 @@ FireAuthorization authorizeFire(const CombatInput& input,
     const auto* visual = currentVisualFor(input, aim.target);
     if (visual == nullptr) {
         clearCadence(result.nextState);
+        clearReaction(result.nextState);
         result.decision = validNoOp(input, CombatReason::InvalidVisibility);
         return result;
     }
     const auto relation = input.world.relation(input.team, aim.target);
     if (relation == perception::Relation::Unknown) {
         clearCadence(result.nextState);
+        clearReaction(result.nextState);
         result.decision = validNoOp(input, CombatReason::UnknownRelation);
         return result;
     }
     if (relation != perception::Relation::Opponent) {
         clearCadence(result.nextState);
+        clearReaction(result.nextState);
         result.decision = validNoOp(input, CombatReason::Ally);
         return result;
     }
-    if (input.timeMicros <
-        reactionReadyAt(visual->identity.observedMicros,
-                        input.difficulty.reactionDelayMicros)) {
+    if (!result.nextState.reactionActive ||
+        result.nextState.reactionTarget != aim.target) {
+        result.nextState.map = input.map;
+        result.nextState.round = input.round;
+        result.nextState.player = input.player;
+        result.nextState.agent = input.agent;
+        result.nextState.initialized = true;
+        result.nextState.reactionTarget = aim.target;
+        result.nextState.reactionStartedMicros = visual->identity.observedMicros;
+        result.nextState.reactionActive = true;
+    }
+    const auto reactionReady = reactionReadyAt(
+        result.nextState.reactionStartedMicros,
+        input.difficulty.reactionDelayMicros);
+    if (input.timeMicros < reactionReady) {
         clearCadence(result.nextState);
         result.decision = suppressedTrack(input, aim, CombatReason::ReactionDelay);
         return result;
     }
     if (input.weapon.clipAmmo <= 0) {
         clearCadence(result.nextState);
+        clearReaction(result.nextState);
         result.decision = suppressedTrack(input, aim, CombatReason::EmptyClip);
         return result;
     }
@@ -970,6 +1008,7 @@ FireAuthorization authorizeFire(const CombatInput& input,
         (result.nextState.cadenceTarget != aim.target ||
          result.nextState.cadenceWeapon != input.weapon.active)) {
         clearCadence(result.nextState);
+        clearReaction(result.nextState);
     }
     if (result.nextState.cadenceActive &&
         result.nextState.cadencePauseUntilMicros > input.timeMicros) {
@@ -980,6 +1019,7 @@ FireAuthorization authorizeFire(const CombatInput& input,
         result.nextState.cadencePauseUntilMicros != 0 &&
         result.nextState.cadencePauseUntilMicros <= input.timeMicros) {
         clearCadence(result.nextState);
+        clearReaction(result.nextState);
     }
 
     FirePlan plan = result.nextState.cadenceActive
@@ -1047,6 +1087,32 @@ FireAuthorization authorizeFire(const CombatInput& input,
         clearCadence(result.nextState);
     }
     return result;
+}
+
+CommandCompositionResult composeCommand(
+    const CombatDecision& combat, const BotCommand& navigation) noexcept {
+    const auto decisionValidation = combat.validateForP5();
+    if (!decisionValidation) {
+        return {{}, CommandCompositionError::InvalidDecision, false};
+    }
+    if (!navigation.validate()) {
+        return {{}, CommandCompositionError::InvalidNavigationCommand, false};
+    }
+
+    constexpr ButtonMask combatButtons =
+        static_cast<ButtonMask>(Button::Attack) |
+        static_cast<ButtonMask>(Button::Reload);
+    BotCommand command = navigation;
+    command.view = combat.view;
+    command.buttons = (navigation.buttons & ~combatButtons) |
+                      (combat.buttons & combatButtons);
+    command.weaponSelect = combat.action == CombatAction::SwitchWeapon
+                               ? combat.selectedWeapon.value
+                               : kNoWeaponSelection;
+    if (!command.validate()) {
+        return {{}, CommandCompositionError::InvalidNavigationCommand, false};
+    }
+    return {command, CommandCompositionError::None, true};
 }
 
 } // namespace astrabot::core::combat

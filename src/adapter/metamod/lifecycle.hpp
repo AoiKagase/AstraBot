@@ -14,6 +14,8 @@
 #include "adapter/cstrike/vision.hpp"
 #include "adapter/cstrike/sound.hpp"
 #include "adapter/cstrike/visual_effects.hpp"
+#include "adapter/cstrike/combat.hpp"
+#include "core/combat.hpp"
 #include "core/world_model.hpp"
 #include "adapter/cstrike/nav/console.hpp"
 #include "debug/host_trace.hpp"
@@ -32,6 +34,32 @@ struct LifecycleStatus {
     std::uint32_t removalRequests{0};
     std::uint32_t cleanupCompletions{0};
     debug::RemovalError lastRemovalError{debug::RemovalError::None};
+};
+
+enum class CombatSubmitError : std::uint8_t {
+    None = 0,
+    InvalidActor,
+    InvalidMapGeneration,
+    InvalidTick,
+    InvalidAgentBinding,
+    NotJoined,
+    MissingEntity,
+    DeadPlayer,
+    InvalidDecision,
+    InvalidNavigationCommand,
+    TransportRejected,
+};
+
+struct CombatSubmitResult {
+    core::combat::CombatDecision decision{};
+    core::combat::CommandCompositionResult composition{};
+    MovementResult transport{};
+    CombatSubmitError error{CombatSubmitError::None};
+    bool accepted{false};
+
+    constexpr explicit operator bool() const noexcept {
+        return accepted && error == CombatSubmitError::None;
+    }
 };
 
 class LifecycleCoordinator final {
@@ -60,6 +88,16 @@ public:
         core::MapGeneration mapGeneration,
         core::TickId tick,
         const core::BotCommand& command) noexcept;
+    CombatSubmitResult submitCombat(
+        const core::combat::CombatInput& input,
+        const core::combat::CombatDecision& aim,
+        const core::BotCommand& navigation) noexcept;
+    CombatSubmitResult submitCombatDecision(
+        core::PlayerId player,
+        core::MapGeneration mapGeneration,
+        core::TickId tick,
+        const core::combat::CombatDecision& decision,
+        const core::BotCommand& navigation) noexcept;
 
     void messageBegin(
         int messageDestination,
@@ -94,6 +132,13 @@ public:
     }
     void setMovementTraceSink(debug::MovementTraceSink sink) noexcept {
         movement_.setTraceSink(sink);
+    }
+    void setWeaponSelectionHandler(
+        MovementCoordinator::WeaponSelectionHandler handler) noexcept {
+        movement_.setWeaponSelectionHandler(handler);
+    }
+    void setCombatTraceSink(debug::CombatTraceSink sink) noexcept {
+        combatTraceSink_ = sink;
     }
     void setMovementClockForTest(MovementCoordinator::ClockNow now) noexcept {
         movement_.setClockForTest(now);
@@ -139,6 +184,7 @@ private:
         FakeClientCoordinator fake{};
         cstrike::JoinState join{};
         cstrike::MessageDecoder decoder{};
+        core::combat::AttackLifecycleState combat{};
         bool cleanupPending{};
         cstrike::JoinError cleanupError{cstrike::JoinError::None};
     };
@@ -162,6 +208,28 @@ private:
         host::PlayerId player,
         bool mappingPresent,
         bool entityPresent) noexcept;
+    CombatSubmitResult submitComposedCombat(
+        core::PlayerId player,
+        core::MapGeneration mapGeneration,
+        core::perception::RoundGeneration round,
+        core::BotAgentId agent,
+        core::TickId tick,
+        const core::combat::CombatDecision& decision,
+        const core::BotCommand& navigation,
+        const core::combat::CombatInput* input) noexcept;
+    void emitCombatTrace(
+        core::PlayerId player,
+        const core::combat::CombatDecision& decision,
+        core::MapGeneration mapGeneration,
+        core::perception::RoundGeneration round,
+        core::BotAgentId agent,
+        core::TickId tick,
+        std::uint64_t timeMicros,
+        const core::combat::WeaponSnapshot* weapon,
+        const core::combat::CommandCompositionResult& composition,
+        const CombatSubmitResult& result) noexcept;
+    void clearCombatState(core::PlayerId player) noexcept;
+    void clearAllCombatState() noexcept;
     bool dispatchMenu(ClientState&, std::uint8_t selection) noexcept;
     static void onMessage(
         void* context,
@@ -205,6 +273,8 @@ private:
     debug::LifecycleTraceSink traceSink_{nullptr};
     debug::JoinTraceSink joinTraceSink_{nullptr};
     debug::RemovalTraceSink removalTraceSink_{nullptr};
+    debug::CombatTraceSink combatTraceSink_{nullptr};
+    std::uint64_t combatTraceSequence_{0};
 };
 
 LifecycleCoordinator& lifecycleCoordinator() noexcept;

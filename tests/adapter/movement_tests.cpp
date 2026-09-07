@@ -34,7 +34,20 @@ struct EngineCall {
 
 std::vector<EngineCall> gCalls;
 std::vector<astrabot::debug::MovementTrace> gTraces;
+std::vector<std::uint16_t> gWeaponSelections;
 std::uint64_t gClockUs = 0;
+
+bool captureWeaponSelection(edict_t* entity, astrabot::core::WeaponSelection weapon) noexcept {
+    assert(entity != nullptr);
+    gWeaponSelections.push_back(weapon);
+    return true;
+}
+
+bool rejectWeaponSelection(edict_t* entity, astrabot::core::WeaponSelection weapon) noexcept {
+    assert(entity != nullptr);
+    gWeaponSelections.push_back(weapon);
+    return false;
+}
 
 void captureRunPlayerMove(
     edict_t* entity,
@@ -94,6 +107,7 @@ struct Fixture final {
         gClockUs = 1000000U;
         gCalls.clear();
         gTraces.clear();
+        gWeaponSelections.clear();
     }
 
     BotCommand command() const {
@@ -287,6 +301,36 @@ void testEngineUnavailableAndTraceUniqueness() {
     assert(gTraces.back().error == MovementError::EngineUnavailable);
     assert(!gTraces.back().engineCall);
 }
+
+void testWeaponSelectionHandlerOwnsDispatchGate() {
+    Fixture fixture{};
+    fixture.movement.setWeaponSelectionHandler(&captureWeaponSelection);
+    auto command = fixture.command();
+    command.weaponSelect = 7;
+    fixture.armAndAdvance(16500U);
+    assert(fixture.movement.submit(
+        fixture.player, fixture.map, fixture.registry.currentTick(), command).queued());
+    assert(fixture.dispatch().dispatched());
+    assert(gWeaponSelections.size() == 1);
+    assert(gWeaponSelections.front() == 7);
+    assert(gCalls.size() == 1);
+
+    fixture.movement.resetMap();
+    gCalls.clear();
+    gWeaponSelections.clear();
+    fixture.movement.setWeaponSelectionHandler(&rejectWeaponSelection);
+    assert(fixture.registry.startFrame());
+    command.weaponSelect = 8;
+    fixture.armAndAdvance(16500U);
+    assert(fixture.movement.submit(
+        fixture.player, fixture.map, fixture.registry.currentTick(), command).queued());
+    const auto rejected = fixture.dispatch(TickId{3});
+    assert(rejected.rejected());
+    assert(rejected.error == MovementError::WeaponSelectionRejected);
+    assert(gWeaponSelections.size() == 1);
+    assert(gWeaponSelections.front() == 8);
+    assert(gCalls.empty());
+}
 void testIndependentPlayerQueues() {
     Fixture fixture{}; fixture.armAndAdvance(16000);
     const auto second=fixture.registry.registerPlayer(2).event.player;
@@ -312,5 +356,6 @@ int main() {
     testDispatchGuardsAndCleanup();
     testEngineUnavailableAndTraceUniqueness();
     testIndependentPlayerQueues();
+    testWeaponSelectionHandlerOwnsDispatchGate();
     return 0;
 }

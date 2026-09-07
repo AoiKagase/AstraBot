@@ -19,6 +19,7 @@ using astrabot::host::LifecycleEventKind;
 std::vector<std::string> gLogLines;
 std::vector<std::string> gTraceLines;
 std::vector<astrabot::debug::LifecycleTrace> gLifecycleTraces;
+std::vector<astrabot::debug::CombatTrace> gCombatTraces;
 
 edict_t gFakeEntity{};
 char gFakeInfoBuffer[256]{};
@@ -51,6 +52,11 @@ void captureTraceLine(const char* line) noexcept {
 void captureLifecycleTrace(
     const astrabot::debug::LifecycleTrace& trace) noexcept {
     gLifecycleTraces.push_back(trace);
+}
+
+void captureCombatTrace(
+    const astrabot::debug::CombatTrace& trace) noexcept {
+    gCombatTraces.push_back(trace);
 }
 
 void captureHookTables(
@@ -534,6 +540,31 @@ void testTraceSink() {
     assert(gLifecycleTraces.empty());
 }
 
+void testCombatLifecycleRejectsInvalidActorWithTrace() {
+    auto& lifecycle = astrabot::adapter::metamod::lifecycleCoordinator();
+    lifecycle.reset();
+    gCombatTraces.clear();
+    lifecycle.setCombatTraceSink(&captureCombatTrace);
+
+    astrabot::core::combat::CombatDecision decision{};
+    decision.action = astrabot::core::combat::CombatAction::Track;
+    decision.view = {12.0F, -45.0F, 0.0F};
+    decision.confidence = 1.0;
+    decision.reason = astrabot::core::combat::CombatReason::Accepted;
+    decision.inputTick = {7};
+    const auto result = lifecycle.submitCombatDecision(
+        {}, {}, {1}, decision, astrabot::core::BotCommand::neutral(8));
+
+    assert(!result);
+    assert(result.error == astrabot::adapter::metamod::CombatSubmitError::InvalidActor);
+    assert(result.composition);
+    assert(gCombatTraces.size() == 1);
+    assert(gCombatTraces.front().action == decision.action);
+    assert(gCombatTraces.front().inputTick == astrabot::core::TickId{1});
+    assert(gCombatTraces.front().commandBuilt);
+    assert(!gCombatTraces.front().commandAccepted);
+}
+
 } // namespace
 
 int main() {
@@ -543,5 +574,6 @@ int main() {
     testEmptyHookTablesAndInterfaceChecks();
     testLifecycleHooksAndCoordinatorCleanup();
     testTraceSink();
+    testCombatLifecycleRejectsInvalidActorWithTrace();
     return 0;
 }

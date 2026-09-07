@@ -225,6 +225,8 @@ struct DecisionValidation {
         InvalidFirePlan,
         MissingAttackButton,
         MissingReloadButton,
+        UnexpectedAttackButton,
+        UnexpectedReloadButton,
         InvalidSelectedWeapon,
         InvalidKnowledge,
         UnsupportedFireMode,
@@ -276,6 +278,22 @@ struct CombatInput {
     CombatDecision reject() const noexcept;
 };
 
+enum class CommandCompositionError : std::uint8_t {
+    None = 0,
+    InvalidDecision,
+    InvalidNavigationCommand,
+};
+
+struct CommandCompositionResult {
+    BotCommand command{};
+    CommandCompositionError error{CommandCompositionError::None};
+    bool accepted{false};
+
+    constexpr explicit operator bool() const noexcept {
+        return accepted && error == CommandCompositionError::None;
+    }
+};
+
 struct AttackLifecycleState {
     MapGeneration map{};
     perception::RoundGeneration round{};
@@ -290,6 +308,9 @@ struct AttackLifecycleState {
     FirePlan cadencePlan{};
     std::uint8_t cadenceShotsFired{0};
     std::uint64_t cadencePauseUntilMicros{0};
+    PlayerId reactionTarget{};
+    std::uint64_t reactionStartedMicros{0};
+    bool reactionActive{false};
     bool cadenceActive{false};
     bool attackHeld{false};
     bool initialized{false};
@@ -320,5 +341,13 @@ FireAuthorization authorizeFire(
     const CombatInput& input,
     const CombatDecision& aim,
     AttackLifecycleState previous) noexcept;
+
+// Compose the two owners of one host command. Navigation supplies movement,
+// movement buttons, impulse, and duration; combat supplies view, attack or
+// reload, and a value-level weapon selection. The navigation command's
+// combat-owned fields are discarded so stale attack state cannot survive.
+CommandCompositionResult composeCommand(
+    const CombatDecision& combat,
+    const BotCommand& navigation) noexcept;
 
 } // namespace astrabot::core::combat

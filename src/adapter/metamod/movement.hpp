@@ -46,6 +46,8 @@ struct MovementResult {
 class MovementCoordinator final {
 public:
     using ClockNow = std::chrono::steady_clock::time_point (*)() noexcept;
+    using WeaponSelectionHandler = bool (*)(
+        edict_t*, core::WeaponSelection) noexcept;
 
     void configure(
         enginefuncs_t* engineFunctions,
@@ -80,6 +82,11 @@ public:
 
     void setTraceSink(debug::MovementTraceSink sink) noexcept {
         traceSink_ = sink;
+    }
+    // Weapon IDs are translated by the adapter-owned handler. Core and the
+    // transport never interpret CS private weapon objects or command names.
+    void setWeaponSelectionHandler(WeaponSelectionHandler handler) noexcept {
+        weaponSelectionHandler_ = handler;
     }
 
     void setClockForTest(ClockNow now) noexcept {
@@ -130,6 +137,7 @@ private:
     std::uint64_t frameDeltaUs_{0};
     bool clockArmed_{false};
     debug::MovementTraceSink traceSink_{nullptr};
+    WeaponSelectionHandler weaponSelectionHandler_{nullptr};
 };
 
 } // namespace astrabot::adapter::metamod

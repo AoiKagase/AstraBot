@@ -21,6 +21,7 @@ void MovementCoordinator::reset() noexcept {
     engineFunctions_ = nullptr;
     registry_ = nullptr;
     traceSink_ = nullptr;
+    weaponSelectionHandler_ = nullptr;
 }
 
 void MovementCoordinator::resetMap() noexcept {
@@ -261,6 +262,25 @@ MovementResult MovementCoordinator::dispatchOne(
             pending.mapGeneration,
             pending.commandTick,
             pending.command.msec);
+    }
+
+    if (pending.command.weaponSelect != core::kNoWeaponSelection) {
+        if (weaponSelectionHandler_ == nullptr) {
+            return reject(
+                MovementError::WeaponSelectionUnavailable,
+                pending.player,
+                pending.mapGeneration,
+                pending.commandTick,
+                pending.command.msec);
+        }
+        if (!weaponSelectionHandler_(entity, pending.command.weaponSelect)) {
+            return reject(
+                MovementError::WeaponSelectionRejected,
+                pending.player,
+                pending.mapGeneration,
+                pending.commandTick,
+                pending.command.msec);
+        }
     }
 
     const auto dispatchDelta=frameDeltaUs_; // callbacks may reset the map clock

@@ -60,4 +60,35 @@ WeaponConversionResult toWeaponSnapshot(const WeaponObservation& observation) no
     return result;
 }
 
+CombatInputConversionResult toCombatInput(
+    const CombatObservation& observation) noexcept {
+    CombatInputConversionResult result{};
+    auto& input = result.input;
+    input.map = observation.map;
+    input.round = observation.round;
+    input.tick = observation.tick;
+    input.timeMicros = observation.timeMicros;
+    input.player = observation.player;
+    input.agent = observation.agent;
+    input.alive = observation.alive;
+    input.team = observation.team;
+    input.eye = observation.eye;
+    input.view = observation.view;
+    input.world = observation.world;
+    input.difficulty = observation.difficulty;
+
+    const auto weapon = toWeaponSnapshot(observation.weapon);
+    if (!weapon) {
+        result.error = CombatConversionError::InvalidWeaponObservation;
+        return result;
+    }
+    input.weapon = weapon.snapshot;
+    if (!input.validate()) {
+        result.error = CombatConversionError::InvalidCombatInput;
+        return result;
+    }
+    result.accepted = true;
+    return result;
+}
+
 } // namespace astrabot::adapter::cstrike

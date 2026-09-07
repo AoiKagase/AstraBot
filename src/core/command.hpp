@@ -31,6 +31,9 @@ enum class Button : std::uint32_t {
 };
 
 using ButtonMask = std::uint32_t;
+using WeaponSelection = std::uint16_t;
+
+constexpr WeaponSelection kNoWeaponSelection = 0;
 
 constexpr ButtonMask kKnownButtonMask =
     static_cast<ButtonMask>(Button::Attack) |
@@ -96,6 +99,9 @@ struct BotCommand {
     ButtonMask buttons{0};
     std::uint8_t impulse{0};
     std::uint8_t msec{0};
+    // A value-level request consumed by the adapter before movement dispatch.
+    // Zero means that the current weapon must remain selected.
+    WeaponSelection weaponSelect{kNoWeaponSelection};
 
     static constexpr BotCommand neutral(std::uint8_t durationMsec) noexcept {
         BotCommand command{};
@@ -107,8 +113,9 @@ struct BotCommand {
 
     friend bool operator==(const BotCommand& left, const BotCommand& right) noexcept {
         return left.view == right.view && left.movement == right.movement &&
-               left.buttons == right.buttons && left.impulse == right.impulse &&
-               left.msec == right.msec;
+               left.buttons == right.buttons &&
+               left.weaponSelect == right.weaponSelect &&
+               left.impulse == right.impulse && left.msec == right.msec;
     }
     friend bool operator!=(const BotCommand& left, const BotCommand& right) noexcept {
         return !(left == right);

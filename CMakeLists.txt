@@ -554,6 +554,7 @@ if(ASTRABOT_BUILD_TESTS)
     add_executable(astrabot_combat_contract_tests
         tests/combat_contract_tests.cpp
         src/adapter/cstrike/combat.cpp
+        src/debug/host_trace.cpp
     )
     target_link_libraries(astrabot_combat_contract_tests PRIVATE astrabot_core)
     target_compile_features(astrabot_combat_contract_tests PRIVATE cxx_std_17)
@@ -640,6 +641,42 @@ if(ASTRABOT_BUILD_TESTS)
     add_test(
         NAME astrabot.combat.weapon_handling
         COMMAND astrabot_combat_weapon_tests
+    )
+
+    add_executable(astrabot_combat_command_tests
+        tests/combat_command_tests.cpp
+    )
+    target_link_libraries(astrabot_combat_command_tests PRIVATE astrabot_core)
+    target_compile_features(astrabot_combat_command_tests PRIVATE cxx_std_17)
+    target_include_directories(astrabot_combat_command_tests
+        PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+    set_target_properties(astrabot_combat_command_tests PROPERTIES
+        CXX_EXTENSIONS OFF
+    )
+    astrabot_enable_warnings(astrabot_combat_command_tests)
+
+    add_test(
+        NAME astrabot.combat.command_composition
+        COMMAND astrabot_combat_command_tests
+    )
+
+    add_executable(astrabot_combat_replay_tests
+        tests/combat_replay_tests.cpp
+    )
+    target_link_libraries(astrabot_combat_replay_tests PRIVATE astrabot_core)
+    target_compile_features(astrabot_combat_replay_tests PRIVATE cxx_std_17)
+    target_include_directories(astrabot_combat_replay_tests
+        PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+    set_target_properties(astrabot_combat_replay_tests PROPERTIES
+        CXX_EXTENSIONS OFF
+    )
+    astrabot_enable_warnings(astrabot_combat_replay_tests)
+
+    add_test(
+        NAME astrabot.combat.replay
+        COMMAND astrabot_combat_replay_tests
     )
 
     add_executable(astrabot_player_registry_tests

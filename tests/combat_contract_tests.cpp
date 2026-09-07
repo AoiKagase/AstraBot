@@ -2,6 +2,7 @@
 // Copyright (c) 2026 AstraBot contributors.
 
 #include "adapter/cstrike/combat.hpp"
+#include "debug/host_trace.hpp"
 
 #include <cassert>
 #include <limits>
@@ -12,6 +13,15 @@ namespace c = astrabot::core::combat;
 namespace p = astrabot::core::perception;
 namespace w = astrabot::core::world;
 namespace a = astrabot::adapter::cstrike;
+namespace d = astrabot::debug;
+
+d::CombatTrace gCombatTrace{};
+bool gCombatTraceSeen = false;
+
+void captureCombatTrace(const d::CombatTrace& trace) noexcept {
+    gCombatTrace = trace;
+    gCombatTraceSeen = true;
+}
 
 constexpr astrabot::core::PlayerId player{1, {1}};
 constexpr astrabot::core::BotAgentId agent{1};
@@ -138,6 +148,93 @@ void testInputValidationAndSafeRejection() {
     assert(invalid.reject().reason == c::CombatReason::StaleWeapon);
 }
 
+void testCombatObservationConversion() {
+    const auto expected = validInput();
+    a::CombatObservation observation{};
+    observation.map = expected.map;
+    observation.round = expected.round;
+    observation.tick = expected.tick;
+    observation.timeMicros = expected.timeMicros;
+    observation.player = expected.player;
+    observation.agent = expected.agent;
+    observation.alive = expected.alive;
+    observation.team = expected.team;
+    observation.eye = expected.eye;
+    observation.view = expected.view;
+    observation.world = expected.world;
+    observation.difficulty = expected.difficulty;
+    observation.weapon = weaponObservation();
+
+    const auto converted = a::toCombatInput(observation);
+    assert(converted);
+    assert(converted.input.map == expected.map);
+    assert(converted.input.round == expected.round);
+    assert(converted.input.tick == expected.tick);
+    assert(converted.input.timeMicros == expected.timeMicros);
+    assert(converted.input.player == expected.player);
+    assert(converted.input.agent == expected.agent);
+    assert(converted.input.alive == expected.alive);
+    assert(converted.input.team == expected.team);
+    assert(converted.input.eye.x == expected.eye.x);
+    assert(converted.input.eye.y == expected.eye.y);
+    assert(converted.input.eye.z == expected.eye.z);
+    assert(converted.input.view == expected.view);
+    assert(converted.input.weapon.active == c::WeaponId{5});
+    assert(converted.input.weapon.owns(c::WeaponId{7}));
+
+    observation.weapon.owned[1] = observation.weapon.owned[0];
+    const auto rejected = a::toCombatInput(observation);
+    assert(!rejected);
+    assert(rejected.error == a::CombatConversionError::InvalidWeaponObservation);
+}
+
+void testStructuredCombatTrace() {
+    d::CombatTrace expected{};
+    expected.map = {3};
+    expected.round = {7};
+    expected.player = player;
+    expected.agent = agent;
+    expected.target = {2, {4}};
+    expected.source = p::ObservationSource::Vision;
+    expected.targetAgeMicros = 500;
+    expected.action = c::CombatAction::Fire;
+    expected.reason = c::CombatReason::Accepted;
+    expected.activeWeapon = {5};
+    expected.clipAmmo = 12;
+    expected.reserveAmmo = 48;
+    expected.cooldownReady = true;
+    expected.inputTick = {11};
+    expected.sequence = 42;
+    expected.transportError = d::MovementTraceError::WeaponSelectionRejected;
+    expected.hostError = astrabot::host::HostError::Rejected;
+    expected.commandBuilt = true;
+    expected.commandAccepted = false;
+
+    gCombatTrace = {};
+    gCombatTraceSeen = false;
+    d::emitCombat(expected, &captureCombatTrace);
+    assert(gCombatTraceSeen);
+    assert(gCombatTrace.map == expected.map);
+    assert(gCombatTrace.round == expected.round);
+    assert(gCombatTrace.player == expected.player);
+    assert(gCombatTrace.agent == expected.agent);
+    assert(gCombatTrace.target == expected.target);
+    assert(gCombatTrace.source == expected.source);
+    assert(gCombatTrace.targetAgeMicros == expected.targetAgeMicros);
+    assert(gCombatTrace.action == expected.action);
+    assert(gCombatTrace.reason == expected.reason);
+    assert(gCombatTrace.activeWeapon == expected.activeWeapon);
+    assert(gCombatTrace.clipAmmo == expected.clipAmmo);
+    assert(gCombatTrace.reserveAmmo == expected.reserveAmmo);
+    assert(gCombatTrace.cooldownReady == expected.cooldownReady);
+    assert(gCombatTrace.inputTick == expected.inputTick);
+    assert(gCombatTrace.sequence == expected.sequence);
+    assert(gCombatTrace.transportError == expected.transportError);
+    assert(gCombatTrace.hostError == expected.hostError);
+    assert(gCombatTrace.commandBuilt == expected.commandBuilt);
+    assert(gCombatTrace.commandAccepted == expected.commandAccepted);
+}
+
 void testFireModeExtensionAndDecisionValidation() {
     assert(c::FirePlan::tap().valid());
     assert(c::FirePlan::burst(3).valid());
@@ -178,5 +275,7 @@ int main() {
     testAdapterConversion();
     testInputValidationAndSafeRejection();
     testFireModeExtensionAndDecisionValidation();
+    testCombatObservationConversion();
+    testStructuredCombatTrace();
     return 0;
 }
