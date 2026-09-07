@@ -75,6 +75,7 @@ function(astrabot_enable_metamod_compatibility target)
 endfunction()
 
 add_library(astrabot_core STATIC
+    src/core/combat.cpp
     src/core/team_reports.cpp
     src/core/world_model.cpp
     src/core/sound_memory.cpp
@@ -250,6 +251,7 @@ if(ASTRABOT_BUILD_METAMOD)
     endforeach()
 
     add_library(astrabot_mm SHARED
+        src/adapter/cstrike/combat.cpp
         src/adapter/cstrike/visual_effects.cpp
         src/adapter/cstrike/sound.cpp
         src/adapter/cstrike/sound_profile.cpp
@@ -547,6 +549,25 @@ if(ASTRABOT_BUILD_TESTS)
     add_test(
         NAME astrabot.portable.contracts
         COMMAND astrabot_portable_contract_tests
+    )
+
+    add_executable(astrabot_combat_contract_tests
+        tests/combat_contract_tests.cpp
+        src/adapter/cstrike/combat.cpp
+    )
+    target_link_libraries(astrabot_combat_contract_tests PRIVATE astrabot_core)
+    target_compile_features(astrabot_combat_contract_tests PRIVATE cxx_std_17)
+    target_include_directories(astrabot_combat_contract_tests
+        PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+    set_target_properties(astrabot_combat_contract_tests PROPERTIES
+        CXX_EXTENSIONS OFF
+    )
+    astrabot_enable_warnings(astrabot_combat_contract_tests)
+
+    add_test(
+        NAME astrabot.combat.contracts
+        COMMAND astrabot_combat_contract_tests
     )
 
     add_executable(astrabot_player_registry_tests
