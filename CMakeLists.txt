@@ -77,6 +77,7 @@ endfunction()
 add_library(astrabot_core STATIC
     src/core/action_planner.cpp
     src/core/tactical_planner.cpp
+    src/core/team_director.cpp
     src/core/combat.cpp
     src/core/team_reports.cpp
     src/core/world_model.cpp
@@ -311,6 +312,17 @@ if(ASTRABOT_BUILD_TESTS)
     target_link_libraries(astrabot_team_reports_tests PRIVATE astrabot_core)
     astrabot_enable_warnings(astrabot_team_reports_tests)
     add_test(NAME astrabot.team_reports COMMAND astrabot_team_reports_tests)
+    add_executable(astrabot_team_director_tests tests/team_director_tests.cpp)
+    target_link_libraries(astrabot_team_director_tests PRIVATE astrabot_core)
+    target_compile_features(astrabot_team_director_tests PRIVATE cxx_std_17)
+    target_include_directories(astrabot_team_director_tests
+        PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+    set_target_properties(astrabot_team_director_tests PROPERTIES
+        CXX_EXTENSIONS OFF
+    )
+    astrabot_enable_warnings(astrabot_team_director_tests)
+    add_test(NAME astrabot.team_director COMMAND astrabot_team_director_tests)
     add_executable(astrabot_distribution_tests tests/nav/distribution_tests.cpp)
     target_link_libraries(astrabot_distribution_tests PRIVATE astrabot_nav astrabot_core)
     astrabot_enable_warnings(astrabot_distribution_tests)
