@@ -161,6 +161,8 @@ enum class CombatReason : std::uint8_t {
     Cooldown,
     ReactionDelay,
     HostRejected,
+    InvalidVisibility,
+    DuplicateAttack,
 };
 
 enum class CombatInputError : std::uint8_t {
@@ -253,6 +255,27 @@ struct CombatInput {
     CombatDecision reject() const noexcept;
 };
 
+struct AttackLifecycleState {
+    MapGeneration map{};
+    perception::RoundGeneration round{};
+    PlayerId player{};
+    BotAgentId agent{};
+    TickId lastFireTick{};
+    std::uint64_t lastFireMicros{0};
+    bool attackHeld{false};
+    bool initialized{false};
+
+    constexpr bool sameContext(const CombatInput& input) const noexcept {
+        return initialized && map == input.map && round == input.round &&
+               player == input.player && agent == input.agent;
+    }
+};
+
+struct FireAuthorization {
+    CombatDecision decision{};
+    AttackLifecycleState nextState{};
+};
+
 // Selects at most one currently usable opponent for the bounded combat
 // pipeline. P5-02 only emits Track or NoOp; it never authorizes firing.
 CombatDecision selectTarget(const CombatInput& input) noexcept;
@@ -260,5 +283,13 @@ CombatDecision selectTarget(const CombatInput& input) noexcept;
 // Calculates a bounded, deterministic view toward the selected target. P5-03
 // only tracks; it never emits an attack input or a fire mode.
 CombatDecision aimTarget(const CombatInput& input) noexcept;
+
+// Authorizes one deterministic DirectFire pulse from a P5-03 aim decision.
+// The lifecycle state is explicit so repeated input frames cannot create
+// duplicate attacks through hidden shared state.
+FireAuthorization authorizeFire(
+    const CombatInput& input,
+    const CombatDecision& aim,
+    AttackLifecycleState previous) noexcept;
 
 } // namespace astrabot::core::combat

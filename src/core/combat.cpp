@@ -231,6 +231,52 @@ CombatDecision validNoOp(const CombatInput& input, CombatReason reason) noexcept
     return decision;
 }
 
+CombatDecision suppressedTrack(const CombatInput& input,
+                               const CombatDecision& aim,
+                               CombatReason reason) noexcept {
+    auto decision = aim;
+    decision.action = CombatAction::Track;
+    decision.fireMode.reset();
+    decision.firePlan.reset();
+    decision.buttons = 0;
+    decision.selectedWeapon = {};
+    decision.reason = reason;
+    decision.inputTick = input.tick;
+    decision.validUntilMicros = input.timeMicros;
+    return decision;
+}
+
+const world::VisualMemory* currentVisualFor(
+    const CombatInput& input, PlayerId target) noexcept {
+    if (input.world.visual == nullptr || !validCandidatePlayer(target) ||
+        input.world.visual->count > input.world.visual->memories.size()) {
+        return nullptr;
+    }
+
+    const auto& visual = *input.world.visual;
+    if (visual.stamp.agent != input.agent ||
+        visual.stamp.observer != input.player ||
+        visual.stamp.map != input.map || visual.stamp.round != input.round ||
+        visual.stamp.tick != input.tick ||
+        visual.stamp.timeMicros != input.timeMicros) {
+        return nullptr;
+    }
+
+    for (std::size_t i = 0; i < visual.count; ++i) {
+        const auto& memory = visual.memories[i];
+        if (memory.target != target ||
+            !validVisualIdentity(memory.identity, input) ||
+            memory.identity.observedMicros != visual.stamp.timeMicros ||
+            memory.lastSeenMicros != memory.identity.observedMicros ||
+            !isFinitePoint(memory.lastKnownPosition) ||
+            !validConfidence(memory.confidence, 1.0)) {
+            continue;
+        }
+        return &memory;
+    }
+    return nullptr;
+}
+
 bool inspectVisual(const CombatInput& input, const world::VisualMemory& memory,
                    TargetCandidate& candidate, RejectionFlags& flags) noexcept {
     if (!validCandidatePlayer(memory.target)) {
@@ -636,6 +682,112 @@ CombatDecision aimTarget(const CombatInput& input) noexcept {
         decision.reason = CombatReason::ReactionDelay;
     }
     return decision;
+}
+
+FireAuthorization authorizeFire(const CombatInput& input,
+                                const CombatDecision& aim,
+                                AttackLifecycleState previous) noexcept {
+    FireAuthorization result{};
+    result.decision = validNoOp(input, CombatReason::InvalidInput);
+    result.nextState = previous.sameContext(input) ? previous : AttackLifecycleState{};
+
+    const auto validation = input.validate();
+    if (!validation) {
+        result.decision = input.reject();
+        return result;
+    }
+    if (!input.alive) {
+        result.decision = validNoOp(input, CombatReason::Dead);
+        return result;
+    }
+    if (result.nextState.initialized &&
+        result.nextState.lastFireTick == input.tick) {
+        result.decision = validNoOp(input, CombatReason::DuplicateAttack);
+        result.nextState.attackHeld = false;
+        return result;
+    }
+    if (aim.action == CombatAction::NoOp) {
+        result.decision = aim;
+        return result;
+    }
+    if (aim.action != CombatAction::Track || aim.inputTick != input.tick ||
+        aim.validUntilMicros != input.timeMicros ||
+        !aim.validateForP5()) {
+        result.decision = validNoOp(input, CombatReason::InvalidInput);
+        return result;
+    }
+    if (aim.reason == CombatReason::ReactionDelay) {
+        result.decision = suppressedTrack(input, aim, CombatReason::ReactionDelay);
+        return result;
+    }
+    if (aim.reason != CombatReason::Accepted ||
+        aim.source != perception::ObservationSource::Vision ||
+        !aim.target.isValid()) {
+        result.decision = validNoOp(input, CombatReason::InvalidVisibility);
+        return result;
+    }
+
+    const auto* visual = currentVisualFor(input, aim.target);
+    if (visual == nullptr) {
+        result.decision = validNoOp(input, CombatReason::InvalidVisibility);
+        return result;
+    }
+    const auto relation = input.world.relation(input.team, aim.target);
+    if (relation == perception::Relation::Unknown) {
+        result.decision = validNoOp(input, CombatReason::UnknownRelation);
+        return result;
+    }
+    if (relation != perception::Relation::Opponent) {
+        result.decision = validNoOp(input, CombatReason::Ally);
+        return result;
+    }
+    if (input.timeMicros <
+        reactionReadyAt(visual->identity.observedMicros,
+                        input.difficulty.reactionDelayMicros)) {
+        result.decision = suppressedTrack(input, aim, CombatReason::ReactionDelay);
+        return result;
+    }
+    if (input.weapon.reloading) {
+        result.decision = suppressedTrack(input, aim, CombatReason::Reloading);
+        return result;
+    }
+    if (input.weapon.clipAmmo <= 0) {
+        result.decision = suppressedTrack(input, aim, CombatReason::EmptyClip);
+        return result;
+    }
+    if (input.weapon.primaryAttackReadyMicros > input.timeMicros) {
+        result.decision = suppressedTrack(input, aim, CombatReason::Cooldown);
+        return result;
+    }
+
+    auto decision = aim;
+    decision.action = CombatAction::Fire;
+    decision.fireMode = FireMode::DirectFire;
+    decision.firePlan = FirePlan::tap();
+    decision.buttons = static_cast<ButtonMask>(Button::Attack);
+    decision.selectedWeapon = input.weapon.active;
+    decision.source = perception::ObservationSource::Vision;
+    decision.targetAgeMicros =
+        input.timeMicros - visual->identity.observedMicros;
+    decision.confidence = visual->confidence;
+    decision.reason = CombatReason::Accepted;
+    decision.inputTick = input.tick;
+    decision.validUntilMicros = input.timeMicros;
+    if (!decision.validateForP5()) {
+        result.decision = validNoOp(input, CombatReason::InvalidInput);
+        return result;
+    }
+
+    result.decision = decision;
+    result.nextState.map = input.map;
+    result.nextState.round = input.round;
+    result.nextState.player = input.player;
+    result.nextState.agent = input.agent;
+    result.nextState.lastFireTick = input.tick;
+    result.nextState.lastFireMicros = input.timeMicros;
+    result.nextState.attackHeld = false;
+    result.nextState.initialized = true;
+    return result;
 }
 
 } // namespace astrabot::core::combat

@@ -1,13 +1,14 @@
 # State
-Status: complete — P4-01 through P4-09 implementation and applicable offline gates.
-Main implementation: 17ae95a6b364e1b1d53b5f50305936966d9dc75f, ff-only from codex/p409-offline-gate.
-Main post-merge gates: Windows portable52/52 (153.70s), Metamod67/67 (195.62s), Linux51/51 (91.23s).
-Release PE32/x86/exact six exports; SHA256624df77ad6df0abf456629ba86995bba68c75a2036f58b3df64f0dbb90040f7d.
-P4 plan: docs/plans/phase-4-perception-world-model.md.
-Completion/capabilities/evidence: docs/reports/p4-09-offline-gate.md; earlier p4-01 through p4-08 reports retained.
-Replay: portable18 and adapter15 rows, two independent processes,10 rejected checker mutations each.
-All main evidence records implementation revision and dirty=false. Final commit changes documentation only.
-No remaining P4 offline implementation work. Post-Finish live acceptance remains unchecked in plan.
-Project-wide Finish is NOT declared. No HLDS/ReHLDS live validation, push, subagents or branch/worktree cleanup.
-Root codex/p307-progress-recovery and unrelated edits preserved. Dedicated branches/worktrees retained.
+Status: complete — P4-01 through P4-09 and P5-04 implementation with applicable offline gates.
+P5-04 base: main `41a5a10db6561eac688cf477c2656d6a0ba8b4c7`; dedicated branch/worktree:
+`codex/p5-04-directfire` / `.worktrees/p5-04-directfire`.
+P5-04 evidence: `docs/reports/p5-04-fire-gate.md`; DirectFire authorization is Core-only,
+Tap-only, explicit lifecycle state, and adds no adapter export.
+P5-04 gates: Windows portable Debug53/53, Metamod Debug68/68, Release PE32/x86 with the
+approved six exports. Linux x86 CI remains continuous but was not run locally for P5-04.
+P4 main implementation and evidence remain `17ae95a6b364e1b1d53b5f50305936966d9dc75f`
+and `docs/reports/p4-09-offline-gate.md`; earlier P4 reports are retained.
+Project-wide Finish is NOT declared. No HLDS/ReHLDS live validation, push, subagents or
+branch/worktree cleanup. Root detached worktree, attached plan, and unrelated changes are
+preserved and are not stage targets.
 Graph/source review and FocalSpan updates completed. Do not stage local FocalSpan files.
