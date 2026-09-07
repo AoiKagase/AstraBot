@@ -2,7 +2,9 @@
 #pragma once
 
 #include "core/experience.hpp"
+#include "core/p11_learning.hpp"
 #include "core/perception_identity.hpp"
+#include "nav/enrichment/traversal_learning.hpp"
 #include "nav/query/route_types.hpp"
 
 #include <cstddef>
@@ -38,6 +40,8 @@ struct AdaptiveTraversalExperience final {
     bool valid() const noexcept;
     double successRate() const noexcept;
     double failureRisk() const noexcept;
+    bool eligible(std::uint32_t minimumHumanAttempts,
+                  double minimumHumanSuccessRate) const noexcept;
 };
 
 struct AdaptiveRouteSettings final {
@@ -51,6 +55,14 @@ struct AdaptiveRouteSettings final {
     double exposureWeight{1.0};
     double trafficWeight{1.0};
     double traversalRiskWeight{1.0};
+    bool learnedTraversalOnly{false};
+    std::uint32_t minHumanTraversalAttempts{3};
+    double minHumanTraversalSuccessRate{0.6};
+    core::learning::ApproachDirection approachDirection{
+        core::learning::ApproachDirection::Unknown};
+    core::combat::WeaponSnapshot::WeaponClass enemyWeaponClass{
+        core::combat::WeaponSnapshot::WeaponClass::Unknown};
+    std::uint32_t likelyEnemyArea{0};
 
     bool valid() const noexcept;
 };
@@ -60,6 +72,7 @@ struct AdaptiveRouteSettings final {
 // route-style policy over geometry and traversal metadata alone.
 struct AdaptiveRouteContext final {
     const core::experience::ExperienceModel* experience{nullptr};
+    const core::learning::ContextualDangerModel* contextualDanger{nullptr};
     const AdaptiveTraversalExperience* traversalExperience{nullptr};
     std::size_t traversalExperienceCount{0};
     AdaptiveRouteSettings settings{};

@@ -103,13 +103,26 @@ NavCostDecision cost(const NavCostContext& input, const void* opaque) noexcept {
     if (input.edge.external) traversal += input.edge.external->additionalCost;
     double traversalExperience = 0.0;
     if (const auto* evidence = traversalEvidence(*context, input)) {
+        if (context->settings.learnedTraversalOnly &&
+            !evidence->eligible(context->settings.minHumanTraversalAttempts,
+                                context->settings.minHumanTraversalSuccessRate)) {
+            return {true, {0.0, 0.0, 0.0, 0.0}};
+        }
         traversal += evidence->failureRisk() * context->settings.traversalRiskWeight;
         traversalExperience = 1.0 - evidence->successRate();
+    } else if (context->settings.learnedTraversalOnly && input.edge.external) {
+        return {true, {0.0, 0.0, 0.0, 0.0}};
     }
 
     const double dangerWeight = context->settings.dangerWeight * weights.danger *
         personalityDanger(context->settings.personality);
-    const double dangerCost = danger * dangerWeight +
+    const double contextualDanger = context->contextualDanger
+        ? context->contextualDanger->risk({input.target.id.value, context->settings.team,
+                                           context->settings.approachDirection,
+                                           context->settings.enemyWeaponClass,
+                                           context->settings.likelyEnemyArea})
+        : 0.0;
+    const double dangerCost = (danger + contextualDanger) * dangerWeight +
         exposure * context->settings.exposureWeight * weights.exposure +
         traffic * context->settings.trafficWeight * weights.traffic;
     const double experienceCost = (familiarity + traversalExperience) *
@@ -144,6 +157,14 @@ double AdaptiveTraversalExperience::failureRisk() const noexcept {
         ? (failedAttempts + failures) / denominator : 0.0;
 }
 
+bool AdaptiveTraversalExperience::eligible(std::uint32_t minimumHumanAttempts,
+                                           double minimumHumanSuccessRate) const noexcept {
+    return valid() && minimumHumanAttempts != 0U &&
+           finiteNonNegative(minimumHumanSuccessRate) && minimumHumanSuccessRate <= 1.0 &&
+           humanAttempts >= static_cast<double>(minimumHumanAttempts) &&
+           humanAttempts > 0.0 && humanSuccess / humanAttempts >= minimumHumanSuccessRate;
+}
+
 bool AdaptiveRouteSettings::valid() const noexcept {
     const auto styleValue = static_cast<std::uint8_t>(this->style);
     const auto personalityValue = static_cast<std::uint8_t>(this->personality);
@@ -152,7 +173,14 @@ bool AdaptiveRouteSettings::valid() const noexcept {
            known(team) && finiteNonNegative(distanceWeight) && finiteNonNegative(traversalWeight) &&
            finiteNonNegative(dangerWeight) && finiteNonNegative(experienceWeight) &&
            finiteNonNegative(exposureWeight) && finiteNonNegative(trafficWeight) &&
-           finiteNonNegative(traversalRiskWeight);
+           finiteNonNegative(traversalRiskWeight) && minHumanTraversalAttempts != 0U &&
+           minHumanTraversalAttempts <= 1'000'000U &&
+           finiteNonNegative(minHumanTraversalSuccessRate) &&
+           minHumanTraversalSuccessRate <= 1.0 &&
+           static_cast<std::uint8_t>(approachDirection) <=
+               static_cast<std::uint8_t>(core::learning::ApproachDirection::Down) &&
+           static_cast<std::uint8_t>(enemyWeaponClass) <=
+               static_cast<std::uint8_t>(core::combat::WeaponSnapshot::WeaponClass::Sniper);
 }
 
 bool AdaptiveRouteContext::valid() const noexcept {

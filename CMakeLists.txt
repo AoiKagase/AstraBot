@@ -83,6 +83,7 @@ add_library(astrabot_core STATIC
     src/core/team_reports.cpp
     src/core/world_model.cpp
     src/core/experience.cpp
+    src/core/p11_learning.cpp
     src/core/sound_memory.cpp
     src/core/visual_memory.cpp
     src/core/perception.cpp
@@ -133,6 +134,7 @@ add_library(astrabot_nav STATIC
     src/nav/corridor/corridor.cpp
     src/debug/nav_command.cpp
     src/nav/runtime/route_session.cpp
+    src/nav/enrichment/traversal_learning.cpp
     src/nav/query/adaptive_route.cpp
     src/nav/query/route_search.cpp
     src/nav/query/graph.cpp
@@ -393,6 +395,10 @@ if(ASTRABOT_BUILD_TESTS)
     target_link_libraries(astrabot_experience_tests PRIVATE astrabot_core)
     astrabot_enable_warnings(astrabot_experience_tests)
     add_test(NAME astrabot.experience COMMAND astrabot_experience_tests)
+    add_executable(astrabot_p11_learning_tests tests/p11_learning_tests.cpp)
+    target_link_libraries(astrabot_p11_learning_tests PRIVATE astrabot_nav astrabot_core)
+    astrabot_enable_warnings(astrabot_p11_learning_tests)
+    add_test(NAME astrabot.p11.learning COMMAND astrabot_p11_learning_tests)
     if(ASTRABOT_BUILD_NAV_INSPECTOR)
         add_executable(astrabot_nav_inspection_tests tests/nav/inspection_tests.cpp tools/nav_inspection.cpp)
         target_link_libraries(astrabot_nav_inspection_tests PRIVATE astrabot_nav)

@@ -10,6 +10,7 @@
 
 namespace {
 namespace e = astrabot::core::experience;
+namespace l = astrabot::core::learning;
 namespace p = astrabot::core::perception;
 using namespace astrabot::nav;
 using namespace astrabot::nav::query;
@@ -125,6 +126,49 @@ void invalidContextIsRejected() {
     assert(!result && result.error.field == diagnostics::NavField::RouteCost);
 }
 
+void p11LearningGateAndContextualDanger() {
+    auto a = route_test::Area{1, {{0, 0, 0}, {2, 2, 0}, 0, 0}};
+    auto b = route_test::Area{2, {{3, 0, 0}, {5, 2, 0}, 0, 0}};
+    auto c = route_test::Area{3, {{3, 0, 20}, {5, 2, 20}, 20, 20}};
+    auto d = route_test::Area{4, {{6, 0, 0}, {8, 2, 0}, 0, 0}};
+    a.targets[0] = {3}; b.targets[0] = {4}; c.targets[0] = {4};
+    enrichment::NavTraversalLink link{};
+    link.sourceId = 1; link.generation = 1; link.linkId = 7;
+    link.from = {1}; link.to = {2}; link.entry = {1, 1, 0}; link.exit = {4, 1, 0};
+    enrichment::NavTraversalLinkSet links{};
+    links.links.push_back(link);
+    const auto composed = NavGraph::compose(route_test::snapshot({a, b, c, d}), {}, links,
+                                            {100, 1000, 100000}, {100, 100000});
+    assert(composed);
+    const auto graph = *composed.value;
+    AdaptiveTraversalExperience evidence{7, 2.0, 2.0, 0.0, 0.0, 0.0};
+    AdaptiveRouteContext context{};
+    context.traversalExperience = &evidence;
+    context.traversalExperienceCount = 1;
+    context.settings.learnedTraversalOnly = true;
+    context.settings.experienceWeight = 0.0;
+    auto result = route(graph, context);
+    expectMiddle(result, 3);
+
+    evidence.humanAttempts = 3.0;
+    result = route(graph, context);
+    expectMiddle(result, 2);
+
+    l::ContextualDangerModel danger;
+    const l::ContextualDangerKey key{
+        2, p::Team::Unknown, l::ApproachDirection::Unknown,
+        astrabot::core::combat::WeaponSnapshot::WeaponClass::Unknown, 0};
+    assert(danger.observe({key, 1.0, 1.0, 1}).accepted());
+    context.traversalExperience = nullptr;
+    context.traversalExperienceCount = 0;
+    context.contextualDanger = &danger;
+    context.settings.learnedTraversalOnly = false;
+    context.settings.style = AdaptiveRouteStyle::Safe;
+    context.settings.dangerWeight = 10.0;
+    result = route(diamond(), context);
+    expectMiddle(result, 3);
+}
+
 } // namespace
 
 int main() {
@@ -132,4 +176,5 @@ int main() {
     personalityAndStylesChangeRiskWeighting();
     traversalEvidenceAddsRisk();
     invalidContextIsRejected();
+    p11LearningGateAndContextualDanger();
 }
