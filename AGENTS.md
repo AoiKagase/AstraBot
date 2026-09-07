@@ -122,6 +122,90 @@ explicitly requests committing the local FocalSpan index/configuration.
   cache fallback. See `docs/testing-workflow.md` for the record format and
   workflow details.
 
+## Efficient focused verification and failure triage
+
+Long verification is a phase gate, not an implementation loop. Select the
+smallest check that can falsify the change, and do not start `All` after every
+edit or after every failed command.
+
+### Select the check from the change
+
+1. Inspect the scope first with `rtk git status --short` and
+   `rtk git diff --name-only`. Classify the change before choosing a build.
+2. For documentation, planning, `.gitignore`, or local-index-only changes,
+   do not run CMake or CTest. Use the relevant link/reference or documentation
+   check, `rtk git diff --check`, and the required FocalSpan check.
+3. For one Core source/header or one Core test, reuse the matching portable
+   x86 Debug directory and build only the affected target. Run only the exact
+   registered CTest case with `-R` and `--output-on-failure`.
+4. For adapter, Metamod host, or adapter-test changes, use the matching
+   Metamod x86 Debug directory and exact adapter test. Add the Release/export
+   check only when the adapter artifact, export surface, or Release-only
+   configuration is affected.
+5. For CMake files, test registration, compiler flags, dependency inputs,
+   architecture, generator, or tool-runner changes, reconfigure the affected
+   profile before testing. If the build identity no longer matches, use a new
+   explicitly named directory; never reuse a directory configured with a
+   different generator, architecture, build type, SDK, or dependency.
+6. Run `tools/verify-canonical.ps1 -Profile All` only after the phase's
+   implementation and focused checks are ready for the phase gate. The script
+   may skip profiles through the exact verification cache; a commit, merge,
+   branch switch, or branch deletion alone is not a reason to rerun a passed
+   profile.
+
+During implementation, discover test names without running them:
+
+```powershell
+ctest --test-dir build-portable-x86-test -N
+ctest --test-dir build-metamod-x86-test -N
+```
+
+Then rebuild and run only the affected target/case. Replace the placeholders
+with the actual target and registered CTest name from `ctest -N`:
+
+```powershell
+cmake --build build-portable-x86-test --target <affected-target>
+ctest --test-dir build-portable-x86-test -R '^<exact-test-name>$' --output-on-failure
+```
+
+Use the corresponding `build-metamod-x86-test` directory for adapter work.
+Do not use an unfiltered `ctest --output-on-failure` during implementation;
+the unfiltered suite belongs to the canonical phase gate.
+
+### Triage the first failure before rerunning
+
+Treat the first failing command as evidence. Preserve its command, profile,
+exit code, and first diagnostic, then classify it before rerunning anything:
+
+- **Configure failure:** check the active `VsDevCmd.bat`, x86 target
+  selection, generator, `CMAKE_BUILD_TYPE`, SDK path/SHA, and build options.
+  Correct the mismatch and reconfigure only that profile. Use a fresh build
+  directory when its identity changed; do not hide the cause by retrying the
+  full matrix.
+- **Compile or link failure:** fix the reported source/target and rerun only
+  `cmake --build <matching-build-dir> --target <affected-target>` (add
+  `--verbose` when the command line is needed). Do not rebuild unrelated
+  profiles first.
+- **One CTest failure:** run only that exact test with `-R '^name$'` and
+  `--output-on-failure`, inspect the failure and its fixture, then change the
+  code or test before repeating it. A second identical failure is not useful
+  evidence by itself.
+- **Export failure:** run the Release `dumpbin /exports` check and compare the
+  six required undecorated names. Do not run the Debug CTest suites to diagnose
+  an export-only failure.
+- **Environment, SDK, or runner failure:** verify the toolchain, x86
+  environment, pinned SDK SHA/cleanliness, and the selected build directory.
+  This is an infrastructure correction, not a reason to repeat a long test
+  suite unchanged.
+
+If a canonical run fails after a profile has already passed, fix the cause and
+rerun only the failed profile when the other profiles' build inputs and
+environment identities still match. `tools/verification-cache.ps1` records
+the fingerprint, platform/toolchain/dependency identities, verified `HEAD`,
+and commit tree; never substitute a result from another branch, tree, or
+broader cache fallback. After source, test, CMake, dependency, toolchain, or
+runner changes, let the cache decide which profile is invalidated.
+
 <!-- code-review-graph MCP tools -->
 ## MCP Tools: code-review-graph
 
