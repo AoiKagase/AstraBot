@@ -77,6 +77,23 @@ route A
 route B
 ```
 
+## Implemented contract
+
+`src/nav/query/adaptive_route.*` provides a pure `NavRoutePolicy` adapter for
+the existing A* extension. It keeps the NavMesh immutable and combines:
+
+- geometric distance and built-in/external traversal cost;
+- team-aware danger, encounter, grenade, and death exposure;
+- human/Bot area familiarity from `ExperienceModel`; and
+- optional human/Bot traversal attempts, successes, and failures keyed by
+  published traversal-link ID.
+
+The policy exposes the six route styles `FAST`, `SAFE`, `LOW_EXPOSURE`,
+`LOW_TRAFFIC`, `FLANK`, and `OBJECTIVE_FAST`, plus `Aggressive`, `Balanced`,
+and `Cautious` personality danger weighting. Its context is borrowed only for
+the synchronous search and can be passed through `RouteOptions.policy`.
+Traversal-link discovery and persistence remain outside this phase.
+
 ## P10-06 — Phase 10 Gate
 
 Record the result as:
@@ -84,4 +101,3 @@ Record the result as:
 ```text
 Phase 10 Offline: PASS / FAIL
 ```
-

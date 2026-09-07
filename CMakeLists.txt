@@ -133,6 +133,7 @@ add_library(astrabot_nav STATIC
     src/nav/corridor/corridor.cpp
     src/debug/nav_command.cpp
     src/nav/runtime/route_session.cpp
+    src/nav/query/adaptive_route.cpp
     src/nav/query/route_search.cpp
     src/nav/query/graph.cpp
     src/nav/query/spatial_index.cpp
@@ -147,6 +148,7 @@ add_library(astrabot_nav STATIC
 )
 
 target_compile_features(astrabot_nav PUBLIC cxx_std_17)
+target_link_libraries(astrabot_nav PUBLIC astrabot_core)
 if(MSVC)
     # Debug STL proxy allocation occurs inside noexcept vector constructors/moves.
     # Disable that instrumentation consistently across Nav's public STL ABI so
@@ -565,6 +567,11 @@ if(ASTRABOT_BUILD_TESTS)
     astrabot_enable_warnings(astrabot_nav_route_tests)
     add_test(NAME astrabot.nav.route COMMAND astrabot_nav_route_tests)
     set_tests_properties(astrabot.nav.route PROPERTIES TIMEOUT 30)
+    add_executable(astrabot_nav_adaptive_route_tests tests/nav/adaptive_route_tests.cpp)
+    target_link_libraries(astrabot_nav_adaptive_route_tests PRIVATE astrabot_nav)
+    astrabot_enable_warnings(astrabot_nav_adaptive_route_tests)
+    add_test(NAME astrabot.nav.adaptive_route COMMAND astrabot_nav_adaptive_route_tests)
+    set_tests_properties(astrabot.nav.adaptive_route PROPERTIES TIMEOUT 30)
     add_executable(astrabot_nav_graph_tests tests/nav/graph_tests.cpp)
     target_link_libraries(astrabot_nav_graph_tests PRIVATE astrabot_nav)
     astrabot_enable_warnings(astrabot_nav_graph_tests)
