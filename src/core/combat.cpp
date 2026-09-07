@@ -3,7 +3,10 @@
 
 #include "core/combat.hpp"
 
+#include <algorithm>
 #include <cmath>
+#include <cstdint>
+#include <limits>
 
 namespace astrabot::core::combat {
 namespace {
@@ -81,6 +84,93 @@ bool calculateAngularError(const perception::Point& eye, const perception::Point
     const double yawDelta = shortestAngle(desiredYaw - static_cast<double>(view.yaw));
     error = std::hypot(pitchDelta, yawDelta);
     return std::isfinite(error);
+}
+
+bool calculateAim(const perception::Point& eye, const perception::Point& target,
+                  const ViewAngles& current, ViewAngles& result) noexcept {
+    if (!isFinitePoint(target)) return false;
+    const double dx = target.x - eye.x;
+    const double dy = target.y - eye.y;
+    const double dz = target.z - eye.z;
+    const double horizontal = std::hypot(dx, dy);
+    const double distance = std::hypot(horizontal, dz);
+    if (!std::isfinite(distance) || distance <= 0.0) return false;
+
+    constexpr double kDegreesPerRadian = 57.29577951308232;
+    const double desiredPitch = std::atan2(-dz, horizontal) * kDegreesPerRadian;
+    const double desiredYaw = std::atan2(dy, dx) * kDegreesPerRadian;
+    const double shortestYaw = static_cast<double>(current.yaw) +
+                               shortestAngle(desiredYaw - static_cast<double>(current.yaw));
+    result.pitch = static_cast<float>(std::clamp(desiredPitch, static_cast<double>(kMinPitch),
+                                                  static_cast<double>(kMaxPitch)));
+    result.yaw = static_cast<float>(shortestAngle(shortestYaw));
+    result.roll = current.roll;
+    return isFiniteView(result) && inRange(result);
+}
+
+bool resolveTargetPoint(const CombatInput& input, const CombatDecision& selection,
+                        perception::Point& point, std::uint64_t& observedMicros) noexcept {
+    if (!selection.target.isValid()) return false;
+    if (selection.source == perception::ObservationSource::Vision) {
+        for (std::size_t i = 0; i < input.world.visual->count; ++i) {
+            const auto& memory = input.world.visual->memories[i];
+            if (memory.target == selection.target && memory.identity.source == selection.source) {
+                point = memory.lastKnownPosition;
+                observedMicros = memory.identity.observedMicros;
+                return isFinitePoint(point);
+            }
+        }
+    } else if (selection.source == perception::ObservationSource::TeamReport &&
+               input.world.reports != nullptr) {
+        for (std::size_t i = 0; i < input.world.reports->count; ++i) {
+            const auto& report = input.world.reports->reports[i].report;
+            if (report.target == selection.target &&
+                report.identity.source == selection.source) {
+                point = report.position;
+                observedMicros = report.origin.observedMicros;
+                return isFinitePoint(point);
+            }
+        }
+    }
+    return false;
+}
+
+std::uint64_t mix(std::uint64_t value) noexcept {
+    value ^= value >> 30U;
+    value *= UINT64_C(0xbf58476d1ce4e5b9);
+    value ^= value >> 27U;
+    value *= UINT64_C(0x94d049bb133111eb);
+    return value ^ (value >> 31U);
+}
+
+std::uint64_t aimSeed(const CombatInput& input, const CombatDecision& selection,
+                      std::uint64_t stream) noexcept {
+    std::uint64_t seed = UINT64_C(0x9e3779b97f4a7c15) ^ stream;
+    seed = mix(seed ^ input.agent.value);
+    seed = mix(seed ^ input.map.value);
+    seed = mix(seed ^ input.round.value);
+    seed = mix(seed ^ input.tick.value);
+    seed = mix(seed ^ (static_cast<std::uint64_t>(selection.target.slot) << 32U));
+    seed = mix(seed ^ selection.target.generation.value);
+    seed = mix(seed ^ static_cast<std::uint64_t>(selection.source));
+    return seed;
+}
+
+double signedUnit(std::uint64_t seed) noexcept {
+    constexpr double kUnitScale = 1.0 / 9007199254740992.0;
+    return static_cast<double>(mix(seed) >> 11U) * kUnitScale * 2.0 - 1.0;
+}
+
+double effectiveError(float configured, std::uint8_t quality) noexcept {
+    const double difficulty = static_cast<double>(100U - quality) / 100.0;
+    return static_cast<double>(configured) * difficulty;
+}
+
+std::uint64_t reactionReadyAt(std::uint64_t observedMicros,
+                              std::uint64_t delayMicros) noexcept {
+    const auto maximum = (std::numeric_limits<std::uint64_t>::max)();
+    if (observedMicros > maximum - delayMicros) return maximum;
+    return observedMicros + delayMicros;
 }
 
 bool validVisualIdentity(const perception::ObservationIdentity& identity,
@@ -313,6 +403,18 @@ bool DifficultySettings::valid() const noexcept {
            decisionQuality <= kMaxDecisionQuality;
 }
 
+bool FirePlan::valid() const noexcept {
+    switch (pattern) {
+    case FirePattern::Tap:
+        return burstShots == 1;
+    case FirePattern::Burst:
+        return burstShots >= 2 && burstShots <= kMaxBurstShots;
+    case FirePattern::FullAuto:
+        return burstShots == 0;
+    }
+    return false;
+}
+
 CombatDecision CombatDecision::noOp(TickId tick, CombatReason decisionReason) noexcept {
     CombatDecision decision{};
     decision.reason = decisionReason;
@@ -343,11 +445,22 @@ DecisionValidation CombatDecision::validate() const noexcept {
         if (!fireMode.has_value()) {
             return {DecisionValidation::Error::MissingFireMode};
         }
+        if (!firePlan.has_value()) {
+            return {DecisionValidation::Error::MissingFirePlan};
+        }
+        if (!firePlan->valid()) {
+            return {DecisionValidation::Error::InvalidFirePlan};
+        }
         if ((buttons & static_cast<ButtonMask>(Button::Attack)) == 0U) {
             return {DecisionValidation::Error::MissingAttackButton};
         }
-    } else if (fireMode.has_value()) {
-        return {DecisionValidation::Error::UnexpectedFireMode};
+    } else {
+        if (fireMode.has_value()) {
+            return {DecisionValidation::Error::UnexpectedFireMode};
+        }
+        if (firePlan.has_value()) {
+            return {DecisionValidation::Error::UnexpectedFirePlan};
+        }
     }
     if (action == CombatAction::SwitchWeapon && !selectedWeapon.isValid()) {
         return {DecisionValidation::Error::InvalidSelectedWeapon};
@@ -480,6 +593,49 @@ CombatDecision selectTarget(const CombatInput& input) noexcept {
 
     flags.anonymousSound = input.world.sounds->count != 0;
     return validNoOp(input, noTargetReason(flags));
+}
+
+CombatDecision aimTarget(const CombatInput& input) noexcept {
+    auto decision = selectTarget(input);
+    if (decision.action != CombatAction::Track) return decision;
+
+    perception::Point targetPoint{};
+    std::uint64_t observedMicros = 0;
+    if (!resolveTargetPoint(input, decision, targetPoint, observedMicros)) {
+        return validNoOp(input, CombatReason::StaleTarget);
+    }
+
+    ViewAngles view{};
+    if (!calculateAim(input.eye, targetPoint, input.view, view)) {
+        return validNoOp(input, CombatReason::StaleTarget);
+    }
+
+    const double observationError =
+        effectiveError(input.difficulty.observationErrorDegrees, input.difficulty.decisionQuality) *
+        signedUnit(aimSeed(input, decision, UINT64_C(0x6f62736572766174)));
+    const double predictionError =
+        effectiveError(input.difficulty.predictionErrorDegrees, input.difficulty.decisionQuality) *
+        signedUnit(aimSeed(input, decision, UINT64_C(0x70726564696374)));
+    const double aimNoise =
+        effectiveError(input.difficulty.aimNoiseDegrees, input.difficulty.decisionQuality) *
+        signedUnit(aimSeed(input, decision, UINT64_C(0x61696d2d6e6f6973)));
+    const double totalError = observationError + predictionError + aimNoise;
+    view.pitch = static_cast<float>(std::clamp(
+        static_cast<double>(view.pitch) + totalError, static_cast<double>(kMinPitch),
+        static_cast<double>(kMaxPitch)));
+    view.yaw = static_cast<float>(std::clamp(
+        shortestAngle(static_cast<double>(view.yaw) + totalError),
+        static_cast<double>(kMinYaw), static_cast<double>(kMaxYaw)));
+    if (!isFiniteView(view) || !inRange(view)) {
+        return validNoOp(input, CombatReason::StaleTarget);
+    }
+
+    decision.view = view;
+    decision.validUntilMicros = input.timeMicros;
+    if (input.timeMicros < reactionReadyAt(observedMicros, input.difficulty.reactionDelayMicros)) {
+        decision.reason = CombatReason::ReactionDelay;
+    }
+    return decision;
 }
 
 } // namespace astrabot::core::combat

@@ -128,14 +128,27 @@ void testInputValidationAndSafeRejection() {
 }
 
 void testFireModeExtensionAndDecisionValidation() {
+    assert(c::FirePlan::tap().valid());
+    assert(c::FirePlan::burst(3).valid());
+    assert(c::FirePlan::fullAuto().valid());
+    assert(!c::FirePlan::burst(1).valid());
+    assert(!c::FirePlan::burst(c::kMaxBurstShots + 1).valid());
+    assert(!(c::FirePlan{c::FirePattern::FullAuto, 1}).valid());
+
     const auto noOp = c::CombatDecision::noOp({11}, c::CombatReason::NoTarget);
     assert(noOp.validateForP5());
     assert(!noOp.hasAttackInput());
+
+    auto trackWithPlan = noOp;
+    trackWithPlan.firePlan = c::FirePlan::tap();
+    assert(!trackWithPlan.validate());
+    assert(trackWithPlan.validate().error == c::DecisionValidation::Error::UnexpectedFirePlan);
 
     c::CombatDecision direct{};
     direct.action = c::CombatAction::Fire;
     direct.target = {2, {1}};
     direct.fireMode = c::FireMode::DirectFire;
+    direct.firePlan = c::FirePlan::tap();
     direct.buttons = static_cast<astrabot::core::ButtonMask>(astrabot::core::Button::Attack);
     direct.inputTick = {11};
     assert(direct.validateForP5());

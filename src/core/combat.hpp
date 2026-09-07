@@ -108,6 +108,30 @@ enum class FireMode : std::uint8_t {
     SuppressiveFire,
 };
 
+constexpr std::uint8_t kMaxBurstShots = 8;
+
+// A FirePlan is carried by one Fire decision. It deliberately describes the
+// cadence instead of collapsing future tap/burst/automatic behavior into a
+// persistent attack boolean.
+enum class FirePattern : std::uint8_t {
+    Tap = 0,
+    Burst,
+    FullAuto,
+};
+
+struct FirePlan {
+    FirePattern pattern{FirePattern::Tap};
+    std::uint8_t burstShots{1}; // 0 means no fixed burst count for FullAuto.
+
+    static constexpr FirePlan tap() noexcept { return {FirePattern::Tap, 1}; }
+    static constexpr FirePlan burst(std::uint8_t shots) noexcept {
+        return {FirePattern::Burst, shots};
+    }
+    static constexpr FirePlan fullAuto() noexcept { return {FirePattern::FullAuto, 0}; }
+
+    bool valid() const noexcept;
+};
+
 enum class CombatReason : std::uint8_t {
     None = 0,
     Accepted,
@@ -135,6 +159,7 @@ enum class CombatReason : std::uint8_t {
     Reloading,
     EmptyClip,
     Cooldown,
+    ReactionDelay,
     HostRejected,
 };
 
@@ -172,7 +197,10 @@ struct DecisionValidation {
         UnknownButtons,
         InvalidTarget,
         MissingFireMode,
+        MissingFirePlan,
         UnexpectedFireMode,
+        UnexpectedFirePlan,
+        InvalidFirePlan,
         MissingAttackButton,
         InvalidSelectedWeapon,
         InvalidKnowledge,
@@ -189,6 +217,7 @@ struct CombatDecision {
     CombatAction action{CombatAction::NoOp};
     PlayerId target{};
     std::optional<FireMode> fireMode{};
+    std::optional<FirePlan> firePlan{};
     ViewAngles view{};
     ButtonMask buttons{0};
     WeaponId selectedWeapon{};
@@ -227,5 +256,9 @@ struct CombatInput {
 // Selects at most one currently usable opponent for the bounded combat
 // pipeline. P5-02 only emits Track or NoOp; it never authorizes firing.
 CombatDecision selectTarget(const CombatInput& input) noexcept;
+
+// Calculates a bounded, deterministic view toward the selected target. P5-03
+// only tracks; it never emits an attack input or a fire mode.
+CombatDecision aimTarget(const CombatInput& input) noexcept;
 
 } // namespace astrabot::core::combat
