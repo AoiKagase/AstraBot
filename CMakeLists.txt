@@ -82,6 +82,7 @@ add_library(astrabot_core STATIC
     src/core/combat.cpp
     src/core/team_reports.cpp
     src/core/world_model.cpp
+    src/core/experience.cpp
     src/core/sound_memory.cpp
     src/core/visual_memory.cpp
     src/core/perception.cpp
@@ -386,6 +387,10 @@ if(ASTRABOT_BUILD_TESTS)
     target_link_libraries(astrabot_perception_tests PRIVATE astrabot_core)
     astrabot_enable_warnings(astrabot_perception_tests)
     add_test(NAME astrabot.perception COMMAND astrabot_perception_tests)
+    add_executable(astrabot_experience_tests tests/experience_tests.cpp)
+    target_link_libraries(astrabot_experience_tests PRIVATE astrabot_core)
+    astrabot_enable_warnings(astrabot_experience_tests)
+    add_test(NAME astrabot.experience COMMAND astrabot_experience_tests)
     if(ASTRABOT_BUILD_NAV_INSPECTOR)
         add_executable(astrabot_nav_inspection_tests tests/nav/inspection_tests.cpp tools/nav_inspection.cpp)
         target_link_libraries(astrabot_nav_inspection_tests PRIVATE astrabot_nav)
