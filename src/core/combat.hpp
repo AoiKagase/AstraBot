@@ -224,4 +224,8 @@ struct CombatInput {
     CombatDecision reject() const noexcept;
 };
 
+// Selects at most one currently usable opponent for the bounded combat
+// pipeline. P5-02 only emits Track or NoOp; it never authorizes firing.
+CombatDecision selectTarget(const CombatInput& input) noexcept;
+
 } // namespace astrabot::core::combat

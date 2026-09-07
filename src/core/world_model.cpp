@@ -22,6 +22,7 @@ void WorldModel::reset() noexcept {
 }
 void WorldModel::beginUpdate() noexcept {
     published_ = collecting_ = false; visionCount_ = soundCount_ = 0;
+    roster_ = {};
     diagnostics_.staged = diagnostics_.frameProcessed = 0; diagnostics_.reason = WorldReason::None;
 }
 bool WorldModel::reject(WorldReason reason) noexcept {
@@ -35,6 +36,12 @@ bool WorldModel::advance(const MemoryFrame& frame,const p::TeamRoster& teams) no
         reports_.invalidate();
         visual_.invalidate(MemoryReason::InvalidFrame); sounds_.invalidate(SoundReason::InvalidFrame);
         return reject(WorldReason::InvalidFrame);
+    }
+    if (teams.map() == frame.map) {
+        for (std::size_t i = 0; i < frame.players.size(); ++i) {
+            const auto* member = teams.find(frame.players[i].player);
+            if (member != nullptr) roster_[i] = *member;
+        }
     }
     frame_ = frame; collecting_ = true; return true;
 }
@@ -132,7 +139,12 @@ std::optional<WorldSnapshot> WorldModel::latest(PlayerId player) const noexcept 
     const auto* visual = visual_.latest(player); const auto* sounds = sounds_.latest(player);
     if (!visual || !sounds || !sameStamp(visual->stamp,sounds->stamp) || visual->stamp.map != frame_.map ||
         visual->stamp.round != frame_.round || visual->stamp.tick != frame_.tick || visual->stamp.timeMicros != frame_.timeMicros) return std::nullopt;
-    WorldSnapshot snapshot{visual->stamp,visual,sounds,0,0,0,queues_};
+    WorldSnapshot snapshot{};
+    snapshot.stamp = visual->stamp;
+    snapshot.roster = roster_;
+    snapshot.visual = visual;
+    snapshot.sounds = sounds;
+    snapshot.queues = queues_;
     snapshot.reports=reports_.latest(player);
     if(snapshot.reports) for(std::size_t i=0;i<snapshot.reports->count;++i) {
         const auto& report=snapshot.reports->reports[i].report;
@@ -151,6 +163,15 @@ std::optional<WorldSnapshot> WorldModel::latest(PlayerId player) const noexcept 
         snapshot.maxReceiptDelayMicros = (std::max)(snapshot.maxReceiptDelayMicros,id.receivedMicros-id.observedMicros);
     }
     return snapshot;
+}
+perception::Relation WorldSnapshot::relation(perception::Team observerTeam,PlayerId target) const noexcept {
+    if (!stamp.observer.isValid() || !target.isValid() || target.slot > roster.size()) return perception::Relation::Unknown;
+    const auto& member = roster[target.slot - 1U];
+    const bool observerPlaying = observerTeam == perception::Team::Terrorist || observerTeam == perception::Team::CounterTerrorist;
+    const bool targetPlaying = member.team == perception::Team::Terrorist || member.team == perception::Team::CounterTerrorist;
+    if (member.player != target || !observerPlaying || !targetPlaying) return perception::Relation::Unknown;
+    if (target == stamp.observer) return perception::Relation::Self;
+    return observerTeam == member.team ? perception::Relation::Ally : perception::Relation::Opponent;
 }
 std::optional<KnownPosition> WorldSnapshot::known(PlayerId target) const noexcept {
     if(visual) for(std::size_t i=0;i<visual->count;++i) {

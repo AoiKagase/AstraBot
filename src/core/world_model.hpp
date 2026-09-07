@@ -23,6 +23,9 @@ struct KnownPosition {
 };
 struct WorldSnapshot {
     perception::Stamp stamp{};
+    // Current frame roster copied by value. A matching PlayerId is required;
+    // a slot match with a different generation is unknown.
+    std::array<perception::TeamMember,perception::kPlayerCapacity> roster{};
     const MemorySnapshot* visual{};
     const SoundSnapshot* sounds{};
     std::uint64_t oldestVisualAgeMicros{}, oldestSoundAgeMicros{}, maxReceiptDelayMicros{};
@@ -31,6 +34,7 @@ struct WorldSnapshot {
     std::array<const PositionDistribution*,perception::kCandidateCapacity> distributions{};
     const ReportSnapshot* reports{};
     std::uint64_t oldestReportAgeMicros{};
+    perception::Relation relation(perception::Team observerTeam,PlayerId target) const noexcept;
     std::optional<KnownPosition> known(PlayerId target) const noexcept;
 };
 // Single owner of canonical memories. Snapshots borrow these memories until the
@@ -82,6 +86,7 @@ private:
     TeamReportModel reports_{};
     struct DistributionEntry { PlayerId observer{}, target{}; perception::ObservationIdentity identity{}; PositionDistribution value{}; };
     std::array<std::array<DistributionEntry,32>,32> distributions_{};
+    std::array<perception::TeamMember,perception::kPlayerCapacity> roster_{};
     MemoryFrame frame_{};
     std::array<perception::ObservationBatch,visionCapacity> visionInputs_{};
     std::array<SoundInput,soundCapacity> soundInputs_{};

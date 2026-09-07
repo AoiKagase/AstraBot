@@ -43,6 +43,18 @@ void history() {
     assert(world->latest(actor)->visual->count == 0);
     assert(!world->stage(batch) && !world->publish());
 }
+void rosterSnapshot() {
+    auto world=std::make_unique<w::WorldModel>(); auto f=frame(); p::TeamRoster teams;
+    assert(teams.activate(f.map)); assert(teams.bind(f.map,actor)); assert(teams.bind(f.map,target));
+    assert(teams.update(f.map,actor,p::Team::CounterTerrorist)); assert(teams.update(f.map,target,p::Team::Terrorist));
+    assert(world->advance(f,teams)); assert(world->publish()); const auto snapshot=world->latest(actor); assert(snapshot);
+    assert(snapshot->roster[target.slot-1U].player == target);
+    assert(snapshot->roster[target.slot-1U].team == p::Team::Terrorist);
+    assert(snapshot->relation(p::Team::CounterTerrorist,target)==p::Relation::Opponent);
+    assert(snapshot->relation(p::Team::CounterTerrorist,actor)==p::Relation::Self);
+    assert(snapshot->relation(p::Team::CounterTerrorist,{32,{2}})==p::Relation::Unknown);
+    assert(snapshot->relation(p::Team::Unknown,target)==p::Relation::Unknown);
+}
 std::string replay(bool reverse) {
     auto world=std::make_unique<w::WorldModel>(); auto f=frame(); std::ostringstream out; out << std::setprecision(17);
     for (unsigned step=0;step<12;++step) {
@@ -107,4 +119,4 @@ void capacity() {
     ++f.tick.value; ++f.timeMicros; assert(world->advance(f)); assert(world->sounds().diagnostics().frameVisits == 512);
     assert(world->publish()); std::cout << "WorldModel bytes: " << sizeof(w::WorldModel) << '\n';
 }
-int main() { history(); assert(replay(false)==replay(true)); conflictsAndRetirement(); invalidInputs(); capacity(); }
+int main() { history(); rosterSnapshot(); assert(replay(false)==replay(true)); conflictsAndRetirement(); invalidInputs(); capacity(); }

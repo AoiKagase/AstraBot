@@ -570,6 +570,24 @@ if(ASTRABOT_BUILD_TESTS)
         COMMAND astrabot_combat_contract_tests
     )
 
+    add_executable(astrabot_combat_target_tests
+        tests/combat_target_tests.cpp
+    )
+    target_link_libraries(astrabot_combat_target_tests PRIVATE astrabot_core)
+    target_compile_features(astrabot_combat_target_tests PRIVATE cxx_std_17)
+    target_include_directories(astrabot_combat_target_tests
+        PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+    set_target_properties(astrabot_combat_target_tests PROPERTIES
+        CXX_EXTENSIONS OFF
+    )
+    astrabot_enable_warnings(astrabot_combat_target_tests)
+
+    add_test(
+        NAME astrabot.combat.target_selection
+        COMMAND astrabot_combat_target_tests
+    )
+
     add_executable(astrabot_player_registry_tests
         tests/host/player_registry_tests.cpp
     )

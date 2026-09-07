@@ -38,6 +38,171 @@ bool sameStamp(const world::WorldSnapshot& snapshot, const CombatInput& input) n
     return sameStamp(snapshot.stamp, expected);
 }
 
+struct TargetCandidate {
+    PlayerId target{};
+    perception::ObservationSource source{perception::ObservationSource::Unknown};
+    std::uint64_t observedMicros{0};
+    std::uint64_t ageMicros{0};
+    double confidence{0.0};
+    double angularError{0.0};
+};
+
+struct RejectionFlags {
+    bool unknownRelation{false};
+    bool ally{false};
+    bool stale{false};
+    bool anonymousSound{false};
+};
+
+bool validCandidatePlayer(PlayerId player) noexcept {
+    return player.isValid() && player.slot <= perception::kPlayerCapacity;
+}
+
+double shortestAngle(double delta) noexcept {
+    while (delta > 180.0) delta -= 360.0;
+    while (delta < -180.0) delta += 360.0;
+    return delta;
+}
+
+bool calculateAngularError(const perception::Point& eye, const perception::Point& target,
+                           const ViewAngles& view, double& error) noexcept {
+    if (!isFinitePoint(target)) return false;
+    const double dx = target.x - eye.x;
+    const double dy = target.y - eye.y;
+    const double dz = target.z - eye.z;
+    const double horizontal = std::hypot(dx, dy);
+    const double distance = std::hypot(horizontal, dz);
+    if (!std::isfinite(distance) || distance <= 0.0) return false;
+
+    constexpr double kDegreesPerRadian = 57.29577951308232;
+    const double desiredPitch = std::atan2(-dz, horizontal) * kDegreesPerRadian;
+    const double desiredYaw = std::atan2(dy, dx) * kDegreesPerRadian;
+    const double pitchDelta = desiredPitch - static_cast<double>(view.pitch);
+    const double yawDelta = shortestAngle(desiredYaw - static_cast<double>(view.yaw));
+    error = std::hypot(pitchDelta, yawDelta);
+    return std::isfinite(error);
+}
+
+bool validVisualIdentity(const perception::ObservationIdentity& identity,
+                         const CombatInput& input) noexcept {
+    return identity.source == perception::ObservationSource::Vision &&
+           identity.map == input.map && identity.round == input.round &&
+           identity.validAt(input.timeMicros);
+}
+
+bool validReportIdentity(const world::TeamReport& report, const CombatInput& input) noexcept {
+    return report.origin.source == perception::ObservationSource::Vision &&
+           report.origin.map == input.map && report.origin.round == input.round &&
+           report.origin.validAt(input.timeMicros) &&
+           report.identity.source == perception::ObservationSource::TeamReport &&
+           report.identity.map == input.map && report.identity.round == input.round &&
+           report.identity.validAt(input.timeMicros) &&
+           report.identity.observedMicros == report.origin.observedMicros &&
+           report.origin.receivedMicros <= report.sentMicros &&
+           report.sentMicros <= report.identity.receivedMicros &&
+           report.sentMicros <= input.timeMicros;
+}
+
+bool validConfidence(double confidence, double maximum) noexcept {
+    return std::isfinite(confidence) && confidence > 0.0 && confidence <= maximum;
+}
+
+int sourceRank(perception::ObservationSource source) noexcept {
+    return source == perception::ObservationSource::Vision ? 0 : 1;
+}
+
+bool betterCandidate(const TargetCandidate& left, const TargetCandidate& right) noexcept {
+    if (sourceRank(left.source) != sourceRank(right.source)) {
+        return sourceRank(left.source) < sourceRank(right.source);
+    }
+    if (left.confidence != right.confidence) return left.confidence > right.confidence;
+    if (left.observedMicros != right.observedMicros) return left.observedMicros > right.observedMicros;
+    if (left.angularError != right.angularError) return left.angularError < right.angularError;
+    return left.target < right.target;
+}
+
+void noteRelation(RejectionFlags& flags, perception::Relation relation) noexcept {
+    if (relation == perception::Relation::Unknown) flags.unknownRelation = true;
+    else if (relation == perception::Relation::Self || relation == perception::Relation::Ally) flags.ally = true;
+}
+
+CombatReason noTargetReason(const RejectionFlags& flags) noexcept {
+    if (flags.unknownRelation) return CombatReason::UnknownRelation;
+    if (flags.ally) return CombatReason::Ally;
+    if (flags.stale) return CombatReason::StaleTarget;
+    if (flags.anonymousSound) return CombatReason::AnonymousSound;
+    return CombatReason::NoTarget;
+}
+
+CombatDecision validNoOp(const CombatInput& input, CombatReason reason) noexcept {
+    auto decision = CombatDecision::noOp(input.tick, reason);
+    decision.view = input.view;
+    decision.validUntilMicros = input.timeMicros;
+    return decision;
+}
+
+bool inspectVisual(const CombatInput& input, const world::VisualMemory& memory,
+                   TargetCandidate& candidate, RejectionFlags& flags) noexcept {
+    if (!validCandidatePlayer(memory.target)) {
+        flags.stale = true;
+        return false;
+    }
+    const auto relation = input.world.relation(input.team, memory.target);
+    if (relation != perception::Relation::Opponent) {
+        noteRelation(flags, relation);
+        return false;
+    }
+    if (!validVisualIdentity(memory.identity, input) ||
+        memory.lastSeenMicros != memory.identity.observedMicros ||
+        memory.lastSeenMicros > input.timeMicros ||
+        !validConfidence(memory.confidence, 1.0) ||
+        !calculateAngularError(input.eye, memory.lastKnownPosition, input.view, candidate.angularError)) {
+        flags.stale = true;
+        return false;
+    }
+    candidate.target = memory.target;
+    candidate.source = perception::ObservationSource::Vision;
+    candidate.observedMicros = memory.identity.observedMicros;
+    candidate.ageMicros = input.timeMicros - candidate.observedMicros;
+    candidate.confidence = memory.confidence;
+    return true;
+}
+
+bool inspectReport(const CombatInput& input, const world::ReportMemory& memory,
+                   TargetCandidate& candidate, RejectionFlags& flags) noexcept {
+    const auto& report = memory.report;
+    if (!validCandidatePlayer(report.reporter) || !validCandidatePlayer(report.target) ||
+        report.reporter == report.target || report.reporter == report.receiver ||
+        report.receiver != input.player ||
+        report.receiver == report.target) {
+        flags.stale = true;
+        return false;
+    }
+    const auto reporterRelation = input.world.relation(input.team, report.reporter);
+    if (reporterRelation != perception::Relation::Ally) {
+        noteRelation(flags, reporterRelation);
+        if (reporterRelation == perception::Relation::Opponent) flags.stale = true;
+        return false;
+    }
+    const auto relation = input.world.relation(input.team, report.target);
+    if (relation != perception::Relation::Opponent) {
+        noteRelation(flags, relation);
+        return false;
+    }
+    if (!validReportIdentity(report, input) ||
+        !validConfidence(memory.confidence, 0.5) ||
+        !calculateAngularError(input.eye, report.position, input.view, candidate.angularError)) {
+        flags.stale = true;
+        return false;
+    }
+    candidate.target = report.target;
+    candidate.source = perception::ObservationSource::TeamReport;
+    candidate.observedMicros = report.origin.observedMicros;
+    candidate.ageMicros = input.timeMicros - candidate.observedMicros;
+    candidate.confidence = memory.confidence;
+    return true;
+}
+
 CombatReason rejectionReason(CombatInputError error) noexcept {
     switch (error) {
     case CombatInputError::None:
@@ -233,6 +398,12 @@ CombatInputValidation CombatInput::validate() const noexcept {
         world.sounds->count > world.sounds->sounds.size()) {
         return {CombatInputError::InvalidWorldSnapshot};
     }
+    if (world.reports != nullptr && world.reports->count > world.reports->reports.size()) {
+        return {CombatInputError::InvalidWorldSnapshot};
+    }
+    if (world.reports != nullptr && !sameStamp(world.reports->stamp, world.stamp)) {
+        return {CombatInputError::StaleWorldSnapshot};
+    }
     if (!isFinitePoint(eye) || !isFiniteView(view)) {
         return {CombatInputError::NonFinitePose};
     }
@@ -265,6 +436,50 @@ CombatInputValidation CombatInput::validate() const noexcept {
 CombatDecision CombatInput::reject() const noexcept {
     const auto validation = validate();
     return CombatDecision::noOp(tick, rejectionReason(validation.error));
+}
+
+CombatDecision selectTarget(const CombatInput& input) noexcept {
+    const auto validation = input.validate();
+    if (!validation) return input.reject();
+    if (!input.alive) return validNoOp(input, CombatReason::Dead);
+
+    TargetCandidate best{};
+    bool selected = false;
+    RejectionFlags flags{};
+    for (std::size_t i = 0; i < input.world.visual->count; ++i) {
+        TargetCandidate candidate{};
+        if (inspectVisual(input, input.world.visual->memories[i], candidate, flags) &&
+            (!selected || betterCandidate(candidate, best))) {
+            best = candidate;
+            selected = true;
+        }
+    }
+    if (input.world.reports != nullptr) {
+        for (std::size_t i = 0; i < input.world.reports->count; ++i) {
+            TargetCandidate candidate{};
+            if (inspectReport(input, input.world.reports->reports[i], candidate, flags) &&
+                (!selected || betterCandidate(candidate, best))) {
+                best = candidate;
+                selected = true;
+            }
+        }
+    }
+    if (selected) {
+        CombatDecision decision{};
+        decision.action = CombatAction::Track;
+        decision.target = best.target;
+        decision.view = input.view;
+        decision.source = best.source;
+        decision.targetAgeMicros = best.ageMicros;
+        decision.confidence = best.confidence;
+        decision.reason = CombatReason::Accepted;
+        decision.inputTick = input.tick;
+        decision.validUntilMicros = input.timeMicros;
+        return decision;
+    }
+
+    flags.anonymousSound = input.world.sounds->count != 0;
+    return validNoOp(input, noTargetReason(flags));
 }
 
 } // namespace astrabot::core::combat
