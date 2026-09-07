@@ -103,3 +103,22 @@ context, report the blocker and do not claim the implementation is complete
 without explicit user approval for an exception. Preserve unrelated user
 changes. Do not stage `.focalspan/` or `.focalspan.json` unless the user
 explicitly requests committing the local FocalSpan index/configuration.
+
+## Verification reuse policy
+
+- Use focused tests while implementing. Before task completion, run the
+  canonical full verification once using `tools/verify-canonical.ps1 -Profile All`.
+- Reuse a passed result only when the content fingerprint and the platform,
+  toolchain, dependency, and build identities match. The result must record
+  the verified `HEAD` and commit tree; the commit/tree names themselves are
+  not the cache key.
+- A commit, merge, branch deletion, or branch switch alone never requires a
+  full rerun. Rerun after conflict resolution, rebase/cherry-pick content
+  changes, CMake/build configuration changes, dependency or platform/toolchain
+  changes, or test/test-runner changes.
+- Docs-only edits receive the smallest relevant documentation check. Do not
+  repeat a full build/test when build inputs are unchanged.
+- For CI, reuse only an exact successful same-SHA marker; never use a broad
+  cache fallback. See `docs/testing-workflow.md` for the record format and
+  workflow details.
+

@@ -4,8 +4,49 @@ on:
   push:
   pull_request:
 
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: astrabot-verification-${{ github.sha }}
+  cancel-in-progress: false
+
 jobs:
+  reuse-check:
+    runs-on: ubuntu-latest
+    outputs:
+      skip: ${{ steps.lookup.outputs.skip }}
+    steps:
+      - name: Find a successful verification for this commit SHA
+        id: lookup
+        uses: actions/github-script@v7
+        with:
+          script: |
+            let skip = 'false';
+            try {
+              const response = await github.rest.actions.listWorkflowRunsForRepo({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                workflow_id: 'ci.yml',
+                head_sha: context.sha,
+                status: 'completed',
+                per_page: 100
+              });
+              const previous = response.data.workflow_runs.find((run) =>
+                run.id !== context.runId && run.conclusion === 'success'
+              );
+              if (previous) {
+                skip = 'true';
+                core.info(`Reusing successful run ${previous.id} for ${context.sha}`);
+              }
+            } catch (error) {
+              core.warning(`Verification lookup failed; running the suite: ${error.message}`);
+            }
+            core.setOutput('skip', skip);
   build-and-test:
+    needs: reuse-check
+    if: needs.reuse-check.outputs.skip != 'true'
     runs-on: windows-2022
     timeout-minutes: 20
     steps:
@@ -13,11 +54,25 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
+      - name: Restore successful Windows Debug verification marker
+        id: verification-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: build-portable-x86-test/Testing/Temporary/LastTest.log
+          key: astrabot-verification-v1-windows-debug-${{ github.sha }}
       - name: Portable x86 Debug contracts and seeded fuzz smoke
+        if: steps.verification-cache.outputs.cache-hit != 'true'
         shell: pwsh
         run: ./tools/verify-nav-evidence.ps1 -Mode Debug
+      - name: Save Windows Debug verification marker
+        if: success() && steps.verification-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        continue-on-error: true
+        with:
+          path: build-portable-x86-test/Testing/Temporary/LastTest.log
+          key: astrabot-verification-v1-windows-debug-${{ github.sha }}
       - uses: actions/upload-artifact@v4
-        if: always()
+        if: always() && steps.verification-cache.outputs.cache-hit != 'true'
         with:
           name: nav-debug-evidence
           path: |
@@ -26,15 +81,31 @@ jobs:
             build-portable-x86-test/movement-evidence/
             build-portable-x86-test/perception-evidence/
   nav-asan:
+    needs: reuse-check
+    if: needs.reuse-check.outputs.skip != 'true'
     runs-on: windows-2022
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
+      - name: Restore successful Windows ASan verification marker
+        id: verification-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: build-nav-x86-asan/Testing/Temporary/LastTest.log
+          key: astrabot-verification-v1-windows-asan-${{ github.sha }}
       - name: Windows AddressSanitizer corpus, oracle and long fuzz
+        if: steps.verification-cache.outputs.cache-hit != 'true'
         shell: pwsh
         run: ./tools/verify-nav-evidence.ps1 -Mode Asan -LongFuzz
+      - name: Save Windows ASan verification marker
+        if: success() && steps.verification-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        continue-on-error: true
+        with:
+          path: build-nav-x86-asan/Testing/Temporary/LastTest.log
+          key: astrabot-verification-v1-windows-asan-${{ github.sha }}
       - uses: actions/upload-artifact@v4
-        if: always()
+        if: always() && steps.verification-cache.outputs.cache-hit != 'true'
         with:
           name: nav-asan-evidence
           path: |
@@ -42,15 +113,25 @@ jobs:
             build-nav-x86-asan/fuzz-artifacts/
             build-nav-x86-asan/long-fuzz/
   linux-x86:
+    needs: reuse-check
+    if: needs.reuse-check.outputs.skip != 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+      - name: Restore successful Linux x86 verification marker
+        id: verification-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: build-linux-x86/Testing/Temporary/LastTest.log
+          key: astrabot-verification-v1-linux-x86-${{ github.sha }}
       - name: Install x86 compiler and runtime libraries
+        if: steps.verification-cache.outputs.cache-hit != 'true'
         run: |
           sudo apt-get update
           sudo apt-get install --yes --no-install-recommends gcc-multilib g++-multilib
       - name: Configure Linux x86 Debug portable targets
+        if: steps.verification-cache.outputs.cache-hit != 'true'
         run: >-
           cmake -S . -B build-linux-x86 -G "Unix Makefiles"
           -DCMAKE_BUILD_TYPE=Debug
@@ -63,11 +144,20 @@ jobs:
           -DASTRABOT_BUILD_NAV_INSPECTOR=ON
           -DASTRABOT_WARNINGS_AS_ERRORS=ON
       - name: Build Linux x86 portable targets
+        if: steps.verification-cache.outputs.cache-hit != 'true'
         run: cmake --build build-linux-x86 --parallel 2
       - name: Test Linux x86 portable targets
+        if: steps.verification-cache.outputs.cache-hit != 'true'
         run: ctest --test-dir build-linux-x86 --output-on-failure --timeout 60
+      - name: Save Linux x86 verification marker
+        if: success() && steps.verification-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        continue-on-error: true
+        with:
+          path: build-linux-x86/Testing/Temporary/LastTest.log
+          key: astrabot-verification-v1-linux-x86-${{ github.sha }}
       - uses: actions/upload-artifact@v4
-        if: always()
+        if: always() && steps.verification-cache.outputs.cache-hit != 'true'
         with:
           name: nav-linux-x86-evidence
           path: |
