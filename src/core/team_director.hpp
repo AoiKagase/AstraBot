@@ -15,6 +15,8 @@ namespace astrabot::core::team {
 constexpr std::size_t kMaxTeamMembers = perception::kPlayerCapacity;
 constexpr std::size_t kMaxSharedObservations = perception::kCandidateCapacity;
 constexpr std::size_t kMaxTacticalProposals = perception::kCandidateCapacity;
+constexpr std::size_t kMaxObjectiveTargets = perception::kCandidateCapacity;
+constexpr std::size_t kMaxObjectiveAssignments = kMaxTeamMembers;
 
 enum class Role : std::uint8_t {
     None = 0,
@@ -48,6 +50,24 @@ enum class ObjectivePhase : std::uint8_t {
     Carried,
     Dropped,
     Planted,
+};
+
+enum class ObjectiveFamily : std::uint8_t {
+    BombDefusal = 0,
+    VipEscort,
+    HostageRescue,
+    Escape,
+};
+
+enum class ObjectiveState : std::uint8_t {
+    Unknown = 0,
+    Active,
+    Carried,
+    Dropped,
+    Planted,
+    Completed,
+    Failed,
+    Escaped,
 };
 
 enum class PlanIntent : std::uint8_t {
@@ -87,6 +107,87 @@ enum class ReassignmentReason : std::uint8_t {
     BotDisconnected,
     InputChanged,
     InvalidInput,
+    MapChanged,
+    RoundChanged,
+    ObjectiveInvalidated,
+    VipDied,
+    VipEscaped,
+    HostageStateChanged,
+    EscapeProgressChanged,
+    RouteInvalidated,
+};
+
+enum class ObjectiveAssignmentKind : std::uint8_t {
+    None = 0,
+    Defuser,
+    DefuseCover,
+    RetakeEntry,
+    BombGuard,
+    BombCarrier,
+    BombEscort,
+    Vip,
+    VipEscort,
+    VipGuard,
+    VipPathClear,
+    VipIntercept,
+    HostageRescuer,
+    HostageEscort,
+    RescueCover,
+    RescueRouteGuard,
+    HostageIntercept,
+    EscapeRunner,
+    EscapeEscort,
+    EscapeRouteGuard,
+    EscapeBlocker,
+    EscapeIntercept,
+    RouteDefense,
+};
+
+enum class ObjectiveAssignmentReason : std::uint8_t {
+    None = 0,
+    Initial,
+    BestCandidate,
+    Replacement,
+    ObjectiveTransition,
+    OwnerDied,
+    OwnerDisconnected,
+    TargetChanged,
+    TargetCompleted,
+    RouteInvalidated,
+    TacticalIntentMismatch,
+};
+
+struct ObjectiveTargetId final {
+    EntityId value{0};
+    Generation generation{};
+
+    constexpr bool isValid() const noexcept {
+        return value != 0 && generation.isValid();
+    }
+    friend constexpr bool operator==(ObjectiveTargetId left,
+                                    ObjectiveTargetId right) noexcept {
+        return left.value == right.value && left.generation == right.generation;
+    }
+    friend constexpr bool operator!=(ObjectiveTargetId left,
+                                    ObjectiveTargetId right) noexcept {
+        return !(left == right);
+    }
+    friend constexpr bool operator<(ObjectiveTargetId left,
+                                    ObjectiveTargetId right) noexcept {
+        return left.value < right.value ||
+               (left.value == right.value && left.generation < right.generation);
+    }
+};
+
+struct ObjectiveTarget final {
+    ObjectiveTargetId id{};
+    perception::Point position{};
+    PlayerId owner{};
+    bool alive{true};
+    bool following{false};
+    bool completed{false};
+
+    bool valid() const noexcept;
 };
 
 struct TeamObjective final {
@@ -95,6 +196,20 @@ struct TeamObjective final {
     std::uint32_t site{0};
     std::uint64_t remainingMicros{0};
     bool known{false};
+    ObjectiveFamily family{ObjectiveFamily::BombDefusal};
+    ObjectiveState state{ObjectiveState::Active};
+    PlayerId vip{};
+    std::array<ObjectiveTarget, kMaxObjectiveTargets> targets{};
+    std::size_t targetCount{0};
+    std::uint32_t routeArea{0};
+    std::uint32_t escapeArea{0};
+    std::uint32_t remainingPlayers{0};
+    perception::Point position{};
+    bool positionKnown{false};
+    perception::Point vipPosition{};
+    bool vipPositionKnown{false};
+    bool routeAvailable{true};
+    std::uint32_t enemyBeliefCount{0};
 
     bool valid() const noexcept;
 };
@@ -120,6 +235,7 @@ struct TeamMemberSnapshot final {
     bool carryingObjective{false};
     bool connected{false};
     bool alive{false};
+    perception::Team team{perception::Team::Unknown};
 
     bool valid() const noexcept;
 };
@@ -155,6 +271,15 @@ struct TeamEvents final {
     bool defuserDied{false};
     bool objectiveTransition{false};
     bool botDisconnected{false};
+    bool mapChanged{false};
+    bool roundChanged{false};
+    bool playerGenerationChanged{false};
+    bool vipDied{false};
+    bool vipEscaped{false};
+    bool hostageOwnershipChanged{false};
+    bool hostageStateChanged{false};
+    bool escapeProgressChanged{false};
+    bool routeInvalidated{false};
 
     bool any() const noexcept;
 };
@@ -171,6 +296,7 @@ struct TeamSnapshot final {
     std::size_t observationCount{0};
     std::array<TacticalProposal, kMaxTacticalProposals> proposals{};
     std::size_t proposalCount{0};
+    perception::Team team{perception::Team::Unknown};
 
     bool valid() const noexcept;
 };
@@ -183,7 +309,28 @@ struct RoleAssignment final {
     bool valid() const noexcept;
 };
 
+struct ObjectiveAssignment final {
+    MapGeneration map{};
+    perception::RoundGeneration round{};
+    PlayerId player{};
+    BotAgentId agent{};
+    ObjectiveAssignmentKind kind{ObjectiveAssignmentKind::None};
+    PlayerId playerTarget{};
+    ObjectiveTargetId target{};
+    std::uint32_t routeArea{0};
+    std::uint64_t assignedMicros{0};
+    std::uint64_t assignmentGeneration{0};
+    ObjectiveAssignmentReason reason{ObjectiveAssignmentReason::None};
+    bool exclusive{false};
+
+    bool valid(MapGeneration expectedMap,
+               perception::RoundGeneration expectedRound,
+               std::uint64_t nowMicros) const noexcept;
+};
+
 struct SharedTeamState final {
+    MapGeneration map{};
+    perception::RoundGeneration round{};
     TeamObjective objective{};
     std::array<SharedObservation, kMaxSharedObservations> observations{};
     std::size_t observationCount{0};
@@ -191,6 +338,9 @@ struct SharedTeamState final {
     std::size_t proposalCount{0};
     std::array<RoleAssignment, kMaxTeamMembers> assignments{};
     std::size_t assignmentCount{0};
+    std::array<ObjectiveAssignment, kMaxObjectiveAssignments>
+        objectiveAssignments{};
+    std::size_t objectiveAssignmentCount{0};
 
     bool valid(std::uint64_t nowMicros) const noexcept;
 };
@@ -223,6 +373,10 @@ private:
     static int roleScore(Role role, const TeamMemberSnapshot& member,
                          const TeamSnapshot& snapshot, double frontline) noexcept;
     static ReassignmentReason reasonFor(const TeamEvents& events) noexcept;
+    static void buildObjectiveAssignments(const TeamSnapshot& snapshot,
+                                          SharedTeamState& state,
+                                          std::uint64_t assignmentGeneration,
+                                          ObjectiveAssignmentReason reason) noexcept;
 
     Strategy strategy_{Strategy::None};
     SharedTeamState state_{};
@@ -235,5 +389,10 @@ const char* strategyName(Strategy strategy) noexcept;
 const char* objectivePhaseName(ObjectivePhase phase) noexcept;
 const char* planIntentName(PlanIntent intent) noexcept;
 const char* reassignmentReasonName(ReassignmentReason reason) noexcept;
+const char* objectiveFamilyName(ObjectiveFamily family) noexcept;
+const char* objectiveStateName(ObjectiveState state) noexcept;
+const char* objectiveAssignmentName(ObjectiveAssignmentKind kind) noexcept;
+const char* objectiveAssignmentReasonName(
+    ObjectiveAssignmentReason reason) noexcept;
 
 } // namespace astrabot::core::team

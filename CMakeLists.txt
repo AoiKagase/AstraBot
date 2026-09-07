@@ -325,6 +325,17 @@ if(ASTRABOT_BUILD_TESTS)
     )
     astrabot_enable_warnings(astrabot_team_director_tests)
     add_test(NAME astrabot.team_director COMMAND astrabot_team_director_tests)
+    add_executable(astrabot_objective_role_tests tests/objective_role_tests.cpp)
+    target_link_libraries(astrabot_objective_role_tests PRIVATE astrabot_core)
+    target_compile_features(astrabot_objective_role_tests PRIVATE cxx_std_17)
+    target_include_directories(astrabot_objective_role_tests
+        PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+    set_target_properties(astrabot_objective_role_tests PROPERTIES
+        CXX_EXTENSIONS OFF
+    )
+    astrabot_enable_warnings(astrabot_objective_role_tests)
+    add_test(NAME astrabot.objective_role COMMAND astrabot_objective_role_tests)
     add_executable(astrabot_economy_tests
         tests/economy_tests.cpp
         src/adapter/cstrike/buy_executor.cpp
