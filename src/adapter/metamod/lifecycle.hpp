@@ -67,7 +67,7 @@ public:
     void configure(
         enginefuncs_t* engineFunctions,
         mutil_funcs_t* utilityFunctions,
-        DLL_FUNCTIONS* gameDllFunctions,
+        DLL_FUNCTIONS* hookedGameDllFunctions,
         cstrike::UserMessageIds userMessageIds,
         globalvars_t* engineGlobals = nullptr) noexcept;
     void reset() noexcept;
@@ -257,7 +257,7 @@ private:
     enginefuncs_t* engineFunctions_{nullptr};
     globalvars_t* engineGlobals_{nullptr};
     mutil_funcs_t* utilityFunctions_{nullptr};
-    DLL_FUNCTIONS* gameDllFunctions_{nullptr};
+    DLL_FUNCTIONS* hookedGameDllFunctions_{nullptr};
     cstrike::MessageDecoder messageDecoder_{};
     cstrike::UserMessageIds perceptionMessageIds_{};
     cstrike::MessageDecoder* activeDecoder_{};

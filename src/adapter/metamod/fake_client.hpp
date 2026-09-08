@@ -48,7 +48,7 @@ public:
     void configure(
         enginefuncs_t* engineFunctions,
         mutil_funcs_t* utilityFunctions,
-        DLL_FUNCTIONS* gameDllFunctions,
+        DLL_FUNCTIONS* hookedGameDllFunctions,
         host::PlayerRegistry* players,
         host::BotAgentRegistry* agents) noexcept;
     void reset() noexcept;
@@ -89,7 +89,7 @@ public:
 private:
     enginefuncs_t* engineFunctions_{nullptr};
     mutil_funcs_t* utilityFunctions_{nullptr};
-    DLL_FUNCTIONS* gameDllFunctions_{nullptr};
+    DLL_FUNCTIONS* hookedGameDllFunctions_{nullptr};
     host::PlayerRegistry* players_{nullptr};
     host::BotAgentRegistry* agents_{nullptr};
     debug::FakeClientTraceSink traceSink_{nullptr};

@@ -37,12 +37,12 @@ void FakeClientCoordinator::queuePrimaryCreate(
 void FakeClientCoordinator::configure(
     enginefuncs_t* engineFunctions,
     mutil_funcs_t* utilityFunctions,
-    DLL_FUNCTIONS* gameDllFunctions,
+    DLL_FUNCTIONS* hookedGameDllFunctions,
     host::PlayerRegistry* players,
     host::BotAgentRegistry* agents) noexcept {
     engineFunctions_ = engineFunctions;
     utilityFunctions_ = utilityFunctions;
-    gameDllFunctions_ = gameDllFunctions;
+    hookedGameDllFunctions_ = hookedGameDllFunctions;
     players_ = players;
     agents_ = agents;
 }
@@ -50,7 +50,7 @@ void FakeClientCoordinator::configure(
 void FakeClientCoordinator::reset() noexcept {
     engineFunctions_ = nullptr;
     utilityFunctions_ = nullptr;
-    gameDllFunctions_ = nullptr;
+    hookedGameDllFunctions_ = nullptr;
     players_ = nullptr;
     agents_ = nullptr;
     traceSink_ = nullptr;
@@ -156,7 +156,7 @@ FakeClientResult FakeClientCoordinator::create(
     trace(debug::FakeClientStage::Metadata, debug::FakeClientError::None);
 
     char rejectReason[128]{};
-    if (!gameDllFunctions_->pfnClientConnect(
+    if (!hookedGameDllFunctions_->pfnClientConnect(
             entity, nameBuffer, kLoopbackAddress, rejectReason)) {
         cleanup(entity, false);
         return rejected(debug::FakeClientError::ConnectRejected,
@@ -164,7 +164,7 @@ FakeClientResult FakeClientCoordinator::create(
     }
     trace(debug::FakeClientStage::Connected, debug::FakeClientError::None);
 
-    gameDllFunctions_->pfnClientPutInServer(entity);
+    hookedGameDllFunctions_->pfnClientPutInServer(entity);
     trace(debug::FakeClientStage::PutInServer, debug::FakeClientError::None);
 
     const host::LifecycleResult registration = players_->registerPlayer(slot);
@@ -244,16 +244,16 @@ FakeClientResult FakeClientCoordinator::rejected(
 
 bool FakeClientCoordinator::configured() const noexcept {
     return engineFunctions_ != nullptr && utilityFunctions_ != nullptr &&
-           gameDllFunctions_ != nullptr && players_ != nullptr &&
+           hookedGameDllFunctions_ != nullptr && players_ != nullptr &&
            agents_ != nullptr && engineFunctions_->pfnCreateFakeClient != nullptr &&
            engineFunctions_->pfnIndexOfEdict != nullptr &&
            engineFunctions_->pfnGetInfoKeyBuffer != nullptr &&
            engineFunctions_->pfnSetClientKeyValue != nullptr &&
            engineFunctions_->pfnRemoveEntity != nullptr &&
            utilityFunctions_->pfnCallGameEntity != nullptr &&
-           gameDllFunctions_->pfnClientConnect != nullptr &&
-           gameDllFunctions_->pfnClientPutInServer != nullptr &&
-           gameDllFunctions_->pfnClientDisconnect != nullptr;
+           hookedGameDllFunctions_->pfnClientConnect != nullptr &&
+           hookedGameDllFunctions_->pfnClientPutInServer != nullptr &&
+           hookedGameDllFunctions_->pfnClientDisconnect != nullptr;
 }
 
 bool FakeClientCoordinator::sameEntity() const noexcept {
@@ -352,8 +352,8 @@ bool FakeClientCoordinator::cleanupActiveDirect(bool connected) noexcept {
     }
     if (engineFunctions_ == nullptr || engineFunctions_->pfnRemoveEntity == nullptr ||
         (connected &&
-         (gameDllFunctions_ == nullptr ||
-          gameDllFunctions_->pfnClientDisconnect == nullptr))) {
+         (hookedGameDllFunctions_ == nullptr ||
+          hookedGameDllFunctions_->pfnClientDisconnect == nullptr))) {
         return false;
     }
     const host::PlayerId player = activePlayer_;
@@ -416,9 +416,9 @@ void FakeClientCoordinator::cleanup(edict_t* entity, bool connected) noexcept {
         return;
     }
     const auto serial=entity->serialnumber;
-    if (connected && gameDllFunctions_ != nullptr &&
-        gameDllFunctions_->pfnClientDisconnect != nullptr) {
-        gameDllFunctions_->pfnClientDisconnect(entity);
+    if (connected && hookedGameDllFunctions_ != nullptr &&
+        hookedGameDllFunctions_->pfnClientDisconnect != nullptr) {
+        hookedGameDllFunctions_->pfnClientDisconnect(entity);
     }
     if (!entity->free && entity->serialnumber==serial && engineFunctions_ != nullptr && engineFunctions_->pfnRemoveEntity != nullptr) {
         engineFunctions_->pfnRemoveEntity(entity);

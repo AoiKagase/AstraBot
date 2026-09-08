@@ -307,6 +307,14 @@ qboolean captureClientConnect(
 void captureClientPutInServer(edict_t* entity);
 void captureClientDisconnect(edict_t* entity);
 void captureClientCommand(edict_t* entity);
+qboolean unexpectedDirectClientConnect(
+    edict_t* entity,
+    const char* name,
+    const char* address,
+    char rejectReason[128]);
+void unexpectedDirectClientPutInServer(edict_t* entity);
+void unexpectedDirectClientDisconnect(edict_t* entity);
+void unexpectedDirectClientCommand(edict_t* entity);
 int captureGetUserMsgID(
     plid_t pluginId,
     const char* messageName,
@@ -329,7 +337,9 @@ struct Fixture {
     mutil_funcs_t utility{};
     meta_globals_t globals{};
     DLL_FUNCTIONS dll{};
+    DLL_FUNCTIONS hookDll{};
     NEW_DLL_FUNCTIONS newDll{};
+    NEW_DLL_FUNCTIONS hookNewDll{};
     gamedll_funcs_t gameDll{};
     META_FUNCTIONS callbacks{};
     enginefuncs_t engine{};
@@ -381,10 +391,14 @@ struct Fixture {
         engine.pfnCmd_Argv = &captureArgv;
         engine.pfnTraceLine = &captureGround;
         engine.pfnTraceHull = &captureNavHull;
-        dll.pfnClientConnect = &captureClientConnect;
-        dll.pfnClientPutInServer = &captureClientPutInServer;
-        dll.pfnClientDisconnect = &captureClientDisconnect;
-        dll.pfnClientCommand = &captureClientCommand;
+        dll.pfnClientConnect = &unexpectedDirectClientConnect;
+        dll.pfnClientPutInServer = &unexpectedDirectClientPutInServer;
+        dll.pfnClientDisconnect = &unexpectedDirectClientDisconnect;
+        dll.pfnClientCommand = &unexpectedDirectClientCommand;
+        hookDll.pfnClientConnect = &captureClientConnect;
+        hookDll.pfnClientPutInServer = &captureClientPutInServer;
+        hookDll.pfnClientDisconnect = &captureClientDisconnect;
+        hookDll.pfnClientCommand = &captureClientCommand;
         gameDll.dllapi_table = &dll;
         gameDll.newapi_table = &newDll;
     }
@@ -489,6 +503,27 @@ qboolean captureCallGameEntity(
 qboolean captureClientConnect(
     edict_t* /* entity */, const char* /* name */, const char* /* address */, char /* rejectReason */[128]) {
     return gFixture->connectSucceeds ? 1 : 0;
+}
+
+qboolean unexpectedDirectClientConnect(
+    edict_t* /* entity */,
+    const char* /* name */,
+    const char* /* address */,
+    char /* rejectReason */[128]) {
+    assert(false && "FakeClientCoordinator bypassed the Metamod hook table");
+    return 0;
+}
+
+void unexpectedDirectClientPutInServer(edict_t* /* entity */) {
+    assert(false && "FakeClientCoordinator bypassed the Metamod hook table");
+}
+
+void unexpectedDirectClientDisconnect(edict_t* /* entity */) {
+    assert(false && "FakeClientCoordinator bypassed the Metamod hook table");
+}
+
+void unexpectedDirectClientCommand(edict_t* /* entity */) {
+    assert(false && "FakeClientCoordinator bypassed the Metamod hook table");
 }
 
 void captureClientPutInServer(edict_t* /* entity */) {
@@ -661,8 +696,8 @@ void captureHookTables(
     DLL_FUNCTIONS** dllFunctions,
     NEW_DLL_FUNCTIONS** newDllFunctions) {
     *engineFunctions = &gFixture->engine;
-    *dllFunctions = &gFixture->dll;
-    *newDllFunctions = &gFixture->newDll;
+    *dllFunctions = &gFixture->hookDll;
+    *newDllFunctions = &gFixture->hookNewDll;
 }
 
 void captureFakeTrace(const astrabot::debug::FakeClientTrace& trace) noexcept {
@@ -678,6 +713,8 @@ void captureRemovalTrace(const astrabot::debug::RemovalTrace& trace) noexcept {
 }
 
 void attach(Fixture& fixture) {
+    assert(fixture.gameDll.dllapi_table != &fixture.hookDll);
+    assert(fixture.gameDll.newapi_table != &fixture.hookNewDll);
     GiveFnptrsToDll(&fixture.engine,&fixture.engineGlobals);
     // The hook table must never be used for plugin command registration.
     fixture.engine.pfnAddServerCommand=&unexpectedHookRegistration;

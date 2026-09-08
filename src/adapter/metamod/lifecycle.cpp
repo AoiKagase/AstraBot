@@ -95,8 +95,8 @@ bool LifecycleCoordinator::removalPending(core::PlayerId player) const noexcept 
     const auto* client=findClient(player); return client && client->fake.removalPending();
 }
 void LifecycleCoordinator::configure(enginefuncs_t* engine,mutil_funcs_t* utility,
-    DLL_FUNCTIONS* game,cstrike::UserMessageIds ids,globalvars_t* globals) noexcept {
-    engineFunctions_=engine; utilityFunctions_=utility; gameDllFunctions_=game;
+    DLL_FUNCTIONS* hookedGameDllFunctions,cstrike::UserMessageIds ids,globalvars_t* globals) noexcept {
+    engineFunctions_=engine; utilityFunctions_=utility; hookedGameDllFunctions_=hookedGameDllFunctions;
     engineGlobals_=globals;
     configureUserMessageIds(ids);
     // Most GameDLLs have already registered their messages by attach time.
@@ -104,7 +104,8 @@ void LifecycleCoordinator::configure(enginefuncs_t* engine,mutil_funcs_t* utilit
     // callbacks when the initial lookup is not ready yet.
     if (!userMessageIdsReady_) (void)refreshUserMessageIds(false);
     for(auto& client:clients_) {
-        client.fake.configure(engine,utility,game,&registry_,&agents_);
+        client.fake.configure(
+            engine, utility, hookedGameDllFunctions, &registry_, &agents_);
     }
     movement_.configure(engine,&registry_);
     navConsole_.bindMovement(&movement_);
@@ -173,7 +174,7 @@ void LifecycleCoordinator::reset() noexcept {
         client.fake.reset();
     }
     agents_.reset(); registry_.reset();
-    engineFunctions_=nullptr; utilityFunctions_=nullptr; gameDllFunctions_=nullptr;
+    engineFunctions_=nullptr; utilityFunctions_=nullptr; hookedGameDllFunctions_=nullptr;
     engineGlobals_=nullptr;
     status_={}; traceSink_=nullptr; joinTraceSink_=nullptr; removalTraceSink_=nullptr;
     combatTraceSink_=nullptr; combatTraceSequence_=0;
@@ -819,12 +820,12 @@ void LifecycleCoordinator::cleanupFailedJoin(ClientState& client,cstrike::JoinEr
 }
 bool LifecycleCoordinator::dispatchMenu(ClientState& client,std::uint8_t selection) noexcept {
     const auto player=client.join.player(); auto* entity=client.fake.entityFor(player);
-    if(commandContextActive_ || !entity || !gameDllFunctions_ || !gameDllFunctions_->pfnClientCommand ||
+    if(commandContextActive_ || !entity || !hookedGameDllFunctions_ || !hookedGameDllFunctions_->pfnClientCommand ||
        selection==0 || selection>9) return false;
     copyCommandWord(commandArgv0_,"menuselect");
     commandArgv1_={}; commandArgv1_[0]=static_cast<char>('0'+selection);
     commandArgs_={}; commandArgs_[0]=commandArgv1_[0]; commandPlayer_=player; commandContextActive_=true;
-    { CommandContextGuard guard{commandContextActive_}; gameDllFunctions_->pfnClientCommand(entity); }
+    { CommandContextGuard guard{commandContextActive_}; hookedGameDllFunctions_->pfnClientCommand(entity); }
     commandPlayer_={};
     for(auto& pending:clients_) if(pending.cleanupPending) cleanupFailedJoin(pending,pending.cleanupError);
     return true;

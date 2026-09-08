@@ -171,7 +171,9 @@ struct Fixture {
     mutil_funcs_t utility{};
     meta_globals_t globals{};
     DLL_FUNCTIONS dll{};
+    DLL_FUNCTIONS hookDll{};
     NEW_DLL_FUNCTIONS newDll{};
+    NEW_DLL_FUNCTIONS hookNewDll{};
     gamedll_funcs_t gameDll{};
     META_FUNCTIONS callbacks{};
     enginefuncs_t engine{};
@@ -198,13 +200,14 @@ struct Fixture {
         dll.pfnClientPutInServer = &captureClientPutInServer;
         dll.pfnClientDisconnect = &captureClientDisconnect;
         dll.pfnClientCommand = &captureClientCommand;
+        hookDll = dll;
         gameDll.dllapi_table = &dll;
         gameDll.newapi_table = &newDll;
         callbacks.pfnGetEntityAPI2 = &sentinelEntityApi2;
         callbacks.pfnGetEngineFunctions = &sentinelEngineFunctions;
         gHookEngineFunctions = &engine;
-        gHookDllFunctions = &dll;
-        gHookNewDllFunctions = &newDll;
+        gHookDllFunctions = &hookDll;
+        gHookNewDllFunctions = &hookNewDll;
     }
 };
 
@@ -353,7 +356,7 @@ void testAttachValidationIsRollbackSafe() {
     gHookDllFunctions = &unrelatedDll;
     assert(Meta_Attach(PT_ANYTIME, &fixture.callbacks, &fixture.globals, &fixture.gameDll) == 0);
     assertCallbacksEqual(fixture.callbacks, before);
-    gHookDllFunctions = &fixture.dll;
+    gHookDllFunctions = &fixture.hookDll;
     assert(!gLogLines.empty());
     assert(gLogLines.front().find("Meta_Attach rejected") != std::string::npos);
 }
@@ -406,6 +409,9 @@ void testSuccessfulAttachDoubleAttachAndDetach() {
     assert(!soundHooks.pfnTraceLine && !soundHooks.pfnRunPlayerMove && !soundHooks.pfnMessageBegin);
     assert(gpMetaGlobals == &fixture.globals);
     assert(gpGamedllFuncs == &fixture.gameDll);
+    assert(gpGamedllFuncs->dllapi_table == &fixture.dll);
+    assert(gHookDllFunctions == &fixture.hookDll);
+    assert(gHookDllFunctions != gpGamedllFuncs->dllapi_table);
     assert(gLogLines.size() == 1);
     assert(gLogLines.front() == astrabot::debug::attachedIdentityLine());
 

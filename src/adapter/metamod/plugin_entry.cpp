@@ -59,13 +59,13 @@ bool hasRequiredFakeClientEngine(const enginefuncs_t* engineFunctions) noexcept 
            engineFunctions->pfnServerExecute != nullptr;
 }
 
-bool hasRequiredFakeClientGameDll(
-    const DLL_FUNCTIONS* gameDllFunctions) noexcept {
-    return gameDllFunctions != nullptr &&
-           gameDllFunctions->pfnClientConnect != nullptr &&
-           gameDllFunctions->pfnClientPutInServer != nullptr &&
-           gameDllFunctions->pfnClientDisconnect != nullptr &&
-           gameDllFunctions->pfnClientCommand != nullptr;
+bool hasRequiredFakeClientHookTable(
+    const DLL_FUNCTIONS* hookedGameDllFunctions) noexcept {
+    return hookedGameDllFunctions != nullptr &&
+           hookedGameDllFunctions->pfnClientConnect != nullptr &&
+           hookedGameDllFunctions->pfnClientPutInServer != nullptr &&
+           hookedGameDllFunctions->pfnClientDisconnect != nullptr &&
+           hookedGameDllFunctions->pfnClientCommand != nullptr;
 }
 
 bool hasRequiredFakeClientUtility(
@@ -192,15 +192,11 @@ C_DLLEXPORT FORCE_STACK_ALIGN int Meta_Attach(
     if (hookDllFunctions == nullptr || hookNewDllFunctions == nullptr) {
         return rejectAttach("astrabot Meta_Attach rejected reason=missing-hook-tables");
     }
-    if (hookDllFunctions != gameDllFunctions->dllapi_table ||
-        hookNewDllFunctions != gameDllFunctions->newapi_table) {
-        return rejectAttach("astrabot Meta_Attach rejected reason=hook-tables-mismatch");
-    }
     if (!hasRequiredFakeClientEngine(engineFunctions)) {
         return rejectAttach("astrabot Meta_Attach rejected reason=missing-fake-client-engine");
     }
-    if (!hasRequiredFakeClientGameDll(gameDllFunctions->dllapi_table)) {
-        return rejectAttach("astrabot Meta_Attach rejected reason=missing-fake-client-gamedll");
+    if (!hasRequiredFakeClientHookTable(hookDllFunctions)) {
+        return rejectAttach("astrabot Meta_Attach rejected reason=missing-fake-client-hook-table");
     }
     if (!hasRequiredFakeClientUtility(gpMetaUtilFuncs)) {
         return rejectAttach("astrabot Meta_Attach rejected reason=missing-fake-client-utility");
@@ -222,10 +218,14 @@ C_DLLEXPORT FORCE_STACK_ALIGN int Meta_Attach(
     gState.previousEngineFunctionsPost = previousEngineFunctionsPost;
     gpMetaGlobals = metaGlobals;
     gpGamedllFuncs = gameDllFunctions;
+    // The table passed through gamedll_funcs_t is a private copy of the
+    // GameDLL table for this plugin. Fake-client lifecycle calls must use the
+    // GetHookTables dispatcher so other Metamod plugins and the GameDLL are
+    // reached through the normal hook chain.
     astrabot::adapter::metamod::lifecycleCoordinator().configure(
         engineFunctions,
         gpMetaUtilFuncs,
-        gameDllFunctions->dllapi_table,
+        hookDllFunctions,
         {},
         gEngineGlobals);
     // The bootstrap table contains Metamod's command-registration wrapper.
