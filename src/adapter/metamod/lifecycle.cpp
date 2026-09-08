@@ -39,6 +39,30 @@ struct CommandContextGuard final {
     ~CommandContextGuard() { active = false; }
 };
 
+bool resolveUserMessageIds(
+    mutil_funcs_t* utilityFunctions,
+    cstrike::UserMessageIds& ids) noexcept {
+    if (utilityFunctions == nullptr ||
+        utilityFunctions->pfnGetUserMsgID == nullptr) {
+        return false;
+    }
+    int messageSize = 0;
+    ids.vguiMenu = utilityFunctions->pfnGetUserMsgID(
+        PLID, "VGUIMenu", &messageSize);
+    ids.showMenu = utilityFunctions->pfnGetUserMsgID(
+        PLID, "ShowMenu", &messageSize);
+    ids.teamInfo = utilityFunctions->pfnGetUserMsgID(
+        PLID, "TeamInfo", &messageSize);
+    ids.hltv = utilityFunctions->pfnGetUserMsgID(PLID, "HLTV", &messageSize);
+    ids.screenFade = utilityFunctions->pfnGetUserMsgID(
+        PLID, "ScreenFade", &messageSize);
+    if (ids.screenFade == ids.vguiMenu || ids.screenFade == ids.showMenu ||
+        ids.screenFade == ids.teamInfo || ids.screenFade == ids.hltv) {
+        ids.screenFade = 0;
+    }
+    return ids.valid();
+}
+
 } // namespace
 
 LifecycleCoordinator::ClientState* LifecycleCoordinator::findClient(core::PlayerId player) noexcept {
@@ -74,17 +98,56 @@ void LifecycleCoordinator::configure(enginefuncs_t* engine,mutil_funcs_t* utilit
     DLL_FUNCTIONS* game,cstrike::UserMessageIds ids,globalvars_t* globals) noexcept {
     engineFunctions_=engine; utilityFunctions_=utility; gameDllFunctions_=game;
     engineGlobals_=globals;
-    messageDecoder_.configure(ids,&LifecycleCoordinator::onMessage,this);
-    perceptionMessageIds_ = ids;
-    identityDiagnostics_.roundNotificationAvailable = ids.hltv > 0;
-    activeDecoder_=&messageDecoder_;
+    configureUserMessageIds(ids);
+    // Most GameDLLs have already registered their messages by attach time.
+    // Preserve that fast path while allowing late registration on map/frame
+    // callbacks when the initial lookup is not ready yet.
+    if (!userMessageIdsReady_) (void)refreshUserMessageIds(false);
     for(auto& client:clients_) {
         client.fake.configure(engine,utility,game,&registry_,&agents_);
-        client.decoder.configure(ids,&LifecycleCoordinator::onMessage,this);
     }
     movement_.configure(engine,&registry_);
     navConsole_.bindMovement(&movement_);
     navConsole_.bindWorld(&world_);
+}
+void LifecycleCoordinator::configureUserMessageIds(
+    cstrike::UserMessageIds ids) noexcept {
+    messageDecoder_.configure(ids,&LifecycleCoordinator::onMessage,this);
+    perceptionMessageIds_ = ids;
+    userMessageIdsReady_ = ids.valid();
+    identityDiagnostics_.roundNotificationAvailable = ids.hltv > 0;
+    activeDecoder_=&messageDecoder_;
+    for(auto& client:clients_) {
+        client.decoder.configure(ids,&LifecycleCoordinator::onMessage,this);
+    }
+}
+bool LifecycleCoordinator::refreshUserMessageIds(bool logPending) noexcept {
+    cstrike::UserMessageIds ids{};
+    if (!resolveUserMessageIds(utilityFunctions_,ids)) {
+        if (logPending && !userMessageIdsReady_ && !userMessageIdsPendingLogged_ &&
+            utilityFunctions_ != nullptr &&
+            utilityFunctions_->pfnLogConsole != nullptr) {
+            utilityFunctions_->pfnLogConsole(
+                PLID, "%s", "astrabot user-message-ids pending");
+            userMessageIdsPendingLogged_ = true;
+        }
+        return false;
+    }
+    const bool wasReady = userMessageIdsReady_;
+    userMessageIdsPendingLogged_ = false;
+    if (ids.vguiMenu != perceptionMessageIds_.vguiMenu ||
+        ids.showMenu != perceptionMessageIds_.showMenu ||
+        ids.teamInfo != perceptionMessageIds_.teamInfo ||
+        ids.hltv != perceptionMessageIds_.hltv ||
+        ids.screenFade != perceptionMessageIds_.screenFade) {
+        configureUserMessageIds(ids);
+        if (logPending && !wasReady && userMessageIdsReady_ && utilityFunctions_ != nullptr &&
+            utilityFunctions_->pfnLogConsole != nullptr) {
+            utilityFunctions_->pfnLogConsole(
+                PLID, "%s", "astrabot user-message-ids resolved");
+        }
+    }
+    return true;
 }
 void LifecycleCoordinator::reset() noexcept {
     distributions_.reset();
@@ -114,8 +177,10 @@ void LifecycleCoordinator::reset() noexcept {
     engineGlobals_=nullptr;
     status_={}; traceSink_=nullptr; joinTraceSink_=nullptr; removalTraceSink_=nullptr;
     combatTraceSink_=nullptr; combatTraceSequence_=0;
+    userMessageIdsReady_=false; userMessageIdsPendingLogged_=false;
 }
 void LifecycleCoordinator::serverActivate(int clientMax) noexcept {
+    (void)refreshUserMessageIds(true);
     const auto result=clientMax<1 || clientMax>host::kMaxClientSlots
         ? host::LifecycleResult::rejected(host::HostError::InvalidLifecycle)
         : registry_.activateMap(static_cast<std::uint16_t>(clientMax));
@@ -270,6 +335,7 @@ core::world::ReportResult LifecycleCoordinator::report(core::PlayerId reporter,c
     return world_.requestReport(reporter,target,static_cast<std::uint64_t>(micros),eligible,teams_);
 }
 void LifecycleCoordinator::startFrame() noexcept {
+    if (!perceptionMessageIds_.valid()) (void)refreshUserMessageIds(true);
     world_.beginUpdate();
     const auto result=registry_.startFrame(); emit(host::LifecycleEventKind::FrameStarted,result);
     if(!result.changed()) return;

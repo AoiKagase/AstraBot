@@ -24,6 +24,7 @@ std::vector<astrabot::debug::CombatTrace> gCombatTraces;
 edict_t gFakeEntity{};
 char gFakeInfoBuffer[256]{};
 int gRunPlayerMoveCalls = 0;
+bool gUserMessageIdsReady = true;
 
 enginefuncs_t* gHookEngineFunctions = nullptr;
 DLL_FUNCTIONS* gHookDllFunctions = nullptr;
@@ -116,6 +117,9 @@ int captureGetUserMsgID(
     if (messageName == nullptr) {
         return 0;
     }
+    if (!gUserMessageIdsReady) {
+        return 0;
+    }
     if (std::strcmp(messageName, "VGUIMenu") == 0) {
         return 11;
     }
@@ -124,6 +128,12 @@ int captureGetUserMsgID(
     }
     if (std::strcmp(messageName, "TeamInfo") == 0) {
         return 13;
+    }
+    if (std::strcmp(messageName, "HLTV") == 0) {
+        return 14;
+    }
+    if (std::strcmp(messageName, "ScreenFade") == 0) {
+        return 15;
     }
     return 0;
 }
@@ -204,6 +214,7 @@ void resetAdapter() {
     gTraceLines.clear();
     gLifecycleTraces.clear();
     gRunPlayerMoveCalls = 0;
+    gUserMessageIdsReady = true;
 }
 
 void query(Fixture& fixture) {
@@ -343,7 +354,34 @@ void testAttachValidationIsRollbackSafe() {
     assert(Meta_Attach(PT_ANYTIME, &fixture.callbacks, &fixture.globals, &fixture.gameDll) == 0);
     assertCallbacksEqual(fixture.callbacks, before);
     gHookDllFunctions = &fixture.dll;
-    assert(gLogLines.empty());
+    assert(!gLogLines.empty());
+    assert(gLogLines.front().find("Meta_Attach rejected") != std::string::npos);
+}
+
+void testAttachBeforeUserMessagesAreRegistered() {
+    resetAdapter();
+    Fixture fixture{};
+    gUserMessageIdsReady = false;
+    query(fixture);
+
+    assert(Meta_Attach(PT_ANYTIME, &fixture.callbacks, &fixture.globals, &fixture.gameDll) != 0);
+    assert(!astrabot::adapter::metamod::lifecycleCoordinator().flashCapability());
+    assert(!astrabot::adapter::metamod::lifecycleCoordinator().perceptionIdentityDiagnostics().roundNotificationAvailable);
+
+    astrabot::adapter::metamod::serverActivateHook(nullptr, 0, 32);
+    assert(!astrabot::adapter::metamod::lifecycleCoordinator().flashCapability());
+    assert(!astrabot::adapter::metamod::lifecycleCoordinator().perceptionIdentityDiagnostics().roundNotificationAvailable);
+    assert(gLogLines.size() == 2);
+    assert(gLogLines[1] == "astrabot user-message-ids pending");
+
+    gUserMessageIdsReady = true;
+    astrabot::adapter::metamod::startFrameHook();
+    assert(astrabot::adapter::metamod::lifecycleCoordinator().flashCapability());
+    assert(astrabot::adapter::metamod::lifecycleCoordinator().perceptionIdentityDiagnostics().roundNotificationAvailable);
+    assert(gLogLines.size() == 3);
+    assert(gLogLines[2] == "astrabot user-message-ids resolved");
+
+    assert(Meta_Detach(PT_ANYTIME, PNL_COMMAND) != 0);
 }
 
 void testSuccessfulAttachDoubleAttachAndDetach() {
@@ -375,24 +413,25 @@ void testSuccessfulAttachDoubleAttachAndDetach() {
     const META_FUNCTIONS secondBefore = secondCallbacks;
     assert(Meta_Attach(PT_ANYTIME, &secondCallbacks, &fixture.globals, &fixture.gameDll) == 0);
     assertCallbacksEqual(secondCallbacks, secondBefore);
-    assert(gLogLines.size() == 1);
+    assert(gLogLines.size() == 2);
+    assert(gLogLines[1].find("reason=already-attached") != std::string::npos);
 
     assert(Meta_Detach(PT_ANYTIME, PNL_COMMAND) != 0);
     assertCallbacksEqual(fixture.callbacks, before);
     assert(gpMetaGlobals == nullptr);
     assert(gpGamedllFuncs == nullptr);
     assert(gpMetaUtilFuncs == nullptr);
-    assert(gLogLines.size() == 1);
+    assert(gLogLines.size() == 2);
 
     assert(Meta_Detach(PT_ANYTIME, PNL_COMMAND) != 0);
-    assert(gLogLines.size() == 1);
+    assert(gLogLines.size() == 2);
 
     query(fixture);
     assert(Meta_Attach(PT_ANYTIME, &fixture.callbacks, &fixture.globals, &fixture.gameDll) != 0);
-    assert(gLogLines.size() == 2);
+    assert(gLogLines.size() == 3);
     assert(Meta_Detach(PT_ANYTIME, PNL_COMMAND) != 0);
     assert(Meta_Detach(PT_ANYTIME, PNL_COMMAND) != 0);
-    assert(gLogLines.size() == 2);
+    assert(gLogLines.size() == 3);
 }
 
 void testEmptyHookTablesAndInterfaceChecks() {
@@ -570,6 +609,7 @@ void testCombatLifecycleRejectsInvalidActorWithTrace() {
 int main() {
     testQueryNullMismatchAndIdempotence();
     testAttachValidationIsRollbackSafe();
+    testAttachBeforeUserMessagesAreRegistered();
     testSuccessfulAttachDoubleAttachAndDetach();
     testEmptyHookTablesAndInterfaceChecks();
     testLifecycleHooksAndCoordinatorCleanup();

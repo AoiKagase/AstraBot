@@ -228,6 +228,8 @@ private:
         const core::combat::WeaponSnapshot* weapon,
         const core::combat::CommandCompositionResult& composition,
         const CombatSubmitResult& result) noexcept;
+    void configureUserMessageIds(cstrike::UserMessageIds) noexcept;
+    bool refreshUserMessageIds(bool logPending) noexcept;
     void clearCombatState(core::PlayerId player) noexcept;
     void clearAllCombatState() noexcept;
     bool dispatchMenu(ClientState&, std::uint8_t selection) noexcept;
@@ -259,6 +261,8 @@ private:
     cstrike::MessageDecoder messageDecoder_{};
     cstrike::UserMessageIds perceptionMessageIds_{};
     cstrike::MessageDecoder* activeDecoder_{};
+    bool userMessageIdsReady_{false};
+    bool userMessageIdsPendingLogged_{false};
     core::MapGeneration messageMap_{};
     core::perception::RoundGeneration messageRound_{};
     int messageDestination_{};

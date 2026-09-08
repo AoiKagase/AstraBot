@@ -74,31 +74,17 @@ bool hasRequiredFakeClientUtility(
            utilityFunctions->pfnCallGameEntity != nullptr;
 }
 
-bool resolveUserMessageIds(
-    mutil_funcs_t* utilityFunctions,
-    astrabot::adapter::cstrike::UserMessageIds& ids) noexcept {
-    if (utilityFunctions == nullptr ||
-        utilityFunctions->pfnGetUserMsgID == nullptr) {
-        return false;
-    }
-    int messageSize = 0;
-    ids.vguiMenu = utilityFunctions->pfnGetUserMsgID(
-        PLID, "VGUIMenu", &messageSize);
-    ids.showMenu = utilityFunctions->pfnGetUserMsgID(
-        PLID, "ShowMenu", &messageSize);
-    ids.teamInfo = utilityFunctions->pfnGetUserMsgID(
-        PLID, "TeamInfo", &messageSize);
-    ids.hltv = utilityFunctions->pfnGetUserMsgID(PLID, "HLTV", &messageSize);
-    ids.screenFade = utilityFunctions->pfnGetUserMsgID(PLID, "ScreenFade", &messageSize);
-    if (ids.screenFade == ids.vguiMenu || ids.screenFade == ids.showMenu ||
-        ids.screenFade == ids.teamInfo || ids.screenFade == ids.hltv) ids.screenFade = 0;
-    return ids.valid();
-}
-
 void logAttachedIdentity(const char* line) noexcept {
     if (gpMetaUtilFuncs != nullptr && gpMetaUtilFuncs->pfnLogConsole != nullptr) {
         gpMetaUtilFuncs->pfnLogConsole(PLID, "%s", line);
     }
+}
+
+bool rejectAttach(const char* reason) noexcept {
+    if (gpMetaUtilFuncs != nullptr && gpMetaUtilFuncs->pfnLogConsole != nullptr) {
+        gpMetaUtilFuncs->pfnLogConsole(PLID, "%s", reason);
+    }
+    return false;
 }
 
 void resetState() noexcept {
@@ -168,12 +154,30 @@ C_DLLEXPORT FORCE_STACK_ALIGN int Meta_Attach(
     gamedll_funcs_t* gameDllFunctions) {
     // The pinned Meta_Attach ABI has no enginefuncs_t argument.  Metamod-P
     // supplies the live engine table through the pinned utility callback.
-    if (gState.attached || !gState.queried || functionTable == nullptr ||
-        !gEngineGlobals || !gPluginEngine.pfnAddServerCommand ||
-        !gPluginEngine.pfnCmd_Argc || !gPluginEngine.pfnCmd_Argv ||
-        metaGlobals == nullptr || !hasRequiredGameDllTables(gameDllFunctions) ||
-        !hasRequiredUtilityTable(gpMetaUtilFuncs)) {
-        return 0;
+    // User message IDs are deliberately resolved after attach. Some GameDLLs
+    // do not register them until map activation; refusing attach here makes
+    // the adapter appear unloadable without identifying the timing issue.
+    if (gState.attached) {
+        return rejectAttach("astrabot Meta_Attach rejected reason=already-attached");
+    }
+    if (!gState.queried) {
+        return rejectAttach("astrabot Meta_Attach rejected reason=not-queried");
+    }
+    if (functionTable == nullptr) {
+        return rejectAttach("astrabot Meta_Attach rejected reason=missing-function-table");
+    }
+    if (!gEngineGlobals || !gPluginEngine.pfnAddServerCommand ||
+        !gPluginEngine.pfnCmd_Argc || !gPluginEngine.pfnCmd_Argv) {
+        return rejectAttach("astrabot Meta_Attach rejected reason=engine-bootstrap");
+    }
+    if (metaGlobals == nullptr) {
+        return rejectAttach("astrabot Meta_Attach rejected reason=missing-meta-globals");
+    }
+    if (!hasRequiredGameDllTables(gameDllFunctions)) {
+        return rejectAttach("astrabot Meta_Attach rejected reason=missing-gamedll-tables");
+    }
+    if (!hasRequiredUtilityTable(gpMetaUtilFuncs)) {
+        return rejectAttach("astrabot Meta_Attach rejected reason=missing-utility-table");
     }
 
     enginefuncs_t* engineFunctions = nullptr;
@@ -182,19 +186,24 @@ C_DLLEXPORT FORCE_STACK_ALIGN int Meta_Attach(
     gpMetaUtilFuncs->pfnGetHookTables(
         PLID, &engineFunctions, &hookDllFunctions, &hookNewDllFunctions);
     if (engineFunctions == nullptr ||
-        engineFunctions->pfnIndexOfEdict == nullptr ||
-        hookDllFunctions == nullptr || hookNewDllFunctions == nullptr ||
-        hookDllFunctions != gameDllFunctions->dllapi_table ||
-        hookNewDllFunctions != gameDllFunctions->newapi_table ||
-        !hasRequiredFakeClientEngine(engineFunctions) ||
-        !hasRequiredFakeClientGameDll(gameDllFunctions->dllapi_table) ||
-        !hasRequiredFakeClientUtility(gpMetaUtilFuncs)) {
-        return 0;
+        engineFunctions->pfnIndexOfEdict == nullptr) {
+        return rejectAttach("astrabot Meta_Attach rejected reason=missing-hook-engine");
     }
-
-    astrabot::adapter::cstrike::UserMessageIds userMessageIds{};
-    if (!resolveUserMessageIds(gpMetaUtilFuncs, userMessageIds)) {
-        return 0;
+    if (hookDllFunctions == nullptr || hookNewDllFunctions == nullptr) {
+        return rejectAttach("astrabot Meta_Attach rejected reason=missing-hook-tables");
+    }
+    if (hookDllFunctions != gameDllFunctions->dllapi_table ||
+        hookNewDllFunctions != gameDllFunctions->newapi_table) {
+        return rejectAttach("astrabot Meta_Attach rejected reason=hook-tables-mismatch");
+    }
+    if (!hasRequiredFakeClientEngine(engineFunctions)) {
+        return rejectAttach("astrabot Meta_Attach rejected reason=missing-fake-client-engine");
+    }
+    if (!hasRequiredFakeClientGameDll(gameDllFunctions->dllapi_table)) {
+        return rejectAttach("astrabot Meta_Attach rejected reason=missing-fake-client-gamedll");
+    }
+    if (!hasRequiredFakeClientUtility(gpMetaUtilFuncs)) {
+        return rejectAttach("astrabot Meta_Attach rejected reason=missing-fake-client-utility");
     }
 
     const GETENTITYAPI2_FN previousEntityApi2 = functionTable->pfnGetEntityAPI2;
@@ -217,7 +226,7 @@ C_DLLEXPORT FORCE_STACK_ALIGN int Meta_Attach(
         engineFunctions,
         gpMetaUtilFuncs,
         gameDllFunctions->dllapi_table,
-        userMessageIds,
+        {},
         gEngineGlobals);
     // The bootstrap table contains Metamod's command-registration wrapper.
     // GetHookTables returns a different table that bypasses unload tracking.
