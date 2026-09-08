@@ -36,11 +36,13 @@ Persistent Experience
 ↓
 Adaptive Navigation
 ↓
-AMXX Integration
-↓
 Advanced Learning
 ↓
-Final Integration / Live Acceptance
+Final Integration / Offline Gate
+↓
+Source Cleanup / Release Preparation
+↓
+AMXX Integration
 ```
 
 ## Global principles
@@ -52,6 +54,13 @@ Final Integration / Live Acceptance
 - Preserve deterministic testability.
 - Continue Windows and Linux x86 CI.
 - Keep live-server validation separate from offline gates.
+- Target the pinned Metamod-P build and exact `META_INTERFACE_VERSION "5:13"`.
+- Apply Human/Bot Experience weights at update time only; do not apply them
+  again in Adaptive Route.
+- Guarantee Experience atomic replace plus backup recovery, without claiming
+  OS-level power-loss durability.
+- Keep Runtime single-primary while using bounded slot-oriented internal state.
+- Do not run HLDS/ReHLDS live validation before project-wide Finish is confirmed.
 - Do not pull advanced features forward into a baseline phase.
 
 ## Phase documents
@@ -61,10 +70,10 @@ Final Integration / Live Acceptance
 - [Phase 8 — Team Director](phase-8-team-director.md)
 - [Phase 9 — Persistent Experience](phase-9-persistent-experience.md)
 - [Phase 10 — Adaptive Tactical Navigation](phase-10-adaptive-tactical-navigation.md)
-- [Phase 11 — AMX Mod X API](phase-11-amxx-api.md)
-- [Phase 12 — Advanced Learning and Traversal](phase-12-advanced-learning-and-traversal.md)
-- [Phase 13 — Final Integration and Live Acceptance](phase-13-final-integration-and-live-acceptance.md)
-- [Phase 14 — Final Source Cleanup and Release Preparation](phase-14-source-cleanup-and-release.md)
+- [Phase 11 — Advanced Learning and Traversal](phase-11-advanced-learning-and-traversal.md)
+- [Phase 12 — Final Integration and Live Acceptance](phase-12-final-integration-and-live-acceptance.md)
+- [Phase 13 — Final Source Cleanup and Release Preparation](phase-13-source-cleanup-and-release.md)
+- [Phase 14 — AMX Mod X API](phase-14-amxx-api.md)
 
 ## Final AstraBot capability target
 
@@ -123,4 +132,3 @@ NPC support
 
 These remain candidates for future work after the AstraBot baseline is
 complete.
-

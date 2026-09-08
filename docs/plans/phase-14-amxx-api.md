@@ -1,6 +1,6 @@
-# Phase 11 — AMX Mod X API
+# Phase 14 — AMX Mod X API
 
-Phase 11 exposes AstraBot as an optional external-control bridge without
+Phase 14 exposes AstraBot as an optional external-control bridge without
 making AMX Mod X a required dependency of the core.
 
 ## Goal
@@ -15,12 +15,12 @@ Metamod Runtime
 AMXX Bridge
 ```
 
-## P11-01 — AMXX Bridge Boundary
+## P14-01 — AMXX Bridge Boundary
 
 Define the bridge boundary so AMX Mod X types and lifecycle details do not
 leak into Core.
 
-## P11-02 — Basic Natives
+## P14-02 — Basic Natives
 
 Candidate natives:
 
@@ -35,7 +35,7 @@ astrabot_get_current_area(...)
 astrabot_pause_ai(...)
 ```
 
-## P11-03 — Observability Natives
+## P14-03 — Observability Natives
 
 Candidate observability natives:
 
@@ -46,7 +46,7 @@ astrabot_get_route_cost(...)
 astrabot_get_experience(...)
 ```
 
-## P11-04 — Forwards
+## P14-04 — Forwards
 
 Candidate forwards:
 
@@ -59,7 +59,7 @@ astrabot_goal_reached(...)
 astrabot_stuck(...)
 ```
 
-## P11-05 — Safety
+## P14-05 — Safety
 
 The Core must remain safe when the AMXX side supplies:
 
@@ -68,7 +68,7 @@ The Core must remain safe when the AMXX side supplies:
 - an invalid role; or
 - a cross-map handle.
 
-## P11-06 — Phase 11 Gate
+## P14-06 — Phase 12 Gate
 
 Verify Windows and Linux builds together with basic AMX Mod X integration.
 

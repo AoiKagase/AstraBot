@@ -282,6 +282,7 @@ if(ASTRABOT_BUILD_METAMOD)
         src/adapter/cstrike/nav/ladder_publication.cpp
         src/adapter/cstrike/nav/world_queries.cpp
         src/adapter/metamod/lifecycle.cpp
+        src/adapter/metamod/runtime_orchestrator.cpp
         src/adapter/metamod/movement.cpp
         src/debug/host_trace.cpp
     )
@@ -319,6 +320,20 @@ if(ASTRABOT_BUILD_TESTS)
     target_link_libraries(astrabot_team_reports_tests PRIVATE astrabot_core)
     astrabot_enable_warnings(astrabot_team_reports_tests)
     add_test(NAME astrabot.team_reports COMMAND astrabot_team_reports_tests)
+    add_executable(astrabot_runtime_orchestrator_tests
+        tests/adapter/runtime_orchestrator_tests.cpp
+        src/adapter/metamod/runtime_orchestrator.cpp
+    )
+    target_link_libraries(astrabot_runtime_orchestrator_tests PRIVATE astrabot_core)
+    target_compile_features(astrabot_runtime_orchestrator_tests PRIVATE cxx_std_17)
+    target_include_directories(astrabot_runtime_orchestrator_tests
+        PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+    set_target_properties(astrabot_runtime_orchestrator_tests PROPERTIES
+        CXX_EXTENSIONS OFF
+    )
+    astrabot_enable_warnings(astrabot_runtime_orchestrator_tests)
+    add_test(NAME astrabot.adapter.runtime_orchestrator COMMAND astrabot_runtime_orchestrator_tests)
     add_executable(astrabot_team_director_tests tests/team_director_tests.cpp)
     target_link_libraries(astrabot_team_director_tests PRIVATE astrabot_core)
     target_compile_features(astrabot_team_director_tests PRIVATE cxx_std_17)
@@ -920,6 +935,7 @@ if(ASTRABOT_BUILD_TESTS)
             src/adapter/cstrike/nav/ladder_publication.cpp
             src/adapter/cstrike/nav/world_queries.cpp
             src/adapter/metamod/lifecycle.cpp
+            src/adapter/metamod/runtime_orchestrator.cpp
             src/adapter/metamod/movement.cpp
             src/debug/host_trace.cpp
         )
@@ -990,6 +1006,7 @@ if(ASTRABOT_BUILD_TESTS)
             src/adapter/cstrike/nav/ladder_publication.cpp
             src/adapter/cstrike/nav/world_queries.cpp
             src/adapter/metamod/lifecycle.cpp
+            src/adapter/metamod/runtime_orchestrator.cpp
             src/adapter/metamod/movement.cpp
             src/adapter/metamod/plugin_entry.cpp
             src/debug/host_trace.cpp
@@ -1065,6 +1082,25 @@ if(ASTRABOT_BUILD_TESTS)
             NAME astrabot.cstrike.join
             COMMAND astrabot_cstrike_join_tests
         )
+    endif()
+    if(ASTRABOT_BUILD_TESTS)
+        # Keep the development/phase-gate split discoverable without making
+        # every add_test call repeat the same label policy.
+        get_property(_astrabot_registered_tests DIRECTORY PROPERTY TESTS)
+        foreach(_astrabot_test IN LISTS _astrabot_registered_tests)
+            if(_astrabot_test MATCHES "(^|\\.)live($|\\.)")
+                set(_astrabot_label live)
+            elseif(_astrabot_test MATCHES "fuzz")
+                set(_astrabot_label fuzz)
+            elseif(_astrabot_test MATCHES "replay")
+                set(_astrabot_label replay)
+            elseif(_astrabot_test MATCHES "integration|adapter|fake_client|cstrike|runtime_orchestrator|real_checker|inspection_cli|movement_checker")
+                set(_astrabot_label integration)
+            else()
+                set(_astrabot_label fast)
+            endif()
+            set_tests_properties(${_astrabot_test} PROPERTIES LABELS ${_astrabot_label})
+        endforeach()
     endif()
     endif() # Normal tests include allocator overrides; dedicated ASan tests do not.
 endif()

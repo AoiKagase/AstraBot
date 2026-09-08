@@ -1,6 +1,6 @@
-# Phase 12 — Advanced Learning and Traversal
+# Phase 11 — Advanced Learning and Traversal
 
-Phase 12 adds AstraBot's differentiating learning and traversal capabilities.
+Phase 11 adds AstraBot's differentiating learning and traversal capabilities.
 It may be split into multiple subphases; the subphases below are intentionally
 independent.
 
@@ -10,7 +10,17 @@ Extend contextual danger, human traversal discovery, traversal experience,
 advanced motion primitives, opponent profiling, Wallbang, and SuppressiveFire
 without making the NavMesh mutable or introducing hidden information.
 
-## P12-A — Contextual Danger
+The map-session contract is explicit: `ContextualDangerModel` is cleared on
+`MapGeneration` changes and rejects observations from another generation.
+Opponent profiles are map-session scoped and do not retain redundant round
+metadata. Persistent Experience remains map-identified and separate.
+
+Adaptive Route keeps learned danger separate from geometric exposure. Encounter,
+grenade, and death observations update danger; exposure is supplied only by a
+bounded provider and defaults to zero. Human/Bot traffic weights are applied
+once during Experience update.
+
+## P11-A — Contextual Danger
 
 Extend the initial model:
 
@@ -30,7 +40,7 @@ Danger(
 )
 ```
 
-## P12-B — Human Traversal Discovery
+## P11-B — Human Traversal Discovery
 
 Observe human movement and detect a potential traversal when a player
 successfully moves between areas without a normal Nav connection:
@@ -43,7 +53,7 @@ no normal Nav connection
 successful movement to Area B
 ```
 
-## P12-C — Traversal Experience
+## P11-C — Traversal Experience
 
 Track at least:
 
@@ -55,7 +65,7 @@ bot attempts
 bot success
 ```
 
-## P12-D — Advanced Motion Primitives
+## P11-D — Advanced Motion Primitives
 
 Candidate motion primitives include:
 
@@ -71,7 +81,7 @@ AirControl
 
 Do not implement all primitives at once.
 
-## P12-E — Learned Traversal Activation
+## P11-E — Learned Traversal Activation
 
 Enable only Traversal candidates with sufficient human-success evidence. Keep
 the NavMesh immutable and compose the result as:
@@ -84,7 +94,7 @@ Traversal Enrichment
 Traversal Experience
 ```
 
-## P12-F — Opponent Profiling
+## P11-F — Opponent Profiling
 
 Future profiling candidates include:
 
@@ -99,7 +109,7 @@ rotation speed
 
 Avoid excessive dependence on privacy-sensitive persistent identities.
 
-## P12-G — Wallbang
+## P11-G — Wallbang
 
 Implement the `Wallbang` mode reserved by Phase 5 using:
 
@@ -120,16 +130,15 @@ Never use:
 - exact wallhack targeting; or
 - anonymous sound alone to select a player-specific wallbang target.
 
-## P12-H — Suppressive Fire
+## P11-H — Suppressive Fire
 
 Suppressive fire targets a high-probability region rather than a specific
 player's hidden exact position. Keep this policy separate from Wallbang.
 
-## P12-I — Advanced Learning Gate
+## P11-I — Advanced Learning Gate
 
 Verify that learning does not cause:
 
 - loss of deterministic replay;
 - unbounded database growth; or
 - unstable route oscillation.
-

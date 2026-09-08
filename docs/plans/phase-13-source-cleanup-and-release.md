@@ -1,6 +1,6 @@
-# Phase 14 — Final Source Cleanup and Release Preparation
+# Phase 13 — Final Source Cleanup and Release Preparation
 
-After functionality is complete, Phase 14 organizes readability,
+After functionality is complete, Phase 13 organizes readability,
 documentation, licensing, and distribution artifacts. Cleanup is kept separate
 from functional changes.
 
@@ -9,7 +9,20 @@ from functional changes.
 Prepare the completed project for maintenance and release without changing
 runtime behavior as part of formatting or packaging work.
 
-## P14-01 — Source Readability Cleanup
+The cleanup phase also records the Full Source Review response matrix:
+
+| Finding | Resolution |
+| --- | --- |
+| ContextualDanger lifecycle | Map-session `beginMap`/`reset`, generation-safe observations |
+| OpponentProfile round metadata | Removed; model round remains global |
+| Adaptive Route overlap | Learned danger and provider-only exposure are separate |
+| MapIdentity hashes | Enabled hashes must be non-zero |
+| Experience durability | Atomic replace plus backup; no power-loss guarantee |
+| Metamod compatibility | Pinned Metamod-P and exact `5:13` policy retained |
+| Runtime integration | Adapter-private orchestrator with fixed cadence/order |
+| AMXX API | Deferred to Phase 14 |
+
+## P13-01 — Source Readability Cleanup
 
 Perform the first project-wide formatting pass here.
 
@@ -26,7 +39,7 @@ Conventions:
 
 Keep this in a separate commit from functional changes.
 
-## P14-02 — Test Policy Cleanup
+## P13-02 — Test Policy Cleanup
 
 Apply CTest labels such as:
 
@@ -55,7 +68,7 @@ fuzz
 
 Avoid duplicate full-test runs for the same Git tree.
 
-## P14-03 — Documentation
+## P13-03 — Documentation
 
 Ensure the release documentation covers at least:
 
@@ -74,7 +87,7 @@ configuration
 troubleshooting
 ```
 
-## P14-04 — License / Provenance Audit
+## P13-04 — License / Provenance Audit
 
 Verify:
 
@@ -85,7 +98,7 @@ Verify:
 - fixture provenance; and
 - absence of accidentally copied GPL code.
 
-## P14-05 — Release Packaging
+## P13-05 — Release Packaging
 
 Prepare Windows and Linux packages containing:
 
@@ -95,7 +108,7 @@ Prepare Windows and Linux packages containing:
 - the AMXX bridge, when enabled; and
 - installation instructions.
 
-## P14-06 — Final Gate
+## P13-06 — Final Gate
 
 The final decision requires:
 
@@ -114,4 +127,3 @@ Only after all criteria pass may the project declare:
 ```text
 Project-wide Finish
 ```
-
