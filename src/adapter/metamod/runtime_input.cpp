@@ -46,8 +46,6 @@ RuntimeActorStaleReason staleReason(const LifecycleCoordinator& owner,
     if (!std::isfinite(entity->v.health) || entity->v.health <= 0)
         return RuntimeActorStaleReason::InvalidHealth;
     if (entity->v.iuser1 != 0) return RuntimeActorStaleReason::SpectatorState;
-    if (!(entity->v.flags & FL_FAKECLIENT))
-        return RuntimeActorStaleReason::MissingFakeClientFlag;
     if (entity->v.flags & FL_SPECTATOR) return RuntimeActorStaleReason::SpectatorFlag;
     return RuntimeActorStaleReason::None;
 }

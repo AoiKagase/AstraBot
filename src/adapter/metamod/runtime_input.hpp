@@ -50,7 +50,6 @@ enum class RuntimeActorStaleReason : std::uint8_t {
     Dead,
     InvalidHealth,
     SpectatorState,
-    MissingFakeClientFlag,
     SpectatorFlag,
 };
 

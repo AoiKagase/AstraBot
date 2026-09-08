@@ -196,7 +196,6 @@ const char* runtimeActorStaleReasonName(RuntimeActorStaleReason reason) noexcept
     case RuntimeActorStaleReason::Dead: return "Dead";
     case RuntimeActorStaleReason::InvalidHealth: return "InvalidHealth";
     case RuntimeActorStaleReason::SpectatorState: return "SpectatorState";
-    case RuntimeActorStaleReason::MissingFakeClientFlag: return "MissingFakeClientFlag";
     case RuntimeActorStaleReason::SpectatorFlag: return "SpectatorFlag";
     }
     return "Unknown";
