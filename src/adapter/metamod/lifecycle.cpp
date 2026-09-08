@@ -2,6 +2,7 @@
 // Copyright (c) 2026 AstraBot contributors.
 
 #include "adapter/metamod/lifecycle.hpp"
+#include "adapter/metamod/runtime_input.hpp"
 
 #include <cstdint>
 #include <limits>
@@ -164,6 +165,7 @@ bool LifecycleCoordinator::refreshUserMessageIds(bool logPending) noexcept {
     return true;
 }
 void LifecycleCoordinator::reset() noexcept {
+    runtimeOwnedActor_ = {};
     runtime_.reset();
     distributions_.reset();
     world_.reset();
@@ -214,6 +216,7 @@ void LifecycleCoordinator::serverActivate(int clientMax) noexcept {
     emit(host::LifecycleEventKind::MapActivated,result);
 }
 void LifecycleCoordinator::serverDeactivate() noexcept {
+    runtimeOwnedActor_ = {};
     runtime_.reset();
     distributions_.reset();
     world_.reset();
@@ -381,6 +384,15 @@ void LifecycleCoordinator::startFrame() noexcept {
             if(client.join.player()==player) handleJoinAction(client,client.join.commandCompleted(dispatched));
         }
     }
+    if (runtimeOwnedActor_.isValid() && !runtimeInputProvider_) {
+        const RuntimeFrame frame{map, round_, tick, engineTimeMicros(engineGlobals_), movement_.frameDeltaUs(), {}};
+        if (!engineGlobals_ || !std::isfinite(engineGlobals_->time) || engineGlobals_->time < 0 ||
+            !runtimeActorReady(*this, frame, hookedGameDllFunctions_, runtimeOwnedActor_, runtimeWeapon_, runtimeAttackPending_)) {
+            movement_.forget(runtimeOwnedActor_);
+            navConsole_.invalidateActor(runtimeOwnedActor_, nav::runtime::SessionReason::InvalidSnapshot);
+            runtime_.onDeath(runtimeOwnedActor_);
+        }
+    }
     for(auto& client:clients_) navConsole_.beforeDispatch(*this,client.fake.activePlayer());
     for(auto& client:clients_) {
         if(!registry_.isMapActive() || registry_.mapGeneration()!=map || registry_.currentTick()!=tick) return;
@@ -433,14 +445,23 @@ void LifecycleCoordinator::startFrame() noexcept {
                     runtimeInputCount = runtimeInputProvider_(
                         runtimeInputContext_, *this, runtimeFrame,
                         runtimeInputs.data(), runtimeInputs.size());
+                } else {
+                    runtimeInputCount = buildRuntimeInputs(*this, runtimeFrame,
+                        hookedGameDllFunctions_, runtimeInputs.data(), runtimeInputs.size());
                 }
                 const auto& runtimeResult = runtime_.run(
                     runtimeFrame, runtimeInputs.data(), runtimeInputCount);
                 for (std::size_t i = 0; i < runtimeResult.decisionCount; ++i) {
                     const auto& decision = runtimeResult.decisions[i];
+                    if (decision.executable) {
+                        runtimeOwnedActor_ = decision.player;
+                        runtimeAttackPending_ = decision.combat.hasAttackInput();
+                        if (!runtimeInputProvider_ && runtimeInputCount == 1)
+                            runtimeWeapon_ = runtimeInputs[0].combat.weapon.active;
+                    }
                     if (decision.executable && decision.hasNavigationGoal) {
                         navConsole_.applyRuntimeNavigation(*this, decision);
-                    } else if (runtimeInputProvider_ != nullptr &&
+                    } else if ((runtimeInputProvider_ || runtimeOwnedActor_ == decision.player) &&
                                decision.player.isValid() &&
                                decision.rejection != RuntimeRejectReason::None) {
                         // A provider-owned actor that fails validation must
@@ -450,6 +471,7 @@ void LifecycleCoordinator::startFrame() noexcept {
                         navConsole_.invalidateActor(
                             decision.player,
                             nav::runtime::SessionReason::InvalidSnapshot);
+                        movement_.forget(decision.player);
                     }
                 }
             }
@@ -458,6 +480,18 @@ void LifecycleCoordinator::startFrame() noexcept {
     for(auto& client:clients_) {
         if(!registry_.isMapActive() || registry_.mapGeneration()!=map || registry_.currentTick()!=tick) return;
         navConsole_.moveFrame(*this,client.fake.activePlayer());
+    }
+    // A held position or a completed route may produce no movement command.
+    // Consume the same-frame combat decision once using neutral movement.
+    for (const auto& decision : runtime_.result().decisions) {
+        if (!decision.executable) continue;
+        if (const auto combat = takeRuntimeCombatDecision(decision.player,
+                decision.agent, map, round_, tick)) {
+            core::BotCommand neutral{};
+            neutral.msec = 1;
+            neutral.view = combat->view;
+            (void)submitCombatDecision(decision.player, map, tick, *combat, neutral);
+        }
     }
 }
 void LifecycleCoordinator::soundPrecache(int type,const char* name,std::uint16_t index) noexcept {
@@ -798,6 +832,11 @@ void LifecycleCoordinator::handleMessage(const cstrike::MessageEvent& event) noe
             return;
         }
         ++round_.value; lastRoundTime_ = time; lastRoundTick_ = registry_.currentTick();
+        if (runtimeOwnedActor_.isValid()) {
+            movement_.forget(runtimeOwnedActor_);
+            navConsole_.invalidateActor(runtimeOwnedActor_, nav::runtime::SessionReason::InvalidSnapshot);
+            runtime_.onDeath(runtimeOwnedActor_);
+        }
         clearAllCombatState();
         world_.beginRound(round_);
         ++identityDiagnostics_.rounds; vision_.beginRound(round_);

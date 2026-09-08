@@ -65,9 +65,8 @@ struct CombatSubmitResult {
 
 class LifecycleCoordinator final {
 public:
-    // The adapter owns engine/private-to-value conversion. A null provider is
-    // an intentional safe no-op: perception still publishes, but no actor is
-    // planned or dispatched until a provider supplies a complete DTO set.
+    // The adapter owns engine-to-value conversion. Null selects the production
+    // reader; tests may override the synchronous value boundary.
     using RuntimeInputProvider = std::size_t (*)(
         void*, const LifecycleCoordinator&, RuntimeFrame&,
         RuntimeActorInput*, std::size_t) noexcept;
@@ -304,6 +303,9 @@ private:
     debug::CombatTraceSink combatTraceSink_{nullptr};
     std::uint64_t combatTraceSequence_{0};
     RuntimeInputProvider runtimeInputProvider_{nullptr};
+    core::PlayerId runtimeOwnedActor_{};
+    core::combat::WeaponId runtimeWeapon_{};
+    bool runtimeAttackPending_{false};
     void* runtimeInputContext_{nullptr};
 };
 

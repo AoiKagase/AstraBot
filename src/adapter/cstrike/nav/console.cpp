@@ -239,13 +239,13 @@ bool NavConsole::load(const char* path,core::MapGeneration map,metamod::Lifecycl
     } catch(...) { line("nav load=AllocationOrInputFailure"); return false; }
 }
 nav::runtime::MovementSnapshot NavConsole::snapshot(const metamod::LifecycleCoordinator& owner) const noexcept {
-    return snapshotFor(owner,*current_);
+    return snapshotFor(owner,current_->actor);
 }
 nav::runtime::MovementSnapshot NavConsole::snapshotFor(
-    const metamod::LifecycleCoordinator& owner,const ActorState& actor) const noexcept {
+    const metamod::LifecycleCoordinator& owner,core::PlayerId player) const noexcept {
     nav::runtime::MovementSnapshot s;
     auto& registry=owner.registry();
-    s.actor=actor.actor; s.agent=owner.agents().findByPlayer(s.actor).agent;
+    s.actor=player; s.agent=owner.agents().findByPlayer(s.actor).agent;
     s.map=registry.mapGeneration(); s.tick=registry.currentTick();
     if(globals_ && std::isfinite(globals_->frametime) && globals_->frametime>=0 && globals_->frametime<=60)
         s.elapsedUs=static_cast<std::uint64_t>(double(globals_->frametime)*1000000.0);
@@ -268,15 +268,24 @@ nav::runtime::MovementSnapshot NavConsole::snapshotFor(
 std::optional<RuntimeNavigationState> NavConsole::runtimeState(
     const metamod::LifecycleCoordinator& owner,core::PlayerId player) const noexcept {
     const auto* actor=findActor(player);
-    if(!actor) return {};
+    if(inRequest_ || deferredInvalidation_ || navigation_.map!=owner.registry().mapGeneration() || !index_) return {};
     RuntimeNavigationState result{};
-    result.movement=snapshotFor(owner,*actor);
-    if(actor->session_) {
+    result.movement=snapshotFor(owner,player);
+    if(result.movement.position) {
+        const auto match=index_->containing(*result.movement.position,72.0);
+        if(match && *match.value) result.currentArea=(*match.value)->areaId;
+    }
+    if(actor && actor->session_) {
         const auto& trace=actor->session_->trace();
-        result.currentArea=trace.currentArea;
         result.goal=trace.goal.isValid() ? std::optional<nav::model::NavAreaId>{trace.goal}:std::nullopt;
         result.routeGeneration=trace.routeGeneration;
         result.routeExecutable=actor->session_->executable();
+        if(result.routeExecutable && result.goal && navigation_.graph) {
+            if(const auto vertex=navigation_.graph->find(*result.goal)) {
+                const auto point=navigation_.graph->center(*vertex);
+                result.goalPosition=core::perception::Point{point.x,point.y,point.z};
+            }
+        }
     }
     return result;
 }

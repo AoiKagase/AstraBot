@@ -1,0 +1,182 @@
+// SPDX-License-Identifier: MPL-2.0
+#include "adapter/metamod/runtime_input.hpp"
+#include "adapter/metamod/lifecycle.hpp"
+#include <entity_state.h>
+#include <algorithm>
+#include <cmath>
+#include <limits>
+
+namespace astrabot::adapter::metamod {
+namespace {
+using WeaponClass = core::combat::WeaponSnapshot::WeaponClass;
+
+WeaponClass weaponClass(int id) noexcept {
+    switch (id) {
+    case 1: case 10: case 11: case 16: case 17: case 26: return WeaponClass::Pistol;
+    case 3: case 13: case 18: case 24: return WeaponClass::Sniper;
+    case 7: case 12: case 19: case 23: case 30: return WeaponClass::SMG;
+    case 8: case 15: case 22: case 27: case 28: return WeaponClass::Rifle;
+    default: return WeaponClass::Unknown;
+    }
+}
+
+bool current(const LifecycleCoordinator& owner, const RuntimeFrame& frame,
+             core::PlayerId player, core::BotAgentId agent, const edict_t* entity) noexcept {
+    const auto binding = owner.agents().findByPlayer(player);
+    const auto* join = owner.joinState(player);
+    return owner.registry().isMapActive() && owner.registry().mapGeneration() == frame.map &&
+        owner.registry().currentTick() == frame.tick && owner.round() == frame.round &&
+        owner.registry().currentPlayer(player.slot) == player && binding.isValid() &&
+        binding.agent == agent && binding.map == frame.map &&
+        entity && owner.entityFor(player) == entity && !entity->free &&
+        !owner.removalPending(player) && join && join->phase() == cstrike::JoinPhase::Joined &&
+        entity->v.deadflag == DEAD_NO && std::isfinite(entity->v.health) &&
+        entity->v.health > 0 && entity->v.iuser1 == 0 &&
+        (entity->v.flags & FL_FAKECLIENT) && !(entity->v.flags & FL_SPECTATOR);
+}
+
+bool readWeapon(const LifecycleCoordinator& owner, const RuntimeFrame& frame,
+                core::PlayerId player, core::BotAgentId agent, DLL_FUNCTIONS* dll, edict_t* entity,
+                cstrike::WeaponObservation& result) noexcept {
+    if (!dll || !dll->pfnUpdateClientData || !dll->pfnGetWeaponData) return false;
+    clientdata_t client{};
+    std::array<weapon_data_t, 32> weapons{};
+    dll->pfnUpdateClientData(entity, 1, &client);
+    if (!current(owner, frame, player, agent, entity)) return false;
+    if (!dll->pfnGetWeaponData(entity, weapons.data()) ||
+        !current(owner, frame, player, agent, entity)) return false;
+    if (client.m_iId <= 0 || client.m_iId >= 32) return false;
+    const auto& active = weapons[static_cast<std::size_t>(client.m_iId)];
+    if (active.m_iId != client.m_iId || !std::isfinite(client.vuser4[1]) ||
+        client.vuser4[1] < 0 || client.vuser4[1] > core::combat::kMaxAmmo ||
+        std::floor(client.vuser4[1]) != client.vuser4[1] ||
+        !std::isfinite(client.m_flNextAttack) || !std::isfinite(active.m_flNextPrimaryAttack)) return false;
+    result.map = frame.map; result.round = frame.round; result.tick = frame.tick;
+    result.observedMicros = frame.nowMicros;
+    result.activeWeapon = static_cast<std::uint16_t>(client.m_iId);
+    result.activeClass = weaponClass(client.m_iId);
+    // Non-firearms have -1 clips and unsupported P5 fire modes. They still
+    // provide a current inventory, but cannot authorize firearm attacks.
+    if (active.m_iClip < -1 || (active.m_iClip < 0 && result.activeClass != WeaponClass::Unknown)) return false;
+    result.clipAmmo = (std::max)(0, active.m_iClip);
+    result.reserveAmmo = static_cast<std::int32_t>(client.vuser4[1]);
+    result.reloading = active.m_fInReload != 0 || active.m_fInSpecialReload != 0;
+    result.canReload = result.activeClass != WeaponClass::Unknown && result.reserveAmmo > 0;
+    result.reloadClipThreshold = 3;
+    for (std::size_t i = 1; i < weapons.size(); ++i) {
+        if (weapons[i].m_iId == 0) continue;
+        if (weapons[i].m_iId != static_cast<int>(i) || result.ownedCount == result.owned.size()) return false;
+        result.owned[result.ownedCount++] = static_cast<std::uint16_t>(i);
+    }
+    // ReGameDLL's prediction timers are relative seconds. iuser3 bit 0 is
+    // CAN_SHOOT and bit 1 denotes the freeze period (despite its wire name).
+    const double delay = (std::max)(0.0, static_cast<double>((std::max)(client.m_flNextAttack, active.m_flNextPrimaryAttack)));
+    if (delay > 60.0 || frame.nowMicros > (std::numeric_limits<std::uint64_t>::max)() - 60'000'001) return false;
+    result.primaryAttackReadyMicros = frame.nowMicros + static_cast<std::uint64_t>(std::ceil(delay * 1'000'000.0));
+    if (!(client.iuser3 & 1) || (client.iuser3 & 2) || result.activeClass == WeaponClass::Unknown)
+        result.primaryAttackReadyMicros = frame.nowMicros + 60'000'000;
+    return static_cast<bool>(cstrike::toWeaponSnapshot(result));
+}
+}
+
+bool runtimeActorReady(const LifecycleCoordinator& owner, const RuntimeFrame& frame,
+    DLL_FUNCTIONS* dll, core::PlayerId player, core::combat::WeaponId expected, bool attack) noexcept {
+    const auto agent = owner.agents().findByPlayer(player).agent;
+    auto* entity = owner.entityFor(player);
+    cstrike::WeaponObservation weapon{};
+    const auto nav = owner.navConsole().runtimeState(owner, player);
+    return current(owner, frame, player, agent, entity) && nav && nav->currentArea &&
+        readWeapon(owner, frame, player, agent, dll, entity, weapon) &&
+        weapon.activeWeapon == expected.value &&
+        (!attack || (!weapon.reloading && weapon.clipAmmo > 0 &&
+                     weapon.primaryAttackReadyMicros <= frame.nowMicros));
+}
+
+std::size_t buildRuntimeInputs(const LifecycleCoordinator& owner, const RuntimeFrame& frame,
+    DLL_FUNCTIONS* dll, RuntimeActorInput* output, std::size_t capacity) noexcept {
+    if (!output || capacity == 0 || !frame.valid()) return 0;
+    // Single-primary remains explicit; a secondary actor is never promoted.
+    const auto player = owner.joinState().player();
+    if (!player.isValid()) return 0;
+    auto& input = output[0];
+    input = {};
+    input.player = player;
+    input.agent = owner.agents().findByPlayer(player).agent;
+    input.primary = true;
+    auto* entity = owner.entityFor(player);
+    // Return an invalid actor DTO on failure so orchestration retires its
+    // cached decisions and the caller retires its navigation command.
+    if (!current(owner, frame, player, input.agent, entity)) return 1;
+    const auto world = owner.world().latest(player);
+    const auto nav = owner.navConsole().runtimeState(owner, player);
+    if (!world || !nav || !nav->currentArea || !nav->movement.position) return 1;
+    cstrike::WeaponObservation weapon{};
+    if (!readWeapon(owner, frame, player, input.agent, dll, entity, weapon)) return 1;
+    input.world = *world;
+    cstrike::CombatObservation combat{};
+    combat.map = frame.map; combat.round = frame.round; combat.tick = frame.tick;
+    combat.timeMicros = frame.nowMicros; combat.player = player; combat.agent = input.agent;
+    combat.alive = true; combat.world = *world; combat.weapon = weapon;
+    const auto* affiliation = owner.teams().find(player);
+    if (!affiliation) return 1;
+    combat.team = affiliation->team;
+    const auto& v = entity->v;
+    combat.eye = {v.origin.x + v.view_ofs.x, v.origin.y + v.view_ofs.y, v.origin.z + v.view_ofs.z};
+    combat.view = {v.v_angle.x, std::remainder(v.v_angle.y, 360.0F), v.v_angle.z};
+    const auto converted = cstrike::toCombatInput(combat);
+    if (!converted) return 1;
+    input.combat = converted.input;
+    const core::perception::Point position{v.origin.x, v.origin.y, v.origin.z};
+    const float health = (std::min)(100.0F, v.health);
+    RuntimeObjectiveObservation objective{};
+    RuntimeEconomyObservation economy{};
+    // No objective event or balance reader exists yet. The neutral team
+    // assignment contains no objective task; action/tactical remain None.
+    input.team.map = frame.map; input.team.round = frame.round; input.team.tick = frame.tick;
+    input.team.nowMicros = frame.nowMicros; input.team.team = combat.team;
+    input.team.objective = objective.team;
+    input.teamObjectiveAvailable = objective.available;
+    input.team.memberCount = 1;
+    auto& member = input.team.members[0];
+    member.player = player; member.agent = input.agent; member.position = position;
+    member.healthPercent = health; member.connected = true; member.alive = true; member.team = combat.team;
+    auto& self = input.tactical.self;
+    self.player = player; self.agent = input.agent; self.team = combat.team;
+    self.position = position; self.currentArea = *nav->currentArea; self.healthPercent = health; self.alive = true;
+    input.tactical.objective = objective.tactical;
+    input.tactical.economy = economy.tactical;
+    if (nav->routeExecutable && nav->goal && nav->goalPosition &&
+        nav->movement.speedLimit && *nav->movement.speedLimit > 0) {
+        auto& route = input.tactical.navigation.routes[0];
+        route.target = {*nav->goal, *nav->goalPosition, nav->goal->value};
+        route.style = core::tactical::RouteStyle::Hold;
+        const auto& goal = *nav->goalPosition;
+        const double eta = std::hypot(std::hypot(goal.x-position.x, goal.y-position.y),
+            goal.z-position.z) / *nav->movement.speedLimit * 1'000'000.0;
+        // Geometric lower-bound ETA; no objective timing is authorized from it.
+        if (std::isfinite(eta) && eta < 18446744073709551616.0) {
+            route.etaMicros = (std::max)(std::uint64_t{1}, static_cast<std::uint64_t>(eta));
+            route.available = true;
+            input.tactical.navigation.routeCount = 1;
+        }
+    }
+    auto& action = input.action;
+    action.map = frame.map; action.round = frame.round; action.tick = frame.tick;
+    action.nowMicros = frame.nowMicros; action.player = player; action.agent = input.agent;
+    action.alive = true; action.healthPercent = health;
+    action.currentArea = *nav->currentArea; action.currentPosition = position;
+    action.objective = objective.action;
+    action.weapon.active = input.combat.weapon.active;
+    action.weapon.activeClass = weapon.activeClass;
+    action.weapon.clipAmmo = weapon.clipAmmo; action.weapon.reserveAmmo = weapon.reserveAmmo;
+    action.weapon.reloading = weapon.reloading; action.weapon.canReload = weapon.canReload;
+    const auto tactical = core::tactical::buildTacticalContext(*world, input.tactical);
+    if (tactical.enemyCount) {
+        const auto& enemy = tactical.enemies[0];
+        action.enemy = {enemy.target, enemy.position, frame.nowMicros - enemy.observedAgeMicros,
+            enemy.confidence, true, enemy.directVision, enemy.directVision};
+        input.actionObservation.enemyAppeared = enemy.directVision;
+    }
+    return 1;
+}
+}

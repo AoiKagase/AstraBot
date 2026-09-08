@@ -44,6 +44,7 @@ struct RuntimeNavigationState final {
     nav::runtime::MovementSnapshot movement{};
     std::optional<nav::model::NavAreaId> currentArea{};
     std::optional<nav::model::NavAreaId> goal{};
+    std::optional<core::perception::Point> goalPosition{};
     std::uint64_t routeGeneration{0};
     bool routeExecutable{false};
 };
@@ -101,7 +102,7 @@ private:
     nav::runtime::MovementSnapshot snapshot(
         const metamod::LifecycleCoordinator&) const noexcept;
     nav::runtime::MovementSnapshot snapshotFor(
-        const metamod::LifecycleCoordinator&,const ActorState&) const noexcept;
+        const metamod::LifecycleCoordinator&,core::PlayerId) const noexcept;
     void printUpdate(const nav::runtime::SessionUpdate&) noexcept;
     void line(const char*) noexcept;
     static void sink(void*,const char*) noexcept;

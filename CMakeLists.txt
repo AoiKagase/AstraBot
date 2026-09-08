@@ -282,6 +282,7 @@ if(ASTRABOT_BUILD_METAMOD)
         src/adapter/cstrike/nav/ladder_publication.cpp
         src/adapter/cstrike/nav/world_queries.cpp
         src/adapter/metamod/lifecycle.cpp
+        src/adapter/metamod/runtime_input.cpp
         src/adapter/metamod/runtime_orchestrator.cpp
         src/adapter/metamod/movement.cpp
         src/debug/host_trace.cpp
@@ -935,6 +936,8 @@ if(ASTRABOT_BUILD_TESTS)
             src/adapter/cstrike/nav/ladder_publication.cpp
             src/adapter/cstrike/nav/world_queries.cpp
             src/adapter/metamod/lifecycle.cpp
+            src/adapter/metamod/runtime_input.cpp
+            src/adapter/cstrike/combat.cpp
             src/adapter/metamod/runtime_orchestrator.cpp
             src/adapter/metamod/movement.cpp
             src/debug/host_trace.cpp
@@ -1006,6 +1009,8 @@ if(ASTRABOT_BUILD_TESTS)
             src/adapter/cstrike/nav/ladder_publication.cpp
             src/adapter/cstrike/nav/world_queries.cpp
             src/adapter/metamod/lifecycle.cpp
+            src/adapter/metamod/runtime_input.cpp
+            src/adapter/cstrike/combat.cpp
             src/adapter/metamod/runtime_orchestrator.cpp
             src/adapter/metamod/movement.cpp
             src/adapter/metamod/plugin_entry.cpp
@@ -1014,6 +1019,7 @@ if(ASTRABOT_BUILD_TESTS)
         target_compile_features(astrabot_fake_client_tests PRIVATE cxx_std_17)
         target_compile_definitions(astrabot_fake_client_tests PRIVATE ASTRABOT_LADDER_HOST_TESTS)
         add_test(NAME astrabot.adapter.vision COMMAND astrabot_fake_client_tests --p401-tests)
+        add_test(NAME astrabot.adapter.runtime_input COMMAND astrabot_fake_client_tests --runtime-input-tests)
         add_test(NAME astrabot.adapter.visual_memory COMMAND astrabot_fake_client_tests --p402-tests)
         add_test(NAME astrabot.adapter.perception_identity COMMAND astrabot_fake_client_tests --p403-tests)
         add_test(NAME astrabot.adapter.sound COMMAND astrabot_fake_client_tests --p404-tests)

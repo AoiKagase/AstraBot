@@ -44,8 +44,17 @@ bool RuntimeActorInput::valid(const RuntimeFrame &frame) const noexcept {
 	    !agent.isValid() || !primary) {
 		return false;
 	}
+	auto checkedTeam = team;
+	if (!teamObjectiveAvailable) {
+		if (tactical.objective.kind != core::tactical::ObjectiveKind::None ||
+		    action.objective.kind != core::action::ObjectiveKind::None) return false;
+		// Validate the roster/stamp independently without manufacturing an
+		// objective observation for TeamDirector.
+		checkedTeam.objective = {};
+		checkedTeam.objective.known = true;
+	}
 	if (team.map != frame.map || team.round != frame.round || team.tick != frame.tick ||
-	    team.nowMicros != frame.nowMicros || !team.valid()) {
+	    team.nowMicros != frame.nowMicros || !checkedTeam.valid()) {
 		return false;
 	}
 	if (world.stamp.map != frame.map || world.stamp.round != frame.round ||
@@ -373,15 +382,25 @@ const RuntimeFrameResult &RuntimeOrchestrator::run(const RuntimeFrame &frame,
 		}
 	}
 	appendStage(RuntimeStage::TeamDirector);
-	if (teamInput) {
+	bool teamExecuted = false;
+	if (teamInput && !teamInput->teamObjectiveAvailable) {
+		if (team_.strategy() != core::team::Strategy::None)
+			for (std::size_t i = 0; i < kRuntimeActorCapacity; ++i) clearSlot(i);
+		team_.reset();
+		teamDecision_ = {};
+		teamDecision_.accepted = true;
+		teamDecisionReady_ = true;
+		teamDecisionMicros_ = 0;
+	} else if (teamInput) {
 		const bool eventDriven = teamInput->teamEvents.any();
 		const auto maximum = (std::numeric_limits<std::uint64_t>::max)();
 		const bool cadence =
-		    !teamDecisionReady_ ||
+		    !teamDecisionReady_ || team_.strategy() == core::team::Strategy::None ||
 		    frame.nowMicros >= (teamDecisionMicros_ > maximum - kTeamDirectorCadenceMicros
 		                            ? maximum
 		                            : teamDecisionMicros_ + kTeamDirectorCadenceMicros);
 		if (cadence || eventDriven) {
+			teamExecuted = true;
 			teamDecision_ = team_.update(teamInput->team, teamInput->teamEvents);
 			if (teamDecision_.accepted) {
 				teamDecisionReady_ = true;
@@ -418,6 +437,7 @@ const RuntimeFrameResult &RuntimeOrchestrator::run(const RuntimeFrame &frame,
 		decision.player = input->player;
 		decision.agent = input->agent;
 		decision.team = teamDecision_;
+		decision.teamExecuted = teamExecuted;
 		auto tacticalSeed = input->tactical;
 		if (const auto *assignment = assignmentFor(input->player)) {
 			if (tacticalSeed.self.role == core::tactical::RolePreference::Any) {

@@ -256,6 +256,20 @@ void testDeterministicReplayAndDisconnect() {
 } // namespace
 
 int main() {
+	{
+		auto fixtureStorage = std::make_unique<Fixture>();
+		auto& fixture = *fixtureStorage;
+		auto runtime = std::make_unique<a::RuntimeOrchestrator>();
+		assert(runtime->run(fixture.frame, &fixture.input, 1).decisions[0].teamExecuted);
+		fixture.advance(1'000);
+		fixture.input.teamObjectiveAvailable = false;
+		fixture.input.team.objective.known = false;
+		const auto& neutral = runtime->run(fixture.frame, &fixture.input, 1);
+		assert(neutral.executableCount == 1 && !neutral.decisions[0].teamExecuted);
+		assert(neutral.decisions[0].team.strategy == c::team::Strategy::None);
+		fixture.advance(1'000);
+		assert(runtime->run(fixture.frame, &fixture.input, 1).decisions[0].teamExecuted);
+	}
 	testOrderedCadenceAndOneShotCombat();
 	testInvalidAndGenerationReset();
 	testDuplicateActorAndAgentAreRejected();

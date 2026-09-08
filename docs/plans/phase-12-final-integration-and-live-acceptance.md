@@ -28,8 +28,20 @@ convert the current `PlayerRegistry`, `BotAgentRegistry`, `WorldModel`,
 `NavConsole`, combat observation, and explicit objective/economy DTOs into
 `RuntimeActorInput` values. The provider is synchronous and borrowed for one
 frame. A missing or invalid DTO is a skip/no-op for that actor; it never grants
-permission to reuse an old command. When no provider is installed, the
-orchestrator intentionally performs no actor dispatch.
+permission to reuse an old command. The default production reader now uses
+the hooked GameDLL UpdateClientData/GetWeaponData callbacks for current self
+weapon observations, with generation checks before and after callbacks.
+The injectable provider remains a synchronous test/extension boundary.
+
+An unavailable objective observation explicitly disables TeamDirector strategy
+and discards old objective-related decisions. Tactical/action objectives stay
+neutral and economy stays unavailable; no bomb state, funds, or purchase is
+inferred. This self-state integration is not full objective/economy live support.
+NAV must be published for the current map; current area comes from the current
+position, independent of an existing route. Existing executable route goals can
+be consumed as tactical input. Without a route the actor holds its current area.
+Combat can queue neutral movement at a held position, and dispatch still occurs
+only on a later tick. See `../reports/p12-runtime-input.md` for scope and evidence.
 
 The canonical offline gate is:
 

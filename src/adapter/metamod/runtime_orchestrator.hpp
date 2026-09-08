@@ -77,6 +77,9 @@ struct RuntimeActorInput final {
 	bool primary{false};
 	core::world::WorldSnapshot world{};
 	core::team::TeamSnapshot team{};
+	// Missing objective observations disable team strategy for this frame.
+	// Self perception/combat may continue with a neutral team decision.
+	bool teamObjectiveAvailable{true};
 	core::tactical::TacticalContextSeed tactical{};
 	core::action::ActionPlannerInput action{};
 	core::combat::CombatInput combat{};
