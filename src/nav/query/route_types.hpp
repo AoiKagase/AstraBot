@@ -4,7 +4,11 @@
 #include <vector>
 
 namespace astrabot::nav::query {
-struct NavCostComponents { double distance{0}, traversal{0}, danger{0}, experience{0}; };
+// Exposure is kept separate from learned experience so route diagnostics can
+// prove that geometric visibility costs were not learned danger in disguise.
+struct NavCostComponents {
+    double distance{0}, traversal{0}, danger{0}, experience{0}, exposure{0};
+};
 struct NavCostDecision { bool blocked{false}; NavCostComponents components{}; };
 struct NavCostContext {
     const NavDirectedEdge &edge;

@@ -254,6 +254,8 @@ public:
 
 // A bounded, little-endian, versioned binary store. The store is deliberately
 // behind IExperiencePersistence so an engine adapter never owns a file format.
+// save() guarantees a temporary-file replacement and one-generation backup;
+// it does not promise OS-level power-loss durability (fsync/FlushFileBuffers).
 class BinaryExperienceStore final : public IExperiencePersistence {
 public:
     explicit BinaryExperienceStore(std::string path) noexcept
@@ -276,13 +278,22 @@ private:
 
 class ExperiencePipeline final {
 public:
+    ExperiencePipeline() noexcept : model_(), persistence_(nullptr) {}
     ExperiencePipeline(ExperienceSettings settings,
                         IExperiencePersistence* persistence) noexcept
         : model_(settings), persistence_(persistence) {}
 
+    void reset() noexcept { model_.reset(); }
+    bool active() const noexcept { return model_.active(); }
+    const MapIdentity& map() const noexcept { return model_.map(); }
+
     bool activate(const MapIdentity& map,
                   perception::RoundGeneration round) noexcept {
         return model_.activate(map, round);
+    }
+    ExperienceUpdateResult beginRound(perception::RoundGeneration round,
+                                      std::uint64_t timeMicros) noexcept {
+        return model_.beginRound(round, timeMicros);
     }
     PersistenceResult restore();
     ExperienceUpdateResult submit(const ExperienceEvent& event) {

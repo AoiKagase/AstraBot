@@ -53,7 +53,7 @@ bool operator<(const ContextualDangerKey& left,
 }
 
 bool ContextualDangerObservation::valid() const noexcept {
-    return key.valid() && finiteNonNegative(risk) && risk <= 1.0 &&
+    return key.valid() && map.isValid() && finiteNonNegative(risk) && risk <= 1.0 &&
            finiteNonNegative(weight) && weight > 0.0 && weight <= 1'000'000.0;
 }
 
@@ -65,6 +65,9 @@ bool ContextualDangerRecord::valid() const noexcept {
 ContextualDangerUpdate ContextualDangerModel::observe(
     const ContextualDangerObservation& observation) noexcept {
     if (!observation.valid()) return {ContextualDangerUpdateReason::InvalidObservation, false};
+    if (!map_.isValid() || observation.map != map_) {
+        return {ContextualDangerUpdateReason::WrongMap, false};
+    }
     auto it = std::lower_bound(records_.begin(), records_.end(), observation.key,
         [](const ContextualDangerRecord& record, const ContextualDangerKey& key) {
             return record.key < key;
@@ -97,6 +100,23 @@ ContextualDangerUpdate ContextualDangerModel::observe(
     return {ContextualDangerUpdateReason::Accepted, true};
 }
 
+bool ContextualDangerModel::beginMap(MapGeneration map) noexcept {
+    if (!map.isValid() || (map_.isValid() && map.value <= map_.value)) return false;
+    try {
+        records_.clear();
+        map_ = map;
+        return true;
+    } catch (...) {
+        reset();
+        return false;
+    }
+}
+
+void ContextualDangerModel::reset() noexcept {
+    records_.clear();
+    map_ = {};
+}
+
 const ContextualDangerRecord* ContextualDangerModel::find(
     const ContextualDangerKey& key) const noexcept {
     const auto it = std::lower_bound(records_.begin(), records_.end(), key,
@@ -121,7 +141,7 @@ bool OpponentObservation::valid() const noexcept {
 }
 
 bool OpponentProfile::valid() const noexcept {
-    return player.isValid() && map.isValid() && round.isValid() && finiteNonNegative(aggression) &&
+    return player.isValid() && map.isValid() && finiteNonNegative(aggression) &&
            aggression <= 1.0 && finiteNonNegative(rushProbability) && rushProbability <= 1.0 &&
            finiteNonNegative(campProbability) && campProbability <= 1.0 &&
            finiteNonNegative(rotationSpeed) && rotationSpeed <= 1.0 &&
@@ -184,7 +204,6 @@ OpponentProfileUpdate OpponentProfileModel::observe(
         profile = &profiles_[count_++];
         profile->player = observation.player;
         profile->map = observation.map;
-        profile->round = observation.round;
     }
     const auto next = (std::min)(1'000'000U, profile->observations + 1U);
     const double ratio = 1.0 / static_cast<double>(next);

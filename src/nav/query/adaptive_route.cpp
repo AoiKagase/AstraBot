@@ -93,10 +93,16 @@ NavCostDecision cost(const NavCostContext& input, const void* opaque) noexcept {
     const auto* area = context->experience && context->experience->active()
         ? context->experience->area(input.target.id.value) : nullptr;
     const double danger = area ? teamDanger(*area, context->settings.team) : 0.0;
-    const double exposure = area ? area->encounterRate + area->grenadeThreat + area->deathRate : 0.0;
+    double exposure = 0.0;
+    if (context->exposureProvider != nullptr) {
+        exposure = context->exposureProvider(input, context->exposureContext);
+        if (!std::isfinite(exposure) || exposure < 0.0 || exposure > 1.0) {
+            return invalidCost(input, opaque);
+        }
+    }
     const double traffic = area ? area->humanTraffic + area->botTraffic : 0.0;
     const double familiarity = area
-        ? 1.0 / (1.0 + area->visits + area->humanTraffic + area->botTraffic)
+        ? 1.0 / (1.0 + area->visits)
         : (context->experience && context->experience->active() ? 1.0 : 0.0);
 
     double traversal = traversalBase(input.edge.traversal);
@@ -122,14 +128,17 @@ NavCostDecision cost(const NavCostContext& input, const void* opaque) noexcept {
                                            context->settings.enemyWeaponClass,
                                            context->settings.likelyEnemyArea})
         : 0.0;
-    const double dangerCost = (danger + contextualDanger) * dangerWeight +
-        exposure * context->settings.exposureWeight * weights.exposure +
+    const double learnedDanger = area
+        ? danger + area->encounterRate + area->grenadeThreat + area->deathRate
+        : 0.0;
+    const double dangerCost = (learnedDanger + contextualDanger) * dangerWeight +
         traffic * context->settings.trafficWeight * weights.traffic;
     const double experienceCost = (familiarity + traversalExperience) *
         context->settings.experienceWeight * weights.experience;
+    const double exposureCost = exposure * context->settings.exposureWeight * weights.exposure;
     return {false, {input.geometricDistance * context->settings.distanceWeight * weights.distance,
                     traversal * context->settings.traversalWeight * weights.traversal,
-                    dangerCost, experienceCost}};
+                    dangerCost, experienceCost, exposureCost}};
 }
 
 } // namespace

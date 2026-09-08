@@ -17,16 +17,26 @@ namespace e = astrabot::nav::enrichment;
 
 void contextualDangerIsBoundedAndDeterministic() {
     l::ContextualDangerModel model;
+    assert(model.observe({
+        {7, p::Team::Terrorist, l::ApproachDirection::East,
+         c::WeaponSnapshot::WeaponClass::Rifle, 9},
+        {1}, 0.8, 1.0, 100}).reason == l::ContextualDangerUpdateReason::WrongMap);
+    assert(model.beginMap({1}));
     const l::ContextualDangerKey key{7, p::Team::Terrorist, l::ApproachDirection::East,
                                      c::WeaponSnapshot::WeaponClass::Rifle, 9};
     assert(key.valid());
-    assert(model.observe({key, 0.8, 1.0, 100}).accepted());
+    assert(model.observe({key, {1}, 0.8, 1.0, 100}).accepted());
     assert(std::abs(model.risk(key) - 0.8) < 0.00001);
-    assert(model.observe({key, 0.2, 1.0, 90}).reason ==
+    assert(model.observe({key, {1}, 0.2, 1.0, 90}).reason ==
            l::ContextualDangerUpdateReason::StaleObservation);
-    assert(model.observe({key, 0.2, 1.0, 110}).accepted());
+    assert(model.observe({key, {1}, 0.2, 1.0, 110}).accepted());
     assert(model.find(key) != nullptr && model.find(key)->observations == 2.0);
     assert(model.risk(key) < 0.8 && model.risk(key) > 0.2);
+
+    auto otherMap = l::ContextualDangerObservation{key, {2}, 0.9, 1.0, 120};
+    assert(model.observe(otherMap).reason == l::ContextualDangerUpdateReason::WrongMap);
+    assert(model.beginMap({2}));
+    assert(model.size() == 0U);
 }
 
 void opponentProfilesAreMapSessionLocal() {

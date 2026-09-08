@@ -23,7 +23,11 @@ bool finiteNonNegative(double value) noexcept {
     return std::isfinite(value) && value >= 0.0;
 }
 
-bool validHash(const ContentHash&) noexcept { return true; }
+bool validHash(const ContentHash& hash) noexcept {
+    return std::any_of(hash.begin(), hash.end(), [](std::uint8_t value) {
+        return value != 0U;
+    });
+}
 
 std::uint64_t checksum(const std::vector<std::uint8_t>& bytes) noexcept {
     std::uint64_t result = 1469598103934665603ULL;

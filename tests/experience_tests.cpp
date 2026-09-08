@@ -28,6 +28,16 @@ e::MapIdentity map() {
     return value;
 }
 
+void zeroHashesAreRejected() {
+    auto invalidBsp = map();
+    invalidBsp.bspHash = {};
+    assert(!invalidBsp.valid());
+
+    auto invalidNav = map();
+    invalidNav.navHash = {};
+    assert(!invalidNav.valid());
+}
+
 e::ExperienceEvent event(e::ExperienceEventKind kind,
                          std::uint32_t area,
                          e::ActorKind actor = e::ActorKind::Bot) {
@@ -161,6 +171,7 @@ void persistenceAndRecovery() {
 } // namespace
 
 int main() {
+    zeroHashesAreRejected();
     contractsAndWeights();
     eventPipelineAndDecay();
     snapshotRoundTripAndMapMismatch();

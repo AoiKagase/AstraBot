@@ -41,6 +41,7 @@ struct ContextualDangerKey final {
 
 struct ContextualDangerObservation final {
     ContextualDangerKey key{};
+    MapGeneration map{};
     double risk{0.0};
     double weight{1.0};
     std::uint64_t timeMicros{0};
@@ -61,6 +62,7 @@ enum class ContextualDangerUpdateReason : std::uint8_t {
     None = 0,
     Accepted,
     InvalidObservation,
+    WrongMap,
     StaleObservation,
     CapacityExceeded,
 };
@@ -76,14 +78,20 @@ struct ContextualDangerUpdate final {
 
 class ContextualDangerModel final {
 public:
+    // Contextual danger is tactical state for one active map session. It is
+    // deliberately separate from the map-identified persistent experience.
+    bool beginMap(MapGeneration map) noexcept;
+    void reset() noexcept;
     ContextualDangerUpdate observe(const ContextualDangerObservation& observation) noexcept;
     double risk(const ContextualDangerKey& key) const noexcept;
     const ContextualDangerRecord* find(const ContextualDangerKey& key) const noexcept;
     std::size_t size() const noexcept { return records_.size(); }
+    MapGeneration map() const noexcept { return map_; }
     const std::vector<ContextualDangerRecord>& records() const noexcept { return records_; }
 
 private:
     std::vector<ContextualDangerRecord> records_{};
+    MapGeneration map_{};
 };
 
 struct OpponentObservation final {
@@ -105,7 +113,6 @@ struct OpponentObservation final {
 struct OpponentProfile final {
     PlayerId player{};
     MapGeneration map{};
-    perception::RoundGeneration round{};
     double aggression{0.0};
     double rushProbability{0.0};
     double campProbability{0.0};

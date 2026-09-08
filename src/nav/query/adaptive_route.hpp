@@ -71,10 +71,16 @@ struct AdaptiveRouteSettings final {
 // An absent experience model means that the policy remains a deterministic
 // route-style policy over geometry and traversal metadata alone.
 struct AdaptiveRouteContext final {
+    using ExposureProvider = double (*)(const NavCostContext&, const void*) noexcept;
+
     const core::experience::ExperienceModel* experience{nullptr};
     const core::learning::ContextualDangerModel* contextualDanger{nullptr};
     const AdaptiveTraversalExperience* traversalExperience{nullptr};
     std::size_t traversalExperienceCount{0};
+    // The provider and its context are borrowed for one synchronous search.
+    // It must return normalized geometric exposure in [0, 1].
+    ExposureProvider exposureProvider{nullptr};
+    const void* exposureContext{nullptr};
     AdaptiveRouteSettings settings{};
 
     bool valid() const noexcept;

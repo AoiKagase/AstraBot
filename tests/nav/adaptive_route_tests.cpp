@@ -5,6 +5,7 @@
 
 #include <cassert>
 #include <cmath>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -126,6 +127,64 @@ void invalidContextIsRejected() {
     assert(!result && result.error.field == diagnostics::NavField::RouteCost);
 }
 
+double fixedExposure(const NavCostContext&, const void* context) noexcept {
+    return *static_cast<const double*>(context);
+}
+
+double invalidExposure(const NavCostContext&, const void*) noexcept {
+    return (std::numeric_limits<double>::quiet_NaN)();
+}
+
+void dangerExposureAndTrafficAreSeparated() {
+    e::ExperienceModel dangerExperience;
+    assert(dangerExperience.load(snapshot(0.0, 0.0, 10.0, 0.0)));
+    AdaptiveRouteContext dangerContext{};
+    dangerContext.experience = &dangerExperience;
+    dangerContext.settings.team = p::Team::Terrorist;
+    dangerContext.settings.experienceWeight = 0.0;
+    const auto graph = diamond();
+    const auto dangerResult = NavRouteSearch::search(
+        *graph, {{1}, {2}, {100, 100000}, false},
+        adaptiveRoutePolicy(dangerContext));
+    assert(dangerResult);
+    assert(dangerResult.value->components.danger > 0.0);
+    assert(dangerResult.value->components.exposure == 0.0);
+
+    const double exposureValue = 0.25;
+    AdaptiveRouteContext exposureContext{};
+    exposureContext.exposureProvider = &fixedExposure;
+    exposureContext.exposureContext = &exposureValue;
+    const auto exposureResult = NavRouteSearch::search(
+        *graph, {{1}, {2}, {100, 100000}, false},
+        adaptiveRoutePolicy(exposureContext));
+    assert(exposureResult);
+    assert(exposureResult.value->components.danger == 0.0);
+    assert(exposureResult.value->components.exposure > 0.0);
+
+    AdaptiveRouteContext invalidExposureContext{};
+    invalidExposureContext.exposureProvider = &invalidExposure;
+    const auto invalidExposureResult = NavRouteSearch::search(
+        *graph, {{1}, {2}, {100, 100000}, false},
+        adaptiveRoutePolicy(invalidExposureContext));
+    assert(!invalidExposureResult &&
+           invalidExposureResult.error.field == diagnostics::NavField::RouteCost);
+
+    auto trafficSnapshot = snapshot(0.0, 0.0, 0.0, 0.0);
+    trafficSnapshot.areas[0].humanTraffic = 1.0;
+    trafficSnapshot.areas[0].botTraffic = 0.25;
+    e::ExperienceModel trafficExperience;
+    assert(trafficExperience.load(trafficSnapshot));
+    AdaptiveRouteContext trafficContext{};
+    trafficContext.experience = &trafficExperience;
+    trafficContext.settings.style = AdaptiveRouteStyle::Safe;
+    trafficContext.settings.experienceWeight = 0.0;
+    const auto trafficResult = NavRouteSearch::search(
+        *graph, {{1}, {2}, {100, 100000}, false},
+        adaptiveRoutePolicy(trafficContext));
+    assert(trafficResult);
+    assert(std::abs(trafficResult.value->components.danger - 1.25) < 0.00001);
+}
+
 void p11LearningGateAndContextualDanger() {
     auto a = route_test::Area{1, {{0, 0, 0}, {2, 2, 0}, 0, 0}};
     auto b = route_test::Area{2, {{3, 0, 0}, {5, 2, 0}, 0, 0}};
@@ -155,10 +214,11 @@ void p11LearningGateAndContextualDanger() {
     expectMiddle(result, 2);
 
     l::ContextualDangerModel danger;
+    assert(danger.beginMap({1}));
     const l::ContextualDangerKey key{
         2, p::Team::Unknown, l::ApproachDirection::Unknown,
         astrabot::core::combat::WeaponSnapshot::WeaponClass::Unknown, 0};
-    assert(danger.observe({key, 1.0, 1.0, 1}).accepted());
+    assert(danger.observe({key, {1}, 1.0, 1.0, 1}).accepted());
     context.traversalExperience = nullptr;
     context.traversalExperienceCount = 0;
     context.contextualDanger = &danger;
@@ -176,5 +236,6 @@ int main() {
     personalityAndStylesChangeRiskWeighting();
     traversalEvidenceAddsRisk();
     invalidContextIsRejected();
+    dangerExposureAndTrafficAreSeparated();
     p11LearningGateAndContextualDanger();
 }

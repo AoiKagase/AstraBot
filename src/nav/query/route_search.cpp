@@ -28,7 +28,8 @@ bool add(double &total, double value) noexcept {
 bool costTotal(const NavCostComponents &c, double &total) noexcept {
     total = c.distance;
     return valid(c.distance) && valid(c.traversal) && valid(c.danger) && valid(c.experience) &&
-           add(total, c.traversal) && add(total, c.danger) && add(total, c.experience);
+           valid(c.exposure) && add(total, c.traversal) && add(total, c.danger) &&
+           add(total, c.experience) && add(total, c.exposure);
 }
 double distance(NavQueryPoint a, NavQueryPoint b) noexcept {
     return std::hypot(a.x - b.x, a.y - b.y, a.z - b.z);
@@ -122,6 +123,7 @@ Error reconstruct(const NavGraph &graph, const Query &query, std::size_t start,
             !add(result.components.traversal, step.components.traversal) ||
             !add(result.components.danger, step.components.danger) ||
             !add(result.components.experience, step.components.experience) ||
+            !add(result.components.exposure, step.components.exposure) ||
             !add(result.total, step.total))
             return routeError(K::InvalidValue, F::RouteCost);
     }
