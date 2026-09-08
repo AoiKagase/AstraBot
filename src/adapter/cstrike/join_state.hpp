@@ -56,6 +56,7 @@ enum class JoinError : std::uint8_t {
     MapDeactivated,
     KickFailed,
     MessageUnavailable,
+    GameDllProgressUnavailable,
 };
 
 enum class JoinActionKind : std::uint8_t {
@@ -98,6 +99,11 @@ public:
         const MessageEvent& event,
         host::TickId tick) noexcept;
     JoinAction onFrame(host::TickId tick) noexcept;
+    JoinAction onGameFrameAdvanced() noexcept;
+    // Fake clients may not receive a user-message menu because they have no
+    // network channel.  Prime the bounded menu-selection fallback while the
+    // normal message-driven path remains authoritative when a prompt exists.
+    bool primeMenuSelection() noexcept;
     JoinAction commandCompleted(bool dispatched) noexcept;
     JoinAction commandFailed(JoinError reason) noexcept;
     JoinAction cancel(JoinError reason) noexcept;
@@ -112,6 +118,9 @@ public:
     host::TickId deadline() const noexcept { return deadline_; }
     std::uint8_t attempts() const noexcept { return attempts_; }
     bool teamConfirmed() const noexcept { return teamConfirmed_; }
+    bool classSelectionCompleted() const noexcept {
+        return classSelectionCompleted_;
+    }
     bool pendingSelection() const noexcept { return pendingSelection_; }
     bool active() const noexcept {
         return phase_ != JoinPhase::Idle && phase_ != JoinPhase::Joined &&
@@ -130,10 +139,13 @@ private:
     host::TickId deadline_{};
     std::uint8_t attempts_{0};
     bool teamConfirmed_{false};
+    bool classSelectionCompleted_{false};
+    bool postClassFrameAdvanced_{false};
     bool pendingSelection_{false};
     std::uint8_t pendingValue_{0};
     host::TickId pendingTick_{};
     bool repeatedPrompt_{false};
+    std::uint8_t promptGraceFrames_{0};
 
     bool isTarget(const MessageEvent& event) const noexcept;
     bool isTeamMenu(const MessageEvent& event) const noexcept;

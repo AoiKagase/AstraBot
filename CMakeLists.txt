@@ -270,6 +270,7 @@ if(ASTRABOT_BUILD_METAMOD)
         src/adapter/cstrike/join_state.cpp
         src/adapter/cstrike/messages.cpp
         src/adapter/metamod/fake_client.cpp
+        src/adapter/metamod/console_debug.cpp
         src/adapter/metamod/plugin_entry.cpp
         src/adapter/cstrike/nav/console.cpp
         src/adapter/cstrike/nav/motion.cpp
@@ -924,6 +925,7 @@ if(ASTRABOT_BUILD_TESTS)
             src/adapter/cstrike/join_state.cpp
             src/adapter/cstrike/messages.cpp
             src/adapter/metamod/fake_client.cpp
+            src/adapter/metamod/console_debug.cpp
             src/adapter/metamod/plugin_entry.cpp
             src/adapter/cstrike/nav/console.cpp
             src/adapter/cstrike/nav/motion.cpp
@@ -1014,6 +1016,7 @@ if(ASTRABOT_BUILD_TESTS)
             src/adapter/metamod/runtime_orchestrator.cpp
             src/adapter/metamod/movement.cpp
             src/adapter/metamod/plugin_entry.cpp
+            src/adapter/metamod/console_debug.cpp
             src/debug/host_trace.cpp
         )
         target_compile_features(astrabot_fake_client_tests PRIVATE cxx_std_17)

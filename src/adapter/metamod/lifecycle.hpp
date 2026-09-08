@@ -18,6 +18,7 @@
 #include "core/combat.hpp"
 #include "core/world_model.hpp"
 #include "adapter/metamod/runtime_orchestrator.hpp"
+#include "adapter/metamod/runtime_input.hpp"
 #include "adapter/cstrike/nav/console.hpp"
 #include "debug/host_trace.hpp"
 #include "host/bot_agents.hpp"
@@ -154,6 +155,12 @@ public:
     void setMovementTraceSink(debug::MovementTraceSink sink) noexcept {
         movement_.setTraceSink(sink);
     }
+    debug::MovementTraceSource activeMovementDispatchSource() const noexcept {
+        return movement_.activeDispatchSource();
+    }
+    const RuntimeInputBuildStatus& runtimeInputBuildStatus() const noexcept {
+        return runtimeInputBuildStatus_;
+    }
     void setWeaponSelectionHandler(
         MovementCoordinator::WeaponSelectionHandler handler) noexcept {
         movement_.setWeaponSelectionHandler(handler);
@@ -173,6 +180,7 @@ public:
     cstrike::JoinState& joinState() noexcept { return clients_[0].join; }
     const cstrike::JoinState& joinState() const noexcept { return clients_[0].join; }
     const cstrike::JoinState* joinState(core::PlayerId) const noexcept;
+    std::uint32_t managedTeamCount(cstrike::Team team) const noexcept;
     const cstrike::MessageDecoder& messageDecoder() const noexcept {
         return activeDecoder_ ? *activeDecoder_:messageDecoder_;
     }
@@ -207,6 +215,8 @@ private:
         cstrike::JoinState join{};
         cstrike::MessageDecoder decoder{};
         core::combat::AttackLifecycleState combat{};
+        std::array<cstrike::MessageEvent, 4> pendingJoinMessages{};
+        std::uint8_t pendingJoinMessageCount{0};
         bool cleanupPending{};
         cstrike::JoinError cleanupError{cstrike::JoinError::None};
     };
@@ -263,6 +273,7 @@ private:
     host::BotAgentRegistry agents_{};
     std::array<ClientState,host::kMaxClientSlots> clients_{};
     MovementCoordinator movement_{};
+    RuntimeInputBuildStatus runtimeInputBuildStatus_{};
     cstrike::NavConsole navConsole_{};
     RuntimeOrchestrator runtime_{};
     core::world::WorldModel world_{};

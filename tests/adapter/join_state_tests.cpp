@@ -190,7 +190,11 @@ void testJoinState() {
     action = state.commandCompleted(true);
     assert(state.phase() == JoinPhase::WaitingConfirmation);
     action = state.onMessage(teamInfo(1, "TERRORIST"), TickId{3});
+    assert(action.kind == JoinActionKind::None);
+    action = state.onGameFrameAdvanced();
     assert(action.kind == JoinActionKind::Joined);
+    assert(state.phase() == JoinPhase::Joined);
+    assert(state.onFrame(TickId{100}).kind == JoinActionKind::None);
     assert(state.phase() == JoinPhase::Joined);
 }
 
@@ -274,6 +278,8 @@ void testCounterTerroristAndDuplicatePrompt() {
     assert(state.phase() == JoinPhase::WaitingConfirmation);
     assert(action.changed);
     action = state.onMessage(teamInfo(2, "CT"), TickId{3});
+    assert(action.kind == JoinActionKind::None);
+    action = state.onGameFrameAdvanced();
     assert(action.kind == JoinActionKind::Joined);
     assert(state.phase() == JoinPhase::Joined);
 
@@ -291,6 +297,38 @@ void testCounterTerroristAndDuplicatePrompt() {
                    TickId{1})
                 .changed);
     assert(unassigned.phase() == JoinPhase::WaitingTeamMenu);
+}
+
+void testLegacySpectatorTeamMenusAndSpectatorTeamInfo() {
+    constexpr const char* menus[] = {
+        "#Team_Select_Spect",
+        "#IG_Team_Select_Spect",
+        "#IG_VIP_Team_Select",
+        "#IG_VIP_Team_Select_Spect",
+    };
+    for (const char* token : menus) {
+        JoinState state{};
+        assert(state.begin(
+                           PlayerId{1, Generation{1}},
+                           MapGeneration{1},
+                           JoinRequest{Team::Terrorist, 1},
+                           TickId{1})
+                   .changed);
+        const auto action = state.onMessage(
+            menu(MessageKind::ShowMenu, 1, 0x0001, 0, token), TickId{1});
+        assert(action.changed);
+        assert(state.pendingSelection());
+    }
+
+    JoinState spectator{};
+    assert(spectator.begin(
+                           PlayerId{1, Generation{1}},
+                           MapGeneration{1},
+                           JoinRequest{Team::Terrorist, 1},
+                           TickId{1})
+               .changed);
+    assert(!spectator.onMessage(teamInfo(1, "SPECTATOR"), TickId{1}).changed);
+    assert(spectator.phase() == JoinPhase::WaitingTeamMenu);
 }
 
 void testAttemptLimitAndTimeout() {
@@ -332,6 +370,7 @@ int main() {
     testJoinState();
     testAlreadyAssignedAndInvalidMenu();
     testCounterTerroristAndDuplicatePrompt();
+    testLegacySpectatorTeamMenusAndSpectatorTeamInfo();
     testAttemptLimitAndTimeout();
     return 0;
 }

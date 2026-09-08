@@ -31,6 +31,9 @@ void MovementCoordinator::resetMap() noexcept {
     clockArmed_ = false;
     frameDeltaUs_ = 0;
     lastFrame_ = {};
+    dispatchedThisFrame_.fill(false);
+    callCounts_.fill(0);
+    activeDispatchSource_ = debug::MovementTraceSource::None;
 }
 
 void MovementCoordinator::forget(core::PlayerId player) noexcept {
@@ -41,6 +44,8 @@ void MovementCoordinator::forget(core::PlayerId player) noexcept {
     if (pending.has_value() && pending->player == player) {
         pending.reset();
     }
+    dispatchedThisFrame_[player.slot-1U] = false;
+    callCounts_[player.slot-1U] = 0;
 }
 
 bool MovementCoordinator::cancel(core::PlayerId player, core::MapGeneration map, core::TickId tick) noexcept {
@@ -144,6 +149,7 @@ MovementResult MovementCoordinator::rejectIngress(
 }
 
 void MovementCoordinator::beginFrame() noexcept {
+    dispatchedThisFrame_.fill(false);
     const auto now = now_();
     if (!clockArmed_) {
         lastFrame_ = now;
@@ -168,10 +174,56 @@ MovementResult MovementCoordinator::dispatchAtFrameEnd(
     core::TickId dispatchTick) noexcept {
     if(!activePlayer.isValid() || activePlayer.slot>host::kMaxClientSlots) return {};
     auto& pending=pending_[activePlayer.slot-1U];
-    if(!pending) return {};
+    if(!pending) {
+        // Fake clients have no network command stream.  ReGameDLL advances
+        // gravity, animation and other player simulation from RunPlayerMove,
+        // so an otherwise idle joined bot still needs one neutral usercmd per
+        // server frame.
+        if (!dispatchedThisFrame_[activePlayer.slot-1U] &&
+            joinPhase == cstrike::JoinPhase::Joined && entity != nullptr &&
+            !entity->free && entity->v.deadflag == DEAD_NO) {
+            (void)dispatchJoinProgress(activePlayer, entity, mapGeneration,
+                debug::MovementTraceSource::Idle);
+        }
+        return {};
+    }
     const PendingCommand command=*pending;
     pending.reset();
     return dispatchOne(command,joinPhase,activePlayer,entity,mapGeneration,dispatchTick);
+}
+
+bool MovementCoordinator::dispatchJoinProgress(
+    core::PlayerId activePlayer,
+    edict_t* entity,
+    core::MapGeneration mapGeneration,
+    debug::MovementTraceSource source) noexcept {
+    if (registry_ == nullptr || !registry_->isMapActive() ||
+        !mapGeneration.isValid() || registry_->mapGeneration() != mapGeneration ||
+        !activePlayer.isValid() || activePlayer.slot > host::kMaxClientSlots ||
+        !registry_->isConnected(activePlayer.slot) ||
+        registry_->currentPlayer(activePlayer.slot) != activePlayer ||
+        entity == nullptr || entity->free || engineFunctions_ == nullptr ||
+        engineFunctions_->pfnRunPlayerMove == nullptr) {
+        return false;
+    }
+
+    const float viewAngles[3]{
+        entity->v.v_angle.x,
+        entity->v.v_angle.y,
+        entity->v.v_angle.z};
+    const auto index=activePlayer.slot-1U;
+    const auto engineMsec=quantizeMsec(frameDeltaUs_);
+    activeDispatchSource_=source;
+    engineFunctions_->pfnRunPlayerMove(
+        entity, viewAngles, 0.0F, 0.0F, 0.0F, 0, 0,
+        engineMsec);
+    activeDispatchSource_=debug::MovementTraceSource::None;
+    dispatchedThisFrame_[index] = true;
+    const auto callCount=++callCounts_[index];
+    emit(MovementOutcome::Dispatched,MovementError::None,mapGeneration,
+        activePlayer,registry_->currentTick(),registry_->currentTick(),0,true,
+        frameDeltaUs_,source,callCount);
+    return true;
 }
 
 MovementResult MovementCoordinator::dispatchOne(
@@ -289,6 +341,7 @@ MovementResult MovementCoordinator::dispatchOne(
         pending.command.view.pitch,
         pending.command.view.yaw,
         pending.command.view.roll};
+    activeDispatchSource_=debug::MovementTraceSource::Command;
     engineFunctions_->pfnRunPlayerMove(
         entity,
         viewAngles,
@@ -298,6 +351,10 @@ MovementResult MovementCoordinator::dispatchOne(
         static_cast<unsigned short>(pending.command.buttons),
         pending.command.impulse,
         engineMsec);
+    activeDispatchSource_=debug::MovementTraceSource::None;
+    const auto index=activePlayer.slot-1U;
+    dispatchedThisFrame_[index] = true;
+    const auto callCount=++callCounts_[index];
     emit(
         MovementOutcome::Dispatched,
         MovementError::None,
@@ -306,7 +363,7 @@ MovementResult MovementCoordinator::dispatchOne(
         pending.commandTick,
         dispatchTick,
         pending.command.msec,
-        true,dispatchDelta);
+        true,dispatchDelta,debug::MovementTraceSource::Command,callCount);
     return MovementResult{MovementOutcome::Dispatched, MovementError::None, std::nullopt};
 }
 
@@ -336,7 +393,8 @@ void MovementCoordinator::emit(
     core::TickId commandTick,
     core::TickId dispatchTick,
     std::uint8_t originalMsec,
-    bool engineCall, std::optional<std::uint64_t> dispatchDelta) noexcept {
+    bool engineCall, std::optional<std::uint64_t> dispatchDelta,
+    debug::MovementTraceSource source, std::uint64_t callCount) noexcept {
     const auto delta=dispatchDelta.value_or(frameDeltaUs_);
     const debug::MovementTrace trace{
         outcome,
@@ -348,7 +406,9 @@ void MovementCoordinator::emit(
         originalMsec,
         delta,
         engineCall ? quantizeMsec(delta) : 0U,
-        engineCall};
+        engineCall,
+        source,
+        callCount};
     debug::emitMovement(trace, traceSink_);
 }
 

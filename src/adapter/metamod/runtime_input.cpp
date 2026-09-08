@@ -20,19 +20,41 @@ WeaponClass weaponClass(int id) noexcept {
     }
 }
 
-bool current(const LifecycleCoordinator& owner, const RuntimeFrame& frame,
-             core::PlayerId player, core::BotAgentId agent, const edict_t* entity) noexcept {
+RuntimeActorStaleReason staleReason(const LifecycleCoordinator& owner,
+             const RuntimeFrame& frame, core::PlayerId player,
+             core::BotAgentId agent, const edict_t* entity) noexcept {
     const auto binding = owner.agents().findByPlayer(player);
     const auto* join = owner.joinState(player);
-    return owner.registry().isMapActive() && owner.registry().mapGeneration() == frame.map &&
-        owner.registry().currentTick() == frame.tick && owner.round() == frame.round &&
-        owner.registry().currentPlayer(player.slot) == player && binding.isValid() &&
-        binding.agent == agent && binding.map == frame.map &&
-        entity && owner.entityFor(player) == entity && !entity->free &&
-        !owner.removalPending(player) && join && join->phase() == cstrike::JoinPhase::Joined &&
-        entity->v.deadflag == DEAD_NO && std::isfinite(entity->v.health) &&
-        entity->v.health > 0 && entity->v.iuser1 == 0 &&
-        (entity->v.flags & FL_FAKECLIENT) && !(entity->v.flags & FL_SPECTATOR);
+    if (!owner.registry().isMapActive()) return RuntimeActorStaleReason::MapInactive;
+    if (owner.registry().mapGeneration() != frame.map)
+        return RuntimeActorStaleReason::MapGenerationMismatch;
+    if (owner.registry().currentTick() != frame.tick)
+        return RuntimeActorStaleReason::TickMismatch;
+    if (owner.round() != frame.round) return RuntimeActorStaleReason::RoundMismatch;
+    if (owner.registry().currentPlayer(player.slot) != player)
+        return RuntimeActorStaleReason::PlayerGenerationMismatch;
+    if (!binding.isValid()) return RuntimeActorStaleReason::BindingInvalid;
+    if (binding.agent != agent) return RuntimeActorStaleReason::BindingAgentMismatch;
+    if (binding.map != frame.map) return RuntimeActorStaleReason::BindingMapMismatch;
+    if (!entity || owner.entityFor(player) != entity)
+        return RuntimeActorStaleReason::MissingEntity;
+    if (entity->free) return RuntimeActorStaleReason::EntityFree;
+    if (owner.removalPending(player)) return RuntimeActorStaleReason::RemovalPending;
+    if (!join || join->phase() != cstrike::JoinPhase::Joined)
+        return RuntimeActorStaleReason::NotJoined;
+    if (entity->v.deadflag != DEAD_NO) return RuntimeActorStaleReason::Dead;
+    if (!std::isfinite(entity->v.health) || entity->v.health <= 0)
+        return RuntimeActorStaleReason::InvalidHealth;
+    if (entity->v.iuser1 != 0) return RuntimeActorStaleReason::SpectatorState;
+    if (!(entity->v.flags & FL_FAKECLIENT))
+        return RuntimeActorStaleReason::MissingFakeClientFlag;
+    if (entity->v.flags & FL_SPECTATOR) return RuntimeActorStaleReason::SpectatorFlag;
+    return RuntimeActorStaleReason::None;
+}
+
+bool current(const LifecycleCoordinator& owner, const RuntimeFrame& frame,
+             core::PlayerId player, core::BotAgentId agent, const edict_t* entity) noexcept {
+    return staleReason(owner, frame, player, agent, entity) == RuntimeActorStaleReason::None;
 }
 
 bool readWeapon(const LifecycleCoordinator& owner, const RuntimeFrame& frame,
@@ -93,11 +115,20 @@ bool runtimeActorReady(const LifecycleCoordinator& owner, const RuntimeFrame& fr
 }
 
 std::size_t buildRuntimeInputs(const LifecycleCoordinator& owner, const RuntimeFrame& frame,
-    DLL_FUNCTIONS* dll, RuntimeActorInput* output, std::size_t capacity) noexcept {
-    if (!output || capacity == 0 || !frame.valid()) return 0;
+    DLL_FUNCTIONS* dll, RuntimeActorInput* output, std::size_t capacity,
+    RuntimeInputBuildStatus* status) noexcept {
+    if(status) *status={};
+    if (!output || capacity == 0 || !frame.valid()) {
+        if(status) status->reason=RuntimeInputBuildReason::InvalidFrame;
+        return 0;
+    }
     // Single-primary remains explicit; a secondary actor is never promoted.
     const auto player = owner.joinState().player();
-    if (!player.isValid()) return 0;
+    if (!player.isValid()) {
+        if(status) status->reason=RuntimeInputBuildReason::MissingPrimary;
+        return 0;
+    }
+    if(status) status->player=player;
     auto& input = output[0];
     input = {};
     input.player = player;
@@ -106,25 +137,38 @@ std::size_t buildRuntimeInputs(const LifecycleCoordinator& owner, const RuntimeF
     auto* entity = owner.entityFor(player);
     // Return an invalid actor DTO on failure so orchestration retires its
     // cached decisions and the caller retires its navigation command.
-    if (!current(owner, frame, player, input.agent, entity)) return 1;
+    if (!current(owner, frame, player, input.agent, entity)) {
+        if(status) {
+            status->reason=RuntimeInputBuildReason::StaleActor;
+            status->staleReason=staleReason(owner, frame, player, input.agent, entity);
+        }
+        return 1;
+    }
     const auto world = owner.world().latest(player);
     const auto nav = owner.navConsole().runtimeState(owner, player);
-    if (!world || !nav || !nav->currentArea || !nav->movement.position) return 1;
+    if (!world) { if(status) status->reason=RuntimeInputBuildReason::MissingWorld; return 1; }
+    if (!nav) { if(status) status->reason=RuntimeInputBuildReason::MissingNav; return 1; }
+    if (!nav->currentArea) { if(status) status->reason=RuntimeInputBuildReason::MissingCurrentArea; return 1; }
+    if (!nav->movement.position) { if(status) status->reason=RuntimeInputBuildReason::MissingPosition; return 1; }
     cstrike::WeaponObservation weapon{};
-    if (!readWeapon(owner, frame, player, input.agent, dll, entity, weapon)) return 1;
+    if (!readWeapon(owner, frame, player, input.agent, dll, entity, weapon)) {
+        if(status) status->reason=RuntimeInputBuildReason::WeaponUnavailable;
+        return 1;
+    }
+    if(status) status->activeWeapon=weapon.activeWeapon;
     input.world = *world;
     cstrike::CombatObservation combat{};
     combat.map = frame.map; combat.round = frame.round; combat.tick = frame.tick;
     combat.timeMicros = frame.nowMicros; combat.player = player; combat.agent = input.agent;
     combat.alive = true; combat.world = *world; combat.weapon = weapon;
     const auto* affiliation = owner.teams().find(player);
-    if (!affiliation) return 1;
+    if (!affiliation) { if(status) status->reason=RuntimeInputBuildReason::MissingTeam; return 1; }
     combat.team = affiliation->team;
     const auto& v = entity->v;
     combat.eye = {v.origin.x + v.view_ofs.x, v.origin.y + v.view_ofs.y, v.origin.z + v.view_ofs.z};
     combat.view = {v.v_angle.x, std::remainder(v.v_angle.y, 360.0F), v.v_angle.z};
     const auto converted = cstrike::toCombatInput(combat);
-    if (!converted) return 1;
+    if (!converted) { if(status) status->reason=RuntimeInputBuildReason::CombatConversionFailed; return 1; }
     input.combat = converted.input;
     const core::perception::Point position{v.origin.x, v.origin.y, v.origin.z};
     const float health = (std::min)(100.0F, v.health);

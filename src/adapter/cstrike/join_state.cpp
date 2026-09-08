@@ -54,10 +54,13 @@ JoinAction JoinState::begin(
     deadline_ = makeDeadline(startTick);
     attempts_ = 0;
     teamConfirmed_ = false;
+    classSelectionCompleted_ = false;
+    postClassFrameAdvanced_ = false;
     pendingSelection_ = false;
     pendingValue_ = 0;
     pendingTick_ = host::TickId::invalid();
     repeatedPrompt_ = false;
+    promptGraceFrames_ = 0;
     return {JoinActionKind::None, JoinError::None, 0, true};
 }
 
@@ -67,12 +70,14 @@ JoinAction JoinState::onMessage(
     if (!active() || !isTarget(event)) {
         return JoinAction::noOp();
     }
+    promptGraceFrames_ = 0;
 
     if (event.kind == MessageKind::TeamInfo) {
         if (isExpectedTeam(event.text.data())) {
             const bool changed = !teamConfirmed_;
             teamConfirmed_ = true;
-            if (phase_ == JoinPhase::WaitingConfirmation) {
+            if (phase_ == JoinPhase::WaitingConfirmation &&
+                classSelectionCompleted_ && postClassFrameAdvanced_) {
                 phase_ = JoinPhase::Joined;
                 return JoinAction::joined();
             }
@@ -171,9 +176,52 @@ JoinAction JoinState::onFrame(host::TickId tick) noexcept {
     pendingSelection_ = false;
     pendingTick_ = host::TickId::invalid();
     repeatedPrompt_ = false;
+    promptGraceFrames_ = 0;
     ++attempts_;
     phase_ = isTeam ? JoinPhase::TeamCommandPending : JoinPhase::ClassCommandPending;
     return JoinAction::send(pendingValue_);
+}
+
+JoinAction JoinState::onGameFrameAdvanced() noexcept {
+    if (!active() || !classSelectionCompleted_ ||
+        phase_ != JoinPhase::WaitingConfirmation) {
+        return JoinAction::noOp();
+    }
+    postClassFrameAdvanced_ = true;
+    if (!teamConfirmed_) {
+        return {JoinActionKind::None, JoinError::None, 0, true};
+    }
+    phase_ = JoinPhase::Joined;
+    return JoinAction::joined();
+}
+
+bool JoinState::primeMenuSelection() noexcept {
+    if (!active() || pendingSelection_ || attempts_ >= 2U) {
+        return false;
+    }
+    if (promptGraceFrames_ < 2U) {
+        ++promptGraceFrames_;
+        return false;
+    }
+    promptGraceFrames_ = 0;
+    if (phase_ == JoinPhase::WaitingTeamMenu) {
+        if (teamConfirmed_) {
+            phase_ = JoinPhase::WaitingClassMenu;
+            pendingValue_ = request_.classNumber;
+        } else {
+            pendingValue_ = request_.teamSelection();
+        }
+        pendingSelection_ = true;
+        pendingTick_ = host::TickId::invalid();
+        return true;
+    }
+    if (phase_ == JoinPhase::WaitingClassMenu) {
+        pendingValue_ = request_.classNumber;
+        pendingSelection_ = true;
+        pendingTick_ = host::TickId::invalid();
+        return true;
+    }
+    return false;
 }
 
 JoinAction JoinState::commandCompleted(bool dispatched) noexcept {
@@ -195,19 +243,18 @@ JoinAction JoinState::commandCompleted(bool dispatched) noexcept {
                      ? JoinPhase::WaitingTeamMenu
                      : JoinPhase::WaitingClassMenu;
         repeatedPrompt_ = false;
+        promptGraceFrames_ = 0;
         return {JoinActionKind::None, JoinError::None, 0, true};
     }
 
     if (phase_ == JoinPhase::TeamCommandPending) {
         phase_ = JoinPhase::WaitingClassMenu;
+        promptGraceFrames_ = 0;
         return {JoinActionKind::None, JoinError::None, 0, true};
     }
 
+    classSelectionCompleted_ = true;
     phase_ = JoinPhase::WaitingConfirmation;
-    if (teamConfirmed_) {
-        phase_ = JoinPhase::Joined;
-        return JoinAction::joined();
-    }
     return {JoinActionKind::None, JoinError::None, 0, true};
 }
 
@@ -224,6 +271,7 @@ JoinAction JoinState::cancel(JoinError reason) noexcept {
     pendingSelection_ = false;
     pendingTick_ = host::TickId::invalid();
     repeatedPrompt_ = false;
+    promptGraceFrames_ = 0;
     return JoinAction::cancelled(reason);
 }
 
@@ -233,6 +281,7 @@ JoinAction JoinState::fail(JoinError reason) noexcept {
     pendingSelection_ = false;
     pendingTick_ = host::TickId::invalid();
     repeatedPrompt_ = false;
+    promptGraceFrames_ = 0;
     return JoinAction::failed(reason);
 }
 
@@ -245,10 +294,13 @@ void JoinState::reset() noexcept {
     deadline_ = {};
     attempts_ = 0;
     teamConfirmed_ = false;
+    classSelectionCompleted_ = false;
+    postClassFrameAdvanced_ = false;
     pendingSelection_ = false;
     pendingValue_ = 0;
     pendingTick_ = host::TickId::invalid();
     repeatedPrompt_ = false;
+    promptGraceFrames_ = 0;
 }
 
 bool JoinState::isTarget(const MessageEvent& event) const noexcept {
@@ -264,7 +316,11 @@ bool JoinState::isTeamMenu(const MessageEvent& event) const noexcept {
     }
     return event.kind == MessageKind::ShowMenu &&
            (textEquals(event.text.data(), "#Team_Select") ||
-            textEquals(event.text.data(), "#IG_Team_Select"));
+            textEquals(event.text.data(), "#Team_Select_Spect") ||
+            textEquals(event.text.data(), "#IG_Team_Select") ||
+            textEquals(event.text.data(), "#IG_Team_Select_Spect") ||
+            textEquals(event.text.data(), "#IG_VIP_Team_Select") ||
+            textEquals(event.text.data(), "#IG_VIP_Team_Select_Spect"));
 }
 
 bool JoinState::isClassMenu(const MessageEvent& event) const noexcept {

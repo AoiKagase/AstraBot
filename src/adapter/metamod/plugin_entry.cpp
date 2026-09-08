@@ -3,6 +3,7 @@
 
 #include "adapter/metamod/plugin_entry.hpp"
 
+#include "adapter/metamod/console_debug.hpp"
 #include "adapter/metamod/lifecycle.hpp"
 #include "adapter/metamod/sound_hooks.hpp"
 #include "debug/host_trace.hpp"
@@ -232,6 +233,10 @@ C_DLLEXPORT FORCE_STACK_ALIGN int Meta_Attach(
     // GetHookTables returns a different table that bypasses unload tracking.
     astrabot::adapter::metamod::lifecycleCoordinator().navConsole().configure(
         &gPluginEngine, gpMetaUtilFuncs, gEngineGlobals);
+    astrabot::adapter::metamod::ConsoleDebug::instance().configure(
+        &gPluginEngine,
+        gpMetaUtilFuncs,
+        &astrabot::adapter::metamod::lifecycleCoordinator());
 
     astrabot::debug::emitAttached(&logAttachedIdentity);
     return 1;
@@ -239,6 +244,7 @@ C_DLLEXPORT FORCE_STACK_ALIGN int Meta_Attach(
 
 C_DLLEXPORT FORCE_STACK_ALIGN int Meta_Detach(
     PLUG_LOADTIME /* now */, PL_UNLOAD_REASON /* reason */) {
+    astrabot::adapter::metamod::ConsoleDebug::instance().reset();
     astrabot::adapter::metamod::lifecycleCoordinator().reset();
     if (gState.attached && gState.functionTable != nullptr) {
         gState.functionTable->pfnGetEntityAPI2 = gState.previousEntityApi2;

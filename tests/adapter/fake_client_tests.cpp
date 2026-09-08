@@ -23,6 +23,8 @@
 
 #include <cassert>
 #include <cstdarg>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -42,6 +44,7 @@ std::vector<std::string> gNavOutput;
 std::vector<std::pair<edict_t*,std::string>> gClientCommands;
 std::vector<std::pair<edict_t*,float>> gClientMoves;
 std::vector<edict_t*> gClientRemovals;
+std::vector<std::pair<std::string, std::string>> gClientInfoKeys;
 bool gGroundMissing=false;
 bool gInvalidateDuringGround=false;
 bool gInvalidateDuringHull=false;
@@ -258,6 +261,7 @@ enginefuncs_t* gEngineHooks = nullptr;
 int gGameDllCommandCalls = 0;
 int gEngineClientCommandCalls = 0;
 int gRunPlayerMoveCalls = 0;
+int gIdlePlayerMoveCalls = 0;
 bool gSimulateNav=false;
 bool gFreezeNav=false;
 edict_t* gFrozenActor=nullptr;
@@ -361,6 +365,7 @@ struct Fixture {
     bool factorySucceeds{true};
     bool infoReturnsNull{false};
     bool connectSucceeds{true};
+    bool emitJoinMenuDuringPutInServer{false};
     int createCalls{0};
     int putCalls{0};
     int disconnectCalls{0};
@@ -374,6 +379,7 @@ struct Fixture {
 
     Fixture() {
         gFixture = this;
+        gClientInfoKeys.clear();
         utility.pfnLogConsole = &captureLogConsole;
         utility.pfnGetHookTables = &captureHookTables;
         utility.pfnCallGameEntity = &captureCallGameEntity;
@@ -488,8 +494,11 @@ char* captureGetInfoKeyBuffer(edict_t* /* entity */) {
 }
 
 void captureSetClientKeyValue(
-    int /* clientIndex */, char* /* infoBuffer */, char* /* key */, char* /* value */) {
+    int /* clientIndex */, char* /* infoBuffer */, char* key, char* value) {
     ++gFixture->setKeyCalls;
+    if (key != nullptr && value != nullptr) {
+        gClientInfoKeys.emplace_back(key, value);
+    }
 }
 
 void captureRemoveEntity(edict_t* entity) {
@@ -530,6 +539,16 @@ void unexpectedDirectClientCommand(edict_t* /* entity */) {
 
 void captureClientPutInServer(edict_t* /* entity */) {
     ++gFixture->putCalls;
+    if (!gFixture->emitJoinMenuDuringPutInServer || gEngineHooks == nullptr) {
+        return;
+    }
+    gEngineHooks->pfnMessageBegin(0, 11, nullptr, &gFixture->entity);
+    gEngineHooks->pfnWriteByte(2);
+    gEngineHooks->pfnWriteShort(0x0001);
+    gEngineHooks->pfnWriteChar(-1);
+    gEngineHooks->pfnWriteByte(0);
+    gEngineHooks->pfnWriteString("");
+    gEngineHooks->pfnMessageEnd();
 }
 
 void captureClientDisconnect(edict_t* /* entity */) {
@@ -600,10 +619,32 @@ void captureRunPlayerMove(
     edict_t* entity, const float* viewAngles, float forwardMove, float sideMove, float upMove,
     unsigned short buttons, byte impulse, byte msec) {
     ++gRunPlayerMoveCalls;
-    if(gFixture->multiClient) gClientMoves.push_back({entity,forwardMove});
+    const bool neutralInput=forwardMove==0 && sideMove==0 && upMove==0 && buttons==0 && impulse==0;
+    const bool idleDispatch=astrabot::adapter::metamod::lifecycleCoordinator().activeMovementDispatchSource()==
+        astrabot::debug::MovementTraceSource::Idle;
+    if(idleDispatch) {
+        assert(neutralInput);
+        ++gIdlePlayerMoveCalls;
+    }
+    if(gFixture->multiClient &&
+       (forwardMove != 0.0F || sideMove != 0.0F || upMove != 0.0F ||
+        buttons != 0U || impulse != 0U)) {
+        gClientMoves.push_back({entity,forwardMove});
+    }
     if(gSimulateNav) {
         auto& owner=astrabot::adapter::metamod::lifecycleCoordinator();
         const auto* actorTrace=owner.navConsole().motionTrace(owner.playerForEntity(entity));
+        if(actorTrace == nullptr) {
+            entity->v.v_angle=Vector(viewAngles[0],viewAngles[1],viewAngles[2]);
+            return;
+        }
+        if(idleDispatch) {
+            // Joined fake clients receive an idle usercmd every frame to keep
+            // ReGameDLL physics and animation advancing.  It is not a NAV
+            // command and must not affect NAV command-count assertions.
+            entity->v.v_angle=Vector(viewAngles[0],viewAngles[1],viewAngles[2]);
+            return;
+        }
         assert(actorTrace && owner.registry().currentTick().isAfter(actorTrace->commandTick));
         astrabot::core::BotCommand c{{viewAngles[0],viewAngles[1],viewAngles[2]},
             {forwardMove,sideMove,upMove},buttons,impulse,msec};
@@ -619,7 +660,7 @@ void captureRunPlayerMove(
             entity->v.v_angle=Vector(viewAngles[0],viewAngles[1],viewAngles[2]);
             return;
         }
-        assert((buttons==0 || (gDoorActive && buttons==IN_USE) || (gSimulateCrouch && buttons==IN_DUCK) ||
+    assert((buttons==0 || (gDoorActive && buttons==IN_USE) || (gSimulateCrouch && buttons==IN_DUCK) ||
             (gSimulateJump && buttons==IN_JUMP)) && impulse==0 && upMove==0 && entity->v.deadflag==DEAD_NO);
         if(gSimulateCrouch) {
             const bool duck=(buttons&IN_DUCK)!=0;
@@ -760,7 +801,14 @@ void testSuccessfulCreationAndOpaquePrivateData() {
     assert(result.agent == BotAgentId{1});
     assert(result.playerRegistration.changed());
     assert(fixture.createCalls == 1);
-    assert(fixture.setKeyCalls == 3);
+    assert(fixture.setKeyCalls == 12);
+    bool legacyMenus = false;
+    for (const auto& entry : gClientInfoKeys) {
+        if (entry.first == "_vgui_menus" && entry.second == "0") {
+            legacyMenus = true;
+        }
+    }
+    assert(legacyMenus);
     assert(fixture.putCalls == 1);
     assert(fixture.disconnectCalls == 0);
     assert(fixture.removeCalls == 0);
@@ -954,7 +1002,7 @@ void prepareNavWalk(Fixture& fixture,enginefuncs_t& hooks,std::uint64_t us=16000
     assert(owner.requestJoin({astrabot::adapter::cstrike::Team::Terrorist,1}).changed);
     sendVguiMenu(hooks,11,&fixture.entity,2,1); navFrame(fixture,us);
     sendVguiMenu(hooks,11,&fixture.entity,26,1); navFrame(fixture,us);
-    sendTeamInfo(hooks,13,1,"TERRORIST");
+    sendTeamInfo(hooks,13,1,"TERRORIST"); navFrame(fixture,us);
     assert(owner.joinState().phase()==astrabot::adapter::cstrike::JoinPhase::Joined);
     fixture.entity.v.flags=FL_ONGROUND|FL_FAKECLIENT; fixture.entity.v.deadflag=DEAD_NO;
     fixture.entity.v.origin=Vector(50,50,36); fixture.entity.v.v_angle=Vector(0,90,0);
@@ -1031,7 +1079,7 @@ void testMultipleManagedClients() {
     assert(!owner.joinState(second.player)->pendingSelection()); frame();
     assert(gClientCommands.size()==1 && gClientCommands.back().first==&fixture.entity && gClientCommands.back().second=="1");
     assert(owner.joinState(second.player)->phase()==JoinPhase::WaitingTeamMenu);
-    sendVguiMenu(hooks,11,&fixture.entity,26,1); frame(); sendTeamInfo(hooks,13,1,"TERRORIST");
+    sendVguiMenu(hooks,11,&fixture.entity,26,1); frame(); sendTeamInfo(hooks,13,1,"TERRORIST"); frame();
     assert(owner.joinState(first.player)->phase()==JoinPhase::Joined);
     core::BotCommand one=core::BotCommand::neutral(1),two=one;
     one.movement.forward=17; two.movement.forward=53;
@@ -1041,7 +1089,7 @@ void testMultipleManagedClients() {
     frame(); assert(gClientMoves.size()==1 && gClientMoves.back().first==&fixture.entity && gClientMoves.back().second==17);
     fragment(&fixture.secondEntity,2,0,"Select"); frame();
     assert(gClientCommands.back().first==&fixture.secondEntity && gClientCommands.back().second=="2");
-    sendVguiMenu(hooks,11,&fixture.secondEntity,27,2); frame(); sendTeamInfo(hooks,13,2,"CT");
+    sendVguiMenu(hooks,11,&fixture.secondEntity,27,2); frame(); sendTeamInfo(hooks,13,2,"CT"); frame();
     assert(owner.joinState(second.player)->phase()==JoinPhase::Joined && owner.joinState(first.player)->phase()==JoinPhase::Joined);
     gClientMoves.clear();
     assert(owner.submitCommand(second.player,map,owner.registry().currentTick(),two).queued());
@@ -1082,6 +1130,7 @@ void testMultipleManagedClients() {
     assert(gClientMoves.size()==beforeMap && !owner.entityFor(first.player) && owner.agents().mappingCount()==0);
     detach();
 }
+
 void testMultipleNavSessions() {
     using namespace astrabot;
     for(std::uint64_t us : {8000U,16000U,100000U}) for(int mode=0;mode<6;++mode) {
@@ -1095,6 +1144,7 @@ void testMultipleNavSessions() {
         sendVguiMenu(hooks,11,&fixture.secondEntity,2,1); navFrame(fixture);
         sendVguiMenu(hooks,11,&fixture.secondEntity,26,1); navFrame(fixture);
         sendTeamInfo(hooks,13,2,"TERRORIST");
+        navFrame(fixture);
         assert(owner.joinState(second.player)->phase()==adapter::cstrike::JoinPhase::Joined);
         fixture.secondEntity.v=fixture.entity.v; fixture.secondEntity.v.origin=Vector(50,250,36);
         route_test::Area a{1,{{0,0,0},{100,100,0},0,0}},b{2,{{100,0,0},{200,100,0},0,0}},
@@ -1160,10 +1210,17 @@ void testMultipleNavSessions() {
             sendVguiMenu(hooks,11,&fixture.secondEntity,2,1); navFrame(fixture);
             sendVguiMenu(hooks,11,&fixture.secondEntity,26,1); navFrame(fixture);
             sendTeamInfo(hooks,13,2,"TERRORIST");
+            navFrame(fixture); // Advance GameDLL after class selection before starting navigation.
+            const auto* replacementJoin=owner.joinState(replacement.player);
+            assert(replacementJoin != nullptr);
+            assert(replacementJoin->phase()==adapter::cstrike::JoinPhase::Joined);
             fixture.secondEntity.v.origin=Vector(50,250,36);
             const auto fresh="2:"+std::to_string(replacement.player.generation.value);
             runNav({"astrabot_goto","4",fresh.c_str()});
-            assert(!console.motionTrace(second.player) && console.trace(replacement.player)->state==nav::runtime::SessionState::Ready);
+            assert(!console.motionTrace(second.player));
+            const auto* replacementTrace=console.trace(replacement.player);
+            assert(replacementTrace != nullptr);
+            assert(replacementTrace->state==nav::runtime::SessionState::Ready);
             assert(console.motionHistoryCount(replacement.player)<console.motionHistoryLimit);
             for(int frame=0;frame<2000 && console.motionTrace(replacement.player)->decision.state!=nav::local::WalkState::Arrived;++frame)
                 navFrame(fixture,us);
@@ -1593,7 +1650,11 @@ void testNavWalkArrival() {
         assert(std::hypot(position.x-expectedX,position.y-expectedY)<=1.01f);
         assert(console.motionTrace().decision.support && console.motionTrace().decision.support->area.value==unsigned(goal[0]-'0'));
         navFrame(fixture,us); assert(!gNavMoves.empty() && gNavMoves.back().movement==core::Movement{});
-        const auto count=gNavMoves.size(); navFrame(fixture,us); navFrame(fixture,us); assert(gNavMoves.size()==count);
+        const auto count=gNavMoves.size();
+        const auto idleCount=gIdlePlayerMoveCalls;
+        navFrame(fixture,us); navFrame(fixture,us);
+        assert(gNavMoves.size()==count);
+        assert(gIdlePlayerMoveCalls>=idleCount+2);
         if(goal[0]=='4' && us==8000) assert(console.motionHistoryCount()==console.motionHistoryLimit);
         gSimulateNav=false; detach();
     }
@@ -1773,9 +1834,11 @@ void testNavWalkCancellationAndGuards() {
         runNav({"astrabot_goto","4"}); awaitMovingQueue(fixture);
         const auto count=gNavMoves.size(); const auto position=fixture.entity.v.origin;
         if(mode==0) {
+            const auto idleCount=gIdlePlayerMoveCalls;
             runNav({"astrabot_nav_cancel"}); navFrame(fixture); assert(gNavMoves.size()==count);
             navFrame(fixture); assert(gNavMoves.size()==count+1 && gNavMoves.back().movement==core::Movement{});
             navFrame(fixture); assert(gNavMoves.size()==count+1 && fixture.entity.v.origin.x==position.x);
+            assert(gIdlePlayerMoveCalls>idleCount);
         } else if(mode==1) {
             const auto generation=console.trace()->routeGeneration;
             runNav({"astrabot_goto","1"}); assert(console.trace()->routeGeneration==generation+1);
@@ -1888,6 +1951,7 @@ void testMessageDrivenJoinAndCommandContext() {
     astrabot::adapter::metamod::lifecycleCoordinator().startFrame();
     assert(gGameDllCommandCalls == 2);
     sendTeamInfo(hooks, 13, 1, "TERRORIST");
+    astrabot::adapter::metamod::lifecycleCoordinator().startFrame();
     assert(astrabot::adapter::metamod::lifecycleCoordinator().joinState().phase() ==
            astrabot::adapter::cstrike::JoinPhase::Joined);
     assert(astrabot::adapter::metamod::lifecycleCoordinator().agents().mappingCount() == 1);
@@ -2092,32 +2156,108 @@ void testCounterTerroristPrimaryJoinRequest() {
     assert(gGameDllCommandCalls == 2);
     assert(gLastCommandArgv1 == "2");
     sendTeamInfo(engineHooks, 13, 1, "CT");
+    astrabot::adapter::metamod::lifecycleCoordinator().startFrame();
     assert(astrabot::adapter::metamod::lifecycleCoordinator().joinState().phase() ==
            astrabot::adapter::cstrike::JoinPhase::Joined);
     detach();
 }
 
-void testJoinTimeoutCleanup() {
+void testJoinFallbackRequiresGameDllProgress() {
     Fixture fixture{};
     activate(fixture);
+    auto& coordinator = astrabot::adapter::metamod::lifecycleCoordinator();
+    coordinator.setRemovalTraceSink(&captureRemovalTrace);
+    gRemovalTraces.clear();
     const FakeClientResult created =
-        astrabot::adapter::metamod::lifecycleCoordinator().fakeClient().create(
+        coordinator.fakeClient().create(
             "AstraBot-Timeout");
     assert(created.succeeded());
-    assert(astrabot::adapter::metamod::lifecycleCoordinator().requestJoin(
+    assert(coordinator.requestJoin(
                 {astrabot::adapter::cstrike::Team::Terrorist, 1})
                .changed);
     for (int frame = 0; frame < 128; ++frame) {
-        astrabot::adapter::metamod::lifecycleCoordinator().startFrame();
+        coordinator.startFrame();
     }
-    assert(astrabot::adapter::metamod::lifecycleCoordinator().joinState().phase() ==
+    assert(coordinator.joinState().phase() ==
            astrabot::adapter::cstrike::JoinPhase::Failed);
-    assert(astrabot::adapter::metamod::lifecycleCoordinator().joinState().error() ==
+    assert(coordinator.joinState().error() ==
            astrabot::adapter::cstrike::JoinError::Timeout);
     assert(fixture.serverCommandCalls == 1);
     assert(fixture.serverExecuteCalls == 1);
-    assert(!astrabot::adapter::metamod::lifecycleCoordinator().registry().isConnected(1));
-    assert(astrabot::adapter::metamod::lifecycleCoordinator().agents().mappingCount() == 0);
+    assert(!coordinator.registry().isConnected(1));
+    assert(coordinator.agents().mappingCount() == 0);
+    assert(!gRemovalTraces.empty());
+    detach();
+}
+
+void testJoinMenuEmittedDuringPutInServer() {
+    Fixture fixture{};
+    fixture.emitJoinMenuDuringPutInServer = true;
+    activate(fixture);
+    auto& coordinator = astrabot::adapter::metamod::lifecycleCoordinator();
+    enginefuncs_t hooks{};
+    int engineVersion = ENGINE_INTERFACE_VERSION;
+    assert(GetEngineFunctions(&hooks, &engineVersion) != 0);
+    gEngineHooks = &hooks;
+    gGameDllCommandCalls = 0;
+    gRunPlayerMoveCalls = 0;
+    gIdlePlayerMoveCalls = 0;
+
+    const FakeClientResult created = coordinator.fakeClient().create(
+        "AstraBot-PutInServer-Menu");
+    assert(created.succeeded());
+    const auto started = coordinator.requestJoin(
+        {astrabot::adapter::cstrike::Team::Terrorist, 1});
+    assert(started.changed);
+    assert(coordinator.joinState().pendingSelection());
+    assert(coordinator.joinState().phase() ==
+           astrabot::adapter::cstrike::JoinPhase::WaitingTeamMenu);
+
+    coordinator.startFrame();
+    assert(gGameDllCommandCalls == 1);
+    assert(gRunPlayerMoveCalls == 1);
+    sendVguiMenu(hooks, 11, &fixture.entity, 26, 0x0001);
+    coordinator.startFrame();
+    sendTeamInfo(hooks, 13, 1, "TERRORIST");
+    coordinator.startFrame();
+    assert(gRunPlayerMoveCalls == 3);
+    assert(coordinator.joinState().phase() ==
+           astrabot::adapter::cstrike::JoinPhase::Joined);
+    coordinator.startFrame();
+    assert(gRunPlayerMoveCalls == 4);
+    assert(gIdlePlayerMoveCalls > 0);
+    detach();
+}
+
+void testJoinFallbackTimeoutCleansUpWithoutGameDllProgress() {
+    Fixture fixture{};
+    activate(fixture);
+    auto& coordinator = astrabot::adapter::metamod::lifecycleCoordinator();
+    coordinator.setRemovalTraceSink(&captureRemovalTrace);
+    gRemovalTraces.clear();
+    const FakeClientResult created =
+        coordinator.fakeClient().create("AstraBot-Timeout-Fallback");
+    assert(created.succeeded());
+    assert(coordinator.requestJoin(
+                       {astrabot::adapter::cstrike::Team::Terrorist, 1})
+               .changed);
+    for (int frame = 0; frame < 128; ++frame) {
+        coordinator.startFrame();
+    }
+    assert(coordinator.joinState().phase() ==
+           astrabot::adapter::cstrike::JoinPhase::Failed);
+    assert(coordinator.joinState().error() ==
+           astrabot::adapter::cstrike::JoinError::Timeout);
+    assert(!gRemovalTraces.empty());
+    assert(gRemovalTraces.back().outcome == RemovalOutcome::KickQueued);
+    assert(fixture.serverCommandCalls == 1);
+    assert(fixture.lastServerCommand == "kick #1\n");
+    // A valid user ID uses the engine kick path, not direct GameDLL cleanup.
+    assert(fixture.disconnectCalls == 0);
+    assert(fixture.removeCalls == 0);
+    assert(!coordinator.registry().isConnected(created.player.slot));
+    assert(coordinator.agents().mappingCount() == 0);
+    assert(coordinator.fakeClient().activeEntity() == nullptr);
     detach();
 }
 
@@ -2297,6 +2437,7 @@ void testExternalDisconnectResetsJoinedState() {
     sendVguiMenu(hooks, 11, &fixture.entity, 26, 0x0001);
     coordinator.startFrame();
     sendTeamInfo(hooks, 13, 1, "TERRORIST");
+    coordinator.startFrame();
     assert(coordinator.joinState().phase() ==
            astrabot::adapter::cstrike::JoinPhase::Joined);
 
@@ -2330,6 +2471,7 @@ void testRemovalStopsPendingMovement() {
     sendVguiMenu(hooks, 11, &fixture.entity, 26, 0x0001);
     coordinator.startFrame();
     sendTeamInfo(hooks, 13, 1, "TERRORIST");
+    coordinator.startFrame();
     assert(coordinator.joinState().phase() ==
            astrabot::adapter::cstrike::JoinPhase::Joined);
 
@@ -2343,10 +2485,11 @@ void testRemovalStopsPendingMovement() {
         coordinator.registry().currentTick(),
         command);
     assert(queued.queued());
+    const auto runsBeforeRemoval = gRunPlayerMoveCalls;
     const RemovalResult removed = coordinator.removeActive();
     assert(removed.succeeded());
     coordinator.startFrame();
-    assert(gRunPlayerMoveCalls == 0);
+    assert(gRunPlayerMoveCalls == runsBeforeRemoval);
     coordinator.clientDisconnect(&fixture.entity);
     detach();
 }
@@ -2430,6 +2573,7 @@ int main(int argc,char** argv) {
     testFirstFrameBootstrapAndCleanup();
     testMissingFunctionIsRejectedWithoutEngineCall();
     testMessageDrivenJoinAndCommandContext();
+    testJoinMenuEmittedDuringPutInServer();
     testNavWalkArrival();
     testStandardJumpPhysics();
     testNavJumpHost();
@@ -2450,7 +2594,8 @@ int main(int argc,char** argv) {
     testNavWalkCancellationAndGuards();
     testJoinFailureCleanupAndCommandContextReentry();
     testCounterTerroristPrimaryJoinRequest();
-    testJoinTimeoutCleanup();
+    testJoinFallbackRequiresGameDllProgress();
+    testJoinFallbackTimeoutCleansUpWithoutGameDllProgress();
     testExplicitRemovalKickAndDisconnectAcknowledge();
     testRemovalCancelsJoinBeforeKick();
     testRemovalFallbackCleansInvalidUserId();

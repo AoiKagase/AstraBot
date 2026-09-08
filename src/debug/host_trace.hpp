@@ -153,6 +153,13 @@ enum class MovementTraceError : std::uint8_t {
     WeaponSelectionRejected,
 };
 
+enum class MovementTraceSource : std::uint8_t {
+    None,
+    Join,
+    Command,
+    Idle,
+};
+
 struct MovementTrace {
     MovementTraceOutcome outcome{MovementTraceOutcome::None};
     MovementTraceError error{MovementTraceError::None};
@@ -164,6 +171,8 @@ struct MovementTrace {
     std::uint64_t frameDeltaUs{0};
     std::uint8_t engineMsec{0};
     bool engineCall{false};
+    MovementTraceSource source{MovementTraceSource::None};
+    std::uint64_t callCount{0};
 };
 
 using MovementTraceSink = void (*)(const MovementTrace& trace) noexcept;

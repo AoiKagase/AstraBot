@@ -105,6 +105,15 @@ const cstrike::JoinState* LifecycleCoordinator::joinState(core::PlayerId player)
     const auto* client=findClient(player);
     return client && client->join.player()==player ? &client->join:nullptr;
 }
+std::uint32_t LifecycleCoordinator::managedTeamCount(cstrike::Team team) const noexcept {
+    std::uint32_t count = 0;
+    for (const auto& client : clients_) {
+        if (client.fake.activePlayer().isValid() && client.join.request().team == team) {
+            ++count;
+        }
+    }
+    return count;
+}
 bool LifecycleCoordinator::removalPending(core::PlayerId player) const noexcept {
     const auto* client=findClient(player); return client && client->fake.removalPending();
 }
@@ -179,7 +188,9 @@ void LifecycleCoordinator::reset() noexcept {
     messageDecoder_.reset(); activeDecoder_=&messageDecoder_;
     // Retire every actor's portable state before any external disconnect callback.
     for(auto& client:clients_) {
-        client.join.reset(); client.decoder.reset(); client.combat={}; client.cleanupPending=false;
+        client.join.reset(); client.decoder.reset(); client.combat={};
+        client.pendingJoinMessageCount = 0;
+        client.cleanupPending=false;
         client.cleanupError=cstrike::JoinError::None;
         const auto player=client.fake.activePlayer();
         if(player.isValid()) { (void)agents_.unbind(player); (void)registry_.disconnectPlayer(player); }
@@ -228,7 +239,9 @@ void LifecycleCoordinator::serverDeactivate() noexcept {
     for(auto& client:clients_) {
         const auto action=client.join.cancel(cstrike::JoinError::MapDeactivated);
         emitJoin(client,action);
-        client.join.reset(); client.decoder.reset(); client.combat={}; client.cleanupPending=false;
+        client.join.reset(); client.decoder.reset(); client.combat={};
+        client.pendingJoinMessageCount = 0;
+        client.cleanupPending=false;
         client.cleanupError=cstrike::JoinError::None;
     }
     messageDecoder_.reset(); activeDecoder_=&messageDecoder_;
@@ -263,7 +276,9 @@ void LifecycleCoordinator::clientDisconnect(edict_t* entity) noexcept {
     if(client) {
         navConsole_.invalidateActor(player,nav::runtime::SessionReason::Disconnected);
         emitJoin(*client,client->join.cancel(cstrike::JoinError::Disconnected));
-        client->join.reset(); client->decoder.reset(); client->cleanupPending=false;
+        client->join.reset(); client->decoder.reset();
+        client->pendingJoinMessageCount = 0;
+        client->cleanupPending=false;
         client->cleanupError=cstrike::JoinError::None;
     }
     if(commandPlayer_==player) {
@@ -286,12 +301,17 @@ FakeClientResult LifecycleCoordinator::createBot(const char* name,cstrike::JoinR
     for(auto& client:clients_) {
         if(client.fake.activePlayer().isValid()) continue;
         client.fake.resetMap(); client.join.reset(); client.decoder.reset(); client.combat={};
+        client.pendingJoinMessageCount = 0;
         client.cleanupPending=false; client.cleanupError=cstrike::JoinError::None;
         const auto result=client.fake.create(name,request);
         ++status_.createAttempts;
         if(result.playerRegistration.changed()) emit(host::LifecycleEventKind::PlayerConnected,result.playerRegistration);
         if(result.playerRollback.changed()) emit(host::LifecycleEventKind::PlayerDisconnected,result.playerRollback);
-        if(result.succeeded()) (void)requestJoin(result.player,request);
+        if(result.succeeded()) {
+            (void)requestJoin(result.player,request);
+        } else {
+            client.pendingJoinMessageCount = 0;
+        }
         return result;
     }
     return {debug::FakeClientError::AlreadyCreated,{}};
@@ -310,7 +330,8 @@ RemovalResult LifecycleCoordinator::remove(core::PlayerId player) noexcept {
     runtime_.onDisconnect(player);
     navConsole_.invalidateActor(player,nav::runtime::SessionReason::Disconnected);
     emitJoin(*client,client->join.cancel(cstrike::JoinError::Disconnected));
-    client->decoder.reset(); client->cleanupPending=false; client->cleanupError=cstrike::JoinError::None;
+    client->decoder.reset(); client->pendingJoinMessageCount=0;
+    client->cleanupPending=false; client->cleanupError=cstrike::JoinError::None;
     if(commandPlayer_==player) {
         commandContextActive_=false; commandPlayer_={}; commandArgv0_={}; commandArgv1_={}; commandArgs_={};
     }
@@ -373,11 +394,27 @@ void LifecycleCoordinator::startFrame() noexcept {
         if(!registry_.isMapActive() || registry_.mapGeneration()!=map || registry_.currentTick()!=tick) return;
         const auto player=client.fake.activePlayer();
         if(!player.isValid()) continue;
-        const auto* entity = client.fake.entityFor(player);
+        auto* entity = client.fake.entityFor(player);
         if (entity != nullptr && entity->v.deadflag != DEAD_NO) {
             client.combat = {};
             runtime_.onDeath(player);
         }
+        if (client.join.active() && !client.fake.removalPending()) {
+            if (!movement_.dispatchJoinProgress(player, entity, map)) {
+                handleJoinAction(
+                    client,
+                    client.join.fail(cstrike::JoinError::GameDllProgressUnavailable));
+                continue;
+            }
+            if (client.join.player() == player) {
+                handleJoinAction(client, client.join.onGameFrameAdvanced());
+            }
+        }
+        // A fake client has no network channel, so ReGameDLL may never emit
+        // VGUIMenu/ShowMenu to this adapter.  Prompt-driven events still take
+        // precedence; this bounded prime only supplies the selection when a
+        // prompt was not observed before the frame deadline.
+        (void)client.join.primeMenuSelection();
         const auto action=client.join.onFrame(tick); handleJoinAction(client,action);
         if(action.kind==cstrike::JoinActionKind::SendMenuSelect && client.fake.activePlayer()==player) {
             const bool dispatched=dispatchMenu(client,action.selection);
@@ -393,10 +430,21 @@ void LifecycleCoordinator::startFrame() noexcept {
             runtime_.onDeath(runtimeOwnedActor_);
         }
     }
-    for(auto& client:clients_) navConsole_.beforeDispatch(*this,client.fake.activePlayer());
+    for(auto& client:clients_) {
+        const auto player=client.fake.activePlayer();
+        if(client.fake.removalPending()) {
+            movement_.forget(player);
+            continue;
+        }
+        navConsole_.beforeDispatch(*this,player);
+    }
     for(auto& client:clients_) {
         if(!registry_.isMapActive() || registry_.mapGeneration()!=map || registry_.currentTick()!=tick) return;
         const auto player=client.fake.activePlayer(); if(!player.isValid()) continue;
+        if(client.fake.removalPending()) {
+            movement_.forget(player);
+            continue;
+        }
         const auto ticket=navConsole_.dispatchTicket(player);
         const auto moved=movement_.dispatchAtFrameEnd(client.join.phase(),player,client.fake.entityFor(player),map,tick);
         navConsole_.afterDispatch(player,moved,tick,ticket);
@@ -441,13 +489,15 @@ void LifecycleCoordinator::startFrame() noexcept {
                 }
                 std::array<RuntimeActorInput,kRuntimeActorCapacity> runtimeInputs{};
                 std::size_t runtimeInputCount = 0;
+                runtimeInputBuildStatus_ = {};
                 if (runtimeInputProvider_ != nullptr) {
                     runtimeInputCount = runtimeInputProvider_(
                         runtimeInputContext_, *this, runtimeFrame,
                         runtimeInputs.data(), runtimeInputs.size());
                 } else {
                     runtimeInputCount = buildRuntimeInputs(*this, runtimeFrame,
-                        hookedGameDllFunctions_, runtimeInputs.data(), runtimeInputs.size());
+                        hookedGameDllFunctions_, runtimeInputs.data(), runtimeInputs.size(),
+                        &runtimeInputBuildStatus_);
                 }
                 const auto& runtimeResult = runtime_.run(
                     runtimeFrame, runtimeInputs.data(), runtimeInputCount);
@@ -789,8 +839,27 @@ cstrike::JoinAction LifecycleCoordinator::requestJoin(core::PlayerId player,cstr
     auto* client=findClient(player);
     if(!client || !client->fake.entityFor(player)) return cstrike::JoinAction::failed(cstrike::JoinError::InvalidPlayer);
     const auto action=client->join.begin(player,registry_.mapGeneration(),request,registry_.currentTick());
-    if(action.error!=cstrike::JoinError::AlreadyJoining) handleJoinAction(*client,action);
-    return action;
+    if(action.error==cstrike::JoinError::AlreadyJoining) return action;
+    handleJoinAction(*client,action);
+    if(action.kind==cstrike::JoinActionKind::Failed ||
+       client->join.phase()==cstrike::JoinPhase::Failed) return action;
+
+    // GameDLLs can emit the first menu synchronously from ClientPutInServer,
+    // before createBot has a chance to call requestJoin.  Replay those events
+    // in wire order now that JoinState has an active request.
+    const auto pendingCount = client->pendingJoinMessageCount;
+    client->pendingJoinMessageCount = 0;
+    cstrike::JoinAction replayAction = action;
+    for(std::uint8_t index=0; index<pendingCount; ++index) {
+        const auto event = client->pendingJoinMessages[index];
+        const auto next = client->join.onMessage(event,registry_.currentTick());
+        if(!next.changed) continue;
+        replayAction = next;
+        handleJoinAction(*client,next);
+        if(client->join.phase()==cstrike::JoinPhase::Failed ||
+           client->join.phase()==cstrike::JoinPhase::Cancelled) break;
+    }
+    return replayAction;
 }
 bool LifecycleCoordinator::dispatchMenuForTest(std::uint8_t selection) noexcept { return dispatchMenu(clients_[0],selection); }
 void LifecycleCoordinator::emit(
@@ -882,6 +951,15 @@ void LifecycleCoordinator::handleMessage(const cstrike::MessageEvent& event) noe
         if (client && client->join.phase() == cstrike::JoinPhase::Joined) return;
     }
     if(!client || !client->fake.entityFor(client->fake.activePlayer())) return;
+    if (client->join.phase() == cstrike::JoinPhase::Idle) {
+        if ((event.kind == cstrike::MessageKind::VguiMenu ||
+             event.kind == cstrike::MessageKind::ShowMenu ||
+             event.kind == cstrike::MessageKind::TeamInfo) &&
+            client->pendingJoinMessageCount < client->pendingJoinMessages.size()) {
+            client->pendingJoinMessages[client->pendingJoinMessageCount++] = event;
+        }
+        return;
+    }
     handleJoinAction(*client,client->join.onMessage(event,registry_.currentTick()));
 }
 void LifecycleCoordinator::handleJoinAction(ClientState& client,const cstrike::JoinAction& action) noexcept {
@@ -929,6 +1007,7 @@ void LifecycleCoordinator::cleanupFailedJoin(ClientState& client,cstrike::JoinEr
         movement_.forget(player); client.combat={}; (void)agents_.unbind(player); (void)registry_.disconnectPlayer(player);
         (void)client.fake.kickAndCleanup(player);
     }
+    client.pendingJoinMessageCount = 0;
     client.cleanupPending=false; client.cleanupError=cstrike::JoinError::None;
 }
 bool LifecycleCoordinator::dispatchMenu(ClientState& client,std::uint8_t selection) noexcept {

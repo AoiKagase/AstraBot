@@ -79,6 +79,17 @@ public:
         edict_t* entity,
         core::MapGeneration mapGeneration,
         core::TickId dispatchTick) noexcept;
+    // Advance a fake client's GameDLL join state without submitting gameplay
+    // movement. Join-time entities may still be dead or spectator.
+    bool dispatchJoinProgress(
+        core::PlayerId activePlayer,
+        edict_t* entity,
+        core::MapGeneration mapGeneration,
+        debug::MovementTraceSource source = debug::MovementTraceSource::Join) noexcept;
+
+    debug::MovementTraceSource activeDispatchSource() const noexcept {
+        return activeDispatchSource_;
+    }
 
     void setTraceSink(debug::MovementTraceSink sink) noexcept {
         traceSink_ = sink;
@@ -127,11 +138,16 @@ private:
         core::TickId commandTick,
         core::TickId dispatchTick,
         std::uint8_t originalMsec,
-        bool engineCall, std::optional<std::uint64_t> dispatchDelta=std::nullopt) noexcept;
+        bool engineCall, std::optional<std::uint64_t> dispatchDelta=std::nullopt,
+        debug::MovementTraceSource source=debug::MovementTraceSource::None,
+        std::uint64_t callCount=0) noexcept;
 
     enginefuncs_t* engineFunctions_{nullptr};
     host::PlayerRegistry* registry_{nullptr};
     std::array<std::optional<PendingCommand>, host::kMaxClientSlots> pending_{};
+    std::array<bool, host::kMaxClientSlots> dispatchedThisFrame_{};
+    std::array<std::uint64_t, host::kMaxClientSlots> callCounts_{};
+    debug::MovementTraceSource activeDispatchSource_{debug::MovementTraceSource::None};
     ClockNow now_{&MovementCoordinator::steadyNow};
     std::chrono::steady_clock::time_point lastFrame_{};
     std::uint64_t frameDeltaUs_{0};

@@ -2,6 +2,7 @@
 // Copyright (c) 2026 AstraBot contributors.
 
 #include "adapter/metamod/plugin_entry.hpp"
+#include "adapter/metamod/console_debug.hpp"
 #include "adapter/metamod/lifecycle.hpp"
 
 #include "debug/host_trace.hpp"
@@ -9,6 +10,7 @@
 #include <cassert>
 #include <cstdarg>
 #include <cstring>
+#include <initializer_list>
 #include <string>
 #include <vector>
 
@@ -18,6 +20,12 @@ using astrabot::host::LifecycleEventKind;
 
 std::vector<std::string> gLogLines;
 std::vector<std::string> gTraceLines;
+struct RegisteredCommand {
+    std::string name;
+    void (*callback)(){};
+};
+std::vector<RegisteredCommand> gServerCommands;
+std::vector<std::string> gCommandArgs;
 std::vector<astrabot::debug::LifecycleTrace> gLifecycleTraces;
 std::vector<astrabot::debug::CombatTrace> gCombatTraces;
 
@@ -144,9 +152,18 @@ int captureGetPlayerUserId(edict_t* /* entity */) {
 
 void captureServerCommand(char* /* command */) {}
 void captureServerExecute() {}
-void captureAddCommand(char*, void(*)()) {}
-int captureArgc() { return 0; }
-const char* captureArgv(int) { return ""; }
+void captureAddCommand(char* name, void (*callback)()) {
+    if (name != nullptr && callback != nullptr) {
+        gServerCommands.push_back({name, callback});
+    }
+}
+int captureArgc() { return static_cast<int>(gCommandArgs.size()); }
+const char* captureArgv(int index) {
+    if (index < 0 || static_cast<std::size_t>(index) >= gCommandArgs.size()) {
+        return "";
+    }
+    return gCommandArgs[static_cast<std::size_t>(index)].c_str();
+}
 void captureRunPlayerMove(
     edict_t* /* entity */,
     const float* /* viewAngles */,
@@ -215,9 +232,28 @@ void resetAdapter() {
     assert(Meta_Detach(PT_ANYTIME, PNL_NULL) != 0);
     gLogLines.clear();
     gTraceLines.clear();
+    gServerCommands.clear();
+    gCommandArgs.clear();
     gLifecycleTraces.clear();
+    gCombatTraces.clear();
     gRunPlayerMoveCalls = 0;
     gUserMessageIdsReady = true;
+}
+
+void runServerCommand(
+    const std::initializer_list<const char*>& arguments,
+    const char* name) {
+    gCommandArgs.clear();
+    for (const char* argument : arguments) {
+        gCommandArgs.emplace_back(argument == nullptr ? "" : argument);
+    }
+    for (const auto& command : gServerCommands) {
+        if (command.name == name) {
+            command.callback();
+            return;
+        }
+    }
+    assert(false && "server command was not registered");
 }
 
 void query(Fixture& fixture) {
@@ -585,6 +621,124 @@ void testTraceSink() {
     assert(gLifecycleTraces.empty());
 }
 
+void testConsoleDebugCommandAndTracePrefixes() {
+    resetAdapter();
+    Fixture fixture{};
+    query(fixture);
+    assert(Meta_Attach(PT_ANYTIME, &fixture.callbacks, &fixture.globals, &fixture.gameDll) != 0);
+
+    bool registered = false;
+    bool addBotRegistered = false;
+    for (const auto& command : gServerCommands) {
+        if (command.name == "astrabot_debug") {
+            registered = true;
+            assert(command.callback != nullptr);
+        }
+        if (command.name == "astrabot_addbot") {
+            addBotRegistered = true;
+            assert(command.callback != nullptr);
+        }
+    }
+    assert(registered);
+    assert(addBotRegistered);
+
+    runServerCommand({"astrabot_debug"}, "astrabot_debug");
+    assert(gLogLines.back() == "[ASTRABOT][DEBUG][COMMAND] state=off");
+
+    astrabot::debug::JoinTrace join{};
+    join.phase = astrabot::adapter::cstrike::JoinPhase::Failed;
+    join.error = astrabot::adapter::cstrike::JoinError::MenuOptionUnavailable;
+    join.map = {1};
+    join.player = {1, {2}};
+    join.team = astrabot::adapter::cstrike::Team::CounterTerrorist;
+    join.classNumber = 3;
+    join.tick = {12};
+    join.sequence = 7;
+    join.attempts = 2;
+    join.changed = true;
+
+    gLogLines.clear();
+    astrabot::adapter::metamod::ConsoleDebug::instance().joinTrace(join);
+    assert(gLogLines.empty());
+
+    runServerCommand({"astrabot_debug", "1"}, "astrabot_debug");
+    assert(gLogLines.size() == 1);
+    assert(gLogLines.front() == "[ASTRABOT][DEBUG][COMMAND] enabled=1");
+
+    astrabot::debug::LifecycleTrace lifecycle{};
+    lifecycle.kind = astrabot::host::LifecycleEventKind::FrameStarted;
+    lifecycle.map = {1};
+    lifecycle.tick = {12};
+    astrabot::adapter::metamod::ConsoleDebug::instance().lifecycleTrace(lifecycle);
+    assert(gLogLines.size() == 1);
+
+    lifecycle.kind = astrabot::host::LifecycleEventKind::MapActivated;
+    lifecycle.playerGeneration = {2};
+    lifecycle.sequence = 3;
+    lifecycle.accepted = true;
+    lifecycle.changed = true;
+    astrabot::adapter::metamod::ConsoleDebug::instance().lifecycleTrace(lifecycle);
+
+    astrabot::debug::FakeClientTrace fake{};
+    fake.stage = astrabot::debug::FakeClientStage::Published;
+    fake.map = {1};
+    fake.slot = 1;
+    fake.playerGeneration = {2};
+    fake.agent = {3};
+    fake.sequence = 4;
+    fake.accepted = true;
+    fake.changed = true;
+    astrabot::adapter::metamod::ConsoleDebug::instance().fakeClientTrace(fake);
+
+    astrabot::debug::MovementTrace movement{};
+    movement.player = {1, {2}};
+    movement.engineMsec = 16;
+    movement.engineCall = true;
+    movement.source = astrabot::debug::MovementTraceSource::Idle;
+    movement.callCount = 1;
+    astrabot::adapter::metamod::ConsoleDebug::instance().movementTrace(movement);
+
+    astrabot::adapter::metamod::ConsoleDebug::instance().joinTrace(join);
+
+    astrabot::debug::RemovalTrace removal{};
+    removal.outcome = astrabot::debug::RemovalOutcome::KickQueued;
+    removal.map = {1};
+    removal.player = {1, {2}};
+    removal.tick = {12};
+    removal.sequence = 8;
+    removal.mappingPresent = true;
+    removal.entityPresent = true;
+    astrabot::adapter::metamod::ConsoleDebug::instance().removalTrace(removal);
+
+    assert(gLogLines.size() == 6);
+    assert(gLogLines[1].rfind("[ASTRABOT][DEBUG][LIFECYCLE] ", 0) == 0);
+    assert(gLogLines[1].find("kind=MapActivated") != std::string::npos);
+    assert(gLogLines[2].rfind("[ASTRABOT][DEBUG][FAKECLIENT] ", 0) == 0);
+    assert(gLogLines[2].find("stage=Published") != std::string::npos);
+    assert(gLogLines[3].rfind("[ASTRABOT][DEBUG][MOVEMENT] ", 0) == 0);
+    assert(gLogLines[3].find("source=Idle") != std::string::npos);
+    assert(gLogLines[4].rfind("[ASTRABOT][DEBUG][JOIN] ", 0) == 0);
+    assert(gLogLines[4].find("error=MenuOptionUnavailable") != std::string::npos);
+    assert(gLogLines[5].rfind("[ASTRABOT][DEBUG][REMOVAL] ", 0) == 0);
+    assert(gLogLines[5].find("outcome=KickQueued") != std::string::npos);
+
+    runServerCommand({"astrabot_debug", "9"}, "astrabot_debug");
+    assert(gLogLines.back().find("error=InvalidArguments") != std::string::npos);
+    gLogLines.clear();
+    astrabot::adapter::metamod::ConsoleDebug::instance().joinTrace(join);
+    assert(gLogLines.size() == 1);
+
+    runServerCommand({"astrabot_debug", "0"}, "astrabot_debug");
+    assert(gLogLines.size() == 2);
+    astrabot::adapter::metamod::ConsoleDebug::instance().joinTrace(join);
+    assert(gLogLines.size() == 2);
+
+    assert(Meta_Detach(PT_ANYTIME, PNL_COMMAND) != 0);
+    gLogLines.clear();
+    astrabot::adapter::metamod::ConsoleDebug::instance().joinTrace(join);
+    assert(gLogLines.empty());
+}
+
 void testCombatLifecycleRejectsInvalidActorWithTrace() {
     auto& lifecycle = astrabot::adapter::metamod::lifecycleCoordinator();
     lifecycle.reset();
@@ -620,6 +774,7 @@ int main() {
     testEmptyHookTablesAndInterfaceChecks();
     testLifecycleHooksAndCoordinatorCleanup();
     testTraceSink();
+    testConsoleDebugCommandAndTracePrefixes();
     testCombatLifecycleRejectsInvalidActorWithTrace();
     return 0;
 }

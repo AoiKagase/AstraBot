@@ -143,12 +143,50 @@ FakeClientResult FakeClientCoordinator::create(
         return rejected(debug::FakeClientError::InfoBufferFailed,
                         debug::FakeClientStage::RolledBack);
     }
+    char modelKey[] = "model";
+    char modelValue[] = "";
+    char rateKey[] = "rate";
+    char rateValue[] = "3500.000000";
+    char updateRateKey[] = "cl_updaterate";
+    char updateRateValue[] = "20";
+    char trackerKey[] = "tracker";
+    char trackerValue[] = "0";
+    char downloadMaxKey[] = "cl_dlmax";
+    char downloadMaxValue[] = "128";
+    char leftHandKey[] = "lefthand";
+    char leftHandValue[] = "1";
+    char friendsKey[] = "friends";
+    char friendsValue[] = "0";
+    char dmKey[] = "dm";
+    char dmValue[] = "0";
+    char autoHelpKey[] = "ah";
+    char autoHelpValue[] = "1";
     char vguiKey[] = "_vgui_menus";
+    // Match the proven fake-client setup used by RealBot: fake clients must
+    // opt out of VGUI menus so the GameDLL sends the legacy ShowMenu events
+    // that can be answered through MDLL_ClientCommand/menuselect.
     char vguiValue[] = "0";
     char ahKey[] = "_ah";
     char ahValue[] = "0";
     char botKey[] = "*bot";
     char botValue[] = "1";
+    engineFunctions_->pfnSetClientKeyValue(
+        index, infoBuffer, modelKey, modelValue);
+    engineFunctions_->pfnSetClientKeyValue(
+        index, infoBuffer, rateKey, rateValue);
+    engineFunctions_->pfnSetClientKeyValue(
+        index, infoBuffer, updateRateKey, updateRateValue);
+    engineFunctions_->pfnSetClientKeyValue(
+        index, infoBuffer, trackerKey, trackerValue);
+    engineFunctions_->pfnSetClientKeyValue(
+        index, infoBuffer, downloadMaxKey, downloadMaxValue);
+    engineFunctions_->pfnSetClientKeyValue(
+        index, infoBuffer, leftHandKey, leftHandValue);
+    engineFunctions_->pfnSetClientKeyValue(
+        index, infoBuffer, friendsKey, friendsValue);
+    engineFunctions_->pfnSetClientKeyValue(index, infoBuffer, dmKey, dmValue);
+    engineFunctions_->pfnSetClientKeyValue(
+        index, infoBuffer, autoHelpKey, autoHelpValue);
     engineFunctions_->pfnSetClientKeyValue(
         index, infoBuffer, vguiKey, vguiValue);
     engineFunctions_->pfnSetClientKeyValue(index, infoBuffer, ahKey, ahValue);
@@ -164,22 +202,30 @@ FakeClientResult FakeClientCoordinator::create(
     }
     trace(debug::FakeClientStage::Connected, debug::FakeClientError::None);
 
-    hookedGameDllFunctions_->pfnClientPutInServer(entity);
-    trace(debug::FakeClientStage::PutInServer, debug::FakeClientError::None);
-
     const host::LifecycleResult registration = players_->registerPlayer(slot);
     if (!registration) {
-        cleanup(entity, true);
+        cleanup(entity, false);
         return rejected(debug::FakeClientError::PlayerRegistrationFailed,
                         debug::FakeClientStage::RolledBack);
     }
 
+    // ClientPutInServer may synchronously emit the first team/class menu.
+    // Publish the identity before entering GameDLL code so the lifecycle
+    // decoder can associate those messages with this fake client.  The
+    // lifecycle keeps the event until requestJoin starts JoinState.
+    activeEntity_ = entity;
+    activePlayer_ = registration.event.player;
+    activeMap_ = registration.event.map;
+    activeSerial_ = entity->serialnumber;
+    hookedGameDllFunctions_->pfnClientPutInServer(entity);
+    trace(debug::FakeClientStage::PutInServer, debug::FakeClientError::None);
+
     const host::BotAgentResult binding =
         agents_->bind(registration.event.player, registration.event.map);
     if (!binding) {
+        cleanup(entity, true);
         const host::LifecycleResult rollback =
             players_->disconnectPlayer(registration.event.player);
-        cleanup(entity, true);
         FakeClientResult result = rejected(
             debug::FakeClientError::AgentBindingFailed,
             debug::FakeClientStage::RolledBack,
@@ -195,9 +241,6 @@ FakeClientResult FakeClientCoordinator::create(
     result.playerRegistration = registration;
     result.accepted = true;
     result.changed = true;
-    activeEntity_ = entity;
-    activePlayer_ = result.player;
-    activeMap_=registration.event.map; activeSerial_=entity->serialnumber;
     trace(
         debug::FakeClientStage::Published,
         debug::FakeClientError::None,
@@ -374,14 +417,39 @@ void FakeClientCoordinator::acknowledgeDisconnect(
 
 bool FakeClientCoordinator::kickAndCleanup(host::PlayerId player) noexcept {
     if (!player.isValid() || activePlayer_ != player || !sameEntity()) {
+        emitRemoval(
+            debug::RemovalOutcome::Rejected,
+            debug::RemovalError::NoActiveClient,
+            player,
+            false,
+            false);
         return false;
     }
 
     edict_t* entity = activeEntity_;
     debug::RemovalError error = debug::RemovalError::None;
     const bool kicked = issueKick(entity, error);
-    if (!kicked) {
+    if (kicked) {
+        emitRemoval(
+            debug::RemovalOutcome::KickQueued,
+            debug::RemovalError::None,
+            player,
+            true,
+            true);
+    } else {
+        const bool canCleanup =
+            engineFunctions_ != nullptr &&
+            engineFunctions_->pfnRemoveEntity != nullptr &&
+            hookedGameDllFunctions_ != nullptr &&
+            hookedGameDllFunctions_->pfnClientDisconnect != nullptr;
         cleanup(entity, true);
+        emitRemoval(
+            canCleanup ? debug::RemovalOutcome::Cleaned
+                       : debug::RemovalOutcome::Rejected,
+            canCleanup ? error : debug::RemovalError::DirectCleanupFailed,
+            player,
+            true,
+            true);
     }
     forget(player);
     return kicked;
