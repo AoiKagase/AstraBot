@@ -17,6 +17,7 @@
 #include "adapter/cstrike/combat.hpp"
 #include "core/combat.hpp"
 #include "core/world_model.hpp"
+#include "adapter/metamod/runtime_orchestrator.hpp"
 #include "adapter/cstrike/nav/console.hpp"
 #include "debug/host_trace.hpp"
 #include "host/bot_agents.hpp"
@@ -64,6 +65,13 @@ struct CombatSubmitResult {
 
 class LifecycleCoordinator final {
 public:
+    // The adapter owns engine/private-to-value conversion. A null provider is
+    // an intentional safe no-op: perception still publishes, but no actor is
+    // planned or dispatched until a provider supplies a complete DTO set.
+    using RuntimeInputProvider = std::size_t (*)(
+        void*, const LifecycleCoordinator&, RuntimeFrame&,
+        RuntimeActorInput*, std::size_t) noexcept;
+
     void configure(
         enginefuncs_t* engineFunctions,
         mutil_funcs_t* utilityFunctions,
@@ -98,6 +106,20 @@ public:
         core::TickId tick,
         const core::combat::CombatDecision& decision,
         const core::BotCommand& navigation) noexcept;
+    void setRuntimeInputProvider(RuntimeInputProvider provider,
+                                 void* context) noexcept {
+        runtimeInputProvider_ = provider;
+        runtimeInputContext_ = context;
+    }
+    RuntimeOrchestrator& runtimeOrchestrator() noexcept { return runtime_; }
+    const RuntimeOrchestrator& runtimeOrchestrator() const noexcept { return runtime_; }
+    const RuntimeFrameResult& runtimeResult() const noexcept { return runtime_.result(); }
+    std::optional<core::combat::CombatDecision> takeRuntimeCombatDecision(
+        core::PlayerId player, core::BotAgentId agent,
+        core::MapGeneration map, core::perception::RoundGeneration round,
+        core::TickId tick) noexcept {
+        return runtime_.takeCombatDecision(player, agent, map, round, tick);
+    }
 
     void messageBegin(
         int messageDestination,
@@ -157,6 +179,7 @@ public:
     }
     LifecycleStatus status() const noexcept { return status_; }
     cstrike::NavConsole& navConsole() noexcept { return navConsole_; }
+    const cstrike::NavConsole& navConsole() const noexcept { return navConsole_; }
     const cstrike::VisionAdapter& vision() const noexcept { return vision_; }
     const core::world::WorldModel& world() const noexcept { return world_; }
     const nav::query::DistributionModel& distributions() const noexcept { return distributions_; }
@@ -242,6 +265,7 @@ private:
     std::array<ClientState,host::kMaxClientSlots> clients_{};
     MovementCoordinator movement_{};
     cstrike::NavConsole navConsole_{};
+    RuntimeOrchestrator runtime_{};
     core::world::WorldModel world_{};
     nav::query::DistributionModel distributions_{};
     cstrike::VisionAdapter vision_{world_};
@@ -279,6 +303,8 @@ private:
     debug::RemovalTraceSink removalTraceSink_{nullptr};
     debug::CombatTraceSink combatTraceSink_{nullptr};
     std::uint64_t combatTraceSequence_{0};
+    RuntimeInputProvider runtimeInputProvider_{nullptr};
+    void* runtimeInputContext_{nullptr};
 };
 
 LifecycleCoordinator& lifecycleCoordinator() noexcept;

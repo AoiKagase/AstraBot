@@ -468,13 +468,30 @@ void NavConsole::submitMotion(const nav::runtime::MovementSnapshot& s,metamod::L
         if(current_->pump_) current_->pump_->submissionRejected();
         current_->motionTrace_.rejected=add(current_->motionTrace_.rejected,1); recordMotion(MotionEvent::Rejected,MotionReason::MotorRejected); return;
     }
-    const auto result=owner.submitCommand(s.actor,s.map,s.tick,*command.command);
-    current_->motionTrace_.command=*command.command;
+    core::BotCommand submittedCommand=*command.command;
+    metamod::MovementResult result{};
+    // Runtime combat is a one-shot value owned by the orchestrator. Consume
+    // it only for this exact navigation stamp so a stale attack cannot be
+    // attached to a later movement command. The fallback preserves manual NAV
+    // operation when the high-level runtime has no executable decision.
+    if (const auto combat = owner.takeRuntimeCombatDecision(
+            s.actor, s.agent, s.map, owner.round(), s.tick)) {
+        const auto composed = owner.submitCombatDecision(
+            s.actor, s.map, s.tick, *combat, submittedCommand);
+        if (composed.composition) submittedCommand = composed.composition.command;
+        result = composed.transport;
+        if (!composed.accepted && result.error == metamod::MovementError::None)
+            result = metamod::MovementResult::rejectedResult(
+                metamod::MovementError::RegistryRejected);
+    } else {
+        result=owner.submitCommand(s.actor,s.map,s.tick,submittedCommand);
+    }
+    current_->motionTrace_.command=submittedCommand;
     current_->motionTrace_.commandTick=s.tick; current_->motionTrace_.dispatchTick={}; current_->motionTrace_.intentAgeUs=age;
     current_->motionTrace_.transportError=result.error;
     if(result.queued()) {
         current_->pendingMotion_=PendingMotion{current_->motionTrace_.decision.binding,s.tick,nav::local::IntentPump::maxIntentAgeUs-age,
-            s,*command.command,current_->segment_,contact};
+            s,submittedCommand,current_->segment_,contact};
         if(decision.jumpState && decision.jumpPlan && decision.jumpPhysics)
             current_->pendingMotion_->jump=JumpTicket{*decision.jumpPlan,*decision.jumpPhysics,*decision.jumpState,decision.jumpPressTick};
         if(decision.ladderState && decision.ladderPlan) {
@@ -487,7 +504,7 @@ void NavConsole::submitMotion(const nav::runtime::MovementSnapshot& s,metamod::L
         current_->motionTrace_.queued=add(current_->motionTrace_.queued,1); recordMotion(MotionEvent::Queued);
     } else {
         reportLadderTransport(decision,s.tick,s.tick,false);
-        if(current_->walk_ && (command.command->buttons&static_cast<core::ButtonMask>(core::Button::Jump)))
+        if(current_->walk_ && (submittedCommand.buttons&static_cast<core::ButtonMask>(core::Button::Jump)))
             (void)current_->walk_->reportJumpDispatch({decision.binding,s.tick,s.tick,false});
         if(current_->pump_) current_->pump_->submissionRejected();
         current_->motionTrace_.rejected=add(current_->motionTrace_.rejected,1);

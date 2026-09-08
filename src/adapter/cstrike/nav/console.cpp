@@ -94,6 +94,49 @@ void NavConsole::moveFrame(metamod::LifecycleCoordinator& owner,core::PlayerId p
     auto* actor=findActor(player); if(!actor) return;
     ActorScope scope(current_,actor); moveFrame(owner);
 }
+void NavConsole::applyRuntimeNavigation(
+    metamod::LifecycleCoordinator& owner,
+    const metamod::RuntimeDecision& decision) noexcept {
+    if (!decision.executable || !decision.hasNavigationGoal ||
+        !decision.player.isValid() || !decision.agent.isValid() ||
+        !decision.navigationGoal.isValid() || inRequest_ ||
+        !owner.registry().isMapActive() ||
+        owner.registry().mapGeneration() != decision.team.shared.map ||
+        owner.registry().currentTick() == core::TickId{}) {
+        return;
+    }
+    if (!selectActor(decision.player)) return;
+    const auto s = snapshot(owner);
+    if (s.kind != nav::runtime::ActorKind::ManagedBot ||
+        s.actor != decision.player || s.agent != decision.agent ||
+        s.map != owner.registry().mapGeneration() ||
+        s.connected != true || s.alive != true || s.joined != true ||
+        !s.position || !s.velocity || !s.view || !s.hull || !s.speedLimit) {
+        return;
+    }
+    if (current_->session_ && current_->session_->executable() &&
+        current_->session_->trace().actor == s.actor &&
+        current_->session_->trace().agent == s.agent &&
+        current_->session_->trace().map == s.map &&
+        current_->session_->trace().goal == decision.navigationGoal) {
+        return;
+    }
+    if (!current_->session_ || current_->session_->trace().actor != s.actor ||
+        current_->session_->trace().agent != s.agent ||
+        current_->session_->trace().map != s.map) {
+        current_->session_.emplace(s.agent, s.actor, s.map);
+    }
+    stopMotion();
+    current_->replan_ = {};
+    current_->navigationTimeUs_ = 0;
+    current_->navigationTimeTick_ = s.tick;
+    current_->recovery_ = {};
+    current_->recoveryReplan_ = false;
+    nav::runtime::RouteOptions options;
+    options.limits = {100000, 256 * mib};
+    options.groundNavTolerance = 18;
+    requestRoute(s, decision.navigationGoal, owner, options);
+}
 void NavConsole::configure(enginefuncs_t* engine,mutil_funcs_t* utility,globalvars_t* globals) noexcept {
     engine_=engine; utility_=utility; globals_=globals;
     if (!engine_ || !engine_->pfnAddServerCommand || !engine_->pfnCmd_Argc || !engine_->pfnCmd_Argv) return;
@@ -195,10 +238,14 @@ bool NavConsole::load(const char* path,core::MapGeneration map,metamod::Lifecycl
         loadCurrentLadders(owner); return true;
     } catch(...) { line("nav load=AllocationOrInputFailure"); return false; }
 }
-nav::runtime::MovementSnapshot NavConsole::snapshot(metamod::LifecycleCoordinator& owner) noexcept {
+nav::runtime::MovementSnapshot NavConsole::snapshot(const metamod::LifecycleCoordinator& owner) const noexcept {
+    return snapshotFor(owner,*current_);
+}
+nav::runtime::MovementSnapshot NavConsole::snapshotFor(
+    const metamod::LifecycleCoordinator& owner,const ActorState& actor) const noexcept {
     nav::runtime::MovementSnapshot s;
     auto& registry=owner.registry();
-    s.actor=current_->actor; s.agent=owner.agents().findByPlayer(s.actor).agent;
+    s.actor=actor.actor; s.agent=owner.agents().findByPlayer(s.actor).agent;
     s.map=registry.mapGeneration(); s.tick=registry.currentTick();
     if(globals_ && std::isfinite(globals_->frametime) && globals_->frametime>=0 && globals_->frametime<=60)
         s.elapsedUs=static_cast<std::uint64_t>(double(globals_->frametime)*1000000.0);
@@ -217,6 +264,21 @@ nav::runtime::MovementSnapshot NavConsole::snapshot(metamod::LifecycleCoordinato
     s.hull=nav::runtime::HullDimensions{{v.mins.x,v.mins.y,v.mins.z},{v.maxs.x,v.maxs.y,v.maxs.z}};
     if (std::isfinite(v.maxspeed) && v.maxspeed>=0) s.speedLimit=v.maxspeed;
     return s;
+}
+std::optional<RuntimeNavigationState> NavConsole::runtimeState(
+    const metamod::LifecycleCoordinator& owner,core::PlayerId player) const noexcept {
+    const auto* actor=findActor(player);
+    if(!actor) return {};
+    RuntimeNavigationState result{};
+    result.movement=snapshotFor(owner,*actor);
+    if(actor->session_) {
+        const auto& trace=actor->session_->trace();
+        result.currentArea=trace.currentArea;
+        result.goal=trace.goal.isValid() ? std::optional<nav::model::NavAreaId>{trace.goal}:std::nullopt;
+        result.routeGeneration=trace.routeGeneration;
+        result.routeExecutable=actor->session_->executable();
+    }
+    return result;
 }
 void NavConsole::observe(metamod::LifecycleCoordinator& owner) noexcept {
     if(inRequest_) return;

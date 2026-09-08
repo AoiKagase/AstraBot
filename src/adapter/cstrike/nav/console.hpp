@@ -8,6 +8,7 @@
 #include "nav/local/walk.hpp"
 #include "nav/local/intent_pump.hpp"
 #include "adapter/metamod/movement.hpp"
+#include "adapter/metamod/runtime_orchestrator.hpp"
 #include "adapter/cstrike/nav/ladder_discovery.hpp"
 #include "adapter/cstrike/nav/ladder_frame.hpp"
 #include <istream>
@@ -36,6 +37,16 @@ struct MotionTrace {
     LadderBindingReason ladderBindingReason{LadderBindingReason::None};
     LadderFrameReason ladderFrameReason{LadderFrameReason::None};
 };
+// Read-only adapter values exposed to the RuntimeInputProvider. They contain
+// only the current actor snapshot and route trace metadata; engine pointers
+// and private state remain inside NavConsole.
+struct RuntimeNavigationState final {
+    nav::runtime::MovementSnapshot movement{};
+    std::optional<nav::model::NavAreaId> currentArea{};
+    std::optional<nav::model::NavAreaId> goal{};
+    std::uint64_t routeGeneration{0};
+    bool routeExecutable{false};
+};
 class NavConsole final : public nav::runtime::IWorldQueries {
 public:
     void bindMovement(metamod::MovementCoordinator* movement) noexcept { movement_=movement; }
@@ -55,6 +66,10 @@ public:
     void afterDispatch(core::PlayerId,const metamod::MovementResult&,core::TickId,const std::optional<MotionTrace>&) noexcept;
     void moveFrame(metamod::LifecycleCoordinator&) noexcept;
     void moveFrame(metamod::LifecycleCoordinator&,core::PlayerId) noexcept;
+    void applyRuntimeNavigation(metamod::LifecycleCoordinator&,
+        const metamod::RuntimeDecision&) noexcept;
+    std::optional<RuntimeNavigationState> runtimeState(
+        const metamod::LifecycleCoordinator&,core::PlayerId) const noexcept;
     void execute(NavCommand, metamod::LifecycleCoordinator&) noexcept;
     // Publication binds an independently obtained immutable mesh to the current map.
     nav::diagnostics::NavError publish(core::MapGeneration,
@@ -82,7 +97,11 @@ public:
     const MotionTrace* motionHistory(core::PlayerId,std::size_t) const noexcept;
     nav::runtime::WorldQueryResult query(const nav::runtime::QueryRequest&) override;
 private:
-    nav::runtime::MovementSnapshot snapshot(metamod::LifecycleCoordinator&) noexcept;
+    struct ActorState;
+    nav::runtime::MovementSnapshot snapshot(
+        const metamod::LifecycleCoordinator&) const noexcept;
+    nav::runtime::MovementSnapshot snapshotFor(
+        const metamod::LifecycleCoordinator&,const ActorState&) const noexcept;
     void printUpdate(const nav::runtime::SessionUpdate&) noexcept;
     void line(const char*) noexcept;
     static void sink(void*,const char*) noexcept;
