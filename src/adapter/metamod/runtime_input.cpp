@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 #include "adapter/metamod/runtime_input.hpp"
+#include "adapter/cstrike/weapon_protocol.hpp"
 #include "adapter/metamod/lifecycle.hpp"
 #include <entity_state.h>
 #include <algorithm>
@@ -10,30 +11,8 @@ namespace astrabot::adapter::metamod {
 namespace {
 using WeaponClass = core::combat::WeaponSnapshot::WeaponClass;
 
-WeaponClass weaponClass(int id) noexcept {
-    switch (id) {
-    case 1: case 10: case 11: case 16: case 17: case 26: return WeaponClass::Pistol;
-    case 3: case 13: case 18: case 24: return WeaponClass::Sniper;
-    case 7: case 12: case 19: case 23: case 30: return WeaponClass::SMG;
-    case 8: case 14: case 15: case 22: case 27: case 28: return WeaponClass::Rifle;
-    case 5: case 21: return WeaponClass::Shotgun;
-    case 20: return WeaponClass::MachineGun;
-    case 29: return WeaponClass::Melee;
-    default: return WeaponClass::Unknown;
-    }
-}
-
-bool isSwitchableWeapon(int id) noexcept {
-    switch (id) {
-    case 1: case 3: case 5: case 7: case 8: case 10: case 11:
-    case 12: case 13: case 14: case 15: case 16: case 17: case 18:
-    case 19: case 20: case 21: case 22: case 23: case 24: case 26:
-    case 27: case 28: case 29: case 30:
-        return true;
-    default:
-        return false;
-    }
-}
+using cstrike::protocol::weaponClass;
+using cstrike::protocol::isSwitchableWeapon;
 
 RuntimeActorStaleReason staleReason(const LifecycleCoordinator& owner,
              const RuntimeFrame& frame, core::PlayerId player,
@@ -83,14 +62,14 @@ bool readWeapon(const LifecycleCoordinator& owner, const RuntimeFrame& frame,
     if (!dll->pfnGetWeaponData)
         return fail(RuntimeInputBuildReason::MissingWeaponData);
     clientdata_t client{};
-    std::array<weapon_data_t, 32> weapons{};
+    std::array<weapon_data_t, cstrike::protocol::kWeaponDataSlots> weapons{};
     dll->pfnUpdateClientData(entity, 1, &client);
     if (!current(owner, frame, player, agent, entity))
         return fail(RuntimeInputBuildReason::InvalidWeaponObservation);
     if (!dll->pfnGetWeaponData(entity, weapons.data()) ||
         !current(owner, frame, player, agent, entity))
         return fail(RuntimeInputBuildReason::InvalidWeaponObservation);
-    if (client.m_iId <= 0 || client.m_iId >= 32)
+    if (client.m_iId <= 0 || static_cast<std::size_t>(client.m_iId) >= weapons.size())
         return fail(RuntimeInputBuildReason::InvalidWeaponObservation);
     const auto& active = weapons[static_cast<std::size_t>(client.m_iId)];
     if (active.m_iId != client.m_iId || !std::isfinite(client.vuser4[1]) ||
@@ -104,7 +83,7 @@ bool readWeapon(const LifecycleCoordinator& owner, const RuntimeFrame& frame,
     result.activeClass = weaponClass(client.m_iId);
     // Non-firearms have -1 clips and unsupported P5 fire modes. They still
     // provide a current inventory, but cannot authorize firearm attacks.
-    if (active.m_iClip < -1 || (active.m_iClip < 0 && result.activeClass != WeaponClass::Unknown && result.activeClass != WeaponClass::Melee))
+    if (active.m_iClip < cstrike::protocol::kNoClip || (active.m_iClip < 0 && result.activeClass != WeaponClass::Unknown && result.activeClass != WeaponClass::Melee))
         return fail(RuntimeInputBuildReason::InvalidWeaponObservation);
     result.clipAmmo = (std::max)(0, active.m_iClip);
     result.reserveAmmo = result.activeClass == WeaponClass::Melee ? 0 : static_cast<std::int32_t>(client.vuser4[1]);
@@ -126,7 +105,8 @@ bool readWeapon(const LifecycleCoordinator& owner, const RuntimeFrame& frame,
     if (delay > 60.0 || frame.nowMicros > (std::numeric_limits<std::uint64_t>::max)() - 60'000'001)
         return fail(RuntimeInputBuildReason::InvalidWeaponObservation);
     result.primaryAttackReadyMicros = frame.nowMicros + static_cast<std::uint64_t>(std::ceil(delay * 1'000'000.0));
-    if (!(client.iuser3 & 1) || (client.iuser3 & 2) || result.activeClass == WeaponClass::Unknown)
+    if (!(client.iuser3 & cstrike::protocol::kCanShoot) ||
+        (client.iuser3 & cstrike::protocol::kFreezePeriod) || result.activeClass == WeaponClass::Unknown)
         result.primaryAttackReadyMicros = frame.nowMicros + 60'000'000;
     if (!cstrike::toWeaponSnapshot(result))
         return fail(RuntimeInputBuildReason::InvalidWeaponObservation);

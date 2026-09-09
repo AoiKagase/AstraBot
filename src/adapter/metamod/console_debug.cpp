@@ -151,8 +151,6 @@ const char* teamName(cstrike::Team team) noexcept {
     switch (team) {
     case cstrike::Team::Terrorist: return "T";
     case cstrike::Team::CounterTerrorist: return "CT";
-    case cstrike::Team::Spectator: return "Spectator";
-    case cstrike::Team::Unknown: return "Unknown";
     }
     return "Unknown";
 }
