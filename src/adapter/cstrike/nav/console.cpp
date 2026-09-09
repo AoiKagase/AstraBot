@@ -19,6 +19,7 @@ namespace astrabot::adapter::cstrike {
 namespace {
 constexpr std::size_t mib=1024*1024;
 constexpr std::size_t inputLimit=64*mib;
+constexpr std::uint64_t currentAreaFallbackMaxAgeTicks=2;
 const nav::io::NavMeshReadLimits meshLimits{inputLimit,{100000,65535,65535,8*mib},
     {100000,4096,255,255,65536,255,1000000,1000000,1000000,1000000,1000000},256*mib};
 void run(NavCommand command) noexcept {
@@ -107,6 +108,11 @@ void NavConsole::applyRuntimeNavigation(
     status.player = decision.player;
     status.agent = decision.agent;
     status.goal = decision.navigationGoal;
+    const bool roamDecision =
+        decision.tactical.intent.type == core::tactical::IntentType::Roam;
+    const bool explicitDecision =
+        decision.tactical.intent.type == core::tactical::IntentType::Hold &&
+        decision.tactical.intent.reason == core::tactical::Reason::Periodic;
     const auto publish = [&]() noexcept {
         runtimeNavigationStatus_ = status;
         if (status.player.isValid() && status.player.slot <= host::kMaxClientSlots)
@@ -118,7 +124,22 @@ void NavConsole::applyRuntimeNavigation(
         publish();
     };
     if (!decision.executable || !decision.hasNavigationGoal) {
-        reject(RuntimeNavigationApplyReason::NoExecutableGoal);
+        if (!decision.executable) {
+            reject(RuntimeNavigationApplyReason::NoExecutableGoal);
+        } else {
+            const auto* actor = findActor(decision.player);
+            if (actor && !actor->explicitRoute_ && actor->session_ &&
+                actor->session_->executable()) {
+                auto* mutableActor = const_cast<ActorState*>(actor);
+                ActorScope scope(current_, mutableActor);
+                stopMotion();
+                (void)current_->session_->cancel();
+                current_->roamArrived_ = true;
+            }
+            status.result = RuntimeNavigationApplyResult::Unchanged;
+            status.reason = RuntimeNavigationApplyReason::None;
+            publish();
+        }
         return;
     }
     if (!decision.player.isValid() || !decision.agent.isValid() ||
@@ -154,6 +175,12 @@ void NavConsole::applyRuntimeNavigation(
         reject(RuntimeNavigationApplyReason::ActorStateInvalid);
         return;
     }
+    if (current_->explicitRoute_ && roamDecision) {
+        status.result = RuntimeNavigationApplyResult::Unchanged;
+        status.reason = RuntimeNavigationApplyReason::None;
+        publish();
+        return;
+    }
     if (current_->session_ && current_->session_->executable() &&
         current_->session_->trace().actor == s.actor &&
         current_->session_->trace().agent == s.agent &&
@@ -174,6 +201,8 @@ void NavConsole::applyRuntimeNavigation(
     current_->navigationTimeTick_ = s.tick;
     current_->recovery_ = {};
     current_->recoveryReplan_ = false;
+    current_->explicitRoute_ = explicitDecision;
+    current_->roamArrived_ = false;
     nav::runtime::RouteOptions options;
     options.limits = {100000, 256 * mib};
     options.groundNavTolerance = 18;
@@ -182,6 +211,16 @@ void NavConsole::applyRuntimeNavigation(
         status.result = RuntimeNavigationApplyResult::Applied;
         status.reason = RuntimeNavigationApplyReason::None;
     } else {
+        if (roamDecision &&
+            current_->roamRejectedGoalCount_ < current_->roamRejectedGoals_.size()) {
+            bool duplicate = false;
+            for (std::size_t i = 0; i < current_->roamRejectedGoalCount_; ++i)
+                duplicate = duplicate || current_->roamRejectedGoals_[i] ==
+                    decision.navigationGoal;
+            if (!duplicate)
+                current_->roamRejectedGoals_[current_->roamRejectedGoalCount_++] =
+                    decision.navigationGoal;
+        }
         status.result = RuntimeNavigationApplyResult::Rejected;
         status.reason = RuntimeNavigationApplyReason::RouteRejected;
     }
@@ -219,6 +258,8 @@ void NavConsole::invalidateCurrent(nav::runtime::SessionReason reason) noexcept 
     current_->lastCurrentAreaMap_={};
     current_->lastCurrentAreaRouteGeneration_=0;
     current_->lastCurrentAreaTick_={};
+    current_->explicitRoute_=false;
+    current_->roamArrived_=false;
     clearPending();
     stopMotion();
     if(current_->session_) {
@@ -330,46 +371,83 @@ nav::runtime::MovementSnapshot NavConsole::snapshotFor(
     return s;
 }
 std::optional<RuntimeNavigationState> NavConsole::runtimeState(
-    const metamod::LifecycleCoordinator& owner,core::PlayerId player) const noexcept {
-    const auto* actor=findActor(player);
-    if(inRequest_ || deferredInvalidation_ || navigation_.map!=owner.registry().mapGeneration() || !index_) return {};
+    const metamod::LifecycleCoordinator& owner, core::PlayerId player) const noexcept {
+    const auto* actor = findActor(player);
+    if (inRequest_ || deferredInvalidation_ ||
+        navigation_.map != owner.registry().mapGeneration() || !index_)
+        return {};
+
     RuntimeNavigationState result{};
-    result.movement=snapshotFor(owner,player);
-    if(actor && actor->session_) {
-        const auto& trace=actor->session_->trace();
-        result.goal=trace.goal.isValid() ? std::optional<nav::model::NavAreaId>{trace.goal}:std::nullopt;
-        result.routeGeneration=trace.routeGeneration;
-        result.routeExecutable=actor->session_->executable();
-        if(result.routeExecutable && result.goal && navigation_.graph) {
-            if(const auto vertex=navigation_.graph->find(*result.goal)) {
-                const auto point=navigation_.graph->center(*vertex);
-                result.goalPosition=core::perception::Point{point.x,point.y,point.z};
+    result.movement = snapshotFor(owner, player);
+    result.roamGeneration =
+        static_cast<std::uint64_t>(result.movement.map.value) * 1'000'003ULL +
+        static_cast<std::uint64_t>(result.movement.agent.value) * 97ULL +
+        static_cast<std::uint64_t>(result.movement.actor.slot) * 53ULL +
+        static_cast<std::uint64_t>(result.movement.actor.generation.value) * 7ULL +
+        static_cast<std::uint64_t>(owner.round().value);
+    if (actor && actor->session_) {
+        const auto& trace = actor->session_->trace();
+        result.goal = trace.goal.isValid()
+            ? std::optional<nav::model::NavAreaId>{trace.goal}
+            : std::nullopt;
+        result.routeGeneration = trace.routeGeneration;
+        result.explicitRoute = actor->explicitRoute_;
+        result.roamActive = !actor->explicitRoute_;
+        result.roamArrived = actor->roamArrived_ && result.roamActive;
+        result.routeExecutable = actor->session_->executable() &&
+                                 !result.roamArrived;
+        if (result.roamActive && !result.roamArrived && result.goal) {
+            const auto limit = (std::min)(
+                actor->roamRejectedGoalCount_, actor->roamRejectedGoals_.size());
+            for (std::size_t i = 0; i < limit; ++i) {
+                if (actor->roamRejectedGoals_[i] == *result.goal) {
+                    result.roamRejected = true;
+                    break;
+                }
             }
         }
+        if (result.routeExecutable && result.goal && navigation_.graph) {
+            if (const auto vertex = navigation_.graph->find(*result.goal)) {
+                const auto point = navigation_.graph->center(*vertex);
+                result.goalPosition =
+                    core::perception::Point{point.x, point.y, point.z};
+            }
+        } else if (result.roamArrived) {
+            result.goal.reset();
+            result.goalPosition.reset();
+        }
     }
-    if(result.movement.position) {
-        const auto match=index_->containing(*result.movement.position,72.0);
-        if(match && *match.value) {
-            result.currentArea=(*match.value)->areaId;
+
+    if (result.movement.position) {
+        const auto match = index_->containing(*result.movement.position, 72.0);
+        if (match && *match.value) {
+            result.currentArea = (*match.value)->areaId;
             if (actor && actor->session_) {
-                const auto& trace=actor->session_->trace();
-                actor->lastCurrentArea_=result.currentArea;
-                actor->lastCurrentAreaActor_=result.movement.actor;
-                actor->lastCurrentAreaAgent_=result.movement.agent;
-                actor->lastCurrentAreaMap_=result.movement.map;
-                actor->lastCurrentAreaRouteGeneration_=trace.routeGeneration;
-                actor->lastCurrentAreaTick_=result.movement.tick;
+                const auto& trace = actor->session_->trace();
+                actor->lastCurrentArea_ = result.currentArea;
+                actor->lastCurrentAreaActor_ = result.movement.actor;
+                actor->lastCurrentAreaAgent_ = result.movement.agent;
+                actor->lastCurrentAreaMap_ = result.movement.map;
+                actor->lastCurrentAreaRouteGeneration_ = trace.routeGeneration;
+                actor->lastCurrentAreaTick_ = result.movement.tick;
             }
         }
     }
-    const bool traversal = actor && actor->session_ && actor->session_->executable() &&
+
+    const bool traversal = actor && actor->session_ &&
+        actor->session_->executable() &&
+        result.movement.connected.value_or(false) &&
+        result.movement.joined.value_or(false) &&
+        result.movement.alive.value_or(false) &&
+        result.movement.tick.isValid() && result.routeGeneration != 0 &&
         actor->motionTrace_.decision.accepted &&
         actor->motionTrace_.decision.state == nav::local::WalkState::Running &&
         actor->motionTrace_.decision.binding.actor == result.movement.actor &&
         actor->motionTrace_.decision.binding.agent == result.movement.agent &&
         actor->motionTrace_.decision.binding.map == result.movement.map &&
         actor->motionTrace_.decision.binding.map == navigation_.map &&
-        actor->motionTrace_.decision.binding.routeGeneration == result.routeGeneration &&
+        actor->motionTrace_.decision.binding.routeGeneration ==
+            result.routeGeneration &&
         (actor->motionTrace_.decision.jumpState.has_value() ||
          actor->motionTrace_.decision.ladderState.has_value());
     if (!result.currentArea && traversal && actor->lastCurrentArea_ &&
@@ -378,9 +456,71 @@ std::optional<RuntimeNavigationState> NavConsole::runtimeState(
         actor->lastCurrentAreaMap_ == result.movement.map &&
         actor->lastCurrentAreaRouteGeneration_ == result.routeGeneration &&
         actor->lastCurrentAreaTick_.isValid() &&
-        !result.movement.tick.isBefore(actor->lastCurrentAreaTick_)) {
-        result.currentArea=actor->lastCurrentArea_;
-        result.currentAreaHeld=true;
+        !result.movement.tick.isBefore(actor->lastCurrentAreaTick_) &&
+        result.movement.tick.value - actor->lastCurrentAreaTick_.value <=
+            currentAreaFallbackMaxAgeTicks) {
+        result.currentArea = actor->lastCurrentArea_;
+        result.currentAreaHeld = true;
+    }
+
+    const bool validManagedMovement =
+        result.movement.kind == nav::runtime::ActorKind::ManagedBot &&
+        result.movement.actor.isValid() && result.movement.agent.isValid() &&
+        result.movement.map == navigation_.map;
+    if (validManagedMovement && result.currentArea && navigation_.graph) {
+        const auto current = *result.currentArea;
+        const auto isListed = [](const auto& values, std::size_t count,
+                                 nav::model::NavAreaId id) noexcept {
+            const auto limit = (std::min)(count, values.size());
+            for (std::size_t i = 0; i < limit; ++i)
+                if (values[i] == id) return true;
+            return false;
+        };
+        const auto occupiedByOther = [&](nav::model::NavAreaId id) noexcept {
+            for (const auto& other : actors_) {
+                if (!other || other.get() == actor || !other->session_ ||
+                    !other->session_->executable() || other->explicitRoute_ ||
+                    other->roamArrived_)
+                    continue;
+                if (other->session_->trace().goal == id) return true;
+            }
+            return false;
+        };
+        const auto addCandidate = [&](nav::model::NavAreaId id,
+                                      bool allowRecent) noexcept {
+            if (result.roamCandidateCount >= result.roamCandidates.size() ||
+                !id.isValid() || id == current || occupiedByOther(id))
+                return;
+        if (actor && isListed(actor->roamRejectedGoals_,
+                actor->roamRejectedGoalCount, id))
+            return;
+        if (!allowRecent && actor && isListed(actor->roamRecentGoals_,
+                actor->roamRecentGoalCount, id))
+            return;
+            const auto vertex = navigation_.graph->find(id);
+            if (!vertex) return;
+            const auto point = navigation_.graph->center(*vertex);
+            result.roamCandidates[result.roamCandidateCount++] =
+                {{id}, {point.x, point.y, point.z}, id.value};
+        };
+
+        if (result.roamActive && result.routeExecutable && result.goal)
+            addCandidate(*result.goal, true);
+
+        const auto areaCount = navigation_.graph->areaCount();
+        const auto seed =
+            static_cast<std::size_t>(result.movement.agent.value) * 2654435761U +
+            static_cast<std::size_t>(owner.round().value);
+        if (areaCount != 0) {
+            const auto offset = seed % areaCount;
+            for (std::size_t step = 0;
+                 step < areaCount &&
+                 result.roamCandidateCount < result.roamCandidates.size();
+                 ++step) {
+                const auto vertex = (offset + step) % areaCount;
+                addCandidate(navigation_.graph->area(vertex).id, false);
+            }
+        }
     }
     return result;
 }
@@ -441,6 +581,8 @@ void NavConsole::execute(NavCommand command,metamod::LifecycleCoordinator& owner
         current_->replan_={};
         current_->recovery_={};
         current_->recoveryReplan_=false;
+        current_->explicitRoute_=false;
+        current_->roamArrived_=false;
         stopMotion();
         if(current_->session_) printUpdate(current_->session_->cancel()); else line("nav state=Idle"); return;
     }
@@ -457,6 +599,8 @@ void NavConsole::execute(NavCommand command,metamod::LifecycleCoordinator& owner
     current_->replan_={}; current_->navigationTimeUs_=0; current_->navigationTimeTick_=s.tick;
     current_->recovery_={};
     current_->recoveryReplan_=false;
+    current_->explicitRoute_=true;
+    current_->roamArrived_=false;
     nav::runtime::RouteOptions options; options.limits={100000,256*mib};
     options.groundNavTolerance=18;
     requestRoute(s,*goal,owner,options);

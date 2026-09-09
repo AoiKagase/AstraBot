@@ -245,6 +245,9 @@ bool LifecycleCoordinator::refreshUserMessageIds(bool logPending) noexcept {
 void LifecycleCoordinator::reset() noexcept {
     runtimeOwnedActor_ = {};
     runtime_.reset();
+    runtimeInputBuildStatus_ = {};
+    runtimeInputBuildStatuses_.fill({});
+    runtimeCorrelation_.fill({});
     distributions_.reset();
     world_.reset();
     visualEffects_.reset();
@@ -298,6 +301,9 @@ void LifecycleCoordinator::serverActivate(int clientMax) noexcept {
 void LifecycleCoordinator::serverDeactivate() noexcept {
     runtimeOwnedActor_ = {};
     runtime_.reset();
+    runtimeInputBuildStatus_ = {};
+    runtimeInputBuildStatuses_.fill({});
+    runtimeCorrelation_.fill({});
     distributions_.reset();
     world_.reset();
     visualEffects_.reset();
@@ -453,7 +459,11 @@ void LifecycleCoordinator::startFrame() noexcept {
     const auto result=registry_.startFrame(); emit(host::LifecycleEventKind::FrameStarted,result);
     if(!result.changed()) return;
     movement_.beginFrame();
-    const auto map=registry_.mapGeneration(); const auto tick=registry_.currentTick();
+    const auto map=registry_.mapGeneration();
+    const auto tick=registry_.currentTick();
+
+    runtimeInputBuildStatuses_.fill({});
+    runtimeCorrelation_.fill({});
     const auto created=clients_[0].fake.processPrimaryCreate();
     if(created.changed || created.error!=debug::FakeClientError::None) ++status_.createAttempts;
     if(created.playerRegistration.changed()) emit(host::LifecycleEventKind::PlayerConnected,created.playerRegistration);
@@ -490,15 +500,6 @@ void LifecycleCoordinator::startFrame() noexcept {
             if(client.join.player()==player) handleJoinAction(client,client.join.commandCompleted(dispatched));
         }
     }
-    if (runtimeOwnedActor_.isValid() && !runtimeInputProvider_) {
-        const RuntimeFrame frame{map, round_, tick, engineTimeMicros(engineGlobals_), movement_.frameDeltaUs(), {}};
-        if (!engineGlobals_ || !std::isfinite(engineGlobals_->time) || engineGlobals_->time < 0 ||
-            !runtimeActorReady(*this, frame, hookedGameDllFunctions_, runtimeOwnedActor_, runtimeWeapon_, runtimeAttackPending_)) {
-            movement_.forget(runtimeOwnedActor_);
-            navConsole_.invalidateActor(runtimeOwnedActor_, nav::runtime::SessionReason::InvalidSnapshot);
-            runtime_.onInputUnavailable(runtimeOwnedActor_);
-        }
-    }
     for(auto& client:clients_) {
         const auto player=client.fake.activePlayer();
         if(client.fake.removalPending()) {
@@ -511,11 +512,17 @@ void LifecycleCoordinator::startFrame() noexcept {
         if(!registry_.isMapActive() || registry_.mapGeneration()!=map || registry_.currentTick()!=tick) return;
         const auto player=client.fake.activePlayer(); if(!player.isValid()) continue;
         if(client.fake.removalPending()) {
-            movement_.forget(player);
+            const auto ticket=navConsole_.dispatchTicket(player);
+            const auto moved=movement_.dispatchAtFrameEnd(
+                client.join.phase(), player, client.fake.entityFor(player), map,
+                tick, true);
+            navConsole_.afterDispatch(player,moved,tick,ticket);
             continue;
         }
         const auto ticket=navConsole_.dispatchTicket(player);
-        const auto moved=movement_.dispatchAtFrameEnd(client.join.phase(),player,client.fake.entityFor(player),map,tick);
+        const auto moved=movement_.dispatchAtFrameEnd(
+            client.join.phase(), player, client.fake.entityFor(player), map, tick,
+            false);
         navConsole_.afterDispatch(player,moved,tick,ticket);
     }
     if(registry_.isMapActive() && registry_.mapGeneration()==map && registry_.currentTick()==tick) {
@@ -559,15 +566,37 @@ void LifecycleCoordinator::startFrame() noexcept {
                 std::array<RuntimeActorInput,kRuntimeActorCapacity> runtimeInputs{};
                 std::size_t runtimeInputCount = 0;
                 runtimeInputBuildStatus_ = {};
+                runtimeInputBuildStatuses_.fill({});
+                runtimeInputBuildStatus_.map = runtimeFrame.map;
+                runtimeInputBuildStatus_.round = runtimeFrame.round;
+                runtimeInputBuildStatus_.tick = runtimeFrame.tick;
+                runtimeInputBuildStatus_.nowMicros = runtimeFrame.nowMicros;
                 if (runtimeInputProvider_ != nullptr) {
                     runtimeInputCount = runtimeInputProvider_(
                         runtimeInputContext_, *this, runtimeFrame,
                         runtimeInputs.data(), runtimeInputs.size());
+                    for (std::size_t i = 0; i < runtimeInputCount &&
+                                        i < runtimeInputs.size(); ++i) {
+                        const auto player = runtimeInputs[i].player;
+                        if (!player.isValid() ||
+                            player.slot > host::kMaxClientSlots) continue;
+                        auto& actorStatus =
+                            runtimeInputBuildStatuses_[player.slot - 1U];
+                        actorStatus.map = runtimeFrame.map;
+                        actorStatus.round = runtimeFrame.round;
+                        actorStatus.tick = runtimeFrame.tick;
+                        actorStatus.nowMicros = runtimeFrame.nowMicros;
+                        actorStatus.player = player;
+                        actorStatus.agent = runtimeInputs[i].agent;
+                    }
                 } else {
-                    runtimeInputCount = buildRuntimeInputs(*this, runtimeFrame,
-                        hookedGameDllFunctions_, runtimeInputs.data(), runtimeInputs.size(),
-                        &runtimeInputBuildStatus_);
+                    runtimeInputCount = buildRuntimeInputs(
+                        *this, runtimeFrame, hookedGameDllFunctions_,
+                        runtimeInputs.data(), runtimeInputs.size(),
+                        runtimeInputBuildStatuses_.data());
                 }
+                if (runtimeInputCount != 0)
+                    runtimeInputBuildStatus_ = runtimeInputBuildStatuses_[0];
                 const auto& runtimeResult = runtime_.run(
                     runtimeFrame, runtimeInputs.data(), runtimeInputCount);
                 for (std::size_t i = 0; i < runtimeResult.decisionCount; ++i) {
@@ -578,10 +607,12 @@ void LifecycleCoordinator::startFrame() noexcept {
                         if (!runtimeInputProvider_ && runtimeInputCount == 1)
                             runtimeWeapon_ = runtimeInputs[0].combat.weapon.active;
                     }
-                    if (decision.executable && decision.hasNavigationGoal) {
+                    if (decision.player.isValid()) {
+                        // Record Applied/Unchanged/Rejected for every runtime decision,
+                        // including a valid decision with no NAV goal.
                         navConsole_.applyRuntimeNavigation(*this, decision);
-                    } else if ((runtimeInputProvider_ || runtimeOwnedActor_ == decision.player) &&
-                               decision.player.isValid() &&
+                    }
+                    if (decision.player.isValid() &&
                                decision.rejection != RuntimeRejectReason::None) {
                         // A provider-owned actor that fails validation must
                         // retire its old route before the next movement pass;
@@ -600,17 +631,67 @@ void LifecycleCoordinator::startFrame() noexcept {
         if(!registry_.isMapActive() || registry_.mapGeneration()!=map || registry_.currentTick()!=tick) return;
         navConsole_.moveFrame(*this,client.fake.activePlayer());
     }
-    // A held position or a completed route may produce no movement command.
-    // Consume the same-frame combat decision once using neutral movement.
+    // A held position or a completed route may produce no NAV command.
+    // Consume only actionable combat decisions here; a NoOp reaches
+    // MovementCoordinator::dispatchAtFrameEnd as the Idle heartbeat.
     for (const auto& decision : runtime_.result().decisions) {
         if (!decision.executable) continue;
         if (const auto combat = takeRuntimeCombatDecision(decision.player,
                 decision.agent, map, round_, tick)) {
+            if (combat->action == core::combat::CombatAction::NoOp) continue;
+
             core::BotCommand neutral{};
             neutral.msec = 1;
             neutral.view = combat->view;
             (void)submitCombatDecision(decision.player, map, tick, *combat, neutral);
         }
+    }
+    for (const auto& client : clients_) {
+        const auto player = client.fake.activePlayer();
+        if (!player.isValid() || player.slot > host::kMaxClientSlots) continue;
+        auto& correlation = runtimeCorrelation_[player.slot - 1U];
+        correlation = {};
+        correlation.map = map; correlation.round = round_; correlation.player = player;
+        const auto binding = agents_.findByPlayer(player);
+        correlation.agent = binding.agent;
+        correlation.managed = binding.isValid() && binding.player == player && binding.map == map;
+        const auto* entity = client.fake.entityFor(player);
+        correlation.edictSerial = entity != nullptr ? static_cast<std::uint32_t>(entity->serialnumber) : 0U;
+        correlation.connected = registry_.isConnected(player.slot) && registry_.currentPlayer(player.slot) == player;
+        correlation.removalPending = client.fake.removalPending();
+        correlation.alive = entity != nullptr && !entity->free && entity->v.deadflag == DEAD_NO;
+        const auto& input = runtimeInputBuildStatuses_[player.slot - 1U];
+        correlation.inputTick = input.player == player ? input.tick : core::TickId{};
+        correlation.inputReason = input.player == player ? input.reason : RuntimeInputBuildReason::None;
+        correlation.staleReason = input.player == player ? input.staleReason : RuntimeActorStaleReason::None;
+        correlation.currentAreaHeld = input.player == player && input.currentAreaHeld;
+        if (const auto* decision = runtime_.decision(player)) {
+            correlation.decisionTick = decision->team.shared.tick.isValid() ? decision->team.shared.tick : tick;
+            correlation.intent = decision->tactical.intent.type;
+            correlation.route = decision->tactical.intent.route;
+            correlation.reason = decision->tactical.intent.reason;
+            correlation.roamGoal = decision->tactical.intent.type ==
+                    core::tactical::IntentType::Roam
+                ? decision->tactical.intent.target.area
+                : nav::model::NavAreaId{};
+            correlation.roamCandidateCount = decision->roamCandidateCount;
+            correlation.roamGeneration = decision->roamGeneration;
+        }
+        const auto& nav = navConsole_.runtimeNavigationStatus(player);
+        correlation.navResult = nav.result; correlation.navReason = nav.reason;
+        const auto& queued = movement_.frameQueueTrace(player);
+        const auto& dispatched = movement_.frameDispatchTrace(player);
+        const auto& rejected = movement_.frameRejectionTrace(player);
+        correlation.queueOutcome = queued.outcome; correlation.queueError = queued.error;
+        correlation.queueTick = queued.commandTick;
+        correlation.dispatchOutcome = dispatched.outcome; correlation.dispatchError = dispatched.error;
+        correlation.dispatchTick = dispatched.dispatchTick;
+        const auto& movement = dispatched.outcome != MovementOutcome::None ? dispatched : queued;
+        correlation.source = movement.source; correlation.forward = movement.forward;
+        correlation.side = movement.side; correlation.up = movement.up;
+        correlation.buttons = movement.buttons;
+        correlation.impulse = movement.impulse; correlation.msec = movement.engineMsec;
+        if (rejected.outcome == MovementOutcome::Rejected) correlation.dispatchError = rejected.error;
     }
 }
 void LifecycleCoordinator::soundPrecache(int type,const char* name,std::uint16_t index) noexcept {
@@ -948,10 +1029,16 @@ void LifecycleCoordinator::emit(
 void LifecycleCoordinator::emitJoin(const ClientState& client,const cstrike::JoinAction& action) noexcept {
     if(!action.changed) return;
     const auto& join=client.join; const auto request=join.request();
+    const auto* member=teams_.find(join.player());
+    const auto observedTeam=member ? member->team : core::perception::Team::Unknown;
+    const auto* entity=client.fake.entityFor(join.player());
     debug::emitJoin({join.phase(),join.error(),join.map(),join.player(),request.team,request.classNumber,
         registry_.currentTick(),registry_.eventSequence(),join.attempts(),
         action.kind!=cstrike::JoinActionKind::Failed && action.kind!=cstrike::JoinActionKind::Cancelled,
-        action.changed},joinTraceSink_);
+        action.changed, observedTeam, entity ? entity->v.model : 0,
+        join.teamInfoReceived(), join.classSelectionCompleted(),
+        join.postClassFrameAdvanced(), entity != nullptr && !entity->free,
+        entity != nullptr && !entity->free && entity->v.deadflag == DEAD_NO},joinTraceSink_);
 }
 void LifecycleCoordinator::handleMessage(const cstrike::MessageEvent& event) noexcept {
     if (!registry_.isMapActive() || messageMap_ != registry_.mapGeneration() || messageRound_ != round_) return;
@@ -970,12 +1057,13 @@ void LifecycleCoordinator::handleMessage(const cstrike::MessageEvent& event) noe
             return;
         }
         ++round_.value; lastRoundTime_ = time; lastRoundTick_ = registry_.currentTick();
-        if (runtimeOwnedActor_.isValid()) {
-            movement_.forget(runtimeOwnedActor_);
-            navConsole_.invalidateActor(runtimeOwnedActor_, nav::runtime::SessionReason::InvalidSnapshot);
-            runtime_.onDeath(runtimeOwnedActor_);
-        }
-        clearAllCombatState();
+        for (auto& client : clients_) {
+            const auto player = client.fake.activePlayer();
+            if (!player.isValid()) continue;
+            movement_.forget(player);
+            navConsole_.invalidateActor(player, nav::runtime::SessionReason::InvalidSnapshot);
+            runtime_.onDeath(player);
+        }        clearAllCombatState();
         world_.beginRound(round_);
         ++identityDiagnostics_.rounds; vision_.beginRound(round_);
         sound_.beginRound(round_);
@@ -1099,6 +1187,14 @@ void LifecycleCoordinator::onMessage(
     }
 }
 
+const RuntimeInputBuildStatus& LifecycleCoordinator::runtimeInputBuildStatus(core::PlayerId player) const noexcept {
+    static const RuntimeInputBuildStatus empty{};
+    return player.isValid() && player.slot <= host::kMaxClientSlots ? runtimeInputBuildStatuses_[player.slot - 1U] : empty;
+}
+const RuntimeActorCorrelation& LifecycleCoordinator::runtimeCorrelation(core::PlayerId player) const noexcept {
+    static const RuntimeActorCorrelation empty{};
+    return player.isValid() && player.slot <= host::kMaxClientSlots ? runtimeCorrelation_[player.slot - 1U] : empty;
+}
 LifecycleCoordinator& lifecycleCoordinator() noexcept {
     return gCoordinator;
 }

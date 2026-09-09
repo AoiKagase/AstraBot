@@ -35,6 +35,9 @@ void MovementCoordinator::resetMap() noexcept {
     frameDeltaUs_ = 0;
     lastFrame_ = {};
     dispatchedThisFrame_.fill(false);
+    frameQueued_.fill({});
+    frameDispatched_.fill({});
+    frameRejected_.fill({});
     callCounts_.fill(0);
     activeDispatchSource_ = debug::MovementTraceSource::None;
 }
@@ -129,7 +132,11 @@ MovementResult MovementCoordinator::submit(
         return result;
     }
 
-    pending = PendingCommand{player, mapGeneration, tick, command};
+    const auto* submittedEntity = engineFunctions_->pfnPEntityOfEntIndex
+        ? engineFunctions_->pfnPEntityOfEntIndex(player.slot) : nullptr;
+    pending = PendingCommand{player, mapGeneration, tick,
+        submittedEntity ? static_cast<std::uint32_t>(submittedEntity->serialnumber) : 0U,
+        command};
     emit(
         MovementOutcome::Queued,
         MovementError::None,
@@ -138,7 +145,9 @@ MovementResult MovementCoordinator::submit(
         tick,
         core::TickId::invalid(),
         command.msec,
-        false);
+        false, std::nullopt, debug::MovementTraceSource::Command, 0, 0,
+        command.movement.forward, command.movement.side, command.movement.up,
+        static_cast<std::uint16_t>(command.buttons), command.impulse);
     return MovementResult{MovementOutcome::Queued, MovementError::None, registryResult};
 }
 
@@ -153,6 +162,9 @@ MovementResult MovementCoordinator::rejectIngress(
 
 void MovementCoordinator::beginFrame() noexcept {
     dispatchedThisFrame_.fill(false);
+    frameQueued_.fill({});
+    frameDispatched_.fill({});
+    frameRejected_.fill({});
     const auto now = now_();
     if (!clockArmed_) {
         lastFrame_ = now;
@@ -174,8 +186,22 @@ MovementResult MovementCoordinator::dispatchAtFrameEnd(
     core::PlayerId activePlayer,
     edict_t* entity,
     core::MapGeneration mapGeneration,
-    core::TickId dispatchTick) noexcept {
+    core::TickId dispatchTick,
+    bool removalPending) noexcept {
     if(!activePlayer.isValid() || activePlayer.slot>host::kMaxClientSlots) return {};
+    if (removalPending) {
+        pending_[activePlayer.slot - 1U].reset();
+        return reject(MovementError::NotJoined, activePlayer, mapGeneration,
+            dispatchTick, 0);
+    }
+    if (agents_ != nullptr) {
+        const auto binding = agents_->findByPlayer(activePlayer);
+        if (!binding.isValid() || binding.player != activePlayer ||
+            binding.map != mapGeneration) {
+            return reject(MovementError::MappingMismatch, activePlayer,
+                mapGeneration, dispatchTick, 0);
+        }
+    }
     auto& pending=pending_[activePlayer.slot-1U];
     if(!pending) {
         // Fake clients have no network command stream.  ReGameDLL advances
@@ -202,7 +228,14 @@ MovementResult MovementCoordinator::dispatchAtFrameEnd(
     // dispatch interval.
     const auto binding = agents_ ? agents_->findByPlayer(activePlayer)
                                  : host::BotAgentBinding{};
-    if (result.rejected() && command.player == activePlayer &&
+    const bool fallbackAllowed = result.error != MovementError::MapInactive &&
+        result.error != MovementError::MapGenerationMismatch &&
+        result.error != MovementError::NotConnected &&
+        result.error != MovementError::NotJoined &&
+        result.error != MovementError::MissingEntity &&
+        result.error != MovementError::MappingMismatch;
+    if (result.rejected() && fallbackAllowed &&
+        command.player == activePlayer &&
         !dispatchedThisFrame_[activePlayer.slot-1U] &&
         (!agents_ || (binding.isValid() && binding.player == activePlayer &&
                       binding.map == mapGeneration)) &&
@@ -257,7 +290,7 @@ bool MovementCoordinator::dispatchJoinProgress(
     const auto callCount=++callCounts_[index];
     emit(MovementOutcome::Dispatched,MovementError::None,mapGeneration,
         activePlayer,registry_->currentTick(),registry_->currentTick(),0,true,
-        frameDeltaUs_,source,callCount);
+        frameDeltaUs_,source,callCount,entity->serialnumber,0.0F,0.0F,0.0F,0,0);
     return true;
 }
 
@@ -335,6 +368,24 @@ MovementResult MovementCoordinator::dispatchOne(
     if (entity == nullptr || entity->free) {
         return reject(
             MovementError::MissingEntity,
+            pending.player,
+            pending.mapGeneration,
+            pending.commandTick,
+            pending.command.msec);
+    }
+    if (engineFunctions_->pfnPEntityOfEntIndex &&
+        engineFunctions_->pfnPEntityOfEntIndex(pending.player.slot) != entity) {
+        return reject(
+            MovementError::MappingMismatch,
+            pending.player,
+            pending.mapGeneration,
+            pending.commandTick,
+            pending.command.msec);
+    }
+    if (pending.edictSerial != 0U &&
+        static_cast<std::uint32_t>(entity->serialnumber) != pending.edictSerial) {
+        return reject(
+            MovementError::MappingMismatch,
             pending.player,
             pending.mapGeneration,
             pending.commandTick,
@@ -423,6 +474,15 @@ MovementResult MovementCoordinator::dispatchOne(
     if (entity == nullptr || entity->free) {
         return reject(
             MovementError::MissingEntity,
+            pending.player,
+            pending.mapGeneration,
+            pending.commandTick,
+            pending.command.msec);
+    }
+    if (engineFunctions_->pfnPEntityOfEntIndex &&
+        engineFunctions_->pfnPEntityOfEntIndex(pending.player.slot) != entity) {
+        return reject(
+            MovementError::MappingMismatch,
             pending.player,
             pending.mapGeneration,
             pending.commandTick,
@@ -530,7 +590,9 @@ void MovementCoordinator::emit(
     core::TickId dispatchTick,
     std::uint8_t originalMsec,
     bool engineCall, std::optional<std::uint64_t> dispatchDelta,
-    debug::MovementTraceSource source, std::uint64_t callCount) noexcept {
+    debug::MovementTraceSource source, std::uint64_t callCount,
+    std::uint32_t edictSerial, float forward, float side, float up,
+    std::uint16_t buttons, std::uint8_t impulse) noexcept {
     const auto delta=dispatchDelta.value_or(frameDeltaUs_);
     const debug::MovementTrace trace{
         outcome,
@@ -545,7 +607,19 @@ void MovementCoordinator::emit(
         engineCall ? quantizeMsec(delta) : 0U,
         engineCall,
         source,
-        callCount};
+        callCount,
+        edictSerial,
+        forward,
+        side,
+        up,
+        buttons,
+        impulse};
+    if (player.isValid() && player.slot <= host::kMaxClientSlots) {
+        const auto index = static_cast<std::size_t>(player.slot - 1U);
+        if (outcome == MovementOutcome::Queued) frameQueued_[index] = trace;
+        if (outcome == MovementOutcome::Dispatched) frameDispatched_[index] = trace;
+        if (outcome == MovementOutcome::Rejected) frameRejected_[index] = trace;
+    }
     debug::emitMovement(trace, traceSink_);
 }
 
@@ -562,4 +636,16 @@ std::uint8_t MovementCoordinator::quantizeMsec(std::uint64_t deltaUs) noexcept {
     return static_cast<std::uint8_t>(rounded);
 }
 
+const debug::MovementTrace& MovementCoordinator::frameQueueTrace(core::PlayerId player) const noexcept {
+    static const debug::MovementTrace empty{};
+    return player.isValid() && player.slot <= host::kMaxClientSlots ? frameQueued_[player.slot - 1U] : empty;
+}
+const debug::MovementTrace& MovementCoordinator::frameDispatchTrace(core::PlayerId player) const noexcept {
+    static const debug::MovementTrace empty{};
+    return player.isValid() && player.slot <= host::kMaxClientSlots ? frameDispatched_[player.slot - 1U] : empty;
+}
+const debug::MovementTrace& MovementCoordinator::frameRejectionTrace(core::PlayerId player) const noexcept {
+    static const debug::MovementTrace empty{};
+    return player.isValid() && player.slot <= host::kMaxClientSlots ? frameRejected_[player.slot - 1U] : empty;
+}
 } // namespace astrabot::adapter::metamod

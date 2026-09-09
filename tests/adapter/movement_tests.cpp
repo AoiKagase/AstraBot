@@ -2,6 +2,7 @@
 // Copyright (c) 2026 AstraBot contributors.
 
 #include "adapter/metamod/movement.hpp"
+#include "host/bot_agents.hpp"
 
 #include <cassert>
 #include <chrono>
@@ -36,6 +37,10 @@ std::vector<EngineCall> gCalls;
 std::vector<astrabot::debug::MovementTrace> gTraces;
 std::vector<std::uint16_t> gWeaponSelections;
 std::uint64_t gClockUs = 0;
+edict_t* gIndexedEntity = nullptr;
+edict_t* indexedEntity(int index) noexcept {
+    return index == 1 ? gIndexedEntity : nullptr;
+}
 
 bool captureWeaponSelection(edict_t* entity, astrabot::core::WeaponSelection weapon) noexcept {
     assert(entity != nullptr);
@@ -140,6 +145,71 @@ struct Fixture final {
             tick);
     }
 };
+
+void testJoinedActorReceivesNeutralHeartbeat() {
+    Fixture fixture{};
+    fixture.armAndAdvance(10000U);
+    assert(fixture.dispatch(TickId{2}).outcome == MovementOutcome::None);
+    assert(gCalls.size() == 1);
+    assert(gCalls.front().forward == 0.0F && gCalls.front().side == 0.0F &&
+           gCalls.front().up == 0.0F && gCalls.front().buttons == 0U &&
+           gCalls.front().impulse == 0U && gCalls.front().msec == 10U);
+    assert(gTraces.back().source == astrabot::debug::MovementTraceSource::Idle);
+    assert(fixture.dispatch(TickId{3}).outcome == MovementOutcome::None);
+    assert(gCalls.size() == 1);
+}
+
+void testRemovalPendingSuppressesMovement() {
+    Fixture fixture{};
+    fixture.armAndAdvance(10000U);
+    const auto tick = fixture.registry.currentTick();
+    assert(fixture.movement.submit(
+        fixture.player, fixture.map, tick, fixture.command()).queued());
+
+    const auto queued = fixture.movement.dispatchAtFrameEnd(
+        JoinPhase::Joined, fixture.player, &fixture.entity, fixture.map,
+        TickId{2}, true);
+    assert(queued.rejected() && queued.error == MovementError::NotJoined);
+    assert(gCalls.empty());
+
+    const auto idle = fixture.movement.dispatchAtFrameEnd(
+        JoinPhase::Joined, fixture.player, &fixture.entity, fixture.map,
+        TickId{3}, true);
+    assert(idle.rejected() && idle.error == MovementError::NotJoined);
+    assert(gCalls.empty());
+}
+
+void testManagedBindingAndEdictIdentityRejectWithoutFallback() {
+    Fixture fixture{};
+    astrabot::host::BotAgentRegistry agents;
+    MovementCoordinator movement;
+    movement.configure(&fixture.engine, &fixture.registry, &agents);
+    movement.setClockForTest(&fakeNow);
+    movement.beginFrame();
+    gClockUs += 10000U;
+    movement.beginFrame();
+    const auto unbound = movement.dispatchAtFrameEnd(
+        JoinPhase::Joined, fixture.player, &fixture.entity, fixture.map, TickId{2});
+    assert(unbound.rejected() && unbound.error == MovementError::MappingMismatch);
+    assert(gCalls.empty());
+    fixture.engine.pfnPEntityOfEntIndex = &indexedEntity;
+    gIndexedEntity = &fixture.entity;
+    fixture.entity.serialnumber = 7;
+    movement.resetMap();
+    movement.beginFrame();
+    gClockUs += 10000U;
+    movement.beginFrame();
+    const auto queued = movement.submit(
+        fixture.player, fixture.map, fixture.registry.currentTick(), fixture.command());
+    assert(queued.queued());
+    fixture.entity.serialnumber = 8;
+    gCalls.clear();
+    const auto stale = movement.dispatchAtFrameEnd(
+        JoinPhase::Joined, fixture.player, &fixture.entity, fixture.map, TickId{2});
+    assert(stale.rejected() && stale.error == MovementError::MappingMismatch);
+    assert(gCalls.empty());
+    gIndexedEntity = nullptr;
+}
 
 void testMsecQuantizationAndAbiConversion() {
     Fixture fixture{};
@@ -359,6 +429,9 @@ void testIndependentPlayerQueues() {
 } // namespace
 
 int main() {
+    testJoinedActorReceivesNeutralHeartbeat();
+    testRemovalPendingSuppressesMovement();
+    testManagedBindingAndEdictIdentityRejectWithoutFallback();
     testMsecQuantizationAndAbiConversion();
     testClockArmAndBoundaryClamp();
     testOneCallAndPendingClear();
