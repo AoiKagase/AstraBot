@@ -497,7 +497,7 @@ void ConsoleDebug::movementTrace(const debug::MovementTrace& trace) noexcept {
     const bool spawned=entity && entity->v.deadflag==DEAD_NO && entity->v.health>0 && !spectator;
     char lineBuffer[768]{};
     std::snprintf(lineBuffer,sizeof(lineBuffer),
-        "[ASTRABOT][DEBUG][MOVEMENT] map=%u round=%llu actor=%u:%u agent=%u outcome=%u error=%u input_tick=%llu dispatch_tick=%llu calls=%llu source=%s msec=%u phase=%s spawned=%u z=%.3f vz=%.3f movetype=%d solid=%d onground=%u spectator=%u runtime_map=%u runtime_round=%llu runtime_tick=%llu input_actor=%u:%u input_agent=%u input_match=%u runtime=%s stale=%s held_area=%u weapon=%u weapon_class=%u decision_map=%u decision_round=%llu decision_tick=%llu runtime_reject=%u nav=%s nav_reason=%s nav_map=%u nav_round=%llu nav_tick=%llu nav_decision_tick=%llu",
+        "[ASTRABOT][DEBUG][MOVEMENT] map=%u round=%llu actor=%u:%u agent=%u outcome=%u error=%u input_tick=%llu dispatch_tick=%llu calls=%llu source=%s msec=%u phase=%s spawned=%u x=%.3f y=%.3f z=%.3f vx=%.3f vy=%.3f vz=%.3f movetype=%d solid=%d onground=%u spectator=%u runtime_map=%u runtime_round=%llu runtime_tick=%llu input_actor=%u:%u input_agent=%u input_match=%u runtime=%s stale=%s held_area=%u weapon=%u weapon_class=%u decision_map=%u decision_round=%llu decision_tick=%llu runtime_reject=%u nav=%s nav_reason=%s nav_map=%u nav_round=%llu nav_tick=%llu nav_decision_tick=%llu",
         unsigned(trace.map.value),
         static_cast<unsigned long long>(lifecycle_->round().value),
         unsigned(trace.player.slot),unsigned(trace.player.generation.value),
@@ -506,7 +506,9 @@ void ConsoleDebug::movementTrace(const debug::MovementTrace& trace) noexcept {
         static_cast<unsigned long long>(trace.dispatchTick.value),
         static_cast<unsigned long long>(trace.callCount),movementSourceName(trace.source),
         unsigned(trace.engineMsec),join ? joinPhaseName(join->phase()):"None",unsigned(spawned),
-        entity ? double(entity->v.origin.z):0.0,entity ? double(entity->v.velocity.z):0.0,
+        entity ? double(entity->v.origin.x):0.0,entity ? double(entity->v.origin.y):0.0,
+        entity ? double(entity->v.origin.z):0.0,entity ? double(entity->v.velocity.x):0.0,
+        entity ? double(entity->v.velocity.y):0.0,entity ? double(entity->v.velocity.z):0.0,
         entity ? entity->v.movetype:0,entity ? entity->v.solid:0,
         unsigned(entity && (entity->v.flags&FL_ONGROUND)),unsigned(spectator),
         unsigned(runtime.map.value),
