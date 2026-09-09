@@ -416,6 +416,28 @@ void NavConsole::moveFrame(metamod::LifecycleCoordinator& owner) noexcept {
             decision.recovery.terminalEvent=true;
         }
         current_->motionTrace_.decision=decision; current_->motionTrace_.missedDecisions=add(current_->motionTrace_.missedDecisions,schedule.missedDeadlines);
+        if (!current_->explicitRoute_ &&
+            decision.state == nav::local::WalkState::Arrived) {
+            current_->roamArrived_ = true;
+            const auto goal = current_->session_
+                ? current_->session_->trace().goal
+                : nav::model::NavAreaId{};
+            if (goal.isValid()) {
+                for (std::size_t i = (std::min)(current_->roamRecentGoalCount_,
+                                                current_->roamRecentGoals_.size());
+                     i > 0; --i) {
+                    if (i < current_->roamRecentGoals_.size())
+                        current_->roamRecentGoals_[i] =
+                            current_->roamRecentGoals_[i - 1U];
+                }
+                current_->roamRecentGoals_[0] = goal;
+                if (current_->roamRecentGoalCount_ <
+                    current_->roamRecentGoals_.size())
+                    ++current_->roamRecentGoalCount_;
+            }
+            stopMotion();
+            return;
+        }
         current_->segment_=decision.target && s.position ? std::optional<Segment>{{*s.position,decision.target->origin}}:std::nullopt;
         current_->intentWallAgeUs_=0;
         if(recovery.measuredProgress && current_->recoveryReplan_) {

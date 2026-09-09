@@ -38,6 +38,44 @@ struct LifecycleStatus {
     debug::RemovalError lastRemovalError{debug::RemovalError::None};
 };
 
+struct RuntimeActorCorrelation final {
+    core::MapGeneration map{};
+    core::perception::RoundGeneration round{};
+    core::PlayerId player{};
+    core::BotAgentId agent{};
+    std::uint32_t edictSerial{0};
+    core::TickId inputTick{};
+    core::TickId decisionTick{};
+    core::TickId queueTick{};
+    core::TickId dispatchTick{};
+    RuntimeInputBuildReason inputReason{RuntimeInputBuildReason::None};
+    RuntimeActorStaleReason staleReason{RuntimeActorStaleReason::None};
+    cstrike::RuntimeNavigationApplyResult navResult{cstrike::RuntimeNavigationApplyResult::None};
+    cstrike::RuntimeNavigationApplyReason navReason{cstrike::RuntimeNavigationApplyReason::None};
+    MovementOutcome queueOutcome{MovementOutcome::None};
+    MovementError queueError{MovementError::None};
+    MovementOutcome dispatchOutcome{MovementOutcome::None};
+    MovementError dispatchError{MovementError::None};
+    debug::MovementTraceSource source{debug::MovementTraceSource::None};
+    float forward{0.0F};
+    float side{0.0F};
+    float up{0.0F};
+    std::uint16_t buttons{0};
+    std::uint8_t impulse{0};
+    std::uint8_t msec{0};
+    bool managed{false};
+    bool connected{false};
+    bool removalPending{false};
+    bool alive{false};
+    bool currentAreaHeld{false};
+    core::tactical::IntentType intent{core::tactical::IntentType::None};
+    core::tactical::RouteStyle route{core::tactical::RouteStyle::None};
+    core::tactical::Reason reason{core::tactical::Reason::None};
+    nav::model::NavAreaId roamGoal{};
+    std::size_t roamCandidateCount{0};
+    std::uint64_t roamGeneration{0};
+};
+
 enum class CombatSubmitError : std::uint8_t {
     None = 0,
     InvalidActor,
@@ -161,6 +199,8 @@ public:
     const RuntimeInputBuildStatus& runtimeInputBuildStatus() const noexcept {
         return runtimeInputBuildStatus_;
     }
+    const RuntimeInputBuildStatus& runtimeInputBuildStatus(core::PlayerId player) const noexcept;
+    const RuntimeActorCorrelation& runtimeCorrelation(core::PlayerId player) const noexcept;
     const RuntimeDiagnostics& runtimeDiagnostics() const noexcept {
         return runtime_.diagnostics();
     }
@@ -281,6 +321,8 @@ private:
     std::array<ClientState,host::kMaxClientSlots> clients_{};
     MovementCoordinator movement_{};
     RuntimeInputBuildStatus runtimeInputBuildStatus_{};
+    std::array<RuntimeInputBuildStatus,host::kMaxClientSlots> runtimeInputBuildStatuses_{};
+    std::array<RuntimeActorCorrelation,host::kMaxClientSlots> runtimeCorrelation_{};
     cstrike::NavConsole navConsole_{};
     RuntimeOrchestrator runtime_{};
     core::world::WorldModel world_{};

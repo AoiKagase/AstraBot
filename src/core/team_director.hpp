@@ -332,6 +332,7 @@ struct SharedTeamState final {
     MapGeneration map{};
     perception::RoundGeneration round{};
     TickId tick{};
+    std::uint64_t nowMicros{0};
     TeamObjective objective{};
     std::array<SharedObservation, kMaxSharedObservations> observations{};
     std::size_t observationCount{0};

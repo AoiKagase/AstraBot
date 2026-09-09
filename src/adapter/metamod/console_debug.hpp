@@ -59,6 +59,11 @@ private:
     std::uint32_t nextBotOrdinal_{1};
     std::array<std::uint64_t, host::kMaxClientSlots> lastMovementLogCall_{};
     std::array<debug::MovementTraceSource, host::kMaxClientSlots> lastMovementSource_{};
+    std::array<debug::MovementTraceOutcome, host::kMaxClientSlots> lastMovementOutcome_{};
+    std::array<debug::MovementTraceError, host::kMaxClientSlots> lastMovementError_{};
+    std::array<core::MapGeneration, host::kMaxClientSlots> lastMovementMap_{};
+    std::array<core::PlayerId, host::kMaxClientSlots> lastMovementPlayer_{};
+    std::array<core::BotAgentId, host::kMaxClientSlots> lastMovementAgent_{};
 };
 
 } // namespace astrabot::adapter::metamod

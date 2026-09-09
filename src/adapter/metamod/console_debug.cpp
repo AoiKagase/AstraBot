@@ -522,7 +522,7 @@ void ConsoleDebug::movementTrace(const debug::MovementTrace& trace) noexcept {
     const bool spawned=entity && entity->v.deadflag==DEAD_NO && entity->v.health>0 && !spectator;
     char lineBuffer[2048]{};
     std::snprintf(lineBuffer,sizeof(lineBuffer),
-        "[ASTRABOT][DEBUG][MOVEMENT] map=%u round=%llu actor=%u:%u agent=%u outcome=%u error=%u input_tick=%llu dispatch_tick=%llu calls=%llu source=%s msec=%u serial=%u command_f=%.3f command_s=%.3f command_u=%.3f buttons=%u impulse=%u managed=%u connected=%u removal=%u phase=%s spawned=%u x=%.3f y=%.3f z=%.3f vx=%.3f vy=%.3f vz=%.3f movetype=%d solid=%d onground=%u spectator=%u runtime_map=%u runtime_round=%llu runtime_tick=%llu input_actor=%u:%u input_agent=%u input_match=%u runtime=%s stale=%s held_area=%u weapon=%u weapon_class=%u decision_map=%u decision_round=%llu decision_tick=%llu runtime_reject=%u nav=%s nav_reason=%s nav_map=%u nav_round=%llu nav_tick=%llu nav_decision_tick=%llu primary=%zu nonprimary=%zu intent=%s route=%s reason=%s roam_goal=%u roam_candidates=%zu roam_generation=%llu",
+        "[ASTRABOT][DEBUG][MOVEMENT] map=%u round=%llu actor=%u:%u agent=%u outcome=%u error=%u input_tick=%llu dispatch_tick=%llu calls=%llu source=%s msec=%u serial=%u command_f=%.3f command_s=%.3f command_u=%.3f buttons=%u impulse=%u managed=%u connected=%u removal=%u phase=%s spawned=%u x=%.3f y=%.3f z=%.3f vx=%.3f vy=%.3f vz=%.3f movetype=%d solid=%d onground=%u spectator=%u runtime_map=%u runtime_round=%llu runtime_tick=%llu input_actor=%u:%u input_agent=%u input_match=%u runtime=%s stale=%s held_area=%u weapon=%u weapon_class=%u decision_map=%u decision_round=%llu decision_tick=%llu runtime_reject=%u nav=%s nav_reason=%s nav_map=%u nav_round=%llu nav_tick=%llu nav_decision_tick=%llu accepted=%zu nonprimary_rejected=%zu intent=%s route=%s reason=%s roam_goal=%u roam_candidates=%zu roam_generation=%llu",
         unsigned(trace.map.value),
         static_cast<unsigned long long>(lifecycle_->round().value),
         unsigned(trace.player.slot),unsigned(trace.player.generation.value),
@@ -556,7 +556,7 @@ void ConsoleDebug::movementTrace(const debug::MovementTrace& trace) noexcept {
         static_cast<unsigned long long>(nav.round.value),
         static_cast<unsigned long long>(nav.tick.value),
         static_cast<unsigned long long>(nav.decisionTick.value),
-        lifecycle_->runtimeResult().primaryAcceptedCount,
+        lifecycle_->runtimeResult().acceptedActorCount,
         lifecycle_->runtimeResult().nonPrimaryRejectedCount,
         core::tactical::intentName(decision ? decision->tactical.intent.type :
                                    core::tactical::IntentType::None),

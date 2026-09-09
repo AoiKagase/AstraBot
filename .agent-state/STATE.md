@@ -14,15 +14,15 @@ Current checkpoint (2026-09-09, Asia/Tokyo):
 
 Verification boundary:
 - git diff --check has passed after the latest source repairs.
-- FocalSpan update completed after the latest edits; post-edit status is ready=true, stale=false, index_fresh=true, 413 files, 5170 symbols.
-- Implementation commit 1fc65fb is present. No CMake configure/build, test-program build, CTest, canonical All, merge, or live HLDS/ReHLDS acceptance has been performed for this worktree state.
+- FocalSpan update completed after the latest edits; post-edit status is ready=true, stale=false, index_fresh=true, 414 files, 5193 symbols. Static checks only; no configure/build/CTest was run.
+- Implementation commit 1fc65fb is present. On 2026-09-09, the Windows x86 Release Metamod adapter was rebuilt with tests OFF, the six required exports were verified, and the resulting DLL was deployed to D:\SteamCMD\cstrike_rehlds\cstrike\addons\astrabot\dlls\astrabot_mm.dll with matching SHA-256 e0c5bf61e7a283eece12cb7a66e34c7ea14aae577b63af52be2232490f60ce9b. Debug/CTest, canonical All, merge, and live HLDS/ReHLDS acceptance remain unperformed for this worktree state.
+- Movement rejection diagnostics are bounded by actor/map/agent/source/error state; repeated identical refusals are suppressed while new generations remain visible.
 - An offline/static result must not be reported as実機PASS or Finish.
 
 Next:
-1. Run FocalSpan update and confirm its post-edit status/query.
-2. Reinspect final diff and static symbol/switch coverage; run git diff --check again.
-3. Wait for explicit user-confirmed real-device PASS with date, SHA, DLL, and environment before tests ON build, CTest, or canonical All.
-4. After PASS, follow the documented Windows x86 Debug focused tests, one canonical All, STATE evidence, and narrow commit workflow.
+1. Reinspect final diff and static symbol/switch coverage; run git diff --check again.
+2. Wait for explicit user-confirmed real-device PASS with date, SHA, DLL, and environment before tests ON build, CTest, or canonical All.
+3. After PASS, follow the documented Windows x86 Debug focused tests, one canonical All, STATE evidence, and narrow commit workflow.
 
 Open acceptance:
 - Live runtime behavior, death animation, real-map NAV compatibility, runtime weapon callbacks, model/render result, and Finish status remain unverified.

@@ -54,6 +54,7 @@ JoinAction JoinState::begin(
     deadline_ = makeDeadline(startTick);
     attempts_ = 0;
     teamConfirmed_ = false;
+    teamInfoReceived_ = false;
     classSelectionCompleted_ = false;
     postClassFrameAdvanced_ = false;
     pendingSelection_ = false;
@@ -73,6 +74,7 @@ JoinAction JoinState::onMessage(
     promptGraceFrames_ = 0;
 
     if (event.kind == MessageKind::TeamInfo) {
+        teamInfoReceived_ = true;
         if (isExpectedTeam(event.text.data())) {
             const bool changed = !teamConfirmed_;
             teamConfirmed_ = true;
@@ -294,6 +296,7 @@ void JoinState::reset() noexcept {
     deadline_ = {};
     attempts_ = 0;
     teamConfirmed_ = false;
+    teamInfoReceived_ = false;
     classSelectionCompleted_ = false;
     postClassFrameAdvanced_ = false;
     pendingSelection_ = false;

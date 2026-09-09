@@ -197,6 +197,9 @@ exit code, and first diagnostic, then classify it before rerunning anything:
   environment, pinned SDK SHA/cleanliness, and the selected build directory.
   This is an infrastructure correction, not a reason to repeat a long test
   suite unchanged.
+- `wait_agent` を呼ぶたびに、`timeout_ms` には完了までの推定残り時間の2倍をミリ秒で明示する。
+  ツール定義の最短・最大待機時間の範囲に収め、見積もれない場合は既定時間を明示する。通知で途中解除されるため、
+  短い確認のために待機時間を縮めない。タイムアウト後は完了見込みを更新して同じ基準で待つ。
 
 If a canonical run fails after a profile has already passed, fix the cause and
 rerun only the failed profile when the other profiles' build inputs and

@@ -251,7 +251,7 @@ void testAllValidatedActorsExecute() {
     assert(result.accepted);
     assert(result.executableCount == 2);
     assert(result.decisionCount == 2);
-    assert(result.primaryAcceptedCount == 2);
+    assert(result.acceptedActorCount == 2);
     assert(result.nonPrimaryRejectedCount == 0);
     assert(result.decisions[0].rejection == a::RuntimeRejectReason::None);
     assert(result.decisions[1].rejection == a::RuntimeRejectReason::None);

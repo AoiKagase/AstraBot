@@ -357,7 +357,7 @@ const RuntimeFrameResult &RuntimeOrchestrator::run(const RuntimeFrame &frame,
 			continue;
 		}
 		ordered[index] = &input;
-		++result_.primaryAcceptedCount;
+		++result_.acceptedActorCount;
 		actorIdentity_[index] = input.player;
 	}
 

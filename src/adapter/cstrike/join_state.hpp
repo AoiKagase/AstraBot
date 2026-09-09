@@ -118,9 +118,11 @@ public:
     host::TickId deadline() const noexcept { return deadline_; }
     std::uint8_t attempts() const noexcept { return attempts_; }
     bool teamConfirmed() const noexcept { return teamConfirmed_; }
+    bool teamInfoReceived() const noexcept { return teamInfoReceived_; }
     bool classSelectionCompleted() const noexcept {
         return classSelectionCompleted_;
     }
+    bool postClassFrameAdvanced() const noexcept { return postClassFrameAdvanced_; }
     bool pendingSelection() const noexcept { return pendingSelection_; }
     bool active() const noexcept {
         return phase_ != JoinPhase::Idle && phase_ != JoinPhase::Joined &&
@@ -139,6 +141,7 @@ private:
     host::TickId deadline_{};
     std::uint8_t attempts_{0};
     bool teamConfirmed_{false};
+    bool teamInfoReceived_{false};
     bool classSelectionCompleted_{false};
     bool postClassFrameAdvanced_{false};
     bool pendingSelection_{false};

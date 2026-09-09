@@ -189,6 +189,42 @@ void testWorldModelContextUsesOnlyKnownBeliefs() {
     assert(result.enemies[0].area == astrabot::nav::model::NavAreaId{});
 }
 
+void testAutonomousRoamAndPriorityContracts() {
+    auto state = context();
+    state.navigation.routes[0].available = false;
+    state.navigation.routeCount = 0;
+    state.navigation.roamCandidates[0] = area(101);
+    state.navigation.roamCandidates[1] = area(102);
+    state.navigation.roamCandidateCount = 2;
+
+    t::TacticalPlanner planner;
+    const auto first = planner.plan(state);
+    assert(first.accepted);
+    assert(first.intent.type == t::IntentType::Roam);
+    assert(first.intent.route == t::RouteStyle::Roam);
+    assert(first.intent.reason == t::Reason::AutonomousRoam);
+    assert(first.intent.target.area != state.self.currentArea);
+
+    state.nowMicros += 1;
+    t::ReplanEvents arrived{};
+    arrived.intentInvalidated = true;
+    const auto second = planner.plan(state, arrived);
+    assert(second.replanned);
+    assert(second.intent.type == t::IntentType::Roam);
+    assert(second.intent.target.area != first.intent.target.area);
+
+    auto explicitRoute = context();
+    explicitRoute.navigation.routes[0].available = false;
+    explicitRoute.navigation.routeCount = 0;
+    explicitRoute.navigation.explicitRouteAvailable = true;
+    explicitRoute.navigation.explicitRoute = route(t::RouteStyle::Hold, 500);
+    explicitRoute.navigation.roamCandidates[0] = area(501);
+    explicitRoute.navigation.roamCandidateCount = 1;
+    const auto explicitDecision = t::TacticalPlanner{}.plan(explicitRoute);
+    assert(explicitDecision.intent.type == t::IntentType::Hold);
+    assert(explicitDecision.intent.target.area ==
+           astrabot::nav::model::NavAreaId{500});
+}
 } // namespace
 
 int main() {
@@ -198,5 +234,6 @@ int main() {
     testEntryDeathSupportReevaluation();
     testPeriodicAndBlockedReplanning();
     testWorldModelContextUsesOnlyKnownBeliefs();
+    testAutonomousRoamAndPriorityContracts();
     return 0;
 }

@@ -593,7 +593,8 @@ void LifecycleCoordinator::startFrame() noexcept {
                     runtimeInputCount = buildRuntimeInputs(
                         *this, runtimeFrame, hookedGameDllFunctions_,
                         runtimeInputs.data(), runtimeInputs.size(),
-                        runtimeInputBuildStatuses_.data());
+                        runtimeInputBuildStatuses_.data(),
+                        runtimeInputBuildStatuses_.size());
                 }
                 if (runtimeInputCount != 0)
                     runtimeInputBuildStatus_ = runtimeInputBuildStatuses_[0];

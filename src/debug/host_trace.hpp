@@ -5,6 +5,7 @@
 
 #include "adapter/cstrike/join_state.hpp"
 #include "core/combat.hpp"
+#include "core/perception_identity.hpp"
 #include "host/game_host.hpp"
 
 #include <cstdint>
@@ -89,6 +90,17 @@ struct JoinTrace {
     std::uint8_t attempts{0};
     bool accepted{false};
     bool changed{false};
+    // Requested values and observed GameDLL state are intentionally kept
+    // separate. A command being sent is not evidence that TeamInfo or a
+    // post-class spawn actually happened.
+    astrabot::core::perception::Team observedTeam{
+        astrabot::core::perception::Team::Unknown};
+    std::int32_t modelIndex{0};
+    bool teamInfoReceived{false};
+    bool classSelectionCompleted{false};
+    bool postClassFrameAdvanced{false};
+    bool entityPresent{false};
+    bool alive{false};
 };
 
 using JoinTraceSink = void (*)(const JoinTrace& trace) noexcept;
@@ -175,6 +187,12 @@ struct MovementTrace {
     bool engineCall{false};
     MovementTraceSource source{MovementTraceSource::None};
     std::uint64_t callCount{0};
+    std::uint32_t edictSerial{0};
+    float forward{0.0F};
+    float side{0.0F};
+    float up{0.0F};
+    std::uint16_t buttons{0};
+    std::uint8_t impulse{0};
 };
 
 using MovementTraceSink = void (*)(const MovementTrace& trace) noexcept;

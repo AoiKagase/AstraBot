@@ -136,7 +136,14 @@ bool runtimeActorReady(const LifecycleCoordinator& owner, const RuntimeFrame& fr
 
 std::size_t buildRuntimeInputs(const LifecycleCoordinator& owner, const RuntimeFrame& frame,
     DLL_FUNCTIONS* dll, RuntimeActorInput* output, std::size_t capacity,
-    RuntimeInputBuildStatus* status) noexcept {
+    RuntimeInputBuildStatus* status, std::size_t statusCapacity) noexcept {
+    const auto statusFor = [&](core::PlayerId player) noexcept
+        -> RuntimeInputBuildStatus* {
+        if (!status || !player.isValid() || player.slot == 0 ||
+            player.slot > statusCapacity)
+            return nullptr;
+        return &status[player.slot - 1U];
+    };
     const auto initializeStatus = [&](RuntimeInputBuildStatus* target,
                                       core::PlayerId player,
                                       core::BotAgentId agent) noexcept {
@@ -150,7 +157,7 @@ std::size_t buildRuntimeInputs(const LifecycleCoordinator& owner, const RuntimeF
         target->agent = agent;
     };
     if (!output || capacity == 0 || !frame.valid()) {
-        if (status) {
+        if (status && statusCapacity != 0) {
             initializeStatus(status, {}, {});
             status->reason = RuntimeInputBuildReason::InvalidFrame;
         }
@@ -174,7 +181,7 @@ std::size_t buildRuntimeInputs(const LifecycleCoordinator& owner, const RuntimeF
         // Kept true for compatibility with older providers. Multi-actor
         // acceptance is determined by identity and valid(), not this flag.
         input.primary = true;
-        auto* actorStatus = status ? &status[player.slot - 1U] : nullptr;
+        auto* actorStatus = statusFor(player);
         initializeStatus(actorStatus, player, input.agent);
         auto* entity = owner.entityFor(player);
         if (!current(owner, frame, player, input.agent, entity)) {
@@ -238,7 +245,7 @@ std::size_t buildRuntimeInputs(const LifecycleCoordinator& owner, const RuntimeF
         const auto* affiliation = owner.teams().find(player);
         if (!affiliation) {
             if (actorStatus) {
-                actorStatus->reason = owner.teams().findBySlot(player)
+                actorStatus->reason = owner.teams().findBySlot(player.slot)
                     ? RuntimeInputBuildReason::TeamGenerationMismatch
                     : RuntimeInputBuildReason::MissingTeam;
             }
