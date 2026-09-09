@@ -97,21 +97,61 @@ void NavConsole::moveFrame(metamod::LifecycleCoordinator& owner,core::PlayerId p
 void NavConsole::applyRuntimeNavigation(
     metamod::LifecycleCoordinator& owner,
     const metamod::RuntimeDecision& decision) noexcept {
-    if (!decision.executable || !decision.hasNavigationGoal ||
-        !decision.player.isValid() || !decision.agent.isValid() ||
-        !decision.navigationGoal.isValid() || inRequest_ ||
-        !owner.registry().isMapActive() ||
-        owner.registry().mapGeneration() != decision.team.shared.map ||
-        owner.registry().currentTick() == core::TickId{}) {
+    RuntimeNavigationStatus status{};
+    status.map = owner.registry().mapGeneration();
+    status.round = owner.round();
+    status.tick = owner.registry().currentTick();
+    status.decisionMap = decision.team.shared.map;
+    status.decisionRound = decision.team.shared.round;
+    status.decisionTick = decision.team.shared.tick;
+    status.player = decision.player;
+    status.agent = decision.agent;
+    status.goal = decision.navigationGoal;
+    const auto publish = [&]() noexcept {
+        runtimeNavigationStatus_ = status;
+        if (status.player.isValid() && status.player.slot <= host::kMaxClientSlots)
+            runtimeNavigationStatuses_[status.player.slot - 1U] = status;
+    };
+    const auto reject = [&](RuntimeNavigationApplyReason reason) noexcept {
+        status.result = RuntimeNavigationApplyResult::Rejected;
+        status.reason = reason;
+        publish();
+    };
+    if (!decision.executable || !decision.hasNavigationGoal) {
+        reject(RuntimeNavigationApplyReason::NoExecutableGoal);
         return;
     }
-    if (!selectActor(decision.player)) return;
+    if (!decision.player.isValid() || !decision.agent.isValid() ||
+        !decision.navigationGoal.isValid()) {
+        reject(RuntimeNavigationApplyReason::InvalidIdentity);
+        return;
+    }
+    if (inRequest_) {
+        reject(RuntimeNavigationApplyReason::RequestReentrant);
+        return;
+    }
+    if (!owner.registry().isMapActive()) {
+        reject(RuntimeNavigationApplyReason::MapInactive);
+        return;
+    }
+    if (owner.registry().mapGeneration() != decision.team.shared.map ||
+        owner.round() != decision.team.shared.round ||
+        owner.registry().currentTick() != decision.team.shared.tick ||
+        owner.registry().currentTick() == core::TickId{}) {
+        reject(RuntimeNavigationApplyReason::StampMismatch);
+        return;
+    }
+    if (!selectActor(decision.player)) {
+        reject(RuntimeNavigationApplyReason::ActorUnavailable);
+        return;
+    }
     const auto s = snapshot(owner);
     if (s.kind != nav::runtime::ActorKind::ManagedBot ||
         s.actor != decision.player || s.agent != decision.agent ||
         s.map != owner.registry().mapGeneration() ||
         s.connected != true || s.alive != true || s.joined != true ||
         !s.position || !s.velocity || !s.view || !s.hull || !s.speedLimit) {
+        reject(RuntimeNavigationApplyReason::ActorStateInvalid);
         return;
     }
     if (current_->session_ && current_->session_->executable() &&
@@ -119,6 +159,8 @@ void NavConsole::applyRuntimeNavigation(
         current_->session_->trace().agent == s.agent &&
         current_->session_->trace().map == s.map &&
         current_->session_->trace().goal == decision.navigationGoal) {
+        status.result = RuntimeNavigationApplyResult::Unchanged;
+        publish();
         return;
     }
     if (!current_->session_ || current_->session_->trace().actor != s.actor ||
@@ -136,6 +178,14 @@ void NavConsole::applyRuntimeNavigation(
     options.limits = {100000, 256 * mib};
     options.groundNavTolerance = 18;
     requestRoute(s, decision.navigationGoal, owner, options);
+    if (current_->session_ && current_->session_->executable()) {
+        status.result = RuntimeNavigationApplyResult::Applied;
+        status.reason = RuntimeNavigationApplyReason::None;
+    } else {
+        status.result = RuntimeNavigationApplyResult::Rejected;
+        status.reason = RuntimeNavigationApplyReason::RouteRejected;
+    }
+    publish();
 }
 void NavConsole::configure(enginefuncs_t* engine,mutil_funcs_t* utility,globalvars_t* globals) noexcept {
     engine_=engine; utility_=utility; globals_=globals;
@@ -163,6 +213,12 @@ void NavConsole::invalidateCurrent(nav::runtime::SessionReason reason) noexcept 
     current_->replan_={};
     current_->recovery_={};
     current_->recoveryReplan_=false;
+    current_->lastCurrentArea_.reset();
+    current_->lastCurrentAreaActor_={};
+    current_->lastCurrentAreaAgent_={};
+    current_->lastCurrentAreaMap_={};
+    current_->lastCurrentAreaRouteGeneration_=0;
+    current_->lastCurrentAreaTick_={};
     clearPending();
     stopMotion();
     if(current_->session_) {
@@ -200,6 +256,8 @@ void NavConsole::reset() noexcept {
     movement_=nullptr; world_=nullptr;
     for(auto& actor:actors_) if(actor) *actor=ActorState{};
     idle_=ActorState{}; current_=&idle_;
+    runtimeNavigationStatus_={};
+    runtimeNavigationStatuses_={};
 }
 nav::diagnostics::NavError NavConsole::publish(core::MapGeneration map,
     std::shared_ptr<const nav::model::NavMeshSnapshot> mesh) noexcept {
@@ -245,7 +303,8 @@ nav::runtime::MovementSnapshot NavConsole::snapshotFor(
     const metamod::LifecycleCoordinator& owner,core::PlayerId player) const noexcept {
     nav::runtime::MovementSnapshot s;
     auto& registry=owner.registry();
-    s.actor=player; s.agent=owner.agents().findByPlayer(s.actor).agent;
+    const auto binding=owner.agents().findByPlayer(player);
+    s.actor=player; s.agent=binding.agent;
     s.map=registry.mapGeneration(); s.tick=registry.currentTick();
     if(globals_ && std::isfinite(globals_->frametime) && globals_->frametime>=0 && globals_->frametime<=60)
         s.elapsedUs=static_cast<std::uint64_t>(double(globals_->frametime)*1000000.0);
@@ -253,9 +312,14 @@ nav::runtime::MovementSnapshot NavConsole::snapshotFor(
     const auto* join=owner.joinState(s.actor);
     s.joined=join && join->phase()==JoinPhase::Joined && join->player()==s.actor;
     auto* entity=owner.entityFor(s.actor);
-    if (!entity || entity->free || !engine_ || !engine_->pfnIndexOfEdict ||
-        engine_->pfnIndexOfEdict(entity)!=s.actor.slot || !s.agent.isValid() || owner.removalPending(s.actor)) return s;
-    s.kind=(entity->v.flags&FL_FAKECLIENT) ? nav::runtime::ActorKind::ManagedBot:nav::runtime::ActorKind::Human;
+    if (!binding.isValid() || binding.player != s.actor ||
+        binding.map != s.map || !entity || entity->free || !engine_ ||
+        !engine_->pfnIndexOfEdict ||
+        engine_->pfnIndexOfEdict(entity)!=s.actor.slot ||
+        (engine_->pfnPEntityOfEntIndex &&
+         engine_->pfnPEntityOfEntIndex(s.actor.slot)!=entity) ||
+        owner.removalPending(s.actor)) return s;
+    s.kind=nav::runtime::ActorKind::ManagedBot;
     const auto& v=entity->v;
     s.alive=v.deadflag==DEAD_NO; s.grounded=(v.flags&FL_ONGROUND)!=0; s.ducked=(v.flags&FL_DUCKING)!=0;
     s.position=nav::model::NavVector3{v.origin.x,v.origin.y,v.origin.z};
@@ -271,10 +335,6 @@ std::optional<RuntimeNavigationState> NavConsole::runtimeState(
     if(inRequest_ || deferredInvalidation_ || navigation_.map!=owner.registry().mapGeneration() || !index_) return {};
     RuntimeNavigationState result{};
     result.movement=snapshotFor(owner,player);
-    if(result.movement.position) {
-        const auto match=index_->containing(*result.movement.position,72.0);
-        if(match && *match.value) result.currentArea=(*match.value)->areaId;
-    }
     if(actor && actor->session_) {
         const auto& trace=actor->session_->trace();
         result.goal=trace.goal.isValid() ? std::optional<nav::model::NavAreaId>{trace.goal}:std::nullopt;
@@ -286,6 +346,41 @@ std::optional<RuntimeNavigationState> NavConsole::runtimeState(
                 result.goalPosition=core::perception::Point{point.x,point.y,point.z};
             }
         }
+    }
+    if(result.movement.position) {
+        const auto match=index_->containing(*result.movement.position,72.0);
+        if(match && *match.value) {
+            result.currentArea=(*match.value)->areaId;
+            if (actor && actor->session_) {
+                const auto& trace=actor->session_->trace();
+                actor->lastCurrentArea_=result.currentArea;
+                actor->lastCurrentAreaActor_=result.movement.actor;
+                actor->lastCurrentAreaAgent_=result.movement.agent;
+                actor->lastCurrentAreaMap_=result.movement.map;
+                actor->lastCurrentAreaRouteGeneration_=trace.routeGeneration;
+                actor->lastCurrentAreaTick_=result.movement.tick;
+            }
+        }
+    }
+    const bool traversal = actor && actor->session_ && actor->session_->executable() &&
+        actor->motionTrace_.decision.accepted &&
+        actor->motionTrace_.decision.state == nav::local::WalkState::Running &&
+        actor->motionTrace_.decision.binding.actor == result.movement.actor &&
+        actor->motionTrace_.decision.binding.agent == result.movement.agent &&
+        actor->motionTrace_.decision.binding.map == result.movement.map &&
+        actor->motionTrace_.decision.binding.map == navigation_.map &&
+        actor->motionTrace_.decision.binding.routeGeneration == result.routeGeneration &&
+        (actor->motionTrace_.decision.jumpState.has_value() ||
+         actor->motionTrace_.decision.ladderState.has_value());
+    if (!result.currentArea && traversal && actor->lastCurrentArea_ &&
+        actor->lastCurrentAreaActor_ == result.movement.actor &&
+        actor->lastCurrentAreaAgent_ == result.movement.agent &&
+        actor->lastCurrentAreaMap_ == result.movement.map &&
+        actor->lastCurrentAreaRouteGeneration_ == result.routeGeneration &&
+        actor->lastCurrentAreaTick_.isValid() &&
+        !result.movement.tick.isBefore(actor->lastCurrentAreaTick_)) {
+        result.currentArea=actor->lastCurrentArea_;
+        result.currentAreaHeld=true;
     }
     return result;
 }

@@ -394,6 +394,7 @@ FirePlan chooseFirePlan(const CombatInput& input, PlayerId target) noexcept {
     const bool poorAim = aimError > kPoorAimErrorDegrees;
     switch (input.weapon.activeClass) {
     case WeaponClass::Rifle:
+    case WeaponClass::MachineGun:
         if (distance >= kLongCombatRange || poorAim) return FirePlan::tap();
         if (distance >= kMediumCombatRange || quality < kFullAutoQualityThreshold) {
             return boundedBurst(3, input.weapon.clipAmmo);
@@ -406,6 +407,8 @@ FirePlan chooseFirePlan(const CombatInput& input, PlayerId target) noexcept {
         }
         return input.weapon.clipAmmo >= 2 ? FirePlan::fullAuto() : FirePlan::tap();
     case WeaponClass::Pistol:
+    case WeaponClass::Shotgun:
+    case WeaponClass::Melee:
     case WeaponClass::Sniper:
     case WeaponClass::Unknown:
         return FirePlan::tap();
@@ -413,11 +416,24 @@ FirePlan chooseFirePlan(const CombatInput& input, PlayerId target) noexcept {
     return FirePlan::tap();
 }
 
+bool isSwitchableWeaponId(WeaponId weapon) noexcept {
+    switch (weapon.value) {
+    case 1: case 3: case 5: case 7: case 8: case 10: case 11:
+    case 12: case 13: case 14: case 15: case 16: case 17: case 18:
+    case 19: case 20: case 21: case 22: case 23: case 24: case 26:
+    case 27: case 28: case 29: case 30:
+        return true;
+    default:
+        return false;
+    }
+}
+
 WeaponId preferredSwitchWeapon(const WeaponSnapshot& weapon) noexcept {
     WeaponId selected{};
     for (std::size_t i = 0; i < weapon.ownedCount; ++i) {
         const auto candidate = weapon.owned[i];
         if (!candidate.isValid() || candidate == weapon.active) continue;
+        if (!isSwitchableWeaponId(candidate)) continue;
         if (!selected.isValid() || candidate < selected) selected = candidate;
     }
     return selected;
@@ -497,7 +513,8 @@ std::optional<CombatDecision> planWeaponAction(
         return acceptedReload(input);
     }
 
-    if (input.weapon.clipAmmo <= 0 && input.weapon.reserveAmmo <= 0) {
+    if (input.weapon.clipAmmo <= 0 && input.weapon.reserveAmmo <= 0 &&
+        input.weapon.activeClass != WeaponClass::Melee) {
         const auto candidate = preferredSwitchWeapon(input.weapon);
         if (input.weapon.canSwitch && candidate.isValid()) {
             clearCadence(state);
@@ -561,6 +578,10 @@ WeaponValidation WeaponSnapshot::validate() const noexcept {
     }
     if (!active.isValid()) {
         return {WeaponValidationError::InvalidActiveWeapon};
+    }
+    if (static_cast<std::uint8_t>(activeClass) >
+        static_cast<std::uint8_t>(WeaponClass::Melee)) {
+        return {WeaponValidationError::InvalidWeaponClass};
     }
     if (ownedCount == 0 || ownedCount > owned.size()) {
         return {WeaponValidationError::InvalidInventory};
@@ -993,7 +1014,7 @@ FireAuthorization authorizeFire(const CombatInput& input,
         result.decision = suppressedTrack(input, aim, CombatReason::ReactionDelay);
         return result;
     }
-    if (input.weapon.clipAmmo <= 0) {
+    if (input.weapon.clipAmmo <= 0 && input.weapon.activeClass != WeaponClass::Melee) {
         clearCadence(result.nextState);
         clearReaction(result.nextState);
         result.decision = suppressedTrack(input, aim, CombatReason::EmptyClip);

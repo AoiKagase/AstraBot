@@ -131,6 +131,7 @@ enum class OpponentProfileUpdateReason : std::uint8_t {
     InvalidObservation,
     WrongMap,
     WrongRound,
+    RetiredGeneration,
     CapacityExceeded,
 };
 
@@ -159,6 +160,7 @@ public:
 
 private:
     std::array<OpponentProfile, kMaxOpponentProfiles> profiles_{};
+    std::array<Generation, kMaxOpponentProfiles> retiredGenerations_{};
     MapGeneration map_{};
     perception::RoundGeneration round_{};
     std::size_t count_{0};

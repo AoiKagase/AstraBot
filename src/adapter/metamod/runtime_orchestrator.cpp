@@ -127,7 +127,8 @@ void RuntimeOrchestrator::appendStage(RuntimeStage stage) noexcept {
 }
 
 void RuntimeOrchestrator::addDiagnostic(RuntimeStage stage, RuntimeRejectReason reason,
-                                        const RuntimeFrame &frame, core::PlayerId player) noexcept {
+                                        const RuntimeFrame &frame, core::PlayerId player,
+                                        core::BotAgentId agent) noexcept {
 	RuntimeDiagnostic value{};
 	value.stage = stage;
 	value.reason = reason;
@@ -135,6 +136,7 @@ void RuntimeOrchestrator::addDiagnostic(RuntimeStage stage, RuntimeRejectReason 
 	value.round = frame.round;
 	value.tick = frame.tick;
 	value.player = player;
+	value.agent = agent;
 	if (diagnostics_.count < diagnostics_.entries.size()) {
 		diagnostics_.entries[diagnostics_.count++] = value;
 		return;
@@ -217,9 +219,12 @@ bool RuntimeOrchestrator::beginFrameContext(const RuntimeFrame &frame) noexcept 
 		opponentProfiles_.reset();
 		experience_.reset();
 		if (!contextualDanger_.beginMap(frame.map) || !opponentProfiles_.beginMap(frame.map)) {
-			return false;
-		}
-		if (validExperienceMap(frame.mapIdentity) &&
+            return false;
+        }
+        if (!opponentProfiles_.beginRound(frame.round)) {
+            return false;
+        }
+        if (validExperienceMap(frame.mapIdentity) &&
 		    !experience_.activate(frame.mapIdentity, frame.round)) {
 			return false;
 		}
@@ -309,7 +314,7 @@ const RuntimeFrameResult &RuntimeOrchestrator::run(const RuntimeFrame &frame,
 		              frame, {});
 	}
 	auto appendRejected = [&](const RuntimeActorInput &input, RuntimeRejectReason reason) noexcept {
-		addDiagnostic(RuntimeStage::PerceptionPublished, reason, frame, input.player);
+		addDiagnostic(RuntimeStage::PerceptionPublished, reason, frame, input.player, input.agent);
 		if (result_.decisionCount >= result_.decisions.size())
 			return;
 		auto &decision = result_.decisions[result_.decisionCount++];
@@ -363,7 +368,8 @@ const RuntimeFrameResult &RuntimeOrchestrator::run(const RuntimeFrame &frame,
 				(void)experience_.submit(input->experienceEvents[i]);
 			} catch (...) {
 				addDiagnostic(RuntimeStage::ExperienceUpdated,
-				              RuntimeRejectReason::InvalidActorInput, frame, input->player);
+				              RuntimeRejectReason::InvalidActorInput, frame, input->player,
+				              input->agent);
 				break;
 			}
 		}
@@ -388,6 +394,9 @@ const RuntimeFrameResult &RuntimeOrchestrator::run(const RuntimeFrame &frame,
 			for (std::size_t i = 0; i < kRuntimeActorCapacity; ++i) clearSlot(i);
 		team_.reset();
 		teamDecision_ = {};
+		teamDecision_.shared.map = frame.map;
+		teamDecision_.shared.round = frame.round;
+		teamDecision_.shared.tick = frame.tick;
 		teamDecision_.accepted = true;
 		teamDecisionReady_ = true;
 		teamDecisionMicros_ = 0;
@@ -407,7 +416,7 @@ const RuntimeFrameResult &RuntimeOrchestrator::run(const RuntimeFrame &frame,
 				teamDecisionMicros_ = frame.nowMicros;
 			} else {
 				addDiagnostic(RuntimeStage::TeamDirector, RuntimeRejectReason::InvalidTeamInput,
-				              frame, teamInput->player);
+				              frame, teamInput->player, teamInput->agent);
 			}
 		}
 	}
@@ -429,15 +438,21 @@ const RuntimeFrameResult &RuntimeOrchestrator::run(const RuntimeFrame &frame,
 			decision.agent = input->agent;
 			decision.rejection = RuntimeRejectReason::InvalidTeamInput;
 			addDiagnostic(RuntimeStage::TeamDirector, RuntimeRejectReason::InvalidTeamInput, frame,
-			              input->player);
+			              input->player, input->agent);
 			continue;
 		}
 
-		RuntimeDecision decision{};
-		decision.player = input->player;
-		decision.agent = input->agent;
-		decision.team = teamDecision_;
-		decision.teamExecuted = teamExecuted;
+        RuntimeDecision decision{};
+        decision.player = input->player;
+        decision.agent = input->agent;
+        decision.team = teamDecision_;
+        // Team strategy is cadence-cached, but the value delivered to NAV
+        // belongs to this input frame. Preserve the cached objective and
+        // assignments while stamping the transport identity for this tick.
+        decision.team.shared.map = frame.map;
+        decision.team.shared.round = frame.round;
+        decision.team.shared.tick = frame.tick;
+        decision.teamExecuted = teamExecuted;
 		auto tacticalSeed = input->tactical;
 		if (const auto *assignment = assignmentFor(input->player)) {
 			if (tacticalSeed.self.role == core::tactical::RolePreference::Any) {
@@ -463,7 +478,8 @@ const RuntimeFrameResult &RuntimeOrchestrator::run(const RuntimeFrame &frame,
 		if (!context.valid()) {
 			clearSlot(index);
 			decision.rejection = RuntimeRejectReason::InvalidTacticalInput;
-			addDiagnostic(RuntimeStage::TacticalPlanner, decision.rejection, frame, input->player);
+			addDiagnostic(RuntimeStage::TacticalPlanner, decision.rejection, frame, input->player,
+			              input->agent);
 			if (result_.decisionCount < result_.decisions.size())
 				result_.decisions[result_.decisionCount++] = decision;
 			continue;
@@ -485,7 +501,8 @@ const RuntimeFrameResult &RuntimeOrchestrator::run(const RuntimeFrame &frame,
 		}
 		if (!decision.tactical.accepted) {
 			decision.rejection = RuntimeRejectReason::PlannerRejected;
-			addDiagnostic(RuntimeStage::TacticalPlanner, decision.rejection, frame, input->player);
+			addDiagnostic(RuntimeStage::TacticalPlanner, decision.rejection, frame, input->player,
+			              input->agent);
 		}
 
 		auto actionInput = input->action;
@@ -509,7 +526,8 @@ const RuntimeFrameResult &RuntimeOrchestrator::run(const RuntimeFrame &frame,
 		}
 		if (!decision.action.accepted && decision.rejection == RuntimeRejectReason::None) {
 			decision.rejection = RuntimeRejectReason::PlannerRejected;
-			addDiagnostic(RuntimeStage::ActionPlanner, decision.rejection, frame, input->player);
+			addDiagnostic(RuntimeStage::ActionPlanner, decision.rejection, frame, input->player,
+			              input->agent);
 		}
 
 		const auto aim = core::combat::aimTarget(input->combat);
@@ -519,7 +537,8 @@ const RuntimeFrameResult &RuntimeOrchestrator::run(const RuntimeFrame &frame,
 		decision.combatExecuted = true;
 		if (!decision.combat.validateForP5()) {
 			decision.rejection = RuntimeRejectReason::InvalidCombatInput;
-			addDiagnostic(RuntimeStage::Combat, decision.rejection, frame, input->player);
+			addDiagnostic(RuntimeStage::Combat, decision.rejection, frame, input->player,
+			              input->agent);
 		}
 		if (decision.action.intent.targetArea.isValid()) {
 			decision.navigationGoal = decision.action.intent.targetArea;
@@ -579,7 +598,12 @@ void RuntimeOrchestrator::onDeath(core::PlayerId player) noexcept {
 	const auto index = slotIndex(player);
 	if (index < kRuntimeActorCapacity)
 		clearSlot(index);
-	opponentProfiles_.forget(player);
+}
+
+void RuntimeOrchestrator::onInputUnavailable(core::PlayerId player) noexcept {
+	const auto index = slotIndex(player);
+	if (index < kRuntimeActorCapacity)
+		clearSlot(index);
 }
 
 std::optional<core::combat::CombatDecision> RuntimeOrchestrator::takeCombatDecision(

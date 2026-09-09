@@ -245,9 +245,13 @@ void testDispatchGuardsAndCleanup() {
     assert(fixture.movement.submit(
         fixture.player, fixture.map, tick, fixture.command()).queued());
     assert(fixture.dispatch( tick).rejected());
-    assert(gCalls.empty());
+    assert(gCalls.size() == 1);
+    assert(gCalls.front().forward == 0.0F && gCalls.front().side == 0.0F &&
+           gCalls.front().up == 0.0F && gCalls.front().buttons == 0U);
 
     assert(fixture.registry.startFrame());
+    gCalls.clear();
+    gTraces.clear();
     gClockUs += 10000U;
     fixture.movement.beginFrame();
     const TickId nextTick = fixture.registry.currentTick();
@@ -255,7 +259,10 @@ void testDispatchGuardsAndCleanup() {
         fixture.player, fixture.map, nextTick, fixture.command()).queued());
     fixture.entity.v.deadflag = DEAD_DEAD;
     assert(fixture.dispatch(TickId{3}).rejected());
-    assert(gCalls.empty());
+    assert(gCalls.size() == 1);
+    assert(gCalls.front().forward == 0.0F && gCalls.front().side == 0.0F &&
+           gCalls.front().up == 0.0F && gCalls.front().buttons == 0U);
+    assert(gTraces.back().source == astrabot::debug::MovementTraceSource::Dead);
 
     Fixture disconnected{};
     disconnected.armAndAdvance(10000U);
@@ -329,7 +336,11 @@ void testWeaponSelectionHandlerOwnsDispatchGate() {
     assert(rejected.error == MovementError::WeaponSelectionRejected);
     assert(gWeaponSelections.size() == 1);
     assert(gWeaponSelections.front() == 8);
-    assert(gCalls.empty());
+    assert(gCalls.size() == 1);
+    assert(gCalls.front().forward == 0.0F);
+    assert(gCalls.front().side == 0.0F);
+    assert(gCalls.front().up == 0.0F);
+    assert(gTraces.back().source == astrabot::debug::MovementTraceSource::Idle);
 }
 void testIndependentPlayerQueues() {
     Fixture fixture{}; fixture.armAndAdvance(16000);

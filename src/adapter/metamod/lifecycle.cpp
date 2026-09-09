@@ -21,8 +21,9 @@ void markIgnored() noexcept {
     }
 }
 
+template <std::size_t Size>
 void copyCommandWord(
-    std::array<char, 16>& destination,
+    std::array<char, Size>& destination,
     const char* source) noexcept {
     destination = {};
     if (source == nullptr) {
@@ -32,6 +33,41 @@ void copyCommandWord(
     while (index + 1U < destination.size() && source[index] != '\0') {
         destination[index] = source[index];
         ++index;
+    }
+}
+
+const char* weaponCommand(core::WeaponSelection selection) noexcept {
+    switch (selection) {
+    case 1: return "weapon_p228";
+    case 3: return "weapon_scout";
+    case 4: return "weapon_hegrenade";
+    case 5: return "weapon_xm1014";
+    case 6: return "weapon_c4";
+    case 7: return "weapon_mac10";
+    case 8: return "weapon_aug";
+    case 9: return "weapon_smokegrenade";
+    case 10: return "weapon_elite";
+    case 11: return "weapon_fiveseven";
+    case 12: return "weapon_ump45";
+    case 13: return "weapon_sg550";
+    case 14: return "weapon_galil";
+    case 15: return "weapon_famas";
+    case 16: return "weapon_usp";
+    case 17: return "weapon_glock18";
+    case 18: return "weapon_awp";
+    case 19: return "weapon_mp5navy";
+    case 20: return "weapon_m249";
+    case 21: return "weapon_m3";
+    case 22: return "weapon_m4a1";
+    case 23: return "weapon_tmp";
+    case 24: return "weapon_g3sg1";
+    case 25: return "weapon_flashbang";
+    case 26: return "weapon_deagle";
+    case 27: return "weapon_sg552";
+    case 28: return "weapon_ak47";
+    case 29: return "weapon_knife";
+    case 30: return "weapon_p90";
+    default: return nullptr;
     }
 }
 
@@ -78,6 +114,55 @@ std::uint64_t engineTimeMicros(globalvars_t* globals) noexcept {
 }
 
 } // namespace
+
+bool LifecycleCoordinator::dispatchWeaponSelectionHook(
+    edict_t* entity, core::WeaponSelection selection) noexcept {
+    return gCoordinator.dispatchWeaponSelection(entity, selection);
+}
+
+bool LifecycleCoordinator::dispatchWeaponSelection(
+    edict_t* entity, core::WeaponSelection selection) noexcept {
+    const char* command = weaponCommand(selection);
+    if (command == nullptr || commandContextActive_ || entity == nullptr ||
+        entity->free || !registry_.isMapActive() ||
+        !hookedGameDllFunctions_ ||
+        !hookedGameDllFunctions_->pfnClientCommand) {
+        return false;
+    }
+    const auto player = playerForEntity(entity);
+    if (!player.isValid() || player.slot > host::kMaxClientSlots ||
+        !registry_.isConnected(player.slot) ||
+        registry_.currentPlayer(player.slot) != player ||
+        !engineFunctions_ || !engineFunctions_->pfnIndexOfEdict ||
+        engineFunctions_->pfnIndexOfEdict(entity) != player.slot) {
+        return false;
+    }
+    if (engineFunctions_->pfnPEntityOfEntIndex &&
+        engineFunctions_->pfnPEntityOfEntIndex(player.slot) != entity) {
+        return false;
+    }
+    const auto binding = agents_.findByPlayer(player);
+    const auto* join = joinState(player);
+    if (!binding.isValid() || binding.player != player ||
+        binding.map != registry_.mapGeneration() || join == nullptr ||
+        join->phase() != cstrike::JoinPhase::Joined ||
+        entity->v.deadflag != DEAD_NO) {
+        return false;
+    }
+    copyCommandWord(commandArgv0_, command);
+    commandArgv1_ = {};
+    commandArgs_ = {};
+    commandArgc_ = 1;
+    commandPlayer_ = player;
+    commandContextActive_ = true;
+    {
+        CommandContextGuard guard{commandContextActive_};
+        hookedGameDllFunctions_->pfnClientCommand(entity);
+    }
+    commandPlayer_ = {};
+    commandArgc_ = 0;
+    return true;
+}
 
 LifecycleCoordinator::ClientState* LifecycleCoordinator::findClient(core::PlayerId player) noexcept {
     if(!player.isValid()) return nullptr;
@@ -126,11 +211,27 @@ void LifecycleCoordinator::configure(enginefuncs_t* engine,mutil_funcs_t* utilit
     // Preserve that fast path while allowing late registration on map/frame
     // callbacks when the initial lookup is not ready yet.
     if (!userMessageIdsReady_) (void)refreshUserMessageIds(false);
+
+    if ((!hookedGameDllFunctions_ || !hookedGameDllFunctions_->pfnUpdateClientData ||
+         !hookedGameDllFunctions_->pfnGetWeaponData) &&
+        utilityFunctions_ != nullptr && utilityFunctions_->pfnLogConsole != nullptr) {
+        utilityFunctions_->pfnLogConsole(
+            PLID, "%s", "astrabot capability=runtime_weapon status=Unavailable");
+    }
+    if (utilityFunctions_ != nullptr && utilityFunctions_->pfnLogConsole != nullptr) {
+        if (!hookedGameDllFunctions_ || !hookedGameDllFunctions_->pfnUpdateClientData)
+            utilityFunctions_->pfnLogConsole(PLID, "%s",
+                "astrabot capability=runtime_weapon status=Unavailable callback=UpdateClientData");
+        if (!hookedGameDllFunctions_ || !hookedGameDllFunctions_->pfnGetWeaponData)
+            utilityFunctions_->pfnLogConsole(PLID, "%s",
+                "astrabot capability=runtime_weapon status=Unavailable callback=GetWeaponData");
+    }
     for(auto& client:clients_) {
         client.fake.configure(
             engine, utility, hookedGameDllFunctions, &registry_, &agents_);
     }
-    movement_.configure(engine,&registry_);
+    movement_.configure(engine,&registry_,&agents_);
+    movement_.setWeaponSelectionHandler(&LifecycleCoordinator::dispatchWeaponSelectionHook);
     navConsole_.bindMovement(&movement_);
     navConsole_.bindWorld(&world_);
 }
@@ -183,7 +284,7 @@ void LifecycleCoordinator::reset() noexcept {
     vision_.reset();
     teams_ = {}; round_ = {1}; identityDiagnostics_ = {}; lastRoundTick_ = {}; lastRoundTime_ = -1;
     navConsole_.reset(); movement_.reset();
-    commandContextActive_=false; commandPlayer_={};
+    commandContextActive_=false; commandPlayer_={}; commandArgc_=0;
     commandArgv0_={}; commandArgv1_={}; commandArgs_={};
     messageDecoder_.reset(); activeDecoder_=&messageDecoder_;
     // Retire every actor's portable state before any external disconnect callback.
@@ -245,7 +346,7 @@ void LifecycleCoordinator::serverDeactivate() noexcept {
         client.cleanupError=cstrike::JoinError::None;
     }
     messageDecoder_.reset(); activeDecoder_=&messageDecoder_;
-    commandContextActive_=false; commandPlayer_={};
+    commandContextActive_=false; commandPlayer_={}; commandArgc_=0;
     commandArgv0_={}; commandArgv1_={}; commandArgs_={};
     const auto result=registry_.deactivateMap();
     for(auto& client:clients_) client.fake.resetMap();
@@ -282,7 +383,7 @@ void LifecycleCoordinator::clientDisconnect(edict_t* entity) noexcept {
         client->cleanupError=cstrike::JoinError::None;
     }
     if(commandPlayer_==player) {
-        commandContextActive_=false; commandPlayer_={};
+        commandContextActive_=false; commandPlayer_={}; commandArgc_=0;
         commandArgv0_={}; commandArgv1_={}; commandArgs_={};
     }
     const auto result=registry_.disconnectSlot(static_cast<std::uint16_t>(index));
@@ -333,7 +434,7 @@ RemovalResult LifecycleCoordinator::remove(core::PlayerId player) noexcept {
     client->decoder.reset(); client->pendingJoinMessageCount=0;
     client->cleanupPending=false; client->cleanupError=cstrike::JoinError::None;
     if(commandPlayer_==player) {
-        commandContextActive_=false; commandPlayer_={}; commandArgv0_={}; commandArgv1_={}; commandArgs_={};
+        commandContextActive_=false; commandPlayer_={}; commandArgc_=0; commandArgv0_={}; commandArgv1_={}; commandArgs_={};
     }
     ++status_.removalRequests;
     const auto result=client->fake.requestRemoval();
@@ -427,7 +528,7 @@ void LifecycleCoordinator::startFrame() noexcept {
             !runtimeActorReady(*this, frame, hookedGameDllFunctions_, runtimeOwnedActor_, runtimeWeapon_, runtimeAttackPending_)) {
             movement_.forget(runtimeOwnedActor_);
             navConsole_.invalidateActor(runtimeOwnedActor_, nav::runtime::SessionReason::InvalidSnapshot);
-            runtime_.onDeath(runtimeOwnedActor_);
+            runtime_.onInputUnavailable(runtimeOwnedActor_);
         }
     }
     for(auto& client:clients_) {
@@ -826,7 +927,7 @@ int LifecycleCoordinator::commandArgc() noexcept {
         if (gpMetaGlobals != nullptr) {
             gpMetaGlobals->mres = MRES_SUPERCEDE;
         }
-        return 2;
+        return commandArgc_;
     }
     markIgnored();
     return 0;
@@ -1016,7 +1117,7 @@ bool LifecycleCoordinator::dispatchMenu(ClientState& client,std::uint8_t selecti
        selection==0 || selection>9) return false;
     copyCommandWord(commandArgv0_,"menuselect");
     commandArgv1_={}; commandArgv1_[0]=static_cast<char>('0'+selection);
-    commandArgs_={}; commandArgs_[0]=commandArgv1_[0]; commandPlayer_=player; commandContextActive_=true;
+    commandArgs_={}; commandArgs_[0]=commandArgv1_[0]; commandArgc_=2; commandPlayer_=player; commandContextActive_=true;
     { CommandContextGuard guard{commandContextActive_}; hookedGameDllFunctions_->pfnClientCommand(entity); }
     commandPlayer_={};
     for(auto& pending:clients_) if(pending.cleanupPending) cleanupFailedJoin(pending,pending.cleanupError);

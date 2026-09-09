@@ -331,6 +331,7 @@ struct ObjectiveAssignment final {
 struct SharedTeamState final {
     MapGeneration map{};
     perception::RoundGeneration round{};
+    TickId tick{};
     TeamObjective objective{};
     std::array<SharedObservation, kMaxSharedObservations> observations{};
     std::size_t observationCount{0};

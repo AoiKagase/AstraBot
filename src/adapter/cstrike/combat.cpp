@@ -14,6 +14,8 @@ WeaponConversionError mapError(core::combat::WeaponValidationError error) noexce
     case Error::InvalidIdentity:
     case Error::InvalidTimestamp:
         return WeaponConversionError::InvalidIdentity;
+    case Error::InvalidWeaponClass:
+        return WeaponConversionError::InvalidWeaponClass;
     case Error::InvalidActiveWeapon:
         return WeaponConversionError::InvalidActiveWeapon;
     case Error::InvalidInventory:

@@ -39,6 +39,7 @@ enum class WeaponConversionError : std::uint8_t {
     DuplicateWeapon,
     InvalidActiveWeapon,
     ImpossibleAmmo,
+    InvalidWeaponClass,
     InvalidReloadThreshold,
 };
 

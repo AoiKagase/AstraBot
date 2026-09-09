@@ -2,18 +2,23 @@
 // Included after the existing fake-engine perception fixture.
 namespace runtime_input_test {
 using namespace astrabot;
-bool invalidWeapon{}, disconnectOnRead{};
+bool invalidWeapon{}, disconnectOnRead{}, includeAlternative{};
+std::uint16_t observedWeapon{28};
 void clientData(const edict_t*, int sendWeapons, clientdata_s* client) {
     assert(sendWeapons == 1);
-    client->m_iId = invalidWeapon ? 0 : 28;
+    client->m_iId = invalidWeapon ? 0 : observedWeapon;
     client->vuser4[1] = 90;
     client->iuser3 = 1;
     if (disconnectOnRead) adapter::metamod::lifecycleCoordinator().clientDisconnect(&gFixture->entity);
 }
 int weaponData(edict_t*, weapon_data_s* data) {
-    data[28].m_iId = 28;
-    data[28].m_iClip = 30;
-    data[28].m_flNextPrimaryAttack = 0.25F;
+    data[observedWeapon].m_iId = observedWeapon;
+    data[observedWeapon].m_iClip = observedWeapon == 29 ? -1 : 30;
+    data[observedWeapon].m_flNextPrimaryAttack = 0.25F;
+    if (includeAlternative) {
+        data[16].m_iId = 16;
+        data[16].m_iClip = 12;
+    }
     return 1;
 }
 void trace(const float* start, const float* end, int flags, edict_t* observer, TraceResult* result) {
@@ -32,7 +37,8 @@ void run() {
     fixture.hookDll.pfnUpdateClientData = &clientData;
     fixture.hookDll.pfnGetWeaponData = &weaponData;
     fixture.engine.pfnTraceLine = &trace;
-    invalidWeapon = disconnectOnRead = false;
+    invalidWeapon = disconnectOnRead = includeAlternative = false;
+    observedWeapon = 28;
     route_test::Area area{1,{{-100,-100,0},{200,200,0},0,0}};
     assert(owner.navConsole().publish(owner.registry().mapGeneration(), route_test::snapshot({area})).isNone());
     const int before = gRunPlayerMoveCalls;
@@ -72,13 +78,47 @@ void run() {
     for (const auto& transport : gNavTransportTraces) {
         if (transport.engineCall) assert(transport.dispatchTick.isAfter(transport.commandTick));
     }
+    invalidWeapon = false;
+    includeAlternative = true;
+    observedWeapon = 28;
+    assert(adapter::metamod::buildRuntimeInputs(owner, frame, &fixture.hookDll, input.get(), 1) == 1);
+    assert(input->valid(frame) && input->combat.weapon.canSwitch);
+    assert(input->action.weapon.canSwitch);
+    includeAlternative = false;
+
+    observedWeapon = 5;
+    assert(adapter::metamod::buildRuntimeInputs(owner, frame, &fixture.hookDll, input.get(), 1) == 1);
+    assert(input->combat.weapon.activeClass == core::combat::WeaponSnapshot::WeaponClass::Shotgun);
+    observedWeapon = 14;
+    assert(adapter::metamod::buildRuntimeInputs(owner, frame, &fixture.hookDll, input.get(), 1) == 1);
+    assert(input->combat.weapon.activeClass == core::combat::WeaponSnapshot::WeaponClass::Rifle);
+    observedWeapon = 20;
+    assert(adapter::metamod::buildRuntimeInputs(owner, frame, &fixture.hookDll, input.get(), 1) == 1);
+    assert(input->combat.weapon.activeClass == core::combat::WeaponSnapshot::WeaponClass::MachineGun);
+    observedWeapon = 21;
+    assert(adapter::metamod::buildRuntimeInputs(owner, frame, &fixture.hookDll, input.get(), 1) == 1);
+    assert(input->combat.weapon.activeClass == core::combat::WeaponSnapshot::WeaponClass::Shotgun);
+    observedWeapon = 29;
+    assert(adapter::metamod::buildRuntimeInputs(owner, frame, &fixture.hookDll, input.get(), 1) == 1);
+    assert(input->combat.weapon.activeClass == core::combat::WeaponSnapshot::WeaponClass::Melee);
+    assert(!input->combat.weapon.canReload);
+    observedWeapon = 28;
     invalidWeapon = true;
+
     const auto beforeInvalid = gRunPlayerMoveCalls;
     step();
     assert(gRunPlayerMoveCalls == beforeInvalid);
     assert(owner.runtimeResult().executableCount == 0);
     assert(owner.runtimeResult().decisions[0].rejection != adapter::metamod::RuntimeRejectReason::None);
     invalidWeapon = false;
+    auto* updateClientData = fixture.hookDll.pfnUpdateClientData;
+    fixture.hookDll.pfnUpdateClientData = nullptr;
+    adapter::metamod::RuntimeInputBuildStatus callbackStatus{};
+    assert(adapter::metamod::buildRuntimeInputs(
+        owner, frame, &fixture.hookDll, input.get(), 1, &callbackStatus) == 1);
+    assert(callbackStatus.reason ==
+           adapter::metamod::RuntimeInputBuildReason::MissingUpdateClientData);
+    fixture.hookDll.pfnUpdateClientData = updateClientData;
     step();
     assert(owner.runtimeResult().executableCount == 1);
     disconnectOnRead = true;

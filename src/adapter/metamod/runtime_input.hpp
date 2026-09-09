@@ -29,7 +29,12 @@ enum class RuntimeInputBuildReason : std::uint8_t {
     MissingCurrentArea,
     MissingPosition,
     WeaponUnavailable,
+    MissingUpdateClientData,
+    MissingWeaponData,
+    InvalidWeaponObservation,
     MissingTeam,
+    TeamGenerationMismatch,
+    UnknownTeam,
     CombatConversionFailed,
 };
 
@@ -56,8 +61,15 @@ enum class RuntimeActorStaleReason : std::uint8_t {
 struct RuntimeInputBuildStatus final {
     RuntimeInputBuildReason reason{RuntimeInputBuildReason::None};
     RuntimeActorStaleReason staleReason{RuntimeActorStaleReason::None};
+    core::MapGeneration map{};
+    core::perception::RoundGeneration round{};
+    core::TickId tick{};
     core::PlayerId player{};
+    core::BotAgentId agent{};
     std::uint16_t activeWeapon{0};
+    core::combat::WeaponSnapshot::WeaponClass activeClass{
+        core::combat::WeaponSnapshot::WeaponClass::Unknown};
+    bool currentAreaHeld{false};
 };
 
 std::size_t buildRuntimeInputs(const LifecycleCoordinator&, const RuntimeFrame&,

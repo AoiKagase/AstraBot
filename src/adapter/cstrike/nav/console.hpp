@@ -40,6 +40,36 @@ struct MotionTrace {
 // Read-only adapter values exposed to the RuntimeInputProvider. They contain
 // only the current actor snapshot and route trace metadata; engine pointers
 // and private state remain inside NavConsole.
+enum class RuntimeNavigationApplyResult : std::uint8_t {
+    None,
+    Applied,
+    Unchanged,
+    Rejected,
+};
+enum class RuntimeNavigationApplyReason : std::uint8_t {
+    None,
+    NoExecutableGoal,
+    InvalidIdentity,
+    RequestReentrant,
+    MapInactive,
+    StampMismatch,
+    ActorUnavailable,
+    ActorStateInvalid,
+    RouteRejected,
+};
+struct RuntimeNavigationStatus final {
+    RuntimeNavigationApplyResult result{RuntimeNavigationApplyResult::None};
+    RuntimeNavigationApplyReason reason{RuntimeNavigationApplyReason::None};
+    core::MapGeneration map{};
+    core::perception::RoundGeneration round{};
+    core::TickId tick{};
+    core::MapGeneration decisionMap{};
+    core::perception::RoundGeneration decisionRound{};
+    core::TickId decisionTick{};
+    core::PlayerId player{};
+    core::BotAgentId agent{};
+    nav::model::NavAreaId goal{};
+};
 struct RuntimeNavigationState final {
     nav::runtime::MovementSnapshot movement{};
     std::optional<nav::model::NavAreaId> currentArea{};
@@ -47,6 +77,7 @@ struct RuntimeNavigationState final {
     std::optional<core::perception::Point> goalPosition{};
     std::uint64_t routeGeneration{0};
     bool routeExecutable{false};
+    bool currentAreaHeld{false};
 };
 class NavConsole final : public nav::runtime::IWorldQueries {
 public:
@@ -62,6 +93,11 @@ public:
     std::optional<MotionTrace> dispatchTicket() const noexcept {
         return current_->pendingMotion_ ? std::optional<MotionTrace>{current_->motionTrace_}:std::nullopt;
     }
+    const RuntimeNavigationStatus& runtimeNavigationStatus(core::PlayerId player) const noexcept {
+        if (!player.isValid() || player.slot > host::kMaxClientSlots)
+            return runtimeNavigationStatus_;
+        return runtimeNavigationStatuses_[player.slot - 1U];
+    }
     std::optional<MotionTrace> dispatchTicket(core::PlayerId) const noexcept;
     void afterDispatch(const metamod::MovementResult&, core::TickId,const std::optional<MotionTrace>&) noexcept;
     void afterDispatch(core::PlayerId,const metamod::MovementResult&,core::TickId,const std::optional<MotionTrace>&) noexcept;
@@ -71,6 +107,9 @@ public:
         const metamod::RuntimeDecision&) noexcept;
     std::optional<RuntimeNavigationState> runtimeState(
         const metamod::LifecycleCoordinator&,core::PlayerId) const noexcept;
+    const RuntimeNavigationStatus& runtimeNavigationStatus() const noexcept {
+        return runtimeNavigationStatus_;
+    }
     void execute(NavCommand, metamod::LifecycleCoordinator&) noexcept;
     // Publication binds an independently obtained immutable mesh to the current map.
     nav::diagnostics::NavError publish(core::MapGeneration,
@@ -175,6 +214,12 @@ private:
     std::size_t motionNext_{}, motionCount_{};
     std::uint64_t motionSequence_{};
     std::optional<nav::runtime::RouteSession> session_{};
+    mutable std::optional<nav::model::NavAreaId> lastCurrentArea_{};
+    mutable core::PlayerId lastCurrentAreaActor_{};
+    mutable core::BotAgentId lastCurrentAreaAgent_{};
+    mutable core::MapGeneration lastCurrentAreaMap_{};
+    mutable std::uint64_t lastCurrentAreaRouteGeneration_{0};
+    mutable core::TickId lastCurrentAreaTick_{};
     };
     // Fixed slot capacity, lazy allocation, stable addresses through reentrant
     // invalidation/reset. Mesh, graph and index remain shared across all actors.
@@ -187,6 +232,7 @@ private:
         ActorScope(ActorState*& slot,ActorState* actor) noexcept : current(slot),previous(slot) { current=actor; }
         ~ActorScope() { current=previous; }
     };
+    std::array<RuntimeNavigationStatus, host::kMaxClientSlots> runtimeNavigationStatuses_{};
     ActorState* findActor(core::PlayerId) noexcept;
     const ActorState* findActor(core::PlayerId) const noexcept;
     enginefuncs_t* engine_{};
@@ -197,6 +243,7 @@ private:
     std::shared_ptr<const nav::query::DistributionTopology> distributionTopology_{};
     std::shared_ptr<const nav::model::NavMeshSnapshot> mesh_{};
     std::shared_ptr<const LadderDiscovery> ladders_{};
+    RuntimeNavigationStatus runtimeNavigationStatus_{};
     std::uint64_t ladderGeneration_{};
     bool inRequest_{};
     std::optional<nav::runtime::SessionReason> deferredInvalidation_{};

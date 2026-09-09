@@ -128,6 +128,7 @@ struct RuntimeDiagnostic final {
 	core::perception::RoundGeneration round{};
 	core::TickId tick{};
 	core::PlayerId player{};
+	core::BotAgentId agent{};
 };
 
 struct RuntimeDiagnostics final {
@@ -147,6 +148,7 @@ class RuntimeOrchestrator final {
 	void beginMap(core::MapGeneration map) noexcept;
 	void onDisconnect(core::PlayerId player) noexcept;
 	void onDeath(core::PlayerId player) noexcept;
+	void onInputUnavailable(core::PlayerId player) noexcept;
 
 	// A navigation producer calls this after run() and before NavConsole's
 	// movement pass.  A matching value is consumed exactly once.
@@ -155,6 +157,15 @@ class RuntimeOrchestrator final {
 	                   core::perception::RoundGeneration round, core::TickId tick) noexcept;
 
 	const RuntimeFrameResult &result() const noexcept { return result_; }
+	const RuntimeDecision *decision(core::PlayerId player) const noexcept {
+		if (!player.isValid())
+			return nullptr;
+		for (std::size_t i = 0; i < result_.decisionCount; ++i) {
+			if (result_.decisions[i].player == player)
+				return &result_.decisions[i];
+		}
+		return nullptr;
+	}
 	const RuntimeDiagnostics &diagnostics() const noexcept { return diagnostics_; }
 	const core::team::TeamDirector &teamDirector() const noexcept { return team_; }
 	const core::experience::ExperienceModel &experience() const noexcept {
@@ -170,7 +181,7 @@ class RuntimeOrchestrator final {
   private:
 	static std::size_t slotIndex(core::PlayerId player) noexcept;
 	void addDiagnostic(RuntimeStage stage, RuntimeRejectReason reason, const RuntimeFrame &frame,
-	                   core::PlayerId player) noexcept;
+	                   core::PlayerId player, core::BotAgentId agent = {}) noexcept;
 	void appendStage(RuntimeStage stage) noexcept;
 	void clearSlot(std::size_t index) noexcept;
 	void resetPlanners() noexcept;

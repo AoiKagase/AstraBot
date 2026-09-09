@@ -67,7 +67,7 @@ LadderFrameResult inspectLadderFrame(LadderFrameWorld w,edict_t* actor,nav::loca
         if(!ladderPassageCurrent(w.ladder,p,maximum)) { result.reason=LadderFrameReason::StaleWorld; return false; }
         if(!w.current(w.context,binding,s.tick) || actor->free || actor->serialnumber!=serial ||
            e->pfnPEntityOfEntIndex(binding.actor.slot)!=actor || e->pfnIndexOfEdict(actor)!=binding.actor.slot ||
-           actor->v.deadflag!=DEAD_NO || !(actor->v.flags&FL_FAKECLIENT) ||
+           actor->v.deadflag!=DEAD_NO ||
            (actor->v.flags&(FL_FROZEN|FL_ONTRAIN)) || actor->v.iuser1!=0 || value(actor->v.punchangle)!=V{} ||
            actor->v.gravity!=actorGravity || actor->v.friction!=actorFriction ||
            bool(actor->v.flags&FL_ONGROUND)!=*s.grounded || (actor->v.flags&FL_DUCKING) ||

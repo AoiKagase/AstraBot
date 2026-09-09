@@ -46,6 +46,7 @@ enum class WeaponValidationError : std::uint8_t {
     DuplicateWeapon,
     ImpossibleAmmo,
     InvalidReloadThreshold,
+    InvalidWeaponClass,
 };
 
 struct WeaponValidation {
@@ -70,6 +71,9 @@ struct WeaponSnapshot {
         SMG,
         Pistol,
         Sniper,
+        Shotgun,
+        MachineGun,
+        Melee,
     };
     WeaponClass activeClass{WeaponClass::Unknown};
     std::array<WeaponId, kMaxOwnedWeapons> owned{};

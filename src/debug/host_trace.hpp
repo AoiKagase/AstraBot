@@ -158,6 +158,7 @@ enum class MovementTraceSource : std::uint8_t {
     Join,
     Command,
     Idle,
+    Dead,
 };
 
 struct MovementTrace {
@@ -165,6 +166,7 @@ struct MovementTrace {
     MovementTraceError error{MovementTraceError::None};
     astrabot::core::MapGeneration map{};
     astrabot::core::PlayerId player{};
+    astrabot::core::BotAgentId agent{};
     astrabot::core::TickId commandTick{};
     astrabot::core::TickId dispatchTick{};
     std::uint8_t originalMsec{0};

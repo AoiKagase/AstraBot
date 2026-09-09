@@ -94,7 +94,9 @@ nav::runtime::WorldQueryResult queryNavWorld(enginefuncs_t* engine, edict_t* ent
             if(slot==0 || (slot>0 && slot<maxEntities && hit.pHit->v.solid==SOLID_BSP && wall)) {
                 r.blocker=BlockerObservation{static_cast<std::uint64_t>(slot),BlockerKind::Geometry};
             } else if(slot>0 && slot<maxEntities && hit.pHit!=entity &&
-                      (hit.pHit->v.flags&(FL_CLIENT|FL_FAKECLIENT)) && hit.pHit->v.solid==SOLID_SLIDEBOX) {
+                      hit.pHit->v.solid==SOLID_SLIDEBOX &&
+                      ((hit.pHit->v.flags&(FL_CLIENT|FL_FAKECLIENT)) ||
+                       (resolver.resolve && resolver.resolve(resolver.context,hit.pHit).isValid()))) {
                 if(!engine->pfnPEntityOfEntIndex) { r.error=QueryError::Unavailable; return r; }
                 auto* obstacle=hit.pHit;
                 const auto serial=obstacle->serialnumber;

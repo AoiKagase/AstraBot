@@ -253,6 +253,21 @@ void testCadencePolicyByWeaponAndRange() {
         const auto result = c::authorizeFire(fixture.input, fixture.aim, {});
         assertFirePattern(result, c::FirePattern::Burst, 5);
     }
+    {
+        Fixture fixture;
+        fixture.visual.memories[0].lastKnownPosition = {610.0, 20.0, 30.0};
+        fixture.input.weapon.activeClass = c::WeaponSnapshot::WeaponClass::MachineGun;
+        const auto result = c::authorizeFire(fixture.input, fixture.aim, {});
+        assertFirePattern(result, c::FirePattern::Burst, 3);
+    }
+    {
+        Fixture fixture;
+        fixture.input.weapon.activeClass = c::WeaponSnapshot::WeaponClass::Melee;
+        fixture.input.weapon.clipAmmo = 0;
+        fixture.input.weapon.reserveAmmo = 0;
+        const auto result = c::authorizeFire(fixture.input, fixture.aim, {});
+        assertFirePattern(result, c::FirePattern::Tap, 1);
+    }
 }
 
 void testCadenceIsBoundedAndReevaluated() {

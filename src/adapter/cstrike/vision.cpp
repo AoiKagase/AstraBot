@@ -7,11 +7,14 @@
 namespace astrabot::adapter::cstrike {
 namespace {
 namespace p = core::perception;
-bool connected(edict_t* e) noexcept {
-    return e && !e->free && (e->v.flags & (FL_CLIENT | FL_FAKECLIENT)) != 0;
+bool present(edict_t* e) noexcept {
+    return e && !e->free;
 }
-bool alive(edict_t* e) noexcept {
-    return connected(e) && e->v.deadflag == DEAD_NO && std::isfinite(e->v.health) &&
+bool connected(edict_t* e, bool managed=false) noexcept {
+    return present(e) && (managed || (e->v.flags & (FL_CLIENT | FL_FAKECLIENT)) != 0);
+}
+bool alive(edict_t* e, bool managed=false) noexcept {
+    return connected(e, managed) && e->v.deadflag == DEAD_NO && std::isfinite(e->v.health) &&
         e->v.health > 0 && e->v.iuser1 == 0 && (e->v.flags & FL_SPECTATOR) == 0;
 }
 p::Point point(const Vector& v) noexcept { return {v.x,v.y,v.z}; }
@@ -38,10 +41,11 @@ public:
         const auto& b = entities[player.slot-1U];
         const auto* member = owner.teams().find(player);
         if (member && member->team == p::Team::Spectator) return false;
+        const bool managed = owner.agents().findByPlayer(player).isValid();
         return owner.registry().isMapActive() && owner.registry().mapGeneration() == stamp.map &&
             owner.round() == stamp.round &&
             owner.registry().currentTick() == stamp.tick && b.player == player &&
-            owner.registry().currentPlayer(player.slot) == player && alive(b.entity) &&
+            owner.registry().currentPlayer(player.slot) == player && alive(b.entity, managed) &&
             b.entity->serialnumber == b.serial && engine.pfnPEntityOfEntIndex &&
             engine.pfnPEntityOfEntIndex(player.slot) == b.entity && !owner.removalPending(player);
     }
@@ -104,7 +108,7 @@ void VisionAdapter::beginRound(p::RoundGeneration round) noexcept {
 bool VisionAdapter::bound(core::PlayerId player, enginefuncs_t* engine) const noexcept {
     if (!player.isValid() || player.slot > roster_.size() || !engine || !engine->pfnPEntityOfEntIndex) return false;
     const auto& binding = roster_[player.slot-1U];
-    return binding.player == player && connected(binding.entity) && binding.entity->serialnumber == binding.serial &&
+    return binding.player == player && present(binding.entity) && binding.entity->serialnumber == binding.serial &&
         engine->pfnPEntityOfEntIndex(player.slot) == binding.entity;
 }
 bool VisionAdapter::synchronize(metamod::LifecycleCoordinator& owner, enginefuncs_t* engine) noexcept {
@@ -123,10 +127,10 @@ bool VisionAdapter::synchronize(metamod::LifecycleCoordinator& owner, enginefunc
     for (std::uint16_t slot=1; slot<=registry.clientMax(); ++slot) {
         const auto i = static_cast<std::size_t>(slot-1U);
         auto* entity = engine->pfnPEntityOfEntIndex(slot);
-        const bool valid = connected(entity) && engine->pfnIndexOfEdict(entity) == slot;
         if (revision != revision_ || !registry.isMapActive() || registry.mapGeneration() != map_) return false;
         auto player = registry.currentPlayer(slot);
         const bool managed = owner.agents().findByPlayer(player).isValid();
+        const bool valid = connected(entity, managed) && engine->pfnIndexOfEdict(entity) == slot;
         const auto prior = roster_[i];
         if (prior.player.isValid() && !player.isValid() && valid && prior.entity == entity && prior.serial == entity->serialnumber) {
             vision_.forget(prior.player); memory_.forget(prior.player); world_.forgetReports(prior.player); owner.teams_.forget(prior.player);
@@ -175,13 +179,13 @@ void VisionAdapter::frame(metamod::LifecycleCoordinator& owner, enginefuncs_t* e
         auto player = registry.currentPlayer(slot);
         const auto binding = owner.agents().findByPlayer(player);
         const bool managed = binding.isValid();
-        const bool valid = connected(entity) && engine->pfnIndexOfEdict(entity) == slot;
+        const bool valid = connected(entity, managed) && engine->pfnIndexOfEdict(entity) == slot;
         if (!valid) continue;
         if (managed && (owner.entityFor(player) != entity || owner.removalPending(player))) continue;
         if (!bound(player,engine)) continue;
         queries.entities[i] = {entity,entity->serialnumber,player};
         auto& sample = input.players[i];
-        sample.player = player; sample.alive = alive(entity);
+        sample.player = player; sample.alive = alive(entity, managed);
         const auto* member = owner.teams().find(player);
         if (member && member->team == p::Team::Spectator) sample.alive = false;
         if (managed) {
