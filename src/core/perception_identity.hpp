@@ -57,6 +57,11 @@ public:
         const auto& member = members_[player.slot - 1U];
         return member.player == player ? &member : nullptr;
     }
+    const TeamMember* findBySlot(std::uint16_t slot) const noexcept {
+        if (slot == 0 || slot > 32) return nullptr;
+        const auto& member = members_[slot - 1U];
+        return member.player.isValid() ? &member : nullptr;
+    }
     Relation relation(PlayerId observer, PlayerId target) const noexcept {
         const auto* a = find(observer); const auto* b = find(target);
         if (!a || !b) return Relation::Unknown;

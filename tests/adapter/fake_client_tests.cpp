@@ -1016,7 +1016,9 @@ void testNavPlayerQueries() {
     using namespace astrabot;
     Fixture fixture{};
     fixture.engine.pfnPEntityOfEntIndex=&captureDoorEntity;
-    gNavPlayer={}; gNavPlayer.v.flags=FL_CLIENT; gNavPlayer.v.solid=SOLID_SLIDEBOX; gNavPlayer.serialnumber=17;
+    // The resolver owns managed identity; engine client flags are not part of
+    // the portable blocker classification contract.
+    gNavPlayer={}; gNavPlayer.v.flags=0; gNavPlayer.v.solid=SOLID_SLIDEBOX; gNavPlayer.serialnumber=17;
     gPlayerObstacle=true; gSteeringMode=1;
     host::PlayerRegistry players; assert(players.activateMap(32));
     assert(players.registerPlayer(1)); assert(players.registerPlayer(2)); assert(players.startFrame());
@@ -1519,6 +1521,7 @@ void testNavJumpHost() {
         Fixture fixture{}; fixture.engine.pfnCVarGetPointer=&captureJumpCvar;
         gJumpGravity.value=800; gJumpHeight.value=45; gMissingJumpGravity=gMissingJumpHeight=false;
         enginefuncs_t hooks{}; prepareNavWalk(fixture,hooks);
+        fixture.entity.v.flags &= ~FL_FAKECLIENT;
         fixture.entity.v.movetype=MOVETYPE_WALK; fixture.entity.v.velocity=Vector(0,0,0);
         auto& owner=adapter::metamod::lifecycleCoordinator(); auto& console=owner.navConsole();
         route_test::Area a{1,{{0,0,0},{100,100,0},0,0}},b{2,{{100,0,0},{200,100,0},0,0},{},2},
@@ -1580,6 +1583,7 @@ void testNavLadderHost() {
     fixture.engineGlobals.maxEntities=128;
     (void)configureLadderMotionFixture(fixture.engine,&fixture.entity,{},down);
     prepareNavWalk(fixture,hooks);
+    fixture.entity.v.flags &= ~FL_FAKECLIENT;
     auto& owner=adapter::metamod::lifecycleCoordinator(); auto& console=owner.navConsole();
     const auto mesh=configureLadderMotionFixture(fixture.engine,&fixture.entity,owner.registry().mapGeneration(),down);
     fixture.entity.v.origin=Vector(-49,32,down ? 164.0f:36.0f); fixture.entity.v.velocity=Vector(0,0,0);
@@ -1988,7 +1992,7 @@ void testMessageDrivenJoinAndCommandContext() {
     fixture.entity.v.deadflag=DEAD_NO;
     fixture.entity.v.flags &= ~FL_FAKECLIENT;
     runNav({"astrabot_goto","2"});
-    assert(nav.trace()->state!=astrabot::nav::runtime::SessionState::Ready);
+    assert(nav.trace()->state==astrabot::nav::runtime::SessionState::Ready);
     fixture.entity.v.flags |= FL_FAKECLIENT;
     gGroundMissing=true;
     runNav({"astrabot_goto","2"});

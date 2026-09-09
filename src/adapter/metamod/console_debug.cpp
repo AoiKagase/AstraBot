@@ -148,7 +148,13 @@ const char* removalErrorName(debug::RemovalError error) noexcept {
 }
 
 const char* teamName(cstrike::Team team) noexcept {
-    return team == cstrike::Team::CounterTerrorist ? "CT" : "T";
+    switch (team) {
+    case cstrike::Team::Terrorist: return "T";
+    case cstrike::Team::CounterTerrorist: return "CT";
+    case cstrike::Team::Spectator: return "Spectator";
+    case cstrike::Team::Unknown: return "Unknown";
+    }
+    return "Unknown";
 }
 
 const char* movementSourceName(debug::MovementTraceSource source) noexcept {
@@ -157,6 +163,7 @@ const char* movementSourceName(debug::MovementTraceSource source) noexcept {
     case debug::MovementTraceSource::Join: return "Join";
     case debug::MovementTraceSource::Command: return "Command";
     case debug::MovementTraceSource::Idle: return "Idle";
+    case debug::MovementTraceSource::Dead: return "Dead";
     }
     return "Unknown";
 }
@@ -172,7 +179,12 @@ const char* runtimeInputReasonName(RuntimeInputBuildReason reason) noexcept {
     case RuntimeInputBuildReason::MissingCurrentArea: return "MissingCurrentArea";
     case RuntimeInputBuildReason::MissingPosition: return "MissingPosition";
     case RuntimeInputBuildReason::WeaponUnavailable: return "WeaponUnavailable";
+    case RuntimeInputBuildReason::MissingUpdateClientData: return "MissingUpdateClientData";
+    case RuntimeInputBuildReason::MissingWeaponData: return "MissingWeaponData";
+    case RuntimeInputBuildReason::InvalidWeaponObservation: return "InvalidWeaponObservation";
     case RuntimeInputBuildReason::MissingTeam: return "MissingTeam";
+    case RuntimeInputBuildReason::TeamGenerationMismatch: return "TeamGenerationMismatch";
+    case RuntimeInputBuildReason::UnknownTeam: return "UnknownTeam";
     case RuntimeInputBuildReason::CombatConversionFailed: return "CombatConversionFailed";
     }
     return "Unknown";
@@ -201,6 +213,31 @@ const char* runtimeActorStaleReasonName(RuntimeActorStaleReason reason) noexcept
     return "Unknown";
 }
 
+const char* runtimeNavigationResultName(
+    cstrike::RuntimeNavigationApplyResult result) noexcept {
+    switch (result) {
+    case cstrike::RuntimeNavigationApplyResult::None: return "None";
+    case cstrike::RuntimeNavigationApplyResult::Applied: return "Applied";
+    case cstrike::RuntimeNavigationApplyResult::Unchanged: return "Unchanged";
+    case cstrike::RuntimeNavigationApplyResult::Rejected: return "Rejected";
+    }
+    return "Unknown";
+}
+
+const char* runtimeNavigationReasonName(cstrike::RuntimeNavigationApplyReason reason) noexcept {
+    switch (reason) {
+    case cstrike::RuntimeNavigationApplyReason::None: return "None";
+    case cstrike::RuntimeNavigationApplyReason::NoExecutableGoal: return "NoExecutableGoal";
+    case cstrike::RuntimeNavigationApplyReason::InvalidIdentity: return "InvalidIdentity";
+    case cstrike::RuntimeNavigationApplyReason::RequestReentrant: return "RequestReentrant";
+    case cstrike::RuntimeNavigationApplyReason::MapInactive: return "MapInactive";
+    case cstrike::RuntimeNavigationApplyReason::StampMismatch: return "StampMismatch";
+    case cstrike::RuntimeNavigationApplyReason::ActorUnavailable: return "ActorUnavailable";
+    case cstrike::RuntimeNavigationApplyReason::ActorStateInvalid: return "ActorStateInvalid";
+    case cstrike::RuntimeNavigationApplyReason::RouteRejected: return "RouteRejected";
+    }
+    return "Unknown";
+}
 } // namespace
 
 ConsoleDebug& ConsoleDebug::instance() noexcept {
@@ -442,31 +479,55 @@ void ConsoleDebug::removalTrace(const debug::RemovalTrace& trace) noexcept {
 }
 
 void ConsoleDebug::movementTrace(const debug::MovementTrace& trace) noexcept {
-    if(!enabled_ || !trace.engineCall || !trace.player.isValid() ||
+    if(!enabled_ || !trace.player.isValid() ||
        trace.player.slot>host::kMaxClientSlots || lifecycle_==nullptr) return;
     const auto index=trace.player.slot-1U;
     auto& last=lastMovementLogCall_[index];
     auto& lastSource=lastMovementSource_[index];
     const bool sourceChanged=trace.source!=lastSource;
-    if(!sourceChanged && trace.callCount!=1 && trace.callCount<last+512) return;
+    if(!trace.engineCall && trace.outcome != debug::MovementTraceOutcome::Rejected) return;
+    if(!sourceChanged && trace.callCount!=0 && trace.callCount!=1 && trace.callCount<last+512) return;
     last=trace.callCount;
     lastSource=trace.source;
     const auto* entity=lifecycle_->entityFor(trace.player);
     const auto* join=lifecycle_->joinState(trace.player);
     const auto& runtime=lifecycle_->runtimeInputBuildStatus();
+    const auto& nav=lifecycle_->navConsole().runtimeNavigationStatus(trace.player);
+    const auto* decision=lifecycle_->runtimeOrchestrator().decision(trace.player);
+    const bool inputMatch=runtime.player==trace.player && runtime.agent==trace.agent;
     const bool spectator=entity && (entity->v.iuser1!=0 || (entity->v.flags&FL_SPECTATOR));
     const bool spawned=entity && entity->v.deadflag==DEAD_NO && entity->v.health>0 && !spectator;
-    char lineBuffer[512]{};
+    char lineBuffer[768]{};
     std::snprintf(lineBuffer,sizeof(lineBuffer),
-        "[ASTRABOT][DEBUG][MOVEMENT] player=%u:%u calls=%llu source=%s msec=%u phase=%s spawned=%u z=%.3f vz=%.3f movetype=%d solid=%d onground=%u spectator=%u runtime=%s stale=%s weapon=%u",
+        "[ASTRABOT][DEBUG][MOVEMENT] map=%u round=%llu actor=%u:%u agent=%u outcome=%u error=%u input_tick=%llu dispatch_tick=%llu calls=%llu source=%s msec=%u phase=%s spawned=%u z=%.3f vz=%.3f movetype=%d solid=%d onground=%u spectator=%u runtime_map=%u runtime_round=%llu runtime_tick=%llu input_actor=%u:%u input_agent=%u input_match=%u runtime=%s stale=%s held_area=%u weapon=%u weapon_class=%u decision_map=%u decision_round=%llu decision_tick=%llu runtime_reject=%u nav=%s nav_reason=%s nav_map=%u nav_round=%llu nav_tick=%llu nav_decision_tick=%llu",
+        unsigned(trace.map.value),
+        static_cast<unsigned long long>(lifecycle_->round().value),
         unsigned(trace.player.slot),unsigned(trace.player.generation.value),
+        unsigned(trace.agent.value),unsigned(trace.outcome),unsigned(trace.error),
+        static_cast<unsigned long long>(trace.commandTick.value),
+        static_cast<unsigned long long>(trace.dispatchTick.value),
         static_cast<unsigned long long>(trace.callCount),movementSourceName(trace.source),
         unsigned(trace.engineMsec),join ? joinPhaseName(join->phase()):"None",unsigned(spawned),
         entity ? double(entity->v.origin.z):0.0,entity ? double(entity->v.velocity.z):0.0,
         entity ? entity->v.movetype:0,entity ? entity->v.solid:0,
         unsigned(entity && (entity->v.flags&FL_ONGROUND)),unsigned(spectator),
+        unsigned(runtime.map.value),
+        static_cast<unsigned long long>(runtime.round.value),
+        static_cast<unsigned long long>(runtime.tick.value),
+        unsigned(runtime.player.slot),unsigned(runtime.player.generation.value),
+        unsigned(runtime.agent.value),unsigned(inputMatch),
         runtimeInputReasonName(runtime.reason),runtimeActorStaleReasonName(runtime.staleReason),
-        unsigned(runtime.activeWeapon));
+        unsigned(runtime.currentAreaHeld),unsigned(runtime.activeWeapon),
+        unsigned(runtime.activeClass),
+        unsigned(decision ? decision->team.shared.map.value : 0U),
+        static_cast<unsigned long long>(decision ? decision->team.shared.round.value : 0U),
+        static_cast<unsigned long long>(decision ? decision->team.shared.tick.value : 0U),
+        unsigned(decision ? decision->rejection : RuntimeRejectReason::None),
+        runtimeNavigationResultName(nav.result),runtimeNavigationReasonName(nav.reason),
+        unsigned(nav.map.value),
+        static_cast<unsigned long long>(nav.round.value),
+        static_cast<unsigned long long>(nav.tick.value),
+        static_cast<unsigned long long>(nav.decisionTick.value));
     line(lineBuffer);
 }
 

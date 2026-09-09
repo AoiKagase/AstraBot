@@ -7,6 +7,7 @@
 #include "core/command.hpp"
 #include "debug/host_trace.hpp"
 #include "host/player_registry.hpp"
+#include "host/bot_agents.hpp"
 
 #include <array>
 #include <chrono>
@@ -51,7 +52,8 @@ public:
 
     void configure(
         enginefuncs_t* engineFunctions,
-        host::PlayerRegistry* registry) noexcept;
+        host::PlayerRegistry* registry,
+        host::BotAgentRegistry* agents = nullptr) noexcept;
     void reset() noexcept;
     void resetMap() noexcept;
     void forget(core::PlayerId player) noexcept;
@@ -130,6 +132,13 @@ private:
         edict_t* entity,
         core::MapGeneration mapGeneration,
         core::TickId dispatchTick) noexcept;
+    bool dispatchNeutral(
+        core::PlayerId activePlayer,
+        edict_t* entity,
+        core::MapGeneration mapGeneration,
+        debug::MovementTraceSource source,
+        bool requireDead) noexcept;
+
     void emit(
         MovementOutcome outcome,
         MovementError error,
@@ -144,6 +153,7 @@ private:
 
     enginefuncs_t* engineFunctions_{nullptr};
     host::PlayerRegistry* registry_{nullptr};
+    host::BotAgentRegistry* agents_{nullptr};
     std::array<std::optional<PendingCommand>, host::kMaxClientSlots> pending_{};
     std::array<bool, host::kMaxClientSlots> dispatchedThisFrame_{};
     std::array<std::uint64_t, host::kMaxClientSlots> callCounts_{};

@@ -15,8 +15,23 @@ WeaponClass weaponClass(int id) noexcept {
     case 1: case 10: case 11: case 16: case 17: case 26: return WeaponClass::Pistol;
     case 3: case 13: case 18: case 24: return WeaponClass::Sniper;
     case 7: case 12: case 19: case 23: case 30: return WeaponClass::SMG;
-    case 8: case 15: case 22: case 27: case 28: return WeaponClass::Rifle;
+    case 8: case 14: case 15: case 22: case 27: case 28: return WeaponClass::Rifle;
+    case 5: case 21: return WeaponClass::Shotgun;
+    case 20: return WeaponClass::MachineGun;
+    case 29: return WeaponClass::Melee;
     default: return WeaponClass::Unknown;
+    }
+}
+
+bool isSwitchableWeapon(int id) noexcept {
+    switch (id) {
+    case 1: case 3: case 5: case 7: case 8: case 10: case 11:
+    case 12: case 13: case 14: case 15: case 16: case 17: case 18:
+    case 19: case 20: case 21: case 22: case 23: case 24: case 26:
+    case 27: case 28: case 29: case 30:
+        return true;
+    default:
+        return false;
     }
 }
 
@@ -57,45 +72,65 @@ bool current(const LifecycleCoordinator& owner, const RuntimeFrame& frame,
 
 bool readWeapon(const LifecycleCoordinator& owner, const RuntimeFrame& frame,
                 core::PlayerId player, core::BotAgentId agent, DLL_FUNCTIONS* dll, edict_t* entity,
-                cstrike::WeaponObservation& result) noexcept {
-    if (!dll || !dll->pfnUpdateClientData || !dll->pfnGetWeaponData) return false;
+                cstrike::WeaponObservation& result,
+                RuntimeInputBuildReason* failure = nullptr) noexcept {
+    const auto fail = [&](RuntimeInputBuildReason reason) noexcept {
+        if (failure) *failure = reason;
+        return false;
+    };
+    if (!dll || !dll->pfnUpdateClientData)
+        return fail(RuntimeInputBuildReason::MissingUpdateClientData);
+    if (!dll->pfnGetWeaponData)
+        return fail(RuntimeInputBuildReason::MissingWeaponData);
     clientdata_t client{};
     std::array<weapon_data_t, 32> weapons{};
     dll->pfnUpdateClientData(entity, 1, &client);
-    if (!current(owner, frame, player, agent, entity)) return false;
+    if (!current(owner, frame, player, agent, entity))
+        return fail(RuntimeInputBuildReason::InvalidWeaponObservation);
     if (!dll->pfnGetWeaponData(entity, weapons.data()) ||
-        !current(owner, frame, player, agent, entity)) return false;
-    if (client.m_iId <= 0 || client.m_iId >= 32) return false;
+        !current(owner, frame, player, agent, entity))
+        return fail(RuntimeInputBuildReason::InvalidWeaponObservation);
+    if (client.m_iId <= 0 || client.m_iId >= 32)
+        return fail(RuntimeInputBuildReason::InvalidWeaponObservation);
     const auto& active = weapons[static_cast<std::size_t>(client.m_iId)];
     if (active.m_iId != client.m_iId || !std::isfinite(client.vuser4[1]) ||
         client.vuser4[1] < 0 || client.vuser4[1] > core::combat::kMaxAmmo ||
         std::floor(client.vuser4[1]) != client.vuser4[1] ||
-        !std::isfinite(client.m_flNextAttack) || !std::isfinite(active.m_flNextPrimaryAttack)) return false;
+        !std::isfinite(client.m_flNextAttack) || !std::isfinite(active.m_flNextPrimaryAttack))
+        return fail(RuntimeInputBuildReason::InvalidWeaponObservation);
     result.map = frame.map; result.round = frame.round; result.tick = frame.tick;
     result.observedMicros = frame.nowMicros;
     result.activeWeapon = static_cast<std::uint16_t>(client.m_iId);
     result.activeClass = weaponClass(client.m_iId);
     // Non-firearms have -1 clips and unsupported P5 fire modes. They still
     // provide a current inventory, but cannot authorize firearm attacks.
-    if (active.m_iClip < -1 || (active.m_iClip < 0 && result.activeClass != WeaponClass::Unknown)) return false;
+    if (active.m_iClip < -1 || (active.m_iClip < 0 && result.activeClass != WeaponClass::Unknown && result.activeClass != WeaponClass::Melee))
+        return fail(RuntimeInputBuildReason::InvalidWeaponObservation);
     result.clipAmmo = (std::max)(0, active.m_iClip);
-    result.reserveAmmo = static_cast<std::int32_t>(client.vuser4[1]);
+    result.reserveAmmo = result.activeClass == WeaponClass::Melee ? 0 : static_cast<std::int32_t>(client.vuser4[1]);
     result.reloading = active.m_fInReload != 0 || active.m_fInSpecialReload != 0;
-    result.canReload = result.activeClass != WeaponClass::Unknown && result.reserveAmmo > 0;
-    result.reloadClipThreshold = 3;
+    result.canReload = result.activeClass != WeaponClass::Unknown && result.activeClass != WeaponClass::Melee && result.reserveAmmo > 0;
+    result.reloadClipThreshold = result.activeClass == WeaponClass::Melee ? 0 : 3;
+    bool hasSwitchableAlternative = false;
     for (std::size_t i = 1; i < weapons.size(); ++i) {
         if (weapons[i].m_iId == 0) continue;
-        if (weapons[i].m_iId != static_cast<int>(i) || result.ownedCount == result.owned.size()) return false;
+        if (weapons[i].m_iId != static_cast<int>(i) || result.ownedCount == result.owned.size())
+            return fail(RuntimeInputBuildReason::InvalidWeaponObservation);
         result.owned[result.ownedCount++] = static_cast<std::uint16_t>(i);
+        hasSwitchableAlternative = hasSwitchableAlternative || (i != static_cast<std::size_t>(client.m_iId) && isSwitchableWeapon(static_cast<int>(i)));
     }
+    result.canSwitch = hasSwitchableAlternative;
     // ReGameDLL's prediction timers are relative seconds. iuser3 bit 0 is
     // CAN_SHOOT and bit 1 denotes the freeze period (despite its wire name).
     const double delay = (std::max)(0.0, static_cast<double>((std::max)(client.m_flNextAttack, active.m_flNextPrimaryAttack)));
-    if (delay > 60.0 || frame.nowMicros > (std::numeric_limits<std::uint64_t>::max)() - 60'000'001) return false;
+    if (delay > 60.0 || frame.nowMicros > (std::numeric_limits<std::uint64_t>::max)() - 60'000'001)
+        return fail(RuntimeInputBuildReason::InvalidWeaponObservation);
     result.primaryAttackReadyMicros = frame.nowMicros + static_cast<std::uint64_t>(std::ceil(delay * 1'000'000.0));
     if (!(client.iuser3 & 1) || (client.iuser3 & 2) || result.activeClass == WeaponClass::Unknown)
         result.primaryAttackReadyMicros = frame.nowMicros + 60'000'000;
-    return static_cast<bool>(cstrike::toWeaponSnapshot(result));
+    if (!cstrike::toWeaponSnapshot(result))
+        return fail(RuntimeInputBuildReason::InvalidWeaponObservation);
+    return true;
 }
 }
 
@@ -115,7 +150,12 @@ bool runtimeActorReady(const LifecycleCoordinator& owner, const RuntimeFrame& fr
 std::size_t buildRuntimeInputs(const LifecycleCoordinator& owner, const RuntimeFrame& frame,
     DLL_FUNCTIONS* dll, RuntimeActorInput* output, std::size_t capacity,
     RuntimeInputBuildStatus* status) noexcept {
-    if(status) *status={};
+    if(status) {
+        *status={};
+        status->map=frame.map;
+        status->round=frame.round;
+        status->tick=frame.tick;
+    }
     if (!output || capacity == 0 || !frame.valid()) {
         if(status) status->reason=RuntimeInputBuildReason::InvalidFrame;
         return 0;
@@ -131,6 +171,7 @@ std::size_t buildRuntimeInputs(const LifecycleCoordinator& owner, const RuntimeF
     input = {};
     input.player = player;
     input.agent = owner.agents().findByPlayer(player).agent;
+    if (status) status->agent = input.agent;
     input.primary = true;
     auto* entity = owner.entityFor(player);
     // Return an invalid actor DTO on failure so orchestration retires its
@@ -146,21 +187,37 @@ std::size_t buildRuntimeInputs(const LifecycleCoordinator& owner, const RuntimeF
     const auto nav = owner.navConsole().runtimeState(owner, player);
     if (!world) { if(status) status->reason=RuntimeInputBuildReason::MissingWorld; return 1; }
     if (!nav) { if(status) status->reason=RuntimeInputBuildReason::MissingNav; return 1; }
+    if (status) status->currentAreaHeld = nav->currentAreaHeld;
     if (!nav->currentArea) { if(status) status->reason=RuntimeInputBuildReason::MissingCurrentArea; return 1; }
     if (!nav->movement.position) { if(status) status->reason=RuntimeInputBuildReason::MissingPosition; return 1; }
     cstrike::WeaponObservation weapon{};
-    if (!readWeapon(owner, frame, player, input.agent, dll, entity, weapon)) {
-        if(status) status->reason=RuntimeInputBuildReason::WeaponUnavailable;
+    RuntimeInputBuildReason weaponFailure=RuntimeInputBuildReason::WeaponUnavailable;
+    if (!readWeapon(owner, frame, player, input.agent, dll, entity, weapon, &weaponFailure)) {
+        if(status) status->reason=weaponFailure;
         return 1;
     }
-    if(status) status->activeWeapon=weapon.activeWeapon;
+    if(status) {
+        status->activeWeapon=weapon.activeWeapon;
+        status->activeClass=weapon.activeClass;
+    }
     input.world = *world;
     cstrike::CombatObservation combat{};
     combat.map = frame.map; combat.round = frame.round; combat.tick = frame.tick;
     combat.timeMicros = frame.nowMicros; combat.player = player; combat.agent = input.agent;
     combat.alive = true; combat.world = *world; combat.weapon = weapon;
     const auto* affiliation = owner.teams().find(player);
-    if (!affiliation) { if(status) status->reason=RuntimeInputBuildReason::MissingTeam; return 1; }
+    if (!affiliation) {
+        if (status) {
+            status->reason = owner.teams().findBySlot(player.slot)
+                ? RuntimeInputBuildReason::TeamGenerationMismatch
+                : RuntimeInputBuildReason::MissingTeam;
+        }
+        return 1;
+    }
+    if (affiliation->team == core::perception::Team::Unknown) {
+        if(status) status->reason=RuntimeInputBuildReason::UnknownTeam;
+        return 1;
+    }
     combat.team = affiliation->team;
     const auto& v = entity->v;
     combat.eye = {v.origin.x + v.view_ofs.x, v.origin.y + v.view_ofs.y, v.origin.z + v.view_ofs.z};
@@ -212,6 +269,7 @@ std::size_t buildRuntimeInputs(const LifecycleCoordinator& owner, const RuntimeF
     action.weapon.activeClass = weapon.activeClass;
     action.weapon.clipAmmo = weapon.clipAmmo; action.weapon.reserveAmmo = weapon.reserveAmmo;
     action.weapon.reloading = weapon.reloading; action.weapon.canReload = weapon.canReload;
+    action.weapon.canSwitch = weapon.canSwitch;
     const auto tactical = core::tactical::buildTacticalContext(*world, input.tactical);
     if (tactical.enemyCount) {
         const auto& enemy = tactical.enemies[0];

@@ -86,6 +86,10 @@ void observationsAndRetirement() {
     const auto diagnostics = [&]() { return owner.vision().observations().diagnostics(observer); };
     assert(target.isValid() && latest() && latest()->count == 1);
     assert(latest()->observations[0].target == target && latest()->observations[0].position.z == 64);
+    fixture.entity.v.flags &= ~FL_FAKECLIENT;
+    step(fixture,0.2f);
+    assert(latest() && latest()->count == 1);
+    fixture.entity.v.flags |= FL_FAKECLIENT;
     const auto stamp = latest()->stamp;
     step(fixture,0.001f);
     assert(latest()->stamp.tick == stamp.tick && latest()->stamp.timeMicros == stamp.timeMicros);

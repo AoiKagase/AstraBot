@@ -26,7 +26,7 @@ bool validTeam(perception::Team team) noexcept {
 
 bool validWeapon(combat::WeaponSnapshot::WeaponClass weapon) noexcept {
     return static_cast<std::uint8_t>(weapon) <=
-           static_cast<std::uint8_t>(combat::WeaponSnapshot::WeaponClass::Sniper);
+           static_cast<std::uint8_t>(combat::WeaponSnapshot::WeaponClass::Melee);
 }
 
 bool validApproach(ApproachDirection approach) noexcept {
@@ -153,6 +153,7 @@ bool OpponentProfileModel::beginMap(MapGeneration map) noexcept {
     map_ = map;
     round_ = {};
     profiles_ = {};
+    retiredGenerations_ = {};
     count_ = 0;
     return true;
 }
@@ -165,6 +166,7 @@ bool OpponentProfileModel::beginRound(perception::RoundGeneration round) noexcep
 
 void OpponentProfileModel::reset() noexcept {
     profiles_ = {};
+    retiredGenerations_ = {};
     map_ = {};
     round_ = {};
     count_ = 0;
@@ -172,6 +174,10 @@ void OpponentProfileModel::reset() noexcept {
 
 void OpponentProfileModel::forget(PlayerId player) noexcept {
     if (!player.isValid()) return;
+    if (player.slot <= retiredGenerations_.size() &&
+        retiredGenerations_[player.slot - 1U] < player.generation) {
+        retiredGenerations_[player.slot - 1U] = player.generation;
+    }
     for (std::size_t i = 0; i < count_; ++i) {
         if (profiles_[i].player != player) continue;
         for (std::size_t next = i + 1; next < count_; ++next) {
@@ -191,6 +197,29 @@ OpponentProfileUpdate OpponentProfileModel::observe(
     }
     if (!round_.isValid() || observation.round != round_) {
         return {OpponentProfileUpdateReason::WrongRound, false};
+    }
+    if (observation.player.slot == 0 ||
+        observation.player.slot > retiredGenerations_.size()) {
+        return {OpponentProfileUpdateReason::InvalidObservation, false};
+    }
+    const auto retired = retiredGenerations_[observation.player.slot - 1U];
+    if (retired.isValid() && observation.player.generation.value <= retired.value) {
+        return {OpponentProfileUpdateReason::RetiredGeneration, false};
+    }
+    // A newer generation on the same slot retires any delayed profile from the
+    // prior occupant before the observation can create or update a profile.
+    for (std::size_t i = 0; i < count_;) {
+        const auto& existing = profiles_[i];
+        if (existing.player.slot != observation.player.slot ||
+            existing.player.generation.value >= observation.player.generation.value) {
+            ++i;
+            continue;
+        }
+        for (std::size_t next = i + 1; next < count_; ++next) {
+            profiles_[next - 1] = profiles_[next];
+        }
+        profiles_[count_ - 1] = {};
+        --count_;
     }
     OpponentProfile* profile = nullptr;
     for (std::size_t i = 0; i < count_; ++i) {

@@ -70,6 +70,8 @@ void opponentProfilesAreMapSessionLocal() {
     const auto oldPlayer = observation.player;
     model.forget(oldPlayer);
     assert(model.size() == 0U && model.find(oldPlayer) == nullptr);
+    assert(model.observe(nextRound).reason ==
+           l::OpponentProfileUpdateReason::RetiredGeneration);
 
     const l::OpponentObservation replacement{
         {2, {2}}, {1}, {2}, {1}, 21, c::WeaponSnapshot::WeaponClass::Pistol,

@@ -189,7 +189,7 @@ bool AdaptiveRouteSettings::valid() const noexcept {
            static_cast<std::uint8_t>(approachDirection) <=
                static_cast<std::uint8_t>(core::learning::ApproachDirection::Down) &&
            static_cast<std::uint8_t>(enemyWeaponClass) <=
-               static_cast<std::uint8_t>(core::combat::WeaponSnapshot::WeaponClass::Sniper);
+               static_cast<std::uint8_t>(core::combat::WeaponSnapshot::WeaponClass::Melee);
 }
 
 bool AdaptiveRouteContext::valid() const noexcept {

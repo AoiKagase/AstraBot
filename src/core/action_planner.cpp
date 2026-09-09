@@ -83,6 +83,12 @@ std::int32_t classFit(WeaponClass weapon, double range) noexcept {
         return range < 350.0 ? 48 : 24;
     case WeaponClass::Sniper:
         return range > 700.0 ? 88 : 36;
+    case WeaponClass::Shotgun:
+        return range < 300.0 ? 78 : 20;
+    case WeaponClass::MachineGun:
+        return range < 450.0 ? 70 : range > 1'200.0 ? 60 : 80;
+    case WeaponClass::Melee:
+        return range <= 100.0 ? 70 : 0;
     case WeaponClass::Unknown:
         return 20;
     }
@@ -106,15 +112,15 @@ double expectedRange(const ActionPlannerInput& input) noexcept {
 std::int32_t roleFit(TacticalRole role, WeaponClass weapon) noexcept {
     switch (role) {
     case TacticalRole::Entry:
-        return weapon == WeaponClass::Rifle || weapon == WeaponClass::SMG ? 16 : 0;
+        return weapon == WeaponClass::Rifle || weapon == WeaponClass::SMG || weapon == WeaponClass::Shotgun || weapon == WeaponClass::MachineGun ? 16 : 0;
     case TacticalRole::Support:
-        return weapon == WeaponClass::Rifle ? 16 : 5;
+        return weapon == WeaponClass::Rifle || weapon == WeaponClass::Shotgun || weapon == WeaponClass::MachineGun ? 16 : 5;
     case TacticalRole::Sniper:
         return weapon == WeaponClass::Sniper ? 24 : weapon == WeaponClass::Rifle ? 8 : 0;
     case TacticalRole::Anchor:
-        return weapon == WeaponClass::Rifle || weapon == WeaponClass::Sniper ? 14 : 0;
+        return weapon == WeaponClass::Rifle || weapon == WeaponClass::Sniper || weapon == WeaponClass::MachineGun ? 14 : 0;
     case TacticalRole::Escort:
-        return weapon == WeaponClass::Rifle || weapon == WeaponClass::SMG ? 14 : 0;
+        return weapon == WeaponClass::Rifle || weapon == WeaponClass::SMG || weapon == WeaponClass::Shotgun || weapon == WeaponClass::MachineGun ? 14 : 0;
     case TacticalRole::Unknown:
         return 0;
     }

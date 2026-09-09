@@ -106,8 +106,13 @@ void testAdapterConversion() {
     const auto noActive = a::toWeaponSnapshot(invalid);
     assert(!noActive);
     assert(noActive.error == a::WeaponConversionError::InvalidActiveWeapon);
-}
 
+    invalid = weaponObservation();
+    invalid.activeClass = static_cast<c::WeaponSnapshot::WeaponClass>(255);
+    const auto invalidClass = a::toWeaponSnapshot(invalid);
+    assert(!invalidClass);
+    assert(invalidClass.error == a::WeaponConversionError::InvalidWeaponClass);
+}
 void testInputValidationAndSafeRejection() {
     auto input = validInput();
     assert(input.validate());

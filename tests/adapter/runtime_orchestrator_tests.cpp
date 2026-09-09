@@ -249,8 +249,8 @@ void testDeterministicReplayAndDisconnect() {
 	assert(l.decisions[0].action.intent.action == r.decisions[0].action.intent.action);
 	assert(l.decisions[0].combat.action == r.decisions[0].combat.action);
 	left->onDisconnect(fixture.player);
-	assert(!left->takeCombatDecision(fixture.player, fixture.agent, fixture.map, fixture.round,
-	                                 fixture.tick));
+    assert(!left->takeCombatDecision(fixture.player, fixture.agent, fixture.map, fixture.round,
+                                     fixture.tick));
 }
 
 } // namespace
@@ -264,15 +264,19 @@ int main() {
 		fixture.advance(1'000);
 		fixture.input.teamObjectiveAvailable = false;
 		fixture.input.team.objective.known = false;
-		const auto& neutral = runtime->run(fixture.frame, &fixture.input, 1);
-		assert(neutral.executableCount == 1 && !neutral.decisions[0].teamExecuted);
-		assert(neutral.decisions[0].team.strategy == c::team::Strategy::None);
-		fixture.advance(1'000);
-		assert(runtime->run(fixture.frame, &fixture.input, 1).decisions[0].teamExecuted);
+        const auto& neutral = runtime->run(fixture.frame, &fixture.input, 1);
+        assert(neutral.executableCount == 1 && !neutral.decisions[0].teamExecuted);
+        assert(neutral.decisions[0].team.strategy == c::team::Strategy::None);
+        assert(neutral.decisions[0].team.shared.map == fixture.map);
+        assert(neutral.decisions[0].team.shared.round == fixture.round);
+        assert(neutral.decisions[0].team.shared.tick == fixture.tick);
+        assert(!neutral.decisions[0].team.shared.objective.known);
+        fixture.advance(1'000);
+        assert(runtime->run(fixture.frame, &fixture.input, 1).decisions[0].teamExecuted);
 	}
 	testOrderedCadenceAndOneShotCombat();
 	testInvalidAndGenerationReset();
 	testDuplicateActorAndAgentAreRejected();
-	testNonPrimaryInputNeverExecutes();
-	testDeterministicReplayAndDisconnect();
+    testNonPrimaryInputNeverExecutes();
+    testDeterministicReplayAndDisconnect();
 }

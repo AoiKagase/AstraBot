@@ -10,9 +10,11 @@ namespace astrabot::adapter::metamod {
 
 void MovementCoordinator::configure(
     enginefuncs_t* engineFunctions,
-    host::PlayerRegistry* registry) noexcept {
+    host::PlayerRegistry* registry,
+    host::BotAgentRegistry* agents) noexcept {
     engineFunctions_ = engineFunctions;
     registry_ = registry;
+    agents_ = agents;
     resetMap();
 }
 
@@ -20,6 +22,7 @@ void MovementCoordinator::reset() noexcept {
     resetMap();
     engineFunctions_ = nullptr;
     registry_ = nullptr;
+    agents_ = nullptr;
     traceSink_ = nullptr;
     weaponSelectionHandler_ = nullptr;
 }
@@ -181,15 +184,39 @@ MovementResult MovementCoordinator::dispatchAtFrameEnd(
         // server frame.
         if (!dispatchedThisFrame_[activePlayer.slot-1U] &&
             joinPhase == cstrike::JoinPhase::Joined && entity != nullptr &&
-            !entity->free && entity->v.deadflag == DEAD_NO) {
-            (void)dispatchJoinProgress(activePlayer, entity, mapGeneration,
-                debug::MovementTraceSource::Idle);
+            !entity->free) {
+            (void)dispatchNeutral(activePlayer, entity, mapGeneration,
+                entity->v.deadflag == DEAD_NO
+                    ? debug::MovementTraceSource::Idle
+                    : debug::MovementTraceSource::Dead,
+                entity->v.deadflag != DEAD_NO);
         }
         return {};
     }
     const PendingCommand command=*pending;
     pending.reset();
-    return dispatchOne(command,joinPhase,activePlayer,entity,mapGeneration,dispatchTick);
+    const auto result=dispatchOne(command,joinPhase,activePlayer,entity,mapGeneration,dispatchTick);
+    // A rejected action command must not freeze a still-valid joined actor.
+    // The fallback is a newly-created zero-input simulation step; it never
+    // reuses the rejected command and is limited to the same generation and
+    // dispatch interval.
+    const auto binding = agents_ ? agents_->findByPlayer(activePlayer)
+                                 : host::BotAgentBinding{};
+    if (result.rejected() && command.player == activePlayer &&
+        !dispatchedThisFrame_[activePlayer.slot-1U] &&
+        (!agents_ || (binding.isValid() && binding.player == activePlayer &&
+                      binding.map == mapGeneration)) &&
+        joinPhase == cstrike::JoinPhase::Joined && entity != nullptr &&
+        !entity->free) {
+        if (entity->v.deadflag == DEAD_NO) {
+            (void)dispatchNeutral(activePlayer, entity, mapGeneration,
+                debug::MovementTraceSource::Idle, false);
+        } else if (result.error == MovementError::DeadPlayer) {
+            (void)dispatchNeutral(activePlayer, entity, mapGeneration,
+                debug::MovementTraceSource::Dead, true);
+        }
+    }
+    return result;
 }
 
 bool MovementCoordinator::dispatchJoinProgress(
@@ -204,6 +231,14 @@ bool MovementCoordinator::dispatchJoinProgress(
         registry_->currentPlayer(activePlayer.slot) != activePlayer ||
         entity == nullptr || entity->free || engineFunctions_ == nullptr ||
         engineFunctions_->pfnRunPlayerMove == nullptr) {
+        return false;
+    }
+    if (engineFunctions_->pfnPEntityOfEntIndex &&
+        engineFunctions_->pfnPEntityOfEntIndex(activePlayer.slot) != entity) {
+        return false;
+    }
+    if (engineFunctions_->pfnIndexOfEdict &&
+        engineFunctions_->pfnIndexOfEdict(entity) != activePlayer.slot) {
         return false;
     }
 
@@ -224,6 +259,20 @@ bool MovementCoordinator::dispatchJoinProgress(
         activePlayer,registry_->currentTick(),registry_->currentTick(),0,true,
         frameDeltaUs_,source,callCount);
     return true;
+}
+
+bool MovementCoordinator::dispatchNeutral(
+    core::PlayerId activePlayer,
+    edict_t* entity,
+    core::MapGeneration mapGeneration,
+    debug::MovementTraceSource source,
+    bool requireDead) noexcept {
+    if (entity == nullptr || entity->free ||
+        (requireDead ? entity->v.deadflag == DEAD_NO
+                     : entity->v.deadflag != DEAD_NO)) {
+        return false;
+    }
+    return dispatchJoinProgress(activePlayer, entity, mapGeneration, source);
 }
 
 MovementResult MovementCoordinator::dispatchOne(
@@ -316,6 +365,7 @@ MovementResult MovementCoordinator::dispatchOne(
             pending.command.msec);
     }
 
+    const auto entitySerial = entity->serialnumber;
     if (pending.command.weaponSelect != core::kNoWeaponSelection) {
         if (weaponSelectionHandler_ == nullptr) {
             return reject(
@@ -333,6 +383,92 @@ MovementResult MovementCoordinator::dispatchOne(
                 pending.commandTick,
                 pending.command.msec);
         }
+    }
+    // ClientCommand is an engine callback and may synchronously disconnect the
+    // player, change the map, or replace the slot entity. Revalidate every
+    // identity boundary before sending the queued movement to the engine.
+    if (registry_ == nullptr || !registry_->isMapActive()) {
+        return reject(
+            MovementError::MapInactive,
+            pending.player,
+            pending.mapGeneration,
+            pending.commandTick,
+            pending.command.msec);
+    }
+    if (registry_->mapGeneration() != mapGeneration) {
+        return reject(
+            MovementError::MapGenerationMismatch,
+            pending.player,
+            pending.mapGeneration,
+            pending.commandTick,
+            pending.command.msec);
+    }
+    if (!registry_->isConnected(pending.player.slot) ||
+        registry_->currentPlayer(pending.player.slot) != pending.player) {
+        return reject(
+            MovementError::NotConnected,
+            pending.player,
+            pending.mapGeneration,
+            pending.commandTick,
+            pending.command.msec);
+    }
+    if (activePlayer != pending.player) {
+        return reject(
+            MovementError::MappingMismatch,
+            pending.player,
+            pending.mapGeneration,
+            pending.commandTick,
+            pending.command.msec);
+    }
+    if (entity == nullptr || entity->free) {
+        return reject(
+            MovementError::MissingEntity,
+            pending.player,
+            pending.mapGeneration,
+            pending.commandTick,
+            pending.command.msec);
+    }
+    if (entity->serialnumber != entitySerial) {
+        return reject(
+            MovementError::MappingMismatch,
+            pending.player,
+            pending.mapGeneration,
+            pending.commandTick,
+            pending.command.msec);
+    }
+    if (entity->v.deadflag != DEAD_NO) {
+        return reject(
+            MovementError::DeadPlayer,
+            pending.player,
+            pending.mapGeneration,
+            pending.commandTick,
+            pending.command.msec);
+    }
+    if (engineFunctions_ == nullptr || engineFunctions_->pfnRunPlayerMove == nullptr) {
+        return reject(
+            MovementError::EngineUnavailable,
+            pending.player,
+            pending.mapGeneration,
+            pending.commandTick,
+            pending.command.msec);
+    }
+    if (engineFunctions_->pfnPEntityOfEntIndex &&
+        engineFunctions_->pfnPEntityOfEntIndex(activePlayer.slot) != entity) {
+        return reject(
+            MovementError::MappingMismatch,
+            pending.player,
+            pending.mapGeneration,
+            pending.commandTick,
+            pending.command.msec);
+    }
+    if (engineFunctions_->pfnIndexOfEdict &&
+        engineFunctions_->pfnIndexOfEdict(entity) != activePlayer.slot) {
+        return reject(
+            MovementError::MappingMismatch,
+            pending.player,
+            pending.mapGeneration,
+            pending.commandTick,
+            pending.command.msec);
     }
 
     const auto dispatchDelta=frameDeltaUs_; // callbacks may reset the map clock
@@ -401,6 +537,7 @@ void MovementCoordinator::emit(
         error,
         mapGeneration,
         player,
+        agents_ ? agents_->findByPlayer(player).agent : core::BotAgentId{},
         commandTick,
         dispatchTick,
         originalMsec,

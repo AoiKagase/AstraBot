@@ -161,6 +161,9 @@ public:
     const RuntimeInputBuildStatus& runtimeInputBuildStatus() const noexcept {
         return runtimeInputBuildStatus_;
     }
+    const RuntimeDiagnostics& runtimeDiagnostics() const noexcept {
+        return runtime_.diagnostics();
+    }
     void setWeaponSelectionHandler(
         MovementCoordinator::WeaponSelectionHandler handler) noexcept {
         movement_.setWeaponSelectionHandler(handler);
@@ -265,6 +268,10 @@ private:
     void clearCombatState(core::PlayerId player) noexcept;
     void clearAllCombatState() noexcept;
     bool dispatchMenu(ClientState&, std::uint8_t selection) noexcept;
+    static bool dispatchWeaponSelectionHook(
+        edict_t*, core::WeaponSelection) noexcept;
+    bool dispatchWeaponSelection(
+        edict_t*, core::WeaponSelection) noexcept;
     static void onMessage(
         void* context,
         const cstrike::MessageEvent& event) noexcept;
@@ -305,7 +312,8 @@ private:
     bool commandContextActive_{false};
     core::PlayerId commandPlayer_{};
     LifecycleStatus status_{};
-    std::array<char, 16> commandArgv0_{};
+    int commandArgc_{0};
+    std::array<char, 32> commandArgv0_{};
     std::array<char, 16> commandArgv1_{};
     std::array<char, 16> commandArgs_{};
     debug::LifecycleTraceSink traceSink_{nullptr};

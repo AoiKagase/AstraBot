@@ -10,6 +10,8 @@ int main() {
     assert(!roster.bind({},human));
     assert(roster.activate({1}));
     assert(roster.bind({1},human) && roster.bind({1},bot));
+    assert(roster.findBySlot(human.slot) && roster.findBySlot(human.slot)->player == human);
+    assert(roster.findBySlot(0) == nullptr && roster.findBySlot(33) == nullptr);
     assert(roster.relation(human,human) == p::Relation::Self);
     assert(roster.relation(human,bot) == p::Relation::Unknown);
     assert(roster.update({1},bot,p::Team::Terrorist));

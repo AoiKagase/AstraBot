@@ -439,7 +439,7 @@ bool ObjectiveAssignment::valid(
 }
 
 bool SharedTeamState::valid(std::uint64_t nowMicros) const noexcept {
-    if (!map.isValid() || !round.isValid() || !objective.valid() ||
+    if (!map.isValid() || !round.isValid() || !tick.isValid() || !objective.valid() ||
         observationCount > observations.size() ||
         proposalCount > proposals.size() || assignmentCount > assignments.size() ||
         objectiveAssignmentCount > objectiveAssignments.size()) {
@@ -866,6 +866,7 @@ TeamDecision TeamDirector::update(const TeamSnapshot& snapshot,
     SharedTeamState next{};
     next.map = snapshot.map;
     next.round = snapshot.round;
+    next.tick = snapshot.tick;
     next.objective = snapshot.objective;
     next.observationCount = snapshot.observationCount;
     next.proposalCount = snapshot.proposalCount;
