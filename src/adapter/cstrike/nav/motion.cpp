@@ -222,6 +222,7 @@ void NavConsole::startMotion(const nav::runtime::MovementSnapshot& s) noexcept {
             nav::runtime::ExecutionFailure::Observation : nav::runtime::ExecutionFailure::Corridor,
             reason==MotionReason::InvalidCorridor &&
             (current_->motionTrace_.portalReason==nav::corridor::PortalFailureReason::BoundaryMismatch ||
+             current_->motionTrace_.portalReason==nav::corridor::PortalFailureReason::NoPortalSpan ||
              current_->motionTrace_.portalReason==nav::corridor::PortalFailureReason::UnsupportedTraversal));
     };
     if(!ready(s) || !movement_ || !navigation_.graph || !index_) { fail(MotionReason::MissingObservation); return; }

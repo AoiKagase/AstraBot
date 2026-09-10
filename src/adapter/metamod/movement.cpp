@@ -174,7 +174,8 @@ MovementResult MovementCoordinator::rejectIngress(
     return reject(error, player, mapGeneration, tick, originalMsec);
 }
 
-void MovementCoordinator::beginFrame() noexcept {
+void MovementCoordinator::beginFrame(
+    std::optional<std::uint64_t> engineFrameDeltaUs) noexcept {
     dispatchedThisFrame_.fill(false);
     frameQueued_.fill({});
     frameDispatched_.fill({});
@@ -183,16 +184,20 @@ void MovementCoordinator::beginFrame() noexcept {
     if (!clockArmed_) {
         lastFrame_ = now;
         clockArmed_ = true;
-        frameDeltaUs_ = 0;
+        frameDeltaUs_ = engineFrameDeltaUs.value_or(0U);
         return;
     }
 
     const auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(
         now - lastFrame_);
     lastFrame_ = now;
-    frameDeltaUs_ = elapsed.count() <= 0
-        ? 0U
-        : static_cast<std::uint64_t>(elapsed.count());
+    if (engineFrameDeltaUs.has_value()) {
+        frameDeltaUs_ = *engineFrameDeltaUs;
+    } else {
+        frameDeltaUs_ = elapsed.count() <= 0
+            ? 0U
+            : static_cast<std::uint64_t>(elapsed.count());
+    }
 }
 
 MovementResult MovementCoordinator::dispatchAtFrameEnd(

@@ -72,7 +72,8 @@ public:
         core::TickId tick,
         std::uint8_t originalMsec) noexcept;
 
-    void beginFrame() noexcept;
+    void beginFrame(
+        std::optional<std::uint64_t> engineFrameDeltaUs = std::nullopt) noexcept;
     // Dispatch only this player's slot. Caller supplies its freshly resolved
     // generation/serial-validated entity and own join phase; other queues remain.
     MovementResult dispatchAtFrameEnd(

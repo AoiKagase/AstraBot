@@ -537,7 +537,15 @@ void LifecycleCoordinator::startFrame() noexcept {
     world_.beginUpdate();
     const auto result=registry_.startFrame(); emit(host::LifecycleEventKind::FrameStarted,result);
     if(!result.changed()) return;
-    movement_.beginFrame();
+    std::optional<std::uint64_t> engineFrameDeltaUs;
+    if (engineGlobals_ != nullptr &&
+        std::isfinite(static_cast<double>(engineGlobals_->frametime)) &&
+        engineGlobals_->frametime >= 0.0F &&
+        static_cast<double>(engineGlobals_->frametime) < 18446744073709.55) {
+        engineFrameDeltaUs = static_cast<std::uint64_t>(
+            static_cast<double>(engineGlobals_->frametime) * 1000000.0);
+    }
+    movement_.beginFrame(engineFrameDeltaUs);
     const auto map=registry_.mapGeneration();
     const auto tick=registry_.currentTick();
 
