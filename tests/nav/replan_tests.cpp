@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 #include "nav/runtime/replan.hpp"
+#include "nav/runtime/execution.hpp"
 #include "nav/query/route_search.hpp"
 #include "route_fixture.hpp"
 #include <cassert>
@@ -16,6 +17,31 @@ int main() {
     };
     const auto original=search({}); assert(original && original.value->steps.size()==1);
     const auto edge=original.value->steps[0].edge;
+    runtime::Execution execution;
+    execution.begin();
+    assert(execution.state==runtime::ExecutionState::Planning);
+    execution.fail({2},runtime::ExecutionFailure::Corridor,100,edge,true);
+    assert(execution.state==runtime::ExecutionState::Failed && execution.blocked(edge));
+    assert(execution.cooling({2},101) && !execution.cooling({2},execution.retryAtUs));
+    assert(!execution.canSearch(101) && execution.canSearch(250'100));
+    assert(!execution.cooling({4},101)); // another goal remains eligible
+    const runtime::ExecutionPolicy excluded{&execution,{}};
+    const auto executableDetour=search(excluded.policy());
+    assert(executableDetour && executableDetour.value->areas==
+        std::vector<model::NavAreaId>({{1},{3},{4},{2}}));
+    execution.begin(); // new route does not forget structurally invalid edges
+    assert(execution.blocked(edge));
+    const auto executionReverse=query::NavRouteSearch::search(**graph.value,
+        {{2},{1},{4,1000000},false},excluded.policy());
+    assert(executionReverse && executionReverse.value->steps.size()==1);
+    runtime::Execution otherActor;
+    const runtime::ExecutionPolicy otherPolicy{&otherActor,{}};
+    assert(search(otherPolicy.policy()).value->steps.size()==1);
+    execution={}; // a new actor/map generation starts with no inherited failures
+    assert(!execution.blocked(edge) && !execution.cooling({2},101));
+    execution.fail({2},runtime::ExecutionFailure::Observation,100,edge,false);
+    assert(!execution.blocked(edge)); // transient failures never poison topology
+    assert(search(excluded.policy()).value->steps.size()==1);
     local::Binding binding{{1},{1,{1}},{1},1,0};
     runtime::ReplanAttempt attempt;
     assert(attempt.schedule(binding,edge,{1},100));

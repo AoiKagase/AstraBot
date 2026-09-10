@@ -45,8 +45,16 @@ JumpGeometryResult JumpGeometry::derive(const corridor::Corridor& path,Binding b
     if(!hints || hints.kind!=model::NavTraversalKind::Jump || t.edge.external || t.edge.direction>3)
         return fail(JumpGeometryReason::UnsupportedTransition);
     if(!query::containsXY(t.sourceExtent,*s.position)) return fail(JumpGeometryReason::InvalidActor);
-    const auto source=region(t.sourceExtent,*s.hull,motion.takeoffRadius,limits.clearanceMargin);
-    const auto target=region(t.targetExtent,*s.hull,motion.landingRadius,limits.clearanceMargin);
+    // A micro NAV patch is not a physical enclosure. Keep its landing centre
+    // inside the patch; JumpProbe still proves the complete actor hull/flight.
+    const auto candidateRegion=[&](const model::NavExtent& e,corridor::AreaFit fit,double radius) {
+        if(fit==corridor::AreaFit::HullSafe) return region(e,*s.hull,radius,limits.clearanceMargin);
+        const double inset=(std::min)({limits.clearanceMargin,
+            (double(e.southEast.x)-e.northWest.x)/4,(double(e.southEast.y)-e.northWest.y)/4});
+        return Region{e.northWest.x+inset,e.southEast.x-inset,e.northWest.y+inset,e.southEast.y-inset};
+    };
+    const auto source=candidateRegion(t.sourceExtent,t.sourceFit,motion.takeoffRadius);
+    const auto target=candidateRegion(t.targetExtent,t.targetFit,motion.landingRadius);
     if(!fits(source) || !fits(target)) return fail(JumpGeometryReason::NoRoom);
     const bool vertical=t.edge.direction==1 || t.edge.direction==3;
     const bool forward=t.edge.direction==1 || t.edge.direction==2;

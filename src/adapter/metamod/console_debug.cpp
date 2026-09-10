@@ -16,6 +16,43 @@
 namespace astrabot::adapter::metamod {
 namespace {
 
+const char* runtimeFireReasonName(core::combat::CombatReason reason) noexcept {
+    switch (reason) {
+    case core::combat::CombatReason::None: return "None";
+    case core::combat::CombatReason::Accepted: return "Accepted";
+    case core::combat::CombatReason::InvalidInput: return "InvalidInput";
+    case core::combat::CombatReason::InvalidActor: return "InvalidActor";
+    case core::combat::CombatReason::InvalidMap: return "InvalidMap";
+    case core::combat::CombatReason::InvalidRound: return "InvalidRound";
+    case core::combat::CombatReason::InvalidTick: return "InvalidTick";
+    case core::combat::CombatReason::InvalidWorldSnapshot: return "InvalidWorldSnapshot";
+    case core::combat::CombatReason::StaleInput: return "StaleInput";
+    case core::combat::CombatReason::StaleWeapon: return "StaleWeapon";
+    case core::combat::CombatReason::NonFinitePose: return "NonFinitePose";
+    case core::combat::CombatReason::ViewOutOfRange: return "ViewOutOfRange";
+    case core::combat::CombatReason::InvalidWeapon: return "InvalidWeapon";
+    case core::combat::CombatReason::ImpossibleAmmo: return "ImpossibleAmmo";
+    case core::combat::CombatReason::InvalidDifficulty: return "InvalidDifficulty";
+    case core::combat::CombatReason::Dead: return "Dead";
+    case core::combat::CombatReason::NoTarget: return "NoTarget";
+    case core::combat::CombatReason::UnknownRelation: return "UnknownRelation";
+    case core::combat::CombatReason::Ally: return "Ally";
+    case core::combat::CombatReason::StaleTarget: return "StaleTarget";
+    case core::combat::CombatReason::AnonymousSound: return "AnonymousSound";
+    case core::combat::CombatReason::UnsupportedFireMode: return "UnsupportedFireMode";
+    case core::combat::CombatReason::NoUsableWeapon: return "NoUsableWeapon";
+    case core::combat::CombatReason::Reloading: return "Reloading";
+    case core::combat::CombatReason::EmptyClip: return "EmptyClip";
+    case core::combat::CombatReason::Cooldown: return "Cooldown";
+    case core::combat::CombatReason::ReactionDelay: return "ReactionDelay";
+    case core::combat::CombatReason::HostRejected: return "HostRejected";
+    case core::combat::CombatReason::InvalidVisibility: return "InvalidVisibility";
+    case core::combat::CombatReason::DuplicateAttack: return "DuplicateAttack";
+    case core::combat::CombatReason::DuplicateAction: return "DuplicateAction";
+    }
+    return "Unknown";
+}
+
 const char* lifecycleKindName(host::LifecycleEventKind kind) noexcept {
     switch (kind) {
     case host::LifecycleEventKind::None: return "None";
@@ -540,6 +577,40 @@ void ConsoleDebug::runtimeCorrelationTrace(core::PlayerId player) noexcept {
     const auto decisionRound = decisionStampMatch ? candidate->team.shared.round : core::perception::RoundGeneration{};
     const auto decisionTick = decisionStampMatch ? candidate->team.shared.tick : core::TickId{};
     const auto decisionReject = decisionStampMatch ? candidate->rejection : RuntimeRejectReason::None;
+    // This snapshot exposes perception and authorization even when NAV emits
+    // no command. Queue/dispatch remain separate evidence in the correlation.
+    if (decisionStampMatch) {
+        const auto& combat = candidate->combat;
+        char combatLine[768]{};
+        std::snprintf(combatLine, sizeof(combatLine),
+            "[ASTRABOT][DEBUG][COMBAT] kind=Runtime map=%u round=%llu tick=%llu actor=%u:%u agent=%u known_enemies=%zu vision_memories=%zu target=%u:%u source=%u age_us=%llu confidence=%.3f action=%u fire_reason=%s attack_authorized=%u executable=%u tactical_ran=%u action_ran=%u",
+            unsigned(correlation.map.value),
+            static_cast<unsigned long long>(correlation.round.value),
+            static_cast<unsigned long long>(correlation.inputTick.value),
+            unsigned(player.slot), unsigned(player.generation.value),
+            unsigned(correlation.agent.value), candidate->knownEnemyCount,
+            candidate->directEnemyCount, unsigned(combat.target.slot),
+            unsigned(combat.target.generation.value), unsigned(combat.source),
+            static_cast<unsigned long long>(combat.targetAgeMicros), combat.confidence,
+            unsigned(combat.action), runtimeFireReasonName(combat.reason),
+            unsigned(combat.hasAttackInput()), unsigned(candidate->executable),
+            unsigned(candidate->tacticalExecuted), unsigned(candidate->actionExecuted));
+        line(combatLine);
+    }
+    if (const auto* health = lifecycle_->runtimeHealth(player)) {
+        char healthLine[512]{};
+        std::snprintf(healthLine, sizeof(healthLine),
+            "[ASTRABOT][DEBUG][COMBAT] kind=SelfObservation map=%u round=%llu tick=%llu actor=%u:%u agent=%u serial=%d health=%.2f dead=%u health_loss_observed=%.2f deaths_observed=%llu respawns_observed=%llu attribution=Unknown",
+            unsigned(health->frame.map.value),
+            static_cast<unsigned long long>(health->frame.round.value),
+            static_cast<unsigned long long>(health->frame.tick.value),
+            unsigned(player.slot), unsigned(player.generation.value),
+            unsigned(health->agent.value), health->serial, double(health->health),
+            unsigned(health->dead), health->observedHealthLoss,
+            static_cast<unsigned long long>(health->deaths),
+            static_cast<unsigned long long>(health->respawns));
+        line(healthLine);
+    }
     const auto intent = decisionStampMatch ? correlation.intent : core::tactical::IntentType::None;
     const auto route = decisionStampMatch ? correlation.route : core::tactical::RouteStyle::None;
     const auto reason = decisionStampMatch ? correlation.reason : core::tactical::Reason::None;

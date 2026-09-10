@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 // Copyright (c) 2026 AstraBot contributors.
 
+#include <cstdio> // Must precede the legacy SDK's snprintf macro.
 #include "adapter/metamod/lifecycle.hpp"
 #include "adapter/cstrike/weapon_protocol.hpp"
 #include "adapter/metamod/console_debug.hpp"
@@ -11,6 +12,10 @@
 #include <cmath>
 #include <cstring>
 #include <event_flags.h>
+
+#ifdef snprintf
+#undef snprintf
+#endif
 
 namespace astrabot::adapter::metamod {
 namespace {
@@ -246,6 +251,8 @@ bool LifecycleCoordinator::refreshUserMessageIds(bool logPending) noexcept {
 void LifecycleCoordinator::reset() noexcept {
     runtimeOwnedActor_ = {};
     runtime_.reset();
+    runtimeHealth_.fill({});
+    mapNavLoadStatus_ = {};
     runtimeInputBuildStatus_ = {};
     runtimeInputBuildStatuses_.fill({});
     runtimeCorrelation_.fill({});
@@ -287,6 +294,15 @@ void LifecycleCoordinator::serverActivate(int clientMax) noexcept {
         ? host::LifecycleResult::rejected(host::HostError::InvalidLifecycle)
         : registry_.activateMap(static_cast<std::uint16_t>(clientMax));
     if(result.changed()) {
+        // Retire both route producers and transport before any current-map
+        // loader callback. A failed load must never leave an old graph live.
+        navConsole_.invalidate(nav::runtime::SessionReason::MapChanged);
+        movement_.resetMap();
+        runtimeHealth_.fill({});
+        runtimeCorrelation_.fill({});
+        runtimeInputBuildStatuses_.fill({});
+        runtimeInputBuildStatus_ = {};
+        runtimeOwnedActor_ = {};
         clearAllCombatState();
         runtime_.beginMap(registry_.mapGeneration());
         vision_.reset();
@@ -295,13 +311,75 @@ void LifecycleCoordinator::serverActivate(int clientMax) noexcept {
         (void)advanceVisualEffects();
         ++status_.mapActivations;
         if(status_.mapActivations>1) ++status_.mapReplays;
-        movement_.resetMap(); clients_[0].fake.queuePrimaryCreate();
+        clients_[0].fake.queuePrimaryCreate();
+        loadMapNavigation();
     }
     emit(host::LifecycleEventKind::MapActivated,result);
+}
+
+void LifecycleCoordinator::loadMapNavigation() noexcept {
+    const auto map = registry_.mapGeneration();
+    if (!registry_.isMapActive() || !map.isValid() || mapNavLoadStatus_.map == map) return;
+    // Mark the attempt before calling the host: reentrant activation must
+    // not retry, and StartFrame never retries a missing/invalid file.
+    mapNavLoadStatus_ = {};
+    mapNavLoadStatus_.map = map;
+    const auto current = [&]() noexcept {
+        return registry_.isMapActive() && registry_.mapGeneration() == map;
+    };
+    const auto finish = [&](MapNavLoadReason reason, const char* name) noexcept {
+        if (!current()) return;
+        mapNavLoadStatus_.reason = reason;
+        if (utilityFunctions_ && utilityFunctions_->pfnLogConsole) {
+            char text[1400]{};
+            std::snprintf(text, sizeof(text),
+                "astrabot nav_auto map=%u status=%s path=%s retry=explicit_load",
+                unsigned(map.value), name, mapNavLoadStatus_.path.data());
+            utilityFunctions_->pfnLogConsole(PLID, "%s", text);
+        }
+    };
+    if (!engineFunctions_ || !engineFunctions_->pfnSzFromIndex || !engineGlobals_) {
+        finish(MapNavLoadReason::MissingMapName, "MissingMapName"); return;
+    }
+    const char* name = engineFunctions_->pfnSzFromIndex(engineGlobals_->mapname);
+    if (!current()) return;
+    if (!name || !*name) { finish(MapNavLoadReason::MissingMapName, "MissingMapName"); return; }
+    std::array<char, 64> mapName{};
+    std::size_t length = 0;
+    for (; length < mapName.size() && name[length] != '\0'; ++length) {
+        const unsigned char c = static_cast<unsigned char>(name[length]);
+        if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+              (c >= '0' && c <= '9') || c == '_' || c == '-')) {
+            finish(MapNavLoadReason::InvalidMapName, "InvalidMapName"); return;
+        }
+        mapName[length] = static_cast<char>(c);
+    }
+    if (length == mapName.size()) {
+        finish(MapNavLoadReason::InvalidMapName, "InvalidMapName"); return;
+    }
+    if (!engineFunctions_->pfnGetGameDir) {
+        finish(MapNavLoadReason::MissingGameDirectory, "MissingGameDirectory"); return;
+    }
+    std::array<char, 1024> directory{};
+    engineFunctions_->pfnGetGameDir(directory.data());
+    if (!current()) return;
+    if (directory[0] == '\0' || std::memchr(directory.data(), '\0', directory.size()) == nullptr) {
+        finish(MapNavLoadReason::InvalidGameDirectory, "InvalidGameDirectory"); return;
+    }
+    const int written = std::snprintf(mapNavLoadStatus_.path.data(), mapNavLoadStatus_.path.size(),
+        "%s/maps/%s.nav", directory.data(), mapName.data());
+    if (written < 0 || static_cast<std::size_t>(written) >= mapNavLoadStatus_.path.size()) {
+        finish(MapNavLoadReason::InvalidGameDirectory, "InvalidGameDirectory"); return;
+    }
+    const bool loaded = navConsole_.loadForMap(mapNavLoadStatus_.path.data(), map, *this);
+    if (!current()) return;
+    finish(loaded ? MapNavLoadReason::Ready : MapNavLoadReason::LoadFailed,
+           loaded ? "Ready" : "LoadFailed");
 }
 void LifecycleCoordinator::serverDeactivate() noexcept {
     runtimeOwnedActor_ = {};
     runtime_.reset();
+    runtimeHealth_.fill({});
     runtimeInputBuildStatus_ = {};
     runtimeInputBuildStatuses_.fill({});
     runtimeCorrelation_.fill({});
@@ -474,6 +552,21 @@ void LifecycleCoordinator::startFrame() noexcept {
         const auto player=client.fake.activePlayer();
         if(!player.isValid()) continue;
         auto* entity = client.fake.entityFor(player);
+        if (player.slot <= runtimeHealth_.size()) {
+            auto& observation = runtimeHealth_[player.slot - 1U];
+            if (entity && !entity->free && !client.fake.removalPending() &&
+                client.join.phase() == cstrike::JoinPhase::Joined) {
+                RuntimeFrame observedFrame{};
+                observedFrame.map = map; observedFrame.round = round_;
+                observedFrame.tick = tick;
+                observedFrame.nowMicros = engineTimeMicros(engineGlobals_);
+                observation.observe(observedFrame, player,
+                    agents_.findByPlayer(player).agent, entity->serialnumber,
+                    entity->v.health, entity->v.deadflag != DEAD_NO || entity->v.health <= 0);
+            } else {
+                observation = {};
+            }
+        }
         if (entity != nullptr && entity->v.deadflag != DEAD_NO) {
             client.combat = {};
             runtime_.onDeath(player);

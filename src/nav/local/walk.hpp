@@ -8,6 +8,7 @@
 #include "nav/local/traversal_constraints.hpp"
 #include "nav/local/jump_geometry.hpp"
 #include "nav/local/jump_probe.hpp"
+#include "nav/local/drop.hpp"
 #include "nav/local/ladder.hpp"
 #include "nav/local/recovery.hpp"
 
@@ -27,6 +28,7 @@ struct WalkLimits {
     BlockerLimits blocker{}; // Zero timeout disables reactive player handling.
     CrouchLimits crouch{}; // Zero timeout keeps special traversal disabled.
     std::optional<WalkJumpLimits> jump{}; // Requires explicit current host physics as well.
+    std::optional<DropLimits> drop{}; // Explicit host opt-in; observed gravity required.
     std::optional<LadderLimits> ladder{};
 };
 struct DoorContact {
@@ -59,6 +61,9 @@ struct WalkDecision {
     CrouchReason postureReason{CrouchReason::None};
     ConstraintReason constraintReason{ConstraintReason::None};
     std::optional<JumpState> jumpState{};
+    std::optional<DropState> dropState{};
+    DropReason dropReason{DropReason::None};
+    std::optional<DropPlan> dropPlan{};
     JumpReason jumpReason{JumpReason::None};
     JumpProbeReason jumpProbeReason{JumpProbeReason::None};
     JumpGeometryReason jumpGeometryReason{JumpGeometryReason::None};
@@ -121,6 +126,10 @@ private:
     std::optional<CrouchState> posture_{};
     CrouchReason postureReason_{CrouchReason::None};
     std::optional<SimpleJump> jump_{};
+    std::optional<DropPlan> dropPlan_{};
+    DropState dropState_{DropState::Approach};
+    std::uint64_t dropStartedUs_{}, dropAirborneUs_{}, dropLastUs_{};
+    double dropGravity_{};
     std::optional<JumpPlan> jumpPlan_{};
     std::optional<JumpPhysics> jumpPhysics_{};
     std::optional<JumpDispatch> jumpDispatch_{};
@@ -133,6 +142,8 @@ private:
     WalkDecision updateLadder(WalkDecision,const runtime::MovementSnapshot&,const query::NavSpatialIndex&,
         std::uint64_t,std::uint32_t,const std::optional<LadderObservation>&) noexcept;
     WalkDecision updateJump(WalkDecision,const runtime::MovementSnapshot&,const query::NavSpatialIndex&,
+        core::MapGeneration,runtime::IWorldQueries&,std::uint64_t,std::uint32_t,std::optional<JumpPhysics>) noexcept;
+    WalkDecision updateDrop(WalkDecision,const runtime::MovementSnapshot&,const query::NavSpatialIndex&,
         core::MapGeneration,runtime::IWorldQueries&,std::uint64_t,std::uint32_t,std::optional<JumpPhysics>) noexcept;
     WalkDecision updateMotion(const runtime::MovementSnapshot&,const query::NavSpatialIndex&,
         core::MapGeneration,runtime::IWorldQueries&,std::uint64_t,std::uint32_t,std::optional<JumpPhysics>,std::optional<LadderObservation>) noexcept;

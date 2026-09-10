@@ -3,6 +3,7 @@
 #include "adapter/metamod/plugin_entry.hpp"
 #include "nav/runtime/route_session.hpp"
 #include "nav/runtime/replan.hpp"
+#include "nav/runtime/execution.hpp"
 #include "nav/query/spatial_index.hpp"
 #include "nav/query/distribution.hpp"
 #include "nav/local/walk.hpp"
@@ -17,12 +18,13 @@ namespace astrabot::adapter::cstrike {
 enum class NavCommand { Load, GoTo, Status, Cancel, Report };
 enum class MotionEvent { None, Decision, Queued, Dispatched, Rejected, Cancelled };
 enum class MotionReason { None, InvalidCorridor, InvalidGoal, MissingObservation,
-    StaleCommand, Deviation, MotorRejected, TransportRejected, Cancelled, DoorChanged, PostureChanged, JumpChanged, LadderChanged };
+    StaleCommand, Deviation, MotorRejected, TransportRejected, Cancelled, DoorChanged, PostureChanged, JumpChanged, LadderChanged, DropChanged };
 struct MotionTrace {
     std::optional<nav::model::NavVector3> dispatchOrigin{};
     std::uint64_t dispatchDurationUs{};
     nav::local::WalkDecision decision{};
     std::optional<nav::query::NavDirectedEdge> selectedEdge{};
+    std::optional<nav::query::NavDirectedEdge> failedEdge{};
     core::BotCommand command{}; // Queued command; msec is a hint, transport measures dispatch.
     MotionEvent event{MotionEvent::None};
     MotionReason reason{MotionReason::None};
@@ -78,6 +80,10 @@ struct RuntimeNavigationStatus final {
     nav::model::NavAreaId goal{};
 };
 struct RuntimeNavigationState final {
+    nav::runtime::ExecutionState execution{nav::runtime::ExecutionState::Idle};
+    nav::runtime::ExecutionFailure executionFailure{nav::runtime::ExecutionFailure::None};
+    std::optional<nav::query::NavDirectedEdge> failedEdge{};
+    std::uint64_t retryAtUs{};
     nav::runtime::MovementSnapshot movement{};
     std::optional<nav::model::NavAreaId> currentArea{};
     std::optional<core::perception::Point> goalPosition{};
@@ -96,6 +102,8 @@ struct RuntimeNavigationState final {
 };
 class NavConsole final : public nav::runtime::IWorldQueries {
 public:
+    // Map lifecycle entry: independent of a primary actor or console argc/argv.
+    bool loadForMap(const char*,core::MapGeneration,metamod::LifecycleCoordinator&) noexcept;
     void bindMovement(metamod::MovementCoordinator* movement) noexcept { movement_=movement; }
     void bindWorld(core::world::WorldModel* world) noexcept { world_=world; }
     void configure(enginefuncs_t*, mutil_funcs_t*, globalvars_t*) noexcept;
@@ -164,6 +172,7 @@ private:
     void loadCurrentLadders(metamod::LifecycleCoordinator&) noexcept;
     void startMotion(const nav::runtime::MovementSnapshot&) noexcept;
     void stopMotion() noexcept;
+    void failExecution(nav::runtime::ExecutionFailure,bool structural=false) noexcept;
     void clearPending() noexcept;
     void recordMotion(MotionEvent, MotionReason=MotionReason::None) noexcept;
     void printMotion() noexcept;
@@ -192,12 +201,16 @@ private:
         std::optional<Segment> segment{};
         std::optional<nav::local::DoorContact> contact{};
         std::optional<JumpTicket> jump{};
+        std::optional<nav::local::DropPlan> drop{};
+        nav::local::DropState dropState{nav::local::DropState::Approach};
+        double dropGravity{};
         std::optional<nav::local::LadderPlan> ladder{};
         nav::local::LadderState ladderState{nav::local::LadderState::Approach};
         core::TickId ladderPressTick{};
         nav::model::NavVector3 ladderTarget{};
     };
     MotionReason guardJump(metamod::LifecycleCoordinator&,const nav::runtime::MovementSnapshot&,const PendingMotion&) noexcept;
+    MotionReason guardDrop(metamod::LifecycleCoordinator&,const nav::runtime::MovementSnapshot&,const PendingMotion&) noexcept;
     MotionReason guardLadder(metamod::LifecycleCoordinator&,const nav::runtime::MovementSnapshot&,const PendingMotion&) noexcept;
     std::optional<nav::local::LadderObservation> observeLadder(metamod::LifecycleCoordinator&,
         const nav::runtime::MovementSnapshot&,nav::local::Binding,std::uint32_t) noexcept;
@@ -209,6 +222,7 @@ private:
     core::world::WorldModel* world_{}; // Withdraw candidate distributions when NAV is retired.
     struct ActorState {
     core::PlayerId actor{};
+    nav::runtime::Execution execution_{};
     std::optional<nav::local::Walk> walk_{};
     std::optional<nav::local::IntentPump> pump_{};
     std::optional<Segment> segment_{};

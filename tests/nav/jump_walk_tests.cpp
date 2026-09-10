@@ -175,4 +175,25 @@ void standingBeforeJump() {
     }
 }
 }
-int main() { pumpPipeline(); failuresAndBudgets(); standingBeforeJump(); }
+void microJumpGeometryAndWorldProof() {
+    route_test::Area a{5,{{0,0,0},{100,100,0},0,0},{}};
+    route_test::Area b{1665,{{100,37.5F,0},{125,62.5F,0},0,0},{},2};
+    route_test::Area c{9,{{125,0,0},{225,100,0},0,0},{}};
+    a.targets[1]={1665}; b.targets[1]={9};
+    const auto mesh=route_test::snapshot({a,b,c});
+    const auto graph=query::NavGraph::build(mesh,{3,2,1000000}); assert(graph);
+    const auto route=query::NavRouteSearch::search(**graph.value,{{5},{9},{3,1000000},false}); assert(route);
+    const auto path=corridor::Corridor::build(**graph.value,*route.value,{16,16},{2,1000000,2},
+        corridor::PortalPolicy::AllowMicroTransit); assert(path);
+    const auto spatial=query::NavSpatialIndex::build(mesh,{3,5,1000000}); assert(spatial);
+    auto s=actor(); const auto l=limits();
+    const auto geometry=JumpGeometry::derive(*path.value,binding,s,l.jump->motion,l.jump->geometry);
+    assert(geometry && query::containsXY(b.extent,geometry.plan->landing));
+    // A NAV hint and a centre that fits are still not clearance evidence.
+    World blocked(**spatial.value); blocked.ceiling=true;
+    Walk walk(binding,path.value,{175,50,0},l);
+    const auto d=walk.update(s,**spatial.value,binding.map,blocked,40000,0,physics(walk,s));
+    assert(d.intent.jump!=ActionRequest::Press && walk.step()==0);
+    assert(d.jumpPlan && d.jumpGeometryReason==JumpGeometryReason::None);
+}
+int main() { pumpPipeline(); failuresAndBudgets(); standingBeforeJump(); microJumpGeometryAndWorldProof(); }

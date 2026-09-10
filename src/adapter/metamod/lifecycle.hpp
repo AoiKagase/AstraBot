@@ -92,6 +92,17 @@ enum class CombatSubmitError : std::uint8_t {
     TransportRejected,
 };
 
+enum class MapNavLoadReason : std::uint8_t {
+    None, Ready, MissingMapName, InvalidMapName, MissingGameDirectory,
+    InvalidGameDirectory, LoadFailed,
+};
+
+struct MapNavLoadStatus final {
+    core::MapGeneration map{};
+    MapNavLoadReason reason{MapNavLoadReason::None};
+    std::array<char, 1200> path{};
+};
+
 struct CombatSubmitResult {
     core::combat::CombatDecision decision{};
     core::combat::CommandCompositionResult composition{};
@@ -121,6 +132,7 @@ public:
     void reset() noexcept;
 
     void serverActivate(int clientMax) noexcept;
+    const MapNavLoadStatus& mapNavLoadStatus() const noexcept { return mapNavLoadStatus_; }
     void serverDeactivate() noexcept;
     void clientDisconnect(edict_t* entity) noexcept;
     void startFrame() noexcept;
@@ -203,6 +215,19 @@ public:
     }
     const RuntimeInputBuildStatus& runtimeInputBuildStatus(core::PlayerId player) const noexcept;
     const RuntimeActorCorrelation& runtimeCorrelation(core::PlayerId player) const noexcept;
+    const RuntimeHealthObservation* runtimeHealth(core::PlayerId player) const noexcept {
+        if (!player.isValid() || player.slot > runtimeHealth_.size()) return nullptr;
+        const auto& observation = runtimeHealth_[player.slot - 1U];
+        const auto binding = agents_.findByPlayer(player);
+        const auto* entity = entityFor(player);
+        return observation.known && observation.player == player &&
+            binding.isValid() && binding.agent == observation.agent &&
+            entity != nullptr && !entity->free && entity->serialnumber == observation.serial &&
+            !removalPending(player) && registry_.currentPlayer(player.slot) == player &&
+            observation.frame.tick == registry_.currentTick() &&
+            observation.frame.map == registry_.mapGeneration() &&
+            observation.frame.round == round_ ? &observation : nullptr;
+    }
     const RuntimeDiagnostics& runtimeDiagnostics() const noexcept {
         return runtime_.diagnostics();
     }
@@ -327,6 +352,9 @@ private:
     std::array<RuntimeActorCorrelation,host::kMaxClientSlots> runtimeCorrelation_{};
     cstrike::NavConsole navConsole_{};
     RuntimeOrchestrator runtime_{};
+    void loadMapNavigation() noexcept;
+    MapNavLoadStatus mapNavLoadStatus_{};
+    std::array<RuntimeHealthObservation,host::kMaxClientSlots> runtimeHealth_{};
     core::world::WorldModel world_{};
     nav::query::DistributionModel distributions_{};
     cstrike::VisionAdapter vision_{world_};

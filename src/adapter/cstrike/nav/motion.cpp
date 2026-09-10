@@ -137,6 +137,15 @@ void NavConsole::printMotion() noexcept {
             d.jumpPhysics ? d.jumpPhysics->verticalImpulse:0,static_cast<unsigned long long>(current_->motionTrace_.jumpGuardQueries));
         line(jump);
     }
+    if(d.dropState) {
+        char drop[320]{};
+        std::snprintf(drop,sizeof(drop),"drop actor=%u:%u route=%llu step=%zu state=%u reason=%u fall=%.6g gap=%.6g",
+            unsigned(d.binding.actor.slot),unsigned(d.binding.actor.generation.value),
+            static_cast<unsigned long long>(d.binding.routeGeneration),d.binding.step,
+            unsigned(*d.dropState),unsigned(d.dropReason),d.dropPlan ? d.dropPlan->fall:0,
+            d.dropPlan ? d.dropPlan->gap:0);
+        line(drop);
+    }
     if(d.ladderState) {
         char ladder[384]{};
         const auto* link=d.ladderPlan ? &d.ladderPlan->link:nullptr;
@@ -163,6 +172,31 @@ void NavConsole::stopMotion() noexcept {
     }
     current_->walk_.reset(); current_->pump_.reset(); current_->segment_.reset(); current_->intentWallAgeUs_=0;
 }
+void NavConsole::failExecution(nav::runtime::ExecutionFailure reason,bool structural) noexcept {
+    const auto goal=current_->session_ ? current_->session_->trace().goal : nav::model::NavAreaId{};
+    auto edge=current_->motionTrace_.failedEdge;
+    if(!edge) edge=current_->motionTrace_.selectedEdge;
+    current_->execution_.fail(goal,reason,current_->navigationTimeUs_,edge,structural);
+    current_->motionTrace_.failedEdge=edge;
+    const auto& binding=current_->motionTrace_.decision.binding;
+    char execution[512]{};
+    std::snprintf(execution,sizeof(execution),
+        "execution actor=%u:%u agent=%llu map=%u route=%llu tick=%llu state=Failed reason=%u failed_edge=%u:%u failed_transition=%zu structural=%u retry_at_us=%llu",
+        unsigned(binding.actor.slot),unsigned(binding.actor.generation.value),
+        static_cast<unsigned long long>(binding.agent.value),unsigned(binding.map.value),
+        static_cast<unsigned long long>(binding.routeGeneration),
+        static_cast<unsigned long long>(current_->motionTrace_.decision.tick.value),unsigned(reason),
+        edge ? unsigned(edge->source.value):0U,edge ? unsigned(edge->target.value):0U,
+        current_->motionTrace_.corridorTransition,unsigned(structural),
+        static_cast<unsigned long long>(current_->execution_.retryAtUs));
+    line(execution);
+    clearPending();
+    current_->neutralBinding_=current_->motionTrace_.decision.binding;
+    current_->neutralDuck_=current_->motionTrace_.decision.intent.duck==core::ActionRequest::Hold;
+    // Preserve the original terminal trace, rather than replacing it with Cancelled.
+    current_->walk_.reset(); current_->pump_.reset(); current_->segment_.reset();
+    current_->intentWallAgeUs_=0;
+}
 void NavConsole::startMotion(const nav::runtime::MovementSnapshot& s) noexcept {
     current_->motionTrace_={}; current_->motionNext_=current_->motionCount_=0; current_->motionSequence_=0; current_->requestTick_=s.tick;
     if(!current_->session_ || !current_->session_->executable()) return;
@@ -174,6 +208,11 @@ void NavConsole::startMotion(const nav::runtime::MovementSnapshot& s) noexcept {
         current_->motionTrace_.decision.state=nav::local::WalkState::Failed;
         current_->motionTrace_.decision.terminalEvent=true;
         recordMotion(MotionEvent::Decision,reason);
+        failExecution(reason==MotionReason::MissingObservation ?
+            nav::runtime::ExecutionFailure::Observation : nav::runtime::ExecutionFailure::Corridor,
+            reason==MotionReason::InvalidCorridor &&
+            (current_->motionTrace_.portalReason==nav::corridor::PortalFailureReason::BoundaryMismatch ||
+             current_->motionTrace_.portalReason==nav::corridor::PortalFailureReason::UnsupportedTraversal));
     };
     if(!ready(s) || !movement_ || !navigation_.graph || !index_) { fail(MotionReason::MissingObservation); return; }
     const auto& hull=*s.hull;
@@ -191,6 +230,8 @@ void NavConsole::startMotion(const nav::runtime::MovementSnapshot& s) noexcept {
         current_->motionTrace_.corridorError=corridor.error;
         current_->motionTrace_.portalReason=corridor.portalReason;
         current_->motionTrace_.corridorTransition=corridor.transition;
+        if(corridor.transition<route.route->steps.size())
+            current_->motionTrace_.failedEdge=route.route->steps[corridor.transition].edge;
         if(corridor.transition<route.route->steps.size()) {
             const auto& failedEdge=route.route->steps[corridor.transition].edge;
             const auto from=navigation_.graph->find(failedEdge.source);
@@ -223,10 +264,87 @@ void NavConsole::startMotion(const nav::runtime::MovementSnapshot& s) noexcept {
         static_cast<float>(std::clamp(double(s.position->y),lowY,highY)),0};
     const auto floor=nav::query::projectToArea(e,xy);
     const nav::model::NavVector3 goal{xy.x,xy.y,static_cast<float>(floor.z)};
-    auto profile=walkLimits; profile.jump=jumpLimits; profile.ladder=nav::local::LadderLimits{};
+    auto profile=walkLimits; profile.jump=jumpLimits; profile.drop=nav::local::DropLimits{}; profile.ladder=nav::local::LadderLimits{};
     current_->walk_.emplace(current_->motionTrace_.decision.binding,corridor.value,goal,profile);
+    current_->execution_.state=nav::runtime::ExecutionState::Running;
     (void)current_->recovery_.bindRoute(current_->motionTrace_.decision.binding);
     current_->pump_.emplace(current_->motionTrace_.decision.binding); current_->intentWallAgeUs_=0; current_->neutralBinding_.reset();
+}
+MotionReason NavConsole::guardDrop(metamod::LifecycleCoordinator& owner,
+    const nav::runtime::MovementSnapshot& s,const PendingMotion& pending) noexcept {
+    using namespace nav::runtime;
+    if(!pending.drop || !s.position || !s.velocity || !s.hull || !s.grounded ||
+       !index_ || !current_->walk_ || current_->walk_->step()!=pending.binding.step)
+        return MotionReason::DropChanged;
+    const auto& plan=*pending.drop;
+    const auto physics=standardJumpPhysics(engine_,owner.entityFor(s.actor),pending.binding,s.tick);
+    if(!physics || physics->gravity!=pending.dropGravity || !s.velocity->isFinite() ||
+       plan.fall<=0 || plan.fall>128 || plan.gap<0 || plan.gap>32 ||
+       s.velocity->z < -580 || s.ducked!=false ||
+       (pending.command.buttons & (static_cast<core::ButtonMask>(core::Button::Jump) |
+        static_cast<core::ButtonMask>(core::Button::Duck)))) return MotionReason::DropChanged;
+    const auto delta=movement_->frameDeltaUs();
+    if(!delta || delta>120000 || current_->guardQueries_>18) return MotionReason::StaleCommand;
+    const double dt=double(std::clamp(delta/1000+(delta%1000>=500 ? 1U:0U),
+        std::uint64_t{1},std::uint64_t{255}))/1000;
+    const double yaw=pending.command.view.yaw*3.14159265358979323846/180;
+    const double vx=pending.command.movement.forward*std::cos(yaw)+pending.command.movement.side*std::sin(yaw);
+    const double vy=pending.command.movement.forward*std::sin(yaw)-pending.command.movement.side*std::cos(yaw);
+    if(std::hypot(vx,vy)>100.001 || pending.command.movement.up!=0 ||
+       !plan.landing.isFinite() || !plan.takeoff.isFinite()) return MotionReason::DropChanged;
+    const auto ask=[&](QueryKind kind,nav::model::NavVector3 a,nav::model::NavVector3 b,
+                       std::optional<HullDimensions> hull)->std::optional<WorldQueryResult> {
+        if(current_->guardQueries_>=21) return {};
+        const QueryRequest q{{s.agent,s.actor,s.map,s.tick,pending.binding.routeGeneration,
+            ++current_->guardQueries_},kind,a,b,hull};
+        WorldQueryResult r;
+        try { r=query(q); } catch(...) { return {}; }
+        if(!(r.stamp==q.stamp) || r.kind!=q.kind || r.error!=QueryError::None) return {};
+        return r;
+    };
+    // Revalidate the destination floor on every dispatch, not just planning.
+    const float floorZ=plan.landing.z+s.hull->minimum.z;
+    const nav::model::NavVector3 top{plan.landing.x,plan.landing.y,floorZ+18};
+    const nav::model::NavVector3 bottom{plan.landing.x,plan.landing.y,floorZ-18};
+    const auto floor=ask(QueryKind::Floor,top,bottom,{});
+    if(!floor || !floor->floor || !floor->floor->supported ||
+       !std::isfinite(floor->floor->height) || !floor->floor->normal.isFinite() ||
+       floor->floor->normal.z<0.7f || std::abs(floor->floor->height-floorZ)>4)
+        return MotionReason::DropChanged;
+    const auto area=index_->containing({plan.landing.x,plan.landing.y,floor->floor->height},18);
+    if(!area || !*area.value || (**area.value).areaId!=plan.target) return MotionReason::DropChanged;
+    const double vertical=s.grounded==true ? 0.0 : double(s.velocity->z)*dt-0.5*physics->gravity*dt*dt;
+    // Air movement uses observed velocity; ground movement uses the submitted wish.
+    const nav::model::NavVector3 end{
+        static_cast<float>(s.position->x+(s.grounded==true ? vx:s.velocity->x)*dt),
+        static_cast<float>(s.position->y+(s.grounded==true ? vy:s.velocity->y)*dt),
+        static_cast<float>(s.position->z+vertical)};
+    if(!end.isFinite()) return MotionReason::DropChanged;
+    const auto sweep=ask(QueryKind::SweptHull,*s.position,end,s.hull);
+    if(!sweep || !sweep->hull || sweep->hull->startSolid || !sweep->hull->end.isFinite() ||
+       !sweep->hull->normal.isFinite() || !std::isfinite(sweep->hull->fraction) ||
+       sweep->hull->fraction<0 || sweep->hull->fraction>1) return MotionReason::DropChanged;
+    const auto& hit=*sweep->hull;
+    const auto closeCoordinate=[](double a,double b) { return std::abs(a-b)<=0.01; };
+    if(!closeCoordinate(hit.end.x,s.position->x+(end.x-s.position->x)*hit.fraction) ||
+       !closeCoordinate(hit.end.y,s.position->y+(end.y-s.position->y)*hit.fraction) ||
+       !closeCoordinate(hit.end.z,s.position->z+(end.z-s.position->z)*hit.fraction)) return MotionReason::DropChanged;
+    if(hit.fraction<1) {
+        if(vertical>=0 || hit.normal.z<0.7f || !navigation_.graph) return MotionReason::DropChanged;
+        const auto vertex=navigation_.graph->find(plan.target);
+        if(!vertex) return MotionReason::DropChanged;
+        const auto& e=navigation_.graph->area(*vertex).extent;
+        if(hit.end.x+s.hull->minimum.x<e.northWest.x || hit.end.x+s.hull->maximum.x>e.southEast.x ||
+           hit.end.y+s.hull->minimum.y<e.northWest.y || hit.end.y+s.hull->maximum.y>e.southEast.y)
+            return MotionReason::DropChanged;
+        const auto contact=ask(QueryKind::GroundedArea,hit.end,hit.end,s.hull);
+        if(!contact || !contact->ground || contact->ground->area!=plan.target || !contact->ground->floor ||
+           !contact->ground->floor->supported || !contact->ground->floor->normal.isFinite() ||
+           contact->ground->floor->normal.z<0.7f || !std::isfinite(contact->ground->floor->height) ||
+           std::abs(hit.end.z+s.hull->minimum.z-contact->ground->floor->height)>4)
+            return MotionReason::DropChanged;
+    }
+    return MotionReason::None;
 }
 void NavConsole::beforeDispatch(metamod::LifecycleCoordinator& owner) noexcept {
     observe(owner);
@@ -240,7 +358,7 @@ void NavConsole::beforeDispatch(metamod::LifecycleCoordinator& owner) noexcept {
     MotionReason reason=MotionReason::None;
     const auto elapsed=(std::max)(s.elapsedUs,movement_->frameDeltaUs());
     const bool stationary=pending.command.movement==core::Movement{} && pending.command.buttons==0;
-    if(!ready(s,pending.jump.has_value() || pending.ladder.has_value() || stationary) || s.actor!=pending.binding.actor || s.agent!=pending.binding.agent || s.map!=pending.binding.map ||
+    if(!ready(s,pending.jump.has_value() || pending.drop.has_value() || pending.ladder.has_value() || stationary) || s.actor!=pending.binding.actor || s.agent!=pending.binding.agent || s.map!=pending.binding.map ||
        !s.tick.isAfter(pending.tick) || s.hull->minimum!=pending.observation.hull->minimum ||
        s.hull->maximum!=pending.observation.hull->maximum) reason=MotionReason::MissingObservation;
     else if(!s.elapsedUs || !movement_->frameDeltaUs() || elapsed>pending.remainingFreshUs)
@@ -253,7 +371,7 @@ void NavConsole::beforeDispatch(metamod::LifecycleCoordinator& owner) noexcept {
         const double speed=std::hypot(double(m.forward),double(m.side));
         const auto delta=movement_->frameDeltaUs();
         const auto msec=std::clamp(delta/1000+(delta%1000>=500 ? 1U:0U),std::uint64_t{1},std::uint64_t{255});
-        if(speed>double(*s.speedLimit)+0.001 || (speed>0 && !pending.jump && !pending.ladder && !pending.contact && (!pending.segment ||
+        if(speed>double(*s.speedLimit)+0.001 || (speed>0 && !pending.jump && !pending.drop && !pending.ladder && !pending.contact && (!pending.segment ||
            !segmentAllows(pending.segment->start,pending.segment->end,*s.position,speed*double(msec)/1000))))
             reason=MotionReason::Deviation;
     }
@@ -264,6 +382,8 @@ void NavConsole::beforeDispatch(metamod::LifecycleCoordinator& owner) noexcept {
         current_->motionTrace_.commandTick=pending.tick; current_->motionTrace_.dispatchTick=s.tick;
         clearPending(); if(current_->pump_) current_->pump_->submissionRejected();
         current_->motionTrace_.rejected=add(current_->motionTrace_.rejected,1); recordMotion(MotionEvent::Rejected,reason);
+        failExecution(reason==MotionReason::MissingObservation ?
+            nav::runtime::ExecutionFailure::Observation : nav::runtime::ExecutionFailure::Transport);
         return;
     }
     if(pending.ladder) {
@@ -277,6 +397,21 @@ void NavConsole::beforeDispatch(metamod::LifecycleCoordinator& owner) noexcept {
             current_->motionTrace_.commandTick=queued; current_->motionTrace_.dispatchTick=s.tick;
             clearPending(); if(current_->pump_) current_->pump_->submissionRejected();
             current_->motionTrace_.rejected=add(current_->motionTrace_.rejected,1); recordMotion(MotionEvent::Rejected,guarded);
+        }
+        return;
+    }
+    if(pending.drop) {
+        const auto queued=pending.tick;
+        inRequest_=true; queryingEntity_=owner.entityFor(current_->actor); queryingPlayers_=&owner.registry(); queryingOwner_=&owner;
+        const auto guarded=guardDrop(owner,s,pending);
+        inRequest_=false; queryingEntity_=nullptr; queryingPlayers_=nullptr; queryingOwner_=nullptr;
+        if(deferredInvalidation_) { (void)applyDeferredInvalidation(); return; }
+        if(guarded!=MotionReason::None) {
+            current_->motionTrace_.commandTick=queued; current_->motionTrace_.dispatchTick=s.tick;
+            clearPending();
+            current_->motionTrace_.rejected=add(current_->motionTrace_.rejected,1);
+            recordMotion(MotionEvent::Rejected,guarded);
+            failExecution(nav::runtime::ExecutionFailure::Transport);
         }
         return;
     }
@@ -390,7 +525,7 @@ void NavConsole::afterDispatch(const metamod::MovementResult& result,core::TickI
     if(sameRoute && ticket->dispatchOrigin) {
         const auto& d=ticket->decision;
         auto expected=nav::local::ExpectedProgress::Pause;
-        if(d.state==nav::local::WalkState::Running && !d.jumpState && !d.ladderState && !d.doorState && !d.contact &&
+    if(d.state==nav::local::WalkState::Running && !d.jumpState && !d.dropState && !d.ladderState && !d.doorState && !d.contact &&
            d.blockerAction!=nav::local::BlockerAction::Yield && d.intent.speed>0 &&
            (ticket->command.movement.forward!=0 || ticket->command.movement.side!=0))
             expected=(ticket->command.buttons&static_cast<core::ButtonMask>(core::Button::Duck)) ?
@@ -410,6 +545,7 @@ void NavConsole::afterDispatch(const metamod::MovementResult& result,core::TickI
     } else {
         if(sameRoute && current_->pump_) current_->pump_->submissionRejected();
         current_->motionTrace_.rejected=add(current_->motionTrace_.rejected,1); recordMotion(MotionEvent::Rejected,MotionReason::TransportRejected);
+        if(sameRoute) failExecution(nav::runtime::ExecutionFailure::Transport);
     }
     if(!sameRoute) current_->motionTrace_=saved;
 }
@@ -466,6 +602,7 @@ void NavConsole::moveFrame(metamod::LifecycleCoordinator& owner) noexcept {
         if (!current_->explicitRoute_ &&
             decision.state == nav::local::WalkState::Arrived) {
             current_->roamArrived_ = true;
+            current_->execution_.state=nav::runtime::ExecutionState::Arrived;
             const auto goal = current_->session_
                 ? current_->session_->trace().goal
                 : nav::model::NavAreaId{};
@@ -513,10 +650,22 @@ void NavConsole::moveFrame(metamod::LifecycleCoordinator& owner) noexcept {
                 printReplan();
             }
         }
+        if(decision.terminalEvent && decision.state==nav::local::WalkState::Failed) {
+            if(current_->replan_.state()==nav::runtime::ReplanState::Pending) {
+                current_->execution_.state=nav::runtime::ExecutionState::Recovering;
+                clearPending();
+            } else {
+                failExecution(nav::runtime::ExecutionFailure::Motion,
+                    decision.reason==nav::local::WalkReason::UnsupportedTraversal);
+            }
+            return;
+        }
+        if(decision.state==nav::local::WalkState::Arrived)
+            current_->execution_.state=nav::runtime::ExecutionState::Arrived;
         if(!current_->pump_->publish(decision.binding,s.tick,decision.intent)) return;
     }
     const auto output=current_->pump_->take();
-    if(!output.emit || !ready(s,current_->motionTrace_.decision.jumpState.has_value() || current_->motionTrace_.decision.ladderState.has_value())) return;
+    if(!output.emit || !ready(s,current_->motionTrace_.decision.jumpState.has_value() || current_->motionTrace_.decision.dropState.has_value() || current_->motionTrace_.decision.ladderState.has_value())) return;
     const auto age=(std::max)(output.intentAgeUs,current_->intentWallAgeUs_);
     if(age>nav::local::IntentPump::maxIntentAgeUs) { current_->pump_->stop(nav::local::PumpReason::StaleIntent); return; }
     submitMotion(s,owner,output.intent,output.firstFrame,age);
@@ -535,7 +684,8 @@ void NavConsole::submitMotion(const nav::runtime::MovementSnapshot& s,metamod::L
     const auto command=core::Motor::command(effective,{s.view->x,s.view->y,s.view->z},*s.speedLimit,s.elapsedUs,firstFrame);
     if(!command) {
         if(current_->pump_) current_->pump_->submissionRejected();
-        current_->motionTrace_.rejected=add(current_->motionTrace_.rejected,1); recordMotion(MotionEvent::Rejected,MotionReason::MotorRejected); return;
+        current_->motionTrace_.rejected=add(current_->motionTrace_.rejected,1); recordMotion(MotionEvent::Rejected,MotionReason::MotorRejected);
+        failExecution(nav::runtime::ExecutionFailure::Motion); return;
     }
     core::BotCommand submittedCommand=*command.command;
     metamod::MovementResult result{};
@@ -563,6 +713,12 @@ void NavConsole::submitMotion(const nav::runtime::MovementSnapshot& s,metamod::L
             s,submittedCommand,current_->segment_,contact};
         if(decision.jumpState && decision.jumpPlan && decision.jumpPhysics)
             current_->pendingMotion_->jump=JumpTicket{*decision.jumpPlan,*decision.jumpPhysics,*decision.jumpState,decision.jumpPressTick};
+        if(decision.dropState && *decision.dropState!=nav::local::DropState::Landed &&
+           *decision.dropState!=nav::local::DropState::Failed && decision.dropPlan && decision.jumpPhysics) {
+            current_->pendingMotion_->drop=decision.dropPlan;
+            current_->pendingMotion_->dropState=*decision.dropState;
+            current_->pendingMotion_->dropGravity=decision.jumpPhysics->gravity;
+        }
         if(decision.ladderState && decision.ladderPlan) {
             auto& pending=*current_->pendingMotion_; pending.ladder=decision.ladderPlan; pending.ladderState=*decision.ladderState;
             pending.ladderPressTick=decision.ladderPressTick;
@@ -578,6 +734,7 @@ void NavConsole::submitMotion(const nav::runtime::MovementSnapshot& s,metamod::L
         if(current_->pump_) current_->pump_->submissionRejected();
         current_->motionTrace_.rejected=add(current_->motionTrace_.rejected,1);
         recordMotion(MotionEvent::Rejected,MotionReason::TransportRejected);
+        failExecution(nav::runtime::ExecutionFailure::Transport);
     }
 }
 }

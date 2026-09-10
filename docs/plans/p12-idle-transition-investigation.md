@@ -1,5 +1,7 @@
 # P12 Idle遷移停止の原因切り分け計画
 
+2026-09-10追記: 本文の入力拒否ログは過去の調査時点の証拠。現在の承認済み修正・検証境界は [全BOT自律戦闘計画](p12-autonomous-combat.md) を参照。探索Readyと移動実行失敗の分離、Jump/Drop、changelevel後NAV自動ロードを実装したが、実機受入れは未完了。
+
 ## 目的
 
 実機でBOTが `source=Idle` から移行しない問題について、FakeClientの生成・Join・フレーム更新・Runtime入力・NAV・移動dispatchのどの境界で停止しているかを確定する。

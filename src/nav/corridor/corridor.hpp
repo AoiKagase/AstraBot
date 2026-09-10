@@ -15,6 +15,8 @@ struct HullClearance { double halfX{}, halfY{}; };
 struct Limits { std::size_t maxTransitions{}, maxBytes{}, maxEdgeChecks{}; };
 struct Transition {
     query::NavDirectedEdge edge{};
+    // Derived only; graph/route ownership and failure keys retain edge above.
+    model::NavTraversalKind effectiveTraversal{model::NavTraversalKind::Walk};
     // Walk: endpoints ordered by increasing tangent coordinate, with independent
     // source/target floor Z. External: degenerate entry/exit segments.
     query::NavQueryPoint sourceLow{}, sourceHigh{}, targetLow{}, targetHigh{};

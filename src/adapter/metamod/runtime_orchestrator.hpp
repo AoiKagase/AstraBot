@@ -136,11 +136,28 @@ struct RuntimeDecision final {
 	bool hasNavigationGoal{false};
 	std::size_t roamCandidateCount{0};
 	std::uint64_t roamGeneration{0};
+	std::size_t knownEnemyCount{0};
+	std::size_t directEnemyCount{0};
 	bool teamExecuted{false};
 	bool tacticalExecuted{false};
 	bool actionExecuted{false};
 	bool combatExecuted{false};
 	bool executable{false};
+};
+
+// Diagnostic self observations only. Health loss is not proof of a hit by
+// this bot or any particular attacker. Context changes start a new baseline.
+struct RuntimeHealthObservation final {
+	RuntimeFrame frame{};
+	core::PlayerId player{};
+	core::BotAgentId agent{};
+	int serial{0};
+	float health{0};
+	double observedHealthLoss{0};
+	std::uint64_t deaths{0}, respawns{0};
+	bool known{false}, dead{false};
+	void observe(const RuntimeFrame&, core::PlayerId, core::BotAgentId,
+	             int serialNumber, float currentHealth, bool isDead) noexcept;
 };
 
 struct RuntimeFrameResult final {

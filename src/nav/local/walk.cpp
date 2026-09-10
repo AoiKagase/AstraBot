@@ -104,6 +104,7 @@ Walk::Walk(Binding b, std::shared_ptr<const corridor::Corridor> c, model::NavVec
     : binding_(b), corridor_(std::move(c)), cursor_(corridor_), goal_(goal), limits_(limits) {}
 
 StuckCause observedStuckCause(const WalkDecision& d) noexcept {
+    if(d.dropReason!=DropReason::None) return StuckCause::TraversalFailed;
     if(d.reason==WalkReason::JumpFailed || d.reason==WalkReason::LadderFailed || d.reason==WalkReason::PostureFailed)
         return StuckCause::TraversalFailed;
     if(d.reason==WalkReason::DoorBlocked && d.doorId) return StuckCause::DoorBlocked;
@@ -331,6 +332,9 @@ WalkDecision Walk::updateMotion(const runtime::MovementSnapshot& s,const query::
        limits_.blocker.factLifetimeUs>limits_.blocker.timeoutUs || limits_.sideProbeDistance<=0))
         return finish(out,WalkState::Failed,WalkReason::InvalidInput);
     if(ladder_ || selectedLadderLink()) return updateLadder(out,s,index,nowUs,reservedQueries,ladder);
+    if(dropPlan_ || (!cursor_.exhausted() &&
+       corridor_->transitions()[cursor_.index()].effectiveTraversal==model::NavTraversalKind::Drop))
+        return updateDrop(out,s,index,indexMap,port,nowUs,reservedQueries,physics);
     if(jump_ || (!cursor_.exhausted() && constraints(corridor_->transitions()[cursor_.index()].edge.traversal,
         corridor_->transitions()[cursor_.index()].sourceAttributes,
         corridor_->transitions()[cursor_.index()].targetAttributes).kind==model::NavTraversalKind::Jump))

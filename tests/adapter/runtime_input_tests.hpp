@@ -68,6 +68,10 @@ void run() {
     assert(input->combat.weapon.primaryAttackReadyMicros == frame.nowMicros + 250'000);
     assert(!input->action.objective.canPlant && !input->tactical.economy.available);
     assert(!input->teamObjectiveAvailable && !input->team.objective.known);
+    const auto navigationState = owner.navConsole().runtimeState(owner, player);
+    assert(navigationState);
+    assert(input->actionObservation.routeSafe == !navigationState->roamRejected);
+    assert(input->actionObservation.actionComplete == navigationState->roamArrived);
     const auto first = *input;
     assert(adapter::metamod::buildRuntimeInputs(owner, frame, &fixture.hookDll, input.get(), 1) == 1);
     assert(input->combat.weapon == first.combat.weapon);

@@ -2545,6 +2545,8 @@ void testDetachDirectlyCleansActiveEntityOnce() {
 #include "p408_report_tests.hpp"
 #include "p409_replay.hpp"
 #include "runtime_input_tests.hpp"
+#include "p12_execution_tests.hpp"
+#include "p12_map_nav_tests.hpp"
 
 } // namespace
 
@@ -2559,6 +2561,8 @@ int main(int argc,char** argv) {
     if(argc==3 && std::strcmp(argv[1],"--p308-output")==0) return runP308HostMatrix(argv[2]);
     if(argc==2 && std::strcmp(argv[1],"--p401-tests")==0) { p401::run(); return 0; }
     if(argc==2 && std::strcmp(argv[1],"--runtime-input-tests")==0) { runtime_input_test::run(); return 0; }
+    if(argc==2 && std::strcmp(argv[1],"--p12-execution-tests")==0) { p12_execution_test::run(); return 0; }
+    if(argc==2 && std::strcmp(argv[1],"--p12-map-nav-tests")==0) { p12_map_nav_test::run(); return 0; }
     if(argc==2 && std::strcmp(argv[1],"--p402-tests")==0) { p402::run(); return 0; }
     if(argc==2 && std::strcmp(argv[1],"--p403-tests")==0) { p403::run(); return 0; }
     if(argc==2 && std::strcmp(argv[1],"--p404-tests")==0) { p404::run(); return 0; }
@@ -2579,6 +2583,8 @@ int main(int argc,char** argv) {
     testMessageDrivenJoinAndCommandContext();
     testJoinMenuEmittedDuringPutInServer();
     testNavWalkArrival();
+    p12_execution_test::run();
+    p12_map_nav_test::run();
     testStandardJumpPhysics();
     testNavJumpHost();
     testNavLadderHost();
