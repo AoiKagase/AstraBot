@@ -301,7 +301,7 @@ std::size_t buildRuntimeInputs(const LifecycleCoordinator& owner, const RuntimeF
         self.healthPercent = health;
         self.alive = true;
         input.tactical.objective = objective.tactical;
-        input.tactical.economy = economy;
+        input.tactical.economy = economy.tactical;
         input.tactical.navigation.roamGeneration = nav->roamGeneration;
         input.tactical.navigation.roamCandidateCount =
             (std::min)(nav->roamCandidateCount,
