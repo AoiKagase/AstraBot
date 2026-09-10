@@ -438,7 +438,7 @@ bool ObjectiveAssignment::valid(
            optionalPlayerId(playerTarget) && optionalObjectiveTargetId(target);
 }
 
-bool SharedTeamState::valid(std::uint64_t nowMicros) const noexcept {
+bool SharedTeamState::valid(std::uint64_t currentMicros) const noexcept {
     if (!map.isValid() || !round.isValid() || !tick.isValid() || !objective.valid() ||
         observationCount > observations.size() ||
         proposalCount > proposals.size() || assignmentCount > assignments.size() ||
@@ -446,7 +446,7 @@ bool SharedTeamState::valid(std::uint64_t nowMicros) const noexcept {
         return false;
     }
     for (std::size_t i = 0; i < observationCount; ++i) {
-        if (!observations[i].valid(nowMicros)) return false;
+        if (!observations[i].valid(currentMicros)) return false;
     }
     for (std::size_t i = 0; i < proposalCount; ++i) {
         if (!proposals[i].valid()) return false;
@@ -462,7 +462,7 @@ bool SharedTeamState::valid(std::uint64_t nowMicros) const noexcept {
     }
     for (std::size_t i = 0; i < objectiveAssignmentCount; ++i) {
         const auto& assignment = objectiveAssignments[i];
-        if (!assignment.valid(map, round, nowMicros)) return false;
+        if (!assignment.valid(map, round, currentMicros)) return false;
         for (std::size_t j = 0; j < i; ++j) {
             const auto& previous = objectiveAssignments[j];
             if (assignment.player == previous.player ||
@@ -867,6 +867,7 @@ TeamDecision TeamDirector::update(const TeamSnapshot& snapshot,
     next.map = snapshot.map;
     next.round = snapshot.round;
     next.tick = snapshot.tick;
+    next.nowMicros = snapshot.nowMicros;
     next.objective = snapshot.objective;
     next.observationCount = snapshot.observationCount;
     next.proposalCount = snapshot.proposalCount;

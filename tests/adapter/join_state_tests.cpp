@@ -362,6 +362,29 @@ void testAttemptLimitAndTimeout() {
     assert(expired.error == JoinError::Timeout);
 }
 
+void testBoundedPrimeWithoutMenuMessages() {
+    JoinState state{};
+    const PlayerId player{1, Generation{1}};
+    assert(state.begin(player, MapGeneration{1}, {Team::Terrorist, 1}, TickId{1}).changed);
+    assert(!state.primeMenuSelection());
+    assert(!state.primeMenuSelection());
+    assert(state.primeMenuSelection());
+    assert(state.pendingSelection());
+    assert(state.onFrame(TickId{2}).kind == JoinActionKind::SendMenuSelect);
+    assert(state.commandCompleted(true).changed);
+    assert(state.phase() == JoinPhase::WaitingClassMenu);
+    assert(!state.primeMenuSelection());
+    assert(!state.primeMenuSelection());
+    assert(state.primeMenuSelection());
+    assert(state.onFrame(TickId{3}).kind == JoinActionKind::SendMenuSelect);
+    assert(state.commandCompleted(true).changed);
+    assert(state.phase() == JoinPhase::WaitingConfirmation);
+    assert(state.onGameFrameAdvanced().changed);
+    assert(state.phase() == JoinPhase::WaitingConfirmation);
+    assert(state.onFrame(TickId{129}).kind == JoinActionKind::Failed);
+    assert(state.error() == JoinError::Timeout);
+}
+
 } // namespace
 
 int main() {
@@ -372,5 +395,6 @@ int main() {
     testCounterTerroristAndDuplicatePrompt();
     testLegacySpectatorTeamMenusAndSpectatorTeamInfo();
     testAttemptLimitAndTimeout();
+    testBoundedPrimeWithoutMenuMessages();
     return 0;
 }

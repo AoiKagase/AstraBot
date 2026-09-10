@@ -41,7 +41,7 @@ bool RuntimeFrame::valid() const noexcept {
 
 bool RuntimeActorInput::valid(const RuntimeFrame &frame) const noexcept {
 	if (!frame.valid() || !player.isValid() || player.slot > core::perception::kPlayerCapacity ||
-	    !agent.isValid() || !primary) {
+	    !agent.isValid()) {
 		return false;
 	}
 	auto checkedTeam = team;
@@ -158,6 +158,7 @@ void RuntimeOrchestrator::clearSlot(std::size_t index) noexcept {
 	combatPending_[index] = false;
 	lastTacticalMicros_[index] = 0;
 	lastActionMicros_[index] = 0;
+	actorIdentity_[index] = {};
 }
 
 void RuntimeOrchestrator::resetPlanners() noexcept {
@@ -165,6 +166,7 @@ void RuntimeOrchestrator::resetPlanners() noexcept {
 	teamDecision_ = {};
 	teamDecisionReady_ = false;
 	teamDecisionMicros_ = 0;
+	actorIdentity_.fill({});
 	for (std::size_t i = 0; i < kRuntimeActorCapacity; ++i)
 		clearSlot(i);
 }
@@ -301,7 +303,6 @@ const RuntimeFrameResult &RuntimeOrchestrator::run(const RuntimeFrame &frame,
 
 	std::array<const RuntimeActorInput *, kRuntimeActorCapacity> ordered{};
 	std::array<bool, kRuntimeActorCapacity> seen{};
-	bool primarySeen = false;
 	const auto limit = (std::min)(inputCount, kRuntimeActorCapacity);
 	if (inputs == nullptr && limit != 0) {
 		addDiagnostic(RuntimeStage::PerceptionPublished, RuntimeRejectReason::InvalidActorInput,
@@ -314,6 +315,8 @@ const RuntimeFrameResult &RuntimeOrchestrator::run(const RuntimeFrame &frame,
 		              frame, {});
 	}
 	auto appendRejected = [&](const RuntimeActorInput &input, RuntimeRejectReason reason) noexcept {
+		if (reason == RuntimeRejectReason::NonPrimaryActor)
+			++result_.nonPrimaryRejectedCount;
 		addDiagnostic(RuntimeStage::PerceptionPublished, reason, frame, input.player, input.agent);
 		if (result_.decisionCount >= result_.decisions.size())
 			return;
@@ -342,18 +345,20 @@ const RuntimeFrameResult &RuntimeOrchestrator::run(const RuntimeFrame &frame,
 			appendRejected(input, RuntimeRejectReason::DuplicateActor);
 			continue;
 		}
-		if (!input.primary || primarySeen) {
-			appendRejected(input, RuntimeRejectReason::NonPrimaryActor);
-			continue;
-		}
-		seen[index] = true;
+		// All valid managed actors are accepted. The primary flag is retained
+		// for older providers and is not an execution gate.
+	seen[index] = true;
+	if (actorIdentity_[index].isValid() && actorIdentity_[index] != input.player)
+		clearSlot(index);
 		if (!input.valid(frame)) {
-			clearSlot(index);
+			if (!actorIdentity_[index].isValid() || actorIdentity_[index] == input.player)
+				clearSlot(index);
 			appendRejected(input, RuntimeRejectReason::InvalidActorInput);
 			continue;
 		}
 		ordered[index] = &input;
-		primarySeen = true;
+		++result_.acceptedActorCount;
+		actorIdentity_[index] = input.player;
 	}
 
 	appendStage(RuntimeStage::ExperienceUpdated);
@@ -390,13 +395,14 @@ const RuntimeFrameResult &RuntimeOrchestrator::run(const RuntimeFrame &frame,
 	appendStage(RuntimeStage::TeamDirector);
 	bool teamExecuted = false;
 	if (teamInput && !teamInput->teamObjectiveAvailable) {
-		if (team_.strategy() != core::team::Strategy::None)
-			for (std::size_t i = 0; i < kRuntimeActorCapacity; ++i) clearSlot(i);
+		// Unknown objective input is a neutral team decision, not a reason to
+		// erase each actor's tactical planner or Roam history.
 		team_.reset();
 		teamDecision_ = {};
 		teamDecision_.shared.map = frame.map;
 		teamDecision_.shared.round = frame.round;
 		teamDecision_.shared.tick = frame.tick;
+		teamDecision_.shared.nowMicros = frame.nowMicros;
 		teamDecision_.accepted = true;
 		teamDecisionReady_ = true;
 		teamDecisionMicros_ = 0;
@@ -452,6 +458,7 @@ const RuntimeFrameResult &RuntimeOrchestrator::run(const RuntimeFrame &frame,
         decision.team.shared.map = frame.map;
         decision.team.shared.round = frame.round;
         decision.team.shared.tick = frame.tick;
+		decision.team.shared.nowMicros = frame.nowMicros;
         decision.teamExecuted = teamExecuted;
 		auto tacticalSeed = input->tactical;
 		if (const auto *assignment = assignmentFor(input->player)) {
@@ -475,6 +482,8 @@ const RuntimeFrameResult &RuntimeOrchestrator::run(const RuntimeFrame &frame,
 			}
 		}
 		const auto context = core::tactical::buildTacticalContext(input->world, tacticalSeed);
+		decision.roamCandidateCount = context.navigation.roamCandidateCount;
+		decision.roamGeneration = context.navigation.roamGeneration;
 		if (!context.valid()) {
 			clearSlot(index);
 			decision.rejection = RuntimeRejectReason::InvalidTacticalInput;
@@ -543,7 +552,10 @@ const RuntimeFrameResult &RuntimeOrchestrator::run(const RuntimeFrame &frame,
 		if (decision.action.intent.targetArea.isValid()) {
 			decision.navigationGoal = decision.action.intent.targetArea;
 			decision.hasNavigationGoal = true;
-		} else if (decision.tactical.intent.target.area.isValid()) {
+		} else if (decision.tactical.intent.target.area.isValid() &&
+		           !(decision.tactical.intent.type == core::tactical::IntentType::Hold &&
+		             decision.tactical.intent.reason == core::tactical::Reason::HoldCurrentArea &&
+		             decision.tactical.intent.target.area == input->tactical.self.currentArea)) {
 			decision.navigationGoal = decision.tactical.intent.target.area;
 			decision.hasNavigationGoal = true;
 		}
@@ -589,20 +601,23 @@ void RuntimeOrchestrator::beginMap(core::MapGeneration map) noexcept {
 
 void RuntimeOrchestrator::onDisconnect(core::PlayerId player) noexcept {
 	const auto index = slotIndex(player);
-	if (index < kRuntimeActorCapacity)
+	if (index < kRuntimeActorCapacity &&
+	    (!actorIdentity_[index].isValid() || actorIdentity_[index] == player))
 		clearSlot(index);
 	opponentProfiles_.forget(player);
 }
 
 void RuntimeOrchestrator::onDeath(core::PlayerId player) noexcept {
 	const auto index = slotIndex(player);
-	if (index < kRuntimeActorCapacity)
+	if (index < kRuntimeActorCapacity &&
+	    (!actorIdentity_[index].isValid() || actorIdentity_[index] == player))
 		clearSlot(index);
 }
 
 void RuntimeOrchestrator::onInputUnavailable(core::PlayerId player) noexcept {
 	const auto index = slotIndex(player);
-	if (index < kRuntimeActorCapacity)
+	if (index < kRuntimeActorCapacity &&
+	    (!actorIdentity_[index].isValid() || actorIdentity_[index] == player))
 		clearSlot(index);
 }
 

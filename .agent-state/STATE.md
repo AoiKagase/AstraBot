@@ -1,33 +1,23 @@
 # State
 
-Status: complete — P12 self-runtime implementation and canonical offline verification
+Status: in progress — P12 Idle heartbeat/Roam implementation integrated on `main`; live acceptance remains pending
+
 Milestone: P12
-Task: Runtime input integration from rereview a811135 (no new task ID)
 
-Goal: Wire production Adapter inputs, verify canonically once, commit the P12
-change and fast-forward main with the same verified build inputs.
+Task: Integrate the committed P12 Idle/Roam, runtime identity, diagnostics, and MEDIUM/LOW contract changes while preserving the pre-live verification boundary.
 
-Relevant:
-- docs/reports/p12-runtime-input.md
-- src/adapter/metamod/runtime_input.cpp
-- tests/adapter/runtime_input_tests.hpp
+Current checkpoint (2026-09-10, Asia/Tokyo):
 
-Done:
-- Current self/weapon/WorldModel/NAV reader and stationary combat composition.
-- Generation and pre-dispatch validation; unavailable objectives disable team
-  strategy. Real objective/economy readers remain unavailable (no live AI claim).
-- Branch codex/p12-runtime-input, baseline a811135; FocalSpan updated.
+- Working branch: `main`; feature source: `codex/p12-console-debug` through `7a045d4`.
+- HIGH-01/HIGH-03, additional A/B/C, Idle heartbeat, autonomous Roam, actor-scoped diagnostics, and MEDIUM/LOW contract changes are staged for the main integration commit.
+- Roam recent/rejected goals are cleared when the NAV/map session is invalidated; same-actor route replanning retains the active map-session history.
+- The unrelated `AGENTS.md` wait rule and two root-document moves were reverted. The CSSDK dependency remains with `third_party/CSSDK-PROVENANCE.md`.
+- The feature-side audit document version with implementation follow-up was selected for `docs/p12-live-source-audit.md`.
 
-Next:
-- Main integration is authorized; inspect main and codex/p12-runtime-input tips
-  for the final commit. No full rerun for unchanged build inputs.
-- Objective/economy real observation readers and post-Finish live acceptance
-  remain outstanding; see the P12 report for the exact implemented scope.
+Verification boundary:
 
-Blocked: none for self-runtime integration; full objective/economy support and
-post-Finish live acceptance remain outstanding.
+- Static review, graph review, FocalSpan status, and diff checks only. No tests-ON configure/build, CTest, canonical All, HLDS deployment, or live run was performed in this task.
+- Existing Release adapter evidence from the prior implementation remains historical and is not treated as new live acceptance.
+- Existing untracked user materials remain un-staged.
 
-Verified: final canonical All PASS, Portable65/65, Metamod84/84, Release six
-exports. The report records final content fingerprints after yaw normalization.
-Preserve .gitignore, untracked review/plans/.github instruction and local indexes.
-No push, branch/worktree cleanup or Finish declaration.
+Open acceptance: explicit real-device/Finish acceptance with recorded date, SHA, DLL, environment, followed by the prescribed Windows x86 Debug focused tests and one canonical All run.

@@ -80,7 +80,8 @@ public:
         core::PlayerId activePlayer,
         edict_t* entity,
         core::MapGeneration mapGeneration,
-        core::TickId dispatchTick) noexcept;
+        core::TickId dispatchTick,
+        bool removalPending = false) noexcept;
     // Advance a fake client's GameDLL join state without submitting gameplay
     // movement. Join-time entities may still be dead or spectator.
     bool dispatchJoinProgress(
@@ -88,6 +89,9 @@ public:
         edict_t* entity,
         core::MapGeneration mapGeneration,
         debug::MovementTraceSource source = debug::MovementTraceSource::Join) noexcept;
+    const debug::MovementTrace& frameQueueTrace(core::PlayerId player) const noexcept;
+    const debug::MovementTrace& frameDispatchTrace(core::PlayerId player) const noexcept;
+    const debug::MovementTrace& frameRejectionTrace(core::PlayerId player) const noexcept;
 
     debug::MovementTraceSource activeDispatchSource() const noexcept {
         return activeDispatchSource_;
@@ -113,6 +117,7 @@ private:
         core::PlayerId player{};
         core::MapGeneration mapGeneration{};
         core::TickId commandTick{};
+        std::uint32_t edictSerial{0};
         core::BotCommand command{};
     };
 
@@ -149,7 +154,10 @@ private:
         std::uint8_t originalMsec,
         bool engineCall, std::optional<std::uint64_t> dispatchDelta=std::nullopt,
         debug::MovementTraceSource source=debug::MovementTraceSource::None,
-        std::uint64_t callCount=0) noexcept;
+        std::uint64_t callCount=0,
+        std::uint32_t edictSerial=0,
+        float forward=0.0F, float side=0.0F, float up=0.0F,
+        std::uint16_t buttons=0, std::uint8_t impulse=0) noexcept;
 
     enginefuncs_t* engineFunctions_{nullptr};
     host::PlayerRegistry* registry_{nullptr};
@@ -157,6 +165,9 @@ private:
     std::array<std::optional<PendingCommand>, host::kMaxClientSlots> pending_{};
     std::array<bool, host::kMaxClientSlots> dispatchedThisFrame_{};
     std::array<std::uint64_t, host::kMaxClientSlots> callCounts_{};
+    std::array<debug::MovementTrace, host::kMaxClientSlots> frameQueued_{};
+    std::array<debug::MovementTrace, host::kMaxClientSlots> frameDispatched_{};
+    std::array<debug::MovementTrace, host::kMaxClientSlots> frameRejected_{};
     debug::MovementTraceSource activeDispatchSource_{debug::MovementTraceSource::None};
     ClockNow now_{&MovementCoordinator::steadyNow};
     std::chrono::steady_clock::time_point lastFrame_{};

@@ -15,6 +15,8 @@
 namespace astrabot::core::tactical {
 
 constexpr std::size_t kMaxTacticalRoutes = 16;
+constexpr std::size_t kMaxTacticalRoamCandidates = 16;
+constexpr std::size_t kTacticalRoamHistory = 4;
 constexpr std::size_t kMaxTacticalTeammates = perception::kPlayerCapacity - 1;
 constexpr std::size_t kMaxTacticalEnemies = perception::kCandidateCapacity;
 constexpr std::uint64_t kDefaultReplanIntervalMicros = 1'000'000;
@@ -37,6 +39,7 @@ enum class IntentType : std::uint8_t {
     Trade,
     Hold,
     Escort,
+    Roam,
 };
 
 enum class RouteStyle : std::uint8_t {
@@ -50,6 +53,7 @@ enum class RouteStyle : std::uint8_t {
     Lurk,
     Support,
     Escort,
+    Roam,
     Hold,
 };
 
@@ -87,6 +91,7 @@ enum class Reason : std::uint8_t {
     ObjectiveTransition,
     RouteBlocked,
     IntentInvalidated,
+    AutonomousRoam,
     Periodic,
     InvalidContext,
 };
@@ -197,6 +202,11 @@ struct EconomySummary final {
 struct NavigationState final {
     std::array<TacticalRoute, kMaxTacticalRoutes> routes{};
     std::size_t routeCount{0};
+    TacticalRoute explicitRoute{};
+    bool explicitRouteAvailable{false};
+    std::array<TargetArea, kMaxTacticalRoamCandidates> roamCandidates{};
+    std::size_t roamCandidateCount{0};
+    std::uint64_t roamGeneration{0};
 
     bool valid() const noexcept;
 };
@@ -314,11 +324,15 @@ private:
                           ReplanTrigger trigger) const noexcept;
     bool currentStillValid(const TacticalContext& context) const noexcept;
     void activate(TacticalIntent intent) noexcept;
+    bool wasRecentRoam(const TargetArea& target) const noexcept;
+    void rememberRoam(const TargetArea& target) noexcept;
 
     TacticalPlannerSettings settings_{};
     TacticalIntent current_{};
     std::uint64_t lastPlanMicros_{0};
     std::uint64_t generation_{0};
+    std::array<TargetArea, kTacticalRoamHistory> recentRoam_{};
+    std::size_t recentRoamCount_{0};
     bool active_{false};
 };
 

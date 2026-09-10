@@ -207,11 +207,16 @@ bool EconomySummary::valid() const noexcept {
 }
 
 bool NavigationState::valid() const noexcept {
-    if (routeCount > routes.size()) return false;
+    if (routeCount > routes.size() || roamCandidateCount > roamCandidates.size())
+        return false;
+    if (explicitRouteAvailable && !explicitRoute.valid()) return false;
     const auto count = (std::min)(routeCount, routes.size());
     for (std::size_t i = 0; i < count; ++i) {
         if (routes[i].available && !routes[i].valid()) return false;
     }
+    const auto roamCount = (std::min)(roamCandidateCount, roamCandidates.size());
+    for (std::size_t i = 0; i < roamCount; ++i)
+        if (!roamCandidates[i].valid()) return false;
     return true;
 }
 
@@ -278,6 +283,8 @@ bool TacticalPlannerSettings::valid() const noexcept {
 }
 
 void TacticalPlanner::reset() noexcept {
+    recentRoam_ = {};
+    recentRoamCount_ = 0;
     current_ = {};
     lastPlanMicros_ = 0;
     generation_ = 0;
@@ -287,7 +294,18 @@ void TacticalPlanner::reset() noexcept {
 bool TacticalPlanner::currentStillValid(const TacticalContext& context) const noexcept {
     if (!active_ || current_.validity != Validity::Valid ||
         context.nowMicros >= current_.expiresMicros) return false;
-    if (current_.route == RouteStyle::Hold) return context.self.currentArea.isValid();
+    if (current_.route == RouteStyle::Hold) {
+        if (current_.target.area == context.self.currentArea) return true;
+        return routeForTarget(context, RouteStyle::Hold, current_.target) != nullptr;
+    }
+    if (current_.route == RouteStyle::Roam) {
+        const auto count = (std::min)(context.navigation.roamCandidateCount,
+                                      context.navigation.roamCandidates.size());
+        for (std::size_t i = 0; i < count; ++i)
+            if (sameTarget(context.navigation.roamCandidates[i], current_.target))
+                return true;
+        return false;
+    }
     return routeForTarget(context, current_.route, current_.target) != nullptr;
 }
 
@@ -436,6 +454,32 @@ TacticalIntent TacticalPlanner::choose(const TacticalContext& context,
         }
     }
 
+    if (context.navigation.explicitRouteAvailable &&
+        context.navigation.explicitRoute.valid()) {
+        return baseIntent(IntentType::Hold, &context.navigation.explicitRoute,
+                          context, settings_, Urgency::Low, Reason::Periodic);
+    }
+    const auto roamCount = (std::min)(context.navigation.roamCandidateCount,
+                                      context.navigation.roamCandidates.size());
+    if (roamCount != 0) {
+        const auto seed = static_cast<std::uint64_t>(context.self.agent.value) *
+            2'654'435'761ULL + static_cast<std::uint64_t>(context.round.value);
+        const auto offset = static_cast<std::size_t>(seed % roamCount);
+        for (std::size_t step = 0; step < roamCount; ++step) {
+            const auto& candidate =
+                context.navigation.roamCandidates[(offset + step) % roamCount];
+            if (!candidate.valid() || candidate.area == context.self.currentArea ||
+                wasRecentRoam(candidate))
+                continue;
+            auto result = baseIntent(IntentType::Roam, nullptr, context, settings_,
+                                     Urgency::Low, Reason::AutonomousRoam);
+            result.target = candidate;
+            result.route = RouteStyle::Roam;
+            return result;
+        }
+    }
+
+
     const auto* hold = routeFor(context, RouteStyle::Hold);
     return baseIntent(IntentType::Hold, hold, context, settings_, Urgency::Low,
                       Reason::HoldCurrentArea);
@@ -478,12 +522,31 @@ TacticalDecision TacticalPlanner::plan(const TacticalContext& context,
 }
 
 void TacticalPlanner::activate(TacticalIntent intent) noexcept {
+    const bool newRoam = intent.type == IntentType::Roam &&
+        (!active_ || current_.type != IntentType::Roam ||
+         !sameTarget(current_.target, intent.target));
+    if (newRoam) rememberRoam(intent.target);
+
     current_ = intent;
     lastPlanMicros_ = intent.createdMicros;
     generation_ = intent.generation;
     active_ = true;
 }
 
+bool TacticalPlanner::wasRecentRoam(const TargetArea& target) const noexcept {
+    for (std::size_t i = 0; i < recentRoamCount_; ++i)
+        if (sameTarget(recentRoam_[i], target)) return true;
+    return false;
+}
+
+void TacticalPlanner::rememberRoam(const TargetArea& target) noexcept {
+    if (!target.valid()) return;
+    const auto count = (std::min)(recentRoamCount_, recentRoam_.size());
+    for (std::size_t i = count; i > 0; --i)
+        if (i < recentRoam_.size()) recentRoam_[i] = recentRoam_[i - 1U];
+    recentRoam_[0] = target;
+    if (recentRoamCount_ < recentRoam_.size()) ++recentRoamCount_;
+}
 const char* intentName(IntentType intent) noexcept {
     switch (intent) {
     case IntentType::None: return "None";
@@ -494,6 +557,7 @@ const char* intentName(IntentType intent) noexcept {
     case IntentType::Save: return "Save";
     case IntentType::Flank: return "Flank";
     case IntentType::Lurk: return "Lurk";
+    case IntentType::Roam: return "Roam";
     case IntentType::Support: return "Support";
     case IntentType::Entry: return "Entry";
     case IntentType::Trade: return "Trade";
@@ -510,6 +574,7 @@ const char* routeStyleName(RouteStyle route) noexcept {
     case RouteStyle::Safe: return "Safe";
     case RouteStyle::Fast: return "Fast";
     case RouteStyle::Rotate: return "Rotate";
+    case RouteStyle::Roam: return "Roam";
     case RouteStyle::Retake: return "Retake";
     case RouteStyle::Flank: return "Flank";
     case RouteStyle::Lurk: return "Lurk";
@@ -534,6 +599,7 @@ const char* reasonName(Reason reason) noexcept {
     case Reason::RetakeUnavailable: return "RetakeUnavailable";
     case Reason::SaveWeapon: return "SaveWeapon";
     case Reason::EntryLost: return "EntryLost";
+    case Reason::AutonomousRoam: return "AutonomousRoam";
     case Reason::TeammateDeath: return "TeammateDeath";
     case Reason::ObjectiveTransition: return "ObjectiveTransition";
     case Reason::RouteBlocked: return "RouteBlocked";

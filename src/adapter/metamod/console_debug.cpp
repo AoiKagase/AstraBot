@@ -151,8 +151,6 @@ const char* teamName(cstrike::Team team) noexcept {
     switch (team) {
     case cstrike::Team::Terrorist: return "T";
     case cstrike::Team::CounterTerrorist: return "CT";
-    case cstrike::Team::Spectator: return "Spectator";
-    case cstrike::Team::Unknown: return "Unknown";
     }
     return "Unknown";
 }
@@ -285,6 +283,11 @@ void ConsoleDebug::reset() noexcept {
     nextBotOrdinal_ = 1;
     lastMovementLogCall_.fill(0);
     lastMovementSource_.fill(debug::MovementTraceSource::None);
+    lastMovementOutcome_.fill(debug::MovementTraceOutcome::None);
+    lastMovementError_.fill(debug::MovementTraceError::None);
+    lastMovementMap_.fill({});
+    lastMovementPlayer_.fill({});
+    lastMovementAgent_.fill({});
 }
 
 void ConsoleDebug::command() {
@@ -449,17 +452,20 @@ void ConsoleDebug::fakeClientTrace(const debug::FakeClientTrace& trace) noexcept
 }
 
 void ConsoleDebug::joinTrace(const debug::JoinTrace& trace) noexcept {
-    char lineBuffer[384]{};
+    char lineBuffer[512]{};
     std::snprintf(
         lineBuffer,
         sizeof(lineBuffer),
-        "[ASTRABOT][DEBUG][JOIN] phase=%s error=%s map=%u player=%u:%u team=%s class=%u tick=%llu seq=%llu attempts=%u accepted=%u changed=%u",
+        "[ASTRABOT][DEBUG][JOIN] phase=%s error=%s map=%u player=%u:%u team=%s class=%u tick=%llu seq=%llu attempts=%u accepted=%u changed=%u observed_team=%u model=%d team_info=%u class_done=%u post_class_frame=%u entity=%u alive=%u",
         joinPhaseName(trace.phase), joinErrorName(trace.error),
         unsigned(trace.map.value), unsigned(trace.player.slot),
         unsigned(trace.player.generation.value), teamName(trace.team),
         unsigned(trace.classNumber), static_cast<unsigned long long>(trace.tick.value),
         static_cast<unsigned long long>(trace.sequence), unsigned(trace.attempts),
-        unsigned(trace.accepted), unsigned(trace.changed));
+        unsigned(trace.accepted), unsigned(trace.changed), unsigned(trace.observedTeam),
+        int(trace.modelIndex), unsigned(trace.teamInfoReceived),
+        unsigned(trace.classSelectionCompleted), unsigned(trace.postClassFrameAdvanced),
+        unsigned(trace.entityPresent), unsigned(trace.alive));
     line(lineBuffer);
 }
 
@@ -484,22 +490,39 @@ void ConsoleDebug::movementTrace(const debug::MovementTrace& trace) noexcept {
     const auto index=trace.player.slot-1U;
     auto& last=lastMovementLogCall_[index];
     auto& lastSource=lastMovementSource_[index];
+    auto& lastOutcome=lastMovementOutcome_[index];
+    auto& lastError=lastMovementError_[index];
     const bool sourceChanged=trace.source!=lastSource;
     if(!trace.engineCall && trace.outcome != debug::MovementTraceOutcome::Rejected) return;
-    if(!sourceChanged && trace.callCount!=0 && trace.callCount!=1 && trace.callCount<last+512) return;
+    const bool actorChanged = trace.map != lastMovementMap_[index] ||
+        trace.player != lastMovementPlayer_[index] || trace.agent != lastMovementAgent_[index];
+    const bool rejectionChanged = trace.outcome == debug::MovementTraceOutcome::Rejected &&
+        (trace.outcome != lastOutcome || trace.error != lastError || sourceChanged || actorChanged);
+    if(trace.outcome == debug::MovementTraceOutcome::Rejected && !rejectionChanged) return;
+    if(!sourceChanged && trace.outcome != debug::MovementTraceOutcome::Rejected &&
+       trace.callCount!=0 && trace.callCount!=1 && trace.callCount<last+512) return;
     last=trace.callCount;
     lastSource=trace.source;
+    lastOutcome=trace.outcome;
+    lastError=trace.error;
+    lastMovementMap_[index]=trace.map;
+    lastMovementPlayer_[index]=trace.player;
+    lastMovementAgent_[index]=trace.agent;
     const auto* entity=lifecycle_->entityFor(trace.player);
     const auto* join=lifecycle_->joinState(trace.player);
-    const auto& runtime=lifecycle_->runtimeInputBuildStatus();
+    const auto& runtime=lifecycle_->runtimeInputBuildStatus(trace.player);
+    const auto binding=lifecycle_->agents().findByPlayer(trace.player);
+    const bool managed=binding.isValid() && binding.player==trace.player && binding.map==trace.map;
+    const bool connected=lifecycle_->registry().isConnected(trace.player.slot) && lifecycle_->registry().currentPlayer(trace.player.slot)==trace.player;
+    const bool removal=lifecycle_->removalPending(trace.player);
     const auto& nav=lifecycle_->navConsole().runtimeNavigationStatus(trace.player);
     const auto* decision=lifecycle_->runtimeOrchestrator().decision(trace.player);
     const bool inputMatch=runtime.player==trace.player && runtime.agent==trace.agent;
     const bool spectator=entity && (entity->v.iuser1!=0 || (entity->v.flags&FL_SPECTATOR));
     const bool spawned=entity && entity->v.deadflag==DEAD_NO && entity->v.health>0 && !spectator;
-    char lineBuffer[768]{};
+    char lineBuffer[2048]{};
     std::snprintf(lineBuffer,sizeof(lineBuffer),
-        "[ASTRABOT][DEBUG][MOVEMENT] map=%u round=%llu actor=%u:%u agent=%u outcome=%u error=%u input_tick=%llu dispatch_tick=%llu calls=%llu source=%s msec=%u phase=%s spawned=%u z=%.3f vz=%.3f movetype=%d solid=%d onground=%u spectator=%u runtime_map=%u runtime_round=%llu runtime_tick=%llu input_actor=%u:%u input_agent=%u input_match=%u runtime=%s stale=%s held_area=%u weapon=%u weapon_class=%u decision_map=%u decision_round=%llu decision_tick=%llu runtime_reject=%u nav=%s nav_reason=%s nav_map=%u nav_round=%llu nav_tick=%llu nav_decision_tick=%llu",
+        "[ASTRABOT][DEBUG][MOVEMENT] map=%u round=%llu actor=%u:%u agent=%u outcome=%u error=%u input_tick=%llu dispatch_tick=%llu calls=%llu source=%s msec=%u serial=%u command_f=%.3f command_s=%.3f command_u=%.3f buttons=%u impulse=%u managed=%u connected=%u removal=%u phase=%s spawned=%u x=%.3f y=%.3f z=%.3f vx=%.3f vy=%.3f vz=%.3f movetype=%d solid=%d onground=%u spectator=%u runtime_map=%u runtime_round=%llu runtime_tick=%llu input_actor=%u:%u input_agent=%u input_match=%u runtime=%s stale=%s held_area=%u weapon=%u weapon_class=%u decision_map=%u decision_round=%llu decision_tick=%llu runtime_reject=%u nav=%s nav_reason=%s nav_map=%u nav_round=%llu nav_tick=%llu nav_decision_tick=%llu accepted=%zu nonprimary_rejected=%zu intent=%s route=%s reason=%s roam_goal=%u roam_candidates=%zu roam_generation=%llu",
         unsigned(trace.map.value),
         static_cast<unsigned long long>(lifecycle_->round().value),
         unsigned(trace.player.slot),unsigned(trace.player.generation.value),
@@ -507,8 +530,13 @@ void ConsoleDebug::movementTrace(const debug::MovementTrace& trace) noexcept {
         static_cast<unsigned long long>(trace.commandTick.value),
         static_cast<unsigned long long>(trace.dispatchTick.value),
         static_cast<unsigned long long>(trace.callCount),movementSourceName(trace.source),
-        unsigned(trace.engineMsec),join ? joinPhaseName(join->phase()):"None",unsigned(spawned),
-        entity ? double(entity->v.origin.z):0.0,entity ? double(entity->v.velocity.z):0.0,
+        unsigned(trace.engineMsec),unsigned(trace.edictSerial),
+        double(trace.forward),double(trace.side),double(trace.up),
+        unsigned(trace.buttons),unsigned(trace.impulse),unsigned(managed),
+        unsigned(connected),unsigned(removal),join ? joinPhaseName(join->phase()):"None",unsigned(spawned),
+        entity ? double(entity->v.origin.x):0.0,entity ? double(entity->v.origin.y):0.0,
+        entity ? double(entity->v.origin.z):0.0,entity ? double(entity->v.velocity.x):0.0,
+        entity ? double(entity->v.velocity.y):0.0,entity ? double(entity->v.velocity.z):0.0,
         entity ? entity->v.movetype:0,entity ? entity->v.solid:0,
         unsigned(entity && (entity->v.flags&FL_ONGROUND)),unsigned(spectator),
         unsigned(runtime.map.value),
@@ -527,7 +555,21 @@ void ConsoleDebug::movementTrace(const debug::MovementTrace& trace) noexcept {
         unsigned(nav.map.value),
         static_cast<unsigned long long>(nav.round.value),
         static_cast<unsigned long long>(nav.tick.value),
-        static_cast<unsigned long long>(nav.decisionTick.value));
+        static_cast<unsigned long long>(nav.decisionTick.value),
+        lifecycle_->runtimeResult().acceptedActorCount,
+        lifecycle_->runtimeResult().nonPrimaryRejectedCount,
+        core::tactical::intentName(decision ? decision->tactical.intent.type :
+                                   core::tactical::IntentType::None),
+        core::tactical::routeStyleName(decision ? decision->tactical.intent.route :
+                                       core::tactical::RouteStyle::None),
+        core::tactical::reasonName(decision ? decision->tactical.intent.reason :
+                                   core::tactical::Reason::None),
+        unsigned(decision && decision->tactical.intent.type ==
+                         core::tactical::IntentType::Roam
+                     ? decision->tactical.intent.target.area.value
+                     : 0U),
+        decision ? decision->roamCandidateCount : 0U,
+        static_cast<unsigned long long>(decision ? decision->roamGeneration : 0U));
     line(lineBuffer);
 }
 

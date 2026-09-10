@@ -71,9 +71,8 @@ struct RuntimeFrame final {
 struct RuntimeActorInput final {
 	core::PlayerId player{};
 	core::BotAgentId agent{};
-	// The current adapter contract executes exactly one primary bot. The
-	// slot-oriented arrays below are retained for a future multi-bot mode,
-	// but an input that is not explicitly marked primary is never executed.
+	// The primary field remains for compatibility with older input providers.
+	// Runtime execution accepts every independently validated managed actor.
 	bool primary{false};
 	core::world::WorldSnapshot world{};
 	core::team::TeamSnapshot team{};
@@ -104,6 +103,8 @@ struct RuntimeDecision final {
 	nav::model::NavAreaId navigationGoal{};
 	RuntimeRejectReason rejection{RuntimeRejectReason::None};
 	bool hasNavigationGoal{false};
+	std::size_t roamCandidateCount{0};
+	std::uint64_t roamGeneration{0};
 	bool teamExecuted{false};
 	bool tacticalExecuted{false};
 	bool actionExecuted{false};
@@ -116,6 +117,8 @@ struct RuntimeFrameResult final {
 	std::size_t decisionCount{0};
 	std::size_t executableCount{0};
 	std::size_t queuedCombatCount{0};
+	std::size_t acceptedActorCount{0};
+	std::size_t nonPrimaryRejectedCount{0};
 	std::array<RuntimeStage, 8> stageTrace{};
 	std::size_t stageCount{0};
 	bool accepted{false};
@@ -199,6 +202,7 @@ class RuntimeOrchestrator final {
 	std::array<bool, kRuntimeActorCapacity> combatPending_{};
 	std::array<std::uint64_t, kRuntimeActorCapacity> lastTacticalMicros_{};
 	std::array<std::uint64_t, kRuntimeActorCapacity> lastActionMicros_{};
+	std::array<core::PlayerId, kRuntimeActorCapacity> actorIdentity_{};
 	core::team::TeamDirector team_{};
 	core::team::TeamDecision teamDecision_{};
 	core::experience::ExperiencePipeline experience_{};

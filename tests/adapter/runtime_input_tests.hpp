@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
+#include "adapter/cstrike/weapon_protocol.hpp"
 // Included after the existing fake-engine perception fixture.
 namespace runtime_input_test {
 using namespace astrabot;
@@ -55,7 +56,12 @@ void run() {
     adapter::metamod::RuntimeFrame frame{owner.registry().mapGeneration(), owner.round(),
         owner.registry().currentTick(), world->stamp.timeMicros, 100'000, {}};
     auto input = std::make_unique<adapter::metamod::RuntimeActorInput>();
-    assert(adapter::metamod::buildRuntimeInputs(owner, frame, &fixture.hookDll, input.get(), 1) == 1);
+    adapter::metamod::RuntimeInputBuildStatus initialStatus{};
+    assert(adapter::metamod::buildRuntimeInputs(owner, frame, &fixture.hookDll, input.get(), 1, &initialStatus) == 1);
+    assert(initialStatus.map == frame.map && initialStatus.round == frame.round &&
+           initialStatus.tick == frame.tick && initialStatus.nowMicros == frame.nowMicros);
+    assert(initialStatus.updateClientDataAvailable && initialStatus.weaponDataAvailable);
+    assert(initialStatus.updateClientDataCalled && initialStatus.weaponDataCalled);
     assert(input->valid(frame));
     assert(input->combat.weapon.active.value == 28 && input->combat.weapon.clipAmmo == 30);
     assert(input->combat.weapon.reserveAmmo == 90);
@@ -92,6 +98,9 @@ void run() {
     observedWeapon = 14;
     assert(adapter::metamod::buildRuntimeInputs(owner, frame, &fixture.hookDll, input.get(), 1) == 1);
     assert(input->combat.weapon.activeClass == core::combat::WeaponSnapshot::WeaponClass::Rifle);
+    // Weapon id 14 is CS GALIL; keep the protocol contract explicit.
+    assert(adapter::cstrike::protocol::weaponClass(WEAPON_GALIL) ==
+           core::combat::WeaponSnapshot::WeaponClass::Rifle);
     observedWeapon = 20;
     assert(adapter::metamod::buildRuntimeInputs(owner, frame, &fixture.hookDll, input.get(), 1) == 1);
     assert(input->combat.weapon.activeClass == core::combat::WeaponSnapshot::WeaponClass::MachineGun);
@@ -118,6 +127,11 @@ void run() {
         owner, frame, &fixture.hookDll, input.get(), 1, &callbackStatus) == 1);
     assert(callbackStatus.reason ==
            adapter::metamod::RuntimeInputBuildReason::MissingUpdateClientData);
+    assert(callbackStatus.map == frame.map && callbackStatus.round == frame.round &&
+           callbackStatus.tick == frame.tick && callbackStatus.nowMicros == frame.nowMicros);
+    assert(!callbackStatus.updateClientDataAvailable && callbackStatus.weaponDataAvailable);
+    assert(!callbackStatus.updateClientDataCalled);
+
     fixture.hookDll.pfnUpdateClientData = updateClientData;
     step();
     assert(owner.runtimeResult().executableCount == 1);

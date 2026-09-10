@@ -17,7 +17,7 @@
 | HEAD | `fc34d9b` (`Accept managed bots without FL_FAKECLIENT`) |
 | worktree | clean、`main...origin/main` |
 | 本体 worktree | `codex/p12-console-debug`、無関係な未コミット変更・未追跡ファイルを保持 |
-| ソース修正 | 今回は未実施。監査文書のみを追加する |
+| ソース修正 | 実装済み。テストビルド/CTest/実機受入れは未実施 |
 
 本体 worktree はユーザーの既存作業を保持するため、強制的に `main` へ切り替えていない。`main-integration` がすでに clean な `main` であり、ここへ監査文書を出力する。
 
@@ -94,16 +94,16 @@ results=[]
 
 | ID | 重要度 | 判定 | 要点 |
 |---|---|---|---|
-| HIGH-01 | High | 有力候補、実機未確定 | objective未取得時に `teamDecision_` を空にするため `decision.team.shared.map` が空になり、NAV適用がmap mismatchで黙って拒否される |
-| HIGH-02 | High | 有力候補、実機未確定 | 死亡後は `DEAD_NO` 条件で `RunPlayerMove` が止まり、FakeClientのGameDLL側シミュレーション／アニメーション更新が止まる可能性がある |
-| HIGH-03 | High | 条件付き、実機未確定 | `FL_FAKECLIENT` 必須をRuntime入力からは外したが、NAVのActor分類とVisionの接続判定には依然として残っている |
-| MEDIUM-01 | Medium | 有力候補 | TeamInfo未取得またはUnknown teamにより TacticalContext が無効になる |
-| MEDIUM-02 | Medium | 有力候補 | `pfnUpdateClientData` / `pfnGetWeaponData` がRuntime入力の必須条件だが、Meta_Attach必須検査に含まれない |
-| MEDIUM-03 | Medium | 有力候補 | CS武器分類の漏れ、特にXM1014/GALIL/M249/M3/Knifeで攻撃が成立しない可能性がある |
+| HIGH-01 | High | 実装済み、実機未確定 | neutral TeamDecisionへmap/round/tickを保持し、NAV適用をApplied/Unchanged/Rejectedで診断 |
+| HIGH-02 | High | 実装済み、実機未確定 | planner/combat入力を停止し、Dead actorには旧commandを再送せずzero-inputを限定dispatch |
+| HIGH-03 | High | 実装済み、実機未確定 | binding、PlayerId/generation、edict identity、map、退役状態でManagedBotを判定し、Engine契約は維持 |
+| MEDIUM-01 | Medium | 実装済み、実機未確定 | MissingTeam、TeamGenerationMismatch、UnknownTeamを分離し、Unknownを推測補正しない |
+| MEDIUM-02 | Medium | 実装済み、実機未確定 | callback欠落をattach失敗にせず、capabilityとRuntime reason/logで明示 |
+| MEDIUM-03 | Medium | 実装済み、実機未確定 | GALIL、XM1014/M3、M249、Knifeを分類し、Unknown/非銃器の入力境界を明示 |
 | MEDIUM-04 | Medium | 仕様上の制限 | 複数BOTを保持できても、Runtime AI入力を作るのはprimary一体だけ |
-| MEDIUM-05 | Medium | 有力候補 | NAV index、current area、route state の成立条件が多く、`MissingNav` 等でRuntimeが無効化される |
-| LOW-01 | Low | 未確認 | BOT作成時の `model` が空で、BOTごとの明示的なモデル選択がない |
-| LOW-02 | Low | 観測性不足 | MovementログはRuntime拒否理由を直接示さず、フレーム順序のため前フレームのstatusを表示し得る |
+| MEDIUM-05 | Medium | 実装済み、実機未確定 | Jump/Ladderの有効Traversal中だけ、identity/agent/map/route generation一致の直近areaを限定利用 |
+| LOW-01 | Low | 仕様確認・実機未確定 | model空文字だけを根因と断定せず、addbotのteam/class循環とJoinTraceを記録。実renderは未確認 |
+| LOW-02 | Low | 実装済み、実機未確定 | actor/agent/input_match、input/decision/dispatch tick、Runtime/NAV/queue/dispatch結果をbounded診断へ関連付け |
 
 上記は「ソースから導ける根因候補」であり、実機の `source=Command`、Runtime reason、NAV apply結果、dead後のanimation stateを取得するまで確定バグとは呼ばない。
 
@@ -617,6 +617,22 @@ Finish/post-Finish境界が解除された後、以下の順で一回のlive ses
 6. **CS weapon分類とKnife近接攻撃を実装範囲として決める。** 未分類IDを追加するだけでなく、各weaponのattack semanticsを確認する。
 7. **model選択の仕様を決める。** GameDLL任せならliveでteam/class/modelを証明し、BOT別モデルが必要ならFakeClient metadataまたはjoin後の選択を設計する。
 
+## 9.5 実装後の追補（2026-09-09）
+
+監査ベースライン以後の未コミット作業ツリーでは、HIGH-01/HIGH-03、追加指摘A/B/C、MEDIUM/LOWのうち実装可能な項目を反映した。以下はソース静的確認の記録であり、テストPASS・実機PASS・Finishの証明ではない。
+
+- HIGH-01: objective/economy readerがない場合もneutral TeamDecisionのmap/round/tickを入力frameから保持する。NAV適用結果はApplied、Unchanged、Rejectedと理由を診断する。
+- HIGH-03: ManagedBotはBotAgentRegistryのbinding、PlayerId/generation、edict identity、map、退役状態で判定する。Engine/GameDLL向けFakeClient契約は別に維持する。
+- 追加A: onDeath/input unavailableではplanner/combat状態だけを解除し、map-session中のOpponent Profileを保持する。disconnect/map終了でforgetし、同一slotの新generation観測時は旧Profileを破棄して遅延観測の混入を防ぐ。
+- 追加B: pending command拒否時は、同一actor・同一map・現entity・Joined・有効binding・当frame未dispatchの場合だけ、旧commandを再送しないzero-inputを一度送る。Dead経路はDead traceとして分離する。
+- 追加C: currentArea fallbackはJump/Ladderの有効Traversal中で、actor/agent/map/route generation/tickが一致する直近areaに限定する。spawn、Idle、routeなし、map変更ではfallbackしない。
+- MEDIUM-01/02/03: TeamInfoのMissing/GenerationMismatch/Unknownを分離し、callback欠落をcapability診断へ出す。GALIL、XM1014/M3、M249、Knifeの分類と非銃器境界を追加した。
+- MEDIUM-04/05: single-primaryを明示的な契約として維持し、Traversal中だけarea fallbackを許可する。
+- LOW-01/02: model空文字を根因と断定せず、addbotのteam/class循環とJoinTraceを証拠化する。Movement診断はactor/agent/input_match、input/decision/dispatch tick、Runtime/NAV/queue/dispatch結果を関連付け、bounded出力を維持する。
+- 追加の静的修正: map rollover時のOpponent Profile round初期化、同一slotの新generationによる旧Profile除去、weapon validation/testの宣言・括弧・関数境界を修復した。
+
+今回の確認済み範囲はソース、回帰テスト、診断、状態文書の静的整合性とgit diff --checkまでである。実機PASSが明示されるまでは、tests ONのconfigure/build、CTest、canonical All、commit/mergeを実施しない。
+
 ## 10. 最終判定
 
 ```text
@@ -626,7 +642,7 @@ FocalSpan確認                 完了（fresh/ready）
 参照Bot比較                  完了（podbot_mm/YaPB/SyPB/RealBot）
 BOT棒立ちの根因              Runtime integrationの複数候補を特定、実機未確定
 死亡アニメーションの根因     死亡後RunPlayerMove停止を有力候補として特定、実機未確定
-ソース修正                    未実施
+ソース修正                    HIGH/MEDIUM/LOW実装済み（静的確認）
 P12実機受入れ                 未完了。Finish/post-Finish境界により今回は未実行
 ```
 

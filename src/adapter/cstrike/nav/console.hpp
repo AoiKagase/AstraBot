@@ -73,11 +73,20 @@ struct RuntimeNavigationStatus final {
 struct RuntimeNavigationState final {
     nav::runtime::MovementSnapshot movement{};
     std::optional<nav::model::NavAreaId> currentArea{};
-    std::optional<nav::model::NavAreaId> goal{};
     std::optional<core::perception::Point> goalPosition{};
+    std::optional<nav::model::NavAreaId> goal{};
+    std::array<core::tactical::TargetArea, core::tactical::kMaxTacticalRoamCandidates>
+        roamCandidates{};
+    std::size_t roamCandidateCount{0};
+    std::uint64_t roamGeneration{0};
     std::uint64_t routeGeneration{0};
     bool routeExecutable{false};
     bool currentAreaHeld{false};
+    bool explicitRoute{false};
+    core::tactical::RouteStyle routeStyle{core::tactical::RouteStyle::None};
+    bool roamActive{false};
+    bool roamRejected{false};
+    bool roamArrived{false};
 };
 class NavConsole final : public nav::runtime::IWorldQueries {
 public:
@@ -220,6 +229,16 @@ private:
     mutable core::MapGeneration lastCurrentAreaMap_{};
     mutable std::uint64_t lastCurrentAreaRouteGeneration_{0};
     mutable core::TickId lastCurrentAreaTick_{};
+    std::array<nav::model::NavAreaId, core::tactical::kTacticalRoamHistory>
+        roamRecentGoals_{};
+    std::size_t roamRecentGoalCount_{0};
+    std::array<nav::model::NavAreaId, core::tactical::kMaxTacticalRoamCandidates>
+        roamRejectedGoals_{};
+    std::size_t roamRejectedGoalCount_{0};
+    bool explicitRoute_{false};
+    bool roamActive_{false};
+    core::tactical::RouteStyle routeStyle_{core::tactical::RouteStyle::None};
+    bool roamArrived_{false};
     };
     // Fixed slot capacity, lazy allocation, stable addresses through reentrant
     // invalidation/reset. Mesh, graph and index remain shared across all actors.

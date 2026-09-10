@@ -64,17 +64,23 @@ struct RuntimeInputBuildStatus final {
     core::MapGeneration map{};
     core::perception::RoundGeneration round{};
     core::TickId tick{};
+    std::uint64_t nowMicros{0};
     core::PlayerId player{};
     core::BotAgentId agent{};
     std::uint16_t activeWeapon{0};
     core::combat::WeaponSnapshot::WeaponClass activeClass{
         core::combat::WeaponSnapshot::WeaponClass::Unknown};
     bool currentAreaHeld{false};
+    bool updateClientDataAvailable{false};
+    bool weaponDataAvailable{false};
+    bool updateClientDataCalled{false};
+    bool weaponDataCalled{false};
 };
 
 std::size_t buildRuntimeInputs(const LifecycleCoordinator&, const RuntimeFrame&,
     DLL_FUNCTIONS*, RuntimeActorInput*, std::size_t,
-    RuntimeInputBuildStatus* = nullptr) noexcept;
+    RuntimeInputBuildStatus* = nullptr,
+    std::size_t statusCapacity = 1) noexcept;
 bool runtimeActorReady(const LifecycleCoordinator&, const RuntimeFrame&,
     DLL_FUNCTIONS*, core::PlayerId, core::combat::WeaponId, bool attack) noexcept;
 }

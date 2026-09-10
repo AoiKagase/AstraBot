@@ -226,6 +226,7 @@ if(ASTRABOT_BUILD_METAMOD)
     endif()
 
     set(_astrabot_metamod_sdk_include_dirs
+        "${CMAKE_CURRENT_SOURCE_DIR}/third_party"
         "${ASTRABOT_METAMOD_SDK_ROOT}/metamod"
         "${ASTRABOT_METAMOD_SDK_ROOT}/hlsdk"
         "${ASTRABOT_METAMOD_SDK_ROOT}/hlsdk/engine"
