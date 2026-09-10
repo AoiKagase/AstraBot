@@ -583,7 +583,7 @@ void ConsoleDebug::runtimeCorrelationTrace(core::PlayerId player) noexcept {
         const auto& combat = candidate->combat;
         char combatLine[768]{};
         std::snprintf(combatLine, sizeof(combatLine),
-            "[ASTRABOT][DEBUG][COMBAT] kind=Runtime map=%u round=%llu tick=%llu actor=%u:%u agent=%u known_enemies=%zu vision_memories=%zu target=%u:%u source=%u age_us=%llu confidence=%.3f action=%u fire_reason=%s attack_authorized=%u executable=%u tactical_ran=%u action_ran=%u",
+            "[ASTRABOT][DEBUG][COMBAT] kind=Runtime map=%u round=%llu tick=%llu actor=%u:%u agent=%u known_enemies=%zu vision_memories=%zu target=%u:%u source=%u age_us=%llu confidence=%.3f action=%u fire_reason=%s attack_authorized=%u executable=%u tactical_ran=%u action_ran=%u view_pitch=%.2f view_yaw=%.2f",
             unsigned(correlation.map.value),
             static_cast<unsigned long long>(correlation.round.value),
             static_cast<unsigned long long>(correlation.inputTick.value),
@@ -594,7 +594,8 @@ void ConsoleDebug::runtimeCorrelationTrace(core::PlayerId player) noexcept {
             static_cast<unsigned long long>(combat.targetAgeMicros), combat.confidence,
             unsigned(combat.action), runtimeFireReasonName(combat.reason),
             unsigned(combat.hasAttackInput()), unsigned(candidate->executable),
-            unsigned(candidate->tacticalExecuted), unsigned(candidate->actionExecuted));
+            unsigned(candidate->tacticalExecuted), unsigned(candidate->actionExecuted),
+            static_cast<double>(combat.view.pitch), static_cast<double>(combat.view.yaw));
         line(combatLine);
     }
     if (const auto* health = lifecycle_->runtimeHealth(player)) {

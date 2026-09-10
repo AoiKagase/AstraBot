@@ -108,6 +108,39 @@ bool calculateAim(const perception::Point& eye, const perception::Point& target,
     return isFiniteView(result) && inRange(result);
 }
 
+constexpr std::uint64_t kViewScanPeriodMicros = 4'000'000;
+
+ViewAngles scanView(const CombatInput& input) noexcept {
+    ViewAngles result = input.view;
+    const auto phase = (input.timeMicros % kViewScanPeriodMicros +
+                        (static_cast<std::uint64_t>(input.agent.value) * 500'000U) %
+                            kViewScanPeriodMicros) % kViewScanPeriodMicros;
+    const double yaw = -180.0 +
+                       360.0 * static_cast<double>(phase) /
+                           static_cast<double>(kViewScanPeriodMicros);
+    result.yaw = static_cast<float>(yaw);
+    return result;
+}
+
+void preserveWorldMovement(const ViewAngles& from, const ViewAngles& to,
+                           BotCommand& command) noexcept {
+    constexpr double radiansPerDegree = 3.14159265358979323846 / 180.0;
+    const double delta = (static_cast<double>(from.yaw) -
+                         static_cast<double>(to.yaw)) * radiansPerDegree;
+    const double cosine = std::cos(delta);
+    const double sine = std::sin(delta);
+    const double forward = static_cast<double>(command.movement.forward);
+    const double side = static_cast<double>(command.movement.side);
+    const double rotatedForward = forward * cosine + side * sine;
+    const double rotatedSide = -forward * sine + side * cosine;
+    if (std::isfinite(rotatedForward) && std::isfinite(rotatedSide) &&
+        std::abs(rotatedForward) <= static_cast<double>(kMaxMovement) + 0.001 &&
+        std::abs(rotatedSide) <= static_cast<double>(kMaxMovement) + 0.001) {
+        command.movement.forward = static_cast<float>(rotatedForward);
+        command.movement.side = static_cast<float>(rotatedSide);
+    }
+}
+
 bool resolveTargetPoint(const CombatInput& input, const CombatDecision& selection,
                         perception::Point& point, std::uint64_t& observedMicros) noexcept {
     if (!selection.target.isValid()) return false;
@@ -866,7 +899,10 @@ CombatDecision selectTarget(const CombatInput& input) noexcept {
 
 CombatDecision aimTarget(const CombatInput& input) noexcept {
     auto decision = selectTarget(input);
-    if (decision.action != CombatAction::Track) return decision;
+    if (decision.action != CombatAction::Track) {
+        if (input.validate()) decision.view = scanView(input);
+        return decision;
+    }
 
     perception::Point targetPoint{};
     std::uint64_t observedMicros = 0;
@@ -1124,6 +1160,7 @@ CommandCompositionResult composeCommand(
         static_cast<ButtonMask>(Button::Attack) |
         static_cast<ButtonMask>(Button::Reload);
     BotCommand command = navigation;
+    preserveWorldMovement(navigation.view, combat.view, command);
     command.view = combat.view;
     command.buttons = (navigation.buttons & ~combatButtons) |
                       (combat.buttons & combatButtons);
