@@ -7,6 +7,20 @@
 #include <limits>
 
 namespace astrabot::adapter::metamod {
+namespace {
+// RunPlayerMove updates the fake client's view, but ReGameDLL does not always
+// mirror that view onto the player model. Keep the body and the view on the
+// same GoldSrc convention used by the existing bot implementations: body
+// pitch is the inverted, damped view pitch and body yaw is the view yaw.
+void syncBodyAngles(edict_t* entity, const float viewAngles[3]) noexcept {
+    if (entity == nullptr || viewAngles == nullptr) return;
+    entity->v.angles.x = -viewAngles[0] / 3.0F;
+    entity->v.angles.y = viewAngles[1];
+    entity->v.angles.z = 0.0F;
+    entity->v.ideal_yaw = viewAngles[1];
+    entity->v.idealpitch = viewAngles[0];
+}
+}
 
 void MovementCoordinator::configure(
     enginefuncs_t* engineFunctions,
@@ -304,6 +318,7 @@ bool MovementCoordinator::dispatchJoinProgress(
     engineFunctions_->pfnRunPlayerMove(
         entity, viewAngles, 0.0F, 0.0F, 0.0F, 0, 0,
         engineMsec);
+    syncBodyAngles(entity, viewAngles);
     activeDispatchSource_=debug::MovementTraceSource::None;
     dispatchedThisFrame_[index] = true;
     const auto callCount=++callCounts_[index];
@@ -566,6 +581,7 @@ MovementResult MovementCoordinator::dispatchOne(
         static_cast<unsigned short>(pending.command.buttons),
         pending.command.impulse,
         engineMsec);
+    syncBodyAngles(entity, viewAngles);
     activeDispatchSource_=debug::MovementTraceSource::None;
     const auto index=activePlayer.slot-1U;
     dispatchedThisFrame_[index] = true;

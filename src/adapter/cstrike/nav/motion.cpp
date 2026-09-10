@@ -706,8 +706,20 @@ void NavConsole::moveFrame(metamod::LifecycleCoordinator& owner) noexcept {
                 current_->execution_.state=nav::runtime::ExecutionState::Recovering;
                 clearPending();
             } else {
+                // A jump failure, or an unoccupied ground probe that reports
+                // a hard hull block, is a repeatable physical failure of the
+                // directed NAV edge. Exclude that edge for this NAV
+                // generation; dynamic/player blockers remain on bounded
+                // recovery instead of being misclassified here.
+                const bool structural =
+                    decision.reason == nav::local::WalkReason::UnsupportedTraversal ||
+                    (decision.reason == nav::local::WalkReason::JumpFailed &&
+                     !decision.blocker) ||
+                    (decision.reason == nav::local::WalkReason::ProbeFailed &&
+                     decision.probeReason == nav::local::ProbeReason::Blocked &&
+                     !decision.blocker);
                 failExecution(nav::runtime::ExecutionFailure::Motion,
-                    decision.reason==nav::local::WalkReason::UnsupportedTraversal);
+                    structural);
             }
             return;
         }
@@ -760,12 +772,21 @@ void NavConsole::submitMotion(const nav::runtime::MovementSnapshot& s,metamod::L
     current_->motionTrace_.commandTick=s.tick; current_->motionTrace_.dispatchTick={}; current_->motionTrace_.intentAgeUs=age;
     current_->motionTrace_.transportError=result.error;
     if(result.queued()) {
+        // A command is queued for the next server tick. Under a loaded HLDS
+        // that tick can legitimately take longer than the nominal intent
+        // lifetime; retain one measured frame of grace so a one-tick command
+        // is not rejected solely because wall time exceeded 120 ms. A second
+        // missed dispatch still expires through the normal bounded stale path.
+        const auto frameDelta=movement_->frameDeltaUs();
+        const auto remaining=nav::local::IntentPump::maxIntentAgeUs>age
+            ? nav::local::IntentPump::maxIntentAgeUs-age : 0U;
+        const auto pendingFreshness=add(remaining,frameDelta);
         current_->motionTrace_.elapsedUs=s.elapsedUs;
-        current_->motionTrace_.frameDeltaUs=movement_->frameDeltaUs();
-        current_->motionTrace_.pendingRemainingUs=nav::local::IntentPump::maxIntentAgeUs-age;
+        current_->motionTrace_.frameDeltaUs=frameDelta;
+        current_->motionTrace_.pendingRemainingUs=pendingFreshness;
         current_->motionTrace_.intentSpeed=double(intent.speed);
         current_->motionTrace_.speedLimit=double(*s.speedLimit);
-        current_->pendingMotion_=PendingMotion{current_->motionTrace_.decision.binding,s.tick,nav::local::IntentPump::maxIntentAgeUs-age,
+        current_->pendingMotion_=PendingMotion{current_->motionTrace_.decision.binding,s.tick,pendingFreshness,
             s,submittedCommand,current_->segment_,contact};
         if(decision.jumpState && decision.jumpPlan && decision.jumpPhysics)
             current_->pendingMotion_->jump=JumpTicket{*decision.jumpPlan,*decision.jumpPhysics,*decision.jumpState,decision.jumpPressTick};
