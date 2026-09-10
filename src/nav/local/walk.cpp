@@ -353,9 +353,11 @@ WalkDecision Walk::updateMotion(const runtime::MovementSnapshot& s,const query::
     if(dropPlan_ || (!cursor_.exhausted() &&
        corridor_->transitions()[cursor_.index()].effectiveTraversal==model::NavTraversalKind::Drop))
         return updateDrop(out,s,index,indexMap,port,nowUs,reservedQueries,physics);
-    if(jump_ || (!cursor_.exhausted() && constraints(corridor_->transitions()[cursor_.index()].edge.traversal,
-        corridor_->transitions()[cursor_.index()].sourceAttributes,
-        corridor_->transitions()[cursor_.index()].targetAttributes).kind==model::NavTraversalKind::Jump))
+    if(jump_ || (!cursor_.exhausted() &&
+        (corridor_->transitions()[cursor_.index()].effectiveTraversal==model::NavTraversalKind::Jump ||
+         constraints(corridor_->transitions()[cursor_.index()].edge.traversal,
+            corridor_->transitions()[cursor_.index()].sourceAttributes,
+            corridor_->transitions()[cursor_.index()].targetAttributes).kind==model::NavTraversalKind::Jump)))
         return updateJump(out,s,index,indexMap,port,nowUs,reservedQueries,physics);
     if(reservedQueries>=limits_.probe.maxQueries) {
         out.queries=reservedQueries; out.probeReason=ProbeReason::BudgetExceeded;

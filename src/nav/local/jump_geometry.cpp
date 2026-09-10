@@ -41,7 +41,9 @@ JumpGeometryResult JumpGeometry::derive(const corridor::Corridor& path,Binding b
        s.grounded!=true || s.ducked!=false) return fail(JumpGeometryReason::InvalidActor);
     if(binding.step>=path.transitions().size()) return fail(JumpGeometryReason::InvalidStep);
     const auto& t=path.transitions()[binding.step];
-    const auto hints=constraints(t.edge.traversal,t.sourceAttributes,t.targetAttributes);
+    const auto jumpEdge=t.effectiveTraversal==model::NavTraversalKind::Jump;
+    const auto hints=constraints(jumpEdge ? model::NavTraversalKind::Jump:t.edge.traversal,
+        t.sourceAttributes,t.targetAttributes);
     if(!hints || hints.kind!=model::NavTraversalKind::Jump || t.edge.external || t.edge.direction>3)
         return fail(JumpGeometryReason::UnsupportedTransition);
     if(!query::containsXY(t.sourceExtent,*s.position)) return fail(JumpGeometryReason::InvalidActor);

@@ -90,17 +90,38 @@ PortalFailureReason portal(Transition& t, HullClearance hull, PortalPolicy polic
     const double sourceHigh=vertical ? a.southEast.y : a.southEast.x;
     const double targetLow=vertical ? b.northWest.y : b.northWest.x;
     const double targetHigh=vertical ? b.southEast.y : b.southEast.x;
-    const double low=std::max(sourceLow+(sourceFits ? margin:0.0),
-                              targetLow+(targetFits ? margin:0.0));
-    const double high=std::min(sourceHigh-(sourceFits ? margin:0.0),
-                               targetHigh-(targetFits ? margin:0.0));
-    if(!(low<high)) return PortalFailureReason::NoPortalSpan;
+    double low=std::max(sourceLow+(sourceFits ? margin:0.0),
+                        targetLow+(targetFits ? margin:0.0));
+    double high=std::min(sourceHigh-(sourceFits ? margin:0.0),
+                         targetHigh-(targetFits ? margin:0.0));
+    if(!(low<high)) {
+        // A ReGameDLL/ZBot NAV patch can be a zero-width boundary or can
+        // become point-like after the actor hull is projected out. That is
+        // not, by itself, a solid wall. Preserve the measured overlap as a
+        // micro portal and let the runtime hull sweep/support probe decide
+        // whether the actor can actually cross it.
+        const double rawLow=std::max(sourceLow,targetLow);
+        const double rawHigh=std::min(sourceHigh,targetHigh);
+        if(policy!=PortalPolicy::AllowMicroTransit || rawLow>rawHigh)
+            return PortalFailureReason::NoPortalSpan;
+        low=high=(rawLow+rawHigh)*0.5;
+    }
     const double x0=vertical ? boundary:low, y0=vertical ? low:boundary;
     const double x1=vertical ? boundary:high, y1=vertical ? high:boundary;
     t.sourceLow=support(a,x0,y0); t.sourceHigh=support(a,x1,y1);
     t.targetLow=support(b,vertical ? opposite:low,vertical ? low:opposite);
     t.targetHigh=support(b,vertical ? opposite:high,vertical ? high:opposite);
     const double lowFall=t.sourceLow.z-t.targetLow.z, highFall=t.sourceHigh.z-t.targetHigh.z;
+    const double lowRise=-lowFall, highRise=-highFall;
+    if(gap==0 && (lowRise>18 || highRise>18)) {
+        // GoldSrc's ordinary step is about 18 units. A larger measured
+        // upward transition must use the existing, observed jump primitive;
+        // treating it as Walk makes GroundProbe stop at the riser forever.
+        if(!hints || hints.kind!=model::NavTraversalKind::Walk || hints.noJump ||
+           lowRise>80 || highRise>80)
+            return PortalFailureReason::UnsupportedTraversal;
+        t.effectiveTraversal=model::NavTraversalKind::Jump;
+    }
     if(gap!=0 || (policy==PortalPolicy::AllowMicroTransit && (lowFall>18 || highFall>18))) {
         // The source NAV patch need not contain the hull: its measured support
         // is mandatory in updateDrop. Landing still requires a hull-safe target.
@@ -115,8 +136,10 @@ Point project(const Transition& t, Point p) noexcept {
     if(t.edge.external) return t.sourceLow;
     const auto a=t.sourceLow, b=t.sourceHigh;
     const bool vertical=a.x==b.x;
-    const double f=vertical ? std::clamp((p.y-a.y)/(b.y-a.y),0.0,1.0) :
-                              std::clamp((p.x-a.x)/(b.x-a.x),0.0,1.0);
+    const double denominator=vertical ? double(b.y)-a.y:double(b.x)-a.x;
+    if(std::abs(denominator)<=0.000001) return a;
+    const double f=vertical ? std::clamp((p.y-a.y)/denominator,0.0,1.0) :
+                              std::clamp((p.x-a.x)/denominator,0.0,1.0);
     return {a.x+(b.x-a.x)*f,a.y+(b.y-a.y)*f,a.z+(b.z-a.z)*f};
 }
 }

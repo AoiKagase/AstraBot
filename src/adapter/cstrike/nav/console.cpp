@@ -36,13 +36,18 @@ bool hullFits(const nav::model::NavExtent& extent,
 }
 
 // Route searches are actor-local, while the resulting corridors are executed
-// in the same world. Keep a small synchronous view of other actors' first
+// in the same world. Keep a small synchronous view of other actors' leading
 // edges so newly planned bots do not all select the same narrow entry. This
 // is a cost preference, not a hard exclusion: if the map has no alternative,
 // the route remains executable.
+constexpr std::size_t trafficLookAhead=6;
+struct TrafficReservation final {
+    nav::query::NavDirectedEdge edge{};
+    std::size_t depth{};
+};
 struct TrafficRoutePolicy final {
     nav::query::NavRoutePolicy base{};
-    std::array<nav::query::NavDirectedEdge, host::kMaxClientSlots> occupied{};
+    std::array<TrafficReservation, host::kMaxClientSlots*trafficLookAhead> occupied{};
     std::size_t count{0};
 };
 
@@ -71,8 +76,9 @@ nav::query::NavCostDecision trafficCost(
     if (result.blocked) return result;
     std::size_t shared=0;
     for (std::size_t i=0; i<policy->count; ++i)
-        if (sameRouteEdge(input.edge,policy->occupied[i])) ++shared;
-    if (shared) result.components.danger += 2048.0*static_cast<double>(shared);
+        if (sameRouteEdge(input.edge,policy->occupied[i].edge))
+            shared += policy->occupied[i].depth==0 ? 4:1;
+    if (shared) result.components.danger += 8192.0*static_cast<double>(shared);
     return result;
 }
 
@@ -592,7 +598,13 @@ std::optional<RuntimeNavigationState> NavConsole::runtimeState(
                     other->execution_.state!=nav::runtime::ExecutionState::Running || other->explicitRoute_ ||
                     other->roamArrived_)
                     continue;
-                if (other->session_->trace().goal == id) return true;
+                const auto& trace=other->session_->trace();
+                if (trace.goal == id) return true;
+                if (trace.route) {
+                    const auto count=(std::min)(trafficLookAhead,trace.route->areas.size());
+                    for (std::size_t i=0; i<count; ++i)
+                        if (trace.route->areas[i] == id) return true;
+                }
             }
             return false;
         };
@@ -760,8 +772,10 @@ void NavConsole::requestRoute(const nav::runtime::MovementSnapshot& s,nav::model
             other->execution_.state!=nav::runtime::ExecutionState::Running ||
             other->session_->trace().map!=s.map) continue;
         const auto& route=other->session_->trace().route;
-        if (!route || route->steps.empty() || traffic.count>=traffic.occupied.size()) continue;
-        traffic.occupied[traffic.count++]=route->steps.front().edge;
+        if (!route || route->steps.empty()) continue;
+        const auto count=(std::min)(trafficLookAhead,route->steps.size());
+        for (std::size_t depth=0; depth<count && traffic.count<traffic.occupied.size(); ++depth)
+            traffic.occupied[traffic.count++]={route->steps[depth].edge,depth};
     }
     if (traffic.count) {
         filteredOptions.policy={&traffic,&trafficCost,&trafficHeuristic};
