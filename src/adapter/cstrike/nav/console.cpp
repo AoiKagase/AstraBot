@@ -245,6 +245,23 @@ void NavConsole::applyRuntimeNavigation(
         reject(RuntimeNavigationApplyReason::RouteRejected);
         return;
     }
+    const bool sameRunningRoute =
+        current_->execution_.state==nav::runtime::ExecutionState::Running &&
+        current_->session_ && current_->session_->executable() &&
+        current_->session_->trace().actor == s.actor &&
+        current_->session_->trace().agent == s.agent &&
+        current_->session_->trace().map == s.map &&
+        current_->session_->trace().goal == decision.navigationGoal;
+    // A periodic runtime decision must not revalidate the current route as a
+    // new search.  Execution cooldowns and search budgets describe failed or
+    // pending replans; applying them to an already-running route turns a
+    // healthy route into GoalReplaced/Unchanged churn.
+    if (sameRunningRoute) {
+        status.result = RuntimeNavigationApplyResult::Unchanged;
+        status.reason = RuntimeNavigationApplyReason::None;
+        publish();
+        return;
+    }
     if(current_->execution_.cooling(decision.navigationGoal,current_->navigationTimeUs_) ||
        !current_->execution_.canSearch(current_->navigationTimeUs_)) {
         reject(RuntimeNavigationApplyReason::RouteRejected); return;
@@ -263,16 +280,6 @@ void NavConsole::applyRuntimeNavigation(
     if (current_->explicitRoute_ && roamDecision) {
         status.result = RuntimeNavigationApplyResult::Unchanged;
         status.reason = RuntimeNavigationApplyReason::None;
-        publish();
-        return;
-    }
-    if (current_->execution_.state==nav::runtime::ExecutionState::Running &&
-        current_->session_ && current_->session_->executable() &&
-        current_->session_->trace().actor == s.actor &&
-        current_->session_->trace().agent == s.agent &&
-        current_->session_->trace().map == s.map &&
-        current_->session_->trace().goal == decision.navigationGoal) {
-        status.result = RuntimeNavigationApplyResult::Unchanged;
         publish();
         return;
     }
@@ -488,9 +495,15 @@ std::optional<RuntimeNavigationState> NavConsole::runtimeState(
         result.routeExecutable = actor->session_->executable() &&
                                  actor->execution_.state==nav::runtime::ExecutionState::Running &&
                                  !result.roamArrived;
-        result.roamRejected=result.roamActive && result.goal &&
-            actor->execution_.cooling(*result.goal,actor->navigationTimeUs_);
-        if (result.roamActive && !result.roamArrived && result.goal) {
+        // A running route is already accepted.  Its goal must remain visible
+        // to the planner even while the execution budget contains cooldown
+        // information from an earlier bounded recovery.  Only a non-running
+        // goal is eligible for rejection/replan signalling here.
+        result.roamRejected = false;
+        if (result.roamActive && !result.roamArrived &&
+            !result.routeExecutable && result.goal) {
+            result.roamRejected = actor->execution_.cooling(
+                *result.goal, actor->navigationTimeUs_);
             const auto limit = (std::min)(
                 actor->roamRejectedGoalCount_, actor->roamRejectedGoals_.size());
             for (std::size_t i = 0; i < limit; ++i) {
@@ -585,6 +598,8 @@ std::optional<RuntimeNavigationState> NavConsole::runtimeState(
         };
         const auto addCandidate = [&](nav::model::NavAreaId id,
                                       bool allowRecent) noexcept {
+        const bool preserveCurrentGoal = result.roamActive &&
+            result.routeExecutable && result.goal && id == *result.goal;
         if (result.roamCandidateCount >= result.roamCandidates.size()) {
             ++result.roamExcludedCapacity; return;
         }
@@ -594,15 +609,17 @@ std::optional<RuntimeNavigationState> NavConsole::runtimeState(
         if (occupiedByOther(id)) {
             ++result.roamExcludedOccupied; return;
         }
-        if(actor && (!actor->execution_.canSearch(actor->navigationTimeUs_) ||
-            actor->execution_.cooling(id,actor->navigationTimeUs_))) {
+        if(!preserveCurrentGoal && actor &&
+            (!actor->execution_.canSearch(actor->navigationTimeUs_) ||
+             actor->execution_.cooling(id,actor->navigationTimeUs_))) {
             ++result.roamExcludedCooling; return;
         }
-        if (actor && isListed(actor->roamRejectedGoals_,
+        if (!preserveCurrentGoal && actor && isListed(actor->roamRejectedGoals_,
             actor->roamRejectedGoalCount_, id)) {
             ++result.roamExcludedRejected; return;
         }
-        if (!allowRecent && actor && isListed(actor->roamRecentGoals_,
+        if (!preserveCurrentGoal && !allowRecent && actor &&
+            isListed(actor->roamRecentGoals_,
             actor->roamRecentGoalCount_, id)) {
             ++result.roamExcludedRecent; return;
         }

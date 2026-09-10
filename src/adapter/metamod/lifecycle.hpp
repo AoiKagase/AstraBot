@@ -346,6 +346,8 @@ private:
     void clearCombatState(core::PlayerId player) noexcept;
     void clearAllCombatState() noexcept;
     bool dispatchMenu(ClientState&, std::uint8_t selection) noexcept;
+    bool dispatchBuyCommand(core::PlayerId, const char*) noexcept;
+    void dispatchRoundBuy(ClientState&) noexcept;
     static bool dispatchWeaponSelectionHook(
         edict_t*, core::WeaponSelection) noexcept;
     bool dispatchWeaponSelection(
@@ -375,6 +377,8 @@ private:
     bool advanceVisualEffects() noexcept;
     core::perception::TeamRoster teams_{};
     core::perception::RoundGeneration round_{1};
+    std::array<core::perception::RoundGeneration,host::kMaxClientSlots>
+        lastBuyRound_{};
     PerceptionIdentityDiagnostics identityDiagnostics_{};
     core::TickId lastRoundTick_{};
     double lastRoundTime_{-1};

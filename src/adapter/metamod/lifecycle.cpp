@@ -262,6 +262,7 @@ void LifecycleCoordinator::reset() noexcept {
     sound_.reset();
     vision_.reset();
     teams_ = {}; round_ = {1}; identityDiagnostics_ = {}; lastRoundTick_ = {}; lastRoundTime_ = -1;
+    lastBuyRound_.fill({});
     navConsole_.reset(); movement_.reset();
     commandContextActive_=false; commandPlayer_={}; commandArgc_=0;
     commandArgv0_={}; commandArgv1_={}; commandArgs_={};
@@ -308,6 +309,7 @@ void LifecycleCoordinator::serverActivate(int clientMax) noexcept {
         vision_.reset();
         sound_.beginMap(registry_.mapGeneration());
         (void)teams_.activate(registry_.mapGeneration()); round_ = {1}; lastRoundTick_ = {}; lastRoundTime_ = -1;
+        lastBuyRound_.fill({});
         (void)advanceVisualEffects();
         ++status_.mapActivations;
         if(status_.mapActivations>1) ++status_.mapReplays;
@@ -425,6 +427,7 @@ void LifecycleCoordinator::clientDisconnect(edict_t* entity) noexcept {
     visualEffects_.forget(player);
     sound_.forget(player);
     movement_.forget(player);
+    if (player.slot <= lastBuyRound_.size()) lastBuyRound_[player.slot - 1U] = {};
     clearCombatState(player);
     runtime_.onDisconnect(player);
     if(client) {
@@ -480,6 +483,7 @@ RemovalResult LifecycleCoordinator::remove(core::PlayerId player) noexcept {
     visualEffects_.forget(player);
     teams_.forget(player);
     movement_.forget(player);
+    if (player.slot <= lastBuyRound_.size()) lastBuyRound_[player.slot - 1U] = {};
     clearCombatState(player);
     runtime_.onDisconnect(player);
     navConsole_.invalidateActor(player,nav::runtime::SessionReason::Disconnected);
@@ -599,6 +603,11 @@ void LifecycleCoordinator::startFrame() noexcept {
         if(action.kind==cstrike::JoinActionKind::SendMenuSelect && client.fake.activePlayer()==player) {
             const bool dispatched=dispatchMenu(client,action.selection);
             if(client.join.player()==player) handleJoinAction(client,client.join.commandCompleted(dispatched));
+        }
+        if (client.join.phase() == cstrike::JoinPhase::Joined &&
+            entity != nullptr && !entity->free && entity->v.deadflag == DEAD_NO &&
+            std::isfinite(entity->v.health) && entity->v.health > 0.0F) {
+            dispatchRoundBuy(client);
         }
     }
     for(auto& client:clients_) {
@@ -1314,6 +1323,94 @@ bool LifecycleCoordinator::dispatchMenu(ClientState& client,std::uint8_t selecti
     for(auto& pending:clients_) if(pending.cleanupPending) cleanupFailedJoin(pending,pending.cleanupError);
     return true;
 }
+bool LifecycleCoordinator::dispatchBuyCommand(
+    core::PlayerId player, const char* item) noexcept {
+    if (commandContextActive_ || item == nullptr || item[0] == '\0' ||
+        !registry_.isMapActive() || !hookedGameDllFunctions_ ||
+        !hookedGameDllFunctions_->pfnClientCommand) {
+        return false;
+    }
+    auto* entity = entityFor(player);
+    if (entity == nullptr || entity->free || !player.isValid() ||
+        player.slot > host::kMaxClientSlots ||
+        !registry_.isConnected(player.slot) ||
+        registry_.currentPlayer(player.slot) != player ||
+        !engineFunctions_ || !engineFunctions_->pfnIndexOfEdict ||
+        engineFunctions_->pfnIndexOfEdict(entity) != player.slot) {
+        return false;
+    }
+    if (engineFunctions_->pfnPEntityOfEntIndex &&
+        engineFunctions_->pfnPEntityOfEntIndex(player.slot) != entity) {
+        return false;
+    }
+    const auto* join = joinState(player);
+    if (join == nullptr || join->phase() != cstrike::JoinPhase::Joined ||
+        entity->v.deadflag != DEAD_NO) {
+        return false;
+    }
+    copyCommandWord(commandArgv0_, "buy");
+    copyCommandWord(commandArgv1_, item);
+    commandArgs_ = {};
+    copyCommandWord(commandArgs_, item);
+    commandArgc_ = 2;
+    commandPlayer_ = player;
+    commandContextActive_ = true;
+    {
+        CommandContextGuard guard{commandContextActive_};
+        hookedGameDllFunctions_->pfnClientCommand(entity);
+    }
+    commandPlayer_ = {};
+    commandArgc_ = 0;
+    return true;
+}
+
+void LifecycleCoordinator::dispatchRoundBuy(ClientState& client) noexcept {
+    const auto player = client.fake.activePlayer();
+    if (!player.isValid() || player.slot > lastBuyRound_.size() ||
+        lastBuyRound_[player.slot - 1U] == round_) {
+        return;
+    }
+    const auto* affiliation = teams_.find(player);
+    if (affiliation == nullptr ||
+        (affiliation->team != core::perception::Team::Terrorist &&
+         affiliation->team != core::perception::Team::CounterTerrorist)) {
+        return;
+    }
+
+    // Keep the sequence deliberately bounded. Counter-Strike validates money,
+    // buy-zone, buy-time, and weapon availability for every command; rejected
+    // commands are harmless and the trace makes the attempt visible per
+    // actor/round while live inventory observations are not yet wired.
+    const char* commands[9]{};
+    commands[0] = affiliation->team == core::perception::Team::CounterTerrorist
+        ? "m4a1" : "ak47";
+    commands[1] = "vesthelm";
+    commands[2] = "deagle";
+    commands[3] = "primammo";
+    commands[4] = "secammo";
+    commands[5] = "hegren";
+    commands[6] = "flash";
+    commands[7] = "sgren";
+    commands[8] = "defuser";
+    const std::size_t commandCount =
+        affiliation->team == core::perception::Team::CounterTerrorist ? 9 : 8;
+
+    std::size_t sent = 0;
+    for (std::size_t i = 0; i < commandCount; ++i) {
+        if (dispatchBuyCommand(player, commands[i])) ++sent;
+    }
+    lastBuyRound_[player.slot - 1U] = round_;
+    if (utilityFunctions_ && utilityFunctions_->pfnLogConsole) {
+        char text[192]{};
+        std::snprintf(text, sizeof(text),
+            "astrabot buy actor=%u:%u round=%llu attempted=%u sent=%u",
+            unsigned(player.slot), unsigned(player.generation.value),
+            static_cast<unsigned long long>(round_.value),
+            static_cast<unsigned>(commandCount), static_cast<unsigned>(sent));
+        utilityFunctions_->pfnLogConsole(PLID, "%s", text);
+    }
+}
+
 void LifecycleCoordinator::onMessage(
     void* context,
     const cstrike::MessageEvent& event) noexcept {
