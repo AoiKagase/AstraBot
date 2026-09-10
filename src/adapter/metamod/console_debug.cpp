@@ -516,6 +516,97 @@ void ConsoleDebug::removalTrace(const debug::RemovalTrace& trace) noexcept {
     line(lineBuffer);
 }
 
+void ConsoleDebug::runtimeCorrelationTrace(core::PlayerId player) noexcept {
+    if (!enabled_ || !player.isValid() ||
+        player.slot > host::kMaxClientSlots || lifecycle_ == nullptr) {
+        return;
+    }
+
+    const auto& correlation = lifecycle_->runtimeCorrelation(player);
+    const auto& input = lifecycle_->runtimeInputBuildStatus(player);
+    const bool inputStampMatch = correlation.player == player &&
+        correlation.agent.isValid() && correlation.inputTick.isValid() &&
+        input.player == player && input.agent == correlation.agent &&
+        input.map == correlation.map && input.round == correlation.round &&
+        input.tick == correlation.inputTick;
+    const auto* candidate = lifecycle_->runtimeOrchestrator().decision(player);
+    const bool decisionStampMatch = inputStampMatch && candidate != nullptr &&
+        candidate->player == player && candidate->agent == correlation.agent &&
+        candidate->team.shared.map == correlation.map &&
+        candidate->team.shared.round == correlation.round &&
+        candidate->team.shared.tick == correlation.inputTick;
+    const auto& result = lifecycle_->runtimeResult();
+    const auto decisionMap = decisionStampMatch ? candidate->team.shared.map : core::MapGeneration{};
+    const auto decisionRound = decisionStampMatch ? candidate->team.shared.round : core::perception::RoundGeneration{};
+    const auto decisionTick = decisionStampMatch ? candidate->team.shared.tick : core::TickId{};
+    const auto decisionReject = decisionStampMatch ? candidate->rejection : RuntimeRejectReason::None;
+    const auto intent = decisionStampMatch ? correlation.intent : core::tactical::IntentType::None;
+    const auto route = decisionStampMatch ? correlation.route : core::tactical::RouteStyle::None;
+    const auto reason = decisionStampMatch ? correlation.reason : core::tactical::Reason::None;
+    const auto goal = decisionStampMatch ? correlation.roamGoal : nav::model::NavAreaId{};
+    const auto navResult = inputStampMatch ? correlation.navResult : cstrike::RuntimeNavigationApplyResult::None;
+    const auto navReason = inputStampMatch ? correlation.navReason : cstrike::RuntimeNavigationApplyReason::None;
+    const auto queueOutcome = inputStampMatch ? correlation.queueOutcome : MovementOutcome::None;
+    const auto queueError = inputStampMatch ? correlation.queueError : MovementError::None;
+    const auto dispatchOutcome = inputStampMatch ? correlation.dispatchOutcome : MovementOutcome::None;
+    const auto dispatchError = inputStampMatch ? correlation.dispatchError : MovementError::None;
+    const auto* entity = lifecycle_->entityFor(player);
+    const double originX = entity != nullptr ? entity->v.origin.x : 0.0;
+    const double originY = entity != nullptr ? entity->v.origin.y : 0.0;
+    const double originZ = entity != nullptr ? entity->v.origin.z : 0.0;
+    const double velocityX = entity != nullptr ? entity->v.velocity.x : 0.0;
+    const double velocityY = entity != nullptr ? entity->v.velocity.y : 0.0;
+    const double velocityZ = entity != nullptr ? entity->v.velocity.z : 0.0;
+    const unsigned onGround = entity != nullptr && (entity->v.flags & FL_ONGROUND) ? 1U : 0U;
+    char lineBuffer[2048]{};
+    std::snprintf(
+        lineBuffer, sizeof(lineBuffer),
+        "[ASTRABOT][DEBUG][MOVEMENT] kind=Correlation correlated=%u map=%u round=%llu tick=%llu actor=%u:%u agent=%u input_reason=%s stale=%s validation=%s current_area=%u weapon=%u weapon_class=%u update_client_data=%u weapon_data=%u update_called=%u weapon_called=%u accepted=%zu decision=%u decision_map=%u decision_round=%llu decision_tick=%llu runtime_reject=%u nav=%s nav_reason=%s nav_map=%u nav_round=%llu nav_tick=%llu nav_decision_tick=%llu queue=%u queue_error=%u queue_tick=%llu dispatch=%u dispatch_error=%u dispatch_command_tick=%llu dispatch_tick=%llu source=%s command_f=%.3f command_s=%.3f command_u=%.3f buttons=%u impulse=%u msec=%u origin=%.2f,%.2f,%.2f velocity=%.2f,%.2f,%.2f onground=%u intent=%s route=%s reason=%s roam_goal=%u roam_candidates=%zu roam_generation=%llu",
+        unsigned(inputStampMatch),
+        unsigned(correlation.map.value),
+        static_cast<unsigned long long>(correlation.round.value),
+        static_cast<unsigned long long>(correlation.inputTick.value),
+        unsigned(player.slot), unsigned(player.generation.value),
+        unsigned(correlation.agent.value),
+        runtimeInputReasonName(inputStampMatch ? correlation.inputReason : RuntimeInputBuildReason::None),
+        runtimeActorStaleReasonName(inputStampMatch ? correlation.staleReason : RuntimeActorStaleReason::None),
+        runtimeInputValidationReasonName(inputStampMatch ? correlation.validation : RuntimeInputValidationReason::None),
+        unsigned(inputStampMatch && correlation.currentAreaHeld),
+        unsigned(inputStampMatch ? input.activeWeapon : 0U),
+        unsigned(inputStampMatch ? input.activeClass : core::combat::WeaponSnapshot::WeaponClass::Unknown),
+        unsigned(inputStampMatch && input.updateClientDataAvailable),
+        unsigned(inputStampMatch && input.weaponDataAvailable),
+        unsigned(inputStampMatch && input.updateClientDataCalled),
+        unsigned(inputStampMatch && input.weaponDataCalled),
+        inputStampMatch ? result.acceptedActorCount : 0U,
+        unsigned(decisionStampMatch), unsigned(decisionMap.value),
+        static_cast<unsigned long long>(decisionRound.value),
+        static_cast<unsigned long long>(decisionTick.value),
+        unsigned(decisionReject), runtimeNavigationResultName(navResult),
+        runtimeNavigationReasonName(navReason), unsigned(inputStampMatch ? correlation.map.value : 0U),
+        static_cast<unsigned long long>(inputStampMatch ? correlation.round.value : 0U),
+        static_cast<unsigned long long>(inputStampMatch ? correlation.inputTick.value : 0U),
+        static_cast<unsigned long long>(inputStampMatch ? correlation.decisionTick.value : 0U),
+        unsigned(queueOutcome), unsigned(queueError),
+        static_cast<unsigned long long>(inputStampMatch ? correlation.queueTick.value : 0U),
+        unsigned(dispatchOutcome), unsigned(dispatchError),
+        static_cast<unsigned long long>(inputStampMatch ? correlation.dispatchCommandTick.value : 0U),
+        static_cast<unsigned long long>(inputStampMatch ? correlation.dispatchTick.value : 0U),
+        movementSourceName(inputStampMatch ? correlation.source : debug::MovementTraceSource::None),
+        inputStampMatch ? double(correlation.forward) : 0.0,
+        inputStampMatch ? double(correlation.side) : 0.0,
+        inputStampMatch ? double(correlation.up) : 0.0,
+        unsigned(inputStampMatch ? correlation.buttons : 0U),
+        unsigned(inputStampMatch ? correlation.impulse : 0U),
+        unsigned(inputStampMatch ? correlation.msec : 0U),
+        originX, originY, originZ, velocityX, velocityY, velocityZ, onGround,
+        core::tactical::intentName(intent), core::tactical::routeStyleName(route),
+        core::tactical::reasonName(reason), unsigned(goal.value),
+        inputStampMatch ? correlation.roamCandidateCount : 0U,
+        static_cast<unsigned long long>(inputStampMatch ? correlation.roamGeneration : 0U));
+    line(lineBuffer);
+}
+
 void ConsoleDebug::movementTrace(const debug::MovementTrace& trace) noexcept {
     if(!enabled_ || !trace.player.isValid() ||
        trace.player.slot>host::kMaxClientSlots || lifecycle_==nullptr) return;
@@ -545,24 +636,39 @@ void ConsoleDebug::movementTrace(const debug::MovementTrace& trace) noexcept {
     const auto& runtime=lifecycle_->runtimeInputBuildStatus(trace.player);
     const auto& correlation=lifecycle_->runtimeCorrelation(trace.player);
     const bool correlationMatch=correlation.player==trace.player &&
-        correlation.agent==trace.agent && correlation.inputTick.isValid();
-    const auto runtimeMap=correlationMatch ? correlation.map : runtime.map;
-    const auto runtimeRound=correlationMatch ? correlation.round : runtime.round;
-    const auto runtimeTick=correlationMatch ? correlation.inputTick : runtime.tick;
-    const auto runtimePlayer=correlationMatch ? correlation.player : runtime.player;
-    const auto runtimeAgent=correlationMatch ? correlation.agent : runtime.agent;
-    const auto runtimeReason=correlationMatch ? correlation.inputReason : runtime.reason;
-    const auto runtimeStale=correlationMatch ? correlation.staleReason : runtime.staleReason;
-    const auto runtimeValidation=correlationMatch ? correlation.validation :
-        RuntimeInputValidationReason::None;
-    const bool runtimeHeldArea=correlationMatch ? correlation.currentAreaHeld :
-        runtime.currentAreaHeld;
+        correlation.agent==trace.agent && correlation.map==trace.map &&
+        correlation.round==lifecycle_->round() && correlation.inputTick.isValid() &&
+        correlation.inputTick==trace.commandTick;
+    const bool runtimeStatusMatch=correlationMatch && runtime.player==trace.player &&
+        runtime.agent==trace.agent && runtime.map==correlation.map &&
+        runtime.round==correlation.round && runtime.tick==correlation.inputTick;
+    const auto runtimeMap=correlationMatch ? correlation.map : core::MapGeneration{};
+    const auto runtimeRound=correlationMatch ? correlation.round : core::perception::RoundGeneration{};
+    const auto runtimeTick=correlationMatch ? correlation.inputTick : core::TickId{};
+    const auto runtimePlayer=correlationMatch ? correlation.player : core::PlayerId{};
+    const auto runtimeAgent=correlationMatch ? correlation.agent : core::BotAgentId{};
+    const auto runtimeReason=correlationMatch ? correlation.inputReason : RuntimeInputBuildReason::None;
+    const auto runtimeStale=correlationMatch ? correlation.staleReason : RuntimeActorStaleReason::None;
+    const auto runtimeValidation=correlationMatch ? correlation.validation : RuntimeInputValidationReason::None;
+    const bool runtimeHeldArea=runtimeStatusMatch && correlation.currentAreaHeld;
     const auto binding=lifecycle_->agents().findByPlayer(trace.player);
     const bool managed=binding.isValid() && binding.player==trace.player && binding.map==trace.map;
     const bool connected=lifecycle_->registry().isConnected(trace.player.slot) && lifecycle_->registry().currentPlayer(trace.player.slot)==trace.player;
     const bool removal=lifecycle_->removalPending(trace.player);
-    const auto& nav=lifecycle_->navConsole().runtimeNavigationStatus(trace.player);
-    const auto* decision=lifecycle_->runtimeOrchestrator().decision(trace.player);
+    const auto* latestDecision=lifecycle_->runtimeOrchestrator().decision(trace.player);
+    const bool decisionMatch=correlationMatch && latestDecision!=nullptr &&
+        latestDecision->player==correlation.player &&
+        latestDecision->agent==correlation.agent &&
+        latestDecision->team.shared.map==correlation.map &&
+        latestDecision->team.shared.round==correlation.round &&
+        latestDecision->team.shared.tick==correlation.inputTick;
+    const auto* decision=decisionMatch ? latestDecision : nullptr;
+    const auto navResult=correlationMatch ? correlation.navResult : cstrike::RuntimeNavigationApplyResult::None;
+    const auto navReason=correlationMatch ? correlation.navReason : cstrike::RuntimeNavigationApplyReason::None;
+    const auto navMap=correlationMatch ? correlation.map : core::MapGeneration{};
+    const auto navRound=correlationMatch ? correlation.round : core::perception::RoundGeneration{};
+    const auto navTick=correlationMatch ? correlation.inputTick : core::TickId{};
+    const auto navDecisionTick=correlationMatch ? correlation.decisionTick : core::TickId{};
     const bool inputMatch=runtimePlayer==trace.player && runtimeAgent==trace.agent;
     const bool spectator=entity && (entity->v.iuser1!=0 || (entity->v.flags&FL_SPECTATOR));
     const bool spawned=entity && entity->v.deadflag==DEAD_NO && entity->v.health>0 && !spectator;
@@ -592,19 +698,19 @@ void ConsoleDebug::movementTrace(const debug::MovementTrace& trace) noexcept {
         unsigned(runtimeAgent.value),unsigned(inputMatch),
         runtimeInputValidationReasonName(runtimeValidation),
         runtimeInputReasonName(runtimeReason),runtimeActorStaleReasonName(runtimeStale),
-        unsigned(runtimeHeldArea),unsigned(runtime.activeWeapon),
-        unsigned(runtime.activeClass),
+        unsigned(runtimeHeldArea),unsigned(runtimeStatusMatch ? runtime.activeWeapon : 0U),
+        unsigned(runtimeStatusMatch ? runtime.activeClass : core::combat::WeaponSnapshot::WeaponClass::Unknown),
         unsigned(decision ? decision->team.shared.map.value : 0U),
         static_cast<unsigned long long>(decision ? decision->team.shared.round.value : 0U),
         static_cast<unsigned long long>(decision ? decision->team.shared.tick.value : 0U),
         unsigned(decision ? decision->rejection : RuntimeRejectReason::None),
-        runtimeNavigationResultName(nav.result),runtimeNavigationReasonName(nav.reason),
-        unsigned(nav.map.value),
-        static_cast<unsigned long long>(nav.round.value),
-        static_cast<unsigned long long>(nav.tick.value),
-        static_cast<unsigned long long>(nav.decisionTick.value),
-        lifecycle_->runtimeResult().acceptedActorCount,
-        lifecycle_->runtimeResult().nonPrimaryRejectedCount,
+        runtimeNavigationResultName(navResult),runtimeNavigationReasonName(navReason),
+        unsigned(navMap.value),
+        static_cast<unsigned long long>(navRound.value),
+        static_cast<unsigned long long>(navTick.value),
+        static_cast<unsigned long long>(navDecisionTick.value),
+        correlationMatch ? lifecycle_->runtimeResult().acceptedActorCount : 0U,
+        correlationMatch ? lifecycle_->runtimeResult().nonPrimaryRejectedCount : 0U,
         core::tactical::intentName(decision ? decision->tactical.intent.type :
                                    core::tactical::IntentType::None),
         core::tactical::routeStyleName(decision ? decision->tactical.intent.route :

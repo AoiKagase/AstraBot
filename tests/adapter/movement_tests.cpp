@@ -237,6 +237,35 @@ void testMsecQuantizationAndAbiConversion() {
     assert(gTraces[1].frameDeltaUs == 16500U);
     assert(gTraces[1].engineMsec == 17);
     assert(gTraces[1].engineCall);
+    assert(gTraces[1].player == fixture.player);
+    assert(gTraces[1].map == fixture.map);
+    assert(gTraces[1].forward == 120.0F);
+    assert(gTraces[1].side == -45.0F);
+    assert(gTraces[1].up == 8.0F);
+    assert(gTraces[1].buttons == static_cast<std::uint16_t>(
+        static_cast<astrabot::core::ButtonMask>(Button::Forward | Button::Jump)));
+    assert(gTraces[1].impulse == 4);
+}
+
+void testForgetClearsFrameTraceCaches() {
+    Fixture fixture{};
+    fixture.armAndAdvance(16500U);
+    assert(fixture.movement.submit(
+        fixture.player, fixture.map, fixture.registry.currentTick(),
+        fixture.command()).queued());
+    assert(fixture.dispatch().dispatched());
+    assert(fixture.movement.frameQueueTrace(fixture.player).outcome ==
+           MovementOutcome::Queued);
+    assert(fixture.movement.frameDispatchTrace(fixture.player).outcome ==
+           MovementOutcome::Dispatched);
+
+    fixture.movement.forget(fixture.player);
+    assert(fixture.movement.frameQueueTrace(fixture.player).outcome ==
+           MovementOutcome::None);
+    assert(fixture.movement.frameDispatchTrace(fixture.player).outcome ==
+           MovementOutcome::None);
+    assert(fixture.movement.frameRejectionTrace(fixture.player).outcome ==
+           MovementOutcome::None);
 }
 
 void testClockArmAndBoundaryClamp() {
@@ -433,6 +462,7 @@ int main() {
     testRemovalPendingSuppressesMovement();
     testManagedBindingAndEdictIdentityRejectWithoutFallback();
     testMsecQuantizationAndAbiConversion();
+    testForgetClearsFrameTraceCaches();
     testClockArmAndBoundaryClamp();
     testOneCallAndPendingClear();
     testExactPendingCancellation();

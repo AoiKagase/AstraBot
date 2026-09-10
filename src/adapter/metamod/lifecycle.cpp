@@ -3,6 +3,7 @@
 
 #include "adapter/metamod/lifecycle.hpp"
 #include "adapter/cstrike/weapon_protocol.hpp"
+#include "adapter/metamod/console_debug.hpp"
 #include "adapter/metamod/runtime_input.hpp"
 
 #include <cstdint>
@@ -680,19 +681,36 @@ void LifecycleCoordinator::startFrame() noexcept {
         }
         const auto& nav = navConsole_.runtimeNavigationStatus(player);
         correlation.navResult = nav.result; correlation.navReason = nav.reason;
-        const auto& queued = movement_.frameQueueTrace(player);
-        const auto& dispatched = movement_.frameDispatchTrace(player);
-        const auto& rejected = movement_.frameRejectionTrace(player);
+        const auto& queuedTrace = movement_.frameQueueTrace(player);
+        const auto& dispatchedTrace = movement_.frameDispatchTrace(player);
+        const auto& rejectedTrace = movement_.frameRejectionTrace(player);
+        const auto traceMatches = [&](const debug::MovementTrace& trace) noexcept {
+            return trace.player == player && trace.agent == correlation.agent &&
+                trace.map == map &&
+                (trace.edictSerial == 0U || correlation.edictSerial == 0U ||
+                 trace.edictSerial == correlation.edictSerial);
+        };
+        const debug::MovementTrace emptyTrace{};
+        const auto& queued = traceMatches(queuedTrace) ? queuedTrace : emptyTrace;
+        const auto& dispatched = traceMatches(dispatchedTrace) ? dispatchedTrace : emptyTrace;
+        const auto& rejected = traceMatches(rejectedTrace) ? rejectedTrace : emptyTrace;
         correlation.queueOutcome = queued.outcome; correlation.queueError = queued.error;
         correlation.queueTick = queued.commandTick;
         correlation.dispatchOutcome = dispatched.outcome; correlation.dispatchError = dispatched.error;
+        correlation.dispatchCommandTick = dispatched.commandTick;
         correlation.dispatchTick = dispatched.dispatchTick;
-        const auto& movement = dispatched.outcome != MovementOutcome::None ? dispatched : queued;
+        const auto& movement =
+            dispatched.commandTick == tick && dispatched.outcome != MovementOutcome::None
+                ? dispatched
+                : queued.commandTick == tick && queued.outcome != MovementOutcome::None
+                    ? queued
+                    : emptyTrace;
         correlation.source = movement.source; correlation.forward = movement.forward;
         correlation.side = movement.side; correlation.up = movement.up;
         correlation.buttons = movement.buttons;
         correlation.impulse = movement.impulse; correlation.msec = movement.engineMsec;
         if (rejected.outcome == MovementOutcome::Rejected) correlation.dispatchError = rejected.error;
+        ConsoleDebug::instance().runtimeCorrelationTrace(player);
     }
 }
 void LifecycleCoordinator::soundPrecache(int type,const char* name,std::uint16_t index) noexcept {

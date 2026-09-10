@@ -47,6 +47,7 @@ struct RuntimeActorCorrelation final {
     core::TickId inputTick{};
     core::TickId decisionTick{};
     core::TickId queueTick{};
+    core::TickId dispatchCommandTick{};
     core::TickId dispatchTick{};
     RuntimeInputBuildReason inputReason{RuntimeInputBuildReason::None};
     RuntimeActorStaleReason staleReason{RuntimeActorStaleReason::None};

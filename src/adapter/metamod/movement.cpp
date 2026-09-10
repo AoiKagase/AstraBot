@@ -52,6 +52,9 @@ void MovementCoordinator::forget(core::PlayerId player) noexcept {
     }
     dispatchedThisFrame_[player.slot-1U] = false;
     callCounts_[player.slot-1U] = 0;
+    frameQueued_[player.slot-1U] = {};
+    frameDispatched_[player.slot-1U] = {};
+    frameRejected_[player.slot-1U] = {};
 }
 
 bool MovementCoordinator::cancel(core::PlayerId player, core::MapGeneration map, core::TickId tick) noexcept {
@@ -559,7 +562,13 @@ MovementResult MovementCoordinator::dispatchOne(
         pending.commandTick,
         dispatchTick,
         pending.command.msec,
-        true,dispatchDelta,debug::MovementTraceSource::Command,callCount);
+        true,dispatchDelta,debug::MovementTraceSource::Command,callCount,
+        static_cast<std::uint32_t>(entity->serialnumber),
+        pending.command.movement.forward,
+        pending.command.movement.side,
+        pending.command.movement.up,
+        static_cast<std::uint16_t>(pending.command.buttons),
+        pending.command.impulse);
     return MovementResult{MovementOutcome::Dispatched, MovementError::None, std::nullopt};
 }
 
@@ -638,14 +647,26 @@ std::uint8_t MovementCoordinator::quantizeMsec(std::uint64_t deltaUs) noexcept {
 
 const debug::MovementTrace& MovementCoordinator::frameQueueTrace(core::PlayerId player) const noexcept {
     static const debug::MovementTrace empty{};
-    return player.isValid() && player.slot <= host::kMaxClientSlots ? frameQueued_[player.slot - 1U] : empty;
+    if (!player.isValid() || player.slot > host::kMaxClientSlots) return empty;
+    const auto& trace = frameQueued_[player.slot - 1U];
+    return trace.player == player &&
+        (registry_ == nullptr || trace.map == registry_->mapGeneration())
+        ? trace : empty;
 }
 const debug::MovementTrace& MovementCoordinator::frameDispatchTrace(core::PlayerId player) const noexcept {
     static const debug::MovementTrace empty{};
-    return player.isValid() && player.slot <= host::kMaxClientSlots ? frameDispatched_[player.slot - 1U] : empty;
+    if (!player.isValid() || player.slot > host::kMaxClientSlots) return empty;
+    const auto& trace = frameDispatched_[player.slot - 1U];
+    return trace.player == player &&
+        (registry_ == nullptr || trace.map == registry_->mapGeneration())
+        ? trace : empty;
 }
 const debug::MovementTrace& MovementCoordinator::frameRejectionTrace(core::PlayerId player) const noexcept {
     static const debug::MovementTrace empty{};
-    return player.isValid() && player.slot <= host::kMaxClientSlots ? frameRejected_[player.slot - 1U] : empty;
+    if (!player.isValid() || player.slot > host::kMaxClientSlots) return empty;
+    const auto& trace = frameRejected_[player.slot - 1U];
+    return trace.player == player &&
+        (registry_ == nullptr || trace.map == registry_->mapGeneration())
+        ? trace : empty;
 }
 } // namespace astrabot::adapter::metamod

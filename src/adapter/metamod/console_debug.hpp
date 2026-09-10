@@ -37,6 +37,7 @@ public:
     void joinTrace(const debug::JoinTrace& trace) noexcept;
     void removalTrace(const debug::RemovalTrace& trace) noexcept;
     void movementTrace(const debug::MovementTrace& trace) noexcept;
+    void runtimeCorrelationTrace(core::PlayerId player) noexcept;
 
     static ConsoleDebug& instance() noexcept;
 
