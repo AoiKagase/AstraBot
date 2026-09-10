@@ -14,6 +14,14 @@ namespace {
 // pitch is the inverted, damped view pitch and body yaw is the view yaw.
 void syncBodyAngles(edict_t* entity, const float viewAngles[3]) noexcept {
     if (entity == nullptr || viewAngles == nullptr) return;
+    // RunPlayerMove receives the view for this command, but the next runtime
+    // input snapshot reads entvars::v_angle.  ReGameDLL may update it for a
+    // real client and leave it unchanged for a fake client, so keep the
+    // authoritative command view in both places.  Without this, aim is lost
+    // on the next tick and combat falls back to the spawn view.
+    entity->v.v_angle.x = viewAngles[0];
+    entity->v.v_angle.y = viewAngles[1];
+    entity->v.v_angle.z = viewAngles[2];
     entity->v.angles.x = -viewAngles[0] / 3.0F;
     entity->v.angles.y = viewAngles[1];
     entity->v.angles.z = 0.0F;

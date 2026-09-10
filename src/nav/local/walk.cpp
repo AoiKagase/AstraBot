@@ -37,7 +37,18 @@ public:
         if(q.kind==runtime::QueryKind::SweptHull && r.stamp==q.stamp && r.kind==q.kind &&
            r.error==runtime::QueryError::None && r.hull && !r.hull->startSolid &&
            std::isfinite(r.hull->fraction) && r.hull->fraction>=0 && r.hull->fraction<1 &&
-           r.hull->end.isFinite() && r.hull->normal.isFinite()) blocked=q;
+           r.hull->end.isFinite() && r.hull->normal.isFinite() && issued<maximum_) {
+            // A hull hit is not evidence of a door.  Classify the same
+            // contact through the adapter's Door query before allowing the
+            // state machine to enter DoorWait; walls, stairs and player
+            // bodies must go through the normal blocker/replan path.
+            auto doorRequest=q;
+            doorRequest.kind=runtime::QueryKind::Door;
+            doorRequest.stamp.ordinal=++issued;
+            const auto door=port_.query(doorRequest);
+            if(door.stamp==doorRequest.stamp && door.kind==doorRequest.kind &&
+               door.error==runtime::QueryError::None && door.door) blocked=q;
+        }
         if(q.kind==runtime::QueryKind::GroundedArea) { request_=q; cached_=r; }
         if(restrictAreas && q.kind==runtime::QueryKind::Floor && r.stamp==q.stamp &&
            r.kind==q.kind && r.error==runtime::QueryError::None && r.floor && r.floor->supported) {

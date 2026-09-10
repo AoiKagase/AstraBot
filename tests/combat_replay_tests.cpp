@@ -132,19 +132,21 @@ void testMinimumScenarioReplay() {
     assert(!scenario.state.cadenceActive);
 }
 
-void testNoTargetStillScansView() {
+void testNoTargetKeepsObservedView() {
     Scenario scenario;
     scenario.visible(false);
 
     const auto first = c::aimTarget(scenario.input);
     assert(first.action == c::CombatAction::NoOp);
     assert(first.reason == c::CombatReason::NoTarget);
+    assert(first.view.pitch == scenario.input.view.pitch);
+    assert(first.view.yaw == scenario.input.view.yaw);
 
     scenario.next(100'000);
     const auto second = c::aimTarget(scenario.input);
     assert(second.action == c::CombatAction::NoOp);
     assert(second.view.pitch == scenario.input.view.pitch);
-    assert(second.view.yaw != first.view.yaw);
+    assert(second.view.yaw == first.view.yaw);
 }
 
 void testBurstPauseAndReevaluation() {
@@ -298,7 +300,7 @@ void testMapRoundAndLoadDeterminism() {
 
 int main() {
     testMinimumScenarioReplay();
-    testNoTargetStillScansView();
+    testNoTargetKeepsObservedView();
     testBurstPauseAndReevaluation();
     testReloadSwitchAndStaleLifecycle();
     testTargetReplacementAndAllyGate();

@@ -32,8 +32,60 @@ bool hullFits(const nav::model::NavExtent& extent,
     const double halfX=(std::max)(std::abs(double(hull.minimum.x)),std::abs(double(hull.maximum.x)));
     const double halfY=(std::max)(std::abs(double(hull.minimum.y)),std::abs(double(hull.maximum.y)));
     return double(extent.southEast.x)-extent.northWest.x >= 2*halfX &&
-        double(extent.southEast.y)-extent.northWest.y >= 2*halfY;
+           double(extent.southEast.y)-extent.northWest.y >= 2*halfY;
 }
+
+// Route searches are actor-local, while the resulting corridors are executed
+// in the same world. Keep a small synchronous view of other actors' first
+// edges so newly planned bots do not all select the same narrow entry. This
+// is a cost preference, not a hard exclusion: if the map has no alternative,
+// the route remains executable.
+struct TrafficRoutePolicy final {
+    nav::query::NavRoutePolicy base{};
+    std::array<nav::query::NavDirectedEdge, host::kMaxClientSlots> occupied{};
+    std::size_t count{0};
+};
+
+bool sameRouteEdge(const nav::query::NavDirectedEdge& left,
+                   const nav::query::NavDirectedEdge& right) noexcept {
+    if (left.source != right.source || left.target != right.target ||
+        left.traversal != right.traversal ||
+        left.external.has_value() != right.external.has_value()) return false;
+    if (!left.external) return left.direction == right.direction;
+    return left.external->sourceId == right.external->sourceId &&
+           left.external->generation == right.external->generation &&
+           left.external->linkId == right.external->linkId &&
+           left.external->direction == right.external->direction;
+}
+
+nav::query::NavCostDecision trafficCost(
+    const nav::query::NavCostContext& input, const void* opaque) noexcept {
+    const auto* policy=static_cast<const TrafficRoutePolicy*>(opaque);
+    if (!policy) return {true,{}};
+    auto result=policy->base.cost
+        ? policy->base.cost(input,policy->base.context)
+        : nav::query::NavCostDecision{
+              false,{input.geometricDistance,0.0,0.0,
+                     input.edge.external ? input.edge.external->additionalCost:0.0,
+                     0.0}};
+    if (result.blocked) return result;
+    std::size_t shared=0;
+    for (std::size_t i=0; i<policy->count; ++i)
+        if (sameRouteEdge(input.edge,policy->occupied[i])) ++shared;
+    if (shared) result.components.danger += 2048.0*static_cast<double>(shared);
+    return result;
+}
+
+double trafficHeuristic(const nav::query::NavHeuristicContext& input,
+                        const void* opaque) noexcept {
+    // The congestion surcharge is not represented in the base heuristic.
+    // Return zero so the wrapped policy remains admissible for every base
+    // cost function, including custom policies supplied by callers.
+    (void)input;
+    (void)opaque;
+    return 0.0;
+}
+
 void run(NavCommand command) noexcept {
     auto& owner=metamod::lifecycleCoordinator(); owner.navConsole().execute(command,owner);
 }
@@ -683,6 +735,20 @@ void NavConsole::requestRoute(const nav::runtime::MovementSnapshot& s,nav::model
     const nav::runtime::ExecutionPolicy executionPolicy{&current_->execution_,options.policy};
     auto filteredOptions=options;
     filteredOptions.policy=executionPolicy.policy();
+    TrafficRoutePolicy traffic;
+    traffic.base=filteredOptions.policy;
+    for (const auto& other : actors_) {
+        if (!other || other.get()==current_ || !other->session_ ||
+            !other->session_->executable() ||
+            other->execution_.state!=nav::runtime::ExecutionState::Running ||
+            other->session_->trace().map!=s.map) continue;
+        const auto& route=other->session_->trace().route;
+        if (!route || route->steps.empty() || traffic.count>=traffic.occupied.size()) continue;
+        traffic.occupied[traffic.count++]=route->steps.front().edge;
+    }
+    if (traffic.count) {
+        filteredOptions.policy={&traffic,&trafficCost,&trafficHeuristic};
+    }
     auto update=current_->session_->request(s,goal,navigation,*this,filteredOptions);
     inRequest_=false;
     queryingEntity_=nullptr; queryingPlayers_=nullptr; queryingOwner_=nullptr;

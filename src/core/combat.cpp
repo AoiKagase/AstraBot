@@ -900,7 +900,10 @@ CombatDecision selectTarget(const CombatInput& input) noexcept {
 CombatDecision aimTarget(const CombatInput& input) noexcept {
     auto decision = selectTarget(input);
     if (decision.action != CombatAction::Track) {
-        if (input.validate()) decision.view = scanView(input);
+        // A no-target frame must retain the observed view.  The navigation
+        // command supplies the locomotion heading during composition; a
+        // combat-side scan here otherwise rotates every bot every tick and
+        // overwrites the view that was just used for aiming.
         return decision;
     }
 
@@ -1160,8 +1163,15 @@ CommandCompositionResult composeCommand(
         static_cast<ButtonMask>(Button::Attack) |
         static_cast<ButtonMask>(Button::Reload);
     BotCommand command = navigation;
-    preserveWorldMovement(navigation.view, combat.view, command);
-    command.view = combat.view;
+    if (combat.action == CombatAction::NoOp) {
+        // No target/rejected combat input does not own the view.  Retain the
+        // NAV heading so ordinary movement follows its route rather than the
+        // spawn orientation shared by every fake client.
+        command.view = navigation.view;
+    } else {
+        preserveWorldMovement(navigation.view, combat.view, command);
+        command.view = combat.view;
+    }
     command.buttons = (navigation.buttons & ~combatButtons) |
                       (combat.buttons & combatButtons);
     command.weaponSelect = combat.action == CombatAction::SwitchWeapon
