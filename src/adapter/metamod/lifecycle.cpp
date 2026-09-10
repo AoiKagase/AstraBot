@@ -463,7 +463,6 @@ void LifecycleCoordinator::startFrame() noexcept {
     const auto tick=registry_.currentTick();
 
     runtimeInputBuildStatuses_.fill({});
-    runtimeCorrelation_.fill({});
     const auto created=clients_[0].fake.processPrimaryCreate();
     if(created.changed || created.error!=debug::FakeClientError::None) ++status_.createAttempts;
     if(created.playerRegistration.changed()) emit(host::LifecycleEventKind::PlayerConnected,created.playerRegistration);
@@ -668,6 +667,7 @@ void LifecycleCoordinator::startFrame() noexcept {
         correlation.currentAreaHeld = input.player == player && input.currentAreaHeld;
         if (const auto* decision = runtime_.decision(player)) {
             correlation.decisionTick = decision->team.shared.tick.isValid() ? decision->team.shared.tick : tick;
+            correlation.validation = decision->validation;
             correlation.intent = decision->tactical.intent.type;
             correlation.route = decision->tactical.intent.route;
             correlation.reason = decision->tactical.intent.reason;

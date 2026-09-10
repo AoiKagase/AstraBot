@@ -312,6 +312,27 @@ void testTransientActorEventsRetainAndRetireProfiles() {
     assert(orchestrator.opponentProfiles().find(fixture.player) == nullptr);
 }
 
+void testValidationReasonPropagation() {
+    Fixture fixture;
+    assert(fixture.input.validationReason(fixture.frame) ==
+           a::RuntimeInputValidationReason::None);
+
+    fixture.input.action.tick.value += 1;
+    assert(fixture.input.validationReason(fixture.frame) ==
+           a::RuntimeInputValidationReason::ActionStampMismatch);
+
+    a::RuntimeOrchestrator orchestrator;
+    const auto& rejected = orchestrator.run(fixture.frame, &fixture.input, 1);
+    assert(rejected.accepted);
+    assert(rejected.decisionCount == 1);
+    assert(rejected.decisions[0].rejection == a::RuntimeRejectReason::InvalidActorInput);
+    assert(rejected.decisions[0].validation ==
+           a::RuntimeInputValidationReason::ActionStampMismatch);
+    assert(orchestrator.diagnostics().count == 1);
+    assert(orchestrator.diagnostics().entries[0].validation ==
+           a::RuntimeInputValidationReason::ActionStampMismatch);
+}
+
 int main() {
 	{
 		auto fixtureStorage = std::make_unique<Fixture>();
@@ -336,6 +357,7 @@ int main() {
 	}
 	testOrderedCadenceAndOneShotCombat();
 	testInvalidAndGenerationReset();
+	testValidationReasonPropagation();
 	testDuplicateActorAndAgentAreRejected();
     testAllValidatedActorsExecute();
     testDeterministicReplayAndDisconnect();

@@ -55,6 +55,32 @@ enum class RuntimeRejectReason : std::uint8_t {
 	QueueDuplicate,
 };
 
+// Identifies the first value-level contract that made an actor input
+// unusable. This stays separate from RuntimeRejectReason: the latter
+// describes the orchestration outcome, while this enum explains why the
+// actor was rejected before planning could begin.
+enum class RuntimeInputValidationReason : std::uint8_t {
+	None = 0,
+	InvalidFrame,
+	InvalidActor,
+	InvalidAgent,
+	TeamStampMismatch,
+	InvalidTeam,
+	WorldStampMismatch,
+	MissingWorld,
+	ActionStampMismatch,
+	ActionIdentityMismatch,
+	InvalidAction,
+	CombatStampMismatch,
+	CombatIdentityMismatch,
+	InvalidCombat,
+	TacticalStampMismatch,
+	TacticalIdentityMismatch,
+	InvalidTacticalContext,
+	InvalidOptionalObservation,
+	InvalidExperienceEvent,
+};
+
 struct RuntimeFrame final {
 	core::MapGeneration map{};
 	core::perception::RoundGeneration round{};
@@ -90,7 +116,11 @@ struct RuntimeActorInput final {
 	std::optional<core::learning::ContextualDangerObservation> contextualDanger{};
 	std::optional<core::learning::OpponentObservation> opponent{};
 
-	bool valid(const RuntimeFrame &frame) const noexcept;
+	RuntimeInputValidationReason validationReason(
+		const RuntimeFrame &frame) const noexcept;
+	bool valid(const RuntimeFrame &frame) const noexcept {
+		return validationReason(frame) == RuntimeInputValidationReason::None;
+	}
 };
 
 struct RuntimeDecision final {
@@ -102,6 +132,7 @@ struct RuntimeDecision final {
 	core::combat::CombatDecision combat{};
 	nav::model::NavAreaId navigationGoal{};
 	RuntimeRejectReason rejection{RuntimeRejectReason::None};
+	RuntimeInputValidationReason validation{RuntimeInputValidationReason::None};
 	bool hasNavigationGoal{false};
 	std::size_t roamCandidateCount{0};
 	std::uint64_t roamGeneration{0};
@@ -127,6 +158,7 @@ struct RuntimeFrameResult final {
 struct RuntimeDiagnostic final {
 	RuntimeStage stage{RuntimeStage::None};
 	RuntimeRejectReason reason{RuntimeRejectReason::None};
+	RuntimeInputValidationReason validation{RuntimeInputValidationReason::None};
 	core::MapGeneration map{};
 	core::perception::RoundGeneration round{};
 	core::TickId tick{};
@@ -184,7 +216,9 @@ class RuntimeOrchestrator final {
   private:
 	static std::size_t slotIndex(core::PlayerId player) noexcept;
 	void addDiagnostic(RuntimeStage stage, RuntimeRejectReason reason, const RuntimeFrame &frame,
-	                   core::PlayerId player, core::BotAgentId agent = {}) noexcept;
+	                   core::PlayerId player, core::BotAgentId agent = {},
+	                   RuntimeInputValidationReason validation =
+	                       RuntimeInputValidationReason::None) noexcept;
 	void appendStage(RuntimeStage stage) noexcept;
 	void clearSlot(std::size_t index) noexcept;
 	void resetPlanners() noexcept;

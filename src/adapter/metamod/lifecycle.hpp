@@ -50,6 +50,7 @@ struct RuntimeActorCorrelation final {
     core::TickId dispatchTick{};
     RuntimeInputBuildReason inputReason{RuntimeInputBuildReason::None};
     RuntimeActorStaleReason staleReason{RuntimeActorStaleReason::None};
+    RuntimeInputValidationReason validation{RuntimeInputValidationReason::None};
     cstrike::RuntimeNavigationApplyResult navResult{cstrike::RuntimeNavigationApplyResult::None};
     cstrike::RuntimeNavigationApplyReason navReason{cstrike::RuntimeNavigationApplyReason::None};
     MovementOutcome queueOutcome{MovementOutcome::None};

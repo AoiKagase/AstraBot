@@ -188,6 +188,38 @@ const char* runtimeInputReasonName(RuntimeInputBuildReason reason) noexcept {
     return "Unknown";
 }
 
+const char* runtimeInputValidationReasonName(
+    RuntimeInputValidationReason reason) noexcept {
+	switch (reason) {
+	case RuntimeInputValidationReason::None: return "None";
+	case RuntimeInputValidationReason::InvalidFrame: return "InvalidFrame";
+	case RuntimeInputValidationReason::InvalidActor: return "InvalidActor";
+	case RuntimeInputValidationReason::InvalidAgent: return "InvalidAgent";
+	case RuntimeInputValidationReason::TeamStampMismatch: return "TeamStampMismatch";
+	case RuntimeInputValidationReason::InvalidTeam: return "InvalidTeam";
+	case RuntimeInputValidationReason::WorldStampMismatch: return "WorldStampMismatch";
+	case RuntimeInputValidationReason::MissingWorld: return "MissingWorld";
+	case RuntimeInputValidationReason::ActionStampMismatch: return "ActionStampMismatch";
+	case RuntimeInputValidationReason::ActionIdentityMismatch: return "ActionIdentityMismatch";
+	case RuntimeInputValidationReason::InvalidAction: return "InvalidAction";
+	case RuntimeInputValidationReason::CombatStampMismatch: return "CombatStampMismatch";
+	case RuntimeInputValidationReason::CombatIdentityMismatch:
+		return "CombatIdentityMismatch";
+	case RuntimeInputValidationReason::InvalidCombat: return "InvalidCombat";
+	case RuntimeInputValidationReason::TacticalStampMismatch:
+		return "TacticalStampMismatch";
+	case RuntimeInputValidationReason::TacticalIdentityMismatch:
+		return "TacticalIdentityMismatch";
+	case RuntimeInputValidationReason::InvalidTacticalContext:
+		return "InvalidTacticalContext";
+	case RuntimeInputValidationReason::InvalidOptionalObservation:
+		return "InvalidOptionalObservation";
+	case RuntimeInputValidationReason::InvalidExperienceEvent:
+		return "InvalidExperienceEvent";
+	}
+	return "Unknown";
+}
+
 const char* runtimeActorStaleReasonName(RuntimeActorStaleReason reason) noexcept {
     switch (reason) {
     case RuntimeActorStaleReason::None: return "None";
@@ -511,18 +543,32 @@ void ConsoleDebug::movementTrace(const debug::MovementTrace& trace) noexcept {
     const auto* entity=lifecycle_->entityFor(trace.player);
     const auto* join=lifecycle_->joinState(trace.player);
     const auto& runtime=lifecycle_->runtimeInputBuildStatus(trace.player);
+    const auto& correlation=lifecycle_->runtimeCorrelation(trace.player);
+    const bool correlationMatch=correlation.player==trace.player &&
+        correlation.agent==trace.agent && correlation.inputTick.isValid();
+    const auto runtimeMap=correlationMatch ? correlation.map : runtime.map;
+    const auto runtimeRound=correlationMatch ? correlation.round : runtime.round;
+    const auto runtimeTick=correlationMatch ? correlation.inputTick : runtime.tick;
+    const auto runtimePlayer=correlationMatch ? correlation.player : runtime.player;
+    const auto runtimeAgent=correlationMatch ? correlation.agent : runtime.agent;
+    const auto runtimeReason=correlationMatch ? correlation.inputReason : runtime.reason;
+    const auto runtimeStale=correlationMatch ? correlation.staleReason : runtime.staleReason;
+    const auto runtimeValidation=correlationMatch ? correlation.validation :
+        RuntimeInputValidationReason::None;
+    const bool runtimeHeldArea=correlationMatch ? correlation.currentAreaHeld :
+        runtime.currentAreaHeld;
     const auto binding=lifecycle_->agents().findByPlayer(trace.player);
     const bool managed=binding.isValid() && binding.player==trace.player && binding.map==trace.map;
     const bool connected=lifecycle_->registry().isConnected(trace.player.slot) && lifecycle_->registry().currentPlayer(trace.player.slot)==trace.player;
     const bool removal=lifecycle_->removalPending(trace.player);
     const auto& nav=lifecycle_->navConsole().runtimeNavigationStatus(trace.player);
     const auto* decision=lifecycle_->runtimeOrchestrator().decision(trace.player);
-    const bool inputMatch=runtime.player==trace.player && runtime.agent==trace.agent;
+    const bool inputMatch=runtimePlayer==trace.player && runtimeAgent==trace.agent;
     const bool spectator=entity && (entity->v.iuser1!=0 || (entity->v.flags&FL_SPECTATOR));
     const bool spawned=entity && entity->v.deadflag==DEAD_NO && entity->v.health>0 && !spectator;
     char lineBuffer[2048]{};
     std::snprintf(lineBuffer,sizeof(lineBuffer),
-        "[ASTRABOT][DEBUG][MOVEMENT] map=%u round=%llu actor=%u:%u agent=%u outcome=%u error=%u input_tick=%llu dispatch_tick=%llu calls=%llu source=%s msec=%u serial=%u command_f=%.3f command_s=%.3f command_u=%.3f buttons=%u impulse=%u managed=%u connected=%u removal=%u phase=%s spawned=%u x=%.3f y=%.3f z=%.3f vx=%.3f vy=%.3f vz=%.3f movetype=%d solid=%d onground=%u spectator=%u runtime_map=%u runtime_round=%llu runtime_tick=%llu input_actor=%u:%u input_agent=%u input_match=%u runtime=%s stale=%s held_area=%u weapon=%u weapon_class=%u decision_map=%u decision_round=%llu decision_tick=%llu runtime_reject=%u nav=%s nav_reason=%s nav_map=%u nav_round=%llu nav_tick=%llu nav_decision_tick=%llu accepted=%zu nonprimary_rejected=%zu intent=%s route=%s reason=%s roam_goal=%u roam_candidates=%zu roam_generation=%llu",
+        "[ASTRABOT][DEBUG][MOVEMENT] map=%u round=%llu actor=%u:%u agent=%u outcome=%u error=%u input_tick=%llu dispatch_tick=%llu calls=%llu source=%s msec=%u serial=%u command_f=%.3f command_s=%.3f command_u=%.3f buttons=%u impulse=%u managed=%u connected=%u removal=%u phase=%s spawned=%u x=%.3f y=%.3f z=%.3f vx=%.3f vy=%.3f vz=%.3f movetype=%d solid=%d onground=%u spectator=%u runtime_map=%u runtime_round=%llu runtime_tick=%llu input_actor=%u:%u input_agent=%u input_match=%u runtime_validation=%s runtime=%s stale=%s held_area=%u weapon=%u weapon_class=%u decision_map=%u decision_round=%llu decision_tick=%llu runtime_reject=%u nav=%s nav_reason=%s nav_map=%u nav_round=%llu nav_tick=%llu nav_decision_tick=%llu accepted=%zu nonprimary_rejected=%zu intent=%s route=%s reason=%s roam_goal=%u roam_candidates=%zu roam_generation=%llu",
         unsigned(trace.map.value),
         static_cast<unsigned long long>(lifecycle_->round().value),
         unsigned(trace.player.slot),unsigned(trace.player.generation.value),
@@ -539,13 +585,14 @@ void ConsoleDebug::movementTrace(const debug::MovementTrace& trace) noexcept {
         entity ? double(entity->v.velocity.y):0.0,entity ? double(entity->v.velocity.z):0.0,
         entity ? entity->v.movetype:0,entity ? entity->v.solid:0,
         unsigned(entity && (entity->v.flags&FL_ONGROUND)),unsigned(spectator),
-        unsigned(runtime.map.value),
-        static_cast<unsigned long long>(runtime.round.value),
-        static_cast<unsigned long long>(runtime.tick.value),
-        unsigned(runtime.player.slot),unsigned(runtime.player.generation.value),
-        unsigned(runtime.agent.value),unsigned(inputMatch),
-        runtimeInputReasonName(runtime.reason),runtimeActorStaleReasonName(runtime.staleReason),
-        unsigned(runtime.currentAreaHeld),unsigned(runtime.activeWeapon),
+        unsigned(runtimeMap.value),
+        static_cast<unsigned long long>(runtimeRound.value),
+        static_cast<unsigned long long>(runtimeTick.value),
+        unsigned(runtimePlayer.slot),unsigned(runtimePlayer.generation.value),
+        unsigned(runtimeAgent.value),unsigned(inputMatch),
+        runtimeInputValidationReasonName(runtimeValidation),
+        runtimeInputReasonName(runtimeReason),runtimeActorStaleReasonName(runtimeStale),
+        unsigned(runtimeHeldArea),unsigned(runtime.activeWeapon),
         unsigned(runtime.activeClass),
         unsigned(decision ? decision->team.shared.map.value : 0U),
         static_cast<unsigned long long>(decision ? decision->team.shared.round.value : 0U),

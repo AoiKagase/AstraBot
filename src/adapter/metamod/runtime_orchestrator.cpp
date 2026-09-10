@@ -39,75 +39,87 @@ bool RuntimeFrame::valid() const noexcept {
 	return validOptionalMapIdentity(mapIdentity);
 }
 
-bool RuntimeActorInput::valid(const RuntimeFrame &frame) const noexcept {
-	if (!frame.valid() || !player.isValid() || player.slot > core::perception::kPlayerCapacity ||
-	    !agent.isValid()) {
-		return false;
-	}
+RuntimeInputValidationReason RuntimeActorInput::validationReason(
+	const RuntimeFrame &frame) const noexcept {
+	if (!frame.valid())
+		return RuntimeInputValidationReason::InvalidFrame;
+	if (!player.isValid() || player.slot > core::perception::kPlayerCapacity)
+		return RuntimeInputValidationReason::InvalidActor;
+	if (!agent.isValid())
+		return RuntimeInputValidationReason::InvalidAgent;
+
 	auto checkedTeam = team;
 	if (!teamObjectiveAvailable) {
 		if (tactical.objective.kind != core::tactical::ObjectiveKind::None ||
-		    action.objective.kind != core::action::ObjectiveKind::None) return false;
+		    action.objective.kind != core::action::ObjectiveKind::None)
+			return RuntimeInputValidationReason::InvalidTeam;
 		// Validate the roster/stamp independently without manufacturing an
 		// objective observation for TeamDirector.
 		checkedTeam.objective = {};
 		checkedTeam.objective.known = true;
 	}
 	if (team.map != frame.map || team.round != frame.round || team.tick != frame.tick ||
-	    team.nowMicros != frame.nowMicros || !checkedTeam.valid()) {
-		return false;
-	}
+	    team.nowMicros != frame.nowMicros)
+		return RuntimeInputValidationReason::TeamStampMismatch;
+	if (!checkedTeam.valid())
+		return RuntimeInputValidationReason::InvalidTeam;
+
 	if (world.stamp.map != frame.map || world.stamp.round != frame.round ||
 	    world.stamp.tick != frame.tick || world.stamp.timeMicros != frame.nowMicros ||
-	    !world.visual || !world.sounds || !sameStamp(world, frame)) {
-		return false;
-	}
+	    !sameStamp(world, frame))
+		return RuntimeInputValidationReason::WorldStampMismatch;
+	if (!world.visual || !world.sounds)
+		return RuntimeInputValidationReason::MissingWorld;
+
 	if (action.map != frame.map || action.round != frame.round || action.tick != frame.tick ||
-	    action.nowMicros != frame.nowMicros || action.player != player || action.agent != agent ||
-	    !action.valid()) {
-		return false;
-	}
+	    action.nowMicros != frame.nowMicros)
+		return RuntimeInputValidationReason::ActionStampMismatch;
+	if (action.player != player || action.agent != agent)
+		return RuntimeInputValidationReason::ActionIdentityMismatch;
+	if (!action.valid())
+		return RuntimeInputValidationReason::InvalidAction;
+
 	if (combat.map != frame.map || combat.round != frame.round || combat.tick != frame.tick ||
-	    combat.timeMicros != frame.nowMicros || combat.player != player || combat.agent != agent ||
-	    !combat.validate()) {
-		return false;
-	}
-	if (contextualDanger && contextualDanger->map != frame.map) {
-		return false;
-	}
+	    combat.timeMicros != frame.nowMicros)
+		return RuntimeInputValidationReason::CombatStampMismatch;
+	if (combat.player != player || combat.agent != agent)
+		return RuntimeInputValidationReason::CombatIdentityMismatch;
+	if (!combat.validate())
+		return RuntimeInputValidationReason::InvalidCombat;
+
+	if (contextualDanger && contextualDanger->map != frame.map)
+		return RuntimeInputValidationReason::InvalidOptionalObservation;
 	if (opponent && (opponent->map != frame.map || opponent->round != frame.round ||
-	                 opponent->tick != frame.tick)) {
-		return false;
-	}
+	                 opponent->tick != frame.tick))
+		return RuntimeInputValidationReason::InvalidOptionalObservation;
+
 	const auto context = core::tactical::buildTacticalContext(world, tactical);
-	if (context.map != frame.map || context.round != frame.round || context.tick != frame.tick ||
-	    context.nowMicros != frame.nowMicros || context.self.player != player ||
-	    context.self.agent != agent || !context.valid()) {
-		return false;
-	}
+	if (context.map != frame.map || context.round != frame.round ||
+	    context.tick != frame.tick || context.nowMicros != frame.nowMicros)
+		return RuntimeInputValidationReason::TacticalStampMismatch;
+	if (context.self.player != player || context.self.agent != agent)
+		return RuntimeInputValidationReason::TacticalIdentityMismatch;
+	if (!context.valid())
+		return RuntimeInputValidationReason::InvalidTacticalContext;
+
 	if (experienceEventCount > experienceEvents.size())
-		return false;
+		return RuntimeInputValidationReason::InvalidExperienceEvent;
 	for (std::size_t i = 0; i < experienceEventCount; ++i) {
 		const auto &event = experienceEvents[i];
 		if (!event.valid() || !validExperienceMap(frame.mapIdentity) ||
 		    event.map != frame.mapIdentity || event.round != frame.round ||
-		    event.tick.value > frame.tick.value || event.timeMicros > frame.nowMicros) {
-			return false;
-		}
+		    event.tick.value > frame.tick.value || event.timeMicros > frame.nowMicros)
+			return RuntimeInputValidationReason::InvalidExperienceEvent;
 	}
-	if (contextualDanger) {
-		if (!contextualDanger->valid() || contextualDanger->map != frame.map ||
-		    contextualDanger->timeMicros > frame.nowMicros) {
-			return false;
-		}
-	}
-	if (opponent) {
-		if (!opponent->valid() || opponent->map != frame.map || opponent->round != frame.round ||
-		    opponent->tick.value > frame.tick.value) {
-			return false;
-		}
-	}
-	return true;
+	if (contextualDanger &&
+	    (!contextualDanger->valid() || contextualDanger->map != frame.map ||
+	     contextualDanger->timeMicros > frame.nowMicros))
+		return RuntimeInputValidationReason::InvalidOptionalObservation;
+	if (opponent &&
+	    (!opponent->valid() || opponent->map != frame.map || opponent->round != frame.round ||
+	     opponent->tick.value > frame.tick.value))
+		return RuntimeInputValidationReason::InvalidOptionalObservation;
+	return RuntimeInputValidationReason::None;
 }
 
 std::size_t RuntimeOrchestrator::slotIndex(core::PlayerId player) noexcept {
@@ -128,10 +140,12 @@ void RuntimeOrchestrator::appendStage(RuntimeStage stage) noexcept {
 
 void RuntimeOrchestrator::addDiagnostic(RuntimeStage stage, RuntimeRejectReason reason,
                                         const RuntimeFrame &frame, core::PlayerId player,
-                                        core::BotAgentId agent) noexcept {
+                                        core::BotAgentId agent,
+                                        RuntimeInputValidationReason validation) noexcept {
 	RuntimeDiagnostic value{};
 	value.stage = stage;
 	value.reason = reason;
+	value.validation = validation;
 	value.map = frame.map;
 	value.round = frame.round;
 	value.tick = frame.tick;
@@ -314,22 +328,27 @@ const RuntimeFrameResult &RuntimeOrchestrator::run(const RuntimeFrame &frame,
 		addDiagnostic(RuntimeStage::PerceptionPublished, RuntimeRejectReason::InvalidActorInput,
 		              frame, {});
 	}
-	auto appendRejected = [&](const RuntimeActorInput &input, RuntimeRejectReason reason) noexcept {
+	auto appendRejected = [&](const RuntimeActorInput &input, RuntimeRejectReason reason,
+	                          RuntimeInputValidationReason validation =
+	                              RuntimeInputValidationReason::None) noexcept {
 		if (reason == RuntimeRejectReason::NonPrimaryActor)
 			++result_.nonPrimaryRejectedCount;
-		addDiagnostic(RuntimeStage::PerceptionPublished, reason, frame, input.player, input.agent);
+		addDiagnostic(RuntimeStage::PerceptionPublished, reason, frame, input.player, input.agent,
+		              validation);
 		if (result_.decisionCount >= result_.decisions.size())
 			return;
 		auto &decision = result_.decisions[result_.decisionCount++];
 		decision.player = input.player;
 		decision.agent = input.agent;
 		decision.rejection = reason;
+		decision.validation = validation;
 	};
 	for (std::size_t i = 0; i < limit; ++i) {
 		const auto &input = inputs[i];
+		const auto validation = input.validationReason(frame);
 		const auto index = slotIndex(input.player);
 		if (index >= kRuntimeActorCapacity) {
-			appendRejected(input, RuntimeRejectReason::InvalidActorInput);
+			appendRejected(input, RuntimeRejectReason::InvalidActorInput, validation);
 			continue;
 		}
 		bool duplicateAgent = false;
@@ -350,10 +369,10 @@ const RuntimeFrameResult &RuntimeOrchestrator::run(const RuntimeFrame &frame,
 	seen[index] = true;
 	if (actorIdentity_[index].isValid() && actorIdentity_[index] != input.player)
 		clearSlot(index);
-		if (!input.valid(frame)) {
+		if (validation != RuntimeInputValidationReason::None) {
 			if (!actorIdentity_[index].isValid() || actorIdentity_[index] == input.player)
 				clearSlot(index);
-			appendRejected(input, RuntimeRejectReason::InvalidActorInput);
+			appendRejected(input, RuntimeRejectReason::InvalidActorInput, validation);
 			continue;
 		}
 		ordered[index] = &input;
