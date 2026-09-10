@@ -128,16 +128,13 @@ void NavConsole::applyRuntimeNavigation(
             reject(RuntimeNavigationApplyReason::NoExecutableGoal);
         } else {
             const auto* actor = findActor(decision.player);
-            if (actor && !actor->explicitRoute_) {
+            if (actor && !actor->explicitRoute_ && actor->session_ &&
+                actor->session_->executable()) {
                 auto* mutableActor = const_cast<ActorState*>(actor);
                 ActorScope scope(current_, mutableActor);
-                if (current_->session_ && current_->session_->executable()) {
-                    stopMotion();
-                    (void)current_->session_->cancel();
-                }
-                current_->roamArrived_ = current_->roamActive_;
-                current_->roamActive_ = false;
-                current_->routeStyle_ = core::tactical::RouteStyle::None;
+                stopMotion();
+                (void)current_->session_->cancel();
+                current_->roamArrived_ = true;
             }
             status.result = RuntimeNavigationApplyResult::Unchanged;
             status.reason = RuntimeNavigationApplyReason::None;
@@ -189,13 +186,6 @@ void NavConsole::applyRuntimeNavigation(
         current_->session_->trace().agent == s.agent &&
         current_->session_->trace().map == s.map &&
         current_->session_->trace().goal == decision.navigationGoal) {
-        current_->explicitRoute_ = explicitDecision;
-        current_->roamActive_ = roamDecision;
-        current_->routeStyle_ = explicitDecision
-            ? core::tactical::RouteStyle::Hold
-            : (decision.tactical.intent.route != core::tactical::RouteStyle::None
-                ? decision.tactical.intent.route
-                : core::tactical::RouteStyle::Direct);
         status.result = RuntimeNavigationApplyResult::Unchanged;
         publish();
         return;
@@ -212,12 +202,6 @@ void NavConsole::applyRuntimeNavigation(
     current_->recovery_ = {};
     current_->recoveryReplan_ = false;
     current_->explicitRoute_ = explicitDecision;
-    current_->roamActive_ = roamDecision;
-    current_->routeStyle_ = explicitDecision
-        ? core::tactical::RouteStyle::Hold
-        : (decision.tactical.intent.route != core::tactical::RouteStyle::None
-            ? decision.tactical.intent.route
-            : core::tactical::RouteStyle::Direct);
     current_->roamArrived_ = false;
     nav::runtime::RouteOptions options;
     options.limits = {100000, 256 * mib};
@@ -275,8 +259,6 @@ void NavConsole::invalidateCurrent(nav::runtime::SessionReason reason) noexcept 
     current_->lastCurrentAreaRouteGeneration_=0;
     current_->lastCurrentAreaTick_={};
     current_->explicitRoute_=false;
-    current_->roamActive_=false;
-    current_->routeStyle_=core::tactical::RouteStyle::None;
     current_->roamArrived_=false;
     clearPending();
     stopMotion();
@@ -297,13 +279,6 @@ void NavConsole::invalidate(nav::runtime::SessionReason reason) noexcept {
     for(auto& actor:actors_) if(actor) {
         ActorScope scope(current_,actor.get());
         if(inRequest_) clearPending(); else invalidateCurrent(reason);
-        // Roam history and rejected goals belong to the loaded NAV/map
-        // session. Do not let area ids from a retired graph affect the next
-        // map or a newly published graph with the same numeric ids.
-        actor->roamRecentGoals_ = {};
-        actor->roamRecentGoalCount_ = 0;
-        actor->roamRejectedGoals_ = {};
-        actor->roamRejectedGoalCount_ = 0;
     }
     if(inRequest_) { deferredInvalidation_=reason; deferredAll_=true; return; }
     navigation_={}; index_.reset(); distributionTopology_.reset(); mesh_.reset(); ladders_.reset(); queryingEntity_=nullptr; queryingPlayers_=nullptr; queryingOwner_=nullptr;
@@ -417,8 +392,7 @@ std::optional<RuntimeNavigationState> NavConsole::runtimeState(
             : std::nullopt;
         result.routeGeneration = trace.routeGeneration;
         result.explicitRoute = actor->explicitRoute_;
-        result.routeStyle = actor->routeStyle_;
-        result.roamActive = actor->roamActive_;
+        result.roamActive = !actor->explicitRoute_;
         result.roamArrived = actor->roamArrived_ && result.roamActive;
         result.routeExecutable = actor->session_->executable() &&
                                  !result.roamArrived;
@@ -608,8 +582,6 @@ void NavConsole::execute(NavCommand command,metamod::LifecycleCoordinator& owner
         current_->recovery_={};
         current_->recoveryReplan_=false;
         current_->explicitRoute_=false;
-        current_->roamActive_=false;
-        current_->routeStyle_=core::tactical::RouteStyle::None;
         current_->roamArrived_=false;
         stopMotion();
         if(current_->session_) printUpdate(current_->session_->cancel()); else line("nav state=Idle"); return;
@@ -628,8 +600,6 @@ void NavConsole::execute(NavCommand command,metamod::LifecycleCoordinator& owner
     current_->recovery_={};
     current_->recoveryReplan_=false;
     current_->explicitRoute_=true;
-    current_->roamActive_=false;
-    current_->routeStyle_=core::tactical::RouteStyle::Hold;
     current_->roamArrived_=false;
     nav::runtime::RouteOptions options; options.limits={100000,256*mib};
     options.groundNavTolerance=18;

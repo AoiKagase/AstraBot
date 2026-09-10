@@ -315,9 +315,7 @@ std::size_t buildRuntimeInputs(const LifecycleCoordinator& owner, const RuntimeF
             auto& route = input.tactical.navigation.routes[0];
             route.target = {*nav->goal, *nav->goalPosition, nav->goal->value};
             route.style = nav->explicitRoute ? core::tactical::RouteStyle::Hold
-                                              : (nav->routeStyle != core::tactical::RouteStyle::None
-                                                  ? nav->routeStyle
-                                                  : core::tactical::RouteStyle::Direct);
+                                              : core::tactical::RouteStyle::Roam;
             const auto& goal = *nav->goalPosition;
             const double eta =
                 std::hypot(std::hypot(goal.x - position.x, goal.y - position.y),
