@@ -26,3 +26,9 @@ Next:
 
 Open acceptance:
 - Live runtime behavior, death animation, real-map NAV compatibility, runtime weapon callbacks, model/render result, and Finish status remain unverified.
+
+P12 runtime-input checkpoint (2026-09-10, Asia/Tokyo):
+- Added actor-level RuntimeInputValidationReason classification and propagated it to RuntimeDecision and RuntimeDiagnostic.
+- Preserved prior-frame actor/tick correlation through Movement dispatch and added runtime_validation to the console trace.
+- Added a focused ActionStampMismatch propagation test; existing multi-actor isolation coverage remains in place.
+- FocalSpan was updated successfully; git diff --check passed. Build, CTest, canonical verification, Finish, and live acceptance remain intentionally unperformed until the user confirms the real-device gate.
