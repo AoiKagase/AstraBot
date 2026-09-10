@@ -22,6 +22,18 @@ constexpr std::size_t inputLimit=64*mib;
 constexpr std::uint64_t currentAreaFallbackMaxAgeTicks=2;
 const nav::io::NavMeshReadLimits meshLimits{inputLimit,{100000,65535,65535,8*mib},
     {100000,4096,255,255,65536,255,1000000,1000000,1000000,1000000,1000000},256*mib};
+bool hullFits(const nav::model::NavExtent& extent,
+              const nav::runtime::HullDimensions& hull) noexcept {
+    if(!extent.isFinite() || extent.southEast.x<=extent.northWest.x ||
+       extent.southEast.y<=extent.northWest.y || !hull.minimum.isFinite() ||
+       !hull.maximum.isFinite() || hull.minimum.x>=hull.maximum.x ||
+       hull.minimum.y>=hull.maximum.y)
+        return false;
+    const double halfX=(std::max)(std::abs(double(hull.minimum.x)),std::abs(double(hull.maximum.x)));
+    const double halfY=(std::max)(std::abs(double(hull.minimum.y)),std::abs(double(hull.maximum.y)));
+    return double(extent.southEast.x)-extent.northWest.x >= 2*halfX &&
+        double(extent.southEast.y)-extent.northWest.y >= 2*halfY;
+}
 void run(NavCommand command) noexcept {
     auto& owner=metamod::lifecycleCoordinator(); owner.navConsole().execute(command,owner);
 }
@@ -173,6 +185,21 @@ void NavConsole::applyRuntimeNavigation(
         s.connected != true || s.alive != true || s.joined != true ||
         !s.position || !s.velocity || !s.view || !s.hull || !s.speedLimit) {
         reject(RuntimeNavigationApplyReason::ActorStateInvalid);
+        return;
+    }
+    if(!navigation_.graph) {
+        reject(RuntimeNavigationApplyReason::RouteRejected);
+        return;
+    }
+    const auto goalVertex=navigation_.graph->find(decision.navigationGoal);
+    if(!goalVertex || !hullFits(navigation_.graph->area(*goalVertex).extent,*s.hull)) {
+        if(roamDecision && current_->roamRejectedGoalCount_ < current_->roamRejectedGoals_.size()) {
+            bool duplicate=false;
+            for(std::size_t i=0;i<current_->roamRejectedGoalCount_;++i)
+                duplicate=duplicate || current_->roamRejectedGoals_[i]==decision.navigationGoal;
+            if(!duplicate) current_->roamRejectedGoals_[current_->roamRejectedGoalCount_++]=decision.navigationGoal;
+        }
+        reject(RuntimeNavigationApplyReason::RouteRejected);
         return;
     }
     if (current_->explicitRoute_ && roamDecision) {
@@ -492,13 +519,15 @@ std::optional<RuntimeNavigationState> NavConsole::runtimeState(
                 !id.isValid() || id == current || occupiedByOther(id))
                 return;
         if (actor && isListed(actor->roamRejectedGoals_,
-                actor->roamRejectedGoalCount, id))
+                actor->roamRejectedGoalCount_, id))
             return;
         if (!allowRecent && actor && isListed(actor->roamRecentGoals_,
-                actor->roamRecentGoalCount, id))
+                actor->roamRecentGoalCount_, id))
             return;
             const auto vertex = navigation_.graph->find(id);
             if (!vertex) return;
+            if (!result.movement.hull || !hullFits(navigation_.graph->area(*vertex).extent,*result.movement.hull))
+                return;
             const auto point = navigation_.graph->center(*vertex);
             result.roamCandidates[result.roamCandidateCount++] =
                 {{id}, {point.x, point.y, point.z}, id.value};
@@ -592,6 +621,13 @@ void NavConsole::execute(NavCommand command,metamod::LifecycleCoordinator& owner
     const auto s=snapshot(owner);
     if(s.kind!=nav::runtime::ActorKind::ManagedBot || !s.agent.isValid() || s.connected!=true || s.joined!=true) {
         observe(owner); line("nav error=NoUniqueJoinedManagedActor"); return;
+    }
+    if(!navigation_.graph || !s.hull) {
+        line("nav error=InvalidGoalArea"); return;
+    }
+    const auto goalVertex=navigation_.graph->find(*goal);
+    if(!goalVertex || !hullFits(navigation_.graph->area(*goalVertex).extent,*s.hull)) {
+        line("nav error=InvalidGoalArea"); return;
     }
     if(!current_->session_ || current_->session_->trace().actor!=s.actor || current_->session_->trace().agent!=s.agent || current_->session_->trace().map!=s.map)
         current_->session_.emplace(s.agent,s.actor,s.map);

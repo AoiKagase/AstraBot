@@ -94,6 +94,10 @@ public:
         core::MapGeneration,runtime::IWorldQueries&,const RecoveryDecision&,std::uint32_t reservedQueries=0) noexcept;
     WalkState state() const noexcept { return state_; }
     std::size_t step() const noexcept { return cursor_.index(); }
+    const corridor::Transition* activeTransition() const noexcept {
+        return corridor_ && cursor_.index() < corridor_->transitions().size() ?
+            &corridor_->transitions()[cursor_.index()] : nullptr;
+    }
 private:
     Binding binding_{};
     std::shared_ptr<const corridor::Corridor> corridor_{};
@@ -125,6 +129,7 @@ private:
     std::optional<std::size_t> completedJumpStep_{};
     std::optional<Ladder> ladder_{};
     std::optional<LadderPlan> ladderPlan_{};
+    bool microTransitValidated_{};
     WalkDecision updateLadder(WalkDecision,const runtime::MovementSnapshot&,const query::NavSpatialIndex&,
         std::uint64_t,std::uint32_t,const std::optional<LadderObservation>&) noexcept;
     WalkDecision updateJump(WalkDecision,const runtime::MovementSnapshot&,const query::NavSpatialIndex&,

@@ -54,6 +54,21 @@ void NavConsole::recordMotion(MotionEvent event,MotionReason reason) noexcept {
     if(current_->session_ && current_->session_->trace().route && current_->session_->trace().routeGeneration==current_->motionTrace_.decision.binding.routeGeneration &&
        current_->motionTrace_.decision.binding.step<current_->session_->trace().route->steps.size())
         current_->motionTrace_.selectedEdge=current_->session_->trace().route->steps[current_->motionTrace_.decision.binding.step].edge;
+    if(current_->motionTrace_.portalReason==nav::corridor::PortalFailureReason::None)
+        current_->motionTrace_.corridorTransition=current_->motionTrace_.decision.binding.step;
+    if(current_->walk_) {
+        if(const auto* transition=current_->walk_->activeTransition()) {
+            current_->motionTrace_.sourceFit=transition->sourceFit;
+            current_->motionTrace_.targetFit=transition->targetFit;
+            current_->motionTrace_.sourceExtentWidth=double(transition->sourceExtent.southEast.x)-transition->sourceExtent.northWest.x;
+            current_->motionTrace_.sourceExtentHeight=double(transition->sourceExtent.southEast.y)-transition->sourceExtent.northWest.y;
+            current_->motionTrace_.targetExtentWidth=double(transition->targetExtent.southEast.x)-transition->targetExtent.northWest.x;
+            current_->motionTrace_.targetExtentHeight=double(transition->targetExtent.southEast.y)-transition->targetExtent.northWest.y;
+        } else if(current_->motionTrace_.portalReason==nav::corridor::PortalFailureReason::None) {
+            current_->motionTrace_.sourceFit=nav::corridor::AreaFit::HullSafe;
+            current_->motionTrace_.targetFit=nav::corridor::AreaFit::HullSafe;
+        }
+    }
     current_->motionTrace_.event=event; current_->motionTrace_.reason=reason;
     current_->motionSequence_=add(current_->motionSequence_,1); current_->motionTrace_.sequence=current_->motionSequence_;
     current_->motionHistory_[current_->motionNext_]=current_->motionTrace_; current_->motionNext_=(current_->motionNext_+1)%motionHistoryLimit;
@@ -75,11 +90,18 @@ void NavConsole::printMotion() noexcept {
     const auto target=d.target ? d.target->origin:nav::model::NavVector3{};
     char text[1536]{};
     std::snprintf(text,sizeof(text),
-        "walk actor=%u:%u map=%u route=%llu step=%zu tick=%llu state=%s reason=%u probe=%u event=%u motion_reason=%u corridor=%u transport=%u command_tick=%llu dispatch_tick=%llu age_us=%llu speed=%.6g direction=(%.6g,%.6g) target_present=%u target=(%.6g,%.6g,%.6g) support=%u queries=%u samples=%u step_probes=%u queued=%llu dispatched=%llu rejected=%llu missed=%llu history=%zu omitted=%llu edge=%u:%u command=(%.6g,%.6g,%u) door=%llu door_state=%u door_reason=%u use_checks=%llu contact_pulse=%u contact_guards=%llu clearance=(%.6g,%.6g) narrow=%u avoiding=%u lateral=%.6g",
+        "walk actor=%u:%u map=%u route=%llu step=%zu tick=%llu state=%s reason=%u probe=%u event=%u motion_reason=%u corridor=%u portal_reason=%u transition=%zu micro_area=%u extent=(%.6g,%.6g)->(%.6g,%.6g) hull=(%.6g,%.6g) transport=%u command_tick=%llu dispatch_tick=%llu age_us=%llu speed=%.6g direction=(%.6g,%.6g) target_present=%u target=(%.6g,%.6g,%.6g) support=%u queries=%u samples=%u step_probes=%u queued=%llu dispatched=%llu rejected=%llu missed=%llu history=%zu omitted=%llu edge=%u:%u command=(%.6g,%.6g,%u) door=%llu door_state=%u door_reason=%u use_checks=%llu contact_pulse=%u contact_guards=%llu clearance=(%.6g,%.6g) narrow=%u avoiding=%u lateral=%.6g",
         unsigned(d.binding.actor.slot),unsigned(d.binding.actor.generation.value),unsigned(d.binding.map.value),
         static_cast<unsigned long long>(d.binding.routeGeneration),d.binding.step,static_cast<unsigned long long>(d.tick.value),
         walkState(d.state),unsigned(d.reason),unsigned(d.probeReason),unsigned(current_->motionTrace_.event),unsigned(current_->motionTrace_.reason),
-        unsigned(current_->motionTrace_.corridorError),unsigned(current_->motionTrace_.transportError),
+        unsigned(current_->motionTrace_.corridorError),unsigned(current_->motionTrace_.portalReason),
+        current_->motionTrace_.corridorTransition,
+        unsigned(current_->motionTrace_.sourceFit==nav::corridor::AreaFit::MicroTransit ||
+                 current_->motionTrace_.targetFit==nav::corridor::AreaFit::MicroTransit),
+        current_->motionTrace_.sourceExtentWidth,current_->motionTrace_.sourceExtentHeight,
+        current_->motionTrace_.targetExtentWidth,current_->motionTrace_.targetExtentHeight,
+        current_->motionTrace_.hullWidth,current_->motionTrace_.hullHeight,
+        unsigned(current_->motionTrace_.transportError),
         static_cast<unsigned long long>(current_->motionTrace_.commandTick.value),static_cast<unsigned long long>(current_->motionTrace_.dispatchTick.value),
         static_cast<unsigned long long>(current_->motionTrace_.intentAgeUs),d.intent.speed,d.intent.direction.x,d.intent.direction.y,
         unsigned(d.target.has_value()),double(target.x),double(target.y),double(target.z),
@@ -161,9 +183,34 @@ void NavConsole::startMotion(const nav::runtime::MovementSnapshot& s) noexcept {
     const nav::corridor::HullClearance clearance{
         (std::max)(std::abs(double(hull.minimum.x)),std::abs(double(hull.maximum.x))),
         (std::max)(std::abs(double(hull.minimum.y)),std::abs(double(hull.maximum.y)))};
+    current_->motionTrace_.hullWidth=2*clearance.halfX;
+    current_->motionTrace_.hullHeight=2*clearance.halfY;
     const auto corridor=nav::corridor::Corridor::build(*navigation_.graph,*route.route,clearance,
-        {100000,256U*1024U*1024U,1000000});
-    if(!corridor) { current_->motionTrace_.corridorError=corridor.error; fail(MotionReason::InvalidCorridor); return; }
+        {100000,256U*1024U*1024U,1000000},nav::corridor::PortalPolicy::AllowMicroTransit);
+    if(!corridor) {
+        current_->motionTrace_.corridorError=corridor.error;
+        current_->motionTrace_.portalReason=corridor.portalReason;
+        current_->motionTrace_.corridorTransition=corridor.transition;
+        if(corridor.transition<route.route->steps.size()) {
+            const auto& failedEdge=route.route->steps[corridor.transition].edge;
+            const auto from=navigation_.graph->find(failedEdge.source);
+            const auto to=navigation_.graph->find(failedEdge.target);
+            if(from && to) {
+                const auto& source=navigation_.graph->area(*from).extent;
+                const auto& target=navigation_.graph->area(*to).extent;
+                current_->motionTrace_.sourceExtentWidth=double(source.southEast.x)-source.northWest.x;
+                current_->motionTrace_.sourceExtentHeight=double(source.southEast.y)-source.northWest.y;
+                current_->motionTrace_.targetExtentWidth=double(target.southEast.x)-target.northWest.x;
+                current_->motionTrace_.targetExtentHeight=double(target.southEast.y)-target.northWest.y;
+            }
+        }
+        fail(corridor.error==nav::corridor::Error::InvalidGoalArea ?
+            MotionReason::InvalidGoal : MotionReason::InvalidCorridor); return;
+    }
+    current_->motionTrace_.portalReason=nav::corridor::PortalFailureReason::None;
+    current_->motionTrace_.corridorTransition=0;
+    current_->motionTrace_.sourceFit=nav::corridor::AreaFit::HullSafe;
+    current_->motionTrace_.targetFit=nav::corridor::AreaFit::HullSafe;
     const auto vertex=navigation_.graph->find(route.goal);
     if(!vertex) { fail(MotionReason::InvalidGoal); return; }
     const auto& e=navigation_.graph->area(*vertex).extent;
