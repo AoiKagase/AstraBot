@@ -60,6 +60,10 @@ bool inside(const model::NavExtent& e, model::NavVector3 p, runtime::HullDimensi
     return double(p.x)+h.minimum.x>=e.northWest.x && double(p.x)+h.maximum.x<=e.southEast.x &&
            double(p.y)+h.minimum.y>=e.northWest.y && double(p.y)+h.maximum.y<=e.southEast.y;
 }
+bool rawInside(const model::NavExtent& e, model::NavVector3 p) noexcept {
+    return p.isFinite() && e.isFinite() && p.x>=e.northWest.x && p.x<=e.southEast.x &&
+        p.y>=e.northWest.y && p.y<=e.southEast.y;
+}
 float inward(double value, float origin) noexcept {
     const auto rounded=static_cast<float>(value);
     if((value>origin && rounded>value) || (value<origin && rounded<value))
@@ -264,6 +268,9 @@ WalkDecision Walk::recover(const runtime::MovementSnapshot& s,const query::NavSp
         if(area==t.edge.source) extent=&t.sourceExtent;
         else if(area==t.edge.target) extent=&t.targetExtent;
         else return retainDuck(out);
+        if(t.sourceFit==corridor::AreaFit::MicroTransit ||
+           t.targetFit==corridor::AreaFit::MicroTransit)
+            return retainDuck(finish(out,WalkState::Failed,WalkReason::ProbeFailed));
     } else {
         if(area!=corridor_->goal()) return retainDuck(out);
         if(!corridor_->transitions().empty()) extent=&corridor_->transitions().back().targetExtent;
@@ -397,7 +404,13 @@ WalkDecision Walk::updateMotion(const runtime::MovementSnapshot& s,const query::
                 return finish(out,WalkState::Failed,WalkReason::InvalidPortal);
             return out; // lifecycle entry has its own tick, with no movement yet
         }
-        if(area==t.edge.target && inside(t.targetExtent,*s.position,*s.hull)) {
+        const bool targetReached = t.targetFit==corridor::AreaFit::MicroTransit
+            ? rawInside(t.targetExtent,*s.position)
+            : inside(t.targetExtent,*s.position,*s.hull);
+        if(area==t.edge.target && targetReached) {
+            if((t.sourceFit==corridor::AreaFit::MicroTransit ||
+                t.targetFit==corridor::AreaFit::MicroTransit) && !microTransitValidated_)
+                return finish(out,WalkState::Failed,WalkReason::ProbeFailed);
             if(blocker_) {
                 if(!clearBlocker()) return finish(out,WalkState::Failed,WalkReason::DynamicBlocked);
                 return out; // Measured passage progress retires its old portal fact first.
@@ -408,6 +421,7 @@ WalkDecision Walk::updateMotion(const runtime::MovementSnapshot& s,const query::
                !cursor_.advance(out.binding.step,area,true))
                 return finish(out,WalkState::Failed,WalkReason::InvalidPortal);
             out.primitiveEvent=completed.event; primitive_=Primitive{}; avoidSide_=0; avoidDecisions_=0;
+            microTransitValidated_=false;
             return out; // at most one measured transition per decision
         }
         auto reference=*s.position;
@@ -418,12 +432,15 @@ WalkDecision Walk::updateMotion(const runtime::MovementSnapshot& s,const query::
         if(!portal) return finish(out,WalkState::Failed,WalkReason::InvalidPortal);
         double x=portal.value->x, y=portal.value->y;
         const bool vertical=t.edge.direction==1 || t.edge.direction==3;
-        if((vertical && (y+s.hull->minimum.y<t.sourceExtent.northWest.y ||
-                         y+s.hull->maximum.y>t.sourceExtent.southEast.y)) ||
-           (!vertical && (x+s.hull->minimum.x<t.sourceExtent.northWest.x ||
-                          x+s.hull->maximum.x>t.sourceExtent.southEast.x)))
+        const bool sourceInArea = t.sourceFit==corridor::AreaFit::MicroTransit
+            ? rawInside(t.sourceExtent,{static_cast<float>(x),static_cast<float>(y),s.position->z})
+            : ((vertical && (y+s.hull->minimum.y>=t.sourceExtent.northWest.y &&
+                             y+s.hull->maximum.y<=t.sourceExtent.southEast.y)) ||
+               (!vertical && (x+s.hull->minimum.x>=t.sourceExtent.northWest.x &&
+                              x+s.hull->maximum.x<=t.sourceExtent.southEast.x)));
+        if(!sourceInArea)
             return finish(out,WalkState::Failed,WalkReason::InvalidPortal);
-        switch(t.edge.direction) {
+        if(t.targetFit!=corridor::AreaFit::MicroTransit) switch(t.edge.direction) {
         case 0: y-=double(s.hull->maximum.y)+limits_.crossingMargin; break;
         case 1: x+=-double(s.hull->minimum.x)+limits_.crossingMargin; break;
         case 2: y+=-double(s.hull->minimum.y)+limits_.crossingMargin; break;
@@ -434,7 +451,8 @@ WalkDecision Walk::updateMotion(const runtime::MovementSnapshot& s,const query::
            std::abs(y)>(std::numeric_limits<float>::max)())
             return finish(out,WalkState::Failed,WalkReason::InvalidPortal);
         aim={static_cast<float>(x),static_cast<float>(y),s.position->z};
-        if(!aim.isFinite() || !inside(t.targetExtent,aim,*s.hull))
+        if(!aim.isFinite() || (t.targetFit==corridor::AreaFit::MicroTransit
+            ? !rawInside(t.targetExtent,aim) : !inside(t.targetExtent,aim,*s.hull)))
             return finish(out,WalkState::Failed,WalkReason::InvalidPortal);
         queries.source=t.edge.source; queries.target=t.edge.target;
     } else {
@@ -553,6 +571,12 @@ WalkDecision Walk::updateMotion(const runtime::MovementSnapshot& s,const query::
         if(!queries.offCorridor && probe.reason==ProbeReason::NoSupport && limits_.doorTimeoutUs)
             return updateDoor(out,s,index,indexMap,queries,{x,y,s.position->z},nowUs);
         return finish(out,WalkState::Failed,queries.offCorridor ? WalkReason::OffCorridor:WalkReason::ProbeFailed);
+    }
+    if(!cursor_.exhausted()) {
+        const auto& active=corridor_->transitions()[cursor_.index()];
+        microTransitValidated_=(active.sourceFit==corridor::AreaFit::MicroTransit ||
+                                active.targetFit==corridor::AreaFit::MicroTransit) &&
+            probe.target->area==active.edge.target;
     }
     out.target=probe.target;
     if(blocker_) {

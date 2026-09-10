@@ -40,17 +40,34 @@ bool insideHull(const model::NavExtent& e, Point p, HullClearance h) noexcept {
     return finite(p) && p.x>=double(e.northWest.x)+h.halfX && p.x<=double(e.southEast.x)-h.halfX &&
         p.y>=double(e.northWest.y)+h.halfY && p.y<=double(e.southEast.y)-h.halfY;
 }
-bool portal(Transition& t, HullClearance hull) noexcept {
+PortalFailureReason portal(Transition& t, HullClearance hull, PortalPolicy policy) noexcept {
     const auto& a=t.sourceExtent; const auto& b=t.targetExtent;
-    if(!fits(a,hull) || !fits(b,hull)) return false;
+    if(!a.isFinite() || !b.isFinite() ||
+       a.southEast.x<=a.northWest.x || a.southEast.y<=a.northWest.y ||
+       b.southEast.x<=b.northWest.x || b.southEast.y<=b.northWest.y)
+        return PortalFailureReason::NoPortalSpan;
+    const bool sourceFits=fits(a,hull), targetFits=fits(b,hull);
+    t.sourceFit=sourceFits ? AreaFit::HullSafe : AreaFit::MicroTransit;
+    t.targetFit=targetFits ? AreaFit::HullSafe : AreaFit::MicroTransit;
+    if(!sourceFits && policy==PortalPolicy::Strict) return PortalFailureReason::SourceHullFit;
+    if(!targetFits && policy==PortalPolicy::Strict) return PortalFailureReason::TargetHullFit;
     if(t.edge.external) {
+        if(!sourceFits)
+            return policy==PortalPolicy::AllowMicroTransit ?
+                PortalFailureReason::UnsupportedTraversal : PortalFailureReason::SourceHullFit;
+        if(!targetFits)
+            return policy==PortalPolicy::AllowMicroTransit ?
+                PortalFailureReason::UnsupportedTraversal : PortalFailureReason::TargetHullFit;
         const auto& e=*t.edge.external;
         const Point entry{e.entry.x,e.entry.y,e.entry.z}, exit{e.exit.x,e.exit.y,e.exit.z};
-        if(!insideHull(a,entry,hull) || !insideHull(b,exit,hull)) return false;
+        if(!insideHull(a,entry,hull) || !insideHull(b,exit,hull))
+            return PortalFailureReason::InvalidExternalEndpoint;
         t.sourceLow=t.sourceHigh=entry; t.targetLow=t.targetHigh=exit;
-        return true;
+        return PortalFailureReason::None;
     }
-    if(t.edge.traversal!=model::NavTraversalKind::Walk || t.edge.direction>3) return false;
+    if(t.edge.traversal!=model::NavTraversalKind::Walk || t.edge.direction>3 ||
+       ((!sourceFits || !targetFits) && (t.sourceAttributes!=0 || t.targetAttributes!=0)))
+        return PortalFailureReason::UnsupportedTraversal;
     const auto d=t.edge.direction;
     double boundary=0, opposite=0;
     switch(d) {
@@ -58,21 +75,26 @@ bool portal(Transition& t, HullClearance hull) noexcept {
     case 1: boundary=a.southEast.x; opposite=b.northWest.x; break;
     case 2: boundary=a.southEast.y; opposite=b.northWest.y; break;
     case 3: boundary=a.northWest.x; opposite=b.southEast.x; break;
-    default: return false;
+    default: return PortalFailureReason::UnsupportedTraversal;
     }
     // No epsilon bridging of disconnected NAV boundaries.
-    if(boundary!=opposite) return false;
+    if(boundary!=opposite) return PortalFailureReason::BoundaryMismatch;
     const bool vertical=d==1 || d==3;
-    const double low=vertical ? std::max(a.northWest.y,b.northWest.y)+hull.halfY :
-                                std::max(a.northWest.x,b.northWest.x)+hull.halfX;
-    const double high=vertical ? std::min(a.southEast.y,b.southEast.y)-hull.halfY :
-                                 std::min(a.southEast.x,b.southEast.x)-hull.halfX;
-    if(!(low<high)) return false;
+    const double margin=vertical ? hull.halfY : hull.halfX;
+    const double sourceLow=vertical ? a.northWest.y : a.northWest.x;
+    const double sourceHigh=vertical ? a.southEast.y : a.southEast.x;
+    const double targetLow=vertical ? b.northWest.y : b.northWest.x;
+    const double targetHigh=vertical ? b.southEast.y : b.southEast.x;
+    const double low=std::max(sourceLow+(sourceFits ? margin:0.0),
+                              targetLow+(targetFits ? margin:0.0));
+    const double high=std::min(sourceHigh-(sourceFits ? margin:0.0),
+                               targetHigh-(targetFits ? margin:0.0));
+    if(!(low<high)) return PortalFailureReason::NoPortalSpan;
     const double x0=vertical ? boundary:low, y0=vertical ? low:boundary;
     const double x1=vertical ? boundary:high, y1=vertical ? high:boundary;
     t.sourceLow=support(a,x0,y0); t.sourceHigh=support(a,x1,y1);
     t.targetLow=support(b,x0,y0); t.targetHigh=support(b,x1,y1);
-    return true;
+    return PortalFailureReason::None;
 }
 Point project(const Transition& t, Point p) noexcept {
     if(t.edge.external) return t.sourceLow;
@@ -84,49 +106,61 @@ Point project(const Transition& t, Point p) noexcept {
 }
 }
 BuildResult Corridor::build(const query::NavGraph& graph, const query::NavRouteResult& route,
-                            HullClearance hull, Limits limits) noexcept {
+                            HullClearance hull, Limits limits, PortalPolicy policy) noexcept {
     if(!std::isfinite(hull.halfX) || !std::isfinite(hull.halfY) || hull.halfX<0 || hull.halfY<0)
-        return {{},Error::InvalidHull,0};
+        return {{},Error::InvalidHull,0,PortalFailureReason::None};
     const auto count=route.steps.size();
     if(route.status!=query::NavRouteStatus::Complete || route.areas.empty() ||
-       count!=route.areas.size()-1) return {{},Error::InvalidRoute,0};
+       count!=route.areas.size()-1) return {{},Error::InvalidRoute,0,PortalFailureReason::None};
     if(count>limits.maxTransitions || limits.maxBytes<sizeof(Corridor) ||
-       count>(limits.maxBytes-sizeof(Corridor))/sizeof(Transition)) return {{},Error::LimitExceeded,0};
-    if(!graph.find(route.areas.front())) return {{},Error::InvalidRoute,0};
+       count>(limits.maxBytes-sizeof(Corridor))/sizeof(Transition)) return {{},Error::LimitExceeded,0,PortalFailureReason::None};
+    if(!graph.find(route.areas.front()) || !graph.find(route.areas.back()))
+        return {{},Error::InvalidRoute,0,PortalFailureReason::None};
+    const auto& goal=graph.area(*graph.find(route.areas.back()));
+    if(!goal.extent.isFinite() || goal.extent.southEast.x<=goal.extent.northWest.x ||
+       goal.extent.southEast.y<=goal.extent.northWest.y || !fits(goal.extent,hull))
+        return {{},Error::InvalidGoalArea,0,PortalFailureReason::InvalidGoalArea};
     std::size_t index=0, checks=0;
     try {
         std::shared_ptr<Corridor> result(new Corridor);
         result->transitions_.reserve(count);
         result->start_=route.areas.front(); result->goal_=route.areas.back();
+        result->hull_=hull;
         result->startAttributes_=graph.area(*graph.find(result->start_)).attributes;
         result->logicalBytes_=sizeof(Corridor)+count*sizeof(Transition);
         for(;index<count;++index) {
             const auto& edge=route.steps[index].edge;
             const auto from=graph.find(edge.source), to=graph.find(edge.target);
             if(!from || !to || edge.source!=route.areas[index] || edge.target!=route.areas[index+1])
-                return {{},Error::InvalidRoute,index};
+                return {{},Error::InvalidRoute,index,PortalFailureReason::None};
             bool found=false;
             for(auto e=graph.edgeBegin(*from);e<graph.edgeEnd(*from);++e) {
-                if(checks==limits.maxEdgeChecks) return {{},Error::LimitExceeded,index};
+                if(checks==limits.maxEdgeChecks) return {{},Error::LimitExceeded,index,PortalFailureReason::None};
                 ++checks;
                 if(same(edge,graph.edge(e))) { found=true; break; }
             }
-            if(!found) return {{},Error::InvalidRoute,index};
+            if(!found) return {{},Error::InvalidRoute,index,PortalFailureReason::None};
             Transition transition;
             transition.edge=edge;
             transition.sourceExtent=graph.area(*from).extent; transition.targetExtent=graph.area(*to).extent;
             transition.sourceAttributes=graph.area(*from).attributes;
             transition.targetAttributes=graph.area(*to).attributes;
-            if(!portal(transition,hull)) return {{},Error::InvalidPortal,index};
+            const auto portalReason=portal(transition,hull,policy);
+            if(portalReason!=PortalFailureReason::None)
+                return {{},Error::InvalidPortal,index,portalReason};
             result->transitions_.push_back(std::move(transition));
         }
-        return {std::move(result),Error::None,0};
-    } catch(const std::bad_alloc&) { return {{},Error::AllocationFailure,index}; }
-      catch(...) { return {{},Error::LimitExceeded,index}; }
+        return {std::move(result),Error::None,0,PortalFailureReason::None};
+    } catch(const std::bad_alloc&) { return {{},Error::AllocationFailure,index,PortalFailureReason::None}; }
+      catch(...) { return {{},Error::LimitExceeded,index,PortalFailureReason::None}; }
 }
 TargetResult Corridor::target(std::size_t cursor, Point position, std::size_t lookAhead) const noexcept {
     if(cursor>=transitions_.size() || lookAhead==0) return {{},Error::InvalidCursor};
-    if(!finite(position) || !contains(transitions_[cursor].sourceExtent,position))
+    const auto& current=transitions_[cursor];
+    const bool inSource=current.sourceFit==AreaFit::MicroTransit
+        ? contains(current.sourceExtent,position)
+        : insideHull(current.sourceExtent,position,hull_);
+    if(!inSource)
         return {{},Error::InvalidPosition};
     const auto end=cursor+std::min(lookAhead,transitions_.size()-cursor);
     auto stop=cursor;

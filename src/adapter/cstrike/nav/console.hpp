@@ -27,6 +27,13 @@ struct MotionTrace {
     MotionEvent event{MotionEvent::None};
     MotionReason reason{MotionReason::None};
     nav::corridor::Error corridorError{nav::corridor::Error::None};
+    nav::corridor::PortalFailureReason portalReason{nav::corridor::PortalFailureReason::None};
+    std::size_t corridorTransition{};
+    nav::corridor::AreaFit sourceFit{nav::corridor::AreaFit::HullSafe};
+    nav::corridor::AreaFit targetFit{nav::corridor::AreaFit::HullSafe};
+    double sourceExtentWidth{}, sourceExtentHeight{};
+    double targetExtentWidth{}, targetExtentHeight{};
+    double hullWidth{}, hullHeight{};
     metamod::MovementError transportError{metamod::MovementError::None};
     core::TickId commandTick{}, dispatchTick{};
     std::uint64_t intentAgeUs{}, missedDecisions{}, queued{}, dispatched{}, rejected{}, sequence{};

@@ -3,8 +3,13 @@
 #include "nav/query/route_types.hpp"
 
 namespace astrabot::nav::corridor {
-enum class Error { None, InvalidRoute, InvalidHull, InvalidPortal, LimitExceeded,
-                   AllocationFailure, InvalidCursor, InvalidPosition };
+enum class Error { None, InvalidRoute, InvalidHull, InvalidPortal, InvalidGoalArea,
+                   LimitExceeded, AllocationFailure, InvalidCursor, InvalidPosition };
+enum class PortalPolicy { Strict, AllowMicroTransit };
+enum class PortalFailureReason { None, SourceHullFit, TargetHullFit, BoundaryMismatch,
+                                 NoPortalSpan, UnsupportedTraversal, InvalidExternalEndpoint,
+                                 InvalidGoalArea };
+enum class AreaFit { HullSafe, MicroTransit };
 struct HullClearance { double halfX{}, halfY{}; };
 // No implicit allowance. Logical bytes exclude allocator overhead/control blocks.
 struct Limits { std::size_t maxTransitions{}, maxBytes{}, maxEdgeChecks{}; };
@@ -15,6 +20,7 @@ struct Transition {
     query::NavQueryPoint sourceLow{}, sourceHigh{}, targetLow{}, targetHigh{};
     model::NavExtent sourceExtent{}, targetExtent{};
     std::uint8_t sourceAttributes{}, targetAttributes{};
+    AreaFit sourceFit{AreaFit::HullSafe}, targetFit{AreaFit::HullSafe};
     // NAV geometry is a constraint, never proof of world clearance/support.
     bool requiresWorldProbe{true};
 };
@@ -23,6 +29,7 @@ struct BuildResult {
     std::shared_ptr<const Corridor> value{};
     Error error{Error::None};
     std::size_t transition{};
+    PortalFailureReason portalReason{PortalFailureReason::None};
     explicit operator bool() const noexcept { return value && error == Error::None; }
 };
 struct TargetResult {
@@ -33,7 +40,7 @@ struct TargetResult {
 class Corridor final {
 public:
     static BuildResult build(const query::NavGraph&, const query::NavRouteResult&,
-                             HullClearance, Limits) noexcept;
+        HullClearance, Limits, PortalPolicy = PortalPolicy::Strict) noexcept;
     const std::vector<Transition>& transitions() const noexcept { return transitions_; }
     model::NavAreaId start() const noexcept { return start_; }
     model::NavAreaId goal() const noexcept { return goal_; }
@@ -48,7 +55,9 @@ private:
     Corridor() = default;
     std::vector<Transition> transitions_{};
     model::NavAreaId start_{}, goal_{};
-    std::uint8_t startAttributes_{}; // Also preserves constraints on a same-area route.
+    std::uint8_t startAttributes_{};
+    HullClearance hull_{};
+    // Also preserves constraints on a same-area route.
     std::size_t logicalBytes_{};
 };
 // Single owner. Advancement requires caller-validated support in the target

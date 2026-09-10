@@ -115,5 +115,41 @@ void externalOwnership() {
     assert(t.value->x==25 && t.value->y==25);
     assert(built.value->transitions()[0].targetLow.x==75);
 }
+void microTransitPolicy() {
+    auto a=square(1,0,0), b=square(2,100,37.5F), c=square(3,125,0);
+    a.targets[1]={2}; b.targets[3]={1}; b.targets[1]={3}; c.targets[3]={2};
+    auto g=graph({a,b,c});
+    const auto r=route(*g,1,3);
+    const auto strict=corridor::Corridor::build(*g,r,{16,16},limits);
+    assert(strict.error==corridor::Error::InvalidPortal);
+    assert(strict.portalReason==corridor::PortalFailureReason::TargetHullFit);
+    const auto transit=corridor::Corridor::build(*g,r,{16,16},limits,
+        corridor::PortalPolicy::AllowMicroTransit);
+    assert(transit);
+    assert(transit.value->transitions()[0].targetFit==corridor::AreaFit::MicroTransit);
+    assert(transit.value->transitions()[1].sourceFit==corridor::AreaFit::MicroTransit);
+    assert(transit.value->transitions()[1].targetFit==corridor::AreaFit::HullSafe);
+
+    const auto microGoal=route(*g,1,2);
+    const auto rejectedGoal=corridor::Corridor::build(*g,microGoal,{16,16},limits,
+        corridor::PortalPolicy::AllowMicroTransit);
+    assert(rejectedGoal.error==corridor::Error::InvalidGoalArea);
+    assert(rejectedGoal.portalReason==corridor::PortalFailureReason::InvalidGoalArea);
+
+    b.attributes=1;
+    auto attributed=graph({a,b,c});
+    const auto attributedRoute=route(*attributed,1,3);
+    const auto rejectedAttribute=corridor::Corridor::build(*attributed,attributedRoute,{16,16},limits,
+        corridor::PortalPolicy::AllowMicroTransit);
+    assert(rejectedAttribute.error==corridor::Error::InvalidPortal);
+    assert(rejectedAttribute.portalReason==corridor::PortalFailureReason::UnsupportedTraversal);
+
+    b=square(2,100,200); a.targets[1]={2}; b.targets[3]={1};
+    auto disconnected=graph({a,b});
+    const auto disconnectedRoute=route(*disconnected,1,2);
+    const auto noSpan=corridor::Corridor::build(*disconnected,disconnectedRoute,{0,0},limits);
+    assert(noSpan.error==corridor::Error::InvalidPortal);
+    assert(noSpan.portalReason==corridor::PortalFailureReason::NoPortalSpan);
 }
-int main() { cardinalAndSlopes(); invalidAndBudgets(); lookAheadAndReplay(); externalOwnership(); }
+}
+int main() { cardinalAndSlopes(); invalidAndBudgets(); lookAheadAndReplay(); externalOwnership(); microTransitPolicy(); }
