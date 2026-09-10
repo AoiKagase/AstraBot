@@ -70,11 +70,22 @@ struct RuntimeActorCorrelation final {
     bool removalPending{false};
     bool alive{false};
     bool currentAreaHeld{false};
+    nav::model::NavAreaId currentArea{};
+    std::uint64_t elapsedUs{0};
+    std::uint64_t frameDeltaUs{0};
     core::tactical::IntentType intent{core::tactical::IntentType::None};
     core::tactical::RouteStyle route{core::tactical::RouteStyle::None};
     core::tactical::Reason reason{core::tactical::Reason::None};
     nav::model::NavAreaId roamGoal{};
     std::size_t roamCandidateCount{0};
+    std::uint32_t roamExcludedCapacity{0};
+    std::uint32_t roamExcludedInvalid{0};
+    std::uint32_t roamExcludedOccupied{0};
+    std::uint32_t roamExcludedCooling{0};
+    std::uint32_t roamExcludedRejected{0};
+    std::uint32_t roamExcludedRecent{0};
+    std::uint32_t roamExcludedMissing{0};
+    std::uint32_t roamExcludedHull{0};
     std::uint64_t roamGeneration{0};
 };
 

@@ -455,6 +455,16 @@ void testIndependentPlayerQueues() {
     assert(fixture.dispatch().outcome==MovementOutcome::None);
 }
 
+void testInitialFrameDoesNotQueueTimedMovement() {
+    Fixture fixture{};
+    fixture.movement.beginFrame();
+    const auto result = fixture.movement.submit(
+        fixture.player, fixture.map, fixture.registry.currentTick(), fixture.command());
+    assert(result.rejected());
+    assert(result.error == MovementError::NoFrameDelta);
+    assert(gCalls.empty());
+}
+
 } // namespace
 
 int main() {
@@ -470,6 +480,7 @@ int main() {
     testDispatchGuardsAndCleanup();
     testEngineUnavailableAndTraceUniqueness();
     testIndependentPlayerQueues();
+    testInitialFrameDoesNotQueueTimedMovement();
     testWeaponSelectionHandlerOwnsDispatchGate();
     return 0;
 }

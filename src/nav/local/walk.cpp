@@ -129,6 +129,13 @@ WalkDecision Walk::finish(WalkDecision out, WalkState state, WalkReason reason) 
         (void)ladder_->abort(); ladder_.reset(); ladderPlan_.reset();
         out.intent.jump=out.intent.forward=out.intent.back=ActionRequest::Release;
     }
+    // Drop has no transport acknowledgement of its own. Once the enclosing
+    // walk is retired, do not let a stale airborne/step-off state leak into
+    // the next route generation.
+    dropPlan_.reset();
+    dropState_=DropState::Approach;
+    dropStartedUs_=dropAirborneUs_=dropLastUs_=0;
+    dropGravity_=0.0;
     if(primitive_.state()==PrimitiveState::Running) {
         if(state==WalkState::Failed)
             out.primitiveEvent=primitive_.update({out.binding,out.tick,Progress::Failed,{},std::nullopt,false}).event;

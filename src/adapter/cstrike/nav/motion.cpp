@@ -123,6 +123,16 @@ void NavConsole::printMotion() noexcept {
         d.blocker && d.blocker->player ? unsigned(d.blocker->player->slot):0U,
         d.blocker && d.blocker->player ? unsigned(d.blocker->player->generation.value):0U);
     line(text);
+    char timing[384]{};
+    std::snprintf(timing,sizeof(timing),
+        "motion_timing actor=%u:%u elapsed_us=%llu frame_delta_us=%llu intent_speed=%.6g speed_limit=%.6g pending_remaining_us=%llu stale_reason=%u",
+        unsigned(d.binding.actor.slot),unsigned(d.binding.actor.generation.value),
+        static_cast<unsigned long long>(current_->motionTrace_.elapsedUs),
+        static_cast<unsigned long long>(current_->motionTrace_.frameDeltaUs),
+        current_->motionTrace_.intentSpeed,current_->motionTrace_.speedLimit,
+        static_cast<unsigned long long>(current_->motionTrace_.pendingRemainingUs),
+        unsigned(current_->motionTrace_.reason));
+    line(timing);
     if(d.posture || d.constraintReason!=nav::local::ConstraintReason::None) {
         char posture[128]{};
         std::snprintf(posture,sizeof(posture),"walk posture_present=%u posture=%u posture_reason=%u constraint_reason=%u duck=%u",
@@ -355,8 +365,16 @@ void NavConsole::beforeDispatch(metamod::LifecycleCoordinator& owner) noexcept {
     current_->motionTrace_.dispatchOrigin=s.position;
     const auto duration=movement_->frameDeltaUs();
     current_->motionTrace_.dispatchDurationUs=1000*std::clamp(duration/1000+(duration%1000>=500 ? 1U:0U),std::uint64_t{1},std::uint64_t{255});
+    current_->motionTrace_.elapsedUs=s.elapsedUs;
+    current_->motionTrace_.frameDeltaUs=duration;
+    current_->motionTrace_.pendingRemainingUs=pending.remainingFreshUs;
+    current_->motionTrace_.intentSpeed=std::hypot(
+        double(current_->motionTrace_.decision.intent.direction.x),
+        double(current_->motionTrace_.decision.intent.direction.y)) *
+        current_->motionTrace_.decision.intent.speed;
+    current_->motionTrace_.speedLimit=s.speedLimit ? double(*s.speedLimit) : 0.0;
     MotionReason reason=MotionReason::None;
-    const auto elapsed=(std::max)(s.elapsedUs,movement_->frameDeltaUs());
+    const auto elapsed=s.elapsedUs;
     const bool stationary=pending.command.movement==core::Movement{} && pending.command.buttons==0;
     if(!ready(s,pending.jump.has_value() || pending.drop.has_value() || pending.ladder.has_value() || stationary) || s.actor!=pending.binding.actor || s.agent!=pending.binding.agent || s.map!=pending.binding.map ||
        !s.tick.isAfter(pending.tick) || s.hull->minimum!=pending.observation.hull->minimum ||
@@ -376,14 +394,42 @@ void NavConsole::beforeDispatch(metamod::LifecycleCoordinator& owner) noexcept {
             reason=MotionReason::Deviation;
     }
     if(reason!=MotionReason::None) {
+        const auto binding=pending.binding;
+        const auto edge=current_->motionTrace_.selectedEdge;
         if(pending.ladder) reportLadderTransport(current_->motionTrace_.decision,pending.tick,s.tick,false);
         if(current_->walk_ && (pending.command.buttons&static_cast<core::ButtonMask>(core::Button::Jump)))
             (void)current_->walk_->reportJumpDispatch({pending.binding,pending.tick,s.tick,false});
         current_->motionTrace_.commandTick=pending.tick; current_->motionTrace_.dispatchTick=s.tick;
+        current_->motionTrace_.failedEdge=edge;
         clearPending(); if(current_->pump_) current_->pump_->submissionRejected();
         current_->motionTrace_.rejected=add(current_->motionTrace_.rejected,1); recordMotion(MotionEvent::Rejected,reason);
-        failExecution(reason==MotionReason::MissingObservation ?
-            nav::runtime::ExecutionFailure::Observation : nav::runtime::ExecutionFailure::Transport);
+        if (reason==MotionReason::StaleCommand && current_->walk_ &&
+            current_->session_ && current_->session_->executable() &&
+            binding.actor==current_->actor && binding.agent.isValid() &&
+            binding.map==navigation_.map) {
+            // A stale ticket is not evidence that the old command can still
+            // be executed. Retire the primitive, including Jump/Drop/Ladder
+            // state, and hand the active edge to bounded replan.
+            current_->motionTrace_.decision=current_->walk_->abort();
+            current_->motionTrace_.failedEdge=edge;
+            current_->replan_={};
+            const bool scheduled=edge
+                ? current_->replan_.schedule(binding,*edge,s.tick,current_->navigationTimeUs_)
+                : current_->replan_.scheduleRecovery(binding,s.tick,current_->navigationTimeUs_);
+            current_->recoveryReplan_=scheduled;
+            if (scheduled) {
+                current_->execution_.state=nav::runtime::ExecutionState::Recovering;
+                current_->motionTrace_.decision.terminalEvent=true;
+                current_->motionTrace_.decision.reason=nav::local::WalkReason::RecoveryReplan;
+                recordMotion(MotionEvent::Decision,reason);
+            } else {
+                stopMotion();
+                failExecution(nav::runtime::ExecutionFailure::Transport);
+            }
+        } else {
+            failExecution(reason==MotionReason::MissingObservation ?
+                nav::runtime::ExecutionFailure::Observation : nav::runtime::ExecutionFailure::Transport);
+        }
         return;
     }
     if(pending.ladder) {
@@ -571,6 +617,10 @@ void NavConsole::moveFrame(metamod::LifecycleCoordinator& owner) noexcept {
     if(inRequest_ || !current_->walk_ || !current_->pump_ || !movement_ || !current_->session_ || !current_->session_->executable() ||
        current_->walk_->state()!=nav::local::WalkState::Running) return;
     const auto s=snapshot(owner);
+    // There is no valid simulation interval on the first armed frame. The
+    // movement coordinator emits the neutral heartbeat; NAV waits for the
+    // next frame before creating an aged action command.
+    if (!s.elapsedUs || !movement_->frameDeltaUs()) return;
     if(!s.tick.isAfter(current_->requestTick_)) return; // Route request owns ordinal 1 on its tick.
     const auto schedule=current_->pump_->beginFrame(s);
     if(!schedule.accepted) { stopMotion(); return; }
@@ -709,6 +759,11 @@ void NavConsole::submitMotion(const nav::runtime::MovementSnapshot& s,metamod::L
     current_->motionTrace_.commandTick=s.tick; current_->motionTrace_.dispatchTick={}; current_->motionTrace_.intentAgeUs=age;
     current_->motionTrace_.transportError=result.error;
     if(result.queued()) {
+        current_->motionTrace_.elapsedUs=s.elapsedUs;
+        current_->motionTrace_.frameDeltaUs=movement_->frameDeltaUs();
+        current_->motionTrace_.pendingRemainingUs=nav::local::IntentPump::maxIntentAgeUs-age;
+        current_->motionTrace_.intentSpeed=double(intent.speed);
+        current_->motionTrace_.speedLimit=double(*s.speedLimit);
         current_->pendingMotion_=PendingMotion{current_->motionTrace_.decision.binding,s.tick,nav::local::IntentPump::maxIntentAgeUs-age,
             s,submittedCommand,current_->segment_,contact};
         if(decision.jumpState && decision.jumpPlan && decision.jumpPhysics)

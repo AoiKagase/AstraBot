@@ -754,11 +754,26 @@ void LifecycleCoordinator::startFrame() noexcept {
         correlation.connected = registry_.isConnected(player.slot) && registry_.currentPlayer(player.slot) == player;
         correlation.removalPending = client.fake.removalPending();
         correlation.alive = entity != nullptr && !entity->free && entity->v.deadflag == DEAD_NO;
+        correlation.elapsedUs = movement_.frameDeltaUs();
+        correlation.frameDeltaUs = movement_.frameDeltaUs();
         const auto& input = runtimeInputBuildStatuses_[player.slot - 1U];
         correlation.inputTick = input.player == player ? input.tick : core::TickId{};
         correlation.inputReason = input.player == player ? input.reason : RuntimeInputBuildReason::None;
         correlation.staleReason = input.player == player ? input.staleReason : RuntimeActorStaleReason::None;
         correlation.currentAreaHeld = input.player == player && input.currentAreaHeld;
+        if (const auto navState = navConsole_.runtimeState(*this, player);
+            navState) {
+            if (navState->currentArea)
+                correlation.currentArea = *navState->currentArea;
+            correlation.roamExcludedCapacity = navState->roamExcludedCapacity;
+            correlation.roamExcludedInvalid = navState->roamExcludedInvalid;
+            correlation.roamExcludedOccupied = navState->roamExcludedOccupied;
+            correlation.roamExcludedCooling = navState->roamExcludedCooling;
+            correlation.roamExcludedRejected = navState->roamExcludedRejected;
+            correlation.roamExcludedRecent = navState->roamExcludedRecent;
+            correlation.roamExcludedMissing = navState->roamExcludedMissing;
+            correlation.roamExcludedHull = navState->roamExcludedHull;
+        }
         if (const auto* decision = runtime_.decision(player)) {
             correlation.decisionTick = decision->team.shared.tick.isValid() ? decision->team.shared.tick : tick;
             correlation.validation = decision->validation;

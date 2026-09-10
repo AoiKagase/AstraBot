@@ -22,6 +22,11 @@ enum class MotionReason { None, InvalidCorridor, InvalidGoal, MissingObservation
 struct MotionTrace {
     std::optional<nav::model::NavVector3> dispatchOrigin{};
     std::uint64_t dispatchDurationUs{};
+    std::uint64_t elapsedUs{};
+    std::uint64_t frameDeltaUs{};
+    std::uint64_t pendingRemainingUs{};
+    double intentSpeed{};
+    double speedLimit{};
     nav::local::WalkDecision decision{};
     std::optional<nav::query::NavDirectedEdge> selectedEdge{};
     std::optional<nav::query::NavDirectedEdge> failedEdge{};
@@ -91,6 +96,14 @@ struct RuntimeNavigationState final {
     std::array<core::tactical::TargetArea, core::tactical::kMaxTacticalRoamCandidates>
         roamCandidates{};
     std::size_t roamCandidateCount{0};
+    std::uint32_t roamExcludedCapacity{0};
+    std::uint32_t roamExcludedInvalid{0};
+    std::uint32_t roamExcludedOccupied{0};
+    std::uint32_t roamExcludedCooling{0};
+    std::uint32_t roamExcludedRejected{0};
+    std::uint32_t roamExcludedRecent{0};
+    std::uint32_t roamExcludedMissing{0};
+    std::uint32_t roamExcludedHull{0};
     std::uint64_t roamGeneration{0};
     std::uint64_t routeGeneration{0};
     bool routeExecutable{false};

@@ -111,6 +111,17 @@ MovementResult MovementCoordinator::submit(
             tick,
             command.msec);
     }
+    // The first frame after arming the host clock has no trustworthy
+    // simulation interval. Keep the neutral heartbeat in dispatchAtFrameEnd
+    // but never retain an action command that cannot be timed or aged.
+    if (frameDeltaUs_ == 0U) {
+        return reject(
+            MovementError::NoFrameDelta,
+            player,
+            mapGeneration,
+            tick,
+            command.msec);
+    }
 
     auto& pending = pending_[static_cast<std::size_t>(player.slot - 1U)];
     if (pending.has_value()) {

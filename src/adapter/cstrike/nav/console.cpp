@@ -377,8 +377,13 @@ nav::runtime::MovementSnapshot NavConsole::snapshotFor(
     const auto binding=owner.agents().findByPlayer(player);
     s.actor=player; s.agent=binding.agent;
     s.map=registry.mapGeneration(); s.tick=registry.currentTick();
-    if(globals_ && std::isfinite(globals_->frametime) && globals_->frametime>=0 && globals_->frametime<=60)
-        s.elapsedUs=static_cast<std::uint64_t>(double(globals_->frametime)*1000000.0);
+    // MovementCoordinator owns the frame clock used by RunPlayerMove and by
+    // pending-command freshness. Do not mix it with globalvars->frametime:
+    // the latter can be zero or represent a different callback interval.
+    // A zero delta is deliberately preserved for the first frame; callers
+    // keep that frame neutral and do not queue movement from it.
+    if (movement_)
+        s.elapsedUs=movement_->frameDeltaUs();
     s.connected=s.actor.isValid() && registry.currentPlayer(s.actor.slot)==s.actor;
     const auto* join=owner.joinState(s.actor);
     s.joined=join && join->phase()==JoinPhase::Joined && join->player()==s.actor;
@@ -528,21 +533,31 @@ std::optional<RuntimeNavigationState> NavConsole::runtimeState(
         };
         const auto addCandidate = [&](nav::model::NavAreaId id,
                                       bool allowRecent) noexcept {
-            if (result.roamCandidateCount >= result.roamCandidates.size() ||
-                !id.isValid() || id == current || occupiedByOther(id))
-                return;
-            if(actor && (!actor->execution_.canSearch(actor->navigationTimeUs_) ||
-                actor->execution_.cooling(id,actor->navigationTimeUs_))) return;
+        if (result.roamCandidateCount >= result.roamCandidates.size()) {
+            ++result.roamExcludedCapacity; return;
+        }
+        if (!id.isValid() || id == current) {
+            ++result.roamExcludedInvalid; return;
+        }
+        if (occupiedByOther(id)) {
+            ++result.roamExcludedOccupied; return;
+        }
+        if(actor && (!actor->execution_.canSearch(actor->navigationTimeUs_) ||
+            actor->execution_.cooling(id,actor->navigationTimeUs_))) {
+            ++result.roamExcludedCooling; return;
+        }
         if (actor && isListed(actor->roamRejectedGoals_,
-                actor->roamRejectedGoalCount_, id))
-            return;
+            actor->roamRejectedGoalCount_, id)) {
+            ++result.roamExcludedRejected; return;
+        }
         if (!allowRecent && actor && isListed(actor->roamRecentGoals_,
-                actor->roamRecentGoalCount_, id))
-            return;
-            const auto vertex = navigation_.graph->find(id);
-            if (!vertex) return;
-            if (!result.movement.hull || !hullFits(navigation_.graph->area(*vertex).extent,*result.movement.hull))
-                return;
+            actor->roamRecentGoalCount_, id)) {
+            ++result.roamExcludedRecent; return;
+        }
+        const auto vertex = navigation_.graph->find(id);
+        if (!vertex) { ++result.roamExcludedMissing; return; }
+        if (!result.movement.hull || !hullFits(navigation_.graph->area(*vertex).extent,*result.movement.hull))
+            { ++result.roamExcludedHull; return; }
             const auto point = navigation_.graph->center(*vertex);
             result.roamCandidates[result.roamCandidateCount++] =
                 {{id}, {point.x, point.y, point.z}, id.value};
