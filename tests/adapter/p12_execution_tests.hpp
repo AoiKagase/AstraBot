@@ -93,8 +93,11 @@ void run() {
     assert(apply(first, {3}).result == Result::Applied);
     assert(console.runtimeState(owner, first)->routeExecutable);
     assert(console.runtimeState(owner, first)->execution == State::Running);
-    assert(apply(first, {2}).result == Result::Rejected);
+    assert(apply(first, {2}).result == Result::Unchanged);
     assert(console.runtimeState(owner, first)->goal == nav::model::NavAreaId{3});
+    // Periodic Roam alternatives do not reset a healthy running route or its
+    // edge-scoped progress detector.  Higher-priority/non-Roam decisions are
+    // still allowed through applyRuntimeNavigation.
 
     // A different goal behind the same bad edge must be filtered at search,
     // including after a successful intervening goal. The other actor can

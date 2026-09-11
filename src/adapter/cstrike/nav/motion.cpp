@@ -42,7 +42,11 @@ const char* walkState(nav::local::WalkState state) noexcept {
 }
 }
 void NavConsole::recordMotion(MotionEvent event,MotionReason reason) noexcept {
-    if(event==MotionEvent::Rejected) current_->recovery_.pause(current_->motionTrace_.decision.binding);
+    const bool traversalRejected=reason==MotionReason::JumpChanged ||
+        reason==MotionReason::DropChanged || reason==MotionReason::LadderChanged ||
+        reason==MotionReason::PostureChanged;
+    if(event==MotionEvent::Rejected && !traversalRejected)
+        current_->recovery_.pause(current_->motionTrace_.decision.binding);
     if(event==MotionEvent::Decision) current_->motionTrace_.selectedEdge.reset();
     if(current_->session_ && current_->session_->trace().route && current_->session_->trace().routeGeneration==current_->motionTrace_.decision.binding.routeGeneration &&
        current_->motionTrace_.decision.binding.step<current_->session_->trace().route->steps.size())
@@ -131,7 +135,7 @@ void NavConsole::printMotion() noexcept {
     }
     char timing[384]{};
     std::snprintf(timing,sizeof(timing),
-        "motion_timing actor=%u:%u elapsed_us=%llu frame_delta_us=%llu intent_speed=%.6g speed_limit=%.6g pending_remaining_us=%llu stale_reason=%u diagnostic_suppressed=%llu",
+        "motion_timing actor=%u:%u elapsed_us=%llu frame_delta_us=%llu intent_speed=%.6g speed_limit=%.6g pending_remaining_us=%llu motion_reason=%u diagnostic_suppressed=%llu",
         unsigned(d.binding.actor.slot),unsigned(d.binding.actor.generation.value),
         static_cast<unsigned long long>(current_->motionTrace_.elapsedUs),
         static_cast<unsigned long long>(current_->motionTrace_.frameDeltaUs),
@@ -176,8 +180,9 @@ void NavConsole::printMotion() noexcept {
     }
     if(d.jumpState) {
         char jump[384]{};
-        std::snprintf(jump,sizeof(jump),"jump state=%u reason=%u probe=%u geometry=%u press_tick=%llu gravity=%.6g impulse=%.6g guard_queries=%llu profile=standard-cs",
+        std::snprintf(jump,sizeof(jump),"jump state=%u reason=%u probe=%u geometry=%u guard_reason=%u press_tick=%llu gravity=%.6g impulse=%.6g guard_queries=%llu profile=standard-cs",
             unsigned(*d.jumpState),unsigned(d.jumpReason),unsigned(d.jumpProbeReason),unsigned(d.jumpGeometryReason),
+            unsigned(current_->motionTrace_.jumpGuardReason),
             static_cast<unsigned long long>(d.jumpPressTick.value),d.jumpPhysics ? d.jumpPhysics->gravity:0,
             d.jumpPhysics ? d.jumpPhysics->verticalImpulse:0,static_cast<unsigned long long>(current_->motionTrace_.jumpGuardQueries));
         line(jump);
@@ -329,7 +334,12 @@ void NavConsole::startMotion(const nav::runtime::MovementSnapshot& s) noexcept {
     auto profile=walkLimits; profile.jump=jumpLimits; profile.drop=nav::local::DropLimits{}; profile.ladder=nav::local::LadderLimits{};
     current_->walk_.emplace(current_->motionTrace_.decision.binding,corridor.value,goal,profile);
     current_->execution_.state=nav::runtime::ExecutionState::Running;
-    (void)current_->recovery_.bindRoute(current_->motionTrace_.decision.binding);
+    std::optional<nav::local::RecoveryEdge> recoveryEdge;
+    if(route.route && !route.route->steps.empty()) {
+        const auto& edge=route.route->steps.front().edge;
+        recoveryEdge=nav::local::RecoveryEdge{edge.source,edge.target};
+    }
+    (void)current_->recovery_.bindRoute(current_->motionTrace_.decision.binding,recoveryEdge);
     current_->pump_.emplace(current_->motionTrace_.decision.binding); current_->intentWallAgeUs_=0; current_->neutralBinding_.reset();
 }
 nav::local::ProbeResult NavConsole::guardGround(metamod::LifecycleCoordinator& owner,
@@ -466,6 +476,16 @@ void NavConsole::beforeDispatch(metamod::LifecycleCoordinator& owner) noexcept {
         double(current_->motionTrace_.decision.intent.direction.y)) *
         current_->motionTrace_.decision.intent.speed;
     current_->motionTrace_.speedLimit=s.speedLimit ? double(*s.speedLimit) : 0.0;
+    const auto reportTraversalRejection = [&](MotionReason rejected) noexcept {
+        if((rejected!=MotionReason::JumpChanged && rejected!=MotionReason::LadderChanged &&
+            rejected!=MotionReason::PostureChanged) || !pending.observation.position)
+            return;
+        const auto expected=(pending.command.buttons&static_cast<core::ButtonMask>(core::Button::Duck))
+            ? nav::local::ExpectedProgress::Crouch:nav::local::ExpectedProgress::Walk;
+        (void)current_->recovery_.report({pending.binding,pending.tick,s.tick,
+            *pending.observation.position,current_->motionTrace_.decision.progressDirection,
+            current_->motionTrace_.dispatchDurationUs,expected,false,true});
+    };
     MotionReason reason=MotionReason::None;
     const auto elapsed=s.elapsedUs;
     const bool stationary=pending.command.movement==core::Movement{} && pending.command.buttons==0;
@@ -535,6 +555,7 @@ void NavConsole::beforeDispatch(metamod::LifecycleCoordinator& owner) noexcept {
         if(guarded!=MotionReason::None) {
             reportLadderTransport(current_->motionTrace_.decision,queued,s.tick,false);
             current_->motionTrace_.commandTick=queued; current_->motionTrace_.dispatchTick=s.tick;
+            reportTraversalRejection(guarded);
             clearPending(); if(current_->pump_) current_->pump_->submissionRejected();
             current_->motionTrace_.rejected=add(current_->motionTrace_.rejected,1); recordMotion(MotionEvent::Rejected,guarded);
         }
@@ -565,6 +586,7 @@ void NavConsole::beforeDispatch(metamod::LifecycleCoordinator& owner) noexcept {
         if(guarded!=MotionReason::None) {
             if(press && current_->walk_) (void)current_->walk_->reportJumpDispatch({binding,queued,s.tick,false});
             current_->motionTrace_.commandTick=queued; current_->motionTrace_.dispatchTick=s.tick;
+            reportTraversalRejection(guarded);
             clearPending(); if(current_->pump_) current_->pump_->submissionRejected();
             current_->motionTrace_.rejected=add(current_->motionTrace_.rejected,1); recordMotion(MotionEvent::Rejected,guarded);
         }
@@ -780,6 +802,13 @@ void NavConsole::moveFrame(metamod::LifecycleCoordinator& owner) noexcept {
         const auto index=index_; // pins navigation across synchronous host reentry
         const auto reserved=current_->guardTick_==s.tick ? current_->guardQueries_:0;
         auto binding=current_->motionTrace_.decision.binding; binding.step=current_->walk_->step();
+        std::optional<nav::local::RecoveryEdge> recoveryEdge;
+        const auto& route=current_->session_->trace().route;
+        if(route && binding.step<route->steps.size()) {
+            const auto& edge=route->steps[binding.step].edge;
+            recoveryEdge=nav::local::RecoveryEdge{edge.source,edge.target};
+        }
+        (void)current_->recovery_.bindRoute(binding,recoveryEdge);
         const auto recovery=s.position ? current_->recovery_.observe(binding,s.tick,current_->navigationTimeUs_,*s.position):current_->recovery_.decision();
         nav::local::WalkDecision decision;
         if(recovery.state==nav::local::RecoveryState::Monitoring) {

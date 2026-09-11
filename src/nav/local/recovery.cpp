@@ -6,6 +6,9 @@
 namespace astrabot::nav::local {
 namespace {
 bool sameOwner(Binding a,Binding b) noexcept { return a.agent==b.agent && a.actor==b.actor && a.map==b.map; }
+bool sameEdge(const RecoveryEdge& a,const RecoveryEdge& b) noexcept {
+    return a.source==b.source && a.target==b.target;
+}
 std::uint64_t add(std::uint64_t a,std::uint64_t b) noexcept {
     return b>(std::numeric_limits<std::uint64_t>::max)()-a ? (std::numeric_limits<std::uint64_t>::max)():a+b;
 }
@@ -14,13 +17,18 @@ void Recovery::clearWindow() noexcept {
     window_=credited_=false; windowUs_=0;
     decision_.commandedUs=0; decision_.displacement=decision_.projected=decision_.travel=0;
 }
-bool Recovery::bindRoute(Binding b) noexcept {
+bool Recovery::bindRoute(Binding b,std::optional<RecoveryEdge> edge) noexcept {
     if(!b.agent.isValid() || !b.actor.isValid() || !b.map.isValid() || !b.routeGeneration ||
-       (bound_ && (!sameOwner(b,binding_) || b.routeGeneration<binding_.routeGeneration))) return false;
-    if(!bound_ || b.routeGeneration!=binding_.routeGeneration) {
+       (bound_ && (!sameOwner(b,binding_) || b.routeGeneration<binding_.routeGeneration)) ||
+       (edge && !edge->isValid())) return false;
+    const bool edgeChanged=bound_ && edge_ && edge && !sameEdge(*edge_,*edge);
+    const bool unknownReplacement=bound_ && b.routeGeneration!=binding_.routeGeneration &&
+        (!edge_ || !edge);
+    if(!bound_ || edgeChanged || unknownReplacement) {
         clearWindow(); reference_=false; dispatchTick_={};
     }
-    bound_=true; binding_=b; return true;
+    if(edgeChanged) decision_={};
+    bound_=true; binding_=b; edge_=edge; return true;
 }
 bool Recovery::report(const ProgressDispatch& d) noexcept {
     if(!bound_ || !sameOwner(d.binding,binding_) || d.binding.routeGeneration!=binding_.routeGeneration ||
@@ -29,7 +37,7 @@ bool Recovery::report(const ProgressDispatch& d) noexcept {
     dispatchTick_=d.dispatchTick;
     if(decision_.state!=RecoveryState::Monitoring) return true;
     const auto length=std::hypot(d.direction.x,d.direction.y);
-    if(!d.dispatched || d.expected==ExpectedProgress::Pause || !d.origin.isFinite() ||
+    if((!d.dispatched && !d.traversalRejected) || d.expected==ExpectedProgress::Pause || !d.origin.isFinite() ||
        !std::isfinite(length) || length<=0 || !d.durationUs || d.durationUs>255000) {
         clearWindow(); return true;
     }

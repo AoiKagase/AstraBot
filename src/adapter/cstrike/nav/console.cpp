@@ -251,13 +251,22 @@ void NavConsole::applyRuntimeNavigation(
         current_->session_->trace().agent == s.agent &&
         current_->session_->trace().map == s.map &&
         current_->session_->trace().goal == decision.navigationGoal;
+    const bool preserveAutonomousRoam = roamDecision &&
+        !current_->explicitRoute_ &&
+        current_->execution_.state==nav::runtime::ExecutionState::Running &&
+        current_->session_ && current_->session_->executable() &&
+        current_->session_->trace().actor == s.actor &&
+        current_->session_->trace().agent == s.agent &&
+        current_->session_->trace().map == s.map;
     // A periodic runtime decision must not revalidate the current route as a
     // new search.  Execution cooldowns and search budgets describe failed or
     // pending replans; applying them to an already-running route turns a
     // healthy route into GoalReplaced/Unchanged churn.
-    if (sameRunningRoute) {
+    if (sameRunningRoute || preserveAutonomousRoam) {
         status.result = RuntimeNavigationApplyResult::Unchanged;
         status.reason = RuntimeNavigationApplyReason::None;
+        if (preserveAutonomousRoam)
+            status.goal = current_->session_->trace().goal;
         publish();
         return;
     }

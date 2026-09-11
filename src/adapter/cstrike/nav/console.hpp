@@ -19,6 +19,11 @@ enum class NavCommand { Load, GoTo, Status, Cancel, Report };
 enum class MotionEvent { None, Decision, Queued, Dispatched, Rejected, Cancelled };
 enum class MotionReason { None, InvalidCorridor, InvalidGoal, MissingObservation,
     StaleCommand, Deviation, MotorRejected, TransportRejected, Cancelled, DoorChanged, PostureChanged, JumpChanged, LadderChanged, DropChanged };
+enum class JumpGuardReason : std::uint8_t { None, CommandShape, TerminalState,
+    Binding, Physics, Capability, FlightHull, CompletionState, StandClearance,
+    Posture, Timing, TakeoffState, LaunchProbe, LandingProbe, Segment,
+    GroundProbe, AirState, AirAcceleration, FlightPrediction, FlightSweep,
+    LandingContact, QueryBudget, Unknown };
 enum class RoamExclusionReason : std::uint8_t {
     Capacity, Invalid, Occupied, Cooling, Rejected, Recent, Missing, Hull
 };
@@ -44,6 +49,7 @@ struct MotionTrace {
     core::BotCommand command{}; // Queued command; msec is a hint, transport measures dispatch.
     MotionEvent event{MotionEvent::None};
     MotionReason reason{MotionReason::None};
+    JumpGuardReason jumpGuardReason{JumpGuardReason::None};
     nav::corridor::Error corridorError{nav::corridor::Error::None};
     nav::corridor::PortalFailureReason portalReason{nav::corridor::PortalFailureReason::None};
     std::size_t corridorTransition{};

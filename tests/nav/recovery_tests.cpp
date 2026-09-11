@@ -12,8 +12,9 @@ using namespace astrabot::nav::local;
 namespace {
 Binding binding() { return {{1},{2,{3}},{4},1,0}; }
 struct Replay {
-    Recovery recovery{}; Binding b=binding(); std::uint64_t tick=1,now=0;
-    Replay() { assert(recovery.bindRoute(b)); }
+    Recovery recovery{}; Binding b=binding(); RecoveryEdge edge{{11},{2036}};
+    std::uint64_t tick=1,now=0;
+    Replay() { assert(recovery.bindRoute(b,edge)); }
     RecoveryDecision frame(nav::model::NavVector3 p={},ExpectedProgress expected=ExpectedProgress::Walk,
         bool sent=true,core::IntentVector direction={1,0,0},std::uint64_t us=100000) {
         assert(recovery.report({b,{tick},{tick+1},p,direction,us,expected,sent}));
@@ -101,11 +102,35 @@ void finiteReplanAndReset() {
         assert(terminal.decision().cause==cause && !terminal.abort(cause).terminalEvent);
     }
 }
+void edgeScopedBinding() {
+    Replay same;
+    for(int i=0;i<3;++i) assert(same.frame().state==RecoveryState::Monitoring);
+    ++same.b.routeGeneration;
+    assert(same.recovery.bindRoute(same.b,same.edge));
+    assert(same.frame().state==RecoveryState::Monitoring);
+    assert(same.frame().state==RecoveryState::Wait); // Route replacement did not erase 300 ms.
+
+    Replay changed;
+    for(int i=0;i<4;++i) assert(changed.frame().state==RecoveryState::Monitoring);
+    ++changed.b.routeGeneration;
+    assert(changed.recovery.bindRoute(changed.b,RecoveryEdge{{11},{141}}));
+    assert(changed.recovery.decision().state==RecoveryState::Monitoring);
+    assert(changed.recovery.decision().attempts==0);
+    for(int i=0;i<4;++i) assert(changed.frame().state==RecoveryState::Monitoring);
+
+    Replay rejected;
+    for(int i=0;i<5;++i) {
+        assert(rejected.recovery.report({rejected.b,{rejected.tick},{rejected.tick+1},{},
+            {1,0,0},100000,ExpectedProgress::Walk,false,true}));
+        rejected.tick+=2; rejected.now+=100000;
+    }
+    assert(rejected.recovery.observe(rejected.b,{rejected.tick},rejected.now,{}).state==RecoveryState::Wait);
+}
 }
 int main() {
 #ifdef _MSC_VER
     _CrtSetReportMode(_CRT_ASSERT,_CRTDBG_MODE_FILE); _CrtSetReportFile(_CRT_ASSERT,_CRTDBG_FILE_STDERR);
     _set_abort_behavior(0,_WRITE_ABORT_MSG|_CALL_REPORTFAULT);
 #endif
-    detection(); pausesAndStaleFeedback(); finiteReplanAndReset();
+    detection(); pausesAndStaleFeedback(); finiteReplanAndReset(); edgeScopedBinding();
 }

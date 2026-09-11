@@ -25,6 +25,11 @@ struct ProgressDispatch {
     std::uint64_t durationUs{};
     ExpectedProgress expected{ExpectedProgress::Pause};
     bool dispatched{};
+    bool traversalRejected{};
+};
+struct RecoveryEdge {
+    model::NavAreaId source{}, target{};
+    bool isValid() const noexcept { return source.isValid() && target.isValid(); }
 };
 // One explicit goal owns this value. Replacing Walk or its route cannot reset it.
 // Only trusted, successfully dispatched ground motion contributes detector time.
@@ -33,7 +38,7 @@ class Recovery final {
 public:
     static constexpr std::uint64_t walkWindowUs=500000, crouchWindowUs=1000000, stageUs=250000;
     static constexpr double progressDistance=4;
-    bool bindRoute(Binding) noexcept;
+    bool bindRoute(Binding,std::optional<RecoveryEdge> edge=std::nullopt) noexcept;
     bool report(const ProgressDispatch&) noexcept;
     void pause(Binding) noexcept;
     RecoveryDecision observe(Binding,core::TickId,std::uint64_t nowUs,model::NavVector3) noexcept;
@@ -42,6 +47,7 @@ public:
     RecoveryDecision decision() const noexcept { return decision_; }
 private:
     Binding binding_{};
+    std::optional<RecoveryEdge> edge_{};
     core::TickId dispatchTick_{}, observationTick_{};
     std::uint64_t nowUs_{}, windowUs_{};
     model::NavVector3 anchor_{}, previous_{};
