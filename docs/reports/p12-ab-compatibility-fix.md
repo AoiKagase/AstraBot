@@ -1,5 +1,21 @@
 # P12 A/B compatibility correction
 
+## Local main integration (2026-09-11)
+
+- User requested main merge and cleanup of this task worktree/branch.
+- Integrated implementation `7130889` with main `967d75c`; retained main's
+  Roam arrival cancellation, route-style state, diagnostics and economy fixes.
+- Integration x86 Release adapter build passed with tests OFF; PE32/x86 and
+  exactly six required exports verified. No tests/CTest/canonical or live run.
+- Merged DLL SHA-256:
+  `42a5d6d33a8a1fda73a806537704a704a38ca066d4e0c0e9f8bc32675aa024a0`.
+- This merged DLL was not deployed. The earlier deployment below remains
+  distinct and has no live PASS.
+- Cleanup archive: `C:/Users/SandS/AppData/Local/Temp/astrabot-p12-ab-merge-20260911`.
+  It retains the task's local configuration/index, inherited patch, Release
+  output and the root's previously untracked plan file. Other worktrees and
+  unrelated root changes remain untouched.
+
 Scope: the approved A/B correction plan from 2026-09-11. C runtime-added links
 and damage-bearing shortcuts are out of scope. Reference: ReGameDLL_CS
 `b0889847fe6d03898be88acc9e366660efb40ab5`.

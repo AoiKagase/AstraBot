@@ -131,6 +131,7 @@ struct RuntimeNavigationState final {
     bool routeExecutable{false};
     bool currentAreaHeld{false};
     bool explicitRoute{false};
+    core::tactical::RouteStyle routeStyle{core::tactical::RouteStyle::None};
     bool roamActive{false};
     bool roamRejected{false};
     bool roamArrived{false};
@@ -296,6 +297,8 @@ private:
         roamRejectedGoals_{};
     std::size_t roamRejectedGoalCount_{0};
     bool explicitRoute_{false};
+    bool roamActive_{false};
+    core::tactical::RouteStyle routeStyle_{core::tactical::RouteStyle::None};
     bool roamArrived_{false};
     };
     // Fixed slot capacity, lazy allocation, stable addresses through reentrant
