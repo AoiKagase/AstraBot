@@ -456,7 +456,9 @@ WalkDecision Walk::updateMotion(const runtime::MovementSnapshot& s,const query::
         if(!portal) return finish(out,WalkState::Failed,WalkReason::InvalidPortal);
         double x=portal.value->x, y=portal.value->y;
         const bool vertical=t.edge.direction==1 || t.edge.direction==3;
-        const bool sourceInArea = t.sourceFit==corridor::AreaFit::MicroTransit
+        const bool sourceInArea = t.edge.external
+            ? rawInside(t.sourceExtent,*s.position)
+            : t.sourceFit==corridor::AreaFit::MicroTransit
             ? rawInside(t.sourceExtent,{static_cast<float>(x),static_cast<float>(y),s.position->z})
             : ((vertical && (y+s.hull->minimum.y>=t.sourceExtent.northWest.y &&
                              y+s.hull->maximum.y<=t.sourceExtent.southEast.y)) ||
@@ -464,7 +466,7 @@ WalkDecision Walk::updateMotion(const runtime::MovementSnapshot& s,const query::
                               x+s.hull->maximum.x<=t.sourceExtent.southEast.x)));
         if(!sourceInArea)
             return finish(out,WalkState::Failed,WalkReason::InvalidPortal);
-        if(t.targetFit!=corridor::AreaFit::MicroTransit) switch(t.edge.direction) {
+        if(t.targetFit!=corridor::AreaFit::MicroTransit && !t.edge.external) switch(t.edge.direction) {
         case 0: y-=double(s.hull->maximum.y)+limits_.crossingMargin; break;
         case 1: x+=-double(s.hull->minimum.x)+limits_.crossingMargin; break;
         case 2: y+=-double(s.hull->minimum.y)+limits_.crossingMargin; break;
@@ -501,6 +503,12 @@ WalkDecision Walk::updateMotion(const runtime::MovementSnapshot& s,const query::
     float y=inward(s.position->y+dy*fraction,s.position->y);
     const double ux=dx/distance,uy=dy/distance;
     out.progressDirection={ux,uy,0};
+    bool precise=false;
+    if(!cursor_.exhausted()) {
+        const auto& active=corridor_->transitions()[cursor_.index()];
+        precise=constraints(active.edge.traversal,active.sourceAttributes,
+                            active.targetAttributes).precise;
+    }
     const auto constrain=[&](float& tx,float& ty) {
         if(!cursor_.exhausted()) {
             const auto& t=corridor_->transitions()[cursor_.index()];
@@ -509,8 +517,18 @@ WalkDecision Walk::updateMotion(const runtime::MovementSnapshot& s,const query::
             else tx=static_cast<float>(std::clamp(double(tx),(std::max)(t.sourceLow.x,t.targetLow.x),(std::min)(t.sourceHigh.x,t.targetHigh.x)));
         }
     };
+    const auto constrainWithinBudget=[&](float& tx,float& ty) {
+        constrain(tx,ty);
+        const double vx=double(tx)-s.position->x, vy=double(ty)-s.position->y;
+        const double length=std::hypot(vx,vy);
+        if(length>limits_.probe.maxDistance && length>0) {
+            const double scale=limits_.probe.maxDistance/length;
+            tx=inward(s.position->x+vx*scale,s.position->x);
+            ty=inward(s.position->y+vy*scale,s.position->y);
+        }
+    };
     double speedLimit=limits_.speed;
-    if(limits_.sideProbeDistance>0) {
+    if(limits_.sideProbeDistance>0 && !precise) {
         out.probeReason=sides(s,binding_.routeGeneration,ux,uy,limits_.sideProbeDistance,
             limits_.probe.maxQueries,queries,out);
         if(out.probeReason!=ProbeReason::None) return finish(out,WalkState::Failed,WalkReason::ProbeFailed);
@@ -523,7 +541,7 @@ WalkDecision Walk::updateMotion(const runtime::MovementSnapshot& s,const query::
             const double forward=std::sqrt((std::max)(0.0,distance*distance*fraction*fraction-lateral*lateral));
             x=inward(s.position->x+ux*forward+uy*lateral,s.position->x);
             y=inward(s.position->y+uy*forward-ux*lateral,s.position->y);
-            constrain(x,y);
+            constrainWithinBudget(x,y);
         }
     }
     probeLimits.maxQueries=limits_.probe.maxQueries-out.queries+1; // same-decision ground cache
@@ -568,7 +586,7 @@ WalkDecision Walk::updateMotion(const runtime::MovementSnapshot& s,const query::
                 if(free<=1) return noSide();
                 x=inward(s.position->x+avoidSide_*uy*(free-1),s.position->x);
                 y=inward(s.position->y-avoidSide_*ux*(free-1),s.position->y);
-                constrain(x,y);
+                constrainWithinBudget(x,y);
                 if(std::hypot(double(x)-s.position->x,double(y)-s.position->y)<0.1)
                     return noSide();
                 auto budget=limits_.probe; budget.maxQueries=limits_.probe.maxQueries-out.queries+1;

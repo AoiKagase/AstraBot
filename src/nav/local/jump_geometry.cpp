@@ -44,8 +44,24 @@ JumpGeometryResult JumpGeometry::derive(const corridor::Corridor& path,Binding b
     const auto jumpEdge=t.effectiveTraversal==model::NavTraversalKind::Jump;
     const auto hints=constraints(jumpEdge ? model::NavTraversalKind::Jump:t.edge.traversal,
         t.sourceAttributes,t.targetAttributes);
-    if(!hints || hints.kind!=model::NavTraversalKind::Jump || t.edge.external || t.edge.direction>3)
+    if(!hints || hints.kind!=model::NavTraversalKind::Jump || t.edge.direction>3)
         return fail(JumpGeometryReason::UnsupportedTransition);
+    if(t.edge.external) {
+        const auto a=t.sourceLow, b=t.targetLow;
+        if(!std::isfinite(a.x) || !std::isfinite(a.y) || !std::isfinite(a.z) ||
+           !std::isfinite(b.x) || !std::isfinite(b.y) || !std::isfinite(b.z) ||
+           !query::containsXY(t.sourceExtent,*s.position))
+            return fail(JumpGeometryReason::InvalidGeometry);
+        const double length=std::hypot(b.x-a.x,b.y-a.y);
+        const double rise=b.z-a.z;
+        if(length<=0 || length>motion.maximumDistance || rise<0 || rise>motion.maximumRise)
+            return fail(rise<0 || rise>motion.maximumRise ?
+                        JumpGeometryReason::HeightUnsupported:JumpGeometryReason::NoRoom);
+        const model::NavVector3 takeoff{static_cast<float>(a.x),static_cast<float>(a.y),static_cast<float>(a.z)};
+        const model::NavVector3 landing{static_cast<float>(b.x),static_cast<float>(b.y),static_cast<float>(b.z)};
+        return {JumpGeometryReason::None,
+                JumpPlan{t.edge.source,t.edge.target,takeoff,landing,t.sourceAttributes,t.targetAttributes}};
+    }
     if(!query::containsXY(t.sourceExtent,*s.position)) return fail(JumpGeometryReason::InvalidActor);
     // A micro NAV patch is not a physical enclosure. Keep its landing centre
     // inside the patch; JumpProbe still proves the complete actor hull/flight.

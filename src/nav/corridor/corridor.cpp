@@ -54,17 +54,20 @@ PortalFailureReason portal(Transition& t, HullClearance hull, PortalPolicy polic
     if(!sourceFits && policy==PortalPolicy::Strict) return PortalFailureReason::SourceHullFit;
     if(!targetFits && policy==PortalPolicy::Strict) return PortalFailureReason::TargetHullFit;
     if(t.edge.external) {
-        if(!sourceFits)
-            return policy==PortalPolicy::AllowMicroTransit ?
-                PortalFailureReason::UnsupportedTraversal : PortalFailureReason::SourceHullFit;
-        if(!targetFits)
-            return policy==PortalPolicy::AllowMicroTransit ?
-                PortalFailureReason::UnsupportedTraversal : PortalFailureReason::TargetHullFit;
+        if((!sourceFits || !targetFits) && policy==PortalPolicy::Strict)
+            return !sourceFits ? PortalFailureReason::SourceHullFit:
+                                PortalFailureReason::TargetHullFit;
         const auto& e=*t.edge.external;
         const Point entry{e.entry.x,e.entry.y,e.entry.z}, exit{e.exit.x,e.exit.y,e.exit.z};
-        if(!insideHull(a,entry,hull) || !insideHull(b,exit,hull))
+        if(!contains(a,entry) || !contains(b,exit))
             return PortalFailureReason::InvalidExternalEndpoint;
         t.sourceLow=t.sourceHigh=entry; t.targetLow=t.targetHigh=exit;
+        if(t.edge.traversal==model::NavTraversalKind::Walk) {
+            if(e.direction==enrichment::NavLinkDirection::Up)
+                t.effectiveTraversal=model::NavTraversalKind::Jump;
+            else if(e.direction==enrichment::NavLinkDirection::Down)
+                t.effectiveTraversal=model::NavTraversalKind::Drop;
+        }
         return PortalFailureReason::None;
     }
     const auto hints=local::constraints(t.edge.traversal,t.sourceAttributes,t.targetAttributes);
@@ -117,8 +120,9 @@ PortalFailureReason portal(Transition& t, HullClearance hull, PortalPolicy polic
         // GoldSrc's ordinary step is about 18 units. A larger measured
         // upward transition must use the existing, observed jump primitive;
         // treating it as Walk makes GroundProbe stop at the riser forever.
-        if(!hints || hints.kind!=model::NavTraversalKind::Walk || hints.noJump ||
-           lowRise>80 || highRise>80)
+        if(!hints || (hints.kind!=model::NavTraversalKind::Walk &&
+                      hints.kind!=model::NavTraversalKind::Jump) || hints.noJump ||
+           lowRise>44 || highRise>44)
             return PortalFailureReason::UnsupportedTraversal;
         t.effectiveTraversal=model::NavTraversalKind::Jump;
     }
@@ -133,7 +137,7 @@ PortalFailureReason portal(Transition& t, HullClearance hull, PortalPolicy polic
     return PortalFailureReason::None;
 }
 Point project(const Transition& t, Point p) noexcept {
-    if(t.edge.external) return t.sourceLow;
+    if(t.edge.external) return t.targetLow;
     const auto a=t.sourceLow, b=t.sourceHigh;
     const bool vertical=a.x==b.x;
     const double denominator=vertical ? double(b.y)-a.y:double(b.x)-a.x;

@@ -7,13 +7,14 @@ enum class DropReason { None, Disabled, InvalidInput, MissingObservation, StaleP
     Timeout, MissingSupport, WrongLanding, UnsafeGeometry, UnsafeVelocity, Blocked,
     StaleQuery, QueryFailed, BudgetExceeded };
 struct DropLimits {
-    double maximumFall{128}, maximumGap{32}, speed{100}, arrivalTolerance{4};
+    double maximumFall{192}, maximumGap{64}, speed{160}, arrivalTolerance{4};
+    double maximumDamage{10}, minimumLandingHealth{30}, maximumHealthFraction{0.10};
     std::uint64_t approachTimeoutUs{5000000}, airborneTimeoutUs{2000000};
     std::uint32_t maxQueries{21}, maxSegments{12};
 };
 struct DropPlan {
     model::NavAreaId source{}, target{};
     model::NavVector3 takeoff{}, landing{};
-    double fall{}, gap{};
+    double fall{}, gap{}, predictedDamage{};
 };
 }

@@ -108,10 +108,11 @@ ProbeResult probe(const runtime::MovementSnapshot& s, std::uint64_t generation,
         if(!representable(originZ)) return fail(ProbeReason::InvalidInput);
         const model::NavVector3 destination{tx,ty,static_cast<float>(originZ)};
         if(!clearance(position,destination)) {
-            // Only a well-formed collision across a measured height change can
-            // become a stair candidate. Unknown/start-solid/flat obstructions stop.
-            if(!stairCandidate || next.height==floor.height) return result;
-            const bool rising=next.height>floor.height;
+            // A hull can hit a riser before the floor trace reaches the higher
+            // tread. A same-height sample is therefore still a valid step
+            // candidate; the lifted sweeps decide whether it is walkable.
+            if(!stairCandidate || next.height<floor.height-limits.supportTolerance) return result;
+            const bool rising=next.height>floor.height+limits.supportTolerance;
             const std::uint32_t extra=rising ? 3U:2U;
             if(extra>limits.maxQueries-result.queries) return fail(ProbeReason::BudgetExceeded);
             const double liftedZ=double(position.z)+(rising ? limits.maxStepUp:0);

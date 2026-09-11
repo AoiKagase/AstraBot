@@ -164,11 +164,16 @@ void boundaryAndJumpHints() {
     assert(first.effectiveTraversal==model::NavTraversalKind::Jump);
     assert(first.targetFit==corridor::AreaFit::MicroTransit);
     assert(path.value->target(0,{1187.742,50,36},1)); // centre supported; hull crosses NAV boundary
-    for(std::uint8_t bad : {std::uint8_t{10},std::uint8_t{3},std::uint8_t{18},std::uint8_t{6}}) {
+    for(std::uint8_t bad : {std::uint8_t{10},std::uint8_t{3},std::uint8_t{18}}) {
         b.attributes=bad; auto rejectedGraph=graph({a,b,c});
         assert(!corridor::Corridor::build(*rejectedGraph,route(*rejectedGraph,5,9),{16,16},limits,
             corridor::PortalPolicy::AllowMicroTransit));
     }
+    b.attributes=6; auto preciseJump=graph({a,b,c});
+    const auto precisePath=corridor::Corridor::build(*preciseJump,route(*preciseJump,5,9),
+        {16,16},limits,corridor::PortalPolicy::AllowMicroTransit);
+    assert(precisePath && precisePath.value->transitions()[0].effectiveTraversal==
+        model::NavTraversalKind::Jump);
 }
 void lookAheadStopsBeforeDerivedTraversal() {
     for(bool drop : {false,true}) {

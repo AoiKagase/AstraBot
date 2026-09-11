@@ -193,6 +193,8 @@ private:
     bool runReplan(metamod::LifecycleCoordinator&) noexcept;
     void requestRoute(const nav::runtime::MovementSnapshot&,nav::model::NavAreaId,
         metamod::LifecycleCoordinator&,const nav::runtime::RouteOptions&) noexcept;
+    nav::enrichment::NavTraversalLinkSet discoverShortcuts(
+        const nav::runtime::MovementSnapshot&,std::uint64_t) noexcept;
     void invalidateCurrent(nav::runtime::SessionReason) noexcept;
     bool applyDeferredInvalidation() noexcept;
     bool selectActor(core::PlayerId) noexcept;
@@ -298,6 +300,8 @@ private:
     bool inRequest_{};
     std::optional<nav::runtime::SessionReason> deferredInvalidation_{};
     bool deferredAll_{}, deferredReset_{};
+    core::TickId shortcutQueryTick_{};
+    std::uint32_t shortcutQueriesThisTick_{};
     edict_t* queryingEntity_{}; // borrowed only for synchronous request
     const host::PlayerRegistry* queryingPlayers_{};
     const metamod::LifecycleCoordinator* queryingOwner_{};

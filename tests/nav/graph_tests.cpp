@@ -146,6 +146,20 @@ void constructionShapeSweeps() {
     }
 }
 } // namespace
+void runtimeOverlayAugment() {
+    const model::NavExtent extent{{0,0,0},{100,100,0},0,0};
+    route_test::Area from{1,extent},to{2,extent};
+    auto snapshot=route_test::snapshot({from,to});
+    auto base=NavGraph::build(snapshot,{2,0,100000});
+    assert(base);
+    enrichment::NavTraversalLinkSet links{};
+    links.links.push_back({0x415354524153484FULL,1,1,{1},{2},{20,50,36},{80,50,36},
+        model::NavTraversalKind::Walk,enrichment::NavLinkDirection::Forward,0});
+    auto augmented=NavGraph::augment(*base.value,links,{2,1,100000},{1,100000});
+    assert(augmented && (*augmented.value)->edgeCount()==1);
+    assert((*augmented.value)->edge(0).external.has_value());
+    assert(base.value->edgeCount()==0);
+}
 int main() {
 #ifdef _MSC_VER
     _set_error_mode(_OUT_TO_STDERR);
@@ -256,4 +270,5 @@ int main() {
     }
     chargeBoundaries();
     constructionShapeSweeps();
+    runtimeOverlayAugment();
 }

@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 #include <cstdio>
 #include <cmath>
+#include <array>
 #include <fstream>
+#include <limits>
 #include <string_view>
 #include "adapter/cstrike/nav/console.hpp"
 #include "adapter/cstrike/nav/world_queries.hpp"
@@ -74,11 +76,13 @@ nav::query::NavCostDecision trafficCost(
                      input.edge.external ? input.edge.external->additionalCost:0.0,
                      0.0}};
     if (result.blocked) return result;
-    std::size_t shared=0;
+    double waitSeconds=0.0;
     for (std::size_t i=0; i<policy->count; ++i)
         if (sameRouteEdge(input.edge,policy->occupied[i].edge))
-            shared += policy->occupied[i].depth==0 ? 4:1;
-    if (shared) result.components.danger += 8192.0*static_cast<double>(shared);
+            // Convert a bounded courtesy wait into the same distance-like
+            // units used by the default route cost (CS run speed ~=160).
+            waitSeconds += 0.25 + 0.08*static_cast<double>(policy->occupied[i].depth);
+    if (waitSeconds>0) result.components.danger += waitSeconds*160.0;
     return result;
 }
 
@@ -468,6 +472,7 @@ nav::runtime::MovementSnapshot NavConsole::snapshotFor(
     s.view=nav::model::NavVector3{v.v_angle.x,v.v_angle.y,v.v_angle.z};
     s.hull=nav::runtime::HullDimensions{{v.mins.x,v.mins.y,v.mins.z},{v.maxs.x,v.maxs.y,v.maxs.z}};
     if (std::isfinite(v.maxspeed) && v.maxspeed>=0) s.speedLimit=v.maxspeed;
+    if (std::isfinite(v.health) && v.health>0) s.health=v.health;
     return s;
 }
 std::optional<RuntimeNavigationState> NavConsole::runtimeState(
@@ -601,9 +606,11 @@ std::optional<RuntimeNavigationState> NavConsole::runtimeState(
                 const auto& trace=other->session_->trace();
                 if (trace.goal == id) return true;
                 if (trace.route) {
-                    const auto count=(std::min)(trafficLookAhead,trace.route->areas.size());
+                    const auto cursor=other->walk_ ? other->walk_->step():0;
+                    const auto count=(std::min)(trafficLookAhead,
+                        trace.route->areas.size()>cursor ? trace.route->areas.size()-cursor:0);
                     for (std::size_t i=0; i<count; ++i)
-                        if (trace.route->areas[i] == id) return true;
+                        if (trace.route->areas[cursor+i] == id) return true;
                 }
             }
             return false;
@@ -618,7 +625,7 @@ std::optional<RuntimeNavigationState> NavConsole::runtimeState(
         if (!id.isValid() || id == current) {
             ++result.roamExcludedInvalid; return;
         }
-        if (occupiedByOther(id)) {
+        if (!preserveCurrentGoal && occupiedByOther(id)) {
             ++result.roamExcludedOccupied; return;
         }
         if(!preserveCurrentGoal && actor &&
@@ -760,6 +767,21 @@ void NavConsole::requestRoute(const nav::runtime::MovementSnapshot& s,nav::model
     auto navigation=navigation_;
     if(!navigation.graph) navigation.map=s.map;
     inRequest_=true;
+    const auto previousGeneration=current_->session_ ?
+        current_->session_->trace().routeGeneration:0;
+    const auto shortcutGeneration=previousGeneration==(std::numeric_limits<std::uint64_t>::max)() ?
+        std::uint64_t{1}:previousGeneration+1;
+    const auto shortcuts=discoverShortcuts(s,shortcutGeneration);
+    if (navigation.graph && !shortcuts.links.empty()) {
+        const auto augmented=nav::query::NavGraph::augment(navigation.graph,shortcuts,
+            {100000,1000000,256U*1024U*1024U},{128,4U*1024U*1024U});
+        if (augmented) navigation.graph=*augmented.value;
+        char text[160]{};
+        std::snprintf(text,sizeof(text),"nav shortcuts actor=%u:%u candidates=%zu accepted=%zu generation=%llu",
+            unsigned(s.actor.slot),unsigned(s.actor.generation.value),std::size_t(8),shortcuts.links.size(),
+            static_cast<unsigned long long>(shortcutGeneration));
+        line(text);
+    }
     current_->execution_.begin();
     const nav::runtime::ExecutionPolicy executionPolicy{&current_->execution_,options.policy};
     auto filteredOptions=options;
@@ -773,9 +795,11 @@ void NavConsole::requestRoute(const nav::runtime::MovementSnapshot& s,nav::model
             other->session_->trace().map!=s.map) continue;
         const auto& route=other->session_->trace().route;
         if (!route || route->steps.empty()) continue;
-        const auto count=(std::min)(trafficLookAhead,route->steps.size());
+        const auto cursor=other->walk_ ? other->walk_->step():0;
+        const auto count=(std::min)(trafficLookAhead,
+            route->steps.size()>cursor ? route->steps.size()-cursor:0);
         for (std::size_t depth=0; depth<count && traffic.count<traffic.occupied.size(); ++depth)
-            traffic.occupied[traffic.count++]={route->steps[depth].edge,depth};
+            traffic.occupied[traffic.count++]={route->steps[cursor+depth].edge,depth};
     }
     if (traffic.count) {
         filteredOptions.policy={&traffic,&trafficCost,&trafficHeuristic};
@@ -811,6 +835,102 @@ void NavConsole::printReplan() noexcept {
         static_cast<unsigned long long>(edge && edge->external ? edge->external->generation:0),
         static_cast<unsigned long long>(edge && edge->external ? edge->external->linkId:0));
     line(text);
+}
+
+nav::enrichment::NavTraversalLinkSet NavConsole::discoverShortcuts(
+    const nav::runtime::MovementSnapshot& s,std::uint64_t generation) noexcept {
+    nav::enrichment::NavTraversalLinkSet result{};
+    if (!navigation_.graph || !index_ || !s.position || !s.hull || !generation ||
+        s.kind!=nav::runtime::ActorKind::ManagedBot || s.connected!=true ||
+        s.alive!=true || s.joined!=true) return result;
+    if (shortcutQueryTick_!=s.tick) {
+        shortcutQueryTick_=s.tick;
+        shortcutQueriesThisTick_=0;
+    }
+    const auto current=index_->containing(*s.position,18.0);
+    if (!current || !*current.value) return result;
+    const auto currentId=(**current.value).areaId;
+    const auto currentVertex=navigation_.graph->find(currentId);
+    if (!currentVertex) return result;
+    struct Candidate { nav::model::NavAreaId id{}; double score{0}; };
+    std::array<Candidate,8> candidates{};
+    std::size_t candidateCount=0;
+    const auto hasNativeEdge=[&](nav::model::NavAreaId id) noexcept {
+        for (auto e=navigation_.graph->edgeBegin(*currentVertex);
+             e<navigation_.graph->edgeEnd(*currentVertex);++e)
+            if (navigation_.graph->edge(e).target==id &&
+                !navigation_.graph->edge(e).external) return true;
+        return false;
+    };
+    for (std::size_t i=0;i<navigation_.graph->areaCount();++i) {
+        const auto id=navigation_.graph->area(i).id;
+        if (id==currentId || hasNativeEdge(id)) continue;
+        const auto center=navigation_.graph->center(i);
+        const double dx=center.x-s.position->x,dy=center.y-s.position->y;
+        const double distance=std::hypot(dx,dy);
+        const double height=std::abs(center.z-(double(s.position->z)+s.hull->minimum.z));
+        if (!std::isfinite(distance) || !std::isfinite(height) || distance>256 || height>192)
+            continue;
+        const Candidate candidate{id,distance+height*2};
+        std::size_t insert=candidateCount;
+        for (std::size_t n=0;n<candidateCount;++n)
+            if (candidate.score<candidates[n].score) { insert=n; break; }
+        if (candidateCount< candidates.size()) ++candidateCount;
+        else if (insert==candidates.size()) continue;
+        if (insert==candidateCount-1 && candidateCount<=candidates.size())
+            candidates[insert]=candidate;
+        else {
+            for (std::size_t n=candidateCount-1;n>insert;--n) candidates[n]=candidates[n-1];
+            candidates[insert]=candidate;
+        }
+    }
+    for (std::size_t n=0;n<candidateCount && result.links.size()<8;++n) {
+        const auto targetVertex=navigation_.graph->find(candidates[n].id);
+        if (!targetVertex) continue;
+        const auto targetExtent=navigation_.graph->area(*targetVertex).extent;
+        const auto targetFloor=nav::query::projectToArea(targetExtent,
+            {s.position->x,s.position->y,s.position->z});
+        const nav::model::NavVector3 landing{
+            static_cast<float>(targetFloor.x),static_cast<float>(targetFloor.y),
+            static_cast<float>(targetFloor.z-s.hull->minimum.z)};
+        if(shortcutQueriesThisTick_>=8) break;
+        nav::runtime::QueryRequest ground{{s.agent,s.actor,s.map,s.tick,generation,
+            ++shortcutQueriesThisTick_},
+            nav::runtime::QueryKind::GroundedArea,landing,landing,s.hull,18};
+        const auto support=query(ground);
+        if (support.error!=nav::runtime::QueryError::None || !support.ground ||
+            !support.ground->floor || !support.ground->area ||
+            *support.ground->area!=candidates[n].id) continue;
+        const double sourceFloor=double(s.position->z)+s.hull->minimum.z;
+        const double fall=sourceFloor-double(support.ground->floor->height);
+        const double rise=-fall;
+        nav::model::NavTraversalKind traversal=nav::model::NavTraversalKind::Walk;
+        nav::enrichment::NavLinkDirection direction=nav::enrichment::NavLinkDirection::Forward;
+        if (rise>18) {
+            if (rise>44 || candidates[n].score>160) continue;
+            traversal=nav::model::NavTraversalKind::Walk;
+            direction=nav::enrichment::NavLinkDirection::Up;
+        } else if (fall>18) {
+            if (fall>192) continue;
+            traversal=nav::model::NavTraversalKind::Walk;
+            direction=nav::enrichment::NavLinkDirection::Down;
+        }
+        if(shortcutQueriesThisTick_>=8) break;
+        nav::runtime::QueryRequest clear{{s.agent,s.actor,s.map,s.tick,generation,
+            ++shortcutQueriesThisTick_},
+            nav::runtime::QueryKind::SweptHull,*s.position,landing,s.hull,18};
+        const auto passage=query(clear);
+        const bool directClear=passage.error==nav::runtime::QueryError::None &&
+            passage.hull && !passage.hull->startSolid && passage.hull->fraction==1;
+        if (traversal==nav::model::NavTraversalKind::Walk && !directClear) continue;
+        if (traversal==nav::model::NavTraversalKind::Drop && !directClear && fall<=128) continue;
+        if (!std::isfinite(landing.x) || !std::isfinite(landing.y) || !std::isfinite(landing.z)) continue;
+        const auto linkId=(std::uint64_t(currentId.value)<<32)|candidates[n].id.value;
+        result.links.push_back({0x415354524153484FULL,generation,linkId,currentId,candidates[n].id,
+            {s.position->x,s.position->y,s.position->z},
+            {landing.x,landing.y,landing.z},traversal,direction,0});
+    }
+    return result;
 }
 bool NavConsole::runReplan(metamod::LifecycleCoordinator& owner) noexcept {
     if(current_->replan_.state()!=nav::runtime::ReplanState::Pending) return false;

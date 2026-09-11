@@ -58,6 +58,7 @@ public:
     SessionUpdate cancel() noexcept;
     bool executable() const noexcept;
     const DecisionTrace& trace() const noexcept { return trace_; }
+    std::shared_ptr<const query::NavGraph> graph() const noexcept { return graph_; }
     std::size_t cursor() const noexcept { return 0; } // Portal cursor advancement belongs to P3-02.
 private:
     DecisionTrace trace_{};

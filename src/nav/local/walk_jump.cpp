@@ -55,9 +55,13 @@ WalkDecision Walk::updateDrop(WalkDecision out,const runtime::MovementSnapshot& 
     if(!limits_.drop) return fail(DropReason::Disabled);
     const auto& l=*limits_.drop;
     const auto positive=[](double v) { return std::isfinite(v) && v>0; };
-    if(cursor_.exhausted() || !positive(l.maximumFall) || l.maximumFall>128 ||
-       !std::isfinite(l.maximumGap) || l.maximumGap<0 || l.maximumGap>32 || !positive(l.speed) ||
+    if(cursor_.exhausted() || !positive(l.maximumFall) || l.maximumFall>256 ||
+       !std::isfinite(l.maximumGap) || l.maximumGap<0 || l.maximumGap>64 || !positive(l.speed) ||
        l.speed>400 || !positive(l.arrivalTolerance) || l.arrivalTolerance>8 ||
+       !std::isfinite(l.maximumDamage) || l.maximumDamage<0 || l.maximumDamage>100 ||
+       !std::isfinite(l.minimumLandingHealth) || l.minimumLandingHealth<0 ||
+       l.minimumLandingHealth>100 || !std::isfinite(l.maximumHealthFraction) ||
+       l.maximumHealthFraction<0 || l.maximumHealthFraction>1 ||
        !l.approachTimeoutUs || !l.airborneTimeoutUs || !l.maxSegments || l.maxSegments>12 ||
        !l.maxQueries || l.maxQueries>21 || reserved>=l.maxQueries || reserved>=limits_.probe.maxQueries)
         return fail(DropReason::InvalidInput);
@@ -72,7 +76,7 @@ WalkDecision Walk::updateDrop(WalkDecision out,const runtime::MovementSnapshot& 
         return fail(DropReason::StalePhysics);
     const auto& t=corridor_->transitions()[cursor_.index()];
     const auto hints=constraints(t.edge.traversal,t.sourceAttributes,t.targetAttributes);
-    if(t.effectiveTraversal!=model::NavTraversalKind::Drop || t.edge.external ||
+    if(t.effectiveTraversal!=model::NavTraversalKind::Drop ||
        !hints || hints.kind!=model::NavTraversalKind::Walk)
         return fail(DropReason::UnsafeGeometry);
     const auto goal=index.containing(goal_,limits_.probe.navTolerance);
@@ -83,31 +87,57 @@ WalkDecision Walk::updateDrop(WalkDecision out,const runtime::MovementSnapshot& 
     auto groundLimits=limits_.probe; groundLimits.maxQueries=maximum-reserved;
     const auto doneFail=[&](DropReason reason) { out.queries=queries.issued; return fail(reason); };
     const auto& p=*s.position;
+    const bool external=t.edge.external.has_value();
     const bool vertical=t.edge.direction==1 || t.edge.direction==3;
     const double sign=(t.edge.direction==1 || t.edge.direction==2) ? 1.0:-1.0;
-    const double ux=vertical ? sign:0, uy=vertical ? 0:sign;
+    double ux=vertical ? sign:0, uy=vertical ? 0:sign;
     if(!dropPlan_) {
         if(s.grounded!=true) return doneFail(DropReason::MissingSupport);
-        const auto projected=corridor_->target(cursor_.index(),{p.x,p.y,p.z},1);
-        if(!projected) return doneFail(DropReason::UnsafeGeometry);
-        const auto q=*projected.value;
-        const double tangent=vertical ? q.y:q.x;
-        const double boundary=vertical ? q.x:q.y;
-        const double targetBoundary=vertical ? t.targetLow.x:t.targetLow.y;
-        const double targetInset=(vertical ? (sign>0 ? -s.hull->minimum.x:s.hull->maximum.x)
-                                                         : (sign>0 ? -s.hull->minimum.y:s.hull->maximum.y))+l.arrivalTolerance;
-        const double landingNormal=targetBoundary+sign*targetInset;
-        model::NavVector3 takeoff{static_cast<float>(vertical ? boundary-sign:tangent),
-            static_cast<float>(vertical ? tangent:boundary-sign),0};
-        model::NavVector3 landing{static_cast<float>(vertical ? landingNormal:tangent),
-            static_cast<float>(vertical ? tangent:landingNormal),0};
-        takeoff.z=static_cast<float>(query::projectToArea(t.sourceExtent,takeoff).z-s.hull->minimum.z);
-        landing.z=static_cast<float>(query::projectToArea(t.targetExtent,landing).z-s.hull->minimum.z);
-        const double fall=double(takeoff.z)-landing.z, gap=(targetBoundary-boundary)*sign;
+        model::NavVector3 takeoff{}, landing{};
+        double gap=0;
+        if(external) {
+            takeoff={static_cast<float>(t.sourceLow.x),static_cast<float>(t.sourceLow.y),
+                     static_cast<float>(t.sourceLow.z)};
+            landing={static_cast<float>(t.targetLow.x),static_cast<float>(t.targetLow.y),
+                     static_cast<float>(t.targetLow.z)};
+            gap=std::hypot(double(landing.x)-takeoff.x,double(landing.y)-takeoff.y);
+            const double length=gap;
+            if(length<=0) return doneFail(DropReason::UnsafeGeometry);
+            ux=(landing.x-takeoff.x)/length;
+            uy=(landing.y-takeoff.y)/length;
+        } else {
+            const auto projected=corridor_->target(cursor_.index(),{p.x,p.y,p.z},1);
+            if(!projected) return doneFail(DropReason::UnsafeGeometry);
+            const auto q=*projected.value;
+            const double tangent=vertical ? q.y:q.x;
+            const double boundary=vertical ? q.x:q.y;
+            const double targetBoundary=vertical ? t.targetLow.x:t.targetLow.y;
+            const double targetInset=(vertical ? (sign>0 ? -s.hull->minimum.x:s.hull->maximum.x)
+                                                             : (sign>0 ? -s.hull->minimum.y:s.hull->maximum.y))+l.arrivalTolerance;
+            const double landingNormal=targetBoundary+sign*targetInset;
+            takeoff={static_cast<float>(vertical ? boundary-sign:tangent),
+                static_cast<float>(vertical ? tangent:boundary-sign),0};
+            landing={static_cast<float>(vertical ? landingNormal:tangent),
+                static_cast<float>(vertical ? tangent:landingNormal),0};
+            takeoff.z=static_cast<float>(query::projectToArea(t.sourceExtent,takeoff).z-s.hull->minimum.z);
+            landing.z=static_cast<float>(query::projectToArea(t.targetExtent,landing).z-s.hull->minimum.z);
+            gap=(targetBoundary-boundary)*sign;
+        }
+        const double fall=double(takeoff.z)-landing.z;
         if(!takeoff.isFinite() || !landing.isFinite() || fall<=limits_.probe.maxStepUp ||
-           fall>l.maximumFall || gap<0 || gap>l.maximumGap || !inside(t.targetExtent,landing,*s.hull))
+           fall>l.maximumFall || gap<0 || gap>l.maximumGap ||
+           (t.edge.external ? !query::containsXY(t.targetExtent,landing) :
+                              !inside(t.targetExtent,landing,*s.hull)))
             return doneFail(DropReason::UnsafeGeometry);
-        dropPlan_=DropPlan{t.edge.source,t.edge.target,takeoff,landing,fall,gap};
+        const double impactSpeed=std::sqrt((std::max)(0.0,2.0*physics->gravity*fall));
+        const double predictedDamage=(std::max)(0.0,impactSpeed-500.0) *
+            (100.0/(1100.0-500.0)) * 1.25;
+        if (!std::isfinite(predictedDamage) || predictedDamage>l.maximumDamage ||
+            (predictedDamage>0 && (!s.health || !std::isfinite(*s.health) ||
+             *s.health-predictedDamage<l.minimumLandingHealth ||
+             predictedDamage>*s.health*l.maximumHealthFraction)))
+            return doneFail(DropReason::UnsafeGeometry);
+        dropPlan_=DropPlan{t.edge.source,t.edge.target,takeoff,landing,fall,gap,predictedDamage};
         dropGravity_=physics->gravity; dropStartedUs_=now; dropLastUs_=now;
     }
     out.dropPlan=dropPlan_;
@@ -177,8 +207,9 @@ WalkDecision Walk::updateDrop(WalkDecision out,const runtime::MovementSnapshot& 
         return true;
     };
     // Release starts after the complete hull has cleared the source ledge.
-    const double leading=vertical ? (sign>0 ? -s.hull->minimum.x:s.hull->maximum.x)
-                                 : (sign>0 ? -s.hull->minimum.y:s.hull->maximum.y);
+    const double leading=external ? 0.0 :
+        (vertical ? (sign>0 ? -s.hull->minimum.x:s.hull->maximum.x)
+                  : (sign>0 ? -s.hull->minimum.y:s.hull->maximum.y));
     model::NavVector3 release=plan.takeoff;
     release.x=static_cast<float>(release.x+ux*(leading+2));
     release.y=static_cast<float>(release.y+uy*(leading+2));
@@ -272,9 +303,10 @@ WalkDecision Walk::updateJump(WalkDecision out,const runtime::MovementSnapshot& 
     };
     if(!limits_.jump || cursor_.exhausted()) return finish(out,WalkState::Failed,WalkReason::UnsupportedTraversal);
     const auto& t=corridor_->transitions()[cursor_.index()];
-    const auto hints=constraints(t.edge.traversal,t.sourceAttributes,t.targetAttributes);
+    const auto hints=constraints(t.effectiveTraversal==model::NavTraversalKind::Jump ?
+        model::NavTraversalKind::Jump:t.edge.traversal,t.sourceAttributes,t.targetAttributes);
     out.constraintReason=hints.reason;
-    if(!hints || hints.kind!=model::NavTraversalKind::Jump || t.edge.external)
+    if(!hints || hints.kind!=model::NavTraversalKind::Jump)
         return finish(out,WalkState::Failed,WalkReason::UnsupportedTraversal);
     const auto goal=index.containing(goal_,limits_.probe.navTolerance);
     if(!goal || !*goal.value || (**goal.value).areaId!=corridor_->goal())

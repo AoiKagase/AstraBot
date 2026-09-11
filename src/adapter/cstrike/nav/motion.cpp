@@ -149,11 +149,12 @@ void NavConsole::printMotion() noexcept {
     }
     if(d.dropState) {
         char drop[320]{};
-        std::snprintf(drop,sizeof(drop),"drop actor=%u:%u route=%llu step=%zu state=%u reason=%u fall=%.6g gap=%.6g",
+        std::snprintf(drop,sizeof(drop),"drop actor=%u:%u route=%llu step=%zu state=%u reason=%u fall=%.6g gap=%.6g predicted_damage=%.6g",
             unsigned(d.binding.actor.slot),unsigned(d.binding.actor.generation.value),
             static_cast<unsigned long long>(d.binding.routeGeneration),d.binding.step,
             unsigned(*d.dropState),unsigned(d.dropReason),d.dropPlan ? d.dropPlan->fall:0,
-            d.dropPlan ? d.dropPlan->gap:0);
+            d.dropPlan ? d.dropPlan->gap:0,
+            d.dropPlan ? d.dropPlan->predictedDamage:0);
         line(drop);
     }
     if(d.ladderState) {
@@ -225,7 +226,8 @@ void NavConsole::startMotion(const nav::runtime::MovementSnapshot& s) noexcept {
              current_->motionTrace_.portalReason==nav::corridor::PortalFailureReason::NoPortalSpan ||
              current_->motionTrace_.portalReason==nav::corridor::PortalFailureReason::UnsupportedTraversal));
     };
-    if(!ready(s) || !movement_ || !navigation_.graph || !index_) { fail(MotionReason::MissingObservation); return; }
+    const auto activeGraph=current_->session_ ? current_->session_->graph():navigation_.graph;
+    if(!ready(s) || !movement_ || !activeGraph || !index_) { fail(MotionReason::MissingObservation); return; }
     const auto& hull=*s.hull;
     if(hull.minimum.x>=hull.maximum.x || hull.minimum.y>=hull.maximum.y || hull.minimum.z>=hull.maximum.z) {
         fail(MotionReason::MissingObservation); return;
@@ -235,7 +237,7 @@ void NavConsole::startMotion(const nav::runtime::MovementSnapshot& s) noexcept {
         (std::max)(std::abs(double(hull.minimum.y)),std::abs(double(hull.maximum.y)))};
     current_->motionTrace_.hullWidth=2*clearance.halfX;
     current_->motionTrace_.hullHeight=2*clearance.halfY;
-    const auto corridor=nav::corridor::Corridor::build(*navigation_.graph,*route.route,clearance,
+    const auto corridor=nav::corridor::Corridor::build(*activeGraph,*route.route,clearance,
         {100000,256U*1024U*1024U,1000000},nav::corridor::PortalPolicy::AllowMicroTransit);
     if(!corridor) {
         current_->motionTrace_.corridorError=corridor.error;
@@ -245,11 +247,11 @@ void NavConsole::startMotion(const nav::runtime::MovementSnapshot& s) noexcept {
             current_->motionTrace_.failedEdge=route.route->steps[corridor.transition].edge;
         if(corridor.transition<route.route->steps.size()) {
             const auto& failedEdge=route.route->steps[corridor.transition].edge;
-            const auto from=navigation_.graph->find(failedEdge.source);
-            const auto to=navigation_.graph->find(failedEdge.target);
+            const auto from=activeGraph->find(failedEdge.source);
+            const auto to=activeGraph->find(failedEdge.target);
             if(from && to) {
-                const auto& source=navigation_.graph->area(*from).extent;
-                const auto& target=navigation_.graph->area(*to).extent;
+            const auto& source=activeGraph->area(*from).extent;
+            const auto& target=activeGraph->area(*to).extent;
                 current_->motionTrace_.sourceExtentWidth=double(source.southEast.x)-source.northWest.x;
                 current_->motionTrace_.sourceExtentHeight=double(source.southEast.y)-source.northWest.y;
                 current_->motionTrace_.targetExtentWidth=double(target.southEast.x)-target.northWest.x;
@@ -263,9 +265,9 @@ void NavConsole::startMotion(const nav::runtime::MovementSnapshot& s) noexcept {
     current_->motionTrace_.corridorTransition=0;
     current_->motionTrace_.sourceFit=nav::corridor::AreaFit::HullSafe;
     current_->motionTrace_.targetFit=nav::corridor::AreaFit::HullSafe;
-    const auto vertex=navigation_.graph->find(route.goal);
+    const auto vertex=activeGraph->find(route.goal);
     if(!vertex) { fail(MotionReason::InvalidGoal); return; }
-    const auto& e=navigation_.graph->area(*vertex).extent;
+    const auto& e=activeGraph->area(*vertex).extent;
     const double lowX=double(e.northWest.x)-hull.minimum.x+1, highX=double(e.southEast.x)-hull.maximum.x-1;
     const double lowY=double(e.northWest.y)-hull.minimum.y+1, highY=double(e.southEast.y)-hull.maximum.y-1;
     if(lowX>highX || lowY>highY) { fail(MotionReason::InvalidGoal); return; }
@@ -711,10 +713,18 @@ void NavConsole::moveFrame(metamod::LifecycleCoordinator& owner) noexcept {
                 // directed NAV edge. Exclude that edge for this NAV
                 // generation; dynamic/player blockers remain on bounded
                 // recovery instead of being misclassified here.
+                const bool jumpStructural = decision.reason == nav::local::WalkReason::JumpFailed &&
+                    (decision.jumpGeometryReason==nav::local::JumpGeometryReason::UnsupportedTransition ||
+                     decision.jumpGeometryReason==nav::local::JumpGeometryReason::NoRoom ||
+                     decision.jumpGeometryReason==nav::local::JumpGeometryReason::InvalidGeometry ||
+                     decision.jumpGeometryReason==nav::local::JumpGeometryReason::HeightUnsupported ||
+                     decision.jumpProbeReason==nav::local::JumpProbeReason::UnsupportedConstraints ||
+                     decision.jumpProbeReason==nav::local::JumpProbeReason::CannotLand ||
+                     decision.jumpProbeReason==nav::local::JumpProbeReason::WrongArea ||
+                     decision.jumpReason==nav::local::JumpReason::WrongLanding);
                 const bool structural =
                     decision.reason == nav::local::WalkReason::UnsupportedTraversal ||
-                    (decision.reason == nav::local::WalkReason::JumpFailed &&
-                     !decision.blocker) ||
+                    (jumpStructural && !decision.blocker) ||
                     (decision.reason == nav::local::WalkReason::ProbeFailed &&
                      decision.probeReason == nav::local::ProbeReason::Blocked &&
                      !decision.blocker);
