@@ -19,6 +19,13 @@ failure reasons, canonical standing/crouching hull transitions continue through
 the posture guard, and host/cvar failures do not poison a directed edge. Roam
 SearchBackoff is no longer counted once per candidate as goal cooling.
 
+Live restart evidence through 2026-09-11 16:37:51 showed queue physics valid,
+but 2,996 dispatches rejected as `TicketStale` versus 63 accepted. IntentPump
+correctly queued a fresh decision on a later tick, while the guard incorrectly
+required the decision physics tick to equal the pending command tick. The
+follow-up rebinds the stable physics model to the actual queue tick and retains
+full dispatch-time actor/physics validation. A second restart is still pending.
+
 Evidence: docs/reports/p12-ab-compatibility-fix.md.
 Reference: ReGameDLL_CS b0889847fe6d03898be88acc9e366660efb40ab5.
 Scope: A/B only; C links/damage shortcuts and project Finish remain excluded.
@@ -33,10 +40,11 @@ Verification boundary:
   recorded separately and is not automatically redeployed.
 - JumpPhysics-fix x86 Release tests-OFF build passes. Regression sources were
   updated but remain intentionally unbuilt/unrun until live PASS.
-- JumpPhysics-fix DLL SHA-256
-  `7E94EDE545F51E440156AD121E0704BC20BDCB029296A16858AD38ABC7C45C32`
-  is deployed. The previous `BE451600...AA91` DLL is retained as
-  `astrabot_mm.pre-bdbbb69-20260911-163438.dll`.
+- TicketStale follow-up DLL SHA-256
+  `DFAE3AB191BD71ED97EB346DB9DF70710A8E3F03DFF2F4BB885691B24FAE2C13`
+  is deployed. The prior JumpPhysics DLL is retained as
+  `astrabot_mm.pre-b080ad2-20260911-164228.dll`; the original pre-fix DLL is
+  retained as `astrabot_mm.pre-bdbbb69-20260911-163438.dll`.
 - FocalSpan and diff checks accompany integration; local config is not committed.
 
 Next: obtain server restart authorization, then

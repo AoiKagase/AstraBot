@@ -191,9 +191,12 @@ void NavConsole::printMotion() noexcept {
             const auto* model=p.physics ? &*p.physics:nullptr;
             const auto* hull=p.actorHull ? &*p.actorHull:nullptr;
             std::snprintf(detail,sizeof(detail),
-                "jump_physics phase=%s reason=%s(%u) posture=%s(%u) model_valid=%u gravity=%.9g impulse=%.9g crouch_multiplier=%.9g movetype=%d water=%d flags=%d base=(%.6g,%.6g,%.6g) moving_support=%u hull_valid=%u hull=(%.6g,%.6g,%.6g)->(%.6g,%.6g,%.6g)",
+                "jump_physics phase=%s reason=%s(%u) posture=%s(%u) model_valid=%u model_tick=%llu model_route=%llu model_step=%zu gravity=%.9g impulse=%.9g crouch_multiplier=%.9g movetype=%d water=%d flags=%d base=(%.6g,%.6g,%.6g) moving_support=%u hull_valid=%u hull=(%.6g,%.6g,%.6g)->(%.6g,%.6g,%.6g)",
                 phase,jumpPhysicsReasonName(p.reason),unsigned(p.reason),
                 jumpActorPostureName(p.posture),unsigned(p.posture),unsigned(model!=nullptr),
+                static_cast<unsigned long long>(model ? model->tick.value:0),
+                static_cast<unsigned long long>(model ? model->binding.routeGeneration:0),
+                model ? model->binding.step:0,
                 model ? model->gravity:0,model ? model->verticalImpulse:0,
                 model ? model->crouchSpeedMultiplier:0,p.moveType,p.waterLevel,p.flags,
                 p.baseVelocity.x,p.baseVelocity.y,p.baseVelocity.z,unsigned(p.movingSupport),
@@ -1008,8 +1011,17 @@ void NavConsole::submitMotion(const nav::runtime::MovementSnapshot& s,metamod::L
         current_->motionTrace_.speedLimit=double(*s.speedLimit);
         current_->pendingMotion_=PendingMotion{current_->motionTrace_.decision.binding,s.tick,pendingFreshness,
             s,submittedCommand,current_->segment_,contact};
-        if(decision.jumpState && decision.jumpPlan && decision.jumpPhysics)
-            current_->pendingMotion_->jump=JumpTicket{*decision.jumpPlan,*decision.jumpPhysics,*decision.jumpState,decision.jumpPressTick};
+        if(decision.jumpState && decision.jumpPlan && decision.jumpPhysics) {
+            auto queuedPhysics=*decision.jumpPhysics;
+            // IntentPump may emit a still-fresh decision on a later tick. The
+            // stable model is issued with this pending command; actor posture
+            // and host physics are independently reacquired before dispatch.
+            queuedPhysics.binding=decision.binding;
+            queuedPhysics.tick=s.tick;
+            current_->motionTrace_.jumpQueuePhysics.physics=queuedPhysics;
+            current_->pendingMotion_->jump=JumpTicket{
+                *decision.jumpPlan,queuedPhysics,*decision.jumpState,decision.jumpPressTick};
+        }
         if(decision.dropState && *decision.dropState!=nav::local::DropState::Landed &&
            *decision.dropState!=nav::local::DropState::Failed && decision.dropPlan && decision.jumpPhysics) {
             current_->pendingMotion_->drop=decision.dropPlan;
