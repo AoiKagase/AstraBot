@@ -7,6 +7,7 @@
 #include <string_view>
 #include "adapter/cstrike/nav/console.hpp"
 #include "adapter/cstrike/nav/world_queries.hpp"
+#include "adapter/metamod/console_debug.hpp"
 #include "adapter/metamod/lifecycle.hpp"
 #include "debug/nav_command.hpp"
 #include "nav/io/mesh_loader.hpp"
@@ -333,7 +334,9 @@ void NavConsole::configure(enginefuncs_t* engine,mutil_funcs_t* utility,globalva
 }
 void NavConsole::sink(void* ctx,const char* text) noexcept { static_cast<NavConsole*>(ctx)->line(text); }
 void NavConsole::line(const char* text) noexcept {
-    if (utility_ && utility_->pfnLogConsole) utility_->pfnLogConsole(PLID,"%s",text);
+    if(!metamod::ConsoleDebug::instance().enabled() ||
+       !utility_ || !utility_->pfnLogConsole || !text) return;
+    utility_->pfnLogConsole(PLID,"%s",text);
 }
 void NavConsole::printUpdate(const nav::runtime::SessionUpdate& update) noexcept {
     for(std::size_t i=0;i<update.count;++i) debug::printNavTrace(update.events[i],&sink,this);

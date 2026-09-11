@@ -783,6 +783,7 @@ void detach() {
 
 void activate(Fixture& fixture) {
     attach(fixture);
+    runNav({"astrabot_debug", "1"});
     assert(
         astrabot::adapter::metamod::lifecycleCoordinator().registry().activateMap(32));
 }

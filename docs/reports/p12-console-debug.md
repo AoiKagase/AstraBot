@@ -13,8 +13,9 @@ astrabot_debug 0
 
 The command is disabled by default. With no argument it reports the current
 state. `1` enables the production lifecycle, FakeClient, Join, and Removal
-Trace sinks; `0` disables them. Invalid arguments leave the current state
-unchanged.
+Trace sinks and NAV diagnostic sinks; `0` disables them. This includes NAV
+load, route, movement, Jump/Drop, ladder, and status lines emitted by the
+adapter. Invalid arguments leave the current state unchanged.
 
 Every emitted diagnostic starts with a stable searchable prefix:
 
