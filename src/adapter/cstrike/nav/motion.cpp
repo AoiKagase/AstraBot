@@ -227,10 +227,21 @@ void NavConsole::stopMotion() noexcept {
     current_->walk_.reset(); current_->pump_.reset(); current_->segment_.reset(); current_->intentWallAgeUs_=0;
 }
 void NavConsole::failExecution(nav::runtime::ExecutionFailure reason,bool structural) noexcept {
+    // Local avoidance exhaustion is transient. It must enter the bounded
+    // recovery/edge-cooldown path and must never become a NAV-generation
+    // permanent exclusion merely because the forward probe was blocked.
+    if(current_ && current_->motionTrace_.decision.avoidanceReason!=nav::local::AvoidanceReason::None)
+        structural=false;
     const auto goal=current_->session_ ? current_->session_->trace().goal : nav::model::NavAreaId{};
     auto edge=current_->motionTrace_.failedEdge;
     if(!edge) edge=current_->motionTrace_.selectedEdge;
     current_->execution_.fail(goal,reason,current_->navigationTimeUs_,edge,structural);
+    current_->motionTrace_.failedEdge=edge;
+    if(edge) {
+        current_->motionTrace_.edgeCooldownRemainingUs=
+            current_->execution_.edgeCooldownRemaining(*edge,current_->navigationTimeUs_);
+        current_->motionTrace_.edgeCooling=current_->motionTrace_.edgeCooldownRemainingUs>0;
+    }
     current_->motionTrace_.failedEdge=edge;
     const auto& binding=current_->motionTrace_.decision.binding;
     char execution[512]{};
@@ -639,6 +650,10 @@ void NavConsole::afterDispatch(const metamod::MovementResult& result,core::TickI
             trace.dispatchNoProgress=(transport.forward!=0.0F ||
                 transport.side!=0.0F || transport.up!=0.0F || transport.buttons!=0U) &&
                 trace.dispatchHorizontalDisplacement<1.0;
+                const double corridorProgress=dx*trace.decision.progressDirection.x+
+                    dy*trace.decision.progressDirection.y;
+                if(sameRoute && corridorProgress>=4.0 && trace.selectedEdge)
+                    current_->execution_.clearEdgeCooldown(*trace.selectedEdge);
         }
     }
     if(sameRoute) reportLadderTransport(ticket->decision,ticket->commandTick,tick,result.dispatched());

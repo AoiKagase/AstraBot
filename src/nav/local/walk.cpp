@@ -575,11 +575,19 @@ WalkDecision Walk::updateMotion(const runtime::MovementSnapshot& s,const query::
             if(classified && (r.blocker->kind==runtime::BlockerKind::Geometry || blocker_)) {
                 const auto noSide=[&] {
                     if(blocker_) { out.blockerAction=BlockerAction::Yield; return out; }
+                    // A transient local-avoidance exhaustion is not proof that
+                    // the NAV edge is structurally impassable. Keep it in the
+                    // execution/recovery path so the actor can cool and retry
+                    // the directed edge instead of permanently excluding it.
+                    out.avoidanceReason=AvoidanceReason::CandidateBlocked;
                     return finish(out,WalkState::Failed,WalkReason::ProbeFailed);
                 };
                 if(blocker_ && avoidDecisions_>=limits_.maxAvoidanceDecisions) return noSide();
                 if(avoidDecisions_>=limits_.maxAvoidanceDecisions || out.samples>=limits_.probe.maxSamples ||
-                   out.queries>=limits_.probe.maxQueries) return finish(out,WalkState::Failed,WalkReason::ProbeFailed);
+                   out.queries>=limits_.probe.maxQueries) {
+                    out.avoidanceReason=AvoidanceReason::BudgetExceeded;
+                    return finish(out,WalkState::Failed,WalkReason::ProbeFailed);
+                }
                 const auto forwardProbeReason=out.probeReason;
                 if(!avoidSide_) avoidSide_=out.rightClearance>=out.leftClearance ? 1:-1;
                 ++avoidDecisions_;
