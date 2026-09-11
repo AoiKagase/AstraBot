@@ -19,11 +19,11 @@ Done:
 - FocalSpan is fresh/ready after the current source update.
 
 Verified:
-- Previous deployed DLL hash: F34CB22B14A66C171A50CA31EF9C0225560406EDD76DDE66286773A5723AC918.
+- Current deployed DLL hash: 05B995666A5C7B99859076793007F7E98CE79EA84116399694164E13CB702104.
 - Existing unrelated .gitignore and untracked work files remain unstaged and preserved.
 
 Next:
-- Rebuild/redeploy after the debug-level 2 change, then restart/changelevel ReHLDS and capture qconsole.log with astrabot_debug 0, 1, and 2.
+- Restart/changelevel ReHLDS and capture qconsole.log with astrabot_debug 0, 1, and 2.
 - After explicit user-confirmed live PASS only, build/run focused regression tests and then the canonical gate.
 
 Blocked:
