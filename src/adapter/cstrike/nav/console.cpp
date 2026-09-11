@@ -625,9 +625,18 @@ std::optional<RuntimeNavigationState> NavConsole::runtimeState(
                         if (trace.route->areas[cursor+i] == id) return other->actor;
                 }
             }
-            return {};
-        };
-        const auto addCandidate = [&](nav::model::NavAreaId id,
+        return {};
+    };
+    if(actor && !actor->execution_.canSearch(actor->navigationTimeUs_)) {
+        result.roamSearchBackoff=true;
+        const auto now=actor->navigationTimeUs_;
+        const auto retry=actor->execution_.retryAtUs>now ?
+            actor->execution_.retryAtUs-now:0U;
+        const auto search=actor->execution_.nextSearchAtUs>now ?
+            actor->execution_.nextSearchAtUs-now:0U;
+        result.roamSearchBackoffRemainingUs=(std::max)(retry,search);
+    }
+    const auto addCandidate = [&](nav::model::NavAreaId id,
                                       bool allowRecent) noexcept {
         const bool preserveCurrentGoal = result.roamActive &&
             result.routeExecutable && result.goal && id == *result.goal;
@@ -644,16 +653,16 @@ std::optional<RuntimeNavigationState> NavConsole::runtimeState(
             ++result.roamExcludedOccupied;
             recordExclusion(id,RoamExclusionReason::Occupied,occupiedOwner); return;
         }
+        if(!preserveCurrentGoal && result.roamSearchBackoff) return;
         if(!preserveCurrentGoal && actor &&
-            (!actor->execution_.canSearch(actor->navigationTimeUs_) ||
-             actor->execution_.cooling(id,actor->navigationTimeUs_))) {
-            ++result.roamExcludedCooling;
+            actor->execution_.cooling(id,actor->navigationTimeUs_)) {
+            ++result.roamExcludedGoalCooling;
             const auto now=actor->navigationTimeUs_;
             const auto retry=actor->execution_.retryAtUs>now ?
                 actor->execution_.retryAtUs-now:0U;
             const auto search=actor->execution_.nextSearchAtUs>now ?
                 actor->execution_.nextSearchAtUs-now:0U;
-            recordExclusion(id,RoamExclusionReason::Cooling,{},
+            recordExclusion(id,RoamExclusionReason::GoalCooling,{},
                 (std::max)(retry,search)); return;
         }
         if (!preserveCurrentGoal && actor && isListed(actor->roamRejectedGoals_,

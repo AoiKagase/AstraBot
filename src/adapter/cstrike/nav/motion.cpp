@@ -186,6 +186,24 @@ void NavConsole::printMotion() noexcept {
             static_cast<unsigned long long>(d.jumpPressTick.value),d.jumpPhysics ? d.jumpPhysics->gravity:0,
             d.jumpPhysics ? d.jumpPhysics->verticalImpulse:0,static_cast<unsigned long long>(current_->motionTrace_.jumpGuardQueries));
         line(jump);
+        const auto printPhysics=[&](const char* phase,const JumpPhysicsAssessment& p) {
+            char detail[640]{};
+            const auto* model=p.physics ? &*p.physics:nullptr;
+            const auto* hull=p.actorHull ? &*p.actorHull:nullptr;
+            std::snprintf(detail,sizeof(detail),
+                "jump_physics phase=%s reason=%s(%u) posture=%s(%u) model_valid=%u gravity=%.9g impulse=%.9g crouch_multiplier=%.9g movetype=%d water=%d flags=%d base=(%.6g,%.6g,%.6g) moving_support=%u hull_valid=%u hull=(%.6g,%.6g,%.6g)->(%.6g,%.6g,%.6g)",
+                phase,jumpPhysicsReasonName(p.reason),unsigned(p.reason),
+                jumpActorPostureName(p.posture),unsigned(p.posture),unsigned(model!=nullptr),
+                model ? model->gravity:0,model ? model->verticalImpulse:0,
+                model ? model->crouchSpeedMultiplier:0,p.moveType,p.waterLevel,p.flags,
+                p.baseVelocity.x,p.baseVelocity.y,p.baseVelocity.z,unsigned(p.movingSupport),
+                unsigned(hull!=nullptr),hull ? hull->minimum.x:0,hull ? hull->minimum.y:0,
+                hull ? hull->minimum.z:0,hull ? hull->maximum.x:0,
+                hull ? hull->maximum.y:0,hull ? hull->maximum.z:0);
+            line(detail);
+        };
+        printPhysics("queue",current_->motionTrace_.jumpQueuePhysics);
+        printPhysics("dispatch",current_->motionTrace_.jumpDispatchPhysics);
     }
     if(d.dropState) {
         char drop[320]{};
@@ -223,15 +241,17 @@ void NavConsole::stopMotion() noexcept {
     }
     current_->walk_.reset(); current_->pump_.reset(); current_->segment_.reset(); current_->intentWallAgeUs_=0;
 }
-void NavConsole::failExecution(nav::runtime::ExecutionFailure reason,bool structural) noexcept {
+void NavConsole::failExecution(nav::runtime::ExecutionFailure reason,bool structural,
+    bool bindFailedEdge) noexcept {
     // Local avoidance exhaustion is transient. It must enter the bounded
     // recovery/edge-cooldown path and must never become a NAV-generation
     // permanent exclusion merely because the forward probe was blocked.
     if(current_ && current_->motionTrace_.decision.avoidanceReason!=nav::local::AvoidanceReason::None)
         structural=false;
     const auto goal=current_->session_ ? current_->session_->trace().goal : nav::model::NavAreaId{};
-    auto edge=current_->motionTrace_.failedEdge;
-    if(!edge) edge=current_->motionTrace_.selectedEdge;
+    auto edge=bindFailedEdge ? current_->motionTrace_.failedEdge:
+        std::optional<nav::query::NavDirectedEdge>{};
+    if(bindFailedEdge && !edge) edge=current_->motionTrace_.selectedEdge;
     current_->execution_.fail(goal,reason,current_->navigationTimeUs_,edge,structural);
     current_->motionTrace_.failedEdge=edge;
     if(edge) {
@@ -390,8 +410,8 @@ MotionReason NavConsole::guardDrop(metamod::LifecycleCoordinator& owner,
        !index_ || !current_->walk_ || current_->walk_->step()!=pending.binding.step)
         return MotionReason::DropChanged;
     const auto& plan=*pending.drop;
-    const auto physics=standardJumpPhysics(engine_,owner.entityFor(s.actor),pending.binding,s.tick);
-    if(!physics || physics->gravity!=pending.dropGravity || !s.velocity->isFinite() ||
+    const auto physics=assessStandardJumpPhysics(engine_,owner.entityFor(s.actor),pending.binding,s.tick);
+    if(!physics || !physics.physics || physics.physics->gravity!=pending.dropGravity || !s.velocity->isFinite() ||
        plan.fall<=0 || plan.fall>128 || plan.gap<0 || plan.gap>32 ||
        s.velocity->z < -580 || s.ducked!=false ||
        (pending.command.buttons & (static_cast<core::ButtonMask>(core::Button::Jump) |
@@ -426,7 +446,8 @@ MotionReason NavConsole::guardDrop(metamod::LifecycleCoordinator& owner,
         return MotionReason::DropChanged;
     const auto area=index_->containing({plan.landing.x,plan.landing.y,floor->floor->height},18);
     if(!area || !*area.value || (**area.value).areaId!=plan.target) return MotionReason::DropChanged;
-    const double vertical=s.grounded==true ? 0.0 : double(s.velocity->z)*dt-0.5*physics->gravity*dt*dt;
+    const double vertical=s.grounded==true ? 0.0 :
+        double(s.velocity->z)*dt-0.5*physics.physics->gravity*dt*dt;
     // Air movement uses observed velocity; ground movement uses the submitted wish.
     const nav::model::NavVector3 end{
         static_cast<float>(s.position->x+(s.grounded==true ? vx:s.velocity->x)*dt),
@@ -587,6 +608,15 @@ void NavConsole::beforeDispatch(metamod::LifecycleCoordinator& owner) noexcept {
             if(press && current_->walk_) (void)current_->walk_->reportJumpDispatch({binding,queued,s.tick,false});
             current_->motionTrace_.commandTick=queued; current_->motionTrace_.dispatchTick=s.tick;
             reportTraversalRejection(guarded);
+            const auto physicsReason=current_->motionTrace_.jumpDispatchPhysics.reason;
+            const bool hostPhysicsFailure=guarded==MotionReason::JumpChanged &&
+                current_->motionTrace_.jumpGuardReason==JumpGuardReason::Physics &&
+                (physicsReason==JumpPhysicsReason::MissingHost ||
+                 physicsReason==JumpPhysicsReason::MissingGravity ||
+                 physicsReason==JumpPhysicsReason::InvalidGravity ||
+                 physicsReason==JumpPhysicsReason::InvalidJumpHeight);
+            if(hostPhysicsFailure)
+                failExecution(nav::runtime::ExecutionFailure::Observation,false,false);
             clearPending(); if(current_->pump_) current_->pump_->submissionRejected();
             current_->motionTrace_.rejected=add(current_->motionTrace_.rejected,1); recordMotion(MotionEvent::Rejected,guarded);
         }
@@ -812,9 +842,11 @@ void NavConsole::moveFrame(metamod::LifecycleCoordinator& owner) noexcept {
         const auto recovery=s.position ? current_->recovery_.observe(binding,s.tick,current_->navigationTimeUs_,*s.position):current_->recovery_.decision();
         nav::local::WalkDecision decision;
         if(recovery.state==nav::local::RecoveryState::Monitoring) {
-            const auto physics=standardJumpPhysics(engine_,queryingEntity_,binding,s.tick);
+            const auto physics=assessStandardJumpPhysics(engine_,queryingEntity_,binding,s.tick);
+            current_->motionTrace_.jumpQueuePhysics=physics;
+            current_->motionTrace_.jumpDispatchPhysics={};
             const auto ladder=observeLadder(owner,s,binding,reserved);
-            decision=current_->walk_->update(s,*index,navigation_.map,*this,current_->pump_->timeUs(),reserved,physics,ladder);
+            decision=current_->walk_->update(s,*index,navigation_.map,*this,current_->pump_->timeUs(),reserved,physics.physics,ladder);
             decision.recovery=recovery;
         } else decision=current_->walk_->recover(s,*index,navigation_.map,*this,recovery,reserved);
         inRequest_=false; queryingEntity_=nullptr; queryingPlayers_=nullptr; queryingOwner_=nullptr;

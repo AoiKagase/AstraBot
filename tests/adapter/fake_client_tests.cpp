@@ -7,6 +7,7 @@
 #include <cmath>
 #include <chrono>
 #include <iterator>
+#include <limits>
 #ifdef _MSC_VER
 #include <crtdbg.h>
 #endif
@@ -1523,6 +1524,91 @@ void testStandardJumpPhysics() {
     }
     gMissingJumpGravity=false;
 }
+void testJumpPhysicsAssessment() {
+    using namespace astrabot;
+    using adapter::cstrike::JumpActorPosture;
+    using adapter::cstrike::JumpPhysicsReason;
+    enginefuncs_t engine{}; engine.pfnCVarGetPointer=&captureJumpCvar;
+    edict_t entity{}; entity.v.movetype=MOVETYPE_WALK;
+    entity.v.mins=Vector(-16,-16,-36); entity.v.maxs=Vector(16,16,36);
+    const nav::local::Binding binding{{1},{2,{3}},{4},5,6};
+    gJumpGravity.value=800; gJumpHeight.value=45;
+    gMissingJumpGravity=gMissingJumpHeight=false;
+    const auto inspect=[&]() {
+        return adapter::cstrike::assessStandardJumpPhysics(&engine,&entity,binding,{7});
+    };
+    auto p=inspect();
+    assert(p && p.reason==JumpPhysicsReason::None &&
+        p.posture==JumpActorPosture::Standing && p.physics);
+    const auto ticket=*p.physics;
+    auto current=ticket;
+    assert(adapter::cstrike::validateJumpPhysicsTicket(ticket,current,binding,{7})==
+        JumpPhysicsReason::None);
+    current.gravity=std::nextafter(current.gravity,
+        (std::numeric_limits<double>::infinity)());
+    assert(adapter::cstrike::validateJumpPhysicsTicket(ticket,current,binding,{7})==
+        JumpPhysicsReason::None);
+    for(int i=0;i<4;++i) current.gravity=std::nextafter(current.gravity,
+        (std::numeric_limits<double>::infinity)());
+    assert(adapter::cstrike::validateJumpPhysicsTicket(ticket,current,binding,{7})==
+        JumpPhysicsReason::GravityChanged);
+    current=ticket; current.verticalImpulse+=1;
+    assert(adapter::cstrike::validateJumpPhysicsTicket(ticket,current,binding,{7})==
+        JumpPhysicsReason::ImpulseChanged);
+    current=ticket; current.crouchSpeedMultiplier+=0.1;
+    assert(adapter::cstrike::validateJumpPhysicsTicket(ticket,current,binding,{7})==
+        JumpPhysicsReason::CrouchMultiplierChanged);
+    current=ticket; current.standingHull->maximum.x+=1;
+    assert(adapter::cstrike::validateJumpPhysicsTicket(ticket,current,binding,{7})==
+        JumpPhysicsReason::PostureIncompatible);
+    auto changedBinding=binding; ++changedBinding.step;
+    assert(adapter::cstrike::validateJumpPhysicsTicket(ticket,ticket,changedBinding,{7})==
+        JumpPhysicsReason::BindingChanged);
+    assert(adapter::cstrike::validateJumpPhysicsTicket(ticket,ticket,binding,{8})==
+        JumpPhysicsReason::TicketStale);
+    entity.v.flags|=FL_DUCKING;
+    p=inspect();
+    assert(p && p.posture==JumpActorPosture::Transition);
+    entity.v.mins.z=-18; entity.v.maxs.z=18;
+    p=inspect();
+    assert(p && p.posture==JumpActorPosture::Crouching);
+    entity.v.flags&=~FL_DUCKING;
+    p=inspect();
+    assert(p && p.posture==JumpActorPosture::Transition);
+    entity.v.mins=Vector(-16,-16,-36); entity.v.maxs=Vector(16,16,36);
+
+    assert(adapter::cstrike::assessStandardJumpPhysics(nullptr,&entity,binding,{7}).reason==
+        JumpPhysicsReason::MissingHost);
+    assert(adapter::cstrike::assessStandardJumpPhysics(&engine,nullptr,binding,{7}).reason==
+        JumpPhysicsReason::MissingActor);
+    assert(adapter::cstrike::assessStandardJumpPhysics(&engine,&entity,binding,{}).reason==
+        JumpPhysicsReason::InvalidTick);
+    entity.v.movetype=MOVETYPE_FLY; assert(inspect().reason==JumpPhysicsReason::MoveType);
+    entity.v.movetype=MOVETYPE_WALK; entity.v.waterlevel=1;
+    assert(inspect().reason==JumpPhysicsReason::Water);
+    entity.v.waterlevel=0; entity.v.flags|=FL_WATERJUMP;
+    assert(inspect().reason==JumpPhysicsReason::WaterJump);
+    entity.v.flags&=~FL_WATERJUMP; entity.v.basevelocity.x=1;
+    assert(inspect().reason==JumpPhysicsReason::BaseVelocity);
+    entity.v.basevelocity=Vector(0,0,0); edict_t support{};
+    support.v.velocity.x=1; entity.v.groundentity=&support;
+    assert(inspect().reason==JumpPhysicsReason::MovingSupport);
+    entity.v.groundentity=nullptr; gMissingJumpGravity=true;
+    assert(inspect().reason==JumpPhysicsReason::MissingGravity);
+    gMissingJumpGravity=false; gJumpGravity.value=-1;
+    assert(inspect().reason==JumpPhysicsReason::InvalidGravity);
+    gJumpGravity.value=800; gJumpHeight.value=65;
+    assert(inspect().reason==JumpPhysicsReason::InvalidJumpHeight);
+    gJumpHeight.value=45; entity.v.maxs.x=17;
+    assert(inspect().reason==JumpPhysicsReason::NonCanonicalHull);
+    edict_t second{}; second.v.movetype=MOVETYPE_WALK;
+    second.v.flags|=FL_DUCKING;
+    second.v.mins=Vector(-16,-16,-18); second.v.maxs=Vector(16,16,18);
+    const auto independent=adapter::cstrike::assessStandardJumpPhysics(
+        &engine,&second,binding,{7});
+    assert(independent && independent.posture==JumpActorPosture::Crouching);
+    entity.v.maxs.x=16;
+}
 void testNavJumpHost() {
     using namespace astrabot;
     for(bool multiple : {false,true}) for(int mode=0;mode<=10;++mode) for(std::uint64_t us : {8000U,16000U,100000U}) {
@@ -2621,6 +2707,7 @@ int main(int argc,char** argv) {
     p12_execution_test::run();
     p12_map_nav_test::run();
     testStandardJumpPhysics();
+    testJumpPhysicsAssessment();
     testNavJumpHost();
     testNavLadderHost();
     testNavStairs();

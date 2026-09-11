@@ -81,11 +81,13 @@ struct RuntimeActorCorrelation final {
     std::uint32_t roamExcludedCapacity{0};
     std::uint32_t roamExcludedInvalid{0};
     std::uint32_t roamExcludedOccupied{0};
-    std::uint32_t roamExcludedCooling{0};
+    std::uint32_t roamExcludedGoalCooling{0};
     std::uint32_t roamExcludedRejected{0};
     std::uint32_t roamExcludedRecent{0};
     std::uint32_t roamExcludedMissing{0};
     std::uint32_t roamExcludedHull{0};
+    bool roamSearchBackoff{false};
+    std::uint64_t roamSearchBackoffRemainingUs{0};
     std::array<cstrike::RoamExclusionSample, 4> roamExclusionSamples{};
     std::size_t roamExclusionCount{0};
     std::uint64_t roamGeneration{0};

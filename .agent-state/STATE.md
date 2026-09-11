@@ -1,6 +1,6 @@
 # State
 
-Status: P12 movement encounter blocker implemented; live acceptance pending.
+Status: P12 JumpPhysics posture-transition fix implemented; live acceptance pending.
 Integration target: local main (user requested merge and task worktree cleanup).
 
 P12 implementation 7130889 integrates with main 967d75c. Preserve main's
@@ -12,6 +12,12 @@ The current movement fix preserves a healthy autonomous Roam route across
 periodic goal alternatives, keys Recovery progress to the active directed edge,
 counts fresh Jump/Ladder guard rejection toward bounded no-progress recovery,
 and emits granular Jump guard diagnostics at `astrabot_debug 2`.
+
+The JumpPhysics fix separates stable gravity/impulse/hull constants from
+volatile actor eligibility and posture. Queue/dispatch assessments retain exact
+failure reasons, canonical standing/crouching hull transitions continue through
+the posture guard, and host/cvar failures do not poison a directed edge. Roam
+SearchBackoff is no longer counted once per candidate as goal cooling.
 
 Evidence: docs/reports/p12-ab-compatibility-fix.md.
 Reference: ReGameDLL_CS b0889847fe6d03898be88acc9e366660efb40ab5.
@@ -25,9 +31,15 @@ Verification boundary:
   targets, CTest and canonical remain intentionally unbuilt/unrun until live PASS.
 - The previously deployed DLL is historical evidence; the merged artifact is
   recorded separately and is not automatically redeployed.
+- JumpPhysics-fix x86 Release tests-OFF build passes. Regression sources were
+  updated but remain intentionally unbuilt/unrun until live PASS.
+- JumpPhysics-fix DLL SHA-256
+  `7E94EDE545F51E440156AD121E0704BC20BDCB029296A16858AD38ABC7C45C32`
+  is deployed. The previous `BE451600...AA91` DLL is retained as
+  `astrabot_mm.pre-bdbbb69-20260911-163438.dll`.
 - FocalSpan and diff checks accompany integration; local config is not committed.
 
-Next: deploy the movement-fix DLL, obtain server restart authorization, and
+Next: obtain server restart authorization, then
 capture at least 30 seconds with two BOTs at `astrabot_debug 2`. Confirm that
 11->2036 is traversed or enters bounded recovery/detour/Hold instead of remaining
 Running indefinitely, then run 2v2 for at least 10 minutes/three rounds.

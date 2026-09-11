@@ -83,6 +83,10 @@ void run() {
     assert(console.runtimeState(owner, first)->routeGeneration == failed->routeGeneration);
     assert(!console.runtimeState(owner, first)->routeExecutable);
     assert(apply(first, {3}).result == Result::Rejected); // Global 250 ms search backoff.
+    const auto searchBackoff=console.runtimeState(owner,first);
+    assert(searchBackoff && searchBackoff->roamSearchBackoff &&
+        searchBackoff->roamSearchBackoffRemainingUs!=0 &&
+        searchBackoff->roamExcludedGoalCooling==0);
 
     // One actor's failed goal/backoff cannot prevent another actor from moving.
     assert(apply(second, {3}).result == Result::Applied);

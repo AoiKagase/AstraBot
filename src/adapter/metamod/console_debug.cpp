@@ -698,10 +698,12 @@ void ConsoleDebug::runtimeCorrelationTrace(core::PlayerId player) noexcept {
     if (inputStampMatch && correlation.roamCandidateCount == 0U) {
         char filterLine[512]{};
         std::snprintf(filterLine, sizeof(filterLine),
-            "[ASTRABOT][DEBUG][NAV] kind=RoamCandidateFilter actor=%u:%u candidates=0 capacity=%u invalid=%u occupied=%u cooling=%u rejected=%u recent=%u missing=%u hull=%u",
+                "[ASTRABOT][DEBUG][NAV] kind=RoamCandidateFilter actor=%u:%u candidates=0 capacity=%u invalid=%u occupied=%u goal_cooling=%u search_backoff=%u search_backoff_remaining_us=%llu rejected=%u recent=%u missing=%u hull=%u",
             unsigned(player.slot), unsigned(player.generation.value),
             correlation.roamExcludedCapacity, correlation.roamExcludedInvalid,
-            correlation.roamExcludedOccupied, correlation.roamExcludedCooling,
+                correlation.roamExcludedOccupied, correlation.roamExcludedGoalCooling,
+                unsigned(correlation.roamSearchBackoff),
+                static_cast<unsigned long long>(correlation.roamSearchBackoffRemainingUs),
             correlation.roamExcludedRejected, correlation.roamExcludedRecent,
             correlation.roamExcludedMissing, correlation.roamExcludedHull);
         line(filterLine);

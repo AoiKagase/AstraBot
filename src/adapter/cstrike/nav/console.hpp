@@ -12,6 +12,7 @@
 #include "adapter/metamod/runtime_orchestrator.hpp"
 #include "adapter/cstrike/nav/ladder_discovery.hpp"
 #include "adapter/cstrike/nav/ladder_frame.hpp"
+#include "adapter/cstrike/nav/jump_motion.hpp"
 #include <istream>
 namespace astrabot::adapter::metamod { class LifecycleCoordinator; }
 namespace astrabot::adapter::cstrike {
@@ -25,7 +26,7 @@ enum class JumpGuardReason : std::uint8_t { None, CommandShape, TerminalState,
     GroundProbe, AirState, AirAcceleration, FlightPrediction, FlightSweep,
     LandingContact, QueryBudget, Unknown };
 enum class RoamExclusionReason : std::uint8_t {
-    Capacity, Invalid, Occupied, Cooling, Rejected, Recent, Missing, Hull
+    Capacity, Invalid, Occupied, GoalCooling, Rejected, Recent, Missing, Hull
 };
 struct RoamExclusionSample {
     nav::model::NavAreaId area{};
@@ -50,6 +51,8 @@ struct MotionTrace {
     MotionEvent event{MotionEvent::None};
     MotionReason reason{MotionReason::None};
     JumpGuardReason jumpGuardReason{JumpGuardReason::None};
+    JumpPhysicsAssessment jumpQueuePhysics{};
+    JumpPhysicsAssessment jumpDispatchPhysics{};
     nav::corridor::Error corridorError{nav::corridor::Error::None};
     nav::corridor::PortalFailureReason portalReason{nav::corridor::PortalFailureReason::None};
     std::size_t corridorTransition{};
@@ -125,13 +128,15 @@ struct RuntimeNavigationState final {
     std::uint32_t roamExcludedCapacity{0};
     std::uint32_t roamExcludedInvalid{0};
     std::uint32_t roamExcludedOccupied{0};
-    std::uint32_t roamExcludedCooling{0};
+    std::uint32_t roamExcludedGoalCooling{0};
     std::uint32_t roamExcludedRejected{0};
     std::uint32_t roamExcludedRecent{0};
     std::uint32_t roamExcludedMissing{0};
     std::uint32_t roamExcludedHull{0};
     std::array<RoamExclusionSample, 4> roamExclusionSamples{};
     std::size_t roamExclusionCount{0};
+    bool roamSearchBackoff{false};
+    std::uint64_t roamSearchBackoffRemainingUs{0};
     std::uint64_t roamGeneration{0};
     std::uint64_t routeGeneration{0};
     bool routeExecutable{false};
@@ -214,7 +219,8 @@ private:
     void loadCurrentLadders(metamod::LifecycleCoordinator&) noexcept;
     void startMotion(const nav::runtime::MovementSnapshot&) noexcept;
     void stopMotion() noexcept;
-    void failExecution(nav::runtime::ExecutionFailure,bool structural=false) noexcept;
+    void failExecution(nav::runtime::ExecutionFailure,bool structural=false,
+        bool bindFailedEdge=true) noexcept;
     void clearPending() noexcept;
     void recordMotion(MotionEvent, MotionReason=MotionReason::None) noexcept;
     void printMotion() noexcept;

@@ -785,11 +785,13 @@ void LifecycleCoordinator::startFrame() noexcept {
             correlation.roamExcludedCapacity = navState->roamExcludedCapacity;
             correlation.roamExcludedInvalid = navState->roamExcludedInvalid;
             correlation.roamExcludedOccupied = navState->roamExcludedOccupied;
-            correlation.roamExcludedCooling = navState->roamExcludedCooling;
+        correlation.roamExcludedGoalCooling = navState->roamExcludedGoalCooling;
             correlation.roamExcludedRejected = navState->roamExcludedRejected;
             correlation.roamExcludedRecent = navState->roamExcludedRecent;
             correlation.roamExcludedMissing = navState->roamExcludedMissing;
-            correlation.roamExcludedHull = navState->roamExcludedHull;
+        correlation.roamExcludedHull = navState->roamExcludedHull;
+        correlation.roamSearchBackoff = navState->roamSearchBackoff;
+        correlation.roamSearchBackoffRemainingUs = navState->roamSearchBackoffRemainingUs;
             correlation.roamExclusionSamples = navState->roamExclusionSamples;
             correlation.roamExclusionCount = navState->roamExclusionCount;
         }
