@@ -7,6 +7,7 @@ enum class ConstraintReason { None, UnknownAttributes, PreciseUnsupported,
 struct TraversalConstraints {
     model::NavTraversalKind kind{model::NavTraversalKind::Walk};
     bool noJump{};
+    bool precise{};
     ConstraintReason reason{ConstraintReason::None};
     explicit operator bool() const noexcept { return reason==ConstraintReason::None; }
 };
@@ -14,9 +15,8 @@ struct TraversalConstraints {
 // rewriting serialized attributes or treating an area hint as a jump button.
 inline TraversalConstraints constraints(model::NavTraversalKind edge,std::uint8_t source,std::uint8_t target) noexcept {
     const auto hints=static_cast<unsigned>(source|target);
-    TraversalConstraints out; out.noJump=(hints&8U)!=0;
+    TraversalConstraints out; out.noJump=(hints&8U)!=0; out.precise=(hints&4U)!=0;
     if(hints&~15U) { out.reason=ConstraintReason::UnknownAttributes; return out; }
-    if(hints&4U) { out.reason=ConstraintReason::PreciseUnsupported; return out; }
     if(edge!=model::NavTraversalKind::Walk && edge!=model::NavTraversalKind::Crouch && edge!=model::NavTraversalKind::Jump) {
         out.reason=ConstraintReason::UnsupportedTraversal; return out;
     }

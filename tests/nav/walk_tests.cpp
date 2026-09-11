@@ -380,4 +380,14 @@ void invalidAndBudgets() {
     assert(sameHint.update(s,*same.index,s.map,hinted).reason==local::WalkReason::UnsupportedTraversal);
 }
 }
-int main() { arrivals(); stops(); measuredCompletion(); invalidAndBudgets(); doors(); touchAndReservedQueries(); crouchCrossing(); recoverySafety(); }
+void supportedBoundaryOrigin() {
+    auto a=square(5,1175,0), b=square(6,1275,0); a.targets[1]={6};
+    const std::vector<route_test::Area> areas{a,b}; Fixture f(areas,5,6);
+    World world(areas); auto s=actor({1187.742F,50,36});
+    local::Walk walk(binding(),f.corridor,{1325,50,0},limits);
+    const auto d=walk.update(s,*f.index,s.map,world);
+    assert(d.state==local::WalkState::Running && d.reason==local::WalkReason::None);
+    assert(d.support && d.support->area==model::NavAreaId{5} && d.intent.speed>0);
+    assert(!world.calls.empty()); // physical support/hull checks remain mandatory
+}
+int main() { arrivals(); stops(); measuredCompletion(); invalidAndBudgets(); doors(); touchAndReservedQueries(); crouchCrossing(); recoverySafety(); supportedBoundaryOrigin(); }

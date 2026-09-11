@@ -43,8 +43,14 @@ inline bool finite(NavLinkPoint p) noexcept {
 // Called only after graph and working budgets are checked. Arrays die before
 // final graph storage is allocated. Throws allocation failures to compose.
 inline Error validate(const model::NavMeshSnapshot &snapshot, const NavMapFingerprint &expected,
-                      const NavTraversalLinkSet &set) {
-    if (expected != set.fingerprint) return linkError(K::InvalidValue, F::LinkFingerprint);
+                      const NavTraversalLinkSet &set, bool verifyFingerprint = true) {
+    // A runtime overlay is already bound to the immutable NavGraph instance
+    // that owns this snapshot.  Its producer has no serialized-link file from
+    // which to derive a second fingerprint, so an all-zero fingerprint is the
+    // explicit internal binding marker.  Persisted/enrichment links still use
+    // the strict expected-fingerprint comparison by default.
+    if (verifyFingerprint && expected != set.fingerprint)
+        return linkError(K::InvalidValue, F::LinkFingerprint);
     if (set.links.empty()) return {};
     const auto &areas = snapshot.areas();
     std::vector<std::size_t> areaOrder(areas.size());

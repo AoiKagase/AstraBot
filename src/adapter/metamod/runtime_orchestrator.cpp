@@ -39,6 +39,32 @@ bool RuntimeFrame::valid() const noexcept {
 	return validOptionalMapIdentity(mapIdentity);
 }
 
+void RuntimeHealthObservation::observe(const RuntimeFrame& current,
+    core::PlayerId actor, core::BotAgentId binding, int serialNumber,
+    float currentHealth, bool isDead) noexcept {
+	if (!current.valid() || !actor.isValid() || !binding.isValid() ||
+	    !std::isfinite(currentHealth)) {
+		*this = {};
+		return;
+	}
+	const bool same = known && frame.map == current.map && frame.round == current.round &&
+	    player == actor && agent == binding && serial == serialNumber;
+	if (same && current.tick.value <= frame.tick.value) return;
+	if (!same) *this = {};
+	if (same) {
+		if (!dead && currentHealth < health)
+			observedHealthLoss += static_cast<double>(health) - currentHealth;
+		if (!dead && isDead) ++deaths;
+		if (dead && !isDead) ++respawns;
+	}
+	// Retain only the observation stamp; optional map names are not part of
+	// this diagnostic and copying one must not allocate in this noexcept path.
+	frame.map = current.map; frame.round = current.round; frame.tick = current.tick;
+	frame.nowMicros = current.nowMicros;
+	player = actor; agent = binding; serial = serialNumber;
+	health = currentHealth; dead = isDead; known = true;
+}
+
 RuntimeInputValidationReason RuntimeActorInput::validationReason(
 	const RuntimeFrame &frame) const noexcept {
 	if (!frame.valid())
@@ -366,9 +392,11 @@ const RuntimeFrameResult &RuntimeOrchestrator::run(const RuntimeFrame &frame,
 		}
 		// All valid managed actors are accepted. The primary flag is retained
 		// for older providers and is not an execution gate.
-	seen[index] = true;
-	if (actorIdentity_[index].isValid() && actorIdentity_[index] != input.player)
-		clearSlot(index);
+		seen[index] = true;
+		if (actorIdentity_[index].isValid() &&
+		    (actorIdentity_[index] != input.player ||
+		     (hasDecision_[index] && lastDecisions_[index].agent != input.agent)))
+			clearSlot(index);
 		if (validation != RuntimeInputValidationReason::None) {
 			if (!actorIdentity_[index].isValid() || actorIdentity_[index] == input.player)
 				clearSlot(index);
@@ -379,6 +407,11 @@ const RuntimeFrameResult &RuntimeOrchestrator::run(const RuntimeFrame &frame,
 		++result_.acceptedActorCount;
 		actorIdentity_[index] = input.player;
 	}
+
+	// Missing input is an interruption too: do not resume cached intents or
+	// fire cadence if this actor returns before its planner interval expires.
+	for (std::size_t index = 0; index < ordered.size(); ++index)
+		if (!ordered[index] && actorIdentity_[index].isValid()) clearSlot(index);
 
 	appendStage(RuntimeStage::ExperienceUpdated);
 	for (std::size_t index = 0; index < ordered.size(); ++index) {
@@ -512,6 +545,9 @@ const RuntimeFrameResult &RuntimeOrchestrator::run(const RuntimeFrame &frame,
 				result_.decisions[result_.decisionCount++] = decision;
 			continue;
 		}
+		decision.knownEnemyCount = context.enemyCount;
+		for (std::size_t enemy = 0; enemy < context.enemyCount; ++enemy)
+			if (context.enemies[enemy].directVision) ++decision.directEnemyCount;
 
 		const auto maximum = (std::numeric_limits<std::uint64_t>::max)();
 		const bool tacticalDue =

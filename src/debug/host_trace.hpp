@@ -173,6 +173,24 @@ enum class MovementTraceSource : std::uint8_t {
     Dead,
 };
 
+struct MovementPhysicalSample {
+    bool valid{false};
+    float beforeOriginX{0.0F};
+    float beforeOriginY{0.0F};
+    float beforeOriginZ{0.0F};
+    float afterOriginX{0.0F};
+    float afterOriginY{0.0F};
+    float afterOriginZ{0.0F};
+    float beforeVelocityX{0.0F};
+    float beforeVelocityY{0.0F};
+    float beforeVelocityZ{0.0F};
+    float afterVelocityX{0.0F};
+    float afterVelocityY{0.0F};
+    float afterVelocityZ{0.0F};
+    std::uint8_t beforeOnGround{0};
+    std::uint8_t afterOnGround{0};
+};
+
 struct MovementTrace {
     MovementTraceOutcome outcome{MovementTraceOutcome::None};
     MovementTraceError error{MovementTraceError::None};
@@ -193,6 +211,7 @@ struct MovementTrace {
     float up{0.0F};
     std::uint16_t buttons{0};
     std::uint8_t impulse{0};
+    MovementPhysicalSample physical{};
 };
 
 using MovementTraceSink = void (*)(const MovementTrace& trace) noexcept;

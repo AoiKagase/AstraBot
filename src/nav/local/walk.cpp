@@ -37,7 +37,18 @@ public:
         if(q.kind==runtime::QueryKind::SweptHull && r.stamp==q.stamp && r.kind==q.kind &&
            r.error==runtime::QueryError::None && r.hull && !r.hull->startSolid &&
            std::isfinite(r.hull->fraction) && r.hull->fraction>=0 && r.hull->fraction<1 &&
-           r.hull->end.isFinite() && r.hull->normal.isFinite()) blocked=q;
+           r.hull->end.isFinite() && r.hull->normal.isFinite() && issued<maximum_) {
+            // A hull hit is not evidence of a door.  Classify the same
+            // contact through the adapter's Door query before allowing the
+            // state machine to enter DoorWait; walls, stairs and player
+            // bodies must go through the normal blocker/replan path.
+            auto doorRequest=q;
+            doorRequest.kind=runtime::QueryKind::Door;
+            doorRequest.stamp.ordinal=++issued;
+            const auto door=port_.query(doorRequest);
+            if(door.stamp==doorRequest.stamp && door.kind==doorRequest.kind &&
+               door.error==runtime::QueryError::None && door.door) blocked=q;
+        }
         if(q.kind==runtime::QueryKind::GroundedArea) { request_=q; cached_=r; }
         if(restrictAreas && q.kind==runtime::QueryKind::Floor && r.stamp==q.stamp &&
            r.kind==q.kind && r.error==runtime::QueryError::None && r.floor && r.floor->supported) {
@@ -104,6 +115,7 @@ Walk::Walk(Binding b, std::shared_ptr<const corridor::Corridor> c, model::NavVec
     : binding_(b), corridor_(std::move(c)), cursor_(corridor_), goal_(goal), limits_(limits) {}
 
 StuckCause observedStuckCause(const WalkDecision& d) noexcept {
+    if(d.dropReason!=DropReason::None) return StuckCause::TraversalFailed;
     if(d.reason==WalkReason::JumpFailed || d.reason==WalkReason::LadderFailed || d.reason==WalkReason::PostureFailed)
         return StuckCause::TraversalFailed;
     if(d.reason==WalkReason::DoorBlocked && d.doorId) return StuckCause::DoorBlocked;
@@ -128,6 +140,13 @@ WalkDecision Walk::finish(WalkDecision out, WalkState state, WalkReason reason) 
         (void)ladder_->abort(); ladder_.reset(); ladderPlan_.reset();
         out.intent.jump=out.intent.forward=out.intent.back=ActionRequest::Release;
     }
+    // Drop has no transport acknowledgement of its own. Once the enclosing
+    // walk is retired, do not let a stale airborne/step-off state leak into
+    // the next route generation.
+    dropPlan_.reset();
+    dropState_=DropState::Approach;
+    dropStartedUs_=dropAirborneUs_=dropLastUs_=0;
+    dropGravity_=0.0;
     if(primitive_.state()==PrimitiveState::Running) {
         if(state==WalkState::Failed)
             out.primitiveEvent=primitive_.update({out.binding,out.tick,Progress::Failed,{},std::nullopt,false}).event;
@@ -331,9 +350,14 @@ WalkDecision Walk::updateMotion(const runtime::MovementSnapshot& s,const query::
        limits_.blocker.factLifetimeUs>limits_.blocker.timeoutUs || limits_.sideProbeDistance<=0))
         return finish(out,WalkState::Failed,WalkReason::InvalidInput);
     if(ladder_ || selectedLadderLink()) return updateLadder(out,s,index,nowUs,reservedQueries,ladder);
-    if(jump_ || (!cursor_.exhausted() && constraints(corridor_->transitions()[cursor_.index()].edge.traversal,
-        corridor_->transitions()[cursor_.index()].sourceAttributes,
-        corridor_->transitions()[cursor_.index()].targetAttributes).kind==model::NavTraversalKind::Jump))
+    if(dropPlan_ || (!cursor_.exhausted() &&
+       corridor_->transitions()[cursor_.index()].effectiveTraversal==model::NavTraversalKind::Drop))
+        return updateDrop(out,s,index,indexMap,port,nowUs,reservedQueries,physics);
+    if(jump_ || (!cursor_.exhausted() &&
+        (corridor_->transitions()[cursor_.index()].effectiveTraversal==model::NavTraversalKind::Jump ||
+         constraints(corridor_->transitions()[cursor_.index()].edge.traversal,
+            corridor_->transitions()[cursor_.index()].sourceAttributes,
+            corridor_->transitions()[cursor_.index()].targetAttributes).kind==model::NavTraversalKind::Jump)))
         return updateJump(out,s,index,indexMap,port,nowUs,reservedQueries,physics);
     if(reservedQueries>=limits_.probe.maxQueries) {
         out.queries=reservedQueries; out.probeReason=ProbeReason::BudgetExceeded;
@@ -432,7 +456,9 @@ WalkDecision Walk::updateMotion(const runtime::MovementSnapshot& s,const query::
         if(!portal) return finish(out,WalkState::Failed,WalkReason::InvalidPortal);
         double x=portal.value->x, y=portal.value->y;
         const bool vertical=t.edge.direction==1 || t.edge.direction==3;
-        const bool sourceInArea = t.sourceFit==corridor::AreaFit::MicroTransit
+        const bool sourceInArea = t.edge.external
+            ? rawInside(t.sourceExtent,*s.position)
+            : t.sourceFit==corridor::AreaFit::MicroTransit
             ? rawInside(t.sourceExtent,{static_cast<float>(x),static_cast<float>(y),s.position->z})
             : ((vertical && (y+s.hull->minimum.y>=t.sourceExtent.northWest.y &&
                              y+s.hull->maximum.y<=t.sourceExtent.southEast.y)) ||
@@ -440,7 +466,7 @@ WalkDecision Walk::updateMotion(const runtime::MovementSnapshot& s,const query::
                               x+s.hull->maximum.x<=t.sourceExtent.southEast.x)));
         if(!sourceInArea)
             return finish(out,WalkState::Failed,WalkReason::InvalidPortal);
-        if(t.targetFit!=corridor::AreaFit::MicroTransit) switch(t.edge.direction) {
+        if(t.targetFit!=corridor::AreaFit::MicroTransit && !t.edge.external) switch(t.edge.direction) {
         case 0: y-=double(s.hull->maximum.y)+limits_.crossingMargin; break;
         case 1: x+=-double(s.hull->minimum.x)+limits_.crossingMargin; break;
         case 2: y+=-double(s.hull->minimum.y)+limits_.crossingMargin; break;
@@ -477,6 +503,12 @@ WalkDecision Walk::updateMotion(const runtime::MovementSnapshot& s,const query::
     float y=inward(s.position->y+dy*fraction,s.position->y);
     const double ux=dx/distance,uy=dy/distance;
     out.progressDirection={ux,uy,0};
+    bool precise=false;
+    if(!cursor_.exhausted()) {
+        const auto& active=corridor_->transitions()[cursor_.index()];
+        precise=constraints(active.edge.traversal,active.sourceAttributes,
+                            active.targetAttributes).precise;
+    }
     const auto constrain=[&](float& tx,float& ty) {
         if(!cursor_.exhausted()) {
             const auto& t=corridor_->transitions()[cursor_.index()];
@@ -485,8 +517,18 @@ WalkDecision Walk::updateMotion(const runtime::MovementSnapshot& s,const query::
             else tx=static_cast<float>(std::clamp(double(tx),(std::max)(t.sourceLow.x,t.targetLow.x),(std::min)(t.sourceHigh.x,t.targetHigh.x)));
         }
     };
+    const auto constrainWithinBudget=[&](float& tx,float& ty) {
+        constrain(tx,ty);
+        const double vx=double(tx)-s.position->x, vy=double(ty)-s.position->y;
+        const double length=std::hypot(vx,vy);
+        if(length>limits_.probe.maxDistance && length>0) {
+            const double scale=limits_.probe.maxDistance/length;
+            tx=inward(s.position->x+vx*scale,s.position->x);
+            ty=inward(s.position->y+vy*scale,s.position->y);
+        }
+    };
     double speedLimit=limits_.speed;
-    if(limits_.sideProbeDistance>0) {
+    if(limits_.sideProbeDistance>0 && !precise) {
         out.probeReason=sides(s,binding_.routeGeneration,ux,uy,limits_.sideProbeDistance,
             limits_.probe.maxQueries,queries,out);
         if(out.probeReason!=ProbeReason::None) return finish(out,WalkState::Failed,WalkReason::ProbeFailed);
@@ -499,7 +541,7 @@ WalkDecision Walk::updateMotion(const runtime::MovementSnapshot& s,const query::
             const double forward=std::sqrt((std::max)(0.0,distance*distance*fraction*fraction-lateral*lateral));
             x=inward(s.position->x+ux*forward+uy*lateral,s.position->x);
             y=inward(s.position->y+uy*forward-ux*lateral,s.position->y);
-            constrain(x,y);
+            constrainWithinBudget(x,y);
         }
     }
     probeLimits.maxQueries=limits_.probe.maxQueries-out.queries+1; // same-decision ground cache
@@ -533,31 +575,96 @@ WalkDecision Walk::updateMotion(const runtime::MovementSnapshot& s,const query::
             if(classified && (r.blocker->kind==runtime::BlockerKind::Geometry || blocker_)) {
                 const auto noSide=[&] {
                     if(blocker_) { out.blockerAction=BlockerAction::Yield; return out; }
+                    // A transient local-avoidance exhaustion is not proof that
+                    // the NAV edge is structurally impassable. Keep it in the
+                    // execution/recovery path so the actor can cool and retry
+                    // the directed edge instead of permanently excluding it.
+                    out.avoidanceReason=AvoidanceReason::CandidateBlocked;
                     return finish(out,WalkState::Failed,WalkReason::ProbeFailed);
                 };
                 if(blocker_ && avoidDecisions_>=limits_.maxAvoidanceDecisions) return noSide();
                 if(avoidDecisions_>=limits_.maxAvoidanceDecisions || out.samples>=limits_.probe.maxSamples ||
-                   out.queries>=limits_.probe.maxQueries) return finish(out,WalkState::Failed,WalkReason::ProbeFailed);
+                   out.queries>=limits_.probe.maxQueries) {
+                    out.avoidanceReason=AvoidanceReason::BudgetExceeded;
+                    return finish(out,WalkState::Failed,WalkReason::ProbeFailed);
+                }
+                const auto forwardProbeReason=out.probeReason;
                 if(!avoidSide_) avoidSide_=out.rightClearance>=out.leftClearance ? 1:-1;
                 ++avoidDecisions_;
-                const double free=avoidSide_>0 ? out.rightClearance:out.leftClearance;
-                if(free<=1) return noSide();
+                double free=avoidSide_>0 ? out.rightClearance:out.leftClearance;
+                if(free<=1) {
+                    avoidSide_=-avoidSide_;
+                    free=avoidSide_>0 ? out.rightClearance:out.leftClearance;
+                    out.avoidanceReason=AvoidanceReason::CandidateCollapsed;
+                    if(free<=1) return finish(out,WalkState::Failed,WalkReason::AvoidanceCollapsed);
+                }
                 x=inward(s.position->x+avoidSide_*uy*(free-1),s.position->x);
                 y=inward(s.position->y-avoidSide_*ux*(free-1),s.position->y);
-                constrain(x,y);
-                if(std::hypot(double(x)-s.position->x,double(y)-s.position->y)<0.1)
-                    return noSide();
+                constrainWithinBudget(x,y);
+                double candidateDistance=std::hypot(double(x)-s.position->x,double(y)-s.position->y);
+                out.avoidanceSide=avoidSide_;
+                out.avoidanceDistance=candidateDistance;
+                out.avoidanceCandidate=model::NavVector3{static_cast<float>(x),static_cast<float>(y),s.position->z};
+                if(candidateDistance<1.0) {
+                    out.avoidanceReason=AvoidanceReason::CandidateCollapsed;
+                    avoidSide_=-avoidSide_;
+                    const double oppositeFree=avoidSide_>0 ? out.rightClearance:out.leftClearance;
+                    x=inward(s.position->x+avoidSide_*uy*(oppositeFree-1),s.position->x);
+                    y=inward(s.position->y-avoidSide_*ux*(oppositeFree-1),s.position->y);
+                    candidateDistance=std::hypot(double(x)-s.position->x,double(y)-s.position->y);
+                    out.avoidanceSide=avoidSide_;
+                    out.avoidanceDistance=candidateDistance;
+                    out.avoidanceCandidate=model::NavVector3{static_cast<float>(x),static_cast<float>(y),s.position->z};
+                    if(candidateDistance<1.0)
+                        return finish(out,WalkState::Failed,WalkReason::AvoidanceCollapsed);
+                }
                 auto budget=limits_.probe; budget.maxQueries=limits_.probe.maxQueries-out.queries+1;
                 budget.maxSamples-=out.samples;
                 const auto alternate=GroundProbe::inspect(s,binding_.routeGeneration,area,x,y,index,indexMap,queries,budget);
                 out.queries=queries.issued; out.samples+=alternate.samples; out.steps+=alternate.steps;
                 out.probeReason=alternate.reason;
                 if(!alternate) {
+                    out.avoidanceReason=queries.offCorridor ? AvoidanceReason::CandidateOffCorridor:
+                        alternate.reason==ProbeReason::BudgetExceeded ? AvoidanceReason::BudgetExceeded:
+                        AvoidanceReason::CandidateBlocked;
+                    out.probeReason=forwardProbeReason;
+                    if(alternate.reason==ProbeReason::BudgetExceeded) {
+                        out.intent={};
+                        return out;
+                    }
+                    if(!queries.offCorridor && alternate.reason!=ProbeReason::BudgetExceeded) {
+                        avoidSide_=-avoidSide_;
+                        const double otherFree=avoidSide_>0 ? out.rightClearance:out.leftClearance;
+                        float otherX=inward(s.position->x+avoidSide_*uy*(otherFree-1),s.position->x);
+                        float otherY=inward(s.position->y-avoidSide_*ux*(otherFree-1),s.position->y);
+                        constrainWithinBudget(otherX,otherY);
+                        const double otherDistance=std::hypot(double(otherX)-s.position->x,double(otherY)-s.position->y);
+                        out.avoidanceSide=avoidSide_; out.avoidanceDistance=otherDistance;
+                        out.avoidanceCandidate=model::NavVector3{static_cast<float>(otherX),static_cast<float>(otherY),s.position->z};
+                        if(otherDistance<1.0)
+                            return finish(out,WalkState::Failed,WalkReason::AvoidanceCollapsed);
+                        if(otherDistance>=1.0 && out.queries<limits_.probe.maxQueries && out.samples<limits_.probe.maxSamples) {
+                            auto otherBudget=limits_.probe;
+                            otherBudget.maxQueries=limits_.probe.maxQueries-out.queries+1;
+                            otherBudget.maxSamples-=out.samples;
+                            const auto other=GroundProbe::inspect(s,binding_.routeGeneration,area,otherX,otherY,index,indexMap,queries,otherBudget);
+                            out.queries=queries.issued; out.samples+=other.samples; out.steps+=other.steps;
+                            if(other) {
+                                out.probeReason=forwardProbeReason;
+                                out.target=other.target; out.avoiding=true; out.avoidanceReason=AvoidanceReason::None;
+                                const double length=otherDistance;
+                                out.intent.direction={(double(otherX)-s.position->x)/length,(double(otherY)-s.position->y)/length,0};
+                                out.intent.speed=(std::min)(limits_.narrowSpeed,length/0.120);
+                                return out;
+                            }
+                        }
+                    }
                     if(!queries.offCorridor && (alternate.reason==ProbeReason::Blocked || alternate.reason==ProbeReason::NoSupport))
                         return noSide();
                     return finish(out,WalkState::Failed,WalkReason::ProbeFailed);
                 }
-                out.target=alternate.target; out.avoiding=true;
+                out.probeReason=forwardProbeReason;
+                out.target=alternate.target; out.avoiding=true; out.avoidanceReason=AvoidanceReason::None;
                 const double length=std::hypot(double(x)-s.position->x,double(y)-s.position->y);
                 out.intent.direction={(double(x)-s.position->x)/length,(double(y)-s.position->y)/length,0};
                 out.intent.speed=(std::min)(limits_.narrowSpeed,length/0.120); return out;

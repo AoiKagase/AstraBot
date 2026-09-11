@@ -3,6 +3,7 @@
 #include "adapter/metamod/plugin_entry.hpp"
 #include "nav/runtime/route_session.hpp"
 #include "nav/runtime/replan.hpp"
+#include "nav/runtime/execution.hpp"
 #include "nav/query/spatial_index.hpp"
 #include "nav/query/distribution.hpp"
 #include "nav/local/walk.hpp"
@@ -17,12 +18,29 @@ namespace astrabot::adapter::cstrike {
 enum class NavCommand { Load, GoTo, Status, Cancel, Report };
 enum class MotionEvent { None, Decision, Queued, Dispatched, Rejected, Cancelled };
 enum class MotionReason { None, InvalidCorridor, InvalidGoal, MissingObservation,
-    StaleCommand, Deviation, MotorRejected, TransportRejected, Cancelled, DoorChanged, PostureChanged, JumpChanged, LadderChanged };
+    StaleCommand, Deviation, MotorRejected, TransportRejected, Cancelled, DoorChanged, PostureChanged, JumpChanged, LadderChanged, DropChanged };
+enum class RoamExclusionReason : std::uint8_t {
+    Capacity, Invalid, Occupied, Cooling, Rejected, Recent, Missing, Hull
+};
+struct RoamExclusionSample {
+    nav::model::NavAreaId area{};
+    RoamExclusionReason reason{RoamExclusionReason::Invalid};
+    core::PlayerId owner{};
+    std::uint64_t remainingUs{0};
+};
 struct MotionTrace {
     std::optional<nav::model::NavVector3> dispatchOrigin{};
     std::uint64_t dispatchDurationUs{};
+    std::uint64_t elapsedUs{};
+    std::uint64_t frameDeltaUs{};
+    std::uint64_t pendingRemainingUs{};
+    double intentSpeed{};
+    double speedLimit{};
     nav::local::WalkDecision decision{};
     std::optional<nav::query::NavDirectedEdge> selectedEdge{};
+    std::optional<nav::query::NavDirectedEdge> failedEdge{};
+    std::uint64_t edgeCooldownRemainingUs{};
+    bool edgeCooling{false};
     core::BotCommand command{}; // Queued command; msec is a hint, transport measures dispatch.
     MotionEvent event{MotionEvent::None};
     MotionReason reason{MotionReason::None};
@@ -37,6 +55,15 @@ struct MotionTrace {
     metamod::MovementError transportError{metamod::MovementError::None};
     core::TickId commandTick{}, dispatchTick{};
     std::uint64_t intentAgeUs{}, missedDecisions{}, queued{}, dispatched{}, rejected{}, sequence{};
+    bool dispatchPhysicalValid{false};
+    std::uint64_t dispatchSequence{};
+    float dispatchBeforeOriginX{0.0F}, dispatchBeforeOriginY{0.0F}, dispatchBeforeOriginZ{0.0F};
+    float dispatchAfterOriginX{0.0F}, dispatchAfterOriginY{0.0F}, dispatchAfterOriginZ{0.0F};
+    float dispatchBeforeVelocityX{0.0F}, dispatchBeforeVelocityY{0.0F}, dispatchBeforeVelocityZ{0.0F};
+    float dispatchAfterVelocityX{0.0F}, dispatchAfterVelocityY{0.0F}, dispatchAfterVelocityZ{0.0F};
+    std::uint8_t dispatchBeforeOnGround{0}, dispatchAfterOnGround{0};
+    double dispatchHorizontalDisplacement{0.0};
+    bool dispatchNoProgress{false};
     std::uint64_t useGuardChecks{};
     std::uint64_t contactGuardQueries{};
     std::uint64_t jumpGuardQueries{};
@@ -78,6 +105,10 @@ struct RuntimeNavigationStatus final {
     nav::model::NavAreaId goal{};
 };
 struct RuntimeNavigationState final {
+    nav::runtime::ExecutionState execution{nav::runtime::ExecutionState::Idle};
+    nav::runtime::ExecutionFailure executionFailure{nav::runtime::ExecutionFailure::None};
+    std::optional<nav::query::NavDirectedEdge> failedEdge{};
+    std::uint64_t retryAtUs{};
     nav::runtime::MovementSnapshot movement{};
     std::optional<nav::model::NavAreaId> currentArea{};
     std::optional<core::perception::Point> goalPosition{};
@@ -85,6 +116,16 @@ struct RuntimeNavigationState final {
     std::array<core::tactical::TargetArea, core::tactical::kMaxTacticalRoamCandidates>
         roamCandidates{};
     std::size_t roamCandidateCount{0};
+    std::uint32_t roamExcludedCapacity{0};
+    std::uint32_t roamExcludedInvalid{0};
+    std::uint32_t roamExcludedOccupied{0};
+    std::uint32_t roamExcludedCooling{0};
+    std::uint32_t roamExcludedRejected{0};
+    std::uint32_t roamExcludedRecent{0};
+    std::uint32_t roamExcludedMissing{0};
+    std::uint32_t roamExcludedHull{0};
+    std::array<RoamExclusionSample, 4> roamExclusionSamples{};
+    std::size_t roamExclusionCount{0};
     std::uint64_t roamGeneration{0};
     std::uint64_t routeGeneration{0};
     bool routeExecutable{false};
@@ -97,6 +138,8 @@ struct RuntimeNavigationState final {
 };
 class NavConsole final : public nav::runtime::IWorldQueries {
 public:
+    // Map lifecycle entry: independent of a primary actor or console argc/argv.
+    bool loadForMap(const char*,core::MapGeneration,metamod::LifecycleCoordinator&) noexcept;
     void bindMovement(metamod::MovementCoordinator* movement) noexcept { movement_=movement; }
     void bindWorld(core::world::WorldModel* world) noexcept { world_=world; }
     void configure(enginefuncs_t*, mutil_funcs_t*, globalvars_t*) noexcept;
@@ -165,6 +208,7 @@ private:
     void loadCurrentLadders(metamod::LifecycleCoordinator&) noexcept;
     void startMotion(const nav::runtime::MovementSnapshot&) noexcept;
     void stopMotion() noexcept;
+    void failExecution(nav::runtime::ExecutionFailure,bool structural=false) noexcept;
     void clearPending() noexcept;
     void recordMotion(MotionEvent, MotionReason=MotionReason::None) noexcept;
     void printMotion() noexcept;
@@ -172,6 +216,8 @@ private:
     bool runReplan(metamod::LifecycleCoordinator&) noexcept;
     void requestRoute(const nav::runtime::MovementSnapshot&,nav::model::NavAreaId,
         metamod::LifecycleCoordinator&,const nav::runtime::RouteOptions&) noexcept;
+    nav::enrichment::NavTraversalLinkSet discoverShortcuts(
+        const nav::runtime::MovementSnapshot&,std::uint64_t) noexcept;
     void invalidateCurrent(nav::runtime::SessionReason) noexcept;
     bool applyDeferredInvalidation() noexcept;
     bool selectActor(core::PlayerId) noexcept;
@@ -193,12 +239,16 @@ private:
         std::optional<Segment> segment{};
         std::optional<nav::local::DoorContact> contact{};
         std::optional<JumpTicket> jump{};
+        std::optional<nav::local::DropPlan> drop{};
+        nav::local::DropState dropState{nav::local::DropState::Approach};
+        double dropGravity{};
         std::optional<nav::local::LadderPlan> ladder{};
         nav::local::LadderState ladderState{nav::local::LadderState::Approach};
         core::TickId ladderPressTick{};
         nav::model::NavVector3 ladderTarget{};
     };
     MotionReason guardJump(metamod::LifecycleCoordinator&,const nav::runtime::MovementSnapshot&,const PendingMotion&) noexcept;
+    MotionReason guardDrop(metamod::LifecycleCoordinator&,const nav::runtime::MovementSnapshot&,const PendingMotion&) noexcept;
     MotionReason guardLadder(metamod::LifecycleCoordinator&,const nav::runtime::MovementSnapshot&,const PendingMotion&) noexcept;
     std::optional<nav::local::LadderObservation> observeLadder(metamod::LifecycleCoordinator&,
         const nav::runtime::MovementSnapshot&,nav::local::Binding,std::uint32_t) noexcept;
@@ -210,6 +260,7 @@ private:
     core::world::WorldModel* world_{}; // Withdraw candidate distributions when NAV is retired.
     struct ActorState {
     core::PlayerId actor{};
+    nav::runtime::Execution execution_{};
     std::optional<nav::local::Walk> walk_{};
     std::optional<nav::local::IntentPump> pump_{};
     std::optional<Segment> segment_{};
@@ -236,6 +287,8 @@ private:
     mutable core::MapGeneration lastCurrentAreaMap_{};
     mutable std::uint64_t lastCurrentAreaRouteGeneration_{0};
     mutable core::TickId lastCurrentAreaTick_{};
+    std::uint64_t diagnosticNextUs{};
+    std::uint64_t diagnosticSuppressed{};
     std::array<nav::model::NavAreaId, core::tactical::kTacticalRoamHistory>
         roamRecentGoals_{};
     std::size_t roamRecentGoalCount_{0};
@@ -274,6 +327,8 @@ private:
     bool inRequest_{};
     std::optional<nav::runtime::SessionReason> deferredInvalidation_{};
     bool deferredAll_{}, deferredReset_{};
+    core::TickId shortcutQueryTick_{};
+    std::uint32_t shortcutQueriesThisTick_{};
     edict_t* queryingEntity_{}; // borrowed only for synchronous request
     const host::PlayerRegistry* queryingPlayers_{};
     const metamod::LifecycleCoordinator* queryingOwner_{};

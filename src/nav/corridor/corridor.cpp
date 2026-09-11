@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 #include "nav/corridor/corridor.hpp"
+#include "nav/local/traversal_constraints.hpp"
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -41,6 +42,7 @@ bool insideHull(const model::NavExtent& e, Point p, HullClearance h) noexcept {
         p.y>=double(e.northWest.y)+h.halfY && p.y<=double(e.southEast.y)-h.halfY;
 }
 PortalFailureReason portal(Transition& t, HullClearance hull, PortalPolicy policy) noexcept {
+    t.effectiveTraversal=t.edge.traversal;
     const auto& a=t.sourceExtent; const auto& b=t.targetExtent;
     if(!a.isFinite() || !b.isFinite() ||
        a.southEast.x<=a.northWest.x || a.southEast.y<=a.northWest.y ||
@@ -52,22 +54,27 @@ PortalFailureReason portal(Transition& t, HullClearance hull, PortalPolicy polic
     if(!sourceFits && policy==PortalPolicy::Strict) return PortalFailureReason::SourceHullFit;
     if(!targetFits && policy==PortalPolicy::Strict) return PortalFailureReason::TargetHullFit;
     if(t.edge.external) {
-        if(!sourceFits)
-            return policy==PortalPolicy::AllowMicroTransit ?
-                PortalFailureReason::UnsupportedTraversal : PortalFailureReason::SourceHullFit;
-        if(!targetFits)
-            return policy==PortalPolicy::AllowMicroTransit ?
-                PortalFailureReason::UnsupportedTraversal : PortalFailureReason::TargetHullFit;
+        if((!sourceFits || !targetFits) && policy==PortalPolicy::Strict)
+            return !sourceFits ? PortalFailureReason::SourceHullFit:
+                                PortalFailureReason::TargetHullFit;
         const auto& e=*t.edge.external;
         const Point entry{e.entry.x,e.entry.y,e.entry.z}, exit{e.exit.x,e.exit.y,e.exit.z};
-        if(!insideHull(a,entry,hull) || !insideHull(b,exit,hull))
+        if(!contains(a,entry) || !contains(b,exit))
             return PortalFailureReason::InvalidExternalEndpoint;
         t.sourceLow=t.sourceHigh=entry; t.targetLow=t.targetHigh=exit;
+        if(t.edge.traversal==model::NavTraversalKind::Walk) {
+            if(e.direction==enrichment::NavLinkDirection::Up)
+                t.effectiveTraversal=model::NavTraversalKind::Jump;
+            else if(e.direction==enrichment::NavLinkDirection::Down)
+                t.effectiveTraversal=model::NavTraversalKind::Drop;
+        }
         return PortalFailureReason::None;
     }
+    const auto hints=local::constraints(t.edge.traversal,t.sourceAttributes,t.targetAttributes);
     if(t.edge.traversal!=model::NavTraversalKind::Walk || t.edge.direction>3 ||
-       ((!sourceFits || !targetFits) && (t.sourceAttributes!=0 || t.targetAttributes!=0)))
+       ((!sourceFits || !targetFits) && (!hints || hints.kind==model::NavTraversalKind::Crouch)))
         return PortalFailureReason::UnsupportedTraversal;
+    if(hints) t.effectiveTraversal=hints.kind;
     const auto d=t.edge.direction;
     double boundary=0, opposite=0;
     switch(d) {
@@ -77,31 +84,66 @@ PortalFailureReason portal(Transition& t, HullClearance hull, PortalPolicy polic
     case 3: boundary=a.northWest.x; opposite=b.southEast.x; break;
     default: return PortalFailureReason::UnsupportedTraversal;
     }
-    // No epsilon bridging of disconnected NAV boundaries.
-    if(boundary!=opposite) return PortalFailureReason::BoundaryMismatch;
+    const double gap=(opposite-boundary)*((d==1 || d==2) ? 1.0:-1.0);
+    if(gap<0 || gap>32 || (gap!=0 && policy==PortalPolicy::Strict))
+        return PortalFailureReason::BoundaryMismatch;
     const bool vertical=d==1 || d==3;
     const double margin=vertical ? hull.halfY : hull.halfX;
     const double sourceLow=vertical ? a.northWest.y : a.northWest.x;
     const double sourceHigh=vertical ? a.southEast.y : a.southEast.x;
     const double targetLow=vertical ? b.northWest.y : b.northWest.x;
     const double targetHigh=vertical ? b.southEast.y : b.southEast.x;
-    const double low=std::max(sourceLow+(sourceFits ? margin:0.0),
-                              targetLow+(targetFits ? margin:0.0));
-    const double high=std::min(sourceHigh-(sourceFits ? margin:0.0),
-                               targetHigh-(targetFits ? margin:0.0));
-    if(!(low<high)) return PortalFailureReason::NoPortalSpan;
+    double low=std::max(sourceLow+(sourceFits ? margin:0.0),
+                        targetLow+(targetFits ? margin:0.0));
+    double high=std::min(sourceHigh-(sourceFits ? margin:0.0),
+                         targetHigh-(targetFits ? margin:0.0));
+    if(!(low<high)) {
+        // A ReGameDLL/ZBot NAV patch can be a zero-width boundary or can
+        // become point-like after the actor hull is projected out. That is
+        // not, by itself, a solid wall. Preserve the measured overlap as a
+        // micro portal and let the runtime hull sweep/support probe decide
+        // whether the actor can actually cross it.
+        const double rawLow=std::max(sourceLow,targetLow);
+        const double rawHigh=std::min(sourceHigh,targetHigh);
+        if(policy!=PortalPolicy::AllowMicroTransit || rawLow>rawHigh)
+            return PortalFailureReason::NoPortalSpan;
+        low=high=(rawLow+rawHigh)*0.5;
+    }
     const double x0=vertical ? boundary:low, y0=vertical ? low:boundary;
     const double x1=vertical ? boundary:high, y1=vertical ? high:boundary;
     t.sourceLow=support(a,x0,y0); t.sourceHigh=support(a,x1,y1);
-    t.targetLow=support(b,x0,y0); t.targetHigh=support(b,x1,y1);
+    t.targetLow=support(b,vertical ? opposite:low,vertical ? low:opposite);
+    t.targetHigh=support(b,vertical ? opposite:high,vertical ? high:opposite);
+    const double lowFall=t.sourceLow.z-t.targetLow.z, highFall=t.sourceHigh.z-t.targetHigh.z;
+    const double lowRise=-lowFall, highRise=-highFall;
+    if(gap==0 && (lowRise>18 || highRise>18)) {
+        // GoldSrc's ordinary step is about 18 units. A larger measured
+        // upward transition must use the existing, observed jump primitive;
+        // treating it as Walk makes GroundProbe stop at the riser forever.
+        if(!hints || (hints.kind!=model::NavTraversalKind::Walk &&
+                      hints.kind!=model::NavTraversalKind::Jump) || hints.noJump ||
+           lowRise>44 || highRise>44)
+            return PortalFailureReason::UnsupportedTraversal;
+        t.effectiveTraversal=model::NavTraversalKind::Jump;
+    }
+    if(gap!=0 || (policy==PortalPolicy::AllowMicroTransit && (lowFall>18 || highFall>18))) {
+        // The source NAV patch need not contain the hull: its measured support
+        // is mandatory in updateDrop. Landing still requires a hull-safe target.
+        if(!hints || hints.kind!=model::NavTraversalKind::Walk || !targetFits ||
+           lowFall<=18 || highFall<=18 || lowFall>128 || highFall>128)
+            return PortalFailureReason::UnsupportedTraversal;
+        t.effectiveTraversal=model::NavTraversalKind::Drop;
+    }
     return PortalFailureReason::None;
 }
 Point project(const Transition& t, Point p) noexcept {
-    if(t.edge.external) return t.sourceLow;
+    if(t.edge.external) return t.targetLow;
     const auto a=t.sourceLow, b=t.sourceHigh;
     const bool vertical=a.x==b.x;
-    const double f=vertical ? std::clamp((p.y-a.y)/(b.y-a.y),0.0,1.0) :
-                              std::clamp((p.x-a.x)/(b.x-a.x),0.0,1.0);
+    const double denominator=vertical ? double(b.y)-a.y:double(b.x)-a.x;
+    if(std::abs(denominator)<=0.000001) return a;
+    const double f=vertical ? std::clamp((p.y-a.y)/denominator,0.0,1.0) :
+                              std::clamp((p.x-a.x)/denominator,0.0,1.0);
     return {a.x+(b.x-a.x)*f,a.y+(b.y-a.y)*f,a.z+(b.z-a.z)*f};
 }
 }
@@ -157,14 +199,14 @@ BuildResult Corridor::build(const query::NavGraph& graph, const query::NavRouteR
 TargetResult Corridor::target(std::size_t cursor, Point position, std::size_t lookAhead) const noexcept {
     if(cursor>=transitions_.size() || lookAhead==0) return {{},Error::InvalidCursor};
     const auto& current=transitions_[cursor];
-    const bool inSource=current.sourceFit==AreaFit::MicroTransit
-        ? contains(current.sourceExtent,position)
-        : insideHull(current.sourceExtent,position,hull_);
+    const bool inSource=finite(position) && contains(current.sourceExtent,position);
     if(!inSource)
         return {{},Error::InvalidPosition};
     const auto end=cursor+std::min(lookAhead,transitions_.size()-cursor);
     auto stop=cursor;
-    while(stop+1<end && !transitions_[stop].edge.external) ++stop;
+    while(stop+1<end && !transitions_[stop].edge.external && !transitions_[stop+1].edge.external &&
+          transitions_[stop].effectiveTraversal==model::NavTraversalKind::Walk &&
+          transitions_[stop+1].effectiveTraversal==model::NavTraversalKind::Walk) ++stop;
     auto aim=project(transitions_[stop],position);
     while(stop>cursor) aim=project(transitions_[--stop],aim);
     return {aim,Error::None};

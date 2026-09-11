@@ -24,6 +24,7 @@ struct MovementSnapshot {
     std::optional<bool> connected{}, alive{}, joined{}, grounded{}, ducked{};
     std::optional<HullDimensions> hull{};
     std::optional<float> speedLimit{};
+    std::optional<float> health{};
     std::optional<LadderContact> ladder{};
 };
 } // namespace astrabot::nav::runtime

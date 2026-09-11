@@ -309,6 +309,8 @@ std::size_t buildRuntimeInputs(const LifecycleCoordinator& owner, const RuntimeF
         for (std::size_t i = 0; i < input.tactical.navigation.roamCandidateCount; ++i)
             input.tactical.navigation.roamCandidates[i] = nav->roamCandidates[i];
         input.tacticalEvents.intentInvalidated = nav->roamArrived || nav->roamRejected;
+        input.actionObservation.routeSafe = !nav->roamRejected;
+        input.actionObservation.actionComplete = nav->roamArrived;
 
         if (nav->routeExecutable && nav->goal && nav->goalPosition &&
             nav->movement.speedLimit && *nav->movement.speedLimit > 0) {

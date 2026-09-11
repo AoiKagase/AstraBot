@@ -74,6 +74,12 @@ void scenario(int mode,std::uint64_t frameUs) {
             assert(d.queries==world.calls.size()-before && d.queries<=profile.probe.maxQueries && d.samples<=4);
             narrow=narrow || d.narrow; corrected=corrected || std::abs(d.intent.lateralCorrection)>0.001; avoided=avoided || d.avoiding;
             if(mode==0 && d.narrow) assert(d.intent.speed<limits.speed);
+            if(mode==10) {
+                assert(d.reason==local::WalkReason::AvoidanceCollapsed);
+                assert(d.avoidanceReason==local::AvoidanceReason::CandidateCollapsed);
+                assert(d.avoidanceDistance<1.0);
+                assert(d.intent.speed==0);
+            }
             if(d.state!=local::WalkState::Running) {
                 if(mode<2) assert(d.state==local::WalkState::Arrived);
                 else assert(d.state==local::WalkState::Failed && d.intent.speed==0);
@@ -90,4 +96,4 @@ void scenario(int mode,std::uint64_t frameUs) {
     if(mode==1) assert(avoided);
 }
 }
-int main() { for(std::uint64_t us : {8000U,16000U,100000U}) for(int mode=0;mode<10;++mode) scenario(mode,us); }
+int main() { for(std::uint64_t us : {8000U,16000U,100000U}) for(int mode=0;mode<11;++mode) scenario(mode,us); }

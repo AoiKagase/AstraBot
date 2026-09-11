@@ -27,7 +27,8 @@ public:
         LifecycleCoordinator* lifecycle) noexcept;
     void reset() noexcept;
 
-    bool enabled() const noexcept { return enabled_; }
+    bool enabled() const noexcept { return debugLevel_ != 0; }
+    bool navEnabled() const noexcept { return debugLevel_ >= 2; }
 
     // These methods are the production TraceSink endpoints.  They are public
     // only within the adapter boundary so the Metamod test fixture can drive
@@ -56,7 +57,7 @@ private:
     enginefuncs_t* engine_{nullptr};
     mutil_funcs_t* utility_{nullptr};
     LifecycleCoordinator* lifecycle_{nullptr};
-    bool enabled_{false};
+    std::uint32_t debugLevel_{0};
     std::uint32_t nextBotOrdinal_{1};
     std::array<std::uint64_t, host::kMaxClientSlots> lastMovementLogCall_{};
     std::array<debug::MovementTraceSource, host::kMaxClientSlots> lastMovementSource_{};
@@ -65,6 +66,14 @@ private:
     std::array<core::MapGeneration, host::kMaxClientSlots> lastMovementMap_{};
     std::array<core::PlayerId, host::kMaxClientSlots> lastMovementPlayer_{};
     std::array<core::BotAgentId, host::kMaxClientSlots> lastMovementAgent_{};
+    std::array<std::uint64_t, host::kMaxClientSlots> physicalWindowUs_{};
+    std::array<std::uint64_t, host::kMaxClientSlots> physicalDispatches_{};
+    std::array<std::uint64_t, host::kMaxClientSlots> physicalNonZeroInputs_{};
+    std::array<std::uint64_t, host::kMaxClientSlots> physicalSuppressed_{};
+    std::array<bool, host::kMaxClientSlots> physicalWindowActive_{};
+    std::array<float, host::kMaxClientSlots> physicalStartX_{};
+    std::array<float, host::kMaxClientSlots> physicalStartY_{};
+    std::array<float, host::kMaxClientSlots> physicalStartZ_{};
 };
 
 } // namespace astrabot::adapter::metamod

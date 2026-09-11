@@ -70,11 +70,24 @@ struct RuntimeActorCorrelation final {
     bool removalPending{false};
     bool alive{false};
     bool currentAreaHeld{false};
+    nav::model::NavAreaId currentArea{};
+    std::uint64_t elapsedUs{0};
+    std::uint64_t frameDeltaUs{0};
     core::tactical::IntentType intent{core::tactical::IntentType::None};
     core::tactical::RouteStyle route{core::tactical::RouteStyle::None};
     core::tactical::Reason reason{core::tactical::Reason::None};
     nav::model::NavAreaId roamGoal{};
     std::size_t roamCandidateCount{0};
+    std::uint32_t roamExcludedCapacity{0};
+    std::uint32_t roamExcludedInvalid{0};
+    std::uint32_t roamExcludedOccupied{0};
+    std::uint32_t roamExcludedCooling{0};
+    std::uint32_t roamExcludedRejected{0};
+    std::uint32_t roamExcludedRecent{0};
+    std::uint32_t roamExcludedMissing{0};
+    std::uint32_t roamExcludedHull{0};
+    std::array<cstrike::RoamExclusionSample, 4> roamExclusionSamples{};
+    std::size_t roamExclusionCount{0};
     std::uint64_t roamGeneration{0};
 };
 
@@ -90,6 +103,17 @@ enum class CombatSubmitError : std::uint8_t {
     InvalidDecision,
     InvalidNavigationCommand,
     TransportRejected,
+};
+
+enum class MapNavLoadReason : std::uint8_t {
+    None, Ready, MissingMapName, InvalidMapName, MissingGameDirectory,
+    InvalidGameDirectory, LoadFailed,
+};
+
+struct MapNavLoadStatus final {
+    core::MapGeneration map{};
+    MapNavLoadReason reason{MapNavLoadReason::None};
+    std::array<char, 1200> path{};
 };
 
 struct CombatSubmitResult {
@@ -121,6 +145,7 @@ public:
     void reset() noexcept;
 
     void serverActivate(int clientMax) noexcept;
+    const MapNavLoadStatus& mapNavLoadStatus() const noexcept { return mapNavLoadStatus_; }
     void serverDeactivate() noexcept;
     void clientDisconnect(edict_t* entity) noexcept;
     void startFrame() noexcept;
@@ -203,6 +228,19 @@ public:
     }
     const RuntimeInputBuildStatus& runtimeInputBuildStatus(core::PlayerId player) const noexcept;
     const RuntimeActorCorrelation& runtimeCorrelation(core::PlayerId player) const noexcept;
+    const RuntimeHealthObservation* runtimeHealth(core::PlayerId player) const noexcept {
+        if (!player.isValid() || player.slot > runtimeHealth_.size()) return nullptr;
+        const auto& observation = runtimeHealth_[player.slot - 1U];
+        const auto binding = agents_.findByPlayer(player);
+        const auto* entity = entityFor(player);
+        return observation.known && observation.player == player &&
+            binding.isValid() && binding.agent == observation.agent &&
+            entity != nullptr && !entity->free && entity->serialnumber == observation.serial &&
+            !removalPending(player) && registry_.currentPlayer(player.slot) == player &&
+            observation.frame.tick == registry_.currentTick() &&
+            observation.frame.map == registry_.mapGeneration() &&
+            observation.frame.round == round_ ? &observation : nullptr;
+    }
     const RuntimeDiagnostics& runtimeDiagnostics() const noexcept {
         return runtime_.diagnostics();
     }
@@ -310,6 +348,8 @@ private:
     void clearCombatState(core::PlayerId player) noexcept;
     void clearAllCombatState() noexcept;
     bool dispatchMenu(ClientState&, std::uint8_t selection) noexcept;
+    bool dispatchBuyCommand(core::PlayerId, const char*) noexcept;
+    void dispatchRoundBuy(ClientState&) noexcept;
     static bool dispatchWeaponSelectionHook(
         edict_t*, core::WeaponSelection) noexcept;
     bool dispatchWeaponSelection(
@@ -327,6 +367,9 @@ private:
     std::array<RuntimeActorCorrelation,host::kMaxClientSlots> runtimeCorrelation_{};
     cstrike::NavConsole navConsole_{};
     RuntimeOrchestrator runtime_{};
+    void loadMapNavigation() noexcept;
+    MapNavLoadStatus mapNavLoadStatus_{};
+    std::array<RuntimeHealthObservation,host::kMaxClientSlots> runtimeHealth_{};
     core::world::WorldModel world_{};
     nav::query::DistributionModel distributions_{};
     cstrike::VisionAdapter vision_{world_};
@@ -336,6 +379,8 @@ private:
     bool advanceVisualEffects() noexcept;
     core::perception::TeamRoster teams_{};
     core::perception::RoundGeneration round_{1};
+    std::array<core::perception::RoundGeneration,host::kMaxClientSlots>
+        lastBuyRound_{};
     PerceptionIdentityDiagnostics identityDiagnostics_{};
     core::TickId lastRoundTick_{};
     double lastRoundTime_{-1};

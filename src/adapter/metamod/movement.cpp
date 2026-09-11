@@ -7,6 +7,28 @@
 #include <limits>
 
 namespace astrabot::adapter::metamod {
+namespace {
+// RunPlayerMove updates the fake client's view, but ReGameDLL does not always
+// mirror that view onto the player model. Keep the body and the view on the
+// same GoldSrc convention used by the existing bot implementations: body
+// pitch is the inverted, damped view pitch and body yaw is the view yaw.
+void syncBodyAngles(edict_t* entity, const float viewAngles[3]) noexcept {
+    if (entity == nullptr || viewAngles == nullptr) return;
+    // RunPlayerMove receives the view for this command, but the next runtime
+    // input snapshot reads entvars::v_angle.  ReGameDLL may update it for a
+    // real client and leave it unchanged for a fake client, so keep the
+    // authoritative command view in both places.  Without this, aim is lost
+    // on the next tick and combat falls back to the spawn view.
+    entity->v.v_angle.x = viewAngles[0];
+    entity->v.v_angle.y = viewAngles[1];
+    entity->v.v_angle.z = viewAngles[2];
+    entity->v.angles.x = -viewAngles[0] / 3.0F;
+    entity->v.angles.y = viewAngles[1];
+    entity->v.angles.z = 0.0F;
+    entity->v.ideal_yaw = viewAngles[1];
+    entity->v.idealpitch = viewAngles[0];
+}
+}
 
 void MovementCoordinator::configure(
     enginefuncs_t* engineFunctions,
@@ -111,6 +133,17 @@ MovementResult MovementCoordinator::submit(
             tick,
             command.msec);
     }
+    // The first frame after arming the host clock has no trustworthy
+    // simulation interval. Keep the neutral heartbeat in dispatchAtFrameEnd
+    // but never retain an action command that cannot be timed or aged.
+    if (frameDeltaUs_ == 0U) {
+        return reject(
+            MovementError::NoFrameDelta,
+            player,
+            mapGeneration,
+            tick,
+            command.msec);
+    }
 
     auto& pending = pending_[static_cast<std::size_t>(player.slot - 1U)];
     if (pending.has_value()) {
@@ -163,7 +196,8 @@ MovementResult MovementCoordinator::rejectIngress(
     return reject(error, player, mapGeneration, tick, originalMsec);
 }
 
-void MovementCoordinator::beginFrame() noexcept {
+void MovementCoordinator::beginFrame(
+    std::optional<std::uint64_t> engineFrameDeltaUs) noexcept {
     dispatchedThisFrame_.fill(false);
     frameQueued_.fill({});
     frameDispatched_.fill({});
@@ -172,16 +206,20 @@ void MovementCoordinator::beginFrame() noexcept {
     if (!clockArmed_) {
         lastFrame_ = now;
         clockArmed_ = true;
-        frameDeltaUs_ = 0;
+        frameDeltaUs_ = engineFrameDeltaUs.value_or(0U);
         return;
     }
 
     const auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(
         now - lastFrame_);
     lastFrame_ = now;
-    frameDeltaUs_ = elapsed.count() <= 0
-        ? 0U
-        : static_cast<std::uint64_t>(elapsed.count());
+    if (engineFrameDeltaUs.has_value()) {
+        frameDeltaUs_ = *engineFrameDeltaUs;
+    } else {
+        frameDeltaUs_ = elapsed.count() <= 0
+            ? 0U
+            : static_cast<std::uint64_t>(elapsed.count());
+    }
 }
 
 MovementResult MovementCoordinator::dispatchAtFrameEnd(
@@ -282,18 +320,36 @@ bool MovementCoordinator::dispatchJoinProgress(
         entity->v.v_angle.x,
         entity->v.v_angle.y,
         entity->v.v_angle.z};
+    debug::MovementPhysicalSample physical{};
+    physical.valid=true;
+    physical.beforeOriginX=entity->v.origin.x;
+    physical.beforeOriginY=entity->v.origin.y;
+    physical.beforeOriginZ=entity->v.origin.z;
+    physical.beforeVelocityX=entity->v.velocity.x;
+    physical.beforeVelocityY=entity->v.velocity.y;
+    physical.beforeVelocityZ=entity->v.velocity.z;
+    physical.beforeOnGround=(entity->v.flags&FL_ONGROUND) ? 1U : 0U;
     const auto index=activePlayer.slot-1U;
     const auto engineMsec=quantizeMsec(frameDeltaUs_);
     activeDispatchSource_=source;
     engineFunctions_->pfnRunPlayerMove(
         entity, viewAngles, 0.0F, 0.0F, 0.0F, 0, 0,
         engineMsec);
+    physical.afterOriginX=entity->v.origin.x;
+    physical.afterOriginY=entity->v.origin.y;
+    physical.afterOriginZ=entity->v.origin.z;
+    physical.afterVelocityX=entity->v.velocity.x;
+    physical.afterVelocityY=entity->v.velocity.y;
+    physical.afterVelocityZ=entity->v.velocity.z;
+    physical.afterOnGround=(entity->v.flags&FL_ONGROUND) ? 1U : 0U;
+    syncBodyAngles(entity, viewAngles);
     activeDispatchSource_=debug::MovementTraceSource::None;
     dispatchedThisFrame_[index] = true;
     const auto callCount=++callCounts_[index];
     emit(MovementOutcome::Dispatched,MovementError::None,mapGeneration,
         activePlayer,registry_->currentTick(),registry_->currentTick(),0,true,
-        frameDeltaUs_,source,callCount,entity->serialnumber,0.0F,0.0F,0.0F,0,0);
+        frameDeltaUs_,source,callCount,entity->serialnumber,0.0F,0.0F,0.0F,0,0,
+        &physical);
     return true;
 }
 
@@ -540,6 +596,15 @@ MovementResult MovementCoordinator::dispatchOne(
         pending.command.view.pitch,
         pending.command.view.yaw,
         pending.command.view.roll};
+    debug::MovementPhysicalSample physical{};
+    physical.valid=true;
+    physical.beforeOriginX=entity->v.origin.x;
+    physical.beforeOriginY=entity->v.origin.y;
+    physical.beforeOriginZ=entity->v.origin.z;
+    physical.beforeVelocityX=entity->v.velocity.x;
+    physical.beforeVelocityY=entity->v.velocity.y;
+    physical.beforeVelocityZ=entity->v.velocity.z;
+    physical.beforeOnGround=(entity->v.flags&FL_ONGROUND) ? 1U : 0U;
     activeDispatchSource_=debug::MovementTraceSource::Command;
     engineFunctions_->pfnRunPlayerMove(
         entity,
@@ -550,6 +615,14 @@ MovementResult MovementCoordinator::dispatchOne(
         static_cast<unsigned short>(pending.command.buttons),
         pending.command.impulse,
         engineMsec);
+    physical.afterOriginX=entity->v.origin.x;
+    physical.afterOriginY=entity->v.origin.y;
+    physical.afterOriginZ=entity->v.origin.z;
+    physical.afterVelocityX=entity->v.velocity.x;
+    physical.afterVelocityY=entity->v.velocity.y;
+    physical.afterVelocityZ=entity->v.velocity.z;
+    physical.afterOnGround=(entity->v.flags&FL_ONGROUND) ? 1U : 0U;
+    syncBodyAngles(entity, viewAngles);
     activeDispatchSource_=debug::MovementTraceSource::None;
     const auto index=activePlayer.slot-1U;
     dispatchedThisFrame_[index] = true;
@@ -568,7 +641,8 @@ MovementResult MovementCoordinator::dispatchOne(
         pending.command.movement.side,
         pending.command.movement.up,
         static_cast<std::uint16_t>(pending.command.buttons),
-        pending.command.impulse);
+        pending.command.impulse,
+        &physical);
     return MovementResult{MovementOutcome::Dispatched, MovementError::None, std::nullopt};
 }
 
@@ -601,9 +675,10 @@ void MovementCoordinator::emit(
     bool engineCall, std::optional<std::uint64_t> dispatchDelta,
     debug::MovementTraceSource source, std::uint64_t callCount,
     std::uint32_t edictSerial, float forward, float side, float up,
-    std::uint16_t buttons, std::uint8_t impulse) noexcept {
+    std::uint16_t buttons, std::uint8_t impulse,
+    const debug::MovementPhysicalSample* physical) noexcept {
     const auto delta=dispatchDelta.value_or(frameDeltaUs_);
-    const debug::MovementTrace trace{
+    debug::MovementTrace trace{
         outcome,
         error,
         mapGeneration,
@@ -623,6 +698,8 @@ void MovementCoordinator::emit(
         up,
         buttons,
         impulse};
+    if (physical != nullptr)
+        trace.physical=*physical;
     if (player.isValid() && player.slot <= host::kMaxClientSlots) {
         const auto index = static_cast<std::size_t>(player.slot - 1U);
         if (outcome == MovementOutcome::Queued) frameQueued_[index] = trace;

@@ -8,6 +8,8 @@
 
 #include <cstdio>
 #include <cstring>
+#include <cmath>
+#include <algorithm>
 
 #ifdef snprintf
 #undef snprintf
@@ -15,6 +17,43 @@
 
 namespace astrabot::adapter::metamod {
 namespace {
+
+const char* runtimeFireReasonName(core::combat::CombatReason reason) noexcept {
+    switch (reason) {
+    case core::combat::CombatReason::None: return "None";
+    case core::combat::CombatReason::Accepted: return "Accepted";
+    case core::combat::CombatReason::InvalidInput: return "InvalidInput";
+    case core::combat::CombatReason::InvalidActor: return "InvalidActor";
+    case core::combat::CombatReason::InvalidMap: return "InvalidMap";
+    case core::combat::CombatReason::InvalidRound: return "InvalidRound";
+    case core::combat::CombatReason::InvalidTick: return "InvalidTick";
+    case core::combat::CombatReason::InvalidWorldSnapshot: return "InvalidWorldSnapshot";
+    case core::combat::CombatReason::StaleInput: return "StaleInput";
+    case core::combat::CombatReason::StaleWeapon: return "StaleWeapon";
+    case core::combat::CombatReason::NonFinitePose: return "NonFinitePose";
+    case core::combat::CombatReason::ViewOutOfRange: return "ViewOutOfRange";
+    case core::combat::CombatReason::InvalidWeapon: return "InvalidWeapon";
+    case core::combat::CombatReason::ImpossibleAmmo: return "ImpossibleAmmo";
+    case core::combat::CombatReason::InvalidDifficulty: return "InvalidDifficulty";
+    case core::combat::CombatReason::Dead: return "Dead";
+    case core::combat::CombatReason::NoTarget: return "NoTarget";
+    case core::combat::CombatReason::UnknownRelation: return "UnknownRelation";
+    case core::combat::CombatReason::Ally: return "Ally";
+    case core::combat::CombatReason::StaleTarget: return "StaleTarget";
+    case core::combat::CombatReason::AnonymousSound: return "AnonymousSound";
+    case core::combat::CombatReason::UnsupportedFireMode: return "UnsupportedFireMode";
+    case core::combat::CombatReason::NoUsableWeapon: return "NoUsableWeapon";
+    case core::combat::CombatReason::Reloading: return "Reloading";
+    case core::combat::CombatReason::EmptyClip: return "EmptyClip";
+    case core::combat::CombatReason::Cooldown: return "Cooldown";
+    case core::combat::CombatReason::ReactionDelay: return "ReactionDelay";
+    case core::combat::CombatReason::HostRejected: return "HostRejected";
+    case core::combat::CombatReason::InvalidVisibility: return "InvalidVisibility";
+    case core::combat::CombatReason::DuplicateAttack: return "DuplicateAttack";
+    case core::combat::CombatReason::DuplicateAction: return "DuplicateAction";
+    }
+    return "Unknown";
+}
 
 const char* lifecycleKindName(host::LifecycleEventKind kind) noexcept {
     switch (kind) {
@@ -311,7 +350,7 @@ void ConsoleDebug::reset() noexcept {
     engine_ = nullptr;
     utility_ = nullptr;
     lifecycle_ = nullptr;
-    enabled_ = false;
+    debugLevel_ = 0;
     nextBotOrdinal_ = 1;
     lastMovementLogCall_.fill(0);
     lastMovementSource_.fill(debug::MovementTraceSource::None);
@@ -320,6 +359,14 @@ void ConsoleDebug::reset() noexcept {
     lastMovementMap_.fill({});
     lastMovementPlayer_.fill({});
     lastMovementAgent_.fill({});
+    physicalWindowUs_.fill(0);
+    physicalDispatches_.fill(0);
+    physicalNonZeroInputs_.fill(0);
+    physicalSuppressed_.fill(0);
+    physicalWindowActive_.fill(false);
+    physicalStartX_.fill(0.0F);
+    physicalStartY_.fill(0.0F);
+    physicalStartZ_.fill(0.0F);
 }
 
 void ConsoleDebug::command() {
@@ -332,29 +379,34 @@ void ConsoleDebug::command() {
 
     const int argc = self.engine_->pfnCmd_Argc();
     if (argc == 1) {
-        self.commandLine(self.enabled_
+        self.commandLine(self.debugLevel_ != 0
                              ? "[ASTRABOT][DEBUG][COMMAND] state=on"
                              : "[ASTRABOT][DEBUG][COMMAND] state=off");
         return;
     }
     if (argc != 2) {
         self.commandLine(
-            "[ASTRABOT][DEBUG][COMMAND] error=InvalidArguments expected=0|1");
+            "[ASTRABOT][DEBUG][COMMAND] error=InvalidArguments expected=0|1|2");
         return;
     }
 
     const char* value = self.engine_->pfnCmd_Argv(1);
     if (value == nullptr || (std::strcmp(value, "0") != 0 &&
-                             std::strcmp(value, "1") != 0)) {
+                             std::strcmp(value, "1") != 0 &&
+                             std::strcmp(value, "2") != 0)) {
         self.commandLine(
-            "[ASTRABOT][DEBUG][COMMAND] error=InvalidArguments expected=0|1");
+            "[ASTRABOT][DEBUG][COMMAND] error=InvalidArguments expected=0|1|2");
         return;
     }
 
-    self.enabled_ = value[0] == '1';
-    self.commandLine(self.enabled_
-                         ? "[ASTRABOT][DEBUG][COMMAND] enabled=1"
-                         : "[ASTRABOT][DEBUG][COMMAND] enabled=0");
+    self.debugLevel_ = static_cast<std::uint32_t>(value[0] - '0');
+    if (self.debugLevel_ == 0) {
+        self.commandLine("[ASTRABOT][DEBUG][COMMAND] enabled=0");
+    } else if (self.debugLevel_ == 1) {
+        self.commandLine("[ASTRABOT][DEBUG][COMMAND] enabled=1");
+    } else {
+        self.commandLine("[ASTRABOT][DEBUG][COMMAND] enabled=2 nav=1");
+    }
 }
 
 void ConsoleDebug::addBotCommand() {
@@ -437,7 +489,7 @@ void ConsoleDebug::addBotCommand() {
 }
 
 void ConsoleDebug::line(const char* text) noexcept {
-    if (!enabled_ || text == nullptr || utility_ == nullptr ||
+    if (debugLevel_ == 0 || text == nullptr || utility_ == nullptr ||
         utility_->pfnLogConsole == nullptr) {
         return;
     }
@@ -517,7 +569,7 @@ void ConsoleDebug::removalTrace(const debug::RemovalTrace& trace) noexcept {
 }
 
 void ConsoleDebug::runtimeCorrelationTrace(core::PlayerId player) noexcept {
-    if (!enabled_ || !player.isValid() ||
+    if (debugLevel_ == 0 || !player.isValid() ||
         player.slot > host::kMaxClientSlots || lifecycle_ == nullptr) {
         return;
     }
@@ -540,6 +592,41 @@ void ConsoleDebug::runtimeCorrelationTrace(core::PlayerId player) noexcept {
     const auto decisionRound = decisionStampMatch ? candidate->team.shared.round : core::perception::RoundGeneration{};
     const auto decisionTick = decisionStampMatch ? candidate->team.shared.tick : core::TickId{};
     const auto decisionReject = decisionStampMatch ? candidate->rejection : RuntimeRejectReason::None;
+    // This snapshot exposes perception and authorization even when NAV emits
+    // no command. Queue/dispatch remain separate evidence in the correlation.
+    if (decisionStampMatch) {
+        const auto& combat = candidate->combat;
+        char combatLine[768]{};
+        std::snprintf(combatLine, sizeof(combatLine),
+            "[ASTRABOT][DEBUG][COMBAT] kind=Runtime map=%u round=%llu tick=%llu actor=%u:%u agent=%u known_enemies=%zu vision_memories=%zu target=%u:%u source=%u age_us=%llu confidence=%.3f action=%u fire_reason=%s attack_authorized=%u executable=%u tactical_ran=%u action_ran=%u view_pitch=%.2f view_yaw=%.2f",
+            unsigned(correlation.map.value),
+            static_cast<unsigned long long>(correlation.round.value),
+            static_cast<unsigned long long>(correlation.inputTick.value),
+            unsigned(player.slot), unsigned(player.generation.value),
+            unsigned(correlation.agent.value), candidate->knownEnemyCount,
+            candidate->directEnemyCount, unsigned(combat.target.slot),
+            unsigned(combat.target.generation.value), unsigned(combat.source),
+            static_cast<unsigned long long>(combat.targetAgeMicros), combat.confidence,
+            unsigned(combat.action), runtimeFireReasonName(combat.reason),
+            unsigned(combat.hasAttackInput()), unsigned(candidate->executable),
+            unsigned(candidate->tacticalExecuted), unsigned(candidate->actionExecuted),
+            static_cast<double>(combat.view.pitch), static_cast<double>(combat.view.yaw));
+        line(combatLine);
+    }
+    if (const auto* health = lifecycle_->runtimeHealth(player)) {
+        char healthLine[512]{};
+        std::snprintf(healthLine, sizeof(healthLine),
+            "[ASTRABOT][DEBUG][COMBAT] kind=SelfObservation map=%u round=%llu tick=%llu actor=%u:%u agent=%u serial=%d health=%.2f dead=%u health_loss_observed=%.2f deaths_observed=%llu respawns_observed=%llu attribution=Unknown",
+            unsigned(health->frame.map.value),
+            static_cast<unsigned long long>(health->frame.round.value),
+            static_cast<unsigned long long>(health->frame.tick.value),
+            unsigned(player.slot), unsigned(player.generation.value),
+            unsigned(health->agent.value), health->serial, double(health->health),
+            unsigned(health->dead), health->observedHealthLoss,
+            static_cast<unsigned long long>(health->deaths),
+            static_cast<unsigned long long>(health->respawns));
+        line(healthLine);
+    }
     const auto intent = decisionStampMatch ? correlation.intent : core::tactical::IntentType::None;
     const auto route = decisionStampMatch ? correlation.route : core::tactical::RouteStyle::None;
     const auto reason = decisionStampMatch ? correlation.reason : core::tactical::Reason::None;
@@ -561,7 +648,7 @@ void ConsoleDebug::runtimeCorrelationTrace(core::PlayerId player) noexcept {
     char lineBuffer[2048]{};
     std::snprintf(
         lineBuffer, sizeof(lineBuffer),
-        "[ASTRABOT][DEBUG][MOVEMENT] kind=Correlation correlated=%u map=%u round=%llu tick=%llu actor=%u:%u agent=%u input_reason=%s stale=%s validation=%s current_area=%u weapon=%u weapon_class=%u update_client_data=%u weapon_data=%u update_called=%u weapon_called=%u accepted=%zu decision=%u decision_map=%u decision_round=%llu decision_tick=%llu runtime_reject=%u nav=%s nav_reason=%s nav_map=%u nav_round=%llu nav_tick=%llu nav_decision_tick=%llu queue=%u queue_error=%u queue_tick=%llu dispatch=%u dispatch_error=%u dispatch_command_tick=%llu dispatch_tick=%llu source=%s command_f=%.3f command_s=%.3f command_u=%.3f buttons=%u impulse=%u msec=%u origin=%.2f,%.2f,%.2f velocity=%.2f,%.2f,%.2f onground=%u intent=%s route=%s reason=%s roam_goal=%u roam_candidates=%zu roam_generation=%llu",
+        "[ASTRABOT][DEBUG][MOVEMENT] kind=Correlation correlated=%u map=%u round=%llu tick=%llu actor=%u:%u agent=%u input_reason=%s stale=%s validation=%s current_area_held=%u current_area=%u elapsed_us=%llu frame_delta_us=%llu weapon=%u weapon_class=%u update_client_data=%u weapon_data=%u update_called=%u weapon_called=%u accepted=%zu decision=%u decision_map=%u decision_round=%llu decision_tick=%llu runtime_reject=%u nav=%s nav_reason=%s nav_map=%u nav_round=%llu nav_tick=%llu nav_decision_tick=%llu queue=%u queue_error=%u queue_tick=%llu dispatch=%u dispatch_error=%u dispatch_command_tick=%llu dispatch_tick=%llu source=%s command_f=%.3f command_s=%.3f command_u=%.3f buttons=%u impulse=%u msec=%u origin=%.2f,%.2f,%.2f velocity=%.2f,%.2f,%.2f onground=%u intent=%s route=%s reason=%s roam_goal=%u roam_candidates=%zu roam_generation=%llu",
         unsigned(inputStampMatch),
         unsigned(correlation.map.value),
         static_cast<unsigned long long>(correlation.round.value),
@@ -572,6 +659,9 @@ void ConsoleDebug::runtimeCorrelationTrace(core::PlayerId player) noexcept {
         runtimeActorStaleReasonName(inputStampMatch ? correlation.staleReason : RuntimeActorStaleReason::None),
         runtimeInputValidationReasonName(inputStampMatch ? correlation.validation : RuntimeInputValidationReason::None),
         unsigned(inputStampMatch && correlation.currentAreaHeld),
+        unsigned(inputStampMatch ? correlation.currentArea.value : 0U),
+        static_cast<unsigned long long>(inputStampMatch ? correlation.elapsedUs : 0U),
+        static_cast<unsigned long long>(inputStampMatch ? correlation.frameDeltaUs : 0U),
         unsigned(inputStampMatch ? input.activeWeapon : 0U),
         unsigned(inputStampMatch ? input.activeClass : core::combat::WeaponSnapshot::WeaponClass::Unknown),
         unsigned(inputStampMatch && input.updateClientDataAvailable),
@@ -605,10 +695,37 @@ void ConsoleDebug::runtimeCorrelationTrace(core::PlayerId player) noexcept {
         inputStampMatch ? correlation.roamCandidateCount : 0U,
         static_cast<unsigned long long>(inputStampMatch ? correlation.roamGeneration : 0U));
     line(lineBuffer);
+    if (inputStampMatch && correlation.roamCandidateCount == 0U) {
+        char filterLine[512]{};
+        std::snprintf(filterLine, sizeof(filterLine),
+            "[ASTRABOT][DEBUG][NAV] kind=RoamCandidateFilter actor=%u:%u candidates=0 capacity=%u invalid=%u occupied=%u cooling=%u rejected=%u recent=%u missing=%u hull=%u",
+            unsigned(player.slot), unsigned(player.generation.value),
+            correlation.roamExcludedCapacity, correlation.roamExcludedInvalid,
+            correlation.roamExcludedOccupied, correlation.roamExcludedCooling,
+            correlation.roamExcludedRejected, correlation.roamExcludedRecent,
+            correlation.roamExcludedMissing, correlation.roamExcludedHull);
+        line(filterLine);
+    }
+    if (inputStampMatch) {
+        const auto count=(std::min)(correlation.roamExclusionCount,
+                                    correlation.roamExclusionSamples.size());
+        for (std::size_t i=0; i<count; ++i) {
+            const auto& sample=correlation.roamExclusionSamples[i];
+            char sampleLine[384]{};
+            std::snprintf(
+                sampleLine, sizeof(sampleLine),
+                "[ASTRABOT][DEBUG][NAV] kind=RoamCandidateExclusion actor=%u:%u sample=%u area=%u reason=%u remaining_us=%llu owner=%u:%u",
+                unsigned(player.slot), unsigned(player.generation.value),
+                unsigned(i), unsigned(sample.area.value), unsigned(sample.reason),
+                static_cast<unsigned long long>(sample.remainingUs),
+                unsigned(sample.owner.slot), unsigned(sample.owner.generation.value));
+            line(sampleLine);
+        }
+    }
 }
 
 void ConsoleDebug::movementTrace(const debug::MovementTrace& trace) noexcept {
-    if(!enabled_ || !trace.player.isValid() ||
+    if(debugLevel_ == 0 || !trace.player.isValid() ||
        trace.player.slot>host::kMaxClientSlots || lifecycle_==nullptr) return;
     const auto index=trace.player.slot-1U;
     auto& last=lastMovementLogCall_[index];
@@ -619,11 +736,36 @@ void ConsoleDebug::movementTrace(const debug::MovementTrace& trace) noexcept {
     if(!trace.engineCall && trace.outcome != debug::MovementTraceOutcome::Rejected) return;
     const bool actorChanged = trace.map != lastMovementMap_[index] ||
         trace.player != lastMovementPlayer_[index] || trace.agent != lastMovementAgent_[index];
+    if (actorChanged) {
+        physicalWindowUs_[index] = 0;
+        physicalDispatches_[index] = 0;
+        physicalNonZeroInputs_[index] = 0;
+        physicalSuppressed_[index] = 0;
+        physicalWindowActive_[index] = false;
+    }
+    if (debugLevel_ >= 2 && trace.engineCall && trace.physical.valid) {
+        if (physicalWindowActive_[index])
+            ++physicalSuppressed_[index];
+        else {
+            physicalWindowActive_[index] = true;
+            physicalStartX_[index] = trace.physical.beforeOriginX;
+            physicalStartY_[index] = trace.physical.beforeOriginY;
+            physicalStartZ_[index] = trace.physical.beforeOriginZ;
+        }
+        physicalWindowUs_[index] += trace.frameDeltaUs;
+        ++physicalDispatches_[index];
+        if (trace.forward != 0.0F || trace.side != 0.0F || trace.up != 0.0F ||
+            trace.buttons != 0U)
+            ++physicalNonZeroInputs_[index];
+    }
+    const bool physicalReady = debugLevel_ >= 2 && trace.engineCall &&
+        trace.physical.valid && physicalWindowUs_[index] >= 1'000'000U;
     const bool rejectionChanged = trace.outcome == debug::MovementTraceOutcome::Rejected &&
         (trace.outcome != lastOutcome || trace.error != lastError || sourceChanged || actorChanged);
     if(trace.outcome == debug::MovementTraceOutcome::Rejected && !rejectionChanged) return;
     if(!sourceChanged && trace.outcome != debug::MovementTraceOutcome::Rejected &&
-       trace.callCount!=0 && trace.callCount!=1 && trace.callCount<last+512) return;
+       trace.callCount!=0 && trace.callCount!=1 && trace.callCount<last+512 &&
+       !physicalReady) return;
     last=trace.callCount;
     lastSource=trace.source;
     lastOutcome=trace.outcome;
@@ -724,6 +866,51 @@ void ConsoleDebug::movementTrace(const debug::MovementTrace& trace) noexcept {
         decision ? decision->roamCandidateCount : 0U,
         static_cast<unsigned long long>(decision ? decision->roamGeneration : 0U));
     line(lineBuffer);
+    if (debugLevel_ >= 2 && trace.engineCall && trace.physical.valid &&
+        physicalWindowUs_[index] >= 1'000'000U) {
+        const double dx = static_cast<double>(trace.physical.afterOriginX) -
+            static_cast<double>(physicalStartX_[index]);
+        const double dy = static_cast<double>(trace.physical.afterOriginY) -
+            static_cast<double>(physicalStartY_[index]);
+        const double dz = static_cast<double>(trace.physical.afterOriginZ) -
+            static_cast<double>(physicalStartZ_[index]);
+        const double horizontal = std::sqrt(dx * dx + dy * dy);
+        const bool noProgress = physicalNonZeroInputs_[index] != 0U &&
+            horizontal < 1.0;
+        char physicalLine[1024]{};
+        std::snprintf(
+            physicalLine,
+            sizeof(physicalLine),
+            "[ASTRABOT][DEBUG][MOVEMENT] kind=DispatchObservation map=%u actor=%u:%u agent=%u sequence=%llu command_tick=%llu dispatch_tick=%llu window_us=%llu dispatches=%llu nonzero_inputs=%llu suppressed=%llu physical_valid=%u before_origin=%.3f,%.3f,%.3f after_origin=%.3f,%.3f,%.3f displacement=%.3f,%.3f,%.3f horizontal_displacement=%.3f no_progress=%u before_velocity=%.3f,%.3f,%.3f after_velocity=%.3f,%.3f,%.3f onground=%u->%u source=%s command=%.3f,%.3f,%.3f buttons=%u msec=%u",
+            unsigned(trace.map.value), unsigned(trace.player.slot),
+            unsigned(trace.player.generation.value), unsigned(trace.agent.value),
+            static_cast<unsigned long long>(trace.callCount),
+            static_cast<unsigned long long>(trace.commandTick.value),
+            static_cast<unsigned long long>(trace.dispatchTick.value),
+            static_cast<unsigned long long>(physicalWindowUs_[index]),
+            static_cast<unsigned long long>(physicalDispatches_[index]),
+            static_cast<unsigned long long>(physicalNonZeroInputs_[index]),
+            static_cast<unsigned long long>(physicalSuppressed_[index]),
+            1U,
+            static_cast<float>(physicalStartX_[index]),
+            static_cast<float>(physicalStartY_[index]),
+            static_cast<float>(physicalStartZ_[index]),
+            trace.physical.afterOriginX, trace.physical.afterOriginY,
+            trace.physical.afterOriginZ, dx, dy, dz, horizontal,
+            unsigned(noProgress), trace.physical.beforeVelocityX,
+            trace.physical.beforeVelocityY, trace.physical.beforeVelocityZ,
+            trace.physical.afterVelocityX, trace.physical.afterVelocityY,
+            trace.physical.afterVelocityZ, unsigned(trace.physical.beforeOnGround),
+            unsigned(trace.physical.afterOnGround), movementSourceName(trace.source),
+            double(trace.forward), double(trace.side), double(trace.up),
+            unsigned(trace.buttons), unsigned(trace.engineMsec));
+        line(physicalLine);
+        physicalWindowUs_[index] = 0;
+        physicalDispatches_[index] = 0;
+        physicalNonZeroInputs_[index] = 0;
+        physicalSuppressed_[index] = 0;
+        physicalWindowActive_[index] = false;
+    }
 }
 
 void ConsoleDebug::lifecycleSink(const debug::LifecycleTrace& trace) noexcept {

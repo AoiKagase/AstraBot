@@ -229,8 +229,14 @@ void testAllValidatedActorsExecute() {
     a::RuntimeActorInput secondary = fixture.input;
     secondary.player = {2, {1}};
     secondary.agent = {2};
-    secondary.world.stamp.actor = secondary.agent;
-    secondary.world.stamp.player = secondary.player;
+    secondary.world.stamp.agent = secondary.agent;
+    secondary.world.stamp.observer = secondary.player;
+    auto secondaryVisual = fixture.visual;
+    auto secondarySounds = fixture.sounds;
+    secondaryVisual.stamp = secondary.world.stamp;
+    secondarySounds.stamp = secondary.world.stamp;
+    secondary.world.visual = &secondaryVisual;
+    secondary.world.sounds = &secondarySounds;
     secondary.world.roster[1] = {secondary.player, p::Team::CounterTerrorist};
     secondary.team.members[0].player = secondary.player;
     secondary.team.members[0].agent = secondary.agent;
@@ -333,6 +339,103 @@ void testValidationReasonPropagation() {
            a::RuntimeInputValidationReason::ActionStampMismatch);
 }
 
+void testMissingActorAndAgentReplacementRetireCadence() {
+    Fixture fixture;
+    auto runtime = std::make_unique<a::RuntimeOrchestrator>();
+    assert(runtime->run(fixture.frame, &fixture.input, 1).executableCount == 1);
+    fixture.advance(1'000);
+    assert(runtime->run(fixture.frame, nullptr, 0).decisionCount == 0);
+    assert(!runtime->takeCombatDecision(fixture.player, fixture.agent, fixture.map,
+                                       fixture.round, fixture.tick));
+    fixture.advance(1'000);
+    const auto& resumed = runtime->run(fixture.frame, &fixture.input, 1);
+    assert(resumed.decisions[0].tacticalExecuted);
+    assert(resumed.decisions[0].actionExecuted);
+    fixture.advance(1'000);
+    ++fixture.agent.value;
+    fixture.refresh();
+    const auto& rebound = runtime->run(fixture.frame, &fixture.input, 1);
+    assert(rebound.decisions[0].tacticalExecuted);
+    assert(rebound.decisions[0].actionExecuted);
+}
+
+void testHealthObservationsAreContextBoundAndUnattributed() {
+    Fixture fixture;
+    a::RuntimeHealthObservation observation;
+    const auto sample = [&](float health, bool dead, int serial = 10) {
+        observation.observe(fixture.frame, fixture.player, fixture.agent, serial, health, dead);
+    };
+    sample(100, false);
+    assert(observation.known && observation.observedHealthLoss == 0);
+    fixture.advance(); sample(75, false);
+    assert(observation.observedHealthLoss == 25 && observation.deaths == 0);
+    sample(0, true); // Duplicate tick cannot invent a second observation.
+    assert(observation.health == 75 && observation.deaths == 0);
+    fixture.advance(); sample(0, true);
+    assert(observation.deaths == 1 && observation.observedHealthLoss == 100);
+    fixture.advance(); sample(0, true);
+    assert(observation.deaths == 1);
+    fixture.advance(); sample(100, false);
+    assert(observation.respawns == 1 && observation.observedHealthLoss == 100);
+    fixture.advance(); sample(10, false, 11);
+    assert(observation.deaths == 0 && observation.observedHealthLoss == 0);
+    ++fixture.round.value; fixture.advance(); sample(100, false, 11);
+    assert(observation.respawns == 0 && observation.observedHealthLoss == 0);
+    ++fixture.player.generation.value; fixture.advance(); sample(5, false, 11);
+    assert(observation.observedHealthLoss == 0);
+}
+
+void testActorCadenceAndInvalidInputIsolation() {
+    auto first = std::make_unique<Fixture>();
+    auto second = std::make_unique<Fixture>();
+    second->player = {2, {1}}; second->agent = {2}; second->refresh();
+    auto runtime = std::make_unique<a::RuntimeOrchestrator>();
+    auto run = [&]() -> const a::RuntimeFrameResult& {
+        const std::array<a::RuntimeActorInput, 2> inputs{first->input, second->input};
+        return runtime->run(first->frame, inputs.data(), inputs.size());
+    };
+    assert(run().executableCount == 2);
+    first->advance(1'000); second->advance(1'000);
+    second->input.actionObservation.routeSafe = false;
+    const auto& independent = run();
+    assert(!independent.decisions[0].actionExecuted);
+    assert(independent.decisions[1].actionExecuted);
+    assert(independent.decisions[0].knownEnemyCount == 0);
+    assert(independent.decisions[1].directEnemyCount == 0);
+    first->advance(1'000); second->advance(1'000);
+    second->input.action.tick.value += 1;
+    assert(run().executableCount == 1);
+    assert(runtime->decision(first->player)->executable);
+    assert(runtime->decision(second->player)->validation ==
+           a::RuntimeInputValidationReason::ActionStampMismatch);
+    assert(runtime->takeCombatDecision(first->player, first->agent, first->map,
+                                      first->round, first->tick));
+    assert(!runtime->takeCombatDecision(second->player, second->agent, second->map,
+                                       second->round, second->tick));
+}
+
+void testPerceptionDiagnosticsUseObservedEnemiesOnly() {
+    auto fixture = std::make_unique<Fixture>();
+    auto runtime = std::make_unique<a::RuntimeOrchestrator>();
+    const c::PlayerId enemy{3, {1}};
+    fixture->world.roster[2] = {enemy, p::Team::Terrorist};
+    fixture->input.world = fixture->world;
+    fixture->input.combat.world = fixture->world;
+    assert(runtime->run(fixture->frame, &fixture->input, 1).decisions[0].knownEnemyCount == 0);
+    fixture->advance();
+    fixture->world.roster[2] = {enemy, p::Team::Terrorist};
+    fixture->visual.count = 1;
+    fixture->visual.memories[0] = {enemy, {100, 0, 36}, fixture->now, 1.0,
+        {fixture->map, fixture->round, p::ObservationSource::Vision, 1,
+         fixture->now, fixture->now}};
+    fixture->input.world = fixture->world;
+    fixture->input.combat.world = fixture->world;
+    const auto& observed = runtime->run(fixture->frame, &fixture->input, 1);
+    assert(observed.decisions[0].knownEnemyCount == 1);
+    assert(observed.decisions[0].directEnemyCount == 1);
+    assert(observed.decisions[0].combat.target == enemy);
+}
+
 int main() {
 	{
 		auto fixtureStorage = std::make_unique<Fixture>();
@@ -358,6 +461,10 @@ int main() {
 	testOrderedCadenceAndOneShotCombat();
 	testInvalidAndGenerationReset();
 	testValidationReasonPropagation();
+    testMissingActorAndAgentReplacementRetireCadence();
+    testHealthObservationsAreContextBoundAndUnattributed();
+    testActorCadenceAndInvalidInputIsolation();
+    testPerceptionDiagnosticsUseObservedEnemiesOnly();
 	testDuplicateActorAndAgentAreRejected();
     testAllValidatedActorsExecute();
     testDeterministicReplayAndDisconnect();

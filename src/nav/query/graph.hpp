@@ -30,6 +30,14 @@ class NavGraph final {
             const enrichment::NavTraversalLinkSet &links,
             const NavGraphLimits &limits,
             const enrichment::NavEnrichmentLimits &enrichmentLimits) noexcept;
+    // Per-actor runtime overlay. The immutable NAV snapshot is shared and the
+    // returned graph owns only a bounded copy of the adjacency records plus
+    // validated, map-scoped external links.
+    static diagnostics::ReadResult<std::shared_ptr<const NavGraph>>
+    augment(std::shared_ptr<const NavGraph> base,
+            const enrichment::NavTraversalLinkSet &links,
+            const NavGraphLimits &limits,
+            const enrichment::NavEnrichmentLimits &enrichmentLimits) noexcept;
     std::size_t areaCount() const noexcept { return vertices_.size(); }
     std::size_t edgeCount() const noexcept { return edges_.size(); }
     std::size_t logicalBytes() const noexcept { return logicalBytes_; }

@@ -4,6 +4,7 @@
 #include "core/combat.hpp"
 
 #include <cassert>
+#include <cmath>
 
 namespace {
 
@@ -52,7 +53,18 @@ void testMovementAndCombatOwnersRemainSeparate() {
     const auto composed = c::composeCommand(decision(c::CombatAction::Fire), navigation);
     assert(composed);
     assert(composed.command.view == decision(c::CombatAction::Fire).view);
-    assert(composed.command.movement == navigation.movement);
+    const double radians =
+        (static_cast<double>(navigation.view.yaw) -
+         static_cast<double>(composed.command.view.yaw)) *
+        3.14159265358979323846 / 180.0;
+    const double cosine = std::cos(radians);
+    const double sine = std::sin(radians);
+    assert(std::abs(composed.command.movement.forward -
+                    static_cast<float>(navigation.movement.forward * cosine +
+                                       navigation.movement.side * sine)) < 0.001F);
+    assert(std::abs(composed.command.movement.side -
+                    static_cast<float>(-navigation.movement.forward * sine +
+                                       navigation.movement.side * cosine)) < 0.001F);
     assert(composed.command.impulse == navigation.impulse);
     assert(composed.command.msec == navigation.msec);
     assert(composed.command.weaponSelect == 0);

@@ -152,4 +152,47 @@ void microTransitPolicy() {
     assert(noSpan.portalReason==corridor::PortalFailureReason::NoPortalSpan);
 }
 }
-int main() { cardinalAndSlopes(); invalidAndBudgets(); lookAheadAndReplay(); externalOwnership(); microTransitPolicy(); }
+void boundaryAndJumpHints() {
+    auto a=square(5,1175,0), b=square(1665,1275,37.5F), c=square(9,1300,0);
+    b.extent.southEast={1300,62.5F,0}; b.attributes=2;
+    a.targets[1]={1665}; b.targets[1]={9};
+    auto g=graph({a,b,c}); auto r=route(*g,5,9);
+    const auto path=corridor::Corridor::build(*g,r,{16,16},limits,corridor::PortalPolicy::AllowMicroTransit);
+    assert(path);
+    const auto& first=path.value->transitions()[0];
+    assert(first.edge.traversal==model::NavTraversalKind::Walk);
+    assert(first.effectiveTraversal==model::NavTraversalKind::Jump);
+    assert(first.targetFit==corridor::AreaFit::MicroTransit);
+    assert(path.value->target(0,{1187.742,50,36},1)); // centre supported; hull crosses NAV boundary
+    for(std::uint8_t bad : {std::uint8_t{10},std::uint8_t{3},std::uint8_t{18}}) {
+        b.attributes=bad; auto rejectedGraph=graph({a,b,c});
+        assert(!corridor::Corridor::build(*rejectedGraph,route(*rejectedGraph,5,9),{16,16},limits,
+            corridor::PortalPolicy::AllowMicroTransit));
+    }
+    b.attributes=6; auto preciseJump=graph({a,b,c});
+    const auto precisePath=corridor::Corridor::build(*preciseJump,route(*preciseJump,5,9),
+        {16,16},limits,corridor::PortalPolicy::AllowMicroTransit);
+    assert(precisePath && precisePath.value->transitions()[0].effectiveTraversal==
+        model::NavTraversalKind::Jump);
+}
+void lookAheadStopsBeforeDerivedTraversal() {
+    for(bool drop : {false,true}) {
+        auto a=square(1,0,0), b=square(2,100,0), c=square(3,100,drop ? 125.0F:100.0F);
+        a.targets[1]={2}; b.targets[2]={3};
+        if(drop) {
+            c.extent.northWest.z=c.extent.southEast.z=-74;
+            c.extent.northEastZ=c.extent.southWestZ=-74;
+        } else c.attributes=2;
+        auto g=graph({a,b,c});
+        const auto path=corridor::Corridor::build(*g,route(*g,1,3),{16,16},limits,
+            corridor::PortalPolicy::AllowMicroTransit); assert(path);
+        assert(path.value->transitions()[0].effectiveTraversal==model::NavTraversalKind::Walk);
+        assert(path.value->transitions()[1].effectiveTraversal==
+            (drop ? model::NavTraversalKind::Drop:model::NavTraversalKind::Jump));
+        const auto immediate=path.value->target(0,{50,30,36},1);
+        const auto ahead=path.value->target(0,{50,30,36},3);
+        assert(immediate && ahead && ahead.value->x==immediate.value->x && ahead.value->y==immediate.value->y);
+        assert(ahead.value->y==30);
+    }
+}
+int main() { cardinalAndSlopes(); invalidAndBudgets(); lookAheadAndReplay(); externalOwnership(); microTransitPolicy(); boundaryAndJumpHints(); lookAheadStopsBeforeDerivedTraversal(); }

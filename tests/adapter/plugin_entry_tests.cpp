@@ -722,6 +722,31 @@ void testConsoleDebugCommandAndTracePrefixes() {
     assert(gLogLines[5].rfind("[ASTRABOT][DEBUG][REMOVAL] ", 0) == 0);
     assert(gLogLines[5].find("outcome=KickQueued") != std::string::npos);
 
+    runServerCommand({"astrabot_debug", "2"}, "astrabot_debug");
+    gLogLines.clear();
+    movement.frameDeltaUs = 1'000'000U;
+    movement.physical.valid = true;
+    movement.physical.beforeOriginX = 10.0F;
+    movement.physical.beforeOriginY = 20.0F;
+    movement.physical.beforeOriginZ = 30.0F;
+    movement.physical.afterOriginX = 10.0F;
+    movement.physical.afterOriginY = 20.0F;
+    movement.physical.afterOriginZ = 30.0F;
+    movement.callCount = 2;
+    astrabot::adapter::metamod::ConsoleDebug::instance().movementTrace(movement);
+    assert(gLogLines.size() == 2);
+    assert(gLogLines.back().find("kind=DispatchObservation") != std::string::npos);
+    assert(gLogLines.back().find("physical_valid=1") != std::string::npos);
+
+    gLogLines.clear();
+    movement.player = {2, {7}};
+    movement.callCount = 1;
+    astrabot::adapter::metamod::ConsoleDebug::instance().movementTrace(movement);
+    movement.callCount = 2;
+    astrabot::adapter::metamod::ConsoleDebug::instance().movementTrace(movement);
+    assert(gLogLines.back().find("actor=2:7") != std::string::npos);
+    assert(gLogLines.back().find("kind=DispatchObservation") != std::string::npos);
+
     runServerCommand({"astrabot_debug", "9"}, "astrabot_debug");
     assert(gLogLines.back().find("error=InvalidArguments") != std::string::npos);
     gLogLines.clear();

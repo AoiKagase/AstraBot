@@ -35,6 +35,70 @@ NavGraph::compose(std::shared_ptr<const model::NavMeshSnapshot> snapshot,
 }
 
 diagnostics::ReadResult<std::shared_ptr<const NavGraph>>
+NavGraph::augment(std::shared_ptr<const NavGraph> base,
+                  const enrichment::NavTraversalLinkSet &links,
+                  const NavGraphLimits &limits,
+                  const enrichment::NavEnrichmentLimits &enrichmentLimits) noexcept {
+    using Result = diagnostics::ReadResult<std::shared_ptr<const NavGraph>>;
+    using K = diagnostics::NavErrorKind;
+    using F = diagnostics::NavField;
+    if (!base) return Result::failure(detail::graphError(K::InvalidInput));
+    auto budget=enrichment::detail::workingBudget(base->areaCount(),links.links.size(),enrichmentLimits);
+    if (!budget.isNone()) return Result::failure(budget);
+    if (base->edgeCount()>limits.maxEdges || links.links.size()>limits.maxEdges-base->edgeCount())
+        return Result::failure(detail::graphError(K::CountLimitExceeded,F::ConnectionCount));
+    const enrichment::NavMapFingerprint emptyFingerprint{};
+    if (links.fingerprint != emptyFingerprint)
+        return Result::failure(detail::graphError(K::InvalidValue,F::LinkFingerprint));
+    auto error=enrichment::detail::validate(*base->snapshot_,emptyFingerprint,links,false);
+    if (!error.isNone()) return Result::failure(error);
+    const auto total=base->edgeCount()+links.links.size();
+    std::size_t bytes=sizeof(NavGraph);
+    auto charge=[&](std::size_t count,std::size_t size) {
+        if (count>std::numeric_limits<std::size_t>::max()/size) return false;
+        if (bytes>std::numeric_limits<std::size_t>::max()-count*size) return false;
+        bytes+=count*size; return true;
+    };
+    if (!charge(base->areaCount(),sizeof(Vertex)) || !charge(total,sizeof(Edge)) ||
+        bytes>limits.maxGraphBytes)
+        return Result::failure(detail::graphError(K::CountLimitExceeded));
+    try {
+        std::shared_ptr<NavGraph> graph(new NavGraph);
+        graph->snapshot_=base->snapshot_;
+        graph->vertices_=base->vertices_;
+        graph->edges_=base->edges_;
+        graph->edges_.reserve(total);
+        for (const auto &link:links.links) {
+            const auto target=graph->find(link.to);
+            if (!target) return Result::failure(detail::graphError(K::DanglingReference,F::LinkTo));
+            graph->edges_.push_back({{link.from,link.to,0,link.traversal,link},*target});
+        }
+        std::sort(graph->edges_.begin(),graph->edges_.end(),[](const Edge &a,const Edge &b) {
+            const auto &x=a.selected; const auto &y=b.selected;
+            if (x.source!=y.source) return x.source<y.source;
+            if (x.external.has_value()!=y.external.has_value()) return !x.external;
+            if (x.external) return enrichment::detail::identity(*x.external)<
+                                      enrichment::detail::identity(*y.external);
+            return std::tie(x.direction,x.target,x.traversal)<
+                   std::tie(y.direction,y.target,y.traversal);
+        });
+        std::size_t cursor=0;
+        for (auto &vertex:graph->vertices_) {
+            vertex.begin=cursor;
+            const auto id=graph->snapshot_->areas()[vertex.snapshotIndex].id;
+            while (cursor<graph->edges_.size() && graph->edges_[cursor].selected.source==id) ++cursor;
+            vertex.end=cursor;
+        }
+        graph->logicalBytes_=bytes;
+        return Result::success(std::move(graph));
+    } catch (const std::bad_alloc &) {
+        return Result::failure(detail::graphError(K::AllocationFailure));
+    } catch (const std::length_error &) {
+        return Result::failure(detail::graphError(K::AllocationFailure));
+    }
+}
+
+diagnostics::ReadResult<std::shared_ptr<const NavGraph>>
 NavGraph::buildImpl(std::shared_ptr<const model::NavMeshSnapshot> snapshot,
                     const NavGraphLimits &limits,
                     const enrichment::NavMapFingerprint *expected,

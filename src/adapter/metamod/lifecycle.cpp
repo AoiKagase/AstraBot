@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 // Copyright (c) 2026 AstraBot contributors.
 
+#include <cstdio> // Must precede the legacy SDK's snprintf macro.
 #include "adapter/metamod/lifecycle.hpp"
 #include "adapter/cstrike/weapon_protocol.hpp"
 #include "adapter/metamod/console_debug.hpp"
@@ -11,6 +12,10 @@
 #include <cmath>
 #include <cstring>
 #include <event_flags.h>
+
+#ifdef snprintf
+#undef snprintf
+#endif
 
 namespace astrabot::adapter::metamod {
 namespace {
@@ -246,6 +251,8 @@ bool LifecycleCoordinator::refreshUserMessageIds(bool logPending) noexcept {
 void LifecycleCoordinator::reset() noexcept {
     runtimeOwnedActor_ = {};
     runtime_.reset();
+    runtimeHealth_.fill({});
+    mapNavLoadStatus_ = {};
     runtimeInputBuildStatus_ = {};
     runtimeInputBuildStatuses_.fill({});
     runtimeCorrelation_.fill({});
@@ -255,6 +262,7 @@ void LifecycleCoordinator::reset() noexcept {
     sound_.reset();
     vision_.reset();
     teams_ = {}; round_ = {1}; identityDiagnostics_ = {}; lastRoundTick_ = {}; lastRoundTime_ = -1;
+    lastBuyRound_.fill({});
     navConsole_.reset(); movement_.reset();
     commandContextActive_=false; commandPlayer_={}; commandArgc_=0;
     commandArgv0_={}; commandArgv1_={}; commandArgs_={};
@@ -287,21 +295,93 @@ void LifecycleCoordinator::serverActivate(int clientMax) noexcept {
         ? host::LifecycleResult::rejected(host::HostError::InvalidLifecycle)
         : registry_.activateMap(static_cast<std::uint16_t>(clientMax));
     if(result.changed()) {
+        // Retire both route producers and transport before any current-map
+        // loader callback. A failed load must never leave an old graph live.
+        navConsole_.invalidate(nav::runtime::SessionReason::MapChanged);
+        movement_.resetMap();
+        runtimeHealth_.fill({});
+        runtimeCorrelation_.fill({});
+        runtimeInputBuildStatuses_.fill({});
+        runtimeInputBuildStatus_ = {};
+        runtimeOwnedActor_ = {};
         clearAllCombatState();
         runtime_.beginMap(registry_.mapGeneration());
         vision_.reset();
         sound_.beginMap(registry_.mapGeneration());
         (void)teams_.activate(registry_.mapGeneration()); round_ = {1}; lastRoundTick_ = {}; lastRoundTime_ = -1;
+        lastBuyRound_.fill({});
         (void)advanceVisualEffects();
         ++status_.mapActivations;
         if(status_.mapActivations>1) ++status_.mapReplays;
-        movement_.resetMap(); clients_[0].fake.queuePrimaryCreate();
+        clients_[0].fake.queuePrimaryCreate();
+        loadMapNavigation();
     }
     emit(host::LifecycleEventKind::MapActivated,result);
+}
+
+void LifecycleCoordinator::loadMapNavigation() noexcept {
+    const auto map = registry_.mapGeneration();
+    if (!registry_.isMapActive() || !map.isValid() || mapNavLoadStatus_.map == map) return;
+    // Mark the attempt before calling the host: reentrant activation must
+    // not retry, and StartFrame never retries a missing/invalid file.
+    mapNavLoadStatus_ = {};
+    mapNavLoadStatus_.map = map;
+    const auto current = [&]() noexcept {
+        return registry_.isMapActive() && registry_.mapGeneration() == map;
+    };
+    const auto finish = [&](MapNavLoadReason reason, const char* name) noexcept {
+        if (!current()) return;
+        mapNavLoadStatus_.reason = reason;
+        if (utilityFunctions_ && utilityFunctions_->pfnLogConsole) {
+            char text[1400]{};
+            std::snprintf(text, sizeof(text),
+                "astrabot nav_auto map=%u status=%s path=%s retry=explicit_load",
+                unsigned(map.value), name, mapNavLoadStatus_.path.data());
+            utilityFunctions_->pfnLogConsole(PLID, "%s", text);
+        }
+    };
+    if (!engineFunctions_ || !engineFunctions_->pfnSzFromIndex || !engineGlobals_) {
+        finish(MapNavLoadReason::MissingMapName, "MissingMapName"); return;
+    }
+    const char* name = engineFunctions_->pfnSzFromIndex(engineGlobals_->mapname);
+    if (!current()) return;
+    if (!name || !*name) { finish(MapNavLoadReason::MissingMapName, "MissingMapName"); return; }
+    std::array<char, 64> mapName{};
+    std::size_t length = 0;
+    for (; length < mapName.size() && name[length] != '\0'; ++length) {
+        const unsigned char c = static_cast<unsigned char>(name[length]);
+        if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+              (c >= '0' && c <= '9') || c == '_' || c == '-')) {
+            finish(MapNavLoadReason::InvalidMapName, "InvalidMapName"); return;
+        }
+        mapName[length] = static_cast<char>(c);
+    }
+    if (length == mapName.size()) {
+        finish(MapNavLoadReason::InvalidMapName, "InvalidMapName"); return;
+    }
+    if (!engineFunctions_->pfnGetGameDir) {
+        finish(MapNavLoadReason::MissingGameDirectory, "MissingGameDirectory"); return;
+    }
+    std::array<char, 1024> directory{};
+    engineFunctions_->pfnGetGameDir(directory.data());
+    if (!current()) return;
+    if (directory[0] == '\0' || std::memchr(directory.data(), '\0', directory.size()) == nullptr) {
+        finish(MapNavLoadReason::InvalidGameDirectory, "InvalidGameDirectory"); return;
+    }
+    const int written = std::snprintf(mapNavLoadStatus_.path.data(), mapNavLoadStatus_.path.size(),
+        "%s/maps/%s.nav", directory.data(), mapName.data());
+    if (written < 0 || static_cast<std::size_t>(written) >= mapNavLoadStatus_.path.size()) {
+        finish(MapNavLoadReason::InvalidGameDirectory, "InvalidGameDirectory"); return;
+    }
+    const bool loaded = navConsole_.loadForMap(mapNavLoadStatus_.path.data(), map, *this);
+    if (!current()) return;
+    finish(loaded ? MapNavLoadReason::Ready : MapNavLoadReason::LoadFailed,
+           loaded ? "Ready" : "LoadFailed");
 }
 void LifecycleCoordinator::serverDeactivate() noexcept {
     runtimeOwnedActor_ = {};
     runtime_.reset();
+    runtimeHealth_.fill({});
     runtimeInputBuildStatus_ = {};
     runtimeInputBuildStatuses_.fill({});
     runtimeCorrelation_.fill({});
@@ -347,6 +427,7 @@ void LifecycleCoordinator::clientDisconnect(edict_t* entity) noexcept {
     visualEffects_.forget(player);
     sound_.forget(player);
     movement_.forget(player);
+    if (player.slot <= lastBuyRound_.size()) lastBuyRound_[player.slot - 1U] = {};
     clearCombatState(player);
     runtime_.onDisconnect(player);
     if(client) {
@@ -402,6 +483,7 @@ RemovalResult LifecycleCoordinator::remove(core::PlayerId player) noexcept {
     visualEffects_.forget(player);
     teams_.forget(player);
     movement_.forget(player);
+    if (player.slot <= lastBuyRound_.size()) lastBuyRound_[player.slot - 1U] = {};
     clearCombatState(player);
     runtime_.onDisconnect(player);
     navConsole_.invalidateActor(player,nav::runtime::SessionReason::Disconnected);
@@ -459,7 +541,15 @@ void LifecycleCoordinator::startFrame() noexcept {
     world_.beginUpdate();
     const auto result=registry_.startFrame(); emit(host::LifecycleEventKind::FrameStarted,result);
     if(!result.changed()) return;
-    movement_.beginFrame();
+    std::optional<std::uint64_t> engineFrameDeltaUs;
+    if (engineGlobals_ != nullptr &&
+        std::isfinite(static_cast<double>(engineGlobals_->frametime)) &&
+        engineGlobals_->frametime >= 0.0F &&
+        static_cast<double>(engineGlobals_->frametime) < 18446744073709.55) {
+        engineFrameDeltaUs = static_cast<std::uint64_t>(
+            static_cast<double>(engineGlobals_->frametime) * 1000000.0);
+    }
+    movement_.beginFrame(engineFrameDeltaUs);
     const auto map=registry_.mapGeneration();
     const auto tick=registry_.currentTick();
 
@@ -474,6 +564,21 @@ void LifecycleCoordinator::startFrame() noexcept {
         const auto player=client.fake.activePlayer();
         if(!player.isValid()) continue;
         auto* entity = client.fake.entityFor(player);
+        if (player.slot <= runtimeHealth_.size()) {
+            auto& observation = runtimeHealth_[player.slot - 1U];
+            if (entity && !entity->free && !client.fake.removalPending() &&
+                client.join.phase() == cstrike::JoinPhase::Joined) {
+                RuntimeFrame observedFrame{};
+                observedFrame.map = map; observedFrame.round = round_;
+                observedFrame.tick = tick;
+                observedFrame.nowMicros = engineTimeMicros(engineGlobals_);
+                observation.observe(observedFrame, player,
+                    agents_.findByPlayer(player).agent, entity->serialnumber,
+                    entity->v.health, entity->v.deadflag != DEAD_NO || entity->v.health <= 0);
+            } else {
+                observation = {};
+            }
+        }
         if (entity != nullptr && entity->v.deadflag != DEAD_NO) {
             client.combat = {};
             runtime_.onDeath(player);
@@ -498,6 +603,11 @@ void LifecycleCoordinator::startFrame() noexcept {
         if(action.kind==cstrike::JoinActionKind::SendMenuSelect && client.fake.activePlayer()==player) {
             const bool dispatched=dispatchMenu(client,action.selection);
             if(client.join.player()==player) handleJoinAction(client,client.join.commandCompleted(dispatched));
+        }
+        if (client.join.phase() == cstrike::JoinPhase::Joined &&
+            entity != nullptr && !entity->free && entity->v.deadflag == DEAD_NO &&
+            std::isfinite(entity->v.health) && entity->v.health > 0.0F) {
+            dispatchRoundBuy(client);
         }
     }
     for(auto& client:clients_) {
@@ -661,11 +771,28 @@ void LifecycleCoordinator::startFrame() noexcept {
         correlation.connected = registry_.isConnected(player.slot) && registry_.currentPlayer(player.slot) == player;
         correlation.removalPending = client.fake.removalPending();
         correlation.alive = entity != nullptr && !entity->free && entity->v.deadflag == DEAD_NO;
+        correlation.elapsedUs = movement_.frameDeltaUs();
+        correlation.frameDeltaUs = movement_.frameDeltaUs();
         const auto& input = runtimeInputBuildStatuses_[player.slot - 1U];
         correlation.inputTick = input.player == player ? input.tick : core::TickId{};
         correlation.inputReason = input.player == player ? input.reason : RuntimeInputBuildReason::None;
         correlation.staleReason = input.player == player ? input.staleReason : RuntimeActorStaleReason::None;
         correlation.currentAreaHeld = input.player == player && input.currentAreaHeld;
+        if (const auto navState = navConsole_.runtimeState(*this, player);
+            navState) {
+            if (navState->currentArea)
+                correlation.currentArea = *navState->currentArea;
+            correlation.roamExcludedCapacity = navState->roamExcludedCapacity;
+            correlation.roamExcludedInvalid = navState->roamExcludedInvalid;
+            correlation.roamExcludedOccupied = navState->roamExcludedOccupied;
+            correlation.roamExcludedCooling = navState->roamExcludedCooling;
+            correlation.roamExcludedRejected = navState->roamExcludedRejected;
+            correlation.roamExcludedRecent = navState->roamExcludedRecent;
+            correlation.roamExcludedMissing = navState->roamExcludedMissing;
+            correlation.roamExcludedHull = navState->roamExcludedHull;
+            correlation.roamExclusionSamples = navState->roamExclusionSamples;
+            correlation.roamExclusionCount = navState->roamExclusionCount;
+        }
         if (const auto* decision = runtime_.decision(player)) {
             correlation.decisionTick = decision->team.shared.tick.isValid() ? decision->team.shared.tick : tick;
             correlation.validation = decision->validation;
@@ -1198,6 +1325,94 @@ bool LifecycleCoordinator::dispatchMenu(ClientState& client,std::uint8_t selecti
     for(auto& pending:clients_) if(pending.cleanupPending) cleanupFailedJoin(pending,pending.cleanupError);
     return true;
 }
+bool LifecycleCoordinator::dispatchBuyCommand(
+    core::PlayerId player, const char* item) noexcept {
+    if (commandContextActive_ || item == nullptr || item[0] == '\0' ||
+        !registry_.isMapActive() || !hookedGameDllFunctions_ ||
+        !hookedGameDllFunctions_->pfnClientCommand) {
+        return false;
+    }
+    auto* entity = entityFor(player);
+    if (entity == nullptr || entity->free || !player.isValid() ||
+        player.slot > host::kMaxClientSlots ||
+        !registry_.isConnected(player.slot) ||
+        registry_.currentPlayer(player.slot) != player ||
+        !engineFunctions_ || !engineFunctions_->pfnIndexOfEdict ||
+        engineFunctions_->pfnIndexOfEdict(entity) != player.slot) {
+        return false;
+    }
+    if (engineFunctions_->pfnPEntityOfEntIndex &&
+        engineFunctions_->pfnPEntityOfEntIndex(player.slot) != entity) {
+        return false;
+    }
+    const auto* join = joinState(player);
+    if (join == nullptr || join->phase() != cstrike::JoinPhase::Joined ||
+        entity->v.deadflag != DEAD_NO) {
+        return false;
+    }
+    copyCommandWord(commandArgv0_, "buy");
+    copyCommandWord(commandArgv1_, item);
+    commandArgs_ = {};
+    copyCommandWord(commandArgs_, item);
+    commandArgc_ = 2;
+    commandPlayer_ = player;
+    commandContextActive_ = true;
+    {
+        CommandContextGuard guard{commandContextActive_};
+        hookedGameDllFunctions_->pfnClientCommand(entity);
+    }
+    commandPlayer_ = {};
+    commandArgc_ = 0;
+    return true;
+}
+
+void LifecycleCoordinator::dispatchRoundBuy(ClientState& client) noexcept {
+    const auto player = client.fake.activePlayer();
+    if (!player.isValid() || player.slot > lastBuyRound_.size() ||
+        lastBuyRound_[player.slot - 1U] == round_) {
+        return;
+    }
+    const auto* affiliation = teams_.find(player);
+    if (affiliation == nullptr ||
+        (affiliation->team != core::perception::Team::Terrorist &&
+         affiliation->team != core::perception::Team::CounterTerrorist)) {
+        return;
+    }
+
+    // Keep the sequence deliberately bounded. Counter-Strike validates money,
+    // buy-zone, buy-time, and weapon availability for every command; rejected
+    // commands are harmless and the trace makes the attempt visible per
+    // actor/round while live inventory observations are not yet wired.
+    const char* commands[9]{};
+    commands[0] = affiliation->team == core::perception::Team::CounterTerrorist
+        ? "m4a1" : "ak47";
+    commands[1] = "vesthelm";
+    commands[2] = "deagle";
+    commands[3] = "primammo";
+    commands[4] = "secammo";
+    commands[5] = "hegren";
+    commands[6] = "flash";
+    commands[7] = "sgren";
+    commands[8] = "defuser";
+    const std::size_t commandCount =
+        affiliation->team == core::perception::Team::CounterTerrorist ? 9 : 8;
+
+    std::size_t sent = 0;
+    for (std::size_t i = 0; i < commandCount; ++i) {
+        if (dispatchBuyCommand(player, commands[i])) ++sent;
+    }
+    lastBuyRound_[player.slot - 1U] = round_;
+    if (utilityFunctions_ && utilityFunctions_->pfnLogConsole) {
+        char text[192]{};
+        std::snprintf(text, sizeof(text),
+            "astrabot buy actor=%u:%u round=%llu attempted=%u sent=%u",
+            unsigned(player.slot), unsigned(player.generation.value),
+            static_cast<unsigned long long>(round_.value),
+            static_cast<unsigned>(commandCount), static_cast<unsigned>(sent));
+        utilityFunctions_->pfnLogConsole(PLID, "%s", text);
+    }
+}
+
 void LifecycleCoordinator::onMessage(
     void* context,
     const cstrike::MessageEvent& event) noexcept {
