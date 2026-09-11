@@ -1,35 +1,34 @@
-# State
+# State Status: verifying — ZBot-compatible movement implementation committed; live acceptance pending
 
-Status: verifying — source implementation complete, live acceptance pending
 Milestone: P12
-Task: All-BOT autonomous movement, Jump/Drop, combat and round recovery
-
-Goal:
-Every managed BOT independently roams, perceives and fights enemy BOTs, recovers from route failures, and resumes after the next round spawn. Actual movement, damage and death remain live acceptance requirements.
+Task: ZBot-equivalent NAV movement with bounded shortcut, Jump/Drop, collision recovery, and combat regression
+Goal: Every managed BOT independently roams, follows a validated route, handles stairs/Jump/Drop/obstacles, and resumes after round/map transitions. Damage/death/combat remain live acceptance requirements.
 
 Relevant:
-- docs/plans/p12-autonomous-combat.md
-- src/nav/runtime/execution.hpp
+- docs/plans/p12-zbot-movement-implementation.md
 - src/adapter/cstrike/nav/console.cpp
 - src/adapter/cstrike/nav/motion.cpp
-- src/nav/local/walk.hpp
-- src/adapter/metamod/runtime_orchestrator.cpp
+- src/nav/corridor/corridor.cpp
+- src/nav/local/walk.cpp
+- src/nav/local/walk_jump.cpp
+- src/nav/query/graph.cpp
 
 Done:
-- User approved the full autonomous-combat plan and implementation delegation on 2026-09-10.
-- Starting branch codex/p12-console-debug, HEAD c16d431; unrelated .gitignore and local/untracked inputs preserved.
-- Pre-edit FocalSpan status ready/fresh and architecture query succeeded. Graph metadata was stale; source inspection followed graph discovery.
-- Integrated separate search/motion execution state, directed-edge exclusions, 250ms search backoff and 2s failed-goal cooldown.
-- Integrated boundary-compatible Walk, attributed micro Jump, guarded Drop (128-unit fall/32-unit gap), actor retirement/combat diagnostics, and current-map NAV autoload once per ServerActivate generation.
-
-Next:
-- With applicable deployment/server authority, validate 1v1, 2v2 and operational BOT count for at least ten minutes/three rounds, including changelevel and next-round recovery.
-- After explicit user-confirmed live PASS, compile/run focused regression tests and the canonical gate according to the existing verification policy.
-
-Blocked:
-- CTest configurations/builds, CTest and canonical verification remain prohibited until explicit user-confirmed live PASS.
-- No HLDS/ReHLDS operations or DLL deployment are performed as part of source editing.
+- Implemented and committed the approved P12 ZBot-compatible NAV/movement plan as 7e316c5.
+- Added runtime route-local overlay links with bounded physical queries, active-session graph use, route-step traffic reservation, precision traversal handling, step-up probing, external Jump/Drop endpoint handling, and bounded fall-risk checks.
+- Added focused regression source changes for overlay ownership and precise/Jump corridor behavior; tests have not been built or run.
+- FocalSpan status is fresh/ready after the implementation update.
+- Tests-OFF x86 Release adapter rebuilt and six exports verified.
+- Deployed DLL: D:\SteamCMD\cstrike_rehlds\cstrike\addons\astrabot\dlls\astrabot_mm.dll.
 
 Verified:
-- Tests-OFF x86 Release DLL target built successfully; six required exports verified. Artifact SHA-256 FB2FDAF210DD2634231FFE51DAABD839C4FAC631B8323936D741E801AD0EDB13. Not deployed.
-- Initial FocalSpan and git diff --check passed; tests remain unbuilt/unexecuted. P12-wide acceptance and Finish are not declared.
+- Release DLL SHA-256: 96356FA139764D02EE2C9C677F98EE75A1EB8028C5911989EF57DF701BCEC79B.
+- Existing unrelated .gitignore and untracked work files remain unstaged and preserved.
+
+Next:
+- Restart/changelevel the ReHLDS server so the deployed DLL is loaded, then capture qconsole.log for 1v1, 2v2, configured BOT count, stairs/Jump/Drop/obstacle recovery, round/map transitions, damage/death, and combat regression.
+- After explicit user-confirmed live PASS only, build/run focused regression tests and then the canonical gate.
+
+Blocked:
+- CTest, test-target builds/runs, and canonical verification remain prohibited until explicit real-device PASS.
+- P12 live acceptance is not yet established; do not report P12 or project Finish as complete.
