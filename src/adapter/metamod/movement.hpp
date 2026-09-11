@@ -158,7 +158,8 @@ private:
         std::uint64_t callCount=0,
         std::uint32_t edictSerial=0,
         float forward=0.0F, float side=0.0F, float up=0.0F,
-        std::uint16_t buttons=0, std::uint8_t impulse=0) noexcept;
+        std::uint16_t buttons=0, std::uint8_t impulse=0,
+        const debug::MovementPhysicalSample* physical=nullptr) noexcept;
 
     enginefuncs_t* engineFunctions_{nullptr};
     host::PlayerRegistry* registry_{nullptr};

@@ -790,6 +790,8 @@ void LifecycleCoordinator::startFrame() noexcept {
             correlation.roamExcludedRecent = navState->roamExcludedRecent;
             correlation.roamExcludedMissing = navState->roamExcludedMissing;
             correlation.roamExcludedHull = navState->roamExcludedHull;
+            correlation.roamExclusionSamples = navState->roamExclusionSamples;
+            correlation.roamExclusionCount = navState->roamExclusionCount;
         }
         if (const auto* decision = runtime_.decision(player)) {
             correlation.decisionTick = decision->team.shared.tick.isValid() ? decision->team.shared.tick : tick;

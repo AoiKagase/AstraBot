@@ -86,6 +86,8 @@ struct RuntimeActorCorrelation final {
     std::uint32_t roamExcludedRecent{0};
     std::uint32_t roamExcludedMissing{0};
     std::uint32_t roamExcludedHull{0};
+    std::array<cstrike::RoamExclusionSample, 4> roamExclusionSamples{};
+    std::size_t roamExclusionCount{0};
     std::uint64_t roamGeneration{0};
 };
 

@@ -66,6 +66,14 @@ private:
     std::array<core::MapGeneration, host::kMaxClientSlots> lastMovementMap_{};
     std::array<core::PlayerId, host::kMaxClientSlots> lastMovementPlayer_{};
     std::array<core::BotAgentId, host::kMaxClientSlots> lastMovementAgent_{};
+    std::array<std::uint64_t, host::kMaxClientSlots> physicalWindowUs_{};
+    std::array<std::uint64_t, host::kMaxClientSlots> physicalDispatches_{};
+    std::array<std::uint64_t, host::kMaxClientSlots> physicalNonZeroInputs_{};
+    std::array<std::uint64_t, host::kMaxClientSlots> physicalSuppressed_{};
+    std::array<bool, host::kMaxClientSlots> physicalWindowActive_{};
+    std::array<float, host::kMaxClientSlots> physicalStartX_{};
+    std::array<float, host::kMaxClientSlots> physicalStartY_{};
+    std::array<float, host::kMaxClientSlots> physicalStartZ_{};
 };
 
 } // namespace astrabot::adapter::metamod

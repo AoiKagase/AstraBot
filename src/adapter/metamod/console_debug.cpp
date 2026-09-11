@@ -8,6 +8,8 @@
 
 #include <cstdio>
 #include <cstring>
+#include <cmath>
+#include <algorithm>
 
 #ifdef snprintf
 #undef snprintf
@@ -357,6 +359,14 @@ void ConsoleDebug::reset() noexcept {
     lastMovementMap_.fill({});
     lastMovementPlayer_.fill({});
     lastMovementAgent_.fill({});
+    physicalWindowUs_.fill(0);
+    physicalDispatches_.fill(0);
+    physicalNonZeroInputs_.fill(0);
+    physicalSuppressed_.fill(0);
+    physicalWindowActive_.fill(false);
+    physicalStartX_.fill(0.0F);
+    physicalStartY_.fill(0.0F);
+    physicalStartZ_.fill(0.0F);
 }
 
 void ConsoleDebug::command() {
@@ -696,6 +706,22 @@ void ConsoleDebug::runtimeCorrelationTrace(core::PlayerId player) noexcept {
             correlation.roamExcludedMissing, correlation.roamExcludedHull);
         line(filterLine);
     }
+    if (inputStampMatch) {
+        const auto count=(std::min)(correlation.roamExclusionCount,
+                                    correlation.roamExclusionSamples.size());
+        for (std::size_t i=0; i<count; ++i) {
+            const auto& sample=correlation.roamExclusionSamples[i];
+            char sampleLine[384]{};
+            std::snprintf(
+                sampleLine, sizeof(sampleLine),
+                "[ASTRABOT][DEBUG][NAV] kind=RoamCandidateExclusion actor=%u:%u sample=%u area=%u reason=%u remaining_us=%llu owner=%u:%u",
+                unsigned(player.slot), unsigned(player.generation.value),
+                unsigned(i), unsigned(sample.area.value), unsigned(sample.reason),
+                static_cast<unsigned long long>(sample.remainingUs),
+                unsigned(sample.owner.slot), unsigned(sample.owner.generation.value));
+            line(sampleLine);
+        }
+    }
 }
 
 void ConsoleDebug::movementTrace(const debug::MovementTrace& trace) noexcept {
@@ -710,11 +736,36 @@ void ConsoleDebug::movementTrace(const debug::MovementTrace& trace) noexcept {
     if(!trace.engineCall && trace.outcome != debug::MovementTraceOutcome::Rejected) return;
     const bool actorChanged = trace.map != lastMovementMap_[index] ||
         trace.player != lastMovementPlayer_[index] || trace.agent != lastMovementAgent_[index];
+    if (actorChanged) {
+        physicalWindowUs_[index] = 0;
+        physicalDispatches_[index] = 0;
+        physicalNonZeroInputs_[index] = 0;
+        physicalSuppressed_[index] = 0;
+        physicalWindowActive_[index] = false;
+    }
+    if (debugLevel_ >= 2 && trace.engineCall && trace.physical.valid) {
+        if (physicalWindowActive_[index])
+            ++physicalSuppressed_[index];
+        else {
+            physicalWindowActive_[index] = true;
+            physicalStartX_[index] = trace.physical.beforeOriginX;
+            physicalStartY_[index] = trace.physical.beforeOriginY;
+            physicalStartZ_[index] = trace.physical.beforeOriginZ;
+        }
+        physicalWindowUs_[index] += trace.frameDeltaUs;
+        ++physicalDispatches_[index];
+        if (trace.forward != 0.0F || trace.side != 0.0F || trace.up != 0.0F ||
+            trace.buttons != 0U)
+            ++physicalNonZeroInputs_[index];
+    }
+    const bool physicalReady = debugLevel_ >= 2 && trace.engineCall &&
+        trace.physical.valid && physicalWindowUs_[index] >= 1'000'000U;
     const bool rejectionChanged = trace.outcome == debug::MovementTraceOutcome::Rejected &&
         (trace.outcome != lastOutcome || trace.error != lastError || sourceChanged || actorChanged);
     if(trace.outcome == debug::MovementTraceOutcome::Rejected && !rejectionChanged) return;
     if(!sourceChanged && trace.outcome != debug::MovementTraceOutcome::Rejected &&
-       trace.callCount!=0 && trace.callCount!=1 && trace.callCount<last+512) return;
+       trace.callCount!=0 && trace.callCount!=1 && trace.callCount<last+512 &&
+       !physicalReady) return;
     last=trace.callCount;
     lastSource=trace.source;
     lastOutcome=trace.outcome;
@@ -815,6 +866,51 @@ void ConsoleDebug::movementTrace(const debug::MovementTrace& trace) noexcept {
         decision ? decision->roamCandidateCount : 0U,
         static_cast<unsigned long long>(decision ? decision->roamGeneration : 0U));
     line(lineBuffer);
+    if (debugLevel_ >= 2 && trace.engineCall && trace.physical.valid &&
+        physicalWindowUs_[index] >= 1'000'000U) {
+        const double dx = static_cast<double>(trace.physical.afterOriginX) -
+            static_cast<double>(physicalStartX_[index]);
+        const double dy = static_cast<double>(trace.physical.afterOriginY) -
+            static_cast<double>(physicalStartY_[index]);
+        const double dz = static_cast<double>(trace.physical.afterOriginZ) -
+            static_cast<double>(physicalStartZ_[index]);
+        const double horizontal = std::sqrt(dx * dx + dy * dy);
+        const bool noProgress = physicalNonZeroInputs_[index] != 0U &&
+            horizontal < 1.0;
+        char physicalLine[1024]{};
+        std::snprintf(
+            physicalLine,
+            sizeof(physicalLine),
+            "[ASTRABOT][DEBUG][MOVEMENT] kind=DispatchObservation map=%u actor=%u:%u agent=%u sequence=%llu command_tick=%llu dispatch_tick=%llu window_us=%llu dispatches=%llu nonzero_inputs=%llu suppressed=%llu physical_valid=%u before_origin=%.3f,%.3f,%.3f after_origin=%.3f,%.3f,%.3f displacement=%.3f,%.3f,%.3f horizontal_displacement=%.3f no_progress=%u before_velocity=%.3f,%.3f,%.3f after_velocity=%.3f,%.3f,%.3f onground=%u->%u source=%s command=%.3f,%.3f,%.3f buttons=%u msec=%u",
+            unsigned(trace.map.value), unsigned(trace.player.slot),
+            unsigned(trace.player.generation.value), unsigned(trace.agent.value),
+            static_cast<unsigned long long>(trace.callCount),
+            static_cast<unsigned long long>(trace.commandTick.value),
+            static_cast<unsigned long long>(trace.dispatchTick.value),
+            static_cast<unsigned long long>(physicalWindowUs_[index]),
+            static_cast<unsigned long long>(physicalDispatches_[index]),
+            static_cast<unsigned long long>(physicalNonZeroInputs_[index]),
+            static_cast<unsigned long long>(physicalSuppressed_[index]),
+            1U,
+            static_cast<float>(physicalStartX_[index]),
+            static_cast<float>(physicalStartY_[index]),
+            static_cast<float>(physicalStartZ_[index]),
+            trace.physical.afterOriginX, trace.physical.afterOriginY,
+            trace.physical.afterOriginZ, dx, dy, dz, horizontal,
+            unsigned(noProgress), trace.physical.beforeVelocityX,
+            trace.physical.beforeVelocityY, trace.physical.beforeVelocityZ,
+            trace.physical.afterVelocityX, trace.physical.afterVelocityY,
+            trace.physical.afterVelocityZ, unsigned(trace.physical.beforeOnGround),
+            unsigned(trace.physical.afterOnGround), movementSourceName(trace.source),
+            double(trace.forward), double(trace.side), double(trace.up),
+            unsigned(trace.buttons), unsigned(trace.engineMsec));
+        line(physicalLine);
+        physicalWindowUs_[index] = 0;
+        physicalDispatches_[index] = 0;
+        physicalNonZeroInputs_[index] = 0;
+        physicalSuppressed_[index] = 0;
+        physicalWindowActive_[index] = false;
+    }
 }
 
 void ConsoleDebug::lifecycleSink(const debug::LifecycleTrace& trace) noexcept {

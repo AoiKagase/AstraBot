@@ -19,6 +19,15 @@ enum class NavCommand { Load, GoTo, Status, Cancel, Report };
 enum class MotionEvent { None, Decision, Queued, Dispatched, Rejected, Cancelled };
 enum class MotionReason { None, InvalidCorridor, InvalidGoal, MissingObservation,
     StaleCommand, Deviation, MotorRejected, TransportRejected, Cancelled, DoorChanged, PostureChanged, JumpChanged, LadderChanged, DropChanged };
+enum class RoamExclusionReason : std::uint8_t {
+    Capacity, Invalid, Occupied, Cooling, Rejected, Recent, Missing, Hull
+};
+struct RoamExclusionSample {
+    nav::model::NavAreaId area{};
+    RoamExclusionReason reason{RoamExclusionReason::Invalid};
+    core::PlayerId owner{};
+    std::uint64_t remainingUs{0};
+};
 struct MotionTrace {
     std::optional<nav::model::NavVector3> dispatchOrigin{};
     std::uint64_t dispatchDurationUs{};
@@ -44,6 +53,15 @@ struct MotionTrace {
     metamod::MovementError transportError{metamod::MovementError::None};
     core::TickId commandTick{}, dispatchTick{};
     std::uint64_t intentAgeUs{}, missedDecisions{}, queued{}, dispatched{}, rejected{}, sequence{};
+    bool dispatchPhysicalValid{false};
+    std::uint64_t dispatchSequence{};
+    float dispatchBeforeOriginX{0.0F}, dispatchBeforeOriginY{0.0F}, dispatchBeforeOriginZ{0.0F};
+    float dispatchAfterOriginX{0.0F}, dispatchAfterOriginY{0.0F}, dispatchAfterOriginZ{0.0F};
+    float dispatchBeforeVelocityX{0.0F}, dispatchBeforeVelocityY{0.0F}, dispatchBeforeVelocityZ{0.0F};
+    float dispatchAfterVelocityX{0.0F}, dispatchAfterVelocityY{0.0F}, dispatchAfterVelocityZ{0.0F};
+    std::uint8_t dispatchBeforeOnGround{0}, dispatchAfterOnGround{0};
+    double dispatchHorizontalDisplacement{0.0};
+    bool dispatchNoProgress{false};
     std::uint64_t useGuardChecks{};
     std::uint64_t contactGuardQueries{};
     std::uint64_t jumpGuardQueries{};
@@ -104,6 +122,8 @@ struct RuntimeNavigationState final {
     std::uint32_t roamExcludedRecent{0};
     std::uint32_t roamExcludedMissing{0};
     std::uint32_t roamExcludedHull{0};
+    std::array<RoamExclusionSample, 4> roamExclusionSamples{};
+    std::size_t roamExclusionCount{0};
     std::uint64_t roamGeneration{0};
     std::uint64_t routeGeneration{0};
     bool routeExecutable{false};
@@ -264,6 +284,8 @@ private:
     mutable core::MapGeneration lastCurrentAreaMap_{};
     mutable std::uint64_t lastCurrentAreaRouteGeneration_{0};
     mutable core::TickId lastCurrentAreaTick_{};
+    std::uint64_t diagnosticNextUs{};
+    std::uint64_t diagnosticSuppressed{};
     std::array<nav::model::NavAreaId, core::tactical::kTacticalRoamHistory>
         roamRecentGoals_{};
     std::size_t roamRecentGoalCount_{0};

@@ -5,6 +5,7 @@
 #include <cstring>
 #include <limits>
 #include "adapter/cstrike/nav/console.hpp"
+#include "adapter/metamod/console_debug.hpp"
 #include "adapter/metamod/lifecycle.hpp"
 #include "adapter/cstrike/nav/world_queries.hpp"
 #include "adapter/cstrike/nav/jump_motion.hpp"
@@ -125,14 +126,43 @@ void NavConsole::printMotion() noexcept {
     line(text);
     char timing[384]{};
     std::snprintf(timing,sizeof(timing),
-        "motion_timing actor=%u:%u elapsed_us=%llu frame_delta_us=%llu intent_speed=%.6g speed_limit=%.6g pending_remaining_us=%llu stale_reason=%u",
+        "motion_timing actor=%u:%u elapsed_us=%llu frame_delta_us=%llu intent_speed=%.6g speed_limit=%.6g pending_remaining_us=%llu stale_reason=%u diagnostic_suppressed=%llu",
         unsigned(d.binding.actor.slot),unsigned(d.binding.actor.generation.value),
         static_cast<unsigned long long>(current_->motionTrace_.elapsedUs),
         static_cast<unsigned long long>(current_->motionTrace_.frameDeltaUs),
         current_->motionTrace_.intentSpeed,current_->motionTrace_.speedLimit,
         static_cast<unsigned long long>(current_->motionTrace_.pendingRemainingUs),
-        unsigned(current_->motionTrace_.reason));
+        unsigned(current_->motionTrace_.reason),
+        static_cast<unsigned long long>(current_->diagnosticSuppressed));
     line(timing);
+    if (current_->motionTrace_.dispatchPhysicalValid) {
+        char dispatch[768]{};
+        std::snprintf(
+            dispatch, sizeof(dispatch),
+            "movement_dispatch actor=%u:%u sequence=%llu command_tick=%llu dispatch_tick=%llu physical_valid=%u before_origin=%.3f,%.3f,%.3f after_origin=%.3f,%.3f,%.3f before_velocity=%.3f,%.3f,%.3f after_velocity=%.3f,%.3f,%.3f onground=%u->%u horizontal_displacement=%.3f no_progress=%u",
+            unsigned(d.binding.actor.slot), unsigned(d.binding.actor.generation.value),
+            static_cast<unsigned long long>(current_->motionTrace_.dispatchSequence),
+            static_cast<unsigned long long>(current_->motionTrace_.commandTick.value),
+            static_cast<unsigned long long>(current_->motionTrace_.dispatchTick.value),
+            unsigned(current_->motionTrace_.dispatchPhysicalValid),
+            current_->motionTrace_.dispatchBeforeOriginX,
+            current_->motionTrace_.dispatchBeforeOriginY,
+            current_->motionTrace_.dispatchBeforeOriginZ,
+            current_->motionTrace_.dispatchAfterOriginX,
+            current_->motionTrace_.dispatchAfterOriginY,
+            current_->motionTrace_.dispatchAfterOriginZ,
+            current_->motionTrace_.dispatchBeforeVelocityX,
+            current_->motionTrace_.dispatchBeforeVelocityY,
+            current_->motionTrace_.dispatchBeforeVelocityZ,
+            current_->motionTrace_.dispatchAfterVelocityX,
+            current_->motionTrace_.dispatchAfterVelocityY,
+            current_->motionTrace_.dispatchAfterVelocityZ,
+            unsigned(current_->motionTrace_.dispatchBeforeOnGround),
+            unsigned(current_->motionTrace_.dispatchAfterOnGround),
+            current_->motionTrace_.dispatchHorizontalDisplacement,
+            unsigned(current_->motionTrace_.dispatchNoProgress));
+        line(dispatch);
+    }
     if(d.posture || d.constraintReason!=nav::local::ConstraintReason::None) {
         char posture[128]{};
         std::snprintf(posture,sizeof(posture),"walk posture_present=%u posture=%u posture_reason=%u constraint_reason=%u duck=%u",
@@ -570,6 +600,34 @@ void NavConsole::afterDispatch(const metamod::MovementResult& result,core::TickI
         b.routeGeneration==current.routeGeneration;
     const auto saved=current_->motionTrace_;
     if(!sameRoute) current_->motionTrace_=*ticket; // reentrant goto must not receive old-route feedback
+    if (movement_ != nullptr) {
+        const auto& transport=movement_->frameDispatchTrace(b.actor);
+        if (transport.physical.valid) {
+            auto& trace=current_->motionTrace_;
+            trace.dispatchPhysicalValid=true;
+            trace.dispatchSequence=transport.callCount;
+            trace.dispatchBeforeOriginX=transport.physical.beforeOriginX;
+            trace.dispatchBeforeOriginY=transport.physical.beforeOriginY;
+            trace.dispatchBeforeOriginZ=transport.physical.beforeOriginZ;
+            trace.dispatchAfterOriginX=transport.physical.afterOriginX;
+            trace.dispatchAfterOriginY=transport.physical.afterOriginY;
+            trace.dispatchAfterOriginZ=transport.physical.afterOriginZ;
+            trace.dispatchBeforeVelocityX=transport.physical.beforeVelocityX;
+            trace.dispatchBeforeVelocityY=transport.physical.beforeVelocityY;
+            trace.dispatchBeforeVelocityZ=transport.physical.beforeVelocityZ;
+            trace.dispatchAfterVelocityX=transport.physical.afterVelocityX;
+            trace.dispatchAfterVelocityY=transport.physical.afterVelocityY;
+            trace.dispatchAfterVelocityZ=transport.physical.afterVelocityZ;
+            trace.dispatchBeforeOnGround=transport.physical.beforeOnGround;
+            trace.dispatchAfterOnGround=transport.physical.afterOnGround;
+            const auto dx=static_cast<double>(trace.dispatchAfterOriginX)-trace.dispatchBeforeOriginX;
+            const auto dy=static_cast<double>(trace.dispatchAfterOriginY)-trace.dispatchBeforeOriginY;
+            trace.dispatchHorizontalDisplacement=std::sqrt(dx*dx+dy*dy);
+            trace.dispatchNoProgress=(transport.forward!=0.0F ||
+                transport.side!=0.0F || transport.up!=0.0F || transport.buttons!=0U) &&
+                trace.dispatchHorizontalDisplacement<1.0;
+        }
+    }
     if(sameRoute) reportLadderTransport(ticket->decision,ticket->commandTick,tick,result.dispatched());
     if(sameRoute && ticket->dispatchOrigin) {
         const auto& d=ticket->decision;
@@ -604,6 +662,16 @@ void NavConsole::moveFrame(metamod::LifecycleCoordinator& owner) noexcept {
     if(owner.registry().currentTick().isAfter(current_->navigationTimeTick_)) {
         current_->navigationTimeTick_=owner.registry().currentTick();
         current_->navigationTimeUs_=add(current_->navigationTimeUs_,movement_->frameDeltaUs());
+    }
+    if (metamod::ConsoleDebug::instance().navEnabled()) {
+        if (current_->navigationTimeUs_ >= current_->diagnosticNextUs) {
+            if (current_->motionTrace_.decision.binding.routeGeneration)
+                printMotion();
+            current_->diagnosticSuppressed=0;
+            current_->diagnosticNextUs=add(current_->navigationTimeUs_,1'000'000U);
+        } else {
+            ++current_->diagnosticSuppressed;
+        }
     }
     if(runReplan(owner)) return;
     if(current_->neutralBinding_) {

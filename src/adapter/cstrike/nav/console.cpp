@@ -355,6 +355,8 @@ void NavConsole::invalidateCurrent(nav::runtime::SessionReason reason) noexcept 
     current_->lastCurrentAreaMap_={};
     current_->lastCurrentAreaRouteGeneration_=0;
     current_->lastCurrentAreaTick_={};
+    current_->diagnosticNextUs=0;
+    current_->diagnosticSuppressed=0;
     current_->explicitRoute_=false;
     current_->roamArrived_=false;
     clearPending();
@@ -592,6 +594,15 @@ std::optional<RuntimeNavigationState> NavConsole::runtimeState(
         result.movement.map == navigation_.map;
     if (validManagedMovement && result.currentArea && navigation_.graph) {
         const auto current = *result.currentArea;
+        result.roamExclusionCount=0;
+        const auto recordExclusion = [&](nav::model::NavAreaId id,
+                                         RoamExclusionReason reason,
+                                         core::PlayerId owner={},
+                                         std::uint64_t remainingUs=0) noexcept {
+            if (result.roamExclusionCount < result.roamExclusionSamples.size())
+                result.roamExclusionSamples[result.roamExclusionCount++] =
+                    {id,reason,owner,remainingUs};
+        };
         const auto isListed = [](const auto& values, std::size_t count,
                                  nav::model::NavAreaId id) noexcept {
             const auto limit = (std::min)(count, values.size());
@@ -599,7 +610,8 @@ std::optional<RuntimeNavigationState> NavConsole::runtimeState(
                 if (values[i] == id) return true;
             return false;
         };
-        const auto occupiedByOther = [&](nav::model::NavAreaId id) noexcept {
+        const auto occupiedByOther = [&](nav::model::NavAreaId id) noexcept
+            -> core::PlayerId {
             for (const auto& other : actors_) {
                 if (!other || other.get() == actor || !other->session_ ||
                     !other->session_->executable() ||
@@ -607,48 +619,65 @@ std::optional<RuntimeNavigationState> NavConsole::runtimeState(
                     other->roamArrived_)
                     continue;
                 const auto& trace=other->session_->trace();
-                if (trace.goal == id) return true;
+                if (trace.goal == id) return other->actor;
                 if (trace.route) {
                     const auto cursor=other->walk_ ? other->walk_->step():0;
                     const auto count=(std::min)(trafficLookAhead,
                         trace.route->areas.size()>cursor ? trace.route->areas.size()-cursor:0);
                     for (std::size_t i=0; i<count; ++i)
-                        if (trace.route->areas[cursor+i] == id) return true;
+                        if (trace.route->areas[cursor+i] == id) return other->actor;
                 }
             }
-            return false;
+            return {};
         };
         const auto addCandidate = [&](nav::model::NavAreaId id,
                                       bool allowRecent) noexcept {
         const bool preserveCurrentGoal = result.roamActive &&
             result.routeExecutable && result.goal && id == *result.goal;
         if (result.roamCandidateCount >= result.roamCandidates.size()) {
-            ++result.roamExcludedCapacity; return;
+            ++result.roamExcludedCapacity;
+            recordExclusion(id,RoamExclusionReason::Capacity); return;
         }
         if (!id.isValid() || id == current) {
-            ++result.roamExcludedInvalid; return;
+            ++result.roamExcludedInvalid;
+            recordExclusion(id,RoamExclusionReason::Invalid); return;
         }
-        if (!preserveCurrentGoal && occupiedByOther(id)) {
-            ++result.roamExcludedOccupied; return;
+        const auto occupiedOwner=occupiedByOther(id);
+        if (!preserveCurrentGoal && occupiedOwner.isValid()) {
+            ++result.roamExcludedOccupied;
+            recordExclusion(id,RoamExclusionReason::Occupied,occupiedOwner); return;
         }
         if(!preserveCurrentGoal && actor &&
             (!actor->execution_.canSearch(actor->navigationTimeUs_) ||
              actor->execution_.cooling(id,actor->navigationTimeUs_))) {
-            ++result.roamExcludedCooling; return;
+            ++result.roamExcludedCooling;
+            const auto now=actor->navigationTimeUs_;
+            const auto retry=actor->execution_.retryAtUs>now ?
+                actor->execution_.retryAtUs-now:0U;
+            const auto search=actor->execution_.nextSearchAtUs>now ?
+                actor->execution_.nextSearchAtUs-now:0U;
+            recordExclusion(id,RoamExclusionReason::Cooling,{},
+                (std::max)(retry,search)); return;
         }
         if (!preserveCurrentGoal && actor && isListed(actor->roamRejectedGoals_,
             actor->roamRejectedGoalCount_, id)) {
-            ++result.roamExcludedRejected; return;
+            ++result.roamExcludedRejected;
+            recordExclusion(id,RoamExclusionReason::Rejected); return;
         }
         if (!preserveCurrentGoal && !allowRecent && actor &&
             isListed(actor->roamRecentGoals_,
             actor->roamRecentGoalCount_, id)) {
-            ++result.roamExcludedRecent; return;
+            ++result.roamExcludedRecent;
+            recordExclusion(id,RoamExclusionReason::Recent); return;
         }
         const auto vertex = navigation_.graph->find(id);
-        if (!vertex) { ++result.roamExcludedMissing; return; }
+        if (!vertex) {
+            ++result.roamExcludedMissing;
+            recordExclusion(id,RoamExclusionReason::Missing); return;
+        }
         if (!result.movement.hull || !hullFits(navigation_.graph->area(*vertex).extent,*result.movement.hull))
-            { ++result.roamExcludedHull; return; }
+            { ++result.roamExcludedHull;
+              recordExclusion(id,RoamExclusionReason::Hull); return; }
             const auto point = navigation_.graph->center(*vertex);
             result.roamCandidates[result.roamCandidateCount++] =
                 {{id}, {point.x, point.y, point.z}, id.value};

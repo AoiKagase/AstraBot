@@ -155,6 +155,11 @@ void testJoinedActorReceivesNeutralHeartbeat() {
            gCalls.front().up == 0.0F && gCalls.front().buttons == 0U &&
            gCalls.front().impulse == 0U && gCalls.front().msec == 10U);
     assert(gTraces.back().source == astrabot::debug::MovementTraceSource::Idle);
+    assert(gTraces.back().physical.valid);
+    assert(gTraces.back().physical.beforeOriginX ==
+        gTraces.back().physical.afterOriginX);
+    assert(gTraces.back().physical.beforeOriginY ==
+        gTraces.back().physical.afterOriginY);
     assert(fixture.dispatch(TickId{3}).outcome == MovementOutcome::None);
     assert(gCalls.size() == 1);
 }
@@ -237,6 +242,11 @@ void testMsecQuantizationAndAbiConversion() {
     assert(gTraces[1].frameDeltaUs == 16500U);
     assert(gTraces[1].engineMsec == 17);
     assert(gTraces[1].engineCall);
+    assert(gTraces[1].physical.valid);
+    assert(gTraces[1].physical.beforeOriginX ==
+        gTraces[1].physical.afterOriginX);
+    assert(gTraces[1].physical.beforeVelocityX ==
+        gTraces[1].physical.afterVelocityX);
     assert(gTraces[1].player == fixture.player);
     assert(gTraces[1].map == fixture.map);
     assert(gTraces[1].forward == 120.0F);
