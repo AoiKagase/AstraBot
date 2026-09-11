@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 #include "nav/local/ground_probe.hpp"
+#include "nav/local/ground_frame.hpp"
 #include "route_fixture.hpp"
 #include <cassert>
 #include <limits>
@@ -71,7 +72,7 @@ void failures() {
         local::ProbeReason::NoSupport,local::ProbeReason::NoSupport,local::ProbeReason::InvalidResult,
         local::ProbeReason::NoArea,local::ProbeReason::Blocked,local::ProbeReason::Blocked,local::ProbeReason::InvalidResult};
     for(int mode=1;mode<=11;++mode) { Script p; p.mode=mode; const auto r=inspect(p);
-        assert(!r && !r.target && r.reason==reasons[mode]); assert(p.calls.size()<=3); }
+        assert(!r && !r.target && r.reason==reasons[mode]); assert(p.calls.size()<=limits.maxQueries); }
     for(auto l : {local::GroundProbeLimits{4,4,64,16,18,18,64,4,2,0.7},
                    local::GroundProbeLimits{9,1,64,16,18,18,64,4,2,0.7}}) {
         Script p; auto r=inspect(p,l); assert(r.reason==local::ProbeReason::BudgetExceeded && p.calls.empty());
@@ -117,18 +118,44 @@ void stairProbes() {
     assert(up.calls[5].end==model::NavVector3({36,50,52}));
     Stairs down; down.from=16; down.to=0;
     Stairs boundary; boundary.to=18; assert(run(boundary,l));
-    const auto d=run(down,l); assert(d && d.steps==1 && d.queries==5 && d.target->origin.z==36);
+    const auto d=run(down,l); assert(d && d.steps==1 && d.queries==6 && d.target->origin.z==36);
     for(int ordinal : {4,5,6}) { Stairs p; p.block=ordinal;
         const auto failure=run(p,l); assert(!failure && failure.reason==local::ProbeReason::Blocked && failure.steps==0);
         assert(failure.queries==static_cast<std::uint32_t>(ordinal)); }
     Stairs stale; stale.stale=4; assert(run(stale,l).reason==local::ProbeReason::StaleQuery);
     Stairs budget; auto small=l; small.maxQueries=5;
     const auto exhausted=run(budget,small); assert(exhausted.reason==local::ProbeReason::BudgetExceeded && exhausted.queries==3);
-    Stairs flat; flat.to=0; assert(run(flat,l).reason==local::ProbeReason::Blocked && flat.calls.size()==3);
+    // A riser can block the hull while the sampled floor is still level.
+    Stairs flat; flat.to=0; const auto levelStep=run(flat,l);
+    assert(levelStep && levelStep.steps==1 && flat.calls.size()==6);
+    assert(flat.calls[3].end.z==54 && flat.calls[4].start.z==54);
+    assert(levelStep.lastStep && levelStep.lastStep->landing.origin.z==36);
+    Stairs lowCeiling; lowCeiling.to=0; lowCeiling.block=4;
+    assert(run(lowCeiling,l).reason==local::ProbeReason::Blocked);
+    Stairs noBudget; noBudget.to=0;
+    assert(run(noBudget,small).reason==local::ProbeReason::BudgetExceeded);
     Stairs high; high.to=19; assert(run(high,l).reason==local::ProbeReason::InvalidResult && high.calls.size()==2);
 }
 }
+void frameGround() {
+    auto s=actor(); s.position=model::NavVector3{44,50,54};
+    Script p; p.height=18;
+    auto allowance=limits; allowance.navTolerance=18;
+    // The actual stair height is not the straight line between route endpoints.
+    assert(local::groundSegmentAllows({20,50,36},{68,50,54},*s.position,2));
+    const auto proof=local::inspectGroundFrame(s,7,{1},{1},46,50,*index(),s.map,p,allowance);
+    assert(proof && proof.target->origin.z==54);
+    assert(!local::groundSegmentAllows({20,50,36},{68,50,54},{44,51,54},2));
+    assert(!local::groundSegmentAllows({20,50,36},{68,50,54},*s.position,25));
+    Script missing; missing.height=18; missing.mode=5;
+    assert(!local::inspectGroundFrame(s,7,{1},{1},46,50,*index(),s.map,missing,allowance));
+    Script wall; wall.height=18; wall.mode=9;
+    assert(!local::inspectGroundFrame(s,7,{1},{1},46,50,*index(),s.map,wall,allowance));
+    Script budget; allowance.maxQueries=1;
+    assert(local::inspectGroundFrame(s,7,{1},{1},46,50,*index(),s.map,budget,allowance).reason==local::ProbeReason::BudgetExceeded);
+}
 int main() {
+    frameGround();
     successReplayAndFloors(); failures(); stairProbes();
     Script port; auto s=actor(); auto l=limits; l.maxQueries=1; l.maxSamples=0;
     const auto located=local::GroundProbe::locate(s,7,*index(),s.map,port,l);

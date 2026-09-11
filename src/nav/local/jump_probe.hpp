@@ -10,7 +10,13 @@ struct JumpPhysics {
     Binding binding{};
     core::TickId tick{};
     double gravity{}, verticalImpulse{};
+    std::optional<runtime::HullDimensions> standingHull{}, crouchingHull{};
+    double crouchSpeedMultiplier{};
 };
+// Origin-rise capability from current engine physics. Geometry converts landing
+// floor height through the selected flight hull, including midair duck feet lift.
+std::optional<JumpLimits> deriveJumpLimits(JumpLimits, const JumpPhysics&,
+    const runtime::MovementSnapshot&, TraversalConstraints) noexcept;
 struct JumpProbeLimits {
     std::uint32_t maxQueries{}, maxSegments{};
     double maxSegmentSeconds{}, maxChordRise{}, navTolerance{};

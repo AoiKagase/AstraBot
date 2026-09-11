@@ -72,7 +72,7 @@ PortalFailureReason portal(Transition& t, HullClearance hull, PortalPolicy polic
     }
     const auto hints=local::constraints(t.edge.traversal,t.sourceAttributes,t.targetAttributes);
     if(t.edge.traversal!=model::NavTraversalKind::Walk || t.edge.direction>3 ||
-       ((!sourceFits || !targetFits) && (!hints || hints.kind==model::NavTraversalKind::Crouch)))
+       ((!sourceFits || !targetFits) && !hints))
         return PortalFailureReason::UnsupportedTraversal;
     if(hints) t.effectiveTraversal=hints.kind;
     const auto d=t.edge.direction;
@@ -121,15 +121,14 @@ PortalFailureReason portal(Transition& t, HullClearance hull, PortalPolicy polic
         // upward transition must use the existing, observed jump primitive;
         // treating it as Walk makes GroundProbe stop at the riser forever.
         if(!hints || (hints.kind!=model::NavTraversalKind::Walk &&
-                      hints.kind!=model::NavTraversalKind::Jump) || hints.noJump ||
-           lowRise>44 || highRise>44)
+                      hints.kind!=model::NavTraversalKind::Jump && hints.kind!=model::NavTraversalKind::Crouch) || hints.noJump)
             return PortalFailureReason::UnsupportedTraversal;
         t.effectiveTraversal=model::NavTraversalKind::Jump;
     }
     if(gap!=0 || (policy==PortalPolicy::AllowMicroTransit && (lowFall>18 || highFall>18))) {
         // The source NAV patch need not contain the hull: its measured support
         // is mandatory in updateDrop. Landing still requires a hull-safe target.
-        if(!hints || hints.kind!=model::NavTraversalKind::Walk || !targetFits ||
+        if(!hints || hints.kind!=model::NavTraversalKind::Walk ||
            lowFall<=18 || highFall<=18 || lowFall>128 || highFall>128)
             return PortalFailureReason::UnsupportedTraversal;
         t.effectiveTraversal=model::NavTraversalKind::Drop;
@@ -160,7 +159,7 @@ BuildResult Corridor::build(const query::NavGraph& graph, const query::NavRouteR
         return {{},Error::InvalidRoute,0,PortalFailureReason::None};
     const auto& goal=graph.area(*graph.find(route.areas.back()));
     if(!goal.extent.isFinite() || goal.extent.southEast.x<=goal.extent.northWest.x ||
-       goal.extent.southEast.y<=goal.extent.northWest.y || !fits(goal.extent,hull))
+       goal.extent.southEast.y<=goal.extent.northWest.y || (policy==PortalPolicy::Strict && !fits(goal.extent,hull)))
         return {{},Error::InvalidGoalArea,0,PortalFailureReason::InvalidGoalArea};
     std::size_t index=0, checks=0;
     try {

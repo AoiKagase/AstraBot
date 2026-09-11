@@ -148,4 +148,11 @@ void accelerationRequiresLaunchProofBeforePress() {
     assert(d.state==JumpState::Failed && d.reason==JumpReason::Blocked && d.intent.jump!=ActionRequest::Press);
 }
 }
-int main() { physics(); failures(); accelerationRequiresLaunchProofBeforePress(); }
+void crouchJumpConstraints() {
+    const auto both=constraints(model::NavTraversalKind::Walk,3,0);
+    assert(both && both.kind==model::NavTraversalKind::Jump && both.sourceDuck && !both.targetDuck);
+    const auto target=constraints(model::NavTraversalKind::Jump,0,1);
+    assert(target && !target.sourceDuck && target.targetDuck);
+    assert(!constraints(model::NavTraversalKind::Jump,8,1));
+}
+int main() { physics(); failures(); accelerationRequiresLaunchProofBeforePress(); crouchJumpConstraints(); }

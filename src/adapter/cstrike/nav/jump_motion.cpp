@@ -23,7 +23,12 @@ std::optional<nav::local::JumpPhysics> standardJumpPhysics(enginefuncs_t* engine
     const double effective=base*multiplier;
     if(!std::isfinite(effective) || effective<=0 || effective>4000 || !std::isfinite(jumpHeight) || jumpHeight<=0 || jumpHeight>64)
         return {};
-    return nav::local::JumpPhysics{binding,tick,effective,std::sqrt(1600*jumpHeight)};
+    const nav::runtime::HullDimensions standing{{-16,-16,-36},{16,16,36}}, crouching{{-16,-16,-18},{16,16,18}};
+    const auto expected=(entity->v.flags&FL_DUCKING) ? crouching:standing;
+    if(entity->v.mins.x!=expected.minimum.x || entity->v.mins.y!=expected.minimum.y ||
+       entity->v.mins.z!=expected.minimum.z || entity->v.maxs.x!=expected.maximum.x ||
+       entity->v.maxs.y!=expected.maximum.y || entity->v.maxs.z!=expected.maximum.z) return {};
+    return nav::local::JumpPhysics{binding,tick,effective,std::sqrt(1600*jumpHeight),standing,crouching,1.0/3.0};
 }
 namespace {
 class GuardQueries final : public nav::runtime::IWorldQueries {
@@ -52,15 +57,46 @@ MotionReason NavConsole::guardJump(metamod::LifecycleCoordinator& owner,const na
     const bool press=(command.buttons&static_cast<core::ButtonMask>(core::Button::Jump))!=0;
     const double speed=std::hypot(command.movement.forward,command.movement.side);
     if(command.impulse || command.movement.up!=0 ||
-       (command.buttons&~static_cast<core::ButtonMask>(core::Button::Jump))) return MotionReason::JumpChanged;
-    if(ticket.state==JumpState::Complete || ticket.state==JumpState::Failed || ticket.state==JumpState::Aborted)
+       (command.buttons&~(static_cast<core::ButtonMask>(core::Button::Jump)|static_cast<core::ButtonMask>(core::Button::Duck)))) return MotionReason::JumpChanged;
+    if(ticket.state==JumpState::Failed || ticket.state==JumpState::Aborted)
         return !press && speed==0 ? MotionReason::None:MotionReason::JumpChanged;
-    if(!current_->walk_ || current_->walk_->step()!=pending.binding.step || !s.velocity || !s.velocity->isFinite() || s.ducked!=false)
+    if(!current_->walk_ || current_->walk_->step()!=pending.binding.step || !s.velocity || !s.velocity->isFinite() || !s.ducked)
         return MotionReason::JumpChanged;
     auto* entity=owner.entityFor(s.actor);
     const auto physics=standardJumpPhysics(engine_,entity,pending.binding,s.tick);
-    if(!physics || physics->gravity!=ticket.physics.gravity || physics->verticalImpulse!=ticket.physics.verticalImpulse)
+    const auto sameHull=[](const std::optional<nav::runtime::HullDimensions>& a,
+                           const std::optional<nav::runtime::HullDimensions>& b) {
+        return a.has_value()==b.has_value() && (!a || (a->minimum==b->minimum && a->maximum==b->maximum));
+    };
+    if(!physics || ticket.physics.tick!=pending.tick || physics->gravity!=ticket.physics.gravity ||
+       physics->verticalImpulse!=ticket.physics.verticalImpulse ||
+       physics->crouchSpeedMultiplier!=ticket.physics.crouchSpeedMultiplier ||
+       !sameHull(physics->standingHull,ticket.physics.standingHull) ||
+       !sameHull(physics->crouchingHull,ticket.physics.crouchingHull))
         return MotionReason::JumpChanged;
+    const auto hints=constraints(nav::model::NavTraversalKind::Jump,ticket.plan.sourceAttributes,ticket.plan.targetAttributes);
+    const auto capability=deriveJumpLimits(jumpLimits.motion,*physics,s,hints);
+    if(!capability) return MotionReason::JumpChanged;
+    const auto motion=*capability;
+    if(!sameHull(ticket.plan.flightHull,motion.flightHull)) return MotionReason::JumpChanged;
+    const bool duck=(command.buttons&static_cast<core::ButtonMask>(core::Button::Duck))!=0;
+    if(ticket.state==JumpState::Complete) {
+        if(press || speed!=0 || s.grounded!=true) return MotionReason::JumpChanged;
+        if(duck || s.ducked==false) return MotionReason::None;
+        if(!physics->standingHull || !s.hull || !s.position || current_->guardQueries_>=21)
+            return MotionReason::JumpChanged;
+        auto origin=*s.position;
+        origin.z+=s.hull->minimum.z-physics->standingHull->minimum.z;
+        const QueryRequest q{{s.agent,s.actor,s.map,s.tick,pending.binding.routeGeneration,1},
+            QueryKind::Clearance,origin,origin,physics->standingHull};
+        GuardQueries queries(*this,current_->guardQueries_,current_->motionTrace_.jumpGuardQueries);
+        WorldQueryResult r; try { r=queries.query(q); } catch(...) { return MotionReason::JumpChanged; }
+        return r.stamp==q.stamp && r.kind==q.kind && r.error==QueryError::None && r.clearance && r.clearance->clear
+            ? MotionReason::None:MotionReason::JumpChanged;
+    }
+    const bool airbornePhase=s.grounded==false || ticket.state==JumpState::Airborne || ticket.state==JumpState::Recover;
+    const bool expectedDuck=airbornePhase ? ticket.plan.flightHull.has_value():hints.sourceDuck;
+    if(duck!=expectedDuck || (press && *s.ducked!=hints.sourceDuck)) return MotionReason::JumpChanged;
     const auto delta=movement_->frameDeltaUs();
     if(!delta || delta>120000) return MotionReason::StaleCommand;
     const double dt=double(delta/1000+(delta%1000>=500 ? 1U:0U))/1000;
@@ -73,13 +109,13 @@ MotionReason NavConsole::guardJump(metamod::LifecycleCoordinator& owner,const na
            (entity->v.oldbuttons&static_cast<int>(core::Button::Jump)) || current_->guardQueries_>=20)
             return MotionReason::JumpChanged;
         auto flight=jumpLimits.flight; flight.maxQueries=20-current_->guardQueries_; // Reserve the actual frame sweep.
-        const auto launch=JumpProbe::launch(s,pending.binding,ticket.plan,jumpLimits.motion,*physics,flight,*index_,navigation_.map,queries);
+        const auto launch=JumpProbe::launch(s,pending.binding,ticket.plan,motion,*physics,flight,*index_,navigation_.map,queries);
         if(!launch) return MotionReason::JumpChanged;
     } else if(s.grounded==true) {
         if(ticket.state==JumpState::Takeoff) return speed==0 ? MotionReason::None:MotionReason::JumpChanged;
         if(ticket.state==JumpState::Airborne || ticket.state==JumpState::Recover) {
             if(speed!=0) return MotionReason::JumpChanged;
-            return JumpProbe::land(s,pending.binding,ticket.plan,jumpLimits.motion,ground,*index_,navigation_.map,queries)
+            return JumpProbe::land(s,pending.binding,ticket.plan,motion,ground,*index_,navigation_.map,queries)
                 ? MotionReason::None:MotionReason::JumpChanged;
         }
         const double yaw=command.view.yaw*3.14159265358979323846/180;
@@ -112,7 +148,7 @@ MotionReason NavConsole::guardJump(metamod::LifecycleCoordinator& owner,const na
         static_cast<float>(s.position->y+double(s.velocity->y)*dt),
         static_cast<float>(s.position->z+initialZ*dt-0.5*physics->gravity*dt*dt)};
     if(!end.isFinite()) return MotionReason::JumpChanged;
-    const QueryRequest q{{s.agent,s.actor,s.map,s.tick,pending.binding.routeGeneration,1},QueryKind::SweptHull,*s.position,end,s.hull};
+    const QueryRequest q{{s.agent,s.actor,s.map,s.tick,pending.binding.routeGeneration,1},QueryKind::SweptHull,*s.position,end,(duck && s.grounded==false) ? ticket.plan.flightHull:s.hull};
     WorldQueryResult r; try { r=queries.query(q); } catch(...) { return MotionReason::JumpChanged; }
     if(!(r.stamp==q.stamp) || r.kind!=q.kind || r.error!=QueryError::None || !r.hull || r.hull->startSolid ||
        !std::isfinite(r.hull->fraction) || r.hull->fraction<0 || r.hull->fraction>1 || !r.hull->end.isFinite() || !r.hull->normal.isFinite())
@@ -125,8 +161,9 @@ MotionReason NavConsole::guardJump(metamod::LifecycleCoordinator& owner,const na
     if(hit.fraction==1) return MotionReason::None;
     if(press || initialZ>=0 || hit.normal.z<0.7f || current_->guardQueries_>=21) return MotionReason::JumpChanged;
     auto contact=s; contact.position=hit.end; contact.grounded=true;
+    if(duck && ticket.plan.flightHull) { contact.hull=ticket.plan.flightHull; contact.ducked=true; }
     ground.maxQueries=21-current_->guardQueries_;
-    return JumpProbe::land(contact,pending.binding,ticket.plan,jumpLimits.motion,ground,*index_,navigation_.map,queries)
+    return JumpProbe::land(contact,pending.binding,ticket.plan,motion,ground,*index_,navigation_.map,queries)
         ? MotionReason::None:MotionReason::JumpChanged;
 }
 }

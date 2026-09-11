@@ -5,6 +5,10 @@
 
 namespace astrabot::nav::local {
 namespace {
+bool sameHull(const std::optional<runtime::HullDimensions>& a,
+              const std::optional<runtime::HullDimensions>& b) noexcept {
+    return a.has_value()==b.has_value() && (!a || (a->minimum==b->minimum && a->maximum==b->maximum));
+}
 bool same(Binding a,Binding b) noexcept {
     return a.agent==b.agent && a.actor==b.actor && a.map==b.map &&
         a.routeGeneration==b.routeGeneration && a.step==b.step;
@@ -114,7 +118,9 @@ WalkDecision Walk::updateDrop(WalkDecision out,const runtime::MovementSnapshot& 
             const double targetBoundary=vertical ? t.targetLow.x:t.targetLow.y;
             const double targetInset=(vertical ? (sign>0 ? -s.hull->minimum.x:s.hull->maximum.x)
                                                              : (sign>0 ? -s.hull->minimum.y:s.hull->maximum.y))+l.arrivalTolerance;
-            const double landingNormal=targetBoundary+sign*targetInset;
+            const double landingNormal=std::clamp(targetBoundary+sign*targetInset,
+                vertical ? double(t.targetExtent.northWest.x):double(t.targetExtent.northWest.y),
+                vertical ? double(t.targetExtent.southEast.x):double(t.targetExtent.southEast.y));
             takeoff={static_cast<float>(vertical ? boundary-sign:tangent),
                 static_cast<float>(vertical ? tangent:boundary-sign),0};
             landing={static_cast<float>(vertical ? landingNormal:tangent),
@@ -126,8 +132,7 @@ WalkDecision Walk::updateDrop(WalkDecision out,const runtime::MovementSnapshot& 
         const double fall=double(takeoff.z)-landing.z;
         if(!takeoff.isFinite() || !landing.isFinite() || fall<=limits_.probe.maxStepUp ||
            fall>l.maximumFall || gap<0 || gap>l.maximumGap ||
-           (t.edge.external ? !query::containsXY(t.targetExtent,landing) :
-                              !inside(t.targetExtent,landing,*s.hull)))
+           !query::containsXY(t.targetExtent,landing))
             return doneFail(DropReason::UnsafeGeometry);
         const double impactSpeed=std::sqrt((std::max)(0.0,2.0*physics->gravity*fall));
         const double predictedDamage=(std::max)(0.0,impactSpeed-500.0) *
@@ -156,7 +161,7 @@ WalkDecision Walk::updateDrop(WalkDecision out,const runtime::MovementSnapshot& 
         if(!supported) return doneFail(DropReason::MissingSupport);
         out.support=supported.target;
         if(dropState_==DropState::Airborne) {
-            if(supported.target->area!=plan.target || !inside(t.targetExtent,p,*s.hull) ||
+            if(supported.target->area!=plan.target || !query::containsXY(t.targetExtent,p) ||
                std::abs(double(p.z)-plan.landing.z)>limits_.probe.supportTolerance ||
                !cursor_.advance(out.binding.step,supported.target->area,true))
                 return doneFail(DropReason::WrongLanding);
@@ -244,7 +249,7 @@ WalkDecision Walk::updateDrop(WalkDecision out,const runtime::MovementSnapshot& 
     }
     model::NavVector3 landing{static_cast<float>(origin.x+s.velocity->x*flight),
         static_cast<float>(origin.y+s.velocity->y*flight),plan.landing.z};
-    if(!landing.isFinite() || !inside(t.targetExtent,landing,*s.hull)) return doneFail(DropReason::UnsafeVelocity);
+    if(!landing.isFinite() || !query::containsXY(t.targetExtent,landing)) return doneFail(DropReason::UnsafeVelocity);
     const auto support=fetch(runtime::QueryKind::GroundedArea,landing,landing);
     if(!support) return doneFail(queryFailure);
     if(!support->ground || support->ground->area!=plan.target || !support->ground->floor)
@@ -303,7 +308,7 @@ WalkDecision Walk::updateJump(WalkDecision out,const runtime::MovementSnapshot& 
     };
     if(!limits_.jump || cursor_.exhausted()) return finish(out,WalkState::Failed,WalkReason::UnsupportedTraversal);
     const auto& t=corridor_->transitions()[cursor_.index()];
-    const auto hints=constraints(t.effectiveTraversal==model::NavTraversalKind::Jump ?
+    const auto hints=constraints(t.effectiveTraversal==model::NavTraversalKind::Jump || observedJumpCandidate_ ?
         model::NavTraversalKind::Jump:t.edge.traversal,t.sourceAttributes,t.targetAttributes);
     out.constraintReason=hints.reason;
     if(!hints || hints.kind!=model::NavTraversalKind::Jump)
@@ -314,26 +319,60 @@ WalkDecision Walk::updateJump(WalkDecision out,const runtime::MovementSnapshot& 
     if(!physics) return fail(JumpReason::MissingObservation);
     if(!same(physics->binding,out.binding) || physics->tick!=s.tick || !std::isfinite(physics->gravity) ||
        physics->gravity<=0 || !std::isfinite(physics->verticalImpulse) || physics->verticalImpulse<=0 ||
-       (jumpPhysics_ && (jumpPhysics_->gravity!=physics->gravity || jumpPhysics_->verticalImpulse!=physics->verticalImpulse)))
+       (jumpPhysics_ && (jumpPhysics_->gravity!=physics->gravity || jumpPhysics_->verticalImpulse!=physics->verticalImpulse ||
+         jumpPhysics_->crouchSpeedMultiplier!=physics->crouchSpeedMultiplier ||
+         !sameHull(jumpPhysics_->standingHull,physics->standingHull) ||
+         !sameHull(jumpPhysics_->crouchingHull,physics->crouchingHull))))
         return fail(JumpReason::StaleInspection);
-    const auto& profile=*limits_.jump;
+    auto profile=*limits_.jump;
+    const auto capability=deriveJumpLimits(profile.motion,*physics,s,hints);
+    if(!capability) return fail(JumpReason::MissingObservation);
+    profile.motion=*capability;
+    profile.geometry.preferredDistance=(std::min)(profile.geometry.preferredDistance,profile.motion.maximumDistance*0.9);
     const auto maximum=(std::min)({limits_.probe.maxQueries,profile.motion.maxQueries,profile.flight.maxQueries,21U});
     if(!maximum || reserved>maximum) return fail(JumpReason::InvalidInput);
     jumpPhysics_=physics;
+    if(jump_ && jump_->state()==JumpState::Complete && limits_.crouch.transitionTimeoutUs) {
+        if(!s.position || !s.hull || s.grounded!=true) return fail(JumpReason::WrongLanding);
+        if(!crouch_) crouch_.emplace(binding_,limits_.crouch);
+        const auto pose=crouch_->update(s,hints.targetDuck,nowUs,port,reserved,maximum);
+        out.queries+=pose.queries; posture_=pose.state; postureReason_=pose.reason; postureAction_=pose.intent.duck;
+        out.intent=pose.intent; out.intent.jump=ActionRequest::Release;
+        if(pose.terminalEvent) return finish(out,WalkState::Failed,WalkReason::PostureFailed);
+        if(!pose.movementAllowed) return out;
+        auto ground=limits_.probe; ground.maxQueries=maximum-out.queries;
+        JumpQueries queries(port,out.queries,maximum);
+        const auto support=GroundProbe::locate(s,out.binding.routeGeneration,index,indexMap,queries,ground);
+        out.queries=queries.issued;
+        if(!support || support.target->area!=jumpPlan_->target || !query::containsXY(t.targetExtent,*s.position))
+            return fail(JumpReason::WrongLanding);
+        out.support=support.target;
+        const auto completed=primitive_.update({out.binding,s.tick,Progress::Complete,{},out.support->area,true});
+        if(!completed.accepted || completed.state!=PrimitiveState::Complete || !cursor_.advance(out.binding.step,out.support->area,true))
+            return fail(JumpReason::WrongLanding);
+        out.primitiveEvent=completed.event; completedJumpStep_=out.binding.step; observedJumpCandidate_=false;
+        primitive_=Primitive{}; jump_.reset(); jumpPlan_.reset(); jumpPhysics_.reset(); jumpDispatch_.reset();
+        jumpPressTick_={}; out.intent={}; out.intent.jump=ActionRequest::Release;
+        return out;
+    }
     if(!jump_) {
         if(limits_.crouch.transitionTimeoutUs) {
             if(!crouch_) crouch_.emplace(binding_,limits_.crouch);
-            const auto pose=crouch_->update(s,false,nowUs,port,reserved,maximum);
+            const auto pose=crouch_->update(s,hints.sourceDuck,nowUs,port,reserved,maximum);
             out.queries+=pose.queries; posture_=pose.state; postureReason_=pose.reason; postureAction_=pose.intent.duck;
             if(pose.terminalEvent) return finish(out,WalkState::Failed,WalkReason::PostureFailed);
             if(!pose.movementAllowed) return out;
         }
-        const auto candidate=JumpGeometry::derive(*corridor_,out.binding,s,profile.motion,profile.geometry);
+        const auto candidate=JumpGeometry::derive(*corridor_,out.binding,s,profile.motion,profile.geometry,observedJumpCandidate_);
         out.jumpGeometryReason=candidate.reason;
         if(!candidate) return fail(JumpReason::InvalidInput);
-        const auto entered=primitive_.enter(out.binding,t,s.tick);
-        out.primitiveEvent=entered.event;
-        if(!entered.accepted || entered.state!=PrimitiveState::Running) return fail(JumpReason::InvalidInput);
+        if(observedJumpCandidate_ && (primitive_.state()!=PrimitiveState::Running ||
+           !same(primitive_.binding(),out.binding))) return fail(JumpReason::InvalidInput);
+        if(!observedJumpCandidate_) {
+            const auto entered=primitive_.enter(out.binding,t,s.tick);
+            out.primitiveEvent=entered.event;
+            if(!entered.accepted || entered.state!=PrimitiveState::Running) return fail(JumpReason::InvalidInput);
+        }
         jumpPlan_=candidate.plan; jump_.emplace(out.binding,*jumpPlan_,profile.motion);
         jumpDispatch_.reset(); jumpDispatchSeen_=false; jumpPressTick_={};
         out.jumpPlan=jumpPlan_; out.jumpPressTick={}; return out; // Primitive entry owns its own tick.
@@ -365,11 +404,11 @@ WalkDecision Walk::updateJump(WalkDecision out,const runtime::MovementSnapshot& 
     out.queries=queries.issued;
     const auto decision=jump_->update(feedback);
     out.jumpState=decision.state; out.jumpReason=decision.reason; out.jumpPressTick=decision.pressTick;
-    out.intent=decision.intent;
+    out.intent=decision.intent; postureAction_=decision.intent.duck;
     if(decision.intent.jump==ActionRequest::Press) jumpPressTick_=decision.pressTick;
     if(decision.state==JumpState::Failed || decision.state==JumpState::Aborted)
         return finish(out,decision.state==JumpState::Aborted ? WalkState::Aborted:WalkState::Failed,WalkReason::JumpFailed);
-    if(decision.state==JumpState::Complete) {
+    if(decision.state==JumpState::Complete && !limits_.crouch.transitionTimeoutUs) {
         if(!out.support || !s.position || !s.hull ||
            !(t.targetFit==corridor::AreaFit::MicroTransit ? query::containsXY(t.targetExtent,*s.position)
                                                        : inside(t.targetExtent,*s.position,*s.hull)))
@@ -377,7 +416,7 @@ WalkDecision Walk::updateJump(WalkDecision out,const runtime::MovementSnapshot& 
         const auto completed=primitive_.update({out.binding,s.tick,Progress::Complete,{},out.support->area,true});
         if(!completed.accepted || completed.state!=PrimitiveState::Complete || !cursor_.advance(out.binding.step,out.support->area,true))
             return fail(JumpReason::WrongLanding);
-        out.primitiveEvent=completed.event; completedJumpStep_=out.binding.step;
+        out.primitiveEvent=completed.event; completedJumpStep_=out.binding.step; observedJumpCandidate_=false;
         primitive_=Primitive{}; jump_.reset(); jumpPlan_.reset(); jumpPhysics_.reset(); jumpDispatch_.reset();
         jumpPressTick_={};
         out.intent={}; out.intent.jump=ActionRequest::Release;

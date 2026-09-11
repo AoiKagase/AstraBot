@@ -25,9 +25,10 @@ runtime::MovementSnapshot actor() {
 struct Fixture {
     std::shared_ptr<const query::NavSpatialIndex> index;
     std::shared_ptr<const corridor::Corridor> corridor;
-    explicit Fixture(bool multiple=false) {
+    explicit Fixture(bool multiple=false,std::uint8_t targetAttributes=2) {
         route_test::Area a{1,{{0,0,0},{100,100,0},0,0},{}};
         route_test::Area b{2,{{100,0,0},{200,100,0},0,0},{},2};
+        b.attributes=targetAttributes;
         route_test::Area c{3,{{200,0,0},{300,100,0},0,0},{}};
         route_test::Area d{4,{{300,0,0},{400,100,0},0,0},{}};
         a.targets[1]={2}; if(multiple) { b.targets[1]={3}; c.targets[1]={4}; }
@@ -157,6 +158,54 @@ void failuresAndBudgets() {
     World none(*f.index); Walk missing(binding,f.corridor,{150,50,0},limits()); s=actor();
     assert(missing.update(s,*f.index,binding.map,none,40000).jumpReason==JumpReason::MissingObservation && none.total==0);
 }
+void standingToDuckLandingObservations() {
+    const runtime::HullDimensions standing{{-16,-16,-36},{16,16,36}},duck{{-16,-16,-18},{16,16,18}};
+    for(int mode=0;mode<3;++mode) {
+        Fixture f(false,3); World world(*f.index); auto profile=limits();
+        profile.crouch={standing,duck,1000000};
+        Walk walk(binding,f.corridor,{150,50,0},profile); auto s=actor();
+        s.position=model::NavVector3{60,50,36}; s.velocity=model::NavVector3{120,0,0};
+        const auto observedPhysics=[&] {
+            auto b=binding; b.step=walk.step();
+            return JumpPhysics{b,s.tick,800,268.3281573,standing,duck,1.0/3.0};
+        };
+        WalkDecision d; std::optional<JumpPlan> plan;
+        for(std::uint64_t tick=1;tick<=4;++tick) {
+            s.tick={tick}; auto p=observedPhysics();
+            if(tick==4 && mode==1) p.tick={3};
+            if(tick==4 && mode==2) p.crouchingHull->maximum.x=17;
+            d=walk.update(s,*f.index,binding.map,world,tick*40000,0,p);
+            if(d.jumpPlan) plan=d.jumpPlan;
+        }
+        assert(plan && plan->flightHull && plan->takeoff.z==36 && plan->landing.z==18);
+        if(mode) {
+            assert(d.state==WalkState::Failed && d.jumpReason==JumpReason::StaleInspection);
+            assert(d.intent.jump!=ActionRequest::Press && d.intent.speed==0 && walk.step()==0);
+            continue;
+        }
+        assert(d.intent.jump==ActionRequest::Press && d.intent.duck!=ActionRequest::Hold);
+        assert(walk.reportJumpDispatch({d.binding,d.jumpPressTick,{5},true}));
+        s.tick={5}; s.grounded=false; s.position=model::NavVector3{65,50,45}; s.velocity->z=200;
+        d=walk.update(s,*f.index,binding.map,world,200000,0,observedPhysics());
+        assert(d.jumpState==JumpState::Airborne && d.intent.duck==ActionRequest::Hold);
+        assert(walk.step()==0 && !d.support);
+        // The next engine observation shrinks the airborne hull without moving
+        // its origin; only a later measured grounded feet height proves landing.
+        s.tick={6}; s.ducked=true; s.hull=duck;
+        d=walk.update(s,*f.index,binding.map,world,240000,0,observedPhysics());
+        assert(s.position->z==45 && d.jumpState==JumpState::Airborne && d.intent.duck==ActionRequest::Hold);
+        s.tick={7}; s.grounded=true; s.position=plan->landing; s.velocity->z=0;
+        d=walk.update(s,*f.index,binding.map,world,280000,0,observedPhysics());
+        assert(d.jumpState==JumpState::Recover && d.support && d.support->floor.height==0);
+        assert(s.position->z+s.hull->minimum.z==0 && walk.step()==0);
+        s.tick={8}; d=walk.update(s,*f.index,binding.map,world,480000,0,observedPhysics());
+        assert(d.jumpState==JumpState::Complete && walk.step()==0);
+        s.tick={9}; d=walk.update(s,*f.index,binding.map,world,520000,0,observedPhysics());
+        assert(d.primitiveEvent==PrimitiveEvent::Complete && walk.step()==1);
+        assert(d.support && d.support->area==model::NavAreaId{2} && d.posture==CrouchState::Crouched);
+        assert(d.intent.jump!=ActionRequest::Press);
+    }
+}
 void standingBeforeJump() {
     Fixture f;
     for(bool blocked : {false,true}) {
@@ -196,4 +245,51 @@ void microJumpGeometryAndWorldProof() {
     assert(d.intent.jump!=ActionRequest::Press && walk.step()==0);
     assert(d.jumpPlan && d.jumpGeometryReason==JumpGeometryReason::None);
 }
-int main() { pumpPipeline(); failuresAndBudgets(); standingBeforeJump(); microJumpGeometryAndWorldProof(); }
+void observedObstacleReusesRunningWalkPrimitive() {
+    Fixture fixture(false,0);
+    struct ObstacleWorld final : runtime::IWorldQueries {
+        World clear;
+        bool blocked{};
+        unsigned classifications{};
+        explicit ObstacleWorld(const query::NavSpatialIndex& index):clear(index) {}
+        runtime::WorldQueryResult query(const runtime::QueryRequest& request) override {
+            auto wire=request;
+            if(wire.kind==runtime::QueryKind::Blocker) wire.kind=runtime::QueryKind::SweptHull;
+            auto result=clear.query(wire);
+            result.kind=request.kind;
+            if(request.kind==runtime::QueryKind::Blocker) {
+                ++classifications;
+                result.hull.reset();
+                result.blocker=runtime::BlockerObservation{1,runtime::BlockerKind::Geometry,{}};
+            } else if(blocked && request.kind==runtime::QueryKind::SweptHull &&
+                      request.end.x>request.start.x && request.end.y==request.start.y &&
+                      request.end.z==request.start.z) {
+                auto contact=request.start;
+                contact.x+=(request.end.x-request.start.x)*0.5f;
+                result.hull=runtime::HullObservation{0.5f,contact,{-1,0,0},false};
+            }
+            return result;
+        }
+    } world(*fixture.index);
+    auto profile=limits();
+    profile.sideProbeDistance=16; profile.narrowMargin=1; profile.narrowSpeed=60;
+    profile.maxAvoidanceDecisions=3;
+    Walk walk(binding,fixture.corridor,{150,50,0},profile);
+    auto s=actor();
+    auto d=walk.update(s,*fixture.index,binding.map,world,40000,0,physics(walk,s));
+    assert(d.primitiveEvent==PrimitiveEvent::Entered && !d.jumpPlan);
+    world.blocked=true;
+    for(std::uint64_t tick=2;tick<=6 && world.classifications==0;++tick) {
+        s.tick={tick};
+        d=walk.update(s,*fixture.index,binding.map,world,tick*40000,0,physics(walk,s));
+        assert(d.state==WalkState::Running && d.intent.jump!=ActionRequest::Press);
+    }
+    assert(world.classifications==1 && !d.jumpPlan && walk.step()==0);
+    world.blocked=false;
+    ++s.tick.value;
+    d=walk.update(s,*fixture.index,binding.map,world,s.tick.value*40000,0,physics(walk,s));
+    assert(d.state==WalkState::Running && d.jumpPlan && d.jumpState==JumpState::Approach);
+    assert(d.jumpReason==JumpReason::None && d.jumpGeometryReason==JumpGeometryReason::None);
+    assert(d.primitiveEvent!=PrimitiveEvent::Entered && walk.step()==0);
+}
+int main() { pumpPipeline(); failuresAndBudgets(); standingBeforeJump(); standingToDuckLandingObservations(); microJumpGeometryAndWorldProof(); observedObstacleReusesRunningWalkPrimitive(); }

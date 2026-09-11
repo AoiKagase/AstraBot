@@ -322,7 +322,7 @@ void recoverySafety() {
         if(mode==1) world.mode=3; // Missing future floor.
         if(mode==2) world.mode=5; // Stale stamped response.
         if(mode==3) s.grounded=false;
-        if(mode==4) s.position=nav::model::NavVector3{20,80,36}; // Hull cannot fit the detour.
+        if(mode==4) s.position=nav::model::NavVector3{20,95,36}; // Center leaves the route area.
         if(mode==5) r.state=local::RecoveryState::Reverse;
         if(mode==6) world.mode=1; // Swept hull collision.
         const auto d=walk.recover(s,*f.index,s.map,world,r);
@@ -353,6 +353,50 @@ void recoverySafety() {
     cause={}; cause.blocker.emplace(); cause.blocker->kind=runtime::BlockerKind::Player;
     cause.blocker->player=core::PlayerId{5,{6}};
     assert(local::observedStuckCause(cause)==local::StuckCause::PlayerBlocked);
+}
+void crossingUsesCenterMembership() {
+    const std::vector<route_test::Area> areas=[] {
+        auto a=square(1,0,0), b=square(2,100,0); a.targets[1]={2};
+        return std::vector<route_test::Area>{a,b};
+    }();
+    Fixture f(areas,1,2); World world(areas); auto s=actor({95,50,36});
+    local::Walk walk(binding(),f.corridor,{150,50,0},limits);
+    auto d=walk.update(s,*f.index,s.map,world); // Enter the primitive.
+    assert(d.state==local::WalkState::Running);
+    ++s.tick.value; s.position->x=100; // Shared boundary still belongs to source.
+    d=walk.update(s,*f.index,s.map,world);
+    assert(d.primitiveEvent!=local::PrimitiveEvent::Complete);
+    ++s.tick.value; s.position->x=101; // Center is across; hull still straddles.
+    d=walk.update(s,*f.index,s.map,world);
+    assert(d.primitiveEvent==local::PrimitiveEvent::Complete);
+    assert(d.support && d.support->area==model::NavAreaId{2});
+}
+void narrowRecoveryUsesPhysicalQueries() {
+    // These NAV strips partition a wider floor; their width is not a wall.
+    auto a=square(1,0,0), b=square(2,20,0);
+    a.extent.southEast.x=20;
+    b.extent.southEast.x=40;
+    a.targets[1]={2};
+    for(int mode=0;mode<6;++mode) {
+        a.attributes=mode==3 || mode==4 ? 4 : 0; // NAV_PRECISE.
+        const std::vector<route_test::Area> areas{a,b};
+        Fixture f(areas,1,2); World world(areas);
+        auto s=actor({15,50,36}); auto profile=limits; profile.probe.maxQueries=21;
+        local::Walk walk(binding(),f.corridor,{30,50,0},profile);
+        local::RecoveryDecision r; r.state=local::RecoveryState::Sidestep; r.forward={1,0,0};
+        if(mode==1) world.mode=1; // Physical wall must still reject.
+        if(mode==2) world.mode=3; // Missing floor must still reject.
+        if(mode==4) r.state=local::RecoveryState::Reverse;
+        if(mode==5) { r.state=local::RecoveryState::Reverse; s.position->x=5; }
+        const auto d=walk.recover(s,*f.index,s.map,world,r);
+        assert(d.queries==world.calls.size() && d.queries<=21);
+        if(mode==0 || mode==4) {
+            assert(d.state==local::WalkState::Running && d.target && d.intent.speed>0);
+            assert(d.target->area==model::NavAreaId{1});
+            assert(mode==0 ? d.intent.direction.y==1 : d.intent.direction.x==-1);
+        } else assert(!d.target && d.intent.speed==0);
+        if(mode==3) assert(d.state==local::WalkState::Running);
+    }
 }
 void invalidAndBudgets() {
     auto areas=zigzag(); Fixture f(areas,1,2); auto s=actor(); World world(areas);
@@ -390,4 +434,27 @@ void supportedBoundaryOrigin() {
     assert(d.support && d.support->area==model::NavAreaId{5} && d.intent.speed>0);
     assert(!world.calls.empty()); // physical support/hull checks remain mandatory
 }
-int main() { arrivals(); stops(); measuredCompletion(); invalidAndBudgets(); doors(); touchAndReservedQueries(); crouchCrossing(); recoverySafety(); supportedBoundaryOrigin(); }
+void preciseGoalSegment() {
+    for(bool single : {false,true}) {
+        auto a=square(1,0,0), b=square(2,100,0);
+        a.targets[1]={2}; b.attributes=4;
+        if(single) a.attributes=4;
+        std::vector<route_test::Area> areas=single ? std::vector<route_test::Area>{a}:std::vector<route_test::Area>{a,b};
+        Fixture f(areas,1,single ? 1:2); World world(areas);
+        auto profile=limits; profile.probe.maxQueries=21;
+        profile.sideProbeDistance=12; profile.narrowMargin=8; profile.narrowSpeed=40;
+        local::Walk walk(binding(),f.corridor,{single ? 80.0F:150.0F,50,0},profile);
+        auto s=actor();
+        if(!single) {
+            (void)walk.update(s,*f.index,s.map,world,40000);
+            ++s.tick.value; s.position->x=101;
+            (void)walk.update(s,*f.index,s.map,world,80000);
+            ++s.tick.value;
+        }
+        world.calls.clear();
+        const auto d=walk.update(s,*f.index,s.map,world,120000);
+        assert(d.state==local::WalkState::Running && d.intent.direction.y==0 && !d.avoiding);
+        for(const auto& q:world.calls) assert(q.start.y==50 && q.end.y==50);
+    }
+}
+int main() { preciseGoalSegment(); arrivals(); stops(); measuredCompletion(); invalidAndBudgets(); doors(); touchAndReservedQueries(); crouchCrossing(); recoverySafety(); crossingUsesCenterMembership(); narrowRecoveryUsesPhysicalQueries(); supportedBoundaryOrigin(); }

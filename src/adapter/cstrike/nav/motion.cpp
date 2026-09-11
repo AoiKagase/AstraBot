@@ -9,6 +9,7 @@
 #include "adapter/metamod/lifecycle.hpp"
 #include "adapter/cstrike/nav/world_queries.hpp"
 #include "adapter/cstrike/nav/jump_motion.hpp"
+#include "nav/local/ground_frame.hpp"
 #ifdef snprintf
 #undef snprintf
 #endif
@@ -27,17 +28,8 @@ bool ready(const nav::runtime::MovementSnapshot& s,bool airborne=false) noexcept
         s.speedLimit && std::isfinite(*s.speedLimit) && *s.speedLimit>=0;
 }
 bool segmentAllows(nav::model::NavVector3 start,nav::model::NavVector3 end,
-                   nav::model::NavVector3 position,double travel) noexcept {
-    const double dx=double(end.x)-start.x, dy=double(end.y)-start.y;
-    const double length=std::hypot(dx,dy);
-    if(length<=0) return false;
-    const double px=double(position.x)-start.x, py=double(position.y)-start.y;
-    const double along=(px*dx+py*dy)/length;
-    const double lateral=std::abs(px*dy-py*dx)/length;
-    const double expectedZ=start.z+(double(end.z)-start.z)*(along/length);
-    return along>=-0.01 && along<=length && lateral<=0.5 &&
-        std::abs(double(position.z)-expectedZ)<=walkLimits.probe.supportTolerance &&
-        along+travel<=length+0.001;
+    nav::model::NavVector3 position,double travel) noexcept {
+    return nav::local::groundSegmentAllows(start,end,position,travel);
 }
 const char* walkState(nav::local::WalkState state) noexcept {
     switch(state) {
@@ -227,10 +219,21 @@ void NavConsole::stopMotion() noexcept {
     current_->walk_.reset(); current_->pump_.reset(); current_->segment_.reset(); current_->intentWallAgeUs_=0;
 }
 void NavConsole::failExecution(nav::runtime::ExecutionFailure reason,bool structural) noexcept {
+    // Local avoidance exhaustion is transient. It must enter the bounded
+    // recovery/edge-cooldown path and must never become a NAV-generation
+    // permanent exclusion merely because the forward probe was blocked.
+    if(current_ && current_->motionTrace_.decision.avoidanceReason!=nav::local::AvoidanceReason::None)
+        structural=false;
     const auto goal=current_->session_ ? current_->session_->trace().goal : nav::model::NavAreaId{};
     auto edge=current_->motionTrace_.failedEdge;
     if(!edge) edge=current_->motionTrace_.selectedEdge;
     current_->execution_.fail(goal,reason,current_->navigationTimeUs_,edge,structural);
+    current_->motionTrace_.failedEdge=edge;
+    if(edge) {
+        current_->motionTrace_.edgeCooldownRemainingUs=
+            current_->execution_.edgeCooldownRemaining(*edge,current_->navigationTimeUs_);
+        current_->motionTrace_.edgeCooling=current_->motionTrace_.edgeCooldownRemainingUs>0;
+    }
     current_->motionTrace_.failedEdge=edge;
     const auto& binding=current_->motionTrace_.decision.binding;
     char execution[512]{};
@@ -311,13 +314,16 @@ void NavConsole::startMotion(const nav::runtime::MovementSnapshot& s) noexcept {
     const auto vertex=activeGraph->find(route.goal);
     if(!vertex) { fail(MotionReason::InvalidGoal); return; }
     const auto& e=activeGraph->area(*vertex).extent;
-    const double lowX=double(e.northWest.x)-hull.minimum.x+1, highX=double(e.southEast.x)-hull.maximum.x-1;
-    const double lowY=double(e.northWest.y)-hull.minimum.y+1, highY=double(e.southEast.y)-hull.maximum.y-1;
+    const double lowX=e.northWest.x, highX=e.southEast.x;
+    const double lowY=e.northWest.y, highY=e.southEast.y;
     if(lowX>highX || lowY>highY) { fail(MotionReason::InvalidGoal); return; }
-    // An area-id goal chooses a hull-safe XY projection of the current point.
-    // Intermediate steering still follows selected portals, never area centers.
-    const nav::model::NavVector3 xy{static_cast<float>(std::clamp(double(s.position->x),lowX,highX)),
-        static_cast<float>(std::clamp(double(s.position->y),lowY,highY)),0};
+    // NAV bounds describe center membership. GroundProbe verifies physical hull
+    // clearance and support while approaching this goal, including narrow NAV.
+    // Keep the goal off shared boundaries without demanding a hull-wide NAV
+    // inset. Intermediate steering still follows the selected portals.
+    const double insetX=(std::min)(1.0,(highX-lowX)/4),insetY=(std::min)(1.0,(highY-lowY)/4);
+    const nav::model::NavVector3 xy{static_cast<float>(std::clamp(double(s.position->x),lowX+insetX,highX-insetX)),
+        static_cast<float>(std::clamp(double(s.position->y),lowY+insetY,highY-insetY)),0};
     const auto floor=nav::query::projectToArea(e,xy);
     const nav::model::NavVector3 goal{xy.x,xy.y,static_cast<float>(floor.z)};
     auto profile=walkLimits; profile.jump=jumpLimits; profile.drop=nav::local::DropLimits{}; profile.ladder=nav::local::LadderLimits{};
@@ -325,6 +331,47 @@ void NavConsole::startMotion(const nav::runtime::MovementSnapshot& s) noexcept {
     current_->execution_.state=nav::runtime::ExecutionState::Running;
     (void)current_->recovery_.bindRoute(current_->motionTrace_.decision.binding);
     current_->pump_.emplace(current_->motionTrace_.decision.binding); current_->intentWallAgeUs_=0; current_->neutralBinding_.reset();
+}
+nav::local::ProbeResult NavConsole::guardGround(metamod::LifecycleCoordinator& owner,
+    const nav::runtime::MovementSnapshot& s,const PendingMotion& pending) noexcept {
+    nav::local::ProbeResult proof;
+    proof.reason=nav::local::ProbeReason::StaleNavigation;
+    if(!index_ || !current_->walk_ || !current_->session_ || !current_->session_->executable() ||
+       current_->walk_->step()!=pending.binding.step || !s.position || !pending.segment) return proof;
+    const auto& route=current_->session_->trace();
+    if(route.routeGeneration!=pending.binding.routeGeneration || route.actor!=pending.binding.actor ||
+       route.agent!=pending.binding.agent || route.map!=pending.binding.map || navigation_.map!=pending.binding.map)
+        return proof;
+    if(current_->guardQueries_>=21) { proof.reason=nav::local::ProbeReason::BudgetExceeded; return proof; }
+    auto source=current_->session_->trace().goal,target=source;
+    if(const auto* transition=current_->walk_->activeTransition()) {
+        source=transition->edge.source; target=transition->edge.target;
+    }
+    struct Queries final : nav::runtime::IWorldQueries {
+        NavConsole& port; std::uint32_t& count;
+        Queries(NavConsole& p,std::uint32_t& c) : port(p),count(c) {}
+        nav::runtime::WorldQueryResult query(const nav::runtime::QueryRequest& original) override {
+            auto q=original;
+            if(count>=21) {
+                nav::runtime::WorldQueryResult r; r.stamp=q.stamp; r.kind=q.kind;
+                r.error=nav::runtime::QueryError::BudgetExceeded; return r;
+            }
+            q.stamp.ordinal=++count;
+            auto r=port.query(q);
+            if(r.stamp==q.stamp) r.stamp=original.stamp;
+            return r;
+        }
+    } queries(*this,current_->guardQueries_);
+    auto limits=walkLimits.probe; limits.maxQueries=21-current_->guardQueries_;
+    const double dt=double(current_->motionTrace_.dispatchDurationUs)/1000000;
+    const double yaw=pending.command.view.yaw*3.14159265358979323846/180;
+    const auto& m=pending.command.movement;
+    const float x=static_cast<float>(s.position->x+(m.forward*std::cos(yaw)+m.side*std::sin(yaw))*dt);
+    const float y=static_cast<float>(s.position->y+(m.forward*std::sin(yaw)-m.side*std::cos(yaw))*dt);
+    inRequest_=true; queryingEntity_=owner.entityFor(s.actor); queryingPlayers_=&owner.registry(); queryingOwner_=&owner;
+    proof=nav::local::inspectGroundFrame(s,pending.binding.routeGeneration,source,target,x,y,*index_,navigation_.map,queries,limits);
+    inRequest_=false; queryingEntity_=nullptr; queryingPlayers_=nullptr; queryingOwner_=nullptr;
+    return proof;
 }
 MotionReason NavConsole::guardDrop(metamod::LifecycleCoordinator& owner,
     const nav::runtime::MovementSnapshot& s,const PendingMotion& pending) noexcept {
@@ -423,8 +470,9 @@ void NavConsole::beforeDispatch(metamod::LifecycleCoordinator& owner) noexcept {
     const auto elapsed=s.elapsedUs;
     const bool stationary=pending.command.movement==core::Movement{} && pending.command.buttons==0;
     if(!ready(s,pending.jump.has_value() || pending.drop.has_value() || pending.ladder.has_value() || stationary) || s.actor!=pending.binding.actor || s.agent!=pending.binding.agent || s.map!=pending.binding.map ||
-       !s.tick.isAfter(pending.tick) || s.hull->minimum!=pending.observation.hull->minimum ||
-       s.hull->maximum!=pending.observation.hull->maximum) reason=MotionReason::MissingObservation;
+       !s.tick.isAfter(pending.tick) || (!pending.jump &&
+       (s.hull->minimum!=pending.observation.hull->minimum ||
+        s.hull->maximum!=pending.observation.hull->maximum))) reason=MotionReason::MissingObservation;
     else if(!s.elapsedUs || !movement_->frameDeltaUs() || elapsed>pending.remainingFreshUs)
         reason=MotionReason::StaleCommand;
     else if(current_->motionTrace_.decision.recovery.deadlineUs &&
@@ -521,6 +569,20 @@ void NavConsole::beforeDispatch(metamod::LifecycleCoordinator& owner) noexcept {
             current_->motionTrace_.rejected=add(current_->motionTrace_.rejected,1); recordMotion(MotionEvent::Rejected,guarded);
         }
         return;
+    }
+    if(!pending.contact && (pending.command.movement.forward!=0 || pending.command.movement.side!=0)) {
+        const auto proof=guardGround(owner,s,pending);
+        if(deferredInvalidation_) { (void)applyDeferredInvalidation(); return; }
+        if(!proof) {
+            current_->motionTrace_.commandTick=pending.tick; current_->motionTrace_.dispatchTick=s.tick;
+            clearPending(); if(current_->pump_) current_->pump_->submissionRejected();
+            current_->motionTrace_.rejected=add(current_->motionTrace_.rejected,1);
+            recordMotion(MotionEvent::Rejected,MotionReason::MissingObservation);
+            // Retry a budget-limited observation; no route or edge exclusion.
+            if(proof.reason!=nav::local::ProbeReason::BudgetExceeded)
+                failExecution(nav::runtime::ExecutionFailure::Observation);
+            return;
+        }
     }
     if(s.ducked==true && (pending.command.buttons&static_cast<core::ButtonMask>(core::Button::Duck))==0) {
         const auto queued=pending.tick;
@@ -639,6 +701,10 @@ void NavConsole::afterDispatch(const metamod::MovementResult& result,core::TickI
             trace.dispatchNoProgress=(transport.forward!=0.0F ||
                 transport.side!=0.0F || transport.up!=0.0F || transport.buttons!=0U) &&
                 trace.dispatchHorizontalDisplacement<1.0;
+                const double corridorProgress=dx*trace.decision.progressDirection.x+
+                    dy*trace.decision.progressDirection.y;
+                if(sameRoute && corridorProgress>=4.0 && trace.selectedEdge)
+                    current_->execution_.clearEdgeCooldown(*trace.selectedEdge);
         }
     }
     if(sameRoute) reportLadderTransport(ticket->decision,ticket->commandTick,tick,result.dispatched());

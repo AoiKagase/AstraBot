@@ -17,7 +17,11 @@ bool support(const GroundedTarget& p,const runtime::MovementSnapshot& s,model::N
 }
 }
 JumpDecision SimpleJump::result(JumpReason reason) const noexcept {
-    JumpDecision out; out.state=state_; out.reason=reason; out.pressTick=pressTick_; out.intent.jump=ActionRequest::Release; return out;
+    JumpDecision out; out.state=state_; out.reason=reason; out.pressTick=pressTick_; out.intent.jump=ActionRequest::Release;
+    const bool duck=((plan_.sourceAttributes&1U)!=0) || (plan_.flightHull &&
+        (state_==JumpState::Airborne || state_==JumpState::Recover || state_==JumpState::Complete));
+    out.intent.duck=duck ? ActionRequest::Hold:ActionRequest::Release;
+    return out;
 }
 JumpDecision SimpleJump::finish(JumpState state,JumpReason reason) noexcept {
     const bool first=!terminal(state_); state_=state; auto out=result(reason); out.accepted=out.terminalEvent=first; return out;
@@ -41,7 +45,7 @@ JumpDecision SimpleJump::update(const JumpFeedback& f) noexcept {
        !limits_.maxQueries || !limits_.approachTimeoutUs || !limits_.takeoffTimeoutUs || !limits_.airborneTimeoutUs || !limits_.cooldownUs)
         return fail(JumpReason::InvalidInput);
     const auto length=distance(plan_.takeoff,plan_.landing);
-    if(length<=0 || length>limits_.maximumDistance || plan_.landing.z<plan_.takeoff.z ||
+    if(length<=0 || length>limits_.maximumDistance || (plan_.landing.z<plan_.takeoff.z && !plan_.flightHull) ||
        double(plan_.landing.z)-plan_.takeoff.z>limits_.maximumRise) return fail(JumpReason::InvalidInput);
     if(!same(f.binding,binding_) || s.agent!=binding_.agent || s.actor!=binding_.actor || s.map!=binding_.map ||
        s.kind!=runtime::ActorKind::ManagedBot || s.connected!=true || s.alive!=true || s.joined!=true)
@@ -53,7 +57,7 @@ JumpDecision SimpleJump::update(const JumpFeedback& f) noexcept {
     if(!s.position || !s.position->isFinite() || !s.velocity || !s.velocity->isFinite() ||
        !s.view || !s.view->isFinite() || !s.hull || !s.hull->minimum.isFinite() || !s.hull->maximum.isFinite() ||
        s.hull->minimum.x>=s.hull->maximum.x || s.hull->minimum.y>=s.hull->maximum.y || s.hull->minimum.z>=s.hull->maximum.z ||
-       !s.grounded || s.ducked!=false || !s.speedLimit || !std::isfinite(*s.speedLimit) || *s.speedLimit<limits_.minimumSpeed)
+       !s.grounded || !s.ducked || !s.speedLimit || !std::isfinite(*s.speedLimit) || *s.speedLimit<limits_.minimumSpeed)
         return fail(JumpReason::MissingObservation);
     const auto* proof=f.inspection ? &*f.inspection:nullptr;
     if(proof && (proof->stamp.agent!=s.agent || proof->stamp.actor!=s.actor || proof->stamp.map!=s.map ||
@@ -66,6 +70,11 @@ JumpDecision SimpleJump::update(const JumpFeedback& f) noexcept {
     const double ux=(double(plan_.landing.x)-plan_.takeoff.x)/length,uy=(double(plan_.landing.y)-plan_.takeoff.y)/length;
     const double yaw=std::atan2(uy,ux)*180/3.14159265358979323846;
     auto out=result(); out.accepted=true;
+    const bool flight=state_==JumpState::Airborne || state_==JumpState::Recover || (state_==JumpState::Takeoff && !*s.grounded);
+    const bool requiredDuck=flight ? plan_.flightHull.has_value():hints.sourceDuck;
+    out.intent.duck=requiredDuck ? ActionRequest::Hold:ActionRequest::Release;
+    if(!flight && *s.ducked!=hints.sourceDuck) return fail(JumpReason::MissingObservation);
+    if(flight && *s.grounded && *s.ducked!=requiredDuck) return fail(JumpReason::WrongLanding);
     const auto moving=[&](double speed) {
         out.intent.direction={ux,uy,0}; out.intent.speed=(std::min)(speed,double(*s.speedLimit));
         out.intent.view=core::IntentVector{0,yaw,0}; return out;

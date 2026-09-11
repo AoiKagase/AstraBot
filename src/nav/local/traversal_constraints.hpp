@@ -8,6 +8,7 @@ struct TraversalConstraints {
     model::NavTraversalKind kind{model::NavTraversalKind::Walk};
     bool noJump{};
     bool precise{};
+    bool sourceDuck{}, targetDuck{};
     ConstraintReason reason{ConstraintReason::None};
     explicit operator bool() const noexcept { return reason==ConstraintReason::None; }
 };
@@ -23,7 +24,8 @@ inline TraversalConstraints constraints(model::NavTraversalKind edge,std::uint8_
     const bool duck=(hints&1U)!=0 || edge==model::NavTraversalKind::Crouch;
     const bool jump=(hints&2U)!=0 || edge==model::NavTraversalKind::Jump;
     if(jump && out.noJump) { out.reason=ConstraintReason::ConflictingJump; return out; }
-    if(jump && duck) { out.reason=ConstraintReason::DuckJumpUnsupported; return out; }
+    out.sourceDuck=(source&1U)!=0;
+    out.targetDuck=(target&1U)!=0;
     out.kind=jump ? model::NavTraversalKind::Jump:duck ? model::NavTraversalKind::Crouch:model::NavTraversalKind::Walk;
     return out;
 }

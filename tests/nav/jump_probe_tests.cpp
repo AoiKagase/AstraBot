@@ -188,4 +188,19 @@ void controllerConsumesRealQueries() {
     }
 }
 }
-int main() { clearAndEnvelope(); supportedTransitions(); failures(); controllerConsumesRealQueries(); }
+void currentPhysicsCapabilities() {
+    auto s=actor();
+    JumpPhysics p{binding,s.tick,800,std::sqrt(72000.0),*s.hull,
+        runtime::HullDimensions{{-16,-16,-18},{16,16,18}}};
+    const auto hints=constraints(model::NavTraversalKind::Jump,0,1);
+    auto derived=deriveJumpLimits(motion,p,s,hints);
+    assert(derived && std::abs(derived->maximumRise-45)<0.001 && derived->flightHull);
+    // Shrinking in air leaves origin fixed and lifts feet by 18 units.
+    const auto floorRise=derived->maximumRise+derived->flightHull->minimum.z-s.hull->minimum.z;
+    assert(std::abs(floorRise-63)<0.001);
+    p.gravity=1600;
+    derived=deriveJumpLimits(motion,p,s,hints);
+    assert(derived && std::abs(derived->maximumRise-22.5)<0.001);
+    p.tick={}; assert(!deriveJumpLimits(motion,p,s,hints));
+}
+int main() { currentPhysicsCapabilities(); clearAndEnvelope(); supportedTransitions(); failures(); controllerConsumesRealQueries(); }

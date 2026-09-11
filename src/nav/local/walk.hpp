@@ -131,6 +131,7 @@ private:
     std::optional<CrouchState> posture_{};
     CrouchReason postureReason_{CrouchReason::None};
     std::optional<SimpleJump> jump_{};
+    bool observedJumpCandidate_{};
     std::optional<DropPlan> dropPlan_{};
     DropState dropState_{DropState::Approach};
     std::uint64_t dropStartedUs_{}, dropAirborneUs_{}, dropLastUs_{};

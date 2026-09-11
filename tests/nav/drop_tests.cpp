@@ -12,10 +12,11 @@ constexpr Binding binding{{1},{2,{3}},{4},5,0};
 struct Fixture {
     std::shared_ptr<const query::NavSpatialIndex> index;
     std::shared_ptr<const corridor::Corridor> path;
-    explicit Fixture(bool south=false) {
+    explicit Fixture(bool south=false,bool narrowTarget=false) {
         route_test::Area a{1,{{0,0,0},{100,100,0},0,0},{}};
         route_test::Area b{2,{{125,0,-75},{325,100,-75},-75,-75},{}};
         if(south) b.extent={{0,125,-75},{100,325,-75},-75,-75};
+        if(narrowTarget) { b.extent.northWest.y=37.5F; b.extent.southEast.y=62.5F; }
         a.targets[south ? 2:1]={2};
         const auto mesh=route_test::snapshot({a,b});
         const auto graph=query::NavGraph::build(mesh,{2,1,1000000}); assert(graph);
@@ -77,6 +78,24 @@ void observedLifecycle() {
     const auto landed=walk.update(s,*f.index,binding.map,world,440000,0,physics(s));
     assert(landed.state==WalkState::Running && landed.dropState==DropState::Landed);
     assert(landed.support && landed.support->area==model::NavAreaId{2} && walk.step()==1);
+}
+void narrowTargetRequiresPhysicalSupport() {
+    Fixture f(false,true);
+    assert(f.path->transitions()[0].targetFit==corridor::AreaFit::MicroTransit);
+    for(int mode=0;mode<3;++mode) {
+        auto s=actor(); World world(*f.index);
+        world.blocked=mode==1; world.missing=mode==2;
+        Walk walk(binding,f.path,{175,50,-75},limits());
+        const auto d=walk.update(s,*f.index,binding.map,world,40000,0,physics(s));
+        if(mode==0) {
+            assert(d.state==WalkState::Running && d.dropState==DropState::StepOff);
+            assert(d.dropPlan && d.dropPlan->target==model::NavAreaId{2});
+            assert(d.dropPlan->landing.y>=37.5F && d.dropPlan->landing.y<=62.5F);
+        } else {
+            assert(d.state==WalkState::Failed && d.dropState==DropState::Failed);
+            assert(d.intent.speed==0 && walk.step()==0);
+        }
+    }
 }
 void rejectsUnprovenMotion() {
     Fixture f;
@@ -140,5 +159,5 @@ void landingRequiresObservedFlight() {
 }
 int main() {
     Fixture south(true); assert(south.path->transitions()[0].edge.direction==2);
-    observedLifecycle(); rejectsUnprovenMotion(); landingRequiresObservedFlight(); exactMicroSourceDrop();
+    observedLifecycle(); rejectsUnprovenMotion(); landingRequiresObservedFlight(); exactMicroSourceDrop(); narrowTargetRequiresPhysicalSupport();
 }

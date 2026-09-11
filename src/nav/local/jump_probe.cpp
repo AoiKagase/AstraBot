@@ -5,6 +5,42 @@
 #include <limits>
 
 namespace astrabot::nav::local {
+std::optional<JumpLimits> deriveJumpLimits(JumpLimits motion,const JumpPhysics& physics,
+    const runtime::MovementSnapshot& s,TraversalConstraints hints) noexcept {
+    if(!hints || hints.noJump || physics.tick!=s.tick || physics.binding.agent!=s.agent ||
+       physics.binding.actor!=s.actor || physics.binding.map!=s.map || !s.hull ||
+       !std::isfinite(physics.gravity) || physics.gravity<=0 ||
+       !std::isfinite(physics.verticalImpulse) || physics.verticalImpulse<=0) return {};
+    const auto validHull=[](const runtime::HullDimensions& h) {
+        return h.minimum.isFinite() && h.maximum.isFinite() && h.minimum.x<h.maximum.x &&
+            h.minimum.y<h.maximum.y && h.minimum.z<h.maximum.z;
+    };
+    if(!validHull(*s.hull)) return {};
+    if(physics.standingHull || physics.crouchingHull) {
+        if(!physics.standingHull || !physics.crouchingHull || !s.ducked ||
+           !validHull(*physics.standingHull) || !validHull(*physics.crouchingHull)) return {};
+        const auto& expected=*s.ducked ? *physics.crouchingHull:*physics.standingHull;
+        if(s.hull->minimum!=expected.minimum || s.hull->maximum!=expected.maximum) return {};
+    }
+    motion.standingHull=physics.standingHull;
+    motion.maximumRise=physics.verticalImpulse*physics.verticalImpulse/(2*physics.gravity);
+    if(!std::isfinite(motion.maximumRise) || motion.maximumRise<=0) return {};
+    if(hints.sourceDuck) {
+        if(!s.speedLimit || !std::isfinite(*s.speedLimit) || *s.speedLimit<=0 ||
+           !std::isfinite(physics.crouchSpeedMultiplier) || physics.crouchSpeedMultiplier<=0 ||
+           physics.crouchSpeedMultiplier>1) return {};
+        const double speed=*s.speedLimit*physics.crouchSpeedMultiplier;
+        motion.minimumSpeed=(std::min)(motion.minimumSpeed,speed*0.8);
+        motion.approachSpeed=(std::min)(double(*s.speedLimit),motion.approachSpeed/physics.crouchSpeedMultiplier);
+        motion.maximumSpeed=(std::max)(motion.maximumSpeed,motion.approachSpeed);
+        motion.maximumDistance=(std::min)(motion.maximumDistance,speed*2*physics.verticalImpulse/physics.gravity);
+    }
+    if(hints.sourceDuck || hints.targetDuck) {
+        if(!physics.standingHull || !physics.crouchingHull) return {};
+        motion.flightHull=physics.crouchingHull;
+    } else motion.flightHull.reset();
+    return motion;
+}
 namespace {
 bool same(Binding a,Binding b) noexcept {
     return a.agent==b.agent && a.actor==b.actor && a.map==b.map &&
@@ -62,7 +98,10 @@ JumpProbeResult JumpProbe::land(const runtime::MovementSnapshot& s,Binding bindi
     core::MapGeneration indexMap,runtime::IWorldQueries& port) noexcept {
     JumpProbeResult result;
     const auto fail=[&](JumpProbeReason reason) { result.reason=reason; return result; };
-    if(s.agent!=binding.agent || s.actor!=binding.actor || s.map!=binding.map || s.ducked!=false ||
+    if(s.ducked!=plan.flightHull.has_value() || (plan.flightHull && (!s.hull ||
+       s.hull->minimum!=plan.flightHull->minimum || s.hull->maximum!=plan.flightHull->maximum)))
+        return fail(JumpProbeReason::InvalidInput);
+    if(s.agent!=binding.agent || s.actor!=binding.actor || s.map!=binding.map || !s.ducked ||
        !plan.takeoff.isFinite() || !plan.landing.isFinite() || !plan.target.isValid() ||
        !positive(motion.landingRadius) || !positive(motion.supportTolerance) ||
        !limits.maxQueries || limits.maxQueries>21 || limits.maxQueries>motion.maxQueries)
@@ -84,7 +123,9 @@ JumpProbeResult JumpProbe::prepare(const runtime::MovementSnapshot& s,Binding bi
     core::MapGeneration indexMap,runtime::IWorldQueries& port) noexcept {
     JumpProbeResult result;
     const auto fail=[&](JumpProbeReason reason) { result.reason=reason; result.inspection.reset(); return result; };
-    if(s.agent!=binding.agent || s.actor!=binding.actor || s.map!=binding.map || s.ducked!=false ||
+    if(s.ducked!=constraints(model::NavTraversalKind::Jump,plan.sourceAttributes,plan.targetAttributes).sourceDuck)
+        return fail(JumpProbeReason::InvalidInput);
+    if(s.agent!=binding.agent || s.actor!=binding.actor || s.map!=binding.map || !s.ducked ||
        !s.position || !s.position->isFinite() || !plan.takeoff.isFinite() || !plan.landing.isFinite() ||
        !plan.source.isValid() || !plan.target.isValid() || plan.source==plan.target ||
        !positive(motion.takeoffRadius) || !positive(motion.approachSpeed) || !positive(motion.maximumSpeed) ||
@@ -137,7 +178,7 @@ JumpProbeResult JumpProbe::launch(const runtime::MovementSnapshot& s,Binding bin
     if(!binding.agent.isValid() || !binding.actor.isValid() || !binding.map.isValid() || !binding.routeGeneration ||
        s.agent!=binding.agent || s.actor!=binding.actor || s.map!=binding.map || !s.tick.isValid() ||
        s.kind!=runtime::ActorKind::ManagedBot || s.connected!=true || s.alive!=true || s.joined!=true ||
-       s.grounded!=true || s.ducked!=false || !s.position || !s.position->isFinite() ||
+       s.grounded!=true || s.ducked!=constraints(model::NavTraversalKind::Jump,plan.sourceAttributes,plan.targetAttributes).sourceDuck || !s.position || !s.position->isFinite() ||
        !s.velocity || !s.velocity->isFinite() || !s.view || !s.view->isFinite() ||
        !s.speedLimit || !positive(*s.speedLimit) || !s.hull ||
        !s.hull->minimum.isFinite() || !s.hull->maximum.isFinite() ||
@@ -147,6 +188,9 @@ JumpProbeResult JumpProbe::launch(const runtime::MovementSnapshot& s,Binding bin
         return fail(JumpProbeReason::InvalidInput);
     if(indexMap!=s.map) return fail(JumpProbeReason::StaleNavigation);
     if(!same(binding,physics.binding) || physics.tick!=s.tick) return fail(JumpProbeReason::StalePhysics);
+    if(plan.flightHull && (!physics.crouchingHull ||
+       plan.flightHull->minimum!=physics.crouchingHull->minimum ||
+       plan.flightHull->maximum!=physics.crouchingHull->maximum)) return fail(JumpProbeReason::StalePhysics);
     if(!constraints(model::NavTraversalKind::Jump,plan.sourceAttributes,plan.targetAttributes))
         return fail(JumpProbeReason::UnsupportedConstraints);
     for(double v : {physics.gravity,physics.verticalImpulse,motion.minimumSpeed,motion.maximumSpeed,
@@ -158,7 +202,7 @@ JumpProbeResult JumpProbe::launch(const runtime::MovementSnapshot& s,Binding bin
        !limits.maxQueries || limits.maxQueries>21 || !limits.maxSegments || limits.maxSegments>8 ||
        limits.maxQueries>motion.maxQueries) return fail(JumpProbeReason::InvalidInput);
     const double length=distance(plan.takeoff,plan.landing);
-    if(length<=0 || length>motion.maximumDistance || plan.landing.z<plan.takeoff.z ||
+    if(length<=0 || length>motion.maximumDistance || (plan.landing.z<plan.takeoff.z && !plan.flightHull) ||
        double(plan.landing.z)-plan.takeoff.z>motion.maximumRise) return fail(JumpProbeReason::InvalidInput);
     if(distance(*s.position,plan.takeoff)>motion.takeoffRadius ||
        std::abs(double(s.position->z)-plan.takeoff.z)>motion.supportTolerance)
@@ -171,11 +215,12 @@ JumpProbeResult JumpProbe::launch(const runtime::MovementSnapshot& s,Binding bin
        std::abs(std::remainder(double(s.view->y)-yaw,360.0))>motion.facingDegrees)
         return fail(JumpProbeReason::InvalidVelocity);
     const runtime::QueryStamp stamp{s.agent,s.actor,s.map,s.tick,binding.routeGeneration,0};
-    const auto fetch=[&](runtime::QueryKind kind,model::NavVector3 start,model::NavVector3 end)
+    const auto fetch=[&](runtime::QueryKind kind,model::NavVector3 start,model::NavVector3 end,
+        std::optional<runtime::HullDimensions> hull={})
         ->std::optional<runtime::WorldQueryResult> {
         if(!start.isFinite() || !end.isFinite()) { result.reason=JumpProbeReason::InvalidInput; return {}; }
         if(result.queries==limits.maxQueries) { result.reason=JumpProbeReason::BudgetExceeded; return {}; }
-        runtime::QueryRequest q{stamp,kind,start,end,s.hull,limits.navTolerance}; q.stamp.ordinal=++result.queries;
+        runtime::QueryRequest q{stamp,kind,start,end,hull ? hull:s.hull,limits.navTolerance}; q.stamp.ordinal=++result.queries;
         try {
             const auto r=port.query(q);
             if(!(r.stamp==q.stamp) || r.kind!=kind) result.reason=JumpProbeReason::StaleQuery;
@@ -185,8 +230,9 @@ JumpProbeResult JumpProbe::launch(const runtime::MovementSnapshot& s,Binding bin
         } catch(...) { result.reason=JumpProbeReason::QueryFailed; }
         return {};
     };
-    const auto ground=[&](model::NavVector3 origin,model::NavAreaId area)->std::optional<GroundedTarget> {
-        const auto r=fetch(runtime::QueryKind::GroundedArea,origin,origin); if(!r) return {};
+    const auto ground=[&](model::NavVector3 origin,model::NavAreaId area,
+        std::optional<runtime::HullDimensions> hull={})->std::optional<GroundedTarget> {
+        const auto r=fetch(runtime::QueryKind::GroundedArea,origin,origin,hull); if(!r) return {};
         if(!r->ground || !r->ground->floor) { result.reason=JumpProbeReason::NoSupport; return {}; }
         const auto& floor=*r->ground->floor;
         const double normal=double(floor.normal.x)*floor.normal.x+double(floor.normal.y)*floor.normal.y+double(floor.normal.z)*floor.normal.z;
@@ -194,7 +240,7 @@ JumpProbeResult JumpProbe::launch(const runtime::MovementSnapshot& s,Binding bin
             result.reason=JumpProbeReason::InvalidResult; return {};
         }
         if(!floor.supported || floor.normal.z<0.7f ||
-           std::abs(double(origin.z)+s.hull->minimum.z-floor.height)>motion.supportTolerance) {
+           std::abs(double(origin.z)+(hull ? hull->minimum.z:s.hull->minimum.z)-floor.height)>motion.supportTolerance) {
             result.reason=JumpProbeReason::NoSupport; return {};
         }
         const auto match=index.containing({origin.x,origin.y,floor.height},limits.navTolerance);
@@ -203,8 +249,8 @@ JumpProbeResult JumpProbe::launch(const runtime::MovementSnapshot& s,Binding bin
         }
         return GroundedTarget{origin,area,floor};
     };
-    const auto sweep=[&](model::NavVector3 start,model::NavVector3 end) {
-        const auto r=fetch(runtime::QueryKind::SweptHull,start,end); if(!r) return false;
+    const auto sweep=[&](model::NavVector3 start,model::NavVector3 end,std::optional<runtime::HullDimensions> hull={}) {
+        const auto r=fetch(runtime::QueryKind::SweptHull,start,end,hull); if(!r) return false;
         if(!r->hull || !std::isfinite(r->hull->fraction) || r->hull->fraction<0 || r->hull->fraction>1 ||
            !r->hull->end.isFinite() || !r->hull->normal.isFinite()) result.reason=JumpProbeReason::InvalidResult;
         else if(r->hull->startSolid || r->hull->fraction!=1) result.reason=JumpProbeReason::Blocked;
@@ -214,11 +260,11 @@ JumpProbeResult JumpProbe::launch(const runtime::MovementSnapshot& s,Binding bin
         return false;
     };
     const auto source=ground(*s.position,plan.source); if(!source) return fail(result.reason);
-    const auto destination=ground(plan.landing,plan.target); if(!destination) return fail(result.reason);
-    const double landingZ=double(destination->floor.height)-s.hull->minimum.z;
+    const auto destination=ground(plan.landing,plan.target,plan.flightHull); if(!destination) return fail(result.reason);
+    const double landingZ=double(destination->floor.height)-(plan.flightHull ? plan.flightHull->minimum.z:s.hull->minimum.z);
     const double rise=landingZ-s.position->z;
     const double discriminant=physics.verticalImpulse*physics.verticalImpulse-2*physics.gravity*rise;
-    if(!representable(landingZ) || rise<0 || rise>motion.maximumRise || !std::isfinite(discriminant) || discriminant<=0)
+    if(!representable(landingZ) || (rise<0 && !plan.flightHull) || rise>motion.maximumRise || !std::isfinite(discriminant) || discriminant<=0)
         return fail(JumpProbeReason::CannotLand);
     const double time=(physics.verticalImpulse+std::sqrt(discriminant))/physics.gravity;
     const double x=s.position->x+double(s.velocity->x)*time,y=s.position->y+double(s.velocity->y)*time;
@@ -229,7 +275,7 @@ JumpProbeResult JumpProbe::launch(const runtime::MovementSnapshot& s,Binding bin
         return fail(JumpProbeReason::CannotLand);
     // A second support measurement checks where the observed velocity actually
     // lands. A different-height surface invalidates this trajectory, never retries.
-    const auto landing=ground(touchdown,plan.target); if(!landing) return fail(result.reason);
+    const auto landing=ground(touchdown,plan.target,plan.flightHull); if(!landing) return fail(result.reason);
     if(std::abs(double(landing->floor.height)-destination->floor.height)>0.001)
         return fail(JumpProbeReason::CannotLand);
     const double count=std::ceil(time/limits.maxSegmentSeconds);
@@ -242,7 +288,7 @@ JumpProbeResult JumpProbe::launch(const runtime::MovementSnapshot& s,Binding bin
     const double hullHeight=double(s.hull->maximum.z)-s.hull->minimum.z;
     if(!positive(bulge) || bulge>limits.maxChordRise || bulge>hullHeight)
         return fail(JumpProbeReason::BudgetExceeded);
-    if(!sweep(*s.position,*s.position) || !sweep(touchdown,touchdown)) return fail(result.reason);
+    if(!sweep(*s.position,*s.position) || !sweep(touchdown,touchdown,plan.flightHull)) return fail(result.reason);
     auto previous=*s.position;
     for(std::uint32_t i=1;i<=segments;++i) {
         const double t=time*i/segments;
@@ -260,7 +306,8 @@ JumpProbeResult JumpProbe::launch(const runtime::MovementSnapshot& s,Binding bin
         upperEnd.z=std::nextafter(static_cast<float>(double(next.z)+bulge),std::numeric_limits<float>::infinity());
         if(!upperStart.isFinite() || !upperEnd.isFinite() || double(upperStart.z)-previous.z>hullHeight ||
            double(upperEnd.z)-next.z>hullHeight) return fail(JumpProbeReason::InvalidInput);
-        if(!sweep(previous,next) || !sweep(upperStart,upperEnd)) return fail(result.reason);
+        const auto hull=(time*(i-1)/segments>=0.240) ? plan.flightHull:std::optional<runtime::HullDimensions>{};
+        if(!sweep(previous,next,hull) || !sweep(upperStart,upperEnd,hull)) return fail(result.reason);
         previous=next; ++result.segments;
     }
     JumpInspection proof; proof.stamp=stamp; proof.step=binding.step; proof.queries=result.queries;

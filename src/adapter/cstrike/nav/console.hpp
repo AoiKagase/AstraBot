@@ -39,6 +39,8 @@ struct MotionTrace {
     nav::local::WalkDecision decision{};
     std::optional<nav::query::NavDirectedEdge> selectedEdge{};
     std::optional<nav::query::NavDirectedEdge> failedEdge{};
+    std::uint64_t edgeCooldownRemainingUs{};
+    bool edgeCooling{false};
     core::BotCommand command{}; // Queued command; msec is a hint, transport measures dispatch.
     MotionEvent event{MotionEvent::None};
     MotionReason reason{MotionReason::None};
@@ -245,6 +247,7 @@ private:
         nav::model::NavVector3 ladderTarget{};
     };
     MotionReason guardJump(metamod::LifecycleCoordinator&,const nav::runtime::MovementSnapshot&,const PendingMotion&) noexcept;
+    nav::local::ProbeResult guardGround(metamod::LifecycleCoordinator&,const nav::runtime::MovementSnapshot&,const PendingMotion&) noexcept;
     MotionReason guardDrop(metamod::LifecycleCoordinator&,const nav::runtime::MovementSnapshot&,const PendingMotion&) noexcept;
     MotionReason guardLadder(metamod::LifecycleCoordinator&,const nav::runtime::MovementSnapshot&,const PendingMotion&) noexcept;
     std::optional<nav::local::LadderObservation> observeLadder(metamod::LifecycleCoordinator&,

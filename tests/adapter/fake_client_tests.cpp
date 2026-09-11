@@ -1497,10 +1497,18 @@ bool motionReason(astrabot::adapter::cstrike::MotionReason reason) {
 void testStandardJumpPhysics() {
     using namespace astrabot;
     enginefuncs_t engine{}; engine.pfnCVarGetPointer=&captureJumpCvar; edict_t entity{}; entity.v.movetype=MOVETYPE_WALK;
+    entity.v.mins=Vector(-16,-16,-36); entity.v.maxs=Vector(16,16,36);
     const nav::local::Binding binding{{1},{2,{3}},{4},5,6};
     gJumpGravity.value=800; gJumpHeight.value=45; gMissingJumpGravity=gMissingJumpHeight=false;
     auto p=adapter::cstrike::standardJumpPhysics(&engine,&entity,binding,{7});
     assert(p && p->gravity==800 && std::abs(p->verticalImpulse-std::sqrt(72000.0))<0.001 && p->binding.step==6);
+    entity.v.mins.z=-18; entity.v.maxs.z=18; entity.v.flags|=FL_DUCKING;
+    p=adapter::cstrike::standardJumpPhysics(&engine,&entity,binding,{7});
+    assert(p && p->gravity==800 && std::abs(p->verticalImpulse-std::sqrt(72000.0))<0.001);
+    entity.v.mins=Vector(-16,-16,-36); entity.v.maxs=Vector(16,16,36); entity.v.flags&=~FL_DUCKING;
+    entity.v.maxs.x=17;
+    assert(!adapter::cstrike::standardJumpPhysics(&engine,&entity,binding,{7}));
+    entity.v.maxs.x=16;
     entity.v.gravity=0.5f; p=adapter::cstrike::standardJumpPhysics(&engine,&entity,binding,{7}); assert(p && p->gravity==400);
     entity.v.gravity=0; gJumpHeight.value=64; p=adapter::cstrike::standardJumpPhysics(&engine,&entity,binding,{7}); assert(p && p->verticalImpulse==320);
     gMissingJumpHeight=true; p=adapter::cstrike::standardJumpPhysics(&engine,&entity,binding,{7}); assert(p && p->verticalImpulse<269);
@@ -1664,7 +1672,33 @@ void testNavWalkArrival() {
         gSimulateNav=false; detach();
     }
 }
+void testNarrowNavGoal() {
+    using namespace astrabot;
+    for(bool missing : {false,true}) {
+        Fixture fixture{}; enginefuncs_t hooks{}; prepareNavWalk(fixture,hooks);
+        auto& owner=adapter::metamod::lifecycleCoordinator(); auto& console=owner.navConsole();
+        route_test::Area a{1,{{0,0,0},{100,100,0},0,0}},
+            b{2,{{100,40,0},{120,60,0},0,0}};
+        a.targets[1]={2};
+        assert(console.publish(owner.registry().mapGeneration(),route_test::snapshot({a,b})).isNone());
+        runNav({"astrabot_goto","2"});
+        assert(console.motionTrace().reason!=adapter::cstrike::MotionReason::InvalidGoal);
+        // The same narrow NAV remains admissible; physical support decides movement.
+        gGroundMissing=missing;
+        bool arrived=false;
+        for(int i=0;i<500;++i) {
+            navFrame(fixture,16000);
+            const auto& d=console.motionTrace().decision;
+            if(d.state==nav::local::WalkState::Arrived) { arrived=true; break; }
+            if(d.state==nav::local::WalkState::Failed || d.state==nav::local::WalkState::Aborted) break;
+        }
+        assert(arrived!=missing);
+        if(missing) assert(fixture.entity.v.origin.x<100);
+        gGroundMissing=false; gSimulateNav=false; detach();
+    }
+}
 void testNavStairs() {
+    testNarrowNavGoal();
     using namespace astrabot;
     for(int mode=0;mode<4;++mode) for(std::uint64_t us : {8000U,16000U,100000U}) {
         Fixture fixture{}; enginefuncs_t hooks{}; prepareNavWalk(fixture,hooks);

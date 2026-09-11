@@ -18,6 +18,6 @@ public:
     // NAV-interpolated standing origins are only candidates for world queries.
     // No external/gap/duck-jump traversal, world proof or command is inferred.
     static JumpGeometryResult derive(const corridor::Corridor&, Binding,
-        const runtime::MovementSnapshot&, JumpLimits, JumpGeometryLimits) noexcept;
+        const runtime::MovementSnapshot&, JumpLimits, JumpGeometryLimits, bool observedObstacle=false) noexcept;
 };
 }

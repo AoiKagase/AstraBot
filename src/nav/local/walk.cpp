@@ -67,10 +67,6 @@ private:
     runtime::QueryRequest request_{};
     std::optional<runtime::WorldQueryResult> cached_{};
 };
-bool inside(const model::NavExtent& e, model::NavVector3 p, runtime::HullDimensions h) noexcept {
-    return double(p.x)+h.minimum.x>=e.northWest.x && double(p.x)+h.maximum.x<=e.southEast.x &&
-           double(p.y)+h.minimum.y>=e.northWest.y && double(p.y)+h.maximum.y<=e.southEast.y;
-}
 bool rawInside(const model::NavExtent& e, model::NavVector3 p) noexcept {
     return p.isFinite() && e.isFinite() && p.x>=e.northWest.x && p.x<=e.southEast.x &&
         p.y>=e.northWest.y && p.y<=e.southEast.y;
@@ -287,12 +283,18 @@ WalkDecision Walk::recover(const runtime::MovementSnapshot& s,const query::NavSp
         if(area==t.edge.source) extent=&t.sourceExtent;
         else if(area==t.edge.target) extent=&t.targetExtent;
         else return retainDuck(out);
-        if(t.sourceFit==corridor::AreaFit::MicroTransit ||
-           t.targetFit==corridor::AreaFit::MicroTransit)
-            return retainDuck(finish(out,WalkState::Failed,WalkReason::ProbeFailed));
+        if(recovery.state==RecoveryState::Sidestep &&
+           constraints(t.edge.traversal,t.sourceAttributes,t.targetAttributes).precise)
+            return retainDuck(out);
     } else {
         if(area!=corridor_->goal()) return retainDuck(out);
-        if(!corridor_->transitions().empty()) extent=&corridor_->transitions().back().targetExtent;
+        if(!corridor_->transitions().empty()) {
+            const auto& last=corridor_->transitions().back();
+            extent=&last.targetExtent;
+            if(recovery.state==RecoveryState::Sidestep &&
+               constraints(model::NavTraversalKind::Walk,0,last.targetAttributes).precise)
+                return retainDuck(out);
+        }
         else return retainDuck(out); // No retained extent to prove a hull-safe same-area detour.
     }
     const auto& forward=recovery.forward;
@@ -309,7 +311,9 @@ WalkDecision Walk::recover(const runtime::MovementSnapshot& s,const query::NavSp
         ux=recoverySide_*forward.y; uy=-recoverySide_*forward.x;
     }
     const auto x=inward(s.position->x+ux*distance,s.position->x),y=inward(s.position->y+uy*distance,s.position->y);
-    if(extent && !inside(*extent,{x,y,s.position->z},*s.hull)) return retainDuck(out);
+    // NAV bounds constrain the actor center. Floor and swept-hull queries
+    // below establish physical support and clearance across the detour.
+    if(extent && !rawInside(*extent,{x,y,s.position->z})) return retainDuck(out);
     budget.maxQueries=limits_.probe.maxQueries-out.queries+1;
     const auto probe=GroundProbe::inspect(s,binding_.routeGeneration,area,x,y,index,indexMap,queries,budget);
     out.queries=queries.issued; out.samples=probe.samples; out.steps=probe.steps; out.probeReason=probe.reason;
@@ -353,7 +357,7 @@ WalkDecision Walk::updateMotion(const runtime::MovementSnapshot& s,const query::
     if(dropPlan_ || (!cursor_.exhausted() &&
        corridor_->transitions()[cursor_.index()].effectiveTraversal==model::NavTraversalKind::Drop))
         return updateDrop(out,s,index,indexMap,port,nowUs,reservedQueries,physics);
-    if(jump_ || (!cursor_.exhausted() &&
+    if(jump_ || observedJumpCandidate_ || (!cursor_.exhausted() &&
         (corridor_->transitions()[cursor_.index()].effectiveTraversal==model::NavTraversalKind::Jump ||
          constraints(corridor_->transitions()[cursor_.index()].edge.traversal,
             corridor_->transitions()[cursor_.index()].sourceAttributes,
@@ -428,9 +432,7 @@ WalkDecision Walk::updateMotion(const runtime::MovementSnapshot& s,const query::
                 return finish(out,WalkState::Failed,WalkReason::InvalidPortal);
             return out; // lifecycle entry has its own tick, with no movement yet
         }
-        const bool targetReached = t.targetFit==corridor::AreaFit::MicroTransit
-            ? rawInside(t.targetExtent,*s.position)
-            : inside(t.targetExtent,*s.position,*s.hull);
+        const bool targetReached = rawInside(t.targetExtent,*s.position);
         if(area==t.edge.target && targetReached) {
             if((t.sourceFit==corridor::AreaFit::MicroTransit ||
                 t.targetFit==corridor::AreaFit::MicroTransit) && !microTransitValidated_)
@@ -455,30 +457,30 @@ WalkDecision Walk::updateMotion(const runtime::MovementSnapshot& s,const query::
         const auto portal=cursor_.target({reference.x,reference.y,reference.z},limits_.lookAhead);
         if(!portal) return finish(out,WalkState::Failed,WalkReason::InvalidPortal);
         double x=portal.value->x, y=portal.value->y;
-        const bool vertical=t.edge.direction==1 || t.edge.direction==3;
         const bool sourceInArea = t.edge.external
             ? rawInside(t.sourceExtent,*s.position)
-            : t.sourceFit==corridor::AreaFit::MicroTransit
-            ? rawInside(t.sourceExtent,{static_cast<float>(x),static_cast<float>(y),s.position->z})
-            : ((vertical && (y+s.hull->minimum.y>=t.sourceExtent.northWest.y &&
-                             y+s.hull->maximum.y<=t.sourceExtent.southEast.y)) ||
-               (!vertical && (x+s.hull->minimum.x>=t.sourceExtent.northWest.x &&
-                              x+s.hull->maximum.x<=t.sourceExtent.southEast.x)));
+            : rawInside(t.sourceExtent,{static_cast<float>(x),static_cast<float>(y),s.position->z});
         if(!sourceInArea)
             return finish(out,WalkState::Failed,WalkReason::InvalidPortal);
-        if(t.targetFit!=corridor::AreaFit::MicroTransit && !t.edge.external) switch(t.edge.direction) {
-        case 0: y-=double(s.hull->maximum.y)+limits_.crossingMargin; break;
-        case 1: x+=-double(s.hull->minimum.x)+limits_.crossingMargin; break;
-        case 2: y+=-double(s.hull->minimum.y)+limits_.crossingMargin; break;
-        case 3: x-=double(s.hull->maximum.x)+limits_.crossingMargin; break;
-        default: return finish(out,WalkState::Failed,WalkReason::InvalidPortal);
+        // Cross only the NAV center boundary. Physical hull clearance is
+        // established by GroundProbe, not by padding NAV edges with a hull.
+        if(!t.edge.external) {
+            const double inset=(std::min)({1.0,limits_.crossingMargin,
+                (double(t.targetExtent.southEast.x)-t.targetExtent.northWest.x)*0.25,
+                (double(t.targetExtent.southEast.y)-t.targetExtent.northWest.y)*0.25});
+            switch(t.edge.direction) {
+            case 0: y-=inset; break;
+            case 1: x+=inset; break;
+            case 2: y+=inset; break;
+            case 3: x-=inset; break;
+            default: return finish(out,WalkState::Failed,WalkReason::InvalidPortal);
+            }
         }
         if(!std::isfinite(x) || !std::isfinite(y) || std::abs(x)>(std::numeric_limits<float>::max)() ||
            std::abs(y)>(std::numeric_limits<float>::max)())
             return finish(out,WalkState::Failed,WalkReason::InvalidPortal);
         aim={static_cast<float>(x),static_cast<float>(y),s.position->z};
-        if(!aim.isFinite() || (t.targetFit==corridor::AreaFit::MicroTransit
-            ? !rawInside(t.targetExtent,aim) : !inside(t.targetExtent,aim,*s.hull)))
+        if(!aim.isFinite() || !rawInside(t.targetExtent,aim))
             return finish(out,WalkState::Failed,WalkReason::InvalidPortal);
         queries.source=t.edge.source; queries.target=t.edge.target;
     } else {
@@ -503,7 +505,9 @@ WalkDecision Walk::updateMotion(const runtime::MovementSnapshot& s,const query::
     float y=inward(s.position->y+dy*fraction,s.position->y);
     const double ux=dx/distance,uy=dy/distance;
     out.progressDirection={ux,uy,0};
-    bool precise=false;
+    bool precise=constraints(model::NavTraversalKind::Walk,0,
+        corridor_->transitions().empty() ? corridor_->startAttributes():
+        corridor_->transitions().back().targetAttributes).precise;
     if(!cursor_.exhausted()) {
         const auto& active=corridor_->transitions()[cursor_.index()];
         precise=constraints(active.edge.traversal,active.sourceAttributes,
@@ -557,6 +561,17 @@ WalkDecision Walk::updateMotion(const runtime::MovementSnapshot& s,const query::
             try { r=queries.query(q); } catch(...) {}
             const bool classified=r.stamp==q.stamp && r.kind==q.kind &&
                 r.error==runtime::QueryError::None && r.blocker;
+            if(classified && r.blocker->kind==runtime::BlockerKind::Geometry &&
+               limits_.jump && physics && !cursor_.exhausted() && s.grounded==true) {
+                const auto& transition=corridor_->transitions()[cursor_.index()];
+                const auto candidate=constraints(model::NavTraversalKind::Jump,
+                    transition.sourceAttributes,transition.targetAttributes);
+                if(candidate) {
+                    observedJumpCandidate_=true;
+                    out.intent={};
+                    return out; // Fresh physics and a full proof budget are required next tick.
+                }
+            }
             const bool dynamic=classified && (r.blocker->kind==runtime::BlockerKind::Player ||
                 r.blocker->kind==runtime::BlockerKind::Teammate || r.blocker->kind==runtime::BlockerKind::Enemy ||
                 r.blocker->kind==runtime::BlockerKind::Other);
@@ -575,11 +590,19 @@ WalkDecision Walk::updateMotion(const runtime::MovementSnapshot& s,const query::
             if(classified && (r.blocker->kind==runtime::BlockerKind::Geometry || blocker_)) {
                 const auto noSide=[&] {
                     if(blocker_) { out.blockerAction=BlockerAction::Yield; return out; }
+                    // A transient local-avoidance exhaustion is not proof that
+                    // the NAV edge is structurally impassable. Keep it in the
+                    // execution/recovery path so the actor can cool and retry
+                    // the directed edge instead of permanently excluding it.
+                    out.avoidanceReason=AvoidanceReason::CandidateBlocked;
                     return finish(out,WalkState::Failed,WalkReason::ProbeFailed);
                 };
                 if(blocker_ && avoidDecisions_>=limits_.maxAvoidanceDecisions) return noSide();
                 if(avoidDecisions_>=limits_.maxAvoidanceDecisions || out.samples>=limits_.probe.maxSamples ||
-                   out.queries>=limits_.probe.maxQueries) return finish(out,WalkState::Failed,WalkReason::ProbeFailed);
+                   out.queries>=limits_.probe.maxQueries) {
+                    out.avoidanceReason=AvoidanceReason::BudgetExceeded;
+                    return finish(out,WalkState::Failed,WalkReason::ProbeFailed);
+                }
                 const auto forwardProbeReason=out.probeReason;
                 if(!avoidSide_) avoidSide_=out.rightClearance>=out.leftClearance ? 1:-1;
                 ++avoidDecisions_;

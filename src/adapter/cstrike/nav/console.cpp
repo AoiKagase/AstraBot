@@ -25,18 +25,6 @@ constexpr std::size_t inputLimit=64*mib;
 constexpr std::uint64_t currentAreaFallbackMaxAgeTicks=2;
 const nav::io::NavMeshReadLimits meshLimits{inputLimit,{100000,65535,65535,8*mib},
     {100000,4096,255,255,65536,255,1000000,1000000,1000000,1000000,1000000},256*mib};
-bool hullFits(const nav::model::NavExtent& extent,
-              const nav::runtime::HullDimensions& hull) noexcept {
-    if(!extent.isFinite() || extent.southEast.x<=extent.northWest.x ||
-       extent.southEast.y<=extent.northWest.y || !hull.minimum.isFinite() ||
-       !hull.maximum.isFinite() || hull.minimum.x>=hull.maximum.x ||
-       hull.minimum.y>=hull.maximum.y)
-        return false;
-    const double halfX=(std::max)(std::abs(double(hull.minimum.x)),std::abs(double(hull.maximum.x)));
-    const double halfY=(std::max)(std::abs(double(hull.minimum.y)),std::abs(double(hull.maximum.y)));
-    return double(extent.southEast.x)-extent.northWest.x >= 2*halfX &&
-           double(extent.southEast.y)-extent.northWest.y >= 2*halfY;
-}
 
 // Route searches are actor-local, while the resulting corridors are executed
 // in the same world. Keep a small synchronous view of other actors' leading
@@ -278,7 +266,7 @@ void NavConsole::applyRuntimeNavigation(
         reject(RuntimeNavigationApplyReason::RouteRejected); return;
     }
     const auto goalVertex=navigation_.graph->find(decision.navigationGoal);
-    if(!goalVertex || !hullFits(navigation_.graph->area(*goalVertex).extent,*s.hull)) {
+    if(!goalVertex) {
         if(roamDecision && current_->roamRejectedGoalCount_ < current_->roamRejectedGoals_.size()) {
             bool duplicate=false;
             for(std::size_t i=0;i<current_->roamRejectedGoalCount_;++i)
@@ -675,7 +663,7 @@ std::optional<RuntimeNavigationState> NavConsole::runtimeState(
             ++result.roamExcludedMissing;
             recordExclusion(id,RoamExclusionReason::Missing); return;
         }
-        if (!result.movement.hull || !hullFits(navigation_.graph->area(*vertex).extent,*result.movement.hull))
+        if (!result.movement.hull)
             { ++result.roamExcludedHull;
               recordExclusion(id,RoamExclusionReason::Hull); return; }
             const auto point = navigation_.graph->center(*vertex);
@@ -776,7 +764,7 @@ void NavConsole::execute(NavCommand command,metamod::LifecycleCoordinator& owner
         line("nav error=InvalidGoalArea"); return;
     }
     const auto goalVertex=navigation_.graph->find(*goal);
-    if(!goalVertex || !hullFits(navigation_.graph->area(*goalVertex).extent,*s.hull)) {
+    if(!goalVertex) {
         line("nav error=InvalidGoalArea"); return;
     }
     if(!current_->session_ || current_->session_->trace().actor!=s.actor || current_->session_->trace().agent!=s.agent || current_->session_->trace().map!=s.map)

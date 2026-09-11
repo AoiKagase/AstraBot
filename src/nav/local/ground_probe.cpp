@@ -111,16 +111,17 @@ ProbeResult probe(const runtime::MovementSnapshot& s, std::uint64_t generation,
             // A hull can hit a riser before the floor trace reaches the higher
             // tread. A same-height sample is therefore still a valid step
             // candidate; the lifted sweeps decide whether it is walkable.
-            if(!stairCandidate || next.height<floor.height-limits.supportTolerance) return result;
-            const bool rising=next.height>floor.height+limits.supportTolerance;
-            const std::uint32_t extra=rising ? 3U:2U;
+            if(!stairCandidate) return result;
+            const std::uint32_t extra=3U;
             if(extra>limits.maxQueries-result.queries) return fail(ProbeReason::BudgetExceeded);
-            const double liftedZ=double(position.z)+(rising ? limits.maxStepUp:0);
+            const double liftedZ=double(position.z)+limits.maxStepUp;
             if(!representable(liftedZ)) return fail(ProbeReason::InvalidInput);
             const model::NavVector3 lifted{position.x,position.y,static_cast<float>(liftedZ)};
             const model::NavVector3 across{tx,ty,lifted.z};
-            if((rising && !clearance(position,lifted)) || !clearance(lifted,across) || !clearance(across,destination))
+            if(!clearance(position,lifted) || !clearance(lifted,across) || !clearance(across,destination))
                 return result;
+            result.lastStep=StepEvidence{position,lifted,across,
+                GroundedTarget{destination,(**match.value).areaId,next}};
             ++result.steps;
         }
         position=destination; floor=next; area=(**match.value).areaId; ++result.samples;

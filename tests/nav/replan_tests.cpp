@@ -41,7 +41,20 @@ int main() {
     assert(!execution.blocked(edge) && !execution.cooling({2},101));
     execution.fail({2},runtime::ExecutionFailure::Observation,100,edge,false);
     assert(!execution.blocked(edge)); // transient failures never poison topology
+    execution.setSearchTime(101);
+    assert(execution.edgeCooling(edge));
+    assert(search(excluded.policy()).value->steps.size()==3);
+    execution.begin(); // A new goal retains the bounded temporary edge cooldown.
+    assert(execution.edgeCooling(edge));
+    assert(search(otherPolicy.policy()).value->steps.size()==1);
+    execution.setSearchTime(100+runtime::Execution::edgeRetryDelayUs);
+    assert(!execution.edgeCooling(edge) && !execution.blocked(edge));
     assert(search(excluded.policy()).value->steps.size()==1);
+    execution.fail({2},runtime::ExecutionFailure::Observation,3'000'000,edge,false);
+    execution.setSearchTime(3'000'001);
+    assert(execution.edgeCooling(edge));
+    execution.clearEdgeCooldown(edge);
+    assert(!execution.edgeCooling(edge) && !execution.blocked(edge));
     local::Binding binding{{1},{1,{1}},{1},1,0};
     runtime::ReplanAttempt attempt;
     assert(attempt.schedule(binding,edge,{1},100));

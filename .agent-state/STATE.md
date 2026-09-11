@@ -1,31 +1,35 @@
-# State Status: verifying — P12 movement implementation and debug-level follow-up pending live acceptance
+# State Status: live acceptance pending — P12 A/B compatibility correction
 
-Milestone: P12
-Task: ZBot-equivalent NAV movement with bounded shortcut, Jump/Drop, collision recovery, combat regression, and controllable diagnostics
-Goal: Every managed BOT independently roams, follows a validated route, handles stairs/Jump/Drop/obstacles, and resumes after round/map transitions. Damage/death/combat remain live acceptance requirements.
+Branch: codex/p12-ab-compat-fix
+Workspace: H:/sourcecode/003.Game/amxmodx/AstraBot/.worktrees/p12-ab-compat-fix
+Base: 8807783 plus inherited movement/cooldown changes. Original worktree preserved.
+Scope: approved A/B; no C additional links or damage shortcuts.
+Reference: ReGameDLL_CS b0889847fe6d03898be88acc9e366660efb40ab5.
+Plan/evidence: docs/reports/p12-ab-compatibility-fix.md
 
-Relevant:
-- docs/plans/p12-zbot-movement-implementation.md
-- docs/reports/p12-console-debug.md
-- src/adapter/cstrike/nav/console.cpp
-- src/adapter/metamod/console_debug.cpp
-- src/adapter/metamod/console_debug.hpp
+Implemented and tests-OFF Release built:
+- Ground step-up always lifts; StepEvidence retained.
+- ground_frame.hpp revalidates physical per-frame ground/steps at dispatch.
+- Narrow NAV center membership for goals/crossings/recovery.
+- PRECISE final segment lateral suppression; regression test sources.
 
-Done:
-- P12 ZBot-compatible NAV/movement implementation committed as 7e316c5.
-- NAV diagnostics were gated by astrabot_debug in 67b6f56; the follow-up changes now define level 0 as all diagnostics off, level 1 as general diagnostics, and level 2 as general plus NAV diagnostics.
-- Tests-OFF x86 Release adapter rebuilt and six exports verified.
-- Deployed DLL: D:\SteamCMD\cstrike_rehlds\cstrike\addons\astrabot\dlls\astrabot_mm.dll.
-- FocalSpan is fresh/ready after the current source update.
+Additional implementation:
+- Shared Jump capabilities and observed source/flight/landing hull transitions.
+- Measured forward obstruction Jump fallback reuses the running primitive.
+- Regression sources updated; static review findings resolved.
 
-Verified:
-- Current deployed DLL hash: 05B995666A5C7B99859076793007F7E98CE79EA84116399694164E13CB702104.
-- Existing unrelated .gitignore and untracked work files remain unstaged and preserved.
+Verification:
+- Dedicated x86 NMake Release configured, tests OFF, W4/WX, pinned SDK.
+- Final x86 Release build and six exports passed. DLL deployed and backup
+  hash verified; full artifact identities are in the report above.
+- FocalSpan updated/queried before edits; final refresh precedes commit.
+- Independent ground/narrow review's PRECISE finding fixed.
+- No test configure/build/run, CTest or canonical performed.
 
-Next:
-- Restart/changelevel ReHLDS and capture qconsole.log with astrabot_debug 0, 1, and 2.
-- After explicit user-confirmed live PASS only, build/run focused regression tests and then the canonical gate.
-
-Blocked:
-- CTest, test-target builds/runs, and canonical verification remain prohibited until explicit real-device PASS.
-- P12 live acceptance is not yet established; do not report P12 or project Finish as complete.
+Gates:
+- User approved pre-Finish live A/B comparison for this task only.
+- Next: obtain server operation permission, then identical Zbot/AstraBot live
+  cases (5 passes each), multi-BOT and lifecycle/combat acceptance.
+- Explicit live PASS required before tests/canonical.
+- Live comparative/multi-BOT/lifecycle/combat acceptance pending.
+- Commit only intended source/tests/report/state; preserve local config/temp files.

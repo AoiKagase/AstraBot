@@ -16,11 +16,16 @@ struct GroundedTarget {
     model::NavAreaId area{};
     runtime::FloorObservation floor{};
 };
+struct StepEvidence {
+    model::NavVector3 start{}, lifted{}, across{};
+    GroundedTarget landing{};
+};
 struct ProbeResult {
     runtime::QueryStamp stamp{}; // Batch identity; ordinal 0, queries counts issued ordinals.
     ProbeReason reason{ProbeReason::None};
     std::optional<GroundedTarget> target{};
     std::uint32_t queries{}, samples{}, steps{};
+    std::optional<StepEvidence> lastStep{};
     explicit operator bool() const noexcept { return reason==ProbeReason::None && target.has_value(); }
 };
 // Offline value seam; synchronous, no retained host pointer and no motor command.

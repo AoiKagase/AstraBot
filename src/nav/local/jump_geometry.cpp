@@ -26,7 +26,7 @@ std::optional<model::NavVector3> point(const model::NavExtent& e,double x,double
 }
 }
 JumpGeometryResult JumpGeometry::derive(const corridor::Corridor& path,Binding binding,
-    const runtime::MovementSnapshot& s,JumpLimits motion,JumpGeometryLimits limits) noexcept {
+    const runtime::MovementSnapshot& s,JumpLimits motion,JumpGeometryLimits limits,bool observedObstacle) noexcept {
     const auto fail=[](JumpGeometryReason reason) { return JumpGeometryResult{reason,{}}; };
     if(!binding.agent.isValid() || !binding.actor.isValid() || !binding.map.isValid() || !binding.routeGeneration ||
        !s.tick.isValid() || !s.position || !s.position->isFinite() || !s.hull ||
@@ -38,10 +38,10 @@ JumpGeometryResult JumpGeometry::derive(const corridor::Corridor& path,Binding b
        !positive(limits.clearanceMargin)) return fail(JumpGeometryReason::InvalidInput);
     if(s.agent!=binding.agent || s.actor!=binding.actor || s.map!=binding.map ||
        s.kind!=runtime::ActorKind::ManagedBot || s.connected!=true || s.alive!=true || s.joined!=true ||
-       s.grounded!=true || s.ducked!=false) return fail(JumpGeometryReason::InvalidActor);
+       s.grounded!=true || !s.ducked) return fail(JumpGeometryReason::InvalidActor);
     if(binding.step>=path.transitions().size()) return fail(JumpGeometryReason::InvalidStep);
     const auto& t=path.transitions()[binding.step];
-    const auto jumpEdge=t.effectiveTraversal==model::NavTraversalKind::Jump;
+    const auto jumpEdge=t.effectiveTraversal==model::NavTraversalKind::Jump || observedObstacle;
     const auto hints=constraints(jumpEdge ? model::NavTraversalKind::Jump:t.edge.traversal,
         t.sourceAttributes,t.targetAttributes);
     if(!hints || hints.kind!=model::NavTraversalKind::Jump || t.edge.direction>3)
@@ -53,20 +53,24 @@ JumpGeometryResult JumpGeometry::derive(const corridor::Corridor& path,Binding b
            !query::containsXY(t.sourceExtent,*s.position))
             return fail(JumpGeometryReason::InvalidGeometry);
         const double length=std::hypot(b.x-a.x,b.y-a.y);
-        const double rise=b.z-a.z;
-        if(length<=0 || length>motion.maximumDistance || rise<0 || rise>motion.maximumRise)
-            return fail(rise<0 || rise>motion.maximumRise ?
+        const double sourceOffset=motion.standingHull ? motion.standingHull->minimum.z-s.hull->minimum.z:0;
+        const double targetOffset=motion.standingHull && motion.flightHull ?
+            motion.standingHull->minimum.z-motion.flightHull->minimum.z:sourceOffset;
+        const double rise=(b.z+targetOffset)-(a.z+sourceOffset);
+        if(length<=0 || length>motion.maximumDistance || (rise<0 && !motion.flightHull) || rise>motion.maximumRise)
+            return fail((rise<0 && !motion.flightHull) || rise>motion.maximumRise ?
                         JumpGeometryReason::HeightUnsupported:JumpGeometryReason::NoRoom);
-        const model::NavVector3 takeoff{static_cast<float>(a.x),static_cast<float>(a.y),static_cast<float>(a.z)};
-        const model::NavVector3 landing{static_cast<float>(b.x),static_cast<float>(b.y),static_cast<float>(b.z)};
+        const model::NavVector3 takeoff{static_cast<float>(a.x),static_cast<float>(a.y),static_cast<float>(a.z+sourceOffset)};
+        const model::NavVector3 landing{static_cast<float>(b.x),static_cast<float>(b.y),static_cast<float>(b.z+targetOffset)};
         return {JumpGeometryReason::None,
-                JumpPlan{t.edge.source,t.edge.target,takeoff,landing,t.sourceAttributes,t.targetAttributes}};
+                JumpPlan{t.edge.source,t.edge.target,takeoff,landing,t.sourceAttributes,t.targetAttributes,motion.flightHull}};
     }
     if(!query::containsXY(t.sourceExtent,*s.position)) return fail(JumpGeometryReason::InvalidActor);
     // A micro NAV patch is not a physical enclosure. Keep its landing centre
     // inside the patch; JumpProbe still proves the complete actor hull/flight.
     const auto candidateRegion=[&](const model::NavExtent& e,corridor::AreaFit fit,double radius) {
-        if(fit==corridor::AreaFit::HullSafe) return region(e,*s.hull,radius,limits.clearanceMargin);
+        if(fit==corridor::AreaFit::HullSafe && !hints.sourceDuck && !hints.targetDuck)
+            return region(e,*s.hull,radius,limits.clearanceMargin);
         const double inset=(std::min)({limits.clearanceMargin,
             (double(e.southEast.x)-e.northWest.x)/4,(double(e.southEast.y)-e.northWest.y)/4});
         return Region{e.northWest.x+inset,e.southEast.x-inset,e.northWest.y+inset,e.southEast.y-inset};
@@ -85,12 +89,13 @@ JumpGeometryResult JumpGeometry::derive(const corridor::Corridor& path,Binding b
     const double from=std::clamp(boundary-offset,vertical ? source.lowX:source.lowY,vertical ? source.highX:source.highY);
     const double to=std::clamp(boundary+offset,vertical ? target.lowX:target.lowY,vertical ? target.highX:target.highY);
     const auto a=point(t.sourceExtent,vertical ? from:tangent,vertical ? tangent:from,s.hull->minimum.z);
-    const auto b=point(t.targetExtent,vertical ? to:tangent,vertical ? tangent:to,s.hull->minimum.z);
+    const auto b=point(t.targetExtent,vertical ? to:tangent,vertical ? tangent:to,
+        motion.flightHull ? motion.flightHull->minimum.z:s.hull->minimum.z);
     if(!a || !b || !inside(source,*a) || !inside(target,*b)) return fail(JumpGeometryReason::InvalidGeometry);
     const double length=std::hypot(double(b->x)-a->x,double(b->y)-a->y);
     if(length<=0 || length>motion.maximumDistance) return fail(JumpGeometryReason::NoRoom);
     const double rise=double(b->z)-a->z;
-    if(rise<0 || rise>motion.maximumRise) return fail(JumpGeometryReason::HeightUnsupported);
-    return {JumpGeometryReason::None,JumpPlan{t.edge.source,t.edge.target,*a,*b,t.sourceAttributes,t.targetAttributes}};
+    if((rise<0 && !motion.flightHull) || rise>motion.maximumRise) return fail(JumpGeometryReason::HeightUnsupported);
+    return {JumpGeometryReason::None,JumpPlan{t.edge.source,t.edge.target,*a,*b,t.sourceAttributes,t.targetAttributes,motion.flightHull}};
 }
 }

@@ -131,18 +131,19 @@ void microTransitPolicy() {
     assert(transit.value->transitions()[1].targetFit==corridor::AreaFit::HullSafe);
 
     const auto microGoal=route(*g,1,2);
-    const auto rejectedGoal=corridor::Corridor::build(*g,microGoal,{16,16},limits,
+    const auto acceptedGoal=corridor::Corridor::build(*g,microGoal,{16,16},limits,
         corridor::PortalPolicy::AllowMicroTransit);
-    assert(rejectedGoal.error==corridor::Error::InvalidGoalArea);
-    assert(rejectedGoal.portalReason==corridor::PortalFailureReason::InvalidGoalArea);
+    assert(acceptedGoal && acceptedGoal.value->goal()==model::NavAreaId{2});
+    assert(acceptedGoal.value->transitions()[0].targetFit==corridor::AreaFit::MicroTransit);
 
     b.attributes=1;
     auto attributed=graph({a,b,c});
     const auto attributedRoute=route(*attributed,1,3);
-    const auto rejectedAttribute=corridor::Corridor::build(*attributed,attributedRoute,{16,16},limits,
+    const auto acceptedAttribute=corridor::Corridor::build(*attributed,attributedRoute,{16,16},limits,
         corridor::PortalPolicy::AllowMicroTransit);
-    assert(rejectedAttribute.error==corridor::Error::InvalidPortal);
-    assert(rejectedAttribute.portalReason==corridor::PortalFailureReason::UnsupportedTraversal);
+    assert(acceptedAttribute);
+    assert(acceptedAttribute.value->transitions()[0].targetAttributes==1);
+    assert(acceptedAttribute.value->transitions()[0].targetFit==corridor::AreaFit::MicroTransit);
 
     b=square(2,100,200); a.targets[1]={2}; b.targets[3]={1};
     auto disconnected=graph({a,b});
@@ -164,16 +165,34 @@ void boundaryAndJumpHints() {
     assert(first.effectiveTraversal==model::NavTraversalKind::Jump);
     assert(first.targetFit==corridor::AreaFit::MicroTransit);
     assert(path.value->target(0,{1187.742,50,36},1)); // centre supported; hull crosses NAV boundary
-    for(std::uint8_t bad : {std::uint8_t{10},std::uint8_t{3},std::uint8_t{18}}) {
+    for(std::uint8_t bad : {std::uint8_t{10},std::uint8_t{18}}) {
         b.attributes=bad; auto rejectedGraph=graph({a,b,c});
         assert(!corridor::Corridor::build(*rejectedGraph,route(*rejectedGraph,5,9),{16,16},limits,
             corridor::PortalPolicy::AllowMicroTransit));
     }
+    b.attributes=3; auto crouchJump=graph({a,b,c});
+    const auto crouchPath=corridor::Corridor::build(*crouchJump,route(*crouchJump,5,9),
+        {16,16},limits,corridor::PortalPolicy::AllowMicroTransit);
+    assert(crouchPath && crouchPath.value->transitions()[0].effectiveTraversal==model::NavTraversalKind::Jump);
+    assert(crouchPath.value->transitions()[0].targetAttributes==3);
     b.attributes=6; auto preciseJump=graph({a,b,c});
     const auto precisePath=corridor::Corridor::build(*preciseJump,route(*preciseJump,5,9),
         {16,16},limits,corridor::PortalPolicy::AllowMicroTransit);
     assert(precisePath && precisePath.value->transitions()[0].effectiveTraversal==
         model::NavTraversalKind::Jump);
+}
+void jumpRiseUsesRuntimePhysics() {
+    auto a=square(1,0,0), b=square(2,100,0);
+    a.targets[1]={2}; b.attributes=3; // Raised CROUCH|JUMP landing.
+    b.extent.northWest.z=b.extent.southEast.z=60;
+    b.extent.northEastZ=b.extent.southWestZ=60;
+    auto g=graph({a,b});
+    const auto path=corridor::Corridor::build(*g,route(*g,1,2),{16,16},limits,
+        corridor::PortalPolicy::AllowMicroTransit);
+    // The corridor retains this candidate; measured gravity, launch velocity,
+    // flight posture and physical sweeps decide whether it is executable.
+    assert(path && path.value->transitions()[0].effectiveTraversal==model::NavTraversalKind::Jump);
+    assert(path.value->transitions()[0].targetAttributes==3);
 }
 void lookAheadStopsBeforeDerivedTraversal() {
     for(bool drop : {false,true}) {
@@ -195,4 +214,4 @@ void lookAheadStopsBeforeDerivedTraversal() {
         assert(ahead.value->y==30);
     }
 }
-int main() { cardinalAndSlopes(); invalidAndBudgets(); lookAheadAndReplay(); externalOwnership(); microTransitPolicy(); boundaryAndJumpHints(); lookAheadStopsBeforeDerivedTraversal(); }
+int main() { cardinalAndSlopes(); invalidAndBudgets(); lookAheadAndReplay(); externalOwnership(); microTransitPolicy(); boundaryAndJumpHints(); jumpRiseUsesRuntimePhysics(); lookAheadStopsBeforeDerivedTraversal(); }

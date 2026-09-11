@@ -11,14 +11,18 @@ enum class JumpReason { None, InvalidInput, InvalidActor, StaleTick, StaleInspec
     WrongLanding, LostSupport, Cancelled };
 struct JumpPlan {
     model::NavAreaId source{}, target{};
-    model::NavVector3 takeoff{}, landing{}; // Standing-hull origins, not area centers.
+    model::NavVector3 takeoff{}, landing{}; // Origins in observed launch and selected landing poses, not area centers.
     std::uint8_t sourceAttributes{}, targetAttributes{};
+    // Landing/airborne hull, when a crouch hint requires a midair shrink.
+    std::optional<runtime::HullDimensions> flightHull{};
 };
 struct JumpLimits {
     double approachSpeed{}, minimumSpeed{}, maximumSpeed{}, takeoffRadius{}, landingRadius{}, facingDegrees{},
         maximumDistance{}, maximumRise{}, supportTolerance{};
     std::uint32_t maxQueries{};
     std::uint64_t approachTimeoutUs{}, takeoffTimeoutUs{}, airborneTimeoutUs{}, cooldownUs{};
+    std::optional<runtime::HullDimensions> flightHull{};
+    std::optional<runtime::HullDimensions> standingHull{};
 };
 // Produced by a trusted, bounded world-query planner, never by NAV hints alone.
 // One current-stamped batch owns support and optional approach/flight evidence.
