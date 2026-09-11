@@ -580,26 +580,83 @@ WalkDecision Walk::updateMotion(const runtime::MovementSnapshot& s,const query::
                 if(blocker_ && avoidDecisions_>=limits_.maxAvoidanceDecisions) return noSide();
                 if(avoidDecisions_>=limits_.maxAvoidanceDecisions || out.samples>=limits_.probe.maxSamples ||
                    out.queries>=limits_.probe.maxQueries) return finish(out,WalkState::Failed,WalkReason::ProbeFailed);
+                const auto forwardProbeReason=out.probeReason;
                 if(!avoidSide_) avoidSide_=out.rightClearance>=out.leftClearance ? 1:-1;
                 ++avoidDecisions_;
-                const double free=avoidSide_>0 ? out.rightClearance:out.leftClearance;
-                if(free<=1) return noSide();
+                double free=avoidSide_>0 ? out.rightClearance:out.leftClearance;
+                if(free<=1) {
+                    avoidSide_=-avoidSide_;
+                    free=avoidSide_>0 ? out.rightClearance:out.leftClearance;
+                    out.avoidanceReason=AvoidanceReason::CandidateCollapsed;
+                    if(free<=1) return finish(out,WalkState::Failed,WalkReason::AvoidanceCollapsed);
+                }
                 x=inward(s.position->x+avoidSide_*uy*(free-1),s.position->x);
                 y=inward(s.position->y-avoidSide_*ux*(free-1),s.position->y);
                 constrainWithinBudget(x,y);
-                if(std::hypot(double(x)-s.position->x,double(y)-s.position->y)<0.1)
-                    return noSide();
+                double candidateDistance=std::hypot(double(x)-s.position->x,double(y)-s.position->y);
+                out.avoidanceSide=avoidSide_;
+                out.avoidanceDistance=candidateDistance;
+                out.avoidanceCandidate=model::NavVector3{static_cast<float>(x),static_cast<float>(y),s.position->z};
+                if(candidateDistance<1.0) {
+                    out.avoidanceReason=AvoidanceReason::CandidateCollapsed;
+                    avoidSide_=-avoidSide_;
+                    const double oppositeFree=avoidSide_>0 ? out.rightClearance:out.leftClearance;
+                    x=inward(s.position->x+avoidSide_*uy*(oppositeFree-1),s.position->x);
+                    y=inward(s.position->y-avoidSide_*ux*(oppositeFree-1),s.position->y);
+                    candidateDistance=std::hypot(double(x)-s.position->x,double(y)-s.position->y);
+                    out.avoidanceSide=avoidSide_;
+                    out.avoidanceDistance=candidateDistance;
+                    out.avoidanceCandidate=model::NavVector3{static_cast<float>(x),static_cast<float>(y),s.position->z};
+                    if(candidateDistance<1.0)
+                        return finish(out,WalkState::Failed,WalkReason::AvoidanceCollapsed);
+                }
                 auto budget=limits_.probe; budget.maxQueries=limits_.probe.maxQueries-out.queries+1;
                 budget.maxSamples-=out.samples;
                 const auto alternate=GroundProbe::inspect(s,binding_.routeGeneration,area,x,y,index,indexMap,queries,budget);
                 out.queries=queries.issued; out.samples+=alternate.samples; out.steps+=alternate.steps;
                 out.probeReason=alternate.reason;
                 if(!alternate) {
+                    out.avoidanceReason=queries.offCorridor ? AvoidanceReason::CandidateOffCorridor:
+                        alternate.reason==ProbeReason::BudgetExceeded ? AvoidanceReason::BudgetExceeded:
+                        AvoidanceReason::CandidateBlocked;
+                    out.probeReason=forwardProbeReason;
+                    if(alternate.reason==ProbeReason::BudgetExceeded) {
+                        out.intent={};
+                        return out;
+                    }
+                    if(!queries.offCorridor && alternate.reason!=ProbeReason::BudgetExceeded) {
+                        avoidSide_=-avoidSide_;
+                        const double otherFree=avoidSide_>0 ? out.rightClearance:out.leftClearance;
+                        float otherX=inward(s.position->x+avoidSide_*uy*(otherFree-1),s.position->x);
+                        float otherY=inward(s.position->y-avoidSide_*ux*(otherFree-1),s.position->y);
+                        constrainWithinBudget(otherX,otherY);
+                        const double otherDistance=std::hypot(double(otherX)-s.position->x,double(otherY)-s.position->y);
+                        out.avoidanceSide=avoidSide_; out.avoidanceDistance=otherDistance;
+                        out.avoidanceCandidate=model::NavVector3{static_cast<float>(otherX),static_cast<float>(otherY),s.position->z};
+                        if(otherDistance<1.0)
+                            return finish(out,WalkState::Failed,WalkReason::AvoidanceCollapsed);
+                        if(otherDistance>=1.0 && out.queries<limits_.probe.maxQueries && out.samples<limits_.probe.maxSamples) {
+                            auto otherBudget=limits_.probe;
+                            otherBudget.maxQueries=limits_.probe.maxQueries-out.queries+1;
+                            otherBudget.maxSamples-=out.samples;
+                            const auto other=GroundProbe::inspect(s,binding_.routeGeneration,area,otherX,otherY,index,indexMap,queries,otherBudget);
+                            out.queries=queries.issued; out.samples+=other.samples; out.steps+=other.steps;
+                            if(other) {
+                                out.probeReason=forwardProbeReason;
+                                out.target=other.target; out.avoiding=true; out.avoidanceReason=AvoidanceReason::None;
+                                const double length=otherDistance;
+                                out.intent.direction={(double(otherX)-s.position->x)/length,(double(otherY)-s.position->y)/length,0};
+                                out.intent.speed=(std::min)(limits_.narrowSpeed,length/0.120);
+                                return out;
+                            }
+                        }
+                    }
                     if(!queries.offCorridor && (alternate.reason==ProbeReason::Blocked || alternate.reason==ProbeReason::NoSupport))
                         return noSide();
                     return finish(out,WalkState::Failed,WalkReason::ProbeFailed);
                 }
-                out.target=alternate.target; out.avoiding=true;
+                out.probeReason=forwardProbeReason;
+                out.target=alternate.target; out.avoiding=true; out.avoidanceReason=AvoidanceReason::None;
                 const double length=std::hypot(double(x)-s.position->x,double(y)-s.position->y);
                 out.intent.direction={(double(x)-s.position->x)/length,(double(y)-s.position->y)/length,0};
                 out.intent.speed=(std::min)(limits_.narrowSpeed,length/0.120); return out;

@@ -2,12 +2,26 @@
 #pragma once
 #include "nav/runtime/world_query.hpp"
 #include <algorithm>
+#include <cmath>
 namespace steering_fixture {
 // Independent synthetic physics. Bounds describe the hull center after Minkowski expansion.
 inline astrabot::nav::runtime::HullObservation sweep(int mode,astrabot::nav::model::NavVector3 a,
     astrabot::nav::model::NavVector3 b) {
     using namespace astrabot::nav;
     runtime::HullObservation h{1,b,{},false};
+    if(mode==10) {
+        const float dx=b.x-a.x, dy=b.y-a.y;
+        if(std::abs(dy)>std::abs(dx)) {
+            h.fraction=0.1335F;
+            h.normal={0,dy>0 ? -1.0F:1.0F,0};
+            h.end={a.x+dx*h.fraction,a.y+dy*h.fraction,a.z};
+        } else if(std::abs(dx)>0.0F) {
+            h.fraction=0.5F;
+            h.normal={dx>0 ? -1.0F:1.0F,0,0};
+            h.end={a.x+dx*h.fraction,a.y+dy*h.fraction,a.z};
+        }
+        return h;
+    }
     if(mode==0) {
         if(a.y<48 || a.y>52) { h.startSolid=true; return h; }
         if(b.y>52) { h.fraction=(52-a.y)/(b.y-a.y); h.normal={0,-1,0}; }

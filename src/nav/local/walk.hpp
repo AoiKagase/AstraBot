@@ -15,7 +15,8 @@
 namespace astrabot::nav::local {
 enum class WalkState { Running, Arrived, Failed, Aborted };
 enum class WalkReason { None, InvalidInput, StaleTick, InvalidActor, StaleNavigation,
-    UnsupportedTraversal, InvalidGoal, OffCorridor, InvalidPortal, ProbeFailed, Cancelled, DoorBlocked, DynamicBlocked, PostureFailed, JumpFailed, LadderFailed, Stuck, RecoveryReplan };
+    UnsupportedTraversal, InvalidGoal, OffCorridor, InvalidPortal, ProbeFailed, Cancelled, DoorBlocked, DynamicBlocked, PostureFailed, JumpFailed, LadderFailed, Stuck, RecoveryReplan, AvoidanceCollapsed };
+enum class AvoidanceReason { None, CandidateCollapsed, CandidateBlocked, CandidateOffCorridor, BudgetExceeded };
 struct WalkJumpLimits { JumpLimits motion{}; JumpGeometryLimits geometry{}; JumpProbeLimits flight{}; };
 struct WalkLimits {
     GroundProbeLimits probe{};
@@ -54,6 +55,10 @@ struct WalkDecision {
     std::optional<DoorContact> contact{}; // Single-frame pulse; host must revalidate before dispatch.
     double leftClearance{}, rightClearance{};
     bool narrow{}, avoiding{};
+    AvoidanceReason avoidanceReason{AvoidanceReason::None};
+    int avoidanceSide{};
+    double avoidanceDistance{};
+    std::optional<model::NavVector3> avoidanceCandidate{};
     BlockerAction blockerAction{BlockerAction::Neutral};
     BlockerReason blockerReason{BlockerReason::None};
     std::optional<runtime::BlockerObservation> blocker{};

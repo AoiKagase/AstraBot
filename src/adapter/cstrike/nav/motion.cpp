@@ -91,7 +91,7 @@ void NavConsole::printMotion() noexcept {
     const auto target=d.target ? d.target->origin:nav::model::NavVector3{};
     char text[1536]{};
     std::snprintf(text,sizeof(text),
-        "walk actor=%u:%u map=%u route=%llu step=%zu tick=%llu state=%s reason=%u probe=%u event=%u motion_reason=%u corridor=%u portal_reason=%u transition=%zu micro_area=%u extent=(%.6g,%.6g)->(%.6g,%.6g) hull=(%.6g,%.6g) transport=%u command_tick=%llu dispatch_tick=%llu age_us=%llu speed=%.6g direction=(%.6g,%.6g) target_present=%u target=(%.6g,%.6g,%.6g) support=%u queries=%u samples=%u step_probes=%u queued=%llu dispatched=%llu rejected=%llu missed=%llu history=%zu omitted=%llu edge=%u:%u command=(%.6g,%.6g,%u) door=%llu door_state=%u door_reason=%u use_checks=%llu contact_pulse=%u contact_guards=%llu clearance=(%.6g,%.6g) narrow=%u avoiding=%u lateral=%.6g",
+        "walk actor=%u:%u map=%u route=%llu step=%zu tick=%llu state=%s reason=%u probe=%u event=%u motion_reason=%u corridor=%u portal_reason=%u transition=%zu micro_area=%u extent=(%.6g,%.6g)->(%.6g,%.6g) hull=(%.6g,%.6g) transport=%u command_tick=%llu dispatch_tick=%llu age_us=%llu speed=%.6g direction=(%.6g,%.6g) target_present=%u target=(%.6g,%.6g,%.6g) support=%u queries=%u samples=%u step_probes=%u queued=%llu dispatched=%llu rejected=%llu missed=%llu history=%zu omitted=%llu edge=%u:%u command_forward=%.6g command_side=%.6g command_msec=%u door=%llu door_state=%u door_reason=%u use_checks=%llu contact_pulse=%u contact_guards=%llu clearance=(%.6g,%.6g) narrow=%u avoiding=%u lateral=%.6g",
         unsigned(d.binding.actor.slot),unsigned(d.binding.actor.generation.value),unsigned(d.binding.map.value),
         static_cast<unsigned long long>(d.binding.routeGeneration),d.binding.step,static_cast<unsigned long long>(d.tick.value),
         walkState(d.state),unsigned(d.reason),unsigned(d.probeReason),unsigned(current_->motionTrace_.event),unsigned(current_->motionTrace_.reason),
@@ -124,6 +124,19 @@ void NavConsole::printMotion() noexcept {
         d.blocker && d.blocker->player ? unsigned(d.blocker->player->slot):0U,
         d.blocker && d.blocker->player ? unsigned(d.blocker->player->generation.value):0U);
     line(text);
+    if(d.avoiding || d.avoidanceReason!=nav::local::AvoidanceReason::None) {
+        char avoidance[512]{};
+        const auto& candidate=d.avoidanceCandidate;
+        std::snprintf(avoidance,sizeof(avoidance),
+            "nav avoidance actor=%u:%u route=%llu step=%zu side=%d reason=%u distance=%.6g candidate_present=%u candidate=(%.6g,%.6g,%.6g) left=%.6g right=%.6g forward_probe=%u queries=%u budget=%u",
+            unsigned(d.binding.actor.slot),unsigned(d.binding.actor.generation.value),
+            static_cast<unsigned long long>(d.binding.routeGeneration),d.binding.step,
+            d.avoidanceSide,unsigned(d.avoidanceReason),d.avoidanceDistance,
+            unsigned(candidate.has_value()),candidate ? candidate->x:0.0F,candidate ? candidate->y:0.0F,candidate ? candidate->z:0.0F,
+            d.leftClearance,d.rightClearance,unsigned(d.probeReason),d.queries,
+            d.queries<walkLimits.probe.maxQueries);
+        line(avoidance);
+    }
     char timing[384]{};
     std::snprintf(timing,sizeof(timing),
         "motion_timing actor=%u:%u elapsed_us=%llu frame_delta_us=%llu intent_speed=%.6g speed_limit=%.6g pending_remaining_us=%llu stale_reason=%u diagnostic_suppressed=%llu",
