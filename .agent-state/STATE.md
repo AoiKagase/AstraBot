@@ -1,32 +1,29 @@
-# State Status: verifying — ZBot-compatible movement implementation committed; live acceptance pending
+# State Status: verifying — P12 movement implementation and debug-level follow-up pending live acceptance
 
 Milestone: P12
-Task: ZBot-equivalent NAV movement with bounded shortcut, Jump/Drop, collision recovery, and combat regression
+Task: ZBot-equivalent NAV movement with bounded shortcut, Jump/Drop, collision recovery, combat regression, and controllable diagnostics
 Goal: Every managed BOT independently roams, follows a validated route, handles stairs/Jump/Drop/obstacles, and resumes after round/map transitions. Damage/death/combat remain live acceptance requirements.
 
 Relevant:
 - docs/plans/p12-zbot-movement-implementation.md
+- docs/reports/p12-console-debug.md
 - src/adapter/cstrike/nav/console.cpp
-- src/adapter/cstrike/nav/motion.cpp
-- src/nav/corridor/corridor.cpp
-- src/nav/local/walk.cpp
-- src/nav/local/walk_jump.cpp
-- src/nav/query/graph.cpp
+- src/adapter/metamod/console_debug.cpp
+- src/adapter/metamod/console_debug.hpp
 
 Done:
-- Implemented and committed the approved P12 ZBot-compatible NAV/movement plan as 7e316c5.
-- Added runtime route-local overlay links with bounded physical queries, active-session graph use, route-step traffic reservation, precision traversal handling, step-up probing, external Jump/Drop endpoint handling, and bounded fall-risk checks.
-- Added focused regression source changes for overlay ownership and precise/Jump corridor behavior; tests have not been built or run.
-- FocalSpan status is fresh/ready after the implementation update.
+- P12 ZBot-compatible NAV/movement implementation committed as 7e316c5.
+- NAV diagnostics were gated by astrabot_debug in 67b6f56; the follow-up changes now define level 0 as all diagnostics off, level 1 as general diagnostics, and level 2 as general plus NAV diagnostics.
 - Tests-OFF x86 Release adapter rebuilt and six exports verified.
 - Deployed DLL: D:\SteamCMD\cstrike_rehlds\cstrike\addons\astrabot\dlls\astrabot_mm.dll.
+- FocalSpan is fresh/ready after the current source update.
 
 Verified:
-- Release DLL SHA-256: 96356FA139764D02EE2C9C677F98EE75A1EB8028C5911989EF57DF701BCEC79B.
+- Previous deployed DLL hash: F34CB22B14A66C171A50CA31EF9C0225560406EDD76DDE66286773A5723AC918.
 - Existing unrelated .gitignore and untracked work files remain unstaged and preserved.
 
 Next:
-- Restart/changelevel the ReHLDS server so the deployed DLL is loaded, then capture qconsole.log for 1v1, 2v2, configured BOT count, stairs/Jump/Drop/obstacle recovery, round/map transitions, damage/death, and combat regression.
+- Rebuild/redeploy after the debug-level 2 change, then restart/changelevel ReHLDS and capture qconsole.log with astrabot_debug 0, 1, and 2.
 - After explicit user-confirmed live PASS only, build/run focused regression tests and then the canonical gate.
 
 Blocked:

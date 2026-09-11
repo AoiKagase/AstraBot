@@ -348,7 +348,7 @@ void ConsoleDebug::reset() noexcept {
     engine_ = nullptr;
     utility_ = nullptr;
     lifecycle_ = nullptr;
-    enabled_ = false;
+    debugLevel_ = 0;
     nextBotOrdinal_ = 1;
     lastMovementLogCall_.fill(0);
     lastMovementSource_.fill(debug::MovementTraceSource::None);
@@ -369,29 +369,34 @@ void ConsoleDebug::command() {
 
     const int argc = self.engine_->pfnCmd_Argc();
     if (argc == 1) {
-        self.commandLine(self.enabled_
+        self.commandLine(self.debugLevel_ != 0
                              ? "[ASTRABOT][DEBUG][COMMAND] state=on"
                              : "[ASTRABOT][DEBUG][COMMAND] state=off");
         return;
     }
     if (argc != 2) {
         self.commandLine(
-            "[ASTRABOT][DEBUG][COMMAND] error=InvalidArguments expected=0|1");
+            "[ASTRABOT][DEBUG][COMMAND] error=InvalidArguments expected=0|1|2");
         return;
     }
 
     const char* value = self.engine_->pfnCmd_Argv(1);
     if (value == nullptr || (std::strcmp(value, "0") != 0 &&
-                             std::strcmp(value, "1") != 0)) {
+                             std::strcmp(value, "1") != 0 &&
+                             std::strcmp(value, "2") != 0)) {
         self.commandLine(
-            "[ASTRABOT][DEBUG][COMMAND] error=InvalidArguments expected=0|1");
+            "[ASTRABOT][DEBUG][COMMAND] error=InvalidArguments expected=0|1|2");
         return;
     }
 
-    self.enabled_ = value[0] == '1';
-    self.commandLine(self.enabled_
-                         ? "[ASTRABOT][DEBUG][COMMAND] enabled=1"
-                         : "[ASTRABOT][DEBUG][COMMAND] enabled=0");
+    self.debugLevel_ = static_cast<std::uint32_t>(value[0] - '0');
+    if (self.debugLevel_ == 0) {
+        self.commandLine("[ASTRABOT][DEBUG][COMMAND] enabled=0");
+    } else if (self.debugLevel_ == 1) {
+        self.commandLine("[ASTRABOT][DEBUG][COMMAND] enabled=1");
+    } else {
+        self.commandLine("[ASTRABOT][DEBUG][COMMAND] enabled=2 nav=1");
+    }
 }
 
 void ConsoleDebug::addBotCommand() {
@@ -474,7 +479,7 @@ void ConsoleDebug::addBotCommand() {
 }
 
 void ConsoleDebug::line(const char* text) noexcept {
-    if (!enabled_ || text == nullptr || utility_ == nullptr ||
+    if (debugLevel_ == 0 || text == nullptr || utility_ == nullptr ||
         utility_->pfnLogConsole == nullptr) {
         return;
     }
@@ -554,7 +559,7 @@ void ConsoleDebug::removalTrace(const debug::RemovalTrace& trace) noexcept {
 }
 
 void ConsoleDebug::runtimeCorrelationTrace(core::PlayerId player) noexcept {
-    if (!enabled_ || !player.isValid() ||
+    if (debugLevel_ == 0 || !player.isValid() ||
         player.slot > host::kMaxClientSlots || lifecycle_ == nullptr) {
         return;
     }
@@ -694,7 +699,7 @@ void ConsoleDebug::runtimeCorrelationTrace(core::PlayerId player) noexcept {
 }
 
 void ConsoleDebug::movementTrace(const debug::MovementTrace& trace) noexcept {
-    if(!enabled_ || !trace.player.isValid() ||
+    if(debugLevel_ == 0 || !trace.player.isValid() ||
        trace.player.slot>host::kMaxClientSlots || lifecycle_==nullptr) return;
     const auto index=trace.player.slot-1U;
     auto& last=lastMovementLogCall_[index];

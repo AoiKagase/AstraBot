@@ -334,7 +334,7 @@ void NavConsole::configure(enginefuncs_t* engine,mutil_funcs_t* utility,globalva
 }
 void NavConsole::sink(void* ctx,const char* text) noexcept { static_cast<NavConsole*>(ctx)->line(text); }
 void NavConsole::line(const char* text) noexcept {
-    if(!metamod::ConsoleDebug::instance().enabled() ||
+    if(!metamod::ConsoleDebug::instance().navEnabled() ||
        !utility_ || !utility_->pfnLogConsole || !text) return;
     utility_->pfnLogConsole(PLID,"%s",text);
 }
