@@ -18,7 +18,8 @@ runtime::MovementSnapshot actor() {
     runtime::MovementSnapshot s; s.agent=binding.agent; s.actor=binding.actor; s.map=binding.map; s.tick={10};
     s.kind=runtime::ActorKind::ManagedBot; s.connected=s.alive=s.joined=s.grounded=true; s.ducked=false;
     s.position=plan.takeoff; s.velocity=model::NavVector3{120,0,0}; s.view=model::NavVector3{};
-    s.hull=runtime::HullDimensions{{-16,-16,-36},{16,16,36}}; s.speedLimit=250.0f; return s;
+    s.hull=runtime::HullDimensions{{-16,-16,-36},{16,16,36}};
+    s.speedLimit=250.0f; s.elapsedUs=40000; return s;
 }
 auto index(float height=0) {
     const auto r=query::NavSpatialIndex::build(route_test::snapshot({
@@ -46,8 +47,12 @@ bool intersects(const runtime::QueryRequest& q,Box box) {
 struct World final : runtime::IWorldQueries {
     std::vector<runtime::QueryRequest> calls;
     std::vector<Box> obstacles;
+    std::optional<runtime::BlockerKind> obstacleKind{};
     unsigned faultAt{}; int fault{};
     float targetHeight{};
+    unsigned groundedCalls{};
+    unsigned allSolidGroundedCall{};
+    bool floorUnsupported{};
     runtime::WorldQueryResult query(const runtime::QueryRequest& q) override {
         calls.push_back(q); assert(q.stamp.ordinal==calls.size());
         assert(q.hull && q.hull->minimum==actor().hull->minimum && q.hull->maximum==actor().hull->maximum);
@@ -55,10 +60,23 @@ struct World final : runtime::IWorldQueries {
         if(q.kind==runtime::QueryKind::GroundedArea) {
             r.ground=runtime::GroundedAreaObservation{model::NavAreaId{q.start.x<100 ? 1U:2U},
                 runtime::FloorObservation{q.start.x<100 ? 0:targetHeight,{0,0,1},true}};
+            if(++groundedCalls==allSolidGroundedCall) {
+                r.ground->floor->status=runtime::FloorObservationStatus::AllSolid;
+                r.ground->floor->trace=runtime::FloorTraceEvidence{q.start,q.end,q.end,{0,0,1},0,true,true};
+            }
+        }
+        else if(q.kind==runtime::QueryKind::Floor) {
+            r.floor=runtime::FloorObservation{q.start.x<100 ? 0:targetHeight,{0,0,1},true};
+            r.floor->status=runtime::FloorObservationStatus::Supported;
+            r.floor->supported=!floorUnsupported;
+            r.floor->trace=runtime::FloorTraceEvidence{q.start,q.end,q.end,{0,0,1},1,false,false};
         } else {
             assert(q.kind==runtime::QueryKind::SweptHull);
             r.hull=runtime::HullObservation{1,q.end,{},false};
-            for(const auto box : obstacles) if(intersects(q,box)) r.hull->fraction=0;
+            for(const auto box : obstacles) if(intersects(q,box)) {
+                r.hull->fraction=0;
+                if(obstacleKind) r.blocker=runtime::BlockerObservation{1,*obstacleKind,{}};
+            }
         }
         if(q.stamp.ordinal==faultAt) {
             switch(fault) {
@@ -114,9 +132,20 @@ void clearAndEnvelope() {
     exact.maxQueries=18; World over; const auto exhausted=launch(over,exact);
     assert(!exhausted && exhausted.reason==JumpProbeReason::BudgetExceeded && over.calls.size()==3);
     World obstacle; obstacle.obstacles.push_back({{80,20,0},{90,80,18}}); assert(launch(obstacle));
-    World wall; wall.obstacles.push_back({{80,20,0},{90,80,80}});
-    assert(launch(wall).reason==JumpProbeReason::Blocked);
-    World ceiling; ceiling.obstacles.push_back({{60,20,115},{120,80,130}});
+    World wall; wall.obstacleKind=runtime::BlockerKind::Geometry;
+    wall.obstacles.push_back({{80,20,0},{90,80,80}});
+    const auto staticBlock=launch(wall);
+    assert(staticBlock.reason==JumpProbeReason::Blocked &&
+           staticBlock.flightProof==JumpProof::StaticBlocked &&
+           staticBlock.provenance==JumpProofProvenance::StaticBsp);
+    World dynamic; dynamic.obstacleKind=runtime::BlockerKind::Player;
+    dynamic.obstacles.push_back({{80,20,0},{90,80,80}});
+    const auto transientBlock=launch(dynamic);
+    assert(transientBlock.reason==JumpProbeReason::Blocked &&
+           transientBlock.flightProof==JumpProof::TransientUnknown &&
+           transientBlock.provenance==JumpProofProvenance::DynamicBlocker);
+    World ceiling; ceiling.obstacleKind=runtime::BlockerKind::Geometry;
+    ceiling.obstacles.push_back({{60,20,115},{120,80,130}});
     assert(launch(ceiling).reason==JumpProbeReason::Blocked);
 }
 void supportedTransitions() {
@@ -131,11 +160,43 @@ void supportedTransitions() {
     auto jump=plan; jump.landing={104,104,36};
     assert(JumpProbe::launch(s,binding,jump,motion,physics(),limits,*index(),binding.map,rotated));
 }
+void landingSupportFallbacks() {
+    World planned;
+    planned.allSolidGroundedCall=2;
+    const auto plannedProof=launch(planned);
+    assert(plannedProof && plannedProof.inspection);
+    const auto& plannedEvidence=plannedProof.supportEvidence[1];
+    assert(plannedEvidence.role==JumpSupportRole::PlannedLanding &&
+        plannedEvidence.initialReason==ProbeReason::AllSolid &&
+        plannedEvidence.fallbackAttempted && plannedEvidence.fallbackAccepted &&
+        plannedEvidence.reason==ProbeReason::None && plannedEvidence.fallbackTrace);
+    assert(plannedProof.inspection->supportEvidence[1].fallbackAccepted);
+
+    World predicted;
+    predicted.allSolidGroundedCall=3;
+    const auto predictedProof=launch(predicted);
+    assert(predictedProof && predictedProof.inspection);
+    const auto& predictedEvidence=predictedProof.supportEvidence[2];
+    assert(predictedEvidence.role==JumpSupportRole::PredictedLanding &&
+        predictedEvidence.initialReason==ProbeReason::AllSolid &&
+        predictedEvidence.fallbackAttempted && predictedEvidence.fallbackAccepted &&
+        predictedEvidence.reason==ProbeReason::None && predictedEvidence.fallbackTrace);
+
+    World rejected;
+    rejected.allSolidGroundedCall=2;
+    rejected.floorUnsupported=true;
+    const auto rejectedProof=launch(rejected);
+    assert(!rejectedProof && rejectedProof.reason==JumpProbeReason::NoSupport);
+    const auto& rejectedEvidence=rejectedProof.supportEvidence[1];
+    assert(rejectedEvidence.initialReason==ProbeReason::AllSolid &&
+        rejectedEvidence.fallbackAttempted && !rejectedEvidence.fallbackAccepted &&
+        rejectedEvidence.reason==ProbeReason::AllSolid);
+}
 void failures() {
     const JumpProbeReason errors[]{JumpProbeReason::None,JumpProbeReason::StaleQuery,JumpProbeReason::StaleQuery,
-        JumpProbeReason::QueryFailed,JumpProbeReason::BudgetExceeded,JumpProbeReason::QueryFailed,
-        JumpProbeReason::NoSupport,JumpProbeReason::InvalidResult,JumpProbeReason::WrongArea,
-        JumpProbeReason::NoSupport,JumpProbeReason::CannotLand,JumpProbeReason::InvalidResult,
+        JumpProbeReason::QueryUnavailable,JumpProbeReason::BudgetExceeded,JumpProbeReason::QueryFailed,
+        JumpProbeReason::QueryUnavailable,JumpProbeReason::InvalidResult,JumpProbeReason::WrongArea,
+        JumpProbeReason::ActorNotGrounded,JumpProbeReason::FloorHeightMismatch,JumpProbeReason::InvalidResult,
         JumpProbeReason::Blocked,JumpProbeReason::InvalidResult,JumpProbeReason::InvalidResult};
     for(int fault=1;fault<=14;++fault) {
         World world; world.fault=fault; world.faultAt=fault<=9 ? 1U:(fault==10 ? 3U:6U);
@@ -203,4 +264,24 @@ void currentPhysicsCapabilities() {
     assert(derived && std::abs(derived->maximumRise-22.5)<0.001);
     p.tick={}; assert(!deriveJumpLimits(motion,p,s,hints));
 }
-int main() { currentPhysicsCapabilities(); clearAndEnvelope(); supportedTransitions(); failures(); controllerConsumesRealQueries(); }
+void launchProofDoesNotRequireVelocityReadiness() {
+    auto s=actor(); s.velocity=model::NavVector3{44,23,0};
+    auto p=physics(); p.tick=s.tick;
+    World world;
+    const auto proof=JumpProbe::launch(s,binding,plan,motion,p,limits,*index(),binding.map,world);
+    assert(proof && proof.takeoffProof==JumpProof::Passed &&
+           proof.flightProof==JumpProof::Passed && proof.landingProof==JumpProof::Passed);
+    assert(proof.inspection->velocity==s.velocity);
+}
+void trajectoryUsesMeasuredHorizontalVelocity() {
+    const auto s=actor();
+    const auto p=physics();
+    const auto ready=solveJumpTrajectory(*s.position,{120,0,0},plan.landing,motion,p);
+    assert(ready && ready.landingError<=motion.landingRadius);
+    const auto slow=solveJumpTrajectory(*s.position,{44,0,0},plan.landing,motion,p);
+    assert(!slow && slow.reason==JumpTrajectoryReason::LandingRadius);
+}
+int main() {
+    currentPhysicsCapabilities(); clearAndEnvelope(); supportedTransitions(); landingSupportFallbacks(); failures();
+    controllerConsumesRealQueries(); launchProofDoesNotRequireVelocityReadiness(); trajectoryUsesMeasuredHorizontalVelocity();
+}

@@ -29,13 +29,14 @@ public:
         // evaluated by edgeCooling() against the current synchronous search.
     }
     void fail(model::NavAreaId goal, ExecutionFailure why, std::uint64_t now,
-              std::optional<query::NavDirectedEdge> edge={}, bool structural=false) noexcept {
+              std::optional<query::NavDirectedEdge> edge={}, bool structural=false,
+              bool aggregateSource=true) noexcept {
         state=ExecutionState::Failed; failure=why; failedEdge=edge;
         retryAtUs=now>(std::numeric_limits<std::uint64_t>::max)()-retryDelayUs
             ? (std::numeric_limits<std::uint64_t>::max)() : now+retryDelayUs;
         nextSearchAtUs=now>(std::numeric_limits<std::uint64_t>::max)()-250'000
             ? (std::numeric_limits<std::uint64_t>::max)() : now+250'000;
-        if(goal.isValid()) {
+        if(goal.isValid() && aggregateSource) {
             auto* slot=&goals_[nextGoal_];
             for(auto& item:goals_) if(item.goal==goal) { slot=&item; break; }
             *slot={goal,retryAtUs}; nextGoal_=(nextGoal_+1)%goals_.size();
@@ -45,7 +46,10 @@ public:
             if(blockedCount_<blocked_.size()) blocked_[blockedCount_++]=*edge;
             else { saturated_=true; failure=ExecutionFailure::ExclusionCapacity; }
         }
-        if(!structural && edge) coolEdge(*edge,now);
+        if(!structural && edge) {
+            coolEdge(*edge,now);
+            if(aggregateSource) noteSourceFailure(*edge,now);
+        }
     }
     bool cooling(model::NavAreaId goal,std::uint64_t now) const noexcept {
         for(const auto& item:goals_) if(item.goal==goal && now<item.until) return true;
@@ -56,6 +60,12 @@ public:
         for(const auto& item:edgeRetries_) {
             if(item.edge && sameEdge(*item.edge,edge) && searchNowUs_<item.until) return true;
         }
+        return false;
+    }
+
+    bool sourceCooling(const query::NavDirectedEdge& edge) const noexcept {
+        for(const auto& item:sourceRetries_) if(item.source==edge.source &&
+            item.traversal==edge.traversal && searchNowUs_<item.coolingUntil) return true;
         return false;
     }
 
@@ -89,6 +99,12 @@ public:
     }
 private:
     struct EdgeRetry { std::optional<query::NavDirectedEdge> edge{}; std::uint64_t until{}; };
+    struct SourceRetry {
+        model::NavAreaId source{},lastTarget{};
+        model::NavTraversalKind traversal{model::NavTraversalKind::Walk};
+        std::uint64_t windowUntil{},coolingUntil{};
+        unsigned failures{};
+    };
     static bool sameEdge(const query::NavDirectedEdge& a,const query::NavDirectedEdge& b) noexcept {
         return a.source==b.source && a.target==b.target && a.direction==b.direction &&
             a.traversal==b.traversal && a.external.has_value()==b.external.has_value() &&
@@ -114,6 +130,27 @@ private:
         *oldest={edge,now>(std::numeric_limits<std::uint64_t>::max)()-edgeRetryDelayUs
             ? (std::numeric_limits<std::uint64_t>::max)() : now+edgeRetryDelayUs};
     }
+    void noteSourceFailure(const query::NavDirectedEdge& edge,std::uint64_t now) noexcept {
+        SourceRetry* selected=nullptr;
+        for(auto& item:sourceRetries_) if(item.source==edge.source && item.traversal==edge.traversal) {
+            selected=&item; break;
+        }
+        if(!selected) for(auto& item:sourceRetries_) if(!item.source.isValid() || item.windowUntil<=now) {
+            selected=&item; break;
+        }
+        if(!selected) selected=&*std::min_element(sourceRetries_.begin(),sourceRetries_.end(),
+            [](const auto& a,const auto& b){ return a.windowUntil<b.windowUntil; });
+        if(selected->source!=edge.source || selected->traversal!=edge.traversal ||
+           selected->windowUntil<=now) {
+            *selected={edge.source,edge.target,edge.traversal,now+edgeRetryDelayUs,0,1};
+            return;
+        }
+        if(selected->lastTarget!=edge.target || selected->failures!=0) ++selected->failures;
+        selected->lastTarget=edge.target;
+        selected->windowUntil=now>(std::numeric_limits<std::uint64_t>::max)()-edgeRetryDelayUs
+            ? (std::numeric_limits<std::uint64_t>::max)():now+edgeRetryDelayUs;
+        if(selected->failures>=2) selected->coolingUntil=selected->windowUntil;
+    }
     struct GoalRetry { model::NavAreaId goal{}; std::uint64_t until{}; };
     std::array<GoalRetry,16> goals_{};
     std::size_t nextGoal_{};
@@ -121,6 +158,7 @@ private:
     std::size_t blockedCount_{};
     bool saturated_{};
     std::array<EdgeRetry,128> edgeRetries_{};
+    std::array<SourceRetry,32> sourceRetries_{};
     mutable std::uint64_t searchNowUs_{};
 };
 
@@ -131,7 +169,7 @@ struct ExecutionPolicy final {
     static query::NavCostDecision cost(const query::NavCostContext& c,const void* context) {
         const auto& self=*static_cast<const ExecutionPolicy*>(context);
         if(self.execution && (self.execution->saturated() || self.execution->blocked(c.edge) ||
-            self.execution->edgeCooling(c.edge)))
+            self.execution->edgeCooling(c.edge) || self.execution->sourceCooling(c.edge)))
             return {true,{}};
         return self.base.cost ? self.base.cost(c,self.base.context) :
             query::NavCostDecision{false,{c.geometricDistance,0,0,

@@ -116,7 +116,13 @@ void edgeScopedBinding() {
     assert(changed.recovery.bindRoute(changed.b,RecoveryEdge{{11},{141}}));
     assert(changed.recovery.decision().state==RecoveryState::Monitoring);
     assert(changed.recovery.decision().attempts==0);
-    for(int i=0;i<4;++i) assert(changed.frame().state==RecoveryState::Monitoring);
+    assert(changed.frame().state==RecoveryState::Wait); // Same source/kind shares its budget.
+
+    Replay differentSource;
+    for(int i=0;i<4;++i) assert(differentSource.frame().state==RecoveryState::Monitoring);
+    ++differentSource.b.routeGeneration;
+    assert(differentSource.recovery.bindRoute(differentSource.b,RecoveryEdge{{24},{141}}));
+    for(int i=0;i<4;++i) assert(differentSource.frame().state==RecoveryState::Monitoring);
 
     Replay rejected;
     for(int i=0;i<5;++i) {

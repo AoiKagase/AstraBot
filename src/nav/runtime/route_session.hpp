@@ -10,6 +10,18 @@ struct NavigationSnapshot {
     core::MapGeneration map{};
     std::shared_ptr<const query::NavGraph> graph{};
 };
+enum class CurrentAreaObservationSource : std::uint8_t { Exact, Nearest, LastKnown };
+struct CurrentAreaObservation final {
+    core::BotAgentId agent{};
+    core::PlayerId actor{};
+    core::MapGeneration map{};
+    core::TickId tick{};
+    model::NavAreaId area{};
+    CurrentAreaObservationSource source{CurrentAreaObservationSource::Exact};
+    float floorHeight{};
+    std::uint64_t ageUs{};
+    bool grounded{};
+};
 enum class SessionState { Idle, Ready, Failed, Cancelled };
 enum class SessionReason {
     None, InvalidActor, ActorChanged, MapChanged, Disconnected, Dead, NotJoined,
@@ -23,6 +35,7 @@ struct RouteOptions {
     bool diagnosticPartial{false};
     query::NavRoutePolicy policy{}; // Pure policy context borrowed only during request().
     double groundNavTolerance{2};
+    std::optional<CurrentAreaObservation> currentArea{};
 };
 struct DecisionTrace {
     core::BotAgentId agent{};
@@ -32,6 +45,8 @@ struct DecisionTrace {
     std::uint64_t routeGeneration{}, elapsedUs{};
     model::NavAreaId goal{};
     std::optional<model::NavAreaId> currentArea{};
+    CurrentAreaObservationSource currentAreaSource{CurrentAreaObservationSource::Exact};
+    std::uint64_t currentAreaAgeUs{};
     SessionState state{SessionState::Idle};
     SessionReason reason{SessionReason::None};
     bool terminal{};

@@ -6,8 +6,8 @@
 namespace astrabot::nav::local {
 namespace {
 bool sameOwner(Binding a,Binding b) noexcept { return a.agent==b.agent && a.actor==b.actor && a.map==b.map; }
-bool sameEdge(const RecoveryEdge& a,const RecoveryEdge& b) noexcept {
-    return a.source==b.source && a.target==b.target;
+bool sameRecoveryGroup(const RecoveryEdge& a,const RecoveryEdge& b) noexcept {
+    return a.source==b.source && a.traversal==b.traversal;
 }
 std::uint64_t add(std::uint64_t a,std::uint64_t b) noexcept {
     return b>(std::numeric_limits<std::uint64_t>::max)()-a ? (std::numeric_limits<std::uint64_t>::max)():a+b;
@@ -21,11 +21,11 @@ bool Recovery::bindRoute(Binding b,std::optional<RecoveryEdge> edge) noexcept {
     if(!b.agent.isValid() || !b.actor.isValid() || !b.map.isValid() || !b.routeGeneration ||
        (bound_ && (!sameOwner(b,binding_) || b.routeGeneration<binding_.routeGeneration)) ||
        (edge && !edge->isValid())) return false;
-    const bool edgeChanged=bound_ && edge_ && edge && !sameEdge(*edge_,*edge);
+    const bool edgeChanged=bound_ && edge_ && edge && !sameRecoveryGroup(*edge_,*edge);
     const bool unknownReplacement=bound_ && b.routeGeneration!=binding_.routeGeneration &&
         (!edge_ || !edge);
     if(!bound_ || edgeChanged || unknownReplacement) {
-        clearWindow(); reference_=false; dispatchTick_={};
+        clearWindow(); reference_=false; dispatchTick_={}; progressAtUs_=0;
     }
     if(edgeChanged) decision_={};
     bound_=true; binding_=b; edge_=edge; return true;
@@ -71,9 +71,11 @@ RecoveryDecision Recovery::observe(Binding b,core::TickId tick,std::uint64_t now
        !tick.isValid() || (observationTick_.isValid() && !tick.isAfter(observationTick_)) || now<nowUs_ || !p.isFinite())
         return decision_;
     observationTick_=tick; nowUs_=now;
-    if(b.step!=binding_.step) { clearWindow(); reference_=false; }
+    if(!progressAtUs_) progressAtUs_=now;
+    if(b.step!=binding_.step) { clearWindow(); reference_=false; progressAtUs_=now; }
     binding_.step=b.step;
     if(decision_.state==RecoveryState::Aborted || decision_.state==RecoveryState::Replan) return decision_;
+    if(now-progressAtUs_>=pathProgressTimeoutUs) return abort(StuckCause::Unknown);
     if(decision_.state!=RecoveryState::Monitoring) {
         if(now<decision_.deadlineUs) return decision_;
         if(decision_.state==RecoveryState::Wait) decision_.state=RecoveryState::Sidestep;
@@ -92,7 +94,7 @@ RecoveryDecision Recovery::observe(Binding b,core::TickId tick,std::uint64_t now
         decision_.attempts=0; decision_.cause=StuckCause::None; decision_.symptom=StuckSymptom::None;
         // Retain the selected corridor direction and forward high-water point
         // across windows: a reversed steering target cannot refill the budget.
-        anchor_=p; furthest_=0; decision_.measuredProgress=true; clearWindow(); return decision_;
+        anchor_=p; furthest_=0; progressAtUs_=now; decision_.measuredProgress=true; clearWindow(); return decision_;
     }
     // A verified lateral avoidance can make displacement without advancing the
     // portal. Credit only a NEW displacement high-water mark, never a repeated

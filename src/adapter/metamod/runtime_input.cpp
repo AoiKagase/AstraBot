@@ -174,8 +174,7 @@ std::size_t buildRuntimeInputs(const LifecycleCoordinator& owner, const RuntimeF
             binding.map != frame.map)
             continue;
 
-        auto& input = output[count];
-        input = {};
+        RuntimeActorInput input{};
         input.player = player;
         input.agent = binding.agent;
         // Kept true for compatibility with older providers. Multi-actor
@@ -190,7 +189,6 @@ std::size_t buildRuntimeInputs(const LifecycleCoordinator& owner, const RuntimeF
                 actorStatus->staleReason =
                     staleReason(owner, frame, player, input.agent, entity);
             }
-            ++count;
             continue;
         }
 
@@ -198,23 +196,19 @@ std::size_t buildRuntimeInputs(const LifecycleCoordinator& owner, const RuntimeF
         const auto nav = owner.navConsole().runtimeState(owner, player);
         if (!world) {
             if (actorStatus) actorStatus->reason = RuntimeInputBuildReason::MissingWorld;
-            ++count;
             continue;
         }
         if (!nav) {
             if (actorStatus) actorStatus->reason = RuntimeInputBuildReason::MissingNav;
-            ++count;
             continue;
         }
         if (actorStatus) actorStatus->currentAreaHeld = nav->currentAreaHeld;
         if (!nav->currentArea) {
             if (actorStatus) actorStatus->reason = RuntimeInputBuildReason::MissingCurrentArea;
-            ++count;
             continue;
         }
         if (!nav->movement.position) {
             if (actorStatus) actorStatus->reason = RuntimeInputBuildReason::MissingPosition;
-            ++count;
             continue;
         }
 
@@ -223,7 +217,6 @@ std::size_t buildRuntimeInputs(const LifecycleCoordinator& owner, const RuntimeF
         if (!readWeapon(owner, frame, player, input.agent, dll, entity, weapon,
                         &weaponFailure, actorStatus)) {
             if (actorStatus) actorStatus->reason = weaponFailure;
-            ++count;
             continue;
         }
         if (actorStatus) {
@@ -249,12 +242,10 @@ std::size_t buildRuntimeInputs(const LifecycleCoordinator& owner, const RuntimeF
                     ? RuntimeInputBuildReason::TeamGenerationMismatch
                     : RuntimeInputBuildReason::MissingTeam;
             }
-            ++count;
             continue;
         }
         if (affiliation->team == core::perception::Team::Unknown) {
             if (actorStatus) actorStatus->reason = RuntimeInputBuildReason::UnknownTeam;
-            ++count;
             continue;
         }
         combat.team = affiliation->team;
@@ -265,7 +256,6 @@ std::size_t buildRuntimeInputs(const LifecycleCoordinator& owner, const RuntimeF
         const auto converted = cstrike::toCombatInput(combat);
         if (!converted) {
             if (actorStatus) actorStatus->reason = RuntimeInputBuildReason::CombatConversionFailed;
-            ++count;
             continue;
         }
         input.combat = converted.input;
@@ -365,7 +355,8 @@ std::size_t buildRuntimeInputs(const LifecycleCoordinator& owner, const RuntimeF
                             enemy.directVision};
             input.actionObservation.enemyAppeared = enemy.directVision;
         }
-        ++count;
+        if (actorStatus) actorStatus->inputIncluded = true;
+        output[count++]=input;
     }
     return count;
 }

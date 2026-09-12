@@ -15,8 +15,20 @@ bool representable(double value) noexcept {
         value<=(std::numeric_limits<float>::max)();
 }
 ProbeReason floorReason(const runtime::FloorObservation& f, double minimumNormal) noexcept {
+    switch(f.status) {
+    case runtime::FloorObservationStatus::TraceNoHit: return ProbeReason::TraceNoHit;
+    case runtime::FloorObservationStatus::StartSolid: return ProbeReason::StartSolid;
+    case runtime::FloorObservationStatus::AllSolid: return ProbeReason::AllSolid;
+    case runtime::FloorObservationStatus::InvalidTrace: return ProbeReason::InvalidResult;
+    case runtime::FloorObservationStatus::UnsupportedNormal: return ProbeReason::UnsupportedFloor;
+    case runtime::FloorObservationStatus::HeightMismatch: return ProbeReason::FloorHeightMismatch;
+    case runtime::FloorObservationStatus::NavContainmentMissing: return ProbeReason::NavContainmentMissing;
+    case runtime::FloorObservationStatus::Unknown:
+    case runtime::FloorObservationStatus::Supported: break;
+    }
     if(!std::isfinite(f.height) || !f.normal.isFinite()) return ProbeReason::InvalidResult;
-    if(!f.supported || f.normal.z<minimumNormal) return ProbeReason::NoSupport;
+    if(!f.supported) return ProbeReason::ActorNotGrounded;
+    if(f.normal.z<minimumNormal) return ProbeReason::UnsupportedFloor;
     const double n=double(f.normal.x)*f.normal.x+double(f.normal.y)*f.normal.y+double(f.normal.z)*f.normal.z;
     return n>=0.99 && n<=1.01 ? ProbeReason::None:ProbeReason::InvalidResult;
 }
@@ -36,7 +48,7 @@ ProbeResult probe(const runtime::MovementSnapshot& s, std::uint64_t generation,
         if(!std::isfinite(v) || v<0) return fail(ProbeReason::InvalidInput);
     if(limits.sampleSpacing==0 || limits.probeDepth<limits.maxDrop || limits.minNormalZ<=0 || limits.minNormalZ>1)
         return fail(ProbeReason::InvalidInput);
-    if(s.grounded!=true) return fail(ProbeReason::NoSupport);
+    const bool actorGrounded=s.grounded==true;
     const double dx=double(x)-s.position->x, dy=double(y)-s.position->y;
     const double distance=std::hypot(dx,dy);
     const double count=locateOnly ? 0.0:std::max(1.0,std::ceil(distance/limits.sampleSpacing));
@@ -50,8 +62,13 @@ ProbeResult probe(const runtime::MovementSnapshot& s, std::uint64_t generation,
         runtime::QueryRequest q{{s.agent,s.actor,s.map,s.tick,generation,++result.queries},kind,start,end,s.hull,limits.navTolerance};
         try {
             auto reply=port.query(q);
-            if(!(reply.stamp==q.stamp) || reply.kind!=kind) result.reason=ProbeReason::StaleQuery;
+        if(!(reply.stamp==q.stamp) || reply.kind!=kind) {
+            result.reason=ProbeReason::StaleQuery;
+            return {};
+        }
             else if(reply.error==runtime::QueryError::BudgetExceeded) result.reason=ProbeReason::BudgetExceeded;
+        else if(reply.error==runtime::QueryError::Unavailable) result.reason=ProbeReason::QueryUnavailable;
+        else if(reply.error==runtime::QueryError::InvalidResult) result.reason=ProbeReason::InvalidResult;
             else if(reply.error!=runtime::QueryError::None) result.reason=ProbeReason::QueryFailed;
             else return reply;
         } catch(...) { result.reason=ProbeReason::QueryFailed; }
@@ -75,18 +92,48 @@ ProbeResult probe(const runtime::MovementSnapshot& s, std::uint64_t generation,
     };
     auto ground=fetch(runtime::QueryKind::GroundedArea,*s.position,*s.position);
     if(!ground) return result;
-    if(!ground->ground || !ground->ground->floor) return fail(ProbeReason::NoSupport);
+    if(!ground->ground || !ground->ground->floor) return fail(ProbeReason::QueryUnavailable);
     auto floor=*ground->ground->floor;
-    auto reason=floorReason(floor,limits.minNormalZ);
-    if(reason!=ProbeReason::None) return fail(reason);
+    result.initialTrace=floor.trace;
+ auto reason=floorReason(floor,limits.minNormalZ);
+ result.initialReason=reason;
+ if(reason==ProbeReason::AllSolid || reason==ProbeReason::StartSolid) {
+     result.supportFallbackAttempted=true;
+     const double feet=double(s.position->z)+s.hull->minimum.z;
+     const double top=feet+limits.supportTolerance;
+     const double bottom=feet-limits.probeDepth;
+     if(!representable(top) || !representable(bottom)) return fail(ProbeReason::InvalidInput);
+     const auto fallback=fetch(runtime::QueryKind::Floor,
+         {s.position->x,s.position->y,static_cast<float>(top)},
+         {s.position->x,s.position->y,static_cast<float>(bottom)});
+     if(!fallback || !fallback->floor) return result;
+        floor=*fallback->floor;
+        result.fallbackTrace=floor.trace;
+     reason=floorReason(floor,limits.minNormalZ);
+     if(reason!=ProbeReason::None) return fail(reason);
+     result.supportFallbackAccepted=true;
+ }
+ if(reason!=ProbeReason::None) return fail(reason);
+    if(!actorGrounded) return fail(ProbeReason::ActorGroundFlagMismatch);
     const double feet=double(s.position->z)+s.hull->minimum.z;
-    if(std::abs(double(floor.height)-feet)>limits.supportTolerance) return fail(ProbeReason::NoSupport);
-    if(!ground->ground->area || !ground->ground->area->isValid()) return fail(ProbeReason::NoArea);
-    if(!locateOnly && *ground->ground->area!=currentArea) return fail(ProbeReason::WrongStartArea);
-    currentArea=*ground->ground->area;
+    if(std::abs(double(floor.height)-feet)>limits.supportTolerance) return fail(ProbeReason::FloorHeightMismatch);
+    result.floorEvidenceValid=true;
+    result.startFloorHeight=floor.height;
+    result.lastFloorHeight=floor.height;
+ std::optional<model::NavAreaId> observedArea=ground->ground->area;
+ if(!observedArea) {
+     const auto fallbackArea=index.containing({s.position->x,s.position->y,floor.height},limits.navTolerance);
+     if(!fallbackArea || !*fallbackArea.value) return fail(ProbeReason::NavContainmentMissing);
+     observedArea=(**fallbackArea.value).areaId;
+ }
+ if(!observedArea->isValid()) return fail(ProbeReason::NavContainmentMissing);
+ if(!locateOnly && *observedArea!=currentArea) return fail(ProbeReason::WrongStartArea);
+ currentArea=*observedArea;
     auto match=index.containing({s.position->x,s.position->y,floor.height},limits.navTolerance);
-    if(!match || !*match.value || (**match.value).areaId!=currentArea) return fail(ProbeReason::NoArea);
+    if(!match || !*match.value || (**match.value).areaId!=currentArea)
+        return fail(ProbeReason::NavContainmentMissing);
     auto position=*s.position;
+    double previousFloorHeight=floor.height;
     model::NavAreaId area=currentArea;
     for(std::uint32_t i=0;i<samples;++i) {
         const double f=double(i+1)/samples;
@@ -96,14 +143,18 @@ ProbeResult probe(const runtime::MovementSnapshot& s, std::uint64_t generation,
         const model::NavVector3 start{tx,ty,static_cast<float>(top)}, end{tx,ty,static_cast<float>(bottom)};
         auto reply=fetch(runtime::QueryKind::Floor,start,end);
         if(!reply) return result;
-        if(!reply->floor) return fail(ProbeReason::NoSupport);
+        if(!reply->floor) return fail(ProbeReason::QueryUnavailable);
         const auto next=*reply->floor;
         reason=floorReason(next,limits.minNormalZ);
         if(reason!=ProbeReason::None) return fail(reason);
         if(next.height>start.z || next.height<end.z) return fail(ProbeReason::InvalidResult);
-        if(double(floor.height)-next.height>limits.maxDrop) return fail(ProbeReason::UnsafeDrop);
+        const double intervalDrop=previousFloorHeight-double(next.height);
+        result.floorDelta=intervalDrop;
+        result.cumulativeDownDrop=(std::max)(0.0,result.startFloorHeight-double(next.height));
+        result.maxDownStep=(std::max)(result.maxDownStep,(std::max)(0.0,intervalDrop));
+        if(intervalDrop>limits.maxDrop) return fail(ProbeReason::UnsafeDrop);
         match=index.containing({tx,ty,next.height},limits.navTolerance);
-        if(!match || !*match.value) return fail(ProbeReason::NoArea);
+        if(!match || !*match.value) return fail(ProbeReason::NavContainmentMissing);
         const double originZ=double(next.height)-s.hull->minimum.z;
         if(!representable(originZ)) return fail(ProbeReason::InvalidInput);
         const model::NavVector3 destination{tx,ty,static_cast<float>(originZ)};
@@ -125,6 +176,8 @@ ProbeResult probe(const runtime::MovementSnapshot& s, std::uint64_t generation,
             ++result.steps;
         }
         position=destination; floor=next; area=(**match.value).areaId; ++result.samples;
+        previousFloorHeight=next.height;
+        result.lastFloorHeight=next.height;
     }
     result.target=GroundedTarget{position,area,floor}; return result;
 }

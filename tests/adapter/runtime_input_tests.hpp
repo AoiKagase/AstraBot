@@ -70,6 +70,8 @@ void run() {
     assert(!input->teamObjectiveAvailable && !input->team.objective.known);
     const auto navigationState = owner.navConsole().runtimeState(owner, player);
     assert(navigationState);
+    assert(navigationState->currentAreaSource==adapter::cstrike::CurrentAreaSource::Exact ||
+           navigationState->currentAreaSource==adapter::cstrike::CurrentAreaSource::Nearest);
     assert(input->actionObservation.routeSafe == !navigationState->roamRejected);
     assert(input->actionObservation.actionComplete == navigationState->roamArrived);
     const auto first = *input;
@@ -80,7 +82,7 @@ void run() {
     assert(input->valid(frame) && input->combat.view.yaw == -90.0F);
     fixture.entity.v.v_angle.y = 0.0F;
     ++frame.round.value;
-    assert(adapter::metamod::buildRuntimeInputs(owner, frame, &fixture.hookDll, input.get(), 1) == 1);
+    assert(adapter::metamod::buildRuntimeInputs(owner, frame, &fixture.hookDll, input.get(), 1) == 0);
     assert(!input->valid(frame));
     --frame.round.value;
     step();
@@ -128,7 +130,7 @@ void run() {
     fixture.hookDll.pfnUpdateClientData = nullptr;
     adapter::metamod::RuntimeInputBuildStatus callbackStatus{};
     assert(adapter::metamod::buildRuntimeInputs(
-        owner, frame, &fixture.hookDll, input.get(), 1, &callbackStatus) == 1);
+        owner, frame, &fixture.hookDll, input.get(), 1, &callbackStatus) == 0);
     assert(callbackStatus.reason ==
            adapter::metamod::RuntimeInputBuildReason::MissingUpdateClientData);
     assert(callbackStatus.map == frame.map && callbackStatus.round == frame.round &&

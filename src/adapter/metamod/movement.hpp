@@ -82,7 +82,8 @@ public:
         edict_t* entity,
         core::MapGeneration mapGeneration,
         core::TickId dispatchTick,
-        bool removalPending = false) noexcept;
+        bool removalPending = false,
+        bool suppressRuntimeInput = false) noexcept;
     // Advance a fake client's GameDLL join state without submitting gameplay
     // movement. Join-time entities may still be dead or spectator.
     bool dispatchJoinProgress(

@@ -69,5 +69,17 @@ void invalidation() {
     s=snapshot(1,std::numeric_limits<std::uint64_t>::max());
     assert(overflow.beginFrame(s).reason==PumpReason::ClockOverflow && !overflow.take().emit);
 }
+void provedLifetime() {
+    IntentPump p(binding()); auto s=snapshot(1,10000);
+    assert(p.beginFrame(s).decisionDue);
+    MovementIntent run; run.direction={1,0,0};
+    assert(astrabot::core::Motor::bindLocomotion(run,astrabot::core::LocomotionMode::Run,250,5));
+    assert(run.validForUs==20000 && p.publish(binding(),s.tick,run));
+    auto out=p.take(); assert(out.intentLifetimeUs==20000 && out.intent.locomotion==astrabot::core::LocomotionMode::Run);
+    s=snapshot(2,10000); assert(p.beginFrame(s).accepted); out=p.take();
+    assert(out.reason==PumpReason::None && out.intent.locomotion==astrabot::core::LocomotionMode::Run);
+    s=snapshot(3,10001); assert(p.beginFrame(s).accepted); out=p.take();
+    assert(out.reason==PumpReason::StaleIntent && out.intent.locomotion==astrabot::core::LocomotionMode::Explicit && out.intent.speed==0);
 }
-int main() { rates(); freshness(); invalidation(); }
+}
+int main() { rates(); freshness(); invalidation(); provedLifetime(); }

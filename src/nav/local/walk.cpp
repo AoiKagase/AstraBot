@@ -6,6 +6,28 @@
 
 namespace astrabot::nav::local {
 namespace {
+bool groundProbeRejected(ProbeReason reason) noexcept {
+    switch(reason) {
+    case ProbeReason::Blocked:
+    case ProbeReason::NoSupport:
+    case ProbeReason::ActorNotGrounded:
+    case ProbeReason::ActorGroundFlagMismatch:
+    case ProbeReason::TraceNoHit:
+    case ProbeReason::StartSolid:
+    case ProbeReason::AllSolid:
+    case ProbeReason::UnsupportedFloor:
+    case ProbeReason::FloorHeightMismatch:
+    case ProbeReason::NavContainmentMissing:
+    case ProbeReason::QueryUnavailable:
+    case ProbeReason::QueryFailed:
+    case ProbeReason::InvalidResult:
+        return true;
+    default:
+        return false;
+    }
+}
+}
+namespace {
 // The one ground observation is reused only inside this decision. Real engine
 // ordinals remain 1..N; inspect's ordinal 1 is an exact synchronous cache hit.
 class DecisionQueries final : public runtime::IWorldQueries {
@@ -77,6 +99,15 @@ float inward(double value, float origin) noexcept {
         return std::nextafter(rounded,origin);
     return rounded;
 }
+bool bindGroundIntent(core::MovementIntent& intent,core::LocomotionMode mode,
+    const runtime::MovementSnapshot& s,double distance) noexcept {
+    if(!s.speedLimit || !s.elapsedUs ||
+       !core::Motor::bindLocomotion(intent,mode,*s.speedLimit,distance) ||
+       intent.validForUs<s.elapsedUs) {
+        intent={}; return false;
+    }
+    return true;
+}
 ProbeReason sides(const runtime::MovementSnapshot& s, std::uint64_t generation,
     double ux,double uy,double range,std::uint32_t maximum,runtime::IWorldQueries& port,WalkDecision& out) noexcept {
     if(out.queries>maximum || maximum-out.queries<2) return ProbeReason::BudgetExceeded;
@@ -107,8 +138,9 @@ ProbeReason sides(const runtime::MovementSnapshot& s, std::uint64_t generation,
 }
 }
 Walk::Walk(Binding b, std::shared_ptr<const corridor::Corridor> c, model::NavVector3 goal,
-           WalkLimits limits) noexcept
-    : binding_(b), corridor_(std::move(c)), cursor_(corridor_), goal_(goal), limits_(limits) {}
+           WalkLimits limits,JumpAttemptRegistry* jumpAttempts) noexcept
+    : binding_(b), corridor_(std::move(c)), cursor_(corridor_), goal_(goal), limits_(limits),
+      jumpAttempts_(jumpAttempts ? jumpAttempts:&localJumpAttempts_) {}
 
 StuckCause observedStuckCause(const WalkDecision& d) noexcept {
     if(d.dropReason!=DropReason::None) return StuckCause::TraversalFailed;
@@ -129,7 +161,7 @@ WalkDecision Walk::finish(WalkDecision out, WalkState state, WalkReason reason) 
     out.terminalEvent=state_==WalkState::Running;
     state_=state; reason_=reason; out.state=state; out.reason=reason; out.intent={}; out.contact.reset();
     if(jump_) {
-        (void)jump_->abort(); jump_.reset(); jumpPlan_.reset(); jumpPhysics_.reset(); jumpDispatch_.reset();
+        (void)jump_->abort(); jump_.reset(); jumpPlan_.reset(); jumpLandingEnvelope_.reset(); jumpPhysics_.reset(); jumpDispatch_.reset();
         out.intent.jump=ActionRequest::Release;
     }
     if(ladder_) {
@@ -239,7 +271,9 @@ WalkDecision Walk::approachDoor(WalkDecision out, const runtime::MovementSnapsho
     out.probeReason=probe.reason;
     if(!probe) return fail();
     out.target=probe.target; out.intent.direction={ux,uy,0};
-    out.intent.speed=(std::min)(limits_.speed,std::hypot(double(x)-s.position->x,double(y)-s.position->y)/0.120);
+    if(!bindGroundIntent(out.intent,core::LocomotionMode::Walk,s,
+        std::hypot(double(x)-s.position->x,double(y)-s.position->y)))
+        out.reason=WalkReason::InsufficientMovementProof;
     return out;
 }
 WalkDecision Walk::update(const runtime::MovementSnapshot& s, const query::NavSpatialIndex& index,
@@ -264,8 +298,12 @@ WalkDecision Walk::recover(const runtime::MovementSnapshot& s,const query::NavSp
     tick_=s.tick; out.accepted=true;
     if(recovery.state==RecoveryState::Replan || recovery.state==RecoveryState::Aborted)
         return retainDuck(finish(out,WalkState::Failed,recovery.state==RecoveryState::Replan ? WalkReason::RecoveryReplan:WalkReason::Stuck));
-    if(recovery.state==RecoveryState::Wait) { recoverySide_=0; return retainDuck(out); }
-    if(recovery.state!=RecoveryState::Sidestep && recovery.state!=RecoveryState::Reverse) return retainDuck(out);
+    if(recovery.state==RecoveryState::Wait) {
+        recoverySide_=0; out.disposition=MotionDisposition::Hold; return retainDuck(out);
+    }
+    if(recovery.state!=RecoveryState::Sidestep && recovery.state!=RecoveryState::Reverse) {
+        out.disposition=MotionDisposition::Recovery; return retainDuck(out);
+    }
     // Specialized traversal owns its own pauses/timeouts. Never synthesize a
     // ground recovery while attached, airborne, entering posture, or at a door.
     if(!corridor_ || ladder_ || jump_ || door_ || s.grounded!=true || !s.position || !s.hull ||
@@ -319,7 +357,8 @@ WalkDecision Walk::recover(const runtime::MovementSnapshot& s,const query::NavSp
     out.queries=queries.issued; out.samples=probe.samples; out.steps=probe.steps; out.probeReason=probe.reason;
     if(!probe || probe.target->area!=area) return retainDuck(out);
     out.target=probe.target; out.intent.direction={ux,uy,0};
-    out.intent.speed=(std::min)(40.0,distance/0.120);
+    if(!bindGroundIntent(out.intent,core::LocomotionMode::Run,s,distance))
+        out.reason=WalkReason::InsufficientMovementProof;
     out.intent.view=core::IntentVector{0,std::atan2(forward.y,forward.x)*180/3.14159265358979323846,0};
     return retainDuck(out);
 }
@@ -340,14 +379,15 @@ WalkDecision Walk::updateMotion(const runtime::MovementSnapshot& s,const query::
     }
     tick_=s.tick;
     if(!corridor_ || binding_.step!=0 || !binding_.routeGeneration || !goal_.isFinite() ||
-       !std::isfinite(limits_.speed) || limits_.speed<=0 || limits_.speed>400 ||
+       !std::isfinite(limits_.finalApproachRange) || limits_.finalApproachRange<=limits_.arrivalTolerance ||
        !std::isfinite(limits_.arrivalTolerance) || limits_.arrivalTolerance<=0 ||
        !std::isfinite(limits_.crossingMargin) || limits_.crossingMargin<=0 || limits_.lookAhead==0)
         return finish(out,WalkState::Failed,WalkReason::InvalidInput);
     if(!std::isfinite(limits_.sideProbeDistance) || limits_.sideProbeDistance<0 ||
        (limits_.sideProbeDistance>0 && (!std::isfinite(limits_.narrowMargin) || limits_.narrowMargin<=0 ||
         limits_.narrowMargin>limits_.sideProbeDistance || limits_.sideProbeDistance>limits_.probe.maxDistance ||
-        !std::isfinite(limits_.narrowSpeed) || limits_.narrowSpeed<=0 || limits_.narrowSpeed>limits_.speed ||
+        !std::isfinite(limits_.minimumCrossingDistance) || limits_.minimumCrossingDistance<0 ||
+        limits_.minimumCrossingDistance>limits_.probe.maxDistance ||
         !limits_.maxAvoidanceDecisions))) return finish(out,WalkState::Failed,WalkReason::InvalidInput);
     if(limits_.blocker.timeoutUs && (!limits_.blocker.factLifetimeUs || !limits_.blocker.yieldUs ||
        limits_.blocker.yieldUs>=limits_.blocker.timeoutUs ||
@@ -371,6 +411,12 @@ WalkDecision Walk::updateMotion(const runtime::MovementSnapshot& s,const query::
     DecisionQueries queries(port,index,limits_.probe.navTolerance,reservedQueries,limits_.probe.maxQueries);
     const auto ground=GroundProbe::locate(s,binding_.routeGeneration,index,indexMap,queries,probeLimits);
     out.queries=queries.issued; out.probeReason=ground.reason;
+    out.floorEvidenceValid=ground.floorEvidenceValid;
+    out.startFloorHeight=ground.startFloorHeight;
+    out.lastFloorHeight=ground.lastFloorHeight;
+    out.floorDelta=ground.floorDelta;
+    out.cumulativeDownDrop=ground.cumulativeDownDrop;
+    out.maxDownStep=ground.maxDownStep;
     if(!ground) return finish(out,WalkState::Failed,WalkReason::ProbeFailed);
     out.support=ground.target;
     const auto clearBlocker=[&] {
@@ -465,14 +511,18 @@ WalkDecision Walk::updateMotion(const runtime::MovementSnapshot& s,const query::
         // Cross only the NAV center boundary. Physical hull clearance is
         // established by GroundProbe, not by padding NAV edges with a hull.
         if(!t.edge.external) {
-            const double inset=(std::min)({1.0,limits_.crossingMargin,
-                (double(t.targetExtent.southEast.x)-t.targetExtent.northWest.x)*0.25,
-                (double(t.targetExtent.southEast.y)-t.targetExtent.northWest.y)*0.25});
+            const double depth=(t.edge.direction==0 || t.edge.direction==2) ?
+                double(t.targetExtent.southEast.y)-t.targetExtent.northWest.y:
+                double(t.targetExtent.southEast.x)-t.targetExtent.northWest.x;
+            const double requested=(std::max)({5.0,limits_.crossingMargin,
+                limits_.minimumCrossingDistance});
+            const double inset=(std::min)(requested,depth*0.5);
+            if(inset<5.0) return finish(out,WalkState::Failed,WalkReason::InvalidPortal);
             switch(t.edge.direction) {
-            case 0: y-=inset; break;
-            case 1: x+=inset; break;
-            case 2: y+=inset; break;
-            case 3: x-=inset; break;
+            case 0: y=(std::min)(y,double(t.targetExtent.southEast.y)-inset); break;
+            case 1: x=(std::max)(x,double(t.targetExtent.northWest.x)+inset); break;
+            case 2: y=(std::max)(y,double(t.targetExtent.northWest.y)+inset); break;
+            case 3: x=(std::min)(x,double(t.targetExtent.southEast.x)-inset); break;
             default: return finish(out,WalkState::Failed,WalkReason::InvalidPortal);
             }
         }
@@ -531,7 +581,7 @@ WalkDecision Walk::updateMotion(const runtime::MovementSnapshot& s,const query::
             ty=inward(s.position->y+vy*scale,s.position->y);
         }
     };
-    double speedLimit=limits_.speed;
+    bool useWalk=precise || (cursor_.exhausted() && distance<=limits_.finalApproachRange);
     if(limits_.sideProbeDistance>0 && !precise) {
         out.probeReason=sides(s,binding_.routeGeneration,ux,uy,limits_.sideProbeDistance,
             limits_.probe.maxQueries,queries,out);
@@ -539,7 +589,7 @@ WalkDecision Walk::updateMotion(const runtime::MovementSnapshot& s,const query::
         const auto margin=(std::min)(out.leftClearance,out.rightClearance);
         out.narrow=margin<limits_.narrowMargin;
         if(out.narrow) {
-            speedLimit=limits_.narrowSpeed+(limits_.speed-limits_.narrowSpeed)*margin/limits_.narrowMargin;
+            useWalk=true;
             const double lateral=std::clamp((out.rightClearance-out.leftClearance)/2,-4.0,4.0)*
                 (std::min)(1.0,distance*fraction/limits_.sideProbeDistance);
             const double forward=std::sqrt((std::max)(0.0,distance*distance*fraction*fraction-lateral*lateral));
@@ -552,9 +602,17 @@ WalkDecision Walk::updateMotion(const runtime::MovementSnapshot& s,const query::
     queries.blocked.reset(); // Side obstructions are not the forward obstruction.
     const auto probe=GroundProbe::inspect(s,binding_.routeGeneration,area,x,y,index,indexMap,queries,probeLimits);
     out.queries=queries.issued; out.samples=probe.samples; out.steps=probe.steps; out.probeReason=probe.reason;
+    out.floorEvidenceValid=probe.floorEvidenceValid;
+    out.startFloorHeight=probe.startFloorHeight;
+    out.lastFloorHeight=probe.lastFloorHeight;
+    out.floorDelta=probe.floorDelta;
+        out.cumulativeDownDrop=probe.cumulativeDownDrop;
+        out.maxDownStep=probe.maxDownStep;
+        if(probe && probe.steps>0) out.obstacleClass=ObstacleClass::Step;
+        if(probe) observedObstacleHull_.reset();
     if(!probe) {
         if(limits_.sideProbeDistance>0 && !queries.offCorridor &&
-           (probe.reason==ProbeReason::Blocked || probe.reason==ProbeReason::NoSupport) && out.queries<limits_.probe.maxQueries) {
+           groundProbeRejected(probe.reason) && out.queries<limits_.probe.maxQueries) {
             runtime::QueryRequest q{{s.agent,s.actor,s.map,s.tick,binding_.routeGeneration,++out.queries},
                 runtime::QueryKind::Blocker,*s.position,{x,y,s.position->z},s.hull};
             runtime::WorldQueryResult r;
@@ -587,8 +645,23 @@ WalkDecision Walk::updateMotion(const runtime::MovementSnapshot& s,const query::
                     return finish(out,WalkState::Failed,WalkReason::DynamicBlocked);
                 if(d.action!=BlockerAction::InspectAvoidance) return out;
             }
-            if(classified && (r.blocker->kind==runtime::BlockerKind::Geometry || blocker_)) {
-                const auto noSide=[&] {
+        if(classified && (r.blocker->kind==runtime::BlockerKind::Geometry || blocker_)) {
+            out.blocker=r.blocker;
+            out.obstacleHull=r.hull;
+            if(r.blocker->kind==runtime::BlockerKind::Geometry) {
+                out.obstacleClass=ObstacleClass::Unknown;
+                if (r.hull) {
+                    observedObstacleHull_=ObservedObstacleHull{
+                        *r.hull, q.stamp,
+                        static_cast<std::uint64_t>(cursor_.index())};
+                } else {
+                    observedObstacleHull_.reset();
+                }
+            } else if(dynamic) {
+                out.obstacleClass=ObstacleClass::Dynamic;
+                observedObstacleHull_.reset();
+            }
+            const auto noSide=[&] {
                     if(blocker_) { out.blockerAction=BlockerAction::Yield; return out; }
                     // A transient local-avoidance exhaustion is not proof that
                     // the NAV edge is structurally impassable. Keep it in the
@@ -669,12 +742,13 @@ WalkDecision Walk::updateMotion(const runtime::MovementSnapshot& s,const query::
                                 out.target=other.target; out.avoiding=true; out.avoidanceReason=AvoidanceReason::None;
                                 const double length=otherDistance;
                                 out.intent.direction={(double(otherX)-s.position->x)/length,(double(otherY)-s.position->y)/length,0};
-                                out.intent.speed=(std::min)(limits_.narrowSpeed,length/0.120);
+                                if(!bindGroundIntent(out.intent,core::LocomotionMode::Walk,s,length))
+                                    out.reason=WalkReason::InsufficientMovementProof;
                                 return out;
                             }
                         }
                     }
-                    if(!queries.offCorridor && (alternate.reason==ProbeReason::Blocked || alternate.reason==ProbeReason::NoSupport))
+        if(!queries.offCorridor && groundProbeRejected(alternate.reason))
                         return noSide();
                     return finish(out,WalkState::Failed,WalkReason::ProbeFailed);
                 }
@@ -682,7 +756,9 @@ WalkDecision Walk::updateMotion(const runtime::MovementSnapshot& s,const query::
                 out.target=alternate.target; out.avoiding=true; out.avoidanceReason=AvoidanceReason::None;
                 const double length=std::hypot(double(x)-s.position->x,double(y)-s.position->y);
                 out.intent.direction={(double(x)-s.position->x)/length,(double(y)-s.position->y)/length,0};
-                out.intent.speed=(std::min)(limits_.narrowSpeed,length/0.120); return out;
+                if(!bindGroundIntent(out.intent,core::LocomotionMode::Walk,s,length))
+                    out.reason=WalkReason::InsufficientMovementProof;
+                return out;
             }
         }
         if(!queries.offCorridor && probe.reason==ProbeReason::Blocked && queries.blocked && limits_.doorTimeoutUs)
@@ -690,7 +766,7 @@ WalkDecision Walk::updateMotion(const runtime::MovementSnapshot& s,const query::
         // A tall door may make a future floor probe start solid before its
         // horizontal sweep. Current ground is already verified; only a typed
         // door hit can enter stationary waiting. A gap still fails closed.
-        if(!queries.offCorridor && probe.reason==ProbeReason::NoSupport && limits_.doorTimeoutUs)
+        if(!queries.offCorridor && groundProbeRejected(probe.reason) && limits_.doorTimeoutUs)
             return updateDoor(out,s,index,indexMap,queries,{x,y,s.position->z},nowUs);
         return finish(out,WalkState::Failed,queries.offCorridor ? WalkReason::OffCorridor:WalkReason::ProbeFailed);
     }
@@ -706,11 +782,11 @@ WalkDecision Walk::updateMotion(const runtime::MovementSnapshot& s,const query::
         return out; // Complete verified passage invalidates the fact; translation waits for a new decision.
     }
     avoidSide_=0; avoidDecisions_=0;
-    // Even a full 120 ms fresh-intent hold cannot pass the inspected endpoint.
     const double inspected=std::hypot(double(x)-s.position->x,double(y)-s.position->y);
     if(inspected==0) return finish(out,WalkState::Failed,WalkReason::InvalidPortal);
     out.intent.direction={(double(x)-s.position->x)/inspected,(double(y)-s.position->y)/inspected,0};
-    out.intent.speed=std::min(speedLimit,inspected/0.120);
+    if(!bindGroundIntent(out.intent,useWalk ? core::LocomotionMode::Walk:core::LocomotionMode::Run,s,inspected))
+        out.reason=WalkReason::InsufficientMovementProof;
     const double forward=(double(x)-s.position->x)*ux+(double(y)-s.position->y)*uy;
     const double lateral=(double(x)-s.position->x)*uy-(double(y)-s.position->y)*ux;
     if(out.narrow && forward>0 && std::abs(lateral)>0.001 && std::abs(lateral)<=forward) {

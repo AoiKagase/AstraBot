@@ -2,6 +2,7 @@
 #pragma once
 #include "nav/local/primitive.hpp"
 #include "nav/runtime/movement_snapshot.hpp"
+#include <algorithm>
 
 namespace astrabot::nav::local {
 enum class PumpReason { None, InvalidActor, DuplicateFrame, ClockOverflow,
@@ -12,14 +13,18 @@ struct PumpOutput {
     MovementIntent intent{};
     PumpReason reason{PumpReason::None};
     core::TickId tick{};
-    std::uint64_t frameUs{}, intentAgeUs{};
+    std::uint64_t frameUs{}, intentAgeUs{}, intentLifetimeUs{};
 };
 // Per actor/map/route owner. The host must beginFrame AFTER dispatching the old
 // queue, decide at most once when due, then take() and submit for a later tick.
 // No wall clock, callbacks, A*, motor call or SDK dependency is retained here.
 class IntentPump final {
 public:
-    static constexpr std::uint64_t decisionPeriodUs=40000, maxIntentAgeUs=120000;
+    static constexpr std::uint64_t decisionPeriodUs=40000,
+        maxIntentAgeUs=core::kMaximumMovementIntentUs;
+    static std::uint64_t freshnessLimit(const MovementIntent& intent) noexcept {
+        return intent.validForUs ? (std::min)(intent.validForUs,maxIntentAgeUs):maxIntentAgeUs;
+    }
     explicit IntentPump(Binding binding) noexcept : binding_(binding) {}
     FrameSchedule beginFrame(const runtime::MovementSnapshot&) noexcept;
     bool publish(Binding, core::TickId decisionTick, const MovementIntent&) noexcept;

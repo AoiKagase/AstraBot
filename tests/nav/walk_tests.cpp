@@ -136,7 +136,7 @@ void doors() {
         if(mode==7) world.open=false;
         ++s.tick.value; d=walk.update(s,*f.index,s.map,world,120000);
         if(mode==7) assert(d.state==local::WalkState::Failed && d.doorReason==local::DoorWaitReason::Reblocked);
-        else assert(d.state==local::WalkState::Running && d.intent.speed>0 && d.intent.use==local::ActionRequest::None);
+        else assert(d.state==local::WalkState::Running && core::Motor::requestedSpeed(d.intent)>0 && d.intent.use==local::ActionRequest::None);
     }
 }
 void touchAndReservedQueries() {
@@ -156,7 +156,7 @@ void touchAndReservedQueries() {
         assert(d.state==local::WalkState::Running || d.state==local::WalkState::Arrived);
         assert(d.intent.use==local::ActionRequest::None);
         if(d.contact) { assert(++contacts==1); s.position->x=83.96875f; world.open=true; }
-        else s.position->x+=static_cast<float>(d.intent.direction.x*d.intent.speed*0.040);
+        else s.position->x+=static_cast<float>(d.intent.direction.x*core::Motor::requestedSpeed(d.intent)*0.040);
         if(d.state==local::WalkState::Arrived) { arrived=true; break; }
     }
     assert(arrived && contacts==1);
@@ -268,16 +268,18 @@ void measuredCompletion() {
     walk.update(s,*f.index,s.map,world);
     ++s.tick.value; s.position->x=101;
     auto d=walk.update(s,*f.index,s.map,world);
-    assert(d.state==local::WalkState::Running && walk.step()==0 && d.intent.speed>0 && d.target);
+    assert(d.state==local::WalkState::Running && walk.step()==0 && core::Motor::requestedSpeed(d.intent)>0 && d.target);
     assert(d.target->origin.x>=116); // cross beyond the portal, not an area center
+    assert(d.intent.locomotion==core::LocomotionMode::Walk);
+    assert(core::Motor::requestedSpeed(d.intent)==100 && d.intent.validForUs>=s.elapsedUs);
     ++s.tick.value; s.position->x=116;
     d=walk.update(s,*f.index,s.map,world);
     assert(d.primitiveEvent==local::PrimitiveEvent::Complete && walk.step()==1 && d.intent.speed==0);
     ++s.tick.value; d=walk.update(s,*f.index,s.map,world);
-    assert(d.state==local::WalkState::Running && d.intent.speed>0); // exhaustion is not arrival
+    assert(d.state==local::WalkState::Running && core::Motor::requestedSpeed(d.intent)>0); // exhaustion is not arrival
     ++s.tick.value; s.position->x=170; s.grounded=false;
     d=walk.update(s,*f.index,s.map,world);
-    assert(d.state==local::WalkState::Failed && d.probeReason==local::ProbeReason::NoSupport);
+    assert(d.state==local::WalkState::Failed && d.probeReason==local::ProbeReason::ActorGroundFlagMismatch);
 }
 void crouchCrossing() {
     for(int mode=0;mode<3;++mode) {
@@ -329,7 +331,7 @@ void recoverySafety() {
         assert(d.queries==world.calls.size() && d.queries<=21 && d.samples<=4);
         assert(d.intent.jump==core::ActionRequest::None && d.intent.use==core::ActionRequest::None);
         if(mode==0 || mode==5) {
-            assert(d.target && d.intent.speed>0 && d.target->area==model::NavAreaId{1});
+            assert(d.target && core::Motor::requestedSpeed(d.intent)>0 && d.target->area==model::NavAreaId{1});
             if(mode==0) assert(d.intent.direction.y==1); // Stable even actor chooses left on tie.
             else assert(d.intent.direction.x==-1);
         } else assert(!d.target && d.intent.speed==0);
@@ -391,7 +393,7 @@ void narrowRecoveryUsesPhysicalQueries() {
         const auto d=walk.recover(s,*f.index,s.map,world,r);
         assert(d.queries==world.calls.size() && d.queries<=21);
         if(mode==0 || mode==4) {
-            assert(d.state==local::WalkState::Running && d.target && d.intent.speed>0);
+            assert(d.state==local::WalkState::Running && d.target && core::Motor::requestedSpeed(d.intent)>0);
             assert(d.target->area==model::NavAreaId{1});
             assert(mode==0 ? d.intent.direction.y==1 : d.intent.direction.x==-1);
         } else assert(!d.target && d.intent.speed==0);
@@ -406,7 +408,7 @@ void invalidAndBudgets() {
     const auto d=budget.update(s,*f.index,s.map,world);
     assert(d.state==local::WalkState::Failed && d.probeReason==local::ProbeReason::BudgetExceeded && d.queries==1);
     for(double value : {0.0,-1.0,std::numeric_limits<double>::infinity(),std::numeric_limits<double>::quiet_NaN()}) {
-        bad=limits; bad.speed=value; local::Walk invalid(binding(),f.corridor,{170,50,0},bad);
+        bad=limits; bad.finalApproachRange=value; local::Walk invalid(binding(),f.corridor,{170,50,0},bad);
         const auto count=world.calls.size();
         assert(invalid.update(s,*f.index,s.map,world).reason==local::WalkReason::InvalidInput);
         assert(count==world.calls.size());
@@ -431,7 +433,7 @@ void supportedBoundaryOrigin() {
     local::Walk walk(binding(),f.corridor,{1325,50,0},limits);
     const auto d=walk.update(s,*f.index,s.map,world);
     assert(d.state==local::WalkState::Running && d.reason==local::WalkReason::None);
-    assert(d.support && d.support->area==model::NavAreaId{5} && d.intent.speed>0);
+    assert(d.support && d.support->area==model::NavAreaId{5} && core::Motor::requestedSpeed(d.intent)>0);
     assert(!world.calls.empty()); // physical support/hull checks remain mandatory
 }
 void preciseGoalSegment() {
@@ -442,7 +444,7 @@ void preciseGoalSegment() {
         std::vector<route_test::Area> areas=single ? std::vector<route_test::Area>{a}:std::vector<route_test::Area>{a,b};
         Fixture f(areas,1,single ? 1:2); World world(areas);
         auto profile=limits; profile.probe.maxQueries=21;
-        profile.sideProbeDistance=12; profile.narrowMargin=8; profile.narrowSpeed=40;
+        profile.sideProbeDistance=12; profile.narrowMargin=8; profile.minimumCrossingDistance=5;
         local::Walk walk(binding(),f.corridor,{single ? 80.0F:150.0F,50,0},profile);
         auto s=actor();
         if(!single) {
@@ -457,4 +459,13 @@ void preciseGoalSegment() {
         for(const auto& q:world.calls) assert(q.start.y==50 && q.end.y==50);
     }
 }
-int main() { preciseGoalSegment(); arrivals(); stops(); measuredCompletion(); invalidAndBudgets(); doors(); touchAndReservedQueries(); crouchCrossing(); recoverySafety(); crossingUsesCenterMembership(); narrowRecoveryUsesPhysicalQueries(); supportedBoundaryOrigin(); }
+void insufficientMovementProof() {
+    const auto areas=zigzag(); Fixture f(areas,1,2); World world(areas);
+    auto profile=limits; profile.probe.maxDistance=1; profile.sideProbeDistance=0;
+    local::Walk walk(binding(),f.corridor,{170,50,0},profile);
+    auto s=actor();
+    const auto d=walk.update(s,*f.index,s.map,world);
+    assert(d.state==local::WalkState::Running && d.reason==local::WalkReason::InsufficientMovementProof);
+    assert(core::Motor::requestedSpeed(d.intent)==0 && d.intent.validForUs==0);
+}
+int main() { preciseGoalSegment(); arrivals(); stops(); measuredCompletion(); invalidAndBudgets(); doors(); touchAndReservedQueries(); crouchCrossing(); recoverySafety(); crossingUsesCenterMembership(); narrowRecoveryUsesPhysicalQueries(); supportedBoundaryOrigin(); insufficientMovementProof(); }

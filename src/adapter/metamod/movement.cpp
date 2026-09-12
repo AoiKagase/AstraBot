@@ -228,7 +228,8 @@ MovementResult MovementCoordinator::dispatchAtFrameEnd(
     edict_t* entity,
     core::MapGeneration mapGeneration,
     core::TickId dispatchTick,
-    bool removalPending) noexcept {
+    bool removalPending,
+    bool suppressRuntimeInput) noexcept {
     if(!activePlayer.isValid() || activePlayer.slot>host::kMaxClientSlots) return {};
     if (removalPending) {
         pending_[activePlayer.slot - 1U].reset();
@@ -244,6 +245,14 @@ MovementResult MovementCoordinator::dispatchAtFrameEnd(
         }
     }
     auto& pending=pending_[activePlayer.slot-1U];
+    if (suppressRuntimeInput) {
+        const auto commandTick = pending ? pending->commandTick : dispatchTick;
+        const std::uint8_t originalMsec =
+            pending ? pending->command.msec : std::uint8_t{0};
+        pending.reset();
+        return reject(MovementError::RuntimeInputUnavailable, activePlayer,
+            mapGeneration, commandTick, originalMsec);
+    }
     if(!pending) {
         // Fake clients have no network command stream.  ReGameDLL advances
         // gravity, animation and other player simulation from RunPlayerMove,

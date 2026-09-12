@@ -68,7 +68,7 @@ void observedLifecycle() {
     const auto start=walk.update(s,*f.index,binding.map,world,40000,0,physics(s));
     assert(start.state==WalkState::Running && start.dropState==DropState::StepOff);
     assert(start.dropPlan && start.dropPlan->gap==25 && start.dropPlan->fall==75 && start.jumpPhysics);
-    assert(start.intent.speed>0 && start.intent.jump==ActionRequest::None && walk.step()==0);
+    assert(core::Motor::requestedSpeed(start.intent)>0 && start.intent.jump==ActionRequest::None && walk.step()==0);
     ++s.tick.value; s.grounded=false; s.elapsedUs=200000;
     s.position=model::NavVector3{117+s.velocity->x*0.2F,50,20}; s.velocity->z=-160;
     const auto air=walk.update(s,*f.index,binding.map,world,240000,0,physics(s));
@@ -143,7 +143,7 @@ void exactMicroSourceDrop() {
         } else {
             assert(d.state==WalkState::Running && d.dropState==DropState::StepOff);
             assert(d.support && d.support->area==model::NavAreaId{2036});
-            assert(d.intent.speed>0);
+            assert(core::Motor::requestedSpeed(d.intent)>0);
         }
     }
 }

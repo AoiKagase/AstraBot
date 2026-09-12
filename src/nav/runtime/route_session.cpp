@@ -101,13 +101,34 @@ SessionUpdate RouteSession::request(const MovementSnapshot& s, model::NavAreaId 
     if (!navigation.graph) return fail(SessionReason::MissingGraph);
     graph_=navigation.graph;
     if (!goal.isValid() || !graph_->find(goal)) return fail(SessionReason::InvalidGoal);
-    if (s.grounded!=true) return fail(SessionReason::UnknownGround);
-    if (!options.maxWorldQueries) return fail(SessionReason::QueryBudgetExceeded);
+    if (s.grounded != true) return fail(SessionReason::UnknownGround);
+    bool seededFromObservation = false;
+    if (options.currentArea) {
+        const auto& observation = *options.currentArea;
+        if (observation.agent != s.agent || observation.actor != s.actor ||
+            observation.map != s.map || !observation.tick.isValid() ||
+            s.tick.isBefore(observation.tick) || !observation.area.isValid() ||
+            !graph_->find(observation.area) || !observation.grounded ||
+            !std::isfinite(observation.floorHeight) || !s.position || !s.hull ||
+            std::abs(double(observation.floorHeight) -
+                     (double(s.position->z) + s.hull->minimum.z)) > options.groundNavTolerance)
+            return fail(SessionReason::NoCurrentArea);
+        if (observation.source == CurrentAreaObservationSource::LastKnown &&
+            observation.ageUs > 5'000'000)
+            return fail(SessionReason::NoCurrentArea);
+        trace_.currentArea = observation.area;
+        trace_.currentAreaSource = observation.source;
+        trace_.currentAreaAgeUs = observation.ageUs;
+        seededFromObservation = true;
+    }
+    if (!seededFromObservation && !options.maxWorldQueries)
+        return fail(SessionReason::QueryBudgetExceeded);
     if(!std::isfinite(options.groundNavTolerance) || options.groundNavTolerance<0)
         return fail(SessionReason::InvalidSnapshot);
-    const QueryRequest request{{s.agent,s.actor,s.map,s.tick,trace_.routeGeneration,1},
-        QueryKind::GroundedArea,*s.position,*s.position,s.hull,options.groundNavTolerance};
-    try {
+    if (!seededFromObservation) {
+        const QueryRequest request{{s.agent,s.actor,s.map,s.tick,trace_.routeGeneration,1},
+            QueryKind::GroundedArea,*s.position,*s.position,s.hull,options.groundNavTolerance};
+        try {
         const auto reply=port.query(request);
         if (!(reply.stamp==request.stamp) || reply.kind!=request.kind) return fail(SessionReason::StaleQuery);
         if (reply.error==QueryError::BudgetExceeded) return fail(SessionReason::QueryBudgetExceeded);
@@ -119,15 +140,18 @@ SessionUpdate RouteSession::request(const MovementSnapshot& s, model::NavAreaId 
             (floor.normal.x==0 && floor.normal.y==0 && floor.normal.z==0)) return fail(SessionReason::QueryFailed);
         if (!reply.ground->area || !reply.ground->area->isValid() || !graph_->find(*reply.ground->area))
             return fail(SessionReason::NoCurrentArea);
-        trace_.currentArea=reply.ground->area;
-        auto route=query::NavRouteSearch::search(*graph_, {*trace_.currentArea,goal,options.limits,options.diagnosticPartial}, options.policy);
-        if (!route) { trace_.navError=route.error; return fail(SessionReason::NavFailure); }
-        trace_.route=std::make_shared<const query::NavRouteResult>(std::move(*route.value));
-        if (trace_.route->status==query::NavRouteStatus::Unreachable) return fail(SessionReason::Unreachable);
-        if (trace_.route->status==query::NavRouteStatus::ExpansionLimit) return fail(SessionReason::ExpansionLimit);
-        trace_.state=SessionState::Ready; update.accepted=true; update.reason=SessionReason::None;
-        update.events[update.count++]=trace_; return update;
-    } catch (const std::bad_alloc&) { return fail(SessionReason::AllocationFailure); }
-      catch (...) { return fail(SessionReason::QueryFailed); }
+            trace_.currentArea=reply.ground->area;
+            trace_.currentAreaSource=CurrentAreaObservationSource::Exact;
+            trace_.currentAreaAgeUs=0;
+        } catch (const std::bad_alloc&) { return fail(SessionReason::AllocationFailure); }
+          catch (...) { return fail(SessionReason::QueryFailed); }
+    }
+    auto route=query::NavRouteSearch::search(*graph_, {*trace_.currentArea,goal,options.limits,options.diagnosticPartial}, options.policy);
+    if (!route) { trace_.navError=route.error; return fail(SessionReason::NavFailure); }
+    trace_.route=std::make_shared<const query::NavRouteResult>(std::move(*route.value));
+    if (trace_.route->status==query::NavRouteStatus::Unreachable) return fail(SessionReason::Unreachable);
+    if (trace_.route->status==query::NavRouteStatus::ExpansionLimit) return fail(SessionReason::ExpansionLimit);
+    trace_.state=SessionState::Ready; update.accepted=true; update.reason=SessionReason::None;
+    update.events[update.count++]=trace_; return update;
 }
 } // namespace astrabot::nav::runtime

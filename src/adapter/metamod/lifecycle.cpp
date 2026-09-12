@@ -553,6 +553,17 @@ void LifecycleCoordinator::startFrame() noexcept {
     const auto map=registry_.mapGeneration();
     const auto tick=registry_.currentTick();
 
+    const auto previousRuntimeInputStatuses = runtimeInputBuildStatuses_;
+    const auto dispatchInputUnavailable =
+        [&](core::PlayerId player) noexcept {
+            if (!player.isValid() || player.slot > host::kMaxClientSlots)
+                return false;
+            const auto& status =
+                previousRuntimeInputStatuses[player.slot - 1U];
+            return status.player == player && status.agent.isValid() &&
+                status.map == map && status.round == round_ &&
+                status.reason != RuntimeInputBuildReason::None;
+        };
     runtimeInputBuildStatuses_.fill({});
     const auto created=clients_[0].fake.processPrimaryCreate();
     if(created.changed || created.error!=debug::FakeClientError::None) ++status_.createAttempts;
@@ -630,10 +641,12 @@ void LifecycleCoordinator::startFrame() noexcept {
             continue;
         }
         const auto ticket=navConsole_.dispatchTicket(player);
+        const bool suppressRuntimeInput = dispatchInputUnavailable(player);
         const auto moved=movement_.dispatchAtFrameEnd(
             client.join.phase(), player, client.fake.entityFor(player), map, tick,
-            false);
-        navConsole_.afterDispatch(player,moved,tick,ticket);
+            false, suppressRuntimeInput);
+        if (!suppressRuntimeInput)
+            navConsole_.afterDispatch(player,moved,tick,ticket);
     }
     if(registry_.isMapActive() && registry_.mapGeneration()==map && registry_.currentTick()==tick) {
         (void)advanceVisualEffects();
@@ -681,6 +694,19 @@ void LifecycleCoordinator::startFrame() noexcept {
                 runtimeInputBuildStatus_.round = runtimeFrame.round;
                 runtimeInputBuildStatus_.tick = runtimeFrame.tick;
                 runtimeInputBuildStatus_.nowMicros = runtimeFrame.nowMicros;
+                const auto runtimeInputUnavailable =
+                    [&](core::PlayerId player) noexcept {
+                        if (!player.isValid() ||
+                            player.slot > host::kMaxClientSlots)
+                            return false;
+                        const auto& status =
+                            runtimeInputBuildStatuses_[player.slot - 1U];
+                        return status.player == player && status.agent.isValid() &&
+                            status.map == runtimeFrame.map &&
+                            status.round == runtimeFrame.round &&
+                            status.tick == runtimeFrame.tick &&
+                            status.reason != RuntimeInputBuildReason::None;
+                    };
                 if (runtimeInputProvider_ != nullptr) {
                     runtimeInputCount = runtimeInputProvider_(
                         runtimeInputContext_, *this, runtimeFrame,
@@ -698,6 +724,7 @@ void LifecycleCoordinator::startFrame() noexcept {
                         actorStatus.nowMicros = runtimeFrame.nowMicros;
                         actorStatus.player = player;
                         actorStatus.agent = runtimeInputs[i].agent;
+                        actorStatus.inputIncluded = true;
                     }
                 } else {
                     runtimeInputCount = buildRuntimeInputs(
@@ -735,12 +762,28 @@ void LifecycleCoordinator::startFrame() noexcept {
                         movement_.forget(decision.player);
                     }
                 }
+                // A failed value-boundary observation must not leave an old
+                // NAV ticket alive and must not be converted into an Idle
+                // RunPlayerMove later in this frame. The status remains the
+                // primary diagnostic; valid actors continue independently.
+                for (auto& client : clients_) {
+                    const auto player = client.fake.activePlayer();
+                    if (!runtimeInputUnavailable(player)) continue;
+                    auto& actorStatus =
+                        runtimeInputBuildStatuses_[player.slot - 1U];
+                    actorStatus.idleDispatchSuppressed = true;
+                    navConsole_.invalidateActor(
+                        player, nav::runtime::SessionReason::InvalidSnapshot);
+                    movement_.forget(player);
+                }
             }
         }
     }
     for(auto& client:clients_) {
         if(!registry_.isMapActive() || registry_.mapGeneration()!=map || registry_.currentTick()!=tick) return;
-        navConsole_.moveFrame(*this,client.fake.activePlayer());
+        const auto player = client.fake.activePlayer();
+        if (dispatchInputUnavailable(player)) continue;
+        navConsole_.moveFrame(*this, player);
     }
     // A held position or a completed route may produce no NAV command.
     // Consume only actionable combat decisions here; a NoOp reaches
@@ -782,6 +825,8 @@ void LifecycleCoordinator::startFrame() noexcept {
             navState) {
             if (navState->currentArea)
                 correlation.currentArea = *navState->currentArea;
+            correlation.currentAreaSource = navState->currentAreaSource;
+            correlation.currentAreaAgeUs = navState->currentAreaAgeUs;
             correlation.roamExcludedCapacity = navState->roamExcludedCapacity;
             correlation.roamExcludedInvalid = navState->roamExcludedInvalid;
             correlation.roamExcludedOccupied = navState->roamExcludedOccupied;

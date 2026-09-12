@@ -49,9 +49,25 @@ int main() {
     assert(search(otherPolicy.policy()).value->steps.size()==1);
     execution.setSearchTime(100+runtime::Execution::edgeRetryDelayUs);
     assert(!execution.edgeCooling(edge) && !execution.blocked(edge));
-    assert(search(excluded.policy()).value->steps.size()==1);
-    execution.fail({2},runtime::ExecutionFailure::Observation,3'000'000,edge,false);
-    execution.setSearchTime(3'000'001);
+
+    auto alternate=edge;
+    alternate.target={3};
+    execution.fail({70},runtime::ExecutionFailure::Motion,3'000'000,edge,false);
+    execution.fail({70},runtime::ExecutionFailure::Motion,3'100'000,alternate,false);
+    execution.setSearchTime(3'100'000);
+    assert(execution.sourceCooling(edge));
+    assert(execution.sourceCooling(alternate));
+    assert(!search(excluded.policy()));
+
+    runtime::Execution exactJump;
+    exactJump.fail({70},runtime::ExecutionFailure::Motion,4'000'000,edge,false,false);
+    exactJump.setSearchTime(4'000'001);
+    assert(exactJump.edgeCooling(edge));
+    assert(!exactJump.edgeCooling(alternate));
+    assert(!exactJump.sourceCooling(edge) && !exactJump.sourceCooling(alternate));
+    assert(!exactJump.cooling({70},4'000'001));
+    execution.fail({2},runtime::ExecutionFailure::Observation,6'000'000,edge,false);
+    execution.setSearchTime(6'000'001);
     assert(execution.edgeCooling(edge));
     execution.clearEdgeCooldown(edge);
     assert(!execution.edgeCooling(edge) && !execution.blocked(edge));

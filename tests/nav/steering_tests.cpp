@@ -11,7 +11,7 @@
 using namespace astrabot;
 using namespace astrabot::nav;
 namespace {
-constexpr local::WalkLimits limits{{21,4,48,16,18,18,64,4,2,0.7},160,1,1,3,0,0,12,8,40,25};
+constexpr local::WalkLimits limits{{21,4,48,16,18,18,64,4,2,0.7},160,1,1,3,0,0,12,8,5,25};
 local::Binding binding() { return {{1},{1,{1}},{1},1,0}; }
 struct World final : runtime::IWorldQueries {
     int mode{};
@@ -73,7 +73,7 @@ void scenario(int mode,std::uint64_t frameUs) {
             const auto before=world.calls.size(); const auto d=walk.update(s,**index.value,s.map,world,pump.timeUs());
             assert(d.queries==world.calls.size()-before && d.queries<=profile.probe.maxQueries && d.samples<=4);
             narrow=narrow || d.narrow; corrected=corrected || std::abs(d.intent.lateralCorrection)>0.001; avoided=avoided || d.avoiding;
-            if(mode==0 && d.narrow) assert(d.intent.speed<limits.speed);
+            if(mode==0 && d.narrow) assert(d.intent.locomotion==core::LocomotionMode::Walk);
             if(mode==10) {
                 assert(d.reason==local::WalkReason::AvoidanceCollapsed);
                 assert(d.avoidanceReason==local::AvoidanceReason::CandidateCollapsed);

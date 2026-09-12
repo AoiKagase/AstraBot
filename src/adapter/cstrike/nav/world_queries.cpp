@@ -83,8 +83,20 @@ nav::runtime::WorldQueryResult queryNavWorld(enginefuncs_t* engine, edict_t* ent
         // Include actors/dynamic blockers; ignore only the validated querying actor.
         engine->pfnTraceHull(start,end,0,hull,entity,&hit);
         if(!valid(hit)) { r.error=QueryError::InvalidResult; return r; }
-        r.error=QueryError::None;
-        const bool solid=hit.fStartSolid || hit.fAllSolid;
+    r.error=QueryError::None;
+    const bool solid=hit.fStartSolid || hit.fAllSolid;
+    r.hull=nav::runtime::HullObservation{hit.flFraction,value(hit.vecEndPos),
+        value(hit.vecPlaneNormal),hit.fStartSolid!=0,hit.fAllSolid!=0};
+        if(q.kind==QueryKind::SweptHull && (solid || hit.flFraction!=1) &&
+           hit.pHit && !hit.pHit->free && engine->pfnIndexOfEdict) {
+            const int slot=engine->pfnIndexOfEdict(hit.pHit);
+            const auto* name=engine->pfnSzFromIndex ? engine->pfnSzFromIndex(hit.pHit->v.classname):nullptr;
+            const bool wall=name && (!std::strcmp(name,"func_wall") || !std::strcmp(name,"func_wall_toggle"));
+            if(slot==0 || (slot>0 && slot<maxEntities && hit.pHit->v.solid==SOLID_BSP && wall))
+                r.blocker=BlockerObservation{static_cast<std::uint64_t>(slot),BlockerKind::Geometry};
+            else
+                r.blocker=BlockerObservation{static_cast<std::uint64_t>(slot>0 ? slot:0),BlockerKind::Other,{}};
+        }
         if(q.kind==QueryKind::Blocker) {
             if(solid || hit.flFraction==1 || !hit.pHit || hit.pHit->free || !engine->pfnIndexOfEdict) return r;
             const int slot=engine->pfnIndexOfEdict(hit.pHit);
@@ -143,10 +155,12 @@ nav::runtime::WorldQueryResult queryNavWorld(enginefuncs_t* engine, edict_t* ent
             const bool touch=door->v.solid==SOLID_BSP && door->v.targetname==0 &&
                 !(static_cast<unsigned>(door->v.spawnflags)&((1U<<8)|(1U<<31)));
             r.door=DoorObservation{id,false,view.has_value(),view,touch};
-            r.hull=HullObservation{hit.flFraction,value(hit.vecEndPos),value(hit.vecPlaneNormal),false};
+        r.hull=HullObservation{hit.flFraction,value(hit.vecEndPos),value(hit.vecPlaneNormal),
+        hit.fStartSolid!=0,hit.fAllSolid!=0};
             return r;
         }
-        if(q.kind==QueryKind::SweptHull) r.hull=HullObservation{hit.flFraction,value(hit.vecEndPos),value(hit.vecPlaneNormal),solid};
+        if(q.kind==QueryKind::SweptHull) r.hull=HullObservation{hit.flFraction,value(hit.vecEndPos),
+        value(hit.vecPlaneNormal),hit.fStartSolid!=0,hit.fAllSolid!=0};
         else r.clearance=ClearanceObservation{!solid && hit.flFraction==1};
         return r;
     }
@@ -156,9 +170,12 @@ nav::runtime::WorldQueryResult queryNavWorld(enginefuncs_t* engine, edict_t* ent
     auto start=q.start, end=q.end;
     float feet=0;
     if(q.kind==QueryKind::GroundedArea) {
-        if(!index) return r;
         feet=q.start.z+q.hull->minimum.z;
-        start.z=q.start.z+2; end={q.start.x,q.start.y,q.start.z-4};
+        // GroundProbe may supply an explicit support interval.  Preserve the
+        // historical narrow probe only for callers that provide one point.
+        if(start.x==end.x && start.y==end.y && start.z==end.z) {
+            start.z=q.start.z+2; end={q.start.x,q.start.y,q.start.z-4};
+        }
     } else {
         // Floor requests use feet heights; TraceHull consumes actor origins.
         const double top=double(start.z)-q.hull->minimum.z, bottom=double(end.z)-q.hull->minimum.z;
@@ -175,15 +192,45 @@ nav::runtime::WorldQueryResult queryNavWorld(enginefuncs_t* engine, edict_t* ent
     // bodies are not floor proof. Each request issues exactly one engine trace.
     TraceResult hit{}; engine->pfnTraceHull(a,b,1,hullIndex(*q.hull),entity,&hit);
     if(!valid(hit)) { r.error=QueryError::InvalidResult; return r; }
-    r.error=QueryError::None;
-    if(hit.fAllSolid || hit.fStartSolid || hit.flFraction==1) return r;
+ r.error=QueryError::None;
+ const FloorTraceEvidence evidence{
+     {start.x,start.y,start.z},{end.x,end.y,end.z},value(hit.vecEndPos),
+     value(hit.vecPlaneNormal),hit.flFraction,hit.fStartSolid!=0,hit.fAllSolid!=0};
+ if(hit.fAllSolid || hit.fStartSolid || hit.flFraction==1) {
+ FloorObservation floor{};
+ floor.trace=evidence;
+        floor.status=hit.fAllSolid ? FloorObservationStatus::AllSolid :
+            (hit.fStartSolid ? FloorObservationStatus::StartSolid : FloorObservationStatus::TraceNoHit);
+        if(q.kind==QueryKind::Floor) r.floor=floor;
+        else r.ground=GroundedAreaObservation{std::nullopt,floor};
+        return r;
+    }
     if(std::abs(hit.vecEndPos.x-start.x)>0.001f || std::abs(hit.vecEndPos.y-start.y)>0.001f ||
        hit.vecEndPos.z>start.z || hit.vecEndPos.z<end.z) { r.error=QueryError::InvalidResult; return r; }
-    const FloorObservation floor{hit.vecEndPos.z+q.hull->minimum.z,value(hit.vecPlaneNormal),true};
+    FloorObservation floor{hit.vecEndPos.z+q.hull->minimum.z,value(hit.vecPlaneNormal),true,
+ FloorObservationStatus::Supported,evidence};
     if(q.kind==QueryKind::Floor) { r.floor=floor; return r; }
-    if(floor.normal.z<0.7f || std::abs(floor.height-feet)>4) return r;
+    if(floor.normal.z<0.7f) {
+        floor.status=FloorObservationStatus::UnsupportedNormal;
+        r.ground=GroundedAreaObservation{std::nullopt,floor};
+        return r;
+    }
+    if(std::abs(floor.height-feet)>4) {
+        floor.status=FloorObservationStatus::HeightMismatch;
+        r.ground=GroundedAreaObservation{std::nullopt,floor};
+        return r;
+    }
+    if(!index) {
+        floor.status=FloorObservationStatus::NavContainmentMissing;
+        r.ground=GroundedAreaObservation{std::nullopt,floor};
+        return r;
+    }
     const auto match=index->containing({q.start.x,q.start.y,floor.height},q.navTolerance);
-    if(!match || !*match.value) return r;
+    if(!match || !*match.value) {
+        floor.status=FloorObservationStatus::NavContainmentMissing;
+        r.ground=GroundedAreaObservation{std::nullopt,floor};
+        return r;
+    }
     r.ground=GroundedAreaObservation{(**match.value).areaId,floor}; return r;
 }
 }

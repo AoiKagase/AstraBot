@@ -29,6 +29,7 @@ struct ProgressDispatch {
 };
 struct RecoveryEdge {
     model::NavAreaId source{}, target{};
+    model::NavTraversalKind traversal{model::NavTraversalKind::Walk};
     bool isValid() const noexcept { return source.isValid() && target.isValid(); }
 };
 // One explicit goal owns this value. Replacing Walk or its route cannot reset it.
@@ -36,7 +37,8 @@ struct RecoveryEdge {
 // Recovery movement never counts as forward progress and cannot refill its budget.
 class Recovery final {
 public:
-    static constexpr std::uint64_t walkWindowUs=500000, crouchWindowUs=1000000, stageUs=250000;
+    static constexpr std::uint64_t walkWindowUs=500000, crouchWindowUs=1000000,
+        stageUs=250000, pathProgressTimeoutUs=5000000;
     static constexpr double progressDistance=4;
     bool bindRoute(Binding,std::optional<RecoveryEdge> edge=std::nullopt) noexcept;
     bool report(const ProgressDispatch&) noexcept;
@@ -50,6 +52,7 @@ private:
     std::optional<RecoveryEdge> edge_{};
     core::TickId dispatchTick_{}, observationTick_{};
     std::uint64_t nowUs_{}, windowUs_{};
+    std::uint64_t progressAtUs_{};
     model::NavVector3 anchor_{}, previous_{};
     double furthest_{};
     bool bound_{}, window_{}, credited_{}, reference_{};

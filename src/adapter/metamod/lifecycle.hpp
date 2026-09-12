@@ -71,6 +71,8 @@ struct RuntimeActorCorrelation final {
     bool alive{false};
     bool currentAreaHeld{false};
     nav::model::NavAreaId currentArea{};
+    cstrike::CurrentAreaSource currentAreaSource{cstrike::CurrentAreaSource::None};
+    std::uint64_t currentAreaAgeUs{0};
     std::uint64_t elapsedUs{0};
     std::uint64_t frameDeltaUs{0};
     core::tactical::IntentType intent{core::tactical::IntentType::None};

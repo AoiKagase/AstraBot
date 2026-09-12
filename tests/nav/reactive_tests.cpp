@@ -10,7 +10,7 @@
 using namespace astrabot;
 using namespace astrabot::nav;
 namespace {
-constexpr local::WalkLimits limits{{21,4,48,16,18,18,64,4,2,0.7},160,1,1,3,0,0,12,8,40,25,{120000,400000,3000000}};
+constexpr local::WalkLimits limits{{21,4,48,16,18,18,64,4,2,0.7},160,1,1,3,0,0,12,8,5,25,{120000,400000,3000000}};
 struct World final : runtime::IWorldQueries {
     int mode{};
     std::uint64_t now{}, firstBlocked{}, lastTick{};

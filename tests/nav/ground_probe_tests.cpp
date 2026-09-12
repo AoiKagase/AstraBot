@@ -30,7 +30,8 @@ struct Script final : runtime::IWorldQueries {
         if(mode==3) { r.error=runtime::QueryError::Unavailable; return r; }
         const runtime::FloorObservation f{height,{0,0,1},true};
         if(q.kind==runtime::QueryKind::GroundedArea) {
-            r.ground=runtime::GroundedAreaObservation{model::NavAreaId{height==100 ? 2U:1U},f};
+        r.ground=runtime::GroundedAreaObservation{model::NavAreaId{height==100 ? 2U:1U},f};
+        if(mode==12) { r.ground->area.reset(); r.ground->floor->status=runtime::FloorObservationStatus::NavContainmentMissing; }
         } else if(q.kind==runtime::QueryKind::Floor) {
             r.floor=f;
             if(mode==4) r.floor->height=-40;
@@ -64,15 +65,17 @@ void successReplayAndFloors() {
     r=local::GroundProbe::inspect(s,7,{2},52,50,*index(),{4},upper,limits);
     assert(r && r.target->area==model::NavAreaId{2} && r.target->origin.z==136);
     Script wrong;
-    assert(local::GroundProbe::inspect(s,7,{2},52,50,*index(),{4},wrong,limits).reason==local::ProbeReason::NoSupport);
+    assert(local::GroundProbe::inspect(s,7,{2},52,50,*index(),{4},wrong,limits).reason==local::ProbeReason::FloorHeightMismatch);
 }
 void failures() {
     const local::ProbeReason reasons[]={local::ProbeReason::None,local::ProbeReason::StaleQuery,
-        local::ProbeReason::QueryFailed,local::ProbeReason::QueryFailed,local::ProbeReason::UnsafeDrop,
-        local::ProbeReason::NoSupport,local::ProbeReason::NoSupport,local::ProbeReason::InvalidResult,
+        local::ProbeReason::QueryFailed,local::ProbeReason::QueryUnavailable,local::ProbeReason::UnsafeDrop,
+        local::ProbeReason::ActorNotGrounded,local::ProbeReason::UnsupportedFloor,local::ProbeReason::InvalidResult,
         local::ProbeReason::NoArea,local::ProbeReason::Blocked,local::ProbeReason::Blocked,local::ProbeReason::InvalidResult};
     for(int mode=1;mode<=11;++mode) { Script p; p.mode=mode; const auto r=inspect(p);
         assert(!r && !r.target && r.reason==reasons[mode]); assert(p.calls.size()<=limits.maxQueries); }
+    Script navMissing; navMissing.mode=12;
+    assert(inspect(navMissing).reason==local::ProbeReason::NavContainmentMissing);
     for(auto l : {local::GroundProbeLimits{4,4,64,16,18,18,64,4,2,0.7},
                    local::GroundProbeLimits{9,1,64,16,18,18,64,4,2,0.7}}) {
         Script p; auto r=inspect(p,l); assert(r.reason==local::ProbeReason::BudgetExceeded && p.calls.empty());
@@ -83,7 +86,7 @@ void failures() {
     assert(inspect(p,l).reason==local::ProbeReason::InvalidInput && p.calls.size()==1);
     p.calls.clear();
     auto s=actor(); s.grounded=false;
-    assert(local::GroundProbe::inspect(s,7,{1},52,50,*index(),{4},p,limits).reason==local::ProbeReason::NoSupport);
+    assert(local::GroundProbe::inspect(s,7,{1},52,50,*index(),{4},p,limits).reason==local::ProbeReason::ActorGroundFlagMismatch);
     s=actor(); s.kind=runtime::ActorKind::Human;
     assert(local::GroundProbe::inspect(s,7,{1},52,50,*index(),{4},p,limits).reason==local::ProbeReason::InvalidInput);
     assert(local::GroundProbe::inspect(actor(),7,{1},52,50,*index(),{3},p,limits).reason==local::ProbeReason::StaleNavigation);

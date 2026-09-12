@@ -22,7 +22,7 @@ namespace astrabot::adapter::cstrike {
 namespace {
 constexpr std::size_t mib=1024*1024;
 constexpr std::size_t inputLimit=64*mib;
-constexpr std::uint64_t currentAreaFallbackMaxAgeTicks=2;
+constexpr std::uint64_t currentAreaFallbackMaxAgeUs=5'000'000;
 const nav::io::NavMeshReadLimits meshLimits{inputLimit,{100000,65535,65535,8*mib},
     {100000,4096,255,255,65536,255,1000000,1000000,1000000,1000000,1000000},256*mib};
 
@@ -352,6 +352,8 @@ void NavConsole::invalidateCurrent(nav::runtime::SessionReason reason) noexcept 
     current_->lastCurrentAreaMap_={};
     current_->lastCurrentAreaRouteGeneration_=0;
     current_->lastCurrentAreaTick_={};
+    current_->lastCurrentAreaUs_=0;
+    current_->lastCurrentAreaFloorHeight_.reset();
     current_->diagnosticNextUs=0;
     current_->diagnosticSuppressed=0;
     current_->explicitRoute_=false;
@@ -539,50 +541,75 @@ std::optional<RuntimeNavigationState> NavConsole::runtimeState(
     }
 
     if (result.movement.position) {
-        const auto match = index_->containing(*result.movement.position, 72.0);
+        auto sample=*result.movement.position;
+        sample.z=static_cast<float>(double(sample.z)+5.0);
+        const auto match = index_->containing(sample, 120.0);
         if (match && *match.value) {
             result.currentArea = (*match.value)->areaId;
-            if (actor && actor->session_) {
-                const auto& trace = actor->session_->trace();
-                actor->lastCurrentArea_ = result.currentArea;
-                actor->lastCurrentAreaActor_ = result.movement.actor;
-                actor->lastCurrentAreaAgent_ = result.movement.agent;
-                actor->lastCurrentAreaMap_ = result.movement.map;
-                actor->lastCurrentAreaRouteGeneration_ = trace.routeGeneration;
-                actor->lastCurrentAreaTick_ = result.movement.tick;
+            result.currentAreaSource=CurrentAreaSource::Exact;
+            if (result.movement.hull)
+                result.currentFloorHeight = static_cast<float>(double(result.movement.position->z) + result.movement.hull->minimum.z);
+        } else if(actor && result.movement.hull && result.movement.grounded==true) {
+            const auto nearby=index_->nearestGeometry(sample,{34.0,120.0});
+            if(nearby && *nearby.value) {
+                const auto& candidate=**nearby.value;
+                const double dx=double(candidate.projectedPoint.x)-result.movement.position->x;
+                const double dy=double(candidate.projectedPoint.y)-result.movement.position->y;
+                const double feet=double(result.movement.position->z)+result.movement.hull->minimum.z;
+                bool related=!actor->lastCurrentArea_ || *actor->lastCurrentArea_==candidate.areaId;
+                const auto connected=[&](nav::model::NavAreaId from,nav::model::NavAreaId to) noexcept {
+                    if(!navigation_.graph) return false;
+                    const auto vertex=navigation_.graph->find(from);
+                    if(!vertex) return false;
+                    for(auto edge=navigation_.graph->edgeBegin(*vertex);edge<navigation_.graph->edgeEnd(*vertex);++edge)
+                        if(navigation_.graph->edge(edge).target==to) return true;
+                    return false;
+                };
+                if(actor->lastCurrentArea_) related=related ||
+                    connected(*actor->lastCurrentArea_,candidate.areaId) ||
+                    connected(candidate.areaId,*actor->lastCurrentArea_);
+                if(!related && actor->session_ && actor->session_->trace().route)
+                    for(const auto& step:actor->session_->trace().route->steps)
+                        related=related || step.edge.source==candidate.areaId || step.edge.target==candidate.areaId;
+                if(std::hypot(dx,dy)<=34.0 && std::abs(double(candidate.projectedPoint.z)-feet)<=18.0 && related) {
+                    result.currentArea=candidate.areaId;
+                    result.currentAreaSource=CurrentAreaSource::Nearest;
+        result.currentFloorHeight = static_cast<float>(candidate.projectedPoint.z);
+                }
             }
+        }
+        if(result.currentArea && actor) {
+            const auto routeGeneration=actor->session_ ? actor->session_->trace().routeGeneration:0;
+            actor->lastCurrentArea_ = result.currentArea;
+            actor->lastCurrentAreaActor_ = result.movement.actor;
+            actor->lastCurrentAreaAgent_ = result.movement.agent;
+            actor->lastCurrentAreaMap_ = result.movement.map;
+            actor->lastCurrentAreaRouteGeneration_ = routeGeneration;
+            actor->lastCurrentAreaTick_ = result.movement.tick;
+            actor->lastCurrentAreaUs_=actor->navigationTimeUs_;
+            actor->lastCurrentAreaFloorHeight_=result.currentFloorHeight;
         }
     }
 
-    const bool traversal = actor && actor->session_ &&
-        actor->session_->executable() &&
-        actor->execution_.state==nav::runtime::ExecutionState::Running &&
+    const bool currentAreaFallbackEligible = actor &&
         result.movement.connected.value_or(false) &&
         result.movement.joined.value_or(false) &&
         result.movement.alive.value_or(false) &&
-        result.movement.tick.isValid() && result.routeGeneration != 0 &&
-        actor->motionTrace_.decision.accepted &&
-        actor->motionTrace_.decision.state == nav::local::WalkState::Running &&
-        actor->motionTrace_.decision.binding.actor == result.movement.actor &&
-        actor->motionTrace_.decision.binding.agent == result.movement.agent &&
-        actor->motionTrace_.decision.binding.map == result.movement.map &&
-        actor->motionTrace_.decision.binding.map == navigation_.map &&
-        actor->motionTrace_.decision.binding.routeGeneration ==
-            result.routeGeneration &&
-        (actor->motionTrace_.decision.jumpState.has_value() ||
-         actor->motionTrace_.decision.dropState.has_value() ||
-         actor->motionTrace_.decision.ladderState.has_value());
-    if (!result.currentArea && traversal && actor->lastCurrentArea_ &&
+        result.movement.tick.isValid() && result.movement.actor.isValid() &&
+        result.movement.agent.isValid() && result.movement.map == navigation_.map;
+    if (!result.currentArea && currentAreaFallbackEligible && actor->lastCurrentArea_ &&
         actor->lastCurrentAreaActor_ == result.movement.actor &&
         actor->lastCurrentAreaAgent_ == result.movement.agent &&
         actor->lastCurrentAreaMap_ == result.movement.map &&
-        actor->lastCurrentAreaRouteGeneration_ == result.routeGeneration &&
         actor->lastCurrentAreaTick_.isValid() &&
         !result.movement.tick.isBefore(actor->lastCurrentAreaTick_) &&
-        result.movement.tick.value - actor->lastCurrentAreaTick_.value <=
-            currentAreaFallbackMaxAgeTicks) {
+        actor->navigationTimeUs_>=actor->lastCurrentAreaUs_ &&
+        actor->navigationTimeUs_-actor->lastCurrentAreaUs_<=currentAreaFallbackMaxAgeUs) {
         result.currentArea = actor->lastCurrentArea_;
         result.currentAreaHeld = true;
+        result.currentAreaSource=CurrentAreaSource::Held;
+        result.currentAreaAgeUs=actor->navigationTimeUs_-actor->lastCurrentAreaUs_;
+        result.currentFloorHeight=actor->lastCurrentAreaFloorHeight_;
     }
 
     const bool validManagedMovement =
@@ -824,6 +851,34 @@ void NavConsole::requestRoute(const nav::runtime::MovementSnapshot& s,nav::model
     const nav::runtime::ExecutionPolicy executionPolicy{&current_->execution_,options.policy};
     auto filteredOptions=options;
     filteredOptions.policy=executionPolicy.policy();
+    if (const auto state=runtimeState(owner,s.actor);
+        state && state->currentArea && state->currentFloorHeight) {
+        nav::runtime::CurrentAreaObservation observation{};
+        observation.agent=s.agent;
+        observation.actor=s.actor;
+        observation.map=s.map;
+        observation.tick=s.tick;
+        observation.area=*state->currentArea;
+        observation.floorHeight=*state->currentFloorHeight;
+        observation.ageUs=state->currentAreaAgeUs;
+        observation.grounded=s.grounded==true;
+        observation.source = state->currentAreaSource==CurrentAreaSource::Held
+            ? nav::runtime::CurrentAreaObservationSource::LastKnown
+            : state->currentAreaSource==CurrentAreaSource::Nearest
+                ? nav::runtime::CurrentAreaObservationSource::Nearest
+                : nav::runtime::CurrentAreaObservationSource::Exact;
+        filteredOptions.currentArea=observation;
+        const char* sourceName=observation.source==nav::runtime::CurrentAreaObservationSource::LastKnown
+            ? "LastKnown"
+            : observation.source==nav::runtime::CurrentAreaObservationSource::Nearest
+                ? "Nearest" : "Exact";
+        char text[256]{};
+        std::snprintf(text,sizeof(text),
+            "nav current_seed actor=%u:%u area=%u source=%s age_us=%llu floor_z=%.3f",
+            unsigned(s.actor.slot),unsigned(s.actor.generation.value),unsigned(observation.area.value),
+            sourceName,static_cast<unsigned long long>(observation.ageUs),observation.floorHeight);
+        line(text);
+    }
     TrafficRoutePolicy traffic;
     traffic.base=filteredOptions.policy;
     for (const auto& other : actors_) {

@@ -20,16 +20,49 @@ std::optional<JumpLimits> deriveJumpLimits(JumpLimits, const JumpPhysics&,
 struct JumpProbeLimits {
     std::uint32_t maxQueries{}, maxSegments{};
     double maxSegmentSeconds{}, maxChordRise{}, navTolerance{};
+    // Supplied by the owning Walk profile for the one permitted source-floor
+    // fallback. Zero keeps the offline launch seam fail-closed.
+    double supportTolerance{}, supportProbeDepth{};
 };
 enum class JumpProbeReason { None, InvalidInput, StaleNavigation, StalePhysics,
     UnsupportedConstraints, OutsideTakeoff, InvalidVelocity, CannotLand,
-    BudgetExceeded, StaleQuery, QueryFailed, InvalidResult, NoSupport, WrongArea, Blocked };
+    BudgetExceeded, StaleQuery, QueryFailed, QueryUnavailable, InvalidResult,
+    ActorNotGrounded, FloorHeightMismatch, NavContainmentMissing, NoSupport,
+    WrongArea, Blocked };
+enum class JumpTrajectoryReason : std::uint8_t {
+    None, InvalidInput, BallisticSolution, LandingRadius, MaximumDistance
+};
+struct JumpTrajectoryResult {
+    JumpTrajectoryReason reason{JumpTrajectoryReason::InvalidInput};
+    model::NavVector3 touchdown{};
+    double seconds{}, landingError{};
+    explicit operator bool() const noexcept { return reason==JumpTrajectoryReason::None; }
+};
+// One closed-form model for candidate selection and the live launch proof.
+// `horizontalVelocity` is measured at launch or the candidate's intended
+// approach velocity; this helper never changes actor velocity.
+JumpTrajectoryResult solveJumpTrajectory(model::NavVector3 origin,model::NavVector3 horizontalVelocity,
+    model::NavVector3 landing,JumpLimits,JumpPhysics) noexcept;
 struct JumpProbeResult {
     JumpProbeReason reason{JumpProbeReason::None};
+    ProbeReason supportReason{ProbeReason::None};
+    ProbeReason supportInitialReason{ProbeReason::None};
+    bool supportFallbackAttempted{};
+    bool supportFallbackAccepted{};
+    std::optional<runtime::FloorTraceEvidence> supportInitialTrace{};
+    std::optional<runtime::FloorTraceEvidence> supportFallbackTrace{};
+    std::array<JumpSupportEvidence,3> supportEvidence{};
+    JumpLandingFailure landingFailure{JumpLandingFailure::None};
     std::optional<JumpInspection> inspection{};
     std::optional<model::NavVector3> touchdown{};
     double flightSeconds{};
+    double landingError{};
+    bool trajectoryReady{};
     std::uint32_t queries{}, segments{};
+    JumpProof takeoffProof{JumpProof::TransientUnknown};
+    JumpProof flightProof{JumpProof::TransientUnknown};
+    JumpProof landingProof{JumpProof::TransientUnknown};
+    JumpProofProvenance provenance{JumpProofProvenance::None};
     explicit operator bool() const noexcept { return reason==JumpProbeReason::None && inspection.has_value(); }
 };
 class JumpProbe final {

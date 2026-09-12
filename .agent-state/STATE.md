@@ -1,55 +1,59 @@
-# State
+# AstraBot active state
 
-Status: P12 JumpPhysics posture-transition fix implemented; live acceptance pending.
-Integration target: local main (user requested merge and task worktree cleanup).
+- Repository: `H:\sourcecode\003.Game\amxmodx\AstraBot`
+- Branch/HEAD at implementation start: `main` / `d5f7959`
+- Active work: P12 ZBot-style Jump firing and movement continuity.
+- User-owned `.gitignore` and untracked files remain untouched.
 
-P12 implementation 7130889 integrates with main 967d75c. Preserve main's
-Roam arrival/session cancellation, route style, runtime diagnostics and economy
-observation fixes alongside ground/step dispatch, Jump posture/capabilities,
-narrow NAV physical validation and transient edge cooldown.
+## Implemented, awaiting live acceptance
 
-The current movement fix preserves a healthy autonomous Roam route across
-periodic goal alternatives, keys Recovery progress to the active directed edge,
-counts fresh Jump/Ladder guard rejection toward bounded no-progress recovery,
-and emits granular Jump guard diagnostics at `astrabot_debug 2`.
+- Added actor-local bounded `JumpAttemptRegistry`; keys contain agent/player generations, map, source, target and Jump traversal, but not route/goal generation.
+- `SimpleJump` now separates proof, readiness, terminal reason and recovery disposition.
+- Under-speed, lateral error and over-speed remain in `Accelerate`; Run input points along the velocity error. They no longer immediately become `Blocked`.
+- `JumpProbe::launch` validates the intended launch velocity and reuses an existing sweep slot to validate the current-frame alignment command. No diagnostic-only world query was added.
+- Jump press is recorded once per attempt. Attempt start/press state survives route regeneration through `NavConsole::ActorState`.
+- Sweep provenance distinguishes verified world/static BSP from dynamic/unknown blockers. Only verified static proof requests structural exclusion.
+- Jump failure bypasses goal/source aggregation, so only the exact directed edge receives transient 2-second cooldown. Sibling Jump exits remain searchable.
+- `astrabot_debug 2` includes attempt ID/start, proof/provenance, readiness, axis, velocity components, Run command direction, proof distance/lifetime and command/dispatch ticks.
 
-The JumpPhysics fix separates stable gravity/impulse/hull constants from
-volatile actor eligibility and posture. Queue/dispatch assessments retain exact
-failure reasons, canonical standing/crouching hull transitions continue through
-the posture guard, and host/cvar failures do not poison a directed edge. Roam
-SearchBackoff is no longer counted once per candidate as goal cooling.
+## Verification completed
 
-Live restart evidence through 2026-09-11 16:37:51 showed queue physics valid,
-but 2,996 dispatches rejected as `TicketStale` versus 63 accepted. IntentPump
-correctly queued a fresh decision on a later tick, while the guard incorrectly
-required the decision physics tick to equal the pending command tick. The
-follow-up rebinds the stable physics model to the actual queue tick and retains
-full dispatch-time actor/physics validation. A second restart is still pending.
+- FocalSpan Ready before edit; post-edit index update completed.
+- tests-OFF x86 Release `astrabot_mm` build passed.
+- `dumpbin /exports` found exactly the six required undecorated exports.
+- `git diff --check` passed after the test-source additions; rerun after this state update.
+- Test source was extended, but test targets, CTest and canonical were not configured, built or run.
 
-Evidence: docs/reports/p12-ab-compatibility-fix.md.
-Reference: ReGameDLL_CS b0889847fe6d03898be88acc9e366660efb40ab5.
-Scope: A/B only; C links/damage shortcuts and project Finish remain excluded.
+## Required next actions
 
-Verification boundary:
-- Regression sources exist; no test configure/build/run, CTest or canonical
-  until explicit user-confirmed live PASS.
-- Integration verification uses x86 Release, tests OFF, pinned SDK, six exports.
-- The movement-fix x86 Release tests-OFF build and six-export check pass. Test
-  targets, CTest and canonical remain intentionally unbuilt/unrun until live PASS.
-- The previously deployed DLL is historical evidence; the merged artifact is
-  recorded separately and is not automatically redeployed.
-- JumpPhysics-fix x86 Release tests-OFF build passes. Regression sources were
-  updated but remain intentionally unbuilt/unrun until live PASS.
-- TicketStale follow-up DLL SHA-256
-  `DFAE3AB191BD71ED97EB346DB9DF70710A8E3F03DFF2F4BB885691B24FAE2C13`
-  is deployed. The prior JumpPhysics DLL is retained as
-  `astrabot_mm.pre-b080ad2-20260911-164228.dll`; the original pre-fix DLL is
-  retained as `astrabot_mm.pre-bdbbb69-20260911-163438.dll`.
-- FocalSpan and diff checks accompany integration; local config is not committed.
+1. User restarts and runs `de_dust`, 1v1, `astrabot_debug 2`, for 60 seconds or until both actors complete Jump.
+2. Require attempt-correlated `Accelerate -> Takeoff -> IN_JUMP dispatch -> Airborne -> Recover/Complete`, and actor 1 leaving area 5 plus actor 2 leaving area 11.
+3. Before explicit live PASS, do not build/run test targets, CTest or canonical, and do not commit.
+4. After explicit live PASS, run focused tests and canonical All once, update FocalSpan, stage explicit paths only, diff-check and create the limited commit.
 
-Next: obtain server restart authorization, then
-capture at least 30 seconds with two BOTs at `astrabot_debug 2`. Confirm that
-11->2036 is traversed or enters bounded recovery/detour/Hold instead of remaining
-Running indefinitely, then run 2v2 for at least 10 minutes/three rounds.
-After explicit live PASS run focused regressions and canonical All once.
-No live acceptance or project Finish has been declared.
+## Previous deployed artifacts
+
+- Runtime DLL before this task: SHA-256 `C6090A2FCB9DBD2B6F1BC3F221548A0DF4A18D9FFBC0EC7483AD7F54FC93043F`.
+- Backup: `D:\SteamCMD\cstrike_rehlds\cstrike\addons\astrabot\dlls\astrabot_mm.pre-jump-attempt-20260911-204957.dll`, same SHA-256 as above.
+- Intermediate candidate backup: `D:\SteamCMD\cstrike_rehlds\cstrike\addons\astrabot\dlls\astrabot_mm.pre-final-jump-attempt-20260911-205700.dll`, SHA-256 `0B74813BAAC24EA8621237FBF6D3602758B537BDD04853421F2FEC2ABAE63A0E`.
+- Newly deployed runtime DLL: SHA-256 `0487247B73423B273A0B3F85F78738F8B99323AC51B802594B06F1DB7856BBF4`.
+- Server was not restarted by Codex.
+
+## Current P12 measurement candidate
+
+- Rebuilt tests-OFF x86 Release artifact at 2026-09-12 11:17:11. SHA-256 `05DC0223D8438241B0343F8C4AE13396B5CFB989657FCDB85D475FDEE3F5229C`.
+- Exactly six required undecorated exports verified with `dumpbin /exports`.
+- Deployed to `D:\SteamCMD\cstrike_rehlds\cstrike\addons\astrabot\dlls\astrabot_mm.dll`.
+- Backup: `D:\SteamCMD\cstrike_rehlds\cstrike\addons\astrabot\dlls\astrabot_mm.dll.pre-p12-nosupport-rebuild-20260912-111711`, SHA-256 `DF1E7BFC1C01E4B417A777CE5E83452FE94055A2952A3965CE4D2BF3D8FCDA9A`.
+- Server was not restarted by Codex; live acceptance, CTest, canonical, and commit remain pending.
+
+## P12 micro-NAV Jump candidate deployment (2026-09-12)
+
+- `JumpLandingEnvelope` now carries the target centre-safe region and, only for a direct ordinary route continuation, one successor landing region.  `JumpPlan` records its landing area and one- or two-transition cursor advance.
+- Candidate construction no longer reimposes full-hull NAV containment on micro patches and filters candidates through the shared deterministic trajectory calculation.
+- `JumpProbe::launch` uses measured horizontal velocity for touchdown prediction.  A `LandingRadius` mismatch preserves current source support and lets `SimpleJump` continue Run alignment; no Jump press is allowed until full trajectory proof is ready.
+- `Cursor::advanceLanding` accepts exactly the supported target or validated immediate Walk/Crouch successor, never arbitrary area skipping.
+- `astrabot_debug 2` now emits candidate area/advance, landing envelope bounds, predicted touchdown, landing error and trajectory-ready state.
+- tests-OFF x86 Release `astrabot_mm.dll` built and six exports verified. Runtime deployed SHA-256: `0E250F689E8A96B67FE64DF81C0A87C1FAB14308CE199BA630336AC0573256EA`.
+- Runtime backup: `D:\SteamCMD\cstrike_rehlds\cstrike\addons\astrabot\dlls\astrabot_mm.dll.pre-p12-micro-jump-20260912-142500` (SHA-256 `576305CEF67EF5103A9B535E644933932FD6F4275CDCF849313F6EA870AB7CF4`).
+- Required next action: user restart, then 2BOT `astrabot_debug 2` live measurement.  Do not run test targets, CTest, canonical, or commit until explicit live PASS.

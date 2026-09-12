@@ -205,6 +205,16 @@ const char* movementSourceName(debug::MovementTraceSource source) noexcept {
     return "Unknown";
 }
 
+const char* currentAreaSourceName(cstrike::CurrentAreaSource source) noexcept {
+    switch(source) {
+    case cstrike::CurrentAreaSource::None: return "None";
+    case cstrike::CurrentAreaSource::Exact: return "Exact";
+    case cstrike::CurrentAreaSource::Nearest: return "Nearest";
+    case cstrike::CurrentAreaSource::Held: return "LastKnown";
+    }
+    return "Unknown";
+}
+
 const char* runtimeInputReasonName(RuntimeInputBuildReason reason) noexcept {
     switch(reason) {
     case RuntimeInputBuildReason::None: return "None";
@@ -648,7 +658,7 @@ void ConsoleDebug::runtimeCorrelationTrace(core::PlayerId player) noexcept {
     char lineBuffer[2048]{};
     std::snprintf(
         lineBuffer, sizeof(lineBuffer),
-        "[ASTRABOT][DEBUG][MOVEMENT] kind=Correlation correlated=%u map=%u round=%llu tick=%llu actor=%u:%u agent=%u input_reason=%s stale=%s validation=%s current_area_held=%u current_area=%u elapsed_us=%llu frame_delta_us=%llu weapon=%u weapon_class=%u update_client_data=%u weapon_data=%u update_called=%u weapon_called=%u accepted=%zu decision=%u decision_map=%u decision_round=%llu decision_tick=%llu runtime_reject=%u nav=%s nav_reason=%s nav_map=%u nav_round=%llu nav_tick=%llu nav_decision_tick=%llu queue=%u queue_error=%u queue_tick=%llu dispatch=%u dispatch_error=%u dispatch_command_tick=%llu dispatch_tick=%llu source=%s command_f=%.3f command_s=%.3f command_u=%.3f buttons=%u impulse=%u msec=%u origin=%.2f,%.2f,%.2f velocity=%.2f,%.2f,%.2f onground=%u intent=%s route=%s reason=%s roam_goal=%u roam_candidates=%zu roam_generation=%llu",
+        "[ASTRABOT][DEBUG][MOVEMENT] kind=Correlation correlated=%u map=%u round=%llu tick=%llu actor=%u:%u agent=%u input_reason=%s input_included=%u idle_suppressed=%u stale=%s validation=%s current_area_held=%u current_area=%u current_area_source=%s current_area_age_us=%llu elapsed_us=%llu frame_delta_us=%llu weapon=%u weapon_class=%u update_client_data=%u weapon_data=%u update_called=%u weapon_called=%u accepted=%zu decision=%u decision_map=%u decision_round=%llu decision_tick=%llu runtime_reject=%u nav=%s nav_reason=%s nav_map=%u nav_round=%llu nav_tick=%llu nav_decision_tick=%llu queue=%u queue_error=%u queue_tick=%llu dispatch=%u dispatch_error=%u dispatch_command_tick=%llu dispatch_tick=%llu source=%s command_f=%.3f command_s=%.3f command_u=%.3f buttons=%u impulse=%u msec=%u origin=%.2f,%.2f,%.2f velocity=%.2f,%.2f,%.2f onground=%u intent=%s route=%s reason=%s roam_goal=%u roam_candidates=%zu roam_generation=%llu",
         unsigned(inputStampMatch),
         unsigned(correlation.map.value),
         static_cast<unsigned long long>(correlation.round.value),
@@ -656,10 +666,14 @@ void ConsoleDebug::runtimeCorrelationTrace(core::PlayerId player) noexcept {
         unsigned(player.slot), unsigned(player.generation.value),
         unsigned(correlation.agent.value),
         runtimeInputReasonName(inputStampMatch ? correlation.inputReason : RuntimeInputBuildReason::None),
+        unsigned(inputStampMatch && input.inputIncluded),
+        unsigned(inputStampMatch && input.idleDispatchSuppressed),
         runtimeActorStaleReasonName(inputStampMatch ? correlation.staleReason : RuntimeActorStaleReason::None),
         runtimeInputValidationReasonName(inputStampMatch ? correlation.validation : RuntimeInputValidationReason::None),
         unsigned(inputStampMatch && correlation.currentAreaHeld),
         unsigned(inputStampMatch ? correlation.currentArea.value : 0U),
+        currentAreaSourceName(inputStampMatch ? correlation.currentAreaSource : cstrike::CurrentAreaSource::None),
+        static_cast<unsigned long long>(inputStampMatch ? correlation.currentAreaAgeUs : 0U),
         static_cast<unsigned long long>(inputStampMatch ? correlation.elapsedUs : 0U),
         static_cast<unsigned long long>(inputStampMatch ? correlation.frameDeltaUs : 0U),
         unsigned(inputStampMatch ? input.activeWeapon : 0U),

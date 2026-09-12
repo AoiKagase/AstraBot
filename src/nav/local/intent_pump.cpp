@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 #include "nav/local/intent_pump.hpp"
+#include <algorithm>
 #include <limits>
 namespace astrabot::nav::local {
 void IntentPump::stop(PumpReason reason) noexcept {
@@ -42,11 +43,12 @@ bool IntentPump::publish(Binding binding, core::TickId tick, const MovementInten
     reason_=PumpReason::None; published_=true; return true;
 }
 PumpOutput IntentPump::take() noexcept {
-    if(!eligible_ || taken_ || retired_) return {false,false,{},reason_,tick_,frameUs_,0};
+    if(!eligible_ || taken_ || retired_) return {false,false,{},reason_,tick_,frameUs_,0,0};
     taken_=true;
     const auto age=hasIntent_ ? timeUs_-intentTimeUs_:0;
-    if(hasIntent_ && age>maxIntentAgeUs) stop(PumpReason::StaleIntent);
-    const PumpOutput output{true,first_,intent_,reason_,tick_,frameUs_,age};
+    const auto lifetime=hasIntent_ ? freshnessLimit(intent_):maxIntentAgeUs;
+    if(hasIntent_ && age>lifetime) stop(PumpReason::StaleIntent);
+    const PumpOutput output{true,first_,intent_,reason_,tick_,frameUs_,age,lifetime};
     first_=false; return output;
 }
 }

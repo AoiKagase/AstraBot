@@ -215,6 +215,24 @@ bool Cursor::advance(std::size_t expected, model::NavAreaId area, bool supportVe
        area!=corridor_->transitions()[index_].edge.target) return false;
     ++index_; return true;
 }
+bool Cursor::advanceLanding(std::size_t expected, model::NavAreaId area,
+                            std::uint8_t transitions, bool supportVerified) noexcept {
+    if(!corridor_ || expected!=index_ || !supportVerified || (transitions!=1 && transitions!=2) ||
+       index_>=corridor_->transitions().size()) return false;
+    const auto end=index_+transitions;
+    if(end>corridor_->transitions().size()) return false;
+    const auto& active=corridor_->transitions()[index_];
+    if(transitions==1) {
+        if(area!=active.edge.target) return false;
+    } else {
+        const auto& next=corridor_->transitions()[index_+1];
+        if(active.edge.target!=next.edge.source || next.edge.external ||
+           (next.effectiveTraversal!=model::NavTraversalKind::Walk &&
+            next.effectiveTraversal!=model::NavTraversalKind::Crouch) || area!=next.edge.target)
+            return false;
+    }
+    index_=end; return true;
+}
 TargetResult Cursor::target(Point p, std::size_t lookAhead) const noexcept {
     return corridor_ ? corridor_->target(index_,p,lookAhead) : TargetResult{{},Error::InvalidCursor};
 }

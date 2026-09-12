@@ -163,6 +163,7 @@ enum class MovementTraceError : std::uint8_t {
     MappingMismatch,
     WeaponSelectionUnavailable,
     WeaponSelectionRejected,
+    RuntimeInputUnavailable,
 };
 
 enum class MovementTraceSource : std::uint8_t {

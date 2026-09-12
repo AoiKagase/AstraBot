@@ -9,8 +9,29 @@ struct GroundProbeLimits {
     double maxDistance{}, sampleSpacing{}, maxStepUp{}, maxDrop{}, probeDepth{};
     double supportTolerance{}, navTolerance{}, minNormalZ{};
 };
-enum class ProbeReason { None, InvalidInput, StaleNavigation, BudgetExceeded, StaleQuery, QueryFailed,
-    InvalidResult, NoSupport, NoArea, WrongStartArea, UnsafeDrop, Blocked };
+enum class ProbeReason {
+    None,
+    InvalidInput,
+    StaleNavigation,
+    BudgetExceeded,
+    StaleQuery,
+    QueryUnavailable,
+    QueryFailed,
+    InvalidResult,
+    ActorNotGrounded,
+    ActorGroundFlagMismatch,
+    TraceNoHit,
+    StartSolid,
+    AllSolid,
+    UnsupportedFloor,
+    FloorHeightMismatch,
+    NavContainmentMissing,
+    NoSupport, // Legacy aggregate retained for callers not yet reason-aware.
+    NoArea,
+    WrongStartArea,
+    UnsafeDrop,
+    Blocked
+};
 struct GroundedTarget {
     model::NavVector3 origin{};
     model::NavAreaId area{};
@@ -23,8 +44,15 @@ struct StepEvidence {
 struct ProbeResult {
     runtime::QueryStamp stamp{}; // Batch identity; ordinal 0, queries counts issued ordinals.
     ProbeReason reason{ProbeReason::None};
+    ProbeReason initialReason{ProbeReason::None};
+    bool supportFallbackAttempted{};
+    bool supportFallbackAccepted{};
+    std::optional<runtime::FloorTraceEvidence> initialTrace{};
+    std::optional<runtime::FloorTraceEvidence> fallbackTrace{};
     std::optional<GroundedTarget> target{};
     std::uint32_t queries{}, samples{}, steps{};
+    bool floorEvidenceValid{};
+    double startFloorHeight{}, lastFloorHeight{}, floorDelta{}, cumulativeDownDrop{}, maxDownStep{};
     std::optional<StepEvidence> lastStep{};
     explicit operator bool() const noexcept { return reason==ProbeReason::None && target.has_value(); }
 };

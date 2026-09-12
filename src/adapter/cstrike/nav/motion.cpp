@@ -15,7 +15,7 @@
 #endif
 namespace astrabot::adapter::cstrike {
 namespace {
-constexpr nav::local::WalkLimits walkLimits{{21,4,48,16,18,18,64,4,18,0.7},160,1,1,3,1000000,3000000,12,8,40,25,{120000,400000,3000000},
+constexpr nav::local::WalkLimits walkLimits{{21,4,48,16,18,18,64,4,18,0.7},200,20,5,3,1000000,3000000,12,8,5,25,{120000,400000,3000000},
     {{{-16,-16,-36},{16,16,36}},{{-16,-16,-18},{16,16,18}},1000000}};
 std::uint64_t add(std::uint64_t a,std::uint64_t b) noexcept {
     const auto maximum=(std::numeric_limits<std::uint64_t>::max)();
@@ -37,6 +37,111 @@ const char* walkState(nav::local::WalkState state) noexcept {
     case nav::local::WalkState::Arrived:return "Arrived";
     case nav::local::WalkState::Failed:return "Failed";
     case nav::local::WalkState::Aborted:return "Aborted";
+    }
+    return "Unknown";
+}
+const char* motionDisposition(nav::local::MotionDisposition disposition) noexcept {
+    switch(disposition) {
+    case nav::local::MotionDisposition::Execute: return "Execute";
+    case nav::local::MotionDisposition::Hold: return "Hold";
+    case nav::local::MotionDisposition::Recovery: return "Recovery";
+    }
+    return "Unknown";
+}
+const char* obstacleClassName(nav::local::ObstacleClass obstacle) noexcept {
+    switch(obstacle) {
+    case nav::local::ObstacleClass::None: return "None";
+    case nav::local::ObstacleClass::Step: return "Step";
+    case nav::local::ObstacleClass::Jumpable: return "Jumpable";
+    case nav::local::ObstacleClass::TooHigh: return "TooHigh";
+    case nav::local::ObstacleClass::Dynamic: return "Dynamic";
+    case nav::local::ObstacleClass::Unknown: return "Unknown";
+    }
+    return "Unknown";
+}
+const char* jumpCandidateRegionModeName(nav::local::JumpCandidateRegionMode mode) noexcept {
+    switch(mode) {
+    case nav::local::JumpCandidateRegionMode::Margin: return "Margin";
+    case nav::local::JumpCandidateRegionMode::PhysicalHull: return "PhysicalHull";
+    case nav::local::JumpCandidateRegionMode::CentreInset: return "CentreInset";
+    case nav::local::JumpCandidateRegionMode::SuccessorCentreInset: return "SuccessorCentreInset";
+    case nav::local::JumpCandidateRegionMode::Collapsed: return "Collapsed";
+    case nav::local::JumpCandidateRegionMode::NoBallisticLanding: return "NoBallisticLanding";
+    }
+    return "Unknown";
+}
+const char* jumpCandidateSwitchReasonName(nav::local::JumpCandidateSwitchReason reason) noexcept {
+    switch(reason) {
+    case nav::local::JumpCandidateSwitchReason::None: return "None";
+    case nav::local::JumpCandidateSwitchReason::PlannedLandingStaticFailure: return "PlannedLandingStaticFailure";
+    case nav::local::JumpCandidateSwitchReason::BallisticLandingMismatch: return "BallisticLandingMismatch";
+    }
+    return "Unknown";
+}
+const char* jumpProofPhaseName(nav::local::JumpProofPhase phase) noexcept {
+    switch(phase) {
+    case nav::local::JumpProofPhase::None: return "None";
+    case nav::local::JumpProofPhase::Prepare: return "Prepare";
+    case nav::local::JumpProofPhase::Launch: return "Launch";
+    case nav::local::JumpProofPhase::Land: return "Land";
+    }
+    return "Unknown";
+}
+const char* jumpProofDeferReasonName(nav::local::JumpProofDeferReason reason) noexcept {
+    switch(reason) {
+    case nav::local::JumpProofDeferReason::None: return "None";
+    case nav::local::JumpProofDeferReason::ReservedQueries: return "ReservedQueries";
+    }
+    return "Unknown";
+}
+const char* probeReasonName(nav::local::ProbeReason reason) noexcept {
+    switch(reason) {
+    case nav::local::ProbeReason::None: return "None";
+    case nav::local::ProbeReason::AllSolid: return "AllSolid";
+    case nav::local::ProbeReason::StartSolid: return "StartSolid";
+    case nav::local::ProbeReason::TraceNoHit: return "TraceNoHit";
+    case nav::local::ProbeReason::NoSupport: return "NoSupport";
+    case nav::local::ProbeReason::ActorGroundFlagMismatch: return "ActorGroundFlagMismatch";
+    case nav::local::ProbeReason::FloorHeightMismatch: return "FloorHeightMismatch";
+    case nav::local::ProbeReason::NavContainmentMissing: return "NavContainmentMissing";
+    case nav::local::ProbeReason::BudgetExceeded: return "BudgetExceeded";
+    case nav::local::ProbeReason::StaleQuery: return "StaleQuery";
+    case nav::local::ProbeReason::QueryUnavailable: return "QueryUnavailable";
+    case nav::local::ProbeReason::QueryFailed: return "QueryFailed";
+    default: return "Other";
+    }
+}
+const char* jumpProbeReasonName(nav::local::JumpProbeReason reason) noexcept {
+    switch(reason) {
+    case nav::local::JumpProbeReason::None: return "None";
+    case nav::local::JumpProbeReason::NoSupport: return "NoSupport";
+    case nav::local::JumpProbeReason::CannotLand: return "CannotLand";
+    case nav::local::JumpProbeReason::OutsideTakeoff: return "OutsideTakeoff";
+    case nav::local::JumpProbeReason::BudgetExceeded: return "BudgetExceeded";
+    case nav::local::JumpProbeReason::StaleQuery: return "StaleQuery";
+    case nav::local::JumpProbeReason::QueryUnavailable: return "QueryUnavailable";
+    case nav::local::JumpProbeReason::StalePhysics: return "StalePhysics";
+    case nav::local::JumpProbeReason::Blocked: return "Blocked";
+    default: return "Other";
+    }
+}
+const char* jumpSupportRoleName(nav::local::JumpSupportRole role) noexcept {
+    switch(role) {
+    case nav::local::JumpSupportRole::Source: return "Source";
+    case nav::local::JumpSupportRole::PlannedLanding: return "PlannedLanding";
+    case nav::local::JumpSupportRole::PredictedLanding: return "PredictedLanding";
+    }
+    return "Unknown";
+}
+const char* jumpLandingFailureName(nav::local::JumpLandingFailure failure) noexcept {
+    switch(failure) {
+    case nav::local::JumpLandingFailure::None: return "None";
+    case nav::local::JumpLandingFailure::PlannedSupport: return "PlannedSupport";
+    case nav::local::JumpLandingFailure::PredictedSupport: return "PredictedSupport";
+    case nav::local::JumpLandingFailure::BallisticSolution: return "BallisticSolution";
+    case nav::local::JumpLandingFailure::LandingRadius: return "LandingRadius";
+    case nav::local::JumpLandingFailure::MaximumDistance: return "MaximumDistance";
+    case nav::local::JumpLandingFailure::FloorHeightMismatch: return "FloorHeightMismatch";
     }
     return "Unknown";
 }
@@ -87,10 +192,10 @@ void NavConsole::printMotion() noexcept {
     const auto target=d.target ? d.target->origin:nav::model::NavVector3{};
     char text[1536]{};
     std::snprintf(text,sizeof(text),
-        "walk actor=%u:%u map=%u route=%llu step=%zu tick=%llu state=%s reason=%u probe=%u event=%u motion_reason=%u corridor=%u portal_reason=%u transition=%zu micro_area=%u extent=(%.6g,%.6g)->(%.6g,%.6g) hull=(%.6g,%.6g) transport=%u command_tick=%llu dispatch_tick=%llu age_us=%llu speed=%.6g direction=(%.6g,%.6g) target_present=%u target=(%.6g,%.6g,%.6g) support=%u queries=%u samples=%u step_probes=%u queued=%llu dispatched=%llu rejected=%llu missed=%llu history=%zu omitted=%llu edge=%u:%u command_forward=%.6g command_side=%.6g command_msec=%u door=%llu door_state=%u door_reason=%u use_checks=%llu contact_pulse=%u contact_guards=%llu clearance=(%.6g,%.6g) narrow=%u avoiding=%u lateral=%.6g",
+        "walk actor=%u:%u map=%u route=%llu step=%zu tick=%llu state=%s disposition=%s reason=%u probe=%u event=%u motion_reason=%u corridor=%u portal_reason=%u transition=%zu micro_area=%u extent=(%.6g,%.6g)->(%.6g,%.6g) hull=(%.6g,%.6g) transport=%u command_tick=%llu dispatch_tick=%llu age_us=%llu speed=%.6g direction=(%.6g,%.6g) target_present=%u target=(%.6g,%.6g,%.6g) support=%u queries=%u samples=%u step_probes=%u queued=%llu dispatched=%llu rejected=%llu missed=%llu history=%zu omitted=%llu edge=%u:%u command_forward=%.6g command_side=%.6g command_msec=%u door=%llu door_state=%u door_reason=%u use_checks=%llu contact_pulse=%u contact_guards=%llu clearance=(%.6g,%.6g) narrow=%u avoiding=%u lateral=%.6g",
         unsigned(d.binding.actor.slot),unsigned(d.binding.actor.generation.value),unsigned(d.binding.map.value),
         static_cast<unsigned long long>(d.binding.routeGeneration),d.binding.step,static_cast<unsigned long long>(d.tick.value),
-        walkState(d.state),unsigned(d.reason),unsigned(d.probeReason),unsigned(current_->motionTrace_.event),unsigned(current_->motionTrace_.reason),
+        walkState(d.state),motionDisposition(d.disposition),unsigned(d.reason),unsigned(d.probeReason),unsigned(current_->motionTrace_.event),unsigned(current_->motionTrace_.reason),
         unsigned(current_->motionTrace_.corridorError),unsigned(current_->motionTrace_.portalReason),
         current_->motionTrace_.corridorTransition,
         unsigned(current_->motionTrace_.sourceFit==nav::corridor::AreaFit::MicroTransit ||
@@ -119,7 +224,22 @@ void NavConsole::printMotion() noexcept {
         d.blocker ? unsigned(d.blocker->kind):0U,unsigned(d.blockerAction),unsigned(d.blockerReason),
         d.blocker && d.blocker->player ? unsigned(d.blocker->player->slot):0U,
         d.blocker && d.blocker->player ? unsigned(d.blocker->player->generation.value):0U);
-    line(text);
+        line(text);
+        if(d.obstacleClass!=nav::local::ObstacleClass::None || d.obstacleHull || d.blocker) {
+            char obstacle[768]{};
+            const auto* hull=d.obstacleHull ? &*d.obstacleHull:nullptr;
+            std::snprintf(obstacle,sizeof(obstacle),
+                "nav obstacle actor=%u:%u route=%llu step=%zu class=%s blocker=%u hit=(%.3f,%.3f,%.3f) normal=(%.3f,%.3f,%.3f) fraction=%.6g start_solid=%u all_solid=%u floor_start=%.3f floor_next=%.3f delta=%.3f cumulative_drop=%.3f max_step=%.3f",
+                unsigned(d.binding.actor.slot),unsigned(d.binding.actor.generation.value),
+                static_cast<unsigned long long>(d.binding.routeGeneration),d.binding.step,
+                obstacleClassName(d.obstacleClass),unsigned(d.blocker.has_value()),
+                hull ? hull->end.x:0.0F,hull ? hull->end.y:0.0F,hull ? hull->end.z:0.0F,
+                hull ? hull->normal.x:0.0F,hull ? hull->normal.y:0.0F,hull ? hull->normal.z:0.0F,
+                hull ? hull->fraction:0.0F,hull ? unsigned(hull->startSolid):0U,
+                hull ? unsigned(hull->allSolid):0U,d.startFloorHeight,d.lastFloorHeight,
+                d.floorDelta,d.cumulativeDownDrop,d.maxDownStep);
+            line(obstacle);
+        }
     if(d.avoiding || d.avoidanceReason!=nav::local::AvoidanceReason::None) {
         char avoidance[512]{};
         const auto& candidate=d.avoidanceCandidate;
@@ -133,17 +253,55 @@ void NavConsole::printMotion() noexcept {
             d.queries<walkLimits.probe.maxQueries);
         line(avoidance);
     }
-    char timing[384]{};
+    char timing[768]{};
     std::snprintf(timing,sizeof(timing),
-        "motion_timing actor=%u:%u elapsed_us=%llu frame_delta_us=%llu intent_speed=%.6g speed_limit=%.6g pending_remaining_us=%llu motion_reason=%u diagnostic_suppressed=%llu",
+        "motion_timing actor=%u:%u elapsed_us=%llu frame_delta_us=%llu locomotion_mode=%u intent_speed=%.6g decision_speed_limit=%.6g dispatch_speed_limit=%.6g resolved_speed=%.6g validated_distance=%.6g intent_lifetime_us=%llu pending_remaining_us=%llu motion_reason=%u diagnostic_suppressed=%llu",
         unsigned(d.binding.actor.slot),unsigned(d.binding.actor.generation.value),
         static_cast<unsigned long long>(current_->motionTrace_.elapsedUs),
         static_cast<unsigned long long>(current_->motionTrace_.frameDeltaUs),
-        current_->motionTrace_.intentSpeed,current_->motionTrace_.speedLimit,
+        unsigned(current_->motionTrace_.locomotionMode),current_->motionTrace_.intentSpeed,
+        current_->motionTrace_.decisionSpeedLimit,current_->motionTrace_.speedLimit,
+        current_->motionTrace_.resolvedSpeed,current_->motionTrace_.validatedDistance,
+        static_cast<unsigned long long>(current_->motionTrace_.intentLifetimeUs),
         static_cast<unsigned long long>(current_->motionTrace_.pendingRemainingUs),
         unsigned(current_->motionTrace_.reason),
         static_cast<unsigned long long>(current_->diagnosticSuppressed));
     line(timing);
+    if (current_->motionTrace_.groundGuardReason != nav::local::ProbeReason::None) {
+        char ground[384]{};
+        std::snprintf(ground,sizeof(ground),
+            "ground_guard actor=%u:%u reason=%s(%u) queries=%u proof_valid=%u",
+            unsigned(d.binding.actor.slot),unsigned(d.binding.actor.generation.value),
+            probeReasonName(current_->motionTrace_.groundGuardReason),
+            unsigned(current_->motionTrace_.groundGuardReason),
+            current_->motionTrace_.groundGuardQueries,
+            unsigned(current_->motionTrace_.groundGuardValid));
+        line(ground);
+    }
+    const auto printGroundTrace = [&](const char* kind,
+                                      const std::optional<nav::runtime::FloorTraceEvidence>& trace) noexcept {
+        if (!trace) return;
+        char detail[640]{};
+        std::snprintf(detail,sizeof(detail),
+            "ground_probe actor=%u:%u kind=%s start=(%.3f,%.3f,%.3f) end=(%.3f,%.3f,%.3f) hit=(%.3f,%.3f,%.3f) normal=(%.3f,%.3f,%.3f) fraction=%.6g startsolid=%u allsolid=%u",
+            unsigned(d.binding.actor.slot),unsigned(d.binding.actor.generation.value),kind,
+            trace->start.x,trace->start.y,trace->start.z,trace->end.x,trace->end.y,trace->end.z,
+            trace->hitEnd.x,trace->hitEnd.y,trace->hitEnd.z,trace->hitNormal.x,trace->hitNormal.y,trace->hitNormal.z,
+            trace->fraction,unsigned(trace->startSolid),unsigned(trace->allSolid));
+        line(detail);
+    };
+    printGroundTrace("GroundedArea",current_->motionTrace_.groundGuardInitialTrace);
+    printGroundTrace("Floor",current_->motionTrace_.groundGuardFallbackTrace);
+    if (current_->motionTrace_.groundGuardStep) {
+        const auto& step=*current_->motionTrace_.groundGuardStep;
+        char detail[384]{};
+        std::snprintf(detail,sizeof(detail),
+            "ground_step actor=%u:%u start=(%.3f,%.3f,%.3f) lifted=(%.3f,%.3f,%.3f) across=(%.3f,%.3f,%.3f) landing_area=%u",
+            unsigned(d.binding.actor.slot),unsigned(d.binding.actor.generation.value),
+            step.start.x,step.start.y,step.start.z,step.lifted.x,step.lifted.y,step.lifted.z,
+            step.across.x,step.across.y,step.across.z,unsigned(step.landing.area.value));
+        line(detail);
+    }
     if (current_->motionTrace_.dispatchPhysicalValid) {
         char dispatch[768]{};
         std::snprintf(
@@ -180,12 +338,96 @@ void NavConsole::printMotion() noexcept {
     }
     if(d.jumpState) {
         char jump[384]{};
-        std::snprintf(jump,sizeof(jump),"jump state=%u reason=%u probe=%u geometry=%u guard_reason=%u press_tick=%llu gravity=%.6g impulse=%.6g guard_queries=%llu profile=standard-cs",
-            unsigned(*d.jumpState),unsigned(d.jumpReason),unsigned(d.jumpProbeReason),unsigned(d.jumpGeometryReason),
+        std::snprintf(jump,sizeof(jump),"jump state=%u reason=%u probe=%s(%u) support_reason=%s(%u) support_initial=%s(%u) fallback_attempted=%u fallback_accepted=%u landing_failure=%s(%u) geometry=%u guard_reason=%u press_tick=%llu gravity=%.6g impulse=%.6g guard_queries=%llu profile=standard-cs",
+            unsigned(*d.jumpState),unsigned(d.jumpReason),jumpProbeReasonName(d.jumpProbeReason),unsigned(d.jumpProbeReason),
+            probeReasonName(d.jumpSupportReason),unsigned(d.jumpSupportReason),probeReasonName(d.jumpSupportInitialReason),unsigned(d.jumpSupportInitialReason),
+            unsigned(d.jumpSupportFallbackAttempted),unsigned(d.jumpSupportFallbackAccepted),
+            jumpLandingFailureName(d.jumpLandingFailure),unsigned(d.jumpLandingFailure),
+            unsigned(d.jumpGeometryReason),
             unsigned(current_->motionTrace_.jumpGuardReason),
             static_cast<unsigned long long>(d.jumpPressTick.value),d.jumpPhysics ? d.jumpPhysics->gravity:0,
             d.jumpPhysics ? d.jumpPhysics->verticalImpulse:0,static_cast<unsigned long long>(current_->motionTrace_.jumpGuardQueries));
         line(jump);
+        const auto printFloorTrace=[&](const nav::local::JumpSupportEvidence& evidence,
+                                       const char* kind,nav::local::ProbeReason reason,
+                                       const std::optional<nav::runtime::FloorTraceEvidence>& trace) {
+            char floor[640]{};
+            const auto* hull=evidence.hull ? &*evidence.hull:nullptr;
+            if(!trace) {
+                std::snprintf(floor,sizeof(floor),"jump_floor actor=%u:%u role=%s kind=%s present=0 reason=%s(%u) origin=(%.3f,%.3f,%.3f) expected_area=%u fallback_attempted=%u fallback_accepted=%u hull_present=%u",
+                    unsigned(d.binding.actor.slot),unsigned(d.binding.actor.generation.value),jumpSupportRoleName(evidence.role),kind,
+                    probeReasonName(reason),unsigned(reason),evidence.origin.x,evidence.origin.y,evidence.origin.z,
+                    unsigned(evidence.expectedArea.value),unsigned(evidence.fallbackAttempted),unsigned(evidence.fallbackAccepted),unsigned(hull!=nullptr));
+            } else {
+                std::snprintf(floor,sizeof(floor),
+                    "jump_floor actor=%u:%u role=%s kind=%s present=1 reason=%s(%u) origin=(%.3f,%.3f,%.3f) expected_area=%u start=(%.3f,%.3f,%.3f) end=(%.3f,%.3f,%.3f) hit=(%.3f,%.3f,%.3f) normal=(%.3f,%.3f,%.3f) fraction=%.6g start_solid=%u all_solid=%u fallback_attempted=%u fallback_accepted=%u",
+                    unsigned(d.binding.actor.slot),unsigned(d.binding.actor.generation.value),jumpSupportRoleName(evidence.role),kind,
+                    probeReasonName(reason),unsigned(reason),evidence.origin.x,evidence.origin.y,evidence.origin.z,unsigned(evidence.expectedArea.value),
+                    trace->start.x,trace->start.y,trace->start.z,trace->end.x,trace->end.y,trace->end.z,
+                    trace->hitEnd.x,trace->hitEnd.y,trace->hitEnd.z,trace->hitNormal.x,trace->hitNormal.y,trace->hitNormal.z,
+                    trace->fraction,unsigned(trace->startSolid),unsigned(trace->allSolid),unsigned(evidence.fallbackAttempted),unsigned(evidence.fallbackAccepted));
+            }
+            line(floor);
+        };
+        for(const auto& evidence : d.jumpSupportEvidence) {
+            printFloorTrace(evidence,"GroundedArea",evidence.initialReason,evidence.initialTrace);
+            if(evidence.fallbackAttempted || evidence.fallbackTrace)
+                printFloorTrace(evidence,"Floor",evidence.fallbackReason,evidence.fallbackTrace);
+        }
+        char attempt[1280]{};
+        std::snprintf(attempt,sizeof(attempt),
+        "jump_attempt actor=%u:%u map=%u route=%llu step=%zu edge=%u:%u attempt=%llu started_us=%llu "
+        "candidate=%u/%u candidate_region=%s candidate_switch=%s candidate_area=%u candidate_advance=%u landing=(%.4f,%.4f,%.4f) predicted=(%.4f,%.4f,%.4f) landing_error=%.4f trajectory_ready=%u proof_phase=%s proof_queries=%u reserved_queries=%u available_queries=%u deferred=%u defer_reason=%s guard_suppressed=%u landing_failure=%u "
+            "proof=%u/%u/%u provenance=%u readiness=%u recovery=%u axis=(%.4f,%.4f) from_takeoff=%.4f "
+            "along=%.4f lateral=%.4f min=%.4f max=%.4f speed_limit=%.4f desired=%.4f command=(%.4f,%.4f) "
+            "validated_distance=%.4f valid_for_us=%llu press_tick=%llu command_tick=%llu dispatch_tick=%llu",
+            unsigned(d.binding.actor.slot),unsigned(d.binding.actor.generation.value),unsigned(d.binding.map.value),
+            static_cast<unsigned long long>(d.binding.routeGeneration),d.binding.step,
+        d.jumpPlan ? unsigned(d.jumpPlan->source.value):0U,d.jumpPlan ? unsigned(d.jumpPlan->target.value):0U,
+        static_cast<unsigned long long>(d.jumpAttemptId),static_cast<unsigned long long>(d.jumpAttemptStartedUs),
+        unsigned(d.jumpCandidateIndex),unsigned(d.jumpCandidateCount),
+        jumpCandidateRegionModeName(d.jumpCandidateRegionMode),jumpCandidateSwitchReasonName(d.jumpCandidateSwitchReason),
+        unsigned(d.jumpCandidateArea.value),unsigned(d.jumpCandidateAdvance),
+        d.jumpCandidateLanding ? d.jumpCandidateLanding->x:0.0F,
+        d.jumpCandidateLanding ? d.jumpCandidateLanding->y:0.0F,
+        d.jumpCandidateLanding ? d.jumpCandidateLanding->z:0.0F,
+        d.jumpPredictedLanding.x,d.jumpPredictedLanding.y,d.jumpPredictedLanding.z,d.jumpLandingError,
+        unsigned(d.jumpTrajectoryReady),
+        jumpProofPhaseName(d.jumpProofPhase),d.jumpLaunchRequiredQueries,d.jumpReservedQueries,
+        d.jumpLaunchAvailableQueries,unsigned(d.jumpLaunchDeferred),jumpProofDeferReasonName(d.jumpProofDeferReason),
+        unsigned(d.jumpGuardSuppressed),unsigned(d.jumpLandingFailure),
+            unsigned(d.jumpTakeoffProof),unsigned(d.jumpFlightProof),unsigned(d.jumpLandingProof),
+            unsigned(d.jumpProofProvenance),unsigned(d.jumpReadiness),unsigned(d.jumpRecoveryDisposition),
+            double(d.jumpAxis.x),double(d.jumpAxis.y),d.jumpFromTakeoff,d.jumpAlong,d.jumpLateral,
+            d.jumpMinimumSpeed,d.jumpMaximumSpeed,d.jumpSpeedLimit,d.jumpDesiredSpeed,
+            double(d.jumpCommandDirection.x),double(d.jumpCommandDirection.y),d.jumpValidatedDistance,
+            static_cast<unsigned long long>(d.jumpValidForUs),static_cast<unsigned long long>(d.jumpPressTick.value),
+            static_cast<unsigned long long>(current_->motionTrace_.commandTick.value),
+            static_cast<unsigned long long>(current_->motionTrace_.dispatchTick.value));
+        line(attempt);
+        if(d.jumpLandingEnvelope) {
+            const auto& landingTarget=d.jumpLandingEnvelope->target;
+            char envelope[640]{};
+            std::snprintf(envelope,sizeof(envelope),
+                "jump_envelope actor=%u:%u attempt=%llu target_area=%u advance=%u kind=%u extent=(%.3f,%.3f)-(%.3f,%.3f) bounds=(%.3f,%.3f,%.3f,%.3f) successor_area=%u successor_advance=%u successor_kind=%u successor_extent=(%.3f,%.3f)-(%.3f,%.3f) successor_bounds=(%.3f,%.3f,%.3f,%.3f)",
+                unsigned(d.binding.actor.slot),unsigned(d.binding.actor.generation.value),
+                static_cast<unsigned long long>(d.jumpAttemptId),unsigned(landingTarget.area.value),unsigned(landingTarget.cursorAdvance),
+                unsigned(landingTarget.kind),landingTarget.extent.northWest.x,landingTarget.extent.northWest.y,
+                landingTarget.extent.southEast.x,landingTarget.extent.southEast.y,landingTarget.lowX,landingTarget.highX,
+                landingTarget.lowY,landingTarget.highY,
+                d.jumpLandingEnvelope->successor ? unsigned(d.jumpLandingEnvelope->successor->area.value):0U,
+                d.jumpLandingEnvelope->successor ? unsigned(d.jumpLandingEnvelope->successor->cursorAdvance):0U,
+                d.jumpLandingEnvelope->successor ? unsigned(d.jumpLandingEnvelope->successor->kind):0U,
+                d.jumpLandingEnvelope->successor ? d.jumpLandingEnvelope->successor->extent.northWest.x:0.0F,
+                d.jumpLandingEnvelope->successor ? d.jumpLandingEnvelope->successor->extent.northWest.y:0.0F,
+                d.jumpLandingEnvelope->successor ? d.jumpLandingEnvelope->successor->extent.southEast.x:0.0F,
+                d.jumpLandingEnvelope->successor ? d.jumpLandingEnvelope->successor->extent.southEast.y:0.0F,
+                d.jumpLandingEnvelope->successor ? d.jumpLandingEnvelope->successor->lowX:0.0,
+                d.jumpLandingEnvelope->successor ? d.jumpLandingEnvelope->successor->highX:0.0,
+                d.jumpLandingEnvelope->successor ? d.jumpLandingEnvelope->successor->lowY:0.0,
+                d.jumpLandingEnvelope->successor ? d.jumpLandingEnvelope->successor->highY:0.0);
+            line(envelope);
+        }
         const auto printPhysics=[&](const char* phase,const JumpPhysicsAssessment& p) {
             char detail[640]{};
             const auto* model=p.physics ? &*p.physics:nullptr;
@@ -245,7 +487,7 @@ void NavConsole::stopMotion() noexcept {
     current_->walk_.reset(); current_->pump_.reset(); current_->segment_.reset(); current_->intentWallAgeUs_=0;
 }
 void NavConsole::failExecution(nav::runtime::ExecutionFailure reason,bool structural,
-    bool bindFailedEdge) noexcept {
+                               bool bindFailedEdge,bool aggregateSource) noexcept {
     // Local avoidance exhaustion is transient. It must enter the bounded
     // recovery/edge-cooldown path and must never become a NAV-generation
     // permanent exclusion merely because the forward probe was blocked.
@@ -255,7 +497,7 @@ void NavConsole::failExecution(nav::runtime::ExecutionFailure reason,bool struct
     auto edge=bindFailedEdge ? current_->motionTrace_.failedEdge:
         std::optional<nav::query::NavDirectedEdge>{};
     if(bindFailedEdge && !edge) edge=current_->motionTrace_.selectedEdge;
-    current_->execution_.fail(goal,reason,current_->navigationTimeUs_,edge,structural);
+    current_->execution_.fail(goal,reason,current_->navigationTimeUs_,edge,structural,aggregateSource);
     current_->motionTrace_.failedEdge=edge;
     if(edge) {
         current_->motionTrace_.edgeCooldownRemainingUs=
@@ -355,12 +597,13 @@ void NavConsole::startMotion(const nav::runtime::MovementSnapshot& s) noexcept {
     const auto floor=nav::query::projectToArea(e,xy);
     const nav::model::NavVector3 goal{xy.x,xy.y,static_cast<float>(floor.z)};
     auto profile=walkLimits; profile.jump=jumpLimits; profile.drop=nav::local::DropLimits{}; profile.ladder=nav::local::LadderLimits{};
-    current_->walk_.emplace(current_->motionTrace_.decision.binding,corridor.value,goal,profile);
+    current_->walk_.emplace(current_->motionTrace_.decision.binding,corridor.value,goal,profile,
+                            &current_->jumpAttempts_);
     current_->execution_.state=nav::runtime::ExecutionState::Running;
     std::optional<nav::local::RecoveryEdge> recoveryEdge;
     if(route.route && !route.route->steps.empty()) {
         const auto& edge=route.route->steps.front().edge;
-        recoveryEdge=nav::local::RecoveryEdge{edge.source,edge.target};
+        recoveryEdge=nav::local::RecoveryEdge{edge.source,edge.target,edge.traversal};
     }
     (void)current_->recovery_.bindRoute(current_->motionTrace_.decision.binding,recoveryEdge);
     current_->pump_.emplace(current_->motionTrace_.decision.binding); current_->intentWallAgeUs_=0; current_->neutralBinding_.reset();
@@ -495,10 +738,13 @@ void NavConsole::beforeDispatch(metamod::LifecycleCoordinator& owner) noexcept {
     current_->motionTrace_.elapsedUs=s.elapsedUs;
     current_->motionTrace_.frameDeltaUs=duration;
     current_->motionTrace_.pendingRemainingUs=pending.remainingFreshUs;
-    current_->motionTrace_.intentSpeed=std::hypot(
-        double(current_->motionTrace_.decision.intent.direction.x),
-        double(current_->motionTrace_.decision.intent.direction.y)) *
-        current_->motionTrace_.decision.intent.speed;
+    current_->motionTrace_.intentSpeed=std::hypot(double(pending.command.movement.forward),
+        double(pending.command.movement.side));
+    current_->motionTrace_.resolvedSpeed=current_->motionTrace_.intentSpeed;
+    current_->motionTrace_.locomotionMode=current_->motionTrace_.decision.intent.locomotion;
+    current_->motionTrace_.decisionSpeedLimit=current_->motionTrace_.decision.intent.decisionSpeedLimit;
+    current_->motionTrace_.intentLifetimeUs=nav::local::IntentPump::freshnessLimit(
+        current_->motionTrace_.decision.intent);
     current_->motionTrace_.speedLimit=s.speedLimit ? double(*s.speedLimit) : 0.0;
     const auto reportTraversalRejection = [&](MotionReason rejected) noexcept {
         if((rejected!=MotionReason::JumpChanged && rejected!=MotionReason::LadderChanged &&
@@ -603,8 +849,10 @@ void NavConsole::beforeDispatch(metamod::LifecycleCoordinator& owner) noexcept {
     if(pending.jump) {
         const auto queued=pending.tick; const auto binding=pending.binding;
         const bool press=(pending.command.buttons&static_cast<core::ButtonMask>(core::Button::Jump))!=0;
+        const bool preserveFlightBudget=!press && current_->walk_ && current_->walk_->needsJumpProofBudget();
+        if(preserveFlightBudget) current_->motionTrace_.decision.jumpGuardSuppressed=true;
         inRequest_=true; queryingEntity_=owner.entityFor(current_->actor); queryingPlayers_=&owner.registry(); queryingOwner_=&owner;
-        const auto guarded=guardJump(owner,s,pending);
+        const auto guarded=preserveFlightBudget ? MotionReason::None:guardJump(owner,s,pending);
         inRequest_=false; queryingEntity_=nullptr; queryingPlayers_=nullptr; queryingOwner_=nullptr;
         if(deferredInvalidation_) { (void)applyDeferredInvalidation(); return; }
         if(guarded!=MotionReason::None) {
@@ -627,15 +875,22 @@ void NavConsole::beforeDispatch(metamod::LifecycleCoordinator& owner) noexcept {
     }
     if(!pending.contact && (pending.command.movement.forward!=0 || pending.command.movement.side!=0)) {
         const auto proof=guardGround(owner,s,pending);
+        current_->motionTrace_.groundGuardReason=proof.reason;
+        current_->motionTrace_.groundGuardQueries=proof.queries;
+        current_->motionTrace_.groundGuardValid=static_cast<bool>(proof);
+        current_->motionTrace_.groundGuardInitialTrace=proof.initialTrace;
+        current_->motionTrace_.groundGuardFallbackTrace=proof.fallbackTrace;
+        current_->motionTrace_.groundGuardStep=proof.lastStep;
         if(deferredInvalidation_) { (void)applyDeferredInvalidation(); return; }
         if(!proof) {
             current_->motionTrace_.commandTick=pending.tick; current_->motionTrace_.dispatchTick=s.tick;
             clearPending(); if(current_->pump_) current_->pump_->submissionRejected();
+            stopMotion();
             current_->motionTrace_.rejected=add(current_->motionTrace_.rejected,1);
-            recordMotion(MotionEvent::Rejected,MotionReason::MissingObservation);
-            // Retry a budget-limited observation; no route or edge exclusion.
-            if(proof.reason!=nav::local::ProbeReason::BudgetExceeded)
-                failExecution(nav::runtime::ExecutionFailure::Observation);
+            recordMotion(MotionEvent::Rejected,MotionReason::GroundProbe);
+            // Preserve the exact probe reason; do not turn an observation
+            // failure into a structural NAV exclusion.
+            failExecution(nav::runtime::ExecutionFailure::Observation,false,false,false);
             return;
         }
     }
@@ -767,7 +1022,8 @@ void NavConsole::afterDispatch(const metamod::MovementResult& result,core::TickI
         const auto& d=ticket->decision;
         auto expected=nav::local::ExpectedProgress::Pause;
     if(d.state==nav::local::WalkState::Running && !d.jumpState && !d.dropState && !d.ladderState && !d.doorState && !d.contact &&
-           d.blockerAction!=nav::local::BlockerAction::Yield && d.intent.speed>0 &&
+       d.blockerAction!=nav::local::BlockerAction::Yield &&
+       (d.intent.locomotion!=core::LocomotionMode::Explicit || d.intent.speed>0) &&
            (ticket->command.movement.forward!=0 || ticket->command.movement.side!=0))
             expected=(ticket->command.buttons&static_cast<core::ButtonMask>(core::Button::Duck)) ?
                 nav::local::ExpectedProgress::Crouch:nav::local::ExpectedProgress::Walk;
@@ -839,7 +1095,7 @@ void NavConsole::moveFrame(metamod::LifecycleCoordinator& owner) noexcept {
         const auto& route=current_->session_->trace().route;
         if(route && binding.step<route->steps.size()) {
             const auto& edge=route->steps[binding.step].edge;
-            recoveryEdge=nav::local::RecoveryEdge{edge.source,edge.target};
+        recoveryEdge=nav::local::RecoveryEdge{edge.source,edge.target,edge.traversal};
         }
         (void)current_->recovery_.bindRoute(binding,recoveryEdge);
         const auto recovery=s.position ? current_->recovery_.observe(binding,s.tick,current_->navigationTimeUs_,*s.position):current_->recovery_.decision();
@@ -863,6 +1119,15 @@ void NavConsole::moveFrame(metamod::LifecycleCoordinator& owner) noexcept {
             decision.recovery.terminalEvent=true;
         }
         current_->motionTrace_.decision=decision; current_->motionTrace_.missedDecisions=add(current_->motionTrace_.missedDecisions,schedule.missedDeadlines);
+        if((decision.reason==nav::local::WalkReason::InsufficientMovementProof ||
+            decision.disposition!=nav::local::MotionDisposition::Execute) &&
+           recovery.state==nav::local::RecoveryState::Monitoring && s.position &&
+           current_->motionTrace_.commandTick.isValid() && s.tick.isAfter(current_->motionTrace_.commandTick)) {
+            const auto expected=decision.intent.duck==core::ActionRequest::Hold ?
+                nav::local::ExpectedProgress::Crouch:nav::local::ExpectedProgress::Walk;
+            (void)current_->recovery_.report({decision.binding,current_->motionTrace_.commandTick,s.tick,
+                *s.position,decision.progressDirection,current_->intentWallAgeUs_,expected,false,true});
+        }
         if (decision.state == nav::local::WalkState::Arrived) {
             const auto wasRoam = current_->roamActive_;
             const auto goal = current_->session_
@@ -926,15 +1191,9 @@ void NavConsole::moveFrame(metamod::LifecycleCoordinator& owner) noexcept {
                 // directed NAV edge. Exclude that edge for this NAV
                 // generation; dynamic/player blockers remain on bounded
                 // recovery instead of being misclassified here.
-                const bool jumpStructural = decision.reason == nav::local::WalkReason::JumpFailed &&
-                    (decision.jumpGeometryReason==nav::local::JumpGeometryReason::UnsupportedTransition ||
-                     decision.jumpGeometryReason==nav::local::JumpGeometryReason::NoRoom ||
-                     decision.jumpGeometryReason==nav::local::JumpGeometryReason::InvalidGeometry ||
-                     decision.jumpGeometryReason==nav::local::JumpGeometryReason::HeightUnsupported ||
-                     decision.jumpProbeReason==nav::local::JumpProbeReason::UnsupportedConstraints ||
-                     decision.jumpProbeReason==nav::local::JumpProbeReason::CannotLand ||
-                     decision.jumpProbeReason==nav::local::JumpProbeReason::WrongArea ||
-                     decision.jumpReason==nav::local::JumpReason::WrongLanding);
+                const bool jumpFailure=decision.reason==nav::local::WalkReason::JumpFailed;
+                const bool jumpStructural=jumpFailure &&
+                    decision.jumpRecoveryDisposition==nav::local::RecoveryDisposition::StructuralEdgeExclusion;
                 const bool structural =
                     decision.reason == nav::local::WalkReason::UnsupportedTraversal ||
                     (jumpStructural && !decision.blocker) ||
@@ -942,7 +1201,7 @@ void NavConsole::moveFrame(metamod::LifecycleCoordinator& owner) noexcept {
                      decision.probeReason == nav::local::ProbeReason::Blocked &&
                      !decision.blocker);
                 failExecution(nav::runtime::ExecutionFailure::Motion,
-                    structural);
+                    structural,true,!jumpFailure);
             }
             return;
         }
@@ -953,13 +1212,17 @@ void NavConsole::moveFrame(metamod::LifecycleCoordinator& owner) noexcept {
     const auto output=current_->pump_->take();
     if(!output.emit || !ready(s,current_->motionTrace_.decision.jumpState.has_value() || current_->motionTrace_.decision.dropState.has_value() || current_->motionTrace_.decision.ladderState.has_value())) return;
     const auto age=(std::max)(output.intentAgeUs,current_->intentWallAgeUs_);
-    if(age>nav::local::IntentPump::maxIntentAgeUs) { current_->pump_->stop(nav::local::PumpReason::StaleIntent); return; }
+    if(age>output.intentLifetimeUs) { current_->pump_->stop(nav::local::PumpReason::StaleIntent); return; }
     submitMotion(s,owner,output.intent,output.firstFrame,age);
 }
 void NavConsole::submitMotion(const nav::runtime::MovementSnapshot& s,metamod::LifecycleCoordinator& owner,
     const core::MovementIntent& intent,bool firstFrame,std::uint64_t age) noexcept {
     const auto contact=firstFrame ? current_->motionTrace_.decision.contact:std::nullopt;
     auto effective=current_->motionTrace_.decision.contact && !firstFrame ? core::MovementIntent{}:intent;
+    const auto lifetime=nav::local::IntentPump::freshnessLimit(intent);
+    const auto frameDelta=movement_->frameDeltaUs();
+    if(intent.locomotion!=core::LocomotionMode::Explicit &&
+       (age>=lifetime || lifetime-age<frameDelta)) effective={};
     const auto& decision=current_->motionTrace_.decision;
     if(s.grounded==true && (decision.jumpState==nav::local::JumpState::Airborne || decision.jumpState==nav::local::JumpState::Recover)) {
         effective={}; effective.jump=core::ActionRequest::Release;
@@ -1000,15 +1263,21 @@ void NavConsole::submitMotion(const nav::runtime::MovementSnapshot& s,metamod::L
         // lifetime; retain one measured frame of grace so a one-tick command
         // is not rejected solely because wall time exceeded 120 ms. A second
         // missed dispatch still expires through the normal bounded stale path.
-        const auto frameDelta=movement_->frameDeltaUs();
-        const auto remaining=nav::local::IntentPump::maxIntentAgeUs>age
-            ? nav::local::IntentPump::maxIntentAgeUs-age : 0U;
-        const auto pendingFreshness=add(remaining,frameDelta);
+        const auto remaining=lifetime>age ? lifetime-age:0U;
+        const auto pendingFreshness=intent.locomotion==core::LocomotionMode::Explicit ?
+            add(remaining,frameDelta):remaining;
         current_->motionTrace_.elapsedUs=s.elapsedUs;
         current_->motionTrace_.frameDeltaUs=frameDelta;
         current_->motionTrace_.pendingRemainingUs=pendingFreshness;
+        current_->motionTrace_.locomotionMode=intent.locomotion;
         current_->motionTrace_.intentSpeed=double(intent.speed);
+        current_->motionTrace_.decisionSpeedLimit=double(intent.decisionSpeedLimit);
         current_->motionTrace_.speedLimit=double(*s.speedLimit);
+        current_->motionTrace_.resolvedSpeed=command.resolvedSpeed;
+        current_->motionTrace_.intentLifetimeUs=lifetime;
+        current_->motionTrace_.validatedDistance=decision.target && s.position ?
+            std::hypot(double(decision.target->origin.x)-s.position->x,
+                double(decision.target->origin.y)-s.position->y):0.0;
         current_->pendingMotion_=PendingMotion{current_->motionTrace_.decision.binding,s.tick,pendingFreshness,
             s,submittedCommand,current_->segment_,contact};
         if(decision.jumpState && decision.jumpPlan && decision.jumpPhysics) {

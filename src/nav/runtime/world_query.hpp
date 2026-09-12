@@ -25,12 +25,41 @@ struct QueryRequest {
     double navTolerance{2}; // GroundedArea: explicit NAV/observed-floor height allowance.
     std::uint64_t doorId{}; // Door: zero discovers the hit; nonzero revalidates this generation.
 };
-struct FloorObservation { float height{}; model::NavVector3 normal{}; bool supported{}; };
+// The physics result and the NAV lookup are deliberately kept separate.  A
+// valid floor trace may exist even when no NAV area contains that floor.
+struct FloorTraceEvidence {
+    model::NavVector3 start{}, end{}, hitEnd{}, hitNormal{};
+    float fraction{};
+    bool startSolid{}, allSolid{};
+};
+enum class FloorObservationStatus {
+    Unknown,
+    Supported,
+    TraceNoHit,
+    StartSolid,
+    AllSolid,
+    InvalidTrace,
+    UnsupportedNormal,
+    HeightMismatch,
+    NavContainmentMissing
+};
+struct FloorObservation {
+    float height{};
+    model::NavVector3 normal{};
+    bool supported{};
+    FloorObservationStatus status{FloorObservationStatus::Unknown};
+    std::optional<FloorTraceEvidence> trace{};
+};
 struct GroundedAreaObservation {
     std::optional<model::NavAreaId> area{};
     std::optional<FloorObservation> floor{};
 };
-struct HullObservation { float fraction{}; model::NavVector3 end{}, normal{}; bool startSolid{}; };
+struct HullObservation {
+    float fraction{};
+    model::NavVector3 end{}, normal{};
+    bool startSolid{};
+    bool allSolid{};
+};
 struct ClearanceObservation { bool clear{}; };
 // id includes entity generation within the stamped map. 'open' means the
 // requested swept passage is physically clear, not an inferred toggle state.

@@ -34,14 +34,24 @@ const char* stateName(nav::runtime::SessionState state) noexcept {
     }
     return "Unknown";
 }
+const char* areaSourceName(nav::runtime::CurrentAreaObservationSource source) noexcept {
+    using S=nav::runtime::CurrentAreaObservationSource;
+    switch(source) {
+    case S::Exact: return "Exact";
+    case S::Nearest: return "Nearest";
+    case S::LastKnown: return "LastKnown";
+    }
+    return "Unknown";
+}
 }
 void printNavTrace(const nav::runtime::DecisionTrace& t, NavLineSink sink, void* ctx) noexcept {
     if (!sink) return;
     char line[512]{};
-    std::snprintf(line,sizeof(line),"nav actor=%u:%u agent=%u map=%u tick=%llu route=%llu current=%u goal=%u state=%s reason=%s terminal=%u arrival=unverified nav_error=%u field=%u offset=%llu",
+    std::snprintf(line,sizeof(line),"nav actor=%u:%u agent=%u map=%u tick=%llu route=%llu current=%u current_source=%s current_age_us=%llu goal=%u state=%s reason=%s terminal=%u arrival=unverified nav_error=%u field=%u offset=%llu",
         unsigned(t.actor.slot),unsigned(t.actor.generation.value),unsigned(t.agent.value),unsigned(t.map.value),
         static_cast<unsigned long long>(t.tick.value),static_cast<unsigned long long>(t.routeGeneration),
-        t.currentArea ? unsigned(t.currentArea->value):0U,unsigned(t.goal.value),stateName(t.state),reasonName(t.reason),unsigned(t.terminal),
+        t.currentArea ? unsigned(t.currentArea->value):0U,areaSourceName(t.currentAreaSource),
+        static_cast<unsigned long long>(t.currentAreaAgeUs),unsigned(t.goal.value),stateName(t.state),reasonName(t.reason),unsigned(t.terminal),
         unsigned(t.navError.kind),unsigned(t.navError.field),static_cast<unsigned long long>(t.navError.offset));
     sink(ctx,line);
     if (!t.route) return;

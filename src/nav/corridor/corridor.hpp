@@ -69,6 +69,10 @@ class Cursor final {
 public:
     explicit Cursor(std::shared_ptr<const Corridor> corridor) noexcept : corridor_(std::move(corridor)) {}
     bool advance(std::size_t expected, model::NavAreaId supportedArea, bool supportVerified) noexcept;
+    // A Jump may land in the direct successor of a micro target patch.  This
+    // accepts at most the active target plus one already-built transition.
+    bool advanceLanding(std::size_t expected, model::NavAreaId supportedArea,
+                        std::uint8_t transitions, bool supportVerified) noexcept;
     std::size_t index() const noexcept { return index_; }
     bool exhausted() const noexcept { return corridor_ && index_ == corridor_->transitions().size(); }
     TargetResult target(query::NavQueryPoint p, std::size_t lookAhead) const noexcept;

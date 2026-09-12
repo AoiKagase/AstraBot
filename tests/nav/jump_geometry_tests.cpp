@@ -144,7 +144,7 @@ void preparationAndLanding() {
     proof=JumpProbe::land(s,binding,*p.plan,motion,groundLimits,*f.index,binding.map,world);
     assert(proof && proof.queries==1 && proof.inspection->support->area==p.plan->target && !proof.inspection->flightClear);
     world.calls.clear(); world.missing=true;
-    assert(JumpProbe::land(s,binding,*p.plan,motion,groundLimits,*f.index,binding.map,world).reason==JumpProbeReason::NoSupport);
+    assert(JumpProbe::land(s,binding,*p.plan,motion,groundLimits,*f.index,binding.map,world).reason==JumpProbeReason::QueryUnavailable);
     world.missing=false; world.calls.clear(); s.position=p.plan->takeoff;
     assert(JumpProbe::land(s,binding,*p.plan,motion,groundLimits,*f.index,binding.map,world).reason==JumpProbeReason::WrongArea);
 }

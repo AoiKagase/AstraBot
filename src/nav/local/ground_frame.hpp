@@ -39,7 +39,10 @@ inline ProbeResult inspectGroundFrame(const runtime::MovementSnapshot& s,std::ui
                     if(match && *match.value) area=(**match.value).areaId;
                 }
                 if(area && *area!=source && *area!=target) {
-                    outside=true; r.ground.reset(); r.floor.reset();
+                    // Keep the physical sample. The final supported landing
+                    // is checked below; an intermediate stair sample may be
+                    // outside either NAV endpoint without being unsafe.
+                    outside=true;
                 }
             }
             if(r.stamp==q.stamp) r.stamp=original.stamp;
@@ -53,7 +56,11 @@ inline ProbeResult inspectGroundFrame(const runtime::MovementSnapshot& s,std::ui
     limits.maxQueries-=ground.queries;
     result=GroundProbe::inspect(s,generation,ground.target->area,x,y,index,map,queries,limits);
     result.queries+=ground.queries;
-    if(queries.outside) { result.reason=ProbeReason::NoArea; result.target.reset(); }
+    if(queries.outside && (!result.target ||
+        (result.target->area!=source && result.target->area!=target))) {
+        result.reason=ProbeReason::NoArea;
+        result.target.reset();
+    }
     return result;
 }
 }

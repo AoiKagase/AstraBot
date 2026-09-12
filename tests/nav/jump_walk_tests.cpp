@@ -152,9 +152,13 @@ void failuresAndBudgets() {
     assert(walk.abort().intent.jump==ActionRequest::Release && walk.step()==0);
     World exhausted(*f.index); Walk low(binding,f.corridor,{150,50,0},limits()); s=actor();
     assert(low.update(s,*f.index,binding.map,exhausted,40000,0,physics(low,s)).primitiveEvent==PrimitiveEvent::Entered);
-    ++s.tick.value; exhausted.reserved=20;
-    const auto failure=low.update(s,*f.index,binding.map,exhausted,80000,20,physics(low,s));
-    assert(failure.state==WalkState::Failed && failure.jumpProbeReason==JumpProbeReason::BudgetExceeded && failure.queries<=21);
+    ++s.tick.value; exhausted.reserved=3;
+    const auto failure=low.update(s,*f.index,binding.map,exhausted,80000,3,physics(low,s));
+    assert(failure.state==WalkState::Running && failure.jumpLaunchDeferred &&
+        failure.jumpProofPhase==JumpProofPhase::Prepare &&
+        failure.jumpProofDeferReason==JumpProofDeferReason::ReservedQueries &&
+        failure.jumpReservedQueries==3 && failure.jumpLaunchAvailableQueries==18 &&
+        failure.intent.jump!=ActionRequest::Press && failure.queries<=21);
     World none(*f.index); Walk missing(binding,f.corridor,{150,50,0},limits()); s=actor();
     assert(missing.update(s,*f.index,binding.map,none,40000).jumpReason==JumpReason::MissingObservation && none.total==0);
 }
@@ -237,13 +241,19 @@ void microJumpGeometryAndWorldProof() {
     const auto spatial=query::NavSpatialIndex::build(mesh,{3,5,1000000}); assert(spatial);
     auto s=actor(); const auto l=limits();
     const auto geometry=JumpGeometry::derive(*path.value,binding,s,l.jump->motion,l.jump->geometry);
-    assert(geometry && query::containsXY(b.extent,geometry.plan->landing));
+    assert(geometry && geometry.landingEnvelope && query::containsXY(b.extent,geometry.plan->landing));
+    assert(geometry.landingEnvelope->target.area==model::NavAreaId{1665} &&
+           geometry.landingEnvelope->target.kind==JumpLandingRegionKind::CentreInset);
+    assert(geometry.landingEnvelope->successor && geometry.landingEnvelope->successor->area==model::NavAreaId{9} &&
+           geometry.landingEnvelope->successor->cursorAdvance==2);
     // A NAV hint and a centre that fits are still not clearance evidence.
     World blocked(**spatial.value); blocked.ceiling=true;
     Walk walk(binding,path.value,{175,50,0},l);
     const auto d=walk.update(s,**spatial.value,binding.map,blocked,40000,0,physics(walk,s));
     assert(d.intent.jump!=ActionRequest::Press && walk.step()==0);
     assert(d.jumpPlan && d.jumpGeometryReason==JumpGeometryReason::None);
+    assert(d.jumpCandidateCount>0 && d.jumpCandidateIndex==0 && d.jumpCandidateLanding);
+    assert(d.jumpCandidateCount>0 && d.jumpCandidateAdvance>=1 && d.jumpCandidateAdvance<=2);
 }
 void observedObstacleReusesRunningWalkPrimitive() {
     Fixture fixture(false,0);
@@ -272,7 +282,7 @@ void observedObstacleReusesRunningWalkPrimitive() {
         }
     } world(*fixture.index);
     auto profile=limits();
-    profile.sideProbeDistance=16; profile.narrowMargin=1; profile.narrowSpeed=60;
+    profile.sideProbeDistance=16; profile.narrowMargin=1; profile.minimumCrossingDistance=5;
     profile.maxAvoidanceDecisions=3;
     Walk walk(binding,fixture.corridor,{150,50,0},profile);
     auto s=actor();

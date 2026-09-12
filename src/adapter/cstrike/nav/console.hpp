@@ -19,7 +19,7 @@ namespace astrabot::adapter::cstrike {
 enum class NavCommand { Load, GoTo, Status, Cancel, Report };
 enum class MotionEvent { None, Decision, Queued, Dispatched, Rejected, Cancelled };
 enum class MotionReason { None, InvalidCorridor, InvalidGoal, MissingObservation,
-    StaleCommand, Deviation, MotorRejected, TransportRejected, Cancelled, DoorChanged, PostureChanged, JumpChanged, LadderChanged, DropChanged };
+    StaleCommand, Deviation, MotorRejected, TransportRejected, Cancelled, DoorChanged, PostureChanged, JumpChanged, LadderChanged, DropChanged, GroundProbe };
 enum class JumpGuardReason : std::uint8_t { None, CommandShape, TerminalState,
     Binding, Physics, Capability, FlightHull, CompletionState, StandClearance,
     Posture, Timing, TakeoffState, LaunchProbe, LandingProbe, Segment,
@@ -41,12 +41,23 @@ struct MotionTrace {
     std::uint64_t frameDeltaUs{};
     std::uint64_t pendingRemainingUs{};
     double intentSpeed{};
+    double decisionSpeedLimit{};
     double speedLimit{};
+    double resolvedSpeed{};
+    double validatedDistance{};
+    std::uint64_t intentLifetimeUs{};
+    core::LocomotionMode locomotionMode{core::LocomotionMode::Explicit};
     nav::local::WalkDecision decision{};
     std::optional<nav::query::NavDirectedEdge> selectedEdge{};
     std::optional<nav::query::NavDirectedEdge> failedEdge{};
     std::uint64_t edgeCooldownRemainingUs{};
     bool edgeCooling{false};
+    nav::local::ProbeReason groundGuardReason{nav::local::ProbeReason::None};
+    std::uint32_t groundGuardQueries{};
+    bool groundGuardValid{false};
+    std::optional<nav::runtime::FloorTraceEvidence> groundGuardInitialTrace{};
+    std::optional<nav::runtime::FloorTraceEvidence> groundGuardFallbackTrace{};
+    std::optional<nav::local::StepEvidence> groundGuardStep{};
     core::BotCommand command{}; // Queued command; msec is a hint, transport measures dispatch.
     MotionEvent event{MotionEvent::None};
     MotionReason reason{MotionReason::None};
@@ -113,6 +124,7 @@ struct RuntimeNavigationStatus final {
     core::BotAgentId agent{};
     nav::model::NavAreaId goal{};
 };
+enum class CurrentAreaSource : std::uint8_t { None, Exact, Nearest, Held };
 struct RuntimeNavigationState final {
     nav::runtime::ExecutionState execution{nav::runtime::ExecutionState::Idle};
     nav::runtime::ExecutionFailure executionFailure{nav::runtime::ExecutionFailure::None};
@@ -120,6 +132,9 @@ struct RuntimeNavigationState final {
     std::uint64_t retryAtUs{};
     nav::runtime::MovementSnapshot movement{};
     std::optional<nav::model::NavAreaId> currentArea{};
+    CurrentAreaSource currentAreaSource{CurrentAreaSource::None};
+    std::uint64_t currentAreaAgeUs{};
+    std::optional<float> currentFloorHeight{};
     std::optional<core::perception::Point> goalPosition{};
     std::optional<nav::model::NavAreaId> goal{};
     std::array<core::tactical::TargetArea, core::tactical::kMaxTacticalRoamCandidates>
@@ -220,7 +235,7 @@ private:
     void startMotion(const nav::runtime::MovementSnapshot&) noexcept;
     void stopMotion() noexcept;
     void failExecution(nav::runtime::ExecutionFailure,bool structural=false,
-        bool bindFailedEdge=true) noexcept;
+                       bool bindFailedEdge=true,bool aggregateSource=true) noexcept;
     void clearPending() noexcept;
     void recordMotion(MotionEvent, MotionReason=MotionReason::None) noexcept;
     void printMotion() noexcept;
@@ -272,9 +287,10 @@ private:
     metamod::MovementCoordinator* movement_{}; // Owned by the containing lifecycle coordinator.
     core::world::WorldModel* world_{}; // Withdraw candidate distributions when NAV is retired.
     struct ActorState {
-    core::PlayerId actor{};
-    nav::runtime::Execution execution_{};
-    std::optional<nav::local::Walk> walk_{};
+        core::PlayerId actor{};
+        nav::runtime::Execution execution_{};
+        nav::local::JumpAttemptRegistry jumpAttempts_{};
+        std::optional<nav::local::Walk> walk_{};
     std::optional<nav::local::IntentPump> pump_{};
     std::optional<Segment> segment_{};
     std::optional<PendingMotion> pendingMotion_{};
@@ -300,6 +316,8 @@ private:
     mutable core::MapGeneration lastCurrentAreaMap_{};
     mutable std::uint64_t lastCurrentAreaRouteGeneration_{0};
     mutable core::TickId lastCurrentAreaTick_{};
+    mutable std::uint64_t lastCurrentAreaUs_{};
+    mutable std::optional<float> lastCurrentAreaFloorHeight_{};
     std::uint64_t diagnosticNextUs{};
     std::uint64_t diagnosticSuppressed{};
     std::array<nav::model::NavAreaId, core::tactical::kTacticalRoamHistory>

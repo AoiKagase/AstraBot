@@ -75,6 +75,11 @@ struct RuntimeInputBuildStatus final {
     bool weaponDataAvailable{false};
     bool updateClientDataCalled{false};
     bool weaponDataCalled{false};
+    // A failed actor is deliberately omitted from the orchestrator input
+    // array. These fields let the transport distinguish that omission from a
+    // valid actor which simply produced no command this frame.
+    bool inputIncluded{false};
+    bool idleDispatchSuppressed{false};
 };
 
 std::size_t buildRuntimeInputs(const LifecycleCoordinator&, const RuntimeFrame&,

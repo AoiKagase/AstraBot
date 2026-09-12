@@ -17,6 +17,112 @@ bool inside(const model::NavExtent& e,model::NavVector3 p,runtime::HullDimension
     return double(p.x)+h.minimum.x>=e.northWest.x && double(p.x)+h.maximum.x<=e.southEast.x &&
         double(p.y)+h.minimum.y>=e.northWest.y && double(p.y)+h.maximum.y<=e.southEast.y;
 }
+
+std::size_t buildJumpCandidates(std::array<JumpPlan,5>& candidates,const JumpPlan& base,
+    const model::NavExtent& target,const runtime::HullDimensions& hull,JumpLimits limits,
+    JumpGeometryLimits geometry,JumpCandidateRegionMode& regionMode) noexcept {
+    const auto finite=[](double value) noexcept { return std::isfinite(value); };
+    const auto bounds=[&](double margin) noexcept {
+        return std::array<double,4>{double(target.northWest.x)-hull.minimum.x+margin,
+            double(target.southEast.x)-hull.maximum.x-margin,
+            double(target.northWest.y)-hull.minimum.y+margin,
+            double(target.southEast.y)-hull.maximum.y-margin};
+    };
+    auto inner=bounds(geometry.clearanceMargin);
+    const auto valid=[&](const std::array<double,4>& value) noexcept {
+        return finite(value[0]) && finite(value[1]) && finite(value[2]) && finite(value[3]) &&
+            value[0]<=value[1] && value[2]<=value[3];
+    };
+    regionMode=JumpCandidateRegionMode::Margin;
+    if(!valid(inner)) {
+        inner=bounds(0.0);
+        regionMode=JumpCandidateRegionMode::PhysicalHull;
+    }
+    if(!valid(inner) || !finite(limits.maximumDistance) || limits.maximumDistance<=0) {
+        regionMode=JumpCandidateRegionMode::Collapsed;
+        return 0;
+    }
+    const auto lowX=inner[0],highX=inner[1],lowY=inner[2],highY=inner[3];
+
+    const auto dx=double(base.landing.x)-base.takeoff.x;
+    const auto dy=double(base.landing.y)-base.takeoff.y;
+    const auto length=std::hypot(dx,dy);
+    if(!finite(length) || length<=0) return 0;
+    const auto ux=dx/length,uy=dy/length;
+    const auto tx=-uy,ty=ux;
+    const auto lateral=(std::min)(16.0,(std::min)((highX-lowX)*0.5,(highY-lowY)*0.5));
+    std::size_t count{};
+    const auto append=[&](double depth,double offset) noexcept {
+        if(count==candidates.size()) return;
+        const auto x=std::clamp(double(base.landing.x)+ux*depth+tx*offset,lowX,highX);
+        const auto y=std::clamp(double(base.landing.y)+uy*depth+ty*offset,lowY,highY);
+        const model::NavVector3 landing{static_cast<float>(x),static_cast<float>(y),base.landing.z};
+        if(!landing.isFinite() || !inside(target,landing,hull) ||
+            std::hypot(x-double(base.takeoff.x),y-double(base.takeoff.y))>limits.maximumDistance) return;
+        for(std::size_t index{};index<count;++index)
+            if(candidates[index].landing==landing) return;
+        candidates[count]=base;
+        candidates[count++].landing=landing;
+    };
+    append(5.0,0.0);
+    if(lateral>0.001) append(5.0,lateral);
+    if(lateral>0.001) append(5.0,-lateral);
+    append(12.0,0.0);
+    if(lateral>0.001) append(12.0,-lateral);
+    return count;
+}
+std::size_t buildEnvelopeCandidates(std::array<JumpPlan,5>& candidates,const JumpPlan& base,
+    const JumpLandingEnvelope& envelope,JumpLimits limits,JumpPhysics physics,double speedLimit,
+    JumpCandidateRegionMode& regionMode) noexcept {
+    const auto finite=[](double value) noexcept { return std::isfinite(value); };
+    if(!envelope.target || !finite(limits.maximumDistance) || limits.maximumDistance<=0) {
+        regionMode=JumpCandidateRegionMode::Collapsed; return 0;
+    }
+    const double dx=double(base.landing.x)-base.takeoff.x,dy=double(base.landing.y)-base.takeoff.y;
+    const double length=std::hypot(dx,dy);
+    if(length<=0) { regionMode=JumpCandidateRegionMode::NoBallisticLanding; return 0; }
+    const double ux=dx/length,uy=dy/length,tx=-uy,ty=ux;
+    std::size_t count=0;
+    const auto appendRegion=[&](const JumpLandingRegion& region) noexcept {
+        const double lateral=(std::min)(16.0,(std::min)((region.highX-region.lowX)*0.5,
+            (region.highY-region.lowY)*0.5));
+        const auto append=[&](double depth,double offset) noexcept {
+            if(count==candidates.size()) return;
+            const double x=std::clamp(double(base.landing.x)+ux*depth+tx*offset,region.lowX,region.highX);
+            const double y=std::clamp(double(base.landing.y)+uy*depth+ty*offset,region.lowY,region.highY);
+            if(std::hypot(x-double(base.takeoff.x),y-double(base.takeoff.y))>limits.maximumDistance) return;
+            model::NavVector3 landing{static_cast<float>(x),static_cast<float>(y),0};
+            const double z=query::projectToArea(region.extent,landing).z-
+                (base.flightHull ? base.flightHull->minimum.z:0.0F);
+            if(!landing.isFinite() || !finite(z)) return;
+            landing.z=static_cast<float>(z);
+            for(std::size_t i=0;i<count;++i)
+                if(candidates[i].landingArea==region.area &&
+                   std::hypot(double(candidates[i].landing.x)-landing.x,double(candidates[i].landing.y)-landing.y)<0.01)
+                    return;
+            const double range=std::hypot(double(landing.x)-base.takeoff.x,double(landing.y)-base.takeoff.y);
+            if(range<=0 || !finite(speedLimit) || speedLimit<=0) return;
+            const double desired=(std::min)((std::max)(limits.approachSpeed,limits.minimumSpeed),
+                (std::min)(limits.maximumSpeed,speedLimit));
+            if(desired<limits.minimumSpeed) return;
+            const model::NavVector3 velocity{static_cast<float>((landing.x-base.takeoff.x)/range*desired),
+                static_cast<float>((landing.y-base.takeoff.y)/range*desired),0};
+            auto candidate=base;
+            candidate.landing=landing; candidate.landingArea=region.area; candidate.landingAdvance=region.cursorAdvance;
+            if(!solveJumpTrajectory(candidate.takeoff,velocity,candidate.landing,limits,physics)) return;
+            candidates[count++]=candidate;
+        };
+        append(5.0,0.0); if(lateral>0.001) append(5.0,lateral); if(lateral>0.001) append(5.0,-lateral);
+        append(12.0,0.0); if(lateral>0.001) append(12.0,-lateral);
+    };
+    appendRegion(envelope.target);
+    if(envelope.successor) appendRegion(*envelope.successor);
+    if(!count) { regionMode=JumpCandidateRegionMode::Collapsed; return 0; }
+    regionMode=candidates[0].landingAdvance==2 ? JumpCandidateRegionMode::SuccessorCentreInset:
+        (envelope.target.kind==JumpLandingRegionKind::HullMargin ? JumpCandidateRegionMode::Margin:
+         JumpCandidateRegionMode::CentreInset);
+    return count;
+}
 class JumpQueries final : public runtime::IWorldQueries {
 public:
     JumpQueries(runtime::IWorldQueries& port,std::uint32_t reserved,std::uint32_t maximum) noexcept
@@ -37,16 +143,6 @@ private:
     runtime::IWorldQueries& port_;
     std::uint32_t maximum_;
 };
-bool launchReady(const runtime::MovementSnapshot& s,JumpPlan plan,JumpLimits limits) noexcept {
-    if(!s.velocity || !s.velocity->isFinite() || !s.view || !s.view->isFinite() || !s.speedLimit) return false;
-    const double length=std::hypot(double(plan.landing.x)-plan.takeoff.x,double(plan.landing.y)-plan.takeoff.y);
-    if(length<=0) return false;
-    const double ux=(double(plan.landing.x)-plan.takeoff.x)/length,uy=(double(plan.landing.y)-plan.takeoff.y)/length;
-    const double speed=s.velocity->x*ux+s.velocity->y*uy,lateral=std::abs(s.velocity->x*uy-s.velocity->y*ux);
-    const double yaw=std::atan2(uy,ux)*180/3.14159265358979323846;
-    return speed>=limits.minimumSpeed && speed<=limits.maximumSpeed && speed<=*s.speedLimit &&
-        lateral<=limits.minimumSpeed*0.1 && std::abs(std::remainder(double(s.view->y)-yaw,360.0))<=limits.facingDegrees;
-}
 }
 WalkDecision Walk::updateDrop(WalkDecision out,const runtime::MovementSnapshot& s,
     const query::NavSpatialIndex& index,core::MapGeneration indexMap,runtime::IWorldQueries& port,
@@ -183,7 +279,8 @@ WalkDecision Walk::updateDrop(WalkDecision out,const runtime::MovementSnapshot& 
         const double range=std::hypot(dx,dy);
         if(range<=0) return doneFail(DropReason::Blocked);
         out.intent.direction={dx/range,dy/range,0};
-        out.intent.speed=(std::min)({l.speed,double(*s.speedLimit),range/0.12});
+        if(!core::Motor::bindLocomotion(out.intent,core::LocomotionMode::Walk,*s.speedLimit,range) ||
+           out.intent.validForUs<s.elapsedUs) return doneFail(DropReason::Blocked);
         out.progressDirection={ux,uy,0}; return out;
     }
     DropReason queryFailure=DropReason::None;
@@ -302,7 +399,34 @@ WalkDecision Walk::updateJump(WalkDecision out,const runtime::MovementSnapshot& 
     std::optional<JumpPhysics> physics) noexcept {
     out.queries=reserved; out.jumpState=jump_ ? jump_->state():JumpState::Approach;
     out.jumpPlan=jumpPlan_; out.jumpPhysics=physics; out.jumpPressTick=jumpPressTick_;
+    out.jumpLandingEnvelope=jumpLandingEnvelope_;
+    out.jumpCandidateIndex=static_cast<std::uint8_t>(jumpCandidateIndex_);
+    out.jumpCandidateCount=static_cast<std::uint8_t>(jumpCandidateCount_);
+    out.jumpCandidateRegionMode=jumpCandidateRegionMode_;
+    if(jumpPlan_) {
+        out.jumpCandidateLanding=jumpPlan_->landing;
+        out.jumpCandidateArea=jumpPlan_->landingArea;
+        out.jumpCandidateAdvance=jumpPlan_->landingAdvance;
+    }
+    const bool obstacleStampMatches = observedObstacleHull_ &&
+        observedObstacleHull_->stamp.agent == s.agent &&
+        observedObstacleHull_->stamp.actor == s.actor &&
+        observedObstacleHull_->stamp.map == s.map &&
+        observedObstacleHull_->stamp.tick == s.tick &&
+        observedObstacleHull_->stamp.routeGeneration == binding_.routeGeneration &&
+        observedObstacleHull_->step == cursor_.index();
+    if (observedObstacleHull_ && !obstacleStampMatches)
+        observedObstacleHull_.reset();
+    if (obstacleStampMatches) {
+        out.obstacleHull=observedObstacleHull_->hull;
+        out.obstacleClass=ObstacleClass::Unknown;
+    }
     const auto fail=[&](JumpReason reason) {
+        observedJumpCandidate_=false;
+        if(jumpAttemptKey_) jumpAttempts_->erase(*jumpAttemptKey_);
+        jumpAttempt_=nullptr; jumpAttemptKey_.reset();
+        jumpCandidateCount_=0;
+        jumpCandidateIndex_=0;
         out.jumpReason=reason; out.jumpState=JumpState::Failed;
         return finish(out,WalkState::Failed,WalkReason::JumpFailed);
     };
@@ -351,7 +475,9 @@ WalkDecision Walk::updateJump(WalkDecision out,const runtime::MovementSnapshot& 
         if(!completed.accepted || completed.state!=PrimitiveState::Complete || !cursor_.advance(out.binding.step,out.support->area,true))
             return fail(JumpReason::WrongLanding);
         out.primitiveEvent=completed.event; completedJumpStep_=out.binding.step; observedJumpCandidate_=false;
-        primitive_=Primitive{}; jump_.reset(); jumpPlan_.reset(); jumpPhysics_.reset(); jumpDispatch_.reset();
+        if(jumpAttemptKey_) jumpAttempts_->erase(*jumpAttemptKey_);
+        jumpAttempt_=nullptr; jumpAttemptKey_.reset();
+        primitive_=Primitive{}; jump_.reset(); jumpPlan_.reset(); jumpLandingEnvelope_.reset(); jumpPhysics_.reset(); jumpDispatch_.reset();
         jumpPressTick_={}; out.intent={}; out.intent.jump=ActionRequest::Release;
         return out;
     }
@@ -373,51 +499,214 @@ WalkDecision Walk::updateJump(WalkDecision out,const runtime::MovementSnapshot& 
             out.primitiveEvent=entered.event;
             if(!entered.accepted || entered.state!=PrimitiveState::Running) return fail(JumpReason::InvalidInput);
         }
-        jumpPlan_=candidate.plan; jump_.emplace(out.binding,*jumpPlan_,profile.motion);
+    jumpLandingEnvelope_=candidate.landingEnvelope;
+    out.jumpLandingEnvelope=jumpLandingEnvelope_;
+    if(!jumpLandingEnvelope_) return fail(JumpReason::InvalidInput);
+    jumpCandidateCount_=buildEnvelopeCandidates(jumpCandidates_,*candidate.plan,*jumpLandingEnvelope_,
+        profile.motion,*physics,*s.speedLimit,jumpCandidateRegionMode_);
+    out.jumpCandidateRegionMode=jumpCandidateRegionMode_;
+    if(!jumpCandidateCount_) {
+        out.disposition=MotionDisposition::Recovery;
+        out.intent={};
+        return fail(JumpReason::NoLandingCandidate);
+    }
+    jumpCandidateIndex_=0;
+    jumpPlan_=jumpCandidates_[jumpCandidateIndex_];
+        jumpAttemptKey_=JumpAttemptKey{out.binding.agent,out.binding.actor,out.binding.map,
+            jumpPlan_->source,jumpPlan_->target,model::NavTraversalKind::Jump};
+    jumpAttempt_=&jumpAttempts_->acquire(*jumpAttemptKey_,nowUs);
+    jump_.emplace(out.binding,*jumpPlan_,profile.motion,jumpAttempt_);
+    observedJumpCandidate_=false;
         jumpDispatch_.reset(); jumpDispatchSeen_=false; jumpPressTick_={};
-        out.jumpPlan=jumpPlan_; out.jumpPressTick={}; return out; // Primitive entry owns its own tick.
+    out.jumpPlan=jumpPlan_; out.jumpPressTick={};
+    out.jumpCandidateIndex=static_cast<std::uint8_t>(jumpCandidateIndex_);
+                out.jumpCandidateCount=static_cast<std::uint8_t>(jumpCandidateCount_);
+                out.jumpCandidateLanding=jumpPlan_->landing;
+                out.jumpCandidateArea=jumpPlan_->landingArea;
+                out.jumpCandidateAdvance=jumpPlan_->landingAdvance;
+    out.jumpCandidateArea=jumpPlan_->landingArea;
+    out.jumpCandidateAdvance=jumpPlan_->landingAdvance;
+        out.disposition=MotionDisposition::Hold;
+        if(jumpPlan_) {
+            const double dx=double(jumpPlan_->landing.x)-jumpPlan_->takeoff.x;
+            const double dy=double(jumpPlan_->landing.y)-jumpPlan_->takeoff.y;
+            const double length=std::hypot(dx,dy);
+            if(length>0) out.progressDirection={dx/length,dy/length,0};
+        }
+        return out; // Primitive entry owns its own tick.
     }
     JumpFeedback feedback{out.binding,s,nowUs,{},jumpDispatch_}; jumpDispatch_.reset();
-    JumpQueries queries(port,reserved,maximum);
     const auto state=jump_->state();
+    if(s.grounded==true && state!=JumpState::Takeoff) {
+        out.jumpProofPhase=(state==JumpState::Airborne || state==JumpState::Recover) ?
+            JumpProofPhase::Land:(state==JumpState::Accelerate ? JumpProofPhase::Launch:JumpProofPhase::Prepare);
+    }
+    const auto proofRequired=out.jumpProofPhase==JumpProofPhase::None ? 0U:maximum;
+    out.jumpLaunchRequiredQueries=proofRequired;
+    out.jumpReservedQueries=reserved;
+    out.jumpLaunchAvailableQueries=maximum>reserved ? maximum-reserved:0;
+    if(out.jumpProofPhase!=JumpProofPhase::None && reserved) {
+        out.jumpLaunchDeferred=true;
+        out.jumpProofDeferReason=JumpProofDeferReason::ReservedQueries;
+        out.disposition=MotionDisposition::Hold;
+        return out;
+    }
+    JumpQueries queries(port,reserved,maximum);
     // Takeoff waits for dispatch/observed airborne without issuing ground motion.
     // Airborne decisions need no fictitious support. Landing always does.
+    JumpProbeResult proof;
     if(s.grounded==true && state!=JumpState::Takeoff) {
-        JumpProbeResult proof;
         if(reserved==maximum) proof.reason=JumpProbeReason::BudgetExceeded;
         else {
-            auto ground=limits_.probe; ground.maxQueries=maximum-reserved;
+        auto ground=limits_.probe; ground.maxQueries=maximum;
             if(state==JumpState::Airborne || state==JumpState::Recover)
                 proof=JumpProbe::land(s,out.binding,*jumpPlan_,profile.motion,ground,index,indexMap,queries);
-            else if(state==JumpState::Accelerate && launchReady(s,*jumpPlan_,profile.motion)) {
-                auto flight=profile.flight; flight.maxQueries=maximum-reserved;
+            else if(state==JumpState::Accelerate) {
+            auto flight=profile.flight; flight.maxQueries=maximum;
+                flight.supportTolerance=profile.motion.supportTolerance;
+                flight.supportProbeDepth=limits_.probe.probeDepth;
                 proof=JumpProbe::launch(s,out.binding,*jumpPlan_,profile.motion,*physics,flight,index,indexMap,queries);
             } else proof=JumpProbe::prepare(s,out.binding,*jumpPlan_,profile.motion,ground,index,indexMap,queries);
         }
-        out.jumpProbeReason=proof.reason;
+    out.jumpProbeReason=proof.reason;
+    out.jumpSupportReason=proof.supportReason;
+    out.jumpSupportInitialReason=proof.supportInitialReason;
+    out.jumpSupportFallbackAttempted=proof.supportFallbackAttempted;
+    out.jumpSupportFallbackAccepted=proof.supportFallbackAccepted;
+    out.jumpSupportInitialTrace=proof.supportInitialTrace;
+    out.jumpSupportFallbackTrace=proof.supportFallbackTrace;
+    out.jumpSupportEvidence=proof.supportEvidence;
+    out.jumpLandingFailure=proof.landingFailure;
+    out.jumpPredictedLanding=proof.touchdown.value_or(model::NavVector3{});
+    out.jumpLandingError=proof.landingError;
+    out.jumpTrajectoryReady=proof.trajectoryReady;
         if(proof) {
             feedback.inspection=proof.inspection;
             feedback.inspection->queries=queries.issued;
+            feedback.inspection->attemptId=jumpAttempt_ ? jumpAttempt_->attemptId:0;
             out.support=proof.inspection->support; out.target=proof.inspection->approach;
         }
+        feedback.takeoffProof=proof.takeoffProof;
+        feedback.flightProof=proof.flightProof;
+        feedback.landingProof=proof.landingProof;
+        feedback.proofProvenance=proof.provenance;
+        if(!proof && proof.reason==JumpProbeReason::BudgetExceeded)
+            feedback.proofProvenance=JumpProofProvenance::QueryBudget;
+        else if(!proof && (proof.reason==JumpProbeReason::StaleNavigation ||
+                           proof.reason==JumpProbeReason::StalePhysics ||
+                           proof.reason==JumpProbeReason::StaleQuery))
+            feedback.proofProvenance=JumpProofProvenance::Stale;
+        else if(!proof && proof.reason!=JumpProbeReason::None &&
+                feedback.proofProvenance==JumpProofProvenance::None)
+            feedback.proofProvenance=JumpProofProvenance::QueryUnavailable;
     }
     out.queries=queries.issued;
+    const auto plannedStaticFailure=[&]() noexcept {
+        if(proof.landingFailure!=JumpLandingFailure::PlannedSupport ||
+            proof.provenance==JumpProofProvenance::QueryBudget ||
+            proof.provenance==JumpProofProvenance::QueryUnavailable ||
+            proof.provenance==JumpProofProvenance::Stale ||
+            proof.provenance==JumpProofProvenance::DynamicBlocker) return false;
+        const auto& support=proof.supportEvidence[static_cast<std::size_t>(JumpSupportRole::PlannedLanding)];
+        return support.reason==ProbeReason::AllSolid || support.reason==ProbeReason::StartSolid ||
+            support.reason==ProbeReason::FloorHeightMismatch || support.reason==ProbeReason::NavContainmentMissing;
+    };
+    if(state==JumpState::Accelerate && plannedStaticFailure() && jumpCandidateIndex_+1<jumpCandidateCount_) {
+        ++jumpCandidateIndex_;
+        jumpPlan_=jumpCandidates_[jumpCandidateIndex_];
+        jump_.emplace(out.binding,*jumpPlan_,profile.motion,jumpAttempt_);
+        jumpDispatch_.reset();
+        jumpPressTick_={};
+        out.jumpPlan=jumpPlan_;
+        out.jumpCandidateIndex=static_cast<std::uint8_t>(jumpCandidateIndex_);
+        out.jumpCandidateCount=static_cast<std::uint8_t>(jumpCandidateCount_);
+        out.jumpCandidateLanding=jumpPlan_->landing;
+        out.jumpCandidateSwitchReason=JumpCandidateSwitchReason::PlannedLandingStaticFailure;
+        out.disposition=MotionDisposition::Hold;
+        return out;
+    }
     const auto decision=jump_->update(feedback);
     out.jumpState=decision.state; out.jumpReason=decision.reason; out.jumpPressTick=decision.pressTick;
+    out.jumpAttemptId=decision.attemptId; out.jumpAttemptStartedUs=decision.attemptStartedUs;
+    out.jumpTakeoffProof=decision.takeoffProof; out.jumpFlightProof=decision.flightProof;
+    out.jumpLandingProof=decision.landingProof; out.jumpProofProvenance=decision.proofProvenance;
+    out.jumpReadiness=decision.readiness; out.jumpRecoveryDisposition=decision.recoveryDisposition;
+    out.jumpAxis=decision.jumpAxis; out.jumpCommandDirection=decision.commandDirection;
+    out.jumpFromTakeoff=decision.fromTakeoff; out.jumpAlong=decision.along;
+    out.jumpLateral=decision.lateral; out.jumpMinimumSpeed=decision.minimumSpeed;
+    out.jumpMaximumSpeed=decision.maximumSpeed; out.jumpSpeedLimit=decision.speedLimit;
+    out.jumpDesiredSpeed=decision.desiredSpeed; out.jumpValidatedDistance=decision.validatedDistance;
+    out.jumpValidForUs=decision.validForUs;
+    if(observedObstacleHull_) {
+        const bool transient=decision.proofProvenance==JumpProofProvenance::QueryBudget ||
+            decision.proofProvenance==JumpProofProvenance::QueryUnavailable ||
+            decision.proofProvenance==JumpProofProvenance::Stale ||
+            decision.proofProvenance==JumpProofProvenance::DynamicBlocker ||
+            decision.reason==JumpReason::StaleInspection ||
+            decision.reason==JumpReason::ProofTimeout;
+        if(decision.state==JumpState::Takeoff || decision.state==JumpState::Airborne ||
+           decision.state==JumpState::Recover || decision.state==JumpState::Complete) {
+            out.obstacleClass=ObstacleClass::Jumpable;
+        } else if(transient) {
+            out.obstacleClass=ObstacleClass::Unknown;
+        } else if(decision.state==JumpState::Failed || decision.state==JumpState::Aborted) {
+            out.obstacleClass=ObstacleClass::TooHigh;
+        } else {
+            out.obstacleClass=ObstacleClass::Unknown;
+        }
+    }
     out.intent=decision.intent; postureAction_=decision.intent.duck;
+    if(jumpPlan_) {
+        const double dx=double(jumpPlan_->landing.x)-jumpPlan_->takeoff.x;
+        const double dy=double(jumpPlan_->landing.y)-jumpPlan_->takeoff.y;
+        const double length=std::hypot(dx,dy);
+        if(length>0) out.progressDirection={dx/length,dy/length,0};
+    }
+    const bool zeroMovement=out.intent.speed<=0 && out.intent.direction.x==0 &&
+        out.intent.direction.y==0 && out.intent.jump!=ActionRequest::Press;
+    if(zeroMovement && (decision.state==JumpState::Approach ||
+                        decision.state==JumpState::Align ||
+                        decision.state==JumpState::Accelerate ||
+                        decision.state==JumpState::Takeoff)) {
+        out.disposition=decision.recoveryDisposition==RecoveryDisposition::Retry ||
+            decision.recoveryDisposition==RecoveryDisposition::EdgeCooldown ||
+            decision.recoveryDisposition==RecoveryDisposition::StructuralEdgeExclusion
+            ? MotionDisposition::Recovery : MotionDisposition::Hold;
+    }
     if(decision.intent.jump==ActionRequest::Press) jumpPressTick_=decision.pressTick;
-    if(decision.state==JumpState::Failed || decision.state==JumpState::Aborted)
+    if(decision.state==JumpState::Failed || decision.state==JumpState::Aborted) {
+        if(decision.state==JumpState::Failed && jumpAttemptKey_) jumpAttempts_->erase(*jumpAttemptKey_);
+        jumpAttempt_=nullptr; jumpAttemptKey_.reset();
+        jumpCandidateCount_=0;
+        jumpCandidateIndex_=0;
         return finish(out,decision.state==JumpState::Aborted ? WalkState::Aborted:WalkState::Failed,WalkReason::JumpFailed);
+    }
     if(decision.state==JumpState::Complete && !limits_.crouch.transitionTimeoutUs) {
-        if(!out.support || !s.position || !s.hull ||
-           !(t.targetFit==corridor::AreaFit::MicroTransit ? query::containsXY(t.targetExtent,*s.position)
-                                                       : inside(t.targetExtent,*s.position,*s.hull)))
-            return fail(JumpReason::WrongLanding);
+        if(!jumpPlan_ || !out.support || !s.position || !s.hull ||
+           out.support->area!=jumpLandingArea(*jumpPlan_)) return fail(JumpReason::WrongLanding);
+        const auto extentFor=[&]() -> const JumpLandingRegion* {
+            if(!jumpLandingEnvelope_) return nullptr;
+            if(jumpLandingEnvelope_->target.area==jumpLandingArea(*jumpPlan_)) return &jumpLandingEnvelope_->target;
+            if(jumpLandingEnvelope_->successor && jumpLandingEnvelope_->successor->area==jumpLandingArea(*jumpPlan_))
+                return &*jumpLandingEnvelope_->successor;
+            return nullptr;
+        };
+        const auto* landingRegion=extentFor();
+        if(!landingRegion || !query::containsXY(landingRegion->extent,*s.position) ||
+           (landingRegion->kind==JumpLandingRegionKind::HullMargin &&
+            !inside(landingRegion->extent,*s.position,*s.hull))) return fail(JumpReason::WrongLanding);
         const auto completed=primitive_.update({out.binding,s.tick,Progress::Complete,{},out.support->area,true});
-        if(!completed.accepted || completed.state!=PrimitiveState::Complete || !cursor_.advance(out.binding.step,out.support->area,true))
+        if(!completed.accepted || completed.state!=PrimitiveState::Complete ||
+           !cursor_.advanceLanding(out.binding.step,out.support->area,jumpLandingAdvance(*jumpPlan_),true))
             return fail(JumpReason::WrongLanding);
-        out.primitiveEvent=completed.event; completedJumpStep_=out.binding.step; observedJumpCandidate_=false;
-        primitive_=Primitive{}; jump_.reset(); jumpPlan_.reset(); jumpPhysics_.reset(); jumpDispatch_.reset();
+        out.primitiveEvent=completed.event;
+        completedJumpStep_=out.binding.step+jumpLandingAdvance(*jumpPlan_)-1;
+        observedJumpCandidate_=false;
+        if(jumpAttemptKey_) jumpAttempts_->erase(*jumpAttemptKey_);
+    jumpAttempt_=nullptr; jumpAttemptKey_.reset();
+    jumpCandidateCount_=0;
+    jumpCandidateIndex_=0;
+    primitive_=Primitive{}; jump_.reset(); jumpPlan_.reset(); jumpLandingEnvelope_.reset(); jumpPhysics_.reset(); jumpDispatch_.reset();
         jumpPressTick_={};
         out.intent={}; out.intent.jump=ActionRequest::Release;
     }

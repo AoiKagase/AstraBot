@@ -105,11 +105,32 @@ void groundTolerance() {
         check(session.request(s,{2},graph(),port,options).reason==SessionReason::InvalidSnapshot && port.calls==calls);
     }
 }
+void currentAreaReseed() {
+    auto s=snapshot();
+    s.hull=runtime::HullDimensions{{-16,-16,-36},{16,16,36}};
+    FakeQueries port;
+    RouteSession session(s.agent,s.actor,s.map);
+    RouteOptions options; options.limits={3,1000000}; options.maxWorldQueries=0;
+    CurrentAreaObservation observation{};
+    observation.agent=s.agent; observation.actor=s.actor; observation.map=s.map;
+    observation.tick=s.tick; observation.area={1};
+    observation.source=CurrentAreaObservationSource::Nearest;
+    observation.floorHeight=-36; observation.grounded=true;
+    options.currentArea=observation;
+    check(session.request(s,{3},graph(),port,options).accepted);
+    check(port.calls==0 && session.trace().currentArea==model::NavAreaId{1});
+    check(session.trace().currentAreaSource==CurrentAreaObservationSource::Nearest);
+    observation.source=CurrentAreaObservationSource::LastKnown;
+    observation.ageUs=5'000'001;
+    options.currentArea=observation;
+    check(session.request(s,{3},graph(),port,options).reason==SessionReason::NoCurrentArea);
+}
 int main() {
     try {
         consoleValues();
         externalOwnership();
         groundTolerance();
+        currentAreaReseed();
         auto s=snapshot(); auto g=graph(); FakeQueries port;
         RouteSession session(s.agent,s.actor,s.map);
         RouteOptions options; options.limits={3,1000000};

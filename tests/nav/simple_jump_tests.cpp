@@ -25,7 +25,14 @@ JumpFeedback feedback(runtime::MovementSnapshot s,std::uint64_t time) {
     if(s.grounded==true) proof.support=GroundedTarget{*s.position,area,{0,{0,0,1},true}};
     proof.approach=GroundedTarget{plan.takeoff,{1},{0,{0,0,1},true}};
     proof.approachClear=proof.takeoffClear=proof.flightClear=proof.landingClear=true;
-    f.inspection=proof; return f;
+    proof.attemptId=1;
+    proof.approachProof=proof.takeoffProof=proof.flightProof=proof.landingProof=JumpProof::Passed;
+    proof.provenance=JumpProofProvenance::SweptHull;
+    proof.validatedDistance=32; proof.validForUs=120000;
+    f.inspection=proof;
+    f.takeoffProof=f.flightProof=f.landingProof=JumpProof::Passed;
+    f.proofProvenance=JumpProofProvenance::SweptHull;
+    return f;
 }
 core::TickId press(SimpleJump& jump,runtime::MovementSnapshot& s) {
     for(std::uint64_t i=1;i<=3;++i) {
@@ -140,12 +147,57 @@ void accelerationRequiresLaunchProofBeforePress() {
         s.tick={tick}; auto f=feedback(s,tick*40000);
         f.inspection->flightClear.reset(); f.inspection->landingClear.reset(); f.inspection->velocity.reset();
         const auto d=jump.update(f); assert(d.accepted && d.intent.jump!=ActionRequest::Press);
-        if(tick==3) assert(d.state==JumpState::Accelerate && d.intent.speed>0);
+        if(tick==3) assert(d.state==JumpState::Accelerate &&
+            d.intent.locomotion==core::LocomotionMode::Run && d.intent.speed==0);
     }
     s.tick={4}; s.velocity=model::NavVector3{120,0,0}; auto f=feedback(s,160000);
     f.inspection->velocity.reset();
     const auto d=jump.update(f);
     assert(d.state==JumpState::Failed && d.reason==JumpReason::Blocked && d.intent.jump!=ActionRequest::Press);
+}
+void readinessAndAttemptRegistry() {
+    SimpleJump jump(binding,plan,limits); auto s=actor();
+    s.velocity=model::NavVector3{44,23,0};
+    s.tick={1}; assert(jump.update(feedback(s,40000)).state==JumpState::Align);
+    s.tick={2}; assert(jump.update(feedback(s,80000)).state==JumpState::Accelerate);
+    s.tick={3}; auto d=jump.update(feedback(s,120000));
+    assert(d.state==JumpState::Accelerate && !d.terminalEvent &&
+           d.readiness==JumpReadiness::UnderSpeed && d.intent.locomotion==core::LocomotionMode::Run);
+    s.velocity=model::NavVector3{120,23,0}; s.tick={4}; d=jump.update(feedback(s,160000));
+    assert(d.state==JumpState::Accelerate && d.readiness==JumpReadiness::LateralError && !d.terminalEvent);
+    s.velocity=model::NavVector3{190,0,0}; s.tick={5}; d=jump.update(feedback(s,200000));
+    assert(d.state==JumpState::Accelerate && d.readiness==JumpReadiness::OverSpeed && !d.terminalEvent);
+    s.velocity=model::NavVector3{120,0,0}; s.tick={6}; d=jump.update(feedback(s,240000));
+    assert(d.state==JumpState::Takeoff && d.intent.jump==ActionRequest::Press && d.pressTick==s.tick);
+
+    auto slow=s; slow.tick={1}; slow.speedLimit=80;
+    SimpleJump limited(binding,plan,limits);
+    assert(limited.update(feedback(slow,40000)).state==JumpState::Align);
+    ++slow.tick.value; assert(limited.update(feedback(slow,80000)).state==JumpState::Accelerate);
+    ++slow.tick.value; d=limited.update(feedback(slow,120000));
+    assert(d.state==JumpState::Accelerate && d.readiness==JumpReadiness::SpeedLimitInsufficient &&
+           d.recoveryDisposition==RecoveryDisposition::Hold);
+
+    JumpAttemptRegistry registry;
+    const JumpAttemptKey first{binding.agent,binding.actor,binding.map,plan.source,plan.target,
+                               model::NavTraversalKind::Jump};
+    auto sibling=first; sibling.target={3};
+    const auto firstId=registry.acquire(first,100).attemptId;
+    assert(registry.acquire(first,900).attemptId==firstId);
+    assert(registry.acquire(first,900).startedUs==100);
+    assert(registry.acquire(sibling,900).attemptId!=firstId);
+    registry.erase(first);
+    assert(registry.acquire(first,1000).attemptId!=firstId);
+    registry.clear();
+    assert(registry.acquire(first,1100).startedUs==1100);
+
+    auto& owned=registry.acquire(first,1200);
+    SimpleJump stamped(binding,plan,limits,&owned);
+    auto stampedActor=actor(); stampedActor.tick={1};
+    auto stale=feedback(stampedActor,1240); stale.inspection->attemptId=owned.attemptId+1;
+    d=stamped.update(stale);
+    assert(d.state==JumpState::Approach && d.reason==JumpReason::StaleInspection &&
+           d.recoveryDisposition==RecoveryDisposition::Retry && !d.terminalEvent);
 }
 }
 void crouchJumpConstraints() {
@@ -155,4 +207,7 @@ void crouchJumpConstraints() {
     assert(target && !target.sourceDuck && target.targetDuck);
     assert(!constraints(model::NavTraversalKind::Jump,8,1));
 }
-int main() { physics(); failures(); accelerationRequiresLaunchProofBeforePress(); crouchJumpConstraints(); }
+int main() {
+    physics(); failures(); accelerationRequiresLaunchProofBeforePress();
+    readinessAndAttemptRegistry(); crouchJumpConstraints();
+}
