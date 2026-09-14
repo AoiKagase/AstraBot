@@ -31,7 +31,7 @@ inline ProbeResult inspectGroundFrame(const runtime::MovementSnapshot& s,std::ui
         runtime::WorldQueryResult query(const runtime::QueryRequest& original) override {
             auto q=original; q.stamp.ordinal=++issued;
             auto r=port.query(q);
-            if(r.stamp==q.stamp && r.kind==q.kind && r.error==runtime::QueryError::None) {
+            if(runtime::sameQueryContext(r.stamp,q.stamp) && r.kind==q.kind && r.error==runtime::QueryError::None) {
                 std::optional<model::NavAreaId> area;
                 if(r.ground) area=r.ground->area;
                 if(r.floor) {
@@ -45,7 +45,7 @@ inline ProbeResult inspectGroundFrame(const runtime::MovementSnapshot& s,std::ui
                     outside=true;
                 }
             }
-            if(r.stamp==q.stamp) r.stamp=original.stamp;
+            if(runtime::sameQueryContext(r.stamp,q.stamp)) r.stamp=original.stamp;
             return r;
         }
     } queries(port,index,source,target);

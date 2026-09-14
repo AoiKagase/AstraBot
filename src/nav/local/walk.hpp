@@ -62,6 +62,15 @@ struct WalkDecision {
     core::TickId tick{};
     MovementIntent intent{};
     core::IntentVector progressDirection{}; // Selected corridor direction before lateral steering.
+    // PathFollower's measured progress is copied into the movement decision
+    // so the adapter can correlate route direction and target retention with
+    // the command sent in the same tick.
+    query::NavQueryPoint routeForward{};
+    double routeProjection{};
+    double targetProjection{};
+    double routeProgress{};
+    bool retainedTarget{};
+    std::uint64_t stuckElapsedUs{};
     PrimitiveEvent primitiveEvent{PrimitiveEvent::None};
     std::optional<GroundedTarget> support{}, target{};
     ProbeReason probeReason{ProbeReason::None};
@@ -76,6 +85,12 @@ struct WalkDecision {
     int avoidanceSide{};
     double avoidanceDistance{};
     std::optional<model::NavVector3> avoidanceCandidate{};
+    std::int8_t detourFirstSide{};
+    std::int8_t detourSecondSide{};
+    ProbeReason detourFirstReason{ProbeReason::None};
+    ProbeReason detourSecondReason{ProbeReason::None};
+    bool detourFirstAttempted{};
+    bool detourSecondAttempted{};
     BlockerAction blockerAction{BlockerAction::Neutral};
     BlockerReason blockerReason{BlockerReason::None};
     std::optional<runtime::BlockerObservation> blocker{};
@@ -158,6 +173,9 @@ public:
     std::optional<enrichment::NavTraversalLink> selectedLadderLink() const noexcept;
     model::NavVector3 ladderTarget(const LadderPlan&,model::NavVector3 origin) const noexcept;
     WalkDecision abort() noexcept;
+    // Comparison/ladder bridge only. The native follower supplies the observed
+    // supported source after completing ordinary transitions.
+    bool resumeSpecial(std::size_t,model::NavAreaId) noexcept;
     WalkDecision recover(const runtime::MovementSnapshot&,const query::NavSpatialIndex&,
         core::MapGeneration,runtime::IWorldQueries&,const RecoveryDecision&,std::uint32_t reservedQueries=0) noexcept;
     WalkState state() const noexcept { return state_; }

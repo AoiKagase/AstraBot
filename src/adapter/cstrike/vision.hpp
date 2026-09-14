@@ -5,6 +5,8 @@
 #include "core/visual_memory.hpp"
 #include "core/world_model.hpp"
 
+#include <cstdint>
+
 namespace astrabot::adapter::metamod { class LifecycleCoordinator; }
 namespace astrabot::adapter::cstrike {
 // Engine pointers/serials and unobserved geometry stay inside this adapter.
@@ -16,8 +18,11 @@ public:
     void beginRound(core::perception::RoundGeneration) noexcept;
     bool synchronize(metamod::LifecycleCoordinator&, enginefuncs_t*) noexcept;
     bool bound(core::PlayerId, enginefuncs_t*) const noexcept;
-    void frame(metamod::LifecycleCoordinator&, enginefuncs_t*, float engineTime) noexcept;
+    void frame(metamod::LifecycleCoordinator&, enginefuncs_t*, std::uint64_t frameMicros) noexcept;
     const core::perception::Vision& observations() const noexcept { return vision_; }
+    const core::perception::Diagnostics* diagnostics(core::PlayerId player) const noexcept {
+        return vision_.diagnostics(player);
+    }
     const core::world::VisualMemoryModel& memory() const noexcept { return memory_; }
     core::perception::Reason error() const noexcept { return error_; }
 private:

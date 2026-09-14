@@ -47,6 +47,7 @@ public:
     model::NavAreaId start() const noexcept { return start_; }
     model::NavAreaId goal() const noexcept { return goal_; }
     std::uint8_t startAttributes() const noexcept { return startAttributes_; }
+    const model::NavExtent& goalExtent() const noexcept { return goalExtent_; }
     std::size_t logicalBytes() const noexcept { return logicalBytes_; }
     // Returns a source-side target on the active portal, never a shortcut beyond
     // it. Reverse projection of at most lookAhead gates biases the tangent.
@@ -58,6 +59,7 @@ private:
     std::vector<Transition> transitions_{};
     model::NavAreaId start_{}, goal_{};
     std::uint8_t startAttributes_{};
+    model::NavExtent goalExtent_{};
     HullClearance hull_{};
     // Also preserves constraints on a same-area route.
     std::size_t logicalBytes_{};

@@ -21,11 +21,25 @@ bool Recovery::bindRoute(Binding b,std::optional<RecoveryEdge> edge) noexcept {
     if(!b.agent.isValid() || !b.actor.isValid() || !b.map.isValid() || !b.routeGeneration ||
        (bound_ && (!sameOwner(b,binding_) || b.routeGeneration<binding_.routeGeneration)) ||
        (edge && !edge->isValid())) return false;
+    const bool generationChanged=bound_ && b.routeGeneration!=binding_.routeGeneration;
     const bool edgeChanged=bound_ && edge_ && edge && !sameRecoveryGroup(*edge_,*edge);
-    const bool unknownReplacement=bound_ && b.routeGeneration!=binding_.routeGeneration &&
-        (!edge_ || !edge);
-    if(!bound_ || edgeChanged || unknownReplacement) {
+    const bool unknownReplacement=generationChanged && (!edge_ || !edge);
+    if(!bound_ || edgeChanged || unknownReplacement || generationChanged) {
         clearWindow(); reference_=false; dispatchTick_={}; progressAtUs_=0;
+        observationTick_={}; nowUs_=0;
+    }
+    // A new route always starts with a fresh observation window. In
+    // particular, a terminal Replan/Aborted state must never be interpreted
+    // by Walk::recover() as a failure of the newly-created route. Keep the
+    // bounded attempt count, but clear the terminal cause and resume
+    // monitoring on the new route generation.
+    if(generationChanged) {
+        decision_.state=RecoveryState::Monitoring;
+        decision_.cause=StuckCause::None;
+        decision_.symptom=StuckSymptom::None;
+        decision_.terminalEvent=false;
+        decision_.measuredProgress=false;
+        decision_.deadlineUs=0;
     }
     if(edgeChanged) decision_={};
     bound_=true; binding_=b; edge_=edge; return true;
@@ -62,7 +76,14 @@ RecoveryDecision Recovery::abort(StuckCause cause) noexcept {
 }
 void Recovery::replanned() noexcept {
     decision_.attempts=1;
-    if(decision_.state!=RecoveryState::Aborted) decision_.state=RecoveryState::Monitoring;
+    // A successful bounded replan arms a new route. Even when the previous
+    // route ended through abort, the next route must be observable and cannot
+    // inherit the terminal state.
+    decision_.state=RecoveryState::Monitoring;
+    decision_.cause=StuckCause::None;
+    decision_.symptom=StuckSymptom::None;
+    decision_.terminalEvent=false;
+    decision_.measuredProgress=false;
     decision_.deadlineUs=0; clearWindow(); reference_=false;
 }
 RecoveryDecision Recovery::observe(Binding b,core::TickId tick,std::uint64_t now,model::NavVector3 p) noexcept {

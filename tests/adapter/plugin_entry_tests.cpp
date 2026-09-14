@@ -9,8 +9,13 @@
 
 #include <cassert>
 #include <cstdarg>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
+#include <fstream>
+#include <filesystem>
 #include <initializer_list>
+#include <iterator>
 #include <string>
 #include <vector>
 
@@ -38,6 +43,22 @@ enginefuncs_t* gHookEngineFunctions = nullptr;
 DLL_FUNCTIONS* gHookDllFunctions = nullptr;
 NEW_DLL_FUNCTIONS* gHookNewDllFunctions = nullptr;
 const edict_t* gDisconnectEntity = nullptr;
+
+void setEnvironment(const char* name, const char* value) {
+#if defined(_WIN32)
+    assert(_putenv_s(name, value) == 0);
+#else
+    assert(::setenv(name, value, 1) == 0);
+#endif
+}
+
+void clearEnvironment(const char* name) {
+#if defined(_WIN32)
+    assert(_putenv_s(name, "") == 0);
+#else
+    assert(::unsetenv(name) == 0);
+#endif
+}
 
 void captureLogConsole(plid_t /* pluginId */, const char* format, ...) {
     assert(format != nullptr);
@@ -622,6 +643,10 @@ void testTraceSink() {
 }
 
 void testConsoleDebugCommandAndTracePrefixes() {
+    constexpr const char* logPath = "astrabot-console-debug-test.log";
+    std::remove(logPath);
+    setEnvironment("ASTRABOT_LOG_PATH", logPath);
+    setEnvironment("ASTRABOT_LOG_CONSOLE", "1");
     resetAdapter();
     Fixture fixture{};
     query(fixture);
@@ -762,6 +787,9 @@ void testConsoleDebugCommandAndTracePrefixes() {
     gLogLines.clear();
     astrabot::adapter::metamod::ConsoleDebug::instance().joinTrace(join);
     assert(gLogLines.empty());
+    clearEnvironment("ASTRABOT_LOG_PATH");
+    clearEnvironment("ASTRABOT_LOG_CONSOLE");
+    std::remove(logPath);
 }
 
 void testCombatLifecycleRejectsInvalidActorWithTrace() {
@@ -789,6 +817,85 @@ void testCombatLifecycleRejectsInvalidActorWithTrace() {
     assert(!gCombatTraces.front().commandAccepted);
 }
 
+void testConsoleDebugWritesTraceToFileWithoutConsoleFallback() {
+    constexpr const char* logPath = "astrabot-console-debug-test.log";
+    std::remove(logPath);
+    setEnvironment("ASTRABOT_LOG_PATH", logPath);
+    setEnvironment("ASTRABOT_LOG_CONSOLE", "0");
+
+    resetAdapter();
+    Fixture fixture{};
+    query(fixture);
+    assert(Meta_Attach(PT_ANYTIME, &fixture.callbacks, &fixture.globals,
+                       &fixture.gameDll) != 0);
+    gLogLines.clear();
+
+    runServerCommand({"astrabot_debug", "1"}, "astrabot_debug");
+    astrabot::debug::JoinTrace join{};
+    join.phase = astrabot::adapter::cstrike::JoinPhase::Failed;
+    join.error = astrabot::adapter::cstrike::JoinError::MenuOptionUnavailable;
+    join.map = {1};
+    join.player = {1, {2}};
+    join.team = astrabot::adapter::cstrike::Team::CounterTerrorist;
+    join.classNumber = 3;
+    join.tick = {12};
+    join.sequence = 7;
+    join.attempts = 2;
+    join.changed = true;
+    astrabot::adapter::metamod::ConsoleDebug::instance().joinTrace(join);
+
+    assert(gLogLines.empty());
+    assert(Meta_Detach(PT_ANYTIME, PNL_COMMAND) != 0);
+    std::ifstream input(logPath);
+    assert(input.good());
+    const std::string contents(
+        (std::istreambuf_iterator<char>(input)),
+        std::istreambuf_iterator<char>());
+    assert(contents.find("[ASTRABOT][DEBUG][JOIN] ") != std::string::npos);
+    assert(contents.find("error=MenuOptionUnavailable") != std::string::npos);
+
+    clearEnvironment("ASTRABOT_LOG_PATH");
+    clearEnvironment("ASTRABOT_LOG_CONSOLE");
+    std::remove(logPath);
+}
+
+void testConsoleDebugResolvesQuotedDirectoryPath() {
+    const std::filesystem::path logDirectory =
+        "astrabot-console-debug-logdir";
+    const std::filesystem::path logPath = logDirectory / "astrabot.log";
+    std::filesystem::remove_all(logDirectory);
+    assert(std::filesystem::create_directory(logDirectory));
+    setEnvironment("ASTRABOT_LOG_PATH", "\"astrabot-console-debug-logdir\"");
+    setEnvironment("ASTRABOT_LOG_CONSOLE", "0");
+
+    resetAdapter();
+    Fixture fixture{};
+    query(fixture);
+    assert(Meta_Attach(PT_ANYTIME, &fixture.callbacks, &fixture.globals,
+                       &fixture.gameDll) != 0);
+    runServerCommand({"astrabot_debug", "1"}, "astrabot_debug");
+
+    astrabot::debug::JoinTrace join{};
+    join.phase = astrabot::adapter::cstrike::JoinPhase::Failed;
+    join.error = astrabot::adapter::cstrike::JoinError::MenuOptionUnavailable;
+    join.map = {1};
+    join.player = {1, {2}};
+    join.tick = {13};
+    astrabot::adapter::metamod::ConsoleDebug::instance().joinTrace(join);
+
+    assert(Meta_Detach(PT_ANYTIME, PNL_COMMAND) != 0);
+    std::ifstream input(logPath);
+    assert(input.good());
+    const std::string contents(
+        (std::istreambuf_iterator<char>(input)),
+        std::istreambuf_iterator<char>());
+    assert(contents.find("[ASTRABOT][DEBUG][JOIN] ") != std::string::npos);
+
+    clearEnvironment("ASTRABOT_LOG_PATH");
+    clearEnvironment("ASTRABOT_LOG_CONSOLE");
+    std::filesystem::remove_all(logDirectory);
+}
+
 } // namespace
 
 int main() {
@@ -800,6 +907,8 @@ int main() {
     testLifecycleHooksAndCoordinatorCleanup();
     testTraceSink();
     testConsoleDebugCommandAndTracePrefixes();
+    testConsoleDebugWritesTraceToFileWithoutConsoleFallback();
+    testConsoleDebugResolvesQuotedDirectoryPath();
     testCombatLifecycleRejectsInvalidActorWithTrace();
     return 0;
 }

@@ -187,7 +187,22 @@ public:
         core::PlayerId player, core::BotAgentId agent,
         core::MapGeneration map, core::perception::RoundGeneration round,
         core::TickId tick) noexcept {
-        return runtime_.takeCombatDecision(player, agent, map, round, tick);
+        auto decision = runtime_.takeCombatDecision(player, agent, map, round, tick);
+        if (decision && player.isValid() && player.slot <= runtimeCombatPending_.size())
+            runtimeCombatPending_[player.slot - 1U] = false;
+        return decision;
+    }
+    bool runtimeCombatDecisionPending(
+        core::PlayerId player, core::BotAgentId agent,
+        core::MapGeneration map, core::perception::RoundGeneration round,
+        core::TickId tick) const noexcept {
+        if (!player.isValid() || player.slot > runtimeCombatPending_.size() ||
+            !runtimeCombatPending_[player.slot - 1U] ||
+            !registry_.isMapActive() || registry_.mapGeneration() != map ||
+            round_ != round || registry_.currentTick() != tick) return false;
+        const auto binding = agents_.findByPlayer(player);
+        return binding.isValid() && binding.player == player &&
+            binding.agent == agent && binding.map == map;
     }
 
     void messageBegin(
@@ -245,6 +260,7 @@ public:
             observation.frame.map == registry_.mapGeneration() &&
             observation.frame.round == round_ ? &observation : nullptr;
     }
+    const core::combat::CombatLock* combatLock(core::PlayerId player) const noexcept;
     const RuntimeDiagnostics& runtimeDiagnostics() const noexcept {
         return runtime_.diagnostics();
     }
@@ -302,6 +318,7 @@ private:
         cstrike::JoinState join{};
         cstrike::MessageDecoder decoder{};
         core::combat::AttackLifecycleState combat{};
+        core::combat::CombatLock combatLock{};
         std::array<cstrike::MessageEvent, 4> pendingJoinMessages{};
         std::uint8_t pendingJoinMessageCount{0};
         bool cleanupPending{};
@@ -347,10 +364,18 @@ private:
         const core::combat::WeaponSnapshot* weapon,
         const core::combat::CommandCompositionResult& composition,
         const CombatSubmitResult& result) noexcept;
+    static std::size_t produceExperienceEvents(
+        void*, const LifecycleCoordinator&, const RuntimeFrame&, core::PlayerId,
+        const edict_t*, core::experience::ExperienceEvent*, std::size_t) noexcept;
+    static bool readObjective(
+        void*, const LifecycleCoordinator&, const RuntimeFrame&, core::PlayerId,
+        const edict_t*, RuntimeObjectiveObservation&, RuntimeEconomyObservation&) noexcept;
     void configureUserMessageIds(cstrike::UserMessageIds) noexcept;
     bool refreshUserMessageIds(bool logPending) noexcept;
     void clearCombatState(core::PlayerId player) noexcept;
     void clearAllCombatState() noexcept;
+    void retireCombatTarget(core::PlayerId player) noexcept;
+    void refreshCombatTargetLiveness() noexcept;
     bool dispatchMenu(ClientState&, std::uint8_t selection) noexcept;
     bool dispatchBuyCommand(core::PlayerId, const char*) noexcept;
     void dispatchRoundBuy(ClientState&) noexcept;
@@ -367,13 +392,22 @@ private:
     std::array<ClientState,host::kMaxClientSlots> clients_{};
     MovementCoordinator movement_{};
     RuntimeInputBuildStatus runtimeInputBuildStatus_{};
+    // One frame owns this scratch storage. Keeping it off the GoldSrc stack
+    // leaves room for synchronous spawn/invalidation callbacks.
+    std::array<RuntimeActorInput,kRuntimeActorCapacity> runtimeInputsScratch_{};
     std::array<RuntimeInputBuildStatus,host::kMaxClientSlots> runtimeInputBuildStatuses_{};
+    std::array<bool,host::kMaxClientSlots> runtimeCombatPending_{};
     std::array<RuntimeActorCorrelation,host::kMaxClientSlots> runtimeCorrelation_{};
+    mutable std::array<nav::model::NavAreaId,host::kMaxClientSlots> experienceAreas_{};
+    mutable std::array<double,host::kMaxClientSlots> experienceDamageSeen_{};
+    mutable std::array<std::uint64_t,host::kMaxClientSlots> experienceDeathsSeen_{};
+    mutable std::uint64_t experienceEventSequence_{0};
     cstrike::NavConsole navConsole_{};
     RuntimeOrchestrator runtime_{};
     void loadMapNavigation() noexcept;
     MapNavLoadStatus mapNavLoadStatus_{};
     std::array<RuntimeHealthObservation,host::kMaxClientSlots> runtimeHealth_{};
+    std::array<core::PlayerId,host::kMaxClientSlots> retiredCombatTargets_{};
     core::world::WorldModel world_{};
     nav::query::DistributionModel distributions_{};
     cstrike::VisionAdapter vision_{world_};
@@ -385,6 +419,8 @@ private:
     core::perception::RoundGeneration round_{1};
     std::array<core::perception::RoundGeneration,host::kMaxClientSlots>
         lastBuyRound_{};
+    std::array<std::int32_t,host::kMaxClientSlots> money_{};
+    std::array<bool,host::kMaxClientSlots> moneyKnown_{};
     PerceptionIdentityDiagnostics identityDiagnostics_{};
     core::TickId lastRoundTick_{};
     double lastRoundTime_{-1};

@@ -51,13 +51,19 @@ PortalFailureReason portal(Transition& t, HullClearance hull, PortalPolicy polic
     const bool sourceFits=fits(a,hull), targetFits=fits(b,hull);
     t.sourceFit=sourceFits ? AreaFit::HullSafe : AreaFit::MicroTransit;
     t.targetFit=targetFits ? AreaFit::HullSafe : AreaFit::MicroTransit;
-    if(!sourceFits && policy==PortalPolicy::Strict) return PortalFailureReason::SourceHullFit;
-    if(!targetFits && policy==PortalPolicy::Strict) return PortalFailureReason::TargetHullFit;
+    if((!sourceFits || !targetFits) && policy==PortalPolicy::Strict)
+        return !sourceFits ? PortalFailureReason::SourceHullFit:
+                             PortalFailureReason::TargetHullFit;
     if(t.edge.external) {
-        if((!sourceFits || !targetFits) && policy==PortalPolicy::Strict)
+        const auto& e=*t.edge.external;
+        const bool explicitSpecial=e.traversal==model::NavTraversalKind::Jump ||
+            e.traversal==model::NavTraversalKind::Drop ||
+            (e.traversal==model::NavTraversalKind::Walk &&
+             (e.direction==enrichment::NavLinkDirection::Up ||
+              e.direction==enrichment::NavLinkDirection::Down));
+        if((!sourceFits || !targetFits) && !explicitSpecial)
             return !sourceFits ? PortalFailureReason::SourceHullFit:
                                 PortalFailureReason::TargetHullFit;
-        const auto& e=*t.edge.external;
         const Point entry{e.entry.x,e.entry.y,e.entry.z}, exit{e.exit.x,e.exit.y,e.exit.z};
         if(!contains(a,entry) || !contains(b,exit))
             return PortalFailureReason::InvalidExternalEndpoint;
@@ -115,17 +121,13 @@ PortalFailureReason portal(Transition& t, HullClearance hull, PortalPolicy polic
     t.targetLow=support(b,vertical ? opposite:low,vertical ? low:opposite);
     t.targetHigh=support(b,vertical ? opposite:high,vertical ? high:opposite);
     const double lowFall=t.sourceLow.z-t.targetLow.z, highFall=t.sourceHigh.z-t.targetHigh.z;
-    const double lowRise=-lowFall, highRise=-highFall;
-    if(gap==0 && (lowRise>18 || highRise>18)) {
-        // GoldSrc's ordinary step is about 18 units. A larger measured
-        // upward transition must use the existing, observed jump primitive;
-        // treating it as Walk makes GroundProbe stop at the riser forever.
-        if(!hints || (hints.kind!=model::NavTraversalKind::Walk &&
-                      hints.kind!=model::NavTraversalKind::Jump && hints.kind!=model::NavTraversalKind::Crouch) || hints.noJump)
-            return PortalFailureReason::UnsupportedTraversal;
-        t.effectiveTraversal=model::NavTraversalKind::Jump;
-    }
-    if(gap!=0 || (policy==PortalPolicy::AllowMicroTransit && (lowFall>18 || highFall>18))) {
+    // Height deltas alone do not establish a jump or a drop.  Continuous
+    // slopes and ordinary terrain seams stay Walk; LocomotionController may
+    // promote Walk only after a current physical blocker has been observed.
+    // A non-zero NAV boundary gap is retained as the explicit drop geometry
+    // already represented by the route, while an external Down link remains
+    // handled above.
+    if(gap!=0) {
         // The source NAV patch need not contain the hull: its measured support
         // is mandatory in updateDrop. Landing still requires a hull-safe target.
         if(!hints || hints.kind!=model::NavTraversalKind::Walk ||
@@ -166,6 +168,7 @@ BuildResult Corridor::build(const query::NavGraph& graph, const query::NavRouteR
         std::shared_ptr<Corridor> result(new Corridor);
         result->transitions_.reserve(count);
         result->start_=route.areas.front(); result->goal_=route.areas.back();
+        result->goalExtent_=goal.extent;
         result->hull_=hull;
         result->startAttributes_=graph.area(*graph.find(result->start_)).attributes;
         result->logicalBytes_=sizeof(Corridor)+count*sizeof(Transition);

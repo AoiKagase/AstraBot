@@ -15,7 +15,22 @@ struct QueryStamp {
             a.routeGeneration==b.routeGeneration && a.ordinal==b.ordinal;
     }
 };
-enum class QueryKind { GroundedArea, SweptHull, Floor, Clearance, Door, Blocker };
+// Query adapters may allocate their own per-frame ordinal while preserving
+// actor/map/tick/route identity. Ordinal normalization is a transport
+// concern; cross-actor and cross-generation observations remain rejected.
+inline bool sameQueryContext(const QueryStamp& a, const QueryStamp& b) noexcept {
+    return a.agent==b.agent && a.actor==b.actor && a.map==b.map &&
+        a.tick==b.tick && a.routeGeneration==b.routeGeneration;
+}
+enum class QueryKind {
+    GroundedArea, SweptHull, Floor, Clearance, Door, Blocker,
+    // Feet coordinates. Candidate is a point trace, never footprint support.
+    FloorCandidate,
+    // Feet coordinates. Downward player hull trace; independent of NAV/ground flag.
+    HullSupport,
+    // World point coordinates; static geometry line sensing, no hull offset.
+    Feeler
+};
 enum class QueryError { None, Unavailable, BudgetExceeded, InvalidResult };
 struct QueryRequest {
     QueryStamp stamp{};

@@ -125,8 +125,12 @@ void microTransitPolicy() {
     assert(strict.portalReason==corridor::PortalFailureReason::TargetHullFit);
     const auto transit=corridor::Corridor::build(*g,r,{16,16},limits,
         corridor::PortalPolicy::AllowMicroTransit);
+    // A narrow NAV patch is only a geometric hint.  Its physical support and
+    // hull clearance are verified by the world probe before the command is
+    // dispatched, so corridor construction must keep this route executable.
     assert(transit);
     assert(transit.value->transitions()[0].targetFit==corridor::AreaFit::MicroTransit);
+    assert(transit.value->transitions()[0].requiresWorldProbe);
     assert(transit.value->transitions()[1].sourceFit==corridor::AreaFit::MicroTransit);
     assert(transit.value->transitions()[1].targetFit==corridor::AreaFit::HullSafe);
 
@@ -152,6 +156,43 @@ void microTransitPolicy() {
     assert(noSpan.error==corridor::Error::InvalidPortal);
     assert(noSpan.portalReason==corridor::PortalFailureReason::NoPortalSpan);
 }
+void narrowPatchDefersClearanceToWorldProbe() {
+    auto a=square(1,0,0), b=square(2,100,0);
+    b.extent.southEast.x=125; // 25-unit target patch from a live NAV seam.
+    a.targets[1]={2}; b.targets[3]={1};
+    const auto g=graph({a,b});
+    const auto r=route(*g,1,2);
+    const auto strict=corridor::Corridor::build(*g,r,{16,16},limits);
+    assert(strict.error==corridor::Error::InvalidPortal);
+    assert(strict.portalReason==corridor::PortalFailureReason::TargetHullFit);
+
+    const auto deferred=corridor::Corridor::build(*g,r,{16,16},limits,
+        corridor::PortalPolicy::AllowMicroTransit);
+    assert(deferred);
+    const auto& transition=deferred.value->transitions().front();
+    assert(transition.targetFit==corridor::AreaFit::MicroTransit);
+    assert(transition.requiresWorldProbe);
+    assert(transition.sourceLow.x==100 && transition.targetLow.x==100);
+}
+}
+void heightChangesDoNotInventSpecialTraversal() {
+    auto a=square(1,0,0), b=square(2,100,0);
+    a.targets[1]={2};
+    b.extent.northWest.z=b.extent.northEastZ=60;
+    b.extent.southWestZ=b.extent.southEast.z=60;
+    auto g=graph({a,b});
+    const auto raised=corridor::Corridor::build(*g,route(*g,1,2),{16,16},limits,
+        corridor::PortalPolicy::Strict);
+    assert(raised);
+    assert(raised.value->transitions()[0].effectiveTraversal==model::NavTraversalKind::Walk);
+
+    b.extent.northWest.z=b.extent.northEastZ=-60;
+    b.extent.southWestZ=b.extent.southEast.z=-60;
+    g=graph({a,b});
+    const auto lowered=corridor::Corridor::build(*g,route(*g,1,2),{16,16},limits,
+        corridor::PortalPolicy::AllowMicroTransit);
+    assert(lowered);
+    assert(lowered.value->transitions()[0].effectiveTraversal==model::NavTraversalKind::Walk);
 }
 void boundaryAndJumpHints() {
     auto a=square(5,1175,0), b=square(1665,1275,37.5F), c=square(9,1300,0);
@@ -214,4 +255,4 @@ void lookAheadStopsBeforeDerivedTraversal() {
         assert(ahead.value->y==30);
     }
 }
-int main() { cardinalAndSlopes(); invalidAndBudgets(); lookAheadAndReplay(); externalOwnership(); microTransitPolicy(); boundaryAndJumpHints(); jumpRiseUsesRuntimePhysics(); lookAheadStopsBeforeDerivedTraversal(); }
+int main() { cardinalAndSlopes(); invalidAndBudgets(); lookAheadAndReplay(); externalOwnership(); microTransitPolicy(); narrowPatchDefersClearanceToWorldProbe(); heightChangesDoNotInventSpecialTraversal(); boundaryAndJumpHints(); jumpRiseUsesRuntimePhysics(); lookAheadStopsBeforeDerivedTraversal(); }

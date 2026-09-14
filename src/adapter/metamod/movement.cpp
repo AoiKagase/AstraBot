@@ -60,11 +60,13 @@ void MovementCoordinator::resetMap() noexcept {
     frameQueued_.fill({});
     frameDispatched_.fill({});
     frameRejected_.fill({});
+    activityPulseElapsedUs_.fill(0U);
+    activityPulsePolarity_.fill(false);
     callCounts_.fill(0);
     activeDispatchSource_ = debug::MovementTraceSource::None;
 }
 
-void MovementCoordinator::forget(core::PlayerId player) noexcept {
+void MovementCoordinator::forget(core::PlayerId player, bool preserveFrameTrace) noexcept {
     if (!player.isValid() || player.slot > host::kMaxClientSlots) {
         return;
     }
@@ -72,11 +74,16 @@ void MovementCoordinator::forget(core::PlayerId player) noexcept {
     if (pending.has_value() && pending->player == player) {
         pending.reset();
     }
-    dispatchedThisFrame_[player.slot-1U] = false;
-    callCounts_[player.slot-1U] = 0;
-    frameQueued_[player.slot-1U] = {};
-    frameDispatched_[player.slot-1U] = {};
-    frameRejected_[player.slot-1U] = {};
+    if (!preserveFrameTrace) {
+        dispatchedThisFrame_[player.slot-1U] = false;
+        callCounts_[player.slot-1U] = 0;
+        frameQueued_[player.slot-1U] = {};
+        frameDispatched_[player.slot-1U] = {};
+        frameRejected_[player.slot-1U] = {};
+    }
+    // `forget` also retires a transient runtime/NAV command. Preserve the
+    // activity timer across that boundary so an invalid-input heartbeat can
+    // still refresh ReGameDLL's PlayerIdle watchdog.
 }
 
 bool MovementCoordinator::cancel(core::PlayerId player, core::MapGeneration map, core::TickId tick) noexcept {
@@ -245,6 +252,25 @@ MovementResult MovementCoordinator::dispatchAtFrameEnd(
         }
     }
     auto& pending=pending_[activePlayer.slot-1U];
+    // A dead fake client still needs a neutral RunPlayerMove heartbeat so
+    // ReGameDLL can advance its death animation and other simulation state.
+    // Runtime input is intentionally unavailable for dead actors, so allow
+    // this heartbeat before applying the live-input suppression gate.
+    if (suppressRuntimeInput && joinPhase == cstrike::JoinPhase::Joined &&
+        entity != nullptr && !entity->free &&
+        !dispatchedThisFrame_[activePlayer.slot-1U]) {
+        // Missing-area/airborne actors have no executable NAV intent, but
+        // ReGameDLL still needs one neutral RunPlayerMove to advance gravity
+        // and animation until support can be observed again. Map, binding,
+        // and edict checks above keep this heartbeat from crossing a lifetime
+        // boundary. Dead actors retain their dispatch trace for diagnostics.
+        const bool dead = entity->v.deadflag != DEAD_NO;
+        pending.reset();
+        (void)dispatchNeutral(activePlayer, entity, mapGeneration,
+            dead ? debug::MovementTraceSource::Dead : debug::MovementTraceSource::Idle,
+            dead);
+        return {};
+    }
     if (suppressRuntimeInput) {
         const auto commandTick = pending ? pending->commandTick : dispatchTick;
         const std::uint8_t originalMsec =
@@ -325,10 +351,11 @@ bool MovementCoordinator::dispatchJoinProgress(
         return false;
     }
 
-    const float viewAngles[3]{
+    float viewAngles[3]{
         entity->v.v_angle.x,
         entity->v.v_angle.y,
         entity->v.v_angle.z};
+    applyActivityPulse(activePlayer, viewAngles);
     debug::MovementPhysicalSample physical{};
     physical.valid=true;
     physical.beforeOriginX=entity->v.origin.x;
@@ -601,10 +628,11 @@ MovementResult MovementCoordinator::dispatchOne(
 
     const auto dispatchDelta=frameDeltaUs_; // callbacks may reset the map clock
     const std::uint8_t engineMsec = quantizeMsec(dispatchDelta);
-    const float viewAngles[3]{
+    float viewAngles[3]{
         pending.command.view.pitch,
         pending.command.view.yaw,
         pending.command.view.roll};
+    applyActivityPulse(activePlayer, viewAngles);
     debug::MovementPhysicalSample physical{};
     physical.valid=true;
     physical.beforeOriginX=entity->v.origin.x;
@@ -729,6 +757,43 @@ std::uint8_t MovementCoordinator::quantizeMsec(std::uint64_t deltaUs) noexcept {
     }
     rounded = std::clamp<std::uint64_t>(rounded, 1U, 255U);
     return static_cast<std::uint8_t>(rounded);
+}
+
+void MovementCoordinator::applyActivityPulse(
+    core::PlayerId player, float viewAngles[3]) noexcept {
+    if (!player.isValid() || player.slot > host::kMaxClientSlots ||
+        viewAngles == nullptr || !clockArmed_ || frameDeltaUs_ == 0U) {
+        return;
+    }
+
+    // ReGameDLL's idle check runs on the same server frame as our command
+    // dispatch.  A pulse exactly at the five second boundary can lose the
+    // race because of frame quantisation, so keep a one second margin.
+    constexpr std::uint64_t kActivityPulseIntervalUs = 4'000'000U;
+    constexpr float kActivityPulseDegrees = 0.25F;
+    const auto index = static_cast<std::size_t>(player.slot - 1U);
+    auto& elapsed = activityPulseElapsedUs_[index];
+    const auto advance = frameDeltaUs_ < kActivityPulseIntervalUs
+        ? frameDeltaUs_ : kActivityPulseIntervalUs;
+    if (elapsed > kActivityPulseIntervalUs - advance) {
+        elapsed = kActivityPulseIntervalUs;
+    } else {
+        elapsed += frameDeltaUs_;
+    }
+    if (elapsed < kActivityPulseIntervalUs) {
+        return;
+    }
+
+    elapsed = 0U;
+    const float delta = activityPulsePolarity_[index]
+        ? kActivityPulseDegrees
+        : -kActivityPulseDegrees;
+    activityPulsePolarity_[index] = !activityPulsePolarity_[index];
+    // ReGameDLL's activity check requires both axes to move by at least 0.1
+    // degrees. A quarter-degree pulse is below useful aim precision while
+    // reliably refreshing m_fLastMovement for a fake client.
+    viewAngles[0] += delta;
+    viewAngles[1] += delta;
 }
 
 const debug::MovementTrace& MovementCoordinator::frameQueueTrace(core::PlayerId player) const noexcept {

@@ -46,8 +46,11 @@ void priorityAndClear() {
     const auto a=binding(1), b=binding(2);
     BlockerWait first(a,{120,200,1000}), second(b,{120,200,1000});
     auto f=feedback(a,1,100); f.observed.blocker->player=b.actor;
+    f.observed.hull=runtime::HullObservation{0,{},{},true,true};
     assert(first.update(f).action==BlockerAction::InspectAvoidance);
-    assert(second.update(feedback(b,1,100)).action==BlockerAction::Yield);
+    auto overlap=feedback(b,1,100);
+    overlap.observed.hull=runtime::HullObservation{0,{},{},true,true};
+    assert(second.update(overlap).action==BlockerAction::Yield);
     f=feedback(b,2,150); f.observed.kind=runtime::QueryKind::Clearance;
     f.observed.blocker.reset(); f.observed.clearance=runtime::ClearanceObservation{true};
     const auto clear=second.update(f);

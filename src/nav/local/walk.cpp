@@ -6,6 +6,18 @@
 
 namespace astrabot::nav::local {
 namespace {
+bool unknownGroundProbe(ProbeReason reason) noexcept {
+    return reason==ProbeReason::BudgetExceeded || reason==ProbeReason::QueryUnavailable ||
+        reason==ProbeReason::QueryFailed || reason==ProbeReason::StaleQuery ||
+        reason==ProbeReason::InvalidResult || reason==ProbeReason::NavContainmentMissing;
+}
+WalkDecision holdUnknownGround(WalkDecision out) noexcept {
+    out.intent={};
+    out.target.reset();
+    out.contact.reset();
+    out.disposition=MotionDisposition::Hold;
+    return out;
+}
 bool groundProbeRejected(ProbeReason reason) noexcept {
     switch(reason) {
     case ProbeReason::Blocked:
@@ -54,7 +66,7 @@ public:
         auto r=port_.query(wire);
         // Map a validated wire stamp back to a helper's local ordinal. Each
         // additional inspection reuses only ground, never an engine ordinal.
-        if(r.stamp==wire.stamp) r.stamp=q.stamp;
+        if(runtime::sameQueryContext(r.stamp,wire.stamp)) r.stamp=q.stamp;
         else { r.error=runtime::QueryError::InvalidResult; }
         if(q.kind==runtime::QueryKind::SweptHull && r.stamp==q.stamp && r.kind==q.kind &&
            r.error==runtime::QueryError::None && r.hull && !r.hull->startSolid &&
@@ -103,7 +115,11 @@ bool bindGroundIntent(core::MovementIntent& intent,core::LocomotionMode mode,
     const runtime::MovementSnapshot& s,double distance) noexcept {
     if(!s.speedLimit || !s.elapsedUs ||
        !core::Motor::bindLocomotion(intent,mode,*s.speedLimit,distance) ||
-       intent.validForUs<s.elapsedUs) {
+       intent.validForUs==0) {
+        // A freshly measured command may legitimately have a physical
+        // validity window shorter than a loaded HLDS frame. The dispatch
+        // path consumes it once and rechecks the envelope before sending;
+        // rejecting it here would turn a short correction into zero input.
         intent={}; return false;
     }
     return true;
@@ -181,6 +197,21 @@ WalkDecision Walk::finish(WalkDecision out, WalkState state, WalkReason reason) 
         else out.primitiveEvent=primitive_.abort().event;
     }
     return out;
+}
+bool Walk::resumeSpecial(std::size_t step,model::NavAreaId source) noexcept {
+    if(!corridor_ || state_!=WalkState::Running || step<cursor_.index() ||
+       step>=corridor_->transitions().size() || corridor_->transitions()[step].edge.source!=source)
+        return false;
+    for(auto i=cursor_.index();i<step;++i) {
+        const auto& t=corridor_->transitions()[i];
+        if(t.edge.external || (t.effectiveTraversal!=model::NavTraversalKind::Walk &&
+            t.effectiveTraversal!=model::NavTraversalKind::Crouch)) return false;
+    }
+    while(cursor_.index()<step) {
+        const auto i=cursor_.index();
+        if(!cursor_.advance(i,corridor_->transitions()[i].edge.target,true)) return false;
+    }
+    primitive_=Primitive{}; return true;
 }
 WalkDecision Walk::abort() noexcept {
     WalkDecision out; out.binding=binding_; out.binding.step=cursor_.index(); out.tick=tick_;
@@ -405,7 +436,7 @@ WalkDecision Walk::updateMotion(const runtime::MovementSnapshot& s,const query::
         return updateJump(out,s,index,indexMap,port,nowUs,reservedQueries,physics);
     if(reservedQueries>=limits_.probe.maxQueries) {
         out.queries=reservedQueries; out.probeReason=ProbeReason::BudgetExceeded;
-        return finish(out,WalkState::Failed,WalkReason::ProbeFailed);
+        return holdUnknownGround(out);
     }
     auto probeLimits=limits_.probe; probeLimits.maxQueries-=reservedQueries;
     DecisionQueries queries(port,index,limits_.probe.navTolerance,reservedQueries,limits_.probe.maxQueries);
@@ -417,7 +448,10 @@ WalkDecision Walk::updateMotion(const runtime::MovementSnapshot& s,const query::
     out.floorDelta=ground.floorDelta;
     out.cumulativeDownDrop=ground.cumulativeDownDrop;
     out.maxDownStep=ground.maxDownStep;
-    if(!ground) return finish(out,WalkState::Failed,WalkReason::ProbeFailed);
+    if(!ground) {
+        if(unknownGroundProbe(ground.reason)) return holdUnknownGround(out);
+        return finish(out,WalkState::Failed,WalkReason::ProbeFailed);
+    }
     out.support=ground.target;
     const auto clearBlocker=[&] {
         const auto d=blocker_->clear(out.binding,s.tick,nowUs);
@@ -517,7 +551,16 @@ WalkDecision Walk::updateMotion(const runtime::MovementSnapshot& s,const query::
             const double requested=(std::max)({5.0,limits_.crossingMargin,
                 limits_.minimumCrossingDistance});
             const double inset=(std::min)(requested,depth*0.5);
-            if(inset<5.0) return finish(out,WalkState::Failed,WalkReason::InvalidPortal);
+            // The crossing margin is a preferred clearance, not a minimum
+            // depth for the target NAV patch.  A thin patch can be the
+            // centerline portion of a physically wide passage (and is
+            // intentionally admitted by AllowMicroTransit); rejecting it
+            // here sends the actor into recovery before GroundProbe gets a
+            // chance to verify the actual hull sweep.  Corridor::build has
+            // already rejected non-positive extents, so a positive inset is
+            // sufficient to form the center crossing target.
+            if(!(inset>0.0) || !std::isfinite(inset))
+                return finish(out,WalkState::Failed,WalkReason::InvalidPortal);
             switch(t.edge.direction) {
             case 0: y=(std::min)(y,double(t.targetExtent.southEast.y)-inset); break;
             case 1: x=(std::max)(x,double(t.targetExtent.northWest.x)+inset); break;
@@ -611,6 +654,7 @@ WalkDecision Walk::updateMotion(const runtime::MovementSnapshot& s,const query::
         if(probe && probe.steps>0) out.obstacleClass=ObstacleClass::Step;
         if(probe) observedObstacleHull_.reset();
     if(!probe) {
+        if(unknownGroundProbe(probe.reason)) return holdUnknownGround(out);
         if(limits_.sideProbeDistance>0 && !queries.offCorridor &&
            groundProbeRejected(probe.reason) && out.queries<limits_.probe.maxQueries) {
             runtime::QueryRequest q{{s.agent,s.actor,s.map,s.tick,binding_.routeGeneration,++out.queries},
@@ -645,7 +689,10 @@ WalkDecision Walk::updateMotion(const runtime::MovementSnapshot& s,const query::
                     return finish(out,WalkState::Failed,WalkReason::DynamicBlocked);
                 if(d.action!=BlockerAction::InspectAvoidance) return out;
             }
-        if(classified && (r.blocker->kind==runtime::BlockerKind::Geometry || blocker_)) {
+        const bool geometryHit = r.stamp==q.stamp && r.kind==q.kind && r.blocker &&
+            r.blocker->kind==runtime::BlockerKind::Geometry;
+        if((classified && (r.blocker->kind==runtime::BlockerKind::Geometry || blocker_)) ||
+           geometryHit) {
             out.blocker=r.blocker;
             out.obstacleHull=r.hull;
             if(r.blocker->kind==runtime::BlockerKind::Geometry) {
@@ -657,7 +704,23 @@ WalkDecision Walk::updateMotion(const runtime::MovementSnapshot& s,const query::
                 } else {
                     observedObstacleHull_.reset();
                 }
-            } else if(dynamic) {
+            // A precise/micro portal may skip the normal side probes. When
+            // the forward hull starts against geometry, that leaves both
+            // clearances at zero and the avoidance path immediately collapses
+            // into a recovery loop. Spend the remaining two queries on the
+            // lateral segments now; GroundProbe still verifies the selected
+            // detour before it becomes a movement target.
+            if (limits_.sideProbeDistance>0 && out.leftClearance<=0 &&
+                out.rightClearance<=0 &&
+                limits_.probe.maxQueries>=queries.issued &&
+                limits_.probe.maxQueries-queries.issued>=2) {
+                const auto forwardReason=out.probeReason;
+                const auto lateralReason=sides(s,binding_.routeGeneration,ux,uy,
+                    limits_.sideProbeDistance,limits_.probe.maxQueries,queries,out);
+                if (lateralReason==ProbeReason::None)
+                    out.probeReason=forwardReason;
+            }
+        } else if(dynamic) {
                 out.obstacleClass=ObstacleClass::Dynamic;
                 observedObstacleHull_.reset();
             }

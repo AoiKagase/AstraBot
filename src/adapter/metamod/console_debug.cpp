@@ -7,8 +7,13 @@
 #include "adapter/metamod/lifecycle.hpp"
 
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <cmath>
+#include <sys/stat.h>
+#ifdef _WIN32
+#include <share.h>
+#endif
 #include <algorithm>
 
 #ifdef snprintf
@@ -317,11 +322,88 @@ const char* runtimeNavigationReasonName(cstrike::RuntimeNavigationApplyReason re
     }
     return "Unknown";
 }
+constexpr std::uint64_t kLogRotationBytes = 16U * 1024U * 1024U;
+
+bool environmentValue(const char* name, char* output,
+                      std::size_t capacity) noexcept {
+    if (name == nullptr || output == nullptr || capacity == 0) {
+        return false;
+    }
+    output[0] = '\0';
+#ifdef _WIN32
+    char* value = nullptr;
+    std::size_t valueLength = 0;
+    if (_dupenv_s(&value, &valueLength, name) != 0 || value == nullptr) {
+        std::free(value);
+        return false;
+    }
+    const int written = std::snprintf(output, capacity, "%s", value);
+    std::free(value);
+    return written >= 0 && static_cast<std::size_t>(written) < capacity;
+#else
+    const char* value = std::getenv(name);
+    if (value == nullptr) {
+        return false;
+    }
+    const int written = std::snprintf(output, capacity, "%s", value);
+    return written >= 0 && static_cast<std::size_t>(written) < capacity;
+#endif
+}
+
+bool environmentFlag(const char* value) noexcept {
+    return value != nullptr &&
+           (std::strcmp(value, "1") == 0 ||
+            std::strcmp(value, "true") == 0 ||
+            std::strcmp(value, "TRUE") == 0 ||
+            std::strcmp(value, "on") == 0 ||
+            std::strcmp(value, "ON") == 0);
+}
+
+char pathSeparator(const char* path) noexcept {
+#ifdef _WIN32
+    if (path != nullptr && std::strchr(path, '\\') != nullptr) {
+        return '\\';
+    }
+#else
+    (void)path;
+#endif
+    return '/';
+}
+
+std::FILE* openLogPath(const char* path, const char* mode) noexcept {
+#ifdef _WIN32
+    // Permit a live diagnosis reader to tail the file while HLDS is running.
+    return path != nullptr && mode != nullptr
+               ? _fsopen(path, mode, _SH_DENYNO)
+               : nullptr;
+#else
+    return path != nullptr && mode != nullptr ? std::fopen(path, mode)
+                                               : nullptr;
+#endif
+}
+
+bool isDirectoryPath(const char* path) noexcept {
+    if (path == nullptr || path[0] == '\0') {
+        return false;
+    }
+#ifdef _WIN32
+    struct _stat info{};
+    return _stat(path, &info) == 0 && (info.st_mode & _S_IFDIR) != 0;
+#else
+    struct stat info{};
+    return stat(path, &info) == 0 && S_ISDIR(info.st_mode);
+#endif
+}
+
 } // namespace
 
 ConsoleDebug& ConsoleDebug::instance() noexcept {
     static ConsoleDebug value{};
     return value;
+}
+
+ConsoleDebug::~ConsoleDebug() noexcept {
+    closeLogFile();
 }
 
 void ConsoleDebug::configure(
@@ -338,6 +420,24 @@ void ConsoleDebug::configure(
         return;
     }
 
+    char consoleSetting[16]{};
+    consoleOutput_ = environmentValue("ASTRABOT_LOG_CONSOLE", consoleSetting,
+                                      sizeof(consoleSetting)) &&
+                     environmentFlag(consoleSetting);
+    // Keep live diagnostics reproducible from hlds_start.bat.  Previously
+    // the adapter opened the file but left debugLevel_ at zero unless an
+    // operator manually issued `astrabot_debug 1|2`, which made file logging
+    // appear broken during unattended runs.
+    char debugSetting[16]{};
+    if (environmentValue("ASTRABOT_DEBUG", debugSetting,
+                         sizeof(debugSetting))) {
+        if (std::strcmp(debugSetting, "2") == 0)
+            debugLevel_ = 2;
+        else if (std::strcmp(debugSetting, "1") == 0)
+            debugLevel_ = 1;
+    }
+    openLogFile();
+
     static char commandName[] = "astrabot_debug";
     engine_->pfnAddServerCommand(commandName, &ConsoleDebug::command);
     static char addBotCommandName[] = "astrabot_addbot";
@@ -350,6 +450,7 @@ void ConsoleDebug::configure(
 }
 
 void ConsoleDebug::reset() noexcept {
+    closeLogFile();
     if (lifecycle_ != nullptr) {
         lifecycle_->setTraceSink(nullptr);
         lifecycle_->setFakeClientTraceSink(nullptr);
@@ -362,6 +463,9 @@ void ConsoleDebug::reset() noexcept {
     lifecycle_ = nullptr;
     debugLevel_ = 0;
     nextBotOrdinal_ = 1;
+    consoleOutput_ = false;
+    logPath_.fill('\0');
+    logBackupPath_.fill('\0');
     lastMovementLogCall_.fill(0);
     lastMovementSource_.fill(debug::MovementTraceSource::None);
     lastMovementOutcome_.fill(debug::MovementTraceOutcome::None);
@@ -377,6 +481,7 @@ void ConsoleDebug::reset() noexcept {
     physicalStartX_.fill(0.0F);
     physicalStartY_.fill(0.0F);
     physicalStartZ_.fill(0.0F);
+    lastCorrelationTick_.fill(0);
 }
 
 void ConsoleDebug::command() {
@@ -498,19 +603,184 @@ void ConsoleDebug::addBotCommand() {
     self.commandLine(lineBuffer);
 }
 
-void ConsoleDebug::line(const char* text) noexcept {
-    if (debugLevel_ == 0 || text == nullptr || utility_ == nullptr ||
-        utility_->pfnLogConsole == nullptr) {
+void ConsoleDebug::openLogFile() noexcept {
+    closeLogFile();
+    logPath_.fill('\0');
+    logBackupPath_.fill('\0');
+
+    int written = -1;
+    char configuredPath[logPath_.size()]{};
+    if (environmentValue("ASTRABOT_LOG_PATH", configuredPath,
+                         sizeof(configuredPath)) &&
+        configuredPath[0] != '\0') {
+        std::size_t begin = 0;
+        std::size_t end = std::strlen(configuredPath);
+        if (end >= 2 && configuredPath[0] == '"' &&
+            configuredPath[end - 1] == '"') {
+            ++begin;
+            --end;
+        }
+        if (end > begin) {
+            const std::size_t length = end - begin;
+            if (length < logPath_.size()) {
+                std::memcpy(logPath_.data(), configuredPath + begin, length);
+                logPath_[length] = '\0';
+                const std::size_t pathLength = std::strlen(logPath_.data());
+                const bool trailingSeparator =
+                    pathLength != 0 &&
+                    (logPath_[pathLength - 1] == '/' ||
+                     logPath_[pathLength - 1] == '\\');
+                if (isDirectoryPath(logPath_.data()) || trailingSeparator) {
+                    char basePath[logPath_.size()]{};
+                    std::memcpy(basePath, logPath_.data(), pathLength + 1);
+                    const char separator =
+                        trailingSeparator ? '\0' : pathSeparator(logPath_.data());
+                    written = separator == '\0'
+                                  ? std::snprintf(logPath_.data(), logPath_.size(),
+                                                  "%sastrabot.log",
+                                                  basePath)
+                                  : std::snprintf(logPath_.data(), logPath_.size(),
+                                                  "%s%castrabot.log",
+                                                  basePath, separator);
+                } else {
+                    written = static_cast<int>(length);
+                }
+            }
+        }
+    } else {
+#ifdef _WIN32
+        char tempDirectory[logPath_.size()]{};
+        if (!environmentValue("TEMP", tempDirectory, sizeof(tempDirectory)) ||
+            tempDirectory[0] == '\0') {
+            (void)environmentValue("TMP", tempDirectory, sizeof(tempDirectory));
+        }
+#else
+        char tempDirectory[logPath_.size()]{};
+        (void)environmentValue("TMPDIR", tempDirectory, sizeof(tempDirectory));
+#endif
+        if (tempDirectory[0] != '\0') {
+            const auto length = std::strlen(tempDirectory);
+            const char separator =
+                length != 0 && (tempDirectory[length - 1] == '/' ||
+                                tempDirectory[length - 1] == '\\')
+                    ? '\0'
+                    : pathSeparator(tempDirectory);
+            if (separator == '\0') {
+                written = std::snprintf(logPath_.data(), logPath_.size(),
+                                        "%sastrabot.log", tempDirectory);
+            } else {
+                written = std::snprintf(logPath_.data(), logPath_.size(),
+                                        "%s%castrabot.log", tempDirectory,
+                                        separator);
+            }
+        } else {
+            written = std::snprintf(logPath_.data(), logPath_.size(),
+                                    "astrabot.log");
+        }
+    }
+    if (written < 0 || static_cast<std::size_t>(written) >= logPath_.size() ||
+        logPath_[0] == '\0') {
+        logPath_.fill('\0');
         return;
     }
-    utility_->pfnLogConsole(PLID, "%s", text);
+
+    written = std::snprintf(logBackupPath_.data(), logBackupPath_.size(),
+                            "%s.1", logPath_.data());
+    if (written < 0 ||
+        static_cast<std::size_t>(written) >= logBackupPath_.size()) {
+        logBackupPath_.fill('\0');
+    }
+
+    logFile_ = openLogPath(logPath_.data(), "ab+");
+    if (logFile_ == nullptr) {
+        return;
+    }
+    if (std::fseek(logFile_, 0, SEEK_END) == 0) {
+        const long position = std::ftell(logFile_);
+        if (position >= 0) {
+            logBytes_ = static_cast<std::uint64_t>(position);
+        }
+    }
+    if (logBytes_ >= kLogRotationBytes && !rotateLogFile()) {
+        closeLogFile();
+    }
+}
+
+void ConsoleDebug::closeLogFile() noexcept {
+    if (logFile_ != nullptr) {
+        (void)std::fflush(logFile_);
+        (void)std::fclose(logFile_);
+        logFile_ = nullptr;
+    }
+    logBytes_ = 0;
+}
+
+bool ConsoleDebug::rotateLogFile() noexcept {
+    closeLogFile();
+    if (logPath_[0] == '\0') {
+        return false;
+    }
+
+    bool renamed = false;
+    if (logBackupPath_[0] != '\0') {
+        (void)std::remove(logBackupPath_.data());
+        renamed = std::rename(logPath_.data(), logBackupPath_.data()) == 0;
+    }
+    logFile_ = openLogPath(logPath_.data(), renamed ? "ab" : "wb");
+    if (logFile_ == nullptr) {
+        return false;
+    }
+    logBytes_ = 0;
+    return true;
+}
+
+void ConsoleDebug::writeLine(const char* text) noexcept {
+    if (text == nullptr) {
+        return;
+    }
+    if (logFile_ != nullptr) {
+        const std::size_t length = std::strlen(text);
+        if (length < kLogRotationBytes &&
+            logBytes_ + static_cast<std::uint64_t>(length) + 1U >
+                kLogRotationBytes &&
+            !rotateLogFile()) {
+            closeLogFile();
+        }
+        if (logFile_ != nullptr) {
+            const std::size_t body = std::fwrite(text, 1, length, logFile_);
+            const int newline = std::fputc('\n', logFile_);
+            if (body != length || newline == EOF || std::fflush(logFile_) != 0) {
+                closeLogFile();
+            } else {
+                logBytes_ += static_cast<std::uint64_t>(length) + 1U;
+            }
+        }
+    }
+    if (consoleOutput_ && utility_ != nullptr &&
+        utility_->pfnLogConsole != nullptr) {
+        utility_->pfnLogConsole(PLID, "%s", text);
+    }
+}
+
+void ConsoleDebug::line(const char* text) noexcept {
+    if (debugLevel_ == 0 || text == nullptr) {
+        return;
+    }
+    writeLine(text);
+}
+
+void ConsoleDebug::navLine(const char* text) noexcept {
+    if (debugLevel_ < 2 || text == nullptr) {
+        return;
+    }
+    writeLine(text);
 }
 
 void ConsoleDebug::commandLine(const char* text) noexcept {
-    if (text == nullptr || utility_ == nullptr || utility_->pfnLogConsole == nullptr) {
+    if (text == nullptr) {
         return;
     }
-    utility_->pfnLogConsole(PLID, "%s", text);
+    writeLine(text);
 }
 
 void ConsoleDebug::lifecycleTrace(const debug::LifecycleTrace& trace) noexcept {
@@ -586,6 +856,17 @@ void ConsoleDebug::runtimeCorrelationTrace(core::PlayerId player) noexcept {
 
     const auto& correlation = lifecycle_->runtimeCorrelation(player);
     const auto& input = lifecycle_->runtimeInputBuildStatus(player);
+    const auto index = player.slot - 1U;
+    if (correlation.inputTick.isValid()) {
+        const auto tick = correlation.inputTick.value;
+        const auto previous = lastCorrelationTick_[index];
+        // Emit the first snapshot and then sample once per 10 simulation
+        // ticks (~100 ms at the GoldSrc server tick rate).
+        if (previous != 0 && tick >= previous && tick - previous < 10) {
+            return;
+        }
+        lastCorrelationTick_[index] = tick;
+    }
     const bool inputStampMatch = correlation.player == player &&
         correlation.agent.isValid() && correlation.inputTick.isValid() &&
         input.player == player && input.agent == correlation.agent &&
@@ -606,20 +887,36 @@ void ConsoleDebug::runtimeCorrelationTrace(core::PlayerId player) noexcept {
     // no command. Queue/dispatch remain separate evidence in the correlation.
     if (decisionStampMatch) {
         const auto& combat = candidate->combat;
-        char combatLine[768]{};
+        const auto* lock = lifecycle_->combatLock(player);
+        const auto* visionDiagnostics = lifecycle_->vision().diagnostics(player);
+        std::size_t visualMemoryCount = 0;
+        if (const auto snapshot = lifecycle_->world().latest(player)) {
+            visualMemoryCount = snapshot->visual != nullptr ? snapshot->visual->count : 0;
+        }
+        const auto lockGeneration = lock != nullptr ? lock->generation : 0;
+        const auto visualAge = combat.source == core::perception::ObservationSource::Vision
+            ? combat.targetAgeMicros : 0;
+        char combatLine[1024]{};
         std::snprintf(combatLine, sizeof(combatLine),
-            "[ASTRABOT][DEBUG][COMBAT] kind=Runtime map=%u round=%llu tick=%llu actor=%u:%u agent=%u known_enemies=%zu vision_memories=%zu target=%u:%u source=%u age_us=%llu confidence=%.3f action=%u fire_reason=%s attack_authorized=%u executable=%u tactical_ran=%u action_ran=%u view_pitch=%.2f view_yaw=%.2f",
+            "[ASTRABOT][DEBUG][COMBAT] kind=Runtime map=%u round=%llu tick=%llu actor=%u:%u agent=%u known_enemies=%zu direct_visible=%zu vision_memories=%zu decision_target=%u:%u submitted_target=%u:%u source=%u age_us=%llu visual_age_us=%llu confidence=%.3f action=%u fire_reason=%s lock_generation=%llu attack_authorized=%u executable=%u tactical_ran=%u action_ran=%u vision_candidates=%u vision_traces=%u vision_reason=%u view_pitch=%.2f view_yaw=%.2f",
             unsigned(correlation.map.value),
             static_cast<unsigned long long>(correlation.round.value),
             static_cast<unsigned long long>(correlation.inputTick.value),
             unsigned(player.slot), unsigned(player.generation.value),
             unsigned(correlation.agent.value), candidate->knownEnemyCount,
-            candidate->directEnemyCount, unsigned(combat.target.slot),
+            candidate->directEnemyCount, visualMemoryCount,
+            unsigned(combat.target.slot),
             unsigned(combat.target.generation.value), unsigned(combat.source),
-            static_cast<unsigned long long>(combat.targetAgeMicros), combat.confidence,
+            unsigned(combat.target.slot), unsigned(combat.target.generation.value),
+            static_cast<unsigned long long>(combat.targetAgeMicros),
+            static_cast<unsigned long long>(visualAge), combat.confidence,
             unsigned(combat.action), runtimeFireReasonName(combat.reason),
+            static_cast<unsigned long long>(lockGeneration),
             unsigned(combat.hasAttackInput()), unsigned(candidate->executable),
             unsigned(candidate->tacticalExecuted), unsigned(candidate->actionExecuted),
+            visionDiagnostics != nullptr ? visionDiagnostics->candidates : 0U,
+            visionDiagnostics != nullptr ? visionDiagnostics->traces : 0U,
+            visionDiagnostics != nullptr ? static_cast<unsigned>(visionDiagnostics->reason) : 0U,
             static_cast<double>(combat.view.pitch), static_cast<double>(combat.view.yaw));
         line(combatLine);
     }

@@ -1,9 +1,46 @@
 // SPDX-License-Identifier: MPL-2.0
 #pragma once
+#include "core/perception_identity.hpp"
 #include "nav/local/primitive.hpp"
 #include "nav/query/route_types.hpp"
 
 namespace astrabot::nav::runtime {
+struct RouteGoalIdentity final {
+    core::BotAgentId agent{};
+    core::PlayerId actor{};
+    core::MapGeneration map{};
+    core::perception::RoundGeneration round{};
+    std::uint64_t routeGeneration{};
+    bool valid() const noexcept {
+        return agent.isValid() && actor.isValid() && map.isValid() &&
+            round.value && routeGeneration;
+    }
+    friend bool operator==(const RouteGoalIdentity& a,
+                           const RouteGoalIdentity& b) noexcept {
+        return a.agent==b.agent && a.actor==b.actor && a.map==b.map &&
+            a.round==b.round && a.routeGeneration==b.routeGeneration;
+    }
+};
+
+// A running route owns its accepted goal until that exact route identity ends.
+// Periodic planner output may refresh intent, but cannot replace this lease.
+class RouteGoalLease final {
+public:
+    bool acquire(RouteGoalIdentity identity,model::NavAreaId goal) noexcept {
+        if(!identity.valid() || !goal.isValid()) return false;
+        identity_=identity; goal_=goal; held_=true; return true;
+    }
+    bool holds(const RouteGoalIdentity& identity) const noexcept {
+        return held_ && identity.valid() && identity_==identity;
+    }
+    model::NavAreaId goal() const noexcept { return held_ ? goal_:model::NavAreaId{}; }
+    void release() noexcept { *this={}; }
+private:
+    RouteGoalIdentity identity_{};
+    model::NavAreaId goal_{};
+    bool held_{};
+};
+
 enum class ReplanState { Idle, Pending, Consumed, Exhausted, Expired, Invalid };
 // One goal owns one automatic retry. Route generation changes never replenish
 // it. The host resets this value only on explicit goal/lifecycle invalidation.
@@ -13,12 +50,24 @@ public:
     static constexpr unsigned maxAttempts=1;
     struct PolicySnapshot {
         std::optional<query::NavDirectedEdge> blocked{};
-        static query::NavCostDecision cost(const query::NavCostContext& c,const void* context) noexcept {
+        query::NavRoutePolicy base{};
+        static query::NavCostDecision cost(const query::NavCostContext& c,const void* context) {
             const auto& self=*static_cast<const PolicySnapshot*>(context);
-            return {self.blocked && sameEdge(*self.blocked,c.edge),
-                {c.geometricDistance,c.edge.external ? c.edge.external->additionalCost:0,0,0}};
+            if(self.blocked && sameEdge(*self.blocked,c.edge)) return {true,{}};
+            return self.base.cost ? self.base.cost(c,self.base.context)
+                : query::NavCostDecision{false,{c.geometricDistance,
+                    c.edge.external ? c.edge.external->additionalCost:0,0,0,0}};
         }
-        query::NavRoutePolicy policy() const noexcept { return {this,&cost,nullptr}; }
+        static double heuristic(const query::NavHeuristicContext& c,const void* context) {
+            const auto& self=*static_cast<const PolicySnapshot*>(context);
+            return self.base.heuristic
+                ? self.base.heuristic(c,self.base.context)
+                : c.geometricDistance;
+        }
+        query::NavRoutePolicy policy() const noexcept {
+            const auto h=(base.heuristic || !base.cost) ? &heuristic : nullptr;
+            return {this,&cost,h};
+        }
     };
     bool schedule(local::Binding binding,query::NavDirectedEdge edge,core::TickId tick,
                   std::uint64_t nowUs) noexcept {

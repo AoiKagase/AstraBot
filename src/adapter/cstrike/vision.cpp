@@ -155,7 +155,8 @@ bool VisionAdapter::synchronize(metamod::LifecycleCoordinator& owner, enginefunc
     }
     return true;
 }
-void VisionAdapter::frame(metamod::LifecycleCoordinator& owner, enginefuncs_t* engine, float time) noexcept {
+void VisionAdapter::frame(metamod::LifecycleCoordinator& owner, enginefuncs_t* engine,
+                          std::uint64_t frameMicros) noexcept {
     error_ = p::Reason::None;
     auto& registry = owner.registry();
     if (!registry.isMapActive()) { reset(); return; }
@@ -163,13 +164,8 @@ void VisionAdapter::frame(metamod::LifecycleCoordinator& owner, enginefuncs_t* e
         memory_.invalidate(core::world::MemoryReason::MissingEngine);
         vision_.reset(); error_ = p::Reason::MissingEngine; return;
     }
-    const double micros = double(time)*1000000;
-    if (!std::isfinite(micros) || micros < 0 || micros >= 18446744073709551616.0) {
-        memory_.invalidate(core::world::MemoryReason::InvalidFrame);
-        vision_.reset(); error_ = p::Reason::InvalidFrame; return;
-    }
     p::InputFrame input{};
-    input.map = map_; input.tick = registry.currentTick(); input.timeMicros = static_cast<std::uint64_t>(micros);
+    input.map = map_; input.tick = registry.currentTick(); input.timeMicros = frameMicros;
     input.round = owner.round();
     Queries queries(owner,*engine);
     const auto revision = revision_;

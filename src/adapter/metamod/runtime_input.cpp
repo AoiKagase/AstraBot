@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <new>
 
 namespace astrabot::adapter::metamod {
 namespace {
@@ -136,7 +137,8 @@ bool runtimeActorReady(const LifecycleCoordinator& owner, const RuntimeFrame& fr
 
 std::size_t buildRuntimeInputs(const LifecycleCoordinator& owner, const RuntimeFrame& frame,
     DLL_FUNCTIONS* dll, RuntimeActorInput* output, std::size_t capacity,
-    RuntimeInputBuildStatus* status, std::size_t statusCapacity) noexcept {
+    RuntimeInputBuildStatus* status, std::size_t statusCapacity,
+    const RuntimeInputSources& sources) noexcept {
     const auto statusFor = [&](core::PlayerId player) noexcept
         -> RuntimeInputBuildStatus* {
         if (!status || !player.isValid() || player.slot == 0 ||
@@ -165,8 +167,34 @@ std::size_t buildRuntimeInputs(const LifecycleCoordinator& owner, const RuntimeF
     }
 
     std::size_t count = 0;
+    std::array<core::team::TeamMemberSnapshot, kRuntimeActorCapacity> teamMembers{};
+    std::size_t teamMemberCount = 0;
     const auto clientMax = (std::min)(owner.registry().clientMax(),
                                       static_cast<std::uint16_t>(host::kMaxClientSlots));
+    // Build the team roster independently of weapon/combat conversion. A
+    // temporarily unavailable weapon observation must not make a managed
+    // teammate disappear from every other actor's TeamSnapshot.
+    for (std::uint16_t slot = 1; slot <= clientMax &&
+         teamMemberCount < teamMembers.size(); ++slot) {
+        const auto player = owner.registry().currentPlayer(slot);
+        const auto binding = owner.agents().findByPlayer(player);
+        if (!player.isValid() || !binding.isValid() || binding.player != player ||
+            binding.map != frame.map)
+            continue;
+        const auto* entity = owner.entityFor(player);
+        if (!entity || !current(owner, frame, player, binding.agent, entity)) continue;
+        const auto* affiliation = owner.teams().find(player);
+        if (!affiliation || affiliation->team == core::perception::Team::Unknown)
+            continue;
+        auto& member = teamMembers[teamMemberCount++];
+        member.player = player;
+        member.agent = binding.agent;
+        member.position = {entity->v.origin.x, entity->v.origin.y, entity->v.origin.z};
+        member.healthPercent = (std::min)(100.0F, entity->v.health);
+        member.connected = true;
+        member.alive = true;
+        member.team = affiliation->team;
+    }
     for (std::uint16_t slot = 1; slot <= clientMax && count < capacity; ++slot) {
         const auto player = owner.registry().currentPlayer(slot);
         const auto binding = owner.agents().findByPlayer(player);
@@ -174,7 +202,15 @@ std::size_t buildRuntimeInputs(const LifecycleCoordinator& owner, const RuntimeF
             binding.map != frame.map)
             continue;
 
-        RuntimeActorInput input{};
+        // RuntimeActorInput owns the complete per-actor world snapshot and is
+        // intentionally large. Reconstruct the caller-owned output slot in
+        // place instead of materializing a temporary on the GoldSrc stack.
+        // HLDS gives hook callbacks a comparatively small stack and this
+        // builder runs once per actor per frame.
+        auto* inputStorage = &output[count];
+        inputStorage->~RuntimeActorInput();
+        ::new (static_cast<void*>(inputStorage)) RuntimeActorInput{};
+        auto& input = *inputStorage;
         input.player = player;
         input.agent = binding.agent;
         // Kept true for compatibility with older providers. Multi-actor
@@ -264,6 +300,13 @@ std::size_t buildRuntimeInputs(const LifecycleCoordinator& owner, const RuntimeF
         const float health = (std::min)(100.0F, v.health);
         RuntimeObjectiveObservation objective{};
         RuntimeEconomyObservation economy{};
+        if (sources.objectiveReader) {
+            if (!sources.objectiveReader(sources.context, owner, frame, player, entity,
+                                         objective, economy)) {
+                objective = {};
+                economy = {};
+            }
+        }
 
         input.team.map = frame.map;
         input.team.round = frame.round;
@@ -272,15 +315,10 @@ std::size_t buildRuntimeInputs(const LifecycleCoordinator& owner, const RuntimeF
         input.team.team = combat.team;
         input.team.objective = objective.team;
         input.teamObjectiveAvailable = objective.available;
-        input.team.memberCount = 1;
-        auto& member = input.team.members[0];
-        member.player = player;
-        member.agent = input.agent;
-        member.position = position;
-        member.healthPercent = health;
-        member.connected = true;
-        member.alive = true;
-        member.team = combat.team;
+    // The complete same-team roster is populated after every actor input has
+    // been built. Keeping this count empty here prevents a self-only snapshot
+    // from leaking into TeamDirector before the aggregate pass below.
+    input.team.memberCount = 0;
 
         auto& self = input.tactical.self;
         self.player = player;
@@ -355,8 +393,31 @@ std::size_t buildRuntimeInputs(const LifecycleCoordinator& owner, const RuntimeF
                             enemy.directVision};
             input.actionObservation.enemyAppeared = enemy.directVision;
         }
+        if (sources.experienceProducer) {
+            const auto produced = sources.experienceProducer(
+                sources.context, owner, frame, player, entity,
+                input.experienceEvents.data(), input.experienceEvents.size());
+            // Producers receive the output capacity and must never write past
+            // it. Clamp a malformed count at the value boundary so the
+            // orchestrator cannot consume uninitialized events.
+            input.experienceEventCount =
+                (std::min)(produced, input.experienceEvents.size());
+        }
         if (actorStatus) actorStatus->inputIncluded = true;
         output[count++]=input;
+    }
+    // Every actor receives a complete snapshot of its own team from this
+    // frame. Keep opposing teams out of TeamDirector's private snapshot;
+    // WorldModel remains the source for opponent beliefs.
+    for (std::size_t i = 0; i < count; ++i) {
+        auto& team = output[i].team;
+        const auto teamId = team.team;
+        team.memberCount = 0;
+        for (std::size_t j = 0; j < teamMemberCount; ++j) {
+            if (teamMembers[j].team != teamId || team.memberCount == team.members.size())
+                continue;
+            team.members[team.memberCount++] = teamMembers[j];
+        }
     }
     return count;
 }

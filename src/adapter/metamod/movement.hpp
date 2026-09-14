@@ -56,7 +56,9 @@ public:
         host::BotAgentRegistry* agents = nullptr) noexcept;
     void reset() noexcept;
     void resetMap() noexcept;
-    void forget(core::PlayerId player) noexcept;
+    // Retire pending commands for an actor. A frame-end death heartbeat may
+    // preserve the current frame trace until lifecycle correlation completes.
+    void forget(core::PlayerId player, bool preserveFrameTrace = false) noexcept;
     bool cancel(core::PlayerId, core::MapGeneration, core::TickId commandTick) noexcept;
     std::uint64_t frameDeltaUs() const noexcept { return frameDeltaUs_; }
 
@@ -125,6 +127,7 @@ private:
 
     static std::chrono::steady_clock::time_point steadyNow() noexcept;
     static std::uint8_t quantizeMsec(std::uint64_t deltaUs) noexcept;
+    void applyActivityPulse(core::PlayerId player, float viewAngles[3]) noexcept;
 
     MovementResult reject(
         MovementError error,
@@ -171,6 +174,12 @@ private:
     std::array<debug::MovementTrace, host::kMaxClientSlots> frameQueued_{};
     std::array<debug::MovementTrace, host::kMaxClientSlots> frameDispatched_{};
     std::array<debug::MovementTrace, host::kMaxClientSlots> frameRejected_{};
+    // ReGameDLL's PlayerIdle watchdog ignores RunPlayerMove movement deltas
+    // and only observes button edges or a simultaneous pitch/yaw change. Keep
+    // a small per-client timer so fake clients receive an occasional harmless
+    // activity pulse without changing their movement or attack buttons.
+    std::array<std::uint64_t, host::kMaxClientSlots> activityPulseElapsedUs_{};
+    std::array<bool, host::kMaxClientSlots> activityPulsePolarity_{};
     debug::MovementTraceSource activeDispatchSource_{debug::MovementTraceSource::None};
     ClockNow now_{&MovementCoordinator::steadyNow};
     std::chrono::steady_clock::time_point lastFrame_{};

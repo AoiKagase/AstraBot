@@ -7,6 +7,7 @@
 #include "nav/query/spatial_index.hpp"
 #include "nav/query/distribution.hpp"
 #include "nav/local/walk.hpp"
+#include "nav/local/locomotion_controller.hpp"
 #include "nav/local/intent_pump.hpp"
 #include "adapter/metamod/movement.hpp"
 #include "adapter/metamod/runtime_orchestrator.hpp"
@@ -258,8 +259,11 @@ private:
         core::TickId pressTick{};
     };
     struct PendingMotion {
+        // Native controller envelopes are revalidated with the same terrain
+        // sampler used for decisions; legacy specialized tickets stay below.
         nav::local::Binding binding{};
         core::TickId tick{};
+        std::optional<nav::local::MotionEnvelope> envelope{};
         std::uint64_t remainingFreshUs{};
         nav::runtime::MovementSnapshot observation{};
         core::BotCommand command{};
@@ -290,7 +294,7 @@ private:
         core::PlayerId actor{};
         nav::runtime::Execution execution_{};
         nav::local::JumpAttemptRegistry jumpAttempts_{};
-        std::optional<nav::local::Walk> walk_{};
+        std::optional<nav::local::LocomotionController> walk_{};
     std::optional<nav::local::IntentPump> pump_{};
     std::optional<Segment> segment_{};
     std::optional<PendingMotion> pendingMotion_{};
@@ -301,6 +305,7 @@ private:
     std::uint32_t guardQueries_{};
     std::uint64_t intentWallAgeUs_{};
     nav::runtime::ReplanAttempt replan_{};
+    nav::runtime::RouteGoalLease goalLease_{};
     nav::local::Recovery recovery_{};
     bool recoveryReplan_{};
     std::uint64_t navigationTimeUs_{};

@@ -26,7 +26,7 @@ public:
         return intent.validForUs ? (std::min)(intent.validForUs,maxIntentAgeUs):maxIntentAgeUs;
     }
     explicit IntentPump(Binding binding) noexcept : binding_(binding) {}
-    FrameSchedule beginFrame(const runtime::MovementSnapshot&) noexcept;
+    FrameSchedule beginFrame(const runtime::MovementSnapshot&,bool immediate=false) noexcept;
     bool publish(Binding, core::TickId decisionTick, const MovementIntent&) noexcept;
     PumpOutput take() noexcept;
     void stop(PumpReason reason=PumpReason::MissingIntent) noexcept;

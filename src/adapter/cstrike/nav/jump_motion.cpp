@@ -23,7 +23,7 @@ std::optional<nav::local::JumpPhysics> standardJumpPhysics(enginefuncs_t* engine
     const double effective=base*multiplier;
     if(!std::isfinite(effective) || effective<=0 || effective>4000 || !std::isfinite(jumpHeight) || jumpHeight<=0 || jumpHeight>64)
         return {};
-    const nav::runtime::HullDimensions standing{{-16,-16,-36},{16,16,36}}, crouching{{-16,-16,-18},{16,16,18}};
+    const nav::runtime::HullDimensions standing{{-16,-16,-36},{16,16,36}}, crouching{{-16,-16,-18},{16,16,32}};
     const auto expected=(entity->v.flags&FL_DUCKING) ? crouching:standing;
     if(entity->v.mins.x!=expected.minimum.x || entity->v.mins.y!=expected.minimum.y ||
        entity->v.mins.z!=expected.minimum.z || entity->v.maxs.x!=expected.maximum.x ||
@@ -69,7 +69,7 @@ JumpPhysicsAssessment assessStandardJumpPhysics(enginefuncs_t* engine,edict_t* e
     if(!std::isfinite(jumpHeight) || jumpHeight<=0 || jumpHeight>64)
         return fail(JumpPhysicsReason::InvalidJumpHeight);
     const nav::runtime::HullDimensions standing{{-16,-16,-36},{16,16,36}};
-    const nav::runtime::HullDimensions crouching{{-16,-16,-18},{16,16,18}};
+    const nav::runtime::HullDimensions crouching{{-16,-16,-18},{16,16,32}};
     const auto sameHull=[](const nav::runtime::HullDimensions& a,
                            const nav::runtime::HullDimensions& b) noexcept {
         return a.minimum==b.minimum && a.maximum==b.maximum;

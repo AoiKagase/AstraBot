@@ -210,7 +210,7 @@ void testNavWorldQueries() {
     gHullMode=0; gHullCalls=0;
     auto r=call(); assert(r.error==runtime::QueryError::None && r.hull && r.hull->fraction==1);
     assert(r.stamp==q.stamp && gHullKind==1 && gHullCalls==1);
-    q.hull=runtime::HullDimensions{{-16,-16,-18},{16,16,18}};
+    q.hull=runtime::HullDimensions{{-16,-16,-18},{16,16,32}};
     r=call(); assert(r.hull && gHullKind==3);
     q.hull->maximum.x=17;
     r=call(); assert(r.error==runtime::QueryError::Unavailable && gHullCalls==2);
@@ -669,7 +669,7 @@ void captureRunPlayerMove(
                 assert(!gCloseHeadroom && !(gCrouchCeiling && entity->v.origin.x+16>100 && entity->v.origin.x-16<200));
             }
             if(duck) entity->v.flags|=FL_DUCKING; else entity->v.flags&=~FL_DUCKING;
-            entity->v.mins.z=duck ? -18.0f:-36.0f; entity->v.maxs.z=duck ? 18.0f:36.0f;
+            entity->v.mins.z=duck ? -18.0f:-36.0f; entity->v.maxs.z=duck ? 32.0f:36.0f;
         }
         if(buttons==IN_USE) {
             assert(forwardMove==0 && sideMove==0 && !gDoorAmbiguous);
@@ -1036,6 +1036,17 @@ void testNavPlayerQueries() {
     };
     auto r=call(&players);
     assert(r.blocker && r.blocker->kind==nav::runtime::BlockerKind::Player && r.blocker->player==players.currentPlayer(2));
+    fixture.engine.pfnTraceHull=[](const float* start,const float* end,int ignoreMonsters,
+        int hull,edict_t* actor,TraceResult* result) {
+        captureNavHull(start,end,ignoreMonsters,hull,actor,result);
+        result->fStartSolid=1;
+        result->fAllSolid=1;
+    };
+    r=call(&players);
+    assert(r.blocker && r.blocker->kind==nav::runtime::BlockerKind::Player &&
+        r.blocker->player==players.currentPlayer(2));
+    assert(r.hull && r.hull->startSolid && r.hull->allSolid && r.hull->fraction<1);
+    fixture.engine.pfnTraceHull=&captureNavHull;
     const auto oldId=r.blocker->id;
     const auto oldGeneration=r.blocker->player->generation.value;
     assert(players.disconnectSlot(2)); assert(players.registerPlayer(2)); ++gNavPlayer.serialnumber;
@@ -1503,7 +1514,7 @@ void testStandardJumpPhysics() {
     gJumpGravity.value=800; gJumpHeight.value=45; gMissingJumpGravity=gMissingJumpHeight=false;
     auto p=adapter::cstrike::standardJumpPhysics(&engine,&entity,binding,{7});
     assert(p && p->gravity==800 && std::abs(p->verticalImpulse-std::sqrt(72000.0))<0.001 && p->binding.step==6);
-    entity.v.mins.z=-18; entity.v.maxs.z=18; entity.v.flags|=FL_DUCKING;
+    entity.v.mins.z=-18; entity.v.maxs.z=32; entity.v.flags|=FL_DUCKING;
     p=adapter::cstrike::standardJumpPhysics(&engine,&entity,binding,{7});
     assert(p && p->gravity==800 && std::abs(p->verticalImpulse-std::sqrt(72000.0))<0.001);
     entity.v.mins=Vector(-16,-16,-36); entity.v.maxs=Vector(16,16,36); entity.v.flags&=~FL_DUCKING;
@@ -1569,7 +1580,7 @@ void testJumpPhysicsAssessment() {
     entity.v.flags|=FL_DUCKING;
     p=inspect();
     assert(p && p.posture==JumpActorPosture::Transition);
-    entity.v.mins.z=-18; entity.v.maxs.z=18;
+    entity.v.mins.z=-18; entity.v.maxs.z=32;
     p=inspect();
     assert(p && p.posture==JumpActorPosture::Crouching);
     entity.v.flags&=~FL_DUCKING;
@@ -1603,7 +1614,7 @@ void testJumpPhysicsAssessment() {
     assert(inspect().reason==JumpPhysicsReason::NonCanonicalHull);
     edict_t second{}; second.v.movetype=MOVETYPE_WALK;
     second.v.flags|=FL_DUCKING;
-    second.v.mins=Vector(-16,-16,-18); second.v.maxs=Vector(16,16,18);
+    second.v.mins=Vector(-16,-16,-18); second.v.maxs=Vector(16,16,32);
     const auto independent=adapter::cstrike::assessStandardJumpPhysics(
         &engine,&second,binding,{7});
     assert(independent && independent.posture==JumpActorPosture::Crouching);

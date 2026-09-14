@@ -39,6 +39,7 @@ struct Script final : runtime::IWorldQueries {
             if(mode==6) r.floor->normal.z=0.1f;
             if(mode==7) r.floor->height=std::numeric_limits<float>::quiet_NaN();
             if(mode==8) r.floor->height=10; // support exists but NAV floor disagrees
+            if(mode==13 && q.end.x==36) r.floor->height=10; // Intermediate NAV miss only.
         } else if(q.kind==runtime::QueryKind::SweptHull) {
             r.hull=runtime::HullObservation{1,q.end,{0,0,0},false};
             if(mode==9) r.hull->fraction=0.5f;
@@ -72,10 +73,18 @@ void failures() {
         local::ProbeReason::QueryFailed,local::ProbeReason::QueryUnavailable,local::ProbeReason::UnsafeDrop,
         local::ProbeReason::ActorNotGrounded,local::ProbeReason::UnsupportedFloor,local::ProbeReason::InvalidResult,
         local::ProbeReason::NoArea,local::ProbeReason::Blocked,local::ProbeReason::Blocked,local::ProbeReason::InvalidResult};
-    for(int mode=1;mode<=11;++mode) { Script p; p.mode=mode; const auto r=inspect(p);
+    for(int mode=1;mode<=11;++mode) { if(mode==8) continue;
+        Script p; p.mode=mode; const auto r=inspect(p);
         assert(!r && !r.target && r.reason==reasons[mode]); assert(p.calls.size()<=limits.maxQueries); }
+    Script physicalOnly; physicalOnly.mode=8;
+    const auto advisory=inspect(physicalOnly);
+    assert(advisory && advisory.reason==local::ProbeReason::None &&
+           advisory.initialReason==local::ProbeReason::NavContainmentMissing);
+    assert(advisory.target->area==model::NavAreaId{1} && advisory.target->origin.z==46);
     Script navMissing; navMissing.mode=12;
-    assert(inspect(navMissing).reason==local::ProbeReason::NavContainmentMissing);
+    // A host NAV miss is advisory when its floor is physically valid and this
+    // stamped local index independently contains the observed support.
+    assert(inspect(navMissing));
     for(auto l : {local::GroundProbeLimits{4,4,64,16,18,18,64,4,2,0.7},
                    local::GroundProbeLimits{9,1,64,16,18,18,64,4,2,0.7}}) {
         Script p; auto r=inspect(p,l); assert(r.reason==local::ProbeReason::BudgetExceeded && p.calls.empty());
@@ -140,6 +149,18 @@ void stairProbes() {
     Stairs high; high.to=19; assert(run(high,l).reason==local::ProbeReason::InvalidResult && high.calls.size()==2);
 }
 }
+void intermediateNavMissKeepsPhysicalTarget() {
+    Script port; port.mode=13;
+    const auto result=inspect(port);
+    assert(result && result.reason==local::ProbeReason::None);
+    assert(result.initialReason==local::ProbeReason::NavContainmentMissing);
+    assert(result.target->area==model::NavAreaId{1});
+    assert(result.target->origin==model::NavVector3({52,50,36}));
+    assert(result.samples==2 && result.queries==5 && port.calls.size()==5);
+    // Both samples still require physical passage, including the NAV-less one.
+    assert(port.calls[2].kind==runtime::QueryKind::SweptHull && port.calls[2].end.z==46);
+    assert(port.calls[4].kind==runtime::QueryKind::SweptHull && port.calls[4].end.z==36);
+}
 void frameGround() {
     auto s=actor(); s.position=model::NavVector3{44,50,54};
     Script p; p.height=18;
@@ -158,6 +179,7 @@ void frameGround() {
     assert(local::inspectGroundFrame(s,7,{1},{1},46,50,*index(),s.map,budget,allowance).reason==local::ProbeReason::BudgetExceeded);
 }
 int main() {
+    intermediateNavMissKeepsPhysicalTarget();
     frameGround();
     successReplayAndFloors(); failures(); stairProbes();
     Script port; auto s=actor(); auto l=limits; l.maxQueries=1; l.maxSamples=0;

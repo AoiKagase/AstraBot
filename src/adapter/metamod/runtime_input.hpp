@@ -19,6 +19,23 @@ struct RuntimeEconomyObservation final {
     core::tactical::EconomySummary tactical{};
 };
 
+// Optional value-only adapter sources. The production lifecycle can bind an
+// ObjectiveExtractor without exposing SDK state to Core or changing the
+// RuntimeActorInput contract. A null reader preserves the neutral unknown
+// objective/economy behavior used while no extractor is available.
+using RuntimeObjectiveReader = bool (*)(
+    void*, const LifecycleCoordinator&, const RuntimeFrame&, core::PlayerId,
+    const edict_t*, RuntimeObjectiveObservation&, RuntimeEconomyObservation&) noexcept;
+using RuntimeExperienceProducer = std::size_t (*)(
+    void*, const LifecycleCoordinator&, const RuntimeFrame&, core::PlayerId,
+    const edict_t*, core::experience::ExperienceEvent*, std::size_t) noexcept;
+
+struct RuntimeInputSources final {
+    RuntimeObjectiveReader objectiveReader{nullptr};
+    RuntimeExperienceProducer experienceProducer{nullptr};
+    void* context{nullptr};
+};
+
 enum class RuntimeInputBuildReason : std::uint8_t {
     None,
     InvalidFrame,
@@ -85,7 +102,8 @@ struct RuntimeInputBuildStatus final {
 std::size_t buildRuntimeInputs(const LifecycleCoordinator&, const RuntimeFrame&,
     DLL_FUNCTIONS*, RuntimeActorInput*, std::size_t,
     RuntimeInputBuildStatus* = nullptr,
-    std::size_t statusCapacity = 1) noexcept;
+    std::size_t statusCapacity = 1,
+    const RuntimeInputSources& sources = {}) noexcept;
 bool runtimeActorReady(const LifecycleCoordinator&, const RuntimeFrame&,
     DLL_FUNCTIONS*, core::PlayerId, core::combat::WeaponId, bool attack) noexcept;
 }

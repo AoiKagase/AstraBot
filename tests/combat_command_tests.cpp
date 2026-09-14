@@ -111,10 +111,38 @@ void testInvalidInputsFailClosedAndAreDeterministic() {
     assert(first.command == second.command);
 }
 
+void testNoTargetScanOwnsOnlyStationaryValidView() {
+    auto scan=decision(c::CombatAction::NoOp);
+    scan.reason=c::CombatReason::NoTarget;
+    scan.view={0.0F,-90.0F,0.0F};
+
+    auto stationary=BotCommand::neutral(16);
+    stationary.view={0.0F,25.0F,0.0F};
+    const auto searching=c::composeCommand(scan,stationary);
+    assert(searching && searching.command.view==scan.view);
+
+    scan.reason=c::CombatReason::AnonymousSound;
+    assert(c::composeCommand(scan,stationary).command.view==scan.view);
+
+    auto moving=stationary;
+    moving.movement.forward=100.0F;
+    assert(c::composeCommand(scan,moving).command.view==moving.view);
+
+    auto usingDoor=stationary;
+    usingDoor.buttons=static_cast<ButtonMask>(Button::Use);
+    assert(c::composeCommand(scan,usingDoor).command.view==usingDoor.view);
+    assert((c::composeCommand(scan,usingDoor).command.buttons &
+        static_cast<ButtonMask>(Button::Use))!=0U);
+
+    scan.reason=c::CombatReason::InvalidInput;
+    assert(c::composeCommand(scan,stationary).command.view==stationary.view);
+}
+
 } // namespace
 
 int main() {
     testMovementAndCombatOwnersRemainSeparate();
     testInvalidInputsFailClosedAndAreDeterministic();
+    testNoTargetScanOwnsOnlyStationaryValidView();
     return 0;
 }
