@@ -93,11 +93,14 @@ FollowResult PathFollower::update(Point position, model::NavAreaId area,
                                   bool supportVerified, double lookAhead,
                                   double goalTolerance) noexcept {
     FollowResult result; result.step=step_; result.routeProgress=routeProgress_;
+    const auto* transitionsPtr = corridor_ ? &corridor_->transitions() : nullptr;
+    const auto* goalExtent = transitionsPtr && !transitionsPtr->empty() ?
+        &transitionsPtr->back().targetExtent : nullptr;
     if(!corridor_ || !finite(position) || !finite(goal_) || !std::isfinite(lookAhead) ||
        lookAhead<=0 || !std::isfinite(goalTolerance) || goalTolerance<0 ||
-       !contains(corridor_->goalExtent(),goal_)) return result;
+       (goalExtent && !contains(*goalExtent,goal_))) return result;
     if(!supportVerified) { result.status=FollowStatus::MissingSupport; return result; }
-    const auto& steps=corridor_->transitions();
+    const auto& steps=*transitionsPtr;
     const auto diagnose = [&]() {
         Point origin=goal_;
         if(step_<steps.size() && ordinary(steps[step_])) {
@@ -186,8 +189,8 @@ FollowResult PathFollower::update(Point position, model::NavAreaId area,
     if(result.changed) confirmedTarget_.reset();
     diagnose();
     if(step_==steps.size()) {
-        if(area!=corridor_->goal() || !contains(corridor_->goalExtent(),position)) {
-            if (area==corridor_->goal() && recoverBoundary(corridor_->goalExtent()))
+        if(area!=corridor_->goal() || (goalExtent && !contains(*goalExtent,position))) {
+            if (area==corridor_->goal() && goalExtent && recoverBoundary(*goalExtent))
                 return result;
             if (step_>0 && ordinary(steps.back()) && area==steps.back().edge.source &&
                 recoverBoundary(steps.back().sourceExtent))

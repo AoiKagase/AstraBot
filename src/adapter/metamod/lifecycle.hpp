@@ -232,6 +232,7 @@ public:
     }
     const RuntimeInputBuildStatus& runtimeInputBuildStatus(core::PlayerId player) const noexcept;
     const RuntimeActorCorrelation& runtimeCorrelation(core::PlayerId player) const noexcept;
+    const core::combat::CombatLock* combatLock(core::PlayerId player) const noexcept;
     const RuntimeHealthObservation* runtimeHealth(core::PlayerId player) const noexcept {
         if (!player.isValid() || player.slot > runtimeHealth_.size()) return nullptr;
         const auto& observation = runtimeHealth_[player.slot - 1U];
@@ -302,6 +303,7 @@ private:
         cstrike::JoinState join{};
         cstrike::MessageDecoder decoder{};
         core::combat::AttackLifecycleState combat{};
+        core::combat::CombatLock combatLock{};
         std::array<cstrike::MessageEvent, 4> pendingJoinMessages{};
         std::uint8_t pendingJoinMessageCount{0};
         bool cleanupPending{};
@@ -351,6 +353,8 @@ private:
     bool refreshUserMessageIds(bool logPending) noexcept;
     void clearCombatState(core::PlayerId player) noexcept;
     void clearAllCombatState() noexcept;
+    void retireCombatTarget(core::PlayerId player) noexcept;
+    void refreshCombatTargetLiveness() noexcept;
     bool dispatchMenu(ClientState&, std::uint8_t selection) noexcept;
     bool dispatchBuyCommand(core::PlayerId, const char*) noexcept;
     void dispatchRoundBuy(ClientState&) noexcept;
@@ -372,8 +376,23 @@ private:
     cstrike::NavConsole navConsole_{};
     RuntimeOrchestrator runtime_{};
     void loadMapNavigation() noexcept;
+    static bool readObjective(void*, const LifecycleCoordinator&, const RuntimeFrame&,
+        core::PlayerId, const edict_t*, RuntimeObjectiveObservation&,
+        RuntimeEconomyObservation&) noexcept;
+    static std::size_t produceExperienceEvents(void*, const LifecycleCoordinator&,
+        const RuntimeFrame&, core::PlayerId, const edict_t*,
+        core::experience::ExperienceEvent*, std::size_t) noexcept;
     MapNavLoadStatus mapNavLoadStatus_{};
     std::array<RuntimeHealthObservation,host::kMaxClientSlots> runtimeHealth_{};
+    std::array<core::PlayerId,host::kMaxClientSlots> retiredCombatTargets_{};
+    std::array<bool,host::kMaxClientSlots> runtimeCombatPending_{};
+    std::array<RuntimeActorInput,kRuntimeActorCapacity> runtimeInputsScratch_{};
+    mutable std::array<nav::model::NavAreaId,host::kMaxClientSlots> experienceAreas_{};
+    mutable std::array<double,host::kMaxClientSlots> experienceDamageSeen_{};
+    mutable std::array<std::uint64_t,host::kMaxClientSlots> experienceDeathsSeen_{};
+    mutable std::uint64_t experienceEventSequence_{};
+    std::array<std::int32_t,host::kMaxClientSlots> money_{};
+    std::array<bool,host::kMaxClientSlots> moneyKnown_{};
     core::world::WorldModel world_{};
     nav::query::DistributionModel distributions_{};
     cstrike::VisionAdapter vision_{world_};

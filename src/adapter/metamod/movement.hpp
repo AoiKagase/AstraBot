@@ -56,7 +56,7 @@ public:
         host::BotAgentRegistry* agents = nullptr) noexcept;
     void reset() noexcept;
     void resetMap() noexcept;
-    void forget(core::PlayerId player) noexcept;
+    void forget(core::PlayerId player, bool preserveFrameTrace = false) noexcept;
     bool cancel(core::PlayerId, core::MapGeneration, core::TickId commandTick) noexcept;
     std::uint64_t frameDeltaUs() const noexcept { return frameDeltaUs_; }
 

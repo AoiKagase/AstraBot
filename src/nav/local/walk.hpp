@@ -62,6 +62,14 @@ struct WalkDecision {
     core::TickId tick{};
     MovementIntent intent{};
     core::IntentVector progressDirection{}; // Selected corridor direction before lateral steering.
+    query::NavQueryPoint routeForward{};
+    double routeProjection{}, targetProjection{}, routeProgress{};
+    std::uint64_t stuckElapsedUs{};
+    bool retainedTarget{};
+    bool detourFirstAttempted{}, detourSecondAttempted{};
+    std::int8_t detourFirstSide{}, detourSecondSide{};
+    ProbeReason detourFirstReason{ProbeReason::None};
+    ProbeReason detourSecondReason{ProbeReason::None};
     PrimitiveEvent primitiveEvent{PrimitiveEvent::None};
     std::optional<GroundedTarget> support{}, target{};
     ProbeReason probeReason{ProbeReason::None};
@@ -156,6 +164,7 @@ public:
     bool reportJumpDispatch(const JumpDispatch&) noexcept;
     bool reportLadderDispatch(const LadderDispatch&) noexcept;
     std::optional<enrichment::NavTraversalLink> selectedLadderLink() const noexcept;
+    bool resumeSpecial(std::size_t expectedStep, model::NavAreaId supportedArea) noexcept;
     model::NavVector3 ladderTarget(const LadderPlan&,model::NavVector3 origin) const noexcept;
     WalkDecision abort() noexcept;
     WalkDecision recover(const runtime::MovementSnapshot&,const query::NavSpatialIndex&,

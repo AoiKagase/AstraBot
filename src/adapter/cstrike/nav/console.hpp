@@ -7,6 +7,7 @@
 #include "nav/query/spatial_index.hpp"
 #include "nav/query/distribution.hpp"
 #include "nav/local/walk.hpp"
+#include "nav/local/locomotion_controller.hpp"
 #include "nav/local/intent_pump.hpp"
 #include "adapter/metamod/movement.hpp"
 #include "adapter/metamod/runtime_orchestrator.hpp"
@@ -264,6 +265,7 @@ private:
         nav::runtime::MovementSnapshot observation{};
         core::BotCommand command{};
         std::optional<Segment> segment{};
+        std::optional<nav::local::MotionEnvelope> envelope{};
         std::optional<nav::local::DoorContact> contact{};
         std::optional<JumpTicket> jump{};
         std::optional<nav::local::DropPlan> drop{};
@@ -289,11 +291,12 @@ private:
     struct ActorState {
         core::PlayerId actor{};
         nav::runtime::Execution execution_{};
+        nav::runtime::RouteGoalLease goalLease_{};
         nav::local::JumpAttemptRegistry jumpAttempts_{};
-        std::optional<nav::local::Walk> walk_{};
+        std::optional<nav::local::LocomotionController> walk_{};
     std::optional<nav::local::IntentPump> pump_{};
-    std::optional<Segment> segment_{};
-    std::optional<PendingMotion> pendingMotion_{};
+        std::optional<Segment> segment_{};
+        std::optional<PendingMotion> pendingMotion_{};
     std::optional<nav::local::Binding> neutralBinding_{};
     bool neutralDuck_{};
     core::TickId requestTick_{};

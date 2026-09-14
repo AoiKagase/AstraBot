@@ -82,10 +82,24 @@ struct RuntimeInputBuildStatus final {
     bool idleDispatchSuppressed{false};
 };
 
+using RuntimeObjectiveSource = bool (*)(
+    void*, const LifecycleCoordinator&, const RuntimeFrame&, core::PlayerId,
+    const edict_t*, RuntimeObjectiveObservation&, RuntimeEconomyObservation&) noexcept;
+using RuntimeExperienceSource = std::size_t (*)(
+    void*, const LifecycleCoordinator&, const RuntimeFrame&, core::PlayerId,
+    const edict_t*, core::experience::ExperienceEvent*, std::size_t) noexcept;
+
+struct RuntimeInputSources final {
+    RuntimeObjectiveSource objective{};
+    RuntimeExperienceSource experience{};
+    void* context{};
+};
+
 std::size_t buildRuntimeInputs(const LifecycleCoordinator&, const RuntimeFrame&,
     DLL_FUNCTIONS*, RuntimeActorInput*, std::size_t,
     RuntimeInputBuildStatus* = nullptr,
-    std::size_t statusCapacity = 1) noexcept;
+    std::size_t statusCapacity = 1,
+    RuntimeInputSources sources = {}) noexcept;
 bool runtimeActorReady(const LifecycleCoordinator&, const RuntimeFrame&,
     DLL_FUNCTIONS*, core::PlayerId, core::combat::WeaponId, bool attack) noexcept;
 }

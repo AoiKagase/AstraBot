@@ -17,6 +17,10 @@ bool validActor(const runtime::MovementSnapshot& s,Binding b) noexcept {
     return s.agent==b.agent && s.actor==b.actor && s.map==b.map &&
         s.kind==runtime::ActorKind::ManagedBot && s.connected==true && s.alive==true && s.joined==true;
 }
+bool sameQueryContext(const runtime::QueryStamp& a,const runtime::QueryStamp& b) noexcept {
+    return a.agent==b.agent && a.actor==b.actor && a.map==b.map && a.tick==b.tick &&
+        a.routeGeneration==b.routeGeneration;
+}
 struct Queries final : runtime::IWorldQueries {
     runtime::IWorldQueries& port; std::uint32_t used,maximum;
     Queries(runtime::IWorldQueries& p,std::uint32_t reserved,std::uint32_t limit)
@@ -26,7 +30,7 @@ struct Queries final : runtime::IWorldQueries {
         if(used>=maximum) { out.error=runtime::QueryError::BudgetExceeded; return out; }
         auto request=original; request.stamp.ordinal=++used;
         try { out=port.query(request); } catch(...) { out.error=runtime::QueryError::Unavailable; return out; }
-        if(runtime::sameQueryContext(out.stamp,request.stamp)) out.stamp=original.stamp;
+        if(sameQueryContext(out.stamp,request.stamp)) out.stamp=original.stamp;
         else { out.stamp={}; out.error=runtime::QueryError::InvalidResult; }
         return out;
     }

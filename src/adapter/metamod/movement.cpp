@@ -64,7 +64,7 @@ void MovementCoordinator::resetMap() noexcept {
     activeDispatchSource_ = debug::MovementTraceSource::None;
 }
 
-void MovementCoordinator::forget(core::PlayerId player) noexcept {
+void MovementCoordinator::forget(core::PlayerId player, bool preserveFrameTrace) noexcept {
     if (!player.isValid() || player.slot > host::kMaxClientSlots) {
         return;
     }
@@ -74,9 +74,11 @@ void MovementCoordinator::forget(core::PlayerId player) noexcept {
     }
     dispatchedThisFrame_[player.slot-1U] = false;
     callCounts_[player.slot-1U] = 0;
-    frameQueued_[player.slot-1U] = {};
-    frameDispatched_[player.slot-1U] = {};
-    frameRejected_[player.slot-1U] = {};
+    if (!preserveFrameTrace) {
+        frameQueued_[player.slot-1U] = {};
+        frameDispatched_[player.slot-1U] = {};
+        frameRejected_[player.slot-1U] = {};
+    }
 }
 
 bool MovementCoordinator::cancel(core::PlayerId player, core::MapGeneration map, core::TickId tick) noexcept {

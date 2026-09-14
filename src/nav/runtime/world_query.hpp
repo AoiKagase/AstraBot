@@ -15,7 +15,19 @@ struct QueryStamp {
             a.routeGeneration==b.routeGeneration && a.ordinal==b.ordinal;
     }
 };
-enum class QueryKind { GroundedArea, SweptHull, Floor, Clearance, Door, Blocker };
+enum class QueryKind {
+    GroundedArea,
+    SweptHull,
+    Floor,
+    Clearance,
+    Door,
+    Blocker,
+    // Distinct query kinds retain the adapter's point-floor and support-hull
+    // semantics. Appended values preserve the existing wire ordinals.
+    FloorCandidate,
+    HullSupport,
+    Feeler
+};
 enum class QueryError { None, Unavailable, BudgetExceeded, InvalidResult };
 struct QueryRequest {
     QueryStamp stamp{};

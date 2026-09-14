@@ -21,6 +21,11 @@ std::uint64_t add(std::uint64_t a,std::uint64_t b) noexcept {
     const auto maximum=(std::numeric_limits<std::uint64_t>::max)();
     return b>maximum-a ? maximum:a+b;
 }
+bool sameQueryContext(const nav::runtime::QueryStamp& a,
+                      const nav::runtime::QueryStamp& b) noexcept {
+    return a.agent==b.agent && a.actor==b.actor && a.map==b.map &&
+        a.tick==b.tick && a.routeGeneration==b.routeGeneration;
+}
 bool ready(const nav::runtime::MovementSnapshot& s,bool airborne=false) noexcept {
     return s.kind==nav::runtime::ActorKind::ManagedBot && s.connected==true && s.alive==true &&
         s.joined==true && (s.grounded==true || (airborne && s.grounded==false)) && s.position && s.position->isFinite() &&
@@ -665,7 +670,7 @@ nav::local::ProbeResult NavConsole::guardGround(metamod::LifecycleCoordinator& o
                     unsigned(r.stamp.agent.value), unsigned(r.kind), unsigned(r.error));
                 port.line(mismatch);
             }
-            if(nav::runtime::sameQueryContext(r.stamp,q.stamp)) r.stamp=original.stamp;
+                if(sameQueryContext(r.stamp,q.stamp)) r.stamp=original.stamp;
             return r;
         }
     } queries(*this,current_->guardQueries_);
@@ -1184,9 +1189,9 @@ void NavConsole::moveFrame(metamod::LifecycleCoordinator& owner) noexcept {
     const auto composePendingCombat = [&]() noexcept {
         if(inRequest_ || !movement_ || current_->pendingMotion_) return;
         const auto s=snapshot(owner);
-        if(!ready(s,true) || !s.elapsedUs ||
-           !owner.runtimeCombatDecisionPending(
-               s.actor,s.agent,s.map,owner.round(),s.tick)) return;
+        const auto* runtimeDecision=owner.runtimeOrchestrator().decision(s.actor);
+        if(!ready(s,true) || !s.elapsedUs || !runtimeDecision ||
+           !runtimeDecision->executable || !runtimeDecision->combat.hasAttackInput()) return;
 
         // A frame with no NAV output still goes through the same command
         // composer. Route generation zero marks this as a frame command: it
@@ -1242,7 +1247,7 @@ void NavConsole::moveFrame(metamod::LifecycleCoordinator& owner) noexcept {
     // next frame before creating an aged action command.
     if (!s.elapsedUs || !movement_->frameDeltaUs()) return;
     if(!s.tick.isAfter(current_->requestTick_)) return; // Route request owns ordinal 1 on its tick.
-    const auto schedule=current_->pump_->beginFrame(s,current_->walk_->native());
+        const auto schedule=current_->pump_->beginFrame(s);
     if(!schedule.accepted) { stopMotion(); return; }
     current_->intentWallAgeUs_=add(current_->intentWallAgeUs_,movement_->frameDeltaUs());
     if(schedule.decisionDue) {

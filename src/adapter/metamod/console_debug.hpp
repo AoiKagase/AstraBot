@@ -40,6 +40,11 @@ public:
     void movementTrace(const debug::MovementTrace& trace) noexcept;
     void runtimeCorrelationTrace(core::PlayerId player) noexcept;
 
+    // Navigation diagnostics are already formatted by the caller. Keep the
+    // adapter-only sink behind the same log-level and Metamod logging checks
+    // used by the structured trace endpoints.
+    void navLine(const char* text) noexcept { line(text); }
+
     static ConsoleDebug& instance() noexcept;
 
 private:

@@ -136,7 +136,8 @@ bool runtimeActorReady(const LifecycleCoordinator& owner, const RuntimeFrame& fr
 
 std::size_t buildRuntimeInputs(const LifecycleCoordinator& owner, const RuntimeFrame& frame,
     DLL_FUNCTIONS* dll, RuntimeActorInput* output, std::size_t capacity,
-    RuntimeInputBuildStatus* status, std::size_t statusCapacity) noexcept {
+    RuntimeInputBuildStatus* status, std::size_t statusCapacity,
+    RuntimeInputSources sources) noexcept {
     const auto statusFor = [&](core::PlayerId player) noexcept
         -> RuntimeInputBuildStatus* {
         if (!status || !player.isValid() || player.slot == 0 ||
@@ -264,6 +265,16 @@ std::size_t buildRuntimeInputs(const LifecycleCoordinator& owner, const RuntimeF
         const float health = (std::min)(100.0F, v.health);
         RuntimeObjectiveObservation objective{};
         RuntimeEconomyObservation economy{};
+        if (sources.objective != nullptr) {
+            (void)sources.objective(sources.context, owner, frame, player, entity,
+                                    objective, economy);
+        }
+        if (sources.experience != nullptr) {
+            input.experienceEventCount = (std::min)(
+                sources.experience(sources.context, owner, frame, player, entity,
+                                   input.experienceEvents.data(), input.experienceEvents.size()),
+                input.experienceEvents.size());
+        }
 
         input.team.map = frame.map;
         input.team.round = frame.round;

@@ -1,11 +1,73 @@
 // SPDX-License-Identifier: MPL-2.0
 #pragma once
 #include "nav/query/route_types.hpp"
+#include "core/perception_identity.hpp"
 #include <array>
 #include <algorithm>
 #include <limits>
 
 namespace astrabot::nav::runtime {
+struct RouteGoalIdentity final {
+    core::BotAgentId agent{};
+    core::PlayerId actor{};
+    core::MapGeneration map{};
+    core::perception::RoundGeneration round{};
+    std::uint64_t routeGeneration{};
+
+    bool valid() const noexcept {
+        return agent.isValid() && actor.isValid() && map.isValid() && round.isValid() &&
+            routeGeneration != 0;
+    }
+
+    friend bool operator==(const RouteGoalIdentity& left,
+                           const RouteGoalIdentity& right) noexcept {
+        return left.agent == right.agent && left.actor == right.actor &&
+            left.map == right.map && left.round == right.round &&
+            left.routeGeneration == right.routeGeneration;
+    }
+};
+
+class RouteGoalLease final {
+public:
+    bool acquire(RouteGoalIdentity identity, model::NavAreaId goal,
+                 std::uint64_t issuedAtUs = 0) noexcept {
+        if (!identity.valid() || !goal.isValid()) {
+            return false;
+        }
+
+        identity_ = identity;
+        goal_ = goal;
+        issuedAtUs_ = issuedAtUs;
+        active_ = true;
+        return true;
+    }
+
+    bool holds(const RouteGoalIdentity& identity) const noexcept {
+        return active_ && identity_ == identity;
+    }
+
+    model::NavAreaId goal() const noexcept {
+        return active_ ? goal_ : model::NavAreaId{};
+    }
+
+    std::uint64_t issuedAtUs() const noexcept {
+        return issuedAtUs_;
+    }
+
+    void release() noexcept {
+        active_ = false;
+        identity_ = {};
+        goal_ = {};
+        issuedAtUs_ = 0;
+    }
+
+private:
+    RouteGoalIdentity identity_{};
+    model::NavAreaId goal_{};
+    std::uint64_t issuedAtUs_{};
+    bool active_{};
+};
+
 // Search completion is not evidence that a motion primitive can execute it.
 enum class ExecutionState { Idle, Planning, Running, Arrived, Failed, Recovering };
 enum class ExecutionFailure { None, Search, Corridor, Motion, Observation, Transport, ExclusionCapacity };
