@@ -19,18 +19,6 @@ std::optional<enrichment::NavTraversalLink> Walk::selectedLadderLink() const noe
     const auto& edge=corridor_->transitions()[cursor_.index()].edge;
     return edge.traversal==model::NavTraversalKind::Ladder ? edge.external:std::nullopt;
 }
-bool Walk::resumeSpecial(std::size_t expectedStep, model::NavAreaId supportedArea) noexcept {
-    if(state_!=WalkState::Running || !corridor_ || cursor_.exhausted() ||
-       expectedStep<cursor_.index() || expectedStep>=corridor_->transitions().size()) return false;
-    while(cursor_.index()<expectedStep) {
-        const auto index=cursor_.index();
-        if(!cursor_.advance(index,corridor_->transitions()[index].edge.target,true)) return false;
-    }
-    const auto& transition=corridor_->transitions()[cursor_.index()];
-    const bool special=transition.effectiveTraversal!=model::NavTraversalKind::Walk &&
-        transition.effectiveTraversal!=model::NavTraversalKind::Crouch;
-    return special && transition.edge.source==supportedArea;
-}
 model::NavVector3 Walk::ladderTarget(const LadderPlan& plan,model::NavVector3 origin) const noexcept {
     return ladder_ ? ladder_->target(origin):plan.start;
 }

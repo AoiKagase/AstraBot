@@ -867,10 +867,7 @@ void LifecycleCoordinator::startFrame() noexcept {
     }
     if(registry_.isMapActive() && registry_.mapGeneration()==map && registry_.currentTick()==tick) {
         (void)advanceVisualEffects();
-        const float visionTime = engineGlobals_ && std::isfinite(engineGlobals_->time)
-            ? engineGlobals_->time
-            : static_cast<float>(static_cast<double>(nowMicros) / 1'000'000.0);
-        vision_.frame(*this,engineFunctions_,visionTime);
+        vision_.frame(*this,engineFunctions_,nowMicros);
         if(registry_.isMapActive() && registry_.mapGeneration()==map && registry_.currentTick()==tick) {
             sound_.frame(*this,engineGlobals_ ? engineGlobals_->time : (std::numeric_limits<float>::quiet_NaN)());
             if(registry_.isMapActive() && registry_.mapGeneration()==map && registry_.currentTick()==tick) {

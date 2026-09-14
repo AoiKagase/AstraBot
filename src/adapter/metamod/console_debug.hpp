@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MPL-2.0
+﻿// SPDX-License-Identifier: MPL-2.0
 // Copyright (c) 2026 AstraBot contributors.
 
 #pragma once
@@ -44,12 +44,11 @@ public:
     // Adapter-side NAV diagnostics use the same file/console sink as the
     // lifecycle and movement traces.  Keeping this entry point here avoids
     // a second logging path that can disappear from file evidence.
-    void navLine(const char* text) noexcept;
 
     // Navigation diagnostics are already formatted by the caller. Keep the
     // adapter-only sink behind the same log-level and Metamod logging checks
     // used by the structured trace endpoints.
-    void navLine(const char* text) noexcept { line(text); }
+    void navLine(const char* text) noexcept;
 
     static ConsoleDebug& instance() noexcept;
 

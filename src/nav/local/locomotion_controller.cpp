@@ -17,10 +17,6 @@ bool validActor(const runtime::MovementSnapshot& s,Binding b) noexcept {
     return s.agent==b.agent && s.actor==b.actor && s.map==b.map &&
         s.kind==runtime::ActorKind::ManagedBot && s.connected==true && s.alive==true && s.joined==true;
 }
-bool sameQueryContext(const runtime::QueryStamp& a,const runtime::QueryStamp& b) noexcept {
-    return a.agent==b.agent && a.actor==b.actor && a.map==b.map && a.tick==b.tick &&
-        a.routeGeneration==b.routeGeneration;
-}
 struct Queries final : runtime::IWorldQueries {
     runtime::IWorldQueries& port; std::uint32_t used,maximum;
     Queries(runtime::IWorldQueries& p,std::uint32_t reserved,std::uint32_t limit)

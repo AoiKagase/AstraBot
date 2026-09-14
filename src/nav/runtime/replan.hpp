@@ -5,42 +5,6 @@
 #include "nav/query/route_types.hpp"
 
 namespace astrabot::nav::runtime {
-struct RouteGoalIdentity final {
-    core::BotAgentId agent{};
-    core::PlayerId actor{};
-    core::MapGeneration map{};
-    core::perception::RoundGeneration round{};
-    std::uint64_t routeGeneration{};
-    bool valid() const noexcept {
-        return agent.isValid() && actor.isValid() && map.isValid() &&
-            round.value && routeGeneration;
-    }
-    friend bool operator==(const RouteGoalIdentity& a,
-                           const RouteGoalIdentity& b) noexcept {
-        return a.agent==b.agent && a.actor==b.actor && a.map==b.map &&
-            a.round==b.round && a.routeGeneration==b.routeGeneration;
-    }
-};
-
-// A running route owns its accepted goal until that exact route identity ends.
-// Periodic planner output may refresh intent, but cannot replace this lease.
-class RouteGoalLease final {
-public:
-    bool acquire(RouteGoalIdentity identity,model::NavAreaId goal) noexcept {
-        if(!identity.valid() || !goal.isValid()) return false;
-        identity_=identity; goal_=goal; held_=true; return true;
-    }
-    bool holds(const RouteGoalIdentity& identity) const noexcept {
-        return held_ && identity.valid() && identity_==identity;
-    }
-    model::NavAreaId goal() const noexcept { return held_ ? goal_:model::NavAreaId{}; }
-    void release() noexcept { *this={}; }
-private:
-    RouteGoalIdentity identity_{};
-    model::NavAreaId goal_{};
-    bool held_{};
-};
-
 enum class ReplanState { Idle, Pending, Consumed, Exhausted, Expired, Invalid };
 // One goal owns one automatic retry. Route generation changes never replenish
 // it. The host resets this value only on explicit goal/lifecycle invalidation.

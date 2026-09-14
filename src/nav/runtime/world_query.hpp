@@ -15,6 +15,11 @@ struct QueryStamp {
             a.routeGeneration==b.routeGeneration && a.ordinal==b.ordinal;
     }
 };
+
+inline bool sameQueryContext(const QueryStamp& a, const QueryStamp& b) noexcept {
+    return a.agent == b.agent && a.actor == b.actor && a.map == b.map &&
+        a.tick == b.tick && a.routeGeneration == b.routeGeneration;
+}
 enum class QueryKind {
     GroundedArea,
     SweptHull,

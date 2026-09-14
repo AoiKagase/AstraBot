@@ -21,11 +21,6 @@ std::uint64_t add(std::uint64_t a,std::uint64_t b) noexcept {
     const auto maximum=(std::numeric_limits<std::uint64_t>::max)();
     return b>maximum-a ? maximum:a+b;
 }
-bool sameQueryContext(const nav::runtime::QueryStamp& a,
-                      const nav::runtime::QueryStamp& b) noexcept {
-    return a.agent==b.agent && a.actor==b.actor && a.map==b.map &&
-        a.tick==b.tick && a.routeGeneration==b.routeGeneration;
-}
 bool ready(const nav::runtime::MovementSnapshot& s,bool airborne=false) noexcept {
     return s.kind==nav::runtime::ActorKind::ManagedBot && s.connected==true && s.alive==true &&
         s.joined==true && (s.grounded==true || (airborne && s.grounded==false)) && s.position && s.position->isFinite() &&

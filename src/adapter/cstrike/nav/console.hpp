@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MPL-2.0
+﻿// SPDX-License-Identifier: MPL-2.0
 #pragma once
 #include "adapter/metamod/plugin_entry.hpp"
 #include "nav/runtime/route_session.hpp"
@@ -268,7 +268,6 @@ private:
         nav::runtime::MovementSnapshot observation{};
         core::BotCommand command{};
         std::optional<Segment> segment{};
-        std::optional<nav::local::MotionEnvelope> envelope{};
         std::optional<nav::local::DoorContact> contact{};
         std::optional<JumpTicket> jump{};
         std::optional<nav::local::DropPlan> drop{};
@@ -307,7 +306,6 @@ private:
     std::uint32_t guardQueries_{};
     std::uint64_t intentWallAgeUs_{};
     nav::runtime::ReplanAttempt replan_{};
-    nav::runtime::RouteGoalLease goalLease_{};
     nav::local::Recovery recovery_{};
     bool recoveryReplan_{};
     std::uint64_t navigationTimeUs_{};
