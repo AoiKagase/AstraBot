@@ -1,0 +1,11 @@
+﻿{
+    "sha256":  "4b40a04a6dfafa097f4b070f424414b3e7244d322d359c14938d6cc0668d41aa",
+    "pid":  16180,
+    "debuggerPid":  38192,
+    "bots":  2,
+    "restartCommands":  10,
+    "lastRound":  12,
+    "observedUtc":  "2026-09-12T10:22:36.4440761Z",
+    "result":  "REPRODUCTION_DID_NOT_RECUR",
+    "fullAcceptance":  false
+}

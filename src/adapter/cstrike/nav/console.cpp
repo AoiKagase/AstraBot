@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 #include <cstdio>
+#include <new>
 #include <cmath>
 #include <array>
 #include <fstream>
@@ -124,7 +125,11 @@ bool NavConsole::selectActor(core::PlayerId player) noexcept {
     current_=actor.get();
     if(current_->actor!=player) {
         invalidateCurrent(nav::runtime::SessionReason::Disconnected);
-        *current_=ActorState{}; current_->actor=player;
+        // Preserve the address used by ActorScope without materializing the
+        // large per-actor history/controller state on the engine stack.
+        current_->~ActorState();
+        ::new (static_cast<void*>(current_)) ActorState{};
+        current_->actor=player;
     }
     return true;
 }
@@ -186,13 +191,29 @@ void NavConsole::applyRuntimeNavigation(
         status.reason = reason;
         publish();
     };
+    const auto leaseIdentity = [](const ActorState& actor,
+                                  const metamod::RuntimeDecision& candidate) noexcept {
+        return nav::runtime::RouteGoalIdentity{
+            candidate.agent,candidate.player,candidate.team.shared.map,
+            candidate.team.shared.round,
+            actor.session_ ? actor.session_->trace().routeGeneration:0};
+    };
+    const auto activeLeaseIdentity = [&](const ActorState& actor) noexcept {
+        const auto* trace=actor.session_ ? &actor.session_->trace():nullptr;
+        return nav::runtime::RouteGoalIdentity{
+            trace ? trace->agent:core::BotAgentId{},
+            trace ? trace->actor:core::PlayerId{},
+            owner.registry().mapGeneration(),owner.round(),
+            trace ? trace->routeGeneration:0};
+    };
     if (!decision.executable || !decision.hasNavigationGoal) {
         if (!decision.executable) {
             reject(RuntimeNavigationApplyReason::NoExecutableGoal);
         } else {
             const auto* actor = findActor(decision.player);
             if (actor && !actor->explicitRoute_ && actor->session_ &&
-                actor->session_->executable()) {
+                actor->session_->executable() &&
+                !actor->goalLease_.holds(activeLeaseIdentity(*actor))) {
                 auto* mutableActor = const_cast<ActorState*>(actor);
                 ActorScope scope(current_, mutableActor);
                 stopMotion();
@@ -244,34 +265,90 @@ void NavConsole::applyRuntimeNavigation(
         reject(RuntimeNavigationApplyReason::RouteRejected);
         return;
     }
-    const bool sameRunningRoute =
-        current_->execution_.state==nav::runtime::ExecutionState::Running &&
-        current_->session_ && current_->session_->executable() &&
+    // A route that already owns the same goal must not be rebuilt on every
+    // Tactical cadence.  Reissuing an identical request cancels the current
+    // RouteSession and is the direct source of the two-tick GoalReplaced
+    // churn seen in live traces.
+    if (current_->session_ && current_->session_->executable() &&
         current_->session_->trace().actor == s.actor &&
         current_->session_->trace().agent == s.agent &&
         current_->session_->trace().map == s.map &&
-        current_->session_->trace().goal == decision.navigationGoal;
-    const bool preserveAutonomousRoam = roamDecision &&
-        !current_->explicitRoute_ &&
-        current_->execution_.state==nav::runtime::ExecutionState::Running &&
-        current_->session_ && current_->session_->executable() &&
+        current_->session_->trace().goal == decision.navigationGoal) {
+        status.result = RuntimeNavigationApplyResult::Unchanged;
+        status.reason = RuntimeNavigationApplyReason::None;
+        status.goal = decision.navigationGoal;
+        publish();
+        return;
+    }
+    const bool routeIdentity = current_->session_ && current_->session_->executable() &&
         current_->session_->trace().actor == s.actor &&
         current_->session_->trace().agent == s.agent &&
         current_->session_->trace().map == s.map;
+    // A failed local decision can leave the session executable while the
+    // bounded recovery timer is active.  Periodic tactical output must not
+    // replace that route (and increment its generation) while runReplan() is
+    // waiting to consume its one-shot fact.  Once both timers expire, the
+    // normal request path is allowed to start a fresh route.
+    const bool recoveryInFlight = current_->execution_.state==nav::runtime::ExecutionState::Recovering;
+    const bool failedBackoff = current_->execution_.state==nav::runtime::ExecutionState::Failed &&
+        (current_->execution_.searchWaiting(current_->navigationTimeUs_) ||
+         current_->execution_.goalCooling(decision.navigationGoal,current_->navigationTimeUs_));
+    const bool routeInFlight = current_->execution_.state==nav::runtime::ExecutionState::Planning ||
+        current_->execution_.state==nav::runtime::ExecutionState::Running ||
+        recoveryInFlight || failedBackoff;
+    const bool sameRunningRoute = routeIdentity && routeInFlight &&
+        current_->session_->trace().goal == decision.navigationGoal;
+    const bool preserveLeasedGoal = current_->session_ &&
+        current_->session_->executable() &&
+        current_->goalLease_.holds(activeLeaseIdentity(*current_));
+    // A recovery route keeps ownership of the accepted goal even after the
+    // failed Walk instance has been retired.  Tactical cadence may produce a
+    // different roam candidate during this short window, but accepting it
+    // would turn one physical failure into a GoalReplaced oscillation before
+    // runReplan() gets its next opportunity.
+    const bool preserveRecoveryGoal = !current_->explicitRoute_ &&
+        current_->goalLease_.goal().isValid() &&
+        current_->goalLease_.holds(activeLeaseIdentity(*current_)) &&
+        (current_->execution_.state == nav::runtime::ExecutionState::Recovering ||
+         current_->replan_.state() == nav::runtime::ReplanState::Pending ||
+         (current_->execution_.state == nav::runtime::ExecutionState::Failed &&
+          (current_->execution_.searchWaiting(current_->navigationTimeUs_) ||
+           current_->execution_.goalCooling(current_->goalLease_.goal(),
+                                            current_->navigationTimeUs_))));
+    const bool preserveAutonomousRoam = roamDecision && !current_->explicitRoute_ &&
+        routeIdentity && routeInFlight;
     // A periodic runtime decision must not revalidate the current route as a
     // new search.  Execution cooldowns and search budgets describe failed or
     // pending replans; applying them to an already-running route turns a
     // healthy route into GoalReplaced/Unchanged churn.
-    if (sameRunningRoute || preserveAutonomousRoam) {
+    if (preserveRecoveryGoal || sameRunningRoute || preserveAutonomousRoam || preserveLeasedGoal) {
         status.result = RuntimeNavigationApplyResult::Unchanged;
         status.reason = RuntimeNavigationApplyReason::None;
-        if (preserveAutonomousRoam)
+        if (preserveRecoveryGoal)
+            status.goal = current_->goalLease_.goal();
+        else if (preserveAutonomousRoam || preserveLeasedGoal)
             status.goal = current_->session_->trace().goal;
         publish();
         return;
     }
-    if(current_->execution_.cooling(decision.navigationGoal,current_->navigationTimeUs_) ||
-       !current_->execution_.canSearch(current_->navigationTimeUs_)) {
+    current_->execution_.setSearchTime(current_->navigationTimeUs_);
+    // A single RecoveryReplan is intentionally bounded, but exhaustion must
+    // not leave an actor permanently in Failed/neutral-heartbeat state. Once
+    // its retry window expires, reopen the planner while preserving the
+    // directed-edge and goal cooldown tables.
+    if (current_->execution_.state == nav::runtime::ExecutionState::Failed &&
+        current_->replan_.state() == nav::runtime::ReplanState::Exhausted &&
+        !current_->execution_.searchWaiting(current_->navigationTimeUs_)) {
+        current_->execution_.state = nav::runtime::ExecutionState::Idle;
+        current_->execution_.failure = nav::runtime::ExecutionFailure::None;
+        current_->execution_.failedEdge.reset();
+        current_->execution_.retryAtUs = 0;
+        current_->execution_.nextSearchAtUs = 0;
+        current_->replan_ = {};
+    }
+    if(current_->execution_.goalCooling(decision.navigationGoal,current_->navigationTimeUs_) ||
+       current_->execution_.saturated() ||
+       current_->execution_.searchWaiting(current_->navigationTimeUs_)) {
         reject(RuntimeNavigationApplyReason::RouteRejected); return;
     }
     const auto goalVertex=navigation_.graph->find(decision.navigationGoal);
@@ -309,6 +386,9 @@ void NavConsole::applyRuntimeNavigation(
     requestRoute(s, decision.navigationGoal, owner, options);
     if (current_->session_ && current_->session_->executable() &&
         current_->execution_.state==nav::runtime::ExecutionState::Running) {
+        (void)current_->goalLease_.acquire({s.agent,s.actor,s.map,owner.round(),
+            current_->session_->trace().routeGeneration},
+            current_->session_->trace().goal);
         status.result = RuntimeNavigationApplyResult::Applied;
         status.reason = RuntimeNavigationApplyReason::None;
     } else {
@@ -331,9 +411,9 @@ void NavConsole::configure(enginefuncs_t* engine,mutil_funcs_t* utility,globalva
 }
 void NavConsole::sink(void* ctx,const char* text) noexcept { static_cast<NavConsole*>(ctx)->line(text); }
 void NavConsole::line(const char* text) noexcept {
-    if(!metamod::ConsoleDebug::instance().navEnabled() ||
-       !utility_ || !utility_->pfnLogConsole || !text) return;
-    utility_->pfnLogConsole(PLID,"%s",text);
+    auto& debug = metamod::ConsoleDebug::instance();
+    if(!debug.navEnabled() || !text) return;
+    debug.navLine(text);
 }
 void NavConsole::printUpdate(const nav::runtime::SessionUpdate& update) noexcept {
     for(std::size_t i=0;i<update.count;++i) debug::printNavTrace(update.events[i],&sink,this);
@@ -342,7 +422,7 @@ void NavConsole::printUpdate(const nav::runtime::SessionUpdate& update) noexcept
     }
 }
 void NavConsole::invalidateCurrent(nav::runtime::SessionReason reason) noexcept {
-    current_->execution_={};
+    current_->execution_.reset();
     current_->replan_={};
     current_->recovery_={};
     current_->recoveryReplan_=false;
@@ -393,8 +473,13 @@ void NavConsole::reset() noexcept {
     if(inRequest_) { invalidate(nav::runtime::SessionReason::Cancelled); deferredReset_=true; return; }
     invalidate(nav::runtime::SessionReason::Cancelled); engine_=nullptr; utility_=nullptr; globals_=nullptr;
     movement_=nullptr; world_=nullptr;
-    for(auto& actor:actors_) if(actor) *actor=ActorState{};
-    idle_=ActorState{}; current_=&idle_;
+    for(auto& actor:actors_) if(actor) {
+        actor->~ActorState();
+        ::new (static_cast<void*>(actor.get())) ActorState{};
+    }
+    idle_.~ActorState();
+    ::new (static_cast<void*>(&idle_)) ActorState{};
+    current_=&idle_;
     runtimeNavigationStatus_={};
     runtimeNavigationStatuses_={};
 }
@@ -549,32 +634,34 @@ std::optional<RuntimeNavigationState> NavConsole::runtimeState(
             result.currentAreaSource=CurrentAreaSource::Exact;
             if (result.movement.hull)
                 result.currentFloorHeight = static_cast<float>(double(result.movement.position->z) + result.movement.hull->minimum.z);
-        } else if(actor && result.movement.hull && result.movement.grounded==true) {
-            const auto nearby=index_->nearestGeometry(sample,{34.0,120.0});
+        } else if(actor && result.movement.hull && result.movement.grounded==true &&
+                  result.movement.actor==actor->actor && result.movement.agent.isValid() &&
+                  result.movement.map==navigation_.map) {
+            const double feet=double(result.movement.position->z)+result.movement.hull->minimum.z;
+            const nav::model::NavVector3 support{
+                result.movement.position->x,result.movement.position->y,
+                static_cast<float>(feet)};
+            // nearestGeometry applies maxRadius in 3D. Querying from the eye/body
+            // origin rejects an otherwise valid floor before its support height
+            // can be checked, so recover only around the grounded hull's feet.
+            const auto nearby=index_->nearestGeometry(support,{34.0,18.0});
             if(nearby && *nearby.value) {
                 const auto& candidate=**nearby.value;
+                // A nearest result is an advisory physical-support observation.
+                // It must remain available while an old route is being retired;
+                // tying it to the previous route generation made the next input
+                // build report MissingCurrentArea, invalidate the route, and
+                // only then expose the same nearest area in diagnostics.
                 const double dx=double(candidate.projectedPoint.x)-result.movement.position->x;
                 const double dy=double(candidate.projectedPoint.y)-result.movement.position->y;
-                const double feet=double(result.movement.position->z)+result.movement.hull->minimum.z;
-                bool related=!actor->lastCurrentArea_ || *actor->lastCurrentArea_==candidate.areaId;
-                const auto connected=[&](nav::model::NavAreaId from,nav::model::NavAreaId to) noexcept {
-                    if(!navigation_.graph) return false;
-                    const auto vertex=navigation_.graph->find(from);
-                    if(!vertex) return false;
-                    for(auto edge=navigation_.graph->edgeBegin(*vertex);edge<navigation_.graph->edgeEnd(*vertex);++edge)
-                        if(navigation_.graph->edge(edge).target==to) return true;
-                    return false;
-                };
-                if(actor->lastCurrentArea_) related=related ||
-                    connected(*actor->lastCurrentArea_,candidate.areaId) ||
-                    connected(candidate.areaId,*actor->lastCurrentArea_);
-                if(!related && actor->session_ && actor->session_->trace().route)
-                    for(const auto& step:actor->session_->trace().route->steps)
-                        related=related || step.edge.source==candidate.areaId || step.edge.target==candidate.areaId;
-                if(std::hypot(dx,dy)<=34.0 && std::abs(double(candidate.projectedPoint.z)-feet)<=18.0 && related) {
+                const bool finiteCandidate=std::isfinite(candidate.projectedPoint.x) &&
+                    std::isfinite(candidate.projectedPoint.y) &&
+                    std::isfinite(candidate.projectedPoint.z);
+                if(finiteCandidate && std::hypot(dx,dy)<=34.0 &&
+                   std::abs(double(candidate.projectedPoint.z)-feet)<=18.0) {
                     result.currentArea=candidate.areaId;
                     result.currentAreaSource=CurrentAreaSource::Nearest;
-        result.currentFloorHeight = static_cast<float>(candidate.projectedPoint.z);
+                    result.currentFloorHeight = static_cast<float>(candidate.projectedPoint.z);
                 }
             }
         }
@@ -601,6 +688,8 @@ std::optional<RuntimeNavigationState> NavConsole::runtimeState(
         actor->lastCurrentAreaActor_ == result.movement.actor &&
         actor->lastCurrentAreaAgent_ == result.movement.agent &&
         actor->lastCurrentAreaMap_ == result.movement.map &&
+        actor->lastCurrentAreaRouteGeneration_ ==
+            (actor->session_ ? actor->session_->trace().routeGeneration:0) &&
         actor->lastCurrentAreaTick_.isValid() &&
         !result.movement.tick.isBefore(actor->lastCurrentAreaTick_) &&
         actor->navigationTimeUs_>=actor->lastCurrentAreaUs_ &&
@@ -680,7 +769,10 @@ std::optional<RuntimeNavigationState> NavConsole::runtimeState(
             ++result.roamExcludedOccupied;
             recordExclusion(id,RoamExclusionReason::Occupied,occupiedOwner); return;
         }
-        if(!preserveCurrentGoal && result.roamSearchBackoff) return;
+        // Search backoff only delays starting a new route.  It must not erase
+        // the candidate set: the tactical layer still needs valid sibling
+        // exits for the next search window, and diagnostics must distinguish
+        // "waiting to search" from "no reachable candidates".
         if(!preserveCurrentGoal && actor &&
             actor->execution_.cooling(id,actor->navigationTimeUs_)) {
             ++result.roamExcludedGoalCooling;
@@ -692,12 +784,12 @@ std::optional<RuntimeNavigationState> NavConsole::runtimeState(
             recordExclusion(id,RoamExclusionReason::GoalCooling,{},
                 (std::max)(retry,search)); return;
         }
-        if (!preserveCurrentGoal && actor && isListed(actor->roamRejectedGoals_,
+        if (!preserveCurrentGoal && !result.roamSearchBackoff && actor && isListed(actor->roamRejectedGoals_,
             actor->roamRejectedGoalCount_, id)) {
             ++result.roamExcludedRejected;
             recordExclusion(id,RoamExclusionReason::Rejected); return;
         }
-        if (!preserveCurrentGoal && !allowRecent && actor &&
+        if (!preserveCurrentGoal && !result.roamSearchBackoff && !allowRecent && actor &&
             isListed(actor->roamRecentGoals_,
             actor->roamRecentGoalCount_, id)) {
             ++result.roamExcludedRecent;
@@ -831,6 +923,10 @@ void NavConsole::requestRoute(const nav::runtime::MovementSnapshot& s,nav::model
     queryingOwner_=&owner;
     auto navigation=navigation_;
     if(!navigation.graph) navigation.map=s.map;
+    // runtimeState() deliberately refuses re-entrant reads while a route
+    // request is active. Capture the same-tick physical/NAV seed first so
+    // RouteSession can validate it without falling back to a second query.
+    const auto currentAreaSeed=runtimeState(owner,s.actor);
     inRequest_=true;
     const auto previousGeneration=current_->session_ ?
         current_->session_->trace().routeGeneration:0;
@@ -851,8 +947,10 @@ void NavConsole::requestRoute(const nav::runtime::MovementSnapshot& s,nav::model
     const nav::runtime::ExecutionPolicy executionPolicy{&current_->execution_,options.policy};
     auto filteredOptions=options;
     filteredOptions.policy=executionPolicy.policy();
-    if (const auto state=runtimeState(owner,s.actor);
-        state && state->currentArea && state->currentFloorHeight) {
+    if (const auto& state=currentAreaSeed;
+        state && state->currentArea && state->currentFloorHeight &&
+        (state->currentAreaSource==CurrentAreaSource::Exact ||
+         state->currentAreaSource==CurrentAreaSource::Nearest)) {
         nav::runtime::CurrentAreaObservation observation{};
         observation.agent=s.agent;
         observation.actor=s.actor;
@@ -862,11 +960,9 @@ void NavConsole::requestRoute(const nav::runtime::MovementSnapshot& s,nav::model
         observation.floorHeight=*state->currentFloorHeight;
         observation.ageUs=state->currentAreaAgeUs;
         observation.grounded=s.grounded==true;
-        observation.source = state->currentAreaSource==CurrentAreaSource::Held
-            ? nav::runtime::CurrentAreaObservationSource::LastKnown
-            : state->currentAreaSource==CurrentAreaSource::Nearest
-                ? nav::runtime::CurrentAreaObservationSource::Nearest
-                : nav::runtime::CurrentAreaObservationSource::Exact;
+        observation.source = state->currentAreaSource==CurrentAreaSource::Nearest
+            ? nav::runtime::CurrentAreaObservationSource::Nearest
+            : nav::runtime::CurrentAreaObservationSource::Exact;
         filteredOptions.currentArea=observation;
         const char* sourceName=observation.source==nav::runtime::CurrentAreaObservationSource::LastKnown
             ? "LastKnown"
@@ -911,8 +1007,25 @@ void NavConsole::requestRoute(const nav::runtime::MovementSnapshot& s,nav::model
         (void)applyDeferredInvalidation(); return;
     }
     printUpdate(update);
-    if(current_->session_ && current_->session_->executable()) startMotion(s);
-    else current_->execution_.fail(goal,nav::runtime::ExecutionFailure::Search,current_->navigationTimeUs_);
+    if(current_->session_ && current_->session_->executable()) {
+        startMotion(s);
+    } else {
+        // Keep RouteRejected as the external status contract, but emit the
+        // bounded session/NAV cause that led to the non-executable result.
+        // This is especially useful when the session has no route event to
+        // print (for example, a bounded query or allocation failure).
+        const auto* trace=current_->session_ ? &current_->session_->trace():nullptr;
+        const auto sessionReason=trace ? trace->reason:nav::runtime::SessionReason::MissingGraph;
+        const auto navError=trace ? trace->navError:nav::diagnostics::NavError{};
+        char text[256]{};
+        std::snprintf(text,sizeof(text),
+            "nav route_rejected actor=%u:%u goal=%u session_reason=%u nav_error_kind=%u nav_error_field=%u nav_error_offset=%llu",
+            unsigned(s.actor.slot),unsigned(s.actor.generation.value),unsigned(goal.value),
+            unsigned(sessionReason),unsigned(navError.kind),unsigned(navError.field),
+            static_cast<unsigned long long>(navError.offset));
+        line(text);
+        current_->execution_.fail(goal,nav::runtime::ExecutionFailure::Search,current_->navigationTimeUs_);
+    }
 }
 void NavConsole::printReplan() noexcept {
     char text[512]{};
@@ -999,15 +1112,14 @@ nav::enrichment::NavTraversalLinkSet NavConsole::discoverShortcuts(
         const double rise=-fall;
         nav::model::NavTraversalKind traversal=nav::model::NavTraversalKind::Walk;
         nav::enrichment::NavLinkDirection direction=nav::enrichment::NavLinkDirection::Forward;
-        if (rise>18) {
-            if (rise>44 || candidates[n].score>160) continue;
-            traversal=nav::model::NavTraversalKind::Walk;
-            direction=nav::enrichment::NavLinkDirection::Up;
-        } else if (fall>18) {
-            if (fall>192) continue;
-            traversal=nav::model::NavTraversalKind::Walk;
-            direction=nav::enrichment::NavLinkDirection::Down;
-        }
+        // A height delta alone is not evidence for a jump or a drop.  The
+        // candidate sweep below is intentionally a straight, clear passage;
+        // converting that clear diagonal into an Up/Down external link made
+        // continuous slopes repeatedly request Jump.  Native NAV transitions
+        // and the ground probe own explicit drops, while a locally blocked
+        // segment is handled by LocomotionController's physical obstacle path.
+        // Keep this opportunistic shortcut as ordinary forward walking.
+        if (rise>44 || fall>192) continue;
         if(shortcutQueriesThisTick_>=8) break;
         nav::runtime::QueryRequest clear{{s.agent,s.actor,s.map,s.tick,generation,
             ++shortcutQueriesThisTick_},
@@ -1038,6 +1150,11 @@ bool NavConsole::runReplan(metamod::LifecycleCoordinator& owner) noexcept {
             current_->motionTrace_.decision.terminalEvent=false; // The retiring Walk already emitted its terminal event.
             recordMotion(MotionEvent::Decision);
         }
+        // The bounded recovery fact was consumed but no executable route
+        // could be produced. Release the old goal lease so the next tactical
+        // decision may choose a sibling exit instead of leaving the actor in
+        // a permanent neutral-heartbeat state.
+        current_->goalLease_.release();
         failExecution(nav::runtime::ExecutionFailure::Motion);
         return true;
     }
@@ -1047,6 +1164,14 @@ bool NavConsole::runReplan(metamod::LifecycleCoordinator& owner) noexcept {
     nav::runtime::RouteOptions options; options.limits={100000,256*mib};
     options.groundNavTolerance=18; options.policy=policy->policy();
     requestRoute(s,goal,owner,options);
+    if (current_->session_ && current_->session_->executable() &&
+        current_->execution_.state == nav::runtime::ExecutionState::Running) {
+        (void)current_->goalLease_.acquire(
+            {s.agent,s.actor,s.map,owner.round(),
+             current_->session_->trace().routeGeneration}, goal);
+    } else {
+        current_->goalLease_.release();
+    }
     return true;
 }
 nav::runtime::WorldQueryResult NavConsole::query(const nav::runtime::QueryRequest& request) {
@@ -1054,6 +1179,39 @@ nav::runtime::WorldQueryResult NavConsole::query(const nav::runtime::QueryReques
         return context ? static_cast<const metamod::LifecycleCoordinator*>(context)->playerForEntity(entity):core::PlayerId{};
     }};
     auto result=queryNavWorld(engine_,queryingEntity_,index_.get(),request,globals_ ? globals_->maxEntities:0,queryingPlayers_,resolver);
+    if (result.error == nav::runtime::QueryError::Unavailable) {
+        static char unavailable[384]{};
+        const auto* hull = request.hull ? &*request.hull : nullptr;
+        const bool entityPresent = queryingEntity_ != nullptr && !queryingEntity_->free;
+        const bool indexMatches = entityPresent && engine_ && engine_->pfnIndexOfEdict
+            && engine_->pfnIndexOfEdict(queryingEntity_) == request.stamp.actor.slot;
+        std::snprintf(unavailable, sizeof(unavailable),
+            "nav query_unavailable actor=%u:%u kind=%u entity=%u index=%u pfn_hull=%u pfn_line=%u hull=(%.3g,%.3g,%.3g;%.3g,%.3g,%.3g)",
+            unsigned(request.stamp.actor.slot), unsigned(request.stamp.actor.generation.value),
+            unsigned(request.kind), unsigned(entityPresent), unsigned(indexMatches),
+            unsigned(engine_ && engine_->pfnTraceHull), unsigned(engine_ && engine_->pfnTraceLine),
+            hull ? hull->minimum.x : 0.0F, hull ? hull->minimum.y : 0.0F,
+            hull ? hull->minimum.z : 0.0F, hull ? hull->maximum.x : 0.0F,
+            hull ? hull->maximum.y : 0.0F, hull ? hull->maximum.z : 0.0F);
+        line(unavailable);
+    }
+    if (!(result.stamp == request.stamp) || result.kind != request.kind) {
+        static char mismatch[320]{};
+        std::snprintf(mismatch, sizeof(mismatch),
+            "nav query_identity_mismatch actor=%u:%u kind=%u expected=(%llu,%u,%llu,%u,%u) actual=(%llu,%u,%llu,%u,%u) actual_kind=%u",
+            unsigned(request.stamp.actor.slot), unsigned(request.stamp.actor.generation.value),
+            unsigned(request.kind),
+            static_cast<unsigned long long>(request.stamp.tick.value),
+            unsigned(request.stamp.map.value),
+            static_cast<unsigned long long>(request.stamp.routeGeneration),
+            unsigned(request.stamp.ordinal), unsigned(request.stamp.agent.value),
+            static_cast<unsigned long long>(result.stamp.tick.value),
+            unsigned(result.stamp.map.value),
+            static_cast<unsigned long long>(result.stamp.routeGeneration),
+            unsigned(result.stamp.ordinal), unsigned(result.stamp.agent.value),
+            unsigned(result.kind));
+        line(mismatch);
+    }
     if(deferredInvalidation_) {
         result={}; result.stamp=request.stamp; result.kind=request.kind;
     }

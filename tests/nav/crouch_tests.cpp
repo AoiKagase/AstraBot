@@ -7,7 +7,7 @@ using namespace astrabot;
 using namespace astrabot::nav;
 namespace {
 constexpr local::Binding binding{{1},{2,{3}},{4},5,0};
-const local::CrouchLimits limits{{{-16,-16,-36},{16,16,36}},{{-16,-16,-18},{16,16,18}},1000000};
+const local::CrouchLimits limits{{{-16,-16,-36},{16,16,36}},{{-16,-16,-18},{16,16,32}},1000000};
 runtime::MovementSnapshot actor() {
     runtime::MovementSnapshot s; s.agent=binding.agent; s.actor=binding.actor; s.map=binding.map; s.tick={1};
     s.kind=runtime::ActorKind::ManagedBot; s.connected=s.alive=s.joined=s.grounded=true; s.ducked=false;

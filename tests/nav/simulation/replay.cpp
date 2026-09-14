@@ -53,7 +53,7 @@ struct World final:runtime::IWorldQueries {
 };
 local::WalkLimits profile() {
     local::WalkLimits p{{queryLimit,4,48,16,18,18,64,4,2,0.7},100,4,1,3};
-    p.crouch={{{-16,-16,-36},{16,16,36}},{{-16,-16,-18},{16,16,18}},1000000};
+    p.crouch={{{-16,-16,-36},{16,16,36}},{{-16,-16,-18},{16,16,32}},1000000};
     return p;
 }
 struct Actor {

@@ -12,6 +12,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 option(ASTRABOT_BUILD_TESTS "Build AstraBot portable contract tests" ON)
+option(ASTRABOT_LEGACY_LOCOMOTION "Temporary P12 comparison controller (remove after live PASS)" OFF)
 option(ASTRABOT_BUILD_METAMOD "Build the Metamod-P adapter" OFF)
 option(ASTRABOT_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" ON)
 option(ASTRABOT_NAV_ASAN "Build dedicated Nav evidence tests with MSVC AddressSanitizer" OFF)
@@ -130,6 +131,10 @@ add_library(astrabot_nav STATIC
     src/nav/local/jump_geometry.cpp
     src/nav/local/intent_pump.cpp
     src/nav/local/ground_probe.cpp
+    src/nav/local/terrain_sampler.cpp
+    src/nav/local/path_follower.cpp
+    src/nav/local/locomotion_controller.cpp
+    src/nav/local/local_door.cpp
     src/nav/local/primitive.cpp
     src/nav/corridor/corridor.cpp
     src/debug/nav_command.cpp
@@ -150,6 +155,9 @@ add_library(astrabot_nav STATIC
 )
 
 target_compile_features(astrabot_nav PUBLIC cxx_std_17)
+if(ASTRABOT_LEGACY_LOCOMOTION)
+    target_compile_definitions(astrabot_nav PUBLIC ASTRABOT_LEGACY_LOCOMOTION=1)
+endif()
 target_link_libraries(astrabot_nav PUBLIC astrabot_core)
 if(MSVC)
     # Debug STL proxy allocation occurs inside noexcept vector constructors/moves.
@@ -285,6 +293,7 @@ if(ASTRABOT_BUILD_METAMOD)
         src/adapter/cstrike/nav/world_queries.cpp
         src/adapter/metamod/lifecycle.cpp
         src/adapter/metamod/runtime_input.cpp
+        src/adapter/metamod/objective_observation.cpp
         src/adapter/metamod/runtime_orchestrator.cpp
         src/adapter/metamod/movement.cpp
         src/debug/host_trace.cpp
@@ -569,6 +578,13 @@ if(ASTRABOT_BUILD_TESTS)
     astrabot_enable_warnings(astrabot_nav_ground_probe_tests)
     add_test(NAME astrabot.nav.ground_probe COMMAND astrabot_nav_ground_probe_tests)
     set_tests_properties(astrabot.nav.ground_probe PROPERTIES TIMEOUT 30)
+    foreach(_local_test IN ITEMS terrain_sampler path_follower motion_envelope locomotion_controller local_door execution_policy)
+        add_executable(astrabot_nav_${_local_test}_tests tests/nav/${_local_test}_tests.cpp)
+        target_link_libraries(astrabot_nav_${_local_test}_tests PRIVATE astrabot_nav astrabot_core)
+        astrabot_enable_warnings(astrabot_nav_${_local_test}_tests)
+        add_test(NAME astrabot.nav.${_local_test} COMMAND astrabot_nav_${_local_test}_tests)
+        set_tests_properties(astrabot.nav.${_local_test} PROPERTIES TIMEOUT 30)
+    endforeach()
     add_executable(astrabot_nav_primitive_tests tests/nav/primitive_tests.cpp)
     target_link_libraries(astrabot_nav_primitive_tests PRIVATE astrabot_nav)
     astrabot_enable_warnings(astrabot_nav_primitive_tests)
@@ -1068,6 +1084,23 @@ if(ASTRABOT_BUILD_TESTS)
         add_test(
             NAME astrabot.fake_client
             COMMAND astrabot_fake_client_tests
+        )
+        add_executable(astrabot_objective_observation_tests
+            tests/adapter/objective_observation_tests.cpp
+            src/adapter/metamod/objective_observation.cpp
+        )
+        target_link_libraries(astrabot_objective_observation_tests PRIVATE astrabot_core)
+        target_compile_features(astrabot_objective_observation_tests PRIVATE cxx_std_17)
+        target_include_directories(astrabot_objective_observation_tests PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src
+        )
+        set_target_properties(astrabot_objective_observation_tests PROPERTIES
+            CXX_EXTENSIONS OFF
+        )
+        astrabot_enable_warnings(astrabot_objective_observation_tests)
+        add_test(
+            NAME astrabot.adapter.objective_observation
+            COMMAND astrabot_objective_observation_tests
         )
         add_test(NAME astrabot.nav.host_movement_replay COMMAND "${Python3_EXECUTABLE}"
             "${CMAKE_CURRENT_SOURCE_DIR}/tools/check-movement-evidence.py" run

@@ -26,6 +26,93 @@ void trace(const float* start, const float* end, int flags, edict_t* observer, T
     if (flags) captureGround(start, end, flags, observer, result);
     else p401::trace(start, end, flags, observer, result);
 }
+struct SourceState final {
+    std::size_t objectiveCalls{};
+    std::size_t experienceCalls{};
+};
+
+bool readObjective(void* context, const adapter::metamod::LifecycleCoordinator&,
+                  const adapter::metamod::RuntimeFrame&, core::PlayerId,
+                  const edict_t*, adapter::metamod::RuntimeObjectiveObservation& objective,
+                  adapter::metamod::RuntimeEconomyObservation& economy) noexcept {
+    auto& state = *static_cast<SourceState*>(context);
+    ++state.objectiveCalls;
+    objective.available = true;
+    objective.team.known = true;
+    economy.tactical.available = true;
+    economy.tactical.weaponValue = 42;
+    return true;
+}
+
+std::size_t produceExperience(void* context, const adapter::metamod::LifecycleCoordinator&,
+                              const adapter::metamod::RuntimeFrame& frame, core::PlayerId player,
+                              const edict_t*, core::experience::ExperienceEvent* output,
+                              std::size_t capacity) noexcept {
+    auto& state = *static_cast<SourceState*>(context);
+    ++state.experienceCalls;
+    if (!output || capacity == 0) return 0;
+    output[0] = {};
+    output[0].map = frame.mapIdentity;
+    output[0].round = frame.round;
+    output[0].tick = frame.tick;
+    output[0].timeMicros = frame.nowMicros;
+    output[0].sequence = 1;
+    output[0].kind = core::experience::ExperienceEventKind::AreaEntered;
+    output[0].area = 1;
+    output[0].actor = player;
+    output[0].actorKind = core::experience::ActorKind::Bot;
+    output[0].team = core::perception::Team::Terrorist;
+    return 1;
+}
+
+void sourcesAndRoster() {
+    Fixture fixture;
+    enginefuncs_t hooks{};
+    p401::setup(fixture, hooks, 2);
+    auto& owner = adapter::metamod::lifecycleCoordinator();
+    owner.setMovementClockForTest(&navNow);
+    owner.setMovementTraceSink(&navTransportTrace);
+    fixture.hookDll.pfnUpdateClientData = &clientData;
+    fixture.hookDll.pfnGetWeaponData = &weaponData;
+    fixture.engine.pfnTraceLine = &trace;
+
+    const auto firstPlayer = owner.registry().currentPlayer(1);
+    const auto world = owner.world().latest(firstPlayer);
+    assert(world);
+    adapter::metamod::RuntimeFrame frame{
+        owner.registry().mapGeneration(), owner.round(), owner.registry().currentTick(),
+        world->stamp.timeMicros, 100'000, {}};
+    frame.mapIdentity.name = "runtime-input-test";
+
+    std::array<adapter::metamod::RuntimeActorInput, 2> inputs{};
+    SourceState state{};
+    const adapter::metamod::RuntimeInputSources sources{
+        &readObjective, &produceExperience, &state};
+    assert(adapter::metamod::buildRuntimeInputs(
+               owner, frame, &fixture.hookDll, inputs.data(), inputs.size(), nullptr, 0,
+               sources) == 2);
+    assert(state.objectiveCalls == 2 && state.experienceCalls == 2);
+    const auto secondPlayer = owner.registry().currentPlayer(2);
+    assert(inputs[0].teamObjectiveAvailable && inputs[1].teamObjectiveAvailable);
+    assert(inputs[0].tactical.economy.available && inputs[1].tactical.economy.available);
+    assert(inputs[0].experienceEventCount == 1 && inputs[1].experienceEventCount == 1);
+    for (const auto& input : inputs) {
+        assert(input.valid(frame));
+        assert(input.team.memberCount == 2);
+        assert(input.team.members[0].player == firstPlayer ||
+               input.team.members[0].player == secondPlayer);
+        assert(input.team.members[1].player == firstPlayer ||
+               input.team.members[1].player == secondPlayer);
+        assert(input.team.members[0].player != input.team.members[1].player);
+        assert(input.experienceEvents[0].actor == input.player);
+        assert(input.experienceEvents[0].map == frame.mapIdentity);
+        assert(input.experienceEvents[0].round == frame.round);
+        assert(input.experienceEvents[0].tick == frame.tick);
+        assert(input.experienceEvents[0].timeMicros == frame.nowMicros);
+    }
+    detach();
+}
+
 void run() {
     Fixture fixture;
     enginefuncs_t hooks{};
@@ -147,5 +234,6 @@ void run() {
     assert(owner.runtimeResult().executableCount == 0);
     disconnectOnRead = false;
     detach();
+    sourcesAndRoster();
 }
 }

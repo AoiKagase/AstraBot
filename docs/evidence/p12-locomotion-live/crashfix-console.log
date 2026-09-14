@@ -1,0 +1,37 @@
+﻿astrabot nav_auto map=1 status=Ready path=cstrike/maps/de_dust2.nav retry=explicit_load
+astrabot buy actor=1:1 round=1 attempted=8 sent=8
+[ASTRABOT][DEBUG][COMMAND] addbot requested=1 created=1 error=None
+astrabot buy actor=1:1 round=2 attempted=8 sent=8
+astrabot buy actor=2:1 round=2 attempted=9 sent=9
+L 09/12/2026 - 19:21:06: World triggered "Restart_Round_(1_second)"
+astrabot buy actor=1:1 round=3 attempted=8 sent=8
+astrabot buy actor=2:1 round=3 attempted=9 sent=9
+L 09/12/2026 - 19:21:09: World triggered "Restart_Round_(1_second)"
+astrabot buy actor=1:1 round=4 attempted=8 sent=8
+astrabot buy actor=2:1 round=4 attempted=9 sent=9
+L 09/12/2026 - 19:21:13: World triggered "Restart_Round_(1_second)"
+astrabot buy actor=1:1 round=5 attempted=8 sent=8
+astrabot buy actor=2:1 round=5 attempted=9 sent=9
+L 09/12/2026 - 19:21:16: World triggered "Restart_Round_(1_second)"
+astrabot buy actor=1:1 round=6 attempted=8 sent=8
+astrabot buy actor=2:1 round=6 attempted=9 sent=9
+L 09/12/2026 - 19:21:20: World triggered "Restart_Round_(1_second)"
+astrabot buy actor=1:1 round=7 attempted=8 sent=8
+astrabot buy actor=2:1 round=7 attempted=9 sent=9
+L 09/12/2026 - 19:21:23: World triggered "Restart_Round_(1_second)"
+astrabot buy actor=1:1 round=8 attempted=8 sent=8
+astrabot buy actor=2:1 round=8 attempted=9 sent=9
+L 09/12/2026 - 19:21:27: World triggered "Restart_Round_(1_second)"
+astrabot buy actor=1:1 round=9 attempted=8 sent=8
+astrabot buy actor=2:1 round=9 attempted=9 sent=9
+L 09/12/2026 - 19:21:30: World triggered "Restart_Round_(1_second)"
+astrabot buy actor=1:1 round=10 attempted=8 sent=8
+astrabot buy actor=2:1 round=10 attempted=9 sent=9
+L 09/12/2026 - 19:21:34: World triggered "Restart_Round_(1_second)"
+astrabot buy actor=1:1 round=11 attempted=8 sent=8
+astrabot buy actor=2:1 round=11 attempted=9 sent=9
+L 09/12/2026 - 19:21:37: World triggered "Restart_Round_(1_second)"
+astrabot buy actor=1:1 round=12 attempted=8 sent=8
+astrabot buy actor=2:1 round=12 attempted=9 sent=9
+astrabot buy actor=1:1 round=13 attempted=8 sent=8
+astrabot buy actor=2:1 round=13 attempted=9 sent=9

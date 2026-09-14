@@ -6,11 +6,13 @@
 #include "adapter/cstrike/weapon_protocol.hpp"
 #include "adapter/metamod/console_debug.hpp"
 #include "adapter/metamod/runtime_input.hpp"
+#include "core/economy.hpp"
 
 #include <cstdint>
 #include <limits>
 #include <cmath>
 #include <cstring>
+#include <new>
 #include <event_flags.h>
 
 #ifdef snprintf
@@ -67,6 +69,7 @@ bool resolveUserMessageIds(
     ids.hltv = utilityFunctions->pfnGetUserMsgID(PLID, "HLTV", &messageSize);
     ids.screenFade = utilityFunctions->pfnGetUserMsgID(
         PLID, "ScreenFade", &messageSize);
+    ids.money = utilityFunctions->pfnGetUserMsgID(PLID, "Money", &messageSize);
     if (ids.screenFade == ids.vguiMenu || ids.screenFade == ids.showMenu ||
         ids.screenFade == ids.teamInfo || ids.screenFade == ids.hltv) {
         ids.screenFade = 0;
@@ -88,6 +91,180 @@ std::uint64_t engineTimeMicros(globalvars_t* globals) noexcept {
 }
 
 } // namespace
+
+std::size_t LifecycleCoordinator::produceExperienceEvents(
+    void*, const LifecycleCoordinator& owner, const RuntimeFrame& frame,
+    core::PlayerId player, const edict_t*,
+    core::experience::ExperienceEvent* output, std::size_t capacity) noexcept {
+    if (output == nullptr || capacity == 0U || !frame.valid() ||
+        !frame.mapIdentity.valid() || !player.isValid() ||
+        player.slot > host::kMaxClientSlots) {
+        return 0U;
+    }
+    const auto binding = owner.agents().findByPlayer(player);
+    if (!binding.isValid() || binding.player != player ||
+        binding.map != frame.map) {
+        return 0U;
+    }
+    const auto* affiliation = owner.teams().find(player);
+    if (affiliation == nullptr ||
+        affiliation->team == core::perception::Team::Unknown) {
+        return 0U;
+    }
+    const auto nav = owner.navConsole().runtimeState(owner, player);
+    if (!nav || !nav->currentArea || !nav->currentArea->isValid()) {
+        return 0U;
+    }
+    const auto index = static_cast<std::size_t>(player.slot - 1U);
+    const auto area = *nav->currentArea;
+    std::size_t count = 0U;
+    const auto append = [&](core::experience::ExperienceEventKind kind,
+                            double amount, bool success) noexcept {
+        if (count >= capacity) return;
+        auto& event = output[count++];
+        event = {};
+        event.map = frame.mapIdentity;
+        event.round = frame.round;
+        event.tick = frame.tick;
+        event.timeMicros = frame.nowMicros;
+        event.sequence = ++owner.experienceEventSequence_;
+        event.kind = kind;
+        event.area = area.value;
+        event.actor = player;
+        event.actorKind = core::experience::ActorKind::Bot;
+        event.team = affiliation->team;
+        event.amount = amount;
+        event.success = success;
+    };
+
+    // AreaEntered is emitted once per observed area transition.  Keep the
+    // health/death deltas independent of area movement so a bot taking damage
+    // while holding a position still contributes to Experience in that frame.
+    if (owner.experienceAreas_[index] != area) {
+        owner.experienceAreas_[index] = area;
+        append(core::experience::ExperienceEventKind::AreaEntered, 1.0, true);
+    }
+    const auto& health = owner.runtimeHealth_[index];
+    if (health.known && health.player == player && health.frame.map == frame.map &&
+        health.frame.round == frame.round && health.frame.tick == frame.tick) {
+        const auto damage = health.observedHealthLoss - owner.experienceDamageSeen_[index];
+        if (damage > 0.0 && std::isfinite(damage)) {
+            owner.experienceDamageSeen_[index] = health.observedHealthLoss;
+            append(core::experience::ExperienceEventKind::DamageReceived, damage, true);
+        }
+        if (health.deaths > owner.experienceDeathsSeen_[index]) {
+            owner.experienceDeathsSeen_[index] = health.deaths;
+            append(core::experience::ExperienceEventKind::Death, 1.0, false);
+        }
+    }
+    return count;
+}
+
+bool LifecycleCoordinator::readObjective(
+    void*, const LifecycleCoordinator& owner, const RuntimeFrame& frame,
+    core::PlayerId player, const edict_t* entity,
+    RuntimeObjectiveObservation& objective,
+    RuntimeEconomyObservation& economy) noexcept {
+    if (!frame.valid() || !frame.mapIdentity.valid() || !player.isValid() ||
+        entity == nullptr || entity->free ||
+        owner.registry_.mapGeneration() != frame.map ||
+        owner.registry_.currentPlayer(player.slot) != player) {
+        return false;
+    }
+    const char* mapName = nullptr;
+    if (owner.engineFunctions_ != nullptr && owner.engineGlobals_ != nullptr &&
+        owner.engineFunctions_->pfnSzFromIndex != nullptr) {
+        mapName = owner.engineFunctions_->pfnSzFromIndex(owner.engineGlobals_->mapname);
+    }
+    if (mapName == nullptr) return false;
+
+    const auto affiliation = owner.teams_.find(player);
+    if (affiliation == nullptr || affiliation->team == core::perception::Team::Unknown) {
+        return false;
+    }
+    const auto index = static_cast<std::size_t>(player.slot - 1U);
+    objective = {};
+    economy = {};
+    objective.team.known = false;
+    if (std::strncmp(mapName, "de_", 3) == 0) {
+        objective.available = true;
+        objective.team.known = true;
+        objective.team.family = core::team::ObjectiveFamily::BombDefusal;
+        const bool terrorist = affiliation->team == core::perception::Team::Terrorist;
+        objective.team.phase = terrorist ? core::team::ObjectivePhase::Attack
+                                         : core::team::ObjectivePhase::Defense;
+        objective.team.state = core::team::ObjectiveState::Active;
+        objective.tactical.kind = core::tactical::ObjectiveKind::Bomb;
+        objective.tactical.bomb = core::tactical::BombState::None;
+        objective.tactical.canAttack = terrorist;
+        objective.tactical.canDefend = !terrorist;
+        objective.action.kind = core::action::ObjectiveKind::Bomb;
+        bool hasC4 = false;
+        bool ownCarrier = false;
+        for (std::uint16_t slot = 1; slot <= owner.registry_.clientMax(); ++slot) {
+            const auto carrier = owner.registry_.currentPlayer(slot);
+            const auto* carrierEntity = owner.entityFor(carrier);
+            if (!carrier.isValid() || carrierEntity == nullptr || carrierEntity->free ||
+                (carrierEntity->v.weapons & (1 << WEAPON_C4)) == 0) continue;
+            hasC4 = true;
+            const auto* carrierAffiliation = owner.teams_.find(carrier);
+            if (carrierAffiliation != nullptr &&
+                carrierAffiliation->team == affiliation->team) {
+                objective.team.carrier = carrier;
+                ownCarrier = true;
+            }
+            break;
+        }
+        objective.action.bomb = hasC4
+            ? static_cast<core::action::BombState>(core::tactical::BombState::Carried)
+            : static_cast<core::action::BombState>(core::tactical::BombState::None);
+        objective.action.canPlant = hasC4 && affiliation->team == core::perception::Team::Terrorist;
+        objective.tactical.bomb = hasC4 ? core::tactical::BombState::Carried
+                                        : core::tactical::BombState::None;
+        objective.team.state = ownCarrier ? core::team::ObjectiveState::Carried
+                                           : core::team::ObjectiveState::Active;
+        objective.team.phase = ownCarrier ? core::team::ObjectivePhase::Carried
+                                           : (terrorist ? core::team::ObjectivePhase::Attack
+                                                        : core::team::ObjectivePhase::Defense);
+    } else if (std::strncmp(mapName, "cs_", 3) == 0 &&
+               owner.engineFunctions_->pfnSzFromIndex != nullptr &&
+               owner.engineGlobals_ != nullptr) {
+        objective.available = true;
+        objective.team.known = true;
+        objective.team.family = core::team::ObjectiveFamily::HostageRescue;
+        objective.team.phase = core::team::ObjectivePhase::Escort;
+        objective.team.state = core::team::ObjectiveState::Active;
+        objective.tactical.kind = core::tactical::ObjectiveKind::Hostage;
+        objective.action.kind = core::action::ObjectiveKind::Hostage;
+        const int maxEntities = std::clamp(owner.engineGlobals_->maxEntities, 0, 2048);
+        for (int slot = host::kMaxClientSlots + 1;
+             slot < maxEntities && objective.team.targetCount < objective.team.targets.size(); ++slot) {
+            auto* candidate = owner.engineFunctions_->pfnPEntityOfEntIndex
+                ? owner.engineFunctions_->pfnPEntityOfEntIndex(slot) : nullptr;
+            if (candidate == nullptr || candidate->free) continue;
+            const char* classname = owner.engineFunctions_->pfnSzFromIndex(candidate->v.classname);
+            if (classname == nullptr || std::strcmp(classname, "hostage_entity") != 0) continue;
+            auto& target = objective.team.targets[objective.team.targetCount++];
+            target.id = {static_cast<core::EntityId>(slot),
+                core::Generation{static_cast<std::uint32_t>(candidate->serialnumber)}};
+            target.position = {candidate->v.origin.x, candidate->v.origin.y, candidate->v.origin.z};
+            target.alive = candidate->v.deadflag == DEAD_NO;
+        }
+    } else if (std::strncmp(mapName, "as_", 3) == 0) {
+        // VIP identity is private GameDLL state; keep it unavailable until a
+        // supported authority hook supplies the identity.
+        objective = {};
+    } else {
+        return false;
+    }
+
+    const auto moneyKnown = player.slot <= owner.moneyKnown_.size() &&
+        owner.moneyKnown_[index];
+    // Current weapon utility is supplied by readWeapon() in runtime_input;
+    // money alone must not make an economy decision appear complete.
+    (void)moneyKnown;
+    return objective.available || economy.tactical.available;
+}
 
 bool LifecycleCoordinator::dispatchWeaponSelectionHook(
     edict_t* entity, core::WeaponSelection selection) noexcept {
@@ -238,7 +415,8 @@ bool LifecycleCoordinator::refreshUserMessageIds(bool logPending) noexcept {
         ids.showMenu != perceptionMessageIds_.showMenu ||
         ids.teamInfo != perceptionMessageIds_.teamInfo ||
         ids.hltv != perceptionMessageIds_.hltv ||
-        ids.screenFade != perceptionMessageIds_.screenFade) {
+        ids.screenFade != perceptionMessageIds_.screenFade ||
+        ids.money != perceptionMessageIds_.money) {
         configureUserMessageIds(ids);
         if (logPending && !wasReady && userMessageIdsReady_ && utilityFunctions_ != nullptr &&
             utilityFunctions_->pfnLogConsole != nullptr) {
@@ -252,9 +430,11 @@ void LifecycleCoordinator::reset() noexcept {
     runtimeOwnedActor_ = {};
     runtime_.reset();
     runtimeHealth_.fill({});
+    retiredCombatTargets_.fill({});
     mapNavLoadStatus_ = {};
     runtimeInputBuildStatus_ = {};
     runtimeInputBuildStatuses_.fill({});
+    runtimeCombatPending_.fill(false);
     runtimeCorrelation_.fill({});
     distributions_.reset();
     world_.reset();
@@ -263,13 +443,15 @@ void LifecycleCoordinator::reset() noexcept {
     vision_.reset();
     teams_ = {}; round_ = {1}; identityDiagnostics_ = {}; lastRoundTick_ = {}; lastRoundTime_ = -1;
     lastBuyRound_.fill({});
+    money_.fill(0);
+    moneyKnown_.fill(false);
     navConsole_.reset(); movement_.reset();
     commandContextActive_=false; commandPlayer_={}; commandArgc_=0;
     commandArgv0_={}; commandArgv1_={}; commandArgs_={};
     messageDecoder_.reset(); activeDecoder_=&messageDecoder_;
     // Retire every actor's portable state before any external disconnect callback.
     for(auto& client:clients_) {
-        client.join.reset(); client.decoder.reset(); client.combat={};
+        client.join.reset(); client.decoder.reset(); client.combat={}; client.combatLock={};
         client.pendingJoinMessageCount = 0;
         client.cleanupPending=false;
         client.cleanupError=cstrike::JoinError::None;
@@ -300,16 +482,25 @@ void LifecycleCoordinator::serverActivate(int clientMax) noexcept {
         navConsole_.invalidate(nav::runtime::SessionReason::MapChanged);
         movement_.resetMap();
         runtimeHealth_.fill({});
+        retiredCombatTargets_.fill({});
         runtimeCorrelation_.fill({});
+        experienceAreas_.fill({});
+        experienceDamageSeen_.fill(0.0);
+        experienceDeathsSeen_.fill(0U);
+        experienceEventSequence_ = 0;
         runtimeInputBuildStatuses_.fill({});
+        runtimeCombatPending_.fill(false);
         runtimeInputBuildStatus_ = {};
         runtimeOwnedActor_ = {};
         clearAllCombatState();
         runtime_.beginMap(registry_.mapGeneration());
         vision_.reset();
         sound_.beginMap(registry_.mapGeneration());
-        (void)teams_.activate(registry_.mapGeneration()); round_ = {1}; lastRoundTick_ = {}; lastRoundTime_ = -1;
-        lastBuyRound_.fill({});
+    (void)teams_.activate(registry_.mapGeneration());
+    round_ = {1}; lastRoundTick_ = {}; lastRoundTime_ = -1;
+    lastBuyRound_.fill({});
+    money_.fill(0);
+    moneyKnown_.fill(false);
         (void)advanceVisualEffects();
         ++status_.mapActivations;
         if(status_.mapActivations>1) ++status_.mapReplays;
@@ -382,9 +573,17 @@ void LifecycleCoordinator::serverDeactivate() noexcept {
     runtimeOwnedActor_ = {};
     runtime_.reset();
     runtimeHealth_.fill({});
+    retiredCombatTargets_.fill({});
     runtimeInputBuildStatus_ = {};
     runtimeInputBuildStatuses_.fill({});
+    runtimeCombatPending_.fill(false);
     runtimeCorrelation_.fill({});
+    experienceAreas_.fill({});
+    experienceDamageSeen_.fill(0.0);
+    experienceDeathsSeen_.fill(0U);
+    experienceEventSequence_ = 0;
+    money_.fill(0);
+    moneyKnown_.fill(false);
     distributions_.reset();
     world_.reset();
     visualEffects_.reset();
@@ -395,7 +594,7 @@ void LifecycleCoordinator::serverDeactivate() noexcept {
     for(auto& client:clients_) {
         const auto action=client.join.cancel(cstrike::JoinError::MapDeactivated);
         emitJoin(client,action);
-        client.join.reset(); client.decoder.reset(); client.combat={};
+        client.join.reset(); client.decoder.reset(); client.combat={}; client.combatLock={};
         client.pendingJoinMessageCount = 0;
         client.cleanupPending=false;
         client.cleanupError=cstrike::JoinError::None;
@@ -422,12 +621,17 @@ void LifecycleCoordinator::clientDisconnect(edict_t* entity) noexcept {
     if(client && client->fake.entityFor(player)!=entity) {
         emit(host::LifecycleEventKind::PlayerDisconnected,host::LifecycleResult::rejected(host::HostError::InvalidPlayer)); return;
     }
-    vision_.forget(player);
+    retireCombatTarget(player);
     teams_.forget(player);
     visualEffects_.forget(player);
     sound_.forget(player);
     movement_.forget(player);
-    if (player.slot <= lastBuyRound_.size()) lastBuyRound_[player.slot - 1U] = {};
+    if (player.slot <= lastBuyRound_.size()) {
+        lastBuyRound_[player.slot - 1U] = {};
+        experienceAreas_[player.slot - 1U] = {};
+        experienceDamageSeen_[player.slot - 1U] = 0.0;
+        experienceDeathsSeen_[player.slot - 1U] = 0U;
+    }
     clearCombatState(player);
     runtime_.onDisconnect(player);
     if(client) {
@@ -457,7 +661,7 @@ FakeClientResult LifecycleCoordinator::createBot(const char* name,cstrike::JoinR
     for(const auto& client:clients_) if(client.fake.operationActive()) return {debug::FakeClientError::Reentrant,{}};
     for(auto& client:clients_) {
         if(client.fake.activePlayer().isValid()) continue;
-        client.fake.resetMap(); client.join.reset(); client.decoder.reset(); client.combat={};
+        client.fake.resetMap(); client.join.reset(); client.decoder.reset(); client.combat={}; client.combatLock={};
         client.pendingJoinMessageCount = 0;
         client.cleanupPending=false; client.cleanupError=cstrike::JoinError::None;
         const auto result=client.fake.create(name,request);
@@ -478,7 +682,7 @@ RemovalResult LifecycleCoordinator::remove(core::PlayerId player) noexcept {
     auto* client=findClient(player);
     if(!client) return {debug::RemovalOutcome::NoOp,debug::RemovalError::None,{},true,false};
     if(client->fake.removalPending()) return {debug::RemovalOutcome::NoOp,debug::RemovalError::None,player,true,false};
-    vision_.forget(player);
+    retireCombatTarget(player);
     sound_.forget(player);
     visualEffects_.forget(player);
     teams_.forget(player);
@@ -552,6 +756,12 @@ void LifecycleCoordinator::startFrame() noexcept {
     movement_.beginFrame(engineFrameDeltaUs);
     const auto map=registry_.mapGeneration();
     const auto tick=registry_.currentTick();
+    // Capture one monotonic engine stamp for every observation and decision
+    // produced by this frame.  Vision, world-model input, and combat must
+    // share the same value even though dispatch happens in separate phases.
+    const auto nowMicros = engineTimeMicros(engineGlobals_);
+    refreshCombatTargetLiveness();
+    runtimeCombatPending_.fill(false);
 
     const auto previousRuntimeInputStatuses = runtimeInputBuildStatuses_;
     const auto dispatchInputUnavailable =
@@ -582,7 +792,7 @@ void LifecycleCoordinator::startFrame() noexcept {
                 RuntimeFrame observedFrame{};
                 observedFrame.map = map; observedFrame.round = round_;
                 observedFrame.tick = tick;
-                observedFrame.nowMicros = engineTimeMicros(engineGlobals_);
+            observedFrame.nowMicros = nowMicros;
                 observation.observe(observedFrame, player,
                     agents_.findByPlayer(player).agent, entity->serialnumber,
                     entity->v.health, entity->v.deadflag != DEAD_NO || entity->v.health <= 0);
@@ -592,6 +802,7 @@ void LifecycleCoordinator::startFrame() noexcept {
         }
         if (entity != nullptr && entity->v.deadflag != DEAD_NO) {
             client.combat = {};
+            client.combatLock = {};
             runtime_.onDeath(player);
         }
         if (client.join.active() && !client.fake.removalPending()) {
@@ -641,17 +852,22 @@ void LifecycleCoordinator::startFrame() noexcept {
             continue;
         }
         const auto ticket=navConsole_.dispatchTicket(player);
-        const bool suppressRuntimeInput = dispatchInputUnavailable(player);
-        const auto moved=movement_.dispatchAtFrameEnd(
-            client.join.phase(), player, client.fake.entityFor(player), map, tick,
-            false, suppressRuntimeInput);
-        if (!suppressRuntimeInput)
-            navConsole_.afterDispatch(player,moved,tick,ticket);
+                const bool suppressRuntimeInput = dispatchInputUnavailable(player);
+                const auto* dispatchEntity = client.fake.entityFor(player);
+                const bool deadHeartbeat = suppressRuntimeInput &&
+                    dispatchEntity != nullptr && !dispatchEntity->free &&
+                    dispatchEntity->v.deadflag != DEAD_NO;
+                const auto moved=movement_.dispatchAtFrameEnd(
+                    client.join.phase(), player, client.fake.entityFor(player), map, tick,
+                    false, suppressRuntimeInput);
+                if (!suppressRuntimeInput)
+                    navConsole_.afterDispatch(player,moved,tick,ticket);
+                else if (deadHeartbeat)
+                    movement_.forget(player, true);
     }
     if(registry_.isMapActive() && registry_.mapGeneration()==map && registry_.currentTick()==tick) {
         (void)advanceVisualEffects();
-        vision_.frame(*this,engineFunctions_,engineGlobals_ ? engineGlobals_->time :
-            (std::numeric_limits<float>::quiet_NaN)());
+        vision_.frame(*this,engineFunctions_,nowMicros);
         if(registry_.isMapActive() && registry_.mapGeneration()==map && registry_.currentTick()==tick) {
             sound_.frame(*this,engineGlobals_ ? engineGlobals_->time : (std::numeric_limits<float>::quiet_NaN)());
             if(registry_.isMapActive() && registry_.mapGeneration()==map && registry_.currentTick()==tick) {
@@ -661,7 +877,7 @@ void LifecycleCoordinator::startFrame() noexcept {
                 runtimeFrame.map = map;
                 runtimeFrame.round = round_;
                 runtimeFrame.tick = tick;
-                runtimeFrame.nowMicros = engineTimeMicros(engineGlobals_);
+                runtimeFrame.nowMicros = nowMicros;
                 runtimeFrame.elapsedMicros = movement_.frameDeltaUs();
                 // The map name is the strongest identity available at this
                 // boundary until a provider supplies BSP/NAV hashes. Keep
@@ -686,7 +902,14 @@ void LifecycleCoordinator::startFrame() noexcept {
                         }
                     }
                 }
-                std::array<RuntimeActorInput,kRuntimeActorCapacity> runtimeInputs{};
+                auto& runtimeInputs=runtimeInputsScratch_;
+                for(auto& input:runtimeInputs) {
+                    // Avoid a large RuntimeActorInput assignment temporary on
+                    // the engine callback stack. Each slot is owned by this
+                    // coordinator and may be safely reconstructed per frame.
+                    input.~RuntimeActorInput();
+                    ::new (static_cast<void*>(&input)) RuntimeActorInput{};
+                }
                 std::size_t runtimeInputCount = 0;
                 runtimeInputBuildStatus_ = {};
                 runtimeInputBuildStatuses_.fill({});
@@ -727,11 +950,21 @@ void LifecycleCoordinator::startFrame() noexcept {
                         actorStatus.inputIncluded = true;
                     }
                 } else {
-                    runtimeInputCount = buildRuntimeInputs(
+        runtimeInputCount = buildRuntimeInputs(
                         *this, runtimeFrame, hookedGameDllFunctions_,
                         runtimeInputs.data(), runtimeInputs.size(),
                         runtimeInputBuildStatuses_.data(),
-                        runtimeInputBuildStatuses_.size());
+                        runtimeInputBuildStatuses_.size(),
+                        RuntimeInputSources{
+                            &LifecycleCoordinator::readObjective,
+                            &LifecycleCoordinator::produceExperienceEvents,
+                            nullptr});
+                }
+                // CombatLock is actor-owned state; bind it only after the
+                // value boundary has produced a validated player identity.
+                for (std::size_t i = 0; i < runtimeInputCount && i < runtimeInputs.size(); ++i) {
+                    if (auto* client = findClient(runtimeInputs[i].player))
+                        runtimeInputs[i].combat.lock = &client->combatLock;
                 }
                 if (runtimeInputCount != 0)
                     runtimeInputBuildStatus_ = runtimeInputBuildStatuses_[0];
@@ -740,6 +973,9 @@ void LifecycleCoordinator::startFrame() noexcept {
                 for (std::size_t i = 0; i < runtimeResult.decisionCount; ++i) {
                     const auto& decision = runtimeResult.decisions[i];
                     if (decision.executable) {
+                        if (decision.player.isValid() &&
+                            decision.player.slot <= runtimeCombatPending_.size())
+                            runtimeCombatPending_[decision.player.slot - 1U] = true;
                         runtimeOwnedActor_ = decision.player;
                         runtimeAttackPending_ = decision.combat.hasAttackInput();
                         if (!runtimeInputProvider_ && runtimeInputCount == 1)
@@ -774,7 +1010,13 @@ void LifecycleCoordinator::startFrame() noexcept {
                     actorStatus.idleDispatchSuppressed = true;
                     navConsole_.invalidateActor(
                         player, nav::runtime::SessionReason::InvalidSnapshot);
-                    movement_.forget(player);
+                    // Keep a dead actor's frame trace until its neutral
+                    // heartbeat has dispatched. Live invalid-input actors are
+                    // retired immediately so stale commands cannot become an
+                    // Idle RunPlayerMove later in this frame.
+                    const auto* entity = client.fake.entityFor(player);
+                    if (entity == nullptr || entity->v.deadflag == DEAD_NO)
+                        movement_.forget(player);
                 }
             }
         }
@@ -785,21 +1027,9 @@ void LifecycleCoordinator::startFrame() noexcept {
         if (dispatchInputUnavailable(player)) continue;
         navConsole_.moveFrame(*this, player);
     }
-    // A held position or a completed route may produce no NAV command.
-    // Consume only actionable combat decisions here; a NoOp reaches
-    // MovementCoordinator::dispatchAtFrameEnd as the Idle heartbeat.
-    for (const auto& decision : runtime_.result().decisions) {
-        if (!decision.executable) continue;
-        if (const auto combat = takeRuntimeCombatDecision(decision.player,
-                decision.agent, map, round_, tick)) {
-            if (combat->action == core::combat::CombatAction::NoOp) continue;
-
-            core::BotCommand neutral{};
-            neutral.msec = 1;
-            neutral.view = combat->view;
-            (void)submitCombatDecision(decision.player, map, tick, *combat, neutral);
-        }
-    }
+    // Runtime combat is consumed only by submitMotion() while composing a NAV
+    // command. A held/completed route falls through to the existing neutral
+    // heartbeat, preserving one queued command per actor and frame.
     for (const auto& client : clients_) {
         const auto player = client.fake.activePlayer();
         if (!player.isValid() || player.slot > host::kMaxClientSlots) continue;
@@ -978,6 +1208,7 @@ CombatSubmitResult LifecycleCoordinator::submitCombat(
     if (client->combat.cadenceActive && aim.target.isValid() &&
         client->combat.cadenceTarget != aim.target) {
         client->combat = {};
+        client->combatLock = {};
     }
     const auto authorization = core::combat::authorizeFire(
         input, aim, client->combat);
@@ -1106,11 +1337,62 @@ void LifecycleCoordinator::emitCombatTrace(
 }
 
 void LifecycleCoordinator::clearCombatState(core::PlayerId player) noexcept {
-    if (auto* client = findClient(player)) client->combat = {};
+    if (auto* client = findClient(player)) {
+        client->combat = {};
+        client->combatLock = {};
+    }
 }
 
 void LifecycleCoordinator::clearAllCombatState() noexcept {
-    for (auto& client : clients_) client.combat = {};
+    for (auto& client : clients_) {
+        client.combat = {};
+        client.combatLock = {};
+    }
+}
+
+void LifecycleCoordinator::retireCombatTarget(core::PlayerId player) noexcept {
+    if (!player.isValid()) return;
+    for (auto& client : clients_) {
+        if (client.combatLock.target == player ||
+            client.combat.cadenceTarget == player ||
+            client.combat.reactionTarget == player) {
+            client.combat = {};
+            client.combatLock.clear();
+        }
+    }
+    // Drop this identity from every observer's visual reducer and invalidate
+    // team reports rooted in the retired player before combat runs again.
+    vision_.forget(player);
+}
+
+void LifecycleCoordinator::refreshCombatTargetLiveness() noexcept {
+    if (!registry_.isMapActive() || engineFunctions_ == nullptr ||
+        engineFunctions_->pfnPEntityOfEntIndex == nullptr ||
+        engineFunctions_->pfnIndexOfEdict == nullptr) {
+        return;
+    }
+
+    for (std::uint16_t slot = 1; slot <= registry_.clientMax(); ++slot) {
+        const auto index = static_cast<std::size_t>(slot - 1U);
+        const auto player = registry_.currentPlayer(slot);
+        auto& retired = retiredCombatTargets_[index];
+        if (!player.isValid()) {
+            retired = {};
+            continue;
+        }
+
+        auto* entity = engineFunctions_->pfnPEntityOfEntIndex(slot);
+        const bool alive = entity != nullptr && !entity->free &&
+            engineFunctions_->pfnIndexOfEdict(entity) == slot &&
+            entity->v.deadflag == DEAD_NO && std::isfinite(entity->v.health) &&
+            entity->v.health > 0.0F;
+        if (alive) {
+            retired = {};
+        } else if (retired != player) {
+            retireCombatTarget(player);
+            retired = player;
+        }
+    }
 }
 void LifecycleCoordinator::messageBegin(int destination,int messageType,const float*,edict_t* recipient) noexcept {
     if (messageType > 0 && (messageType == perceptionMessageIds_.teamInfo || messageType == perceptionMessageIds_.hltv))
@@ -1250,6 +1532,11 @@ void LifecycleCoordinator::handleMessage(const cstrike::MessageEvent& event) noe
             return;
         }
         ++round_.value; lastRoundTime_ = time; lastRoundTick_ = registry_.currentTick();
+        // Experience deltas are round scoped. Reset these cursors before the
+        // first post-round frame so area and health events use the new stamp.
+        experienceAreas_.fill({});
+        experienceDamageSeen_.fill(0.0);
+        experienceDeathsSeen_.fill(0U);
         for (auto& client : clients_) {
             const auto player = client.fake.activePlayer();
             if (!player.isValid()) continue;
@@ -1263,6 +1550,15 @@ void LifecycleCoordinator::handleMessage(const cstrike::MessageEvent& event) noe
         (void)advanceVisualEffects();
         messageDecoder_.reset();
         for (auto& client : clients_) client.decoder.reset();
+        return;
+    }
+    if (event.kind == cstrike::MessageKind::Money) {
+        const auto slot = event.recipientSlot;
+        if (slot >= 1U && slot <= money_.size() &&
+            registry_.currentPlayer(slot).isValid()) {
+            money_[slot - 1U] = std::clamp(event.money, 0, core::economy::kMaxMoney);
+            moneyKnown_[slot - 1U] = true;
+        }
         return;
     }
     const auto slot=event.kind==cstrike::MessageKind::TeamInfo ? event.playerSlot:event.recipientSlot;
@@ -1329,7 +1625,7 @@ void LifecycleCoordinator::cleanupActiveAfterRemoval(ClientState& client,const R
     else { client.fake.forget(player); status_.lastRemovalError=debug::RemovalError::DirectCleanupFailed; }
     emitRemoval(cleaned ? debug::RemovalOutcome::Cleaned:debug::RemovalOutcome::Rejected,
         cleaned ? result.error:debug::RemovalError::DirectCleanupFailed,player,mapping,true);
-    client.join.reset(); client.decoder.reset(); client.combat={};
+    client.join.reset(); client.decoder.reset(); client.combat={}; client.combatLock={};
 }
 void LifecycleCoordinator::emitRemoval(
     debug::RemovalOutcome outcome,
@@ -1354,7 +1650,7 @@ void LifecycleCoordinator::emitRemoval(
 void LifecycleCoordinator::cleanupFailedJoin(ClientState& client,cstrike::JoinError) noexcept {
     const auto player=client.join.player();
     if(player.isValid()) {
-        movement_.forget(player); client.combat={}; (void)agents_.unbind(player); (void)registry_.disconnectPlayer(player);
+        movement_.forget(player); client.combat={}; client.combatLock={}; (void)agents_.unbind(player); (void)registry_.disconnectPlayer(player);
         (void)client.fake.kickAndCleanup(player);
     }
     client.pendingJoinMessageCount = 0;
@@ -1426,27 +1722,71 @@ void LifecycleCoordinator::dispatchRoundBuy(ClientState& client) noexcept {
         return;
     }
 
-    // Keep the sequence deliberately bounded. Counter-Strike validates money,
-    // buy-zone, buy-time, and weapon availability for every command; rejected
-    // commands are harmless and the trace makes the attempt visible per
-    // actor/round while live inventory observations are not yet wired.
-    const char* commands[9]{};
-    commands[0] = affiliation->team == core::perception::Team::CounterTerrorist
-        ? "m4a1" : "ak47";
-    commands[1] = "vesthelm";
-    commands[2] = "deagle";
-    commands[3] = "primammo";
-    commands[4] = "secammo";
-    commands[5] = "hegren";
-    commands[6] = "flash";
-    commands[7] = "sgren";
-    commands[8] = "defuser";
-    const std::size_t commandCount =
-        affiliation->team == core::perception::Team::CounterTerrorist ? 9 : 8;
-
-    std::size_t sent = 0;
-    for (std::size_t i = 0; i < commandCount; ++i) {
-        if (dispatchBuyCommand(player, commands[i])) ++sent;
+    // Build one stamped team snapshot from authoritative money messages and
+    // the live player registry.  Unknown money deliberately disables buying;
+    // the adapter never guesses a budget or silently falls back to a fixed
+    // command list.
+    core::economy::TeamEconomySnapshot snapshot{};
+    snapshot.map = registry_.mapGeneration();
+    snapshot.round = round_;
+    snapshot.tick = registry_.currentTick();
+    snapshot.nowMicros = engineTimeMicros(engineGlobals_);
+    snapshot.roundNumber = static_cast<std::uint32_t>(round_.value);
+    snapshot.phase = core::economy::RoundPhase::FreezeTime;
+    snapshot.team = affiliation->team;
+    for (std::uint16_t slot = 1; slot <= registry_.clientMax() &&
+         snapshot.memberCount < snapshot.members.size(); ++slot) {
+        const auto memberPlayer = registry_.currentPlayer(slot);
+        const auto* memberAffiliation = teams_.find(memberPlayer);
+        const auto* memberEntity = entityFor(memberPlayer);
+        if (!memberPlayer.isValid() || memberAffiliation == nullptr ||
+            memberAffiliation->team != snapshot.team || memberEntity == nullptr ||
+            memberEntity->free || !moneyKnown_[slot - 1U]) {
+            if (memberPlayer.isValid() && memberAffiliation != nullptr &&
+                memberAffiliation->team == snapshot.team)
+                return;
+            continue;
+        }
+        auto& member = snapshot.members[snapshot.memberCount++];
+        member.player = memberPlayer;
+        member.agent = agents_.findByPlayer(memberPlayer).agent;
+        member.team = snapshot.team;
+        member.role = snapshot.team == core::perception::Team::CounterTerrorist
+            ? core::team::Role::Defuser : core::team::Role::Entry;
+        member.money = money_[slot - 1U];
+        member.connected = true;
+        member.alive = memberEntity->v.deadflag == DEAD_NO;
+    }
+    if (!snapshot.valid()) return;
+    const auto decision = core::economy::BuyPlanner{}.planTeam(snapshot);
+    const core::economy::BuyPlan* plan = nullptr;
+    for (std::size_t i = 0; i < decision.planCount; ++i)
+        if (decision.plans[i].player == player) { plan = &decision.plans[i]; break; }
+    if (plan == nullptr || !plan->valid()) return;
+    const auto commandFor = [&](core::economy::PurchaseItem item) noexcept -> const char* {
+        switch (item) {
+        case core::economy::PurchaseItem::Rifle:
+            return snapshot.team == core::perception::Team::CounterTerrorist ? "m4a1" : "ak47";
+        case core::economy::PurchaseItem::Galil: return snapshot.team == core::perception::Team::CounterTerrorist ? "famas" : "galil";
+        case core::economy::PurchaseItem::Smg: return "mp5navy";
+        case core::economy::PurchaseItem::Awp: return "awp";
+        case core::economy::PurchaseItem::Pistol: return "deagle";
+        case core::economy::PurchaseItem::Armor: return "vest";
+        case core::economy::PurchaseItem::Helmet: return "vesthelm";
+        case core::economy::PurchaseItem::DefuseKit: return "defuser";
+        case core::economy::PurchaseItem::HeGrenade: return "hegren";
+        case core::economy::PurchaseItem::Flashbang: return "flash";
+        case core::economy::PurchaseItem::SmokeGrenade: return "sgren";
+        case core::economy::PurchaseItem::Ammo: return "primammo";
+        default: return nullptr;
+        }
+    };
+    std::size_t attempted = 0, sent = 0;
+    for (std::size_t i = 0; i < plan->requestCount; ++i) {
+        const auto* command = commandFor(plan->requests[i].item);
+        if (command == nullptr) continue;
+        ++attempted;
+        if (dispatchBuyCommand(player, command)) ++sent;
     }
     lastBuyRound_[player.slot - 1U] = round_;
     if (utilityFunctions_ && utilityFunctions_->pfnLogConsole) {
@@ -1455,7 +1795,7 @@ void LifecycleCoordinator::dispatchRoundBuy(ClientState& client) noexcept {
             "astrabot buy actor=%u:%u round=%llu attempted=%u sent=%u",
             unsigned(player.slot), unsigned(player.generation.value),
             static_cast<unsigned long long>(round_.value),
-            static_cast<unsigned>(commandCount), static_cast<unsigned>(sent));
+            static_cast<unsigned>(attempted), static_cast<unsigned>(sent));
         utilityFunctions_->pfnLogConsole(PLID, "%s", text);
     }
 }
@@ -1472,6 +1812,12 @@ const RuntimeInputBuildStatus& LifecycleCoordinator::runtimeInputBuildStatus(cor
     static const RuntimeInputBuildStatus empty{};
     return player.isValid() && player.slot <= host::kMaxClientSlots ? runtimeInputBuildStatuses_[player.slot - 1U] : empty;
 }
+
+const core::combat::CombatLock* LifecycleCoordinator::combatLock(core::PlayerId player) const noexcept {
+    const auto* client = findClient(player);
+    return client != nullptr ? &client->combatLock : nullptr;
+}
+
 const RuntimeActorCorrelation& LifecycleCoordinator::runtimeCorrelation(core::PlayerId player) const noexcept {
     static const RuntimeActorCorrelation empty{};
     return player.isValid() && player.slot <= host::kMaxClientSlots ? runtimeCorrelation_[player.slot - 1U] : empty;

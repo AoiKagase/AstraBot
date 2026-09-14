@@ -1,0 +1,7 @@
+﻿{
+    "destination":  "D:\\SteamCMD\\cstrike_rehlds\\cstrike\\addons\\astrabot\\dlls\\astrabot_mm.dll",
+    "backup":  "D:\\SteamCMD\\cstrike_rehlds\\cstrike\\addons\\astrabot\\dlls\\astrabot_mm.dll.pre-p12-native-20260912-185425.bak",
+    "previousSha256":  "8fa0836bbcc58168762294f000ccae853773d5a5ab518e27a22725c570a9cd72",
+    "sha256":  "ba702d6b2202e8703e18dda58c52302e888ef4c4f88fb4e6829b72c43a7e3e7e",
+    "status":  "DEPLOYED_SERVER_NOT_STARTED"
+}

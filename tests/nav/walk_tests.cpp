@@ -291,7 +291,7 @@ void crouchCrossing() {
         const std::vector<route_test::Area> areas{a,b,c};
         Fixture f(areas,1,mode==1 ? 1:3); World world(areas); auto s=actor(); s.ducked=false;
         auto profile=limits; profile.probe.maxQueries=21;
-        profile.crouch={{{-16,-16,-36},{16,16,36}},{{-16,-16,-18},{16,16,18}},1000000};
+        profile.crouch={{{-16,-16,-36},{16,16,36}},{{-16,-16,-18},{16,16,32}},1000000};
         const model::NavVector3 goal{mode==1 ? 50.0f:217.0f,50,0};
         local::Walk walk(binding(),f.corridor,goal,profile); bool arrived=false,ducked=false;
         for(std::uint64_t tick=1;tick<500;++tick) {

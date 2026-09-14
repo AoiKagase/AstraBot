@@ -1,0 +1,7 @@
+﻿"scenario","start_x","start_y","start_z","goal_x","goal_y","goal_z","yaw","note"
+"wall","","","","","","","","UNCONFIRMED"
+"downhill","","","","","","","","UNCONFIRMED"
+"stairs","","","","","","","","UNCONFIRMED"
+"obstacle_jump","","","","","","","","UNCONFIRMED"
+"oscillation","","","","","","","","UNCONFIRMED"
+"replan","","","","","","","","UNCONFIRMED"

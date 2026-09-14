@@ -182,6 +182,8 @@ void MessageDecoder::begin(
         kind_ = MessageKind::Hltv;
     } else if (messageType > 0 && messageType == ids_.screenFade) {
         kind_ = MessageKind::ScreenFade;
+    } else if (messageType > 0 && messageType == ids_.money) {
+        kind_ = MessageKind::Money;
     } else {
         kind_ = MessageKind::None;
         lastError_ = MessageDecodeError::UnknownMessage;
@@ -263,6 +265,15 @@ void MessageDecoder::write(FieldKind expected, int value) noexcept {
         if (value < 0 || value > 255) { fail(MessageDecodeError::InvalidShape); return; }
         event_.hltv[fieldIndex_] = static_cast<std::uint8_t>(value);
         break;
+    case MessageKind::Money:
+        if (fieldIndex_ == 0U) {
+            if (value < 0 || value > 16000) { fail(MessageDecodeError::InvalidShape); return; }
+            event_.money = value;
+        } else if (fieldIndex_ == 1U) {
+            if (value < 0 || value > 255) { fail(MessageDecodeError::InvalidShape); return; }
+            event_.moneyFlash = static_cast<std::uint8_t>(value);
+        }
+        break;
     case MessageKind::VguiMenu:
         if (fieldIndex_ == 0U) {
             event_.menuType = static_cast<std::uint8_t>(value);
@@ -321,6 +332,10 @@ void MessageDecoder::writeText(const char* value) noexcept {
 bool MessageDecoder::expects(FieldKind expected) const noexcept {
     if (kind_ == MessageKind::ScreenFade) return fieldIndex_ < 7 && expected == (fieldIndex_ < 3 ? FieldKind::Short : FieldKind::Byte);
     if (kind_ == MessageKind::Hltv) return fieldIndex_ < 2 && expected == FieldKind::Byte;
+    if (kind_ == MessageKind::Money) {
+        static constexpr FieldKind fields[] = {FieldKind::Short, FieldKind::Byte};
+        return fieldIndex_ < 2 && fields[fieldIndex_] == expected;
+    }
     if (kind_ == MessageKind::VguiMenu) {
         static constexpr FieldKind fields[] = {
             FieldKind::Byte,
@@ -357,8 +372,10 @@ bool MessageDecoder::complete() const noexcept {
     switch (kind_) {
     case MessageKind::ScreenFade:
         return fieldIndex_ == 7;
-    case MessageKind::Hltv:
-        return fieldIndex_ == 2;
+        case MessageKind::Hltv:
+            return fieldIndex_ == 2;
+        case MessageKind::Money:
+            return fieldIndex_ == 2;
     case MessageKind::VguiMenu:
         return fieldIndex_ == kVguiMenuFields;
     case MessageKind::ShowMenu:

@@ -263,6 +263,39 @@ struct CombatDecision {
     bool hasAttackInput() const noexcept;
 };
 
+inline constexpr std::uint64_t kVisualFreshnessMicros = 300000;
+
+struct CombatInput;
+
+struct CombatLock {
+    MapGeneration map{};
+    perception::RoundGeneration round{};
+    PlayerId observer{};
+    BotAgentId agent{};
+    PlayerId target{};
+    // The slot alone is not an identity. Keep the generation captured when
+    // this lock was acquired so an edict/slot reuse cannot inherit combat
+    // state from the previous occupant.
+    Generation targetGeneration{};
+    // Lock lifetime is observable independently from the current expiry. The
+    // timestamps let the adapter distinguish a retained target from a newly
+    // acquired one in a single frame trace.
+    std::uint64_t acquiredMicros{0};
+    std::uint64_t lastConfirmedMicros{0};
+    std::uint64_t expiresMicros{0};
+    std::uint64_t generation{0};
+
+    constexpr void clear() noexcept {
+        // Preserve the monotonically increasing lifecycle generation across
+        // invalidation. This is diagnostic state and does not keep any target
+        // identity alive after the lock is cleared.
+        const auto lifecycleGeneration = generation;
+        *this = {};
+        generation = lifecycleGeneration;
+    }
+    constexpr bool validFor(const CombatInput& input) const noexcept;
+};
+
 struct CombatInput {
     MapGeneration map{};
     perception::RoundGeneration round{};
@@ -277,10 +310,33 @@ struct CombatInput {
     world::WorldSnapshot world{};
     WeaponSnapshot weapon{};
     DifficultySettings difficulty{};
+    CombatLock* lock{nullptr};
 
     CombatInputValidation validate() const noexcept;
     CombatDecision reject() const noexcept;
 };
+
+constexpr bool CombatLock::validFor(const CombatInput& input) const noexcept {
+    if (!input.alive || map != input.map || round != input.round ||
+        observer != input.player || agent != input.agent || !target.isValid() ||
+        !targetGeneration.isValid() || target.generation != targetGeneration ||
+        target.slot > input.world.roster.size() ||
+        lastConfirmedMicros < acquiredMicros || expiresMicros < lastConfirmedMicros ||
+        input.timeMicros < lastConfirmedMicros || input.timeMicros > expiresMicros) {
+        return false;
+    }
+
+    // Retain a target only while the exact PlayerId is in this frame's roster
+    // on the opposing playing team. Slot reuse/disconnect cannot inherit the
+    // previous occupant's lock through cached visual evidence.
+    const auto& member = input.world.roster[target.slot - 1U];
+    const bool observerPlaying = input.team == perception::Team::Terrorist ||
+        input.team == perception::Team::CounterTerrorist;
+    const bool targetPlaying = member.team == perception::Team::Terrorist ||
+        member.team == perception::Team::CounterTerrorist;
+    return member.player == target && observerPlaying && targetPlaying &&
+        member.team != input.team;
+}
 
 enum class CommandCompositionError : std::uint8_t {
     None = 0,

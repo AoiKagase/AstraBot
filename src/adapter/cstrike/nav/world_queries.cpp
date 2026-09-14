@@ -13,7 +13,10 @@ bool valid(const TraceResult& t) noexcept {
 }
 int hullIndex(const nav::runtime::HullDimensions& h) noexcept {
     if(h.minimum==nav::model::NavVector3{-16,-16,-36} && h.maximum==nav::model::NavVector3{16,16,36}) return 1;
-    if(h.minimum==nav::model::NavVector3{-16,-16,-18} && h.maximum==nav::model::NavVector3{16,16,18}) return 3;
+    // ReGameDLL uses VEC_DUCK_HULL_MIN=(-16,-16,-18) and
+    // VEC_DUCK_HULL_MAX=(16,16,32).  A symmetric +18 upper bound is not a
+    // GoldSrc hull and makes TraceHull report unavailable for crouched bots.
+    if(h.minimum==nav::model::NavVector3{-16,-16,-18} && h.maximum==nav::model::NavVector3{16,16,32}) return 3;
     return -1; // TraceHull cannot represent arbitrary hull dimensions.
 }
 std::uint64_t doorIdentity(enginefuncs_t* e,edict_t* door,int maximum) noexcept {
@@ -75,6 +78,19 @@ nav::runtime::WorldQueryResult queryNavWorld(enginefuncs_t* engine, edict_t* ent
     WorldQueryResult r; r.stamp=q.stamp; r.kind=q.kind;
     if(!engine || !entity || entity->free) return r;
     if(!q.start.isFinite() || !q.end.isFinite()) { r.error=QueryError::InvalidResult; return r; }
+    if(q.kind==QueryKind::Feeler) {
+        if(!engine->pfnTraceLine) return r;
+        const float start[]{q.start.x,q.start.y,q.start.z}, end[]{q.end.x,q.end.y,q.end.z};
+        TraceResult hit{};
+        // Same static-geometry policy as floor sensing: ignore player/monster
+        // bodies, retain BSP doors/glass, and exclude the querying actor.
+        engine->pfnTraceLine(start,end,1,entity,&hit);
+        if(!valid(hit)) { r.error=QueryError::InvalidResult; return r; }
+        r.error=QueryError::None;
+        r.hull=HullObservation{hit.flFraction,value(hit.vecEndPos),value(hit.vecPlaneNormal),
+            hit.fStartSolid!=0,hit.fAllSolid!=0};
+        return r;
+    }
     if(q.kind==QueryKind::SweptHull || q.kind==QueryKind::Clearance || q.kind==QueryKind::Door || q.kind==QueryKind::Blocker) {
         if(!engine->pfnTraceHull || !q.hull) return r;
         const int hull=hullIndex(*q.hull); if(hull<0) return r;
@@ -98,7 +114,19 @@ nav::runtime::WorldQueryResult queryNavWorld(enginefuncs_t* engine, edict_t* ent
                 r.blocker=BlockerObservation{static_cast<std::uint64_t>(slot>0 ? slot:0),BlockerKind::Other,{}};
         }
         if(q.kind==QueryKind::Blocker) {
-            if(solid || hit.flFraction==1 || !hit.pHit || hit.pHit->free || !engine->pfnIndexOfEdict) return r;
+            // Contact overlap does not erase a validated blocker identity.
+            // Classification gives no collision permission: r.hull retains solid.
+            if(hit.fStartSolid || hit.fAllSolid) {
+                // GoldSrc may report an embedded world hull with no pHit.
+                // Preserve that physical contact as anonymous geometry so
+                // the local controller can try its two-sided detour instead
+                // of treating the forward segment as clear forever.
+                if(!hit.pHit || hit.pHit->free) {
+                    r.blocker=BlockerObservation{0,BlockerKind::Geometry};
+                    return r;
+                }
+            }
+            if(hit.flFraction==1 || !hit.pHit || hit.pHit->free || !engine->pfnIndexOfEdict) return r;
             const int slot=engine->pfnIndexOfEdict(hit.pHit);
             const auto* name=engine->pfnSzFromIndex ? engine->pfnSzFromIndex(hit.pHit->v.classname):nullptr;
             const bool wall=name && (!std::strcmp(name,"func_wall") || !std::strcmp(name,"func_wall_toggle"));
@@ -164,8 +192,11 @@ nav::runtime::WorldQueryResult queryNavWorld(enginefuncs_t* engine, edict_t* ent
         else r.clearance=ClearanceObservation{!solid && hit.flFraction==1};
         return r;
     }
-    if(q.kind!=QueryKind::GroundedArea && q.kind!=QueryKind::Floor) return r;
-    if(!engine->pfnTraceHull || !q.hull || hullIndex(*q.hull)<0) return r;
+    if(q.kind!=QueryKind::GroundedArea && q.kind!=QueryKind::Floor &&
+       q.kind!=QueryKind::FloorCandidate && q.kind!=QueryKind::HullSupport) return r;
+    const bool pointCandidate=q.kind==QueryKind::FloorCandidate;
+    if(!q.hull || hullIndex(*q.hull)<0 ||
+       (pointCandidate ? !engine->pfnTraceLine : !engine->pfnTraceHull)) return r;
     if(!std::isfinite(q.navTolerance) || q.navTolerance<0) { r.error=QueryError::InvalidResult; return r; }
     auto start=q.start, end=q.end;
     float feet=0;
@@ -176,7 +207,7 @@ nav::runtime::WorldQueryResult queryNavWorld(enginefuncs_t* engine, edict_t* ent
         if(start.x==end.x && start.y==end.y && start.z==end.z) {
             start.z=q.start.z+2; end={q.start.x,q.start.y,q.start.z-4};
         }
-    } else {
+    } else if(!pointCandidate) {
         // Floor requests use feet heights; TraceHull consumes actor origins.
         const double top=double(start.z)-q.hull->minimum.z, bottom=double(end.z)-q.hull->minimum.z;
         if(std::abs(top)>(std::numeric_limits<float>::max)() || std::abs(bottom)>(std::numeric_limits<float>::max)()) {
@@ -190,7 +221,9 @@ nav::runtime::WorldQueryResult queryNavWorld(enginefuncs_t* engine, edict_t* ent
     const float a[]{start.x,start.y,start.z}, b[]{end.x,end.y,end.z};
     // Static hull support includes the footprint on a stair tread. Player
     // bodies are not floor proof. Each request issues exactly one engine trace.
-    TraceResult hit{}; engine->pfnTraceHull(a,b,1,hullIndex(*q.hull),entity,&hit);
+    TraceResult hit{};
+    if(pointCandidate) engine->pfnTraceLine(a,b,1,entity,&hit);
+    else engine->pfnTraceHull(a,b,1,hullIndex(*q.hull),entity,&hit);
     if(!valid(hit)) { r.error=QueryError::InvalidResult; return r; }
  r.error=QueryError::None;
  const FloorTraceEvidence evidence{
@@ -201,15 +234,15 @@ nav::runtime::WorldQueryResult queryNavWorld(enginefuncs_t* engine, edict_t* ent
  floor.trace=evidence;
         floor.status=hit.fAllSolid ? FloorObservationStatus::AllSolid :
             (hit.fStartSolid ? FloorObservationStatus::StartSolid : FloorObservationStatus::TraceNoHit);
-        if(q.kind==QueryKind::Floor) r.floor=floor;
+        if(q.kind!=QueryKind::GroundedArea) r.floor=floor;
         else r.ground=GroundedAreaObservation{std::nullopt,floor};
         return r;
     }
     if(std::abs(hit.vecEndPos.x-start.x)>0.001f || std::abs(hit.vecEndPos.y-start.y)>0.001f ||
        hit.vecEndPos.z>start.z || hit.vecEndPos.z<end.z) { r.error=QueryError::InvalidResult; return r; }
-    FloorObservation floor{hit.vecEndPos.z+q.hull->minimum.z,value(hit.vecPlaneNormal),true,
+    FloorObservation floor{hit.vecEndPos.z+(pointCandidate ? 0.0f:q.hull->minimum.z),value(hit.vecPlaneNormal),true,
  FloorObservationStatus::Supported,evidence};
-    if(q.kind==QueryKind::Floor) { r.floor=floor; return r; }
+    if(q.kind!=QueryKind::GroundedArea) { r.floor=floor; return r; }
     if(floor.normal.z<0.7f) {
         floor.status=FloorObservationStatus::UnsupportedNormal;
         r.ground=GroundedAreaObservation{std::nullopt,floor};
@@ -220,14 +253,16 @@ nav::runtime::WorldQueryResult queryNavWorld(enginefuncs_t* engine, edict_t* ent
         r.ground=GroundedAreaObservation{std::nullopt,floor};
         return r;
     }
+    // GroundedArea is a physical support observation. NAV containment is
+    // advisory and may be unavailable at a narrow seam or between adjacent
+    // micro areas; keep the floor evidence so GroundProbe can validate a
+    // bounded nearest candidate and a swept-hull passage before accepting it.
     if(!index) {
-        floor.status=FloorObservationStatus::NavContainmentMissing;
         r.ground=GroundedAreaObservation{std::nullopt,floor};
         return r;
     }
     const auto match=index->containing({q.start.x,q.start.y,floor.height},q.navTolerance);
     if(!match || !*match.value) {
-        floor.status=FloorObservationStatus::NavContainmentMissing;
         r.ground=GroundedAreaObservation{std::nullopt,floor};
         return r;
     }

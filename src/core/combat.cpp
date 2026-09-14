@@ -290,8 +290,8 @@ const world::VisualMemory* currentVisualFor(
     if (visual.stamp.agent != input.agent ||
         visual.stamp.observer != input.player ||
         visual.stamp.map != input.map || visual.stamp.round != input.round ||
-        visual.stamp.tick != input.tick ||
-        visual.stamp.timeMicros != input.timeMicros) {
+        visual.stamp.timeMicros > input.timeMicros ||
+        input.timeMicros - visual.stamp.timeMicros > kVisualFreshnessMicros) {
         return nullptr;
     }
 
@@ -299,8 +299,11 @@ const world::VisualMemory* currentVisualFor(
         const auto& memory = visual.memories[i];
         if (memory.target != target ||
             !validVisualIdentity(memory.identity, input) ||
-            memory.identity.observedMicros != visual.stamp.timeMicros ||
             memory.lastSeenMicros != memory.identity.observedMicros ||
+            memory.identity.observedMicros > input.timeMicros ||
+            input.timeMicros - memory.identity.observedMicros > kVisualFreshnessMicros ||
+            memory.lastSeenMicros > input.timeMicros ||
+            input.timeMicros - memory.lastSeenMicros > kVisualFreshnessMicros ||
             !isFinitePoint(memory.lastKnownPosition) ||
             !validConfidence(memory.confidence, 1.0)) {
             continue;
@@ -324,6 +327,7 @@ bool inspectVisual(const CombatInput& input, const world::VisualMemory& memory,
     if (!validVisualIdentity(memory.identity, input) ||
         memory.lastSeenMicros != memory.identity.observedMicros ||
         memory.lastSeenMicros > input.timeMicros ||
+        input.timeMicros - memory.lastSeenMicros > kVisualFreshnessMicros ||
         !validConfidence(memory.confidence, 1.0) ||
         !calculateAngularError(input.eye, memory.lastKnownPosition, input.view, candidate.angularError)) {
         flags.stale = true;
@@ -854,19 +858,30 @@ CombatDecision CombatInput::reject() const noexcept {
 }
 
 CombatDecision selectTarget(const CombatInput& input) noexcept {
+    if (input.lock != nullptr && !input.lock->validFor(input)) input.lock->clear();
     const auto validation = input.validate();
     if (!validation) return input.reject();
     if (!input.alive) return validNoOp(input, CombatReason::Dead);
 
+    const bool lockWasValid = input.lock != nullptr && input.lock->validFor(input);
+
     TargetCandidate best{};
+    TargetCandidate locked{};
     bool selected = false;
+    bool lockedSelected = false;
     RejectionFlags flags{};
     for (std::size_t i = 0; i < input.world.visual->count; ++i) {
         TargetCandidate candidate{};
-        if (inspectVisual(input, input.world.visual->memories[i], candidate, flags) &&
-            (!selected || betterCandidate(candidate, best))) {
-            best = candidate;
-            selected = true;
+        if (inspectVisual(input, input.world.visual->memories[i], candidate, flags)) {
+            if (lockWasValid && candidate.target == input.lock->target &&
+                candidate.target.generation == input.lock->targetGeneration) {
+                locked = candidate;
+                lockedSelected = true;
+            }
+            if (!selected || betterCandidate(candidate, best)) {
+                best = candidate;
+                selected = true;
+            }
         }
     }
     if (input.world.reports != nullptr) {
@@ -879,7 +894,30 @@ CombatDecision selectTarget(const CombatInput& input) noexcept {
             }
         }
     }
+    if (lockedSelected) best = locked;
     if (selected) {
+        if (input.lock != nullptr && best.source == perception::ObservationSource::Vision) {
+            const bool retained = lockWasValid && input.lock->target == best.target &&
+                input.lock->targetGeneration == best.target.generation;
+            input.lock->map = input.map;
+            input.lock->round = input.round;
+            input.lock->observer = input.player;
+            input.lock->agent = input.agent;
+            input.lock->target = best.target;
+            input.lock->targetGeneration = best.target.generation;
+            if (!retained) {
+                const auto maximum = (std::numeric_limits<std::uint64_t>::max)();
+                input.lock->generation = input.lock->generation == maximum
+                    ? maximum : input.lock->generation + 1U;
+                input.lock->acquiredMicros = input.timeMicros;
+            }
+            input.lock->lastConfirmedMicros = input.timeMicros;
+            const auto maximum = (std::numeric_limits<std::uint64_t>::max)();
+            input.lock->expiresMicros = input.timeMicros > (maximum - kVisualFreshnessMicros)
+                ? maximum : input.timeMicros + kVisualFreshnessMicros;
+        } else if (input.lock != nullptr) {
+            input.lock->clear();
+        }
         CombatDecision decision{};
         decision.action = CombatAction::Track;
         decision.target = best.target;
@@ -893,6 +931,7 @@ CombatDecision selectTarget(const CombatInput& input) noexcept {
         return decision;
     }
 
+    if (input.lock != nullptr) input.lock->clear();
     flags.anonymousSound = input.world.sounds->count != 0;
     return validNoOp(input, noTargetReason(flags));
 }
@@ -900,10 +939,11 @@ CombatDecision selectTarget(const CombatInput& input) noexcept {
 CombatDecision aimTarget(const CombatInput& input) noexcept {
     auto decision = selectTarget(input);
     if (decision.action != CombatAction::Track) {
-        // A no-target frame must retain the observed view.  The navigation
-        // command supplies the locomotion heading during composition; a
-        // combat-side scan here otherwise rotates every bot every tick and
-        // overwrites the view that was just used for aiming.
+        if(decision.reason==CombatReason::NoTarget ||
+           decision.reason==CombatReason::AnonymousSound)
+            decision.view=scanView(input);
+        // Composition applies the deterministic scan only while stationary;
+        // moving navigation and rejected input continue to own their view.
         return decision;
     }
 
@@ -1164,10 +1204,14 @@ CommandCompositionResult composeCommand(
         static_cast<ButtonMask>(Button::Reload);
     BotCommand command = navigation;
     if (combat.action == CombatAction::NoOp) {
-        // No target/rejected combat input does not own the view.  Retain the
-        // NAV heading so ordinary movement follows its route rather than the
-        // spawn orientation shared by every fake client.
-        command.view = navigation.view;
+        const auto navigationActions=navigation.buttons & ~combatButtons;
+        // Valid no-target decisions own view only while stationary.
+        const bool scan=(combat.reason==CombatReason::NoTarget ||
+            combat.reason==CombatReason::AnonymousSound) &&
+            navigation.movement.forward==0.0F &&
+            navigation.movement.side==0.0F && navigation.movement.up==0.0F &&
+            navigationActions==0U;
+        command.view=scan ? combat.view:navigation.view;
     } else {
         preserveWorldMovement(navigation.view, combat.view, command);
         command.view = combat.view;

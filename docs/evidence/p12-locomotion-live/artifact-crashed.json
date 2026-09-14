@@ -1,0 +1,15 @@
+﻿{
+    "status":  "LIVE_CRASH_REPORTED",
+    "baseCommit":  "38ca8de18e3269dfd6e04cf564eafb97c45b4e8e",
+    "dll":  "H:\\sourcecode\\003.Game\\amxmodx\\AstraBot\\.worktrees\\p12-locomotion-redesign\\build-p12-native-release\\astrabot_mm.dll",
+    "sha256":  "ba702d6b2202e8703e18dda58c52302e888ef4c4f88fb4e6829b72c43a7e3e7e",
+    "bytes":  863744,
+    "builtUtc":  "2026-09-12T09:51:59.6199729Z",
+    "architecture":  "x86",
+    "generator":  "NMake Makefiles",
+    "configuration":  "Release",
+    "tests":  false,
+    "legacyLocomotion":  false,
+    "sdkCommit":  "7ec9b014f8c0a947a724644aebe34eb33706e44b",
+    "livePass":  false
+}

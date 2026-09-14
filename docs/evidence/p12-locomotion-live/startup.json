@@ -1,0 +1,9 @@
+﻿{
+    "pid":  42436,
+    "startedUtc":  "2026-09-12T09:54:57.3959541Z",
+    "scope":  "startup smoke only; not scenario acceptance",
+    "modulePath":  "D:\\SteamCMD\\cstrike_rehlds\\cstrike\\addons\\astrabot\\dlls\\astrabot_mm.dll",
+    "observation":  "x86 PowerShell module enumeration; NAV Ready; bot entered game; process alive",
+    "observedUtc":  "2026-09-12T09:56:53.8247799Z",
+    "result":  "STARTUP_SMOKE_ONLY"
+}

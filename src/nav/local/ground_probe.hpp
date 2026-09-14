@@ -25,7 +25,7 @@ enum class ProbeReason {
     AllSolid,
     UnsupportedFloor,
     FloorHeightMismatch,
-    NavContainmentMissing,
+    NavContainmentMissing, // Advisory NAV unresolved; not evidence of a physical obstruction.
     NoSupport, // Legacy aggregate retained for callers not yet reason-aware.
     NoArea,
     WrongStartArea,
@@ -62,7 +62,9 @@ struct ProbeResult {
 // continuous support between samples; swept hulls only prove collision clearance.
 class GroundProbe final {
 public:
-    // One measured ground query, validated against containing NAV at the floor.
+    // Measured physical support with strict or bounded boundary NAV identity.
+    // A nearest candidate additionally requires an actual-origin hull check;
+    // the adopted NAV result is not subjected to strict containment again.
     // No expected-area assumption: the actor may just have crossed a portal.
     static ProbeResult locate(const runtime::MovementSnapshot&, std::uint64_t routeGeneration,
         const query::NavSpatialIndex&, core::MapGeneration indexMap,
