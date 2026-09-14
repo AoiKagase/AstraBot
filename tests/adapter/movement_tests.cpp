@@ -6,6 +6,7 @@
 
 #include <cassert>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <vector>
 
@@ -257,6 +258,25 @@ void testMsecQuantizationAndAbiConversion() {
     assert(gTraces[1].impulse == 4);
 }
 
+void testLongIdleDispatchPulsesViewActivity() {
+    Fixture fixture{};
+    fixture.armAndAdvance(5'000'000U);
+    const auto command = fixture.command();
+    assert(fixture.movement.submit(
+        fixture.player, fixture.map, fixture.registry.currentTick(), command).queued());
+
+    assert(fixture.dispatch().dispatched());
+    assert(gCalls.size() == 1);
+    // ReGameDLL updates m_fLastMovement only for button edges or a simultaneous
+    // pitch/yaw change. The adapter must keep a stuck-but-live fake client out
+    // of PlayerIdle without changing the movement or attack buttons.
+    assert(std::fabs(gCalls.front().angles[0] - command.view.pitch) >= 0.1F);
+    assert(std::fabs(gCalls.front().angles[1] - command.view.yaw) >= 0.1F);
+    assert(gCalls.front().forward == command.movement.forward);
+    assert(gCalls.front().side == command.movement.side);
+    assert(gCalls.front().buttons == static_cast<unsigned short>(command.buttons));
+}
+
 void testForgetClearsFrameTraceCaches() {
     Fixture fixture{};
     fixture.armAndAdvance(16500U);
@@ -404,6 +424,26 @@ void testDispatchGuardsAndCleanup() {
     assert(gCalls.empty());
 }
 
+void testSuppressedDeadActorStillReceivesNeutralHeartbeat() {
+    Fixture fixture{};
+    fixture.armAndAdvance(10000U);
+    fixture.entity.v.deadflag = DEAD_DEAD;
+    gCalls.clear();
+    gTraces.clear();
+
+    const auto result = fixture.movement.dispatchAtFrameEnd(
+        JoinPhase::Joined, fixture.player, &fixture.entity, fixture.map,
+        TickId{2}, false, true);
+
+    assert(!result.rejected());
+    assert(gCalls.size() == 1);
+    assert(gCalls.front().forward == 0.0F);
+    assert(gCalls.front().side == 0.0F);
+    assert(gCalls.front().up == 0.0F);
+    assert(gCalls.front().buttons == 0U);
+    assert(gTraces.back().source == astrabot::debug::MovementTraceSource::Dead);
+}
+
 void testEngineUnavailableAndTraceUniqueness() {
     Fixture fixture{};
     fixture.armAndAdvance(10000U);
@@ -480,8 +520,10 @@ void testInitialFrameDoesNotQueueTimedMovement() {
 int main() {
     testJoinedActorReceivesNeutralHeartbeat();
     testRemovalPendingSuppressesMovement();
+    testSuppressedDeadActorStillReceivesNeutralHeartbeat();
     testManagedBindingAndEdictIdentityRejectWithoutFallback();
     testMsecQuantizationAndAbiConversion();
+    testLongIdleDispatchPulsesViewActivity();
     testForgetClearsFrameTraceCaches();
     testClockArmAndBoundaryClamp();
     testOneCallAndPendingClear();

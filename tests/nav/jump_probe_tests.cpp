@@ -252,7 +252,7 @@ void controllerConsumesRealQueries() {
 void currentPhysicsCapabilities() {
     auto s=actor();
     JumpPhysics p{binding,s.tick,800,std::sqrt(72000.0),*s.hull,
-        runtime::HullDimensions{{-16,-16,-18},{16,16,18}}};
+        runtime::HullDimensions{{-16,-16,-18},{16,16,32}}};
     const auto hints=constraints(model::NavTraversalKind::Jump,0,1);
     auto derived=deriveJumpLimits(motion,p,s,hints);
     assert(derived && std::abs(derived->maximumRise-45)<0.001 && derived->flightHull);

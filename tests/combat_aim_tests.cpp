@@ -207,6 +207,27 @@ void testFailClosedAndNeverFire() {
     assert(!decision.hasAttackInput());
 }
 
+void testValidNoTargetUsesStableScanPhase() {
+    Fixture fixture;
+    fixture.input.timeMicros=1'100'000;
+    fixture.input.world.stamp.timeMicros=fixture.input.timeMicros;
+    fixture.visual.stamp.timeMicros=fixture.input.timeMicros;
+    fixture.sounds.stamp.timeMicros=fixture.input.timeMicros;
+    fixture.reports.stamp.timeMicros=fixture.input.timeMicros;
+    const auto first=c::aimTarget(fixture.input);
+    const auto second=c::aimTarget(fixture.input);
+    assert(first.action==c::CombatAction::NoOp && first.reason==c::CombatReason::NoTarget);
+    assert(first.view==second.view);
+    // 4 s scan, agent 1 contributes the existing 0.5 s phase offset.
+    assert(std::abs(first.view.yaw-(-36.0F))<kEpsilon);
+
+    fixture.sounds.count=1;
+    const auto anonymous=c::aimTarget(fixture.input);
+    assert(anonymous.reason==c::CombatReason::AnonymousSound);
+    assert(anonymous.view==first.view);
+
+}
+
 } // namespace
 
 int main() {
@@ -214,5 +235,6 @@ int main() {
     testReactionWindowAndReportedTarget();
     testDeterministicBoundedErrors();
     testFailClosedAndNeverFire();
+    testValidNoTargetUsesStableScanPhase();
     return 0;
 }

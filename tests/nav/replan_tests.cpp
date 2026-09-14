@@ -53,11 +53,11 @@ int main() {
     auto alternate=edge;
     alternate.target={3};
     execution.fail({70},runtime::ExecutionFailure::Motion,3'000'000,edge,false);
-    execution.fail({70},runtime::ExecutionFailure::Motion,3'100'000,alternate,false);
+    execution.fail({70},runtime::ExecutionFailure::Motion,3'100'000,edge,false);
     execution.setSearchTime(3'100'000);
-    assert(execution.sourceCooling(edge));
-    assert(execution.sourceCooling(alternate));
-    assert(!search(excluded.policy()));
+    assert(!execution.sourceCooling(edge) && !execution.sourceCooling(alternate));
+    assert(execution.edgeCooling(edge) && !execution.edgeCooling(alternate));
+    assert(search(excluded.policy()));
 
     runtime::Execution exactJump;
     exactJump.fail({70},runtime::ExecutionFailure::Motion,4'000'000,edge,false,false);
@@ -86,6 +86,18 @@ int main() {
     const auto expired=attempt.snapshot(binding.map,100+runtime::ReplanAttempt::factLifetimeUs);
     assert(!expired.blocked && search(expired.policy()).value->steps.size()==1);
     assert(!attempt.snapshot({2},102).blocked && !attempt.snapshot(binding.map,99).blocked);
+    runtime::RouteGoalLease lease;
+    const runtime::RouteGoalIdentity leaseIdentity{
+        binding.agent,binding.actor,binding.map,{9},binding.routeGeneration};
+    assert(lease.acquire(leaseIdentity,{2}) && lease.holds(leaseIdentity));
+    auto changedIdentity=leaseIdentity;
+    ++changedIdentity.routeGeneration;
+    assert(!lease.holds(changedIdentity));
+    changedIdentity=leaseIdentity;
+    ++changedIdentity.round.value;
+    assert(!lease.holds(changedIdentity));
+    lease.release();
+    assert(!lease.holds(leaseIdentity) && !lease.goal().isValid());
     // Reset is explicit; a failed/expired consume cannot smuggle stale facts into search.
     attempt={}; assert(attempt.schedule(binding,edge,{1},100));
     assert(!attempt.consume(binding,{2},100+runtime::ReplanAttempt::factLifetimeUs));

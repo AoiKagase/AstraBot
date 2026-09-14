@@ -291,6 +291,70 @@ void testValidationAndDeterminism() {
     assert(!dead.target.isValid() && !dead.hasAttackInput());
 }
 
+void testCombatLockReacquiresAfterTargetGenerationChange() {
+    Fixture fixture;
+    c::CombatLock lock{};
+    fixture.input.lock = &lock;
+    addVisual(fixture, 0, targetA, {100.0, 0.0, 0.0}, 1.0, now, 1);
+
+    const auto first = c::selectTarget(fixture.input);
+    assertTrack(first, targetA, p::ObservationSource::Vision);
+    assert(lock.target == targetA);
+    assert(lock.targetGeneration == targetA.generation);
+    assert(lock.acquiredMicros == now);
+    assert(lock.lastConfirmedMicros == now);
+    assert(lock.generation == 1);
+
+    fixture.input.tick.value += 1;
+    fixture.input.timeMicros += 10'000;
+    fixture.input.world.stamp.tick = fixture.input.tick;
+    fixture.input.world.stamp.timeMicros = fixture.input.timeMicros;
+    fixture.visual.stamp = fixture.input.world.stamp;
+    fixture.sounds.stamp = fixture.input.world.stamp;
+    fixture.input.weapon.tick = fixture.input.tick;
+    fixture.input.weapon.observedMicros = fixture.input.timeMicros;
+    fixture.visual.count = 0;
+    addVisual(fixture, 0, targetA, {100.0, 0.0, 0.0}, 1.0,
+              fixture.input.timeMicros, 2);
+
+    const auto retained = c::selectTarget(fixture.input);
+    assert(retained.action == c::CombatAction::Track);
+    assert(retained.target == targetA);
+    assert(retained.source == p::ObservationSource::Vision);
+    assert(retained.reason == c::CombatReason::Accepted);
+    assert(retained.validUntilMicros == fixture.input.timeMicros);
+    assert(lock.generation == 1);
+    assert(lock.acquiredMicros == now);
+    assert(lock.lastConfirmedMicros == fixture.input.timeMicros);
+
+    fixture.input.tick.value += 1;
+    fixture.input.timeMicros += 10'000;
+    fixture.input.world.stamp.tick = fixture.input.tick;
+    fixture.input.world.stamp.timeMicros = fixture.input.timeMicros;
+    fixture.visual.stamp = fixture.input.world.stamp;
+    fixture.sounds.stamp = fixture.input.world.stamp;
+    fixture.input.weapon.tick = fixture.input.tick;
+    fixture.input.weapon.observedMicros = fixture.input.timeMicros;
+    fixture.visual.count = 0;
+    const astrabot::core::PlayerId respawnedTarget{targetA.slot, {2}};
+    fixture.input.world.roster[targetA.slot - 1U] =
+        {respawnedTarget, p::Team::Terrorist};
+    addVisual(fixture, 0, respawnedTarget, {100.0, 0.0, 0.0}, 1.0,
+              fixture.input.timeMicros, 3);
+
+    const auto reacquired = c::selectTarget(fixture.input);
+    assert(reacquired.action == c::CombatAction::Track);
+    assert(reacquired.target == respawnedTarget);
+    assert(reacquired.source == p::ObservationSource::Vision);
+    assert(reacquired.reason == c::CombatReason::Accepted);
+    assert(reacquired.validUntilMicros == fixture.input.timeMicros);
+    assert(lock.target == respawnedTarget);
+    assert(lock.targetGeneration == respawnedTarget.generation);
+    assert(lock.generation == 2);
+    assert(lock.acquiredMicros == fixture.input.timeMicros);
+    assert(lock.lastConfirmedMicros == fixture.input.timeMicros);
+}
+
 } // namespace
 
 int main() {
@@ -299,5 +363,6 @@ int main() {
     testRelationsFailClosed();
     testStaleAndAnonymousEvidence();
     testValidationAndDeterminism();
+    testCombatLockReacquiresAfterTargetGenerationChange();
     return 0;
 }

@@ -9,8 +9,10 @@
 #include <extdll.h>
 #include <meta_api.h>
 
-#include <cstdint>
 #include <array>
+#include <cstddef>
+#include <cstdint>
+#include <cstdio>
 
 namespace astrabot::adapter::metamod {
 
@@ -39,6 +41,10 @@ public:
     void removalTrace(const debug::RemovalTrace& trace) noexcept;
     void movementTrace(const debug::MovementTrace& trace) noexcept;
     void runtimeCorrelationTrace(core::PlayerId player) noexcept;
+    // Adapter-side NAV diagnostics use the same file/console sink as the
+    // lifecycle and movement traces.  Keeping this entry point here avoids
+    // a second logging path that can disappear from file evidence.
+    void navLine(const char* text) noexcept;
 
     // Navigation diagnostics are already formatted by the caller. Keep the
     // adapter-only sink behind the same log-level and Metamod logging checks
@@ -46,6 +52,8 @@ public:
     void navLine(const char* text) noexcept { line(text); }
 
     static ConsoleDebug& instance() noexcept;
+
+    ~ConsoleDebug() noexcept;
 
 private:
     static void command();
@@ -58,11 +66,22 @@ private:
 
     void line(const char* text) noexcept;
     void commandLine(const char* text) noexcept;
+    void openLogFile() noexcept;
+    void closeLogFile() noexcept;
+    void writeLine(const char* text) noexcept;
+    bool rotateLogFile() noexcept;
 
     enginefuncs_t* engine_{nullptr};
     mutil_funcs_t* utility_{nullptr};
     LifecycleCoordinator* lifecycle_{nullptr};
     std::uint32_t debugLevel_{0};
+    std::FILE* logFile_{nullptr};
+    std::size_t logBytes_{0};
+    // ASTRABOT_LOG_PATH overrides the OS temp-file destination.  Console
+    // mirroring is opt-in through ASTRABOT_LOG_CONSOLE=1 for diagnostics.
+    bool consoleOutput_{false};
+    std::array<char, 512> logPath_{};
+    std::array<char, 516> logBackupPath_{};
     std::uint32_t nextBotOrdinal_{1};
     std::array<std::uint64_t, host::kMaxClientSlots> lastMovementLogCall_{};
     std::array<debug::MovementTraceSource, host::kMaxClientSlots> lastMovementSource_{};
@@ -79,6 +98,8 @@ private:
     std::array<float, host::kMaxClientSlots> physicalStartX_{};
     std::array<float, host::kMaxClientSlots> physicalStartY_{};
     std::array<float, host::kMaxClientSlots> physicalStartZ_{};
+    // Correlation diagnostics are sampled to avoid unbounded qconsole traffic.
+    std::array<std::uint64_t, host::kMaxClientSlots> lastCorrelationTick_{};
 };
 
 } // namespace astrabot::adapter::metamod

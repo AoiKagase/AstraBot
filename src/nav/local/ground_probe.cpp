@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 #include "nav/local/ground_probe.hpp"
+#include "nav/local/supported_nav.hpp"
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -22,7 +23,7 @@ ProbeReason floorReason(const runtime::FloorObservation& f, double minimumNormal
     case runtime::FloorObservationStatus::InvalidTrace: return ProbeReason::InvalidResult;
     case runtime::FloorObservationStatus::UnsupportedNormal: return ProbeReason::UnsupportedFloor;
     case runtime::FloorObservationStatus::HeightMismatch: return ProbeReason::FloorHeightMismatch;
-    case runtime::FloorObservationStatus::NavContainmentMissing: return ProbeReason::NavContainmentMissing;
+    case runtime::FloorObservationStatus::NavContainmentMissing: break; // NAV is advisory; validate the physical floor below.
     case runtime::FloorObservationStatus::Unknown:
     case runtime::FloorObservationStatus::Supported: break;
     }
@@ -83,7 +84,7 @@ ProbeResult probe(const runtime::MovementSnapshot& s, std::uint64_t generation,
         const auto& hit=*sweep->hull;
         if(!std::isfinite(hit.fraction) || hit.fraction<0 || hit.fraction>1 || !hit.end.isFinite() || !hit.normal.isFinite())
             result.reason=ProbeReason::InvalidResult;
-        else if(hit.startSolid) result.reason=ProbeReason::Blocked;
+        else if(hit.startSolid || hit.allSolid) result.reason=ProbeReason::Blocked;
         else if(hit.fraction<1) { result.reason=ProbeReason::Blocked; stairCandidate=true; }
         else if(std::abs(double(hit.end.x)-b.x)>0.001 || std::abs(double(hit.end.y)-b.y)>0.001 ||
                 std::abs(double(hit.end.z)-b.z)>0.001) result.reason=ProbeReason::InvalidResult;
@@ -120,18 +121,28 @@ ProbeResult probe(const runtime::MovementSnapshot& s, std::uint64_t generation,
     result.floorEvidenceValid=true;
     result.startFloorHeight=floor.height;
     result.lastFloorHeight=floor.height;
- std::optional<model::NavAreaId> observedArea=ground->ground->area;
- if(!observedArea) {
-     const auto fallbackArea=index.containing({s.position->x,s.position->y,floor.height},limits.navTolerance);
-     if(!fallbackArea || !*fallbackArea.value) return fail(ProbeReason::NavContainmentMissing);
-     observedArea=(**fallbackArea.value).areaId;
- }
- if(!observedArea->isValid()) return fail(ProbeReason::NavContainmentMissing);
- if(!locateOnly && *observedArea!=currentArea) return fail(ProbeReason::WrongStartArea);
- currentArea=*observedArea;
-    auto match=index.containing({s.position->x,s.position->y,floor.height},limits.navTolerance);
-    if(!match || !*match.value || (**match.value).areaId!=currentArea)
+    const auto observedArea=ground->ground->area;
+    if(observedArea && !observedArea->isValid()) return fail(ProbeReason::NavContainmentMissing);
+    if(!locateOnly && observedArea && *observedArea!=currentArea)
+        return fail(ProbeReason::WrongStartArea);
+    // Resolve the measured support once. Strict containment after a bounded
+    // nearest candidate would discard evidence without adding a physical check.
+    auto match=supportedNavArea(index,{s.position->x,s.position->y,floor.height},*s.hull,limits,
+        locateOnly ? model::NavAreaId{}:currentArea);
+    if(!match || !*match.value) return fail(ProbeReason::NavContainmentMissing);
+    const auto& sourceMatch=**match.value;
+    if(observedArea && sourceMatch.areaId!=*observedArea)
         return fail(ProbeReason::NavContainmentMissing);
+    // Physical support at an adjacent NAV seam is valid even when the
+    // previous route area no longer contains the actor's center.  The local
+    // follower performs the route reachability check after this observation;
+    // rejecting here makes narrow continuous passages look like walls.
+    const bool boundaryCandidate=sourceMatch.projectedPoint.x!=s.position->x ||
+                                 sourceMatch.projectedPoint.y!=s.position->y;
+    // Nearest NAV never grants occupancy. Check the actual origin, including
+    // locate-only calls; do not move the actor onto the NAV projection.
+    if(boundaryCandidate && !clearance(*s.position,*s.position)) return fail(result.reason);
+    currentArea=sourceMatch.areaId;
     auto position=*s.position;
     double previousFloorHeight=floor.height;
     model::NavAreaId area=currentArea;
@@ -153,8 +164,18 @@ ProbeResult probe(const runtime::MovementSnapshot& s, std::uint64_t generation,
         result.cumulativeDownDrop=(std::max)(0.0,result.startFloorHeight-double(next.height));
         result.maxDownStep=(std::max)(result.maxDownStep,(std::max)(0.0,intervalDrop));
         if(intervalDrop>limits.maxDrop) return fail(ProbeReason::UnsafeDrop);
-        match=index.containing({tx,ty,next.height},limits.navTolerance);
-        if(!match || !*match.value) return fail(ProbeReason::NavContainmentMissing);
+        match=supportedNavArea(index,{tx,ty,next.height},*s.hull,limits,{});
+        if(!match || !*match.value) {
+            // A narrow, physically continuous passage can leave a small
+            // centerline gap between adjacent NAV rectangles. The floor trace
+            // and hull sweep above are authoritative for this sample; keep
+            // the last confirmed area until a later sample supplies the next
+            // one instead of turning an advisory NAV miss into a wall.
+            if(result.initialReason==ProbeReason::None)
+                result.initialReason=ProbeReason::NavContainmentMissing;
+        } else {
+            area=(**match.value).areaId;
+        }
         const double originZ=double(next.height)-s.hull->minimum.z;
         if(!representable(originZ)) return fail(ProbeReason::InvalidInput);
         const model::NavVector3 destination{tx,ty,static_cast<float>(originZ)};
@@ -171,11 +192,11 @@ ProbeResult probe(const runtime::MovementSnapshot& s, std::uint64_t generation,
             const model::NavVector3 across{tx,ty,lifted.z};
             if(!clearance(position,lifted) || !clearance(lifted,across) || !clearance(across,destination))
                 return result;
-            result.lastStep=StepEvidence{position,lifted,across,
-                GroundedTarget{destination,(**match.value).areaId,next}};
+        result.lastStep=StepEvidence{position,lifted,across,
+            GroundedTarget{destination,area,next}};
             ++result.steps;
         }
-        position=destination; floor=next; area=(**match.value).areaId; ++result.samples;
+        position=destination; floor=next; ++result.samples;
         previousFloorHeight=next.height;
         result.lastFloorHeight=next.height;
     }

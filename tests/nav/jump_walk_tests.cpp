@@ -163,7 +163,7 @@ void failuresAndBudgets() {
     assert(missing.update(s,*f.index,binding.map,none,40000).jumpReason==JumpReason::MissingObservation && none.total==0);
 }
 void standingToDuckLandingObservations() {
-    const runtime::HullDimensions standing{{-16,-16,-36},{16,16,36}},duck{{-16,-16,-18},{16,16,18}};
+    const runtime::HullDimensions standing{{-16,-16,-36},{16,16,36}},duck{{-16,-16,-18},{16,16,32}};
     for(int mode=0;mode<3;++mode) {
         Fixture f(false,3); World world(*f.index); auto profile=limits();
         profile.crouch={standing,duck,1000000};
@@ -213,7 +213,7 @@ void standingToDuckLandingObservations() {
 void standingBeforeJump() {
     Fixture f;
     for(bool blocked : {false,true}) {
-        auto l=limits(); l.crouch={{{-16,-16,-36},{16,16,36}},{{-16,-16,-18},{16,16,18}},1000000};
+        auto l=limits(); l.crouch={{{-16,-16,-36},{16,16,36}},{{-16,-16,-18},{16,16,32}},1000000};
         Walk walk(binding,f.corridor,{150,50,0},l); World world(*f.index); world.ceiling=blocked;
         auto s=actor(); s.ducked=true; s.position->z=18; s.hull=l.crouch.crouched;
         const auto waiting=walk.update(s,*f.index,binding.map,world,40000,0,physics(walk,s));

@@ -6,7 +6,7 @@ namespace astrabot::nav::local {
 void IntentPump::stop(PumpReason reason) noexcept {
     intent_={}; hasIntent_=false; first_=false; reason_=reason;
 }
-FrameSchedule IntentPump::beginFrame(const runtime::MovementSnapshot& s) noexcept {
+FrameSchedule IntentPump::beginFrame(const runtime::MovementSnapshot& s,bool immediate) noexcept {
     eligible_=false;
     if(retired_ || !binding_.agent.isValid() || !binding_.actor.isValid() || !binding_.map.isValid() ||
        !binding_.routeGeneration || s.agent!=binding_.agent || s.actor!=binding_.actor || s.map!=binding_.map ||
@@ -32,6 +32,7 @@ FrameSchedule IntentPump::beginFrame(const runtime::MovementSnapshot& s) noexcep
         nextDecisionUs_=timeUs_+decisionPeriodUs-lateness%decisionPeriodUs;
         due_=true; return {true,true,PumpReason::None,missed};
     }
+    if(immediate) { due_=true; return {true,true,PumpReason::None,0}; }
     return {true,false,PumpReason::None,0};
 }
 bool IntentPump::publish(Binding binding, core::TickId tick, const MovementIntent& intent) noexcept {
