@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 #include <cstdio>
-#include <new>
-#include <cmath>
 #include <array>
+#include <cmath>
 #include <fstream>
 #include <limits>
+#include <new>
 #include <string_view>
 #include "adapter/cstrike/nav/console.hpp"
 #include "adapter/cstrike/nav/world_queries.hpp"
@@ -23,21 +23,21 @@ namespace astrabot::adapter::cstrike
 {
 namespace
 {
-constexpr std::size_t mib = 1024 * 1024;
-constexpr std::size_t inputLimit = 64 * mib;
-constexpr std::uint64_t currentAreaFallbackMaxAgeUs = 5'000'000;
-const nav::io::NavMeshReadLimits meshLimits{
-	inputLimit,
-	{100000, 65535, 65535, 8 * mib},
+constexpr std::size_t kMebibyte = 1024 * 1024;
+constexpr std::size_t kInputLimitBytes = 64 * kMebibyte;
+constexpr std::uint64_t kCurrentAreaFallbackMaxAgeUs = 5'000'000;
+const nav::io::NavMeshReadLimits kMeshLimits{
+	kInputLimitBytes,
+	{100000, 65535, 65535, 8 * kMebibyte},
 	{100000, 4096, 255, 255, 65536, 255, 1000000, 1000000, 1000000, 1000000, 1000000},
-	256 * mib};
+	256 * kMebibyte};
 
 // Route searches are actor-local, while the resulting corridors are executed
 // in the same world. Keep a small synchronous view of other actors' leading
 // edges so newly planned bots do not all select the same narrow entry. This
 // is a cost preference, not a hard exclusion: if the map has no alternative,
 // the route remains executable.
-constexpr std::size_t trafficLookAhead = 6;
+constexpr std::size_t kTrafficLookAhead = 6;
 struct TrafficReservation final
 {
 	nav::query::NavDirectedEdge edge{};
@@ -46,7 +46,7 @@ struct TrafficReservation final
 struct TrafficRoutePolicy final
 {
 	nav::query::NavRoutePolicy base{};
-	std::array<TrafficReservation, host::kMaxClientSlots * trafficLookAhead> occupied{};
+	std::array<TrafficReservation, host::kMaxClientSlots * kTrafficLookAhead> occupied{};
 	std::size_t count{0};
 };
 
@@ -456,7 +456,7 @@ void NavConsole::applyRuntimeNavigation(metamod::LifecycleCoordinator& owner,
 	current_->explicitRoute_ = explicitDecision;
 	current_->roamArrived_ = false;
 	nav::runtime::RouteOptions options;
-	options.limits = {100000, 256 * mib};
+	options.limits = {100000, 256 * kMebibyte};
 	options.groundNavTolerance = 18;
 	requestRoute(s, decision.navigationGoal, owner, options);
 	if (current_->session_ && current_->session_->executable() &&
@@ -638,10 +638,10 @@ nav::diagnostics::NavError NavConsole::publish(core::MapGeneration map,
 	invalidate(nav::runtime::SessionReason::GoalReplaced);
 	if (!map.isValid())
 		return {nav::diagnostics::NavErrorKind::InvalidInput};
-	const auto index = nav::query::NavSpatialIndex::build(mesh, {100000, 199999, 256 * mib});
+	const auto index = nav::query::NavSpatialIndex::build(mesh, {100000, 199999, 256 * kMebibyte});
 	if (!index)
 		return index.error;
-	const auto graph = nav::query::NavGraph::build(mesh, {100000, 1000000, 256 * mib});
+	const auto graph = nav::query::NavGraph::build(mesh, {100000, 1000000, 256 * kMebibyte});
 	if (!graph)
 		return graph.error;
 	distributionTopology_ = nav::query::DistributionTopology::build(map, *graph.value, *index.value);
@@ -671,7 +671,7 @@ bool NavConsole::load(const char* path, core::MapGeneration map, metamod::Lifecy
 			return false;
 		}
 		const auto end = input.tellg();
-		if (end < 0 || static_cast<std::uint64_t>(end) > inputLimit)
+		if (end < 0 || static_cast<std::uint64_t>(end) > kInputLimitBytes)
 		{
 			line("nav load=InputSizeLimit");
 			return false;
@@ -685,7 +685,7 @@ bool NavConsole::load(const char* path, core::MapGeneration map, metamod::Lifecy
 			line("nav load=InputChanged");
 			return false;
 		}
-		const auto mesh = nav::io::NavMeshLoader::load({bytes.data(), bytes.size()}, meshLimits);
+		const auto mesh = nav::io::NavMeshLoader::load({bytes.data(), bytes.size()}, kMeshLimits);
 		auto error = mesh ? publish(map, *mesh.value) : mesh.error;
 		if (!error.isNone())
 		{
@@ -883,7 +883,7 @@ std::optional<RuntimeNavigationState> NavConsole::runtimeState(const metamod::Li
 		actor->lastCurrentAreaRouteGeneration_ == (actor->session_ ? actor->session_->trace().routeGeneration : 0) &&
 		actor->lastCurrentAreaTick_.isValid() && !result.movement.tick.isBefore(actor->lastCurrentAreaTick_) &&
 		actor->navigationTimeUs_ >= actor->lastCurrentAreaUs_ &&
-		actor->navigationTimeUs_ - actor->lastCurrentAreaUs_ <= currentAreaFallbackMaxAgeUs)
+		actor->navigationTimeUs_ - actor->lastCurrentAreaUs_ <= kCurrentAreaFallbackMaxAgeUs)
 	{
 		result.currentArea = actor->lastCurrentArea_;
 		result.currentAreaHeld = true;
@@ -925,7 +925,7 @@ std::optional<RuntimeNavigationState> NavConsole::runtimeState(const metamod::Li
 				{
 					const auto cursor = other->walk_ ? other->walk_->step() : 0;
 					const auto count = (std::min)(
-						trafficLookAhead, trace.route->areas.size() > cursor ? trace.route->areas.size() - cursor : 0);
+						kTrafficLookAhead, trace.route->areas.size() > cursor ? trace.route->areas.size() - cursor : 0);
 					for (std::size_t i = 0; i < count; ++i)
 						if (trace.route->areas[cursor + i] == id)
 							return other->actor;
@@ -1196,7 +1196,7 @@ void NavConsole::execute(NavCommand command, metamod::LifecycleCoordinator& owne
 	current_->explicitRoute_ = true;
 	current_->roamArrived_ = false;
 	nav::runtime::RouteOptions options;
-	options.limits = {100000, 256 * mib};
+	options.limits = {100000, 256 * kMebibyte};
 	options.groundNavTolerance = 18;
 	requestRoute(s, *goal, owner, options);
 }
@@ -1273,7 +1273,7 @@ void NavConsole::requestRoute(const nav::runtime::MovementSnapshot& s, nav::mode
 			continue;
 		const auto cursor = other->walk_ ? other->walk_->step() : 0;
 		const auto count =
-			(std::min)(trafficLookAhead, route->steps.size() > cursor ? route->steps.size() - cursor : 0);
+			(std::min)(kTrafficLookAhead, route->steps.size() > cursor ? route->steps.size() - cursor : 0);
 		for (std::size_t depth = 0; depth < count && traffic.count < traffic.occupied.size(); ++depth)
 			traffic.occupied[traffic.count++] = {route->steps[cursor + depth].edge, depth};
 	}
@@ -1508,7 +1508,7 @@ bool NavConsole::runReplan(metamod::LifecycleCoordinator& owner) noexcept
 	const auto goal = current_->session_->trace().goal;
 	stopMotion();
 	nav::runtime::RouteOptions options;
-	options.limits = {100000, 256 * mib};
+	options.limits = {100000, 256 * kMebibyte};
 	options.groundNavTolerance = 18;
 	options.policy = policy->policy();
 	requestRoute(s, goal, owner, options);

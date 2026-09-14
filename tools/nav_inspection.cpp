@@ -17,7 +17,7 @@ namespace
 namespace fs = std::filesystem;
 using namespace nav;
 using namespace diagnostics;
-constexpr std::size_t mib = 1024 * 1024;
+constexpr std::size_t kMebibyte = 1024 * 1024;
 const char* kindName(NavErrorKind kind)
 {
 	switch (kind)
@@ -29,8 +29,9 @@ const char* kindName(NavErrorKind kind)
 		K(EndOfInput)
 		K(OffsetOverflow)
 		K(NonFiniteFloat)
-		K(InvalidInput) K(InvalidValue) K(UnsupportedValue) K(CountLimitExceeded) K(DuplicateId) K(DanglingReference)
-			K(InvalidGeometry) K(TrailingData) K(AllocationFailure) K(PolicyFailure)
+		K(InvalidInput)
+		K(InvalidValue) K(UnsupportedValue) K(CountLimitExceeded) K(DuplicateId) K(DanglingReference) K(InvalidGeometry)
+			K(TrailingData) K(AllocationFailure) K(PolicyFailure)
 #undef K
 	}
 	return "Unknown";
@@ -194,13 +195,13 @@ void limits(std::ostream& out, const Profile& p)
 	L(mesh.header.maxAreas)
 	L(mesh.header.maxPlaces)
 	L(mesh.header.maxPlaceBytes)
-	L(mesh.header.maxTotalPlaceBytes) L(mesh.areas.maxAreas) L(mesh.areas.maxConnectionsPerDirection)
-		L(mesh.areas.maxHidingSpotsPerArea) L(mesh.areas.maxApproachesPerArea) L(mesh.areas.maxEncountersPerArea)
-			L(mesh.areas.maxEncounterSpotsPerPath) L(mesh.areas.maxTotalConnections) L(mesh.areas.maxTotalHidingSpots)
-				L(mesh.areas.maxTotalApproaches) L(mesh.areas.maxTotalEncounters) L(mesh.areas.maxTotalEncounterSpots)
-					L(mesh.maxSnapshotBytes) L(index.maxAreas) L(index.maxNodes) L(index.maxIndexBytes)
-						L(graph.maxAreas) L(graph.maxEdges) L(graph.maxGraphBytes) L(route.maxExpansions)
-							L(route.maxWorkingBytes)
+	L(mesh.header.maxTotalPlaceBytes)
+	L(mesh.areas.maxAreas) L(mesh.areas.maxConnectionsPerDirection) L(mesh.areas.maxHidingSpotsPerArea)
+		L(mesh.areas.maxApproachesPerArea) L(mesh.areas.maxEncountersPerArea) L(mesh.areas.maxEncounterSpotsPerPath)
+			L(mesh.areas.maxTotalConnections) L(mesh.areas.maxTotalHidingSpots) L(mesh.areas.maxTotalApproaches)
+				L(mesh.areas.maxTotalEncounters) L(mesh.areas.maxTotalEncounterSpots) L(mesh.maxSnapshotBytes)
+					L(index.maxAreas) L(index.maxNodes) L(index.maxIndexBytes) L(graph.maxAreas) L(graph.maxEdges)
+						L(graph.maxGraphBytes) L(route.maxExpansions) L(route.maxWorkingBytes)
 #undef L
 }
 bool fileLength(const fs::path& path, std::uintmax_t& length)
@@ -384,13 +385,13 @@ int usage(std::ostream& out, bool help)
 } // namespace
 Profile compatibilityProfile() noexcept
 {
-	return {{64 * mib,
-			 {100000, 65535, 65535, 8 * mib},
+	return {{64 * kMebibyte,
+			 {100000, 65535, 65535, 8 * kMebibyte},
 			 {100000, 4096, 255, 255, 65536, 255, 1000000, 1000000, 1000000, 1000000, 1000000},
-			 256 * mib},
-			{100000, 199999, 256 * mib},
-			{100000, 1000000, 256 * mib},
-			{100000, 256 * mib}};
+			 256 * kMebibyte},
+			{100000, 199999, 256 * kMebibyte},
+			{100000, 1000000, 256 * kMebibyte},
+			{100000, 256 * kMebibyte}};
 }
 int run(const Options& options, const Profile& profile, std::ostream& out)
 {

@@ -61,7 +61,7 @@ LadderExitResult planExit(const LadderPlan& p, const runtime::MovementSnapshot& 
 		return true;
 	};
 	bool attached = touching;
-	constexpr double pi = 3.14159265358979323846;
+	constexpr double kPi = 3.14159265358979323846;
 	for (unsigned frame = 0; frame < 256 && (frame + 1) * unsigned(msec) <= 2000; ++frame)
 	{
 		MovementIntent intent;
@@ -71,7 +71,7 @@ LadderExitResult planExit(const LadderPlan& p, const runtime::MovementSnapshot& 
 		}
 		else if (attached)
 		{
-			intent.view = core::IntentVector{-45, std::atan2(-p.normal.y, -p.normal.x) * 180 / pi, 0};
+			intent.view = core::IntentVector{-45, std::atan2(-p.normal.y, -p.normal.x) * 180 / kPi, 0};
 			intent.direction = {-p.normal.x, -p.normal.y, 0};
 			intent.speed = (std::min)(physics.maximumSpeed, 200.0);
 			intent.forward = ActionRequest::Hold;

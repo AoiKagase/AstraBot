@@ -17,7 +17,7 @@ namespace astrabot::adapter::cstrike
 {
 namespace
 {
-constexpr nav::local::WalkLimits walkLimits{
+constexpr nav::local::WalkLimits kWalkLimits{
 	{21, 4, 48, 16, 18, 18, 64, 4, 18, 0.7},
 	200,
 	20,
@@ -406,7 +406,7 @@ void NavConsole::printMotion() noexcept
 			unsigned(d.avoidanceReason), d.avoidanceDistance, unsigned(candidate.has_value()),
 			candidate ? candidate->x : 0.0F, candidate ? candidate->y : 0.0F, candidate ? candidate->z : 0.0F,
 			d.leftClearance, d.rightClearance, unsigned(d.probeReason), d.queries,
-			d.queries < walkLimits.probe.maxQueries);
+			d.queries < kWalkLimits.probe.maxQueries);
 		line(avoidance);
 	}
 	static char timing[768]{};
@@ -832,7 +832,7 @@ void NavConsole::startMotion(const nav::runtime::MovementSnapshot& s) noexcept
 		static_cast<float>(std::clamp(double(s.position->y), lowY + insetY, highY - insetY)), 0};
 	const auto floor = nav::query::projectToArea(e, xy);
 	const nav::model::NavVector3 goal{xy.x, xy.y, static_cast<float>(floor.z)};
-	auto profile = walkLimits;
+	auto profile = kWalkLimits;
 	profile.jump = jumpLimits;
 	profile.drop = nav::local::DropLimits{};
 	profile.ladder = nav::local::LadderLimits{};
@@ -915,7 +915,7 @@ nav::local::ProbeResult NavConsole::guardGround(metamod::LifecycleCoordinator& o
 			return r;
 		}
 	} queries(*this, current_->guardQueries_);
-	auto limits = walkLimits.probe;
+	auto limits = kWalkLimits.probe;
 	limits.maxQueries = 21 - current_->guardQueries_;
 	const double dt = double(current_->motionTrace_.dispatchDurationUs) / 1000000;
 	const double yaw = pending.command.view.yaw * 3.14159265358979323846 / 180;
@@ -1393,13 +1393,13 @@ void NavConsole::beforeDispatch(metamod::LifecycleCoordinator& owner) noexcept
 	{
 		const auto queued = pending.tick;
 		auto center = *s.position;
-		center.z += s.hull->minimum.z - walkLimits.crouch.standing.minimum.z;
+		center.z += s.hull->minimum.z - kWalkLimits.crouch.standing.minimum.z;
 		const nav::runtime::QueryRequest q{
 			{s.agent, s.actor, s.map, s.tick, pending.binding.routeGeneration, ++current_->guardQueries_},
 			nav::runtime::QueryKind::Clearance,
 			center,
 			center,
-			walkLimits.crouch.standing};
+			kWalkLimits.crouch.standing};
 		inRequest_ = true;
 		const auto result = queryNavWorld(engine_, owner.entityFor(current_->actor), index_.get(), q,
 										  globals_ ? globals_->maxEntities : 0);
@@ -1436,7 +1436,7 @@ void NavConsole::beforeDispatch(metamod::LifecycleCoordinator& owner) noexcept
 										 *s.position,
 										 contact.end,
 										 s.hull,
-										 walkLimits.probe.navTolerance,
+										 kWalkLimits.probe.navTolerance,
 										 contact.id};
 			inRequest_ = true;
 			const auto result = queryNavWorld(engine_, owner.entityFor(current_->actor), index_.get(), q,

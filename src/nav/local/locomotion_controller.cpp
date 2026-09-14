@@ -8,7 +8,7 @@ namespace astrabot::nav::local
 namespace
 {
 using Vec = model::NavVector3;
-constexpr double pi = 3.14159265358979323846;
+constexpr double kPi = 3.14159265358979323846;
 double range(Vec a, Vec b) noexcept
 {
 	return std::hypot(double(a.x) - b.x, double(a.y) - b.y);
@@ -546,7 +546,7 @@ void LocomotionController::issue(WalkDecision& out, const runtime::MovementSnaps
 		envelope_.reset();
 		return;
 	}
-	out.intent.view = core::IntentVector{0, std::atan2(direction.y, direction.x) * 180 / pi, 0};
+	out.intent.view = core::IntentVector{0, std::atan2(direction.y, direction.x) * 180 / kPi, 0};
 	out.disposition = MotionDisposition::Execute;
 	envelope_ = MotionEnvelope{out.binding,
 							   s.tick,
@@ -647,8 +647,8 @@ WalkDecision LocomotionController::update(const runtime::MovementSnapshot& s, co
 	}
 	else if (std::hypot(cx, cy) < 0.001 && s.view && s.view->isFinite())
 	{
-		cx = std::cos(s.view->y * pi / 180.0);
-		cy = std::sin(s.view->y * pi / 180.0);
+		cx = std::cos(s.view->y * kPi / 180.0);
+		cy = std::sin(s.view->y * kPi / 180.0);
 	}
 	const double contactLength = std::hypot(cx, cy);
 	if (contactLength > 0.001)
@@ -749,8 +749,8 @@ WalkDecision LocomotionController::update(const runtime::MovementSnapshot& s, co
 			double ax = progressAxis_.x, ay = progressAxis_.y;
 			if (std::hypot(ax, ay) < 0.001 && s.view && s.view->isFinite())
 			{
-				ax = std::cos(s.view->y * pi / 180.0);
-				ay = std::sin(s.view->y * pi / 180.0);
+				ax = std::cos(s.view->y * kPi / 180.0);
+				ay = std::sin(s.view->y * kPi / 180.0);
 			}
 			const double axisLength = std::hypot(ax, ay);
 			if (axisLength > 0.001)

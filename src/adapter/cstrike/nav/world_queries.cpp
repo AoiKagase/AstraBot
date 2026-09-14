@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 #include <cmath>
-#include <limits>
 #include <cstring>
+#include <limits>
 #include "adapter/cstrike/nav/world_queries.hpp"
 
 namespace astrabot::adapter::cstrike

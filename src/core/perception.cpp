@@ -7,7 +7,7 @@ namespace astrabot::core::perception
 {
 namespace
 {
-constexpr double pi = 3.14159265358979323846;
+constexpr double kPi = 3.14159265358979323846;
 std::uint64_t add(std::uint64_t a, std::uint64_t b) noexcept
 {
 	const auto max = (std::numeric_limits<std::uint64_t>::max)();
@@ -41,7 +41,7 @@ Reason geometry(Point eye, Point forward, Point end, VisionSettings settings) no
 		return Reason::OutOfRange;
 	const double dot = (delta.x / distance) * (forward.x / length) + (delta.y / distance) * (forward.y / length) +
 					   (delta.z / distance) * (forward.z / length);
-	return dot + 1e-12 >= std::cos(settings.fullFovDegrees * pi / 360) ? Reason::None : Reason::OutsideFov;
+	return dot + 1e-12 >= std::cos(settings.fullFovDegrees * kPi / 360) ? Reason::None : Reason::OutsideFov;
 }
 } // namespace
 bool finite(Point p) noexcept
