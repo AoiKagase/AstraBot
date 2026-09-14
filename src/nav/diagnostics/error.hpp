@@ -8,134 +8,146 @@
 #include <utility>
 #include <type_traits>
 
-namespace astrabot::nav::diagnostics {
+namespace astrabot::nav::diagnostics
+{
 
-enum class NavErrorKind : std::uint8_t {
-    None = 0,
-    EndOfInput,
-    OffsetOverflow,
-    NonFiniteFloat,
-    InvalidInput,
-    InvalidValue,
-    UnsupportedValue,
-    CountLimitExceeded,
-    DuplicateId,
-    DanglingReference,
-    InvalidGeometry,
-    TrailingData,
-    AllocationFailure,
-    PolicyFailure,
+enum class NavErrorKind : std::uint8_t
+{
+	None = 0,
+	EndOfInput,
+	OffsetOverflow,
+	NonFiniteFloat,
+	InvalidInput,
+	InvalidValue,
+	UnsupportedValue,
+	CountLimitExceeded,
+	DuplicateId,
+	DanglingReference,
+	InvalidGeometry,
+	TrailingData,
+	AllocationFailure,
+	PolicyFailure,
 };
 
-enum class NavRecord : std::uint8_t {
-    None = 0,
-    RawInput,
-    FileHeader,
-    PlaceDictionary,
-    Area,
-    Connection,
-    HidingSpot,
-    Approach,
-    Encounter,
-    TraversalLink,
-    Graph,
-    Route,
+enum class NavRecord : std::uint8_t
+{
+	None = 0,
+	RawInput,
+	FileHeader,
+	PlaceDictionary,
+	Area,
+	Connection,
+	HidingSpot,
+	Approach,
+	Encounter,
+	TraversalLink,
+	Graph,
+	Route,
 };
 
-enum class NavField : std::uint8_t {
-    None = 0,
-    RawBytes,
-    Magic,
-    Version,
-    BspSize,
-    PlaceCount,
-    PlaceLength,
-    PlaceText,
-    AreaCount,
-    AreaId,
-    Attributes,
-    NorthWestExtent,
-    SouthEastExtent,
-    NorthEastZ,
-    SouthWestZ,
-    ConnectionCount,
-    ConnectionAreaId,
-    HidingSpotCount,
-    HidingSpotId,
-    HidingSpotFlags,
-    ApproachCount,
-    ApproachAreaId,
-    ApproachTraversal,
-    EncounterCount,
-    EncounterAreaId,
-    EncounterDirection,
-    EncounterSpotCount,
-    EncounterSpotId,
-    EncounterSpotT,
-    Place,
-    GraphBytes,
-    GraphTraversal,
-    RouteStart,
-    RouteGoal,
-    RouteCost,
-    RouteHeuristic,
-    RouteBytes,
-    LinkCount,
-    LinkWorkingBytes,
-    LinkFingerprint,
-    LinkSourceId,
-    LinkGeneration,
-    LinkId,
-    LinkFrom,
-    LinkTo,
-    LinkTraversal,
-    LinkDirection,
-    LinkEntry,
-    LinkExit,
-    LinkCost,
-    LinkGenerationConflict,
-    LinkConflict,
+enum class NavField : std::uint8_t
+{
+	None = 0,
+	RawBytes,
+	Magic,
+	Version,
+	BspSize,
+	PlaceCount,
+	PlaceLength,
+	PlaceText,
+	AreaCount,
+	AreaId,
+	Attributes,
+	NorthWestExtent,
+	SouthEastExtent,
+	NorthEastZ,
+	SouthWestZ,
+	ConnectionCount,
+	ConnectionAreaId,
+	HidingSpotCount,
+	HidingSpotId,
+	HidingSpotFlags,
+	ApproachCount,
+	ApproachAreaId,
+	ApproachTraversal,
+	EncounterCount,
+	EncounterAreaId,
+	EncounterDirection,
+	EncounterSpotCount,
+	EncounterSpotId,
+	EncounterSpotT,
+	Place,
+	GraphBytes,
+	GraphTraversal,
+	RouteStart,
+	RouteGoal,
+	RouteCost,
+	RouteHeuristic,
+	RouteBytes,
+	LinkCount,
+	LinkWorkingBytes,
+	LinkFingerprint,
+	LinkSourceId,
+	LinkGeneration,
+	LinkId,
+	LinkFrom,
+	LinkTo,
+	LinkTraversal,
+	LinkDirection,
+	LinkEntry,
+	LinkExit,
+	LinkCost,
+	LinkGenerationConflict,
+	LinkConflict,
 };
 
-struct NavError final {
-    NavErrorKind kind{NavErrorKind::None};
-    std::uint64_t offset{0};
-    NavRecord record{NavRecord::None};
-    NavField field{NavField::None};
+struct NavError final
+{
+	NavErrorKind kind{NavErrorKind::None};
+	std::uint64_t offset{0};
+	NavRecord record{NavRecord::None};
+	NavField field{NavField::None};
 
-    constexpr bool isNone() const noexcept {
-        return kind == NavErrorKind::None;
-    }
+	constexpr bool isNone() const noexcept
+	{
+		return kind == NavErrorKind::None;
+	}
 
-    friend constexpr bool operator==(NavError left, NavError right) noexcept {
-        return left.kind == right.kind && left.offset == right.offset &&
-               left.record == right.record && left.field == right.field;
-    }
-    friend constexpr bool operator!=(NavError left, NavError right) noexcept {
-        return !(left == right);
-    }
+	friend constexpr bool operator==(NavError left, NavError right) noexcept
+	{
+		return left.kind == right.kind && left.offset == right.offset && left.record == right.record &&
+			   left.field == right.field;
+	}
+	friend constexpr bool operator!=(NavError left, NavError right) noexcept
+	{
+		return !(left == right);
+	}
 };
 
-template <typename T>
-struct ReadResult final {
-    std::optional<T> value{};
-    NavError error{};
+template <typename T> struct ReadResult final
+{
+	std::optional<T> value{};
+	NavError error{};
 
-    static ReadResult success(T result) noexcept(std::is_nothrow_move_constructible_v<T>) {
-        return {std::optional<T>{std::move(result)}, NavError{}};
-    }
+	static ReadResult success(T result) noexcept(std::is_nothrow_move_constructible_v<T>)
+	{
+		return {std::optional<T>{std::move(result)}, NavError{}};
+	}
 
-    static ReadResult failure(NavError reason) noexcept {
-        return {std::nullopt, reason};
-    }
+	static ReadResult failure(NavError reason) noexcept
+	{
+		return {std::nullopt, reason};
+	}
 
-    bool succeeded() const noexcept {
-        return value.has_value() && error.isNone();
-    }
+	bool succeeded() const noexcept
+	{
+		return value.has_value() && error.isNone();
+	}
 
-    explicit operator bool() const noexcept {
-        return succeeded();
-    }
+	explicit operator bool() const noexcept
+	{
+		return succeeded();
+	}
 };
 
 } // namespace astrabot::nav::diagnostics

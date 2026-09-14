@@ -19,1883 +19,2291 @@
 #undef snprintf
 #endif
 
-namespace astrabot::adapter::metamod {
-namespace {
+namespace astrabot::adapter::metamod
+{
+namespace
+{
 
 LifecycleCoordinator gCoordinator{};
 
-void markIgnored() noexcept {
-    if (gpMetaGlobals != nullptr) {
-        gpMetaGlobals->mres = MRES_IGNORED;
-    }
+void markIgnored() noexcept
+{
+	if (gpMetaGlobals != nullptr)
+	{
+		gpMetaGlobals->mres = MRES_IGNORED;
+	}
 }
 
-template <std::size_t Size>
-void copyCommandWord(
-    std::array<char, Size>& destination,
-    const char* source) noexcept {
-    destination = {};
-    if (source == nullptr) {
-        return;
-    }
-    std::uint16_t index = 0;
-    while (index + 1U < destination.size() && source[index] != '\0') {
-        destination[index] = source[index];
-        ++index;
-    }
+template <std::size_t Size> void copyCommandWord(std::array<char, Size>& destination, const char* source) noexcept
+{
+	destination = {};
+	if (source == nullptr)
+	{
+		return;
+	}
+	std::uint16_t index = 0;
+	while (index + 1U < destination.size() && source[index] != '\0')
+	{
+		destination[index] = source[index];
+		++index;
+	}
 }
 
 using cstrike::protocol::weaponCommand;
 
-struct CommandContextGuard final {
-    bool& active;
-    ~CommandContextGuard() { active = false; }
+struct CommandContextGuard final
+{
+	bool& active;
+	~CommandContextGuard()
+	{
+		active = false;
+	}
 };
 
-bool resolveUserMessageIds(
-    mutil_funcs_t* utilityFunctions,
-    cstrike::UserMessageIds& ids) noexcept {
-    if (utilityFunctions == nullptr ||
-        utilityFunctions->pfnGetUserMsgID == nullptr) {
-        return false;
-    }
-    int messageSize = 0;
-    ids.vguiMenu = utilityFunctions->pfnGetUserMsgID(
-        PLID, "VGUIMenu", &messageSize);
-    ids.showMenu = utilityFunctions->pfnGetUserMsgID(
-        PLID, "ShowMenu", &messageSize);
-    ids.teamInfo = utilityFunctions->pfnGetUserMsgID(
-        PLID, "TeamInfo", &messageSize);
-    ids.hltv = utilityFunctions->pfnGetUserMsgID(PLID, "HLTV", &messageSize);
-    ids.screenFade = utilityFunctions->pfnGetUserMsgID(
-        PLID, "ScreenFade", &messageSize);
-    ids.money = utilityFunctions->pfnGetUserMsgID(PLID, "Money", &messageSize);
-    if (ids.screenFade == ids.vguiMenu || ids.screenFade == ids.showMenu ||
-        ids.screenFade == ids.teamInfo || ids.screenFade == ids.hltv) {
-        ids.screenFade = 0;
-    }
-    return ids.valid();
+bool resolveUserMessageIds(mutil_funcs_t* utilityFunctions, cstrike::UserMessageIds& ids) noexcept
+{
+	if (utilityFunctions == nullptr || utilityFunctions->pfnGetUserMsgID == nullptr)
+	{
+		return false;
+	}
+	int messageSize = 0;
+	ids.vguiMenu = utilityFunctions->pfnGetUserMsgID(PLID, "VGUIMenu", &messageSize);
+	ids.showMenu = utilityFunctions->pfnGetUserMsgID(PLID, "ShowMenu", &messageSize);
+	ids.teamInfo = utilityFunctions->pfnGetUserMsgID(PLID, "TeamInfo", &messageSize);
+	ids.hltv = utilityFunctions->pfnGetUserMsgID(PLID, "HLTV", &messageSize);
+	ids.screenFade = utilityFunctions->pfnGetUserMsgID(PLID, "ScreenFade", &messageSize);
+	ids.money = utilityFunctions->pfnGetUserMsgID(PLID, "Money", &messageSize);
+	if (ids.screenFade == ids.vguiMenu || ids.screenFade == ids.showMenu || ids.screenFade == ids.teamInfo ||
+		ids.screenFade == ids.hltv)
+	{
+		ids.screenFade = 0;
+	}
+	return ids.valid();
 }
 
-std::uint64_t engineTimeMicros(globalvars_t* globals) noexcept {
-    if (globals == nullptr || !std::isfinite(globals->time) ||
-        globals->time < 0.0F) {
-        return 0U;
-    }
-    const double micros = static_cast<double>(globals->time) * 1000000.0;
-    constexpr double maxExclusive = 18446744073709551616.0;
-    if (!std::isfinite(micros) || micros < 0.0 || micros >= maxExclusive) {
-        return 0U;
-    }
-    return static_cast<std::uint64_t>(micros);
+std::uint64_t engineTimeMicros(globalvars_t* globals) noexcept
+{
+	if (globals == nullptr || !std::isfinite(globals->time) || globals->time < 0.0F)
+	{
+		return 0U;
+	}
+	const double micros = static_cast<double>(globals->time) * 1000000.0;
+	constexpr double maxExclusive = 18446744073709551616.0;
+	if (!std::isfinite(micros) || micros < 0.0 || micros >= maxExclusive)
+	{
+		return 0U;
+	}
+	return static_cast<std::uint64_t>(micros);
 }
 
 } // namespace
 
-std::size_t LifecycleCoordinator::produceExperienceEvents(
-    void*, const LifecycleCoordinator& owner, const RuntimeFrame& frame,
-    core::PlayerId player, const edict_t*,
-    core::experience::ExperienceEvent* output, std::size_t capacity) noexcept {
-    if (output == nullptr || capacity == 0U || !frame.valid() ||
-        !frame.mapIdentity.valid() || !player.isValid() ||
-        player.slot > host::kMaxClientSlots) {
-        return 0U;
-    }
-    const auto binding = owner.agents().findByPlayer(player);
-    if (!binding.isValid() || binding.player != player ||
-        binding.map != frame.map) {
-        return 0U;
-    }
-    const auto* affiliation = owner.teams().find(player);
-    if (affiliation == nullptr ||
-        affiliation->team == core::perception::Team::Unknown) {
-        return 0U;
-    }
-    const auto nav = owner.navConsole().runtimeState(owner, player);
-    if (!nav || !nav->currentArea || !nav->currentArea->isValid()) {
-        return 0U;
-    }
-    const auto index = static_cast<std::size_t>(player.slot - 1U);
-    const auto area = *nav->currentArea;
-    std::size_t count = 0U;
-    const auto append = [&](core::experience::ExperienceEventKind kind,
-                            double amount, bool success) noexcept {
-        if (count >= capacity) return;
-        auto& event = output[count++];
-        event = {};
-        event.map = frame.mapIdentity;
-        event.round = frame.round;
-        event.tick = frame.tick;
-        event.timeMicros = frame.nowMicros;
-        event.sequence = ++owner.experienceEventSequence_;
-        event.kind = kind;
-        event.area = area.value;
-        event.actor = player;
-        event.actorKind = core::experience::ActorKind::Bot;
-        event.team = affiliation->team;
-        event.amount = amount;
-        event.success = success;
-    };
+std::size_t LifecycleCoordinator::produceExperienceEvents(void*, const LifecycleCoordinator& owner,
+														  const RuntimeFrame& frame, core::PlayerId player,
+														  const edict_t*, core::experience::ExperienceEvent* output,
+														  std::size_t capacity) noexcept
+{
+	if (output == nullptr || capacity == 0U || !frame.valid() || !frame.mapIdentity.valid() || !player.isValid() ||
+		player.slot > host::kMaxClientSlots)
+	{
+		return 0U;
+	}
+	const auto binding = owner.agents().findByPlayer(player);
+	if (!binding.isValid() || binding.player != player || binding.map != frame.map)
+	{
+		return 0U;
+	}
+	const auto* affiliation = owner.teams().find(player);
+	if (affiliation == nullptr || affiliation->team == core::perception::Team::Unknown)
+	{
+		return 0U;
+	}
+	const auto nav = owner.navConsole().runtimeState(owner, player);
+	if (!nav || !nav->currentArea || !nav->currentArea->isValid())
+	{
+		return 0U;
+	}
+	const auto index = static_cast<std::size_t>(player.slot - 1U);
+	const auto area = *nav->currentArea;
+	std::size_t count = 0U;
+	const auto append = [&](core::experience::ExperienceEventKind kind, double amount, bool success) noexcept {
+		if (count >= capacity)
+			return;
+		auto& event = output[count++];
+		event = {};
+		event.map = frame.mapIdentity;
+		event.round = frame.round;
+		event.tick = frame.tick;
+		event.timeMicros = frame.nowMicros;
+		event.sequence = ++owner.experienceEventSequence_;
+		event.kind = kind;
+		event.area = area.value;
+		event.actor = player;
+		event.actorKind = core::experience::ActorKind::Bot;
+		event.team = affiliation->team;
+		event.amount = amount;
+		event.success = success;
+	};
 
-    // AreaEntered is emitted once per observed area transition.  Keep the
-    // health/death deltas independent of area movement so a bot taking damage
-    // while holding a position still contributes to Experience in that frame.
-    if (owner.experienceAreas_[index] != area) {
-        owner.experienceAreas_[index] = area;
-        append(core::experience::ExperienceEventKind::AreaEntered, 1.0, true);
-    }
-    const auto& health = owner.runtimeHealth_[index];
-    if (health.known && health.player == player && health.frame.map == frame.map &&
-        health.frame.round == frame.round && health.frame.tick == frame.tick) {
-        const auto damage = health.observedHealthLoss - owner.experienceDamageSeen_[index];
-        if (damage > 0.0 && std::isfinite(damage)) {
-            owner.experienceDamageSeen_[index] = health.observedHealthLoss;
-            append(core::experience::ExperienceEventKind::DamageReceived, damage, true);
-        }
-        if (health.deaths > owner.experienceDeathsSeen_[index]) {
-            owner.experienceDeathsSeen_[index] = health.deaths;
-            append(core::experience::ExperienceEventKind::Death, 1.0, false);
-        }
-    }
-    return count;
-}
-
-bool LifecycleCoordinator::readObjective(
-    void*, const LifecycleCoordinator& owner, const RuntimeFrame& frame,
-    core::PlayerId player, const edict_t* entity,
-    RuntimeObjectiveObservation& objective,
-    RuntimeEconomyObservation& economy) noexcept {
-    if (!frame.valid() || !frame.mapIdentity.valid() || !player.isValid() ||
-        entity == nullptr || entity->free ||
-        owner.registry_.mapGeneration() != frame.map ||
-        owner.registry_.currentPlayer(player.slot) != player) {
-        return false;
-    }
-    const char* mapName = nullptr;
-    if (owner.engineFunctions_ != nullptr && owner.engineGlobals_ != nullptr &&
-        owner.engineFunctions_->pfnSzFromIndex != nullptr) {
-        mapName = owner.engineFunctions_->pfnSzFromIndex(owner.engineGlobals_->mapname);
-    }
-    if (mapName == nullptr) return false;
-
-    const auto affiliation = owner.teams_.find(player);
-    if (affiliation == nullptr || affiliation->team == core::perception::Team::Unknown) {
-        return false;
-    }
-    const auto index = static_cast<std::size_t>(player.slot - 1U);
-    objective = {};
-    economy = {};
-    objective.team.known = false;
-    if (std::strncmp(mapName, "de_", 3) == 0) {
-        objective.available = true;
-        objective.team.known = true;
-        objective.team.family = core::team::ObjectiveFamily::BombDefusal;
-        const bool terrorist = affiliation->team == core::perception::Team::Terrorist;
-        objective.team.phase = terrorist ? core::team::ObjectivePhase::Attack
-                                         : core::team::ObjectivePhase::Defense;
-        objective.team.state = core::team::ObjectiveState::Active;
-        objective.tactical.kind = core::tactical::ObjectiveKind::Bomb;
-        objective.tactical.bomb = core::tactical::BombState::None;
-        objective.tactical.canAttack = terrorist;
-        objective.tactical.canDefend = !terrorist;
-        objective.action.kind = core::action::ObjectiveKind::Bomb;
-        bool hasC4 = false;
-        bool ownCarrier = false;
-        for (std::uint16_t slot = 1; slot <= owner.registry_.clientMax(); ++slot) {
-            const auto carrier = owner.registry_.currentPlayer(slot);
-            const auto* carrierEntity = owner.entityFor(carrier);
-            if (!carrier.isValid() || carrierEntity == nullptr || carrierEntity->free ||
-                (carrierEntity->v.weapons & (1 << WEAPON_C4)) == 0) continue;
-            hasC4 = true;
-            const auto* carrierAffiliation = owner.teams_.find(carrier);
-            if (carrierAffiliation != nullptr &&
-                carrierAffiliation->team == affiliation->team) {
-                objective.team.carrier = carrier;
-                ownCarrier = true;
-            }
-            break;
-        }
-        objective.action.bomb = hasC4
-            ? static_cast<core::action::BombState>(core::tactical::BombState::Carried)
-            : static_cast<core::action::BombState>(core::tactical::BombState::None);
-        objective.action.canPlant = hasC4 && affiliation->team == core::perception::Team::Terrorist;
-        objective.tactical.bomb = hasC4 ? core::tactical::BombState::Carried
-                                        : core::tactical::BombState::None;
-        objective.team.state = ownCarrier ? core::team::ObjectiveState::Carried
-                                           : core::team::ObjectiveState::Active;
-        objective.team.phase = ownCarrier ? core::team::ObjectivePhase::Carried
-                                           : (terrorist ? core::team::ObjectivePhase::Attack
-                                                        : core::team::ObjectivePhase::Defense);
-    } else if (std::strncmp(mapName, "cs_", 3) == 0 &&
-               owner.engineFunctions_->pfnSzFromIndex != nullptr &&
-               owner.engineGlobals_ != nullptr) {
-        objective.available = true;
-        objective.team.known = true;
-        objective.team.family = core::team::ObjectiveFamily::HostageRescue;
-        objective.team.phase = core::team::ObjectivePhase::Escort;
-        objective.team.state = core::team::ObjectiveState::Active;
-        objective.tactical.kind = core::tactical::ObjectiveKind::Hostage;
-        objective.action.kind = core::action::ObjectiveKind::Hostage;
-        const int maxEntities = std::clamp(owner.engineGlobals_->maxEntities, 0, 2048);
-        for (int slot = host::kMaxClientSlots + 1;
-             slot < maxEntities && objective.team.targetCount < objective.team.targets.size(); ++slot) {
-            auto* candidate = owner.engineFunctions_->pfnPEntityOfEntIndex
-                ? owner.engineFunctions_->pfnPEntityOfEntIndex(slot) : nullptr;
-            if (candidate == nullptr || candidate->free) continue;
-            const char* classname = owner.engineFunctions_->pfnSzFromIndex(candidate->v.classname);
-            if (classname == nullptr || std::strcmp(classname, "hostage_entity") != 0) continue;
-            auto& target = objective.team.targets[objective.team.targetCount++];
-            target.id = {static_cast<core::EntityId>(slot),
-                core::Generation{static_cast<std::uint32_t>(candidate->serialnumber)}};
-            target.position = {candidate->v.origin.x, candidate->v.origin.y, candidate->v.origin.z};
-            target.alive = candidate->v.deadflag == DEAD_NO;
-        }
-    } else if (std::strncmp(mapName, "as_", 3) == 0) {
-        // VIP identity is private GameDLL state; keep it unavailable until a
-        // supported authority hook supplies the identity.
-        objective = {};
-    } else {
-        return false;
-    }
-
-    const auto moneyKnown = player.slot <= owner.moneyKnown_.size() &&
-        owner.moneyKnown_[index];
-    // Current weapon utility is supplied by readWeapon() in runtime_input;
-    // money alone must not make an economy decision appear complete.
-    (void)moneyKnown;
-    return objective.available || economy.tactical.available;
+	// AreaEntered is emitted once per observed area transition.  Keep the
+	// health/death deltas independent of area movement so a bot taking damage
+	// while holding a position still contributes to Experience in that frame.
+	if (owner.experienceAreas_[index] != area)
+	{
+		owner.experienceAreas_[index] = area;
+		append(core::experience::ExperienceEventKind::AreaEntered, 1.0, true);
+	}
+	const auto& health = owner.runtimeHealth_[index];
+	if (health.known && health.player == player && health.frame.map == frame.map && health.frame.round == frame.round &&
+		health.frame.tick == frame.tick)
+	{
+		const auto damage = health.observedHealthLoss - owner.experienceDamageSeen_[index];
+		if (damage > 0.0 && std::isfinite(damage))
+		{
+			owner.experienceDamageSeen_[index] = health.observedHealthLoss;
+			append(core::experience::ExperienceEventKind::DamageReceived, damage, true);
+		}
+		if (health.deaths > owner.experienceDeathsSeen_[index])
+		{
+			owner.experienceDeathsSeen_[index] = health.deaths;
+			append(core::experience::ExperienceEventKind::Death, 1.0, false);
+		}
+	}
+	return count;
 }
 
-bool LifecycleCoordinator::dispatchWeaponSelectionHook(
-    edict_t* entity, core::WeaponSelection selection) noexcept {
-    return gCoordinator.dispatchWeaponSelection(entity, selection);
+bool LifecycleCoordinator::readObjective(void*, const LifecycleCoordinator& owner, const RuntimeFrame& frame,
+										 core::PlayerId player, const edict_t* entity,
+										 RuntimeObjectiveObservation& objective,
+										 RuntimeEconomyObservation& economy) noexcept
+{
+	if (!frame.valid() || !frame.mapIdentity.valid() || !player.isValid() || entity == nullptr || entity->free ||
+		owner.registry_.mapGeneration() != frame.map || owner.registry_.currentPlayer(player.slot) != player)
+	{
+		return false;
+	}
+	const char* mapName = nullptr;
+	if (owner.engineFunctions_ != nullptr && owner.engineGlobals_ != nullptr &&
+		owner.engineFunctions_->pfnSzFromIndex != nullptr)
+	{
+		mapName = owner.engineFunctions_->pfnSzFromIndex(owner.engineGlobals_->mapname);
+	}
+	if (mapName == nullptr)
+		return false;
+
+	const auto affiliation = owner.teams_.find(player);
+	if (affiliation == nullptr || affiliation->team == core::perception::Team::Unknown)
+	{
+		return false;
+	}
+	const auto index = static_cast<std::size_t>(player.slot - 1U);
+	objective = {};
+	economy = {};
+	objective.team.known = false;
+	if (std::strncmp(mapName, "de_", 3) == 0)
+	{
+		objective.available = true;
+		objective.team.known = true;
+		objective.team.family = core::team::ObjectiveFamily::BombDefusal;
+		const bool terrorist = affiliation->team == core::perception::Team::Terrorist;
+		objective.team.phase = terrorist ? core::team::ObjectivePhase::Attack : core::team::ObjectivePhase::Defense;
+		objective.team.state = core::team::ObjectiveState::Active;
+		objective.tactical.kind = core::tactical::ObjectiveKind::Bomb;
+		objective.tactical.bomb = core::tactical::BombState::None;
+		objective.tactical.canAttack = terrorist;
+		objective.tactical.canDefend = !terrorist;
+		objective.action.kind = core::action::ObjectiveKind::Bomb;
+		bool hasC4 = false;
+		bool ownCarrier = false;
+		for (std::uint16_t slot = 1; slot <= owner.registry_.clientMax(); ++slot)
+		{
+			const auto carrier = owner.registry_.currentPlayer(slot);
+			const auto* carrierEntity = owner.entityFor(carrier);
+			if (!carrier.isValid() || carrierEntity == nullptr || carrierEntity->free ||
+				(carrierEntity->v.weapons & (1 << WEAPON_C4)) == 0)
+				continue;
+			hasC4 = true;
+			const auto* carrierAffiliation = owner.teams_.find(carrier);
+			if (carrierAffiliation != nullptr && carrierAffiliation->team == affiliation->team)
+			{
+				objective.team.carrier = carrier;
+				ownCarrier = true;
+			}
+			break;
+		}
+		objective.action.bomb = hasC4 ? static_cast<core::action::BombState>(core::tactical::BombState::Carried)
+									  : static_cast<core::action::BombState>(core::tactical::BombState::None);
+		objective.action.canPlant = hasC4 && affiliation->team == core::perception::Team::Terrorist;
+		objective.tactical.bomb = hasC4 ? core::tactical::BombState::Carried : core::tactical::BombState::None;
+		objective.team.state = ownCarrier ? core::team::ObjectiveState::Carried : core::team::ObjectiveState::Active;
+		objective.team.phase =
+			ownCarrier ? core::team::ObjectivePhase::Carried
+					   : (terrorist ? core::team::ObjectivePhase::Attack : core::team::ObjectivePhase::Defense);
+	}
+	else if (std::strncmp(mapName, "cs_", 3) == 0 && owner.engineFunctions_->pfnSzFromIndex != nullptr &&
+			 owner.engineGlobals_ != nullptr)
+	{
+		objective.available = true;
+		objective.team.known = true;
+		objective.team.family = core::team::ObjectiveFamily::HostageRescue;
+		objective.team.phase = core::team::ObjectivePhase::Escort;
+		objective.team.state = core::team::ObjectiveState::Active;
+		objective.tactical.kind = core::tactical::ObjectiveKind::Hostage;
+		objective.action.kind = core::action::ObjectiveKind::Hostage;
+		const int maxEntities = std::clamp(owner.engineGlobals_->maxEntities, 0, 2048);
+		for (int slot = host::kMaxClientSlots + 1;
+			 slot < maxEntities && objective.team.targetCount < objective.team.targets.size(); ++slot)
+		{
+			auto* candidate = owner.engineFunctions_->pfnPEntityOfEntIndex
+								  ? owner.engineFunctions_->pfnPEntityOfEntIndex(slot)
+								  : nullptr;
+			if (candidate == nullptr || candidate->free)
+				continue;
+			const char* classname = owner.engineFunctions_->pfnSzFromIndex(candidate->v.classname);
+			if (classname == nullptr || std::strcmp(classname, "hostage_entity") != 0)
+				continue;
+			auto& target = objective.team.targets[objective.team.targetCount++];
+			target.id = {static_cast<core::EntityId>(slot),
+						 core::Generation{static_cast<std::uint32_t>(candidate->serialnumber)}};
+			target.position = {candidate->v.origin.x, candidate->v.origin.y, candidate->v.origin.z};
+			target.alive = candidate->v.deadflag == DEAD_NO;
+		}
+	}
+	else if (std::strncmp(mapName, "as_", 3) == 0)
+	{
+		// VIP identity is private GameDLL state; keep it unavailable until a
+		// supported authority hook supplies the identity.
+		objective = {};
+	}
+	else
+	{
+		return false;
+	}
+
+	const auto moneyKnown = player.slot <= owner.moneyKnown_.size() && owner.moneyKnown_[index];
+	// Current weapon utility is supplied by readWeapon() in runtime_input;
+	// money alone must not make an economy decision appear complete.
+	(void)moneyKnown;
+	return objective.available || economy.tactical.available;
 }
 
-bool LifecycleCoordinator::dispatchWeaponSelection(
-    edict_t* entity, core::WeaponSelection selection) noexcept {
-    const char* command = weaponCommand(selection);
-    if (command == nullptr || commandContextActive_ || entity == nullptr ||
-        entity->free || !registry_.isMapActive() ||
-        !hookedGameDllFunctions_ ||
-        !hookedGameDllFunctions_->pfnClientCommand) {
-        return false;
-    }
-    const auto player = playerForEntity(entity);
-    if (!player.isValid() || player.slot > host::kMaxClientSlots ||
-        !registry_.isConnected(player.slot) ||
-        registry_.currentPlayer(player.slot) != player ||
-        !engineFunctions_ || !engineFunctions_->pfnIndexOfEdict ||
-        engineFunctions_->pfnIndexOfEdict(entity) != player.slot) {
-        return false;
-    }
-    if (engineFunctions_->pfnPEntityOfEntIndex &&
-        engineFunctions_->pfnPEntityOfEntIndex(player.slot) != entity) {
-        return false;
-    }
-    const auto binding = agents_.findByPlayer(player);
-    const auto* join = joinState(player);
-    if (!binding.isValid() || binding.player != player ||
-        binding.map != registry_.mapGeneration() || join == nullptr ||
-        join->phase() != cstrike::JoinPhase::Joined ||
-        entity->v.deadflag != DEAD_NO) {
-        return false;
-    }
-    copyCommandWord(commandArgv0_, command);
-    commandArgv1_ = {};
-    commandArgs_ = {};
-    commandArgc_ = 1;
-    commandPlayer_ = player;
-    commandContextActive_ = true;
-    {
-        CommandContextGuard guard{commandContextActive_};
-        hookedGameDllFunctions_->pfnClientCommand(entity);
-    }
-    commandPlayer_ = {};
-    commandArgc_ = 0;
-    return true;
+bool LifecycleCoordinator::dispatchWeaponSelectionHook(edict_t* entity, core::WeaponSelection selection) noexcept
+{
+	return gCoordinator.dispatchWeaponSelection(entity, selection);
 }
 
-LifecycleCoordinator::ClientState* LifecycleCoordinator::findClient(core::PlayerId player) noexcept {
-    if(!player.isValid()) return nullptr;
-    for(auto& client:clients_) if(client.fake.activePlayer()==player) return &client;
-    return nullptr;
-}
-const LifecycleCoordinator::ClientState* LifecycleCoordinator::findClient(core::PlayerId player) const noexcept {
-    if(!player.isValid()) return nullptr;
-    for(const auto& client:clients_) if(client.fake.activePlayer()==player) return &client;
-    return nullptr;
-}
-edict_t* LifecycleCoordinator::entityFor(core::PlayerId player) const noexcept {
-    const auto* client=findClient(player);
-    return client ? client->fake.entityFor(player):nullptr;
-}
-core::PlayerId LifecycleCoordinator::playerForEntity(edict_t* entity) const noexcept {
-    if(!entity) return {};
-    for(const auto& client:clients_) {
-        const auto player=client.fake.activePlayer();
-        if(player.isValid() && client.fake.entityFor(player)==entity) return player;
-    }
-    return {};
-}
-const cstrike::JoinState* LifecycleCoordinator::joinState(core::PlayerId player) const noexcept {
-    const auto* client=findClient(player);
-    return client && client->join.player()==player ? &client->join:nullptr;
-}
-std::uint32_t LifecycleCoordinator::managedTeamCount(cstrike::Team team) const noexcept {
-    std::uint32_t count = 0;
-    for (const auto& client : clients_) {
-        if (client.fake.activePlayer().isValid() && client.join.request().team == team) {
-            ++count;
-        }
-    }
-    return count;
-}
-bool LifecycleCoordinator::removalPending(core::PlayerId player) const noexcept {
-    const auto* client=findClient(player); return client && client->fake.removalPending();
-}
-void LifecycleCoordinator::configure(enginefuncs_t* engine,mutil_funcs_t* utility,
-    DLL_FUNCTIONS* hookedGameDllFunctions,cstrike::UserMessageIds ids,globalvars_t* globals) noexcept {
-    engineFunctions_=engine; utilityFunctions_=utility; hookedGameDllFunctions_=hookedGameDllFunctions;
-    engineGlobals_=globals;
-    configureUserMessageIds(ids);
-    // Most GameDLLs have already registered their messages by attach time.
-    // Preserve that fast path while allowing late registration on map/frame
-    // callbacks when the initial lookup is not ready yet.
-    if (!userMessageIdsReady_) (void)refreshUserMessageIds(false);
-
-    if ((!hookedGameDllFunctions_ || !hookedGameDllFunctions_->pfnUpdateClientData ||
-         !hookedGameDllFunctions_->pfnGetWeaponData) &&
-        utilityFunctions_ != nullptr && utilityFunctions_->pfnLogConsole != nullptr) {
-        utilityFunctions_->pfnLogConsole(
-            PLID, "%s", "astrabot capability=runtime_weapon status=Unavailable");
-    }
-    if (utilityFunctions_ != nullptr && utilityFunctions_->pfnLogConsole != nullptr) {
-        if (!hookedGameDllFunctions_ || !hookedGameDllFunctions_->pfnUpdateClientData)
-            utilityFunctions_->pfnLogConsole(PLID, "%s",
-                "astrabot capability=runtime_weapon status=Unavailable callback=UpdateClientData");
-        if (!hookedGameDllFunctions_ || !hookedGameDllFunctions_->pfnGetWeaponData)
-            utilityFunctions_->pfnLogConsole(PLID, "%s",
-                "astrabot capability=runtime_weapon status=Unavailable callback=GetWeaponData");
-    }
-    for(auto& client:clients_) {
-        client.fake.configure(
-            engine, utility, hookedGameDllFunctions, &registry_, &agents_);
-    }
-    movement_.configure(engine,&registry_,&agents_);
-    movement_.setWeaponSelectionHandler(&LifecycleCoordinator::dispatchWeaponSelectionHook);
-    navConsole_.bindMovement(&movement_);
-    navConsole_.bindWorld(&world_);
-}
-void LifecycleCoordinator::configureUserMessageIds(
-    cstrike::UserMessageIds ids) noexcept {
-    messageDecoder_.configure(ids,&LifecycleCoordinator::onMessage,this);
-    perceptionMessageIds_ = ids;
-    userMessageIdsReady_ = ids.valid();
-    identityDiagnostics_.roundNotificationAvailable = ids.hltv > 0;
-    activeDecoder_=&messageDecoder_;
-    for(auto& client:clients_) {
-        client.decoder.configure(ids,&LifecycleCoordinator::onMessage,this);
-    }
-}
-bool LifecycleCoordinator::refreshUserMessageIds(bool logPending) noexcept {
-    cstrike::UserMessageIds ids{};
-    if (!resolveUserMessageIds(utilityFunctions_,ids)) {
-        if (logPending && !userMessageIdsReady_ && !userMessageIdsPendingLogged_ &&
-            utilityFunctions_ != nullptr &&
-            utilityFunctions_->pfnLogConsole != nullptr) {
-            utilityFunctions_->pfnLogConsole(
-                PLID, "%s", "astrabot user-message-ids pending");
-            userMessageIdsPendingLogged_ = true;
-        }
-        return false;
-    }
-    const bool wasReady = userMessageIdsReady_;
-    userMessageIdsPendingLogged_ = false;
-    if (ids.vguiMenu != perceptionMessageIds_.vguiMenu ||
-        ids.showMenu != perceptionMessageIds_.showMenu ||
-        ids.teamInfo != perceptionMessageIds_.teamInfo ||
-        ids.hltv != perceptionMessageIds_.hltv ||
-        ids.screenFade != perceptionMessageIds_.screenFade ||
-        ids.money != perceptionMessageIds_.money) {
-        configureUserMessageIds(ids);
-        if (logPending && !wasReady && userMessageIdsReady_ && utilityFunctions_ != nullptr &&
-            utilityFunctions_->pfnLogConsole != nullptr) {
-            utilityFunctions_->pfnLogConsole(
-                PLID, "%s", "astrabot user-message-ids resolved");
-        }
-    }
-    return true;
-}
-void LifecycleCoordinator::reset() noexcept {
-    runtimeOwnedActor_ = {};
-    runtime_.reset();
-    runtimeHealth_.fill({});
-    retiredCombatTargets_.fill({});
-    mapNavLoadStatus_ = {};
-    runtimeInputBuildStatus_ = {};
-    runtimeInputBuildStatuses_.fill({});
-    runtimeCombatPending_.fill(false);
-    runtimeCorrelation_.fill({});
-    distributions_.reset();
-    world_.reset();
-    visualEffects_.reset();
-    sound_.reset();
-    vision_.reset();
-    teams_ = {}; round_ = {1}; identityDiagnostics_ = {}; lastRoundTick_ = {}; lastRoundTime_ = -1;
-    lastBuyRound_.fill({});
-    money_.fill(0);
-    moneyKnown_.fill(false);
-    navConsole_.reset(); movement_.reset();
-    commandContextActive_=false; commandPlayer_={}; commandArgc_=0;
-    commandArgv0_={}; commandArgv1_={}; commandArgs_={};
-    messageDecoder_.reset(); activeDecoder_=&messageDecoder_;
-    // Retire every actor's portable state before any external disconnect callback.
-    for(auto& client:clients_) {
-        client.join.reset(); client.decoder.reset(); client.combat={}; client.combatLock={};
-        client.pendingJoinMessageCount = 0;
-        client.cleanupPending=false;
-        client.cleanupError=cstrike::JoinError::None;
-        const auto player=client.fake.activePlayer();
-        if(player.isValid()) { (void)agents_.unbind(player); (void)registry_.disconnectPlayer(player); }
-    }
-    for(auto& client:clients_) {
-        const auto player=client.fake.activePlayer();
-        if(player.isValid()) (void)client.fake.cleanupActiveDirect(true);
-        client.fake.reset();
-    }
-    agents_.reset(); registry_.reset();
-    engineFunctions_=nullptr; utilityFunctions_=nullptr; hookedGameDllFunctions_=nullptr;
-    engineGlobals_=nullptr;
-    status_={}; traceSink_=nullptr; joinTraceSink_=nullptr; removalTraceSink_=nullptr;
-    combatTraceSink_=nullptr; combatTraceSequence_=0;
-    userMessageIdsReady_=false; userMessageIdsPendingLogged_=false;
-    runtimeInputProvider_=nullptr; runtimeInputContext_=nullptr;
-}
-void LifecycleCoordinator::serverActivate(int clientMax) noexcept {
-    (void)refreshUserMessageIds(true);
-    const auto result=clientMax<1 || clientMax>host::kMaxClientSlots
-        ? host::LifecycleResult::rejected(host::HostError::InvalidLifecycle)
-        : registry_.activateMap(static_cast<std::uint16_t>(clientMax));
-    if(result.changed()) {
-        // Retire both route producers and transport before any current-map
-        // loader callback. A failed load must never leave an old graph live.
-        navConsole_.invalidate(nav::runtime::SessionReason::MapChanged);
-        movement_.resetMap();
-        runtimeHealth_.fill({});
-        retiredCombatTargets_.fill({});
-        runtimeCorrelation_.fill({});
-        experienceAreas_.fill({});
-        experienceDamageSeen_.fill(0.0);
-        experienceDeathsSeen_.fill(0U);
-        experienceEventSequence_ = 0;
-        runtimeInputBuildStatuses_.fill({});
-        runtimeCombatPending_.fill(false);
-        runtimeInputBuildStatus_ = {};
-        runtimeOwnedActor_ = {};
-        clearAllCombatState();
-        runtime_.beginMap(registry_.mapGeneration());
-        vision_.reset();
-        sound_.beginMap(registry_.mapGeneration());
-    (void)teams_.activate(registry_.mapGeneration());
-    round_ = {1}; lastRoundTick_ = {}; lastRoundTime_ = -1;
-    lastBuyRound_.fill({});
-    money_.fill(0);
-    moneyKnown_.fill(false);
-        (void)advanceVisualEffects();
-        ++status_.mapActivations;
-        if(status_.mapActivations>1) ++status_.mapReplays;
-        clients_[0].fake.queuePrimaryCreate();
-        loadMapNavigation();
-    }
-    emit(host::LifecycleEventKind::MapActivated,result);
+bool LifecycleCoordinator::dispatchWeaponSelection(edict_t* entity, core::WeaponSelection selection) noexcept
+{
+	const char* command = weaponCommand(selection);
+	if (command == nullptr || commandContextActive_ || entity == nullptr || entity->free || !registry_.isMapActive() ||
+		!hookedGameDllFunctions_ || !hookedGameDllFunctions_->pfnClientCommand)
+	{
+		return false;
+	}
+	const auto player = playerForEntity(entity);
+	if (!player.isValid() || player.slot > host::kMaxClientSlots || !registry_.isConnected(player.slot) ||
+		registry_.currentPlayer(player.slot) != player || !engineFunctions_ || !engineFunctions_->pfnIndexOfEdict ||
+		engineFunctions_->pfnIndexOfEdict(entity) != player.slot)
+	{
+		return false;
+	}
+	if (engineFunctions_->pfnPEntityOfEntIndex && engineFunctions_->pfnPEntityOfEntIndex(player.slot) != entity)
+	{
+		return false;
+	}
+	const auto binding = agents_.findByPlayer(player);
+	const auto* join = joinState(player);
+	if (!binding.isValid() || binding.player != player || binding.map != registry_.mapGeneration() || join == nullptr ||
+		join->phase() != cstrike::JoinPhase::Joined || entity->v.deadflag != DEAD_NO)
+	{
+		return false;
+	}
+	copyCommandWord(commandArgv0_, command);
+	commandArgv1_ = {};
+	commandArgs_ = {};
+	commandArgc_ = 1;
+	commandPlayer_ = player;
+	commandContextActive_ = true;
+	{
+		CommandContextGuard guard{commandContextActive_};
+		hookedGameDllFunctions_->pfnClientCommand(entity);
+	}
+	commandPlayer_ = {};
+	commandArgc_ = 0;
+	return true;
 }
 
-void LifecycleCoordinator::loadMapNavigation() noexcept {
-    const auto map = registry_.mapGeneration();
-    if (!registry_.isMapActive() || !map.isValid() || mapNavLoadStatus_.map == map) return;
-    // Mark the attempt before calling the host: reentrant activation must
-    // not retry, and StartFrame never retries a missing/invalid file.
-    mapNavLoadStatus_ = {};
-    mapNavLoadStatus_.map = map;
-    const auto current = [&]() noexcept {
-        return registry_.isMapActive() && registry_.mapGeneration() == map;
-    };
-    const auto finish = [&](MapNavLoadReason reason, const char* name) noexcept {
-        if (!current()) return;
-        mapNavLoadStatus_.reason = reason;
-        if (utilityFunctions_ && utilityFunctions_->pfnLogConsole) {
-            char text[1400]{};
-            std::snprintf(text, sizeof(text),
-                "astrabot nav_auto map=%u status=%s path=%s retry=explicit_load",
-                unsigned(map.value), name, mapNavLoadStatus_.path.data());
-            utilityFunctions_->pfnLogConsole(PLID, "%s", text);
-        }
-    };
-    if (!engineFunctions_ || !engineFunctions_->pfnSzFromIndex || !engineGlobals_) {
-        finish(MapNavLoadReason::MissingMapName, "MissingMapName"); return;
-    }
-    const char* name = engineFunctions_->pfnSzFromIndex(engineGlobals_->mapname);
-    if (!current()) return;
-    if (!name || !*name) { finish(MapNavLoadReason::MissingMapName, "MissingMapName"); return; }
-    std::array<char, 64> mapName{};
-    std::size_t length = 0;
-    for (; length < mapName.size() && name[length] != '\0'; ++length) {
-        const unsigned char c = static_cast<unsigned char>(name[length]);
-        if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
-              (c >= '0' && c <= '9') || c == '_' || c == '-')) {
-            finish(MapNavLoadReason::InvalidMapName, "InvalidMapName"); return;
-        }
-        mapName[length] = static_cast<char>(c);
-    }
-    if (length == mapName.size()) {
-        finish(MapNavLoadReason::InvalidMapName, "InvalidMapName"); return;
-    }
-    if (!engineFunctions_->pfnGetGameDir) {
-        finish(MapNavLoadReason::MissingGameDirectory, "MissingGameDirectory"); return;
-    }
-    std::array<char, 1024> directory{};
-    engineFunctions_->pfnGetGameDir(directory.data());
-    if (!current()) return;
-    if (directory[0] == '\0' || std::memchr(directory.data(), '\0', directory.size()) == nullptr) {
-        finish(MapNavLoadReason::InvalidGameDirectory, "InvalidGameDirectory"); return;
-    }
-    const int written = std::snprintf(mapNavLoadStatus_.path.data(), mapNavLoadStatus_.path.size(),
-        "%s/maps/%s.nav", directory.data(), mapName.data());
-    if (written < 0 || static_cast<std::size_t>(written) >= mapNavLoadStatus_.path.size()) {
-        finish(MapNavLoadReason::InvalidGameDirectory, "InvalidGameDirectory"); return;
-    }
-    const bool loaded = navConsole_.loadForMap(mapNavLoadStatus_.path.data(), map, *this);
-    if (!current()) return;
-    finish(loaded ? MapNavLoadReason::Ready : MapNavLoadReason::LoadFailed,
-           loaded ? "Ready" : "LoadFailed");
+LifecycleCoordinator::ClientState* LifecycleCoordinator::findClient(core::PlayerId player) noexcept
+{
+	if (!player.isValid())
+		return nullptr;
+	for (auto& client : clients_)
+		if (client.fake.activePlayer() == player)
+			return &client;
+	return nullptr;
 }
-void LifecycleCoordinator::serverDeactivate() noexcept {
-    runtimeOwnedActor_ = {};
-    runtime_.reset();
-    runtimeHealth_.fill({});
-    retiredCombatTargets_.fill({});
-    runtimeInputBuildStatus_ = {};
-    runtimeInputBuildStatuses_.fill({});
-    runtimeCombatPending_.fill(false);
-    runtimeCorrelation_.fill({});
-    experienceAreas_.fill({});
-    experienceDamageSeen_.fill(0.0);
-    experienceDeathsSeen_.fill(0U);
-    experienceEventSequence_ = 0;
-    money_.fill(0);
-    moneyKnown_.fill(false);
-    distributions_.reset();
-    world_.reset();
-    visualEffects_.reset();
-    sound_.reset();
-    vision_.reset();
-    teams_.clear();
-    navConsole_.invalidate(nav::runtime::SessionReason::MapChanged); movement_.resetMap();
-    for(auto& client:clients_) {
-        const auto action=client.join.cancel(cstrike::JoinError::MapDeactivated);
-        emitJoin(client,action);
-        client.join.reset(); client.decoder.reset(); client.combat={}; client.combatLock={};
-        client.pendingJoinMessageCount = 0;
-        client.cleanupPending=false;
-        client.cleanupError=cstrike::JoinError::None;
-    }
-    messageDecoder_.reset(); activeDecoder_=&messageDecoder_;
-    commandContextActive_=false; commandPlayer_={}; commandArgc_=0;
-    commandArgv0_={}; commandArgv1_={}; commandArgs_={};
-    const auto result=registry_.deactivateMap();
-    for(auto& client:clients_) client.fake.resetMap();
-    agents_.clearMappings();
-    emit(host::LifecycleEventKind::MapDeactivated,result);
+const LifecycleCoordinator::ClientState* LifecycleCoordinator::findClient(core::PlayerId player) const noexcept
+{
+	if (!player.isValid())
+		return nullptr;
+	for (const auto& client : clients_)
+		if (client.fake.activePlayer() == player)
+			return &client;
+	return nullptr;
 }
-void LifecycleCoordinator::clientDisconnect(edict_t* entity) noexcept {
-    if(!entity || !engineFunctions_ || !engineFunctions_->pfnIndexOfEdict) {
-        emit(host::LifecycleEventKind::PlayerDisconnected,host::LifecycleResult::rejected(host::HostError::InvalidPlayer)); return;
-    }
-    const int index=engineFunctions_->pfnIndexOfEdict(entity);
-    if(index<1 || index>host::kMaxClientSlots) {
-        emit(host::LifecycleEventKind::PlayerDisconnected,host::LifecycleResult::rejected(host::HostError::InvalidPlayer)); return;
-    }
-    const auto player=registry_.currentPlayer(static_cast<std::uint16_t>(index));
-    auto* client=findClient(player);
-    // A reused edict or a foreign entity must not disconnect the mapped actor.
-    if(client && client->fake.entityFor(player)!=entity) {
-        emit(host::LifecycleEventKind::PlayerDisconnected,host::LifecycleResult::rejected(host::HostError::InvalidPlayer)); return;
-    }
-    retireCombatTarget(player);
-    teams_.forget(player);
-    visualEffects_.forget(player);
-    sound_.forget(player);
-    movement_.forget(player);
-    if (player.slot <= lastBuyRound_.size()) {
-        lastBuyRound_[player.slot - 1U] = {};
-        experienceAreas_[player.slot - 1U] = {};
-        experienceDamageSeen_[player.slot - 1U] = 0.0;
-        experienceDeathsSeen_[player.slot - 1U] = 0U;
-    }
-    clearCombatState(player);
-    runtime_.onDisconnect(player);
-    if(client) {
-        navConsole_.invalidateActor(player,nav::runtime::SessionReason::Disconnected);
-        emitJoin(*client,client->join.cancel(cstrike::JoinError::Disconnected));
-        client->join.reset(); client->decoder.reset();
-        client->pendingJoinMessageCount = 0;
-        client->cleanupPending=false;
-        client->cleanupError=cstrike::JoinError::None;
-    }
-    if(commandPlayer_==player) {
-        commandContextActive_=false; commandPlayer_={}; commandArgc_=0;
-        commandArgv0_={}; commandArgv1_={}; commandArgs_={};
-    }
-    const auto result=registry_.disconnectSlot(static_cast<std::uint16_t>(index));
-    if(result.changed()) {
-        (void)agents_.unbind(player);
-        if(client) {
-            client->fake.acknowledgeDisconnect(player); ++status_.cleanupCompletions;
-            emitRemoval(debug::RemovalOutcome::Cleaned,debug::RemovalError::None,player,false,false);
-        }
-    }
-    emit(host::LifecycleEventKind::PlayerDisconnected,result);
+edict_t* LifecycleCoordinator::entityFor(core::PlayerId player) const noexcept
+{
+	const auto* client = findClient(player);
+	return client ? client->fake.entityFor(player) : nullptr;
 }
-FakeClientResult LifecycleCoordinator::createBot(const char* name,cstrike::JoinRequest request) noexcept {
-    if(commandContextActive_) return {debug::FakeClientError::Reentrant,{}};
-    for(const auto& client:clients_) if(client.fake.operationActive()) return {debug::FakeClientError::Reentrant,{}};
-    for(auto& client:clients_) {
-        if(client.fake.activePlayer().isValid()) continue;
-        client.fake.resetMap(); client.join.reset(); client.decoder.reset(); client.combat={}; client.combatLock={};
-        client.pendingJoinMessageCount = 0;
-        client.cleanupPending=false; client.cleanupError=cstrike::JoinError::None;
-        const auto result=client.fake.create(name,request);
-        ++status_.createAttempts;
-        if(result.playerRegistration.changed()) emit(host::LifecycleEventKind::PlayerConnected,result.playerRegistration);
-        if(result.playerRollback.changed()) emit(host::LifecycleEventKind::PlayerDisconnected,result.playerRollback);
-        if(result.succeeded()) {
-            (void)requestJoin(result.player,request);
-        } else {
-            client.pendingJoinMessageCount = 0;
-        }
-        return result;
-    }
-    return {debug::FakeClientError::AlreadyCreated,{}};
+core::PlayerId LifecycleCoordinator::playerForEntity(edict_t* entity) const noexcept
+{
+	if (!entity)
+		return {};
+	for (const auto& client : clients_)
+	{
+		const auto player = client.fake.activePlayer();
+		if (player.isValid() && client.fake.entityFor(player) == entity)
+			return player;
+	}
+	return {};
 }
-RemovalResult LifecycleCoordinator::removeActive() noexcept { return remove(clients_[0].fake.activePlayer()); }
-RemovalResult LifecycleCoordinator::remove(core::PlayerId player) noexcept {
-    auto* client=findClient(player);
-    if(!client) return {debug::RemovalOutcome::NoOp,debug::RemovalError::None,{},true,false};
-    if(client->fake.removalPending()) return {debug::RemovalOutcome::NoOp,debug::RemovalError::None,player,true,false};
-    retireCombatTarget(player);
-    sound_.forget(player);
-    visualEffects_.forget(player);
-    teams_.forget(player);
-    movement_.forget(player);
-    if (player.slot <= lastBuyRound_.size()) lastBuyRound_[player.slot - 1U] = {};
-    clearCombatState(player);
-    runtime_.onDisconnect(player);
-    navConsole_.invalidateActor(player,nav::runtime::SessionReason::Disconnected);
-    emitJoin(*client,client->join.cancel(cstrike::JoinError::Disconnected));
-    client->decoder.reset(); client->pendingJoinMessageCount=0;
-    client->cleanupPending=false; client->cleanupError=cstrike::JoinError::None;
-    if(commandPlayer_==player) {
-        commandContextActive_=false; commandPlayer_={}; commandArgc_=0; commandArgv0_={}; commandArgv1_={}; commandArgs_={};
-    }
-    ++status_.removalRequests;
-    const auto result=client->fake.requestRemoval();
-    status_.lastRemovalError=result.error;
-    if(!result.succeeded()) cleanupActiveAfterRemoval(*client,result,player);
-    return result;
+const cstrike::JoinState* LifecycleCoordinator::joinState(core::PlayerId player) const noexcept
+{
+	const auto* client = findClient(player);
+	return client && client->join.player() == player ? &client->join : nullptr;
 }
-void LifecycleCoordinator::queuePrimaryCreate(cstrike::JoinRequest request) noexcept { clients_[0].fake.queuePrimaryCreate(request); }
-core::world::ReportResult LifecycleCoordinator::report(core::PlayerId reporter,core::PlayerId target) noexcept {
-    using Reason=core::world::ReportReason;
-    const auto* published=world_.publishedFrame();
-    if(reporting_ || !published || !engineGlobals_ || !registry_.isMapActive() ||
-        published->map!=registry_.mapGeneration() || published->round!=round_ || published->tick!=registry_.currentTick()) return {Reason::NotReady,0};
-    reporting_=true; CommandContextGuard guard{reporting_};
-    const auto frame=*published;
-    const double micros=static_cast<double>(engineGlobals_->time)*1000000;
-    if(!std::isfinite(micros) || micros<0 || micros>=18446744073709551616.0) { world_.invalidateReports(); return {Reason::InvalidTime,0}; }
-    std::array<edict_t*,32> entities{}; std::array<int,32> serials{}; std::array<bool,32> eligible{};
-    for(std::size_t i=0;i<frame.players.size();++i) {
-        const auto& player=frame.players[i];
-        if(!player.eligible || !player.player.isValid() || registry_.currentPlayer(player.player.slot)!=player.player) continue;
-        auto* entity=player.agent.isValid() ? entityFor(player.player):
-            engineFunctions_ && engineFunctions_->pfnPEntityOfEntIndex ? engineFunctions_->pfnPEntityOfEntIndex(player.player.slot):nullptr;
-        if(!entity) continue;
-        if(!player.agent.isValid() && !vision_.bound(player.player,engineFunctions_)) continue;
-        entities[i]=entity; serials[i]=entity->serialnumber;
-    }
-    if(!world_.publishedFrame() || !registry_.isMapActive() || registry_.mapGeneration()!=frame.map ||
-        registry_.currentTick()!=frame.tick || round_!=frame.round) return {Reason::NotReady,0};
-    if(!engineGlobals_ || static_cast<double>(engineGlobals_->time)*1000000!=micros) {
-        world_.invalidateReports(); return {Reason::InvalidTime,0};
-    }
-    // Recheck identities and lifecycle flags after all engine callbacks. No positions are read.
-    for(std::size_t i=0;i<frame.players.size();++i) {
-        const auto& player=frame.players[i]; const auto* entity=entities[i];
-        const auto* join=player.agent.isValid() ? joinState(player.player):nullptr;
-        eligible[i]=entity && !entity->free && entity->serialnumber==serials[i] &&
-            registry_.currentPlayer(player.player.slot)==player.player && entity->v.deadflag==DEAD_NO &&
-            std::isfinite(entity->v.health) && entity->v.health>0 && entity->v.iuser1==0 && !(entity->v.flags&FL_SPECTATOR) &&
-            (!player.agent.isValid() || (join && join->phase()==cstrike::JoinPhase::Joined && !removalPending(player.player)));
-        if(!eligible[i]) world_.forgetReports(player.player);
-    }
-    return world_.requestReport(reporter,target,static_cast<std::uint64_t>(micros),eligible,teams_);
+std::uint32_t LifecycleCoordinator::managedTeamCount(cstrike::Team team) const noexcept
+{
+	std::uint32_t count = 0;
+	for (const auto& client : clients_)
+	{
+		if (client.fake.activePlayer().isValid() && client.join.request().team == team)
+		{
+			++count;
+		}
+	}
+	return count;
 }
-void LifecycleCoordinator::startFrame() noexcept {
-    if (!perceptionMessageIds_.valid()) (void)refreshUserMessageIds(true);
-    world_.beginUpdate();
-    const auto result=registry_.startFrame(); emit(host::LifecycleEventKind::FrameStarted,result);
-    if(!result.changed()) return;
-    std::optional<std::uint64_t> engineFrameDeltaUs;
-    if (engineGlobals_ != nullptr &&
-        std::isfinite(static_cast<double>(engineGlobals_->frametime)) &&
-        engineGlobals_->frametime >= 0.0F &&
-        static_cast<double>(engineGlobals_->frametime) < 18446744073709.55) {
-        engineFrameDeltaUs = static_cast<std::uint64_t>(
-            static_cast<double>(engineGlobals_->frametime) * 1000000.0);
-    }
-    movement_.beginFrame(engineFrameDeltaUs);
-    const auto map=registry_.mapGeneration();
-    const auto tick=registry_.currentTick();
-    // Capture one monotonic engine stamp for every observation and decision
-    // produced by this frame.  Vision, world-model input, and combat must
-    // share the same value even though dispatch happens in separate phases.
-    const auto nowMicros = engineTimeMicros(engineGlobals_);
-    refreshCombatTargetLiveness();
-    runtimeCombatPending_.fill(false);
+bool LifecycleCoordinator::removalPending(core::PlayerId player) const noexcept
+{
+	const auto* client = findClient(player);
+	return client && client->fake.removalPending();
+}
+void LifecycleCoordinator::configure(enginefuncs_t* engine, mutil_funcs_t* utility,
+									 DLL_FUNCTIONS* hookedGameDllFunctions, cstrike::UserMessageIds ids,
+									 globalvars_t* globals) noexcept
+{
+	engineFunctions_ = engine;
+	utilityFunctions_ = utility;
+	hookedGameDllFunctions_ = hookedGameDllFunctions;
+	engineGlobals_ = globals;
+	configureUserMessageIds(ids);
+	// Most GameDLLs have already registered their messages by attach time.
+	// Preserve that fast path while allowing late registration on map/frame
+	// callbacks when the initial lookup is not ready yet.
+	if (!userMessageIdsReady_)
+		(void)refreshUserMessageIds(false);
 
-    const auto previousRuntimeInputStatuses = runtimeInputBuildStatuses_;
-    const auto dispatchInputUnavailable =
-        [&](core::PlayerId player) noexcept {
-            if (!player.isValid() || player.slot > host::kMaxClientSlots)
-                return false;
-            const auto& status =
-                previousRuntimeInputStatuses[player.slot - 1U];
-            return status.player == player && status.agent.isValid() &&
-                status.map == map && status.round == round_ &&
-                status.reason != RuntimeInputBuildReason::None;
-        };
-    runtimeInputBuildStatuses_.fill({});
-    const auto created=clients_[0].fake.processPrimaryCreate();
-    if(created.changed || created.error!=debug::FakeClientError::None) ++status_.createAttempts;
-    if(created.playerRegistration.changed()) emit(host::LifecycleEventKind::PlayerConnected,created.playerRegistration);
-    if(created.playerRollback.changed()) emit(host::LifecycleEventKind::PlayerDisconnected,created.playerRollback);
-    if(created.succeeded() && created.changed) (void)requestJoin(created.player,clients_[0].fake.activeJoinRequest());
-    for(auto& client:clients_) {
-        if(!registry_.isMapActive() || registry_.mapGeneration()!=map || registry_.currentTick()!=tick) return;
-        const auto player=client.fake.activePlayer();
-        if(!player.isValid()) continue;
-        auto* entity = client.fake.entityFor(player);
-        if (player.slot <= runtimeHealth_.size()) {
-            auto& observation = runtimeHealth_[player.slot - 1U];
-            if (entity && !entity->free && !client.fake.removalPending() &&
-                client.join.phase() == cstrike::JoinPhase::Joined) {
-                RuntimeFrame observedFrame{};
-                observedFrame.map = map; observedFrame.round = round_;
-                observedFrame.tick = tick;
-            observedFrame.nowMicros = nowMicros;
-                observation.observe(observedFrame, player,
-                    agents_.findByPlayer(player).agent, entity->serialnumber,
-                    entity->v.health, entity->v.deadflag != DEAD_NO || entity->v.health <= 0);
-            } else {
-                observation = {};
-            }
-        }
-        if (entity != nullptr && entity->v.deadflag != DEAD_NO) {
-            client.combat = {};
-            client.combatLock = {};
-            runtime_.onDeath(player);
-        }
-        if (client.join.active() && !client.fake.removalPending()) {
-            if (!movement_.dispatchJoinProgress(player, entity, map)) {
-                handleJoinAction(
-                    client,
-                    client.join.fail(cstrike::JoinError::GameDllProgressUnavailable));
-                continue;
-            }
-            if (client.join.player() == player) {
-                handleJoinAction(client, client.join.onGameFrameAdvanced());
-            }
-        }
-        // A fake client has no network channel, so ReGameDLL may never emit
-        // VGUIMenu/ShowMenu to this adapter.  Prompt-driven events still take
-        // precedence; this bounded prime only supplies the selection when a
-        // prompt was not observed before the frame deadline.
-        (void)client.join.primeMenuSelection();
-        const auto action=client.join.onFrame(tick); handleJoinAction(client,action);
-        if(action.kind==cstrike::JoinActionKind::SendMenuSelect && client.fake.activePlayer()==player) {
-            const bool dispatched=dispatchMenu(client,action.selection);
-            if(client.join.player()==player) handleJoinAction(client,client.join.commandCompleted(dispatched));
-        }
-        if (client.join.phase() == cstrike::JoinPhase::Joined &&
-            entity != nullptr && !entity->free && entity->v.deadflag == DEAD_NO &&
-            std::isfinite(entity->v.health) && entity->v.health > 0.0F) {
-            dispatchRoundBuy(client);
-        }
-    }
-    for(auto& client:clients_) {
-        const auto player=client.fake.activePlayer();
-        if(client.fake.removalPending()) {
-            movement_.forget(player);
-            continue;
-        }
-        navConsole_.beforeDispatch(*this,player);
-    }
-    for(auto& client:clients_) {
-        if(!registry_.isMapActive() || registry_.mapGeneration()!=map || registry_.currentTick()!=tick) return;
-        const auto player=client.fake.activePlayer(); if(!player.isValid()) continue;
-        if(client.fake.removalPending()) {
-            const auto ticket=navConsole_.dispatchTicket(player);
-            const auto moved=movement_.dispatchAtFrameEnd(
-                client.join.phase(), player, client.fake.entityFor(player), map,
-                tick, true);
-            navConsole_.afterDispatch(player,moved,tick,ticket);
-            continue;
-        }
-        const auto ticket=navConsole_.dispatchTicket(player);
-                const bool suppressRuntimeInput = dispatchInputUnavailable(player);
-                const auto* dispatchEntity = client.fake.entityFor(player);
-                const bool deadHeartbeat = suppressRuntimeInput &&
-                    dispatchEntity != nullptr && !dispatchEntity->free &&
-                    dispatchEntity->v.deadflag != DEAD_NO;
-                const auto moved=movement_.dispatchAtFrameEnd(
-                    client.join.phase(), player, client.fake.entityFor(player), map, tick,
-                    false, suppressRuntimeInput);
-                if (!suppressRuntimeInput)
-                    navConsole_.afterDispatch(player,moved,tick,ticket);
-                else if (deadHeartbeat)
-                    movement_.forget(player, true);
-    }
-    if(registry_.isMapActive() && registry_.mapGeneration()==map && registry_.currentTick()==tick) {
-        (void)advanceVisualEffects();
-        vision_.frame(*this,engineFunctions_,nowMicros);
-        if(registry_.isMapActive() && registry_.mapGeneration()==map && registry_.currentTick()==tick) {
-            sound_.frame(*this,engineGlobals_ ? engineGlobals_->time : (std::numeric_limits<float>::quiet_NaN)());
-            if(registry_.isMapActive() && registry_.mapGeneration()==map && registry_.currentTick()==tick) {
-                (void)world_.publish({sound_.diagnostics().queued,sound_.diagnostics().overflow});
-                distributions_.update(world_,navConsole_.distributionTopology());
-                RuntimeFrame runtimeFrame{};
-                runtimeFrame.map = map;
-                runtimeFrame.round = round_;
-                runtimeFrame.tick = tick;
-                runtimeFrame.nowMicros = nowMicros;
-                runtimeFrame.elapsedMicros = movement_.frameDeltaUs();
-                // The map name is the strongest identity available at this
-                // boundary until a provider supplies BSP/NAV hashes. Keep
-                // the optional value empty if the engine string table is not
-                // ready; RuntimeFrame remains valid and learning simply stays
-                // inactive for that frame.
-                if (engineFunctions_ && engineFunctions_->pfnSzFromIndex &&
-                    engineGlobals_) {
-                    const char* mapName = engineFunctions_->pfnSzFromIndex(
-                        engineGlobals_->mapname);
-                    if (mapName) {
-                        std::size_t length = 0;
-                        while (length <= core::experience::kMapNameLimit &&
-                               mapName[length] != '\0') ++length;
-                        if (length <= core::experience::kMapNameLimit) {
-                            try {
-                                runtimeFrame.mapIdentity.name.assign(
-                                    mapName, length);
-                            } catch (...) {
-                                runtimeFrame.mapIdentity = {};
-                            }
-                        }
-                    }
-                }
-                auto& runtimeInputs=runtimeInputsScratch_;
-                for(auto& input:runtimeInputs) {
-                    // Avoid a large RuntimeActorInput assignment temporary on
-                    // the engine callback stack. Each slot is owned by this
-                    // coordinator and may be safely reconstructed per frame.
-                    input.~RuntimeActorInput();
-                    ::new (static_cast<void*>(&input)) RuntimeActorInput{};
-                }
-                std::size_t runtimeInputCount = 0;
-                runtimeInputBuildStatus_ = {};
-                runtimeInputBuildStatuses_.fill({});
-                runtimeInputBuildStatus_.map = runtimeFrame.map;
-                runtimeInputBuildStatus_.round = runtimeFrame.round;
-                runtimeInputBuildStatus_.tick = runtimeFrame.tick;
-                runtimeInputBuildStatus_.nowMicros = runtimeFrame.nowMicros;
-                const auto runtimeInputUnavailable =
-                    [&](core::PlayerId player) noexcept {
-                        if (!player.isValid() ||
-                            player.slot > host::kMaxClientSlots)
-                            return false;
-                        const auto& status =
-                            runtimeInputBuildStatuses_[player.slot - 1U];
-                        return status.player == player && status.agent.isValid() &&
-                            status.map == runtimeFrame.map &&
-                            status.round == runtimeFrame.round &&
-                            status.tick == runtimeFrame.tick &&
-                            status.reason != RuntimeInputBuildReason::None;
-                    };
-                if (runtimeInputProvider_ != nullptr) {
-                    runtimeInputCount = runtimeInputProvider_(
-                        runtimeInputContext_, *this, runtimeFrame,
-                        runtimeInputs.data(), runtimeInputs.size());
-                    for (std::size_t i = 0; i < runtimeInputCount &&
-                                        i < runtimeInputs.size(); ++i) {
-                        const auto player = runtimeInputs[i].player;
-                        if (!player.isValid() ||
-                            player.slot > host::kMaxClientSlots) continue;
-                        auto& actorStatus =
-                            runtimeInputBuildStatuses_[player.slot - 1U];
-                        actorStatus.map = runtimeFrame.map;
-                        actorStatus.round = runtimeFrame.round;
-                        actorStatus.tick = runtimeFrame.tick;
-                        actorStatus.nowMicros = runtimeFrame.nowMicros;
-                        actorStatus.player = player;
-                        actorStatus.agent = runtimeInputs[i].agent;
-                        actorStatus.inputIncluded = true;
-                    }
-                } else {
-        runtimeInputCount = buildRuntimeInputs(
-                        *this, runtimeFrame, hookedGameDllFunctions_,
-                        runtimeInputs.data(), runtimeInputs.size(),
-                        runtimeInputBuildStatuses_.data(),
-                        runtimeInputBuildStatuses_.size(),
-                        RuntimeInputSources{
-                            &LifecycleCoordinator::readObjective,
-                            &LifecycleCoordinator::produceExperienceEvents,
-                            nullptr});
-                }
-                // CombatLock is actor-owned state; bind it only after the
-                // value boundary has produced a validated player identity.
-                for (std::size_t i = 0; i < runtimeInputCount && i < runtimeInputs.size(); ++i) {
-                    if (auto* client = findClient(runtimeInputs[i].player))
-                        runtimeInputs[i].combat.lock = &client->combatLock;
-                }
-                if (runtimeInputCount != 0)
-                    runtimeInputBuildStatus_ = runtimeInputBuildStatuses_[0];
-                const auto& runtimeResult = runtime_.run(
-                    runtimeFrame, runtimeInputs.data(), runtimeInputCount);
-                for (std::size_t i = 0; i < runtimeResult.decisionCount; ++i) {
-                    const auto& decision = runtimeResult.decisions[i];
-                    if (decision.executable) {
-                        if (decision.player.isValid() &&
-                            decision.player.slot <= runtimeCombatPending_.size())
-                            runtimeCombatPending_[decision.player.slot - 1U] = true;
-                        runtimeOwnedActor_ = decision.player;
-                        runtimeAttackPending_ = decision.combat.hasAttackInput();
-                        if (!runtimeInputProvider_ && runtimeInputCount == 1)
-                            runtimeWeapon_ = runtimeInputs[0].combat.weapon.active;
-                    }
-                    if (decision.player.isValid()) {
-                        // Record Applied/Unchanged/Rejected for every runtime decision,
-                        // including a valid decision with no NAV goal.
-                        navConsole_.applyRuntimeNavigation(*this, decision);
-                    }
-                    if (decision.player.isValid() &&
-                               decision.rejection != RuntimeRejectReason::None) {
-                        // A provider-owned actor that fails validation must
-                        // retire its old route before the next movement pass;
-                        // otherwise an obsolete NAV command could survive an
-                        // invalid perception/identity frame.
-                        navConsole_.invalidateActor(
-                            decision.player,
-                            nav::runtime::SessionReason::InvalidSnapshot);
-                        movement_.forget(decision.player);
-                    }
-                }
-                // A failed value-boundary observation must not leave an old
-                // NAV ticket alive and must not be converted into an Idle
-                // RunPlayerMove later in this frame. The status remains the
-                // primary diagnostic; valid actors continue independently.
-                for (auto& client : clients_) {
-                    const auto player = client.fake.activePlayer();
-                    if (!runtimeInputUnavailable(player)) continue;
-                    auto& actorStatus =
-                        runtimeInputBuildStatuses_[player.slot - 1U];
-                    actorStatus.idleDispatchSuppressed = true;
-                    navConsole_.invalidateActor(
-                        player, nav::runtime::SessionReason::InvalidSnapshot);
-                    // Keep a dead actor's frame trace until its neutral
-                    // heartbeat has dispatched. Live invalid-input actors are
-                    // retired immediately so stale commands cannot become an
-                    // Idle RunPlayerMove later in this frame.
-                    const auto* entity = client.fake.entityFor(player);
-                    if (entity == nullptr || entity->v.deadflag == DEAD_NO)
-                        movement_.forget(player);
-                }
-            }
-        }
-    }
-    for(auto& client:clients_) {
-        if(!registry_.isMapActive() || registry_.mapGeneration()!=map || registry_.currentTick()!=tick) return;
-        const auto player = client.fake.activePlayer();
-        if (dispatchInputUnavailable(player)) continue;
-        navConsole_.moveFrame(*this, player);
-    }
-    // Runtime combat is consumed only by submitMotion() while composing a NAV
-    // command. A held/completed route falls through to the existing neutral
-    // heartbeat, preserving one queued command per actor and frame.
-    for (const auto& client : clients_) {
-        const auto player = client.fake.activePlayer();
-        if (!player.isValid() || player.slot > host::kMaxClientSlots) continue;
-        auto& correlation = runtimeCorrelation_[player.slot - 1U];
-        correlation = {};
-        correlation.map = map; correlation.round = round_; correlation.player = player;
-        const auto binding = agents_.findByPlayer(player);
-        correlation.agent = binding.agent;
-        correlation.managed = binding.isValid() && binding.player == player && binding.map == map;
-        const auto* entity = client.fake.entityFor(player);
-        correlation.edictSerial = entity != nullptr ? static_cast<std::uint32_t>(entity->serialnumber) : 0U;
-        correlation.connected = registry_.isConnected(player.slot) && registry_.currentPlayer(player.slot) == player;
-        correlation.removalPending = client.fake.removalPending();
-        correlation.alive = entity != nullptr && !entity->free && entity->v.deadflag == DEAD_NO;
-        correlation.elapsedUs = movement_.frameDeltaUs();
-        correlation.frameDeltaUs = movement_.frameDeltaUs();
-        const auto& input = runtimeInputBuildStatuses_[player.slot - 1U];
-        correlation.inputTick = input.player == player ? input.tick : core::TickId{};
-        correlation.inputReason = input.player == player ? input.reason : RuntimeInputBuildReason::None;
-        correlation.staleReason = input.player == player ? input.staleReason : RuntimeActorStaleReason::None;
-        correlation.currentAreaHeld = input.player == player && input.currentAreaHeld;
-        if (const auto navState = navConsole_.runtimeState(*this, player);
-            navState) {
-            if (navState->currentArea)
-                correlation.currentArea = *navState->currentArea;
-            correlation.currentAreaSource = navState->currentAreaSource;
-            correlation.currentAreaAgeUs = navState->currentAreaAgeUs;
-            correlation.roamExcludedCapacity = navState->roamExcludedCapacity;
-            correlation.roamExcludedInvalid = navState->roamExcludedInvalid;
-            correlation.roamExcludedOccupied = navState->roamExcludedOccupied;
-        correlation.roamExcludedGoalCooling = navState->roamExcludedGoalCooling;
-            correlation.roamExcludedRejected = navState->roamExcludedRejected;
-            correlation.roamExcludedRecent = navState->roamExcludedRecent;
-            correlation.roamExcludedMissing = navState->roamExcludedMissing;
-        correlation.roamExcludedHull = navState->roamExcludedHull;
-        correlation.roamSearchBackoff = navState->roamSearchBackoff;
-        correlation.roamSearchBackoffRemainingUs = navState->roamSearchBackoffRemainingUs;
-            correlation.roamExclusionSamples = navState->roamExclusionSamples;
-            correlation.roamExclusionCount = navState->roamExclusionCount;
-        }
-        if (const auto* decision = runtime_.decision(player)) {
-            correlation.decisionTick = decision->team.shared.tick.isValid() ? decision->team.shared.tick : tick;
-            correlation.validation = decision->validation;
-            correlation.intent = decision->tactical.intent.type;
-            correlation.route = decision->tactical.intent.route;
-            correlation.reason = decision->tactical.intent.reason;
-            correlation.roamGoal = decision->tactical.intent.type ==
-                    core::tactical::IntentType::Roam
-                ? decision->tactical.intent.target.area
-                : nav::model::NavAreaId{};
-            correlation.roamCandidateCount = decision->roamCandidateCount;
-            correlation.roamGeneration = decision->roamGeneration;
-        }
-        const auto& nav = navConsole_.runtimeNavigationStatus(player);
-        correlation.navResult = nav.result; correlation.navReason = nav.reason;
-        const auto& queuedTrace = movement_.frameQueueTrace(player);
-        const auto& dispatchedTrace = movement_.frameDispatchTrace(player);
-        const auto& rejectedTrace = movement_.frameRejectionTrace(player);
-        const auto traceMatches = [&](const debug::MovementTrace& trace) noexcept {
-            return trace.player == player && trace.agent == correlation.agent &&
-                trace.map == map &&
-                (trace.edictSerial == 0U || correlation.edictSerial == 0U ||
-                 trace.edictSerial == correlation.edictSerial);
-        };
-        const debug::MovementTrace emptyTrace{};
-        const auto& queued = traceMatches(queuedTrace) ? queuedTrace : emptyTrace;
-        const auto& dispatched = traceMatches(dispatchedTrace) ? dispatchedTrace : emptyTrace;
-        const auto& rejected = traceMatches(rejectedTrace) ? rejectedTrace : emptyTrace;
-        correlation.queueOutcome = queued.outcome; correlation.queueError = queued.error;
-        correlation.queueTick = queued.commandTick;
-        correlation.dispatchOutcome = dispatched.outcome; correlation.dispatchError = dispatched.error;
-        correlation.dispatchCommandTick = dispatched.commandTick;
-        correlation.dispatchTick = dispatched.dispatchTick;
-        const auto& movement =
-            dispatched.commandTick == tick && dispatched.outcome != MovementOutcome::None
-                ? dispatched
-                : queued.commandTick == tick && queued.outcome != MovementOutcome::None
-                    ? queued
-                    : emptyTrace;
-        correlation.source = movement.source; correlation.forward = movement.forward;
-        correlation.side = movement.side; correlation.up = movement.up;
-        correlation.buttons = movement.buttons;
-        correlation.impulse = movement.impulse; correlation.msec = movement.engineMsec;
-        if (rejected.outcome == MovementOutcome::Rejected) correlation.dispatchError = rejected.error;
-        ConsoleDebug::instance().runtimeCorrelationTrace(player);
-    }
+	if ((!hookedGameDllFunctions_ || !hookedGameDllFunctions_->pfnUpdateClientData ||
+		 !hookedGameDllFunctions_->pfnGetWeaponData) &&
+		utilityFunctions_ != nullptr && utilityFunctions_->pfnLogConsole != nullptr)
+	{
+		utilityFunctions_->pfnLogConsole(PLID, "%s", "astrabot capability=runtime_weapon status=Unavailable");
+	}
+	if (utilityFunctions_ != nullptr && utilityFunctions_->pfnLogConsole != nullptr)
+	{
+		if (!hookedGameDllFunctions_ || !hookedGameDllFunctions_->pfnUpdateClientData)
+			utilityFunctions_->pfnLogConsole(
+				PLID, "%s", "astrabot capability=runtime_weapon status=Unavailable callback=UpdateClientData");
+		if (!hookedGameDllFunctions_ || !hookedGameDllFunctions_->pfnGetWeaponData)
+			utilityFunctions_->pfnLogConsole(
+				PLID, "%s", "astrabot capability=runtime_weapon status=Unavailable callback=GetWeaponData");
+	}
+	for (auto& client : clients_)
+	{
+		client.fake.configure(engine, utility, hookedGameDllFunctions, &registry_, &agents_);
+	}
+	movement_.configure(engine, &registry_, &agents_);
+	movement_.setWeaponSelectionHandler(&LifecycleCoordinator::dispatchWeaponSelectionHook);
+	navConsole_.bindMovement(&movement_);
+	navConsole_.bindWorld(&world_);
 }
-void LifecycleCoordinator::soundPrecache(int type,const char* name,std::uint16_t index) noexcept {
-    sound_.precache(type,name,index);
+void LifecycleCoordinator::configureUserMessageIds(cstrike::UserMessageIds ids) noexcept
+{
+	messageDecoder_.configure(ids, &LifecycleCoordinator::onMessage, this);
+	perceptionMessageIds_ = ids;
+	userMessageIdsReady_ = ids.valid();
+	identityDiagnostics_.roundNotificationAvailable = ids.hltv > 0;
+	activeDecoder_ = &messageDecoder_;
+	for (auto& client : clients_)
+	{
+		client.decoder.configure(ids, &LifecycleCoordinator::onMessage, this);
+	}
 }
-void LifecycleCoordinator::emitSound(const edict_t* emitter,const float* origin,int channel,const char* sample,
-    float volume,float attenuation,int flags,int pitch,bool ambient) noexcept {
-    sound_.emit(*this,engineGlobals_ ? engineGlobals_->time : (std::numeric_limits<float>::quiet_NaN)(),
-        emitter,origin,channel,sample,volume,attenuation,flags,pitch,ambient);
+bool LifecycleCoordinator::refreshUserMessageIds(bool logPending) noexcept
+{
+	cstrike::UserMessageIds ids{};
+	if (!resolveUserMessageIds(utilityFunctions_, ids))
+	{
+		if (logPending && !userMessageIdsReady_ && !userMessageIdsPendingLogged_ && utilityFunctions_ != nullptr &&
+			utilityFunctions_->pfnLogConsole != nullptr)
+		{
+			utilityFunctions_->pfnLogConsole(PLID, "%s", "astrabot user-message-ids pending");
+			userMessageIdsPendingLogged_ = true;
+		}
+		return false;
+	}
+	const bool wasReady = userMessageIdsReady_;
+	userMessageIdsPendingLogged_ = false;
+	if (ids.vguiMenu != perceptionMessageIds_.vguiMenu || ids.showMenu != perceptionMessageIds_.showMenu ||
+		ids.teamInfo != perceptionMessageIds_.teamInfo || ids.hltv != perceptionMessageIds_.hltv ||
+		ids.screenFade != perceptionMessageIds_.screenFade || ids.money != perceptionMessageIds_.money)
+	{
+		configureUserMessageIds(ids);
+		if (logPending && !wasReady && userMessageIdsReady_ && utilityFunctions_ != nullptr &&
+			utilityFunctions_->pfnLogConsole != nullptr)
+		{
+			utilityFunctions_->pfnLogConsole(PLID, "%s", "astrabot user-message-ids resolved");
+		}
+	}
+	return true;
 }
-bool LifecycleCoordinator::advanceVisualEffects() noexcept {
-    const double time = engineGlobals_ ? double(engineGlobals_->time)*1000000 : -1;
-    if (!std::isfinite(time) || time < 0 || time >= 18446744073709551616.0) {
-        visualEffects_.invalidate(); return false;
-    }
-    return visualEffects_.advance(registry_.mapGeneration(),round_,static_cast<std::uint64_t>(time));
+void LifecycleCoordinator::reset() noexcept
+{
+	runtimeOwnedActor_ = {};
+	runtime_.reset();
+	runtimeHealth_.fill({});
+	retiredCombatTargets_.fill({});
+	mapNavLoadStatus_ = {};
+	runtimeInputBuildStatus_ = {};
+	runtimeInputBuildStatuses_.fill({});
+	runtimeCombatPending_.fill(false);
+	runtimeCorrelation_.fill({});
+	distributions_.reset();
+	world_.reset();
+	visualEffects_.reset();
+	sound_.reset();
+	vision_.reset();
+	teams_ = {};
+	round_ = {1};
+	identityDiagnostics_ = {};
+	lastRoundTick_ = {};
+	lastRoundTime_ = -1;
+	lastBuyRound_.fill({});
+	money_.fill(0);
+	moneyKnown_.fill(false);
+	navConsole_.reset();
+	movement_.reset();
+	commandContextActive_ = false;
+	commandPlayer_ = {};
+	commandArgc_ = 0;
+	commandArgv0_ = {};
+	commandArgv1_ = {};
+	commandArgs_ = {};
+	messageDecoder_.reset();
+	activeDecoder_ = &messageDecoder_;
+	// Retire every actor's portable state before any external disconnect callback.
+	for (auto& client : clients_)
+	{
+		client.join.reset();
+		client.decoder.reset();
+		client.combat = {};
+		client.combatLock = {};
+		client.pendingJoinMessageCount = 0;
+		client.cleanupPending = false;
+		client.cleanupError = cstrike::JoinError::None;
+		const auto player = client.fake.activePlayer();
+		if (player.isValid())
+		{
+			(void)agents_.unbind(player);
+			(void)registry_.disconnectPlayer(player);
+		}
+	}
+	for (auto& client : clients_)
+	{
+		const auto player = client.fake.activePlayer();
+		if (player.isValid())
+			(void)client.fake.cleanupActiveDirect(true);
+		client.fake.reset();
+	}
+	agents_.reset();
+	registry_.reset();
+	engineFunctions_ = nullptr;
+	utilityFunctions_ = nullptr;
+	hookedGameDllFunctions_ = nullptr;
+	engineGlobals_ = nullptr;
+	status_ = {};
+	traceSink_ = nullptr;
+	joinTraceSink_ = nullptr;
+	removalTraceSink_ = nullptr;
+	combatTraceSink_ = nullptr;
+	combatTraceSequence_ = 0;
+	userMessageIdsReady_ = false;
+	userMessageIdsPendingLogged_ = false;
+	runtimeInputProvider_ = nullptr;
+	runtimeInputContext_ = nullptr;
 }
-void LifecycleCoordinator::playbackEvent(int flags,const edict_t* invoker,std::uint16_t event,float delay,const float* origin,
-    const float* angles,float f1,float f2,int i1,int i2,int b1,int b2) noexcept {
-    if (sound_.events().find(event) != cstrike::EventKind::Smoke) {
-        sound_.playback(*this,engineGlobals_ ? engineGlobals_->time : (std::numeric_limits<float>::quiet_NaN)(),flags,invoker,event,delay,origin);
-        return;
-    }
-    // SG_Detonate initial event only. Recurring particle events do not renew it.
-    if (!registry_.isMapActive() || invoker || (flags != 0 && flags != FEV_RELIABLE) || delay != 0 || !origin || !angles ||
-        angles[0] != 0 || angles[1] != 0 || angles[2] != 0 || f1 != 0 || f2 != 0 || i1 != 0 || i2 != 1 ||
-        (b1 != 0 && b1 != 1) || b2 != 0) { visualEffects_.reject(); return; }
-    if (advanceVisualEffects()) (void)visualEffects_.smoke({origin[0],origin[1],origin[2]});
-}
-MovementResult LifecycleCoordinator::submitCommand(core::PlayerId player,core::MapGeneration map,
-    core::TickId tick,const core::BotCommand& command) noexcept {
-    const auto* client=findClient(player);
-    const auto reject=[&](MovementError error) { return movement_.rejectIngress(error,player,map,tick,command.msec); };
-    if(!client) return reject(MovementError::MappingMismatch);
-    if(client->fake.removalPending() || client->join.player()!=player || client->join.phase()!=cstrike::JoinPhase::Joined) return reject(MovementError::NotJoined);
-    auto* entity=client->fake.entityFor(player);
-    if(!entity) return reject(MovementError::MissingEntity);
-    if(entity->v.deadflag!=DEAD_NO) return reject(MovementError::DeadPlayer);
-    return movement_.submit(player,map,tick,command);
+void LifecycleCoordinator::serverActivate(int clientMax) noexcept
+{
+	(void)refreshUserMessageIds(true);
+	const auto result = clientMax < 1 || clientMax > host::kMaxClientSlots
+							? host::LifecycleResult::rejected(host::HostError::InvalidLifecycle)
+							: registry_.activateMap(static_cast<std::uint16_t>(clientMax));
+	if (result.changed())
+	{
+		// Retire both route producers and transport before any current-map
+		// loader callback. A failed load must never leave an old graph live.
+		navConsole_.invalidate(nav::runtime::SessionReason::MapChanged);
+		movement_.resetMap();
+		runtimeHealth_.fill({});
+		retiredCombatTargets_.fill({});
+		runtimeCorrelation_.fill({});
+		experienceAreas_.fill({});
+		experienceDamageSeen_.fill(0.0);
+		experienceDeathsSeen_.fill(0U);
+		experienceEventSequence_ = 0;
+		runtimeInputBuildStatuses_.fill({});
+		runtimeCombatPending_.fill(false);
+		runtimeInputBuildStatus_ = {};
+		runtimeOwnedActor_ = {};
+		clearAllCombatState();
+		runtime_.beginMap(registry_.mapGeneration());
+		vision_.reset();
+		sound_.beginMap(registry_.mapGeneration());
+		(void)teams_.activate(registry_.mapGeneration());
+		round_ = {1};
+		lastRoundTick_ = {};
+		lastRoundTime_ = -1;
+		lastBuyRound_.fill({});
+		money_.fill(0);
+		moneyKnown_.fill(false);
+		(void)advanceVisualEffects();
+		++status_.mapActivations;
+		if (status_.mapActivations > 1)
+			++status_.mapReplays;
+		clients_[0].fake.queuePrimaryCreate();
+		loadMapNavigation();
+	}
+	emit(host::LifecycleEventKind::MapActivated, result);
 }
 
-CombatSubmitResult LifecycleCoordinator::submitCombat(
-    const core::combat::CombatInput& input,
-    const core::combat::CombatDecision& aim,
-    const core::BotCommand& navigation) noexcept {
-    CombatSubmitResult rejected{};
-    rejected.decision = input.reject();
+void LifecycleCoordinator::loadMapNavigation() noexcept
+{
+	const auto map = registry_.mapGeneration();
+	if (!registry_.isMapActive() || !map.isValid() || mapNavLoadStatus_.map == map)
+		return;
+	// Mark the attempt before calling the host: reentrant activation must
+	// not retry, and StartFrame never retries a missing/invalid file.
+	mapNavLoadStatus_ = {};
+	mapNavLoadStatus_.map = map;
+	const auto current = [&]() noexcept { return registry_.isMapActive() && registry_.mapGeneration() == map; };
+	const auto finish = [&](MapNavLoadReason reason, const char* name) noexcept {
+		if (!current())
+			return;
+		mapNavLoadStatus_.reason = reason;
+		if (utilityFunctions_ && utilityFunctions_->pfnLogConsole)
+		{
+			char text[1400]{};
+			std::snprintf(text, sizeof(text), "astrabot nav_auto map=%u status=%s path=%s retry=explicit_load",
+						  unsigned(map.value), name, mapNavLoadStatus_.path.data());
+			utilityFunctions_->pfnLogConsole(PLID, "%s", text);
+		}
+	};
+	if (!engineFunctions_ || !engineFunctions_->pfnSzFromIndex || !engineGlobals_)
+	{
+		finish(MapNavLoadReason::MissingMapName, "MissingMapName");
+		return;
+	}
+	const char* name = engineFunctions_->pfnSzFromIndex(engineGlobals_->mapname);
+	if (!current())
+		return;
+	if (!name || !*name)
+	{
+		finish(MapNavLoadReason::MissingMapName, "MissingMapName");
+		return;
+	}
+	std::array<char, 64> mapName{};
+	std::size_t length = 0;
+	for (; length < mapName.size() && name[length] != '\0'; ++length)
+	{
+		const unsigned char c = static_cast<unsigned char>(name[length]);
+		if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-'))
+		{
+			finish(MapNavLoadReason::InvalidMapName, "InvalidMapName");
+			return;
+		}
+		mapName[length] = static_cast<char>(c);
+	}
+	if (length == mapName.size())
+	{
+		finish(MapNavLoadReason::InvalidMapName, "InvalidMapName");
+		return;
+	}
+	if (!engineFunctions_->pfnGetGameDir)
+	{
+		finish(MapNavLoadReason::MissingGameDirectory, "MissingGameDirectory");
+		return;
+	}
+	std::array<char, 1024> directory{};
+	engineFunctions_->pfnGetGameDir(directory.data());
+	if (!current())
+		return;
+	if (directory[0] == '\0' || std::memchr(directory.data(), '\0', directory.size()) == nullptr)
+	{
+		finish(MapNavLoadReason::InvalidGameDirectory, "InvalidGameDirectory");
+		return;
+	}
+	const int written = std::snprintf(mapNavLoadStatus_.path.data(), mapNavLoadStatus_.path.size(), "%s/maps/%s.nav",
+									  directory.data(), mapName.data());
+	if (written < 0 || static_cast<std::size_t>(written) >= mapNavLoadStatus_.path.size())
+	{
+		finish(MapNavLoadReason::InvalidGameDirectory, "InvalidGameDirectory");
+		return;
+	}
+	const bool loaded = navConsole_.loadForMap(mapNavLoadStatus_.path.data(), map, *this);
+	if (!current())
+		return;
+	finish(loaded ? MapNavLoadReason::Ready : MapNavLoadReason::LoadFailed, loaded ? "Ready" : "LoadFailed");
+}
+void LifecycleCoordinator::serverDeactivate() noexcept
+{
+	runtimeOwnedActor_ = {};
+	runtime_.reset();
+	runtimeHealth_.fill({});
+	retiredCombatTargets_.fill({});
+	runtimeInputBuildStatus_ = {};
+	runtimeInputBuildStatuses_.fill({});
+	runtimeCombatPending_.fill(false);
+	runtimeCorrelation_.fill({});
+	experienceAreas_.fill({});
+	experienceDamageSeen_.fill(0.0);
+	experienceDeathsSeen_.fill(0U);
+	experienceEventSequence_ = 0;
+	money_.fill(0);
+	moneyKnown_.fill(false);
+	distributions_.reset();
+	world_.reset();
+	visualEffects_.reset();
+	sound_.reset();
+	vision_.reset();
+	teams_.clear();
+	navConsole_.invalidate(nav::runtime::SessionReason::MapChanged);
+	movement_.resetMap();
+	for (auto& client : clients_)
+	{
+		const auto action = client.join.cancel(cstrike::JoinError::MapDeactivated);
+		emitJoin(client, action);
+		client.join.reset();
+		client.decoder.reset();
+		client.combat = {};
+		client.combatLock = {};
+		client.pendingJoinMessageCount = 0;
+		client.cleanupPending = false;
+		client.cleanupError = cstrike::JoinError::None;
+	}
+	messageDecoder_.reset();
+	activeDecoder_ = &messageDecoder_;
+	commandContextActive_ = false;
+	commandPlayer_ = {};
+	commandArgc_ = 0;
+	commandArgv0_ = {};
+	commandArgv1_ = {};
+	commandArgs_ = {};
+	const auto result = registry_.deactivateMap();
+	for (auto& client : clients_)
+		client.fake.resetMap();
+	agents_.clearMappings();
+	emit(host::LifecycleEventKind::MapDeactivated, result);
+}
+void LifecycleCoordinator::clientDisconnect(edict_t* entity) noexcept
+{
+	if (!entity || !engineFunctions_ || !engineFunctions_->pfnIndexOfEdict)
+	{
+		emit(host::LifecycleEventKind::PlayerDisconnected,
+			 host::LifecycleResult::rejected(host::HostError::InvalidPlayer));
+		return;
+	}
+	const int index = engineFunctions_->pfnIndexOfEdict(entity);
+	if (index < 1 || index > host::kMaxClientSlots)
+	{
+		emit(host::LifecycleEventKind::PlayerDisconnected,
+			 host::LifecycleResult::rejected(host::HostError::InvalidPlayer));
+		return;
+	}
+	const auto player = registry_.currentPlayer(static_cast<std::uint16_t>(index));
+	auto* client = findClient(player);
+	// A reused edict or a foreign entity must not disconnect the mapped actor.
+	if (client && client->fake.entityFor(player) != entity)
+	{
+		emit(host::LifecycleEventKind::PlayerDisconnected,
+			 host::LifecycleResult::rejected(host::HostError::InvalidPlayer));
+		return;
+	}
+	retireCombatTarget(player);
+	teams_.forget(player);
+	visualEffects_.forget(player);
+	sound_.forget(player);
+	movement_.forget(player);
+	if (player.slot <= lastBuyRound_.size())
+	{
+		lastBuyRound_[player.slot - 1U] = {};
+		experienceAreas_[player.slot - 1U] = {};
+		experienceDamageSeen_[player.slot - 1U] = 0.0;
+		experienceDeathsSeen_[player.slot - 1U] = 0U;
+	}
+	clearCombatState(player);
+	runtime_.onDisconnect(player);
+	if (client)
+	{
+		navConsole_.invalidateActor(player, nav::runtime::SessionReason::Disconnected);
+		emitJoin(*client, client->join.cancel(cstrike::JoinError::Disconnected));
+		client->join.reset();
+		client->decoder.reset();
+		client->pendingJoinMessageCount = 0;
+		client->cleanupPending = false;
+		client->cleanupError = cstrike::JoinError::None;
+	}
+	if (commandPlayer_ == player)
+	{
+		commandContextActive_ = false;
+		commandPlayer_ = {};
+		commandArgc_ = 0;
+		commandArgv0_ = {};
+		commandArgv1_ = {};
+		commandArgs_ = {};
+	}
+	const auto result = registry_.disconnectSlot(static_cast<std::uint16_t>(index));
+	if (result.changed())
+	{
+		(void)agents_.unbind(player);
+		if (client)
+		{
+			client->fake.acknowledgeDisconnect(player);
+			++status_.cleanupCompletions;
+			emitRemoval(debug::RemovalOutcome::Cleaned, debug::RemovalError::None, player, false, false);
+		}
+	}
+	emit(host::LifecycleEventKind::PlayerDisconnected, result);
+}
+FakeClientResult LifecycleCoordinator::createBot(const char* name, cstrike::JoinRequest request) noexcept
+{
+	if (commandContextActive_)
+		return {debug::FakeClientError::Reentrant, {}};
+	for (const auto& client : clients_)
+		if (client.fake.operationActive())
+			return {debug::FakeClientError::Reentrant, {}};
+	for (auto& client : clients_)
+	{
+		if (client.fake.activePlayer().isValid())
+			continue;
+		client.fake.resetMap();
+		client.join.reset();
+		client.decoder.reset();
+		client.combat = {};
+		client.combatLock = {};
+		client.pendingJoinMessageCount = 0;
+		client.cleanupPending = false;
+		client.cleanupError = cstrike::JoinError::None;
+		const auto result = client.fake.create(name, request);
+		++status_.createAttempts;
+		if (result.playerRegistration.changed())
+			emit(host::LifecycleEventKind::PlayerConnected, result.playerRegistration);
+		if (result.playerRollback.changed())
+			emit(host::LifecycleEventKind::PlayerDisconnected, result.playerRollback);
+		if (result.succeeded())
+		{
+			(void)requestJoin(result.player, request);
+		}
+		else
+		{
+			client.pendingJoinMessageCount = 0;
+		}
+		return result;
+	}
+	return {debug::FakeClientError::AlreadyCreated, {}};
+}
+RemovalResult LifecycleCoordinator::removeActive() noexcept
+{
+	return remove(clients_[0].fake.activePlayer());
+}
+RemovalResult LifecycleCoordinator::remove(core::PlayerId player) noexcept
+{
+	auto* client = findClient(player);
+	if (!client)
+		return {debug::RemovalOutcome::NoOp, debug::RemovalError::None, {}, true, false};
+	if (client->fake.removalPending())
+		return {debug::RemovalOutcome::NoOp, debug::RemovalError::None, player, true, false};
+	retireCombatTarget(player);
+	sound_.forget(player);
+	visualEffects_.forget(player);
+	teams_.forget(player);
+	movement_.forget(player);
+	if (player.slot <= lastBuyRound_.size())
+		lastBuyRound_[player.slot - 1U] = {};
+	clearCombatState(player);
+	runtime_.onDisconnect(player);
+	navConsole_.invalidateActor(player, nav::runtime::SessionReason::Disconnected);
+	emitJoin(*client, client->join.cancel(cstrike::JoinError::Disconnected));
+	client->decoder.reset();
+	client->pendingJoinMessageCount = 0;
+	client->cleanupPending = false;
+	client->cleanupError = cstrike::JoinError::None;
+	if (commandPlayer_ == player)
+	{
+		commandContextActive_ = false;
+		commandPlayer_ = {};
+		commandArgc_ = 0;
+		commandArgv0_ = {};
+		commandArgv1_ = {};
+		commandArgs_ = {};
+	}
+	++status_.removalRequests;
+	const auto result = client->fake.requestRemoval();
+	status_.lastRemovalError = result.error;
+	if (!result.succeeded())
+		cleanupActiveAfterRemoval(*client, result, player);
+	return result;
+}
+void LifecycleCoordinator::queuePrimaryCreate(cstrike::JoinRequest request) noexcept
+{
+	clients_[0].fake.queuePrimaryCreate(request);
+}
+core::world::ReportResult LifecycleCoordinator::report(core::PlayerId reporter, core::PlayerId target) noexcept
+{
+	using Reason = core::world::ReportReason;
+	const auto* published = world_.publishedFrame();
+	if (reporting_ || !published || !engineGlobals_ || !registry_.isMapActive() ||
+		published->map != registry_.mapGeneration() || published->round != round_ ||
+		published->tick != registry_.currentTick())
+		return {Reason::NotReady, 0};
+	reporting_ = true;
+	CommandContextGuard guard{reporting_};
+	const auto frame = *published;
+	const double micros = static_cast<double>(engineGlobals_->time) * 1000000;
+	if (!std::isfinite(micros) || micros < 0 || micros >= 18446744073709551616.0)
+	{
+		world_.invalidateReports();
+		return {Reason::InvalidTime, 0};
+	}
+	std::array<edict_t*, 32> entities{};
+	std::array<int, 32> serials{};
+	std::array<bool, 32> eligible{};
+	for (std::size_t i = 0; i < frame.players.size(); ++i)
+	{
+		const auto& player = frame.players[i];
+		if (!player.eligible || !player.player.isValid() ||
+			registry_.currentPlayer(player.player.slot) != player.player)
+			continue;
+		auto* entity = player.agent.isValid() ? entityFor(player.player)
+					   : engineFunctions_ && engineFunctions_->pfnPEntityOfEntIndex
+						   ? engineFunctions_->pfnPEntityOfEntIndex(player.player.slot)
+						   : nullptr;
+		if (!entity)
+			continue;
+		if (!player.agent.isValid() && !vision_.bound(player.player, engineFunctions_))
+			continue;
+		entities[i] = entity;
+		serials[i] = entity->serialnumber;
+	}
+	if (!world_.publishedFrame() || !registry_.isMapActive() || registry_.mapGeneration() != frame.map ||
+		registry_.currentTick() != frame.tick || round_ != frame.round)
+		return {Reason::NotReady, 0};
+	if (!engineGlobals_ || static_cast<double>(engineGlobals_->time) * 1000000 != micros)
+	{
+		world_.invalidateReports();
+		return {Reason::InvalidTime, 0};
+	}
+	// Recheck identities and lifecycle flags after all engine callbacks. No positions are read.
+	for (std::size_t i = 0; i < frame.players.size(); ++i)
+	{
+		const auto& player = frame.players[i];
+		const auto* entity = entities[i];
+		const auto* join = player.agent.isValid() ? joinState(player.player) : nullptr;
+		eligible[i] = entity && !entity->free && entity->serialnumber == serials[i] &&
+					  registry_.currentPlayer(player.player.slot) == player.player && entity->v.deadflag == DEAD_NO &&
+					  std::isfinite(entity->v.health) && entity->v.health > 0 && entity->v.iuser1 == 0 &&
+					  !(entity->v.flags & FL_SPECTATOR) &&
+					  (!player.agent.isValid() ||
+					   (join && join->phase() == cstrike::JoinPhase::Joined && !removalPending(player.player)));
+		if (!eligible[i])
+			world_.forgetReports(player.player);
+	}
+	return world_.requestReport(reporter, target, static_cast<std::uint64_t>(micros), eligible, teams_);
+}
+void LifecycleCoordinator::startFrame() noexcept
+{
+	if (!perceptionMessageIds_.valid())
+		(void)refreshUserMessageIds(true);
+	world_.beginUpdate();
+	const auto result = registry_.startFrame();
+	emit(host::LifecycleEventKind::FrameStarted, result);
+	if (!result.changed())
+		return;
+	std::optional<std::uint64_t> engineFrameDeltaUs;
+	if (engineGlobals_ != nullptr && std::isfinite(static_cast<double>(engineGlobals_->frametime)) &&
+		engineGlobals_->frametime >= 0.0F && static_cast<double>(engineGlobals_->frametime) < 18446744073709.55)
+	{
+		engineFrameDeltaUs = static_cast<std::uint64_t>(static_cast<double>(engineGlobals_->frametime) * 1000000.0);
+	}
+	movement_.beginFrame(engineFrameDeltaUs);
+	const auto map = registry_.mapGeneration();
+	const auto tick = registry_.currentTick();
+	// Capture one monotonic engine stamp for every observation and decision
+	// produced by this frame.  Vision, world-model input, and combat must
+	// share the same value even though dispatch happens in separate phases.
+	const auto nowMicros = engineTimeMicros(engineGlobals_);
+	refreshCombatTargetLiveness();
+	runtimeCombatPending_.fill(false);
 
-    auto* client = findClient(input.player);
-    const auto binding = agents_.findByPlayer(input.player);
-    const auto invalid = [&](CombatSubmitError error) {
-        rejected.error = error;
-        rejected.accepted = false;
-        clearCombatState(input.player);
-        emitCombatTrace(
-            input.player, rejected.decision, input.map, input.round, input.agent, input.tick,
-            input.timeMicros,
-            &input.weapon, rejected.composition, rejected);
-        return rejected;
-    };
-    if (!client || !input.player.isValid()) return invalid(CombatSubmitError::InvalidActor);
-    if (!input.map.isValid() || input.map != registry_.mapGeneration()) {
-        return invalid(CombatSubmitError::InvalidMapGeneration);
-    }
-    if (!input.tick.isValid() || input.tick != registry_.currentTick()) {
-        return invalid(CombatSubmitError::InvalidTick);
-    }
-    if (!binding.isValid() || binding.agent != input.agent ||
-        binding.map != input.map) {
-        return invalid(CombatSubmitError::InvalidAgentBinding);
-    }
-    if (client->fake.removalPending() || client->join.player() != input.player ||
-        client->join.phase() != cstrike::JoinPhase::Joined) {
-        return invalid(CombatSubmitError::NotJoined);
-    }
-    auto* entity = client->fake.entityFor(input.player);
-    if (!entity) return invalid(CombatSubmitError::MissingEntity);
-    if (!input.alive || entity->v.deadflag != DEAD_NO) {
-        clearCombatState(input.player);
-        rejected.decision = core::combat::CombatDecision::noOp(
-            input.tick, core::combat::CombatReason::Dead);
-        rejected.decision.view = navigation.view;
-        rejected.error = CombatSubmitError::DeadPlayer;
-        emitCombatTrace(
-            input.player, rejected.decision, input.map, input.round, input.agent, input.tick,
-            input.timeMicros,
-            &input.weapon, rejected.composition, rejected);
-        return rejected;
-    }
-
-    if (client->combat.cadenceActive && aim.target.isValid() &&
-        client->combat.cadenceTarget != aim.target) {
-        client->combat = {};
-        client->combatLock = {};
-    }
-    const auto authorization = core::combat::authorizeFire(
-        input, aim, client->combat);
-    client->combat = authorization.nextState;
-    return submitComposedCombat(
-        input.player, input.map, input.round, input.agent, input.tick,
-        authorization.decision, navigation, &input);
+	const auto previousRuntimeInputStatuses = runtimeInputBuildStatuses_;
+	const auto dispatchInputUnavailable = [&](core::PlayerId player) noexcept {
+		if (!player.isValid() || player.slot > host::kMaxClientSlots)
+			return false;
+		const auto& status = previousRuntimeInputStatuses[player.slot - 1U];
+		return status.player == player && status.agent.isValid() && status.map == map && status.round == round_ &&
+			   status.reason != RuntimeInputBuildReason::None;
+	};
+	runtimeInputBuildStatuses_.fill({});
+	const auto created = clients_[0].fake.processPrimaryCreate();
+	if (created.changed || created.error != debug::FakeClientError::None)
+		++status_.createAttempts;
+	if (created.playerRegistration.changed())
+		emit(host::LifecycleEventKind::PlayerConnected, created.playerRegistration);
+	if (created.playerRollback.changed())
+		emit(host::LifecycleEventKind::PlayerDisconnected, created.playerRollback);
+	if (created.succeeded() && created.changed)
+		(void)requestJoin(created.player, clients_[0].fake.activeJoinRequest());
+	for (auto& client : clients_)
+	{
+		if (!registry_.isMapActive() || registry_.mapGeneration() != map || registry_.currentTick() != tick)
+			return;
+		const auto player = client.fake.activePlayer();
+		if (!player.isValid())
+			continue;
+		auto* entity = client.fake.entityFor(player);
+		if (player.slot <= runtimeHealth_.size())
+		{
+			auto& observation = runtimeHealth_[player.slot - 1U];
+			if (entity && !entity->free && !client.fake.removalPending() &&
+				client.join.phase() == cstrike::JoinPhase::Joined)
+			{
+				RuntimeFrame observedFrame{};
+				observedFrame.map = map;
+				observedFrame.round = round_;
+				observedFrame.tick = tick;
+				observedFrame.nowMicros = nowMicros;
+				observation.observe(observedFrame, player, agents_.findByPlayer(player).agent, entity->serialnumber,
+									entity->v.health, entity->v.deadflag != DEAD_NO || entity->v.health <= 0);
+			}
+			else
+			{
+				observation = {};
+			}
+		}
+		if (entity != nullptr && entity->v.deadflag != DEAD_NO)
+		{
+			client.combat = {};
+			client.combatLock = {};
+			runtime_.onDeath(player);
+		}
+		if (client.join.active() && !client.fake.removalPending())
+		{
+			if (!movement_.dispatchJoinProgress(player, entity, map))
+			{
+				handleJoinAction(client, client.join.fail(cstrike::JoinError::GameDllProgressUnavailable));
+				continue;
+			}
+			if (client.join.player() == player)
+			{
+				handleJoinAction(client, client.join.onGameFrameAdvanced());
+			}
+		}
+		// A fake client has no network channel, so ReGameDLL may never emit
+		// VGUIMenu/ShowMenu to this adapter.  Prompt-driven events still take
+		// precedence; this bounded prime only supplies the selection when a
+		// prompt was not observed before the frame deadline.
+		(void)client.join.primeMenuSelection();
+		const auto action = client.join.onFrame(tick);
+		handleJoinAction(client, action);
+		if (action.kind == cstrike::JoinActionKind::SendMenuSelect && client.fake.activePlayer() == player)
+		{
+			const bool dispatched = dispatchMenu(client, action.selection);
+			if (client.join.player() == player)
+				handleJoinAction(client, client.join.commandCompleted(dispatched));
+		}
+		if (client.join.phase() == cstrike::JoinPhase::Joined && entity != nullptr && !entity->free &&
+			entity->v.deadflag == DEAD_NO && std::isfinite(entity->v.health) && entity->v.health > 0.0F)
+		{
+			dispatchRoundBuy(client);
+		}
+	}
+	for (auto& client : clients_)
+	{
+		const auto player = client.fake.activePlayer();
+		if (client.fake.removalPending())
+		{
+			movement_.forget(player);
+			continue;
+		}
+		navConsole_.beforeDispatch(*this, player);
+	}
+	for (auto& client : clients_)
+	{
+		if (!registry_.isMapActive() || registry_.mapGeneration() != map || registry_.currentTick() != tick)
+			return;
+		const auto player = client.fake.activePlayer();
+		if (!player.isValid())
+			continue;
+		if (client.fake.removalPending())
+		{
+			const auto ticket = navConsole_.dispatchTicket(player);
+			const auto moved = movement_.dispatchAtFrameEnd(client.join.phase(), player, client.fake.entityFor(player),
+															map, tick, true);
+			navConsole_.afterDispatch(player, moved, tick, ticket);
+			continue;
+		}
+		const auto ticket = navConsole_.dispatchTicket(player);
+		const bool suppressRuntimeInput = dispatchInputUnavailable(player);
+		const auto* dispatchEntity = client.fake.entityFor(player);
+		const bool deadHeartbeat = suppressRuntimeInput && dispatchEntity != nullptr && !dispatchEntity->free &&
+								   dispatchEntity->v.deadflag != DEAD_NO;
+		const auto moved = movement_.dispatchAtFrameEnd(client.join.phase(), player, client.fake.entityFor(player), map,
+														tick, false, suppressRuntimeInput);
+		if (!suppressRuntimeInput)
+			navConsole_.afterDispatch(player, moved, tick, ticket);
+		else if (deadHeartbeat)
+			movement_.forget(player, true);
+	}
+	if (registry_.isMapActive() && registry_.mapGeneration() == map && registry_.currentTick() == tick)
+	{
+		(void)advanceVisualEffects();
+		vision_.frame(*this, engineFunctions_, nowMicros);
+		if (registry_.isMapActive() && registry_.mapGeneration() == map && registry_.currentTick() == tick)
+		{
+			sound_.frame(*this, engineGlobals_ ? engineGlobals_->time : (std::numeric_limits<float>::quiet_NaN)());
+			if (registry_.isMapActive() && registry_.mapGeneration() == map && registry_.currentTick() == tick)
+			{
+				(void)world_.publish({sound_.diagnostics().queued, sound_.diagnostics().overflow});
+				distributions_.update(world_, navConsole_.distributionTopology());
+				RuntimeFrame runtimeFrame{};
+				runtimeFrame.map = map;
+				runtimeFrame.round = round_;
+				runtimeFrame.tick = tick;
+				runtimeFrame.nowMicros = nowMicros;
+				runtimeFrame.elapsedMicros = movement_.frameDeltaUs();
+				// The map name is the strongest identity available at this
+				// boundary until a provider supplies BSP/NAV hashes. Keep
+				// the optional value empty if the engine string table is not
+				// ready; RuntimeFrame remains valid and learning simply stays
+				// inactive for that frame.
+				if (engineFunctions_ && engineFunctions_->pfnSzFromIndex && engineGlobals_)
+				{
+					const char* mapName = engineFunctions_->pfnSzFromIndex(engineGlobals_->mapname);
+					if (mapName)
+					{
+						std::size_t length = 0;
+						while (length <= core::experience::kMapNameLimit && mapName[length] != '\0')
+							++length;
+						if (length <= core::experience::kMapNameLimit)
+						{
+							try
+							{
+								runtimeFrame.mapIdentity.name.assign(mapName, length);
+							}
+							catch (...)
+							{
+								runtimeFrame.mapIdentity = {};
+							}
+						}
+					}
+				}
+				auto& runtimeInputs = runtimeInputsScratch_;
+				for (auto& input : runtimeInputs)
+				{
+					// Avoid a large RuntimeActorInput assignment temporary on
+					// the engine callback stack. Each slot is owned by this
+					// coordinator and may be safely reconstructed per frame.
+					input.~RuntimeActorInput();
+					::new (static_cast<void*>(&input)) RuntimeActorInput{};
+				}
+				std::size_t runtimeInputCount = 0;
+				runtimeInputBuildStatus_ = {};
+				runtimeInputBuildStatuses_.fill({});
+				runtimeInputBuildStatus_.map = runtimeFrame.map;
+				runtimeInputBuildStatus_.round = runtimeFrame.round;
+				runtimeInputBuildStatus_.tick = runtimeFrame.tick;
+				runtimeInputBuildStatus_.nowMicros = runtimeFrame.nowMicros;
+				const auto runtimeInputUnavailable = [&](core::PlayerId player) noexcept {
+					if (!player.isValid() || player.slot > host::kMaxClientSlots)
+						return false;
+					const auto& status = runtimeInputBuildStatuses_[player.slot - 1U];
+					return status.player == player && status.agent.isValid() && status.map == runtimeFrame.map &&
+						   status.round == runtimeFrame.round && status.tick == runtimeFrame.tick &&
+						   status.reason != RuntimeInputBuildReason::None;
+				};
+				if (runtimeInputProvider_ != nullptr)
+				{
+					runtimeInputCount = runtimeInputProvider_(runtimeInputContext_, *this, runtimeFrame,
+															  runtimeInputs.data(), runtimeInputs.size());
+					for (std::size_t i = 0; i < runtimeInputCount && i < runtimeInputs.size(); ++i)
+					{
+						const auto player = runtimeInputs[i].player;
+						if (!player.isValid() || player.slot > host::kMaxClientSlots)
+							continue;
+						auto& actorStatus = runtimeInputBuildStatuses_[player.slot - 1U];
+						actorStatus.map = runtimeFrame.map;
+						actorStatus.round = runtimeFrame.round;
+						actorStatus.tick = runtimeFrame.tick;
+						actorStatus.nowMicros = runtimeFrame.nowMicros;
+						actorStatus.player = player;
+						actorStatus.agent = runtimeInputs[i].agent;
+						actorStatus.inputIncluded = true;
+					}
+				}
+				else
+				{
+					runtimeInputCount = buildRuntimeInputs(
+						*this, runtimeFrame, hookedGameDllFunctions_, runtimeInputs.data(), runtimeInputs.size(),
+						runtimeInputBuildStatuses_.data(), runtimeInputBuildStatuses_.size(),
+						RuntimeInputSources{&LifecycleCoordinator::readObjective,
+											&LifecycleCoordinator::produceExperienceEvents, nullptr});
+				}
+				// CombatLock is actor-owned state; bind it only after the
+				// value boundary has produced a validated player identity.
+				for (std::size_t i = 0; i < runtimeInputCount && i < runtimeInputs.size(); ++i)
+				{
+					if (auto* client = findClient(runtimeInputs[i].player))
+						runtimeInputs[i].combat.lock = &client->combatLock;
+				}
+				if (runtimeInputCount != 0)
+					runtimeInputBuildStatus_ = runtimeInputBuildStatuses_[0];
+				const auto& runtimeResult = runtime_.run(runtimeFrame, runtimeInputs.data(), runtimeInputCount);
+				for (std::size_t i = 0; i < runtimeResult.decisionCount; ++i)
+				{
+					const auto& decision = runtimeResult.decisions[i];
+					if (decision.executable)
+					{
+						if (decision.player.isValid() && decision.player.slot <= runtimeCombatPending_.size())
+							runtimeCombatPending_[decision.player.slot - 1U] = true;
+						runtimeOwnedActor_ = decision.player;
+						runtimeAttackPending_ = decision.combat.hasAttackInput();
+						if (!runtimeInputProvider_ && runtimeInputCount == 1)
+							runtimeWeapon_ = runtimeInputs[0].combat.weapon.active;
+					}
+					if (decision.player.isValid())
+					{
+						// Record Applied/Unchanged/Rejected for every runtime decision,
+						// including a valid decision with no NAV goal.
+						navConsole_.applyRuntimeNavigation(*this, decision);
+					}
+					if (decision.player.isValid() && decision.rejection != RuntimeRejectReason::None)
+					{
+						// A provider-owned actor that fails validation must
+						// retire its old route before the next movement pass;
+						// otherwise an obsolete NAV command could survive an
+						// invalid perception/identity frame.
+						navConsole_.invalidateActor(decision.player, nav::runtime::SessionReason::InvalidSnapshot);
+						movement_.forget(decision.player);
+					}
+				}
+				// A failed value-boundary observation must not leave an old
+				// NAV ticket alive and must not be converted into an Idle
+				// RunPlayerMove later in this frame. The status remains the
+				// primary diagnostic; valid actors continue independently.
+				for (auto& client : clients_)
+				{
+					const auto player = client.fake.activePlayer();
+					if (!runtimeInputUnavailable(player))
+						continue;
+					auto& actorStatus = runtimeInputBuildStatuses_[player.slot - 1U];
+					actorStatus.idleDispatchSuppressed = true;
+					navConsole_.invalidateActor(player, nav::runtime::SessionReason::InvalidSnapshot);
+					// Keep a dead actor's frame trace until its neutral
+					// heartbeat has dispatched. Live invalid-input actors are
+					// retired immediately so stale commands cannot become an
+					// Idle RunPlayerMove later in this frame.
+					const auto* entity = client.fake.entityFor(player);
+					if (entity == nullptr || entity->v.deadflag == DEAD_NO)
+						movement_.forget(player);
+				}
+			}
+		}
+	}
+	for (auto& client : clients_)
+	{
+		if (!registry_.isMapActive() || registry_.mapGeneration() != map || registry_.currentTick() != tick)
+			return;
+		const auto player = client.fake.activePlayer();
+		if (dispatchInputUnavailable(player))
+			continue;
+		navConsole_.moveFrame(*this, player);
+	}
+	// Runtime combat is consumed only by submitMotion() while composing a NAV
+	// command. A held/completed route falls through to the existing neutral
+	// heartbeat, preserving one queued command per actor and frame.
+	for (const auto& client : clients_)
+	{
+		const auto player = client.fake.activePlayer();
+		if (!player.isValid() || player.slot > host::kMaxClientSlots)
+			continue;
+		auto& correlation = runtimeCorrelation_[player.slot - 1U];
+		correlation = {};
+		correlation.map = map;
+		correlation.round = round_;
+		correlation.player = player;
+		const auto binding = agents_.findByPlayer(player);
+		correlation.agent = binding.agent;
+		correlation.managed = binding.isValid() && binding.player == player && binding.map == map;
+		const auto* entity = client.fake.entityFor(player);
+		correlation.edictSerial = entity != nullptr ? static_cast<std::uint32_t>(entity->serialnumber) : 0U;
+		correlation.connected = registry_.isConnected(player.slot) && registry_.currentPlayer(player.slot) == player;
+		correlation.removalPending = client.fake.removalPending();
+		correlation.alive = entity != nullptr && !entity->free && entity->v.deadflag == DEAD_NO;
+		correlation.elapsedUs = movement_.frameDeltaUs();
+		correlation.frameDeltaUs = movement_.frameDeltaUs();
+		const auto& input = runtimeInputBuildStatuses_[player.slot - 1U];
+		correlation.inputTick = input.player == player ? input.tick : core::TickId{};
+		correlation.inputReason = input.player == player ? input.reason : RuntimeInputBuildReason::None;
+		correlation.staleReason = input.player == player ? input.staleReason : RuntimeActorStaleReason::None;
+		correlation.currentAreaHeld = input.player == player && input.currentAreaHeld;
+		if (const auto navState = navConsole_.runtimeState(*this, player); navState)
+		{
+			if (navState->currentArea)
+				correlation.currentArea = *navState->currentArea;
+			correlation.currentAreaSource = navState->currentAreaSource;
+			correlation.currentAreaAgeUs = navState->currentAreaAgeUs;
+			correlation.roamExcludedCapacity = navState->roamExcludedCapacity;
+			correlation.roamExcludedInvalid = navState->roamExcludedInvalid;
+			correlation.roamExcludedOccupied = navState->roamExcludedOccupied;
+			correlation.roamExcludedGoalCooling = navState->roamExcludedGoalCooling;
+			correlation.roamExcludedRejected = navState->roamExcludedRejected;
+			correlation.roamExcludedRecent = navState->roamExcludedRecent;
+			correlation.roamExcludedMissing = navState->roamExcludedMissing;
+			correlation.roamExcludedHull = navState->roamExcludedHull;
+			correlation.roamSearchBackoff = navState->roamSearchBackoff;
+			correlation.roamSearchBackoffRemainingUs = navState->roamSearchBackoffRemainingUs;
+			correlation.roamExclusionSamples = navState->roamExclusionSamples;
+			correlation.roamExclusionCount = navState->roamExclusionCount;
+		}
+		if (const auto* decision = runtime_.decision(player))
+		{
+			correlation.decisionTick = decision->team.shared.tick.isValid() ? decision->team.shared.tick : tick;
+			correlation.validation = decision->validation;
+			correlation.intent = decision->tactical.intent.type;
+			correlation.route = decision->tactical.intent.route;
+			correlation.reason = decision->tactical.intent.reason;
+			correlation.roamGoal = decision->tactical.intent.type == core::tactical::IntentType::Roam
+									   ? decision->tactical.intent.target.area
+									   : nav::model::NavAreaId{};
+			correlation.roamCandidateCount = decision->roamCandidateCount;
+			correlation.roamGeneration = decision->roamGeneration;
+		}
+		const auto& nav = navConsole_.runtimeNavigationStatus(player);
+		correlation.navResult = nav.result;
+		correlation.navReason = nav.reason;
+		const auto& queuedTrace = movement_.frameQueueTrace(player);
+		const auto& dispatchedTrace = movement_.frameDispatchTrace(player);
+		const auto& rejectedTrace = movement_.frameRejectionTrace(player);
+		const auto traceMatches = [&](const debug::MovementTrace& trace) noexcept {
+			return trace.player == player && trace.agent == correlation.agent && trace.map == map &&
+				   (trace.edictSerial == 0U || correlation.edictSerial == 0U ||
+					trace.edictSerial == correlation.edictSerial);
+		};
+		const debug::MovementTrace emptyTrace{};
+		const auto& queued = traceMatches(queuedTrace) ? queuedTrace : emptyTrace;
+		const auto& dispatched = traceMatches(dispatchedTrace) ? dispatchedTrace : emptyTrace;
+		const auto& rejected = traceMatches(rejectedTrace) ? rejectedTrace : emptyTrace;
+		correlation.queueOutcome = queued.outcome;
+		correlation.queueError = queued.error;
+		correlation.queueTick = queued.commandTick;
+		correlation.dispatchOutcome = dispatched.outcome;
+		correlation.dispatchError = dispatched.error;
+		correlation.dispatchCommandTick = dispatched.commandTick;
+		correlation.dispatchTick = dispatched.dispatchTick;
+		const auto& movement = dispatched.commandTick == tick && dispatched.outcome != MovementOutcome::None
+								   ? dispatched
+							   : queued.commandTick == tick && queued.outcome != MovementOutcome::None ? queued
+																									   : emptyTrace;
+		correlation.source = movement.source;
+		correlation.forward = movement.forward;
+		correlation.side = movement.side;
+		correlation.up = movement.up;
+		correlation.buttons = movement.buttons;
+		correlation.impulse = movement.impulse;
+		correlation.msec = movement.engineMsec;
+		if (rejected.outcome == MovementOutcome::Rejected)
+			correlation.dispatchError = rejected.error;
+		ConsoleDebug::instance().runtimeCorrelationTrace(player);
+	}
+}
+void LifecycleCoordinator::soundPrecache(int type, const char* name, std::uint16_t index) noexcept
+{
+	sound_.precache(type, name, index);
+}
+void LifecycleCoordinator::emitSound(const edict_t* emitter, const float* origin, int channel, const char* sample,
+									 float volume, float attenuation, int flags, int pitch, bool ambient) noexcept
+{
+	sound_.emit(*this, engineGlobals_ ? engineGlobals_->time : (std::numeric_limits<float>::quiet_NaN)(), emitter,
+				origin, channel, sample, volume, attenuation, flags, pitch, ambient);
+}
+bool LifecycleCoordinator::advanceVisualEffects() noexcept
+{
+	const double time = engineGlobals_ ? double(engineGlobals_->time) * 1000000 : -1;
+	if (!std::isfinite(time) || time < 0 || time >= 18446744073709551616.0)
+	{
+		visualEffects_.invalidate();
+		return false;
+	}
+	return visualEffects_.advance(registry_.mapGeneration(), round_, static_cast<std::uint64_t>(time));
+}
+void LifecycleCoordinator::playbackEvent(int flags, const edict_t* invoker, std::uint16_t event, float delay,
+										 const float* origin, const float* angles, float f1, float f2, int i1, int i2,
+										 int b1, int b2) noexcept
+{
+	if (sound_.events().find(event) != cstrike::EventKind::Smoke)
+	{
+		sound_.playback(*this, engineGlobals_ ? engineGlobals_->time : (std::numeric_limits<float>::quiet_NaN)(), flags,
+						invoker, event, delay, origin);
+		return;
+	}
+	// SG_Detonate initial event only. Recurring particle events do not renew it.
+	if (!registry_.isMapActive() || invoker || (flags != 0 && flags != FEV_RELIABLE) || delay != 0 || !origin ||
+		!angles || angles[0] != 0 || angles[1] != 0 || angles[2] != 0 || f1 != 0 || f2 != 0 || i1 != 0 || i2 != 1 ||
+		(b1 != 0 && b1 != 1) || b2 != 0)
+	{
+		visualEffects_.reject();
+		return;
+	}
+	if (advanceVisualEffects())
+		(void)visualEffects_.smoke({origin[0], origin[1], origin[2]});
+}
+MovementResult LifecycleCoordinator::submitCommand(core::PlayerId player, core::MapGeneration map, core::TickId tick,
+												   const core::BotCommand& command) noexcept
+{
+	const auto* client = findClient(player);
+	const auto reject = [&](MovementError error) {
+		return movement_.rejectIngress(error, player, map, tick, command.msec);
+	};
+	if (!client)
+		return reject(MovementError::MappingMismatch);
+	if (client->fake.removalPending() || client->join.player() != player ||
+		client->join.phase() != cstrike::JoinPhase::Joined)
+		return reject(MovementError::NotJoined);
+	auto* entity = client->fake.entityFor(player);
+	if (!entity)
+		return reject(MovementError::MissingEntity);
+	if (entity->v.deadflag != DEAD_NO)
+		return reject(MovementError::DeadPlayer);
+	return movement_.submit(player, map, tick, command);
 }
 
-CombatSubmitResult LifecycleCoordinator::submitCombatDecision(
-    core::PlayerId player,
-    core::MapGeneration mapGeneration,
-    core::TickId tick,
-    const core::combat::CombatDecision& decision,
-    const core::BotCommand& navigation) noexcept {
-    const auto binding = agents_.findByPlayer(player);
-    return submitComposedCombat(
-        player, mapGeneration, round_, binding.agent, tick, decision,
-        navigation, nullptr);
+CombatSubmitResult LifecycleCoordinator::submitCombat(const core::combat::CombatInput& input,
+													  const core::combat::CombatDecision& aim,
+													  const core::BotCommand& navigation) noexcept
+{
+	CombatSubmitResult rejected{};
+	rejected.decision = input.reject();
+
+	auto* client = findClient(input.player);
+	const auto binding = agents_.findByPlayer(input.player);
+	const auto invalid = [&](CombatSubmitError error) {
+		rejected.error = error;
+		rejected.accepted = false;
+		clearCombatState(input.player);
+		emitCombatTrace(input.player, rejected.decision, input.map, input.round, input.agent, input.tick,
+						input.timeMicros, &input.weapon, rejected.composition, rejected);
+		return rejected;
+	};
+	if (!client || !input.player.isValid())
+		return invalid(CombatSubmitError::InvalidActor);
+	if (!input.map.isValid() || input.map != registry_.mapGeneration())
+	{
+		return invalid(CombatSubmitError::InvalidMapGeneration);
+	}
+	if (!input.tick.isValid() || input.tick != registry_.currentTick())
+	{
+		return invalid(CombatSubmitError::InvalidTick);
+	}
+	if (!binding.isValid() || binding.agent != input.agent || binding.map != input.map)
+	{
+		return invalid(CombatSubmitError::InvalidAgentBinding);
+	}
+	if (client->fake.removalPending() || client->join.player() != input.player ||
+		client->join.phase() != cstrike::JoinPhase::Joined)
+	{
+		return invalid(CombatSubmitError::NotJoined);
+	}
+	auto* entity = client->fake.entityFor(input.player);
+	if (!entity)
+		return invalid(CombatSubmitError::MissingEntity);
+	if (!input.alive || entity->v.deadflag != DEAD_NO)
+	{
+		clearCombatState(input.player);
+		rejected.decision = core::combat::CombatDecision::noOp(input.tick, core::combat::CombatReason::Dead);
+		rejected.decision.view = navigation.view;
+		rejected.error = CombatSubmitError::DeadPlayer;
+		emitCombatTrace(input.player, rejected.decision, input.map, input.round, input.agent, input.tick,
+						input.timeMicros, &input.weapon, rejected.composition, rejected);
+		return rejected;
+	}
+
+	if (client->combat.cadenceActive && aim.target.isValid() && client->combat.cadenceTarget != aim.target)
+	{
+		client->combat = {};
+		client->combatLock = {};
+	}
+	const auto authorization = core::combat::authorizeFire(input, aim, client->combat);
+	client->combat = authorization.nextState;
+	return submitComposedCombat(input.player, input.map, input.round, input.agent, input.tick, authorization.decision,
+								navigation, &input);
 }
 
-CombatSubmitResult LifecycleCoordinator::submitComposedCombat(
-    core::PlayerId player,
-    core::MapGeneration mapGeneration,
-    core::perception::RoundGeneration round,
-    core::BotAgentId agent,
-    core::TickId tick,
-    const core::combat::CombatDecision& decision,
-    const core::BotCommand& navigation,
-    const core::combat::CombatInput* input) noexcept {
-    CombatSubmitResult result{};
-    result.decision = decision;
-    result.composition = core::combat::composeCommand(decision, navigation);
-    if (!result.composition) {
-        result.error = result.composition.error ==
-                               core::combat::CommandCompositionError::InvalidDecision
-                           ? CombatSubmitError::InvalidDecision
-                           : CombatSubmitError::InvalidNavigationCommand;
-        emitCombatTrace(
-            player, decision, mapGeneration, round, agent, tick,
-            input == nullptr ? 0U : input->timeMicros,
-            input == nullptr ? nullptr : &input->weapon,
-            result.composition, result);
-        return result;
-    }
-
-    const auto binding = agents_.findByPlayer(player);
-    auto* client = findClient(player);
-    if (!player.isValid() || !client) {
-        result.error = CombatSubmitError::InvalidActor;
-    } else if (!mapGeneration.isValid() ||
-               mapGeneration != registry_.mapGeneration()) {
-        result.error = CombatSubmitError::InvalidMapGeneration;
-    } else if (!tick.isValid() || tick != registry_.currentTick()) {
-        result.error = CombatSubmitError::InvalidTick;
-    } else if (!binding.isValid() || binding.agent != agent ||
-               binding.map != mapGeneration) {
-        result.error = CombatSubmitError::InvalidAgentBinding;
-    } else if (client->fake.removalPending() ||
-               client->join.player() != player ||
-               client->join.phase() != cstrike::JoinPhase::Joined) {
-        result.error = CombatSubmitError::NotJoined;
-    } else if (client->fake.entityFor(player) == nullptr) {
-        result.error = CombatSubmitError::MissingEntity;
-    } else if (client->fake.entityFor(player)->v.deadflag != DEAD_NO) {
-        result.error = CombatSubmitError::DeadPlayer;
-    }
-
-    if (result.error == CombatSubmitError::None) {
-        result.transport = submitCommand(
-            player, mapGeneration, tick, result.composition.command);
-        result.accepted = result.transport.queued();
-        if (!result.accepted) result.error = CombatSubmitError::TransportRejected;
-    }
-    emitCombatTrace(
-        player, decision, mapGeneration, round, agent, tick,
-        input == nullptr ? 0U : input->timeMicros,
-        input == nullptr ? nullptr : &input->weapon,
-        result.composition, result);
-    return result;
+CombatSubmitResult LifecycleCoordinator::submitCombatDecision(core::PlayerId player, core::MapGeneration mapGeneration,
+															  core::TickId tick,
+															  const core::combat::CombatDecision& decision,
+															  const core::BotCommand& navigation) noexcept
+{
+	const auto binding = agents_.findByPlayer(player);
+	return submitComposedCombat(player, mapGeneration, round_, binding.agent, tick, decision, navigation, nullptr);
 }
 
-void LifecycleCoordinator::emitCombatTrace(
-    core::PlayerId player,
-    const core::combat::CombatDecision& decision,
-    core::MapGeneration mapGeneration,
-    core::perception::RoundGeneration round,
-    core::BotAgentId agent,
-    core::TickId tick,
-    std::uint64_t timeMicros,
-    const core::combat::WeaponSnapshot* weapon,
-    const core::combat::CommandCompositionResult& composition,
-    const CombatSubmitResult& result) noexcept {
-    if (combatTraceSequence_ != (std::numeric_limits<std::uint64_t>::max)()) {
-        ++combatTraceSequence_;
-    }
-    debug::CombatTrace trace{};
-    trace.map = mapGeneration;
-    trace.round = round;
-    trace.player = player;
-    trace.agent = agent;
-    trace.target = decision.target;
-    trace.source = decision.source;
-    trace.targetAgeMicros = decision.targetAgeMicros;
-    trace.action = decision.action;
-    trace.reason = decision.reason;
-    trace.inputTick = tick;
-    trace.sequence = combatTraceSequence_;
-    trace.transportError = result.transport.error;
-    if (result.transport.registryResult.has_value()) {
-        trace.hostError = result.transport.registryResult->error;
-    }
-    trace.commandBuilt = static_cast<bool>(composition);
-    trace.commandAccepted = result.accepted;
-    if (weapon != nullptr) {
-        trace.activeWeapon = weapon->active;
-        trace.clipAmmo = weapon->clipAmmo;
-        trace.reserveAmmo = weapon->reserveAmmo;
-        trace.reloading = weapon->reloading;
-        trace.cooldownReady = weapon->primaryAttackReadyMicros <= timeMicros;
-        trace.cooldownRemainingMicros = trace.cooldownReady
-            ? 0
-            : weapon->primaryAttackReadyMicros - timeMicros;
-    }
-    debug::emitCombat(trace, combatTraceSink_);
+CombatSubmitResult LifecycleCoordinator::submitComposedCombat(core::PlayerId player, core::MapGeneration mapGeneration,
+															  core::perception::RoundGeneration round,
+															  core::BotAgentId agent, core::TickId tick,
+															  const core::combat::CombatDecision& decision,
+															  const core::BotCommand& navigation,
+															  const core::combat::CombatInput* input) noexcept
+{
+	CombatSubmitResult result{};
+	result.decision = decision;
+	result.composition = core::combat::composeCommand(decision, navigation);
+	if (!result.composition)
+	{
+		result.error = result.composition.error == core::combat::CommandCompositionError::InvalidDecision
+						   ? CombatSubmitError::InvalidDecision
+						   : CombatSubmitError::InvalidNavigationCommand;
+		emitCombatTrace(player, decision, mapGeneration, round, agent, tick, input == nullptr ? 0U : input->timeMicros,
+						input == nullptr ? nullptr : &input->weapon, result.composition, result);
+		return result;
+	}
+
+	const auto binding = agents_.findByPlayer(player);
+	auto* client = findClient(player);
+	if (!player.isValid() || !client)
+	{
+		result.error = CombatSubmitError::InvalidActor;
+	}
+	else if (!mapGeneration.isValid() || mapGeneration != registry_.mapGeneration())
+	{
+		result.error = CombatSubmitError::InvalidMapGeneration;
+	}
+	else if (!tick.isValid() || tick != registry_.currentTick())
+	{
+		result.error = CombatSubmitError::InvalidTick;
+	}
+	else if (!binding.isValid() || binding.agent != agent || binding.map != mapGeneration)
+	{
+		result.error = CombatSubmitError::InvalidAgentBinding;
+	}
+	else if (client->fake.removalPending() || client->join.player() != player ||
+			 client->join.phase() != cstrike::JoinPhase::Joined)
+	{
+		result.error = CombatSubmitError::NotJoined;
+	}
+	else if (client->fake.entityFor(player) == nullptr)
+	{
+		result.error = CombatSubmitError::MissingEntity;
+	}
+	else if (client->fake.entityFor(player)->v.deadflag != DEAD_NO)
+	{
+		result.error = CombatSubmitError::DeadPlayer;
+	}
+
+	if (result.error == CombatSubmitError::None)
+	{
+		result.transport = submitCommand(player, mapGeneration, tick, result.composition.command);
+		result.accepted = result.transport.queued();
+		if (!result.accepted)
+			result.error = CombatSubmitError::TransportRejected;
+	}
+	emitCombatTrace(player, decision, mapGeneration, round, agent, tick, input == nullptr ? 0U : input->timeMicros,
+					input == nullptr ? nullptr : &input->weapon, result.composition, result);
+	return result;
 }
 
-void LifecycleCoordinator::clearCombatState(core::PlayerId player) noexcept {
-    if (auto* client = findClient(player)) {
-        client->combat = {};
-        client->combatLock = {};
-    }
+void LifecycleCoordinator::emitCombatTrace(core::PlayerId player, const core::combat::CombatDecision& decision,
+										   core::MapGeneration mapGeneration, core::perception::RoundGeneration round,
+										   core::BotAgentId agent, core::TickId tick, std::uint64_t timeMicros,
+										   const core::combat::WeaponSnapshot* weapon,
+										   const core::combat::CommandCompositionResult& composition,
+										   const CombatSubmitResult& result) noexcept
+{
+	if (combatTraceSequence_ != (std::numeric_limits<std::uint64_t>::max)())
+	{
+		++combatTraceSequence_;
+	}
+	debug::CombatTrace trace{};
+	trace.map = mapGeneration;
+	trace.round = round;
+	trace.player = player;
+	trace.agent = agent;
+	trace.target = decision.target;
+	trace.source = decision.source;
+	trace.targetAgeMicros = decision.targetAgeMicros;
+	trace.action = decision.action;
+	trace.reason = decision.reason;
+	trace.inputTick = tick;
+	trace.sequence = combatTraceSequence_;
+	trace.transportError = result.transport.error;
+	if (result.transport.registryResult.has_value())
+	{
+		trace.hostError = result.transport.registryResult->error;
+	}
+	trace.commandBuilt = static_cast<bool>(composition);
+	trace.commandAccepted = result.accepted;
+	if (weapon != nullptr)
+	{
+		trace.activeWeapon = weapon->active;
+		trace.clipAmmo = weapon->clipAmmo;
+		trace.reserveAmmo = weapon->reserveAmmo;
+		trace.reloading = weapon->reloading;
+		trace.cooldownReady = weapon->primaryAttackReadyMicros <= timeMicros;
+		trace.cooldownRemainingMicros = trace.cooldownReady ? 0 : weapon->primaryAttackReadyMicros - timeMicros;
+	}
+	debug::emitCombat(trace, combatTraceSink_);
 }
 
-void LifecycleCoordinator::clearAllCombatState() noexcept {
-    for (auto& client : clients_) {
-        client.combat = {};
-        client.combatLock = {};
-    }
+void LifecycleCoordinator::clearCombatState(core::PlayerId player) noexcept
+{
+	if (auto* client = findClient(player))
+	{
+		client->combat = {};
+		client->combatLock = {};
+	}
 }
 
-void LifecycleCoordinator::retireCombatTarget(core::PlayerId player) noexcept {
-    if (!player.isValid()) return;
-    for (auto& client : clients_) {
-        if (client.combatLock.target == player ||
-            client.combat.cadenceTarget == player ||
-            client.combat.reactionTarget == player) {
-            client.combat = {};
-            client.combatLock.clear();
-        }
-    }
-    // Drop this identity from every observer's visual reducer and invalidate
-    // team reports rooted in the retired player before combat runs again.
-    vision_.forget(player);
+void LifecycleCoordinator::clearAllCombatState() noexcept
+{
+	for (auto& client : clients_)
+	{
+		client.combat = {};
+		client.combatLock = {};
+	}
 }
 
-void LifecycleCoordinator::refreshCombatTargetLiveness() noexcept {
-    if (!registry_.isMapActive() || engineFunctions_ == nullptr ||
-        engineFunctions_->pfnPEntityOfEntIndex == nullptr ||
-        engineFunctions_->pfnIndexOfEdict == nullptr) {
-        return;
-    }
-
-    for (std::uint16_t slot = 1; slot <= registry_.clientMax(); ++slot) {
-        const auto index = static_cast<std::size_t>(slot - 1U);
-        const auto player = registry_.currentPlayer(slot);
-        auto& retired = retiredCombatTargets_[index];
-        if (!player.isValid()) {
-            retired = {};
-            continue;
-        }
-
-        auto* entity = engineFunctions_->pfnPEntityOfEntIndex(slot);
-        const bool alive = entity != nullptr && !entity->free &&
-            engineFunctions_->pfnIndexOfEdict(entity) == slot &&
-            entity->v.deadflag == DEAD_NO && std::isfinite(entity->v.health) &&
-            entity->v.health > 0.0F;
-        if (alive) {
-            retired = {};
-        } else if (retired != player) {
-            retireCombatTarget(player);
-            retired = player;
-        }
-    }
-}
-void LifecycleCoordinator::messageBegin(int destination,int messageType,const float*,edict_t* recipient) noexcept {
-    if (messageType > 0 && (messageType == perceptionMessageIds_.teamInfo || messageType == perceptionMessageIds_.hltv))
-        (void)vision_.synchronize(*this,engineFunctions_);
-    messageMap_=registry_.mapGeneration();
-    messageRound_=round_; messageDestination_=destination; messageHasRecipient_=recipient != nullptr;
-    for(std::uint16_t i=1;i<=host::kMaxClientSlots;++i) messagePlayers_[i-1U]=registry_.currentPlayer(i);
-    std::uint16_t slot=0;
-    if(recipient && engineFunctions_ && engineFunctions_->pfnIndexOfEdict) {
-        const int index=engineFunctions_->pfnIndexOfEdict(recipient);
-        if(index>=1 && index<=host::kMaxClientSlots) slot=static_cast<std::uint16_t>(index);
-    }
-    auto* client=findClient(registry_.currentPlayer(slot));
-    // Per-client decoders preserve interleaved ShowMenu fragments. Broadcast
-    // TeamInfo uses the shared decoder and is routed by its playerSlot at end.
-    const bool matched=client && client->fake.entityFor(client->fake.activePlayer())==recipient;
-    activeDecoder_=matched ? &client->decoder:&messageDecoder_;
-    if(recipient && !matched) slot=0;
-    activeDecoder_->begin(messageType,slot);
-}
-void LifecycleCoordinator::messageEnd() noexcept { if(activeDecoder_) activeDecoder_->end(); }
-void LifecycleCoordinator::writeByte(int v) noexcept { if(activeDecoder_) activeDecoder_->writeByte(v); }
-void LifecycleCoordinator::writeChar(int v) noexcept { if(activeDecoder_) activeDecoder_->writeChar(v); }
-void LifecycleCoordinator::writeShort(int v) noexcept { if(activeDecoder_) activeDecoder_->writeShort(v); }
-void LifecycleCoordinator::writeString(const char* v) noexcept { if(activeDecoder_) activeDecoder_->writeString(v); }
-const char* LifecycleCoordinator::commandArgs() noexcept {
-    if (commandContextActive_) {
-        if (gpMetaGlobals != nullptr) {
-            gpMetaGlobals->mres = MRES_SUPERCEDE;
-        }
-        return commandArgs_.data();
-    }
-    markIgnored();
-    return "";
+void LifecycleCoordinator::retireCombatTarget(core::PlayerId player) noexcept
+{
+	if (!player.isValid())
+		return;
+	for (auto& client : clients_)
+	{
+		if (client.combatLock.target == player || client.combat.cadenceTarget == player ||
+			client.combat.reactionTarget == player)
+		{
+			client.combat = {};
+			client.combatLock.clear();
+		}
+	}
+	// Drop this identity from every observer's visual reducer and invalidate
+	// team reports rooted in the retired player before combat runs again.
+	vision_.forget(player);
 }
 
-const char* LifecycleCoordinator::commandArgv(int index) noexcept {
-    if (commandContextActive_) {
-        if (gpMetaGlobals != nullptr) {
-            gpMetaGlobals->mres = MRES_SUPERCEDE;
-        }
-        if (index == 0) {
-            return commandArgv0_.data();
-        }
-        if (index == 1) {
-            return commandArgv1_.data();
-        }
-        return "";
-    }
-    markIgnored();
-    return "";
+void LifecycleCoordinator::refreshCombatTargetLiveness() noexcept
+{
+	if (!registry_.isMapActive() || engineFunctions_ == nullptr || engineFunctions_->pfnPEntityOfEntIndex == nullptr ||
+		engineFunctions_->pfnIndexOfEdict == nullptr)
+	{
+		return;
+	}
+
+	for (std::uint16_t slot = 1; slot <= registry_.clientMax(); ++slot)
+	{
+		const auto index = static_cast<std::size_t>(slot - 1U);
+		const auto player = registry_.currentPlayer(slot);
+		auto& retired = retiredCombatTargets_[index];
+		if (!player.isValid())
+		{
+			retired = {};
+			continue;
+		}
+
+		auto* entity = engineFunctions_->pfnPEntityOfEntIndex(slot);
+		const bool alive = entity != nullptr && !entity->free && engineFunctions_->pfnIndexOfEdict(entity) == slot &&
+						   entity->v.deadflag == DEAD_NO && std::isfinite(entity->v.health) && entity->v.health > 0.0F;
+		if (alive)
+		{
+			retired = {};
+		}
+		else if (retired != player)
+		{
+			retireCombatTarget(player);
+			retired = player;
+		}
+	}
+}
+void LifecycleCoordinator::messageBegin(int destination, int messageType, const float*, edict_t* recipient) noexcept
+{
+	if (messageType > 0 && (messageType == perceptionMessageIds_.teamInfo || messageType == perceptionMessageIds_.hltv))
+		(void)vision_.synchronize(*this, engineFunctions_);
+	messageMap_ = registry_.mapGeneration();
+	messageRound_ = round_;
+	messageDestination_ = destination;
+	messageHasRecipient_ = recipient != nullptr;
+	for (std::uint16_t i = 1; i <= host::kMaxClientSlots; ++i)
+		messagePlayers_[i - 1U] = registry_.currentPlayer(i);
+	std::uint16_t slot = 0;
+	if (recipient && engineFunctions_ && engineFunctions_->pfnIndexOfEdict)
+	{
+		const int index = engineFunctions_->pfnIndexOfEdict(recipient);
+		if (index >= 1 && index <= host::kMaxClientSlots)
+			slot = static_cast<std::uint16_t>(index);
+	}
+	auto* client = findClient(registry_.currentPlayer(slot));
+	// Per-client decoders preserve interleaved ShowMenu fragments. Broadcast
+	// TeamInfo uses the shared decoder and is routed by its playerSlot at end.
+	const bool matched = client && client->fake.entityFor(client->fake.activePlayer()) == recipient;
+	activeDecoder_ = matched ? &client->decoder : &messageDecoder_;
+	if (recipient && !matched)
+		slot = 0;
+	activeDecoder_->begin(messageType, slot);
+}
+void LifecycleCoordinator::messageEnd() noexcept
+{
+	if (activeDecoder_)
+		activeDecoder_->end();
+}
+void LifecycleCoordinator::writeByte(int v) noexcept
+{
+	if (activeDecoder_)
+		activeDecoder_->writeByte(v);
+}
+void LifecycleCoordinator::writeChar(int v) noexcept
+{
+	if (activeDecoder_)
+		activeDecoder_->writeChar(v);
+}
+void LifecycleCoordinator::writeShort(int v) noexcept
+{
+	if (activeDecoder_)
+		activeDecoder_->writeShort(v);
+}
+void LifecycleCoordinator::writeString(const char* v) noexcept
+{
+	if (activeDecoder_)
+		activeDecoder_->writeString(v);
+}
+const char* LifecycleCoordinator::commandArgs() noexcept
+{
+	if (commandContextActive_)
+	{
+		if (gpMetaGlobals != nullptr)
+		{
+			gpMetaGlobals->mres = MRES_SUPERCEDE;
+		}
+		return commandArgs_.data();
+	}
+	markIgnored();
+	return "";
 }
 
-int LifecycleCoordinator::commandArgc() noexcept {
-    if (commandContextActive_) {
-        if (gpMetaGlobals != nullptr) {
-            gpMetaGlobals->mres = MRES_SUPERCEDE;
-        }
-        return commandArgc_;
-    }
-    markIgnored();
-    return 0;
+const char* LifecycleCoordinator::commandArgv(int index) noexcept
+{
+	if (commandContextActive_)
+	{
+		if (gpMetaGlobals != nullptr)
+		{
+			gpMetaGlobals->mres = MRES_SUPERCEDE;
+		}
+		if (index == 0)
+		{
+			return commandArgv0_.data();
+		}
+		if (index == 1)
+		{
+			return commandArgv1_.data();
+		}
+		return "";
+	}
+	markIgnored();
+	return "";
 }
 
-cstrike::JoinAction LifecycleCoordinator::requestJoin(cstrike::JoinRequest request) noexcept {
-    return requestJoin(clients_[0].fake.activePlayer(),request);
-}
-cstrike::JoinAction LifecycleCoordinator::requestJoin(core::PlayerId player,cstrike::JoinRequest request) noexcept {
-    auto* client=findClient(player);
-    if(!client || !client->fake.entityFor(player)) return cstrike::JoinAction::failed(cstrike::JoinError::InvalidPlayer);
-    const auto action=client->join.begin(player,registry_.mapGeneration(),request,registry_.currentTick());
-    if(action.error==cstrike::JoinError::AlreadyJoining) return action;
-    handleJoinAction(*client,action);
-    if(action.kind==cstrike::JoinActionKind::Failed ||
-       client->join.phase()==cstrike::JoinPhase::Failed) return action;
-
-    // GameDLLs can emit the first menu synchronously from ClientPutInServer,
-    // before createBot has a chance to call requestJoin.  Replay those events
-    // in wire order now that JoinState has an active request.
-    const auto pendingCount = client->pendingJoinMessageCount;
-    client->pendingJoinMessageCount = 0;
-    cstrike::JoinAction replayAction = action;
-    for(std::uint8_t index=0; index<pendingCount; ++index) {
-        const auto event = client->pendingJoinMessages[index];
-        const auto next = client->join.onMessage(event,registry_.currentTick());
-        if(!next.changed) continue;
-        replayAction = next;
-        handleJoinAction(*client,next);
-        if(client->join.phase()==cstrike::JoinPhase::Failed ||
-           client->join.phase()==cstrike::JoinPhase::Cancelled) break;
-    }
-    return replayAction;
-}
-bool LifecycleCoordinator::dispatchMenuForTest(std::uint8_t selection) noexcept { return dispatchMenu(clients_[0],selection); }
-void LifecycleCoordinator::emit(
-    host::LifecycleEventKind attemptedKind,
-    const host::LifecycleResult& result,
-    host::PlayerId attemptedPlayer,
-    host::TickId attemptedTick) noexcept {
-    debug::emitLifecycle(
-        attemptedKind,
-        result,
-        registry_.mapGeneration(),
-        attemptedPlayer,
-        attemptedTick,
-        traceSink_);
+int LifecycleCoordinator::commandArgc() noexcept
+{
+	if (commandContextActive_)
+	{
+		if (gpMetaGlobals != nullptr)
+		{
+			gpMetaGlobals->mres = MRES_SUPERCEDE;
+		}
+		return commandArgc_;
+	}
+	markIgnored();
+	return 0;
 }
 
-void LifecycleCoordinator::emitJoin(const ClientState& client,const cstrike::JoinAction& action) noexcept {
-    if(!action.changed) return;
-    const auto& join=client.join; const auto request=join.request();
-    const auto* member=teams_.find(join.player());
-    const auto observedTeam=member ? member->team : core::perception::Team::Unknown;
-    const auto* entity=client.fake.entityFor(join.player());
-    debug::emitJoin({join.phase(),join.error(),join.map(),join.player(),request.team,request.classNumber,
-        registry_.currentTick(),registry_.eventSequence(),join.attempts(),
-        action.kind!=cstrike::JoinActionKind::Failed && action.kind!=cstrike::JoinActionKind::Cancelled,
-        action.changed, observedTeam, entity ? entity->v.model : 0,
-        join.teamInfoReceived(), join.classSelectionCompleted(),
-        join.postClassFrameAdvanced(), entity != nullptr && !entity->free,
-        entity != nullptr && !entity->free && entity->v.deadflag == DEAD_NO},joinTraceSink_);
+cstrike::JoinAction LifecycleCoordinator::requestJoin(cstrike::JoinRequest request) noexcept
+{
+	return requestJoin(clients_[0].fake.activePlayer(), request);
 }
-void LifecycleCoordinator::handleMessage(const cstrike::MessageEvent& event) noexcept {
-    if (!registry_.isMapActive() || messageMap_ != registry_.mapGeneration() || messageRound_ != round_) return;
-    if (event.kind == cstrike::MessageKind::Hltv) {
-        if (messageHasRecipient_ || messageDestination_ != MSG_SPEC || event.hltv[0] != 0 || event.hltv[1] != 0 ||
-            !engineGlobals_ || !std::isfinite(engineGlobals_->time) || engineGlobals_->time < 0 ||
-            round_.value == (std::numeric_limits<std::uint64_t>::max)()) {
-            ++identityDiagnostics_.rejectedRounds; return;
-        }
-        // The wire event has no sequence number. Identical notifications at the
-        // same simulation time or in the same host frame are one round boundary.
-        const double time = engineGlobals_->time;
-        if (lastRoundTime_ >= 0 && (time <= lastRoundTime_ || lastRoundTick_ == registry_.currentTick())) {
-            if (time < lastRoundTime_) ++identityDiagnostics_.rejectedRounds;
-            else ++identityDiagnostics_.duplicateRounds;
-            return;
-        }
-        ++round_.value; lastRoundTime_ = time; lastRoundTick_ = registry_.currentTick();
-        // Experience deltas are round scoped. Reset these cursors before the
-        // first post-round frame so area and health events use the new stamp.
-        experienceAreas_.fill({});
-        experienceDamageSeen_.fill(0.0);
-        experienceDeathsSeen_.fill(0U);
-        for (auto& client : clients_) {
-            const auto player = client.fake.activePlayer();
-            if (!player.isValid()) continue;
-            movement_.forget(player);
-            navConsole_.invalidateActor(player, nav::runtime::SessionReason::InvalidSnapshot);
-            runtime_.onDeath(player);
-        }        clearAllCombatState();
-        world_.beginRound(round_);
-        ++identityDiagnostics_.rounds; vision_.beginRound(round_);
-        sound_.beginRound(round_);
-        (void)advanceVisualEffects();
-        messageDecoder_.reset();
-        for (auto& client : clients_) client.decoder.reset();
-        return;
-    }
-    if (event.kind == cstrike::MessageKind::Money) {
-        const auto slot = event.recipientSlot;
-        if (slot >= 1U && slot <= money_.size() &&
-            registry_.currentPlayer(slot).isValid()) {
-            money_[slot - 1U] = std::clamp(event.money, 0, core::economy::kMaxMoney);
-            moneyKnown_[slot - 1U] = true;
-        }
-        return;
-    }
-    const auto slot=event.kind==cstrike::MessageKind::TeamInfo ? event.playerSlot:event.recipientSlot;
-    if(slot<1 || slot>host::kMaxClientSlots || messageMap_!=registry_.mapGeneration() ||
-       messagePlayers_[slot-1U]!=registry_.currentPlayer(slot)) return;
-    auto* client=findClient(registry_.currentPlayer(slot));
-    if (event.kind == cstrike::MessageKind::ScreenFade) {
-        const auto& color = event.fadeColor;
-        const auto* entity = client ? client->fake.entityFor(client->fake.activePlayer()) : nullptr;
-        if (!client || !messageHasRecipient_ || messageDestination_ != MSG_ONE ||
-            !entity || client->fake.removalPending() || entity->v.deadflag != DEAD_NO ||
-            !std::isfinite(entity->v.health) || entity->v.health <= 0 || entity->v.iuser1 != 0 || (entity->v.flags & FL_SPECTATOR) != 0 ||
-            color[0] != 255 || color[1] != 255 || color[2] != 255 || color[3] == 0 || event.fadeTimesFlags[2] != 0) {
-            visualEffects_.reject(); return;
-        }
-        const std::uint64_t units = std::uint64_t(event.fadeTimesFlags[0])+event.fadeTimesFlags[1];
-        if (advanceVisualEffects()) (void)visualEffects_.flash(client->fake.activePlayer(),(units*1000000+4095)/4096);
-        return;
-    }
-    if (event.kind == cstrike::MessageKind::TeamInfo) {
-        const auto player = registry_.currentPlayer(slot);
-        const bool current = client ? client->fake.entityFor(player) != nullptr && !client->fake.removalPending() : vision_.bound(player,engineFunctions_);
-        if (!current) {
-            teams_.forget(player); vision_.forget(player); sound_.forget(player); ++identityDiagnostics_.rejectedTeams; return;
-        }
-        if (!teams_.bind(registry_.mapGeneration(),player)) { ++identityDiagnostics_.rejectedTeams; return; }
-        using Team = core::perception::Team;
-        const auto* name = event.text.data();
-        const auto team = std::strcmp(name,"TERRORIST") == 0 ? Team::Terrorist :
-            std::strcmp(name,"CT") == 0 ? Team::CounterTerrorist :
-            std::strcmp(name,"SPECTATOR") == 0 ? Team::Spectator : Team::Unknown;
-        const auto previous = teams_.find(player)->team;
-        (void)teams_.update(registry_.mapGeneration(),player,team); ++identityDiagnostics_.teamUpdates;
-        if (previous != team) { ++identityDiagnostics_.teamChanges; clearCombatState(player); vision_.forget(player); sound_.forget(player); visualEffects_.forget(player); }
-        // Team changes after joining are affiliation events, not join failures.
-        if (client && client->join.phase() == cstrike::JoinPhase::Joined) return;
-    }
-    if(!client || !client->fake.entityFor(client->fake.activePlayer())) return;
-    if (client->join.phase() == cstrike::JoinPhase::Idle) {
-        if ((event.kind == cstrike::MessageKind::VguiMenu ||
-             event.kind == cstrike::MessageKind::ShowMenu ||
-             event.kind == cstrike::MessageKind::TeamInfo) &&
-            client->pendingJoinMessageCount < client->pendingJoinMessages.size()) {
-            client->pendingJoinMessages[client->pendingJoinMessageCount++] = event;
-        }
-        return;
-    }
-    handleJoinAction(*client,client->join.onMessage(event,registry_.currentTick()));
+cstrike::JoinAction LifecycleCoordinator::requestJoin(core::PlayerId player, cstrike::JoinRequest request) noexcept
+{
+	auto* client = findClient(player);
+	if (!client || !client->fake.entityFor(player))
+		return cstrike::JoinAction::failed(cstrike::JoinError::InvalidPlayer);
+	const auto action = client->join.begin(player, registry_.mapGeneration(), request, registry_.currentTick());
+	if (action.error == cstrike::JoinError::AlreadyJoining)
+		return action;
+	handleJoinAction(*client, action);
+	if (action.kind == cstrike::JoinActionKind::Failed || client->join.phase() == cstrike::JoinPhase::Failed)
+		return action;
+
+	// GameDLLs can emit the first menu synchronously from ClientPutInServer,
+	// before createBot has a chance to call requestJoin.  Replay those events
+	// in wire order now that JoinState has an active request.
+	const auto pendingCount = client->pendingJoinMessageCount;
+	client->pendingJoinMessageCount = 0;
+	cstrike::JoinAction replayAction = action;
+	for (std::uint8_t index = 0; index < pendingCount; ++index)
+	{
+		const auto event = client->pendingJoinMessages[index];
+		const auto next = client->join.onMessage(event, registry_.currentTick());
+		if (!next.changed)
+			continue;
+		replayAction = next;
+		handleJoinAction(*client, next);
+		if (client->join.phase() == cstrike::JoinPhase::Failed || client->join.phase() == cstrike::JoinPhase::Cancelled)
+			break;
+	}
+	return replayAction;
 }
-void LifecycleCoordinator::handleJoinAction(ClientState& client,const cstrike::JoinAction& action) noexcept {
-    if(!action.changed) return;
-    emitJoin(client,action);
-    if(action.kind==cstrike::JoinActionKind::Failed) {
-        if(commandContextActive_) { client.cleanupPending=true; client.cleanupError=action.error; }
-        else cleanupFailedJoin(client,action.error);
-    }
+bool LifecycleCoordinator::dispatchMenuForTest(std::uint8_t selection) noexcept
+{
+	return dispatchMenu(clients_[0], selection);
 }
-void LifecycleCoordinator::cleanupActiveAfterRemoval(ClientState& client,const RemovalResult& result,host::PlayerId player) noexcept {
-    const bool mapping=agents_.findByPlayer(player).isValid();
-    client.combat = {};
-    (void)agents_.unbind(player); (void)registry_.disconnectPlayer(player);
-    const bool cleaned=client.fake.cleanupActiveDirect(true);
-    if(cleaned) ++status_.cleanupCompletions;
-    else { client.fake.forget(player); status_.lastRemovalError=debug::RemovalError::DirectCleanupFailed; }
-    emitRemoval(cleaned ? debug::RemovalOutcome::Cleaned:debug::RemovalOutcome::Rejected,
-        cleaned ? result.error:debug::RemovalError::DirectCleanupFailed,player,mapping,true);
-    client.join.reset(); client.decoder.reset(); client.combat={}; client.combatLock={};
-}
-void LifecycleCoordinator::emitRemoval(
-    debug::RemovalOutcome outcome,
-    debug::RemovalError error,
-    host::PlayerId player,
-    bool mappingPresent,
-    bool entityPresent) noexcept {
-    debug::emitRemoval(
-        {
-            outcome,
-            error,
-            registry_.mapGeneration(),
-            player,
-            registry_.currentTick(),
-            registry_.eventSequence(),
-            mappingPresent,
-            entityPresent,
-        },
-        removalTraceSink_);
+void LifecycleCoordinator::emit(host::LifecycleEventKind attemptedKind, const host::LifecycleResult& result,
+								host::PlayerId attemptedPlayer, host::TickId attemptedTick) noexcept
+{
+	debug::emitLifecycle(attemptedKind, result, registry_.mapGeneration(), attemptedPlayer, attemptedTick, traceSink_);
 }
 
-void LifecycleCoordinator::cleanupFailedJoin(ClientState& client,cstrike::JoinError) noexcept {
-    const auto player=client.join.player();
-    if(player.isValid()) {
-        movement_.forget(player); client.combat={}; client.combatLock={}; (void)agents_.unbind(player); (void)registry_.disconnectPlayer(player);
-        (void)client.fake.kickAndCleanup(player);
-    }
-    client.pendingJoinMessageCount = 0;
-    client.cleanupPending=false; client.cleanupError=cstrike::JoinError::None;
+void LifecycleCoordinator::emitJoin(const ClientState& client, const cstrike::JoinAction& action) noexcept
+{
+	if (!action.changed)
+		return;
+	const auto& join = client.join;
+	const auto request = join.request();
+	const auto* member = teams_.find(join.player());
+	const auto observedTeam = member ? member->team : core::perception::Team::Unknown;
+	const auto* entity = client.fake.entityFor(join.player());
+	debug::emitJoin(
+		{join.phase(), join.error(), join.map(), join.player(), request.team, request.classNumber,
+		 registry_.currentTick(), registry_.eventSequence(), join.attempts(),
+		 action.kind != cstrike::JoinActionKind::Failed && action.kind != cstrike::JoinActionKind::Cancelled,
+		 action.changed, observedTeam, entity ? entity->v.model : 0, join.teamInfoReceived(),
+		 join.classSelectionCompleted(), join.postClassFrameAdvanced(), entity != nullptr && !entity->free,
+		 entity != nullptr && !entity->free && entity->v.deadflag == DEAD_NO},
+		joinTraceSink_);
 }
-bool LifecycleCoordinator::dispatchMenu(ClientState& client,std::uint8_t selection) noexcept {
-    const auto player=client.join.player(); auto* entity=client.fake.entityFor(player);
-    if(commandContextActive_ || !entity || !hookedGameDllFunctions_ || !hookedGameDllFunctions_->pfnClientCommand ||
-       selection==0 || selection>9) return false;
-    copyCommandWord(commandArgv0_,"menuselect");
-    commandArgv1_={}; commandArgv1_[0]=static_cast<char>('0'+selection);
-    commandArgs_={}; commandArgs_[0]=commandArgv1_[0]; commandArgc_=2; commandPlayer_=player; commandContextActive_=true;
-    { CommandContextGuard guard{commandContextActive_}; hookedGameDllFunctions_->pfnClientCommand(entity); }
-    commandPlayer_={};
-    for(auto& pending:clients_) if(pending.cleanupPending) cleanupFailedJoin(pending,pending.cleanupError);
-    return true;
+void LifecycleCoordinator::handleMessage(const cstrike::MessageEvent& event) noexcept
+{
+	if (!registry_.isMapActive() || messageMap_ != registry_.mapGeneration() || messageRound_ != round_)
+		return;
+	if (event.kind == cstrike::MessageKind::Hltv)
+	{
+		if (messageHasRecipient_ || messageDestination_ != MSG_SPEC || event.hltv[0] != 0 || event.hltv[1] != 0 ||
+			!engineGlobals_ || !std::isfinite(engineGlobals_->time) || engineGlobals_->time < 0 ||
+			round_.value == (std::numeric_limits<std::uint64_t>::max)())
+		{
+			++identityDiagnostics_.rejectedRounds;
+			return;
+		}
+		// The wire event has no sequence number. Identical notifications at the
+		// same simulation time or in the same host frame are one round boundary.
+		const double time = engineGlobals_->time;
+		if (lastRoundTime_ >= 0 && (time <= lastRoundTime_ || lastRoundTick_ == registry_.currentTick()))
+		{
+			if (time < lastRoundTime_)
+				++identityDiagnostics_.rejectedRounds;
+			else
+				++identityDiagnostics_.duplicateRounds;
+			return;
+		}
+		++round_.value;
+		lastRoundTime_ = time;
+		lastRoundTick_ = registry_.currentTick();
+		// Experience deltas are round scoped. Reset these cursors before the
+		// first post-round frame so area and health events use the new stamp.
+		experienceAreas_.fill({});
+		experienceDamageSeen_.fill(0.0);
+		experienceDeathsSeen_.fill(0U);
+		for (auto& client : clients_)
+		{
+			const auto player = client.fake.activePlayer();
+			if (!player.isValid())
+				continue;
+			movement_.forget(player);
+			navConsole_.invalidateActor(player, nav::runtime::SessionReason::InvalidSnapshot);
+			runtime_.onDeath(player);
+		}
+		clearAllCombatState();
+		world_.beginRound(round_);
+		++identityDiagnostics_.rounds;
+		vision_.beginRound(round_);
+		sound_.beginRound(round_);
+		(void)advanceVisualEffects();
+		messageDecoder_.reset();
+		for (auto& client : clients_)
+			client.decoder.reset();
+		return;
+	}
+	if (event.kind == cstrike::MessageKind::Money)
+	{
+		const auto slot = event.recipientSlot;
+		if (slot >= 1U && slot <= money_.size() && registry_.currentPlayer(slot).isValid())
+		{
+			money_[slot - 1U] = std::clamp(event.money, 0, core::economy::kMaxMoney);
+			moneyKnown_[slot - 1U] = true;
+		}
+		return;
+	}
+	const auto slot = event.kind == cstrike::MessageKind::TeamInfo ? event.playerSlot : event.recipientSlot;
+	if (slot < 1 || slot > host::kMaxClientSlots || messageMap_ != registry_.mapGeneration() ||
+		messagePlayers_[slot - 1U] != registry_.currentPlayer(slot))
+		return;
+	auto* client = findClient(registry_.currentPlayer(slot));
+	if (event.kind == cstrike::MessageKind::ScreenFade)
+	{
+		const auto& color = event.fadeColor;
+		const auto* entity = client ? client->fake.entityFor(client->fake.activePlayer()) : nullptr;
+		if (!client || !messageHasRecipient_ || messageDestination_ != MSG_ONE || !entity ||
+			client->fake.removalPending() || entity->v.deadflag != DEAD_NO || !std::isfinite(entity->v.health) ||
+			entity->v.health <= 0 || entity->v.iuser1 != 0 || (entity->v.flags & FL_SPECTATOR) != 0 ||
+			color[0] != 255 || color[1] != 255 || color[2] != 255 || color[3] == 0 || event.fadeTimesFlags[2] != 0)
+		{
+			visualEffects_.reject();
+			return;
+		}
+		const std::uint64_t units = std::uint64_t(event.fadeTimesFlags[0]) + event.fadeTimesFlags[1];
+		if (advanceVisualEffects())
+			(void)visualEffects_.flash(client->fake.activePlayer(), (units * 1000000 + 4095) / 4096);
+		return;
+	}
+	if (event.kind == cstrike::MessageKind::TeamInfo)
+	{
+		const auto player = registry_.currentPlayer(slot);
+		const bool current = client ? client->fake.entityFor(player) != nullptr && !client->fake.removalPending()
+									: vision_.bound(player, engineFunctions_);
+		if (!current)
+		{
+			teams_.forget(player);
+			vision_.forget(player);
+			sound_.forget(player);
+			++identityDiagnostics_.rejectedTeams;
+			return;
+		}
+		if (!teams_.bind(registry_.mapGeneration(), player))
+		{
+			++identityDiagnostics_.rejectedTeams;
+			return;
+		}
+		using Team = core::perception::Team;
+		const auto* name = event.text.data();
+		const auto team = std::strcmp(name, "TERRORIST") == 0	? Team::Terrorist
+						  : std::strcmp(name, "CT") == 0		? Team::CounterTerrorist
+						  : std::strcmp(name, "SPECTATOR") == 0 ? Team::Spectator
+																: Team::Unknown;
+		const auto previous = teams_.find(player)->team;
+		(void)teams_.update(registry_.mapGeneration(), player, team);
+		++identityDiagnostics_.teamUpdates;
+		if (previous != team)
+		{
+			++identityDiagnostics_.teamChanges;
+			clearCombatState(player);
+			vision_.forget(player);
+			sound_.forget(player);
+			visualEffects_.forget(player);
+		}
+		// Team changes after joining are affiliation events, not join failures.
+		if (client && client->join.phase() == cstrike::JoinPhase::Joined)
+			return;
+	}
+	if (!client || !client->fake.entityFor(client->fake.activePlayer()))
+		return;
+	if (client->join.phase() == cstrike::JoinPhase::Idle)
+	{
+		if ((event.kind == cstrike::MessageKind::VguiMenu || event.kind == cstrike::MessageKind::ShowMenu ||
+			 event.kind == cstrike::MessageKind::TeamInfo) &&
+			client->pendingJoinMessageCount < client->pendingJoinMessages.size())
+		{
+			client->pendingJoinMessages[client->pendingJoinMessageCount++] = event;
+		}
+		return;
+	}
+	handleJoinAction(*client, client->join.onMessage(event, registry_.currentTick()));
 }
-bool LifecycleCoordinator::dispatchBuyCommand(
-    core::PlayerId player, const char* item) noexcept {
-    if (commandContextActive_ || item == nullptr || item[0] == '\0' ||
-        !registry_.isMapActive() || !hookedGameDllFunctions_ ||
-        !hookedGameDllFunctions_->pfnClientCommand) {
-        return false;
-    }
-    auto* entity = entityFor(player);
-    if (entity == nullptr || entity->free || !player.isValid() ||
-        player.slot > host::kMaxClientSlots ||
-        !registry_.isConnected(player.slot) ||
-        registry_.currentPlayer(player.slot) != player ||
-        !engineFunctions_ || !engineFunctions_->pfnIndexOfEdict ||
-        engineFunctions_->pfnIndexOfEdict(entity) != player.slot) {
-        return false;
-    }
-    if (engineFunctions_->pfnPEntityOfEntIndex &&
-        engineFunctions_->pfnPEntityOfEntIndex(player.slot) != entity) {
-        return false;
-    }
-    const auto* join = joinState(player);
-    if (join == nullptr || join->phase() != cstrike::JoinPhase::Joined ||
-        entity->v.deadflag != DEAD_NO) {
-        return false;
-    }
-    copyCommandWord(commandArgv0_, "buy");
-    copyCommandWord(commandArgv1_, item);
-    commandArgs_ = {};
-    copyCommandWord(commandArgs_, item);
-    commandArgc_ = 2;
-    commandPlayer_ = player;
-    commandContextActive_ = true;
-    {
-        CommandContextGuard guard{commandContextActive_};
-        hookedGameDllFunctions_->pfnClientCommand(entity);
-    }
-    commandPlayer_ = {};
-    commandArgc_ = 0;
-    return true;
+void LifecycleCoordinator::handleJoinAction(ClientState& client, const cstrike::JoinAction& action) noexcept
+{
+	if (!action.changed)
+		return;
+	emitJoin(client, action);
+	if (action.kind == cstrike::JoinActionKind::Failed)
+	{
+		if (commandContextActive_)
+		{
+			client.cleanupPending = true;
+			client.cleanupError = action.error;
+		}
+		else
+			cleanupFailedJoin(client, action.error);
+	}
 }
-
-void LifecycleCoordinator::dispatchRoundBuy(ClientState& client) noexcept {
-    const auto player = client.fake.activePlayer();
-    if (!player.isValid() || player.slot > lastBuyRound_.size() ||
-        lastBuyRound_[player.slot - 1U] == round_) {
-        return;
-    }
-    const auto* affiliation = teams_.find(player);
-    if (affiliation == nullptr ||
-        (affiliation->team != core::perception::Team::Terrorist &&
-         affiliation->team != core::perception::Team::CounterTerrorist)) {
-        return;
-    }
-
-    // Build one stamped team snapshot from authoritative money messages and
-    // the live player registry.  Unknown money deliberately disables buying;
-    // the adapter never guesses a budget or silently falls back to a fixed
-    // command list.
-    core::economy::TeamEconomySnapshot snapshot{};
-    snapshot.map = registry_.mapGeneration();
-    snapshot.round = round_;
-    snapshot.tick = registry_.currentTick();
-    snapshot.nowMicros = engineTimeMicros(engineGlobals_);
-    snapshot.roundNumber = static_cast<std::uint32_t>(round_.value);
-    snapshot.phase = core::economy::RoundPhase::FreezeTime;
-    snapshot.team = affiliation->team;
-    for (std::uint16_t slot = 1; slot <= registry_.clientMax() &&
-         snapshot.memberCount < snapshot.members.size(); ++slot) {
-        const auto memberPlayer = registry_.currentPlayer(slot);
-        const auto* memberAffiliation = teams_.find(memberPlayer);
-        const auto* memberEntity = entityFor(memberPlayer);
-        if (!memberPlayer.isValid() || memberAffiliation == nullptr ||
-            memberAffiliation->team != snapshot.team || memberEntity == nullptr ||
-            memberEntity->free || !moneyKnown_[slot - 1U]) {
-            if (memberPlayer.isValid() && memberAffiliation != nullptr &&
-                memberAffiliation->team == snapshot.team)
-                return;
-            continue;
-        }
-        auto& member = snapshot.members[snapshot.memberCount++];
-        member.player = memberPlayer;
-        member.agent = agents_.findByPlayer(memberPlayer).agent;
-        member.team = snapshot.team;
-        member.role = snapshot.team == core::perception::Team::CounterTerrorist
-            ? core::team::Role::Defuser : core::team::Role::Entry;
-        member.money = money_[slot - 1U];
-        member.connected = true;
-        member.alive = memberEntity->v.deadflag == DEAD_NO;
-    }
-    if (!snapshot.valid()) return;
-    const auto decision = core::economy::BuyPlanner{}.planTeam(snapshot);
-    const core::economy::BuyPlan* plan = nullptr;
-    for (std::size_t i = 0; i < decision.planCount; ++i)
-        if (decision.plans[i].player == player) { plan = &decision.plans[i]; break; }
-    if (plan == nullptr || !plan->valid()) return;
-    const auto commandFor = [&](core::economy::PurchaseItem item) noexcept -> const char* {
-        switch (item) {
-        case core::economy::PurchaseItem::Rifle:
-            return snapshot.team == core::perception::Team::CounterTerrorist ? "m4a1" : "ak47";
-        case core::economy::PurchaseItem::Galil: return snapshot.team == core::perception::Team::CounterTerrorist ? "famas" : "galil";
-        case core::economy::PurchaseItem::Smg: return "mp5navy";
-        case core::economy::PurchaseItem::Awp: return "awp";
-        case core::economy::PurchaseItem::Pistol: return "deagle";
-        case core::economy::PurchaseItem::Armor: return "vest";
-        case core::economy::PurchaseItem::Helmet: return "vesthelm";
-        case core::economy::PurchaseItem::DefuseKit: return "defuser";
-        case core::economy::PurchaseItem::HeGrenade: return "hegren";
-        case core::economy::PurchaseItem::Flashbang: return "flash";
-        case core::economy::PurchaseItem::SmokeGrenade: return "sgren";
-        case core::economy::PurchaseItem::Ammo: return "primammo";
-        default: return nullptr;
-        }
-    };
-    std::size_t attempted = 0, sent = 0;
-    for (std::size_t i = 0; i < plan->requestCount; ++i) {
-        const auto* command = commandFor(plan->requests[i].item);
-        if (command == nullptr) continue;
-        ++attempted;
-        if (dispatchBuyCommand(player, command)) ++sent;
-    }
-    lastBuyRound_[player.slot - 1U] = round_;
-    if (utilityFunctions_ && utilityFunctions_->pfnLogConsole) {
-        char text[192]{};
-        std::snprintf(text, sizeof(text),
-            "astrabot buy actor=%u:%u round=%llu attempted=%u sent=%u",
-            unsigned(player.slot), unsigned(player.generation.value),
-            static_cast<unsigned long long>(round_.value),
-            static_cast<unsigned>(attempted), static_cast<unsigned>(sent));
-        utilityFunctions_->pfnLogConsole(PLID, "%s", text);
-    }
+void LifecycleCoordinator::cleanupActiveAfterRemoval(ClientState& client, const RemovalResult& result,
+													 host::PlayerId player) noexcept
+{
+	const bool mapping = agents_.findByPlayer(player).isValid();
+	client.combat = {};
+	(void)agents_.unbind(player);
+	(void)registry_.disconnectPlayer(player);
+	const bool cleaned = client.fake.cleanupActiveDirect(true);
+	if (cleaned)
+		++status_.cleanupCompletions;
+	else
+	{
+		client.fake.forget(player);
+		status_.lastRemovalError = debug::RemovalError::DirectCleanupFailed;
+	}
+	emitRemoval(cleaned ? debug::RemovalOutcome::Cleaned : debug::RemovalOutcome::Rejected,
+				cleaned ? result.error : debug::RemovalError::DirectCleanupFailed, player, mapping, true);
+	client.join.reset();
+	client.decoder.reset();
+	client.combat = {};
+	client.combatLock = {};
 }
-
-void LifecycleCoordinator::onMessage(
-    void* context,
-    const cstrike::MessageEvent& event) noexcept {
-    if (context != nullptr) {
-        static_cast<LifecycleCoordinator*>(context)->handleMessage(event);
-    }
-}
-
-const RuntimeInputBuildStatus& LifecycleCoordinator::runtimeInputBuildStatus(core::PlayerId player) const noexcept {
-    static const RuntimeInputBuildStatus empty{};
-    return player.isValid() && player.slot <= host::kMaxClientSlots ? runtimeInputBuildStatuses_[player.slot - 1U] : empty;
-}
-
-const core::combat::CombatLock* LifecycleCoordinator::combatLock(core::PlayerId player) const noexcept {
-    const auto* client = findClient(player);
-    return client != nullptr ? &client->combatLock : nullptr;
-}
-
-const RuntimeActorCorrelation& LifecycleCoordinator::runtimeCorrelation(core::PlayerId player) const noexcept {
-    static const RuntimeActorCorrelation empty{};
-    return player.isValid() && player.slot <= host::kMaxClientSlots ? runtimeCorrelation_[player.slot - 1U] : empty;
-}
-LifecycleCoordinator& lifecycleCoordinator() noexcept {
-    return gCoordinator;
-}
-
-void setLifecycleTraceSink(debug::LifecycleTraceSink sink) noexcept {
-    gCoordinator.setTraceSink(sink);
-}
-
-void serverActivateHook(edict_t* entityList, int edictCount, int clientMax) {
-    (void)entityList;
-    (void)edictCount;
-    gCoordinator.serverActivate(clientMax);
-    markIgnored();
-}
-
-void serverDeactivateHook() {
-    gCoordinator.serverDeactivate();
-    markIgnored();
-}
-
-void clientDisconnectHook(edict_t* entity) {
-    gCoordinator.clientDisconnect(entity);
-    markIgnored();
-}
-
-void startFrameHook() {
-    gCoordinator.startFrame();
-    markIgnored();
-}
-
-void messageBeginHook(
-    int messageDestination,
-    int messageType,
-    const float* origin,
-    edict_t* recipient) {
-    gCoordinator.messageBegin(messageDestination, messageType, origin, recipient);
-    markIgnored();
+void LifecycleCoordinator::emitRemoval(debug::RemovalOutcome outcome, debug::RemovalError error, host::PlayerId player,
+									   bool mappingPresent, bool entityPresent) noexcept
+{
+	debug::emitRemoval(
+		{
+			outcome,
+			error,
+			registry_.mapGeneration(),
+			player,
+			registry_.currentTick(),
+			registry_.eventSequence(),
+			mappingPresent,
+			entityPresent,
+		},
+		removalTraceSink_);
 }
 
-void messageEndHook() {
-    gCoordinator.messageEnd();
-    markIgnored();
+void LifecycleCoordinator::cleanupFailedJoin(ClientState& client, cstrike::JoinError) noexcept
+{
+	const auto player = client.join.player();
+	if (player.isValid())
+	{
+		movement_.forget(player);
+		client.combat = {};
+		client.combatLock = {};
+		(void)agents_.unbind(player);
+		(void)registry_.disconnectPlayer(player);
+		(void)client.fake.kickAndCleanup(player);
+	}
+	client.pendingJoinMessageCount = 0;
+	client.cleanupPending = false;
+	client.cleanupError = cstrike::JoinError::None;
+}
+bool LifecycleCoordinator::dispatchMenu(ClientState& client, std::uint8_t selection) noexcept
+{
+	const auto player = client.join.player();
+	auto* entity = client.fake.entityFor(player);
+	if (commandContextActive_ || !entity || !hookedGameDllFunctions_ || !hookedGameDllFunctions_->pfnClientCommand ||
+		selection == 0 || selection > 9)
+		return false;
+	copyCommandWord(commandArgv0_, "menuselect");
+	commandArgv1_ = {};
+	commandArgv1_[0] = static_cast<char>('0' + selection);
+	commandArgs_ = {};
+	commandArgs_[0] = commandArgv1_[0];
+	commandArgc_ = 2;
+	commandPlayer_ = player;
+	commandContextActive_ = true;
+	{
+		CommandContextGuard guard{commandContextActive_};
+		hookedGameDllFunctions_->pfnClientCommand(entity);
+	}
+	commandPlayer_ = {};
+	for (auto& pending : clients_)
+		if (pending.cleanupPending)
+			cleanupFailedJoin(pending, pending.cleanupError);
+	return true;
+}
+bool LifecycleCoordinator::dispatchBuyCommand(core::PlayerId player, const char* item) noexcept
+{
+	if (commandContextActive_ || item == nullptr || item[0] == '\0' || !registry_.isMapActive() ||
+		!hookedGameDllFunctions_ || !hookedGameDllFunctions_->pfnClientCommand)
+	{
+		return false;
+	}
+	auto* entity = entityFor(player);
+	if (entity == nullptr || entity->free || !player.isValid() || player.slot > host::kMaxClientSlots ||
+		!registry_.isConnected(player.slot) || registry_.currentPlayer(player.slot) != player || !engineFunctions_ ||
+		!engineFunctions_->pfnIndexOfEdict || engineFunctions_->pfnIndexOfEdict(entity) != player.slot)
+	{
+		return false;
+	}
+	if (engineFunctions_->pfnPEntityOfEntIndex && engineFunctions_->pfnPEntityOfEntIndex(player.slot) != entity)
+	{
+		return false;
+	}
+	const auto* join = joinState(player);
+	if (join == nullptr || join->phase() != cstrike::JoinPhase::Joined || entity->v.deadflag != DEAD_NO)
+	{
+		return false;
+	}
+	copyCommandWord(commandArgv0_, "buy");
+	copyCommandWord(commandArgv1_, item);
+	commandArgs_ = {};
+	copyCommandWord(commandArgs_, item);
+	commandArgc_ = 2;
+	commandPlayer_ = player;
+	commandContextActive_ = true;
+	{
+		CommandContextGuard guard{commandContextActive_};
+		hookedGameDllFunctions_->pfnClientCommand(entity);
+	}
+	commandPlayer_ = {};
+	commandArgc_ = 0;
+	return true;
 }
 
-void writeByteHook(int value) {
-    gCoordinator.writeByte(value);
-    markIgnored();
+void LifecycleCoordinator::dispatchRoundBuy(ClientState& client) noexcept
+{
+	const auto player = client.fake.activePlayer();
+	if (!player.isValid() || player.slot > lastBuyRound_.size() || lastBuyRound_[player.slot - 1U] == round_)
+	{
+		return;
+	}
+	const auto* affiliation = teams_.find(player);
+	if (affiliation == nullptr || (affiliation->team != core::perception::Team::Terrorist &&
+								   affiliation->team != core::perception::Team::CounterTerrorist))
+	{
+		return;
+	}
+
+	// Build one stamped team snapshot from authoritative money messages and
+	// the live player registry.  Unknown money deliberately disables buying;
+	// the adapter never guesses a budget or silently falls back to a fixed
+	// command list.
+	core::economy::TeamEconomySnapshot snapshot{};
+	snapshot.map = registry_.mapGeneration();
+	snapshot.round = round_;
+	snapshot.tick = registry_.currentTick();
+	snapshot.nowMicros = engineTimeMicros(engineGlobals_);
+	snapshot.roundNumber = static_cast<std::uint32_t>(round_.value);
+	snapshot.phase = core::economy::RoundPhase::FreezeTime;
+	snapshot.team = affiliation->team;
+	for (std::uint16_t slot = 1; slot <= registry_.clientMax() && snapshot.memberCount < snapshot.members.size();
+		 ++slot)
+	{
+		const auto memberPlayer = registry_.currentPlayer(slot);
+		const auto* memberAffiliation = teams_.find(memberPlayer);
+		const auto* memberEntity = entityFor(memberPlayer);
+		if (!memberPlayer.isValid() || memberAffiliation == nullptr || memberAffiliation->team != snapshot.team ||
+			memberEntity == nullptr || memberEntity->free || !moneyKnown_[slot - 1U])
+		{
+			if (memberPlayer.isValid() && memberAffiliation != nullptr && memberAffiliation->team == snapshot.team)
+				return;
+			continue;
+		}
+		auto& member = snapshot.members[snapshot.memberCount++];
+		member.player = memberPlayer;
+		member.agent = agents_.findByPlayer(memberPlayer).agent;
+		member.team = snapshot.team;
+		member.role = snapshot.team == core::perception::Team::CounterTerrorist ? core::team::Role::Defuser
+																				: core::team::Role::Entry;
+		member.money = money_[slot - 1U];
+		member.connected = true;
+		member.alive = memberEntity->v.deadflag == DEAD_NO;
+	}
+	if (!snapshot.valid())
+		return;
+	const auto decision = core::economy::BuyPlanner{}.planTeam(snapshot);
+	const core::economy::BuyPlan* plan = nullptr;
+	for (std::size_t i = 0; i < decision.planCount; ++i)
+		if (decision.plans[i].player == player)
+		{
+			plan = &decision.plans[i];
+			break;
+		}
+	if (plan == nullptr || !plan->valid())
+		return;
+	const auto commandFor = [&](core::economy::PurchaseItem item) noexcept -> const char* {
+		switch (item)
+		{
+		case core::economy::PurchaseItem::Rifle:
+			return snapshot.team == core::perception::Team::CounterTerrorist ? "m4a1" : "ak47";
+		case core::economy::PurchaseItem::Galil:
+			return snapshot.team == core::perception::Team::CounterTerrorist ? "famas" : "galil";
+		case core::economy::PurchaseItem::Smg:
+			return "mp5navy";
+		case core::economy::PurchaseItem::Awp:
+			return "awp";
+		case core::economy::PurchaseItem::Pistol:
+			return "deagle";
+		case core::economy::PurchaseItem::Armor:
+			return "vest";
+		case core::economy::PurchaseItem::Helmet:
+			return "vesthelm";
+		case core::economy::PurchaseItem::DefuseKit:
+			return "defuser";
+		case core::economy::PurchaseItem::HeGrenade:
+			return "hegren";
+		case core::economy::PurchaseItem::Flashbang:
+			return "flash";
+		case core::economy::PurchaseItem::SmokeGrenade:
+			return "sgren";
+		case core::economy::PurchaseItem::Ammo:
+			return "primammo";
+		default:
+			return nullptr;
+		}
+	};
+	std::size_t attempted = 0, sent = 0;
+	for (std::size_t i = 0; i < plan->requestCount; ++i)
+	{
+		const auto* command = commandFor(plan->requests[i].item);
+		if (command == nullptr)
+			continue;
+		++attempted;
+		if (dispatchBuyCommand(player, command))
+			++sent;
+	}
+	lastBuyRound_[player.slot - 1U] = round_;
+	if (utilityFunctions_ && utilityFunctions_->pfnLogConsole)
+	{
+		char text[192]{};
+		std::snprintf(text, sizeof(text), "astrabot buy actor=%u:%u round=%llu attempted=%u sent=%u",
+					  unsigned(player.slot), unsigned(player.generation.value),
+					  static_cast<unsigned long long>(round_.value), static_cast<unsigned>(attempted),
+					  static_cast<unsigned>(sent));
+		utilityFunctions_->pfnLogConsole(PLID, "%s", text);
+	}
 }
 
-void writeCharHook(int value) {
-    gCoordinator.writeChar(value);
-    markIgnored();
+void LifecycleCoordinator::onMessage(void* context, const cstrike::MessageEvent& event) noexcept
+{
+	if (context != nullptr)
+	{
+		static_cast<LifecycleCoordinator*>(context)->handleMessage(event);
+	}
 }
 
-void writeShortHook(int value) {
-    gCoordinator.writeShort(value);
-    markIgnored();
+const RuntimeInputBuildStatus& LifecycleCoordinator::runtimeInputBuildStatus(core::PlayerId player) const noexcept
+{
+	static const RuntimeInputBuildStatus empty{};
+	return player.isValid() && player.slot <= host::kMaxClientSlots ? runtimeInputBuildStatuses_[player.slot - 1U]
+																	: empty;
 }
 
-void writeStringHook(const char* value) {
-    gCoordinator.writeString(value);
-    markIgnored();
+const core::combat::CombatLock* LifecycleCoordinator::combatLock(core::PlayerId player) const noexcept
+{
+	const auto* client = findClient(player);
+	return client != nullptr ? &client->combatLock : nullptr;
 }
 
-const char* commandArgsHook() {
-    return gCoordinator.commandArgs();
+const RuntimeActorCorrelation& LifecycleCoordinator::runtimeCorrelation(core::PlayerId player) const noexcept
+{
+	static const RuntimeActorCorrelation empty{};
+	return player.isValid() && player.slot <= host::kMaxClientSlots ? runtimeCorrelation_[player.slot - 1U] : empty;
+}
+LifecycleCoordinator& lifecycleCoordinator() noexcept
+{
+	return gCoordinator;
 }
 
-const char* commandArgvHook(int index) {
-    return gCoordinator.commandArgv(index);
+void setLifecycleTraceSink(debug::LifecycleTraceSink sink) noexcept
+{
+	gCoordinator.setTraceSink(sink);
 }
 
-int commandArgcHook() {
-    return gCoordinator.commandArgc();
+void serverActivateHook(edict_t* entityList, int edictCount, int clientMax)
+{
+	(void)entityList;
+	(void)edictCount;
+	gCoordinator.serverActivate(clientMax);
+	markIgnored();
+}
+
+void serverDeactivateHook()
+{
+	gCoordinator.serverDeactivate();
+	markIgnored();
+}
+
+void clientDisconnectHook(edict_t* entity)
+{
+	gCoordinator.clientDisconnect(entity);
+	markIgnored();
+}
+
+void startFrameHook()
+{
+	gCoordinator.startFrame();
+	markIgnored();
+}
+
+void messageBeginHook(int messageDestination, int messageType, const float* origin, edict_t* recipient)
+{
+	gCoordinator.messageBegin(messageDestination, messageType, origin, recipient);
+	markIgnored();
+}
+
+void messageEndHook()
+{
+	gCoordinator.messageEnd();
+	markIgnored();
+}
+
+void writeByteHook(int value)
+{
+	gCoordinator.writeByte(value);
+	markIgnored();
+}
+
+void writeCharHook(int value)
+{
+	gCoordinator.writeChar(value);
+	markIgnored();
+}
+
+void writeShortHook(int value)
+{
+	gCoordinator.writeShort(value);
+	markIgnored();
+}
+
+void writeStringHook(const char* value)
+{
+	gCoordinator.writeString(value);
+	markIgnored();
+}
+
+const char* commandArgsHook()
+{
+	return gCoordinator.commandArgs();
+}
+
+const char* commandArgvHook(int index)
+{
+	return gCoordinator.commandArgv(index);
+}
+
+int commandArgcHook()
+{
+	return gCoordinator.commandArgc();
 }
 
 } // namespace astrabot::adapter::metamod

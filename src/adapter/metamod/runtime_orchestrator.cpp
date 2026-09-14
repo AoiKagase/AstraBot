@@ -7,66 +7,84 @@
 #include <cmath>
 #include <limits>
 
-namespace astrabot::adapter::metamod {
-namespace {
+namespace astrabot::adapter::metamod
+{
+namespace
+{
 
-bool sameStamp(const core::world::WorldSnapshot &snapshot, const RuntimeFrame &frame) noexcept {
+bool sameStamp(const core::world::WorldSnapshot& snapshot, const RuntimeFrame& frame) noexcept
+{
 	return snapshot.stamp.map == frame.map && snapshot.stamp.round == frame.round &&
-	       snapshot.stamp.tick == frame.tick && snapshot.stamp.timeMicros == frame.nowMicros;
+		   snapshot.stamp.tick == frame.tick && snapshot.stamp.timeMicros == frame.nowMicros;
 }
 
-bool actionObservationEvent(const core::action::ActionObservation &observation) noexcept {
+bool actionObservationEvent(const core::action::ActionObservation& observation) noexcept
+{
 	return observation.actionComplete || observation.enemyAppeared || observation.threatChanged ||
-	       observation.objectiveUrgent || observation.candidatePickedUp || !observation.routeSafe ||
-	       !observation.enoughTime || observation.betterActionCritical;
+		   observation.objectiveUrgent || observation.candidatePickedUp || !observation.routeSafe ||
+		   !observation.enoughTime || observation.betterActionCritical;
 }
 
-bool validExperienceMap(const core::experience::MapIdentity &map) noexcept {
+bool validExperienceMap(const core::experience::MapIdentity& map) noexcept
+{
 	return !map.name.empty() && map.valid();
 }
 
-bool validOptionalMapIdentity(const core::experience::MapIdentity &map) noexcept {
-	const bool absent = map.name.empty() && map.bspBytes == 0U && !map.hasBspHash &&
-	                    map.navFormatVersion == 0U && !map.hasNavHash;
+bool validOptionalMapIdentity(const core::experience::MapIdentity& map) noexcept
+{
+	const bool absent =
+		map.name.empty() && map.bspBytes == 0U && !map.hasBspHash && map.navFormatVersion == 0U && !map.hasNavHash;
 	return absent || map.valid();
 }
 
 } // namespace
 
-bool RuntimeFrame::valid() const noexcept {
+bool RuntimeFrame::valid() const noexcept
+{
 	if (!map.isValid() || !round.isValid() || !tick.isValid())
 		return false;
 	return validOptionalMapIdentity(mapIdentity);
 }
 
-void RuntimeHealthObservation::observe(const RuntimeFrame& current,
-    core::PlayerId actor, core::BotAgentId binding, int serialNumber,
-    float currentHealth, bool isDead) noexcept {
-	if (!current.valid() || !actor.isValid() || !binding.isValid() ||
-	    !std::isfinite(currentHealth)) {
+void RuntimeHealthObservation::observe(const RuntimeFrame& current, core::PlayerId actor, core::BotAgentId binding,
+									   int serialNumber, float currentHealth, bool isDead) noexcept
+{
+	if (!current.valid() || !actor.isValid() || !binding.isValid() || !std::isfinite(currentHealth))
+	{
 		*this = {};
 		return;
 	}
-	const bool same = known && frame.map == current.map && frame.round == current.round &&
-	    player == actor && agent == binding && serial == serialNumber;
-	if (same && current.tick.value <= frame.tick.value) return;
-	if (!same) *this = {};
-	if (same) {
+	const bool same = known && frame.map == current.map && frame.round == current.round && player == actor &&
+					  agent == binding && serial == serialNumber;
+	if (same && current.tick.value <= frame.tick.value)
+		return;
+	if (!same)
+		*this = {};
+	if (same)
+	{
 		if (!dead && currentHealth < health)
 			observedHealthLoss += static_cast<double>(health) - currentHealth;
-		if (!dead && isDead) ++deaths;
-		if (dead && !isDead) ++respawns;
+		if (!dead && isDead)
+			++deaths;
+		if (dead && !isDead)
+			++respawns;
 	}
 	// Retain only the observation stamp; optional map names are not part of
 	// this diagnostic and copying one must not allocate in this noexcept path.
-	frame.map = current.map; frame.round = current.round; frame.tick = current.tick;
+	frame.map = current.map;
+	frame.round = current.round;
+	frame.tick = current.tick;
 	frame.nowMicros = current.nowMicros;
-	player = actor; agent = binding; serial = serialNumber;
-	health = currentHealth; dead = isDead; known = true;
+	player = actor;
+	agent = binding;
+	serial = serialNumber;
+	health = currentHealth;
+	dead = isDead;
+	known = true;
 }
 
-RuntimeInputValidationReason RuntimeActorInput::validationReason(
-	const RuntimeFrame &frame) const noexcept {
+RuntimeInputValidationReason RuntimeActorInput::validationReason(const RuntimeFrame& frame) const noexcept
+{
 	if (!frame.valid())
 		return RuntimeInputValidationReason::InvalidFrame;
 	if (!player.isValid() || player.slot > core::perception::kPlayerCapacity)
@@ -75,9 +93,10 @@ RuntimeInputValidationReason RuntimeActorInput::validationReason(
 		return RuntimeInputValidationReason::InvalidAgent;
 
 	auto checkedTeam = team;
-	if (!teamObjectiveAvailable) {
+	if (!teamObjectiveAvailable)
+	{
 		if (tactical.objective.kind != core::tactical::ObjectiveKind::None ||
-		    action.objective.kind != core::action::ObjectiveKind::None)
+			action.objective.kind != core::action::ObjectiveKind::None)
 			return RuntimeInputValidationReason::InvalidTeam;
 		// Validate the roster/stamp independently without manufacturing an
 		// objective observation for TeamDirector.
@@ -85,20 +104,19 @@ RuntimeInputValidationReason RuntimeActorInput::validationReason(
 		checkedTeam.objective.known = true;
 	}
 	if (team.map != frame.map || team.round != frame.round || team.tick != frame.tick ||
-	    team.nowMicros != frame.nowMicros)
+		team.nowMicros != frame.nowMicros)
 		return RuntimeInputValidationReason::TeamStampMismatch;
 	if (!checkedTeam.valid())
 		return RuntimeInputValidationReason::InvalidTeam;
 
-	if (world.stamp.map != frame.map || world.stamp.round != frame.round ||
-	    world.stamp.tick != frame.tick || world.stamp.timeMicros != frame.nowMicros ||
-	    !sameStamp(world, frame))
+	if (world.stamp.map != frame.map || world.stamp.round != frame.round || world.stamp.tick != frame.tick ||
+		world.stamp.timeMicros != frame.nowMicros || !sameStamp(world, frame))
 		return RuntimeInputValidationReason::WorldStampMismatch;
 	if (!world.visual || !world.sounds)
 		return RuntimeInputValidationReason::MissingWorld;
 
 	if (action.map != frame.map || action.round != frame.round || action.tick != frame.tick ||
-	    action.nowMicros != frame.nowMicros)
+		action.nowMicros != frame.nowMicros)
 		return RuntimeInputValidationReason::ActionStampMismatch;
 	if (action.player != player || action.agent != agent)
 		return RuntimeInputValidationReason::ActionIdentityMismatch;
@@ -106,7 +124,7 @@ RuntimeInputValidationReason RuntimeActorInput::validationReason(
 		return RuntimeInputValidationReason::InvalidAction;
 
 	if (combat.map != frame.map || combat.round != frame.round || combat.tick != frame.tick ||
-	    combat.timeMicros != frame.nowMicros)
+		combat.timeMicros != frame.nowMicros)
 		return RuntimeInputValidationReason::CombatStampMismatch;
 	if (combat.player != player || combat.agent != agent)
 		return RuntimeInputValidationReason::CombatIdentityMismatch;
@@ -115,13 +133,12 @@ RuntimeInputValidationReason RuntimeActorInput::validationReason(
 
 	if (contextualDanger && contextualDanger->map != frame.map)
 		return RuntimeInputValidationReason::InvalidOptionalObservation;
-	if (opponent && (opponent->map != frame.map || opponent->round != frame.round ||
-	                 opponent->tick != frame.tick))
+	if (opponent && (opponent->map != frame.map || opponent->round != frame.round || opponent->tick != frame.tick))
 		return RuntimeInputValidationReason::InvalidOptionalObservation;
 
 	const auto context = core::tactical::buildTacticalContext(world, tactical);
-	if (context.map != frame.map || context.round != frame.round ||
-	    context.tick != frame.tick || context.nowMicros != frame.nowMicros)
+	if (context.map != frame.map || context.round != frame.round || context.tick != frame.tick ||
+		context.nowMicros != frame.nowMicros)
 		return RuntimeInputValidationReason::TacticalStampMismatch;
 	if (context.self.player != player || context.self.agent != agent)
 		return RuntimeInputValidationReason::TacticalIdentityMismatch;
@@ -130,44 +147,46 @@ RuntimeInputValidationReason RuntimeActorInput::validationReason(
 
 	if (experienceEventCount > experienceEvents.size())
 		return RuntimeInputValidationReason::InvalidExperienceEvent;
-	for (std::size_t i = 0; i < experienceEventCount; ++i) {
-		const auto &event = experienceEvents[i];
-		if (!event.valid() || !validExperienceMap(frame.mapIdentity) ||
-		    event.map != frame.mapIdentity || event.round != frame.round ||
-		    event.tick.value > frame.tick.value || event.timeMicros > frame.nowMicros)
+	for (std::size_t i = 0; i < experienceEventCount; ++i)
+	{
+		const auto& event = experienceEvents[i];
+		if (!event.valid() || !validExperienceMap(frame.mapIdentity) || event.map != frame.mapIdentity ||
+			event.round != frame.round || event.tick.value > frame.tick.value || event.timeMicros > frame.nowMicros)
 			return RuntimeInputValidationReason::InvalidExperienceEvent;
 	}
-	if (contextualDanger &&
-	    (!contextualDanger->valid() || contextualDanger->map != frame.map ||
-	     contextualDanger->timeMicros > frame.nowMicros))
+	if (contextualDanger && (!contextualDanger->valid() || contextualDanger->map != frame.map ||
+							 contextualDanger->timeMicros > frame.nowMicros))
 		return RuntimeInputValidationReason::InvalidOptionalObservation;
-	if (opponent &&
-	    (!opponent->valid() || opponent->map != frame.map || opponent->round != frame.round ||
-	     opponent->tick.value > frame.tick.value))
+	if (opponent && (!opponent->valid() || opponent->map != frame.map || opponent->round != frame.round ||
+					 opponent->tick.value > frame.tick.value))
 		return RuntimeInputValidationReason::InvalidOptionalObservation;
 	return RuntimeInputValidationReason::None;
 }
 
-std::size_t RuntimeOrchestrator::slotIndex(core::PlayerId player) noexcept {
-	if (!player.isValid() || player.slot == 0 || player.slot > kRuntimeActorCapacity) {
+std::size_t RuntimeOrchestrator::slotIndex(core::PlayerId player) noexcept
+{
+	if (!player.isValid() || player.slot == 0 || player.slot > kRuntimeActorCapacity)
+	{
 		return kRuntimeActorCapacity;
 	}
 	return static_cast<std::size_t>(player.slot - 1U);
 }
 
-void RuntimeOrchestrator::appendStage(RuntimeStage stage) noexcept {
+void RuntimeOrchestrator::appendStage(RuntimeStage stage) noexcept
+{
 	if (result_.stageCount >= result_.stageTrace.size())
 		return;
-	if (result_.stageCount != 0 && result_.stageTrace[result_.stageCount - 1U] == stage) {
+	if (result_.stageCount != 0 && result_.stageTrace[result_.stageCount - 1U] == stage)
+	{
 		return;
 	}
 	result_.stageTrace[result_.stageCount++] = stage;
 }
 
-void RuntimeOrchestrator::addDiagnostic(RuntimeStage stage, RuntimeRejectReason reason,
-                                        const RuntimeFrame &frame, core::PlayerId player,
-                                        core::BotAgentId agent,
-                                        RuntimeInputValidationReason validation) noexcept {
+void RuntimeOrchestrator::addDiagnostic(RuntimeStage stage, RuntimeRejectReason reason, const RuntimeFrame& frame,
+										core::PlayerId player, core::BotAgentId agent,
+										RuntimeInputValidationReason validation) noexcept
+{
 	RuntimeDiagnostic value{};
 	value.stage = stage;
 	value.reason = reason;
@@ -177,7 +196,8 @@ void RuntimeOrchestrator::addDiagnostic(RuntimeStage stage, RuntimeRejectReason 
 	value.tick = frame.tick;
 	value.player = player;
 	value.agent = agent;
-	if (diagnostics_.count < diagnostics_.entries.size()) {
+	if (diagnostics_.count < diagnostics_.entries.size())
+	{
 		diagnostics_.entries[diagnostics_.count++] = value;
 		return;
 	}
@@ -185,7 +205,8 @@ void RuntimeOrchestrator::addDiagnostic(RuntimeStage stage, RuntimeRejectReason 
 	++diagnostics_.dropped;
 }
 
-void RuntimeOrchestrator::clearSlot(std::size_t index) noexcept {
+void RuntimeOrchestrator::clearSlot(std::size_t index) noexcept
+{
 	if (index >= kRuntimeActorCapacity)
 		return;
 	tactical_[index].reset();
@@ -201,7 +222,8 @@ void RuntimeOrchestrator::clearSlot(std::size_t index) noexcept {
 	actorIdentity_[index] = {};
 }
 
-void RuntimeOrchestrator::resetPlanners() noexcept {
+void RuntimeOrchestrator::resetPlanners() noexcept
+{
 	team_.reset();
 	teamDecision_ = {};
 	teamDecisionReady_ = false;
@@ -211,29 +233,34 @@ void RuntimeOrchestrator::resetPlanners() noexcept {
 		clearSlot(i);
 }
 
-bool RuntimeOrchestrator::beginFrameContext(const RuntimeFrame &frame) noexcept {
+bool RuntimeOrchestrator::beginFrameContext(const RuntimeFrame& frame) noexcept
+{
 	if (!frame.valid())
 		return false;
 
-	if (!active_) {
+	if (!active_)
+	{
 		resetPlanners();
 		map_ = frame.map;
 		round_ = frame.round;
 		tick_ = {};
 		lastNowMicros_ = frame.nowMicros;
-		if (contextualDanger_.map() != frame.map) {
+		if (contextualDanger_.map() != frame.map)
+		{
 			contextualDanger_.reset();
 			opponentProfiles_.reset();
-			if (!contextualDanger_.beginMap(frame.map) || !opponentProfiles_.beginMap(frame.map)) {
+			if (!contextualDanger_.beginMap(frame.map) || !opponentProfiles_.beginMap(frame.map))
+			{
 				return false;
 			}
 		}
-		if (!opponentProfiles_.beginRound(frame.round)) {
+		if (!opponentProfiles_.beginRound(frame.round))
+		{
 			return false;
 		}
 		experience_.reset();
-		if (validExperienceMap(frame.mapIdentity) &&
-		    !experience_.activate(frame.mapIdentity, frame.round)) {
+		if (validExperienceMap(frame.mapIdentity) && !experience_.activate(frame.mapIdentity, frame.round))
+		{
 			return false;
 		}
 		active_ = true;
@@ -243,38 +270,46 @@ bool RuntimeOrchestrator::beginFrameContext(const RuntimeFrame &frame) noexcept 
 
 	const bool mapChanged = frame.map != map_;
 	const bool roundChanged = frame.round != round_;
-	if ((!mapChanged && frame.map.value < map_.value) ||
-	    (mapChanged && frame.map.value < map_.value) ||
-	    (!mapChanged && frame.round.value < round_.value) ||
-	    (!mapChanged && !roundChanged && frame.tick.value <= tick_.value) ||
-	    (!mapChanged && frame.nowMicros < lastNowMicros_)) {
+	if ((!mapChanged && frame.map.value < map_.value) || (mapChanged && frame.map.value < map_.value) ||
+		(!mapChanged && frame.round.value < round_.value) ||
+		(!mapChanged && !roundChanged && frame.tick.value <= tick_.value) ||
+		(!mapChanged && frame.nowMicros < lastNowMicros_))
+	{
 		return false;
 	}
 	if (!mapChanged && experience_.active() && validExperienceMap(frame.mapIdentity) &&
-	    frame.mapIdentity != experience_.map()) {
+		frame.mapIdentity != experience_.map())
+	{
 		return false;
 	}
 
-	if (mapChanged) {
+	if (mapChanged)
+	{
 		resetPlanners();
 		contextualDanger_.reset();
 		opponentProfiles_.reset();
 		experience_.reset();
-		if (!contextualDanger_.beginMap(frame.map) || !opponentProfiles_.beginMap(frame.map)) {
-            return false;
-        }
-        if (!opponentProfiles_.beginRound(frame.round)) {
-            return false;
-        }
-        if (validExperienceMap(frame.mapIdentity) &&
-		    !experience_.activate(frame.mapIdentity, frame.round)) {
+		if (!contextualDanger_.beginMap(frame.map) || !opponentProfiles_.beginMap(frame.map))
+		{
 			return false;
 		}
-	} else if (roundChanged) {
+		if (!opponentProfiles_.beginRound(frame.round))
+		{
+			return false;
+		}
+		if (validExperienceMap(frame.mapIdentity) && !experience_.activate(frame.mapIdentity, frame.round))
+		{
+			return false;
+		}
+	}
+	else if (roundChanged)
+	{
 		resetPlanners();
-		if (experience_.active()) {
+		if (experience_.active())
+		{
 			const auto update = experience_.beginRound(frame.round, frame.nowMicros);
-			if (update.reason != core::experience::ExperienceUpdateReason::Accepted) {
+			if (update.reason != core::experience::ExperienceUpdateReason::Accepted)
+			{
 				return false;
 			}
 		}
@@ -289,8 +324,10 @@ bool RuntimeOrchestrator::beginFrameContext(const RuntimeFrame &frame) noexcept 
 	return true;
 }
 
-core::action::TacticalRole RuntimeOrchestrator::roleFor(core::team::Role role) noexcept {
-	switch (role) {
+core::action::TacticalRole RuntimeOrchestrator::roleFor(core::team::Role role) noexcept
+{
+	switch (role)
+	{
 	case core::team::Role::Entry:
 		return core::action::TacticalRole::Entry;
 	case core::team::Role::Support:
@@ -312,92 +349,96 @@ core::action::TacticalRole RuntimeOrchestrator::roleFor(core::team::Role role) n
 	return core::action::TacticalRole::Unknown;
 }
 
-const core::team::RoleAssignment *
-RuntimeOrchestrator::assignmentFor(core::PlayerId player) const noexcept {
-	const auto &state = team_.state();
+const core::team::RoleAssignment* RuntimeOrchestrator::assignmentFor(core::PlayerId player) const noexcept
+{
+	const auto& state = team_.state();
 	const auto limit = (std::min)(state.assignmentCount, state.assignments.size());
-	for (std::size_t i = 0; i < limit; ++i) {
+	for (std::size_t i = 0; i < limit; ++i)
+	{
 		if (state.assignments[i].player == player)
 			return &state.assignments[i];
 	}
 	return nullptr;
 }
 
-const RuntimeFrameResult &RuntimeOrchestrator::run(const RuntimeFrame &frame,
-                                                   const RuntimeActorInput *inputs,
-                                                   std::size_t inputCount) noexcept {
+const RuntimeFrameResult& RuntimeOrchestrator::run(const RuntimeFrame& frame, const RuntimeActorInput* inputs,
+												   std::size_t inputCount) noexcept
+{
 	result_ = {};
 	// A combat value belongs to exactly one run/tick. Any value not consumed
 	// by that tick's navigation pass is discarded before the next frame,
 	// including stale-frame and generation-mismatch paths.
 	combatPending_ = {};
-	if (!beginFrameContext(frame)) {
+	if (!beginFrameContext(frame))
+	{
 		addDiagnostic(RuntimeStage::None,
-		              frame.valid() ? RuntimeRejectReason::StaleFrame
-		                            : RuntimeRejectReason::InvalidFrame,
-		              frame, {});
+					  frame.valid() ? RuntimeRejectReason::StaleFrame : RuntimeRejectReason::InvalidFrame, frame, {});
 		return result_;
 	}
 	result_.accepted = true;
 	appendStage(RuntimeStage::PerceptionPublished);
 
-	std::array<const RuntimeActorInput *, kRuntimeActorCapacity> ordered{};
+	std::array<const RuntimeActorInput*, kRuntimeActorCapacity> ordered{};
 	std::array<bool, kRuntimeActorCapacity> seen{};
 	const auto limit = (std::min)(inputCount, kRuntimeActorCapacity);
-	if (inputs == nullptr && limit != 0) {
-		addDiagnostic(RuntimeStage::PerceptionPublished, RuntimeRejectReason::InvalidActorInput,
-		              frame, {});
+	if (inputs == nullptr && limit != 0)
+	{
+		addDiagnostic(RuntimeStage::PerceptionPublished, RuntimeRejectReason::InvalidActorInput, frame, {});
 		result_.accepted = false;
 		return result_;
 	}
-	if (inputCount > kRuntimeActorCapacity) {
-		addDiagnostic(RuntimeStage::PerceptionPublished, RuntimeRejectReason::InvalidActorInput,
-		              frame, {});
+	if (inputCount > kRuntimeActorCapacity)
+	{
+		addDiagnostic(RuntimeStage::PerceptionPublished, RuntimeRejectReason::InvalidActorInput, frame, {});
 	}
-	auto appendRejected = [&](const RuntimeActorInput &input, RuntimeRejectReason reason,
-	                          RuntimeInputValidationReason validation =
-	                              RuntimeInputValidationReason::None) noexcept {
+	auto appendRejected = [&](const RuntimeActorInput& input, RuntimeRejectReason reason,
+							  RuntimeInputValidationReason validation = RuntimeInputValidationReason::None) noexcept {
 		if (reason == RuntimeRejectReason::NonPrimaryActor)
 			++result_.nonPrimaryRejectedCount;
-		addDiagnostic(RuntimeStage::PerceptionPublished, reason, frame, input.player, input.agent,
-		              validation);
+		addDiagnostic(RuntimeStage::PerceptionPublished, reason, frame, input.player, input.agent, validation);
 		if (result_.decisionCount >= result_.decisions.size())
 			return;
-		auto &decision = result_.decisions[result_.decisionCount++];
+		auto& decision = result_.decisions[result_.decisionCount++];
 		decision.player = input.player;
 		decision.agent = input.agent;
 		decision.rejection = reason;
 		decision.validation = validation;
 	};
-	for (std::size_t i = 0; i < limit; ++i) {
-		const auto &input = inputs[i];
+	for (std::size_t i = 0; i < limit; ++i)
+	{
+		const auto& input = inputs[i];
 		const auto validation = input.validationReason(frame);
 		const auto index = slotIndex(input.player);
-		if (index >= kRuntimeActorCapacity) {
+		if (index >= kRuntimeActorCapacity)
+		{
 			appendRejected(input, RuntimeRejectReason::InvalidActorInput, validation);
 			continue;
 		}
 		bool duplicateAgent = false;
-		if (input.agent.isValid()) {
-			for (const auto *existing : ordered) {
-				if (existing != nullptr && existing->agent == input.agent) {
+		if (input.agent.isValid())
+		{
+			for (const auto* existing : ordered)
+			{
+				if (existing != nullptr && existing->agent == input.agent)
+				{
 					duplicateAgent = true;
 					break;
 				}
 			}
 		}
-		if (seen[index] || duplicateAgent) {
+		if (seen[index] || duplicateAgent)
+		{
 			appendRejected(input, RuntimeRejectReason::DuplicateActor);
 			continue;
 		}
 		// All valid managed actors are accepted. The primary flag is retained
 		// for older providers and is not an execution gate.
 		seen[index] = true;
-		if (actorIdentity_[index].isValid() &&
-		    (actorIdentity_[index] != input.player ||
-		     (hasDecision_[index] && lastDecisions_[index].agent != input.agent)))
+		if (actorIdentity_[index].isValid() && (actorIdentity_[index] != input.player ||
+												(hasDecision_[index] && lastDecisions_[index].agent != input.agent)))
 			clearSlot(index);
-		if (validation != RuntimeInputValidationReason::None) {
+		if (validation != RuntimeInputValidationReason::None)
+		{
 			if (!actorIdentity_[index].isValid() || actorIdentity_[index] == input.player)
 				clearSlot(index);
 			appendRejected(input, RuntimeRejectReason::InvalidActorInput, validation);
@@ -411,42 +452,51 @@ const RuntimeFrameResult &RuntimeOrchestrator::run(const RuntimeFrame &frame,
 	// Missing input is an interruption too: do not resume cached intents or
 	// fire cadence if this actor returns before its planner interval expires.
 	for (std::size_t index = 0; index < ordered.size(); ++index)
-		if (!ordered[index] && actorIdentity_[index].isValid()) clearSlot(index);
+		if (!ordered[index] && actorIdentity_[index].isValid())
+			clearSlot(index);
 
 	appendStage(RuntimeStage::ExperienceUpdated);
-	for (std::size_t index = 0; index < ordered.size(); ++index) {
-		const auto *input = ordered[index];
+	for (std::size_t index = 0; index < ordered.size(); ++index)
+	{
+		const auto* input = ordered[index];
 		if (!input)
 			continue;
-		for (std::size_t i = 0; i < input->experienceEventCount; ++i) {
+		for (std::size_t i = 0; i < input->experienceEventCount; ++i)
+		{
 			if (!experience_.active())
 				break;
-			try {
+			try
+			{
 				(void)experience_.submit(input->experienceEvents[i]);
-			} catch (...) {
-				addDiagnostic(RuntimeStage::ExperienceUpdated,
-				              RuntimeRejectReason::InvalidActorInput, frame, input->player,
-				              input->agent);
+			}
+			catch (...)
+			{
+				addDiagnostic(RuntimeStage::ExperienceUpdated, RuntimeRejectReason::InvalidActorInput, frame,
+							  input->player, input->agent);
 				break;
 			}
 		}
-		if (input->contextualDanger) {
+		if (input->contextualDanger)
+		{
 			(void)contextualDanger_.observe(*input->contextualDanger);
 		}
 		if (input->opponent)
 			(void)opponentProfiles_.observe(*input->opponent);
 	}
 
-	const RuntimeActorInput *teamInput = nullptr;
-	for (const auto *input : ordered) {
-		if (input) {
+	const RuntimeActorInput* teamInput = nullptr;
+	for (const auto* input : ordered)
+	{
+		if (input)
+		{
 			teamInput = input;
 			break;
 		}
 	}
 	appendStage(RuntimeStage::TeamDirector);
 	bool teamExecuted = false;
-	if (teamInput && !teamInput->teamObjectiveAvailable) {
+	if (teamInput && !teamInput->teamObjectiveAvailable)
+	{
 		// Unknown objective input is a neutral team decision, not a reason to
 		// erase each actor's tactical planner or Roam history.
 		team_.reset();
@@ -458,23 +508,28 @@ const RuntimeFrameResult &RuntimeOrchestrator::run(const RuntimeFrame &frame,
 		teamDecision_.accepted = true;
 		teamDecisionReady_ = true;
 		teamDecisionMicros_ = 0;
-	} else if (teamInput) {
+	}
+	else if (teamInput)
+	{
 		const bool eventDriven = teamInput->teamEvents.any();
 		const auto maximum = (std::numeric_limits<std::uint64_t>::max)();
-		const bool cadence =
-		    !teamDecisionReady_ || team_.strategy() == core::team::Strategy::None ||
-		    frame.nowMicros >= (teamDecisionMicros_ > maximum - kTeamDirectorCadenceMicros
-		                            ? maximum
-		                            : teamDecisionMicros_ + kTeamDirectorCadenceMicros);
-		if (cadence || eventDriven) {
+		const bool cadence = !teamDecisionReady_ || team_.strategy() == core::team::Strategy::None ||
+							 frame.nowMicros >= (teamDecisionMicros_ > maximum - kTeamDirectorCadenceMicros
+													 ? maximum
+													 : teamDecisionMicros_ + kTeamDirectorCadenceMicros);
+		if (cadence || eventDriven)
+		{
 			teamExecuted = true;
 			teamDecision_ = team_.update(teamInput->team, teamInput->teamEvents);
-			if (teamDecision_.accepted) {
+			if (teamDecision_.accepted)
+			{
 				teamDecisionReady_ = true;
 				teamDecisionMicros_ = frame.nowMicros;
-			} else {
-				addDiagnostic(RuntimeStage::TeamDirector, RuntimeRejectReason::InvalidTeamInput,
-				              frame, teamInput->player, teamInput->agent);
+			}
+			else
+			{
+				addDiagnostic(RuntimeStage::TeamDirector, RuntimeRejectReason::InvalidTeamInput, frame,
+							  teamInput->player, teamInput->agent);
 			}
 		}
 	}
@@ -483,39 +538,44 @@ const RuntimeFrameResult &RuntimeOrchestrator::run(const RuntimeFrame &frame,
 	appendStage(RuntimeStage::ActionPlanner);
 	appendStage(RuntimeStage::Combat);
 	appendStage(RuntimeStage::Navigation);
-	for (std::size_t index = 0; index < ordered.size(); ++index) {
-		const auto *input = ordered[index];
+	for (std::size_t index = 0; index < ordered.size(); ++index)
+	{
+		const auto* input = ordered[index];
 		if (!input)
 			continue;
-		if (!teamDecisionReady_) {
+		if (!teamDecisionReady_)
+		{
 			clearSlot(index);
 			if (result_.decisionCount >= result_.decisions.size())
 				continue;
-			auto &decision = result_.decisions[result_.decisionCount++];
+			auto& decision = result_.decisions[result_.decisionCount++];
 			decision.player = input->player;
 			decision.agent = input->agent;
 			decision.rejection = RuntimeRejectReason::InvalidTeamInput;
-			addDiagnostic(RuntimeStage::TeamDirector, RuntimeRejectReason::InvalidTeamInput, frame,
-			              input->player, input->agent);
+			addDiagnostic(RuntimeStage::TeamDirector, RuntimeRejectReason::InvalidTeamInput, frame, input->player,
+						  input->agent);
 			continue;
 		}
 
-        RuntimeDecision decision{};
-        decision.player = input->player;
-        decision.agent = input->agent;
-        decision.team = teamDecision_;
-        // Team strategy is cadence-cached, but the value delivered to NAV
-        // belongs to this input frame. Preserve the cached objective and
-        // assignments while stamping the transport identity for this tick.
-        decision.team.shared.map = frame.map;
-        decision.team.shared.round = frame.round;
-        decision.team.shared.tick = frame.tick;
+		RuntimeDecision decision{};
+		decision.player = input->player;
+		decision.agent = input->agent;
+		decision.team = teamDecision_;
+		// Team strategy is cadence-cached, but the value delivered to NAV
+		// belongs to this input frame. Preserve the cached objective and
+		// assignments while stamping the transport identity for this tick.
+		decision.team.shared.map = frame.map;
+		decision.team.shared.round = frame.round;
+		decision.team.shared.tick = frame.tick;
 		decision.team.shared.nowMicros = frame.nowMicros;
-        decision.teamExecuted = teamExecuted;
+		decision.teamExecuted = teamExecuted;
 		auto tacticalSeed = input->tactical;
-		if (const auto *assignment = assignmentFor(input->player)) {
-			if (tacticalSeed.self.role == core::tactical::RolePreference::Any) {
-				switch (assignment->role) {
+		if (const auto* assignment = assignmentFor(input->player))
+		{
+			if (tacticalSeed.self.role == core::tactical::RolePreference::Any)
+			{
+				switch (assignment->role)
+				{
 				case core::team::Role::Entry:
 					tacticalSeed.self.role = core::tactical::RolePreference::Entry;
 					break;
@@ -536,62 +596,69 @@ const RuntimeFrameResult &RuntimeOrchestrator::run(const RuntimeFrame &frame,
 		const auto context = core::tactical::buildTacticalContext(input->world, tacticalSeed);
 		decision.roamCandidateCount = context.navigation.roamCandidateCount;
 		decision.roamGeneration = context.navigation.roamGeneration;
-		if (!context.valid()) {
+		if (!context.valid())
+		{
 			clearSlot(index);
 			decision.rejection = RuntimeRejectReason::InvalidTacticalInput;
-			addDiagnostic(RuntimeStage::TacticalPlanner, decision.rejection, frame, input->player,
-			              input->agent);
+			addDiagnostic(RuntimeStage::TacticalPlanner, decision.rejection, frame, input->player, input->agent);
 			if (result_.decisionCount < result_.decisions.size())
 				result_.decisions[result_.decisionCount++] = decision;
 			continue;
 		}
 		decision.knownEnemyCount = context.enemyCount;
 		for (std::size_t enemy = 0; enemy < context.enemyCount; ++enemy)
-			if (context.enemies[enemy].directVision) ++decision.directEnemyCount;
+			if (context.enemies[enemy].directVision)
+				++decision.directEnemyCount;
 
 		const auto maximum = (std::numeric_limits<std::uint64_t>::max)();
 		const bool tacticalDue =
-		    !hasDecision_[index] || input->tacticalEvents.any() ||
-		    tactical_[index]->needsReplan(context, input->tacticalEvents) ||
-		    frame.nowMicros >= (lastTacticalMicros_[index] > maximum - kTacticalPlannerCadenceMicros
-		                            ? maximum
-		                            : lastTacticalMicros_[index] + kTacticalPlannerCadenceMicros);
-		if (tacticalDue) {
+			!hasDecision_[index] || input->tacticalEvents.any() ||
+			tactical_[index]->needsReplan(context, input->tacticalEvents) ||
+			frame.nowMicros >= (lastTacticalMicros_[index] > maximum - kTacticalPlannerCadenceMicros
+									? maximum
+									: lastTacticalMicros_[index] + kTacticalPlannerCadenceMicros);
+		if (tacticalDue)
+		{
 			decision.tactical = tactical_[index]->plan(context, input->tacticalEvents);
 			decision.tacticalExecuted = true;
 			lastTacticalMicros_[index] = frame.nowMicros;
-		} else {
+		}
+		else
+		{
 			decision.tactical = lastDecisions_[index].tactical;
 		}
-		if (!decision.tactical.accepted) {
+		if (!decision.tactical.accepted)
+		{
 			decision.rejection = RuntimeRejectReason::PlannerRejected;
-			addDiagnostic(RuntimeStage::TacticalPlanner, decision.rejection, frame, input->player,
-			              input->agent);
+			addDiagnostic(RuntimeStage::TacticalPlanner, decision.rejection, frame, input->player, input->agent);
 		}
 
 		auto actionInput = input->action;
-		if (const auto *assignment = assignmentFor(input->player)) {
+		if (const auto* assignment = assignmentFor(input->player))
+		{
 			if (actionInput.role == core::action::TacticalRole::Unknown)
 				actionInput.role = roleFor(assignment->role);
 		}
-		const bool actionDue =
-		    !hasDecision_[index] || actionObservationEvent(input->actionObservation) ||
-		    frame.nowMicros >= (lastActionMicros_[index] > maximum - kActionPlannerCadenceMicros
-		                            ? maximum
-		                            : lastActionMicros_[index] + kActionPlannerCadenceMicros);
-		if (actionDue) {
+		const bool actionDue = !hasDecision_[index] || actionObservationEvent(input->actionObservation) ||
+							   frame.nowMicros >= (lastActionMicros_[index] > maximum - kActionPlannerCadenceMicros
+													   ? maximum
+													   : lastActionMicros_[index] + kActionPlannerCadenceMicros);
+		if (actionDue)
+		{
 			if (action_[index]->active())
 				(void)action_[index]->update(actionInput, input->actionObservation);
 			decision.action = action_[index]->decide(actionInput);
 			decision.actionExecuted = true;
 			lastActionMicros_[index] = frame.nowMicros;
-		} else {
+		}
+		else
+		{
 			decision.action = lastDecisions_[index].action;
 		}
-		if (!decision.action.accepted && decision.rejection == RuntimeRejectReason::None) {
+		if (!decision.action.accepted && decision.rejection == RuntimeRejectReason::None)
+		{
 			decision.rejection = RuntimeRejectReason::PlannerRejected;
-			addDiagnostic(RuntimeStage::ActionPlanner, decision.rejection, frame, input->player,
-			              input->agent);
+			addDiagnostic(RuntimeStage::ActionPlanner, decision.rejection, frame, input->player, input->agent);
 		}
 
 		const auto aim = core::combat::aimTarget(input->combat);
@@ -599,24 +666,26 @@ const RuntimeFrameResult &RuntimeOrchestrator::run(const RuntimeFrame &frame,
 		combat_[index] = authorization.nextState;
 		decision.combat = authorization.decision;
 		decision.combatExecuted = true;
-		if (!decision.combat.validateForP5()) {
+		if (!decision.combat.validateForP5())
+		{
 			decision.rejection = RuntimeRejectReason::InvalidCombatInput;
-			addDiagnostic(RuntimeStage::Combat, decision.rejection, frame, input->player,
-			              input->agent);
+			addDiagnostic(RuntimeStage::Combat, decision.rejection, frame, input->player, input->agent);
 		}
-		if (decision.action.intent.targetArea.isValid()) {
+		if (decision.action.intent.targetArea.isValid())
+		{
 			decision.navigationGoal = decision.action.intent.targetArea;
 			decision.hasNavigationGoal = true;
-		} else if (decision.tactical.intent.target.area.isValid() &&
-		           !(decision.tactical.intent.type == core::tactical::IntentType::Hold &&
-		             decision.tactical.intent.reason == core::tactical::Reason::HoldCurrentArea &&
-		             decision.tactical.intent.target.area == input->tactical.self.currentArea)) {
+		}
+		else if (decision.tactical.intent.target.area.isValid() &&
+				 !(decision.tactical.intent.type == core::tactical::IntentType::Hold &&
+				   decision.tactical.intent.reason == core::tactical::Reason::HoldCurrentArea &&
+				   decision.tactical.intent.target.area == input->tactical.self.currentArea))
+		{
 			decision.navigationGoal = decision.tactical.intent.target.area;
 			decision.hasNavigationGoal = true;
 		}
-		decision.executable = decision.rejection == RuntimeRejectReason::None &&
-		                      decision.tactical.accepted && decision.action.accepted &&
-		                      decision.combat.validateForP5();
+		decision.executable = decision.rejection == RuntimeRejectReason::None && decision.tactical.accepted &&
+							  decision.action.accepted && decision.combat.validateForP5();
 		combatPending_[index] = decision.executable;
 		if (combatPending_[index])
 			++result_.queuedCombatCount;
@@ -631,7 +700,8 @@ const RuntimeFrameResult &RuntimeOrchestrator::run(const RuntimeFrame &frame,
 	return result_;
 }
 
-void RuntimeOrchestrator::reset() noexcept {
+void RuntimeOrchestrator::reset() noexcept
+{
 	result_ = {};
 	diagnostics_ = {};
 	resetPlanners();
@@ -645,44 +715,48 @@ void RuntimeOrchestrator::reset() noexcept {
 	active_ = false;
 }
 
-void RuntimeOrchestrator::beginMap(core::MapGeneration map) noexcept {
+void RuntimeOrchestrator::beginMap(core::MapGeneration map) noexcept
+{
 	reset();
-	if (!map.isValid() || !contextualDanger_.beginMap(map) || !opponentProfiles_.beginMap(map)) {
+	if (!map.isValid() || !contextualDanger_.beginMap(map) || !opponentProfiles_.beginMap(map))
+	{
 		reset();
 		return;
 	}
 	map_ = map;
 }
 
-void RuntimeOrchestrator::onDisconnect(core::PlayerId player) noexcept {
+void RuntimeOrchestrator::onDisconnect(core::PlayerId player) noexcept
+{
 	const auto index = slotIndex(player);
-	if (index < kRuntimeActorCapacity &&
-	    (!actorIdentity_[index].isValid() || actorIdentity_[index] == player))
+	if (index < kRuntimeActorCapacity && (!actorIdentity_[index].isValid() || actorIdentity_[index] == player))
 		clearSlot(index);
 	opponentProfiles_.forget(player);
 }
 
-void RuntimeOrchestrator::onDeath(core::PlayerId player) noexcept {
+void RuntimeOrchestrator::onDeath(core::PlayerId player) noexcept
+{
 	const auto index = slotIndex(player);
-	if (index < kRuntimeActorCapacity &&
-	    (!actorIdentity_[index].isValid() || actorIdentity_[index] == player))
+	if (index < kRuntimeActorCapacity && (!actorIdentity_[index].isValid() || actorIdentity_[index] == player))
 		clearSlot(index);
 }
 
-void RuntimeOrchestrator::onInputUnavailable(core::PlayerId player) noexcept {
+void RuntimeOrchestrator::onInputUnavailable(core::PlayerId player) noexcept
+{
 	const auto index = slotIndex(player);
-	if (index < kRuntimeActorCapacity &&
-	    (!actorIdentity_[index].isValid() || actorIdentity_[index] == player))
+	if (index < kRuntimeActorCapacity && (!actorIdentity_[index].isValid() || actorIdentity_[index] == player))
 		clearSlot(index);
 }
 
-std::optional<core::combat::CombatDecision> RuntimeOrchestrator::takeCombatDecision(
-    core::PlayerId player, core::BotAgentId agent, core::MapGeneration map,
-    core::perception::RoundGeneration round, core::TickId tick) noexcept {
+std::optional<core::combat::CombatDecision>
+RuntimeOrchestrator::takeCombatDecision(core::PlayerId player, core::BotAgentId agent, core::MapGeneration map,
+										core::perception::RoundGeneration round, core::TickId tick) noexcept
+{
 	const auto index = slotIndex(player);
-	if (!active_ || index >= kRuntimeActorCapacity || !combatPending_[index] || map != map_ ||
-	    round != round_ || tick != tick_ || lastDecisions_[index].player != player ||
-	    lastDecisions_[index].agent != agent || !lastDecisions_[index].combat.validateForP5()) {
+	if (!active_ || index >= kRuntimeActorCapacity || !combatPending_[index] || map != map_ || round != round_ ||
+		tick != tick_ || lastDecisions_[index].player != player || lastDecisions_[index].agent != agent ||
+		!lastDecisions_[index].combat.validateForP5())
+	{
 		return std::nullopt;
 	}
 	combatPending_[index] = false;

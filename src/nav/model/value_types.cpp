@@ -5,15 +5,17 @@
 
 #include <cmath>
 
-namespace astrabot::nav::model {
+namespace astrabot::nav::model
+{
 
-bool NavVector3::isFinite() const noexcept {
-    return std::isfinite(x) && std::isfinite(y) && std::isfinite(z);
+bool NavVector3::isFinite() const noexcept
+{
+	return std::isfinite(x) && std::isfinite(y) && std::isfinite(z);
 }
 
-bool NavExtent::isFinite() const noexcept {
-    return northWest.isFinite() && southEast.isFinite() &&
-           std::isfinite(northEastZ) && std::isfinite(southWestZ);
+bool NavExtent::isFinite() const noexcept
+{
+	return northWest.isFinite() && southEast.isFinite() && std::isfinite(northEastZ) && std::isfinite(southWestZ);
 }
 
 } // namespace astrabot::nav::model

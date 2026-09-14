@@ -8,24 +8,27 @@
 
 #include <cstdint>
 
-namespace astrabot::nav::io {
+namespace astrabot::nav::io
+{
 
-struct NavReadLimits final {
-    std::uint32_t maxAreas{0};
-    std::uint16_t maxPlaces{0};
-    std::uint16_t maxPlaceBytes{0};
-    std::uint32_t maxTotalPlaceBytes{0};
+struct NavReadLimits final
+{
+	std::uint32_t maxAreas{0};
+	std::uint16_t maxPlaces{0};
+	std::uint16_t maxPlaceBytes{0};
+	std::uint32_t maxTotalPlaceBytes{0};
 };
 
-class NavFileReader final {
+class NavFileReader final
+{
 public:
-    static diagnostics::ReadResult<model::NavFileHeader> readHeader(
-        ByteView bytes,
-        const NavReadLimits& limits) noexcept;
+	static diagnostics::ReadResult<model::NavFileHeader> readHeader(ByteView bytes,
+																	const NavReadLimits& limits) noexcept;
+
 private:
-    friend class NavMeshLoader;
-    static diagnostics::ReadResult<model::NavFileHeader> readTracked(
-        ByteView bytes, const NavReadLimits& limits, detail::DecodeContext* context) noexcept;
+	friend class NavMeshLoader;
+	static diagnostics::ReadResult<model::NavFileHeader> readTracked(ByteView bytes, const NavReadLimits& limits,
+																	 detail::DecodeContext* context) noexcept;
 };
 
 } // namespace astrabot::nav::io

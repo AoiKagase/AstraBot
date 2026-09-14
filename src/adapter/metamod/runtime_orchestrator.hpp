@@ -19,7 +19,8 @@
 #include <cstdint>
 #include <optional>
 
-namespace astrabot::adapter::metamod {
+namespace astrabot::adapter::metamod
+{
 
 constexpr std::size_t kRuntimeActorCapacity = 32;
 constexpr std::size_t kRuntimeExperienceEvents = 8;
@@ -28,7 +29,8 @@ constexpr std::uint64_t kTeamDirectorCadenceMicros = 1'000'000;
 constexpr std::uint64_t kTacticalPlannerCadenceMicros = 200'000;
 constexpr std::uint64_t kActionPlannerCadenceMicros = 100'000;
 
-enum class RuntimeStage : std::uint8_t {
+enum class RuntimeStage : std::uint8_t
+{
 	None = 0,
 	PerceptionPublished,
 	ExperienceUpdated,
@@ -39,7 +41,8 @@ enum class RuntimeStage : std::uint8_t {
 	Navigation,
 };
 
-enum class RuntimeRejectReason : std::uint8_t {
+enum class RuntimeRejectReason : std::uint8_t
+{
 	None = 0,
 	InvalidFrame,
 	StaleFrame,
@@ -59,7 +62,8 @@ enum class RuntimeRejectReason : std::uint8_t {
 // unusable. This stays separate from RuntimeRejectReason: the latter
 // describes the orchestration outcome, while this enum explains why the
 // actor was rejected before planning could begin.
-enum class RuntimeInputValidationReason : std::uint8_t {
+enum class RuntimeInputValidationReason : std::uint8_t
+{
 	None = 0,
 	InvalidFrame,
 	InvalidActor,
@@ -81,7 +85,8 @@ enum class RuntimeInputValidationReason : std::uint8_t {
 	InvalidExperienceEvent,
 };
 
-struct RuntimeFrame final {
+struct RuntimeFrame final
+{
 	core::MapGeneration map{};
 	core::perception::RoundGeneration round{};
 	core::TickId tick{};
@@ -94,7 +99,8 @@ struct RuntimeFrame final {
 	bool valid() const noexcept;
 };
 
-struct RuntimeActorInput final {
+struct RuntimeActorInput final
+{
 	core::PlayerId player{};
 	core::BotAgentId agent{};
 	// The primary field remains for compatibility with older input providers.
@@ -116,14 +122,15 @@ struct RuntimeActorInput final {
 	std::optional<core::learning::ContextualDangerObservation> contextualDanger{};
 	std::optional<core::learning::OpponentObservation> opponent{};
 
-	RuntimeInputValidationReason validationReason(
-		const RuntimeFrame &frame) const noexcept;
-	bool valid(const RuntimeFrame &frame) const noexcept {
+	RuntimeInputValidationReason validationReason(const RuntimeFrame& frame) const noexcept;
+	bool valid(const RuntimeFrame& frame) const noexcept
+	{
 		return validationReason(frame) == RuntimeInputValidationReason::None;
 	}
 };
 
-struct RuntimeDecision final {
+struct RuntimeDecision final
+{
 	core::PlayerId player{};
 	core::BotAgentId agent{};
 	core::team::TeamDecision team{};
@@ -147,7 +154,8 @@ struct RuntimeDecision final {
 
 // Diagnostic self observations only. Health loss is not proof of a hit by
 // this bot or any particular attacker. Context changes start a new baseline.
-struct RuntimeHealthObservation final {
+struct RuntimeHealthObservation final
+{
 	RuntimeFrame frame{};
 	core::PlayerId player{};
 	core::BotAgentId agent{};
@@ -156,11 +164,12 @@ struct RuntimeHealthObservation final {
 	double observedHealthLoss{0};
 	std::uint64_t deaths{0}, respawns{0};
 	bool known{false}, dead{false};
-	void observe(const RuntimeFrame&, core::PlayerId, core::BotAgentId,
-	             int serialNumber, float currentHealth, bool isDead) noexcept;
+	void observe(const RuntimeFrame&, core::PlayerId, core::BotAgentId, int serialNumber, float currentHealth,
+				 bool isDead) noexcept;
 };
 
-struct RuntimeFrameResult final {
+struct RuntimeFrameResult final
+{
 	std::array<RuntimeDecision, kRuntimeActorCapacity> decisions{};
 	std::size_t decisionCount{0};
 	std::size_t executableCount{0};
@@ -172,7 +181,8 @@ struct RuntimeFrameResult final {
 	bool accepted{false};
 };
 
-struct RuntimeDiagnostic final {
+struct RuntimeDiagnostic final
+{
 	RuntimeStage stage{RuntimeStage::None};
 	RuntimeRejectReason reason{RuntimeRejectReason::None};
 	RuntimeInputValidationReason validation{RuntimeInputValidationReason::None};
@@ -183,16 +193,18 @@ struct RuntimeDiagnostic final {
 	core::BotAgentId agent{};
 };
 
-struct RuntimeDiagnostics final {
+struct RuntimeDiagnostics final
+{
 	std::array<RuntimeDiagnostic, kRuntimeDiagnosticCapacity> entries{};
 	std::size_t count{0};
 	std::uint64_t dropped{0};
 };
 
-class RuntimeOrchestrator final {
-  public:
-	const RuntimeFrameResult &run(const RuntimeFrame &frame, const RuntimeActorInput *inputs,
-	                              std::size_t inputCount) noexcept;
+class RuntimeOrchestrator final
+{
+public:
+	const RuntimeFrameResult& run(const RuntimeFrame& frame, const RuntimeActorInput* inputs,
+								  std::size_t inputCount) noexcept;
 
 	void reset() noexcept;
 	// LifecycleCoordinator calls this at ServerActivate so map-session
@@ -204,44 +216,58 @@ class RuntimeOrchestrator final {
 
 	// A navigation producer calls this after run() and before NavConsole's
 	// movement pass.  A matching value is consumed exactly once.
-	std::optional<core::combat::CombatDecision>
-	takeCombatDecision(core::PlayerId player, core::BotAgentId agent, core::MapGeneration map,
-	                   core::perception::RoundGeneration round, core::TickId tick) noexcept;
+	std::optional<core::combat::CombatDecision> takeCombatDecision(core::PlayerId player, core::BotAgentId agent,
+																   core::MapGeneration map,
+																   core::perception::RoundGeneration round,
+																   core::TickId tick) noexcept;
 
-	const RuntimeFrameResult &result() const noexcept { return result_; }
-	const RuntimeDecision *decision(core::PlayerId player) const noexcept {
+	const RuntimeFrameResult& result() const noexcept
+	{
+		return result_;
+	}
+	const RuntimeDecision* decision(core::PlayerId player) const noexcept
+	{
 		if (!player.isValid())
 			return nullptr;
-		for (std::size_t i = 0; i < result_.decisionCount; ++i) {
+		for (std::size_t i = 0; i < result_.decisionCount; ++i)
+		{
 			if (result_.decisions[i].player == player)
 				return &result_.decisions[i];
 		}
 		return nullptr;
 	}
-	const RuntimeDiagnostics &diagnostics() const noexcept { return diagnostics_; }
-	const core::team::TeamDirector &teamDirector() const noexcept { return team_; }
-	const core::experience::ExperienceModel &experience() const noexcept {
+	const RuntimeDiagnostics& diagnostics() const noexcept
+	{
+		return diagnostics_;
+	}
+	const core::team::TeamDirector& teamDirector() const noexcept
+	{
+		return team_;
+	}
+	const core::experience::ExperienceModel& experience() const noexcept
+	{
 		return experience_.model();
 	}
-	const core::learning::ContextualDangerModel &contextualDanger() const noexcept {
+	const core::learning::ContextualDangerModel& contextualDanger() const noexcept
+	{
 		return contextualDanger_;
 	}
-	const core::learning::OpponentProfileModel &opponentProfiles() const noexcept {
+	const core::learning::OpponentProfileModel& opponentProfiles() const noexcept
+	{
 		return opponentProfiles_;
 	}
 
-  private:
+private:
 	static std::size_t slotIndex(core::PlayerId player) noexcept;
-	void addDiagnostic(RuntimeStage stage, RuntimeRejectReason reason, const RuntimeFrame &frame,
-	                   core::PlayerId player, core::BotAgentId agent = {},
-	                   RuntimeInputValidationReason validation =
-	                       RuntimeInputValidationReason::None) noexcept;
+	void addDiagnostic(RuntimeStage stage, RuntimeRejectReason reason, const RuntimeFrame& frame, core::PlayerId player,
+					   core::BotAgentId agent = {},
+					   RuntimeInputValidationReason validation = RuntimeInputValidationReason::None) noexcept;
 	void appendStage(RuntimeStage stage) noexcept;
 	void clearSlot(std::size_t index) noexcept;
 	void resetPlanners() noexcept;
-	bool beginFrameContext(const RuntimeFrame &frame) noexcept;
+	bool beginFrameContext(const RuntimeFrame& frame) noexcept;
 	static core::action::TacticalRole roleFor(core::team::Role role) noexcept;
-	const core::team::RoleAssignment *assignmentFor(core::PlayerId player) const noexcept;
+	const core::team::RoleAssignment* assignmentFor(core::PlayerId player) const noexcept;
 
 	RuntimeFrameResult result_{};
 	RuntimeDiagnostics diagnostics_{};

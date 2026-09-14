@@ -6,245 +6,344 @@
 #include <algorithm>
 #include <limits>
 
-namespace astrabot::nav::runtime {
-struct RouteGoalIdentity final {
-    core::BotAgentId agent{};
-    core::PlayerId actor{};
-    core::MapGeneration map{};
-    core::perception::RoundGeneration round{};
-    std::uint64_t routeGeneration{};
+namespace astrabot::nav::runtime
+{
+struct RouteGoalIdentity final
+{
+	core::BotAgentId agent{};
+	core::PlayerId actor{};
+	core::MapGeneration map{};
+	core::perception::RoundGeneration round{};
+	std::uint64_t routeGeneration{};
 
-    bool valid() const noexcept {
-        return agent.isValid() && actor.isValid() && map.isValid() && round.isValid() &&
-            routeGeneration != 0;
-    }
+	bool valid() const noexcept
+	{
+		return agent.isValid() && actor.isValid() && map.isValid() && round.isValid() && routeGeneration != 0;
+	}
 
-    friend bool operator==(const RouteGoalIdentity& left,
-                           const RouteGoalIdentity& right) noexcept {
-        return left.agent == right.agent && left.actor == right.actor &&
-            left.map == right.map && left.round == right.round &&
-            left.routeGeneration == right.routeGeneration;
-    }
+	friend bool operator==(const RouteGoalIdentity& left, const RouteGoalIdentity& right) noexcept
+	{
+		return left.agent == right.agent && left.actor == right.actor && left.map == right.map &&
+			   left.round == right.round && left.routeGeneration == right.routeGeneration;
+	}
 };
 
-class RouteGoalLease final {
+class RouteGoalLease final
+{
 public:
-    bool acquire(RouteGoalIdentity identity, model::NavAreaId goal,
-                 std::uint64_t issuedAtUs = 0) noexcept {
-        if (!identity.valid() || !goal.isValid()) {
-            return false;
-        }
+	bool acquire(RouteGoalIdentity identity, model::NavAreaId goal, std::uint64_t issuedAtUs = 0) noexcept
+	{
+		if (!identity.valid() || !goal.isValid())
+		{
+			return false;
+		}
 
-        identity_ = identity;
-        goal_ = goal;
-        issuedAtUs_ = issuedAtUs;
-        active_ = true;
-        return true;
-    }
+		identity_ = identity;
+		goal_ = goal;
+		issuedAtUs_ = issuedAtUs;
+		active_ = true;
+		return true;
+	}
 
-    bool holds(const RouteGoalIdentity& identity) const noexcept {
-        return active_ && identity_ == identity;
-    }
+	bool holds(const RouteGoalIdentity& identity) const noexcept
+	{
+		return active_ && identity_ == identity;
+	}
 
-    model::NavAreaId goal() const noexcept {
-        return active_ ? goal_ : model::NavAreaId{};
-    }
+	model::NavAreaId goal() const noexcept
+	{
+		return active_ ? goal_ : model::NavAreaId{};
+	}
 
-    std::uint64_t issuedAtUs() const noexcept {
-        return issuedAtUs_;
-    }
+	std::uint64_t issuedAtUs() const noexcept
+	{
+		return issuedAtUs_;
+	}
 
-    void release() noexcept {
-        active_ = false;
-        identity_ = {};
-        goal_ = {};
-        issuedAtUs_ = 0;
-    }
+	void release() noexcept
+	{
+		active_ = false;
+		identity_ = {};
+		goal_ = {};
+		issuedAtUs_ = 0;
+	}
 
 private:
-    RouteGoalIdentity identity_{};
-    model::NavAreaId goal_{};
-    std::uint64_t issuedAtUs_{};
-    bool active_{};
+	RouteGoalIdentity identity_{};
+	model::NavAreaId goal_{};
+	std::uint64_t issuedAtUs_{};
+	bool active_{};
 };
 
 // Search completion is not evidence that a motion primitive can execute it.
-enum class ExecutionState { Idle, Planning, Running, Arrived, Failed, Recovering };
-enum class ExecutionFailure { None, Search, Corridor, Motion, Observation, Transport, ExclusionCapacity };
+enum class ExecutionState
+{
+	Idle,
+	Planning,
+	Running,
+	Arrived,
+	Failed,
+	Recovering
+};
+enum class ExecutionFailure
+{
+	None,
+	Search,
+	Corridor,
+	Motion,
+	Observation,
+	Transport,
+	ExclusionCapacity
+};
 
-class Execution final {
+class Execution final
+{
 public:
-    static constexpr std::uint64_t retryDelayUs = 2'000'000;
-    static constexpr std::uint64_t edgeRetryDelayUs = 2'000'000;
-    ExecutionState state{ExecutionState::Idle};
-    ExecutionFailure failure{ExecutionFailure::None};
-    std::optional<query::NavDirectedEdge> failedEdge{};
-    std::uint64_t retryAtUs{};
-    std::uint64_t nextSearchAtUs{};
+	static constexpr std::uint64_t retryDelayUs = 2'000'000;
+	static constexpr std::uint64_t edgeRetryDelayUs = 2'000'000;
+	ExecutionState state{ExecutionState::Idle};
+	ExecutionFailure failure{ExecutionFailure::None};
+	std::optional<query::NavDirectedEdge> failedEdge{};
+	std::uint64_t retryAtUs{};
+	std::uint64_t nextSearchAtUs{};
 
-    // Reset the actor-local execution state in place. Execution owns bounded
-    // retry tables; assigning `{}` would materialize a full ~33 KiB temporary
-    // on the GoldSrc callback stack and can exhaust the x86 stack during
-    // repeated invalidation/recovery.
-    void reset() noexcept {
-        state = ExecutionState::Idle;
-        failure = ExecutionFailure::None;
-        failedEdge.reset();
-        retryAtUs = 0;
-        nextSearchAtUs = 0;
-        for (auto& item : goals_) item = {};
-        nextGoal_ = 0;
-        for (auto& edge : blocked_) edge = {};
-        blockedCount_ = 0;
-        saturated_ = false;
-        for (auto& item : edgeRetries_) item = {};
-        searchNowUs_ = 0;
-    }
+	// Reset the actor-local execution state in place. Execution owns bounded
+	// retry tables; assigning `{}` would materialize a full ~33 KiB temporary
+	// on the GoldSrc callback stack and can exhaust the x86 stack during
+	// repeated invalidation/recovery.
+	void reset() noexcept
+	{
+		state = ExecutionState::Idle;
+		failure = ExecutionFailure::None;
+		failedEdge.reset();
+		retryAtUs = 0;
+		nextSearchAtUs = 0;
+		for (auto& item : goals_)
+			item = {};
+		nextGoal_ = 0;
+		for (auto& edge : blocked_)
+			edge = {};
+		blockedCount_ = 0;
+		saturated_ = false;
+		for (auto& item : edgeRetries_)
+			item = {};
+		searchNowUs_ = 0;
+	}
 
-    void setSearchTime(std::uint64_t now) noexcept { searchNowUs_=now; }
+	void setSearchTime(std::uint64_t now) noexcept
+	{
+		searchNowUs_ = now;
+	}
 
-    void begin() noexcept {
-        state=ExecutionState::Planning; failure=ExecutionFailure::None;
-        failedEdge.reset(); retryAtUs=0;
-        // A new route must not erase a still-cooling directed edge. Expiry is
-        // evaluated by edgeCooling() against the current synchronous search.
-    }
-    void fail(model::NavAreaId goal, ExecutionFailure why, std::uint64_t now,
-              std::optional<query::NavDirectedEdge> edge={}, bool structural=false,
-              bool aggregateSource=true) noexcept {
-        state=ExecutionState::Failed; failure=why; failedEdge=edge;
-        retryAtUs=now>(std::numeric_limits<std::uint64_t>::max)()-retryDelayUs
-            ? (std::numeric_limits<std::uint64_t>::max)() : now+retryDelayUs;
-        nextSearchAtUs=now>(std::numeric_limits<std::uint64_t>::max)()-250'000
-            ? (std::numeric_limits<std::uint64_t>::max)() : now+250'000;
-        if(goal.isValid() && aggregateSource) {
-            auto* slot=&goals_[nextGoal_];
-            for(auto& item:goals_) if(item.goal==goal) { slot=&item; break; }
-            *slot={goal,retryAtUs}; nextGoal_=(nextGoal_+1)%goals_.size();
-        }
-        if(structural && edge && !blocked(*edge)) {
-            // Bounded and fail-closed: never silently evict a known bad edge.
-            if(blockedCount_<blocked_.size()) blocked_[blockedCount_++]=*edge;
-            else { saturated_=true; failure=ExecutionFailure::ExclusionCapacity; }
-        }
-        if(!structural && edge) coolEdge(*edge,now);
-    }
-    bool goalCooling(model::NavAreaId goal,std::uint64_t now) const noexcept {
-        for(const auto& item:goals_) if(item.goal==goal && now<item.until) return true;
-        return false;
-    }
-    bool cooling(model::NavAreaId goal,std::uint64_t now) const noexcept {
-        return goalCooling(goal,now);
-    }
+	void begin() noexcept
+	{
+		state = ExecutionState::Planning;
+		failure = ExecutionFailure::None;
+		failedEdge.reset();
+		retryAtUs = 0;
+		// A new route must not erase a still-cooling directed edge. Expiry is
+		// evaluated by edgeCooling() against the current synchronous search.
+	}
+	void fail(model::NavAreaId goal, ExecutionFailure why, std::uint64_t now,
+			  std::optional<query::NavDirectedEdge> edge = {}, bool structural = false,
+			  bool aggregateSource = true) noexcept
+	{
+		state = ExecutionState::Failed;
+		failure = why;
+		failedEdge = edge;
+		retryAtUs = now > (std::numeric_limits<std::uint64_t>::max)() - retryDelayUs
+						? (std::numeric_limits<std::uint64_t>::max)()
+						: now + retryDelayUs;
+		nextSearchAtUs = now > (std::numeric_limits<std::uint64_t>::max)() - 250'000
+							 ? (std::numeric_limits<std::uint64_t>::max)()
+							 : now + 250'000;
+		if (goal.isValid() && aggregateSource)
+		{
+			auto* slot = &goals_[nextGoal_];
+			for (auto& item : goals_)
+				if (item.goal == goal)
+				{
+					slot = &item;
+					break;
+				}
+			*slot = {goal, retryAtUs};
+			nextGoal_ = (nextGoal_ + 1) % goals_.size();
+		}
+		if (structural && edge && !blocked(*edge))
+		{
+			// Bounded and fail-closed: never silently evict a known bad edge.
+			if (blockedCount_ < blocked_.size())
+				blocked_[blockedCount_++] = *edge;
+			else
+			{
+				saturated_ = true;
+				failure = ExecutionFailure::ExclusionCapacity;
+			}
+		}
+		if (!structural && edge)
+			coolEdge(*edge, now);
+	}
+	bool goalCooling(model::NavAreaId goal, std::uint64_t now) const noexcept
+	{
+		for (const auto& item : goals_)
+			if (item.goal == goal && now < item.until)
+				return true;
+		return false;
+	}
+	bool cooling(model::NavAreaId goal, std::uint64_t now) const noexcept
+	{
+		return goalCooling(goal, now);
+	}
 
-    bool edgeCooling(const query::NavDirectedEdge& edge,std::uint64_t now) const noexcept {
-        for(const auto& item:edgeRetries_) {
-            if(item.edge && sameEdge(*item.edge,edge) && now<item.until) return true;
-        }
-        return false;
-    }
-    bool edgeCooling(const query::NavDirectedEdge& edge) const noexcept {
-        return edgeCooling(edge,searchNowUs_);
-    }
+	bool edgeCooling(const query::NavDirectedEdge& edge, std::uint64_t now) const noexcept
+	{
+		for (const auto& item : edgeRetries_)
+		{
+			if (item.edge && sameEdge(*item.edge, edge) && now < item.until)
+				return true;
+		}
+		return false;
+	}
+	bool edgeCooling(const query::NavDirectedEdge& edge) const noexcept
+	{
+		return edgeCooling(edge, searchNowUs_);
+	}
 
-    bool sourceCooling(const query::NavDirectedEdge&) const noexcept {
-        // Retained for source compatibility. Evidence for one directed edge
-        // must not suppress any sibling exit from the same source area.
-        return false;
-    }
+	bool sourceCooling(const query::NavDirectedEdge&) const noexcept
+	{
+		// Retained for source compatibility. Evidence for one directed edge
+		// must not suppress any sibling exit from the same source area.
+		return false;
+	}
 
-    std::uint64_t edgeCooldownRemaining(const query::NavDirectedEdge& edge,
-                                        std::uint64_t now) const noexcept {
-        for(const auto& item:edgeRetries_) if(item.edge && sameEdge(*item.edge,edge))
-            return item.until>now ? item.until-now : 0;
-        return 0;
-    }
+	std::uint64_t edgeCooldownRemaining(const query::NavDirectedEdge& edge, std::uint64_t now) const noexcept
+	{
+		for (const auto& item : edgeRetries_)
+			if (item.edge && sameEdge(*item.edge, edge))
+				return item.until > now ? item.until - now : 0;
+		return 0;
+	}
 
-    void clearEdgeCooldown(const query::NavDirectedEdge& edge) noexcept {
-        for(auto& item:edgeRetries_) if(item.edge && sameEdge(*item.edge,edge)) {
-            item.edge.reset(); item.until=0; return;
-        }
-    }
-    bool blocked(const query::NavDirectedEdge& edge) const noexcept {
-        for(std::size_t i=0;i<blockedCount_;++i) {
-            const auto& b=blocked_[i];
-            if(b.source==edge.source && b.target==edge.target && b.direction==edge.direction &&
-               b.traversal==edge.traversal && b.external.has_value()==edge.external.has_value() &&
-               (!b.external || (b.external->sourceId==edge.external->sourceId &&
-                b.external->generation==edge.external->generation &&
-                b.external->linkId==edge.external->linkId))) return true;
-        }
-        return false;
-    }
-    bool saturated() const noexcept { return saturated_; }
-    bool searchWaiting(std::uint64_t now) const noexcept {
-        return now<nextSearchAtUs;
-    }
-    bool canSearch(std::uint64_t now) const noexcept {
-        searchNowUs_=now;
-        return !saturated_ && !searchWaiting(now);
-    }
+	void clearEdgeCooldown(const query::NavDirectedEdge& edge) noexcept
+	{
+		for (auto& item : edgeRetries_)
+			if (item.edge && sameEdge(*item.edge, edge))
+			{
+				item.edge.reset();
+				item.until = 0;
+				return;
+			}
+	}
+	bool blocked(const query::NavDirectedEdge& edge) const noexcept
+	{
+		for (std::size_t i = 0; i < blockedCount_; ++i)
+		{
+			const auto& b = blocked_[i];
+			if (b.source == edge.source && b.target == edge.target && b.direction == edge.direction &&
+				b.traversal == edge.traversal && b.external.has_value() == edge.external.has_value() &&
+				(!b.external ||
+				 (b.external->sourceId == edge.external->sourceId &&
+				  b.external->generation == edge.external->generation && b.external->linkId == edge.external->linkId)))
+				return true;
+		}
+		return false;
+	}
+	bool saturated() const noexcept
+	{
+		return saturated_;
+	}
+	bool searchWaiting(std::uint64_t now) const noexcept
+	{
+		return now < nextSearchAtUs;
+	}
+	bool canSearch(std::uint64_t now) const noexcept
+	{
+		searchNowUs_ = now;
+		return !saturated_ && !searchWaiting(now);
+	}
+
 private:
-    struct EdgeRetry { std::optional<query::NavDirectedEdge> edge{}; std::uint64_t until{}; };
-    static bool sameEdge(const query::NavDirectedEdge& a,const query::NavDirectedEdge& b) noexcept {
-        return a.source==b.source && a.target==b.target && a.direction==b.direction &&
-            a.traversal==b.traversal && a.external.has_value()==b.external.has_value() &&
-            (!a.external || (a.external->sourceId==b.external->sourceId &&
-                a.external->generation==b.external->generation && a.external->linkId==b.external->linkId));
-    }
-    void coolEdge(const query::NavDirectedEdge& edge,std::uint64_t now) noexcept {
-        for(auto& item:edgeRetries_) if(item.edge && sameEdge(*item.edge,edge)) {
-            item.until=now>(std::numeric_limits<std::uint64_t>::max)()-edgeRetryDelayUs
-                ? (std::numeric_limits<std::uint64_t>::max)() : now+edgeRetryDelayUs;
-            return;
-        }
-        for(auto& item:edgeRetries_) if(!item.edge || item.until<=now) {
-            item={edge,now>(std::numeric_limits<std::uint64_t>::max)()-edgeRetryDelayUs
-                ? (std::numeric_limits<std::uint64_t>::max)() : now+edgeRetryDelayUs};
-            return;
-        }
-        // The temporary table is bounded. Preserve the oldest entry so a
-        // burst of actors cannot turn a transient failure into an unbounded
-        // allocation or erase a newer failure.
-        auto oldest=std::min_element(edgeRetries_.begin(),edgeRetries_.end(),
-            [](const auto& a,const auto& b){ return a.until<b.until; });
-        *oldest={edge,now>(std::numeric_limits<std::uint64_t>::max)()-edgeRetryDelayUs
-            ? (std::numeric_limits<std::uint64_t>::max)() : now+edgeRetryDelayUs};
-    }
-    struct GoalRetry { model::NavAreaId goal{}; std::uint64_t until{}; };
-    std::array<GoalRetry,16> goals_{};
-    std::size_t nextGoal_{};
-    std::array<query::NavDirectedEdge,128> blocked_{};
-    std::size_t blockedCount_{};
-    bool saturated_{};
-    std::array<EdgeRetry,128> edgeRetries_{};
-    mutable std::uint64_t searchNowUs_{};
+	struct EdgeRetry
+	{
+		std::optional<query::NavDirectedEdge> edge{};
+		std::uint64_t until{};
+	};
+	static bool sameEdge(const query::NavDirectedEdge& a, const query::NavDirectedEdge& b) noexcept
+	{
+		return a.source == b.source && a.target == b.target && a.direction == b.direction &&
+			   a.traversal == b.traversal && a.external.has_value() == b.external.has_value() &&
+			   (!a.external ||
+				(a.external->sourceId == b.external->sourceId && a.external->generation == b.external->generation &&
+				 a.external->linkId == b.external->linkId));
+	}
+	void coolEdge(const query::NavDirectedEdge& edge, std::uint64_t now) noexcept
+	{
+		for (auto& item : edgeRetries_)
+			if (item.edge && sameEdge(*item.edge, edge))
+			{
+				item.until = now > (std::numeric_limits<std::uint64_t>::max)() - edgeRetryDelayUs
+								 ? (std::numeric_limits<std::uint64_t>::max)()
+								 : now + edgeRetryDelayUs;
+				return;
+			}
+		for (auto& item : edgeRetries_)
+			if (!item.edge || item.until <= now)
+			{
+				item = {edge, now > (std::numeric_limits<std::uint64_t>::max)() - edgeRetryDelayUs
+								  ? (std::numeric_limits<std::uint64_t>::max)()
+								  : now + edgeRetryDelayUs};
+				return;
+			}
+		// The temporary table is bounded. Preserve the oldest entry so a
+		// burst of actors cannot turn a transient failure into an unbounded
+		// allocation or erase a newer failure.
+		auto oldest = std::min_element(edgeRetries_.begin(), edgeRetries_.end(),
+									   [](const auto& a, const auto& b) { return a.until < b.until; });
+		*oldest = {edge, now > (std::numeric_limits<std::uint64_t>::max)() - edgeRetryDelayUs
+							 ? (std::numeric_limits<std::uint64_t>::max)()
+							 : now + edgeRetryDelayUs};
+	}
+	struct GoalRetry
+	{
+		model::NavAreaId goal{};
+		std::uint64_t until{};
+	};
+	std::array<GoalRetry, 16> goals_{};
+	std::size_t nextGoal_{};
+	std::array<query::NavDirectedEdge, 128> blocked_{};
+	std::size_t blockedCount_{};
+	bool saturated_{};
+	std::array<EdgeRetry, 128> edgeRetries_{};
+	mutable std::uint64_t searchNowUs_{};
 };
 
 // Compose exclusions with existing dynamic/experience costs; never replace them.
-struct ExecutionPolicy final {
-    const Execution* execution{};
-    query::NavRoutePolicy base{};
-    static query::NavCostDecision cost(const query::NavCostContext& c,const void* context) {
-        const auto& self=*static_cast<const ExecutionPolicy*>(context);
-        if(self.execution && (self.execution->saturated() || self.execution->blocked(c.edge) ||
-           self.execution->edgeCooling(c.edge)))
-            return {true,{}};
-        return self.base.cost ? self.base.cost(c,self.base.context) :
-            query::NavCostDecision{false,{c.geometricDistance,0,0,
-                c.edge.external ? c.edge.external->additionalCost : 0,0}};
-    }
-    static double heuristic(const query::NavHeuristicContext& c,const void* context) {
-        const auto& self=*static_cast<const ExecutionPolicy*>(context);
-        return self.base.heuristic
-            ? self.base.heuristic(c,self.base.context)
-            : c.geometricDistance;
-    }
-    query::NavRoutePolicy policy() const noexcept {
-        // No geometric heuristic is generally admissible for an arbitrary
-        // custom cost. Let route search use h=0 unless the base supplies one.
-        const auto h=(base.heuristic || !base.cost) ? &heuristic : nullptr;
-        return {this,&cost,h};
-    }
+struct ExecutionPolicy final
+{
+	const Execution* execution{};
+	query::NavRoutePolicy base{};
+	static query::NavCostDecision cost(const query::NavCostContext& c, const void* context)
+	{
+		const auto& self = *static_cast<const ExecutionPolicy*>(context);
+		if (self.execution &&
+			(self.execution->saturated() || self.execution->blocked(c.edge) || self.execution->edgeCooling(c.edge)))
+			return {true, {}};
+		return self.base.cost
+				   ? self.base.cost(c, self.base.context)
+				   : query::NavCostDecision{
+						 false, {c.geometricDistance, 0, 0, c.edge.external ? c.edge.external->additionalCost : 0, 0}};
+	}
+	static double heuristic(const query::NavHeuristicContext& c, const void* context)
+	{
+		const auto& self = *static_cast<const ExecutionPolicy*>(context);
+		return self.base.heuristic ? self.base.heuristic(c, self.base.context) : c.geometricDistance;
+	}
+	query::NavRoutePolicy policy() const noexcept
+	{
+		// No geometric heuristic is generally admissible for an arbitrary
+		// custom cost. Let route search use h=0 unless the base supplies one.
+		const auto h = (base.heuristic || !base.cost) ? &heuristic : nullptr;
+		return {this, &cost, h};
+	}
 };
-}
+} // namespace astrabot::nav::runtime

@@ -2,114 +2,146 @@
 #pragma once
 #include "nav/runtime/movement_snapshot.hpp"
 
-namespace astrabot::nav::runtime {
-struct QueryStamp {
-    core::BotAgentId agent{};
-    core::PlayerId actor{};
-    core::MapGeneration map{};
-    core::TickId tick{};
-    std::uint64_t routeGeneration{};
-    std::uint32_t ordinal{};
-    friend bool operator==(const QueryStamp& a, const QueryStamp& b) noexcept {
-        return a.agent==b.agent && a.actor==b.actor && a.map==b.map && a.tick==b.tick &&
-            a.routeGeneration==b.routeGeneration && a.ordinal==b.ordinal;
-    }
+namespace astrabot::nav::runtime
+{
+struct QueryStamp
+{
+	core::BotAgentId agent{};
+	core::PlayerId actor{};
+	core::MapGeneration map{};
+	core::TickId tick{};
+	std::uint64_t routeGeneration{};
+	std::uint32_t ordinal{};
+	friend bool operator==(const QueryStamp& a, const QueryStamp& b) noexcept
+	{
+		return a.agent == b.agent && a.actor == b.actor && a.map == b.map && a.tick == b.tick &&
+			   a.routeGeneration == b.routeGeneration && a.ordinal == b.ordinal;
+	}
 };
 
-inline bool sameQueryContext(const QueryStamp& a, const QueryStamp& b) noexcept {
-    return a.agent == b.agent && a.actor == b.actor && a.map == b.map &&
-        a.tick == b.tick && a.routeGeneration == b.routeGeneration;
+inline bool sameQueryContext(const QueryStamp& a, const QueryStamp& b) noexcept
+{
+	return a.agent == b.agent && a.actor == b.actor && a.map == b.map && a.tick == b.tick &&
+		   a.routeGeneration == b.routeGeneration;
 }
-enum class QueryKind {
-    GroundedArea,
-    SweptHull,
-    Floor,
-    Clearance,
-    Door,
-    Blocker,
-    // Distinct query kinds retain the adapter's point-floor and support-hull
-    // semantics. Appended values preserve the existing wire ordinals.
-    FloorCandidate,
-    HullSupport,
-    Feeler
+enum class QueryKind
+{
+	GroundedArea,
+	SweptHull,
+	Floor,
+	Clearance,
+	Door,
+	Blocker,
+	// Distinct query kinds retain the adapter's point-floor and support-hull
+	// semantics. Appended values preserve the existing wire ordinals.
+	FloorCandidate,
+	HullSupport,
+	Feeler
 };
-enum class QueryError { None, Unavailable, BudgetExceeded, InvalidResult };
-struct QueryRequest {
-    QueryStamp stamp{};
-    QueryKind kind{QueryKind::GroundedArea};
-    model::NavVector3 start{}, end{};
-    std::optional<HullDimensions> hull{};
-    double navTolerance{2}; // GroundedArea: explicit NAV/observed-floor height allowance.
-    std::uint64_t doorId{}; // Door: zero discovers the hit; nonzero revalidates this generation.
+enum class QueryError
+{
+	None,
+	Unavailable,
+	BudgetExceeded,
+	InvalidResult
+};
+struct QueryRequest
+{
+	QueryStamp stamp{};
+	QueryKind kind{QueryKind::GroundedArea};
+	model::NavVector3 start{}, end{};
+	std::optional<HullDimensions> hull{};
+	double navTolerance{2}; // GroundedArea: explicit NAV/observed-floor height allowance.
+	std::uint64_t doorId{}; // Door: zero discovers the hit; nonzero revalidates this generation.
 };
 // The physics result and the NAV lookup are deliberately kept separate.  A
 // valid floor trace may exist even when no NAV area contains that floor.
-struct FloorTraceEvidence {
-    model::NavVector3 start{}, end{}, hitEnd{}, hitNormal{};
-    float fraction{};
-    bool startSolid{}, allSolid{};
+struct FloorTraceEvidence
+{
+	model::NavVector3 start{}, end{}, hitEnd{}, hitNormal{};
+	float fraction{};
+	bool startSolid{}, allSolid{};
 };
-enum class FloorObservationStatus {
-    Unknown,
-    Supported,
-    TraceNoHit,
-    StartSolid,
-    AllSolid,
-    InvalidTrace,
-    UnsupportedNormal,
-    HeightMismatch,
-    NavContainmentMissing
+enum class FloorObservationStatus
+{
+	Unknown,
+	Supported,
+	TraceNoHit,
+	StartSolid,
+	AllSolid,
+	InvalidTrace,
+	UnsupportedNormal,
+	HeightMismatch,
+	NavContainmentMissing
 };
-struct FloorObservation {
-    float height{};
-    model::NavVector3 normal{};
-    bool supported{};
-    FloorObservationStatus status{FloorObservationStatus::Unknown};
-    std::optional<FloorTraceEvidence> trace{};
+struct FloorObservation
+{
+	float height{};
+	model::NavVector3 normal{};
+	bool supported{};
+	FloorObservationStatus status{FloorObservationStatus::Unknown};
+	std::optional<FloorTraceEvidence> trace{};
 };
-struct GroundedAreaObservation {
-    std::optional<model::NavAreaId> area{};
-    std::optional<FloorObservation> floor{};
+struct GroundedAreaObservation
+{
+	std::optional<model::NavAreaId> area{};
+	std::optional<FloorObservation> floor{};
 };
-struct HullObservation {
-    float fraction{};
-    model::NavVector3 end{}, normal{};
-    bool startSolid{};
-    bool allSolid{};
+struct HullObservation
+{
+	float fraction{};
+	model::NavVector3 end{}, normal{};
+	bool startSolid{};
+	bool allSolid{};
 };
-struct ClearanceObservation { bool clear{}; };
+struct ClearanceObservation
+{
+	bool clear{};
+};
 // id includes entity generation within the stamped map. 'open' means the
 // requested swept passage is physically clear, not an inferred toggle state.
 // canUse requires adapter proof of player-use capability and target selection.
-struct DoorObservation {
-    std::uint64_t id{};
-    bool open{}, canUse{};
-    std::optional<model::NavVector3> useView{}; // Verified player-use pitch/yaw/roll, degrees.
-    bool canTouch{}; // Ordinary untargeted, non-use-only door; not proof that a master is unlocked.
+struct DoorObservation
+{
+	std::uint64_t id{};
+	bool open{}, canUse{};
+	std::optional<model::NavVector3> useView{}; // Verified player-use pitch/yaw/roll, degrees.
+	bool canTouch{}; // Ordinary untargeted, non-use-only door; not proof that a master is unlocked.
 };
-enum class BlockerKind { Unknown, Teammate, Enemy, Geometry, Other, Player };
-struct BlockerObservation {
-    std::uint64_t id{};
-    BlockerKind kind{BlockerKind::Unknown};
-    // Player classifications require adapter-validated registry identity. Entity
-    // serial/index IDs alone must not be converted to a PlayerId in portable Nav.
-    std::optional<core::PlayerId> player{};
+enum class BlockerKind
+{
+	Unknown,
+	Teammate,
+	Enemy,
+	Geometry,
+	Other,
+	Player
 };
-struct WorldQueryResult {
-    QueryStamp stamp{};
-    QueryKind kind{QueryKind::GroundedArea};
-    QueryError error{QueryError::Unavailable};
-    std::optional<GroundedAreaObservation> ground{};
-    std::optional<HullObservation> hull{};
-    std::optional<FloorObservation> floor{};
-    std::optional<ClearanceObservation> clearance{};
-    std::optional<DoorObservation> door{};
-    std::optional<BlockerObservation> blocker{};
+struct BlockerObservation
+{
+	std::uint64_t id{};
+	BlockerKind kind{BlockerKind::Unknown};
+	// Player classifications require adapter-validated registry identity. Entity
+	// serial/index IDs alone must not be converted to a PlayerId in portable Nav.
+	std::optional<core::PlayerId> player{};
+};
+struct WorldQueryResult
+{
+	QueryStamp stamp{};
+	QueryKind kind{QueryKind::GroundedArea};
+	QueryError error{QueryError::Unavailable};
+	std::optional<GroundedAreaObservation> ground{};
+	std::optional<HullObservation> hull{};
+	std::optional<FloorObservation> floor{};
+	std::optional<ClearanceObservation> clearance{};
+	std::optional<DoorObservation> door{};
+	std::optional<BlockerObservation> blocker{};
 };
 // Synchronous, borrowed for one call. Session never retains this interface or SDK pointers.
-class IWorldQueries {
+class IWorldQueries
+{
 public:
-    virtual ~IWorldQueries() = default;
-    virtual WorldQueryResult query(const QueryRequest& request) = 0;
+	virtual ~IWorldQueries() = default;
+	virtual WorldQueryResult query(const QueryRequest& request) = 0;
 };
 } // namespace astrabot::nav::runtime

@@ -5,7 +5,8 @@
 
 #include <type_traits>
 
-namespace astrabot::host {
+namespace astrabot::host
+{
 
 static_assert(std::is_trivially_copyable_v<LifecycleEvent>);
 static_assert(std::is_trivially_copyable_v<LifecycleResult>);

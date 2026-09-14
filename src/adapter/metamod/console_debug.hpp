@@ -1,4 +1,4 @@
-﻿// SPDX-License-Identifier: MPL-2.0
+// SPDX-License-Identifier: MPL-2.0
 // Copyright (c) 2026 AstraBot contributors.
 
 #pragma once
@@ -14,91 +14,96 @@
 #include <cstdint>
 #include <cstdio>
 
-namespace astrabot::adapter::metamod {
+namespace astrabot::adapter::metamod
+{
 
 class LifecycleCoordinator;
 
 // Adapter-private operator diagnostics.  The command and sinks deliberately
 // stay outside Core so live logging cannot become part of a portable decision
 // contract.
-class ConsoleDebug final {
+class ConsoleDebug final
+{
 public:
-    void configure(
-        enginefuncs_t* engine,
-        mutil_funcs_t* utility,
-        LifecycleCoordinator* lifecycle) noexcept;
-    void reset() noexcept;
+	void configure(enginefuncs_t* engine, mutil_funcs_t* utility, LifecycleCoordinator* lifecycle) noexcept;
+	void reset() noexcept;
 
-    bool enabled() const noexcept { return debugLevel_ != 0; }
-    bool navEnabled() const noexcept { return debugLevel_ >= 2; }
+	bool enabled() const noexcept
+	{
+		return debugLevel_ != 0;
+	}
+	bool navEnabled() const noexcept
+	{
+		return debugLevel_ >= 2;
+	}
 
-    // These methods are the production TraceSink endpoints.  They are public
-    // only within the adapter boundary so the Metamod test fixture can drive
-    // the same formatting path without exposing a Core API.
-    void lifecycleTrace(const debug::LifecycleTrace& trace) noexcept;
-    void fakeClientTrace(const debug::FakeClientTrace& trace) noexcept;
-    void joinTrace(const debug::JoinTrace& trace) noexcept;
-    void removalTrace(const debug::RemovalTrace& trace) noexcept;
-    void movementTrace(const debug::MovementTrace& trace) noexcept;
-    void runtimeCorrelationTrace(core::PlayerId player) noexcept;
-    // Adapter-side NAV diagnostics use the same file/console sink as the
-    // lifecycle and movement traces.  Keeping this entry point here avoids
-    // a second logging path that can disappear from file evidence.
+	// These methods are the production TraceSink endpoints.  They are public
+	// only within the adapter boundary so the Metamod test fixture can drive
+	// the same formatting path without exposing a Core API.
+	void lifecycleTrace(const debug::LifecycleTrace& trace) noexcept;
+	void fakeClientTrace(const debug::FakeClientTrace& trace) noexcept;
+	void joinTrace(const debug::JoinTrace& trace) noexcept;
+	void removalTrace(const debug::RemovalTrace& trace) noexcept;
+	void movementTrace(const debug::MovementTrace& trace) noexcept;
+	void runtimeCorrelationTrace(core::PlayerId player) noexcept;
+	// Adapter-side NAV diagnostics use the same file/console sink as the
+	// lifecycle and movement traces.  Keeping this entry point here avoids
+	// a second logging path that can disappear from file evidence.
 
-    // Navigation diagnostics are already formatted by the caller. Keep the
-    // adapter-only sink behind the same log-level and Metamod logging checks
-    // used by the structured trace endpoints.
-    void navLine(const char* text) noexcept;
+	// Navigation diagnostics are already formatted by the caller. Keep the
+	// adapter-only sink behind the same log-level and Metamod logging checks
+	// used by the structured trace endpoints.
+	void navLine(const char* text) noexcept;
 
-    static ConsoleDebug& instance() noexcept;
+	static ConsoleDebug& instance() noexcept;
 
-    ~ConsoleDebug() noexcept;
+	~ConsoleDebug() noexcept;
 
 private:
-    static void command();
-    static void addBotCommand();
-    static void lifecycleSink(const debug::LifecycleTrace& trace) noexcept;
-    static void fakeClientSink(const debug::FakeClientTrace& trace) noexcept;
-    static void joinSink(const debug::JoinTrace& trace) noexcept;
-    static void removalSink(const debug::RemovalTrace& trace) noexcept;
-    static void movementSink(const debug::MovementTrace& trace) noexcept;
+	static void command();
+	static void addBotCommand();
+	static void lifecycleSink(const debug::LifecycleTrace& trace) noexcept;
+	static void fakeClientSink(const debug::FakeClientTrace& trace) noexcept;
+	static void joinSink(const debug::JoinTrace& trace) noexcept;
+	static void removalSink(const debug::RemovalTrace& trace) noexcept;
+	static void movementSink(const debug::MovementTrace& trace) noexcept;
 
-    void line(const char* text) noexcept;
-    void commandLine(const char* text) noexcept;
-    void openLogFile() noexcept;
-    void closeLogFile() noexcept;
-    void writeLine(const char* text) noexcept;
-    bool rotateLogFile() noexcept;
+	void line(const char* text) noexcept;
+	void commandLine(const char* text) noexcept;
+	void openLogFile() noexcept;
+	void closeLogFile() noexcept;
+	void writeLine(const char* text) noexcept;
+	bool rotateLogFile() noexcept;
 
-    enginefuncs_t* engine_{nullptr};
-    mutil_funcs_t* utility_{nullptr};
-    LifecycleCoordinator* lifecycle_{nullptr};
-    std::uint32_t debugLevel_{0};
-    std::FILE* logFile_{nullptr};
-    std::size_t logBytes_{0};
-    // ASTRABOT_LOG_PATH overrides the OS temp-file destination.  Console
-    // mirroring is opt-in through ASTRABOT_LOG_CONSOLE=1 for diagnostics.
-    bool consoleOutput_{false};
-    std::array<char, 512> logPath_{};
-    std::array<char, 516> logBackupPath_{};
-    std::uint32_t nextBotOrdinal_{1};
-    std::array<std::uint64_t, host::kMaxClientSlots> lastMovementLogCall_{};
-    std::array<debug::MovementTraceSource, host::kMaxClientSlots> lastMovementSource_{};
-    std::array<debug::MovementTraceOutcome, host::kMaxClientSlots> lastMovementOutcome_{};
-    std::array<debug::MovementTraceError, host::kMaxClientSlots> lastMovementError_{};
-    std::array<core::MapGeneration, host::kMaxClientSlots> lastMovementMap_{};
-    std::array<core::PlayerId, host::kMaxClientSlots> lastMovementPlayer_{};
-    std::array<core::BotAgentId, host::kMaxClientSlots> lastMovementAgent_{};
-    std::array<std::uint64_t, host::kMaxClientSlots> physicalWindowUs_{};
-    std::array<std::uint64_t, host::kMaxClientSlots> physicalDispatches_{};
-    std::array<std::uint64_t, host::kMaxClientSlots> physicalNonZeroInputs_{};
-    std::array<std::uint64_t, host::kMaxClientSlots> physicalSuppressed_{};
-    std::array<bool, host::kMaxClientSlots> physicalWindowActive_{};
-    std::array<float, host::kMaxClientSlots> physicalStartX_{};
-    std::array<float, host::kMaxClientSlots> physicalStartY_{};
-    std::array<float, host::kMaxClientSlots> physicalStartZ_{};
-    // Correlation diagnostics are sampled to avoid unbounded qconsole traffic.
-    std::array<std::uint64_t, host::kMaxClientSlots> lastCorrelationTick_{};
+	enginefuncs_t* engine_{nullptr};
+	mutil_funcs_t* utility_{nullptr};
+	LifecycleCoordinator* lifecycle_{nullptr};
+	std::uint32_t debugLevel_{0};
+	std::FILE* logFile_{nullptr};
+	std::size_t logBytes_{0};
+	// ASTRABOT_LOG_PATH overrides the OS temp-file destination.  Console
+	// mirroring is opt-in through ASTRABOT_LOG_CONSOLE=1 for diagnostics.
+	bool consoleOutput_{false};
+	std::array<char, 512> logPath_{};
+	std::array<char, 516> logBackupPath_{};
+	std::uint32_t nextBotOrdinal_{1};
+	std::array<std::uint64_t, host::kMaxClientSlots> lastMovementLogCall_{};
+	std::array<debug::MovementTraceSource, host::kMaxClientSlots> lastMovementSource_{};
+	std::array<debug::MovementTraceOutcome, host::kMaxClientSlots> lastMovementOutcome_{};
+	std::array<debug::MovementTraceError, host::kMaxClientSlots> lastMovementError_{};
+	std::array<core::MapGeneration, host::kMaxClientSlots> lastMovementMap_{};
+	std::array<core::PlayerId, host::kMaxClientSlots> lastMovementPlayer_{};
+	std::array<core::BotAgentId, host::kMaxClientSlots> lastMovementAgent_{};
+	std::array<std::uint64_t, host::kMaxClientSlots> physicalWindowUs_{};
+	std::array<std::uint64_t, host::kMaxClientSlots> physicalDispatches_{};
+	std::array<std::uint64_t, host::kMaxClientSlots> physicalNonZeroInputs_{};
+	std::array<std::uint64_t, host::kMaxClientSlots> physicalSuppressed_{};
+	std::array<bool, host::kMaxClientSlots> physicalWindowActive_{};
+	std::array<float, host::kMaxClientSlots> physicalStartX_{};
+	std::array<float, host::kMaxClientSlots> physicalStartY_{};
+	std::array<float, host::kMaxClientSlots> physicalStartZ_{};
+	// Correlation diagnostics are sampled to avoid unbounded qconsole traffic.
+	std::array<std::uint64_t, host::kMaxClientSlots> lastCorrelationTick_{};
 };
 
 } // namespace astrabot::adapter::metamod

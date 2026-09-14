@@ -7,252 +7,352 @@
 #include <limits>
 
 using namespace astrabot::nav;
-namespace {
+namespace
+{
 constexpr corridor::Limits limits{100, 1000000, 1000};
-route_test::Area square(std::uint32_t id, float x, float y) {
-    return {id, {{x,y,0},{x+100,y+100,0},0,0}, {}};
+route_test::Area square(std::uint32_t id, float x, float y)
+{
+	return {id, {{x, y, 0}, {x + 100, y + 100, 0}, 0, 0}, {}};
 }
-auto graph(std::vector<route_test::Area> areas) {
-    auto r=query::NavGraph::build(route_test::snapshot(areas),{100,100,1000000});
-    assert(r); return *r.value;
+auto graph(std::vector<route_test::Area> areas)
+{
+	auto r = query::NavGraph::build(route_test::snapshot(areas), {100, 100, 1000000});
+	assert(r);
+	return *r.value;
 }
-auto route(const query::NavGraph& g, std::uint32_t from, std::uint32_t to) {
-    auto r=query::NavRouteSearch::search(g,{{from},{to},{100,1000000},false});
-    assert(r); return *r.value;
+auto route(const query::NavGraph& g, std::uint32_t from, std::uint32_t to)
+{
+	auto r = query::NavRouteSearch::search(g, {{from}, {to}, {100, 1000000}, false});
+	assert(r);
+	return *r.value;
 }
-auto build(const query::NavGraph& g, std::uint32_t from=1, std::uint32_t to=2,
-           corridor::HullClearance hull={16,16}) {
-    return corridor::Corridor::build(g,route(g,from,to),hull,limits);
+auto build(const query::NavGraph& g, std::uint32_t from = 1, std::uint32_t to = 2,
+		   corridor::HullClearance hull = {16, 16})
+{
+	return corridor::Corridor::build(g, route(g, from, to), hull, limits);
 }
-void cardinalAndSlopes() {
-    const float xs[]={0,100,0,-100}, ys[]={-100,0,100,0};
-    for(std::uint8_t d=0;d<4;++d) {
-        auto a=square(1,0,0), b=square(2,xs[d],ys[d]);
-        a.targets[d]={2}; b.targets[(d+2U)%4U]={1};
-        auto g=graph({b,a}); auto r=build(*g); assert(r);
-        const auto& p=r.value->transitions()[0];
-        assert(p.edge.direction==d && p.requiresWorldProbe);
-        const auto reverse=build(*g,2,1); assert(reverse);
-        const auto& q=reverse.value->transitions()[0];
-        assert(p.sourceLow.x==q.targetLow.x && p.sourceLow.y==q.targetLow.y);
-        const bool vertical=d==1 || d==3;
-        assert((vertical ? p.sourceHigh.y-p.sourceLow.y : p.sourceHigh.x-p.sourceLow.x)==68);
-    }
-    auto a=square(1,0,0), b=square(2,100,20);
-    a.targets[1]={2}; b.extent.southEast.y=80;
-    a.extent.northEastZ=10; a.extent.southEast.z=30;
-    b.extent.northWest.z=40; b.extent.southWestZ=100;
-    const auto g=graph({a,b}); const auto r=build(*g); assert(r);
-    const auto& p=r.value->transitions()[0];
-    assert(p.sourceLow.y==36 && p.sourceHigh.y==64);
-    assert(std::abs(p.sourceLow.z-17.2)<1e-10);
-    assert(std::abs(p.targetLow.z-56)<1e-10);
-    assert(std::abs(p.targetHigh.z-84)<1e-10);
-    assert(p.sourceLow.z!=p.targetLow.z); // discontinuity retained, no step inference
+void cardinalAndSlopes()
+{
+	const float xs[] = {0, 100, 0, -100}, ys[] = {-100, 0, 100, 0};
+	for (std::uint8_t d = 0; d < 4; ++d)
+	{
+		auto a = square(1, 0, 0), b = square(2, xs[d], ys[d]);
+		a.targets[d] = {2};
+		b.targets[(d + 2U) % 4U] = {1};
+		auto g = graph({b, a});
+		auto r = build(*g);
+		assert(r);
+		const auto& p = r.value->transitions()[0];
+		assert(p.edge.direction == d && p.requiresWorldProbe);
+		const auto reverse = build(*g, 2, 1);
+		assert(reverse);
+		const auto& q = reverse.value->transitions()[0];
+		assert(p.sourceLow.x == q.targetLow.x && p.sourceLow.y == q.targetLow.y);
+		const bool vertical = d == 1 || d == 3;
+		assert((vertical ? p.sourceHigh.y - p.sourceLow.y : p.sourceHigh.x - p.sourceLow.x) == 68);
+	}
+	auto a = square(1, 0, 0), b = square(2, 100, 20);
+	a.targets[1] = {2};
+	b.extent.southEast.y = 80;
+	a.extent.northEastZ = 10;
+	a.extent.southEast.z = 30;
+	b.extent.northWest.z = 40;
+	b.extent.southWestZ = 100;
+	const auto g = graph({a, b});
+	const auto r = build(*g);
+	assert(r);
+	const auto& p = r.value->transitions()[0];
+	assert(p.sourceLow.y == 36 && p.sourceHigh.y == 64);
+	assert(std::abs(p.sourceLow.z - 17.2) < 1e-10);
+	assert(std::abs(p.targetLow.z - 56) < 1e-10);
+	assert(std::abs(p.targetHigh.z - 84) < 1e-10);
+	assert(p.sourceLow.z != p.targetLow.z); // discontinuity retained, no step inference
 }
-void invalidAndBudgets() {
-    auto a=square(1,0,0), b=square(2,100,0); a.targets[1]={2};
-    auto g=graph({a,b}); auto r=route(*g,1,2);
-    auto good=build(*g); assert(good);
-    assert(corridor::Corridor::build(*g,r,{16,16},{1,good.value->logicalBytes(),1}));
-    for(auto l : {corridor::Limits{0,1000000,10}, {1,good.value->logicalBytes()-1,10}, {1,1000000,0}})
-        assert(corridor::Corridor::build(*g,r,{16,16},l).error==corridor::Error::LimitExceeded);
-    for(auto h : {corridor::HullClearance{-1,1}, {1,std::numeric_limits<double>::infinity()}})
-        assert(build(*g,1,2,h).error==corridor::Error::InvalidHull);
-    assert(build(*g,1,2,{16,50}).error==corridor::Error::InvalidPortal);
-    r.status=query::NavRouteStatus::ExpansionLimit;
-    assert(corridor::Corridor::build(*g,r,{16,16},limits).error==corridor::Error::InvalidRoute);
-    r=route(*g,1,2); r.steps[0].edge.direction=3;
-    assert(corridor::Corridor::build(*g,r,{16,16},limits).error==corridor::Error::InvalidRoute);
-    r=route(*g,1,2); r.areas[1]={1};
-    assert(corridor::Corridor::build(*g,r,{16,16},limits).error==corridor::Error::InvalidRoute);
-    assert(build(*g,2,1).error==corridor::Error::InvalidRoute); // unreachable
-    for(float x : {99.0F,101.0F}) {
-        b=square(2,x,0); assert(build(*graph({a,b})).error==corridor::Error::InvalidPortal);
-    }
-    b=square(2,100,100); // tangent touching only
-    assert(build(*graph({a,b}),1,2,{0,0}).error==corridor::Error::InvalidPortal);
-    b=square(2,-100,0); // connection direction contradicts geometry
-    assert(build(*graph({a,b})).error==corridor::Error::InvalidPortal);
-    const auto same=build(*g,1,1); assert(same && same.value->transitions().empty());
-    corridor::Cursor cursor(same.value); assert(cursor.exhausted());
-    assert(cursor.target({50,50,0},1).error==corridor::Error::InvalidCursor);
+void invalidAndBudgets()
+{
+	auto a = square(1, 0, 0), b = square(2, 100, 0);
+	a.targets[1] = {2};
+	auto g = graph({a, b});
+	auto r = route(*g, 1, 2);
+	auto good = build(*g);
+	assert(good);
+	assert(corridor::Corridor::build(*g, r, {16, 16}, {1, good.value->logicalBytes(), 1}));
+	for (auto l : {corridor::Limits{0, 1000000, 10}, {1, good.value->logicalBytes() - 1, 10}, {1, 1000000, 0}})
+		assert(corridor::Corridor::build(*g, r, {16, 16}, l).error == corridor::Error::LimitExceeded);
+	for (auto h : {corridor::HullClearance{-1, 1}, {1, std::numeric_limits<double>::infinity()}})
+		assert(build(*g, 1, 2, h).error == corridor::Error::InvalidHull);
+	assert(build(*g, 1, 2, {16, 50}).error == corridor::Error::InvalidPortal);
+	r.status = query::NavRouteStatus::ExpansionLimit;
+	assert(corridor::Corridor::build(*g, r, {16, 16}, limits).error == corridor::Error::InvalidRoute);
+	r = route(*g, 1, 2);
+	r.steps[0].edge.direction = 3;
+	assert(corridor::Corridor::build(*g, r, {16, 16}, limits).error == corridor::Error::InvalidRoute);
+	r = route(*g, 1, 2);
+	r.areas[1] = {1};
+	assert(corridor::Corridor::build(*g, r, {16, 16}, limits).error == corridor::Error::InvalidRoute);
+	assert(build(*g, 2, 1).error == corridor::Error::InvalidRoute); // unreachable
+	for (float x : {99.0F, 101.0F})
+	{
+		b = square(2, x, 0);
+		assert(build(*graph({a, b})).error == corridor::Error::InvalidPortal);
+	}
+	b = square(2, 100, 100); // tangent touching only
+	assert(build(*graph({a, b}), 1, 2, {0, 0}).error == corridor::Error::InvalidPortal);
+	b = square(2, -100, 0); // connection direction contradicts geometry
+	assert(build(*graph({a, b})).error == corridor::Error::InvalidPortal);
+	const auto same = build(*g, 1, 1);
+	assert(same && same.value->transitions().empty());
+	corridor::Cursor cursor(same.value);
+	assert(cursor.exhausted());
+	assert(cursor.target({50, 50, 0}, 1).error == corridor::Error::InvalidCursor);
 }
-void lookAheadAndReplay() {
-    auto a=square(1,0,0), b=square(2,100,0), c=square(3,100,100), d=square(4,200,100);
-    a.targets[1]={2}; b.targets[2]={3}; c.targets[1]={4};
-    auto g=graph({d,b,a,c}); auto r=build(*g,1,4); assert(r);
-    corridor::Cursor cursor(r.value);
-    for(double jitter : {-0.01,0.0,0.01}) {
-        auto t=cursor.target({50,50+jitter,0},100); assert(t);
-        assert(t.value->x==100 && t.value->y>=16 && t.value->y<=84);
-        auto replay=cursor.target({50,50+jitter,0},100);
-        assert(replay.value->x==t.value->x && replay.value->y==t.value->y && replay.value->z==t.value->z);
-        assert(cursor.index()==0);
-    }
-    assert(cursor.target({50,50,0},0).error==corridor::Error::InvalidCursor);
-    assert(cursor.target({std::numeric_limits<double>::quiet_NaN(),0,0},1).error==corridor::Error::InvalidPosition);
-    assert(cursor.target({-1,50,0},1).error==corridor::Error::InvalidPosition);
-    assert(!cursor.advance(0,{2},false) && !cursor.advance(1,{2},true));
-    assert(cursor.advance(0,{2},true) && !cursor.advance(0,{2},true));
-    auto t=cursor.target({150,50,0},3); assert(t && t.value->y==100 && t.value->x>=116 && t.value->x<=184);
-    assert(cursor.advance(1,{3},true)); assert(cursor.advance(2,{4},true)); assert(cursor.exhausted());
-    assert(!cursor.advance(3,{4},true));
+void lookAheadAndReplay()
+{
+	auto a = square(1, 0, 0), b = square(2, 100, 0), c = square(3, 100, 100), d = square(4, 200, 100);
+	a.targets[1] = {2};
+	b.targets[2] = {3};
+	c.targets[1] = {4};
+	auto g = graph({d, b, a, c});
+	auto r = build(*g, 1, 4);
+	assert(r);
+	corridor::Cursor cursor(r.value);
+	for (double jitter : {-0.01, 0.0, 0.01})
+	{
+		auto t = cursor.target({50, 50 + jitter, 0}, 100);
+		assert(t);
+		assert(t.value->x == 100 && t.value->y >= 16 && t.value->y <= 84);
+		auto replay = cursor.target({50, 50 + jitter, 0}, 100);
+		assert(replay.value->x == t.value->x && replay.value->y == t.value->y && replay.value->z == t.value->z);
+		assert(cursor.index() == 0);
+	}
+	assert(cursor.target({50, 50, 0}, 0).error == corridor::Error::InvalidCursor);
+	assert(cursor.target({std::numeric_limits<double>::quiet_NaN(), 0, 0}, 1).error ==
+		   corridor::Error::InvalidPosition);
+	assert(cursor.target({-1, 50, 0}, 1).error == corridor::Error::InvalidPosition);
+	assert(!cursor.advance(0, {2}, false) && !cursor.advance(1, {2}, true));
+	assert(cursor.advance(0, {2}, true) && !cursor.advance(0, {2}, true));
+	auto t = cursor.target({150, 50, 0}, 3);
+	assert(t && t.value->y == 100 && t.value->x >= 116 && t.value->x <= 184);
+	assert(cursor.advance(1, {3}, true));
+	assert(cursor.advance(2, {4}, true));
+	assert(cursor.exhausted());
+	assert(!cursor.advance(3, {4}, true));
 }
-void externalOwnership() {
-    auto mesh=route_test::snapshot({square(1,0,0),square(2,0,0)});
-    enrichment::NavMapFingerprint fp{}; fp[0]=1;
-    enrichment::NavTraversalLinkSet links{fp,{
-        {1,2,3,{1},{2},{25,25,0},{75,75,0},model::NavTraversalKind::Jump,enrichment::NavLinkDirection::Forward,0},
-        {1,2,4,{1},{2},{30,30,0},{70,70,0},model::NavTraversalKind::Jump,enrichment::NavLinkDirection::Forward,10}}};
-    auto g=query::NavGraph::compose(mesh,fp,links,{2,2,1000000},{2,1000000}); assert(g);
-    auto selected=route(**g.value,1,2); auto built=corridor::Corridor::build(**g.value,selected,{16,16},limits); assert(built);
-    assert(built.value->transitions()[0].edge.external->linkId==3);
-    selected.steps[0].edge.external->linkId=99;
-    assert(corridor::Corridor::build(**g.value,selected,{16,16},limits).error==corridor::Error::InvalidRoute);
-    links.links.clear(); g.value.reset(); mesh.reset();
-    const auto t=built.value->target(0,{50,50,0},10); assert(t);
-    assert(t.value->x==25 && t.value->y==25);
-    assert(built.value->transitions()[0].targetLow.x==75);
+void externalOwnership()
+{
+	auto mesh = route_test::snapshot({square(1, 0, 0), square(2, 0, 0)});
+	enrichment::NavMapFingerprint fp{};
+	fp[0] = 1;
+	enrichment::NavTraversalLinkSet links{fp,
+										  {{1,
+											2,
+											3,
+											{1},
+											{2},
+											{25, 25, 0},
+											{75, 75, 0},
+											model::NavTraversalKind::Jump,
+											enrichment::NavLinkDirection::Forward,
+											0},
+										   {1,
+											2,
+											4,
+											{1},
+											{2},
+											{30, 30, 0},
+											{70, 70, 0},
+											model::NavTraversalKind::Jump,
+											enrichment::NavLinkDirection::Forward,
+											10}}};
+	auto g = query::NavGraph::compose(mesh, fp, links, {2, 2, 1000000}, {2, 1000000});
+	assert(g);
+	auto selected = route(**g.value, 1, 2);
+	auto built = corridor::Corridor::build(**g.value, selected, {16, 16}, limits);
+	assert(built);
+	assert(built.value->transitions()[0].edge.external->linkId == 3);
+	selected.steps[0].edge.external->linkId = 99;
+	assert(corridor::Corridor::build(**g.value, selected, {16, 16}, limits).error == corridor::Error::InvalidRoute);
+	links.links.clear();
+	g.value.reset();
+	mesh.reset();
+	const auto t = built.value->target(0, {50, 50, 0}, 10);
+	assert(t);
+	assert(t.value->x == 25 && t.value->y == 25);
+	assert(built.value->transitions()[0].targetLow.x == 75);
 }
-void microTransitPolicy() {
-    auto a=square(1,0,0), b=square(2,100,37.5F), c=square(3,125,0);
-    a.targets[1]={2}; b.targets[3]={1}; b.targets[1]={3}; c.targets[3]={2};
-    auto g=graph({a,b,c});
-    const auto r=route(*g,1,3);
-    const auto strict=corridor::Corridor::build(*g,r,{16,16},limits);
-    assert(strict.error==corridor::Error::InvalidPortal);
-    assert(strict.portalReason==corridor::PortalFailureReason::TargetHullFit);
-    const auto transit=corridor::Corridor::build(*g,r,{16,16},limits,
-        corridor::PortalPolicy::AllowMicroTransit);
-    // A narrow NAV patch is only a geometric hint.  Its physical support and
-    // hull clearance are verified by the world probe before the command is
-    // dispatched, so corridor construction must keep this route executable.
-    assert(transit);
-    assert(transit.value->transitions()[0].targetFit==corridor::AreaFit::MicroTransit);
-    assert(transit.value->transitions()[0].requiresWorldProbe);
-    assert(transit.value->transitions()[1].sourceFit==corridor::AreaFit::MicroTransit);
-    assert(transit.value->transitions()[1].targetFit==corridor::AreaFit::HullSafe);
+void microTransitPolicy()
+{
+	auto a = square(1, 0, 0), b = square(2, 100, 37.5F), c = square(3, 125, 0);
+	a.targets[1] = {2};
+	b.targets[3] = {1};
+	b.targets[1] = {3};
+	c.targets[3] = {2};
+	auto g = graph({a, b, c});
+	const auto r = route(*g, 1, 3);
+	const auto strict = corridor::Corridor::build(*g, r, {16, 16}, limits);
+	assert(strict.error == corridor::Error::InvalidPortal);
+	assert(strict.portalReason == corridor::PortalFailureReason::TargetHullFit);
+	const auto transit = corridor::Corridor::build(*g, r, {16, 16}, limits, corridor::PortalPolicy::AllowMicroTransit);
+	// A narrow NAV patch is only a geometric hint.  Its physical support and
+	// hull clearance are verified by the world probe before the command is
+	// dispatched, so corridor construction must keep this route executable.
+	assert(transit);
+	assert(transit.value->transitions()[0].targetFit == corridor::AreaFit::MicroTransit);
+	assert(transit.value->transitions()[0].requiresWorldProbe);
+	assert(transit.value->transitions()[1].sourceFit == corridor::AreaFit::MicroTransit);
+	assert(transit.value->transitions()[1].targetFit == corridor::AreaFit::HullSafe);
 
-    const auto microGoal=route(*g,1,2);
-    const auto acceptedGoal=corridor::Corridor::build(*g,microGoal,{16,16},limits,
-        corridor::PortalPolicy::AllowMicroTransit);
-    assert(acceptedGoal && acceptedGoal.value->goal()==model::NavAreaId{2});
-    assert(acceptedGoal.value->transitions()[0].targetFit==corridor::AreaFit::MicroTransit);
+	const auto microGoal = route(*g, 1, 2);
+	const auto acceptedGoal =
+		corridor::Corridor::build(*g, microGoal, {16, 16}, limits, corridor::PortalPolicy::AllowMicroTransit);
+	assert(acceptedGoal && acceptedGoal.value->goal() == model::NavAreaId{2});
+	assert(acceptedGoal.value->transitions()[0].targetFit == corridor::AreaFit::MicroTransit);
 
-    b.attributes=1;
-    auto attributed=graph({a,b,c});
-    const auto attributedRoute=route(*attributed,1,3);
-    const auto acceptedAttribute=corridor::Corridor::build(*attributed,attributedRoute,{16,16},limits,
-        corridor::PortalPolicy::AllowMicroTransit);
-    assert(acceptedAttribute);
-    assert(acceptedAttribute.value->transitions()[0].targetAttributes==1);
-    assert(acceptedAttribute.value->transitions()[0].targetFit==corridor::AreaFit::MicroTransit);
+	b.attributes = 1;
+	auto attributed = graph({a, b, c});
+	const auto attributedRoute = route(*attributed, 1, 3);
+	const auto acceptedAttribute = corridor::Corridor::build(*attributed, attributedRoute, {16, 16}, limits,
+															 corridor::PortalPolicy::AllowMicroTransit);
+	assert(acceptedAttribute);
+	assert(acceptedAttribute.value->transitions()[0].targetAttributes == 1);
+	assert(acceptedAttribute.value->transitions()[0].targetFit == corridor::AreaFit::MicroTransit);
 
-    b=square(2,100,200); a.targets[1]={2}; b.targets[3]={1};
-    auto disconnected=graph({a,b});
-    const auto disconnectedRoute=route(*disconnected,1,2);
-    const auto noSpan=corridor::Corridor::build(*disconnected,disconnectedRoute,{0,0},limits);
-    assert(noSpan.error==corridor::Error::InvalidPortal);
-    assert(noSpan.portalReason==corridor::PortalFailureReason::NoPortalSpan);
+	b = square(2, 100, 200);
+	a.targets[1] = {2};
+	b.targets[3] = {1};
+	auto disconnected = graph({a, b});
+	const auto disconnectedRoute = route(*disconnected, 1, 2);
+	const auto noSpan = corridor::Corridor::build(*disconnected, disconnectedRoute, {0, 0}, limits);
+	assert(noSpan.error == corridor::Error::InvalidPortal);
+	assert(noSpan.portalReason == corridor::PortalFailureReason::NoPortalSpan);
 }
-void narrowPatchDefersClearanceToWorldProbe() {
-    auto a=square(1,0,0), b=square(2,100,0);
-    b.extent.southEast.x=125; // 25-unit target patch from a live NAV seam.
-    a.targets[1]={2}; b.targets[3]={1};
-    const auto g=graph({a,b});
-    const auto r=route(*g,1,2);
-    const auto strict=corridor::Corridor::build(*g,r,{16,16},limits);
-    assert(strict.error==corridor::Error::InvalidPortal);
-    assert(strict.portalReason==corridor::PortalFailureReason::TargetHullFit);
+void narrowPatchDefersClearanceToWorldProbe()
+{
+	auto a = square(1, 0, 0), b = square(2, 100, 0);
+	b.extent.southEast.x = 125; // 25-unit target patch from a live NAV seam.
+	a.targets[1] = {2};
+	b.targets[3] = {1};
+	const auto g = graph({a, b});
+	const auto r = route(*g, 1, 2);
+	const auto strict = corridor::Corridor::build(*g, r, {16, 16}, limits);
+	assert(strict.error == corridor::Error::InvalidPortal);
+	assert(strict.portalReason == corridor::PortalFailureReason::TargetHullFit);
 
-    const auto deferred=corridor::Corridor::build(*g,r,{16,16},limits,
-        corridor::PortalPolicy::AllowMicroTransit);
-    assert(deferred);
-    const auto& transition=deferred.value->transitions().front();
-    assert(transition.targetFit==corridor::AreaFit::MicroTransit);
-    assert(transition.requiresWorldProbe);
-    assert(transition.sourceLow.x==100 && transition.targetLow.x==100);
+	const auto deferred = corridor::Corridor::build(*g, r, {16, 16}, limits, corridor::PortalPolicy::AllowMicroTransit);
+	assert(deferred);
+	const auto& transition = deferred.value->transitions().front();
+	assert(transition.targetFit == corridor::AreaFit::MicroTransit);
+	assert(transition.requiresWorldProbe);
+	assert(transition.sourceLow.x == 100 && transition.targetLow.x == 100);
 }
-}
-void heightChangesDoNotInventSpecialTraversal() {
-    auto a=square(1,0,0), b=square(2,100,0);
-    a.targets[1]={2};
-    b.extent.northWest.z=b.extent.northEastZ=60;
-    b.extent.southWestZ=b.extent.southEast.z=60;
-    auto g=graph({a,b});
-    const auto raised=corridor::Corridor::build(*g,route(*g,1,2),{16,16},limits,
-        corridor::PortalPolicy::Strict);
-    assert(raised);
-    assert(raised.value->transitions()[0].effectiveTraversal==model::NavTraversalKind::Walk);
+} // namespace
+void heightChangesDoNotInventSpecialTraversal()
+{
+	auto a = square(1, 0, 0), b = square(2, 100, 0);
+	a.targets[1] = {2};
+	b.extent.northWest.z = b.extent.northEastZ = 60;
+	b.extent.southWestZ = b.extent.southEast.z = 60;
+	auto g = graph({a, b});
+	const auto raised =
+		corridor::Corridor::build(*g, route(*g, 1, 2), {16, 16}, limits, corridor::PortalPolicy::Strict);
+	assert(raised);
+	assert(raised.value->transitions()[0].effectiveTraversal == model::NavTraversalKind::Walk);
 
-    b.extent.northWest.z=b.extent.northEastZ=-60;
-    b.extent.southWestZ=b.extent.southEast.z=-60;
-    g=graph({a,b});
-    const auto lowered=corridor::Corridor::build(*g,route(*g,1,2),{16,16},limits,
-        corridor::PortalPolicy::AllowMicroTransit);
-    assert(lowered);
-    assert(lowered.value->transitions()[0].effectiveTraversal==model::NavTraversalKind::Walk);
+	b.extent.northWest.z = b.extent.northEastZ = -60;
+	b.extent.southWestZ = b.extent.southEast.z = -60;
+	g = graph({a, b});
+	const auto lowered =
+		corridor::Corridor::build(*g, route(*g, 1, 2), {16, 16}, limits, corridor::PortalPolicy::AllowMicroTransit);
+	assert(lowered);
+	assert(lowered.value->transitions()[0].effectiveTraversal == model::NavTraversalKind::Walk);
 }
-void boundaryAndJumpHints() {
-    auto a=square(5,1175,0), b=square(1665,1275,37.5F), c=square(9,1300,0);
-    b.extent.southEast={1300,62.5F,0}; b.attributes=2;
-    a.targets[1]={1665}; b.targets[1]={9};
-    auto g=graph({a,b,c}); auto r=route(*g,5,9);
-    const auto path=corridor::Corridor::build(*g,r,{16,16},limits,corridor::PortalPolicy::AllowMicroTransit);
-    assert(path);
-    const auto& first=path.value->transitions()[0];
-    assert(first.edge.traversal==model::NavTraversalKind::Walk);
-    assert(first.effectiveTraversal==model::NavTraversalKind::Jump);
-    assert(first.targetFit==corridor::AreaFit::MicroTransit);
-    assert(path.value->target(0,{1187.742,50,36},1)); // centre supported; hull crosses NAV boundary
-    for(std::uint8_t bad : {std::uint8_t{10},std::uint8_t{18}}) {
-        b.attributes=bad; auto rejectedGraph=graph({a,b,c});
-        assert(!corridor::Corridor::build(*rejectedGraph,route(*rejectedGraph,5,9),{16,16},limits,
-            corridor::PortalPolicy::AllowMicroTransit));
-    }
-    b.attributes=3; auto crouchJump=graph({a,b,c});
-    const auto crouchPath=corridor::Corridor::build(*crouchJump,route(*crouchJump,5,9),
-        {16,16},limits,corridor::PortalPolicy::AllowMicroTransit);
-    assert(crouchPath && crouchPath.value->transitions()[0].effectiveTraversal==model::NavTraversalKind::Jump);
-    assert(crouchPath.value->transitions()[0].targetAttributes==3);
-    b.attributes=6; auto preciseJump=graph({a,b,c});
-    const auto precisePath=corridor::Corridor::build(*preciseJump,route(*preciseJump,5,9),
-        {16,16},limits,corridor::PortalPolicy::AllowMicroTransit);
-    assert(precisePath && precisePath.value->transitions()[0].effectiveTraversal==
-        model::NavTraversalKind::Jump);
+void boundaryAndJumpHints()
+{
+	auto a = square(5, 1175, 0), b = square(1665, 1275, 37.5F), c = square(9, 1300, 0);
+	b.extent.southEast = {1300, 62.5F, 0};
+	b.attributes = 2;
+	a.targets[1] = {1665};
+	b.targets[1] = {9};
+	auto g = graph({a, b, c});
+	auto r = route(*g, 5, 9);
+	const auto path = corridor::Corridor::build(*g, r, {16, 16}, limits, corridor::PortalPolicy::AllowMicroTransit);
+	assert(path);
+	const auto& first = path.value->transitions()[0];
+	assert(first.edge.traversal == model::NavTraversalKind::Walk);
+	assert(first.effectiveTraversal == model::NavTraversalKind::Jump);
+	assert(first.targetFit == corridor::AreaFit::MicroTransit);
+	assert(path.value->target(0, {1187.742, 50, 36}, 1)); // centre supported; hull crosses NAV boundary
+	for (std::uint8_t bad : {std::uint8_t{10}, std::uint8_t{18}})
+	{
+		b.attributes = bad;
+		auto rejectedGraph = graph({a, b, c});
+		assert(!corridor::Corridor::build(*rejectedGraph, route(*rejectedGraph, 5, 9), {16, 16}, limits,
+										  corridor::PortalPolicy::AllowMicroTransit));
+	}
+	b.attributes = 3;
+	auto crouchJump = graph({a, b, c});
+	const auto crouchPath = corridor::Corridor::build(*crouchJump, route(*crouchJump, 5, 9), {16, 16}, limits,
+													  corridor::PortalPolicy::AllowMicroTransit);
+	assert(crouchPath && crouchPath.value->transitions()[0].effectiveTraversal == model::NavTraversalKind::Jump);
+	assert(crouchPath.value->transitions()[0].targetAttributes == 3);
+	b.attributes = 6;
+	auto preciseJump = graph({a, b, c});
+	const auto precisePath = corridor::Corridor::build(*preciseJump, route(*preciseJump, 5, 9), {16, 16}, limits,
+													   corridor::PortalPolicy::AllowMicroTransit);
+	assert(precisePath && precisePath.value->transitions()[0].effectiveTraversal == model::NavTraversalKind::Jump);
 }
-void jumpRiseUsesRuntimePhysics() {
-    auto a=square(1,0,0), b=square(2,100,0);
-    a.targets[1]={2}; b.attributes=3; // Raised CROUCH|JUMP landing.
-    b.extent.northWest.z=b.extent.southEast.z=60;
-    b.extent.northEastZ=b.extent.southWestZ=60;
-    auto g=graph({a,b});
-    const auto path=corridor::Corridor::build(*g,route(*g,1,2),{16,16},limits,
-        corridor::PortalPolicy::AllowMicroTransit);
-    // The corridor retains this candidate; measured gravity, launch velocity,
-    // flight posture and physical sweeps decide whether it is executable.
-    assert(path && path.value->transitions()[0].effectiveTraversal==model::NavTraversalKind::Jump);
-    assert(path.value->transitions()[0].targetAttributes==3);
+void jumpRiseUsesRuntimePhysics()
+{
+	auto a = square(1, 0, 0), b = square(2, 100, 0);
+	a.targets[1] = {2};
+	b.attributes = 3; // Raised CROUCH|JUMP landing.
+	b.extent.northWest.z = b.extent.southEast.z = 60;
+	b.extent.northEastZ = b.extent.southWestZ = 60;
+	auto g = graph({a, b});
+	const auto path =
+		corridor::Corridor::build(*g, route(*g, 1, 2), {16, 16}, limits, corridor::PortalPolicy::AllowMicroTransit);
+	// The corridor retains this candidate; measured gravity, launch velocity,
+	// flight posture and physical sweeps decide whether it is executable.
+	assert(path && path.value->transitions()[0].effectiveTraversal == model::NavTraversalKind::Jump);
+	assert(path.value->transitions()[0].targetAttributes == 3);
 }
-void lookAheadStopsBeforeDerivedTraversal() {
-    for(bool drop : {false,true}) {
-        auto a=square(1,0,0), b=square(2,100,0), c=square(3,100,drop ? 125.0F:100.0F);
-        a.targets[1]={2}; b.targets[2]={3};
-        if(drop) {
-            c.extent.northWest.z=c.extent.southEast.z=-74;
-            c.extent.northEastZ=c.extent.southWestZ=-74;
-        } else c.attributes=2;
-        auto g=graph({a,b,c});
-        const auto path=corridor::Corridor::build(*g,route(*g,1,3),{16,16},limits,
-            corridor::PortalPolicy::AllowMicroTransit); assert(path);
-        assert(path.value->transitions()[0].effectiveTraversal==model::NavTraversalKind::Walk);
-        assert(path.value->transitions()[1].effectiveTraversal==
-            (drop ? model::NavTraversalKind::Drop:model::NavTraversalKind::Jump));
-        const auto immediate=path.value->target(0,{50,30,36},1);
-        const auto ahead=path.value->target(0,{50,30,36},3);
-        assert(immediate && ahead && ahead.value->x==immediate.value->x && ahead.value->y==immediate.value->y);
-        assert(ahead.value->y==30);
-    }
+void lookAheadStopsBeforeDerivedTraversal()
+{
+	for (bool drop : {false, true})
+	{
+		auto a = square(1, 0, 0), b = square(2, 100, 0), c = square(3, 100, drop ? 125.0F : 100.0F);
+		a.targets[1] = {2};
+		b.targets[2] = {3};
+		if (drop)
+		{
+			c.extent.northWest.z = c.extent.southEast.z = -74;
+			c.extent.northEastZ = c.extent.southWestZ = -74;
+		}
+		else
+			c.attributes = 2;
+		auto g = graph({a, b, c});
+		const auto path =
+			corridor::Corridor::build(*g, route(*g, 1, 3), {16, 16}, limits, corridor::PortalPolicy::AllowMicroTransit);
+		assert(path);
+		assert(path.value->transitions()[0].effectiveTraversal == model::NavTraversalKind::Walk);
+		assert(path.value->transitions()[1].effectiveTraversal ==
+			   (drop ? model::NavTraversalKind::Drop : model::NavTraversalKind::Jump));
+		const auto immediate = path.value->target(0, {50, 30, 36}, 1);
+		const auto ahead = path.value->target(0, {50, 30, 36}, 3);
+		assert(immediate && ahead && ahead.value->x == immediate.value->x && ahead.value->y == immediate.value->y);
+		assert(ahead.value->y == 30);
+	}
 }
-int main() { cardinalAndSlopes(); invalidAndBudgets(); lookAheadAndReplay(); externalOwnership(); microTransitPolicy(); narrowPatchDefersClearanceToWorldProbe(); heightChangesDoNotInventSpecialTraversal(); boundaryAndJumpHints(); jumpRiseUsesRuntimePhysics(); lookAheadStopsBeforeDerivedTraversal(); }
+int main()
+{
+	cardinalAndSlopes();
+	invalidAndBudgets();
+	lookAheadAndReplay();
+	externalOwnership();
+	microTransitPolicy();
+	narrowPatchDefersClearanceToWorldProbe();
+	heightChangesDoNotInventSpecialTraversal();
+	boundaryAndJumpHints();
+	jumpRiseUsesRuntimePhysics();
+	lookAheadStopsBeforeDerivedTraversal();
+}

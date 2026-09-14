@@ -9,233 +9,261 @@
 #include <string>
 #include <vector>
 
-namespace {
+namespace
+{
 namespace e = astrabot::core::experience;
 namespace l = astrabot::core::learning;
 namespace p = astrabot::core::perception;
 using namespace astrabot::nav;
 using namespace astrabot::nav::query;
 
-e::MapIdentity map() {
-    e::MapIdentity value{};
-    value.name = "de_adaptive";
-    return value;
+e::MapIdentity map()
+{
+	e::MapIdentity value{};
+	value.name = "de_adaptive";
+	return value;
 }
 
-std::shared_ptr<const NavGraph> diamond() {
-    auto a = route_test::Area{1, {{0, 0, 0}, {2, 2, 0}, 0, 0}};
-    auto b = route_test::Area{2, {{3, 0, 0}, {5, 2, 0}, 0, 0}};
-    auto c = route_test::Area{3, {{3, 0, 0}, {5, 2, 0}, 0, 0}};
-    auto d = route_test::Area{4, {{6, 0, 0}, {8, 2, 0}, 0, 0}};
-    a.targets[0] = {2, 3}; b.targets[0] = {4}; c.targets[0] = {4};
-    auto result = NavGraph::build(route_test::snapshot({a, b, c, d}), {100, 1000, 100000});
-    assert(result);
-    return *result.value;
+std::shared_ptr<const NavGraph> diamond()
+{
+	auto a = route_test::Area{1, {{0, 0, 0}, {2, 2, 0}, 0, 0}};
+	auto b = route_test::Area{2, {{3, 0, 0}, {5, 2, 0}, 0, 0}};
+	auto c = route_test::Area{3, {{3, 0, 0}, {5, 2, 0}, 0, 0}};
+	auto d = route_test::Area{4, {{6, 0, 0}, {8, 2, 0}, 0, 0}};
+	a.targets[0] = {2, 3};
+	b.targets[0] = {4};
+	c.targets[0] = {4};
+	auto result = NavGraph::build(route_test::snapshot({a, b, c, d}), {100, 1000, 100000});
+	assert(result);
+	return *result.value;
 }
 
-e::ExperienceSnapshot snapshot(double area2Visits, double area3Visits,
-                               double area2Danger, double area3Danger) {
-    e::ExperienceSnapshot result{};
-    result.map = map(); result.round = {1};
-    e::AreaExperience first{}; first.area = 2; first.visits = area2Visits;
-    first.dangerT = area2Danger;
-    e::AreaExperience second{}; second.area = 3; second.visits = area3Visits;
-    second.dangerT = area3Danger;
-    result.areas = {first, second};
-    assert(result.valid());
-    return result;
+e::ExperienceSnapshot snapshot(double area2Visits, double area3Visits, double area2Danger, double area3Danger)
+{
+	e::ExperienceSnapshot result{};
+	result.map = map();
+	result.round = {1};
+	e::AreaExperience first{};
+	first.area = 2;
+	first.visits = area2Visits;
+	first.dangerT = area2Danger;
+	e::AreaExperience second{};
+	second.area = 3;
+	second.visits = area3Visits;
+	second.dangerT = area3Danger;
+	result.areas = {first, second};
+	assert(result.valid());
+	return result;
 }
 
-NavRouteResult route(const std::shared_ptr<const NavGraph>& graph,
-                     const AdaptiveRouteContext& context) {
-    const auto result = NavRouteSearch::search(*graph, {{1}, {4}, {100, 100000}, false},
-                                                adaptiveRoutePolicy(context));
-    assert(result && result.value->status == NavRouteStatus::Complete);
-    return *result.value;
+NavRouteResult route(const std::shared_ptr<const NavGraph>& graph, const AdaptiveRouteContext& context)
+{
+	const auto result = NavRouteSearch::search(*graph, {{1}, {4}, {100, 100000}, false}, adaptiveRoutePolicy(context));
+	assert(result && result.value->status == NavRouteStatus::Complete);
+	return *result.value;
 }
 
-void expectMiddle(const NavRouteResult& result, std::uint32_t middle) {
-    assert(result.areas.size() == 3U);
-    assert(result.areas[0] == model::NavAreaId{1});
-    assert(result.areas[1] == model::NavAreaId{middle});
-    assert(result.areas[2] == model::NavAreaId{4});
+void expectMiddle(const NavRouteResult& result, std::uint32_t middle)
+{
+	assert(result.areas.size() == 3U);
+	assert(result.areas[0] == model::NavAreaId{1});
+	assert(result.areas[1] == model::NavAreaId{middle});
+	assert(result.areas[2] == model::NavAreaId{4});
 }
 
-void experienceChangesTheRoute() {
-    e::ExperienceModel experience;
-    assert(experience.load(snapshot(100.0, 0.0, 0.0, 0.0)));
-    AdaptiveRouteContext context{};
-    context.experience = &experience;
-    context.settings.experienceWeight = 10.0;
-    const auto graph = diamond();
-    auto result = route(graph, context);
-    expectMiddle(result, 2);
+void experienceChangesTheRoute()
+{
+	e::ExperienceModel experience;
+	assert(experience.load(snapshot(100.0, 0.0, 0.0, 0.0)));
+	AdaptiveRouteContext context{};
+	context.experience = &experience;
+	context.settings.experienceWeight = 10.0;
+	const auto graph = diamond();
+	auto result = route(graph, context);
+	expectMiddle(result, 2);
 
-    assert(experience.load(snapshot(0.0, 100.0, 0.0, 0.0)));
-    result = route(graph, context);
-    expectMiddle(result, 3);
+	assert(experience.load(snapshot(0.0, 100.0, 0.0, 0.0)));
+	result = route(graph, context);
+	expectMiddle(result, 3);
 }
 
-void personalityAndStylesChangeRiskWeighting() {
-    e::ExperienceModel experience;
-    assert(experience.load(snapshot(0.0, 0.0, 10.0, 0.0)));
-    AdaptiveRouteContext context{};
-    context.experience = &experience;
-    context.settings.team = p::Team::Terrorist;
-    context.settings.experienceWeight = 0.0;
-    context.settings.style = AdaptiveRouteStyle::Safe;
-    context.settings.personality = AdaptiveRoutePersonality::Cautious;
-    const auto graph = diamond();
-    auto result = route(graph, context);
-    expectMiddle(result, 3);
-    assert(std::string(adaptiveRouteStyleName(AdaptiveRouteStyle::LowExposure)) == "LOW_EXPOSURE");
-    assert(std::string(adaptiveRoutePersonalityName(AdaptiveRoutePersonality::Aggressive)) == "Aggressive");
+void personalityAndStylesChangeRiskWeighting()
+{
+	e::ExperienceModel experience;
+	assert(experience.load(snapshot(0.0, 0.0, 10.0, 0.0)));
+	AdaptiveRouteContext context{};
+	context.experience = &experience;
+	context.settings.team = p::Team::Terrorist;
+	context.settings.experienceWeight = 0.0;
+	context.settings.style = AdaptiveRouteStyle::Safe;
+	context.settings.personality = AdaptiveRoutePersonality::Cautious;
+	const auto graph = diamond();
+	auto result = route(graph, context);
+	expectMiddle(result, 3);
+	assert(std::string(adaptiveRouteStyleName(AdaptiveRouteStyle::LowExposure)) == "LOW_EXPOSURE");
+	assert(std::string(adaptiveRoutePersonalityName(AdaptiveRoutePersonality::Aggressive)) == "Aggressive");
 }
 
-void traversalEvidenceAddsRisk() {
-    auto a = route_test::Area{1, {{0, 0, 0}, {2, 2, 0}, 0, 0}};
-    auto b = route_test::Area{2, {{3, 0, 0}, {5, 2, 0}, 0, 0}};
-    auto c = route_test::Area{3, {{3, 0, 0}, {5, 2, 0}, 0, 0}};
-    auto d = route_test::Area{4, {{6, 0, 0}, {8, 2, 0}, 0, 0}};
-    a.targets[0] = {3}; b.targets[0] = {4}; c.targets[0] = {4};
-    enrichment::NavTraversalLink link{};
-    link.sourceId = 1; link.generation = 1; link.linkId = 7; link.from = {1}; link.to = {2};
-    link.entry = {1, 1, 0}; link.exit = {4, 1, 0};
-    enrichment::NavTraversalLinkSet links{}; links.links.push_back(link);
-    const auto graph = NavGraph::compose(route_test::snapshot({a, b, c, d}), {}, links,
-                                          {100, 1000, 100000}, {100, 100000});
-    assert(graph);
-    AdaptiveTraversalExperience evidence{7, 10.0, 10.0, 0.0, 0.0, 10.0};
-    AdaptiveRouteContext context{};
-    context.traversalExperience = &evidence;
-    context.traversalExperienceCount = 1;
-    context.settings.experienceWeight = 0.0;
-    auto result = route(*graph.value, context);
-    expectMiddle(result, 3);
+void traversalEvidenceAddsRisk()
+{
+	auto a = route_test::Area{1, {{0, 0, 0}, {2, 2, 0}, 0, 0}};
+	auto b = route_test::Area{2, {{3, 0, 0}, {5, 2, 0}, 0, 0}};
+	auto c = route_test::Area{3, {{3, 0, 0}, {5, 2, 0}, 0, 0}};
+	auto d = route_test::Area{4, {{6, 0, 0}, {8, 2, 0}, 0, 0}};
+	a.targets[0] = {3};
+	b.targets[0] = {4};
+	c.targets[0] = {4};
+	enrichment::NavTraversalLink link{};
+	link.sourceId = 1;
+	link.generation = 1;
+	link.linkId = 7;
+	link.from = {1};
+	link.to = {2};
+	link.entry = {1, 1, 0};
+	link.exit = {4, 1, 0};
+	enrichment::NavTraversalLinkSet links{};
+	links.links.push_back(link);
+	const auto graph =
+		NavGraph::compose(route_test::snapshot({a, b, c, d}), {}, links, {100, 1000, 100000}, {100, 100000});
+	assert(graph);
+	AdaptiveTraversalExperience evidence{7, 10.0, 10.0, 0.0, 0.0, 10.0};
+	AdaptiveRouteContext context{};
+	context.traversalExperience = &evidence;
+	context.traversalExperienceCount = 1;
+	context.settings.experienceWeight = 0.0;
+	auto result = route(*graph.value, context);
+	expectMiddle(result, 3);
 
-    evidence = {7, 10.0, 10.0, 0.0, 0.0, 0.0};
-    result = route(*graph.value, context);
-    expectMiddle(result, 2);
+	evidence = {7, 10.0, 10.0, 0.0, 0.0, 0.0};
+	result = route(*graph.value, context);
+	expectMiddle(result, 2);
 }
 
-void invalidContextIsRejected() {
-    AdaptiveRouteContext context{};
-    context.settings.distanceWeight = -1.0;
-    assert(!context.valid());
-    const auto result = NavRouteSearch::search(*diamond(), {{1}, {4}, {100, 100000}, false},
-                                               adaptiveRoutePolicy(context));
-    assert(!result && result.error.field == diagnostics::NavField::RouteCost);
+void invalidContextIsRejected()
+{
+	AdaptiveRouteContext context{};
+	context.settings.distanceWeight = -1.0;
+	assert(!context.valid());
+	const auto result =
+		NavRouteSearch::search(*diamond(), {{1}, {4}, {100, 100000}, false}, adaptiveRoutePolicy(context));
+	assert(!result && result.error.field == diagnostics::NavField::RouteCost);
 }
 
-double fixedExposure(const NavCostContext&, const void* context) noexcept {
-    return *static_cast<const double*>(context);
+double fixedExposure(const NavCostContext&, const void* context) noexcept
+{
+	return *static_cast<const double*>(context);
 }
 
-double invalidExposure(const NavCostContext&, const void*) noexcept {
-    return (std::numeric_limits<double>::quiet_NaN)();
+double invalidExposure(const NavCostContext&, const void*) noexcept
+{
+	return (std::numeric_limits<double>::quiet_NaN)();
 }
 
-void dangerExposureAndTrafficAreSeparated() {
-    e::ExperienceModel dangerExperience;
-    assert(dangerExperience.load(snapshot(0.0, 0.0, 10.0, 0.0)));
-    AdaptiveRouteContext dangerContext{};
-    dangerContext.experience = &dangerExperience;
-    dangerContext.settings.team = p::Team::Terrorist;
-    dangerContext.settings.experienceWeight = 0.0;
-    const auto graph = diamond();
-    const auto dangerResult = NavRouteSearch::search(
-        *graph, {{1}, {2}, {100, 100000}, false},
-        adaptiveRoutePolicy(dangerContext));
-    assert(dangerResult);
-    assert(dangerResult.value->components.danger > 0.0);
-    assert(dangerResult.value->components.exposure == 0.0);
+void dangerExposureAndTrafficAreSeparated()
+{
+	e::ExperienceModel dangerExperience;
+	assert(dangerExperience.load(snapshot(0.0, 0.0, 10.0, 0.0)));
+	AdaptiveRouteContext dangerContext{};
+	dangerContext.experience = &dangerExperience;
+	dangerContext.settings.team = p::Team::Terrorist;
+	dangerContext.settings.experienceWeight = 0.0;
+	const auto graph = diamond();
+	const auto dangerResult =
+		NavRouteSearch::search(*graph, {{1}, {2}, {100, 100000}, false}, adaptiveRoutePolicy(dangerContext));
+	assert(dangerResult);
+	assert(dangerResult.value->components.danger > 0.0);
+	assert(dangerResult.value->components.exposure == 0.0);
 
-    const double exposureValue = 0.25;
-    AdaptiveRouteContext exposureContext{};
-    exposureContext.exposureProvider = &fixedExposure;
-    exposureContext.exposureContext = &exposureValue;
-    const auto exposureResult = NavRouteSearch::search(
-        *graph, {{1}, {2}, {100, 100000}, false},
-        adaptiveRoutePolicy(exposureContext));
-    assert(exposureResult);
-    assert(exposureResult.value->components.danger == 0.0);
-    assert(exposureResult.value->components.exposure > 0.0);
+	const double exposureValue = 0.25;
+	AdaptiveRouteContext exposureContext{};
+	exposureContext.exposureProvider = &fixedExposure;
+	exposureContext.exposureContext = &exposureValue;
+	const auto exposureResult =
+		NavRouteSearch::search(*graph, {{1}, {2}, {100, 100000}, false}, adaptiveRoutePolicy(exposureContext));
+	assert(exposureResult);
+	assert(exposureResult.value->components.danger == 0.0);
+	assert(exposureResult.value->components.exposure > 0.0);
 
-    AdaptiveRouteContext invalidExposureContext{};
-    invalidExposureContext.exposureProvider = &invalidExposure;
-    const auto invalidExposureResult = NavRouteSearch::search(
-        *graph, {{1}, {2}, {100, 100000}, false},
-        adaptiveRoutePolicy(invalidExposureContext));
-    assert(!invalidExposureResult &&
-           invalidExposureResult.error.field == diagnostics::NavField::RouteCost);
+	AdaptiveRouteContext invalidExposureContext{};
+	invalidExposureContext.exposureProvider = &invalidExposure;
+	const auto invalidExposureResult =
+		NavRouteSearch::search(*graph, {{1}, {2}, {100, 100000}, false}, adaptiveRoutePolicy(invalidExposureContext));
+	assert(!invalidExposureResult && invalidExposureResult.error.field == diagnostics::NavField::RouteCost);
 
-    auto trafficSnapshot = snapshot(0.0, 0.0, 0.0, 0.0);
-    trafficSnapshot.areas[0].humanTraffic = 1.0;
-    trafficSnapshot.areas[0].botTraffic = 0.25;
-    e::ExperienceModel trafficExperience;
-    assert(trafficExperience.load(trafficSnapshot));
-    AdaptiveRouteContext trafficContext{};
-    trafficContext.experience = &trafficExperience;
-    trafficContext.settings.style = AdaptiveRouteStyle::Safe;
-    trafficContext.settings.experienceWeight = 0.0;
-    const auto trafficResult = NavRouteSearch::search(
-        *graph, {{1}, {2}, {100, 100000}, false},
-        adaptiveRoutePolicy(trafficContext));
-    assert(trafficResult);
-    assert(std::abs(trafficResult.value->components.danger - 1.25) < 0.00001);
+	auto trafficSnapshot = snapshot(0.0, 0.0, 0.0, 0.0);
+	trafficSnapshot.areas[0].humanTraffic = 1.0;
+	trafficSnapshot.areas[0].botTraffic = 0.25;
+	e::ExperienceModel trafficExperience;
+	assert(trafficExperience.load(trafficSnapshot));
+	AdaptiveRouteContext trafficContext{};
+	trafficContext.experience = &trafficExperience;
+	trafficContext.settings.style = AdaptiveRouteStyle::Safe;
+	trafficContext.settings.experienceWeight = 0.0;
+	const auto trafficResult =
+		NavRouteSearch::search(*graph, {{1}, {2}, {100, 100000}, false}, adaptiveRoutePolicy(trafficContext));
+	assert(trafficResult);
+	assert(std::abs(trafficResult.value->components.danger - 1.25) < 0.00001);
 }
 
-void p11LearningGateAndContextualDanger() {
-    auto a = route_test::Area{1, {{0, 0, 0}, {2, 2, 0}, 0, 0}};
-    auto b = route_test::Area{2, {{3, 0, 0}, {5, 2, 0}, 0, 0}};
-    auto c = route_test::Area{3, {{3, 0, 20}, {5, 2, 20}, 20, 20}};
-    auto d = route_test::Area{4, {{6, 0, 0}, {8, 2, 0}, 0, 0}};
-    a.targets[0] = {3}; b.targets[0] = {4}; c.targets[0] = {4};
-    enrichment::NavTraversalLink link{};
-    link.sourceId = 1; link.generation = 1; link.linkId = 7;
-    link.from = {1}; link.to = {2}; link.entry = {1, 1, 0}; link.exit = {4, 1, 0};
-    enrichment::NavTraversalLinkSet links{};
-    links.links.push_back(link);
-    const auto composed = NavGraph::compose(route_test::snapshot({a, b, c, d}), {}, links,
-                                            {100, 1000, 100000}, {100, 100000});
-    assert(composed);
-    const auto graph = *composed.value;
-    AdaptiveTraversalExperience evidence{7, 2.0, 2.0, 0.0, 0.0, 0.0};
-    AdaptiveRouteContext context{};
-    context.traversalExperience = &evidence;
-    context.traversalExperienceCount = 1;
-    context.settings.learnedTraversalOnly = true;
-    context.settings.experienceWeight = 0.0;
-    auto result = route(graph, context);
-    expectMiddle(result, 3);
+void p11LearningGateAndContextualDanger()
+{
+	auto a = route_test::Area{1, {{0, 0, 0}, {2, 2, 0}, 0, 0}};
+	auto b = route_test::Area{2, {{3, 0, 0}, {5, 2, 0}, 0, 0}};
+	auto c = route_test::Area{3, {{3, 0, 20}, {5, 2, 20}, 20, 20}};
+	auto d = route_test::Area{4, {{6, 0, 0}, {8, 2, 0}, 0, 0}};
+	a.targets[0] = {3};
+	b.targets[0] = {4};
+	c.targets[0] = {4};
+	enrichment::NavTraversalLink link{};
+	link.sourceId = 1;
+	link.generation = 1;
+	link.linkId = 7;
+	link.from = {1};
+	link.to = {2};
+	link.entry = {1, 1, 0};
+	link.exit = {4, 1, 0};
+	enrichment::NavTraversalLinkSet links{};
+	links.links.push_back(link);
+	const auto composed =
+		NavGraph::compose(route_test::snapshot({a, b, c, d}), {}, links, {100, 1000, 100000}, {100, 100000});
+	assert(composed);
+	const auto graph = *composed.value;
+	AdaptiveTraversalExperience evidence{7, 2.0, 2.0, 0.0, 0.0, 0.0};
+	AdaptiveRouteContext context{};
+	context.traversalExperience = &evidence;
+	context.traversalExperienceCount = 1;
+	context.settings.learnedTraversalOnly = true;
+	context.settings.experienceWeight = 0.0;
+	auto result = route(graph, context);
+	expectMiddle(result, 3);
 
-    evidence.humanAttempts = 3.0;
-    result = route(graph, context);
-    expectMiddle(result, 2);
+	evidence.humanAttempts = 3.0;
+	result = route(graph, context);
+	expectMiddle(result, 2);
 
-    l::ContextualDangerModel danger;
-    assert(danger.beginMap({1}));
-    const l::ContextualDangerKey key{
-        2, p::Team::Unknown, l::ApproachDirection::Unknown,
-        astrabot::core::combat::WeaponSnapshot::WeaponClass::Unknown, 0};
-    assert(danger.observe({key, {1}, 1.0, 1.0, 1}).accepted());
-    context.traversalExperience = nullptr;
-    context.traversalExperienceCount = 0;
-    context.contextualDanger = &danger;
-    context.settings.learnedTraversalOnly = false;
-    context.settings.style = AdaptiveRouteStyle::Safe;
-    context.settings.dangerWeight = 10.0;
-    result = route(diamond(), context);
-    expectMiddle(result, 3);
+	l::ContextualDangerModel danger;
+	assert(danger.beginMap({1}));
+	const l::ContextualDangerKey key{2, p::Team::Unknown, l::ApproachDirection::Unknown,
+									 astrabot::core::combat::WeaponSnapshot::WeaponClass::Unknown, 0};
+	assert(danger.observe({key, {1}, 1.0, 1.0, 1}).accepted());
+	context.traversalExperience = nullptr;
+	context.traversalExperienceCount = 0;
+	context.contextualDanger = &danger;
+	context.settings.learnedTraversalOnly = false;
+	context.settings.style = AdaptiveRouteStyle::Safe;
+	context.settings.dangerWeight = 10.0;
+	result = route(diamond(), context);
+	expectMiddle(result, 3);
 }
 
 } // namespace
 
-int main() {
-    experienceChangesTheRoute();
-    personalityAndStylesChangeRiskWeighting();
-    traversalEvidenceAddsRisk();
-    invalidContextIsRejected();
-    dangerExposureAndTrafficAreSeparated();
-    p11LearningGateAndContextualDanger();
+int main()
+{
+	experienceChangesTheRoute();
+	personalityAndStylesChangeRiskWeighting();
+	traversalEvidenceAddsRisk();
+	invalidContextIsRejected();
+	dangerExposureAndTrafficAreSeparated();
+	p11LearningGateAndContextualDanger();
 }

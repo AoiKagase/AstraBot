@@ -3,94 +3,103 @@
 
 #include "adapter/cstrike/combat.hpp"
 
-namespace astrabot::adapter::cstrike {
-namespace {
+namespace astrabot::adapter::cstrike
+{
+namespace
+{
 
-WeaponConversionError mapError(core::combat::WeaponValidationError error) noexcept {
-    using Error = core::combat::WeaponValidationError;
-    switch (error) {
-    case Error::None:
-        return WeaponConversionError::None;
-    case Error::InvalidIdentity:
-    case Error::InvalidTimestamp:
-        return WeaponConversionError::InvalidIdentity;
-    case Error::InvalidWeaponClass:
-        return WeaponConversionError::InvalidWeaponClass;
-    case Error::InvalidActiveWeapon:
-        return WeaponConversionError::InvalidActiveWeapon;
-    case Error::InvalidInventory:
-        return WeaponConversionError::InvalidInventory;
-    case Error::DuplicateWeapon:
-        return WeaponConversionError::DuplicateWeapon;
-    case Error::ImpossibleAmmo:
-        return WeaponConversionError::ImpossibleAmmo;
-    case Error::InvalidReloadThreshold:
-        return WeaponConversionError::InvalidReloadThreshold;
-    }
-    return WeaponConversionError::InvalidInventory;
+WeaponConversionError mapError(core::combat::WeaponValidationError error) noexcept
+{
+	using Error = core::combat::WeaponValidationError;
+	switch (error)
+	{
+	case Error::None:
+		return WeaponConversionError::None;
+	case Error::InvalidIdentity:
+	case Error::InvalidTimestamp:
+		return WeaponConversionError::InvalidIdentity;
+	case Error::InvalidWeaponClass:
+		return WeaponConversionError::InvalidWeaponClass;
+	case Error::InvalidActiveWeapon:
+		return WeaponConversionError::InvalidActiveWeapon;
+	case Error::InvalidInventory:
+		return WeaponConversionError::InvalidInventory;
+	case Error::DuplicateWeapon:
+		return WeaponConversionError::DuplicateWeapon;
+	case Error::ImpossibleAmmo:
+		return WeaponConversionError::ImpossibleAmmo;
+	case Error::InvalidReloadThreshold:
+		return WeaponConversionError::InvalidReloadThreshold;
+	}
+	return WeaponConversionError::InvalidInventory;
 }
 
 } // namespace
 
-WeaponConversionResult toWeaponSnapshot(const WeaponObservation& observation) noexcept {
-    WeaponConversionResult result{};
-    auto& snapshot = result.snapshot;
-    snapshot.map = observation.map;
-    snapshot.round = observation.round;
-    snapshot.tick = observation.tick;
-    snapshot.observedMicros = observation.observedMicros;
-    snapshot.active = {observation.activeWeapon};
-    snapshot.activeClass = observation.activeClass;
-    snapshot.ownedCount = observation.ownedCount;
-    snapshot.clipAmmo = observation.clipAmmo;
-    snapshot.reserveAmmo = observation.reserveAmmo;
-    snapshot.reloadClipThreshold = observation.reloadClipThreshold;
-    snapshot.reloading = observation.reloading;
-    snapshot.canReload = observation.canReload;
-    snapshot.canSwitch = observation.canSwitch;
-    snapshot.primaryAttackReadyMicros = observation.primaryAttackReadyMicros;
-    for (std::size_t i = 0; i < snapshot.owned.size(); ++i) {
-        snapshot.owned[i] = {observation.owned[i]};
-    }
+WeaponConversionResult toWeaponSnapshot(const WeaponObservation& observation) noexcept
+{
+	WeaponConversionResult result{};
+	auto& snapshot = result.snapshot;
+	snapshot.map = observation.map;
+	snapshot.round = observation.round;
+	snapshot.tick = observation.tick;
+	snapshot.observedMicros = observation.observedMicros;
+	snapshot.active = {observation.activeWeapon};
+	snapshot.activeClass = observation.activeClass;
+	snapshot.ownedCount = observation.ownedCount;
+	snapshot.clipAmmo = observation.clipAmmo;
+	snapshot.reserveAmmo = observation.reserveAmmo;
+	snapshot.reloadClipThreshold = observation.reloadClipThreshold;
+	snapshot.reloading = observation.reloading;
+	snapshot.canReload = observation.canReload;
+	snapshot.canSwitch = observation.canSwitch;
+	snapshot.primaryAttackReadyMicros = observation.primaryAttackReadyMicros;
+	for (std::size_t i = 0; i < snapshot.owned.size(); ++i)
+	{
+		snapshot.owned[i] = {observation.owned[i]};
+	}
 
-    const auto validation = snapshot.validate();
-    if (!validation) {
-        result.error = mapError(validation.error);
-        return result;
-    }
-    result.accepted = true;
-    return result;
+	const auto validation = snapshot.validate();
+	if (!validation)
+	{
+		result.error = mapError(validation.error);
+		return result;
+	}
+	result.accepted = true;
+	return result;
 }
 
-CombatInputConversionResult toCombatInput(
-    const CombatObservation& observation) noexcept {
-    CombatInputConversionResult result{};
-    auto& input = result.input;
-    input.map = observation.map;
-    input.round = observation.round;
-    input.tick = observation.tick;
-    input.timeMicros = observation.timeMicros;
-    input.player = observation.player;
-    input.agent = observation.agent;
-    input.alive = observation.alive;
-    input.team = observation.team;
-    input.eye = observation.eye;
-    input.view = observation.view;
-    input.world = observation.world;
-    input.difficulty = observation.difficulty;
+CombatInputConversionResult toCombatInput(const CombatObservation& observation) noexcept
+{
+	CombatInputConversionResult result{};
+	auto& input = result.input;
+	input.map = observation.map;
+	input.round = observation.round;
+	input.tick = observation.tick;
+	input.timeMicros = observation.timeMicros;
+	input.player = observation.player;
+	input.agent = observation.agent;
+	input.alive = observation.alive;
+	input.team = observation.team;
+	input.eye = observation.eye;
+	input.view = observation.view;
+	input.world = observation.world;
+	input.difficulty = observation.difficulty;
 
-    const auto weapon = toWeaponSnapshot(observation.weapon);
-    if (!weapon) {
-        result.error = CombatConversionError::InvalidWeaponObservation;
-        return result;
-    }
-    input.weapon = weapon.snapshot;
-    if (!input.validate()) {
-        result.error = CombatConversionError::InvalidCombatInput;
-        return result;
-    }
-    result.accepted = true;
-    return result;
+	const auto weapon = toWeaponSnapshot(observation.weapon);
+	if (!weapon)
+	{
+		result.error = CombatConversionError::InvalidWeaponObservation;
+		return result;
+	}
+	input.weapon = weapon.snapshot;
+	if (!input.validate())
+	{
+		result.error = CombatConversionError::InvalidCombatInput;
+		return result;
+	}
+	result.accepted = true;
+	return result;
 }
 
 } // namespace astrabot::adapter::cstrike

@@ -5,7 +5,8 @@
 
 #include <type_traits>
 
-namespace astrabot::core {
+namespace astrabot::core
+{
 
 static_assert(std::is_trivially_copyable_v<Generation>);
 static_assert(std::is_trivially_copyable_v<MapGeneration>);

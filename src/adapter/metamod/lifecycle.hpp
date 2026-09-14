@@ -27,417 +27,487 @@
 #include <array>
 #include <cstdint>
 
-namespace astrabot::adapter::metamod {
+namespace astrabot::adapter::metamod
+{
 
-struct LifecycleStatus {
-    std::uint32_t mapActivations{0};
-    std::uint32_t mapReplays{0};
-    std::uint32_t createAttempts{0};
-    std::uint32_t removalRequests{0};
-    std::uint32_t cleanupCompletions{0};
-    debug::RemovalError lastRemovalError{debug::RemovalError::None};
+struct LifecycleStatus
+{
+	std::uint32_t mapActivations{0};
+	std::uint32_t mapReplays{0};
+	std::uint32_t createAttempts{0};
+	std::uint32_t removalRequests{0};
+	std::uint32_t cleanupCompletions{0};
+	debug::RemovalError lastRemovalError{debug::RemovalError::None};
 };
 
-struct RuntimeActorCorrelation final {
-    core::MapGeneration map{};
-    core::perception::RoundGeneration round{};
-    core::PlayerId player{};
-    core::BotAgentId agent{};
-    std::uint32_t edictSerial{0};
-    core::TickId inputTick{};
-    core::TickId decisionTick{};
-    core::TickId queueTick{};
-    core::TickId dispatchCommandTick{};
-    core::TickId dispatchTick{};
-    RuntimeInputBuildReason inputReason{RuntimeInputBuildReason::None};
-    RuntimeActorStaleReason staleReason{RuntimeActorStaleReason::None};
-    RuntimeInputValidationReason validation{RuntimeInputValidationReason::None};
-    cstrike::RuntimeNavigationApplyResult navResult{cstrike::RuntimeNavigationApplyResult::None};
-    cstrike::RuntimeNavigationApplyReason navReason{cstrike::RuntimeNavigationApplyReason::None};
-    MovementOutcome queueOutcome{MovementOutcome::None};
-    MovementError queueError{MovementError::None};
-    MovementOutcome dispatchOutcome{MovementOutcome::None};
-    MovementError dispatchError{MovementError::None};
-    debug::MovementTraceSource source{debug::MovementTraceSource::None};
-    float forward{0.0F};
-    float side{0.0F};
-    float up{0.0F};
-    std::uint16_t buttons{0};
-    std::uint8_t impulse{0};
-    std::uint8_t msec{0};
-    bool managed{false};
-    bool connected{false};
-    bool removalPending{false};
-    bool alive{false};
-    bool currentAreaHeld{false};
-    nav::model::NavAreaId currentArea{};
-    cstrike::CurrentAreaSource currentAreaSource{cstrike::CurrentAreaSource::None};
-    std::uint64_t currentAreaAgeUs{0};
-    std::uint64_t elapsedUs{0};
-    std::uint64_t frameDeltaUs{0};
-    core::tactical::IntentType intent{core::tactical::IntentType::None};
-    core::tactical::RouteStyle route{core::tactical::RouteStyle::None};
-    core::tactical::Reason reason{core::tactical::Reason::None};
-    nav::model::NavAreaId roamGoal{};
-    std::size_t roamCandidateCount{0};
-    std::uint32_t roamExcludedCapacity{0};
-    std::uint32_t roamExcludedInvalid{0};
-    std::uint32_t roamExcludedOccupied{0};
-    std::uint32_t roamExcludedGoalCooling{0};
-    std::uint32_t roamExcludedRejected{0};
-    std::uint32_t roamExcludedRecent{0};
-    std::uint32_t roamExcludedMissing{0};
-    std::uint32_t roamExcludedHull{0};
-    bool roamSearchBackoff{false};
-    std::uint64_t roamSearchBackoffRemainingUs{0};
-    std::array<cstrike::RoamExclusionSample, 4> roamExclusionSamples{};
-    std::size_t roamExclusionCount{0};
-    std::uint64_t roamGeneration{0};
+struct RuntimeActorCorrelation final
+{
+	core::MapGeneration map{};
+	core::perception::RoundGeneration round{};
+	core::PlayerId player{};
+	core::BotAgentId agent{};
+	std::uint32_t edictSerial{0};
+	core::TickId inputTick{};
+	core::TickId decisionTick{};
+	core::TickId queueTick{};
+	core::TickId dispatchCommandTick{};
+	core::TickId dispatchTick{};
+	RuntimeInputBuildReason inputReason{RuntimeInputBuildReason::None};
+	RuntimeActorStaleReason staleReason{RuntimeActorStaleReason::None};
+	RuntimeInputValidationReason validation{RuntimeInputValidationReason::None};
+	cstrike::RuntimeNavigationApplyResult navResult{cstrike::RuntimeNavigationApplyResult::None};
+	cstrike::RuntimeNavigationApplyReason navReason{cstrike::RuntimeNavigationApplyReason::None};
+	MovementOutcome queueOutcome{MovementOutcome::None};
+	MovementError queueError{MovementError::None};
+	MovementOutcome dispatchOutcome{MovementOutcome::None};
+	MovementError dispatchError{MovementError::None};
+	debug::MovementTraceSource source{debug::MovementTraceSource::None};
+	float forward{0.0F};
+	float side{0.0F};
+	float up{0.0F};
+	std::uint16_t buttons{0};
+	std::uint8_t impulse{0};
+	std::uint8_t msec{0};
+	bool managed{false};
+	bool connected{false};
+	bool removalPending{false};
+	bool alive{false};
+	bool currentAreaHeld{false};
+	nav::model::NavAreaId currentArea{};
+	cstrike::CurrentAreaSource currentAreaSource{cstrike::CurrentAreaSource::None};
+	std::uint64_t currentAreaAgeUs{0};
+	std::uint64_t elapsedUs{0};
+	std::uint64_t frameDeltaUs{0};
+	core::tactical::IntentType intent{core::tactical::IntentType::None};
+	core::tactical::RouteStyle route{core::tactical::RouteStyle::None};
+	core::tactical::Reason reason{core::tactical::Reason::None};
+	nav::model::NavAreaId roamGoal{};
+	std::size_t roamCandidateCount{0};
+	std::uint32_t roamExcludedCapacity{0};
+	std::uint32_t roamExcludedInvalid{0};
+	std::uint32_t roamExcludedOccupied{0};
+	std::uint32_t roamExcludedGoalCooling{0};
+	std::uint32_t roamExcludedRejected{0};
+	std::uint32_t roamExcludedRecent{0};
+	std::uint32_t roamExcludedMissing{0};
+	std::uint32_t roamExcludedHull{0};
+	bool roamSearchBackoff{false};
+	std::uint64_t roamSearchBackoffRemainingUs{0};
+	std::array<cstrike::RoamExclusionSample, 4> roamExclusionSamples{};
+	std::size_t roamExclusionCount{0};
+	std::uint64_t roamGeneration{0};
 };
 
-enum class CombatSubmitError : std::uint8_t {
-    None = 0,
-    InvalidActor,
-    InvalidMapGeneration,
-    InvalidTick,
-    InvalidAgentBinding,
-    NotJoined,
-    MissingEntity,
-    DeadPlayer,
-    InvalidDecision,
-    InvalidNavigationCommand,
-    TransportRejected,
+enum class CombatSubmitError : std::uint8_t
+{
+	None = 0,
+	InvalidActor,
+	InvalidMapGeneration,
+	InvalidTick,
+	InvalidAgentBinding,
+	NotJoined,
+	MissingEntity,
+	DeadPlayer,
+	InvalidDecision,
+	InvalidNavigationCommand,
+	TransportRejected,
 };
 
-enum class MapNavLoadReason : std::uint8_t {
-    None, Ready, MissingMapName, InvalidMapName, MissingGameDirectory,
-    InvalidGameDirectory, LoadFailed,
+enum class MapNavLoadReason : std::uint8_t
+{
+	None,
+	Ready,
+	MissingMapName,
+	InvalidMapName,
+	MissingGameDirectory,
+	InvalidGameDirectory,
+	LoadFailed,
 };
 
-struct MapNavLoadStatus final {
-    core::MapGeneration map{};
-    MapNavLoadReason reason{MapNavLoadReason::None};
-    std::array<char, 1200> path{};
+struct MapNavLoadStatus final
+{
+	core::MapGeneration map{};
+	MapNavLoadReason reason{MapNavLoadReason::None};
+	std::array<char, 1200> path{};
 };
 
-struct CombatSubmitResult {
-    core::combat::CombatDecision decision{};
-    core::combat::CommandCompositionResult composition{};
-    MovementResult transport{};
-    CombatSubmitError error{CombatSubmitError::None};
-    bool accepted{false};
+struct CombatSubmitResult
+{
+	core::combat::CombatDecision decision{};
+	core::combat::CommandCompositionResult composition{};
+	MovementResult transport{};
+	CombatSubmitError error{CombatSubmitError::None};
+	bool accepted{false};
 
-    constexpr explicit operator bool() const noexcept {
-        return accepted && error == CombatSubmitError::None;
-    }
+	constexpr explicit operator bool() const noexcept
+	{
+		return accepted && error == CombatSubmitError::None;
+	}
 };
 
-class LifecycleCoordinator final {
+class LifecycleCoordinator final
+{
 public:
-    // The adapter owns engine-to-value conversion. Null selects the production
-    // reader; tests may override the synchronous value boundary.
-    using RuntimeInputProvider = std::size_t (*)(
-        void*, const LifecycleCoordinator&, RuntimeFrame&,
-        RuntimeActorInput*, std::size_t) noexcept;
+	// The adapter owns engine-to-value conversion. Null selects the production
+	// reader; tests may override the synchronous value boundary.
+	using RuntimeInputProvider = std::size_t (*)(void*, const LifecycleCoordinator&, RuntimeFrame&, RuntimeActorInput*,
+												 std::size_t) noexcept;
 
-    void configure(
-        enginefuncs_t* engineFunctions,
-        mutil_funcs_t* utilityFunctions,
-        DLL_FUNCTIONS* hookedGameDllFunctions,
-        cstrike::UserMessageIds userMessageIds,
-        globalvars_t* engineGlobals = nullptr) noexcept;
-    void reset() noexcept;
+	void configure(enginefuncs_t* engineFunctions, mutil_funcs_t* utilityFunctions,
+				   DLL_FUNCTIONS* hookedGameDllFunctions, cstrike::UserMessageIds userMessageIds,
+				   globalvars_t* engineGlobals = nullptr) noexcept;
+	void reset() noexcept;
 
-    void serverActivate(int clientMax) noexcept;
-    const MapNavLoadStatus& mapNavLoadStatus() const noexcept { return mapNavLoadStatus_; }
-    void serverDeactivate() noexcept;
-    void clientDisconnect(edict_t* entity) noexcept;
-    void startFrame() noexcept;
-    RemovalResult removeActive() noexcept;
-    RemovalResult remove(core::PlayerId) noexcept;
-    FakeClientResult createBot(const char*, cstrike::JoinRequest) noexcept;
-    edict_t* entityFor(core::PlayerId) const noexcept;
-    core::PlayerId playerForEntity(edict_t*) const noexcept;
-    bool removalPending(core::PlayerId) const noexcept;
-    void queuePrimaryCreate(cstrike::JoinRequest request) noexcept;
-    MovementResult submitCommand(
-        core::PlayerId player,
-        core::MapGeneration mapGeneration,
-        core::TickId tick,
-        const core::BotCommand& command) noexcept;
-    CombatSubmitResult submitCombat(
-        const core::combat::CombatInput& input,
-        const core::combat::CombatDecision& aim,
-        const core::BotCommand& navigation) noexcept;
-    CombatSubmitResult submitCombatDecision(
-        core::PlayerId player,
-        core::MapGeneration mapGeneration,
-        core::TickId tick,
-        const core::combat::CombatDecision& decision,
-        const core::BotCommand& navigation) noexcept;
-    void setRuntimeInputProvider(RuntimeInputProvider provider,
-                                 void* context) noexcept {
-        runtimeInputProvider_ = provider;
-        runtimeInputContext_ = context;
-    }
-    RuntimeOrchestrator& runtimeOrchestrator() noexcept { return runtime_; }
-    const RuntimeOrchestrator& runtimeOrchestrator() const noexcept { return runtime_; }
-    const RuntimeFrameResult& runtimeResult() const noexcept { return runtime_.result(); }
-    std::optional<core::combat::CombatDecision> takeRuntimeCombatDecision(
-        core::PlayerId player, core::BotAgentId agent,
-        core::MapGeneration map, core::perception::RoundGeneration round,
-        core::TickId tick) noexcept {
-        return runtime_.takeCombatDecision(player, agent, map, round, tick);
-    }
+	void serverActivate(int clientMax) noexcept;
+	const MapNavLoadStatus& mapNavLoadStatus() const noexcept
+	{
+		return mapNavLoadStatus_;
+	}
+	void serverDeactivate() noexcept;
+	void clientDisconnect(edict_t* entity) noexcept;
+	void startFrame() noexcept;
+	RemovalResult removeActive() noexcept;
+	RemovalResult remove(core::PlayerId) noexcept;
+	FakeClientResult createBot(const char*, cstrike::JoinRequest) noexcept;
+	edict_t* entityFor(core::PlayerId) const noexcept;
+	core::PlayerId playerForEntity(edict_t*) const noexcept;
+	bool removalPending(core::PlayerId) const noexcept;
+	void queuePrimaryCreate(cstrike::JoinRequest request) noexcept;
+	MovementResult submitCommand(core::PlayerId player, core::MapGeneration mapGeneration, core::TickId tick,
+								 const core::BotCommand& command) noexcept;
+	CombatSubmitResult submitCombat(const core::combat::CombatInput& input, const core::combat::CombatDecision& aim,
+									const core::BotCommand& navigation) noexcept;
+	CombatSubmitResult submitCombatDecision(core::PlayerId player, core::MapGeneration mapGeneration, core::TickId tick,
+											const core::combat::CombatDecision& decision,
+											const core::BotCommand& navigation) noexcept;
+	void setRuntimeInputProvider(RuntimeInputProvider provider, void* context) noexcept
+	{
+		runtimeInputProvider_ = provider;
+		runtimeInputContext_ = context;
+	}
+	RuntimeOrchestrator& runtimeOrchestrator() noexcept
+	{
+		return runtime_;
+	}
+	const RuntimeOrchestrator& runtimeOrchestrator() const noexcept
+	{
+		return runtime_;
+	}
+	const RuntimeFrameResult& runtimeResult() const noexcept
+	{
+		return runtime_.result();
+	}
+	std::optional<core::combat::CombatDecision> takeRuntimeCombatDecision(core::PlayerId player, core::BotAgentId agent,
+																		  core::MapGeneration map,
+																		  core::perception::RoundGeneration round,
+																		  core::TickId tick) noexcept
+	{
+		return runtime_.takeCombatDecision(player, agent, map, round, tick);
+	}
 
-    void messageBegin(
-        int messageDestination,
-        int messageType,
-        const float* origin,
-        edict_t* recipient) noexcept;
-    void messageEnd() noexcept;
-    void writeByte(int value) noexcept;
-    void writeChar(int value) noexcept;
-    void writeShort(int value) noexcept;
-    void writeString(const char* value) noexcept;
-    const char* commandArgs() noexcept;
-    const char* commandArgv(int index) noexcept;
-    int commandArgc() noexcept;
+	void messageBegin(int messageDestination, int messageType, const float* origin, edict_t* recipient) noexcept;
+	void messageEnd() noexcept;
+	void writeByte(int value) noexcept;
+	void writeChar(int value) noexcept;
+	void writeShort(int value) noexcept;
+	void writeString(const char* value) noexcept;
+	const char* commandArgs() noexcept;
+	const char* commandArgv(int index) noexcept;
+	int commandArgc() noexcept;
 
-    cstrike::JoinAction requestJoin(cstrike::JoinRequest request) noexcept;
-    cstrike::JoinAction requestJoin(core::PlayerId, cstrike::JoinRequest) noexcept;
-    bool dispatchMenuForTest(std::uint8_t selection) noexcept;
+	cstrike::JoinAction requestJoin(cstrike::JoinRequest request) noexcept;
+	cstrike::JoinAction requestJoin(core::PlayerId, cstrike::JoinRequest) noexcept;
+	bool dispatchMenuForTest(std::uint8_t selection) noexcept;
 
-    void setTraceSink(debug::LifecycleTraceSink sink) noexcept {
-        traceSink_ = sink;
-    }
-    void setFakeClientTraceSink(debug::FakeClientTraceSink sink) noexcept {
-        for(auto& client:clients_) client.fake.setTraceSink(sink);
-    }
-    void setJoinTraceSink(debug::JoinTraceSink sink) noexcept {
-        joinTraceSink_ = sink;
-    }
-    void setRemovalTraceSink(debug::RemovalTraceSink sink) noexcept {
-        removalTraceSink_ = sink;
-        for(auto& client:clients_) client.fake.setRemovalTraceSink(sink);
-    }
-    void setMovementTraceSink(debug::MovementTraceSink sink) noexcept {
-        movement_.setTraceSink(sink);
-    }
-    debug::MovementTraceSource activeMovementDispatchSource() const noexcept {
-        return movement_.activeDispatchSource();
-    }
-    const RuntimeInputBuildStatus& runtimeInputBuildStatus() const noexcept {
-        return runtimeInputBuildStatus_;
-    }
-    const RuntimeInputBuildStatus& runtimeInputBuildStatus(core::PlayerId player) const noexcept;
-    const RuntimeActorCorrelation& runtimeCorrelation(core::PlayerId player) const noexcept;
-    const core::combat::CombatLock* combatLock(core::PlayerId player) const noexcept;
-    const RuntimeHealthObservation* runtimeHealth(core::PlayerId player) const noexcept {
-        if (!player.isValid() || player.slot > runtimeHealth_.size()) return nullptr;
-        const auto& observation = runtimeHealth_[player.slot - 1U];
-        const auto binding = agents_.findByPlayer(player);
-        const auto* entity = entityFor(player);
-        return observation.known && observation.player == player &&
-            binding.isValid() && binding.agent == observation.agent &&
-            entity != nullptr && !entity->free && entity->serialnumber == observation.serial &&
-            !removalPending(player) && registry_.currentPlayer(player.slot) == player &&
-            observation.frame.tick == registry_.currentTick() &&
-            observation.frame.map == registry_.mapGeneration() &&
-            observation.frame.round == round_ ? &observation : nullptr;
-    }
-    const RuntimeDiagnostics& runtimeDiagnostics() const noexcept {
-        return runtime_.diagnostics();
-    }
-    void setWeaponSelectionHandler(
-        MovementCoordinator::WeaponSelectionHandler handler) noexcept {
-        movement_.setWeaponSelectionHandler(handler);
-    }
-    void setCombatTraceSink(debug::CombatTraceSink sink) noexcept {
-        combatTraceSink_ = sink;
-    }
-    void setMovementClockForTest(MovementCoordinator::ClockNow now) noexcept {
-        movement_.setClockForTest(now);
-    }
+	void setTraceSink(debug::LifecycleTraceSink sink) noexcept
+	{
+		traceSink_ = sink;
+	}
+	void setFakeClientTraceSink(debug::FakeClientTraceSink sink) noexcept
+	{
+		for (auto& client : clients_)
+			client.fake.setTraceSink(sink);
+	}
+	void setJoinTraceSink(debug::JoinTraceSink sink) noexcept
+	{
+		joinTraceSink_ = sink;
+	}
+	void setRemovalTraceSink(debug::RemovalTraceSink sink) noexcept
+	{
+		removalTraceSink_ = sink;
+		for (auto& client : clients_)
+			client.fake.setRemovalTraceSink(sink);
+	}
+	void setMovementTraceSink(debug::MovementTraceSink sink) noexcept
+	{
+		movement_.setTraceSink(sink);
+	}
+	debug::MovementTraceSource activeMovementDispatchSource() const noexcept
+	{
+		return movement_.activeDispatchSource();
+	}
+	const RuntimeInputBuildStatus& runtimeInputBuildStatus() const noexcept
+	{
+		return runtimeInputBuildStatus_;
+	}
+	const RuntimeInputBuildStatus& runtimeInputBuildStatus(core::PlayerId player) const noexcept;
+	const RuntimeActorCorrelation& runtimeCorrelation(core::PlayerId player) const noexcept;
+	const core::combat::CombatLock* combatLock(core::PlayerId player) const noexcept;
+	const RuntimeHealthObservation* runtimeHealth(core::PlayerId player) const noexcept
+	{
+		if (!player.isValid() || player.slot > runtimeHealth_.size())
+			return nullptr;
+		const auto& observation = runtimeHealth_[player.slot - 1U];
+		const auto binding = agents_.findByPlayer(player);
+		const auto* entity = entityFor(player);
+		return observation.known && observation.player == player && binding.isValid() &&
+					   binding.agent == observation.agent && entity != nullptr && !entity->free &&
+					   entity->serialnumber == observation.serial && !removalPending(player) &&
+					   registry_.currentPlayer(player.slot) == player &&
+					   observation.frame.tick == registry_.currentTick() &&
+					   observation.frame.map == registry_.mapGeneration() && observation.frame.round == round_
+				   ? &observation
+				   : nullptr;
+	}
+	const RuntimeDiagnostics& runtimeDiagnostics() const noexcept
+	{
+		return runtime_.diagnostics();
+	}
+	void setWeaponSelectionHandler(MovementCoordinator::WeaponSelectionHandler handler) noexcept
+	{
+		movement_.setWeaponSelectionHandler(handler);
+	}
+	void setCombatTraceSink(debug::CombatTraceSink sink) noexcept
+	{
+		combatTraceSink_ = sink;
+	}
+	void setMovementClockForTest(MovementCoordinator::ClockNow now) noexcept
+	{
+		movement_.setClockForTest(now);
+	}
 
-    host::PlayerRegistry& registry() noexcept { return registry_; }
-    const host::PlayerRegistry& registry() const noexcept { return registry_; }
-    host::BotAgentRegistry& agents() noexcept { return agents_; }
-    const host::BotAgentRegistry& agents() const noexcept { return agents_; }
-    FakeClientCoordinator& fakeClient() noexcept { return clients_[0].fake; }
-    cstrike::JoinState& joinState() noexcept { return clients_[0].join; }
-    const cstrike::JoinState& joinState() const noexcept { return clients_[0].join; }
-    const cstrike::JoinState* joinState(core::PlayerId) const noexcept;
-    std::uint32_t managedTeamCount(cstrike::Team team) const noexcept;
-    const cstrike::MessageDecoder& messageDecoder() const noexcept {
-        return activeDecoder_ ? *activeDecoder_:messageDecoder_;
-    }
-    LifecycleStatus status() const noexcept { return status_; }
-    cstrike::NavConsole& navConsole() noexcept { return navConsole_; }
-    const cstrike::NavConsole& navConsole() const noexcept { return navConsole_; }
-    const cstrike::VisionAdapter& vision() const noexcept { return vision_; }
-    const core::world::WorldModel& world() const noexcept { return world_; }
-    const nav::query::DistributionModel& distributions() const noexcept { return distributions_; }
-    core::world::ReportResult report(core::PlayerId reporter,core::PlayerId target) noexcept;
-    const cstrike::SoundAdapter& sound() const noexcept { return sound_; }
-    void soundPrecache(int,const char*,std::uint16_t) noexcept;
-    void rejectSoundHook() noexcept { sound_.rejectHook(); }
-    void emitSound(const edict_t*,const float*,int,const char*,float,float,int,int,bool) noexcept;
-    void playbackEvent(int,const edict_t*,std::uint16_t,float,const float*,const float* = nullptr,float = 0,float = 0,int = 0,int = 0,int = 0,int = 0) noexcept;
-    const cstrike::VisualEffects& visualEffects() const noexcept { return visualEffects_; }
-    bool flashCapability() const noexcept { return perceptionMessageIds_.screenFade > 0; }
-    bool smokeCapability() const noexcept { return sound_.events().supports(cstrike::EventKind::Smoke); }
-    const core::perception::TeamRoster& teams() const noexcept { return teams_; }
-    core::perception::RoundGeneration round() const noexcept { return round_; }
-    struct PerceptionIdentityDiagnostics {
-        std::uint64_t teamUpdates{}, teamChanges{}, rejectedTeams{}, rounds{}, duplicateRounds{}, rejectedRounds{};
-        bool roundNotificationAvailable{};
-    };
-    const PerceptionIdentityDiagnostics& perceptionIdentityDiagnostics() const noexcept { return identityDiagnostics_; }
+	host::PlayerRegistry& registry() noexcept
+	{
+		return registry_;
+	}
+	const host::PlayerRegistry& registry() const noexcept
+	{
+		return registry_;
+	}
+	host::BotAgentRegistry& agents() noexcept
+	{
+		return agents_;
+	}
+	const host::BotAgentRegistry& agents() const noexcept
+	{
+		return agents_;
+	}
+	FakeClientCoordinator& fakeClient() noexcept
+	{
+		return clients_[0].fake;
+	}
+	cstrike::JoinState& joinState() noexcept
+	{
+		return clients_[0].join;
+	}
+	const cstrike::JoinState& joinState() const noexcept
+	{
+		return clients_[0].join;
+	}
+	const cstrike::JoinState* joinState(core::PlayerId) const noexcept;
+	std::uint32_t managedTeamCount(cstrike::Team team) const noexcept;
+	const cstrike::MessageDecoder& messageDecoder() const noexcept
+	{
+		return activeDecoder_ ? *activeDecoder_ : messageDecoder_;
+	}
+	LifecycleStatus status() const noexcept
+	{
+		return status_;
+	}
+	cstrike::NavConsole& navConsole() noexcept
+	{
+		return navConsole_;
+	}
+	const cstrike::NavConsole& navConsole() const noexcept
+	{
+		return navConsole_;
+	}
+	const cstrike::VisionAdapter& vision() const noexcept
+	{
+		return vision_;
+	}
+	const core::world::WorldModel& world() const noexcept
+	{
+		return world_;
+	}
+	const nav::query::DistributionModel& distributions() const noexcept
+	{
+		return distributions_;
+	}
+	core::world::ReportResult report(core::PlayerId reporter, core::PlayerId target) noexcept;
+	const cstrike::SoundAdapter& sound() const noexcept
+	{
+		return sound_;
+	}
+	void soundPrecache(int, const char*, std::uint16_t) noexcept;
+	void rejectSoundHook() noexcept
+	{
+		sound_.rejectHook();
+	}
+	void emitSound(const edict_t*, const float*, int, const char*, float, float, int, int, bool) noexcept;
+	void playbackEvent(int, const edict_t*, std::uint16_t, float, const float*, const float* = nullptr, float = 0,
+					   float = 0, int = 0, int = 0, int = 0, int = 0) noexcept;
+	const cstrike::VisualEffects& visualEffects() const noexcept
+	{
+		return visualEffects_;
+	}
+	bool flashCapability() const noexcept
+	{
+		return perceptionMessageIds_.screenFade > 0;
+	}
+	bool smokeCapability() const noexcept
+	{
+		return sound_.events().supports(cstrike::EventKind::Smoke);
+	}
+	const core::perception::TeamRoster& teams() const noexcept
+	{
+		return teams_;
+	}
+	core::perception::RoundGeneration round() const noexcept
+	{
+		return round_;
+	}
+	struct PerceptionIdentityDiagnostics
+	{
+		std::uint64_t teamUpdates{}, teamChanges{}, rejectedTeams{}, rounds{}, duplicateRounds{}, rejectedRounds{};
+		bool roundNotificationAvailable{};
+	};
+	const PerceptionIdentityDiagnostics& perceptionIdentityDiagnostics() const noexcept
+	{
+		return identityDiagnostics_;
+	}
 
 private:
-    friend class cstrike::VisionAdapter;
-    friend class cstrike::SoundAdapter;
-    struct ClientState {
-        FakeClientCoordinator fake{};
-        cstrike::JoinState join{};
-        cstrike::MessageDecoder decoder{};
-        core::combat::AttackLifecycleState combat{};
-        core::combat::CombatLock combatLock{};
-        std::array<cstrike::MessageEvent, 4> pendingJoinMessages{};
-        std::uint8_t pendingJoinMessageCount{0};
-        bool cleanupPending{};
-        cstrike::JoinError cleanupError{cstrike::JoinError::None};
-    };
-    ClientState* findClient(core::PlayerId) noexcept;
-    const ClientState* findClient(core::PlayerId) const noexcept;
-    void emit(
-        host::LifecycleEventKind attemptedKind,
-        const host::LifecycleResult& result,
-        host::PlayerId attemptedPlayer = host::PlayerId::invalid(),
-        host::TickId attemptedTick = host::TickId::invalid()) noexcept;
-    void emitJoin(const ClientState&, const cstrike::JoinAction& action) noexcept;
-    void handleMessage(const cstrike::MessageEvent& event) noexcept;
-    void handleJoinAction(ClientState&, const cstrike::JoinAction& action) noexcept;
-    void cleanupFailedJoin(ClientState&, cstrike::JoinError error) noexcept;
-    void cleanupActiveAfterRemoval(
-        ClientState&, const RemovalResult& result,
-        host::PlayerId player) noexcept;
-    void emitRemoval(
-        debug::RemovalOutcome outcome,
-        debug::RemovalError error,
-        host::PlayerId player,
-        bool mappingPresent,
-        bool entityPresent) noexcept;
-    CombatSubmitResult submitComposedCombat(
-        core::PlayerId player,
-        core::MapGeneration mapGeneration,
-        core::perception::RoundGeneration round,
-        core::BotAgentId agent,
-        core::TickId tick,
-        const core::combat::CombatDecision& decision,
-        const core::BotCommand& navigation,
-        const core::combat::CombatInput* input) noexcept;
-    void emitCombatTrace(
-        core::PlayerId player,
-        const core::combat::CombatDecision& decision,
-        core::MapGeneration mapGeneration,
-        core::perception::RoundGeneration round,
-        core::BotAgentId agent,
-        core::TickId tick,
-        std::uint64_t timeMicros,
-        const core::combat::WeaponSnapshot* weapon,
-        const core::combat::CommandCompositionResult& composition,
-        const CombatSubmitResult& result) noexcept;
-    void configureUserMessageIds(cstrike::UserMessageIds) noexcept;
-    bool refreshUserMessageIds(bool logPending) noexcept;
-    void clearCombatState(core::PlayerId player) noexcept;
-    void clearAllCombatState() noexcept;
-    void retireCombatTarget(core::PlayerId player) noexcept;
-    void refreshCombatTargetLiveness() noexcept;
-    bool dispatchMenu(ClientState&, std::uint8_t selection) noexcept;
-    bool dispatchBuyCommand(core::PlayerId, const char*) noexcept;
-    void dispatchRoundBuy(ClientState&) noexcept;
-    static bool dispatchWeaponSelectionHook(
-        edict_t*, core::WeaponSelection) noexcept;
-    bool dispatchWeaponSelection(
-        edict_t*, core::WeaponSelection) noexcept;
-    static void onMessage(
-        void* context,
-        const cstrike::MessageEvent& event) noexcept;
+	friend class cstrike::VisionAdapter;
+	friend class cstrike::SoundAdapter;
+	struct ClientState
+	{
+		FakeClientCoordinator fake{};
+		cstrike::JoinState join{};
+		cstrike::MessageDecoder decoder{};
+		core::combat::AttackLifecycleState combat{};
+		core::combat::CombatLock combatLock{};
+		std::array<cstrike::MessageEvent, 4> pendingJoinMessages{};
+		std::uint8_t pendingJoinMessageCount{0};
+		bool cleanupPending{};
+		cstrike::JoinError cleanupError{cstrike::JoinError::None};
+	};
+	ClientState* findClient(core::PlayerId) noexcept;
+	const ClientState* findClient(core::PlayerId) const noexcept;
+	void emit(host::LifecycleEventKind attemptedKind, const host::LifecycleResult& result,
+			  host::PlayerId attemptedPlayer = host::PlayerId::invalid(),
+			  host::TickId attemptedTick = host::TickId::invalid()) noexcept;
+	void emitJoin(const ClientState&, const cstrike::JoinAction& action) noexcept;
+	void handleMessage(const cstrike::MessageEvent& event) noexcept;
+	void handleJoinAction(ClientState&, const cstrike::JoinAction& action) noexcept;
+	void cleanupFailedJoin(ClientState&, cstrike::JoinError error) noexcept;
+	void cleanupActiveAfterRemoval(ClientState&, const RemovalResult& result, host::PlayerId player) noexcept;
+	void emitRemoval(debug::RemovalOutcome outcome, debug::RemovalError error, host::PlayerId player,
+					 bool mappingPresent, bool entityPresent) noexcept;
+	CombatSubmitResult submitComposedCombat(core::PlayerId player, core::MapGeneration mapGeneration,
+											core::perception::RoundGeneration round, core::BotAgentId agent,
+											core::TickId tick, const core::combat::CombatDecision& decision,
+											const core::BotCommand& navigation,
+											const core::combat::CombatInput* input) noexcept;
+	void emitCombatTrace(core::PlayerId player, const core::combat::CombatDecision& decision,
+						 core::MapGeneration mapGeneration, core::perception::RoundGeneration round,
+						 core::BotAgentId agent, core::TickId tick, std::uint64_t timeMicros,
+						 const core::combat::WeaponSnapshot* weapon,
+						 const core::combat::CommandCompositionResult& composition,
+						 const CombatSubmitResult& result) noexcept;
+	void configureUserMessageIds(cstrike::UserMessageIds) noexcept;
+	bool refreshUserMessageIds(bool logPending) noexcept;
+	void clearCombatState(core::PlayerId player) noexcept;
+	void clearAllCombatState() noexcept;
+	void retireCombatTarget(core::PlayerId player) noexcept;
+	void refreshCombatTargetLiveness() noexcept;
+	bool dispatchMenu(ClientState&, std::uint8_t selection) noexcept;
+	bool dispatchBuyCommand(core::PlayerId, const char*) noexcept;
+	void dispatchRoundBuy(ClientState&) noexcept;
+	static bool dispatchWeaponSelectionHook(edict_t*, core::WeaponSelection) noexcept;
+	bool dispatchWeaponSelection(edict_t*, core::WeaponSelection) noexcept;
+	static void onMessage(void* context, const cstrike::MessageEvent& event) noexcept;
 
-    host::PlayerRegistry registry_{};
-    host::BotAgentRegistry agents_{};
-    std::array<ClientState,host::kMaxClientSlots> clients_{};
-    MovementCoordinator movement_{};
-    RuntimeInputBuildStatus runtimeInputBuildStatus_{};
-    std::array<RuntimeInputBuildStatus,host::kMaxClientSlots> runtimeInputBuildStatuses_{};
-    std::array<RuntimeActorCorrelation,host::kMaxClientSlots> runtimeCorrelation_{};
-    cstrike::NavConsole navConsole_{};
-    RuntimeOrchestrator runtime_{};
-    void loadMapNavigation() noexcept;
-    static bool readObjective(void*, const LifecycleCoordinator&, const RuntimeFrame&,
-        core::PlayerId, const edict_t*, RuntimeObjectiveObservation&,
-        RuntimeEconomyObservation&) noexcept;
-    static std::size_t produceExperienceEvents(void*, const LifecycleCoordinator&,
-        const RuntimeFrame&, core::PlayerId, const edict_t*,
-        core::experience::ExperienceEvent*, std::size_t) noexcept;
-    MapNavLoadStatus mapNavLoadStatus_{};
-    std::array<RuntimeHealthObservation,host::kMaxClientSlots> runtimeHealth_{};
-    std::array<core::PlayerId,host::kMaxClientSlots> retiredCombatTargets_{};
-    std::array<bool,host::kMaxClientSlots> runtimeCombatPending_{};
-    std::array<RuntimeActorInput,kRuntimeActorCapacity> runtimeInputsScratch_{};
-    mutable std::array<nav::model::NavAreaId,host::kMaxClientSlots> experienceAreas_{};
-    mutable std::array<double,host::kMaxClientSlots> experienceDamageSeen_{};
-    mutable std::array<std::uint64_t,host::kMaxClientSlots> experienceDeathsSeen_{};
-    mutable std::uint64_t experienceEventSequence_{};
-    std::array<std::int32_t,host::kMaxClientSlots> money_{};
-    std::array<bool,host::kMaxClientSlots> moneyKnown_{};
-    core::world::WorldModel world_{};
-    nav::query::DistributionModel distributions_{};
-    cstrike::VisionAdapter vision_{world_};
-    bool reporting_{};
-    cstrike::SoundAdapter sound_{world_.soundReducer()};
-    cstrike::VisualEffects visualEffects_{};
-    bool advanceVisualEffects() noexcept;
-    core::perception::TeamRoster teams_{};
-    core::perception::RoundGeneration round_{1};
-    std::array<core::perception::RoundGeneration,host::kMaxClientSlots>
-        lastBuyRound_{};
-    PerceptionIdentityDiagnostics identityDiagnostics_{};
-    core::TickId lastRoundTick_{};
-    double lastRoundTime_{-1};
-    enginefuncs_t* engineFunctions_{nullptr};
-    globalvars_t* engineGlobals_{nullptr};
-    mutil_funcs_t* utilityFunctions_{nullptr};
-    DLL_FUNCTIONS* hookedGameDllFunctions_{nullptr};
-    cstrike::MessageDecoder messageDecoder_{};
-    cstrike::UserMessageIds perceptionMessageIds_{};
-    cstrike::MessageDecoder* activeDecoder_{};
-    bool userMessageIdsReady_{false};
-    bool userMessageIdsPendingLogged_{false};
-    core::MapGeneration messageMap_{};
-    core::perception::RoundGeneration messageRound_{};
-    int messageDestination_{};
-    bool messageHasRecipient_{};
-    std::array<core::PlayerId,host::kMaxClientSlots> messagePlayers_{};
-    bool commandContextActive_{false};
-    core::PlayerId commandPlayer_{};
-    LifecycleStatus status_{};
-    int commandArgc_{0};
-    std::array<char, 32> commandArgv0_{};
-    std::array<char, 16> commandArgv1_{};
-    std::array<char, 16> commandArgs_{};
-    debug::LifecycleTraceSink traceSink_{nullptr};
-    debug::JoinTraceSink joinTraceSink_{nullptr};
-    debug::RemovalTraceSink removalTraceSink_{nullptr};
-    debug::CombatTraceSink combatTraceSink_{nullptr};
-    std::uint64_t combatTraceSequence_{0};
-    RuntimeInputProvider runtimeInputProvider_{nullptr};
-    core::PlayerId runtimeOwnedActor_{};
-    core::combat::WeaponId runtimeWeapon_{};
-    bool runtimeAttackPending_{false};
-    void* runtimeInputContext_{nullptr};
+	host::PlayerRegistry registry_{};
+	host::BotAgentRegistry agents_{};
+	std::array<ClientState, host::kMaxClientSlots> clients_{};
+	MovementCoordinator movement_{};
+	RuntimeInputBuildStatus runtimeInputBuildStatus_{};
+	std::array<RuntimeInputBuildStatus, host::kMaxClientSlots> runtimeInputBuildStatuses_{};
+	std::array<RuntimeActorCorrelation, host::kMaxClientSlots> runtimeCorrelation_{};
+	cstrike::NavConsole navConsole_{};
+	RuntimeOrchestrator runtime_{};
+	void loadMapNavigation() noexcept;
+	static bool readObjective(void*, const LifecycleCoordinator&, const RuntimeFrame&, core::PlayerId, const edict_t*,
+							  RuntimeObjectiveObservation&, RuntimeEconomyObservation&) noexcept;
+	static std::size_t produceExperienceEvents(void*, const LifecycleCoordinator&, const RuntimeFrame&, core::PlayerId,
+											   const edict_t*, core::experience::ExperienceEvent*,
+											   std::size_t) noexcept;
+	MapNavLoadStatus mapNavLoadStatus_{};
+	std::array<RuntimeHealthObservation, host::kMaxClientSlots> runtimeHealth_{};
+	std::array<core::PlayerId, host::kMaxClientSlots> retiredCombatTargets_{};
+	std::array<bool, host::kMaxClientSlots> runtimeCombatPending_{};
+	std::array<RuntimeActorInput, kRuntimeActorCapacity> runtimeInputsScratch_{};
+	mutable std::array<nav::model::NavAreaId, host::kMaxClientSlots> experienceAreas_{};
+	mutable std::array<double, host::kMaxClientSlots> experienceDamageSeen_{};
+	mutable std::array<std::uint64_t, host::kMaxClientSlots> experienceDeathsSeen_{};
+	mutable std::uint64_t experienceEventSequence_{};
+	std::array<std::int32_t, host::kMaxClientSlots> money_{};
+	std::array<bool, host::kMaxClientSlots> moneyKnown_{};
+	core::world::WorldModel world_{};
+	nav::query::DistributionModel distributions_{};
+	cstrike::VisionAdapter vision_{world_};
+	bool reporting_{};
+	cstrike::SoundAdapter sound_{world_.soundReducer()};
+	cstrike::VisualEffects visualEffects_{};
+	bool advanceVisualEffects() noexcept;
+	core::perception::TeamRoster teams_{};
+	core::perception::RoundGeneration round_{1};
+	std::array<core::perception::RoundGeneration, host::kMaxClientSlots> lastBuyRound_{};
+	PerceptionIdentityDiagnostics identityDiagnostics_{};
+	core::TickId lastRoundTick_{};
+	double lastRoundTime_{-1};
+	enginefuncs_t* engineFunctions_{nullptr};
+	globalvars_t* engineGlobals_{nullptr};
+	mutil_funcs_t* utilityFunctions_{nullptr};
+	DLL_FUNCTIONS* hookedGameDllFunctions_{nullptr};
+	cstrike::MessageDecoder messageDecoder_{};
+	cstrike::UserMessageIds perceptionMessageIds_{};
+	cstrike::MessageDecoder* activeDecoder_{};
+	bool userMessageIdsReady_{false};
+	bool userMessageIdsPendingLogged_{false};
+	core::MapGeneration messageMap_{};
+	core::perception::RoundGeneration messageRound_{};
+	int messageDestination_{};
+	bool messageHasRecipient_{};
+	std::array<core::PlayerId, host::kMaxClientSlots> messagePlayers_{};
+	bool commandContextActive_{false};
+	core::PlayerId commandPlayer_{};
+	LifecycleStatus status_{};
+	int commandArgc_{0};
+	std::array<char, 32> commandArgv0_{};
+	std::array<char, 16> commandArgv1_{};
+	std::array<char, 16> commandArgs_{};
+	debug::LifecycleTraceSink traceSink_{nullptr};
+	debug::JoinTraceSink joinTraceSink_{nullptr};
+	debug::RemovalTraceSink removalTraceSink_{nullptr};
+	debug::CombatTraceSink combatTraceSink_{nullptr};
+	std::uint64_t combatTraceSequence_{0};
+	RuntimeInputProvider runtimeInputProvider_{nullptr};
+	core::PlayerId runtimeOwnedActor_{};
+	core::combat::WeaponId runtimeWeapon_{};
+	bool runtimeAttackPending_{false};
+	void* runtimeInputContext_{nullptr};
 };
 
 LifecycleCoordinator& lifecycleCoordinator() noexcept;
@@ -449,11 +519,7 @@ void serverDeactivateHook();
 void clientDisconnectHook(edict_t* entity);
 void startFrameHook();
 
-void messageBeginHook(
-    int messageDestination,
-    int messageType,
-    const float* origin,
-    edict_t* recipient);
+void messageBeginHook(int messageDestination, int messageType, const float* origin, edict_t* recipient);
 void messageEndHook();
 void writeByteHook(int value);
 void writeCharHook(int value);

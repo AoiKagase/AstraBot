@@ -7,36 +7,55 @@
 
 #include <cstdint>
 
-namespace astrabot::adapter::metamod { class LifecycleCoordinator; }
-namespace astrabot::adapter::cstrike {
-// Engine pointers/serials and unobserved geometry stay inside this adapter.
-class VisionAdapter final {
-public:
-    explicit VisionAdapter(core::world::WorldModel& world) noexcept : world_(world),memory_(world.visualReducer()) {}
-    void reset() noexcept;
-    void forget(core::PlayerId) noexcept;
-    void beginRound(core::perception::RoundGeneration) noexcept;
-    bool synchronize(metamod::LifecycleCoordinator&, enginefuncs_t*) noexcept;
-    bool bound(core::PlayerId, enginefuncs_t*) const noexcept;
-    void frame(metamod::LifecycleCoordinator&, enginefuncs_t*, std::uint64_t frameMicros) noexcept;
-    const core::perception::Vision& observations() const noexcept { return vision_; }
-    const core::perception::Diagnostics* diagnostics(core::PlayerId player) const noexcept {
-        return vision_.diagnostics(player);
-    }
-    const core::world::VisualMemoryModel& memory() const noexcept { return memory_; }
-    core::perception::Reason error() const noexcept { return error_; }
-private:
-    struct EntityBinding {
-        edict_t* entity{};
-        int serial{};
-        core::PlayerId player{};
-    };
-    std::array<EntityBinding, core::perception::kPlayerCapacity> roster_{};
-    core::perception::Vision vision_{};
-    core::world::WorldModel& world_;
-    core::world::VisualMemoryModel& memory_;
-    std::uint64_t revision_{};
-    core::MapGeneration map_{};
-    core::perception::Reason error_{core::perception::Reason::None};
-};
+namespace astrabot::adapter::metamod
+{
+class LifecycleCoordinator;
 }
+namespace astrabot::adapter::cstrike
+{
+// Engine pointers/serials and unobserved geometry stay inside this adapter.
+class VisionAdapter final
+{
+public:
+	explicit VisionAdapter(core::world::WorldModel& world) noexcept : world_(world), memory_(world.visualReducer())
+	{
+	}
+	void reset() noexcept;
+	void forget(core::PlayerId) noexcept;
+	void beginRound(core::perception::RoundGeneration) noexcept;
+	bool synchronize(metamod::LifecycleCoordinator&, enginefuncs_t*) noexcept;
+	bool bound(core::PlayerId, enginefuncs_t*) const noexcept;
+	void frame(metamod::LifecycleCoordinator&, enginefuncs_t*, std::uint64_t frameMicros) noexcept;
+	const core::perception::Vision& observations() const noexcept
+	{
+		return vision_;
+	}
+	const core::perception::Diagnostics* diagnostics(core::PlayerId player) const noexcept
+	{
+		return vision_.diagnostics(player);
+	}
+	const core::world::VisualMemoryModel& memory() const noexcept
+	{
+		return memory_;
+	}
+	core::perception::Reason error() const noexcept
+	{
+		return error_;
+	}
+
+private:
+	struct EntityBinding
+	{
+		edict_t* entity{};
+		int serial{};
+		core::PlayerId player{};
+	};
+	std::array<EntityBinding, core::perception::kPlayerCapacity> roster_{};
+	core::perception::Vision vision_{};
+	core::world::WorldModel& world_;
+	core::world::VisualMemoryModel& memory_;
+	std::uint64_t revision_{};
+	core::MapGeneration map_{};
+	core::perception::Reason error_{core::perception::Reason::None};
+};
+} // namespace astrabot::adapter::cstrike

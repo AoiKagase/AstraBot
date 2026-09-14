@@ -3,132 +3,204 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
-namespace astrabot::nav::local {
-namespace {
-bool sameOwner(Binding a,Binding b) noexcept { return a.agent==b.agent && a.actor==b.actor && a.map==b.map; }
-bool sameRecoveryGroup(const RecoveryEdge& a,const RecoveryEdge& b) noexcept {
-    return a.source==b.source && a.traversal==b.traversal;
+namespace astrabot::nav::local
+{
+namespace
+{
+bool sameOwner(Binding a, Binding b) noexcept
+{
+	return a.agent == b.agent && a.actor == b.actor && a.map == b.map;
 }
-std::uint64_t add(std::uint64_t a,std::uint64_t b) noexcept {
-    return b>(std::numeric_limits<std::uint64_t>::max)()-a ? (std::numeric_limits<std::uint64_t>::max)():a+b;
+bool sameRecoveryGroup(const RecoveryEdge& a, const RecoveryEdge& b) noexcept
+{
+	return a.source == b.source && a.traversal == b.traversal;
 }
+std::uint64_t add(std::uint64_t a, std::uint64_t b) noexcept
+{
+	return b > (std::numeric_limits<std::uint64_t>::max)() - a ? (std::numeric_limits<std::uint64_t>::max)() : a + b;
 }
-void Recovery::clearWindow() noexcept {
-    window_=credited_=false; windowUs_=0;
-    decision_.commandedUs=0; decision_.displacement=decision_.projected=decision_.travel=0;
+} // namespace
+void Recovery::clearWindow() noexcept
+{
+	window_ = credited_ = false;
+	windowUs_ = 0;
+	decision_.commandedUs = 0;
+	decision_.displacement = decision_.projected = decision_.travel = 0;
 }
-bool Recovery::bindRoute(Binding b,std::optional<RecoveryEdge> edge) noexcept {
-    if(!b.agent.isValid() || !b.actor.isValid() || !b.map.isValid() || !b.routeGeneration ||
-       (bound_ && (!sameOwner(b,binding_) || b.routeGeneration<binding_.routeGeneration)) ||
-       (edge && !edge->isValid())) return false;
-    const bool generationChanged=bound_ && b.routeGeneration!=binding_.routeGeneration;
-    const bool edgeChanged=bound_ && edge_ && edge && !sameRecoveryGroup(*edge_,*edge);
-    const bool unknownReplacement=generationChanged && (!edge_ || !edge);
-    if(!bound_ || edgeChanged || unknownReplacement || generationChanged) {
-        clearWindow(); reference_=false; dispatchTick_={}; progressAtUs_=0;
-        observationTick_={}; nowUs_=0;
-    }
-    // A new route always starts with a fresh observation window. In
-    // particular, a terminal Replan/Aborted state must never be interpreted
-    // by Walk::recover() as a failure of the newly-created route. Keep the
-    // bounded attempt count, but clear the terminal cause and resume
-    // monitoring on the new route generation.
-    if(generationChanged) {
-        decision_.state=RecoveryState::Monitoring;
-        decision_.cause=StuckCause::None;
-        decision_.symptom=StuckSymptom::None;
-        decision_.terminalEvent=false;
-        decision_.measuredProgress=false;
-        decision_.deadlineUs=0;
-    }
-    if(edgeChanged) decision_={};
-    bound_=true; binding_=b; edge_=edge; return true;
+bool Recovery::bindRoute(Binding b, std::optional<RecoveryEdge> edge) noexcept
+{
+	if (!b.agent.isValid() || !b.actor.isValid() || !b.map.isValid() || !b.routeGeneration ||
+		(bound_ && (!sameOwner(b, binding_) || b.routeGeneration < binding_.routeGeneration)) ||
+		(edge && !edge->isValid()))
+		return false;
+	const bool generationChanged = bound_ && b.routeGeneration != binding_.routeGeneration;
+	const bool edgeChanged = bound_ && edge_ && edge && !sameRecoveryGroup(*edge_, *edge);
+	const bool unknownReplacement = generationChanged && (!edge_ || !edge);
+	if (!bound_ || edgeChanged || unknownReplacement || generationChanged)
+	{
+		clearWindow();
+		reference_ = false;
+		dispatchTick_ = {};
+		progressAtUs_ = 0;
+		observationTick_ = {};
+		nowUs_ = 0;
+	}
+	// A new route always starts with a fresh observation window. In
+	// particular, a terminal Replan/Aborted state must never be interpreted
+	// by Walk::recover() as a failure of the newly-created route. Keep the
+	// bounded attempt count, but clear the terminal cause and resume
+	// monitoring on the new route generation.
+	if (generationChanged)
+	{
+		decision_.state = RecoveryState::Monitoring;
+		decision_.cause = StuckCause::None;
+		decision_.symptom = StuckSymptom::None;
+		decision_.terminalEvent = false;
+		decision_.measuredProgress = false;
+		decision_.deadlineUs = 0;
+	}
+	if (edgeChanged)
+		decision_ = {};
+	bound_ = true;
+	binding_ = b;
+	edge_ = edge;
+	return true;
 }
-bool Recovery::report(const ProgressDispatch& d) noexcept {
-    if(!bound_ || !sameOwner(d.binding,binding_) || d.binding.routeGeneration!=binding_.routeGeneration ||
-       !d.commandTick.isValid() || !d.dispatchTick.isAfter(d.commandTick) ||
-       (dispatchTick_.isValid() && !d.dispatchTick.isAfter(dispatchTick_))) return false;
-    dispatchTick_=d.dispatchTick;
-    if(decision_.state!=RecoveryState::Monitoring) return true;
-    const auto length=std::hypot(d.direction.x,d.direction.y);
-    if((!d.dispatched && !d.traversalRejected) || d.expected==ExpectedProgress::Pause || !d.origin.isFinite() ||
-       !std::isfinite(length) || length<=0 || !d.durationUs || d.durationUs>255000) {
-        clearWindow(); return true;
-    }
-    window_=true;
-    if(!reference_) {
-        reference_=true; anchor_=previous_=d.origin; furthest_=0;
-        decision_.forward={d.direction.x/length,d.direction.y/length,0};
-    }
-    // Changing a target or crouch tag does not restart the window.
-    windowUs_=(std::max)(windowUs_,d.expected==ExpectedProgress::Crouch ? crouchWindowUs:walkWindowUs);
-    decision_.commandedUs=add(decision_.commandedUs,d.durationUs); credited_=true;
-    return true;
+bool Recovery::report(const ProgressDispatch& d) noexcept
+{
+	if (!bound_ || !sameOwner(d.binding, binding_) || d.binding.routeGeneration != binding_.routeGeneration ||
+		!d.commandTick.isValid() || !d.dispatchTick.isAfter(d.commandTick) ||
+		(dispatchTick_.isValid() && !d.dispatchTick.isAfter(dispatchTick_)))
+		return false;
+	dispatchTick_ = d.dispatchTick;
+	if (decision_.state != RecoveryState::Monitoring)
+		return true;
+	const auto length = std::hypot(d.direction.x, d.direction.y);
+	if ((!d.dispatched && !d.traversalRejected) || d.expected == ExpectedProgress::Pause || !d.origin.isFinite() ||
+		!std::isfinite(length) || length <= 0 || !d.durationUs || d.durationUs > 255000)
+	{
+		clearWindow();
+		return true;
+	}
+	window_ = true;
+	if (!reference_)
+	{
+		reference_ = true;
+		anchor_ = previous_ = d.origin;
+		furthest_ = 0;
+		decision_.forward = {d.direction.x / length, d.direction.y / length, 0};
+	}
+	// Changing a target or crouch tag does not restart the window.
+	windowUs_ = (std::max)(windowUs_, d.expected == ExpectedProgress::Crouch ? crouchWindowUs : walkWindowUs);
+	decision_.commandedUs = add(decision_.commandedUs, d.durationUs);
+	credited_ = true;
+	return true;
 }
-void Recovery::pause(Binding b) noexcept {
-    if(bound_ && sameOwner(b,binding_) && b.routeGeneration==binding_.routeGeneration &&
-       decision_.state==RecoveryState::Monitoring) clearWindow();
+void Recovery::pause(Binding b) noexcept
+{
+	if (bound_ && sameOwner(b, binding_) && b.routeGeneration == binding_.routeGeneration &&
+		decision_.state == RecoveryState::Monitoring)
+		clearWindow();
 }
-RecoveryDecision Recovery::abort(StuckCause cause) noexcept {
-    const bool first=decision_.state!=RecoveryState::Aborted;
-    decision_.state=RecoveryState::Aborted; decision_.cause=cause;
-    decision_.terminalEvent=first; decision_.deadlineUs=0; return decision_;
+RecoveryDecision Recovery::abort(StuckCause cause) noexcept
+{
+	const bool first = decision_.state != RecoveryState::Aborted;
+	decision_.state = RecoveryState::Aborted;
+	decision_.cause = cause;
+	decision_.terminalEvent = first;
+	decision_.deadlineUs = 0;
+	return decision_;
 }
-void Recovery::replanned() noexcept {
-    decision_.attempts=1;
-    // A successful bounded replan arms a new route. Even when the previous
-    // route ended through abort, the next route must be observable and cannot
-    // inherit the terminal state.
-    decision_.state=RecoveryState::Monitoring;
-    decision_.cause=StuckCause::None;
-    decision_.symptom=StuckSymptom::None;
-    decision_.terminalEvent=false;
-    decision_.measuredProgress=false;
-    decision_.deadlineUs=0; clearWindow(); reference_=false;
+void Recovery::replanned() noexcept
+{
+	decision_.attempts = 1;
+	// A successful bounded replan arms a new route. Even when the previous
+	// route ended through abort, the next route must be observable and cannot
+	// inherit the terminal state.
+	decision_.state = RecoveryState::Monitoring;
+	decision_.cause = StuckCause::None;
+	decision_.symptom = StuckSymptom::None;
+	decision_.terminalEvent = false;
+	decision_.measuredProgress = false;
+	decision_.deadlineUs = 0;
+	clearWindow();
+	reference_ = false;
 }
-RecoveryDecision Recovery::observe(Binding b,core::TickId tick,std::uint64_t now,model::NavVector3 p) noexcept {
-    decision_.terminalEvent=decision_.measuredProgress=false;
-    if(!bound_ || !sameOwner(b,binding_) || b.routeGeneration!=binding_.routeGeneration ||
-       !tick.isValid() || (observationTick_.isValid() && !tick.isAfter(observationTick_)) || now<nowUs_ || !p.isFinite())
-        return decision_;
-    observationTick_=tick; nowUs_=now;
-    if(!progressAtUs_) progressAtUs_=now;
-    if(b.step!=binding_.step) { clearWindow(); reference_=false; progressAtUs_=now; }
-    binding_.step=b.step;
-    if(decision_.state==RecoveryState::Aborted || decision_.state==RecoveryState::Replan) return decision_;
-    if(now-progressAtUs_>=pathProgressTimeoutUs) return abort(StuckCause::Unknown);
-    if(decision_.state!=RecoveryState::Monitoring) {
-        if(now<decision_.deadlineUs) return decision_;
-        if(decision_.state==RecoveryState::Wait) decision_.state=RecoveryState::Sidestep;
-        else if(decision_.state==RecoveryState::Sidestep) decision_.state=RecoveryState::Reverse;
-        else decision_.state=RecoveryState::Replan;
-        decision_.deadlineUs=decision_.state==RecoveryState::Replan ? 0:add(now,stageUs);
-        return decision_;
-    }
-    if(!window_ || !credited_) return decision_;
-    credited_=false;
-    const double dx=double(p.x)-anchor_.x,dy=double(p.y)-anchor_.y;
-    decision_.displacement=std::hypot(dx,dy);
-    decision_.projected=dx*decision_.forward.x+dy*decision_.forward.y;
-    decision_.travel+=std::hypot(double(p.x)-previous_.x,double(p.y)-previous_.y); previous_=p;
-    if(decision_.projected>=progressDistance && decision_.displacement>=progressDistance) {
-        decision_.attempts=0; decision_.cause=StuckCause::None; decision_.symptom=StuckSymptom::None;
-        // Retain the selected corridor direction and forward high-water point
-        // across windows: a reversed steering target cannot refill the budget.
-        anchor_=p; furthest_=0; progressAtUs_=now; decision_.measuredProgress=true; clearWindow(); return decision_;
-    }
-    // A verified lateral avoidance can make displacement without advancing the
-    // portal. Credit only a NEW displacement high-water mark, never a repeated
-    // excursion. This postpones detection but does not replenish replan attempts.
-    if(decision_.displacement>=furthest_+progressDistance) {
-        furthest_=decision_.displacement; decision_.commandedUs=0; decision_.travel=0;
-        return decision_;
-    }
-    if(decision_.commandedUs<windowUs_) return decision_;
-    decision_.cause=StuckCause::Unknown; // Failed progress alone never proves a collision.
-    decision_.symptom=decision_.travel-decision_.displacement>=progressDistance ? StuckSymptom::Oscillation:StuckSymptom::NoProgress;
-    if(decision_.attempts) return abort(decision_.cause);
-    decision_.state=RecoveryState::Wait; decision_.deadlineUs=add(now,stageUs);
-    return decision_;
+RecoveryDecision Recovery::observe(Binding b, core::TickId tick, std::uint64_t now, model::NavVector3 p) noexcept
+{
+	decision_.terminalEvent = decision_.measuredProgress = false;
+	if (!bound_ || !sameOwner(b, binding_) || b.routeGeneration != binding_.routeGeneration || !tick.isValid() ||
+		(observationTick_.isValid() && !tick.isAfter(observationTick_)) || now < nowUs_ || !p.isFinite())
+		return decision_;
+	observationTick_ = tick;
+	nowUs_ = now;
+	if (!progressAtUs_)
+		progressAtUs_ = now;
+	if (b.step != binding_.step)
+	{
+		clearWindow();
+		reference_ = false;
+		progressAtUs_ = now;
+	}
+	binding_.step = b.step;
+	if (decision_.state == RecoveryState::Aborted || decision_.state == RecoveryState::Replan)
+		return decision_;
+	if (now - progressAtUs_ >= pathProgressTimeoutUs)
+		return abort(StuckCause::Unknown);
+	if (decision_.state != RecoveryState::Monitoring)
+	{
+		if (now < decision_.deadlineUs)
+			return decision_;
+		if (decision_.state == RecoveryState::Wait)
+			decision_.state = RecoveryState::Sidestep;
+		else if (decision_.state == RecoveryState::Sidestep)
+			decision_.state = RecoveryState::Reverse;
+		else
+			decision_.state = RecoveryState::Replan;
+		decision_.deadlineUs = decision_.state == RecoveryState::Replan ? 0 : add(now, stageUs);
+		return decision_;
+	}
+	if (!window_ || !credited_)
+		return decision_;
+	credited_ = false;
+	const double dx = double(p.x) - anchor_.x, dy = double(p.y) - anchor_.y;
+	decision_.displacement = std::hypot(dx, dy);
+	decision_.projected = dx * decision_.forward.x + dy * decision_.forward.y;
+	decision_.travel += std::hypot(double(p.x) - previous_.x, double(p.y) - previous_.y);
+	previous_ = p;
+	if (decision_.projected >= progressDistance && decision_.displacement >= progressDistance)
+	{
+		decision_.attempts = 0;
+		decision_.cause = StuckCause::None;
+		decision_.symptom = StuckSymptom::None;
+		// Retain the selected corridor direction and forward high-water point
+		// across windows: a reversed steering target cannot refill the budget.
+		anchor_ = p;
+		furthest_ = 0;
+		progressAtUs_ = now;
+		decision_.measuredProgress = true;
+		clearWindow();
+		return decision_;
+	}
+	// A verified lateral avoidance can make displacement without advancing the
+	// portal. Credit only a NEW displacement high-water mark, never a repeated
+	// excursion. This postpones detection but does not replenish replan attempts.
+	if (decision_.displacement >= furthest_ + progressDistance)
+	{
+		furthest_ = decision_.displacement;
+		decision_.commandedUs = 0;
+		decision_.travel = 0;
+		return decision_;
+	}
+	if (decision_.commandedUs < windowUs_)
+		return decision_;
+	decision_.cause = StuckCause::Unknown; // Failed progress alone never proves a collision.
+	decision_.symptom = decision_.travel - decision_.displacement >= progressDistance ? StuckSymptom::Oscillation
+																					  : StuckSymptom::NoProgress;
+	if (decision_.attempts)
+		return abort(decision_.cause);
+	decision_.state = RecoveryState::Wait;
+	decision_.deadlineUs = add(now, stageUs);
+	return decision_;
 }
-}
+} // namespace astrabot::nav::local
