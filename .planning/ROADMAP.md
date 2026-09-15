@@ -67,9 +67,16 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
+**Wave 1**
 
 - [ ] 02-01: Implement Metamod entrypoints and hook table skeleton.
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 02-02: Implement map/round runtime session and generation ownership.
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 02-03: Implement native CSBot guard and runtime diagnostics.
 
 ### Phase 3: FakeClient and input dispatch
