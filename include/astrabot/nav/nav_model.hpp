@@ -83,6 +83,7 @@ struct NavArea
 	NavExtent extent;
 	float northEastZ;
 	float southWestZ;
+	std::uint16_t placeId;
 	std::array<std::vector<AreaId>, kDirectionCount> connections;
 	std::vector<NavHidingSpot> hidingSpots;
 	std::vector<NavApproach> approaches;

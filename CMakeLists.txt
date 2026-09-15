@@ -26,6 +26,7 @@ include(cmake/AstraBotBuild.cmake)
   src/core/compat/bot_configuration.cpp
   src/core/compat/profile_catalog.cpp
   src/core/nav/nav_model.cpp
+  src/core/nav/legacy_nav_reader.cpp
   src/core/runtime/bot_command.cpp
     src/core/runtime/command_queue.cpp
   src/core/runtime/lifecycle.cpp
@@ -159,6 +160,16 @@ if(ASTRABOT_BUILD_TESTS)
   target_link_libraries(astrabot_nav_model PRIVATE astrabot_core)
   astrabot_apply_warnings(astrabot_nav_model)
   add_test(NAME astrabot_nav_model COMMAND astrabot_nav_model)
+
+  add_executable(astrabot_legacy_nav_reader
+    tests/legacy_nav_reader_tests.cpp
+  )
+  target_include_directories(astrabot_legacy_nav_reader PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+  )
+  target_link_libraries(astrabot_legacy_nav_reader PRIVATE astrabot_core)
+  astrabot_apply_warnings(astrabot_legacy_nav_reader)
+  add_test(NAME astrabot_legacy_nav_reader COMMAND astrabot_legacy_nav_reader)
 endif()
 
 if(ASTRABOT_BUILD_METAMOD)

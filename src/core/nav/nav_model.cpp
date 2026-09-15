@@ -119,6 +119,22 @@ NavModelResult NavDocument::validate() const
 		{
 			return NavModelResult::InvalidGeometry;
 		}
+		if (area.placeId != 0U)
+		{
+			bool placeFound = false;
+			for (const NavPlace &place : places_)
+			{
+				if (place.id == area.placeId)
+				{
+					placeFound = true;
+					break;
+				}
+			}
+			if (!placeFound)
+			{
+				return NavModelResult::InvalidReference;
+			}
+		}
 		for (const std::vector<AreaId> &connections : area.connections)
 		{
 			for (const AreaId target : connections)
