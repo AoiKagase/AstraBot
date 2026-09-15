@@ -20,10 +20,17 @@ include(cmake/AstraBotBuild.cmake)
 
 add_library(astrabot_core STATIC
   src/core/build_identity.cpp
+  src/core/runtime/lifecycle.cpp
 )
 target_include_directories(astrabot_core PUBLIC
   "${CMAKE_CURRENT_SOURCE_DIR}/include"
 )
+if(NOT MSVC)
+  set_target_properties(astrabot_core PROPERTIES
+    CXX_VISIBILITY_PRESET hidden
+    VISIBILITY_INLINES_HIDDEN ON
+  )
+endif()
 target_compile_definitions(astrabot_core PRIVATE
   ASTRABOT_CXX_STANDARD=14
   ASTRABOT_VERSION_STRING="${PROJECT_VERSION}"
@@ -42,6 +49,26 @@ if(ASTRABOT_BUILD_TESTS)
   target_link_libraries(astrabot_build_identity PRIVATE astrabot_core)
   astrabot_apply_warnings(astrabot_build_identity)
   add_test(NAME astrabot_build_identity COMMAND astrabot_build_identity)
+
+  add_executable(astrabot_lifecycle_generation
+    tests/lifecycle_generation_tests.cpp
+  )
+  target_include_directories(astrabot_lifecycle_generation PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+  )
+  target_link_libraries(astrabot_lifecycle_generation PRIVATE astrabot_core)
+  astrabot_apply_warnings(astrabot_lifecycle_generation)
+  add_test(NAME astrabot_lifecycle_generation COMMAND astrabot_lifecycle_generation)
+
+  add_executable(astrabot_native_bot_guard
+    tests/native_bot_guard_tests.cpp
+    src/adapter/metamod/native_bot_guard.cpp
+  )
+  target_include_directories(astrabot_native_bot_guard PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+  )
+  astrabot_apply_warnings(astrabot_native_bot_guard)
+  add_test(NAME astrabot_native_bot_guard COMMAND astrabot_native_bot_guard)
 endif()
 
 if(ASTRABOT_BUILD_METAMOD)
@@ -62,6 +89,8 @@ if(ASTRABOT_BUILD_METAMOD)
 
   add_library(astrabot_mm SHARED
     src/adapter/metamod/plugin_exports.cpp
+    src/adapter/metamod/native_bot_guard.cpp
+    src/adapter/metamod/plugin_runtime.cpp
   )
   target_include_directories(astrabot_mm PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/include"
@@ -71,6 +100,13 @@ if(ASTRABOT_BUILD_METAMOD)
     ASTRABOT_CXX_STANDARD=14
     ASTRABOT_VERSION_STRING="${PROJECT_VERSION}"
   )
+  target_link_libraries(astrabot_mm PRIVATE astrabot_core)
+  if(NOT MSVC)
+    set_target_properties(astrabot_mm PROPERTIES
+      CXX_VISIBILITY_PRESET hidden
+      VISIBILITY_INLINES_HIDDEN ON
+    )
+  endif()
   if(MSVC)
     target_sources(astrabot_mm PRIVATE
       src/adapter/metamod/astrabot_mm.def
@@ -89,5 +125,22 @@ if(ASTRABOT_BUILD_METAMOD)
     target_link_libraries(astrabot_metamod_abi PRIVATE astrabot_mm)
     astrabot_apply_warnings(astrabot_metamod_abi)
     add_test(NAME astrabot_metamod_abi COMMAND astrabot_metamod_abi)
+
+    add_executable(astrabot_metamod_hooks
+      tests/metamod_hook_table_tests.cpp
+    )
+    target_include_directories(astrabot_metamod_hooks PRIVATE
+      "${CMAKE_CURRENT_SOURCE_DIR}/include"
+      "${CMAKE_CURRENT_SOURCE_DIR}/src/adapter/metamod"
+      ${ASTRABOT_METAMOD_INCLUDE_DIRS}
+    )
+    target_sources(astrabot_metamod_hooks PRIVATE
+      src/adapter/metamod/native_bot_guard.cpp
+      src/adapter/metamod/plugin_exports.cpp
+      src/adapter/metamod/plugin_runtime.cpp
+    )
+    target_link_libraries(astrabot_metamod_hooks PRIVATE astrabot_core)
+    astrabot_apply_warnings(astrabot_metamod_hooks)
+    add_test(NAME astrabot_metamod_hooks COMMAND astrabot_metamod_hooks)
   endif()
 endif()

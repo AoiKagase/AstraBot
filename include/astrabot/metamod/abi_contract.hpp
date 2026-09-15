@@ -26,7 +26,11 @@ extern "C"
 	C_DLLEXPORT FORCE_STACK_ALIGN int GetEntityAPI2(DLL_FUNCTIONS *functionTable,
 	int *interfaceVersion);
 	C_DLLEXPORT int GetEngineFunctions(enginefuncs_t *engineFunctions, int *interfaceVersion);
-	void WINAPI GiveFnptrsToDll(enginefuncs_t *engineFunctions, globalvars_t *globals);
+#ifdef _WIN32
+void WINAPI GiveFnptrsToDll(enginefuncs_t *engineFunctions, globalvars_t *globals);
+#else
+C_DLLEXPORT void WINAPI GiveFnptrsToDll(enginefuncs_t *engineFunctions, globalvars_t *globals);
+#endif
 }
 
 } // namespace metamod

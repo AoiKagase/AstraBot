@@ -13,9 +13,9 @@
 
 ### Lifecycle and actors
 
-- [ ] **LIFE-01**: AstraBot initializes and retires map, round, Entity-slot, and actor generations without retaining stale references.
+- [x] **LIFE-01**: AstraBot initializes and retires map, round, Entity-slot, and actor generations without retaining stale references.
 - [ ] **LIFE-02**: An administrator can create, join, control, remove, and recreate AstraBot FakeClients without a crash or identity collision.
-- [ ] **LIFE-03**: Native ReGameDLL-CS CSBot is suppressed or detected before AstraBot creates managed actors, preventing silent double ownership.
+- [x] **LIFE-03**: Native ReGameDLL-CS CSBot is suppressed or detected before AstraBot creates managed actors, preventing silent double ownership.
 - [ ] **LIFE-04**: Map changes, round restarts, disconnects, death/respawn, and edict reuse invalidate stale observations, commands, routes, and state.
 
 ### Compatibility surface
@@ -87,9 +87,9 @@ Deferred until v1 CSBot parity is accepted.
 | HOST-01 | Phase 1 | Complete |
 | HOST-02 | Phase 1 | Complete |
 | HOST-03 | Phase 1 | Complete |
-| LIFE-01 | Phase 2 | Pending |
+| LIFE-01 | Phase 2 | Complete |
 | LIFE-02 | Phase 3 | Pending |
-| LIFE-03 | Phase 2 | Pending |
+| LIFE-03 | Phase 2 | Complete |
 | LIFE-04 | Phase 3 | Pending |
 | COMP-01 | Phase 4 | Pending |
 | COMP-02 | Phase 4 | Pending |

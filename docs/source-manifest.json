@@ -89,6 +89,60 @@
       "origin": "AstraBot",
       "license_status": "pending_release_review",
       "reference_only": false
+    },
+    {
+      "path": "include/astrabot/runtime/lifecycle.hpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "include/astrabot/metamod/native_bot_guard.hpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "src/core/runtime/lifecycle.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "src/adapter/metamod/plugin_runtime.hpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "src/adapter/metamod/plugin_runtime.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "src/adapter/metamod/native_bot_guard.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "tests/metamod_hook_table_tests.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "tests/lifecycle_generation_tests.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "tests/native_bot_guard_tests.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
     }
   ]
 }

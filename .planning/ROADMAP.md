@@ -7,7 +7,7 @@ The first milestone builds a standalone, source-independent Metamod-P plugin tha
 ## Phases
 
 - [x] **Phase 1: Foundation and ABI** - Establish the project toolchain, source boundary, public contracts, and x86 artifact checks. (completed 2026-09-15)
-- [ ] **Phase 2: Metamod lifecycle and native guard** - Load safely, receive hooks, manage map/round state, and prevent native Bot mixing.
+- [x] **Phase 2: Metamod lifecycle and native guard** - Load safely, receive hooks, manage map/round state, and prevent native Bot mixing. (completed 2026-09-15)
 - [ ] **Phase 3: FakeClient and input dispatch** - Create actor-safe FakeClients and validate command/input/receipt lifecycles.
 - [ ] **Phase 4: CSBot compatibility surface** - Reproduce required `bot_*` commands/CVars, profiles, and server configuration behavior.
 - [ ] **Phase 5: Read-only legacy Nav** - Load and validate existing `.nav` v1-v5 data into an immutable SDK-free model.
@@ -69,15 +69,15 @@ Plans:
 Plans:
 **Wave 1**
 
-- [ ] 02-01: Implement Metamod entrypoints and hook table skeleton.
+- [x] 02-01: Implement Metamod entrypoints and hook table skeleton.
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 02-02: Implement map/round runtime session and generation ownership.
+- [x] 02-02: Implement map/round runtime session and generation ownership.
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 02-03: Implement native CSBot guard and runtime diagnostics.
+- [x] 02-03: Implement native CSBot guard and runtime diagnostics.
 
 ### Phase 3: FakeClient and input dispatch
 
@@ -209,7 +209,7 @@ Phases execute sequentially: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundation and ABI | 3/3 | Complete    | 2026-09-15 |
-| 2. Metamod lifecycle and native guard | 0/3 | Not started | - |
+| 2. Metamod lifecycle and native guard | 3/3 | Complete    | 2026-09-15 |
 | 3. FakeClient and input dispatch | 0/3 | Not started | - |
 | 4. CSBot compatibility surface | 0/3 | Not started | - |
 | 5. Read-only legacy Nav | 0/4 | Not started | - |
