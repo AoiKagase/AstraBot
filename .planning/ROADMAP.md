@@ -28,14 +28,24 @@ The first milestone builds a standalone, source-independent Metamod-P plugin tha
 **Depends on**: Nothing (first phase)
 **Requirements**: HOST-01, HOST-02, HOST-03, TEST-01
 **Success Criteria**:
+
   1. The project configures and builds a minimal target separately for Windows x86 and Linux x86.
   2. The approved Metamod-P SDK commit and ReGameDLL-CS behavioral reference commit are recorded.
   3. The initial plugin export/ABI contract and non-copy source manifest are testable.
+
 **Plans**: 3 plans
 
 Plans:
+**Wave 1**
+
 - [ ] 01-01: Establish CMake/toolchain and x86 build identity.
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 01-02: Define plugin ABI/export and Core/adapter contract tests.
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 01-03: Add source-origin manifest and verification harness.
 
 ### Phase 2: Metamod lifecycle and native guard
@@ -44,12 +54,15 @@ Plans:
 **Depends on**: Phase 1
 **Requirements**: LIFE-01, LIFE-03
 **Success Criteria**:
+
   1. Plugin load, attach, map activation, frame dispatch, deactivation, and detach are observable and safe.
   2. Native CSBot is suppressed or a detected incompatibility prevents managed Bot creation.
   3. Map and round generations invalidate stale runtime state.
+
 **Plans**: 3 plans
 
 Plans:
+
 - [ ] 02-01: Implement Metamod entrypoints and hook table skeleton.
 - [ ] 02-02: Implement map/round runtime session and generation ownership.
 - [ ] 02-03: Implement native CSBot guard and runtime diagnostics.
@@ -60,12 +73,15 @@ Plans:
 **Depends on**: Phase 2
 **Requirements**: LIFE-02, LIFE-04, TEST-02
 **Success Criteria**:
+
   1. Bot creation, join, input dispatch, removal, and slot reuse are safe and traceable.
   2. Stale, duplicate, rejected, and actor-mismatched commands cannot advance Bot state.
   3. Multiple actors remain isolated in a fake host and in the real hook path.
+
 **Plans**: 3 plans
 
 Plans:
+
 - [ ] 03-01: Implement actor registry and FakeClient lifecycle.
 - [ ] 03-02: Implement safe command and usercmd dispatch boundary.
 - [ ] 03-03: Add generation/receipt diagnostics and multi-actor isolation tests.
@@ -76,12 +92,15 @@ Plans:
 **Depends on**: Phase 3
 **Requirements**: COMP-01, COMP-02, COMP-03
 **Success Criteria**:
+
   1. Required `bot_*` commands/CVars parse and report results compatibly.
   2. Existing profile files can select Bot identity/difficulty/team data.
   3. Enable/disable/add/remove/team/configuration flows do not reach native CSBot unexpectedly.
+
 **Plans**: 3 plans
 
 Plans:
+
 - [ ] 04-01: Define command/CVar compatibility contracts and parser tests.
 - [ ] 04-02: Implement profile loading and selection boundary.
 - [ ] 04-03: Integrate administrator command flows with the Bot runtime.
@@ -92,12 +111,15 @@ Plans:
 **Depends on**: Phase 4
 **Requirements**: NAV-01, NAV-02, NAV-03, NAV-04
 **Success Criteria**:
+
   1. Supported `.nav` v1-v5 fixtures load with stable IDs, connectivity, and required geometry.
   2. Corrupt, oversized, mismatched, and non-finite input fails without partial publication.
   3. No v1 runtime command writes or edits the source Nav file.
+
 **Plans**: 4 plans
 
 Plans:
+
 - [ ] 05-01: Define format-neutral Nav model and validation limits.
 - [ ] 05-02: Implement bounded legacy `.nav` reader.
 - [ ] 05-03: Publish immutable Nav snapshot and map fingerprint.
@@ -109,12 +131,15 @@ Plans:
 **Depends on**: Phase 5
 **Requirements**: PAR-01
 **Success Criteria**:
+
   1. Bots follow Walk/Crouch/Step/Jump/Drop/Ladder/Door/narrow-passage routes under observed GoldSrc physics.
   2. Stuck, collision, stale route, and rejected input states recover or terminate explicitly.
   3. Route search success is not reported as movement success without dispatch and movement evidence.
+
 **Plans**: 5 plans
 
 Plans:
+
 - [ ] 06-01: Implement spatial query, directed links, corridor, and path follower.
 - [ ] 06-02: Implement Walk/Crouch/Step movement and support validation.
 - [ ] 06-03: Implement Jump/Drop movement envelopes and feedback.
@@ -127,12 +152,15 @@ Plans:
 **Depends on**: Phase 6
 **Requirements**: PAR-02, PAR-03, PAR-04, PAR-05
 **Success Criteria**:
+
   1. Bots observe and remember visible/audible world state without hidden information.
   2. Bots select weapons, aim, fire, reload, survive/die, and recover as required by the reference behavior.
   3. Bomb, hostage, buy, attack, defend, state transitions, radio/chatter, and round behavior operate per actor/team.
+
 **Plans**: 6 plans
 
 Plans:
+
 - [ ] 07-01: Implement WorldSnapshot, perception, and uncertainty contracts.
 - [ ] 07-02: Implement CSBot state machine and objective planner.
 - [ ] 07-03: Implement weapon inventory, aiming, firing, reload, and damage integration.
@@ -146,13 +174,16 @@ Plans:
 **Depends on**: Phase 7
 **Requirements**: PAR-06, TEST-03, TEST-04
 **Success Criteria**:
+
   1. Portable, adapter, and Release/export checks pass for both x86 target environments.
   2. Differential evidence covers lifecycle, Nav movement, perception, combat, objectives, and recovery against the pinned reference behavior.
   3. An unmodified ReGameDLL-CS plus Metamod-P server accepts the plugin for 1v1, 2v2, and configured multi-Bot operation without native Bot mixing.
   4. Acceptance records distinguish offline test success from real-server movement, combat, stability, and multi-Bot evidence.
+
 **Plans**: 4 plans
 
 Plans:
+
 - [ ] 08-01: Complete cross-platform artifact and export verification.
 - [ ] 08-02: Run differential scenario and replay review.
 - [ ] 08-03: Run real-server single/multi-Bot lifecycle and gameplay acceptance.
