@@ -93,9 +93,16 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
+**Wave 1**
 
 - [ ] 03-01: Implement actor registry and FakeClient lifecycle.
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 03-02: Implement safe command and usercmd dispatch boundary.
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 03-03: Add generation/receipt diagnostics and multi-actor isolation tests.
 
 ### Phase 4: CSBot compatibility surface
