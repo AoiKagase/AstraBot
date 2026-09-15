@@ -87,6 +87,15 @@ int main()
 	{
 		return 1;
 	}
+	ProfileCatalog teamPreference;
+	teamPreference.add(profile("Any", ProfileTeam::Any, 1, 50, 50));
+	teamPreference.add(profile("TOnly", ProfileTeam::Terrorist, 1, 60, 60));
+	if (!check(teamPreference.select(ProfileTeam::Terrorist, 1, 0U, &selected) ==
+			ProfileSelectionResult::Selected && std::strcmp(selected.name, "TOnly") == 0,
+			"exact team profiles take precedence over any-team profiles"))
+	{
+		return 1;
+	}
 	if (!check(catalog.selectNamed("missing", ProfileTeam::Any, &selected) ==
 			ProfileSelectionResult::UnknownProfile, "unknown names are explicit"))
 	{

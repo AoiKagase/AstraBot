@@ -61,8 +61,9 @@ ProfileSelectionResult ProfileCatalog::select(
 	std::size_t matchingCount = 0U;
 	for (std::size_t index = 0U; index < size_; ++index)
 	{
-		if (profiles_[index].difficulty == difficulty &&
-				isCompatible(profiles_[index].team, team))
+		const bool exactTeam = team == ProfileTeam::Any ||
+			profiles_[index].team == team;
+		if (profiles_[index].difficulty == difficulty && exactTeam)
 		{
 			matchingIndices[matchingCount] = index;
 			++matchingCount;

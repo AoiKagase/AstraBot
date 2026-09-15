@@ -9,7 +9,7 @@ The first milestone builds a standalone, source-independent Metamod-P plugin tha
 - [x] **Phase 1: Foundation and ABI** - Establish the project toolchain, source boundary, public contracts, and x86 artifact checks. (completed 2026-09-15)
 - [x] **Phase 2: Metamod lifecycle and native guard** - Load safely, receive hooks, manage map/round state, and prevent native Bot mixing. (completed 2026-09-15)
 - [x] **Phase 3: FakeClient and input dispatch** - Create actor-safe FakeClients and validate command/input/receipt lifecycles. (completed 2026-09-15)
-- [ ] **Phase 4: CSBot compatibility surface** - Reproduce required `bot_*` commands/CVars, profiles, and server configuration behavior.
+- [x] **Phase 4: CSBot compatibility surface** - Reproduce required `bot_*` commands/CVars, profiles, and server configuration behavior. (completed 2026-09-15)
 - [ ] **Phase 5: Read-only legacy Nav** - Load and validate existing `.nav` v1-v5 data into an immutable SDK-free model.
 - [ ] **Phase 6: Baseline locomotion** - Execute existing Nav routes with CSBot-compatible movement and recovery.
 - [ ] **Phase 7: CSBot behavior parity** - Add perception, state machine, combat, objectives, radio/chatter, and round behavior.
@@ -121,15 +121,15 @@ Plans:
 Plans:
 **Wave 1**
 
-- [ ] 04-01: Define command/CVar compatibility contracts and parser tests.
+- [x] 04-01: Define command/CVar compatibility contracts and parser tests.
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 04-02: Implement profile loading and selection boundary.
+- [x] 04-02: Implement profile loading and selection boundary.
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 04-03: Integrate administrator command flows with the Bot runtime.
+- [x] 04-03: Integrate administrator command flows with the Bot runtime.
 
 ### Phase 5: Read-only legacy Nav
 
@@ -225,7 +225,7 @@ Phases execute sequentially: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 | 1. Foundation and ABI | 3/3 | Complete    | 2026-09-15 |
 | 2. Metamod lifecycle and native guard | 3/3 | Complete    | 2026-09-15 |
 | 3. FakeClient and input dispatch | 3/3 | Complete    | 2026-09-15 |
-| 4. CSBot compatibility surface | 0/3 | Not started | - |
+| 4. CSBot compatibility surface | 3/3 | Complete | 2026-09-15 |
 | 5. Read-only legacy Nav | 0/4 | Not started | - |
 | 6. Baseline locomotion | 0/5 | Not started | - |
 | 7. CSBot behavior parity | 0/6 | Not started | - |

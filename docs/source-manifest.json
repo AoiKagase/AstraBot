@@ -323,6 +323,30 @@
       "origin": "AstraBot",
       "license_status": "pending_release_review",
       "reference_only": false
+    },
+    {
+      "path": "include/astrabot/compat/bot_configuration.hpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "src/core/compat/bot_configuration.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "tests/bot_configuration_tests.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "tests/compat_actor_command_tests.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
     }
   ]
 }

@@ -9,12 +9,30 @@
 #include "astrabot/runtime/lifecycle.hpp"
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 
 namespace astrabot
 {
 namespace metamod
 {
+	enum class CompatibilityCommandResult
+	{
+		Handled,
+		Unknown,
+		InvalidArguments,
+		InvalidOutput,
+		NotActive,
+		Disabled,
+		Stopped,
+		QuotaReached,
+		NativeGuardDenied,
+		NoTarget,
+		ProfileUnavailable,
+		NameTaken,
+		ActorOperationFailed
+	};
+
 	class PluginRuntime
 	{
 	public:
@@ -58,6 +76,13 @@ namespace metamod
 		void onStartFrame();
 		void onAddServerCommand(char *command, void (*function)(void));
 		void onCompatibilityCommand();
+		compat::CvarUpdateResult setCompatibilityFloat(const char *name, float value);
+		compat::CvarUpdateResult setCompatibilityString(
+			const char *name,
+			const char *value);
+		ProfileLoadResult loadCompatibilityProfiles(const char *path);
+		CompatibilityCommandResult executeCompatibilityCommand(
+			const compat::CommandRequest &request);
 		FakeClientResult createFakeClient(const char *name, FakeClientHandle *handle);
 		FakeClientResult removeFakeClient(FakeClientHandle *handle);
 		runtime::QueueResult enqueueBotCommand(const runtime::BotCommand &command);
@@ -76,6 +101,19 @@ namespace metamod
 			const NativeBotGuardDecision &previousDecision) const;
 		void configureFakeClientManager();
 		void registerCompatibilityCommands();
+		std::size_t managedBotCount() const;
+		FakeClientHandle *findManagedBot(const char *name);
+		void rememberManagedBot(const FakeClientHandle &handle, const char *name);
+		void clearManagedBot(std::size_t index);
+		void clearManagedBots();
+		CompatibilityCommandResult executeRemoveCommand(
+			const compat::CommandAction &action);
+		CompatibilityCommandResult executeKillCommand(
+			const compat::CommandAction &action);
+		static CompatibilityCommandResult mapConfigurationResult(
+			compat::BotActionResult result);
+		static CompatibilityCommandResult mapFakeClientResult(
+			FakeClientResult result);
 
 		State state_;
 		meta_globals_t *metaGlobals_;
@@ -92,6 +130,10 @@ namespace metamod
 		NativeBotGuard nativeBotGuard_;
 		NativeBotGuardDecision nativeGuardDecision_;
 		std::array<bool, NativeBotObservation::kClientSlotCount> managedBotSlots_;
+		std::array<FakeClientHandle, NativeBotObservation::kClientSlotCount>
+			managedBotHandles_;
+		std::array<std::array<char, compat::ProfileRecord::kNameCapacity + 1U>,
+			NativeBotObservation::kClientSlotCount> managedBotNames_;
 		bool nativeGuardEnabled_;
 		bool compatibilityRegistrationInProgress_;
 		bool nativeControlsCaptured_;

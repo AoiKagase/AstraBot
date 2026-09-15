@@ -33,14 +33,28 @@ namespace metamod
 
 	compat::CvarUpdateResult CompatibilitySurface::setFloat(const char *name, float value)
 	{
-		return cvarState_.setFloat(name, value);
+		return botConfiguration_.setFloat(name, value);
 	}
 
 	compat::CvarUpdateResult CompatibilitySurface::setString(
 		const char *name,
 		const char *value)
 	{
-		return cvarState_.setString(name, value);
+		return botConfiguration_.setString(name, value);
+	}
+
+	compat::CvarSnapshot CompatibilitySurface::configuration() const
+	{
+		return botConfiguration_.snapshot();
+	}
+
+	compat::BotActionResult CompatibilitySurface::authorize(
+		const compat::CommandAction &action,
+		std::size_t managedActorCount,
+		bool nativeGuardAllowsCreation) const
+	{
+		return botConfiguration_.authorize(
+			action, managedActorCount, nativeGuardAllowsCreation);
 	}
 
 	ProfileLoadResult CompatibilitySurface::loadProfiles(const char *path)
@@ -62,6 +76,18 @@ namespace metamod
 		else if (action.team == compat::CommandTeam::CounterTerrorist)
 		{
 			team = compat::ProfileTeam::CounterTerrorist;
+		}
+		else
+		{
+			const compat::CvarSnapshot state = botConfiguration_.snapshot();
+			if (state.botJoinTeam == compat::JoinTeam::Terrorist)
+			{
+				team = compat::ProfileTeam::Terrorist;
+			}
+			else if (state.botJoinTeam == compat::JoinTeam::CounterTerrorist)
+			{
+				team = compat::ProfileTeam::CounterTerrorist;
+			}
 		}
 		if (action.target != nullptr)
 		{

@@ -212,6 +212,26 @@ namespace metamod
 		return FakeClientResult::Removed;
 	}
 
+	FakeClientResult FakeClientManager::kill(FakeClientHandle *handle)
+	{
+		if (handle == nullptr || handle->entity == nullptr)
+		{
+			return FakeClientResult::NotFound;
+		}
+		if (!lifecycle_.isMapActive() || gameDllFunctions_ == nullptr ||
+				gameDllFunctions_->dllapi_table == nullptr ||
+				gameDllFunctions_->dllapi_table->pfnClientKill == nullptr)
+		{
+			return FakeClientResult::BoundaryUnavailable;
+		}
+		if (registry_.state(handle->actor) != runtime::ActorState::Joined)
+		{
+			return FakeClientResult::NotFound;
+		}
+		gameDllFunctions_->dllapi_table->pfnClientKill(handle->entity);
+		return FakeClientResult::Killed;
+	}
+
 	void FakeClientManager::cleanupFailedClient(
 		edict_t *entity,
 		std::uint32_t slot,

@@ -14,6 +14,7 @@ namespace metamod
 	{
 		Created,
 		Removed,
+		Killed,
 		NativeGuardDenied,
 		BoundaryUnavailable,
 		InvalidName,
@@ -44,6 +45,7 @@ namespace metamod
 			bool managedBotCreationAllowed);
 		FakeClientResult create(const char *name, FakeClientHandle *handle);
 		FakeClientResult remove(FakeClientHandle *handle);
+		FakeClientResult kill(FakeClientHandle *handle);
 
 	private:
 		void cleanupFailedClient(

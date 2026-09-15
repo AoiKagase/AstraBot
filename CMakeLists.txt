@@ -23,6 +23,7 @@ include(cmake/AstraBotBuild.cmake)
   src/core/runtime/actor_registry.cpp
   src/core/compat/command_registry.cpp
   src/core/compat/cvar_state.cpp
+  src/core/compat/bot_configuration.cpp
   src/core/compat/profile_catalog.cpp
   src/core/runtime/bot_command.cpp
     src/core/runtime/command_queue.cpp
@@ -137,6 +138,16 @@ if(ASTRABOT_BUILD_TESTS)
   target_link_libraries(astrabot_profile_loader PRIVATE astrabot_core)
   astrabot_apply_warnings(astrabot_profile_loader)
   add_test(NAME astrabot_profile_loader COMMAND astrabot_profile_loader)
+
+  add_executable(astrabot_bot_configuration
+    tests/bot_configuration_tests.cpp
+  )
+  target_include_directories(astrabot_bot_configuration PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+  )
+  target_link_libraries(astrabot_bot_configuration PRIVATE astrabot_core)
+  astrabot_apply_warnings(astrabot_bot_configuration)
+  add_test(NAME astrabot_bot_configuration COMMAND astrabot_bot_configuration)
 endif()
 
 if(ASTRABOT_BUILD_METAMOD)
@@ -274,5 +285,24 @@ if(ASTRABOT_BUILD_METAMOD)
     target_link_libraries(astrabot_compat_surface PRIVATE astrabot_core)
     astrabot_apply_warnings(astrabot_compat_surface)
     add_test(NAME astrabot_compat_surface COMMAND astrabot_compat_surface)
+
+    add_executable(astrabot_compat_actor_command
+      tests/compat_actor_command_tests.cpp
+      src/adapter/metamod/compat_surface.cpp
+      src/adapter/metamod/profile_loader.cpp
+      src/adapter/metamod/fake_client_manager.cpp
+      src/adapter/metamod/input_dispatcher.cpp
+      src/adapter/metamod/native_bot_guard.cpp
+      src/adapter/metamod/plugin_exports.cpp
+      src/adapter/metamod/plugin_runtime.cpp
+    )
+    target_include_directories(astrabot_compat_actor_command PRIVATE
+      "${CMAKE_CURRENT_SOURCE_DIR}/include"
+      "${CMAKE_CURRENT_SOURCE_DIR}/src/adapter/metamod"
+      ${ASTRABOT_METAMOD_INCLUDE_DIRS}
+    )
+    target_link_libraries(astrabot_compat_actor_command PRIVATE astrabot_core)
+    astrabot_apply_warnings(astrabot_compat_actor_command)
+    add_test(NAME astrabot_compat_actor_command COMMAND astrabot_compat_actor_command)
   endif()
 endif()

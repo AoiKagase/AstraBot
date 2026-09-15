@@ -1,6 +1,7 @@
 #include "plugin_runtime.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <limits>
 #include <cstring>
@@ -15,6 +16,25 @@ namespace metamod
 {
 	namespace
 	{
+		bool equalsIgnoreCase(const char *left, const char *right)
+		{
+			if (left == nullptr || right == nullptr)
+			{
+				return false;
+			}
+			std::size_t index = 0U;
+			while (left[index] != '\0' && right[index] != '\0')
+			{
+				if (std::tolower(static_cast<unsigned char>(left[index])) !=
+						std::tolower(static_cast<unsigned char>(right[index])))
+				{
+					return false;
+				}
+				++index;
+			}
+			return left[index] == '\0' && right[index] == '\0';
+		}
+
 		void setMetaResult(META_RES result)
 		{
 			if (gpMetaGlobals != nullptr)
@@ -42,8 +62,10 @@ namespace metamod
 			NativeBotGuardState::Unsupported,
 			NativeBotGuardReason::ControlsUnavailable,
 			false
-		}),
+		  }),
 		  managedBotSlots_(),
+		  managedBotHandles_(),
+		  managedBotNames_(),
 		  nativeGuardEnabled_(false),
 		  compatibilityRegistrationInProgress_(false),
 		  nativeControlsCaptured_(false),
@@ -238,7 +260,7 @@ namespace metamod
 			lifecycle_.disconnectSlot(clientSlot);
 			if (slot <= static_cast<int>(NativeBotObservation::kClientSlotCount))
 			{
-				managedBotSlots_[static_cast<std::size_t>(slot - 1)] = false;
+				clearManagedBot(static_cast<std::size_t>(slot - 1));
 			}
 		}
 	}
@@ -285,6 +307,7 @@ namespace metamod
 			adapterFrameCount_ = 0U;
 			updateNativeBotGuard();
 			inputDispatcher_.reset();
+			clearManagedBots();
 			actorRegistry_ = runtime::ActorRegistry();
 			state_ = State::Attached;
 			compatibilityRegistrationInProgress_ = false;
@@ -398,7 +421,7 @@ namespace metamod
 			NativeBotGuardReason::ControlsUnavailable,
 			false
 		};
-		managedBotSlots_.fill(false);
+		clearManagedBots();
 		nativeGuardEnabled_ = false;
 		nativeControlsCaptured_ = false;
 		originalBotEnable_ = 0.0f;
@@ -507,8 +530,93 @@ namespace metamod
 			request.arguments[index] = engineFunctions_->pfnCmd_Argv(
 				static_cast<int>(index + 1U));
 		}
+		(void)executeCompatibilityCommand(request);
+	}
+
+	compat::CvarUpdateResult PluginRuntime::setCompatibilityFloat(
+		const char *name,
+		float value)
+	{
+		return compatibilitySurface_.setFloat(name, value);
+	}
+
+	compat::CvarUpdateResult PluginRuntime::setCompatibilityString(
+		const char *name,
+		const char *value)
+	{
+		return compatibilitySurface_.setString(name, value);
+	}
+
+	ProfileLoadResult PluginRuntime::loadCompatibilityProfiles(const char *path)
+	{
+		return compatibilitySurface_.loadProfiles(path);
+	}
+
+	CompatibilityCommandResult PluginRuntime::executeCompatibilityCommand(
+		const compat::CommandRequest &request)
+	{
 		compat::CommandAction action{};
-		compatibilitySurface_.resolve(request, &action);
+		const compat::CommandResult commandResult =
+			compatibilitySurface_.resolve(request, &action);
+		if (commandResult == compat::CommandResult::Unknown)
+		{
+			return CompatibilityCommandResult::Unknown;
+		}
+		if (commandResult == compat::CommandResult::InvalidArguments)
+		{
+			return CompatibilityCommandResult::InvalidArguments;
+		}
+		if (commandResult == compat::CommandResult::InvalidOutput)
+		{
+			return CompatibilityCommandResult::InvalidOutput;
+		}
+		if (state_ != State::ActiveMap && (action.id == compat::CommandId::Add ||
+				action.id == compat::CommandId::Kick || action.id == compat::CommandId::Kill))
+		{
+			return CompatibilityCommandResult::NotActive;
+		}
+
+		const compat::BotActionResult authorization = compatibilitySurface_.authorize(
+			action, managedBotCount(), nativeGuardDecision_.managedBotCreationAllowed);
+		if (authorization != compat::BotActionResult::Allowed)
+		{
+			return mapConfigurationResult(authorization);
+		}
+
+		switch (action.id)
+		{
+		case compat::CommandId::Add:
+		{
+			const compat::CvarSnapshot configuration = compatibilitySurface_.configuration();
+			compat::ProfileRecord profile = {};
+			const compat::ProfileSelectionResult profileResult =
+				compatibilitySurface_.selectProfile(
+					action, configuration.botDifficulty, managedBotCount(), &profile);
+			if (profileResult != compat::ProfileSelectionResult::Selected &&
+					profileResult != compat::ProfileSelectionResult::Fallback)
+			{
+				return CompatibilityCommandResult::ProfileUnavailable;
+			}
+			if (findManagedBot(profile.name) != nullptr)
+			{
+				return CompatibilityCommandResult::NameTaken;
+			}
+			FakeClientHandle handle{};
+			return mapFakeClientResult(createFakeClient(profile.name, &handle));
+		}
+		case compat::CommandId::Kick:
+			return executeRemoveCommand(action);
+		case compat::CommandId::Kill:
+			return executeKillCommand(action);
+		case compat::CommandId::About:
+		case compat::CommandId::KnivesOnly:
+		case compat::CommandId::PistolsOnly:
+		case compat::CommandId::SnipersOnly:
+		case compat::CommandId::AllWeapons:
+			return CompatibilityCommandResult::Handled;
+		default:
+			return CompatibilityCommandResult::InvalidOutput;
+		}
 	}
 
 	FakeClientResult PluginRuntime::createFakeClient(const char *name, FakeClientHandle *handle)
@@ -528,6 +636,7 @@ namespace metamod
 				managedBotSlots_[slotIndex] = false;
 				return FakeClientResult::CleanupFailed;
 			}
+			rememberManagedBot(*handle, name);
 		}
 		return result;
 	}
@@ -546,7 +655,7 @@ namespace metamod
 		if (result == FakeClientResult::Removed && slot >= 1U &&
 				slot <= NativeBotObservation::kClientSlotCount)
 		{
-			managedBotSlots_[static_cast<std::size_t>(slot - 1U)] = false;
+			clearManagedBot(static_cast<std::size_t>(slot - 1U));
 		}
 		return result;
 	}
@@ -569,6 +678,202 @@ namespace metamod
 			nativeGuardDecision_.managedBotCreationAllowed;
 		fakeClientManager_.configure(engineFunctions_, gpGamedllFuncs, allowed);
 		inputDispatcher_.configure(engineFunctions_);
+	}
+
+	std::size_t PluginRuntime::managedBotCount() const
+	{
+		std::size_t count = 0U;
+		for (const bool managed : managedBotSlots_)
+		{
+			if (managed)
+			{
+				++count;
+			}
+		}
+		return count;
+	}
+
+	FakeClientHandle *PluginRuntime::findManagedBot(const char *name)
+	{
+		if (name == nullptr || name[0] == '\0')
+		{
+			return nullptr;
+		}
+		for (std::size_t index = 0U; index < managedBotSlots_.size(); ++index)
+		{
+			if (managedBotSlots_[index] &&
+					equalsIgnoreCase(managedBotNames_[index].data(), name))
+			{
+				return &managedBotHandles_[index];
+			}
+		}
+		return nullptr;
+	}
+
+	void PluginRuntime::rememberManagedBot(
+		const FakeClientHandle &handle,
+		const char *name)
+	{
+		if (name == nullptr || handle.actor.slot < 1U ||
+				handle.actor.slot > NativeBotObservation::kClientSlotCount)
+		{
+			return;
+		}
+		const std::size_t index = static_cast<std::size_t>(handle.actor.slot - 1U);
+		managedBotHandles_[index] = handle;
+		managedBotSlots_[index] = true;
+		const std::size_t length = std::strlen(name);
+		const std::size_t copyLength = length < compat::ProfileRecord::kNameCapacity ?
+			length : compat::ProfileRecord::kNameCapacity;
+		for (std::size_t character = 0U; character < copyLength; ++character)
+		{
+			managedBotNames_[index][character] = name[character];
+		}
+		managedBotNames_[index][copyLength] = '\0';
+	}
+
+	void PluginRuntime::clearManagedBot(std::size_t index)
+	{
+		if (index >= managedBotSlots_.size())
+		{
+			return;
+		}
+		managedBotSlots_[index] = false;
+		managedBotHandles_[index] = FakeClientHandle{};
+		managedBotNames_[index].fill('\0');
+	}
+
+	void PluginRuntime::clearManagedBots()
+	{
+		for (std::size_t index = 0U; index < managedBotSlots_.size(); ++index)
+		{
+			clearManagedBot(index);
+		}
+	}
+
+	CompatibilityCommandResult PluginRuntime::executeRemoveCommand(
+		const compat::CommandAction &action)
+	{
+		const bool removeAll = action.allTargets || action.target == nullptr;
+		if (!removeAll)
+		{
+			FakeClientHandle *handle = findManagedBot(action.target);
+			if (handle == nullptr)
+			{
+				return CompatibilityCommandResult::NoTarget;
+			}
+			return mapFakeClientResult(removeFakeClient(handle));
+		}
+
+		std::size_t removedCount = 0U;
+		bool operationFailed = false;
+		for (std::size_t index = 0U; index < managedBotSlots_.size(); ++index)
+		{
+			if (!managedBotSlots_[index])
+			{
+				continue;
+			}
+			const FakeClientResult result = removeFakeClient(&managedBotHandles_[index]);
+			if (result == FakeClientResult::Removed)
+			{
+				++removedCount;
+			}
+			else
+			{
+				operationFailed = true;
+			}
+		}
+		if (removedCount == 0U)
+		{
+			return operationFailed ? CompatibilityCommandResult::ActorOperationFailed :
+				CompatibilityCommandResult::NoTarget;
+		}
+		return operationFailed ? CompatibilityCommandResult::ActorOperationFailed :
+			CompatibilityCommandResult::Handled;
+	}
+
+	CompatibilityCommandResult PluginRuntime::executeKillCommand(
+		const compat::CommandAction &action)
+	{
+		const bool killAll = action.allTargets || action.target == nullptr;
+		if (!killAll)
+		{
+			FakeClientHandle *handle = findManagedBot(action.target);
+			if (handle == nullptr)
+			{
+				return CompatibilityCommandResult::NoTarget;
+			}
+			return mapFakeClientResult(fakeClientManager_.kill(handle));
+		}
+
+		std::size_t killedCount = 0U;
+		bool operationFailed = false;
+		for (std::size_t index = 0U; index < managedBotSlots_.size(); ++index)
+		{
+			if (!managedBotSlots_[index])
+			{
+				continue;
+			}
+			const FakeClientResult result = fakeClientManager_.kill(
+				&managedBotHandles_[index]);
+			if (result == FakeClientResult::Killed)
+			{
+				++killedCount;
+			}
+			else
+			{
+				operationFailed = true;
+			}
+		}
+		if (killedCount == 0U)
+		{
+			return operationFailed ? CompatibilityCommandResult::ActorOperationFailed :
+				CompatibilityCommandResult::NoTarget;
+		}
+		return operationFailed ? CompatibilityCommandResult::ActorOperationFailed :
+			CompatibilityCommandResult::Handled;
+	}
+
+	CompatibilityCommandResult PluginRuntime::mapConfigurationResult(
+		compat::BotActionResult result)
+	{
+		switch (result)
+		{
+		case compat::BotActionResult::Allowed:
+			return CompatibilityCommandResult::Handled;
+		case compat::BotActionResult::InvalidRequest:
+			return CompatibilityCommandResult::InvalidOutput;
+		case compat::BotActionResult::Disabled:
+			return CompatibilityCommandResult::Disabled;
+		case compat::BotActionResult::Stopped:
+			return CompatibilityCommandResult::Stopped;
+		case compat::BotActionResult::QuotaReached:
+			return CompatibilityCommandResult::QuotaReached;
+		case compat::BotActionResult::NoTarget:
+			return CompatibilityCommandResult::NoTarget;
+		case compat::BotActionResult::NativeGuardDenied:
+			return CompatibilityCommandResult::NativeGuardDenied;
+		default:
+			return CompatibilityCommandResult::InvalidOutput;
+		}
+	}
+
+	CompatibilityCommandResult PluginRuntime::mapFakeClientResult(
+		FakeClientResult result)
+	{
+		switch (result)
+		{
+		case FakeClientResult::Created:
+		case FakeClientResult::Removed:
+		case FakeClientResult::Killed:
+			return CompatibilityCommandResult::Handled;
+		case FakeClientResult::NativeGuardDenied:
+			return CompatibilityCommandResult::NativeGuardDenied;
+		case FakeClientResult::NotFound:
+			return CompatibilityCommandResult::NoTarget;
+		default:
+			return CompatibilityCommandResult::ActorOperationFailed;
+		}
 	}
 
 	void PluginRuntime::registerCompatibilityCommands()

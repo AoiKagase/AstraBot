@@ -20,9 +20,9 @@
 
 ### Compatibility surface
 
-- [ ] **COMP-01**: Existing `bot_*` commands and CVar behavior required for normal CSBot operation are accepted, validated, and reported through the compatibility layer.
-- [ ] **COMP-02**: Existing Bot profile input and selection behavior required by CSBot operation remains usable without copying ReGameDLL profile implementation.
-- [ ] **COMP-03**: Existing server configuration can enable, disable, add, remove, team-select, and configure Bots through the compatible surface.
+- [x] **COMP-01**: Existing `bot_*` commands and CVar behavior required for normal CSBot operation are accepted, validated, and reported through the compatibility layer.
+- [x] **COMP-02**: Existing Bot profile input and selection behavior required by CSBot operation remains usable without copying ReGameDLL profile implementation.
+- [x] **COMP-03**: Existing server configuration can enable, disable, add, remove, team-select, and configure Bots through the compatible surface.
 
 ### Existing Nav input
 
@@ -91,9 +91,9 @@ Deferred until v1 CSBot parity is accepted.
 | LIFE-02 | Phase 3 | Complete |
 | LIFE-03 | Phase 2 | Complete |
 | LIFE-04 | Phase 3 | Complete |
-| COMP-01 | Phase 4 | Pending |
-| COMP-02 | Phase 4 | Pending |
-| COMP-03 | Phase 4 | Pending |
+| COMP-01 | Phase 4 | Complete |
+| COMP-02 | Phase 4 | Complete |
+| COMP-03 | Phase 4 | Complete |
 | NAV-01 | Phase 5 | Pending |
 | NAV-02 | Phase 5 | Pending |
 | NAV-03 | Phase 5 | Pending |
@@ -117,4 +117,4 @@ Deferred until v1 CSBot parity is accepted.
 
 ---
 *Requirements defined: 2026-09-15*
-*Last updated: 2026-09-15 after initial scope definition*
+*Last updated: 2026-09-15 after Phase 4 compatibility surface completion*
