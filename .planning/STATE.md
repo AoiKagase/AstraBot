@@ -27,10 +27,10 @@ See: `.planning/PROJECT.md` (updated 2026-09-15)
 
 ## Current Position
 
-Phase: 6 (Baseline locomotion) — READY TO EXECUTE
-Plan: Not started
-Status: Ready to execute
-Last activity: 2026-09-15 — Phase 5 complete, transitioned to Phase 6
+Phase: 6 (Baseline locomotion) — PLAN READY
+Plan: 06-01 through 06-05
+Status: Plan created; 06-01 ready to execute
+Last activity: 2026-09-16 — Phase 6 decomposed into five sequential plans
 
 Progress: ░░░░░░░░░░ [██████░░░░] 63%
 
