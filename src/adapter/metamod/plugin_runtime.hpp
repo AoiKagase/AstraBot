@@ -2,6 +2,7 @@
 #define ASTRABOT_ADAPTER_METAMOD_PLUGIN_RUNTIME_HPP
 
 #include "astrabot/metamod/abi_contract.hpp"
+#include "astrabot/metamod/fake_client_manager.hpp"
 #include "astrabot/metamod/native_bot_guard.hpp"
 #include "astrabot/runtime/lifecycle.hpp"
 
@@ -54,6 +55,8 @@ namespace metamod
 		void onServerDeactivate();
 		void onStartFrame();
 		void onAddServerCommand(char *command, void (*function)(void));
+		FakeClientResult createFakeClient(const char *name, FakeClientHandle *handle);
+		FakeClientResult removeFakeClient(FakeClientHandle *handle);
 
 	private:
 		PluginRuntime();
@@ -64,6 +67,7 @@ namespace metamod
 		void restoreNativeBotControls();
 		void logNativeBotGuardTransition(
 			const NativeBotGuardDecision &previousDecision) const;
+		void configureFakeClientManager();
 
 		State state_;
 		meta_globals_t *metaGlobals_;
@@ -71,6 +75,8 @@ namespace metamod
 		enginefuncs_t *engineFunctions_;
 		globalvars_t *globals_;
 		runtime::LifecycleSession lifecycle_;
+		runtime::ActorRegistry actorRegistry_;
+		FakeClientManager fakeClientManager_;
 		std::uint32_t adapterFrameCount_;
 		plid_t pluginId_;
 		NativeBotGuard nativeBotGuard_;

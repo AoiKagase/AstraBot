@@ -31,6 +31,8 @@ namespace metamod
 		  engineFunctions_(nullptr),
 		  globals_(nullptr),
 		  lifecycle_(),
+		  actorRegistry_(),
+		  fakeClientManager_(lifecycle_, actorRegistry_),
 		  adapterFrameCount_(0U),
 		  pluginId_(nullptr),
 		  nativeBotGuard_(),
@@ -82,6 +84,7 @@ namespace metamod
 		engineFunctions_ = nullptr;
 		globals_ = nullptr;
 		lifecycle_ = runtime::LifecycleSession();
+		actorRegistry_ = runtime::ActorRegistry();
 		adapterFrameCount_ = 0U;
 		pluginId_ = pluginId;
 		resetNativeBotGuard();
@@ -97,6 +100,7 @@ namespace metamod
 				pluginId, &hookedEngineFunctions, &hookedDllFunctions, &hookedNewDllFunctions);
 			engineFunctions_ = hookedEngineFunctions;
 		}
+		configureFakeClientManager();
 		state_ = State::Attached;
 		return true;
 	}
@@ -106,6 +110,7 @@ namespace metamod
 		(void)loadTime;
 		(void)reason;
 
+		configureFakeClientManager();
 		restoreNativeBotControls();
 		state_ = State::Detached;
 		metaGlobals_ = nullptr;
@@ -119,6 +124,7 @@ namespace metamod
 		gpMetaUtilFuncs = nullptr;
 		pluginId_ = nullptr;
 		nativeGuardEnabled_ = false;
+		configureFakeClientManager();
 		return true;
 	}
 
@@ -178,6 +184,7 @@ namespace metamod
 	{
 		engineFunctions_ = engineFunctions;
 		globals_ = globals;
+		configureFakeClientManager();
 	}
 
 	PluginRuntime::Snapshot PluginRuntime::snapshot() const
@@ -245,6 +252,7 @@ namespace metamod
 				adapterFrameCount_ = 0U;
 				state_ = State::ActiveMap;
 				armNativeBotGuard();
+				configureFakeClientManager();
 			}
 		}
 	}
@@ -257,6 +265,7 @@ namespace metamod
 			adapterFrameCount_ = 0U;
 			updateNativeBotGuard();
 			state_ = State::Attached;
+			configureFakeClientManager();
 		}
 	}
 
@@ -280,6 +289,7 @@ namespace metamod
 		}
 		lifecycle_.observeFrame(adapterFrameCount_, globals_->time);
 		updateNativeBotGuard();
+		configureFakeClientManager();
 	}
 
 	NativeBotObservation PluginRuntime::collectNativeBotObservation() const
@@ -444,6 +454,44 @@ namespace metamod
 			return;
 		}
 		setMetaResult(MRES_IGNORED);
+	}
+
+	FakeClientResult PluginRuntime::createFakeClient(const char *name, FakeClientHandle *handle)
+	{
+		configureFakeClientManager();
+		const FakeClientResult result = fakeClientManager_.create(name, handle);
+		if (result == FakeClientResult::Created && handle != nullptr &&
+				handle->actor.slot >= 1U &&
+				handle->actor.slot <= NativeBotObservation::kClientSlotCount)
+		{
+			managedBotSlots_[static_cast<std::size_t>(handle->actor.slot - 1U)] = true;
+		}
+		return result;
+	}
+
+	FakeClientResult PluginRuntime::removeFakeClient(FakeClientHandle *handle)
+	{
+		if (handle == nullptr)
+		{
+			return FakeClientResult::NotFound;
+		}
+
+		const std::uint32_t slot = handle->actor.slot;
+		configureFakeClientManager();
+		const FakeClientResult result = fakeClientManager_.remove(handle);
+		if (result == FakeClientResult::Removed && slot >= 1U &&
+				slot <= NativeBotObservation::kClientSlotCount)
+		{
+			managedBotSlots_[static_cast<std::size_t>(slot - 1U)] = false;
+		}
+		return result;
+	}
+
+	void PluginRuntime::configureFakeClientManager()
+	{
+		const bool allowed = state_ == State::ActiveMap &&
+			nativeGuardDecision_.managedBotCreationAllowed;
+		fakeClientManager_.configure(engineFunctions_, gpGamedllFuncs, allowed);
 	}
 
 	void HookClientDisconnect(edict_t *entity)

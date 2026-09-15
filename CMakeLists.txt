@@ -20,6 +20,7 @@ include(cmake/AstraBotBuild.cmake)
 
 add_library(astrabot_core STATIC
   src/core/build_identity.cpp
+  src/core/runtime/actor_registry.cpp
   src/core/runtime/lifecycle.cpp
 )
 target_include_directories(astrabot_core PUBLIC
@@ -69,6 +70,16 @@ if(ASTRABOT_BUILD_TESTS)
   )
   astrabot_apply_warnings(astrabot_native_bot_guard)
   add_test(NAME astrabot_native_bot_guard COMMAND astrabot_native_bot_guard)
+
+  add_executable(astrabot_actor_registry
+    tests/actor_registry_tests.cpp
+  )
+  target_include_directories(astrabot_actor_registry PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+  )
+  target_link_libraries(astrabot_actor_registry PRIVATE astrabot_core)
+  astrabot_apply_warnings(astrabot_actor_registry)
+  add_test(NAME astrabot_actor_registry COMMAND astrabot_actor_registry)
 endif()
 
 if(ASTRABOT_BUILD_METAMOD)
@@ -88,6 +99,7 @@ if(ASTRABOT_BUILD_METAMOD)
   )
 
   add_library(astrabot_mm SHARED
+    src/adapter/metamod/fake_client_manager.cpp
     src/adapter/metamod/plugin_exports.cpp
     src/adapter/metamod/native_bot_guard.cpp
     src/adapter/metamod/plugin_runtime.cpp
@@ -135,6 +147,7 @@ if(ASTRABOT_BUILD_METAMOD)
       ${ASTRABOT_METAMOD_INCLUDE_DIRS}
     )
     target_sources(astrabot_metamod_hooks PRIVATE
+      src/adapter/metamod/fake_client_manager.cpp
       src/adapter/metamod/native_bot_guard.cpp
       src/adapter/metamod/plugin_exports.cpp
       src/adapter/metamod/plugin_runtime.cpp
@@ -142,5 +155,17 @@ if(ASTRABOT_BUILD_METAMOD)
     target_link_libraries(astrabot_metamod_hooks PRIVATE astrabot_core)
     astrabot_apply_warnings(astrabot_metamod_hooks)
     add_test(NAME astrabot_metamod_hooks COMMAND astrabot_metamod_hooks)
+
+    add_executable(astrabot_fake_client_manager
+      tests/fake_client_manager_tests.cpp
+      src/adapter/metamod/fake_client_manager.cpp
+    )
+    target_include_directories(astrabot_fake_client_manager PRIVATE
+      "${CMAKE_CURRENT_SOURCE_DIR}/include"
+      ${ASTRABOT_METAMOD_INCLUDE_DIRS}
+    )
+    target_link_libraries(astrabot_fake_client_manager PRIVATE astrabot_core)
+    astrabot_apply_warnings(astrabot_fake_client_manager)
+    add_test(NAME astrabot_fake_client_manager COMMAND astrabot_fake_client_manager)
   endif()
 endif()
