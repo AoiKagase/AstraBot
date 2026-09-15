@@ -14,9 +14,9 @@
 ### Lifecycle and actors
 
 - [x] **LIFE-01**: AstraBot initializes and retires map, round, Entity-slot, and actor generations without retaining stale references.
-- [ ] **LIFE-02**: An administrator can create, join, control, remove, and recreate AstraBot FakeClients without a crash or identity collision.
+- [x] **LIFE-02**: An administrator can create, join, control, remove, and recreate AstraBot FakeClients without a crash or identity collision.
 - [x] **LIFE-03**: Native ReGameDLL-CS CSBot is suppressed or detected before AstraBot creates managed actors, preventing silent double ownership.
-- [ ] **LIFE-04**: Map changes, round restarts, disconnects, death/respawn, and edict reuse invalidate stale observations, commands, routes, and state.
+- [x] **LIFE-04**: Map changes, round restarts, disconnects, death/respawn, and edict reuse invalidate stale observations, commands, routes, and state.
 
 ### Compatibility surface
 
@@ -43,7 +43,7 @@
 ### Verification and acceptance
 
 - [x] **TEST-01**: Portable Core contracts, Nav loading, lifecycle generation, command validation, and deterministic replay have automated tests on Windows/Linux x86.
-- [ ] **TEST-02**: Adapter tests verify hook order, FakeClient dispatch, native Bot suppression, compatibility commands, and release export identity.
+- [x] **TEST-02**: Adapter tests verify hook order, FakeClient dispatch, native Bot suppression, compatibility commands, and release export identity.
 - [ ] **TEST-03**: A differential evidence set compares AstraBot against the pinned CSBot reference behavior without copying reference source.
 - [ ] **TEST-04**: Real-server acceptance verifies the unmodified ReGameDLL-CS plus Metamod-P plugin on Windows x86 and Linux x86 for single- and multi-Bot operation.
 
@@ -88,9 +88,9 @@ Deferred until v1 CSBot parity is accepted.
 | HOST-02 | Phase 1 | Complete |
 | HOST-03 | Phase 1 | Complete |
 | LIFE-01 | Phase 2 | Complete |
-| LIFE-02 | Phase 3 | Pending |
+| LIFE-02 | Phase 3 | Complete |
 | LIFE-03 | Phase 2 | Complete |
-| LIFE-04 | Phase 3 | Pending |
+| LIFE-04 | Phase 3 | Complete |
 | COMP-01 | Phase 4 | Pending |
 | COMP-02 | Phase 4 | Pending |
 | COMP-03 | Phase 4 | Pending |
@@ -105,7 +105,7 @@ Deferred until v1 CSBot parity is accepted.
 | PAR-05 | Phase 7 | Pending |
 | PAR-06 | Phase 8 | Pending |
 | TEST-01 | Phase 1 | Complete |
-| TEST-02 | Phase 3 | Pending |
+| TEST-02 | Phase 3 | Complete |
 | TEST-03 | Phase 8 | Pending |
 | TEST-04 | Phase 8 | Pending |
 

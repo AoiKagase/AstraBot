@@ -193,5 +193,22 @@ if(ASTRABOT_BUILD_METAMOD)
     target_link_libraries(astrabot_input_dispatcher PRIVATE astrabot_core)
     astrabot_apply_warnings(astrabot_input_dispatcher)
     add_test(NAME astrabot_input_dispatcher COMMAND astrabot_input_dispatcher)
+
+    add_executable(astrabot_fake_client_isolation
+      tests/fake_client_isolation_tests.cpp
+      src/adapter/metamod/fake_client_manager.cpp
+      src/adapter/metamod/input_dispatcher.cpp
+      src/adapter/metamod/native_bot_guard.cpp
+      src/adapter/metamod/plugin_exports.cpp
+      src/adapter/metamod/plugin_runtime.cpp
+    )
+    target_include_directories(astrabot_fake_client_isolation PRIVATE
+      "${CMAKE_CURRENT_SOURCE_DIR}/include"
+      "${CMAKE_CURRENT_SOURCE_DIR}/src/adapter/metamod"
+      ${ASTRABOT_METAMOD_INCLUDE_DIRS}
+    )
+    target_link_libraries(astrabot_fake_client_isolation PRIVATE astrabot_core)
+    astrabot_apply_warnings(astrabot_fake_client_isolation)
+    add_test(NAME astrabot_fake_client_isolation COMMAND astrabot_fake_client_isolation)
   endif()
 endif()

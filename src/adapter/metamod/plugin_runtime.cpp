@@ -221,7 +221,17 @@ namespace metamod
 		const int slot = engineFunctions_->pfnIndexOfEdict(entity);
 		if (slot > 0)
 		{
-			lifecycle_.disconnectSlot(static_cast<std::uint32_t>(slot));
+			const std::uint32_t clientSlot = static_cast<std::uint32_t>(slot);
+			const runtime::ActorId actor = actorRegistry_.actorForSlot(clientSlot);
+			if (actor.actorGeneration != 0U)
+			{
+				inputDispatcher_.unbindActor(actor);
+				if (actorRegistry_.beginRemoval(actor) == runtime::ActorResult::Accepted)
+				{
+					actorRegistry_.release(actor);
+				}
+			}
+			lifecycle_.disconnectSlot(clientSlot);
 			if (slot <= static_cast<int>(NativeBotObservation::kClientSlotCount))
 			{
 				managedBotSlots_[static_cast<std::size_t>(slot - 1)] = false;
