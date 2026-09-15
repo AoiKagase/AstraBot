@@ -7,9 +7,9 @@
 
 ### Plugin and platform
 
-- [ ] **HOST-01**: AstraBot loads as a Metamod-P plugin beside an unmodified ReGameDLL-CS without private ReGameDLL symbols, ReAPI, or DLL patching.
-- [ ] **HOST-02**: The plugin exports and validates the required Metamod/HLSDK entrypoints and calling conventions for the supported GoldSrc ABI.
-- [ ] **HOST-03**: Windows 32-bit and Linux 32-bit builds are reproducible with separately identified toolchains and SDK inputs.
+- [x] **HOST-01**: AstraBot loads as a Metamod-P plugin beside an unmodified ReGameDLL-CS without private ReGameDLL symbols, ReAPI, or DLL patching.
+- [x] **HOST-02**: The plugin exports and validates the required Metamod/HLSDK entrypoints and calling conventions for the supported GoldSrc ABI.
+- [x] **HOST-03**: Windows 32-bit and Linux 32-bit builds are reproducible with separately identified toolchains and SDK inputs.
 
 ### Lifecycle and actors
 
@@ -42,7 +42,7 @@
 
 ### Verification and acceptance
 
-- [ ] **TEST-01**: Portable Core contracts, Nav loading, lifecycle generation, command validation, and deterministic replay have automated tests on Windows/Linux x86.
+- [x] **TEST-01**: Portable Core contracts, Nav loading, lifecycle generation, command validation, and deterministic replay have automated tests on Windows/Linux x86.
 - [ ] **TEST-02**: Adapter tests verify hook order, FakeClient dispatch, native Bot suppression, compatibility commands, and release export identity.
 - [ ] **TEST-03**: A differential evidence set compares AstraBot against the pinned CSBot reference behavior without copying reference source.
 - [ ] **TEST-04**: Real-server acceptance verifies the unmodified ReGameDLL-CS plus Metamod-P plugin on Windows x86 and Linux x86 for single- and multi-Bot operation.
@@ -76,13 +76,17 @@ Deferred until v1 CSBot parity is accepted.
 | `astranav` file production during v1 | Requires a separately designed and verified authoring format |
 | Wallbang/adaptive experience during v1 | Advanced AI must not obscure whether baseline CSBot parity is complete |
 
+## Status Interpretation
+
+`Complete` in the traceability table means that the requirement's current phase deliverable has been implemented and verified. It does not override later live-server acceptance gates. In particular, Phase 1 artifact/ABI evidence does not claim that full CSBot/ZBot gameplay parity or real HLDS/ReHLDS operation is complete; those remain covered by Phase 8.
+
 ## Traceability
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| HOST-01 | Phase 1 | Pending |
-| HOST-02 | Phase 1 | Pending |
-| HOST-03 | Phase 1 | Pending |
+| HOST-01 | Phase 1 | Complete |
+| HOST-02 | Phase 1 | Complete |
+| HOST-03 | Phase 1 | Complete |
 | LIFE-01 | Phase 2 | Pending |
 | LIFE-02 | Phase 3 | Pending |
 | LIFE-03 | Phase 2 | Pending |
@@ -100,7 +104,7 @@ Deferred until v1 CSBot parity is accepted.
 | PAR-04 | Phase 7 | Pending |
 | PAR-05 | Phase 7 | Pending |
 | PAR-06 | Phase 8 | Pending |
-| TEST-01 | Phase 1 | Pending |
+| TEST-01 | Phase 1 | Complete |
 | TEST-02 | Phase 3 | Pending |
 | TEST-03 | Phase 8 | Pending |
 | TEST-04 | Phase 8 | Pending |

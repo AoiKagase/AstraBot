@@ -95,7 +95,7 @@ coverage:
 **1. [SDK include boundary] Added direct HLSDK subdirectory paths**
 
 - **Found during:** Task 1 (ABI RED build)
-- **Issue:** `metamod/enginecallbacks.h` includes `enginecallback.h` and `event_flags.h` without directory prefixes.
+- **Issue:** The Metamod-P engine-callback wrapper includes HLSDK headers by unqualified name.
 - **Fix:** Added `hlsdk/common`, `hlsdk/dlls`, `hlsdk/engine`, and `hlsdk/pm_shared` to the external include set.
 - **Files modified:** `CMakeLists.txt`
 - **Verification:** The next build reached the intended missing-export link failure.

@@ -6,7 +6,7 @@ The first milestone builds a standalone, source-independent Metamod-P plugin tha
 
 ## Phases
 
-- [ ] **Phase 1: Foundation and ABI** - Establish the project toolchain, source boundary, public contracts, and x86 artifact checks.
+- [x] **Phase 1: Foundation and ABI** - Establish the project toolchain, source boundary, public contracts, and x86 artifact checks. (completed 2026-09-15)
 - [ ] **Phase 2: Metamod lifecycle and native guard** - Load safely, receive hooks, manage map/round state, and prevent native Bot mixing.
 - [ ] **Phase 3: FakeClient and input dispatch** - Create actor-safe FakeClients and validate command/input/receipt lifecycles.
 - [ ] **Phase 4: CSBot compatibility surface** - Reproduce required `bot_*` commands/CVars, profiles, and server configuration behavior.
@@ -201,7 +201,7 @@ Phases execute sequentially: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation and ABI | 3/3 | In Progress|  |
+| 1. Foundation and ABI | 3/3 | Complete    | 2026-09-15 |
 | 2. Metamod lifecycle and native guard | 0/3 | Not started | - |
 | 3. FakeClient and input dispatch | 0/3 | Not started | - |
 | 4. CSBot compatibility surface | 0/3 | Not started | - |
