@@ -1,0 +1,94 @@
+{
+  "schema_version": 1,
+  "project": "AstraBot",
+  "release_license_status": "pending_release_review",
+  "references": [
+    {
+      "name": "ReGameDLL-CS",
+      "path": "../ReGameDLL_CS",
+      "commit": "b0889847fe6d03898be88acc9e366660efb40ab5",
+      "role": "behavior-only",
+      "mutable": false
+    },
+    {
+      "name": "Metamod-P",
+      "path": "../metamod-p",
+      "commit": "7ec9b014f8c0a947a724644aebe34eb33706e44b",
+      "role": "public-SDK-only",
+      "mutable": false
+    }
+  ],
+  "project_files": [
+    "CMakeLists.txt",
+    ".gitignore",
+    "cmake/AstraBotBuild.cmake"
+  ],
+  "source_files": [
+    {
+      "path": "include/astrabot/build_identity.hpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "include/astrabot/metamod/abi_contract.hpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "src/core/build_identity.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "src/adapter/metamod/astrabot_mm.def",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "src/adapter/metamod/plugin_exports.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "tests/build_identity_tests.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "tests/metamod_abi_tests.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "tests/source_manifest_checker_tests.py",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "tests/x86_artifact_verifier_tests.py",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "tools/check_source_manifest.py",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "tools/verify_x86_artifact.py",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    }
+  ]
+}
