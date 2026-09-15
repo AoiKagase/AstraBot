@@ -1,24 +1,27 @@
 # AstraBot CSBot-Compatible Metamod Plugin Design
 
 **Date:** 2026-09-15
-**Status:** Design approved in conversation; implementation pending written-spec review
+**Status:** Design revision pending written-spec review
 
 ## 1. Purpose
 
-AstraBot is an independently implemented Counter-Strike 1.6 Bot that can replace the operational surface and gameplay behavior of the CSBot/ZBot implementation shipped by ReGameDLL-CS. The final target is a standalone Metamod-P plugin for unmodified ReGameDLL-CS, with Windows 32-bit and Linux 32-bit builds, existing `bot_*` operation compatibility, `.nav` compatibility, automatic Nav learning, and room for an optimized `astranav` format.
+AstraBot is an independently implemented Counter-Strike 1.6 Bot that can replace the operational surface and gameplay behavior of the CSBot/ZBot implementation shipped by ReGameDLL-CS. The first target is a standalone Metamod-P plugin for unmodified ReGameDLL-CS, with Windows 32-bit and Linux 32-bit builds, existing `bot_*` operation compatibility, and read-only loading of existing `.nav` data. Nav creation, learning, editing, and the optimized `astranav` format are later AstraNav work, not part of the first CSBot parity target.
 
 The project is a clean-room behavioral reimplementation. ReGameDLL-CS and Metamod-P are reference inputs for public behavior, ABI boundaries, file formats, and observable results. Their Bot source, internal classes, and implementation structure are not copied or linked into AstraBot.
 
 ## 2. Goals
 
-- Reproduce the observable CSBot/ZBot lifecycle and gameplay behavior closely enough to replace it in normal server operation.
+- Reproduce the observable CSBot/ZBot lifecycle and gameplay behavior closely enough to replace it in normal server operation when a compatible existing `.nav` is available.
 - Load without modifying or relinking ReGameDLL-CS.
 - Use only Metamod-P, HLSDK, Engine, and GameDLL public boundaries at runtime; ReAPI and private DLL patches are not dependencies.
 - Preserve the operational surface of existing `bot_*` commands/CVars, Bot profiles, `.nav` files, and server configuration.
-- Support automatic Nav learning, analysis, editing, persistence, and reuse.
-- Provide a format-neutral Nav model so a future `astranav` file can store precomputed and learned data without changing Bot decision logic.
+- Keep a format-neutral Nav model and persistence boundary so a future AstraNav subsystem can add Nav creation, learning, editing, analysis, and an optimized `astranav` file without changing Bot decision logic.
 - Keep Core behavior testable in deterministic offline simulations and replay tests.
 - Produce and verify Windows x86 and Linux x86 artifacts separately from real-server acceptance.
+
+### Initial CSBot parity boundary
+
+The initial implementation accepts and loads existing compatible `.nav` files only. It does not generate Nav, learn new geometry, edit Nav, analyze a map into new Nav data, or write back `.nav`/`astranav`. If a compatible Nav file is missing or invalid, the plugin reports the condition and does not claim CSBot parity for that map. These capabilities belong to the later AstraNav extension.
 
 ## 3. Constraints and references
 
@@ -54,7 +57,7 @@ The SDK-free Core is divided by responsibility:
 - `PerceptionSystem`: vision, sound, contacts, confidence, memory, and uncertainty.
 - `ObjectivePlanner`: attack, defend, rotate, retake, save, escort, rescue, and scenario objectives.
 - `BehaviorStateMachine`: high-level Bot state transitions.
-- `NavigationSystem`: Nav model, queries, local movement, recovery, learning, editing, and persistence ports.
+- `NavigationSystem`: Nav model, queries, local movement, and recovery; future learning, editing, and persistence ports remain isolated behind AstraNav boundaries.
 - `ActionSystem`: movement, view, firing, reload, weapon selection, purchase, bomb, hostage, and radio actions.
 - `CompatibilityLayer`: command/CVar/profile contracts and compatibility diagnostics.
 
@@ -64,13 +67,13 @@ Core ports include `Clock`, `RandomSource`, `TracePort`, `EntityPort`, `FileStor
 
 - `adapter/goldsrc`: translates Entity, FakeClient, Trace, physics, weapons, messages, file paths, and game events.
 - `adapter/metamod`: implements plugin exports, hook tables, lifecycle, command interception, CVar access, logging, and dispatch.
-- `tools`: validates and converts Nav files, analyzes learning data, runs deterministic simulations, and replays traces.
+- `tools`: validates existing Nav files, runs deterministic simulations, and replays traces. Nav generation and learning tools are deferred to AstraNav.
 
 ## 5. Runtime lifecycle
 
 The adapter validates the Metamod interface in `Meta_Query`, creates the runtime in `Meta_Attach`, and releases it in `Meta_Detach`. `GiveFnptrsToDll` and the Engine/GameDLL API tables are treated as ABI boundaries and are validated before use.
 
-`ServerActivate` creates a map session, loads and validates Nav data, establishes the map fingerprint, and initializes the Bot registry. `ClientPutInServer` and `ClientDisconnect` bind and retire slot-scoped identities. `StartFrame` captures one world snapshot, processes events, schedules Bot ticks, calls Core, validates commands, and dispatches only current commands. `CmdStart` and the required player hooks provide the input and post-dispatch feedback boundary. `ServerDeactivate` flushes valid learning data, invalidates map state, and releases all Entity references.
+`ServerActivate` creates a map session, loads and validates Nav data, establishes the map fingerprint, and initializes the Bot registry. `ClientPutInServer` and `ClientDisconnect` bind and retire slot-scoped identities. `StartFrame` captures one world snapshot, processes events, schedules Bot ticks, calls Core, validates commands, and dispatches only current commands. `CmdStart` and the required player hooks provide the input and post-dispatch feedback boundary. `ServerDeactivate` invalidates map state and releases all Entity references. Initial CSBot parity has no Nav write or learning flush path.
 
 All observations, plans, commands, and receipts carry map, round, tick, actor, Entity generation, Nav revision, and sequence information. A stale or duplicate receipt cannot advance a route or state machine.
 
@@ -86,20 +89,20 @@ ReGameDLL-CS contains a native CSBot manager. AstraBot must prevent double owner
 
 The exact suppress/override behavior is a Phase 1 runtime acceptance item because it depends on the actual Metamod hook order and CVar behavior. If the standard public boundary cannot guarantee isolation, the plugin reports the incompatibility and does not create managed Bots.
 
-## 6. Nav model and formats
+## 6. Nav model and initial legacy load
 
 The format pipeline is:
 
 ```text
-.nav / astranav
-    -> NavCodec
+.nav
+    -> LegacyNavReader
     -> format-neutral NavDocument
-    -> NavNormalizer / NavAnalyzer / NavEnricher
+    -> NavNormalizer / NavEnricher
     -> immutable NavSnapshot
     -> NavQuery / PathPlanner
 ```
 
-`NavCodec` supports legacy `.nav` versions 1 through 5 and leaves room for `AstraNavCodec`. `NavDocument` contains no file-format-specific type. Loading is transactional and rejects invalid counts, overflow, invalid indices, non-finite coordinates, duplicate identity, and unsafe allocations without partially publishing the graph.
+The initial `LegacyNavReader` supports legacy `.nav` versions 1 through 5 and is read-only. `NavDocument` contains no file-format-specific type, leaving room for a later `AstraNavCodec`. Loading is transactional and rejects invalid counts, overflow, invalid indices, non-finite coordinates, duplicate identity, and unsafe allocations without partially publishing the graph.
 
 ### 6.1 Area data
 
@@ -134,17 +137,17 @@ TraversalLink
 
 Supported kinds include Walk, Crouch, StepUp, Jump, Drop, Ladder, Door, NarrowPassage, and LearnedTraversal. The movement envelope records the relevant launch/landing, clearance, slope, height, horizontal reach, damage risk, and input requirements. Runtime geometry and physics still validate the envelope before execution.
 
-### 6.3 Tactical and learned layers
+### 6.3 Future AstraNav and learned layers
 
-The static graph remains immutable. Adaptive routing composes it with derived and learned data such as `FAST`, `SAFE`, `LOW_EXPOSURE`, `LOW_TRAFFIC`, `FLANK`, and `OBJECTIVE_FAST` policies.
+The initial CSBot parity graph is loaded read-only and remains immutable. A future AstraNav subsystem may compose it with derived and learned data such as `FAST`, `SAFE`, `LOW_EXPOSURE`, `LOW_TRAFFIC`, `FLANK`, and `OBJECTIVE_FAST` policies.
 
-Persistent experience is keyed by map and Nav revision and keeps human and Bot evidence separate. Area experience includes visits, team danger, encounters, deaths, grenades, sniper threat, push/retake success, and traffic. Traversal experience includes human/Bot attempts, successes, failures, time, damage, posture, and failure reason. Experience uses deterministic decay and atomic persistence.
+Future persistent experience will be keyed by map and Nav revision and will keep human and Bot evidence separate. Area experience may include visits, team danger, encounters, deaths, grenades, sniper threat, push/retake success, and traffic. Traversal experience may include human/Bot attempts, successes, failures, time, damage, posture, and failure reason. This is outside the initial parity target.
 
 Round/session overlays contain current traffic, reservations, temporary blockers, cooldowns, contextual danger, and current enemy beliefs. They are not facts about the static Nav and are not unconditionally written into the base graph.
 
-## 7. Ballistics and Wallbang geometry
+## 7. Future AstraNav ballistics and Wallbang geometry
 
-Wallbang requires static geometry, but a single wall-thickness field is insufficient. The optional `BallisticsGeometry` chunk in `astranav` stores representative penetration paths from tactical points and direction sectors:
+Wallbang is a later advanced-AI extension, not an initial CSBot parity gate. When AstraNav adds it, static geometry will be required, but a single wall-thickness field is insufficient. The optional `BallisticsGeometry` chunk in `astranav` stores representative penetration paths from tactical points and direction sectors:
 
 ```text
 PenetrationPath
@@ -162,7 +165,7 @@ PenetrationPath
 
 Each layer records material/surface, thickness, entry/exit normals, and surface flags. Precomputation is bounded to cover, peek, sniper, objective, and likely-enemy sectors rather than every ray in the map.
 
-At fire time, Core combines this static geometry with current weapon penetration, distance, angle, ammunition, enemy belief, friendly-fire risk, and fresh Trace results. Unknown geometry is not treated as penetrable. Dynamic enemy positions and hidden engine truth are never stored in Nav or used as a wallhack target. Wallbang outcomes are learned in an experience sidecar keyed by a stable geometry/profile identity.
+At fire time, a future Core extension combines this static geometry with current weapon penetration, distance, angle, ammunition, enemy belief, friendly-fire risk, and fresh Trace results. Unknown geometry is not treated as penetrable. Dynamic enemy positions and hidden engine truth are never stored in Nav or used as a wallhack target. Wallbang outcomes are learned in an experience sidecar keyed by a stable geometry/profile identity.
 
 ## 8. Information boundaries
 
@@ -172,7 +175,7 @@ Team communication may share explicit observations, tactical proposals, assignme
 
 ## 9. Failure and resource policy
 
-The plugin fails closed for ABI mismatch, missing required hooks, corrupt or mismatched Nav, invalid Trace, stale generations, invalid commands, native Bot mixing, and unsafe Wallbang information. It preserves the last valid persisted data if learning save fails.
+The plugin fails closed for ABI mismatch, missing required hooks, corrupt or mismatched Nav, invalid Trace, stale generations, invalid commands, native Bot mixing, and unsafe future Wallbang information. Initial parity has no Nav write path, so a loaded source Nav remains untouched.
 
 No C++ exception crosses a Metamod C ABI boundary. All queues, Bot ticks, Trace queries, path searches, learning candidates, logs, and Nav allocations have explicit upper bounds. Engine and GameDLL calls are never made from worker threads. Diagnostics include map/round/tick/actor/Entity generation/Nav revision, sequence, and failure reason.
 
@@ -181,8 +184,8 @@ No C++ exception crosses a Metamod C ABI boundary. All queues, Bot ticks, Trace 
 ### 10.1 Portable Core
 
 - Nav graph/query, legacy Codec, `astranav` schema, CRC, corruption, and bounded allocation tests;
-- traversal envelope and Wallbang geometry tests;
-- deterministic perception, planning, combat, learning, decay, and replay tests;
+- traversal envelope tests;
+- deterministic perception, planning, combat, and replay tests;
 - generation, Unknown, stale command, and resource-limit tests;
 - Windows x86 and Linux x86 builds.
 
@@ -200,12 +203,12 @@ No C++ exception crosses a Metamod C ABI boundary. All queues, Bot ticks, Trace 
 - map/round/Entity generation changes;
 - multiple Bot isolation and scheduling;
 - rejected Trace/Command/receipt paths;
-- Nav reload/edit/learning persistence;
+- Nav load and immutable Nav publication;
 - Tactical, Combat, TeamReport, and hidden-information boundaries.
 
 ### 10.4 Real server
 
-On an unmodified ReGameDLL-CS plus Metamod-P installation, verify plugin loading, existing configuration migration, Bot management, `.nav` load, automatic learning, reuse after restart, locomotion, perception, combat, objectives, Wallbang, map changes, round restarts, disconnects, Entity reuse, 1v1, 2v2, and the configured multi-Bot count on both supported operating systems.
+On an unmodified ReGameDLL-CS plus Metamod-P installation, verify plugin loading, existing configuration migration, Bot management, read-only `.nav` load, locomotion, perception, combat, objectives, map changes, round restarts, disconnects, Entity reuse, 1v1, 2v2, and the configured multi-Bot count on both supported operating systems. Automatic Nav creation/learning and Wallbang are not initial parity gates.
 
 Offline tests are evidence for their layer only. They do not replace real HLDS/ReHLDS movement, combat, stability, or multi-Bot acceptance. Each live result records the DLL, SDK, BSP, Nav, map, configuration, Bot count, tick trace, and failure details.
 
@@ -217,14 +220,12 @@ The roadmap should keep each item independently buildable and verifiable:
 2. Metamod plugin skeleton, lifecycle, hooks, and native Bot guard.
 3. FakeClient registry and safe command/input dispatch.
 4. `bot_*` command/CVar/profile compatibility.
-5. Legacy `.nav` Reader/Writer and immutable Nav model.
-6. Area queries, directed traversal, basic Walk/Crouch/Step/Jump/Drop/Ladder execution.
-7. Nav learning, editing, analysis, and atomic persistence.
-8. Perception, visual/sound memory, and WorldModel.
-9. Combat baseline, weapons, Wallbang geometry, and firing policy.
-10. Objective states, tactical planner, team roles, communication, and round recovery.
-11. Persistent experience, adaptive routing, human/Bot traversal learning, and opponent modeling.
-12. `astranav` Codec, tactical/visibility/acoustic/ballistic chunks, precomputed indices, and full cross-platform/live acceptance.
+5. Legacy `.nav` read-only Reader and immutable Nav model.
+6. Area queries, directed traversal, and basic Walk/Crouch/Step/Jump/Drop/Ladder execution.
+7. CSBot parity for perception, visual/sound memory, WorldModel, combat, weapons, objectives, state machines, radio/chatter, and round recovery.
+8. Differential behavior tests, multi-Bot integration, and full cross-platform/live CSBot parity acceptance.
+9. AstraNav: Nav generation, learning, editing, analysis, atomic persistence, and `astranav` Codec.
+10. AstraNav-derived tactical/visibility/acoustic/ballistic chunks, Wallbang, adaptive routing, and advanced learning.
 
 Each roadmap phase may be split into smaller GSD plans. A phase is complete only after its implementation, applicable offline verification, documentation, and required live acceptance are separately recorded.
 
