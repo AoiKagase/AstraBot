@@ -1,19 +1,19 @@
 ---
 gsd_state_version: "1.0"
-current_phase: 4
-current_phase_name: CSBot compatibility surface
-status: executing
-stopped_at: Phase 3 complete, ready to plan Phase 4
-last_updated: "2026-09-15T11:16:41.077Z"
+current_phase: 6
+current_phase_name: Baseline locomotion
+status: ready
+stopped_at: Phase 5 complete, ready to plan Phase 6
+last_updated: "2026-09-15T23:37:17+09:00"
 last_activity: 2026-09-15
-last_activity_desc: Phase 3 complete, transitioned to Phase 4
-state_head: 575be40a01c713a2326c6a227108e7856a0c9ce0
+last_activity_desc: Phase 5 complete, transitioned to Phase 6
+state_head: ed16012b6a74d9683deb39eecf6ac7ebc9d51c36
 progress:
   total_phases: 8
-  completed_phases: 3
-  total_plans: 12
-  completed_plans: 9
-  percent: 38
+  completed_phases: 5
+  total_plans: 16
+  completed_plans: 16
+  percent: 63
 ---
 
 # Project State
@@ -23,22 +23,22 @@ progress:
 See: `.planning/PROJECT.md` (updated 2026-09-15)
 
 **Core value:** Replace ReGameDLL-CS CSBot with an independent Metamod plugin while preserving normal operation.
-**Current focus:** Phase 2 — Metamod lifecycle and native guard
+**Current focus:** Phase 6 — Baseline locomotion
 
 ## Current Position
 
-Phase: 4 (CSBot compatibility surface) — READY TO EXECUTE
+Phase: 6 (Baseline locomotion) — READY TO EXECUTE
 Plan: Not started
 Status: Ready to execute
-Last activity: 2026-09-15 — Phase 3 complete, transitioned to Phase 4
+Last activity: 2026-09-15 — Phase 5 complete, transitioned to Phase 6
 
-Progress: ░░░░░░░░░░ [████░░░░░░] 38%
+Progress: ░░░░░░░░░░ [██████░░░░] 63%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 9
+- Total plans completed: 16
 - Average duration: -
 - Total execution time: 0 hours
 
@@ -49,6 +49,9 @@ Progress: ░░░░░░░░░░ [████░░░░░░] 38%
 | 1 | 3 | - | - |
 | 2 | 3 | - | - |
 | 3 | 3 | - | - |
+| 4 | 3 | - | - |
+| 5 | 4 | - | - |
+| 6 | 5 | - | - |
 
 **Recent Trend:**
 
@@ -70,7 +73,7 @@ None yet.
 
 ### Blockers/Concerns
 
-- The current AstraBot graph has no implementation communities yet; code-review-graph cannot provide source relationships until code exists.
+- The current AstraBot graph is available and must be refreshed after source changes; graph output remains review navigation rather than runtime acceptance evidence.
 - Real-server acceptance remains a later phase and must not be inferred from offline tests.
 
 ## Deferred Items
@@ -83,5 +86,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-09-15
-Stopped at: Phase 3 complete, ready to plan Phase 4
+Stopped at: Phase 5 complete, ready to plan Phase 6
 Resume file: None

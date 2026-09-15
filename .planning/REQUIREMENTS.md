@@ -26,10 +26,10 @@
 
 ### Existing Nav input
 
-- [ ] **NAV-01**: AstraBot can load each supported existing `.nav` version required by ReGameDLL-CS, including versions 1 through 5, through a read-only legacy reader.
-- [ ] **NAV-02**: Nav loading validates bounds, IDs, indices, coordinates, connectivity, and allocations transactionally before publishing an immutable snapshot.
-- [ ] **NAV-03**: Missing, invalid, or fingerprint-mismatched Nav produces an explicit diagnostic and never silently fabricates geometry or claims parity.
-- [ ] **NAV-04**: The Core Nav model and query contracts do not expose legacy file-layout types, leaving a clean extension point for AstraNav.
+- [x] **NAV-01**: AstraBot can load each supported existing `.nav` version required by ReGameDLL-CS, including versions 1 through 5, through a read-only legacy reader.
+- [x] **NAV-02**: Nav loading validates bounds, IDs, indices, coordinates, connectivity, and allocations transactionally before publishing an immutable snapshot.
+- [x] **NAV-03**: Missing, invalid, or fingerprint-mismatched Nav produces an explicit diagnostic and never silently fabricates geometry or claims parity.
+- [x] **NAV-04**: The Core Nav model and query contracts do not expose legacy file-layout types, leaving a clean extension point for AstraNav.
 
 ### CSBot/ZBot runtime parity
 
@@ -94,10 +94,10 @@ Deferred until v1 CSBot parity is accepted.
 | COMP-01 | Phase 4 | Complete |
 | COMP-02 | Phase 4 | Complete |
 | COMP-03 | Phase 4 | Complete |
-| NAV-01 | Phase 5 | Pending |
-| NAV-02 | Phase 5 | Pending |
-| NAV-03 | Phase 5 | Pending |
-| NAV-04 | Phase 5 | Pending |
+| NAV-01 | Phase 5 | Complete |
+| NAV-02 | Phase 5 | Complete |
+| NAV-03 | Phase 5 | Complete |
+| NAV-04 | Phase 5 | Complete |
 | PAR-01 | Phase 6 | Pending |
 | PAR-02 | Phase 7 | Pending |
 | PAR-03 | Phase 7 | Pending |
