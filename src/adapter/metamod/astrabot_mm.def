@@ -1,0 +1,9 @@
+LIBRARY astrabot_mm
+
+EXPORTS
+	GetEngineFunctions
+	GetEntityAPI2
+	Meta_Attach
+	Meta_Detach
+	Meta_Query
+	GiveFnptrsToDll=_GiveFnptrsToDll@8

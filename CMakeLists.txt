@@ -50,4 +50,44 @@ if(ASTRABOT_BUILD_METAMOD)
     message(FATAL_ERROR
       "ASTRABOT_METAMOD_SDK_ROOT must contain the pinned metamod and hlsdk directories")
   endif()
+
+  set(ASTRABOT_METAMOD_INCLUDE_DIRS
+    "${ASTRABOT_METAMOD_SDK_ROOT}/metamod"
+    "${ASTRABOT_METAMOD_SDK_ROOT}/hlsdk"
+    "${ASTRABOT_METAMOD_SDK_ROOT}/hlsdk/common"
+    "${ASTRABOT_METAMOD_SDK_ROOT}/hlsdk/dlls"
+    "${ASTRABOT_METAMOD_SDK_ROOT}/hlsdk/engine"
+    "${ASTRABOT_METAMOD_SDK_ROOT}/hlsdk/pm_shared"
+  )
+
+  add_library(astrabot_mm SHARED
+    src/adapter/metamod/plugin_exports.cpp
+  )
+  target_include_directories(astrabot_mm PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    ${ASTRABOT_METAMOD_INCLUDE_DIRS}
+  )
+  target_compile_definitions(astrabot_mm PRIVATE
+    ASTRABOT_CXX_STANDARD=14
+    ASTRABOT_VERSION_STRING="${PROJECT_VERSION}"
+  )
+  if(MSVC)
+    target_sources(astrabot_mm PRIVATE
+      src/adapter/metamod/astrabot_mm.def
+    )
+  endif()
+  astrabot_apply_warnings(astrabot_mm)
+
+  if(ASTRABOT_BUILD_TESTS)
+    add_executable(astrabot_metamod_abi
+      tests/metamod_abi_tests.cpp
+    )
+    target_include_directories(astrabot_metamod_abi PRIVATE
+      "${CMAKE_CURRENT_SOURCE_DIR}/include"
+      ${ASTRABOT_METAMOD_INCLUDE_DIRS}
+    )
+    target_link_libraries(astrabot_metamod_abi PRIVATE astrabot_mm)
+    astrabot_apply_warnings(astrabot_metamod_abi)
+    add_test(NAME astrabot_metamod_abi COMMAND astrabot_metamod_abi)
+  endif()
 endif()
