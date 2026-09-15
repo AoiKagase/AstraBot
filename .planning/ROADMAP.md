@@ -149,7 +149,7 @@ Plans:
 - [x] 05-01: Define format-neutral Nav model and validation limits.
 - [x] 05-02: Implement bounded legacy `.nav` reader.
 - [x] 05-03: Publish immutable Nav snapshot and map fingerprint.
-- [ ] 05-04: Add codec fixtures, corruption tests, and adapter load diagnostics.
+- [x] 05-04: Add codec fixtures, corruption tests, and adapter load diagnostics.
 
 ### Phase 6: Baseline locomotion
 
@@ -226,7 +226,7 @@ Phases execute sequentially: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 | 2. Metamod lifecycle and native guard | 3/3 | Complete    | 2026-09-15 |
 | 3. FakeClient and input dispatch | 3/3 | Complete    | 2026-09-15 |
 | 4. CSBot compatibility surface | 3/3 | Complete | 2026-09-15 |
-| 5. Read-only legacy Nav | 3/4 | In progress | - |
+| 5. Read-only legacy Nav | 4/4 | In progress | - |
 | 6. Baseline locomotion | 0/5 | Not started | - |
 | 7. CSBot behavior parity | 0/6 | Not started | - |
 | 8. Differential and live parity acceptance | 0/4 | Not started | - |

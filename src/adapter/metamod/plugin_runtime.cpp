@@ -35,14 +35,74 @@ namespace metamod
 			return left[index] == '\0' && right[index] == '\0';
 		}
 
-		void setMetaResult(META_RES result)
+	void setMetaResult(META_RES result)
+	{
+		if (gpMetaGlobals != nullptr)
 		{
-			if (gpMetaGlobals != nullptr)
-			{
-				gpMetaGlobals->mres = result;
-			}
+			gpMetaGlobals->mres = result;
 		}
 	}
+
+	bool boundedStringLength(const char *value, std::size_t maximum,
+		std::size_t *length)
+	{
+		if (value == nullptr || length == nullptr)
+		{
+			return false;
+		}
+		for (std::size_t index = 0U; index < maximum; ++index)
+		{
+			if (value[index] == '\0')
+			{
+				*length = index;
+				return true;
+			}
+		}
+		return false;
+	}
+
+	bool buildMapPath(const char *gameDirectory, const char *mapName,
+		const char *extension, char *path, std::size_t pathCapacity)
+	{
+		std::size_t gameDirectoryLength = 0U;
+		std::size_t mapNameLength = 0U;
+		std::size_t extensionLength = 0U;
+		if (!boundedStringLength(gameDirectory, pathCapacity,
+				&gameDirectoryLength) ||
+				!boundedStringLength(mapName, pathCapacity, &mapNameLength) ||
+				!boundedStringLength(extension, pathCapacity, &extensionLength) ||
+				path == nullptr || gameDirectoryLength == 0U)
+		{
+			return false;
+		}
+
+		const bool needsSeparator =
+			gameDirectory[gameDirectoryLength - 1U] != '/' &&
+			gameDirectory[gameDirectoryLength - 1U] != '\\';
+		const std::size_t separatorLength = needsSeparator ? 1U : 0U;
+		const std::size_t requiredLength = gameDirectoryLength +
+			separatorLength + 5U + mapNameLength + extensionLength;
+		if (requiredLength >= pathCapacity)
+		{
+			return false;
+		}
+
+		std::size_t position = 0U;
+		std::memcpy(path + position, gameDirectory, gameDirectoryLength);
+		position += gameDirectoryLength;
+		if (needsSeparator)
+		{
+			path[position++] = '/';
+		}
+		std::memcpy(path + position, "maps/", 5U);
+		position += 5U;
+		std::memcpy(path + position, mapName, mapNameLength);
+		position += mapNameLength;
+		std::memcpy(path + position, extension, extensionLength);
+		path[requiredLength] = '\0';
+		return true;
+	}
+}
 
 	PluginRuntime::PluginRuntime()
 		: state_(State::Cold),
@@ -55,6 +115,9 @@ namespace metamod
 		  fakeClientManager_(lifecycle_, actorRegistry_),
 		  inputDispatcher_(lifecycle_, actorRegistry_),
 		  compatibilitySurface_(),
+		  navLoader_(),
+		  navPublisher_(),
+		  navLoadDiagnostic_(),
 		  adapterFrameCount_(0U),
 		  pluginId_(nullptr),
 		  nativeBotGuard_(),
@@ -111,6 +174,8 @@ namespace metamod
 		lifecycle_ = runtime::LifecycleSession();
 		actorRegistry_ = runtime::ActorRegistry();
 		inputDispatcher_.reset();
+		navPublisher_.invalidate(0U);
+		navLoadDiagnostic_ = {};
 		adapterFrameCount_ = 0U;
 		compatibilityRegistrationInProgress_ = false;
 		pluginId_ = pluginId;
@@ -141,6 +206,8 @@ namespace metamod
 		restoreNativeBotControls();
 		inputDispatcher_.reset();
 		actorRegistry_ = runtime::ActorRegistry();
+		navPublisher_.invalidate(lifecycle_.mapGeneration());
+		navLoadDiagnostic_ = {};
 		lifecycle_.deactivateMap();
 		state_ = State::Detached;
 		metaGlobals_ = nullptr;
@@ -231,6 +298,21 @@ namespace metamod
 		return current;
 	}
 
+	NavLoadResult PluginRuntime::loadNavigationFile(const NavLoadRequest *request)
+	{
+		return navLoader_.loadFile(request, &navPublisher_, &navLoadDiagnostic_);
+	}
+
+	NavLoadDiagnostic PluginRuntime::navigationDiagnostic() const
+	{
+		return navLoadDiagnostic_;
+	}
+
+	nav::NavSnapshot PluginRuntime::navigationSnapshot() const
+	{
+		return navPublisher_.snapshot();
+	}
+
 	runtime::LifecycleToken PluginRuntime::tokenForSlot(std::uint32_t slot) const
 	{
 		return lifecycle_.tokenForSlot(slot);
@@ -295,6 +377,7 @@ namespace metamod
 				armNativeBotGuard();
 				configureFakeClientManager();
 				registerCompatibilityCommands();
+				loadCurrentMapNavigation();
 			}
 		}
 	}
@@ -304,6 +387,8 @@ namespace metamod
 		if (state_ == State::ActiveMap)
 		{
 			lifecycle_.deactivateMap();
+			navPublisher_.invalidate(lifecycle_.mapGeneration());
+			navLoadDiagnostic_ = {};
 			adapterFrameCount_ = 0U;
 			updateNativeBotGuard();
 			inputDispatcher_.reset();
@@ -313,6 +398,53 @@ namespace metamod
 			compatibilityRegistrationInProgress_ = false;
 			configureFakeClientManager();
 		}
+	}
+
+	void PluginRuntime::loadCurrentMapNavigation()
+	{
+		navPublisher_.invalidate(lifecycle_.mapGeneration());
+		navLoadDiagnostic_ = {};
+		navLoadDiagnostic_.result = NavLoadResult::BoundaryUnavailable;
+		navLoadDiagnostic_.readerResult = nav::NavReadResult::InvalidArgument;
+		navLoadDiagnostic_.snapshotResult = nav::NavSnapshotResult::Invalidated;
+		navLoadDiagnostic_.mapGeneration = lifecycle_.mapGeneration();
+
+		if (engineFunctions_ == nullptr || globals_ == nullptr ||
+				engineFunctions_->pfnSzFromIndex == nullptr ||
+				engineFunctions_->pfnGetGameDir == nullptr ||
+				engineFunctions_->pfnGetFileSize == nullptr)
+		{
+			return;
+		}
+
+		const char *mapName = engineFunctions_->pfnSzFromIndex(globals_->mapname);
+		if (mapName == nullptr || mapName[0] == '\0')
+		{
+			return;
+		}
+		char gameDirectory[NavLoader::kMaximumPathLength] = {};
+		engineFunctions_->pfnGetGameDir(gameDirectory);
+		char navPath[NavLoader::kMaximumPathLength] = {};
+		char bspPath[NavLoader::kMaximumPathLength] = {};
+		if (!buildMapPath(gameDirectory, mapName, ".nav", navPath,
+				sizeof(navPath)) ||
+			!buildMapPath(gameDirectory, mapName, ".bsp", bspPath,
+				sizeof(bspPath)))
+		{
+			return;
+		}
+
+		const int bspSize = engineFunctions_->pfnGetFileSize(bspPath);
+		const NavLoadRequest request = {
+			navPath,
+			mapName,
+			lifecycle_.mapGeneration(),
+			bspSize >= 0,
+			bspSize >= 0 ? static_cast<std::uint32_t>(bspSize) : 0U,
+			false,
+			0U
+		};
+		loadNavigationFile(&request);
 	}
 
 	void PluginRuntime::onStartFrame()

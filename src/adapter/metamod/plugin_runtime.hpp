@@ -6,6 +6,7 @@
 #include "astrabot/metamod/fake_client_manager.hpp"
 #include "astrabot/metamod/input_dispatcher.hpp"
 #include "astrabot/metamod/native_bot_guard.hpp"
+#include "astrabot/metamod/nav_loader.hpp"
 #include "astrabot/runtime/lifecycle.hpp"
 
 #include <array>
@@ -66,8 +67,11 @@ namespace metamod
 		bool provideEntityApi(DLL_FUNCTIONS *functionTable, int *interfaceVersion);
 		bool provideEngineFunctions(enginefuncs_t *engineFunctions, int *interfaceVersion);
 		void giveEnginePointers(enginefuncs_t *engineFunctions, globalvars_t *globals);
-		Snapshot snapshot() const;
-		runtime::LifecycleToken tokenForSlot(std::uint32_t slot) const;
+	Snapshot snapshot() const;
+	NavLoadResult loadNavigationFile(const NavLoadRequest *request);
+	NavLoadDiagnostic navigationDiagnostic() const;
+	nav::NavSnapshot navigationSnapshot() const;
+	runtime::LifecycleToken tokenForSlot(std::uint32_t slot) const;
 
 		void onClientDisconnect(edict_t *entity);
 		void onClientPutInServer(edict_t *entity);
@@ -99,8 +103,9 @@ namespace metamod
 		void restoreNativeBotControls();
 		void logNativeBotGuardTransition(
 			const NativeBotGuardDecision &previousDecision) const;
-		void configureFakeClientManager();
-		void registerCompatibilityCommands();
+	void configureFakeClientManager();
+	void registerCompatibilityCommands();
+	void loadCurrentMapNavigation();
 		std::size_t managedBotCount() const;
 		FakeClientHandle *findManagedBot(const char *name);
 		void rememberManagedBot(const FakeClientHandle &handle, const char *name);
@@ -123,9 +128,12 @@ namespace metamod
 		runtime::LifecycleSession lifecycle_;
 		runtime::ActorRegistry actorRegistry_;
 		FakeClientManager fakeClientManager_;
-		InputDispatcher inputDispatcher_;
-		CompatibilitySurface compatibilitySurface_;
-		std::uint32_t adapterFrameCount_;
+	InputDispatcher inputDispatcher_;
+	CompatibilitySurface compatibilitySurface_;
+	NavLoader navLoader_;
+	nav::NavSnapshotPublisher navPublisher_;
+	NavLoadDiagnostic navLoadDiagnostic_;
+	std::uint32_t adapterFrameCount_;
 		plid_t pluginId_;
 		NativeBotGuard nativeBotGuard_;
 		NativeBotGuardDecision nativeGuardDecision_;
