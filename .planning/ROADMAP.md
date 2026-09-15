@@ -119,9 +119,16 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
+**Wave 1**
 
 - [ ] 04-01: Define command/CVar compatibility contracts and parser tests.
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 04-02: Implement profile loading and selection boundary.
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 04-03: Integrate administrator command flows with the Bot runtime.
 
 ### Phase 5: Read-only legacy Nav
