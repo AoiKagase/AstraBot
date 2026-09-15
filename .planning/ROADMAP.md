@@ -10,7 +10,7 @@ The first milestone builds a standalone, source-independent Metamod-P plugin tha
 - [x] **Phase 2: Metamod lifecycle and native guard** - Load safely, receive hooks, manage map/round state, and prevent native Bot mixing. (completed 2026-09-15)
 - [x] **Phase 3: FakeClient and input dispatch** - Create actor-safe FakeClients and validate command/input/receipt lifecycles. (completed 2026-09-15)
 - [x] **Phase 4: CSBot compatibility surface** - Reproduce required `bot_*` commands/CVars, profiles, and server configuration behavior. (completed 2026-09-15)
-- [ ] **Phase 5: Read-only legacy Nav** - Load and validate existing `.nav` v1-v5 data into an immutable SDK-free model.
+- [ ] **Phase 5: Read-only legacy Nav** - Load and validate existing `.nav` v1-v5 data into an immutable SDK-free model. (in progress)
 - [ ] **Phase 6: Baseline locomotion** - Execute existing Nav routes with CSBot-compatible movement and recovery.
 - [ ] **Phase 7: CSBot behavior parity** - Add perception, state machine, combat, objectives, radio/chatter, and round behavior.
 - [ ] **Phase 8: Differential and live parity acceptance** - Verify Windows/Linux x86 artifacts and real-server replacement behavior.
@@ -146,7 +146,7 @@ Plans:
 
 Plans:
 
-- [ ] 05-01: Define format-neutral Nav model and validation limits.
+- [x] 05-01: Define format-neutral Nav model and validation limits.
 - [ ] 05-02: Implement bounded legacy `.nav` reader.
 - [ ] 05-03: Publish immutable Nav snapshot and map fingerprint.
 - [ ] 05-04: Add codec fixtures, corruption tests, and adapter load diagnostics.
@@ -226,7 +226,7 @@ Phases execute sequentially: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 | 2. Metamod lifecycle and native guard | 3/3 | Complete    | 2026-09-15 |
 | 3. FakeClient and input dispatch | 3/3 | Complete    | 2026-09-15 |
 | 4. CSBot compatibility surface | 3/3 | Complete | 2026-09-15 |
-| 5. Read-only legacy Nav | 0/4 | Not started | - |
+| 5. Read-only legacy Nav | 1/4 | In progress | - |
 | 6. Baseline locomotion | 0/5 | Not started | - |
 | 7. CSBot behavior parity | 0/6 | Not started | - |
 | 8. Differential and live parity acceptance | 0/4 | Not started | - |

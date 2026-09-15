@@ -25,6 +25,7 @@ include(cmake/AstraBotBuild.cmake)
   src/core/compat/cvar_state.cpp
   src/core/compat/bot_configuration.cpp
   src/core/compat/profile_catalog.cpp
+  src/core/nav/nav_model.cpp
   src/core/runtime/bot_command.cpp
     src/core/runtime/command_queue.cpp
   src/core/runtime/lifecycle.cpp
@@ -148,6 +149,16 @@ if(ASTRABOT_BUILD_TESTS)
   target_link_libraries(astrabot_bot_configuration PRIVATE astrabot_core)
   astrabot_apply_warnings(astrabot_bot_configuration)
   add_test(NAME astrabot_bot_configuration COMMAND astrabot_bot_configuration)
+
+  add_executable(astrabot_nav_model
+    tests/nav_model_tests.cpp
+  )
+  target_include_directories(astrabot_nav_model PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+  )
+  target_link_libraries(astrabot_nav_model PRIVATE astrabot_core)
+  astrabot_apply_warnings(astrabot_nav_model)
+  add_test(NAME astrabot_nav_model COMMAND astrabot_nav_model)
 endif()
 
 if(ASTRABOT_BUILD_METAMOD)
