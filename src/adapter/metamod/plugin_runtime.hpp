@@ -1,6 +1,7 @@
 #ifndef ASTRABOT_ADAPTER_METAMOD_PLUGIN_RUNTIME_HPP
 #define ASTRABOT_ADAPTER_METAMOD_PLUGIN_RUNTIME_HPP
 
+#include "astrabot/metamod/compat_surface.hpp"
 #include "astrabot/metamod/abi_contract.hpp"
 #include "astrabot/metamod/fake_client_manager.hpp"
 #include "astrabot/metamod/input_dispatcher.hpp"
@@ -56,6 +57,7 @@ namespace metamod
 		void onServerDeactivate();
 		void onStartFrame();
 		void onAddServerCommand(char *command, void (*function)(void));
+		void onCompatibilityCommand();
 		FakeClientResult createFakeClient(const char *name, FakeClientHandle *handle);
 		FakeClientResult removeFakeClient(FakeClientHandle *handle);
 		runtime::QueueResult enqueueBotCommand(const runtime::BotCommand &command);
@@ -73,6 +75,7 @@ namespace metamod
 		void logNativeBotGuardTransition(
 			const NativeBotGuardDecision &previousDecision) const;
 		void configureFakeClientManager();
+		void registerCompatibilityCommands();
 
 		State state_;
 		meta_globals_t *metaGlobals_;
@@ -83,12 +86,14 @@ namespace metamod
 		runtime::ActorRegistry actorRegistry_;
 		FakeClientManager fakeClientManager_;
 		InputDispatcher inputDispatcher_;
+		CompatibilitySurface compatibilitySurface_;
 		std::uint32_t adapterFrameCount_;
 		plid_t pluginId_;
 		NativeBotGuard nativeBotGuard_;
 		NativeBotGuardDecision nativeGuardDecision_;
 		std::array<bool, NativeBotObservation::kClientSlotCount> managedBotSlots_;
 		bool nativeGuardEnabled_;
+		bool compatibilityRegistrationInProgress_;
 		bool nativeControlsCaptured_;
 		float originalBotEnable_;
 		float originalBotQuota_;
@@ -100,6 +105,7 @@ namespace metamod
 	FORCE_STACK_ALIGN void HookServerDeactivate();
 	FORCE_STACK_ALIGN void HookStartFrame();
 	FORCE_STACK_ALIGN void HookAddServerCommand(char *command, void (*function)(void));
+	FORCE_STACK_ALIGN void HookCompatibilityServerCommand();
 }
 }
 

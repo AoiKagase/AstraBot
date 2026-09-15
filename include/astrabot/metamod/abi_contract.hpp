@@ -4,6 +4,13 @@
 #include <meta_api.h>
 #include <h_export.h>
 
+#ifdef min
+#undef min
+#endif
+#ifdef max
+#undef max
+#endif
+
 namespace astrabot
 {
 namespace metamod

@@ -34,6 +34,7 @@ namespace metamod
 		  actorRegistry_(),
 		  fakeClientManager_(lifecycle_, actorRegistry_),
 		  inputDispatcher_(lifecycle_, actorRegistry_),
+		  compatibilitySurface_(),
 		  adapterFrameCount_(0U),
 		  pluginId_(nullptr),
 		  nativeBotGuard_(),
@@ -44,6 +45,7 @@ namespace metamod
 		}),
 		  managedBotSlots_(),
 		  nativeGuardEnabled_(false),
+		  compatibilityRegistrationInProgress_(false),
 		  nativeControlsCaptured_(false),
 		  originalBotEnable_(0.0f),
 		  originalBotQuota_(0.0f)
@@ -88,6 +90,7 @@ namespace metamod
 		actorRegistry_ = runtime::ActorRegistry();
 		inputDispatcher_.reset();
 		adapterFrameCount_ = 0U;
+		compatibilityRegistrationInProgress_ = false;
 		pluginId_ = pluginId;
 		resetNativeBotGuard();
 		gpMetaGlobals = metaGlobals;
@@ -129,6 +132,7 @@ namespace metamod
 		gpMetaUtilFuncs = nullptr;
 		pluginId_ = nullptr;
 		nativeGuardEnabled_ = false;
+		compatibilityRegistrationInProgress_ = false;
 		configureFakeClientManager();
 		return true;
 	}
@@ -268,6 +272,7 @@ namespace metamod
 				state_ = State::ActiveMap;
 				armNativeBotGuard();
 				configureFakeClientManager();
+				registerCompatibilityCommands();
 			}
 		}
 	}
@@ -282,6 +287,7 @@ namespace metamod
 			inputDispatcher_.reset();
 			actorRegistry_ = runtime::ActorRegistry();
 			state_ = State::Attached;
+			compatibilityRegistrationInProgress_ = false;
 			configureFakeClientManager();
 		}
 	}
@@ -465,12 +471,44 @@ namespace metamod
 	void PluginRuntime::onAddServerCommand(char *command, void (*function)(void))
 	{
 		(void)function;
+		if (compatibilityRegistrationInProgress_)
+		{
+			setMetaResult(MRES_IGNORED);
+			return;
+		}
 		if (nativeGuardEnabled_ && nativeBotGuard_.shouldBlockServerCommand(command))
 		{
 			setMetaResult(MRES_SUPERCEDE);
 			return;
 		}
 		setMetaResult(MRES_IGNORED);
+	}
+
+	void PluginRuntime::onCompatibilityCommand()
+	{
+		if (engineFunctions_ == nullptr || engineFunctions_->pfnCmd_Argc == nullptr ||
+				engineFunctions_->pfnCmd_Argv == nullptr)
+		{
+			return;
+		}
+
+		const int argumentCount = engineFunctions_->pfnCmd_Argc();
+		if (argumentCount < 1 || argumentCount > 3)
+		{
+			return;
+		}
+		compat::CommandRequest request = {
+			engineFunctions_->pfnCmd_Argv(0),
+			static_cast<std::size_t>(argumentCount - 1),
+			{nullptr, nullptr}
+		};
+		for (std::size_t index = 0U; index < request.argumentCount; ++index)
+		{
+			request.arguments[index] = engineFunctions_->pfnCmd_Argv(
+				static_cast<int>(index + 1U));
+		}
+		compat::CommandAction action{};
+		compatibilitySurface_.resolve(request, &action);
 	}
 
 	FakeClientResult PluginRuntime::createFakeClient(const char *name, FakeClientHandle *handle)
@@ -533,6 +571,18 @@ namespace metamod
 		inputDispatcher_.configure(engineFunctions_);
 	}
 
+	void PluginRuntime::registerCompatibilityCommands()
+	{
+		if (engineFunctions_ == nullptr || engineFunctions_->pfnAddServerCommand == nullptr)
+		{
+			return;
+		}
+
+		compatibilityRegistrationInProgress_ = true;
+		compatibilitySurface_.registerCommands(engineFunctions_, &HookCompatibilityServerCommand);
+		compatibilityRegistrationInProgress_ = false;
+	}
+
 	void HookClientDisconnect(edict_t *entity)
 	{
 		PluginRuntime::instance().onClientDisconnect(entity);
@@ -566,6 +616,11 @@ namespace metamod
 	void HookAddServerCommand(char *command, void (*function)(void))
 	{
 		PluginRuntime::instance().onAddServerCommand(command, function);
+	}
+
+	void HookCompatibilityServerCommand()
+	{
+		PluginRuntime::instance().onCompatibilityCommand();
 	}
 }
 }

@@ -20,8 +20,11 @@ include(cmake/AstraBotBuild.cmake)
 
   add_library(astrabot_core STATIC
   src/core/build_identity.cpp
-    src/core/runtime/actor_registry.cpp
-    src/core/runtime/bot_command.cpp
+  src/core/runtime/actor_registry.cpp
+  src/core/compat/command_registry.cpp
+  src/core/compat/cvar_state.cpp
+  src/core/compat/profile_catalog.cpp
+  src/core/runtime/bot_command.cpp
     src/core/runtime/command_queue.cpp
   src/core/runtime/lifecycle.cpp
 )
@@ -92,6 +95,48 @@ if(ASTRABOT_BUILD_TESTS)
   target_link_libraries(astrabot_command_queue PRIVATE astrabot_core)
   astrabot_apply_warnings(astrabot_command_queue)
   add_test(NAME astrabot_command_queue COMMAND astrabot_command_queue)
+
+  add_executable(astrabot_compat_command_registry
+    tests/compat_command_registry_tests.cpp
+  )
+  target_include_directories(astrabot_compat_command_registry PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+  )
+  target_link_libraries(astrabot_compat_command_registry PRIVATE astrabot_core)
+  astrabot_apply_warnings(astrabot_compat_command_registry)
+  add_test(NAME astrabot_compat_command_registry COMMAND astrabot_compat_command_registry)
+
+  add_executable(astrabot_compat_cvar_state
+    tests/compat_cvar_state_tests.cpp
+  )
+  target_include_directories(astrabot_compat_cvar_state PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+  )
+  target_link_libraries(astrabot_compat_cvar_state PRIVATE astrabot_core)
+  astrabot_apply_warnings(astrabot_compat_cvar_state)
+  add_test(NAME astrabot_compat_cvar_state COMMAND astrabot_compat_cvar_state)
+
+  add_executable(astrabot_profile_catalog
+    tests/profile_catalog_tests.cpp
+  )
+  target_include_directories(astrabot_profile_catalog PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+  )
+  target_link_libraries(astrabot_profile_catalog PRIVATE astrabot_core)
+  astrabot_apply_warnings(astrabot_profile_catalog)
+  add_test(NAME astrabot_profile_catalog COMMAND astrabot_profile_catalog)
+
+  add_executable(astrabot_profile_loader
+    tests/profile_loader_tests.cpp
+    src/adapter/metamod/profile_loader.cpp
+  )
+  target_include_directories(astrabot_profile_loader PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/adapter/metamod"
+  )
+  target_link_libraries(astrabot_profile_loader PRIVATE astrabot_core)
+  astrabot_apply_warnings(astrabot_profile_loader)
+  add_test(NAME astrabot_profile_loader COMMAND astrabot_profile_loader)
 endif()
 
 if(ASTRABOT_BUILD_METAMOD)
@@ -111,6 +156,8 @@ if(ASTRABOT_BUILD_METAMOD)
   )
 
   add_library(astrabot_mm SHARED
+    src/adapter/metamod/compat_surface.cpp
+    src/adapter/metamod/profile_loader.cpp
     src/adapter/metamod/fake_client_manager.cpp
     src/adapter/metamod/input_dispatcher.cpp
     src/adapter/metamod/plugin_exports.cpp
@@ -160,7 +207,9 @@ if(ASTRABOT_BUILD_METAMOD)
       ${ASTRABOT_METAMOD_INCLUDE_DIRS}
     )
     target_sources(astrabot_metamod_hooks PRIVATE
-    src/adapter/metamod/fake_client_manager.cpp
+      src/adapter/metamod/compat_surface.cpp
+      src/adapter/metamod/profile_loader.cpp
+      src/adapter/metamod/fake_client_manager.cpp
       src/adapter/metamod/input_dispatcher.cpp
       src/adapter/metamod/native_bot_guard.cpp
       src/adapter/metamod/plugin_exports.cpp
@@ -194,9 +243,11 @@ if(ASTRABOT_BUILD_METAMOD)
     astrabot_apply_warnings(astrabot_input_dispatcher)
     add_test(NAME astrabot_input_dispatcher COMMAND astrabot_input_dispatcher)
 
-    add_executable(astrabot_fake_client_isolation
-      tests/fake_client_isolation_tests.cpp
-      src/adapter/metamod/fake_client_manager.cpp
+  add_executable(astrabot_fake_client_isolation
+    tests/fake_client_isolation_tests.cpp
+    src/adapter/metamod/compat_surface.cpp
+    src/adapter/metamod/profile_loader.cpp
+    src/adapter/metamod/fake_client_manager.cpp
       src/adapter/metamod/input_dispatcher.cpp
       src/adapter/metamod/native_bot_guard.cpp
       src/adapter/metamod/plugin_exports.cpp
@@ -210,5 +261,18 @@ if(ASTRABOT_BUILD_METAMOD)
     target_link_libraries(astrabot_fake_client_isolation PRIVATE astrabot_core)
     astrabot_apply_warnings(astrabot_fake_client_isolation)
     add_test(NAME astrabot_fake_client_isolation COMMAND astrabot_fake_client_isolation)
+
+    add_executable(astrabot_compat_surface
+      tests/compat_surface_tests.cpp
+      src/adapter/metamod/compat_surface.cpp
+      src/adapter/metamod/profile_loader.cpp
+    )
+    target_include_directories(astrabot_compat_surface PRIVATE
+      "${CMAKE_CURRENT_SOURCE_DIR}/include"
+      ${ASTRABOT_METAMOD_INCLUDE_DIRS}
+    )
+    target_link_libraries(astrabot_compat_surface PRIVATE astrabot_core)
+    astrabot_apply_warnings(astrabot_compat_surface)
+    add_test(NAME astrabot_compat_surface COMMAND astrabot_compat_surface)
   endif()
 endif()
