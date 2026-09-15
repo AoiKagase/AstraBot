@@ -33,20 +33,25 @@ The first milestone builds a standalone, source-independent Metamod-P plugin tha
   2. The approved Metamod-P SDK commit and ReGameDLL-CS behavioral reference commit are recorded.
   3. The initial plugin export/ABI contract and non-copy source manifest are testable.
 
-**Plans**: 3 plans
+**Plans**: 3/3 plans executed
 
 Plans:
+
+- [x] 01-01-PLAN.md
+- [x] 01-02-PLAN.md
+- [x] 01-03-PLAN.md
+
 **Wave 1**
 
-- [ ] 01-01: Establish CMake/toolchain and x86 build identity.
+- [x] 01-01: Establish CMake/toolchain and x86 build identity.
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 01-02: Define plugin ABI/export and Core/adapter contract tests.
+- [x] 01-02: Define plugin ABI/export and Core/adapter contract tests.
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 01-03: Add source-origin manifest and verification harness.
+- [x] 01-03: Add source-origin manifest and verification harness.
 
 ### Phase 2: Metamod lifecycle and native guard
 
@@ -196,7 +201,7 @@ Phases execute sequentially: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation and ABI | 0/3 | Not started | - |
+| 1. Foundation and ABI | 3/3 | In Progress|  |
 | 2. Metamod lifecycle and native guard | 0/3 | Not started | - |
 | 3. FakeClient and input dispatch | 0/3 | Not started | - |
 | 4. CSBot compatibility surface | 0/3 | Not started | - |
