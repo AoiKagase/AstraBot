@@ -403,6 +403,24 @@
       "reference_only": false
     },
     {
+      "path": "include/astrabot/nav/nav_query.hpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "src/core/nav/nav_query.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "tests/nav_query_tests.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
       "path": "include/astrabot/metamod/map_fingerprint.hpp",
       "origin": "AstraBot",
       "license_status": "pending_release_review",

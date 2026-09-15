@@ -166,7 +166,7 @@ Plans:
 
 Plans:
 
-- [ ] 06-01: Implement spatial query, directed links, corridor, and path follower.
+- [x] 06-01: Implement spatial query, directed links, corridor, and path follower.
 - [ ] 06-02: Implement Walk/Crouch/Step movement and support validation.
 - [ ] 06-03: Implement Jump/Drop movement envelopes and feedback.
 - [ ] 06-04: Implement Ladder/Door/narrow-passage traversal.
@@ -227,6 +227,6 @@ Phases execute sequentially: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 | 3. FakeClient and input dispatch | 3/3 | Complete    | 2026-09-15 |
 | 4. CSBot compatibility surface | 3/3 | Complete | 2026-09-15 |
 | 5. Read-only legacy Nav | 4/4 | Complete | 2026-09-15 |
-| 6. Baseline locomotion | 0/5 | Not started | - |
+| 6. Baseline locomotion | 1/5 | Executing | - |
 | 7. CSBot behavior parity | 0/6 | Not started | - |
 | 8. Differential and live parity acceptance | 0/4 | Not started | - |

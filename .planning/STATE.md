@@ -11,8 +11,8 @@ state_head: ed16012b6a74d9683deb39eecf6ac7ebc9d51c36
 progress:
   total_phases: 8
   completed_phases: 5
-  total_plans: 16
-  completed_plans: 16
+total_plans: 21
+completed_plans: 17
   percent: 63
 ---
 
@@ -27,10 +27,10 @@ See: `.planning/PROJECT.md` (updated 2026-09-15)
 
 ## Current Position
 
-Phase: 6 (Baseline locomotion) — PLAN READY
-Plan: 06-01 through 06-05
-Status: Plan created; 06-01 ready to execute
-Last activity: 2026-09-16 — Phase 6 decomposed into five sequential plans
+Phase: 6 (Baseline locomotion) — EXECUTING
+Plan: 06-01 complete; 06-02 ready
+Status: First spatial-query/corridor/follower slice verified
+Last activity: 2026-09-16 — 06-01 implemented and verified on Windows/Linux x86
 
 Progress: ░░░░░░░░░░ [██████░░░░] 63%
 
