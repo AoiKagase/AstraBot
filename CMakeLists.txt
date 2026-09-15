@@ -18,9 +18,11 @@ endif()
 
 include(cmake/AstraBotBuild.cmake)
 
-add_library(astrabot_core STATIC
+  add_library(astrabot_core STATIC
   src/core/build_identity.cpp
-  src/core/runtime/actor_registry.cpp
+    src/core/runtime/actor_registry.cpp
+    src/core/runtime/bot_command.cpp
+    src/core/runtime/command_queue.cpp
   src/core/runtime/lifecycle.cpp
 )
 target_include_directories(astrabot_core PUBLIC
@@ -80,6 +82,16 @@ if(ASTRABOT_BUILD_TESTS)
   target_link_libraries(astrabot_actor_registry PRIVATE astrabot_core)
   astrabot_apply_warnings(astrabot_actor_registry)
   add_test(NAME astrabot_actor_registry COMMAND astrabot_actor_registry)
+
+  add_executable(astrabot_command_queue
+    tests/command_queue_tests.cpp
+  )
+  target_include_directories(astrabot_command_queue PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+  )
+  target_link_libraries(astrabot_command_queue PRIVATE astrabot_core)
+  astrabot_apply_warnings(astrabot_command_queue)
+  add_test(NAME astrabot_command_queue COMMAND astrabot_command_queue)
 endif()
 
 if(ASTRABOT_BUILD_METAMOD)
@@ -100,6 +112,7 @@ if(ASTRABOT_BUILD_METAMOD)
 
   add_library(astrabot_mm SHARED
     src/adapter/metamod/fake_client_manager.cpp
+    src/adapter/metamod/input_dispatcher.cpp
     src/adapter/metamod/plugin_exports.cpp
     src/adapter/metamod/native_bot_guard.cpp
     src/adapter/metamod/plugin_runtime.cpp
@@ -147,7 +160,8 @@ if(ASTRABOT_BUILD_METAMOD)
       ${ASTRABOT_METAMOD_INCLUDE_DIRS}
     )
     target_sources(astrabot_metamod_hooks PRIVATE
-      src/adapter/metamod/fake_client_manager.cpp
+    src/adapter/metamod/fake_client_manager.cpp
+      src/adapter/metamod/input_dispatcher.cpp
       src/adapter/metamod/native_bot_guard.cpp
       src/adapter/metamod/plugin_exports.cpp
       src/adapter/metamod/plugin_runtime.cpp
@@ -167,5 +181,17 @@ if(ASTRABOT_BUILD_METAMOD)
     target_link_libraries(astrabot_fake_client_manager PRIVATE astrabot_core)
     astrabot_apply_warnings(astrabot_fake_client_manager)
     add_test(NAME astrabot_fake_client_manager COMMAND astrabot_fake_client_manager)
+
+    add_executable(astrabot_input_dispatcher
+      tests/input_dispatcher_tests.cpp
+      src/adapter/metamod/input_dispatcher.cpp
+    )
+    target_include_directories(astrabot_input_dispatcher PRIVATE
+      "${CMAKE_CURRENT_SOURCE_DIR}/include"
+      ${ASTRABOT_METAMOD_INCLUDE_DIRS}
+    )
+    target_link_libraries(astrabot_input_dispatcher PRIVATE astrabot_core)
+    astrabot_apply_warnings(astrabot_input_dispatcher)
+    add_test(NAME astrabot_input_dispatcher COMMAND astrabot_input_dispatcher)
   endif()
 endif()

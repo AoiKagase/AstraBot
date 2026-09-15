@@ -33,6 +33,7 @@ namespace metamod
 		  lifecycle_(),
 		  actorRegistry_(),
 		  fakeClientManager_(lifecycle_, actorRegistry_),
+		  inputDispatcher_(lifecycle_, actorRegistry_),
 		  adapterFrameCount_(0U),
 		  pluginId_(nullptr),
 		  nativeBotGuard_(),
@@ -85,6 +86,7 @@ namespace metamod
 		globals_ = nullptr;
 		lifecycle_ = runtime::LifecycleSession();
 		actorRegistry_ = runtime::ActorRegistry();
+		inputDispatcher_.reset();
 		adapterFrameCount_ = 0U;
 		pluginId_ = pluginId;
 		resetNativeBotGuard();
@@ -112,6 +114,9 @@ namespace metamod
 
 		configureFakeClientManager();
 		restoreNativeBotControls();
+		inputDispatcher_.reset();
+		actorRegistry_ = runtime::ActorRegistry();
+		lifecycle_.deactivateMap();
 		state_ = State::Detached;
 		metaGlobals_ = nullptr;
 		gameDllFunctions_ = nullptr;
@@ -264,6 +269,8 @@ namespace metamod
 			lifecycle_.deactivateMap();
 			adapterFrameCount_ = 0U;
 			updateNativeBotGuard();
+			inputDispatcher_.reset();
+			actorRegistry_ = runtime::ActorRegistry();
 			state_ = State::Attached;
 			configureFakeClientManager();
 		}
@@ -464,7 +471,15 @@ namespace metamod
 				handle->actor.slot >= 1U &&
 				handle->actor.slot <= NativeBotObservation::kClientSlotCount)
 		{
-			managedBotSlots_[static_cast<std::size_t>(handle->actor.slot - 1U)] = true;
+			const std::size_t slotIndex =
+				static_cast<std::size_t>(handle->actor.slot - 1U);
+			managedBotSlots_[slotIndex] = true;
+			if (!inputDispatcher_.bindActor(handle->actor, handle->entity))
+			{
+				fakeClientManager_.remove(handle);
+				managedBotSlots_[slotIndex] = false;
+				return FakeClientResult::CleanupFailed;
+			}
 		}
 		return result;
 	}
@@ -477,6 +492,7 @@ namespace metamod
 		}
 
 		const std::uint32_t slot = handle->actor.slot;
+		inputDispatcher_.unbindActor(handle->actor);
 		configureFakeClientManager();
 		const FakeClientResult result = fakeClientManager_.remove(handle);
 		if (result == FakeClientResult::Removed && slot >= 1U &&
@@ -487,11 +503,24 @@ namespace metamod
 		return result;
 	}
 
+	runtime::QueueResult PluginRuntime::enqueueBotCommand(const runtime::BotCommand &command)
+	{
+		return inputDispatcher_.enqueue(command);
+	}
+
+	runtime::CommandReceipt PluginRuntime::dispatchBotInput(
+		const runtime::ActorId &actor,
+		std::uint32_t dispatchFrame)
+	{
+		return inputDispatcher_.dispatchNext(actor, dispatchFrame);
+	}
+
 	void PluginRuntime::configureFakeClientManager()
 	{
 		const bool allowed = state_ == State::ActiveMap &&
 			nativeGuardDecision_.managedBotCreationAllowed;
 		fakeClientManager_.configure(engineFunctions_, gpGamedllFuncs, allowed);
+		inputDispatcher_.configure(engineFunctions_);
 	}
 
 	void HookClientDisconnect(edict_t *entity)

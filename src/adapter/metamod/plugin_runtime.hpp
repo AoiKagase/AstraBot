@@ -3,6 +3,7 @@
 
 #include "astrabot/metamod/abi_contract.hpp"
 #include "astrabot/metamod/fake_client_manager.hpp"
+#include "astrabot/metamod/input_dispatcher.hpp"
 #include "astrabot/metamod/native_bot_guard.hpp"
 #include "astrabot/runtime/lifecycle.hpp"
 
@@ -57,6 +58,10 @@ namespace metamod
 		void onAddServerCommand(char *command, void (*function)(void));
 		FakeClientResult createFakeClient(const char *name, FakeClientHandle *handle);
 		FakeClientResult removeFakeClient(FakeClientHandle *handle);
+		runtime::QueueResult enqueueBotCommand(const runtime::BotCommand &command);
+		runtime::CommandReceipt dispatchBotInput(
+			const runtime::ActorId &actor,
+			std::uint32_t dispatchFrame);
 
 	private:
 		PluginRuntime();
@@ -77,6 +82,7 @@ namespace metamod
 		runtime::LifecycleSession lifecycle_;
 		runtime::ActorRegistry actorRegistry_;
 		FakeClientManager fakeClientManager_;
+		InputDispatcher inputDispatcher_;
 		std::uint32_t adapterFrameCount_;
 		plid_t pluginId_;
 		NativeBotGuard nativeBotGuard_;

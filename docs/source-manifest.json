@@ -179,6 +179,54 @@
       "origin": "AstraBot",
       "license_status": "pending_release_review",
       "reference_only": false
+    },
+    {
+      "path": "include/astrabot/runtime/bot_command.hpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "include/astrabot/runtime/command_queue.hpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "src/core/runtime/bot_command.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "src/core/runtime/command_queue.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "include/astrabot/metamod/input_dispatcher.hpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "src/adapter/metamod/input_dispatcher.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "tests/command_queue_tests.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "tests/input_dispatcher_tests.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
     }
   ]
 }
