@@ -30,6 +30,7 @@ include(cmake/AstraBotBuild.cmake)
   src/core/nav/nav_snapshot.cpp
   src/core/nav/nav_query.cpp
   src/core/nav/locomotion.cpp
+  src/core/nav/jump_drop.cpp
   src/core/runtime/bot_command.cpp
     src/core/runtime/command_queue.cpp
   src/core/runtime/lifecycle.cpp
@@ -227,6 +228,16 @@ if(ASTRABOT_BUILD_TESTS)
   )
   astrabot_apply_warnings(astrabot_locomotion)
   add_test(NAME astrabot_locomotion COMMAND astrabot_locomotion)
+
+  add_executable(astrabot_jump_drop
+    tests/jump_drop_tests.cpp
+  )
+  target_link_libraries(astrabot_jump_drop PRIVATE astrabot_core)
+  target_include_directories(astrabot_jump_drop PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+  )
+  astrabot_apply_warnings(astrabot_jump_drop)
+  add_test(NAME astrabot_jump_drop COMMAND astrabot_jump_drop)
 
   add_executable(astrabot_map_fingerprint
     tests/map_fingerprint_tests.cpp
