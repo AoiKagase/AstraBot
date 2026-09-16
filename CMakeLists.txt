@@ -28,6 +28,8 @@ include(cmake/AstraBotBuild.cmake)
   src/core/combat/combat_intent.cpp
   src/core/objectives/objective_state.cpp
   src/core/objectives/round_objectives.cpp
+  src/core/team/team_report.cpp
+  src/core/team/radio_intent.cpp
   src/core/runtime/actor_registry.cpp
   src/core/compat/command_registry.cpp
   src/core/compat/cvar_state.cpp
@@ -337,6 +339,26 @@ if(ASTRABOT_BUILD_TESTS)
   )
   astrabot_apply_warnings(astrabot_round_objectives)
   add_test(NAME astrabot_round_objectives COMMAND astrabot_round_objectives)
+
+  add_executable(astrabot_team_report
+    tests/team_report_tests.cpp
+  )
+  target_link_libraries(astrabot_team_report PRIVATE astrabot_core)
+  target_include_directories(astrabot_team_report PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+  )
+  astrabot_apply_warnings(astrabot_team_report)
+  add_test(NAME astrabot_team_report COMMAND astrabot_team_report)
+
+  add_executable(astrabot_radio_intent
+    tests/radio_intent_tests.cpp
+  )
+  target_link_libraries(astrabot_radio_intent PRIVATE astrabot_core)
+  target_include_directories(astrabot_radio_intent PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+  )
+  astrabot_apply_warnings(astrabot_radio_intent)
+  add_test(NAME astrabot_radio_intent COMMAND astrabot_radio_intent)
 
   add_executable(astrabot_map_fingerprint
     tests/map_fingerprint_tests.cpp
