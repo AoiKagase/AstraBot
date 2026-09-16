@@ -457,6 +457,24 @@
       "reference_only": false
     },
     {
+      "path": "include/astrabot/nav/special_traversal.hpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "src/core/nav/special_traversal.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "tests/special_traversal_tests.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
       "path": "include/astrabot/metamod/map_fingerprint.hpp",
       "origin": "AstraBot",
       "license_status": "pending_release_review",
