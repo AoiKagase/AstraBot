@@ -1,19 +1,19 @@
 ---
 gsd_state_version: "1.0"
-current_phase: 6
-current_phase_name: Baseline locomotion
+current_phase: 7
+current_phase_name: CSBot behavior parity
 status: ready
-stopped_at: Phase 5 complete, ready to plan Phase 6
-last_updated: "2026-09-15T23:37:17+09:00"
-last_activity: 2026-09-15
-last_activity_desc: Phase 5 complete, transitioned to Phase 6
-state_head: 7c8f011
+stopped_at: Phase 6 offline gate complete, ready to plan Phase 7
+last_updated: "2026-09-16T10:30:00+09:00"
+last_activity: 2026-09-16
+last_activity_desc: Phase 6 offline gate complete, transitioned to Phase 7
+state_head: f4ad603
 progress:
   total_phases: 8
-  completed_phases: 5
+  completed_phases: 6
 total_plans: 21
-completed_plans: 20
-  percent: 63
+completed_plans: 21
+  percent: 75
 ---
 
 # Project State
@@ -23,22 +23,22 @@ completed_plans: 20
 See: `.planning/PROJECT.md` (updated 2026-09-15)
 
 **Core value:** Replace ReGameDLL-CS CSBot with an independent Metamod plugin while preserving normal operation.
-**Current focus:** Phase 6 — Baseline locomotion
+**Current focus:** Phase 7 — CSBot behavior parity
 
 ## Current Position
 
-Phase: 6 (Baseline locomotion) — EXECUTING
-Plan: 06-01, 06-02, 06-03, and 06-04 complete; 06-05 ready
-Status: Nav queries, path following, bounded movement, and special traversal intent verified
-Last activity: 2026-09-16 — 06-04 implemented and verified on Windows/Linux x86
+Phase: 7 (CSBot behavior parity) — READY TO EXECUTE
+Plan: Not started
+Status: Phase 6 offline locomotion gate complete; live real-server acceptance remains pending in Phase 8
+Last activity: 2026-09-16 — Phase 6 offline gate completed and transitioned to Phase 7
 
-Progress: ░░░░░░░░░░ [██████░░░░] 63%
+Progress: ░░░░░░░░░░ [███████░░░] 75%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 16
+- Total plans completed: 21
 - Average duration: -
 - Total execution time: 0 hours
 
@@ -85,6 +85,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-15
-Stopped at: Phase 5 complete, ready to plan Phase 6
+Last session: 2026-09-16
+Stopped at: Phase 6 offline gate complete, ready to plan Phase 7
 Resume file: None

@@ -11,7 +11,7 @@ The first milestone builds a standalone, source-independent Metamod-P plugin tha
 - [x] **Phase 3: FakeClient and input dispatch** - Create actor-safe FakeClients and validate command/input/receipt lifecycles. (completed 2026-09-15)
 - [x] **Phase 4: CSBot compatibility surface** - Reproduce required `bot_*` commands/CVars, profiles, and server configuration behavior. (completed 2026-09-15)
 - [x] **Phase 5: Read-only legacy Nav** - Load and validate existing `.nav` v1-v5 data into an immutable SDK-free model. (completed 2026-09-15)
-- [ ] **Phase 6: Baseline locomotion** - Execute existing Nav routes with CSBot-compatible movement and recovery.
+- [x] **Phase 6: Baseline locomotion** - Execute existing Nav routes with CSBot-compatible movement and recovery. (offline contracts completed 2026-09-16; live real-server acceptance remains pending in Phase 8)
 - [ ] **Phase 7: CSBot behavior parity** - Add perception, state machine, combat, objectives, radio/chatter, and round behavior.
 - [ ] **Phase 8: Differential and live parity acceptance** - Verify Windows/Linux x86 artifacts and real-server replacement behavior.
 
@@ -170,7 +170,7 @@ Plans:
 - [x] 06-02: Implement Walk/Crouch/Step movement and support validation.
 - [x] 06-03: Implement Jump/Drop movement envelopes and feedback.
 - [x] 06-04: Implement Ladder/Door/narrow-passage traversal.
-- [ ] 06-05: Implement stuck recovery, route invalidation, and locomotion evidence.
+- [x] 06-05: Implement stuck recovery, route invalidation, and locomotion evidence.
 
 ### Phase 7: CSBot behavior parity
 
@@ -227,6 +227,6 @@ Phases execute sequentially: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 | 3. FakeClient and input dispatch | 3/3 | Complete    | 2026-09-15 |
 | 4. CSBot compatibility surface | 3/3 | Complete | 2026-09-15 |
 | 5. Read-only legacy Nav | 4/4 | Complete | 2026-09-15 |
-| 6. Baseline locomotion | 4/5 | Executing | - |
+| 6. Baseline locomotion | 5/5 | Complete (offline) | 2026-09-16 |
 | 7. CSBot behavior parity | 0/6 | Not started | - |
 | 8. Differential and live parity acceptance | 0/4 | Not started | - |

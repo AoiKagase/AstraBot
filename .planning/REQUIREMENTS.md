@@ -33,7 +33,9 @@
 
 ### CSBot/ZBot runtime parity
 
-- [ ] **PAR-01**: A managed Bot follows existing Nav routes and reproduces required Walk, Crouch, Step, Jump, Drop, Ladder, Door, narrow-passage, stopping, and stuck-recovery behavior.
+- [x] **PAR-01**: A managed Bot follows existing Nav routes and reproduces required Walk, Crouch, Step, Jump, Drop, Ladder, Door, narrow-passage, stopping, and stuck-recovery behavior.
+
+PAR-01's Phase 6 offline movement contracts are complete and verified. Live real-server physics, locomotion, stability, and multi-Bot acceptance remain pending in Phase 8.
 - [ ] **PAR-02**: A managed Bot reproduces the observable visual, sound, threat, memory, and uncertainty behavior required for normal CSBot play without hidden engine truth.
 - [ ] **PAR-03**: A managed Bot reproduces required weapon selection, aiming, firing, reload, ammunition, and damage/death behavior.
 - [ ] **PAR-04**: A managed Bot reproduces Counter-Strike objective behavior required by the reference runtime, including attack/defend, bomb, hostage, buy, and round transitions.
@@ -98,7 +100,7 @@ Deferred until v1 CSBot parity is accepted.
 | NAV-02 | Phase 5 | Complete |
 | NAV-03 | Phase 5 | Complete |
 | NAV-04 | Phase 5 | Complete |
-| PAR-01 | Phase 6 | Pending |
+| PAR-01 | Phase 6 | Complete (offline contracts; live acceptance pending Phase 8) |
 | PAR-02 | Phase 7 | Pending |
 | PAR-03 | Phase 7 | Pending |
 | PAR-04 | Phase 7 | Pending |
@@ -117,4 +119,4 @@ Deferred until v1 CSBot parity is accepted.
 
 ---
 *Requirements defined: 2026-09-15*
-*Last updated: 2026-09-15 after Phase 4 compatibility surface completion*
+*Last updated: 2026-09-16 after Phase 6 offline locomotion gate completion*

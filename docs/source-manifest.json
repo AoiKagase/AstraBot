@@ -79,6 +79,12 @@
       "reference_only": false
     },
     {
+      "path": "tests/phase6_verification.py",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
       "path": "tools/check_source_manifest.py",
       "origin": "AstraBot",
       "license_status": "pending_release_review",
