@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "fixture_id": "visibility-uncertainty",
+  "provenance": {
+    "kind": "synthetic-contract",
+    "source_independent": true,
+    "reference_policy": "behavior-only-pinned"
+  },
+  "trace": [
+    {
+      "identity": {
+        "map_generation": 3,
+        "round_generation": 4,
+        "tick": 100,
+        "observer": {
+          "slot": 1,
+          "generation": 5
+        }
+      },
+      "observations": {
+        "actors": [
+          {
+            "slot": 2,
+            "generation": 9,
+            "state": "ObservedPresent",
+            "position": [128.0, 64.0, 16.0],
+            "confidence": 0.9,
+            "age_ticks": 0
+          },
+          {
+            "slot": 3,
+            "generation": 9,
+            "state": "Unknown",
+            "confidence": 1.0,
+            "age_ticks": 0
+          }
+        ],
+        "sounds": [
+          {
+            "id": 7,
+            "position": [64.0, 64.0, 0.0],
+            "confidence": 0.7,
+            "age_ticks": 0
+          }
+        ]
+      },
+      "expected": {
+        "visible_confirmed": true,
+        "unknown_confirmed": false,
+        "sound_observed": true,
+        "memory_usable": false
+      }
+    },
+    {
+      "identity": {
+        "map_generation": 3,
+        "round_generation": 4,
+        "tick": 102,
+        "observer": {
+          "slot": 1,
+          "generation": 5
+        }
+      },
+      "observations": {
+        "actors": [
+          {
+            "slot": 2,
+            "generation": 9,
+            "state": "Unknown",
+            "confidence": 0.0,
+            "age_ticks": 2,
+            "memory": {
+              "state": "Remembered",
+              "position": [128.0, 64.0, 16.0],
+              "confidence": 0.5,
+              "age_ticks": 2
+            }
+          }
+        ],
+        "sounds": []
+      },
+      "expected": {
+        "visible_confirmed": false,
+        "unknown_confirmed": false,
+        "sound_observed": false,
+        "memory_usable": true
+      }
+    }
+  ]
+}

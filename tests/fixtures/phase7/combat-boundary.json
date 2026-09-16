@@ -1,0 +1,93 @@
+{
+  "schema_version": 1,
+  "fixture_id": "combat-boundary",
+  "provenance": {
+    "kind": "synthetic-contract",
+    "source_independent": true,
+    "reference_policy": "behavior-only-pinned"
+  },
+  "trace": [
+    {
+      "identity": {
+        "map_generation": 3,
+        "round_generation": 4,
+        "tick": 300,
+        "observer": {
+          "slot": 1,
+          "generation": 5
+        }
+      },
+      "observations": {
+        "target": {
+          "slot": 2,
+          "generation": 9,
+          "state": "Unknown",
+          "confidence": 0.0,
+          "age_ticks": 0
+        },
+        "weapon": {
+          "id": 7,
+          "availability": "Available",
+          "clip": 30,
+          "reserve": 90,
+          "clip_capacity": 30,
+          "reload_state": "NotReloading",
+          "cooldown_until_tick": 300
+        },
+        "damage_feedback": {
+          "state": "Unknown",
+          "target_died": true
+        }
+      },
+      "expected": {
+        "aim_intent": false,
+        "fire_intent": false,
+        "damage_confirmed": false,
+        "death_confirmed": false,
+        "receipt_confirmed": false
+      }
+    },
+    {
+      "identity": {
+        "map_generation": 3,
+        "round_generation": 4,
+        "tick": 301,
+        "observer": {
+          "slot": 1,
+          "generation": 5
+        }
+      },
+      "observations": {
+        "target": {
+          "slot": 2,
+          "generation": 9,
+          "state": "Visible",
+          "position": [128.0, 0.0, 0.0],
+          "confidence": 0.9,
+          "age_ticks": 0,
+          "friendly_fire_risk": false
+        },
+        "weapon": {
+          "id": 7,
+          "availability": "Available",
+          "clip": 30,
+          "reserve": 90,
+          "clip_capacity": 30,
+          "reload_state": "NotReloading",
+          "cooldown_until_tick": 301
+        },
+        "damage_feedback": {
+          "state": "Unavailable",
+          "target_died": false
+        }
+      },
+      "expected": {
+        "aim_intent": true,
+        "fire_intent": true,
+        "damage_confirmed": false,
+        "death_confirmed": false,
+        "receipt_confirmed": false
+      }
+    }
+  ]
+}

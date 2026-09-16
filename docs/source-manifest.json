@@ -21,7 +21,12 @@
   "project_files": [
     "CMakeLists.txt",
     ".gitignore",
-    "cmake/AstraBotBuild.cmake"
+    "cmake/AstraBotBuild.cmake",
+    "tests/phase7_scenarios.py",
+    "tests/fixtures/phase7/README.md",
+    "tests/fixtures/phase7/visibility-uncertainty.json",
+    "tests/fixtures/phase7/objective-recovery.json",
+    "tests/fixtures/phase7/combat-boundary.json"
   ],
   "source_files": [
     {

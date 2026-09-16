@@ -1,0 +1,84 @@
+{
+  "schema_version": 1,
+  "fixture_id": "objective-recovery",
+  "provenance": {
+    "kind": "synthetic-contract",
+    "source_independent": true,
+    "reference_policy": "behavior-only-pinned"
+  },
+  "trace": [
+    {
+      "identity": {
+        "map_generation": 3,
+        "round_generation": 4,
+        "tick": 200,
+        "observer": {
+          "slot": 1,
+          "generation": 5
+        }
+      },
+      "observations": {
+        "scenario": {
+          "kind": "Bomb",
+          "team": "Terrorist",
+          "phase": "Live",
+          "scenario_generation": 8
+        },
+        "events": [
+          {
+            "id": 10,
+            "kind": "BombDefused",
+            "state": "Observed"
+          }
+        ],
+        "team_reports": [
+          {
+            "state": "Observed",
+            "confidence": 0.8,
+            "age_ticks": 0,
+            "confirmed_fact": false
+          }
+        ]
+      },
+      "expected": {
+        "proposal": "NoObjective",
+        "completed": false,
+        "recovery": false,
+        "team_report_confirmed": false
+      }
+    },
+    {
+      "identity": {
+        "map_generation": 3,
+        "round_generation": 4,
+        "tick": 201,
+        "observer": {
+          "slot": 1,
+          "generation": 5
+        }
+      },
+      "observations": {
+        "scenario": {
+          "kind": "Unknown",
+          "team": "Unknown",
+          "phase": "Unknown",
+          "scenario_generation": 9
+        },
+        "events": [
+          {
+            "id": 11,
+            "kind": "Unknown",
+            "state": "Unknown"
+          }
+        ],
+        "team_reports": []
+      },
+      "expected": {
+        "proposal": "None",
+        "completed": false,
+        "recovery": true,
+        "team_report_confirmed": false
+      }
+    }
+  ]
+}
