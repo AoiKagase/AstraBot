@@ -187,7 +187,7 @@ Plans:
 
 Plans:
 
-- [ ] 07-01: Implement WorldSnapshot, perception, and uncertainty contracts.
+- [x] 07-01: Implement WorldSnapshot, perception, and uncertainty contracts. (offline contract complete 2026-09-16; live acceptance remains in Phase 8)
 - [ ] 07-02: Implement CSBot state machine and objective planner.
 - [ ] 07-03: Implement weapon inventory, aiming, firing, reload, and damage integration.
 - [ ] 07-04: Implement bomb/hostage/buy/round objective behavior.
@@ -228,5 +228,5 @@ Phases execute sequentially: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 | 4. CSBot compatibility surface | 3/3 | Complete | 2026-09-15 |
 | 5. Read-only legacy Nav | 4/4 | Complete | 2026-09-15 |
 | 6. Baseline locomotion | 5/5 | Complete (offline) | 2026-09-16 |
-| 7. CSBot behavior parity | 0/6 | Not started | - |
+| 7. CSBot behavior parity | 1/6 | In progress | 2026-09-16 |
 | 8. Differential and live parity acceptance | 0/4 | Not started | - |
