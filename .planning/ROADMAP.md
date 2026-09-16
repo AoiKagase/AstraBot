@@ -12,7 +12,7 @@ The first milestone builds a standalone, source-independent Metamod-P plugin tha
 - [x] **Phase 4: CSBot compatibility surface** - Reproduce required `bot_*` commands/CVars, profiles, and server configuration behavior. (completed 2026-09-15)
 - [x] **Phase 5: Read-only legacy Nav** - Load and validate existing `.nav` v1-v5 data into an immutable SDK-free model. (completed 2026-09-15)
 - [x] **Phase 6: Baseline locomotion** - Execute existing Nav routes with CSBot-compatible movement and recovery. (offline contracts completed 2026-09-16; live real-server acceptance remains pending in Phase 8)
-- [ ] **Phase 7: CSBot behavior parity** - Add perception, state machine, combat, objectives, radio/chatter, and round behavior.
+- [x] **Phase 7: CSBot behavior parity** - Add perception, state machine, combat, objectives, radio/chatter, and round behavior. (offline contracts completed 2026-09-16; live and differential acceptance remains in Phase 8)
 - [ ] **Phase 8: Differential and live parity acceptance** - Verify Windows/Linux x86 artifacts and real-server replacement behavior.
 
 ## Future Milestones
@@ -192,7 +192,7 @@ Plans:
 - [x] 07-03: Implement weapon inventory, aiming, firing, reload, and damage integration. (offline contract complete 2026-09-16; live acceptance remains in Phase 8)
 - [x] 07-04: Implement bomb/hostage/buy/round objective behavior. (offline contract complete 2026-09-16; live acceptance remains in Phase 8)
 - [x] 07-05: Implement radio/chatter and actor/team information boundaries. (offline contract complete 2026-09-16; live acceptance remains in Phase 8)
-- [ ] 07-06: Add behavior scenario tests and reference comparison traces.
+- [x] 07-06: Add behavior scenario tests and reference comparison traces. (offline gate complete 2026-09-16; live differential acceptance remains in Phase 8)
 
 ### Phase 8: Differential and live parity acceptance
 
@@ -228,5 +228,5 @@ Phases execute sequentially: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 | 4. CSBot compatibility surface | 3/3 | Complete | 2026-09-15 |
 | 5. Read-only legacy Nav | 4/4 | Complete | 2026-09-15 |
 | 6. Baseline locomotion | 5/5 | Complete (offline) | 2026-09-16 |
-| 7. CSBot behavior parity | 5/6 | In progress | 2026-09-16 |
+| 7. CSBot behavior parity | 6/6 | Complete (offline) | 2026-09-16 |
 | 8. Differential and live parity acceptance | 0/4 | Not started | - |

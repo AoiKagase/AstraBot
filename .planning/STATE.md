@@ -1,19 +1,19 @@
 ---
 gsd_state_version: "1.0"
-current_phase: 7
-current_phase_name: CSBot behavior parity
-status: executing
-stopped_at: Plan 07-05 complete, ready to execute plan 07-06
-last_updated: "2026-09-16T13:23:39+09:00"
+current_phase: 8
+current_phase_name: Differential live parity acceptance
+status: planned
+stopped_at: Phase 7 offline behavior gate complete, ready to execute Phase 8
+last_updated: "2026-09-16T13:35:47+09:00"
 last_activity: 2026-09-16
-last_activity_desc: Plan 07-05 team communication boundaries implemented and verified
-state_head: 3d1ff22
+last_activity_desc: Phase 7 offline behavior gate completed; live and differential acceptance remain pending
+state_head: a7d039a
 progress:
   total_phases: 8
-  completed_phases: 6
+completed_phases: 7
 total_plans: 27
-completed_plans: 26
-  percent: 75
+completed_plans: 27
+percent: 88
 ---
 
 # Project State
@@ -23,16 +23,16 @@ completed_plans: 26
 See: `.planning/PROJECT.md` (updated 2026-09-15)
 
 **Core value:** Replace ReGameDLL-CS CSBot with an independent Metamod plugin while preserving normal operation.
-**Current focus:** Phase 7 — CSBot behavior parity
+**Current focus:** Phase 8 — Differential live parity acceptance
 
 ## Current Position
 
-Phase: 7 (CSBot behavior parity) — PLAN READY
-Plan: 07-06 through 07-06
-Status: 07-05 complete; 07-06 ready to execute
-Last activity: 2026-09-16 — team communication boundaries implemented with offline verification
+Phase: 8 (Differential live parity acceptance) — PLAN READY
+Plan: 08-01 through 08-04
+Status: Phase 7 offline behavior gate complete; Phase 8 live/differential acceptance ready to execute
+Last activity: 2026-09-16 — Phase 7 offline behavior gate completed; live and differential acceptance remain pending
 
-Progress: ░░░░░░░░░░ [███████░░░] 75%
+Progress: ░░░░░░░░░░ [████████░░] 88%
 
 ## Performance Metrics
 
@@ -86,5 +86,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-09-16
-Stopped at: Plan 07-05 complete, ready to execute plan 07-06
+Stopped at: Phase 7 offline behavior gate complete, ready to execute Phase 8
 Resume file: None
