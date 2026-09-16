@@ -191,7 +191,7 @@ Plans:
 - [x] 07-02: Implement CSBot state machine and objective planner. (offline contract complete 2026-09-16; live acceptance remains in Phase 8)
 - [x] 07-03: Implement weapon inventory, aiming, firing, reload, and damage integration. (offline contract complete 2026-09-16; live acceptance remains in Phase 8)
 - [x] 07-04: Implement bomb/hostage/buy/round objective behavior. (offline contract complete 2026-09-16; live acceptance remains in Phase 8)
-- [ ] 07-05: Implement radio/chatter and actor/team information boundaries.
+- [x] 07-05: Implement radio/chatter and actor/team information boundaries. (offline contract complete 2026-09-16; live acceptance remains in Phase 8)
 - [ ] 07-06: Add behavior scenario tests and reference comparison traces.
 
 ### Phase 8: Differential and live parity acceptance
@@ -228,5 +228,5 @@ Phases execute sequentially: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 | 4. CSBot compatibility surface | 3/3 | Complete | 2026-09-15 |
 | 5. Read-only legacy Nav | 4/4 | Complete | 2026-09-15 |
 | 6. Baseline locomotion | 5/5 | Complete (offline) | 2026-09-16 |
-| 7. CSBot behavior parity | 4/6 | In progress | 2026-09-16 |
+| 7. CSBot behavior parity | 5/6 | In progress | 2026-09-16 |
 | 8. Differential and live parity acceptance | 0/4 | Not started | - |
