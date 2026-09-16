@@ -24,6 +24,8 @@ include(cmake/AstraBotBuild.cmake)
   src/core/perception/perception.cpp
   src/core/behavior/objective_proposal.cpp
   src/core/behavior/behavior_state.cpp
+  src/core/combat/weapon_state.cpp
+  src/core/combat/combat_intent.cpp
   src/core/runtime/actor_registry.cpp
   src/core/compat/command_registry.cpp
   src/core/compat/cvar_state.cpp
@@ -293,6 +295,26 @@ if(ASTRABOT_BUILD_TESTS)
   )
   astrabot_apply_warnings(astrabot_objective_proposal)
   add_test(NAME astrabot_objective_proposal COMMAND astrabot_objective_proposal)
+
+  add_executable(astrabot_weapon_state
+    tests/weapon_state_tests.cpp
+  )
+  target_link_libraries(astrabot_weapon_state PRIVATE astrabot_core)
+  target_include_directories(astrabot_weapon_state PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+  )
+  astrabot_apply_warnings(astrabot_weapon_state)
+  add_test(NAME astrabot_weapon_state COMMAND astrabot_weapon_state)
+
+  add_executable(astrabot_combat_intent
+    tests/combat_intent_tests.cpp
+  )
+  target_link_libraries(astrabot_combat_intent PRIVATE astrabot_core)
+  target_include_directories(astrabot_combat_intent PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+  )
+  astrabot_apply_warnings(astrabot_combat_intent)
+  add_test(NAME astrabot_combat_intent COMMAND astrabot_combat_intent)
 
   add_executable(astrabot_map_fingerprint
     tests/map_fingerprint_tests.cpp
