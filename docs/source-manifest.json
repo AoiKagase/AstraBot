@@ -527,6 +527,42 @@
       "origin": "AstraBot",
       "license_status": "pending_release_review",
       "reference_only": false
+    },
+    {
+      "path": "include/astrabot/world/world_snapshot.hpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "src/core/world/world_snapshot.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "include/astrabot/perception/perception.hpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "src/core/perception/perception.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "tests/world_snapshot_tests.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "tests/perception_tests.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
     }
   ]
 }

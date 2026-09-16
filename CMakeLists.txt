@@ -20,6 +20,8 @@ include(cmake/AstraBotBuild.cmake)
 
   add_library(astrabot_core STATIC
   src/core/build_identity.cpp
+  src/core/world/world_snapshot.cpp
+  src/core/perception/perception.cpp
   src/core/runtime/actor_registry.cpp
   src/core/compat/command_registry.cpp
   src/core/compat/cvar_state.cpp
@@ -249,6 +251,26 @@ if(ASTRABOT_BUILD_TESTS)
   )
   astrabot_apply_warnings(astrabot_special_traversal)
   add_test(NAME astrabot_special_traversal COMMAND astrabot_special_traversal)
+
+  add_executable(astrabot_world_snapshot
+    tests/world_snapshot_tests.cpp
+  )
+  target_link_libraries(astrabot_world_snapshot PRIVATE astrabot_core)
+  target_include_directories(astrabot_world_snapshot PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+  )
+  astrabot_apply_warnings(astrabot_world_snapshot)
+  add_test(NAME astrabot_world_snapshot COMMAND astrabot_world_snapshot)
+
+  add_executable(astrabot_perception
+    tests/perception_tests.cpp
+  )
+  target_link_libraries(astrabot_perception PRIVATE astrabot_core)
+  target_include_directories(astrabot_perception PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+  )
+  astrabot_apply_warnings(astrabot_perception)
+  add_test(NAME astrabot_perception COMMAND astrabot_perception)
 
   add_executable(astrabot_map_fingerprint
     tests/map_fingerprint_tests.cpp
