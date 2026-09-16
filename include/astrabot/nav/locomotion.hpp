@@ -1,0 +1,117 @@
+#ifndef ASTRABOT_NAV_LOCOMOTION_HPP
+#define ASTRABOT_NAV_LOCOMOTION_HPP
+
+#include "astrabot/nav/nav_query.hpp"
+
+#include <cstdint>
+
+namespace astrabot
+{
+namespace nav
+{
+enum class LocomotionPosture
+{
+	Standing,
+	Crouching
+};
+
+enum class LocomotionResult
+{
+	Started,
+	IntentReady,
+	TargetReached,
+	NeedsRecovery,
+	StepTooHigh,
+	Stuck,
+	Inactive,
+	InvalidArgument,
+	InvalidConfig,
+	InvalidSnapshot,
+	InvalidCorridor,
+	InvalidObservation,
+	InvalidClearance,
+	StaleSnapshot,
+	ResourceLimit
+};
+
+struct LocomotionConfig
+{
+	static constexpr float kMaximumClearance = 4096.0f;
+	static constexpr float kMaximumTolerance = 4096.0f;
+	static constexpr float kMaximumStepHeight = 256.0f;
+	static constexpr float kMaximumSpeed = 1000.0f;
+	static constexpr std::uint32_t kMaximumStuckFrameLimit = 1024U;
+
+	float requiredClearance;
+	float targetHorizontalTolerance;
+	float targetVerticalTolerance;
+	float maximumStepHeight;
+	float maximumSpeed;
+	std::uint32_t stuckFrameLimit;
+};
+
+struct LocomotionObservation
+{
+	NavVector position;
+	float standingClearance;
+	float crouchingClearance;
+};
+
+struct LocomotionIntent
+{
+	NavVector direction;
+	float speed;
+	LocomotionPosture posture;
+	bool stepUp;
+	AreaId currentArea;
+	AreaId targetArea;
+};
+
+class LocomotionController
+{
+public:
+	LocomotionController();
+	explicit LocomotionController(const LocomotionConfig &config);
+
+	LocomotionResult start(const NavCorridor &corridor);
+	LocomotionResult update(
+		const NavSnapshot &snapshot,
+		const LocomotionObservation &observation,
+		LocomotionIntent *intent);
+	bool isActive() const;
+
+private:
+	static bool isValidConfig(const LocomotionConfig &config);
+	static bool isFiniteObservation(
+		const LocomotionObservation &observation);
+	static float floorHeight(const NavArea &area);
+	static NavVector normalizeDirection(
+		const NavVector &from,
+		const NavVector &to);
+	static float horizontalDistance(
+		const NavVector &from,
+		const NavVector &to);
+	NavQueryResult findCurrentArea(
+		const NavSnapshot &snapshot,
+		const LocomotionObservation &observation,
+		NavAreaMatch *match) const;
+	bool recordProgress(const NavVector &position);
+	LocomotionResult buildIntent(
+		const NavSnapshot &snapshot,
+		const LocomotionObservation &observation,
+		const NavAreaMatch &currentMatch,
+		const NavVector &target,
+		AreaId targetArea,
+		LocomotionIntent *intent);
+
+	NavPathFollower pathFollower_;
+	LocomotionConfig config_;
+	NavVector lastPosition_;
+	std::uint32_t stuckFrames_;
+	bool hasLastPosition_;
+	bool active_;
+};
+}
+}
+
+#endif

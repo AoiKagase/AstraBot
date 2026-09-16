@@ -12,7 +12,7 @@ progress:
   total_phases: 8
   completed_phases: 5
 total_plans: 21
-completed_plans: 17
+completed_plans: 18
   percent: 63
 ---
 
@@ -28,9 +28,9 @@ See: `.planning/PROJECT.md` (updated 2026-09-15)
 ## Current Position
 
 Phase: 6 (Baseline locomotion) — EXECUTING
-Plan: 06-01 complete; 06-02 ready
-Status: First spatial-query/corridor/follower slice verified
-Last activity: 2026-09-16 — 06-01 implemented and verified on Windows/Linux x86
+Plan: 06-01 and 06-02 complete; 06-03 ready
+Status: Nav queries, path following, and bounded Walk/Crouch/Step intent verified
+Last activity: 2026-09-16 — 06-02 implemented and verified on Windows/Linux x86
 
 Progress: ░░░░░░░░░░ [██████░░░░] 63%
 

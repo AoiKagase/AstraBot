@@ -29,6 +29,7 @@ include(cmake/AstraBotBuild.cmake)
   src/core/nav/legacy_nav_reader.cpp
   src/core/nav/nav_snapshot.cpp
   src/core/nav/nav_query.cpp
+  src/core/nav/locomotion.cpp
   src/core/runtime/bot_command.cpp
     src/core/runtime/command_queue.cpp
   src/core/runtime/lifecycle.cpp
@@ -216,6 +217,16 @@ if(ASTRABOT_BUILD_TESTS)
   )
   astrabot_apply_warnings(astrabot_nav_query)
   add_test(NAME astrabot_nav_query COMMAND astrabot_nav_query)
+
+  add_executable(astrabot_locomotion
+    tests/locomotion_tests.cpp
+  )
+  target_link_libraries(astrabot_locomotion PRIVATE astrabot_core)
+  target_include_directories(astrabot_locomotion PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+  )
+  astrabot_apply_warnings(astrabot_locomotion)
+  add_test(NAME astrabot_locomotion COMMAND astrabot_locomotion)
 
   add_executable(astrabot_map_fingerprint
     tests/map_fingerprint_tests.cpp
