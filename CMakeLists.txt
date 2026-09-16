@@ -22,6 +22,8 @@ include(cmake/AstraBotBuild.cmake)
   src/core/build_identity.cpp
   src/core/world/world_snapshot.cpp
   src/core/perception/perception.cpp
+  src/core/behavior/objective_proposal.cpp
+  src/core/behavior/behavior_state.cpp
   src/core/runtime/actor_registry.cpp
   src/core/compat/command_registry.cpp
   src/core/compat/cvar_state.cpp
@@ -271,6 +273,26 @@ if(ASTRABOT_BUILD_TESTS)
   )
   astrabot_apply_warnings(astrabot_perception)
   add_test(NAME astrabot_perception COMMAND astrabot_perception)
+
+  add_executable(astrabot_behavior_state
+    tests/behavior_state_tests.cpp
+  )
+  target_link_libraries(astrabot_behavior_state PRIVATE astrabot_core)
+  target_include_directories(astrabot_behavior_state PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+  )
+  astrabot_apply_warnings(astrabot_behavior_state)
+  add_test(NAME astrabot_behavior_state COMMAND astrabot_behavior_state)
+
+  add_executable(astrabot_objective_proposal
+    tests/objective_proposal_tests.cpp
+  )
+  target_link_libraries(astrabot_objective_proposal PRIVATE astrabot_core)
+  target_include_directories(astrabot_objective_proposal PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+  )
+  astrabot_apply_warnings(astrabot_objective_proposal)
+  add_test(NAME astrabot_objective_proposal COMMAND astrabot_objective_proposal)
 
   add_executable(astrabot_map_fingerprint
     tests/map_fingerprint_tests.cpp
