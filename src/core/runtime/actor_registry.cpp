@@ -99,7 +99,7 @@ namespace runtime
 		{
 			return result;
 		}
-		if (record->state != ActorState::Joined)
+		if (record->state != ActorState::Joining && record->state != ActorState::Joined)
 		{
 			return ActorResult::InvalidState;
 		}

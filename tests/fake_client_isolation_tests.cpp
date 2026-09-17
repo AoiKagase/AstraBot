@@ -98,6 +98,11 @@ namespace
 		return indexOfEdict(entity) + 100;
 	}
 
+	qboolean clientConnect(edict_t *, const char *, const char *, char[128])
+	{
+		return true;
+	}
+
 	void putInServer(edict_t *)
 	{
 	}
@@ -159,6 +164,7 @@ int main()
 	meta_globals_t metaGlobals{};
 	gamedll_funcs_t gameDllFunctions{};
 	DLL_FUNCTIONS gameDllTable{};
+	gameDllTable.pfnClientConnect = &clientConnect;
 	gameDllTable.pfnClientPutInServer = &putInServer;
 	gameDllTable.pfnClientDisconnect = &disconnect;
 	gameDllFunctions.dllapi_table = &gameDllTable;
@@ -237,42 +243,36 @@ int main()
 	BotCommand firstCommand = commandFor(first.actor, firstToken, 1U);
 	BotCommand secondCommand = commandFor(second.actor, secondToken, 1U);
 	if (!check(PluginRuntime::instance().enqueueBotCommand(firstCommand) ==
-			QueueResult::Accepted && PluginRuntime::instance().enqueueBotCommand(secondCommand) ==
-			QueueResult::Accepted, "two actor commands are queued"))
+			   QueueResult::StaleActor &&
+			PluginRuntime::instance().enqueueBotCommand(secondCommand) ==
+			QueueResult::StaleActor, "joining actors cannot queue movement commands"))
 	{
 		return 1;
 	}
 	if (!check(PluginRuntime::instance().dispatchBotInput(first.actor, 2U).result ==
-			DispatchResult::Dispatched && gLastMoveEntity == first.entity,
-			"first actor dispatches to its own entity"))
-	{
-		return 1;
-	}
-	if (!check(PluginRuntime::instance().dispatchBotInput(first.actor, 2U).result ==
-			DispatchResult::NoCommand && gMoveCount == 1,
-			"first actor cannot consume second actor command"))
+			   DispatchResult::NoCommand,
+			   "joining first actor does not dispatch movement"))
 	{
 		return 1;
 	}
 	if (!check(PluginRuntime::instance().dispatchBotInput(second.actor, 2U).result ==
-			DispatchResult::Dispatched && gLastMoveEntity == second.entity,
-			"second actor dispatches to its own entity"))
+			   DispatchResult::NoCommand,
+			   "joining second actor does not dispatch movement"))
 	{
 		return 1;
 	}
-
 	const auto staleToken = PluginRuntime::instance().tokenForSlot(first.actor.slot);
 	if (!check(PluginRuntime::instance().enqueueBotCommand(
-			commandFor(first.actor, staleToken, 2U)) == QueueResult::Accepted,
-			"stale candidate is queued before round reset"))
+			commandFor(first.actor, staleToken, 2U)) == QueueResult::StaleActor,
+			"joining actor rejects a stale movement candidate"))
 	{
 		return 1;
 	}
 	globals.time = 0.0f;
 	entityFunctions.pfnStartFrame();
 	if (!check(PluginRuntime::instance().dispatchBotInput(first.actor, 3U).result ==
-			DispatchResult::StaleActor && gMoveCount == 2,
-			"round reset rejects stale actor input"))
+			DispatchResult::NoCommand,
+			"round reset leaves no movement command for a joining actor"))
 	{
 		return 1;
 	}

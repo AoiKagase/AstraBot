@@ -70,6 +70,13 @@ C_DLLEXPORT FORCE_STACK_ALIGN int GetEntityAPI2(DLL_FUNCTIONS *functionTable,
 			? TRUE : FALSE;
 }
 
+C_DLLEXPORT FORCE_STACK_ALIGN int GetEntityAPI2_Post(DLL_FUNCTIONS *functionTable,
+		int *interfaceVersion)
+{
+	return PluginRuntime::instance().provideEntityApiPost(functionTable, interfaceVersion)
+			? TRUE : FALSE;
+}
+
 C_DLLEXPORT int GetEngineFunctions(enginefuncs_t *engineFunctions, int *interfaceVersion)
 {
 	return PluginRuntime::instance().provideEngineFunctions(engineFunctions, interfaceVersion)

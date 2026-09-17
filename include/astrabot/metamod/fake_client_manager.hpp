@@ -8,59 +8,58 @@
 
 namespace astrabot
 {
-namespace metamod
-{
-	enum class FakeClientResult
+	namespace metamod
 	{
-		Created,
-		Removed,
-		Killed,
-		NativeGuardDenied,
-		BoundaryUnavailable,
-		InvalidName,
-		CreateFailed,
-		InvalidEntity,
-		InvalidSlot,
-		SlotBusy,
-		JoinFailed,
-		NotFound,
-		InvalidState,
-		CleanupFailed
-	};
+		enum class FakeClientResult
+		{
+			Created,
+			Removed,
+			Killed,
+			NativeGuardDenied,
+			BoundaryUnavailable,
+			InvalidName,
+			CreateFailed,
+			InvalidEntity,
+			InvalidSlot,
+			SlotBusy,
+			JoinFailed,
+			NotFound,
+			InvalidState,
+			CleanupFailed
+		};
 
-	struct FakeClientHandle
-	{
-		runtime::ActorId actor;
-		edict_t *entity;
-	};
+		struct FakeClientHandle
+		{
+			runtime::ActorId actor;
+			edict_t *entity;
+		};
 
-	class FakeClientManager
-	{
-	public:
-		FakeClientManager(runtime::LifecycleSession &lifecycle, runtime::ActorRegistry &registry);
+		class FakeClientManager
+		{
+		  public:
+			FakeClientManager(runtime::LifecycleSession &lifecycle,
+							  runtime::ActorRegistry &registry);
 
-		void configure(
-			enginefuncs_t *engineFunctions,
-			gamedll_funcs_t *gameDllFunctions,
-			bool managedBotCreationAllowed);
-		FakeClientResult create(const char *name, FakeClientHandle *handle);
-		FakeClientResult remove(FakeClientHandle *handle);
-		FakeClientResult kill(FakeClientHandle *handle);
+			void configure(enginefuncs_t *engineFunctions, gamedll_funcs_t *gameDllFunctions,
+						   bool managedBotCreationAllowed, mutil_funcs_t *metaUtils = nullptr,
+						   plid_t pluginId = nullptr);
+			FakeClientResult create(const char *name, FakeClientHandle *handle);
+			FakeClientResult remove(FakeClientHandle *handle);
+			FakeClientResult kill(FakeClientHandle *handle);
 
-	private:
-		void cleanupFailedClient(
-			edict_t *entity,
-			std::uint32_t slot,
-			bool disconnectLifecycle);
-		FakeClientResult mapRegistryResult(runtime::ActorResult result) const;
+		  private:
+			void cleanupFailedClient(edict_t *entity, std::uint32_t slot, bool disconnectLifecycle);
+			FakeClientResult mapRegistryResult(runtime::ActorResult result) const;
 
-		runtime::LifecycleSession &lifecycle_;
-		runtime::ActorRegistry &registry_;
-		enginefuncs_t *engineFunctions_;
-		gamedll_funcs_t *gameDllFunctions_;
-		bool managedBotCreationAllowed_;
-	};
-}
-}
+			runtime::LifecycleSession &lifecycle_;
+			runtime::ActorRegistry &registry_;
+			enginefuncs_t *engineFunctions_;
+			gamedll_funcs_t *gameDllFunctions_;
+			mutil_funcs_t *metaUtils_;
+			plid_t pluginId_;
+			bool managedBotCreationAllowed_;
+		};
+	} // namespace metamod
+} // namespace astrabot
 
 #endif

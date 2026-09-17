@@ -42,7 +42,10 @@ namespace metamod
 		}
 
 		const runtime::LifecycleToken token = lifecycle_.tokenForSlot(actor.slot);
-		if (!lifecycle_.isCurrent(token) || !registry_.isCurrent(actor, token))
+		const runtime::ActorState actorState = registry_.state(actor);
+		if (!lifecycle_.isCurrent(token) ||
+				(actorState != runtime::ActorState::Joining &&
+				 actorState != runtime::ActorState::Joined))
 		{
 			return false;
 		}

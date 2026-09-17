@@ -42,7 +42,8 @@ include(cmake/AstraBotBuild.cmake)
   src/core/nav/locomotion.cpp
   src/core/nav/jump_drop.cpp
   src/core/nav/special_traversal.cpp
-  src/core/runtime/bot_command.cpp
+	  src/core/runtime/bot_command.cpp
+	  src/core/runtime/nav_roam_controller.cpp
     src/core/runtime/command_queue.cpp
   src/core/runtime/lifecycle.cpp
 )
@@ -113,6 +114,42 @@ if(ASTRABOT_BUILD_TESTS)
   target_link_libraries(astrabot_command_queue PRIVATE astrabot_core)
   astrabot_apply_warnings(astrabot_command_queue)
   add_test(NAME astrabot_command_queue COMMAND astrabot_command_queue)
+
+  add_executable(astrabot_join_controller
+    tests/join_controller_tests.cpp
+    src/adapter/metamod/join_controller.cpp
+  )
+  target_include_directories(astrabot_join_controller PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    "${ASTRABOT_METAMOD_SDK_ROOT}/metamod"
+    "${ASTRABOT_METAMOD_SDK_ROOT}/hlsdk"
+    "${ASTRABOT_METAMOD_SDK_ROOT}/hlsdk/common"
+    "${ASTRABOT_METAMOD_SDK_ROOT}/hlsdk/dlls"
+    "${ASTRABOT_METAMOD_SDK_ROOT}/hlsdk/engine"
+    "${ASTRABOT_METAMOD_SDK_ROOT}/hlsdk/pm_shared"
+  )
+  astrabot_apply_warnings(astrabot_join_controller)
+  add_test(NAME astrabot_join_controller COMMAND astrabot_join_controller)
+
+  add_executable(astrabot_nav_roam_controller
+    tests/nav_roam_controller_tests.cpp
+  )
+  target_include_directories(astrabot_nav_roam_controller PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+  )
+  target_link_libraries(astrabot_nav_roam_controller PRIVATE astrabot_core)
+  astrabot_apply_warnings(astrabot_nav_roam_controller)
+  add_test(NAME astrabot_nav_roam_controller COMMAND astrabot_nav_roam_controller)
+
+  add_executable(astrabot_nav_legacy_limit
+    tests/nav_legacy_limit_tests.cpp
+  )
+  target_include_directories(astrabot_nav_legacy_limit PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+  )
+  target_link_libraries(astrabot_nav_legacy_limit PRIVATE astrabot_core)
+  astrabot_apply_warnings(astrabot_nav_legacy_limit)
+  add_test(NAME astrabot_nav_legacy_limit COMMAND astrabot_nav_legacy_limit)
 
   add_executable(astrabot_compat_command_registry
     tests/compat_command_registry_tests.cpp
@@ -385,12 +422,19 @@ if(ASTRABOT_BUILD_METAMOD)
     "${ASTRABOT_METAMOD_SDK_ROOT}/hlsdk/dlls"
     "${ASTRABOT_METAMOD_SDK_ROOT}/hlsdk/engine"
     "${ASTRABOT_METAMOD_SDK_ROOT}/hlsdk/pm_shared"
+    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/cssdk/common"
+    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/cssdk/dlls"
+    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/cssdk/engine"
+    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/cssdk/game_shared"
+    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/cssdk/pm_shared"
+    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/cssdk/public"
   )
 
   add_library(astrabot_mm SHARED
     src/adapter/metamod/compat_surface.cpp
     src/adapter/metamod/profile_loader.cpp
     src/adapter/metamod/fake_client_manager.cpp
+    src/adapter/metamod/join_controller.cpp
     src/adapter/metamod/input_dispatcher.cpp
     src/adapter/metamod/plugin_exports.cpp
     src/adapter/metamod/native_bot_guard.cpp
@@ -450,6 +494,7 @@ if(ASTRABOT_BUILD_METAMOD)
       src/adapter/metamod/input_dispatcher.cpp
       src/adapter/metamod/native_bot_guard.cpp
       src/adapter/metamod/plugin_exports.cpp
+      src/adapter/metamod/join_controller.cpp
       src/adapter/metamod/plugin_runtime.cpp
       src/adapter/metamod/nav_loader.cpp
       src/adapter/metamod/map_fingerprint.cpp
@@ -490,6 +535,7 @@ if(ASTRABOT_BUILD_METAMOD)
       src/adapter/metamod/input_dispatcher.cpp
       src/adapter/metamod/native_bot_guard.cpp
       src/adapter/metamod/plugin_exports.cpp
+      src/adapter/metamod/join_controller.cpp
       src/adapter/metamod/plugin_runtime.cpp
       src/adapter/metamod/nav_loader.cpp
       src/adapter/metamod/map_fingerprint.cpp
@@ -524,6 +570,7 @@ if(ASTRABOT_BUILD_METAMOD)
       src/adapter/metamod/input_dispatcher.cpp
       src/adapter/metamod/native_bot_guard.cpp
       src/adapter/metamod/plugin_exports.cpp
+      src/adapter/metamod/join_controller.cpp
       src/adapter/metamod/plugin_runtime.cpp
       src/adapter/metamod/nav_loader.cpp
       src/adapter/metamod/map_fingerprint.cpp
