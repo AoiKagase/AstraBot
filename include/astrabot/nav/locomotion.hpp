@@ -9,11 +9,23 @@ namespace astrabot
 {
 namespace nav
 {
-enum class LocomotionPosture
+	enum class LocomotionPosture
 {
 	Standing,
-	Crouching
-};
+		Crouching
+	};
+
+	enum class TraversalAction
+	{
+		Walk,
+		Crouch,
+		Step,
+		Jump,
+		Drop,
+		Ladder,
+		Door,
+		NarrowPassage
+	};
 
 enum class LocomotionResult
 {
@@ -50,19 +62,24 @@ struct LocomotionConfig
 	std::uint32_t stuckFrameLimit;
 };
 
-struct LocomotionObservation
-{
-	NavVector position;
-	float standingClearance;
-	float crouchingClearance;
-};
+	struct LocomotionObservation
+	{
+		NavVector position;
+		float standingClearance;
+		float crouchingClearance;
+		NavVector velocity;
+		bool grounded;
+		bool ducked;
+		bool onLadder;
+	};
 
 struct LocomotionIntent
 {
-	NavVector direction;
-	float speed;
-	LocomotionPosture posture;
-	bool stepUp;
+		NavVector direction;
+		float speed;
+		LocomotionPosture posture;
+		TraversalAction traversal;
+		bool stepUp;
 	AreaId currentArea;
 	AreaId targetArea;
 };
@@ -79,6 +96,7 @@ public:
 		const LocomotionObservation &observation,
 		LocomotionIntent *intent);
 	bool isActive() const;
+	std::size_t currentCorridorIndex() const;
 
 private:
 	static bool isValidConfig(const LocomotionConfig &config);

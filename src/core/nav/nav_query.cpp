@@ -89,26 +89,213 @@ float rectangleDistanceSquared(
 	return deltaX * deltaX + deltaY * deltaY;
 }
 
-bool isWithinTarget(
+NavVector closestPointOnArea(
 	const NavArea &area,
-	const NavVector &position,
+	const NavVector &position)
+{
+	NavVector point = position;
+	point.x = (std::max)(area.extent.lo.x, (std::min)(point.x, area.extent.hi.x));
+	point.y = (std::max)(area.extent.lo.y, (std::min)(point.y, area.extent.hi.y));
+	point.z = area.northEastZ * 0.5f + area.southWestZ * 0.5f;
+	return point;
+}
+
+bool isWithinTarget(
+		const NavArea &area,
+		const NavVector &position,
 	float horizontalTolerance,
 	float verticalTolerance)
 {
-	const NavVector target = centerOf(area);
-	const float deltaX = position.x - target.x;
-	const float deltaY = position.y - target.y;
-	const float horizontalDistanceSquared =
-		deltaX * deltaX + deltaY * deltaY;
-	return horizontalDistanceSquared <=
+	return rectangleDistanceSquared(area, position) <=
 			horizontalTolerance * horizontalTolerance &&
-		floorDistance(area, position.z) <= verticalTolerance;
+			floorDistance(area, position.z) <= verticalTolerance;
+}
+
+NavVector portalSteeringPoint(
+	const NavArea &area,
+	const NavVector &position)
+{
+	constexpr float kPortalInset = 16.0f;
+	const NavVector closest = closestPointOnArea(area, position);
+	const NavVector center = centerOf(area);
+	const float deltaX = center.x - closest.x;
+	const float deltaY = center.y - closest.y;
+	const float distance = std::hypot(deltaX, deltaY);
+	if (!std::isfinite(distance) || distance <= kPortalInset)
+	{
+		return center;
+	}
+	return {
+		closest.x + deltaX / distance * kPortalInset,
+		closest.y + deltaY / distance * kPortalInset,
+		closest.z};
+}
+
+NavVector portalSteeringPoint(
+	const NavArea &from,
+	const NavArea &to,
+	const NavVector &position)
+{
+	const float overlapLoX = (std::max)(from.extent.lo.x, to.extent.lo.x);
+	const float overlapHiX = (std::min)(from.extent.hi.x, to.extent.hi.x);
+	const float overlapLoY = (std::max)(from.extent.lo.y, to.extent.lo.y);
+	const float overlapHiY = (std::min)(from.extent.hi.y, to.extent.hi.y);
+	if (overlapLoX > overlapHiX || overlapLoY > overlapHiY)
+	{
+		return portalSteeringPoint(to, position);
+	}
+	const NavVector portal = {
+		(overlapLoX + overlapHiX) * 0.5f,
+		(overlapLoY + overlapHiY) * 0.5f,
+		to.northEastZ * 0.5f + to.southWestZ * 0.5f};
+	const NavVector center = centerOf(to);
+	const float deltaX = center.x - portal.x;
+	const float deltaY = center.y - portal.y;
+	const float distance = std::hypot(deltaX, deltaY);
+	if (!std::isfinite(distance) || distance <= 16.0f)
+	{
+		return center;
+	}
+	return {
+		portal.x + deltaX / distance * 16.0f,
+		portal.y + deltaY / distance * 16.0f,
+		portal.z};
+}
+
+NavVector portalSteeringPoint(
+	const NavArea &from,
+	const NavArea &to,
+	const NavVector &position,
+	std::uint8_t direction)
+{
+	if (direction >= NavArea::kDirectionCount)
+	{
+		return portalSteeringPoint(to, position);
+	}
+	const float overlapLoX = (std::max)(from.extent.lo.x, to.extent.lo.x);
+	const float overlapHiX = (std::min)(from.extent.hi.x, to.extent.hi.x);
+	const float overlapLoY = (std::max)(from.extent.lo.y, to.extent.lo.y);
+	const float overlapHiY = (std::min)(from.extent.hi.y, to.extent.hi.y);
+	if (overlapLoX > overlapHiX || overlapLoY > overlapHiY)
+	{
+		return portalSteeringPoint(to, position);
+	}
+	const bool directionMatchesGeometry =
+		(direction == 0U && to.extent.hi.y <= from.extent.lo.y + 1.0f) ||
+		(direction == 1U && to.extent.lo.x >= from.extent.hi.x - 1.0f) ||
+		(direction == 2U && to.extent.lo.y >= from.extent.hi.y - 1.0f) ||
+		(direction == 3U && to.extent.hi.x <= from.extent.lo.x + 1.0f);
+	if (!directionMatchesGeometry)
+	{
+		return portalSteeringPoint(from, to, position);
+	}
+	constexpr float kPortalMargin = 16.0f;
+	const auto clampWithMargin = [kPortalMargin](float value, float lo, float hi) {
+		if (hi - lo <= 2.0f * kPortalMargin)
+		{
+			return (lo + hi) * 0.5f;
+		}
+		return (std::max)(lo + kPortalMargin,
+			(std::min)(hi - kPortalMargin, value));
+	};
+	NavVector result = {
+		clampWithMargin(position.x, overlapLoX, overlapHiX),
+		clampWithMargin(position.y, overlapLoY, overlapHiY),
+		to.northEastZ * 0.5f + to.southWestZ * 0.5f};
+	switch (direction)
+	{
+	case 0U:
+		result.y = from.extent.lo.y - kPortalMargin;
+		break;
+	case 1U:
+		result.x = from.extent.hi.x + kPortalMargin;
+		break;
+	case 2U:
+		result.y = from.extent.hi.y + kPortalMargin;
+		break;
+	case 3U:
+		result.x = from.extent.lo.x - kPortalMargin;
+		break;
+	default:
+		break;
+	}
+	return result;
+}
+
+std::uint8_t howForLink(
+	const NavDocument *document,
+	AreaId fromArea,
+	AreaId toArea)
+{
+	if (document == nullptr)
+	{
+		return 0U;
+	}
+	const NavArea *from = document->findArea(fromArea);
+	if (from != nullptr)
+	{
+		for (const NavApproach &approach : from->approaches)
+		{
+			if (approach.here == fromArea && approach.next == toArea)
+			{
+				return approach.hereToNextHow;
+			}
+		}
+	}
+	const NavArea *to = document->findArea(toArea);
+	if (to != nullptr)
+	{
+		for (const NavApproach &approach : to->approaches)
+		{
+			if (approach.here == toArea && approach.previous == fromArea)
+			{
+				return approach.previousToHereHow;
+			}
+		}
+	}
+	return 0U;
+}
+
+NavDirectedLink directedLinkFor(
+	const NavDocument *document,
+	AreaId fromArea,
+	AreaId toArea)
+{
+	if (document == nullptr)
+	{
+		return {fromArea, toArea, 0U, 0U};
+	}
+	const NavArea *from = document->findArea(fromArea);
+	if (from == nullptr)
+	{
+		return {fromArea, toArea, 0U, 0U};
+	}
+	for (std::size_t direction = 0U;
+			direction < NavArea::kDirectionCount; ++direction)
+	{
+		for (const AreaId target : from->connections[direction])
+		{
+			if (target == toArea)
+			{
+				return {
+					fromArea,
+					toArea,
+					static_cast<std::uint8_t>(direction),
+					howForLink(document, fromArea, toArea)};
+			}
+		}
+	}
+	return {fromArea, toArea, 0U, howForLink(document, fromArea, toArea)};
 }
 }
 
 bool NavCorridor::isValid() const
 {
 	if (navRevision == 0U || mapGeneration == 0U || areas.empty())
+	{
+		return false;
+	}
+	if (!links.empty() && links.size() + 1U != areas.size())
 	{
 		return false;
 	}
@@ -205,6 +392,7 @@ NavQueryResult NavQuery::findContaining(
 	const NavArea *area = document()->findArea(bestArea);
 	match->area = bestArea;
 	match->distanceSquared = rectangleDistanceSquared(*area, position);
+	match->closestPoint = closestPointOnArea(*area, position);
 	return NavQueryResult::Found;
 }
 
@@ -259,6 +447,7 @@ NavQueryResult NavQuery::findNearest(
 
 	match->area = bestArea;
 	match->distanceSquared = bestDistance;
+	match->closestPoint = closestPointOnArea(*document()->findArea(bestArea), position);
 	return NavQueryResult::Found;
 }
 
@@ -295,10 +484,11 @@ NavQueryResult NavQuery::outgoingLinks(
 		{
 			for (const AreaId target : area->connections[direction])
 			{
-				candidate.push_back({
+			candidate.push_back({
 					fromArea,
 					target,
-					static_cast<std::uint8_t>(direction)
+					static_cast<std::uint8_t>(direction),
+					howForLink(currentDocument, fromArea, target)
 				});
 			}
 		}
@@ -321,17 +511,30 @@ NavQueryResult NavQuery::outgoingLinks(
 	return NavQueryResult::Found;
 }
 
-NavQueryResult NavQuery::buildCorridor(
+namespace
+{
+struct AStarRecord
+{
+	AreaId area;
+	AreaId parent;
+	float costSoFar;
+	float totalCost;
+	bool closed;
+};
+
+NavQueryResult buildAStarCorridor(
+	const NavSnapshot &snapshot,
+	const NavQueryLimits &limits,
 	AreaId start,
 	AreaId goal,
-	NavCorridor *corridor) const
+	NavCorridor *corridor)
 {
 	if (corridor == nullptr)
 	{
 		return NavQueryResult::InvalidArgument;
 	}
 	*corridor = {};
-	const NavDocument *currentDocument = document();
+	const NavDocument *currentDocument = snapshot.document();
 	if (currentDocument == nullptr)
 	{
 		return NavQueryResult::EmptySnapshot;
@@ -342,92 +545,184 @@ NavQueryResult NavQuery::buildCorridor(
 	{
 		return NavQueryResult::AreaNotFound;
 	}
-	if (!isValidLimits(limits_))
+	if (!isValidLimits(limits))
 	{
 		return NavQueryResult::ResourceLimit;
 	}
 
-	std::vector<AreaId> discovered;
-	std::vector<AreaId> predecessor;
+	const auto findRecord = [](const std::vector<AStarRecord> &records, AreaId area) {
+		for (std::size_t index = 0U; index < records.size(); ++index)
+		{
+			if (records[index].area == area)
+			{
+				return index;
+			}
+		}
+		return records.size();
+	};
+	const auto contains = [](const std::vector<AreaId> &areas, AreaId area) {
+		return std::find(areas.begin(), areas.end(), area) != areas.end();
+	};
+	const auto distanceBetween = [](const NavArea &left, const NavArea &right) {
+		const NavVector leftCenter = centerOf(left);
+		const NavVector rightCenter = centerOf(right);
+		const float dx = rightCenter.x - leftCenter.x;
+		const float dy = rightCenter.y - leftCenter.y;
+		const float dz = rightCenter.z - leftCenter.z;
+		const float distance = std::sqrt(dx * dx + dy * dy + dz * dz);
+		return std::isfinite(distance) && distance > 1.0f ? distance : 1.0f;
+	};
+
 	try
 	{
-		discovered.reserve(limits_.maximumSearchQueue);
-		predecessor.reserve(limits_.maximumSearchQueue);
-		discovered.push_back(start);
-		predecessor.push_back(0U);
+		std::vector<AStarRecord> records;
+		std::vector<AreaId> open;
+		records.reserve(limits.maximumSearchQueue);
+		open.reserve(limits.maximumSearchQueue);
+		const NavArea *startArea = currentDocument->findArea(start);
+		const NavArea *goalArea = currentDocument->findArea(goal);
+		const float initialHeuristic = distanceBetween(*startArea, *goalArea);
+		records.push_back({start, 0U, 0.0f, initialHeuristic, false});
+		open.push_back(start);
 
-		std::size_t queueIndex = 0U;
-		while (queueIndex < discovered.size())
+		while (!open.empty())
 		{
-			const AreaId current = discovered[queueIndex];
-			++queueIndex;
+			std::size_t bestOpenIndex = 0U;
+			std::size_t bestRecordIndex = findRecord(records, open[0]);
+			for (std::size_t index = 1U; index < open.size(); ++index)
+			{
+				const std::size_t candidateRecordIndex = findRecord(records, open[index]);
+				if (candidateRecordIndex == records.size())
+				{
+					continue;
+				}
+				const AStarRecord &candidate = records[candidateRecordIndex];
+				const AStarRecord &best = records[bestRecordIndex];
+				if (candidate.totalCost < best.totalCost ||
+						(candidate.totalCost == best.totalCost &&
+						 candidate.area < best.area))
+				{
+					bestOpenIndex = index;
+					bestRecordIndex = candidateRecordIndex;
+				}
+			}
+
+			const AreaId current = open[bestOpenIndex];
+			open.erase(open.begin() + static_cast<std::ptrdiff_t>(bestOpenIndex));
+			const std::size_t currentRecordIndex = findRecord(records, current);
+			if (currentRecordIndex == records.size())
+			{
+				return NavQueryResult::NoRoute;
+			}
+			records[currentRecordIndex].closed = true;
 			if (current == goal)
 			{
 				break;
 			}
 
-			const NavArea *area = currentDocument->findArea(current);
-			if (area == nullptr)
+			const NavArea *currentArea = currentDocument->findArea(current);
+			if (currentArea == nullptr)
 			{
 				return NavQueryResult::AreaNotFound;
 			}
 			for (std::size_t direction = 0U;
-					direction < NavArea::kDirectionCount;
-					++direction)
+					direction < NavArea::kDirectionCount; ++direction)
 			{
-				for (const AreaId target : area->connections[direction])
+				for (const AreaId target : currentArea->connections[direction])
 				{
-					if (findDiscoveredArea(discovered, target) !=
-							discovered.size())
+					const NavArea *targetArea = currentDocument->findArea(target);
+					if (targetArea == nullptr)
+					{
+						return NavQueryResult::AreaNotFound;
+					}
+					const float tentativeCost = records[currentRecordIndex].costSoFar +
+						distanceBetween(*currentArea, *targetArea);
+					std::size_t targetRecordIndex = findRecord(records, target);
+					if (targetRecordIndex == records.size())
+					{
+						if (records.size() >= limits.maximumCorridorAreas ||
+								records.size() >= limits.maximumSearchQueue)
+						{
+							return NavQueryResult::ResourceLimit;
+						}
+						const float heuristic = distanceBetween(*targetArea, *goalArea);
+						records.push_back({
+							target, current, tentativeCost,
+							tentativeCost + heuristic, false});
+						open.push_back(target);
+						continue;
+					}
+
+					AStarRecord &targetRecord = records[targetRecordIndex];
+					if (tentativeCost >= targetRecord.costSoFar)
 					{
 						continue;
 					}
-					if (discovered.size() >= limits_.maximumCorridorAreas ||
-							discovered.size() >= limits_.maximumSearchQueue)
+					targetRecord.parent = current;
+					targetRecord.costSoFar = tentativeCost;
+					targetRecord.totalCost = tentativeCost +
+						distanceBetween(*targetArea, *goalArea);
+					if (targetRecord.closed)
 					{
-						return NavQueryResult::ResourceLimit;
+						targetRecord.closed = false;
 					}
-					discovered.push_back(target);
-					predecessor.push_back(current);
+					if (!contains(open, target))
+					{
+						open.push_back(target);
+					}
 				}
 			}
 		}
 
-		if (findDiscoveredArea(discovered, goal) == discovered.size())
+		const std::size_t goalRecordIndex = findRecord(records, goal);
+		if (goalRecordIndex == records.size())
 		{
 			return NavQueryResult::NoRoute;
 		}
-
 		std::vector<AreaId> reversed;
-		reversed.reserve(discovered.size());
+		reversed.reserve(records.size());
 		AreaId current = goal;
 		while (current != 0U)
 		{
 			reversed.push_back(current);
-			const std::size_t index = findDiscoveredArea(discovered, current);
-			if (index == discovered.size())
+			const std::size_t recordIndex = findRecord(records, current);
+			if (recordIndex == records.size())
 			{
 				return NavQueryResult::NoRoute;
 			}
-			current = predecessor[index];
+			current = records[recordIndex].parent;
 		}
-		if (reversed.size() > limits_.maximumCorridorAreas)
+		if (reversed.size() > limits.maximumCorridorAreas)
 		{
 			return NavQueryResult::ResourceLimit;
 		}
 		std::reverse(reversed.begin(), reversed.end());
-
-		corridor->navRevision = snapshot_.revision();
-		corridor->mapGeneration = snapshot_.mapGeneration();
+		corridor->navRevision = snapshot.revision();
+		corridor->mapGeneration = snapshot.mapGeneration();
 		corridor->areas = reversed;
+		corridor->links.clear();
+		corridor->links.reserve(reversed.size() > 0U ? reversed.size() - 1U : 0U);
+		for (std::size_t index = 1U; index < reversed.size(); ++index)
+		{
+			corridor->links.push_back(directedLinkFor(
+				currentDocument, reversed[index - 1U], reversed[index]));
+		}
 	}
 	catch (const std::bad_alloc &)
 	{
 		*corridor = {};
 		return NavQueryResult::ResourceLimit;
 	}
-
 	return NavQueryResult::Found;
+}
+}
+
+NavQueryResult NavQuery::buildCorridor(
+	AreaId start,
+	AreaId goal,
+	NavCorridor *corridor) const
+{
+	return buildAStarCorridor(snapshot_, limits_, start, goal, corridor);
 }
 
 const NavDocument *NavQuery::document() const
@@ -451,6 +746,7 @@ std::size_t NavQuery::findDiscoveredArea(
 
 NavPathFollower::NavPathFollower() :
 	corridor_(),
+	links_(),
 	navRevision_(0U),
 	mapGeneration_(0U),
 	currentIndex_(0U),
@@ -468,6 +764,7 @@ NavFollowerResult NavPathFollower::start(const NavCorridor &corridor)
 	try
 	{
 		corridor_ = corridor.areas;
+		links_ = corridor.links;
 	}
 	catch (const std::bad_alloc &)
 	{
@@ -526,7 +823,20 @@ NavFollowerResult NavPathFollower::update(
 		return NavFollowerResult::InvalidCorridor;
 	}
 
-	NavVector currentTarget = centerOf(*area);
+	NavVector currentTarget = portalSteeringPoint(*area, position);
+	if (currentIndex_ > 0U)
+	{
+		const NavArea *previousArea =
+				currentDocument->findArea(corridor_[currentIndex_ - 1U]);
+		if (previousArea != nullptr)
+		{
+			const std::uint8_t direction = currentIndex_ - 1U < links_.size()
+				? links_[currentIndex_ - 1U].direction
+				: NavArea::kDirectionCount;
+			currentTarget = portalSteeringPoint(
+				*previousArea, *area, position, direction);
+		}
+	}
 	*target = currentTarget;
 	*targetArea = area->id;
 	if (!isWithinTarget(
@@ -546,7 +856,14 @@ NavFollowerResult NavPathFollower::update(
 		{
 			return NavFollowerResult::InvalidCorridor;
 		}
-		*target = centerOf(*nextArea);
+		const NavArea *previousArea =
+				currentDocument->findArea(corridor_[currentIndex_ - 1U]);
+		const std::uint8_t direction = currentIndex_ - 1U < links_.size()
+				? links_[currentIndex_ - 1U].direction
+				: NavArea::kDirectionCount;
+		*target = previousArea != nullptr
+				? portalSteeringPoint(*previousArea, *nextArea, position, direction)
+				: portalSteeringPoint(*nextArea, position);
 		*targetArea = nextArea->id;
 		return NavFollowerResult::Advanced;
 	}

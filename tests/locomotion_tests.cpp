@@ -89,7 +89,11 @@ bool testWalkAndStepIntent()
 	astrabot::nav::LocomotionObservation observation = {
 		{32.0f, 32.0f, 0.0f},
 		64.0f,
-		64.0f
+		64.0f,
+		{0.0f, 0.0f, 0.0f},
+		false,
+		false,
+		false
 	};
 	astrabot::nav::LocomotionIntent intent = {};
 	if (!check(controller.update(snapshot, observation, &intent) ==
@@ -118,7 +122,11 @@ bool testCrouchSelection()
 	const astrabot::nav::LocomotionObservation observation = {
 		{16.0f, 32.0f, 0.0f},
 		24.0f,
-		64.0f
+		64.0f,
+		{0.0f, 0.0f, 0.0f},
+		false,
+		false,
+		false
 	};
 	astrabot::nav::LocomotionIntent intent = {};
 	return check(controller.update(snapshot, observation, &intent) ==
@@ -140,7 +148,11 @@ bool testStepAndStuckRecovery()
 	astrabot::nav::LocomotionObservation observation = {
 		{32.0f, 32.0f, 0.0f},
 		64.0f,
-		64.0f
+		64.0f,
+		{0.0f, 0.0f, 0.0f},
+		false,
+		false,
+		false
 	};
 	astrabot::nav::LocomotionIntent intent = {};
 	if (!check(stepController.update(
@@ -189,7 +201,11 @@ bool testCompletionAndInvalidation()
 	astrabot::nav::LocomotionObservation observation = {
 		{32.0f, 32.0f, 0.0f},
 		64.0f,
-		64.0f
+		64.0f,
+		{0.0f, 0.0f, 0.0f},
+		false,
+		false,
+		false
 	};
 	astrabot::nav::LocomotionIntent intent = {};
 	controller.update(snapshot, observation, &intent);
@@ -215,6 +231,33 @@ bool testCompletionAndInvalidation()
 		"changed map generation invalidates locomotion");
 }
 
+bool testCorridorIndexTracksPortalProgress()
+{
+	astrabot::nav::NavDocument document = routeDocument(0.0f);
+	const astrabot::nav::NavSnapshot snapshot = snapshotFor(&document, 1U);
+	astrabot::nav::LocomotionController controller(config());
+	if (!check(controller.start(corridorFor(snapshot)) ==
+			astrabot::nav::LocomotionResult::Started,
+			"portal progress test starts"))
+	{
+		return false;
+	}
+	astrabot::nav::LocomotionObservation observation = {};
+	observation.position = {16.0f, 32.0f, 0.0f};
+	observation.standingClearance = 72.0f;
+	observation.crouchingClearance = 36.0f;
+	astrabot::nav::LocomotionIntent intent = {};
+	if (!check(controller.update(snapshot, observation, &intent) ==
+			astrabot::nav::LocomotionResult::IntentReady &&
+			controller.currentCorridorIndex() == 1U,
+			"locomotion exposes the advanced portal index"))
+	{
+		return false;
+	}
+	return check(controller.currentCorridorIndex() == 1U,
+			"portal index remains tied to the active route");
+}
+
 bool testInvalidInputs()
 {
 	astrabot::nav::NavDocument document = routeDocument(0.0f);
@@ -234,7 +277,11 @@ bool testInvalidInputs()
 	astrabot::nav::LocomotionObservation observation = {
 		{std::numeric_limits<float>::quiet_NaN(), 32.0f, 0.0f},
 		64.0f,
-		64.0f
+		64.0f,
+		{0.0f, 0.0f, 0.0f},
+		false,
+		false,
+		false
 	};
 	astrabot::nav::LocomotionIntent intent = {};
 	if (!check(controller.start({}) ==
@@ -252,7 +299,8 @@ bool testInvalidInputs()
 	}
 	return check(controller.update(
 			snapshot,
-			{{0.0f, 0.0f, 0.0f}, 64.0f, 64.0f},
+		{{0.0f, 0.0f, 0.0f}, 64.0f, 64.0f,
+			{0.0f, 0.0f, 0.0f}, false, false, false},
 			nullptr) == astrabot::nav::LocomotionResult::InvalidArgument,
 		"null intent output is rejected");
 }
@@ -264,6 +312,7 @@ int main()
 			!testCrouchSelection() ||
 			!testStepAndStuckRecovery() ||
 			!testCompletionAndInvalidation() ||
+			!testCorridorIndexTracksPortalProgress() ||
 			!testInvalidInputs())
 	{
 		return 1;

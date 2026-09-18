@@ -37,6 +37,7 @@ struct NavAreaMatch
 {
 	AreaId area;
 	float distanceSquared;
+	NavVector closestPoint;
 };
 
 struct NavDirectedLink
@@ -44,6 +45,7 @@ struct NavDirectedLink
 	AreaId fromArea;
 	AreaId toArea;
 	std::uint8_t direction;
+	std::uint8_t how;
 };
 
 struct NavCorridor
@@ -51,6 +53,7 @@ struct NavCorridor
 	std::uint64_t navRevision;
 	std::uint32_t mapGeneration;
 	std::vector<AreaId> areas;
+	std::vector<NavDirectedLink> links;
 
 	bool isValid() const;
 };
@@ -121,6 +124,7 @@ public:
 
 private:
 	std::vector<AreaId> corridor_;
+	std::vector<NavDirectedLink> links_;
 	std::uint64_t navRevision_;
 	std::uint32_t mapGeneration_;
 	std::size_t currentIndex_;

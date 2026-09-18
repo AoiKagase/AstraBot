@@ -1,0 +1,415 @@
+#include "astrabot/runtime/nav_roam_controller.hpp"
+
+#include <cmath>
+#include <cstdio>
+
+namespace
+{
+bool check(bool condition, const char *description)
+{
+	if (condition)
+	{
+		return true;
+	}
+
+	std::fprintf(stderr, "check failed: %s\n", description);
+	return false;
+}
+
+astrabot::nav::NavArea area(
+	astrabot::nav::AreaId id,
+	float lowX,
+	float highX)
+{
+	astrabot::nav::NavArea result = {};
+	result.id = id;
+	result.extent.lo = {lowX, 0.0f, 0.0f};
+	result.extent.hi = {highX, 64.0f, 0.0f};
+	result.northEastZ = 0.0f;
+	result.southWestZ = 0.0f;
+	return result;
+}
+}
+
+bool testJumpTraversalAction()
+{
+	astrabot::nav::NavDocument document;
+	document.setSourceIdentity({5U, 100U, 200U});
+	astrabot::nav::NavArea first = area(1U, 0.0f, 64.0f);
+	astrabot::nav::NavArea second = area(2U, 64.0f, 128.0f);
+	first.connections[0U].push_back(2U);
+	first.approaches.push_back({1U, 0U, 2U, 0U, 6U});
+	document.addArea(first);
+	document.addArea(second);
+	astrabot::nav::NavSnapshotPublisher publisher;
+	if (!check(publisher.publish(&document, 1U) ==
+				   astrabot::nav::NavSnapshotResult::Published,
+			   "jump traversal snapshot is published"))
+	{
+		return false;
+	}
+	astrabot::runtime::NavRoamController controller;
+	astrabot::runtime::NavRoamObservation observation = {};
+	observation.actor = {1U, 1U};
+	observation.frame = {1U, 1U, 1U};
+	observation.locomotion.position = {32.0f, 32.0f, 0.0f};
+	observation.locomotion.standingClearance = 72.0f;
+	observation.locomotion.crouchingClearance = 36.0f;
+	observation.locomotion.grounded = true;
+	observation.landingConfirmed = false;
+	astrabot::nav::LocomotionIntent intent = {};
+	return check(controller.update(publisher.snapshot(), observation, &intent) ==
+					 astrabot::runtime::NavRoamResult::IntentReady &&
+					 intent.traversal == astrabot::nav::TraversalAction::Jump,
+				 "jump approach emits jump traversal intent");
+}
+
+bool testLadderTraversalAction()
+{
+	astrabot::nav::NavDocument document;
+	document.setSourceIdentity({5U, 100U, 200U});
+	astrabot::nav::NavArea first = area(1U, 0.0f, 64.0f);
+	astrabot::nav::NavArea second = area(2U, 64.0f, 128.0f);
+	first.connections[0U].push_back(2U);
+	first.approaches.push_back({1U, 0U, 2U, 0U, 4U});
+	document.addArea(first);
+	document.addArea(second);
+	astrabot::nav::NavSnapshotPublisher publisher;
+	if (!check(publisher.publish(&document, 1U) ==
+				   astrabot::nav::NavSnapshotResult::Published,
+			   "ladder traversal snapshot is published"))
+	{
+		return false;
+	}
+	astrabot::runtime::NavRoamController controller;
+	astrabot::runtime::NavRoamObservation observation = {};
+	observation.actor = {1U, 1U};
+	observation.frame = {1U, 1U, 1U};
+	observation.locomotion.position = {32.0f, 32.0f, 0.0f};
+	observation.locomotion.standingClearance = 72.0f;
+	observation.locomotion.crouchingClearance = 36.0f;
+	observation.ladderContact = true;
+	observation.entryConfirmed = true;
+	astrabot::nav::LocomotionIntent intent = {};
+	return check(controller.update(publisher.snapshot(), observation, &intent) ==
+					 astrabot::runtime::NavRoamResult::IntentReady &&
+					 intent.traversal == astrabot::nav::TraversalAction::Ladder,
+				 "ladder approach emits ladder traversal intent");
+}
+
+bool testStuckDecisionRetainsSelectedRoute()
+{
+	astrabot::nav::NavDocument document;
+	document.setSourceIdentity({5U, 100U, 200U});
+	astrabot::nav::NavArea first = area(1U, 0.0f, 64.0f);
+	astrabot::nav::NavArea second = area(2U, 64.0f, 128.0f);
+	first.connections[0U].push_back(2U);
+	document.addArea(first);
+	document.addArea(second);
+
+	astrabot::nav::NavSnapshotPublisher publisher;
+	if (!check(publisher.publish(&document, 1U) ==
+				   astrabot::nav::NavSnapshotResult::Published,
+			   "stuck diagnostics snapshot is published"))
+	{
+		return false;
+	}
+
+	astrabot::runtime::NavRoamController controller;
+	astrabot::runtime::NavRoamObservation observation = {};
+	observation.actor = {1U, 1U};
+	observation.frame = {1U, 1U, 1U};
+	observation.locomotion.position = {32.0f, 32.0f, 0.0f};
+	observation.locomotion.standingClearance = 72.0f;
+	observation.locomotion.crouchingClearance = 36.0f;
+	astrabot::nav::LocomotionIntent intent = {};
+	astrabot::runtime::NavRoamDecision decision = {};
+	if (!check(controller.update(
+			publisher.snapshot(), observation, &intent, &decision) ==
+				astrabot::runtime::NavRoamResult::IntentReady &&
+				intent.targetArea == 2U,
+				"stuck diagnostic route starts with a target"))
+	{
+		return false;
+	}
+
+	for (std::uint32_t tick = 2U; tick <= 9U; ++tick)
+	{
+		observation.frame.tick = tick;
+		if (tick < 9U && !check(controller.update(
+				publisher.snapshot(), observation, &intent, &decision) ==
+					astrabot::runtime::NavRoamResult::IntentReady,
+				"unchanged route remains active before the stuck limit"))
+		{
+			return false;
+		}
+		if (tick == 9U)
+		{
+			const astrabot::runtime::NavRoamResult result = controller.update(
+				publisher.snapshot(), observation, &intent, &decision);
+			if (!check(result == astrabot::runtime::NavRoamResult::IntentReady &&
+					decision.locomotionResult ==
+					astrabot::nav::LocomotionResult::Stuck &&
+					std::hypot(intent.direction.x, intent.direction.y) > 0.9f &&
+					decision.targetArea == 2U &&
+					decision.targetPosition.x == 96.0f &&
+					decision.observationPosition.x == 32.0f &&
+					decision.corridorAreaCount == 2U &&
+			decision.corridorIndex == 1U &&
+					decision.linkFromArea == 1U &&
+					decision.linkToArea == 2U &&
+					controller.isActive(),
+				"stuck emits bounded lateral recovery while retaining route diagnostics"))
+			{
+				return false;
+			}
+		}
+		if (tick == 9U)
+		{
+		observation.frame.tick = 10U;
+		if (!check(controller.update(
+				publisher.snapshot(), observation, &intent, &decision) ==
+					astrabot::runtime::NavRoamResult::IntentReady &&
+					intent.targetArea == 2U,
+				"following frame selects a route after stuck replan"))
+		{
+			return false;
+		}
+		}
+	}
+	return true;
+}
+
+bool testObjectiveTargetSelectsGoalCorridor()
+{
+	astrabot::nav::NavDocument document;
+	document.setSourceIdentity({5U, 100U, 200U});
+	astrabot::nav::NavArea first = area(1U, 0.0f, 64.0f);
+	astrabot::nav::NavArea distractor = area(2U, 64.0f, 128.0f);
+	astrabot::nav::NavArea goal = area(3U, 128.0f, 192.0f);
+	first.connections[0U].push_back(2U);
+	first.connections[0U].push_back(3U);
+	document.addArea(first);
+	document.addArea(distractor);
+	document.addArea(goal);
+	astrabot::nav::NavSnapshotPublisher publisher;
+	if (!check(publisher.publish(&document, 1U) ==
+				astrabot::nav::NavSnapshotResult::Published,
+			"objective target snapshot is published"))
+	{
+		return false;
+	}
+	astrabot::runtime::NavRoamController controller;
+	astrabot::runtime::NavRoamObservation observation = {};
+	observation.actor = {1U, 1U};
+	observation.frame = {1U, 1U, 1U};
+	observation.locomotion.position = {32.0f, 32.0f, 0.0f};
+	observation.locomotion.standingClearance = 72.0f;
+	observation.locomotion.crouchingClearance = 36.0f;
+	observation.locomotion.grounded = true;
+	observation.hasObjectiveTarget = true;
+	observation.objectiveTarget = {160.0f, 32.0f, 0.0f};
+	astrabot::nav::LocomotionIntent intent = {};
+	astrabot::runtime::NavRoamDecision decision = {};
+	return check(controller.update(
+				publisher.snapshot(), observation, &intent, &decision) ==
+					astrabot::runtime::NavRoamResult::IntentReady &&
+				intent.targetArea == 3U && decision.targetArea == 3U &&
+				decision.linkToArea == 3U,
+			"objective target selects its goal corridor instead of random roam");
+}
+
+bool testActorSeedDistributesInitialLinks()
+{
+	astrabot::nav::NavDocument document;
+	document.setSourceIdentity({5U, 100U, 200U});
+	astrabot::nav::NavArea first = area(1U, 0.0f, 64.0f);
+	first.connections[0U].push_back(2U);
+	first.connections[0U].push_back(3U);
+	first.connections[0U].push_back(4U);
+	document.addArea(first);
+	document.addArea(area(2U, 64.0f, 128.0f));
+	document.addArea(area(3U, 128.0f, 192.0f));
+	document.addArea(area(4U, 192.0f, 256.0f));
+	astrabot::nav::NavSnapshotPublisher publisher;
+	if (!check(publisher.publish(&document, 1U) ==
+				astrabot::nav::NavSnapshotResult::Published,
+			"actor seed snapshot is published"))
+	{
+		return false;
+	}
+	const auto makeObservation = [](std::uint32_t slot) {
+		astrabot::runtime::NavRoamObservation observation = {};
+		observation.actor = {slot, 1U};
+		observation.frame = {1U, 1U, 1U};
+		observation.locomotion.position = {32.0f, 32.0f, 0.0f};
+		observation.locomotion.standingClearance = 72.0f;
+		observation.locomotion.crouchingClearance = 36.0f;
+		observation.locomotion.grounded = true;
+		return observation;
+	};
+	astrabot::runtime::NavRoamController firstController;
+	astrabot::runtime::NavRoamController secondController;
+	astrabot::nav::LocomotionIntent firstIntent = {};
+	astrabot::nav::LocomotionIntent secondIntent = {};
+	astrabot::runtime::NavRoamDecision firstDecision = {};
+	astrabot::runtime::NavRoamDecision secondDecision = {};
+	return check(
+				firstController.update(publisher.snapshot(), makeObservation(1U), &firstIntent, &firstDecision) ==
+					astrabot::runtime::NavRoamResult::IntentReady &&
+				secondController.update(publisher.snapshot(), makeObservation(2U), &secondIntent, &secondDecision) ==
+					astrabot::runtime::NavRoamResult::IntentReady &&
+					firstDecision.targetPosition.x != secondDecision.targetPosition.x,
+				"actor identity distributes initial outgoing links");
+}
+
+bool testNormalRoamUsesActorSeededAStarGoal()
+{
+	astrabot::nav::NavDocument document;
+	document.setSourceIdentity({5U, 100U, 200U});
+	astrabot::nav::NavArea first = area(1U, 0.0f, 64.0f);
+	astrabot::nav::NavArea second = area(2U, 64.0f, 128.0f);
+	astrabot::nav::NavArea distractor = area(3U, -192.0f, -128.0f);
+	astrabot::nav::NavArea goal = area(4U, 128.0f, 192.0f);
+	first.connections[0U].push_back(2U);
+	second.connections[0U].push_back(4U);
+	document.addArea(first);
+	document.addArea(second);
+	document.addArea(distractor);
+	document.addArea(goal);
+	astrabot::nav::NavSnapshotPublisher publisher;
+	if (!check(publisher.publish(&document, 1U) ==
+				astrabot::nav::NavSnapshotResult::Published,
+			"normal roam goal snapshot is published"))
+	{
+		return false;
+	}
+	astrabot::runtime::NavRoamController controller;
+	astrabot::runtime::NavRoamObservation observation = {};
+	observation.actor = {3U, 1U};
+	observation.frame = {1U, 1U, 1U};
+	observation.locomotion.position = {32.0f, 32.0f, 0.0f};
+	observation.locomotion.standingClearance = 72.0f;
+	observation.locomotion.crouchingClearance = 36.0f;
+	observation.locomotion.grounded = true;
+	astrabot::nav::LocomotionIntent intent = {};
+	astrabot::runtime::NavRoamDecision decision = {};
+	return check(controller.update(
+				publisher.snapshot(), observation, &intent, &decision) ==
+					astrabot::runtime::NavRoamResult::IntentReady &&
+				decision.corridorAreaCount == 3U && decision.linkToArea == 2U,
+				"normal roam uses an actor-seeded A* goal instead of only the next link");
+}
+
+int main()
+{
+	if (!testJumpTraversalAction())
+	{
+		return 1;
+	}
+	if (!testLadderTraversalAction())
+	{
+		return 1;
+	}
+	if (!testObjectiveTargetSelectsGoalCorridor())
+	{
+		return 1;
+	}
+	if (!testActorSeedDistributesInitialLinks())
+	{
+		return 1;
+	}
+	if (!testNormalRoamUsesActorSeededAStarGoal())
+	{
+		return 1;
+	}
+	if (!testStuckDecisionRetainsSelectedRoute())
+	{
+		return 1;
+	}
+	astrabot::nav::NavDocument document;
+	document.setSourceIdentity({5U, 100U, 200U});
+	astrabot::nav::NavArea first = area(1U, 0.0f, 64.0f);
+	astrabot::nav::NavArea second = area(2U, 64.0f, 128.0f);
+	astrabot::nav::NavArea third = area(3U, 128.0f, 192.0f);
+	first.connections[0U].push_back(2U);
+	second.connections[0U].push_back(3U);
+	document.addArea(first);
+	document.addArea(second);
+	document.addArea(third);
+
+	astrabot::nav::NavSnapshotPublisher publisher;
+	if (!check(publisher.publish(&document, 1U) ==
+			astrabot::nav::NavSnapshotResult::Published,
+			"roam snapshot is published"))
+	{
+		return 1;
+	}
+
+	astrabot::runtime::NavRoamController controller;
+	astrabot::runtime::NavRoamObservation observation = {};
+	observation.actor = {1U, 1U};
+	observation.frame = {1U, 1U, 1U};
+	observation.locomotion.position = {32.0f, 32.0f, 0.0f};
+	observation.locomotion.standingClearance = 72.0f;
+	observation.locomotion.crouchingClearance = 36.0f;
+	astrabot::nav::LocomotionIntent intent = {};
+	astrabot::runtime::NavRoamDecision decision = {};
+	if (!check(controller.update(publisher.snapshot(), observation, &intent, &decision) ==
+			astrabot::runtime::NavRoamResult::IntentReady &&
+			decision.stage == astrabot::runtime::NavRoamStage::LocomotionReady &&
+			intent.targetArea == 2U && intent.direction.x > 0.0f,
+			"roam controller produces the first directed movement intent"))
+	{
+		return 1;
+	}
+
+	if (!check(controller.update(publisher.snapshot(), observation, &intent) ==
+			astrabot::runtime::NavRoamResult::DuplicateFrame,
+			"duplicate roam frame is rejected"))
+	{
+		return 1;
+	}
+
+	observation.frame.tick = 2U;
+	observation.locomotion.position = {96.0f, 32.0f, 0.0f};
+	if (!check(controller.update(publisher.snapshot(), observation, &intent) ==
+			astrabot::runtime::NavRoamResult::TargetReached,
+			"reaching the directed target retires the route"))
+	{
+		return 1;
+	}
+
+	observation.frame.tick = 3U;
+	if (!check(controller.update(publisher.snapshot(), observation, &intent) ==
+			astrabot::runtime::NavRoamResult::IntentReady &&
+			intent.targetArea == 3U,
+			"roam controller replans from the new area"))
+	{
+		return 1;
+	}
+
+	astrabot::runtime::NavRoamController recoveryController;
+	astrabot::runtime::NavRoamObservation recoveryObservation = observation;
+	recoveryObservation.frame.tick = 1U;
+	recoveryObservation.locomotion.position = {-512.0f, 32.0f, 0.0f};
+	astrabot::runtime::NavRoamDecision recoveryDecision = {};
+	if (!check(recoveryController.update(
+			publisher.snapshot(), recoveryObservation, &intent, &recoveryDecision) ==
+			astrabot::runtime::NavRoamResult::IntentReady &&
+			recoveryDecision.stage == astrabot::runtime::NavRoamStage::OffMeshRecovery &&
+			recoveryDecision.recoveryArea == 1U && intent.targetArea == 1U,
+			"nearby position recovers to the nearest roam area"))
+	{
+		return 1;
+	}
+
+	observation.frame.tick = 2U;
+	if (!check(controller.update(publisher.snapshot(), observation, &intent) ==
+			astrabot::runtime::NavRoamResult::StaleFrame,
+			"older roam frame is rejected"))
+	{
+		return 1;
+	}
+	return 0;
+}

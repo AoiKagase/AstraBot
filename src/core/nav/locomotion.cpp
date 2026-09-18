@@ -9,7 +9,8 @@ namespace nav
 {
 namespace
 {
-constexpr float kMinimumProgressDistance = 0.01f;
+	constexpr float kMinimumProgressDistance = 0.01f;
+	constexpr float kMaximumRecoveryDistance = 256.0f;
 
 LocomotionResult mapFollowerResult(NavFollowerResult result)
 {
@@ -174,10 +175,15 @@ NavQueryResult LocomotionController::findCurrentArea(
 	NavAreaMatch *match) const
 {
 	NavQuery query(snapshot);
-	return query.findContaining(
+	const NavQueryResult containingResult = query.findContaining(
 		observation.position,
 		config_.targetVerticalTolerance,
 		match);
+	if (containingResult != NavQueryResult::NoAreaContaining)
+	{
+		return containingResult;
+	}
+	return query.findNearest(observation.position, kMaximumRecoveryDistance, match);
 }
 
 bool LocomotionController::recordProgress(const NavVector &position)
@@ -244,6 +250,9 @@ LocomotionResult LocomotionController::buildIntent(
 	intent->direction = normalizeDirection(observation.position, target);
 	intent->speed = config_.maximumSpeed;
 	intent->posture = posture;
+	intent->traversal = posture == LocomotionPosture::Crouching
+			? TraversalAction::Crouch
+			: (stepHeight > 0.0f ? TraversalAction::Step : TraversalAction::Walk);
 	intent->stepUp = stepHeight > 0.0f;
 	intent->currentArea = currentArea->id;
 	intent->targetArea = targetArea;
@@ -253,6 +262,11 @@ LocomotionResult LocomotionController::buildIntent(
 bool LocomotionController::isActive() const
 {
 	return active_;
+}
+
+std::size_t LocomotionController::currentCorridorIndex() const
+{
+	return pathFollower_.currentIndex();
 }
 
 bool LocomotionController::isValidConfig(const LocomotionConfig &config)

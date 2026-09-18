@@ -142,6 +142,28 @@ bool testDirectedLinksAndCorridor()
 	return true;
 }
 
+bool testApproachTraversalMetadata()
+{
+	astrabot::nav::NavDocument document;
+	document.setSourceIdentity({5U, 100U, 200U});
+	astrabot::nav::NavArea first = area(1U, 0.0f, 64.0f, 0.0f);
+	astrabot::nav::NavArea second = area(2U, 64.0f, 128.0f, 0.0f);
+	first.connections[0U].push_back(2U);
+	first.approaches.push_back({1U, 0U, 2U, 0U, 4U});
+	document.addArea(first);
+	document.addArea(second);
+	const astrabot::nav::NavSnapshot snapshot = snapshotFor(&document, 1U);
+	const astrabot::nav::NavQuery query(snapshot);
+	std::vector<astrabot::nav::NavDirectedLink> links;
+	if (!check(query.outgoingLinks(1U, &links) == astrabot::nav::NavQueryResult::Found &&
+				  links.size() == 1U && links[0].how == 4U,
+			   "directed link preserves approach traversal metadata"))
+	{
+		return false;
+	}
+	return true;
+}
+
 bool testBoundedSearch()
 {
 	astrabot::nav::NavDocument document;
@@ -162,6 +184,105 @@ bool testBoundedSearch()
 	return check(query.buildCorridor(1U, 3U, &corridor) ==
 			astrabot::nav::NavQueryResult::ResourceLimit,
 			"corridor search obeys explicit bounds");
+}
+
+bool testAStarPrefersLowerCostPath()
+{
+	astrabot::nav::NavDocument document;
+	document.setSourceIdentity({5U, 100U, 200U});
+	astrabot::nav::NavArea start = area(1U, 0.0f, 32.0f, 0.0f);
+	astrabot::nav::NavArea longBranch = area(2U, 1000.0f, 1032.0f, 0.0f);
+	astrabot::nav::NavArea shortBranch = area(3U, 64.0f, 96.0f, 0.0f);
+	astrabot::nav::NavArea goal = area(4U, 128.0f, 160.0f, 0.0f);
+	start.connections[0U].push_back(2U);
+	start.connections[0U].push_back(3U);
+	longBranch.connections[0U].push_back(4U);
+	shortBranch.connections[0U].push_back(4U);
+	document.addArea(start);
+	document.addArea(longBranch);
+	document.addArea(shortBranch);
+	document.addArea(goal);
+	const astrabot::nav::NavSnapshot snapshot = snapshotFor(&document, 1U);
+	const astrabot::nav::NavQuery query(snapshot);
+	astrabot::nav::NavCorridor corridor = {};
+	if (!check(query.buildCorridor(1U, 4U, &corridor) ==
+				astrabot::nav::NavQueryResult::Found,
+			"A* test builds a goal corridor"))
+	{
+		return false;
+	}
+	return check(corridor.areas == std::vector<astrabot::nav::AreaId>({1U, 3U, 4U}),
+			"A* chooses the lower-cost geometric route over connection order");
+}
+
+bool testPathFollowerUsesAreaPortalInsteadOfCenter()
+{
+	astrabot::nav::NavDocument document;
+	document.setSourceIdentity({5U, 100U, 200U});
+	astrabot::nav::NavArea first = area(1U, 0.0f, 64.0f, 0.0f);
+	astrabot::nav::NavArea second = area(2U, 64.0f, 256.0f, 0.0f);
+	first.connections[0U].push_back(2U);
+	document.addArea(first);
+	document.addArea(second);
+	const astrabot::nav::NavSnapshot snapshot = snapshotFor(&document, 1U);
+	const astrabot::nav::NavQuery query(snapshot);
+	astrabot::nav::NavCorridor corridor = {};
+	if (!check(query.buildCorridor(1U, 2U, &corridor) ==
+				astrabot::nav::NavQueryResult::Found,
+			"portal test builds a corridor"))
+	{
+		return false;
+	}
+	astrabot::nav::NavPathFollower follower;
+	if (!check(follower.start(corridor) == astrabot::nav::NavFollowerResult::Started,
+			"portal test starts the follower"))
+	{
+		return false;
+	}
+	astrabot::nav::NavVector target = {};
+	astrabot::nav::AreaId targetArea = 0U;
+	if (!check(follower.update(
+				snapshot, {32.0f, 32.0f, 0.0f}, 1.0f, 1.0f,
+				&target, &targetArea) == astrabot::nav::NavFollowerResult::Advanced &&
+				targetArea == 2U && target.x > 64.0f && target.x < 128.0f,
+			"follower aims just inside the next area portal"))
+	{
+		return false;
+	}
+	return check(follower.update(
+				snapshot, {80.0f, 32.0f, 0.0f}, 1.0f, 1.0f,
+				&target, &targetArea) == astrabot::nav::NavFollowerResult::Reached,
+			"follower treats arrival inside the destination area as progress");
+}
+
+bool testPathFollowerUsesDirectedPortal()
+{
+	astrabot::nav::NavDocument document;
+	document.setSourceIdentity({5U, 100U, 200U});
+	astrabot::nav::NavArea first = area(1U, 0.0f, 64.0f, 0.0f);
+	astrabot::nav::NavArea second = area(2U, 64.0f, 128.0f, 0.0f);
+	first.connections[1U].push_back(2U);
+	document.addArea(first);
+	document.addArea(second);
+	const astrabot::nav::NavSnapshot snapshot = snapshotFor(&document, 1U);
+	astrabot::nav::NavQuery query(snapshot);
+	astrabot::nav::NavCorridor corridor = {};
+	if (!check(query.buildCorridor(1U, 2U, &corridor) ==
+			astrabot::nav::NavQueryResult::Found && corridor.links.size() == 1U &&
+			corridor.links[0].direction == 1U,
+			"corridor retains the directed first link"))
+	{
+		return false;
+	}
+	astrabot::nav::NavPathFollower follower;
+	follower.start(corridor);
+	astrabot::nav::NavVector target = {};
+	astrabot::nav::AreaId targetArea = 0U;
+	return check(follower.update(
+			snapshot, {32.0f, 32.0f, 0.0f}, 1.0f, 1.0f,
+			&target, &targetArea) == astrabot::nav::NavFollowerResult::Advanced &&
+			targetArea == 2U && target.x > 64.0f,
+			"directed portal target steps into the next area");
 }
 
 bool testPathFollowerProgressAndStaleRoute()
@@ -200,7 +321,7 @@ bool testPathFollowerProgressAndStaleRoute()
 			&target,
 			&targetArea) == astrabot::nav::NavFollowerResult::Advanced &&
 			targetArea == 2U &&
-			target.x == 96.0f,
+			target.x == 80.0f,
 			"path follower advances only after position feedback"))
 	{
 		return false;
@@ -337,7 +458,11 @@ bool testInvalidInputs()
 int main()
 {
 	if (!testSpatialTieBreaking() ||
-			!testDirectedLinksAndCorridor() ||
+			 !testDirectedLinksAndCorridor() ||
+		!testApproachTraversalMetadata() ||
+		!testPathFollowerUsesAreaPortalInsteadOfCenter() ||
+		!testPathFollowerUsesDirectedPortal() ||
+			!testAStarPrefersLowerCostPath() ||
 			!testBoundedSearch() ||
 			!testPathFollowerProgressAndStaleRoute() ||
 			!testInvalidInputs())
