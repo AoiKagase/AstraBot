@@ -10,10 +10,16 @@ namespace
 	int gCreateCount = 0;
 	int gKillCount = 0;
 	int gClientCommandCount = 0;
+	int gHookedClientCommandCount = 0;
+	int gUnhookedClientCommandCount = 0;
+	int gRunPlayerMoveCount = 0;
+	unsigned short gLastRunPlayerMoveButtons = 0U;
+	bool gDirectJoinCommandSeen = false;
 	char gLastClientCommand[32] = {};
 	int gClientKeyValueCount = 0;
 	bool gMenuTeamContextValid = false;
 	bool gMenuClassContextValid = false;
+	DLL_FUNCTIONS gHookedGameDllTable{};
 	bool gNativeControlsAvailable = false;
 	bool gCompatibilityCvarsRegistered[5] = {};
 	int gCvarRegisterCount = 0;
@@ -80,10 +86,11 @@ namespace
 
 	void getGameDir(char *buffer)
 	{
-		if (buffer != nullptr)
-		{
-			std::strcpy(buffer, ".");
-		}
+	if (buffer != nullptr)
+	{
+		buffer[0] = '.';
+		buffer[1] = '\0';
+	}
 	}
 
 	cvar_t *getCvar(const char *name)
@@ -195,11 +202,18 @@ namespace
 			const std::size_t copyLength =
 				length < sizeof(gLastClientCommand) - 1U ? length : sizeof(gLastClientCommand) - 1U;
 			std::memcpy(gLastClientCommand, command, copyLength);
-			gLastClientCommand[copyLength] = '\0';
-		}
+		gLastClientCommand[copyLength] = '\0';
 	}
+}
 
-	char *getInfoKeyBuffer(edict_t *)
+void runPlayerMove(
+	edict_t *, const float *, float, float, float, unsigned short buttons, byte, byte)
+{
+	++gRunPlayerMoveCount;
+	gLastRunPlayerMoveButtons = buttons;
+}
+
+char *getInfoKeyBuffer(edict_t *)
 	{
 		static char buffer[128] = {};
 		return buffer;
@@ -207,7 +221,7 @@ namespace
 
 	void setClientKeyValue(int, char *, char *, char *) { ++gClientKeyValueCount; }
 
-	void gameClientCommand(edict_t *)
+	void gameClientCommand(edict_t *entity)
 	{
 		++gClientCommandCount;
 		if (astrabot::metamod::HookCommandArgc() == 2)
@@ -216,21 +230,59 @@ namespace
 			const char *const selection = astrabot::metamod::HookCommandArgv(1);
 		if (std::strcmp(command, "jointeam") == 0)
 		{
-			gMenuTeamContextValid = true;
+			gDirectJoinCommandSeen = true;
+			if (entity != nullptr)
+			{
+				entity->v.team = 1;
+			}
+			astrabot::metamod::PluginRuntime &runtime =
+					astrabot::metamod::PluginRuntime::instance();
+			runtime.onMessageBegin(0, 86, nullptr, nullptr);
+			runtime.onWriteByte(indexOfEdict(entity));
+			runtime.onWriteString("TERRORIST");
+			runtime.onMessageEnd();
 		}
 		else if (std::strcmp(command, "joinclass") == 0)
 		{
-			gMenuClassContextValid = true;
+			gDirectJoinCommandSeen = true;
 		}
 		else if (std::strcmp(command, "menuselect") == 0)
 		{
 			if (std::strcmp(selection, "1") == 0 || std::strcmp(selection, "2") == 0 ||
 					std::strcmp(selection, "5") == 0)
-				{
-					gMenuTeamContextValid = gMenuTeamContextValid || gClientCommandCount == 1;
-					gMenuClassContextValid = gMenuClassContextValid || gClientCommandCount >= 2;
-				}
+			{
+				gMenuTeamContextValid = gMenuTeamContextValid || gClientCommandCount == 1;
+				gMenuClassContextValid = gMenuClassContextValid || gClientCommandCount >= 2;
 			}
+			}
+		}
+	}
+
+	void unhookedGameClientCommand(edict_t *)
+	{
+		++gUnhookedClientCommandCount;
+	}
+
+	void hookedGameClientCommand(edict_t *entity)
+	{
+		++gHookedClientCommandCount;
+		gameClientCommand(entity);
+	}
+
+	void getHookTables(plid_t, enginefuncs_t **engineFunctions,
+						 DLL_FUNCTIONS **gameDllFunctions, NEW_DLL_FUNCTIONS **newDllFunctions)
+	{
+		if (engineFunctions != nullptr)
+		{
+			*engineFunctions = nullptr;
+		}
+		if (gameDllFunctions != nullptr)
+		{
+			*gameDllFunctions = &gHookedGameDllTable;
+		}
+		if (newDllFunctions != nullptr)
+		{
+			*newDllFunctions = nullptr;
 		}
 	}
 
@@ -296,9 +348,22 @@ int main()
 	gameDllTable.pfnClientDisconnect = &disconnect;
 	gameDllTable.pfnClientKill = &clientKill;
 	gameDllTable.pfnClientCommand = &gameClientCommand;
+	gHookedGameDllTable = gameDllTable;
+	gHookedGameDllTable.pfnClientCommand = &hookedGameClientCommand;
 	gamedll_funcs_t gameDllFunctions{};
 	gameDllFunctions.dllapi_table = &gameDllTable;
 	META_FUNCTIONS metaFunctions{};
+	mutil_funcs_t metaUtils{};
+	metaUtils.pfnGetHookTables = &getHookTables;
+	char metaInterfaceVersion[] = META_INTERFACE_VERSION;
+	plugin_info_t *pluginInfo = nullptr;
+	if (!check(astrabot::metamod::Meta_Query(metaInterfaceVersion, &pluginInfo, &metaUtils) == TRUE,
+			   "Meta_Query installs the hook-table test boundary"))
+	{
+		std::remove(profilePath);
+		std::remove(defaultProfilePath);
+		return 1;
+	}
 	PluginRuntime &runtime = PluginRuntime::instance();
 	globalvars_t globals{};
 	globals.maxClients = 5;
@@ -320,13 +385,14 @@ int main()
 	engineFunctions.pfnCVarSetFloat = &setCvarFloat;
 	engineFunctions.pfnCvar_RegisterVariable = &registerCvar;
 	engineFunctions.pfnClientCommand = &clientCommand;
+	engineFunctions.pfnRunPlayerMove = &runPlayerMove;
 	engineFunctions.pfnGetInfoKeyBuffer = &getInfoKeyBuffer;
 	engineFunctions.pfnSetClientKeyValue = &setClientKeyValue;
 	engineFunctions.pfnGetGameDir = &getGameDir;
 	engineFunctions.pfnGetPlayerUserId = &playerUserId;
 	engineFunctions.pfnServerCommand = &serverCommand;
 	engineFunctions.pfnServerExecute = &serverExecute;
-	runtime.giveEnginePointers(&engineFunctions, nullptr);
+	runtime.giveEnginePointers(&engineFunctions, &globals);
 	gBotEnable = 1.0f;
 	gBotQuota = 1.0f;
 	runtime.onServerActivate(nullptr, 0, 4);
@@ -341,15 +407,92 @@ int main()
 		std::remove(defaultProfilePath);
 		return 1;
 	}
+	gRunPlayerMoveCount = 0;
+	gLastRunPlayerMoveButtons = 0U;
+	globals.time = 1.1f;
+	runtime.onStartFrame();
+	runtime.onStartFramePost();
+	if (!check(gRunPlayerMoveCount == 1 &&
+				  gLastRunPlayerMoveButtons == static_cast<unsigned short>(IN_ATTACK) &&
+				  runtime.movementPhysicsSample(1U).readiness ==
+					  astrabot::runtime::SpawnReadiness::NotReady,
+			  "initial joining heartbeat advances the public player lifecycle"))
+	{
+		std::remove(profilePath);
+		std::remove(defaultProfilePath);
+		return 1;
+	}
 	globals.time = 1.1f;
 	for (int frame = 0; frame < 8; ++frame)
 	{
 		runtime.onStartFrame();
 		runtime.onStartFramePost();
 	}
-	if (!check(gClientCommandCount == 2 && gMenuTeamContextValid &&
-			   gMenuClassContextValid,
-			   "old-style menu selections are sent after bounded frame delays"))
+	if (!check(gClientCommandCount == 2 && gDirectJoinCommandSeen && !gMenuTeamContextValid &&
+				   !gMenuClassContextValid,
+			   "public jointeam and joinclass commands are sent after bounded frame delays"))
+	{
+		std::remove(profilePath);
+		std::remove(defaultProfilePath);
+		return 1;
+	}
+	gRunPlayerMoveCount = 0;
+	globals.time += 0.1f;
+	runtime.onStartFrame();
+	runtime.onStartFramePost();
+	if (!check(gRunPlayerMoveCount == 1 && gLastRunPlayerMoveButtons == 0U &&
+				  runtime.movementPhysicsSample(1U).readiness ==
+					  astrabot::runtime::SpawnReadiness::NotReady,
+			  "joining actor receives a neutral heartbeat while awaiting physical spawn"))
+	{
+		std::remove(profilePath);
+		std::remove(defaultProfilePath);
+		return 1;
+	}
+	gEntities[0].v.flags &= ~FL_SPECTATOR;
+	gEntities[0].v.flags |= (FL_CLIENT | FL_FAKECLIENT | FL_ONGROUND);
+	gEntities[0].v.deadflag = DEAD_NO;
+	gEntities[0].v.health = 100.0f;
+	gEntities[0].v.solid = SOLID_SLIDEBOX;
+	gEntities[0].v.movetype = MOVETYPE_WALK;
+	runtime.onMessageBegin(0, 86, nullptr, nullptr);
+	runtime.onWriteByte(1);
+	runtime.onWriteString("TERRORIST");
+	runtime.onMessageEnd();
+	gRunPlayerMoveCount = 0;
+	for (int frame = 0; frame < 6; ++frame)
+	{
+		globals.time += 0.1f;
+		runtime.onStartFrame();
+		runtime.onStartFramePost();
+	}
+	if (!check(gRunPlayerMoveCount == 6 && gLastRunPlayerMoveButtons == 0U,
+			   "joined actor receives one neutral heartbeat per post-join frame"))
+	{
+		std::remove(profilePath);
+		std::remove(defaultProfilePath);
+		return 1;
+	}
+	const auto physicsSample = runtime.movementPhysicsSample(1U);
+	if (!check(physicsSample.dispatched &&
+				  physicsSample.readiness == astrabot::runtime::SpawnReadiness::Ready,
+			   "heartbeat records dispatched spawn-ready physics sample"))
+	{
+		std::remove(profilePath);
+		std::remove(defaultProfilePath);
+		return 1;
+	}
+	gEntities[0].v.flags |= FL_SPECTATOR;
+	gEntities[0].v.deadflag = DEAD_DEAD;
+	gEntities[0].v.health = 0.0f;
+	gRunPlayerMoveCount = 0;
+	globals.time += 0.1f;
+	runtime.onStartFrame();
+	runtime.onStartFramePost();
+	if (!check(gRunPlayerMoveCount == 1 &&
+				  runtime.movementPhysicsSample(1U).readiness ==
+					  astrabot::runtime::SpawnReadiness::NotReady,
+			   "joined spectator/dead actor still receives neutral heartbeat"))
 	{
 		std::remove(profilePath);
 		std::remove(defaultProfilePath);
@@ -360,6 +503,7 @@ int main()
 			   "default profile actor can be removed before explicit profile test"))
 	gCreateCount = 0;
 	gClientCommandCount = 0;
+	gDirectJoinCommandSeen = false;
 	gMenuTeamContextValid = false;
 	gMenuClassContextValid = false;
 	resetEntities();
@@ -390,15 +534,47 @@ int main()
 		runtime.onStartFrame();
 		runtime.onStartFramePost();
 	}
-	if (!check(gClientCommandCount == 2 && gMenuTeamContextValid &&
-		gMenuClassContextValid,
-			   "fallback uses old-style menu selections when menu messages are absent"))
+	if (!check(gClientCommandCount == 2 && gDirectJoinCommandSeen &&
+				   !gMenuTeamContextValid && !gMenuClassContextValid,
+				   "fallback uses public join commands when menu messages are absent"))
 	{
 		std::remove(profilePath);
 		std::remove(defaultProfilePath);
-		return 1;
+			return 1;
+		}
+		runtime.executeCompatibilityCommand(request("bot_kick", 1U, "all"));
+	gCreateCount = 0;
+	gClientCommandCount = 0;
+	resetEntities();
+	gameDllTable.pfnClientCommand = nullptr;
+	gHookedGameDllTable.pfnClientCommand = nullptr;
+	globals.time += 0.1f;
+	runtime.onStartFrame();
+	if (!check(runtime.executeCompatibilityCommand(request("bot_add")) ==
+				   CompatibilityCommandResult::Handled,
+			   "failed join scenario creates a managed actor"))
+		{
+			std::remove(profilePath);
+			std::remove(defaultProfilePath);
+			return 1;
+		}
+	for (int frame = 0; frame < 8; ++frame)
+	{
+		globals.time += 0.1f;
+		runtime.onStartFrame();
+		runtime.onStartFramePost();
 	}
-	runtime.executeCompatibilityCommand(request("bot_kick", 1U, "all"));
+	gameDllTable.pfnClientCommand = &gameClientCommand;
+	gHookedGameDllTable.pfnClientCommand = &hookedGameClientCommand;
+	if (!check(runtime.executeCompatibilityCommand(request("bot_add")) ==
+				   CompatibilityCommandResult::Handled,
+			   "failed join cleanup releases managed actor for retry"))
+		{
+			std::remove(profilePath);
+			std::remove(defaultProfilePath);
+			return 1;
+		}
+		runtime.executeCompatibilityCommand(request("bot_kick", 1U, "all"));
 	gCreateCount = 0;
 	gKillCount = 0;
 	gClientCommandCount = 0;
@@ -428,6 +604,78 @@ int main()
 		std::remove(defaultProfilePath);
 		return 1;
 	}
+	runtime.executeCompatibilityCommand(request("bot_kick", 1U, "all"));
+	gCreateCount = 0;
+	gClientCommandCount = 0;
+	gHookedClientCommandCount = 0;
+	gUnhookedClientCommandCount = 0;
+	gDirectJoinCommandSeen = false;
+	gMenuTeamContextValid = false;
+	gMenuClassContextValid = false;
+	resetEntities();
+	gameDllTable.pfnClientCommand = &unhookedGameClientCommand;
+	gHookedGameDllTable.pfnClientCommand = &hookedGameClientCommand;
+	globals.time += 0.1f;
+	runtime.onStartFrame();
+	if (!check(runtime.executeCompatibilityCommand(request("bot_add_t")) ==
+				   CompatibilityCommandResult::Handled,
+				   "hook-table dispatch test creates a terrorist actor"))
+	{
+		std::remove(profilePath);
+		std::remove(defaultProfilePath);
+		return 1;
+	}
+	for (int frame = 0; frame < 8; ++frame)
+	{
+		globals.time += 0.1f;
+		runtime.onStartFrame();
+		runtime.onStartFramePost();
+	}
+	if (!check(gHookedClientCommandCount == 2 && gUnhookedClientCommandCount == 0,
+			   "join menu selections use the Metamod hook-table GameDLL dispatcher"))
+	{
+		std::remove(profilePath);
+		std::remove(defaultProfilePath);
+		return 1;
+	}
+	runtime.executeCompatibilityCommand(request("bot_kick", 1U, "all"));
+	gameDllTable.pfnClientCommand = &gameClientCommand;
+	gHookedGameDllTable.pfnClientCommand = &hookedGameClientCommand;
+	gCreateCount = 0;
+	gClientCommandCount = 0;
+	gHookedClientCommandCount = 0;
+	gUnhookedClientCommandCount = 0;
+	resetEntities();
+	gBotEnable = 1.0f;
+	gBotQuota = 1.0f;
+	globals.time += 0.1f;
+	runtime.onStartFrame();
+	gameDllTable.pfnClientCommand = &gameClientCommand;
+	gHookedGameDllTable.pfnClientCommand = nullptr;
+	if (!check(runtime.executeCompatibilityCommand(request("bot_add_t")) ==
+				   CompatibilityCommandResult::Handled,
+				   "partial hook-table dispatch test creates a terrorist actor"))
+	{
+		std::remove(profilePath);
+		std::remove(defaultProfilePath);
+		return 1;
+	}
+	for (int frame = 0; frame < 8; ++frame)
+	{
+		globals.time += 0.1f;
+		runtime.onStartFrame();
+		runtime.onStartFramePost();
+	}
+	if (!check(gClientCommandCount == 2 && gHookedClientCommandCount == 0 &&
+			   gUnhookedClientCommandCount == 0,
+			   "join dispatch falls back when the hook table lacks pfnClientCommand"))
+	{
+		std::remove(profilePath);
+		std::remove(defaultProfilePath);
+		return 1;
+	}
+	runtime.executeCompatibilityCommand(request("bot_kick", 1U, "all"));
+	gHookedGameDllTable.pfnClientCommand = &hookedGameClientCommand;
 	gCreateCount = 0;
 	resetEntities();
 	gBotEnable = 0.0f;

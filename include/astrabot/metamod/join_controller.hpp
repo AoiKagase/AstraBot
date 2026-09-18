@@ -28,10 +28,31 @@ namespace metamod
 	{
 		None,
 		InvalidRequest,
+		AlreadyJoining,
 		Timeout,
 		CommandDispatchFailed,
 		InvalidActor,
-		WrongTeam
+		WrongTeam,
+		MenuOptionUnavailable,
+		CommandAttemptsExhausted,
+		Disconnected,
+		MapDeactivated,
+		CleanupFailed
+	};
+
+	enum class JoinMenuKind : std::uint8_t
+	{
+		Unknown,
+		Team,
+		TerroristClass,
+		CounterTerroristClass
+	};
+
+	enum class JoinMenuSource : std::uint8_t
+	{
+		Unknown,
+		LegacyShowMenu,
+		Vgui
 	};
 
 	enum class JoinActionKind : std::uint8_t
@@ -74,9 +95,12 @@ namespace metamod
 			const runtime::ActorId &actor,
 			compat::CommandTeam team,
 			std::uint32_t startFrame) noexcept;
-		JoinAction onMenu(bool classMenu, std::uint32_t frame) noexcept;
+		JoinAction onMenu(JoinMenuKind menu, std::uint16_t validSlots,
+						  std::uint32_t frame,
+						  JoinMenuSource source = JoinMenuSource::Unknown) noexcept;
 		JoinAction onTeamInfo(const char *teamName) noexcept;
-		JoinAction onFrame(edict_t *entity, std::uint32_t frame) noexcept;
+		JoinAction onFrame(std::uint32_t frame) noexcept;
+		JoinAction onFrame(const edict_t *entity, std::uint32_t frame) noexcept;
 		JoinAction commandCompleted(std::uint32_t frame) noexcept;
 		JoinAction commandFailed(JoinError error) noexcept;
 		JoinAction cancel(JoinError error) noexcept;
@@ -86,19 +110,27 @@ namespace metamod
 		bool isCurrent(const runtime::ActorId &actor) const noexcept;
 		JoinPhase phase() const noexcept;
 		JoinError error() const noexcept;
+		std::uint8_t attempts() const noexcept;
+		bool teamConfirmed() const noexcept;
+		bool classSelectionCompleted() const noexcept;
+		compat::CommandTeam requestedTeam() const noexcept;
 
 	private:
 		static constexpr std::uint8_t kMaximumAttempts = 3U;
+		static constexpr std::uint8_t kClassSelection = 1U;
 		static constexpr std::uint32_t kTimeoutFrames = 128U;
 		static constexpr std::uint32_t kInitialFallbackFrames = 3U;
 		static constexpr std::uint32_t kRetryFrames = 8U;
+		static constexpr std::uint16_t kAllMenuSelections = 0xFFFFU;
 
 		JoinAction fail(JoinError error) noexcept;
-		JoinAction retryTeam(std::uint32_t frame) noexcept;
+		JoinAction sendPendingSelection() noexcept;
 		std::uint8_t teamSelection() const noexcept;
+		JoinCommandKind pendingCommand() const noexcept;
+		bool selectionAvailable(std::uint16_t validSlots, std::uint8_t selection) const noexcept;
+		bool readyEntity(const edict_t *entity) const noexcept;
 		bool expectedTeamName(const char *teamName) const noexcept;
 		bool oppositeTeamName(const char *teamName) const noexcept;
-		bool readyEntity(edict_t *entity) const noexcept;
 		static bool textEqualsIgnoreCase(const char *left, const char *right) noexcept;
 
 		JoinPhase phase_;
@@ -108,9 +140,19 @@ namespace metamod
 		std::uint32_t deadline_;
 		std::uint32_t nextFrame_;
 		std::uint8_t attempts_;
+		bool teamConfirmed_;
+		bool teamInfoReceived_;
+		bool classSelectionCompleted_;
+		bool postClassFrameAdvanced_;
 		bool teamMenuReceived_;
 		bool classMenuReceived_;
-		bool teamConfirmed_;
+		JoinMenuSource teamMenuSource_;
+		JoinMenuSource classMenuSource_;
+		bool pendingSelection_;
+		bool repeatedPrompt_;
+		std::uint8_t pendingValue_;
+		std::uint32_t pendingFrame_;
+		std::uint8_t promptGraceFrames_;
 	};
 }
 }

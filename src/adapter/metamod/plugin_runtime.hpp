@@ -9,6 +9,7 @@
 #include "astrabot/metamod/native_bot_guard.hpp"
 #include "astrabot/metamod/nav_loader.hpp"
 #include "astrabot/runtime/nav_roam_controller.hpp"
+#include "astrabot/runtime/movement_physics.hpp"
 #include "astrabot/runtime/lifecycle.hpp"
 
 #include <array>
@@ -70,7 +71,8 @@ namespace astrabot
 			Snapshot snapshot() const;
 			NavLoadResult loadNavigationFile(const NavLoadRequest *request);
 			NavLoadDiagnostic navigationDiagnostic() const;
-			nav::NavSnapshot navigationSnapshot() const;
+		nav::NavSnapshot navigationSnapshot() const;
+		runtime::MovementPhysicsSample movementPhysicsSample(std::uint32_t slot) const;
 			runtime::LifecycleToken tokenForSlot(std::uint32_t slot) const;
 
 			void onClientDisconnect(edict_t *entity);
@@ -79,12 +81,15 @@ namespace astrabot
 			void onServerDeactivate();
 			void onStartFrame();
 			void onStartFramePost();
-			void notifyMenuReady(edict_t *entity, bool classMenu);
+		void notifyMenuReady(edict_t *entity, JoinMenuKind menu,
+							 std::uint16_t validSlots = 0U,
+							 JoinMenuSource source = JoinMenuSource::Unknown);
 			void onMessageBegin(int messageDestination, int messageType,
 							const float *origin, edict_t *entity);
 		void onMessageEnd();
 		void onWriteByte(int value);
 		void onWriteChar(int value);
+		void onWriteShort(int value);
 		void onWriteString(const char *value);
 			void onAddServerCommand(char *command, void (*function)(void));
 			void onCompatibilityCommand();
@@ -129,13 +134,26 @@ namespace astrabot
 			void updateManagedBotMovement();
 		void processJoinControllers();
 		void applyJoinAction(std::size_t index, const JoinAction &action);
+		void cleanupManagedJoin(std::size_t index, JoinError error);
 		void notifyTeamInfo(std::uint8_t slot, const char *teamName);
-			void dispatchNeutralMovement(
-				std::size_t index,
-				FakeClientHandle &handle,
-				std::uint8_t milliseconds);
+		runtime::MovementPhysicsState captureMovementPhysicsState(const edict_t *entity) const;
+		runtime::CommandReceipt dispatchNeutralMovement(
+			std::size_t index,
+			FakeClientHandle &handle,
+			std::uint8_t milliseconds);
+		runtime::CommandReceipt dispatchJoinHeartbeat(
+			std::size_t index,
+			FakeClientHandle &handle,
+			std::uint8_t milliseconds);
+		void recordMovementPhysicsSample(
+			std::size_t index,
+			const runtime::MovementPhysicsState &before,
+			const runtime::CommandReceipt &receipt);
 			void resetManagedBotMovement();
-			void logMovementDiagnostic(std::size_t index, const char *reason);
+			void logMovementDiagnostic(
+				std::size_t index,
+				const char *reason,
+				const runtime::NavRoamDecision *decision = nullptr);
 			std::size_t managedBotCount() const;
 			FakeClientHandle *findManagedBot(const char *name);
 			void rememberManagedBot(const FakeClientHandle &handle, const char *name);
@@ -146,7 +164,6 @@ namespace astrabot
 			static CompatibilityCommandResult
 			mapConfigurationResult(compat::BotActionResult result);
 			static CompatibilityCommandResult mapFakeClientResult(FakeClientResult result);
-			bool assignBotTeam(FakeClientHandle *handle, compat::CommandTeam team);
 			bool dispatchClientCommand(edict_t *entity, const char *name, const char *argument);
 			const char *commandArgs() const;
 			const char *commandArgv(int index) const;
@@ -183,8 +200,14 @@ namespace astrabot
 				joinControllers_;
 		UserMessageKind userMessageKind_;
 		edict_t *userMessageTarget_;
-		std::uint8_t userMessageByteCount_;
+		std::uint8_t userMessageFieldCount_;
+		std::uint8_t userMessageMenuType_;
+		std::uint8_t userMessageNeedMore_;
+		std::uint16_t userMessageValidSlots_;
 		std::uint8_t userMessageTeamSlot_;
+		bool userMessageShowFragmentActive_;
+		std::array<char, 257U> userMessageText_;
+		std::uint16_t userMessageTextLength_;
 			std::array<runtime::NavRoamController,
 					   NativeBotObservation::kClientSlotCount>
 				managedBotMovement_;
@@ -209,9 +232,17 @@ namespace astrabot
 			std::array<std::uint32_t,
 					   NativeBotObservation::kClientSlotCount>
 				movementSettledDeadFrames_;
-			std::array<std::uint8_t,
+		std::array<std::uint8_t,
 					   NativeBotObservation::kClientSlotCount>
-				movementWarmupFrames_;
+			movementWarmupFrames_;
+		std::array<runtime::MovementPhysicsSample,
+					   NativeBotObservation::kClientSlotCount>
+			movementPhysicsSamples_;
+		std::array<std::uint32_t,
+					   NativeBotObservation::kClientSlotCount>
+			movementDispatchFrames_;
+		std::array<bool, NativeBotObservation::kClientSlotCount>
+			movementWasAirborne_;
 			std::uint32_t movementDiagnosticRound_;
 			bool movementDiagnosticGlobal_;
 			CommandArgsFunction originalCommandArgs_;
@@ -242,6 +273,7 @@ namespace astrabot
 		FORCE_STACK_ALIGN void HookMessageEnd();
 		FORCE_STACK_ALIGN void HookWriteByte(int value);
 		FORCE_STACK_ALIGN void HookWriteChar(int value);
+		FORCE_STACK_ALIGN void HookWriteShort(int value);
 		FORCE_STACK_ALIGN void HookWriteString(const char *value);
 		FORCE_STACK_ALIGN void HookAddServerCommand(char *command, void (*function)(void));
 		FORCE_STACK_ALIGN void HookCompatibilityServerCommand();

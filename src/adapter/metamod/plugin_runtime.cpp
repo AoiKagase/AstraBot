@@ -16,7 +16,8 @@ namespace astrabot
 	{
 			namespace
 		{
-		constexpr float kRadiansToDegrees = 57.29577951308232f;
+	constexpr float kRadiansToDegrees = 57.29577951308232f;
+	constexpr float kStandingHalfHumanHeight = 36.0f;
 		constexpr std::uint32_t kRespawnSettleFrames = 2U;
 		// Counter-Strike 1.6/ReHLDS registers these user messages before the
 		// plugin utility lookup is available.  Keep the public lookup as the
@@ -196,8 +197,16 @@ namespace astrabot
 					return -1;
 				}
 
-				FILE *file = fopen(path, "rb");
-				if (file == nullptr)
+	FILE *file = nullptr;
+#ifdef _WIN32
+	if (fopen_s(&file, path, "rb") != 0)
+	{
+		return -1;
+	}
+#else
+	file = fopen(path, "rb");
+#endif
+	if (file == nullptr)
 				{
 					return -1;
 				}
@@ -266,15 +275,21 @@ namespace astrabot
 			  managedBotSlots_(), managedBotHandles_(), managedBotNames_(),
 			  joinControllers_(),
 		userMessageKind_(UserMessageKind::None), userMessageTarget_(nullptr),
-		userMessageByteCount_(0U), userMessageTeamSlot_(0U),
+		userMessageFieldCount_(0U), userMessageMenuType_(0U), userMessageNeedMore_(0U),
+		userMessageValidSlots_(0U), userMessageTeamSlot_(0U), userMessageShowFragmentActive_(false),
+		userMessageText_(),
+		userMessageTextLength_(0U),
 			  managedBotMovement_(), managedBotCommandSequences_(),
 			  movementDiagnosticSamples_(),
 			  movementDiagnosticAttempts_(),
 			  movementDiagnosticUnavailable_(),
 			  movementResumeFrames_(),
 			  movementLastDeadFrames_(),
-			  movementSettledDeadFrames_(),
-			  movementWarmupFrames_(),
+			movementSettledDeadFrames_(),
+			movementWarmupFrames_(),
+			movementPhysicsSamples_(),
+			movementDispatchFrames_(),
+			movementWasAirborne_(),
 			  movementDiagnosticRound_(0U),
 			  movementDiagnosticGlobal_(false),
 			  originalCommandArgs_(nullptr), originalCommandArgv_(nullptr),
@@ -459,6 +474,7 @@ namespace astrabot
 			requestedFunctions.pfnMessageEnd = &HookMessageEnd;
 			requestedFunctions.pfnWriteByte = &HookWriteByte;
 			requestedFunctions.pfnWriteChar = &HookWriteChar;
+			requestedFunctions.pfnWriteShort = &HookWriteShort;
 			requestedFunctions.pfnWriteString = &HookWriteString;
 			*engineFunctions = requestedFunctions;
 			return true;
@@ -467,7 +483,7 @@ namespace astrabot
 		void PluginRuntime::giveEnginePointers(enginefuncs_t *engineFunctions,
 											   globalvars_t *globals)
 		{
-			if (gpMetaUtilFuncs != nullptr && gpMetaUtilFuncs->pfnLogConsole != nullptr &&
+		if (gpMetaUtilFuncs != nullptr && gpMetaUtilFuncs->pfnLogConsole != nullptr &&
 				pluginId_ != nullptr)
 			{
 				gpMetaUtilFuncs->pfnLogConsole(
@@ -569,10 +585,20 @@ namespace astrabot
 
 		NavLoadDiagnostic PluginRuntime::navigationDiagnostic() const { return navLoadDiagnostic_; }
 
-		nav::NavSnapshot PluginRuntime::navigationSnapshot() const
-		{
-			return navPublisher_.snapshot();
-		}
+nav::NavSnapshot PluginRuntime::navigationSnapshot() const
+{
+	return navPublisher_.snapshot();
+}
+
+runtime::MovementPhysicsSample PluginRuntime::movementPhysicsSample(std::uint32_t slot) const
+{
+	if (slot < runtime::LifecycleSession::kFirstClientSlot ||
+			slot > runtime::LifecycleSession::kLastClientSlot)
+	{
+		return {};
+	}
+	return movementPhysicsSamples_[static_cast<std::size_t>(slot - 1U)];
+}
 
 		runtime::LifecycleToken PluginRuntime::tokenForSlot(std::uint32_t slot) const
 		{
@@ -603,6 +629,8 @@ namespace astrabot
 				lifecycle_.disconnectSlot(clientSlot);
 				if (slot <= static_cast<int>(NativeBotObservation::kClientSlotCount))
 				{
+					joinControllers_[static_cast<std::size_t>(slot - 1)].cancel(
+						JoinError::Disconnected);
 					clearManagedBot(static_cast<std::size_t>(slot - 1));
 				}
 			}
@@ -818,7 +846,8 @@ namespace astrabot
 			}
 		}
 
-		void PluginRuntime::notifyMenuReady(edict_t *entity, bool classMenu)
+void PluginRuntime::notifyMenuReady(
+	edict_t *entity, JoinMenuKind menu, std::uint16_t validSlots, JoinMenuSource source)
 		{
 			if (entity == nullptr || engineFunctions_ == nullptr ||
 				engineFunctions_->pfnIndexOfEdict == nullptr)
@@ -838,22 +867,28 @@ namespace astrabot
 			{
 				return;
 			}
-			applyJoinAction(index, joinControllers_[index].onMenu(classMenu, adapterFrameCount_));
+	applyJoinAction(
+		index, joinControllers_[index].onMenu(menu, validSlots, adapterFrameCount_, source));
 		}
 				void PluginRuntime::onMessageBegin(int messageDestination, int messageType,
 			const float *origin, edict_t *entity)
 		{
 			(void)messageDestination;
 			(void)origin;
+			const bool continueShowMenu = userMessageShowFragmentActive_;
 			userMessageKind_ = UserMessageKind::None;
 			userMessageTarget_ = nullptr;
-			userMessageByteCount_ = 0U;
+			userMessageFieldCount_ = 0U;
+			userMessageMenuType_ = 0U;
+			userMessageNeedMore_ = 0U;
+			userMessageValidSlots_ = 0U;
 			userMessageTeamSlot_ = 0U;
-			if (gpMetaUtilFuncs == nullptr || gpMetaUtilFuncs->pfnGetUserMsgID == nullptr ||
-				pluginId_ == nullptr)
+			if (!continueShowMenu)
 			{
-				return;
+				userMessageText_.fill('\0');
+				userMessageTextLength_ = 0U;
 			}
+			userMessageShowFragmentActive_ = false;
 
 			int messageSize = 0;
 			int showMenuId = kShowMenuMessageId;
@@ -899,7 +934,8 @@ namespace astrabot
 				return;
 			}
 
-			if (gpMetaUtilFuncs->pfnLogConsole != nullptr && pluginId_ != nullptr)
+			if (gpMetaUtilFuncs != nullptr && gpMetaUtilFuncs->pfnLogConsole != nullptr &&
+				pluginId_ != nullptr)
 			{
 				const int slot = entity != nullptr && engineFunctions_ != nullptr &&
 						engineFunctions_->pfnIndexOfEdict != nullptr
@@ -915,15 +951,46 @@ namespace astrabot
 
 		void PluginRuntime::onMessageEnd()
 		{
+	if (userMessageKind_ == UserMessageKind::VguiMenu && userMessageTarget_ != nullptr)
+	{
+		if (userMessageMenuType_ == 2U)
+		{
+			notifyMenuReady(userMessageTarget_, JoinMenuKind::Team, userMessageValidSlots_,
+				JoinMenuSource::Vgui);
+		}
+		else if (userMessageMenuType_ == 26U)
+		{
+			notifyMenuReady(
+				userMessageTarget_, JoinMenuKind::TerroristClass, userMessageValidSlots_,
+				JoinMenuSource::Vgui);
+		}
+		else if (userMessageMenuType_ == 27U)
+		{
+			notifyMenuReady(
+				userMessageTarget_, JoinMenuKind::CounterTerroristClass, userMessageValidSlots_,
+				JoinMenuSource::Vgui);
+		}
+			}
+			userMessageShowFragmentActive_ =
+				userMessageKind_ == UserMessageKind::ShowMenu && userMessageNeedMore_ != 0U &&
+				userMessageTextLength_ != 0U;
 			userMessageKind_ = UserMessageKind::None;
 			userMessageTarget_ = nullptr;
-			userMessageByteCount_ = 0U;
+			userMessageFieldCount_ = 0U;
+			userMessageMenuType_ = 0U;
+			userMessageNeedMore_ = 0U;
+			userMessageValidSlots_ = 0U;
 			userMessageTeamSlot_ = 0U;
+			if (!userMessageShowFragmentActive_)
+			{
+				userMessageText_.fill('\0');
+				userMessageTextLength_ = 0U;
+			}
 		}
 
 		void PluginRuntime::onWriteByte(int value)
 		{
-			if (userMessageKind_ == UserMessageKind::TeamInfo && userMessageByteCount_ == 0U)
+			if (userMessageKind_ == UserMessageKind::TeamInfo && userMessageFieldCount_ == 0U)
 			{
 				if (value >= static_cast<int>(runtime::LifecycleSession::kFirstClientSlot) &&
 					value <= static_cast<int>(runtime::LifecycleSession::kClientSlotCount))
@@ -931,8 +998,12 @@ namespace astrabot
 					userMessageTeamSlot_ = static_cast<std::uint8_t>(value);
 				}
 			}
-			else if (userMessageKind_ == UserMessageKind::VguiMenu && userMessageByteCount_ == 0U)
+			else if (userMessageKind_ == UserMessageKind::VguiMenu && userMessageFieldCount_ == 0U)
 			{
+				if (value >= 0 && value <= 255)
+				{
+					userMessageMenuType_ = static_cast<std::uint8_t>(value);
+				}
 				if (gpMetaUtilFuncs != nullptr && gpMetaUtilFuncs->pfnLogConsole != nullptr &&
 						pluginId_ != nullptr)
 				{
@@ -940,24 +1011,36 @@ namespace astrabot
 						pluginId_, "menu vgui value=%d frame=%u", value,
 						static_cast<unsigned int>(adapterFrameCount_));
 				}
-				if (value == 2)
-				{
-					notifyMenuReady(userMessageTarget_, false);
-				}
-				else if (value == 26 || value == 27)
-				{
-					notifyMenuReady(userMessageTarget_, true);
-				}
 			}
-			if (userMessageByteCount_ < (std::numeric_limits<std::uint8_t>::max)())
+			else if (userMessageKind_ == UserMessageKind::ShowMenu && userMessageFieldCount_ == 2U)
 			{
-				++userMessageByteCount_;
+				userMessageNeedMore_ = value == 0 ? 0U : 1U;
+			}
+			if (userMessageFieldCount_ < (std::numeric_limits<std::uint8_t>::max)())
+			{
+				++userMessageFieldCount_;
 			}
 		}
 
 		void PluginRuntime::onWriteChar(int value)
 		{
 			onWriteByte(value);
+		}
+
+		void PluginRuntime::onWriteShort(int value)
+		{
+			const bool showMenuSlots = userMessageKind_ == UserMessageKind::ShowMenu &&
+				userMessageFieldCount_ == 0U;
+			const bool vguiMenuSlots = userMessageKind_ == UserMessageKind::VguiMenu &&
+				userMessageFieldCount_ == 1U;
+			if ((showMenuSlots || vguiMenuSlots) && value >= 0 && value <= 65535)
+			{
+				userMessageValidSlots_ = static_cast<std::uint16_t>(value);
+			}
+			if (userMessageFieldCount_ < (std::numeric_limits<std::uint8_t>::max)())
+			{
+				++userMessageFieldCount_;
+			}
 		}
 
 		void PluginRuntime::onWriteString(const char *value)
@@ -975,7 +1058,33 @@ namespace astrabot
 			{
 				return;
 			}
-			if (std::strncmp(value, "#Team_Select", 12U) == 0)
+			const std::size_t valueLength = std::strlen(value);
+			if (valueLength > userMessageText_.size() - 1U ||
+				userMessageTextLength_ > userMessageText_.size() - 1U - valueLength)
+			{
+				userMessageText_.fill('\0');
+				userMessageTextLength_ = 0U;
+				return;
+			}
+			for (std::size_t index = 0U; index < valueLength; ++index)
+			{
+				userMessageText_[userMessageTextLength_ + index] = value[index];
+			}
+			userMessageTextLength_ = static_cast<std::uint16_t>(
+				userMessageTextLength_ + valueLength);
+			userMessageText_[userMessageTextLength_] = '\0';
+			if (userMessageNeedMore_ != 0U)
+			{
+				return;
+			}
+			const char *menuText = userMessageText_.data();
+			const bool teamMenu = std::strcmp(menuText, "#Team_Select") == 0 ||
+				std::strcmp(menuText, "#Team_Select_Spect") == 0 ||
+				std::strcmp(menuText, "#IG_Team_Select") == 0 ||
+				std::strcmp(menuText, "#IG_Team_Select_Spect") == 0 ||
+				std::strcmp(menuText, "#IG_VIP_Team_Select") == 0 ||
+				std::strcmp(menuText, "#IG_VIP_Team_Select_Spect") == 0;
+			if (teamMenu)
 			{
 				if (gpMetaUtilFuncs != nullptr && gpMetaUtilFuncs->pfnLogConsole != nullptr &&
 						pluginId_ != nullptr)
@@ -984,11 +1093,11 @@ namespace astrabot
 						pluginId_, "menu show team value=%s frame=%u", value,
 						static_cast<unsigned int>(adapterFrameCount_));
 				}
-				notifyMenuReady(userMessageTarget_, false);
-			}
-			else if (std::strcmp(value, "#CT_Select") == 0 ||
-					std::strcmp(value, "#Terrorist_Select") == 0)
-			{
+	notifyMenuReady(userMessageTarget_, JoinMenuKind::Team, userMessageValidSlots_,
+		JoinMenuSource::LegacyShowMenu);
+}
+else if (std::strcmp(menuText, "#Terrorist_Select") == 0)
+{
 				if (gpMetaUtilFuncs != nullptr && gpMetaUtilFuncs->pfnLogConsole != nullptr &&
 						pluginId_ != nullptr)
 				{
@@ -996,8 +1105,23 @@ namespace astrabot
 						pluginId_, "menu show class value=%s frame=%u", value,
 						static_cast<unsigned int>(adapterFrameCount_));
 				}
-				notifyMenuReady(userMessageTarget_, true);
-			}
+	notifyMenuReady(
+		userMessageTarget_, JoinMenuKind::TerroristClass, userMessageValidSlots_,
+		JoinMenuSource::LegacyShowMenu);
+}
+else if (std::strcmp(menuText, "#CT_Select") == 0)
+{
+	if (gpMetaUtilFuncs != nullptr && gpMetaUtilFuncs->pfnLogConsole != nullptr &&
+			pluginId_ != nullptr)
+	{
+		gpMetaUtilFuncs->pfnLogConsole(
+			pluginId_, "menu show class value=%s frame=%u", value,
+			static_cast<unsigned int>(adapterFrameCount_));
+	}
+	notifyMenuReady(
+		userMessageTarget_, JoinMenuKind::CounterTerroristClass, userMessageValidSlots_,
+		JoinMenuSource::LegacyShowMenu);
+}
 		}
 
 		void PluginRuntime::notifyTeamInfo(std::uint8_t slot, const char *teamName)
@@ -1007,26 +1131,142 @@ namespace astrabot
 			{
 				return;
 			}
-			const std::size_t index = static_cast<std::size_t>(slot - 1U);
-			if (!managedBotSlots_[index] || managedBotHandles_[index].entity == nullptr)
-			{
-				return;
-			}
-			applyJoinAction(index, joinControllers_[index].onTeamInfo(teamName));
+	const std::size_t index = static_cast<std::size_t>(slot - 1U);
+	if (!managedBotSlots_[index] || managedBotHandles_[index].entity == nullptr)
+	{
+		return;
+	}
+	const FakeClientHandle &handle = managedBotHandles_[index];
+	if (gpMetaUtilFuncs != nullptr && gpMetaUtilFuncs->pfnLogConsole != nullptr &&
+			pluginId_ != nullptr)
+	{
+		gpMetaUtilFuncs->pfnLogConsole(
+			pluginId_,
+			"team info slot=%u generation=%u name=%s phase=%d requested_team=%d "
+			"entity_team=%d deadflag=%d spectator=%d frame=%u",
+			static_cast<unsigned int>(slot),
+			static_cast<unsigned int>(handle.actor.actorGeneration), teamName,
+			static_cast<int>(joinControllers_[index].phase()),
+			static_cast<int>(joinControllers_[index].requestedTeam()),
+			static_cast<int>(handle.entity->v.team), static_cast<int>(handle.entity->v.deadflag),
+			(handle.entity->v.flags & FL_SPECTATOR) != 0 ? 1 : 0,
+			static_cast<unsigned int>(adapterFrameCount_));
+	}
+	applyJoinAction(index, joinControllers_[index].onTeamInfo(teamName));
+}
+runtime::MovementPhysicsState PluginRuntime::captureMovementPhysicsState(
+	const edict_t *entity) const
+{
+	runtime::MovementPhysicsState state{};
+	if (entity == nullptr)
+	{
+		return state;
+	}
+	state.entityValid = true;
+	state.fakeClient = (entity->v.flags & FL_FAKECLIENT) != 0;
+	state.spectator = (entity->v.flags & FL_SPECTATOR) != 0;
+	state.dead = entity->v.deadflag != DEAD_NO || entity->v.health <= 0.0f;
+	state.grounded = (entity->v.flags & FL_ONGROUND) != 0;
+	state.ducked = (entity->v.flags & FL_DUCKING) != 0;
+	state.onLadder = entity->v.movetype == MOVETYPE_FLY;
+	state.flags = entity->v.flags;
+	state.deadflag = entity->v.deadflag;
+	state.team = entity->v.team;
+	state.solid = entity->v.solid;
+	state.movetype = entity->v.movetype;
+	state.health = entity->v.health;
+	state.origin = {entity->v.origin.x, entity->v.origin.y, entity->v.origin.z};
+	state.velocity = {entity->v.velocity.x, entity->v.velocity.y, entity->v.velocity.z};
+	if (entity->v.groundentity != nullptr && engineFunctions_ != nullptr &&
+			engineFunctions_->pfnIndexOfEdict != nullptr)
+	{
+		const int groundIndex = engineFunctions_->pfnIndexOfEdict(entity->v.groundentity);
+		if (groundIndex >= 0)
+		{
+			state.groundEntityIndex = static_cast<std::uint32_t>(groundIndex);
 		}
+	}
+	return state;
+}
+
+void PluginRuntime::recordMovementPhysicsSample(
+	std::size_t index,
+	const runtime::MovementPhysicsState &before,
+	const runtime::CommandReceipt &receipt)
+{
+	if (index >= movementPhysicsSamples_.size() || !managedBotSlots_[index])
+	{
+		return;
+	}
+	const FakeClientHandle &handle = managedBotHandles_[index];
+	runtime::MovementPhysicsSample sample{};
+	sample.actor = handle.actor;
+	sample.frame = {
+		lifecycle_.mapGeneration(), lifecycle_.roundGeneration(), adapterFrameCount_};
+	sample.commandSequence = receipt.sequence;
+	sample.before = before;
+	sample.after = captureMovementPhysicsState(handle.entity);
+	sample.dispatched = receipt.result == runtime::DispatchResult::Dispatched;
+	sample.readiness = runtime::spawnReadiness(sample.after);
+		movementPhysicsSamples_[index] = sample;
+
+		if (sample.dispatched)
+		{
+			if (movementDispatchFrames_[index] !=
+					(std::numeric_limits<std::uint32_t>::max)() &&
+					movementDispatchFrames_[index] == adapterFrameCount_ &&
+				gpMetaUtilFuncs != nullptr && gpMetaUtilFuncs->pfnLogError != nullptr &&
+				pluginId_ != nullptr)
+		{
+			gpMetaUtilFuncs->pfnLogError(
+				pluginId_, "movement duplicate dispatch slot=%u frame=%u",
+				static_cast<unsigned int>(index + 1U),
+				static_cast<unsigned int>(adapterFrameCount_));
+		}
+		movementDispatchFrames_[index] = adapterFrameCount_;
+	}
+
+	if (gpMetaUtilFuncs != nullptr && gpMetaUtilFuncs->pfnLogConsole != nullptr &&
+			pluginId_ != nullptr && movementDiagnosticSamples_[index] < 8U)
+	{
+		gpMetaUtilFuncs->pfnLogConsole(
+			pluginId_,
+			"movement physics actor=%u generation=%u frame=%u sequence=%u dispatched=%d "
+			"before=(%.1f %.1f %.1f) after=(%.1f %.1f %.1f) velocity=(%.1f %.1f %.1f) "
+			"grounded=%d ducked=%d ladder=%d groundentity=%u flags=%d deadflag=%d "
+			"team=%d solid=%d movetype=%d health=%.1f ready=%d result=%d",
+			static_cast<unsigned int>(sample.actor.slot),
+			static_cast<unsigned int>(sample.actor.actorGeneration),
+			static_cast<unsigned int>(adapterFrameCount_),
+			static_cast<unsigned int>(sample.commandSequence), sample.dispatched ? 1 : 0,
+			sample.before.origin.x, sample.before.origin.y, sample.before.origin.z,
+			sample.after.origin.x, sample.after.origin.y, sample.after.origin.z,
+			sample.after.velocity.x, sample.after.velocity.y, sample.after.velocity.z,
+			sample.after.grounded ? 1 : 0, sample.after.ducked ? 1 : 0,
+			sample.after.onLadder ? 1 : 0,
+			static_cast<unsigned int>(sample.after.groundEntityIndex),
+			sample.after.flags, sample.after.deadflag, sample.after.team, sample.after.solid,
+			sample.after.movetype, sample.after.health,
+			sample.readiness == runtime::SpawnReadiness::Ready ? 1 : 0,
+			static_cast<int>(receipt.result));
+		++movementDiagnosticSamples_[index];
+	}
+}
+
 void PluginRuntime::updateManagedBotMovement()
 		{
-			const compat::CvarSnapshot configuration = compatibilitySurface_.configuration();
-			const nav::NavSnapshot navigation = navPublisher_.snapshot();
+	const compat::CvarSnapshot configuration = compatibilitySurface_.configuration();
+	const nav::NavSnapshot navigation = navPublisher_.snapshot();
+	const bool movementUnavailable = configuration.botEnable <= 0.0f ||
+			configuration.botStop > 0.0f || !navigation.isValid();
 			if (movementDiagnosticRound_ != lifecycle_.roundGeneration())
 			{
 				movementDiagnosticRound_ = lifecycle_.roundGeneration();
 				movementDiagnosticSamples_.fill(0U);
 				movementDiagnosticAttempts_.fill(false);
 			}
-			if (configuration.botEnable <= 0.0f || configuration.botStop > 0.0f ||
-					!navigation.isValid())
-			{
+	if (movementUnavailable)
+	{
 				if (!movementDiagnosticGlobal_ && gpMetaUtilFuncs != nullptr &&
 						gpMetaUtilFuncs->pfnLogConsole != nullptr && pluginId_ != nullptr)
 				{
@@ -1037,11 +1277,9 @@ void PluginRuntime::updateManagedBotMovement()
 						configuration.botEnable,
 						configuration.botStop,
 						navigation.isValid() ? 1 : 0);
-					movementDiagnosticGlobal_ = true;
-				}
-				resetManagedBotMovement();
-				return;
-			}
+			movementDiagnosticGlobal_ = true;
+		}
+	}
 
 			const std::uint8_t milliseconds = movementMilliseconds(globals_);
 			for (std::size_t index = 0U; index < managedBotSlots_.size(); ++index)
@@ -1051,8 +1289,50 @@ void PluginRuntime::updateManagedBotMovement()
 					continue;
 				}
 
-				FakeClientHandle &handle = managedBotHandles_[index];
-				if (handle.entity == nullptr ||
+		FakeClientHandle &handle = managedBotHandles_[index];
+		if (handle.entity == nullptr)
+		{
+			continue;
+		}
+		const runtime::LifecycleToken token = lifecycle_.tokenForSlot(handle.actor.slot);
+		if (!lifecycle_.isCurrent(token))
+		{
+			continue;
+		}
+		const runtime::MovementPhysicsState before =
+			captureMovementPhysicsState(handle.entity);
+		const runtime::ActorState actorState = actorRegistry_.state(handle.actor);
+		if (actorState == runtime::ActorState::Joining)
+		{
+			if (!joinControllers_[index].active())
+			{
+				continue;
+			}
+			const runtime::CommandReceipt receipt =
+				dispatchJoinHeartbeat(index, handle, milliseconds);
+			recordMovementPhysicsSample(index, before, receipt);
+			continue;
+		}
+		if (actorState != runtime::ActorState::Joined)
+		{
+			continue;
+		}
+		if (before.dead)
+		{
+			const runtime::CommandReceipt receipt =
+				dispatchNeutralMovement(index, handle, milliseconds);
+			recordMovementPhysicsSample(index, before, receipt);
+			continue;
+		}
+		if (movementUnavailable || runtime::spawnReadiness(before) == runtime::SpawnReadiness::NotReady)
+		{
+			const runtime::CommandReceipt receipt =
+				dispatchNeutralMovement(index, handle, milliseconds);
+			recordMovementPhysicsSample(index, before, receipt);
+			managedBotMovement_[index].reset();
+			continue;
+		}
+		if (handle.entity == nullptr ||
 						handle.entity->v.deadflag != DEAD_NO ||
 						handle.entity->v.health <= 0.0f)
 				{
@@ -1097,11 +1377,13 @@ void PluginRuntime::updateManagedBotMovement()
 					movementDiagnosticAttempts_[index] = false;
 					movementDiagnosticUnavailable_[index] = false;
 				}
-				if (movementWarmupFrames_[index] < 2U)
-				{
-					dispatchNeutralMovement(index, handle, milliseconds);
-					++movementWarmupFrames_[index];
-					continue;
+		if (movementWarmupFrames_[index] < 2U)
+		{
+			const runtime::CommandReceipt receipt =
+				dispatchNeutralMovement(index, handle, milliseconds);
+			recordMovementPhysicsSample(index, before, receipt);
+			++movementWarmupFrames_[index];
+			continue;
 				}
 				handle.entity->v.flags |= (FL_CLIENT | FL_FAKECLIENT);
 
@@ -1111,26 +1393,50 @@ void PluginRuntime::updateManagedBotMovement()
 					lifecycle_.mapGeneration(),
 					lifecycle_.roundGeneration(),
 					adapterFrameCount_};
-				observation.locomotion.position = {
-					handle.entity->v.origin.x,
-					handle.entity->v.origin.y,
-					handle.entity->v.origin.z};
-				observation.locomotion.standingClearance = 72.0f;
-				observation.locomotion.crouchingClearance = 36.0f;
+			float feetOffset = handle.entity->v.mins.z;
+			if (!std::isfinite(feetOffset) || feetOffset >= 0.0f)
+			{
+				feetOffset = -kStandingHalfHumanHeight;
+			}
+		observation.locomotion.position = {
+				handle.entity->v.origin.x,
+				handle.entity->v.origin.y,
+				handle.entity->v.origin.z + feetOffset};
+		observation.locomotion.velocity = {
+			handle.entity->v.velocity.x,
+			handle.entity->v.velocity.y,
+			handle.entity->v.velocity.z};
+		observation.locomotion.standingClearance = 72.0f;
+		observation.locomotion.crouchingClearance = 36.0f;
+		observation.locomotion.grounded = before.grounded;
+		observation.locomotion.ducked = before.ducked;
+		observation.locomotion.onLadder = before.onLadder;
+		observation.airborne = !before.grounded;
+		observation.landingConfirmed = movementWasAirborne_[index] && before.grounded;
+		observation.hasLandingDamage = false;
+		observation.landingDamage = 0.0f;
+		observation.ladderContact = before.onLadder;
+		observation.entryConfirmed = true;
+		observation.exitConfirmed = before.grounded;
+		movementWasAirborne_[index] = !before.grounded;
 
-				nav::LocomotionIntent locomotionIntent = {};
-				const runtime::NavRoamResult roamResult = managedBotMovement_[index].update(
-					navigation,
-					observation,
-					&locomotionIntent);
-				if (roamResult != runtime::NavRoamResult::IntentReady)
-				{
-					logMovementDiagnostic(index, "roam_no_intent");
-					continue;
-				}
+			nav::LocomotionIntent locomotionIntent = {};
+			runtime::NavRoamDecision roamDecision = {};
+			const runtime::NavRoamResult roamResult = managedBotMovement_[index].update(
+				navigation,
+				observation,
+				&locomotionIntent,
+				&roamDecision);
+		if (roamResult != runtime::NavRoamResult::IntentReady)
+		{
+			logMovementDiagnostic(index, "roam_no_intent", &roamDecision);
+			const runtime::CommandReceipt receipt =
+				dispatchNeutralMovement(index, handle, milliseconds);
+			recordMovementPhysicsSample(index, before, receipt);
+			continue;
+		}
 
-				const runtime::LifecycleToken token = lifecycle_.tokenForSlot(handle.actor.slot);
-				if (!lifecycle_.isCurrent(token) ||
+		if (!lifecycle_.isCurrent(token) ||
 						managedBotCommandSequences_[index] ==
 							(std::numeric_limits<std::uint32_t>::max)())
 				{
@@ -1144,15 +1450,26 @@ void PluginRuntime::updateManagedBotMovement()
 				command.issueFrame = adapterFrameCount_;
 				command.viewAngles = {
 					0.0f,
-					movementYaw(locomotionIntent.direction),
-					0.0f};
-				command.movement = {
+				movementYaw(locomotionIntent.direction),
+				0.0f};
+			std::uint16_t movementButtons =
+				locomotionIntent.posture == nav::LocomotionPosture::Crouching
+						? static_cast<std::uint16_t>(IN_DUCK)
+						: static_cast<std::uint16_t>(0U);
+			if (locomotionIntent.traversal == nav::TraversalAction::Jump)
+			{
+				movementButtons = static_cast<std::uint16_t>(movementButtons | IN_JUMP);
+			}
+			if (locomotionIntent.traversal == nav::TraversalAction::Crouch ||
+					locomotionIntent.traversal == nav::TraversalAction::NarrowPassage)
+			{
+				movementButtons = static_cast<std::uint16_t>(movementButtons | IN_DUCK);
+			}
+			command.movement = {
 					locomotionIntent.speed,
 					0.0f,
 					0.0f,
-					locomotionIntent.posture == nav::LocomotionPosture::Crouching ?
-						static_cast<std::uint16_t>(IN_DUCK) :
-						static_cast<std::uint16_t>(0U),
+					movementButtons,
 					0U,
 					milliseconds};
 				handle.entity->v.v_angle[0] = command.viewAngles.pitch;
@@ -1163,10 +1480,11 @@ void PluginRuntime::updateManagedBotMovement()
 				handle.entity->v.angles[2] = command.viewAngles.roll;
 				if (inputDispatcher_.enqueue(command) == runtime::QueueResult::Accepted)
 				{
-					const runtime::CommandReceipt receipt = inputDispatcher_.dispatchNext(
-						handle.actor,
-						adapterFrameCount_);
-					if (receipt.result == runtime::DispatchResult::Dispatched &&
+			const runtime::CommandReceipt receipt = inputDispatcher_.dispatchNext(
+				handle.actor,
+				adapterFrameCount_);
+			recordMovementPhysicsSample(index, before, receipt);
+			if (receipt.result == runtime::DispatchResult::Dispatched &&
 							movementDiagnosticSamples_[index] < 4U &&
 							gpMetaUtilFuncs != nullptr &&
 							gpMetaUtilFuncs->pfnLogConsole != nullptr &&
@@ -1174,37 +1492,43 @@ void PluginRuntime::updateManagedBotMovement()
 					{
 						gpMetaUtilFuncs->pfnLogConsole(
 							pluginId_,
-							"movement actor=%u generation=%u frame=%u origin=(%.1f %.1f %.1f) targetArea=%u sequence=%u",
+							"movement actor=%u generation=%u frame=%u origin=(%.1f %.1f %.1f) targetArea=%u sequence=%u stage=%d currentArea=%u recoveryArea=%u",
 							static_cast<unsigned int>(handle.actor.slot),
 							static_cast<unsigned int>(handle.actor.actorGeneration),
 							static_cast<unsigned int>(adapterFrameCount_),
-							observation.locomotion.position.x,
-							observation.locomotion.position.y,
-							observation.locomotion.position.z,
+							handle.entity->v.origin.x,
+							handle.entity->v.origin.y,
+							handle.entity->v.origin.z,
 							static_cast<unsigned int>(locomotionIntent.targetArea),
-							static_cast<unsigned int>(command.sequence));
+							static_cast<unsigned int>(command.sequence),
+							static_cast<int>(roamDecision.stage),
+							static_cast<unsigned int>(roamDecision.currentArea),
+							static_cast<unsigned int>(roamDecision.recoveryArea));
 						++movementDiagnosticSamples_[index];
 					}
 				}
 			}
 		}
 
-		void PluginRuntime::dispatchNeutralMovement(
-			std::size_t index,
-			FakeClientHandle &handle,
-			std::uint8_t milliseconds)
+	runtime::CommandReceipt PluginRuntime::dispatchNeutralMovement(
+		std::size_t index,
+		FakeClientHandle &handle,
+		std::uint8_t milliseconds)
+	{
+		runtime::CommandReceipt receipt = {
+			handle.actor, 0U, adapterFrameCount_, runtime::DispatchResult::NoCommand};
+		if (index >= managedBotCommandSequences_.size() || handle.entity == nullptr ||
+				managedBotCommandSequences_[index] ==
+						(std::numeric_limits<std::uint32_t>::max)())
 		{
-			if (index >= managedBotCommandSequences_.size() || handle.entity == nullptr ||
-					managedBotCommandSequences_[index] ==
-							(std::numeric_limits<std::uint32_t>::max)())
-			{
-				return;
+			return receipt;
 			}
 
 			const runtime::LifecycleToken token = lifecycle_.tokenForSlot(handle.actor.slot);
-			if (!lifecycle_.isCurrent(token))
-			{
-				return;
+		if (!lifecycle_.isCurrent(token))
+		{
+			receipt.result = runtime::DispatchResult::StaleActor;
+			return receipt;
 			}
 
 			runtime::BotCommand command = {};
@@ -1217,11 +1541,51 @@ void PluginRuntime::updateManagedBotMovement()
 				handle.entity->v.v_angle[1],
 				handle.entity->v.v_angle[2]};
 			command.movement = {0.0f, 0.0f, 0.0f, 0U, 0U, milliseconds};
-			if (inputDispatcher_.enqueue(command) == runtime::QueueResult::Accepted)
-			{
-				inputDispatcher_.dispatchNext(handle.actor, adapterFrameCount_);
-			}
+		if (inputDispatcher_.enqueue(command) != runtime::QueueResult::Accepted)
+		{
+			receipt.result = runtime::DispatchResult::InvalidCommand;
+			return receipt;
 		}
+		return inputDispatcher_.dispatchNext(handle.actor, adapterFrameCount_);
+	}
+
+	runtime::CommandReceipt PluginRuntime::dispatchJoinHeartbeat(
+		std::size_t index,
+		FakeClientHandle &handle,
+		std::uint8_t milliseconds)
+	{
+		runtime::CommandReceipt receipt = {
+			handle.actor, 0U, adapterFrameCount_, runtime::DispatchResult::NoCommand};
+		if (index >= managedBotCommandSequences_.size() || handle.entity == nullptr ||
+			managedBotCommandSequences_[index] ==
+				(std::numeric_limits<std::uint32_t>::max)())
+		{
+			return receipt;
+		}
+		const runtime::LifecycleToken token = lifecycle_.tokenForSlot(handle.actor.slot);
+		if (!lifecycle_.isCurrent(token) || !joinControllers_[index].isCurrent(handle.actor))
+		{
+			receipt.result = runtime::DispatchResult::StaleActor;
+			return receipt;
+		}
+		if (engineFunctions_ == nullptr || engineFunctions_->pfnRunPlayerMove == nullptr)
+		{
+			receipt.result = runtime::DispatchResult::EngineUnavailable;
+			return receipt;
+		}
+		const float viewAngles[3] = {
+			handle.entity->v.v_angle[0],
+			handle.entity->v.v_angle[1],
+			handle.entity->v.v_angle[2]};
+		receipt.sequence = ++managedBotCommandSequences_[index];
+		const unsigned short buttons = joinControllers_[index].phase() == JoinPhase::WaitingTeamMenu
+			? static_cast<unsigned short>(IN_ATTACK)
+			: 0U;
+		engineFunctions_->pfnRunPlayerMove(
+			handle.entity, viewAngles, 0.0f, 0.0f, 0.0f, buttons, 0U, milliseconds);
+		receipt.result = runtime::DispatchResult::Dispatched;
+		return receipt;
+	}
 
 		void PluginRuntime::resetManagedBotMovement()
 		{
@@ -1235,12 +1599,18 @@ void PluginRuntime::updateManagedBotMovement()
 			movementDiagnosticUnavailable_.fill(false);
 			movementResumeFrames_.fill(0U);
 			movementLastDeadFrames_.fill(0U);
-			movementSettledDeadFrames_.fill(0U);
-			movementWarmupFrames_.fill(0U);
-			movementDiagnosticRound_ = 0U;
+	movementSettledDeadFrames_.fill(0U);
+	movementWarmupFrames_.fill(0U);
+	movementPhysicsSamples_.fill({});
+		movementDispatchFrames_.fill((std::numeric_limits<std::uint32_t>::max)());
+	movementWasAirborne_.fill(false);
+	movementDiagnosticRound_ = 0U;
 		}
 
-		void PluginRuntime::logMovementDiagnostic(std::size_t index, const char *reason)
+		void PluginRuntime::logMovementDiagnostic(
+			std::size_t index,
+			const char *reason,
+			const runtime::NavRoamDecision *decision)
 		{
 			if (index >= movementDiagnosticAttempts_.size() ||
 					movementDiagnosticAttempts_[index] ||
@@ -1257,19 +1627,25 @@ void PluginRuntime::updateManagedBotMovement()
 					(handle.entity->v.flags & FL_SPECTATOR) != 0;
 			const nav::NavSnapshot navigation = navPublisher_.snapshot();
 			nav::NavAreaMatch area = {};
+			float feetOffset = handle.entity != nullptr ? handle.entity->v.mins.z : 0.0f;
+			if (!std::isfinite(feetOffset) || feetOffset >= 0.0f)
+			{
+				feetOffset = -kStandingHalfHumanHeight;
+			}
+			const nav::NavVector feetPosition = handle.entity != nullptr ?
+				nav::NavVector{
+					handle.entity->v.origin.x,
+					handle.entity->v.origin.y,
+					handle.entity->v.origin.z + feetOffset} :
+				nav::NavVector{0.0f, 0.0f, 0.0f};
 			const nav::NavQueryResult areaResult =
 				nav::NavQuery(navigation).findContaining(
-						handle.entity != nullptr
-								? nav::NavVector{
-										handle.entity->v.origin.x,
-										handle.entity->v.origin.y,
-										handle.entity->v.origin.z}
-								: nav::NavVector{0.0f, 0.0f, 0.0f},
+						feetPosition,
 						64.0f,
 							&area);
 			gpMetaUtilFuncs->pfnLogConsole(
 				pluginId_,
-				"movement diagnostic actor=%u generation=%u frame=%u reason=%s fake=%d spectator=%d team=%d deadflag=%d health=%.1f origin=(%.1f %.1f %.1f) solid=%d movetype=%d effects=%d nav=%d navAreaResult=%d area=%u runmove=%d",
+				"movement diagnostic actor=%u generation=%u frame=%u reason=%s fake=%d spectator=%d team=%d deadflag=%d health=%.1f origin=(%.1f %.1f %.1f) solid=%d movetype=%d effects=%d nav=%d navAreaResult=%d area=%u runmove=%d stage=%d currentResult=%d nearestResult=%d currentArea=%u recoveryArea=%u targetArea=%u linkResult=%d corridorResult=%d locomotionResult=%d nearestDistanceSquared=%.1f",
 				static_cast<unsigned int>(handle.actor.slot),
 				static_cast<unsigned int>(handle.actor.actorGeneration),
 				static_cast<unsigned int>(adapterFrameCount_),
@@ -1288,7 +1664,17 @@ void PluginRuntime::updateManagedBotMovement()
 				navigation.isValid() ? 1 : 0,
 				static_cast<int>(areaResult),
 				static_cast<unsigned int>(area.area),
-				engineFunctions_ != nullptr && engineFunctions_->pfnRunPlayerMove != nullptr ? 1 : 0);
+				engineFunctions_ != nullptr && engineFunctions_->pfnRunPlayerMove != nullptr ? 1 : 0,
+				decision != nullptr ? static_cast<int>(decision->stage) : -1,
+				decision != nullptr ? static_cast<int>(decision->currentAreaResult) : -1,
+				decision != nullptr ? static_cast<int>(decision->nearestAreaResult) : -1,
+				decision != nullptr ? static_cast<unsigned int>(decision->currentArea) : 0U,
+				decision != nullptr ? static_cast<unsigned int>(decision->recoveryArea) : 0U,
+				decision != nullptr ? static_cast<unsigned int>(decision->targetArea) : 0U,
+				decision != nullptr ? static_cast<int>(decision->linkResult) : -1,
+				decision != nullptr ? static_cast<int>(decision->corridorResult) : -1,
+				decision != nullptr ? static_cast<int>(decision->locomotionResult) : -1,
+				decision != nullptr ? decision->nearestDistanceSquared : 0.0f);
 			movementDiagnosticAttempts_[index] = true;
 		}
 
@@ -1612,7 +1998,16 @@ void PluginRuntime::updateManagedBotMovement()
 				{
 					return mapFakeClientResult(createResult);
 				}
-				if (!assignBotTeam(&handle, action.team))
+				if (handle.actor.slot < runtime::LifecycleSession::kFirstClientSlot ||
+					handle.actor.slot > runtime::LifecycleSession::kClientSlotCount)
+				{
+					(void)removeFakeClient(&handle);
+					return CompatibilityCommandResult::ActorOperationFailed;
+				}
+				const std::size_t slotIndex = static_cast<std::size_t>(handle.actor.slot - 1U);
+				const JoinAction beginAction =
+					joinControllers_[slotIndex].begin(handle.actor, action.team, adapterFrameCount_);
+				if (beginAction.kind == JoinActionKind::Failed)
 				{
 					(void)removeFakeClient(&handle);
 					return CompatibilityCommandResult::ActorOperationFailed;
@@ -1634,34 +2029,18 @@ void PluginRuntime::updateManagedBotMovement()
 			}
 		}
 
-		bool PluginRuntime::assignBotTeam(FakeClientHandle *handle, compat::CommandTeam team)
-		{
-			if (handle == nullptr || handle->entity == nullptr)
-			{
-				return false;
-			}
-			if (team != compat::CommandTeam::Any &&
-				team != compat::CommandTeam::Terrorist &&
-				team != compat::CommandTeam::CounterTerrorist)
-			{
-				return false;
-			}
-			if (handle->actor.slot < runtime::LifecycleSession::kFirstClientSlot ||
-				handle->actor.slot > runtime::LifecycleSession::kClientSlotCount)
-			{
-				return false;
-			}
-
-			const std::size_t index = static_cast<std::size_t>(handle->actor.slot - 1U);
-			const JoinAction action =
-				joinControllers_[index].begin(handle->actor, team, adapterFrameCount_);
-			return action.kind != JoinActionKind::Failed;
-		}
-
 		bool PluginRuntime::dispatchClientCommand(edict_t *entity, const char *name,
-														  const char *argument)
+															  const char *argument)
 		{
-			gamedll_funcs_t *dispatchFunctions = gameDllFunctions_;
+			// Meta_Attach receives a private copy of the GameDLL table.  Commands
+			// synthesized for a FakeClient must use Metamod's hooked dispatcher so
+			// the normal GameDLL command chain and command-argument hooks remain
+			// active, just like a real client command.
+			const bool hookedClientCommandAvailable =
+				hookedGameDllFunctions_.dllapi_table != nullptr &&
+				hookedGameDllFunctions_.dllapi_table->pfnClientCommand != nullptr;
+			gamedll_funcs_t *dispatchFunctions =
+				hookedClientCommandAvailable ? &hookedGameDllFunctions_ : gameDllFunctions_;
 			if (entity == nullptr || clientCommandContextActive_ || dispatchFunctions == nullptr ||
 				dispatchFunctions->dllapi_table == nullptr ||
 				dispatchFunctions->dllapi_table->pfnClientCommand == nullptr ||
@@ -1847,8 +2226,8 @@ void PluginRuntime::updateManagedBotMovement()
 			managedBotNames_[index][copyLength] = '\0';
 		}
 
-		void PluginRuntime::clearManagedBot(std::size_t index)
-		{
+void PluginRuntime::clearManagedBot(std::size_t index)
+{
 			if (index >= managedBotSlots_.size())
 			{
 				return;
@@ -1861,8 +2240,11 @@ void PluginRuntime::updateManagedBotMovement()
 			movementDiagnosticUnavailable_[index] = false;
 			movementResumeFrames_[index] = 0U;
 			movementLastDeadFrames_[index] = 0U;
-			movementSettledDeadFrames_[index] = 0U;
-			movementWarmupFrames_[index] = 0U;
+	movementSettledDeadFrames_[index] = 0U;
+	movementWarmupFrames_[index] = 0U;
+	movementPhysicsSamples_[index] = {};
+	movementDispatchFrames_[index] = (std::numeric_limits<std::uint32_t>::max)();
+	movementWasAirborne_[index] = false;
 			joinControllers_[index].reset();
 			managedBotHandles_[index] = FakeClientHandle{};
 			managedBotNames_[index].fill('\0');
@@ -2074,6 +2456,12 @@ void PluginRuntime::updateManagedBotMovement()
 			setMetaResult(MRES_IGNORED);
 		}
 
+		void HookWriteShort(int value)
+		{
+			PluginRuntime::instance().onWriteShort(value);
+			setMetaResult(MRES_IGNORED);
+		}
+
 		void HookWriteString(const char *value)
 		{
 			PluginRuntime::instance().onWriteString(value);
@@ -2115,56 +2503,181 @@ void PluginRuntime::updateManagedBotMovement()
 		}
 		void PluginRuntime::processJoinControllers()
 		{
-			for (std::size_t index = 0U; index < joinControllers_.size(); ++index)
+	for (std::size_t index = 0U; index < joinControllers_.size(); ++index)
+	{
+		if (!managedBotSlots_[index] || managedBotHandles_[index].entity == nullptr)
+		{
+			if (managedBotSlots_[index])
 			{
-				if (!managedBotSlots_[index] || managedBotHandles_[index].entity == nullptr)
-				{
-					joinControllers_[index].reset();
-					continue;
+				cleanupManagedJoin(index, JoinError::InvalidActor);
+			}
+			else
+			{
+				joinControllers_[index].reset();
+			}
+			continue;
 				}
 				const runtime::ActorId &actor = managedBotHandles_[index].actor;
-				const runtime::LifecycleToken token = lifecycle_.tokenForSlot(actor.slot);
-				const runtime::ActorState actorState = actorRegistry_.state(actor);
-				if (!joinControllers_[index].active() ||
-						!joinControllers_[index].isCurrent(actor) ||
-						!lifecycle_.isCurrent(token) ||
-						(actorState != runtime::ActorState::Joining &&
-							 actorState != runtime::ActorState::Joined))
+		const runtime::LifecycleToken token = lifecycle_.tokenForSlot(actor.slot);
+		const runtime::ActorState actorState = actorRegistry_.state(actor);
+				if (!joinControllers_[index].active())
 				{
 					continue;
 				}
-				const JoinAction action = joinControllers_[index].onFrame(
-						managedBotHandles_[index].entity, adapterFrameCount_);
+		if (!joinControllers_[index].isCurrent(actor) || !lifecycle_.isCurrent(token) ||
+				(actorState != runtime::ActorState::Joining &&
+				 actorState != runtime::ActorState::Joined))
+		{
+			cleanupManagedJoin(index, JoinError::InvalidActor);
+			continue;
+		}
+		const JoinAction action = joinControllers_[index].onFrame(
+			managedBotHandles_[index].entity, adapterFrameCount_);
 				applyJoinAction(index, action);
+	}
+}
+
+void PluginRuntime::cleanupManagedJoin(std::size_t index, JoinError error)
+{
+	if (index >= managedBotSlots_.size() || !managedBotSlots_[index])
+	{
+		return;
+	}
+
+	FakeClientHandle &handle = managedBotHandles_[index];
+	const runtime::ActorId actor = handle.actor;
+	const JoinPhase phase = joinControllers_[index].phase();
+	const compat::CommandTeam requestedTeam = joinControllers_[index].requestedTeam();
+	const int entityTeam = handle.entity != nullptr ? handle.entity->v.team : -1;
+	const int deadflag = handle.entity != nullptr ? handle.entity->v.deadflag : -1;
+	const int spectator = handle.entity != nullptr &&
+			(handle.entity->v.flags & FL_SPECTATOR) != 0 ? 1 : 0;
+
+	if (joinControllers_[index].active())
+	{
+		(void)joinControllers_[index].cancel(error);
+	}
+
+	FakeClientResult cleanupResult = FakeClientResult::NotFound;
+	if (handle.entity != nullptr)
+	{
+		cleanupResult = removeFakeClient(&handle);
+	}
+	else
+	{
+		inputDispatcher_.unbindActor(actor);
+		const runtime::ActorState actorState = actorRegistry_.state(actor);
+		if (actorState == runtime::ActorState::Joining ||
+				actorState == runtime::ActorState::Joined)
+		{
+			if (actorRegistry_.beginRemoval(actor) == runtime::ActorResult::Accepted)
+			{
+				lifecycle_.disconnectSlot(actor.slot);
+				if (actorRegistry_.release(actor) == runtime::ActorResult::Accepted)
+				{
+					cleanupResult = FakeClientResult::Removed;
+					clearManagedBot(index);
+				}
 			}
 		}
-
-		void PluginRuntime::applyJoinAction(std::size_t index, const JoinAction &action)
+		else if (actorState == runtime::ActorState::Vacant)
 		{
-			if (index >= joinControllers_.size() || !managedBotSlots_[index] ||
-					managedBotHandles_[index].entity == nullptr)
-			{
-				return;
-			}
-			if (action.kind == JoinActionKind::Joined)
+			cleanupResult = FakeClientResult::Removed;
+			clearManagedBot(index);
+		}
+	}
+
+	if (cleanupResult != FakeClientResult::Removed)
+	{
+		(void)joinControllers_[index].commandFailed(JoinError::CleanupFailed);
+	}
+
+	if (gpMetaUtilFuncs != nullptr && gpMetaUtilFuncs->pfnLogConsole != nullptr &&
+			pluginId_ != nullptr)
+	{
+		gpMetaUtilFuncs->pfnLogConsole(
+			pluginId_,
+			"join cleanup slot=%u generation=%u map=%u round=%u frame=%u phase=%d team=%d "
+			"entity_team=%d deadflag=%d spectator=%d error=%d result=%d",
+			static_cast<unsigned int>(actor.slot),
+			static_cast<unsigned int>(actor.actorGeneration),
+			static_cast<unsigned int>(lifecycle_.mapGeneration()),
+			static_cast<unsigned int>(lifecycle_.roundGeneration()),
+			static_cast<unsigned int>(adapterFrameCount_),
+			static_cast<int>(phase),
+			static_cast<int>(requestedTeam), entityTeam,
+			deadflag, spectator, static_cast<int>(error),
+			static_cast<int>(cleanupResult));
+	}
+}
+
+void PluginRuntime::applyJoinAction(std::size_t index, const JoinAction &action)
+		{
+	if (index >= joinControllers_.size() || !managedBotSlots_[index])
+	{
+		return;
+	}
+	const FakeClientHandle &handle = managedBotHandles_[index];
+	const runtime::ActorId actor = handle.actor;
+	const int entityTeam = handle.entity != nullptr ? handle.entity->v.team : -1;
+	const int deadflag = handle.entity != nullptr ? handle.entity->v.deadflag : -1;
+	const int spectator = handle.entity != nullptr &&
+			(handle.entity->v.flags & FL_SPECTATOR) != 0 ? 1 : 0;
+	const int requestedTeam = static_cast<int>(joinControllers_[index].requestedTeam());
+	if (action.kind == JoinActionKind::Joined)
 			{
 				const runtime::ActorResult result = actorRegistry_.markJoined(
 						managedBotHandles_[index].actor);
 				if (gpMetaUtilFuncs != nullptr && gpMetaUtilFuncs->pfnLogConsole != nullptr &&
 						pluginId_ != nullptr)
-				{
-					gpMetaUtilFuncs->pfnLogConsole(
-							pluginId_, "join confirmed slot=%u actor_result=%d frame=%u",
-							static_cast<unsigned int>(index + 1U),
-							static_cast<int>(result),
-							static_cast<unsigned int>(adapterFrameCount_));
-				}
-				return;
+		{
+			gpMetaUtilFuncs->pfnLogConsole(
+				pluginId_,
+				"join confirmed slot=%u generation=%u map=%u round=%u phase=%d team=%d "
+				"entity_team=%d deadflag=%d spectator=%d actor_result=%d frame=%u",
+				static_cast<unsigned int>(actor.slot),
+				static_cast<unsigned int>(actor.actorGeneration),
+				static_cast<unsigned int>(lifecycle_.mapGeneration()),
+				static_cast<unsigned int>(lifecycle_.roundGeneration()),
+				static_cast<int>(joinControllers_[index].phase()), requestedTeam, entityTeam,
+				deadflag, spectator, static_cast<int>(result),
+				static_cast<unsigned int>(adapterFrameCount_));
+		}
+		if (result != runtime::ActorResult::Accepted)
+		{
+			cleanupManagedJoin(index, JoinError::InvalidActor);
+		}
+		return;
 			}
-			if (action.kind != JoinActionKind::SendMenuSelect || action.selection == 0U ||
-					action.selection > 9U)
+			if (action.kind == JoinActionKind::Failed || action.kind == JoinActionKind::Cancelled)
 			{
-				return;
+				if (gpMetaUtilFuncs != nullptr && gpMetaUtilFuncs->pfnLogConsole != nullptr &&
+						pluginId_ != nullptr)
+		{
+			gpMetaUtilFuncs->pfnLogConsole(
+				pluginId_,
+				"join controller stopped slot=%u generation=%u action=%d error=%d map=%u "
+				"round=%u phase=%d team=%d entity_team=%d deadflag=%d spectator=%d frame=%u",
+				static_cast<unsigned int>(actor.slot),
+				static_cast<unsigned int>(actor.actorGeneration), static_cast<int>(action.kind),
+				static_cast<int>(action.error),
+				static_cast<unsigned int>(lifecycle_.mapGeneration()),
+				static_cast<unsigned int>(lifecycle_.roundGeneration()),
+				static_cast<int>(joinControllers_[index].phase()), requestedTeam, entityTeam,
+				deadflag, spectator, static_cast<unsigned int>(adapterFrameCount_));
+				}
+		cleanupManagedJoin(index, action.error);
+			return;
+		}
+	if (action.kind == JoinActionKind::None)
+	{
+		return;
+	}
+	if (action.kind != JoinActionKind::SendMenuSelect || action.selection == 0U ||
+			action.selection > 9U)
+	{
+		cleanupManagedJoin(index, JoinError::MenuOptionUnavailable);
+			return;
 			}
 			const char *command = "menuselect";
 			switch (action.command)
@@ -2188,12 +2701,16 @@ void PluginRuntime::updateManagedBotMovement()
 					pluginId_ != nullptr)
 			{
 				gpMetaUtilFuncs->pfnLogConsole(
-					pluginId_, "join dispatch slot=%u command=%s selection=%u dispatched=%d phase=%d",
-					static_cast<unsigned int>(index + 1U),
-					command,
-					static_cast<unsigned int>(action.selection),
-					dispatched ? 1 : 0,
-					static_cast<int>(joinControllers_[index].phase()));
+					pluginId_,
+					"join dispatch slot=%u generation=%u command=%s selection=%u dispatched=%d "
+					"map=%u round=%u phase=%d team=%d entity_team=%d deadflag=%d spectator=%d",
+					static_cast<unsigned int>(actor.slot),
+					static_cast<unsigned int>(actor.actorGeneration), command,
+					static_cast<unsigned int>(action.selection), dispatched ? 1 : 0,
+					static_cast<unsigned int>(lifecycle_.mapGeneration()),
+					static_cast<unsigned int>(lifecycle_.roundGeneration()),
+					static_cast<int>(joinControllers_[index].phase()), requestedTeam, entityTeam,
+					deadflag, spectator);
 			}
 			if (dispatched)
 			{
@@ -2201,10 +2718,12 @@ void PluginRuntime::updateManagedBotMovement()
 						joinControllers_[index].commandCompleted(adapterFrameCount_);
 				applyJoinAction(index, completed);
 			}
-			else
-			{
+		else
+		{
+			const JoinAction failed =
 				joinControllers_[index].commandFailed(JoinError::CommandDispatchFailed);
-			}
+			applyJoinAction(index, failed);
+		}
 		}
 	} // namespace metamod
 } // namespace astrabot
