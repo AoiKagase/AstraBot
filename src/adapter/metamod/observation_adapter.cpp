@@ -125,12 +125,39 @@ void tracePlayer(
 	compat::emitObservationTrace(
 		observation.objective.carryingC4, compat::ObservationValueKind::Boolean, sink);
 }
+
+class SequencedTraceSink : public compat::IObservationTraceSink
+{
+public:
+	SequencedTraceSink(
+		compat::IObservationTraceSink *downstream,
+		std::uint64_t *sequence)
+		: downstream_(downstream), sequence_(sequence)
+	{
+	}
+
+	void record(const compat::ObservationTraceRecord &record) override
+	{
+		if (downstream_ == nullptr || sequence_ == nullptr)
+		{
+			return;
+		}
+		compat::ObservationTraceRecord sequenced = record;
+		sequenced.sequence = ++(*sequence_);
+		downstream_->record(sequenced);
+	}
+
+private:
+	compat::IObservationTraceSink *downstream_;
+	std::uint64_t *sequence_;
+};
 }
 
 ObservationAdapter::ObservationAdapter()
 	: engineFunctions_(nullptr),
 	  globals_(nullptr),
-	  traceSink_(nullptr)
+	  traceSink_(nullptr),
+	  traceSequence_(0U)
 {
 }
 
@@ -258,7 +285,8 @@ ObservationAdapterResult ObservationAdapter::collectActor(
 	observation->objective.vip = unavailableValue<bool>(
 		"OBS-OBJECTIVE-VIP", actor, frame, timing);
 
-	tracePlayer(*observation, traceSink_);
+	SequencedTraceSink sequencedTrace(traceSink_, &traceSequence_);
+	tracePlayer(*observation, traceSink_ == nullptr ? nullptr : &sequencedTrace);
 	return ObservationAdapterResult::Accepted;
 }
 
@@ -296,6 +324,9 @@ ObservationAdapterResult ObservationAdapter::collectPlantedBomb(
 	}
 
 	*observation = {};
+	SequencedTraceSink sequencedTrace(traceSink_, &traceSequence_);
+	compat::IObservationTraceSink *traceSink =
+		traceSink_ == nullptr ? nullptr : &sequencedTrace;
 	const compat::ObservationContext plantedContext = makeContext(
 		"OBS-OBJECTIVE-BOMB-PLANTED", actor, frame, timing,
 		compat::ObservationQuality::Inferred,
@@ -318,11 +349,11 @@ ObservationAdapterResult ObservationAdapter::collectPlantedBomb(
 		positionContext};
 	observation->bombTimer = {entity->v.dmgtime, true, timerContext};
 	compat::emitObservationTrace(
-		observation->bombPlanted, compat::ObservationValueKind::Boolean, traceSink_);
+		observation->bombPlanted, compat::ObservationValueKind::Boolean, traceSink);
 	compat::emitObservationTrace(
-		observation->bombPosition, compat::ObservationValueKind::Vector, traceSink_);
+		observation->bombPosition, compat::ObservationValueKind::Vector, traceSink);
 	compat::emitObservationTrace(
-		observation->bombTimer, compat::ObservationValueKind::Float, traceSink_);
+		observation->bombTimer, compat::ObservationValueKind::Float, traceSink);
 	return ObservationAdapterResult::Accepted;
 }
 }

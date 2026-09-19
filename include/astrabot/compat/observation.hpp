@@ -160,6 +160,7 @@ struct CompatibilityObservation
 
 struct ObservationTraceRecord
 {
+	std::uint64_t sequence;
 	ObservationContext context;
 	ObservationValueKind kind;
 	float floatValue;

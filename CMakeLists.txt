@@ -676,6 +676,19 @@ add_executable(astrabot_compat_actor_command
 	astrabot_apply_warnings(astrabot_observation_adapter)
 	add_test(NAME astrabot_observation_adapter COMMAND astrabot_observation_adapter)
 
+	add_executable(astrabot_observation_trace
+		tests/observation_trace_tests.cpp
+		src/adapter/metamod/observation_adapter.cpp
+	)
+	target_include_directories(astrabot_observation_trace PRIVATE
+		"${CMAKE_CURRENT_SOURCE_DIR}/include"
+		"${CMAKE_CURRENT_SOURCE_DIR}/src/adapter/metamod"
+		${ASTRABOT_METAMOD_INCLUDE_DIRS}
+	)
+	target_link_libraries(astrabot_observation_trace PRIVATE astrabot_core)
+	astrabot_apply_warnings(astrabot_observation_trace)
+	add_test(NAME astrabot_observation_trace COMMAND astrabot_observation_trace)
+
 	add_executable(astrabot_action_adapter
 		tests/action_adapter_tests.cpp
 		src/adapter/metamod/action_adapter.cpp

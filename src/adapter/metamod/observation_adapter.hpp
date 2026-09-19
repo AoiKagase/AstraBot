@@ -43,6 +43,7 @@ private:
 	enginefuncs_t *engineFunctions_;
 	globalvars_t *globals_;
 	compat::IObservationTraceSink *traceSink_;
+	mutable std::uint64_t traceSequence_;
 };
 }
 }
