@@ -45,7 +45,7 @@ LocomotionResult mapFollowerResult(NavFollowerResult result)
 
 LocomotionController::LocomotionController() :
 	pathFollower_(),
-	config_{32.0f, 1.0f, 1.0f, 16.0f, 100.0f, 8U},
+	config_{32.0f, 20.0f, 1.0f, 16.0f, 100.0f, 8U},
 	lastPosition_{0.0f, 0.0f, 0.0f},
 	stuckFrames_(0U),
 	hasLastPosition_(false),
@@ -230,8 +230,12 @@ LocomotionResult LocomotionController::buildIntent(
 		return LocomotionResult::StepTooHigh;
 	}
 
+	const bool requiresJump = (destinationArea->attributes & NavArea::kJump) != 0U;
+	const bool requiresCrouch =
+			(destinationArea->attributes & NavArea::kCrouch) != 0U;
 	LocomotionPosture posture = LocomotionPosture::Standing;
-	if (observation.standingClearance < config_.requiredClearance)
+	if (!requiresJump &&
+			(requiresCrouch || observation.standingClearance < config_.requiredClearance))
 	{
 		if (observation.crouchingClearance < config_.requiredClearance)
 		{
@@ -250,10 +254,12 @@ LocomotionResult LocomotionController::buildIntent(
 	intent->direction = normalizeDirection(observation.position, target);
 	intent->speed = config_.maximumSpeed;
 	intent->posture = posture;
-	intent->traversal = posture == LocomotionPosture::Crouching
-			? TraversalAction::Crouch
-			: (stepHeight > 0.0f ? TraversalAction::Step : TraversalAction::Walk);
-	intent->stepUp = stepHeight > 0.0f;
+	intent->traversal = requiresJump
+			? TraversalAction::Jump
+			: (posture == LocomotionPosture::Crouching
+					? TraversalAction::Crouch
+					: (stepHeight > 0.0f ? TraversalAction::Step : TraversalAction::Walk));
+	intent->stepUp = stepHeight > 0.0f && !requiresJump;
 	intent->currentArea = currentArea->id;
 	intent->targetArea = targetArea;
 	return LocomotionResult::IntentReady;

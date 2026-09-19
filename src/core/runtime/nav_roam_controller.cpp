@@ -18,7 +18,7 @@ namespace
 
 	nav::LocomotionConfig roamLocomotionConfig()
 	{
-		return {32.0f, 1.0f, 64.0f, 16.0f, 100.0f, 8U};
+		return {32.0f, 20.0f, 64.0f, 16.0f, 100.0f, 8U};
 	}
 
 	void initializeDecision(NavRoamDecision *decision)

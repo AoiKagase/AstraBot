@@ -306,6 +306,78 @@ bool testInvalidInputs()
 }
 }
 
+bool testReferenceArrivalTolerance()
+{
+	astrabot::nav::NavDocument document = routeDocument(0.0f);
+	const astrabot::nav::NavSnapshot snapshot = snapshotFor(&document, 1U);
+	astrabot::nav::LocomotionController controller;
+	if (!check(controller.start(corridorFor(snapshot)) ==
+				astrabot::nav::LocomotionResult::Started,
+			"reference arrival controller starts"))
+	{
+		return false;
+	}
+	astrabot::nav::LocomotionObservation observation = {};
+	observation.position = {16.0f, 32.0f, 0.0f};
+	observation.standingClearance = 72.0f;
+	observation.crouchingClearance = 36.0f;
+	astrabot::nav::LocomotionIntent intent = {};
+	if (!check(controller.update(snapshot, observation, &intent) ==
+				astrabot::nav::LocomotionResult::IntentReady,
+			"reference arrival emits an approach intent"))
+	{
+		return false;
+	}
+	observation.position = {60.0f, 32.0f, 0.0f};
+	return check(controller.update(snapshot, observation, &intent) ==
+				astrabot::nav::LocomotionResult::TargetReached,
+			"reference arrival accepts a point within 20 units of the next area");
+}
+
+bool testNavAttributesSelectTraversal()
+{
+	astrabot::nav::NavDocument crouchDocument;
+	crouchDocument.setSourceIdentity({5U, 100U, 200U});
+	astrabot::nav::NavArea crouchStart = area(1U, 0.0f, 64.0f, 0.0f);
+	astrabot::nav::NavArea crouchGoal = area(2U, 64.0f, 128.0f, 0.0f);
+	crouchStart.connections[0U].push_back(2U);
+	crouchGoal.attributes = astrabot::nav::NavArea::kCrouch;
+	crouchDocument.addArea(crouchStart);
+	crouchDocument.addArea(crouchGoal);
+	const astrabot::nav::NavSnapshot crouchSnapshot =
+			snapshotFor(&crouchDocument, 1U);
+	astrabot::nav::LocomotionController crouchController;
+	crouchController.start(corridorFor(crouchSnapshot));
+	astrabot::nav::LocomotionObservation observation = {};
+	observation.position = {16.0f, 32.0f, 0.0f};
+	observation.standingClearance = 72.0f;
+	observation.crouchingClearance = 36.0f;
+	astrabot::nav::LocomotionIntent intent = {};
+	if (!check(crouchController.update(crouchSnapshot, observation, &intent) ==
+				astrabot::nav::LocomotionResult::IntentReady &&
+				intent.traversal == astrabot::nav::TraversalAction::Crouch,
+			"NAV_CROUCH forces crouch traversal"))
+	{
+		return false;
+	}
+
+	astrabot::nav::NavDocument jumpDocument;
+	jumpDocument.setSourceIdentity({5U, 100U, 200U});
+	astrabot::nav::NavArea jumpStart = area(1U, 0.0f, 64.0f, 0.0f);
+	astrabot::nav::NavArea jumpGoal = area(2U, 64.0f, 128.0f, 0.0f);
+	jumpStart.connections[0U].push_back(2U);
+	jumpGoal.attributes = astrabot::nav::NavArea::kJump;
+	jumpDocument.addArea(jumpStart);
+	jumpDocument.addArea(jumpGoal);
+	const astrabot::nav::NavSnapshot jumpSnapshot = snapshotFor(&jumpDocument, 1U);
+	astrabot::nav::LocomotionController jumpController;
+	jumpController.start(corridorFor(jumpSnapshot));
+	return check(jumpController.update(jumpSnapshot, observation, &intent) ==
+				astrabot::nav::LocomotionResult::IntentReady &&
+				intent.traversal == astrabot::nav::TraversalAction::Jump,
+			"NAV_JUMP selects jump traversal before ordinary walking");
+}
+
 int main()
 {
 	if (!testWalkAndStepIntent() ||
@@ -313,7 +385,9 @@ int main()
 			!testStepAndStuckRecovery() ||
 			!testCompletionAndInvalidation() ||
 			!testCorridorIndexTracksPortalProgress() ||
-			!testInvalidInputs())
+			!testInvalidInputs() ||
+			!testReferenceArrivalTolerance() ||
+			!testNavAttributesSelectTraversal())
 	{
 		return 1;
 	}
