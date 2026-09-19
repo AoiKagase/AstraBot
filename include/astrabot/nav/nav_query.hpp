@@ -33,6 +33,12 @@ enum class NavQueryResult
 	ResourceLimit
 };
 
+enum class NavRouteType
+{
+	Fastest,
+	Safest
+};
+
 struct NavAreaMatch
 {
 	AreaId area;
@@ -76,9 +82,14 @@ public:
 		AreaId fromArea,
 		std::vector<NavDirectedLink> *links) const;
 	NavQueryResult buildCorridor(
-		AreaId start,
-		AreaId goal,
-		NavCorridor *corridor) const;
+			AreaId start,
+			AreaId goal,
+			NavCorridor *corridor) const;
+	NavQueryResult buildCorridor(
+			AreaId start,
+			AreaId goal,
+			NavRouteType routeType,
+			NavCorridor *corridor) const;
 
 private:
 	const NavDocument *document() const;

@@ -77,6 +77,10 @@ struct NavEncounter
 struct NavArea
 {
 	static constexpr std::size_t kDirectionCount = 4U;
+	static constexpr std::uint8_t kCrouch = 0x01U;
+	static constexpr std::uint8_t kJump = 0x02U;
+	static constexpr std::uint8_t kPrecise = 0x04U;
+	static constexpr std::uint8_t kNoJump = 0x08U;
 
 	AreaId id;
 	std::uint8_t attributes;

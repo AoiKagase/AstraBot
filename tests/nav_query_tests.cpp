@@ -455,6 +455,70 @@ bool testInvalidInputs()
 
 }
 
+bool testReferenceStableEqualCostTieBreak()
+{
+	astrabot::nav::NavDocument document;
+	document.setSourceIdentity({5U, 100U, 200U});
+	astrabot::nav::NavArea start = area(1U, 0.0f, 64.0f, 0.0f);
+	astrabot::nav::NavArea firstDiscovered = area(20U, 64.0f, 128.0f, 0.0f);
+	astrabot::nav::NavArea secondDiscovered = area(10U, 64.0f, 128.0f, 0.0f);
+	astrabot::nav::NavArea goal = area(4U, 128.0f, 192.0f, 0.0f);
+	start.connections[0U].push_back(20U);
+	start.connections[0U].push_back(10U);
+	firstDiscovered.connections[0U].push_back(4U);
+	secondDiscovered.connections[0U].push_back(4U);
+	document.addArea(start);
+	document.addArea(firstDiscovered);
+	document.addArea(secondDiscovered);
+	document.addArea(goal);
+
+	const astrabot::nav::NavSnapshot snapshot = snapshotFor(&document, 1U);
+	const astrabot::nav::NavQuery query(snapshot);
+	astrabot::nav::NavCorridor corridor = {};
+	if (!check(query.buildCorridor(1U, 4U, &corridor) ==
+				astrabot::nav::NavQueryResult::Found,
+			"equal-cost reference fixture builds"))
+	{
+		return false;
+	}
+	return check(corridor.areas ==
+				std::vector<astrabot::nav::AreaId>({1U, 20U, 4U}),
+			"equal-cost route keeps CSBot discovery order instead of area ID order");
+}
+
+bool testReferenceCrouchCost()
+{
+	astrabot::nav::NavDocument document;
+	document.setSourceIdentity({5U, 100U, 200U});
+	astrabot::nav::NavArea start = area(1U, 0.0f, 64.0f, 0.0f);
+	astrabot::nav::NavArea crouch = area(2U, 64.0f, 96.0f, 0.0f);
+	astrabot::nav::NavArea normal = area(3U, 64.0f, 160.0f, 0.0f);
+	astrabot::nav::NavArea goal = area(4U, 160.0f, 192.0f, 0.0f);
+	crouch.attributes = astrabot::nav::NavArea::kCrouch;
+	start.connections[0U].push_back(2U);
+	start.connections[0U].push_back(3U);
+	crouch.connections[0U].push_back(4U);
+	normal.connections[0U].push_back(4U);
+	document.addArea(start);
+	document.addArea(crouch);
+	document.addArea(normal);
+	document.addArea(goal);
+
+	const astrabot::nav::NavSnapshot snapshot = snapshotFor(&document, 1U);
+	const astrabot::nav::NavQuery query(snapshot);
+	astrabot::nav::NavCorridor corridor = {};
+	if (!check(query.buildCorridor(
+				1U, 4U, astrabot::nav::NavRouteType::Fastest, &corridor) ==
+				astrabot::nav::NavQueryResult::Found,
+			"crouch-cost fixture builds"))
+	{
+		return false;
+	}
+	return check(corridor.areas ==
+				std::vector<astrabot::nav::AreaId>({1U, 3U, 4U}),
+			"fastest route applies the CSBot crouch traversal penalty");
+}
+
 int main()
 {
 	if (!testSpatialTieBreaking() ||
@@ -465,7 +529,9 @@ int main()
 			!testAStarPrefersLowerCostPath() ||
 			!testBoundedSearch() ||
 			!testPathFollowerProgressAndStaleRoute() ||
-			!testInvalidInputs())
+			!testInvalidInputs() ||
+			!testReferenceStableEqualCostTieBreak() ||
+			!testReferenceCrouchCost())
 	{
 		return 1;
 	}

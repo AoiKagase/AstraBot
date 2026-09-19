@@ -498,15 +498,6 @@ NavQueryResult NavQuery::outgoingLinks(
 		return NavQueryResult::ResourceLimit;
 	}
 
-	std::sort(candidate.begin(), candidate.end(),
-		[](const NavDirectedLink &left, const NavDirectedLink &right)
-		{
-			if (left.toArea != right.toArea)
-			{
-				return left.toArea < right.toArea;
-			}
-			return left.direction < right.direction;
-		});
 	*links = candidate;
 	return NavQueryResult::Found;
 }
@@ -527,6 +518,7 @@ NavQueryResult buildAStarCorridor(
 	const NavQueryLimits &limits,
 	AreaId start,
 	AreaId goal,
+	NavRouteType routeType,
 	NavCorridor *corridor)
 {
 	if (corridor == nullptr)
@@ -572,6 +564,24 @@ NavQueryResult buildAStarCorridor(
 		const float distance = std::sqrt(dx * dx + dy * dy + dz * dz);
 		return std::isfinite(distance) && distance > 1.0f ? distance : 1.0f;
 	};
+	const auto traversalCost = [routeType, &distanceBetween](
+			const NavArea &from, const NavArea &to)
+	{
+		const float distance = distanceBetween(from, to);
+		const float crouchPenalty =
+				routeType == NavRouteType::Fastest ? 20.0f : 5.0f;
+		const float jumpPenalty = 1.0f;
+		float cost = distance;
+		if ((to.attributes & NavArea::kCrouch) != 0U)
+		{
+			cost += crouchPenalty * distance;
+		}
+		if ((to.attributes & NavArea::kJump) != 0U)
+		{
+			cost += jumpPenalty * distance;
+		}
+		return cost;
+	};
 
 	try
 	{
@@ -598,9 +608,7 @@ NavQueryResult buildAStarCorridor(
 				}
 				const AStarRecord &candidate = records[candidateRecordIndex];
 				const AStarRecord &best = records[bestRecordIndex];
-				if (candidate.totalCost < best.totalCost ||
-						(candidate.totalCost == best.totalCost &&
-						 candidate.area < best.area))
+			if (candidate.totalCost < best.totalCost)
 				{
 					bestOpenIndex = index;
 					bestRecordIndex = candidateRecordIndex;
@@ -635,8 +643,8 @@ NavQueryResult buildAStarCorridor(
 					{
 						return NavQueryResult::AreaNotFound;
 					}
-					const float tentativeCost = records[currentRecordIndex].costSoFar +
-						distanceBetween(*currentArea, *targetArea);
+			const float tentativeCost = records[currentRecordIndex].costSoFar +
+					traversalCost(*currentArea, *targetArea);
 					std::size_t targetRecordIndex = findRecord(records, target);
 					if (targetRecordIndex == records.size())
 					{
@@ -722,7 +730,17 @@ NavQueryResult NavQuery::buildCorridor(
 	AreaId goal,
 	NavCorridor *corridor) const
 {
-	return buildAStarCorridor(snapshot_, limits_, start, goal, corridor);
+	return buildCorridor(start, goal, NavRouteType::Fastest, corridor);
+}
+
+NavQueryResult NavQuery::buildCorridor(
+	AreaId start,
+	AreaId goal,
+	NavRouteType routeType,
+	NavCorridor *corridor) const
+{
+	return buildAStarCorridor(
+			snapshot_, limits_, start, goal, routeType, corridor);
 }
 
 const NavDocument *NavQuery::document() const
