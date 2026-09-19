@@ -1,5 +1,20 @@
 # P00 Source Map
 
+## P05 state machine boundary
+
+| Reference surface | Pinned source | AstraBot current boundary | P05 status |
+|---|---|---|---|
+| State owner / `SetState` | `regamedll/dlls/bot/cs_bot.h`, `cs_bot_statemachine.cpp` | `include/astrabot/compat/state_machine.hpp`, `src/core/compat/state_machine.cpp` | IMPLEMENTED_OFFLINE_VERIFIED |
+| Full Update dispatch | `regamedll/dlls/bot/cs_bot_update.cpp` | `PluginRuntime::updateManagedBotMovement`, existing `BotTimingScheduler` | IMPLEMENTED_UNVERIFIED; scheduler unchanged |
+| Ordinary state lifecycle | `regamedll/dlls/bot/states/cs_bot_*.cpp` | `CompatibilityStateMachine::invokeEnter/Update/Exit` and owned instances | IMPLEMENTED_UNVERIFIED; internals deferred |
+| Attack overlay | `CCSBot::m_attackState`, `Attack()`, `StopAttacking()` | `attackOverlayActive_`, `beginAttack`, `stopAttack`, existing combat intent handoff | IMPLEMENTED_UNVERIFIED; no live trace |
+| Managed actor ownership | `CCSBot` instance lifecycle | `PluginRuntime::managedBotStateMachines_`, reset on actor/map/round lifecycle | IMPLEMENTED_UNVERIFIED |
+| Transition trace | reference watch/debug state transitions | `StateTraceRecord` and `IStateTraceSink` in Core tests | IMPLEMENTED_OFFLINE_VERIFIED |
+
+The reference source is used as a behavioral comparator only. No private
+ReGameDLL class, pdata offset, or reference implementation is copied into the
+AstraBot Core or public Metamod adapter.
+
 ## P04 observation boundary
 
 | Reference surface | Pinned ReGameDLL-CS consumer examples | AstraBot current boundary | P04 status |

@@ -28,7 +28,32 @@ because the adapter exists or an offline fixture passes.
 - `ASTRA_EXTENSION`: Astra-specific infrastructure or future behavior; it must not affect compatibility mode.
 - `NOT_APPLICABLE`: reference behavior is not in scope for the current adapter boundary.
 
+## P05 State Machine Matrix
+
+| State / boundary | Reference | AstraBot mapping | Lifecycle / orchestration | Internal behavior | Status / blocker |
+|---|---|---|---|---|---|
+| State ownership | `CCSBot::m_state` and one instance per state | `CompatibilityStateMachine` per managed actor | current state, task, timestamp and actor ownership are explicit | existing planner architecture retained | IMPLEMENTED_UNVERIFIED; no live differential trace |
+| SetState | `cs_bot_statemachine.cpp::SetState` | `transitionInternal` | OnExit -> OnEnter -> publish -> timestamp; same-state repeats lifecycle | side effects mapped only | IMPLEMENTED_OFFLINE_VERIFIED |
+| Attack overlay | `m_attackState` + `m_isAttacking` | `attackOverlayActive_` | overlay update has precedence; state change stops overlay | aim/fire/recoil unchanged | IMPLEMENTED_UNVERIFIED; private weapon state unavailable |
+| Idle | `cs_bot_idle.cpp` | `STATE-IDLE` | path reset, SeekAndDestroy task, update dispatch | task selection deferred | PARTIAL |
+| Buy | `cs_bot_buy.cpp` | `STATE-BUY` | lifecycle wrapper | economy/buy algorithm deferred | IMPLEMENTED_UNVERIFIED |
+| DefuseBomb | `cs_bot_defuse_bomb.cpp` | `STATE-DEFUSE-BOMB` | exit task/look cleanup mapped | defuse reasoning and kit state blocked | IMPLEMENTED_UNVERIFIED |
+| EscapeFromBomb | `cs_bot_escape_from_bomb.cpp` | `STATE-ESCAPE-BOMB` | path reset/lifecycle wrapper | escape timing/path deferred | IMPLEMENTED_UNVERIFIED |
+| FetchBomb | `cs_bot_fetch_bomb.cpp` | `STATE-FETCH-BOMB` | path reset/lifecycle wrapper | loose-bomb decision blocked | IMPLEMENTED_UNVERIFIED |
+| Follow | `cs_bot_follow.cpp` | `STATE-FOLLOW` | path reset/task wrapper; attack stop interaction mapped | leader/vision/path behavior deferred | IMPLEMENTED_UNVERIFIED |
+| Hide | `cs_bot_hide.cpp` | `STATE-HIDE` | look cleanup on exit mapped | hiding spot selection deferred | IMPLEMENTED_UNVERIFIED |
+| Hunt | `cs_bot_hunt.cpp` | `STATE-HUNT` | path reset/SeekAndDestroy task mapped | hunt/vision behavior deferred | IMPLEMENTED_UNVERIFIED |
+| InvestigateNoise | `cs_bot_investigate_noise.cpp` | `STATE-INVESTIGATE-NOISE` | lifecycle wrapper | live sound input unavailable | BLOCKED_BY_OBSERVATION |
+| MoveTo | `cs_bot_move_to.cpp` | `STATE-MOVE-TO` | lifecycle wrapper | route/path semantics deferred | IMPLEMENTED_UNVERIFIED |
+| PlantBomb | `cs_bot_plant_bomb.cpp` | `STATE-PLANT-BOMB` | exit guard-task/look cleanup mapped | exact plant sequence deferred | IMPLEMENTED_UNVERIFIED |
+| UseEntity | `cs_bot_use_entity.cpp` | `STATE-USE-ENTITY` | look cleanup mapped | entity-use behavior unavailable | IMPLEMENTED_UNVERIFIED |
+| Full Update gate | `cs_bot_update.cpp` state dispatch | existing `BotTimingScheduler` + adapter sequence | no independent think loop; only Full Update updates state | live cadence differential not run | PASS REGRESSION |
+| Enhanced isolation | Compatibility baseline must not be overridden | `RuntimeModePolicy` + Compatibility-only requests | no enhanced request path | enhanced behavior remains separate | IMPLEMENTED_UNVERIFIED |
+
 ## Matrix
+
+The P05 State Machine Matrix above supersedes the historical P00 State rows
+below. Those rows are retained as an audit trail of the pre-P05 baseline.
 
 | Domain | Reference behavior | AstraBot location | Status | Evidence / gap |
 |---|---|---|---|---|

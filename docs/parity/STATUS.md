@@ -1,5 +1,26 @@
 # CSBot Parity Status
 
+## P05 result: PARTIAL
+
+| Gate | Result | Evidence / limitation |
+|---|---|---|
+| Reference state inventory | PASS | 12 ordinary states plus the separate Attack overlay inventoried from the pinned ReGameDLL-CS source |
+| Compatibility state owner | PASS boundary | one `compat::CompatibilityStateMachine` per managed actor; existing planner state machine retained |
+| SetState lifecycle | PASS offline | OnExit -> OnEnter -> state publication -> timestamp, including same-state requests |
+| Attack overlay | PASS offline boundary | underlying state retained; overlay owns update while active; state changes stop overlay first |
+| Full Update timing | PASS regression | state updates are gated by existing P02 Full Update events; scheduler unchanged |
+| Runtime integration | IMPLEMENTED_UNVERIFIED | managed bots own/reset state machines; public C4 carrying request is wired in Compatibility Mode |
+| Deterministic tests | PASS | focused state-machine target covers ordering, multi-step, blockers, overlay, isolation, lifecycle |
+| Full CTest | PASS | complete x86 Debug suite `50/50 PASS` |
+| Phase 8 | PASS fixture-only | live-log, objective, slow-movement, and action-boundary fixture checks passed; live combat/C4 remains unverified |
+| FocalSpan | PASS freshness | refreshed after P05 source edits; `stale: false` |
+| Live HLDS/ReHLDS | NOT RUN | no live state/differential trace claim |
+
+P05 is intentionally `PARTIAL`. State orchestration and the Attack overlay
+boundary are implemented and offline verified, but most state-internal
+behavior, private observations, exact objective/vision/NAV decisions, and a
+pinned differential runtime trace remain open. P06 is not started.
+
 ## P04 result: PARTIAL
 
 | Gate | Result | Evidence / limitation |
@@ -20,7 +41,8 @@
 | Live HLDS/ReHLDS | NOT RUN | no new live acceptance claim in P04 |
 
 P04 does not promote any observation to `MATCH` solely from an adapter or
-offline fixture. P05 State Machine parity is not started.
+offline fixture. P05 state orchestration is now implemented partially; internal
+behavior and live differential acceptance remain open.
 
 ## P00 result
 
@@ -60,7 +82,9 @@ or reference source was changed.
 | P01 | complete | explicit runtime mode, policy isolation, snapshot diagnostics, and regression tests |
 | P02 | complete | Compatibility timing/command cadence implemented and deterministically verified; live/private-state parity remains open |
 | P03 | partial | Compatibility RNG boundary, engine delegation, scripted consumption, and trace schema are offline verified; specific callsites and live parity remain open |
-| P04-P12 | pending | private-state observation through live parity remain downstream phases and evidence gates |
+| P04 | partial | observation boundary merged; private-state and live gates remain open |
+| P05 | partial | compatibility state orchestration and attack overlay offline verified; internal behavior and live differential trace remain open |
+| P06-P12 | pending | perception through live parity remain downstream phases and evidence gates |
 | P13 | deferred | enhanced intelligence remains downstream of the baseline |
 
 The repository's existing `.planning/STATE.md` is not rewritten by this audit;

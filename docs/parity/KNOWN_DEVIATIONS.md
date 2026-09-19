@@ -1,5 +1,20 @@
 # P00 Known Deviations and Blockers
 
+## P05 state-machine deviations
+
+- `CompatibilityStateMachine` proves lifecycle ordering and overlay ownership,
+  not the internal decision algorithm of each CSBot state.
+- The runtime requests only the public C4-carrying PlantBomb lifecycle in the
+  current Compatibility integration. Planted-bomb tactical choice, defuse
+  reasoning, follow leader, noise, visibility, path failure, and entity-use
+  transitions remain unavailable or deferred.
+- Private weapon accuracy, reload, next-primary/secondary timers, and related
+  weapon branches remain `UNAVAILABLE`; P05 never substitutes defaults.
+- `TRANS-RNG-DEPENDENT` is explicitly blocked when the Compatibility RNG
+  boundary is unavailable. No new direct random callsite was added.
+- Core state traces are deterministic fixture evidence. No pinned reference
+  CSBot runtime trace or live HLDS/ReHLDS state acceptance was collected.
+
 ## P04 observation deviations
 
 - `EXACT_ENGINE_API` public player fields are not behavioral `MATCH`; CSBot

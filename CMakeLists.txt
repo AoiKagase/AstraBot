@@ -38,6 +38,7 @@ include(cmake/AstraBotBuild.cmake)
   src/core/compat/random_source.cpp
   src/core/compat/bot_configuration.cpp
   src/core/compat/profile_catalog.cpp
+  src/core/compat/state_machine.cpp
   src/core/nav/nav_model.cpp
   src/core/nav/legacy_nav_reader.cpp
   src/core/nav/nav_snapshot.cpp
@@ -185,6 +186,16 @@ if(ASTRABOT_BUILD_TESTS)
   target_link_libraries(astrabot_observation_model PRIVATE astrabot_core)
   astrabot_apply_warnings(astrabot_observation_model)
   add_test(NAME astrabot_observation_model COMMAND astrabot_observation_model)
+
+  add_executable(astrabot_compat_state_machine
+    tests/compat_state_machine_tests.cpp
+  )
+  target_include_directories(astrabot_compat_state_machine PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+  )
+  target_link_libraries(astrabot_compat_state_machine PRIVATE astrabot_core)
+  astrabot_apply_warnings(astrabot_compat_state_machine)
+  add_test(NAME astrabot_compat_state_machine COMMAND astrabot_compat_state_machine)
 
   add_executable(astrabot_profile_catalog
     tests/profile_catalog_tests.cpp

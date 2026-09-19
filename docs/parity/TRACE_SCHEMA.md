@@ -1,5 +1,30 @@
 # P00 Differential Trace Contract
 
+## P05 state trace extension
+
+State lifecycle records are bounded deterministic records independent from the
+P03 RNG sink. Each `StateTraceRecord` carries:
+
+| Field | Meaning |
+|---|---|
+| `sequence` | Monotonic trace record sequence for one state-machine owner |
+| `state_sequence` | State lifecycle sequence |
+| `actor` | `slot:generation` identity |
+| `previous_state` / `current_state` | Ordinary compatibility state IDs |
+| `callback_state` / `machine_state` | State callback identity and machine pointer identity at callback time |
+| `event` | `OnExit`, `OnEnter`, `StatePublished`, `TimestampUpdated`, `OnUpdate`, `SideEffect`, or Attack overlay event |
+| `transition_id` | Stable `TRANS-*` semantic ID |
+| `reason` | Stable transition reason |
+| `timestamp` | Injected state time in the existing timing domain |
+| `full_update_sequence` | Existing P02 Full Update sequence; no independent think loop |
+| `attack_overlay_active` | Overlay status at record emission |
+| `task` / `side_effect` | Compatibility task and lifecycle side effect |
+
+Attack overlay records retain the underlying ordinary state. `AttackOnUpdate`
+is emitted instead of ordinary `OnUpdate` while the overlay is active. A state
+transition emits the overlay exit before the ordinary state's exit, matching
+the pinned `SetState`/`StopAttacking` interaction.
+
 ## P04 observation trace extension
 
 Observation records are bounded and optional. They are independent from the

@@ -393,7 +393,8 @@ namespace astrabot
 		userMessageText_(),
 		userMessageTextLength_(0U),
 	managedBotMovement_(), managedBotCombat_(), managedBotObjectives_(),
-	managedBotCommandSequences_(),
+	managedBotStateMachines_(), managedBotCommandSequences_(),
+	managedBotFullUpdateSequences_(), managedBotStateRounds_(), managedBotWasDead_(),
 	managedBotTiming_(), managedBotCommandTemplates_(),
 	managedBotCommandTemplateValid_(),
 			  movementDiagnosticSamples_(),
@@ -1511,6 +1512,16 @@ void PluginRuntime::updateManagedBotMovement()
 			recordMovementPhysicsSample(index, before, receipt);
 			continue;
 		}
+		if (managedBotFullUpdateSequences_[index] ==
+			(std::numeric_limits<std::uint32_t>::max)())
+		{
+			managedBotFullUpdateSequences_[index] = 0U;
+		}
+		else
+		{
+			++managedBotFullUpdateSequences_[index];
+		}
+		updateManagedBotCompatibilityState(index, before);
 		if (before.dead)
 		{
 			if (movementLastDeadFrames_[index] == 0U)
@@ -2246,9 +2257,13 @@ ActionProposal PluginRuntime::decideManagedBotAction(
 				scenario.events[0].team = objectives::TeamRole::Terrorist;
 			}
 			objectives::ObjectiveProposal objective = {};
+	const behavior::BehaviorState compatibilityBehaviorState =
+		managedBotStateMachines_[index].attackOverlayActive()
+			? behavior::BehaviorState::Engage
+			: behavior::BehaviorState::Roam;
 	const objectives::ObjectiveResult objectiveResult =
 		managedBotObjectives_[index].plan(
-			snapshot, behavior::BehaviorState::Roam, scenario, nullptr, &objective);
+			snapshot, compatibilityBehaviorState, scenario, nullptr, &objective);
 	objectives::ObjectiveKind objectiveKind = objectives::ObjectiveKind::None;
 	if (objectiveResult == objectives::ObjectiveResult::Proposed)
 	{
@@ -2331,6 +2346,19 @@ ActionProposal PluginRuntime::decideManagedBotAction(
 	combat::CombatDecision decision = {};
 	const combat::CombatResult result = managedBotCombat_[index].decide(
 		snapshot, inventory, target, context, &decision);
+	const bool fireIntentReady =
+		result == combat::CombatResult::FireIntentReady &&
+		decision.hasFire && decision.hasAim;
+	const compat::StateUpdateContext stateContext =
+		makeManagedBotStateContext(index, before);
+	if (fireIntentReady)
+	{
+		(void)managedBotStateMachines_[index].beginAttack(stateContext);
+	}
+	else if (managedBotStateMachines_[index].attackOverlayActive())
+	{
+		(void)managedBotStateMachines_[index].stopAttack(stateContext);
+	}
 	if ((adapterFrameCount_ % 16U) == 0U && gpMetaUtilFuncs != nullptr &&
 		gpMetaUtilFuncs->pfnLogConsole != nullptr && pluginId_ != nullptr)
 	{
@@ -2342,7 +2370,7 @@ ActionProposal PluginRuntime::decideManagedBotAction(
 			static_cast<unsigned int>(managedBotTeamNumbers_[index]), static_cast<int>(result),
 			decision.hasAim ? 1 : 0, decision.hasFire ? 1 : 0);
 	}
-	if (result == combat::CombatResult::FireIntentReady && decision.hasFire && decision.hasAim)
+	if (fireIntentReady)
 	{
 		proposal.kind = ActionKind::Fire;
 		proposal.viewAngles = {
@@ -2564,7 +2592,7 @@ runtime::CommandReceipt PluginRuntime::dispatchNeutralMovement(
 		return inputDispatcher_.dispatchNext(handle.actor, adapterFrameCount_);
 	}
 
-	runtime::CommandReceipt PluginRuntime::dispatchJoinHeartbeat(
+runtime::CommandReceipt PluginRuntime::dispatchJoinHeartbeat(
 		std::size_t index,
 		FakeClientHandle &handle,
 		std::uint8_t milliseconds)
@@ -2602,6 +2630,116 @@ runtime::CommandReceipt PluginRuntime::dispatchNeutralMovement(
 		return receipt;
 	}
 
+compat::StateUpdateContext PluginRuntime::makeManagedBotStateContext(
+	std::size_t index,
+	const runtime::MovementPhysicsState &before) const
+{
+	compat::StateUpdateContext context = {};
+	if (index >= managedBotHandles_.size())
+	{
+		return context;
+	}
+	const FakeClientHandle &handle = managedBotHandles_[index];
+	context.actor = {handle.actor.slot, handle.actor.actorGeneration};
+	context.frame = {
+		lifecycle_.mapGeneration(), lifecycle_.roundGeneration(), adapterFrameCount_};
+	context.timestamp = globals_ != nullptr ? globals_->time : 0.0f;
+	context.fullUpdateSequence = managedBotFullUpdateSequences_[index];
+	context.fullUpdate = true;
+	context.lifeAvailability = handle.entity != nullptr
+		? compat::ObservationAvailability::Available
+		: compat::ObservationAvailability::Unavailable;
+	context.alive = !before.dead;
+	context.roundAvailability = lifecycle_.isMapActive()
+		? compat::ObservationAvailability::Available
+		: compat::ObservationAvailability::Unavailable;
+	context.roundActive = lifecycle_.isMapActive();
+	context.requestTransition = false;
+	context.requestedState = compat::CompatibilityStateId::None;
+	context.transitionId = compat::StateTransitionId::None;
+	context.transitionReason = compat::StateTransitionReason::None;
+	context.transitionRequest = compat::ObservationAvailability::Available;
+	context.attackObservation = compat::ObservationAvailability::Available;
+	context.rngAvailability = compat::ObservationAvailability::Available;
+	return context;
+}
+
+void PluginRuntime::updateManagedBotCompatibilityState(
+	std::size_t index,
+	const runtime::MovementPhysicsState &before)
+{
+	if (index >= managedBotStateMachines_.size() ||
+		!managedBotSlots_[index] || managedBotHandles_[index].entity == nullptr)
+	{
+		return;
+	}
+	compat::StateUpdateContext context = makeManagedBotStateContext(index, before);
+	compat::CompatibilityStateMachine &machine = managedBotStateMachines_[index];
+	if (managedBotStateRounds_[index] != 0U &&
+		managedBotStateRounds_[index] != lifecycle_.roundGeneration() &&
+		machine.isInitialized())
+	{
+		(void)machine.onRoundReset(context);
+	}
+	managedBotStateRounds_[index] = lifecycle_.roundGeneration();
+	if (!machine.isInitialized())
+	{
+		(void)machine.initialize(context);
+		if (before.dead)
+		{
+			(void)machine.onDeath(context);
+			managedBotWasDead_[index] = true;
+		}
+		return;
+	}
+	if (before.dead)
+	{
+		if (!managedBotWasDead_[index])
+		{
+			(void)machine.onDeath(context);
+		}
+		managedBotWasDead_[index] = true;
+		return;
+	}
+	if (managedBotWasDead_[index])
+	{
+		(void)machine.onRespawn(context);
+		managedBotWasDead_[index] = false;
+		return;
+	}
+
+	const compat::RuntimeMode mode = compatibilitySurface_.configuration().mode;
+	if (mode == compat::RuntimeMode::Compatibility)
+	{
+		const compat::ObservationTimingContext timing = {
+			managedBotCommandSequences_[index], 0U,
+			managedBotFullUpdateSequences_[index]};
+		compat::CompatibilityObservation observation = {};
+		const ObservationAdapterResult observationResult = observationAdapter_.collectActor(
+			managedBotHandles_[index].entity,
+			context.actor,
+			context.frame,
+			timing,
+			&observation);
+		if (observationResult == ObservationAdapterResult::Accepted)
+		{
+			const bool carryingC4 = observation.objective.carryingC4.isAvailable() &&
+				observation.objective.carryingC4.value;
+			const bool teamAvailable = observation.player.team.isAvailable();
+			const int team = teamAvailable ? observation.player.team.value : 0;
+			if (carryingC4 && team == 1)
+			{
+				context.requestTransition = machine.state() !=
+					compat::CompatibilityStateId::PlantBomb;
+				context.requestedState = compat::CompatibilityStateId::PlantBomb;
+				context.transitionId = compat::StateTransitionId::ExplicitStateChange;
+				context.transitionReason = compat::StateTransitionReason::ObjectiveChanged;
+			}
+		}
+	}
+	(void)machine.update(context);
+}
+
 void PluginRuntime::resetManagedBotMovement()
 {
 	for (std::size_t index = 0U; index < managedBotMovement_.size(); ++index)
@@ -2609,10 +2747,14 @@ void PluginRuntime::resetManagedBotMovement()
 		managedBotMovement_[index].reset();
 		managedBotCombat_[index] = combat::CombatController();
 		managedBotObjectives_[index] = objectives::RoundObjectivePlanner();
+		managedBotStateMachines_[index] = compat::CompatibilityStateMachine();
 		managedBotTiming_[index] = runtime::BotTimingScheduler();
 		resetManagedBotCommandTemplate(index);
 	}
 			managedBotCommandSequences_.fill(0U);
+			managedBotFullUpdateSequences_.fill(0U);
+			managedBotStateRounds_.fill(0U);
+			managedBotWasDead_.fill(false);
 			movementDiagnosticSamples_.fill(0U);
 			movementDiagnosticAttempts_.fill(false);
 			movementDiagnosticUnavailable_.fill(false);
@@ -3257,6 +3399,10 @@ void PluginRuntime::rememberManagedBot(const FakeClientHandle &handle, const cha
 	const world::ActorKey actor = {handle.actor.slot, handle.actor.actorGeneration};
 	managedBotCombat_[index] = combat::CombatController(actor);
 	managedBotObjectives_[index] = objectives::RoundObjectivePlanner(actor);
+	managedBotStateMachines_[index] = compat::CompatibilityStateMachine(actor);
+	managedBotFullUpdateSequences_[index] = 0U;
+	managedBotStateRounds_[index] = lifecycle_.roundGeneration();
+	managedBotWasDead_[index] = false;
 	managedBotSlots_[index] = true;
 			const std::size_t length = std::strlen(name);
 			const std::size_t copyLength = length < compat::ProfileRecord::kNameCapacity
@@ -3282,7 +3428,11 @@ void PluginRuntime::clearManagedBot(std::size_t index)
 	managedBotMovement_[index].reset();
 	managedBotCombat_[index] = combat::CombatController();
 	managedBotObjectives_[index] = objectives::RoundObjectivePlanner();
-			managedBotCommandSequences_[index] = 0U;
+	managedBotStateMachines_[index] = compat::CompatibilityStateMachine();
+	managedBotCommandSequences_[index] = 0U;
+	managedBotFullUpdateSequences_[index] = 0U;
+	managedBotStateRounds_[index] = 0U;
+	managedBotWasDead_[index] = false;
 			movementDiagnosticSamples_[index] = 0U;
 			movementDiagnosticAttempts_[index] = false;
 			movementDiagnosticUnavailable_[index] = false;

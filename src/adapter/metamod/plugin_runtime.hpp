@@ -9,6 +9,7 @@
 #include "astrabot/metamod/native_bot_guard.hpp"
 #include "astrabot/metamod/nav_loader.hpp"
 #include "astrabot/combat/combat_intent.hpp"
+#include "astrabot/compat/state_machine.hpp"
 #include "astrabot/objectives/round_objectives.hpp"
 #include "astrabot/perception/perception.hpp"
 #include "astrabot/runtime/nav_roam_controller.hpp"
@@ -142,6 +143,12 @@ namespace astrabot
 			void updateManagedBotMovement();
 			void resetManagedBotTiming(std::size_t index, float spawnTime);
 			void resetManagedBotCommandTemplate(std::size_t index);
+			void updateManagedBotCompatibilityState(
+				std::size_t index,
+				const runtime::MovementPhysicsState &before);
+			compat::StateUpdateContext makeManagedBotStateContext(
+				std::size_t index,
+				const runtime::MovementPhysicsState &before) const;
 			void prepareNeutralManagedBotCommand(
 				std::size_t index,
 				FakeClientHandle &handle,
@@ -251,9 +258,20 @@ namespace astrabot
 			std::array<objectives::RoundObjectivePlanner,
 					   NativeBotObservation::kClientSlotCount>
 					managedBotObjectives_;
+			std::array<compat::CompatibilityStateMachine,
+					   NativeBotObservation::kClientSlotCount>
+				managedBotStateMachines_;
 			std::array<std::uint32_t,
 					   NativeBotObservation::kClientSlotCount>
 				managedBotCommandSequences_;
+			std::array<std::uint32_t,
+					   NativeBotObservation::kClientSlotCount>
+				managedBotFullUpdateSequences_;
+			std::array<runtime::LifecycleGeneration,
+					   NativeBotObservation::kClientSlotCount>
+				managedBotStateRounds_;
+			std::array<bool, NativeBotObservation::kClientSlotCount>
+				managedBotWasDead_;
 			std::array<runtime::BotTimingScheduler,
 					   NativeBotObservation::kClientSlotCount>
 				managedBotTiming_;
