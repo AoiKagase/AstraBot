@@ -1,0 +1,53 @@
+{
+  "contract": "1.0.0",
+  "flavor": "core",
+  "milestone": null,
+  "phases": [
+    {
+      "number": "1",
+      "name": "Foundation and ABI",
+      "status": "complete"
+    },
+    {
+      "number": "2",
+      "name": "Metamod lifecycle and native guard",
+      "status": "complete"
+    },
+    {
+      "number": "3",
+      "name": "FakeClient and input dispatch",
+      "status": "complete"
+    },
+    {
+      "number": "4",
+      "name": "CSBot compatibility surface",
+      "status": "pending"
+    },
+    {
+      "number": "5",
+      "name": "Read-only legacy Nav",
+      "status": "pending"
+    },
+    {
+      "number": "6",
+      "name": "Baseline locomotion",
+      "status": "pending"
+    },
+    {
+      "number": "7",
+      "name": "CSBot behavior parity",
+      "status": "pending"
+    },
+    {
+      "number": "8",
+      "name": "Differential and live parity acceptance",
+      "status": "pending"
+    }
+  ],
+  "next": {
+    "command": "/gsd:progress --next",
+    "label": "Advance to the next step",
+    "reason": "Phase 4 of 8 · 38% · executing"
+  },
+  "updated_at": "2026-09-15T11:16:41.162Z"
+}
