@@ -516,6 +516,7 @@ add_library(astrabot_mm SHARED
     src/adapter/metamod/plugin_exports.cpp
     src/adapter/metamod/native_bot_guard.cpp
 	src/adapter/metamod/plugin_runtime.cpp
+	src/adapter/metamod/runtime_profiler.cpp
 	src/adapter/metamod/movement_execution_gate.cpp
 	src/adapter/metamod/engine_random_source.cpp
 	src/adapter/metamod/map_fingerprint.cpp
@@ -578,6 +579,7 @@ add_executable(astrabot_metamod_hooks
       src/adapter/metamod/plugin_exports.cpp
       src/adapter/metamod/join_controller.cpp
 	src/adapter/metamod/plugin_runtime.cpp
+	src/adapter/metamod/runtime_profiler.cpp
 	src/adapter/metamod/movement_execution_gate.cpp
 		src/adapter/metamod/engine_random_source.cpp
 		src/adapter/metamod/nav_loader.cpp
@@ -623,6 +625,7 @@ add_executable(astrabot_fake_client_isolation
       src/adapter/metamod/plugin_exports.cpp
       src/adapter/metamod/join_controller.cpp
 	src/adapter/metamod/plugin_runtime.cpp
+	src/adapter/metamod/runtime_profiler.cpp
 	src/adapter/metamod/movement_execution_gate.cpp
 		src/adapter/metamod/engine_random_source.cpp
 		src/adapter/metamod/nav_loader.cpp
@@ -662,6 +665,7 @@ add_executable(astrabot_compat_actor_command
       src/adapter/metamod/plugin_exports.cpp
       src/adapter/metamod/join_controller.cpp
 	src/adapter/metamod/plugin_runtime.cpp
+	src/adapter/metamod/runtime_profiler.cpp
 	src/adapter/metamod/movement_execution_gate.cpp
       src/adapter/metamod/engine_random_source.cpp
 	src/adapter/metamod/nav_loader.cpp
@@ -678,9 +682,10 @@ add_executable(astrabot_compat_actor_command
     astrabot_apply_warnings(astrabot_compat_actor_command)
 	add_test(NAME astrabot_compat_actor_command COMMAND astrabot_compat_actor_command)
 
-	add_executable(astrabot_observation_adapter
-    tests/observation_adapter_tests.cpp
-    src/adapter/metamod/observation_adapter.cpp
+add_executable(astrabot_observation_adapter
+	tests/observation_adapter_tests.cpp
+	src/adapter/metamod/observation_adapter.cpp
+	src/adapter/metamod/runtime_profiler.cpp
   )
 	target_include_directories(astrabot_observation_adapter PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/include"
@@ -691,9 +696,10 @@ add_executable(astrabot_compat_actor_command
 	astrabot_apply_warnings(astrabot_observation_adapter)
 	add_test(NAME astrabot_observation_adapter COMMAND astrabot_observation_adapter)
 
-	add_executable(astrabot_perception_adapter
-		tests/perception_adapter_tests.cpp
-		src/adapter/metamod/observation_adapter.cpp
+add_executable(astrabot_perception_adapter
+	tests/perception_adapter_tests.cpp
+	src/adapter/metamod/observation_adapter.cpp
+	src/adapter/metamod/runtime_profiler.cpp
 	)
 	target_include_directories(astrabot_perception_adapter PRIVATE
 		"${CMAKE_CURRENT_SOURCE_DIR}/include"
@@ -704,9 +710,10 @@ add_executable(astrabot_compat_actor_command
 	astrabot_apply_warnings(astrabot_perception_adapter)
 	add_test(NAME astrabot_perception_adapter COMMAND astrabot_perception_adapter)
 
-	add_executable(astrabot_observation_trace
-		tests/observation_trace_tests.cpp
-		src/adapter/metamod/observation_adapter.cpp
+add_executable(astrabot_observation_trace
+	tests/observation_trace_tests.cpp
+	src/adapter/metamod/observation_adapter.cpp
+	src/adapter/metamod/runtime_profiler.cpp
 	)
 	target_include_directories(astrabot_observation_trace PRIVATE
 		"${CMAKE_CURRENT_SOURCE_DIR}/include"
@@ -738,6 +745,15 @@ add_executable(astrabot_compat_actor_command
 	)
 	astrabot_apply_warnings(astrabot_movement_execution_gate)
 	add_test(NAME astrabot_movement_execution_gate COMMAND astrabot_movement_execution_gate)
+	add_executable(astrabot_runtime_profiler
+		tests/runtime_profiler_tests.cpp
+		src/adapter/metamod/runtime_profiler.cpp
+	)
+	target_include_directories(astrabot_runtime_profiler PRIVATE
+		"${CMAKE_CURRENT_SOURCE_DIR}/include"
+	)
+	astrabot_apply_warnings(astrabot_runtime_profiler)
+	add_test(NAME astrabot_runtime_profiler COMMAND astrabot_runtime_profiler)
 endif()
 endif()
 

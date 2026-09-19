@@ -1,5 +1,6 @@
 #include "observation_adapter.hpp"
 
+#include <chrono>
 #include <cmath>
 #include <cstring>
 
@@ -157,7 +158,8 @@ ObservationAdapter::ObservationAdapter()
 	: engineFunctions_(nullptr),
 	  globals_(nullptr),
 	  traceSink_(nullptr),
-	  traceSequence_(0U)
+	  traceSequence_(0U),
+	  profiler_(nullptr)
 {
 }
 
@@ -304,6 +306,10 @@ ObservationAdapterResult ObservationAdapter::collectVisibility(
 		return ObservationAdapterResult::EngineUnavailable;
 	if (observer == nullptr || target == nullptr || observer->free != 0 || target->free != 0)
 		return ObservationAdapterResult::InvalidEntity;
+	const bool profileVision = profiler_ != nullptr && profiler_->enabled();
+	const auto visionStart = profileVision
+		? std::chrono::steady_clock::now()
+		: std::chrono::steady_clock::time_point();
 
 	*observation = {};
 	observation->target = targetActor;
@@ -322,6 +328,7 @@ ObservationAdapterResult ObservationAdapter::collectVisibility(
 		3.14159265358979323846f / 180.0f;
 	const float forwardX = std::cos(yawRadians);
 	const float forwardY = std::sin(yawRadians);
+	std::uint64_t traceCalls = 0U;
 
 	auto inViewCone = [&](const float point[3]) -> bool
 	{
@@ -337,7 +344,19 @@ ObservationAdapterResult ObservationAdapter::collectVisibility(
 	auto traceVisible = [&](const float point[3]) -> bool
 	{
 		TraceResult result = {};
+		++traceCalls;
+		const auto traceStart = profileVision
+			? std::chrono::steady_clock::now()
+			: std::chrono::steady_clock::time_point();
 		engineFunctions_->pfnTraceLine(eye, point, 1, observer, &result);
+		if (profileVision)
+		{
+			const auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(
+				std::chrono::steady_clock::now() - traceStart).count();
+			profiler_->record(
+				RuntimeProfilerStage::TraceLine,
+				elapsed > 0 ? static_cast<std::uint64_t>(elapsed) : 0U);
+		}
 		return result.flFraction == 1.0f;
 	};
 
@@ -380,12 +399,29 @@ ObservationAdapterResult ObservationAdapter::collectVisibility(
 	}
 
 	observation->visible = observation->visibleParts != world::VisibleNone;
+	if (profiler_ != nullptr)
+	{
+		profiler_->recordTraceLine(1U, 1U, traceCalls);
+		if (profileVision)
+		{
+			const auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(
+				std::chrono::steady_clock::now() - visionStart).count();
+			profiler_->record(
+				RuntimeProfilerStage::Vision,
+				elapsed > 0 ? static_cast<std::uint64_t>(elapsed) : 0U);
+		}
+	}
 	return ObservationAdapterResult::Accepted;
 }
 
 void ObservationAdapter::setTraceSink(compat::IObservationTraceSink *sink)
 {
 	traceSink_ = sink;
+}
+
+void ObservationAdapter::setProfiler(RuntimeProfiler *profiler)
+{
+	profiler_ = profiler;
 }
 
 ObservationAdapterResult ObservationAdapter::collectPlantedBomb(

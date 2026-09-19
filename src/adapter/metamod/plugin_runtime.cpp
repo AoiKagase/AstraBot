@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include <cmath>
 #include <cstring>
 #include <limits>
@@ -209,6 +210,47 @@ namespace astrabot
 		return engineFunctions->pfnCVarGetFloat(name);
 	}
 
+	const char *runtimeProfilerStageName(RuntimeProfilerStage stage)
+	{
+		static const char *const names[] = {
+			"StartFrame", "RegistryLifecycle", "Observation", "Vision", "TraceLine",
+			"WorldPublish", "Perception", "RuntimeInput", "RuntimeFullUpdate",
+			"NavCurrentAreaLookup", "PathSearch", "PathRecompute", "NavMovement",
+			"MovementDispatch", "TraceSerialization"};
+		const std::size_t index = static_cast<std::size_t>(stage);
+		return index < static_cast<std::size_t>(RuntimeProfilerStage::Count)
+			? names[index] : "Unknown";
+	}
+
+	class RuntimeProfilerScope
+	{
+	public:
+		RuntimeProfilerScope(
+			RuntimeProfiler &profiler, RuntimeProfilerStage stage) noexcept
+			: profiler_(profiler), stage_(stage), enabled_(profiler.enabled()),
+			  start_(enabled_ ? std::chrono::steady_clock::now()
+						: std::chrono::steady_clock::time_point())
+		{
+		}
+
+		~RuntimeProfilerScope()
+		{
+			if (!enabled_)
+			{
+				return;
+			}
+			const auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(
+				std::chrono::steady_clock::now() - start_).count();
+			profiler_.record(stage_, elapsed > 0 ? static_cast<std::uint64_t>(elapsed) : 0U);
+		}
+
+	private:
+		RuntimeProfiler &profiler_;
+		RuntimeProfilerStage stage_;
+		bool enabled_;
+		std::chrono::steady_clock::time_point start_;
+	};
+
 	bool entityObjectiveBounds(const edict_t *entity, nav::NavExtent *extent)
 	{
 		if (entity == nullptr || extent == nullptr)
@@ -347,9 +389,10 @@ namespace astrabot
 				Enable,
 				Stop,
 				Difficulty,
-				Quota,
-				JoinTeam,
-				Mode
+		Quota,
+		JoinTeam,
+		Mode,
+		Profile
 			};
 
 			char kBotEnableName[] = "bot_enable";
@@ -362,8 +405,10 @@ namespace astrabot
 			char kBotQuotaDefault[] = "0";
 			char kBotJoinTeamName[] = "bot_join_team";
 			char kBotJoinTeamDefault[] = "any";
-			char kAstrabotModeName[] = "astrabot_mode";
-			char kAstrabotModeDefault[] = "compatibility";
+	char kAstrabotModeName[] = "astrabot_mode";
+	char kAstrabotModeDefault[] = "compatibility";
+	char kAstrabotProfileName[] = "astrabot_profile";
+	char kAstrabotProfileDefault[] = "0";
 
 			cvar_t kBotEnableCvar = {kBotEnableName, kBotEnableDefault, FCVAR_SERVER, 0.0f,
 									 nullptr};
@@ -373,17 +418,19 @@ namespace astrabot
 			cvar_t kBotQuotaCvar = {kBotQuotaName, kBotQuotaDefault, FCVAR_SERVER, 0.0f, nullptr};
 			cvar_t kBotJoinTeamCvar = {kBotJoinTeamName, kBotJoinTeamDefault, FCVAR_SERVER, 0.0f,
 									   nullptr};
-			cvar_t kAstrabotModeCvar = {kAstrabotModeName, kAstrabotModeDefault, FCVAR_SERVER, 0.0f,
-										 nullptr};
+	cvar_t kAstrabotModeCvar = {kAstrabotModeName, kAstrabotModeDefault, FCVAR_SERVER, 0.0f,
+		nullptr};
+	cvar_t kAstrabotProfileCvar = {kAstrabotProfileName, kAstrabotProfileDefault, FCVAR_SERVER, 0.0f,
+		nullptr};
 
 			cvar_t *const kCompatibilityCvars[] = {&kBotEnableCvar, &kBotStopCvar,
 												   &kBotDifficultyCvar, &kBotQuotaCvar,
 																				   &kBotJoinTeamCvar,
-																				   &kAstrabotModeCvar};
+		&kAstrabotModeCvar, &kAstrabotProfileCvar};
 
 			const char *const kCompatibilityCvarNames[] = {
 				kBotEnableName, kBotStopName, kBotDifficultyName, kBotQuotaName, kBotJoinTeamName,
-				kAstrabotModeName};
+		kAstrabotModeName, kAstrabotProfileName};
 
 		} // namespace
 
@@ -393,7 +440,7 @@ namespace astrabot
 		  engineFunctions_(nullptr), globals_(nullptr), lifecycle_(), actorRegistry_(),
 			  fakeClientManager_(lifecycle_, actorRegistry_),
 			  inputDispatcher_(lifecycle_, actorRegistry_), compatibilitySurface_(),
-			  compatibilityRandomSource_(), observationAdapter_(), navLoader_(),
+	compatibilityRandomSource_(), observationAdapter_(), runtimeProfiler_(), navLoader_(),
 			  navPublisher_(), navLoadDiagnostic_(), adapterFrameCount_(0U), pluginId_(nullptr),
 			  nativeBotGuard_(),
 	nativeGuardDecision_({NativeBotGuardState::Unsupported,
@@ -645,7 +692,8 @@ namespace astrabot
 			{
 				globals_ = globals;
 			}
-			observationAdapter_.configure(engineFunctions_, globals_);
+		observationAdapter_.configure(engineFunctions_, globals_);
+		observationAdapter_.setProfiler(&runtimeProfiler_);
 			registerCompatibilityCvars();
 			configureFakeClientManager();
 		}
@@ -701,12 +749,19 @@ namespace astrabot
 				compatibilitySurface_.setString(
 					"bot_join_team", engineFunctions_->pfnCVarGetString("bot_join_team"));
 			}
-			if (engineFunctions_->pfnCVarGetPointer("astrabot_mode") != nullptr &&
+		if (engineFunctions_->pfnCVarGetPointer("astrabot_mode") != nullptr &&
 				engineFunctions_->pfnCVarGetString != nullptr)
 			{
 				compatibilitySurface_.setString(
 					"astrabot_mode", engineFunctions_->pfnCVarGetString("astrabot_mode"));
-			}
+		}
+		if (engineFunctions_->pfnCVarGetPointer("astrabot_profile") != nullptr &&
+				engineFunctions_->pfnCVarGetFloat != nullptr)
+		{
+			runtimeProfiler_.setEnabled(
+				engineFunctions_->pfnCVarGetFloat("astrabot_profile") > 0.0f,
+				globals_ != nullptr ? static_cast<double>(globals_->time) : 0.0);
+		}
 		}
 
 		PluginRuntime::Snapshot PluginRuntime::snapshot() const
@@ -965,10 +1020,11 @@ runtime::MovementPhysicsSample PluginRuntime::movementPhysicsSample(std::uint32_
 			{
 				return;
 			}
-			if (globals_ == nullptr || !std::isfinite(globals_->time))
-			{
-				return;
-			}
+		if (globals_ == nullptr || !std::isfinite(globals_->time))
+		{
+			return;
+		}
+		RuntimeProfilerScope profilerScope(runtimeProfiler_, RuntimeProfilerStage::StartFrame);
 			if (adapterFrameCount_ == (std::numeric_limits<std::uint32_t>::max)())
 			{
 				adapterFrameCount_ = 0U;
@@ -986,10 +1042,53 @@ runtime::MovementPhysicsSample PluginRuntime::movementPhysicsSample(std::uint32_
 
 		void PluginRuntime::onStartFramePost()
 		{
+			RuntimeProfilerScope profilerScope(
+				runtimeProfiler_, RuntimeProfilerStage::RuntimeInput);
 			if (state_ == State::ActiveMap)
 			{
 				processJoinControllers();
 				updateManagedBotMovement();
+			}
+			if (globals_ != nullptr && runtimeProfiler_.enabled())
+			{
+				RuntimeProfilerReport report = {};
+				if (runtimeProfiler_.consumeReport(
+						static_cast<double>(globals_->time), &report) &&
+					gpMetaUtilFuncs != nullptr &&
+					gpMetaUtilFuncs->pfnLogConsole != nullptr && pluginId_ != nullptr)
+				{
+					for (std::size_t stageIndex = 0U;
+						stageIndex < static_cast<std::size_t>(RuntimeProfilerStage::Count);
+						++stageIndex)
+					{
+						const RuntimeProfilerStage stage =
+							static_cast<RuntimeProfilerStage>(stageIndex);
+						const RuntimeProfilerStageStats &stats = report.stages[stageIndex];
+						const double average = stats.calls == 0U ? 0.0
+							: static_cast<double>(stats.totalUsec) /
+								static_cast<double>(stats.calls);
+						gpMetaUtilFuncs->pfnLogConsole(
+							pluginId_,
+							"profile stage=%s calls=%u total_usec=%llu avg_usec=%.1f max_usec=%llu",
+							runtimeProfilerStageName(stage),
+							static_cast<unsigned int>(stats.calls),
+							static_cast<unsigned long long>(stats.totalUsec), average,
+							static_cast<unsigned long long>(stats.maxUsec));
+					}
+					gpMetaUtilFuncs->pfnLogConsole(
+						pluginId_,
+						"profile counters traceLine=%llu visibilityCandidates=%llu bodyProbes=%llu "
+						"pathSearch=%llu pathSuccess=%llu pathFailure=%llu pathRecompute=%llu "
+						"runPlayerMove=%llu",
+						static_cast<unsigned long long>(report.traceLineCalls),
+						static_cast<unsigned long long>(report.visibilityCandidates),
+						static_cast<unsigned long long>(report.bodyProbes),
+						static_cast<unsigned long long>(report.pathSearches),
+						static_cast<unsigned long long>(report.pathSearchSuccesses),
+						static_cast<unsigned long long>(report.pathSearchFailures),
+						static_cast<unsigned long long>(report.pathRecomputes),
+						static_cast<unsigned long long>(report.runPlayerMoves));
+				}
 			}
 		}
 
@@ -1355,9 +1454,13 @@ void PluginRuntime::recordMovementPhysicsSample(
 		lifecycle_.mapGeneration(), lifecycle_.roundGeneration(), adapterFrameCount_};
 	sample.commandSequence = receipt.sequence;
 	sample.before = before;
-	sample.after = captureMovementPhysicsState(
-		handle.entity, joinControllers_[index].teamConfirmed(), true);
+		sample.after = captureMovementPhysicsState(
+			handle.entity, joinControllers_[index].teamConfirmed(), true);
 		sample.dispatched = receipt.result == runtime::DispatchResult::Dispatched;
+		if (sample.dispatched)
+		{
+			runtimeProfiler_.recordRunPlayerMove();
+		}
 		sample.readiness = runtime::spawnReadiness(sample.after);
 		movementPhysicsSamples_[index] = sample;
 		if (sample.after.dead || sample.after.spectator)
@@ -1419,6 +1522,7 @@ void PluginRuntime::recordMovementPhysicsSample(
 
 void PluginRuntime::updateManagedBotMovement()
 		{
+	RuntimeProfilerScope profilerScope(runtimeProfiler_, RuntimeProfilerStage::NavMovement);
 	const compat::CvarSnapshot configuration = compatibilitySurface_.configuration();
 	const nav::NavSnapshot navigation = navPublisher_.snapshot();
 	const bool movementUnavailable = configuration.botEnable <= 0.0f ||
@@ -1666,11 +1770,18 @@ void PluginRuntime::updateManagedBotMovement()
 
 			nav::LocomotionIntent locomotionIntent = {};
 			runtime::NavRoamDecision roamDecision = {};
-			const runtime::NavRoamResult roamResult = managedBotMovement_[index].update(
-				navigation,
-				observation,
-				&locomotionIntent,
-				&roamDecision);
+		const runtime::NavRoamResult roamResult = managedBotMovement_[index].update(
+			navigation,
+			observation,
+			&locomotionIntent,
+			&roamDecision);
+		runtimeProfiler_.recordPathSearch(
+			roamDecision.pathResult == nav::NavQueryResult::Found,
+			roamDecision.pathRequested);
+		if (roamDecision.recomputeReason != runtime::NavRecomputeReason::None)
+		{
+			runtimeProfiler_.recordPathRecompute();
+		}
 		if (roamResult != runtime::NavRoamResult::IntentReady)
 		{
 			if (roamDecision.failureReason == runtime::NavFailureReason::None)
@@ -1821,6 +1932,7 @@ bool PluginRuntime::buildManagedWorldSnapshot(
 	world::ActorKey *targetActor,
 	world::WorldPosition *targetPosition)
 {
+	RuntimeProfilerScope profilerScope(runtimeProfiler_, RuntimeProfilerStage::Observation);
 	if (index >= managedBotHandles_.size() || snapshot == nullptr || targetActor == nullptr ||
 		targetPosition == nullptr || engineFunctions_ == nullptr ||
 		engineFunctions_->pfnPEntityOfEntIndex == nullptr || globals_ == nullptr)

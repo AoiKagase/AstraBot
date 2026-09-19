@@ -3,6 +3,7 @@
 
 #include "astrabot/compat/observation.hpp"
 #include "astrabot/metamod/abi_contract.hpp"
+#include "astrabot/metamod/runtime_profiler.hpp"
 #include "astrabot/perception/perception.hpp"
 
 namespace astrabot
@@ -45,12 +46,14 @@ public:
 		const compat::ObservationTimingContext &timing,
 		compat::ObjectiveObservation *observation) const;
 	void setTraceSink(compat::IObservationTraceSink *sink);
+	void setProfiler(RuntimeProfiler *profiler);
 
 private:
 	enginefuncs_t *engineFunctions_;
 	globalvars_t *globals_;
 	compat::IObservationTraceSink *traceSink_;
 	mutable std::uint64_t traceSequence_;
+	RuntimeProfiler *profiler_;
 };
 }
 }

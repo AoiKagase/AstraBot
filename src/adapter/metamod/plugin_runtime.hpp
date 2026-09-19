@@ -19,6 +19,7 @@
 #include "engine_random_source.hpp"
 #include "action_adapter.hpp"
 #include "observation_adapter.hpp"
+#include "astrabot/metamod/runtime_profiler.hpp"
 
 #include <array>
 #include <cstddef>
@@ -114,7 +115,7 @@ namespace astrabot
 													 std::uint32_t dispatchFrame);
 
 		  private:
-		static constexpr std::size_t kCompatibilityCvarCount = 6U;
+		static constexpr std::size_t kCompatibilityCvarCount = 7U;
 
 		enum class UserMessageKind : std::uint8_t
 		{
@@ -224,6 +225,7 @@ namespace astrabot
 			CompatibilitySurface compatibilitySurface_;
 			compat::EngineRandomSource compatibilityRandomSource_;
 			ObservationAdapter observationAdapter_;
+			RuntimeProfiler runtimeProfiler_;
 			NavLoader navLoader_;
 			nav::NavSnapshotPublisher navPublisher_;
 			NavLoadDiagnostic navLoadDiagnostic_;
