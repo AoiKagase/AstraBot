@@ -1,6 +1,7 @@
 #include "engine_random_source.hpp"
 
 #include <cstdio>
+#include <vector>
 
 namespace
 {
@@ -12,6 +13,16 @@ using astrabot::compat::RandomLongResult;
 using astrabot::compat::RandomRequest;
 using astrabot::compat::RandomStatus;
 using astrabot::compat::RandomTimingContext;
+
+struct TraceCollector : public astrabot::compat::IRandomTraceSink
+{
+	std::vector<astrabot::compat::RandomTraceRecord> records;
+
+	void record(const astrabot::compat::RandomTraceRecord &record) override
+	{
+		records.push_back(record);
+	}
+};
 
 int g_floatCalls = 0;
 int g_longCalls = 0;
@@ -98,10 +109,26 @@ bool testUnavailableCallbacks()
 		check(longResult.status == RandomStatus::Unavailable,
 			"missing long callback fails closed");
 }
+
+bool testTraceSequenceIncludesUntracedCalls()
+{
+	EngineRandomSource source;
+	source.configure({&fakeRandomLong, &fakeRandomFloat});
+	const RandomFloatResult untraced = source.nextFloat(RandomRequest::floatRequest(
+		"RNG-ENGINE-UNTRACED", actor(), timing(), 0.0f, 1.0f));
+	TraceCollector trace;
+	source.setTraceSink(&trace);
+	const RandomLongResult traced = source.nextLong(RandomRequest::longRequest(
+		"RNG-ENGINE-TRACED", actor(), timing(), 0, 1));
+	return check(untraced.status == RandomStatus::Ok && traced.status == RandomStatus::Ok,
+			"trace sequence fixture accepts both calls") &&
+		check(trace.records.size() == 1U && trace.records[0].sequence == 2U,
+			"trace sequence includes the untraced accepted call");
+}
 }
 
 int main()
 {
 	return testEngineFloatForwardsExactBounds() && testEngineLongForwardsExactBounds() &&
-		testUnavailableCallbacks() ? 0 : 1;
+		testUnavailableCallbacks() && testTraceSequenceIncludesUntracedCalls() ? 0 : 1;
 }

@@ -35,10 +35,11 @@ RandomFloatResult EngineRandomSource::nextFloat(const RandomRequest &request)
 		return {RandomStatus::Unavailable, 0.0f};
 	}
 	const float value = callbacks_.randomFloat(request.floatLower, request.floatUpper);
+	++sequence_;
 	if (traceSink_ != nullptr)
 	{
 		RandomTraceRecord record = {};
-		record.sequence = ++sequence_;
+		record.sequence = sequence_;
 		record.request = request;
 		record.floatResult = value;
 		traceSink_->record(record);
@@ -57,10 +58,11 @@ RandomLongResult EngineRandomSource::nextLong(const RandomRequest &request)
 		return {RandomStatus::Unavailable, 0};
 	}
 	const std::int32_t value = callbacks_.randomLong(request.longLower, request.longUpper);
+	++sequence_;
 	if (traceSink_ != nullptr)
 	{
 		RandomTraceRecord record = {};
-		record.sequence = ++sequence_;
+		record.sequence = sequence_;
 		record.request = request;
 		record.longResult = value;
 		traceSink_->record(record);
