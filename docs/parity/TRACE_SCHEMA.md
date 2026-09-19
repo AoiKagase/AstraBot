@@ -50,6 +50,23 @@ The existing root `docs/TRACE_SCHEMA.md` is retained as the general contract.
 This parity copy records the P00 minimum needed to compare the pinned reference
 and AstraBot without pointer or process-specific identifiers.
 
+## P06 perception trace extension
+
+Perception tracing is optional and bounded. It is independent from the
+observation and RNG sequences and does not create scheduler events.
+
+| Record kind | Required fields |
+|---|---|
+| vision | sequence, observer actor, target actor, visible, fovPassed, losPassed, visibleParts, frame |
+| knowledge | actor, target, knowledge (Unknown, Believed, Observed), last-known position when usable, frame |
+| noise | actor, category, position, priority, heard/rejected, frame |
+| event | actor, event type, subject when available, frame |
+
+The Core trace sink is null by default. Hidden entity positions are never
+written into a knowledge record unless the contact was actually published as
+observed. Noise source identity remains unknown because the CSBot noise memory
+stores a position/category/priority rather than a player identity.
+
 Use deterministic JSON Lines. Every record carries `sequence`, `mapGeneration`,
 `roundGeneration`, `tick`, and stable actor slot/generation IDs.
 

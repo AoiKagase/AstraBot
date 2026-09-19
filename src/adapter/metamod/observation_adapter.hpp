@@ -3,6 +3,7 @@
 
 #include "astrabot/compat/observation.hpp"
 #include "astrabot/metamod/abi_contract.hpp"
+#include "astrabot/perception/perception.hpp"
 
 namespace astrabot
 {
@@ -28,6 +29,12 @@ public:
 		const world::FrameIdentity &frame,
 		const compat::ObservationTimingContext &timing,
 		compat::CompatibilityObservation *observation) const;
+	ObservationAdapterResult collectVisibility(
+		edict_t *observer,
+		edict_t *target,
+		const world::ActorKey &targetActor,
+		const world::FrameIdentity &frame,
+		perception::VisionObservation *observation) const;
 	ObservationAdapterResult collectPlantedBomb(
 		edict_t *entity,
 		const char *classname,

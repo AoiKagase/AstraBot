@@ -183,7 +183,7 @@ namespace astrabot
 				std::size_t index,
 				world::WorldSnapshot *snapshot,
 				world::ActorKey *targetActor,
-				world::WorldPosition *targetPosition) const;
+				world::WorldPosition *targetPosition);
 			bool buildManagedObjectiveTarget(
 				std::size_t index,
 				nav::NavVector *target) const;
@@ -261,6 +261,12 @@ namespace astrabot
 			std::array<compat::CompatibilityStateMachine,
 					   NativeBotObservation::kClientSlotCount>
 				managedBotStateMachines_;
+			std::array<perception::PerceptionAssembler,
+					   NativeBotObservation::kClientSlotCount>
+				managedBotPerception_;
+			std::array<std::uint32_t,
+					   NativeBotObservation::kClientSlotCount>
+				managedBotPerceptionFullUpdates_;
 			std::array<std::uint32_t,
 					   NativeBotObservation::kClientSlotCount>
 				managedBotCommandSequences_;

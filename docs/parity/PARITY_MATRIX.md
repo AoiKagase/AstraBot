@@ -1,5 +1,20 @@
 # P00 Parity Matrix
 
+## P06 perception parity gate
+
+| Area | Reference evidence | AstraBot evidence | Result |
+|---|---|---|---|
+| FOV | FInViewCone: 2D dot product, strict > 0.5, vertical angle ignored | public adapter evaluates the same bounded cone in deterministic fixture | IMPLEMENTED_OFFLINE_VERIFIED; live/private FOV unverified |
+| LOS / trace | GetEyePosition, ignore_monsters, self skip, flFraction == 1.0 | public pfnTraceLine, same five body probes and order | IMPLEMENTED_UNVERIFIED; glass/smoke/live engine semantics open |
+| Body regions | chest, head, feet, left side, right side bit mask | visibleParts retained in actor observation and memory | IMPLEMENTED_OFFLINE_VERIFIED |
+| Enemy recognition | alive hostile visible players, distance ordering, reaction queue | visible hostile contacts only; hidden contacts are absent with bounded last-known memory | PARTIAL; 20-slot queue/private notice timing not reproduced |
+| Hearing | hostile audible event, range, priority and distance replacement | bounded noise memory, source identity suppressed, reaction delay and expiry | IMPLEMENTED_OFFLINE_VERIFIED; live sound source/range mapping open |
+| Events | CCSBot::OnEvent, CSGameState::OnEvent, chatter and GameEventType | explicit SDK-free event input and lifecycle mutations | IMPLEMENTED_UNVERIFIED; no live GameEvent feed |
+| Ground-truth leak | CSBot does not receive hidden entity coordinates | runtime publishes ObservedAbsent without hidden position; target selection requires visible belief | PASS boundary |
+| Perception trace | reference call path and knowledge mutation | optional bounded vision/knowledge/noise/event trace records | IMPLEMENTED_OFFLINE_VERIFIED; no pinned differential trace |
+
+P06 remains PARTIAL; no row above is promoted to MATCH.
+
 ## P04 observation parity gate
 
 | Area | Reference evidence | AstraBot evidence | Result |

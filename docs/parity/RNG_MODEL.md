@@ -1,5 +1,14 @@
 # P03 RNG Reference Model
 
+## P06 perception callsite note
+
+The pinned reference noise path in cs_bot_event.cpp uses the existing
+RNG-CSBOT-EVENT-NOISE semantic IDs to randomize the remembered position inside
+the detected NAV area. P06 does not add a direct random call. AstraBot stores
+the public event position as positionApproximated=true and keeps the noise
+source identity unknown. Exact random placement and global call ordering remain
+unverified and must not be promoted to MATCH.
+
 ## Scope and result
 
 This document records the ReGameDLL-CS RNG call inventory and the AstraBot

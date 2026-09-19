@@ -1,5 +1,28 @@
 # CSBot Parity Status
 
+## P06 result: PARTIAL
+
+| Gate | Result | Evidence / limitation |
+|---|---|---|
+| Vision boundary | IMPLEMENTED_OFFLINE_VERIFIED | Core stores FOV/LOS/body-region observations; public adapter uses the CSBot probe order and strict 2D dot > 0.5 fixture semantics |
+| Ground truth / belief split | PASS boundary | hidden actors become ObservedAbsent; exact hidden coordinates are not copied into Compatibility belief |
+| Last-known knowledge | PASS offline | actor-generation-scoped memory preserves last-seen position and expires by deterministic configured age |
+| Hearing/noise | PASS offline boundary | range, reaction delay, 3-second replacement rule, priority/nearer selection, and bounded retention are modeled; source identity is not exposed |
+| Event knowledge | PASS offline boundary | death/spawn/respawn/round mutations are explicit; live GameEvent delivery remains unavailable |
+| Runtime integration | IMPLEMENTED_UNVERIFIED | Full Update-scoped perception scan is wired into managed bots; objective path remains public/inferred |
+| Production fixture | PASS | Metamod observation -> public trace/FOV/body result -> PerceptionAssembler -> Compatibility belief |
+| Deterministic tests | PASS | focused perception, adapter, and production-boundary tests pass |
+| Full x86 CTest | PASS | complete current suite 51/51 PASS |
+| Phase 8 PowerShell | PASS fixture-only | action boundary, live-log, objective, and slow-movement fixture checks pass; live combat/C4 fields remain false/unverified |
+| FocalSpan | PENDING | refresh after final P06 edits |
+| Live HLDS/ReHLDS | NOT RUN | engine trace parity, smoke, private CSBot queues, and live event delivery remain unverified |
+
+P06 is intentionally PARTIAL. The compatibility information boundary and
+offline semantics are implemented, but a public Metamod adapter cannot prove
+ReGameDLL private m_enemyQueue, smoke handling, profile reaction timing,
+GameEvent delivery, or exact random noise-position placement without live
+differential evidence.
+
 ## P05 result: PARTIAL
 
 | Gate | Result | Evidence / limitation |
@@ -19,7 +42,7 @@
 P05 is intentionally `PARTIAL`. State orchestration and the Attack overlay
 boundary are implemented and offline verified, but most state-internal
 behavior, private observations, exact objective/vision/NAV decisions, and a
-pinned differential runtime trace remain open. P06 is not started.
+pinned differential runtime trace remain open. P06 is recorded above.
 
 ## P04 result: PARTIAL
 
@@ -84,7 +107,8 @@ or reference source was changed.
 | P03 | partial | Compatibility RNG boundary, engine delegation, scripted consumption, and trace schema are offline verified; specific callsites and live parity remain open |
 | P04 | partial | observation boundary merged; private-state and live gates remain open |
 | P05 | partial | compatibility state orchestration and attack overlay offline verified; internal behavior and live differential trace remain open |
-| P06-P12 | pending | perception through live parity remain downstream phases and evidence gates |
+| P06 | partial | perception boundary, bounded belief, public visibility fixture, and offline gates complete; live/private differential evidence remains |
+| P07-P12 | pending | downstream behavior through live parity remain separate evidence gates |
 | P13 | deferred | enhanced intelligence remains downstream of the baseline |
 
 The repository's existing `.planning/STATE.md` is not rewritten by this audit;

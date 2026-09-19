@@ -104,6 +104,48 @@ enum class MemoryState
 	Expired
 };
 
+enum class KnowledgeState
+{
+	Unknown,
+	Believed,
+	Observed
+};
+
+enum class NoisePriority : std::uint8_t
+{
+	Low = 0U,
+	Medium = 1U,
+	High = 2U
+};
+
+enum class PerceptionEventType
+{
+	None,
+	PlayerHurt,
+	PlayerDeath,
+	PlayerSpawn,
+	PlayerRespawn,
+	WeaponFire,
+	BombPlanted,
+	BombDropped,
+	BombPickedUp,
+	BombDefused,
+	BombExploded,
+	RoundStart,
+	RoundEnd,
+	Radio
+};
+
+enum VisiblePart : std::uint8_t
+{
+	VisibleNone = 0x00U,
+	VisibleChest = 0x01U,
+	VisibleHead = 0x02U,
+	VisibleLeftSide = 0x04U,
+	VisibleRightSide = 0x08U,
+	VisibleFeet = 0x10U
+};
+
 enum class ContactLookupResult
 {
 	Found,
@@ -140,9 +182,12 @@ struct ContactConfidence
 struct MemorySample
 {
 	MemoryState state;
+	KnowledgeState knowledge;
 	ActorKey actor;
 	WorldPosition position;
 	ContactConfidence confidence;
+	std::uint8_t visibleParts;
+	FrameIdentity lastSeenFrame;
 
 	bool isUsable() const;
 };
@@ -158,6 +203,10 @@ struct ActorObservation
 	float viewYaw;
 	ContactConfidence confidence;
 	MemorySample memory;
+	bool visible;
+	bool fovPassed;
+	bool losPassed;
+	std::uint8_t visibleParts;
 
 	bool isConfirmed() const;
 	bool hasCurrentPosition() const;
@@ -182,6 +231,24 @@ struct AudibleEvent
 	WorldPosition origin;
 	float loudness;
 	ContactConfidence confidence;
+	ActorKey source;
+	NoisePriority priority;
+	float distance;
+	std::uint32_t timestampTick;
+};
+
+struct NoiseMemory
+{
+	bool active;
+	bool ready;
+	SoundKind kind;
+	WorldPosition position;
+	float distance;
+	NoisePriority priority;
+	std::uint32_t timestampTick;
+	ContactConfidence confidence;
+	ActorKey source;
+	bool positionApproximated;
 };
 
 class WorldSnapshot
@@ -206,6 +273,7 @@ public:
 
 	std::size_t soundCount() const;
 	const AudibleEvent *soundAt(std::size_t index) const;
+	const NoiseMemory &noise() const;
 
 	MemoryLookupResult memoryFor(
 		const ActorKey &actor,
@@ -221,6 +289,7 @@ private:
 	std::size_t entityCount_;
 	std::array<AudibleEvent, WorldLimits::kMaximumSounds> sounds_;
 	std::size_t soundCount_;
+	NoiseMemory noise_;
 	std::array<MemorySample, WorldLimits::kMaximumActors> memories_;
 	std::size_t memoryCount_;
 };

@@ -20,7 +20,25 @@ enum class PerceptionInputResult
 	DuplicateActor,
 	DuplicateEntity,
 	DuplicateSound,
+	DuplicateEvent,
 	ResourceLimit
+};
+
+struct VisionObservation
+{
+	world::ActorKey target;
+	bool fovPassed;
+	bool losPassed;
+	std::uint8_t visibleParts;
+	bool visible;
+};
+
+struct PerceptionEvent
+{
+	std::uint32_t id;
+	world::PerceptionEventType type;
+	world::ActorKey actor;
+	world::ActorKey subject;
 };
 
 class PerceptionInput
@@ -35,6 +53,7 @@ public:
 	PerceptionInputResult addActor(const world::ActorObservation &observation);
 	PerceptionInputResult addEntity(const world::EntityObservation &observation);
 	PerceptionInputResult addSound(const world::AudibleEvent &sound);
+	PerceptionInputResult addEvent(const PerceptionEvent &event);
 
 	std::size_t actorCount() const;
 	const world::ActorObservation *actorAt(std::size_t index) const;
@@ -42,6 +61,8 @@ public:
 	const world::EntityObservation *entityAt(std::size_t index) const;
 	std::size_t soundCount() const;
 	const world::AudibleEvent *soundAt(std::size_t index) const;
+	std::size_t eventCount() const;
+	const PerceptionEvent *eventAt(std::size_t index) const;
 
 private:
 	world::SnapshotIdentity identity_;
@@ -53,12 +74,17 @@ private:
 	std::size_t entityCount_;
 	std::array<world::AudibleEvent, world::WorldLimits::kMaximumSounds> sounds_;
 	std::size_t soundCount_;
+	std::array<PerceptionEvent, world::WorldLimits::kMaximumSounds> events_;
+	std::size_t eventCount_;
 };
 
 struct PerceptionAssemblerConfig
 {
 	std::uint32_t maximumObservationAgeTicks;
 	std::uint32_t maximumMemoryAgeTicks;
+	std::uint32_t maximumNoiseAgeTicks;
+	std::uint32_t noiseReactionDelayTicks;
+	std::uint32_t maximumHearingDistance;
 
 	PerceptionAssemblerConfig();
 	bool isValid() const;
@@ -76,7 +102,44 @@ enum class PerceptionResult
 	StaleFrame,
 	ResourceLimit,
 	Invalidated,
-	NotFound
+	NotFound,
+	InvalidEvent
+};
+
+enum class PerceptionTraceKind
+{
+	Vision,
+	Knowledge,
+	Noise,
+	Event
+};
+
+struct PerceptionTraceRecord
+{
+	std::uint64_t sequence;
+	PerceptionTraceKind kind;
+	world::ActorKey actor;
+	world::ActorKey target;
+	world::FrameIdentity frame;
+	bool visible;
+	bool fovPassed;
+	bool losPassed;
+	std::uint8_t visibleParts;
+	world::KnowledgeState knowledge;
+	world::WorldPosition position;
+	bool hasPosition;
+	world::SoundKind soundKind;
+	world::NoisePriority noisePriority;
+	bool heard;
+	bool rejected;
+	world::PerceptionEventType eventType;
+};
+
+class IPerceptionTraceSink
+{
+public:
+	virtual ~IPerceptionTraceSink() {}
+	virtual void record(const PerceptionTraceRecord &record) = 0;
 };
 
 class PerceptionAssembler
@@ -92,6 +155,7 @@ public:
 
 	const PerceptionAssemblerConfig &config() const;
 	const world::WorldSnapshot &snapshot() const;
+	void setTraceSink(IPerceptionTraceSink *sink);
 
 private:
 	friend class PerceptionInput;
@@ -101,9 +165,12 @@ private:
 		bool active;
 		world::ActorKey actor;
 		world::MemoryState state;
+		world::KnowledgeState knowledge;
 		world::WorldPosition position;
 		world::ContactConfidence confidence;
+		std::uint8_t visibleParts;
 		world::FrameIdentity lastFrame;
+		world::FrameIdentity lastSeenFrame;
 	};
 
 	static bool isFiniteVector(const world::WorldVector &value);
@@ -128,6 +195,7 @@ private:
 	static void clearMemory(MemoryRecord *record);
 	static void expireMemory(MemoryRecord *record);
 	static world::MemorySample sampleFor(const MemoryRecord &record);
+	static void clearNoise(world::NoiseMemory *noise);
 
 	PerceptionResult validateInput(const PerceptionInput &input) const;
 	void advanceMemory(
@@ -137,11 +205,25 @@ private:
 		std::array<MemoryRecord, world::WorldLimits::kMaximumActors> *memory,
 		const world::ActorObservation &observation,
 		const world::FrameIdentity &frame) const;
+	void advanceNoise(world::NoiseMemory *noise,
+		const world::FrameIdentity &frame) const;
+	void updateNoise(world::NoiseMemory *noise,
+		const world::AudibleEvent &sound,
+		const world::ActorKey &observer,
+		const world::FrameIdentity &frame) const;
+	void applyEvent(
+		std::array<MemoryRecord, world::WorldLimits::kMaximumActors> *memory,
+		world::NoiseMemory *noise,
+		const PerceptionEvent &event,
+		const world::FrameIdentity &frame) const;
+	void emit(const PerceptionTraceRecord &record) const;
 
 	PerceptionAssemblerConfig config_;
 	std::array<MemoryRecord, world::WorldLimits::kMaximumActors> memory_;
 	world::WorldSnapshot snapshot_;
 	world::SnapshotIdentity lastIdentity_;
+	IPerceptionTraceSink *traceSink_;
+	mutable std::uint64_t traceSequence_;
 	bool hasPublished_;
 };
 }

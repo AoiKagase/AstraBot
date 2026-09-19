@@ -290,6 +290,99 @@ ObservationAdapterResult ObservationAdapter::collectActor(
 	return ObservationAdapterResult::Accepted;
 }
 
+ObservationAdapterResult ObservationAdapter::collectVisibility(
+	edict_t *observer,
+	edict_t *target,
+	const world::ActorKey &targetActor,
+	const world::FrameIdentity &frame,
+	perception::VisionObservation *observation) const
+{
+	if (observation == nullptr || !targetActor.isValid() || !frame.isValid())
+		return ObservationAdapterResult::InvalidArgument;
+	if (engineFunctions_ == nullptr || globals_ == nullptr ||
+		engineFunctions_->pfnTraceLine == nullptr)
+		return ObservationAdapterResult::EngineUnavailable;
+	if (observer == nullptr || target == nullptr || observer->free != 0 || target->free != 0)
+		return ObservationAdapterResult::InvalidEntity;
+
+	*observation = {};
+	observation->target = targetActor;
+	if ((target->v.flags & FL_NOTARGET) != 0 ||
+		(target->v.effects & EF_NODRAW) != 0)
+		return ObservationAdapterResult::Accepted;
+
+	const float observerX = observer->v.origin[0];
+	const float observerY = observer->v.origin[1];
+	const float observerZ = observer->v.origin[2];
+	const float eye[3] = {
+		observerX + observer->v.view_ofs[0],
+		observerY + observer->v.view_ofs[1],
+		observerZ + observer->v.view_ofs[2]};
+	const float yawRadians = observer->v.angles[1] *
+		3.14159265358979323846f / 180.0f;
+	const float forwardX = std::cos(yawRadians);
+	const float forwardY = std::sin(yawRadians);
+
+	auto inViewCone = [&](const float point[3]) -> bool
+	{
+		const float dx = point[0] - observerX;
+		const float dy = point[1] - observerY;
+		const float length = std::sqrt(dx * dx + dy * dy);
+		if (!std::isfinite(length) || length <= 0.001f)
+			return true;
+		const float dot = (dx / length) * forwardX + (dy / length) * forwardY;
+		return dot > 0.5f;
+	};
+
+	auto traceVisible = [&](const float point[3]) -> bool
+	{
+		TraceResult result = {};
+		engineFunctions_->pfnTraceLine(eye, point, 1, observer, &result);
+		return result.flFraction == 1.0f;
+	};
+
+	auto testPoint = [&](const float point[3], std::uint8_t bit) -> void
+	{
+		if (!inViewCone(point))
+			return;
+		observation->fovPassed = true;
+		if (traceVisible(point))
+		{
+			observation->losPassed = true;
+			observation->visibleParts = static_cast<std::uint8_t>(
+				observation->visibleParts | bit);
+		}
+	};
+
+	float point[3] = {target->v.origin[0], target->v.origin[1], target->v.origin[2]};
+	// Keep the reference order: chest, head, feet, left edge, right edge.
+	testPoint(point, world::VisibleChest);
+	point[2] = target->v.origin[2] + 25.0f;
+	testPoint(point, world::VisibleHead);
+	point[2] = target->v.origin[2] -
+		((target->v.flags & FL_DUCKING) != 0 ? 14.0f : 34.0f);
+	testPoint(point, world::VisibleFeet);
+
+	const float dx = target->v.origin[0] - observer->v.origin[0];
+	const float dy = target->v.origin[1] - observer->v.origin[1];
+	const float horizontalLength = std::sqrt(dx * dx + dy * dy);
+	if (horizontalLength > 0.001f && std::isfinite(horizontalLength))
+	{
+		const float perpX = -dy / horizontalLength;
+		const float perpY = dx / horizontalLength;
+		point[0] = target->v.origin[0] + perpX * 13.0f;
+		point[1] = target->v.origin[1] + perpY * 13.0f;
+		point[2] = target->v.origin[2];
+		testPoint(point, world::VisibleLeftSide);
+		point[0] = target->v.origin[0] - perpX * 13.0f;
+		point[1] = target->v.origin[1] - perpY * 13.0f;
+		testPoint(point, world::VisibleRightSide);
+	}
+
+	observation->visible = observation->visibleParts != world::VisibleNone;
+	return ObservationAdapterResult::Accepted;
+}
+
 void ObservationAdapter::setTraceSink(compat::IObservationTraceSink *sink)
 {
 	traceSink_ = sink;

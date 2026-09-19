@@ -393,7 +393,8 @@ namespace astrabot
 		userMessageText_(),
 		userMessageTextLength_(0U),
 	managedBotMovement_(), managedBotCombat_(), managedBotObjectives_(),
-	managedBotStateMachines_(), managedBotCommandSequences_(),
+	managedBotStateMachines_(), managedBotPerception_(),
+	managedBotPerceptionFullUpdates_(), managedBotCommandSequences_(),
 	managedBotFullUpdateSequences_(), managedBotStateRounds_(), managedBotWasDead_(),
 	managedBotTiming_(), managedBotCommandTemplates_(),
 	managedBotCommandTemplateValid_(),
@@ -1816,7 +1817,7 @@ bool PluginRuntime::buildManagedWorldSnapshot(
 	std::size_t index,
 	world::WorldSnapshot *snapshot,
 	world::ActorKey *targetActor,
-	world::WorldPosition *targetPosition) const
+	world::WorldPosition *targetPosition)
 {
 	if (index >= managedBotHandles_.size() || snapshot == nullptr || targetActor == nullptr ||
 		targetPosition == nullptr || engineFunctions_ == nullptr ||
@@ -1829,16 +1830,60 @@ bool PluginRuntime::buildManagedWorldSnapshot(
 	{
 		return false;
 	}
+	const auto selectVisibleTarget = [targetActor, targetPosition](
+		const world::WorldSnapshot &belief,
+		const world::ActorKey &observer) -> bool
+	{
+		world::ActorKey selected = {};
+		world::WorldPosition selectedPosition = {};
+		float selectedDistanceSquared = (std::numeric_limits<float>::max)();
+		const world::ActorObservation *observerObservation = nullptr;
+		if (belief.findActor(observer, &observerObservation) !=
+			world::ContactLookupResult::Found || observerObservation == nullptr ||
+			!observerObservation->hasCurrentPosition())
+		{
+			return false;
+		}
+		for (std::size_t actorIndex = 0U; actorIndex < belief.actorCount(); ++actorIndex)
+		{
+			const world::ActorObservation *candidate = belief.actorAt(actorIndex);
+			if (candidate == nullptr || candidate->actor == observer ||
+				candidate->relation != world::TeamRelation::Hostile ||
+				!candidate->visible || !candidate->hasCurrentPosition())
+			{
+				continue;
+			}
+			const float dx = candidate->position.x - observerObservation->position.x;
+			const float dy = candidate->position.y - observerObservation->position.y;
+			const float dz = candidate->position.z - observerObservation->position.z;
+			const float distanceSquared = dx * dx + dy * dy + dz * dz;
+			if (distanceSquared < selectedDistanceSquared)
+			{
+				selectedDistanceSquared = distanceSquared;
+				selected = candidate->actor;
+				selectedPosition = candidate->position;
+			}
+		}
+		if (!selected.isValid())
+			return false;
+		*targetActor = selected;
+		*targetPosition = selectedPosition;
+		return true;
+	};
+	const world::ActorKey observer = {handle.actor.slot, handle.actor.actorGeneration};
+	if (managedBotPerceptionFullUpdates_[index] == managedBotFullUpdateSequences_[index] &&
+		managedBotPerception_[index].snapshot().isValid())
+	{
+		*snapshot = managedBotPerception_[index].snapshot();
+		(void)selectVisibleTarget(*snapshot, observer);
+		return true;
+	}
 	const world::FrameIdentity frame = {
 		lifecycle_.mapGeneration(), lifecycle_.roundGeneration(), adapterFrameCount_};
-	const world::ActorKey observer = {handle.actor.slot, handle.actor.actorGeneration};
 	const world::SnapshotIdentity identity = {frame, observer, 0U};
 	perception::PerceptionInput input(identity);
 	const compat::ObservationTimingContext observationTiming = {
 		managedBotCommandSequences_[index], 0U, 0U};
-	world::ActorKey nearestTarget = {0U, 0U};
-	world::WorldPosition nearestPosition = {0.0f, 0.0f, 0.0f};
-	float nearestDistanceSquared = (std::numeric_limits<float>::max)();
 	const auto effectiveTeam = [this](edict_t *entity) {
 		int team = entity == nullptr ? 0 : static_cast<int>(entity->v.team);
 		if (team >= 1)
@@ -1876,7 +1921,6 @@ bool PluginRuntime::buildManagedWorldSnapshot(
 	{
 		return false;
 	}
-	const world::WorldPosition observerPosition = observerObservation.player.origin.value;
 	const int observedObserverTeam = observerObservation.player.team.isAvailable()
 		? observerObservation.player.team.value
 		: 0;
@@ -1906,44 +1950,44 @@ bool PluginRuntime::buildManagedWorldSnapshot(
 		{
 			continue;
 		}
+		perception::VisionObservation visibility = {};
+		const bool isObserver = actor == observer;
+		const bool visible = isObserver ||
+			(observationAdapter_.collectVisibility(
+				handle.entity, entity, actor, frame, &visibility) ==
+				ObservationAdapterResult::Accepted && visibility.visible);
 		world::ActorObservation observation = {};
 		observation.actor = actor;
-		observation.state = world::ObservationState::ObservedPresent;
 		observation.relation = entityTeam == observerTeam
 			? world::TeamRelation::Friendly
 			: world::TeamRelation::Hostile;
-		observation.position = compatObservation.player.origin.value;
-		observation.velocity = compatObservation.player.velocity.value;
-		observation.confidence = {1.0f, 0U};
+		observation.state = visible
+			? world::ObservationState::ObservedPresent
+			: world::ObservationState::ObservedAbsent;
+		observation.position = visible ? compatObservation.player.origin.value : world::WorldPosition{};
+		observation.velocity = visible ? compatObservation.player.velocity.value : world::WorldVelocity{};
+		observation.confidence = visible ? world::ContactConfidence{1.0f, 0U} :
+			world::ContactConfidence{0.0f, 0U};
+		observation.visible = visible;
+		observation.fovPassed = isObserver || visibility.fovPassed;
+		observation.losPassed = isObserver || visibility.losPassed;
+		observation.visibleParts = isObserver ?
+			static_cast<std::uint8_t>(world::VisibleChest | world::VisibleHead |
+				world::VisibleFeet | world::VisibleLeftSide | world::VisibleRightSide) :
+			visibility.visibleParts;
 		if (input.addActor(observation) != perception::PerceptionInputResult::Accepted)
 		{
 			return false;
 		}
-		if (observation.relation == world::TeamRelation::Hostile)
-		{
-			const float dx = observation.position.x - observerPosition.x;
-			const float dy = observation.position.y - observerPosition.y;
-			const float dz = observation.position.z - observerPosition.z;
-			const float distanceSquared = dx * dx + dy * dy + dz * dz;
-			if (distanceSquared < nearestDistanceSquared)
-			{
-				nearestDistanceSquared = distanceSquared;
-				nearestTarget = actor;
-				nearestPosition = observation.position;
-			}
-		}
 	}
-	perception::PerceptionAssembler assembler;
+	perception::PerceptionAssembler &assembler = managedBotPerception_[index];
 	if (assembler.publish(input, snapshot) != perception::PerceptionResult::Published)
 	{
 		return false;
 	}
-	if (!nearestTarget.isValid())
-	{
-		return false;
-	}
-	*targetActor = nearestTarget;
-	*targetPosition = nearestPosition;
+	managedBotPerceptionFullUpdates_[index] = managedBotFullUpdateSequences_[index];
+	*snapshot = assembler.snapshot();
+	(void)selectVisibleTarget(*snapshot, observer);
 	return true;
 }
 
@@ -2748,11 +2792,13 @@ void PluginRuntime::resetManagedBotMovement()
 		managedBotCombat_[index] = combat::CombatController();
 		managedBotObjectives_[index] = objectives::RoundObjectivePlanner();
 		managedBotStateMachines_[index] = compat::CompatibilityStateMachine();
+		managedBotPerception_[index] = perception::PerceptionAssembler();
 		managedBotTiming_[index] = runtime::BotTimingScheduler();
 		resetManagedBotCommandTemplate(index);
 	}
-			managedBotCommandSequences_.fill(0U);
-			managedBotFullUpdateSequences_.fill(0U);
+	managedBotCommandSequences_.fill(0U);
+	managedBotFullUpdateSequences_.fill(0U);
+	managedBotPerceptionFullUpdates_.fill((std::numeric_limits<std::uint32_t>::max)());
 			managedBotStateRounds_.fill(0U);
 			managedBotWasDead_.fill(false);
 			movementDiagnosticSamples_.fill(0U);
@@ -3429,8 +3475,11 @@ void PluginRuntime::clearManagedBot(std::size_t index)
 	managedBotCombat_[index] = combat::CombatController();
 	managedBotObjectives_[index] = objectives::RoundObjectivePlanner();
 	managedBotStateMachines_[index] = compat::CompatibilityStateMachine();
+	managedBotPerception_[index] = perception::PerceptionAssembler();
 	managedBotCommandSequences_[index] = 0U;
 	managedBotFullUpdateSequences_[index] = 0U;
+	managedBotPerceptionFullUpdates_[index] =
+		(std::numeric_limits<std::uint32_t>::max)();
 	managedBotStateRounds_[index] = 0U;
 	managedBotWasDead_[index] = false;
 			movementDiagnosticSamples_[index] = 0U;

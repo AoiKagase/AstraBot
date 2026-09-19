@@ -1,5 +1,20 @@
 # P00 Source Map
 
+## P06 perception boundary
+
+| Reference surface | Pinned source / call path | AstraBot current boundary | P06 status |
+|---|---|---|---|
+| FOV | basemonster.cpp::FInViewCone, cs_bot_vision.cpp::IsVisible | ObservationAdapter::collectVisibility; strict 2D dot threshold and no vertical FOV inference | IMPLEMENTED_OFFLINE_VERIFIED; live/private state unverified |
+| Visibility trace | cs_bot_vision.cpp::IsVisible; eye -> chest/head/feet/edges | public enginefuncs_t::pfnTraceLine, self skip, fraction check, five ordered probes | IMPLEMENTED_UNVERIFIED; smoke/glass/engine differential open |
+| Enemy selection | FindMostDangerousThreat and UpdateReactionQueue | buildManagedWorldSnapshot selects only visible hostile belief contacts | PARTIAL; no private current-threat queue |
+| Last-known enemy | m_lastEnemyPosition, m_lastSawEnemyTimestamp, enemy death handling | MemorySample with actor generation, knowledge state, last-seen frame and bounded expiry | IMPLEMENTED_OFFLINE_VERIFIED |
+| Listening | cs_bot_event.cpp audible event path, cs_bot_listen.cpp | AudibleEvent -> NoiseMemory; range, priority, nearer replacement and retention | IMPLEMENTED_UNVERIFIED; no live event hook |
+| Event knowledge | CCSBot::OnEvent -> CSGameState/chatter/state | PerceptionEvent -> explicit Core memory/noise mutation | IMPLEMENTED_UNVERIFIED; live GameEvent delivery absent |
+| Runtime cadence | cs_bot_update.cpp Upkeep/Update and reaction queue | perception scan occurs on existing Full Update sequence; command path reuses belief | IMPLEMENTED_UNVERIFIED; no live differential cadence trace |
+
+The Core remains SDK-free. The reference is a behavioral comparator only; no
+ReGameDLL private class, pdata offset, or implementation code was copied.
+
 ## P05 state machine boundary
 
 | Reference surface | Pinned source | AstraBot current boundary | P05 status |

@@ -1,5 +1,26 @@
 # P00 Known Deviations and Blockers
 
+## P06 perception deviations
+
+- Core separates observed contact, believed last-known contact, and unknown
+  contact. Runtime hidden actors are published without position, so
+  Compatibility target selection cannot consume global entity coordinates.
+- The public adapter reproduces the reference body probe order and public
+  trace fraction/self-skip boundary, but ignore_glass, smoke occlusion,
+  private blind state, and ReGameDLL engine trace behavior remain
+  IMPLEMENTED_UNVERIFIED.
+- The reference recognition queue, IsNoticable attention interval, private
+  profile reaction time, and current-enemy replacement rules are not fully
+  reproduced. Offline tests cover the bounded visible-contact and last-known
+  model only.
+- Noise position randomization uses the public observed position as an
+  explicitly approximated position. Reference noise RNG callsites remain
+  catalogued under RNG-CSBOT-EVENT-NOISE; no direct RNG call was added in P06.
+- Perception events have an SDK-free input boundary and deterministic lifecycle
+  mutations, but no public Metamod/GameDLL event feed has been claimed.
+- P06 offline gates pass; live HLDS/ReHLDS differential perception and event
+  acceptance were not run.
+
 ## P05 state-machine deviations
 
 - `CompatibilityStateMachine` proves lifecycle ordering and overlay ownership,

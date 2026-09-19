@@ -2,6 +2,7 @@
 
 #include <cstdio>
 #include <limits>
+#include <vector>
 
 namespace
 {
@@ -225,11 +226,236 @@ bool testInputLimitsAndInvalidIdentity()
 		"invalid observer generation is rejected");
 }
 
+bool testP06VisionBeliefLossAndExpiry()
+{
+	using namespace astrabot;
+	perception::PerceptionAssemblerConfig config = {};
+	config.maximumObservationAgeTicks = 8U;
+	config.maximumMemoryAgeTicks = 5U;
+	config.maximumNoiseAgeTicks = 8U;
+	config.noiseReactionDelayTicks = 0U;
+	perception::PerceptionAssembler assembler(config);
+	world::WorldSnapshot snapshot;
+	const world::ActorKey observer = {1U, 11U};
+	const world::ActorKey enemy = {2U, 7U};
+
+	world::ActorObservation self = visibleActor(observer);
+	self.position = {};
+	self.relation = world::TeamRelation::Friendly;
+	self.visible = true;
+	self.fovPassed = true;
+	self.losPassed = true;
+	world::ActorObservation seen = visibleActor(enemy);
+	seen.position = {128.0f, 0.0f, 0.0f};
+	seen.visible = true;
+	seen.fovPassed = true;
+	seen.losPassed = true;
+	seen.visibleParts = static_cast<std::uint8_t>(
+		world::VisibleChest | world::VisibleHead);
+	perception::PerceptionInput first(identity(10U));
+	first.addActor(self);
+	first.addActor(seen);
+	if (!check(assembler.publish(first, &snapshot) == perception::PerceptionResult::Published,
+			"visible enemy publication succeeds"))
+		return false;
+	const world::ActorObservation *published = nullptr;
+	if (!check(snapshot.findActor(enemy, &published) == world::ContactLookupResult::Found &&
+			published != nullptr && published->visible &&
+			published->visibleParts == (world::VisibleChest | world::VisibleHead),
+			"vision preserves visible body regions"))
+		return false;
+	const world::MemorySample *memory = nullptr;
+	if (!check(snapshot.memoryFor(enemy, &memory) == world::MemoryLookupResult::Found &&
+			memory != nullptr && memory->knowledge == world::KnowledgeState::Observed &&
+			memory->position.x == 128.0f,
+			"visible contact becomes observed last-known knowledge"))
+		return false;
+
+	world::ActorObservation absent = seen;
+	absent.state = world::ObservationState::ObservedAbsent;
+	absent.position = {};
+	absent.velocity = {};
+	absent.confidence = {0.0f, 0U};
+	absent.visible = false;
+	absent.fovPassed = false;
+	absent.losPassed = false;
+	absent.visibleParts = world::VisibleNone;
+	perception::PerceptionInput lost(identity(11U));
+	lost.addActor(self);
+	lost.addActor(absent);
+	if (!check(assembler.publish(lost, &snapshot) == perception::PerceptionResult::Published,
+			"lost enemy publication succeeds"))
+		return false;
+	if (!check(snapshot.findActor(enemy, &published) == world::ContactLookupResult::Found &&
+			published != nullptr && !published->visible && !published->hasCurrentPosition(),
+			"occluded contact does not expose ground-truth position"))
+		return false;
+	if (!check(snapshot.memoryFor(enemy, &memory) == world::MemoryLookupResult::Found &&
+			memory != nullptr && memory->isUsable() && memory->position.x == 128.0f,
+			"last-known position survives visibility loss"))
+		return false;
+
+	perception::PerceptionInput expired(identity(16U));
+	expired.addActor(self);
+	return check(assembler.publish(expired, &snapshot) == perception::PerceptionResult::Published &&
+		snapshot.memoryFor(enemy, &memory) == world::MemoryLookupResult::Expired &&
+		memory != nullptr && !memory->isUsable(),
+		"last-known knowledge expires at the configured deterministic age");
+}
+
+bool testP06NoisePriorityExpiryAndHeardNotSeen()
+{
+	using namespace astrabot;
+	perception::PerceptionAssemblerConfig config = {};
+	config.maximumObservationAgeTicks = 8U;
+	config.maximumMemoryAgeTicks = 32U;
+	config.maximumNoiseAgeTicks = 3U;
+	config.noiseReactionDelayTicks = 1U;
+	perception::PerceptionAssembler assembler(config);
+	world::WorldSnapshot snapshot;
+	world::ActorObservation self = visibleActor({1U, 11U});
+	self.position = {};
+	self.relation = world::TeamRelation::Friendly;
+	self.visible = true;
+
+	world::AudibleEvent high = {};
+	high.id = 1U;
+	high.kind = world::SoundKind::WeaponFire;
+	high.origin = {256.0f, 0.0f, 0.0f};
+	high.loudness = 1.0f;
+	high.priority = world::NoisePriority::High;
+	high.distance = 100.0f;
+	high.timestampTick = 10U;
+	high.confidence = {1.0f, 0U};
+	perception::PerceptionInput input(identity(10U));
+	input.addActor(self);
+	input.addSound(high);
+	if (!check(assembler.publish(input, &snapshot) == perception::PerceptionResult::Published,
+			"noise publication succeeds"))
+		return false;
+	if (!check(snapshot.noise().active && !snapshot.noise().ready &&
+			snapshot.noise().source.slot == 0U &&
+			snapshot.noise().kind == world::SoundKind::WeaponFire,
+			"heard-but-not-seen exposes category and position without identity"))
+		return false;
+
+	world::AudibleEvent weak = high;
+	weak.id = 2U;
+	weak.priority = world::NoisePriority::Low;
+	weak.distance = 10.0f;
+	perception::PerceptionInput next(identity(11U));
+	next.addActor(self);
+	next.addSound(weak);
+	if (!check(assembler.publish(next, &snapshot) == perception::PerceptionResult::Published &&
+			snapshot.noise().distance == 100.0f &&
+			snapshot.noise().priority == world::NoisePriority::High,
+			"lower-priority noise does not replace recent high-priority noise"))
+		return false;
+
+	world::AudibleEvent samePriorityFar = high;
+	samePriorityFar.id = 3U;
+	samePriorityFar.distance = 200.0f;
+	perception::PerceptionInput farther(identity(12U));
+	farther.addActor(self);
+	farther.addSound(samePriorityFar);
+	if (!check(assembler.publish(farther, &snapshot) == perception::PerceptionResult::Published &&
+		snapshot.noise().distance == 100.0f,
+		"equally prioritized farther noise does not replace the current noise"))
+		return false;
+
+	world::AudibleEvent samePriorityNear = high;
+	samePriorityNear.id = 4U;
+	samePriorityNear.distance = 50.0f;
+	samePriorityNear.timestampTick = 13U;
+	perception::PerceptionInput nearer(identity(13U));
+	nearer.addActor(self);
+	nearer.addSound(samePriorityNear);
+	if (!check(assembler.publish(nearer, &snapshot) == perception::PerceptionResult::Published &&
+		snapshot.noise().distance == 50.0f,
+		"equally prioritized nearer noise replaces the current noise"))
+		return false;
+
+	perception::PerceptionInput ready(identity(14U));
+	ready.addActor(self);
+	if (!check(assembler.publish(ready, &snapshot) == perception::PerceptionResult::Published &&
+		snapshot.noise().ready,
+		"noise becomes usable after the reaction delay"))
+		return false;
+	perception::PerceptionInput stale(identity(17U));
+	stale.addActor(self);
+	return check(assembler.publish(stale, &snapshot) == perception::PerceptionResult::Published &&
+		!snapshot.noise().active,
+		"noise expires independently from enemy last-known memory");
+}
+
+bool testP06EventsIsolationAndTrace()
+{
+	using namespace astrabot;
+	struct Trace : perception::IPerceptionTraceSink
+	{
+		std::vector<perception::PerceptionTraceRecord> records;
+		void record(const perception::PerceptionTraceRecord &record) override
+		{
+			records.push_back(record);
+		}
+	};
+	perception::PerceptionAssembler assembler;
+	Trace trace;
+	assembler.setTraceSink(&trace);
+	world::WorldSnapshot snapshot;
+	const world::ActorKey observer = {1U, 11U};
+	const world::ActorKey enemy = {2U, 7U};
+	world::ActorObservation self = visibleActor(observer);
+	self.relation = world::TeamRelation::Friendly;
+	self.visible = true;
+	world::ActorObservation seen = visibleActor(enemy);
+	seen.visible = true;
+	perception::PerceptionInput seenInput(identity(20U));
+	seenInput.addActor(self);
+	seenInput.addActor(seen);
+	if (!check(assembler.publish(seenInput, &snapshot) == perception::PerceptionResult::Published,
+			"event fixture source publication succeeds"))
+		return false;
+
+	perception::PerceptionInput death(identity(21U));
+	death.addActor(self);
+	death.addEvent({1U, world::PerceptionEventType::PlayerDeath, observer, enemy});
+	if (!check(assembler.publish(death, &snapshot) == perception::PerceptionResult::Published,
+			"death event publication succeeds"))
+		return false;
+	const world::MemorySample *memory = nullptr;
+	if (!check(snapshot.memoryFor(enemy, &memory) == world::MemoryLookupResult::Found &&
+			memory != nullptr && memory->knowledge == world::KnowledgeState::Believed,
+			"death event downgrades current belief without inventing a new position"))
+		return false;
+
+	perception::PerceptionInput roundEnd(identity(22U));
+	roundEnd.addActor(self);
+	roundEnd.addEvent({2U, world::PerceptionEventType::RoundEnd, observer, {}});
+	if (!check(assembler.publish(roundEnd, &snapshot) == perception::PerceptionResult::Published &&
+		snapshot.memoryFor(enemy, &memory) == world::MemoryLookupResult::NotFound,
+		"round-end event clears prior-life perception memory"))
+		return false;
+
+	perception::PerceptionAssembler other;
+	world::WorldSnapshot otherSnapshot;
+	perception::PerceptionInput isolated(identity(20U));
+	isolated.addActor(self);
+	if (!check(other.publish(isolated, &otherSnapshot) == perception::PerceptionResult::Published &&
+		otherSnapshot.memoryFor(enemy, &memory) == world::MemoryLookupResult::NotFound,
+		"per-Bot belief isolation is preserved"))
+		return false;
+	return check(!trace.records.empty(), "perception trace remains bounded and observable");
+}
+
 int main()
 {
 	if (!testDuplicateAndStaleFramesPreservePublication() ||
 			!testMemoryExpiryAndGenerationInvalidation() ||
-			!testInputLimitsAndInvalidIdentity())
+			!testInputLimitsAndInvalidIdentity() ||
+			!testP06VisionBeliefLossAndExpiry() ||
+			!testP06NoisePriorityExpiryAndHeardNotSeen() ||
+			!testP06EventsIsolationAndTrace())
 	{
 		return 1;
 	}

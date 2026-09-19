@@ -1,5 +1,24 @@
 # P00 GameDLL Observation Matrix
 
+## P06 perception observations
+
+| Observation | Reference consumer | AstraBot source / quality | Result |
+|---|---|---|---|
+| PERCEPT-VISION-FOV | FInViewCone / IsVisible(..., CHECK_FOV) | public edict_t angles plus SDK-free cone evaluator | IMPLEMENTED_OFFLINE_VERIFIED |
+| PERCEPT-VISION-LOS | UTIL_TraceLine, fraction and self ignore | public pfnTraceLine; trace result is held at the adapter boundary | IMPLEMENTED_UNVERIFIED |
+| PERCEPT-VISION-BODY | chest/head/feet/left/right masks | ActorObservation.visibleParts and MemorySample.visibleParts | IMPLEMENTED_OFFLINE_VERIFIED |
+| PERCEPT-ENEMY-ACQUIRE | visible hostile scan plus reaction queue | visible hostile contacts only; Full Update-scoped | PARTIAL |
+| PERCEPT-ENEMY-LAST-SEEN | m_lastEnemyPosition / timestamp | actor-generation-scoped MemorySample | IMPLEMENTED_OFFLINE_VERIFIED |
+| PERCEPT-NOISE-HEAR | audible hostile GameEvent path | AudibleEvent with bounded distance/priority | IMPLEMENTED_OFFLINE_VERIFIED |
+| PERCEPT-NOISE-PRIORITY | recent higher-priority or nearer replacement | 3-second replacement window, priority then distance | IMPLEMENTED_OFFLINE_VERIFIED |
+| PERCEPT-NOISE-EXPIRE | ForgetNoise after 20 seconds | configurable bounded retention and reaction delay | IMPLEMENTED_OFFLINE_VERIFIED |
+| PERCEPT-EVENT-DEATH | OnEvent(EVENT_PLAYER_DIED) | event mutation downgrades remembered contact | IMPLEMENTED_UNVERIFIED |
+| PERCEPT-EVENT-ROUND | round lifecycle / CSGameState reset | round/map generation and explicit round events clear bounded belief | IMPLEMENTED_UNVERIFIED |
+| PERCEPT-GROUND-TRUTH-LEAK | CSBot only uses recognized information | hidden entity position is scrubbed before Core publication | PASS boundary |
+
+EXACT_ENGINE_API still describes acquisition only. Trace, smoke, private
+reaction queues, and live GameEvent timing are not MATCH claims.
+
 ## P04 semantic observation inventory
 
 This table is the P04 source of truth. Reference names are stable semantic
