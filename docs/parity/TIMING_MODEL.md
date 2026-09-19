@@ -103,3 +103,13 @@ frozen zero-msec/button clearing, and post-frozen sequence refresh.
 
 These are deterministic offline gates. They do not claim live HLDS/ReHLDS,
 full CSBot, Combat, NAV, RNG, private-state, or autonomous gameplay parity.
+
+## P03 RNG timing association
+
+P03 adds timing fields to the optional RNG trace context only. It does not
+modify `BotTimingScheduler`, its 30Hz/10Hz cadence, absolute deadline rebasing,
+no-catch-up behavior, command persistence, or timestamp-derived `msec` logic.
+When a future Compatibility callsite is reached inside an existing scheduler
+event, the caller may attach the already-observed command/upkeep/full-update
+sequence values to the RNG record. A zero value means that no timing context
+was available; it is not a new scheduler event.

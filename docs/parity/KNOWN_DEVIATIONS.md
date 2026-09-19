@@ -13,10 +13,11 @@ These are audit findings, not implementation instructions executed in P00.
 2. **Think timing is resolved offline in P02.** AstraBot now exposes the
    reference 30Hz command and nested 10Hz full-update cadence through
    `BotTimingScheduler`; live/private-state parity remains an open evidence gate.
-3. **RNG parity is absent.** Astra production code has no CSBot-compatible RNG
-   source, seed capture, random-call tape, or call-site ordering. The roam
-   controller uses a deterministic actor/generation-derived route index, which is
-   known to differ from reference `RANDOM_*` use.
+3. **RNG parity was absent at the P00/P02 baseline.** P03 now provides a
+   CSBot-compatible engine callback boundary, scripted tape, and call-order trace
+   contract. Specific production callsites remain unverified, and the roam
+   controller still uses a deterministic actor/generation-derived route index,
+   which differs from reference `RANDOM_*` use.
 4. **Private state is unavailable.** Active weapon/ammo/recoil/reload/FOV,
    CSBot profile values, recognized-enemy queues, `CSGameState`, hostage state,
    and many player-private fields are not reachable through the current public
@@ -67,3 +68,20 @@ remain unverified and are not promoted by P02.
   source pass/fail.
 - No new HLDS/ReHLDS run was performed during P00. Existing live reports remain
   partial and are cited as historical evidence only.
+
+## P03 RNG update
+
+- ReGameDLL-CS contains 148 executable CSBot-related `RANDOM_*` expressions in
+  24 direct bot files. The complete semantic inventory is in `RNG_MODEL.md`.
+- ReGameDLL's `RANDOM_FLOAT` and `RANDOM_LONG` delegate through the engine
+  callback table. AstraBot now delegates through one shared production adapter;
+  it does not copy the generator or add per-Bot state.
+- Scripted/tape and optional trace behavior are offline verified. No current
+  AstraBot production decision consumes the Compatibility source yet, so the
+  individual reference callsites remain UNVERIFIED.
+- The current actor/generation-derived Nav choice remains DIFFERENT and was not
+  changed into a random call in P03.
+- The 21 direct chatter-purpose calls remain inventory items despite their
+  visible scope because a shared global stream could shift later behavior.
+- Live HLDS/ReHLDS acceptance, pinned reference RNG traces, private state, and
+  full CSBot behavior remain open.

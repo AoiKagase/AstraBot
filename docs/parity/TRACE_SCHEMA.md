@@ -47,3 +47,26 @@ frame. Diagnostics must remain bounded and must not enable unbounded per-frame
 logging by default. These fields prove offline cadence and ordering only; they
 are not a live reference trace or evidence of RNG, private-state, Combat, NAV,
 or full CSBot parity.
+
+## P03 RNG record
+
+An optional `rng` record is emitted by the Compatibility RNG source only when
+parity tracing is enabled. It is bounded and does not enable always-on verbose
+logging.
+
+| Field | Required meaning |
+|---|---|
+| `sequence` | Monotonic sequence from the shared Compatibility source |
+| `site` | Semantic callsite ID, never a line-number-only ID |
+| `type` | `float` or `long` |
+| `min`, `max` | Exact type-preserving arguments forwarded to the source |
+| `result` | Value returned by the engine adapter or scripted tape |
+| `bot` / `entity` | Stable actor slot/generation, or explicit unknown for manager calls |
+| `command_sequence` | Existing command timing context, or zero when unavailable |
+| `upkeep_sequence` | Existing upkeep timing context, or zero when unavailable |
+| `full_update_sequence` | Existing full-update timing context, or zero when unavailable |
+
+The sequence counter belongs to the shared Compatibility source. Enhanced-source
+calls are not emitted on this Compatibility stream. Synthetic traces, CTest,
+FocalSpan, and graph output remain offline evidence, not pinned reference
+production traces or live HLDS/ReHLDS acceptance.

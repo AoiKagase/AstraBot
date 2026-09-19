@@ -15,6 +15,7 @@
 #include "astrabot/runtime/movement_physics.hpp"
 #include "astrabot/runtime/bot_timing_scheduler.hpp"
 #include "astrabot/runtime/lifecycle.hpp"
+#include "engine_random_source.hpp"
 #include "action_adapter.hpp"
 
 #include <array>
@@ -213,6 +214,7 @@ namespace astrabot
 			FakeClientManager fakeClientManager_;
 			InputDispatcher inputDispatcher_;
 			CompatibilitySurface compatibilitySurface_;
+			compat::EngineRandomSource compatibilityRandomSource_;
 			NavLoader navLoader_;
 			nav::NavSnapshotPublisher navPublisher_;
 			NavLoadDiagnostic navLoadDiagnostic_;

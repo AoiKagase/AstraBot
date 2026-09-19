@@ -34,6 +34,7 @@ include(cmake/AstraBotBuild.cmake)
   src/core/compat/command_registry.cpp
   src/core/compat/cvar_state.cpp
   src/core/compat/runtime_mode_policy.cpp
+  src/core/compat/random_source.cpp
   src/core/compat/bot_configuration.cpp
   src/core/compat/profile_catalog.cpp
   src/core/nav/nav_model.cpp
@@ -225,6 +226,28 @@ if(ASTRABOT_BUILD_TESTS)
   target_link_libraries(astrabot_runtime_timing PRIVATE astrabot_core)
   astrabot_apply_warnings(astrabot_runtime_timing)
   add_test(NAME astrabot_runtime_timing COMMAND astrabot_runtime_timing)
+
+  add_executable(astrabot_compatibility_rng
+    tests/compatibility_rng_tests.cpp
+  )
+  target_include_directories(astrabot_compatibility_rng PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+  )
+  target_link_libraries(astrabot_compatibility_rng PRIVATE astrabot_core)
+  astrabot_apply_warnings(astrabot_compatibility_rng)
+  add_test(NAME astrabot_compatibility_rng COMMAND astrabot_compatibility_rng)
+
+  add_executable(astrabot_engine_random_source
+    tests/engine_random_source_tests.cpp
+    src/adapter/metamod/engine_random_source.cpp
+  )
+  target_include_directories(astrabot_engine_random_source PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/adapter/metamod"
+  )
+  target_link_libraries(astrabot_engine_random_source PRIVATE astrabot_core)
+  astrabot_apply_warnings(astrabot_engine_random_source)
+  add_test(NAME astrabot_engine_random_source COMMAND astrabot_engine_random_source)
 
   add_executable(astrabot_nav_model
     tests/nav_model_tests.cpp
@@ -471,6 +494,7 @@ if(ASTRABOT_BUILD_METAMOD)
     src/adapter/metamod/plugin_exports.cpp
     src/adapter/metamod/native_bot_guard.cpp
 	src/adapter/metamod/plugin_runtime.cpp
+	src/adapter/metamod/engine_random_source.cpp
 	src/adapter/metamod/map_fingerprint.cpp
 	src/adapter/metamod/nav_loader.cpp
 	src/adapter/metamod/action_adapter.cpp
@@ -530,6 +554,7 @@ if(ASTRABOT_BUILD_METAMOD)
       src/adapter/metamod/plugin_exports.cpp
       src/adapter/metamod/join_controller.cpp
 		src/adapter/metamod/plugin_runtime.cpp
+		src/adapter/metamod/engine_random_source.cpp
 		src/adapter/metamod/nav_loader.cpp
 		src/adapter/metamod/map_fingerprint.cpp
 		src/adapter/metamod/action_adapter.cpp
@@ -572,6 +597,7 @@ if(ASTRABOT_BUILD_METAMOD)
       src/adapter/metamod/plugin_exports.cpp
       src/adapter/metamod/join_controller.cpp
 		src/adapter/metamod/plugin_runtime.cpp
+		src/adapter/metamod/engine_random_source.cpp
 		src/adapter/metamod/nav_loader.cpp
 		src/adapter/metamod/map_fingerprint.cpp
 		src/adapter/metamod/action_adapter.cpp
@@ -608,6 +634,7 @@ add_executable(astrabot_compat_actor_command
       src/adapter/metamod/plugin_exports.cpp
       src/adapter/metamod/join_controller.cpp
       src/adapter/metamod/plugin_runtime.cpp
+      src/adapter/metamod/engine_random_source.cpp
 	src/adapter/metamod/nav_loader.cpp
 	src/adapter/metamod/map_fingerprint.cpp
 	src/adapter/metamod/action_adapter.cpp

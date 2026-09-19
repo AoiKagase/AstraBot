@@ -26,7 +26,7 @@
 | State | Follow / Hide / Hunt / InvestigateNoise / MoveTo / UseEntity | no corresponding state objects | MISSING | no live state implementations |
 | Perception | trace/FOV visibility, visible body parts, recognition and reaction queue | `buildManagedWorldSnapshot`, `PerceptionAssembler` | DIFFERENT | live path enumerates hostile live edicts and chooses nearest target; no trace/FOV/noise/event feed |
 | Events | `GameEventType` reactions and sound/listen behavior | user-message/menu/TeamInfo hooks | MISSING | message handling supports join/readiness, not CSBot event semantics |
-| RNG | `RANDOM_*` source, call site order and branch consumption | no production RNG source; actor-seeded route index | MISSING | current source has no compatibility RNG tape or call-order instrumentation |
+| RNG | `RANDOM_*` source, call site order and branch consumption | `compat::EngineRandomSource`, `compat::ScriptedRandomSource`, `RNG_MODEL.md` | IMPLEMENTED_UNVERIFIED | boundary/callback/tape/trace are offline verified; 148 reference expressions remain unverified against AstraBot production decisions |
 | NAV load | CSBot NAV file/area/place/hiding/encounter loading | `NavLoader`, `LegacyNavReader`, `NavSnapshot` | IMPLEMENTED_UNVERIFIED | independent read-only loader and snapshot pass offline tests; format/semantics not differential-verified |
 | NAV route | path cost, route type, tie breaking and random choices | `NavQuery`, `NavRoamController` | DIFFERENT | actor/generation-derived deterministic starting index; no CSBot cost/RNG parity |
 | NAV movement | path following, jump, ladder, crouch, stuck recovery | `locomotion`, `jump_drop`, `special_traversal`, movement physics | PARTIAL | contracts and offline tests exist; existing live evidence reports `roam_no_intent`/`Stuck` and no sustained movement |
@@ -44,7 +44,7 @@
 
 ## Current count
 
-`MATCH 0`, `IMPLEMENTED_UNVERIFIED 5`, `PARTIAL 10`, `MISSING 8`,
+`MATCH 0`, `IMPLEMENTED_UNVERIFIED 6`, `PARTIAL 10`, `MISSING 7`,
 `DIFFERENT 5`, `ASTRA_EXTENSION 1`, `NOT_APPLICABLE 0`.
 
 These counts describe the rows above, not feature completeness or live acceptance.

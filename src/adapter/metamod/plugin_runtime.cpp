@@ -392,7 +392,8 @@ namespace astrabot
 		  hookedGameDllFunctions_(),
 		  engineFunctions_(nullptr), globals_(nullptr), lifecycle_(), actorRegistry_(),
 			  fakeClientManager_(lifecycle_, actorRegistry_),
-			  inputDispatcher_(lifecycle_, actorRegistry_), compatibilitySurface_(), navLoader_(),
+			  inputDispatcher_(lifecycle_, actorRegistry_), compatibilitySurface_(),
+			  compatibilityRandomSource_(), navLoader_(),
 			  navPublisher_(), navLoadDiagnostic_(), adapterFrameCount_(0U), pluginId_(nullptr),
 			  nativeBotGuard_(),
 	nativeGuardDecision_({NativeBotGuardState::Unsupported,
@@ -622,6 +623,9 @@ namespace astrabot
 			if (engineFunctions != nullptr)
 			{
 				engineFunctions_ = engineFunctions;
+				compatibilityRandomSource_.configure({
+					engineFunctions->pfnRandomLong,
+					engineFunctions->pfnRandomFloat});
 				if (engineFunctions->pfnCmd_Args != &HookCommandArgs)
 				{
 					originalCommandArgs_ = engineFunctions->pfnCmd_Args;

@@ -37,7 +37,8 @@ or reference source was changed.
 | P00 | complete | reference frozen; source map, matrices, observations and blockers recorded |
 | P01 | complete | explicit runtime mode, policy isolation, snapshot diagnostics, and regression tests |
 | P02 | complete | Compatibility timing/command cadence implemented and deterministically verified; live/private-state parity remains open |
-| P03-P12 | pending | RNG through live parity remain downstream phases and evidence gates |
+| P03 | partial | Compatibility RNG boundary, engine delegation, scripted consumption, and trace schema are offline verified; specific callsites and live parity remain open |
+| P04-P12 | pending | private-state observation through live parity remain downstream phases and evidence gates |
 | P13 | deferred | enhanced intelligence remains downstream of the baseline |
 
 The repository's existing `.planning/STATE.md` is not rewritten by this audit;
@@ -73,9 +74,27 @@ remain open.
 
 1. Define and prove compatibility-mode isolation before enabling any Astra-only
    planner, route memory, profile adaptation, team director, or learning behavior.
-2. Add a deterministic RNG record/replay boundary and pin reference call order.
+2. Differentially compare the new deterministic RNG boundary and reference call
+   order; the P03 offline boundary exists, but the pinned production reference
+   tape and live comparison remain open.
 3. Map public/private observations and choose explicit `exact`, `delayed`,
    `inferred`, or `unavailable` policies.
 4. Establish timing/command traces for the reference and Astra paths.
 5. Keep real-server movement, combat, C4, Linux x86, and lifecycle acceptance
    separate from offline tests.
+
+## P03 result: PARTIAL
+
+| Area | Result | Evidence / limitation |
+|---|---|---|
+| Reference RNG model | PARTIAL | 148 executable direct expressions, callback chain, local ReHLDS implementation observation, and 62-file transitive audit recorded in `RNG_MODEL.md` |
+| Compatibility RNG contract | PASS for boundary | SDK-free request/result types, exact type/bounds tape checks, too-many/too-few detection, and branch fixtures pass offline |
+| Production engine adapter | PASS for boundary | Fake callback tests verify exact forwarding and unavailable-callback failure; no production decision callsite is claimed |
+| Shared ownership | PASS for boundary | One PluginRuntime-owned source; multi-Bot A/B/A scripted ordering passes |
+| Enhanced isolation | PASS for boundary | Separate source instances do not advance Compatibility tape |
+| RNG trace | PASS for schema/source | Optional bounded record includes sequence, semantic site, type, bounds, result, actor, and timing context |
+| Specific CSBot callsite parity | UNVERIFIED | AstraBot production behavior does not yet consume the new source at equivalent branches |
+| Live HLDS/ReHLDS RNG parity | NOT RUN | No fresh pinned reference/AstraBot live RNG trace was collected |
+
+P02 timing regression remains PASS and unchanged. P03 does not promote overall
+CSBot parity to MATCH and does not authorize P04.

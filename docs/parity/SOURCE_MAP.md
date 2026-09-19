@@ -108,6 +108,20 @@ Mode. `PluginRuntime::Snapshot::mode` and runtime diagnostics make the selected
 mode observable. Existing Nav/Combat/Objective controllers remain unproven
 baseline candidates; no controller is promoted to `MATCH` by P01.
 
+## P03 Compatibility RNG boundary
+
+| Reference boundary | AstraBot implementation | Status |
+|---|---|---|
+| `RANDOM_FLOAT` / `RANDOM_LONG` -> `g_engfuncs.pfnRandomFloat/Long` | `compat::EngineRandomSource` -> injected public engine callbacks | IMPLEMENTED_OFFLINE_VERIFIED |
+| Global engine RNG ownership and multi-Bot ordering | One `PluginRuntime`-owned Compatibility source shared by all managed Bots | IMPLEMENTED_OFFLINE_VERIFIED |
+| Strict call type/bounds/order test source | `compat::ScriptedRandomSource` and `RandomTapeEntry` | IMPLEMENTED_OFFLINE_VERIFIED |
+| Optional RNG parity record | `RandomTraceRecord` and `IRandomTraceSink` | IMPLEMENTED_OFFLINE_VERIFIED |
+| Reference CSBot production callsites | `docs/parity/RNG_MODEL.md` semantic inventory | PARTIAL; AstraBot production callsites remain UNVERIFIED |
+
+The Core contract is value-only and does not include `edict_t`, `Vector`,
+`enginefuncs_t`, or GameDLL-private types. The adapter does not copy the
+ReGameDLL or engine generator algorithm and does not create per-Bot streams.
+
 ## Transitive reference surfaces requiring future mapping
 
 CSBot reads GameDLL-owned player/weapon/rule state through its in-process class
