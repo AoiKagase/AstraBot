@@ -15,8 +15,9 @@ bool gObjectiveEntitiesAvailable = false;
 	int gClientCommandCount = 0;
 	int gHookedClientCommandCount = 0;
 	int gUnhookedClientCommandCount = 0;
-	int gRunPlayerMoveCount = 0;
-	unsigned short gLastRunPlayerMoveButtons = 0U;
+int gRunPlayerMoveCount = 0;
+unsigned short gLastRunPlayerMoveButtons = 0U;
+byte gLastRunPlayerMoveMsec = 0U;
 	bool gDirectJoinCommandSeen = false;
 	bool gServerSetsEntityTeam = true;
 	char gLastClientCommand[32] = {};
@@ -255,10 +256,11 @@ edict_t *findEntityByString(edict_t *start, const char *field, const char *value
 }
 
 void runPlayerMove(
-	edict_t *, const float *, float, float, float, unsigned short buttons, byte, byte)
+	edict_t *, const float *, float, float, float, unsigned short buttons, byte, byte msec)
 {
 	++gRunPlayerMoveCount;
 	gLastRunPlayerMoveButtons = buttons;
+	gLastRunPlayerMoveMsec = msec;
 }
 
 char *getInfoKeyBuffer(edict_t *)
@@ -561,6 +563,34 @@ int main()
 	runtime.onStartFramePost();
 	if (!check(gRunPlayerMoveCount == 1,
 			   "joined runtime submits once when the 30Hz command deadline is due"))
+	{
+		std::remove(profilePath);
+		std::remove(defaultProfilePath);
+		return 1;
+	}
+	gEntities[0].v.flags |= FL_FROZEN;
+	gRunPlayerMoveCount = 0;
+	gLastRunPlayerMoveButtons = 0U;
+	gLastRunPlayerMoveMsec = 255U;
+	globals.time = timingStart + 0.070f;
+	runtime.onStartFrame();
+	runtime.onStartFramePost();
+	if (!check(gRunPlayerMoveCount == 1 &&
+			   gLastRunPlayerMoveButtons == 0U && gLastRunPlayerMoveMsec == 0U,
+			   "frozen scheduled command clears buttons and submits zero msec"))
+	{
+		std::remove(profilePath);
+		std::remove(defaultProfilePath);
+		return 1;
+	}
+	gEntities[0].v.flags &= ~FL_FROZEN;
+	gRunPlayerMoveCount = 0;
+	globals.time = timingStart + 0.110f;
+	runtime.onStartFrame();
+	runtime.onStartFramePost();
+	const auto postFrozenSample = runtime.movementPhysicsSample(1U);
+	if (!check(gRunPlayerMoveCount == 1 && postFrozenSample.commandSequence > 0U,
+			   "post-frozen command execution refreshes the command sequence"))
 	{
 		std::remove(profilePath);
 		std::remove(defaultProfilePath);
