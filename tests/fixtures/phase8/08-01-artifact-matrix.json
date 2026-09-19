@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "evidence_id": "phase8-08-01-artifact-matrix",
+  "captured_at": "2026-09-16",
+  "source_commit": "5a62a98243ce98081ebd64d24c5495295f53ec58",
+  "reference_policy": "artifact-only-current-head",
+  "exports": [
+    "Meta_Query",
+    "Meta_Attach",
+    "Meta_Detach",
+    "GetEntityAPI2",
+    "GetEngineFunctions",
+    "GiveFnptrsToDll"
+  ],
+  "builds": [
+    {
+      "platform": "windows-x86",
+      "target": "portable",
+      "build_directory": "build-portable-x86-test",
+      "generator": "NMake Makefiles",
+      "configuration": "Debug",
+      "compiler": "MSVC HostX86/x86",
+      "metamod": false,
+      "build": "pass",
+      "ctest": "pass",
+      "ctest_tests": 30
+    },
+    {
+      "platform": "windows-x86",
+      "target": "metamod",
+      "build_directory": "build-metamod-x86-test",
+      "artifact": "build-metamod-x86-test/astrabot_mm.dll",
+      "generator": "NMake Makefiles",
+      "configuration": "Debug",
+      "compiler": "MSVC HostX86/x86",
+      "metamod": true,
+      "build": "pass",
+      "ctest": "pass",
+      "ctest_tests": 37,
+      "artifact_format": "PE",
+      "artifact_architecture": "x86",
+      "artifact_sha256": "b511e711b5459cf69dff83ab1fcc9b7385c6c298e7404c704aedb42dd7ba9174",
+      "exports": "exact-six"
+    },
+    {
+      "platform": "debian-linux-x86",
+      "target": "portable",
+      "build_directory": "build-linux-x86-test",
+      "generator": "Unix Makefiles",
+      "configuration": "Debug",
+      "compiler": "GCC/G++ x86",
+      "metamod": false,
+      "build": "pass",
+      "ctest": "pass",
+      "ctest_tests": 30
+    },
+    {
+      "platform": "debian-linux-x86",
+      "target": "metamod",
+      "build_directory": "build-linux-x86-metamod-test",
+      "artifact": "build-linux-x86-metamod-test/libastrabot_mm.so",
+      "generator": "Unix Makefiles",
+      "configuration": "Debug",
+      "compiler": "GCC/G++ x86",
+      "metamod": true,
+      "build": "pass",
+      "ctest": "pass",
+      "ctest_tests": 37,
+      "artifact_format": "ELF",
+      "artifact_architecture": "Intel 80386",
+      "artifact_sha256": "ea1681baf1e4eecc742084b845bfd064d1b13c90b79c53da231819e2b617fd90",
+      "exports": "exact-six"
+    }
+  ],
+  "checks": {
+    "artifact_verifier": "pass",
+    "python_regression": "6/6 pass",
+    "phase6_verification": "9/9 pass",
+    "phase7_scenarios": "7/7 pass",
+    "live_server": "not-run",
+    "differential_reference_trace": "not-present"
+  },
+  "acceptance_boundary": {
+    "offline_artifacts": "verified",
+    "real_server_parity": "pending",
+    "PAR-06": "pending",
+    "TEST-03": "pending",
+    "TEST-04": "pending"
+  }
+}

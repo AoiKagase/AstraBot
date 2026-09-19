@@ -1,0 +1,173 @@
+{
+  "schema_version": 1,
+  "fixture_id": "differential-observable-contract",
+  "provenance": {
+    "kind": "synthetic-contract",
+    "source_independent": true,
+    "reference_policy": "behavior-only-pinned"
+  },
+  "reference_identity": {
+    "runtime": "ReGameDLL-CS CSBot",
+    "commit": "b0889847fe6d03898be88acc9e366660efb40ab5",
+    "capture_status": "synthetic-contract",
+    "trace_id": "phase7-behavior-contract-reference"
+  },
+  "candidate_identity": {
+    "runtime": "AstraBot",
+    "commit": "5a62a98243ce98081ebd64d24c5495295f53ec58",
+    "capture_status": "synthetic-contract",
+    "trace_id": "phase8-astrabot-contract-candidate"
+  },
+  "reference_trace": [
+    {
+      "identity": {
+        "map_generation": 3,
+        "round_generation": 4,
+        "tick": 200,
+        "elapsed_ms": 0.0,
+        "actor": {
+          "slot": 1,
+          "generation": 5
+        }
+      },
+      "observables": {
+        "lifecycle": {
+          "state": "Active"
+        },
+        "behavior": {
+          "state": "Roam",
+          "transition": "SpawnToRoam"
+        },
+        "objective": {
+          "kind": "Attack",
+          "status": "Proposed"
+        },
+        "perception": {
+          "target_state": "Unknown"
+        },
+        "combat": {
+          "aim_intent": false,
+          "fire_intent": false,
+          "reload_intent": false
+        },
+        "team": {
+          "radio_intent": "None"
+        }
+      }
+    },
+    {
+      "identity": {
+        "map_generation": 3,
+        "round_generation": 4,
+        "tick": 202,
+        "elapsed_ms": 80.0,
+        "actor": {
+          "slot": 1,
+          "generation": 5
+        }
+      },
+      "observables": {
+        "lifecycle": {
+          "state": "Active"
+        },
+        "behavior": {
+          "state": "Engage",
+          "transition": "RoamToEngage"
+        },
+        "objective": {
+          "kind": "Attack",
+          "status": "Active"
+        },
+        "perception": {
+          "target_state": "ObservedPresent"
+        },
+        "combat": {
+          "aim_intent": true,
+          "fire_intent": false,
+          "reload_intent": false
+        },
+        "team": {
+          "radio_intent": "EnemySpotted"
+        }
+      }
+    }
+  ],
+  "candidate_trace": [
+    {
+      "identity": {
+        "map_generation": 3,
+        "round_generation": 4,
+        "tick": 200,
+        "elapsed_ms": 0.0,
+        "actor": {
+          "slot": 1,
+          "generation": 5
+        }
+      },
+      "observables": {
+        "lifecycle": {
+          "state": "Active"
+        },
+        "behavior": {
+          "state": "Roam",
+          "transition": "SpawnToRoam"
+        },
+        "objective": {
+          "kind": "Attack",
+          "status": "Proposed"
+        },
+        "perception": {
+          "target_state": "Unknown"
+        },
+        "combat": {
+          "aim_intent": false,
+          "fire_intent": false,
+          "reload_intent": false
+        },
+        "team": {
+          "radio_intent": "None"
+        }
+      }
+    },
+    {
+      "identity": {
+        "map_generation": 3,
+        "round_generation": 4,
+        "tick": 202,
+        "elapsed_ms": 80.0,
+        "actor": {
+          "slot": 1,
+          "generation": 5
+        }
+      },
+      "observables": {
+        "lifecycle": {
+          "state": "Active"
+        },
+        "behavior": {
+          "state": "Engage",
+          "transition": "RoamToEngage"
+        },
+        "objective": {
+          "kind": "Attack",
+          "status": "Active"
+        },
+        "perception": {
+          "target_state": "ObservedPresent"
+        },
+        "combat": {
+          "aim_intent": true,
+          "fire_intent": false,
+          "reload_intent": false
+        },
+        "team": {
+          "radio_intent": "EnemySpotted"
+        }
+      }
+    }
+  ],
+  "expected": {
+    "observable_match": true,
+    "live_acceptance": "pending-reference-capture"
+  }
+}
