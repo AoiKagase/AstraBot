@@ -10,10 +10,9 @@ These are audit findings, not implementation instructions executed in P00.
    The current runtime has no connected enhanced decision implementation, so the
    existing Nav/Combat/Objective controllers remain unproven baseline candidates;
    this does not promote any row to `MATCH`.
-2. **Think timing is different.** CSBot has a 30Hz command interval and a 10Hz
-   full-AI interval inside `CBot::BotThink`. Astra calls
-   `updateManagedBotMovement()` from the post-StartFrame hook and does not expose
-   the same two-clock order.
+2. **Think timing is resolved offline in P02.** AstraBot now exposes the
+   reference 30Hz command and nested 10Hz full-update cadence through
+   `BotTimingScheduler`; live/private-state parity remains an open evidence gate.
 3. **RNG parity is absent.** Astra production code has no CSBot-compatible RNG
    source, seed capture, random-call tape, or call-site ordering. The roam
    controller uses a deterministic actor/generation-derived route index, which is
@@ -26,6 +25,16 @@ These are audit findings, not implementation instructions executed in P00.
    team/class entry and human damage/death, but no sustained autonomous movement,
    Bot combat, or C4 event. Linux x86 live evidence and a pinned differential
    reference trace remain open.
+
+## P02 timing update
+
+The former per-frame/two-clock timing deviation is resolved for the offline
+Compatibility Mode runtime boundary. `BotTimingScheduler` now matches the
+pinned reference's nested 30Hz command and 10Hz full-update gates, ordered
+reset/update/execute lifecycle, absolute `now + interval` rebasing, no
+catch-up behavior, command-template persistence, and timestamp-based `msec`.
+Live HLDS/ReHLDS acceptance, GameDLL-private state, and full CSBot behavior
+remain unverified and are not promoted by P02.
 
 ## Major behavioral gaps
 

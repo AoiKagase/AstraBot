@@ -27,3 +27,23 @@ Comparison rules:
 
 P00 result: the schema and negative-input differential checks exist, but no
 pinned CSBot reference trace or production RNG tape is present.
+
+## P02 timing fields
+
+P02 adds a bounded runtime timing record for deterministic offline diagnostics.
+Each timing record may contain:
+
+- `timestamp`: explicit current game time;
+- `frame_delta`: observed time since the preceding frame;
+- `command_due`, `command_executed`: 30Hz gate and execution flags;
+- `upkeep_executed`: frequent maintenance event flag;
+- `full_update_due`, `full_update_executed`: nested 10Hz gate and update flags;
+- `command_reset`: reset event flag;
+- `command_sequence`: per-execution materialized command sequence;
+- `command_msec`: timestamp-derived integer command duration.
+
+The scheduler emits at most one ordered event sequence per bot per observed
+frame. Diagnostics must remain bounded and must not enable unbounded per-frame
+logging by default. These fields prove offline cadence and ordering only; they
+are not a live reference trace or evidence of RNG, private-state, Combat, NAV,
+or full CSBot parity.

@@ -36,7 +36,8 @@ or reference source was changed.
 |---|---|---|
 | P00 | complete | reference frozen; source map, matrices, observations and blockers recorded |
 | P01 | complete | explicit runtime mode, policy isolation, snapshot diagnostics, and regression tests |
-| P02-P12 | pending | timing through live parity depend on the preceding contracts and evidence |
+| P02 | complete | Compatibility timing/command cadence implemented and deterministically verified; live/private-state parity remains open |
+| P03-P12 | pending | RNG through live parity remain downstream phases and evidence gates |
 | P13 | deferred | enhanced intelligence remains downstream of the baseline |
 
 The repository's existing `.planning/STATE.md` is not rewritten by this audit;
@@ -47,6 +48,15 @@ its Phase 8 live-gap state remains authoritative for that separate workstream.
 `NO` for claiming CSBot behavioral parity. P02 planning may begin, but timing,
 RNG, private-state, visibility, state-machine, NAV, combat, and live blockers
 remain open.
+
+## P02 verification
+
+- ReGameDLL-CS reference: `b0889847fe6d03898be88acc9e366660efb40ab5`
+- Timing source: `runtime::BotTimingScheduler`, absolute `now + interval`
+- Event order: `Upkeep -> CommandReset -> FullUpdate -> CommandExecute` when both gates are due
+- Delayed frames: one execution/full update maximum; no catch-up loop; deadlines rebase from current time
+- Deterministic CTest: `astrabot_runtime_timing` PASS and `astrabot_compat_actor_command` PASS
+- Full x86/CTest, Phase 8 PowerShell, PE/Python verifier, and live HLDS/ReHLDS gates remain separate final evidence gates
 
 ## P01 verification
 

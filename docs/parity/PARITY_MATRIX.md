@@ -14,8 +14,8 @@
 
 | Domain | Reference behavior | AstraBot location | Status | Evidence / gap |
 |---|---|---|---|---|
-| Runtime | `CBot::BotThink` 30Hz command and 10Hz full-think scheduling | `PluginRuntime::onStartFrame` / `onStartFramePost` / `updateManagedBotMovement` | DIFFERENT | Hook loop runs per server frame; no separate 30Hz/10Hz scheduler |
-| Runtime | `CBot::ExecuteCommand` usercmd generation and execution | `BotCommand`, `CommandQueue`, `InputDispatcher::dispatchNext` | PARTIAL | `pfnRunPlayerMove` and public fields are wired; msec/cadence/private command state differ |
+| Runtime | `CBot::BotThink` 30Hz command and 10Hz full-think scheduling | `runtime::BotTimingScheduler` / `PluginRuntime::onStartFramePost` / `updateManagedBotMovement` | IMPLEMENTED_UNVERIFIED | Absolute `now + interval`, nested due gate, reference ordering, no catch-up; deterministic CTest evidence, live parity remains open |
+| Runtime | `CBot::ExecuteCommand` usercmd generation and execution | `BotCommand` template, `CommandQueue`, `InputDispatcher::dispatchNext` | IMPLEMENTED_UNVERIFIED | Persisted Full Update command state, per-execution sequence/msec materialization, public `pfnRunPlayerMove` boundary; private state/live acceptance remain open |
 | Lifecycle | create, initialize, spawn, disconnect and reset | `FakeClientManager`, `LifecycleSession`, `ActorRegistry`, `JoinController` | PARTIAL | current Windows evidence confirms load/join/spawn layers separately; full CSBot initialization not equivalent |
 | State | `SetState` with `OnExit`, `OnEnter`, timestamp and task side effects | `BehaviorStateMachine` | DIFFERENT | enum machine has seven broad states, not CSBot's state objects or side effects |
 | State | attack overlay supersedes normal state | `CombatController` call inside action decision | MISSING | no persistent attack overlay/state lifecycle |
