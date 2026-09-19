@@ -13,6 +13,7 @@
 #include "astrabot/perception/perception.hpp"
 #include "astrabot/runtime/nav_roam_controller.hpp"
 #include "astrabot/runtime/movement_physics.hpp"
+#include "astrabot/runtime/bot_timing_scheduler.hpp"
 #include "astrabot/runtime/lifecycle.hpp"
 #include "action_adapter.hpp"
 
@@ -137,6 +138,15 @@ namespace astrabot
 			void registerCompatibilityCommands();
 			void loadCurrentMapNavigation();
 			void updateManagedBotMovement();
+			void resetManagedBotTiming(std::size_t index, float spawnTime);
+			void resetManagedBotCommandTemplate(std::size_t index);
+			void prepareNeutralManagedBotCommand(
+				std::size_t index,
+				FakeClientHandle &handle,
+				const runtime::MovementPhysicsState &before);
+			runtime::CommandReceipt executeManagedBotCommand(
+				std::size_t index,
+				FakeClientHandle &handle);
 		void processJoinControllers();
 		void applyJoinAction(std::size_t index, const JoinAction &action);
 		void cleanupManagedJoin(std::size_t index, JoinError error);
@@ -240,6 +250,14 @@ namespace astrabot
 			std::array<std::uint32_t,
 					   NativeBotObservation::kClientSlotCount>
 				managedBotCommandSequences_;
+			std::array<runtime::BotTimingScheduler,
+					   NativeBotObservation::kClientSlotCount>
+				managedBotTiming_;
+			std::array<runtime::BotCommand,
+					   NativeBotObservation::kClientSlotCount>
+				managedBotCommandTemplates_;
+			std::array<bool, NativeBotObservation::kClientSlotCount>
+				managedBotCommandTemplateValid_;
 			std::array<std::uint8_t,
 					   NativeBotObservation::kClientSlotCount>
 				movementDiagnosticSamples_;

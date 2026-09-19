@@ -527,9 +527,9 @@ int main()
 		runtime.onStartFrame();
 		runtime.onStartFramePost();
 	}
-	if (!check(gRunPlayerMoveCount == 6 &&
+	if (!check(gRunPlayerMoveCount == 5 &&
 			(gLastRunPlayerMoveButtons & static_cast<unsigned short>(IN_ATTACK)) == 0U,
-			"joined actor receives neutral heartbeat without live Fire"))
+			"joined actor starts command cadence after the initial scheduler frame"))
 	{
 		std::remove(profilePath);
 		std::remove(defaultProfilePath);
@@ -539,6 +539,28 @@ int main()
 	if (!check(physicsSample.dispatched &&
 				  physicsSample.readiness == astrabot::runtime::SpawnReadiness::Ready,
 				  "heartbeat records dispatched spawn-ready physics sample"))
+	{
+		std::remove(profilePath);
+		std::remove(defaultProfilePath);
+		return 1;
+	}
+	const float timingStart = globals.time;
+	gRunPlayerMoveCount = 0;
+	globals.time = timingStart + 0.010f;
+	runtime.onStartFrame();
+	runtime.onStartFramePost();
+	if (!check(gRunPlayerMoveCount == 0,
+			   "joined runtime does not submit before the 30Hz command deadline"))
+	{
+		std::remove(profilePath);
+		std::remove(defaultProfilePath);
+		return 1;
+	}
+	globals.time = timingStart + 0.034f;
+	runtime.onStartFrame();
+	runtime.onStartFramePost();
+	if (!check(gRunPlayerMoveCount == 1,
+			   "joined runtime submits once when the 30Hz command deadline is due"))
 	{
 		std::remove(profilePath);
 		std::remove(defaultProfilePath);
@@ -596,10 +618,10 @@ int main()
 	globals.time += 0.1f;
 	runtime.onStartFrame();
 	runtime.onStartFramePost();
-	if (!check(gRunPlayerMoveCount == 0 &&
+	if (!check(gRunPlayerMoveCount == 1 &&
 				  runtime.movementPhysicsSample(1U).readiness ==
 					  astrabot::runtime::SpawnReadiness::NotReady,
-				   "joined spectator/dead actor does not receive RunPlayerMove"))
+				   "joined spectator/dead actor receives one scheduled neutral RunPlayerMove"))
 	{
 		std::remove(profilePath);
 		std::remove(defaultProfilePath);

@@ -406,6 +406,8 @@ namespace astrabot
 		userMessageTextLength_(0U),
 	managedBotMovement_(), managedBotCombat_(), managedBotObjectives_(),
 	managedBotCommandSequences_(),
+	managedBotTiming_(), managedBotCommandTemplates_(),
+	managedBotCommandTemplateValid_(),
 			  movementDiagnosticSamples_(),
 			  movementDiagnosticAttempts_(),
 			  movementDiagnosticUnavailable_(),
@@ -1473,6 +1475,50 @@ void PluginRuntime::updateManagedBotMovement()
 		{
 			continue;
 		}
+		if (!managedBotTiming_[index].initialized())
+		{
+			resetManagedBotTiming(index, globals_->time);
+		}
+		const runtime::BotTimingStep timingStep = managedBotTiming_[index].advance(
+			globals_->time);
+		bool commandResetDue = false;
+		bool fullUpdateDue = false;
+		bool commandExecuteDue = false;
+		for (std::size_t eventIndex = 0U; eventIndex < timingStep.eventCount; ++eventIndex)
+		{
+			switch (timingStep.events[eventIndex])
+			{
+			case runtime::BotTimingEvent::CommandReset:
+				commandResetDue = true;
+				break;
+			case runtime::BotTimingEvent::FullUpdate:
+				fullUpdateDue = true;
+				break;
+			case runtime::BotTimingEvent::CommandExecute:
+				commandExecuteDue = true;
+				break;
+			case runtime::BotTimingEvent::Upkeep:
+				break;
+			}
+		}
+		if (!commandExecuteDue)
+		{
+			continue;
+		}
+		if (commandResetDue)
+		{
+			resetManagedBotCommandTemplate(index);
+		}
+		if (!fullUpdateDue)
+		{
+			if (!managedBotCommandTemplateValid_[index])
+			{
+				prepareNeutralManagedBotCommand(index, handle, before);
+			}
+			const runtime::CommandReceipt receipt = executeManagedBotCommand(index, handle);
+			recordMovementPhysicsSample(index, before, receipt);
+			continue;
+		}
 		if (before.dead)
 		{
 			if (movementLastDeadFrames_[index] == 0U)
@@ -1485,8 +1531,8 @@ void PluginRuntime::updateManagedBotMovement()
 				movementWarmupFrames_[index] = 0U;
 				managedBotMovement_[index].reset();
 			}
-			const runtime::CommandReceipt receipt =
-				dispatchNeutralMovement(index, handle, milliseconds);
+			prepareNeutralManagedBotCommand(index, handle, before);
+			const runtime::CommandReceipt receipt = executeManagedBotCommand(index, handle);
 			recordMovementPhysicsSample(index, before, receipt);
 			continue;
 		}
@@ -1505,8 +1551,8 @@ void PluginRuntime::updateManagedBotMovement()
 		}
 		if (movementUnavailable || runtime::spawnReadiness(before) == runtime::SpawnReadiness::NotReady)
 		{
-			const runtime::CommandReceipt receipt =
-				dispatchNeutralMovement(index, handle, milliseconds);
+			prepareNeutralManagedBotCommand(index, handle, before);
+			const runtime::CommandReceipt receipt = executeManagedBotCommand(index, handle);
 			recordMovementPhysicsSample(index, before, receipt);
 			managedBotMovement_[index].reset();
 			continue;
@@ -1558,8 +1604,8 @@ void PluginRuntime::updateManagedBotMovement()
 				}
 		if (movementWarmupFrames_[index] < 2U)
 		{
-			const runtime::CommandReceipt receipt =
-				dispatchNeutralMovement(index, handle, milliseconds);
+			prepareNeutralManagedBotCommand(index, handle, before);
+			const runtime::CommandReceipt receipt = executeManagedBotCommand(index, handle);
 			recordMovementPhysicsSample(index, before, receipt);
 			++movementWarmupFrames_[index];
 			continue;
@@ -1611,8 +1657,8 @@ void PluginRuntime::updateManagedBotMovement()
 		if (roamResult != runtime::NavRoamResult::IntentReady)
 		{
 			logMovementDiagnostic(index, "roam_no_intent", &roamDecision);
-			const runtime::CommandReceipt receipt =
-				dispatchNeutralMovement(index, handle, milliseconds);
+			prepareNeutralManagedBotCommand(index, handle, before);
+			const runtime::CommandReceipt receipt = executeManagedBotCommand(index, handle);
 			recordMovementPhysicsSample(index, before, receipt);
 			continue;
 		}
@@ -1627,8 +1673,8 @@ void PluginRuntime::updateManagedBotMovement()
 			runtime::BotCommand command = {};
 			command.actor = handle.actor;
 			command.lifecycle = token;
-			command.sequence = ++managedBotCommandSequences_[index];
-			command.issueFrame = adapterFrameCount_;
+			command.sequence = 0U;
+			command.issueFrame = 0U;
 			const runtime::ViewAngles movementViewAngles = {
 				0.0f,
 				movementYaw(locomotionIntent.direction),
@@ -1653,7 +1699,7 @@ void PluginRuntime::updateManagedBotMovement()
 			0.0f,
 			movementButtons,
 			0U,
-			milliseconds};
+			1U};
 		const ActionProposal actionProposal = ActionAdapter::forLiveDispatch(
 			decideManagedBotAction(index, before, movementViewAngles, movementButtons),
 			false,
@@ -1733,11 +1779,9 @@ void PluginRuntime::updateManagedBotMovement()
 				handle.entity->v.angles[0] = -command.viewAngles.pitch / 3.0f;
 				handle.entity->v.angles[1] = command.viewAngles.yaw;
 				handle.entity->v.angles[2] = command.viewAngles.roll;
-				if (inputDispatcher_.enqueue(command) == runtime::QueueResult::Accepted)
-				{
-			const runtime::CommandReceipt receipt = inputDispatcher_.dispatchNext(
-				handle.actor,
-				adapterFrameCount_);
+		managedBotCommandTemplates_[index] = command;
+		managedBotCommandTemplateValid_[index] = true;
+		const runtime::CommandReceipt receipt = executeManagedBotCommand(index, handle);
 			recordMovementPhysicsSample(index, before, receipt);
 			if (receipt.result == runtime::DispatchResult::Dispatched &&
 							movementDiagnosticSamples_[index] < 4U &&
@@ -1760,9 +1804,9 @@ void PluginRuntime::updateManagedBotMovement()
 							static_cast<unsigned int>(roamDecision.currentArea),
 							static_cast<unsigned int>(roamDecision.recoveryArea));
 						++movementDiagnosticSamples_[index];
-					}
-				}
 	}
+}
+
 }
 
 bool PluginRuntime::buildManagedWorldSnapshot(
@@ -2261,6 +2305,147 @@ ActionProposal PluginRuntime::decideManagedBotAction(
 	return proposal;
 }
 
+void PluginRuntime::resetManagedBotTiming(std::size_t index, float spawnTime)
+{
+	if (index >= managedBotTiming_.size())
+	{
+		return;
+	}
+	managedBotTiming_[index].reset(spawnTime);
+	resetManagedBotCommandTemplate(index);
+}
+
+void PluginRuntime::resetManagedBotCommandTemplate(std::size_t index)
+{
+	if (index >= managedBotCommandTemplates_.size())
+	{
+		return;
+	}
+	managedBotCommandTemplates_[index] = {};
+	managedBotCommandTemplateValid_[index] = false;
+}
+
+void PluginRuntime::prepareNeutralManagedBotCommand(
+	std::size_t index,
+	FakeClientHandle &handle,
+	const runtime::MovementPhysicsState &before)
+{
+	if (index >= managedBotCommandTemplates_.size() || handle.entity == nullptr)
+	{
+		return;
+	}
+	const runtime::LifecycleToken token = lifecycle_.tokenForSlot(handle.actor.slot);
+	if (!lifecycle_.isCurrent(token))
+	{
+		resetManagedBotCommandTemplate(index);
+		return;
+	}
+	runtime::BotCommand command = {};
+	command.actor = handle.actor;
+	command.lifecycle = token;
+	command.viewAngles = {
+		handle.entity->v.v_angle[0],
+		handle.entity->v.v_angle[1],
+		handle.entity->v.v_angle[2]};
+	command.movement = {0.0f, 0.0f, 0.0f, 0U, 0U, 1U};
+	const ActionProposal actionProposal = ActionAdapter::forLiveDispatch(
+		decideManagedBotAction(index, before, command.viewAngles, command.movement.buttons),
+		false,
+		command.viewAngles);
+	const ActionDispatch actionDispatch = ActionAdapter::translate(actionProposal);
+	command.viewAngles = actionDispatch.viewAngles;
+	command.movement.buttons = actionDispatch.buttons;
+	if (actionDispatch.clientCommand != nullptr)
+	{
+		(void)dispatchClientCommand(handle.entity, actionDispatch.clientCommand, "");
+	}
+	managedBotCommandTemplates_[index] = command;
+	managedBotCommandTemplateValid_[index] = true;
+}
+
+runtime::CommandReceipt PluginRuntime::executeManagedBotCommand(
+	std::size_t index,
+	FakeClientHandle &handle)
+{
+	runtime::CommandReceipt receipt = {
+		handle.actor, 0U, adapterFrameCount_, runtime::DispatchResult::NoCommand};
+	if (index >= managedBotCommandTemplates_.size() || handle.entity == nullptr ||
+		managedBotCommandSequences_[index] == (std::numeric_limits<std::uint32_t>::max)())
+	{
+		return receipt;
+	}
+	if (!managedBotCommandTemplateValid_[index])
+	{
+		const runtime::LifecycleToken neutralToken = lifecycle_.tokenForSlot(handle.actor.slot);
+		if (!lifecycle_.isCurrent(neutralToken))
+		{
+			receipt.result = runtime::DispatchResult::StaleActor;
+			return receipt;
+		}
+		runtime::BotCommand neutralCommand = {};
+		neutralCommand.actor = handle.actor;
+		neutralCommand.lifecycle = neutralToken;
+		neutralCommand.viewAngles = {
+			handle.entity->v.v_angle[0],
+			handle.entity->v.v_angle[1],
+			handle.entity->v.v_angle[2]};
+		neutralCommand.movement = {0.0f, 0.0f, 0.0f, 0U, 0U, 1U};
+		managedBotCommandTemplates_[index] = neutralCommand;
+		managedBotCommandTemplateValid_[index] = true;
+	}
+	if (!managedBotCommandTemplateValid_[index])
+	{
+		return receipt;
+	}
+	const runtime::LifecycleToken token = lifecycle_.tokenForSlot(handle.actor.slot);
+	if (!lifecycle_.isCurrent(token))
+	{
+		receipt.result = runtime::DispatchResult::StaleActor;
+		return receipt;
+	}
+	runtime::BotCommand command = managedBotCommandTemplates_[index];
+	command.sequence = ++managedBotCommandSequences_[index];
+	command.issueFrame = adapterFrameCount_;
+	const bool frozen = (handle.entity->v.flags & FL_FROZEN) != 0;
+	if (frozen)
+	{
+		command.movement.forward = 0.0f;
+		command.movement.side = 0.0f;
+		command.movement.up = 0.0f;
+		command.movement.buttons = 0U;
+		command.movement.msec = 0U;
+		if (engineFunctions_ == nullptr || engineFunctions_->pfnRunPlayerMove == nullptr)
+		{
+			receipt.result = runtime::DispatchResult::EngineUnavailable;
+			return receipt;
+		}
+		const float viewAngles[3] = {
+			command.viewAngles.pitch,
+			command.viewAngles.yaw,
+			command.viewAngles.roll};
+		handle.entity->v.button = 0U;
+		handle.entity->v.impulse = 0U;
+		engineFunctions_->pfnRunPlayerMove(
+			handle.entity, viewAngles, 0.0f, 0.0f, 0.0f, 0U, 0U, 0U);
+		receipt.sequence = command.sequence;
+		receipt.result = runtime::DispatchResult::Dispatched;
+		resetManagedBotCommandTemplate(index);
+		return receipt;
+	}
+	if (globals_ == nullptr)
+	{
+		receipt.result = runtime::DispatchResult::EngineUnavailable;
+		return receipt;
+	}
+	command.movement.msec = managedBotTiming_[index].consumeCommandMsec(globals_->time);
+	if (inputDispatcher_.enqueue(command) != runtime::QueueResult::Accepted)
+	{
+		receipt.result = runtime::DispatchResult::InvalidCommand;
+		return receipt;
+	}
+	return inputDispatcher_.dispatchNext(handle.actor, adapterFrameCount_);
+}
+
 runtime::CommandReceipt PluginRuntime::dispatchNeutralMovement(
 		std::size_t index,
 		FakeClientHandle &handle,
@@ -2374,6 +2559,8 @@ void PluginRuntime::resetManagedBotMovement()
 		managedBotMovement_[index].reset();
 		managedBotCombat_[index] = combat::CombatController();
 		managedBotObjectives_[index] = objectives::RoundObjectivePlanner();
+		managedBotTiming_[index] = runtime::BotTimingScheduler();
+		resetManagedBotCommandTemplate(index);
 	}
 			managedBotCommandSequences_.fill(0U);
 			movementDiagnosticSamples_.fill(0U);
@@ -2916,6 +3103,8 @@ void PluginRuntime::resetManagedBotMovement()
 					const std::size_t slotIndex = static_cast<std::size_t>(handle->actor.slot - 1U);
 					managedBotSlots_[slotIndex] = true;
 					managedBotMovement_[slotIndex].reset();
+					managedBotTiming_[slotIndex] = runtime::BotTimingScheduler();
+					resetManagedBotCommandTemplate(slotIndex);
 			managedBotCommandSequences_[slotIndex] = 0U;
 					movementDiagnosticSamples_[slotIndex] = 0U;
 					movementDiagnosticAttempts_[slotIndex] = false;
@@ -3038,6 +3227,8 @@ void PluginRuntime::clearManagedBot(std::size_t index)
 			}
 	managedBotSlots_[index] = false;
 	managedBotTeamNumbers_[index] = 0U;
+	managedBotTiming_[index] = runtime::BotTimingScheduler();
+	resetManagedBotCommandTemplate(index);
 	managedBotMovement_[index].reset();
 	managedBotCombat_[index] = combat::CombatController();
 	managedBotObjectives_[index] = objectives::RoundObjectivePlanner();
