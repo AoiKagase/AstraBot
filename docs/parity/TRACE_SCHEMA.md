@@ -1,5 +1,26 @@
 # P00 Differential Trace Contract
 
+## P04 observation trace extension
+
+Observation records are bounded and optional. They are independent from the
+P03 RNG trace sequence and do not create scheduler events.
+
+| Field | Required meaning |
+|---|---|
+| `sequence` | Monotonic sequence local to one ObservationAdapter instance |
+| `obs` | Stable semantic observation ID, for example `OBS-PLAYER-FOV` |
+| `actor` | `slot:generation` actor identity |
+| `value` | Typed scalar/vector observation value |
+| `quality` | One of the ten P04 quality classifications |
+| `source` | Public edict/Engine/GameDLL/cache/fixture/synthetic/none |
+| `freshness` | Same tick, current full update, event-driven cached, or stale |
+| `frame` | `map_generation:round_generation:tick` |
+| `timing` | `command:upkeep:full_update`; zero means unavailable context |
+| `delay_ticks` | Explicit message/cache delay |
+
+The production sink is null by default. Trace collection must not read pdata,
+write unbounded files, request RNG values, or alter `BotTimingScheduler`.
+
 The existing root `docs/TRACE_SCHEMA.md` is retained as the general contract.
 This parity copy records the P00 minimum needed to compare the pinned reference
 and AstraBot without pointer or process-specific identifiers.

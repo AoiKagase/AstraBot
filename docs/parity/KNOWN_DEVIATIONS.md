@@ -1,5 +1,24 @@
 # P00 Known Deviations and Blockers
 
+## P04 observation deviations
+
+- `EXACT_ENGINE_API` public player fields are not behavioral `MATCH`; CSBot
+  private object semantics, timing, and lifecycle still differ.
+- FOV currently observes public `entity->v.fov`, but scoped/internal zoom state
+  is unavailable and no CSBot visibility/trace parity is claimed.
+- Active weapon, clip, reserve ammo, reload, next attack timers, accuracy,
+  weapon flags, silencer, burst, and zoom remain `UNAVAILABLE`.
+- C4 possession, planted state, bomb position, and timer are public proxies or
+  entity heuristics classified `INFERRED`; defusing, kit, hostage, rescue, VIP,
+  round, freeze, and win state are unavailable/unknown.
+- `OBS-TRACE-*` fields are `NOT_YET_IMPLEMENTED`; current visibility remains
+  nearest-hostile enumeration and is `INFERRED`.
+- Existing direct public readiness, bounds, and bomb-site reads remain in the
+  adapter/runtime as documented legacy boundaries; no pdata or ReAPI dependency
+  was added.
+- Observation trace sequence is adapter-local and does not establish reference
+  trace parity or live acceptance.
+
 These are audit findings, not implementation instructions executed in P00.
 
 ## Critical

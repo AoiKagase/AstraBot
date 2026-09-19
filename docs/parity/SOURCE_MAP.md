@@ -1,5 +1,22 @@
 # P00 Source Map
 
+## P04 observation boundary
+
+| Reference surface | Pinned ReGameDLL-CS consumer examples | AstraBot current boundary | P04 status |
+|---|---|---|---|
+| Player public state | `CCSBot::IsAlive`, `cs_bot.cpp` `pev->origin`/`pev->v_angle`, vision FOV checks | `ObservationAdapter::collectActor`; public `edict_t` fields become `CompatibilityObservation` and then `WorldSnapshot` | `IMPLEMENTED_UNVERIFIED` |
+| FOV | `CCSBot::IsVisible`, `m_iFOV` checks in `cs_bot.h`/vision | `OBS-PLAYER-FOV` from `entity->v.fov` | `EXACT_ENGINE_API`, not MATCH |
+| Weapon private state | `CBasePlayerWeapon` active/clip/ammo/timers/accuracy consumers | explicit invalid `WeaponObservation` fields; existing synthetic `WeaponRecord` remains | `UNAVAILABLE` |
+| Bomb state | `CSGameState::IsBombPlanted`, `GetBombPosition`, `IsBombLoose` | `collectPlantedBomb` public classname/model/dmgtime/entity origin; C4 bit proxy | `INFERRED` |
+| Visibility trace | `CCSBot::IsVisible` / `UTIL_TraceLine` | observation IDs exist; Engine trace collection remains unimplemented | `NOT_YET_IMPLEMENTED` |
+| Timing context | CSBot command/full-update lifecycle | existing command sequence attached; unavailable event counters remain zero | `IMPLEMENTED_UNVERIFIED` |
+| Observation trace | reference state is in-process, no copied trace implementation | `ObservationTraceRecord` and bounded adapter sink with per-adapter sequence | `IMPLEMENTED_OFFLINE_VERIFIED` |
+
+P04 implementation files are `include/astrabot/compat/observation.hpp`,
+`src/core/compat/observation.cpp`,
+`src/adapter/metamod/observation_adapter.{hpp,cpp}`, and the integration in
+`src/adapter/metamod/plugin_runtime.{hpp,cpp}`. The Core remains SDK-free.
+
 ## Method and limits
 
 The map was built from the pinned ReGameDLL source, the current AstraBot source

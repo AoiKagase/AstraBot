@@ -1,5 +1,23 @@
 # P00 Parity Matrix
 
+## P04 observation parity gate
+
+| Area | Reference evidence | AstraBot evidence | Result |
+|---|---|---|---|
+| Observation contract | CSBot reads in-process player/weapon/GameState/trace state | typed quality/source/freshness/lifecycle contract, Core tests | `IMPLEMENTED_OFFLINE_VERIFIED` |
+| Public player fields | `pev` reads and `m_iFOV`/life consumers | x86 adapter fixture and runtime integration | `IMPLEMENTED_UNVERIFIED` |
+| Team lifecycle | GameDLL team plus TeamInfo-driven runtime state | raw team plus TeamInfo/requested-team fallback | `DELAYED` |
+| FOV | CSBot `CHECK_FOV` and internal FOV | public `pev->fov` same-tick observation; scope private state absent | `PARTIAL` |
+| Weapon state | active weapon, clip, ammo, reload, timers, accuracy | explicit unavailable private fields; synthetic combat fixture | `PARTIAL` |
+| Bomb/objective state | `CSGameState` planted/loose/defuse/hostage/VIP state | public entity/C4 proxies, remaining fields unavailable | `PARTIAL` |
+| Visibility/trace | CSBot FOV/body-part `UTIL_TraceLine` | nearest hostile enumeration; trace collection not implemented | `PARTIAL` |
+| Trace/lifecycle metadata | decision-time context and state identity | actor/frame/source/freshness/timing plus bounded sequence tests | `IMPLEMENTED_OFFLINE_VERIFIED` |
+| P02 timing | scheduler event order/deadline semantics | unchanged; regression tests pass | `PASS REGRESSION` |
+| P03 RNG | shared source/type/bounds/order | unchanged; regression tests pass | `PASS REGRESSION` |
+
+P04 overall result remains `PARTIAL`; no row is promoted to `MATCH` merely
+because the adapter exists or an offline fixture passes.
+
 ## Legend
 
 - `MATCH`: behaviorally matched and currently evidenced. P00 has no row strong enough for this status.

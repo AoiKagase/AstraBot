@@ -1,5 +1,26 @@
 # CSBot Parity Status
 
+## P04 result: PARTIAL
+
+| Gate | Result | Evidence / limitation |
+|---|---|---|
+| Observation Core model | PASS boundary | SDK-free typed values, quality/source/freshness/lifecycle metadata, explicit invalid values |
+| Public ObservationAdapter | PASS boundary | x86 fixture covers player fields, FOV, actor/frame, C4 proxy, planted-bomb inference, missing engine context |
+| PluginRuntime integration | PASS regression | world/objective/action fixture and FakeClient isolation remain green; decisions were preserved |
+| Observation trace | PASS boundary | adapter-local sequence, actor/timing metadata, enhanced/RNG isolation fixture |
+| FOV | PARTIAL | public `pev->fov` is collected; internal scope/visibility/trace parity is not available |
+| Weapon state | PARTIAL | private active weapon/ammo/reload/accuracy/timers/zoom remain unavailable; synthetic weapon remains marked |
+| Objective state | PARTIAL | public C4/entity proxies are inferred; defuse/kit/hostage/VIP/round state remains unavailable or unknown |
+| Configure/build | PASS | current x86 HostX86/x86 NMake Debug worktree build |
+| Focused tests | PASS | observation model 1/1, adapter 1/1, trace 1/1, integration/action/isolation and P02/P03 focused suites passed |
+| Full CTest | PENDING | run in P04 final validation after documentation and current-branch rebuild |
+| Phase 8 PowerShell | PENDING | must remain separate from offline CTest |
+| PE/Python verifier | PENDING | report environment result separately |
+| Live HLDS/ReHLDS | NOT RUN | no new live acceptance claim in P04 |
+
+P04 does not promote any observation to `MATCH` solely from an adapter or
+offline fixture. P05 State Machine parity is not started.
+
 ## P00 result
 
 `PASS` for the P00 audit artifact set. This does not mean the CSBot-compatible
