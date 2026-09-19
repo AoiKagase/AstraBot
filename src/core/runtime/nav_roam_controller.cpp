@@ -29,6 +29,13 @@ namespace
 		}
 		*decision = {};
 		decision->stage = NavRoamStage::None;
+		decision->failureReason = NavFailureReason::None;
+		decision->goalKind = NavGoalKind::None;
+		decision->goalPresent = false;
+		decision->pathRequested = false;
+		decision->pathResult = nav::NavQueryResult::InvalidArgument;
+		decision->goalArea = 0U;
+		decision->goalPosition = {0.0f, 0.0f, 0.0f};
 		decision->currentAreaResult = nav::NavQueryResult::InvalidArgument;
 		decision->nearestAreaResult = nav::NavQueryResult::InvalidArgument;
 		decision->linkResult = nav::NavQueryResult::InvalidArgument;
@@ -276,6 +283,17 @@ NavRoamResult NavRoamController::update(
 				&objectiveMatch) == nav::NavQueryResult::Found)
 		{
 			objectiveArea = objectiveMatch.area;
+			if (decision != nullptr)
+			{
+				decision->goalPresent = true;
+				decision->goalKind = NavGoalKind::Objective;
+				decision->goalArea = objectiveArea;
+				decision->goalPosition = observation.objectiveTarget;
+			}
+		}
+		else if (decision != nullptr)
+		{
+			decision->failureReason = NavFailureReason::GoalAreaMissing;
 		}
 	}
 	if (currentAreaResult == nav::NavQueryResult::NoAreaContaining &&
@@ -297,15 +315,20 @@ NavRoamResult NavRoamController::update(
 		if (nearestResult != nav::NavQueryResult::Found ||
 			!buildRecoveryIntent(currentArea, observation.locomotion, intent))
 		{
-			resetRoute();
+			if (!hasActiveRoute_)
+			{
+				resetRoute();
+			}
 			if (decision != nullptr)
 			{
+				decision->failureReason = NavFailureReason::CurrentAreaMissing;
 				decision->stage = NavRoamStage::Failed;
 			}
 			return NavRoamResult::NoRoute;
 		}
 		if (decision != nullptr)
 		{
+			decision->failureReason = NavFailureReason::CurrentAreaMissing;
 			decision->stage = NavRoamStage::OffMeshRecovery;
 			decision->targetArea = currentArea.area;
 		}
@@ -314,9 +337,13 @@ NavRoamResult NavRoamController::update(
 	if (currentAreaResult != nav::NavQueryResult::Found &&
 			!jumpDrop_.isActive() && !specialTraversal_.isActive())
 	{
-		resetRoute();
+		if (!hasActiveRoute_)
+		{
+			resetRoute();
+		}
 		if (decision != nullptr)
 		{
+			decision->failureReason = NavFailureReason::CurrentAreaMissing;
 			decision->stage = NavRoamStage::Failed;
 		}
 		return NavRoamResult::NoRoute;
@@ -325,6 +352,19 @@ NavRoamResult NavRoamController::update(
 	{
 		decision->stage = NavRoamStage::ExactArea;
 		decision->currentArea = currentArea.area;
+	}
+	if (observation.hasObjectiveTarget && objectiveArea == 0U)
+	{
+		if (!hasActiveRoute_)
+		{
+			resetRoute();
+		}
+		if (decision != nullptr)
+		{
+			decision->failureReason = NavFailureReason::GoalAreaMissing;
+			decision->stage = NavRoamStage::Failed;
+		}
+		return NavRoamResult::NoRoute;
 	}
 
 	if (stuckRecoveryActive_)
@@ -401,6 +441,12 @@ NavRoamResult NavRoamController::update(
 	}
 	if (!selectRoute(snapshot, currentArea, objectiveArea, decision))
 		{
+			if (decision != nullptr && decision->failureReason == NavFailureReason::None)
+			{
+				decision->failureReason = decision->pathRequested
+					? NavFailureReason::PathSearchFailed
+					: NavFailureReason::NoGoal;
+			}
 			resetRoute();
 			if (decision != nullptr)
 			{
@@ -836,12 +882,21 @@ bool NavRoamController::selectRoute(
 
 	if (objectiveArea != 0U && objectiveArea != currentArea.area)
 	{
+		if (decision != nullptr)
+		{
+			decision->goalPresent = true;
+			decision->goalKind = NavGoalKind::Objective;
+			decision->goalArea = objectiveArea;
+			decision->goalPosition = objectiveTarget_;
+			decision->pathRequested = true;
+		}
 		nav::NavCorridor corridor = {};
 		const nav::NavQueryResult corridorResult = query.buildCorridor(
 			currentArea.area, objectiveArea, &corridor);
 		if (decision != nullptr)
 		{
 			decision->corridorResult = corridorResult;
+			decision->pathResult = corridorResult;
 		}
 		if (corridorResult == nav::NavQueryResult::Found && corridor.areas.size() >= 2U)
 		{
@@ -985,12 +1040,23 @@ bool NavRoamController::selectRoamRoute(
 	{
 		for (const nav::NavDirectedLink &link : links)
 		{
+			if (decision != nullptr)
+			{
+				const nav::NavArea *target = document->findArea(link.toArea);
+				decision->goalPresent = target != nullptr;
+				decision->goalKind = NavGoalKind::Roam;
+				decision->goalArea = link.toArea;
+				decision->goalPosition = target != nullptr
+					? centerOf(*target) : nav::NavVector{0.0f, 0.0f, 0.0f};
+				decision->pathRequested = true;
+			}
 			nav::NavCorridor corridor = {};
 			const nav::NavQueryResult corridorResult = query.buildCorridor(
 					currentArea.area, link.toArea, nav::NavRouteType::Fastest, &corridor);
 			if (decision != nullptr)
 			{
 				decision->corridorResult = corridorResult;
+				decision->pathResult = corridorResult;
 			}
 			if (link.toArea == currentArea.area ||
 					corridorResult != nav::NavQueryResult::Found ||
@@ -1023,9 +1089,22 @@ bool NavRoamController::selectRoamRoute(
 			continue;
 		}
 		++attempts;
+		if (decision != nullptr)
+		{
+			decision->goalPresent = true;
+			decision->goalKind = NavGoalKind::Roam;
+			decision->goalArea = candidate.id;
+			decision->goalPosition = centerOf(candidate);
+			decision->pathRequested = true;
+		}
 		nav::NavCorridor corridor = {};
-		if (query.buildCorridor(currentArea.area, candidate.id, &corridor) !=
-				nav::NavQueryResult::Found || corridor.areas.size() < 2U)
+		const nav::NavQueryResult corridorResult = query.buildCorridor(
+			currentArea.area, candidate.id, &corridor);
+		if (decision != nullptr)
+		{
+			decision->pathResult = corridorResult;
+		}
+		if (corridorResult != nav::NavQueryResult::Found || corridor.areas.size() < 2U)
 		{
 			continue;
 		}
@@ -1099,6 +1178,10 @@ void NavRoamController::populateRouteDecision(NavRoamDecision *decision) const
 	{
 		return;
 	}
+	decision->goalPresent = true;
+	decision->goalKind = hasObjectiveTarget_ ? NavGoalKind::Objective : NavGoalKind::Roam;
+	decision->goalArea = activeLink_.toArea;
+	decision->goalPosition = activeTargetPosition_;
 	decision->targetArea = activeLink_.toArea;
 	decision->targetPosition = activeTargetPosition_;
 	decision->corridorAreaCount = activeCorridor_.areas.size();

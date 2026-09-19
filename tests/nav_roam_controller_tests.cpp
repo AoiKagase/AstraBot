@@ -423,6 +423,100 @@ bool testRoutePersistsUntilGoalChange()
 			"goal change is the explicit route recompute trigger");
 }
 
+bool testGoalAndPathFailuresAreTyped()
+{
+	astrabot::nav::NavDocument document;
+	document.setSourceIdentity({5U, 100U, 200U});
+	document.addArea(area(1U, 0.0f, 64.0f));
+	astrabot::nav::NavSnapshotPublisher publisher;
+	if (!check(publisher.publish(&document, 1U) ==
+			astrabot::nav::NavSnapshotResult::Published,
+			"failure reason snapshot is published"))
+	{
+		return false;
+	}
+	astrabot::runtime::NavRoamController controller;
+	astrabot::runtime::NavRoamObservation observation = {};
+	observation.actor = {1U, 1U};
+	observation.frame = {1U, 1U, 1U};
+	observation.locomotion.position = {32.0f, 32.0f, 0.0f};
+	observation.locomotion.standingClearance = 72.0f;
+	observation.locomotion.crouchingClearance = 36.0f;
+	astrabot::nav::LocomotionIntent intent = {};
+	astrabot::runtime::NavRoamDecision decision = {};
+	if (!check(controller.update(publisher.snapshot(), observation, &intent, &decision) ==
+			astrabot::runtime::NavRoamResult::NoRoute &&
+			decision.failureReason == astrabot::runtime::NavFailureReason::NoGoal,
+			"no outgoing goal is not reported as path search failure"))
+	{
+		return false;
+	}
+
+	astrabot::runtime::NavRoamController invalidGoalController;
+	observation.frame.tick = 1U;
+	observation.locomotion.position = {32.0f, 32.0f, 0.0f};
+	observation.hasObjectiveTarget = true;
+	observation.objectiveTarget = {100000.0f, 100000.0f, 0.0f};
+	decision = {};
+	if (!check(invalidGoalController.update(
+			publisher.snapshot(), observation, &intent, &decision) ==
+			astrabot::runtime::NavRoamResult::NoRoute &&
+			decision.failureReason == astrabot::runtime::NavFailureReason::GoalAreaMissing,
+			"unresolvable objective goal is distinguished from path failure"))
+	{
+		return false;
+	}
+
+	return true;
+}
+
+bool testTemporaryCurrentAreaLossRetainsActiveRoute()
+{
+	astrabot::nav::NavDocument document;
+	document.setSourceIdentity({5U, 100U, 200U});
+	astrabot::nav::NavArea first = area(1U, 0.0f, 64.0f);
+	first.connections[0U].push_back(2U);
+	document.addArea(first);
+	document.addArea(area(2U, 64.0f, 128.0f));
+	astrabot::nav::NavSnapshotPublisher publisher;
+	if (!check(publisher.publish(&document, 1U) ==
+			astrabot::nav::NavSnapshotResult::Published,
+			"temporary loss snapshot is published"))
+	{
+		return false;
+	}
+	astrabot::runtime::NavRoamController controller;
+	astrabot::runtime::NavRoamObservation observation = {};
+	observation.actor = {1U, 1U};
+	observation.frame = {1U, 1U, 1U};
+	observation.locomotion.position = {32.0f, 32.0f, 0.0f};
+	observation.locomotion.standingClearance = 72.0f;
+	observation.locomotion.crouchingClearance = 36.0f;
+	astrabot::nav::LocomotionIntent intent = {};
+	astrabot::runtime::NavRoamDecision firstDecision = {};
+	if (!check(controller.update(
+			publisher.snapshot(), observation, &intent, &firstDecision) ==
+			astrabot::runtime::NavRoamResult::IntentReady &&
+			firstDecision.pathSequence == 1U,
+			"temporary loss starts with an active route"))
+	{
+		return false;
+	}
+	observation.frame.tick = 2U;
+	observation.locomotion.position = {50000.0f, 50000.0f, 0.0f};
+	astrabot::runtime::NavRoamDecision lostDecision = {};
+	if (!check(controller.update(
+			publisher.snapshot(), observation, &intent, &lostDecision) ==
+			astrabot::runtime::NavRoamResult::NoRoute &&
+			lostDecision.failureReason == astrabot::runtime::NavFailureReason::CurrentAreaMissing &&
+			lostDecision.pathSequence == 1U,
+			"temporary current-area loss retains the active route identity"))
+	{
+		return false;
+	}
+	return true;
+}
+
 int main()
 {
 	if (!testJumpTraversalAction())
@@ -450,6 +544,11 @@ int main()
 		return 1;
 	}
 	if (!testRoutePersistsUntilGoalChange())
+	{
+		return 1;
+	}
+	if (!testGoalAndPathFailuresAreTyped() ||
+			!testTemporaryCurrentAreaLossRetainsActiveRoute())
 	{
 		return 1;
 	}

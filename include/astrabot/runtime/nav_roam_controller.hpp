@@ -68,6 +68,25 @@ enum class NavRecomputeReason
 	Stuck
 };
 
+enum class NavGoalKind
+{
+	None,
+	Roam,
+	Objective
+};
+
+enum class NavFailureReason
+{
+	None,
+	NoGoal,
+	GoalInvalid,
+	CurrentAreaMissing,
+	GoalAreaMissing,
+	PathSearchFailed,
+	NavApplyRejected,
+	MovementNotProduced
+};
+
 		struct NavRoamDecision
 		{
 			NavRoamStage stage;
@@ -77,6 +96,13 @@ enum class NavRecomputeReason
 			nav::NavQueryResult corridorResult;
 	nav::LocomotionResult locomotionResult;
 	NavRecomputeReason recomputeReason;
+	NavFailureReason failureReason;
+	NavGoalKind goalKind;
+	bool goalPresent;
+	bool pathRequested;
+	nav::NavQueryResult pathResult;
+	nav::AreaId goalArea;
+	nav::NavVector goalPosition;
 	std::uint32_t pathSequence;
 	std::uint32_t fullUpdateSequence;
 	nav::NavRouteType routeType;

@@ -1673,6 +1673,10 @@ void PluginRuntime::updateManagedBotMovement()
 				&roamDecision);
 		if (roamResult != runtime::NavRoamResult::IntentReady)
 		{
+			if (roamDecision.failureReason == runtime::NavFailureReason::None)
+			{
+				roamDecision.failureReason = runtime::NavFailureReason::MovementNotProduced;
+			}
 			logMovementDiagnostic(index, "roam_no_intent", &roamDecision);
 			prepareNeutralManagedBotCommand(index, handle, before);
 			const runtime::CommandReceipt receipt = executeManagedBotCommand(index, handle);
@@ -1779,6 +1783,11 @@ void PluginRuntime::updateManagedBotMovement()
 		managedBotCommandTemplates_[index] = command;
 		managedBotCommandTemplateValid_[index] = true;
 		const runtime::CommandReceipt receipt = executeManagedBotCommand(index, handle);
+		if (receipt.result != runtime::DispatchResult::Dispatched)
+		{
+			roamDecision.failureReason = runtime::NavFailureReason::NavApplyRejected;
+			logMovementDiagnostic(index, "nav_apply_rejected", &roamDecision);
+		}
 			recordMovementPhysicsSample(index, before, receipt);
 			if (receipt.result == runtime::DispatchResult::Dispatched &&
 							movementDiagnosticSamples_[index] < 4U &&
@@ -2883,7 +2892,7 @@ void PluginRuntime::resetManagedBotMovement()
 							&area);
 			gpMetaUtilFuncs->pfnLogConsole(
 				pluginId_,
-				"movement diagnostic actor=%u generation=%u frame=%u reason=%s fake=%d spectator=%d team=%d deadflag=%d health=%.1f origin=(%.1f %.1f %.1f) solid=%d movetype=%d effects=%d nav=%d navAreaResult=%d area=%u runmove=%d stage=%d currentResult=%d nearestResult=%d currentArea=%u recoveryArea=%u targetArea=%u target=(%.1f %.1f %.1f) intent=(%.2f %.2f %.2f) observedVelocity=(%.1f %.1f %.1f) corridorAreas=%u corridorIndex=%u link=(%u->%u how=%u dir=%u) linkResult=%d corridorResult=%d locomotionResult=%d nearestDistanceSquared=%.1f",
+				"movement diagnostic actor=%u generation=%u frame=%u reason=%s fake=%d spectator=%d team=%d deadflag=%d health=%.1f origin=(%.1f %.1f %.1f) solid=%d movetype=%d effects=%d nav=%d navAreaResult=%d area=%u runmove=%d stage=%d currentResult=%d nearestResult=%d currentArea=%u recoveryArea=%u targetArea=%u target=(%.1f %.1f %.1f) intent=(%.2f %.2f %.2f) observedVelocity=(%.1f %.1f %.1f) corridorAreas=%u corridorIndex=%u link=(%u->%u how=%u dir=%u) linkResult=%d corridorResult=%d locomotionResult=%d nearestDistanceSquared=%.1f goalPresent=%d goalKind=%d goalArea=%u pathRequested=%d pathResult=%d failureReason=%d",
 				static_cast<unsigned int>(handle.actor.slot),
 				static_cast<unsigned int>(handle.actor.actorGeneration),
 				static_cast<unsigned int>(adapterFrameCount_),
@@ -2927,7 +2936,13 @@ void PluginRuntime::resetManagedBotMovement()
 				decision != nullptr ? static_cast<int>(decision->linkResult) : -1,
 				decision != nullptr ? static_cast<int>(decision->corridorResult) : -1,
 				decision != nullptr ? static_cast<int>(decision->locomotionResult) : -1,
-				decision != nullptr ? decision->nearestDistanceSquared : 0.0f);
+				decision != nullptr ? decision->nearestDistanceSquared : 0.0f,
+				decision != nullptr && decision->goalPresent ? 1 : 0,
+				decision != nullptr ? static_cast<int>(decision->goalKind) : -1,
+				decision != nullptr ? static_cast<unsigned int>(decision->goalArea) : 0U,
+				decision != nullptr && decision->pathRequested ? 1 : 0,
+				decision != nullptr ? static_cast<int>(decision->pathResult) : -1,
+				decision != nullptr ? static_cast<int>(decision->failureReason) : -1);
 			movementDiagnosticAttempts_[index] = true;
 		}
 

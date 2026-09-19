@@ -27,6 +27,8 @@ def test_start_frame_dispatches_nav_movement():
 	assert "corridorAreas=%u corridorIndex=%u" in controller_body
 	assert "link=(%u->%u how=%u dir=%u)" in controller_body
 	assert "nearestDistanceSquared=%.1f" in controller_body
+	assert "goalPresent=%d goalKind=%d goalArea=%u pathRequested=%d pathResult=%d failureReason=%d" in controller_body
+	assert "NavFailureReason::NavApplyRejected" in controller_body
 	assert "inputDispatcher_.dispatchNext" in controller_body
 	assert "ActionAdapter::projectMovement" in controller_body
 	assert "actionDispatch.stopMovement" in controller_body
@@ -44,9 +46,9 @@ def test_start_frame_dispatches_nav_movement():
 	assert "entityObjectiveCenter" in source
 	assert "entity->v.absmin" in source
 	assert "entity->v.absmax" in source
-	assert "isPlantedC4Entity" in source
-	assert "w_c4.mdl" in source
-	assert "kC4WeaponBit = (1 << 6)" in source
+	assert "collectPlantedBomb" in source
+	assert "plantedC4" in source
+	assert "carryingC4" in source
 
 
 if __name__ == "__main__":
