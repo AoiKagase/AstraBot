@@ -162,7 +162,7 @@ Plans:
   2. Stuck, collision, stale route, and rejected input states recover or terminate explicitly.
   3. Route search success is not reported as movement success without dispatch and movement evidence.
 
-**Plans**: 5 plans
+**Plans**: 6 plans
 
 Plans:
 
@@ -171,6 +171,7 @@ Plans:
 - [x] 06-03: Implement Jump/Drop movement envelopes and feedback.
 - [x] 06-04: Implement Ladder/Door/narrow-passage traversal.
 - [x] 06-05: Implement stuck recovery, route invalidation, and locomotion evidence.
+- [x] 06-06: Integrate ZBot-derived off-mesh recovery, basic route movement, and typed diagnostics. (offline complete 2026-09-17; live movement remains pending in Phase 8)
 
 ### Phase 7: CSBot behavior parity
 
@@ -210,10 +211,13 @@ Plans:
 
 Plans:
 
-- [ ] 08-01: Complete cross-platform artifact and export verification.
-- [ ] 08-02: Run differential scenario and replay review.
-- [ ] 08-03: Run real-server single/multi-Bot lifecycle and gameplay acceptance.
-- [ ] 08-04: Audit v1 closure, documentation, and deferred AstraNav boundary.
+- [x] 08-01: Complete cross-platform artifact and export verification. (offline artifact matrix complete 2026-09-16; live acceptance remains pending)
+- [x] 08-02: Run differential scenario and replay review. (offline source-independent replay contract complete 2026-09-16; pinned live reference trace remains pending)
+- [ ] 08-03: Run real-server single/multi-Bot lifecycle and gameplay acceptance. (Windows team entry and human attack/death captured 2026-09-18; autonomous post-join action failed, Linux and remaining cases pending)
+- [x] 08-04: Audit v1 closure, documentation, and deferred AstraNav boundary. (audit recorded 2026-09-16; milestone remains incomplete until live evidence)
+- [ ] 08-05: Close the autonomous post-join action and Nav intent gaps with current-source regression tests and a pinned Windows x86 retest. (TeamInfo/readiness fix and CTest 41/41 verified offline 2026-09-18; live deployment/retest pending)
+- [ ] 08-06: Close the NavRoam Stuck and live combat/C4 action gaps with focused adapter tests and offset-scoped log acceptance. (Fresh post-fix run reached readiness but failed movement/combat/C4 gates; plan created 2026-09-18)
+- [ ] 08-07: Connect Core combat/objective decisions to public engine action inputs and repeat independent live Bot combat/C4 gates. (Offline bridge/tests complete 2026-09-18; live action evidence remains pending)
 
 ## Progress
 
@@ -229,4 +233,4 @@ Phases execute sequentially: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 | 5. Read-only legacy Nav | 4/4 | Complete | 2026-09-15 |
 | 6. Baseline locomotion | 5/5 | Complete (offline) | 2026-09-16 |
 | 7. CSBot behavior parity | 6/6 | Complete (offline) | 2026-09-16 |
-| 8. Differential and live parity acceptance | 0/4 | Not started | - |
+| 8. Differential and live parity acceptance | 0/5 | In progress (partial Windows live evidence; autonomous action failed; gap closure active) | 2026-09-18 |

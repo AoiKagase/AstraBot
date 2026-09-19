@@ -2,18 +2,18 @@
 gsd_state_version: "1.0"
 current_phase: 8
 current_phase_name: Differential live parity acceptance
-status: planned
+status: executing
 stopped_at: Phase 7 offline behavior gate complete, ready to execute Phase 8
-last_updated: "2026-09-16T13:35:47+09:00"
-last_activity: 2026-09-16
-last_activity_desc: Phase 7 offline behavior gate completed; live and differential acceptance remain pending
-state_head: a7d039a
+last_updated: "2026-09-18T19:15:00+09:00"
+last_activity: 2026-09-18
+last_activity_desc: Plan 08-07 movement boundary repaired offline; full Windows x86 CTest 42/42 passed and DLL 8512034d...a6180880 deployed, but HLDS launch terminated before a post-spawn live observation and C4 remains pending
+state_head: 433235f
 progress:
   total_phases: 8
 completed_phases: 7
-total_plans: 27
-completed_plans: 27
-percent: 88
+total_plans: 32
+completed_plans: 31
+percent: 97
 ---
 
 # Project State
@@ -27,12 +27,12 @@ See: `.planning/PROJECT.md` (updated 2026-09-15)
 
 ## Current Position
 
-Phase: 8 (Differential live parity acceptance) — PLAN READY
-Plan: 08-01 through 08-04
-Status: Phase 7 offline behavior gate complete; Phase 8 live/differential acceptance ready to execute
-Last activity: 2026-09-16 — Phase 7 offline behavior gate completed; live and differential acceptance remain pending
+Phase: 8 (Differential live parity acceptance) — EXECUTING
+Plan: 08-07
+Status: GAP CLOSURE; movement boundary is offline-verified, but live movement and Bot C4 acceptance remain pending
+Last activity: 2026-09-18 — synchronized FakeClient entvars button/impulse before RunPlayerMove, fixed test-target linkage, full CTest 42/42 passed; live HLDS launch terminated before post-spawn observation
 
-Progress: ░░░░░░░░░░ [████████░░] 88%
+Progress: ░░░░░░░░░░ [█████████░] 94%
 
 ## Performance Metrics
 
@@ -86,5 +86,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-09-16
-Stopped at: Phase 7 offline behavior gate complete, ready to execute Phase 8
+Stopped at: Phase 8 Windows x86 partial live acceptance; autonomous action failure recorded; resume with movement/action diagnosis and Linux x86 live evidence
 Resume file: None
