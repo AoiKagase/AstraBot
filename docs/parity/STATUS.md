@@ -13,9 +13,10 @@
 | Objective state | PARTIAL | public C4/entity proxies are inferred; defuse/kit/hostage/VIP/round state remains unavailable or unknown |
 | Configure/build | PASS | current x86 HostX86/x86 NMake Debug worktree build |
 | Focused tests | PASS | observation model 1/1, adapter 1/1, trace 1/1, integration/action/isolation and P02/P03 focused suites passed |
-| Full CTest | PENDING | run in P04 final validation after documentation and current-branch rebuild |
-| Phase 8 PowerShell | PENDING | must remain separate from offline CTest |
-| PE/Python verifier | PENDING | report environment result separately |
+| Full CTest | PASS | current x86 complete build and `49/49 PASS` |
+| Phase 8 PowerShell | PASS fixture-only | live-log umbrella, objective, slow-movement, and action-boundary checks passed; combat/C4 live fields remain separate |
+| FocalSpan | PASS | final worktree index fresh after source/documentation update |
+| PE/Python verifier | NOT RUN | `py -3` could not create its Windows Python process |
 | Live HLDS/ReHLDS | NOT RUN | no new live acceptance claim in P04 |
 
 P04 does not promote any observation to `MATCH` solely from an adapter or
