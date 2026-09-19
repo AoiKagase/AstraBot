@@ -58,6 +58,8 @@ struct NavCorridor
 {
 	std::uint64_t navRevision;
 	std::uint32_t mapGeneration;
+	NavRouteType routeType;
+	float cost;
 	std::vector<AreaId> areas;
 	std::vector<NavDirectedLink> links;
 

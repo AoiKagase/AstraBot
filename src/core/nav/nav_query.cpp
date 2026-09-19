@@ -291,7 +291,8 @@ NavDirectedLink directedLinkFor(
 
 bool NavCorridor::isValid() const
 {
-	if (navRevision == 0U || mapGeneration == 0U || areas.empty())
+	if (navRevision == 0U || mapGeneration == 0U || !std::isfinite(cost) ||
+			areas.empty())
 	{
 		return false;
 	}
@@ -705,9 +706,11 @@ NavQueryResult buildAStarCorridor(
 			return NavQueryResult::ResourceLimit;
 		}
 		std::reverse(reversed.begin(), reversed.end());
-		corridor->navRevision = snapshot.revision();
-		corridor->mapGeneration = snapshot.mapGeneration();
-		corridor->areas = reversed;
+	corridor->navRevision = snapshot.revision();
+	corridor->mapGeneration = snapshot.mapGeneration();
+	corridor->routeType = routeType;
+	corridor->cost = records[goalRecordIndex].costSoFar;
+	corridor->areas = reversed;
 		corridor->links.clear();
 		corridor->links.reserve(reversed.size() > 0U ? reversed.size() - 1U : 0U);
 		for (std::size_t index = 1U; index < reversed.size(); ++index)

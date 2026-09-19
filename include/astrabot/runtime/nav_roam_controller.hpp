@@ -4,11 +4,13 @@
 #include "astrabot/nav/jump_drop.hpp"
 #include "astrabot/nav/locomotion.hpp"
 #include "astrabot/nav/special_traversal.hpp"
+#include "astrabot/compat/runtime_mode_policy.hpp"
 #include "astrabot/world/world_snapshot.hpp"
 #include "astrabot/runtime/actor_registry.hpp"
 
 #include <cstddef>
 #include <cstdint>
+#include <vector>
 
 namespace astrabot
 {
@@ -44,7 +46,7 @@ namespace astrabot
 			StaleFrame
 		};
 
-		enum class NavRoamStage
+enum class NavRoamStage
 		{
 			None,
 			ExactArea,
@@ -53,8 +55,18 @@ namespace astrabot
 			CorridorReady,
 			LocomotionReady,
 			TargetReached,
-			Failed
-		};
+	Failed
+};
+
+enum class NavRecomputeReason
+{
+	None,
+	InitialGoal,
+	GoalChanged,
+	MapOrRoundChanged,
+	PathInvalidated,
+	Stuck
+};
 
 		struct NavRoamDecision
 		{
@@ -63,8 +75,14 @@ namespace astrabot
 			nav::NavQueryResult nearestAreaResult;
 			nav::NavQueryResult linkResult;
 			nav::NavQueryResult corridorResult;
-			nav::LocomotionResult locomotionResult;
-			nav::AreaId currentArea;
+	nav::LocomotionResult locomotionResult;
+	NavRecomputeReason recomputeReason;
+	std::uint32_t pathSequence;
+	std::uint32_t fullUpdateSequence;
+	nav::NavRouteType routeType;
+	float pathCost;
+	std::vector<nav::AreaId> selectedPath;
+	nav::AreaId currentArea;
 			nav::AreaId recoveryArea;
 			nav::AreaId targetArea;
 			float nearestDistanceSquared;
@@ -83,7 +101,9 @@ namespace astrabot
 		class NavRoamController
 		{
 		  public:
-			NavRoamController();
+	NavRoamController();
+	explicit NavRoamController(compat::RuntimeMode mode);
+	void setRuntimeMode(compat::RuntimeMode mode);
 			NavRoamResult update(
 				const nav::NavSnapshot &snapshot,
 				const NavRoamObservation &observation,
@@ -131,17 +151,19 @@ namespace astrabot
 			nav::LocomotionController locomotion_;
 			nav::TraversalAction activeTraversal_;
 			nav::JumpDropController jumpDrop_;
-			nav::SpecialTraversalController specialTraversal_;
+	nav::SpecialTraversalController specialTraversal_;
+	compat::RuntimeModePolicy modePolicy_;
 			ActorId actor_;
 			world::FrameIdentity lastFrame_;
 			std::size_t nextLinkIndex_;
 			nav::NavCorridor activeCorridor_;
 			nav::NavDirectedLink activeLink_;
-			nav::NavVector activeTargetPosition_;
-			nav::NavVector lastIntentDirection_;
-			nav::NavVector stuckRecoveryDirection_;
-			std::size_t activeCorridorIndex_;
-			std::uint32_t stuckRecoveryCount_;
+	nav::NavVector activeTargetPosition_;
+	nav::NavVector lastIntentDirection_;
+	nav::NavVector stuckRecoveryDirection_;
+	std::size_t activeCorridorIndex_;
+	std::uint32_t pathSequence_;
+	std::uint32_t stuckRecoveryCount_;
 			std::uint32_t stuckRecoveryFramesRemaining_;
 			bool stuckRecoveryActive_;
 			bool hasActiveRoute_;

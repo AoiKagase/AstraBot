@@ -248,8 +248,10 @@ bool testActorSeedDistributesInitialLinks()
 		observation.locomotion.grounded = true;
 		return observation;
 	};
-	astrabot::runtime::NavRoamController firstController;
-	astrabot::runtime::NavRoamController secondController;
+	astrabot::runtime::NavRoamController firstController(
+			astrabot::compat::RuntimeMode::Enhanced);
+	astrabot::runtime::NavRoamController secondController(
+			astrabot::compat::RuntimeMode::Enhanced);
 	astrabot::nav::LocomotionIntent firstIntent = {};
 	astrabot::nav::LocomotionIntent secondIntent = {};
 	astrabot::runtime::NavRoamDecision firstDecision = {};
@@ -284,7 +286,8 @@ bool testNormalRoamUsesActorSeededAStarGoal()
 	{
 		return false;
 	}
-	astrabot::runtime::NavRoamController controller;
+	astrabot::runtime::NavRoamController controller(
+			astrabot::compat::RuntimeMode::Enhanced);
 	astrabot::runtime::NavRoamObservation observation = {};
 	observation.actor = {3U, 1U};
 	observation.frame = {1U, 1U, 1U};
@@ -299,6 +302,125 @@ bool testNormalRoamUsesActorSeededAStarGoal()
 					astrabot::runtime::NavRoamResult::IntentReady &&
 				decision.corridorAreaCount == 3U && decision.linkToArea == 2U,
 				"normal roam uses an actor-seeded A* goal instead of only the next link");
+}
+
+bool testCompatibilityIgnoresActorSeededRouteRotation()
+{
+	astrabot::nav::NavDocument document;
+	document.setSourceIdentity({5U, 100U, 200U});
+	astrabot::nav::NavArea start = area(1U, 0.0f, 64.0f);
+	start.connections[0U].push_back(2U);
+	start.connections[0U].push_back(3U);
+	document.addArea(start);
+	document.addArea(area(2U, 64.0f, 128.0f));
+	document.addArea(area(3U, 128.0f, 192.0f));
+
+	astrabot::nav::NavSnapshotPublisher publisher;
+	if (!check(publisher.publish(&document, 1U) ==
+				astrabot::nav::NavSnapshotResult::Published,
+			"compatibility route policy snapshot is published"))
+	{
+		return false;
+	}
+	const auto makeObservation = [](std::uint32_t slot) {
+		astrabot::runtime::NavRoamObservation observation = {};
+		observation.actor = {slot, 1U};
+		observation.frame = {1U, 1U, 1U};
+		observation.locomotion.position = {32.0f, 32.0f, 0.0f};
+		observation.locomotion.standingClearance = 72.0f;
+		observation.locomotion.crouchingClearance = 36.0f;
+		observation.locomotion.grounded = true;
+		return observation;
+	};
+	astrabot::runtime::NavRoamController firstController(
+			astrabot::compat::RuntimeMode::Compatibility);
+	astrabot::runtime::NavRoamController secondController(
+			astrabot::compat::RuntimeMode::Compatibility);
+	astrabot::nav::LocomotionIntent firstIntent = {};
+	astrabot::nav::LocomotionIntent secondIntent = {};
+	astrabot::runtime::NavRoamDecision firstDecision = {};
+	astrabot::runtime::NavRoamDecision secondDecision = {};
+	if (!check(firstController.update(
+				publisher.snapshot(), makeObservation(1U), &firstIntent, &firstDecision) ==
+				astrabot::runtime::NavRoamResult::IntentReady &&
+				secondController.update(
+						publisher.snapshot(), makeObservation(2U), &secondIntent,
+						&secondDecision) == astrabot::runtime::NavRoamResult::IntentReady,
+				"compatibility controllers emit route intents"))
+	{
+		return false;
+	}
+	return check(firstDecision.linkToArea == 2U && secondDecision.linkToArea == 2U,
+			"compatibility route selection is independent of actor-derived rotation");
+}
+
+bool testRoutePersistsUntilGoalChange()
+{
+	astrabot::nav::NavDocument document;
+	document.setSourceIdentity({5U, 100U, 200U});
+	astrabot::nav::NavArea start = area(1U, 0.0f, 64.0f);
+	astrabot::nav::NavArea middle = area(2U, 64.0f, 128.0f);
+	astrabot::nav::NavArea firstGoal = area(3U, 128.0f, 192.0f);
+	astrabot::nav::NavArea secondGoal = area(4U, 192.0f, 256.0f);
+	start.connections[0U].push_back(2U);
+	start.connections[0U].push_back(4U);
+	middle.connections[0U].push_back(3U);
+	document.addArea(start);
+	document.addArea(middle);
+	document.addArea(firstGoal);
+	document.addArea(secondGoal);
+	astrabot::nav::NavSnapshotPublisher publisher;
+	if (!check(publisher.publish(&document, 1U) ==
+				astrabot::nav::NavSnapshotResult::Published,
+			"route persistence snapshot is published"))
+	{
+		return false;
+	}
+	astrabot::runtime::NavRoamObservation observation = {};
+	observation.actor = {1U, 1U};
+	observation.frame = {1U, 1U, 1U};
+	observation.locomotion.position = {32.0f, 32.0f, 0.0f};
+	observation.locomotion.standingClearance = 72.0f;
+	observation.locomotion.crouchingClearance = 36.0f;
+	observation.locomotion.grounded = true;
+	observation.hasObjectiveTarget = true;
+	observation.objectiveTarget = {160.0f, 32.0f, 0.0f};
+	astrabot::runtime::NavRoamController controller(
+			astrabot::compat::RuntimeMode::Compatibility);
+	astrabot::nav::LocomotionIntent intent = {};
+	astrabot::runtime::NavRoamDecision firstDecision = {};
+	if (!check(controller.update(publisher.snapshot(), observation, &intent, &firstDecision) ==
+				astrabot::runtime::NavRoamResult::IntentReady &&
+				firstDecision.recomputeReason ==
+						astrabot::runtime::NavRecomputeReason::InitialGoal &&
+				firstDecision.pathSequence == 1U,
+				"initial goal computes one persistent route"))
+	{
+		return false;
+	}
+	observation.frame.tick = 2U;
+	astrabot::runtime::NavRoamDecision persistentDecision = {};
+	if (!check(controller.update(
+				publisher.snapshot(), observation, &intent, &persistentDecision) ==
+				astrabot::runtime::NavRoamResult::IntentReady &&
+				persistentDecision.recomputeReason ==
+						astrabot::runtime::NavRecomputeReason::None &&
+				persistentDecision.pathSequence == 1U,
+				"unchanged goal keeps the existing route across updates"))
+	{
+		return false;
+	}
+	observation.frame.tick = 3U;
+	observation.objectiveTarget = {224.0f, 32.0f, 0.0f};
+	astrabot::runtime::NavRoamDecision changedDecision = {};
+	return check(controller.update(
+				publisher.snapshot(), observation, &intent, &changedDecision) ==
+				astrabot::runtime::NavRoamResult::IntentReady &&
+				changedDecision.recomputeReason ==
+						astrabot::runtime::NavRecomputeReason::GoalChanged &&
+				changedDecision.pathSequence == 2U &&
+				changedDecision.targetArea == 4U,
+			"goal change is the explicit route recompute trigger");
 }
 
 int main()
@@ -320,6 +442,14 @@ int main()
 		return 1;
 	}
 	if (!testNormalRoamUsesActorSeededAStarGoal())
+	{
+		return 1;
+	}
+	if (!testCompatibilityIgnoresActorSeededRouteRotation())
+	{
+		return 1;
+	}
+	if (!testRoutePersistsUntilGoalChange())
 	{
 		return 1;
 	}

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <vector>
 
 namespace astrabot
@@ -106,10 +107,16 @@ namespace
 }
 
 NavRoamController::NavRoamController()
+	: NavRoamController(compat::RuntimeMode::Compatibility)
+{
+}
+
+NavRoamController::NavRoamController(compat::RuntimeMode mode)
 	: locomotion_(roamLocomotionConfig()),
 	  activeTraversal_(nav::TraversalAction::Walk),
 	  jumpDrop_(),
 	  specialTraversal_(),
+	  modePolicy_(mode),
 	  actor_{0U, LifecycleSession::kInvalidGeneration},
 	  lastFrame_(),
 	  nextLinkIndex_(0U),
@@ -119,6 +126,7 @@ NavRoamController::NavRoamController()
 	  lastIntentDirection_{0.0f, 0.0f, 0.0f},
 	  stuckRecoveryDirection_{0.0f, 0.0f, 0.0f},
 	  activeCorridorIndex_(0U),
+	  pathSequence_(0U),
 	  stuckRecoveryCount_(0U),
 	  stuckRecoveryFramesRemaining_(0U),
 	  stuckRecoveryActive_(false),
@@ -129,6 +137,11 @@ NavRoamController::NavRoamController()
 	  objectiveTarget_{0.0f, 0.0f, 0.0f},
 	  initialized_(false)
 {
+}
+
+void NavRoamController::setRuntimeMode(compat::RuntimeMode mode)
+{
+	modePolicy_ = compat::RuntimeModePolicy(mode);
 }
 
 NavRoamResult NavRoamController::update(
@@ -168,6 +181,10 @@ NavRoamResult NavRoamController::update(
 	{
 		return NavRoamResult::InvalidSnapshot;
 	}
+	if (decision != nullptr)
+	{
+		decision->fullUpdateSequence = observation.frame.tick;
+	}
 
 	if (!initialized_)
 	{
@@ -200,10 +217,14 @@ NavRoamResult NavRoamController::update(
 		{
 			return NavRoamResult::StaleFrame;
 		}
-		if (observation.frame.mapGeneration != lastFrame_.mapGeneration ||
-				observation.frame.roundGeneration != lastFrame_.roundGeneration)
+	if (observation.frame.mapGeneration != lastFrame_.mapGeneration ||
+			observation.frame.roundGeneration != lastFrame_.roundGeneration)
+	{
+		if (decision != nullptr)
 		{
-			resetRoute();
+			decision->recomputeReason = NavRecomputeReason::MapOrRoundChanged;
+		}
+		resetRoute();
 		}
 	}
 	const bool objectiveTargetChanged =
@@ -214,6 +235,12 @@ NavRoamResult NavRoamController::update(
 			 std::fabs(objectiveTarget_.z - observation.objectiveTarget.z) > 0.5f));
 	if (objectiveTargetChanged)
 	{
+		if (decision != nullptr)
+		{
+			decision->recomputeReason = lastFrame_.isValid()
+					? NavRecomputeReason::GoalChanged
+					: NavRecomputeReason::InitialGoal;
+		}
 		resetRoute();
 	}
 	hasObjectiveTarget_ = observation.hasObjectiveTarget;
@@ -367,7 +394,12 @@ NavRoamResult NavRoamController::update(
 				return NavRoamResult::IntentReady;
 			}
 		}
-		if (!selectRoute(snapshot, currentArea, objectiveArea, decision))
+	if (!hasActiveRoute_ && decision != nullptr &&
+			decision->recomputeReason == NavRecomputeReason::None)
+	{
+		decision->recomputeReason = NavRecomputeReason::InitialGoal;
+	}
+	if (!selectRoute(snapshot, currentArea, objectiveArea, decision))
 		{
 			resetRoute();
 			if (decision != nullptr)
@@ -619,6 +651,7 @@ void NavRoamController::reset()
 	actor_ = {0U, LifecycleSession::kInvalidGeneration};
 	lastFrame_ = {};
 	nextLinkIndex_ = 0U;
+	pathSequence_ = 0U;
 	hasAvoidedLink_ = false;
 	avoidedLink_ = {0U, 0U, 0U, 0U};
 	hasObjectiveTarget_ = false;
@@ -948,6 +981,35 @@ bool NavRoamController::selectRoamRoute(
 	{
 		return false;
 	}
+	if (!modePolicy_.allowsAdaptiveRouteWeighting())
+	{
+		for (const nav::NavDirectedLink &link : links)
+		{
+			nav::NavCorridor corridor = {};
+			const nav::NavQueryResult corridorResult = query.buildCorridor(
+					currentArea.area, link.toArea, nav::NavRouteType::Fastest, &corridor);
+			if (decision != nullptr)
+			{
+				decision->corridorResult = corridorResult;
+			}
+			if (link.toArea == currentArea.area ||
+					corridorResult != nav::NavQueryResult::Found ||
+					corridor.areas.size() < 2U ||
+					!startTraversal(snapshot, corridor, link))
+			{
+				continue;
+			}
+			activeTraversal_ = traversalActionFor(snapshot, link);
+			rememberRoute(snapshot, corridor, link);
+			if (decision != nullptr)
+			{
+				decision->targetArea = link.toArea;
+				populateRouteDecision(decision);
+			}
+			return true;
+		}
+		return false;
+	}
 	const std::size_t firstCandidate = nextLinkIndex_ % document->areas().size();
 	std::size_t attempts = 0U;
 	for (std::size_t offset = 0U;
@@ -1014,6 +1076,14 @@ void NavRoamController::rememberRoute(
 	activeLink_ = link;
 	activeCorridorIndex_ = 0U;
 	hasActiveRoute_ = true;
+	if (pathSequence_ == (std::numeric_limits<std::uint32_t>::max)())
+	{
+		pathSequence_ = 1U;
+	}
+	else
+	{
+		++pathSequence_;
+	}
 	const nav::NavDocument *document = snapshot.document();
 	const nav::NavArea *targetArea = document != nullptr
 			? document->findArea(link.toArea)
@@ -1039,6 +1109,10 @@ void NavRoamController::populateRouteDecision(NavRoamDecision *decision) const
 	decision->linkHow = activeLink_.how;
 	decision->linkResult = nav::NavQueryResult::Found;
 	decision->corridorResult = nav::NavQueryResult::Found;
+	decision->pathSequence = pathSequence_;
+	decision->routeType = activeCorridor_.routeType;
+	decision->pathCost = activeCorridor_.cost;
+	decision->selectedPath = activeCorridor_.areas;
 }
 
 void NavRoamController::resetRoute()
