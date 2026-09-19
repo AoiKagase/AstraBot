@@ -379,8 +379,8 @@ namespace astrabot
 		  hookedGameDllFunctions_(),
 		  engineFunctions_(nullptr), globals_(nullptr), lifecycle_(), actorRegistry_(),
 			  fakeClientManager_(lifecycle_, actorRegistry_),
-	inputDispatcher_(lifecycle_, actorRegistry_), compatibilitySurface_(),
-	compatibilityRandomSource_(), observationAdapter_(), navLoader_(),
+			  inputDispatcher_(lifecycle_, actorRegistry_), compatibilitySurface_(),
+			  compatibilityRandomSource_(), observationAdapter_(), navLoader_(),
 			  navPublisher_(), navLoadDiagnostic_(), adapterFrameCount_(0U), pluginId_(nullptr),
 			  nativeBotGuard_(),
 	nativeGuardDecision_({NativeBotGuardState::Unsupported,
@@ -626,12 +626,12 @@ namespace astrabot
 					originalCommandArgc_ = engineFunctions->pfnCmd_Argc;
 				}
 			}
-	if (globals != nullptr)
-	{
-		globals_ = globals;
-	}
-	observationAdapter_.configure(engineFunctions_, globals_);
-	registerCompatibilityCvars();
+			if (globals != nullptr)
+			{
+				globals_ = globals;
+			}
+			observationAdapter_.configure(engineFunctions_, globals_);
+			registerCompatibilityCvars();
 			configureFakeClientManager();
 		}
 
@@ -1856,7 +1856,7 @@ bool PluginRuntime::buildManagedWorldSnapshot(
 				return 0;
 			}
 		}
-	return 0;
+		return 0;
 	};
 	compat::CompatibilityObservation observerObservation = {};
 	if (observationAdapter_.collectActor(

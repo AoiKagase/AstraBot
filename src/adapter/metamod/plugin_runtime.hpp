@@ -213,11 +213,11 @@ namespace astrabot
 			runtime::LifecycleSession lifecycle_;
 			runtime::ActorRegistry actorRegistry_;
 			FakeClientManager fakeClientManager_;
-	InputDispatcher inputDispatcher_;
-	CompatibilitySurface compatibilitySurface_;
-	compat::EngineRandomSource compatibilityRandomSource_;
-	ObservationAdapter observationAdapter_;
-	NavLoader navLoader_;
+			InputDispatcher inputDispatcher_;
+			CompatibilitySurface compatibilitySurface_;
+			compat::EngineRandomSource compatibilityRandomSource_;
+			ObservationAdapter observationAdapter_;
+			NavLoader navLoader_;
 			nav::NavSnapshotPublisher navPublisher_;
 			NavLoadDiagnostic navLoadDiagnostic_;
 			std::uint32_t adapterFrameCount_;
