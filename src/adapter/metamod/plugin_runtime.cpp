@@ -1540,8 +1540,8 @@ void PluginRuntime::updateManagedBotMovement()
 		{
 			if (adapterFrameCount_ < movementResumeFrames_[index])
 			{
-				const runtime::CommandReceipt receipt = {
-					handle.actor, 0U, adapterFrameCount_, runtime::DispatchResult::NoCommand};
+				prepareNeutralManagedBotCommand(index, handle, before);
+				const runtime::CommandReceipt receipt = executeManagedBotCommand(index, handle);
 				recordMovementPhysicsSample(index, before, receipt);
 				continue;
 			}

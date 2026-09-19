@@ -665,8 +665,8 @@ int main()
 	globals.time += 0.1f;
 	runtime.onStartFrame();
 	runtime.onStartFramePost();
-	if (!check(gRunPlayerMoveCount == 0,
-			   "respawning actor does not receive input before grounded readiness"))
+	if (!check(gRunPlayerMoveCount == 1,
+			   "respawning actor receives one scheduled neutral command before grounded readiness"))
 	{
 		std::remove(profilePath);
 		std::remove(defaultProfilePath);

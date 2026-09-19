@@ -56,7 +56,11 @@ remain open.
 - Event order: `Upkeep -> CommandReset -> FullUpdate -> CommandExecute` when both gates are due
 - Delayed frames: one execution/full update maximum; no catch-up loop; deadlines rebase from current time
 - Deterministic CTest: `astrabot_runtime_timing` PASS and `astrabot_compat_actor_command` PASS
-- Full x86/CTest, Phase 8 PowerShell, PE/Python verifier, and live HLDS/ReHLDS gates remain separate final evidence gates
+- Configure/build: PASS in VS 2026 HostX86/x86 NMake Debug environment
+- Full CTest: 44/44 PASS, 0 failures
+- Phase 8 PowerShell checks: PASS; slow-movement fixture reports partial live combat/C4/objective observations as expected
+- PE/Python verifier: environment-unverified; `py -3` could not create the installed Python process
+- New live HLDS/ReHLDS run: NOT RUN; live autonomous movement/combat/C4 and private-state parity remain open
 
 ## P01 verification
 
