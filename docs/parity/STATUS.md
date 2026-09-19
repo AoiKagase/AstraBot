@@ -168,3 +168,23 @@ remain open.
 
 P02 timing regression remains PASS and unchanged. P03 does not promote overall
 CSBot parity to MATCH and does not authorize P04.
+
+## P07 result: PARTIAL
+
+| Gate | Result | Evidence / limitation |
+|---|---|---|
+| NAV load | IMPLEMENTED_OFFLINE_VERIFIED | Existing read-only legacy versions 1-5 loader/model tests; ladder object linkage remains unavailable |
+| Area lookup | IMPLEMENTED_OFFLINE_VERIFIED | Containment, floor tolerance, bounded nearest recovery fixtures |
+| Path cost | PARTIAL | Static distance, crouch, jump, and route-type costs; dynamic danger/fall/ladder/private state unavailable |
+| Tie-break | IMPLEMENTED_OFFLINE_VERIFIED | Stable CSBot discovery-order equal-cost fixture |
+| Path persistence/recompute | IMPLEMENTED_OFFLINE_VERIFIED | `pathSequence`, `fullUpdateSequence`, and explicit recompute reason fixture |
+| Movement command intent | IMPLEMENTED_OFFLINE_VERIFIED | 20-unit arrival, posture/traversal intent, P02 cadence unchanged |
+| Jump | PARTIAL | NAV attribute and bounded jump/drop intent/state tests; live jump physics unverified |
+| Ladder | PARTIAL | Separate enter/maintain/exit controller tests; real ladder object/mount/climb physics unverified |
+| Stuck | PARTIAL | Bounded offline recovery; exact CSBot averaged velocity/RNG/wiggle/live physics unverified |
+| Enhanced isolation | IMPLEMENTED_OFFLINE_VERIFIED | Compatibility route ignores actor rotation; explicit Enhanced policy retains adaptive path selection |
+| Deterministic fixtures | PASS | NAV query, route persistence, posture/traversal, jump/drop, ladder-state, and movement tests |
+| Python/PE verifier | NOT RUN | Environment verifier remains separate and unexecuted |
+| Live HLDS/ReHLDS | NOT RUN | No new live differential acceptance claim |
+
+P07 remains `PARTIAL`: offline Compatibility route/traversal boundaries are implemented and tested, while live physics/private reference evidence is open. P08 is not started.

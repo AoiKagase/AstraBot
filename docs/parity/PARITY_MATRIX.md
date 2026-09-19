@@ -105,4 +105,19 @@ below. Those rows are retained as an audit trail of the pre-P05 baseline.
 `MATCH 0`, `IMPLEMENTED_UNVERIFIED 6`, `PARTIAL 10`, `MISSING 7`,
 `DIFFERENT 5`, `ASTRA_EXTENSION 1`, `NOT_APPLICABLE 0`.
 
+## P07 evidence-grained navigation status
+
+| P07 surface | Reference contract | AstraBot evidence | Status |
+|---|---|---|---|
+| NAV load | v1-v5 read-only area/place/hiding/approach/encounter semantics | loader/model fixtures and transactional validation | IMPLEMENTED_OFFLINE_VERIFIED |
+| Area lookup | containing area, floor tolerance, nearest fallback | `NavQuery` deterministic fixtures | IMPLEMENTED_OFFLINE_VERIFIED |
+| Path cost | distance plus route/attribute penalties; dynamic danger/private state | static FASTEST/SAFEST cost fields and corridor cost | PARTIAL |
+| Tie-break | A* open-list stable discovery order | stored neighbor order and equal-cost golden fixture | IMPLEMENTED_OFFLINE_VERIFIED |
+| Persistence/recompute | retain path; recompute on goal/lifecycle/path/stuck conditions | path sequence and recompute reason fixture | IMPLEMENTED_OFFLINE_VERIFIED |
+| Movement command | portal path following, view/movement boundary, posture | 20-unit arrival and locomotion intent fixtures; P02 unchanged | IMPLEMENTED_OFFLINE_VERIFIED |
+| Jump | NAV_JUMP/traversal and physics | NAV_JUMP intent plus bounded jump/drop controller | PARTIAL |
+| Ladder | ladder edge/mount/climb/dismount | separate traversal state machine; real ladder object/physics unavailable | PARTIAL |
+| Stuck | averaged velocity, wiggle, bounded recovery | bounded offline stuck/recovery fixture | PARTIAL |
+| Enhanced isolation | adaptive route/learning outside compatibility baseline | explicit RuntimeMode route policy fixture | IMPLEMENTED_OFFLINE_VERIFIED |
+
 These counts describe the rows above, not feature completeness or live acceptance.

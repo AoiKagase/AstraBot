@@ -139,4 +139,14 @@ remain unverified and are not promoted by P02.
 - The 21 direct chatter-purpose calls remain inventory items despite their
   visible scope because a shared global stream could shift later behavior.
 - Live HLDS/ReHLDS acceptance, pinned reference RNG traces, private state, and
-  full CSBot behavior remain open.
+full CSBot behavior remain open.
+
+## P07 navigation deviations
+
+- NAV load is read-only and supports the existing legacy v1-v5 document boundary. CSBot-compatible NAV learning/generation, ladder construction from map geometry, and `.nav` writing remain `NOT_YET_IMPLEMENTED`.
+- Compatibility A* now keeps serialized neighbor order and stable equal-cost discovery order. The prior actor/generation-derived route rotation is isolated to explicit Enhanced mode.
+- Compatibility cost currently includes static center distance plus NAV_CROUCH/NAV_JUMP terms. Dynamic danger, aggression, teammate density, fall-damage health margin, ladder length, hostage escort, and private GameDLL inputs remain unavailable; SAFEST is not broad MATCH evidence.
+- Current-area containment, nearest recovery, portal following, route persistence, goal/lifecycle recompute, 20-unit arrival, and NAV posture/traversal intent are offline verified. Exact CSBot path point geometry remains live/unverified.
+- Jump/drop and ladder state boundaries are offline tested. Actual collision, ladder mount/climb/dismount, jump landing, door/use, and `RunPlayerMove` results remain live-unverified.
+- Stuck recovery remains bounded and deterministic at the AstraBot boundary. Exact CSBot averaged velocity threshold, wiggle RNG call order, and engine response remain unverified.
+- P07 does not change P02 cadence, P03 shared Compatibility RNG ownership, P04 observation quality/freshness, P05 state ownership, P06 belief/last-known isolation, combat, economy, or objective tactical decisions.

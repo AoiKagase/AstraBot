@@ -133,3 +133,28 @@ The sequence counter belongs to the shared Compatibility source. Enhanced-source
 calls are not emitted on this Compatibility stream. Synthetic traces, CTest,
 FocalSpan, and graph output remain offline evidence, not pinned reference
 production traces or live HLDS/ReHLDS acceptance.
+
+## P07 navigation trace records
+
+Navigation diagnostics use semantic IDs and bounded records. They must not be reduced to numeric area IDs without the event meaning.
+
+| Semantic ID / field | Required meaning |
+|---|---|
+| `NAV-PATH-SEARCH` | A corridor search was requested; include actor, start area, goal area, route type, Full Update sequence, and reason |
+| `NAV-PATH-TIEBREAK` | Equal-cost candidate resolution; include stored neighbor order and selected path |
+| `NAV-PATH-RECOMPUTE` | Existing path invalidated/replaced; include old/new path and `InitialGoal`, `GoalChanged`, `MapOrRoundChanged`, `PathInvalidated`, or `Stuck` reason |
+| `NAV-GOAL-REACHED` | Corridor/follower reached the target area/point |
+| `NAV-JUMP` | Jump/drop traversal intent with source/target area and launch/landing state |
+| `NAV-LADDER-ENTER` | Ladder entry/mount boundary |
+| `NAV-LADDER-CLIMB` | Ladder maintain/climb boundary |
+| `NAV-LADDER-EXIT` | Ladder dismount/exit boundary |
+| `NAV-CROUCH` | Crouch posture selected from NAV attribute/clearance |
+| `NAV-STUCK-DETECT` | Bounded stuck detection with current area/path index |
+| `NAV-STUCK-RECOVER` | Bounded recovery intent and retained/replanned path |
+| `pathSequence` | Monotonic actor-scoped route identity; unchanged across ordinary Full Updates |
+| `fullUpdateSequence` | P02 Full Update sequence/tick associated with the record |
+| `selectedPath` | Ordered area sequence, including explicit direction/how metadata in the linked corridor |
+| `routeType`, `pathCost` | FASTEST/SAFEST static route mode and computed static cost; dynamic danger remains unavailable |
+| `forward`, `side`, `duck`, `jump`, `ladder_state` | Movement command/traversal intent fields; view/aim is a separate boundary |
+
+`NavRoamDecision` carries the bounded offline fixture form of these values: route sequence, Full Update sequence, recompute reason, selected path, route type, path cost, corridor index, link `how`, and traversal intent. Engine trace parity and exact RNG placement remain unverified.

@@ -177,3 +177,19 @@ objects. The next parity phases must map the relevant fields in `dlls/player.cpp
 `dlls/hostage/*`, and API/private-data paths. AstraBot currently uses public
 Metamod/HLSDK `edict_t`/engine fields and does not have the same private object
 access.
+
+## P07 navigation mapping
+
+| Pinned ReGameDLL-CS surface | AstraBot surface | Evidence/status |
+|---|---|---|
+| `game_shared/bot/nav.h` attributes, directions, traversal types | `include/astrabot/nav/nav_model.hpp` | attributes and directed links represented; ladder object type not represented |
+| `nav_file.cpp` / `CNavArea::Load` | `LegacyNavReader` and `NavDocument` | versions 1-5 read-only loader/model tests |
+| `CNavArea::FindPath` / `NavAreaBuildPath` | `NavQuery::buildCorridor` | stable stored neighbor order, static route costs, explicit corridor cost |
+| `CNavPath::ComputePathPositions` / follower | `NavPathFollower`, `LocomotionController` | portal following and 20-unit default arrival fixture |
+| `CCSBot::ComputePath` and PathCost | `NavRouteType`, `NavCorridor::routeType/cost` | static cost parity partial; dynamic/private terms open |
+| `CCSBot::UpdateLadderMovement` | `SpecialTraversalController` | state boundary and tests; live physics unverified |
+| `CCSBot::DiscontinuityJump` | `JumpDropController` and `TraversalAction::Jump/Drop` | bounded offline state/envelope tests; live physics unverified |
+| `CCSBot::StuckCheck/Wiggle` | `LocomotionController` and `NavRoamController` recovery | bounded fixture; exact RNG/velocity/live behavior open |
+| CSBot state callers (`MoveTo`, `Follow`, `Hunt`, `Hide`, noise/objective states) | existing state/planner goal inputs | P07 maps goal-to-route only; state/tactical ownership unchanged |
+
+Full reference line-level inventory remains in `docs/parity/NAVIGATION_MODEL.md`; source graph indexes are advisory and current checkout evidence takes precedence.
