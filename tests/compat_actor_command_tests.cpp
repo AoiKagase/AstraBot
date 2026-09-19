@@ -601,6 +601,9 @@ int main()
 	gEntities[1].v.flags = FL_CLIENT | FL_ONGROUND;
 	gEntities[1].v.deadflag = DEAD_NO;
 	gEntities[1].v.health = 100.0f;
+	const float observedFovBeforeObjective = gEntities[0].v.fov;
+	const float observedOriginXBeforeObjective = gEntities[0].v.origin.x;
+	const int observedTeamBeforeObjective = static_cast<int>(gEntities[0].v.team);
 	gBombSite.v.origin = gEntities[0].v.origin;
 	gBombSite.v.classname = 1;
 	gPlantedBomb.v.classname = 2;
@@ -613,7 +616,10 @@ int main()
 	runtime.onStartFrame();
 	runtime.onStartFramePost();
 	if (!check(gRunPlayerMoveCount == 1 &&
-			(gLastRunPlayerMoveButtons & static_cast<unsigned short>(IN_USE)) != 0U,
+		(gLastRunPlayerMoveButtons & static_cast<unsigned short>(IN_USE)) != 0U &&
+		gEntities[0].v.fov == observedFovBeforeObjective &&
+		gEntities[0].v.origin.x == observedOriginXBeforeObjective &&
+		static_cast<int>(gEntities[0].v.team) == observedTeamBeforeObjective,
 			"planted bomb objective reaches RunPlayerMove as a use action"))
 	{
 		std::remove(profilePath);

@@ -148,6 +148,27 @@ bool testAdapterHandlesMissingEnginePointers()
 	return check(result == astrabot::metamod::ObservationAdapterResult::EngineUnavailable,
 		"missing engine context is explicit");
 }
+
+bool testPlantedBombEntityIsInferred()
+{
+	Fixture fixture;
+	configureFixture(&fixture);
+	fixture.entity.v.dmgtime = 30.0f;
+	astrabot::compat::ObjectiveObservation objective = {};
+	const astrabot::metamod::ObservationAdapterResult result =
+		fixture.adapter.collectPlantedBomb(
+			&fixture.entity, "grenade", "models/w_c4.mdl", 5.0f,
+			{4U, 9U}, frame(), timing(), &objective);
+	return check(result == astrabot::metamod::ObservationAdapterResult::Accepted,
+		"planted bomb entity is accepted") &&
+		check(objective.bombPlanted.isAvailable() && objective.bombPlanted.value,
+			"planted bomb state is available") &&
+		check(objective.bombPlanted.context.quality ==
+			astrabot::compat::ObservationQuality::Inferred,
+			"planted bomb state is inferred") &&
+		check(objective.bombTimer.value == 30.0f,
+			"planted bomb timer is preserved");
+}
 }
 
 int main()
@@ -156,5 +177,6 @@ int main()
 		testPrivateWeaponFieldsAreUnavailableNotSyntheticExact() &&
 		testObjectiveProxyKeepsInferredQuality() &&
 		testAdapterPreservesActorAndFrameIdentity() &&
-		testAdapterHandlesMissingEnginePointers() ? 0 : 1;
+		testAdapterHandlesMissingEnginePointers() &&
+		testPlantedBombEntityIsInferred() ? 0 : 1;
 }

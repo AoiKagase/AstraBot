@@ -1,5 +1,8 @@
 #include "observation_adapter.hpp"
 
+#include <cmath>
+#include <cstring>
+
 namespace astrabot
 {
 namespace metamod
@@ -262,6 +265,65 @@ ObservationAdapterResult ObservationAdapter::collectActor(
 void ObservationAdapter::setTraceSink(compat::IObservationTraceSink *sink)
 {
 	traceSink_ = sink;
+}
+
+ObservationAdapterResult ObservationAdapter::collectPlantedBomb(
+	edict_t *entity,
+	const char *classname,
+	const char *model,
+	float currentTime,
+	const world::ActorKey &actor,
+	const world::FrameIdentity &frame,
+	const compat::ObservationTimingContext &timing,
+	compat::ObjectiveObservation *observation) const
+{
+	if (observation == nullptr || !actor.isValid() || !frame.isValid())
+	{
+		return ObservationAdapterResult::InvalidArgument;
+	}
+	if (engineFunctions_ == nullptr || globals_ == nullptr)
+	{
+		return ObservationAdapterResult::EngineUnavailable;
+	}
+	if (entity == nullptr || entity->free != 0 || classname == nullptr ||
+		model == nullptr || !std::isfinite(currentTime) ||
+		!std::isfinite(entity->v.dmgtime) ||
+		std::strcmp(classname, "grenade") != 0 ||
+		entity->v.dmgtime <= currentTime ||
+		(model[0] != '\0' && std::strstr(model, "w_c4.mdl") == nullptr))
+	{
+		return ObservationAdapterResult::InvalidEntity;
+	}
+
+	*observation = {};
+	const compat::ObservationContext plantedContext = makeContext(
+		"OBS-OBJECTIVE-BOMB-PLANTED", actor, frame, timing,
+		compat::ObservationQuality::Inferred,
+		compat::ObservationFreshness::SameTick,
+		compat::ObservationSource::PublicEdict);
+	const compat::ObservationContext positionContext = makeContext(
+		"OBS-OBJECTIVE-BOMB-POSITION", actor, frame, timing,
+		compat::ObservationQuality::Inferred,
+		compat::ObservationFreshness::SameTick,
+		compat::ObservationSource::PublicEdict);
+	const compat::ObservationContext timerContext = makeContext(
+		"OBS-OBJECTIVE-BOMB-TIMER", actor, frame, timing,
+		compat::ObservationQuality::Inferred,
+		compat::ObservationFreshness::SameTick,
+		compat::ObservationSource::PublicEdict);
+	observation->bombPlanted = {true, true, plantedContext};
+	observation->bombPosition = {
+		world::WorldVector{entity->v.origin[0], entity->v.origin[1], entity->v.origin[2]},
+		true,
+		positionContext};
+	observation->bombTimer = {entity->v.dmgtime, true, timerContext};
+	compat::emitObservationTrace(
+		observation->bombPlanted, compat::ObservationValueKind::Boolean, traceSink_);
+	compat::emitObservationTrace(
+		observation->bombPosition, compat::ObservationValueKind::Vector, traceSink_);
+	compat::emitObservationTrace(
+		observation->bombTimer, compat::ObservationValueKind::Float, traceSink_);
+	return ObservationAdapterResult::Accepted;
 }
 }
 }

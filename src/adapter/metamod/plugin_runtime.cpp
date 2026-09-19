@@ -20,7 +20,6 @@ namespace astrabot
 	constexpr float kStandingHalfHumanHeight = 36.0f;
 	constexpr float kMaximumObjectiveDistance = 10000.0f;
 	constexpr float kDefaultManagedBotMaxSpeed = 240.0f;
-	constexpr int kC4WeaponBit = (1 << 6);
 			constexpr std::uint32_t kRespawnSettleFrames = 2U;
 			constexpr std::uint8_t kMovementPhysicsLogLimit = 64U;
 		// Counter-Strike 1.6/ReHLDS registers these user messages before the
@@ -276,18 +275,6 @@ namespace astrabot
 			: nav::NavVector{entity->v.origin.x, entity->v.origin.y, entity->v.origin.z};
 	}
 
-	bool isPlantedC4Entity(
-		const char *classname,
-		const char *model,
-		float damageTime,
-		float currentTime)
-	{
-	return classname != nullptr && model != nullptr &&
-		std::strcmp(classname, "grenade") == 0 &&
-		std::isfinite(damageTime) && damageTime > currentTime &&
-		(model[0] == '\0' || std::strstr(model, "w_c4.mdl") != nullptr);
-}
-
 			std::uint8_t movementMilliseconds(const globalvars_t *globals)
 			{
 				if (globals == nullptr || !std::isfinite(globals->frametime) ||
@@ -392,8 +379,8 @@ namespace astrabot
 		  hookedGameDllFunctions_(),
 		  engineFunctions_(nullptr), globals_(nullptr), lifecycle_(), actorRegistry_(),
 			  fakeClientManager_(lifecycle_, actorRegistry_),
-			  inputDispatcher_(lifecycle_, actorRegistry_), compatibilitySurface_(),
-			  compatibilityRandomSource_(), navLoader_(),
+	inputDispatcher_(lifecycle_, actorRegistry_), compatibilitySurface_(),
+	compatibilityRandomSource_(), observationAdapter_(), navLoader_(),
 			  navPublisher_(), navLoadDiagnostic_(), adapterFrameCount_(0U), pluginId_(nullptr),
 			  nativeBotGuard_(),
 	nativeGuardDecision_({NativeBotGuardState::Unsupported,
@@ -639,11 +626,12 @@ namespace astrabot
 					originalCommandArgc_ = engineFunctions->pfnCmd_Argc;
 				}
 			}
-			if (globals != nullptr)
-			{
-				globals_ = globals;
-			}
-			registerCompatibilityCvars();
+	if (globals != nullptr)
+	{
+		globals_ = globals;
+	}
+	observationAdapter_.configure(engineFunctions_, globals_);
+	registerCompatibilityCvars();
 			configureFakeClientManager();
 		}
 
@@ -1835,6 +1823,8 @@ bool PluginRuntime::buildManagedWorldSnapshot(
 	const world::ActorKey observer = {handle.actor.slot, handle.actor.actorGeneration};
 	const world::SnapshotIdentity identity = {frame, observer, 0U};
 	perception::PerceptionInput input(identity);
+	const compat::ObservationTimingContext observationTiming = {
+		managedBotCommandSequences_[index], 0U, 0U};
 	world::ActorKey nearestTarget = {0U, 0U};
 	world::WorldPosition nearestPosition = {0.0f, 0.0f, 0.0f};
 	float nearestDistanceSquared = (std::numeric_limits<float>::max)();
@@ -1866,8 +1856,22 @@ bool PluginRuntime::buildManagedWorldSnapshot(
 				return 0;
 			}
 		}
-		return 0;
+	return 0;
 	};
+	compat::CompatibilityObservation observerObservation = {};
+	if (observationAdapter_.collectActor(
+			handle.entity, observer, frame, observationTiming, &observerObservation) !=
+		ObservationAdapterResult::Accepted)
+	{
+		return false;
+	}
+	const world::WorldPosition observerPosition = observerObservation.player.origin.value;
+	const int observedObserverTeam = observerObservation.player.team.isAvailable()
+		? observerObservation.player.team.value
+		: 0;
+	const int observerTeam = observedObserverTeam >= 1
+		? observedObserverTeam
+		: effectiveTeam(handle.entity);
 	const int maxClients = std::max(0, std::min(globals_->maxClients, 32));
 	for (int slot = 1; slot <= maxClients; ++slot)
 	{
@@ -1882,16 +1886,23 @@ bool PluginRuntime::buildManagedWorldSnapshot(
 		const std::uint32_t generation = token.slotGeneration == 0U ? 1U : token.slotGeneration;
 		const world::ActorKey actor = {
 			static_cast<std::uint32_t>(slot), generation};
+		compat::CompatibilityObservation compatObservation = {};
+		if (observationAdapter_.collectActor(
+				entity, actor, frame, observationTiming, &compatObservation) !=
+			ObservationAdapterResult::Accepted ||
+			!compatObservation.player.origin.isAvailable() ||
+			!compatObservation.player.velocity.isAvailable())
+		{
+			continue;
+		}
 		world::ActorObservation observation = {};
 		observation.actor = actor;
 		observation.state = world::ObservationState::ObservedPresent;
-		observation.relation = entityTeam == effectiveTeam(handle.entity)
+		observation.relation = entityTeam == observerTeam
 			? world::TeamRelation::Friendly
 			: world::TeamRelation::Hostile;
-		observation.position = {
-			entity->v.origin.x, entity->v.origin.y, entity->v.origin.z};
-		observation.velocity = {
-			entity->v.velocity.x, entity->v.velocity.y, entity->v.velocity.z};
+		observation.position = compatObservation.player.origin.value;
+		observation.velocity = compatObservation.player.velocity.value;
 		observation.confidence = {1.0f, 0U};
 		if (input.addActor(observation) != perception::PerceptionInputResult::Accepted)
 		{
@@ -1899,9 +1910,9 @@ bool PluginRuntime::buildManagedWorldSnapshot(
 		}
 		if (observation.relation == world::TeamRelation::Hostile)
 		{
-			const float dx = entity->v.origin.x - handle.entity->v.origin.x;
-			const float dy = entity->v.origin.y - handle.entity->v.origin.y;
-			const float dz = entity->v.origin.z - handle.entity->v.origin.z;
+			const float dx = observation.position.x - observerPosition.x;
+			const float dy = observation.position.y - observerPosition.y;
+			const float dz = observation.position.z - observerPosition.z;
 			const float distanceSquared = dx * dx + dy * dy + dz * dz;
 			if (distanceSquared < nearestDistanceSquared)
 			{
@@ -1941,7 +1952,21 @@ bool PluginRuntime::buildManagedObjectiveTarget(
 	{
 		return false;
 	}
-	int team = static_cast<int>(handle.entity->v.team);
+	const world::FrameIdentity frame = {
+		lifecycle_.mapGeneration(), lifecycle_.roundGeneration(), adapterFrameCount_};
+	const world::ActorKey actor = {handle.actor.slot, handle.actor.actorGeneration};
+	const compat::ObservationTimingContext observationTiming = {
+		managedBotCommandSequences_[index], 0U, 0U};
+	compat::CompatibilityObservation compatObservation = {};
+	if (observationAdapter_.collectActor(
+			handle.entity, actor, frame, observationTiming, &compatObservation) !=
+		ObservationAdapterResult::Accepted)
+	{
+		return false;
+	}
+	int team = compatObservation.player.team.isAvailable()
+		? compatObservation.player.team.value
+		: static_cast<int>(handle.entity->v.team);
 	if (team < 1 && managedBotTeamNumbers_[index] >= 1U &&
 		managedBotTeamNumbers_[index] <= 2U)
 	{
@@ -1958,6 +1983,7 @@ bool PluginRuntime::buildManagedObjectiveTarget(
 	}
 
 	edict_t *plantedBomb = nullptr;
+	compat::ObjectiveObservation plantedObservation = {};
 	nav::NavVector selectedBombSite = {0.0f, 0.0f, 0.0f};
 	std::size_t selectedPathLength = (std::numeric_limits<std::size_t>::max)();
 	const nav::NavSnapshot navigation = navPublisher_.snapshot();
@@ -2044,13 +2070,15 @@ bool PluginRuntime::buildManagedObjectiveTarget(
 			}
 		}
 		const char *model = engineFunctions_->pfnSzFromIndex(entity->v.model);
-		if (plantedBomb == nullptr && isPlantedC4Entity(
-			classname, model, entity->v.dmgtime, globals_->time))
+	if (plantedBomb == nullptr && observationAdapter_.collectPlantedBomb(
+			entity, classname, model, globals_->time, actor, frame,
+			observationTiming, &plantedObservation) == ObservationAdapterResult::Accepted)
 		{
 			plantedBomb = entity;
 		}
 	}
-	const bool carryingBomb = (handle.entity->v.weapons & kC4WeaponBit) != 0;
+	const bool carryingBomb = compatObservation.objective.carryingC4.isAvailable() &&
+		compatObservation.objective.carryingC4.value;
 	if (team == 1 && carryingBomb && selectedPathLength !=
 		(std::numeric_limits<std::size_t>::max)())
 	{
@@ -2083,6 +2111,18 @@ ActionProposal PluginRuntime::decideManagedBotAction(
 		return proposal;
 	}
 	const FakeClientHandle &handle = managedBotHandles_[index];
+	const world::FrameIdentity frame = {
+		lifecycle_.mapGeneration(), lifecycle_.roundGeneration(), adapterFrameCount_};
+	const world::ActorKey actor = {handle.actor.slot, handle.actor.actorGeneration};
+	const compat::ObservationTimingContext observationTiming = {
+		managedBotCommandSequences_[index], 0U, 0U};
+	compat::CompatibilityObservation compatObservation = {};
+	if (observationAdapter_.collectActor(
+			handle.entity, actor, frame, observationTiming, &compatObservation) !=
+		ObservationAdapterResult::Accepted)
+	{
+		return proposal;
+	}
 	world::WorldSnapshot snapshot;
 	world::ActorKey targetActor = {};
 	world::WorldPosition targetPosition = {};
@@ -2099,7 +2139,9 @@ ActionProposal PluginRuntime::decideManagedBotAction(
 		}
 		return proposal;
 	}
-	int team = static_cast<int>(handle.entity->v.team);
+	int team = compatObservation.player.team.isAvailable()
+		? compatObservation.player.team.value
+		: static_cast<int>(handle.entity->v.team);
 	if (team < 1 && managedBotTeamNumbers_[index] >= 1U && managedBotTeamNumbers_[index] <= 2U)
 	{
 		team = static_cast<int>(managedBotTeamNumbers_[index]);
@@ -2141,8 +2183,9 @@ ActionProposal PluginRuntime::decideManagedBotAction(
 			return nullptr;
 		};
 
-		edict_t *bombSite = findEntityByClassname("func_bomb_target");
-		edict_t *plantedBomb = nullptr;
+	edict_t *bombSite = findEntityByClassname("func_bomb_target");
+	edict_t *plantedBomb = nullptr;
+	compat::ObjectiveObservation plantedObservation = {};
 		const int maxEntities = (std::max)(0, (std::min)(globals_->maxEntities, 2048));
 		for (int entityIndex = 1; entityIndex <= maxEntities; ++entityIndex)
 		{
@@ -2153,13 +2196,16 @@ ActionProposal PluginRuntime::decideManagedBotAction(
 			}
 			const char *classname = engineFunctions_->pfnSzFromIndex(entity->v.classname);
 			const char *model = engineFunctions_->pfnSzFromIndex(entity->v.model);
-			if (isPlantedC4Entity(classname, model, entity->v.dmgtime, globals_->time))
-			{
-				plantedBomb = entity;
-				break;
-			}
+		if (plantedBomb == nullptr && observationAdapter_.collectPlantedBomb(
+				entity, classname, model, globals_->time, actor, frame,
+				observationTiming, &plantedObservation) == ObservationAdapterResult::Accepted)
+		{
+			plantedBomb = entity;
+			break;
 		}
-		const bool carryingBomb = (handle.entity->v.weapons & kC4WeaponBit) != 0;
+	}
+	const bool carryingBomb = compatObservation.objective.carryingC4.isAvailable() &&
+		compatObservation.objective.carryingC4.value;
 		if ((adapterFrameCount_ % 16U) == 0U && gpMetaUtilFuncs != nullptr &&
 				gpMetaUtilFuncs->pfnLogConsole != nullptr && pluginId_ != nullptr)
 		{

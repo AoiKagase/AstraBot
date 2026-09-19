@@ -28,6 +28,15 @@ public:
 		const world::FrameIdentity &frame,
 		const compat::ObservationTimingContext &timing,
 		compat::CompatibilityObservation *observation) const;
+	ObservationAdapterResult collectPlantedBomb(
+		edict_t *entity,
+		const char *classname,
+		const char *model,
+		float currentTime,
+		const world::ActorKey &actor,
+		const world::FrameIdentity &frame,
+		const compat::ObservationTimingContext &timing,
+		compat::ObjectiveObservation *observation) const;
 	void setTraceSink(compat::IObservationTraceSink *sink);
 
 private:
