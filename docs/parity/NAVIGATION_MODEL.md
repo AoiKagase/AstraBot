@@ -116,3 +116,11 @@ The following remain `Unit/reference semantics verified; Live parity unverified`
 - jump/drop collision, landing, fall damage, doors/use, and actual `RunPlayerMove` result;
 - dynamic danger, teammate density, aggression, hostage escort, and private GameDLL state;
 - real-map NAV geometry and sustained autonomous traversal on HLDS/ReHLDS.
+# P07.6 production integration
+
+Production Compatibility uses `Roam` as the pre-P08 Goal producer when no
+observed public objective target is available. A temporary current-area miss
+does not retire an active corridor; map/round, goal, invalidation, and bounded
+stuck transitions remain the explicit retirement conditions. The adapter logs
+Goal presence, current/goal area, path request/result, route identity, and NAV
+apply rejection separately.

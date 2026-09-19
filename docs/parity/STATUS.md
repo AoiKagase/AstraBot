@@ -1,5 +1,13 @@
 # CSBot Parity Status
 
+## P07.6 production runtime integration audit
+
+`PARTIAL` — the production adapter now has a public freeze execution gate,
+typed Goal/NAV transaction diagnostics, persistent-route temporary-area
+handling, and opt-in one-second profiler counters. Focused x86 tests are
+offline evidence only. Fresh live HLDS/ReHLDS freeze, Goal, physical progress,
+FPS, and multi-Bot intervals remain open. `P08 NOT STARTED`.
+
 ## P06 result: PARTIAL
 
 | Gate | Result | Evidence / limitation |

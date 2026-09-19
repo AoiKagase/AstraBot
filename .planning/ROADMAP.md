@@ -234,3 +234,13 @@ Phases execute sequentially: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 | 6. Baseline locomotion | 5/5 | Complete (offline) | 2026-09-16 |
 | 7. CSBot behavior parity | 6/6 | Complete (offline) | 2026-09-16 |
 | 8. Differential and live parity acceptance | 0/5 | In progress (partial Windows live evidence; autonomous action failed; gap closure active) | 2026-09-18 |
+# P07.6 Production Runtime Integration Audit & Repair
+
+Status: in progress/offline repair complete; live acceptance remains pending.
+This gap-closure phase audits and repairs the production chain from
+StartFrame through freeze execution, Compatibility Goal, current/goal NAV
+areas, persistent path, movement intent, and public RunPlayerMove. It does not
+start Combat or P08. `P08 NOT STARTED`.
+
+Plans: 4 implementation tasks (freeze gate, Goal/NAV transaction, profiler,
+documentation/live procedure).

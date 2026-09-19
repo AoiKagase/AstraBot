@@ -150,3 +150,9 @@ full CSBot behavior remain open.
 - Jump/drop and ladder state boundaries are offline tested. Actual collision, ladder mount/climb/dismount, jump landing, door/use, and `RunPlayerMove` results remain live-unverified.
 - Stuck recovery remains bounded and deterministic at the AstraBot boundary. Exact CSBot averaged velocity threshold, wiggle RNG call order, and engine response remain unverified.
 - P07 does not change P02 cadence, P03 shared Compatibility RNG ownership, P04 observation quality/freshness, P05 state ownership, P06 belief/last-known isolation, combat, economy, or objective tactical decisions.
+# P07.6 production runtime note
+
+Public `FL_FROZEN` and finite `edict_t::v.maxspeed` projections gate execution;
+private GameRules state remains outside the clean-room boundary. Typed Goal/NAV
+transactions and opt-in profiler counters are offline verified. Live FPS,
+TraceLine cadence, physical Goal progress, and multi-Bot scaling remain open.

@@ -120,4 +120,6 @@ below. Those rows are retained as an audit trail of the pre-P05 baseline.
 | Stuck | averaged velocity, wiggle, bounded recovery | bounded offline stuck/recovery fixture | PARTIAL |
 | Enhanced isolation | adaptive route/learning outside compatibility baseline | explicit RuntimeMode route policy fixture | IMPLEMENTED_OFFLINE_VERIFIED |
 
+| Production runtime integration | authoritative freeze gate, Compatibility Goal, typed NAV transaction, public movement dispatch | `MovementExecutionGate`, `NavRoamDecision`, sampled movement diagnostic, `RuntimeProfiler` | IMPLEMENTED_OFFLINE_VERIFIED; live acceptance pending |
+
 These counts describe the rows above, not feature completeness or live acceptance.

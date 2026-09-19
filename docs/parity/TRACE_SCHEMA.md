@@ -158,3 +158,10 @@ Navigation diagnostics use semantic IDs and bounded records. They must not be re
 | `forward`, `side`, `duck`, `jump`, `ladder_state` | Movement command/traversal intent fields; view/aim is a separate boundary |
 
 `NavRoamDecision` carries the bounded offline fixture form of these values: route sequence, Full Update sequence, recompute reason, selected path, route type, path cost, corridor index, link `how`, and traversal intent. Engine trace parity and exact RNG placement remain unverified.
+# P07.6 production transaction
+
+The sampled adapter diagnostic adds `goalPresent`, `goalKind`, `goalArea`,
+`pathRequested`, `pathResult`, and typed `failureReason` values including
+`NoGoal`, `GoalAreaMissing`, `CurrentAreaMissing`, `PathSearchFailed`,
+`NavApplyRejected`, and `MovementNotProduced`. It is actor/frame scoped and
+bounded; it is not emitted every frame.

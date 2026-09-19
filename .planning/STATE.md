@@ -1,12 +1,12 @@
 ---
 gsd_state_version: "1.0"
-current_phase: 8
-current_phase_name: Differential live parity acceptance
+current_phase: "7.6"
+current_phase_name: Production Runtime Integration Audit & Repair
 status: executing
-stopped_at: Phase 7 offline behavior gate complete, ready to execute Phase 8
-last_updated: "2026-09-18T19:15:00+09:00"
-last_activity: 2026-09-18
-last_activity_desc: Plan 08-07 movement boundary repaired offline; full Windows x86 CTest 42/42 passed and DLL 8512034d...a6180880 deployed, but HLDS launch terminated before a post-spawn live observation and C4 remains pending
+stopped_at: P07.6 offline repair complete; live evidence pending; P08 NOT STARTED
+last_updated: "2026-09-20T00:00:00+09:00"
+last_activity: 2026-09-20
+last_activity_desc: P07.6 freeze gate, Goal/NAV transaction, and opt-in profiler implemented offline; live HLDS/ReHLDS measurement remains pending; P08 NOT STARTED
 state_head: 433235f
 progress:
   total_phases: 8

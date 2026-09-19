@@ -113,3 +113,9 @@ When a future Compatibility callsite is reached inside an existing scheduler
 event, the caller may attach the already-observed command/upkeep/full-update
 sequence values to the RNG record. A zero value means that no timing context
 was available; it is not a new scheduler event.
+# P07.6 timing boundary
+
+P07.6 keeps the scheduler contract unchanged. Freeze is an execution gate after
+decision production: full updates continue, stale movement is invalidated
+rather than replayed after thaw, and `astrabot_profile` reports aggregate
+stage/counter windows once per second while disabled by default.
