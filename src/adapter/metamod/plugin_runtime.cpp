@@ -48,6 +48,11 @@ namespace astrabot
 		}
 	}
 
+	const char *runtimeModeName(compat::RuntimeMode mode)
+	{
+		return mode == compat::RuntimeMode::Enhanced ? "enhanced" : "compatibility";
+	}
+
 			bool equalsIgnoreCase(const char *left, const char *right)
 			{
 				if (left == nullptr || right == nullptr)
@@ -343,7 +348,8 @@ namespace astrabot
 				Stop,
 				Difficulty,
 				Quota,
-				JoinTeam
+				JoinTeam,
+				Mode
 			};
 
 			char kBotEnableName[] = "bot_enable";
@@ -356,6 +362,8 @@ namespace astrabot
 			char kBotQuotaDefault[] = "0";
 			char kBotJoinTeamName[] = "bot_join_team";
 			char kBotJoinTeamDefault[] = "any";
+			char kAstrabotModeName[] = "astrabot_mode";
+			char kAstrabotModeDefault[] = "compatibility";
 
 			cvar_t kBotEnableCvar = {kBotEnableName, kBotEnableDefault, FCVAR_SERVER, 0.0f,
 									 nullptr};
@@ -365,13 +373,17 @@ namespace astrabot
 			cvar_t kBotQuotaCvar = {kBotQuotaName, kBotQuotaDefault, FCVAR_SERVER, 0.0f, nullptr};
 			cvar_t kBotJoinTeamCvar = {kBotJoinTeamName, kBotJoinTeamDefault, FCVAR_SERVER, 0.0f,
 									   nullptr};
+			cvar_t kAstrabotModeCvar = {kAstrabotModeName, kAstrabotModeDefault, FCVAR_SERVER, 0.0f,
+										 nullptr};
 
 			cvar_t *const kCompatibilityCvars[] = {&kBotEnableCvar, &kBotStopCvar,
 												   &kBotDifficultyCvar, &kBotQuotaCvar,
-												   &kBotJoinTeamCvar};
+																				   &kBotJoinTeamCvar,
+																				   &kAstrabotModeCvar};
 
 			const char *const kCompatibilityCvarNames[] = {
-				kBotEnableName, kBotStopName, kBotDifficultyName, kBotQuotaName, kBotJoinTeamName};
+				kBotEnableName, kBotStopName, kBotDifficultyName, kBotQuotaName, kBotJoinTeamName,
+				kAstrabotModeName};
 
 		} // namespace
 
@@ -680,11 +692,18 @@ namespace astrabot
 				compatibilitySurface_.setString(
 					"bot_join_team", engineFunctions_->pfnCVarGetString("bot_join_team"));
 			}
+			if (engineFunctions_->pfnCVarGetPointer("astrabot_mode") != nullptr &&
+				engineFunctions_->pfnCVarGetString != nullptr)
+			{
+				compatibilitySurface_.setString(
+					"astrabot_mode", engineFunctions_->pfnCVarGetString("astrabot_mode"));
+			}
 		}
 
 		PluginRuntime::Snapshot PluginRuntime::snapshot() const
 		{
 			Snapshot current = {state_,
+								compatibilitySurface_.configuration().mode,
 								lifecycle_.mapGeneration(),
 								lifecycle_.roundGeneration(),
 								nativeGuardDecision_.state,
@@ -806,6 +825,10 @@ runtime::MovementPhysicsSample PluginRuntime::movementPhysicsSample(std::uint32_
 						gpMetaUtilFuncs->pfnLogConsole(
 							pluginId_, "menu message ids show=%d vgui=%d team=%d",
 							showMenuId, vguiMenuId, teamInfoId);
+						const compat::RuntimeMode mode = compatibilitySurface_.configuration().mode;
+						gpMetaUtilFuncs->pfnLogConsole(
+							pluginId_, "runtime mode=%s map=%u round=%u",
+							runtimeModeName(mode), lifecycle_.mapGeneration(), lifecycle_.roundGeneration());
 					}
 				}
 			}
@@ -2696,8 +2719,9 @@ void PluginRuntime::resetManagedBotMovement()
 				pluginId_ != nullptr)
 			{
 				gpMetaUtilFuncs->pfnLogConsole(
-					pluginId_, "compat command=%s result=%d map=%u round=%u frame=%u",
+					pluginId_, "compat command=%s result=%d mode=%s map=%u round=%u frame=%u",
 					request.name != nullptr ? request.name : "<null>", static_cast<int>(result),
+					runtimeModeName(compatibilitySurface_.configuration().mode),
 					lifecycle_.mapGeneration(), lifecycle_.roundGeneration(), adapterFrameCount_);
 			}
 		}

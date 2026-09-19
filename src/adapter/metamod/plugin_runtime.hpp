@@ -51,6 +51,7 @@ namespace astrabot
 			struct Snapshot
 			{
 				State state;
+                compat::RuntimeMode mode;
 				runtime::LifecycleGeneration mapGeneration;
 				runtime::LifecycleGeneration roundGeneration;
 				NativeBotGuardState nativeGuardState;
@@ -105,7 +106,7 @@ namespace astrabot
 													 std::uint32_t dispatchFrame);
 
 		  private:
-			static constexpr std::size_t kCompatibilityCvarCount = 5U;
+			static constexpr std::size_t kCompatibilityCvarCount = 6U;
 
 		enum class UserMessageKind : std::uint8_t
 		{

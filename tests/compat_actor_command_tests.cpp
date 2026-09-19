@@ -21,7 +21,7 @@ namespace
 	bool gMenuClassContextValid = false;
 	DLL_FUNCTIONS gHookedGameDllTable{};
 	bool gNativeControlsAvailable = false;
-	bool gCompatibilityCvarsRegistered[5] = {};
+bool gCompatibilityCvarsRegistered[6] = {};
 	int gCvarRegisterCount = 0;
 	float gBotEnable = 0.0f;
 	float gBotQuota = 0.0f;
@@ -30,6 +30,7 @@ namespace
 	cvar_t gBotDifficultyCvar{};
 	cvar_t gBotQuotaCvar{};
 	cvar_t gBotJoinTeamCvar{};
+cvar_t gAstrabotModeCvar{};
 
 	bool check(bool condition, const char *description)
 	{
@@ -121,6 +122,11 @@ namespace
 			return gNativeControlsAvailable || gCompatibilityCvarsRegistered[4] ? &gBotJoinTeamCvar
 																				: nullptr;
 		}
+        if (std::strcmp(name, "astrabot_mode") == 0)
+        {
+            return gNativeControlsAvailable || gCompatibilityCvarsRegistered[5] ? &gAstrabotModeCvar
+                                                        : nullptr;
+        }
 		return nullptr;
 	}
 
@@ -157,8 +163,8 @@ namespace
 			return;
 		}
 		const char *const names[] = {"bot_enable", "bot_stop", "bot_difficulty", "bot_quota",
-									 "bot_join_team"};
-		for (std::size_t index = 0U; index < 5U; ++index)
+            "bot_join_team", "astrabot_mode"};
+        for (std::size_t index = 0U; index < 6U; ++index)
 		{
 			if (std::strcmp(variable->name, names[index]) == 0)
 			{
@@ -399,7 +405,7 @@ int main()
 	runtime.onStartFrame();
 	if (!check(runtime.executeCompatibilityCommand(request("bot_add")) ==
 				  CompatibilityCommandResult::Handled &&
-				  gCreateCount == 1 && gCvarRegisterCount == 5 &&
+                  gCreateCount == 1 && gCvarRegisterCount == 6 &&
 				  gClientCommandCount == 0 && gClientKeyValueCount >= 2,
 			   "bot_add loads the default BotProfile database during activation"))
 	{

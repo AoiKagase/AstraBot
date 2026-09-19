@@ -95,8 +95,18 @@ state-level match.
 | Behavior/objectives | bounded behavior state machine, proposals, bomb/hostage/buy proposal contracts | `src/core/behavior/*`, `src/core/objectives/*`; not a CSBot state graph |
 | Combat/weapons | target belief, aim intent, weapon inventory and reload intent | `src/core/combat/*`; runtime builds a synthetic rifle record |
 | Team/radio | team reports and radio intent/cooldown contracts | `src/core/team/*`; no live delivery/chatter |
-| Compatibility/profile | command/CVAR surface, profile catalog/loader, native bot guard | `src/core/compat/*`, `src/adapter/metamod/*`; no explicit enhanced-mode gate found |
-| Tests and evidence | 42 CTest targets passed; phase8 PowerShell fixture checks passed; Python process unavailable | `CMakeLists.txt`, `tests/`, `docs/evidence/` |
+| Compatibility/profile | command/CVAR surface, profile catalog/loader, native bot guard | `src/core/compat/*`, `src/adapter/metamod/*`; `RuntimeMode`, `RuntimeModePolicy`, and `PluginRuntime::Snapshot::mode` define the P01 boundary |
+| Tests and evidence | P00 CTest 42/42; P01 CTest 43/43; phase8 PowerShell fixture checks passed; Python process unavailable | `CMakeLists.txt`, `tests/`, `docs/evidence/` |
+
+## P01 compatibility boundary
+
+`CvarState` is the single source for `RuntimeMode::Compatibility` (default) and
+`RuntimeMode::Enhanced`, selected by the `astrabot_mode` server CVar and exposed
+through `CompatibilitySurface`. `RuntimeModePolicy` provides the five enhanced
+capability predicates; all are false in Compatibility Mode and true in Enhanced
+Mode. `PluginRuntime::Snapshot::mode` and runtime diagnostics make the selected
+mode observable. Existing Nav/Combat/Objective controllers remain unproven
+baseline candidates; no controller is promoted to `MATCH` by P01.
 
 ## Transitive reference surfaces requiring future mapping
 

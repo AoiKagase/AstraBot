@@ -33,6 +33,7 @@ include(cmake/AstraBotBuild.cmake)
   src/core/runtime/actor_registry.cpp
   src/core/compat/command_registry.cpp
   src/core/compat/cvar_state.cpp
+  src/core/compat/runtime_mode_policy.cpp
   src/core/compat/bot_configuration.cpp
   src/core/compat/profile_catalog.cpp
   src/core/nav/nav_model.cpp
@@ -202,6 +203,16 @@ if(ASTRABOT_BUILD_TESTS)
   target_link_libraries(astrabot_bot_configuration PRIVATE astrabot_core)
   astrabot_apply_warnings(astrabot_bot_configuration)
   add_test(NAME astrabot_bot_configuration COMMAND astrabot_bot_configuration)
+
+  add_executable(astrabot_runtime_mode_policy
+    tests/runtime_mode_policy_tests.cpp
+  )
+  target_include_directories(astrabot_runtime_mode_policy PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+  )
+  target_link_libraries(astrabot_runtime_mode_policy PRIVATE astrabot_core)
+  astrabot_apply_warnings(astrabot_runtime_mode_policy)
+  add_test(NAME astrabot_runtime_mode_policy COMMAND astrabot_runtime_mode_policy)
 
   add_executable(astrabot_nav_model
     tests/nav_model_tests.cpp

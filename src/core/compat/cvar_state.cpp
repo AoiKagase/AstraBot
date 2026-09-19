@@ -43,7 +43,7 @@ namespace compat
 	}
 
 	CvarState::CvarState()
-		: state_{0.0f, 0.0f, 1, 0, JoinTeam::Any}
+		: state_{0.0f, 0.0f, 1, 0, JoinTeam::Any, RuntimeMode::Compatibility}
 	{
 	}
 
@@ -101,6 +101,24 @@ namespace compat
 
 	CvarUpdateResult CvarState::setString(const char *name, const char *value)
 	{
+		if (name != nullptr && std::strcmp(name, "astrabot_mode") == 0)
+		{
+			RuntimeMode mode = RuntimeMode::Compatibility;
+			if (equalsIgnoreCase(value, "enhanced"))
+			{
+				mode = RuntimeMode::Enhanced;
+			}
+			else if (!equalsIgnoreCase(value, "compatibility"))
+			{
+				return CvarUpdateResult::InvalidValue;
+			}
+			if (state_.mode == mode)
+			{
+				return CvarUpdateResult::NoChange;
+			}
+			state_.mode = mode;
+			return CvarUpdateResult::Updated;
+		}
 		if (name == nullptr || std::strcmp(name, "bot_join_team") != 0)
 		{
 			return CvarUpdateResult::Unknown;

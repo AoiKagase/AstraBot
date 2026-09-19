@@ -171,6 +171,11 @@ int main()
 	{
 		return 1;
 	}
+    if (!check(activeSnapshot.mode == astrabot::compat::RuntimeMode::Compatibility,
+               "server activation defaults to compatibility mode"))
+    {
+        return 1;
+    }
 	if (!check(activeSnapshot.mapGeneration != 0U, "server activation creates map generation"))
 	{
 		return 1;

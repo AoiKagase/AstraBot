@@ -21,12 +21,13 @@ int main()
 	using astrabot::compat::CvarState;
 	using astrabot::compat::CvarUpdateResult;
 	using astrabot::compat::JoinTeam;
+	using astrabot::compat::RuntimeMode;
 
 	CvarState state;
 	const auto defaults = state.snapshot();
 	if (!check(defaults.botEnable == 0.0f && defaults.botStop == 0.0f &&
 			defaults.botDifficulty == 1 && defaults.botQuota == 0 &&
-			defaults.botJoinTeam == JoinTeam::Any, "default desired CVar state"))
+		defaults.botJoinTeam == JoinTeam::Any && defaults.mode == RuntimeMode::Compatibility, "default desired CVar state"))
 	{
 		return 1;
 	}
@@ -58,8 +59,35 @@ int main()
 	const auto changed = state.snapshot();
 	if (!check(changed.botEnable == 1.0f && changed.botStop == 1.0f &&
 			changed.botDifficulty == 4 && changed.botQuota == 32 &&
-			changed.botJoinTeam == JoinTeam::CounterTerrorist,
+			changed.botJoinTeam == JoinTeam::CounterTerrorist && changed.mode == RuntimeMode::Compatibility,
 			"valid CVar updates are visible"))
+	{
+		return 1;
+	}
+	if (!check(state.setString("astrabot_mode", "enhanced") == CvarUpdateResult::Updated,
+			"mode accepts enhanced"))
+	{
+		return 1;
+	}
+	if (!check(state.snapshot().mode == RuntimeMode::Enhanced, "enhanced mode is visible"))
+	{
+		return 1;
+	}
+	if (!check(state.setString("astrabot_mode", "COMPATIBILITY") == CvarUpdateResult::Updated,
+			"mode accepts compatibility case-insensitively"))
+	{
+		return 1;
+	}
+	if (!check(state.snapshot().mode == RuntimeMode::Compatibility, "compatibility mode is visible"))
+	{
+		return 1;
+	}
+	if (!check(state.setString("astrabot_mode", "experimental") == CvarUpdateResult::InvalidValue,
+			"mode rejects unknown value"))
+	{
+		return 1;
+	}
+	if (!check(state.snapshot().mode == RuntimeMode::Compatibility, "invalid mode leaves state unchanged"))
 	{
 		return 1;
 	}

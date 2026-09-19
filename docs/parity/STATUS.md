@@ -3,7 +3,8 @@
 ## P00 result
 
 `PASS` for the P00 audit artifact set. This does not mean the CSBot-compatible
-baseline passes. Compatibility mode remains `not established`.
+baseline passes. The Compatibility Mode boundary is `implemented_unverified`;
+behavioral parity remains `not established`.
 
 P00 was analysis/documentation only. No gameplay implementation, Astra extension,
 or reference source was changed.
@@ -34,19 +35,25 @@ or reference source was changed.
 | Plan | Status | Result / blocker |
 |---|---|---|
 | P00 | complete | reference frozen; source map, matrices, observations and blockers recorded |
-| P01 | pending | establish an explicit compatibility/enhanced boundary after review of P00 |
+| P01 | complete | explicit runtime mode, policy isolation, snapshot diagnostics, and regression tests |
 | P02-P12 | pending | timing through live parity depend on the preceding contracts and evidence |
 | P13 | deferred | enhanced intelligence remains downstream of the baseline |
 
 The repository's existing `.planning/STATE.md` is not rewritten by this audit;
 its Phase 8 live-gap state remains authoritative for that separate workstream.
 
-## P01 readiness
+## P02 readiness
 
-`NO` for claiming or implementing parity behavior immediately: the critical
-timing, RNG, private-state, visibility, state-machine, and mode-gating blockers
-remain. `YES` only to begin P01 planning/review using this artifact set as the
-entry point.
+`NO` for claiming CSBot behavioral parity. P02 planning may begin, but timing,
+RNG, private-state, visibility, state-machine, NAV, combat, and live blockers
+remain open.
+
+## P01 verification
+
+- Windows x86 configure/build: PASS
+- CTest: 43/43 PASS, including `astrabot_runtime_mode_policy`
+- Phase 8 PowerShell fixture and action-boundary checks: PASS
+- New live HLDS/ReHLDS run: NOT RUN (out of P01 scope)
 
 ## Required next evidence
 

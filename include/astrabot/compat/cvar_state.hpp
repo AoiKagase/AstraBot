@@ -12,6 +12,12 @@ namespace compat
 		CounterTerrorist
 	};
 
+	enum class RuntimeMode
+	{
+		Compatibility,
+		Enhanced
+	};
+
 	enum class CvarUpdateResult
 	{
 		Updated,
@@ -27,6 +33,7 @@ namespace compat
 		int botDifficulty;
 		int botQuota;
 		JoinTeam botJoinTeam;
+		RuntimeMode mode;
 	};
 
 	class CvarState

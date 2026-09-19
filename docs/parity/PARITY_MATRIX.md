@@ -39,12 +39,12 @@
 | Team/radio | radio command handling, help, chatter and behavior effects | `TeamReportBoard`, `RadioController` | PARTIAL | intent and cooldown contracts exist; no live radio/chatter dispatch |
 | Private state | exact CBasePlayer/CBasePlayerWeapon/GameState access | public `edict_t` and engine APIs | DIFFERENT | many CSBot inputs are unavailable or inferred; see `OBSERVATION_MATRIX.md` |
 | Differential oracle | replayable reference/Astra traces with exact state/RNG/command comparison | `tests/phase8_differential.py`, `docs/TRACE_SCHEMA.md` | IMPLEMENTED_UNVERIFIED | schema/rejection checks exist; pinned reference trace and RNG records are absent |
-| Mode boundary | compatibility baseline isolated from Astra intelligence | `compat_surface` plus core controllers | ASTRA_EXTENSION | no explicit compatibility/enhanced runtime mode gate was found; policy is not established |
+| Mode boundary | compatibility baseline isolated from Astra intelligence | `CvarState`, `RuntimeModePolicy`, `CompatibilitySurface`, `PluginRuntime::Snapshot` | IMPLEMENTED_UNVERIFIED | default `compatibility` mode, `astrabot_mode` selection, observable snapshot, and capability isolation tests; behavioral parity remains unproven |
 | Safety boundary | actor generations, stale command rejection, native bot guard | lifecycle/queue/native guard | ASTRA_EXTENSION | useful Astra infrastructure; not a CSBot behavior match and must remain behavior-neutral |
 
 ## Current count
 
-`MATCH 0`, `IMPLEMENTED_UNVERIFIED 4`, `PARTIAL 10`, `MISSING 8`,
-`DIFFERENT 5`, `ASTRA_EXTENSION 2`, `NOT_APPLICABLE 0`.
+`MATCH 0`, `IMPLEMENTED_UNVERIFIED 5`, `PARTIAL 10`, `MISSING 8`,
+`DIFFERENT 5`, `ASTRA_EXTENSION 1`, `NOT_APPLICABLE 0`.
 
 These counts describe the rows above, not feature completeness or live acceptance.

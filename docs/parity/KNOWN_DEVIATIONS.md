@@ -4,10 +4,12 @@ These are audit findings, not implementation instructions executed in P00.
 
 ## Critical
 
-1. **No proven compatibility-mode boundary.** Current `compat` code provides
-   commands, CVARs, profiles, and safety controls, but no explicit runtime mode
-   that guarantees enhanced behavior is inert. `PluginRuntime` owns core combat,
-   objective, and navigation controllers directly. This is the first P01 concern.
+1. **Compatibility boundary is implemented but not behavioral parity.** P01 adds
+   `RuntimeMode::Compatibility` as the default, the `astrabot_mode` CVar,
+   `RuntimeModePolicy` isolation predicates, and observable runtime diagnostics.
+   The current runtime has no connected enhanced decision implementation, so the
+   existing Nav/Combat/Objective controllers remain unproven baseline candidates;
+   this does not promote any row to `MATCH`.
 2. **Think timing is different.** CSBot has a 30Hz command interval and a 10Hz
    full-AI interval inside `CBot::BotThink`. Astra calls
    `updateManagedBotMovement()` from the post-StartFrame hook and does not expose
