@@ -1,4 +1,5 @@
 #include "plugin_runtime.hpp"
+#include "astrabot/metamod/movement_execution_gate.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -52,7 +53,7 @@ namespace astrabot
 		return mode == compat::RuntimeMode::Enhanced ? "enhanced" : "compatibility";
 	}
 
-			bool equalsIgnoreCase(const char *left, const char *right)
+	bool equalsIgnoreCase(const char *left, const char *right)
 			{
 				if (left == nullptr || right == nullptr)
 				{
@@ -194,6 +195,18 @@ namespace astrabot
 					return 0.0f;
 				}
 		return std::atan2(direction.y, direction.x) * kRadiansToDegrees;
+	}
+
+	float readOptionalCvarFloat(enginefuncs_t *engineFunctions, const char *name)
+	{
+		if (engineFunctions == nullptr || name == nullptr ||
+			engineFunctions->pfnCVarGetPointer == nullptr ||
+			engineFunctions->pfnCVarGetFloat == nullptr ||
+			engineFunctions->pfnCVarGetPointer(name) == nullptr)
+		{
+			return 0.0f;
+		}
+		return engineFunctions->pfnCVarGetFloat(name);
 	}
 
 	bool entityObjectiveBounds(const edict_t *entity, nav::NavExtent *extent)
@@ -1711,26 +1724,6 @@ void PluginRuntime::updateManagedBotMovement()
 		const ActionDispatch actionDispatch = ActionAdapter::translate(actionProposal);
 		command.viewAngles = actionDispatch.viewAngles;
 		command.movement.buttons = actionDispatch.buttons;
-		if (!actionDispatch.stopMovement && handle.entity->v.maxspeed <= 1.0f)
-		{
-			handle.entity->v.maxspeed = kDefaultManagedBotMaxSpeed;
-			if (engineFunctions_ != nullptr &&
-					engineFunctions_->pfnSetClientMaxspeed != nullptr)
-			{
-				engineFunctions_->pfnSetClientMaxspeed(
-					handle.entity, kDefaultManagedBotMaxSpeed);
-			}
-			if (gpMetaUtilFuncs != nullptr && gpMetaUtilFuncs->pfnLogConsole != nullptr &&
-					pluginId_ != nullptr)
-			{
-				gpMetaUtilFuncs->pfnLogConsole(
-					pluginId_, "movement speed restored actor=%u generation=%u frame=%u maxspeed=%.1f",
-					static_cast<unsigned int>(handle.actor.slot),
-					static_cast<unsigned int>(handle.actor.actorGeneration),
-					static_cast<unsigned int>(adapterFrameCount_),
-					kDefaultManagedBotMaxSpeed);
-			}
-		}
 		const MovementProjection movementProjection = ActionAdapter::projectMovement(
 			locomotionIntent.direction.x,
 			locomotionIntent.direction.y,
@@ -2528,17 +2521,45 @@ runtime::CommandReceipt PluginRuntime::executeManagedBotCommand(
 	runtime::BotCommand command = managedBotCommandTemplates_[index];
 	command.sequence = ++managedBotCommandSequences_[index];
 	command.issueFrame = adapterFrameCount_;
-	const bool frozen = (handle.entity->v.flags & FL_FROZEN) != 0;
-	if (frozen)
+	if (globals_ == nullptr)
 	{
-		command.movement.forward = 0.0f;
-		command.movement.side = 0.0f;
-		command.movement.up = 0.0f;
-		command.movement.buttons = 0U;
-		command.movement.msec = 0U;
+		receipt.result = runtime::DispatchResult::EngineUnavailable;
+		return receipt;
+	}
+	command.movement.msec = managedBotTiming_[index].consumeCommandMsec(globals_->time);
+	const float maxSpeed = handle.entity->v.maxspeed;
+	MovementExecutionObservation gateObservation = {};
+	gateObservation.explicitFrozen = (handle.entity->v.flags & FL_FROZEN) != 0;
+	gateObservation.maxSpeedAvailable = std::isfinite(maxSpeed) && maxSpeed > 0.0f;
+	gateObservation.maxSpeed = maxSpeed;
+	gateObservation.forward = command.movement.forward;
+	gateObservation.side = command.movement.side;
+	gateObservation.up = command.movement.up;
+	gateObservation.buttons = command.movement.buttons;
+	gateObservation.msec = command.movement.msec;
+	gateObservation.freezetimeDuck = readOptionalCvarFloat(
+		engineFunctions_, "freezetime_duck");
+	gateObservation.freezetimeJump = readOptionalCvarFloat(
+		engineFunctions_, "freezetime_jump");
+	const MovementExecutionDecision gateDecision =
+		MovementExecutionGate::evaluate(gateObservation);
+	if (gateDecision.phase == MovementExecutionPhase::Live &&
+			(!std::isfinite(maxSpeed) || maxSpeed <= 0.0f))
+	{
+		handle.entity->v.maxspeed = kDefaultManagedBotMaxSpeed;
+		if (engineFunctions_ != nullptr &&
+				engineFunctions_->pfnSetClientMaxspeed != nullptr)
+		{
+			engineFunctions_->pfnSetClientMaxspeed(
+				handle.entity, kDefaultManagedBotMaxSpeed);
+		}
+	}
+	if (gateDecision.phase == MovementExecutionPhase::ControlFrozen)
+	{
 		if (engineFunctions_ == nullptr || engineFunctions_->pfnRunPlayerMove == nullptr)
 		{
 			receipt.result = runtime::DispatchResult::EngineUnavailable;
+			resetManagedBotCommandTemplate(index);
 			return receipt;
 		}
 		const float viewAngles[3] = {
@@ -2554,18 +2575,27 @@ runtime::CommandReceipt PluginRuntime::executeManagedBotCommand(
 		resetManagedBotCommandTemplate(index);
 		return receipt;
 	}
-	if (globals_ == nullptr)
-	{
-		receipt.result = runtime::DispatchResult::EngineUnavailable;
-		return receipt;
-	}
-	command.movement.msec = managedBotTiming_[index].consumeCommandMsec(globals_->time);
+	command.movement.forward = gateDecision.forward;
+	command.movement.side = gateDecision.side;
+	command.movement.up = gateDecision.up;
+	command.movement.buttons = gateDecision.buttons;
+	command.movement.msec = gateDecision.msec;
 	if (inputDispatcher_.enqueue(command) != runtime::QueueResult::Accepted)
 	{
 		receipt.result = runtime::DispatchResult::InvalidCommand;
+		if (gateDecision.invalidateTemplate)
+		{
+			resetManagedBotCommandTemplate(index);
+		}
 		return receipt;
 	}
-	return inputDispatcher_.dispatchNext(handle.actor, adapterFrameCount_);
+	const runtime::CommandReceipt dispatchReceipt =
+		inputDispatcher_.dispatchNext(handle.actor, adapterFrameCount_);
+	if (gateDecision.invalidateTemplate)
+	{
+		resetManagedBotCommandTemplate(index);
+	}
+	return dispatchReceipt;
 }
 
 runtime::CommandReceipt PluginRuntime::dispatchNeutralMovement(
