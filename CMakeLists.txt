@@ -46,7 +46,8 @@ include(cmake/AstraBotBuild.cmake)
 	  src/core/runtime/bot_command.cpp
 	src/core/runtime/nav_roam_controller.cpp
 	src/core/runtime/movement_physics.cpp
-	src/core/runtime/command_queue.cpp
+  src/core/runtime/command_queue.cpp
+  src/core/runtime/bot_timing_scheduler.cpp
   src/core/runtime/lifecycle.cpp
 )
 target_include_directories(astrabot_core PUBLIC

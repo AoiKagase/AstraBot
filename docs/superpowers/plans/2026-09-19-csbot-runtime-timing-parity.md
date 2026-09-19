@@ -54,10 +54,13 @@ the existing `check(bool, const char *)` executable style. The test must include
 the not-yet-existing scheduler header and assert:
 
 - `reset(10.0f)` followed by `advance(10.0f)` emits no events;
-- `advance(10.0333334f)` emits exactly
+- `advance(10.0334f)` emits exactly `Upkeep`, `CommandExecute`, because the
+  reference initializes the full-update deadline independently at spawn plus
+  100ms;
+- `advance(10.1001f)` then emits exactly
   `Upkeep`, `CommandReset`, `FullUpdate`, `CommandExecute`;
-- the next deadlines are `10.0333334f + 1.0f / 30.0f` and
-  `10.0333334f + 1.0f / 10.0f`.
+- after each due frame, the corresponding deadline is `current_time +
+  interval`.
 
 Use explicit literals and no test-side scheduler implementation. Configure and
 build only this target. The expected RED result is a missing-header or missing
