@@ -215,6 +215,16 @@ if(ASTRABOT_BUILD_TESTS)
   astrabot_apply_warnings(astrabot_runtime_mode_policy)
   add_test(NAME astrabot_runtime_mode_policy COMMAND astrabot_runtime_mode_policy)
 
+  add_executable(astrabot_runtime_timing
+    tests/runtime_timing_tests.cpp
+  )
+  target_include_directories(astrabot_runtime_timing PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+  )
+  target_link_libraries(astrabot_runtime_timing PRIVATE astrabot_core)
+  astrabot_apply_warnings(astrabot_runtime_timing)
+  add_test(NAME astrabot_runtime_timing COMMAND astrabot_runtime_timing)
+
   add_executable(astrabot_nav_model
     tests/nav_model_tests.cpp
   )
