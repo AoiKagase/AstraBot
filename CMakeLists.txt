@@ -33,6 +33,7 @@ include(cmake/AstraBotBuild.cmake)
   src/core/runtime/actor_registry.cpp
   src/core/compat/command_registry.cpp
   src/core/compat/cvar_state.cpp
+  src/core/compat/observation.cpp
   src/core/compat/runtime_mode_policy.cpp
   src/core/compat/random_source.cpp
   src/core/compat/bot_configuration.cpp
@@ -174,6 +175,16 @@ if(ASTRABOT_BUILD_TESTS)
   target_link_libraries(astrabot_compat_cvar_state PRIVATE astrabot_core)
   astrabot_apply_warnings(astrabot_compat_cvar_state)
   add_test(NAME astrabot_compat_cvar_state COMMAND astrabot_compat_cvar_state)
+
+  add_executable(astrabot_observation_model
+    tests/observation_model_tests.cpp
+  )
+  target_include_directories(astrabot_observation_model PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+  )
+  target_link_libraries(astrabot_observation_model PRIVATE astrabot_core)
+  astrabot_apply_warnings(astrabot_observation_model)
+  add_test(NAME astrabot_observation_model COMMAND astrabot_observation_model)
 
   add_executable(astrabot_profile_catalog
     tests/profile_catalog_tests.cpp
