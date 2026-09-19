@@ -143,6 +143,7 @@ int main()
 	if (!check(engineFunctions.pfnMessageBegin != nullptr &&
 			   engineFunctions.pfnMessageEnd != nullptr &&
 			   engineFunctions.pfnWriteByte != nullptr &&
+			   engineFunctions.pfnWriteShort != nullptr &&
 			   engineFunctions.pfnWriteString != nullptr,
 			   "fake-client menu message hooks are published"))
 	{
@@ -167,15 +168,15 @@ int main()
 	entityFunctions.pfnServerActivate(nullptr, 0, 32);
 	const auto activeSnapshot = astrabot::metamod::PluginRuntime::instance().snapshot();
 	if (!check(activeSnapshot.state == astrabot::metamod::PluginRuntime::State::ActiveMap,
-			   "server activation enters active map state"))
+			"server activation enters active map state"))
 	{
 		return 1;
 	}
-    if (!check(activeSnapshot.mode == astrabot::compat::RuntimeMode::Compatibility,
-               "server activation defaults to compatibility mode"))
-    {
-        return 1;
-    }
+	if (!check(activeSnapshot.mode == astrabot::compat::RuntimeMode::Compatibility,
+			"server activation defaults to compatibility mode"))
+	{
+		return 1;
+	}
 	if (!check(activeSnapshot.mapGeneration != 0U, "server activation creates map generation"))
 	{
 		return 1;

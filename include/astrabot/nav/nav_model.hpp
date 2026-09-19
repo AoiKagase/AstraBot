@@ -109,9 +109,10 @@ struct NavLimits
 {
 	static constexpr std::size_t kMaximumAreas = 65535U;
 	static constexpr std::size_t kMaximumConnectionsPerDirection = 64U;
+	static constexpr std::uint8_t kTraverseTypeCount = 8U;
 	static constexpr std::size_t kMaximumHidingSpotsPerArea = 255U;
 	static constexpr std::size_t kMaximumApproachesPerArea = 16U;
-	static constexpr std::size_t kMaximumEncountersPerArea = 255U;
+	static constexpr std::size_t kMaximumEncountersPerArea = 4096U;
 	static constexpr std::size_t kMaximumEncounterSpots = 255U;
 	static constexpr std::size_t kMaximumPlaces = 1024U;
 };

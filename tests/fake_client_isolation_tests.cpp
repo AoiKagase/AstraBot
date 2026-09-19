@@ -98,6 +98,16 @@ namespace
 		return indexOfEdict(entity) + 100;
 	}
 
+	char *getInfoKeyBuffer(edict_t *)
+	{
+		static char buffer[128] = {};
+		return buffer;
+	}
+
+	void setClientKeyValue(int, char *, char *, char *)
+	{
+	}
+
 	qboolean clientConnect(edict_t *, const char *, const char *, char[128])
 	{
 		return true;
@@ -201,6 +211,8 @@ int main()
 	engineFunctions.pfnCVarGetPointer = &getCvar;
 	engineFunctions.pfnCVarGetFloat = &getCvarFloat;
 	engineFunctions.pfnCVarSetFloat = &setCvarFloat;
+	engineFunctions.pfnGetInfoKeyBuffer = &getInfoKeyBuffer;
+	engineFunctions.pfnSetClientKeyValue = &setClientKeyValue;
 	engineFunctions.pfnGetPlayerUserId = &playerUserId;
 	engineFunctions.pfnServerCommand = &serverCommand;
 	engineFunctions.pfnServerExecute = &serverExecute;

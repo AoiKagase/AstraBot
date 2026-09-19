@@ -44,8 +44,9 @@ include(cmake/AstraBotBuild.cmake)
   src/core/nav/jump_drop.cpp
   src/core/nav/special_traversal.cpp
 	  src/core/runtime/bot_command.cpp
-	  src/core/runtime/nav_roam_controller.cpp
-    src/core/runtime/command_queue.cpp
+	src/core/runtime/nav_roam_controller.cpp
+	src/core/runtime/movement_physics.cpp
+	src/core/runtime/command_queue.cpp
   src/core/runtime/lifecycle.cpp
 )
 target_include_directories(astrabot_core PUBLIC
@@ -416,7 +417,14 @@ if(ASTRABOT_BUILD_TESTS)
     "${CMAKE_CURRENT_SOURCE_DIR}/include"
   )
   astrabot_apply_warnings(astrabot_map_fingerprint)
-  add_test(NAME astrabot_map_fingerprint COMMAND astrabot_map_fingerprint)
+	add_test(NAME astrabot_map_fingerprint COMMAND astrabot_map_fingerprint)
+
+	add_executable(astrabot_movement_physics
+		tests/movement_physics_tests.cpp
+	)
+	target_link_libraries(astrabot_movement_physics PRIVATE astrabot_core)
+	astrabot_apply_warnings(astrabot_movement_physics)
+	add_test(NAME astrabot_movement_physics COMMAND astrabot_movement_physics)
 endif()
 
 if(ASTRABOT_BUILD_METAMOD)
@@ -433,6 +441,8 @@ if(ASTRABOT_BUILD_METAMOD)
     "${ASTRABOT_METAMOD_SDK_ROOT}/hlsdk/dlls"
     "${ASTRABOT_METAMOD_SDK_ROOT}/hlsdk/engine"
     "${ASTRABOT_METAMOD_SDK_ROOT}/hlsdk/pm_shared"
+  )
+  set(ASTRABOT_CSSDK_INCLUDE_DIRS
     "${CMAKE_CURRENT_SOURCE_DIR}/third_party/cssdk/common"
     "${CMAKE_CURRENT_SOURCE_DIR}/third_party/cssdk/dlls"
     "${CMAKE_CURRENT_SOURCE_DIR}/third_party/cssdk/engine"
@@ -449,13 +459,15 @@ if(ASTRABOT_BUILD_METAMOD)
     src/adapter/metamod/input_dispatcher.cpp
     src/adapter/metamod/plugin_exports.cpp
     src/adapter/metamod/native_bot_guard.cpp
-    src/adapter/metamod/plugin_runtime.cpp
-    src/adapter/metamod/map_fingerprint.cpp
-    src/adapter/metamod/nav_loader.cpp
-  )
+	src/adapter/metamod/plugin_runtime.cpp
+	src/adapter/metamod/map_fingerprint.cpp
+	src/adapter/metamod/nav_loader.cpp
+	src/adapter/metamod/action_adapter.cpp
+	)
   target_include_directories(astrabot_mm PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/include"
     ${ASTRABOT_METAMOD_INCLUDE_DIRS}
+    ${ASTRABOT_CSSDK_INCLUDE_DIRS}
   )
   target_compile_definitions(astrabot_mm PRIVATE
     ASTRABOT_CXX_STANDARD=14
@@ -506,10 +518,11 @@ if(ASTRABOT_BUILD_METAMOD)
       src/adapter/metamod/native_bot_guard.cpp
       src/adapter/metamod/plugin_exports.cpp
       src/adapter/metamod/join_controller.cpp
-      src/adapter/metamod/plugin_runtime.cpp
-      src/adapter/metamod/nav_loader.cpp
-      src/adapter/metamod/map_fingerprint.cpp
-    )
+		src/adapter/metamod/plugin_runtime.cpp
+		src/adapter/metamod/nav_loader.cpp
+		src/adapter/metamod/map_fingerprint.cpp
+		src/adapter/metamod/action_adapter.cpp
+	)
     target_link_libraries(astrabot_metamod_hooks PRIVATE astrabot_core)
     astrabot_apply_warnings(astrabot_metamod_hooks)
     add_test(NAME astrabot_metamod_hooks COMMAND astrabot_metamod_hooks)
@@ -547,10 +560,11 @@ if(ASTRABOT_BUILD_METAMOD)
       src/adapter/metamod/native_bot_guard.cpp
       src/adapter/metamod/plugin_exports.cpp
       src/adapter/metamod/join_controller.cpp
-      src/adapter/metamod/plugin_runtime.cpp
-      src/adapter/metamod/nav_loader.cpp
-      src/adapter/metamod/map_fingerprint.cpp
-    )
+		src/adapter/metamod/plugin_runtime.cpp
+		src/adapter/metamod/nav_loader.cpp
+		src/adapter/metamod/map_fingerprint.cpp
+		src/adapter/metamod/action_adapter.cpp
+	)
     target_include_directories(astrabot_fake_client_isolation PRIVATE
       "${CMAKE_CURRENT_SOURCE_DIR}/include"
       "${CMAKE_CURRENT_SOURCE_DIR}/src/adapter/metamod"
@@ -573,8 +587,8 @@ if(ASTRABOT_BUILD_METAMOD)
     astrabot_apply_warnings(astrabot_compat_surface)
     add_test(NAME astrabot_compat_surface COMMAND astrabot_compat_surface)
 
-    add_executable(astrabot_compat_actor_command
-      tests/compat_actor_command_tests.cpp
+add_executable(astrabot_compat_actor_command
+	tests/compat_actor_command_tests.cpp
       src/adapter/metamod/compat_surface.cpp
       src/adapter/metamod/profile_loader.cpp
       src/adapter/metamod/fake_client_manager.cpp
@@ -583,9 +597,10 @@ if(ASTRABOT_BUILD_METAMOD)
       src/adapter/metamod/plugin_exports.cpp
       src/adapter/metamod/join_controller.cpp
       src/adapter/metamod/plugin_runtime.cpp
-      src/adapter/metamod/nav_loader.cpp
-      src/adapter/metamod/map_fingerprint.cpp
-    )
+	src/adapter/metamod/nav_loader.cpp
+	src/adapter/metamod/map_fingerprint.cpp
+	src/adapter/metamod/action_adapter.cpp
+)
     target_include_directories(astrabot_compat_actor_command PRIVATE
       "${CMAKE_CURRENT_SOURCE_DIR}/include"
       "${CMAKE_CURRENT_SOURCE_DIR}/src/adapter/metamod"
@@ -593,6 +608,26 @@ if(ASTRABOT_BUILD_METAMOD)
     )
     target_link_libraries(astrabot_compat_actor_command PRIVATE astrabot_core)
     astrabot_apply_warnings(astrabot_compat_actor_command)
-    add_test(NAME astrabot_compat_actor_command COMMAND astrabot_compat_actor_command)
-  endif()
+	add_test(NAME astrabot_compat_actor_command COMMAND astrabot_compat_actor_command)
+
+	add_executable(astrabot_action_adapter
+		tests/action_adapter_tests.cpp
+		src/adapter/metamod/action_adapter.cpp
+	)
+	target_include_directories(astrabot_action_adapter PRIVATE
+		"${CMAKE_CURRENT_SOURCE_DIR}/include"
+		"${CMAKE_CURRENT_SOURCE_DIR}/src/adapter/metamod"
+		${ASTRABOT_METAMOD_INCLUDE_DIRS}
+	)
+	astrabot_apply_warnings(astrabot_action_adapter)
+	add_test(NAME astrabot_action_adapter COMMAND astrabot_action_adapter)
+endif()
+endif()
+
+if(ASTRABOT_BUILD_TESTS)
+  get_property(ASTRABOT_REGISTERED_TESTS DIRECTORY PROPERTY TESTS)
+  set_tests_properties(
+    ${ASTRABOT_REGISTERED_TESTS}
+    PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+  )
 endif()

@@ -3,6 +3,7 @@ LIBRARY astrabot_mm
 EXPORTS
 	GetEngineFunctions
 	GetEntityAPI2
+	GetEntityAPI2_Post
 	Meta_Attach
 	Meta_Detach
 	Meta_Query

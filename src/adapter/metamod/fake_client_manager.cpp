@@ -105,6 +105,8 @@ namespace astrabot
 				gameDllFunctions_ == nullptr || gameDllFunctions_->dllapi_table == nullptr ||
 				engineFunctions_->pfnCreateFakeClient == nullptr ||
 				engineFunctions_->pfnIndexOfEdict == nullptr ||
+				engineFunctions_->pfnGetInfoKeyBuffer == nullptr ||
+				engineFunctions_->pfnSetClientKeyValue == nullptr ||
 				gameDllFunctions_->dllapi_table->pfnClientConnect == nullptr ||
 				gameDllFunctions_->dllapi_table->pfnClientPutInServer == nullptr)
 			{
@@ -161,6 +163,8 @@ namespace astrabot
 				char vguiMenusValue[] = "0";
 				char autoHelpKey[] = "_ah";
 				char autoHelpValue[] = "0";
+				char botKey[] = "*bot";
+				char botValue[] = "1";
 				char modelKey[] = "model";
 				char modelValue[] = "";
 				char rateKey[] = "rate";
@@ -193,8 +197,9 @@ namespace astrabot
 				engineFunctions_->pfnSetClientKeyValue(
 						slot, infoBuffer, autoHelpClientKey, autoHelpClientValue);
 				engineFunctions_->pfnSetClientKeyValue(slot, infoBuffer, vguiMenusKey,
-													   vguiMenusValue);
+															   vguiMenusValue);
 				engineFunctions_->pfnSetClientKeyValue(slot, infoBuffer, autoHelpKey, autoHelpValue);
+				engineFunctions_->pfnSetClientKeyValue(slot, infoBuffer, botKey, botValue);
 			}
 			bool connectedHere = false;
 			if (lifecycle_.tokenForSlot(clientSlot).slotGeneration ==
@@ -225,23 +230,11 @@ namespace astrabot
 				return mapRegistryResult(actorResult);
 			}
 
-			if (engineFunctions_->pfnGetInfoKeyBuffer != nullptr &&
-				engineFunctions_->pfnSetClientKeyValue != nullptr)
-			{
-				char *infoBuffer = engineFunctions_->pfnGetInfoKeyBuffer(entity);
-				if (infoBuffer == nullptr)
-				{
-					cleanupFailedClient(entity, clientSlot, connectedHere);
-					return FakeClientResult::InvalidEntity;
-				}
-				char botKey[] = "*bot";
-				char botValue[] = "1";
-				engineFunctions_->pfnSetClientKeyValue(slot, infoBuffer, botKey, botValue);
-			}
 		char rejectReason[128] = {};
 		if (gameDllFunctions_->dllapi_table->pfnClientConnect(
 				entity, name, "127.0.0.1", rejectReason) == 0)
 		{
+			registry_.release(actor);
 			cleanupFailedClient(entity, clientSlot, connectedHere);
 			return FakeClientResult::JoinFailed;
 		}
@@ -269,7 +262,9 @@ namespace astrabot
 				return FakeClientResult::BoundaryUnavailable;
 			}
 
-			const int userId = engineFunctions_->pfnGetPlayerUserId(handle->entity);
+		const runtime::ActorId actor = handle->actor;
+		edict_t *const entity = handle->entity;
+		const int userId = engineFunctions_->pfnGetPlayerUserId(entity);
 			if (userId < 0)
 			{
 				return FakeClientResult::InvalidEntity;
@@ -279,17 +274,17 @@ namespace astrabot
 			{
 				return FakeClientResult::CleanupFailed;
 			}
-			const runtime::ActorResult actorResult = registry_.beginRemoval(handle->actor);
+		const runtime::ActorResult actorResult = registry_.beginRemoval(actor);
 			if (actorResult != runtime::ActorResult::Accepted)
 			{
 				return mapRegistryResult(actorResult);
 			}
 
-			gameDllFunctions_->dllapi_table->pfnClientDisconnect(handle->entity);
-			engineFunctions_->pfnServerCommand(command);
-			engineFunctions_->pfnServerExecute();
-			lifecycle_.disconnectSlot(handle->actor.slot);
-			if (registry_.release(handle->actor) != runtime::ActorResult::Accepted)
+		gameDllFunctions_->dllapi_table->pfnClientDisconnect(entity);
+		engineFunctions_->pfnServerCommand(command);
+		engineFunctions_->pfnServerExecute();
+		lifecycle_.disconnectSlot(actor.slot);
+		if (registry_.release(actor) != runtime::ActorResult::Accepted)
 			{
 				return FakeClientResult::CleanupFailed;
 			}

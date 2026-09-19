@@ -73,7 +73,7 @@ int main()
 	astrabot::nav::NavArea first = area(1U);
 	first.connections[1U].push_back(2U);
 	first.hidingSpots.push_back({7U, {16.0f, 16.0f, 0.0f}, NavHidingSpot::kInCover});
-	first.approaches.push_back({2U, 1U, 2U, 1U, 2U});
+	first.approaches.push_back({2U, 0U, 2U, 7U, 4U});
 	first.encounters.push_back({1U, 1U, 2U, 3U, {{7U, 0.5f}}});
 	astrabot::nav::NavArea second = area(2U);
 	if (!check(document.addArea(first) == NavModelResult::Accepted &&

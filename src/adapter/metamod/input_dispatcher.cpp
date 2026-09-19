@@ -134,6 +134,8 @@ namespace metamod
 			command.viewAngles.yaw,
 			command.viewAngles.roll
 		};
+		boundEntities_[index]->v.button = command.movement.buttons;
+		boundEntities_[index]->v.impulse = command.movement.impulse;
 		engineFunctions_->pfnRunPlayerMove(
 				boundEntities_[index],
 				viewAngles,

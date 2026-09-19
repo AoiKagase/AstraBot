@@ -129,10 +129,15 @@ int main()
 		return 1;
 	}
 	if (!check(gDispatchedAngles[0] == 1.0f && gDispatchedAngles[1] == 2.0f &&
-			gDispatchedAngles[2] == 3.0f && gDispatchedForward == 100.0f &&
-			gDispatchedSide == 20.0f && gDispatchedButtons == 4U &&
-			gDispatchedImpulse == 5U && gDispatchedMsec == 10U,
-			"engine receives converted command values"))
+				gDispatchedAngles[2] == 3.0f && gDispatchedForward == 100.0f &&
+				gDispatchedSide == 20.0f && gDispatchedButtons == 4U &&
+				gDispatchedImpulse == 5U && gDispatchedMsec == 10U,
+				"engine receives converted command values"))
+	{
+		return 1;
+	}
+	if (!check(firstEntity.v.button == 4 && firstEntity.v.impulse == 5,
+				"FakeClient entvars retain dispatched button and impulse state"))
 	{
 		return 1;
 	}

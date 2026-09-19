@@ -26,7 +26,15 @@
     "tests/fixtures/phase7/README.md",
     "tests/fixtures/phase7/visibility-uncertainty.json",
     "tests/fixtures/phase7/objective-recovery.json",
-    "tests/fixtures/phase7/combat-boundary.json"
+    "tests/fixtures/phase7/combat-boundary.json",
+    "tests/fixtures/phase8/08-01-artifact-matrix.json",
+    "tests/phase8_differential.py",
+    "tests/fixtures/phase8/README.md",
+    "tests/fixtures/phase8/differential-observable.json",
+    "docs/evidence/phase8-live-acceptance.md",
+    "docs/evidence/phase8-live/windows-x86.md",
+    "docs/evidence/phase8-live/linux-x86.md",
+    "docs/evidence/phase8-live/cssdk-participation-rebuild-20260917.md"
   ],
   "source_files": [
     {
@@ -174,7 +182,19 @@
       "reference_only": false
     },
     {
+      "path": "include/astrabot/metamod/join_controller.hpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
       "path": "src/adapter/metamod/fake_client_manager.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "src/adapter/metamod/join_controller.cpp",
       "origin": "AstraBot",
       "license_status": "pending_release_review",
       "reference_only": false
@@ -712,6 +732,54 @@
       "origin": "AstraBot",
       "license_status": "pending_release_review",
       "reference_only": false
-    }
+    },
+    {
+      "path": "include/astrabot/runtime/nav_roam_controller.hpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "src/core/runtime/nav_roam_controller.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "tests/nav_legacy_limit_tests.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "tests/nav_roam_controller_tests.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+		{
+			"path": "tests/join_controller_tests.cpp",
+			"origin": "AstraBot",
+			"license_status": "pending_release_review",
+			"reference_only": false
+		},
+		{
+			"path": "include/astrabot/runtime/movement_physics.hpp",
+			"origin": "AstraBot",
+			"license_status": "pending_release_review",
+			"reference_only": false
+		},
+		{
+			"path": "src/core/runtime/movement_physics.cpp",
+			"origin": "AstraBot",
+			"license_status": "pending_release_review",
+			"reference_only": false
+		},
+		{
+			"path": "tests/movement_physics_tests.cpp",
+			"origin": "AstraBot",
+			"license_status": "pending_release_review",
+			"reference_only": false
+		}
   ]
 }

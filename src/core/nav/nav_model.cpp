@@ -10,10 +10,15 @@ namespace nav
 {
 namespace
 {
-bool isDirectionValid(std::uint8_t direction)
-{
-	return direction < NavArea::kDirectionCount;
-}
+		bool isDirectionValid(std::uint8_t direction)
+		{
+			return direction < NavArea::kDirectionCount;
+		}
+
+		bool isTraverseTypeValid(std::uint8_t traverseType)
+		{
+			return traverseType < NavLimits::kTraverseTypeCount;
+		}
 }
 
 NavDocument::NavDocument() : areas_(), places_(), sourceIdentity_{0U, 0U, 0U}
@@ -148,8 +153,8 @@ NavModelResult NavDocument::validate() const
 		for (const NavApproach &approach : area.approaches)
 		{
 			if (findArea(approach.here) == nullptr ||
-					findArea(approach.previous) == nullptr ||
-					findArea(approach.next) == nullptr)
+					(approach.previous != 0U && findArea(approach.previous) == nullptr) ||
+					(approach.next != 0U && findArea(approach.next) == nullptr))
 			{
 				return NavModelResult::InvalidReference;
 			}
@@ -295,16 +300,16 @@ bool NavDocument::isValidArea(const NavArea &area)
 	}
 	for (const NavHidingSpot &spot : area.hidingSpots)
 	{
-		if (spot.id == 0U || !isFiniteVector(spot.position))
+			if (!isFiniteVector(spot.position))
 		{
 			return false;
 		}
 	}
 	for (const NavApproach &approach : area.approaches)
 	{
-		if (approach.here == 0U || approach.previous == 0U || approach.next == 0U ||
-				!isDirectionValid(approach.previousToHereHow) ||
-				!isDirectionValid(approach.hereToNextHow))
+			if (approach.here == 0U ||
+						!isTraverseTypeValid(approach.previousToHereHow) ||
+						!isTraverseTypeValid(approach.hereToNextHow))
 		{
 			return false;
 		}
@@ -320,7 +325,7 @@ bool NavDocument::isValidArea(const NavArea &area)
 		}
 		for (const NavEncounterSpot &spot : encounter.spots)
 		{
-			if (spot.hidingSpotId == 0U || !std::isfinite(spot.t) ||
+				if (!std::isfinite(spot.t) ||
 					spot.t < 0.0f || spot.t > 1.0f)
 			{
 				return false;

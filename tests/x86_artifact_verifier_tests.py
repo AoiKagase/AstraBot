@@ -12,6 +12,7 @@ EXPORTS = [
 	"Meta_Attach",
 	"Meta_Detach",
 	"GetEntityAPI2",
+	"GetEntityAPI2_Post",
 	"GetEngineFunctions",
 	"GiveFnptrsToDll",
 ]

@@ -8,9 +8,13 @@
 #include "astrabot/metamod/input_dispatcher.hpp"
 #include "astrabot/metamod/native_bot_guard.hpp"
 #include "astrabot/metamod/nav_loader.hpp"
+#include "astrabot/combat/combat_intent.hpp"
+#include "astrabot/objectives/round_objectives.hpp"
+#include "astrabot/perception/perception.hpp"
 #include "astrabot/runtime/nav_roam_controller.hpp"
 #include "astrabot/runtime/movement_physics.hpp"
 #include "astrabot/runtime/lifecycle.hpp"
+#include "action_adapter.hpp"
 
 #include <array>
 #include <cstddef>
@@ -48,11 +52,11 @@ namespace astrabot
 				Detached
 			};
 
-			struct Snapshot
-			{
-				State state;
-                compat::RuntimeMode mode;
-				runtime::LifecycleGeneration mapGeneration;
+		struct Snapshot
+		{
+			State state;
+			compat::RuntimeMode mode;
+			runtime::LifecycleGeneration mapGeneration;
 				runtime::LifecycleGeneration roundGeneration;
 				NativeBotGuardState nativeGuardState;
 				NativeBotGuardReason nativeGuardReason;
@@ -106,7 +110,7 @@ namespace astrabot
 													 std::uint32_t dispatchFrame);
 
 		  private:
-			static constexpr std::size_t kCompatibilityCvarCount = 6U;
+		static constexpr std::size_t kCompatibilityCvarCount = 6U;
 
 		enum class UserMessageKind : std::uint8_t
 		{
@@ -137,7 +141,8 @@ namespace astrabot
 		void applyJoinAction(std::size_t index, const JoinAction &action);
 		void cleanupManagedJoin(std::size_t index, JoinError error);
 		void notifyTeamInfo(std::uint8_t slot, const char *teamName);
-		runtime::MovementPhysicsState captureMovementPhysicsState(const edict_t *entity) const;
+	runtime::MovementPhysicsState captureMovementPhysicsState(
+		const edict_t *entity, bool teamConfirmed, bool managedFakeClient) const;
 		runtime::CommandReceipt dispatchNeutralMovement(
 			std::size_t index,
 			FakeClientHandle &handle,
@@ -146,10 +151,23 @@ namespace astrabot
 			std::size_t index,
 			FakeClientHandle &handle,
 			std::uint8_t milliseconds);
-		void recordMovementPhysicsSample(
-			std::size_t index,
-			const runtime::MovementPhysicsState &before,
-			const runtime::CommandReceipt &receipt);
+			void recordMovementPhysicsSample(
+				std::size_t index,
+				const runtime::MovementPhysicsState &before,
+				const runtime::CommandReceipt &receipt);
+			ActionProposal decideManagedBotAction(
+				std::size_t index,
+				const runtime::MovementPhysicsState &before,
+				const runtime::ViewAngles &movementAngles,
+				std::uint16_t movementButtons);
+			bool buildManagedWorldSnapshot(
+				std::size_t index,
+				world::WorldSnapshot *snapshot,
+				world::ActorKey *targetActor,
+				world::WorldPosition *targetPosition) const;
+			bool buildManagedObjectiveTarget(
+				std::size_t index,
+				nav::NavVector *target) const;
 			void resetManagedBotMovement();
 			void logMovementDiagnostic(
 				std::size_t index,
@@ -193,6 +211,7 @@ namespace astrabot
 			NativeBotGuard nativeBotGuard_;
 			NativeBotGuardDecision nativeGuardDecision_;
 			std::array<bool, NativeBotObservation::kClientSlotCount> managedBotSlots_;
+			std::array<std::uint8_t, NativeBotObservation::kClientSlotCount> managedBotTeamNumbers_;
 			std::array<FakeClientHandle, NativeBotObservation::kClientSlotCount> managedBotHandles_;
 			std::array<std::array<char, compat::ProfileRecord::kNameCapacity + 1U>,
 					   NativeBotObservation::kClientSlotCount>
@@ -211,7 +230,13 @@ namespace astrabot
 		std::uint16_t userMessageTextLength_;
 			std::array<runtime::NavRoamController,
 					   NativeBotObservation::kClientSlotCount>
-				managedBotMovement_;
+					managedBotMovement_;
+			std::array<combat::CombatController,
+					   NativeBotObservation::kClientSlotCount>
+					managedBotCombat_;
+			std::array<objectives::RoundObjectivePlanner,
+					   NativeBotObservation::kClientSlotCount>
+					managedBotObjectives_;
 			std::array<std::uint32_t,
 					   NativeBotObservation::kClientSlotCount>
 				managedBotCommandSequences_;
@@ -237,8 +262,10 @@ namespace astrabot
 					   NativeBotObservation::kClientSlotCount>
 			movementWarmupFrames_;
 		std::array<runtime::MovementPhysicsSample,
-					   NativeBotObservation::kClientSlotCount>
+			NativeBotObservation::kClientSlotCount>
 			movementPhysicsSamples_;
+		std::array<bool, NativeBotObservation::kClientSlotCount>
+			movementReadyLogged_;
 		std::array<std::uint32_t,
 					   NativeBotObservation::kClientSlotCount>
 			movementDispatchFrames_;

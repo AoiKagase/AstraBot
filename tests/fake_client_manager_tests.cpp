@@ -16,6 +16,8 @@ namespace
 	int gServerExecuteCount = 0;
 	char gLastServerCommand[64]{};
 	bool gCreateSucceeds = true;
+	bool gClientConnectSucceeds = true;
+	astrabot::metamod::FakeClientHandle *gReentrantHandle = nullptr;
 	char gInfoBuffer[128]{};
 bool gBotMarkerPresent = false;
 bool gBotMarkerObservedDuringPutInServer = false;
@@ -42,6 +44,8 @@ bool gPlayerFactorySawOriginalOrigin = false;
 		gServerExecuteCount = 0;
 		gLastServerCommand[0] = '\0';
 	gCreateSucceeds = true;
+	gClientConnectSucceeds = true;
+	gReentrantHandle = nullptr;
 	gClientConnectCount = 0;
 	gFreePrivateDataCount = 0;
 		gInfoBuffer[0] = '\0';
@@ -81,11 +85,11 @@ edict_t *createFakeClient(const char *)
 		}
 	}
 
-	qboolean clientConnect(edict_t *, const char *, const char *, char[128])
-	{
-		++gClientConnectCount;
-		return true;
-	}
+qboolean clientConnect(edict_t *, const char *, const char *, char[128])
+{
+	++gClientConnectCount;
+	return gClientConnectSucceeds;
+}
 
 	int indexOfEdict(const edict_t *entity)
 	{
@@ -123,7 +127,15 @@ edict_t *createFakeClient(const char *)
 		}
 	}
 
-	void disconnect(edict_t *) { ++gDisconnectCount; }
+void disconnect(edict_t *)
+{
+	++gDisconnectCount;
+	if (gReentrantHandle != nullptr)
+	{
+		gReentrantHandle->actor = {0U, 0U};
+		gReentrantHandle->entity = nullptr;
+	}
+}
 
 	void serverCommand(char *command)
 	{
@@ -248,8 +260,15 @@ int main()
 	{
 		return 1;
 	}
+	gReentrantHandle = &firstHandle;
 	if (!check(manager.remove(&firstHandle) == FakeClientResult::Removed,
-			   "first FakeClient removal succeeds"))
+				   "first FakeClient removal succeeds"))
+	{
+		return 1;
+	}
+	gReentrantHandle = nullptr;
+	if (!check(registry.actorForSlot(1U).actorGeneration == 0U,
+			   "reentrant disconnect still releases the original actor"))
 	{
 		return 1;
 	}
@@ -263,6 +282,21 @@ int main()
 	{
 		return 1;
 	}
+	gClientConnectSucceeds = false;
+	FakeClientHandle connectFailedHandle{};
+	if (!check(manager.create("connect-failed", &connectFailedHandle) ==
+				   FakeClientResult::JoinFailed,
+			   "ClientConnect failure is returned after actor reservation"))
+	{
+		return 1;
+	}
+	if (!check(registry.actorForSlot(1U).actorGeneration == 0U,
+			   "ClientConnect failure releases the reserved actor"))
+	{
+		return 1;
+	}
+	gClientConnectSucceeds = true;
+	gCreateCallCount = 2;
 	if (!check(manager.remove(&firstHandle) == FakeClientResult::NotFound,
 			   "repeated removal is harmless"))
 	{

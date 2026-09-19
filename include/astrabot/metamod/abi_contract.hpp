@@ -31,7 +31,9 @@ extern "C"
 	meta_globals_t *metaGlobals, gamedll_funcs_t *gameDllFunctions);
 	C_DLLEXPORT int Meta_Detach(PLUG_LOADTIME loadTime, PL_UNLOAD_REASON reason);
 	C_DLLEXPORT FORCE_STACK_ALIGN int GetEntityAPI2(DLL_FUNCTIONS *functionTable,
-	int *interfaceVersion);
+		int *interfaceVersion);
+	C_DLLEXPORT FORCE_STACK_ALIGN int GetEntityAPI2_Post(DLL_FUNCTIONS *functionTable,
+		int *interfaceVersion);
 	C_DLLEXPORT int GetEngineFunctions(enginefuncs_t *engineFunctions, int *interfaceVersion);
 #ifdef _WIN32
 void WINAPI GiveFnptrsToDll(enginefuncs_t *engineFunctions, globalvars_t *globals);

@@ -6,7 +6,10 @@
 
 namespace
 {
-	edict_t gEntities[5]{};
+edict_t gEntities[5]{};
+edict_t gBombSite{};
+edict_t gPlantedBomb{};
+bool gObjectiveEntitiesAvailable = false;
 	int gCreateCount = 0;
 	int gKillCount = 0;
 	int gClientCommandCount = 0;
@@ -15,13 +18,14 @@ namespace
 	int gRunPlayerMoveCount = 0;
 	unsigned short gLastRunPlayerMoveButtons = 0U;
 	bool gDirectJoinCommandSeen = false;
+	bool gServerSetsEntityTeam = true;
 	char gLastClientCommand[32] = {};
 	int gClientKeyValueCount = 0;
 	bool gMenuTeamContextValid = false;
 	bool gMenuClassContextValid = false;
 	DLL_FUNCTIONS gHookedGameDllTable{};
 	bool gNativeControlsAvailable = false;
-bool gCompatibilityCvarsRegistered[6] = {};
+	bool gCompatibilityCvarsRegistered[6] = {};
 	int gCvarRegisterCount = 0;
 	float gBotEnable = 0.0f;
 	float gBotQuota = 0.0f;
@@ -30,7 +34,7 @@ bool gCompatibilityCvarsRegistered[6] = {};
 	cvar_t gBotDifficultyCvar{};
 	cvar_t gBotQuotaCvar{};
 	cvar_t gBotJoinTeamCvar{};
-cvar_t gAstrabotModeCvar{};
+	cvar_t gAstrabotModeCvar{};
 
 	bool check(bool condition, const char *description)
 	{
@@ -68,7 +72,7 @@ cvar_t gAstrabotModeCvar{};
 		return entity;
 	}
 
-	int indexOfEdict(const edict_t *entity)
+int indexOfEdict(const edict_t *entity)
 	{
 		for (int index = 0; index < 5; ++index)
 		{
@@ -77,12 +81,50 @@ cvar_t gAstrabotModeCvar{};
 				return index + 1;
 			}
 		}
-		return -1;
+	return -1;
+}
+
+int gFindEntityByStringCount = 0;
+
+edict_t *findEntityByString(edict_t *start, const char *field, const char *value)
+{
+	++gFindEntityByStringCount;
+	if (!gObjectiveEntitiesAvailable || start != nullptr || field == nullptr || value == nullptr ||
+		std::strcmp(field, "classname") != 0)
+	{
+		return nullptr;
+	}
+	if (std::strcmp(value, "func_bomb_target") == 0)
+	{
+		return &gBombSite;
+	}
+	if (std::strcmp(value, "grenade") == 0)
+	{
+		return &gPlantedBomb;
+	}
+	return nullptr;
+}
+
+	const char *szFromIndex(int index)
+	{
+		return index == 1 ? "func_bomb_target" : index == 2 ? "grenade" : "";
 	}
 
 	edict_t *entityOfIndex(int index)
 	{
-		return index >= 1 && index <= 5 ? &gEntities[index - 1] : nullptr;
+		if (index >= 1 && index <= 5)
+		{
+			return &gEntities[index - 1];
+		}
+		if (index == 6)
+		{
+			return &gBombSite;
+		}
+		if (index == 7)
+		{
+			return &gPlantedBomb;
+		}
+		return nullptr;
 	}
 
 	void getGameDir(char *buffer)
@@ -117,16 +159,16 @@ cvar_t gAstrabotModeCvar{};
 			return gNativeControlsAvailable || gCompatibilityCvarsRegistered[3] ? &gBotQuotaCvar
 																				: nullptr;
 		}
-		if (std::strcmp(name, "bot_join_team") == 0)
-		{
-			return gNativeControlsAvailable || gCompatibilityCvarsRegistered[4] ? &gBotJoinTeamCvar
-																				: nullptr;
-		}
-        if (std::strcmp(name, "astrabot_mode") == 0)
-        {
-            return gNativeControlsAvailable || gCompatibilityCvarsRegistered[5] ? &gAstrabotModeCvar
-                                                        : nullptr;
-        }
+	if (std::strcmp(name, "bot_join_team") == 0)
+	{
+		return gNativeControlsAvailable || gCompatibilityCvarsRegistered[4] ? &gBotJoinTeamCvar
+			: nullptr;
+	}
+	if (std::strcmp(name, "astrabot_mode") == 0)
+	{
+		return gNativeControlsAvailable || gCompatibilityCvarsRegistered[5] ? &gAstrabotModeCvar
+			: nullptr;
+	}
 		return nullptr;
 	}
 
@@ -163,8 +205,8 @@ cvar_t gAstrabotModeCvar{};
 			return;
 		}
 		const char *const names[] = {"bot_enable", "bot_stop", "bot_difficulty", "bot_quota",
-            "bot_join_team", "astrabot_mode"};
-        for (std::size_t index = 0U; index < 6U; ++index)
+			"bot_join_team", "astrabot_mode"};
+		for (std::size_t index = 0U; index < 6U; ++index)
 		{
 			if (std::strcmp(variable->name, names[index]) == 0)
 			{
@@ -237,9 +279,9 @@ char *getInfoKeyBuffer(edict_t *)
 		if (std::strcmp(command, "jointeam") == 0)
 		{
 			gDirectJoinCommandSeen = true;
-			if (entity != nullptr)
-			{
-				entity->v.team = 1;
+		if (entity != nullptr && gServerSetsEntityTeam)
+		{
+			entity->v.team = 1;
 			}
 			astrabot::metamod::PluginRuntime &runtime =
 					astrabot::metamod::PluginRuntime::instance();
@@ -373,6 +415,7 @@ int main()
 	PluginRuntime &runtime = PluginRuntime::instance();
 	globalvars_t globals{};
 	globals.maxClients = 5;
+	globals.maxEntities = 7;
 	globals.time = 1.0f;
 	runtime.giveEnginePointers(nullptr, &globals);
 	if (!check(runtime.attach(PT_ANYTIME, &metaFunctions, &metaGlobals, &gameDllFunctions, nullptr),
@@ -386,6 +429,8 @@ int main()
 	engineFunctions.pfnCreateFakeClient = &createFakeClient;
 	engineFunctions.pfnIndexOfEdict = &indexOfEdict;
 	engineFunctions.pfnPEntityOfEntIndex = &entityOfIndex;
+	engineFunctions.pfnFindEntityByString = &findEntityByString;
+	engineFunctions.pfnSzFromIndex = &szFromIndex;
 	engineFunctions.pfnCVarGetPointer = &getCvar;
 	engineFunctions.pfnCVarGetFloat = &getCvarFloat;
 	engineFunctions.pfnCVarSetFloat = &setCvarFloat;
@@ -405,15 +450,16 @@ int main()
 	runtime.onStartFrame();
 	if (!check(runtime.executeCompatibilityCommand(request("bot_add")) ==
 				  CompatibilityCommandResult::Handled &&
-                  gCreateCount == 1 && gCvarRegisterCount == 6 &&
+				 gCreateCount == 1 && gCvarRegisterCount == 6 &&
 				  gClientCommandCount == 0 && gClientKeyValueCount >= 2,
 			   "bot_add loads the default BotProfile database during activation"))
 	{
 		std::remove(profilePath);
 		std::remove(defaultProfilePath);
-		return 1;
-	}
-	gRunPlayerMoveCount = 0;
+			return 1;
+		}
+		gServerSetsEntityTeam = false;
+		gRunPlayerMoveCount = 0;
 	gLastRunPlayerMoveButtons = 0U;
 	globals.time = 1.1f;
 	runtime.onStartFrame();
@@ -461,10 +507,19 @@ int main()
 	gEntities[0].v.health = 100.0f;
 	gEntities[0].v.solid = SOLID_SLIDEBOX;
 	gEntities[0].v.movetype = MOVETYPE_WALK;
+	gEntities[0].v.flags &= ~FL_FAKECLIENT;
 	runtime.onMessageBegin(0, 86, nullptr, nullptr);
 	runtime.onWriteByte(1);
 	runtime.onWriteString("TERRORIST");
 	runtime.onMessageEnd();
+	gEntities[0].v.team = 0;
+	gEntities[1].v.flags = FL_CLIENT | FL_ONGROUND;
+	gEntities[1].v.team = 2;
+	gEntities[1].v.deadflag = DEAD_NO;
+	gEntities[1].v.health = 100.0f;
+	gEntities[1].v.origin.x = 64.0f;
+	gEntities[1].v.origin.y = 0.0f;
+	gEntities[1].v.origin.z = 0.0f;
 	gRunPlayerMoveCount = 0;
 	for (int frame = 0; frame < 6; ++frame)
 	{
@@ -472,8 +527,9 @@ int main()
 		runtime.onStartFrame();
 		runtime.onStartFramePost();
 	}
-	if (!check(gRunPlayerMoveCount == 6 && gLastRunPlayerMoveButtons == 0U,
-			   "joined actor receives one neutral heartbeat per post-join frame"))
+	if (!check(gRunPlayerMoveCount == 6 &&
+			(gLastRunPlayerMoveButtons & static_cast<unsigned short>(IN_ATTACK)) == 0U,
+			"joined actor receives neutral heartbeat without live Fire"))
 	{
 		std::remove(profilePath);
 		std::remove(defaultProfilePath);
@@ -482,12 +538,57 @@ int main()
 	const auto physicsSample = runtime.movementPhysicsSample(1U);
 	if (!check(physicsSample.dispatched &&
 				  physicsSample.readiness == astrabot::runtime::SpawnReadiness::Ready,
-			   "heartbeat records dispatched spawn-ready physics sample"))
+				  "heartbeat records dispatched spawn-ready physics sample"))
 	{
 		std::remove(profilePath);
 		std::remove(defaultProfilePath);
 		return 1;
 	}
+	gEntities[0].v.team = 2;
+	gEntities[1].v.team = 1;
+	gEntities[1].v.flags = FL_CLIENT | FL_ONGROUND;
+	gEntities[1].v.deadflag = DEAD_NO;
+	gEntities[1].v.health = 100.0f;
+	gBombSite.v.origin = gEntities[0].v.origin;
+	gBombSite.v.classname = 1;
+	gPlantedBomb.v.classname = 2;
+	gPlantedBomb.v.origin = gEntities[0].v.origin;
+	gPlantedBomb.v.dmgtime = globals.time + 30.0f;
+	gObjectiveEntitiesAvailable = true;
+	gFindEntityByStringCount = 0;
+	gRunPlayerMoveCount = 0;
+	globals.time += 0.1f;
+	runtime.onStartFrame();
+	runtime.onStartFramePost();
+	if (!check(gRunPlayerMoveCount == 1 &&
+			(gLastRunPlayerMoveButtons & static_cast<unsigned short>(IN_USE)) != 0U,
+			"planted bomb objective reaches RunPlayerMove as a use action"))
+	{
+		std::remove(profilePath);
+		std::remove(defaultProfilePath);
+		return 1;
+	}
+	if (!check(gFindEntityByStringCount == 0,
+			"planted bomb objective avoids Metamod FindEntityByString re-entry"))
+	{
+		std::remove(profilePath);
+		std::remove(defaultProfilePath);
+		return 1;
+	}
+	gObjectiveEntitiesAvailable = false;
+	gRunPlayerMoveCount = 0;
+	gLastRunPlayerMoveButtons = 0U;
+	globals.time += 0.1f;
+	runtime.onStartFrame();
+	runtime.onStartFramePost();
+	if (!check((gLastRunPlayerMoveButtons & static_cast<unsigned short>(IN_ATTACK)) == 0U,
+			"live combat does not dispatch attack without an active weapon boundary"))
+	{
+		std::remove(profilePath);
+		std::remove(defaultProfilePath);
+		return 1;
+	}
+	gServerSetsEntityTeam = true;
 	gEntities[0].v.flags |= FL_SPECTATOR;
 	gEntities[0].v.deadflag = DEAD_DEAD;
 	gEntities[0].v.health = 0.0f;
@@ -495,10 +596,25 @@ int main()
 	globals.time += 0.1f;
 	runtime.onStartFrame();
 	runtime.onStartFramePost();
-	if (!check(gRunPlayerMoveCount == 1 &&
+	if (!check(gRunPlayerMoveCount == 0 &&
 				  runtime.movementPhysicsSample(1U).readiness ==
 					  astrabot::runtime::SpawnReadiness::NotReady,
-			   "joined spectator/dead actor still receives neutral heartbeat"))
+				   "joined spectator/dead actor does not receive RunPlayerMove"))
+	{
+		std::remove(profilePath);
+		std::remove(defaultProfilePath);
+		return 1;
+	}
+	gEntities[0].v.flags &= ~FL_SPECTATOR;
+	gEntities[0].v.deadflag = DEAD_NO;
+	gEntities[0].v.health = 100.0f;
+	gEntities[0].v.flags &= ~FL_ONGROUND;
+	gRunPlayerMoveCount = 0;
+	globals.time += 0.1f;
+	runtime.onStartFrame();
+	runtime.onStartFramePost();
+	if (!check(gRunPlayerMoveCount == 0,
+			   "respawning actor does not receive input before grounded readiness"))
 	{
 		std::remove(profilePath);
 		std::remove(defaultProfilePath);
