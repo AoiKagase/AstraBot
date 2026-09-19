@@ -509,6 +509,7 @@ if(ASTRABOT_BUILD_METAMOD)
 	src/adapter/metamod/map_fingerprint.cpp
 	src/adapter/metamod/nav_loader.cpp
 	src/adapter/metamod/action_adapter.cpp
+	src/adapter/metamod/observation_adapter.cpp
 	)
   target_include_directories(astrabot_mm PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/include"
@@ -569,6 +570,7 @@ if(ASTRABOT_BUILD_METAMOD)
 		src/adapter/metamod/nav_loader.cpp
 		src/adapter/metamod/map_fingerprint.cpp
 		src/adapter/metamod/action_adapter.cpp
+		src/adapter/metamod/observation_adapter.cpp
 	)
     target_link_libraries(astrabot_metamod_hooks PRIVATE astrabot_core)
     astrabot_apply_warnings(astrabot_metamod_hooks)
@@ -612,6 +614,7 @@ if(ASTRABOT_BUILD_METAMOD)
 		src/adapter/metamod/nav_loader.cpp
 		src/adapter/metamod/map_fingerprint.cpp
 		src/adapter/metamod/action_adapter.cpp
+		src/adapter/metamod/observation_adapter.cpp
 	)
     target_include_directories(astrabot_fake_client_isolation PRIVATE
       "${CMAKE_CURRENT_SOURCE_DIR}/include"
@@ -649,6 +652,7 @@ add_executable(astrabot_compat_actor_command
 	src/adapter/metamod/nav_loader.cpp
 	src/adapter/metamod/map_fingerprint.cpp
 	src/adapter/metamod/action_adapter.cpp
+	src/adapter/metamod/observation_adapter.cpp
 )
     target_include_directories(astrabot_compat_actor_command PRIVATE
       "${CMAKE_CURRENT_SOURCE_DIR}/include"
@@ -658,6 +662,19 @@ add_executable(astrabot_compat_actor_command
     target_link_libraries(astrabot_compat_actor_command PRIVATE astrabot_core)
     astrabot_apply_warnings(astrabot_compat_actor_command)
 	add_test(NAME astrabot_compat_actor_command COMMAND astrabot_compat_actor_command)
+
+	add_executable(astrabot_observation_adapter
+    tests/observation_adapter_tests.cpp
+    src/adapter/metamod/observation_adapter.cpp
+  )
+	target_include_directories(astrabot_observation_adapter PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/adapter/metamod"
+    ${ASTRABOT_METAMOD_INCLUDE_DIRS}
+  )
+	target_link_libraries(astrabot_observation_adapter PRIVATE astrabot_core)
+	astrabot_apply_warnings(astrabot_observation_adapter)
+	add_test(NAME astrabot_observation_adapter COMMAND astrabot_observation_adapter)
 
 	add_executable(astrabot_action_adapter
 		tests/action_adapter_tests.cpp
