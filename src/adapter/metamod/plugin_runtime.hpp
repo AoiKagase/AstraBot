@@ -59,6 +59,9 @@ struct ManagedObjectiveTargetCache
 	std::uint32_t generation;
 	bool diagnosticsEmitted;
 	bool lastCacheHit;
+	int rawTeam;
+	int effectiveTeam;
+	bool teamInfoFresh;
 };
 
 		class PluginRuntime
@@ -159,9 +162,12 @@ struct ManagedObjectiveTargetCache
 			void updateManagedBotMovement();
 			void resetManagedBotTiming(std::size_t index, float spawnTime);
 			void resetManagedBotCommandTemplate(std::size_t index);
-			void updateManagedBotCompatibilityState(
-				std::size_t index,
-				const runtime::MovementPhysicsState &before);
+		void updateManagedBotCompatibilityState(
+			std::size_t index,
+			const runtime::MovementPhysicsState &before);
+		int resolveManagedBotTeam(
+			std::size_t index,
+			const compat::CompatibilityObservation &observation) const;
 			compat::StateUpdateContext makeManagedBotStateContext(
 				std::size_t index,
 				const runtime::MovementPhysicsState &before) const;

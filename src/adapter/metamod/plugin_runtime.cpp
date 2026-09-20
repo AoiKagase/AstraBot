@@ -2489,19 +2489,15 @@ bool PluginRuntime::buildManagedObjectiveTarget(
 	{
 		return false;
 	}
-	int team = compatObservation.player.team.isAvailable()
+	const int rawTeam = compatObservation.player.team.isAvailable()
 		? compatObservation.player.team.value
 		: static_cast<int>(handle.entity->v.team);
-	if (team < 1 && managedBotTeamNumbers_[index] >= 1U &&
-		managedBotTeamNumbers_[index] <= 2U)
-	{
-		team = static_cast<int>(managedBotTeamNumbers_[index]);
-	}
-	if (team < 1 && joinControllers_[index].teamConfirmed())
-	{
-		team = joinControllers_[index].requestedTeam() == compat::CommandTeam::Terrorist ? 1 :
-			joinControllers_[index].requestedTeam() == compat::CommandTeam::CounterTerrorist ? 2 : 0;
-	}
+	const int team = resolveManagedBotTeam(index, compatObservation);
+	ManagedObjectiveTargetCache &cache = managedBotObjectiveTargets_[index];
+	cache.rawTeam = rawTeam;
+	cache.effectiveTeam = team;
+	cache.teamInfoFresh = joinControllers_[index].teamConfirmed() &&
+		managedBotTeamNumbers_[index] >= 1U && managedBotTeamNumbers_[index] <= 2U;
 	if (team != 1 && team != 2)
 	{
 		return false;
@@ -2510,7 +2506,6 @@ bool PluginRuntime::buildManagedObjectiveTarget(
 		compatObservation.objective.carryingC4.value;
 	const bool needsBombSite = team == 1 && carryingBomb;
 	const bool needsPlantedBomb = team == 2;
-	ManagedObjectiveTargetCache &cache = managedBotObjectiveTargets_[index];
 	const bool sameObjectiveState = cache.mapGeneration == lifecycle_.mapGeneration() &&
 		cache.roundGeneration == lifecycle_.roundGeneration() &&
 		cache.team == static_cast<std::uint8_t>(team) &&
@@ -2779,18 +2774,7 @@ ActionProposal PluginRuntime::decideManagedBotAction(
 		}
 		return proposal;
 	}
-	int team = compatObservation.player.team.isAvailable()
-		? compatObservation.player.team.value
-		: static_cast<int>(handle.entity->v.team);
-	if (team < 1 && managedBotTeamNumbers_[index] >= 1U && managedBotTeamNumbers_[index] <= 2U)
-	{
-		team = static_cast<int>(managedBotTeamNumbers_[index]);
-	}
-	if (team < 1 && joinControllers_[index].teamConfirmed())
-	{
-		team = joinControllers_[index].requestedTeam() == compat::CommandTeam::Terrorist ? 1 :
-			joinControllers_[index].requestedTeam() == compat::CommandTeam::CounterTerrorist ? 2 : 0;
-	}
+	const int team = resolveManagedBotTeam(index, compatObservation);
 	const objectives::TeamRole teamRole =
 		team == 1 ? objectives::TeamRole::Terrorist :
 		team == 2 ? objectives::TeamRole::CounterTerrorist : objectives::TeamRole::Unknown;
@@ -3332,6 +3316,25 @@ compat::StateUpdateContext PluginRuntime::makeManagedBotStateContext(
 	return context;
 }
 
+int PluginRuntime::resolveManagedBotTeam(
+	std::size_t index,
+	const compat::CompatibilityObservation &observation) const
+{
+	if (index < managedBotTeamNumbers_.size() &&
+		joinControllers_[index].teamConfirmed() &&
+		managedBotTeamNumbers_[index] >= 1U &&
+		managedBotTeamNumbers_[index] <= 2U)
+	{
+		return static_cast<int>(managedBotTeamNumbers_[index]);
+	}
+	if (observation.player.team.isAvailable() &&
+		observation.player.team.value >= 1 && observation.player.team.value <= 2)
+	{
+		return observation.player.team.value;
+	}
+	return 0;
+}
+
 void PluginRuntime::updateManagedBotCompatibilityState(
 	std::size_t index,
 	const runtime::MovementPhysicsState &before)
@@ -3393,8 +3396,7 @@ void PluginRuntime::updateManagedBotCompatibilityState(
 		{
 			const bool carryingC4 = observation.objective.carryingC4.isAvailable() &&
 				observation.objective.carryingC4.value;
-			const bool teamAvailable = observation.player.team.isAvailable();
-			const int team = teamAvailable ? observation.player.team.value : 0;
+			const int team = resolveManagedBotTeam(index, observation);
 			if (carryingC4 && team == 1)
 			{
 				context.requestTransition = machine.state() !=
@@ -3572,18 +3574,22 @@ void PluginRuntime::logGoalAssignmentDiagnostic(
 	}
 	movementGoalDiagnosticSeconds_[index] = second;
 	const ManagedObjectiveTargetCache &cache = managedBotObjectiveTargets_[index];
+	const int rawTeam = before.team != 0 ? before.team : cache.rawTeam;
 	const char *goalSource = decision.goalKind == runtime::NavGoalKind::Objective
 		? "objective"
 		: decision.goalKind == runtime::NavGoalKind::Roam ? "roam" : "none";
 	gpMetaUtilFuncs->pfnLogConsole(
 		pluginId_,
-		"profile goalAssignment bot_id=%u team=%d carrying_c4=%d state=%s task=%s "
+		"profile goalAssignment bot_id=%u raw_team=%d effective_team=%d "
+		"team_info=%d team_fresh=%d carrying_c4=%d state=%s task=%s "
 		"disposition=UNAVAILABLE goal_present=%d goal_kind=%d goal_area=%u "
 		"goal_position=(%.1f %.1f %.1f) goal_source=%s objective_target_id=%u "
 		"goal_generation=%u cache_hit=%d cache_scope=actor corridor_goal_area=%u "
 		"next_area=%u movement_target=(%.1f %.1f %.1f) current_area=%u",
-		static_cast<unsigned int>(managedBotHandles_[index].actor.slot), before.team,
-		cache.carryingBomb ? 1 : 0,
+		static_cast<unsigned int>(managedBotHandles_[index].actor.slot),
+		rawTeam, cache.effectiveTeam,
+		cache.teamInfoFresh ? cache.effectiveTeam : 0,
+		cache.teamInfoFresh ? 1 : 0, cache.carryingBomb ? 1 : 0,
 		compat::toString(managedBotStateMachines_[index].state()),
 		compat::toString(managedBotStateMachines_[index].task()),
 		decision.goalPresent ? 1 : 0, static_cast<int>(decision.goalKind),

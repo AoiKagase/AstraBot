@@ -175,6 +175,39 @@ def test_traversal_trace_exposes_jump_execution_chain() -> None:
         assert field in source
 
 
+def test_effective_team_is_shared_across_runtime_decisions() -> None:
+    root = Path(__file__).parents[1]
+    source = (
+        root / "src" / "adapter" / "metamod" / "plugin_runtime.cpp"
+    ).read_text(encoding="utf-8")
+    assert "resolveManagedBotTeam" in source
+    state_start = source.index(
+        "void PluginRuntime::updateManagedBotCompatibilityState("
+    )
+    state_body = source[state_start:]
+    assert "resolveManagedBotTeam" in state_body
+    objective_start = source.index(
+        "bool PluginRuntime::buildManagedObjectiveTarget("
+    )
+    objective_body = source[objective_start:]
+    assert "resolveManagedBotTeam" in objective_body
+    action_start = source.index("ActionProposal PluginRuntime::decideManagedBotAction(")
+    action_body = source[action_start:]
+    assert "resolveManagedBotTeam" in action_body
+
+
+def test_runtime_diagnostic_separates_raw_and_effective_team() -> None:
+    source = (
+        Path(__file__).parents[1]
+        / "src"
+        / "adapter"
+        / "metamod"
+        / "plugin_runtime.cpp"
+    ).read_text(encoding="utf-8")
+    for field in ("raw_team", "effective_team", "team_info", "team_fresh"):
+        assert field in source
+
+
 if __name__ == "__main__":
     test_non_objective_bots_skip_bomb_site_corridor_enumeration()
     test_diagnostic_performance_cvars_are_present_and_default_off()
@@ -186,4 +219,6 @@ if __name__ == "__main__":
     test_bomb_target_candidates_do_not_collapse_distinct_sites_by_area()
     test_goal_assignment_trace_keeps_actor_local_cache_scope()
     test_traversal_trace_exposes_jump_execution_chain()
+    test_effective_team_is_shared_across_runtime_decisions()
+    test_runtime_diagnostic_separates_raw_and_effective_team()
     print("p076 performance contract: PASS")

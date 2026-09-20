@@ -622,6 +622,10 @@ int main()
 		return 1;
 	}
 	gEntities[0].v.team = 2;
+	runtime.onMessageBegin(0, 86, nullptr, nullptr);
+	runtime.onWriteByte(1);
+	runtime.onWriteString("CT");
+	runtime.onMessageEnd();
 	gEntities[1].v.team = 1;
 	gEntities[1].v.flags = FL_CLIENT | FL_ONGROUND;
 	gEntities[1].v.deadflag = DEAD_NO;
