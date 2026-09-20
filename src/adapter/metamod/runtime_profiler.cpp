@@ -263,7 +263,11 @@ void RuntimeProfiler::recordObjectiveSelection(
 	std::uint32_t uniqueCandidateAreas,
 	std::uint32_t candidateQueries,
 	std::uint32_t duplicateCandidateAreas,
-	std::uint32_t selectedGoalArea) noexcept
+	std::uint32_t selectedGoalArea,
+	std::uint32_t registeredSites,
+	std::uint32_t evaluatedSites,
+	std::uint32_t cacheHits,
+	std::uint32_t selectedSiteIdentity) noexcept
 {
 	if (!enabled_)
 	{
@@ -278,6 +282,13 @@ void RuntimeProfiler::recordObjectiveSelection(
 	if (selectedGoalArea != 0U)
 	{
 		counters_.selectedObjectiveGoalArea = selectedGoalArea;
+	}
+	saturatingAdd(&counters_.objectiveRegisteredSites, registeredSites);
+	saturatingAdd(&counters_.objectiveEvaluatedSites, evaluatedSites);
+	saturatingAdd(&counters_.objectiveCacheHits, cacheHits);
+	if (selectedSiteIdentity != 0U)
+	{
+		counters_.selectedObjectiveSiteIdentity = selectedSiteIdentity;
 	}
 }
 

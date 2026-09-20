@@ -64,6 +64,27 @@ struct ManagedObjectiveTargetCache
 	bool teamInfoFresh;
 };
 
+struct ManagedObjectiveSiteRegistry
+{
+	static constexpr std::size_t kMaximumSites = 4U;
+	struct Entry
+	{
+		bool registered;
+		std::uint32_t targetId;
+		int entityIndex;
+		std::uint32_t siteIdentity;
+		nav::NavVector center;
+		nav::NavExtent extent;
+		bool hasExtent;
+	};
+
+	runtime::LifecycleGeneration mapGeneration;
+	runtime::LifecycleGeneration roundGeneration;
+	bool initialized;
+	std::array<Entry, kMaximumSites> entries;
+	std::uint32_t registeredCount;
+};
+
 		class PluginRuntime
 		{
 		  public:
@@ -206,11 +227,12 @@ struct ManagedObjectiveTargetCache
 				world::WorldSnapshot *snapshot,
 				world::ActorKey *targetActor,
 				world::WorldPosition *targetPosition);
-	bool buildManagedObjectiveTarget(
-		std::size_t index,
-		nav::NavVector *target,
-		nav::NavSearchStats *searchStats,
-		RuntimeObjectiveSelectionStats *objectiveStats = nullptr);
+		bool buildManagedObjectiveTarget(
+			std::size_t index,
+			nav::NavVector *target,
+			nav::NavSearchStats *searchStats,
+			RuntimeObjectiveSelectionStats *objectiveStats = nullptr);
+		void refreshManagedObjectiveSiteRegistry();
 			void resetManagedBotMovement();
 		void logMovementDiagnostic(
 			std::size_t index,
@@ -294,9 +316,10 @@ struct ManagedObjectiveTargetCache
 			std::array<objectives::RoundObjectivePlanner,
 					   NativeBotObservation::kClientSlotCount>
 					managedBotObjectives_;
-			std::array<ManagedObjectiveTargetCache,
-					   NativeBotObservation::kClientSlotCount>
-				managedBotObjectiveTargets_;
+		std::array<ManagedObjectiveTargetCache,
+			NativeBotObservation::kClientSlotCount>
+			managedBotObjectiveTargets_;
+		ManagedObjectiveSiteRegistry managedObjectiveSiteRegistry_;
 			std::array<compat::CompatibilityStateMachine,
 					   NativeBotObservation::kClientSlotCount>
 				managedBotStateMachines_;

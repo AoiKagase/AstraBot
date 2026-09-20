@@ -635,6 +635,7 @@ const char *const kPerformanceCvarNames[kPerformanceCvarCount] = {
 		userMessageTextLength_(0U),
 	managedBotMovement_(), managedBotCombat_(), managedBotObjectives_(),
 	managedBotObjectiveTargets_(),
+	managedObjectiveSiteRegistry_(),
 	managedBotStateMachines_(), managedBotPerception_(),
 	managedBotPerceptionFullUpdates_(), managedBotCommandSequences_(),
 	managedBotFullUpdateSequences_(), managedBotStateRounds_(), managedBotWasDead_(),
@@ -1346,7 +1347,9 @@ void PluginRuntime::onStartFramePost()
 						pluginId_,
 						"profile objectiveCandidates bombSites=%llu candidateAreas=%llu "
 						"uniqueCandidateAreas=%llu candidateQueries=%llu "
-						"duplicateCandidateAreas=%llu selectedGoalArea=%u "
+			"duplicateCandidateAreas=%llu selectedGoalArea=%u "
+			"registered_site_count=%llu evaluated_this_window=%llu "
+			"cache_hit=%llu selected_site_id=%u "
 						"duplicateSearchSameFullUpdate=%llu "
 						"duplicateSearchSameObjectiveGeneration=%llu uniqueSearchKeys=%llu",
 						static_cast<unsigned long long>(report.objectiveBombSites),
@@ -1354,7 +1357,11 @@ void PluginRuntime::onStartFramePost()
 						static_cast<unsigned long long>(report.objectiveUniqueCandidateAreas),
 						static_cast<unsigned long long>(report.objectiveCandidateQueries),
 						static_cast<unsigned long long>(report.objectiveDuplicateCandidateAreas),
-						static_cast<unsigned int>(report.selectedObjectiveGoalArea),
+			static_cast<unsigned int>(report.selectedObjectiveGoalArea),
+			static_cast<unsigned long long>(report.objectiveRegisteredSites),
+			static_cast<unsigned long long>(report.objectiveEvaluatedSites),
+			static_cast<unsigned long long>(report.objectiveCacheHits),
+			static_cast<unsigned int>(report.selectedObjectiveSiteIdentity),
 						static_cast<unsigned long long>(report.duplicateSearchSameFullUpdate),
 						static_cast<unsigned long long>(report.duplicateSearchSameObjectiveGeneration),
 						static_cast<unsigned long long>(report.uniqueSearchKeys));
@@ -2060,7 +2067,11 @@ void PluginRuntime::updateManagedBotMovement()
 			objectiveSelectionStats.uniqueCandidateAreas,
 			objectiveSelectionStats.candidateQueries,
 			objectiveSelectionStats.duplicateCandidateAreas,
-			objectiveSelectionStats.selectedGoalArea);
+			objectiveSelectionStats.selectedGoalArea,
+			objectiveSelectionStats.registeredSites,
+			objectiveSelectionStats.evaluatedSites,
+			objectiveSelectionStats.cacheHits,
+			objectiveSelectionStats.selectedSiteIdentity);
 		runtimeProfiler_.recordPathSearchResults(
 			RuntimePathSearchCaller::ObjectiveCandidateEvaluation,
 			managedBotHandles_[index].actor.slot,
@@ -2456,6 +2467,57 @@ bool PluginRuntime::buildManagedWorldSnapshot(
 	return true;
 }
 
+void PluginRuntime::refreshManagedObjectiveSiteRegistry()
+{
+	const runtime::LifecycleGeneration mapGeneration = lifecycle_.mapGeneration();
+	const runtime::LifecycleGeneration roundGeneration = lifecycle_.roundGeneration();
+	if (managedObjectiveSiteRegistry_.initialized &&
+		managedObjectiveSiteRegistry_.mapGeneration == mapGeneration &&
+		managedObjectiveSiteRegistry_.roundGeneration == roundGeneration)
+	{
+		return;
+	}
+	managedObjectiveSiteRegistry_ = {};
+	managedObjectiveSiteRegistry_.initialized = true;
+	managedObjectiveSiteRegistry_.mapGeneration = mapGeneration;
+	managedObjectiveSiteRegistry_.roundGeneration = roundGeneration;
+	if (engineFunctions_ == nullptr || globals_ == nullptr ||
+		engineFunctions_->pfnPEntityOfEntIndex == nullptr ||
+		engineFunctions_->pfnSzFromIndex == nullptr)
+	{
+		return;
+	}
+	const int maxEntities = (std::max)(0, (std::min)(globals_->maxEntities, 2048));
+	for (int entityIndex = 1; entityIndex <= maxEntities; ++entityIndex)
+	{
+		if (managedObjectiveSiteRegistry_.registeredCount >=
+			ManagedObjectiveSiteRegistry::kMaximumSites)
+		{
+			break;
+		}
+		edict_t *entity = engineFunctions_->pfnPEntityOfEntIndex(entityIndex);
+		if (entity == nullptr || entity->free)
+		{
+			continue;
+		}
+		const char *classname = engineFunctions_->pfnSzFromIndex(entity->v.classname);
+		if (!isBombTargetClassname(classname))
+		{
+			continue;
+		}
+		ManagedObjectiveSiteRegistry::Entry &entry =
+			managedObjectiveSiteRegistry_.entries[
+				managedObjectiveSiteRegistry_.registeredCount];
+		entry.registered = true;
+		entry.targetId = managedObjectiveSiteRegistry_.registeredCount + 1U;
+		entry.entityIndex = entityIndex;
+		entry.siteIdentity = entry.targetId;
+		entry.center = entityObjectiveCenter(entity);
+		entry.hasExtent = objectiveSiteExtent(entity, classname, &entry.extent);
+		++managedObjectiveSiteRegistry_.registeredCount;
+	}
+}
+
 bool PluginRuntime::buildManagedObjectiveTarget(
 	std::size_t index,
 	nav::NavVector *target,
@@ -2507,6 +2569,14 @@ bool PluginRuntime::buildManagedObjectiveTarget(
 		compatObservation.objective.carryingC4.value;
 	const bool needsBombSite = team == 1 && carryingBomb;
 	const bool needsPlantedBomb = team == 2;
+	if (needsBombSite)
+	{
+		refreshManagedObjectiveSiteRegistry();
+		if (objectiveStats != nullptr)
+		{
+			objectiveStats->registeredSites = managedObjectiveSiteRegistry_.registeredCount;
+		}
+	}
 	const bool sameObjectiveState = cache.mapGeneration == lifecycle_.mapGeneration() &&
 		cache.roundGeneration == lifecycle_.roundGeneration() &&
 		cache.team == static_cast<std::uint8_t>(team) &&
@@ -2522,6 +2592,11 @@ bool PluginRuntime::buildManagedObjectiveTarget(
 		if (cachedClassname != nullptr && isBombTargetClassname(cachedClassname))
 		{
 			*target = cache.target;
+			if (objectiveStats != nullptr)
+			{
+				++objectiveStats->cacheHits;
+				objectiveStats->selectedSiteIdentity = cache.selectedSiteIdentity;
+			}
 			cache.lastCacheHit = true;
 			return std::isfinite(target->x) && std::isfinite(target->y) &&
 				std::isfinite(target->z);
@@ -2595,10 +2670,11 @@ bool PluginRuntime::buildManagedObjectiveTarget(
 		if (needsBombSite && isBombTargetClassname(classname))
 		{
 			const std::uint32_t siteIdentity = ++targetId;
-			if (objectiveStats != nullptr)
-			{
-				++objectiveStats->bombSites;
-			}
+		if (objectiveStats != nullptr)
+		{
+			++objectiveStats->bombSites;
+			++objectiveStats->evaluatedSites;
+		}
 			const nav::NavVector candidate = entityObjectiveCenter(entity);
 			nav::NavExtent siteExtent = {};
 			const bool hasSiteExtent = objectiveSiteExtent(entity, classname, &siteExtent);
@@ -2718,6 +2794,10 @@ bool PluginRuntime::buildManagedObjectiveTarget(
 		cache.selectedEntityIndex = selectedBombSiteEntityIndex;
 		cache.selectedSiteIdentity = selectedSiteIdentity;
 		cache.valid = true;
+		if (objectiveStats != nullptr)
+		{
+			objectiveStats->selectedSiteIdentity = selectedSiteIdentity;
+		}
 	}
 	else if (team == 2 && plantedBomb != nullptr)
 	{

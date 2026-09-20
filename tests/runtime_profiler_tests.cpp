@@ -31,7 +31,7 @@ bool testCallerClassificationAndDuplicateKeys()
 		astrabot::metamod::RuntimePathSearchCaller::ObjectiveCandidateEvaluation,
 		1U, 7U, 3U, 41U, 90U, 0U, true, 1U, 1U, 0U, 10U, 12U, 0U, 0U, 0U,
 		100U, 100U, 502U, 502U);
-	profiler.recordObjectiveSelection(2U, 3U, 2U, 2U, 1U, 90U);
+	profiler.recordObjectiveSelection(2U, 3U, 2U, 2U, 1U, 90U, 2U, 2U, 1U, 1U);
 	RuntimeProfilerReport report = {};
 	if (!check(profiler.consumeReport(1.0, &report),
 		"caller classification report is emitted"))
@@ -50,8 +50,12 @@ bool testCallerClassificationAndDuplicateKeys()
 		report.objectiveCandidateAreas == 3U &&
 		report.objectiveUniqueCandidateAreas == 2U &&
 		report.objectiveCandidateQueries == 2U &&
-		report.objectiveDuplicateCandidateAreas == 1U &&
-		report.selectedObjectiveGoalArea == 90U,
+			report.objectiveDuplicateCandidateAreas == 1U &&
+			report.selectedObjectiveGoalArea == 90U &&
+			report.objectiveRegisteredSites == 2U &&
+			report.objectiveEvaluatedSites == 2U &&
+			report.objectiveCacheHits == 1U &&
+			report.selectedObjectiveSiteIdentity == 1U,
 		"caller aggregates and bounded duplicate/objective counters are correct");
 }
 }

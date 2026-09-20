@@ -208,6 +208,29 @@ def test_runtime_diagnostic_separates_raw_and_effective_team() -> None:
         assert field in source
 
 
+def test_bomb_target_registry_separates_registration_from_evaluation() -> None:
+    root = Path(__file__).parents[1]
+    runtime_source = (
+        root / "src" / "adapter" / "metamod" / "plugin_runtime.cpp"
+    ).read_text(encoding="utf-8")
+    runtime_header = (
+        root / "src" / "adapter" / "metamod" / "plugin_runtime.hpp"
+    ).read_text(encoding="utf-8")
+    profiler_header = (
+        root / "include" / "astrabot" / "metamod" / "runtime_profiler.hpp"
+    ).read_text(encoding="utf-8")
+    for symbol in (
+        "ManagedObjectiveSiteRegistry",
+        "refreshManagedObjectiveSiteRegistry",
+        "registered_site_count",
+        "evaluated_this_window",
+        "selected_site_id",
+    ):
+        assert symbol in runtime_source or symbol in runtime_header
+    assert "objectiveRegisteredSites" in profiler_header
+    assert "objectiveCacheHits" in profiler_header
+
+
 if __name__ == "__main__":
     test_non_objective_bots_skip_bomb_site_corridor_enumeration()
     test_diagnostic_performance_cvars_are_present_and_default_off()
@@ -221,4 +244,5 @@ if __name__ == "__main__":
     test_traversal_trace_exposes_jump_execution_chain()
     test_effective_team_is_shared_across_runtime_decisions()
     test_runtime_diagnostic_separates_raw_and_effective_team()
+    test_bomb_target_registry_separates_registration_from_evaluation()
     print("p076 performance contract: PASS")

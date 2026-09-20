@@ -64,6 +64,10 @@ struct RuntimeObjectiveSelectionStats
 	std::uint32_t candidateQueries;
 	std::uint32_t duplicateCandidateAreas;
 	std::uint32_t selectedGoalArea;
+	std::uint32_t registeredSites;
+	std::uint32_t evaluatedSites;
+	std::uint32_t cacheHits;
+	std::uint32_t selectedSiteIdentity;
 };
 
 struct RuntimeProfilerStageStats
@@ -111,6 +115,10 @@ struct RuntimeProfilerReport
 	std::uint64_t objectiveUniqueCandidateAreas;
 	std::uint64_t objectiveCandidateQueries;
 	std::uint64_t objectiveDuplicateCandidateAreas;
+	std::uint64_t objectiveRegisteredSites;
+	std::uint64_t objectiveEvaluatedSites;
+	std::uint64_t objectiveCacheHits;
+	std::uint32_t selectedObjectiveSiteIdentity;
 	std::uint32_t selectedObjectiveGoalArea;
 };
 
@@ -181,7 +189,11 @@ public:
 		std::uint32_t uniqueCandidateAreas,
 		std::uint32_t candidateQueries,
 		std::uint32_t duplicateCandidateAreas,
-		std::uint32_t selectedGoalArea) noexcept;
+		std::uint32_t selectedGoalArea,
+		std::uint32_t registeredSites,
+		std::uint32_t evaluatedSites,
+		std::uint32_t cacheHits,
+		std::uint32_t selectedSiteIdentity) noexcept;
 	void recordPathRecompute() noexcept;
 	void recordRunPlayerMove() noexcept;
 	bool consumeReport(double nowSeconds, RuntimeProfilerReport *report) noexcept;
