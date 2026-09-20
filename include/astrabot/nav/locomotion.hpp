@@ -68,10 +68,11 @@ struct LocomotionConfig
 		float standingClearance;
 		float crouchingClearance;
 		NavVector velocity;
-		bool grounded;
-		bool ducked;
-		bool onLadder;
-	};
+	bool grounded;
+	bool ducked;
+	bool onLadder;
+	bool clearanceAvailable;
+};
 
 struct LocomotionIntent
 {
@@ -113,7 +114,7 @@ private:
 		const NavSnapshot &snapshot,
 		const LocomotionObservation &observation,
 		NavAreaMatch *match) const;
-	bool recordProgress(const NavVector &position);
+	bool recordProgress(const NavVector &position, const NavVector &target);
 	LocomotionResult buildIntent(
 		const NavSnapshot &snapshot,
 		const LocomotionObservation &observation,

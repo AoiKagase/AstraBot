@@ -192,6 +192,65 @@ bool testStepAndStuckRecovery()
 	return true;
 }
 
+bool testLateralJitterDoesNotResetForwardProgress()
+{
+	astrabot::nav::NavDocument document = routeDocument(0.0f);
+	const astrabot::nav::NavSnapshot snapshot = snapshotFor(&document, 1U);
+	astrabot::nav::LocomotionConfig jitterConfig = config();
+	jitterConfig.stuckFrameLimit = 2U;
+	astrabot::nav::LocomotionController controller(jitterConfig);
+	if (!check(controller.start(corridorFor(snapshot)) ==
+				astrabot::nav::LocomotionResult::Started,
+				"jitter progress controller starts"))
+	{
+		return false;
+	}
+	astrabot::nav::LocomotionObservation observation = {};
+	observation.position = {16.0f, 32.0f, 0.0f};
+	observation.standingClearance = 72.0f;
+	observation.crouchingClearance = 36.0f;
+	astrabot::nav::LocomotionIntent intent = {};
+	if (!check(controller.update(snapshot, observation, &intent) ==
+				astrabot::nav::LocomotionResult::IntentReady,
+				"jitter progress establishes baseline"))
+	{
+		return false;
+	}
+	observation.position.y = 32.02f;
+	if (!check(controller.update(snapshot, observation, &intent) ==
+				astrabot::nav::LocomotionResult::IntentReady,
+				"small lateral jitter remains a live intent"))
+	{
+		return false;
+	}
+	observation.position.y = 31.98f;
+	return check(controller.update(snapshot, observation, &intent) ==
+				astrabot::nav::LocomotionResult::Stuck,
+				"lateral jitter does not reset forward no-progress window");
+}
+
+bool testUnavailableClearanceIsExplicit()
+{
+	astrabot::nav::NavDocument document;
+	document.setSourceIdentity({5U, 100U, 200U});
+	astrabot::nav::NavArea start = area(1U, 0.0f, 64.0f, 0.0f);
+	astrabot::nav::NavArea crouch = area(2U, 64.0f, 128.0f, 0.0f);
+	start.connections[0U].push_back(2U);
+	crouch.attributes = astrabot::nav::NavArea::kCrouch;
+	document.addArea(start);
+	document.addArea(crouch);
+	const astrabot::nav::NavSnapshot snapshot = snapshotFor(&document, 1U);
+	astrabot::nav::LocomotionController controller(config());
+	controller.start(corridorFor(snapshot));
+	astrabot::nav::LocomotionObservation observation = {};
+	observation.position = {16.0f, 32.0f, 0.0f};
+	observation.clearanceAvailable = false;
+	astrabot::nav::LocomotionIntent intent = {};
+	return check(controller.update(snapshot, observation, &intent) ==
+				astrabot::nav::LocomotionResult::InvalidClearance,
+				"unavailable clearance is not replaced by guessed hull values");
+}
+
 bool testCompletionAndInvalidation()
 {
 	astrabot::nav::NavDocument document = routeDocument(0.0f);
@@ -418,6 +477,8 @@ int main()
 			!testInvalidInputs() ||
 			!testReferenceArrivalTolerance() ||
 			!testNavAttributesSelectTraversal() ||
+			!testLateralJitterDoesNotResetForwardProgress() ||
+			!testUnavailableClearanceIsExplicit() ||
 			!testJumpAttributesOverrideStepHeight())
 	{
 		return 1;

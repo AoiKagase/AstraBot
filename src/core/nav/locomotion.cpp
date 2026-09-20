@@ -186,12 +186,18 @@ NavQueryResult LocomotionController::findCurrentArea(
 	return query.findNearest(observation.position, kMaximumRecoveryDistance, match);
 }
 
-bool LocomotionController::recordProgress(const NavVector &position)
+bool LocomotionController::recordProgress(
+	const NavVector &position,
+	const NavVector &target)
 {
 	if (hasLastPosition_)
 	{
-		if (horizontalDistance(lastPosition_, position) <
-				kMinimumProgressDistance)
+		const NavVector direction = normalizeDirection(position, target);
+		const float deltaX = position.x - lastPosition_.x;
+		const float deltaY = position.y - lastPosition_.y;
+		const float forwardProgress = deltaX * direction.x + deltaY * direction.y;
+		if (!std::isfinite(forwardProgress) ||
+			forwardProgress < kMinimumProgressDistance)
 		{
 			++stuckFrames_;
 		}
@@ -237,6 +243,14 @@ LocomotionResult LocomotionController::buildIntent(
 	if (!requiresJump &&
 			(requiresCrouch || observation.standingClearance < config_.requiredClearance))
 	{
+		const bool clearanceAvailable = observation.clearanceAvailable ||
+			observation.standingClearance > 0.0f ||
+			observation.crouchingClearance > 0.0f;
+		if (!clearanceAvailable)
+		{
+			active_ = false;
+			return LocomotionResult::InvalidClearance;
+		}
 		if (observation.crouchingClearance < config_.requiredClearance)
 		{
 			active_ = false;
@@ -245,7 +259,13 @@ LocomotionResult LocomotionController::buildIntent(
 		posture = LocomotionPosture::Crouching;
 	}
 
-	if (recordProgress(observation.position))
+	if (observation.onLadder)
+	{
+		lastPosition_ = observation.position;
+		hasLastPosition_ = true;
+		stuckFrames_ = 0U;
+	}
+	else if (recordProgress(observation.position, target))
 	{
 		active_ = false;
 		return LocomotionResult::Stuck;
