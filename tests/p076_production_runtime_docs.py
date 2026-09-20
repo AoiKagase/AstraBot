@@ -21,6 +21,12 @@ def test_p076_runtime_model_is_explicit():
         "TraceLine/sec",
         "pathSearch/sec",
         "astrabot_profile",
+        "P07.6-PERF execution inventory",
+        "O(alive_bots * alive_players * body_probes)",
+        "astrabot_perf_disable_vision",
+        "astrabot_perf_disable_pathsearch",
+        "astrabot_perf_disable_trace",
+        "30 seconds",
         "P08 NOT STARTED",
     ):
         assert required in model, required

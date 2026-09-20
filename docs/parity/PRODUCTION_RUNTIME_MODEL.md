@@ -104,3 +104,99 @@ spawn -> freeze no movement -> round start -> state update -> Goal
 
 Offline CTest, fixture checks, FocalSpan, and profiler reports do not prove
 that live chain. `P08 NOT STARTED`.
+
+## P07.6-PERF execution inventory
+
+The production adapter has two StartFrame hooks. The pre hook performs the
+lifecycle/CVar/native-control work; the post hook processes joins and invokes
+managed movement. The per-actor runtime inventory is:
+
+| Stage | Production location | Cadence |
+|---|---|---|
+| lifecycle/CVar/native guard | `PluginRuntime::onStartFrame` | per-frame |
+| FakeClient join heartbeat | `processJoinControllers` / join dispatch | per-frame while joining |
+| scheduler upkeep/command | `BotTimingScheduler::advance` | 30 Hz command gate |
+| observation, candidate enumeration, Vision FOV/LOS/body probes | `buildManagedWorldSnapshot` / `ObservationAdapter::collectVisibility` | 10 Hz Full Update; cached on command ticks |
+| WorldModel publish | `PerceptionAssembler::publish` | 10 Hz Full Update |
+| Compatibility state and NAV decision | `updateManagedBotMovement` / `NavRoamController::update` | 10 Hz Full Update |
+| current-area lookup and route selection | `NavRoamController` | on Full Update; route retained between updates |
+| NAV movement intent | `NavRoamController` / locomotion | 10 Hz Full Update |
+| public movement dispatch | `executeManagedBotCommand` / `InputDispatcher` | 30 Hz command gate |
+| trace serialization | optional trace sinks | event-driven/disabled by default |
+
+The pinned reference calls `CBot::BotThink` once per valid bot per server
+frame, but gates `Upkeep` and the nested heavy `Update` at 30 Hz and 10 Hz.
+Reference `CCSBot::IsVisible(CBasePlayer*)` preserves the chest/head/feet/
+left/right probe order. AstraBot keeps that order and measures the actual
+engine TraceLine calls rather than only the Perception consume path.
+
+## P07.6-PERF static scaling findings
+
+Before a live interval is available, the source-level scaling is explicit:
+
+```text
+each alive managed bot
+  -> each connected alive non-spectator player
+    -> five ordered body probes
+      -> FOV check before LOS TraceLine
+```
+
+Therefore the current compatibility visibility path can scale as
+`O(alive_bots * alive_players * body_probes)` per 10 Hz Full Update. It is not
+run on every command tick: a command tick reuses the bot's published snapshot.
+This is a measured candidate for live FPS impact, not a claim that Vision is
+the root cause before the live counters are collected.
+
+The confirmed redundant NAV work was different: the old objective sensor
+enumerated every bomb-site NAV area and built a corridor for each site area on
+every eligible call, even when the bot was not carrying C4 and could not use a
+bomb-site goal. The production guard now performs that expensive branch only
+for a Terrorist with a public carrying-C4 observation. Counter-Terrorists only
+scan for a planted bomb; ordinary roam bots do neither. This preserves the
+existing public-objective semantics and leaves normal Compatibility roam path
+persistence unchanged.
+
+## P07.6-PERF profiler and A/B controls
+
+`astrabot_profile 1` enables one-second aggregate reports. The report includes
+the fixed stage timing table plus alive-bot count, visibility candidates,
+FOV checks, LOS checks, body probes, exact TraceLine calls, path request
+success/failure/recompute counters, and RunPlayerMove count. No high-resolution
+clock, counter update, or console output is performed by the stage scopes when
+profiling is disabled.
+
+The A* report additionally records `expanded`, `enqueues`, `reopens`,
+`staleQueue`, `equalCostRepl`, `pathSearchUsec`, and `pathSearchMaxUsec` from
+the actual bounded search. `PathSearch` timing is a leaf measurement; the
+Full Update total remains an inclusive orchestration measure, while RuntimeInput
+and NavMovement no longer wrap the whole StartFrame post hook.
+
+An Objective ResourceLimit failure is cached by
+`(mapGeneration, startArea, goalArea, routeType)` with bounded exponential
+frame backoff. The cache is cleared on map/round/goal changes and successful
+route selection. The A* search limits themselves are unchanged.
+
+The default-off diagnostic CVars are `astrabot_perf_disable_vision`,
+`astrabot_perf_disable_pathsearch`, and `astrabot_perf_disable_trace`. They are
+temporary A/B controls only: vision bypasses the adapter scan, trace bypasses
+engine LOS calls while retaining FOV/body accounting, and pathsearch
+short-circuits route production with a typed `PathSearchFailed` diagnostic.
+They are not compatibility behavior and are not a P08 dependency.
+
+For live evidence, keep the same map/configuration and record each interval:
+
+| Interval | Setup | Required output |
+|---|---|---|
+| A | plugin off | server FPS |
+| B | plugin on, Bot 0 | FPS, StartFrame stage usec |
+| C | 1 alive Bot | FPS, alive_bots, Vision/TraceLine/path counters |
+| D | 2 alive Bots | same counters |
+| E | 4 alive Bots | same counters |
+| F | 4 alive, vision disabled | same counters |
+| G | 4 alive, trace disabled | same counters |
+| H | 4 alive, pathsearch disabled | same counters |
+
+Run each interval for 30 seconds, save the one-second summaries, kill one Bot,
+repeat the interval, and continue until all managed Bots are dead. No live FPS
+or scaling value is filled in by offline tests; P07.6 remains `PARTIAL` until
+fresh HLDS/ReHLDS output identifies the dominant stage.

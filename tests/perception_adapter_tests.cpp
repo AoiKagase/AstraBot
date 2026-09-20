@@ -140,7 +140,104 @@ bool testAdapterPerceptionProductionFixture()
 		"production fixture ends at a compatibility belief");
 }
 
+bool testAdapterProfilerCounters()
+{
+	using namespace astrabot;
+	enginefuncs_t engine = {};
+	globalvars_t globals = {};
+	engine.pfnTraceLine = traceLine;
+	metamod::RuntimeProfiler profiler;
+	profiler.setEnabled(true, 0.0);
+	metamod::ObservationAdapter adapter;
+	adapter.configure(&engine, &globals);
+	adapter.setProfiler(&profiler);
+	edict_t observer = {};
+	edict_t target = {};
+	observer.free = 0;
+	target.free = 0;
+	observer.v.view_ofs[2] = 16.0f;
+	target.v.origin[0] = 128.0f;
+	perception::VisionObservation visible = {};
+	gTraceMode = 0;
+	gTraceCount = 0;
+	if (!check(adapter.collectVisibility(
+		&observer, &target, {2U, 1U}, frame(20U), &visible) ==
+			metamod::ObservationAdapterResult::Accepted &&
+		visible.visible && gTraceCount == 5,
+		"profiler fixture performs five visibility traces"))
+	{
+		return false;
+	}
+	metamod::RuntimeProfilerReport report = {};
+	if (!check(profiler.consumeReport(1.0, &report),
+		"profiler fixture emits one-second report"))
+	{
+		return false;
+	}
+	const auto &vision = report.stages[
+		static_cast<std::size_t>(metamod::RuntimeProfilerStage::Vision)];
+	return check(
+		vision.calls == 1U && report.traceLineCalls == 5U &&
+		report.visibilityCandidates == 1U && report.fovChecks == 5U &&
+		report.losChecks == 5U && report.bodyProbeCalls == 5U,
+		"profiler separates vision candidate, FOV, LOS, TraceLine, and body probes");
+}
+
+bool testAdapterDiagnosticToggles()
+{
+	using namespace astrabot;
+	enginefuncs_t engine = {};
+	globalvars_t globals = {};
+	engine.pfnTraceLine = traceLine;
+	metamod::RuntimeProfiler profiler;
+	profiler.setEnabled(true, 1.0);
+	metamod::ObservationAdapter adapter;
+	adapter.configure(&engine, &globals);
+	adapter.setProfiler(&profiler);
+	edict_t observer = {};
+	edict_t target = {};
+	observer.free = 0;
+	target.free = 0;
+	target.v.origin[0] = 128.0f;
+	perception::VisionObservation visible = {};
+	gTraceMode = 0;
+	gTraceCount = 0;
+	adapter.setPerformanceToggles(true, false);
+	if (!check(adapter.collectVisibility(
+		&observer, &target, {2U, 1U}, frame(30U), &visible) ==
+			metamod::ObservationAdapterResult::Accepted && gTraceCount == 0,
+		"vision diagnostic toggle skips all probes"))
+	{
+		return false;
+	}
+	metamod::RuntimeProfilerReport report = {};
+	if (!check(profiler.consumeReport(2.0, &report) &&
+		report.visibilityCandidates == 1U && report.fovChecks == 0U &&
+		report.traceLineCalls == 0U,
+		"vision diagnostic report records skipped probes"))
+	{
+		return false;
+	}
+	profiler.setEnabled(true, 3.0);
+	adapter.setPerformanceToggles(false, true);
+	gTraceCount = 0;
+	visible = {};
+	if (!check(adapter.collectVisibility(
+		&observer, &target, {2U, 1U}, frame(31U), &visible) ==
+			metamod::ObservationAdapterResult::Accepted && gTraceCount == 0,
+		"trace diagnostic toggle skips engine traces"))
+	{
+		return false;
+	}
+	return check(profiler.consumeReport(4.0, &report) &&
+		report.visibilityCandidates == 1U && report.fovChecks == 5U &&
+		report.traceLineCalls == 0U && report.bodyProbeCalls == 5U,
+		"trace diagnostic report keeps FOV/body counters separate");
+}
+
 int main()
 {
-	return testAdapterPerceptionProductionFixture() ? 0 : 1;
+	return testAdapterPerceptionProductionFixture() && testAdapterProfilerCounters() &&
+		testAdapterDiagnosticToggles()
+		? 0 : 1;
 }

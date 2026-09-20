@@ -1,6 +1,7 @@
 #include "astrabot/nav/nav_query.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <limits>
 #include <new>
@@ -512,6 +513,42 @@ struct AStarRecord
 	float costSoFar;
 	float totalCost;
 	bool closed;
+	bool expandedEver;
+};
+
+struct AStarStatsTimer
+{
+	NavSearchStats *stats;
+	std::chrono::steady_clock::time_point start;
+
+	explicit AStarStatsTimer(NavSearchStats *value)
+		: stats(value), start(value != nullptr ? std::chrono::steady_clock::now() :
+			std::chrono::steady_clock::time_point())
+	{
+		if (stats != nullptr)
+		{
+			static std::uint64_t nextSearchId = 0U;
+			stats->firstSearchId = ++nextSearchId;
+			stats->lastSearchId = stats->firstSearchId;
+		}
+	}
+
+	~AStarStatsTimer()
+	{
+		if (stats == nullptr)
+		{
+			return;
+		}
+		++stats->searchCalls;
+		const auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(
+			std::chrono::steady_clock::now() - start).count();
+		const std::uint64_t usec = elapsed > 0 ? static_cast<std::uint64_t>(elapsed) : 0U;
+		stats->totalUsec += usec;
+		if (usec > stats->maxUsec)
+		{
+			stats->maxUsec = usec;
+		}
+	}
 };
 
 NavQueryResult buildAStarCorridor(
@@ -520,8 +557,14 @@ NavQueryResult buildAStarCorridor(
 	AreaId start,
 	AreaId goal,
 	NavRouteType routeType,
-	NavCorridor *corridor)
+	NavCorridor *corridor,
+	NavSearchStats *stats)
 {
+	if (stats != nullptr)
+	{
+		*stats = {};
+	}
+	AStarStatsTimer statsTimer(stats);
 	if (corridor == nullptr)
 	{
 		return NavQueryResult::InvalidArgument;
@@ -593,8 +636,12 @@ NavQueryResult buildAStarCorridor(
 		const NavArea *startArea = currentDocument->findArea(start);
 		const NavArea *goalArea = currentDocument->findArea(goal);
 		const float initialHeuristic = distanceBetween(*startArea, *goalArea);
-		records.push_back({start, 0U, 0.0f, initialHeuristic, false});
+		records.push_back({start, 0U, 0.0f, initialHeuristic, false, false});
 		open.push_back(start);
+		if (stats != nullptr)
+		{
+			++stats->enqueueCount;
+		}
 
 		while (!open.empty())
 		{
@@ -603,9 +650,13 @@ NavQueryResult buildAStarCorridor(
 			for (std::size_t index = 1U; index < open.size(); ++index)
 			{
 				const std::size_t candidateRecordIndex = findRecord(records, open[index]);
-				if (candidateRecordIndex == records.size())
-				{
-					continue;
+		if (candidateRecordIndex == records.size())
+		{
+			if (stats != nullptr)
+			{
+				++stats->staleQueueEntries;
+			}
+			continue;
 				}
 				const AStarRecord &candidate = records[candidateRecordIndex];
 				const AStarRecord &best = records[bestRecordIndex];
@@ -619,11 +670,20 @@ NavQueryResult buildAStarCorridor(
 			const AreaId current = open[bestOpenIndex];
 			open.erase(open.begin() + static_cast<std::ptrdiff_t>(bestOpenIndex));
 			const std::size_t currentRecordIndex = findRecord(records, current);
-			if (currentRecordIndex == records.size())
+		if (currentRecordIndex == records.size())
+		{
+			if (stats != nullptr)
 			{
-				return NavQueryResult::NoRoute;
+				++stats->staleQueueEntries;
 			}
-			records[currentRecordIndex].closed = true;
+			return NavQueryResult::NoRoute;
+		}
+		if (stats != nullptr && !records[currentRecordIndex].expandedEver)
+		{
+			++stats->expandedUniqueAreas;
+			records[currentRecordIndex].expandedEver = true;
+		}
+		records[currentRecordIndex].closed = true;
 			if (current == goal)
 			{
 				break;
@@ -655,11 +715,15 @@ NavQueryResult buildAStarCorridor(
 							return NavQueryResult::ResourceLimit;
 						}
 						const float heuristic = distanceBetween(*targetArea, *goalArea);
-						records.push_back({
-							target, current, tentativeCost,
-							tentativeCost + heuristic, false});
-						open.push_back(target);
-						continue;
+			records.push_back({
+				target, current, tentativeCost,
+				tentativeCost + heuristic, false, false});
+			open.push_back(target);
+			if (stats != nullptr)
+			{
+				++stats->enqueueCount;
+			}
+			continue;
 					}
 
 					AStarRecord &targetRecord = records[targetRecordIndex];
@@ -671,14 +735,22 @@ NavQueryResult buildAStarCorridor(
 					targetRecord.costSoFar = tentativeCost;
 					targetRecord.totalCost = tentativeCost +
 						distanceBetween(*targetArea, *goalArea);
-					if (targetRecord.closed)
-					{
-						targetRecord.closed = false;
-					}
-					if (!contains(open, target))
-					{
-						open.push_back(target);
-					}
+		if (targetRecord.closed)
+		{
+			targetRecord.closed = false;
+			if (stats != nullptr)
+			{
+				++stats->reopenCount;
+			}
+		}
+		if (!contains(open, target))
+		{
+			open.push_back(target);
+			if (stats != nullptr)
+			{
+				++stats->enqueueCount;
+			}
+		}
 				}
 			}
 		}
@@ -737,13 +809,29 @@ NavQueryResult NavQuery::buildCorridor(
 }
 
 NavQueryResult NavQuery::buildCorridor(
+	AreaId start, AreaId goal, NavCorridor *corridor, NavSearchStats *stats) const
+{
+	return buildCorridor(start, goal, NavRouteType::Fastest, corridor, stats);
+}
+
+NavQueryResult NavQuery::buildCorridor(
 	AreaId start,
 	AreaId goal,
 	NavRouteType routeType,
 	NavCorridor *corridor) const
 {
+	return buildCorridor(start, goal, routeType, corridor, nullptr);
+}
+
+NavQueryResult NavQuery::buildCorridor(
+	AreaId start,
+	AreaId goal,
+	NavRouteType routeType,
+	NavCorridor *corridor,
+	NavSearchStats *stats) const
+{
 	return buildAStarCorridor(
-			snapshot_, limits_, start, goal, routeType, corridor);
+		snapshot_, limits_, start, goal, routeType, corridor, stats);
 }
 
 const NavDocument *NavQuery::document() const

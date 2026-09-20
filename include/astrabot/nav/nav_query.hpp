@@ -20,6 +20,22 @@ struct NavQueryLimits
 	std::size_t maximumSearchQueue;
 };
 
+struct NavSearchStats
+{
+	std::uint32_t expandedUniqueAreas;
+	std::uint32_t enqueueCount;
+	std::uint32_t reopenCount;
+	std::uint32_t staleQueueEntries;
+	std::uint32_t equalCostReplacements;
+	std::uint32_t searchCalls;
+	std::uint32_t successCount;
+	std::uint32_t failureCount;
+	std::uint64_t totalUsec;
+	std::uint64_t maxUsec;
+	std::uint64_t firstSearchId;
+	std::uint64_t lastSearchId;
+};
+
 enum class NavQueryResult
 {
 	Found,
@@ -84,14 +100,25 @@ public:
 		AreaId fromArea,
 		std::vector<NavDirectedLink> *links) const;
 	NavQueryResult buildCorridor(
-			AreaId start,
-			AreaId goal,
-			NavCorridor *corridor) const;
+		AreaId start,
+		AreaId goal,
+		NavCorridor *corridor) const;
 	NavQueryResult buildCorridor(
-			AreaId start,
-			AreaId goal,
-			NavRouteType routeType,
-			NavCorridor *corridor) const;
+		AreaId start,
+		AreaId goal,
+		NavCorridor *corridor,
+		NavSearchStats *stats) const;
+	NavQueryResult buildCorridor(
+		AreaId start,
+		AreaId goal,
+		NavRouteType routeType,
+		NavCorridor *corridor) const;
+	NavQueryResult buildCorridor(
+		AreaId start,
+		AreaId goal,
+		NavRouteType routeType,
+		NavCorridor *corridor,
+		NavSearchStats *stats) const;
 
 private:
 	const NavDocument *document() const;

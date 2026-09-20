@@ -6,7 +6,7 @@ status: executing
 stopped_at: P07.6 offline repair complete; live evidence pending; P08 NOT STARTED
 last_updated: "2026-09-20T00:00:00+09:00"
 last_activity: 2026-09-20
-last_activity_desc: P07.6 freeze gate, Goal/NAV transaction, and opt-in profiler implemented offline; live HLDS/ReHLDS measurement remains pending; P08 NOT STARTED
+last_activity_desc: P07.6-PERF alive-Bot audit adds exact Vision counters, default-off A/B controls, and non-objective bomb-site NAV scan guard; live HLDS/ReHLDS FPS measurement remains pending; P08 NOT STARTED
 state_head: 433235f
 progress:
   total_phases: 8

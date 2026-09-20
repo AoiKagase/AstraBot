@@ -47,6 +47,7 @@ public:
 		compat::ObjectiveObservation *observation) const;
 	void setTraceSink(compat::IObservationTraceSink *sink);
 	void setProfiler(RuntimeProfiler *profiler);
+	void setPerformanceToggles(bool disableVision, bool disableTrace);
 
 private:
 	enginefuncs_t *engineFunctions_;
@@ -54,6 +55,8 @@ private:
 	compat::IObservationTraceSink *traceSink_;
 	mutable std::uint64_t traceSequence_;
 	RuntimeProfiler *profiler_;
+	bool disableVision_;
+	bool disableTrace_;
 };
 }
 }

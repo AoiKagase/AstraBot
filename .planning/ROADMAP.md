@@ -244,3 +244,7 @@ start Combat or P08. `P08 NOT STARTED`.
 
 Plans: 4 implementation tasks (freeze gate, Goal/NAV transaction, profiler,
 documentation/live procedure).
+
+P07.6-PERF static audit and offline repair: exact Vision counter instrumentation,
+default-off A/B controls, and non-objective bomb-site NAV scan guard are in the
+current worktree; live FPS/alive-Bot scaling evidence remains pending.

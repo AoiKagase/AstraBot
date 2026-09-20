@@ -519,6 +519,34 @@ bool testReferenceCrouchCost()
 			"fastest route applies the CSBot crouch traversal penalty");
 }
 
+bool testAStarSearchStats()
+{
+	astrabot::nav::NavDocument document;
+	document.setSourceIdentity({5U, 100U, 200U});
+	astrabot::nav::NavArea start = area(1U, 0.0f, 64.0f, 0.0f);
+	astrabot::nav::NavArea middle = area(2U, 64.0f, 128.0f, 0.0f);
+	astrabot::nav::NavArea goal = area(3U, 128.0f, 192.0f, 0.0f);
+	start.connections[0U].push_back(2U);
+	middle.connections[0U].push_back(3U);
+	document.addArea(start);
+	document.addArea(middle);
+	document.addArea(goal);
+	const astrabot::nav::NavSnapshot snapshot = snapshotFor(&document, 1U);
+	const astrabot::nav::NavQuery query(snapshot);
+	astrabot::nav::NavCorridor corridor = {};
+	astrabot::nav::NavSearchStats stats = {};
+	if (!check(query.buildCorridor(1U, 3U, &corridor, &stats) ==
+			astrabot::nav::NavQueryResult::Found,
+		"A* stats fixture finds the route"))
+	{
+		return false;
+	}
+	return check(stats.expandedUniqueAreas >= 2U && stats.enqueueCount >= 3U &&
+		stats.reopenCount == 0U && stats.staleQueueEntries == 0U &&
+		stats.equalCostReplacements == 0U,
+		"A* stats expose unique expansion and queue behavior");
+}
+
 int main()
 {
 	if (!testSpatialTieBreaking() ||
@@ -530,6 +558,7 @@ int main()
 			!testBoundedSearch() ||
 			!testPathFollowerProgressAndStaleRoute() ||
 			!testInvalidInputs() ||
+			!testAStarSearchStats() ||
 			!testReferenceStableEqualCostTieBreak() ||
 			!testReferenceCrouchCost())
 	{

@@ -185,9 +185,10 @@ namespace astrabot
 				world::WorldSnapshot *snapshot,
 				world::ActorKey *targetActor,
 				world::WorldPosition *targetPosition);
-			bool buildManagedObjectiveTarget(
-				std::size_t index,
-				nav::NavVector *target) const;
+	bool buildManagedObjectiveTarget(
+		std::size_t index,
+		nav::NavVector *target,
+		nav::NavSearchStats *searchStats) const;
 			void resetManagedBotMovement();
 			void logMovementDiagnostic(
 				std::size_t index,
@@ -332,8 +333,9 @@ namespace astrabot
 			bool nativeGuardEnabled_;
 			std::array<bool, kCompatibilityCvarCount> compatibilityCvarOwned_;
 			bool compatibilityRegistrationInProgress_;
-			bool nativeControlsCaptured_;
-			float originalBotEnable_;
+		bool nativeControlsCaptured_;
+		bool performanceDisablePathSearch_;
+		float originalBotEnable_;
 			float originalBotQuota_;
 		};
 

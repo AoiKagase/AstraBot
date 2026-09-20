@@ -6,6 +6,8 @@ option(ASTRABOT_BUILD_METAMOD "Build the Metamod-P plugin target" OFF)
 option(ASTRABOT_BUILD_TESTS "Build portable and adapter tests" OFF)
 option(ASTRABOT_WARNINGS_AS_ERRORS "Treat AstraBot warnings as errors" ON)
 set(ASTRABOT_METAMOD_SDK_ROOT "" CACHE PATH "Path to the pinned Metamod-P checkout")
+set(ASTRABOT_DE_DUST2_NAV "" CACHE FILEPATH
+	"External de_dust2.nav path for the NAV performance regression test")
 
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -301,9 +303,26 @@ if(ASTRABOT_BUILD_TESTS)
     "${CMAKE_CURRENT_SOURCE_DIR}/include"
   )
   astrabot_apply_warnings(astrabot_nav_loader)
-  add_test(NAME astrabot_nav_loader COMMAND astrabot_nav_loader)
+add_test(NAME astrabot_nav_loader COMMAND astrabot_nav_loader)
 
-  add_executable(astrabot_nav_diagnostics
+add_executable(astrabot_nav_external_performance
+	tests/nav_external_performance_tests.cpp
+	src/adapter/metamod/nav_loader.cpp
+	src/adapter/metamod/map_fingerprint.cpp
+)
+target_link_libraries(astrabot_nav_external_performance PRIVATE astrabot_core)
+target_include_directories(astrabot_nav_external_performance PRIVATE
+	"${CMAKE_CURRENT_SOURCE_DIR}/include"
+)
+astrabot_apply_warnings(astrabot_nav_external_performance)
+add_test(NAME astrabot_nav_external_performance COMMAND astrabot_nav_external_performance)
+set_tests_properties(astrabot_nav_external_performance PROPERTIES SKIP_RETURN_CODE 77)
+if(ASTRABOT_DE_DUST2_NAV)
+	set_tests_properties(astrabot_nav_external_performance PROPERTIES
+		ENVIRONMENT "ASTRABOT_DE_DUST2_NAV=${ASTRABOT_DE_DUST2_NAV}")
+endif()
+
+add_executable(astrabot_nav_diagnostics
     tests/nav_diagnostics_tests.cpp
     src/adapter/metamod/nav_loader.cpp
     src/adapter/metamod/map_fingerprint.cpp

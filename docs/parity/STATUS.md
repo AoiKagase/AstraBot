@@ -8,6 +8,11 @@ handling, and opt-in one-second profiler counters. Focused x86 tests are
 offline evidence only. Fresh live HLDS/ReHLDS freeze, Goal, physical progress,
 FPS, and multi-Bot intervals remain open. `P08 NOT STARTED`.
 
+P07.6-PERF additionally measures exact visibility TraceLine/FOV/LOS/body-probe
+counts and one-second stage aggregates, adds default-off vision/path/trace A/B
+CVars, and avoids non-objective bomb-site NAV corridor enumeration. No live FPS
+or alive-Bot scaling result is inferred from these offline checks.
+
 ## P06 result: PARTIAL
 
 | Gate | Result | Evidence / limitation |

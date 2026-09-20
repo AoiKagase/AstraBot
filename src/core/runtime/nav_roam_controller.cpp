@@ -14,14 +14,16 @@ namespace
 	constexpr float kMaximumRecoveryDistance = 10000.0f;
 	constexpr float kRoamSpeed = 32.0f;
 	constexpr std::uint32_t kStuckRecoveryFrameLimit = 8U;
-	constexpr std::uint32_t kMaximumStuckRecoveryAttempts = 2U;
+constexpr std::uint32_t kMaximumStuckRecoveryAttempts = 2U;
+constexpr std::uint32_t kInitialPathFailureBackoffFrames = 15U;
+constexpr std::uint32_t kMaximumPathFailureBackoffFrames = 120U;
 
 	nav::LocomotionConfig roamLocomotionConfig()
 	{
 		return {32.0f, 20.0f, 64.0f, 16.0f, 100.0f, 8U};
 	}
 
-	void initializeDecision(NavRoamDecision *decision)
+void initializeDecision(NavRoamDecision *decision)
 	{
 		if (decision == nullptr)
 		{
@@ -113,6 +115,86 @@ namespace
 	}
 }
 
+void addSearchStats(nav::NavSearchStats *total, const nav::NavSearchStats &sample)
+{
+	if (total == nullptr)
+	{
+		return;
+	}
+	total->expandedUniqueAreas += sample.expandedUniqueAreas;
+	total->enqueueCount += sample.enqueueCount;
+	total->reopenCount += sample.reopenCount;
+	total->staleQueueEntries += sample.staleQueueEntries;
+	total->equalCostReplacements += sample.equalCostReplacements;
+	total->searchCalls += sample.searchCalls;
+	total->successCount += sample.successCount;
+	total->failureCount += sample.failureCount;
+	total->totalUsec += sample.totalUsec;
+	if (sample.maxUsec > total->maxUsec)
+	{
+		total->maxUsec = sample.maxUsec;
+	}
+	if (sample.firstSearchId != 0U)
+	{
+		if (total->firstSearchId == 0U)
+		{
+			total->firstSearchId = sample.firstSearchId;
+		}
+		total->lastSearchId = sample.lastSearchId;
+	}
+}
+
+nav::NavQueryResult buildCorridor(
+	const nav::NavQuery &query,
+	nav::AreaId start,
+	nav::AreaId goal,
+	nav::NavCorridor *corridor,
+	nav::NavSearchStats *stats)
+{
+	nav::NavSearchStats sample = {};
+	const nav::NavQueryResult result = query.buildCorridor(
+		start, goal, corridor, stats == nullptr ? nullptr : &sample);
+	if (stats != nullptr)
+	{
+		if (result == nav::NavQueryResult::Found)
+		{
+			++sample.successCount;
+		}
+		else
+		{
+			++sample.failureCount;
+		}
+	}
+	addSearchStats(stats, sample);
+	return result;
+}
+
+nav::NavQueryResult buildCorridor(
+	const nav::NavQuery &query,
+	nav::AreaId start,
+	nav::AreaId goal,
+	nav::NavRouteType routeType,
+	nav::NavCorridor *corridor,
+	nav::NavSearchStats *stats)
+{
+	nav::NavSearchStats sample = {};
+	const nav::NavQueryResult result = query.buildCorridor(
+		start, goal, routeType, corridor, stats == nullptr ? nullptr : &sample);
+	if (stats != nullptr)
+	{
+		if (result == nav::NavQueryResult::Found)
+		{
+			++sample.successCount;
+		}
+		else
+		{
+			++sample.failureCount;
+		}
+	}
+	addSearchStats(stats, sample);
+	return result;
+}
+
 NavRoamController::NavRoamController()
 	: NavRoamController(compat::RuntimeMode::Compatibility)
 {
@@ -142,6 +224,11 @@ NavRoamController::NavRoamController(compat::RuntimeMode mode)
 	  avoidedLink_{0U, 0U, 0U, 0U},
 	  hasObjectiveTarget_(false),
 	  objectiveTarget_{0.0f, 0.0f, 0.0f},
+	  hasPathFailure_(false),
+	  pathFailureKey_{0U, 0U, 0U, nav::NavRouteType::Fastest},
+	  pathFailureRetryFrame_(0U),
+	  pathFailureBackoffFrames_(kInitialPathFailureBackoffFrames),
+	  collectPathStats_(false),
 	  initialized_(false)
 {
 }
@@ -149,6 +236,55 @@ NavRoamController::NavRoamController(compat::RuntimeMode mode)
 void NavRoamController::setRuntimeMode(compat::RuntimeMode mode)
 {
 	modePolicy_ = compat::RuntimeModePolicy(mode);
+}
+
+bool NavRoamController::isPathFailureBackedOff(
+	std::uint32_t mapGeneration,
+	nav::AreaId startArea,
+	nav::AreaId goalArea,
+	nav::NavRouteType routeType,
+	std::uint32_t frame) const
+{
+	return hasPathFailure_ &&
+		pathFailureKey_.mapGeneration == mapGeneration &&
+		pathFailureKey_.startArea == startArea &&
+		pathFailureKey_.goalArea == goalArea &&
+		pathFailureKey_.routeType == routeType &&
+		frame < pathFailureRetryFrame_;
+}
+
+void NavRoamController::rememberPathFailure(
+	std::uint32_t mapGeneration,
+	nav::AreaId startArea,
+	nav::AreaId goalArea,
+	nav::NavRouteType routeType,
+	std::uint32_t frame)
+{
+	const PathFailureKey key = {mapGeneration, startArea, goalArea, routeType};
+	if (!hasPathFailure_ || pathFailureKey_.mapGeneration != key.mapGeneration ||
+		pathFailureKey_.startArea != key.startArea ||
+		pathFailureKey_.goalArea != key.goalArea ||
+		pathFailureKey_.routeType != key.routeType)
+	{
+		pathFailureBackoffFrames_ = kInitialPathFailureBackoffFrames;
+	}
+	else
+	{
+		pathFailureBackoffFrames_ = (std::min)(
+			kMaximumPathFailureBackoffFrames,
+			pathFailureBackoffFrames_ * 2U);
+	}
+	pathFailureKey_ = key;
+	hasPathFailure_ = true;
+	pathFailureRetryFrame_ = frame + pathFailureBackoffFrames_;
+}
+
+void NavRoamController::clearPathFailure()
+{
+	hasPathFailure_ = false;
+	pathFailureKey_ = {0U, 0U, 0U, nav::NavRouteType::Fastest};
+	pathFailureRetryFrame_ = 0U;
+	pathFailureBackoffFrames_ = kInitialPathFailureBackoffFrames;
 }
 
 NavRoamResult NavRoamController::update(
@@ -184,6 +320,7 @@ NavRoamResult NavRoamController::update(
 	{
 		return NavRoamResult::InvalidObservation;
 	}
+	collectPathStats_ = observation.collectPathStats;
 	if (observation.frame.mapGeneration != snapshot.mapGeneration())
 	{
 		return NavRoamResult::InvalidSnapshot;
@@ -224,10 +361,11 @@ NavRoamResult NavRoamController::update(
 		{
 			return NavRoamResult::StaleFrame;
 		}
-	if (observation.frame.mapGeneration != lastFrame_.mapGeneration ||
-			observation.frame.roundGeneration != lastFrame_.roundGeneration)
-	{
-		if (decision != nullptr)
+		if (observation.frame.mapGeneration != lastFrame_.mapGeneration ||
+				observation.frame.roundGeneration != lastFrame_.roundGeneration)
+		{
+			clearPathFailure();
+			if (decision != nullptr)
 		{
 			decision->recomputeReason = NavRecomputeReason::MapOrRoundChanged;
 		}
@@ -242,6 +380,7 @@ NavRoamResult NavRoamController::update(
 			 std::fabs(objectiveTarget_.z - observation.objectiveTarget.z) > 0.5f));
 	if (objectiveTargetChanged)
 	{
+		clearPathFailure();
 		if (decision != nullptr)
 		{
 			decision->recomputeReason = lastFrame_.isValid()
@@ -434,6 +573,26 @@ NavRoamResult NavRoamController::update(
 				return NavRoamResult::IntentReady;
 			}
 		}
+		const nav::NavRouteType routeType = nav::NavRouteType::Fastest;
+		if (objectiveArea != 0U && isPathFailureBackedOff(
+				observation.frame.mapGeneration,
+				currentArea.area,
+				objectiveArea,
+				routeType,
+				observation.frame.tick))
+		{
+			if (decision != nullptr)
+			{
+				decision->goalPresent = true;
+				decision->goalKind = NavGoalKind::Objective;
+				decision->goalArea = objectiveArea;
+				decision->pathRequested = true;
+				decision->pathResult = nav::NavQueryResult::ResourceLimit;
+				decision->failureReason = NavFailureReason::PathSearchFailed;
+				decision->stage = NavRoamStage::Failed;
+			}
+			return NavRoamResult::NoRoute;
+		}
 	if (!hasActiveRoute_ && decision != nullptr &&
 			decision->recomputeReason == NavRecomputeReason::None)
 	{
@@ -441,6 +600,16 @@ NavRoamResult NavRoamController::update(
 	}
 	if (!selectRoute(snapshot, currentArea, objectiveArea, decision))
 		{
+			if (objectiveArea != 0U && decision != nullptr &&
+				decision->pathResult == nav::NavQueryResult::ResourceLimit)
+			{
+				rememberPathFailure(
+					observation.frame.mapGeneration,
+					currentArea.area,
+					objectiveArea,
+					routeType,
+					observation.frame.tick);
+			}
 			if (decision != nullptr && decision->failureReason == NavFailureReason::None)
 			{
 				decision->failureReason = decision->pathRequested
@@ -457,6 +626,10 @@ NavRoamResult NavRoamController::update(
 		if (decision != nullptr)
 		{
 			decision->stage = NavRoamStage::CorridorReady;
+		}
+		if (objectiveArea != 0U)
+		{
+			clearPathFailure();
 		}
 	}
 
@@ -702,6 +875,7 @@ void NavRoamController::reset()
 	avoidedLink_ = {0U, 0U, 0U, 0U};
 	hasObjectiveTarget_ = false;
 	objectiveTarget_ = {0.0f, 0.0f, 0.0f};
+	clearPathFailure();
 	initialized_ = false;
 }
 
@@ -891,8 +1065,9 @@ bool NavRoamController::selectRoute(
 			decision->pathRequested = true;
 		}
 		nav::NavCorridor corridor = {};
-		const nav::NavQueryResult corridorResult = query.buildCorridor(
-			currentArea.area, objectiveArea, &corridor);
+		const nav::NavQueryResult corridorResult = buildCorridor(
+			query, currentArea.area, objectiveArea, &corridor,
+			decision == nullptr || !collectPathStats_ ? nullptr : &decision->pathSearchStats);
 		if (decision != nullptr)
 		{
 			decision->corridorResult = corridorResult;
@@ -939,10 +1114,12 @@ bool NavRoamController::selectRoute(
 				continue;
 			}
 			nav::NavCorridor corridor = {};
-			const nav::NavQueryResult corridorResult = query.buildCorridor(
+			const nav::NavQueryResult corridorResult = buildCorridor(
+				query,
 				currentArea.area,
 				links[linkIndex].toArea,
-				&corridor);
+				&corridor,
+				decision == nullptr || !collectPathStats_ ? nullptr : &decision->pathSearchStats);
 			if (decision != nullptr)
 			{
 				decision->corridorResult = corridorResult;
@@ -987,10 +1164,12 @@ bool NavRoamController::selectRoute(
 		}
 		++candidateCount;
 		nav::NavCorridor corridor = {};
-		const nav::NavQueryResult corridorResult = query.buildCorridor(
+		const nav::NavQueryResult corridorResult = buildCorridor(
+			query,
 			currentArea.area,
 			candidate.id,
-			&corridor);
+			&corridor,
+			decision == nullptr || !collectPathStats_ ? nullptr : &decision->pathSearchStats);
 		if (decision != nullptr)
 		{
 			decision->corridorResult = corridorResult;
@@ -1051,8 +1230,9 @@ bool NavRoamController::selectRoamRoute(
 				decision->pathRequested = true;
 			}
 			nav::NavCorridor corridor = {};
-			const nav::NavQueryResult corridorResult = query.buildCorridor(
-					currentArea.area, link.toArea, nav::NavRouteType::Fastest, &corridor);
+			const nav::NavQueryResult corridorResult = buildCorridor(
+				query, currentArea.area, link.toArea, nav::NavRouteType::Fastest,
+				&corridor, decision == nullptr || !collectPathStats_ ? nullptr : &decision->pathSearchStats);
 			if (decision != nullptr)
 			{
 				decision->corridorResult = corridorResult;
@@ -1098,8 +1278,9 @@ bool NavRoamController::selectRoamRoute(
 			decision->pathRequested = true;
 		}
 		nav::NavCorridor corridor = {};
-		const nav::NavQueryResult corridorResult = query.buildCorridor(
-			currentArea.area, candidate.id, &corridor);
+		const nav::NavQueryResult corridorResult = buildCorridor(
+			query, currentArea.area, candidate.id, &corridor,
+			decision == nullptr || !collectPathStats_ ? nullptr : &decision->pathSearchStats);
 		if (decision != nullptr)
 		{
 			decision->pathResult = corridorResult;

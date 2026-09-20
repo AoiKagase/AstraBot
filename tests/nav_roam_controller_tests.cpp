@@ -517,6 +517,60 @@ bool testTemporaryCurrentAreaLossRetainsActiveRoute()
 	return true;
 }
 
+bool testResourceLimitFailureIsBackedOff()
+{
+	astrabot::nav::NavDocument document;
+	document.setSourceIdentity({5U, 100U, 200U});
+	for (astrabot::nav::AreaId id = 1U; id <= 300U; ++id)
+	{
+		astrabot::nav::NavArea node = area(
+			id, static_cast<float>((id - 1U) * 32U), static_cast<float>(id * 32U));
+		if (id < 300U)
+		{
+			node.connections[0U].push_back(id + 1U);
+		}
+		document.addArea(node);
+	}
+	astrabot::nav::NavSnapshotPublisher publisher;
+	if (!check(publisher.publish(&document, 1U) ==
+			astrabot::nav::NavSnapshotResult::Published,
+		"ResourceLimit backoff snapshot is published"))
+	{
+		return false;
+	}
+	astrabot::runtime::NavRoamController controller;
+	astrabot::runtime::NavRoamObservation observation = {};
+	observation.actor = {1U, 1U};
+	observation.frame = {1U, 1U, 1U};
+	observation.locomotion.position = {16.0f, 32.0f, 0.0f};
+	observation.locomotion.standingClearance = 72.0f;
+	observation.locomotion.crouchingClearance = 36.0f;
+	observation.hasObjectiveTarget = true;
+	observation.objectiveTarget = {9584.0f, 32.0f, 0.0f};
+	observation.collectPathStats = true;
+	astrabot::nav::LocomotionIntent intent = {};
+	astrabot::runtime::NavRoamDecision first = {};
+	if (!check(controller.update(publisher.snapshot(), observation, &intent, &first) ==
+			astrabot::runtime::NavRoamResult::NoRoute &&
+		first.pathResult == astrabot::nav::NavQueryResult::ResourceLimit &&
+		first.pathSearchStats.searchCalls > 0U,
+		"ResourceLimit request is measured on first search"))
+	{
+		return false;
+	}
+	observation.frame.tick = 2U;
+	astrabot::runtime::NavRoamDecision second = {};
+	if (!check(controller.update(publisher.snapshot(), observation, &intent, &second) ==
+			astrabot::runtime::NavRoamResult::NoRoute &&
+		second.failureReason == astrabot::runtime::NavFailureReason::PathSearchFailed &&
+		second.pathSearchStats.searchCalls == 0U,
+		"identical ResourceLimit request is backed off"))
+	{
+		return false;
+	}
+	return true;
+}
+
 int main()
 {
 	if (!testJumpTraversalAction())
@@ -553,6 +607,10 @@ int main()
 		return 1;
 	}
 	if (!testStuckDecisionRetainsSelectedRoute())
+	{
+		return 1;
+	}
+	if (!testResourceLimitFailureIsBackedOff())
 	{
 		return 1;
 	}

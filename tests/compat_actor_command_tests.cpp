@@ -26,7 +26,8 @@ byte gLastRunPlayerMoveMsec = 0U;
 	bool gMenuClassContextValid = false;
 	DLL_FUNCTIONS gHookedGameDllTable{};
 	bool gNativeControlsAvailable = false;
-	bool gCompatibilityCvarsRegistered[7] = {};
+bool gCompatibilityCvarsRegistered[7] = {};
+bool gPerformanceCvarsRegistered[3] = {};
 	int gCvarRegisterCount = 0;
 	float gBotEnable = 0.0f;
 	float gBotQuota = 0.0f;
@@ -36,7 +37,8 @@ byte gLastRunPlayerMoveMsec = 0U;
 	cvar_t gBotQuotaCvar{};
 	cvar_t gBotJoinTeamCvar{};
 	cvar_t gAstrabotModeCvar{};
-	cvar_t gAstrabotProfileCvar{};
+cvar_t gAstrabotProfileCvar{};
+cvar_t gAstrabotPerfCvars[3]{};
 
 	bool check(bool condition, const char *description)
 	{
@@ -138,7 +140,7 @@ edict_t *findEntityByString(edict_t *start, const char *field, const char *value
 	}
 	}
 
-	cvar_t *getCvar(const char *name)
+cvar_t *getCvar(const char *name)
 	{
 		if (std::strcmp(name, "bot_enable") == 0)
 		{
@@ -176,8 +178,20 @@ edict_t *findEntityByString(edict_t *start, const char *field, const char *value
 		return gNativeControlsAvailable || gCompatibilityCvarsRegistered[6]
 			? &gAstrabotProfileCvar : nullptr;
 	}
-		return nullptr;
+	const char *const performanceNames[] = {
+		"astrabot_perf_disable_vision",
+		"astrabot_perf_disable_pathsearch",
+		"astrabot_perf_disable_trace"};
+	for (std::size_t index = 0U; index < 3U; ++index)
+	{
+		if (std::strcmp(name, performanceNames[index]) == 0)
+		{
+			return gNativeControlsAvailable || gPerformanceCvarsRegistered[index]
+				? &gAstrabotPerfCvars[index] : nullptr;
+		}
 	}
+	return nullptr;
+}
 
 	float getCvarFloat(const char *name)
 	{
@@ -212,13 +226,18 @@ edict_t *findEntityByString(edict_t *start, const char *field, const char *value
 			return;
 		}
 	const char *const names[] = {"bot_enable", "bot_stop", "bot_difficulty", "bot_quota",
-		"bot_join_team", "astrabot_mode", "astrabot_profile"};
-	for (std::size_t index = 0U; index < 7U; ++index)
+		"bot_join_team", "astrabot_mode", "astrabot_profile",
+		"astrabot_perf_disable_vision", "astrabot_perf_disable_pathsearch",
+		"astrabot_perf_disable_trace"};
+	for (std::size_t index = 0U; index < 10U; ++index)
+	{
+		if (std::strcmp(variable->name, names[index]) == 0)
 		{
-			if (std::strcmp(variable->name, names[index]) == 0)
-			{
+			if (index < 7U)
 				gCompatibilityCvarsRegistered[index] = true;
-				return;
+			else
+				gPerformanceCvarsRegistered[index - 7U] = true;
+			return;
 			}
 		}
 	}
@@ -458,7 +477,7 @@ int main()
 	runtime.onStartFrame();
 	if (!check(runtime.executeCompatibilityCommand(request("bot_add")) ==
 				  CompatibilityCommandResult::Handled &&
-			gCreateCount == 1 && gCvarRegisterCount == 7 &&
+		gCreateCount == 1 && gCvarRegisterCount == 10 &&
 				  gClientCommandCount == 0 && gClientKeyValueCount >= 2,
 			   "bot_add loads the default BotProfile database during activation"))
 	{

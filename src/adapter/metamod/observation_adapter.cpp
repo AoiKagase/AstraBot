@@ -158,8 +158,10 @@ ObservationAdapter::ObservationAdapter()
 	: engineFunctions_(nullptr),
 	  globals_(nullptr),
 	  traceSink_(nullptr),
-	  traceSequence_(0U),
-	  profiler_(nullptr)
+	traceSequence_(0U),
+	profiler_(nullptr),
+	disableVision_(false),
+	disableTrace_(false)
 {
 }
 
@@ -312,7 +314,23 @@ ObservationAdapterResult ObservationAdapter::collectVisibility(
 		: std::chrono::steady_clock::time_point();
 
 	*observation = {};
-	observation->target = targetActor;
+	 observation->target = targetActor;
+	if (profileVision)
+	{
+		profiler_->recordVisionCandidate();
+	}
+	if (disableVision_)
+	{
+		if (profileVision)
+		{
+			const auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(
+				std::chrono::steady_clock::now() - visionStart).count();
+			profiler_->record(
+				RuntimeProfilerStage::Vision,
+				elapsed > 0 ? static_cast<std::uint64_t>(elapsed) : 0U);
+		}
+		return ObservationAdapterResult::Accepted;
+	}
 	if ((target->v.flags & FL_NOTARGET) != 0 ||
 		(target->v.effects & EF_NODRAW) != 0)
 		return ObservationAdapterResult::Accepted;
@@ -328,7 +346,6 @@ ObservationAdapterResult ObservationAdapter::collectVisibility(
 		3.14159265358979323846f / 180.0f;
 	const float forwardX = std::cos(yawRadians);
 	const float forwardY = std::sin(yawRadians);
-	std::uint64_t traceCalls = 0U;
 
 	auto inViewCone = [&](const float point[3]) -> bool
 	{
@@ -343,8 +360,16 @@ ObservationAdapterResult ObservationAdapter::collectVisibility(
 
 	auto traceVisible = [&](const float point[3]) -> bool
 	{
+		if (disableTrace_)
+		{
+			return false;
+		}
 		TraceResult result = {};
-		++traceCalls;
+		if (profileVision)
+		{
+			profiler_->recordVisionLosCheck();
+			profiler_->recordTraceLine(1U, 0U, 0U);
+		}
 		const auto traceStart = profileVision
 			? std::chrono::steady_clock::now()
 			: std::chrono::steady_clock::time_point();
@@ -362,6 +387,11 @@ ObservationAdapterResult ObservationAdapter::collectVisibility(
 
 	auto testPoint = [&](const float point[3], std::uint8_t bit) -> void
 	{
+		if (profileVision)
+		{
+			profiler_->recordVisionFovCheck();
+			profiler_->recordBodyProbe();
+		}
 		if (!inViewCone(point))
 			return;
 		observation->fovPassed = true;
@@ -401,7 +431,6 @@ ObservationAdapterResult ObservationAdapter::collectVisibility(
 	observation->visible = observation->visibleParts != world::VisibleNone;
 	if (profiler_ != nullptr)
 	{
-		profiler_->recordTraceLine(1U, 1U, traceCalls);
 		if (profileVision)
 		{
 			const auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(
@@ -422,6 +451,12 @@ void ObservationAdapter::setTraceSink(compat::IObservationTraceSink *sink)
 void ObservationAdapter::setProfiler(RuntimeProfiler *profiler)
 {
 	profiler_ = profiler;
+}
+
+void ObservationAdapter::setPerformanceToggles(bool disableVision, bool disableTrace)
+{
+	disableVision_ = disableVision;
+	disableTrace_ = disableTrace;
 }
 
 ObservationAdapterResult ObservationAdapter::collectPlantedBomb(

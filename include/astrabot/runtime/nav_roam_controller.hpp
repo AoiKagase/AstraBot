@@ -27,9 +27,10 @@ namespace astrabot
 			bool landingConfirmed;
 			bool hasLandingDamage;
 			float landingDamage;
-			bool ladderContact;
-			bool entryConfirmed;
-			bool exitConfirmed;
+	bool ladderContact;
+	bool entryConfirmed;
+	bool exitConfirmed;
+	bool collectPathStats;
 		};
 
 		enum class NavRoamResult
@@ -101,6 +102,7 @@ enum class NavFailureReason
 	bool goalPresent;
 	bool pathRequested;
 	nav::NavQueryResult pathResult;
+	nav::NavSearchStats pathSearchStats;
 	nav::AreaId goalArea;
 	nav::NavVector goalPosition;
 	std::uint32_t pathSequence;
@@ -142,7 +144,15 @@ enum class NavFailureReason
 			void reset();
 			bool isActive() const;
 
-		  private:
+	private:
+	struct PathFailureKey
+	{
+		std::uint32_t mapGeneration;
+		nav::AreaId startArea;
+		nav::AreaId goalArea;
+		nav::NavRouteType routeType;
+	};
+
 			static bool sameFrame(
 				const world::FrameIdentity &left,
 				const world::FrameIdentity &right);
@@ -172,7 +182,20 @@ enum class NavFailureReason
 					const nav::NavCorridor &corridor,
 					const nav::NavDirectedLink &link);
 			void populateRouteDecision(NavRoamDecision *decision) const;
-			void resetRoute();
+		void resetRoute();
+		bool isPathFailureBackedOff(
+			std::uint32_t mapGeneration,
+			nav::AreaId startArea,
+			nav::AreaId goalArea,
+			nav::NavRouteType routeType,
+			std::uint32_t frame) const;
+		void rememberPathFailure(
+			std::uint32_t mapGeneration,
+			nav::AreaId startArea,
+			nav::AreaId goalArea,
+			nav::NavRouteType routeType,
+			std::uint32_t frame);
+		void clearPathFailure();
 
 			nav::LocomotionController locomotion_;
 			nav::TraversalAction activeTraversal_;
@@ -195,9 +218,14 @@ enum class NavFailureReason
 			bool hasActiveRoute_;
 			bool hasAvoidedLink_;
 			nav::NavDirectedLink avoidedLink_;
-			bool hasObjectiveTarget_;
-			nav::NavVector objectiveTarget_;
-			bool initialized_;
+		bool hasObjectiveTarget_;
+		nav::NavVector objectiveTarget_;
+		bool hasPathFailure_;
+		PathFailureKey pathFailureKey_;
+		std::uint32_t pathFailureRetryFrame_;
+	std::uint32_t pathFailureBackoffFrames_;
+	bool collectPathStats_;
+	bool initialized_;
 		};
 	}
 }

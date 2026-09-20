@@ -198,7 +198,7 @@ namespace astrabot
 		return std::atan2(direction.y, direction.x) * kRadiansToDegrees;
 	}
 
-	float readOptionalCvarFloat(enginefuncs_t *engineFunctions, const char *name)
+float readOptionalCvarFloat(enginefuncs_t *engineFunctions, const char *name)
 	{
 		if (engineFunctions == nullptr || name == nullptr ||
 			engineFunctions->pfnCVarGetPointer == nullptr ||
@@ -207,8 +207,37 @@ namespace astrabot
 		{
 			return 0.0f;
 		}
-		return engineFunctions->pfnCVarGetFloat(name);
+	return engineFunctions->pfnCVarGetFloat(name);
+}
+
+void addNavSearchStats(nav::NavSearchStats *total, const nav::NavSearchStats &sample)
+{
+	if (total == nullptr)
+	{
+		return;
 	}
+	total->expandedUniqueAreas += sample.expandedUniqueAreas;
+	total->enqueueCount += sample.enqueueCount;
+	total->reopenCount += sample.reopenCount;
+	total->staleQueueEntries += sample.staleQueueEntries;
+	total->equalCostReplacements += sample.equalCostReplacements;
+	total->searchCalls += sample.searchCalls;
+	total->successCount += sample.successCount;
+	total->failureCount += sample.failureCount;
+	total->totalUsec += sample.totalUsec;
+	if (sample.maxUsec > total->maxUsec)
+	{
+		total->maxUsec = sample.maxUsec;
+	}
+	if (sample.firstSearchId != 0U)
+	{
+		if (total->firstSearchId == 0U)
+		{
+			total->firstSearchId = sample.firstSearchId;
+		}
+		total->lastSearchId = sample.lastSearchId;
+	}
+}
 
 	const char *runtimeProfilerStageName(RuntimeProfilerStage stage)
 	{
@@ -407,8 +436,14 @@ namespace astrabot
 			char kBotJoinTeamDefault[] = "any";
 	char kAstrabotModeName[] = "astrabot_mode";
 	char kAstrabotModeDefault[] = "compatibility";
-	char kAstrabotProfileName[] = "astrabot_profile";
-	char kAstrabotProfileDefault[] = "0";
+char kAstrabotProfileName[] = "astrabot_profile";
+char kAstrabotProfileDefault[] = "0";
+char kAstrabotPerfDisableVisionName[] = "astrabot_perf_disable_vision";
+char kAstrabotPerfDisableVisionDefault[] = "0";
+char kAstrabotPerfDisablePathSearchName[] = "astrabot_perf_disable_pathsearch";
+char kAstrabotPerfDisablePathSearchDefault[] = "0";
+char kAstrabotPerfDisableTraceName[] = "astrabot_perf_disable_trace";
+char kAstrabotPerfDisableTraceDefault[] = "0";
 
 			cvar_t kBotEnableCvar = {kBotEnableName, kBotEnableDefault, FCVAR_SERVER, 0.0f,
 									 nullptr};
@@ -420,17 +455,35 @@ namespace astrabot
 									   nullptr};
 	cvar_t kAstrabotModeCvar = {kAstrabotModeName, kAstrabotModeDefault, FCVAR_SERVER, 0.0f,
 		nullptr};
-	cvar_t kAstrabotProfileCvar = {kAstrabotProfileName, kAstrabotProfileDefault, FCVAR_SERVER, 0.0f,
-		nullptr};
+cvar_t kAstrabotProfileCvar = {kAstrabotProfileName, kAstrabotProfileDefault, FCVAR_SERVER, 0.0f,
+	nullptr};
+cvar_t kAstrabotPerfDisableVisionCvar = {
+	kAstrabotPerfDisableVisionName, kAstrabotPerfDisableVisionDefault, FCVAR_SERVER, 0.0f,
+	nullptr};
+cvar_t kAstrabotPerfDisablePathSearchCvar = {
+	kAstrabotPerfDisablePathSearchName, kAstrabotPerfDisablePathSearchDefault, FCVAR_SERVER,
+	0.0f, nullptr};
+cvar_t kAstrabotPerfDisableTraceCvar = {
+	kAstrabotPerfDisableTraceName, kAstrabotPerfDisableTraceDefault, FCVAR_SERVER, 0.0f,
+	nullptr};
 
 			cvar_t *const kCompatibilityCvars[] = {&kBotEnableCvar, &kBotStopCvar,
 												   &kBotDifficultyCvar, &kBotQuotaCvar,
 																				   &kBotJoinTeamCvar,
 		&kAstrabotModeCvar, &kAstrabotProfileCvar};
 
-			const char *const kCompatibilityCvarNames[] = {
+const char *const kCompatibilityCvarNames[] = {
 				kBotEnableName, kBotStopName, kBotDifficultyName, kBotQuotaName, kBotJoinTeamName,
-		kAstrabotModeName, kAstrabotProfileName};
+	kAstrabotModeName, kAstrabotProfileName};
+constexpr std::size_t kPerformanceCvarCount = 3U;
+cvar_t *const kPerformanceCvars[kPerformanceCvarCount] = {
+	&kAstrabotPerfDisableVisionCvar,
+	&kAstrabotPerfDisablePathSearchCvar,
+	&kAstrabotPerfDisableTraceCvar};
+const char *const kPerformanceCvarNames[kPerformanceCvarCount] = {
+	kAstrabotPerfDisableVisionName,
+	kAstrabotPerfDisablePathSearchName,
+	kAstrabotPerfDisableTraceName};
 
 		} // namespace
 
@@ -475,7 +528,8 @@ namespace astrabot
 			  originalCommandArgc_(nullptr), clientCommandContextActive_(false),
 			  clientCommandArgumentCount_(0), clientCommandArgv0_(), clientCommandArgv1_(),
 			  clientCommandArgs_(), nativeGuardEnabled_(false), compatibilityCvarOwned_(),
-			  compatibilityRegistrationInProgress_(false), nativeControlsCaptured_(false),
+	compatibilityRegistrationInProgress_(false), nativeControlsCaptured_(false),
+	performanceDisablePathSearch_(false),
 			  originalBotEnable_(0.0f), originalBotQuota_(0.0f)
 		{
 		}
@@ -706,15 +760,22 @@ namespace astrabot
 				return;
 			}
 
-			for (std::size_t index = 0U; index < kCompatibilityCvarCount; ++index)
-			{
+	for (std::size_t index = 0U; index < kCompatibilityCvarCount; ++index)
+	{
 				if (engineFunctions_->pfnCVarGetPointer(kCompatibilityCvarNames[index]) == nullptr)
 				{
 					engineFunctions_->pfnCvar_RegisterVariable(kCompatibilityCvars[index]);
 					compatibilityCvarOwned_[index] = true;
-				}
-			}
 		}
+	}
+	for (std::size_t index = 0U; index < kPerformanceCvarCount; ++index)
+	{
+		if (engineFunctions_->pfnCVarGetPointer(kPerformanceCvarNames[index]) == nullptr)
+		{
+			engineFunctions_->pfnCvar_RegisterVariable(kPerformanceCvars[index]);
+		}
+	}
+}
 
 		void PluginRuntime::synchronizeCompatibilityCvars()
 		{
@@ -755,14 +816,21 @@ namespace astrabot
 				compatibilitySurface_.setString(
 					"astrabot_mode", engineFunctions_->pfnCVarGetString("astrabot_mode"));
 		}
-		if (engineFunctions_->pfnCVarGetPointer("astrabot_profile") != nullptr &&
-				engineFunctions_->pfnCVarGetFloat != nullptr)
+	if (engineFunctions_->pfnCVarGetPointer("astrabot_profile") != nullptr &&
+		engineFunctions_->pfnCVarGetFloat != nullptr)
 		{
 			runtimeProfiler_.setEnabled(
 				engineFunctions_->pfnCVarGetFloat("astrabot_profile") > 0.0f,
-				globals_ != nullptr ? static_cast<double>(globals_->time) : 0.0);
-		}
-		}
+			globals_ != nullptr ? static_cast<double>(globals_->time) : 0.0);
+	}
+	const bool disableVision = readOptionalCvarFloat(
+		engineFunctions_, kAstrabotPerfDisableVisionName) > 0.0f;
+	const bool disableTrace = readOptionalCvarFloat(
+		engineFunctions_, kAstrabotPerfDisableTraceName) > 0.0f;
+	performanceDisablePathSearch_ = readOptionalCvarFloat(
+		engineFunctions_, kAstrabotPerfDisablePathSearchName) > 0.0f;
+	observationAdapter_.setPerformanceToggles(disableVision, disableTrace);
+}
 
 		PluginRuntime::Snapshot PluginRuntime::snapshot() const
 		{
@@ -1040,14 +1108,31 @@ runtime::MovementPhysicsSample PluginRuntime::movementPhysicsSample(std::uint32_
 				configureFakeClientManager();
 			}
 
-		void PluginRuntime::onStartFramePost()
+void PluginRuntime::onStartFramePost()
+{
+	if (state_ == State::ActiveMap)
+	{
 		{
 			RuntimeProfilerScope profilerScope(
 				runtimeProfiler_, RuntimeProfilerStage::RuntimeInput);
-			if (state_ == State::ActiveMap)
+			processJoinControllers();
+		}
+			if (runtimeProfiler_.enabled())
 			{
-				processJoinControllers();
-				updateManagedBotMovement();
+				std::uint32_t aliveBots = 0U;
+				for (std::size_t index = 0U; index < managedBotSlots_.size(); ++index)
+				{
+					const FakeClientHandle &handle = managedBotHandles_[index];
+					if (managedBotSlots_[index] && handle.entity != nullptr &&
+						actorRegistry_.state(handle.actor) == runtime::ActorState::Joined &&
+						handle.entity->v.deadflag == DEAD_NO && handle.entity->v.health > 0.0f)
+					{
+						++aliveBots;
+					}
+				}
+				runtimeProfiler_.setAliveBots(aliveBots);
+			}
+			updateManagedBotMovement();
 			}
 			if (globals_ != nullptr && runtimeProfiler_.enabled())
 			{
@@ -1077,16 +1162,32 @@ runtime::MovementPhysicsSample PluginRuntime::movementPhysicsSample(std::uint32_
 					}
 					gpMetaUtilFuncs->pfnLogConsole(
 						pluginId_,
-						"profile counters traceLine=%llu visibilityCandidates=%llu bodyProbes=%llu "
+						"profile counters aliveBots=%u traceLine=%llu visibilityCandidates=%llu "
+						"fovChecks=%llu losChecks=%llu bodyProbeCalls=%llu "
 						"pathSearch=%llu pathSuccess=%llu pathFailure=%llu pathRecompute=%llu "
+						"expanded=%llu enqueues=%llu reopens=%llu staleQueue=%llu equalCostRepl=%llu "
+						"pathSearchUsec=%llu pathSearchMaxUsec=%llu "
+						"pathSearchFirstId=%llu pathSearchLastId=%llu "
 						"runPlayerMove=%llu",
+						static_cast<unsigned int>(report.aliveBots),
 						static_cast<unsigned long long>(report.traceLineCalls),
 						static_cast<unsigned long long>(report.visibilityCandidates),
-						static_cast<unsigned long long>(report.bodyProbes),
+						static_cast<unsigned long long>(report.fovChecks),
+						static_cast<unsigned long long>(report.losChecks),
+						static_cast<unsigned long long>(report.bodyProbeCalls),
 						static_cast<unsigned long long>(report.pathSearches),
 						static_cast<unsigned long long>(report.pathSearchSuccesses),
 						static_cast<unsigned long long>(report.pathSearchFailures),
 						static_cast<unsigned long long>(report.pathRecomputes),
+						static_cast<unsigned long long>(report.pathExpandedAreas),
+						static_cast<unsigned long long>(report.pathEnqueues),
+						static_cast<unsigned long long>(report.pathReopens),
+						static_cast<unsigned long long>(report.pathStaleQueueEntries),
+						static_cast<unsigned long long>(report.pathEqualCostReplacements),
+						static_cast<unsigned long long>(report.pathSearchTotalUsec),
+						static_cast<unsigned long long>(report.pathSearchMaxUsec),
+						static_cast<unsigned long long>(report.pathFirstSearchId),
+						static_cast<unsigned long long>(report.pathLastSearchId),
 						static_cast<unsigned long long>(report.runPlayerMoves));
 				}
 			}
@@ -1521,8 +1622,7 @@ void PluginRuntime::recordMovementPhysicsSample(
 }
 
 void PluginRuntime::updateManagedBotMovement()
-		{
-	RuntimeProfilerScope profilerScope(runtimeProfiler_, RuntimeProfilerStage::NavMovement);
+{
 	const compat::CvarSnapshot configuration = compatibilitySurface_.configuration();
 	const nav::NavSnapshot navigation = navPublisher_.snapshot();
 	const bool movementUnavailable = configuration.botEnable <= 0.0f ||
@@ -1630,6 +1730,8 @@ void PluginRuntime::updateManagedBotMovement()
 			recordMovementPhysicsSample(index, before, receipt);
 			continue;
 		}
+		RuntimeProfilerScope fullUpdateScope(
+			runtimeProfiler_, RuntimeProfilerStage::RuntimeFullUpdate);
 		if (managedBotFullUpdateSequences_[index] ==
 			(std::numeric_limits<std::uint32_t>::max)())
 		{
@@ -1764,20 +1866,60 @@ void PluginRuntime::updateManagedBotMovement()
 		observation.ladderContact = before.onLadder;
 		observation.entryConfirmed = true;
 		observation.exitConfirmed = before.grounded;
+		observation.collectPathStats = runtimeProfiler_.enabled();
+		nav::NavSearchStats objectiveSearchStats = {};
 		observation.hasObjectiveTarget = buildManagedObjectiveTarget(
-			index, &observation.objectiveTarget);
+			index,
+			&observation.objectiveTarget,
+			runtimeProfiler_.enabled() ? &objectiveSearchStats : nullptr);
+		runtimeProfiler_.recordPathSearchResults(
+			objectiveSearchStats.searchCalls != 0U,
+			objectiveSearchStats.searchCalls,
+			objectiveSearchStats.successCount,
+			objectiveSearchStats.failureCount,
+			objectiveSearchStats.expandedUniqueAreas,
+			objectiveSearchStats.enqueueCount,
+			objectiveSearchStats.reopenCount,
+			objectiveSearchStats.staleQueueEntries,
+			objectiveSearchStats.equalCostReplacements,
+			objectiveSearchStats.totalUsec,
+			objectiveSearchStats.maxUsec,
+			objectiveSearchStats.firstSearchId,
+			objectiveSearchStats.lastSearchId);
 		movementWasAirborne_[index] = !before.grounded;
 
-			nav::LocomotionIntent locomotionIntent = {};
-			runtime::NavRoamDecision roamDecision = {};
-		const runtime::NavRoamResult roamResult = managedBotMovement_[index].update(
-			navigation,
-			observation,
-			&locomotionIntent,
-			&roamDecision);
-		runtimeProfiler_.recordPathSearch(
-			roamDecision.pathResult == nav::NavQueryResult::Found,
-			roamDecision.pathRequested);
+		nav::LocomotionIntent locomotionIntent = {};
+		runtime::NavRoamDecision roamDecision = {};
+		runtime::NavRoamResult roamResult = runtime::NavRoamResult::NoRoute;
+		RuntimeProfilerScope navMovementScope(
+			runtimeProfiler_, RuntimeProfilerStage::NavMovement);
+		if (performanceDisablePathSearch_)
+		{
+			roamDecision.failureReason = runtime::NavFailureReason::PathSearchFailed;
+			roamDecision.stage = runtime::NavRoamStage::Failed;
+		}
+		else
+		{
+			roamResult = managedBotMovement_[index].update(
+				navigation,
+				observation,
+				&locomotionIntent,
+				&roamDecision);
+		}
+		runtimeProfiler_.recordPathSearchResults(
+			roamDecision.pathRequested,
+			roamDecision.pathSearchStats.searchCalls,
+			roamDecision.pathSearchStats.successCount,
+			roamDecision.pathSearchStats.failureCount,
+			roamDecision.pathSearchStats.expandedUniqueAreas,
+			roamDecision.pathSearchStats.enqueueCount,
+			roamDecision.pathSearchStats.reopenCount,
+			roamDecision.pathSearchStats.staleQueueEntries,
+			roamDecision.pathSearchStats.equalCostReplacements,
+			roamDecision.pathSearchStats.totalUsec,
+			roamDecision.pathSearchStats.maxUsec,
+			roamDecision.pathSearchStats.firstSearchId,
+			roamDecision.pathSearchStats.lastSearchId);
 		if (roamDecision.recomputeReason != runtime::NavRecomputeReason::None)
 		{
 			runtimeProfiler_.recordPathRecompute();
@@ -2095,6 +2237,8 @@ bool PluginRuntime::buildManagedWorldSnapshot(
 		}
 	}
 	perception::PerceptionAssembler &assembler = managedBotPerception_[index];
+	RuntimeProfilerScope worldPublishScope(
+		runtimeProfiler_, RuntimeProfilerStage::WorldPublish);
 	if (assembler.publish(input, snapshot) != perception::PerceptionResult::Published)
 	{
 		return false;
@@ -2107,7 +2251,8 @@ bool PluginRuntime::buildManagedWorldSnapshot(
 
 bool PluginRuntime::buildManagedObjectiveTarget(
 	std::size_t index,
-	nav::NavVector *target) const
+	nav::NavVector *target,
+	nav::NavSearchStats *searchStats) const
 {
 	if (index >= managedBotHandles_.size() || target == nullptr ||
 		engineFunctions_ == nullptr ||
@@ -2150,6 +2295,14 @@ bool PluginRuntime::buildManagedObjectiveTarget(
 	{
 		return false;
 	}
+	const bool carryingBomb = compatObservation.objective.carryingC4.isAvailable() &&
+		compatObservation.objective.carryingC4.value;
+	const bool needsBombSite = team == 1 && carryingBomb;
+	const bool needsPlantedBomb = team == 2;
+	if (!needsBombSite && !needsPlantedBomb)
+	{
+		return false;
+	}
 
 	edict_t *plantedBomb = nullptr;
 	compat::ObjectiveObservation plantedObservation = {};
@@ -2188,14 +2341,14 @@ bool PluginRuntime::buildManagedObjectiveTarget(
 		{
 			continue;
 		}
-		if (std::strcmp(classname, "func_bomb_target") == 0)
+		if (needsBombSite && std::strcmp(classname, "func_bomb_target") == 0)
 		{
 			const nav::NavVector candidate = entityObjectiveCenter(entity);
 			nav::NavExtent siteExtent = {};
 			const bool hasSiteExtent = entityObjectiveBounds(entity, &siteExtent);
 			std::size_t pathLength = (std::numeric_limits<std::size_t>::max)();
 			nav::NavVector reachablePoint = candidate;
-			if (haveCurrentArea && document != nullptr)
+		if (haveCurrentArea && document != nullptr)
 			{
 				nav::NavQuery query(navigation);
 				for (const nav::NavArea &area : document->areas())
@@ -2213,11 +2366,14 @@ bool PluginRuntime::buildManagedObjectiveTarget(
 						continue;
 					}
 					nav::NavCorridor corridor = {};
-					if (query.buildCorridor(currentMatch.area, area.id, &corridor) !=
-							nav::NavQueryResult::Found)
+					nav::NavSearchStats sample = {};
+					if (query.buildCorridor(currentMatch.area, area.id, &corridor,
+						searchStats == nullptr ? nullptr : &sample) != nav::NavQueryResult::Found)
 					{
+						addNavSearchStats(searchStats, sample);
 						continue;
 					}
+					addNavSearchStats(searchStats, sample);
 					if (corridor.areas.size() < pathLength)
 					{
 						pathLength = corridor.areas.size();
@@ -2239,15 +2395,13 @@ bool PluginRuntime::buildManagedObjectiveTarget(
 			}
 		}
 		const char *model = engineFunctions_->pfnSzFromIndex(entity->v.model);
-	if (plantedBomb == nullptr && observationAdapter_.collectPlantedBomb(
+	if (needsPlantedBomb && plantedBomb == nullptr && observationAdapter_.collectPlantedBomb(
 			entity, classname, model, globals_->time, actor, frame,
 			observationTiming, &plantedObservation) == ObservationAdapterResult::Accepted)
 		{
 			plantedBomb = entity;
 		}
 	}
-	const bool carryingBomb = compatObservation.objective.carryingC4.isAvailable() &&
-		compatObservation.objective.carryingC4.value;
 	if (team == 1 && carryingBomb && selectedPathLength !=
 		(std::numeric_limits<std::size_t>::max)())
 	{
@@ -2454,8 +2608,8 @@ ActionProposal PluginRuntime::decideManagedBotAction(
 				}
 				else if (bombSite != nullptr)
 				{
-					haveObjectivePosition = buildManagedObjectiveTarget(
-						index, &objectivePosition);
+			haveObjectivePosition = buildManagedObjectiveTarget(
+				index, &objectivePosition, nullptr);
 				}
 				if (haveObjectivePosition)
 				{
@@ -2603,6 +2757,8 @@ runtime::CommandReceipt PluginRuntime::executeManagedBotCommand(
 	std::size_t index,
 	FakeClientHandle &handle)
 {
+	RuntimeProfilerScope profilerScope(
+		runtimeProfiler_, RuntimeProfilerStage::MovementDispatch);
 	runtime::CommandReceipt receipt = {
 		handle.actor, 0U, adapterFrameCount_, runtime::DispatchResult::NoCommand};
 	if (index >= managedBotCommandTemplates_.size() || handle.entity == nullptr ||
