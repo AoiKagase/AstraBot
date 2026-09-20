@@ -5,6 +5,7 @@
 #include "astrabot/nav/locomotion.hpp"
 #include "astrabot/nav/special_traversal.hpp"
 #include "astrabot/compat/runtime_mode_policy.hpp"
+#include "astrabot/compat/random_source.hpp"
 #include "astrabot/world/world_snapshot.hpp"
 #include "astrabot/runtime/actor_registry.hpp"
 
@@ -131,6 +132,7 @@ enum class NavFailureReason
 		  public:
 	NavRoamController();
 	explicit NavRoamController(compat::RuntimeMode mode);
+	void setRandomSource(compat::ICompatibilityRandomSource *source);
 	void setRuntimeMode(compat::RuntimeMode mode);
 			NavRoamResult update(
 				const nav::NavSnapshot &snapshot,
@@ -176,6 +178,11 @@ enum class NavFailureReason
 			bool selectRoamRoute(
 					const nav::NavSnapshot &snapshot,
 					const nav::NavAreaMatch &currentArea,
+					NavRoamDecision *decision);
+			bool selectCompatibilityGoal(
+					const nav::NavSnapshot &snapshot,
+					const nav::NavAreaMatch &currentArea,
+					const std::vector<nav::NavDirectedLink> &links,
 					NavRoamDecision *decision);
 			void rememberRoute(
 					const nav::NavSnapshot &snapshot,
@@ -226,7 +233,11 @@ enum class NavFailureReason
 	std::uint32_t pathFailureBackoffFrames_;
 	bool collectPathStats_;
 	bool initialized_;
-		};
+	compat::ICompatibilityRandomSource *randomSource_;
+	bool hasRoamGoal_;
+	nav::AreaId roamGoalArea_;
+	nav::NavVector roamGoalPosition_;
+};
 	}
 }
 

@@ -235,8 +235,18 @@ NavRoamController::NavRoamController(compat::RuntimeMode mode)
 	  pathFailureRetryFrame_(0U),
 	  pathFailureBackoffFrames_(kInitialPathFailureBackoffFrames),
 	  collectPathStats_(false),
-	  initialized_(false)
+	  initialized_(false),
+	  randomSource_(nullptr),
+	  hasRoamGoal_(false),
+	  roamGoalArea_(0U),
+	  roamGoalPosition_{0.0f, 0.0f, 0.0f}
 {
+}
+
+void NavRoamController::setRandomSource(
+	compat::ICompatibilityRandomSource *source)
+{
+	randomSource_ = source;
 }
 
 void NavRoamController::setRuntimeMode(compat::RuntimeMode mode)
@@ -914,6 +924,9 @@ void NavRoamController::reset()
 	hasObjectiveTarget_ = false;
 	objectiveTarget_ = {0.0f, 0.0f, 0.0f};
 	clearPathFailure();
+	hasRoamGoal_ = false;
+	roamGoalArea_ = 0U;
+	roamGoalPosition_ = {0.0f, 0.0f, 0.0f};
 	initialized_ = false;
 }
 
@@ -1243,6 +1256,120 @@ bool NavRoamController::selectRoute(
 	return false;
 }
 
+bool NavRoamController::selectCompatibilityGoal(
+	const nav::NavSnapshot &snapshot,
+	const nav::NavAreaMatch &currentArea,
+	const std::vector<nav::NavDirectedLink> &links,
+	NavRoamDecision *decision)
+{
+	const nav::NavDocument *document = snapshot.document();
+	if (document == nullptr)
+	{
+		return false;
+	}
+	if (!hasRoamGoal_ || roamGoalArea_ == currentArea.area)
+	{
+		if (randomSource_ == nullptr && !links.empty())
+		{
+			roamGoalArea_ = links.front().toArea;
+			const nav::NavArea *goal = document->findArea(roamGoalArea_);
+			roamGoalPosition_ = goal == nullptr
+				? nav::NavVector{0.0f, 0.0f, 0.0f}
+				: centerOf(*goal);
+			hasRoamGoal_ = goal != nullptr;
+		}
+		else
+		{
+		std::vector<nav::AreaId> candidates;
+		for (const nav::NavArea &candidate : document->areas())
+		{
+			if (candidate.id != currentArea.area)
+			{
+				candidates.push_back(candidate.id);
+			}
+		}
+		if (candidates.empty())
+		{
+			hasRoamGoal_ = false;
+			return false;
+		}
+		std::size_t selected = 0U;
+		if (randomSource_ != nullptr && candidates.size() > 1U)
+		{
+			const compat::RandomRequest request = compat::RandomRequest::longRequest(
+				"CSBOT-HUNT-GOAL",
+				{actor_.slot, actor_.actorGeneration},
+				{0U, 0U, decision == nullptr ? 0U : decision->fullUpdateSequence},
+				0, static_cast<std::int32_t>(candidates.size() - 1U));
+			const compat::RandomLongResult result = randomSource_->nextLong(request);
+			if (result.status == compat::RandomStatus::Ok && result.value >= 0 &&
+				static_cast<std::size_t>(result.value) < candidates.size())
+			{
+				selected = static_cast<std::size_t>(result.value);
+			}
+		}
+		roamGoalArea_ = candidates[selected];
+		const nav::NavArea *goal = document->findArea(roamGoalArea_);
+		roamGoalPosition_ = goal == nullptr
+			? nav::NavVector{0.0f, 0.0f, 0.0f}
+			: centerOf(*goal);
+		hasRoamGoal_ = goal != nullptr;
+		}
+	}
+
+	if (!hasRoamGoal_ || roamGoalArea_ == currentArea.area)
+	{
+		hasRoamGoal_ = false;
+		return false;
+	}
+
+	nav::NavQuery query(snapshot);
+	if (decision != nullptr)
+	{
+		decision->goalPresent = true;
+		decision->goalKind = NavGoalKind::Roam;
+		decision->goalArea = roamGoalArea_;
+		decision->goalPosition = roamGoalPosition_;
+		decision->pathRequested = true;
+	}
+	nav::NavCorridor corridor = {};
+	const nav::NavQueryResult corridorResult = buildCorridor(
+		query, currentArea.area, roamGoalArea_, nav::NavRouteType::Fastest,
+		&corridor, decision == nullptr || !collectPathStats_ ? nullptr : &decision->pathSearchStats);
+	if (decision != nullptr)
+	{
+		decision->corridorResult = corridorResult;
+		decision->pathResult = corridorResult;
+	}
+	if (corridorResult != nav::NavQueryResult::Found || corridor.areas.size() < 2U)
+	{
+		hasRoamGoal_ = false;
+		return false;
+	}
+	const nav::AreaId nextArea = corridor.areas[1U];
+	nav::NavDirectedLink link = {currentArea.area, nextArea, 0U, 0U};
+	for (const nav::NavDirectedLink &candidate : links)
+	{
+		if (candidate.toArea == nextArea)
+		{
+			link = candidate;
+			break;
+		}
+	}
+	if (!startTraversal(snapshot, corridor, link))
+	{
+		hasRoamGoal_ = false;
+		return false;
+	}
+	rememberRoute(snapshot, corridor, link);
+	if (decision != nullptr)
+	{
+		decision->targetArea = nextArea;
+		populateRouteDecision(decision);
+	}
+	return true;
+}
+
 bool NavRoamController::selectRoamRoute(
 	const nav::NavSnapshot &snapshot,
 	const nav::NavAreaMatch &currentArea,
@@ -1258,6 +1385,10 @@ bool NavRoamController::selectRoamRoute(
 	if (query.outgoingLinks(currentArea.area, &links) != nav::NavQueryResult::Found)
 	{
 		return false;
+	}
+	if (!modePolicy_.allowsAdaptiveRouteWeighting())
+	{
+		return selectCompatibilityGoal(snapshot, currentArea, links, decision);
 	}
 	if (!modePolicy_.allowsAdaptiveRouteWeighting())
 	{
@@ -1403,10 +1534,14 @@ void NavRoamController::populateRouteDecision(NavRoamDecision *decision) const
 	{
 		return;
 	}
+	const bool hadGoal = decision->goalPresent;
 	decision->goalPresent = true;
-	decision->goalKind = hasObjectiveTarget_ ? NavGoalKind::Objective : NavGoalKind::Roam;
-	decision->goalArea = activeLink_.toArea;
-	decision->goalPosition = activeTargetPosition_;
+	if (!hadGoal)
+	{
+		decision->goalKind = hasObjectiveTarget_ ? NavGoalKind::Objective : NavGoalKind::Roam;
+		decision->goalArea = activeLink_.toArea;
+		decision->goalPosition = activeTargetPosition_;
+	}
 	decision->targetArea = activeLink_.toArea;
 	decision->targetPosition = activeTargetPosition_;
 	decision->corridorAreaCount = activeCorridor_.areas.size();
@@ -1432,6 +1567,9 @@ void NavRoamController::resetRoute()
 	activeCorridor_ = {};
 	activeLink_ = {};
 	activeTargetPosition_ = {0.0f, 0.0f, 0.0f};
+	hasRoamGoal_ = false;
+	roamGoalArea_ = 0U;
+	roamGoalPosition_ = {0.0f, 0.0f, 0.0f};
 	lastIntentDirection_ = {0.0f, 0.0f, 0.0f};
 	stuckRecoveryDirection_ = {0.0f, 0.0f, 0.0f};
 	activeCorridorIndex_ = 0U;

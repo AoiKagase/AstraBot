@@ -2096,6 +2096,7 @@ void PluginRuntime::updateManagedBotMovement()
 		}
 		else
 		{
+			managedBotMovement_[index].setRandomSource(&compatibilityRandomSource_);
 			roamResult = managedBotMovement_[index].update(
 				navigation,
 				observation,

@@ -1,4 +1,5 @@
 #include "astrabot/runtime/nav_roam_controller.hpp"
+#include "astrabot/compat/random_source.hpp"
 
 #include <cmath>
 #include <cstdio>
@@ -622,6 +623,53 @@ bool testResourceLimitFailureIsBackedOff()
 	return true;
 }
 
+bool testCompatibilityGoalSelectionUsesRngBoundary()
+{
+	astrabot::nav::NavDocument document;
+	document.setSourceIdentity({5U, 100U, 200U});
+	astrabot::nav::NavArea start = area(1U, 0.0f, 64.0f);
+	astrabot::nav::NavArea branchA = area(2U, 64.0f, 128.0f);
+	astrabot::nav::NavArea branchB = area(3U, 128.0f, 192.0f);
+	astrabot::nav::NavArea goal = area(4U, 192.0f, 256.0f);
+	start.connections[0U].push_back(2U);
+	start.connections[0U].push_back(3U);
+	branchA.connections[0U].push_back(4U);
+	branchB.connections[0U].push_back(4U);
+	document.addArea(start);
+	document.addArea(branchA);
+	document.addArea(branchB);
+	document.addArea(goal);
+	astrabot::compat::ScriptedRandomSource randomSource({
+		astrabot::compat::RandomTapeEntry::longEntry(
+			"CSBOT-HUNT-GOAL", {1U, 1U}, {0U, 0U, 1U}, 0, 2, 2)});
+	astrabot::nav::NavSnapshotPublisher publisher;
+	if (!check(publisher.publish(&document, 1U) ==
+				astrabot::nav::NavSnapshotResult::Published,
+				"goal selector snapshot is published"))
+	{
+		return false;
+	}
+	astrabot::runtime::NavRoamController controller(
+		astrabot::compat::RuntimeMode::Compatibility);
+	controller.setRandomSource(&randomSource);
+	astrabot::runtime::NavRoamObservation observation = {};
+	observation.actor = {1U, 1U};
+	observation.frame = {1U, 1U, 1U};
+	observation.locomotion.position = {32.0f, 32.0f, 0.0f};
+	observation.locomotion.standingClearance = 72.0f;
+	observation.locomotion.crouchingClearance = 36.0f;
+	observation.locomotion.grounded = true;
+	astrabot::nav::LocomotionIntent intent = {};
+	astrabot::runtime::NavRoamDecision decision = {};
+	const bool selected = controller.update(publisher.snapshot(), observation, &intent, &decision) ==
+		astrabot::runtime::NavRoamResult::IntentReady &&
+		decision.goalKind == astrabot::runtime::NavGoalKind::Roam &&
+		decision.goalArea == 4U && randomSource.position() == 1U;
+	if (!selected) return false;
+	return check(randomSource.verifyComplete(),
+				"Compatibility Goal selection consumes the expected RNG tape");
+}
+
 bool testTraversalSwitchesOnIntermediateJumpLink()
 {
 	astrabot::nav::NavDocument document;
@@ -723,6 +771,10 @@ int main()
 		return 1;
 	}
 	if (!testResourceLimitFailureIsBackedOff())
+	{
+		return 1;
+	}
+	if (!testCompatibilityGoalSelectionUsesRngBoundary())
 	{
 		return 1;
 	}
