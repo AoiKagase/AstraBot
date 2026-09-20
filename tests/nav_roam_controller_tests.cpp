@@ -423,6 +423,57 @@ bool testRoutePersistsUntilGoalChange()
 			"goal change is the explicit route recompute trigger");
 }
 
+bool testRouteRecomputesOnMapGenerationChange()
+{
+	astrabot::nav::NavDocument document;
+	document.setSourceIdentity({5U, 100U, 200U});
+	astrabot::nav::NavArea first = area(1U, 0.0f, 64.0f);
+	astrabot::nav::NavArea second = area(2U, 64.0f, 128.0f);
+	first.connections[0U].push_back(2U);
+	document.addArea(first);
+	document.addArea(second);
+	astrabot::nav::NavSnapshotPublisher publisher;
+	if (!check(publisher.publish(&document, 1U) ==
+			astrabot::nav::NavSnapshotResult::Published,
+			"map-change initial snapshot is published"))
+	{
+		return false;
+	}
+	astrabot::runtime::NavRoamController controller;
+	astrabot::runtime::NavRoamObservation observation = {};
+	observation.actor = {1U, 1U};
+	observation.frame = {1U, 1U, 1U};
+	observation.locomotion.position = {32.0f, 32.0f, 0.0f};
+	observation.locomotion.standingClearance = 72.0f;
+	observation.locomotion.crouchingClearance = 36.0f;
+	astrabot::nav::LocomotionIntent intent = {};
+	astrabot::runtime::NavRoamDecision initial = {};
+	if (!check(controller.update(
+			publisher.snapshot(), observation, &intent, &initial) ==
+			astrabot::runtime::NavRoamResult::IntentReady &&
+			initial.pathSequence == 1U,
+			"map-change fixture starts one route"))
+	{
+		return false;
+	}
+
+	if (!check(publisher.publish(&document, 2U) ==
+			astrabot::nav::NavSnapshotResult::Published,
+			"map-change replacement snapshot is published"))
+	{
+		return false;
+	}
+	observation.frame = {2U, 1U, 2U};
+	astrabot::runtime::NavRoamDecision changed = {};
+	return check(controller.update(
+			publisher.snapshot(), observation, &intent, &changed) ==
+			astrabot::runtime::NavRoamResult::IntentReady &&
+			changed.recomputeReason ==
+				astrabot::runtime::NavRecomputeReason::MapOrRoundChanged &&
+			changed.pathSequence == 2U,
+			"map generation change forces one route recompute");
+}
+
 bool testGoalAndPathFailuresAreTyped()
 {
 	astrabot::nav::NavDocument document;
@@ -598,6 +649,10 @@ int main()
 		return 1;
 	}
 	if (!testRoutePersistsUntilGoalChange())
+	{
+		return 1;
+	}
+	if (!testRouteRecomputesOnMapGenerationChange())
 	{
 		return 1;
 	}

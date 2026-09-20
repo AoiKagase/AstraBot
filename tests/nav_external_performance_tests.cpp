@@ -88,11 +88,12 @@ bool runCase(
 	astrabot::nav::AreaId goal,
 	const char *name,
 	bool requireFound,
-	std::size_t searchLimit =
-		astrabot::nav::NavQueryLimits::kDefaultMaximumCorridorAreas)
+	const astrabot::nav::NavQueryLimits *limits = nullptr,
+	bool expectResourceLimit = false)
 {
-	const astrabot::nav::NavQueryLimits limits = {searchLimit, searchLimit};
-	const astrabot::nav::NavQuery query(snapshot, limits);
+	const astrabot::nav::NavQuery query = limits == nullptr
+		? astrabot::nav::NavQuery(snapshot)
+		: astrabot::nav::NavQuery(snapshot, *limits);
 	astrabot::nav::NavCorridor corridor = {};
 	astrabot::nav::NavSearchStats stats = {};
 	const auto begin = std::chrono::steady_clock::now();
@@ -103,7 +104,12 @@ bool runCase(
 	std::cout << "nav_case=" << name
 		<< " start=" << start
 		<< " goal=" << goal
-		<< " limit=" << searchLimit
+		<< " corridor_limit=" << (limits == nullptr
+			? astrabot::nav::NavQueryLimits::kDefaultMaximumCorridorAreas
+			: limits->maximumCorridorAreas)
+		<< " search_limit=" << (limits == nullptr
+			? astrabot::nav::NavQueryLimits::kDefaultMaximumSearchQueue
+			: limits->maximumSearchQueue)
 		<< " result=" << static_cast<int>(result)
 		<< " wall_usec=" << elapsed
 		<< " expanded=" << stats.expandedUniqueAreas
@@ -117,14 +123,27 @@ bool runCase(
 		<< " search_usec=" << stats.totalUsec
 		<< " search_max_usec=" << stats.maxUsec
 		<< '\n';
+	if (result == astrabot::nav::NavQueryResult::ResourceLimit && expectResourceLimit)
+	{
+		return true;
+	}
 	if (result == astrabot::nav::NavQueryResult::ResourceLimit)
 	{
 		std::cerr << "FAIL: " << name << " returned ResourceLimit\n";
 		return false;
 	}
-	return !requireFound || check(
-		result == astrabot::nav::NavQueryResult::Found,
-		"control route must be found");
+	if (expectResourceLimit)
+	{
+		std::cerr << "FAIL: " << name << " did not return ResourceLimit\n";
+		return false;
+	}
+	return !requireFound ||
+		(check(result == astrabot::nav::NavQueryResult::Found,
+			"required route must be found") &&
+		 check(corridor.areas.size() <= (limits == nullptr
+			? astrabot::nav::NavQueryLimits::kDefaultMaximumCorridorAreas
+			: limits->maximumCorridorAreas),
+			"found route fits final corridor capacity"));
 }
 
 bool directedBfs(
@@ -234,20 +253,14 @@ int main()
 	}
 
 	const bool objectivePass = runCase(
-		snapshot, 41U, 90U, "objective_41_to_90", false);
-	for (const std::size_t limit : {256U, 512U, 1024U, 2048U,
-		astrabot::nav::NavLimits::kMaximumAreas})
-	{
-		const char *label = limit == astrabot::nav::NavLimits::kMaximumAreas
-			? "sweep_unlimited_test" : "sweep_limit";
-		if (!runCase(snapshot, 41U, 90U, label, false, limit))
-		{
-			// The sweep records each ResourceLimit, but continues to the next budget.
-		}
-	}
+		snapshot, 41U, 90U, "objective_41_to_90_default", true);
+	const astrabot::nav::NavQueryLimits explicitBudget256 = {256U, 256U};
+	const bool explicitBudgetPass = runCase(
+		snapshot, 41U, 90U, "objective_41_to_90_explicit_budget_256", false,
+		&explicitBudget256, true);
 	const bool firstControlPass = runCase(
 		snapshot, 41U, 1438U, "control_41_to_1438", true);
 	const bool secondControlPass = runCase(
 		snapshot, 5U, 1520U, "control_5_to_1520", true);
-	return objectivePass && firstControlPass && secondControlPass ? 0 : 1;
+	return objectivePass && explicitBudgetPass && firstControlPass && secondControlPass ? 0 : 1;
 }

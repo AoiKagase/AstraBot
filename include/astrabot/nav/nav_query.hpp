@@ -13,7 +13,9 @@ namespace nav
 {
 struct NavQueryLimits
 {
+	// Maximum number of areas retained by the completed corridor.
 	static constexpr std::size_t kDefaultMaximumCorridorAreas = 256U;
+	// Independent watchdog for A* search records/open-list growth.
 	static constexpr std::size_t kDefaultMaximumSearchQueue = 4096U;
 
 	std::size_t maximumCorridorAreas;

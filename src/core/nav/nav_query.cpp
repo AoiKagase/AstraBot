@@ -709,8 +709,7 @@ NavQueryResult buildAStarCorridor(
 					std::size_t targetRecordIndex = findRecord(records, target);
 					if (targetRecordIndex == records.size())
 					{
-						if (records.size() >= limits.maximumCorridorAreas ||
-								records.size() >= limits.maximumSearchQueue)
+						if (records.size() >= limits.maximumSearchQueue)
 						{
 							return NavQueryResult::ResourceLimit;
 						}

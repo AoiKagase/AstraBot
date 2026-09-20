@@ -3160,7 +3160,7 @@ void PluginRuntime::resetManagedBotMovement()
 							&area);
 			gpMetaUtilFuncs->pfnLogConsole(
 				pluginId_,
-				"movement diagnostic actor=%u generation=%u frame=%u reason=%s fake=%d spectator=%d team=%d deadflag=%d health=%.1f origin=(%.1f %.1f %.1f) solid=%d movetype=%d effects=%d nav=%d navAreaResult=%d area=%u runmove=%d stage=%d currentResult=%d nearestResult=%d currentArea=%u recoveryArea=%u targetArea=%u target=(%.1f %.1f %.1f) intent=(%.2f %.2f %.2f) observedVelocity=(%.1f %.1f %.1f) corridorAreas=%u corridorIndex=%u link=(%u->%u how=%u dir=%u) linkResult=%d corridorResult=%d locomotionResult=%d nearestDistanceSquared=%.1f goalPresent=%d goalKind=%d goalArea=%u pathRequested=%d pathResult=%d failureReason=%d",
+				"movement diagnostic actor=%u generation=%u frame=%u reason=%s fake=%d spectator=%d team=%d deadflag=%d health=%.1f origin=(%.1f %.1f %.1f) solid=%d movetype=%d effects=%d nav=%d navAreaResult=%d area=%u runmove=%d stage=%d currentResult=%d nearestResult=%d currentArea=%u recoveryArea=%u targetArea=%u target=(%.1f %.1f %.1f) intent=(%.2f %.2f %.2f) observedVelocity=(%.1f %.1f %.1f) corridorAreas=%u corridorIndex=%u link=(%u->%u how=%u dir=%u) linkResult=%d corridorResult=%d locomotionResult=%d nearestDistanceSquared=%.1f goalPresent=%d goalKind=%d goalArea=%u pathRequested=%d pathResult=%d failureReason=%d fullUpdate=%u recomputeReason=%d searchCalls=%u expanded=%u enqueues=%u reopens=%u staleQueue=%u equalCostRepl=%u searchUsec=%llu searchMaxUsec=%llu searchFirstId=%llu searchLastId=%llu routeType=%d",
 				static_cast<unsigned int>(handle.actor.slot),
 				static_cast<unsigned int>(handle.actor.actorGeneration),
 				static_cast<unsigned int>(adapterFrameCount_),
@@ -3210,7 +3210,20 @@ void PluginRuntime::resetManagedBotMovement()
 				decision != nullptr ? static_cast<unsigned int>(decision->goalArea) : 0U,
 				decision != nullptr && decision->pathRequested ? 1 : 0,
 				decision != nullptr ? static_cast<int>(decision->pathResult) : -1,
-				decision != nullptr ? static_cast<int>(decision->failureReason) : -1);
+				decision != nullptr ? static_cast<int>(decision->failureReason) : -1,
+				decision != nullptr ? decision->fullUpdateSequence : 0U,
+				decision != nullptr ? static_cast<int>(decision->recomputeReason) : -1,
+				decision != nullptr ? decision->pathSearchStats.searchCalls : 0U,
+				decision != nullptr ? decision->pathSearchStats.expandedUniqueAreas : 0U,
+				decision != nullptr ? decision->pathSearchStats.enqueueCount : 0U,
+				decision != nullptr ? decision->pathSearchStats.reopenCount : 0U,
+				decision != nullptr ? decision->pathSearchStats.staleQueueEntries : 0U,
+				decision != nullptr ? decision->pathSearchStats.equalCostReplacements : 0U,
+				decision != nullptr ? static_cast<unsigned long long>(decision->pathSearchStats.totalUsec) : 0ULL,
+				decision != nullptr ? static_cast<unsigned long long>(decision->pathSearchStats.maxUsec) : 0ULL,
+				decision != nullptr ? static_cast<unsigned long long>(decision->pathSearchStats.firstSearchId) : 0ULL,
+				decision != nullptr ? static_cast<unsigned long long>(decision->pathSearchStats.lastSearchId) : 0ULL,
+				decision != nullptr ? static_cast<int>(decision->routeType) : -1);
 			movementDiagnosticAttempts_[index] = true;
 		}
 

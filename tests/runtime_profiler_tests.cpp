@@ -60,8 +60,13 @@ int main()
 	}
 	const auto &stage = report.stages[
 		static_cast<std::size_t>(RuntimeProfilerStage::StartFrame)];
+	const auto &pathStage = report.stages[
+		static_cast<std::size_t>(RuntimeProfilerStage::PathSearch)];
 	if (!check(
 		stage.calls == 2U && stage.totalUsec == 400U && stage.maxUsec == 300U &&
+		pathStage.calls == report.pathSearches &&
+		pathStage.totalUsec == report.pathSearchTotalUsec &&
+		pathStage.maxUsec == report.pathSearchMaxUsec &&
 		report.aliveBots == 4U && report.traceLineCalls == 4U &&
 		report.visibilityCandidates == 3U && report.fovChecks == 2U &&
 		report.losChecks == 1U && report.bodyProbeCalls == 9U &&

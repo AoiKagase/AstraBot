@@ -178,12 +178,40 @@ bool testBoundedSearch()
 	document.addArea(third);
 
 	const astrabot::nav::NavSnapshot snapshot = snapshotFor(&document, 1U);
-	const astrabot::nav::NavQueryLimits limits = {2U, 2U};
+	const astrabot::nav::NavQueryLimits limits = {3U, 2U};
 	const astrabot::nav::NavQuery query(snapshot, limits);
 	astrabot::nav::NavCorridor corridor = {};
-	return check(query.buildCorridor(1U, 3U, &corridor) ==
+	astrabot::nav::NavSearchStats stats = {};
+	return check(query.buildCorridor(1U, 3U, &corridor, &stats) ==
 			astrabot::nav::NavQueryResult::ResourceLimit,
-			"corridor search obeys explicit bounds");
+			"corridor search obeys explicit search queue bounds") &&
+		check(stats.enqueueCount == 2U && stats.expandedUniqueAreas == 2U,
+			"explicit search queue bound stops before the third record");
+}
+
+bool testCorridorCapacityDoesNotBoundSearchRecords()
+{
+	astrabot::nav::NavDocument document;
+	document.setSourceIdentity({5U, 100U, 200U});
+	astrabot::nav::NavArea first = area(1U, 0.0f, 64.0f, 0.0f);
+	astrabot::nav::NavArea second = area(2U, 64.0f, 128.0f, 0.0f);
+	astrabot::nav::NavArea third = area(3U, 128.0f, 192.0f, 0.0f);
+	first.connections[0U].push_back(2U);
+	second.connections[0U].push_back(3U);
+	document.addArea(first);
+	document.addArea(second);
+	document.addArea(third);
+
+	const astrabot::nav::NavSnapshot snapshot = snapshotFor(&document, 1U);
+	const astrabot::nav::NavQueryLimits limits = {2U, 4U};
+	const astrabot::nav::NavQuery query(snapshot, limits);
+	astrabot::nav::NavCorridor corridor = {};
+	astrabot::nav::NavSearchStats stats = {};
+	return check(query.buildCorridor(1U, 3U, &corridor, &stats) ==
+			astrabot::nav::NavQueryResult::ResourceLimit,
+			"final corridor capacity still rejects an oversized path") &&
+		check(stats.enqueueCount == 3U && stats.expandedUniqueAreas == 3U,
+			"corridor capacity does not stop search record expansion");
 }
 
 bool testAStarPrefersLowerCostPath()
@@ -554,8 +582,9 @@ int main()
 		!testApproachTraversalMetadata() ||
 		!testPathFollowerUsesAreaPortalInsteadOfCenter() ||
 		!testPathFollowerUsesDirectedPortal() ||
-			!testAStarPrefersLowerCostPath() ||
-			!testBoundedSearch() ||
+		!testAStarPrefersLowerCostPath() ||
+		!testBoundedSearch() ||
+		!testCorridorCapacityDoesNotBoundSearchRecords() ||
 			!testPathFollowerProgressAndStaleRoute() ||
 			!testInvalidInputs() ||
 			!testAStarSearchStats() ||

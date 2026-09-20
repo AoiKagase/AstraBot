@@ -142,6 +142,7 @@ void RuntimeProfiler::recordPathSearch(bool success, bool requested) noexcept
 	{
 		saturatingAdd(&counters_.pathSearchFailures, 1U);
 	}
+	record(RuntimeProfilerStage::PathSearch, 0U);
 }
 
 void RuntimeProfiler::recordPathSearchStats(
