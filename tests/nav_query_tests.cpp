@@ -444,6 +444,48 @@ bool testNearest3DUsesSurfaceHeight()
 				"3D nearest selects the standing surface");
 }
 
+bool testStationaryFollowerDoesNotSkipPortalSegment()
+{
+	astrabot::nav::NavDocument document;
+	document.setSourceIdentity({5U, 100U, 200U});
+	astrabot::nav::NavArea first = area(1U, 0.0f, 100.0f, 0.0f);
+	first.extent.hi.y = 100.0f;
+	astrabot::nav::NavArea second = area(2U, 100.0f, 140.0f, 0.0f);
+	second.extent.hi.y = 200.0f;
+	astrabot::nav::NavArea third = area(3U, 140.0f, 240.0f, 0.0f);
+	third.extent.lo.y = 100.0f;
+	third.extent.hi.y = 200.0f;
+	first.connections[0U].push_back(2U);
+	second.connections[0U].push_back(3U);
+	document.addArea(first);
+	document.addArea(second);
+	document.addArea(third);
+	const astrabot::nav::NavSnapshot snapshot = snapshotFor(&document, 1U);
+	const astrabot::nav::NavQuery query(snapshot);
+	astrabot::nav::NavCorridor corridor = {};
+	if (!check(query.buildCorridor(1U, 3U, &corridor) ==
+				astrabot::nav::NavQueryResult::Found,
+				"stationary portal fixture builds corridor"))
+	{
+		return false;
+	}
+	astrabot::nav::NavPathFollower follower;
+	follower.start(corridor);
+	astrabot::nav::NavVector target = {};
+	astrabot::nav::AreaId targetArea = 0U;
+	if (!check(follower.update(snapshot, {90.0f, 20.0f, 0.0f}, 20.0f, 1.0f,
+					&target, &targetArea) == astrabot::nav::NavFollowerResult::Advanced &&
+				targetArea == 2U,
+				"stationary portal fixture enters the intermediate segment"))
+	{
+		return false;
+	}
+	return check(follower.update(snapshot, {90.0f, 20.0f, 0.0f}, 20.0f, 1.0f,
+					&target, &targetArea) == astrabot::nav::NavFollowerResult::TargetReady &&
+				targetArea == 2U && follower.currentIndex() == 1U,
+				"stationary actor cannot skip an unentered corridor segment");
+}
+
 bool testInvalidInputs()
 {
 	astrabot::nav::NavDocument document;
@@ -628,6 +670,7 @@ int main()
 		!testBoundedSearch() ||
 		!testCorridorCapacityDoesNotBoundSearchRecords() ||
 		!testPathFollowerProgressAndStaleRoute() ||
+		!testStationaryFollowerDoesNotSkipPortalSegment() ||
 		!testInterpolatedSurfaceHeight() ||
 		!testNearest3DUsesSurfaceHeight() ||
 			!testInvalidInputs() ||

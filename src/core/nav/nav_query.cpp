@@ -122,6 +122,15 @@ bool isWithinTarget(
 			surfaceDistance(area, position) <= verticalTolerance;
 }
 
+bool isInsideArea(
+	const NavArea &area,
+	const NavVector &position,
+	float verticalTolerance)
+{
+	return rectangleDistanceSquared(area, position) == 0.0f &&
+		surfaceDistance(area, position) <= verticalTolerance;
+}
+
 NavVector portalSteeringPoint(
 	const NavArea &area,
 	const NavVector &position)
@@ -1027,11 +1036,12 @@ NavFollowerResult NavPathFollower::update(
 	}
 	*target = currentTarget;
 	*targetArea = area->id;
-	if (!isWithinTarget(
-			*area,
-			position,
-			horizontalTolerance,
-			verticalTolerance))
+	const bool reachedCurrentSegment = isWithinTarget(
+		*area, position, horizontalTolerance, verticalTolerance);
+	const bool enteredCurrentArea = currentIndex_ == 0U ||
+		currentIndex_ + 1U >= corridor_.size() ||
+		isInsideArea(*area, position, verticalTolerance);
+	if (!reachedCurrentSegment || !enteredCurrentArea)
 	{
 		return NavFollowerResult::TargetReady;
 	}
