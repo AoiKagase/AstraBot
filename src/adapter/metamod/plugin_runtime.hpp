@@ -29,8 +29,8 @@ namespace astrabot
 {
 	namespace metamod
 	{
-		enum class CompatibilityCommandResult
-		{
+enum class CompatibilityCommandResult
+{
 			Handled,
 			Unknown,
 			InvalidArguments,
@@ -43,8 +43,20 @@ namespace astrabot
 			NoTarget,
 			ProfileUnavailable,
 			NameTaken,
-			ActorOperationFailed
-		};
+	ActorOperationFailed
+};
+
+struct ManagedObjectiveTargetCache
+{
+	bool valid;
+	runtime::LifecycleGeneration mapGeneration;
+	runtime::LifecycleGeneration roundGeneration;
+	std::uint8_t team;
+	bool carryingBomb;
+	nav::NavVector target;
+	int selectedEntityIndex;
+	std::uint32_t generation;
+};
 
 		class PluginRuntime
 		{
@@ -188,7 +200,8 @@ namespace astrabot
 	bool buildManagedObjectiveTarget(
 		std::size_t index,
 		nav::NavVector *target,
-		nav::NavSearchStats *searchStats) const;
+		nav::NavSearchStats *searchStats,
+		RuntimeObjectiveSelectionStats *objectiveStats = nullptr);
 			void resetManagedBotMovement();
 			void logMovementDiagnostic(
 				std::size_t index,
@@ -261,6 +274,9 @@ namespace astrabot
 			std::array<objectives::RoundObjectivePlanner,
 					   NativeBotObservation::kClientSlotCount>
 					managedBotObjectives_;
+			std::array<ManagedObjectiveTargetCache,
+					   NativeBotObservation::kClientSlotCount>
+				managedBotObjectiveTargets_;
 			std::array<compat::CompatibilityStateMachine,
 					   NativeBotObservation::kClientSlotCount>
 				managedBotStateMachines_;

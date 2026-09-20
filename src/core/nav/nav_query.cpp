@@ -521,7 +521,11 @@ struct AStarStatsTimer
 	NavSearchStats *stats;
 	std::chrono::steady_clock::time_point start;
 
-	explicit AStarStatsTimer(NavSearchStats *value)
+	AStarStatsTimer(
+		NavSearchStats *value,
+		AreaId startArea,
+		AreaId goalArea,
+		NavRouteType routeType)
 		: stats(value), start(value != nullptr ? std::chrono::steady_clock::now() :
 			std::chrono::steady_clock::time_point())
 	{
@@ -530,6 +534,12 @@ struct AStarStatsTimer
 			static std::uint64_t nextSearchId = 0U;
 			stats->firstSearchId = ++nextSearchId;
 			stats->lastSearchId = stats->firstSearchId;
+			stats->firstStartArea = startArea;
+			stats->firstGoalArea = goalArea;
+			stats->lastStartArea = startArea;
+			stats->lastGoalArea = goalArea;
+			stats->firstRouteType = static_cast<std::uint8_t>(routeType);
+			stats->lastRouteType = stats->firstRouteType;
 		}
 	}
 
@@ -564,7 +574,7 @@ NavQueryResult buildAStarCorridor(
 	{
 		*stats = {};
 	}
-	AStarStatsTimer statsTimer(stats);
+	AStarStatsTimer statsTimer(stats, start, goal, routeType);
 	if (corridor == nullptr)
 	{
 		return NavQueryResult::InvalidArgument;

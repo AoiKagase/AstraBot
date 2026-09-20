@@ -36,6 +36,12 @@ struct NavSearchStats
 	std::uint64_t maxUsec;
 	std::uint64_t firstSearchId;
 	std::uint64_t lastSearchId;
+	AreaId firstStartArea;
+	AreaId firstGoalArea;
+	AreaId lastStartArea;
+	AreaId lastGoalArea;
+	std::uint8_t firstRouteType;
+	std::uint8_t lastRouteType;
 };
 
 enum class NavQueryResult

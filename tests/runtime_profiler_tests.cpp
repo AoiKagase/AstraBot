@@ -18,10 +18,50 @@ bool check(bool condition, const char *message)
 	}
 	return true;
 }
+
+bool testCallerClassificationAndDuplicateKeys()
+{
+	RuntimeProfiler profiler;
+	profiler.setEnabled(true, 0.0);
+	profiler.recordPathSearchResults(
+		astrabot::metamod::RuntimePathSearchCaller::ObjectiveCandidateEvaluation,
+		1U, 7U, 3U, 41U, 90U, 0U, true, 1U, 1U, 0U, 10U, 12U, 0U, 0U, 0U,
+		100U, 100U, 501U, 501U);
+	profiler.recordPathSearchResults(
+		astrabot::metamod::RuntimePathSearchCaller::ObjectiveCandidateEvaluation,
+		1U, 7U, 3U, 41U, 90U, 0U, true, 1U, 1U, 0U, 10U, 12U, 0U, 0U, 0U,
+		100U, 100U, 502U, 502U);
+	profiler.recordObjectiveSelection(2U, 3U, 2U, 2U, 1U, 90U);
+	RuntimeProfilerReport report = {};
+	if (!check(profiler.consumeReport(1.0, &report),
+		"caller classification report is emitted"))
+	{
+		return false;
+	}
+	const auto &aggregate = report.pathSearchByCaller[
+		static_cast<std::size_t>(
+			astrabot::metamod::RuntimePathSearchCaller::ObjectiveCandidateEvaluation)];
+	return check(
+		aggregate.calls == 2U && aggregate.totalUsec == 200U &&
+			aggregate.expandedAreas == 20U && aggregate.enqueues == 24U &&
+		report.duplicateSearchSameFullUpdate == 1U &&
+		report.duplicateSearchSameObjectiveGeneration == 1U &&
+		report.uniqueSearchKeys == 1U && report.objectiveBombSites == 2U &&
+		report.objectiveCandidateAreas == 3U &&
+		report.objectiveUniqueCandidateAreas == 2U &&
+		report.objectiveCandidateQueries == 2U &&
+		report.objectiveDuplicateCandidateAreas == 1U &&
+		report.selectedObjectiveGoalArea == 90U,
+		"caller aggregates and bounded duplicate/objective counters are correct");
+}
 }
 
 int main()
 {
+	if (!testCallerClassificationAndDuplicateKeys())
+	{
+		return 1;
+	}
 	RuntimeProfiler profiler;
 	profiler.record(RuntimeProfilerStage::StartFrame, 100U);
 	RuntimeProfilerReport report = {};

@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -146,6 +147,78 @@ bool runCase(
 			"found route fits final corridor capacity"));
 }
 
+bool productionLikeObjectiveEvaluation(
+	const astrabot::nav::NavSnapshot &snapshot)
+{
+	const astrabot::nav::NavDocument *document = snapshot.document();
+	if (document == nullptr)
+	{
+		return false;
+	}
+	const astrabot::nav::NavQuery query(snapshot);
+	const std::vector<astrabot::nav::AreaId> candidateSources = {90U, 90U, 1438U};
+	std::vector<astrabot::nav::AreaId> uniqueCandidates;
+	std::size_t candidateQueries = 0U;
+	std::size_t duplicateCandidates = 0U;
+	astrabot::nav::AreaId selectedGoal = 0U;
+	float selectedCost = (std::numeric_limits<float>::max)();
+	for (const astrabot::nav::AreaId source : candidateSources)
+	{
+		const astrabot::nav::NavArea *sourceArea = document->findArea(source);
+		if (sourceArea == nullptr)
+		{
+			return false;
+		}
+		const astrabot::nav::NavVector point = {
+			(sourceArea->extent.lo.x + sourceArea->extent.hi.x) * 0.5f,
+			(sourceArea->extent.lo.y + sourceArea->extent.hi.y) * 0.5f,
+			(sourceArea->southWestZ + sourceArea->northEastZ) * 0.5f};
+		astrabot::nav::NavAreaMatch match = {};
+		if (query.findNearest(point, 10000.0f, &match) !=
+			astrabot::nav::NavQueryResult::Found)
+		{
+			return false;
+		}
+		if (std::find(uniqueCandidates.begin(), uniqueCandidates.end(), match.area) !=
+			uniqueCandidates.end())
+		{
+			++duplicateCandidates;
+			continue;
+		}
+		uniqueCandidates.push_back(match.area);
+		astrabot::nav::NavCorridor corridor = {};
+		astrabot::nav::NavSearchStats stats = {};
+		const astrabot::nav::NavQueryResult result = query.buildCorridor(
+			41U, match.area, astrabot::nav::NavRouteType::Fastest, &corridor, &stats);
+		++candidateQueries;
+		if (result != astrabot::nav::NavQueryResult::Found ||
+			stats.searchCalls != 1U)
+		{
+			return false;
+		}
+		if (corridor.cost < selectedCost)
+		{
+			selectedCost = corridor.cost;
+			selectedGoal = match.area;
+		}
+	}
+	astrabot::nav::NavCorridor finalCorridor = {};
+	astrabot::nav::NavSearchStats finalStats = {};
+	const astrabot::nav::NavQueryResult finalResult = query.buildCorridor(
+		41U, selectedGoal, astrabot::nav::NavRouteType::Fastest, &finalCorridor,
+		&finalStats);
+	std::cout << "objective_case=production_like bombSites=2 candidateAreas="
+		<< candidateSources.size() << " uniqueCandidateAreas="
+		<< uniqueCandidates.size() << " candidateQueries=" << candidateQueries
+		<< " duplicateCandidateAreas=" << duplicateCandidates
+		<< " selectedGoalArea=" << selectedGoal
+		<< " finalSearchCalls=" << finalStats.searchCalls << '\n';
+	return uniqueCandidates.size() == 2U && candidateQueries == 2U &&
+		duplicateCandidates == 1U && selectedGoal != 0U &&
+		finalResult == astrabot::nav::NavQueryResult::Found &&
+		finalStats.searchCalls == 1U;
+}
+
 bool directedBfs(
 	const astrabot::nav::NavSnapshot &snapshot,
 	astrabot::nav::AreaId start,
@@ -221,10 +294,26 @@ int main()
 	astrabot::metamod::NavLoader loader;
 	astrabot::nav::NavSnapshotPublisher publisher;
 	astrabot::metamod::NavLoadDiagnostic diagnostic = {};
-	const astrabot::metamod::NavLoadRequest request = {
-		navPath.c_str(), "de_dust2", 1U, true, bspSize, false, 0U};
-	if (!check(loader.loadFile(&request, &publisher, &diagnostic) ==
-			astrabot::metamod::NavLoadResult::Loaded,
+	astrabot::metamod::NavLoadRequest request = {
+		navPath.c_str(), "DE_DUST2.BSP", 1U, true, bspSize, false, 0U};
+	astrabot::metamod::NavLoadResult loadResult =
+		loader.loadFile(&request, &publisher, &diagnostic);
+	bool bspIdentityVerified = loadResult == astrabot::metamod::NavLoadResult::Loaded;
+	if (loadResult == astrabot::metamod::NavLoadResult::BspSizeMismatch)
+	{
+		std::cout << "external_nav_load bspIdentity=BLOCKED_BY_ARTIFACT_MISMATCH"
+			<< " requestedBspSize=" << bspSize << '\n';
+		request.hasBspSize = false;
+		request.bspSize = 0U;
+		loadResult = loader.loadFile(&request, &publisher, &diagnostic);
+	}
+	std::cout << "external_nav_load result=" << static_cast<int>(loadResult)
+		<< " reader=" << static_cast<int>(diagnostic.readerResult)
+		<< " mapName=" << diagnostic.mapName
+		<< " bspSize=" << diagnostic.bspSize
+		<< " sourceHash=" << diagnostic.sourceHash
+		<< " bspIdentityVerified=" << (bspIdentityVerified ? 1 : 0) << '\n';
+	if (!check(loadResult == astrabot::metamod::NavLoadResult::Loaded,
 		"external de_dust2.nav loads through NavLoader"))
 	{
 		return 1;
@@ -262,5 +351,7 @@ int main()
 		snapshot, 41U, 1438U, "control_41_to_1438", true);
 	const bool secondControlPass = runCase(
 		snapshot, 5U, 1520U, "control_5_to_1520", true);
-	return objectivePass && explicitBudgetPass && firstControlPass && secondControlPass ? 0 : 1;
+	const bool productionLikeObjectivePass = productionLikeObjectiveEvaluation(snapshot);
+	return objectivePass && explicitBudgetPass && firstControlPass && secondControlPass &&
+		productionLikeObjectivePass ? 0 : 1;
 }

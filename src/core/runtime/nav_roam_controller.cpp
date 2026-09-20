@@ -139,8 +139,14 @@ void addSearchStats(nav::NavSearchStats *total, const nav::NavSearchStats &sampl
 		if (total->firstSearchId == 0U)
 		{
 			total->firstSearchId = sample.firstSearchId;
+			total->firstStartArea = sample.firstStartArea;
+			total->firstGoalArea = sample.firstGoalArea;
+			total->firstRouteType = sample.firstRouteType;
 		}
 		total->lastSearchId = sample.lastSearchId;
+		total->lastStartArea = sample.lastStartArea;
+		total->lastGoalArea = sample.lastGoalArea;
+		total->lastRouteType = sample.lastRouteType;
 	}
 }
 

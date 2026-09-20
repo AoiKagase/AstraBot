@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cstring>
 #include <limits>
+#include <vector>
 
 meta_globals_t *gpMetaGlobals = nullptr;
 gamedll_funcs_t *gpGamedllFuncs = nullptr;
@@ -53,6 +54,29 @@ namespace astrabot
 	{
 		return mode == compat::RuntimeMode::Enhanced ? "enhanced" : "compatibility";
 	}
+
+RuntimePathSearchCaller navSearchCaller(const runtime::NavRoamDecision &decision)
+{
+	if (decision.goalKind == runtime::NavGoalKind::Objective)
+	{
+		return decision.recomputeReason == runtime::NavRecomputeReason::InitialGoal
+			? RuntimePathSearchCaller::CorridorInitial
+			: RuntimePathSearchCaller::CorridorRecompute;
+	}
+	if (decision.goalKind == runtime::NavGoalKind::Roam)
+	{
+		return RuntimePathSearchCaller::RoamGoalEvaluation;
+	}
+	if (decision.failureReason == runtime::NavFailureReason::CurrentAreaMissing)
+	{
+		return RuntimePathSearchCaller::OffPathRecovery;
+	}
+	if (decision.failureReason == runtime::NavFailureReason::PathSearchFailed)
+	{
+		return RuntimePathSearchCaller::RecoveryAreaEvaluation;
+	}
+	return RuntimePathSearchCaller::DebugOrDiagnostic;
+}
 
 	bool equalsIgnoreCase(const char *left, const char *right)
 			{
@@ -234,8 +258,14 @@ void addNavSearchStats(nav::NavSearchStats *total, const nav::NavSearchStats &sa
 		if (total->firstSearchId == 0U)
 		{
 			total->firstSearchId = sample.firstSearchId;
+			total->firstStartArea = sample.firstStartArea;
+			total->firstGoalArea = sample.firstGoalArea;
+			total->firstRouteType = sample.firstRouteType;
 		}
 		total->lastSearchId = sample.lastSearchId;
+		total->lastStartArea = sample.lastStartArea;
+		total->lastGoalArea = sample.lastGoalArea;
+		total->lastRouteType = sample.lastRouteType;
 	}
 }
 
@@ -244,10 +274,23 @@ void addNavSearchStats(nav::NavSearchStats *total, const nav::NavSearchStats &sa
 		static const char *const names[] = {
 			"StartFrame", "RegistryLifecycle", "Observation", "Vision", "TraceLine",
 			"WorldPublish", "Perception", "RuntimeInput", "RuntimeFullUpdate",
+			"FullUpdateObjective", "ObjectiveCandidateNavEvaluate",
 			"NavCurrentAreaLookup", "PathSearch", "PathRecompute", "NavMovement",
 			"MovementDispatch", "TraceSerialization"};
 		const std::size_t index = static_cast<std::size_t>(stage);
 		return index < static_cast<std::size_t>(RuntimeProfilerStage::Count)
+			? names[index] : "Unknown";
+	}
+
+	const char *runtimePathSearchCallerName(RuntimePathSearchCaller caller)
+	{
+		static const char *const names[] = {
+			"CorridorInitial", "CorridorRecompute", "ObjectiveCandidateEvaluation",
+			"BombSiteSelection", "BombTargetSelection", "RoamGoalEvaluation",
+			"RecoveryAreaEvaluation", "TraversalRecovery", "OffPathRecovery",
+			"DebugOrDiagnostic", "Unknown"};
+		const std::size_t index = static_cast<std::size_t>(caller);
+		return index < static_cast<std::size_t>(RuntimePathSearchCaller::Count)
 			? names[index] : "Unknown";
 	}
 
@@ -506,6 +549,7 @@ const char *const kPerformanceCvarNames[kPerformanceCvarCount] = {
 		userMessageText_(),
 		userMessageTextLength_(0U),
 	managedBotMovement_(), managedBotCombat_(), managedBotObjectives_(),
+	managedBotObjectiveTargets_(),
 	managedBotStateMachines_(), managedBotPerception_(),
 	managedBotPerceptionFullUpdates_(), managedBotCommandSequences_(),
 	managedBotFullUpdateSequences_(), managedBotStateRounds_(), managedBotWasDead_(),
@@ -1188,7 +1232,45 @@ void PluginRuntime::onStartFramePost()
 						static_cast<unsigned long long>(report.pathSearchMaxUsec),
 						static_cast<unsigned long long>(report.pathFirstSearchId),
 						static_cast<unsigned long long>(report.pathLastSearchId),
-						static_cast<unsigned long long>(report.runPlayerMoves));
+					static_cast<unsigned long long>(report.runPlayerMoves));
+					for (std::size_t callerIndex = 0U;
+						callerIndex < static_cast<std::size_t>(RuntimePathSearchCaller::Count);
+						++callerIndex)
+					{
+						const RuntimePathSearchCaller caller =
+							static_cast<RuntimePathSearchCaller>(callerIndex);
+						const RuntimePathSearchAggregate &aggregate =
+							report.pathSearchByCaller[callerIndex];
+						const double average = aggregate.calls == 0U ? 0.0
+							: static_cast<double>(aggregate.totalUsec) /
+								static_cast<double>(aggregate.calls);
+						gpMetaUtilFuncs->pfnLogConsole(
+							pluginId_,
+							"profile pathSearchByCaller.%s calls=%llu total_usec=%llu "
+							"avg_usec=%.1f max_usec=%llu expanded=%llu enqueues=%llu",
+							runtimePathSearchCallerName(caller),
+							static_cast<unsigned long long>(aggregate.calls),
+							static_cast<unsigned long long>(aggregate.totalUsec), average,
+							static_cast<unsigned long long>(aggregate.maxUsec),
+							static_cast<unsigned long long>(aggregate.expandedAreas),
+							static_cast<unsigned long long>(aggregate.enqueues));
+					}
+					gpMetaUtilFuncs->pfnLogConsole(
+						pluginId_,
+						"profile objectiveCandidates bombSites=%llu candidateAreas=%llu "
+						"uniqueCandidateAreas=%llu candidateQueries=%llu "
+						"duplicateCandidateAreas=%llu selectedGoalArea=%u "
+						"duplicateSearchSameFullUpdate=%llu "
+						"duplicateSearchSameObjectiveGeneration=%llu uniqueSearchKeys=%llu",
+						static_cast<unsigned long long>(report.objectiveBombSites),
+						static_cast<unsigned long long>(report.objectiveCandidateAreas),
+						static_cast<unsigned long long>(report.objectiveUniqueCandidateAreas),
+						static_cast<unsigned long long>(report.objectiveCandidateQueries),
+						static_cast<unsigned long long>(report.objectiveDuplicateCandidateAreas),
+						static_cast<unsigned int>(report.selectedObjectiveGoalArea),
+						static_cast<unsigned long long>(report.duplicateSearchSameFullUpdate),
+						static_cast<unsigned long long>(report.duplicateSearchSameObjectiveGeneration),
+						static_cast<unsigned long long>(report.uniqueSearchKeys));
 				}
 			}
 		}
@@ -1868,11 +1950,34 @@ void PluginRuntime::updateManagedBotMovement()
 		observation.exitConfirmed = before.grounded;
 		observation.collectPathStats = runtimeProfiler_.enabled();
 		nav::NavSearchStats objectiveSearchStats = {};
-		observation.hasObjectiveTarget = buildManagedObjectiveTarget(
-			index,
-			&observation.objectiveTarget,
-			runtimeProfiler_.enabled() ? &objectiveSearchStats : nullptr);
+		RuntimeObjectiveSelectionStats objectiveSelectionStats = {};
+		{
+			RuntimeProfilerScope objectiveScope(
+				runtimeProfiler_, RuntimeProfilerStage::FullUpdateObjective);
+			RuntimeProfilerScope candidateNavScope(
+				runtimeProfiler_,
+				RuntimeProfilerStage::ObjectiveCandidateNavEvaluate);
+			observation.hasObjectiveTarget = buildManagedObjectiveTarget(
+				index,
+				&observation.objectiveTarget,
+				runtimeProfiler_.enabled() ? &objectiveSearchStats : nullptr,
+				runtimeProfiler_.enabled() ? &objectiveSelectionStats : nullptr);
+		}
+		runtimeProfiler_.recordObjectiveSelection(
+			objectiveSelectionStats.bombSites,
+			objectiveSelectionStats.candidateAreas,
+			objectiveSelectionStats.uniqueCandidateAreas,
+			objectiveSelectionStats.candidateQueries,
+			objectiveSelectionStats.duplicateCandidateAreas,
+			objectiveSelectionStats.selectedGoalArea);
 		runtimeProfiler_.recordPathSearchResults(
+			RuntimePathSearchCaller::ObjectiveCandidateEvaluation,
+			managedBotHandles_[index].actor.slot,
+			managedBotFullUpdateSequences_[index],
+			managedBotObjectiveTargets_[index].generation,
+			objectiveSearchStats.firstStartArea,
+			objectiveSearchStats.firstGoalArea,
+			objectiveSearchStats.firstRouteType,
 			objectiveSearchStats.searchCalls != 0U,
 			objectiveSearchStats.searchCalls,
 			objectiveSearchStats.successCount,
@@ -1907,6 +2012,13 @@ void PluginRuntime::updateManagedBotMovement()
 				&roamDecision);
 		}
 		runtimeProfiler_.recordPathSearchResults(
+			navSearchCaller(roamDecision),
+			managedBotHandles_[index].actor.slot,
+			managedBotFullUpdateSequences_[index],
+			managedBotObjectiveTargets_[index].generation,
+			roamDecision.pathSearchStats.firstStartArea,
+			roamDecision.pathSearchStats.firstGoalArea,
+			roamDecision.pathSearchStats.firstRouteType,
 			roamDecision.pathRequested,
 			roamDecision.pathSearchStats.searchCalls,
 			roamDecision.pathSearchStats.successCount,
@@ -2252,8 +2364,13 @@ bool PluginRuntime::buildManagedWorldSnapshot(
 bool PluginRuntime::buildManagedObjectiveTarget(
 	std::size_t index,
 	nav::NavVector *target,
-	nav::NavSearchStats *searchStats) const
+	nav::NavSearchStats *searchStats,
+	RuntimeObjectiveSelectionStats *objectiveStats)
 {
+	if (objectiveStats != nullptr)
+	{
+		*objectiveStats = {};
+	}
 	if (index >= managedBotHandles_.size() || target == nullptr ||
 		engineFunctions_ == nullptr ||
 		engineFunctions_->pfnPEntityOfEntIndex == nullptr ||
@@ -2299,6 +2416,40 @@ bool PluginRuntime::buildManagedObjectiveTarget(
 		compatObservation.objective.carryingC4.value;
 	const bool needsBombSite = team == 1 && carryingBomb;
 	const bool needsPlantedBomb = team == 2;
+	ManagedObjectiveTargetCache &cache = managedBotObjectiveTargets_[index];
+	const bool sameObjectiveState = cache.mapGeneration == lifecycle_.mapGeneration() &&
+		cache.roundGeneration == lifecycle_.roundGeneration() &&
+		cache.team == static_cast<std::uint8_t>(team) &&
+		cache.carryingBomb == carryingBomb;
+	if (sameObjectiveState && needsBombSite && cache.valid)
+	{
+		edict_t *cachedSite = cache.selectedEntityIndex > 0
+			? engineFunctions_->pfnPEntityOfEntIndex(cache.selectedEntityIndex)
+			: nullptr;
+		const char *cachedClassname = cachedSite != nullptr && !cachedSite->free
+			? engineFunctions_->pfnSzFromIndex(cachedSite->v.classname)
+			: nullptr;
+		if (cachedClassname != nullptr &&
+			std::strcmp(cachedClassname, "func_bomb_target") == 0)
+		{
+			*target = cache.target;
+			return std::isfinite(target->x) && std::isfinite(target->y) &&
+				std::isfinite(target->z);
+		}
+		cache.valid = false;
+		cache.generation = cache.generation ==
+			(std::numeric_limits<std::uint32_t>::max)() ? 1U : cache.generation + 1U;
+	}
+	if (!sameObjectiveState)
+	{
+		cache.generation = cache.generation ==
+			(std::numeric_limits<std::uint32_t>::max)() ? 1U : cache.generation + 1U;
+	}
+	cache.valid = false;
+	cache.mapGeneration = lifecycle_.mapGeneration();
+	cache.roundGeneration = lifecycle_.roundGeneration();
+	cache.team = static_cast<std::uint8_t>(team);
+	cache.carryingBomb = carryingBomb;
 	if (!needsBombSite && !needsPlantedBomb)
 	{
 		return false;
@@ -2308,10 +2459,12 @@ bool PluginRuntime::buildManagedObjectiveTarget(
 	compat::ObjectiveObservation plantedObservation = {};
 	nav::NavVector selectedBombSite = {0.0f, 0.0f, 0.0f};
 	std::size_t selectedPathLength = (std::numeric_limits<std::size_t>::max)();
+	int selectedBombSiteEntityIndex = 0;
 	const nav::NavSnapshot navigation = navPublisher_.snapshot();
 	const nav::NavDocument *document = navigation.document();
 	nav::NavAreaMatch currentMatch = {};
 	bool haveCurrentArea = false;
+	std::vector<nav::AreaId> evaluatedCandidateAreas;
 	if (navigation.isValid() && document != nullptr)
 	{
 		nav::NavQuery query(navigation);
@@ -2343,28 +2496,53 @@ bool PluginRuntime::buildManagedObjectiveTarget(
 		}
 		if (needsBombSite && std::strcmp(classname, "func_bomb_target") == 0)
 		{
+			if (objectiveStats != nullptr)
+			{
+				++objectiveStats->bombSites;
+			}
 			const nav::NavVector candidate = entityObjectiveCenter(entity);
 			nav::NavExtent siteExtent = {};
 			const bool hasSiteExtent = entityObjectiveBounds(entity, &siteExtent);
 			std::size_t pathLength = (std::numeric_limits<std::size_t>::max)();
 			nav::NavVector reachablePoint = candidate;
-		if (haveCurrentArea && document != nullptr)
+		if (haveCurrentArea && document != nullptr && hasSiteExtent)
 			{
 				nav::NavQuery query(navigation);
-				for (const nav::NavArea &area : document->areas())
+				nav::NavAreaMatch siteMatch = {};
+				if (query.findNearest(
+						candidate, kMaximumObjectiveDistance, &siteMatch) ==
+					nav::NavQueryResult::Found)
 				{
-					if (!hasSiteExtent)
+					const nav::NavArea *siteArea = document->findArea(siteMatch.area);
+					if (siteArea == nullptr ||
+							siteMatch.closestPoint.x < siteExtent.lo.x ||
+							siteMatch.closestPoint.x > siteExtent.hi.x ||
+							siteMatch.closestPoint.y < siteExtent.lo.y ||
+							siteMatch.closestPoint.y > siteExtent.hi.y)
 					{
 						continue;
 					}
-					const float overlapLoX = (std::max)(area.extent.lo.x, siteExtent.lo.x);
-					const float overlapHiX = (std::min)(area.extent.hi.x, siteExtent.hi.x);
-					const float overlapLoY = (std::max)(area.extent.lo.y, siteExtent.lo.y);
-					const float overlapHiY = (std::min)(area.extent.hi.y, siteExtent.hi.y);
-					if (overlapLoX > overlapHiX || overlapLoY > overlapHiY)
+					if (objectiveStats != nullptr)
 					{
+						++objectiveStats->candidateAreas;
+					}
+					if (std::find(
+							evaluatedCandidateAreas.begin(), evaluatedCandidateAreas.end(),
+							siteMatch.area) != evaluatedCandidateAreas.end())
+					{
+						if (objectiveStats != nullptr)
+						{
+							++objectiveStats->duplicateCandidateAreas;
+						}
 						continue;
 					}
+					evaluatedCandidateAreas.push_back(siteMatch.area);
+					if (objectiveStats != nullptr)
+					{
+						++objectiveStats->uniqueCandidateAreas;
+						++objectiveStats->candidateQueries;
+					}
+					const nav::NavArea &area = *siteArea;
 					nav::NavCorridor corridor = {};
 					nav::NavSearchStats sample = {};
 					if (query.buildCorridor(currentMatch.area, area.id, &corridor,
@@ -2377,10 +2555,12 @@ bool PluginRuntime::buildManagedObjectiveTarget(
 					if (corridor.areas.size() < pathLength)
 					{
 						pathLength = corridor.areas.size();
-						reachablePoint = {
-							(overlapLoX + overlapHiX) * 0.5f,
-							(overlapLoY + overlapHiY) * 0.5f,
-							area.northEastZ * 0.5f + area.southWestZ * 0.5f};
+						if (objectiveStats != nullptr)
+						{
+							objectiveStats->selectedGoalArea = area.id;
+						}
+						selectedBombSiteEntityIndex = entityIndex;
+						reachablePoint = siteMatch.closestPoint;
 					}
 				}
 			}
@@ -2406,6 +2586,9 @@ bool PluginRuntime::buildManagedObjectiveTarget(
 		(std::numeric_limits<std::size_t>::max)())
 	{
 		*target = selectedBombSite;
+		cache.target = *target;
+		cache.selectedEntityIndex = selectedBombSiteEntityIndex;
+		cache.valid = true;
 	}
 	else if (team == 2 && plantedBomb != nullptr)
 	{
@@ -3098,6 +3281,7 @@ void PluginRuntime::resetManagedBotMovement()
 		managedBotMovement_[index].reset();
 		managedBotCombat_[index] = combat::CombatController();
 		managedBotObjectives_[index] = objectives::RoundObjectivePlanner();
+		managedBotObjectiveTargets_[index] = {};
 		managedBotStateMachines_[index] = compat::CompatibilityStateMachine();
 		managedBotPerception_[index] = perception::PerceptionAssembler();
 		managedBotTiming_[index] = runtime::BotTimingScheduler();
@@ -3800,6 +3984,7 @@ void PluginRuntime::clearManagedBot(std::size_t index)
 	managedBotMovement_[index].reset();
 	managedBotCombat_[index] = combat::CombatController();
 	managedBotObjectives_[index] = objectives::RoundObjectivePlanner();
+	managedBotObjectiveTargets_[index] = {};
 	managedBotStateMachines_[index] = compat::CompatibilityStateMachine();
 	managedBotPerception_[index] = perception::PerceptionAssembler();
 	managedBotCommandSequences_[index] = 0U;
