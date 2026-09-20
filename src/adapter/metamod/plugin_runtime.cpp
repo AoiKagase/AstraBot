@@ -2687,73 +2687,90 @@ bool PluginRuntime::buildManagedObjectiveTarget(
 			if (haveCurrentArea && document != nullptr && hasSiteExtent)
 			{
 				nav::NavQuery query(navigation);
-				nav::NavAreaMatch siteMatch = {};
-				if (query.findNearest(
-						candidate, kMaximumObjectiveDistance, &siteMatch) ==
-					nav::NavQueryResult::Found)
+				const nav::NavVector samplePoints[] = {
+					candidate,
+					{siteExtent.lo.x, (siteExtent.lo.y + siteExtent.hi.y) * 0.5f, candidate.z},
+					{siteExtent.hi.x, (siteExtent.lo.y + siteExtent.hi.y) * 0.5f, candidate.z},
+					{(siteExtent.lo.x + siteExtent.hi.x) * 0.5f, siteExtent.lo.y, candidate.z},
+					{(siteExtent.lo.x + siteExtent.hi.x) * 0.5f, siteExtent.hi.y, candidate.z}};
+				for (const nav::NavVector &samplePoint : samplePoints)
 				{
-					nearestNavArea = siteMatch.area;
-					candidateNavArea = siteMatch.area;
+					nav::NavAreaMatch siteMatch = {};
+					if (query.findNearest(
+							samplePoint, kMaximumObjectiveDistance, &siteMatch) !=
+						nav::NavQueryResult::Found)
+					{
+						continue;
+					}
+					if (nearestNavArea == 0U)
+					{
+						nearestNavArea = siteMatch.area;
+					}
 					const nav::NavArea *siteArea = document->findArea(siteMatch.area);
 					if (siteArea == nullptr ||
-							siteMatch.closestPoint.x < siteExtent.lo.x ||
-							siteMatch.closestPoint.x > siteExtent.hi.x ||
-							siteMatch.closestPoint.y < siteExtent.lo.y ||
-							 siteMatch.closestPoint.y > siteExtent.hi.y)
+						siteMatch.closestPoint.x < siteExtent.lo.x ||
+						siteMatch.closestPoint.x > siteExtent.hi.x ||
+						siteMatch.closestPoint.y < siteExtent.lo.y ||
+						siteMatch.closestPoint.y > siteExtent.hi.y)
 					{
-						rejectionReason = "candidate_outside_site_extent";
+						if (!validCandidate)
+						{
+							rejectionReason = "candidate_outside_site_extent";
+						}
+						continue;
 					}
-					else
+					if (objectiveStats != nullptr)
+					{
+						++objectiveStats->candidateAreas;
+					}
+					const ObjectiveCandidateKey candidateKey = {
+						entityIndex, siteIdentity, siteMatch.area};
+					if (std::find(
+							evaluatedCandidateKeys.begin(), evaluatedCandidateKeys.end(),
+							candidateKey) != evaluatedCandidateKeys.end())
 					{
 						if (objectiveStats != nullptr)
 						{
-							++objectiveStats->candidateAreas;
+							++objectiveStats->duplicateCandidateAreas;
 						}
-						const ObjectiveCandidateKey candidateKey = {
-							entityIndex, siteIdentity, siteMatch.area};
-						if (std::find(
-								evaluatedCandidateKeys.begin(), evaluatedCandidateKeys.end(),
-								candidateKey) != evaluatedCandidateKeys.end())
+						if (!validCandidate)
 						{
-							if (objectiveStats != nullptr)
-							{
-								++objectiveStats->duplicateCandidateAreas;
-							}
 							rejectionReason = "duplicate_candidate_identity";
 						}
-						else
+						continue;
+					}
+					evaluatedCandidateKeys.push_back(candidateKey);
+					if (objectiveStats != nullptr)
+					{
+						++objectiveStats->uniqueCandidateAreas;
+						++objectiveStats->candidateQueries;
+					}
+					const nav::NavArea &area = *siteArea;
+					nav::NavCorridor corridor = {};
+					nav::NavSearchStats sample = {};
+					if (query.buildCorridor(currentMatch.area, area.id, &corridor,
+							searchStats == nullptr ? nullptr : &sample) ==
+						nav::NavQueryResult::Found && std::isfinite(corridor.cost))
+					{
+						if (corridor.cost < pathCost)
 						{
-							evaluatedCandidateKeys.push_back(candidateKey);
-							if (objectiveStats != nullptr)
-							{
-								++objectiveStats->uniqueCandidateAreas;
-								++objectiveStats->candidateQueries;
-							}
-							const nav::NavArea &area = *siteArea;
-							nav::NavCorridor corridor = {};
-							nav::NavSearchStats sample = {};
-							if (query.buildCorridor(currentMatch.area, area.id, &corridor,
-									searchStats == nullptr ? nullptr : &sample) ==
-								nav::NavQueryResult::Found && std::isfinite(corridor.cost))
-							{
-								pathCost = corridor.cost;
-								reachablePoint = siteMatch.closestPoint;
-								validCandidate = true;
-								rejectionReason = "none";
-							}
-							else
-							{
-								rejectionReason = "no_route";
-							}
-							addNavSearchStats(searchStats, sample);
+							pathCost = corridor.cost;
+							reachablePoint = siteMatch.closestPoint;
+							candidateNavArea = siteMatch.area;
+						}
+						validCandidate = true;
+						rejectionReason = "none";
+					}
+					else
+					{
+						if (!validCandidate)
+						{
+							rejectionReason = "no_route";
 						}
 					}
+					addNavSearchStats(searchStats, sample);
 				}
-				else
-					{
-						rejectionReason = "nearest_nav_area_unavailable";
-					}
-				}
+			}
 			else
 			{
 				pathCost = haveCurrentArea ? 1.0f : 0.0f;
