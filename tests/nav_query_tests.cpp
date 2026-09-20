@@ -402,6 +402,48 @@ bool testPathFollowerProgressAndStaleRoute()
 		"stale snapshot invalidates the follower");
 }
 
+bool testInterpolatedSurfaceHeight()
+{
+	astrabot::nav::NavDocument document;
+	document.setSourceIdentity({5U, 100U, 200U});
+	astrabot::nav::NavArea sloped = area(7U, 0.0f, 100.0f, 0.0f);
+	sloped.extent.hi.y = 100.0f;
+	sloped.extent.hi.z = 60.0f;
+	sloped.northEastZ = 20.0f;
+	sloped.southWestZ = 40.0f;
+	document.addArea(sloped);
+	const astrabot::nav::NavQuery query(snapshotFor(&document, 1U));
+	astrabot::nav::NavAreaMatch match = {};
+	if (!check(query.findNearest({25.0f, 25.0f, 100.0f}, 200.0f, &match) ==
+				astrabot::nav::NavQueryResult::Found &&
+				std::fabs(match.closestPoint.z - 15.0f) < 0.01f,
+				"nearest point uses interpolated surface Z"))
+	{
+		return false;
+	}
+	return check(query.findNearest({100.0f, 0.0f, 100.0f}, 200.0f, &match) ==
+				astrabot::nav::NavQueryResult::Found &&
+				std::fabs(match.closestPoint.z - 20.0f) < 0.01f,
+				"surface interpolation reaches the NE corner");
+}
+
+bool testNearest3DUsesSurfaceHeight()
+{
+	astrabot::nav::NavDocument document;
+	document.setSourceIdentity({5U, 100U, 200U});
+	astrabot::nav::NavArea low = area(10U, 0.0f, 64.0f, 0.0f);
+	low.extent.hi.y = 64.0f;
+	astrabot::nav::NavArea high = area(20U, 0.0f, 64.0f, 100.0f);
+	high.extent.hi.y = 64.0f;
+	document.addArea(low);
+	document.addArea(high);
+	const astrabot::nav::NavQuery query(snapshotFor(&document, 1U));
+	astrabot::nav::NavAreaMatch match = {};
+	return check(query.findNearest3D({32.0f, 32.0f, 100.0f}, 16.0f, &match) ==
+				astrabot::nav::NavQueryResult::Found && match.area == 20U,
+				"3D nearest selects the standing surface");
+}
+
 bool testInvalidInputs()
 {
 	astrabot::nav::NavDocument document;
@@ -585,7 +627,9 @@ int main()
 		!testAStarPrefersLowerCostPath() ||
 		!testBoundedSearch() ||
 		!testCorridorCapacityDoesNotBoundSearchRecords() ||
-			!testPathFollowerProgressAndStaleRoute() ||
+		!testPathFollowerProgressAndStaleRoute() ||
+		!testInterpolatedSurfaceHeight() ||
+		!testNearest3DUsesSurfaceHeight() ||
 			!testInvalidInputs() ||
 			!testAStarSearchStats() ||
 			!testReferenceStableEqualCostTieBreak() ||

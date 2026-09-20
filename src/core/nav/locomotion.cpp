@@ -310,7 +310,10 @@ bool LocomotionController::isFiniteObservation(
 
 float LocomotionController::floorHeight(const NavArea &area)
 {
-	return area.northEastZ * 0.5f + area.southWestZ * 0.5f;
+	return surfaceZAt(
+		area,
+		(area.extent.lo.x + area.extent.hi.x) * 0.5f,
+		(area.extent.lo.y + area.extent.hi.y) * 0.5f);
 }
 
 NavVector LocomotionController::normalizeDirection(

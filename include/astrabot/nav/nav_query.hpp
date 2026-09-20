@@ -78,6 +78,8 @@ struct NavDirectedLink
 	std::uint8_t how;
 };
 
+float surfaceZAt(const NavArea &area, float x, float y);
+
 struct NavCorridor
 {
 	std::uint64_t navRevision;
@@ -101,6 +103,10 @@ public:
 		float floorTolerance,
 		NavAreaMatch *match) const;
 	NavQueryResult findNearest(
+		const NavVector &position,
+		float maximumDistance,
+		NavAreaMatch *match) const;
+	NavQueryResult findNearest3D(
 		const NavVector &position,
 		float maximumDistance,
 		NavAreaMatch *match) const;

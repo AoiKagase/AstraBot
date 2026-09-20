@@ -41,19 +41,28 @@ bool isFiniteTolerance(float tolerance)
 	return std::isfinite(tolerance) && tolerance >= 0.0f;
 }
 
-float floorDistance(const NavArea &area, float z)
+float surfaceZAtInternal(const NavArea &area, float x, float y);
+
+float surfaceDistance(const NavArea &area, const NavVector &position)
 {
-	const float low = std::min(area.northEastZ, area.southWestZ);
-	const float high = std::max(area.northEastZ, area.southWestZ);
-	if (z < low)
+	return std::fabs(surfaceZAtInternal(area, position.x, position.y) - position.z);
+}
+
+float surfaceZAtInternal(const NavArea &area, float x, float y)
+{
+	const float dx = area.extent.hi.x - area.extent.lo.x;
+	const float dy = area.extent.hi.y - area.extent.lo.y;
+	if (dx == 0.0f || dy == 0.0f)
 	{
-		return low - z;
+		return area.extent.lo.z;
 	}
-	if (z > high)
-	{
-		return z - high;
-	}
-	return 0.0f;
+	float u = (x - area.extent.lo.x) / dx;
+	float v = (y - area.extent.lo.y) / dy;
+	u = (std::max)(0.0f, (std::min)(1.0f, u));
+	v = (std::max)(0.0f, (std::min)(1.0f, v));
+	const float northZ = area.extent.lo.z + u * (area.northEastZ - area.extent.lo.z);
+	const float southZ = area.southWestZ + u * (area.extent.hi.z - area.southWestZ);
+	return northZ + v * (southZ - northZ);
 }
 
 NavVector centerOf(const NavArea &area)
@@ -61,7 +70,8 @@ NavVector centerOf(const NavArea &area)
 	return {
 		area.extent.lo.x * 0.5f + area.extent.hi.x * 0.5f,
 		area.extent.lo.y * 0.5f + area.extent.hi.y * 0.5f,
-		area.northEastZ * 0.5f + area.southWestZ * 0.5f
+		surfaceZAtInternal(area, (area.extent.lo.x + area.extent.hi.x) * 0.5f,
+			(area.extent.lo.y + area.extent.hi.y) * 0.5f)
 	};
 }
 
@@ -97,7 +107,7 @@ NavVector closestPointOnArea(
 	NavVector point = position;
 	point.x = (std::max)(area.extent.lo.x, (std::min)(point.x, area.extent.hi.x));
 	point.y = (std::max)(area.extent.lo.y, (std::min)(point.y, area.extent.hi.y));
-	point.z = area.northEastZ * 0.5f + area.southWestZ * 0.5f;
+	point.z = surfaceZAtInternal(area, point.x, point.y);
 	return point;
 }
 
@@ -109,7 +119,7 @@ bool isWithinTarget(
 {
 	return rectangleDistanceSquared(area, position) <=
 			horizontalTolerance * horizontalTolerance &&
-			floorDistance(area, position.z) <= verticalTolerance;
+			surfaceDistance(area, position) <= verticalTolerance;
 }
 
 NavVector portalSteeringPoint(
@@ -290,6 +300,11 @@ NavDirectedLink directedLinkFor(
 }
 }
 
+float surfaceZAt(const NavArea &area, float x, float y)
+{
+	return surfaceZAtInternal(area, x, y);
+}
+
 bool NavCorridor::isValid() const
 {
 	if (navRevision == 0U || mapGeneration == 0U || !std::isfinite(cost) ||
@@ -371,7 +386,7 @@ NavQueryResult NavQuery::findContaining(
 			continue;
 		}
 
-		const float candidateDistance = floorDistance(area, position.z);
+		const float candidateDistance = surfaceDistance(area, position);
 		if (candidateDistance > floorTolerance ||
 				(found && !isBetterMatch(
 					candidateDistance,
@@ -450,6 +465,61 @@ NavQueryResult NavQuery::findNearest(
 	match->area = bestArea;
 	match->distanceSquared = bestDistance;
 	match->closestPoint = closestPointOnArea(*document()->findArea(bestArea), position);
+	return NavQueryResult::Found;
+}
+
+NavQueryResult NavQuery::findNearest3D(
+	const NavVector &position,
+	float maximumDistance,
+	NavAreaMatch *match) const
+{
+	if (match == nullptr)
+	{
+		return NavQueryResult::InvalidArgument;
+	}
+	if (document() == nullptr)
+	{
+		return NavQueryResult::EmptySnapshot;
+	}
+	if (!isFinitePosition(position))
+	{
+		return NavQueryResult::InvalidPosition;
+	}
+	if (!isFiniteTolerance(maximumDistance) || maximumDistance < 0.0f)
+	{
+		return NavQueryResult::InvalidTolerance;
+	}
+
+	const float maximumDistanceSquared = maximumDistance * maximumDistance;
+	bool found = false;
+	AreaId bestArea = 0U;
+	float bestDistance = std::numeric_limits<float>::max();
+	for (const NavArea &area : document()->areas())
+	{
+		const float horizontalDistance = rectangleDistanceSquared(area, position);
+		const float verticalDistance = surfaceDistance(area, position);
+		const float candidateDistance = horizontalDistance +
+			verticalDistance * verticalDistance;
+		if (candidateDistance > maximumDistanceSquared ||
+			(found && !isBetterMatch(
+				candidateDistance, area.id, bestDistance, bestArea)))
+		{
+			continue;
+		}
+		found = true;
+		bestArea = area.id;
+		bestDistance = candidateDistance;
+	}
+
+	if (!found)
+	{
+		return NavQueryResult::NoAreaContaining;
+	}
+
+	const NavArea *area = document()->findArea(bestArea);
+	match->area = bestArea;
+	match->distanceSquared = bestDistance;
+	match->closestPoint = closestPointOnArea(*area, position);
 	return NavQueryResult::Found;
 }
 
