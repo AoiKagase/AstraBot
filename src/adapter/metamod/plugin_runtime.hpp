@@ -55,7 +55,10 @@ struct ManagedObjectiveTargetCache
 	bool carryingBomb;
 	nav::NavVector target;
 	int selectedEntityIndex;
+	std::uint32_t selectedSiteIdentity;
 	std::uint32_t generation;
+	bool diagnosticsEmitted;
+	bool lastCacheHit;
 };
 
 		class PluginRuntime
@@ -203,10 +206,21 @@ struct ManagedObjectiveTargetCache
 		nav::NavSearchStats *searchStats,
 		RuntimeObjectiveSelectionStats *objectiveStats = nullptr);
 			void resetManagedBotMovement();
-			void logMovementDiagnostic(
-				std::size_t index,
-				const char *reason,
-				const runtime::NavRoamDecision *decision = nullptr);
+		void logMovementDiagnostic(
+			std::size_t index,
+			const char *reason,
+			const runtime::NavRoamDecision *decision = nullptr);
+		void logGoalAssignmentDiagnostic(
+			std::size_t index,
+			const runtime::MovementPhysicsState &before,
+			const runtime::NavRoamDecision &decision,
+			const nav::LocomotionIntent &intent);
+		void logTraversalDiagnostic(
+			std::size_t index,
+			const runtime::MovementPhysicsState &before,
+			const runtime::NavRoamDecision &decision,
+			const nav::LocomotionIntent &intent,
+			std::uint16_t buttons);
 			std::size_t managedBotCount() const;
 			FakeClientHandle *findManagedBot(const char *name);
 			void rememberManagedBot(const FakeClientHandle &handle, const char *name);
@@ -331,6 +345,12 @@ struct ManagedObjectiveTargetCache
 			movementPhysicsSamples_;
 		std::array<bool, NativeBotObservation::kClientSlotCount>
 			movementReadyLogged_;
+		std::array<std::uint32_t,
+			NativeBotObservation::kClientSlotCount>
+			movementGoalDiagnosticSeconds_;
+		std::array<std::uint32_t,
+			NativeBotObservation::kClientSlotCount>
+			movementTraversalDiagnosticSeconds_;
 		std::array<std::uint32_t,
 					   NativeBotObservation::kClientSlotCount>
 			movementDispatchFrames_;

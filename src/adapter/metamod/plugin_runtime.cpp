@@ -402,6 +402,91 @@ void addNavSearchStats(nav::NavSearchStats *total, const nav::NavSearchStats &sa
 			: nav::NavVector{entity->v.origin.x, entity->v.origin.y, entity->v.origin.z};
 	}
 
+	bool isBombTargetClassname(const char *classname)
+	{
+		return classname != nullptr &&
+			(std::strcmp(classname, "func_bomb_target") == 0 ||
+			 std::strcmp(classname, "info_bomb_target") == 0);
+	}
+
+	bool objectiveSiteExtent(
+		const edict_t *entity, const char *classname, nav::NavExtent *extent)
+	{
+		if (entity == nullptr || extent == nullptr)
+		{
+			return false;
+		}
+		if (classname != nullptr && std::strcmp(classname, "info_bomb_target") == 0)
+		{
+			const nav::NavVector center = entityObjectiveCenter(entity);
+			if (!std::isfinite(center.x) || !std::isfinite(center.y) ||
+				!std::isfinite(center.z))
+			{
+				return false;
+			}
+			constexpr float kLegacyBombTargetRadius = 256.0f;
+			extent->lo = {
+				center.x - kLegacyBombTargetRadius,
+				center.y - kLegacyBombTargetRadius,
+				center.z - kLegacyBombTargetRadius};
+			extent->hi = {
+				center.x + kLegacyBombTargetRadius,
+				center.y + kLegacyBombTargetRadius,
+				center.z + kLegacyBombTargetRadius};
+			return true;
+		}
+		return entityObjectiveBounds(entity, extent);
+	}
+
+	struct ObjectiveCandidateKey
+	{
+		int entityIndex;
+		std::uint32_t siteIdentity;
+		nav::AreaId targetArea;
+
+		bool operator==(const ObjectiveCandidateKey &other) const
+		{
+			return entityIndex == other.entityIndex &&
+				siteIdentity == other.siteIdentity && targetArea == other.targetArea;
+		}
+	};
+
+	void logObjectiveTargetDiagnostic(
+		plid_t pluginId,
+		std::uint32_t targetId,
+		int entityIndex,
+		const char *classname,
+		const edict_t *entity,
+		const nav::NavVector &center,
+		nav::AreaId nearestNavArea,
+		nav::AreaId candidateNavArea,
+		bool valid,
+		const char *rejectionReason)
+	{
+		if (pluginId == nullptr || gpMetaUtilFuncs == nullptr ||
+			gpMetaUtilFuncs->pfnLogConsole == nullptr || entity == nullptr)
+		{
+			return;
+		}
+		gpMetaUtilFuncs->pfnLogConsole(
+			pluginId,
+			"profile objectiveTarget target_id=%u entity_index=%d classname=%s "
+			"origin=(%.1f %.1f %.1f) mins=(%.1f %.1f %.1f) "
+			"maxs=(%.1f %.1f %.1f) center=(%.1f %.1f %.1f) "
+			"nearest_nav_area=%u candidate_nav_areas=%u site_identity=%u "
+			"valid=%d rejection_reason=%s",
+			static_cast<unsigned int>(targetId), entityIndex,
+			classname == nullptr ? "" : classname,
+			entity->v.origin.x, entity->v.origin.y, entity->v.origin.z,
+			entity->v.mins.x, entity->v.mins.y, entity->v.mins.z,
+			entity->v.maxs.x, entity->v.maxs.y, entity->v.maxs.z,
+			center.x, center.y, center.z,
+			static_cast<unsigned int>(nearestNavArea),
+			static_cast<unsigned int>(candidateNavArea),
+			static_cast<unsigned int>(targetId), valid ? 1 : 0,
+			rejectionReason == nullptr ? "unknown" : rejectionReason);
+	}
+
 			std::uint8_t movementMilliseconds(const globalvars_t *globals)
 			{
 				if (globals == nullptr || !std::isfinite(globals->frametime) ||
@@ -564,6 +649,8 @@ const char *const kPerformanceCvarNames[kPerformanceCvarCount] = {
 		movementWarmupFrames_(),
 		movementPhysicsSamples_(),
 		movementReadyLogged_(),
+		movementGoalDiagnosticSeconds_(),
+		movementTraversalDiagnosticSeconds_(),
 		movementDispatchFrames_(),
 			movementWasAirborne_(),
 			  movementDiagnosticRound_(0U),
@@ -1715,6 +1802,10 @@ void PluginRuntime::updateManagedBotMovement()
 				movementDiagnosticSamples_.fill(0U);
 				movementDiagnosticAttempts_.fill(false);
 				movementReadyLogged_.fill(false);
+				movementGoalDiagnosticSeconds_.fill(
+					(std::numeric_limits<std::uint32_t>::max)());
+				movementTraversalDiagnosticSeconds_.fill(
+					(std::numeric_limits<std::uint32_t>::max)());
 			}
 	if (movementUnavailable)
 	{
@@ -2011,8 +2102,8 @@ void PluginRuntime::updateManagedBotMovement()
 				&locomotionIntent,
 				&roamDecision);
 		}
-		runtimeProfiler_.recordPathSearchResults(
-			navSearchCaller(roamDecision),
+			runtimeProfiler_.recordPathSearchResults(
+				 navSearchCaller(roamDecision),
 			managedBotHandles_[index].actor.slot,
 			managedBotFullUpdateSequences_[index],
 			managedBotObjectiveTargets_[index].generation,
@@ -2030,8 +2121,9 @@ void PluginRuntime::updateManagedBotMovement()
 			roamDecision.pathSearchStats.equalCostReplacements,
 			roamDecision.pathSearchStats.totalUsec,
 			roamDecision.pathSearchStats.maxUsec,
-			roamDecision.pathSearchStats.firstSearchId,
-			roamDecision.pathSearchStats.lastSearchId);
+				roamDecision.pathSearchStats.firstSearchId,
+				roamDecision.pathSearchStats.lastSearchId);
+		logGoalAssignmentDiagnostic(index, before, roamDecision, locomotionIntent);
 		if (roamDecision.recomputeReason != runtime::NavRecomputeReason::None)
 		{
 			runtimeProfiler_.recordPathRecompute();
@@ -2104,10 +2196,12 @@ void PluginRuntime::updateManagedBotMovement()
 		{
 			command.movement.buttons = static_cast<std::uint16_t>(
 				command.movement.buttons |
-				ActionAdapter::movementButtons(
-					command.movement.forward, command.movement.side));
-		}
-		if (movementDiagnosticSamples_[index] < kMovementPhysicsLogLimit &&
+					ActionAdapter::movementButtons(
+						command.movement.forward, command.movement.side));
+			}
+			logTraversalDiagnostic(
+				index, before, roamDecision, locomotionIntent, command.movement.buttons);
+			if (movementDiagnosticSamples_[index] < kMovementPhysicsLogLimit &&
 			gpMetaUtilFuncs != nullptr && gpMetaUtilFuncs->pfnLogConsole != nullptr &&
 			pluginId_ != nullptr)
 		{
@@ -2429,14 +2523,16 @@ bool PluginRuntime::buildManagedObjectiveTarget(
 		const char *cachedClassname = cachedSite != nullptr && !cachedSite->free
 			? engineFunctions_->pfnSzFromIndex(cachedSite->v.classname)
 			: nullptr;
-		if (cachedClassname != nullptr &&
-			std::strcmp(cachedClassname, "func_bomb_target") == 0)
+		if (cachedClassname != nullptr && isBombTargetClassname(cachedClassname))
 		{
 			*target = cache.target;
+			cache.lastCacheHit = true;
 			return std::isfinite(target->x) && std::isfinite(target->y) &&
 				std::isfinite(target->z);
 		}
 		cache.valid = false;
+		cache.diagnosticsEmitted = false;
+		cache.lastCacheHit = false;
 		cache.generation = cache.generation ==
 			(std::numeric_limits<std::uint32_t>::max)() ? 1U : cache.generation + 1U;
 	}
@@ -2446,10 +2542,14 @@ bool PluginRuntime::buildManagedObjectiveTarget(
 			(std::numeric_limits<std::uint32_t>::max)() ? 1U : cache.generation + 1U;
 	}
 	cache.valid = false;
-	cache.mapGeneration = lifecycle_.mapGeneration();
-	cache.roundGeneration = lifecycle_.roundGeneration();
-	cache.team = static_cast<std::uint8_t>(team);
+	cache.selectedEntityIndex = 0;
+	cache.selectedSiteIdentity = 0U;
+		cache.mapGeneration = lifecycle_.mapGeneration();
+		cache.roundGeneration = lifecycle_.roundGeneration();
+		cache.team = static_cast<std::uint8_t>(team);
 	cache.carryingBomb = carryingBomb;
+	cache.diagnosticsEmitted = false;
+	cache.lastCacheHit = false;
 	if (!needsBombSite && !needsPlantedBomb)
 	{
 		return false;
@@ -2458,13 +2558,14 @@ bool PluginRuntime::buildManagedObjectiveTarget(
 	edict_t *plantedBomb = nullptr;
 	compat::ObjectiveObservation plantedObservation = {};
 	nav::NavVector selectedBombSite = {0.0f, 0.0f, 0.0f};
-	std::size_t selectedPathLength = (std::numeric_limits<std::size_t>::max)();
+	float selectedPathCost = (std::numeric_limits<float>::max)();
 	int selectedBombSiteEntityIndex = 0;
+	std::uint32_t selectedSiteIdentity = 0U;
 	const nav::NavSnapshot navigation = navPublisher_.snapshot();
 	const nav::NavDocument *document = navigation.document();
 	nav::NavAreaMatch currentMatch = {};
 	bool haveCurrentArea = false;
-	std::vector<nav::AreaId> evaluatedCandidateAreas;
+	std::vector<ObjectiveCandidateKey> evaluatedCandidateKeys;
 	if (navigation.isValid() && document != nullptr)
 	{
 		nav::NavQuery query(navigation);
@@ -2482,6 +2583,7 @@ bool PluginRuntime::buildManagedObjectiveTarget(
 		}
 	}
 	const int maxEntities = (std::max)(0, (std::min)(globals_->maxEntities, 2048));
+	std::uint32_t targetId = 0U;
 	for (int entityIndex = 1; entityIndex <= maxEntities; ++entityIndex)
 	{
 		edict_t *entity = engineFunctions_->pfnPEntityOfEntIndex(entityIndex);
@@ -2494,18 +2596,23 @@ bool PluginRuntime::buildManagedObjectiveTarget(
 		{
 			continue;
 		}
-		if (needsBombSite && std::strcmp(classname, "func_bomb_target") == 0)
+		if (needsBombSite && isBombTargetClassname(classname))
 		{
+			const std::uint32_t siteIdentity = ++targetId;
 			if (objectiveStats != nullptr)
 			{
 				++objectiveStats->bombSites;
 			}
 			const nav::NavVector candidate = entityObjectiveCenter(entity);
 			nav::NavExtent siteExtent = {};
-			const bool hasSiteExtent = entityObjectiveBounds(entity, &siteExtent);
-			std::size_t pathLength = (std::numeric_limits<std::size_t>::max)();
+			const bool hasSiteExtent = objectiveSiteExtent(entity, classname, &siteExtent);
+			float pathCost = (std::numeric_limits<float>::max)();
 			nav::NavVector reachablePoint = candidate;
-		if (haveCurrentArea && document != nullptr && hasSiteExtent)
+			nav::AreaId nearestNavArea = 0U;
+			nav::AreaId candidateNavArea = 0U;
+			bool validCandidate = false;
+			const char *rejectionReason = "no_candidate_nav_area";
+			if (haveCurrentArea && document != nullptr && hasSiteExtent)
 			{
 				nav::NavQuery query(navigation);
 				nav::NavAreaMatch siteMatch = {};
@@ -2513,65 +2620,86 @@ bool PluginRuntime::buildManagedObjectiveTarget(
 						candidate, kMaximumObjectiveDistance, &siteMatch) ==
 					nav::NavQueryResult::Found)
 				{
+					nearestNavArea = siteMatch.area;
+					candidateNavArea = siteMatch.area;
 					const nav::NavArea *siteArea = document->findArea(siteMatch.area);
 					if (siteArea == nullptr ||
 							siteMatch.closestPoint.x < siteExtent.lo.x ||
 							siteMatch.closestPoint.x > siteExtent.hi.x ||
 							siteMatch.closestPoint.y < siteExtent.lo.y ||
-							siteMatch.closestPoint.y > siteExtent.hi.y)
+							 siteMatch.closestPoint.y > siteExtent.hi.y)
 					{
-						continue;
+						rejectionReason = "candidate_outside_site_extent";
 					}
-					if (objectiveStats != nullptr)
-					{
-						++objectiveStats->candidateAreas;
-					}
-					if (std::find(
-							evaluatedCandidateAreas.begin(), evaluatedCandidateAreas.end(),
-							siteMatch.area) != evaluatedCandidateAreas.end())
+					else
 					{
 						if (objectiveStats != nullptr)
 						{
-							++objectiveStats->duplicateCandidateAreas;
+							++objectiveStats->candidateAreas;
 						}
-						continue;
-					}
-					evaluatedCandidateAreas.push_back(siteMatch.area);
-					if (objectiveStats != nullptr)
-					{
-						++objectiveStats->uniqueCandidateAreas;
-						++objectiveStats->candidateQueries;
-					}
-					const nav::NavArea &area = *siteArea;
-					nav::NavCorridor corridor = {};
-					nav::NavSearchStats sample = {};
-					if (query.buildCorridor(currentMatch.area, area.id, &corridor,
-						searchStats == nullptr ? nullptr : &sample) != nav::NavQueryResult::Found)
-					{
-						addNavSearchStats(searchStats, sample);
-						continue;
-					}
-					addNavSearchStats(searchStats, sample);
-					if (corridor.areas.size() < pathLength)
-					{
-						pathLength = corridor.areas.size();
-						if (objectiveStats != nullptr)
+						const ObjectiveCandidateKey candidateKey = {
+							entityIndex, siteIdentity, siteMatch.area};
+						if (std::find(
+								evaluatedCandidateKeys.begin(), evaluatedCandidateKeys.end(),
+								candidateKey) != evaluatedCandidateKeys.end())
 						{
-							objectiveStats->selectedGoalArea = area.id;
+							if (objectiveStats != nullptr)
+							{
+								++objectiveStats->duplicateCandidateAreas;
+							}
+							rejectionReason = "duplicate_candidate_identity";
 						}
-						selectedBombSiteEntityIndex = entityIndex;
-						reachablePoint = siteMatch.closestPoint;
+						else
+						{
+							evaluatedCandidateKeys.push_back(candidateKey);
+							if (objectiveStats != nullptr)
+							{
+								++objectiveStats->uniqueCandidateAreas;
+								++objectiveStats->candidateQueries;
+							}
+							const nav::NavArea &area = *siteArea;
+							nav::NavCorridor corridor = {};
+							nav::NavSearchStats sample = {};
+							if (query.buildCorridor(currentMatch.area, area.id, &corridor,
+									searchStats == nullptr ? nullptr : &sample) ==
+								nav::NavQueryResult::Found && std::isfinite(corridor.cost))
+							{
+								pathCost = corridor.cost;
+								reachablePoint = siteMatch.closestPoint;
+								validCandidate = true;
+								rejectionReason = "none";
+							}
+							else
+							{
+								rejectionReason = "no_route";
+							}
+							addNavSearchStats(searchStats, sample);
+						}
 					}
 				}
-			}
-			if (pathLength == (std::numeric_limits<std::size_t>::max)())
+				else
+					{
+						rejectionReason = "nearest_nav_area_unavailable";
+					}
+				}
+			else
 			{
-				pathLength = haveCurrentArea ? 1U : 0U;
+				pathCost = haveCurrentArea ? 1.0f : 0.0f;
+				validCandidate = true;
+				rejectionReason = "nav_unavailable_fallback";
 			}
-			if (pathLength < selectedPathLength)
+			if (objectiveStats != nullptr && !cache.diagnosticsEmitted)
 			{
-				selectedPathLength = pathLength;
+				logObjectiveTargetDiagnostic(
+					pluginId_, targetId, entityIndex, classname, entity, candidate,
+					nearestNavArea, candidateNavArea, validCandidate, rejectionReason);
+			}
+			if (validCandidate && pathCost < selectedPathCost)
+			{
+				selectedPathCost = pathCost;
 				selectedBombSite = reachablePoint;
+				selectedBombSiteEntityIndex = entityIndex;
+				selectedSiteIdentity = siteIdentity;
 			}
 		}
 		const char *model = engineFunctions_->pfnSzFromIndex(entity->v.model);
@@ -2580,14 +2708,19 @@ bool PluginRuntime::buildManagedObjectiveTarget(
 			observationTiming, &plantedObservation) == ObservationAdapterResult::Accepted)
 		{
 			plantedBomb = entity;
+			}
 		}
-	}
-	if (team == 1 && carryingBomb && selectedPathLength !=
-		(std::numeric_limits<std::size_t>::max)())
+		if (objectiveStats != nullptr)
+		{
+			cache.diagnosticsEmitted = true;
+		}
+		if (team == 1 && carryingBomb && selectedPathCost !=
+		(std::numeric_limits<float>::max)())
 	{
 		*target = selectedBombSite;
 		cache.target = *target;
 		cache.selectedEntityIndex = selectedBombSiteEntityIndex;
+		cache.selectedSiteIdentity = selectedSiteIdentity;
 		cache.valid = true;
 	}
 	else if (team == 2 && plantedBomb != nullptr)
@@ -2601,6 +2734,7 @@ bool PluginRuntime::buildManagedObjectiveTarget(
 	{
 		return false;
 	}
+	cache.diagnosticsEmitted = objectiveStats != nullptr;
 	return std::isfinite(target->x) && std::isfinite(target->y) &&
 		std::isfinite(target->z);
 }
@@ -3301,6 +3435,9 @@ void PluginRuntime::resetManagedBotMovement()
 		movementWarmupFrames_.fill(0U);
 		movementPhysicsSamples_.fill({});
 		movementReadyLogged_.fill(false);
+		movementGoalDiagnosticSeconds_.fill((std::numeric_limits<std::uint32_t>::max)());
+		movementTraversalDiagnosticSeconds_.fill(
+			(std::numeric_limits<std::uint32_t>::max)());
 		movementDispatchFrames_.fill((std::numeric_limits<std::uint32_t>::max)());
 	movementWasAirborne_.fill(false);
 	movementDiagnosticRound_ = 0U;
@@ -3411,7 +3548,121 @@ void PluginRuntime::resetManagedBotMovement()
 			movementDiagnosticAttempts_[index] = true;
 		}
 
-		NativeBotObservation PluginRuntime::collectNativeBotObservation() const
+void PluginRuntime::logGoalAssignmentDiagnostic(
+	std::size_t index,
+	const runtime::MovementPhysicsState &before,
+	const runtime::NavRoamDecision &decision,
+	const nav::LocomotionIntent &intent)
+{
+	if (!runtimeProfiler_.enabled() || index >= movementGoalDiagnosticSeconds_.size() ||
+		globals_ == nullptr || gpMetaUtilFuncs == nullptr ||
+		gpMetaUtilFuncs->pfnLogConsole == nullptr || pluginId_ == nullptr)
+	{
+		return;
+	}
+	const double now = std::isfinite(static_cast<double>(globals_->time))
+		? static_cast<double>(globals_->time)
+		: 0.0;
+	const std::uint32_t second = now <= 0.0
+		? 0U
+		: static_cast<std::uint32_t>(now);
+	if (movementGoalDiagnosticSeconds_[index] == second)
+	{
+		return;
+	}
+	movementGoalDiagnosticSeconds_[index] = second;
+	const ManagedObjectiveTargetCache &cache = managedBotObjectiveTargets_[index];
+	const char *goalSource = decision.goalKind == runtime::NavGoalKind::Objective
+		? "objective"
+		: decision.goalKind == runtime::NavGoalKind::Roam ? "roam" : "none";
+	gpMetaUtilFuncs->pfnLogConsole(
+		pluginId_,
+		"profile goalAssignment bot_id=%u team=%d carrying_c4=%d state=%s task=%s "
+		"disposition=UNAVAILABLE goal_present=%d goal_kind=%d goal_area=%u "
+		"goal_position=(%.1f %.1f %.1f) goal_source=%s objective_target_id=%u "
+		"goal_generation=%u cache_hit=%d cache_scope=actor corridor_goal_area=%u "
+		"next_area=%u movement_target=(%.1f %.1f %.1f) current_area=%u",
+		static_cast<unsigned int>(managedBotHandles_[index].actor.slot), before.team,
+		cache.carryingBomb ? 1 : 0,
+		compat::toString(managedBotStateMachines_[index].state()),
+		compat::toString(managedBotStateMachines_[index].task()),
+		decision.goalPresent ? 1 : 0, static_cast<int>(decision.goalKind),
+		static_cast<unsigned int>(decision.goalArea), decision.goalPosition.x,
+		decision.goalPosition.y, decision.goalPosition.z, goalSource,
+		static_cast<unsigned int>(cache.selectedSiteIdentity),
+		static_cast<unsigned int>(cache.generation), cache.lastCacheHit ? 1 : 0,
+		static_cast<unsigned int>(decision.goalArea),
+		static_cast<unsigned int>(intent.targetArea), decision.targetPosition.x,
+		decision.targetPosition.y, decision.targetPosition.z,
+		static_cast<unsigned int>(decision.currentArea));
+}
+
+void PluginRuntime::logTraversalDiagnostic(
+	std::size_t index,
+	const runtime::MovementPhysicsState &before,
+	const runtime::NavRoamDecision &decision,
+	const nav::LocomotionIntent &intent,
+	std::uint16_t buttons)
+{
+	if (!runtimeProfiler_.enabled() || index >= movementTraversalDiagnosticSeconds_.size() ||
+		globals_ == nullptr || gpMetaUtilFuncs == nullptr ||
+		gpMetaUtilFuncs->pfnLogConsole == nullptr || pluginId_ == nullptr ||
+		intent.traversal == nav::TraversalAction::Walk)
+	{
+		return;
+	}
+	const double now = std::isfinite(static_cast<double>(globals_->time))
+		? static_cast<double>(globals_->time)
+		: 0.0;
+	const std::uint32_t second = now <= 0.0
+		? 0U
+		: static_cast<std::uint32_t>(now);
+	if (movementTraversalDiagnosticSeconds_[index] == second)
+	{
+		return;
+	}
+	movementTraversalDiagnosticSeconds_[index] = second;
+	std::uint8_t currentAttributes = 0U;
+	std::uint8_t nextAttributes = 0U;
+	const nav::NavSnapshot navigation = navPublisher_.snapshot();
+	const nav::NavDocument *document = navigation.document();
+	if (document != nullptr)
+	{
+		const nav::NavArea *current = document->findArea(decision.currentArea);
+		const nav::NavArea *next = document->findArea(intent.targetArea);
+		currentAttributes = current == nullptr ? 0U : current->attributes;
+		nextAttributes = next == nullptr ? 0U : next->attributes;
+	}
+	const float distanceToTransition = std::hypot(
+		decision.targetPosition.x - before.origin.x,
+		decision.targetPosition.y - before.origin.y);
+	gpMetaUtilFuncs->pfnLogConsole(
+		pluginId_,
+		"profile traversal bot_id=%u current_area=%u next_area=%u "
+		"connection_direction=%u connection_how=%u current_attributes=%u "
+		"next_attributes=%u traversal_intent=%d jump_required=%d "
+		"target_point=(%.1f %.1f %.1f) distance_to_transition=%.1f "
+		"grounded=%d ducked=%d velocity_z=%.1f buttons=%u IN_JUMP=%d "
+		"stuck_time=%d recovery_state=%d corridor_index=%u",
+		static_cast<unsigned int>(managedBotHandles_[index].actor.slot),
+		static_cast<unsigned int>(decision.currentArea),
+		static_cast<unsigned int>(intent.targetArea),
+		static_cast<unsigned int>(decision.linkDirection),
+		static_cast<unsigned int>(decision.linkHow),
+		static_cast<unsigned int>(currentAttributes),
+		static_cast<unsigned int>(nextAttributes),
+		static_cast<int>(intent.traversal),
+		intent.traversal == nav::TraversalAction::Jump ? 1 : 0,
+		decision.targetPosition.x, decision.targetPosition.y, decision.targetPosition.z,
+		distanceToTransition, before.grounded ? 1 : 0, before.ducked ? 1 : 0,
+		before.velocity.z, static_cast<unsigned int>(buttons),
+		(buttons & static_cast<std::uint16_t>(IN_JUMP)) != 0U ? 1 : 0,
+		decision.locomotionResult == nav::LocomotionResult::Stuck ? 1 : 0,
+		static_cast<int>(decision.failureReason),
+		static_cast<unsigned int>(decision.corridorIndex));
+}
+
+NativeBotObservation PluginRuntime::collectNativeBotObservation() const
 		{
 			NativeBotObservation observation{};
 			if (engineFunctions_ == nullptr || engineFunctions_->pfnPEntityOfEntIndex == nullptr)
@@ -3855,8 +4106,12 @@ void PluginRuntime::resetManagedBotMovement()
 					resetManagedBotCommandTemplate(slotIndex);
 			managedBotCommandSequences_[slotIndex] = 0U;
 					movementDiagnosticSamples_[slotIndex] = 0U;
-					movementDiagnosticAttempts_[slotIndex] = false;
-					movementReadyLogged_[slotIndex] = false;
+		movementDiagnosticAttempts_[slotIndex] = false;
+		movementReadyLogged_[slotIndex] = false;
+		movementGoalDiagnosticSeconds_[slotIndex] =
+			(std::numeric_limits<std::uint32_t>::max)();
+		movementTraversalDiagnosticSeconds_[slotIndex] =
+			(std::numeric_limits<std::uint32_t>::max)();
 					movementDiagnosticUnavailable_[slotIndex] = false;
 					movementResumeFrames_[slotIndex] = 0U;
 					movementLastDeadFrames_[slotIndex] = 0U;
@@ -4001,8 +4256,12 @@ void PluginRuntime::clearManagedBot(std::size_t index)
 	movementSettledDeadFrames_[index] = 0U;
 			movementWarmupFrames_[index] = 0U;
 			movementPhysicsSamples_[index] = {};
-			movementReadyLogged_[index] = false;
-	movementDispatchFrames_[index] = (std::numeric_limits<std::uint32_t>::max)();
+		movementReadyLogged_[index] = false;
+		movementGoalDiagnosticSeconds_[index] =
+			(std::numeric_limits<std::uint32_t>::max)();
+		movementTraversalDiagnosticSeconds_[index] =
+			(std::numeric_limits<std::uint32_t>::max)();
+		movementDispatchFrames_[index] = (std::numeric_limits<std::uint32_t>::max)();
 	movementWasAirborne_[index] = false;
 			joinControllers_[index].reset();
 			managedBotHandles_[index] = FakeClientHandle{};
