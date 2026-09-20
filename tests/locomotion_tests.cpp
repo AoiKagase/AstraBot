@@ -378,6 +378,36 @@ bool testNavAttributesSelectTraversal()
 			"NAV_JUMP selects jump traversal before ordinary walking");
 }
 
+bool testJumpAttributesOverrideStepHeight()
+{
+	astrabot::nav::NavDocument document = routeDocument(32.0f);
+	astrabot::nav::NavArea jumpGoal = area(2U, 64.0f, 128.0f, 32.0f);
+	jumpGoal.attributes = astrabot::nav::NavArea::kJump;
+	astrabot::nav::NavDocument jumpDocument;
+	jumpDocument.setSourceIdentity({5U, 100U, 200U});
+	astrabot::nav::NavArea start = area(1U, 0.0f, 64.0f, 0.0f);
+	start.connections[0U].push_back(2U);
+	jumpDocument.addArea(start);
+	jumpDocument.addArea(jumpGoal);
+	const astrabot::nav::NavSnapshot snapshot = snapshotFor(&jumpDocument, 1U);
+	astrabot::nav::LocomotionController controller(config());
+	if (!check(controller.start(corridorFor(snapshot)) ==
+				astrabot::nav::LocomotionResult::Started,
+				"jump step-height fixture starts"))
+	{
+		return false;
+	}
+	astrabot::nav::LocomotionObservation observation = {};
+	observation.position = {16.0f, 32.0f, 0.0f};
+	observation.standingClearance = 72.0f;
+	observation.crouchingClearance = 36.0f;
+	astrabot::nav::LocomotionIntent intent = {};
+	return check(controller.update(snapshot, observation, &intent) ==
+				astrabot::nav::LocomotionResult::IntentReady &&
+				intent.traversal == astrabot::nav::TraversalAction::Jump,
+				"NAV_JUMP takes precedence over ordinary step rejection");
+}
+
 int main()
 {
 	if (!testWalkAndStepIntent() ||
@@ -387,7 +417,8 @@ int main()
 			!testCorridorIndexTracksPortalProgress() ||
 			!testInvalidInputs() ||
 			!testReferenceArrivalTolerance() ||
-			!testNavAttributesSelectTraversal())
+			!testNavAttributesSelectTraversal() ||
+			!testJumpAttributesOverrideStepHeight())
 	{
 		return 1;
 	}

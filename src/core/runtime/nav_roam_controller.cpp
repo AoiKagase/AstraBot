@@ -639,6 +639,38 @@ NavRoamResult NavRoamController::update(
 		}
 	}
 
+	if (hasActiveRoute_ && !activeCorridor_.links.empty())
+	{
+		for (std::size_t index = activeCorridorIndex_;
+			index < activeCorridor_.links.size(); ++index)
+		{
+			const nav::NavDirectedLink candidate = activeCorridor_.links[index];
+			if (candidate.fromArea != currentArea.area ||
+				traversalActionFor(snapshot, candidate) == nav::TraversalAction::Walk)
+			{
+				continue;
+			}
+			const bool activeLinkChanged = candidate.fromArea != activeLink_.fromArea ||
+				candidate.toArea != activeLink_.toArea || candidate.how != activeLink_.how;
+			if (!activeLinkChanged)
+			{
+				break;
+			}
+			activeCorridorIndex_ = index;
+			activeLink_ = candidate;
+			if (!startTraversal(snapshot, activeCorridor_, candidate))
+			{
+				resetRoute();
+				if (decision != nullptr)
+				{
+					decision->stage = NavRoamStage::Failed;
+				}
+				return NavRoamResult::ReplanRequired;
+			}
+			break;
+		}
+	}
+
 	if (jumpDrop_.isActive())
 	{
 		nav::JumpDropObservation traversalObservation = {};
@@ -741,7 +773,7 @@ NavRoamResult NavRoamController::update(
 		return NavRoamResult::ReplanRequired;
 	}
 
-	const nav::LocomotionResult locomotionResult = locomotion_.update(
+	nav::LocomotionResult locomotionResult = locomotion_.update(
 		snapshot,
 		observation.locomotion,
 		intent);
@@ -965,8 +997,11 @@ bool NavRoamController::startTraversal(
 		horizontalDeltaX * horizontalDeltaX + horizontalDeltaY * horizontalDeltaY);
 
 	if (activeTraversal_ == nav::TraversalAction::Jump ||
-			activeTraversal_ == nav::TraversalAction::Drop)
+		activeTraversal_ == nav::TraversalAction::Drop)
 	{
+		nav::NavCorridor traversalCorridor = corridor;
+		traversalCorridor.areas = {link.fromArea, link.toArea};
+		traversalCorridor.links = {link};
 		nav::JumpDropEnvelope envelope = {};
 		envelope.kind = activeTraversal_ == nav::TraversalAction::Jump
 				? nav::JumpDropKind::Jump
@@ -977,12 +1012,15 @@ bool NavRoamController::startTraversal(
 		envelope.maximumDrop = (std::max)(16.0f, -verticalDelta + 16.0f);
 		envelope.horizontalReach = (std::max)(16.0f, horizontalReach + 16.0f);
 		envelope.damageRisk = {4096.0f, 100.0f};
-		return jumpDrop_.start(corridor, envelope, actor_.actorGeneration) ==
+		return jumpDrop_.start(traversalCorridor, envelope, actor_.actorGeneration) ==
 				nav::JumpDropResult::Ready;
 	}
 
 	if (activeTraversal_ == nav::TraversalAction::Ladder)
 	{
+		nav::NavCorridor traversalCorridor = corridor;
+		traversalCorridor.areas = {link.fromArea, link.toArea};
+		traversalCorridor.links = {link};
 		nav::SpecialTraversalCapability capability = {};
 		capability.kind = nav::SpecialTraversalKind::Ladder;
 		capability.entry = {launchPosition, link.fromArea};
@@ -990,7 +1028,7 @@ bool NavRoamController::startTraversal(
 		capability.sourceDirection = link.direction;
 		capability.requiredClearance = 36.0f;
 		capability.minimumPosture = nav::SpecialTraversalPosture::Standing;
-		return specialTraversal_.start(corridor, capability, actor_.actorGeneration) ==
+		return specialTraversal_.start(traversalCorridor, capability, actor_.actorGeneration) ==
 				nav::SpecialTraversalResult::Ready;
 	}
 

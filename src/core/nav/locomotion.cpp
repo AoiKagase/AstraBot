@@ -224,13 +224,13 @@ LocomotionResult LocomotionController::buildIntent(
 
 	const float stepHeight =
 		floorHeight(*destinationArea) - floorHeight(*currentArea);
-	if (stepHeight > config_.maximumStepHeight)
+	const bool requiresJump = (destinationArea->attributes & NavArea::kJump) != 0U;
+	if (stepHeight > config_.maximumStepHeight && !requiresJump)
 	{
 		active_ = false;
 		return LocomotionResult::StepTooHigh;
 	}
 
-	const bool requiresJump = (destinationArea->attributes & NavArea::kJump) != 0U;
 	const bool requiresCrouch =
 			(destinationArea->attributes & NavArea::kCrouch) != 0U;
 	LocomotionPosture posture = LocomotionPosture::Standing;

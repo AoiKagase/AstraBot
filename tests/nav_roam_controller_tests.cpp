@@ -622,6 +622,63 @@ bool testResourceLimitFailureIsBackedOff()
 	return true;
 }
 
+bool testTraversalSwitchesOnIntermediateJumpLink()
+{
+	astrabot::nav::NavDocument document;
+	document.setSourceIdentity({5U, 100U, 200U});
+	astrabot::nav::NavArea first = area(1U, 0.0f, 64.0f);
+	astrabot::nav::NavArea middle = area(2U, 64.0f, 128.0f);
+	astrabot::nav::NavArea goal = area(3U, 128.0f, 192.0f);
+	first.connections[0U].push_back(2U);
+	middle.connections[0U].push_back(3U);
+	middle.approaches.push_back({2U, 1U, 3U, 0U, 6U});
+	document.addArea(first);
+	document.addArea(middle);
+	document.addArea(goal);
+	astrabot::nav::NavSnapshotPublisher publisher;
+	if (!check(publisher.publish(&document, 1U) ==
+				astrabot::nav::NavSnapshotResult::Published,
+				"intermediate jump-link snapshot is published"))
+	{
+		return false;
+	}
+	astrabot::nav::NavQuery query(publisher.snapshot());
+	astrabot::nav::NavCorridor corridor = {};
+	if (!check(query.buildCorridor(1U, 3U, &corridor) ==
+				astrabot::nav::NavQueryResult::Found && corridor.links.size() == 2U &&
+				corridor.links[1U].how == 6U,
+				"intermediate jump-link metadata is retained"))
+	{
+		return false;
+	}
+	astrabot::runtime::NavRoamController controller;
+	astrabot::runtime::NavRoamObservation observation = {};
+	observation.actor = {1U, 1U};
+	observation.frame = {1U, 1U, 1U};
+	observation.locomotion.position = {32.0f, 32.0f, 0.0f};
+	observation.locomotion.standingClearance = 72.0f;
+	observation.locomotion.crouchingClearance = 36.0f;
+	observation.locomotion.grounded = true;
+	observation.hasObjectiveTarget = true;
+	observation.objectiveTarget = {160.0f, 32.0f, 0.0f};
+	astrabot::nav::LocomotionIntent intent = {};
+	astrabot::runtime::NavRoamDecision decision = {};
+	if (!check(controller.update(publisher.snapshot(), observation, &intent, &decision) ==
+				astrabot::runtime::NavRoamResult::IntentReady &&
+				intent.traversal == astrabot::nav::TraversalAction::Walk,
+				"initial corridor link remains ordinary walking"))
+	{
+		return false;
+	}
+	observation.frame.tick = 2U;
+	observation.locomotion.position = {96.0f, 32.0f, 0.0f};
+	const bool switched = controller.update(
+		publisher.snapshot(), observation, &intent, &decision) ==
+		astrabot::runtime::NavRoamResult::IntentReady &&
+		intent.traversal == astrabot::nav::TraversalAction::Jump;
+	return check(switched, "intermediate how=6 link starts Jump traversal");
+}
+
 int main()
 {
 	if (!testJumpTraversalAction())
@@ -666,6 +723,10 @@ int main()
 		return 1;
 	}
 	if (!testResourceLimitFailureIsBackedOff())
+	{
+		return 1;
+	}
+	if (!testTraversalSwitchesOnIntermediateJumpLink())
 	{
 		return 1;
 	}
