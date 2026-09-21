@@ -51,6 +51,7 @@ struct LocomotionConfig
 	static constexpr float kMaximumClearance = 4096.0f;
 	static constexpr float kMaximumTolerance = 4096.0f;
 	static constexpr float kMaximumStepHeight = 256.0f;
+	static constexpr float kMaximumJumpHeight = 41.8f;
 	static constexpr float kMaximumSpeed = 1000.0f;
 	static constexpr std::uint32_t kMaximumStuckFrameLimit = 1024U;
 

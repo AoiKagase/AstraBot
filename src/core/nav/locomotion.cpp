@@ -45,7 +45,7 @@ LocomotionResult mapFollowerResult(NavFollowerResult result)
 
 LocomotionController::LocomotionController() :
 	pathFollower_(),
-	config_{32.0f, 20.0f, 1.0f, 16.0f, 100.0f, 8U},
+	config_{32.0f, 20.0f, 1.0f, 16.0f, 240.0f, 8U},
 	lastPosition_{0.0f, 0.0f, 0.0f},
 	stuckFrames_(0U),
 	hasLastPosition_(false),
@@ -231,7 +231,14 @@ LocomotionResult LocomotionController::buildIntent(
 	const float currentSurfaceHeight = surfaceZAt(
 		*currentArea, target.x, target.y);
 	const float stepHeight = target.z - currentSurfaceHeight;
-	const bool requiresJump = (destinationArea->attributes & NavArea::kJump) != 0U;
+	const bool noJump = (destinationArea->attributes & NavArea::kNoJump) != 0U;
+	const bool navJump = !noJump &&
+		(destinationArea->attributes & NavArea::kJump) != 0U &&
+		stepHeight <= LocomotionConfig::kMaximumJumpHeight;
+	const bool terrainJump = !noJump && !navJump && observation.grounded &&
+		!observation.onLadder && stepHeight > config_.maximumStepHeight &&
+		stepHeight <= LocomotionConfig::kMaximumJumpHeight;
+	const bool requiresJump = navJump || terrainJump;
 	if (stepHeight > config_.maximumStepHeight && !requiresJump)
 	{
 		active_ = false;

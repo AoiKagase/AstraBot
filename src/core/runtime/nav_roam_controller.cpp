@@ -12,7 +12,7 @@ namespace runtime
 namespace
 {
 	constexpr float kMaximumRecoveryDistance = 10000.0f;
-	constexpr float kRoamSpeed = 32.0f;
+constexpr float kRoamSpeed = 240.0f;
 	constexpr std::uint32_t kStuckRecoveryFrameLimit = 8U;
 constexpr std::uint32_t kMaximumStuckRecoveryAttempts = 2U;
 constexpr std::uint32_t kInitialPathFailureBackoffFrames = 15U;
@@ -20,7 +20,7 @@ constexpr std::uint32_t kMaximumPathFailureBackoffFrames = 120U;
 
 	nav::LocomotionConfig roamLocomotionConfig()
 	{
-		return {32.0f, 20.0f, 64.0f, 16.0f, 100.0f, 8U};
+	return {32.0f, 20.0f, 64.0f, 16.0f, 240.0f, 8U};
 	}
 
 void initializeDecision(NavRoamDecision *decision)

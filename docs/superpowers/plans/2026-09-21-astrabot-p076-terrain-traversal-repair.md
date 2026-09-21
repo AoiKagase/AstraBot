@@ -109,3 +109,16 @@
 ## Stop Gate
 
 Stop after slope/stair/Jump traversal repair, regression verification, and live-check preparation. Overall status is `PARTIAL` until fresh HLDS/ReHLDS intervals verify slope, stairs, Jump, negative cases, lifecycle, and multi-Bot performance.
+
+## Follow-up from live qconsole verification
+
+The final-DLL interval exposed two additional P07.6 movement facts:
+
+- Normal Core roam emitted `forward=32` or `100`, while the public managed-bot maxspeed projection is intended to be about `240`; this is a run-speed contract issue, not a command-msec issue. `BotTimingScheduler::consumeCommandMsec()` already owns runtime msec calculation.
+- `IN_JUMP=1` and `traversal_intent=3` were both absent. `roam_no_intent` records had `LocomotionResult::Stuck` and zero observed velocity. Fix speed first, then remeasure Stuck/corner/dead-end behavior before adding recovery changes. Terrain-based Jump lookahead remains a separate hypothesis requiring public engine observation and a new RED test.
+
+Follow-up implementation evidence:
+
+- RED: `testNormalRoamUsesRunSpeed` failed because the default intent speed was below 200 (`kRoamSpeed=32`, Locomotion default `100`). GREEN: the test passes after the bounded run-speed update to `240.0f`.
+- RED: `testTerrainDiscontinuityRequestsJump` failed with `StepTooHigh` for a grounded 32-unit rise without `NAV_JUMP`. GREEN: bounded discontinuity Jump now covers rises above the walk step limit through `41.8f`, while `NAV_NO_JUMP` and higher rises remain non-Jump.
+- Existing bounded Stuck recovery, intermediate traversal, and JumpDrop one-link contract tests remain GREEN. No corner/dead-end recovery code was changed before a fresh speed-corrected live interval.

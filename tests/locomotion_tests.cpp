@@ -138,7 +138,7 @@ bool testCrouchSelection()
 
 bool testStepAndStuckRecovery()
 {
-	astrabot::nav::NavDocument highStepDocument = routeDocument(40.0f);
+	astrabot::nav::NavDocument highStepDocument = routeDocument(64.0f);
 	const astrabot::nav::NavSnapshot highStepSnapshot =
 		snapshotFor(&highStepDocument, 1U);
 	astrabot::nav::LocomotionConfig stepConfig = config();
@@ -190,6 +190,31 @@ bool testStepAndStuckRecovery()
 	}
 
 	return true;
+}
+
+bool testTerrainDiscontinuityRequestsJump()
+{
+	astrabot::nav::NavDocument document = routeDocument(32.0f);
+	const astrabot::nav::NavSnapshot snapshot = snapshotFor(&document, 1U);
+	astrabot::nav::LocomotionConfig jumpConfig = config();
+	jumpConfig.maximumStepHeight = 16.0f;
+	astrabot::nav::LocomotionController controller(jumpConfig);
+	if (!check(controller.start(corridorFor(snapshot)) ==
+				astrabot::nav::LocomotionResult::Started,
+				"terrain discontinuity jump controller starts"))
+	{
+		return false;
+	}
+	astrabot::nav::LocomotionObservation observation = {};
+	observation.position = {16.0f, 32.0f, 0.0f};
+	observation.standingClearance = 72.0f;
+	observation.crouchingClearance = 36.0f;
+	observation.grounded = true;
+	astrabot::nav::LocomotionIntent intent = {};
+	return check(controller.update(snapshot, observation, &intent) ==
+				astrabot::nav::LocomotionResult::IntentReady &&
+				intent.traversal == astrabot::nav::TraversalAction::Jump,
+				"bounded terrain discontinuity requests Jump before StepTooHigh");
 }
 
 bool testContinuousRampUsesPortalTransitionHeight()
@@ -507,9 +532,10 @@ bool testJumpAttributesOverrideStepHeight()
 int main()
 {
 	if (!testWalkAndStepIntent() ||
-			!testCrouchSelection() ||
-			!testStepAndStuckRecovery() ||
-			!testContinuousRampUsesPortalTransitionHeight() ||
+		!testCrouchSelection() ||
+		!testStepAndStuckRecovery() ||
+		!testTerrainDiscontinuityRequestsJump() ||
+		!testContinuousRampUsesPortalTransitionHeight() ||
 			!testCompletionAndInvalidation() ||
 			!testCorridorIndexTracksPortalProgress() ||
 			!testInvalidInputs() ||
