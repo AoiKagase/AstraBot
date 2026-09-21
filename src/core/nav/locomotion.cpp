@@ -228,8 +228,9 @@ LocomotionResult LocomotionController::buildIntent(
 		return LocomotionResult::InvalidCorridor;
 	}
 
-	const float stepHeight =
-		floorHeight(*destinationArea) - floorHeight(*currentArea);
+	const float currentSurfaceHeight = surfaceZAt(
+		*currentArea, target.x, target.y);
+	const float stepHeight = target.z - currentSurfaceHeight;
 	const bool requiresJump = (destinationArea->attributes & NavArea::kJump) != 0U;
 	if (stepHeight > config_.maximumStepHeight && !requiresJump)
 	{
@@ -326,14 +327,6 @@ bool LocomotionController::isFiniteObservation(
 		observation.standingClearance >= 0.0f &&
 		std::isfinite(observation.crouchingClearance) &&
 		observation.crouchingClearance >= 0.0f;
-}
-
-float LocomotionController::floorHeight(const NavArea &area)
-{
-	return surfaceZAt(
-		area,
-		(area.extent.lo.x + area.extent.hi.x) * 0.5f,
-		(area.extent.lo.y + area.extent.hi.y) * 0.5f);
 }
 
 NavVector LocomotionController::normalizeDirection(

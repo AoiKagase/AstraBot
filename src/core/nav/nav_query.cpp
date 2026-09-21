@@ -164,10 +164,10 @@ NavVector portalSteeringPoint(
 	{
 		return portalSteeringPoint(to, position);
 	}
-	const NavVector portal = {
+	NavVector portal = {
 		(overlapLoX + overlapHiX) * 0.5f,
 		(overlapLoY + overlapHiY) * 0.5f,
-		to.northEastZ * 0.5f + to.southWestZ * 0.5f};
+		0.0f};
 	const NavVector center = centerOf(to);
 	const float deltaX = center.x - portal.x;
 	const float deltaY = center.y - portal.y;
@@ -176,10 +176,14 @@ NavVector portalSteeringPoint(
 	{
 		return center;
 	}
-	return {
+	const NavVector steering = {
 		portal.x + deltaX / distance * 16.0f,
 		portal.y + deltaY / distance * 16.0f,
-		portal.z};
+		0.0f};
+	return {
+		steering.x,
+		steering.y,
+		surfaceZAtInternal(to, steering.x, steering.y)};
 }
 
 NavVector portalSteeringPoint(
@@ -221,7 +225,7 @@ NavVector portalSteeringPoint(
 	NavVector result = {
 		clampWithMargin(position.x, overlapLoX, overlapHiX),
 		clampWithMargin(position.y, overlapLoY, overlapHiY),
-		to.northEastZ * 0.5f + to.southWestZ * 0.5f};
+		0.0f};
 	switch (direction)
 	{
 	case 0U:
@@ -239,6 +243,7 @@ NavVector portalSteeringPoint(
 	default:
 		break;
 	}
+	result.z = surfaceZAtInternal(to, result.x, result.y);
 	return result;
 }
 

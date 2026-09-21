@@ -192,6 +192,43 @@ bool testStepAndStuckRecovery()
 	return true;
 }
 
+bool testContinuousRampUsesPortalTransitionHeight()
+{
+	astrabot::nav::NavDocument document;
+	document.setSourceIdentity({5U, 100U, 200U});
+	astrabot::nav::NavArea ramp = area(1U, 0.0f, 100.0f, 0.0f);
+	ramp.extent.hi.y = 64.0f;
+	ramp.extent.hi.z = 60.0f;
+	ramp.northEastZ = 60.0f;
+	ramp.southWestZ = 0.0f;
+	astrabot::nav::NavArea landing = area(2U, 100.0f, 200.0f, 60.0f);
+	landing.extent.hi.y = 64.0f;
+	ramp.connections[1U].push_back(2U);
+	document.addArea(ramp);
+	document.addArea(landing);
+	const astrabot::nav::NavSnapshot snapshot = snapshotFor(&document, 1U);
+	astrabot::nav::LocomotionConfig locomotionConfig = config();
+	locomotionConfig.maximumStepHeight = 16.0f;
+	astrabot::nav::LocomotionController controller(locomotionConfig);
+	if (!check(controller.start(corridorFor(snapshot)) ==
+				astrabot::nav::LocomotionResult::Started,
+				"continuous ramp controller starts"))
+	{
+		return false;
+	}
+	astrabot::nav::LocomotionObservation observation = {};
+	observation.position = {80.0f, 32.0f, 48.0f};
+	observation.standingClearance = 72.0f;
+	observation.crouchingClearance = 36.0f;
+	observation.grounded = true;
+	astrabot::nav::LocomotionIntent intent = {};
+	return check(controller.update(snapshot, observation, &intent) ==
+				astrabot::nav::LocomotionResult::IntentReady &&
+				intent.targetArea == 2U && !intent.stepUp &&
+				intent.traversal == astrabot::nav::TraversalAction::Walk,
+				"continuous ramp does not become a center-height step");
+}
+
 bool testLateralJitterDoesNotResetForwardProgress()
 {
 	astrabot::nav::NavDocument document = routeDocument(0.0f);
@@ -472,6 +509,7 @@ int main()
 	if (!testWalkAndStepIntent() ||
 			!testCrouchSelection() ||
 			!testStepAndStuckRecovery() ||
+			!testContinuousRampUsesPortalTransitionHeight() ||
 			!testCompletionAndInvalidation() ||
 			!testCorridorIndexTracksPortalProgress() ||
 			!testInvalidInputs() ||

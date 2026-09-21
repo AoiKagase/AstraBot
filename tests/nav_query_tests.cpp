@@ -427,6 +427,90 @@ bool testInterpolatedSurfaceHeight()
 				"surface interpolation reaches the NE corner");
 }
 
+bool testPortalSteeringUsesInterpolatedSurfaceHeight()
+{
+	astrabot::nav::NavDocument document;
+	document.setSourceIdentity({5U, 100U, 200U});
+	astrabot::nav::NavArea from = area(1U, 0.0f, 100.0f, 0.0f);
+	from.extent.hi.y = 100.0f;
+	astrabot::nav::NavArea to = area(2U, 100.0f, 200.0f, 0.0f);
+	to.extent.hi.y = 100.0f;
+	to.extent.hi.z = 60.0f;
+	to.northEastZ = 20.0f;
+	to.southWestZ = 0.0f;
+	from.connections[0U].push_back(2U);
+	document.addArea(from);
+	document.addArea(to);
+	const astrabot::nav::NavSnapshot snapshot = snapshotFor(&document, 1U);
+	astrabot::nav::NavQuery query(snapshot);
+	astrabot::nav::NavCorridor corridor = {};
+	if (!check(query.buildCorridor(1U, 2U, &corridor) ==
+				astrabot::nav::NavQueryResult::Found,
+				"portal height fixture builds a corridor"))
+	{
+		return false;
+	}
+	astrabot::nav::NavPathFollower follower;
+	follower.start(corridor);
+	astrabot::nav::NavVector target = {};
+	astrabot::nav::AreaId targetArea = 0U;
+	if (!check(follower.update(snapshot, {50.0f, 50.0f, 0.0f}, 1.0f, 8.0f,
+					&target, &targetArea) == astrabot::nav::NavFollowerResult::Advanced &&
+				targetArea == 2U,
+				"portal height fixture advances to destination"))
+	{
+		return false;
+	}
+	return check(std::fabs(target.z - astrabot::nav::surfaceZAt(
+					*document.findArea(2U), target.x, target.y)) < 0.01f,
+				"portal target Z follows the destination surface");
+}
+
+bool testStationaryStairFollowerDoesNotSkipSegment()
+{
+	astrabot::nav::NavDocument document;
+	document.setSourceIdentity({5U, 100U, 200U});
+	astrabot::nav::NavArea first = area(1U, 0.0f, 100.0f, 0.0f);
+	astrabot::nav::NavArea second = area(2U, 100.0f, 140.0f, 16.0f);
+	astrabot::nav::NavArea third = area(3U, 140.0f, 220.0f, 32.0f);
+	first.connections[1U].push_back(2U);
+	second.connections[1U].push_back(3U);
+	document.addArea(first);
+	document.addArea(second);
+	document.addArea(third);
+	const astrabot::nav::NavSnapshot snapshot = snapshotFor(&document, 1U);
+	astrabot::nav::NavQuery query(snapshot);
+	astrabot::nav::NavCorridor corridor = {};
+	if (!check(query.buildCorridor(1U, 3U, &corridor) ==
+				astrabot::nav::NavQueryResult::Found,
+				"stair fixture builds a corridor"))
+	{
+		return false;
+	}
+	astrabot::nav::NavPathFollower follower;
+	follower.start(corridor);
+	astrabot::nav::NavVector target = {};
+	astrabot::nav::AreaId targetArea = 0U;
+	if (!check(follower.update(snapshot, {90.0f, 32.0f, 0.0f}, 20.0f, 1.0f,
+					&target, &targetArea) == astrabot::nav::NavFollowerResult::Advanced &&
+				targetArea == 2U && follower.currentIndex() == 1U,
+				"stair fixture enters the first segment"))
+	{
+		return false;
+	}
+	if (!check(follower.update(snapshot, {90.0f, 32.0f, 0.0f}, 20.0f, 1.0f,
+					&target, &targetArea) == astrabot::nav::NavFollowerResult::TargetReady &&
+				targetArea == 2U && follower.currentIndex() == 1U,
+				"stationary stair actor cannot skip the second segment"))
+	{
+		return false;
+	}
+	return check(follower.update(snapshot, {120.0f, 32.0f, 16.0f}, 20.0f, 1.0f,
+					&target, &targetArea) == astrabot::nav::NavFollowerResult::Advanced &&
+				targetArea == 3U,
+				"entered stair step allows the next segment");
+}
+
 bool testNearest3DUsesSurfaceHeight()
 {
 	astrabot::nav::NavDocument document;
@@ -672,6 +756,8 @@ int main()
 		!testPathFollowerProgressAndStaleRoute() ||
 		!testStationaryFollowerDoesNotSkipPortalSegment() ||
 		!testInterpolatedSurfaceHeight() ||
+		!testPortalSteeringUsesInterpolatedSurfaceHeight() ||
+		!testStationaryStairFollowerDoesNotSkipSegment() ||
 		!testNearest3DUsesSurfaceHeight() ||
 			!testInvalidInputs() ||
 			!testAStarSearchStats() ||

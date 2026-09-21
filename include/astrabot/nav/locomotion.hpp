@@ -103,7 +103,6 @@ private:
 	static bool isValidConfig(const LocomotionConfig &config);
 	static bool isFiniteObservation(
 		const LocomotionObservation &observation);
-	static float floorHeight(const NavArea &area);
 	static NavVector normalizeDirection(
 		const NavVector &from,
 		const NavVector &to);
