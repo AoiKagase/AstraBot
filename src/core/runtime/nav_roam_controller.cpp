@@ -60,7 +60,9 @@ void initializeDecision(NavRoamDecision *decision)
 			area.closestPoint.z - observation.position.z};
 		const float length = std::sqrt(
 			delta.x * delta.x + delta.y * delta.y + delta.z * delta.z);
-		if (!std::isfinite(length) || length <= 0.0f)
+		const float horizontalLength = std::hypot(delta.x, delta.y);
+		if (!std::isfinite(length) || length <= 0.0f ||
+				!std::isfinite(horizontalLength) || horizontalLength <= 0.0001f)
 		{
 			return false;
 		}
@@ -432,10 +434,18 @@ NavRoamResult NavRoamController::update(
 	if (observation.hasObjectiveTarget)
 	{
 		nav::NavAreaMatch objectiveMatch = {};
-		if (query.findNearest(
+		nav::NavQueryResult objectiveResult = query.findContaining(
 				observation.objectiveTarget,
-				kMaximumRecoveryDistance,
-				&objectiveMatch) == nav::NavQueryResult::Found)
+				64.0f,
+				&objectiveMatch);
+		if (objectiveResult == nav::NavQueryResult::NoAreaContaining)
+		{
+			objectiveResult = query.findNearest(
+					observation.objectiveTarget,
+					kMaximumRecoveryDistance,
+					&objectiveMatch);
+		}
+		if (objectiveResult == nav::NavQueryResult::Found)
 		{
 			objectiveArea = objectiveMatch.area;
 			if (decision != nullptr)
@@ -451,6 +461,7 @@ NavRoamResult NavRoamController::update(
 			decision->failureReason = NavFailureReason::GoalAreaMissing;
 		}
 	}
+	bool plannedLinkContinuation = false;
 	if (currentAreaResult == nav::NavQueryResult::NoAreaContaining &&
 			!jumpDrop_.isActive() && !specialTraversal_.isActive())
 	{
@@ -460,6 +471,11 @@ NavRoamResult NavRoamController::update(
 				 observation.locomotion.position.z},
 			kMaximumRecoveryDistance,
 			&currentArea);
+		plannedLinkContinuation =
+			hasActiveRoute_ && locomotion_.isActive() &&
+			nearestResult == nav::NavQueryResult::Found &&
+			activeLink_.fromArea == currentArea.area &&
+			activeLink_.toArea != activeLink_.fromArea;
 		if (decision != nullptr)
 		{
 			decision->nearestAreaResult = nearestResult;
@@ -467,8 +483,9 @@ NavRoamResult NavRoamController::update(
 				currentArea.area : 0U;
 			decision->nearestDistanceSquared = currentArea.distanceSquared;
 		}
-		if (nearestResult != nav::NavQueryResult::Found ||
-			!buildRecoveryIntent(currentArea, observation.locomotion, intent))
+		if (!plannedLinkContinuation &&
+				(nearestResult != nav::NavQueryResult::Found ||
+					!buildRecoveryIntent(currentArea, observation.locomotion, intent)))
 		{
 			if (!hasActiveRoute_)
 			{
@@ -481,15 +498,19 @@ NavRoamResult NavRoamController::update(
 			}
 			return NavRoamResult::NoRoute;
 		}
-		if (decision != nullptr)
+		if (!plannedLinkContinuation)
 		{
-			decision->failureReason = NavFailureReason::CurrentAreaMissing;
-			decision->stage = NavRoamStage::OffMeshRecovery;
-			decision->targetArea = currentArea.area;
+			if (decision != nullptr)
+			{
+				decision->failureReason = NavFailureReason::CurrentAreaMissing;
+				decision->stage = NavRoamStage::OffMeshRecovery;
+				decision->targetArea = currentArea.area;
+			}
+			return NavRoamResult::IntentReady;
 		}
-		return NavRoamResult::IntentReady;
 	}
 	if (currentAreaResult != nav::NavQueryResult::Found &&
+			!plannedLinkContinuation &&
 			!jumpDrop_.isActive() && !specialTraversal_.isActive())
 	{
 		if (!hasActiveRoute_)
