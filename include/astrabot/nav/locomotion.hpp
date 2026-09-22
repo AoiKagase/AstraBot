@@ -126,8 +126,10 @@ private:
 	NavPathFollower pathFollower_;
 	LocomotionConfig config_;
 	NavVector lastPosition_;
+	AreaId jumpTargetArea_;
 	std::uint32_t stuckFrames_;
 	bool hasLastPosition_;
+	bool jumpIssued_;
 	bool active_;
 };
 }

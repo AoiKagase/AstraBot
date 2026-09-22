@@ -41,14 +41,28 @@ LocomotionResult mapFollowerResult(NavFollowerResult result)
 	}
 	return LocomotionResult::InvalidObservation;
 }
+
+bool hasDirectedConnection(const NavArea &from, AreaId to)
+{
+	for (const std::vector<AreaId> &connections : from.connections)
+	{
+		if (std::find(connections.begin(), connections.end(), to) != connections.end())
+		{
+			return true;
+		}
+	}
+	return false;
+}
 }
 
 LocomotionController::LocomotionController() :
 	pathFollower_(),
 	config_{32.0f, 20.0f, 1.0f, 16.0f, 240.0f, 8U},
 	lastPosition_{0.0f, 0.0f, 0.0f},
+	jumpTargetArea_(0U),
 	stuckFrames_(0U),
 	hasLastPosition_(false),
+	jumpIssued_(false),
 	active_(false)
 {
 }
@@ -58,8 +72,10 @@ LocomotionController::LocomotionController(
 	pathFollower_(),
 	config_(config),
 	lastPosition_{0.0f, 0.0f, 0.0f},
+	jumpTargetArea_(0U),
 	stuckFrames_(0U),
 	hasLastPosition_(false),
+	jumpIssued_(false),
 	active_(false)
 {
 }
@@ -68,6 +84,8 @@ LocomotionResult LocomotionController::start(const NavCorridor &corridor)
 {
 	active_ = false;
 	hasLastPosition_ = false;
+	jumpTargetArea_ = 0U;
+	jumpIssued_ = false;
 	stuckFrames_ = 0U;
 	if (!isValidConfig(config_))
 	{
@@ -227,6 +245,12 @@ LocomotionResult LocomotionController::buildIntent(
 		active_ = false;
 		return LocomotionResult::InvalidCorridor;
 	}
+	if (currentArea->id != destinationArea->id &&
+			!hasDirectedConnection(*currentArea, destinationArea->id))
+	{
+		active_ = false;
+		return LocomotionResult::InvalidCorridor;
+	}
 
 	const float currentSurfaceHeight = surfaceZAt(
 		*currentArea, target.x, target.y);
@@ -238,7 +262,10 @@ LocomotionResult LocomotionController::buildIntent(
 	const bool terrainJump = !noJump && !navJump && observation.grounded &&
 		!observation.onLadder && stepHeight > config_.maximumStepHeight &&
 		stepHeight <= LocomotionConfig::kMaximumJumpHeight;
-	const bool requiresJump = navJump || terrainJump;
+	const bool continuingJump = jumpIssued_ && jumpTargetArea_ == targetArea;
+	const bool requiresJump = navJump || terrainJump || continuingJump;
+	const bool emitJump = (navJump || terrainJump) &&
+		(!jumpIssued_ || jumpTargetArea_ != targetArea);
 	if (stepHeight > config_.maximumStepHeight && !requiresJump)
 	{
 		active_ = false;
@@ -278,12 +305,22 @@ LocomotionResult LocomotionController::buildIntent(
 		active_ = false;
 		return LocomotionResult::Stuck;
 	}
+	if (requiresJump)
+	{
+		jumpTargetArea_ = targetArea;
+		jumpIssued_ = true;
+	}
+	else
+	{
+		jumpTargetArea_ = 0U;
+		jumpIssued_ = false;
+	}
 
 	intent->direction = normalizeDirection(observation.position, target);
 	intent->speed = config_.maximumSpeed;
 	intent->posture = posture;
 	intent->traversal = requiresJump
-			? TraversalAction::Jump
+			? (emitJump ? TraversalAction::Jump : TraversalAction::Walk)
 			: (posture == LocomotionPosture::Crouching
 					? TraversalAction::Crouch
 					: (stepHeight > 0.0f ? TraversalAction::Step : TraversalAction::Walk));

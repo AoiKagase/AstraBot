@@ -165,7 +165,7 @@ JumpDropResult JumpDropController::update(
 	}
 	if (!observation.landingConfirmed)
 	{
-		return JumpDropResult::Emitted;
+		return JumpDropResult::Ready;
 	}
 	if (observation.airborne)
 	{

@@ -140,10 +140,10 @@ bool testValidLaunchAndLandingFeedback()
 	const astrabot::nav::JumpDropObservation unconfirmedLanding =
 		observation({96.0f, 32.0f, 32.0f}, 7U, 101U, false, false, false, 0.0f);
 	if (!check(controller.update(snapshot, unconfirmedLanding, &intent) ==
-			astrabot::nav::JumpDropResult::Emitted &&
+			astrabot::nav::JumpDropResult::Ready &&
 			controller.isActive() &&
 			intent.speed == 0.0f,
-			"landing position alone does not claim success"))
+			"jump input is released while awaiting airborne or landing feedback"))
 	{
 		return false;
 	}

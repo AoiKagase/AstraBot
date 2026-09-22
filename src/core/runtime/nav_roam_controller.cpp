@@ -724,11 +724,30 @@ NavRoamResult NavRoamController::update(
 			intent->stepUp = false;
 			intent->currentArea = traversalIntent.launchArea;
 			intent->targetArea = traversalIntent.landingArea;
+			lastIntentDirection_ = intent->direction;
 			if (decision != nullptr)
 			{
 				decision->locomotionResult = nav::LocomotionResult::IntentReady;
 				decision->stage = NavRoamStage::LocomotionReady;
 				decision->targetArea = traversalIntent.landingArea;
+			}
+			return NavRoamResult::IntentReady;
+		}
+		if (traversalResult == nav::JumpDropResult::Ready)
+		{
+			intent->direction = lastIntentDirection_;
+			intent->speed = kRoamSpeed;
+			intent->posture = nav::LocomotionPosture::Standing;
+			intent->traversal = nav::TraversalAction::Walk;
+			intent->stepUp = false;
+			intent->currentArea = activeLink_.fromArea;
+			intent->targetArea = activeLink_.toArea;
+			if (decision != nullptr)
+			{
+				decision->locomotionResult = nav::LocomotionResult::IntentReady;
+				decision->stage = NavRoamStage::LocomotionReady;
+				decision->targetArea = activeLink_.toArea;
+				decision->intentDirection = intent->direction;
 			}
 			return NavRoamResult::IntentReady;
 		}
@@ -911,9 +930,16 @@ NavRoamResult NavRoamController::update(
 			decision->stage = NavRoamStage::Failed;
 		}
 		return NavRoamResult::InvalidSnapshot;
+	case nav::LocomotionResult::InvalidCorridor:
+		resetRoute();
+		if (decision != nullptr)
+		{
+			decision->recomputeReason = NavRecomputeReason::PathInvalidated;
+			decision->stage = NavRoamStage::Failed;
+		}
+		return NavRoamResult::ReplanRequired;
 	case nav::LocomotionResult::InvalidArgument:
 	case nav::LocomotionResult::InvalidConfig:
-	case nav::LocomotionResult::InvalidCorridor:
 	case nav::LocomotionResult::InvalidObservation:
 	case nav::LocomotionResult::InvalidClearance:
 	case nav::LocomotionResult::ResourceLimit:

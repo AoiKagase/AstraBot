@@ -1769,8 +1769,8 @@ void PluginRuntime::recordMovementPhysicsSample(
 	}
 
 	if (gpMetaUtilFuncs != nullptr && gpMetaUtilFuncs->pfnLogConsole != nullptr &&
-				pluginId_ != nullptr &&
-				movementDiagnosticSamples_[index] < kMovementPhysicsLogLimit)
+		pluginId_ != nullptr &&
+		movementDiagnosticSamples_[index] < kMovementPhysicsLogLimit)
 	{
 		gpMetaUtilFuncs->pfnLogConsole(
 			pluginId_,
@@ -1794,6 +1794,25 @@ void PluginRuntime::recordMovementPhysicsSample(
 			sample.readiness == runtime::SpawnReadiness::Ready ? 1 : 0,
 			static_cast<int>(receipt.result));
 		++movementDiagnosticSamples_[index];
+	}
+	const bool jumpCommand = index < managedBotCommandTemplates_.size() &&
+		managedBotCommandTemplateValid_[index] &&
+		(managedBotCommandTemplates_[index].movement.buttons &
+			static_cast<std::uint16_t>(IN_JUMP)) != 0U;
+	if (jumpCommand && runtimeProfiler_.enabled() && gpMetaUtilFuncs != nullptr &&
+			gpMetaUtilFuncs->pfnLogConsole != nullptr && pluginId_ != nullptr)
+	{
+		gpMetaUtilFuncs->pfnLogConsole(
+			pluginId_,
+			"profile jumpFeedback bot_id=%u command_sequence=%u dispatched=%d "
+			"before_origin=(%.1f %.1f %.1f) after_origin=(%.1f %.1f %.1f) "
+			"after_velocity=(%.1f %.1f %.1f) after_grounded=%d",
+			static_cast<unsigned int>(sample.actor.slot),
+			static_cast<unsigned int>(sample.commandSequence), sample.dispatched ? 1 : 0,
+			sample.before.origin.x, sample.before.origin.y, sample.before.origin.z,
+			sample.after.origin.x, sample.after.origin.y, sample.after.origin.z,
+			sample.after.velocity.x, sample.after.velocity.y, sample.after.velocity.z,
+			sample.after.grounded ? 1 : 0);
 	}
 }
 
@@ -3746,7 +3765,8 @@ void PluginRuntime::logTraversalDiagnostic(
 		"connection_direction=%u connection_how=%u current_attributes=%u "
 		"next_attributes=%u traversal_intent=%d jump_required=%d "
 		"target_point=(%.1f %.1f %.1f) distance_to_transition=%.1f "
-		"grounded=%d ducked=%d velocity_z=%.1f buttons=%u IN_JUMP=%d "
+		"before_grounded=%d before_ducked=%d before_velocity_z=%.1f "
+		"buttons=%u IN_JUMP=%d "
 		"stuck_time=%d recovery_state=%d corridor_index=%u",
 		static_cast<unsigned int>(managedBotHandles_[index].actor.slot),
 		static_cast<unsigned int>(decision.currentArea),

@@ -59,10 +59,19 @@ bool testJumpTraversalAction()
 	observation.locomotion.grounded = true;
 	observation.landingConfirmed = false;
 	astrabot::nav::LocomotionIntent intent = {};
+	if (!check(controller.update(publisher.snapshot(), observation, &intent) ==
+			astrabot::runtime::NavRoamResult::IntentReady &&
+			intent.traversal == astrabot::nav::TraversalAction::Jump,
+			"jump launch emits one jump traversal intent"))
+	{
+		return false;
+	}
+
+	observation.frame.tick = 2U;
 	return check(controller.update(publisher.snapshot(), observation, &intent) ==
-					 astrabot::runtime::NavRoamResult::IntentReady &&
-					 intent.traversal == astrabot::nav::TraversalAction::Jump,
-				 "jump approach emits jump traversal intent");
+			astrabot::runtime::NavRoamResult::IntentReady &&
+			intent.traversal == astrabot::nav::TraversalAction::Walk,
+			"jump button is released while traversal feedback is pending");
 }
 
 bool testNormalRoamUsesRunSpeed()

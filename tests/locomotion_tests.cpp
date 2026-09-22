@@ -211,10 +211,28 @@ bool testTerrainDiscontinuityRequestsJump()
 	observation.crouchingClearance = 36.0f;
 	observation.grounded = true;
 	astrabot::nav::LocomotionIntent intent = {};
+	if (!check(controller.update(snapshot, observation, &intent) ==
+			astrabot::nav::LocomotionResult::IntentReady &&
+			intent.traversal == astrabot::nav::TraversalAction::Jump,
+			"bounded terrain discontinuity requests Jump before StepTooHigh"))
+	{
+		return false;
+	}
+
+	if (!check(controller.update(snapshot, observation, &intent) ==
+			astrabot::nav::LocomotionResult::IntentReady &&
+			intent.traversal == astrabot::nav::TraversalAction::Walk,
+			"the same terrain transition does not hold Jump after launch"))
+	{
+		return false;
+	}
+
+	observation.position.x = 17.0f;
+	observation.grounded = false;
 	return check(controller.update(snapshot, observation, &intent) ==
-				astrabot::nav::LocomotionResult::IntentReady &&
-				intent.traversal == astrabot::nav::TraversalAction::Jump,
-				"bounded terrain discontinuity requests Jump before StepTooHigh");
+			astrabot::nav::LocomotionResult::IntentReady &&
+			intent.traversal == astrabot::nav::TraversalAction::Walk,
+			"an airborne terrain jump keeps forward movement without re-pressing Jump");
 }
 
 bool testContinuousRampUsesPortalTransitionHeight()
@@ -529,8 +547,45 @@ bool testJumpAttributesOverrideStepHeight()
 				"NAV_JUMP takes precedence over ordinary step rejection");
 }
 
+bool testOffPathAreaCannotTriggerJumpToNonAdjacentCorridorTarget()
+{
+	astrabot::nav::NavDocument document = routeDocument(32.0f);
+	document.addArea(area(3U, 192.0f, 256.0f, 0.0f));
+	const astrabot::nav::NavSnapshot snapshot = snapshotFor(&document, 1U);
+	astrabot::nav::LocomotionController controller(config());
+	if (!check(controller.start(corridorFor(snapshot)) ==
+			astrabot::nav::LocomotionResult::Started,
+			"off-path fixture starts its valid corridor"))
+	{
+		return false;
+	}
+
+	astrabot::nav::LocomotionObservation observation = {};
+	observation.position = {32.0f, 32.0f, 0.0f};
+	observation.standingClearance = 72.0f;
+	observation.crouchingClearance = 36.0f;
+	observation.grounded = true;
+	astrabot::nav::LocomotionIntent intent = {};
+	if (!check(controller.update(snapshot, observation, &intent) ==
+			astrabot::nav::LocomotionResult::IntentReady &&
+			controller.currentCorridorIndex() == 1U,
+			"off-path fixture advances to the connected target segment"))
+	{
+		return false;
+	}
+
+	observation.position = {224.0f, 32.0f, 0.0f};
+	return check(controller.update(snapshot, observation, &intent) ==
+			astrabot::nav::LocomotionResult::InvalidCorridor,
+			"an unrelated current area invalidates the segment instead of fabricating Jump");
+}
+
 int main()
 {
+	if (!testOffPathAreaCannotTriggerJumpToNonAdjacentCorridorTarget())
+	{
+		return 1;
+	}
 	if (!testWalkAndStepIntent() ||
 		!testCrouchSelection() ||
 		!testStepAndStuckRecovery() ||
