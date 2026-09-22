@@ -317,6 +317,7 @@ LocomotionResult LocomotionController::buildIntent(
 	}
 
 	intent->direction = normalizeDirection(observation.position, target);
+	intent->targetPosition = target;
 	intent->speed = config_.maximumSpeed;
 	intent->posture = posture;
 	intent->traversal = requiresJump

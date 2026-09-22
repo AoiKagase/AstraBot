@@ -156,13 +156,24 @@ struct ManagedObjectiveSiteRegistry
 		  private:
 		static constexpr std::size_t kCompatibilityCvarCount = 7U;
 
-		enum class UserMessageKind : std::uint8_t
+	enum class UserMessageKind : std::uint8_t
 		{
 			None,
 			ShowMenu,
 			VguiMenu,
-			TeamInfo
-		};
+		TeamInfo
+	};
+	struct MovementReversalDiagnosticState
+	{
+		bool valid;
+		runtime::PhysicsVector feetPosition;
+		runtime::PhysicsVector direction;
+		nav::NavVector localTarget;
+		nav::AreaId currentArea;
+		nav::AreaId targetArea;
+		std::uint32_t pathSequence;
+		std::uint32_t reversalCount;
+	};
 
 		friend const char *HookCommandArgs();
 			friend const char *HookCommandArgv(int index);
@@ -243,12 +254,17 @@ struct ManagedObjectiveSiteRegistry
 			const runtime::MovementPhysicsState &before,
 			const runtime::NavRoamDecision &decision,
 			const nav::LocomotionIntent &intent);
-		void logTraversalDiagnostic(
-			std::size_t index,
-			const runtime::MovementPhysicsState &before,
-			const runtime::NavRoamDecision &decision,
-			const nav::LocomotionIntent &intent,
-			std::uint16_t buttons);
+	void logTraversalDiagnostic(
+		std::size_t index,
+		const runtime::MovementPhysicsState &before,
+		const runtime::NavRoamDecision &decision,
+		const nav::LocomotionIntent &intent,
+		std::uint16_t buttons);
+	void logMovementReversalDiagnostic(
+		std::size_t index,
+		const runtime::MovementPhysicsState &before,
+		const runtime::NavRoamDecision &decision,
+		const nav::LocomotionIntent &intent);
 			std::size_t managedBotCount() const;
 			FakeClientHandle *findManagedBot(const char *name);
 			void rememberManagedBot(const FakeClientHandle &handle, const char *name);
@@ -383,8 +399,10 @@ struct ManagedObjectiveSiteRegistry
 		std::array<std::uint32_t,
 					   NativeBotObservation::kClientSlotCount>
 			movementDispatchFrames_;
-		std::array<bool, NativeBotObservation::kClientSlotCount>
-			movementWasAirborne_;
+	std::array<bool, NativeBotObservation::kClientSlotCount>
+		movementWasAirborne_;
+	std::array<MovementReversalDiagnosticState,
+		NativeBotObservation::kClientSlotCount> movementReversalDiagnostics_;
 			std::uint32_t movementDiagnosticRound_;
 			bool movementDiagnosticGlobal_;
 			CommandArgsFunction originalCommandArgs_;

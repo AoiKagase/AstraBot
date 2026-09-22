@@ -56,6 +56,9 @@ namespace astrabot
 		};
 
 		SpawnReadiness spawnReadiness(const MovementPhysicsState &state) noexcept;
+		bool isMovementDirectionReversal(
+			const PhysicsVector &previous,
+			const PhysicsVector &current) noexcept;
 	}
 }
 

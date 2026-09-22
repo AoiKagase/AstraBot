@@ -654,6 +654,7 @@ const char *const kPerformanceCvarNames[kPerformanceCvarCount] = {
 		movementTraversalDiagnosticSeconds_(),
 		movementDispatchFrames_(),
 			movementWasAirborne_(),
+		movementReversalDiagnostics_(),
 			  movementDiagnosticRound_(0U),
 			  movementDiagnosticGlobal_(false),
 			  originalCommandArgs_(nullptr), originalCommandArgv_(nullptr),
@@ -1830,9 +1831,10 @@ void PluginRuntime::updateManagedBotMovement()
 				movementReadyLogged_.fill(false);
 				movementGoalDiagnosticSeconds_.fill(
 					(std::numeric_limits<std::uint32_t>::max)());
-				movementTraversalDiagnosticSeconds_.fill(
-					(std::numeric_limits<std::uint32_t>::max)());
-			}
+		movementTraversalDiagnosticSeconds_.fill(
+			(std::numeric_limits<std::uint32_t>::max)());
+		movementReversalDiagnostics_.fill({});
+	}
 	if (movementUnavailable)
 	{
 				if (!movementDiagnosticGlobal_ && gpMetaUtilFuncs != nullptr &&
@@ -2230,8 +2232,9 @@ void PluginRuntime::updateManagedBotMovement()
 					ActionAdapter::movementButtons(
 						command.movement.forward, command.movement.side));
 			}
-			logTraversalDiagnostic(
-				index, before, roamDecision, locomotionIntent, command.movement.buttons);
+	logTraversalDiagnostic(
+		index, before, roamDecision, locomotionIntent, command.movement.buttons);
+	logMovementReversalDiagnostic(index, before, roamDecision, locomotionIntent);
 			if (movementDiagnosticSamples_[index] < kMovementPhysicsLogLimit &&
 			gpMetaUtilFuncs != nullptr && gpMetaUtilFuncs->pfnLogConsole != nullptr &&
 			pluginId_ != nullptr)
@@ -3557,8 +3560,9 @@ void PluginRuntime::resetManagedBotMovement()
 		movementGoalDiagnosticSeconds_.fill((std::numeric_limits<std::uint32_t>::max)());
 		movementTraversalDiagnosticSeconds_.fill(
 			(std::numeric_limits<std::uint32_t>::max)());
-		movementDispatchFrames_.fill((std::numeric_limits<std::uint32_t>::max)());
+	movementDispatchFrames_.fill((std::numeric_limits<std::uint32_t>::max)());
 	movementWasAirborne_.fill(false);
+	movementReversalDiagnostics_.fill({});
 	movementDiagnosticRound_ = 0U;
 		}
 
@@ -3784,6 +3788,81 @@ void PluginRuntime::logTraversalDiagnostic(
 		decision.locomotionResult == nav::LocomotionResult::Stuck ? 1 : 0,
 		static_cast<int>(decision.failureReason),
 		static_cast<unsigned int>(decision.corridorIndex));
+}
+
+void PluginRuntime::logMovementReversalDiagnostic(
+	std::size_t index,
+	const runtime::MovementPhysicsState &before,
+	const runtime::NavRoamDecision &decision,
+	const nav::LocomotionIntent &intent)
+{
+	if (!runtimeProfiler_.enabled() ||
+			index >= movementReversalDiagnostics_.size())
+	{
+		return;
+	}
+	MovementReversalDiagnosticState &state = movementReversalDiagnostics_[index];
+	const runtime::PhysicsVector currentDirection = {
+		intent.direction.x, intent.direction.y, intent.direction.z};
+	const bool reversed = state.valid && runtime::isMovementDirectionReversal(
+		state.direction, currentDirection);
+	if (reversed)
+	{
+		if (state.reversalCount != (std::numeric_limits<std::uint32_t>::max)())
+		{
+			++state.reversalCount;
+		}
+		if (gpMetaUtilFuncs != nullptr && gpMetaUtilFuncs->pfnLogConsole != nullptr &&
+				pluginId_ != nullptr)
+		{
+			gpMetaUtilFuncs->pfnLogConsole(
+				pluginId_,
+				"profile movementReversal bot_id=%u frame=%u reversal_count=%u "
+				"previous_feet=(%.1f %.1f %.1f) current_feet=(%.1f %.1f %.1f) "
+				"previous_local_target=(%.1f %.1f %.1f) "
+				"current_local_target=(%.1f %.1f %.1f) "
+				"previous_direction=(%.3f %.3f %.3f) current_direction=(%.3f %.3f %.3f) "
+				"previous_segment=(%u->%u) current_segment=(%u->%u) "
+				"previous_path_sequence=%u path_sequence=%u corridor_index=%u "
+				"link=(%u->%u how=%u dir=%u) recompute_reason=%d traversal=%d "
+				"grounded=%d velocity=(%.1f %.1f %.1f)",
+				static_cast<unsigned int>(managedBotHandles_[index].actor.slot),
+				static_cast<unsigned int>(adapterFrameCount_),
+				static_cast<unsigned int>(state.reversalCount),
+				state.feetPosition.x, state.feetPosition.y, state.feetPosition.z,
+				before.origin.x, before.origin.y, before.origin.z,
+				state.localTarget.x, state.localTarget.y, state.localTarget.z,
+				intent.targetPosition.x, intent.targetPosition.y,
+				intent.targetPosition.z,
+				state.direction.x, state.direction.y, state.direction.z,
+				currentDirection.x, currentDirection.y, currentDirection.z,
+				static_cast<unsigned int>(state.currentArea),
+				static_cast<unsigned int>(state.targetArea),
+				static_cast<unsigned int>(decision.currentArea),
+				static_cast<unsigned int>(intent.targetArea),
+				static_cast<unsigned int>(state.pathSequence),
+				static_cast<unsigned int>(decision.pathSequence),
+				static_cast<unsigned int>(decision.corridorIndex),
+				static_cast<unsigned int>(decision.linkFromArea),
+				static_cast<unsigned int>(decision.linkToArea),
+				static_cast<unsigned int>(decision.linkHow),
+				static_cast<unsigned int>(decision.linkDirection),
+				static_cast<int>(decision.recomputeReason),
+				static_cast<int>(intent.traversal), before.grounded ? 1 : 0,
+				before.velocity.x, before.velocity.y, before.velocity.z);
+		}
+	}
+	else if (state.valid)
+	{
+		state.reversalCount = 0U;
+	}
+	state.valid = true;
+	state.feetPosition = before.origin;
+	state.direction = currentDirection;
+	state.localTarget = intent.targetPosition;
+	state.currentArea = decision.currentArea;
+	state.targetArea = intent.targetArea;
+	state.pathSequence = decision.pathSequence;
 }
 
 NativeBotObservation PluginRuntime::collectNativeBotObservation() const
@@ -4387,6 +4466,7 @@ void PluginRuntime::clearManagedBot(std::size_t index)
 			(std::numeric_limits<std::uint32_t>::max)();
 		movementDispatchFrames_[index] = (std::numeric_limits<std::uint32_t>::max)();
 	movementWasAirborne_[index] = false;
+	movementReversalDiagnostics_[index] = {};
 			joinControllers_[index].reset();
 			managedBotHandles_[index] = FakeClientHandle{};
 			managedBotNames_[index].fill('\0');

@@ -774,8 +774,49 @@ bool testTraversalSwitchesOnIntermediateJumpLink()
 	return check(switched, "intermediate how=6 link starts Jump traversal");
 }
 
+bool testDecisionReportsActualLocalSteeringTarget()
+{
+	astrabot::nav::NavDocument document;
+	document.setSourceIdentity({5U, 100U, 200U});
+	astrabot::nav::NavArea first = area(1U, 0.0f, 64.0f);
+	astrabot::nav::NavArea second = area(2U, 64.0f, 128.0f);
+	first.connections[1U].push_back(2U);
+	document.addArea(first);
+	document.addArea(second);
+	astrabot::nav::NavSnapshotPublisher publisher;
+	if (!check(publisher.publish(&document, 1U) ==
+			astrabot::nav::NavSnapshotResult::Published,
+			"local target snapshot is published"))
+	{
+		return false;
+	}
+
+	astrabot::runtime::NavRoamController controller;
+	astrabot::runtime::NavRoamObservation observation = {};
+	observation.actor = {1U, 1U};
+	observation.frame = {1U, 1U, 1U};
+	observation.locomotion.position = {32.0f, 32.0f, 0.0f};
+	observation.locomotion.standingClearance = 72.0f;
+	observation.locomotion.crouchingClearance = 36.0f;
+	observation.locomotion.grounded = true;
+	observation.hasObjectiveTarget = true;
+	observation.objectiveTarget = {96.0f, 32.0f, 0.0f};
+	astrabot::nav::LocomotionIntent intent = {};
+	astrabot::runtime::NavRoamDecision decision = {};
+	return check(controller.update(
+			publisher.snapshot(), observation, &intent, &decision) ==
+			astrabot::runtime::NavRoamResult::IntentReady &&
+			std::fabs(decision.targetPosition.x - 80.0f) < 0.01f &&
+			std::fabs(decision.targetPosition.y - 32.0f) < 0.01f,
+			"decision reports the active portal steering point instead of the final area center");
+}
+
 int main()
 {
+	if (!testDecisionReportsActualLocalSteeringTarget())
+	{
+		return 1;
+	}
 	if (!testJumpTraversalAction())
 	{
 		return 1;

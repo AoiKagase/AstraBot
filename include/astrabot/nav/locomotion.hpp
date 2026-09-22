@@ -77,8 +77,9 @@ struct LocomotionConfig
 
 struct LocomotionIntent
 {
-		NavVector direction;
-		float speed;
+	NavVector direction;
+	NavVector targetPosition;
+	float speed;
 		LocomotionPosture posture;
 		TraversalAction traversal;
 		bool stepUp;

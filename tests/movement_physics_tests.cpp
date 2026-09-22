@@ -18,7 +18,23 @@ bool check(bool condition, const char *description)
 int main()
 {
 	using astrabot::runtime::MovementPhysicsState;
+	using astrabot::runtime::PhysicsVector;
 	using astrabot::runtime::SpawnReadiness;
+	if (!check(astrabot::runtime::isMovementDirectionReversal(
+				PhysicsVector{1.0f, 0.0f, 0.0f},
+				PhysicsVector{-1.0f, 0.0f, 0.0f}),
+			"opposite horizontal movement directions are a reversal") ||
+		!check(!astrabot::runtime::isMovementDirectionReversal(
+				PhysicsVector{1.0f, 0.0f, 0.0f},
+				PhysicsVector{0.0f, 1.0f, 0.0f}),
+			"orthogonal directions are not a reversal") ||
+		!check(!astrabot::runtime::isMovementDirectionReversal(
+				PhysicsVector{0.0f, 0.0f, 0.0f},
+				PhysicsVector{-1.0f, 0.0f, 0.0f}),
+			"unavailable zero direction is not a reversal"))
+	{
+		return 1;
+	}
 
 	MovementPhysicsState state{};
 	state.entityValid = true;

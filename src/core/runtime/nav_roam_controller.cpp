@@ -842,6 +842,7 @@ NavRoamResult NavRoamController::update(
 		if (intent->targetArea != 0U)
 		{
 			decision->targetArea = intent->targetArea;
+			decision->targetPosition = intent->targetPosition;
 		}
 		if (locomotionResult == nav::LocomotionResult::IntentReady)
 		{
