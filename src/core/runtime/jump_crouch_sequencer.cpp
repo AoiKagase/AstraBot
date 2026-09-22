@@ -99,6 +99,19 @@ JumpCrouchDecision JumpCrouchSequencer::update(
 		elapsed};
 }
 
+JumpCrouchCommandDecision JumpCrouchSequencer::updateCommand(
+	const JumpCrouchObservation &observation,
+	std::uint16_t buttons,
+	std::uint16_t duckButton)
+{
+	const JumpCrouchDecision sequencing = update(observation);
+	if (sequencing.applyDuck)
+	{
+		buttons = static_cast<std::uint16_t>(buttons | duckButton);
+	}
+	return {sequencing, buttons};
+}
+
 void JumpCrouchSequencer::reset()
 {
 	phase_ = JumpCrouchPhase::Idle;

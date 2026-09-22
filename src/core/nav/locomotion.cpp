@@ -309,10 +309,7 @@ LocomotionResult LocomotionController::buildIntent(
 
 	const bool requiresCrouch =
 			(destinationArea->attributes & NavArea::kCrouch) != 0U;
-	LocomotionPosture posture =
-			continuingJump && !observation.grounded
-					? LocomotionPosture::Crouching
-					: LocomotionPosture::Standing;
+	LocomotionPosture posture = LocomotionPosture::Standing;
 	if (!requiresJump &&
 			(requiresCrouch || observation.standingClearance < config_.requiredClearance))
 	{

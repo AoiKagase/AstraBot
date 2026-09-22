@@ -32,7 +32,7 @@ namespace astrabot
 	constexpr int kVguiMenuMessageId = 114;
 	constexpr int kTeamInfoMessageId = 86;
 
-	const char *actionKindName(ActionKind kind)
+const char *actionKindName(ActionKind kind)
 	{
 		switch (kind)
 		{
@@ -76,6 +76,28 @@ RuntimePathSearchCaller navSearchCaller(const runtime::NavRoamDecision &decision
 		return RuntimePathSearchCaller::RecoveryAreaEvaluation;
 	}
 	return RuntimePathSearchCaller::DebugOrDiagnostic;
+}
+
+const char *jumpCrouchTransitionName(runtime::JumpCrouchTransition transition)
+{
+	switch (transition)
+	{
+	case runtime::JumpCrouchTransition::Armed:
+		return "Armed";
+	case runtime::JumpCrouchTransition::DuckStarted:
+		return "DuckStarted";
+	case runtime::JumpCrouchTransition::DuckReleased:
+		return "DuckReleased";
+	case runtime::JumpCrouchTransition::Landed:
+		return "Landed";
+	case runtime::JumpCrouchTransition::Timeout:
+		return "Timeout";
+	case runtime::JumpCrouchTransition::Cancelled:
+		return "Cancelled";
+	case runtime::JumpCrouchTransition::None:
+	default:
+		return "None";
+	}
 }
 
 	bool equalsIgnoreCase(const char *left, const char *right)
@@ -639,7 +661,7 @@ const char *const kPerformanceCvarNames[kPerformanceCvarCount] = {
 	managedBotStateMachines_(), managedBotPerception_(),
 	managedBotPerceptionFullUpdates_(), managedBotCommandSequences_(),
 	managedBotFullUpdateSequences_(), managedBotStateRounds_(), managedBotWasDead_(),
-	managedBotTiming_(), managedBotCommandTemplates_(),
+	managedBotTiming_(), managedBotJumpCrouch_(), managedBotCommandTemplates_(),
 	managedBotCommandTemplateValid_(),
 			  movementDiagnosticSamples_(),
 			  movementDiagnosticAttempts_(),
@@ -1854,10 +1876,14 @@ void PluginRuntime::updateManagedBotMovement()
 			const std::uint8_t milliseconds = movementMilliseconds(globals_);
 			for (std::size_t index = 0U; index < managedBotSlots_.size(); ++index)
 			{
-				if (!managedBotSlots_[index])
-				{
-					continue;
-				}
+		if (!managedBotSlots_[index])
+		{
+			continue;
+		}
+		if (movementUnavailable)
+		{
+			managedBotJumpCrouch_[index].reset();
+		}
 
 		FakeClientHandle &handle = managedBotHandles_[index];
 		if (handle.entity == nullptr)
@@ -3123,6 +3149,7 @@ void PluginRuntime::resetManagedBotTiming(std::size_t index, float spawnTime)
 		return;
 	}
 	managedBotTiming_[index].reset(spawnTime);
+	managedBotJumpCrouch_[index].reset();
 	resetManagedBotCommandTemplate(index);
 }
 
@@ -3226,8 +3253,45 @@ runtime::CommandReceipt PluginRuntime::executeManagedBotCommand(
 	}
 	command.movement.msec = managedBotTiming_[index].consumeCommandMsec(globals_->time);
 	const float maxSpeed = handle.entity->v.maxspeed;
+	const bool explicitFrozen = (handle.entity->v.flags & FL_FROZEN) != 0;
+	const bool roundFreeze = std::isfinite(maxSpeed) && maxSpeed > 0.0f &&
+		maxSpeed <= 1.0f;
+	const std::uint16_t buttonsBeforeJumpCrouch = command.movement.buttons;
+	const runtime::JumpCrouchObservation jumpCrouchObservation = {
+		globals_->time,
+		true,
+		(handle.entity->v.flags & FL_ONGROUND) != 0,
+		handle.entity->v.deadflag != DEAD_NO || handle.entity->v.health <= 0.0f,
+		handle.entity->v.movetype == MOVETYPE_FLY,
+		explicitFrozen || roundFreeze,
+		(command.movement.buttons & static_cast<std::uint16_t>(IN_JUMP)) != 0U};
+	const runtime::JumpCrouchCommandDecision jumpCrouchDecision =
+		managedBotJumpCrouch_[index].updateCommand(
+			jumpCrouchObservation,
+			command.movement.buttons,
+			static_cast<std::uint16_t>(IN_DUCK));
+	command.movement.buttons = jumpCrouchDecision.buttons;
+	if (runtimeProfiler_.enabled() &&
+		jumpCrouchDecision.sequencing.transition !=
+			runtime::JumpCrouchTransition::None &&
+		gpMetaUtilFuncs != nullptr && gpMetaUtilFuncs->pfnLogConsole != nullptr &&
+		pluginId_ != nullptr)
+	{
+		gpMetaUtilFuncs->pfnLogConsole(
+			pluginId_,
+			"profile jumpCrouch bot_id=%u command_sequence=%u transition=%s phase=%d "
+			"elapsed=%.3f grounded=%d before_buttons=%u after_buttons=%u",
+			static_cast<unsigned int>(handle.actor.slot),
+			static_cast<unsigned int>(command.sequence),
+			jumpCrouchTransitionName(jumpCrouchDecision.sequencing.transition),
+			static_cast<int>(jumpCrouchDecision.sequencing.phase),
+			jumpCrouchDecision.sequencing.elapsed,
+			jumpCrouchObservation.grounded ? 1 : 0,
+			static_cast<unsigned int>(buttonsBeforeJumpCrouch),
+			static_cast<unsigned int>(command.movement.buttons));
+	}
 	MovementExecutionObservation gateObservation = {};
-	gateObservation.explicitFrozen = (handle.entity->v.flags & FL_FROZEN) != 0;
+	gateObservation.explicitFrozen = explicitFrozen;
 	gateObservation.maxSpeedAvailable = std::isfinite(maxSpeed) && maxSpeed > 0.0f;
 	gateObservation.maxSpeed = maxSpeed;
 	gateObservation.forward = command.movement.forward;
@@ -3541,6 +3605,7 @@ void PluginRuntime::resetManagedBotMovement()
 		managedBotStateMachines_[index] = compat::CompatibilityStateMachine();
 		managedBotPerception_[index] = perception::PerceptionAssembler();
 		managedBotTiming_[index] = runtime::BotTimingScheduler();
+		managedBotJumpCrouch_[index].reset();
 		resetManagedBotCommandTemplate(index);
 	}
 	managedBotCommandSequences_.fill(0U);
@@ -4438,6 +4503,7 @@ void PluginRuntime::clearManagedBot(std::size_t index)
 	managedBotSlots_[index] = false;
 	managedBotTeamNumbers_[index] = 0U;
 	managedBotTiming_[index] = runtime::BotTimingScheduler();
+	managedBotJumpCrouch_[index].reset();
 	resetManagedBotCommandTemplate(index);
 	managedBotMovement_[index].reset();
 	managedBotCombat_[index] = combat::CombatController();

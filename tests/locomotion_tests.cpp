@@ -590,9 +590,8 @@ bool testBoundedDescendingGapRequestsJumpNearTransition()
 	observation.grounded = false;
 	return check(controller.update(snapshot, observation, &intent) ==
 			astrabot::nav::LocomotionResult::IntentReady &&
-		intent.traversal == astrabot::nav::TraversalAction::Walk &&
-		intent.posture == astrabot::nav::LocomotionPosture::Crouching,
-		"an airborne descending-gap jump crouches while continuing forward");
+		intent.traversal == astrabot::nav::TraversalAction::Walk,
+		"an airborne descending-gap jump continues forward without re-pressing Jump");
 }
 
 bool testDescendingGapHonorsNoJumpAndSafeDropBounds()

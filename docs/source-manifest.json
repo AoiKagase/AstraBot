@@ -780,6 +780,24 @@
 			"origin": "AstraBot",
 			"license_status": "pending_release_review",
 			"reference_only": false
+		},
+		{
+			"path": "include/astrabot/runtime/jump_crouch_sequencer.hpp",
+			"origin": "AstraBot",
+			"license_status": "pending_release_review",
+			"reference_only": false
+		},
+		{
+			"path": "src/core/runtime/jump_crouch_sequencer.cpp",
+			"origin": "AstraBot",
+			"license_status": "pending_release_review",
+			"reference_only": false
+		},
+		{
+			"path": "tests/jump_crouch_sequencer_tests.cpp",
+			"origin": "AstraBot",
+			"license_status": "pending_release_review",
+			"reference_only": false
 		}
   ]
 }

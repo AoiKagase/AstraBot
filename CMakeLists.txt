@@ -52,9 +52,9 @@ include(cmake/AstraBotBuild.cmake)
 	src/core/runtime/nav_roam_controller.cpp
 	src/core/runtime/movement_physics.cpp
   src/core/runtime/command_queue.cpp
-	src/core/runtime/bot_timing_scheduler.cpp
-	src/core/runtime/jump_crouch_sequencer.cpp
-	src/core/runtime/lifecycle.cpp
+  src/core/runtime/bot_timing_scheduler.cpp
+  src/core/runtime/jump_crouch_sequencer.cpp
+  src/core/runtime/lifecycle.cpp
 )
 target_include_directories(astrabot_core PUBLIC
   "${CMAKE_CURRENT_SOURCE_DIR}/include"
@@ -500,14 +500,14 @@ add_executable(astrabot_nav_diagnostics
 	)
 	target_link_libraries(astrabot_movement_physics PRIVATE astrabot_core)
 	astrabot_apply_warnings(astrabot_movement_physics)
-add_test(NAME astrabot_movement_physics COMMAND astrabot_movement_physics)
+	add_test(NAME astrabot_movement_physics COMMAND astrabot_movement_physics)
 
-add_executable(astrabot_jump_crouch_sequencer
-	tests/jump_crouch_sequencer_tests.cpp
-)
-target_link_libraries(astrabot_jump_crouch_sequencer PRIVATE astrabot_core)
-astrabot_apply_warnings(astrabot_jump_crouch_sequencer)
-add_test(NAME astrabot_jump_crouch_sequencer COMMAND astrabot_jump_crouch_sequencer)
+	add_executable(astrabot_jump_crouch_sequencer
+		tests/jump_crouch_sequencer_tests.cpp
+	)
+	target_link_libraries(astrabot_jump_crouch_sequencer PRIVATE astrabot_core)
+	astrabot_apply_warnings(astrabot_jump_crouch_sequencer)
+	add_test(NAME astrabot_jump_crouch_sequencer COMMAND astrabot_jump_crouch_sequencer)
 endif()
 
 if(ASTRABOT_BUILD_METAMOD)

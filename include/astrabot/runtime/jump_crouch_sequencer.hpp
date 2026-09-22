@@ -1,6 +1,8 @@
 #ifndef ASTRABOT_RUNTIME_JUMP_CROUCH_SEQUENCER_HPP
 #define ASTRABOT_RUNTIME_JUMP_CROUCH_SEQUENCER_HPP
 
+#include <cstdint>
+
 namespace astrabot
 {
 namespace runtime
@@ -42,6 +44,12 @@ struct JumpCrouchDecision
 	float elapsed;
 };
 
+struct JumpCrouchCommandDecision
+{
+	JumpCrouchDecision sequencing;
+	std::uint16_t buttons;
+};
+
 class JumpCrouchSequencer
 {
 public:
@@ -52,6 +60,10 @@ public:
 	JumpCrouchSequencer();
 
 	JumpCrouchDecision update(const JumpCrouchObservation &observation);
+	JumpCrouchCommandDecision updateCommand(
+		const JumpCrouchObservation &observation,
+		std::uint16_t buttons,
+		std::uint16_t duckButton);
 	void reset();
 	JumpCrouchPhase phase() const;
 

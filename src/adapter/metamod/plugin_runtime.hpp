@@ -15,6 +15,7 @@
 #include "astrabot/runtime/nav_roam_controller.hpp"
 #include "astrabot/runtime/movement_physics.hpp"
 #include "astrabot/runtime/bot_timing_scheduler.hpp"
+#include "astrabot/runtime/jump_crouch_sequencer.hpp"
 #include "astrabot/runtime/lifecycle.hpp"
 #include "engine_random_source.hpp"
 #include "action_adapter.hpp"
@@ -359,6 +360,9 @@ struct ManagedObjectiveSiteRegistry
 			std::array<runtime::BotTimingScheduler,
 					   NativeBotObservation::kClientSlotCount>
 				managedBotTiming_;
+			std::array<runtime::JumpCrouchSequencer,
+					   NativeBotObservation::kClientSlotCount>
+				managedBotJumpCrouch_;
 			std::array<runtime::BotCommand,
 					   NativeBotObservation::kClientSlotCount>
 				managedBotCommandTemplates_;

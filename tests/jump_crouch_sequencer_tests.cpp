@@ -1,6 +1,7 @@
 #include "astrabot/runtime/jump_crouch_sequencer.hpp"
 
 #include <array>
+#include <cstdint>
 #include <cstdio>
 
 namespace
@@ -130,10 +131,61 @@ bool testResetAndRearm()
 			decision.phase == JumpCrouchPhase::AwaitingAirborne,
 		"a new Jump can arm after reset or previous completion");
 }
+
+bool testCommandTicksAddOnlyDuckAfterTemplateJumpClears()
+{
+	constexpr std::uint16_t jump = 0x02U;
+	constexpr std::uint16_t duck = 0x04U;
+	constexpr std::uint16_t forward = 0x08U;
+	constexpr std::uint16_t attack = 0x01U;
+	JumpCrouchSequencer sequencer;
+
+	auto command = sequencer.updateCommand(
+		observation(50.0f, true, true),
+		static_cast<std::uint16_t>(forward | attack | jump),
+		duck);
+	if (!check(command.buttons == (forward | attack | jump) &&
+			command.sequencing.transition == JumpCrouchTransition::Armed,
+		"launch tick preserves Jump and action buttons without immediate duck"))
+	{
+		return false;
+	}
+
+	command = sequencer.updateCommand(
+		observation(50.033f, false, true),
+		static_cast<std::uint16_t>(forward | attack | jump),
+		duck);
+	if (!check(command.buttons == (forward | attack | jump) &&
+			command.sequencing.transition == JumpCrouchTransition::None,
+		"repeated Jump template does not rearm the active sequence"))
+	{
+		return false;
+	}
+
+	command = sequencer.updateCommand(
+		observation(50.040f, false),
+		static_cast<std::uint16_t>(forward | attack),
+		duck);
+	if (!check(command.buttons == (forward | attack),
+		"early command-only tick preserves a template whose Jump has cleared"))
+	{
+		return false;
+	}
+
+	command = sequencer.updateCommand(
+		observation(50.067f, false),
+		static_cast<std::uint16_t>(forward | attack),
+		duck);
+	return check(command.buttons == (forward | attack | duck) &&
+			(command.buttons & jump) == 0U &&
+			command.sequencing.transition == JumpCrouchTransition::DuckStarted,
+		"later 30Hz tick adds only Duck while preserving movement and actions");
+}
 } // namespace
 
 int main()
 {
 	return testDelayedDuckReleaseAndTimeout() &&
-		testLandingAndCancellationResetState() && testResetAndRearm() ? 0 : 1;
+		testLandingAndCancellationResetState() && testResetAndRearm() &&
+		testCommandTicksAddOnlyDuckAfterTemplateJumpClears() ? 0 : 1;
 }
