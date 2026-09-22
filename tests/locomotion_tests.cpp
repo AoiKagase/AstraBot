@@ -578,10 +578,21 @@ bool testBoundedDescendingGapRequestsJumpNearTransition()
 		return false;
 	}
 	observation.position = {190.0f, 32.0f, 128.0f};
+	if (!check(controller.update(snapshot, observation, &intent) ==
+			astrabot::nav::LocomotionResult::IntentReady &&
+		intent.traversal == astrabot::nav::TraversalAction::Jump,
+		"a nearby 25-unit descending gap requests Jump"))
+	{
+		return false;
+	}
+
+	observation.position = {198.0f, 32.0f, 150.0f};
+	observation.grounded = false;
 	return check(controller.update(snapshot, observation, &intent) ==
 			astrabot::nav::LocomotionResult::IntentReady &&
-			intent.traversal == astrabot::nav::TraversalAction::Jump,
-			"a nearby 25-unit descending gap requests Jump");
+		intent.traversal == astrabot::nav::TraversalAction::Walk &&
+		intent.posture == astrabot::nav::LocomotionPosture::Crouching,
+		"an airborne descending-gap jump crouches while continuing forward");
 }
 
 bool testDescendingGapHonorsNoJumpAndSafeDropBounds()
