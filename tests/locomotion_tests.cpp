@@ -547,6 +547,77 @@ bool testJumpAttributesOverrideStepHeight()
 				"NAV_JUMP takes precedence over ordinary step rejection");
 }
 
+bool testBoundedDescendingGapRequestsJumpNearTransition()
+{
+	astrabot::nav::NavDocument document;
+	document.setSourceIdentity({5U, 100U, 200U});
+	astrabot::nav::NavArea launch = area(1U, 0.0f, 200.0f, 128.0f);
+	astrabot::nav::NavArea landing = area(2U, 225.0f, 300.0f, 30.0f);
+	launch.connections[1U].push_back(2U);
+	document.addArea(launch);
+	document.addArea(landing);
+	const astrabot::nav::NavSnapshot snapshot = snapshotFor(&document, 1U);
+	astrabot::nav::LocomotionController controller(config());
+	if (!check(controller.start(corridorFor(snapshot)) ==
+			astrabot::nav::LocomotionResult::Started,
+			"descending gap fixture starts"))
+	{
+		return false;
+	}
+	astrabot::nav::LocomotionObservation observation = {};
+	observation.position = {32.0f, 32.0f, 128.0f};
+	observation.standingClearance = 72.0f;
+	observation.crouchingClearance = 36.0f;
+	observation.grounded = true;
+	astrabot::nav::LocomotionIntent intent = {};
+	if (!check(controller.update(snapshot, observation, &intent) ==
+			astrabot::nav::LocomotionResult::IntentReady &&
+			intent.traversal == astrabot::nav::TraversalAction::Walk,
+			"a distant descending gap remains an approach walk"))
+	{
+		return false;
+	}
+	observation.position = {190.0f, 32.0f, 128.0f};
+	return check(controller.update(snapshot, observation, &intent) ==
+			astrabot::nav::LocomotionResult::IntentReady &&
+			intent.traversal == astrabot::nav::TraversalAction::Jump,
+			"a nearby 25-unit descending gap requests Jump");
+}
+
+bool testDescendingGapHonorsNoJumpAndSafeDropBounds()
+{
+	auto runCase = [](std::uint8_t landingAttributes, float landingFloor) {
+		astrabot::nav::NavDocument document;
+		document.setSourceIdentity({5U, 100U, 200U});
+		astrabot::nav::NavArea launch = area(1U, 0.0f, 200.0f, 128.0f);
+		astrabot::nav::NavArea landing = area(2U, 225.0f, 300.0f, landingFloor);
+		landing.attributes = landingAttributes;
+		launch.connections[1U].push_back(2U);
+		document.addArea(launch);
+		document.addArea(landing);
+		const astrabot::nav::NavSnapshot snapshot = snapshotFor(&document, 1U);
+		astrabot::nav::LocomotionController controller(config());
+		if (controller.start(corridorFor(snapshot)) !=
+				astrabot::nav::LocomotionResult::Started)
+		{
+			return false;
+		}
+		astrabot::nav::LocomotionObservation observation = {};
+		observation.position = {190.0f, 32.0f, 128.0f};
+		observation.standingClearance = 72.0f;
+		observation.crouchingClearance = 36.0f;
+		observation.grounded = true;
+		astrabot::nav::LocomotionIntent intent = {};
+		return controller.update(snapshot, observation, &intent) ==
+				astrabot::nav::LocomotionResult::IntentReady &&
+			intent.traversal == astrabot::nav::TraversalAction::Walk;
+	};
+	return check(runCase(astrabot::nav::NavArea::kNoJump, 30.0f),
+			"NAV_NO_JUMP suppresses descending gap Jump") &&
+		check(runCase(0U, -128.0f),
+			"an excessive descending gap remains non-Jump");
+}
+
 bool testOffPathAreaCannotTriggerJumpToNonAdjacentCorridorTarget()
 {
 	astrabot::nav::NavDocument document = routeDocument(32.0f);
@@ -582,6 +653,11 @@ bool testOffPathAreaCannotTriggerJumpToNonAdjacentCorridorTarget()
 
 int main()
 {
+	if (!testBoundedDescendingGapRequestsJumpNearTransition() ||
+		!testDescendingGapHonorsNoJumpAndSafeDropBounds())
+	{
+		return 1;
+	}
 	if (!testOffPathAreaCannotTriggerJumpToNonAdjacentCorridorTarget())
 	{
 		return 1;
