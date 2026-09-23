@@ -831,9 +831,20 @@ NavRoamResult NavRoamController::update(
 	{
 		activeCorridorIndex_ = locomotion_.currentCorridorIndex();
 		if (!activeCorridor_.areas.empty() &&
-				activeCorridorIndex_ >= activeCorridor_.areas.size())
+			activeCorridorIndex_ >= activeCorridor_.areas.size())
 		{
 			activeCorridorIndex_ = activeCorridor_.areas.size() - 1U;
+		}
+		if (activeCorridorIndex_ > 0U &&
+			activeCorridorIndex_ - 1U < activeCorridor_.links.size())
+		{
+			const nav::NavDirectedLink currentLink =
+				activeCorridor_.links[activeCorridorIndex_ - 1U];
+			if (traversalActionFor(snapshot, currentLink) ==
+				nav::TraversalAction::Walk)
+			{
+				activeLink_ = currentLink;
+			}
 		}
 	}
 	if (decision != nullptr)

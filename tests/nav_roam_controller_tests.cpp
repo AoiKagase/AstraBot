@@ -616,6 +616,76 @@ bool testTemporaryCurrentAreaLossRetainsActiveRoute()
 	return true;
 }
 
+bool testPlannedGapAfterEarlierSegmentKeepsCurrentLink()
+{
+	astrabot::nav::NavDocument document;
+	document.setSourceIdentity({5U, 100U, 200U});
+	astrabot::nav::NavArea first = area(1U, 0.0f, 64.0f);
+	astrabot::nav::NavArea second = area(2U, 64.0f, 128.0f);
+	astrabot::nav::NavArea third = area(3U, 153.0f, 217.0f);
+	first.connections[1U].push_back(2U);
+	second.connections[1U].push_back(3U);
+	document.addArea(first);
+	document.addArea(second);
+	document.addArea(third);
+	astrabot::nav::NavSnapshotPublisher publisher;
+	if (!check(publisher.publish(&document, 1U) ==
+			astrabot::nav::NavSnapshotResult::Published,
+		"multi-segment gap snapshot is published"))
+	{
+		return false;
+	}
+
+	astrabot::runtime::NavRoamController controller;
+	astrabot::runtime::NavRoamObservation observation = {};
+	observation.actor = {1U, 1U};
+	observation.frame = {1U, 1U, 1U};
+	observation.locomotion.position = {32.0f, 32.0f, 0.0f};
+	observation.locomotion.standingClearance = 72.0f;
+	observation.locomotion.crouchingClearance = 36.0f;
+	observation.locomotion.grounded = true;
+	observation.hasObjectiveTarget = true;
+	observation.objectiveTarget = {185.0f, 32.0f, 0.0f};
+	astrabot::nav::LocomotionIntent intent = {};
+	astrabot::runtime::NavRoamDecision firstDecision = {};
+	if (!check(controller.update(
+			publisher.snapshot(), observation, &intent, &firstDecision) ==
+			astrabot::runtime::NavRoamResult::IntentReady &&
+			intent.currentArea == 1U && intent.targetArea == 2U,
+		"multi-segment route starts on its first link"))
+	{
+		return false;
+	}
+
+	observation.frame.tick = 2U;
+	observation.locomotion.position = {96.0f, 32.0f, 0.0f};
+	astrabot::runtime::NavRoamDecision secondDecision = {};
+	if (!check(controller.update(
+			publisher.snapshot(), observation, &intent, &secondDecision) ==
+			astrabot::runtime::NavRoamResult::IntentReady &&
+			intent.currentArea == 2U && intent.targetArea == 3U &&
+			secondDecision.pathSequence == firstDecision.pathSequence,
+		"locomotion advances to the later planned link without replanning"))
+	{
+		return false;
+	}
+
+	observation.frame.tick = 3U;
+	observation.locomotion.position = {132.0f, 32.0f, 0.0f};
+	observation.locomotion.grounded = false;
+	observation.airborne = true;
+	intent = {};
+	astrabot::runtime::NavRoamDecision gapDecision = {};
+	const astrabot::runtime::NavRoamResult gapResult = controller.update(
+		publisher.snapshot(), observation, &intent, &gapDecision);
+	return check(gapResult ==
+			astrabot::runtime::NavRoamResult::IntentReady &&
+		gapDecision.pathSequence == firstDecision.pathSequence &&
+		intent.currentArea == 2U && intent.targetArea == 3U &&
+		intent.direction.x > 0.0f && intent.targetPosition.x > 132.0f,
+		"temporary gap on a later segment preserves its current forward intent");
+}
+
 bool testResourceLimitFailureIsBackedOff()
 {
 	astrabot::nav::NavDocument document;
@@ -854,7 +924,8 @@ int main()
 		return 1;
 	}
 	if (!testGoalAndPathFailuresAreTyped() ||
-			!testTemporaryCurrentAreaLossRetainsActiveRoute())
+		!testTemporaryCurrentAreaLossRetainsActiveRoute() ||
+		!testPlannedGapAfterEarlierSegmentKeepsCurrentLink())
 	{
 		return 1;
 	}
