@@ -13,6 +13,42 @@ bool check(bool condition, const char *description)
 	std::fprintf(stderr, "check failed: %s\n", description);
 	return false;
 }
+
+bool testFallLandingTrackerReportsMeasuredLandingDamage()
+{
+	using astrabot::runtime::FallLandingTracker;
+	using astrabot::runtime::MovementPhysicsState;
+	FallLandingTracker tracker;
+	MovementPhysicsState state = {};
+	state.entityValid = true;
+	state.health = 100.0f;
+	state.grounded = true;
+	if (!check(!tracker.observe(1U, state).landingConfirmed,
+			"standing does not report a landing"))
+	{
+		return false;
+	}
+	state.grounded = false;
+	tracker.observe(1U, state);
+	state.grounded = true;
+	auto safeLanding = tracker.observe(1U, state);
+	if (!check(safeLanding.landingConfirmed && safeLanding.hasLandingDamage &&
+			safeLanding.landingDamage == 0.0f,
+			"landing reports a measured zero damage result"))
+	{
+		return false;
+	}
+	state.grounded = false;
+	state.health = 100.0f;
+	tracker.observe(1U, state);
+	state.grounded = true;
+	state.health = 90.0f;
+	auto damagedLanding = tracker.observe(1U, state);
+	return check(damagedLanding.landingConfirmed &&
+			damagedLanding.hasLandingDamage &&
+			damagedLanding.landingDamage == 10.0f,
+			"landing reports health lost during the fall interval");
+}
 }
 
 int main()
@@ -20,6 +56,10 @@ int main()
 	using astrabot::runtime::MovementPhysicsState;
 	using astrabot::runtime::PhysicsVector;
 	using astrabot::runtime::SpawnReadiness;
+	if (!testFallLandingTrackerReportsMeasuredLandingDamage())
+	{
+		return 1;
+	}
 	if (!check(astrabot::runtime::isMovementDirectionReversal(
 				PhysicsVector{1.0f, 0.0f, 0.0f},
 				PhysicsVector{-1.0f, 0.0f, 0.0f}),

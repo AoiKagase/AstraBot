@@ -43,7 +43,8 @@ enum class LocomotionResult
 	InvalidObservation,
 	InvalidClearance,
 	StaleSnapshot,
-	ResourceLimit
+	ResourceLimit,
+	UnsafeDrop
 };
 
 struct LocomotionConfig
@@ -52,6 +53,8 @@ struct LocomotionConfig
 	static constexpr float kMaximumTolerance = 4096.0f;
 	static constexpr float kMaximumStepHeight = 256.0f;
 	static constexpr float kMaximumJumpHeight = 41.8f;
+	// ReGameDLL-CS b0889847 starts fall damage only above 500 units/s.
+	static constexpr float kMaximumSafeFallSpeed = 500.0f;
 	static constexpr float kMaximumSpeed = 1000.0f;
 	static constexpr std::uint32_t kMaximumStuckFrameLimit = 1024U;
 
@@ -73,6 +76,8 @@ struct LocomotionConfig
 	bool ducked;
 	bool onLadder;
 	bool clearanceAvailable;
+	float maximumSafeDropHeight;
+	bool safeDropHeightAvailable;
 };
 
 struct LocomotionIntent

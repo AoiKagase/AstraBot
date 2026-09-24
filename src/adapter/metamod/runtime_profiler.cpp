@@ -259,12 +259,17 @@ void RuntimeProfiler::recordPathSearchResults(
 
 void RuntimeProfiler::recordObjectiveSelection(
 	std::uint32_t bombSites,
+	std::uint32_t funcBombTargetSites,
+	std::uint32_t infoBombTargetSites,
 	std::uint32_t candidateAreas,
 	std::uint32_t uniqueCandidateAreas,
 	std::uint32_t candidateQueries,
 	std::uint32_t duplicateCandidateAreas,
 	std::uint32_t selectedGoalArea,
 	std::uint32_t registeredSites,
+	std::uint32_t registeredFuncBombTargetSites,
+	std::uint32_t registeredInfoBombTargetSites,
+	bool registeredSiteCountsAvailable,
 	std::uint32_t evaluatedSites,
 	std::uint32_t cacheHits,
 	std::uint32_t selectedSiteIdentity) noexcept
@@ -274,6 +279,10 @@ void RuntimeProfiler::recordObjectiveSelection(
 		return;
 	}
 	saturatingAdd(&counters_.objectiveBombSites, bombSites);
+	saturatingAdd(
+		&counters_.objectiveFuncBombTargetSites, funcBombTargetSites);
+	saturatingAdd(
+		&counters_.objectiveInfoBombTargetSites, infoBombTargetSites);
 	saturatingAdd(&counters_.objectiveCandidateAreas, candidateAreas);
 	saturatingAdd(&counters_.objectiveUniqueCandidateAreas, uniqueCandidateAreas);
 	saturatingAdd(&counters_.objectiveCandidateQueries, candidateQueries);
@@ -283,7 +292,14 @@ void RuntimeProfiler::recordObjectiveSelection(
 	{
 		counters_.selectedObjectiveGoalArea = selectedGoalArea;
 	}
-	saturatingAdd(&counters_.objectiveRegisteredSites, registeredSites);
+	if (registeredSiteCountsAvailable)
+	{
+		counters_.objectiveRegisteredSites = registeredSites;
+		counters_.objectiveRegisteredFuncBombTargetSites =
+			registeredFuncBombTargetSites;
+		counters_.objectiveRegisteredInfoBombTargetSites =
+			registeredInfoBombTargetSites;
+	}
 	saturatingAdd(&counters_.objectiveEvaluatedSites, evaluatedSites);
 	saturatingAdd(&counters_.objectiveCacheHits, cacheHits);
 	if (selectedSiteIdentity != 0U)

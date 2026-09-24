@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <utility>
 #include <vector>
 
 namespace astrabot
@@ -17,11 +18,30 @@ constexpr float kRoamSpeed = 240.0f;
 constexpr std::uint32_t kMaximumStuckRecoveryAttempts = 2U;
 constexpr std::uint32_t kInitialPathFailureBackoffFrames = 15U;
 constexpr std::uint32_t kMaximumPathFailureBackoffFrames = 120U;
+// Keep safe falls and their run-up alive long enough to confirm landing.
+constexpr std::uint32_t kCompatibilityTraversalFrameBudget = 60U;
 
-	nav::LocomotionConfig roamLocomotionConfig()
-	{
+nav::LocomotionConfig roamLocomotionConfig()
+{
 	return {32.0f, 20.0f, 64.0f, 16.0f, 240.0f, 8U};
-	}
+}
+
+nav::JumpDropConfig roamJumpDropConfig(compat::RuntimeMode mode)
+{
+	const float intentSpeed = mode == compat::RuntimeMode::Compatibility
+		? kRoamSpeed
+		: nav::JumpDropConfig::kDefaultIntentSpeed;
+	const std::uint32_t traversalFrames =
+		mode == compat::RuntimeMode::Compatibility
+			? kCompatibilityTraversalFrameBudget
+			: nav::JumpDropConfig::kDefaultTraversalFrames;
+	return {
+		nav::JumpDropConfig::kDefaultLaunchHorizontalTolerance,
+		nav::JumpDropConfig::kDefaultLaunchVerticalTolerance,
+		nav::JumpDropConfig::kDefaultLandingTolerance,
+		intentSpeed,
+		traversalFrames};
+}
 
 void initializeDecision(NavRoamDecision *decision)
 	{
@@ -30,14 +50,17 @@ void initializeDecision(NavRoamDecision *decision)
 			return;
 		}
 		*decision = {};
-		decision->stage = NavRoamStage::None;
-		decision->failureReason = NavFailureReason::None;
-		decision->goalKind = NavGoalKind::None;
-		decision->goalPresent = false;
+	decision->stage = NavRoamStage::None;
+	decision->failureReason = NavFailureReason::None;
+	decision->goalKind = NavGoalKind::None;
+	decision->goalSelectionReason = GoalSelectionNone;
+	decision->goalSelectionStrategy = GoalSelectionStrategyNone;
+	decision->goalPresent = false;
 		decision->pathRequested = false;
 		decision->pathResult = nav::NavQueryResult::InvalidArgument;
-		decision->goalArea = 0U;
-		decision->goalPosition = {0.0f, 0.0f, 0.0f};
+	decision->goalArea = 0U;
+	decision->goalPosition = {0.0f, 0.0f, 0.0f};
+	decision->goalGeneration = 0U;
 		decision->currentAreaResult = nav::NavQueryResult::InvalidArgument;
 		decision->nearestAreaResult = nav::NavQueryResult::InvalidArgument;
 		decision->linkResult = nav::NavQueryResult::InvalidArgument;
@@ -83,15 +106,31 @@ void initializeDecision(NavRoamDecision *decision)
 		return area.northEastZ * 0.5f + area.southWestZ * 0.5f;
 	}
 
-	nav::NavVector centerOf(const nav::NavArea &area)
-	{
+nav::NavVector centerOf(const nav::NavArea &area)
+{
 		return {
 			area.extent.lo.x * 0.5f + area.extent.hi.x * 0.5f,
 			area.extent.lo.y * 0.5f + area.extent.hi.y * 0.5f,
-			floorHeight(area)};
-	}
+		floorHeight(area)};
+}
 
-	nav::TraversalAction traversalActionFor(
+bool isWithinTraversalLaunchTolerance(
+	const nav::NavVector &position,
+	const nav::NavVector &launchPosition)
+{
+	const float deltaX = position.x - launchPosition.x;
+	const float deltaY = position.y - launchPosition.y;
+	const float horizontalTolerance = (std::max)(
+		32.0f, nav::JumpDropConfig::kDefaultLaunchHorizontalTolerance);
+	return std::isfinite(deltaX) && std::isfinite(deltaY) &&
+		std::isfinite(position.z) && std::isfinite(launchPosition.z) &&
+		deltaX * deltaX + deltaY * deltaY <=
+			horizontalTolerance * horizontalTolerance &&
+		std::fabs(position.z - launchPosition.z) <=
+			nav::JumpDropConfig::kDefaultLaunchVerticalTolerance;
+}
+
+nav::TraversalAction traversalActionFor(
 		const nav::NavSnapshot &snapshot,
 		const nav::NavDirectedLink &link)
 	{
@@ -113,8 +152,20 @@ void initializeDecision(NavRoamDecision *decision)
 			}
 			return nav::TraversalAction::Jump;
 		}
-		return nav::TraversalAction::Walk;
+	const nav::NavDocument *document = snapshot.document();
+	if (document != nullptr)
+	{
+		const nav::NavArea *from = document->findArea(link.fromArea);
+		const nav::NavArea *to = document->findArea(link.toArea);
+		if (from != nullptr && to != nullptr &&
+			floorHeight(*from) - floorHeight(*to) >
+				nav::LocomotionConfig::kMaximumJumpHeight)
+		{
+			return nav::TraversalAction::Drop;
+		}
 	}
+	return nav::TraversalAction::Walk;
+}
 }
 
 void addSearchStats(nav::NavSearchStats *total, const nav::NavSearchStats &sample)
@@ -203,6 +254,64 @@ nav::NavQueryResult buildCorridor(
 	return result;
 }
 
+void NavAreaVisitHistory::record(
+	std::uint32_t mapGeneration,
+	std::uint8_t team,
+	nav::AreaId area,
+	std::uint32_t frame)
+{
+	if (team > 2U || area == 0U)
+	{
+		return;
+	}
+	if (!initialized_ || mapGeneration_ != mapGeneration)
+	{
+		reset(mapGeneration);
+	}
+	auto entry = std::lower_bound(
+		entries_.begin(), entries_.end(), area,
+		[team](const Entry &candidate, nav::AreaId candidateArea) {
+			return candidate.team < team ||
+				(candidate.team == team && candidate.area < candidateArea);
+		});
+	if (entry == entries_.end() || entry->team != team || entry->area != area)
+	{
+		entries_.insert(entry, {team, area, frame});
+		return;
+	}
+	if (frame > entry->frame)
+	{
+		entry->frame = frame;
+	}
+}
+
+std::uint32_t NavAreaVisitHistory::lastVisited(
+	std::uint32_t mapGeneration,
+	std::uint8_t team,
+	nav::AreaId area) const
+{
+	if (!initialized_ || mapGeneration_ != mapGeneration || team > 2U || area == 0U)
+	{
+		return 0U;
+	}
+	const auto entry = std::lower_bound(
+		entries_.begin(), entries_.end(), area,
+		[team](const Entry &candidate, nav::AreaId candidateArea) {
+			return candidate.team < team ||
+				(candidate.team == team && candidate.area < candidateArea);
+		});
+	return entry != entries_.end() && entry->team == team && entry->area == area
+		? entry->frame
+		: 0U;
+}
+
+void NavAreaVisitHistory::reset(std::uint32_t mapGeneration)
+{
+	mapGeneration_ = mapGeneration;
+	initialized_ = true;
+	entries_.clear();
+}
+
 NavRoamController::NavRoamController()
 	: NavRoamController(compat::RuntimeMode::Compatibility)
 {
@@ -211,7 +320,7 @@ NavRoamController::NavRoamController()
 NavRoamController::NavRoamController(compat::RuntimeMode mode)
 	: locomotion_(roamLocomotionConfig()),
 	  activeTraversal_(nav::TraversalAction::Walk),
-	  jumpDrop_(),
+	jumpDrop_(roamJumpDropConfig(mode)),
 	  specialTraversal_(),
 	  modePolicy_(mode),
 	  actor_{0U, LifecycleSession::kInvalidGeneration},
@@ -236,12 +345,24 @@ NavRoamController::NavRoamController(compat::RuntimeMode mode)
 	  pathFailureKey_{0U, 0U, 0U, nav::NavRouteType::Fastest},
 	  pathFailureRetryFrame_(0U),
 	  pathFailureBackoffFrames_(kInitialPathFailureBackoffFrames),
-	  collectPathStats_(false),
-	  initialized_(false),
-	  randomSource_(nullptr),
-	  hasRoamGoal_(false),
-	  roamGoalArea_(0U),
-	  roamGoalPosition_{0.0f, 0.0f, 0.0f}
+	collectPathStats_(false),
+	initialized_(false),
+	randomSource_(nullptr),
+	localAreaVisitHistory_(),
+	areaVisitHistory_(&localAreaVisitHistory_),
+	lastVisitedArea_(0U),
+	lastVisitedMapGeneration_(0U),
+	lastVisitedTeam_(0U),
+	roamGoalGeneration_(0U),
+	goalSelectionReason_(GoalSelectionNone),
+	goalSelectionStrategy_(GoalSelectionStrategyNone),
+	maximumSafeDropHeight_(0.0f),
+	safeDropHeightAvailable_(false),
+	unsafeDropRejected_(false),
+	hasRoamGoal_(false),
+	roamGoalArea_(0U),
+	failedRoamGoalArea_(0U),
+	roamGoalPosition_{0.0f, 0.0f, 0.0f}
 {
 }
 
@@ -251,9 +372,18 @@ void NavRoamController::setRandomSource(
 	randomSource_ = source;
 }
 
+void NavRoamController::setAreaVisitHistory(NavAreaVisitHistory *history)
+{
+	areaVisitHistory_ = history != nullptr ? history : &localAreaVisitHistory_;
+	lastVisitedArea_ = 0U;
+	lastVisitedMapGeneration_ = 0U;
+	lastVisitedTeam_ = 0U;
+}
+
 void NavRoamController::setRuntimeMode(compat::RuntimeMode mode)
 {
 	modePolicy_ = compat::RuntimeModePolicy(mode);
+	jumpDrop_ = nav::JumpDropController(roamJumpDropConfig(mode));
 }
 
 bool NavRoamController::isPathFailureBackedOff(
@@ -379,10 +509,13 @@ NavRoamResult NavRoamController::update(
 		{
 			return NavRoamResult::StaleFrame;
 		}
-		if (observation.frame.mapGeneration != lastFrame_.mapGeneration ||
-				observation.frame.roundGeneration != lastFrame_.roundGeneration)
-		{
-			clearPathFailure();
+	if (observation.frame.mapGeneration != lastFrame_.mapGeneration ||
+			observation.frame.roundGeneration != lastFrame_.roundGeneration)
+	{
+		clearPathFailure();
+		hasAvoidedLink_ = false;
+		avoidedLink_ = {0U, 0U, 0U, 0U};
+		failedRoamGoalArea_ = 0U;
 			if (decision != nullptr)
 		{
 			decision->recomputeReason = NavRecomputeReason::MapOrRoundChanged;
@@ -399,6 +532,9 @@ NavRoamResult NavRoamController::update(
 	if (objectiveTargetChanged)
 	{
 		clearPathFailure();
+		hasAvoidedLink_ = false;
+		avoidedLink_ = {0U, 0U, 0U, 0U};
+		failedRoamGoalArea_ = 0U;
 		if (decision != nullptr)
 		{
 			decision->recomputeReason = lastFrame_.isValid()
@@ -429,6 +565,28 @@ NavRoamResult NavRoamController::update(
 	if (decision != nullptr)
 	{
 		decision->currentAreaResult = currentAreaResult;
+	}
+	safeDropHeightAvailable_ =
+		observation.locomotion.safeDropHeightAvailable &&
+		std::isfinite(observation.locomotion.maximumSafeDropHeight) &&
+		observation.locomotion.maximumSafeDropHeight > 0.0f;
+	maximumSafeDropHeight_ = safeDropHeightAvailable_
+		? observation.locomotion.maximumSafeDropHeight
+		: 0.0f;
+	if (currentAreaResult == nav::NavQueryResult::Found &&
+		currentArea.area != 0U && areaVisitHistory_ != nullptr &&
+		(lastVisitedArea_ != currentArea.area ||
+			lastVisitedMapGeneration_ != observation.frame.mapGeneration ||
+			lastVisitedTeam_ != observation.team))
+	{
+		areaVisitHistory_->record(
+			observation.frame.mapGeneration,
+			observation.team,
+			currentArea.area,
+			observation.frame.tick);
+		lastVisitedArea_ = currentArea.area;
+		lastVisitedMapGeneration_ = observation.frame.mapGeneration;
+		lastVisitedTeam_ = observation.team;
 	}
 	nav::AreaId objectiveArea = 0U;
 	if (observation.hasObjectiveTarget)
@@ -550,8 +708,14 @@ NavRoamResult NavRoamController::update(
 			if (!buildStuckRecoveryIntent(currentArea, intent))
 			{
 				resetRoute();
+				goalSelectionReason_ = GoalSelectionPathFailed;
+				goalSelectionStrategy_ = GoalSelectionStrategyNone;
 				if (decision != nullptr)
 				{
+					decision->locomotionResult = nav::LocomotionResult::Stuck;
+					decision->failureReason = NavFailureReason::MovementNotProduced;
+					decision->goalSelectionReason = goalSelectionReason_;
+					decision->goalSelectionStrategy = goalSelectionStrategy_;
 					decision->stage = NavRoamStage::Failed;
 				}
 				return NavRoamResult::ReplanRequired;
@@ -565,11 +729,19 @@ NavRoamResult NavRoamController::update(
 			}
 			return NavRoamResult::IntentReady;
 		}
-		if (locomotion_.start(activeCorridor_) != nav::LocomotionResult::Started)
+		const nav::LocomotionResult startResult =
+			locomotion_.start(activeCorridor_);
+		if (startResult != nav::LocomotionResult::Started)
 		{
 			resetRoute();
+			goalSelectionReason_ = GoalSelectionPathFailed;
+			goalSelectionStrategy_ = GoalSelectionStrategyNone;
 			if (decision != nullptr)
 			{
+				decision->locomotionResult = startResult;
+				decision->failureReason = NavFailureReason::NavApplyRejected;
+				decision->goalSelectionReason = goalSelectionReason_;
+				decision->goalSelectionStrategy = goalSelectionStrategy_;
 				decision->stage = NavRoamStage::Failed;
 			}
 			return NavRoamResult::ReplanRequired;
@@ -637,8 +809,9 @@ NavRoamResult NavRoamController::update(
 	}
 	if (!selectRoute(snapshot, currentArea, objectiveArea, decision))
 		{
-			if (objectiveArea != 0U && decision != nullptr &&
-				decision->pathResult == nav::NavQueryResult::ResourceLimit)
+		if (objectiveArea != 0U && decision != nullptr &&
+				(decision->pathResult == nav::NavQueryResult::ResourceLimit ||
+					decision->pathResult == nav::NavQueryResult::NoRoute))
 			{
 				rememberPathFailure(
 					observation.frame.mapGeneration,
@@ -670,9 +843,13 @@ NavRoamResult NavRoamController::update(
 		}
 	}
 
-	if (hasActiveRoute_ && !activeCorridor_.links.empty())
+	if (hasActiveRoute_ && !activeCorridor_.links.empty() &&
+			!jumpDrop_.isActive() && !specialTraversal_.isActive())
 	{
-		for (std::size_t index = activeCorridorIndex_;
+		const std::size_t firstLinkIndex = activeCorridorIndex_ > 0U
+			? activeCorridorIndex_ - 1U
+			: 0U;
+		for (std::size_t index = firstLinkIndex;
 			index < activeCorridor_.links.size(); ++index)
 		{
 			const nav::NavDirectedLink candidate = activeCorridor_.links[index];
@@ -681,19 +858,66 @@ NavRoamResult NavRoamController::update(
 			{
 				continue;
 			}
-			const bool activeLinkChanged = candidate.fromArea != activeLink_.fromArea ||
-				candidate.toArea != activeLink_.toArea || candidate.how != activeLink_.how;
-			if (!activeLinkChanged)
+		activeLink_ = candidate;
+		activeTraversal_ = nav::TraversalAction::Walk;
+		const nav::NavDocument *document = snapshot.document();
+		const nav::NavArea *fromArea = document != nullptr
+			? document->findArea(candidate.fromArea)
+			: nullptr;
+		const nav::NavArea *toArea = document != nullptr
+			? document->findArea(candidate.toArea)
+			: nullptr;
+		if (fromArea == nullptr || toArea == nullptr)
+		{
+			resetRoute();
+			if (decision != nullptr)
 			{
-				break;
+				decision->locomotionResult = nav::LocomotionResult::InvalidCorridor;
+				decision->failureReason = NavFailureReason::NavApplyRejected;
+				decision->stage = NavRoamStage::Failed;
 			}
-			activeCorridorIndex_ = index;
-			activeLink_ = candidate;
-			if (!startTraversal(snapshot, activeCorridor_, candidate))
+			return NavRoamResult::ReplanRequired;
+		}
+		const std::uint8_t reverseDirection =
+			candidate.direction < nav::NavArea::kDirectionCount
+				? static_cast<std::uint8_t>(
+					(candidate.direction + 2U) % nav::NavArea::kDirectionCount)
+				: nav::NavArea::kDirectionCount;
+		const nav::NavVector landingPortal = nav::portalSteeringPointForLink(
+			*fromArea, *toArea, observation.locomotion.position,
+			candidate.direction);
+		const nav::NavVector launchPortal = nav::portalSteeringPointForLink(
+			*toArea, *fromArea, landingPortal, reverseDirection);
+		if (!isWithinTraversalLaunchTolerance(
+				observation.locomotion.position, launchPortal))
+		{
+			break;
+		}
+		nav::LocomotionResult traversalStartResult =
+				nav::LocomotionResult::InvalidArgument;
+		if (!startTraversal(
+				snapshot, activeCorridor_, candidate, &traversalStartResult,
+				&observation.locomotion.position, &landingPortal))
+		{
+			hasAvoidedLink_ = true;
+			avoidedLink_ = candidate;
+			++nextLinkIndex_;
+			if (objectiveArea == 0U && hasRoamGoal_)
 			{
-				resetRoute();
+				failedRoamGoalArea_ = roamGoalArea_;
+			}
+			resetRoute();
+				goalSelectionReason_ = GoalSelectionPathFailed;
+				goalSelectionStrategy_ = GoalSelectionStrategyNone;
 				if (decision != nullptr)
 				{
+					decision->locomotionResult = traversalStartResult;
+					decision->failureReason =
+						traversalStartResult == nav::LocomotionResult::UnsafeDrop
+							? NavFailureReason::UnsafeDrop
+							: NavFailureReason::NavApplyRejected;
+					decision->goalSelectionReason = goalSelectionReason_;
+					decision->goalSelectionStrategy = goalSelectionStrategy_;
 					decision->stage = NavRoamStage::Failed;
 				}
 				return NavRoamResult::ReplanRequired;
@@ -753,17 +977,83 @@ NavRoamResult NavRoamController::update(
 		}
 		if (traversalResult == nav::JumpDropResult::Landed)
 		{
-			resetRoute();
+			const bool goalReached =
+				(decision != nullptr && decision->goalPresent &&
+					decision->goalArea == currentArea.area) ||
+				(hasRoamGoal_ && roamGoalArea_ == currentArea.area);
+			if (goalReached)
+			{
+				goalSelectionReason_ = GoalSelectionReached;
+			}
+			resetRoute(!goalReached);
 			if (decision != nullptr)
 			{
 				decision->locomotionResult = nav::LocomotionResult::TargetReached;
-				decision->stage = NavRoamStage::TargetReached;
+				decision->stage = goalReached
+					? NavRoamStage::TargetReached
+					: NavRoamStage::LinkSelection;
+				if (goalReached)
+				{
+					decision->goalSelectionReason = GoalSelectionReached;
+				}
 			}
-			return NavRoamResult::TargetReached;
+			return goalReached
+				? NavRoamResult::TargetReached
+				: NavRoamResult::ReplanRequired;
 		}
+		nav::LocomotionResult traversalFailure =
+			nav::LocomotionResult::InvalidObservation;
+		switch (traversalResult)
+		{
+		case nav::JumpDropResult::Unsafe:
+			traversalFailure = nav::LocomotionResult::UnsafeDrop;
+			break;
+		case nav::JumpDropResult::InvalidSnapshot:
+			traversalFailure = nav::LocomotionResult::InvalidSnapshot;
+			break;
+		case nav::JumpDropResult::InvalidCorridor:
+		case nav::JumpDropResult::InvalidEnvelope:
+			traversalFailure = nav::LocomotionResult::InvalidCorridor;
+			break;
+		case nav::JumpDropResult::Invalidated:
+			traversalFailure = nav::LocomotionResult::StaleSnapshot;
+			break;
+		case nav::JumpDropResult::TimedOut:
+		case nav::JumpDropResult::Inactive:
+			traversalFailure = nav::LocomotionResult::Inactive;
+			break;
+		case nav::JumpDropResult::InvalidArgument:
+			traversalFailure = nav::LocomotionResult::InvalidArgument;
+			break;
+		case nav::JumpDropResult::InvalidConfig:
+			traversalFailure = nav::LocomotionResult::InvalidConfig;
+			break;
+		case nav::JumpDropResult::InvalidObservation:
+		case nav::JumpDropResult::Ready:
+		case nav::JumpDropResult::Emitted:
+		case nav::JumpDropResult::Landed:
+		default:
+			break;
+		}
+		hasAvoidedLink_ = true;
+		avoidedLink_ = activeLink_;
+		++nextLinkIndex_;
+		if (objectiveArea == 0U && hasRoamGoal_)
+		{
+			failedRoamGoalArea_ = roamGoalArea_;
+		}
+		goalSelectionReason_ = GoalSelectionPathFailed;
+		goalSelectionStrategy_ = GoalSelectionStrategyNone;
 		resetRoute();
 		if (decision != nullptr)
 		{
+			decision->locomotionResult = traversalFailure;
+			decision->failureReason =
+				traversalFailure == nav::LocomotionResult::UnsafeDrop
+					? NavFailureReason::UnsafeDrop
+					: NavFailureReason::NavApplyRejected;
+			decision->goalSelectionReason = goalSelectionReason_;
+			decision->goalSelectionStrategy = goalSelectionStrategy_;
 			decision->stage = NavRoamStage::Failed;
 		}
 		return NavRoamResult::ReplanRequired;
@@ -807,13 +1097,29 @@ NavRoamResult NavRoamController::update(
 		}
 		if (traversalResult == nav::SpecialTraversalResult::Completed)
 		{
-			resetRoute();
+			const bool goalReached =
+				(decision != nullptr && decision->goalPresent &&
+					decision->goalArea == currentArea.area) ||
+				(hasRoamGoal_ && roamGoalArea_ == currentArea.area);
+			if (goalReached)
+			{
+				goalSelectionReason_ = GoalSelectionReached;
+			}
+			resetRoute(!goalReached);
 			if (decision != nullptr)
 			{
 				decision->locomotionResult = nav::LocomotionResult::TargetReached;
-				decision->stage = NavRoamStage::TargetReached;
+				decision->stage = goalReached
+					? NavRoamStage::TargetReached
+					: NavRoamStage::LinkSelection;
+				if (goalReached)
+				{
+					decision->goalSelectionReason = GoalSelectionReached;
+				}
 			}
-			return NavRoamResult::TargetReached;
+			return goalReached
+				? NavRoamResult::TargetReached
+				: NavRoamResult::ReplanRequired;
 		}
 		resetRoute();
 		if (decision != nullptr)
@@ -885,12 +1191,39 @@ NavRoamResult NavRoamController::update(
 		}
 		return NavRoamResult::IntentReady;
 	case nav::LocomotionResult::TargetReached:
+	{
+		const bool goalReached =
+			(decision != nullptr && decision->goalPresent &&
+				decision->goalArea == currentArea.area) ||
+			(hasRoamGoal_ && roamGoalArea_ == currentArea.area);
+		if (goalReached)
+		{
+			goalSelectionReason_ = GoalSelectionReached;
+		}
+		resetRoute(!goalReached);
+		if (decision != nullptr)
+		{
+			decision->stage = goalReached
+				? NavRoamStage::TargetReached
+				: NavRoamStage::LinkSelection;
+			if (goalReached)
+			{
+				decision->goalSelectionReason = GoalSelectionReached;
+			}
+		}
+		return goalReached
+			? NavRoamResult::TargetReached
+			: NavRoamResult::ReplanRequired;
+	}
+	case nav::LocomotionResult::UnsafeDrop:
 		resetRoute();
 		if (decision != nullptr)
 		{
-			decision->stage = NavRoamStage::TargetReached;
+			decision->locomotionResult = nav::LocomotionResult::UnsafeDrop;
+			decision->failureReason = NavFailureReason::UnsafeDrop;
+			decision->stage = NavRoamStage::Failed;
 		}
-		return NavRoamResult::TargetReached;
+		return NavRoamResult::ReplanRequired;
 	case nav::LocomotionResult::NeedsRecovery:
 	case nav::LocomotionResult::StepTooHigh:
 	case nav::LocomotionResult::Stuck:
@@ -918,13 +1251,18 @@ NavRoamResult NavRoamController::update(
 				stuckRecoveryActive_ = false;
 				stuckRecoveryFramesRemaining_ = 0U;
 			}
-			hasAvoidedLink_ = true;
-			avoidedLink_ = activeLink_;
-			++nextLinkIndex_;
-			resetRoute();
-			if (decision != nullptr)
-			{
-				decision->stage = NavRoamStage::Failed;
+				hasAvoidedLink_ = true;
+				avoidedLink_ = activeLink_;
+				++nextLinkIndex_;
+				if (objectiveArea == 0U && hasRoamGoal_)
+				{
+					failedRoamGoalArea_ = roamGoalArea_;
+				}
+				resetRoute();
+				if (decision != nullptr)
+				{
+					decision->failureReason = NavFailureReason::MovementNotProduced;
+					decision->stage = NavRoamStage::Failed;
 			}
 			return NavRoamResult::ReplanRequired;
 		}
@@ -943,10 +1281,22 @@ NavRoamResult NavRoamController::update(
 		}
 		return NavRoamResult::InvalidSnapshot;
 	case nav::LocomotionResult::InvalidCorridor:
+		if (activeLink_.fromArea == currentArea.area &&
+				activeLink_.toArea != currentArea.area)
+		{
+			hasAvoidedLink_ = true;
+			avoidedLink_ = activeLink_;
+			++nextLinkIndex_;
+		}
+		if (objectiveArea == 0U && hasRoamGoal_)
+		{
+			failedRoamGoalArea_ = roamGoalArea_;
+		}
 		resetRoute();
 		if (decision != nullptr)
 		{
 			decision->recomputeReason = NavRecomputeReason::PathInvalidated;
+			decision->failureReason = NavFailureReason::NavApplyRejected;
 			decision->stage = NavRoamStage::Failed;
 		}
 		return NavRoamResult::ReplanRequired;
@@ -983,8 +1333,18 @@ void NavRoamController::reset()
 	hasObjectiveTarget_ = false;
 	objectiveTarget_ = {0.0f, 0.0f, 0.0f};
 	clearPathFailure();
+	lastVisitedArea_ = 0U;
+	lastVisitedMapGeneration_ = 0U;
+	lastVisitedTeam_ = 0U;
+	roamGoalGeneration_ = 0U;
+	goalSelectionReason_ = GoalSelectionNone;
+	goalSelectionStrategy_ = GoalSelectionStrategyNone;
+	maximumSafeDropHeight_ = 0.0f;
+	safeDropHeightAvailable_ = false;
+	unsafeDropRejected_ = false;
 	hasRoamGoal_ = false;
 	roamGoalArea_ = 0U;
+	failedRoamGoalArea_ = 0U;
 	roamGoalPosition_ = {0.0f, 0.0f, 0.0f};
 	initialized_ = false;
 }
@@ -1046,22 +1406,44 @@ bool NavRoamController::isValidObservation(
 bool NavRoamController::startTraversal(
 	const nav::NavSnapshot &snapshot,
 	const nav::NavCorridor &corridor,
-	const nav::NavDirectedLink &link)
+	const nav::NavDirectedLink &link,
+	nav::LocomotionResult *startResult,
+	const nav::NavVector *launchPositionOverride,
+	const nav::NavVector *landingPositionOverride)
 {
+	if (startResult != nullptr)
+	{
+		*startResult = nav::LocomotionResult::InvalidArgument;
+	}
+	unsafeDropRejected_ = false;
 	const nav::NavDocument *document = snapshot.document();
 	if (document == nullptr || corridor.areas.size() < 2U)
 	{
+		if (startResult != nullptr)
+		{
+			*startResult = document == nullptr
+				? nav::LocomotionResult::InvalidSnapshot
+				: nav::LocomotionResult::InvalidCorridor;
+		}
 		return false;
 	}
 	const nav::NavArea *fromArea = document->findArea(link.fromArea);
 	const nav::NavArea *toArea = document->findArea(link.toArea);
 	if (fromArea == nullptr || toArea == nullptr)
 	{
+		if (startResult != nullptr)
+		{
+			*startResult = nav::LocomotionResult::InvalidCorridor;
+		}
 		return false;
 	}
 	activeTraversal_ = traversalActionFor(snapshot, link);
-	const nav::NavVector launchPosition = centerOf(*fromArea);
-	const nav::NavVector landingPosition = centerOf(*toArea);
+	const nav::NavVector launchPosition = launchPositionOverride != nullptr
+		? *launchPositionOverride
+		: centerOf(*fromArea);
+	const nav::NavVector landingPosition = landingPositionOverride != nullptr
+		? *landingPositionOverride
+		: centerOf(*toArea);
 	const float verticalDelta = floorHeight(*toArea) - floorHeight(*fromArea);
 	const float horizontalDeltaX = landingPosition.x - launchPosition.x;
 	const float horizontalDeltaY = landingPosition.y - launchPosition.y;
@@ -1083,9 +1465,49 @@ bool NavRoamController::startTraversal(
 		envelope.maximumRise = (std::max)(16.0f, verticalDelta + 16.0f);
 		envelope.maximumDrop = (std::max)(16.0f, -verticalDelta + 16.0f);
 		envelope.horizontalReach = (std::max)(16.0f, horizontalReach + 16.0f);
-		envelope.damageRisk = {4096.0f, 100.0f};
-		return jumpDrop_.start(traversalCorridor, envelope, actor_.actorGeneration) ==
-				nav::JumpDropResult::Ready;
+		envelope.damageRisk = activeTraversal_ == nav::TraversalAction::Drop
+			? nav::JumpDropDamageRisk{maximumSafeDropHeight_, 0.0f}
+			: nav::JumpDropDamageRisk{4096.0f, 100.0f};
+		const nav::JumpDropResult result =
+			jumpDrop_.start(traversalCorridor, envelope, actor_.actorGeneration);
+		if (startResult != nullptr)
+		{
+			switch (result)
+			{
+			case nav::JumpDropResult::Ready:
+				*startResult = nav::LocomotionResult::Started;
+				break;
+			case nav::JumpDropResult::Unsafe:
+				*startResult = nav::LocomotionResult::UnsafeDrop;
+				break;
+			case nav::JumpDropResult::InvalidObservation:
+				*startResult = nav::LocomotionResult::InvalidObservation;
+				break;
+			case nav::JumpDropResult::InvalidSnapshot:
+				*startResult = nav::LocomotionResult::InvalidSnapshot;
+				break;
+			case nav::JumpDropResult::InvalidConfig:
+				*startResult = nav::LocomotionResult::InvalidConfig;
+				break;
+			case nav::JumpDropResult::InvalidArgument:
+				*startResult = nav::LocomotionResult::InvalidArgument;
+				break;
+			case nav::JumpDropResult::Invalidated:
+			case nav::JumpDropResult::TimedOut:
+			case nav::JumpDropResult::Inactive:
+				*startResult = nav::LocomotionResult::Inactive;
+				break;
+			default:
+				*startResult = nav::LocomotionResult::InvalidCorridor;
+				break;
+			}
+		}
+		if (activeTraversal_ == nav::TraversalAction::Drop &&
+			result != nav::JumpDropResult::Ready)
+		{
+			unsafeDropRejected_ = true;
+		}
+		return result == nav::JumpDropResult::Ready;
 	}
 
 	if (activeTraversal_ == nav::TraversalAction::Ladder)
@@ -1100,11 +1522,42 @@ bool NavRoamController::startTraversal(
 		capability.sourceDirection = link.direction;
 		capability.requiredClearance = 36.0f;
 		capability.minimumPosture = nav::SpecialTraversalPosture::Standing;
-		return specialTraversal_.start(traversalCorridor, capability, actor_.actorGeneration) ==
-				nav::SpecialTraversalResult::Ready;
+		const nav::SpecialTraversalResult result = specialTraversal_.start(
+			traversalCorridor, capability, actor_.actorGeneration);
+		if (startResult != nullptr)
+		{
+			*startResult = result == nav::SpecialTraversalResult::Ready
+				? nav::LocomotionResult::Started
+				: nav::LocomotionResult::InvalidCorridor;
+		}
+		return result == nav::SpecialTraversalResult::Ready;
 	}
 
-	return locomotion_.start(corridor) == nav::LocomotionResult::Started;
+	const nav::LocomotionResult result = locomotion_.start(corridor);
+	if (startResult != nullptr)
+	{
+		*startResult = result;
+	}
+	return result == nav::LocomotionResult::Started;
+}
+
+bool NavRoamController::startRoute(
+	const nav::NavSnapshot &snapshot,
+	const nav::NavCorridor &corridor,
+	const nav::NavDirectedLink &link,
+	nav::LocomotionResult *startResult)
+{
+	if (traversalActionFor(snapshot, link) == nav::TraversalAction::Walk)
+	{
+		return startTraversal(snapshot, corridor, link, startResult);
+	}
+	activeTraversal_ = nav::TraversalAction::Walk;
+	const nav::LocomotionResult result = locomotion_.start(corridor);
+	if (startResult != nullptr)
+	{
+		*startResult = result;
+	}
+	return result == nav::LocomotionResult::Started;
 }
 
 bool NavRoamController::buildStuckRecoveryIntent(
@@ -1193,29 +1646,90 @@ bool NavRoamController::selectRoute(
 		{
 			const nav::AreaId nextArea = corridor.areas[1U];
 			nav::NavDirectedLink link = {currentArea.area, nextArea, 0U, 0U};
-			for (const nav::NavDirectedLink &candidate : links)
+		for (const nav::NavDirectedLink &candidate : links)
+		{
+			if (candidate.toArea == nextArea)
 			{
-				if (candidate.toArea == nextArea)
-				{
-					link = candidate;
-					break;
-				}
+				link = candidate;
+				break;
 			}
-			if (startTraversal(snapshot, corridor, link))
+		}
+		if (hasAvoidedLink_ && link.fromArea == avoidedLink_.fromArea &&
+				link.toArea == avoidedLink_.toArea)
+		{
+			nav::NavCorridor alternativeCorridor = {};
+			const nav::NavQueryResult alternativeResult =
+				query.buildAlternativeCorridor(
+					corridor, avoidedLink_, &alternativeCorridor,
+					decision == nullptr || !collectPathStats_
+						? nullptr
+						: &decision->pathSearchStats);
+			if (decision != nullptr)
 			{
-				nextLinkIndex_ = 0U;
-				rememberRoute(snapshot, corridor, link);
+				decision->corridorResult = alternativeResult;
+				decision->pathResult = alternativeResult;
+			}
+			if (alternativeResult != nav::NavQueryResult::Found ||
+					alternativeCorridor.links.empty())
+			{
+				if (decision != nullptr)
+				{
+					decision->linkFromArea = avoidedLink_.fromArea;
+					decision->linkToArea = avoidedLink_.toArea;
+					decision->linkDirection = avoidedLink_.direction;
+					decision->linkHow = avoidedLink_.how;
+					decision->linkResult = nav::NavQueryResult::Found;
+					decision->failureReason = NavFailureReason::PathSearchFailed;
+					decision->stage = NavRoamStage::Failed;
+				}
+				return false;
+			}
+			corridor = std::move(alternativeCorridor);
+			link = corridor.links.front();
+		}
+		if (decision != nullptr)
+		{
+			decision->linkFromArea = link.fromArea;
+			decision->linkToArea = link.toArea;
+			decision->linkDirection = link.direction;
+			decision->linkHow = link.how;
+			decision->linkResult = nav::NavQueryResult::Found;
+		}
+		nav::LocomotionResult startResult =
+			nav::LocomotionResult::InvalidArgument;
+		if (startRoute(snapshot, corridor, link, &startResult))
+		{
+			hasAvoidedLink_ = false;
+			nextLinkIndex_ = 0U;
+			rememberRoute(snapshot, corridor, link);
 				if (decision != nullptr)
 				{
 					populateRouteDecision(decision);
 					decision->targetArea = objectiveArea;
 					decision->targetPosition = objectiveTarget_;
-				}
-				return true;
 			}
+			return true;
 		}
-		return false;
+		hasAvoidedLink_ = true;
+		avoidedLink_ = link;
+		++nextLinkIndex_;
+		if (decision != nullptr)
+		{
+			decision->linkFromArea = link.fromArea;
+			decision->linkToArea = link.toArea;
+			decision->linkDirection = link.direction;
+			decision->linkHow = link.how;
+			decision->linkResult = nav::NavQueryResult::Found;
+			decision->locomotionResult = startResult;
+			decision->failureReason =
+				startResult == nav::LocomotionResult::UnsafeDrop
+					? NavFailureReason::UnsafeDrop
+					: NavFailureReason::NavApplyRejected;
+			decision->stage = NavRoamStage::Failed;
+		}
 	}
+	return false;
+}
 
 	if (!links.empty())
 	{
@@ -1245,7 +1759,7 @@ bool NavRoamController::selectRoute(
 			{
 				continue;
 			}
-		if (!startTraversal(snapshot, corridor, links[linkIndex]))
+			if (!startRoute(snapshot, corridor, links[linkIndex]))
 		{
 			continue;
 		}
@@ -1291,7 +1805,7 @@ bool NavRoamController::selectRoute(
 			decision->corridorResult = corridorResult;
 		}
 	if (corridorResult != nav::NavQueryResult::Found || corridor.areas.size() < 2U ||
-			!startTraversal(snapshot, corridor, {currentArea.area, candidate.id, 0U, 0U}))
+				!startRoute(snapshot, corridor, {currentArea.area, candidate.id, 0U, 0U}))
 		{
 			continue;
 		}
@@ -1326,60 +1840,123 @@ bool NavRoamController::selectCompatibilityGoal(
 	{
 		return false;
 	}
-	if (!hasRoamGoal_ || roamGoalArea_ == currentArea.area)
+	const bool goalReached = hasRoamGoal_ && roamGoalArea_ == currentArea.area;
+	if (!hasRoamGoal_ || goalReached)
 	{
-		if (randomSource_ == nullptr && !links.empty())
-		{
-			roamGoalArea_ = links.front().toArea;
-			const nav::NavArea *goal = document->findArea(roamGoalArea_);
-			roamGoalPosition_ = goal == nullptr
-				? nav::NavVector{0.0f, 0.0f, 0.0f}
-				: centerOf(*goal);
-			hasRoamGoal_ = goal != nullptr;
-		}
-		else
-		{
-		std::vector<nav::AreaId> candidates;
+		NavGoalSelectionReason reason = goalReached
+			? GoalSelectionReached
+			: goalSelectionReason_ == GoalSelectionPathFailed
+				? GoalSelectionPathFailed
+				: goalSelectionReason_ == GoalSelectionReached
+					? GoalSelectionReached
+				: GoalSelectionInitial;
+		NavGoalSelectionStrategy strategy =
+			GoalSelectionStrategyOldestVisitedArea;
+		nav::AreaId selectedGoal = 0U;
+		std::uint32_t oldestVisit = (std::numeric_limits<std::uint32_t>::max)();
 		for (const nav::NavArea &candidate : document->areas())
 		{
-			if (candidate.id != currentArea.area)
+			if (candidate.id == currentArea.area ||
+					(goalSelectionReason_ == GoalSelectionPathFailed &&
+						failedRoamGoalArea_ != 0U &&
+						candidate.id == failedRoamGoalArea_))
 			{
-				candidates.push_back(candidate.id);
+				continue;
+			}
+			if (candidate.extent.hi.x - candidate.extent.lo.x < 150.0f ||
+				candidate.extent.hi.y - candidate.extent.lo.y < 150.0f)
+			{
+				continue;
+			}
+			const std::uint32_t lastVisited = areaVisitHistory_ == nullptr
+				? 0U
+				: areaVisitHistory_->lastVisited(
+					lastVisitedMapGeneration_, lastVisitedTeam_, candidate.id);
+			if (selectedGoal == 0U || lastVisited < oldestVisit)
+			{
+				selectedGoal = candidate.id;
+				oldestVisit = lastVisited;
 			}
 		}
-		if (candidates.empty())
+		if (selectedGoal == 0U)
 		{
-			hasRoamGoal_ = false;
-			return false;
-		}
-		std::size_t selected = 0U;
-		if (randomSource_ != nullptr && candidates.size() > 1U)
-		{
+			strategy = GoalSelectionStrategyRandomFallback;
+			if (document->areas().empty() || randomSource_ == nullptr)
+			{
+				hasRoamGoal_ = false;
+				goalSelectionReason_ = document->areas().empty()
+					? GoalSelectionNoEligibleArea
+					: reason;
+				goalSelectionStrategy_ = document->areas().empty()
+					? GoalSelectionStrategyNoEligibleArea
+					: strategy;
+				if (decision != nullptr)
+				{
+					decision->goalSelectionReason = goalSelectionReason_;
+					decision->goalSelectionStrategy = goalSelectionStrategy_;
+					decision->failureReason = NavFailureReason::NoGoal;
+				}
+				return false;
+			}
 			const compat::RandomRequest request = compat::RandomRequest::longRequest(
 				"CSBOT-HUNT-GOAL",
 				{actor_.slot, actor_.actorGeneration},
 				{0U, 0U, decision == nullptr ? 0U : decision->fullUpdateSequence},
-				0, static_cast<std::int32_t>(candidates.size() - 1U));
+				0, static_cast<std::int32_t>(document->areas().size() - 1U));
 			const compat::RandomLongResult result = randomSource_->nextLong(request);
-			if (result.status == compat::RandomStatus::Ok && result.value >= 0 &&
-				static_cast<std::size_t>(result.value) < candidates.size())
+			if (result.status != compat::RandomStatus::Ok || result.value < 0 ||
+				static_cast<std::size_t>(result.value) >= document->areas().size())
 			{
-				selected = static_cast<std::size_t>(result.value);
+				hasRoamGoal_ = false;
+				goalSelectionReason_ = GoalSelectionNoEligibleArea;
+				goalSelectionStrategy_ = GoalSelectionStrategyRandomFallback;
+				if (decision != nullptr)
+				{
+					decision->goalSelectionReason = goalSelectionReason_;
+					decision->goalSelectionStrategy = goalSelectionStrategy_;
+					decision->failureReason = NavFailureReason::NoGoal;
+				}
+				return false;
 			}
+			selectedGoal = document->areas()[static_cast<std::size_t>(result.value)].id;
 		}
-		roamGoalArea_ = candidates[selected];
+		roamGoalArea_ = selectedGoal;
 		const nav::NavArea *goal = document->findArea(roamGoalArea_);
 		roamGoalPosition_ = goal == nullptr
 			? nav::NavVector{0.0f, 0.0f, 0.0f}
 			: centerOf(*goal);
 		hasRoamGoal_ = goal != nullptr;
+		if (!hasRoamGoal_)
+		{
+			goalSelectionReason_ = GoalSelectionNoEligibleArea;
+			goalSelectionStrategy_ = GoalSelectionStrategyNoEligibleArea;
+			if (decision != nullptr)
+			{
+				decision->goalSelectionReason = goalSelectionReason_;
+				decision->goalSelectionStrategy = goalSelectionStrategy_;
+				decision->failureReason = NavFailureReason::NoGoal;
+			}
+			return false;
 		}
+		++roamGoalGeneration_;
+		if (roamGoalGeneration_ == 0U)
+		{
+			++roamGoalGeneration_;
+		}
+		goalSelectionReason_ = reason;
+		goalSelectionStrategy_ = strategy;
 	}
 
 	if (!hasRoamGoal_ || roamGoalArea_ == currentArea.area)
 	{
 		hasRoamGoal_ = false;
 		return false;
+	}
+	if (decision != nullptr)
+	{
+		decision->goalSelectionReason = goalSelectionReason_;
+		decision->goalSelectionStrategy = goalSelectionStrategy_;
+		decision->goalGeneration = roamGoalGeneration_;
 	}
 
 	nav::NavQuery query(snapshot);
@@ -1393,7 +1970,7 @@ bool NavRoamController::selectCompatibilityGoal(
 	}
 	nav::NavCorridor corridor = {};
 	const nav::NavQueryResult corridorResult = buildCorridor(
-		query, currentArea.area, roamGoalArea_, nav::NavRouteType::Fastest,
+		query, currentArea.area, roamGoalArea_, nav::NavRouteType::Safest,
 		&corridor, decision == nullptr || !collectPathStats_ ? nullptr : &decision->pathSearchStats);
 	if (decision != nullptr)
 	{
@@ -1402,10 +1979,19 @@ bool NavRoamController::selectCompatibilityGoal(
 	}
 	if (corridorResult != nav::NavQueryResult::Found || corridor.areas.size() < 2U)
 	{
+		failedRoamGoalArea_ = roamGoalArea_;
 		hasRoamGoal_ = false;
+		goalSelectionReason_ = GoalSelectionPathFailed;
+		goalSelectionStrategy_ = GoalSelectionStrategyNone;
+		if (decision != nullptr)
+		{
+			decision->goalSelectionReason = goalSelectionReason_;
+			decision->goalSelectionStrategy = goalSelectionStrategy_;
+			decision->failureReason = NavFailureReason::PathSearchFailed;
+		}
 		return false;
 	}
-	const nav::AreaId nextArea = corridor.areas[1U];
+	nav::AreaId nextArea = corridor.areas[1U];
 	nav::NavDirectedLink link = {currentArea.area, nextArea, 0U, 0U};
 	for (const nav::NavDirectedLink &candidate : links)
 	{
@@ -1415,12 +2001,77 @@ bool NavRoamController::selectCompatibilityGoal(
 			break;
 		}
 	}
-	if (!startTraversal(snapshot, corridor, link))
+	if (hasAvoidedLink_ && avoidedLink_.fromArea == currentArea.area &&
+			link.fromArea == avoidedLink_.fromArea &&
+			link.toArea == avoidedLink_.toArea)
 	{
+		nav::NavCorridor alternativeCorridor = {};
+		const nav::NavQueryResult alternativeResult =
+			query.buildAlternativeCorridor(
+				corridor, avoidedLink_, &alternativeCorridor,
+				decision == nullptr || !collectPathStats_
+					? nullptr
+					: &decision->pathSearchStats);
+		if (alternativeResult != nav::NavQueryResult::Found ||
+				alternativeCorridor.links.empty() ||
+				(alternativeCorridor.links.front().fromArea == avoidedLink_.fromArea &&
+				 alternativeCorridor.links.front().toArea == avoidedLink_.toArea))
+		{
+			failedRoamGoalArea_ = roamGoalArea_;
+			hasRoamGoal_ = false;
+			goalSelectionReason_ = GoalSelectionPathFailed;
+			goalSelectionStrategy_ = GoalSelectionStrategyNone;
+			if (decision != nullptr)
+			{
+				decision->corridorResult = alternativeResult;
+				decision->pathResult = alternativeResult;
+				decision->linkFromArea = avoidedLink_.fromArea;
+				decision->linkToArea = avoidedLink_.toArea;
+				decision->linkDirection = avoidedLink_.direction;
+				decision->linkHow = avoidedLink_.how;
+				decision->linkResult = nav::NavQueryResult::Found;
+				decision->goalSelectionReason = goalSelectionReason_;
+				decision->goalSelectionStrategy = goalSelectionStrategy_;
+				decision->failureReason = NavFailureReason::PathSearchFailed;
+			}
+			return false;
+		}
+		corridor = std::move(alternativeCorridor);
+		link = corridor.links.front();
+		nextArea = link.toArea;
+	}
+	if (decision != nullptr)
+	{
+		decision->linkFromArea = link.fromArea;
+		decision->linkToArea = link.toArea;
+		decision->linkDirection = link.direction;
+		decision->linkHow = link.how;
+		decision->linkResult = nav::NavQueryResult::Found;
+	}
+	if (!startRoute(snapshot, corridor, link))
+	{
+		failedRoamGoalArea_ = roamGoalArea_;
 		hasRoamGoal_ = false;
+		goalSelectionReason_ = GoalSelectionPathFailed;
+		goalSelectionStrategy_ = GoalSelectionStrategyNone;
+		if (decision != nullptr)
+		{
+			decision->linkFromArea = link.fromArea;
+			decision->linkToArea = link.toArea;
+			decision->linkDirection = link.direction;
+			decision->linkHow = link.how;
+			decision->linkResult = nav::NavQueryResult::Found;
+			decision->goalSelectionReason = goalSelectionReason_;
+			decision->goalSelectionStrategy = goalSelectionStrategy_;
+			decision->failureReason = unsafeDropRejected_
+				? NavFailureReason::UnsafeDrop
+				: NavFailureReason::NavApplyRejected;
+		}
 		return false;
 	}
 	rememberRoute(snapshot, corridor, link);
+	failedRoamGoalArea_ = 0U;
+	hasAvoidedLink_ = false;
 	if (decision != nullptr)
 	{
 		decision->targetArea = nextArea;
@@ -1475,7 +2126,7 @@ bool NavRoamController::selectRoamRoute(
 			if (link.toArea == currentArea.area ||
 					corridorResult != nav::NavQueryResult::Found ||
 					corridor.areas.size() < 2U ||
-					!startTraversal(snapshot, corridor, link))
+					!startRoute(snapshot, corridor, link))
 			{
 				continue;
 			}
@@ -1538,7 +2189,7 @@ bool NavRoamController::selectRoamRoute(
 		{
 			continue;
 		}
-		if (!startTraversal(snapshot, corridor, link))
+		if (!startRoute(snapshot, corridor, link))
 		{
 			continue;
 		}
@@ -1617,18 +2268,24 @@ void NavRoamController::populateRouteDecision(NavRoamDecision *decision) const
 	decision->selectedPath = activeCorridor_.areas;
 }
 
-void NavRoamController::resetRoute()
+void NavRoamController::resetRoute(bool preserveRoamGoal)
 {
 	locomotion_ = nav::LocomotionController(roamLocomotionConfig());
 	activeTraversal_ = nav::TraversalAction::Walk;
-	jumpDrop_ = nav::JumpDropController();
+	jumpDrop_ = nav::JumpDropController(roamJumpDropConfig(
+			modePolicy_.allowsAdaptiveRouteWeighting()
+				? compat::RuntimeMode::Enhanced
+				: compat::RuntimeMode::Compatibility));
 	specialTraversal_ = nav::SpecialTraversalController();
 	activeCorridor_ = {};
 	activeLink_ = {};
 	activeTargetPosition_ = {0.0f, 0.0f, 0.0f};
-	hasRoamGoal_ = false;
-	roamGoalArea_ = 0U;
-	roamGoalPosition_ = {0.0f, 0.0f, 0.0f};
+	if (!preserveRoamGoal)
+	{
+		hasRoamGoal_ = false;
+		roamGoalArea_ = 0U;
+		roamGoalPosition_ = {0.0f, 0.0f, 0.0f};
+	}
 	lastIntentDirection_ = {0.0f, 0.0f, 0.0f};
 	stuckRecoveryDirection_ = {0.0f, 0.0f, 0.0f};
 	activeCorridorIndex_ = 0U;

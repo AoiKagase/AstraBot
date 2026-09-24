@@ -132,7 +132,7 @@ def test_bomb_target_candidates_do_not_collapse_distinct_sites_by_area() -> None
     assert "entityIndex" in body
     assert "targetArea" in source
     assert "corridor.cost" in body
-    assert "pathCost < selectedPathCost" in body
+    assert "objectives::isBetterBombSiteRoute" in body
     assert "target_id" in source
     assert "nearest_nav_area" in source
     assert "rejection_reason" in source
@@ -223,12 +223,95 @@ def test_bomb_target_registry_separates_registration_from_evaluation() -> None:
         "ManagedObjectiveSiteRegistry",
         "refreshManagedObjectiveSiteRegistry",
         "registered_site_count",
+        "registered_func_bomb_target_count",
+        "registered_info_bomb_target_count",
         "evaluated_this_window",
         "selected_site_id",
     ):
         assert symbol in runtime_source or symbol in runtime_header
     assert "objectiveRegisteredSites" in profiler_header
     assert "objectiveCacheHits" in profiler_header
+
+
+def test_bomb_site_diagnostics_separate_site_type_cost_and_cache_state() -> None:
+    root = Path(__file__).parents[1]
+    runtime_source = (
+        root / "src" / "adapter" / "metamod" / "plugin_runtime.cpp"
+    ).read_text(encoding="utf-8")
+    profiler_header = (
+        root / "include" / "astrabot" / "metamod" / "runtime_profiler.hpp"
+    ).read_text(encoding="utf-8")
+    for field in (
+        "evaluated_func_bomb_target_count=%llu",
+        "evaluated_info_bomb_target_count=%llu",
+        "registered_site_count=%u",
+        "registered_func_bomb_target_count=%u",
+        "registered_info_bomb_target_count=%u",
+        "candidate_area_samples=%u",
+        "unique_nav_candidate_areas=%u",
+        "reachable_nav_candidate_areas=%u",
+        "best_reachable_cost=%.1f",
+        "cache_state=%s",
+        "rejection_reason=%s",
+    ):
+        assert field in runtime_source
+    assert "objectives::isBetterBombSiteRoute" in runtime_source
+    assert "objectiveFuncBombTargetSites" in profiler_header
+    assert "objectiveInfoBombTargetSites" in profiler_header
+
+
+def test_goal_and_traversal_diagnostics_correlate_post_move_feedback() -> None:
+    source = (
+        Path(__file__).parents[1]
+        / "src"
+        / "adapter"
+        / "metamod"
+        / "plugin_runtime.cpp"
+    ).read_text(encoding="utf-8")
+    for field in (
+        "goalAssignmentCorrelation",
+        "frame=%u nav_update=%u goal_generation=%u reselection_reason=%s",
+        "selection_strategy=%s",
+        "objective_generation=%u selected_site_id=%u",
+        "nav_result=%d",
+        "path_result=%d",
+        "failure_reason=%d",
+        "path_search_calls=%u path_search_expanded=%u path_search_enqueues=%u path_search_failures=%u",
+        "profile traversalCorrelation",
+        "profile traversalResult",
+        "after_move=(%.1f %.1f %.1f)",
+        "grounded_after=%d",
+        "health_delta=%.1f",
+    ):
+        assert field in source
+
+
+def test_invalid_corridor_records_failure_and_avoids_objective_link() -> None:
+    source = (
+        Path(__file__).parents[1]
+        / "src"
+        / "core"
+        / "runtime"
+        / "nav_roam_controller.cpp"
+    ).read_text(encoding="utf-8")
+    invalid_corridor = source.split(
+        "case nav::LocomotionResult::InvalidCorridor:", 1
+    )[1].split("case nav::LocomotionResult::InvalidArgument:", 1)[0]
+    assert "decision->failureReason = NavFailureReason::NavApplyRejected;" in invalid_corridor
+    assert "hasAvoidedLink_ = true;" in invalid_corridor
+    assert "avoidedLink_ = activeLink_;" in invalid_corridor
+    route_selection = source.split(
+        "bool NavRoamController::selectRoute(", 1
+    )[1].split("bool NavRoamController::selectCompatibilityGoal(", 1)[0]
+    assert "buildAlternativeCorridor" in route_selection
+    assert "startRoute" in source
+    assert "portalSteeringPointForLink" in source
+    assert "isWithinTraversalLaunchTolerance" in source
+    objective_change = source.split("if (objectiveTargetChanged)", 1)[1].split(
+        "hasObjectiveTarget_ =", 1
+    )[0]
+    assert "clearPathFailure();" in objective_change
+    assert "hasAvoidedLink_ = false;" in objective_change
 
 
 if __name__ == "__main__":
@@ -245,4 +328,7 @@ if __name__ == "__main__":
     test_effective_team_is_shared_across_runtime_decisions()
     test_runtime_diagnostic_separates_raw_and_effective_team()
     test_bomb_target_registry_separates_registration_from_evaluation()
+    test_bomb_site_diagnostics_separate_site_type_cost_and_cache_state()
+    test_goal_and_traversal_diagnostics_correlate_post_move_feedback()
+    test_invalid_corridor_records_failure_and_avoids_objective_link()
     print("p076 performance contract: PASS")

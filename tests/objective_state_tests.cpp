@@ -1,9 +1,41 @@
 #include "astrabot/objectives/objective_state.hpp"
+#include "astrabot/objectives/bomb_site_route_selection.hpp"
 
 #include <cstdio>
+#include <limits>
 
 namespace
 {
+	bool check(bool condition, const char *description);
+
+	bool testBombSiteSelectionUsesLowestReachableRouteCost()
+	{
+		struct SiteRoute
+		{
+			std::uint32_t siteIdentity;
+			float pathCost;
+		};
+		const SiteRoute routes[] = {
+			{11U, 40.0f},
+			{12U, (std::numeric_limits<float>::infinity)()},
+			{13U, 18.0f},
+			{14U, 18.0f}};
+		std::uint32_t selectedSite = 0U;
+		float selectedPathCost = (std::numeric_limits<float>::max)();
+		for (const SiteRoute &route : routes)
+		{
+			if (astrabot::objectives::isBetterBombSiteRoute(
+					route.pathCost, selectedPathCost))
+			{
+				selectedSite = route.siteIdentity;
+				selectedPathCost = route.pathCost;
+			}
+		}
+		return check(
+			selectedSite == 13U && selectedPathCost == 18.0f,
+			"all bomb sites compete by reachable route cost with NAV order for ties");
+	}
+
 	bool check(bool condition, const char *description)
 	{
 		if (condition)
@@ -134,7 +166,8 @@ bool testExpiryAndRoundGeneration()
 
 int main()
 {
-	if (!testProposalLifecycleNeedsExplicitFeedback() ||
+	if (!testBombSiteSelectionUsesLowestReachableRouteCost() ||
+			!testProposalLifecycleNeedsExplicitFeedback() ||
 			!testExpiryAndRoundGeneration())
 	{
 		return 1;

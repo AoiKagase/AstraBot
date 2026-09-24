@@ -17,8 +17,8 @@ namespace astrabot
 			float z;
 		};
 
-		struct MovementPhysicsState
-		{
+struct MovementPhysicsState
+{
 			PhysicsVector origin;
 			PhysicsVector velocity;
 			bool entityValid;
@@ -35,8 +35,31 @@ namespace astrabot
 	bool teamConfirmed;
 	int solid;
 			int movetype;
-			float health;
-		};
+	float health;
+};
+
+struct LandingDamageObservation
+{
+	bool landingConfirmed;
+	bool hasLandingDamage;
+	float landingDamage;
+};
+
+class FallLandingTracker
+{
+public:
+	LandingDamageObservation observe(
+		std::uint32_t actorGeneration,
+		const MovementPhysicsState &state) noexcept;
+	void reset() noexcept;
+
+private:
+	std::uint32_t actorGeneration_ = 0U;
+	bool hasActorGeneration_ = false;
+	bool airborne_ = false;
+	bool hasAirborneHealth_ = false;
+	float airborneHealth_ = 0.0f;
+};
 
 		enum class SpawnReadiness : std::uint8_t
 		{

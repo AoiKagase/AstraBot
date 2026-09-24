@@ -547,7 +547,7 @@ bool testJumpAttributesOverrideStepHeight()
 				"NAV_JUMP takes precedence over ordinary step rejection");
 }
 
-bool testBoundedDescendingGapRequestsJumpNearTransition()
+bool testBoundedSafeDescendingGapUsesDropNearTransition()
 {
 	astrabot::nav::NavDocument document;
 	document.setSourceIdentity({5U, 100U, 200U});
@@ -569,6 +569,8 @@ bool testBoundedDescendingGapRequestsJumpNearTransition()
 	observation.standingClearance = 72.0f;
 	observation.crouchingClearance = 36.0f;
 	observation.grounded = true;
+	observation.safeDropHeightAvailable = true;
+	observation.maximumSafeDropHeight = 150.0f;
 	astrabot::nav::LocomotionIntent intent = {};
 	if (!check(controller.update(snapshot, observation, &intent) ==
 			astrabot::nav::LocomotionResult::IntentReady &&
@@ -579,9 +581,9 @@ bool testBoundedDescendingGapRequestsJumpNearTransition()
 	}
 	observation.position = {190.0f, 32.0f, 128.0f};
 	if (!check(controller.update(snapshot, observation, &intent) ==
-			astrabot::nav::LocomotionResult::IntentReady &&
-		intent.traversal == astrabot::nav::TraversalAction::Jump,
-		"a nearby 25-unit descending gap requests Jump"))
+				astrabot::nav::LocomotionResult::IntentReady &&
+				intent.traversal == astrabot::nav::TraversalAction::Drop,
+				"a nearby safe descending gap uses Drop without Jump"))
 	{
 		return false;
 	}
@@ -594,9 +596,12 @@ bool testBoundedDescendingGapRequestsJumpNearTransition()
 		"an airborne descending-gap jump continues forward without re-pressing Jump");
 }
 
-bool testDescendingGapHonorsNoJumpAndSafeDropBounds()
+bool testDescendingGapUsesDropOnlyInsideSafeFallEnvelope()
 {
-	auto runCase = [](std::uint8_t landingAttributes, float landingFloor) {
+	auto runCase = [](std::uint8_t landingAttributes, float landingFloor,
+			bool safeDropAvailable, float maximumSafeDropHeight,
+			astrabot::nav::LocomotionResult expectedResult,
+			astrabot::nav::TraversalAction expectedTraversal) {
 		astrabot::nav::NavDocument document;
 		document.setSourceIdentity({5U, 100U, 200U});
 		astrabot::nav::NavArea launch = area(1U, 0.0f, 200.0f, 128.0f);
@@ -617,15 +622,27 @@ bool testDescendingGapHonorsNoJumpAndSafeDropBounds()
 		observation.standingClearance = 72.0f;
 		observation.crouchingClearance = 36.0f;
 		observation.grounded = true;
+		observation.safeDropHeightAvailable = safeDropAvailable;
+		observation.maximumSafeDropHeight = maximumSafeDropHeight;
 		astrabot::nav::LocomotionIntent intent = {};
-		return controller.update(snapshot, observation, &intent) ==
-				astrabot::nav::LocomotionResult::IntentReady &&
-			intent.traversal == astrabot::nav::TraversalAction::Walk;
+		const astrabot::nav::LocomotionResult result =
+			controller.update(snapshot, observation, &intent);
+		return result == expectedResult &&
+			(result != astrabot::nav::LocomotionResult::IntentReady ||
+				intent.traversal == expectedTraversal);
 	};
-	return check(runCase(astrabot::nav::NavArea::kNoJump, 30.0f),
-			"NAV_NO_JUMP suppresses descending gap Jump") &&
-		check(runCase(0U, -128.0f),
-			"an excessive descending gap remains non-Jump");
+	return check(runCase(astrabot::nav::NavArea::kNoJump, 30.0f, true,
+			150.0f, astrabot::nav::LocomotionResult::IntentReady,
+			astrabot::nav::TraversalAction::Drop),
+			"NAV_NO_JUMP permits a safe fall without Jump") &&
+		check(runCase(0U, -128.0f, true, 150.0f,
+			astrabot::nav::LocomotionResult::UnsafeDrop,
+			astrabot::nav::TraversalAction::Walk),
+			"a drop outside the safe fall envelope is a typed failure") &&
+		check(runCase(0U, 30.0f, false, 0.0f,
+			astrabot::nav::LocomotionResult::UnsafeDrop,
+			astrabot::nav::TraversalAction::Walk),
+			"an unmeasured fall envelope fails closed");
 }
 
 bool testOffPathAreaCannotTriggerJumpToNonAdjacentCorridorTarget()
@@ -663,8 +680,8 @@ bool testOffPathAreaCannotTriggerJumpToNonAdjacentCorridorTarget()
 
 int main()
 {
-	if (!testBoundedDescendingGapRequestsJumpNearTransition() ||
-		!testDescendingGapHonorsNoJumpAndSafeDropBounds())
+	if (!testBoundedSafeDescendingGapUsesDropNearTransition() ||
+		!testDescendingGapUsesDropOnlyInsideSafeFallEnvelope())
 	{
 		return 1;
 	}

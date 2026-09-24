@@ -92,6 +92,12 @@ struct NavCorridor
 	bool isValid() const;
 };
 
+NavVector portalSteeringPointForLink(
+	const NavArea &fromArea,
+	const NavArea &toArea,
+	const NavVector &position,
+	std::uint8_t direction);
+
 class NavQuery
 {
 public:
@@ -133,6 +139,12 @@ public:
 		NavRouteType routeType,
 		NavCorridor *corridor,
 		NavSearchStats *stats) const;
+
+	NavQueryResult buildAlternativeCorridor(
+		const NavCorridor &currentCorridor,
+		const NavDirectedLink &failedFirstLink,
+		NavCorridor *alternativeCorridor,
+		NavSearchStats *stats = nullptr) const;
 
 private:
 	const NavDocument *document() const;

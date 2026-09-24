@@ -21,6 +21,7 @@ namespace astrabot
 		{
 			ActorId actor;
 			world::FrameIdentity frame;
+			std::uint8_t team;
 			nav::LocomotionObservation locomotion;
 			bool hasObjectiveTarget;
 			nav::NavVector objectiveTarget;
@@ -70,6 +71,23 @@ enum class NavRecomputeReason
 	Stuck
 };
 
+enum NavGoalSelectionReason
+{
+	GoalSelectionNone,
+	GoalSelectionInitial,
+	GoalSelectionReached,
+	GoalSelectionPathFailed,
+	GoalSelectionNoEligibleArea
+};
+
+enum NavGoalSelectionStrategy
+{
+	GoalSelectionStrategyNone,
+	GoalSelectionStrategyOldestVisitedArea,
+	GoalSelectionStrategyRandomFallback,
+	GoalSelectionStrategyNoEligibleArea
+};
+
 enum class NavGoalKind
 {
 	None,
@@ -86,7 +104,8 @@ enum class NavFailureReason
 	GoalAreaMissing,
 	PathSearchFailed,
 	NavApplyRejected,
-	MovementNotProduced
+	MovementNotProduced,
+	UnsafeDrop
 };
 
 		struct NavRoamDecision
@@ -100,12 +119,15 @@ enum class NavFailureReason
 	NavRecomputeReason recomputeReason;
 	NavFailureReason failureReason;
 	NavGoalKind goalKind;
+	NavGoalSelectionReason goalSelectionReason;
+	NavGoalSelectionStrategy goalSelectionStrategy;
 	bool goalPresent;
 	bool pathRequested;
 	nav::NavQueryResult pathResult;
 	nav::NavSearchStats pathSearchStats;
 	nav::AreaId goalArea;
 	nav::NavVector goalPosition;
+	std::uint32_t goalGeneration;
 	std::uint32_t pathSequence;
 	std::uint32_t fullUpdateSequence;
 	nav::NavRouteType routeType;
@@ -127,12 +149,40 @@ enum class NavFailureReason
 			std::uint8_t linkHow;
 		};
 
+		class NavAreaVisitHistory
+		{
+		public:
+			void record(
+				std::uint32_t mapGeneration,
+				std::uint8_t team,
+				nav::AreaId area,
+				std::uint32_t frame);
+			std::uint32_t lastVisited(
+				std::uint32_t mapGeneration,
+				std::uint8_t team,
+				nav::AreaId area) const;
+			void reset(std::uint32_t mapGeneration);
+
+		private:
+			struct Entry
+			{
+				std::uint8_t team;
+				nav::AreaId area;
+				std::uint32_t frame;
+			};
+
+			std::uint32_t mapGeneration_ = 0U;
+			bool initialized_ = false;
+			std::vector<Entry> entries_;
+		};
+
 		class NavRoamController
 		{
 		  public:
 	NavRoamController();
 	explicit NavRoamController(compat::RuntimeMode mode);
 	void setRandomSource(compat::ICompatibilityRandomSource *source);
+	void setAreaVisitHistory(NavAreaVisitHistory *history);
 	void setRuntimeMode(compat::RuntimeMode mode);
 			NavRoamResult update(
 				const nav::NavSnapshot &snapshot,
@@ -163,10 +213,18 @@ enum class NavFailureReason
 				const world::FrameIdentity &candidate,
 				const world::FrameIdentity &current);
 			static bool isValidObservation(const NavRoamObservation &observation);
-			bool startTraversal(
-					const nav::NavSnapshot &snapshot,
-					const nav::NavCorridor &corridor,
-					const nav::NavDirectedLink &link);
+		bool startTraversal(
+			const nav::NavSnapshot &snapshot,
+			const nav::NavCorridor &corridor,
+			const nav::NavDirectedLink &link,
+			nav::LocomotionResult *startResult = nullptr,
+			const nav::NavVector *launchPosition = nullptr,
+			const nav::NavVector *landingPosition = nullptr);
+		bool startRoute(
+			const nav::NavSnapshot &snapshot,
+			const nav::NavCorridor &corridor,
+			const nav::NavDirectedLink &link,
+			nav::LocomotionResult *startResult = nullptr);
 			bool buildStuckRecoveryIntent(
 					const nav::NavAreaMatch &currentArea,
 					nav::LocomotionIntent *intent);
@@ -189,7 +247,7 @@ enum class NavFailureReason
 					const nav::NavCorridor &corridor,
 					const nav::NavDirectedLink &link);
 			void populateRouteDecision(NavRoamDecision *decision) const;
-		void resetRoute();
+		void resetRoute(bool preserveRoamGoal = false);
 		bool isPathFailureBackedOff(
 			std::uint32_t mapGeneration,
 			nav::AreaId startArea,
@@ -234,8 +292,20 @@ enum class NavFailureReason
 	bool collectPathStats_;
 	bool initialized_;
 	compat::ICompatibilityRandomSource *randomSource_;
+	NavAreaVisitHistory localAreaVisitHistory_;
+	NavAreaVisitHistory *areaVisitHistory_;
+	nav::AreaId lastVisitedArea_;
+	std::uint32_t lastVisitedMapGeneration_;
+	std::uint8_t lastVisitedTeam_;
+	std::uint32_t roamGoalGeneration_;
+	NavGoalSelectionReason goalSelectionReason_;
+	NavGoalSelectionStrategy goalSelectionStrategy_;
+	float maximumSafeDropHeight_;
+	bool safeDropHeightAvailable_;
+	bool unsafeDropRejected_;
 	bool hasRoamGoal_;
 	nav::AreaId roamGoalArea_;
+	nav::AreaId failedRoamGoalArea_;
 	nav::NavVector roamGoalPosition_;
 };
 	}

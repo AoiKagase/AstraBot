@@ -5,6 +5,7 @@
 #include <cmath>
 #include <limits>
 #include <new>
+#include <utility>
 
 namespace astrabot
 {
@@ -12,7 +13,38 @@ namespace nav
 {
 namespace
 {
-bool isBetterMatch(
+	void accumulateSearchStats(
+		NavSearchStats *total,
+		const NavSearchStats &sample)
+	{
+		if (total == nullptr || sample.searchCalls == 0U)
+		{
+			return;
+		}
+		if (total->searchCalls == 0U)
+		{
+			total->firstSearchId = sample.firstSearchId;
+			total->firstStartArea = sample.firstStartArea;
+			total->firstGoalArea = sample.firstGoalArea;
+			total->firstRouteType = sample.firstRouteType;
+		}
+		total->expandedUniqueAreas += sample.expandedUniqueAreas;
+		total->enqueueCount += sample.enqueueCount;
+		total->reopenCount += sample.reopenCount;
+		total->staleQueueEntries += sample.staleQueueEntries;
+		total->equalCostReplacements += sample.equalCostReplacements;
+		total->searchCalls += sample.searchCalls;
+		total->successCount += sample.successCount;
+		total->failureCount += sample.failureCount;
+		total->totalUsec += sample.totalUsec;
+		total->maxUsec = (std::max)(total->maxUsec, sample.maxUsec);
+		total->lastSearchId = sample.lastSearchId;
+		total->lastStartArea = sample.lastStartArea;
+		total->lastGoalArea = sample.lastGoalArea;
+		total->lastRouteType = sample.lastRouteType;
+	}
+
+	bool isBetterMatch(
 	float candidateDistance,
 	AreaId candidateArea,
 	float bestDistance,
@@ -346,6 +378,15 @@ bool NavCorridor::isValid() const
 		}
 	}
 	return true;
+}
+
+NavVector portalSteeringPointForLink(
+	const NavArea &fromArea,
+	const NavArea &toArea,
+	const NavVector &position,
+	std::uint8_t direction)
+{
+	return portalSteeringPoint(fromArea, toArea, position, direction);
 }
 
 NavQuery::NavQuery(const NavSnapshot &snapshot) :
@@ -925,6 +966,130 @@ NavQueryResult NavQuery::buildCorridor(
 {
 	return buildAStarCorridor(
 		snapshot_, limits_, start, goal, routeType, corridor, stats);
+}
+
+NavQueryResult NavQuery::buildAlternativeCorridor(
+	const NavCorridor &currentCorridor,
+	const NavDirectedLink &failedFirstLink,
+	NavCorridor *alternativeCorridor,
+	NavSearchStats *stats) const
+{
+	if (alternativeCorridor == nullptr || alternativeCorridor == &currentCorridor ||
+			!snapshot_.isValid() || !currentCorridor.isValid() ||
+			currentCorridor.areas.size() < 2U ||
+			currentCorridor.links.size() + 1U != currentCorridor.areas.size() ||
+			currentCorridor.navRevision != snapshot_.revision() ||
+			currentCorridor.mapGeneration != snapshot_.mapGeneration())
+	{
+		return NavQueryResult::InvalidArgument;
+	}
+	const NavDirectedLink &firstLink = currentCorridor.links.front();
+	if (firstLink.fromArea != failedFirstLink.fromArea ||
+			firstLink.toArea != failedFirstLink.toArea ||
+			firstLink.fromArea != currentCorridor.areas.front())
+	{
+		return NavQueryResult::InvalidArgument;
+	}
+
+	const AreaId startArea = currentCorridor.areas.front();
+	const AreaId goalArea = currentCorridor.areas.back();
+	std::vector<NavDirectedLink> outgoing;
+	const NavQueryResult outgoingResult = outgoingLinks(startArea, &outgoing);
+	if (outgoingResult != NavQueryResult::Found)
+	{
+		return outgoingResult;
+	}
+
+	NavCorridor bestCorridor = {};
+	bool foundAlternative = false;
+	bool searchWasResourceLimited = false;
+	try
+	{
+		for (const NavDirectedLink &candidateLink : outgoing)
+		{
+			if (candidateLink.fromArea != startArea ||
+					candidateLink.toArea == startArea ||
+					candidateLink.toArea == failedFirstLink.toArea)
+			{
+				continue;
+			}
+
+			NavCorridor prefix = {};
+			NavSearchStats prefixStats = {};
+			const NavQueryResult prefixResult = buildCorridor(
+				startArea, candidateLink.toArea, currentCorridor.routeType,
+				&prefix, stats == nullptr ? nullptr : &prefixStats);
+			accumulateSearchStats(stats, prefixStats);
+			if (prefixResult == NavQueryResult::ResourceLimit)
+			{
+				searchWasResourceLimited = true;
+				continue;
+			}
+			if (prefixResult != NavQueryResult::Found ||
+					prefix.areas.size() != 2U || prefix.links.size() != 1U ||
+					prefix.links.front().fromArea != startArea ||
+					prefix.links.front().toArea != candidateLink.toArea ||
+					prefix.links.front().toArea == failedFirstLink.toArea)
+			{
+				continue;
+			}
+
+			NavCorridor suffix = {};
+			NavSearchStats suffixStats = {};
+			const NavQueryResult suffixResult = buildCorridor(
+				candidateLink.toArea, goalArea, currentCorridor.routeType,
+				&suffix, stats == nullptr ? nullptr : &suffixStats);
+			accumulateSearchStats(stats, suffixStats);
+			if (suffixResult == NavQueryResult::ResourceLimit)
+			{
+				searchWasResourceLimited = true;
+				continue;
+			}
+			if (suffixResult != NavQueryResult::Found || !suffix.isValid() ||
+					suffix.areas.front() != candidateLink.toArea ||
+					suffix.links.size() + 1U != suffix.areas.size() ||
+					std::find(suffix.areas.begin() + 1, suffix.areas.end(), startArea) !=
+						suffix.areas.end())
+			{
+				continue;
+			}
+
+			NavCorridor candidate = {};
+			candidate.navRevision = prefix.navRevision;
+			candidate.mapGeneration = prefix.mapGeneration;
+			candidate.routeType = currentCorridor.routeType;
+			candidate.cost = prefix.cost + suffix.cost;
+			candidate.areas = prefix.areas;
+			candidate.areas.insert(
+				candidate.areas.end(), suffix.areas.begin() + 1, suffix.areas.end());
+			candidate.links = prefix.links;
+			candidate.links.insert(
+				candidate.links.end(), suffix.links.begin(), suffix.links.end());
+			if (!candidate.isValid() ||
+				candidate.links.size() + 1U != candidate.areas.size())
+			{
+				continue;
+			}
+			if (!foundAlternative || candidate.cost < bestCorridor.cost)
+			{
+				bestCorridor = std::move(candidate);
+				foundAlternative = true;
+			}
+		}
+	}
+	catch (const std::bad_alloc &)
+	{
+		return NavQueryResult::ResourceLimit;
+	}
+
+	if (!foundAlternative)
+	{
+		return searchWasResourceLimited
+			? NavQueryResult::ResourceLimit
+			: NavQueryResult::NoRoute;
+	}
+	*alternativeCorridor = std::move(bestCorridor);
+	return NavQueryResult::Found;
 }
 
 const NavDocument *NavQuery::document() const

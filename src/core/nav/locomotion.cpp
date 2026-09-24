@@ -13,8 +13,6 @@ namespace
 	constexpr float kMaximumRecoveryDistance = 256.0f;
 	// Matches ZBot's far ground-probe range in MoveTowardsPosition().
 	constexpr float kMaximumGapJumpLookAhead = 80.0f;
-	// Conservative NAV-only bound; live BSP physics remains the acceptance gate.
-	constexpr float kMaximumSafeGapDrop = 160.0f;
 
 LocomotionResult mapFollowerResult(NavFollowerResult result)
 {
@@ -290,16 +288,24 @@ LocomotionResult LocomotionController::buildIntent(
 		stepHeight <= LocomotionConfig::kMaximumJumpHeight;
 	const float transitionGap = areaGap(*currentArea, *destinationArea);
 	const float dropHeight = currentSurfaceHeight - target.z;
-	const bool descendingGapJump = !noJump && !navJump && observation.grounded &&
+	const bool descendingGap = !navJump && observation.grounded &&
 		!observation.onLadder && transitionGap > 0.0f &&
 		transitionGap <= kMaximumGapJumpLookAhead &&
 		dropHeight > LocomotionConfig::kMaximumJumpHeight &&
-		dropHeight <= kMaximumSafeGapDrop &&
 		horizontalDistance(observation.position, target) <= kMaximumGapJumpLookAhead;
+	const bool safeDescendingDrop = descendingGap &&
+		observation.safeDropHeightAvailable &&
+		std::isfinite(observation.maximumSafeDropHeight) &&
+		observation.maximumSafeDropHeight >= 0.0f &&
+		dropHeight <= observation.maximumSafeDropHeight;
+	if (descendingGap && !safeDescendingDrop)
+	{
+		active_ = false;
+		return LocomotionResult::UnsafeDrop;
+	}
 	const bool continuingJump = jumpIssued_ && jumpTargetArea_ == targetArea;
-	const bool requiresJump =
-		navJump || terrainJump || descendingGapJump || continuingJump;
-	const bool emitJump = (navJump || terrainJump || descendingGapJump) &&
+	const bool requiresJump = navJump || terrainJump || continuingJump;
+	const bool emitJump = (navJump || terrainJump) &&
 		(!jumpIssued_ || jumpTargetArea_ != targetArea);
 	if (stepHeight > config_.maximumStepHeight && !requiresJump)
 	{
@@ -355,12 +361,14 @@ LocomotionResult LocomotionController::buildIntent(
 	intent->targetPosition = target;
 	intent->speed = config_.maximumSpeed;
 	intent->posture = posture;
-	intent->traversal = requiresJump
+	intent->traversal = safeDescendingDrop
+		? TraversalAction::Drop
+		: requiresJump
 			? (emitJump ? TraversalAction::Jump : TraversalAction::Walk)
 			: (posture == LocomotionPosture::Crouching
-					? TraversalAction::Crouch
-					: (stepHeight > 0.0f ? TraversalAction::Step : TraversalAction::Walk));
-	intent->stepUp = stepHeight > 0.0f && !requiresJump;
+				? TraversalAction::Crouch
+				: (stepHeight > 0.0f ? TraversalAction::Step : TraversalAction::Walk));
+	intent->stepUp = stepHeight > 0.0f && !requiresJump && !safeDescendingDrop;
 	intent->currentArea = currentArea->id;
 	intent->targetArea = targetArea;
 	return LocomotionResult::IntentReady;

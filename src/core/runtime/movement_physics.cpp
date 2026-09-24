@@ -4,9 +4,58 @@
 
 namespace astrabot
 {
-	namespace runtime
+namespace runtime
+{
+LandingDamageObservation FallLandingTracker::observe(
+	std::uint32_t actorGeneration,
+	const MovementPhysicsState &state) noexcept
+{
+	LandingDamageObservation result = {};
+	if (actorGeneration == 0U || !state.entityValid || state.dead ||
+		!std::isfinite(state.health))
 	{
-		SpawnReadiness spawnReadiness(const MovementPhysicsState &state) noexcept
+		reset();
+		return result;
+	}
+	if (!hasActorGeneration_ || actorGeneration_ != actorGeneration)
+	{
+		reset();
+		actorGeneration_ = actorGeneration;
+		hasActorGeneration_ = true;
+	}
+	if (!state.grounded)
+	{
+		if (!airborne_)
+		{
+			airborneHealth_ = state.health;
+			hasAirborneHealth_ = true;
+		}
+		airborne_ = true;
+		return result;
+	}
+	if (airborne_)
+	{
+		result.landingConfirmed = true;
+		result.hasLandingDamage = hasAirborneHealth_;
+		result.landingDamage = hasAirborneHealth_ && airborneHealth_ > state.health
+			? airborneHealth_ - state.health
+			: 0.0f;
+		airborne_ = false;
+		hasAirborneHealth_ = false;
+	}
+	return result;
+}
+
+void FallLandingTracker::reset() noexcept
+{
+	actorGeneration_ = 0U;
+	hasActorGeneration_ = false;
+	airborne_ = false;
+	hasAirborneHealth_ = false;
+	airborneHealth_ = 0.0f;
+}
+
+SpawnReadiness spawnReadiness(const MovementPhysicsState &state) noexcept
 		{
 			if (!state.entityValid || !state.fakeClient || state.spectator || state.dead ||
 				!state.grounded ||

@@ -84,6 +84,8 @@ struct ManagedObjectiveSiteRegistry
 	bool initialized;
 	std::array<Entry, kMaximumSites> entries;
 	std::uint32_t registeredCount;
+	std::uint32_t registeredFuncBombTargetCount;
+	std::uint32_t registeredInfoBombTargetCount;
 };
 
 		class PluginRuntime
@@ -175,6 +177,28 @@ struct ManagedObjectiveSiteRegistry
 		std::uint32_t pathSequence;
 		std::uint32_t reversalCount;
 	};
+	struct PendingTraversalDiagnostic
+	{
+		bool active;
+		std::uint32_t actorGeneration;
+		std::uint32_t commandFrame;
+		std::uint32_t navUpdateSequence;
+		std::uint32_t goalGeneration;
+		runtime::NavGoalSelectionReason goalSelectionReason;
+		runtime::NavGoalSelectionStrategy goalSelectionStrategy;
+		nav::AreaId currentArea;
+		nav::AreaId targetArea;
+		nav::NavVector targetPosition;
+		nav::NavVector intentDirection;
+		float intentSpeed;
+		std::uint8_t linkDirection;
+		std::uint8_t linkHow;
+		nav::TraversalAction action;
+		std::uint16_t buttons;
+		runtime::PhysicsVector startPosition;
+		bool startGrounded;
+		float startHealth;
+	};
 
 		friend const char *HookCommandArgs();
 			friend const char *HookCommandArgv(int index);
@@ -254,13 +278,18 @@ struct ManagedObjectiveSiteRegistry
 			std::size_t index,
 			const runtime::MovementPhysicsState &before,
 			const runtime::NavRoamDecision &decision,
-			const nav::LocomotionIntent &intent);
+			const nav::LocomotionIntent &intent,
+			runtime::NavRoamResult result);
 	void logTraversalDiagnostic(
 		std::size_t index,
 		const runtime::MovementPhysicsState &before,
 		const runtime::NavRoamDecision &decision,
 		const nav::LocomotionIntent &intent,
 		std::uint16_t buttons);
+	void logTraversalOutcome(
+		std::size_t index,
+		const runtime::MovementPhysicsState &after,
+		const runtime::NavRoamDecision &decision);
 	void logMovementReversalDiagnostic(
 		std::size_t index,
 		const runtime::MovementPhysicsState &before,
@@ -324,7 +353,8 @@ struct ManagedObjectiveSiteRegistry
 		bool userMessageShowFragmentActive_;
 		std::array<char, 257U> userMessageText_;
 		std::uint16_t userMessageTextLength_;
-			std::array<runtime::NavRoamController,
+		runtime::NavAreaVisitHistory managedBotAreaVisitHistory_;
+		std::array<runtime::NavRoamController,
 					   NativeBotObservation::kClientSlotCount>
 					managedBotMovement_;
 			std::array<combat::CombatController,
@@ -400,11 +430,16 @@ struct ManagedObjectiveSiteRegistry
 		std::array<std::uint32_t,
 			NativeBotObservation::kClientSlotCount>
 			movementTraversalDiagnosticSeconds_;
+		std::array<PendingTraversalDiagnostic,
+			NativeBotObservation::kClientSlotCount>
+			movementTraversalPending_;
 		std::array<std::uint32_t,
 					   NativeBotObservation::kClientSlotCount>
 			movementDispatchFrames_;
-	std::array<bool, NativeBotObservation::kClientSlotCount>
+		std::array<bool, NativeBotObservation::kClientSlotCount>
 		movementWasAirborne_;
+		std::array<runtime::FallLandingTracker,
+			NativeBotObservation::kClientSlotCount> movementFallLandingTrackers_;
 	std::array<MovementReversalDiagnosticState,
 		NativeBotObservation::kClientSlotCount> movementReversalDiagnostics_;
 			std::uint32_t movementDiagnosticRound_;

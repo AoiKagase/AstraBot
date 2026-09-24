@@ -59,12 +59,17 @@ struct RuntimePathSearchAggregate
 struct RuntimeObjectiveSelectionStats
 {
 	std::uint32_t bombSites;
+	std::uint32_t funcBombTargetSites;
+	std::uint32_t infoBombTargetSites;
 	std::uint32_t candidateAreas;
 	std::uint32_t uniqueCandidateAreas;
 	std::uint32_t candidateQueries;
 	std::uint32_t duplicateCandidateAreas;
 	std::uint32_t selectedGoalArea;
 	std::uint32_t registeredSites;
+	std::uint32_t registeredFuncBombTargetSites;
+	std::uint32_t registeredInfoBombTargetSites;
+	bool registeredSiteCountsAvailable;
 	std::uint32_t evaluatedSites;
 	std::uint32_t cacheHits;
 	std::uint32_t selectedSiteIdentity;
@@ -111,11 +116,15 @@ struct RuntimeProfilerReport
 	std::uint64_t duplicateSearchSameObjectiveGeneration;
 	std::uint64_t uniqueSearchKeys;
 	std::uint64_t objectiveBombSites;
+	std::uint64_t objectiveFuncBombTargetSites;
+	std::uint64_t objectiveInfoBombTargetSites;
 	std::uint64_t objectiveCandidateAreas;
 	std::uint64_t objectiveUniqueCandidateAreas;
 	std::uint64_t objectiveCandidateQueries;
 	std::uint64_t objectiveDuplicateCandidateAreas;
 	std::uint64_t objectiveRegisteredSites;
+	std::uint64_t objectiveRegisteredFuncBombTargetSites;
+	std::uint64_t objectiveRegisteredInfoBombTargetSites;
 	std::uint64_t objectiveEvaluatedSites;
 	std::uint64_t objectiveCacheHits;
 	std::uint32_t selectedObjectiveSiteIdentity;
@@ -185,12 +194,17 @@ public:
 		std::uint64_t lastSearchId) noexcept;
 	void recordObjectiveSelection(
 		std::uint32_t bombSites,
+		std::uint32_t funcBombTargetSites,
+		std::uint32_t infoBombTargetSites,
 		std::uint32_t candidateAreas,
 		std::uint32_t uniqueCandidateAreas,
 		std::uint32_t candidateQueries,
 		std::uint32_t duplicateCandidateAreas,
 		std::uint32_t selectedGoalArea,
 		std::uint32_t registeredSites,
+		std::uint32_t registeredFuncBombTargetSites,
+		std::uint32_t registeredInfoBombTargetSites,
+		bool registeredSiteCountsAvailable,
 		std::uint32_t evaluatedSites,
 		std::uint32_t cacheHits,
 		std::uint32_t selectedSiteIdentity) noexcept;

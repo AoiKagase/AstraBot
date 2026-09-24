@@ -715,6 +715,50 @@ bool testReferenceCrouchCost()
 			"fastest route applies the CSBot crouch traversal penalty");
 }
 
+bool testAlternativeCorridorAvoidsFailedFirstLink()
+{
+	astrabot::nav::NavDocument document;
+	document.setSourceIdentity({5U, 100U, 200U});
+	astrabot::nav::NavArea start = area(1U, 0.0f, 64.0f, 0.0f);
+	astrabot::nav::NavArea failedBranch = area(2U, 64.0f, 128.0f, 0.0f);
+	astrabot::nav::NavArea alternateBranch = area(3U, 1000.0f, 1064.0f, 0.0f);
+	astrabot::nav::NavArea goal = area(4U, 128.0f, 192.0f, 0.0f);
+	start.connections[0U].push_back(2U);
+	start.connections[0U].push_back(3U);
+	failedBranch.connections[0U].push_back(4U);
+	alternateBranch.connections[0U].push_back(4U);
+	document.addArea(start);
+	document.addArea(failedBranch);
+	document.addArea(alternateBranch);
+	document.addArea(goal);
+	const astrabot::nav::NavSnapshot snapshot = snapshotFor(&document, 1U);
+	const astrabot::nav::NavQuery query(snapshot);
+	astrabot::nav::NavCorridor primary = {};
+	if (!check(query.buildCorridor(1U, 4U, &primary) ==
+			astrabot::nav::NavQueryResult::Found &&
+			primary.areas == std::vector<astrabot::nav::AreaId>({1U, 2U, 4U}),
+			"primary objective route uses the shortest first link"))
+	{
+		return false;
+	}
+	astrabot::nav::NavCorridor alternative = {};
+	if (!check(query.buildAlternativeCorridor(
+			primary, primary.links.front(), &alternative) ==
+			astrabot::nav::NavQueryResult::Found,
+			"objective route can bypass a failed first link"))
+	{
+		return false;
+	}
+	return check(
+		alternative.isValid() &&
+		alternative.areas == std::vector<astrabot::nav::AreaId>({1U, 3U, 4U}) &&
+		alternative.links.size() == 2U &&
+		alternative.links.front().fromArea == 1U &&
+		alternative.links.front().toArea == 3U &&
+		alternative.routeType == primary.routeType,
+		"alternative objective route preserves a valid corridor and route type");
+}
+
 bool testAStarSearchStats()
 {
 	astrabot::nav::NavDocument document;
@@ -760,6 +804,7 @@ int main()
 		!testStationaryStairFollowerDoesNotSkipSegment() ||
 		!testNearest3DUsesSurfaceHeight() ||
 			!testInvalidInputs() ||
+			!testAlternativeCorridorAvoidsFailedFirstLink() ||
 			!testAStarSearchStats() ||
 			!testReferenceStableEqualCostTieBreak() ||
 			!testReferenceCrouchCost())
