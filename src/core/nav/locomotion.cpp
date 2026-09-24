@@ -11,6 +11,8 @@ namespace
 {
 	constexpr float kMinimumProgressDistance = 0.01f;
 	constexpr float kMaximumRecoveryDistance = 256.0f;
+	// Ignore sub-unit NAV rounding when neighboring areas share an edge.
+	constexpr float kMinimumDropGap = 1.0f;
 	// Matches ZBot's far ground-probe range in MoveTowardsPosition().
 	constexpr float kMaximumGapJumpLookAhead = 80.0f;
 
@@ -288,24 +290,35 @@ LocomotionResult LocomotionController::buildIntent(
 		stepHeight <= LocomotionConfig::kMaximumJumpHeight;
 	const float transitionGap = areaGap(*currentArea, *destinationArea);
 	const float dropHeight = currentSurfaceHeight - target.z;
+	const NavVector launchApproachPoint = {
+		(std::max)(currentArea->extent.lo.x,
+			(std::min)(target.x, currentArea->extent.hi.x)),
+		(std::max)(currentArea->extent.lo.y,
+			(std::min)(target.y, currentArea->extent.hi.y)),
+		observation.position.z};
 	const bool descendingGap = !navJump && observation.grounded &&
-		!observation.onLadder && transitionGap > 0.0f &&
-		transitionGap <= kMaximumGapJumpLookAhead &&
+		!observation.onLadder &&
 		dropHeight > LocomotionConfig::kMaximumJumpHeight &&
-		horizontalDistance(observation.position, target) <= kMaximumGapJumpLookAhead;
+		horizontalDistance(observation.position, launchApproachPoint) <=
+			kMaximumGapJumpLookAhead;
 	const bool safeDescendingDrop = descendingGap &&
 		observation.safeDropHeightAvailable &&
 		std::isfinite(observation.maximumSafeDropHeight) &&
 		observation.maximumSafeDropHeight >= 0.0f &&
 		dropHeight <= observation.maximumSafeDropHeight;
-	if (descendingGap && !safeDescendingDrop)
+	const bool hasHorizontalGap = transitionGap > kMinimumDropGap;
+	const bool descendingGapJump = safeDescendingDrop && hasHorizontalGap &&
+		transitionGap <= kMaximumGapJumpLookAhead && !noJump;
+	if (descendingGap && (!safeDescendingDrop ||
+			(hasHorizontalGap && !descendingGapJump)))
 	{
 		active_ = false;
 		return LocomotionResult::UnsafeDrop;
 	}
 	const bool continuingJump = jumpIssued_ && jumpTargetArea_ == targetArea;
-	const bool requiresJump = navJump || terrainJump || continuingJump;
-	const bool emitJump = (navJump || terrainJump) &&
+	const bool requiresJump = navJump || terrainJump || descendingGapJump ||
+		continuingJump;
+	const bool emitJump = (navJump || terrainJump || descendingGapJump) &&
 		(!jumpIssued_ || jumpTargetArea_ != targetArea);
 	if (stepHeight > config_.maximumStepHeight && !requiresJump)
 	{
@@ -361,7 +374,7 @@ LocomotionResult LocomotionController::buildIntent(
 	intent->targetPosition = target;
 	intent->speed = config_.maximumSpeed;
 	intent->posture = posture;
-	intent->traversal = safeDescendingDrop
+	intent->traversal = safeDescendingDrop && !descendingGapJump
 		? TraversalAction::Drop
 		: requiresJump
 			? (emitJump ? TraversalAction::Jump : TraversalAction::Walk)

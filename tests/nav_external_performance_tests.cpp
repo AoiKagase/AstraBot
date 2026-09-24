@@ -1,4 +1,5 @@
 #include "astrabot/metamod/nav_loader.hpp"
+#include "astrabot/nav/locomotion.hpp"
 #include "astrabot/nav/nav_query.hpp"
 
 #include <algorithm>
@@ -145,6 +146,96 @@ bool runCase(
 			? astrabot::nav::NavQueryLimits::kDefaultMaximumCorridorAreas
 			: limits->maximumCorridorAreas),
 			"found route fits final corridor capacity"));
+}
+
+bool realNavArea46To119UsesOneJumpAcrossSafeHorizontalGap(
+	const astrabot::nav::NavSnapshot &snapshot)
+{
+	const astrabot::nav::NavDocument *document = snapshot.document();
+	if (!check(document != nullptr, "real NAV document is available for traversal"))
+	{
+		return false;
+	}
+	const astrabot::nav::NavArea *from = document->findArea(46U);
+	const astrabot::nav::NavArea *to = document->findArea(119U);
+	if (!check(from != nullptr && to != nullptr,
+			"real NAV jump-gap areas 46 and 119 exist"))
+	{
+		return false;
+	}
+	auto axisGap = [](float firstLow, float firstHigh,
+			float secondLow, float secondHigh) {
+		if (firstHigh < secondLow)
+		{
+			return secondLow - firstHigh;
+		}
+		if (secondHigh < firstLow)
+		{
+			return firstLow - secondHigh;
+		}
+		return 0.0f;
+	};
+	const float gapX = axisGap(
+		from->extent.lo.x, from->extent.hi.x,
+		to->extent.lo.x, to->extent.hi.x);
+	const float gapY = axisGap(
+		from->extent.lo.y, from->extent.hi.y,
+		to->extent.lo.y, to->extent.hi.y);
+	if (!check(gapX > 1.0f || gapY > 1.0f,
+			"real NAV areas 46 and 119 have a horizontal gap"))
+	{
+		return false;
+	}
+	if (!check((to->attributes & astrabot::nav::NavArea::kNoJump) == 0U,
+			"real NAV landing area does not prohibit Jump"))
+	{
+		return false;
+	}
+	const astrabot::nav::NavQuery query(snapshot);
+	astrabot::nav::NavCorridor corridor = {};
+	if (!check(query.buildCorridor(
+			46U, 119U, astrabot::nav::NavRouteType::Fastest, &corridor) ==
+			astrabot::nav::NavQueryResult::Found &&
+			corridor.areas.size() == 2U,
+			"real NAV area 46 routes directly to area 119"))
+	{
+		return false;
+	}
+	astrabot::nav::LocomotionController controller;
+	if (!check(controller.start(corridor) ==
+			astrabot::nav::LocomotionResult::Started,
+			"real NAV 46-to-119 locomotion starts"))
+	{
+		return false;
+	}
+	astrabot::nav::LocomotionObservation observation = {};
+	// This is the C4 carrier's observed feet position at the stalled live link.
+	observation.position = {-1548.5f, -170.8f, 128.0f};
+	observation.standingClearance = 72.0f;
+	observation.crouchingClearance = 36.0f;
+	observation.grounded = true;
+	observation.safeDropHeightAvailable = true;
+	observation.maximumSafeDropHeight = 150.0f;
+	astrabot::nav::LocomotionIntent intent = {};
+	const astrabot::nav::LocomotionResult result =
+		controller.update(snapshot, observation, &intent);
+	std::cout << "real_nav_traversal=46_to_119 gapX=" << gapX
+		<< " gapY=" << gapY
+		<< " safeDropHeight=" << observation.maximumSafeDropHeight
+		<< " result=" << static_cast<int>(result)
+		<< " action=" << static_cast<int>(intent.traversal) << '\n';
+	if (!check(result == astrabot::nav::LocomotionResult::IntentReady &&
+			intent.traversal == astrabot::nav::TraversalAction::Jump,
+			"a safe descent across real NAV horizontal gap 46-to-119 starts Jump"))
+	{
+		return false;
+	}
+	observation.position = {-1556.7f, -160.0f, 150.0f};
+	observation.grounded = false;
+	return check(controller.update(snapshot, observation, &intent) ==
+			astrabot::nav::LocomotionResult::IntentReady &&
+			intent.traversal == astrabot::nav::TraversalAction::Walk,
+			"real NAV gap Jump is emitted once while airborne");
 }
 
 bool productionLikeObjectiveEvaluation(
@@ -320,6 +411,10 @@ int main()
 	}
 
 	const astrabot::nav::NavSnapshot snapshot = publisher.snapshot();
+	if (!realNavArea46To119UsesOneJumpAcrossSafeHorizontalGap(snapshot))
+	{
+		return 1;
+	}
 	if (!check(snapshot.document() != nullptr &&
 		snapshot.document()->findArea(41U) != nullptr &&
 		snapshot.document()->findArea(90U) != nullptr &&

@@ -547,12 +547,12 @@ bool testJumpAttributesOverrideStepHeight()
 				"NAV_JUMP takes precedence over ordinary step rejection");
 }
 
-bool testBoundedSafeDescendingGapUsesDropNearTransition()
+bool testSafeDescendingGapWithHorizontalSeparationUsesJumpOnce()
 {
 	astrabot::nav::NavDocument document;
 	document.setSourceIdentity({5U, 100U, 200U});
 	astrabot::nav::NavArea launch = area(1U, 0.0f, 200.0f, 128.0f);
-	astrabot::nav::NavArea landing = area(2U, 225.0f, 300.0f, 30.0f);
+	astrabot::nav::NavArea landing = area(2U, 248.0f, 323.0f, 30.0f);
 	launch.connections[1U].push_back(2U);
 	document.addArea(launch);
 	document.addArea(landing);
@@ -582,8 +582,8 @@ bool testBoundedSafeDescendingGapUsesDropNearTransition()
 	observation.position = {190.0f, 32.0f, 128.0f};
 	if (!check(controller.update(snapshot, observation, &intent) ==
 				astrabot::nav::LocomotionResult::IntentReady &&
-				intent.traversal == astrabot::nav::TraversalAction::Drop,
-				"a nearby safe descending gap uses Drop without Jump"))
+				intent.traversal == astrabot::nav::TraversalAction::Jump,
+				"a safe descending landing across a horizontal gap starts one Jump"))
 	{
 		return false;
 	}
@@ -596,16 +596,17 @@ bool testBoundedSafeDescendingGapUsesDropNearTransition()
 		"an airborne descending-gap jump continues forward without re-pressing Jump");
 }
 
-bool testDescendingGapUsesDropOnlyInsideSafeFallEnvelope()
+bool testDescendingGapSeparatesSafeDropFromHorizontalJump()
 {
-	auto runCase = [](std::uint8_t landingAttributes, float landingFloor,
-			bool safeDropAvailable, float maximumSafeDropHeight,
+	auto runCase = [](std::uint8_t landingAttributes, float horizontalGap,
+			float landingFloor, bool safeDropAvailable, float maximumSafeDropHeight,
 			astrabot::nav::LocomotionResult expectedResult,
 			astrabot::nav::TraversalAction expectedTraversal) {
 		astrabot::nav::NavDocument document;
 		document.setSourceIdentity({5U, 100U, 200U});
 		astrabot::nav::NavArea launch = area(1U, 0.0f, 200.0f, 128.0f);
-		astrabot::nav::NavArea landing = area(2U, 225.0f, 300.0f, landingFloor);
+		astrabot::nav::NavArea landing = area(
+			2U, 200.0f + horizontalGap, 300.0f + horizontalGap, landingFloor);
 		landing.attributes = landingAttributes;
 		launch.connections[1U].push_back(2U);
 		document.addArea(launch);
@@ -631,15 +632,27 @@ bool testDescendingGapUsesDropOnlyInsideSafeFallEnvelope()
 			(result != astrabot::nav::LocomotionResult::IntentReady ||
 				intent.traversal == expectedTraversal);
 	};
-	return check(runCase(astrabot::nav::NavArea::kNoJump, 30.0f, true,
-			150.0f, astrabot::nav::LocomotionResult::IntentReady,
+	return check(runCase(astrabot::nav::NavArea::kNoJump, 0.0f, 30.0f,
+			true, 150.0f, astrabot::nav::LocomotionResult::IntentReady,
 			astrabot::nav::TraversalAction::Drop),
-			"NAV_NO_JUMP permits a safe fall without Jump") &&
-		check(runCase(0U, -128.0f, true, 150.0f,
+			"a safe vertical fall with touching areas needs no Jump") &&
+		check(runCase(0U, 48.0f, 30.0f, true, 150.0f,
+			astrabot::nav::LocomotionResult::IntentReady,
+			astrabot::nav::TraversalAction::Jump),
+			"a safe fall across a horizontal gap uses Jump") &&
+		check(runCase(astrabot::nav::NavArea::kNoJump, 48.0f, 30.0f,
+			true, 150.0f, astrabot::nav::LocomotionResult::UnsafeDrop,
+			astrabot::nav::TraversalAction::Walk),
+			"NAV_NO_JUMP fails closed when a horizontal gap needs crossing") &&
+		check(runCase(0U, 100.0f, 30.0f, true, 150.0f,
+			astrabot::nav::LocomotionResult::UnsafeDrop,
+			astrabot::nav::TraversalAction::Walk),
+			"a horizontal gap outside jump reach fails near the launch edge") &&
+		check(runCase(0U, 48.0f, -128.0f, true, 150.0f,
 			astrabot::nav::LocomotionResult::UnsafeDrop,
 			astrabot::nav::TraversalAction::Walk),
 			"a drop outside the safe fall envelope is a typed failure") &&
-		check(runCase(0U, 30.0f, false, 0.0f,
+		check(runCase(0U, 48.0f, 30.0f, false, 0.0f,
 			astrabot::nav::LocomotionResult::UnsafeDrop,
 			astrabot::nav::TraversalAction::Walk),
 			"an unmeasured fall envelope fails closed");
@@ -680,8 +693,8 @@ bool testOffPathAreaCannotTriggerJumpToNonAdjacentCorridorTarget()
 
 int main()
 {
-	if (!testBoundedSafeDescendingGapUsesDropNearTransition() ||
-		!testDescendingGapUsesDropOnlyInsideSafeFallEnvelope())
+	if (!testSafeDescendingGapWithHorizontalSeparationUsesJumpOnce() ||
+		!testDescendingGapSeparatesSafeDropFromHorizontalJump())
 	{
 		return 1;
 	}
