@@ -486,15 +486,14 @@ bool isBombTargetClassname(const char *classname)
 			{
 				return false;
 			}
-			constexpr float kLegacyBombTargetRadius = 256.0f;
-			extent->lo = {
-				center.x - kLegacyBombTargetRadius,
-				center.y - kLegacyBombTargetRadius,
-				center.z - kLegacyBombTargetRadius};
-			extent->hi = {
-				center.x + kLegacyBombTargetRadius,
-				center.y + kLegacyBombTargetRadius,
-				center.z + kLegacyBombTargetRadius};
+		extent->lo = {
+			center.x - ActionAdapter::kLegacyBombTargetRadius,
+			center.y - ActionAdapter::kLegacyBombTargetRadius,
+			center.z - ActionAdapter::kLegacyBombTargetRadius};
+		extent->hi = {
+			center.x + ActionAdapter::kLegacyBombTargetRadius,
+			center.y + ActionAdapter::kLegacyBombTargetRadius,
+			center.z + ActionAdapter::kLegacyBombTargetRadius};
 			return true;
 		}
 		return entityObjectiveBounds(entity, extent);
@@ -3480,9 +3479,19 @@ bool PluginRuntime::buildManagedObjectiveTarget(
 						{
 							rejectionReason = "candidate_outside_site_extent";
 						}
-						continue;
-					}
-					if (objectiveStats != nullptr)
+					continue;
+				}
+				if (equalsIgnoreCase(classname, "info_bomb_target") &&
+					!ActionAdapter::withinLegacyBombTargetRadius(
+						{candidate.x, candidate.y, candidate.z},
+						{siteMatch.closestPoint.x,
+						 siteMatch.closestPoint.y,
+						 siteMatch.closestPoint.z}))
+				{
+					rejectionReason = "outside_legacy_info_radius";
+					continue;
+				}
+				if (objectiveStats != nullptr)
 					{
 						++objectiveStats->candidateAreas;
 					}
@@ -3889,6 +3898,8 @@ ActionProposal PluginRuntime::decideManagedBotAction(
 				PlantTargetBounds siteBounds{};
 				PlantTargetBounds actorBounds{};
 				bool siteBoundsAvailable = false;
+				bool legacyInfoTarget = false;
+				PlantTargetPoint legacyInfoTargetCenter{};
 				if (targetEntityIndex > 0 && engineFunctions_ != nullptr &&
 					engineFunctions_->pfnPEntityOfEntIndex != nullptr &&
 					engineFunctions_->pfnSzFromIndex != nullptr)
@@ -3900,21 +3911,44 @@ ActionProposal PluginRuntime::decideManagedBotAction(
 					if (site != nullptr && !site->free &&
 						isBombTargetClassname(siteClassname))
 					{
+						legacyInfoTarget = equalsIgnoreCase(
+							siteClassname, "info_bomb_target");
+						if (legacyInfoTarget)
+						{
+							const nav::NavVector center = entityObjectiveCenter(site);
+						legacyInfoTargetCenter = {center.x, center.y, center.z};
+						const float radius = ActionAdapter::kLegacyBombTargetRadius;
 						siteBounds = {
-							site->v.absmin.x, site->v.absmin.y, site->v.absmin.z,
-							site->v.absmax.x, site->v.absmax.y, site->v.absmax.z};
+							center.x - radius, center.y - radius, center.z - radius,
+							center.x + radius, center.y + radius, center.z + radius};
 						siteBoundsAvailable =
-							ActionAdapter::validPlantTargetBounds(siteBounds) &&
-							siteBounds.maximumX > siteBounds.minimumX &&
-							siteBounds.maximumY > siteBounds.minimumY;
+							ActionAdapter::validPlantTargetBounds(siteBounds);
+						}
+						else
+						{
+							siteBounds = {
+								site->v.absmin.x, site->v.absmin.y, site->v.absmin.z,
+								site->v.absmax.x, site->v.absmax.y, site->v.absmax.z};
+							siteBoundsAvailable =
+								ActionAdapter::validPlantTargetBounds(siteBounds) &&
+								siteBounds.maximumX > siteBounds.minimumX &&
+								siteBounds.maximumY > siteBounds.minimumY;
+						}
 					}
 				}
 				actorBounds = {
 					handle.entity->v.absmin.x, handle.entity->v.absmin.y,
 					handle.entity->v.absmin.z, handle.entity->v.absmax.x,
 					handle.entity->v.absmax.y, handle.entity->v.absmax.z};
+				const PlantTargetPoint actorPosition = {
+					handle.entity->v.origin.x,
+					handle.entity->v.origin.y,
+					handle.entity->v.origin.z};
 				const bool actorInSite = siteBoundsAvailable &&
-					ActionAdapter::overlapsPlantTarget(siteBounds, actorBounds);
+					(legacyInfoTarget
+						? ActionAdapter::withinLegacyBombTargetRadius(
+							legacyInfoTargetCenter, actorPosition)
+						: ActionAdapter::overlapsPlantTarget(siteBounds, actorBounds));
 				const float now = globals_ != nullptr ? globals_->time
 					: std::numeric_limits<float>::quiet_NaN();
 				const PlantAttemptResult attempt = ActionAdapter::evaluatePlantAttempt(
@@ -3944,6 +3978,7 @@ ActionProposal PluginRuntime::decideManagedBotAction(
 						pluginId_,
 						"profile plantGate actor=%u actor_generation=%u map=%u round=%u "
 						"frame=%u assignment=%u site=%d site_id=%u bounds_available=%d "
+						"zone_mode=%s "
 						"actor_in_site=%d gate=%d site_bounds=(%.1f %.1f %.1f %.1f %.1f %.1f) "
 						"actor_bounds=(%.1f %.1f %.1f %.1f %.1f %.1f) "
 						"nav_target=(%.1f %.1f %.1f) actor_origin=(%.1f %.1f %.1f) "
@@ -3952,9 +3987,11 @@ ActionProposal PluginRuntime::decideManagedBotAction(
 						static_cast<unsigned int>(handle.actor.actorGeneration),
 						static_cast<unsigned int>(lifecycle_.mapGeneration()),
 						static_cast<unsigned int>(lifecycle_.roundGeneration()),
-						static_cast<unsigned int>(adapterFrameCount_),
-						objectiveAssignment->generation, targetEntityIndex, targetIdentity,
-						siteBoundsAvailable ? 1 : 0, actorInSite ? 1 : 0,
+					static_cast<unsigned int>(adapterFrameCount_),
+					objectiveAssignment->generation, targetEntityIndex, targetIdentity,
+					siteBoundsAvailable ? 1 : 0,
+					legacyInfoTarget ? "legacy_info_radius" : "func_bounds",
+					actorInSite ? 1 : 0,
 						static_cast<int>(attempt),
 						siteBounds.minimumX, siteBounds.minimumY, siteBounds.minimumZ,
 						siteBounds.maximumX, siteBounds.maximumY, siteBounds.maximumZ,

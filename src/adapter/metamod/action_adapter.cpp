@@ -124,6 +124,25 @@ bool ActionAdapter::canBeginPlantObjective(
 		selectedTargetAvailable;
 }
 
+bool ActionAdapter::withinLegacyBombTargetRadius(
+	const PlantTargetPoint &center,
+	const PlantTargetPoint &actor) noexcept
+{
+	const float values[] = {center.x, center.y, center.z, actor.x, actor.y, actor.z};
+	for (const float value : values)
+	{
+		if (!std::isfinite(value))
+		{
+			return false;
+		}
+	}
+	const float dx = center.x - actor.x;
+	const float dy = center.y - actor.y;
+	const float dz = center.z - actor.z;
+	const float radiusSquared = kLegacyBombTargetRadius * kLegacyBombTargetRadius;
+	return dx * dx + dy * dy + dz * dz <= radiusSquared;
+}
+
 PlantAttemptResult ActionAdapter::evaluatePlantAttempt(
 	PlantAttemptState &state,
 	bool actorOverlapsSite,

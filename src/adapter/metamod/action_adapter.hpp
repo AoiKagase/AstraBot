@@ -53,6 +53,12 @@ struct PlantTargetBounds {
 	float maximumZ;
 };
 
+struct PlantTargetPoint {
+	float x;
+	float y;
+	float z;
+};
+
 struct PlantAttemptState {
 	bool active;
 	float startedAt;
@@ -82,9 +88,13 @@ class ActionAdapter
 	static constexpr const char *kSelectC4Command = "weapon_c4";
 	// Public WEAPON_C4 value in the pinned ReGameDLL-CS CurWeapon protocol.
 	static constexpr std::uint8_t kC4WeaponId = 6U;
+	// ReGameDLL-CS b0889847's legacy info_bomb_target check uses a 256-unit radius.
+	static constexpr float kLegacyBombTargetRadius = 256.0f;
 	static bool isBombTargetClassname(const char *classname) noexcept;
 	static bool canBeginPlantObjective(bool hasPlantAssignment,
 		bool carryingBomb, bool isTerrorist, bool selectedTargetAvailable) noexcept;
+	static bool withinLegacyBombTargetRadius(
+		const PlantTargetPoint &center, const PlantTargetPoint &actor) noexcept;
 	static constexpr float kPlantAttemptTimeoutSeconds = 5.0f;
 	static constexpr float kPlantAttemptRetrySeconds = 1.0f;
 	static bool validPlantTargetBounds(const PlantTargetBounds &bounds) noexcept;

@@ -206,6 +206,10 @@ bool testPlantAttackWaitsForObservedC4Selection()
 bool testPlantObjectiveAcceptsAnySelectedBombTargetClass()
 {
 	using astrabot::metamod::ActionAdapter;
+	using astrabot::metamod::PlantTargetPoint;
+	const PlantTargetPoint infoTargetCenter = {100.0f, -50.0f, 32.0f};
+	const PlantTargetPoint atLegacyRadius = {356.0f, -50.0f, 32.0f};
+	const PlantTargetPoint outsideLegacyRadius = {356.1f, -50.0f, 32.0f};
 	return check(ActionAdapter::isBombTargetClassname("func_bomb_target") &&
 			ActionAdapter::isBombTargetClassname("INFO_BOMB_TARGET") &&
 			!ActionAdapter::isBombTargetClassname("info_target"),
@@ -213,7 +217,12 @@ bool testPlantObjectiveAcceptsAnySelectedBombTargetClass()
 		check(ActionAdapter::canBeginPlantObjective(true, true, true, true),
 			"selected info-only site permits a C4-carrying Terrorist to plant") &&
 		check(!ActionAdapter::canBeginPlantObjective(true, true, true, false),
-			"plant action requires a target selected by the shared BombTarget selector");
+			"plant action requires a target selected by the shared BombTarget selector") &&
+		check(ActionAdapter::withinLegacyBombTargetRadius(
+				infoTargetCenter, atLegacyRadius) &&
+			!ActionAdapter::withinLegacyBombTargetRadius(
+				infoTargetCenter, outsideLegacyRadius),
+			"info_bomb_target plant region follows the public 256-unit boundary");
 }
 
 bool testPlantZoneBoundsAndTimeout()
