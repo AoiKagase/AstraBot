@@ -703,6 +703,7 @@ const char *const kPerformanceCvarNames[kPerformanceCvarCount] = {
 		  engineFunctions_(nullptr), globals_(nullptr), roundFreezeScheduled_(false),
 		  roundFreezeStartTime_(0.0f), roundFreezeUntil_(0.0f),
 		  roundFreezeGeneration_(runtime::LifecycleSession::kInvalidGeneration),
+		  roundLifecycleTracker_(),
 		  lifecycle_(), actorRegistry_(),
 			  fakeClientManager_(lifecycle_, actorRegistry_),
 			  inputDispatcher_(lifecycle_, actorRegistry_), compatibilitySurface_(),
@@ -1071,11 +1072,28 @@ const char *const kPerformanceCvarNames[kPerformanceCvarCount] = {
 
 		bool PluginRuntime::roundFreezeActive() const
 		{
-			return roundFreezeScheduled_ && globals_ != nullptr &&
+			const RoundFreezeSchedule schedule = {
+				roundFreezeScheduled_, roundFreezeStartTime_, roundFreezeUntil_};
+			return globals_ != nullptr &&
 				roundFreezeGeneration_ == lifecycle_.roundGeneration() &&
-				std::isfinite(globals_->time) && std::isfinite(roundFreezeStartTime_) &&
-				std::isfinite(roundFreezeUntil_) && globals_->time >= roundFreezeStartTime_ &&
-				globals_->time < roundFreezeUntil_;
+				schedule.isActive(globals_->time);
+		}
+
+		bool PluginRuntime::beginRoundGeneration()
+		{
+			if (!lifecycle_.beginRound())
+			{
+				return false;
+			}
+			managedBotCurrentWeapons_.fill(ManagedCurrentWeaponObservation{});
+			managedBotObjectiveActions_.fill(ManagedObjectiveActionState{});
+			managedTeamObjectiveAssignmentsValid_ = false;
+			managedTeamObjectivePathFailurePending_ = false;
+			managedTeamObjectivePathFailureActor_ = {};
+			managedTeamObjectivePathFailureGeneration_ = 0U;
+			managedTeamObjectivePathFailureStartArea_ = 0U;
+			managedTeamObjectivePathFailureFrame_ = 0U;
+			return true;
 		}
 
 		NavLoadResult PluginRuntime::loadNavigationFile(const NavLoadRequest *request)
@@ -1167,9 +1185,10 @@ runtime::MovementPhysicsSample PluginRuntime::movementPhysicsSample(std::uint32_
 
 			if (state_ == State::Attached)
 			{
-			if (lifecycle_.activateMap())
-			{
-				roundFreezeScheduled_ = false;
+		if (lifecycle_.activateMap())
+		{
+			roundLifecycleTracker_.reset();
+			roundFreezeScheduled_ = false;
 				roundFreezeStartTime_ = 0.0f;
 				roundFreezeUntil_ = 0.0f;
 				roundFreezeGeneration_ = lifecycle_.roundGeneration();
@@ -1208,9 +1227,10 @@ runtime::MovementPhysicsSample PluginRuntime::movementPhysicsSample(std::uint32_
 		{
 			pendingJoinActions_.clear();
 			pendingJoinActionOverflow_.fill(false);
-			if (state_ == State::ActiveMap)
-			{
-				roundFreezeScheduled_ = false;
+		if (state_ == State::ActiveMap)
+		{
+			roundLifecycleTracker_.reset();
+			roundFreezeScheduled_ = false;
 				roundFreezeStartTime_ = 0.0f;
 				roundFreezeUntil_ = 0.0f;
 				roundFreezeGeneration_ = runtime::LifecycleSession::kInvalidGeneration;
@@ -1751,14 +1771,43 @@ void PluginRuntime::notifyMenuReady(
 				"World triggered \"Game_Commencing\"";
 			static constexpr char kRestartPrefix[] =
 				"World triggered \"Restart_Round_(";
+			static constexpr char kRoundEnded[] =
+				"World triggered \"Round_End\"";
 			static constexpr char kRoundStarted[] =
 				"World triggered \"Round_Start\"";
 
-			if (std::strncmp(message, kRoundStarted, sizeof(kRoundStarted) - 1U) == 0)
+		if (std::strncmp(message, kRoundStarted, sizeof(kRoundStarted) - 1U) == 0)
+		{
+			if (roundLifecycleTracker_.isDuplicateRoundStart())
 			{
-				roundFreezeScheduled_ = false;
-				roundFreezeStartTime_ = globals_->time;
-				roundFreezeUntil_ = globals_->time;
+				return;
+			}
+			if (roundLifecycleTracker_.shouldBeginNewGeneration(
+						RoundLifecycleEvent::RoundStart) && !beginRoundGeneration())
+				{
+					return;
+				}
+				const RoundFreezeSchedule freeze = RoundFreezeSchedule::create(
+					globals_->time,
+					readOptionalCvarFloat(engineFunctions_, "mp_freezetime"));
+				roundFreezeStartTime_ = freeze.startTime;
+				roundFreezeUntil_ = freeze.untilTime;
+				roundFreezeGeneration_ = lifecycle_.roundGeneration();
+				roundFreezeScheduled_ = freeze.scheduled;
+				return;
+			}
+			if (std::strncmp(message, kRoundEnded, sizeof(kRoundEnded) - 1U) == 0)
+			{
+				if (roundLifecycleTracker_.shouldBeginNewGeneration(
+						RoundLifecycleEvent::RoundEnd) && !beginRoundGeneration())
+				{
+					return;
+				}
+				const RoundFreezeSchedule noFreeze =
+					RoundFreezeSchedule::create(globals_->time, 0.0f);
+				roundFreezeScheduled_ = noFreeze.scheduled;
+				roundFreezeStartTime_ = noFreeze.startTime;
+				roundFreezeUntil_ = noFreeze.untilTime;
 				roundFreezeGeneration_ = lifecycle_.roundGeneration();
 				return;
 			}
@@ -1795,30 +1844,29 @@ void PluginRuntime::notifyMenuReady(
 				return;
 			}
 
-			float freezeSeconds = readOptionalCvarFloat(engineFunctions_, "mp_freezetime");
-			if (!std::isfinite(freezeSeconds) || freezeSeconds < 0.0f)
-			{
-				freezeSeconds = 0.0f;
-			}
-			freezeSeconds = (std::min)(freezeSeconds, 60.0f);
 			const float scheduledStart = globals_->time + restartDelay;
-			const float freezeUntil = scheduledStart + freezeSeconds;
+			const RoundFreezeSchedule freeze = RoundFreezeSchedule::create(
+				scheduledStart,
+				readOptionalCvarFloat(engineFunctions_, "mp_freezetime"));
+			const float freezeUntil = freeze.untilTime;
 			if (roundFreezeGeneration_ == lifecycle_.roundGeneration() &&
 				roundFreezeStartTime_ == scheduledStart &&
 				roundFreezeUntil_ == freezeUntil)
 			{
 				return;
 			}
-			if (!lifecycle_.beginRound())
+			const RoundLifecycleEvent roundEvent = restart != nullptr
+				? RoundLifecycleEvent::RestartScheduled
+				: RoundLifecycleEvent::GameCommencing;
+			if (roundLifecycleTracker_.shouldBeginNewGeneration(roundEvent) &&
+				!beginRoundGeneration())
 			{
 				return;
 			}
-			managedBotCurrentWeapons_.fill(ManagedCurrentWeaponObservation{});
-			managedBotObjectiveActions_.fill(ManagedObjectiveActionState{});
-			roundFreezeStartTime_ = scheduledStart;
-			roundFreezeUntil_ = freezeUntil;
+			roundFreezeStartTime_ = freeze.startTime;
+			roundFreezeUntil_ = freeze.untilTime;
 			roundFreezeGeneration_ = lifecycle_.roundGeneration();
-			roundFreezeScheduled_ = freezeSeconds > 0.0f && freezeUntil > scheduledStart;
+			roundFreezeScheduled_ = freeze.scheduled;
 		}
 
 		void PluginRuntime::onWriteByte(int value)
@@ -3701,8 +3749,20 @@ ActionProposal PluginRuntime::decideManagedBotAction(
 		};
 
 	edict_t *bombSite = findEntityByClassname("func_bomb_target");
-	edict_t *plantedBomb = nullptr;
-	compat::ObjectiveObservation plantedObservation = {};
+		edict_t *plantedBomb = nullptr;
+		compat::ObjectiveObservation plantedObservation = {};
+		std::uint32_t grenadeEntityCount = 0U;
+		std::uint32_t c4ModelEntityCount = 0U;
+		int firstGrenadeEntityIndex = 0;
+	int firstC4ModelEntityIndex = 0;
+		const char *firstGrenadeClassname = "(none)";
+		const char *firstGrenadeModel = "(none)";
+	const char *firstC4ModelClassname = "(none)";
+	const char *firstC4ModelName = "(none)";
+		float firstGrenadeDamageTime = 0.0f;
+	float firstC4ModelDamageTime = 0.0f;
+	int firstGrenadeObservationResult = -1;
+	int firstC4ModelObservationResult = -1;
 		const int maxEntities = (std::max)(0, (std::min)(globals_->maxEntities, 2048));
 		for (int entityIndex = 1; entityIndex <= maxEntities; ++entityIndex)
 		{
@@ -3713,14 +3773,69 @@ ActionProposal PluginRuntime::decideManagedBotAction(
 			}
 			const char *classname = engineFunctions_->pfnSzFromIndex(entity->v.classname);
 			const char *model = engineFunctions_->pfnSzFromIndex(entity->v.model);
-		if (plantedBomb == nullptr && observationAdapter_.collectPlantedBomb(
-				entity, classname, model, globals_->time, actor, frame,
-				observationTiming, &plantedObservation) == ObservationAdapterResult::Accepted)
+			const bool grenadeEntity = equalsIgnoreCase(classname, "grenade");
+			const bool c4Model = model != nullptr &&
+				std::strstr(model, "w_c4.mdl") != nullptr;
+			if (grenadeEntity)
+			{
+				++grenadeEntityCount;
+			}
+			if (c4Model)
+			{
+				++c4ModelEntityCount;
+			}
+			ObservationAdapterResult plantedResult =
+				ObservationAdapterResult::InvalidEntity;
+			if (plantedBomb == nullptr)
+			{
+				plantedResult = observationAdapter_.collectPlantedBomb(
+					entity, classname, model, globals_->time, actor, frame,
+					observationTiming, &plantedObservation);
+			}
+			if (grenadeEntity && firstGrenadeEntityIndex == 0)
+			{
+				firstGrenadeEntityIndex = entityIndex;
+				firstGrenadeClassname = classname != nullptr ? classname : "(null)";
+				firstGrenadeModel = model != nullptr ? model : "(null)";
+				firstGrenadeDamageTime = entity->v.dmgtime;
+				firstGrenadeObservationResult = static_cast<int>(plantedResult);
+			}
+			if (c4Model && firstC4ModelEntityIndex == 0)
+			{
+				firstC4ModelEntityIndex = entityIndex;
+				firstC4ModelClassname = classname != nullptr ? classname : "(null)";
+				firstC4ModelName = model != nullptr ? model : "(null)";
+				firstC4ModelDamageTime = entity->v.dmgtime;
+				firstC4ModelObservationResult = static_cast<int>(plantedResult);
+			}
+		if (plantedResult == ObservationAdapterResult::Accepted)
 		{
 			plantedBomb = entity;
 			break;
 		}
 	}
+		if (plantedBomb == nullptr && teamRole == objectives::TeamRole::CounterTerrorist &&
+			runtimeProfiler_.enabled() && (adapterFrameCount_ % 64U) == 0U &&
+			gpMetaUtilFuncs != nullptr && gpMetaUtilFuncs->pfnLogConsole != nullptr &&
+			pluginId_ != nullptr)
+		{
+			gpMetaUtilFuncs->pfnLogConsole(
+				pluginId_,
+				"profile plantedBombScan actor=%u actor_generation=%u map=%u round=%u "
+				"frame=%u now=%.2f entities=%d grenade_count=%u "
+				"first_grenade=(%d %s %s dmgtime=%.2f result=%d) "
+				"c4_model_count=%u first_c4_model=(%d %s %s dmgtime=%.2f result=%d)",
+				static_cast<unsigned int>(handle.actor.slot),
+				static_cast<unsigned int>(handle.actor.actorGeneration),
+				static_cast<unsigned int>(lifecycle_.mapGeneration()),
+				static_cast<unsigned int>(lifecycle_.roundGeneration()),
+				static_cast<unsigned int>(adapterFrameCount_), globals_->time,
+				maxEntities, grenadeEntityCount, firstGrenadeEntityIndex,
+				firstGrenadeClassname, firstGrenadeModel, firstGrenadeDamageTime,
+				firstGrenadeObservationResult, c4ModelEntityCount,
+				firstC4ModelEntityIndex, firstC4ModelClassname, firstC4ModelName,
+				firstC4ModelDamageTime, firstC4ModelObservationResult);
+		}
 		const bool carryingBomb = compatObservation.objective.carryingC4.isAvailable() &&
 			compatObservation.objective.carryingC4.value;
 		ManagedObjectiveActionState &plantState = managedBotObjectiveActions_[index];

@@ -1,11 +1,12 @@
 #include "astrabot/runtime/lifecycle.hpp"
+#include "astrabot/metamod/round_lifecycle_tracker.hpp"
 
 #include <cstdio>
 #include <limits>
 
 namespace
 {
-	bool check(bool condition, const char *description)
+bool check(bool condition, const char *description)
 	{
 		if (condition)
 		{
@@ -14,11 +15,75 @@ namespace
 
 		std::fprintf(stderr, "check failed: %s\n", description);
 		return false;
+}
+
+bool testRoundLifecycleSignalsAdvanceExactlyOncePerRound()
+{
+	using astrabot::metamod::RoundLifecycleEvent;
+	using astrabot::metamod::RoundLifecycleTracker;
+	RoundLifecycleTracker tracker;
+	if (!check(tracker.shouldBeginNewGeneration(RoundLifecycleEvent::RoundStart),
+			"first Round_Start begins a generation when no prepare event arrived"))
+	{
+		return false;
 	}
+	if (!check(!tracker.shouldBeginNewGeneration(RoundLifecycleEvent::RoundStart),
+			"duplicate Round_Start does not double-advance the generation"))
+	{
+		return false;
+	}
+	if (!check(tracker.shouldBeginNewGeneration(RoundLifecycleEvent::RoundEnd),
+			"Round_End invalidates the completed round state"))
+	{
+		return false;
+	}
+	if (!check(!tracker.shouldBeginNewGeneration(RoundLifecycleEvent::RoundStart),
+			"the next Round_Start consumes the generation prepared at Round_End"))
+	{
+		return false;
+	}
+	if (!check(tracker.shouldBeginNewGeneration(RoundLifecycleEvent::RoundEnd) &&
+			!tracker.shouldBeginNewGeneration(RoundLifecycleEvent::RestartScheduled) &&
+			!tracker.shouldBeginNewGeneration(RoundLifecycleEvent::RoundStart),
+			"restart scheduling and Round_Start do not double-advance a round"))
+	{
+		return false;
+	}
+	tracker.reset();
+	return check(tracker.shouldBeginNewGeneration(RoundLifecycleEvent::GameCommencing) &&
+			!tracker.shouldBeginNewGeneration(RoundLifecycleEvent::RoundStart),
+			"Game_Commencing preparation is consumed by the first Round_Start");
+}
+
+bool testRoundFreezeWindowUsesRoundStartAndFiniteExpiry()
+{
+	using astrabot::metamod::RoundFreezeSchedule;
+	const RoundFreezeSchedule freeze = RoundFreezeSchedule::create(20.0f, 5.0f);
+	if (!check(freeze.scheduled && freeze.isActive(20.0f) &&
+			freeze.isActive(24.99f) && !freeze.isActive(25.0f),
+			"freezetime is active from Round_Start through its exclusive expiry"))
+	{
+		return false;
+	}
+	const RoundFreezeSchedule noFreeze = RoundFreezeSchedule::create(20.0f, -1.0f);
+	const RoundFreezeSchedule capped = RoundFreezeSchedule::create(20.0f, 120.0f);
+	return check(!noFreeze.scheduled && !noFreeze.isActive(20.0f),
+			"negative freezetime produces no freeze") &&
+		check(capped.scheduled && capped.untilTime == 80.0f,
+			"freezetime is bounded to sixty seconds");
+}
 }
 
 int main()
 {
+	if (!testRoundLifecycleSignalsAdvanceExactlyOncePerRound())
+	{
+		return 1;
+	}
+	if (!testRoundFreezeWindowUsesRoundStartAndFiniteExpiry())
+	{
+		return 1;
+	}
 	using astrabot::runtime::LifecycleSession;
 	using astrabot::runtime::LifecycleToken;
 

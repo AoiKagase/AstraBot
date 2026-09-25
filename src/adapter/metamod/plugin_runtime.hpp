@@ -5,6 +5,7 @@
 #include "astrabot/metamod/compat_surface.hpp"
 #include "astrabot/metamod/fake_client_manager.hpp"
 #include "astrabot/metamod/join_controller.hpp"
+#include "astrabot/metamod/round_lifecycle_tracker.hpp"
 #include "astrabot/metamod/input_dispatcher.hpp"
 #include "astrabot/metamod/native_bot_guard.hpp"
 #include "astrabot/metamod/nav_loader.hpp"
@@ -170,6 +171,7 @@ struct ManagedObjectiveSiteRegistry
 							const float *origin, edict_t *entity);
 		void onMessageEnd();
 		void onRoundLifecycleMessage(const char *message);
+		bool beginRoundGeneration();
 		void onWriteByte(int value);
 		void onWriteChar(int value);
 		void onWriteShort(int value);
@@ -380,7 +382,8 @@ void logTraversalOutcome(
 		float roundFreezeStartTime_;
 		float roundFreezeUntil_;
 		runtime::LifecycleGeneration roundFreezeGeneration_;
-			runtime::LifecycleSession lifecycle_;
+		RoundLifecycleTracker roundLifecycleTracker_;
+		runtime::LifecycleSession lifecycle_;
 			runtime::ActorRegistry actorRegistry_;
 			FakeClientManager fakeClientManager_;
 			InputDispatcher inputDispatcher_;

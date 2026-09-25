@@ -479,10 +479,8 @@ ObservationAdapterResult ObservationAdapter::collectPlantedBomb(
 	}
 	if (entity == nullptr || entity->free != 0 || classname == nullptr ||
 		model == nullptr || !std::isfinite(currentTime) ||
-		!std::isfinite(entity->v.dmgtime) ||
 		std::strcmp(classname, "grenade") != 0 ||
-		entity->v.dmgtime <= currentTime ||
-		(model[0] != '\0' && std::strstr(model, "w_c4.mdl") == nullptr))
+		std::strstr(model, "w_c4.mdl") == nullptr)
 	{
 		return ObservationAdapterResult::InvalidEntity;
 	}
@@ -501,17 +499,25 @@ ObservationAdapterResult ObservationAdapter::collectPlantedBomb(
 		compat::ObservationQuality::Inferred,
 		compat::ObservationFreshness::SameTick,
 		compat::ObservationSource::PublicEdict);
+	const bool timerAvailable = std::isfinite(entity->v.dmgtime) &&
+		entity->v.dmgtime > currentTime;
 	const compat::ObservationContext timerContext = makeContext(
 		"OBS-OBJECTIVE-BOMB-TIMER", actor, frame, timing,
-		compat::ObservationQuality::Inferred,
-		compat::ObservationFreshness::SameTick,
-		compat::ObservationSource::PublicEdict);
+		timerAvailable ? compat::ObservationQuality::Inferred
+					   : compat::ObservationQuality::Unavailable,
+		timerAvailable ? compat::ObservationFreshness::SameTick
+					   : compat::ObservationFreshness::Stale,
+		timerAvailable ? compat::ObservationSource::PublicEdict
+					   : compat::ObservationSource::None);
 	observation->bombPlanted = {true, true, plantedContext};
 	observation->bombPosition = {
 		world::WorldVector{entity->v.origin[0], entity->v.origin[1], entity->v.origin[2]},
 		true,
 		positionContext};
-	observation->bombTimer = {entity->v.dmgtime, true, timerContext};
+	observation->bombTimer = timerAvailable
+		? compat::ObservationValue<float>{entity->v.dmgtime, true, timerContext}
+		: unavailableValue<float>(
+			"OBS-OBJECTIVE-BOMB-TIMER", actor, frame, timing);
 	compat::emitObservationTrace(
 		observation->bombPlanted, compat::ObservationValueKind::Boolean, traceSink);
 	compat::emitObservationTrace(

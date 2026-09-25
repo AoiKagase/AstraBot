@@ -123,7 +123,9 @@ edict_t *findEntityByString(edict_t *start, const char *field, const char *value
 
 	const char *szFromIndex(int index)
 	{
-		return index == 1 ? "func_bomb_target" : index == 2 ? "grenade" : "";
+		return index == 1 ? "func_bomb_target" :
+			index == 2 ? "grenade" :
+			index == 3 ? "models/w_c4.mdl" : "";
 	}
 
 	edict_t *entityOfIndex(int index)
@@ -679,6 +681,7 @@ int main()
 	gBombSite.v.origin = gEntities[0].v.origin;
 	gBombSite.v.classname = 1;
 	gPlantedBomb.v.classname = 2;
+	gPlantedBomb.v.model = 3;
 	gPlantedBomb.serialnumber = 1;
 	gPlantedBomb.v.origin = gEntities[0].v.origin;
 	gPlantedBomb.v.dmgtime = globals.time + 30.0f;
@@ -1212,16 +1215,25 @@ int main()
 		immediateRound.roundGeneration;
 	char roundStartedLog[] = "World triggered \"Round_Start\"\n";
 	requestedEngineFunctions.pfnAlertMessage(at_logged, alertFormat, roundStartedLog);
-	if (!check(!runtime.snapshot().roundFreezeActive &&
+	const float actualRoundStartTime = globals.time;
+	if (!check(runtime.snapshot().roundFreezeActive &&
 			runtime.snapshot().roundGeneration == activeRoundGeneration,
-			"Round_Start log clears freeze without starting another generation"))
+			"Round_Start anchors configured freezetime without advancing the prepared generation"))
+	{
+		std::remove(profilePath);
+		return 1;
+	}
+	globals.time = actualRoundStartTime + gMpFreezetime + 0.1f;
+	if (!check(!runtime.snapshot().roundFreezeActive,
+			"Round_Start freezetime expires at the configured boundary"))
 	{
 		std::remove(profilePath);
 		return 1;
 	}
 	requestedEngineFunctions.pfnAlertMessage(at_logged, alertFormat, roundStartedLog);
-	if (!check(runtime.snapshot().roundGeneration == activeRoundGeneration,
-			"duplicate Round_Start log does not advance generation"))
+	if (!check(runtime.snapshot().roundGeneration == activeRoundGeneration &&
+			!runtime.snapshot().roundFreezeActive,
+			"duplicate Round_Start neither advances generation nor extends freezetime"))
 	{
 		std::remove(profilePath);
 		return 1;
@@ -1247,8 +1259,8 @@ int main()
 	}
 	requestedEngineFunctions.pfnAlertMessage(at_logged, alertFormat, roundStartedLog);
 	if (!check(runtime.snapshot().roundGeneration == commencingRound.roundGeneration &&
-			!runtime.snapshot().roundFreezeActive,
-			"Round_Start log ends the Game_Commencing freeze"))
+			runtime.snapshot().roundFreezeActive,
+			"Round_Start after Game_Commencing preserves generation and applies freezetime"))
 	{
 		std::remove(profilePath);
 		return 1;

@@ -178,6 +178,26 @@ bool testPlantedBombEntityIsInferred()
 			"planted bomb timer is preserved");
 }
 
+bool testPlantedBombWithoutPublicDamageTimeKeepsTimerUnavailable()
+{
+	Fixture fixture;
+	configureFixture(&fixture);
+	fixture.entity.v.dmgtime = 0.0f;
+	astrabot::compat::ObjectiveObservation objective = {};
+	const astrabot::metamod::ObservationAdapterResult result =
+		fixture.adapter.collectPlantedBomb(
+			&fixture.entity, "grenade", "models/w_c4.mdl", 5.0f,
+			{4U, 9U}, frame(), timing(), &objective);
+	return check(result == astrabot::metamod::ObservationAdapterResult::Accepted,
+			"public C4 grenade/model identifies a planted bomb without dmgtime") &&
+		check(objective.bombPlanted.isAvailable() && objective.bombPlanted.value,
+			"planted state remains available without a public bomb timer") &&
+		check(!objective.bombTimer.isAvailable() &&
+			objective.bombTimer.context.quality ==
+				astrabot::compat::ObservationQuality::Unavailable,
+			"private C4 countdown remains explicitly unavailable");
+}
+
 bool testDroppedC4RequiresVerifiedWeaponBoxIdentityAndTracksReuse()
 {
 	Fixture fixture;
@@ -261,5 +281,6 @@ int main()
 		testAdapterPreservesActorAndFrameIdentity() &&
 		testAdapterHandlesMissingEnginePointers() &&
 		testPlantedBombEntityIsInferred() &&
+		testPlantedBombWithoutPublicDamageTimeKeepsTimerUnavailable() &&
 		testDroppedC4RequiresVerifiedWeaponBoxIdentityAndTracksReuse() ? 0 : 1;
 }
