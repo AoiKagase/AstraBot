@@ -478,7 +478,7 @@ bool isBombTargetClassname(const char *classname)
 		{
 			return false;
 		}
-	if (ActionAdapter::isLegacyInfoBombTargetClassname(classname))
+		if (ActionAdapter::isLegacyInfoBombTargetClassname(classname))
 		{
 			const nav::NavVector center = entityObjectiveCenter(entity);
 			if (!std::isfinite(center.x) || !std::isfinite(center.y) ||
@@ -486,14 +486,14 @@ bool isBombTargetClassname(const char *classname)
 			{
 				return false;
 			}
-		extent->lo = {
-			center.x - ActionAdapter::kLegacyBombTargetRadius,
-			center.y - ActionAdapter::kLegacyBombTargetRadius,
-			center.z - ActionAdapter::kLegacyBombTargetRadius};
-		extent->hi = {
-			center.x + ActionAdapter::kLegacyBombTargetRadius,
-			center.y + ActionAdapter::kLegacyBombTargetRadius,
-			center.z + ActionAdapter::kLegacyBombTargetRadius};
+			extent->lo = {
+				center.x - ActionAdapter::kLegacyBombTargetRadius,
+				center.y - ActionAdapter::kLegacyBombTargetRadius,
+				center.z - ActionAdapter::kLegacyBombTargetRadius};
+			extent->hi = {
+				center.x + ActionAdapter::kLegacyBombTargetRadius,
+				center.y + ActionAdapter::kLegacyBombTargetRadius,
+				center.z + ActionAdapter::kLegacyBombTargetRadius};
 			return true;
 		}
 		return entityObjectiveBounds(entity, extent);
