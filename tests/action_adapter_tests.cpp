@@ -34,6 +34,11 @@ bool testFireAndObjectiveButtons()
 	{
 		return false;
 	}
+	if (!check(fireDispatch.clientCommand == nullptr,
+			"generic Fire does not issue a C4 selection command"))
+	{
+		return false;
+	}
 
 	const ActionProposal defuse = {ActionKind::Defuse, aim, 4U};
 	const auto defuseDispatch = ActionAdapter::translate(defuse);
@@ -198,6 +203,19 @@ bool testPlantAttackWaitsForObservedC4Selection()
 			"continued attack requires current C4 observation");
 }
 
+bool testPlantObjectiveAcceptsAnySelectedBombTargetClass()
+{
+	using astrabot::metamod::ActionAdapter;
+	return check(ActionAdapter::isBombTargetClassname("func_bomb_target") &&
+			ActionAdapter::isBombTargetClassname("INFO_BOMB_TARGET") &&
+			!ActionAdapter::isBombTargetClassname("info_target"),
+			"plant target classifier accepts both public BombTarget classnames") &&
+		check(ActionAdapter::canBeginPlantObjective(true, true, true, true),
+			"selected info-only site permits a C4-carrying Terrorist to plant") &&
+		check(!ActionAdapter::canBeginPlantObjective(true, true, true, false),
+			"plant action requires a target selected by the shared BombTarget selector");
+}
+
 bool testPlantZoneBoundsAndTimeout()
 {
 	using astrabot::metamod::ActionAdapter;
@@ -277,6 +295,7 @@ int main()
 		testActionStopsMovementForObjectiveUse() &&
 			testPlantContinuationReselectsC4() &&
 			testPlantAttackWaitsForObservedC4Selection() &&
+			testPlantObjectiveAcceptsAnySelectedBombTargetClass() &&
 			testPlantZoneBoundsAndTimeout() &&
 			testPlantAttemptRequiresSiteAndTimesOutAfterDeliveredInput() &&
 		testWorldMovementProjectionIgnoresAimTarget() &&

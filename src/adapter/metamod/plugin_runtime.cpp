@@ -466,12 +466,10 @@ void addNavSearchStats(nav::NavSearchStats *total, const nav::NavSearchStats &sa
 			: nav::NavVector{entity->v.origin.x, entity->v.origin.y, entity->v.origin.z};
 	}
 
-	bool isBombTargetClassname(const char *classname)
-	{
-		return classname != nullptr &&
-			(std::strcmp(classname, "func_bomb_target") == 0 ||
-			 std::strcmp(classname, "info_bomb_target") == 0);
-	}
+bool isBombTargetClassname(const char *classname)
+{
+	return ActionAdapter::isBombTargetClassname(classname);
+}
 
 	bool objectiveSiteExtent(
 		const edict_t *entity, const char *classname, nav::NavExtent *extent)
@@ -3793,6 +3791,12 @@ ActionProposal PluginRuntime::decideManagedBotAction(
 	const objectives::ObjectiveResult objectiveResult =
 		managedBotObjectives_[index].plan(
 			snapshot, compatibilityBehaviorState, scenario, nullptr, &objective);
+	const bool hasPlantAssignment = objectiveAssignment != nullptr &&
+		objectiveAssignment->kind == team::TeamObjectiveKind::PlantC4;
+	nav::NavVector selectedPlantTarget{};
+	const bool haveSelectedPlantTarget = hasPlantAssignment && carryingBomb &&
+		teamRole == objectives::TeamRole::Terrorist &&
+		buildManagedObjectiveTarget(index, &selectedPlantTarget, nullptr);
 	objectives::ObjectiveKind objectiveKind = objectives::ObjectiveKind::None;
 	if (objectiveResult == objectives::ObjectiveResult::Proposed &&
 		objective.objective.kind != objectives::ObjectiveKind::Plant &&
@@ -3800,10 +3804,10 @@ ActionProposal PluginRuntime::decideManagedBotAction(
 	{
 		objectiveKind = objective.objective.kind;
 	}
-	if (objectiveAssignment != nullptr &&
-		objectiveAssignment->kind == team::TeamObjectiveKind::PlantC4 &&
-		carryingBomb && bombSite != nullptr &&
-		teamRole == objectives::TeamRole::Terrorist)
+	if (ActionAdapter::canBeginPlantObjective(
+		hasPlantAssignment, carryingBomb,
+		teamRole == objectives::TeamRole::Terrorist,
+		haveSelectedPlantTarget))
 	{
 		objectiveKind = objectives::ObjectiveKind::Plant;
 	}
@@ -3836,10 +3840,10 @@ ActionProposal PluginRuntime::decideManagedBotAction(
 						haveObjectivePosition = true;
 					}
 				}
-				else if (bombSite != nullptr)
+				else
 				{
-			haveObjectivePosition = buildManagedObjectiveTarget(
-				index, &objectivePosition, nullptr);
+					objectivePosition = selectedPlantTarget;
+					haveObjectivePosition = haveSelectedPlantTarget;
 				}
 				if (haveObjectivePosition)
 				{

@@ -82,6 +82,9 @@ class ActionAdapter
 	static constexpr const char *kSelectC4Command = "weapon_c4";
 	// Public WEAPON_C4 value in the pinned ReGameDLL-CS CurWeapon protocol.
 	static constexpr std::uint8_t kC4WeaponId = 6U;
+	static bool isBombTargetClassname(const char *classname) noexcept;
+	static bool canBeginPlantObjective(bool hasPlantAssignment,
+		bool carryingBomb, bool isTerrorist, bool selectedTargetAvailable) noexcept;
 	static constexpr float kPlantAttemptTimeoutSeconds = 5.0f;
 	static constexpr float kPlantAttemptRetrySeconds = 1.0f;
 	static bool validPlantTargetBounds(const PlantTargetBounds &bounds) noexcept;

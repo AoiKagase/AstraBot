@@ -1,11 +1,33 @@
 #include "action_adapter.hpp"
 
+#include <cctype>
 #include <cmath>
 
 namespace astrabot
 {
 namespace metamod
 {
+namespace
+{
+bool equalsIgnoreCase(const char *left, const char *right) noexcept
+{
+	if (left == nullptr || right == nullptr)
+	{
+		return false;
+	}
+	while (*left != '\0' && *right != '\0')
+	{
+		const unsigned char leftCharacter = static_cast<unsigned char>(*left++);
+		const unsigned char rightCharacter = static_cast<unsigned char>(*right++);
+		if (std::tolower(leftCharacter) != std::tolower(rightCharacter))
+		{
+			return false;
+		}
+	}
+	return *left == *right;
+}
+} // namespace
+
 ActionDispatch ActionAdapter::translate(const ActionProposal &proposal)
 {
 	ActionDispatch result = {
@@ -13,11 +35,13 @@ ActionDispatch ActionAdapter::translate(const ActionProposal &proposal)
 	switch (proposal.kind)
 	{
 		case ActionKind::Fire:
+			result.buttons = static_cast<std::uint16_t>(result.buttons | kAttackButton);
+			break;
 		case ActionKind::Plant:
 		case ActionKind::PlantContinue:
 			result.buttons = static_cast<std::uint16_t>(result.buttons | kAttackButton);
 			result.clientCommand = kSelectC4Command;
-			result.stopMovement = proposal.kind != ActionKind::Fire;
+			result.stopMovement = true;
 			break;
 		case ActionKind::SelectC4:
 			result.clientCommand = kSelectC4Command;
@@ -82,6 +106,22 @@ bool ActionAdapter::plantAttemptExpired(float elapsedSeconds) noexcept
 {
 	return std::isfinite(elapsedSeconds) &&
 		elapsedSeconds >= kPlantAttemptTimeoutSeconds;
+}
+
+bool ActionAdapter::isBombTargetClassname(const char *classname) noexcept
+{
+	return equalsIgnoreCase(classname, "func_bomb_target") ||
+		equalsIgnoreCase(classname, "info_bomb_target");
+}
+
+bool ActionAdapter::canBeginPlantObjective(
+	bool hasPlantAssignment,
+	bool carryingBomb,
+	bool isTerrorist,
+	bool selectedTargetAvailable) noexcept
+{
+	return hasPlantAssignment && carryingBomb && isTerrorist &&
+		selectedTargetAvailable;
 }
 
 PlantAttemptResult ActionAdapter::evaluatePlantAttempt(
