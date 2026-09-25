@@ -478,7 +478,7 @@ bool isBombTargetClassname(const char *classname)
 		{
 			return false;
 		}
-		if (classname != nullptr && std::strcmp(classname, "info_bomb_target") == 0)
+	if (ActionAdapter::isLegacyInfoBombTargetClassname(classname))
 		{
 			const nav::NavVector center = entityObjectiveCenter(entity);
 			if (!std::isfinite(center.x) || !std::isfinite(center.y) ||

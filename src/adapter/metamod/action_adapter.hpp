@@ -91,6 +91,7 @@ class ActionAdapter
 	// ReGameDLL-CS b0889847's legacy info_bomb_target check uses a 256-unit radius.
 	static constexpr float kLegacyBombTargetRadius = 256.0f;
 	static bool isBombTargetClassname(const char *classname) noexcept;
+	static bool isLegacyInfoBombTargetClassname(const char *classname) noexcept;
 	static bool canBeginPlantObjective(bool hasPlantAssignment,
 		bool carryingBomb, bool isTerrorist, bool selectedTargetAvailable) noexcept;
 	static bool withinLegacyBombTargetRadius(

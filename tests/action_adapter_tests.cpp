@@ -214,6 +214,9 @@ bool testPlantObjectiveAcceptsAnySelectedBombTargetClass()
 			ActionAdapter::isBombTargetClassname("INFO_BOMB_TARGET") &&
 			!ActionAdapter::isBombTargetClassname("info_target"),
 			"plant target classifier accepts both public BombTarget classnames") &&
+		check(ActionAdapter::isLegacyInfoBombTargetClassname("INFO_BOMB_TARGET") &&
+			!ActionAdapter::isLegacyInfoBombTargetClassname("func_bomb_target"),
+			"legacy info radius classifier is case-insensitive") &&
 		check(ActionAdapter::canBeginPlantObjective(true, true, true, true),
 			"selected info-only site permits a C4-carrying Terrorist to plant") &&
 		check(!ActionAdapter::canBeginPlantObjective(true, true, true, false),

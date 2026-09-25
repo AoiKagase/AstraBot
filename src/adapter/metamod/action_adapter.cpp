@@ -111,7 +111,12 @@ bool ActionAdapter::plantAttemptExpired(float elapsedSeconds) noexcept
 bool ActionAdapter::isBombTargetClassname(const char *classname) noexcept
 {
 	return equalsIgnoreCase(classname, "func_bomb_target") ||
-		equalsIgnoreCase(classname, "info_bomb_target");
+		isLegacyInfoBombTargetClassname(classname);
+}
+
+bool ActionAdapter::isLegacyInfoBombTargetClassname(const char *classname) noexcept
+{
+	return equalsIgnoreCase(classname, "info_bomb_target");
 }
 
 bool ActionAdapter::canBeginPlantObjective(
