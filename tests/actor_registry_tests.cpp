@@ -73,6 +73,12 @@ int main()
 	{
 		return 1;
 	}
+	const astrabot::runtime::LifecycleToken nextRoundToken = {1U, 2U, 1U, 1U};
+	if (!check(registry.isCurrent(firstActor, nextRoundToken),
+			"joined actor persists across round changes"))
+	{
+		return 1;
+	}
 	if (!check(registry.beginRemoval(firstActor) == ActorResult::Accepted,
 			"removal transition succeeds"))
 	{

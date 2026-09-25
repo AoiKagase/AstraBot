@@ -157,6 +157,13 @@ int main()
 	{
 		return 1;
 	}
+	const BotCommand currentRoundCommand =
+		commandFor(firstActor, lifecycle.tokenForSlot(firstActor.slot), 4U);
+	if (!check(queue.enqueue(currentRoundCommand) == QueueResult::Accepted,
+			"current round command is accepted for persistent actor"))
+	{
+		return 1;
+	}
 	queue.clearActor(firstActor);
 	if (!check(queue.size() == 0U, "actor clear removes pending commands"))
 	{

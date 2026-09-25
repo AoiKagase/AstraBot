@@ -137,10 +137,10 @@ namespace runtime
 			return false;
 		}
 
+		// Actor registration spans rounds; command lifecycle is checked separately.
 		return record->state == ActorState::Joined &&
 			sameActor(record->actor, actor) &&
 			record->lifecycleToken.mapGeneration == lifecycleToken.mapGeneration &&
-			record->lifecycleToken.roundGeneration == lifecycleToken.roundGeneration &&
 			record->lifecycleToken.slotGeneration == lifecycleToken.slotGeneration &&
 			record->lifecycleToken.slot == lifecycleToken.slot &&
 			isTokenValid(actor.slot, lifecycleToken);
