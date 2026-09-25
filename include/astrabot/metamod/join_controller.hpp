@@ -5,6 +5,8 @@
 #include "astrabot/metamod/abi_contract.hpp"
 #include "astrabot/runtime/actor_registry.hpp"
 
+#include <array>
+#include <cstddef>
 #include <cstdint>
 
 namespace astrabot
@@ -86,6 +88,35 @@ namespace metamod
 		static JoinAction cancelled(JoinError error) noexcept;
 	};
 
+	struct DeferredJoinAction
+	{
+		runtime::ActorId actor{};
+		std::uint32_t mapGeneration = 0U;
+		std::uint32_t slotGeneration = 0U;
+		std::uint32_t capturedFrame = 0U;
+		JoinAction action{};
+	};
+
+	class DeferredJoinActionQueue final
+	{
+	public:
+		static constexpr std::size_t kCapacity =
+			runtime::LifecycleSession::kClientSlotCount * 4U;
+
+		bool enqueue(
+			const runtime::ActorId &actor,
+			const runtime::LifecycleToken &token,
+			std::uint32_t frame,
+			const JoinAction &action) noexcept;
+		bool dequeue(DeferredJoinAction *action) noexcept;
+		void clear() noexcept;
+		std::size_t size() const noexcept;
+
+	private:
+		std::array<DeferredJoinAction, kCapacity> actions_{};
+		std::size_t head_ = 0U;
+		std::size_t count_ = 0U;
+	};
 	class JoinController final
 	{
 	public:

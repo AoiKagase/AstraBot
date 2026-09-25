@@ -31,10 +31,7 @@ MovementExecutionDecision MovementExecutionGate::evaluate(
 		return result;
 	}
 
-	const bool roundFreeze = observation.maxSpeedAvailable &&
-		std::isfinite(observation.maxSpeed) && observation.maxSpeed > 0.0f &&
-		observation.maxSpeed <= 1.0f;
-	if (!roundFreeze)
+	if (!observation.roundFreezeActive)
 	{
 		return result;
 	}

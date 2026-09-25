@@ -520,5 +520,54 @@ ObservationAdapterResult ObservationAdapter::collectPlantedBomb(
 		observation->bombTimer, compat::ObservationValueKind::Float, traceSink);
 	return ObservationAdapterResult::Accepted;
 }
+
+ObservationAdapterResult ObservationAdapter::collectDroppedC4(
+	edict_t *entity,
+	const char *classname,
+	const char *model,
+	const world::ActorKey &actor,
+	const world::FrameIdentity &frame,
+	const compat::ObservationTimingContext &timing,
+	compat::DroppedC4Observation *observation) const
+{
+	if (observation == nullptr || !actor.isValid() || !frame.isValid())
+	{
+		return ObservationAdapterResult::InvalidArgument;
+	}
+	*observation = {};
+	if (engineFunctions_ == nullptr || globals_ == nullptr ||
+		engineFunctions_->pfnIndexOfEdict == nullptr)
+	{
+		return ObservationAdapterResult::EngineUnavailable;
+	}
+	if (entity == nullptr || entity->free != 0 || classname == nullptr ||
+		model == nullptr || std::strcmp(classname, "weaponbox") != 0 ||
+		std::strcmp(model, "models/w_backpack.mdl") != 0 ||
+		!std::isfinite(entity->v.origin[0]) ||
+		!std::isfinite(entity->v.origin[1]) ||
+		!std::isfinite(entity->v.origin[2]))
+	{
+		return ObservationAdapterResult::InvalidEntity;
+	}
+
+	const int entityIndex = engineFunctions_->pfnIndexOfEdict(entity);
+	if (entityIndex <= 0 || entity->serialnumber == 0)
+	{
+		return ObservationAdapterResult::InvalidEntity;
+	}
+
+	observation->available = true;
+	observation->entity = {
+		static_cast<std::uint32_t>(entityIndex),
+		static_cast<std::uint32_t>(entity->serialnumber)};
+	observation->position = {
+		entity->v.origin[0], entity->v.origin[1], entity->v.origin[2]};
+	observation->context = makeContext(
+		"OBS-OBJECTIVE-DROPPED-C4", actor, frame, timing,
+		compat::ObservationQuality::Inferred,
+		compat::ObservationFreshness::SameTick,
+		compat::ObservationSource::PublicEdict);
+	return ObservationAdapterResult::Accepted;
+}
 }
 }

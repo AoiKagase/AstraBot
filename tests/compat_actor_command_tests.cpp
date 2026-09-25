@@ -15,8 +15,10 @@ bool gObjectiveEntitiesAvailable = false;
 	int gClientCommandCount = 0;
 	int gHookedClientCommandCount = 0;
 	int gUnhookedClientCommandCount = 0;
-int gRunPlayerMoveCount = 0;
-unsigned short gLastRunPlayerMoveButtons = 0U;
+	int gRunPlayerMoveCount = 0;
+	int gSetClientMaxspeedCount = 0;
+	float gLastClientMaxspeed = 0.0f;
+	unsigned short gLastRunPlayerMoveButtons = 0U;
 byte gLastRunPlayerMoveMsec = 0U;
 	bool gDirectJoinCommandSeen = false;
 	bool gServerSetsEntityTeam = true;
@@ -31,13 +33,15 @@ bool gPerformanceCvarsRegistered[3] = {};
 	int gCvarRegisterCount = 0;
 	float gBotEnable = 0.0f;
 	float gBotQuota = 0.0f;
+	float gMpFreezetime = 6.0f;
 	cvar_t gBotEnableCvar{};
 	cvar_t gBotStopCvar{};
 	cvar_t gBotDifficultyCvar{};
 	cvar_t gBotQuotaCvar{};
 	cvar_t gBotJoinTeamCvar{};
 	cvar_t gAstrabotModeCvar{};
-cvar_t gAstrabotProfileCvar{};
+	cvar_t gAstrabotProfileCvar{};
+	cvar_t gMpFreezetimeCvar{};
 cvar_t gAstrabotPerfCvars[3]{};
 
 	bool check(bool condition, const char *description)
@@ -77,8 +81,16 @@ cvar_t gAstrabotPerfCvars[3]{};
 	}
 
 int indexOfEdict(const edict_t *entity)
+{
+	if (entity == &gBombSite)
 	{
-		for (int index = 0; index < 5; ++index)
+		return 6;
+	}
+	if (entity == &gPlantedBomb)
+	{
+		return 7;
+	}
+	for (int index = 0; index < 5; ++index)
 		{
 			if (entity == &gEntities[index])
 			{
@@ -140,8 +152,12 @@ edict_t *findEntityByString(edict_t *start, const char *field, const char *value
 	}
 	}
 
-cvar_t *getCvar(const char *name)
+	cvar_t *getCvar(const char *name)
 	{
+		if (std::strcmp(name, "mp_freezetime") == 0)
+		{
+			return &gMpFreezetimeCvar;
+		}
 		if (std::strcmp(name, "bot_enable") == 0)
 		{
 			return gNativeControlsAvailable || gCompatibilityCvarsRegistered[0] ? &gBotEnableCvar
@@ -195,6 +211,10 @@ cvar_t *getCvar(const char *name)
 
 	float getCvarFloat(const char *name)
 	{
+		if (std::strcmp(name, "mp_freezetime") == 0)
+		{
+			return gMpFreezetime;
+		}
 		if (std::strcmp(name, "bot_enable") == 0)
 		{
 			return gBotEnable;
@@ -286,6 +306,16 @@ void runPlayerMove(
 	++gRunPlayerMoveCount;
 	gLastRunPlayerMoveButtons = buttons;
 	gLastRunPlayerMoveMsec = msec;
+}
+
+void setClientMaxspeed(const edict_t *entity, float maxspeed)
+{
+	++gSetClientMaxspeedCount;
+	gLastClientMaxspeed = maxspeed;
+	if (entity != nullptr)
+	{
+		const_cast<edict_t *>(entity)->v.maxspeed = maxspeed;
+	}
 }
 
 char *getInfoKeyBuffer(edict_t *)
@@ -446,7 +476,19 @@ int main()
 	globals.time = 1.0f;
 	runtime.giveEnginePointers(nullptr, &globals);
 	if (!check(runtime.attach(PT_ANYTIME, &metaFunctions, &metaGlobals, &gameDllFunctions, nullptr),
-			   "runtime attaches for actor command test"))
+			"runtime attaches for actor command test"))
+	{
+		std::remove(profilePath);
+		return 1;
+	}
+
+	enginefuncs_t requestedEngineFunctions{};
+	int requestedEngineInterfaceVersion = ENGINE_INTERFACE_VERSION;
+	if (!check(runtime.provideEngineFunctions(
+			&requestedEngineFunctions, &requestedEngineInterfaceVersion),
+			"runtime provides engine hook table") ||
+		!check(requestedEngineFunctions.pfnAlertMessage != nullptr,
+			"public alert hook observes logged round lifecycle messages"))
 	{
 		std::remove(profilePath);
 		return 1;
@@ -464,6 +506,7 @@ int main()
 	engineFunctions.pfnCvar_RegisterVariable = &registerCvar;
 	engineFunctions.pfnClientCommand = &clientCommand;
 	engineFunctions.pfnRunPlayerMove = &runPlayerMove;
+	engineFunctions.pfnSetClientMaxspeed = &setClientMaxspeed;
 	engineFunctions.pfnGetInfoKeyBuffer = &getInfoKeyBuffer;
 	engineFunctions.pfnSetClientKeyValue = &setClientKeyValue;
 	engineFunctions.pfnGetGameDir = &getGameDir;
@@ -636,8 +679,11 @@ int main()
 	gBombSite.v.origin = gEntities[0].v.origin;
 	gBombSite.v.classname = 1;
 	gPlantedBomb.v.classname = 2;
+	gPlantedBomb.serialnumber = 1;
 	gPlantedBomb.v.origin = gEntities[0].v.origin;
 	gPlantedBomb.v.dmgtime = globals.time + 30.0f;
+	gEntities[0].v.maxspeed = 0.0f;
+	const int maxspeedCallsBeforeDefuse = gSetClientMaxspeedCount;
 	gObjectiveEntitiesAvailable = true;
 	gFindEntityByStringCount = 0;
 	gRunPlayerMoveCount = 0;
@@ -655,6 +701,14 @@ int main()
 		std::remove(defaultProfilePath);
 		return 1;
 	}
+	if (!check(gEntities[0].v.maxspeed == 0.0f &&
+			gSetClientMaxspeedCount == maxspeedCallsBeforeDefuse,
+			"defuse stop action does not restore movement maxspeed"))
+	{
+		std::remove(profilePath);
+		std::remove(defaultProfilePath);
+		return 1;
+	}
 	if (!check(gFindEntityByStringCount == 0,
 			"planted bomb objective avoids Metamod FindEntityByString re-entry"))
 	{
@@ -663,8 +717,27 @@ int main()
 		return 1;
 	}
 	gObjectiveEntitiesAvailable = false;
+	gBombSite.v.classname = 0;
+	gPlantedBomb.v.classname = 0;
+	gPlantedBomb.v.dmgtime = 0.0f;
+	gEntities[0].v.maxspeed = 1.0f;
+	const int maxspeedCallsBeforeRecovery = gSetClientMaxspeedCount;
 	gRunPlayerMoveCount = 0;
 	gLastRunPlayerMoveButtons = 0U;
+	globals.time += 0.12f;
+	runtime.onStartFrame();
+	runtime.onStartFramePost();
+	if (!check(gRunPlayerMoveCount == 1 &&
+			gEntities[0].v.maxspeed == 240.0f &&
+			gSetClientMaxspeedCount == maxspeedCallsBeforeRecovery + 1 &&
+			gLastClientMaxspeed == 240.0f,
+			"stale maxspeed restores on a live non-objective command"))
+	{
+		std::remove(profilePath);
+		std::remove(defaultProfilePath);
+		return 1;
+	}
+	gRunPlayerMoveCount = 0;
 	globals.time += 0.1f;
 	runtime.onStartFrame();
 	runtime.onStartFramePost();
@@ -1079,6 +1152,103 @@ int main()
 					   CompatibilityCommandResult::ActorOperationFailed &&
 				   gCreateCount == 5,
 			   "full actor slots report an operation failure"))
+	{
+		std::remove(profilePath);
+		return 1;
+	}
+
+	const astrabot::runtime::LifecycleGeneration roundBeforeLifecycleLog =
+		runtime.snapshot().roundGeneration;
+	const float lifecycleLogStart = globals.time;
+	char alertFormat[] = "%s";
+	char restartRoundLog[] = "World triggered \"Restart_Round_(5_seconds)\"\n";
+	requestedEngineFunctions.pfnAlertMessage(at_logged, alertFormat, restartRoundLog);
+	const auto scheduledRound = runtime.snapshot();
+	if (!check(scheduledRound.roundGeneration == roundBeforeLifecycleLog + 1U &&
+			!scheduledRound.roundFreezeActive,
+			"logged round restart advances generation and schedules a future freeze"))
+	{
+		std::remove(profilePath);
+		return 1;
+	}
+	globals.time = lifecycleLogStart + 4.9f;
+	if (!check(!runtime.snapshot().roundFreezeActive,
+			"scheduled freeze does not begin before the restart delay expires"))
+	{
+		std::remove(profilePath);
+		return 1;
+	}
+	globals.time = lifecycleLogStart + 5.1f;
+	if (!check(runtime.snapshot().roundFreezeActive,
+			"scheduled freeze begins at the expected restart time"))
+	{
+		std::remove(profilePath);
+		return 1;
+	}
+	globals.time = lifecycleLogStart + 10.9f;
+	if (!check(runtime.snapshot().roundFreezeActive,
+			"scheduled freeze remains active before its absolute deadline"))
+	{
+		std::remove(profilePath);
+		return 1;
+	}
+	globals.time = lifecycleLogStart + 11.1f;
+	if (!check(!runtime.snapshot().roundFreezeActive,
+			"tracked freeze interval expires when its absolute deadline passes"))
+	{
+		std::remove(profilePath);
+		return 1;
+	}
+	char immediateRestartLog[] = "World triggered \"Restart_Round_(0_seconds)\"\n";
+	requestedEngineFunctions.pfnAlertMessage(at_logged, alertFormat, immediateRestartLog);
+	const auto immediateRound = runtime.snapshot();
+	if (!check(immediateRound.roundFreezeActive,
+			"zero-delay restart starts the configured freeze period"))
+	{
+		std::remove(profilePath);
+		return 1;
+	}
+	const astrabot::runtime::LifecycleGeneration activeRoundGeneration =
+		immediateRound.roundGeneration;
+	char roundStartedLog[] = "World triggered \"Round_Start\"\n";
+	requestedEngineFunctions.pfnAlertMessage(at_logged, alertFormat, roundStartedLog);
+	if (!check(!runtime.snapshot().roundFreezeActive &&
+			runtime.snapshot().roundGeneration == activeRoundGeneration,
+			"Round_Start log clears freeze without starting another generation"))
+	{
+		std::remove(profilePath);
+		return 1;
+	}
+	requestedEngineFunctions.pfnAlertMessage(at_logged, alertFormat, roundStartedLog);
+	if (!check(runtime.snapshot().roundGeneration == activeRoundGeneration,
+			"duplicate Round_Start log does not advance generation"))
+	{
+		std::remove(profilePath);
+		return 1;
+	}
+	char gameCommencingLog[] = "World triggered \"Game_Commencing\"\n";
+	requestedEngineFunctions.pfnAlertMessage(at_logged, alertFormat, gameCommencingLog);
+	const auto commencingRound = runtime.snapshot();
+	if (!check(commencingRound.roundGeneration == activeRoundGeneration + 1U &&
+			commencingRound.roundFreezeActive,
+			"Game_Commencing starts the initial timed freeze"))
+	{
+		std::remove(profilePath);
+		return 1;
+	}
+	char unrelatedLog[] = "World triggered \"CTs_Win\"\n";
+	requestedEngineFunctions.pfnAlertMessage(at_logged, alertFormat, unrelatedLog);
+	if (!check(runtime.snapshot().roundGeneration == commencingRound.roundGeneration &&
+			runtime.snapshot().roundFreezeActive,
+			"unrelated logged event leaves round freeze state unchanged"))
+	{
+		std::remove(profilePath);
+		return 1;
+	}
+	requestedEngineFunctions.pfnAlertMessage(at_logged, alertFormat, roundStartedLog);
+	if (!check(runtime.snapshot().roundGeneration == commencingRound.roundGeneration &&
+			!runtime.snapshot().roundFreezeActive,
+			"Round_Start log ends the Game_Commencing freeze"))
 	{
 		std::remove(profilePath);
 		return 1;

@@ -17,6 +17,7 @@ enum class MovementExecutionPhase
 struct MovementExecutionObservation
 {
 	bool explicitFrozen;
+	bool roundFreezeActive;
 	bool maxSpeedAvailable;
 	float maxSpeed;
 	float forward;

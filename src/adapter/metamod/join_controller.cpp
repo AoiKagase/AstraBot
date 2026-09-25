@@ -505,5 +505,55 @@ bool JoinController::textEqualsIgnoreCase(const char *left, const char *right) n
 	}
 	return left[index] == '\0' && right[index] == '\0';
 }
+	bool DeferredJoinActionQueue::enqueue(
+		const runtime::ActorId &actor,
+		const runtime::LifecycleToken &token,
+		std::uint32_t frame,
+		const JoinAction &action) noexcept
+	{
+		if (action.kind == JoinActionKind::None ||
+			actor.slot < runtime::LifecycleSession::kFirstClientSlot ||
+			actor.slot > runtime::LifecycleSession::kLastClientSlot ||
+			actor.actorGeneration == runtime::LifecycleSession::kInvalidGeneration ||
+			token.slot != actor.slot ||
+			token.mapGeneration == runtime::LifecycleSession::kInvalidGeneration ||
+			token.slotGeneration == runtime::LifecycleSession::kInvalidGeneration ||
+			count_ >= kCapacity)
+		{
+			return false;
+		}
+
+		const std::size_t tail = (head_ + count_) % kCapacity;
+		actions_[tail] = {
+			actor, token.mapGeneration, token.slotGeneration, frame, action};
+		++count_;
+		return true;
+	}
+
+	bool DeferredJoinActionQueue::dequeue(DeferredJoinAction *action) noexcept
+	{
+		if (action == nullptr || count_ == 0U)
+		{
+			return false;
+		}
+
+		*action = actions_[head_];
+		actions_[head_] = {};
+		head_ = (head_ + 1U) % kCapacity;
+		--count_;
+		return true;
+	}
+
+	void DeferredJoinActionQueue::clear() noexcept
+	{
+		actions_.fill({});
+		head_ = 0U;
+		count_ = 0U;
+	}
+
+	std::size_t DeferredJoinActionQueue::size() const noexcept
+	{
+		return count_;
+	}
 }
 }

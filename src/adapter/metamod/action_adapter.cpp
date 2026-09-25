@@ -12,11 +12,16 @@ ActionDispatch ActionAdapter::translate(const ActionProposal &proposal)
 		proposal.kind, proposal.viewAngles, proposal.movementButtons, nullptr, false};
 	switch (proposal.kind)
 	{
-	case ActionKind::Fire:
-	case ActionKind::Plant:
-		result.buttons = static_cast<std::uint16_t>(result.buttons | kAttackButton);
-		result.clientCommand = kSelectC4Command;
-		result.stopMovement = proposal.kind == ActionKind::Plant;
+		case ActionKind::Fire:
+		case ActionKind::Plant:
+		case ActionKind::PlantContinue:
+			result.buttons = static_cast<std::uint16_t>(result.buttons | kAttackButton);
+			result.clientCommand = kSelectC4Command;
+			result.stopMovement = proposal.kind != ActionKind::Fire;
+			break;
+		case ActionKind::SelectC4:
+			result.clientCommand = kSelectC4Command;
+			result.stopMovement = true;
 		break;
 	case ActionKind::Defuse:
 		result.buttons = static_cast<std::uint16_t>(result.buttons | kUseButton);
@@ -42,6 +47,118 @@ ActionProposal ActionAdapter::forLiveDispatch(
 		return {ActionKind::None, movementViewAngles, proposal.movementButtons};
 	}
 	return proposal;
+}
+
+bool ActionAdapter::validPlantTargetBounds(const PlantTargetBounds &bounds) noexcept
+{
+	const float values[] = {bounds.minimumX, bounds.minimumY, bounds.minimumZ,
+		bounds.maximumX, bounds.maximumY, bounds.maximumZ};
+	for (const float value : values)
+	{
+		if (!std::isfinite(value))
+		{
+			return false;
+		}
+	}
+	return bounds.minimumX <= bounds.maximumX &&
+		bounds.minimumY <= bounds.maximumY &&
+		bounds.minimumZ <= bounds.maximumZ;
+}
+
+bool ActionAdapter::overlapsPlantTarget(
+	const PlantTargetBounds &site,
+	const PlantTargetBounds &actor) noexcept
+{
+	if (!validPlantTargetBounds(site) || !validPlantTargetBounds(actor))
+	{
+		return false;
+	}
+	return actor.maximumX >= site.minimumX && actor.minimumX <= site.maximumX &&
+		actor.maximumY >= site.minimumY && actor.minimumY <= site.maximumY &&
+		actor.maximumZ >= site.minimumZ && actor.minimumZ <= site.maximumZ;
+}
+
+bool ActionAdapter::plantAttemptExpired(float elapsedSeconds) noexcept
+{
+	return std::isfinite(elapsedSeconds) &&
+		elapsedSeconds >= kPlantAttemptTimeoutSeconds;
+}
+
+PlantAttemptResult ActionAdapter::evaluatePlantAttempt(
+	PlantAttemptState &state,
+	bool actorOverlapsSite,
+	bool plantedConfirmed,
+	float now) noexcept
+{
+	if (plantedConfirmed)
+	{
+		state.active = false;
+		state.startedAt = 0.0f;
+		state.retryAfter = 0.0f;
+		return PlantAttemptResult::Confirmed;
+	}
+	if (!std::isfinite(now))
+	{
+		return PlantAttemptResult::InvalidTime;
+	}
+	if (!actorOverlapsSite)
+	{
+		state.active = false;
+		state.startedAt = 0.0f;
+		return PlantAttemptResult::OutsideSite;
+	}
+	if (state.active)
+	{
+		const float elapsed = now - state.startedAt;
+		if (!std::isfinite(elapsed) || elapsed < 0.0f)
+		{
+			state.active = false;
+			state.startedAt = 0.0f;
+		}
+		else if (plantAttemptExpired(elapsed))
+		{
+			state.active = false;
+			state.startedAt = 0.0f;
+			state.retryAfter = now + kPlantAttemptRetrySeconds;
+			return PlantAttemptResult::TimedOut;
+		}
+		else
+		{
+			return PlantAttemptResult::Continuing;
+		}
+	}
+	if (!std::isfinite(state.retryAfter))
+	{
+		state.retryAfter = now;
+	}
+	return now < state.retryAfter
+		? PlantAttemptResult::RetryPending
+		: PlantAttemptResult::Ready;
+}
+
+void ActionAdapter::recordPlantAttemptDispatched(
+	PlantAttemptState &state,
+	float now) noexcept
+{
+	if (state.active || !std::isfinite(now) || now < state.retryAfter)
+	{
+		return;
+	}
+	state.active = true;
+	state.startedAt = now;
+}
+
+ActionKind ActionAdapter::plantActionForWeaponObservation(
+	bool observationAvailable,
+	bool active,
+	std::uint8_t weaponId,
+	bool attackAlreadyDispatched) noexcept
+{
+	if (!observationAvailable || !active || weaponId != kC4WeaponId)
+	{
+		return ActionKind::SelectC4;
+	}
+	return attackAlreadyDispatched ? ActionKind::PlantContinue : ActionKind::Plant;
 }
 
 MovementProjection ActionAdapter::projectMovement(

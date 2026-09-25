@@ -312,6 +312,108 @@ void NavAreaVisitHistory::reset(std::uint32_t mapGeneration)
 	entries_.clear();
 }
 
+NavRoamReservationBoard::NavRoamReservationBoard()
+	: claims_(), mapGeneration_(0U), roundGeneration_(0U), initialized_(false)
+{
+}
+
+void NavRoamReservationBoard::reset(
+	std::uint32_t mapGeneration, std::uint32_t roundGeneration)
+{
+	if (initialized_ && mapGeneration_ == mapGeneration &&
+		roundGeneration_ == roundGeneration)
+	{
+		return;
+	}
+	for (Claim &claim : claims_)
+	{
+		claim = {};
+	}
+	mapGeneration_ = mapGeneration;
+	roundGeneration_ = roundGeneration;
+	initialized_ = true;
+}
+
+bool NavRoamReservationBoard::goalReservedByOther(
+	std::uint8_t team, ActorId actor, nav::AreaId goalArea) const
+{
+	if (!initialized_ || team == 0U || goalArea == 0U)
+	{
+		return false;
+	}
+	for (const Claim &claim : claims_)
+	{
+		if (claim.valid && claim.team == team && claim.goalArea == goalArea &&
+			(claim.actor.slot != actor.slot ||
+				claim.actor.actorGeneration != actor.actorGeneration))
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+bool NavRoamReservationBoard::firstLinkReservedByOther(
+	std::uint8_t team,
+	ActorId actor,
+	nav::AreaId fromArea,
+	nav::AreaId toArea) const
+{
+	if (!initialized_ || team == 0U || fromArea == 0U || toArea == 0U)
+	{
+		return false;
+	}
+	for (const Claim &claim : claims_)
+	{
+		if (claim.valid && claim.team == team &&
+			(claim.actor.slot != actor.slot ||
+				claim.actor.actorGeneration != actor.actorGeneration) &&
+			claim.fromArea == fromArea && claim.toArea == toArea)
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+bool NavRoamReservationBoard::reserve(
+	std::uint8_t team,
+	ActorId actor,
+	nav::AreaId goalArea,
+	nav::AreaId fromArea,
+	nav::AreaId toArea)
+{
+	if (!initialized_ || team == 0U || actor.slot < LifecycleSession::kFirstClientSlot ||
+		actor.slot > LifecycleSession::kLastClientSlot || actor.actorGeneration == 0U ||
+		goalArea == 0U || fromArea == 0U || toArea == 0U)
+	{
+		return false;
+	}
+	Claim &claim = claims_[static_cast<std::size_t>(actor.slot - 1U)];
+	claim.valid = true;
+	claim.team = team;
+	claim.actor = actor;
+	claim.goalArea = goalArea;
+	claim.fromArea = fromArea;
+	claim.toArea = toArea;
+	return true;
+}
+
+void NavRoamReservationBoard::release(ActorId actor)
+{
+	if (actor.slot < LifecycleSession::kFirstClientSlot ||
+		actor.slot > LifecycleSession::kLastClientSlot)
+	{
+		return;
+	}
+	Claim &claim = claims_[static_cast<std::size_t>(actor.slot - 1U)];
+	if (claim.valid && claim.actor.slot == actor.slot &&
+		claim.actor.actorGeneration == actor.actorGeneration)
+	{
+		claim = {};
+	}
+}
+
 NavRoamController::NavRoamController()
 	: NavRoamController(compat::RuntimeMode::Compatibility)
 {
@@ -350,6 +452,7 @@ NavRoamController::NavRoamController(compat::RuntimeMode mode)
 	randomSource_(nullptr),
 	localAreaVisitHistory_(),
 	areaVisitHistory_(&localAreaVisitHistory_),
+	reservationBoard_(nullptr),
 	lastVisitedArea_(0U),
 	lastVisitedMapGeneration_(0U),
 	lastVisitedTeam_(0U),
@@ -378,6 +481,19 @@ void NavRoamController::setAreaVisitHistory(NavAreaVisitHistory *history)
 	lastVisitedArea_ = 0U;
 	lastVisitedMapGeneration_ = 0U;
 	lastVisitedTeam_ = 0U;
+}
+
+void NavRoamController::setReservationBoard(NavRoamReservationBoard *board)
+{
+	if (reservationBoard_ == board)
+	{
+		return;
+	}
+	if (reservationBoard_ != nullptr)
+	{
+		reservationBoard_->release(actor_);
+	}
+	reservationBoard_ = board;
 }
 
 void NavRoamController::setRuntimeMode(compat::RuntimeMode mode)
@@ -1323,6 +1439,10 @@ NavRoamResult NavRoamController::update(
 
 void NavRoamController::reset()
 {
+	if (reservationBoard_ != nullptr)
+	{
+		reservationBoard_->release(actor_);
+	}
 	resetRoute();
 	actor_ = {0U, LifecycleSession::kInvalidGeneration};
 	lastFrame_ = {};
@@ -1841,8 +1961,18 @@ bool NavRoamController::selectCompatibilityGoal(
 		return false;
 	}
 	const bool goalReached = hasRoamGoal_ && roamGoalArea_ == currentArea.area;
+	nav::NavCorridor selectedCorridor = {};
+	bool hasSelectedCorridor = false;
+	bool reservationFallback = false;
+	bool reservationBudgetExhausted = false;
+	NavRoamReservationFallbackReason reservationFallbackReason =
+		NavRoamReservationFallbackReason::None;
 	if (!hasRoamGoal_ || goalReached)
 	{
+		if (goalReached && reservationBoard_ != nullptr)
+		{
+			reservationBoard_->release(actor_);
+		}
 		NavGoalSelectionReason reason = goalReached
 			? GoalSelectionReached
 			: goalSelectionReason_ == GoalSelectionPathFailed
@@ -1875,11 +2005,152 @@ bool NavRoamController::selectCompatibilityGoal(
 			if (selectedGoal == 0U || lastVisited < oldestVisit)
 			{
 				selectedGoal = candidate.id;
-				oldestVisit = lastVisited;
+			oldestVisit = lastVisited;
+		}
+	}
+	if (reservationBoard_ != nullptr)
+	{
+		selectedGoal = 0U;
+		struct GoalCandidate
+		{
+			nav::AreaId area;
+			std::uint32_t lastVisited;
+		};
+		std::vector<GoalCandidate> candidates;
+		candidates.reserve(document->areas().size());
+		for (const nav::NavArea &candidate : document->areas())
+		{
+			if (candidate.id == currentArea.area ||
+				(goalSelectionReason_ == GoalSelectionPathFailed &&
+					failedRoamGoalArea_ != 0U &&
+					candidate.id == failedRoamGoalArea_) ||
+				candidate.extent.hi.x - candidate.extent.lo.x < 150.0f ||
+				candidate.extent.hi.y - candidate.extent.lo.y < 150.0f)
+			{
+				continue;
+			}
+			candidates.push_back({
+				candidate.id,
+				areaVisitHistory_ == nullptr
+					? 0U
+					: areaVisitHistory_->lastVisited(
+						lastVisitedMapGeneration_, lastVisitedTeam_, candidate.id)});
+		}
+		std::stable_sort(candidates.begin(), candidates.end(),
+			[](const GoalCandidate &left, const GoalCandidate &right) {
+				return left.lastVisited < right.lastVisited;
+			});
+
+		nav::NavQuery query(snapshot);
+		nav::AreaId fallbackGoal = 0U;
+		std::uint32_t fallbackVisit =
+			(std::numeric_limits<std::uint32_t>::max)();
+		int fallbackConflictCost = 3;
+		nav::NavCorridor fallbackCorridor = {};
+		std::size_t evaluatedCandidatePaths = 0U;
+		constexpr std::size_t kMaximumCandidatePaths = 8U;
+		for (const GoalCandidate &candidate : candidates)
+		{
+			if (reservationBoard_->goalReservedByOther(
+					lastVisitedTeam_, actor_, candidate.area))
+			{
+				continue;
+			}
+		if (evaluatedCandidatePaths >= kMaximumCandidatePaths)
+		{
+			reservationBudgetExhausted = true;
+			break;
+			}
+			++evaluatedCandidatePaths;
+
+			nav::NavCorridor candidateCorridor = {};
+			const nav::NavQueryResult candidateResult = buildCorridor(
+				query, currentArea.area, candidate.area, nav::NavRouteType::Safest,
+				&candidateCorridor,
+				decision == nullptr || !collectPathStats_
+					? nullptr
+					: &decision->pathSearchStats);
+			if (candidateResult != nav::NavQueryResult::Found ||
+				candidateCorridor.areas.size() < 2U ||
+				candidateCorridor.links.empty())
+			{
+				continue;
+			}
+
+			const nav::NavDirectedLink firstLink = candidateCorridor.links.front();
+			const bool firstLinkReserved =
+				reservationBoard_->firstLinkReservedByOther(
+					lastVisitedTeam_, actor_, firstLink.fromArea, firstLink.toArea);
+			if (!firstLinkReserved)
+			{
+				selectedGoal = candidate.area;
+				oldestVisit = candidate.lastVisited;
+				selectedCorridor = std::move(candidateCorridor);
+				hasSelectedCorridor = true;
+				break;
+			}
+			if (fallbackConflictCost > 1)
+			{
+				fallbackGoal = candidate.area;
+				fallbackVisit = candidate.lastVisited;
+				fallbackConflictCost = 1;
+				fallbackCorridor = std::move(candidateCorridor);
 			}
 		}
+
+		if (selectedGoal == 0U && fallbackGoal != 0U)
+		{
+			selectedGoal = fallbackGoal;
+			oldestVisit = fallbackVisit;
+			selectedCorridor = std::move(fallbackCorridor);
+			hasSelectedCorridor = true;
+			reservationFallback = true;
+			reservationFallbackReason = reservationBudgetExhausted
+				? NavRoamReservationFallbackReason::CandidateBudgetExhausted
+				: NavRoamReservationFallbackReason::NoDistinctRouteFound;
+		}
+
 		if (selectedGoal == 0U)
 		{
+			// If every goal has an owner, allow one oldest reachable shared route.
+			for (const GoalCandidate &candidate : candidates)
+			{
+				if (evaluatedCandidatePaths >= kMaximumCandidatePaths)
+				{
+					break;
+				}
+				if (!reservationBoard_->goalReservedByOther(
+						lastVisitedTeam_, actor_, candidate.area))
+				{
+					continue;
+				}
+				++evaluatedCandidatePaths;
+				nav::NavCorridor candidateCorridor = {};
+				const nav::NavQueryResult candidateResult = buildCorridor(
+					query, currentArea.area, candidate.area, nav::NavRouteType::Safest,
+					&candidateCorridor,
+					decision == nullptr || !collectPathStats_
+						? nullptr
+						: &decision->pathSearchStats);
+				if (candidateResult == nav::NavQueryResult::Found &&
+					candidateCorridor.areas.size() >= 2U &&
+					!candidateCorridor.links.empty())
+				{
+					selectedGoal = candidate.area;
+					oldestVisit = candidate.lastVisited;
+					selectedCorridor = std::move(candidateCorridor);
+					hasSelectedCorridor = true;
+					reservationFallback = true;
+					reservationFallbackReason = reservationBudgetExhausted
+						? NavRoamReservationFallbackReason::CandidateBudgetExhausted
+						: NavRoamReservationFallbackReason::NoDistinctRouteFound;
+					break;
+				}
+			}
+		}
+	}
+	if (selectedGoal == 0U)
+	{
 			strategy = GoalSelectionStrategyRandomFallback;
 			if (document->areas().empty() || randomSource_ == nullptr)
 			{
@@ -1968,10 +2239,15 @@ bool NavRoamController::selectCompatibilityGoal(
 		decision->goalPosition = roamGoalPosition_;
 		decision->pathRequested = true;
 	}
-	nav::NavCorridor corridor = {};
-	const nav::NavQueryResult corridorResult = buildCorridor(
-		query, currentArea.area, roamGoalArea_, nav::NavRouteType::Safest,
-		&corridor, decision == nullptr || !collectPathStats_ ? nullptr : &decision->pathSearchStats);
+	nav::NavCorridor corridor = std::move(selectedCorridor);
+	const nav::NavQueryResult corridorResult = hasSelectedCorridor
+		? nav::NavQueryResult::Found
+		: buildCorridor(
+			query, currentArea.area, roamGoalArea_, nav::NavRouteType::Safest,
+			&corridor,
+			decision == nullptr || !collectPathStats_
+				? nullptr
+				: &decision->pathSearchStats);
 	if (decision != nullptr)
 	{
 		decision->corridorResult = corridorResult;
@@ -2068,6 +2344,29 @@ bool NavRoamController::selectCompatibilityGoal(
 				: NavFailureReason::NavApplyRejected;
 		}
 		return false;
+	}
+	if (reservationBoard_ != nullptr)
+	{
+		reservationFallback =
+			reservationBoard_->goalReservedByOther(
+				lastVisitedTeam_, actor_, roamGoalArea_) ||
+			reservationBoard_->firstLinkReservedByOther(
+				lastVisitedTeam_, actor_, link.fromArea, link.toArea);
+		if (reservationFallback &&
+			reservationFallbackReason == NavRoamReservationFallbackReason::None)
+		{
+			reservationFallbackReason = reservationBudgetExhausted
+				? NavRoamReservationFallbackReason::CandidateBudgetExhausted
+				: NavRoamReservationFallbackReason::NoDistinctRouteFound;
+		}
+		reservationBoard_->reserve(
+			lastVisitedTeam_, actor_, roamGoalArea_, link.fromArea, link.toArea);
+		if (decision != nullptr)
+		{
+			decision->reservationFallback = reservationFallback;
+			decision->reservationFallbackReason =
+				reservationFallbackReason;
+		}
 	}
 	rememberRoute(snapshot, corridor, link);
 	failedRoamGoalArea_ = 0U;
@@ -2270,6 +2569,10 @@ void NavRoamController::populateRouteDecision(NavRoamDecision *decision) const
 
 void NavRoamController::resetRoute(bool preserveRoamGoal)
 {
+	if (!preserveRoamGoal && reservationBoard_ != nullptr)
+	{
+		reservationBoard_->release(actor_);
+	}
 	locomotion_ = nav::LocomotionController(roamLocomotionConfig());
 	activeTraversal_ = nav::TraversalAction::Walk;
 	jumpDrop_ = nav::JumpDropController(roamJumpDropConfig(

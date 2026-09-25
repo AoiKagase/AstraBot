@@ -258,6 +258,28 @@ int main()
 		return 1;
 	}
 
+	astrabot::metamod::DeferredJoinActionQueue deferredActions;
+	const astrabot::runtime::ActorId deferredActor{8U, 1U};
+	const astrabot::runtime::LifecycleToken deferredToken{1U, 2U, 1U, 8U};
+	const auto wrongTeam = astrabot::metamod::JoinAction::failed(
+		astrabot::metamod::JoinError::WrongTeam);
+	if (!check(deferredActions.enqueue(deferredActor, deferredToken, 11062U, wrongTeam),
+			"message callback can defer wrong-team cleanup"))
+	{
+		return 1;
+	}
+	astrabot::metamod::DeferredJoinAction pending{};
+	if (!check(deferredActions.size() == 1U &&
+		deferredActions.dequeue(&pending) &&
+		pending.actor.slot == deferredActor.slot &&
+		pending.actor.actorGeneration == deferredActor.actorGeneration &&
+		pending.action.kind == JoinActionKind::Failed &&
+		pending.action.error == astrabot::metamod::JoinError::WrongTeam &&
+		pending.mapGeneration == 1U && pending.slotGeneration == 1U,
+		"deferred join action retains actor generation and FIFO payload"))
+	{
+		return 1;
+	}
 	return check(controller.onFrame(138U).kind == JoinActionKind::Failed,
 				 "join timeout terminates instead of retrying forever")
 			   ? 0

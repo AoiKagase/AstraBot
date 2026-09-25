@@ -413,9 +413,13 @@ bool testPathFailureChoosesAnotherCompatibilityGoal()
 		return false;
 	}
 	astrabot::runtime::NavRoamController controller;
+	astrabot::runtime::NavRoamReservationBoard reservationBoard;
+	reservationBoard.reset(1U, 1U);
+	controller.setReservationBoard(&reservationBoard);
 	astrabot::runtime::NavRoamObservation observation = {};
 	observation.actor = {1U, 1U};
 	observation.frame = {1U, 1U, 1U};
+	observation.team = 1U;
 	observation.locomotion.position = {240.0f, 128.0f, 100.0f};
 	observation.locomotion.standingClearance = 72.0f;
 	observation.locomotion.crouchingClearance = 36.0f;
@@ -423,10 +427,12 @@ bool testPathFailureChoosesAnotherCompatibilityGoal()
 	astrabot::nav::LocomotionIntent intent = {};
 	astrabot::runtime::NavRoamDecision decision = {};
 	if (!check(controller.update(
-			publisher.snapshot(), observation, &intent, &decision) ==
+		publisher.snapshot(), observation, &intent, &decision) ==
 			astrabot::runtime::NavRoamResult::ReplanRequired &&
-			decision.failureReason == astrabot::runtime::NavFailureReason::UnsafeDrop &&
-			decision.goalArea == 2U,
+		decision.failureReason == astrabot::runtime::NavFailureReason::UnsafeDrop &&
+		decision.goalArea == 2U &&
+		!reservationBoard.goalReservedByOther(
+			1U, {2U, 1U}, 2U),
 			"an unsafe roam drop is classified against its selected goal"))
 	{
 		return false;
@@ -436,10 +442,11 @@ bool testPathFailureChoosesAnotherCompatibilityGoal()
 	observation.locomotion.safeDropHeightAvailable = true;
 	observation.locomotion.maximumSafeDropHeight = 156.25f;
 	return check(controller.update(
-			publisher.snapshot(), observation, &intent, &decision) ==
+		publisher.snapshot(), observation, &intent, &decision) ==
 			astrabot::runtime::NavRoamResult::IntentReady &&
-			decision.goalArea == 3U && intent.targetArea == 3U &&
-			intent.traversal == astrabot::nav::TraversalAction::Walk,
+		decision.goalArea == 3U && intent.targetArea == 3U &&
+		intent.traversal == astrabot::nav::TraversalAction::Walk &&
+		reservationBoard.goalReservedByOther(1U, {2U, 1U}, 3U),
 			"path failure skips the failed oldest goal and chooses a different route");
 }
 
@@ -1392,6 +1399,274 @@ bool testCompatibilityGoalPrefersOldestLargeAreaAndSafestRoute()
 			"large NAV candidates use oldest-visited selection");
 }
 
+bool testTeamReservationsChooseDistinctGoalsAndFirstLinks()
+{
+	using astrabot::nav::NavArea;
+	using astrabot::nav::NavDocument;
+	using astrabot::runtime::NavRoamResult;
+	using astrabot::nav::NavSnapshotPublisher;
+	using astrabot::runtime::NavAreaVisitHistory;
+	using astrabot::runtime::NavRoamController;
+	using astrabot::runtime::NavRoamDecision;
+	using astrabot::runtime::NavRoamObservation;
+	using astrabot::runtime::NavRoamReservationBoard;
+
+	auto largeArea = [](astrabot::nav::AreaId id, float lowX, float highX,
+			float lowY, float highY) {
+		NavArea result = area(id, lowX, highX);
+		result.extent.lo.y = lowY;
+		result.extent.hi.y = highY;
+		return result;
+	};
+	NavDocument document;
+	document.setSourceIdentity({5U, 100U, 200U});
+	NavArea start = largeArea(1U, 0.0f, 200.0f, 0.0f, 200.0f);
+	NavArea east = largeArea(2U, 300.0f, 500.0f, 0.0f, 200.0f);
+	NavArea north = largeArea(3U, 0.0f, 200.0f, 300.0f, 500.0f);
+	start.connections[0U].push_back(2U);
+	start.connections[1U].push_back(3U);
+	document.addArea(start);
+	document.addArea(east);
+	document.addArea(north);
+	NavSnapshotPublisher publisher;
+	if (!check(publisher.publish(&document, 5U) ==
+			astrabot::nav::NavSnapshotResult::Published,
+			"team-reservation NAV fixture publishes"))
+	{
+		return false;
+	}
+
+	NavAreaVisitHistory visits;
+	NavRoamReservationBoard board;
+	board.reset(5U, 7U);
+	NavRoamController first(astrabot::compat::RuntimeMode::Compatibility);
+	NavRoamController second(astrabot::compat::RuntimeMode::Compatibility);
+	first.setAreaVisitHistory(&visits);
+	second.setAreaVisitHistory(&visits);
+	first.setReservationBoard(&board);
+	second.setReservationBoard(&board);
+	NavRoamObservation firstObservation = {};
+	firstObservation.actor = {1U, 1U};
+	firstObservation.frame = {5U, 7U, 1U};
+	firstObservation.team = 1U;
+	firstObservation.locomotion.position = {100.0f, 100.0f, 0.0f};
+	firstObservation.locomotion.standingClearance = 72.0f;
+	firstObservation.locomotion.crouchingClearance = 36.0f;
+	firstObservation.locomotion.grounded = true;
+	NavRoamObservation secondObservation = firstObservation;
+	secondObservation.actor = {2U, 1U};
+	NavRoamDecision firstDecision = {};
+	NavRoamDecision secondDecision = {};
+	astrabot::nav::LocomotionIntent firstIntent = {};
+	astrabot::nav::LocomotionIntent secondIntent = {};
+	if (!check(first.update(publisher.snapshot(), firstObservation, &firstIntent,
+			&firstDecision) == NavRoamResult::IntentReady,
+			"first teammate obtains a reserved roam route") ||
+		!check(second.update(publisher.snapshot(), secondObservation, &secondIntent,
+			&secondDecision) == NavRoamResult::IntentReady,
+			"second teammate obtains a distinct reserved roam route"))
+	{
+		return false;
+	}
+	return check(firstDecision.goalArea != secondDecision.goalArea &&
+			(firstDecision.linkFromArea != secondDecision.linkFromArea ||
+				firstDecision.linkToArea != secondDecision.linkToArea),
+			"shared oldest-visit history does not give teammates the same goal and first link");
+}
+
+bool testTeamReservationFallbackAndLifecycle()
+{
+	using astrabot::nav::NavArea;
+	using astrabot::nav::NavDocument;
+	using astrabot::nav::NavSnapshotPublisher;
+	using astrabot::runtime::NavAreaVisitHistory;
+	using astrabot::runtime::NavRoamController;
+	using astrabot::runtime::NavRoamDecision;
+	using astrabot::runtime::NavRoamObservation;
+	using astrabot::runtime::NavRoamReservationBoard;
+
+	auto largeArea = [](astrabot::nav::AreaId id, float lowX, float highX,
+			float lowY, float highY) {
+		NavArea result = area(id, lowX, highX);
+		result.extent.lo.y = lowY;
+		result.extent.hi.y = highY;
+		return result;
+	};
+	NavDocument document;
+	document.setSourceIdentity({5U, 100U, 200U});
+	NavArea start = largeArea(1U, 0.0f, 200.0f, 0.0f, 200.0f);
+	NavArea onlyGoal = largeArea(2U, 300.0f, 500.0f, 0.0f, 200.0f);
+	start.connections[0U].push_back(2U);
+	document.addArea(start);
+	document.addArea(onlyGoal);
+	NavSnapshotPublisher publisher;
+	if (!check(publisher.publish(&document, 5U) ==
+			astrabot::nav::NavSnapshotResult::Published,
+			"single-route reservation fixture publishes"))
+	{
+		return false;
+	}
+
+	NavRoamReservationBoard board;
+	board.reset(5U, 7U);
+	NavAreaVisitHistory visits;
+	NavRoamController first(astrabot::compat::RuntimeMode::Compatibility);
+	NavRoamController second(astrabot::compat::RuntimeMode::Compatibility);
+	first.setAreaVisitHistory(&visits);
+	second.setAreaVisitHistory(&visits);
+	first.setReservationBoard(&board);
+	second.setReservationBoard(&board);
+	NavRoamObservation observation = {};
+	observation.actor = {1U, 1U};
+	observation.frame = {5U, 7U, 1U};
+	observation.team = 1U;
+	observation.locomotion.position = {100.0f, 100.0f, 0.0f};
+	observation.locomotion.standingClearance = 72.0f;
+	observation.locomotion.crouchingClearance = 36.0f;
+	observation.locomotion.grounded = true;
+	NavRoamDecision firstDecision = {};
+	NavRoamDecision secondDecision = {};
+	astrabot::nav::LocomotionIntent intent = {};
+	if (!check(first.update(publisher.snapshot(), observation, &intent, &firstDecision) ==
+			astrabot::runtime::NavRoamResult::IntentReady,
+			"first teammate claims the only route"))
+	{
+		return false;
+	}
+	observation.actor = {2U, 1U};
+	if (!check(second.update(publisher.snapshot(), observation, &intent, &secondDecision) ==
+			astrabot::runtime::NavRoamResult::IntentReady &&
+		secondDecision.goalArea == firstDecision.goalArea &&
+		secondDecision.reservationFallback &&
+		secondDecision.reservationFallbackReason ==
+			astrabot::runtime::NavRoamReservationFallbackReason::NoDistinctRouteFound,
+			"shared route is an explicit fallback when no distinct goal exists"))
+	{
+		return false;
+	}
+
+	const astrabot::runtime::ActorId firstActor = {1U, 4U};
+	const astrabot::runtime::ActorId reusedActor = {1U, 5U};
+	if (!check(board.goalReservedByOther(1U, reusedActor, 2U),
+			"a reused slot with a new generation cannot impersonate a claim owner"))
+	{
+		return false;
+	}
+	first.reset();
+	if (!check(board.goalReservedByOther(1U, reusedActor, 2U),
+			"another teammate's shared fallback claim remains active"))
+	{
+		return false;
+	}
+	second.reset();
+	if (!check(!board.goalReservedByOther(1U, reusedActor, 2U),
+			"controller resets release all shared goal claims"))
+	{
+		return false;
+	}
+	if (!check(board.reserve(1U, firstActor, 2U, 1U, 2U),
+			"reservation board accepts a bounded actor claim"))
+	{
+		return false;
+	}
+	board.reset(5U, 7U);
+	if (!check(board.goalReservedByOther(1U, reusedActor, 2U),
+			"same-generation reset keeps valid claims"))
+	{
+		return false;
+	}
+	board.reset(5U, 8U);
+	if (!check(!board.goalReservedByOther(1U, reusedActor, 2U),
+			"round generation change releases claims") ||
+		!check(board.reserve(1U, firstActor, 2U, 1U, 2U),
+			"claim can be reserved after the round reset"))
+	{
+		return false;
+	}
+	board.reset(6U, 8U);
+	return check(!board.goalReservedByOther(1U, reusedActor, 2U),
+		"map generation change releases claims");
+}
+
+bool testReservationBudgetFallbackIsDiagnosed()
+{
+	using astrabot::nav::NavArea;
+	using astrabot::nav::NavDocument;
+	using astrabot::nav::NavSnapshotPublisher;
+	using astrabot::runtime::NavAreaVisitHistory;
+	using astrabot::runtime::NavRoamController;
+	using astrabot::runtime::NavRoamDecision;
+	using astrabot::runtime::NavRoamObservation;
+	using astrabot::runtime::NavRoamReservationBoard;
+	using astrabot::runtime::NavRoamReservationFallbackReason;
+
+	auto makeArea = [](astrabot::nav::AreaId id,
+			float lowX, float highX, float lowY, float highY) {
+		NavArea result = area(id, lowX, highX);
+		result.extent.lo.y = lowY;
+		result.extent.hi.y = highY;
+		return result;
+	};
+	NavArea start = makeArea(1U, 0.0f, 200.0f, 0.0f, 200.0f);
+	NavArea hub = makeArea(2U, 220.0f, 280.0f, 0.0f, 200.0f);
+	NavArea distinctGoal = makeArea(12U, 0.0f, 200.0f, 300.0f, 500.0f);
+	NavDocument orderedDocument;
+	orderedDocument.setSourceIdentity({5U, 100U, 200U});
+	start.connections[0U].push_back(2U);
+	start.connections[1U].push_back(12U);
+	for (astrabot::nav::AreaId id = 3U; id <= 11U; ++id)
+	{
+		hub.connections[0U].push_back(id);
+	}
+	orderedDocument.addArea(start);
+	orderedDocument.addArea(hub);
+	for (astrabot::nav::AreaId id = 3U; id <= 11U; ++id)
+	{
+		orderedDocument.addArea(makeArea(
+			id, 300.0f + static_cast<float>(id - 3U) * 220.0f,
+			500.0f + static_cast<float>(id - 3U) * 220.0f,
+			0.0f, 200.0f));
+	}
+	orderedDocument.addArea(distinctGoal);
+	NavSnapshotPublisher publisher;
+	if (!check(publisher.publish(&orderedDocument, 5U) ==
+			astrabot::nav::NavSnapshotResult::Published,
+			"reservation-budget NAV fixture publishes"))
+	{
+		return false;
+	}
+
+	NavRoamReservationBoard board;
+	board.reset(5U, 7U);
+	if (!check(board.reserve(1U, {1U, 1U}, 3U, 1U, 2U),
+			"first Bot claims shared first-link branch"))
+	{
+		return false;
+	}
+	NavAreaVisitHistory visits;
+	NavRoamController controller(
+		astrabot::compat::RuntimeMode::Compatibility);
+	controller.setAreaVisitHistory(&visits);
+	controller.setReservationBoard(&board);
+	NavRoamObservation observation = {};
+	observation.actor = {2U, 1U};
+	observation.frame = {5U, 7U, 1U};
+	observation.team = 1U;
+	observation.locomotion.position = {100.0f, 100.0f, 0.0f};
+	observation.locomotion.standingClearance = 72.0f;
+	observation.locomotion.crouchingClearance = 36.0f;
+	observation.locomotion.grounded = true;
+	astrabot::nav::LocomotionIntent intent = {};
+	NavRoamDecision decision = {};
+	const auto result = controller.update(
+		publisher.snapshot(), observation, &intent, &decision);
+	return check(result == astrabot::runtime::NavRoamResult::IntentReady &&
+			decision.reservationFallback &&
+			decision.reservationFallbackReason ==
+				NavRoamReservationFallbackReason::CandidateBudgetExhausted,
+			"shared-route fallback records that the distinct-route budget ended");
+}
+
 int main()
 {
 	if (!testDecisionReportsActualLocalSteeringTarget())
@@ -1473,6 +1748,18 @@ int main()
 		return 1;
 	}
 	if (!testCompatibilityGoalPrefersOldestLargeAreaAndSafestRoute())
+	{
+		return 1;
+	}
+	if (!testTeamReservationsChooseDistinctGoalsAndFirstLinks())
+	{
+		return 1;
+	}
+	if (!testTeamReservationFallbackAndLifecycle())
+	{
+		return 1;
+	}
+	if (!testReservationBudgetFallbackIsDiagnosed())
 	{
 		return 1;
 	}
