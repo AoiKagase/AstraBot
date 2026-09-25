@@ -684,7 +684,7 @@ int main()
 	gPlantedBomb.v.model = 3;
 	gPlantedBomb.serialnumber = 1;
 	gPlantedBomb.v.origin = gEntities[0].v.origin;
-	gPlantedBomb.v.dmgtime = globals.time + 30.0f;
+	gPlantedBomb.v.dmgtime = 0.0f;
 	gEntities[0].v.maxspeed = 0.0f;
 	const int maxspeedCallsBeforeDefuse = gSetClientMaxspeedCount;
 	gObjectiveEntitiesAvailable = true;

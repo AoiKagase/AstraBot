@@ -116,6 +116,12 @@
       "reference_only": false
     },
     {
+      "path": "include/astrabot/metamod/round_lifecycle_tracker.hpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
       "path": "include/astrabot/metamod/native_bot_guard.hpp",
       "origin": "AstraBot",
       "license_status": "pending_release_review",
