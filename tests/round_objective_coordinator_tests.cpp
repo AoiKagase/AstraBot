@@ -136,6 +136,49 @@ bool testPlantedBombSelectsNearestReachableCounterTerrorist()
 			"nearest reachable Counter-Terrorist receives the defuse assignment");
 }
 
+bool testExternalDefuserAssignsBombAreaGuardThenRestoresDefuse()
+{
+	NavFixture nav;
+	if (!check(nav.ready, "external defuser NAV fixture publishes"))
+	{
+		return false;
+	}
+	astrabot::team::TeamObjectiveInput input = {};
+	input.mapGeneration = 1U;
+	input.roundGeneration = 4U;
+	input.frameSequence = 1U;
+	input.actorCount = 2U;
+	input.actors[0] = actor(1U,
+		astrabot::objectives::TeamRole::CounterTerrorist, true, false, 1U, 32.0f);
+	input.actors[1] = actor(2U,
+		astrabot::objectives::TeamRole::CounterTerrorist, true, false, 2U, 232.0f);
+	input.plantedC4 = bombTarget(47U, 3U, 310.0f);
+	input.externalDefuserActive = true;
+	astrabot::team::RoundObjectiveCoordinator coordinator;
+	astrabot::team::TeamObjectiveAssignmentSet assignments = {};
+	if (!check(coordinator.assign(input, nav.snapshot(), &assignments) ==
+			astrabot::team::TeamObjectiveResult::Assigned &&
+			assignments.count == 1U &&
+			assignments.assignments[0U].actor.slot == 2U &&
+			assignments.assignments[0U].kind ==
+				astrabot::team::TeamObjectiveKind::GuardBombDefuser &&
+			assignments.assignments[0U].targetArea == 3U &&
+			std::fabs(assignments.assignments[0U].targetPosition.x - 332.0f) < 0.001f,
+			"active external defuser gives one CT bot a guard point in the bomb NAV area"))
+	{
+		return false;
+	}
+	input.frameSequence = 2U;
+	input.externalDefuserActive = false;
+	return check(coordinator.assign(input, nav.snapshot(), &assignments) ==
+			astrabot::team::TeamObjectiveResult::Assigned &&
+			assignments.count == 1U &&
+			assignments.assignments[0U].actor.slot == 2U &&
+			assignments.assignments[0U].kind ==
+				astrabot::team::TeamObjectiveKind::DefuseC4,
+			"ending external defuse returns the nearest CT bot to the defuse assignment");
+}
+
 bool testDistanceTieUsesStableActorKeyAndOneOwner()
 {
 	NavFixture nav;
@@ -366,6 +409,7 @@ int main()
 {
 	if (!testDroppedBombSelectsNearestReachableTerrorist() ||
 		!testPlantedBombSelectsNearestReachableCounterTerrorist() ||
+		!testExternalDefuserAssignsBombAreaGuardThenRestoresDefuse() ||
 		!testDistanceTieUsesStableActorKeyAndOneOwner() ||
 		!testDeadAndWrongTeamActorsCannotRetrieveDroppedBomb() ||
 		!testCarryingTerroristOwnsPlantInsteadOfDroppedPickup() ||

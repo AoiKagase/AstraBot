@@ -14,6 +14,13 @@ enum class MovementExecutionPhase
 	ControlFrozen
 };
 
+struct MovementVelocity
+{
+	float x;
+	float y;
+	float z;
+};
+
 struct MovementExecutionObservation
 {
 	bool explicitFrozen;
@@ -43,6 +50,9 @@ struct MovementExecutionDecision
 class MovementExecutionGate
 {
 public:
+	static MovementVelocity stabilizeVelocity(
+		MovementExecutionPhase phase,
+		MovementVelocity velocity) noexcept;
 	static MovementExecutionDecision evaluate(
 		const MovementExecutionObservation &observation) noexcept;
 };

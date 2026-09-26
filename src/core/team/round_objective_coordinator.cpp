@@ -49,6 +49,30 @@ bool sameTarget(const TeamObjectiveAssignment &assignment, const TeamBombTargetO
 	return assignment.targetEntity == target.entity;
 }
 
+world::WorldVector assignmentTargetPosition(
+	TeamObjectiveKind kind,
+	const TeamBombTargetObservation &target,
+	const nav::NavSnapshot &navigation)
+{
+	if (kind != TeamObjectiveKind::GuardBombDefuser || target.area == 0U ||
+		!navigation.isValid())
+	{
+		return target.position;
+	}
+	const nav::NavDocument *document = navigation.document();
+	const nav::NavArea *area = document != nullptr
+		? document->findArea(target.area)
+		: nullptr;
+	if (area == nullptr)
+	{
+		return target.position;
+	}
+	const float x = area->extent.lo.x * 0.5f + area->extent.hi.x * 0.5f;
+	const float y = area->extent.lo.y * 0.5f + area->extent.hi.y * 0.5f;
+	const world::WorldVector position = {x, y, nav::surfaceZAt(*area, x, y)};
+	return isFinitePosition(position) ? position : target.position;
+}
+
 bool actorCanKeepAssignment(
 	const TeamObjectiveActorObservation &actor, TeamObjectiveKind kind)
 {
@@ -59,6 +83,7 @@ bool actorCanKeepAssignment(
 	case TeamObjectiveKind::PlantC4:
 		return isEligible(actor, objectives::TeamRole::Terrorist) && actor.carryingC4;
 	case TeamObjectiveKind::DefuseC4:
+	case TeamObjectiveKind::GuardBombDefuser:
 		return isEligible(actor, objectives::TeamRole::CounterTerrorist);
 	case TeamObjectiveKind::None:
 	default:
@@ -247,7 +272,9 @@ TeamObjectiveResult RoundObjectiveCoordinator::assign(
 		{
 			return TeamObjectiveResult::InvalidInput;
 		}
-		wantedKind = TeamObjectiveKind::DefuseC4;
+		wantedKind = input.externalDefuserActive
+			? TeamObjectiveKind::GuardBombDefuser
+			: TeamObjectiveKind::DefuseC4;
 		wantedTeam = objectives::TeamRole::CounterTerrorist;
 		target = &input.plantedC4;
 	}
@@ -326,9 +353,10 @@ TeamObjectiveResult RoundObjectiveCoordinator::assign(
 		if (assignedActor != nullptr && actorCanKeepAssignment(*assignedActor, wantedKind) &&
 			(fixedOwner == nullptr || fixedOwner->actor == assignedActor->actor))
 		{
-			if (target != nullptr)
-			{
-				assignment_.targetPosition = target->position;
+		if (target != nullptr)
+		{
+				assignment_.targetPosition = assignmentTargetPosition(
+					wantedKind, *target, navigation);
 				assignment_.targetArea = target->area;
 			}
 			assignments->count = 1U;
@@ -408,7 +436,8 @@ TeamObjectiveResult RoundObjectiveCoordinator::assign(
 	if (target != nullptr)
 	{
 		assignment_.targetEntity = target->entity;
-		assignment_.targetPosition = target->position;
+		assignment_.targetPosition = assignmentTargetPosition(
+			wantedKind, *target, navigation);
 		assignment_.targetArea = target->area;
 	}
 	assignment_.generation = nextAssignmentGeneration_;

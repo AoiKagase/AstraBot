@@ -1473,6 +1473,30 @@ void PluginRuntime::onServerActivate(edict_t *edictList, int edictCount, int cli
 				++adapterFrameCount_;
 			}
 			lifecycle_.observeFrame(adapterFrameCount_, globals_->time);
+			if (roundFreezeActive())
+			{
+				for (std::size_t index = 0U; index < managedBotHandles_.size(); ++index)
+				{
+					if (!managedBotSlots_[index])
+					{
+						continue;
+					}
+					edict_t *entity = managedBotHandles_[index].entity;
+					if (entity == nullptr || entity->free != 0)
+					{
+						continue;
+					}
+					const MovementVelocity velocity =
+						MovementExecutionGate::stabilizeVelocity(
+							MovementExecutionPhase::RoundFreeze,
+							{entity->v.velocity.x,
+							 entity->v.velocity.y,
+							 entity->v.velocity.z});
+					entity->v.velocity.x = velocity.x;
+					entity->v.velocity.y = velocity.y;
+					entity->v.velocity.z = velocity.z;
+				}
+			}
 			synchronizeNativeBotControls();
 				synchronizeCompatibilityCvars();
 				updateNativeBotGuard();
@@ -3335,10 +3359,7 @@ void PluginRuntime::refreshManagedTeamObjectiveAssignments(std::size_t contextIn
 		externalDefuserRoundGeneration_ == roundGeneration &&
 		std::isfinite(globals_->time) && std::isfinite(externalDefuserLeaseUntil_) &&
 		globals_->time <= externalDefuserLeaseUntil_;
-	if (externalDefuserActive)
-	{
-		input.plantedC4.available = false;
-	}
+	input.externalDefuserActive = externalDefuserActive;
 	(void)managedTeamObjectiveCoordinator_.assign(
 		input, navigation, &managedTeamObjectiveAssignments_);
 	if (runtimeProfiler_.enabled() && gpMetaUtilFuncs != nullptr &&
@@ -3528,6 +3549,16 @@ bool PluginRuntime::buildManagedObjectiveTarget(
 	cache.diagnosticsEmitted = false;
 	cache.lastCacheHit = false;
 	if (needsDroppedC4 && assignment != nullptr)
+	{
+		*target = {
+			assignment->targetPosition.x,
+			assignment->targetPosition.y,
+			assignment->targetPosition.z};
+		return std::isfinite(target->x) && std::isfinite(target->y) &&
+			std::isfinite(target->z);
+	}
+	if (assignmentKind == team::TeamObjectiveKind::GuardBombDefuser &&
+		assignment != nullptr)
 	{
 		*target = {
 			assignment->targetPosition.x,

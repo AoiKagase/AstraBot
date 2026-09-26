@@ -19,7 +19,8 @@ namespace team
 		None,
 		RetrieveDroppedC4,
 		PlantC4,
-		DefuseC4
+		DefuseC4,
+		GuardBombDefuser
 	};
 
 	enum class TeamObjectiveResult : std::uint8_t
@@ -56,6 +57,7 @@ namespace team
 	TeamObjectiveActorObservation actors[kMaximumTeamObjectiveActors];
 	TeamBombTargetObservation droppedC4;
 	TeamBombTargetObservation plantedC4;
+	bool externalDefuserActive;
 	std::uint32_t frameSequence;
 	};
 

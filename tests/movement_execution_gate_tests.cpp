@@ -132,6 +132,25 @@ int main()
 		}
 	}
 
+	{
+		const astrabot::metamod::MovementVelocity previous = {72.0f, -31.0f, -120.0f};
+		const astrabot::metamod::MovementVelocity frozen =
+			MovementExecutionGate::stabilizeVelocity(
+				MovementExecutionPhase::RoundFreeze, previous);
+		if (!check(frozen.x == 0.0f && frozen.y == 0.0f && frozen.z == previous.z,
+				"round freeze clears horizontal drift and preserves vertical falling"))
+		{
+			return 1;
+		}
+		const astrabot::metamod::MovementVelocity live =
+			MovementExecutionGate::stabilizeVelocity(
+				MovementExecutionPhase::Live, previous);
+		if (!check(live.x == previous.x && live.y == previous.y && live.z == previous.z,
+				"live movement preserves velocity"))
+		{
+			return 1;
+		}
+	}
 	std::cout << "movement execution gate: PASS\n";
 	return 0;
 }
