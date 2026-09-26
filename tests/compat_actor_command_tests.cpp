@@ -685,27 +685,46 @@ int main()
 	gPlantedBomb.serialnumber = 1;
 	gPlantedBomb.v.origin = gEntities[0].v.origin;
 	gPlantedBomb.v.dmgtime = 0.0f;
+	gEntities[1].v.team = 2;
+	gEntities[1].serialnumber = 2;
+	gEntities[1].v.origin = gPlantedBomb.v.origin;
 	gEntities[0].v.maxspeed = 0.0f;
-	const int maxspeedCallsBeforeDefuse = gSetClientMaxspeedCount;
 	gObjectiveEntitiesAvailable = true;
+	gFindEntityByStringCount = 0;
+	runtime.onCmdStart(&gEntities[1], static_cast<std::uint16_t>(IN_USE));
 	gFindEntityByStringCount = 0;
 	gRunPlayerMoveCount = 0;
 	globals.time += 0.1f;
 	runtime.onStartFrame();
 	runtime.onStartFramePost();
 	if (!check(gRunPlayerMoveCount == 1 &&
-		(gLastRunPlayerMoveButtons & static_cast<unsigned short>(IN_USE)) != 0U &&
+		(gLastRunPlayerMoveButtons & static_cast<unsigned short>(IN_USE)) == 0U &&
 		gEntities[0].v.fov == observedFovBeforeObjective &&
 		gEntities[0].v.origin.x == observedOriginXBeforeObjective &&
 		static_cast<int>(gEntities[0].v.team) == observedTeamBeforeObjective,
-			"planted bomb objective reaches RunPlayerMove as a use action"))
+			"nearby CT using planted C4 suppresses Bot IN_USE"))
 	{
 		std::remove(profilePath);
 		std::remove(defaultProfilePath);
 		return 1;
 	}
-	if (!check(gEntities[0].v.maxspeed == 0.0f &&
-			gSetClientMaxspeedCount == maxspeedCallsBeforeDefuse,
+	const float maxspeedBeforeBotTakeover = gEntities[0].v.maxspeed;
+	const int maxspeedCallsBeforeBotTakeover = gSetClientMaxspeedCount;
+	runtime.onCmdStart(&gEntities[1], 0U);
+	globals.time += 0.30f;
+	gRunPlayerMoveCount = 0;
+	runtime.onStartFrame();
+	runtime.onStartFramePost();
+	if (!check(gRunPlayerMoveCount == 1 &&
+		(gLastRunPlayerMoveButtons & static_cast<unsigned short>(IN_USE)) != 0U,
+			"Bot defuse resumes after external CT releases C4 use"))
+	{
+		std::remove(profilePath);
+		std::remove(defaultProfilePath);
+		return 1;
+	}
+	if (!check(gEntities[0].v.maxspeed == maxspeedBeforeBotTakeover &&
+			gSetClientMaxspeedCount == maxspeedCallsBeforeBotTakeover,
 			"defuse stop action does not restore movement maxspeed"))
 	{
 		std::remove(profilePath);

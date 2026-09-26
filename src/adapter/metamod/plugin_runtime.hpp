@@ -2,6 +2,7 @@
 #define ASTRABOT_ADAPTER_METAMOD_PLUGIN_RUNTIME_HPP
 
 #include "astrabot/metamod/abi_contract.hpp"
+#include "usercmd.h"
 #include "astrabot/metamod/compat_surface.hpp"
 #include "astrabot/metamod/fake_client_manager.hpp"
 #include "astrabot/metamod/join_controller.hpp"
@@ -160,6 +161,7 @@ struct ManagedObjectiveSiteRegistry
 
 			void onClientDisconnect(edict_t *entity);
 			void onClientPutInServer(edict_t *entity);
+			void onCmdStart(const edict_t *entity, std::uint16_t buttons);
 			void onServerActivate(edict_t *edictList, int edictCount, int clientMax);
 			void onServerDeactivate();
 			void onStartFrame();
@@ -441,6 +443,11 @@ void logTraversalOutcome(
 	std::uint32_t managedTeamObjectiveAssignmentRoundGeneration_ = 0U;
 	std::uint32_t managedTeamObjectiveAssignmentFrame_ = 0U;
 	bool managedTeamObjectiveAssignmentsValid_ = false;
+   	std::uint32_t externalDefuserEntityIndex_ = 0U;
+   	std::uint32_t externalDefuserEntitySerial_ = 0U;
+   	float externalDefuserLeaseUntil_ = 0.0f;
+   	std::uint32_t externalDefuserMapGeneration_ = 0U;
+   	std::uint32_t externalDefuserRoundGeneration_ = 0U;
 	bool managedTeamObjectivePathFailurePending_ = false;
 	world::ActorKey managedTeamObjectivePathFailureActor_{};
 	std::uint32_t managedTeamObjectivePathFailureGeneration_ = 0U;
@@ -548,6 +555,7 @@ void logTraversalOutcome(
 		};
 
 		FORCE_STACK_ALIGN void HookClientDisconnect(edict_t *entity);
+		FORCE_STACK_ALIGN void HookCmdStart(const edict_t *entity, const usercmd_t *command, unsigned int randomSeed);
 		FORCE_STACK_ALIGN void HookClientPutInServer(edict_t *entity);
 		FORCE_STACK_ALIGN void HookServerActivate(edict_t *edictList, int edictCount,
 												  int clientMax);

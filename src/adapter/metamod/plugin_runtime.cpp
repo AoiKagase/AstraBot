@@ -871,6 +871,7 @@ const char *const kPerformanceCvarNames[kPerformanceCvarCount] = {
 			}
 
 			DLL_FUNCTIONS requestedFunctions{};
+			requestedFunctions.pfnCmdStart = &HookCmdStart;
 			requestedFunctions.pfnClientDisconnect = &HookClientDisconnect;
 			requestedFunctions.pfnClientPutInServer = &HookClientPutInServer;
 			requestedFunctions.pfnServerActivate = &HookServerActivate;
@@ -1169,7 +1170,113 @@ runtime::MovementPhysicsSample PluginRuntime::movementPhysicsSample(std::uint32_
 			}
 		}
 
-		void PluginRuntime::onServerActivate(edict_t *edictList, int edictCount, int clientMax)
+		void PluginRuntime::onCmdStart(const edict_t *entity, std::uint16_t buttons)
+		{
+			if (state_ != State::ActiveMap || entity == nullptr || entity->free != 0 ||
+				engineFunctions_ == nullptr || engineFunctions_->pfnIndexOfEdict == nullptr ||
+				globals_ == nullptr || !std::isfinite(globals_->time))
+			{
+				return;
+			}
+		
+			const int entityIndex = engineFunctions_->pfnIndexOfEdict(entity);
+			if (entityIndex <= 0)
+			{
+				return;
+			}
+			for (const FakeClientHandle &handle : managedBotHandles_)
+			{
+				if (handle.entity == entity)
+				{
+					return;
+				}
+			}
+		
+			const bool sameExternalActor =
+				static_cast<std::uint32_t>(entityIndex) == externalDefuserEntityIndex_ &&
+				static_cast<std::uint32_t>(entity->serialnumber) == externalDefuserEntitySerial_;
+			const bool usingButton =
+				(buttons & static_cast<std::uint16_t>(IN_USE)) != 0U;
+			const bool livingCounterTerrorist = static_cast<int>(entity->v.team) == 2 &&
+				entity->v.deadflag == DEAD_NO && std::isfinite(entity->v.health) &&
+				entity->v.health > 0.0f;
+			if (!usingButton || !livingCounterTerrorist ||
+				!std::isfinite(entity->v.origin.x) || !std::isfinite(entity->v.origin.y) ||
+				!std::isfinite(entity->v.origin.z))
+			{
+				if (sameExternalActor)
+				{
+					externalDefuserEntityIndex_ = 0U;
+					externalDefuserEntitySerial_ = 0U;
+					externalDefuserLeaseUntil_ = 0.0f;
+					managedTeamObjectiveAssignmentsValid_ = false;
+				}
+				return;
+			}
+			if (engineFunctions_->pfnFindEntityByString == nullptr ||
+				engineFunctions_->pfnSzFromIndex == nullptr)
+			{
+				return;
+			}
+		
+			constexpr float kDefuseUseRadius = 100.0f;
+			constexpr float kDefuseUseRadiusSquared = kDefuseUseRadius * kDefuseUseRadius;
+			edict_t *searchAfter = nullptr;
+			bool nearPlantedBomb = false;
+			const int searchLimit = (std::max)(1, (std::min)(globals_->maxEntities, 2048));
+			for (int searchIndex = 0; searchIndex < searchLimit; ++searchIndex)
+			{
+				edict_t *candidate = engineFunctions_->pfnFindEntityByString(
+					searchAfter, "classname", "grenade");
+				if (candidate == nullptr || candidate == searchAfter)
+				{
+					break;
+				}
+				searchAfter = candidate;
+				if (candidate->free != 0)
+				{
+					continue;
+				}
+				const char *classname = engineFunctions_->pfnSzFromIndex(candidate->v.classname);
+				const char *model = engineFunctions_->pfnSzFromIndex(candidate->v.model);
+				if (classname == nullptr || std::strcmp(classname, "grenade") != 0 ||
+					model == nullptr || std::strstr(model, "w_c4.mdl") == nullptr ||
+					!std::isfinite(candidate->v.origin.x) ||
+					!std::isfinite(candidate->v.origin.y) ||
+					!std::isfinite(candidate->v.origin.z))
+				{
+					continue;
+				}
+		
+				const float dx = entity->v.origin.x - candidate->v.origin.x;
+				const float dy = entity->v.origin.y - candidate->v.origin.y;
+				const float dz = entity->v.origin.z - candidate->v.origin.z;
+				if (dx * dx + dy * dy + dz * dz <= kDefuseUseRadiusSquared)
+				{
+					nearPlantedBomb = true;
+					break;
+				}
+			}
+			if (!nearPlantedBomb)
+			{
+				if (sameExternalActor)
+				{
+					externalDefuserEntityIndex_ = 0U;
+					externalDefuserEntitySerial_ = 0U;
+					externalDefuserLeaseUntil_ = 0.0f;
+					managedTeamObjectiveAssignmentsValid_ = false;
+				}
+				return;
+			}
+		
+			externalDefuserEntityIndex_ = static_cast<std::uint32_t>(entityIndex);
+			externalDefuserEntitySerial_ = static_cast<std::uint32_t>(entity->serialnumber);
+			externalDefuserLeaseUntil_ = globals_->time + 0.25f;
+			externalDefuserMapGeneration_ = lifecycle_.mapGeneration();
+			externalDefuserRoundGeneration_ = lifecycle_.roundGeneration();
+			managedTeamObjectiveAssignmentsValid_ = false;
+		}
+void PluginRuntime::onServerActivate(edict_t *edictList, int edictCount, int clientMax)
 		{
 			(void)edictList;
 			(void)edictCount;
@@ -3223,6 +3330,15 @@ void PluginRuntime::refreshManagedTeamObjectiveAssignments(std::size_t contextIn
 		managedTeamObjectivePathFailureStartArea_ = 0U;
 		managedTeamObjectivePathFailureFrame_ = 0U;
 	}
+	const bool externalDefuserActive = externalDefuserEntityIndex_ != 0U &&
+		externalDefuserMapGeneration_ == mapGeneration &&
+		externalDefuserRoundGeneration_ == roundGeneration &&
+		std::isfinite(globals_->time) && std::isfinite(externalDefuserLeaseUntil_) &&
+		globals_->time <= externalDefuserLeaseUntil_;
+	if (externalDefuserActive)
+	{
+		input.plantedC4.available = false;
+	}
 	(void)managedTeamObjectiveCoordinator_.assign(
 		input, navigation, &managedTeamObjectiveAssignments_);
 	if (runtimeProfiler_.enabled() && gpMetaUtilFuncs != nullptr &&
@@ -4569,7 +4685,7 @@ runtime::CommandReceipt PluginRuntime::executeManagedBotCommand(
 			static_cast<unsigned int>(lifecycle_.mapGeneration()),
 			static_cast<unsigned int>(lifecycle_.roundGeneration()),
 			static_cast<unsigned int>(adapterFrameCount_),
-			roundFreezeActive() ? 1 : 0,
+			roundFreeze ? 1 : 0,
 			roundFreezeScheduled_ ? roundFreezeUntil_ : 0.0f,
 			explicitFrozen ? 1 : 0,
 			static_cast<int>(gateDecision.phase),
@@ -4582,6 +4698,31 @@ runtime::CommandReceipt PluginRuntime::executeManagedBotCommand(
 			gateDecision.up,
 			static_cast<unsigned int>(gateDecision.buttons),
 			static_cast<int>(dispatchReceipt.result));
+	}
+	const bool freezeActiveAfterDispatch = roundFreezeActive();
+	const bool freezeMovementInput = std::fabs(gateDecision.forward) > 0.01f ||
+		std::fabs(gateDecision.side) > 0.01f || std::fabs(gateDecision.up) > 0.01f;
+	if (runtimeProfiler_.enabled() && (roundFreeze || freezeActiveAfterDispatch) &&
+		((adapterFrameCount_ % 6U) == 0U || roundFreeze != freezeActiveAfterDispatch ||
+		 freezeMovementInput) &&
+		gpMetaUtilFuncs != nullptr && gpMetaUtilFuncs->pfnLogConsole != nullptr &&
+		pluginId_ != nullptr)
+	{
+		gpMetaUtilFuncs->pfnLogConsole(
+			pluginId_,
+			"profile freezeMotion actor=%u generation=%u map=%u round=%u frame=%u "
+			"freeze_gate=%d freeze_after=%d origin=(%.1f %.1f %.1f) "
+			"velocity=(%.1f %.1f %.1f) input=(%.1f %.1f %.1f) buttons=%u",
+			static_cast<unsigned int>(handle.actor.slot),
+			static_cast<unsigned int>(handle.actor.actorGeneration),
+			static_cast<unsigned int>(lifecycle_.mapGeneration()),
+			static_cast<unsigned int>(lifecycle_.roundGeneration()),
+			static_cast<unsigned int>(adapterFrameCount_),
+			roundFreeze ? 1 : 0, freezeActiveAfterDispatch ? 1 : 0,
+			handle.entity->v.origin.x, handle.entity->v.origin.y, handle.entity->v.origin.z,
+			handle.entity->v.velocity.x, handle.entity->v.velocity.y, handle.entity->v.velocity.z,
+			gateDecision.forward, gateDecision.side, gateDecision.up,
+			static_cast<unsigned int>(gateDecision.buttons));
 	}
 	if (gateDecision.invalidateTemplate)
 	{
@@ -6188,6 +6329,12 @@ void PluginRuntime::clearManagedBot(std::size_t index)
 		void HookClientDisconnect(edict_t *entity)
 		{
 			PluginRuntime::instance().onClientDisconnect(entity);
+			setMetaResult(MRES_IGNORED);
+		}
+		void HookCmdStart(const edict_t *entity, const usercmd_t *command, unsigned int randomSeed)
+		{
+			(void)randomSeed;
+			PluginRuntime::instance().onCmdStart(entity, command != nullptr ? command->buttons : 0U);
 			setMetaResult(MRES_IGNORED);
 		}
 
