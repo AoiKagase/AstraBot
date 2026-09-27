@@ -479,10 +479,8 @@ ObservationAdapterResult ObservationAdapter::collectPlantedBomb(
 	}
 	if (entity == nullptr || entity->free != 0 || classname == nullptr ||
 		model == nullptr || !std::isfinite(currentTime) ||
-		!std::isfinite(entity->v.dmgtime) ||
 		std::strcmp(classname, "grenade") != 0 ||
-		entity->v.dmgtime <= currentTime ||
-		(model[0] != '\0' && std::strstr(model, "w_c4.mdl") == nullptr))
+		std::strstr(model, "w_c4.mdl") == nullptr)
 	{
 		return ObservationAdapterResult::InvalidEntity;
 	}
@@ -501,23 +499,80 @@ ObservationAdapterResult ObservationAdapter::collectPlantedBomb(
 		compat::ObservationQuality::Inferred,
 		compat::ObservationFreshness::SameTick,
 		compat::ObservationSource::PublicEdict);
+	const bool timerAvailable = std::isfinite(entity->v.dmgtime) &&
+		entity->v.dmgtime > currentTime;
 	const compat::ObservationContext timerContext = makeContext(
 		"OBS-OBJECTIVE-BOMB-TIMER", actor, frame, timing,
-		compat::ObservationQuality::Inferred,
-		compat::ObservationFreshness::SameTick,
-		compat::ObservationSource::PublicEdict);
+		timerAvailable ? compat::ObservationQuality::Inferred
+					   : compat::ObservationQuality::Unavailable,
+		timerAvailable ? compat::ObservationFreshness::SameTick
+					   : compat::ObservationFreshness::Stale,
+		timerAvailable ? compat::ObservationSource::PublicEdict
+					   : compat::ObservationSource::None);
 	observation->bombPlanted = {true, true, plantedContext};
 	observation->bombPosition = {
 		world::WorldVector{entity->v.origin[0], entity->v.origin[1], entity->v.origin[2]},
 		true,
 		positionContext};
-	observation->bombTimer = {entity->v.dmgtime, true, timerContext};
+	observation->bombTimer = timerAvailable
+		? compat::ObservationValue<float>{entity->v.dmgtime, true, timerContext}
+		: unavailableValue<float>(
+			"OBS-OBJECTIVE-BOMB-TIMER", actor, frame, timing);
 	compat::emitObservationTrace(
 		observation->bombPlanted, compat::ObservationValueKind::Boolean, traceSink);
 	compat::emitObservationTrace(
 		observation->bombPosition, compat::ObservationValueKind::Vector, traceSink);
 	compat::emitObservationTrace(
 		observation->bombTimer, compat::ObservationValueKind::Float, traceSink);
+	return ObservationAdapterResult::Accepted;
+}
+
+ObservationAdapterResult ObservationAdapter::collectDroppedC4(
+	edict_t *entity,
+	const char *classname,
+	const char *model,
+	const world::ActorKey &actor,
+	const world::FrameIdentity &frame,
+	const compat::ObservationTimingContext &timing,
+	compat::DroppedC4Observation *observation) const
+{
+	if (observation == nullptr || !actor.isValid() || !frame.isValid())
+	{
+		return ObservationAdapterResult::InvalidArgument;
+	}
+	*observation = {};
+	if (engineFunctions_ == nullptr || globals_ == nullptr ||
+		engineFunctions_->pfnIndexOfEdict == nullptr)
+	{
+		return ObservationAdapterResult::EngineUnavailable;
+	}
+	if (entity == nullptr || entity->free != 0 || classname == nullptr ||
+		model == nullptr || std::strcmp(classname, "weaponbox") != 0 ||
+		std::strcmp(model, "models/w_backpack.mdl") != 0 ||
+		!std::isfinite(entity->v.origin[0]) ||
+		!std::isfinite(entity->v.origin[1]) ||
+		!std::isfinite(entity->v.origin[2]))
+	{
+		return ObservationAdapterResult::InvalidEntity;
+	}
+
+	const int entityIndex = engineFunctions_->pfnIndexOfEdict(entity);
+	if (entityIndex <= 0 || entity->serialnumber == 0)
+	{
+		return ObservationAdapterResult::InvalidEntity;
+	}
+
+	observation->available = true;
+	observation->entity = {
+		static_cast<std::uint32_t>(entityIndex),
+		static_cast<std::uint32_t>(entity->serialnumber)};
+	observation->position = {
+		entity->v.origin[0], entity->v.origin[1], entity->v.origin[2]};
+	observation->context = makeContext(
+		"OBS-OBJECTIVE-DROPPED-C4", actor, frame, timing,
+		compat::ObservationQuality::Inferred,
+		compat::ObservationFreshness::SameTick,
+		compat::ObservationSource::PublicEdict);
 	return ObservationAdapterResult::Accepted;
 }
 }

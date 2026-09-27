@@ -2,15 +2,18 @@
 #define ASTRABOT_ADAPTER_METAMOD_PLUGIN_RUNTIME_HPP
 
 #include "astrabot/metamod/abi_contract.hpp"
+#include "usercmd.h"
 #include "astrabot/metamod/compat_surface.hpp"
 #include "astrabot/metamod/fake_client_manager.hpp"
 #include "astrabot/metamod/join_controller.hpp"
+#include "astrabot/metamod/round_lifecycle_tracker.hpp"
 #include "astrabot/metamod/input_dispatcher.hpp"
 #include "astrabot/metamod/native_bot_guard.hpp"
 #include "astrabot/metamod/nav_loader.hpp"
 #include "astrabot/combat/combat_intent.hpp"
 #include "astrabot/compat/state_machine.hpp"
 #include "astrabot/objectives/round_objectives.hpp"
+#include "astrabot/team/round_objective_coordinator.hpp"
 #include "astrabot/perception/perception.hpp"
 #include "astrabot/runtime/nav_roam_controller.hpp"
 #include "astrabot/runtime/movement_physics.hpp"
@@ -58,11 +61,39 @@ struct ManagedObjectiveTargetCache
 	int selectedEntityIndex;
 	std::uint32_t selectedSiteIdentity;
 	std::uint32_t generation;
+	std::uint32_t teamObjectiveAssignmentGeneration;
+	team::TeamObjectiveKind teamObjectiveKind;
 	bool diagnosticsEmitted;
 	bool lastCacheHit;
 	int rawTeam;
 	int effectiveTeam;
 	bool teamInfoFresh;
+};
+
+struct ManagedObjectiveActionState
+{
+	bool active;
+	world::ActorKey actor;
+	team::TeamObjectiveKind kind;
+	std::uint32_t mapGeneration;
+	std::uint32_t roundGeneration;
+	std::uint32_t assignmentGeneration;
+	int targetEntityIndex;
+	std::uint32_t targetSiteIdentity;
+	bool c4SelectionCommandDispatched;
+	bool c4AttackInputDispatched;
+	PlantAttemptState plantAttempt;
+};
+
+struct ManagedCurrentWeaponObservation
+{
+	bool available;
+	bool active;
+	std::uint8_t weaponId;
+	std::uint32_t actorGeneration;
+	std::uint32_t mapGeneration;
+	std::uint32_t roundGeneration;
+	std::uint32_t frame;
 };
 
 struct ManagedObjectiveSiteRegistry
@@ -105,10 +136,11 @@ struct ManagedObjectiveSiteRegistry
 			compat::RuntimeMode mode;
 			runtime::LifecycleGeneration mapGeneration;
 				runtime::LifecycleGeneration roundGeneration;
-				NativeBotGuardState nativeGuardState;
-				NativeBotGuardReason nativeGuardReason;
-				bool managedBotCreationAllowed;
-			};
+			NativeBotGuardState nativeGuardState;
+			NativeBotGuardReason nativeGuardReason;
+			bool managedBotCreationAllowed;
+			bool roundFreezeActive;
+		};
 
 			static PluginRuntime &instance();
 
@@ -129,6 +161,7 @@ struct ManagedObjectiveSiteRegistry
 
 			void onClientDisconnect(edict_t *entity);
 			void onClientPutInServer(edict_t *entity);
+			void onCmdStart(const edict_t *entity, std::uint16_t buttons);
 			void onServerActivate(edict_t *edictList, int edictCount, int clientMax);
 			void onServerDeactivate();
 			void onStartFrame();
@@ -139,6 +172,8 @@ struct ManagedObjectiveSiteRegistry
 			void onMessageBegin(int messageDestination, int messageType,
 							const float *origin, edict_t *entity);
 		void onMessageEnd();
+		void onRoundLifecycleMessage(const char *message);
+		bool beginRoundGeneration();
 		void onWriteByte(int value);
 		void onWriteChar(int value);
 		void onWriteShort(int value);
@@ -162,9 +197,10 @@ struct ManagedObjectiveSiteRegistry
 	enum class UserMessageKind : std::uint8_t
 		{
 			None,
-			ShowMenu,
-			VguiMenu,
-		TeamInfo
+		ShowMenu,
+		VguiMenu,
+		TeamInfo,
+		CurWeapon
 	};
 	struct MovementReversalDiagnosticState
 	{
@@ -182,21 +218,31 @@ struct ManagedObjectiveSiteRegistry
 		bool active;
 		std::uint32_t actorGeneration;
 		std::uint32_t commandFrame;
-		std::uint32_t navUpdateSequence;
-		std::uint32_t goalGeneration;
-		runtime::NavGoalSelectionReason goalSelectionReason;
+	std::uint32_t navUpdateSequence;
+	std::uint32_t goalGeneration;
+	std::uint32_t mapGeneration;
+	std::uint32_t roundGeneration;
+	std::uint32_t corridorIndex;
+	runtime::NavGoalSelectionReason goalSelectionReason;
 		runtime::NavGoalSelectionStrategy goalSelectionStrategy;
 		nav::AreaId currentArea;
 		nav::AreaId targetArea;
 		nav::NavVector targetPosition;
 		nav::NavVector intentDirection;
-		float intentSpeed;
+	float intentSpeed;
+	float sourceFloorZ;
+	float targetFloorZ;
+	float dropHeight;
+	float horizontalGap;
+	float maximumSafeDropHeight;
+	bool safeDropHeightAvailable;
 		std::uint8_t linkDirection;
 		std::uint8_t linkHow;
 		nav::TraversalAction action;
-		std::uint16_t buttons;
-		runtime::PhysicsVector startPosition;
-		bool startGrounded;
+	std::uint16_t buttons;
+	runtime::PhysicsVector startPosition;
+	float startVelocityZ;
+	bool startGrounded;
 		float startHealth;
 	};
 
@@ -236,9 +282,12 @@ struct ManagedObjectiveSiteRegistry
 				std::size_t index,
 				FakeClientHandle &handle);
 		void processJoinControllers();
+		void processDeferredJoinActions();
 		void applyJoinAction(std::size_t index, const JoinAction &action);
+		void deferJoinAction(std::size_t index, const JoinAction &action);
 		void cleanupManagedJoin(std::size_t index, JoinError error);
 		void notifyTeamInfo(std::uint8_t slot, const char *teamName);
+		void captureManagedCurrentWeapon();
 	runtime::MovementPhysicsState captureMovementPhysicsState(
 		const edict_t *entity, bool teamConfirmed, bool managedFakeClient) const;
 		runtime::CommandReceipt dispatchNeutralMovement(
@@ -253,11 +302,16 @@ struct ManagedObjectiveSiteRegistry
 				std::size_t index,
 				const runtime::MovementPhysicsState &before,
 				const runtime::CommandReceipt &receipt);
-			ActionProposal decideManagedBotAction(
-				std::size_t index,
-				const runtime::MovementPhysicsState &before,
-				const runtime::ViewAngles &movementAngles,
-				std::uint16_t movementButtons);
+	ActionProposal decideManagedBotAction(
+		std::size_t index,
+		const runtime::MovementPhysicsState &before,
+		const runtime::ViewAngles &movementAngles,
+		std::uint16_t movementButtons);
+	bool dispatchManagedActionCommand(
+		std::size_t index,
+		FakeClientHandle &handle,
+		const ActionProposal &proposal,
+		const ActionDispatch &dispatch);
 			bool buildManagedWorldSnapshot(
 				std::size_t index,
 				world::WorldSnapshot *snapshot,
@@ -267,8 +321,12 @@ struct ManagedObjectiveSiteRegistry
 			std::size_t index,
 			nav::NavVector *target,
 			nav::NavSearchStats *searchStats,
-			RuntimeObjectiveSelectionStats *objectiveStats = nullptr);
-		void refreshManagedObjectiveSiteRegistry();
+		RuntimeObjectiveSelectionStats *objectiveStats = nullptr);
+	void refreshManagedTeamObjectiveAssignments(std::size_t contextIndex);
+	const team::TeamObjectiveAssignment *findManagedTeamObjectiveAssignment(
+		const world::ActorKey &actor) const;
+	void refreshManagedObjectiveSiteRegistry();
+		bool roundFreezeActive() const;
 			void resetManagedBotMovement();
 		void logMovementDiagnostic(
 			std::size_t index,
@@ -285,11 +343,13 @@ struct ManagedObjectiveSiteRegistry
 		const runtime::MovementPhysicsState &before,
 		const runtime::NavRoamDecision &decision,
 		const nav::LocomotionIntent &intent,
-		std::uint16_t buttons);
-	void logTraversalOutcome(
-		std::size_t index,
-		const runtime::MovementPhysicsState &after,
-		const runtime::NavRoamDecision &decision);
+		std::uint16_t buttons,
+		const nav::LocomotionObservation &locomotion);
+void logTraversalOutcome(
+	std::size_t index,
+	const runtime::MovementPhysicsState &after,
+		const runtime::NavRoamDecision &decision,
+		const runtime::LandingDamageObservation &landingFeedback);
 	void logMovementReversalDiagnostic(
 		std::size_t index,
 		const runtime::MovementPhysicsState &before,
@@ -320,7 +380,12 @@ struct ManagedObjectiveSiteRegistry
 		gamedll_funcs_t hookedGameDllFunctions_;
 		enginefuncs_t *engineFunctions_;
 			globalvars_t *globals_;
-			runtime::LifecycleSession lifecycle_;
+		bool roundFreezeScheduled_;
+		float roundFreezeStartTime_;
+		float roundFreezeUntil_;
+		runtime::LifecycleGeneration roundFreezeGeneration_;
+		RoundLifecycleTracker roundLifecycleTracker_;
+		runtime::LifecycleSession lifecycle_;
 			runtime::ActorRegistry actorRegistry_;
 			FakeClientManager fakeClientManager_;
 			InputDispatcher inputDispatcher_;
@@ -343,9 +408,14 @@ struct ManagedObjectiveSiteRegistry
 				managedBotNames_;
 		std::array<JoinController, NativeBotObservation::kClientSlotCount>
 				joinControllers_;
+				DeferredJoinActionQueue pendingJoinActions_;
+		std::array<bool, NativeBotObservation::kClientSlotCount> pendingJoinActionOverflow_{};
 		UserMessageKind userMessageKind_;
 		edict_t *userMessageTarget_;
-		std::uint8_t userMessageFieldCount_;
+			std::uint8_t userMessageFieldCount_;
+			std::uint8_t userMessageWeaponState_;
+			std::uint8_t userMessageWeaponId_;
+			bool userMessageWeaponMessageValid_;
 		std::uint8_t userMessageMenuType_;
 		std::uint8_t userMessageNeedMore_;
 		std::uint16_t userMessageValidSlots_;
@@ -353,8 +423,9 @@ struct ManagedObjectiveSiteRegistry
 		bool userMessageShowFragmentActive_;
 		std::array<char, 257U> userMessageText_;
 		std::uint16_t userMessageTextLength_;
-		runtime::NavAreaVisitHistory managedBotAreaVisitHistory_;
-		std::array<runtime::NavRoamController,
+	runtime::NavAreaVisitHistory managedBotAreaVisitHistory_;
+	runtime::NavRoamReservationBoard managedBotRoamReservationBoard_;
+	std::array<runtime::NavRoamController,
 					   NativeBotObservation::kClientSlotCount>
 					managedBotMovement_;
 			std::array<combat::CombatController,
@@ -366,7 +437,27 @@ struct ManagedObjectiveSiteRegistry
 		std::array<ManagedObjectiveTargetCache,
 			NativeBotObservation::kClientSlotCount>
 			managedBotObjectiveTargets_;
-		ManagedObjectiveSiteRegistry managedObjectiveSiteRegistry_;
+	team::RoundObjectiveCoordinator managedTeamObjectiveCoordinator_;
+	team::TeamObjectiveAssignmentSet managedTeamObjectiveAssignments_{};
+	std::uint32_t managedTeamObjectiveAssignmentMapGeneration_ = 0U;
+	std::uint32_t managedTeamObjectiveAssignmentRoundGeneration_ = 0U;
+	std::uint32_t managedTeamObjectiveAssignmentFrame_ = 0U;
+	bool managedTeamObjectiveAssignmentsValid_ = false;
+   	std::uint32_t externalDefuserEntityIndex_ = 0U;
+   	std::uint32_t externalDefuserEntitySerial_ = 0U;
+   	float externalDefuserLeaseUntil_ = 0.0f;
+   	std::uint32_t externalDefuserMapGeneration_ = 0U;
+   	std::uint32_t externalDefuserRoundGeneration_ = 0U;
+	bool managedTeamObjectivePathFailurePending_ = false;
+	world::ActorKey managedTeamObjectivePathFailureActor_{};
+	std::uint32_t managedTeamObjectivePathFailureGeneration_ = 0U;
+	nav::AreaId managedTeamObjectivePathFailureStartArea_ = 0U;
+	std::uint32_t managedTeamObjectivePathFailureFrame_ = 0U;
+		std::array<ManagedObjectiveActionState,
+			NativeBotObservation::kClientSlotCount> managedBotObjectiveActions_{};
+		std::array<ManagedCurrentWeaponObservation,
+			NativeBotObservation::kClientSlotCount> managedBotCurrentWeapons_{};
+	ManagedObjectiveSiteRegistry managedObjectiveSiteRegistry_;
 			std::array<compat::CompatibilityStateMachine,
 					   NativeBotObservation::kClientSlotCount>
 				managedBotStateMachines_;
@@ -398,6 +489,8 @@ struct ManagedObjectiveSiteRegistry
 				managedBotCommandTemplates_;
 			std::array<bool, NativeBotObservation::kClientSlotCount>
 				managedBotCommandTemplateValid_;
+			std::array<bool, NativeBotObservation::kClientSlotCount>
+				managedBotActionStopsMovement_;
 			std::array<std::uint8_t,
 					   NativeBotObservation::kClientSlotCount>
 				movementDiagnosticSamples_;
@@ -462,6 +555,7 @@ struct ManagedObjectiveSiteRegistry
 		};
 
 		FORCE_STACK_ALIGN void HookClientDisconnect(edict_t *entity);
+		FORCE_STACK_ALIGN void HookCmdStart(const edict_t *entity, const usercmd_t *command, unsigned int randomSeed);
 		FORCE_STACK_ALIGN void HookClientPutInServer(edict_t *entity);
 		FORCE_STACK_ALIGN void HookServerActivate(edict_t *edictList, int edictCount,
 												  int clientMax);
@@ -475,6 +569,7 @@ struct ManagedObjectiveSiteRegistry
 		FORCE_STACK_ALIGN void HookWriteChar(int value);
 		FORCE_STACK_ALIGN void HookWriteShort(int value);
 		FORCE_STACK_ALIGN void HookWriteString(const char *value);
+		FORCE_STACK_ALIGN void HookAlertMessage(ALERT_TYPE type, char *format, ...);
 		FORCE_STACK_ALIGN void HookAddServerCommand(char *command, void (*function)(void));
 		FORCE_STACK_ALIGN void HookCompatibilityServerCommand();
 		const char *HookCommandArgs();

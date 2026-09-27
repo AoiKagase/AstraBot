@@ -42,6 +42,21 @@ int main()
 {
 	{
 		MovementExecutionObservation value = observation();
+		value.roundFreezeActive = false;
+		value.maxSpeedAvailable = true;
+		value.maxSpeed = 1.0f;
+		const MovementExecutionDecision result = MovementExecutionGate::evaluate(value);
+		if (!check(result.phase == MovementExecutionPhase::Live &&
+				result.forward == value.forward && result.buttons == value.buttons &&
+				result.msec == value.msec,
+				"stale low maxspeed outside round freeze passes movement"))
+		{
+			return 1;
+		}
+	}
+
+	{
+		MovementExecutionObservation value = observation();
 		value.explicitFrozen = true;
 		const MovementExecutionDecision result = MovementExecutionGate::evaluate(value);
 		if (!check(result.phase == MovementExecutionPhase::ControlFrozen &&
@@ -55,6 +70,7 @@ int main()
 
 	{
 		MovementExecutionObservation value = observation();
+		value.roundFreezeActive = true;
 		value.maxSpeedAvailable = true;
 		value.maxSpeed = 1.0f;
 		const MovementExecutionDecision result = MovementExecutionGate::evaluate(value);
@@ -71,6 +87,7 @@ int main()
 
 	{
 		MovementExecutionObservation value = observation();
+		value.roundFreezeActive = true;
 		value.maxSpeedAvailable = true;
 		value.maxSpeed = 1.0f;
 		value.freezetimeDuck = 1.0f;
@@ -80,6 +97,21 @@ int main()
 		if (!check(result.phase == MovementExecutionPhase::RoundFreeze &&
 				result.buttons == expected && result.msec == value.msec,
 				"round freeze posture allowance follows public CVars"))
+		{
+			return 1;
+		}
+	}
+
+	{
+		MovementExecutionObservation value = observation();
+		value.roundFreezeActive = true;
+		value.maxSpeedAvailable = true;
+		value.maxSpeed = 240.0f;
+		const MovementExecutionDecision result = MovementExecutionGate::evaluate(value);
+		if (!check(result.phase == MovementExecutionPhase::RoundFreeze &&
+				result.forward == 0.0f && result.side == 0.0f && result.up == 0.0f &&
+				result.msec == value.msec,
+				"tracked round freeze remains authoritative after maxspeed reset"))
 		{
 			return 1;
 		}
@@ -100,6 +132,25 @@ int main()
 		}
 	}
 
+	{
+		const astrabot::metamod::MovementVelocity previous = {72.0f, -31.0f, -120.0f};
+		const astrabot::metamod::MovementVelocity frozen =
+			MovementExecutionGate::stabilizeVelocity(
+				MovementExecutionPhase::RoundFreeze, previous);
+		if (!check(frozen.x == 0.0f && frozen.y == 0.0f && frozen.z == previous.z,
+				"round freeze clears horizontal drift and preserves vertical falling"))
+		{
+			return 1;
+		}
+		const astrabot::metamod::MovementVelocity live =
+			MovementExecutionGate::stabilizeVelocity(
+				MovementExecutionPhase::Live, previous);
+		if (!check(live.x == previous.x && live.y == previous.y && live.z == previous.z,
+				"live movement preserves velocity"))
+		{
+			return 1;
+		}
+	}
 	std::cout << "movement execution gate: PASS\n";
 	return 0;
 }

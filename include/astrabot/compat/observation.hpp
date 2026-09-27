@@ -147,6 +147,27 @@ struct ObjectiveObservation
 	ObservationValue<bool> vip;
 };
 
+struct DroppedC4Observation
+{
+	bool available;
+	world::EntityKey entity;
+	world::WorldVector position;
+	ObservationContext context;
+
+	bool isAvailable() const
+	{
+		return available && entity.isValid() && context.isValid() &&
+			isAvailableQuality(context.quality);
+	}
+
+	bool isCurrent(const world::FrameIdentity &frame) const
+	{
+		return isAvailable() &&
+			context.freshness != ObservationFreshness::Stale &&
+			context.isCurrent(frame);
+	}
+};
+
 struct CompatibilityObservation
 {
 	world::ActorKey actor;

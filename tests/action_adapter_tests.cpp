@@ -2,6 +2,8 @@
 
 #include <cmath>
 #include <cstdio>
+#include <cstring>
+#include <limits>
 
 namespace
 {
@@ -29,6 +31,11 @@ bool testFireAndObjectiveButtons()
 	if (!check(fireDispatch.buttons == (2U | ActionAdapter::kAttackButton) &&
 				fireDispatch.viewAngles.yaw == aim.yaw,
 			"fire preserves movement buttons and adds IN_ATTACK"))
+	{
+		return false;
+	}
+	if (!check(fireDispatch.clientCommand == nullptr,
+			"generic Fire does not issue a C4 selection command"))
 	{
 		return false;
 	}
@@ -142,11 +149,167 @@ bool testMovementButtonsFollowProjectedInput()
 }
 } // namespace
 
+bool testPlantContinuationReselectsC4()
+{
+	using astrabot::metamod::ActionAdapter;
+	using astrabot::metamod::ActionKind;
+	using astrabot::metamod::ActionProposal;
+	const ActionProposal continuation = {
+		ActionKind::PlantContinue, {0.0f, 45.0f, 0.0f},
+		ActionAdapter::kForwardButton};
+	const auto dispatch = ActionAdapter::translate(continuation);
+	return check(dispatch.kind == ActionKind::PlantContinue &&
+			dispatch.stopMovement &&
+			(dispatch.buttons & ActionAdapter::kAttackButton) != 0U &&
+			dispatch.clientCommand == ActionAdapter::kSelectC4Command,
+		"plant continuation reselects C4 while holding attack");
+}
+
+bool testPlantAttackWaitsForObservedC4Selection()
+{
+	using astrabot::metamod::ActionAdapter;
+	using astrabot::metamod::ActionKind;
+
+	const ActionKind noWeaponObservation = ActionAdapter::plantActionForWeaponObservation(
+		false, false, 0U, false);
+	const auto selectDispatch = ActionAdapter::translate(
+		{noWeaponObservation, {}, 0U});
+	if (!check(noWeaponObservation == ActionKind::SelectC4 &&
+			(selectDispatch.buttons & ActionAdapter::kAttackButton) == 0U &&
+			selectDispatch.clientCommand != nullptr &&
+			std::strcmp(selectDispatch.clientCommand, "weapon_c4") == 0,
+			"unknown active weapon requests ZBot SelectItem without attacking"))
+	{
+		return false;
+	}
+	if (!check(ActionAdapter::plantActionForWeaponObservation(
+			true, true, ActionAdapter::kC4WeaponId, false) == ActionKind::Plant,
+			"primary attack starts only after CurWeapon reports active C4"))
+	{
+		return false;
+	}
+	const auto plantDispatch = ActionAdapter::translate({ActionKind::Plant, {}, 0U});
+	if (!check((plantDispatch.buttons & ActionAdapter::kAttackButton) != 0U &&
+			plantDispatch.clientCommand != nullptr &&
+			std::strcmp(plantDispatch.clientCommand, "weapon_c4") == 0,
+			"active C4 is attacked and reselected like ZBot"))
+	{
+		return false;
+	}
+	return check(ActionAdapter::plantActionForWeaponObservation(
+			true, true, ActionAdapter::kC4WeaponId, true) == ActionKind::PlantContinue &&
+			ActionAdapter::plantActionForWeaponObservation(true, true, 7U, false) ==
+				ActionKind::SelectC4,
+			"continued attack requires current C4 observation");
+}
+
+bool testPlantObjectiveAcceptsAnySelectedBombTargetClass()
+{
+	using astrabot::metamod::ActionAdapter;
+	using astrabot::metamod::PlantTargetPoint;
+	const PlantTargetPoint infoTargetCenter = {100.0f, -50.0f, 32.0f};
+	const PlantTargetPoint atLegacyRadius = {356.0f, -50.0f, 32.0f};
+	const PlantTargetPoint outsideLegacyRadius = {356.1f, -50.0f, 32.0f};
+	return check(ActionAdapter::isBombTargetClassname("func_bomb_target") &&
+			ActionAdapter::isBombTargetClassname("INFO_BOMB_TARGET") &&
+			!ActionAdapter::isBombTargetClassname("info_target"),
+			"plant target classifier accepts both public BombTarget classnames") &&
+		check(ActionAdapter::isLegacyInfoBombTargetClassname("INFO_BOMB_TARGET") &&
+			!ActionAdapter::isLegacyInfoBombTargetClassname("func_bomb_target"),
+			"legacy info radius classifier is case-insensitive") &&
+		check(ActionAdapter::canBeginPlantObjective(true, true, true, true),
+			"selected info-only site permits a C4-carrying Terrorist to plant") &&
+		check(!ActionAdapter::canBeginPlantObjective(true, true, true, false),
+			"plant action requires a target selected by the shared BombTarget selector") &&
+		check(ActionAdapter::withinLegacyBombTargetRadius(
+				infoTargetCenter, atLegacyRadius) &&
+			!ActionAdapter::withinLegacyBombTargetRadius(
+				infoTargetCenter, outsideLegacyRadius),
+			"info_bomb_target plant region follows the public 256-unit boundary");
+}
+
+bool testPlantZoneBoundsAndTimeout()
+{
+	using astrabot::metamod::ActionAdapter;
+	using astrabot::metamod::PlantTargetBounds;
+	const PlantTargetBounds site = {-100.0f, -100.0f, 0.0f, 100.0f, 100.0f, 64.0f};
+	const PlantTargetBounds inside = {-4.0f, -4.0f, 32.0f, 4.0f, 4.0f, 68.0f};
+	const PlantTargetBounds outside = {101.0f, -4.0f, 32.0f, 110.0f, 4.0f, 68.0f};
+	PlantTargetBounds invalid = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+	invalid.maximumX = std::numeric_limits<float>::quiet_NaN();
+	return check(ActionAdapter::overlapsPlantTarget(site, inside),
+		"standing player hull overlaps selected bomb-target bounds") &&
+		check(!ActionAdapter::overlapsPlantTarget(site, outside),
+			"plant attempt is blocked outside the selected bomb-target bounds") &&
+		check(!ActionAdapter::overlapsPlantTarget(site, invalid),
+			"invalid site bounds fail closed") &&
+		check(!ActionAdapter::plantAttemptExpired(4.99f),
+			"plant attempt is live before ZBot timeout") &&
+		check(ActionAdapter::plantAttemptExpired(5.0f),
+			"plant attempt times out at five seconds") &&
+		check(!ActionAdapter::plantAttemptExpired(
+			std::numeric_limits<float>::quiet_NaN()),
+			"nonfinite plant elapsed time does not trigger timeout");
+}
+
+bool testPlantAttemptRequiresSiteAndTimesOutAfterDeliveredInput()
+{
+	using astrabot::metamod::ActionAdapter;
+	using astrabot::metamod::PlantAttemptResult;
+	using astrabot::metamod::PlantAttemptState;
+	PlantAttemptState state{};
+	if (!check(ActionAdapter::evaluatePlantAttempt(state, false, false, 10.0f) ==
+			PlantAttemptResult::OutsideSite,
+			"plant attempt is suppressed outside selected target bounds"))
+	{
+		return false;
+	}
+	if (!check(ActionAdapter::evaluatePlantAttempt(state, true, false, 10.0f) ==
+			PlantAttemptResult::Ready,
+			"plant attempt may start after entering selected target bounds"))
+	{
+		return false;
+	}
+	ActionAdapter::recordPlantAttemptDispatched(state, 10.0f);
+	if (!check(ActionAdapter::evaluatePlantAttempt(state, true, false, 14.99f) ==
+			PlantAttemptResult::Continuing,
+			"delivered attack input keeps the plant attempt active for five seconds"))
+	{
+		return false;
+	}
+	if (!check(ActionAdapter::evaluatePlantAttempt(state, true, false, 15.0f) ==
+			PlantAttemptResult::TimedOut && !state.active,
+			"unconfirmed plant times out and releases the action state"))
+	{
+		return false;
+	}
+	if (!check(ActionAdapter::evaluatePlantAttempt(state, true, false, 15.5f) ==
+			PlantAttemptResult::RetryPending,
+			"timed out plant waits before replanning an attempt"))
+	{
+		return false;
+	}
+	if (!check(ActionAdapter::evaluatePlantAttempt(state, true, false, 16.0f) ==
+			PlantAttemptResult::Ready,
+			"plant attempt can restart after its retry delay"))
+	{
+		return false;
+	}
+	return check(ActionAdapter::evaluatePlantAttempt(state, true, true, 16.0f) ==
+			PlantAttemptResult::Confirmed && !state.active,
+			"observed planted bomb clears the attack attempt");
+}
+
 int main()
 {
 	return testFireAndObjectiveButtons() && testReloadAndNoOp() &&
 		testLiveFireRequiresWeaponBoundary() &&
 		testActionStopsMovementForObjectiveUse() &&
+			testPlantContinuationReselectsC4() &&
+			testPlantAttackWaitsForObservedC4Selection() &&
+			testPlantObjectiveAcceptsAnySelectedBombTargetClass() &&
+			testPlantZoneBoundsAndTimeout() &&
+			testPlantAttemptRequiresSiteAndTimesOutAfterDeliveredInput() &&
 		testWorldMovementProjectionIgnoresAimTarget() &&
 		testMovementButtonsFollowProjectedInput() ? 0 : 1;
 }

@@ -3,9 +3,17 @@
 #include "observation_adapter.hpp"
 
 #include <cstdio>
+#include <limits>
 
 namespace
 {
+const edict_t *gExpectedIndexedEntity = nullptr;
+
+int fakeIndexOfEdict(const edict_t *entity)
+{
+	return entity == gExpectedIndexedEntity ? 21 : 0;
+}
+
 bool check(bool condition, const char *message)
 {
 	if (!condition)
@@ -169,6 +177,100 @@ bool testPlantedBombEntityIsInferred()
 		check(objective.bombTimer.value == 30.0f,
 			"planted bomb timer is preserved");
 }
+
+bool testPlantedBombWithoutPublicDamageTimeKeepsTimerUnavailable()
+{
+	Fixture fixture;
+	configureFixture(&fixture);
+	fixture.entity.v.dmgtime = 0.0f;
+	astrabot::compat::ObjectiveObservation objective = {};
+	const astrabot::metamod::ObservationAdapterResult result =
+		fixture.adapter.collectPlantedBomb(
+			&fixture.entity, "grenade", "models/w_c4.mdl", 5.0f,
+			{4U, 9U}, frame(), timing(), &objective);
+	return check(result == astrabot::metamod::ObservationAdapterResult::Accepted,
+			"public C4 grenade/model identifies a planted bomb without dmgtime") &&
+		check(objective.bombPlanted.isAvailable() && objective.bombPlanted.value,
+			"planted state remains available without a public bomb timer") &&
+		check(!objective.bombTimer.isAvailable() &&
+			objective.bombTimer.context.quality ==
+				astrabot::compat::ObservationQuality::Unavailable,
+			"private C4 countdown remains explicitly unavailable");
+}
+
+bool testDroppedC4RequiresVerifiedWeaponBoxIdentityAndTracksReuse()
+{
+	Fixture fixture;
+	configureFixture(&fixture);
+	fixture.entity.serialnumber = 9;
+	fixture.engine.pfnIndexOfEdict = &fakeIndexOfEdict;
+	gExpectedIndexedEntity = &fixture.entity;
+
+	astrabot::compat::DroppedC4Observation dropped = {};
+	const auto result = fixture.adapter.collectDroppedC4(
+		&fixture.entity, "weaponbox", "models/w_backpack.mdl",
+		{4U, 9U}, frame(), timing(), &dropped);
+	if (!check(result == astrabot::metamod::ObservationAdapterResult::Accepted,
+			"verified ReGameDLL C4 weaponbox is accepted") ||
+		!check(dropped.isAvailable(), "verified dropped C4 is available") ||
+		!check(dropped.entity.id == 21U && dropped.entity.generation == 9U,
+			"dropped C4 identity uses edict index and serial generation") ||
+		!check(dropped.position.x == 128.0f && dropped.position.z == 32.0f,
+			"dropped C4 public origin is preserved"))
+	{
+		gExpectedIndexedEntity = nullptr;
+		return false;
+	}
+
+	const astrabot::world::EntityKey previousIdentity = dropped.entity;
+	fixture.entity.serialnumber = 10;
+	if (!check(fixture.adapter.collectDroppedC4(
+				&fixture.entity, "weaponbox", "models/w_backpack.mdl",
+				{4U, 9U}, frame(), timing(), &dropped) ==
+				astrabot::metamod::ObservationAdapterResult::Accepted,
+			"reused dropped C4 slot is recollected") ||
+		!check(!(dropped.entity == previousIdentity),
+			"edict reuse changes the dropped C4 generation"))
+	{
+		gExpectedIndexedEntity = nullptr;
+		return false;
+	}
+
+	const auto unknown = fixture.adapter.collectDroppedC4(
+		&fixture.entity, "weaponbox", "models/w_ak47.mdl",
+		{4U, 9U}, frame(), timing(), &dropped);
+	if (!check(unknown == astrabot::metamod::ObservationAdapterResult::InvalidEntity,
+			"unknown weaponbox model stays unavailable") ||
+		!check(!dropped.isAvailable(), "unknown weaponbox is not C4 ground truth"))
+	{
+		gExpectedIndexedEntity = nullptr;
+		return false;
+	}
+
+	gExpectedIndexedEntity = &fixture.entity;
+	fixture.entity.free = 1;
+	const auto freed = fixture.adapter.collectDroppedC4(
+		&fixture.entity, "weaponbox", "models/w_backpack.mdl",
+		{4U, 9U}, frame(), timing(), &dropped);
+	fixture.entity.free = 0;
+	if (!check(freed == astrabot::metamod::ObservationAdapterResult::InvalidEntity &&
+			!dropped.isAvailable(), "freed C4 entity remains unavailable"))
+	{
+		gExpectedIndexedEntity = nullptr;
+		return false;
+	}
+
+	fixture.entity.v.origin[1] =
+		(std::numeric_limits<float>::quiet_NaN)();
+	const auto invalidPosition = fixture.adapter.collectDroppedC4(
+		&fixture.entity, "weaponbox", "models/w_backpack.mdl",
+		{4U, 9U}, frame(), timing(), &dropped);
+	gExpectedIndexedEntity = nullptr;
+	return check(invalidPosition ==
+			astrabot::metamod::ObservationAdapterResult::InvalidEntity &&
+			!dropped.isAvailable(),
+		"non-finite dropped C4 origin remains unavailable");
+}
 }
 
 int main()
@@ -178,5 +280,7 @@ int main()
 		testObjectiveProxyKeepsInferredQuality() &&
 		testAdapterPreservesActorAndFrameIdentity() &&
 		testAdapterHandlesMissingEnginePointers() &&
-		testPlantedBombEntityIsInferred() ? 0 : 1;
+		testPlantedBombEntityIsInferred() &&
+		testPlantedBombWithoutPublicDamageTimeKeepsTimerUnavailable() &&
+		testDroppedC4RequiresVerifiedWeaponBoxIdentityAndTracksReuse() ? 0 : 1;
 }

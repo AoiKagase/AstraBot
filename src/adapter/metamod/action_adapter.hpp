@@ -17,6 +17,8 @@ enum class ActionKind : std::uint8_t
 	Fire,
 	Reload,
 	Plant,
+	PlantContinue,
+	SelectC4,
 	Defuse
 };
 
@@ -42,6 +44,37 @@ struct MovementProjection
 	float side;
 };
 
+struct PlantTargetBounds {
+	float minimumX;
+	float minimumY;
+	float minimumZ;
+	float maximumX;
+	float maximumY;
+	float maximumZ;
+};
+
+struct PlantTargetPoint {
+	float x;
+	float y;
+	float z;
+};
+
+struct PlantAttemptState {
+	bool active;
+	float startedAt;
+	float retryAfter;
+};
+
+enum class PlantAttemptResult : std::uint8_t {
+	OutsideSite,
+	RetryPending,
+	Ready,
+	Continuing,
+	TimedOut,
+	Confirmed,
+	InvalidTime
+};
+
 class ActionAdapter
 {
   public:
@@ -52,7 +85,28 @@ class ActionAdapter
 	static constexpr std::uint16_t kMoveLeftButton = static_cast<std::uint16_t>(IN_MOVELEFT);
 	static constexpr std::uint16_t kMoveRightButton = static_cast<std::uint16_t>(IN_MOVERIGHT);
 	static constexpr const char *kReloadCommand = "reload";
-	static constexpr const char *kSelectC4Command = "use weapon_c4";
+	static constexpr const char *kSelectC4Command = "weapon_c4";
+	// Public WEAPON_C4 value in the pinned ReGameDLL-CS CurWeapon protocol.
+	static constexpr std::uint8_t kC4WeaponId = 6U;
+	// ReGameDLL-CS b0889847's legacy info_bomb_target check uses a 256-unit radius.
+	static constexpr float kLegacyBombTargetRadius = 256.0f;
+	static bool isBombTargetClassname(const char *classname) noexcept;
+	static bool isLegacyInfoBombTargetClassname(const char *classname) noexcept;
+	static bool canBeginPlantObjective(bool hasPlantAssignment,
+		bool carryingBomb, bool isTerrorist, bool selectedTargetAvailable) noexcept;
+	static bool withinLegacyBombTargetRadius(
+		const PlantTargetPoint &center, const PlantTargetPoint &actor) noexcept;
+	static constexpr float kPlantAttemptTimeoutSeconds = 5.0f;
+	static constexpr float kPlantAttemptRetrySeconds = 1.0f;
+	static bool validPlantTargetBounds(const PlantTargetBounds &bounds) noexcept;
+	static bool overlapsPlantTarget(const PlantTargetBounds &site,
+		const PlantTargetBounds &actor) noexcept;
+	static bool plantAttemptExpired(float elapsedSeconds) noexcept;
+	static PlantAttemptResult evaluatePlantAttempt(PlantAttemptState &state,
+		bool actorOverlapsSite, bool plantedConfirmed, float now) noexcept;
+	static void recordPlantAttemptDispatched(PlantAttemptState &state, float now) noexcept;
+	static ActionKind plantActionForWeaponObservation(bool observationAvailable,
+		bool active, std::uint8_t weaponId, bool attackAlreadyDispatched) noexcept;
 
 	static ActionDispatch translate(const ActionProposal &proposal);
 	static ActionProposal forLiveDispatch(

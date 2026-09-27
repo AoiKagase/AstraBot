@@ -5,8 +5,11 @@
 #include <algorithm>
 #include <cctype>
 #include <chrono>
+#include <cstdarg>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
+#include <cstdlib>
 #include <limits>
 #include <vector>
 
@@ -43,6 +46,10 @@ const char *actionKindName(ActionKind kind)
 			return "reload";
 		case ActionKind::Plant:
 			return "plant";
+		case ActionKind::PlantContinue:
+			return "plant_continue";
+		case ActionKind::SelectC4:
+			return "select_c4";
 		case ActionKind::Defuse:
 			return "defuse";
 		case ActionKind::None:
@@ -459,12 +466,10 @@ void addNavSearchStats(nav::NavSearchStats *total, const nav::NavSearchStats &sa
 			: nav::NavVector{entity->v.origin.x, entity->v.origin.y, entity->v.origin.z};
 	}
 
-	bool isBombTargetClassname(const char *classname)
-	{
-		return classname != nullptr &&
-			(std::strcmp(classname, "func_bomb_target") == 0 ||
-			 std::strcmp(classname, "info_bomb_target") == 0);
-	}
+bool isBombTargetClassname(const char *classname)
+{
+	return ActionAdapter::isBombTargetClassname(classname);
+}
 
 	bool objectiveSiteExtent(
 		const edict_t *entity, const char *classname, nav::NavExtent *extent)
@@ -473,7 +478,7 @@ void addNavSearchStats(nav::NavSearchStats *total, const nav::NavSearchStats &sa
 		{
 			return false;
 		}
-		if (classname != nullptr && std::strcmp(classname, "info_bomb_target") == 0)
+		if (ActionAdapter::isLegacyInfoBombTargetClassname(classname))
 		{
 			const nav::NavVector center = entityObjectiveCenter(entity);
 			if (!std::isfinite(center.x) || !std::isfinite(center.y) ||
@@ -481,15 +486,14 @@ void addNavSearchStats(nav::NavSearchStats *total, const nav::NavSearchStats &sa
 			{
 				return false;
 			}
-			constexpr float kLegacyBombTargetRadius = 256.0f;
 			extent->lo = {
-				center.x - kLegacyBombTargetRadius,
-				center.y - kLegacyBombTargetRadius,
-				center.z - kLegacyBombTargetRadius};
+				center.x - ActionAdapter::kLegacyBombTargetRadius,
+				center.y - ActionAdapter::kLegacyBombTargetRadius,
+				center.z - ActionAdapter::kLegacyBombTargetRadius};
 			extent->hi = {
-				center.x + kLegacyBombTargetRadius,
-				center.y + kLegacyBombTargetRadius,
-				center.z + kLegacyBombTargetRadius};
+				center.x + ActionAdapter::kLegacyBombTargetRadius,
+				center.y + ActionAdapter::kLegacyBombTargetRadius,
+				center.z + ActionAdapter::kLegacyBombTargetRadius};
 			return true;
 		}
 		return entityObjectiveBounds(entity, extent);
@@ -696,7 +700,11 @@ const char *const kPerformanceCvarNames[kPerformanceCvarCount] = {
 		PluginRuntime::PluginRuntime()
 		: state_(State::Cold), metaGlobals_(nullptr), gameDllFunctions_(nullptr),
 		  hookedGameDllFunctions_(),
-		  engineFunctions_(nullptr), globals_(nullptr), lifecycle_(), actorRegistry_(),
+		  engineFunctions_(nullptr), globals_(nullptr), roundFreezeScheduled_(false),
+		  roundFreezeStartTime_(0.0f), roundFreezeUntil_(0.0f),
+		  roundFreezeGeneration_(runtime::LifecycleSession::kInvalidGeneration),
+		  roundLifecycleTracker_(),
+		  lifecycle_(), actorRegistry_(),
 			  fakeClientManager_(lifecycle_, actorRegistry_),
 			  inputDispatcher_(lifecycle_, actorRegistry_), compatibilitySurface_(),
 	compatibilityRandomSource_(), observationAdapter_(), runtimeProfiler_(), navLoader_(),
@@ -706,8 +714,11 @@ const char *const kPerformanceCvarNames[kPerformanceCvarCount] = {
 	NativeBotGuardReason::ControlsUnavailable, false}),
 	managedBotSlots_(), managedBotTeamNumbers_(), managedBotHandles_(), managedBotNames_(),
 			  joinControllers_(),
+			  pendingJoinActions_(),
 		userMessageKind_(UserMessageKind::None), userMessageTarget_(nullptr),
-		userMessageFieldCount_(0U), userMessageMenuType_(0U), userMessageNeedMore_(0U),
+		userMessageFieldCount_(0U), userMessageWeaponState_(0U),
+		userMessageWeaponId_(0U), userMessageWeaponMessageValid_(false),
+		userMessageMenuType_(0U), userMessageNeedMore_(0U),
 		userMessageValidSlots_(0U), userMessageTeamSlot_(0U), userMessageShowFragmentActive_(false),
 		userMessageText_(),
 		userMessageTextLength_(0U),
@@ -719,7 +730,7 @@ const char *const kPerformanceCvarNames[kPerformanceCvarCount] = {
 	managedBotPerceptionFullUpdates_(), managedBotCommandSequences_(),
 	managedBotFullUpdateSequences_(), managedBotStateRounds_(), managedBotWasDead_(),
 	managedBotTiming_(), managedBotJumpCrouch_(), managedBotCommandTemplates_(),
-	managedBotCommandTemplateValid_(),
+	managedBotCommandTemplateValid_(), managedBotActionStopsMovement_(),
 			  movementDiagnosticSamples_(),
 			  movementDiagnosticAttempts_(),
 			  movementDiagnosticUnavailable_(),
@@ -860,6 +871,7 @@ const char *const kPerformanceCvarNames[kPerformanceCvarCount] = {
 			}
 
 			DLL_FUNCTIONS requestedFunctions{};
+			requestedFunctions.pfnCmdStart = &HookCmdStart;
 			requestedFunctions.pfnClientDisconnect = &HookClientDisconnect;
 			requestedFunctions.pfnClientPutInServer = &HookClientPutInServer;
 			requestedFunctions.pfnServerActivate = &HookServerActivate;
@@ -918,11 +930,12 @@ const char *const kPerformanceCvarNames[kPerformanceCvarCount] = {
 			requestedFunctions.pfnCmd_Argc = &HookCommandArgc;
 			requestedFunctions.pfnMessageBegin = &HookMessageBegin;
 			requestedFunctions.pfnMessageEnd = &HookMessageEnd;
-			requestedFunctions.pfnWriteByte = &HookWriteByte;
-			requestedFunctions.pfnWriteChar = &HookWriteChar;
-			requestedFunctions.pfnWriteShort = &HookWriteShort;
-			requestedFunctions.pfnWriteString = &HookWriteString;
-			*engineFunctions = requestedFunctions;
+		requestedFunctions.pfnWriteByte = &HookWriteByte;
+		requestedFunctions.pfnWriteChar = &HookWriteChar;
+		requestedFunctions.pfnWriteShort = &HookWriteShort;
+		requestedFunctions.pfnWriteString = &HookWriteString;
+		requestedFunctions.pfnAlertMessage = &HookAlertMessage;
+		*engineFunctions = requestedFunctions;
 			return true;
 		}
 
@@ -1049,12 +1062,39 @@ const char *const kPerformanceCvarNames[kPerformanceCvarCount] = {
 		{
 			Snapshot current = {state_,
 								compatibilitySurface_.configuration().mode,
-								lifecycle_.mapGeneration(),
-								lifecycle_.roundGeneration(),
-								nativeGuardDecision_.state,
-								nativeGuardDecision_.reason,
-								nativeGuardDecision_.managedBotCreationAllowed};
+				lifecycle_.mapGeneration(),
+				lifecycle_.roundGeneration(),
+				nativeGuardDecision_.state,
+				nativeGuardDecision_.reason,
+				nativeGuardDecision_.managedBotCreationAllowed,
+				roundFreezeActive()};
 			return current;
+		}
+
+		bool PluginRuntime::roundFreezeActive() const
+		{
+			const RoundFreezeSchedule schedule = {
+				roundFreezeScheduled_, roundFreezeStartTime_, roundFreezeUntil_};
+			return globals_ != nullptr &&
+				roundFreezeGeneration_ == lifecycle_.roundGeneration() &&
+				schedule.isActive(globals_->time);
+		}
+
+		bool PluginRuntime::beginRoundGeneration()
+		{
+			if (!lifecycle_.beginRound())
+			{
+				return false;
+			}
+			managedBotCurrentWeapons_.fill(ManagedCurrentWeaponObservation{});
+			managedBotObjectiveActions_.fill(ManagedObjectiveActionState{});
+			managedTeamObjectiveAssignmentsValid_ = false;
+			managedTeamObjectivePathFailurePending_ = false;
+			managedTeamObjectivePathFailureActor_ = {};
+			managedTeamObjectivePathFailureGeneration_ = 0U;
+			managedTeamObjectivePathFailureStartArea_ = 0U;
+			managedTeamObjectivePathFailureFrame_ = 0U;
+			return true;
 		}
 
 		NavLoadResult PluginRuntime::loadNavigationFile(const NavLoadRequest *request)
@@ -1130,7 +1170,113 @@ runtime::MovementPhysicsSample PluginRuntime::movementPhysicsSample(std::uint32_
 			}
 		}
 
-		void PluginRuntime::onServerActivate(edict_t *edictList, int edictCount, int clientMax)
+		void PluginRuntime::onCmdStart(const edict_t *entity, std::uint16_t buttons)
+		{
+			if (state_ != State::ActiveMap || entity == nullptr || entity->free != 0 ||
+				engineFunctions_ == nullptr || engineFunctions_->pfnIndexOfEdict == nullptr ||
+				globals_ == nullptr || !std::isfinite(globals_->time))
+			{
+				return;
+			}
+		
+			const int entityIndex = engineFunctions_->pfnIndexOfEdict(entity);
+			if (entityIndex <= 0)
+			{
+				return;
+			}
+			for (const FakeClientHandle &handle : managedBotHandles_)
+			{
+				if (handle.entity == entity)
+				{
+					return;
+				}
+			}
+		
+			const bool sameExternalActor =
+				static_cast<std::uint32_t>(entityIndex) == externalDefuserEntityIndex_ &&
+				static_cast<std::uint32_t>(entity->serialnumber) == externalDefuserEntitySerial_;
+			const bool usingButton =
+				(buttons & static_cast<std::uint16_t>(IN_USE)) != 0U;
+			const bool livingCounterTerrorist = static_cast<int>(entity->v.team) == 2 &&
+				entity->v.deadflag == DEAD_NO && std::isfinite(entity->v.health) &&
+				entity->v.health > 0.0f;
+			if (!usingButton || !livingCounterTerrorist ||
+				!std::isfinite(entity->v.origin.x) || !std::isfinite(entity->v.origin.y) ||
+				!std::isfinite(entity->v.origin.z))
+			{
+				if (sameExternalActor)
+				{
+					externalDefuserEntityIndex_ = 0U;
+					externalDefuserEntitySerial_ = 0U;
+					externalDefuserLeaseUntil_ = 0.0f;
+					managedTeamObjectiveAssignmentsValid_ = false;
+				}
+				return;
+			}
+			if (engineFunctions_->pfnFindEntityByString == nullptr ||
+				engineFunctions_->pfnSzFromIndex == nullptr)
+			{
+				return;
+			}
+		
+			constexpr float kDefuseUseRadius = 100.0f;
+			constexpr float kDefuseUseRadiusSquared = kDefuseUseRadius * kDefuseUseRadius;
+			edict_t *searchAfter = nullptr;
+			bool nearPlantedBomb = false;
+			const int searchLimit = (std::max)(1, (std::min)(globals_->maxEntities, 2048));
+			for (int searchIndex = 0; searchIndex < searchLimit; ++searchIndex)
+			{
+				edict_t *candidate = engineFunctions_->pfnFindEntityByString(
+					searchAfter, "classname", "grenade");
+				if (candidate == nullptr || candidate == searchAfter)
+				{
+					break;
+				}
+				searchAfter = candidate;
+				if (candidate->free != 0)
+				{
+					continue;
+				}
+				const char *classname = engineFunctions_->pfnSzFromIndex(candidate->v.classname);
+				const char *model = engineFunctions_->pfnSzFromIndex(candidate->v.model);
+				if (classname == nullptr || std::strcmp(classname, "grenade") != 0 ||
+					model == nullptr || std::strstr(model, "w_c4.mdl") == nullptr ||
+					!std::isfinite(candidate->v.origin.x) ||
+					!std::isfinite(candidate->v.origin.y) ||
+					!std::isfinite(candidate->v.origin.z))
+				{
+					continue;
+				}
+		
+				const float dx = entity->v.origin.x - candidate->v.origin.x;
+				const float dy = entity->v.origin.y - candidate->v.origin.y;
+				const float dz = entity->v.origin.z - candidate->v.origin.z;
+				if (dx * dx + dy * dy + dz * dz <= kDefuseUseRadiusSquared)
+				{
+					nearPlantedBomb = true;
+					break;
+				}
+			}
+			if (!nearPlantedBomb)
+			{
+				if (sameExternalActor)
+				{
+					externalDefuserEntityIndex_ = 0U;
+					externalDefuserEntitySerial_ = 0U;
+					externalDefuserLeaseUntil_ = 0.0f;
+					managedTeamObjectiveAssignmentsValid_ = false;
+				}
+				return;
+			}
+		
+			externalDefuserEntityIndex_ = static_cast<std::uint32_t>(entityIndex);
+			externalDefuserEntitySerial_ = static_cast<std::uint32_t>(entity->serialnumber);
+			externalDefuserLeaseUntil_ = globals_->time + 0.25f;
+			externalDefuserMapGeneration_ = lifecycle_.mapGeneration();
+			externalDefuserRoundGeneration_ = lifecycle_.roundGeneration();
+			managedTeamObjectiveAssignmentsValid_ = false;
+		}
+void PluginRuntime::onServerActivate(edict_t *edictList, int edictCount, int clientMax)
 		{
 			(void)edictList;
 			(void)edictCount;
@@ -1146,9 +1292,14 @@ runtime::MovementPhysicsSample PluginRuntime::movementPhysicsSample(std::uint32_
 
 			if (state_ == State::Attached)
 			{
-				if (lifecycle_.activateMap())
-				{
-					adapterFrameCount_ = 0U;
+		if (lifecycle_.activateMap())
+		{
+			roundLifecycleTracker_.reset();
+			roundFreezeScheduled_ = false;
+				roundFreezeStartTime_ = 0.0f;
+				roundFreezeUntil_ = 0.0f;
+				roundFreezeGeneration_ = lifecycle_.roundGeneration();
+				adapterFrameCount_ = 0U;
 					state_ = State::ActiveMap;
 					movementDiagnosticGlobal_ = false;
 					registerCompatibilityCvars();
@@ -1181,8 +1332,15 @@ runtime::MovementPhysicsSample PluginRuntime::movementPhysicsSample(std::uint32_
 
 		void PluginRuntime::onServerDeactivate()
 		{
-			if (state_ == State::ActiveMap)
-			{
+			pendingJoinActions_.clear();
+			pendingJoinActionOverflow_.fill(false);
+		if (state_ == State::ActiveMap)
+		{
+			roundLifecycleTracker_.reset();
+			roundFreezeScheduled_ = false;
+				roundFreezeStartTime_ = 0.0f;
+				roundFreezeUntil_ = 0.0f;
+				roundFreezeGeneration_ = runtime::LifecycleSession::kInvalidGeneration;
 				lifecycle_.deactivateMap();
 				navPublisher_.invalidate(lifecycle_.mapGeneration());
 				navLoadDiagnostic_ = {};
@@ -1315,6 +1473,30 @@ runtime::MovementPhysicsSample PluginRuntime::movementPhysicsSample(std::uint32_
 				++adapterFrameCount_;
 			}
 			lifecycle_.observeFrame(adapterFrameCount_, globals_->time);
+			if (roundFreezeActive())
+			{
+				for (std::size_t index = 0U; index < managedBotHandles_.size(); ++index)
+				{
+					if (!managedBotSlots_[index])
+					{
+						continue;
+					}
+					edict_t *entity = managedBotHandles_[index].entity;
+					if (entity == nullptr || entity->free != 0)
+					{
+						continue;
+					}
+					const MovementVelocity velocity =
+						MovementExecutionGate::stabilizeVelocity(
+							MovementExecutionPhase::RoundFreeze,
+							{entity->v.velocity.x,
+							 entity->v.velocity.y,
+							 entity->v.velocity.z});
+					entity->v.velocity.x = velocity.x;
+					entity->v.velocity.y = velocity.y;
+					entity->v.velocity.z = velocity.z;
+				}
+			}
 			synchronizeNativeBotControls();
 				synchronizeCompatibilityCvars();
 				updateNativeBotGuard();
@@ -1328,6 +1510,7 @@ void PluginRuntime::onStartFramePost()
 		{
 			RuntimeProfilerScope profilerScope(
 				runtimeProfiler_, RuntimeProfilerStage::RuntimeInput);
+			processDeferredJoinActions();
 			processJoinControllers();
 		}
 			if (runtimeProfiler_.enabled())
@@ -1464,6 +1647,86 @@ void PluginRuntime::onStartFramePost()
 			}
 		}
 
+void PluginRuntime::deferJoinAction(
+	std::size_t index, const JoinAction &action)
+{
+	if (index >= managedBotSlots_.size() || !managedBotSlots_[index] ||
+		action.kind == JoinActionKind::None)
+	{
+		return;
+	}
+	const FakeClientHandle &handle = managedBotHandles_[index];
+	if (handle.entity == nullptr)
+	{
+		return;
+	}
+	const runtime::LifecycleToken token = lifecycle_.tokenForSlot(handle.actor.slot);
+	if (pendingJoinActions_.enqueue(handle.actor, token, adapterFrameCount_, action))
+	{
+		return;
+	}
+	pendingJoinActionOverflow_[index] = true;
+	if (gpMetaUtilFuncs != nullptr && gpMetaUtilFuncs->pfnLogConsole != nullptr &&
+		pluginId_ != nullptr)
+	{
+		gpMetaUtilFuncs->pfnLogConsole(
+			pluginId_,
+			"join action queue full slot=%u generation=%u frame=%u action=%d error=%d",
+			static_cast<unsigned int>(handle.actor.slot),
+			static_cast<unsigned int>(handle.actor.actorGeneration),
+			static_cast<unsigned int>(adapterFrameCount_),
+			static_cast<int>(action.kind),
+			static_cast<int>(action.error));
+	}
+}
+
+void PluginRuntime::processDeferredJoinActions()
+{
+	const std::size_t batchCount = pendingJoinActions_.size();
+	for (std::size_t actionIndex = 0U; actionIndex < batchCount; ++actionIndex)
+	{
+		metamod::DeferredJoinAction pending{};
+		if (!pendingJoinActions_.dequeue(&pending) ||
+			pending.actor.slot < runtime::LifecycleSession::kFirstClientSlot ||
+			pending.actor.slot > runtime::LifecycleSession::kLastClientSlot)
+		{
+			continue;
+		}
+		const std::size_t index =
+			static_cast<std::size_t>(pending.actor.slot - 1U);
+		const FakeClientHandle &handle = managedBotHandles_[index];
+		if (!managedBotSlots_[index] || handle.entity == nullptr ||
+			handle.actor.actorGeneration != pending.actor.actorGeneration ||
+			handle.actor.slot != pending.actor.slot)
+		{
+			continue;
+		}
+		const runtime::LifecycleToken current =
+			lifecycle_.tokenForSlot(pending.actor.slot);
+		if (!lifecycle_.isCurrent(current) ||
+			current.mapGeneration != pending.mapGeneration ||
+			current.slotGeneration != pending.slotGeneration)
+		{
+			continue;
+		}
+		applyJoinAction(index, pending.action);
+	}
+	for (std::size_t index = 0U; index < pendingJoinActionOverflow_.size(); ++index)
+	{
+		if (!pendingJoinActionOverflow_[index])
+		{
+			continue;
+		}
+		pendingJoinActionOverflow_[index] = false;
+		if (managedBotSlots_[index] &&
+			(joinControllers_[index].phase() == JoinPhase::Failed ||
+			joinControllers_[index].phase() == JoinPhase::Cancelled))
+		{
+			cleanupManagedJoin(index, joinControllers_[index].error());
+		}
+	}
+}
+
 void PluginRuntime::notifyMenuReady(
 	edict_t *entity, JoinMenuKind menu, std::uint16_t validSlots, JoinMenuSource source)
 		{
@@ -1485,8 +1748,7 @@ void PluginRuntime::notifyMenuReady(
 			{
 				return;
 			}
-	applyJoinAction(
-		index, joinControllers_[index].onMenu(menu, validSlots, adapterFrameCount_, source));
+	deferJoinAction(index, joinControllers_[index].onMenu(menu, validSlots, adapterFrameCount_, source));
 		}
 				void PluginRuntime::onMessageBegin(int messageDestination, int messageType,
 			const float *origin, edict_t *entity)
@@ -1497,6 +1759,9 @@ void PluginRuntime::notifyMenuReady(
 			userMessageKind_ = UserMessageKind::None;
 			userMessageTarget_ = nullptr;
 			userMessageFieldCount_ = 0U;
+			userMessageWeaponState_ = 0U;
+			userMessageWeaponId_ = 0U;
+			userMessageWeaponMessageValid_ = false;
 			userMessageMenuType_ = 0U;
 			userMessageNeedMore_ = 0U;
 			userMessageValidSlots_ = 0U;
@@ -1512,6 +1777,7 @@ void PluginRuntime::notifyMenuReady(
 			int showMenuId = kShowMenuMessageId;
 			int vguiMenuId = kVguiMenuMessageId;
 			int teamInfoId = kTeamInfoMessageId;
+			int curWeaponId = 0;
 			if (gpMetaUtilFuncs != nullptr && gpMetaUtilFuncs->pfnGetUserMsgID != nullptr &&
 				pluginId_ != nullptr)
 			{
@@ -1521,6 +1787,8 @@ void PluginRuntime::notifyMenuReady(
 					gpMetaUtilFuncs->pfnGetUserMsgID(pluginId_, "VGUIMenu", &messageSize);
 				const int resolvedTeamInfoId =
 					gpMetaUtilFuncs->pfnGetUserMsgID(pluginId_, "TeamInfo", &messageSize);
+				const int resolvedCurWeaponId =
+					gpMetaUtilFuncs->pfnGetUserMsgID(pluginId_, "CurWeapon", &messageSize);
 				if (resolvedShowMenuId > 0)
 				{
 					showMenuId = resolvedShowMenuId;
@@ -1532,6 +1800,10 @@ void PluginRuntime::notifyMenuReady(
 				if (resolvedTeamInfoId > 0)
 				{
 					teamInfoId = resolvedTeamInfoId;
+				}
+				if (resolvedCurWeaponId > 0)
+				{
+					curWeaponId = resolvedCurWeaponId;
 				}
 			}
 			if (showMenuId > 0 && messageType == showMenuId)
@@ -1546,13 +1818,18 @@ void PluginRuntime::notifyMenuReady(
 			{
 				userMessageKind_ = UserMessageKind::TeamInfo;
 			}
+			else if (curWeaponId > 0 && messageType == curWeaponId)
+			{
+				userMessageKind_ = UserMessageKind::CurWeapon;
+			}
 			if (userMessageKind_ == UserMessageKind::None ||
 				(userMessageKind_ != UserMessageKind::TeamInfo && entity == nullptr))
 			{
 				return;
 			}
 
-			if (gpMetaUtilFuncs != nullptr && gpMetaUtilFuncs->pfnLogConsole != nullptr &&
+			if (userMessageKind_ != UserMessageKind::CurWeapon &&
+				gpMetaUtilFuncs != nullptr && gpMetaUtilFuncs->pfnLogConsole != nullptr &&
 				pluginId_ != nullptr)
 			{
 				const int slot = entity != nullptr && engineFunctions_ != nullptr &&
@@ -1569,6 +1846,10 @@ void PluginRuntime::notifyMenuReady(
 
 		void PluginRuntime::onMessageEnd()
 		{
+			if (userMessageKind_ == UserMessageKind::CurWeapon)
+			{
+				captureManagedCurrentWeapon();
+			}
 	if (userMessageKind_ == UserMessageKind::VguiMenu && userMessageTarget_ != nullptr)
 	{
 		if (userMessageMenuType_ == 2U)
@@ -1595,6 +1876,9 @@ void PluginRuntime::notifyMenuReady(
 			userMessageKind_ = UserMessageKind::None;
 			userMessageTarget_ = nullptr;
 			userMessageFieldCount_ = 0U;
+			userMessageWeaponState_ = 0U;
+			userMessageWeaponId_ = 0U;
+			userMessageWeaponMessageValid_ = false;
 			userMessageMenuType_ = 0U;
 			userMessageNeedMore_ = 0U;
 			userMessageValidSlots_ = 0U;
@@ -1606,9 +1890,131 @@ void PluginRuntime::notifyMenuReady(
 			}
 		}
 
+		void PluginRuntime::onRoundLifecycleMessage(const char *message)
+		{
+			if (state_ != State::ActiveMap || globals_ == nullptr || message == nullptr ||
+				!std::isfinite(globals_->time))
+			{
+				return;
+			}
+
+			static constexpr char kGameCommencing[] =
+				"World triggered \"Game_Commencing\"";
+			static constexpr char kRestartPrefix[] =
+				"World triggered \"Restart_Round_(";
+			static constexpr char kRoundEnded[] =
+				"World triggered \"Round_End\"";
+			static constexpr char kRoundStarted[] =
+				"World triggered \"Round_Start\"";
+
+		if (std::strncmp(message, kRoundStarted, sizeof(kRoundStarted) - 1U) == 0)
+		{
+			if (roundLifecycleTracker_.isDuplicateRoundStart())
+			{
+				return;
+			}
+			if (roundLifecycleTracker_.shouldBeginNewGeneration(
+						RoundLifecycleEvent::RoundStart) && !beginRoundGeneration())
+				{
+					return;
+				}
+				const RoundFreezeSchedule freeze = RoundFreezeSchedule::create(
+					globals_->time,
+					readOptionalCvarFloat(engineFunctions_, "mp_freezetime"));
+				roundFreezeStartTime_ = freeze.startTime;
+				roundFreezeUntil_ = freeze.untilTime;
+				roundFreezeGeneration_ = lifecycle_.roundGeneration();
+				roundFreezeScheduled_ = freeze.scheduled;
+				return;
+			}
+			if (std::strncmp(message, kRoundEnded, sizeof(kRoundEnded) - 1U) == 0)
+			{
+				if (roundLifecycleTracker_.shouldBeginNewGeneration(
+						RoundLifecycleEvent::RoundEnd) && !beginRoundGeneration())
+				{
+					return;
+				}
+				const RoundFreezeSchedule noFreeze =
+					RoundFreezeSchedule::create(globals_->time, 0.0f);
+				roundFreezeScheduled_ = noFreeze.scheduled;
+				roundFreezeStartTime_ = noFreeze.startTime;
+				roundFreezeUntil_ = noFreeze.untilTime;
+				roundFreezeGeneration_ = lifecycle_.roundGeneration();
+				return;
+			}
+
+			float restartDelay = 0.0f;
+			bool beginsRound =
+				std::strncmp(message, kGameCommencing, sizeof(kGameCommencing) - 1U) == 0;
+			const char *restart = std::strstr(message, kRestartPrefix);
+			if (restart != nullptr)
+			{
+				const char *delayText = restart + sizeof(kRestartPrefix) - 1U;
+				char *delayEnd = nullptr;
+				const long delaySeconds = std::strtol(delayText, &delayEnd, 10);
+				if (delayEnd == delayText || delaySeconds < 0L || delaySeconds > 300L ||
+					delayEnd[0] != '_' || std::strncmp(delayEnd + 1, "second", 6U) != 0)
+				{
+					return;
+				}
+				const char *suffix = delayEnd + 7;
+				if (*suffix == 's')
+				{
+					++suffix;
+				}
+				if (*suffix != ')')
+				{
+					return;
+				}
+				restartDelay = static_cast<float>(delaySeconds);
+				beginsRound = true;
+			}
+
+			if (!beginsRound)
+			{
+				return;
+			}
+
+			const float scheduledStart = globals_->time + restartDelay;
+			const RoundFreezeSchedule freeze = RoundFreezeSchedule::create(
+				scheduledStart,
+				readOptionalCvarFloat(engineFunctions_, "mp_freezetime"));
+			const float freezeUntil = freeze.untilTime;
+			if (roundFreezeGeneration_ == lifecycle_.roundGeneration() &&
+				roundFreezeStartTime_ == scheduledStart &&
+				roundFreezeUntil_ == freezeUntil)
+			{
+				return;
+			}
+			const RoundLifecycleEvent roundEvent = restart != nullptr
+				? RoundLifecycleEvent::RestartScheduled
+				: RoundLifecycleEvent::GameCommencing;
+			if (roundLifecycleTracker_.shouldBeginNewGeneration(roundEvent) &&
+				!beginRoundGeneration())
+			{
+				return;
+			}
+			roundFreezeStartTime_ = freeze.startTime;
+			roundFreezeUntil_ = freeze.untilTime;
+			roundFreezeGeneration_ = lifecycle_.roundGeneration();
+			roundFreezeScheduled_ = freeze.scheduled;
+		}
+
 		void PluginRuntime::onWriteByte(int value)
 		{
-			if (userMessageKind_ == UserMessageKind::TeamInfo && userMessageFieldCount_ == 0U)
+			if (userMessageKind_ == UserMessageKind::CurWeapon)
+			{
+				if (userMessageFieldCount_ == 0U && (value == 0 || value == 1))
+				{
+					userMessageWeaponState_ = static_cast<std::uint8_t>(value);
+					userMessageWeaponMessageValid_ = true;
+				}
+				else if (userMessageFieldCount_ == 1U && value >= 0 && value <= 255)
+				{
+					userMessageWeaponId_ = static_cast<std::uint8_t>(value);
+				}
+			}
+			else if (userMessageKind_ == UserMessageKind::TeamInfo && userMessageFieldCount_ == 0U)
 			{
 				if (value >= static_cast<int>(runtime::LifecycleSession::kFirstClientSlot) &&
 					value <= static_cast<int>(runtime::LifecycleSession::kClientSlotCount))
@@ -1742,7 +2148,7 @@ else if (std::strcmp(menuText, "#CT_Select") == 0)
 }
 		}
 
-		void PluginRuntime::notifyTeamInfo(std::uint8_t slot, const char *teamName)
+	void PluginRuntime::notifyTeamInfo(std::uint8_t slot, const char *teamName)
 		{
 			if (slot < runtime::LifecycleSession::kFirstClientSlot ||
 				slot > runtime::LifecycleSession::kClientSlotCount || teamName == nullptr)
@@ -1772,8 +2178,56 @@ else if (std::strcmp(menuText, "#CT_Select") == 0)
 			(handle.entity->v.flags & FL_SPECTATOR) != 0 ? 1 : 0,
 			static_cast<unsigned int>(adapterFrameCount_));
 	}
-	applyJoinAction(index, joinControllers_[index].onTeamInfo(teamName));
+	deferJoinAction(index, joinControllers_[index].onTeamInfo(teamName));
 }
+
+void PluginRuntime::captureManagedCurrentWeapon()
+{
+	if (!userMessageWeaponMessageValid_ || userMessageFieldCount_ < 2U ||
+		userMessageTarget_ == nullptr || engineFunctions_ == nullptr ||
+		engineFunctions_->pfnIndexOfEdict == nullptr)
+	{
+		return;
+	}
+	const int slot = engineFunctions_->pfnIndexOfEdict(userMessageTarget_);
+	if (slot < static_cast<int>(runtime::LifecycleSession::kFirstClientSlot) ||
+		slot > static_cast<int>(runtime::LifecycleSession::kClientSlotCount))
+	{
+		return;
+	}
+	const std::size_t index = static_cast<std::size_t>(slot - 1);
+	if (!managedBotSlots_[index] || managedBotHandles_[index].entity != userMessageTarget_)
+	{
+		return;
+	}
+	const FakeClientHandle &handle = managedBotHandles_[index];
+	managedBotCurrentWeapons_[index] = {
+		true,
+		userMessageWeaponState_ != 0U,
+		userMessageWeaponId_,
+		handle.actor.actorGeneration,
+		lifecycle_.mapGeneration(),
+		lifecycle_.roundGeneration(),
+		adapterFrameCount_};
+	if (runtimeProfiler_.enabled() && gpMetaUtilFuncs != nullptr &&
+		gpMetaUtilFuncs->pfnLogConsole != nullptr && pluginId_ != nullptr)
+	{
+		gpMetaUtilFuncs->pfnLogConsole(
+			pluginId_,
+			"profile currentWeapon actor=%u actor_generation=%u map=%u round=%u "
+			"frame=%u state=%u weapon_id=%u is_c4=%d",
+			static_cast<unsigned int>(handle.actor.slot),
+			static_cast<unsigned int>(handle.actor.actorGeneration),
+			static_cast<unsigned int>(lifecycle_.mapGeneration()),
+			static_cast<unsigned int>(lifecycle_.roundGeneration()),
+			static_cast<unsigned int>(adapterFrameCount_),
+			static_cast<unsigned int>(userMessageWeaponState_),
+			static_cast<unsigned int>(userMessageWeaponId_),
+			userMessageWeaponState_ != 0U &&
+				userMessageWeaponId_ == ActionAdapter::kC4WeaponId ? 1 : 0);
+	}
+}
+
 runtime::MovementPhysicsState PluginRuntime::captureMovementPhysicsState(
 	const edict_t *entity, bool teamConfirmed, bool managedFakeClient) const
 {
@@ -2263,11 +2717,44 @@ void PluginRuntime::updateManagedBotMovement()
 			managedBotMovement_[index].setRandomSource(&compatibilityRandomSource_);
 			managedBotMovement_[index].setAreaVisitHistory(
 				&managedBotAreaVisitHistory_);
+			managedBotRoamReservationBoard_.reset(
+				lifecycle_.mapGeneration(), lifecycle_.roundGeneration());
+			managedBotMovement_[index].setReservationBoard(
+				&managedBotRoamReservationBoard_);
 			roamResult = managedBotMovement_[index].update(
 				navigation,
 				observation,
 				&locomotionIntent,
 				&roamDecision);
+			const bool objectivePathFailed =
+				(roamResult == runtime::NavRoamResult::NoRoute ||
+					roamResult == runtime::NavRoamResult::ReplanRequired) &&
+				(roamDecision.failureReason ==
+					runtime::NavFailureReason::PathSearchFailed ||
+					roamDecision.failureReason == runtime::NavFailureReason::UnsafeDrop ||
+					roamDecision.failureReason == runtime::NavFailureReason::NavApplyRejected ||
+					roamDecision.failureReason == runtime::NavFailureReason::MovementNotProduced);
+			if (objectivePathFailed &&
+				roamDecision.goalKind == runtime::NavGoalKind::Objective)
+			{
+				const world::ActorKey actor = {
+					handle.actor.slot, handle.actor.actorGeneration};
+				const team::TeamObjectiveAssignment *assignment =
+					findManagedTeamObjectiveAssignment(actor);
+				if (assignment != nullptr)
+				{
+					managedTeamObjectivePathFailurePending_ = true;
+					managedTeamObjectivePathFailureActor_ = actor;
+					managedTeamObjectivePathFailureGeneration_ =
+						assignment->generation;
+					managedTeamObjectivePathFailureStartArea_ =
+						roamDecision.currentArea != 0U
+							? roamDecision.currentArea
+							: roamDecision.recoveryArea;
+					managedTeamObjectivePathFailureFrame_ =
+						adapterFrameCount_;
+				}
+			}
 		}
 			runtimeProfiler_.recordPathSearchResults(
 				 navSearchCaller(roamDecision),
@@ -2367,9 +2854,10 @@ void PluginRuntime::updateManagedBotMovement()
 					ActionAdapter::movementButtons(
 						command.movement.forward, command.movement.side));
 			}
-	logTraversalOutcome(index, before, roamDecision);
+	logTraversalOutcome(index, before, roamDecision, landingFeedback);
 	logTraversalDiagnostic(
-		index, before, roamDecision, locomotionIntent, command.movement.buttons);
+		index, before, roamDecision, locomotionIntent, command.movement.buttons,
+		observation.locomotion);
 	logMovementReversalDiagnostic(index, before, roamDecision, locomotionIntent);
 			if (movementDiagnosticSamples_[index] < kMovementPhysicsLogLimit &&
 			gpMetaUtilFuncs != nullptr && gpMetaUtilFuncs->pfnLogConsole != nullptr &&
@@ -2401,16 +2889,18 @@ void PluginRuntime::updateManagedBotMovement()
 		}
 		if (actionDispatch.clientCommand != nullptr)
 		{
-			(void)dispatchClientCommand(handle.entity, actionDispatch.clientCommand, "");
+			(void)dispatchManagedActionCommand(
+				index, handle, actionProposal, actionDispatch);
 		}
 		handle.entity->v.v_angle[0] = command.viewAngles.pitch;
 				handle.entity->v.v_angle[1] = command.viewAngles.yaw;
 				handle.entity->v.v_angle[2] = command.viewAngles.roll;
 				handle.entity->v.angles[0] = -command.viewAngles.pitch / 3.0f;
-				handle.entity->v.angles[1] = command.viewAngles.yaw;
-				handle.entity->v.angles[2] = command.viewAngles.roll;
+		handle.entity->v.angles[1] = command.viewAngles.yaw;
+		handle.entity->v.angles[2] = command.viewAngles.roll;
 		managedBotCommandTemplates_[index] = command;
 		managedBotCommandTemplateValid_[index] = true;
+		managedBotActionStopsMovement_[index] = actionDispatch.stopMovement;
 		const runtime::CommandReceipt receipt = executeManagedBotCommand(index, handle);
 		if (receipt.result != runtime::DispatchResult::Dispatched)
 		{
@@ -2684,6 +3174,248 @@ void PluginRuntime::refreshManagedObjectiveSiteRegistry()
 	}
 }
 
+void PluginRuntime::refreshManagedTeamObjectiveAssignments(std::size_t contextIndex)
+{
+	const std::uint32_t mapGeneration = lifecycle_.mapGeneration();
+	const std::uint32_t roundGeneration = lifecycle_.roundGeneration();
+	const world::FrameIdentity frame = {
+		mapGeneration, roundGeneration, adapterFrameCount_};
+	if (managedTeamObjectiveAssignmentsValid_ &&
+		managedTeamObjectiveAssignmentMapGeneration_ == mapGeneration &&
+		managedTeamObjectiveAssignmentRoundGeneration_ == roundGeneration &&
+		managedTeamObjectiveAssignmentFrame_ == adapterFrameCount_)
+	{
+		return;
+	}
+
+	managedTeamObjectiveAssignments_ = {};
+	managedTeamObjectiveAssignmentsValid_ = false;
+	if (contextIndex >= managedBotHandles_.size() ||
+		engineFunctions_ == nullptr ||
+		engineFunctions_->pfnPEntityOfEntIndex == nullptr ||
+		engineFunctions_->pfnSzFromIndex == nullptr ||
+		globals_ == nullptr || !frame.isValid())
+	{
+		return;
+	}
+
+	const FakeClientHandle &contextHandle = managedBotHandles_[contextIndex];
+	const world::ActorKey contextActor = {
+		contextHandle.actor.slot, contextHandle.actor.actorGeneration};
+	const compat::ObservationTimingContext timing = {
+		managedBotCommandSequences_[contextIndex], 0U, 0U};
+	team::TeamObjectiveInput input = {};
+	input.mapGeneration = mapGeneration;
+	input.roundGeneration = roundGeneration;
+	input.frameSequence = adapterFrameCount_;
+	const nav::NavSnapshot navigation = navPublisher_.snapshot();
+	const nav::NavDocument *document = navigation.document();
+	nav::NavQuery query(navigation);
+
+	for (std::size_t index = 0U; index < managedBotHandles_.size() &&
+		input.actorCount < team::kMaximumTeamObjectiveActors; ++index)
+	{
+		if (!managedBotSlots_[index] || managedBotHandles_[index].entity == nullptr ||
+			managedBotHandles_[index].entity->free != 0)
+		{
+			continue;
+		}
+		const FakeClientHandle &handle = managedBotHandles_[index];
+		compat::CompatibilityObservation observation = {};
+		const compat::ObservationTimingContext actorTiming = {
+			managedBotCommandSequences_[index], 0U, 0U};
+		if (observationAdapter_.collectActor(
+				handle.entity,
+				{handle.actor.slot, handle.actor.actorGeneration},
+				frame,
+				actorTiming,
+				&observation) != ObservationAdapterResult::Accepted)
+		{
+			continue;
+		}
+
+		team::TeamObjectiveActorObservation &actor =
+			input.actors[input.actorCount];
+		actor = {};
+		actor.actor = {handle.actor.slot, handle.actor.actorGeneration};
+		const bool teamInfoConfirmed =
+			joinControllers_[index].teamConfirmed() &&
+			managedBotTeamNumbers_[index] >= 1U &&
+			managedBotTeamNumbers_[index] <= 2U;
+		actor.team = !teamInfoConfirmed
+			? objectives::TeamRole::Unknown
+			: managedBotTeamNumbers_[index] == 1U
+				? objectives::TeamRole::Terrorist
+				: objectives::TeamRole::CounterTerrorist;
+		actor.alive = observation.player.deadflag.isAvailable() &&
+			observation.player.deadflag.value == DEAD_NO;
+		actor.carryingC4 = observation.objective.carryingC4.isAvailable() &&
+			observation.objective.carryingC4.value;
+		actor.positionAvailable = observation.player.origin.isAvailable();
+		if (actor.positionAvailable)
+		{
+			actor.position = observation.player.origin.value;
+			if (navigation.isValid() && document != nullptr)
+			{
+				nav::NavAreaMatch area = {};
+				const nav::NavVector position = {
+					actor.position.x, actor.position.y, actor.position.z};
+				if (query.findContaining(position, 64.0f, &area) !=
+					nav::NavQueryResult::Found &&
+					query.findNearest(position, kMaximumObjectiveDistance, &area) !=
+						nav::NavQueryResult::Found)
+				{
+					area.area = 0U;
+				}
+				actor.currentArea = area.area;
+			}
+		}
+		++input.actorCount;
+	}
+
+	const int maximumEntities =
+		(std::max)(0, (std::min)(globals_->maxEntities, 2048));
+	compat::DroppedC4Observation droppedObservation = {};
+	compat::ObjectiveObservation plantedObservation = {};
+	for (int entityIndex = 1; entityIndex <= maximumEntities; ++entityIndex)
+	{
+		edict_t *entity = engineFunctions_->pfnPEntityOfEntIndex(entityIndex);
+		if (entity == nullptr || entity->free != 0)
+		{
+			continue;
+		}
+		const char *classname =
+			engineFunctions_->pfnSzFromIndex(entity->v.classname);
+		const char *model = engineFunctions_->pfnSzFromIndex(entity->v.model);
+		if (!input.droppedC4.available)
+		{
+			compat::DroppedC4Observation candidate = {};
+			if (observationAdapter_.collectDroppedC4(
+					entity, classname, model, contextActor, frame, timing, &candidate) ==
+				ObservationAdapterResult::Accepted &&
+				candidate.isCurrent(frame))
+			{
+				droppedObservation = candidate;
+				input.droppedC4.available = true;
+				input.droppedC4.entity = candidate.entity;
+				input.droppedC4.position = candidate.position;
+			}
+		}
+		if (!input.plantedC4.available &&
+			observationAdapter_.collectPlantedBomb(
+				entity, classname, model, globals_->time, contextActor, frame,
+				timing, &plantedObservation) == ObservationAdapterResult::Accepted &&
+			plantedObservation.bombPosition.isCurrent(frame) &&
+			engineFunctions_->pfnIndexOfEdict != nullptr &&
+			entity->serialnumber != 0)
+		{
+			const int plantedIndex = engineFunctions_->pfnIndexOfEdict(entity);
+			if (plantedIndex > 0)
+			{
+				input.plantedC4.available = true;
+				input.plantedC4.entity = {
+					static_cast<std::uint32_t>(plantedIndex),
+					static_cast<std::uint32_t>(entity->serialnumber)};
+				input.plantedC4.position =
+					plantedObservation.bombPosition.value;
+			}
+		}
+	}
+
+	if (navigation.isValid() && document != nullptr)
+	{
+		for (team::TeamBombTargetObservation *target :
+			{&input.droppedC4, &input.plantedC4})
+		{
+			if (!target->available)
+			{
+				continue;
+			}
+			nav::NavAreaMatch area = {};
+			if (query.findNearest(
+					{target->position.x, target->position.y, target->position.z},
+					kMaximumObjectiveDistance, &area) == nav::NavQueryResult::Found)
+			{
+				target->area = area.area;
+			}
+		}
+	}
+
+	if (managedTeamObjectivePathFailurePending_)
+	{
+		managedTeamObjectiveCoordinator_.reportPathFailure(
+			managedTeamObjectivePathFailureActor_,
+			managedTeamObjectivePathFailureGeneration_,
+			managedTeamObjectivePathFailureStartArea_,
+			managedTeamObjectivePathFailureFrame_);
+		managedTeamObjectivePathFailurePending_ = false;
+		managedTeamObjectivePathFailureActor_ = {};
+		managedTeamObjectivePathFailureGeneration_ = 0U;
+		managedTeamObjectivePathFailureStartArea_ = 0U;
+		managedTeamObjectivePathFailureFrame_ = 0U;
+	}
+	const bool externalDefuserActive = externalDefuserEntityIndex_ != 0U &&
+		externalDefuserMapGeneration_ == mapGeneration &&
+		externalDefuserRoundGeneration_ == roundGeneration &&
+		std::isfinite(globals_->time) && std::isfinite(externalDefuserLeaseUntil_) &&
+		globals_->time <= externalDefuserLeaseUntil_;
+	input.externalDefuserActive = externalDefuserActive;
+	(void)managedTeamObjectiveCoordinator_.assign(
+		input, navigation, &managedTeamObjectiveAssignments_);
+	if (runtimeProfiler_.enabled() && gpMetaUtilFuncs != nullptr &&
+		gpMetaUtilFuncs->pfnLogConsole != nullptr && pluginId_ != nullptr)
+	{
+		for (std::size_t index = 0U;
+			index < managedTeamObjectiveAssignments_.count; ++index)
+		{
+			const team::TeamObjectiveAssignment &assignment =
+				managedTeamObjectiveAssignments_.assignments[index];
+			gpMetaUtilFuncs->pfnLogConsole(
+				pluginId_,
+				"team_objective map=%u round=%u frame=%u actor=%u:%u kind=%u target=%u:%u area=%u generation=%u cost=%.2f cost_fallback=%u dropped=%u planted=%u",
+				static_cast<unsigned int>(mapGeneration),
+				static_cast<unsigned int>(roundGeneration),
+				static_cast<unsigned int>(adapterFrameCount_),
+				static_cast<unsigned int>(assignment.actor.slot),
+				static_cast<unsigned int>(assignment.actor.generation),
+				static_cast<unsigned int>(assignment.kind),
+				static_cast<unsigned int>(assignment.targetEntity.id),
+				static_cast<unsigned int>(assignment.targetEntity.generation),
+				static_cast<unsigned int>(assignment.targetArea),
+				static_cast<unsigned int>(assignment.generation),
+				assignment.routeCostAvailable ? assignment.routeCost : 0.0f,
+				assignment.routeCostGeometricFallback ? 1U : 0U,
+				input.droppedC4.available ? 1U : 0U,
+				input.plantedC4.available ? 1U : 0U);
+		}
+	}
+	managedTeamObjectiveAssignmentMapGeneration_ = mapGeneration;
+	managedTeamObjectiveAssignmentRoundGeneration_ = roundGeneration;
+	managedTeamObjectiveAssignmentFrame_ = adapterFrameCount_;
+	managedTeamObjectiveAssignmentsValid_ = true;
+}
+
+const team::TeamObjectiveAssignment *
+PluginRuntime::findManagedTeamObjectiveAssignment(
+	const world::ActorKey &actor) const
+{
+	if (!managedTeamObjectiveAssignmentsValid_)
+	{
+		return nullptr;
+	}
+	for (std::size_t index = 0U;
+		index < managedTeamObjectiveAssignments_.count; ++index)
+	{
+		const team::TeamObjectiveAssignment &assignment =
+			managedTeamObjectiveAssignments_.assignments[index];
+		if (assignment.actor == actor)
+		{
+			return &assignment;
+		}
+	}
+	return nullptr;
+}
+
 bool PluginRuntime::buildManagedObjectiveTarget(
 	std::size_t index,
 	nav::NavVector *target,
@@ -2733,8 +3465,23 @@ bool PluginRuntime::buildManagedObjectiveTarget(
 	}
 	const bool carryingBomb = compatObservation.objective.carryingC4.isAvailable() &&
 		compatObservation.objective.carryingC4.value;
-	const bool needsBombSite = team == 1 && carryingBomb;
-	const bool needsPlantedBomb = team == 2;
+	refreshManagedTeamObjectiveAssignments(index);
+	const world::ActorKey actorKey = {
+		handle.actor.slot, handle.actor.actorGeneration};
+	const team::TeamObjectiveAssignment *assignment =
+		findManagedTeamObjectiveAssignment(actorKey);
+	const team::TeamObjectiveKind assignmentKind = assignment == nullptr
+		? team::TeamObjectiveKind::None
+		: assignment->kind;
+	const std::uint32_t assignmentGeneration = assignment == nullptr
+		? 0U
+		: assignment->generation;
+	const bool needsDroppedC4 =
+		assignmentKind == team::TeamObjectiveKind::RetrieveDroppedC4;
+	const bool needsBombSite = team == 1 && carryingBomb &&
+		assignmentKind == team::TeamObjectiveKind::PlantC4;
+	const bool needsPlantedBomb = team == 2 &&
+		assignmentKind == team::TeamObjectiveKind::DefuseC4;
 	if (needsBombSite)
 	{
 		refreshManagedObjectiveSiteRegistry();
@@ -2751,7 +3498,9 @@ bool PluginRuntime::buildManagedObjectiveTarget(
 	const bool sameObjectiveState = cache.mapGeneration == lifecycle_.mapGeneration() &&
 		cache.roundGeneration == lifecycle_.roundGeneration() &&
 		cache.team == static_cast<std::uint8_t>(team) &&
-		cache.carryingBomb == carryingBomb;
+		cache.carryingBomb == carryingBomb &&
+		cache.teamObjectiveKind == assignmentKind &&
+		cache.teamObjectiveAssignmentGeneration == assignmentGeneration;
 	const bool diagnosticCacheRefresh = sameObjectiveState && needsBombSite &&
 		cache.valid && objectiveStats != nullptr && !cache.diagnosticsEmitted;
 	const char *objectiveCacheState = diagnosticCacheRefresh
@@ -2793,10 +3542,31 @@ bool PluginRuntime::buildManagedObjectiveTarget(
 	cache.selectedSiteIdentity = 0U;
 		cache.mapGeneration = lifecycle_.mapGeneration();
 		cache.roundGeneration = lifecycle_.roundGeneration();
-		cache.team = static_cast<std::uint8_t>(team);
+	cache.team = static_cast<std::uint8_t>(team);
 	cache.carryingBomb = carryingBomb;
+	cache.teamObjectiveKind = assignmentKind;
+	cache.teamObjectiveAssignmentGeneration = assignmentGeneration;
 	cache.diagnosticsEmitted = false;
 	cache.lastCacheHit = false;
+	if (needsDroppedC4 && assignment != nullptr)
+	{
+		*target = {
+			assignment->targetPosition.x,
+			assignment->targetPosition.y,
+			assignment->targetPosition.z};
+		return std::isfinite(target->x) && std::isfinite(target->y) &&
+			std::isfinite(target->z);
+	}
+	if (assignmentKind == team::TeamObjectiveKind::GuardBombDefuser &&
+		assignment != nullptr)
+	{
+		*target = {
+			assignment->targetPosition.x,
+			assignment->targetPosition.y,
+			assignment->targetPosition.z};
+		return std::isfinite(target->x) && std::isfinite(target->y) &&
+			std::isfinite(target->z);
+	}
 	if (!needsBombSite && !needsPlantedBomb)
 	{
 		return false;
@@ -2904,9 +3674,19 @@ bool PluginRuntime::buildManagedObjectiveTarget(
 						{
 							rejectionReason = "candidate_outside_site_extent";
 						}
-						continue;
-					}
-					if (objectiveStats != nullptr)
+					continue;
+				}
+				if (equalsIgnoreCase(classname, "info_bomb_target") &&
+					!ActionAdapter::withinLegacyBombTargetRadius(
+						{candidate.x, candidate.y, candidate.z},
+						{siteMatch.closestPoint.x,
+						 siteMatch.closestPoint.y,
+						 siteMatch.closestPoint.z}))
+				{
+					rejectionReason = "outside_legacy_info_radius";
+					continue;
+				}
+				if (objectiveStats != nullptr)
 					{
 						++objectiveStats->candidateAreas;
 					}
@@ -3037,8 +3817,15 @@ ActionProposal PluginRuntime::decideManagedBotAction(
 	std::uint16_t movementButtons)
 {
 	ActionProposal proposal = {ActionKind::None, movementAngles, movementButtons};
-	if (index >= managedBotHandles_.size() || before.dead || managedBotHandles_[index].entity == nullptr)
+	bool objectiveActionDispatched = false;
+	bool preserveObjectiveActionState = false;
+	if (index >= managedBotHandles_.size())
 	{
+		return proposal;
+	}
+	if (before.dead || managedBotHandles_[index].entity == nullptr)
+	{
+		managedBotObjectiveActions_[index].active = false;
 		return proposal;
 	}
 	const FakeClientHandle &handle = managedBotHandles_[index];
@@ -3049,16 +3836,21 @@ ActionProposal PluginRuntime::decideManagedBotAction(
 		managedBotCommandSequences_[index], 0U, 0U};
 	compat::CompatibilityObservation compatObservation = {};
 	if (observationAdapter_.collectActor(
-			handle.entity, actor, frame, observationTiming, &compatObservation) !=
+		handle.entity, actor, frame, observationTiming, &compatObservation) !=
 		ObservationAdapterResult::Accepted)
 	{
+		managedBotObjectiveActions_[index].active = false;
 		return proposal;
 	}
+	refreshManagedTeamObjectiveAssignments(index);
+	const team::TeamObjectiveAssignment *objectiveAssignment =
+		findManagedTeamObjectiveAssignment(actor);
 	world::WorldSnapshot snapshot;
 	world::ActorKey targetActor = {};
 	world::WorldPosition targetPosition = {};
 	if (!buildManagedWorldSnapshot(index, &snapshot, &targetActor, &targetPosition))
 	{
+		managedBotObjectiveActions_[index].active = false;
 		if ((adapterFrameCount_ % 16U) == 0U && gpMetaUtilFuncs != nullptr &&
 			gpMetaUtilFuncs->pfnLogConsole != nullptr && pluginId_ != nullptr)
 		{
@@ -3104,8 +3896,20 @@ ActionProposal PluginRuntime::decideManagedBotAction(
 		};
 
 	edict_t *bombSite = findEntityByClassname("func_bomb_target");
-	edict_t *plantedBomb = nullptr;
-	compat::ObjectiveObservation plantedObservation = {};
+		edict_t *plantedBomb = nullptr;
+		compat::ObjectiveObservation plantedObservation = {};
+		std::uint32_t grenadeEntityCount = 0U;
+		std::uint32_t c4ModelEntityCount = 0U;
+		int firstGrenadeEntityIndex = 0;
+	int firstC4ModelEntityIndex = 0;
+		const char *firstGrenadeClassname = "(none)";
+		const char *firstGrenadeModel = "(none)";
+	const char *firstC4ModelClassname = "(none)";
+	const char *firstC4ModelName = "(none)";
+		float firstGrenadeDamageTime = 0.0f;
+	float firstC4ModelDamageTime = 0.0f;
+	int firstGrenadeObservationResult = -1;
+	int firstC4ModelObservationResult = -1;
 		const int maxEntities = (std::max)(0, (std::min)(globals_->maxEntities, 2048));
 		for (int entityIndex = 1; entityIndex <= maxEntities; ++entityIndex)
 		{
@@ -3116,16 +3920,101 @@ ActionProposal PluginRuntime::decideManagedBotAction(
 			}
 			const char *classname = engineFunctions_->pfnSzFromIndex(entity->v.classname);
 			const char *model = engineFunctions_->pfnSzFromIndex(entity->v.model);
-		if (plantedBomb == nullptr && observationAdapter_.collectPlantedBomb(
-				entity, classname, model, globals_->time, actor, frame,
-				observationTiming, &plantedObservation) == ObservationAdapterResult::Accepted)
+			const bool grenadeEntity = equalsIgnoreCase(classname, "grenade");
+			const bool c4Model = model != nullptr &&
+				std::strstr(model, "w_c4.mdl") != nullptr;
+			if (grenadeEntity)
+			{
+				++grenadeEntityCount;
+			}
+			if (c4Model)
+			{
+				++c4ModelEntityCount;
+			}
+			ObservationAdapterResult plantedResult =
+				ObservationAdapterResult::InvalidEntity;
+			if (plantedBomb == nullptr)
+			{
+				plantedResult = observationAdapter_.collectPlantedBomb(
+					entity, classname, model, globals_->time, actor, frame,
+					observationTiming, &plantedObservation);
+			}
+			if (grenadeEntity && firstGrenadeEntityIndex == 0)
+			{
+				firstGrenadeEntityIndex = entityIndex;
+				firstGrenadeClassname = classname != nullptr ? classname : "(null)";
+				firstGrenadeModel = model != nullptr ? model : "(null)";
+				firstGrenadeDamageTime = entity->v.dmgtime;
+				firstGrenadeObservationResult = static_cast<int>(plantedResult);
+			}
+			if (c4Model && firstC4ModelEntityIndex == 0)
+			{
+				firstC4ModelEntityIndex = entityIndex;
+				firstC4ModelClassname = classname != nullptr ? classname : "(null)";
+				firstC4ModelName = model != nullptr ? model : "(null)";
+				firstC4ModelDamageTime = entity->v.dmgtime;
+				firstC4ModelObservationResult = static_cast<int>(plantedResult);
+			}
+		if (plantedResult == ObservationAdapterResult::Accepted)
 		{
 			plantedBomb = entity;
 			break;
 		}
 	}
-	const bool carryingBomb = compatObservation.objective.carryingC4.isAvailable() &&
-		compatObservation.objective.carryingC4.value;
+		if (plantedBomb == nullptr && teamRole == objectives::TeamRole::CounterTerrorist &&
+			runtimeProfiler_.enabled() && (adapterFrameCount_ % 64U) == 0U &&
+			gpMetaUtilFuncs != nullptr && gpMetaUtilFuncs->pfnLogConsole != nullptr &&
+			pluginId_ != nullptr)
+		{
+			gpMetaUtilFuncs->pfnLogConsole(
+				pluginId_,
+				"profile plantedBombScan actor=%u actor_generation=%u map=%u round=%u "
+				"frame=%u now=%.2f entities=%d grenade_count=%u "
+				"first_grenade=(%d %s %s dmgtime=%.2f result=%d) "
+				"c4_model_count=%u first_c4_model=(%d %s %s dmgtime=%.2f result=%d)",
+				static_cast<unsigned int>(handle.actor.slot),
+				static_cast<unsigned int>(handle.actor.actorGeneration),
+				static_cast<unsigned int>(lifecycle_.mapGeneration()),
+				static_cast<unsigned int>(lifecycle_.roundGeneration()),
+				static_cast<unsigned int>(adapterFrameCount_), globals_->time,
+				maxEntities, grenadeEntityCount, firstGrenadeEntityIndex,
+				firstGrenadeClassname, firstGrenadeModel, firstGrenadeDamageTime,
+				firstGrenadeObservationResult, c4ModelEntityCount,
+				firstC4ModelEntityIndex, firstC4ModelClassname, firstC4ModelName,
+				firstC4ModelDamageTime, firstC4ModelObservationResult);
+		}
+		const bool carryingBomb = compatObservation.objective.carryingC4.isAvailable() &&
+			compatObservation.objective.carryingC4.value;
+		ManagedObjectiveActionState &plantState = managedBotObjectiveActions_[index];
+		if (plantedBomb != nullptr && plantState.active &&
+			plantState.actor == actor &&
+			plantState.kind == team::TeamObjectiveKind::PlantC4)
+		{
+			(void)ActionAdapter::evaluatePlantAttempt(
+				plantState.plantAttempt, false, true,
+				globals_ != nullptr ? globals_->time
+					: std::numeric_limits<float>::quiet_NaN());
+			if (runtimeProfiler_.enabled() && gpMetaUtilFuncs != nullptr &&
+				gpMetaUtilFuncs->pfnLogConsole != nullptr && pluginId_ != nullptr)
+			{
+				const int plantedEntityIndex = engineFunctions_ != nullptr &&
+					engineFunctions_->pfnIndexOfEdict != nullptr
+					? engineFunctions_->pfnIndexOfEdict(plantedBomb) : 0;
+				gpMetaUtilFuncs->pfnLogConsole(
+					pluginId_,
+					"profile plantConfirm actor=%u actor_generation=%u map=%u round=%u "
+					"frame=%u assignment=%u site=%d site_id=%u planted_entity=%d "
+					"source=public_planted_c4_observation",
+					static_cast<unsigned int>(handle.actor.slot),
+					static_cast<unsigned int>(handle.actor.actorGeneration),
+					static_cast<unsigned int>(lifecycle_.mapGeneration()),
+					static_cast<unsigned int>(lifecycle_.roundGeneration()),
+					static_cast<unsigned int>(adapterFrameCount_),
+					plantState.assignmentGeneration, plantState.targetEntityIndex,
+					plantState.targetSiteIdentity, plantedEntityIndex);
+			}
+			plantState = {};
+		}
 		if ((adapterFrameCount_ % 16U) == 0U && gpMetaUtilFuncs != nullptr &&
 				gpMetaUtilFuncs->pfnLogConsole != nullptr && pluginId_ != nullptr)
 		{
@@ -3173,19 +4062,38 @@ ActionProposal PluginRuntime::decideManagedBotAction(
 	const objectives::ObjectiveResult objectiveResult =
 		managedBotObjectives_[index].plan(
 			snapshot, compatibilityBehaviorState, scenario, nullptr, &objective);
+	const bool hasPlantAssignment = objectiveAssignment != nullptr &&
+		objectiveAssignment->kind == team::TeamObjectiveKind::PlantC4;
+	nav::NavVector selectedPlantTarget{};
+	const bool haveSelectedPlantTarget = hasPlantAssignment && carryingBomb &&
+		teamRole == objectives::TeamRole::Terrorist &&
+		buildManagedObjectiveTarget(index, &selectedPlantTarget, nullptr);
 	objectives::ObjectiveKind objectiveKind = objectives::ObjectiveKind::None;
-	if (objectiveResult == objectives::ObjectiveResult::Proposed)
+	if (objectiveResult == objectives::ObjectiveResult::Proposed &&
+		objective.objective.kind != objectives::ObjectiveKind::Plant &&
+		objective.objective.kind != objectives::ObjectiveKind::Defuse)
 	{
 		objectiveKind = objective.objective.kind;
 	}
-	else if (carryingBomb && bombSite != nullptr &&
-			teamRole == objectives::TeamRole::Terrorist)
+	if (ActionAdapter::canBeginPlantObjective(
+		hasPlantAssignment, carryingBomb,
+		teamRole == objectives::TeamRole::Terrorist,
+		haveSelectedPlantTarget))
 	{
 		objectiveKind = objectives::ObjectiveKind::Plant;
 	}
-	else if (plantedBomb != nullptr && teamRole == objectives::TeamRole::CounterTerrorist)
+	else if (objectiveAssignment != nullptr &&
+		objectiveAssignment->kind == team::TeamObjectiveKind::DefuseC4 &&
+		plantedBomb != nullptr &&
+		teamRole == objectives::TeamRole::CounterTerrorist)
 	{
 		objectiveKind = objectives::ObjectiveKind::Defuse;
+	}
+	else if (objectiveAssignment == nullptr ||
+		(objectiveAssignment->kind != team::TeamObjectiveKind::PlantC4 &&
+		 objectiveAssignment->kind != team::TeamObjectiveKind::DefuseC4))
+	{
+		objectiveKind = objectives::ObjectiveKind::None;
 	}
 	if (objectiveKind == objectives::ObjectiveKind::Plant ||
 			objectiveKind == objectives::ObjectiveKind::Defuse)
@@ -3203,27 +4111,189 @@ ActionProposal PluginRuntime::decideManagedBotAction(
 						haveObjectivePosition = true;
 					}
 				}
-				else if (bombSite != nullptr)
+				else
 				{
-			haveObjectivePosition = buildManagedObjectiveTarget(
-				index, &objectivePosition, nullptr);
+					objectivePosition = selectedPlantTarget;
+					haveObjectivePosition = haveSelectedPlantTarget;
 				}
 				if (haveObjectivePosition)
 				{
 					const float dx = objectivePosition.x - handle.entity->v.origin.x;
 					const float dy = objectivePosition.y - handle.entity->v.origin.y;
 					const float dz = objectivePosition.z - handle.entity->v.origin.z;
-					if (dx * dx + dy * dy + dz * dz <= 96.0f * 96.0f)
+		if (dx * dx + dy * dy + dz * dz <= 96.0f * 96.0f)
+		{
+			ManagedObjectiveActionState &actionState =
+				managedBotObjectiveActions_[index];
+			const bool planting =
+				objectiveAssignment->kind == team::TeamObjectiveKind::PlantC4;
+			const int targetEntityIndex = planting
+				? managedBotObjectiveTargets_[index].selectedEntityIndex
+				: static_cast<int>(objectiveAssignment->targetEntity.id);
+			const std::uint32_t targetIdentity = planting
+				? managedBotObjectiveTargets_[index].selectedSiteIdentity
+				: objectiveAssignment->targetEntity.generation;
+			const bool sameAction = actionState.active &&
+				actionState.actor == actor &&
+				actionState.kind == objectiveAssignment->kind &&
+				actionState.mapGeneration == lifecycle_.mapGeneration() &&
+				actionState.roundGeneration == lifecycle_.roundGeneration() &&
+				actionState.assignmentGeneration == objectiveAssignment->generation &&
+				actionState.targetEntityIndex == targetEntityIndex &&
+				actionState.targetSiteIdentity == targetIdentity;
+			if (!sameAction)
+			{
+				actionState = {};
+				actionState.active = true;
+				actionState.actor = actor;
+				actionState.kind = objectiveAssignment->kind;
+				actionState.mapGeneration = lifecycle_.mapGeneration();
+				actionState.roundGeneration = lifecycle_.roundGeneration();
+				actionState.assignmentGeneration =
+					objectiveAssignment->generation;
+				actionState.targetEntityIndex = targetEntityIndex;
+				actionState.targetSiteIdentity = targetIdentity;
+			}
+			if (planting)
+			{
+				preserveObjectiveActionState = true;
+				PlantTargetBounds siteBounds{};
+				PlantTargetBounds actorBounds{};
+				bool siteBoundsAvailable = false;
+				bool legacyInfoTarget = false;
+				PlantTargetPoint legacyInfoTargetCenter{};
+				if (targetEntityIndex > 0 && engineFunctions_ != nullptr &&
+					engineFunctions_->pfnPEntityOfEntIndex != nullptr &&
+					engineFunctions_->pfnSzFromIndex != nullptr)
+				{
+					edict_t *site = engineFunctions_->pfnPEntityOfEntIndex(targetEntityIndex);
+					const char *siteClassname = site != nullptr && !site->free
+						? engineFunctions_->pfnSzFromIndex(site->v.classname)
+						: nullptr;
+					if (site != nullptr && !site->free &&
+						isBombTargetClassname(siteClassname))
 					{
-			proposal.kind = objectiveKind == objectives::ObjectiveKind::Defuse
-							? ActionKind::Defuse : ActionKind::Plant;
-						proposal.viewAngles = {
-							-kRadiansToDegrees * std::atan2(dz, std::sqrt(dx * dx + dy * dy)),
-							kRadiansToDegrees * std::atan2(dy, dx), movementAngles.roll};
-						return proposal;
+						legacyInfoTarget = equalsIgnoreCase(
+							siteClassname, "info_bomb_target");
+						if (legacyInfoTarget)
+						{
+							const nav::NavVector center = entityObjectiveCenter(site);
+						legacyInfoTargetCenter = {center.x, center.y, center.z};
+						const float radius = ActionAdapter::kLegacyBombTargetRadius;
+						siteBounds = {
+							center.x - radius, center.y - radius, center.z - radius,
+							center.x + radius, center.y + radius, center.z + radius};
+						siteBoundsAvailable =
+							ActionAdapter::validPlantTargetBounds(siteBounds);
+						}
+						else
+						{
+							siteBounds = {
+								site->v.absmin.x, site->v.absmin.y, site->v.absmin.z,
+								site->v.absmax.x, site->v.absmax.y, site->v.absmax.z};
+							siteBoundsAvailable =
+								ActionAdapter::validPlantTargetBounds(siteBounds) &&
+								siteBounds.maximumX > siteBounds.minimumX &&
+								siteBounds.maximumY > siteBounds.minimumY;
+						}
 					}
 				}
+				actorBounds = {
+					handle.entity->v.absmin.x, handle.entity->v.absmin.y,
+					handle.entity->v.absmin.z, handle.entity->v.absmax.x,
+					handle.entity->v.absmax.y, handle.entity->v.absmax.z};
+				const PlantTargetPoint actorPosition = {
+					handle.entity->v.origin.x,
+					handle.entity->v.origin.y,
+					handle.entity->v.origin.z};
+				const bool actorInSite = siteBoundsAvailable &&
+					(legacyInfoTarget
+						? ActionAdapter::withinLegacyBombTargetRadius(
+							legacyInfoTargetCenter, actorPosition)
+						: ActionAdapter::overlapsPlantTarget(siteBounds, actorBounds));
+				const float now = globals_ != nullptr ? globals_->time
+					: std::numeric_limits<float>::quiet_NaN();
+				const PlantAttemptResult attempt = ActionAdapter::evaluatePlantAttempt(
+					actionState.plantAttempt, actorInSite,
+					plantedBomb != nullptr, now);
+				if (attempt == PlantAttemptResult::TimedOut)
+				{
+					actionState.c4SelectionCommandDispatched = false;
+					actionState.c4AttackInputDispatched = false;
+					managedBotObjectiveTargets_[index].valid = false;
+					managedBotObjectiveTargets_[index].diagnosticsEmitted = false;
+					managedBotMovement_[index].reset();
+				}
+				const ManagedCurrentWeaponObservation &weapon =
+					managedBotCurrentWeapons_[index];
+				const bool weaponObservationCurrent = weapon.available &&
+					weapon.actorGeneration == handle.actor.actorGeneration &&
+					weapon.mapGeneration == lifecycle_.mapGeneration() &&
+					weapon.roundGeneration == lifecycle_.roundGeneration();
+				const bool canContinuePlant = attempt == PlantAttemptResult::Ready ||
+					attempt == PlantAttemptResult::Continuing;
+				if (runtimeProfiler_.enabled() && (adapterFrameCount_ % 16U) == 0U &&
+					gpMetaUtilFuncs != nullptr && gpMetaUtilFuncs->pfnLogConsole != nullptr &&
+					pluginId_ != nullptr)
+				{
+					gpMetaUtilFuncs->pfnLogConsole(
+						pluginId_,
+						"profile plantGate actor=%u actor_generation=%u map=%u round=%u "
+						"frame=%u assignment=%u site=%d site_id=%u bounds_available=%d "
+						"zone_mode=%s "
+						"actor_in_site=%d gate=%d site_bounds=(%.1f %.1f %.1f %.1f %.1f %.1f) "
+						"actor_bounds=(%.1f %.1f %.1f %.1f %.1f %.1f) "
+						"nav_target=(%.1f %.1f %.1f) actor_origin=(%.1f %.1f %.1f) "
+						"weapon_known=%d weapon_active=%d weapon_id=%u",
+						static_cast<unsigned int>(handle.actor.slot),
+						static_cast<unsigned int>(handle.actor.actorGeneration),
+						static_cast<unsigned int>(lifecycle_.mapGeneration()),
+						static_cast<unsigned int>(lifecycle_.roundGeneration()),
+					static_cast<unsigned int>(adapterFrameCount_),
+					objectiveAssignment->generation, targetEntityIndex, targetIdentity,
+					siteBoundsAvailable ? 1 : 0,
+					legacyInfoTarget ? "legacy_info_radius" : "func_bounds",
+					actorInSite ? 1 : 0,
+						static_cast<int>(attempt),
+						siteBounds.minimumX, siteBounds.minimumY, siteBounds.minimumZ,
+						siteBounds.maximumX, siteBounds.maximumY, siteBounds.maximumZ,
+						actorBounds.minimumX, actorBounds.minimumY, actorBounds.minimumZ,
+						actorBounds.maximumX, actorBounds.maximumY, actorBounds.maximumZ,
+						objectivePosition.x, objectivePosition.y, objectivePosition.z,
+						handle.entity->v.origin.x, handle.entity->v.origin.y,
+						handle.entity->v.origin.z,
+						weaponObservationCurrent ? 1 : 0,
+						weaponObservationCurrent && weapon.active ? 1 : 0,
+						static_cast<unsigned int>(weapon.weaponId));
+				}
+				if (!canContinuePlant)
+				{
+					return proposal;
+				}
+				proposal.kind = ActionAdapter::plantActionForWeaponObservation(
+					weaponObservationCurrent,
+					weaponObservationCurrent && weapon.active,
+					weapon.weaponId, actionState.c4AttackInputDispatched);
 			}
+			else
+			{
+				proposal.kind = ActionKind::Defuse;
+			}
+			proposal.viewAngles = {
+				-kRadiansToDegrees * std::atan2(dz, std::sqrt(dx * dx + dy * dy)),
+				kRadiansToDegrees * std::atan2(dy, dx), movementAngles.roll};
+			objectiveActionDispatched = true;
+			return proposal;
+		}
+				}
+			}
+		}
+	}
+	if (!objectiveActionDispatched)
+	{
+		if (!preserveObjectiveActionState)
+		{
+			managedBotObjectiveActions_[index].active = false;
 		}
 	}
 	combat::WeaponInventory inventory;
@@ -3303,6 +4373,62 @@ void PluginRuntime::resetManagedBotTiming(std::size_t index, float spawnTime)
 	resetManagedBotCommandTemplate(index);
 }
 
+bool PluginRuntime::dispatchManagedActionCommand(
+	std::size_t index,
+	FakeClientHandle &handle,
+	const ActionProposal &proposal,
+	const ActionDispatch &dispatch)
+{
+	if (dispatch.clientCommand == nullptr)
+	{
+		return true;
+	}
+	const bool commandDispatched = dispatchClientCommand(
+		handle.entity, dispatch.clientCommand, "");
+	const bool c4SelectionRequest = proposal.kind == ActionKind::SelectC4 ||
+		proposal.kind == ActionKind::Plant ||
+		proposal.kind == ActionKind::PlantContinue;
+	if (commandDispatched && c4SelectionRequest &&
+		index < managedBotObjectiveActions_.size())
+	{
+		ManagedObjectiveActionState &state = managedBotObjectiveActions_[index];
+		if (state.active && state.actor.slot == handle.actor.slot &&
+			state.actor.generation == handle.actor.actorGeneration &&
+			state.kind == team::TeamObjectiveKind::PlantC4)
+		{
+			state.c4SelectionCommandDispatched = true;
+			ActionAdapter::recordPlantAttemptDispatched(
+				state.plantAttempt,
+				globals_ != nullptr ? globals_->time
+					: std::numeric_limits<float>::quiet_NaN());
+		}
+	}
+	if (c4SelectionRequest && runtimeProfiler_.enabled() &&
+		(adapterFrameCount_ % 16U) == 0U &&
+		gpMetaUtilFuncs != nullptr && gpMetaUtilFuncs->pfnLogConsole != nullptr &&
+		pluginId_ != nullptr)
+	{
+		const ManagedCurrentWeaponObservation &weapon =
+			managedBotCurrentWeapons_[index];
+		gpMetaUtilFuncs->pfnLogConsole(
+			pluginId_,
+			"profile plantCommand actor=%u actor_generation=%u map=%u round=%u "
+			"frame=%u action=%s command=%s dispatched=%d current_weapon_known=%d "
+			"current_weapon_active=%d current_weapon_id=%u active_c4=%d",
+			static_cast<unsigned int>(handle.actor.slot),
+			static_cast<unsigned int>(handle.actor.actorGeneration),
+			static_cast<unsigned int>(lifecycle_.mapGeneration()),
+			static_cast<unsigned int>(lifecycle_.roundGeneration()),
+			static_cast<unsigned int>(adapterFrameCount_), actionKindName(proposal.kind),
+			dispatch.clientCommand, commandDispatched ? 1 : 0,
+			weapon.available ? 1 : 0, weapon.active ? 1 : 0,
+			static_cast<unsigned int>(weapon.weaponId),
+			weapon.available && weapon.active &&
+				weapon.weaponId == ActionAdapter::kC4WeaponId ? 1 : 0);
+	}
+	return commandDispatched;
+}
+
 void PluginRuntime::resetManagedBotCommandTemplate(std::size_t index)
 {
 	if (index >= managedBotCommandTemplates_.size())
@@ -3311,6 +4437,7 @@ void PluginRuntime::resetManagedBotCommandTemplate(std::size_t index)
 	}
 	managedBotCommandTemplates_[index] = {};
 	managedBotCommandTemplateValid_[index] = false;
+	managedBotActionStopsMovement_[index] = false;
 }
 
 void PluginRuntime::prepareNeutralManagedBotCommand(
@@ -3345,10 +4472,12 @@ void PluginRuntime::prepareNeutralManagedBotCommand(
 	command.movement.buttons = actionDispatch.buttons;
 	if (actionDispatch.clientCommand != nullptr)
 	{
-		(void)dispatchClientCommand(handle.entity, actionDispatch.clientCommand, "");
+		(void)dispatchManagedActionCommand(
+			index, handle, actionProposal, actionDispatch);
 	}
 	managedBotCommandTemplates_[index] = command;
 	managedBotCommandTemplateValid_[index] = true;
+	managedBotActionStopsMovement_[index] = actionDispatch.stopMovement;
 }
 
 runtime::CommandReceipt PluginRuntime::executeManagedBotCommand(
@@ -3404,8 +4533,7 @@ runtime::CommandReceipt PluginRuntime::executeManagedBotCommand(
 	command.movement.msec = managedBotTiming_[index].consumeCommandMsec(globals_->time);
 	const float maxSpeed = handle.entity->v.maxspeed;
 	const bool explicitFrozen = (handle.entity->v.flags & FL_FROZEN) != 0;
-	const bool roundFreeze = std::isfinite(maxSpeed) && maxSpeed > 0.0f &&
-		maxSpeed <= 1.0f;
+	const bool roundFreeze = roundFreezeActive();
 	const std::uint16_t buttonsBeforeJumpCrouch = command.movement.buttons;
 	const runtime::JumpCrouchObservation jumpCrouchObservation = {
 		globals_->time,
@@ -3442,6 +4570,7 @@ runtime::CommandReceipt PluginRuntime::executeManagedBotCommand(
 	}
 	MovementExecutionObservation gateObservation = {};
 	gateObservation.explicitFrozen = explicitFrozen;
+	gateObservation.roundFreezeActive = roundFreeze;
 	gateObservation.maxSpeedAvailable = std::isfinite(maxSpeed) && maxSpeed > 0.0f;
 	gateObservation.maxSpeed = maxSpeed;
 	gateObservation.forward = command.movement.forward;
@@ -3455,10 +4584,13 @@ runtime::CommandReceipt PluginRuntime::executeManagedBotCommand(
 		engineFunctions_, "freezetime_jump");
 	const MovementExecutionDecision gateDecision =
 		MovementExecutionGate::evaluate(gateObservation);
+	bool speedRestored = false;
 	if (gateDecision.phase == MovementExecutionPhase::Live &&
-			(!std::isfinite(maxSpeed) || maxSpeed <= 0.0f))
+			!managedBotActionStopsMovement_[index] &&
+			(!std::isfinite(maxSpeed) || maxSpeed <= 1.0f))
 	{
 		handle.entity->v.maxspeed = kDefaultManagedBotMaxSpeed;
+		speedRestored = true;
 		if (engineFunctions_ != nullptr &&
 				engineFunctions_->pfnSetClientMaxspeed != nullptr)
 		{
@@ -3492,17 +4624,137 @@ runtime::CommandReceipt PluginRuntime::executeManagedBotCommand(
 	command.movement.up = gateDecision.up;
 	command.movement.buttons = gateDecision.buttons;
 	command.movement.msec = gateDecision.msec;
-	if (inputDispatcher_.enqueue(command) != runtime::QueueResult::Accepted)
+	const runtime::QueueResult enqueueResult = inputDispatcher_.enqueue(command);
+	if (enqueueResult != runtime::QueueResult::Accepted)
 	{
-		receipt.result = runtime::DispatchResult::InvalidCommand;
-		if (gateDecision.invalidateTemplate)
+		if (runtimeProfiler_.enabled() && (adapterFrameCount_ % 32U) == 0U &&
+			gpMetaUtilFuncs != nullptr && gpMetaUtilFuncs->pfnLogConsole != nullptr &&
+			pluginId_ != nullptr)
 		{
-			resetManagedBotCommandTemplate(index);
+			const runtime::LifecycleToken currentToken =
+				lifecycle_.tokenForSlot(handle.actor.slot);
+			gpMetaUtilFuncs->pfnLogConsole(
+				pluginId_,
+				"profile movementReject bot_id=%u actor_generation=%u frame=%u "
+				"queue_result=%d command_valid=%d sequence=%u msec=%u "
+				"command_lifecycle=(%u,%u,%u) current_lifecycle=(%u,%u,%u) "
+				"view=(%.2f %.2f %.2f) move=(%.2f %.2f %.2f) buttons=%u",
+				static_cast<unsigned int>(handle.actor.slot),
+				static_cast<unsigned int>(handle.actor.actorGeneration),
+				static_cast<unsigned int>(adapterFrameCount_),
+				static_cast<int>(enqueueResult),
+				command.isValid() ? 1 : 0,
+				static_cast<unsigned int>(command.sequence),
+				static_cast<unsigned int>(command.movement.msec),
+				static_cast<unsigned int>(command.lifecycle.mapGeneration),
+				static_cast<unsigned int>(command.lifecycle.roundGeneration),
+				static_cast<unsigned int>(command.lifecycle.slotGeneration),
+				static_cast<unsigned int>(currentToken.mapGeneration),
+				static_cast<unsigned int>(currentToken.roundGeneration),
+				static_cast<unsigned int>(currentToken.slotGeneration),
+				command.viewAngles.pitch,
+				command.viewAngles.yaw,
+				command.viewAngles.roll,
+				command.movement.forward,
+				command.movement.side,
+				command.movement.up,
+				static_cast<unsigned int>(command.movement.buttons));
 		}
+		receipt.sequence = command.sequence;
+		receipt.result = enqueueResult == runtime::QueueResult::StaleActor
+			? runtime::DispatchResult::StaleActor
+			: runtime::DispatchResult::InvalidCommand;
+		// Never retry a rejected cached command unchanged; rebuild with the current lifecycle.
+		resetManagedBotCommandTemplate(index);
 		return receipt;
 	}
 	const runtime::CommandReceipt dispatchReceipt =
 		inputDispatcher_.dispatchNext(handle.actor, adapterFrameCount_);
+	if (dispatchReceipt.result == runtime::DispatchResult::Dispatched &&
+		(command.movement.buttons & ActionAdapter::kAttackButton) != 0U)
+	{
+		ManagedObjectiveActionState &actionState = managedBotObjectiveActions_[index];
+		if (actionState.active &&
+			actionState.actor.slot == handle.actor.slot &&
+			actionState.actor.generation == handle.actor.actorGeneration &&
+			actionState.kind == team::TeamObjectiveKind::PlantC4 &&
+			actionState.mapGeneration == lifecycle_.mapGeneration() &&
+			actionState.roundGeneration == lifecycle_.roundGeneration())
+		{
+			actionState.c4AttackInputDispatched = true;
+			ActionAdapter::recordPlantAttemptDispatched(
+				actionState.plantAttempt, globals_ != nullptr ? globals_->time
+					: std::numeric_limits<float>::quiet_NaN());
+			if (runtimeProfiler_.enabled() && (adapterFrameCount_ % 16U) == 0U &&
+				gpMetaUtilFuncs != nullptr &&
+				gpMetaUtilFuncs->pfnLogConsole != nullptr && pluginId_ != nullptr)
+			{
+				gpMetaUtilFuncs->pfnLogConsole(
+					pluginId_,
+					"profile plantInput actor=%u actor_generation=%u map=%u round=%u "
+					"frame=%u stage=attack_dispatched buttons=%u",
+					static_cast<unsigned int>(handle.actor.slot),
+					static_cast<unsigned int>(handle.actor.actorGeneration),
+					static_cast<unsigned int>(lifecycle_.mapGeneration()),
+					static_cast<unsigned int>(lifecycle_.roundGeneration()),
+					static_cast<unsigned int>(adapterFrameCount_),
+					static_cast<unsigned int>(command.movement.buttons));
+			}
+		}
+	}
+	if (runtimeProfiler_.enabled() && gpMetaUtilFuncs != nullptr &&
+		gpMetaUtilFuncs->pfnLogConsole != nullptr && pluginId_ != nullptr)
+	{
+		gpMetaUtilFuncs->pfnLogConsole(
+			pluginId_,
+			"profile movementGate actor=%u generation=%u map=%u round=%u frame=%u "
+			"freeze_active=%d freeze_until=%.3f explicit_frozen=%d phase=%d "
+			"maxspeed_before=%.1f maxspeed_after=%.1f speed_restored=%d action_stop=%d "
+			"input=(%.1f %.1f %.1f) buttons=%u dispatch=%d",
+			static_cast<unsigned int>(handle.actor.slot),
+			static_cast<unsigned int>(handle.actor.actorGeneration),
+			static_cast<unsigned int>(lifecycle_.mapGeneration()),
+			static_cast<unsigned int>(lifecycle_.roundGeneration()),
+			static_cast<unsigned int>(adapterFrameCount_),
+			roundFreeze ? 1 : 0,
+			roundFreezeScheduled_ ? roundFreezeUntil_ : 0.0f,
+			explicitFrozen ? 1 : 0,
+			static_cast<int>(gateDecision.phase),
+			maxSpeed,
+			handle.entity->v.maxspeed,
+			speedRestored ? 1 : 0,
+			managedBotActionStopsMovement_[index] ? 1 : 0,
+			gateDecision.forward,
+			gateDecision.side,
+			gateDecision.up,
+			static_cast<unsigned int>(gateDecision.buttons),
+			static_cast<int>(dispatchReceipt.result));
+	}
+	const bool freezeActiveAfterDispatch = roundFreezeActive();
+	const bool freezeMovementInput = std::fabs(gateDecision.forward) > 0.01f ||
+		std::fabs(gateDecision.side) > 0.01f || std::fabs(gateDecision.up) > 0.01f;
+	if (runtimeProfiler_.enabled() && (roundFreeze || freezeActiveAfterDispatch) &&
+		((adapterFrameCount_ % 6U) == 0U || roundFreeze != freezeActiveAfterDispatch ||
+		 freezeMovementInput) &&
+		gpMetaUtilFuncs != nullptr && gpMetaUtilFuncs->pfnLogConsole != nullptr &&
+		pluginId_ != nullptr)
+	{
+		gpMetaUtilFuncs->pfnLogConsole(
+			pluginId_,
+			"profile freezeMotion actor=%u generation=%u map=%u round=%u frame=%u "
+			"freeze_gate=%d freeze_after=%d origin=(%.1f %.1f %.1f) "
+			"velocity=(%.1f %.1f %.1f) input=(%.1f %.1f %.1f) buttons=%u",
+			static_cast<unsigned int>(handle.actor.slot),
+			static_cast<unsigned int>(handle.actor.actorGeneration),
+			static_cast<unsigned int>(lifecycle_.mapGeneration()),
+			static_cast<unsigned int>(lifecycle_.roundGeneration()),
+			static_cast<unsigned int>(adapterFrameCount_),
+			roundFreeze ? 1 : 0, freezeActiveAfterDispatch ? 1 : 0,
+			handle.entity->v.origin.x, handle.entity->v.origin.y, handle.entity->v.origin.z,
+			handle.entity->v.velocity.x, handle.entity->v.velocity.y, handle.entity->v.velocity.z,
+			gateDecision.forward, gateDecision.side, gateDecision.up,
+			static_cast<unsigned int>(gateDecision.buttons));
+	}
 	if (gateDecision.invalidateTemplate)
 	{
 		resetManagedBotCommandTemplate(index);
@@ -3568,15 +4820,33 @@ runtime::CommandReceipt PluginRuntime::dispatchNeutralMovement(
 	}
 	if (actionDispatch.clientCommand != nullptr)
 	{
-		(void)dispatchClientCommand(handle.entity, actionDispatch.clientCommand, "");
+		(void)dispatchManagedActionCommand(
+			index, handle, actionProposal, actionDispatch);
 	}
 	if (inputDispatcher_.enqueue(command) != runtime::QueueResult::Accepted)
 		{
 			receipt.result = runtime::DispatchResult::InvalidCommand;
 			return receipt;
 		}
-		return inputDispatcher_.dispatchNext(handle.actor, adapterFrameCount_);
+	const runtime::CommandReceipt dispatchReceipt =
+		inputDispatcher_.dispatchNext(handle.actor, adapterFrameCount_);
+	if (dispatchReceipt.result == runtime::DispatchResult::Dispatched &&
+		(actionDispatch.buttons & ActionAdapter::kAttackButton) != 0U)
+	{
+		ManagedObjectiveActionState &actionState = managedBotObjectiveActions_[index];
+		if (actionState.active &&
+			actionState.actor.slot == handle.actor.slot &&
+			actionState.actor.generation == handle.actor.actorGeneration &&
+			actionState.kind == team::TeamObjectiveKind::PlantC4)
+		{
+			actionState.c4AttackInputDispatched = true;
+			ActionAdapter::recordPlantAttemptDispatched(
+				actionState.plantAttempt, globals_ != nullptr ? globals_->time
+					: std::numeric_limits<float>::quiet_NaN());
+		}
 	}
+	return dispatchReceipt;
+}
 
 runtime::CommandReceipt PluginRuntime::dispatchJoinHeartbeat(
 		std::size_t index,
@@ -3746,6 +5016,23 @@ void PluginRuntime::updateManagedBotCompatibilityState(
 
 void PluginRuntime::resetManagedBotMovement()
 {
+	managedBotRoamReservationBoard_.reset(
+		lifecycle_.mapGeneration(), lifecycle_.roundGeneration());
+	managedTeamObjectiveCoordinator_.reset(
+		lifecycle_.mapGeneration(), lifecycle_.roundGeneration());
+	managedTeamObjectiveAssignments_ = {};
+	managedTeamObjectiveAssignmentMapGeneration_ =
+		lifecycle_.mapGeneration();
+	managedTeamObjectiveAssignmentRoundGeneration_ =
+		lifecycle_.roundGeneration();
+	managedTeamObjectiveAssignmentFrame_ = 0U;
+	managedTeamObjectiveAssignmentsValid_ = false;
+	managedTeamObjectivePathFailurePending_ = false;
+	managedTeamObjectivePathFailureActor_ = {};
+	managedTeamObjectivePathFailureGeneration_ = 0U;
+	managedTeamObjectivePathFailureStartArea_ = 0U;
+	managedTeamObjectivePathFailureFrame_ = 0U;
+	managedBotObjectiveActions_ = {};
 	for (std::size_t index = 0U; index < managedBotMovement_.size(); ++index)
 	{
 		managedBotMovement_[index].reset();
@@ -3753,6 +5040,8 @@ void PluginRuntime::resetManagedBotMovement()
 		managedBotCombat_[index] = combat::CombatController();
 		managedBotObjectives_[index] = objectives::RoundObjectivePlanner();
 		managedBotObjectiveTargets_[index] = {};
+		managedBotCurrentWeapons_[index] = {};
+		managedBotObjectiveActions_[index] = {};
 		managedBotStateMachines_[index] = compat::CompatibilityStateMachine();
 		managedBotPerception_[index] = perception::PerceptionAssembler();
 		managedBotTiming_[index] = runtime::BotTimingScheduler();
@@ -3947,7 +5236,8 @@ void PluginRuntime::logGoalAssignmentDiagnostic(
 		"selection_strategy=%s objective_generation=%u selected_site_id=%u "
 		"cache_hit=%d nav_result=%d stage=%d recompute_reason=%d path_result=%d "
 		"failure_reason=%d path_search_calls=%u path_search_expanded=%u path_search_enqueues=%u path_search_failures=%u locomotion_result=%d path_sequence=%u "
-		"route_type=%d path_cost=%.1f goal_kind=%d goal_area=%u current_area=%u "
+				"route_type=%d path_cost=%.1f goal_kind=%d goal_area=%u current_area=%u "
+				"reservation_fallback=%d fallback_reason=%u "
 		"path_link=(%u->%u how=%u dir=%u) input=(%.2f %.2f %.2f) "
 		"speed=%.1f observed_origin=(%.1f %.1f %.1f) grounded=%d",
 		static_cast<unsigned int>(managedBotHandles_[index].actor.slot),
@@ -3969,11 +5259,13 @@ void PluginRuntime::logGoalAssignmentDiagnostic(
 		static_cast<unsigned int>(decision.pathSearchStats.enqueueCount),
 		static_cast<unsigned int>(decision.pathSearchStats.failureCount),
 		static_cast<int>(decision.locomotionResult),
-		decision.pathSequence,
-		static_cast<int>(decision.routeType), decision.pathCost,
-		static_cast<int>(decision.goalKind),
-		static_cast<unsigned int>(decision.goalArea),
-		static_cast<unsigned int>(decision.currentArea),
+				decision.pathSequence,
+				static_cast<int>(decision.routeType), decision.pathCost,
+				static_cast<int>(decision.goalKind),
+				static_cast<unsigned int>(decision.goalArea),
+				static_cast<unsigned int>(decision.currentArea),
+				decision.reservationFallback ? 1 : 0,
+				static_cast<unsigned int>(decision.reservationFallbackReason),
 		static_cast<unsigned int>(decision.linkFromArea),
 		static_cast<unsigned int>(decision.linkToArea),
 		static_cast<unsigned int>(decision.linkHow),
@@ -3988,12 +5280,12 @@ void PluginRuntime::logTraversalDiagnostic(
 	const runtime::MovementPhysicsState &before,
 	const runtime::NavRoamDecision &decision,
 	const nav::LocomotionIntent &intent,
-	std::uint16_t buttons)
+	std::uint16_t buttons,
+	const nav::LocomotionObservation &locomotion)
 {
 	if (!runtimeProfiler_.enabled() || index >= movementTraversalDiagnosticSeconds_.size() ||
 		globals_ == nullptr || gpMetaUtilFuncs == nullptr ||
-		gpMetaUtilFuncs->pfnLogConsole == nullptr || pluginId_ == nullptr ||
-		intent.traversal == nav::TraversalAction::Walk)
+		gpMetaUtilFuncs->pfnLogConsole == nullptr || pluginId_ == nullptr)
 	{
 		return;
 	}
@@ -4003,15 +5295,56 @@ void PluginRuntime::logTraversalDiagnostic(
 	const std::uint32_t second = now <= 0.0
 		? 0U
 		: static_cast<std::uint32_t>(now);
+	std::uint8_t currentAttributes = 0U;
+	std::uint8_t nextAttributes = 0U;
+	const nav::NavSnapshot navigation = navPublisher_.snapshot();
+	const nav::NavDocument *document = navigation.document();
+	const nav::NavArea *sourceArea = document == nullptr
+		? nullptr : document->findArea(intent.currentArea);
+	const nav::NavArea *targetArea = document == nullptr
+		? nullptr : document->findArea(intent.targetArea);
+	float sourceFloorZ = std::numeric_limits<float>::quiet_NaN();
+	float targetFloorZ = intent.targetPosition.z;
+	float horizontalGap = std::numeric_limits<float>::quiet_NaN();
+	float dropHeight = std::numeric_limits<float>::quiet_NaN();
+	if (sourceArea != nullptr && targetArea != nullptr)
+	{
+		sourceFloorZ = nav::surfaceZAt(
+			*sourceArea, intent.targetPosition.x, intent.targetPosition.y);
+		dropHeight = sourceFloorZ - targetFloorZ;
+		const auto axisGap = [](float firstLo, float firstHi,
+			float secondLo, float secondHi) noexcept
+		{
+			if (firstHi < secondLo)
+			{
+				return secondLo - firstHi;
+			}
+			if (secondHi < firstLo)
+			{
+				return firstLo - secondHi;
+			}
+			return 0.0f;
+		};
+		const float gapX = axisGap(
+			sourceArea->extent.lo.x, sourceArea->extent.hi.x,
+			targetArea->extent.lo.x, targetArea->extent.hi.x);
+		const float gapY = axisGap(
+			sourceArea->extent.lo.y, sourceArea->extent.hi.y,
+			targetArea->extent.lo.y, targetArea->extent.hi.y);
+		horizontalGap = std::hypot(gapX, gapY);
+	}
+	const bool descendingOrGapEdge = std::isfinite(dropHeight) && dropHeight > 8.0f;
+	const bool horizontalGapEdge = std::isfinite(horizontalGap) && horizontalGap > 1.0f;
+	if (intent.traversal == nav::TraversalAction::Walk &&
+		!descendingOrGapEdge && !horizontalGapEdge)
+	{
+		return;
+	}
 	if (movementTraversalDiagnosticSeconds_[index] == second)
 	{
 		return;
 	}
 	movementTraversalDiagnosticSeconds_[index] = second;
-	std::uint8_t currentAttributes = 0U;
-	std::uint8_t nextAttributes = 0U;
-	const nav::NavSnapshot navigation = navPublisher_.snapshot();
-	const nav::NavDocument *document = navigation.document();
 	if (document != nullptr)
 	{
 		const nav::NavArea *current = document->findArea(decision.currentArea);
@@ -4024,14 +5357,20 @@ void PluginRuntime::logTraversalDiagnostic(
 		decision.targetPosition.y - before.origin.y);
 	gpMetaUtilFuncs->pfnLogConsole(
 		pluginId_,
-		"profile traversal bot_id=%u current_area=%u next_area=%u "
+		"profile traversal bot_id=%u map=%u round=%u actor_generation=%u "
+		"current_area=%u next_area=%u "
 		"connection_direction=%u connection_how=%u current_attributes=%u "
 		"next_attributes=%u traversal_intent=%d jump_required=%d "
+		"source_floor_z=%.1f target_floor_z=%.1f drop_height=%.1f "
+		"horizontal_gap=%.1f safe_drop_available=%d max_safe_drop=%.1f "
 		"target_point=(%.1f %.1f %.1f) distance_to_transition=%.1f "
 		"before_grounded=%d before_ducked=%d before_velocity_z=%.1f "
 		"buttons=%u IN_JUMP=%d "
 		"stuck_time=%d recovery_state=%d corridor_index=%u",
 		static_cast<unsigned int>(managedBotHandles_[index].actor.slot),
+		static_cast<unsigned int>(lifecycle_.mapGeneration()),
+		static_cast<unsigned int>(lifecycle_.roundGeneration()),
+		static_cast<unsigned int>(managedBotHandles_[index].actor.actorGeneration),
 		static_cast<unsigned int>(decision.currentArea),
 		static_cast<unsigned int>(intent.targetArea),
 		static_cast<unsigned int>(decision.linkDirection),
@@ -4040,6 +5379,9 @@ void PluginRuntime::logTraversalDiagnostic(
 		static_cast<unsigned int>(nextAttributes),
 		static_cast<int>(intent.traversal),
 		intent.traversal == nav::TraversalAction::Jump ? 1 : 0,
+		sourceFloorZ, targetFloorZ, dropHeight, horizontalGap,
+		locomotion.safeDropHeightAvailable ? 1 : 0,
+		locomotion.maximumSafeDropHeight,
 		decision.targetPosition.x, decision.targetPosition.y, decision.targetPosition.z,
 		distanceToTransition, before.grounded ? 1 : 0, before.ducked ? 1 : 0,
 		before.velocity.z, static_cast<unsigned int>(buttons),
@@ -4050,13 +5392,17 @@ void PluginRuntime::logTraversalDiagnostic(
 	gpMetaUtilFuncs->pfnLogConsole(
 		pluginId_,
 		"profile traversalCorrelation bot_id=%u actor_generation=%u frame=%u "
+		"map=%u round=%u "
 		"nav_update=%u goal_generation=%u reselection_reason=%s "
 		"selection_strategy=%s current_area=%u path_link=(%u->%u how=%u dir=%u) "
 		"target_area=%u input=(%.2f %.2f %.2f) speed=%.1f buttons=%u "
 		"observed_origin=(%.1f %.1f %.1f) grounded=%d",
 		static_cast<unsigned int>(managedBotHandles_[index].actor.slot),
 		static_cast<unsigned int>(managedBotHandles_[index].actor.actorGeneration),
-		static_cast<unsigned int>(adapterFrameCount_), decision.fullUpdateSequence,
+		static_cast<unsigned int>(adapterFrameCount_),
+		static_cast<unsigned int>(lifecycle_.mapGeneration()),
+		static_cast<unsigned int>(lifecycle_.roundGeneration()),
+		decision.fullUpdateSequence,
 		decision.goalGeneration,
 		goalSelectionReasonName(decision.goalSelectionReason),
 		goalSelectionStrategyName(decision.goalSelectionStrategy),
@@ -4077,6 +5423,9 @@ void PluginRuntime::logTraversalDiagnostic(
 	pending.commandFrame = adapterFrameCount_;
 	pending.navUpdateSequence = decision.fullUpdateSequence;
 	pending.goalGeneration = decision.goalGeneration;
+	pending.mapGeneration = lifecycle_.mapGeneration();
+	pending.roundGeneration = lifecycle_.roundGeneration();
+	pending.corridorIndex = decision.corridorIndex;
 	pending.goalSelectionReason = decision.goalSelectionReason;
 	pending.goalSelectionStrategy = decision.goalSelectionStrategy;
 	pending.currentArea = decision.currentArea;
@@ -4084,11 +5433,18 @@ void PluginRuntime::logTraversalDiagnostic(
 	pending.targetPosition = decision.targetPosition;
 	pending.intentDirection = intent.direction;
 	pending.intentSpeed = intent.speed;
+	pending.sourceFloorZ = sourceFloorZ;
+	pending.targetFloorZ = targetFloorZ;
+	pending.dropHeight = dropHeight;
+	pending.horizontalGap = horizontalGap;
+	pending.maximumSafeDropHeight = locomotion.maximumSafeDropHeight;
+	pending.safeDropHeightAvailable = locomotion.safeDropHeightAvailable;
 	pending.linkDirection = decision.linkDirection;
 	pending.linkHow = decision.linkHow;
 	pending.action = intent.traversal;
 	pending.buttons = buttons;
 	pending.startPosition = before.origin;
+	pending.startVelocityZ = before.velocity.z;
 	pending.startGrounded = before.grounded;
 	pending.startHealth = before.health;
 }
@@ -4096,7 +5452,8 @@ void PluginRuntime::logTraversalDiagnostic(
 void PluginRuntime::logTraversalOutcome(
 	std::size_t index,
 	const runtime::MovementPhysicsState &after,
-	const runtime::NavRoamDecision &decision)
+	const runtime::NavRoamDecision &decision,
+	const runtime::LandingDamageObservation &landingFeedback)
 {
 	if (!runtimeProfiler_.enabled() || index >= movementTraversalPending_.size())
 	{
@@ -4119,18 +5476,26 @@ void PluginRuntime::logTraversalOutcome(
 		return;
 	}
 	const float healthDelta = pending.startHealth - after.health;
+	const std::uint32_t corridorAdvance = decision.corridorIndex >= pending.corridorIndex
+		? decision.corridorIndex - pending.corridorIndex
+		: 0U;
 	gpMetaUtilFuncs->pfnLogConsole(
 		pluginId_,
-		"profile traversalResult bot_id=%u actor_generation=%u command_frame=%u "
+		"profile traversalResult bot_id=%u actor_generation=%u map=%u round=%u command_frame=%u "
 		"observed_frame=%u nav_update=%u goal_generation=%u reselection_reason=%s "
 		"selection_strategy=%s from_area=%u target_area=%u observed_area=%u "
-		"path_link=(%u->%u how=%u dir=%u) action=%d buttons=%u "
+		"path_link=(%u->%u how=%u dir=%u) action=%d buttons=%u IN_JUMP=%d "
+		"source_floor_z=%.1f target_floor_z=%.1f drop_height=%.1f "
+		"horizontal_gap=%.1f safe_drop_available=%d max_safe_drop=%.1f "
 		"input=(%.2f %.2f %.2f) speed=%.1f "
 		"start=(%.1f %.1f %.1f) after_move=(%.1f %.1f %.1f) "
-		"start_grounded=%d grounded_after=%d velocity_z=%.1f "
-		"health_before=%.1f health_after=%.1f health_delta=%.1f",
+		"start_grounded=%d grounded_after=%d velocity_z_before=%.1f velocity_z_after=%.1f "
+		"health_before=%.1f health_after=%.1f health_delta=%.1f "
+		"landing_damage_available=%d landing_damage=%.1f "
+		"corridor_before=%u corridor_after=%u corridor_advance=%u",
 		static_cast<unsigned int>(handle.actor.slot),
 		static_cast<unsigned int>(handle.actor.actorGeneration),
+		pending.mapGeneration, pending.roundGeneration,
 		pending.commandFrame, static_cast<unsigned int>(adapterFrameCount_),
 		pending.navUpdateSequence, pending.goalGeneration,
 		goalSelectionReasonName(pending.goalSelectionReason),
@@ -4144,12 +5509,21 @@ void PluginRuntime::logTraversalOutcome(
 		static_cast<unsigned int>(pending.linkDirection),
 		static_cast<int>(pending.action),
 		static_cast<unsigned int>(pending.buttons),
+		(pending.buttons & static_cast<std::uint16_t>(IN_JUMP)) != 0U ? 1 : 0,
+		pending.sourceFloorZ, pending.targetFloorZ, pending.dropHeight,
+		pending.horizontalGap, pending.safeDropHeightAvailable ? 1 : 0,
+		pending.maximumSafeDropHeight,
 		pending.intentDirection.x, pending.intentDirection.y,
 		pending.intentDirection.z, pending.intentSpeed,
 		pending.startPosition.x, pending.startPosition.y, pending.startPosition.z,
 		after.origin.x, after.origin.y, after.origin.z,
 		pending.startGrounded ? 1 : 0, after.grounded ? 1 : 0,
-		after.velocity.z, pending.startHealth, after.health, healthDelta);
+		pending.startVelocityZ, after.velocity.z,
+		pending.startHealth, after.health, healthDelta,
+		landingFeedback.hasLandingDamage ? 1 : 0,
+		landingFeedback.landingDamage,
+		static_cast<unsigned int>(pending.corridorIndex),
+		static_cast<unsigned int>(decision.corridorIndex), corridorAdvance);
 	pending.active = false;
 }
 
@@ -4988,6 +6362,12 @@ void PluginRuntime::clearManagedBot(std::size_t index)
 			PluginRuntime::instance().onClientDisconnect(entity);
 			setMetaResult(MRES_IGNORED);
 		}
+		void HookCmdStart(const edict_t *entity, const usercmd_t *command, unsigned int randomSeed)
+		{
+			(void)randomSeed;
+			PluginRuntime::instance().onCmdStart(entity, command != nullptr ? command->buttons : 0U);
+			setMetaResult(MRES_IGNORED);
+		}
 
 		void HookClientPutInServer(edict_t *entity)
 		{
@@ -5054,6 +6434,29 @@ void PluginRuntime::clearManagedBot(std::size_t index)
 		void HookWriteString(const char *value)
 		{
 			PluginRuntime::instance().onWriteString(value);
+			setMetaResult(MRES_IGNORED);
+		}
+
+		void HookAlertMessage(ALERT_TYPE type, char *format, ...)
+		{
+			if (type == at_logged && format != nullptr)
+			{
+				char message[512] = {};
+				va_list arguments;
+				va_start(arguments, format);
+#if defined(_WIN32)
+				const int written = _vsnprintf_s(
+					message, sizeof(message), _TRUNCATE, format, arguments);
+#else
+				const int written = std::vsnprintf(
+					message, sizeof(message), format, arguments);
+#endif
+				va_end(arguments);
+				if (written >= 0)
+				{
+					PluginRuntime::instance().onRoundLifecycleMessage(message);
+				}
+			}
 			setMetaResult(MRES_IGNORED);
 		}
 

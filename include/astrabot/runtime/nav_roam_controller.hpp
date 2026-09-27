@@ -9,6 +9,7 @@
 #include "astrabot/world/world_snapshot.hpp"
 #include "astrabot/runtime/actor_registry.hpp"
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <vector>
@@ -88,6 +89,13 @@ enum NavGoalSelectionStrategy
 	GoalSelectionStrategyNoEligibleArea
 };
 
+enum class NavRoamReservationFallbackReason : std::uint8_t
+{
+	None,
+	NoDistinctRouteFound,
+	CandidateBudgetExhausted
+};
+
 enum class NavGoalKind
 {
 	None,
@@ -121,6 +129,8 @@ enum class NavFailureReason
 	NavGoalKind goalKind;
 	NavGoalSelectionReason goalSelectionReason;
 	NavGoalSelectionStrategy goalSelectionStrategy;
+	bool reservationFallback;
+	NavRoamReservationFallbackReason reservationFallbackReason;
 	bool goalPresent;
 	bool pathRequested;
 	nav::NavQueryResult pathResult;
@@ -174,15 +184,52 @@ enum class NavFailureReason
 			std::uint32_t mapGeneration_ = 0U;
 			bool initialized_ = false;
 			std::vector<Entry> entries_;
+	};
+
+	class NavRoamReservationBoard
+	{
+	public:
+		NavRoamReservationBoard();
+		void reset(std::uint32_t mapGeneration, std::uint32_t roundGeneration);
+		bool goalReservedByOther(std::uint8_t team, ActorId actor, nav::AreaId goalArea) const;
+		bool firstLinkReservedByOther(
+			std::uint8_t team,
+			ActorId actor,
+			nav::AreaId fromArea,
+			nav::AreaId toArea) const;
+		bool reserve(
+			std::uint8_t team,
+			ActorId actor,
+			nav::AreaId goalArea,
+			nav::AreaId fromArea,
+			nav::AreaId toArea);
+		void release(ActorId actor);
+
+	private:
+		struct Claim
+		{
+			bool valid;
+			std::uint8_t team;
+			ActorId actor;
+			nav::AreaId goalArea;
+			nav::AreaId fromArea;
+			nav::AreaId toArea;
 		};
 
-		class NavRoamController
+		std::array<Claim, LifecycleSession::kClientSlotCount> claims_;
+		std::uint32_t mapGeneration_;
+		std::uint32_t roundGeneration_;
+		bool initialized_;
+	};
+
+class NavRoamController
 		{
 		  public:
 	NavRoamController();
 	explicit NavRoamController(compat::RuntimeMode mode);
-	void setRandomSource(compat::ICompatibilityRandomSource *source);
+		void setRandomSource(compat::ICompatibilityRandomSource *source);
 	void setAreaVisitHistory(NavAreaVisitHistory *history);
+	void setReservationBoard(NavRoamReservationBoard *board);
 	void setRuntimeMode(compat::RuntimeMode mode);
 			NavRoamResult update(
 				const nav::NavSnapshot &snapshot,
@@ -294,6 +341,7 @@ enum class NavFailureReason
 	compat::ICompatibilityRandomSource *randomSource_;
 	NavAreaVisitHistory localAreaVisitHistory_;
 	NavAreaVisitHistory *areaVisitHistory_;
+	NavRoamReservationBoard *reservationBoard_;
 	nav::AreaId lastVisitedArea_;
 	std::uint32_t lastVisitedMapGeneration_;
 	std::uint8_t lastVisitedTeam_;

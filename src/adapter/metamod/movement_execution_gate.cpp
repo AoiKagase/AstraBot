@@ -8,6 +8,18 @@ namespace astrabot
 {
 namespace metamod
 {
+MovementVelocity MovementExecutionGate::stabilizeVelocity(
+	MovementExecutionPhase phase,
+	MovementVelocity velocity) noexcept
+{
+	if (phase == MovementExecutionPhase::RoundFreeze)
+	{
+		velocity.x = 0.0f;
+		velocity.y = 0.0f;
+	}
+	return velocity;
+}
+
 MovementExecutionDecision MovementExecutionGate::evaluate(
 	const MovementExecutionObservation &observation) noexcept
 {
@@ -31,10 +43,7 @@ MovementExecutionDecision MovementExecutionGate::evaluate(
 		return result;
 	}
 
-	const bool roundFreeze = observation.maxSpeedAvailable &&
-		std::isfinite(observation.maxSpeed) && observation.maxSpeed > 0.0f &&
-		observation.maxSpeed <= 1.0f;
-	if (!roundFreeze)
+	if (!observation.roundFreezeActive)
 	{
 		return result;
 	}

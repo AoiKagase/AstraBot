@@ -45,6 +45,14 @@ public:
 		const world::FrameIdentity &frame,
 		const compat::ObservationTimingContext &timing,
 		compat::ObjectiveObservation *observation) const;
+	ObservationAdapterResult collectDroppedC4(
+		edict_t *entity,
+		const char *classname,
+		const char *model,
+		const world::ActorKey &actor,
+		const world::FrameIdentity &frame,
+		const compat::ObservationTimingContext &timing,
+		compat::DroppedC4Observation *observation) const;
 	void setTraceSink(compat::IObservationTraceSink *sink);
 	void setProfiler(RuntimeProfiler *profiler);
 	void setPerformanceToggles(bool disableVision, bool disableTrace);

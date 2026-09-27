@@ -116,6 +116,12 @@
       "reference_only": false
     },
     {
+      "path": "include/astrabot/metamod/round_lifecycle_tracker.hpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
       "path": "include/astrabot/metamod/native_bot_guard.hpp",
       "origin": "AstraBot",
       "license_status": "pending_release_review",
@@ -692,13 +698,31 @@
       "reference_only": false
     },
     {
+      "path": "tests/round_objective_coordinator_tests.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
       "path": "tests/round_objectives_tests.cpp",
       "origin": "AstraBot",
       "license_status": "pending_release_review",
       "reference_only": false
     },
     {
+      "path": "include/astrabot/team/round_objective_coordinator.hpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
       "path": "include/astrabot/team/team_report.hpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "src/core/team/round_objective_coordinator.cpp",
       "origin": "AstraBot",
       "license_status": "pending_release_review",
       "reference_only": false

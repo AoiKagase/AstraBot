@@ -31,6 +31,7 @@ include(cmake/AstraBotBuild.cmake)
   src/core/objectives/objective_state.cpp
   src/core/objectives/round_objectives.cpp
   src/core/team/team_report.cpp
+  src/core/team/round_objective_coordinator.cpp
   src/core/team/radio_intent.cpp
   src/core/runtime/actor_registry.cpp
   src/core/compat/command_registry.cpp
@@ -464,6 +465,16 @@ add_executable(astrabot_nav_diagnostics
   )
   astrabot_apply_warnings(astrabot_round_objectives)
   add_test(NAME astrabot_round_objectives COMMAND astrabot_round_objectives)
+
+  add_executable(astrabot_round_objective_coordinator
+    tests/round_objective_coordinator_tests.cpp
+  )
+  target_link_libraries(astrabot_round_objective_coordinator PRIVATE astrabot_core)
+  target_include_directories(astrabot_round_objective_coordinator PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+  )
+  astrabot_apply_warnings(astrabot_round_objective_coordinator)
+  add_test(NAME astrabot_round_objective_coordinator COMMAND astrabot_round_objective_coordinator)
 
   add_executable(astrabot_team_report
     tests/team_report_tests.cpp
