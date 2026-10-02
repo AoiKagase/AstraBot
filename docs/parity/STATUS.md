@@ -1,5 +1,70 @@
 # CSBot Parity Status
 
+## 2026-10-02 combined round-freeze and ground-lookahead verification
+
+IMPLEMENTED_OFFLINE_VERIFIED. Normal Round_End schedules FreezeTime after
+mp_round_restart_delay; Round_Start ends it without starting another interval.
+Initial Game_Commencing schedules it after the ordinary-game three-second
+restart delay. Prepared-generation duplicate Game_Commencing/Round_End events
+cannot restart or extend that interval. Reference: independently interpreted
+ReGameDLL_CS b0889847fe6d03898be88acc9e366660efb40ab5,
+multiplay_gamerules.cpp (Game_Commencing/NeededPlayersCheck, RestartRound and
+OnRoundFreezeEnd). Career/custom hook delays are unavailable at this boundary.
+
+- Reproduction: restoring the baseline HEAD lifecycle fails the Round_Start
+  end-freeze regression. Before the initial-round fix, its three-second start
+  boundary regression also fails. The corrected public adapter passes both.
+- Public execution regression covers three frozen frames, zero movement and
+  horizontal velocity, retained command timing/vertical velocity, no ground
+  lookahead probes, and movement resumption after Round_Start.
+- Core suppression preserves the saved objective route without accumulating
+  stuck time. The bounded near30 fallback and scope/safety tests remain green.
+- Complete HostX86/x86 MSVC NMake Debug build: PASS. Complete CTest: 56/56 PASS
+  (2.87 seconds). PE x86/seven exact Metamod exports: PASS.
+- Final combined Debug DLL: build-action-adapter-x86-1451/astrabot_mm.dll,
+  1210880 bytes, SHA-256 80c505ee1d75422845c1549507c1c2d20de88971516deb80f622b21d5b201980.
+- Both approved changes and their pre-existing source/test prerequisites are
+  included in the local commit scope; no push. Deployment receipt and final commit
+  identity are recorded outside the repository after the stopped-server copy.
+- No server was started for this verification. Live HLDS/ReHLDS timing,
+  physical clearance/landing, FPS and multi-Bot acceptance remain NOT RUN.
+  Historical September 27 logs describe the old deployed DLL only.
+
+This record supersedes the earlier near-ground-only artifact below.
+P07/P07.6 remains PARTIAL; P08 is not started.
+
+## 2026-10-02 bounded near-ground jump fallback
+
+`IMPLEMENTED_OFFLINE_VERIFIED` for the approved 30-unit upward-jump fallback.
+Pinned CSBot `b0889847fe6d03898be88acc9e366660efb40ab5`,
+`cs_bot_nav.cpp:202-253`, continues to the near probe when the running-only
+80-unit probe misses or finds a slope. The current Astra adapter and Core no
+longer require flat far ground for that near-ground decision. Known far-drop
+and missing immediate-ground vetoes, configured step height, 41.8-unit jump
+limit, current-area NAV_NO_JUMP, grounding/ladder and observation-scope checks
+remain intact. This is a bounded fallback improvement, not full 80/30/10 parity.
+
+- Baseline: `7f86bdb54c6bfd725de52a75a4fe6fcfdfc686fd` plus nine pre-existing
+  modified source/test files. This earlier record predates the final combined FreezeTime build above.
+- Core regression: 17 cases cover fallback and retained safety/height gates;
+  six cases failed against the old Core gate before the fix.
+- Public-adapter fixture: deterministic engine RNG + synthetic NAV/ground
+  traces -> PluginRuntime -> RunPlayerMove emits IN_JUMP for missing/sloped
+  far ground. Both cases fail when only the old adapter gate is restored.
+- Actor slot/map/round/actor-generation/frame and target/direction isolation
+  are covered by the locomotion and route-scope tests.
+- Focused locomotion + actor-command CTest: 2/2 PASS.
+- Full HostX86/x86 MSVC 14.51.36231 NMake Debug build: PASS;
+  complete CTest: 56/56 PASS, 4.62 seconds.
+- `verify_x86_artifact.py`: PASS, PE x86 and seven exact Metamod exports.
+  Debug DLL: `build-action-adapter-x86-1451/astrabot_mm.dll`, 1,210,880 bytes,
+  SHA-256 `4d7abb7f314674cf18212e271d14fd6ff6ea3db8269bb98b79c84dd3f6d254cb`.
+- Live HLDS/ReHLDS, physical clearance/landing, FPS, multi-Bot, Linux x86
+  and full pinned differential validation: NOT RUN in this change.
+
+The DLL identity above supersedes historical build identities only for this
+dirty working-tree Debug build. P07/P07.6 remains PARTIAL; P08 is not started.
+
 ## P07.6 production runtime integration audit
 
 `PARTIAL` — the production adapter now has a public freeze execution gate,

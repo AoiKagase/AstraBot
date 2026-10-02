@@ -156,3 +156,25 @@ Public `FL_FROZEN` and finite `edict_t::v.maxspeed` projections gate execution;
 private GameRules state remains outside the clean-room boundary. Typed Goal/NAV
 transactions and opt-in profiler counters are offline verified. Live FPS,
 TraceLine cadence, physical Goal progress, and multi-Bot scaling remain open.
+
+## 2026-10-02 near-ground fallback update
+
+The current adapter/Core no longer suppress the bounded 30-unit upward-jump
+fallback solely because the running-only 80-unit ground probe is missing or
+sloped. Targeted Core and public-adapter command fixtures verify this change.
+The existing 16-unit step configuration, known far-drop and immediate-gap
+vetoes remain intentional limits of this bounded change; full 80/30/10 downward
+jump sequencing, engine-ground-trace parity, collision/landing and live FPS
+remain unverified. This update does not promote P07/P07.6 to MATCH or complete.
+
+## 2026-10-02 round-freeze boundary limits
+
+- The public log adapter models the ordinary initial Game_Commencing delay
+  (three seconds) and mp_round_restart_delay for normal rounds. Career mode
+  and custom GameDLL hook overrides are unavailable; they are not claimed.
+- The freeze window is inferred from public lifecycle messages and CVars,
+  not a direct read of the private GameDLL freeze flag. Round_Start ends the
+  window. Fresh live HLDS/ReHLDS timing still needs acceptance testing.
+- RoundFreeze preserves command msec/vertical physics while clearing movement
+  inputs; FL_FROZEN has the separate zero-msec execution policy. Offline tests
+  confirm these boundaries without proving actual engine collision/landing.

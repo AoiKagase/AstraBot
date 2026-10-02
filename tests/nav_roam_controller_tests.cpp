@@ -32,6 +32,33 @@ astrabot::nav::NavArea area(
 }
 }
 
+bool testGroundLookaheadRouteIsScopedToTheNextMatchingFrame()
+{
+	astrabot::runtime::GroundLookaheadRoute route = {};
+	route.actor = {3U, 11U};
+	route.frame = {5U, 7U, 100U};
+	route.targetArea = 42U;
+	route.direction = {1.0f, 0.0f, 0.0f};
+	route.running = true;
+	route.active = true;
+
+	const astrabot::runtime::ActorId actor = {3U, 11U};
+	const astrabot::world::FrameIdentity nextFrame = {5U, 7U, 101U};
+	if (!check(route.matchesNextFrame(actor, nextFrame),
+			"ground-lookahead route is reusable for its actor on the next frame"))
+	{
+		return false;
+	}
+
+	return check(
+		!route.matchesNextFrame({3U, 12U}, nextFrame) &&
+			!route.matchesNextFrame({4U, 11U}, nextFrame) &&
+			!route.matchesNextFrame(actor, {6U, 7U, 101U}) &&
+			!route.matchesNextFrame(actor, {5U, 8U, 101U}) &&
+			!route.matchesNextFrame(actor, {5U, 7U, 102U}),
+		"ground-lookahead route expires on actor, map, round, or frame change");
+}
+
 bool testJumpTraversalAction()
 {
 	astrabot::nav::NavDocument document;
@@ -585,6 +612,78 @@ bool testStuckDecisionRetainsSelectedRoute()
 		}
 	}
 	return true;
+}
+
+bool testFreezeMovementSuppressionPreservesObjectiveRoute()
+{
+	astrabot::nav::NavDocument document;
+	document.setSourceIdentity({5U, 100U, 200U});
+	astrabot::nav::NavArea first = area(1U, 0.0f, 64.0f);
+	astrabot::nav::NavArea second = area(2U, 64.0f, 128.0f);
+	first.connections[0U].push_back(2U);
+	document.addArea(first);
+	document.addArea(second);
+
+	astrabot::nav::NavSnapshotPublisher publisher;
+	if (!check(publisher.publish(&document, 1U) ==
+				 astrabot::nav::NavSnapshotResult::Published,
+			 "freeze-suppression NAV snapshot is published"))
+	{
+		return false;
+	}
+
+	astrabot::runtime::NavRoamController controller;
+	astrabot::runtime::NavRoamObservation observation = {};
+	observation.actor = {1U, 1U};
+	observation.frame = {1U, 1U, 1U};
+	observation.team = 1U;
+	observation.locomotion.position = {32.0f, 32.0f, 0.0f};
+	observation.locomotion.standingClearance = 72.0f;
+	observation.locomotion.crouchingClearance = 36.0f;
+	observation.locomotion.grounded = true;
+	observation.hasObjectiveTarget = true;
+	observation.objectiveTarget = {96.0f, 32.0f, 0.0f};
+	astrabot::nav::LocomotionIntent intent = {};
+	astrabot::runtime::NavRoamDecision decision = {};
+	if (!check(controller.update(
+				publisher.snapshot(), observation, &intent, &decision) ==
+					astrabot::runtime::NavRoamResult::IntentReady &&
+				decision.goalKind == astrabot::runtime::NavGoalKind::Objective &&
+				decision.goalArea == 2U && decision.linkFromArea == 1U &&
+				decision.linkToArea == 2U && controller.isActive(),
+				"C4 carrier starts with its valid objective link"))
+	{
+		return false;
+	}
+
+	observation.movementSuppressed = true;
+	for (std::uint32_t tick = 2U; tick < 160U; ++tick)
+	{
+		observation.frame.tick = tick;
+		const astrabot::runtime::NavRoamResult result = controller.update(
+			publisher.snapshot(), observation, &intent, &decision);
+		if (!check(result == astrabot::runtime::NavRoamResult::MovementSuppressed &&
+					decision.stage == astrabot::runtime::NavRoamStage::MovementSuppressed &&
+					decision.failureReason == astrabot::runtime::NavFailureReason::None &&
+					decision.goalKind == astrabot::runtime::NavGoalKind::Objective &&
+					decision.goalArea == 2U && decision.linkFromArea == 1U &&
+					decision.linkToArea == 2U && controller.isActive(),
+					"freeze preserves the C4 route without spending recovery frames"))
+		{
+			return false;
+		}
+	}
+
+	observation.movementSuppressed = false;
+	observation.frame.tick = 160U;
+	const astrabot::runtime::NavRoamResult resumed = controller.update(
+		publisher.snapshot(), observation, &intent, &decision);
+	return check(resumed == astrabot::runtime::NavRoamResult::IntentReady &&
+			decision.goalKind == astrabot::runtime::NavGoalKind::Objective &&
+			decision.goalArea == 2U && decision.linkFromArea == 1U &&
+			decision.linkToArea == 2U && controller.isActive() &&
+			std::hypot(intent.direction.x, intent.direction.y) > 0.5f,
+			"C4 carrier resumes its saved route when movement is allowed");
 }
 
 bool testObjectiveTargetSelectsGoalCorridor()
@@ -1669,6 +1768,10 @@ bool testReservationBudgetFallbackIsDiagnosed()
 
 int main()
 {
+	if (!testGroundLookaheadRouteIsScopedToTheNextMatchingFrame())
+	{
+		return 1;
+	}
 	if (!testDecisionReportsActualLocalSteeringTarget())
 	{
 		return 1;
@@ -1732,6 +1835,10 @@ int main()
 	if (!testGoalAndPathFailuresAreTyped() ||
 		!testTemporaryCurrentAreaLossRetainsActiveRoute() ||
 		!testPlannedGapAfterEarlierSegmentKeepsCurrentLink())
+	{
+		return 1;
+	}
+	if (!testFreezeMovementSuppressionPreservesObjectiveRoute())
 	{
 		return 1;
 	}

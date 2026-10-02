@@ -281,10 +281,59 @@ LocomotionResult LocomotionController::buildIntent(
 	const float currentSurfaceHeight = surfaceZAt(
 		*currentArea, target.x, target.y);
 	const float stepHeight = target.z - currentSurfaceHeight;
-	const bool noJump = (destinationArea->attributes & NavArea::kNoJump) != 0U;
+	const bool noJump = (currentArea->attributes & NavArea::kNoJump) != 0U;
 	const bool navJump = !noJump &&
 		(destinationArea->attributes & NavArea::kJump) != 0U &&
 		stepHeight <= LocomotionConfig::kMaximumJumpHeight;
+	const NavVector requestedDirection = normalizeDirection(observation.position, target);
+	const float lookaheadDirectionLength = std::hypot(
+		observation.groundLookahead.direction.x,
+		observation.groundLookahead.direction.y);
+	const float lookaheadDirectionDot =
+		observation.groundLookahead.direction.x * requestedDirection.x +
+		observation.groundLookahead.direction.y * requestedDirection.y;
+	const bool lookaheadMatches =
+		observation.groundLookahead.valid &&
+		observation.groundLookahead.targetArea == targetArea &&
+		std::isfinite(lookaheadDirectionLength) &&
+		lookaheadDirectionLength >= 0.9f &&
+		lookaheadDirectionLength <= 1.1f &&
+		lookaheadDirectionDot / lookaheadDirectionLength >= 0.9f;
+	const float currentFloor = surfaceZAt(
+		*currentArea, observation.position.x, observation.position.y);
+	const auto probeFloorZ = [&](const GroundProbeObservation &probe, float distance) {
+		const float probeX = observation.position.x +
+			observation.groundLookahead.direction.x * distance;
+		const float probeY = observation.position.y +
+			observation.groundLookahead.direction.y * distance;
+		const bool overlapsCurrentArea =
+			probeX >= currentArea->extent.lo.x && probeX <= currentArea->extent.hi.x &&
+			probeY >= currentArea->extent.lo.y && probeY <= currentArea->extent.hi.y;
+		return overlapsCurrentArea
+			? (std::max)(probe.floorZ, surfaceZAt(*currentArea, probeX, probeY))
+			: probe.floorZ;
+	};
+	const bool farDropAhead = lookaheadMatches &&
+		observation.groundLookahead.running &&
+		observation.groundLookahead.far80.sampled &&
+		observation.groundLookahead.far80.hasGround &&
+		observation.groundLookahead.far80.normalZ > 0.9f &&
+		currentFloor - probeFloorZ(observation.groundLookahead.far80, 80.0f) >
+			LocomotionConfig::kMaximumJumpHeight;
+	const bool gapAtTen = lookaheadMatches &&
+		observation.groundLookahead.gap10.sampled &&
+		!observation.groundLookahead.gap10.hasGround;
+	// CSBot b0889847 cs_bot_nav.cpp:229-238 falls back to the near probe
+	// when the far probe is missing or sloped. Keep known-drop safety vetoes.
+	const bool lookaheadJump = lookaheadMatches && !noJump &&
+		observation.grounded && !observation.onLadder &&
+		observation.groundLookahead.near30.sampled &&
+		observation.groundLookahead.near30.hasGround &&
+		probeFloorZ(observation.groundLookahead.near30, 30.0f) - currentFloor >
+			config_.maximumStepHeight &&
+		probeFloorZ(observation.groundLookahead.near30, 30.0f) - currentFloor <=
+			LocomotionConfig::kMaximumJumpHeight &&
+		!farDropAhead && !gapAtTen;
 	const bool terrainJump = !noJump && !navJump && observation.grounded &&
 		!observation.onLadder && stepHeight > config_.maximumStepHeight &&
 		stepHeight <= LocomotionConfig::kMaximumJumpHeight;
@@ -316,9 +365,10 @@ LocomotionResult LocomotionController::buildIntent(
 		return LocomotionResult::UnsafeDrop;
 	}
 	const bool continuingJump = jumpIssued_ && jumpTargetArea_ == targetArea;
-	const bool requiresJump = navJump || terrainJump || descendingGapJump ||
-		continuingJump;
-	const bool emitJump = (navJump || terrainJump || descendingGapJump) &&
+	const bool requiresJump = navJump || terrainJump || lookaheadJump ||
+		descendingGapJump || continuingJump;
+	const bool emitJump =
+		(navJump || terrainJump || lookaheadJump || descendingGapJump) &&
 		(!jumpIssued_ || jumpTargetArea_ != targetArea);
 	if (stepHeight > config_.maximumStepHeight && !requiresJump)
 	{
@@ -421,13 +471,49 @@ bool LocomotionController::isValidConfig(const LocomotionConfig &config)
 bool LocomotionController::isFiniteObservation(
 	const LocomotionObservation &observation)
 {
-	return std::isfinite(observation.position.x) &&
+	const bool baseObservationIsFinite =
+		std::isfinite(observation.position.x) &&
 		std::isfinite(observation.position.y) &&
 		std::isfinite(observation.position.z) &&
 		std::isfinite(observation.standingClearance) &&
 		observation.standingClearance >= 0.0f &&
 		std::isfinite(observation.crouchingClearance) &&
 		observation.crouchingClearance >= 0.0f;
+	if (!baseObservationIsFinite)
+	{
+		return false;
+	}
+	if (!observation.groundLookahead.valid)
+	{
+		return true;
+	}
+
+	const GroundLookaheadObservation &lookahead = observation.groundLookahead;
+	const float directionLength = std::hypot(
+		lookahead.direction.x, lookahead.direction.y);
+	if (lookahead.targetArea == 0U ||
+			!std::isfinite(lookahead.direction.x) ||
+			!std::isfinite(lookahead.direction.y) ||
+			!std::isfinite(lookahead.direction.z) ||
+			!std::isfinite(directionLength) ||
+			directionLength < 0.9f || directionLength > 1.1f)
+	{
+		return false;
+	}
+
+	const auto isValidProbe = [](const GroundProbeObservation &probe) {
+		if (probe.hasGround && !probe.sampled)
+		{
+			return false;
+		}
+		return !probe.sampled || !probe.hasGround ||
+			(std::isfinite(probe.floorZ) &&
+				std::isfinite(probe.normalZ) &&
+				probe.normalZ >= -1.0f && probe.normalZ <= 1.0f);
+	};
+	return isValidProbe(lookahead.far80) &&
+		isValidProbe(lookahead.near30) &&
+		isValidProbe(lookahead.gap10);
 }
 
 NavVector LocomotionController::normalizeDirection(

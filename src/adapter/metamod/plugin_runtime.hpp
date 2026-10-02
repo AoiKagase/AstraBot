@@ -510,8 +510,11 @@ void logTraversalOutcome(
 					   NativeBotObservation::kClientSlotCount>
 				movementSettledDeadFrames_;
 		std::array<std::uint8_t,
-					   NativeBotObservation::kClientSlotCount>
+				   NativeBotObservation::kClientSlotCount>
 			movementWarmupFrames_;
+		std::array<runtime::GroundLookaheadRoute,
+			NativeBotObservation::kClientSlotCount>
+			movementGroundLookaheadRoutes_;
 		std::array<runtime::MovementPhysicsSample,
 			NativeBotObservation::kClientSlotCount>
 			movementPhysicsSamples_;

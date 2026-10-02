@@ -124,3 +124,20 @@ does not retire an active corridor; map/round, goal, invalidation, and bounded
 stuck transitions remain the explicit retirement conditions. The adapter logs
 Goal presence, current/goal area, path request/result, route identity, and NAV
 apply rejection separately.
+
+## 2026-10-02 near-ground fallback boundary
+
+In the pinned reference `cs_bot_nav.cpp:202-253`, a failed or sloped 80-unit
+ground probe does not prevent the 30-unit discontinuity check. The adapter
+publishes independently sampled near/immediate-ground observations even when
+the optional far probe is unknown or sloped; Core can then emit a bounded
+upward jump. Far-probe flatness remains relevant to the existing known-drop
+safety veto only. The current 16-unit configured step threshold and 41.8-unit
+jump cap are unchanged. They are not a claim of complete reference thresholds,
+downward-jump sequencing, cooldowns, trace ordering, or physical jump parity.
+
+The existing immediate-gap, known-drop, NAV_NO_JUMP, grounding, ladder and
+observation target/direction/generation checks remain. Offline fixtures cover
+near-jump commands, including the public adapter through RunPlayerMove, rather
+than real collision, landing or sustained progress. See STATUS.md for the
+current build/test and artifact identity.

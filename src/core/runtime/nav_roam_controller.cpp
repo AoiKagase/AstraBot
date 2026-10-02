@@ -414,6 +414,32 @@ void NavRoamReservationBoard::release(ActorId actor)
 	}
 }
 
+void GroundLookaheadRoute::reset()
+{
+	actor = {};
+	frame = {};
+	targetArea = 0U;
+	direction = {};
+	running = false;
+	active = false;
+}
+
+bool GroundLookaheadRoute::matchesNextFrame(
+	const ActorId &currentActor,
+	const world::FrameIdentity &currentFrame) const
+{
+	const float directionLength = std::hypot(direction.x, direction.y);
+	return active && targetArea != 0U && actor.actorGeneration != 0U &&
+		actor.slot == currentActor.slot &&
+		actor.actorGeneration == currentActor.actorGeneration &&
+		frame.mapGeneration == currentFrame.mapGeneration &&
+		frame.roundGeneration == currentFrame.roundGeneration &&
+		static_cast<std::uint32_t>(currentFrame.tick - frame.tick) == 1U &&
+		std::isfinite(direction.x) && std::isfinite(direction.y) &&
+		std::isfinite(direction.z) && std::isfinite(directionLength) &&
+		directionLength >= 0.9f && directionLength <= 1.1f;
+}
+
 NavRoamController::NavRoamController()
 	: NavRoamController(compat::RuntimeMode::Compatibility)
 {
@@ -668,6 +694,17 @@ NavRoamResult NavRoamController::update(
 		decision->observationVelocity = observation.locomotion.velocity;
 		decision->intentDirection = lastIntentDirection_;
 		populateRouteDecision(decision);
+	}
+
+	if (observation.movementSuppressed)
+	{
+		if (decision != nullptr)
+		{
+			decision->stage = NavRoamStage::MovementSuppressed;
+			decision->locomotionResult = nav::LocomotionResult::Inactive;
+			decision->failureReason = NavFailureReason::None;
+		}
+		return NavRoamResult::MovementSuppressed;
 	}
 
 	nav::NavQuery query(snapshot);

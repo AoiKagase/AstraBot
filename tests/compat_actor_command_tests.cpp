@@ -3,6 +3,8 @@
 
 #include <cstdio>
 #include <cstring>
+#include <cmath>
+#include <vector>
 
 namespace
 {
@@ -20,6 +22,9 @@ bool gObjectiveEntitiesAvailable = false;
 	float gLastClientMaxspeed = 0.0f;
 	unsigned short gLastRunPlayerMoveButtons = 0U;
 byte gLastRunPlayerMoveMsec = 0U;
+float gLastRunPlayerMoveForward = 0.0f;
+float gLastRunPlayerMoveSide = 0.0f;
+float gLastRunPlayerMoveUp = 0.0f;
 	bool gDirectJoinCommandSeen = false;
 	bool gServerSetsEntityTeam = true;
 	char gLastClientCommand[32] = {};
@@ -34,6 +39,7 @@ bool gPerformanceCvarsRegistered[3] = {};
 	float gBotEnable = 0.0f;
 	float gBotQuota = 0.0f;
 	float gMpFreezetime = 6.0f;
+	float gMpRoundRestartDelay = 5.0f;
 	cvar_t gBotEnableCvar{};
 	cvar_t gBotStopCvar{};
 	cvar_t gBotDifficultyCvar{};
@@ -42,6 +48,7 @@ bool gPerformanceCvarsRegistered[3] = {};
 	cvar_t gAstrabotModeCvar{};
 	cvar_t gAstrabotProfileCvar{};
 	cvar_t gMpFreezetimeCvar{};
+	cvar_t gMpRoundRestartDelayCvar{};
 cvar_t gAstrabotPerfCvars[3]{};
 
 	bool check(bool condition, const char *description)
@@ -160,6 +167,10 @@ edict_t *findEntityByString(edict_t *start, const char *field, const char *value
 		{
 			return &gMpFreezetimeCvar;
 		}
+		if (std::strcmp(name, "mp_round_restart_delay") == 0)
+		{
+			return &gMpRoundRestartDelayCvar;
+		}
 		if (std::strcmp(name, "bot_enable") == 0)
 		{
 			return gNativeControlsAvailable || gCompatibilityCvarsRegistered[0] ? &gBotEnableCvar
@@ -216,6 +227,10 @@ edict_t *findEntityByString(edict_t *start, const char *field, const char *value
 		if (std::strcmp(name, "mp_freezetime") == 0)
 		{
 			return gMpFreezetime;
+		}
+		if (std::strcmp(name, "mp_round_restart_delay") == 0)
+		{
+			return gMpRoundRestartDelay;
 		}
 		if (std::strcmp(name, "bot_enable") == 0)
 		{
@@ -303,11 +318,14 @@ edict_t *findEntityByString(edict_t *start, const char *field, const char *value
 }
 
 void runPlayerMove(
-	edict_t *, const float *, float, float, float, unsigned short buttons, byte, byte msec)
+	edict_t *, const float *, float forward, float side, float up, unsigned short buttons, byte, byte msec)
 {
 	++gRunPlayerMoveCount;
 	gLastRunPlayerMoveButtons = buttons;
 	gLastRunPlayerMoveMsec = msec;
+	gLastRunPlayerMoveForward = forward;
+	gLastRunPlayerMoveSide = side;
+	gLastRunPlayerMoveUp = up;
 }
 
 void setClientMaxspeed(const edict_t *entity, float maxspeed)
@@ -400,6 +418,202 @@ char *getInfoKeyBuffer(edict_t *)
 	{
 		return {name, argumentCount, {firstArgument, nullptr}};
 	}
+int32 jumpFixtureRandomLong(int32, int32 high)
+{
+	return high;
+}
+
+float jumpFixtureRandomFloat(float low, float)
+{
+	return low;
+}
+
+int gGroundProbeMode = 0;
+int gFarGroundProbeCount = 0;
+int gNearGroundProbeCount = 0;
+
+void traceJumpGround(const float *start, const float *, int, edict_t *actor, TraceResult *trace)
+{
+	*trace = {};
+	trace->flFraction = 0.5f;
+	trace->vecEndPos[0] = start[0];
+	trace->vecEndPos[1] = start[1];
+	trace->vecEndPos[2] = 0.0f;
+	trace->vecPlaneNormal[2] = 1.0f;
+	const float distance = std::fabs(start[0] - actor->v.origin.x);
+	if (distance > 70.0f)
+	{
+		++gFarGroundProbeCount;
+		if (gGroundProbeMode == 0)
+		{
+			trace->flFraction = 1.0f;
+		}
+		else
+		{
+			trace->vecPlaneNormal[2] = 0.8f;
+		}
+	}
+	else if (distance > 20.0f)
+	{
+		++gNearGroundProbeCount;
+		trace->vecEndPos[2] = 32.0f;
+	}
+}
+
+bool writeJumpNavigation(const char *path)
+{
+	std::vector<std::uint8_t> bytes;
+	const auto appendU32 = [&](std::uint32_t value)
+	{
+		for (unsigned int shift = 0U; shift < 32U; shift += 8U)
+		{
+			bytes.push_back(static_cast<std::uint8_t>(value >> shift));
+		}
+	};
+	const auto appendFloat = [&](float value)
+	{
+		std::uint32_t bits = 0U;
+		std::memcpy(&bits, &value, sizeof(bits));
+		appendU32(bits);
+	};
+	appendU32(0xFEEDFACEU);
+	appendU32(1U);
+	appendU32(2U);
+	for (std::uint32_t id = 1U; id <= 2U; ++id)
+	{
+		appendU32(id);
+		bytes.push_back(0U);
+		const float lowX = static_cast<float>(id - 1U) * 64.0f;
+		const float coordinates[] = {lowX, 0.0f, 0.0f, lowX + 64.0f, 64.0f, 0.0f, 0.0f, 0.0f};
+		for (float value : coordinates)
+		{
+			appendFloat(value);
+		}
+		for (unsigned int direction = 0U; direction < 4U; ++direction)
+		{
+			appendU32(direction == 0U ? 1U : 0U);
+			if (direction == 0U)
+			{
+				appendU32(3U - id);
+			}
+		}
+		bytes.push_back(0U);
+		bytes.push_back(0U);
+		appendU32(0U);
+	}
+	std::FILE *file = openFixture(path, "wb");
+	if (file == nullptr)
+	{
+		return false;
+	}
+	const auto written = std::fwrite(bytes.data(), 1U, bytes.size(), file);
+	const int closed = std::fclose(file);
+	return written == bytes.size() && closed == 0;
+}
+
+bool testRuntimeNearJumpFallback(
+	astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &engine, globalvars_t &globals)
+{
+	const char *path = "astrabot_actor_jump.nav";
+	if (!check(writeJumpNavigation(path), "near-jump NAV fixture written"))
+	{
+		return false;
+	}
+	const astrabot::metamod::NavLoadRequest load =
+		{path, "astrabot_actor_jump", runtime.snapshot().mapGeneration, false, 0U, false, 0U};
+	const auto loaded = runtime.loadNavigationFile(&load);
+	std::remove(path);
+	if (!check(loaded == astrabot::metamod::NavLoadResult::Loaded, "near-jump NAV fixture loaded"))
+	{
+		return false;
+	}
+	engine.pfnTraceLine = &traceJumpGround;
+	engine.pfnRandomLong = &jumpFixtureRandomLong;
+	engine.pfnRandomFloat = &jumpFixtureRandomFloat;
+	runtime.giveEnginePointers(&engine, &globals);
+	runtime.setCompatibilityFloat("bot_enable", 1.0f);
+	runtime.setCompatibilityFloat("bot_quota", 1.0f);
+	gObjectiveEntitiesAvailable = false;
+	gServerSetsEntityTeam = true;
+	bool passed = true;
+	for (int mode = 0; mode < 2; ++mode)
+	{
+		runtime.executeCompatibilityCommand(request("bot_kick", 1U, "all"));
+		resetEntities();
+		gCreateCount = 0;
+		gGroundProbeMode = mode;
+		gFarGroundProbeCount = 0;
+		gNearGroundProbeCount = 0;
+		if (!check(runtime.executeCompatibilityCommand(request("bot_add_t")) ==
+				astrabot::metamod::CompatibilityCommandResult::Handled, "near-jump actor added"))
+		{
+			return false;
+		}
+		gEntities[0].v.flags = FL_CLIENT | FL_FAKECLIENT | FL_ONGROUND;
+		gEntities[0].v.team = 1;
+		gEntities[0].v.deadflag = DEAD_NO;
+		gEntities[0].v.health = 100.0f;
+		gEntities[0].v.solid = SOLID_SLIDEBOX;
+		gEntities[0].v.movetype = MOVETYPE_WALK;
+		gEntities[0].v.origin = Vector(16.0f, 32.0f, 36.0f);
+		gEntities[0].v.mins = Vector(-16.0f, -16.0f, -36.0f);
+		gEntities[0].v.maxs = Vector(16.0f, 16.0f, 36.0f);
+		gEntities[0].v.maxspeed = 240.0f;
+		bool jumped = false;
+		for (int frame = 0; frame < 12 && !jumped; ++frame)
+		{
+			gLastRunPlayerMoveButtons = 0U;
+			globals.time += 0.1f;
+			runtime.onStartFrame();
+			runtime.onStartFramePost();
+			jumped = (gLastRunPlayerMoveButtons & static_cast<unsigned short>(IN_JUMP)) != 0U;
+		}
+		if (!jumped)
+		{
+			std::fprintf(stderr, "near-jump mode=%d far=%d near=%d buttons=%u moves=%d readiness=%d\n",
+				mode, gFarGroundProbeCount, gNearGroundProbeCount, gLastRunPlayerMoveButtons,
+				gRunPlayerMoveCount, static_cast<int>(runtime.movementPhysicsSample(1U).readiness));
+		}
+		passed = check(gFarGroundProbeCount > 0 && gNearGroundProbeCount > 0 && jumped,
+			mode == 0 ? "runtime dispatches near jump with unknown far ground"
+				: "runtime dispatches near jump with sloped far ground") && passed;
+		runtime.onRoundLifecycleMessage("World triggered \"Round_End\"\n");
+		const float freezeStart = globals.time + gMpRoundRestartDelay;
+		const int probesBeforeFreeze = gFarGroundProbeCount + gNearGroundProbeCount;
+		gRunPlayerMoveCount = 0;
+		gEntities[0].v.velocity = Vector(100.0f, -80.0f, 4.0f);
+		for (int frame = 0; frame < 3; ++frame)
+		{
+			globals.time = freezeStart + static_cast<float>(frame) * 0.1f;
+			runtime.onStartFrame();
+			runtime.onStartFramePost();
+		}
+		passed = check(runtime.snapshot().roundFreezeActive && gRunPlayerMoveCount > 0 &&
+			gLastRunPlayerMoveButtons == 0U && gLastRunPlayerMoveMsec > 0U &&
+			gLastRunPlayerMoveForward == 0.0f && gLastRunPlayerMoveSide == 0.0f &&
+			gLastRunPlayerMoveUp == 0.0f && gEntities[0].v.velocity.x == 0.0f &&
+			gEntities[0].v.velocity.y == 0.0f && gEntities[0].v.velocity.z == 4.0f &&
+			gFarGroundProbeCount + gNearGroundProbeCount == probesBeforeFreeze,
+			"scheduled FreezeTime clears movement and skips probes while preserving timing and Z velocity") && passed;
+		runtime.onRoundLifecycleMessage("World triggered \"Round_Start\"\n");
+		bool resumed = false;
+		for (int frame = 0; frame < 6 && !resumed; ++frame)
+		{
+			globals.time += 0.1f;
+			runtime.onStartFrame();
+			runtime.onStartFramePost();
+			resumed = gLastRunPlayerMoveMsec > 0U &&
+				(std::fabs(gLastRunPlayerMoveForward) > 0.0f ||
+					std::fabs(gLastRunPlayerMoveSide) > 0.0f);
+		}
+		passed = check(!runtime.snapshot().roundFreezeActive && resumed,
+			"Round_Start resumes public movement immediately rather than adding another freeze") && passed;
+	}
+	runtime.executeCompatibilityCommand(request("bot_kick", 1U, "all"));
+	engine.pfnTraceLine = nullptr;
+	return passed;
+}
+
 } // namespace
 
 int main()
@@ -1233,11 +1447,12 @@ int main()
 	const astrabot::runtime::LifecycleGeneration activeRoundGeneration =
 		immediateRound.roundGeneration;
 	char roundStartedLog[] = "World triggered \"Round_Start\"\n";
-	requestedEngineFunctions.pfnAlertMessage(at_logged, alertFormat, roundStartedLog);
 	const float actualRoundStartTime = globals.time;
-	if (!check(runtime.snapshot().roundFreezeActive &&
+	globals.time = actualRoundStartTime + gMpFreezetime + 0.1f;
+	requestedEngineFunctions.pfnAlertMessage(at_logged, alertFormat, roundStartedLog);
+	if (!check(!runtime.snapshot().roundFreezeActive &&
 			runtime.snapshot().roundGeneration == activeRoundGeneration,
-			"Round_Start anchors configured freezetime without advancing the prepared generation"))
+			"Round_Start ends the scheduled freeze without extending it"))
 	{
 		std::remove(profilePath);
 		return 1;
@@ -1257,12 +1472,109 @@ int main()
 		std::remove(profilePath);
 		return 1;
 	}
+	char roundEndedLog[] = "World triggered \"Round_End\"\n";
+	gMpRoundRestartDelay = 5.0f;
+	const float roundEndedAt = globals.time + 1.0f;
+	globals.time = roundEndedAt;
+	requestedEngineFunctions.pfnAlertMessage(at_logged, alertFormat, roundEndedLog);
+	if (!check(!runtime.snapshot().roundFreezeActive,
+			"Round_End leaves the restart delay unsuppressed"))
+	{
+		std::remove(profilePath);
+		return 1;
+	}
+	globals.time = roundEndedAt + gMpRoundRestartDelay - 0.1f;
+	if (!check(!runtime.snapshot().roundFreezeActive,
+			"FreezeTime is not scheduled before mp_round_restart_delay"))
+	{
+		std::remove(profilePath);
+		return 1;
+	}
+	globals.time = roundEndedAt + gMpRoundRestartDelay;
+	if (!check(runtime.snapshot().roundFreezeActive,
+			"FreezeTime starts after mp_round_restart_delay"))
+	{
+		std::remove(profilePath);
+		return 1;
+	}
+	globals.time = roundEndedAt + gMpRoundRestartDelay + gMpFreezetime - 0.1f;
+	if (!check(runtime.snapshot().roundFreezeActive,
+			"FreezeTime remains active until the Round_Start boundary"))
+	{
+		std::remove(profilePath);
+		return 1;
+	}
+	globals.time = roundEndedAt + gMpRoundRestartDelay + 2.0f;
+	requestedEngineFunctions.pfnAlertMessage(at_logged, alertFormat, roundEndedLog);
+	globals.time = roundEndedAt + gMpRoundRestartDelay + gMpFreezetime;
+	if (!check(!runtime.snapshot().roundFreezeActive,
+			"duplicate Round_End does not extend the freeze window"))
+	{
+		std::remove(profilePath);
+		return 1;
+	}
+	requestedEngineFunctions.pfnAlertMessage(at_logged, alertFormat, roundStartedLog);
+	if (!check(!runtime.snapshot().roundFreezeActive,
+			"Round_Start ends the Round_End scheduled freeze window"))
+	{
+		std::remove(profilePath);
+		return 1;
+	}
+	const astrabot::runtime::LifecycleGeneration roundEndedGeneration =
+		runtime.snapshot().roundGeneration;
+	const float commencingAt = globals.time;
 	char gameCommencingLog[] = "World triggered \"Game_Commencing\"\n";
 	requestedEngineFunctions.pfnAlertMessage(at_logged, alertFormat, gameCommencingLog);
 	const auto commencingRound = runtime.snapshot();
-	if (!check(commencingRound.roundGeneration == activeRoundGeneration + 1U &&
-			commencingRound.roundFreezeActive,
-			"Game_Commencing starts the initial timed freeze"))
+	if (!check(commencingRound.roundGeneration == roundEndedGeneration + 1U &&
+			!commencingRound.roundFreezeActive,
+			"Game_Commencing begins a round generation without starting freeze early"))
+	{
+		std::remove(profilePath);
+		return 1;
+	}
+	requestedEngineFunctions.pfnAlertMessage(at_logged, alertFormat, roundEndedLog);
+	if (!check(runtime.snapshot().roundGeneration == commencingRound.roundGeneration &&
+			!runtime.snapshot().roundFreezeActive,
+			"Game_Commencing Round_End preserves the initial three-second delay"))
+	{
+		std::remove(profilePath);
+		return 1;
+	}
+	globals.time = commencingAt + 2.9f;
+	if (!check(!runtime.snapshot().roundFreezeActive,
+			"initial FreezeTime remains inactive before three seconds"))
+	{
+		std::remove(profilePath);
+		return 1;
+	}
+	globals.time = commencingAt + 3.0f;
+	if (!check(runtime.snapshot().roundFreezeActive,
+			"initial FreezeTime begins after the Game_Commencing three-second delay"))
+	{
+		std::remove(profilePath);
+		return 1;
+	}
+	globals.time = commencingAt + 3.5f;
+	requestedEngineFunctions.pfnAlertMessage(at_logged, alertFormat, gameCommencingLog);
+	requestedEngineFunctions.pfnAlertMessage(at_logged, alertFormat, roundEndedLog);
+	if (!check(runtime.snapshot().roundGeneration == commencingRound.roundGeneration &&
+			runtime.snapshot().roundFreezeActive,
+			"duplicate initial lifecycle events preserve the active freeze"))
+	{
+		std::remove(profilePath);
+		return 1;
+	}
+	globals.time = commencingAt + 3.0f + gMpFreezetime - 0.1f;
+	if (!check(runtime.snapshot().roundFreezeActive,
+			"initial FreezeTime retains the configured duration"))
+	{
+		std::remove(profilePath);
+		return 1;
+	}
+	globals.time = commencingAt + 3.0f + gMpFreezetime;
+	if (!check(!runtime.snapshot().roundFreezeActive,
+			"duplicate initial lifecycle events do not extend the freeze deadline"))
 	{
 		std::remove(profilePath);
 		return 1;
@@ -1270,7 +1582,7 @@ int main()
 	char unrelatedLog[] = "World triggered \"CTs_Win\"\n";
 	requestedEngineFunctions.pfnAlertMessage(at_logged, alertFormat, unrelatedLog);
 	if (!check(runtime.snapshot().roundGeneration == commencingRound.roundGeneration &&
-			runtime.snapshot().roundFreezeActive,
+			!runtime.snapshot().roundFreezeActive,
 			"unrelated logged event leaves round freeze state unchanged"))
 	{
 		std::remove(profilePath);
@@ -1278,8 +1590,14 @@ int main()
 	}
 	requestedEngineFunctions.pfnAlertMessage(at_logged, alertFormat, roundStartedLog);
 	if (!check(runtime.snapshot().roundGeneration == commencingRound.roundGeneration &&
-			runtime.snapshot().roundFreezeActive,
-			"Round_Start after Game_Commencing preserves generation and applies freezetime"))
+			!runtime.snapshot().roundFreezeActive,
+			"Round_Start after Game_Commencing does not start a new freeze interval"))
+	{
+		std::remove(profilePath);
+		return 1;
+	}
+
+	if (!testRuntimeNearJumpFallback(runtime, engineFunctions, globals))
 	{
 		std::remove(profilePath);
 		return 1;

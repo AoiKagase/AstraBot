@@ -547,6 +547,192 @@ bool testJumpAttributesOverrideStepHeight()
 				"NAV_JUMP takes precedence over ordinary step rejection");
 }
 
+bool testCurrentAreaNoJumpSuppressesDestinationJump()
+{
+	astrabot::nav::NavDocument document;
+	document.setSourceIdentity({5U, 100U, 201U});
+	astrabot::nav::NavArea start = area(1U, 0.0f, 64.0f, 0.0f);
+	start.attributes = astrabot::nav::NavArea::kNoJump;
+	start.connections[0U].push_back(2U);
+	astrabot::nav::NavArea destination = area(2U, 64.0f, 128.0f, 32.0f);
+	destination.attributes = astrabot::nav::NavArea::kJump;
+	document.addArea(start);
+	document.addArea(destination);
+	const astrabot::nav::NavSnapshot snapshot = snapshotFor(&document, 1U);
+	astrabot::nav::LocomotionController controller(config());
+	if (!check(controller.start(corridorFor(snapshot)) ==
+				astrabot::nav::LocomotionResult::Started,
+				"NAV_NO_JUMP source fixture starts"))
+	{
+		return false;
+	}
+	astrabot::nav::LocomotionObservation observation = {};
+	observation.position = {16.0f, 32.0f, 0.0f};
+	observation.standingClearance = 72.0f;
+	observation.crouchingClearance = 36.0f;
+	observation.grounded = true;
+	astrabot::nav::LocomotionIntent intent = {};
+	return check(controller.update(snapshot, observation, &intent) ==
+			astrabot::nav::LocomotionResult::StepTooHigh,
+			"source NAV_NO_JUMP suppresses destination NAV_JUMP");
+}
+
+bool testGroundLookaheadRequestsJumpForUnmarkedWall()
+{
+	astrabot::nav::NavDocument document;
+	document.setSourceIdentity({5U, 100U, 202U});
+	astrabot::nav::NavArea current = area(1U, 0.0f, 64.0f, 0.0f);
+	astrabot::nav::NavArea destination = area(2U, 64.0f, 128.0f, 0.0f);
+	current.connections[0U].push_back(2U);
+	document.addArea(current);
+	document.addArea(destination);
+	const astrabot::nav::NavSnapshot snapshot = snapshotFor(&document, 1U);
+	astrabot::nav::LocomotionController controller(config());
+	if (!check(controller.start(corridorFor(snapshot)) ==
+				astrabot::nav::LocomotionResult::Started,
+				"ground-lookahead wall fixture starts"))
+	{
+		return false;
+	}
+	astrabot::nav::LocomotionObservation observation = {};
+	observation.position = {16.0f, 32.0f, 0.0f};
+	observation.standingClearance = 72.0f;
+	observation.crouchingClearance = 36.0f;
+	observation.grounded = true;
+	observation.groundLookahead.valid = true;
+	observation.groundLookahead.targetArea = 2U;
+	observation.groundLookahead.direction = {1.0f, 0.0f, 0.0f};
+	observation.groundLookahead.running = true;
+	observation.groundLookahead.far80 = {true, true, 0.0f, 1.0f};
+	observation.groundLookahead.near30 = {true, true, 32.0f, 1.0f};
+	observation.groundLookahead.gap10 = {true, true, 0.0f, 1.0f};
+	astrabot::nav::LocomotionIntent intent = {};
+	return check(controller.update(snapshot, observation, &intent) ==
+			astrabot::nav::LocomotionResult::IntentReady &&
+			intent.targetArea == 2U &&
+			intent.traversal == astrabot::nav::TraversalAction::Jump,
+			"30-unit ground probe requests a bounded jump over an unmarked wall");
+}
+
+bool testNearGroundJumpFallbackAndSafety()
+{
+	struct Case
+	{
+		const char *description;
+		astrabot::nav::GroundProbeObservation farGround;
+		float nearHeight;
+		bool nearGroundAvailable;
+		bool gapGroundAvailable;
+		bool running;
+		bool noJump;
+		bool grounded;
+		bool onLadder;
+		bool matchingDirection;
+		bool expectedJump;
+	};
+	const Case cases[] =
+	{
+		{"unknown far ground permits near jump", {true, false, 0.0f, 0.0f}, 32.0f, true, true, true, false, true, false, true, true},
+		{"unsampled far ground permits near jump", {}, 32.0f, true, true, true, false, true, false, true, true},
+		{"sloped far ground permits near jump", {true, true, 0.0f, 0.8f}, 32.0f, true, true, true, false, true, false, true, true},
+		{"far normal at threshold permits near jump", {true, true, 0.0f, 0.9f}, 32.0f, true, true, true, false, true, false, true, true},
+		{"flat far ground permits near jump", {true, true, 0.0f, 1.0f}, 32.0f, true, true, true, false, true, false, true, true},
+		{"walking permits near jump without far probe", {}, 32.0f, true, true, false, false, true, false, true, true},
+		{"configured step height needs no jump", {}, 16.0f, true, true, true, false, true, false, true, false},
+		{"height above configured step requests jump", {}, 16.1f, true, true, true, false, true, false, true, true},
+		{"maximum jump height permits jump", {}, 41.8f, true, true, true, false, true, false, true, true},
+		{"height above maximum jump rejects jump", {}, 41.9f, true, true, true, false, true, false, true, false},
+		{"unknown near ground rejects jump", {}, 32.0f, false, true, true, false, true, false, true, false},
+		{"known far drop retains safety veto", {true, true, -64.0f, 1.0f}, 32.0f, true, true, true, false, true, false, true, false},
+		{"unknown immediate ground retains safety veto", {}, 32.0f, true, false, true, false, true, false, true, false},
+		{"current NAV_NO_JUMP rejects near jump", {}, 32.0f, true, true, true, true, true, false, true, false},
+		{"airborne actor rejects near jump", {}, 32.0f, true, true, true, false, false, false, true, false},
+		{"ladder actor rejects near jump", {}, 32.0f, true, true, true, false, true, true, true, false},
+		{"changed direction rejects near jump", {}, 32.0f, true, true, true, false, true, false, false, false}
+	};
+	bool passed = true;
+	for (const Case &test : cases)
+	{
+		astrabot::nav::NavDocument document;
+		document.setSourceIdentity({5U, 100U, 202U});
+		astrabot::nav::NavArea current = area(1U, 0.0f, 64.0f, 0.0f);
+		current.connections[0U].push_back(2U);
+		if (test.noJump)
+		{
+			current.attributes |= astrabot::nav::NavArea::kNoJump;
+		}
+		document.addArea(current);
+		document.addArea(area(2U, 64.0f, 128.0f, 0.0f));
+		const auto snapshot = snapshotFor(&document, 1U);
+		astrabot::nav::LocomotionController controller(config());
+		if (!check(controller.start(corridorFor(snapshot)) ==
+				astrabot::nav::LocomotionResult::Started, test.description))
+		{
+			return false;
+		}
+		astrabot::nav::LocomotionObservation observation = {};
+		observation.position = {16.0f, 32.0f, 0.0f};
+		observation.standingClearance = 72.0f;
+		observation.crouchingClearance = 36.0f;
+		observation.grounded = test.grounded;
+		observation.onLadder = test.onLadder;
+		observation.groundLookahead.valid = true;
+		observation.groundLookahead.targetArea = 2U;
+		observation.groundLookahead.direction = test.matchingDirection
+			? astrabot::nav::NavVector{1.0f, 0.0f, 0.0f}
+			: astrabot::nav::NavVector{0.0f, 1.0f, 0.0f};
+		observation.groundLookahead.running = test.running;
+		observation.groundLookahead.far80 = test.farGround;
+		observation.groundLookahead.near30 =
+			{true, test.nearGroundAvailable, test.nearHeight, 1.0f};
+		observation.groundLookahead.gap10 =
+			{true, test.gapGroundAvailable, 0.0f, 1.0f};
+		astrabot::nav::LocomotionIntent intent = {};
+		const auto result = controller.update(snapshot, observation, &intent);
+		const bool jumped = intent.traversal == astrabot::nav::TraversalAction::Jump;
+		passed = check(result == astrabot::nav::LocomotionResult::IntentReady &&
+			jumped == test.expectedJump, test.description) && passed;
+	}
+	return passed;
+}
+
+bool testStaleGroundLookaheadTargetDoesNotRequestJump()
+{
+	astrabot::nav::NavDocument document;
+	document.setSourceIdentity({5U, 100U, 202U});
+	astrabot::nav::NavArea current = area(1U, 0.0f, 64.0f, 0.0f);
+	astrabot::nav::NavArea destination = area(2U, 64.0f, 128.0f, 0.0f);
+	current.connections[0U].push_back(2U);
+	document.addArea(current);
+	document.addArea(destination);
+	const astrabot::nav::NavSnapshot snapshot = snapshotFor(&document, 1U);
+	astrabot::nav::LocomotionController controller(config());
+	if (!check(controller.start(corridorFor(snapshot)) ==
+			astrabot::nav::LocomotionResult::Started,
+			"stale ground-lookahead fixture starts"))
+	{
+		return false;
+	}
+
+	astrabot::nav::LocomotionObservation observation = {};
+	observation.position = {16.0f, 32.0f, 0.0f};
+	observation.standingClearance = 72.0f;
+	observation.crouchingClearance = 36.0f;
+	observation.grounded = true;
+	observation.groundLookahead.valid = true;
+	observation.groundLookahead.targetArea = 99U;
+	observation.groundLookahead.direction = {1.0f, 0.0f, 0.0f};
+	observation.groundLookahead.running = true;
+	observation.groundLookahead.far80 = {true, true, 0.0f, 1.0f};
+	observation.groundLookahead.near30 = {true, true, 32.0f, 1.0f};
+	observation.groundLookahead.gap10 = {true, true, 0.0f, 1.0f};
+	astrabot::nav::LocomotionIntent intent = {};
+	return check(controller.update(snapshot, observation, &intent) ==
+			astrabot::nav::LocomotionResult::IntentReady &&
+			intent.traversal != astrabot::nav::TraversalAction::Jump,
+			"ground sample for another target is ignored");
+}
+
 bool testSafeDescendingGapWithHorizontalSeparationUsesJumpOnce()
 {
 	astrabot::nav::NavDocument document;
@@ -598,7 +784,7 @@ bool testSafeDescendingGapWithHorizontalSeparationUsesJumpOnce()
 
 bool testDescendingGapSeparatesSafeDropFromHorizontalJump()
 {
-	auto runCase = [](std::uint8_t landingAttributes, float horizontalGap,
+	auto runCase = [](std::uint8_t sourceAttributes, float horizontalGap,
 			float landingFloor, bool safeDropAvailable, float maximumSafeDropHeight,
 			astrabot::nav::LocomotionResult expectedResult,
 			astrabot::nav::TraversalAction expectedTraversal) {
@@ -607,7 +793,7 @@ bool testDescendingGapSeparatesSafeDropFromHorizontalJump()
 		astrabot::nav::NavArea launch = area(1U, 0.0f, 200.0f, 128.0f);
 		astrabot::nav::NavArea landing = area(
 			2U, 200.0f + horizontalGap, 300.0f + horizontalGap, landingFloor);
-		landing.attributes = landingAttributes;
+		launch.attributes = sourceAttributes;
 		launch.connections[1U].push_back(2U);
 		document.addArea(launch);
 		document.addArea(landing);
@@ -714,7 +900,11 @@ int main()
 			!testNavAttributesSelectTraversal() ||
 			!testLateralJitterDoesNotResetForwardProgress() ||
 			!testUnavailableClearanceIsExplicit() ||
-			!testJumpAttributesOverrideStepHeight())
+			!testJumpAttributesOverrideStepHeight() ||
+			!testCurrentAreaNoJumpSuppressesDestinationJump() ||
+			!testGroundLookaheadRequestsJumpForUnmarkedWall() ||
+			!testNearGroundJumpFallbackAndSafety() ||
+			!testStaleGroundLookaheadTargetDoesNotRequestJump())
 	{
 		return 1;
 	}

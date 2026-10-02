@@ -18,8 +18,8 @@ namespace astrabot
 {
 	namespace runtime
 	{
-		struct NavRoamObservation
-		{
+	struct NavRoamObservation
+	{
 			ActorId actor;
 			world::FrameIdentity frame;
 			std::uint8_t team;
@@ -31,12 +31,28 @@ namespace astrabot
 			bool hasLandingDamage;
 			float landingDamage;
 	bool ladderContact;
-	bool entryConfirmed;
-	bool exitConfirmed;
-	bool collectPathStats;
-		};
+			bool entryConfirmed;
+			bool exitConfirmed;
+			bool collectPathStats;
+		bool movementSuppressed;
+	};
 
-		enum class NavRoamResult
+	struct GroundLookaheadRoute
+	{
+		ActorId actor;
+		world::FrameIdentity frame;
+		nav::AreaId targetArea;
+		nav::NavVector direction;
+		bool running;
+		bool active;
+
+		void reset();
+		bool matchesNextFrame(
+			const ActorId &currentActor,
+			const world::FrameIdentity &currentFrame) const;
+	};
+
+	enum class NavRoamResult
 		{
 			IntentReady,
 			TargetReached,
@@ -47,7 +63,8 @@ namespace astrabot
 			InvalidObservation,
 			StaleActor,
 			DuplicateFrame,
-			StaleFrame
+			StaleFrame,
+			MovementSuppressed
 		};
 
 enum class NavRoamStage
@@ -59,7 +76,8 @@ enum class NavRoamStage
 			CorridorReady,
 			LocomotionReady,
 			TargetReached,
-	Failed
+			Failed,
+			MovementSuppressed
 };
 
 enum class NavRecomputeReason

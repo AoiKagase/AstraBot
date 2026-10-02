@@ -25,6 +25,7 @@ namespace astrabot
 		{
 	constexpr float kRadiansToDegrees = 57.29577951308232f;
 	constexpr float kStandingHalfHumanHeight = 36.0f;
+	constexpr float kGroundProbeDepth = 80.0f;
 	constexpr float kMaximumObjectiveDistance = 10000.0f;
 	constexpr float kDefaultManagedBotMaxSpeed = 240.0f;
 			constexpr std::uint32_t kRespawnSettleFrames = 2U;
@@ -738,6 +739,7 @@ const char *const kPerformanceCvarNames[kPerformanceCvarCount] = {
 			  movementLastDeadFrames_(),
 			movementSettledDeadFrames_(),
 		movementWarmupFrames_(),
+		movementGroundLookaheadRoutes_(),
 		movementPhysicsSamples_(),
 		movementReadyLogged_(),
 		movementGoalDiagnosticSeconds_(),
@@ -1918,32 +1920,64 @@ void PluginRuntime::notifyMenuReady(
 				{
 					return;
 				}
-				const RoundFreezeSchedule freeze = RoundFreezeSchedule::create(
-					globals_->time,
-					readOptionalCvarFloat(engineFunctions_, "mp_freezetime"));
-				roundFreezeStartTime_ = freeze.startTime;
-				roundFreezeUntil_ = freeze.untilTime;
-				roundFreezeGeneration_ = lifecycle_.roundGeneration();
-				roundFreezeScheduled_ = freeze.scheduled;
-				return;
-			}
-			if (std::strncmp(message, kRoundEnded, sizeof(kRoundEnded) - 1U) == 0)
-			{
-				if (roundLifecycleTracker_.shouldBeginNewGeneration(
-						RoundLifecycleEvent::RoundEnd) && !beginRoundGeneration())
-				{
-					return;
-				}
-				const RoundFreezeSchedule noFreeze =
-					RoundFreezeSchedule::create(globals_->time, 0.0f);
-				roundFreezeScheduled_ = noFreeze.scheduled;
-				roundFreezeStartTime_ = noFreeze.startTime;
-				roundFreezeUntil_ = noFreeze.untilTime;
-				roundFreezeGeneration_ = lifecycle_.roundGeneration();
-				return;
-			}
+			const RoundFreezeSchedule noFreeze =
+				RoundFreezeSchedule::create(globals_->time, 0.0f);
+			roundFreezeStartTime_ = noFreeze.startTime;
+			roundFreezeUntil_ = noFreeze.untilTime;
+			roundFreezeGeneration_ = lifecycle_.roundGeneration();
+			roundFreezeScheduled_ = noFreeze.scheduled;
+			return;
+		}
+	if (std::strncmp(message, kRoundEnded, sizeof(kRoundEnded) - 1U) == 0)
+	{
+		if (!roundLifecycleTracker_.shouldBeginNewGeneration(
+				RoundLifecycleEvent::RoundEnd))
+		{
+			return;
+		}
+		if (!beginRoundGeneration())
+		{
+			return;
+		}
+		float restartDelay = readOptionalCvarFloat(
+			engineFunctions_, "mp_round_restart_delay");
+		if (!std::isfinite(restartDelay) || restartDelay < 0.0f)
+		{
+			restartDelay = 0.0f;
+		}
+		restartDelay = (std::min)(restartDelay, 60.0f);
+		const RoundFreezeSchedule freeze = RoundFreezeSchedule::create(
+			globals_->time + restartDelay,
+			readOptionalCvarFloat(engineFunctions_, "mp_freezetime"));
+		roundFreezeScheduled_ = freeze.scheduled;
+		roundFreezeStartTime_ = freeze.startTime;
+		roundFreezeUntil_ = freeze.untilTime;
+		roundFreezeGeneration_ = lifecycle_.roundGeneration();
+		return;
+		}
 
-			float restartDelay = 0.0f;
+		if (std::strncmp(message, kGameCommencing, sizeof(kGameCommencing) - 1U) == 0)
+		{
+			if (!roundLifecycleTracker_.shouldBeginNewGeneration(
+					RoundLifecycleEvent::GameCommencing) || !beginRoundGeneration())
+			{
+				return;
+			}
+			// Pinned ReGameDLL b0889847 NeededPlayersCheck(): ordinary games
+			// commence after three seconds, then RestartRound begins FreezeTime.
+			// Career/custom GameDLL hook delays are unavailable at this boundary.
+			constexpr float kGameCommencingRestartDelay = 3.0f;
+			const RoundFreezeSchedule freeze = RoundFreezeSchedule::create(
+				globals_->time + kGameCommencingRestartDelay,
+				readOptionalCvarFloat(engineFunctions_, "mp_freezetime"));
+			roundFreezeStartTime_ = freeze.startTime;
+			roundFreezeUntil_ = freeze.untilTime;
+			roundFreezeGeneration_ = lifecycle_.roundGeneration();
+			roundFreezeScheduled_ = freeze.scheduled;
+			return;
+		}
+
+		float restartDelay = 0.0f;
 			bool beginsRound =
 				std::strncmp(message, kGameCommencing, sizeof(kGameCommencing) - 1U) == 0;
 			const char *restart = std::strstr(message, kRestartPrefix);
@@ -2370,8 +2404,13 @@ void PluginRuntime::updateManagedBotMovement()
 	const compat::CvarSnapshot configuration = compatibilitySurface_.configuration();
 	const nav::NavSnapshot navigation = navPublisher_.snapshot();
 	const bool movementUnavailable = configuration.botEnable <= 0.0f ||
-			configuration.botStop > 0.0f || !navigation.isValid();
-			if (movementDiagnosticRound_ != lifecycle_.roundGeneration())
+		configuration.botStop > 0.0f || !navigation.isValid();
+	if (movementUnavailable)
+	{
+		movementGroundLookaheadRoutes_.fill(
+			runtime::GroundLookaheadRoute{});
+	}
+	if (movementDiagnosticRound_ != lifecycle_.roundGeneration())
 			{
 				movementDiagnosticRound_ = lifecycle_.roundGeneration();
 				movementDiagnosticSamples_.fill(0U);
@@ -2383,6 +2422,8 @@ void PluginRuntime::updateManagedBotMovement()
 			(std::numeric_limits<std::uint32_t>::max)());
 		movementTraversalPending_.fill({});
 		movementReversalDiagnostics_.fill({});
+		movementGroundLookaheadRoutes_.fill(
+			runtime::GroundLookaheadRoute{});
 	}
 	if (movementUnavailable)
 	{
@@ -2663,6 +2704,86 @@ void PluginRuntime::updateManagedBotMovement()
 		}
 		observation.team = static_cast<std::uint8_t>(
 			managedBotObjectiveTargets_[index].effectiveTeam);
+		observation.movementSuppressed = roundFreezeActive();
+		runtime::GroundLookaheadRoute &groundLookaheadRoute =
+			movementGroundLookaheadRoutes_[index];
+		if (observation.movementSuppressed || !before.grounded ||
+				before.onLadder ||
+				!groundLookaheadRoute.matchesNextFrame(
+					handle.actor, observation.frame) ||
+				engineFunctions_ == nullptr ||
+				engineFunctions_->pfnTraceLine == nullptr)
+		{
+			groundLookaheadRoute.reset();
+		}
+		else
+		{
+			const runtime::GroundLookaheadRoute previousRoute =
+				groundLookaheadRoute;
+			nav::GroundLookaheadObservation &lookahead =
+				observation.locomotion.groundLookahead;
+			lookahead.targetArea = previousRoute.targetArea;
+			lookahead.direction = previousRoute.direction;
+			lookahead.running = previousRoute.running;
+
+			const auto traceGroundAt = [&](float distance)
+				-> nav::GroundProbeObservation
+			{
+				nav::GroundProbeObservation probe = {};
+				const float x = observation.locomotion.position.x +
+					previousRoute.direction.x * distance;
+				const float y = observation.locomotion.position.y +
+					previousRoute.direction.y * distance;
+				const float start[3] = {
+					x,
+					y,
+					handle.entity->v.origin.z + kStandingHalfHumanHeight};
+				const float end[3] = {
+					x,
+					y,
+					observation.locomotion.position.z - kGroundProbeDepth};
+				if (!std::isfinite(x) || !std::isfinite(y) ||
+						!std::isfinite(start[2]) || !std::isfinite(end[2]))
+				{
+					return probe;
+				}
+
+				TraceResult trace = {};
+				RuntimeProfilerScope traceScope(
+					runtimeProfiler_, RuntimeProfilerStage::TraceLine);
+				if (runtimeProfiler_.enabled())
+				{
+					runtimeProfiler_.recordTraceLine(1U, 0U, 0U);
+				}
+			engineFunctions_->pfnTraceLine(
+					start, end, 1, handle.entity, &trace);
+				probe.sampled = true;
+				const float floorZ = trace.vecEndPos[2];
+				const float normalZ = trace.vecPlaneNormal[2];
+				if (!trace.fStartSolid && !trace.fAllSolid &&
+						std::isfinite(trace.flFraction) &&
+						trace.flFraction >= 0.0f && trace.flFraction < 1.0f &&
+						std::isfinite(floorZ) && std::isfinite(normalZ) &&
+						normalZ >= -1.0f && normalZ <= 1.0f && normalZ > 0.0f)
+				{
+					probe.hasGround = true;
+					probe.floorZ = floorZ;
+					probe.normalZ = normalZ;
+				}
+				return probe;
+			};
+
+			if (previousRoute.running)
+			{
+				lookahead.far80 = traceGroundAt(80.0f);
+			}
+			lookahead.near30 = traceGroundAt(30.0f);
+			lookahead.gap10 = traceGroundAt(10.0f);
+			// Near-ground fallback remains usable when the optional far probe misses
+			// or finds a slope (CSBot b0889847 cs_bot_nav.cpp:229-238).
+			lookahead.valid = lookahead.near30.sampled &&
+				lookahead.gap10.sampled;
+		}
 		runtimeProfiler_.recordObjectiveSelection(
 			objectiveSelectionStats.bombSites,
 			objectiveSelectionStats.funcBombTargetSites,
@@ -2707,6 +2828,7 @@ void PluginRuntime::updateManagedBotMovement()
 		runtime::NavRoamResult roamResult = runtime::NavRoamResult::NoRoute;
 		RuntimeProfilerScope navMovementScope(
 			runtimeProfiler_, RuntimeProfilerStage::NavMovement);
+		groundLookaheadRoute.reset();
 		if (performanceDisablePathSearch_)
 		{
 			roamDecision.failureReason = runtime::NavFailureReason::PathSearchFailed;
@@ -2726,6 +2848,30 @@ void PluginRuntime::updateManagedBotMovement()
 				observation,
 				&locomotionIntent,
 				&roamDecision);
+			const float routeDirectionLength = std::hypot(
+				locomotionIntent.direction.x,
+				locomotionIntent.direction.y);
+			if (roamResult == runtime::NavRoamResult::IntentReady &&
+					!observation.movementSuppressed && before.grounded &&
+					!before.onLadder && locomotionIntent.targetArea != 0U &&
+					std::isfinite(locomotionIntent.direction.x) &&
+					std::isfinite(locomotionIntent.direction.y) &&
+					std::isfinite(locomotionIntent.direction.z) &&
+					std::isfinite(routeDirectionLength) &&
+					routeDirectionLength >= 0.9f &&
+					routeDirectionLength <= 1.1f &&
+					std::isfinite(locomotionIntent.speed) &&
+					locomotionIntent.speed > 0.0f)
+			{
+				groundLookaheadRoute.actor = handle.actor;
+				groundLookaheadRoute.frame = observation.frame;
+				groundLookaheadRoute.targetArea = locomotionIntent.targetArea;
+				groundLookaheadRoute.direction = locomotionIntent.direction;
+				groundLookaheadRoute.running =
+					locomotionIntent.posture == nav::LocomotionPosture::Standing &&
+					locomotionIntent.speed >= 200.0f;
+				groundLookaheadRoute.active = true;
+			}
 			const bool objectivePathFailed =
 				(roamResult == runtime::NavRoamResult::NoRoute ||
 					roamResult == runtime::NavRoamResult::ReplanRequired) &&

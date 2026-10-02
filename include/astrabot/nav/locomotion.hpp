@@ -66,8 +66,27 @@ struct LocomotionConfig
 	std::uint32_t stuckFrameLimit;
 };
 
-	struct LocomotionObservation
-	{
+struct GroundProbeObservation
+{
+	bool sampled;
+	bool hasGround;
+	float floorZ;
+	float normalZ;
+};
+
+struct GroundLookaheadObservation
+{
+	bool valid;
+	AreaId targetArea;
+	NavVector direction;
+	bool running;
+	GroundProbeObservation far80;
+	GroundProbeObservation near30;
+	GroundProbeObservation gap10;
+};
+
+struct LocomotionObservation
+{
 		NavVector position;
 		float standingClearance;
 		float crouchingClearance;
@@ -78,6 +97,7 @@ struct LocomotionConfig
 	bool clearanceAvailable;
 	float maximumSafeDropHeight;
 	bool safeDropHeightAvailable;
+	GroundLookaheadObservation groundLookahead;
 };
 
 struct LocomotionIntent
