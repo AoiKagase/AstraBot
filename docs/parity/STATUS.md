@@ -1,5 +1,91 @@
 # CSBot Parity Status
 
+## 2026-10-02 full-update ground cadence and bounded off-mesh commands
+
+IMPLEMENTED_OFFLINE_VERIFIED for ground observation cadence and horizontal
+recovery command construction and bounded recovery-candidate reselection.
+Physical escape from a blocked off-mesh position remains LIVE_UNVERIFIED;
+failed/exhausted attempts are not counted as recovery success.
+
+Comparator: independently interpreted ReGameDLL_CS
+`b0889847fe6d03898be88acc9e366660efb40ab5`, `cs_bot_nav.cpp:202-253`
+(current-direction ground probes), `cs_bot.cpp:382` (StayOnNavMesh), and
+`cs_bot_nav.cpp` (Wiggle). This is a fixed public CSBot proxy. No specific
+ZBot binary/version or live differential run was available; no exact ZBot
+parity or proprietary-source reuse is claimed.
+
+- Read-only evidence: de_dust2 qconsole.log, SHA-256
+  `ad86503d384270d2b6636db29ca03c31cdf05c2af2148dea790164b7a1c8aa5b`.
+  Bert's 53 pre-ascent traversal observations had frame gaps 2 through 14,
+  none 1. The old route required exactly the next server frame although the
+  adapter probes only at full updates. The log contains an emitted jump and
+  ascent before subsequent area=0 recovery, so it does not prove that the
+  user's manual push alone caused ascent or identify its exact time.
+- The last-round four-bot stalls are observed with freeze=0. Recovery XY
+  direction shrank near 0.02 under 3D normalization, reducing 240-unit intent
+  to roughly 4-unit horizontal command speed. This is separate from pre-wall
+  missed lookahead and is not an objective waiting or freeze diagnosis.
+- Ground routes now require the next full-update sequence and age <=0.25 s,
+  a newer server frame, and unchanged actor/generation/map/round scope.
+  Traces are sampled afresh at the current position; target/direction and
+  existing grounding, NO_JUMP, drop/gap and height gates remain enforced.
+- Recovery independently chooses a NAV geometry candidate with height in
+  ranking (64-unit vertical tolerance), aims 5 units inside its XY bounds
+  (half-width for thin areas), records the actual target and normalizes XY
+  only. This is geometry-only, not proof of collision clearance or reachability.
+- After 20 consecutive unsuppressed full updates without >1-unit cumulative
+  improvement, the failed candidate is excluded, route state is cleared and
+  NoRoute/RecoveryNoProgress reports one candidate-failure event. The next full
+  update selects a different eligible candidate. Maximum four failed candidates
+  are retained; no eligible candidate or an exhausted four-attempt budget is
+  the final neutral-stop condition, not the first 20-update failure.
+- A candidate failure joins the existing objectivePathFailed feed. The existing
+  coordinator releases/reassigns the objective; PlantC4 keeps its existing
+  carrier-specific semantics. Goal replacement retains recovery exclusions,
+  preventing repeated selection of the same failed recovery area. Final blocked
+  updates do not repeatedly report objective failure. Exact NAV re-entry clears
+  recovery history before objective resolution and resumes normal route search.
+  >=8-unit external 3D displacement from the first failed position, actor/map/
+  round change or controller reset also permits a fresh attempt. FreezeTime
+  spends no progress budget. Final exhaustion may remain stopped if no new
+  position/lifecycle evidence arrives; there is no physical escape guarantee.
+- Opt-in profiler diagnostics add one groundRecovery record per bot per
+  second with update/route age, fresh far80/near30/gap10 trace values, selected
+  recovery point, geometry-only flag, no-progress count, one-shot candidate
+  failure flag and explicit reason.
+- RED evidence: old cadence fails normal/variable FPS adapter fixtures; old
+  recovery fails XY direction/target, stacked-height and bounded-progress
+  assertions. GREEN covers far-missing/sloped cases at baseline 10, 60, 90,
+  100, 128 and variable FPS (12 adapter scenarios), scope/age boundaries,
+  sequence wrap, FreezeTime, small XY/large Z, stacked/thin NAV, Z tolerance,
+  cutoff/reset transitions, cumulative progress and oscillation. These are
+  synthetic SDK fixtures, not physical BSP replay or live FPS measurements.
+- Additional RED: the first-stop implementation fails alternate-candidate
+  and public RunPlayerMove direction tests. GREEN: failed candidate -> different
+  candidate, all-candidate/four-attempt exhaustion, retained exclusions across
+  goal replacement, alternate NAV entry -> objective path search, public
+  RunPlayerMove alternate direction -> neutral only after both fixture candidates
+  fail -> routed movement after NAV entry. Recovery controller -> existing team
+  coordinator integration reassigns dropped C4 to another actor and lets the old
+  owner attempt another recovery area. NAV entry with an unresolved objective
+  also clears history. Fixtures are synthetic; they do not model engine physics.
+- Final HostX86/x86 MSVC 14.51.36231 Debug full build: PASS; CTest 56/56 PASS
+  (6.49 s); PE x86 and seven exact Metamod exports: PASS. Read-only final
+  review: no Critical/Important findings.
+- Working-tree build based on HEAD
+  `1feec9a5f0cb39da88b2291935cd34c011951071`: 1,210,880 bytes,
+  SHA-256 `0599732edd351866adffebec2f02972df88cd45a57fd29d1033e90c1269a629f`.
+  This records the pre-commit offline artifact. The approved October 3 local
+  commit/deployment receipt is reselection-deployment-receipt.json in the
+  execution workspace. The previous server DLL has SHA-256
+  `80c505ee1d75422845c1549507c1c2d20de88971516deb80f622b21d5b201980`.
+- Live wall clearance/landing, pushed-off-NAV automatic escape, actual FPS,
+  multi-bot performance and reference differential validation: NOT RUN.
+  Offline evidence: reselection-red.log and reselection-full-build.log in the
+  execution workspace; at offline verification, 10 tracked paths changed without staging or commit.
+  Recovery candidate selection scans all NAV areas; live cost is unmeasured.
+  P07/P07.6 remains PARTIAL. P08 is not started.
+
 ## 2026-10-02 combined round-freeze and ground-lookahead verification
 
 IMPLEMENTED_OFFLINE_VERIFIED. Normal Round_End schedules FreezeTime after

@@ -2707,10 +2707,12 @@ void PluginRuntime::updateManagedBotMovement()
 		observation.movementSuppressed = roundFreezeActive();
 		runtime::GroundLookaheadRoute &groundLookaheadRoute =
 			movementGroundLookaheadRoutes_[index];
+		const runtime::GroundLookaheadRoute probeRoute = groundLookaheadRoute;
 		if (observation.movementSuppressed || !before.grounded ||
 				before.onLadder ||
-				!groundLookaheadRoute.matchesNextFrame(
-					handle.actor, observation.frame) ||
+				!groundLookaheadRoute.matchesNextUpdate(
+					handle.actor, observation.frame,
+					managedBotFullUpdateSequences_[index], globals_->time) ||
 				engineFunctions_ == nullptr ||
 				engineFunctions_->pfnTraceLine == nullptr)
 		{
@@ -2865,6 +2867,8 @@ void PluginRuntime::updateManagedBotMovement()
 			{
 				groundLookaheadRoute.actor = handle.actor;
 				groundLookaheadRoute.frame = observation.frame;
+				groundLookaheadRoute.fullUpdateSequence = managedBotFullUpdateSequences_[index];
+				groundLookaheadRoute.createdAt = globals_->time;
 				groundLookaheadRoute.targetArea = locomotionIntent.targetArea;
 				groundLookaheadRoute.direction = locomotionIntent.direction;
 				groundLookaheadRoute.running =
@@ -2879,7 +2883,9 @@ void PluginRuntime::updateManagedBotMovement()
 					runtime::NavFailureReason::PathSearchFailed ||
 					roamDecision.failureReason == runtime::NavFailureReason::UnsafeDrop ||
 					roamDecision.failureReason == runtime::NavFailureReason::NavApplyRejected ||
-					roamDecision.failureReason == runtime::NavFailureReason::MovementNotProduced);
+					roamDecision.failureReason == runtime::NavFailureReason::MovementNotProduced ||
+					(roamDecision.failureReason == runtime::NavFailureReason::RecoveryNoProgress &&
+						roamDecision.recoveryCandidateFailed));
 			if (objectivePathFailed &&
 				roamDecision.goalKind == runtime::NavGoalKind::Objective)
 			{
@@ -2924,7 +2930,8 @@ void PluginRuntime::updateManagedBotMovement()
 				roamDecision.pathSearchStats.firstSearchId,
 				roamDecision.pathSearchStats.lastSearchId);
 		logGoalAssignmentDiagnostic(
-			index, before, roamDecision, locomotionIntent, roamResult);
+			index, before, roamDecision, locomotionIntent, roamResult,
+			observation.locomotion.groundLookahead, probeRoute);
 		if (roamDecision.recomputeReason != runtime::NavRecomputeReason::None)
 		{
 			runtimeProfiler_.recordPathRecompute();
@@ -5328,7 +5335,9 @@ void PluginRuntime::logGoalAssignmentDiagnostic(
 	const runtime::MovementPhysicsState &before,
 	const runtime::NavRoamDecision &decision,
 	const nav::LocomotionIntent &intent,
-	runtime::NavRoamResult roamResult)
+	runtime::NavRoamResult roamResult,
+	const nav::GroundLookaheadObservation &ground,
+	const runtime::GroundLookaheadRoute &probeRoute)
 {
 	if (!runtimeProfiler_.enabled() || index >= movementGoalDiagnosticSeconds_.size() ||
 		globals_ == nullptr || gpMetaUtilFuncs == nullptr ||
@@ -5419,6 +5428,32 @@ void PluginRuntime::logGoalAssignmentDiagnostic(
 		intent.direction.x, intent.direction.y, intent.direction.z, intent.speed,
 		before.origin.x, before.origin.y, before.origin.z,
 		before.grounded ? 1 : 0);
+	gpMetaUtilFuncs->pfnLogConsole(
+		pluginId_,
+		"profile groundRecovery bot_id=%u frame=%u now=%.3f "
+		"full_update=%u route_frame=%u route_update=%u route_age=%.3f "
+		"ground_valid=%d sampled_target=%u intent_target=%u "
+		"sample_direction=(%.3f %.3f %.3f) feet_z=%.1f "
+		"far80=(%d %d %.1f %.3f) near30=(%d %d %.1f %.3f) gap10=(%d %d %.1f %.3f) "
+		"recovery_area=%u recovery_target=(%.1f %.1f %.1f) "
+		"recovery_no_progress_updates=%u geometry_only=%d candidate_failed=%d failure_reason=%d",
+		static_cast<unsigned int>(managedBotHandles_[index].actor.slot),
+		static_cast<unsigned int>(adapterFrameCount_), globals_->time,
+		managedBotFullUpdateSequences_[index], probeRoute.frame.tick,
+		probeRoute.fullUpdateSequence, globals_->time - probeRoute.createdAt,
+		ground.valid ? 1 : 0, ground.targetArea, intent.targetArea,
+		ground.direction.x, ground.direction.y, ground.direction.z,
+		decision.observationPosition.z,
+		ground.far80.sampled ? 1 : 0, ground.far80.hasGround ? 1 : 0,
+		ground.far80.floorZ, ground.far80.normalZ,
+		ground.near30.sampled ? 1 : 0, ground.near30.hasGround ? 1 : 0,
+		ground.near30.floorZ, ground.near30.normalZ,
+		ground.gap10.sampled ? 1 : 0, ground.gap10.hasGround ? 1 : 0,
+		ground.gap10.floorZ, ground.gap10.normalZ,
+		decision.recoveryArea, decision.targetPosition.x,
+		decision.targetPosition.y, decision.targetPosition.z,
+		decision.recoveryNoProgressUpdates, decision.recoveryGeometryOnly ? 1 : 0,
+		decision.recoveryCandidateFailed ? 1 : 0, static_cast<int>(decision.failureReason));
 }
 
 void PluginRuntime::logTraversalDiagnostic(

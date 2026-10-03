@@ -14,6 +14,11 @@ namespace
 {
 	constexpr float kMaximumRecoveryDistance = 10000.0f;
 constexpr float kRoamSpeed = 240.0f;
+constexpr float kRecoveryInset = 5.0f;
+constexpr float kRecoveryLayerTolerance = 64.0f;
+constexpr float kMaximumGroundRouteAge = 0.25f;
+constexpr std::uint32_t kOffMeshNoProgressLimit = 20U;
+constexpr float kExternalRecoveryResetDistance = 8.0f;
 	constexpr std::uint32_t kStuckRecoveryFrameLimit = 8U;
 constexpr std::uint32_t kMaximumStuckRecoveryAttempts = 2U;
 constexpr std::uint32_t kInitialPathFailureBackoffFrames = 15U;
@@ -68,34 +73,68 @@ void initializeDecision(NavRoamDecision *decision)
 		decision->locomotionResult = nav::LocomotionResult::InvalidArgument;
 	}
 
-	bool buildRecoveryIntent(
-		const nav::NavAreaMatch &area,
+	// Geometry-only candidate selection. Public NAV cannot prove collision clearance.
+	bool selectRecoveryArea(const nav::NavSnapshot &snapshot,
 		const nav::LocomotionObservation &observation,
-		nav::LocomotionIntent *intent)
+		const nav::AreaId *excludedAreas, std::size_t excludedCount, nav::NavAreaMatch *match)
 	{
-		if (intent == nullptr)
+		const nav::NavDocument *document = snapshot.document();
+		float bestScore = std::numeric_limits<float>::max();
+		bool found = false;
+		for (const nav::NavArea &candidate : document->areas())
+		{
+			bool excluded = false;
+			for (std::size_t index = 0U; index < excludedCount; ++index)
+			{
+				excluded = excluded || excludedAreas[index] == candidate.id;
+			}
+			if (excluded) continue;
+			const float insetX = (std::min)(kRecoveryInset,
+				(candidate.extent.hi.x - candidate.extent.lo.x) * 0.5f);
+			const float insetY = (std::min)(kRecoveryInset,
+				(candidate.extent.hi.y - candidate.extent.lo.y) * 0.5f);
+			nav::NavVector point = {
+				(std::max)(candidate.extent.lo.x + insetX,
+					(std::min)(observation.position.x, candidate.extent.hi.x - insetX)),
+				(std::max)(candidate.extent.lo.y + insetY,
+					(std::min)(observation.position.y, candidate.extent.hi.y - insetY)), 0.0f};
+			point.z = nav::surfaceZAt(candidate, point.x, point.y);
+			const float dx = point.x - observation.position.x;
+			const float dy = point.y - observation.position.y;
+			const float dz = point.z - observation.position.z;
+			const float horizontalSquared = dx * dx + dy * dy;
+			const float score = horizontalSquared + dz * dz;
+			// Retain the existing 64-unit NAV vertical tolerance. Height participates
+			// in ranking so coincident layers do not reduce to the smallest area ID.
+			if (!std::isfinite(score) || std::fabs(dz) > kRecoveryLayerTolerance ||
+				horizontalSquared <= 0.00000001f ||
+				horizontalSquared > kMaximumRecoveryDistance * kMaximumRecoveryDistance ||
+				(found && (score > bestScore ||
+					(score == bestScore && candidate.id >= match->area))))
+			{
+				continue;
+			}
+			found = true;
+			bestScore = score;
+			*match = {candidate.id, horizontalSquared, point};
+		}
+		return found;
+	}
+
+	bool buildRecoveryIntent(const nav::NavAreaMatch &area,
+		const nav::LocomotionObservation &observation, nav::LocomotionIntent *intent)
+	{
+		const float dx = area.closestPoint.x - observation.position.x;
+		const float dy = area.closestPoint.y - observation.position.y;
+		const float length = std::hypot(dx, dy);
+		if (!std::isfinite(length) || length <= 0.0001f)
 		{
 			return false;
 		}
-		const nav::NavVector delta = {
-			area.closestPoint.x - observation.position.x,
-			area.closestPoint.y - observation.position.y,
-			area.closestPoint.z - observation.position.z};
-		const float length = std::sqrt(
-			delta.x * delta.x + delta.y * delta.y + delta.z * delta.z);
-		const float horizontalLength = std::hypot(delta.x, delta.y);
-		if (!std::isfinite(length) || length <= 0.0f ||
-				!std::isfinite(horizontalLength) || horizontalLength <= 0.0001f)
-		{
-			return false;
-		}
-		intent->direction = {
-			delta.x / length,
-			delta.y / length,
-			delta.z / length};
+		intent->direction = {dx / length, dy / length, 0.0f};
+		intent->targetPosition = area.closestPoint;
 		intent->speed = kRoamSpeed;
 		intent->posture = nav::LocomotionPosture::Standing;
-		intent->stepUp = false;
 		intent->currentArea = area.area;
 		intent->targetArea = area.area;
 		return true;
@@ -422,11 +461,14 @@ void GroundLookaheadRoute::reset()
 	direction = {};
 	running = false;
 	active = false;
+	fullUpdateSequence = 0U;
+	createdAt = 0.0f;
 }
 
-bool GroundLookaheadRoute::matchesNextFrame(
+bool GroundLookaheadRoute::matchesNextUpdate(
 	const ActorId &currentActor,
-	const world::FrameIdentity &currentFrame) const
+	const world::FrameIdentity &currentFrame,
+	std::uint32_t currentFullUpdate, float now) const
 {
 	const float directionLength = std::hypot(direction.x, direction.y);
 	return active && targetArea != 0U && actor.actorGeneration != 0U &&
@@ -434,7 +476,10 @@ bool GroundLookaheadRoute::matchesNextFrame(
 		actor.actorGeneration == currentActor.actorGeneration &&
 		frame.mapGeneration == currentFrame.mapGeneration &&
 		frame.roundGeneration == currentFrame.roundGeneration &&
-		static_cast<std::uint32_t>(currentFrame.tick - frame.tick) == 1U &&
+		currentFrame.tick > frame.tick &&
+		static_cast<std::uint32_t>(currentFullUpdate - fullUpdateSequence) == 1U &&
+		std::isfinite(createdAt) && std::isfinite(now) &&
+		now >= createdAt && now - createdAt <= kMaximumGroundRouteAge &&
 		std::isfinite(direction.x) && std::isfinite(direction.y) &&
 		std::isfinite(direction.z) && std::isfinite(directionLength) &&
 		directionLength >= 0.9f && directionLength <= 1.1f;
@@ -446,7 +491,8 @@ NavRoamController::NavRoamController()
 }
 
 NavRoamController::NavRoamController(compat::RuntimeMode mode)
-	: locomotion_(roamLocomotionConfig()),
+	: offMeshRecovery_{},
+	  locomotion_(roamLocomotionConfig()),
 	  activeTraversal_(nav::TraversalAction::Walk),
 	jumpDrop_(roamJumpDropConfig(mode)),
 	  specialTraversal_(),
@@ -654,6 +700,7 @@ NavRoamResult NavRoamController::update(
 	if (observation.frame.mapGeneration != lastFrame_.mapGeneration ||
 			observation.frame.roundGeneration != lastFrame_.roundGeneration)
 	{
+		offMeshRecovery_ = {};
 		clearPathFailure();
 		hasAvoidedLink_ = false;
 		avoidedLink_ = {0U, 0U, 0U, 0U};
@@ -673,6 +720,8 @@ NavRoamResult NavRoamController::update(
 			 std::fabs(objectiveTarget_.z - observation.objectiveTarget.z) > 0.5f));
 	if (objectiveTargetChanged)
 	{
+		// Goal reassignment cannot make a failed recovery point traversable.
+		// Retain candidate exclusions until movement/lifecycle provides new evidence.
 		clearPathFailure();
 		hasAvoidedLink_ = false;
 		avoidedLink_ = {0U, 0U, 0U, 0U};
@@ -794,30 +843,105 @@ NavRoamResult NavRoamController::update(
 				currentArea.area : 0U;
 			decision->nearestDistanceSquared = currentArea.distanceSquared;
 		}
-		if (!plannedLinkContinuation &&
-				(nearestResult != nav::NavQueryResult::Found ||
-					!buildRecoveryIntent(currentArea, observation.locomotion, intent)))
-		{
-			if (!hasActiveRoute_)
-			{
-				resetRoute();
-			}
-			if (decision != nullptr)
-			{
-				decision->failureReason = NavFailureReason::CurrentAreaMissing;
-				decision->stage = NavRoamStage::Failed;
-			}
-			return NavRoamResult::NoRoute;
-		}
 		if (!plannedLinkContinuation)
 		{
+			const nav::NavVector &position = observation.locomotion.position;
+			const nav::NavVector &blocked = offMeshRecovery_.blockedPosition;
+			const float externalDisplacement = std::hypot(
+				std::hypot(position.x - blocked.x, position.y - blocked.y),
+				position.z - blocked.z);
+			if (offMeshRecovery_.failedAreaCount != 0U &&
+				externalDisplacement >= kExternalRecoveryResetDistance)
+			{
+				offMeshRecovery_ = {};
+			}
+			if (!offMeshRecovery_.blocked &&
+				selectRecoveryArea(snapshot, observation.locomotion,
+					offMeshRecovery_.failedAreas.data(), offMeshRecovery_.failedAreaCount, &currentArea) &&
+				buildRecoveryIntent(currentArea, observation.locomotion, intent))
+			{
+				const float distance = std::sqrt(currentArea.distanceSquared);
+				if (!offMeshRecovery_.active)
+				{
+					offMeshRecovery_.active = true;
+					offMeshRecovery_.noProgressUpdates = 0U;
+					offMeshRecovery_.bestDistance = distance;
+				}
+				else if (currentArea.area == offMeshRecovery_.area &&
+					distance + 1.0f < offMeshRecovery_.bestDistance)
+				{
+					offMeshRecovery_.bestDistance = distance;
+					offMeshRecovery_.noProgressUpdates = 0U;
+				}
+				else
+				{
+					++offMeshRecovery_.noProgressUpdates;
+					if (currentArea.area != offMeshRecovery_.area)
+					{
+						offMeshRecovery_.bestDistance = distance;
+					}
+				}
+				offMeshRecovery_.area = currentArea.area;
+				offMeshRecovery_.target = currentArea.closestPoint;
+				if (offMeshRecovery_.noProgressUpdates >= kOffMeshNoProgressLimit)
+				{
+					if (offMeshRecovery_.failedAreaCount == 0U)
+					{
+						offMeshRecovery_.blockedPosition = position;
+					}
+					offMeshRecovery_.failedAreas[offMeshRecovery_.failedAreaCount++] = currentArea.area;
+					offMeshRecovery_.blocked = offMeshRecovery_.failedAreaCount ==
+						offMeshRecovery_.failedAreas.size();
+					offMeshRecovery_.active = false;
+					resetRoute();
+					// Report this failed attempt for existing objective reassignment.
+					// The next update selects an untried candidate if budget remains.
+					*intent = {};
+					if (decision != nullptr)
+					{
+						decision->stage = NavRoamStage::Failed;
+						decision->failureReason = NavFailureReason::RecoveryNoProgress;
+						decision->recoveryCandidateFailed = true;
+						decision->recoveryArea = currentArea.area;
+						decision->targetPosition = currentArea.closestPoint;
+						decision->recoveryNoProgressUpdates = offMeshRecovery_.noProgressUpdates;
+						decision->recoveryGeometryOnly = true;
+					}
+					return NavRoamResult::NoRoute;
+				}
+				else
+				{
+					if (decision != nullptr)
+					{
+						decision->stage = NavRoamStage::OffMeshRecovery;
+						decision->failureReason = NavFailureReason::CurrentAreaMissing;
+						decision->recoveryArea = currentArea.area;
+						decision->targetArea = currentArea.area;
+						decision->targetPosition = currentArea.closestPoint;
+						decision->nearestDistanceSquared = currentArea.distanceSquared;
+						decision->recoveryNoProgressUpdates = offMeshRecovery_.noProgressUpdates;
+						decision->recoveryGeometryOnly = true;
+					}
+					return NavRoamResult::IntentReady;
+				}
+			}
+			// No eligible geometry candidates remain, or the attempt cap was reached.
+			if (offMeshRecovery_.failedAreaCount != 0U)
+			{
+				offMeshRecovery_.blocked = true;
+			}
+			*intent = {};
 			if (decision != nullptr)
 			{
-				decision->failureReason = NavFailureReason::CurrentAreaMissing;
-				decision->stage = NavRoamStage::OffMeshRecovery;
-				decision->targetArea = currentArea.area;
+				decision->failureReason = offMeshRecovery_.blocked
+					? NavFailureReason::RecoveryNoProgress : NavFailureReason::CurrentAreaMissing;
+				decision->stage = NavRoamStage::Failed;
+				decision->recoveryArea = offMeshRecovery_.blocked ? offMeshRecovery_.area : 0U;
+				decision->targetPosition = offMeshRecovery_.blocked ? offMeshRecovery_.target : nav::NavVector{};
+				decision->recoveryNoProgressUpdates = offMeshRecovery_.noProgressUpdates;
+				decision->recoveryGeometryOnly = true;
 			}
-			return NavRoamResult::IntentReady;
+			return NavRoamResult::NoRoute;
 		}
 	}
 	if (currentAreaResult != nav::NavQueryResult::Found &&
@@ -839,6 +963,10 @@ NavRoamResult NavRoamController::update(
 	{
 		decision->stage = NavRoamStage::ExactArea;
 		decision->currentArea = currentArea.area;
+	}
+	if (currentAreaResult == nav::NavQueryResult::Found)
+	{
+		offMeshRecovery_ = {};
 	}
 	if (observation.hasObjectiveTarget && objectiveArea == 0U)
 	{
@@ -1480,6 +1608,7 @@ void NavRoamController::reset()
 	{
 		reservationBoard_->release(actor_);
 	}
+	offMeshRecovery_ = {};
 	resetRoute();
 	actor_ = {0U, LifecycleSession::kInvalidGeneration};
 	lastFrame_ = {};

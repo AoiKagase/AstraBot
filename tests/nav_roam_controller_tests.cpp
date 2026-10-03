@@ -3,6 +3,7 @@
 
 #include <cmath>
 #include <cstdio>
+#include <limits>
 
 namespace
 {
@@ -34,31 +35,57 @@ astrabot::nav::NavArea area(
 
 bool testGroundLookaheadRouteIsScopedToTheNextMatchingFrame()
 {
-	astrabot::runtime::GroundLookaheadRoute route = {};
+	using namespace astrabot;
+	runtime::GroundLookaheadRoute route = {};
 	route.actor = {3U, 11U};
 	route.frame = {5U, 7U, 100U};
+	route.fullUpdateSequence = 8U;
+	route.createdAt = 10.0f;
 	route.targetArea = 42U;
 	route.direction = {1.0f, 0.0f, 0.0f};
 	route.running = true;
 	route.active = true;
-
-	const astrabot::runtime::ActorId actor = {3U, 11U};
-	const astrabot::world::FrameIdentity nextFrame = {5U, 7U, 101U};
-	if (!check(route.matchesNextFrame(actor, nextFrame),
-			"ground-lookahead route is reusable for its actor on the next frame"))
+	const runtime::ActorId actor = {3U, 11U};
+	bool passed = true;
+	// Observed pre-ascent gaps were 2..14 server frames, never one.
+	for (std::uint32_t gap = 1U; gap <= 14U; ++gap)
 	{
-		return false;
+		passed = check(route.matchesNextUpdate(actor, {5U, 7U, 100U + gap}, 9U, 10.1f),
+			"fresh route is usable at the next full update independent of server frame gap") && passed;
 	}
-
-	return check(
-		!route.matchesNextFrame({3U, 12U}, nextFrame) &&
-			!route.matchesNextFrame({4U, 11U}, nextFrame) &&
-			!route.matchesNextFrame(actor, {6U, 7U, 101U}) &&
-			!route.matchesNextFrame(actor, {5U, 8U, 101U}) &&
-			!route.matchesNextFrame(actor, {5U, 7U, 102U}),
-		"ground-lookahead route expires on actor, map, round, or frame change");
+	passed = check(!route.matchesNextUpdate({3U, 12U}, {5U, 7U, 112U}, 9U, 10.1f) &&
+		!route.matchesNextUpdate({4U, 11U}, {5U, 7U, 112U}, 9U, 10.1f) &&
+		!route.matchesNextUpdate(actor, {6U, 7U, 112U}, 9U, 10.1f) &&
+		!route.matchesNextUpdate(actor, {5U, 8U, 112U}, 9U, 10.1f) &&
+		!route.matchesNextUpdate(actor, {5U, 7U, 100U}, 9U, 10.1f) &&
+		!route.matchesNextUpdate(actor, {5U, 7U, 112U}, 8U, 10.1f) &&
+		!route.matchesNextUpdate(actor, {5U, 7U, 112U}, 10U, 10.1f) &&
+		!route.matchesNextUpdate(actor, {5U, 7U, 112U}, 9U, 10.3f) &&
+		!route.matchesNextUpdate(actor, {5U, 7U, 112U}, 9U, 9.9f),
+		"scope rejects actor/map/round, duplicate frame/update, skipped update, old age and clock reversal") && passed;
+	passed = check(route.matchesNextUpdate(actor, {5U, 7U, 112U}, 9U, 10.25f) &&
+		!route.matchesNextUpdate(actor, {5U, 7U, 112U}, 9U, 10.2501f) &&
+		!route.matchesNextUpdate(actor, {5U, 7U, 112U}, 9U,
+			std::numeric_limits<float>::quiet_NaN()) &&
+		!route.matchesNextUpdate(actor, {5U, 7U, 112U}, 9U,
+			std::numeric_limits<float>::infinity()),
+		"route freshness includes .25 boundary and rejects non-finite clocks") && passed;
+	route.fullUpdateSequence = (std::numeric_limits<std::uint32_t>::max)();
+	passed = check(route.matchesNextUpdate(actor, {5U, 7U, 112U}, 0U, 10.1f) &&
+		!route.matchesNextUpdate(actor, {5U, 7U, 112U}, 1U, 10.1f),
+		"full update wrap accepts only the immediate successor") && passed;
+	route.fullUpdateSequence = 8U;
+	route.targetArea = 0U;
+	passed = check(!route.matchesNextUpdate(actor, {5U, 7U, 112U}, 9U, 10.1f),
+		"route without a target cannot be sampled") && passed;
+	route.targetArea = 42U;
+	route.direction = {0.02f, 0.0f, -1.0f};
+	passed = check(!route.matchesNextUpdate(actor, {5U, 7U, 112U}, 9U, 10.1f),
+		"off-mesh direction cannot become a ground-probe route") && passed;
+	route.reset();
+	return check(!route.matchesNextUpdate(actor, {5U, 7U, 112U}, 9U, 10.1f),
+		"reset expires the route") && passed;
 }
-
 bool testJumpTraversalAction()
 {
 	astrabot::nav::NavDocument document;
@@ -1766,8 +1793,273 @@ bool testReservationBudgetFallbackIsDiagnosed()
 			"shared-route fallback records that the distinct-route budget ended");
 }
 
+bool testOffMeshRecoveryHasHorizontalProgressAndBounds()
+{
+	using namespace astrabot;
+	bool passed = true;
+	for (int scenario = 0; scenario < 4; ++scenario)
+	{
+		nav::NavDocument document;
+		document.setSourceIdentity({5U, 100U, 200U});
+		document.addArea(area(1U, 0.0f, 64.0f));
+		if (scenario == 1)
+		{
+			nav::NavArea upper = area(2U, 0.0f, 64.0f);
+			upper.extent.lo.z = upper.extent.hi.z = 96.0f;
+			upper.northEastZ = upper.southWestZ = 96.0f;
+			document.addArea(upper);
+		}
+		nav::NavSnapshotPublisher publisher;
+		publisher.publish(&document, 1U);
+		runtime::NavRoamController controller;
+		runtime::NavRoamObservation observation = {};
+		observation.actor = {3U, 1U};
+		observation.frame = {1U, 8U, 40158U};
+		observation.locomotion.position = {-0.25f, 32.0f, 40.0f};
+		observation.locomotion.grounded = true;
+		if (scenario == 1) observation.locomotion.position.z = 96.0f;
+		if (scenario == 2) observation.locomotion.position = {32.0f, 32.0f, 200.0f};
+		nav::LocomotionIntent intent = {};
+		runtime::NavRoamDecision decision = {};
+		auto result = controller.update(publisher.snapshot(), observation, &intent, &decision);
+		if (scenario == 2)
+		{
+			passed = check(result == runtime::NavRoamResult::NoRoute && intent.speed == 0.0f,
+				"recovery does not steer vertically toward a remote stacked floor") && passed;
+			continue;
+		}
+		passed = check(result == runtime::NavRoamResult::IntentReady &&
+			std::fabs(intent.direction.x - 1.0f) < 0.001f && intent.direction.z == 0.0f &&
+			intent.targetPosition.x > 0.0f && intent.targetPosition.x < 64.0f &&
+			decision.targetPosition.x == intent.targetPosition.x && intent.speed == 240.0f,
+			"small XY / large Z recovery moves horizontally into the area and reports its target") && passed;
+		if (scenario == 1)
+		{
+			passed = check(intent.targetArea == 2U,
+				"stacked NAV recovery prefers the compatible floor over the lower area id") && passed;
+		}
+		if (scenario != 3) continue;
+		// Replay the observed 12-server-frame gap, with 100 suppressed updates.
+		observation.movementSuppressed = true;
+		for (int update = 0; update < 100; ++update)
+		{
+			observation.frame.tick += 12U;
+			result = controller.update(publisher.snapshot(), observation, &intent, &decision);
+		}
+		passed = check(result == runtime::NavRoamResult::MovementSuppressed,
+			"freeze suppresses off-mesh recovery without spending its progress budget") && passed;
+		observation.movementSuppressed = false;
+		observation.frame.tick += 12U;
+		result = controller.update(publisher.snapshot(), observation, &intent, &decision);
+		passed = check(result == runtime::NavRoamResult::IntentReady,
+			"off-mesh recovery resumes after a long freeze") && passed;
+		for (int update = 0; update < 35; ++update)
+		{
+			observation.frame.tick += 12U;
+			result = controller.update(publisher.snapshot(), observation, &intent, &decision);
+		}
+		passed = check(result == runtime::NavRoamResult::NoRoute && intent.speed == 0.0f &&
+			decision.failureReason != runtime::NavFailureReason::CurrentAreaMissing,
+			"stationary off-mesh recovery ends with an explicit bounded no-progress failure") && passed;
+		observation.actor.actorGeneration = 2U;
+		observation.frame.tick += 12U;
+		result = controller.update(publisher.snapshot(), observation, &intent, &decision);
+		passed = check(result == runtime::NavRoamResult::IntentReady,
+			"new actor generation does not inherit a blocked recovery") && passed;
+	}
+	return passed;
+}
+bool testRecoveryBudgetAndStateTransitions()
+{
+	using namespace astrabot;
+	nav::NavDocument document;
+	document.setSourceIdentity({5U, 100U, 200U});
+	document.addArea(area(1U, 0.0f, 64.0f));
+	nav::NavSnapshotPublisher publisher;
+	publisher.publish(&document, 1U);
+	runtime::NavRoamObservation observation = {};
+	observation.actor = {3U, 1U};
+	observation.frame = {1U, 8U, 40158U};
+	observation.locomotion.position = {-8.0f, 32.0f, 40.0f};
+	observation.locomotion.grounded = true;
+	bool passed = true;
+	for (int transition = 0; transition < 8; ++transition)
+	{
+		runtime::NavRoamController controller;
+		auto obs = observation;
+		nav::LocomotionIntent intent = {};
+		runtime::NavRoamDecision decision = {};
+		controller.update(publisher.snapshot(), obs, &intent, &decision);
+		for (int update = 1; update <= 20; ++update)
+		{
+			obs.frame.tick += 12U;
+			const auto result = controller.update(publisher.snapshot(), obs, &intent, &decision);
+			passed = check(update < 20 ? result == runtime::NavRoamResult::IntentReady :
+				(result == runtime::NavRoamResult::NoRoute && intent.speed == 0.0f &&
+				 intent.direction.x == 0.0f && intent.direction.y == 0.0f &&
+				 decision.failureReason == runtime::NavFailureReason::RecoveryNoProgress),
+				"recovery fails with neutral intent exactly at twenty no-progress updates") && passed;
+		}
+		obs.frame.tick += 12U;
+		passed = check(controller.update(publisher.snapshot(), obs, &intent, &decision) ==
+			runtime::NavRoamResult::NoRoute && intent.speed == 0.0f,
+			"blocked recovery stays neutral at the same position") && passed;
+		if (transition == 0) obs.actor.actorGeneration++;
+		if (transition == 1) obs.frame.roundGeneration++;
+		if (transition == 2)
+		{
+			obs.frame.mapGeneration = 2U;
+			publisher.publish(&document, 2U);
+		}
+		if (transition == 3)
+		{
+			obs.hasObjectiveTarget = true;
+			obs.objectiveTarget = {32.0f, 32.0f, 0.0f};
+		}
+		if (transition == 4) controller.reset();
+		if (transition == 5) obs.locomotion.position.y += 8.0f;
+		if (transition == 6 || transition == 7)
+		{
+			if (transition == 7)
+			{
+				obs.hasObjectiveTarget = true;
+				obs.objectiveTarget = {1000000.0f, 1000000.0f, 0.0f};
+			}
+			obs.frame.tick += 12U;
+			obs.locomotion.position = {16.0f, 32.0f, 0.0f};
+			controller.update(publisher.snapshot(), obs, &intent, &decision);
+			obs.locomotion.position = observation.locomotion.position;
+			obs.hasObjectiveTarget = false;
+		}
+		obs.frame.tick += 12U;
+		passed = check(controller.update(publisher.snapshot(), obs, &intent, &decision) ==
+			(transition == 3 ? runtime::NavRoamResult::NoRoute : runtime::NavRoamResult::IntentReady) &&
+			(transition == 3 || decision.recoveryNoProgressUpdates == 0U),
+			"lifecycle/push/mesh entry resets recovery; objective change retains failed candidates") && passed;
+		publisher.publish(&document, 1U);
+	}
+	for (int moving = 0; moving < 2; ++moving)
+	{
+		runtime::NavRoamController controller;
+		auto obs = observation;
+		nav::LocomotionIntent intent = {};
+		runtime::NavRoamDecision decision = {};
+		controller.update(publisher.snapshot(), obs, &intent, &decision);
+		runtime::NavRoamResult result = runtime::NavRoamResult::InvalidArgument;
+		for (int update = 1; update <= 25; ++update)
+		{
+			obs.frame.tick += 12U;
+			obs.locomotion.position.x = moving ? -8.0f + update * 0.2f :
+				-8.0f + (update % 2 ? 0.25f : -0.25f);
+			result = controller.update(publisher.snapshot(), obs, &intent, &decision);
+		}
+		passed = check(moving ? result == runtime::NavRoamResult::IntentReady :
+			result == runtime::NavRoamResult::NoRoute,
+			"accumulated forward progress resets budget while sub-unit oscillation does not") && passed;
+	}
+	nav::NavDocument narrow;
+	narrow.setSourceIdentity({5U, 100U, 200U});
+	auto thin = area(2U, 0.0f, 6.0f);
+	thin.extent.hi.y = 6.0f;
+	narrow.addArea(thin);
+	thin.id = 1U;
+	narrow.addArea(thin);
+	publisher.publish(&narrow, 1U);
+	auto obs = observation;
+	obs.locomotion.position = {-0.25f, 3.0f, 64.0f};
+	runtime::NavRoamController controller;
+	nav::LocomotionIntent intent = {};
+	runtime::NavRoamDecision decision = {};
+	passed = check(controller.update(publisher.snapshot(), obs, &intent, &decision) ==
+		runtime::NavRoamResult::IntentReady && intent.targetArea == 1U &&
+		intent.targetPosition.x == 3.0f && intent.targetPosition.y == 3.0f,
+		"narrow-area inset remains inside, Z64 is accepted, and ties use stable area id") && passed;
+	obs.frame.tick += 12U;
+	obs.locomotion.position.z = 64.01f;
+	return check(controller.update(publisher.snapshot(), obs, &intent, &decision) ==
+		runtime::NavRoamResult::NoRoute, "incompatible layer beyond Z64 is rejected") && passed;
+}
+
+bool testRecoveryReselectsBeforeExhaustion()
+{
+	using namespace astrabot;
+	nav::NavDocument document;
+	document.setSourceIdentity({5U, 100U, 200U});
+	for (nav::AreaId id = 1U; id <= 5U; ++id)
+	{
+		auto candidate = area(id, (id - 1U) * 64.0f, (id - 1U) * 64.0f + 64.0f);
+		if (id < 5U) candidate.connections[1].push_back(id + 1U);
+		document.addArea(candidate);
+	}
+	nav::NavSnapshotPublisher publisher;
+	publisher.publish(&document, 1U);
+	runtime::NavRoamObservation obs = {};
+	obs.actor = {3U, 1U};
+	obs.frame = {1U, 8U, 100U};
+	obs.locomotion.position = {-8.0f, 32.0f, 40.0f};
+	obs.locomotion.grounded = true;
+	obs.locomotion.standingClearance = 72.0f;
+	obs.locomotion.crouchingClearance = 36.0f;
+	obs.collectPathStats = true;
+	obs.hasObjectiveTarget = true;
+	obs.objectiveTarget = {288.0f, 32.0f, 0.0f};
+	bool passed = true;
+	for (int enterMesh = 0; enterMesh < 2; ++enterMesh)
+	{
+		runtime::NavRoamController controller;
+		auto observation = obs;
+		nav::LocomotionIntent intent = {};
+		runtime::NavRoamDecision decision = {};
+		for (nav::AreaId attempted = 1U; attempted <= (enterMesh ? 1U : 4U); ++attempted)
+		{
+			observation.frame.tick++;
+			passed = check(controller.update(publisher.snapshot(), observation, &intent, &decision) ==
+				runtime::NavRoamResult::IntentReady && intent.targetArea == attempted,
+				"no-progress recovery selects a different untried candidate") && passed;
+			for (int update = 0; update < 20; ++update)
+			{
+				observation.frame.tick++;
+				controller.update(publisher.snapshot(), observation, &intent, &decision);
+			}
+			passed = check(decision.failureReason == runtime::NavFailureReason::RecoveryNoProgress &&
+				intent.speed == 0.0f && decision.recoveryArea == attempted,
+				"candidate failure is reported with the failed area before reselection") && passed;
+		}
+		observation.frame.tick++;
+		// A higher-level goal replacement must not restart the failed-candidate loop.
+		observation.objectiveTarget = {224.0f, 32.0f, 0.0f};
+		const auto result = controller.update(publisher.snapshot(), observation, &intent, &decision);
+		passed = check(enterMesh ? result == runtime::NavRoamResult::IntentReady && intent.targetArea == 2U :
+			result == runtime::NavRoamResult::NoRoute && intent.speed == 0.0f,
+			"goal replacement retains exclusions and four-attempt limit") && passed;
+		if (enterMesh)
+		{
+			observation.frame.tick++;
+			observation.locomotion.position = {96.0f, 32.0f, 0.0f};
+			const auto entered = controller.update(publisher.snapshot(), observation, &intent, &decision);
+			passed = check(entered == runtime::NavRoamResult::IntentReady && decision.pathSearchStats.searchCalls > 0U &&
+				decision.currentArea == 2U,
+				"successful alternate NAV entry resumes objective path search") && passed;
+		}
+		else
+		{
+			for (int update = 0; update < 100; ++update)
+			{
+				observation.frame.tick++;
+				passed = check(controller.update(publisher.snapshot(), observation, &intent, &decision) ==
+					runtime::NavRoamResult::NoRoute && intent.speed == 0.0f,
+					"exhausted attempt budget never cycles into an unbounded retry") && passed;
+			}
+		}
+	}
+	return passed;
+}
+
 int main()
 {
+	if (!testOffMeshRecoveryHasHorizontalProgressAndBounds() ||
+		!testRecoveryBudgetAndStateTransitions() ||
+		!testRecoveryReselectsBeforeExhaustion()) return 1;
 	if (!testGroundLookaheadRouteIsScopedToTheNextMatchingFrame())
 	{
 		return 1;

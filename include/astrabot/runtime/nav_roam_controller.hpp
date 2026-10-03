@@ -43,13 +43,16 @@ namespace astrabot
 		world::FrameIdentity frame;
 		nav::AreaId targetArea;
 		nav::NavVector direction;
+		std::uint32_t fullUpdateSequence;
+		float createdAt;
 		bool running;
 		bool active;
 
 		void reset();
-		bool matchesNextFrame(
+		bool matchesNextUpdate(
 			const ActorId &currentActor,
-			const world::FrameIdentity &currentFrame) const;
+			const world::FrameIdentity &currentFrame,
+			std::uint32_t currentFullUpdate, float now) const;
 	};
 
 	enum class NavRoamResult
@@ -131,7 +134,8 @@ enum class NavFailureReason
 	PathSearchFailed,
 	NavApplyRejected,
 	MovementNotProduced,
-	UnsafeDrop
+	UnsafeDrop,
+	RecoveryNoProgress
 };
 
 		struct NavRoamDecision
@@ -166,6 +170,9 @@ enum class NavFailureReason
 			nav::AreaId targetArea;
 			float nearestDistanceSquared;
 			nav::NavVector targetPosition;
+	std::uint32_t recoveryNoProgressUpdates;
+	bool recoveryGeometryOnly;
+	bool recoveryCandidateFailed;
 			nav::NavVector intentDirection;
 			nav::NavVector observationPosition;
 			nav::NavVector observationVelocity;
@@ -262,6 +269,19 @@ class NavRoamController
 			bool isActive() const;
 
 	private:
+	struct OffMeshRecoveryState
+	{
+		nav::AreaId area;
+		nav::NavVector target;
+		nav::NavVector blockedPosition;
+		float bestDistance;
+		std::uint32_t noProgressUpdates;
+		std::array<nav::AreaId, 4U> failedAreas;
+		std::size_t failedAreaCount;
+		bool active;
+		bool blocked;
+	};
+	OffMeshRecoveryState offMeshRecovery_;
 	struct PathFailureKey
 	{
 		std::uint32_t mapGeneration;

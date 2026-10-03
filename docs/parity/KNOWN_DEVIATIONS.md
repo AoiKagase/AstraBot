@@ -1,5 +1,32 @@
 # P00 Known Deviations and Blockers
 
+## 2026-10-02 ground cadence and off-mesh recovery limits
+
+- Fixed ReGameDLL_CS CSBot is a public reference proxy, not a verified match
+  for an identified proprietary ZBot release. No live differential trace exists.
+- Ground probing now survives normal full-update/server-frame cadence while
+  retaining freshness. Prior-route direction, the 16-unit configured step and
+  41.8-unit upward limit still differ from the reference current-direction and
+  DiscontinuityJump semantics.
+- Height-aware NAV candidate selection and XY normalization repair command
+  construction, not physical reachability. No hull/clearance or landing evidence
+  supports an automatic wall escape guarantee. All-area scan cost is unmeasured.
+- RecoveryNoProgress excludes each failed candidate after 20 non-progress full
+  updates and reports one objective failure, then chooses an untried eligible
+  recovery area on the next update. At most four failed candidates are retained;
+  exhaustion/no eligible candidates produces neutral final failure. Goal changes
+  retain exclusions. NAV re-entry (including unresolved objective), >=8-unit
+  displacement from the first failure anchor, actor/map/round changes or reset
+  clear history. FreezeTime does not consume the budget. This differs from
+  reference Wiggle/stuck behavior. Physical escape is LIVE_UNVERIFIED; final
+  exhaustion can persist without new evidence. Existing team coordinator failure
+  handling is used without changing its PlantC4 carrier-specific semantics.
+- Runtime groundRecovery diagnostics are opt-in and rate-limited. New synthetic
+  FPS fixtures prove command output only, not live server FPS or clearance.
+- This offline record predates the approved October 3 local commit/deployment.
+  See STATUS.md for build evidence and the execution-workspace deployment receipt
+  for the commit, backup and deployed DLL identity.
+
 ## P06 perception deviations
 
 - Core separates observed contact, believed last-known contact, and unknown

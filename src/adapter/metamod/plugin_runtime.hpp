@@ -337,7 +337,9 @@ struct ManagedObjectiveSiteRegistry
 			const runtime::MovementPhysicsState &before,
 			const runtime::NavRoamDecision &decision,
 			const nav::LocomotionIntent &intent,
-			runtime::NavRoamResult result);
+			runtime::NavRoamResult result,
+			const nav::GroundLookaheadObservation &ground,
+			const runtime::GroundLookaheadRoute &probeRoute);
 	void logTraversalDiagnostic(
 		std::size_t index,
 		const runtime::MovementPhysicsState &before,

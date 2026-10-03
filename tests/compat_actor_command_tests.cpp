@@ -25,6 +25,7 @@ byte gLastRunPlayerMoveMsec = 0U;
 float gLastRunPlayerMoveForward = 0.0f;
 float gLastRunPlayerMoveSide = 0.0f;
 float gLastRunPlayerMoveUp = 0.0f;
+float gLastRunPlayerMoveYaw = 0.0f;
 	bool gDirectJoinCommandSeen = false;
 	bool gServerSetsEntityTeam = true;
 	char gLastClientCommand[32] = {};
@@ -318,7 +319,7 @@ edict_t *findEntityByString(edict_t *start, const char *field, const char *value
 }
 
 void runPlayerMove(
-	edict_t *, const float *, float forward, float side, float up, unsigned short buttons, byte, byte msec)
+	edict_t *, const float *angles, float forward, float side, float up, unsigned short buttons, byte, byte msec)
 {
 	++gRunPlayerMoveCount;
 	gLastRunPlayerMoveButtons = buttons;
@@ -326,6 +327,7 @@ void runPlayerMove(
 	gLastRunPlayerMoveForward = forward;
 	gLastRunPlayerMoveSide = side;
 	gLastRunPlayerMoveUp = up;
+	gLastRunPlayerMoveYaw = angles[1];
 }
 
 void setClientMaxspeed(const edict_t *entity, float maxspeed)
@@ -423,6 +425,11 @@ int32 jumpFixtureRandomLong(int32, int32 high)
 	return high;
 }
 
+int32 recoveryFixtureRandomLong(int32 low, int32)
+{
+	return low;
+}
+
 float jumpFixtureRandomFloat(float low, float)
 {
 	return low;
@@ -460,7 +467,7 @@ void traceJumpGround(const float *start, const float *, int, edict_t *actor, Tra
 	}
 }
 
-bool writeJumpNavigation(const char *path)
+bool writeJumpNavigation(const char *path, bool recovery = false)
 {
 	std::vector<std::uint8_t> bytes;
 	const auto appendU32 = [&](std::uint32_t value)
@@ -491,8 +498,9 @@ bool writeJumpNavigation(const char *path)
 		}
 		for (unsigned int direction = 0U; direction < 4U; ++direction)
 		{
-			appendU32(direction == 0U ? 1U : 0U);
-			if (direction == 0U)
+			const unsigned int linkDirection = recovery ? (id == 1U ? 1U : 3U) : 0U;
+			appendU32(direction == linkDirection ? 1U : 0U);
+			if (direction == linkDirection)
 			{
 				appendU32(3U - id);
 			}
@@ -536,7 +544,7 @@ bool testRuntimeNearJumpFallback(
 	gObjectiveEntitiesAvailable = false;
 	gServerSetsEntityTeam = true;
 	bool passed = true;
-	for (int mode = 0; mode < 2; ++mode)
+	for (int mode = 0; mode < 12; ++mode)
 	{
 		runtime.executeCompatibilityCommand(request("bot_kick", 1U, "all"));
 		resetEntities();
@@ -560,10 +568,16 @@ bool testRuntimeNearJumpFallback(
 		gEntities[0].v.maxs = Vector(16.0f, 16.0f, 36.0f);
 		gEntities[0].v.maxspeed = 240.0f;
 		bool jumped = false;
-		for (int frame = 0; frame < 12 && !jumped; ++frame)
+		for (int frame = 0; frame < 300 && !jumped; ++frame)
 		{
 			gLastRunPlayerMoveButtons = 0U;
-			globals.time += 0.1f;
+			const float frameSteps[] = {0.1f, 1.0f / 60.0f, 1.0f / 90.0f,
+				0.01f, 1.0f / 128.0f};
+			const int cadence = mode / 2;
+			const float variableSteps[] = {1.0f / 128.0f, 1.0f / 60.0f,
+				0.01f, 1.0f / 90.0f, 0.035f};
+			globals.time += cadence < 5 ? frameSteps[cadence] :
+				variableSteps[frame % 5];
 			runtime.onStartFrame();
 			runtime.onStartFramePost();
 			jumped = (gLastRunPlayerMoveButtons & static_cast<unsigned short>(IN_JUMP)) != 0U;
@@ -611,6 +625,69 @@ bool testRuntimeNearJumpFallback(
 	}
 	runtime.executeCompatibilityCommand(request("bot_kick", 1U, "all"));
 	engine.pfnTraceLine = nullptr;
+	return passed;
+}
+
+bool testRuntimeRecoveryReselection(
+	astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &engine, globalvars_t &globals)
+{
+	const char *path = "astrabot_actor_recovery.nav";
+	if (!writeJumpNavigation(path, true)) return false;
+	const astrabot::metamod::NavLoadRequest load =
+		{path, "astrabot_actor_recovery", runtime.snapshot().mapGeneration, false, 0U, false, 0U};
+	const auto loaded = runtime.loadNavigationFile(&load);
+	std::remove(path);
+	if (!check(loaded == astrabot::metamod::NavLoadResult::Loaded, "recovery NAV loaded")) return false;
+	runtime.executeCompatibilityCommand(request("bot_kick", 1U, "all"));
+	resetEntities();
+	gCreateCount = 0;
+	gObjectiveEntitiesAvailable = false;
+	gServerSetsEntityTeam = true;
+	engine.pfnTraceLine = nullptr;
+	engine.pfnRandomLong = &recoveryFixtureRandomLong;
+	runtime.giveEnginePointers(&engine, &globals);
+	runtime.onRoundLifecycleMessage("World triggered \"Round_Start\"\n");
+	if (runtime.executeCompatibilityCommand(request("bot_add_t")) !=
+		astrabot::metamod::CompatibilityCommandResult::Handled) return false;
+	gEntities[0].v.flags = FL_CLIENT | FL_FAKECLIENT | FL_ONGROUND;
+	gEntities[0].v.team = 1;
+	gEntities[0].v.deadflag = DEAD_NO;
+	gEntities[0].v.health = 100.0f;
+	gEntities[0].v.solid = SOLID_SLIDEBOX;
+	gEntities[0].v.movetype = MOVETYPE_WALK;
+	gEntities[0].v.origin = Vector(32.0f, -8.0f, 76.0f);
+	gEntities[0].v.mins = Vector(-16.0f, -16.0f, -36.0f);
+	gEntities[0].v.maxs = Vector(16.0f, 16.0f, 36.0f);
+	gEntities[0].v.maxspeed = 240.0f;
+	bool first = false;
+	bool alternate = false;
+	for (int frame = 0; frame < 100; ++frame)
+	{
+		globals.time += 0.12f;
+		runtime.onStartFrame();
+		runtime.onStartFramePost();
+		if (gLastRunPlayerMoveForward > 200.0f)
+		{
+			first = first || std::fabs(gLastRunPlayerMoveYaw - 90.0f) < 1.0f;
+			alternate = alternate || (first && gLastRunPlayerMoveYaw > 0.0f && gLastRunPlayerMoveYaw < 40.0f);
+		}
+	}
+	bool passed = check(first && alternate,
+		"public RunPlayerMove changes recovery direction to the alternate NAV candidate after failure");
+	passed = check(gLastRunPlayerMoveForward == 0.0f && gLastRunPlayerMoveSide == 0.0f,
+		"public recovery becomes neutral only after both candidates fail") && passed;
+	gEntities[0].v.origin = Vector(96.0f, 32.0f, 36.0f);
+	bool resumed = false;
+	for (int frame = 0; frame < 6; ++frame)
+	{
+		globals.time += 0.12f;
+		runtime.onStartFrame();
+		runtime.onStartFramePost();
+		resumed = resumed || gLastRunPlayerMoveForward > 0.0f || gLastRunPlayerMoveSide != 0.0f;
+	}
+	passed = check(resumed, "public NAV re-entry resumes routed movement") && passed;
+	runtime.executeCompatibilityCommand(request("bot_kick", 1U, "all"));
+	engine.pfnRandomLong = &jumpFixtureRandomLong;
 	return passed;
 }
 
@@ -1597,7 +1674,8 @@ int main()
 		return 1;
 	}
 
-	if (!testRuntimeNearJumpFallback(runtime, engineFunctions, globals))
+	if (!testRuntimeNearJumpFallback(runtime, engineFunctions, globals) ||
+		!testRuntimeRecoveryReselection(runtime, engineFunctions, globals))
 	{
 		std::remove(profilePath);
 		return 1;

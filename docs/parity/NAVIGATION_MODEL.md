@@ -1,5 +1,44 @@
 # P07 Navigation, Pathfinding, Movement, and Traversal Model
 
+## 2026-10-02 bounded cadence/recovery amendment
+
+Fresh ground samples are collected on the next full movement update, not the
+next server frame. The saved route carries actor/frame, full-update sequence,
+creation time, target and unit XY direction. It expires after 0.25 s and is
+rejected on duplicate/skipped updates, scope changes or target/direction
+mismatch; physical trace results themselves are never retained across updates.
+Reference CSBot probes along the current requested direction. Astra still uses
+the prior scoped direction and rejects disagreement in Core. Its configured
+16-unit step and 41.8-unit upward envelope remain bounded deviations; the
+reference DiscontinuityJump upward branch does not impose this same cap.
+
+Without a valid planned traversal continuation, off-mesh recovery selects an
+inset NAV geometry point, using XY squared distance plus Z squared distance,
+64-unit vertical tolerance and deterministic area-ID ties. XY direction is
+unit length and Z is zero, so a height mismatch cannot collapse horizontal
+command speed. The intent and diagnostic target agree. This substitutes public
+geometry for reference last-known/nearest-area semantics and cannot establish
+that a wall, hull or landing path is traversable.
+
+No-progress state counts unsuppressed full updates. More than one unit of
+cumulative best-distance improvement resets the count; oscillation or candidate
+switching does not restart the budget. After 20 updates the candidate is excluded,
+the route is cleared and NoRoute/RecoveryNoProgress reports a one-shot failure.
+The next update tries a different eligible NAV area. Four failed areas is the
+fixed attempt limit. Neutral final failure occurs only when eligible candidates
+or this budget are exhausted. Objective changes retain exclusions; new goals
+cannot prove an old recovery candidate reachable. Candidate failures propagate
+through the existing objective path-failure feed; final blocked updates do not
+repeat the notification. The coordinator retains its existing assignment and
+carrier rules. NAV re-entry clears history even if the objective is unresolved,
+then normal objective/roam route search resumes. >=8-unit displacement from the
+first failure anchor, actor/map/round change or explicit reset permits new trials.
+
+This is a bounded independent fallback, not CSBot's randomized Wiggle/stuck
+algorithm. NAV candidate selection is geometry-only and cannot prove hull,
+wall or landing clearance. Physical escape and scan cost remain live-unverified;
+exhausted recovery may stay stopped until new position/lifecycle evidence arrives.
+
 ## Reference identity
 
 The pinned comparator is ReGameDLL-CS commit `b0889847fe6d03898be88acc9e366660efb40ab5`.

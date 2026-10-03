@@ -1,4 +1,5 @@
 #include "astrabot/team/round_objective_coordinator.hpp"
+#include "astrabot/runtime/nav_roam_controller.hpp"
 
 #include <cmath>
 #include <cstdio>
@@ -353,8 +354,27 @@ bool testPathFailureReassignsDroppedC4ToAnotherReachableActor()
 		return false;
 	}
 	const auto failedAssignment = assignments.assignments[0U];
+	astrabot::runtime::NavRoamController movement;
+	astrabot::runtime::NavRoamObservation observation = {};
+	observation.actor = {failedAssignment.actor.slot, failedAssignment.actor.generation};
+	observation.frame = {1U, 4U, 100U};
+	observation.locomotion.position = {232.0f, -8.0f, 40.0f};
+	observation.locomotion.grounded = true;
+	observation.hasObjectiveTarget = true;
+	observation.objectiveTarget = {332.0f, 32.0f, 0.0f};
+	astrabot::nav::LocomotionIntent intent = {};
+	astrabot::runtime::NavRoamDecision decision = {};
+	movement.update(nav.snapshot(), observation, &intent, &decision);
+	for (int update = 0; update < 20; ++update)
+	{
+		observation.frame.tick++;
+		movement.update(nav.snapshot(), observation, &intent, &decision);
+	}
+	if (!check(decision.recoveryCandidateFailed && decision.recoveryArea == 2U &&
+		decision.failureReason == astrabot::runtime::NavFailureReason::RecoveryNoProgress,
+		"off-mesh no-progress emits one candidate failure for objective reassignment")) return false;
 	coordinator.reportPathFailure(
-		failedAssignment.actor, failedAssignment.generation, 2U,
+		failedAssignment.actor, failedAssignment.generation, decision.recoveryArea,
 		input.frameSequence);
 	if (!check(coordinator.assign(input, nav.snapshot(), &assignments) ==
 			astrabot::team::TeamObjectiveResult::Assigned &&
@@ -363,6 +383,12 @@ bool testPathFailureReassignsDroppedC4ToAnotherReachableActor()
 	{
 		return false;
 	}
+	observation.frame.tick++;
+	observation.hasObjectiveTarget = false;
+	if (!check(movement.update(nav.snapshot(), observation, &intent, &decision) ==
+		astrabot::runtime::NavRoamResult::IntentReady && intent.targetArea != 2U &&
+		!decision.recoveryCandidateFailed,
+		"released objective owner selects another recovery candidate without repeating failure")) return false;
 	coordinator.reportPathFailure(
 		failedAssignment.actor, failedAssignment.generation, 2U,
 		input.frameSequence);
