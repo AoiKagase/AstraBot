@@ -11,14 +11,16 @@ namespace metamod
 		  registry_(registry),
 		  queue_(lifecycle, registry),
 		  engineFunctions_(nullptr),
+		  profiler_(nullptr),
 		  boundActors_(),
 		  boundEntities_()
 	{
 	}
 
-	void InputDispatcher::configure(enginefuncs_t *engineFunctions)
+	void InputDispatcher::configure(enginefuncs_t *engineFunctions, RuntimeProfiler *profiler)
 	{
 		engineFunctions_ = engineFunctions;
+		profiler_ = profiler;
 	}
 
 	void InputDispatcher::reset()
@@ -27,6 +29,7 @@ namespace metamod
 		boundActors_.fill({0U, 0U});
 		boundEntities_.fill(nullptr);
 		engineFunctions_ = nullptr;
+		profiler_ = nullptr;
 	}
 
 	runtime::QueueResult InputDispatcher::enqueue(const runtime::BotCommand &command)
@@ -136,6 +139,9 @@ namespace metamod
 		};
 		boundEntities_[index]->v.button = command.movement.buttons;
 		boundEntities_[index]->v.impulse = command.movement.impulse;
+		const bool profileMove = profiler_ != nullptr && profiler_->enabled();
+		const auto moveStart = profileMove ? std::chrono::steady_clock::now()
+			: std::chrono::steady_clock::time_point();
 		engineFunctions_->pfnRunPlayerMove(
 				boundEntities_[index],
 				viewAngles,
@@ -145,6 +151,13 @@ namespace metamod
 				command.movement.buttons,
 				command.movement.impulse,
 				command.movement.msec);
+		if (profileMove)
+		{
+			const auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(
+				std::chrono::steady_clock::now() - moveStart).count();
+			profiler_->record(RuntimeProfilerStage::RunPlayerMove,
+				elapsed > 0 ? static_cast<std::uint64_t>(elapsed) : 0U);
+		}
 		receipt.result = runtime::DispatchResult::Dispatched;
 		return receipt;
 	}

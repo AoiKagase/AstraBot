@@ -1,6 +1,7 @@
 #include "astrabot/runtime/movement_physics.hpp"
 
 #include <cstdio>
+#include <limits>
 
 namespace
 {
@@ -123,10 +124,52 @@ int main()
 	state.dead = false;
 	state.grounded = false;
 	if (!check(astrabot::runtime::spawnReadiness(state) == SpawnReadiness::NotReady,
-			   "airborne entity is not navigation ready"))
+			   "initial airborne entity is not spawn ready"))
 	{
 		return 1;
 	}
+
+	if (!check(astrabot::runtime::movementReadiness(state) == SpawnReadiness::Ready,
+			"continuing alive joined airborne entity is movement ready"))
+	{
+		return 1;
+	}
+	state.team = 0;
+	if (!check(astrabot::runtime::movementReadiness(state) == SpawnReadiness::NotReady,
+			"airborne entity still requires a confirmed team")) return 1;
+	state.teamConfirmed = true;
+	if (!check(astrabot::runtime::movementReadiness(state) == SpawnReadiness::Ready,
+			"airborne TeamInfo-confirmed entity remains movement ready")) return 1;
+	state.spectator = true;
+	if (!check(astrabot::runtime::movementReadiness(state) == SpawnReadiness::NotReady,
+			"airborne spectator never becomes movement ready")) return 1;
+	state.spectator = false;
+	state.dead = true;
+	if (!check(astrabot::runtime::movementReadiness(state) == SpawnReadiness::NotReady,
+			"airborne dead entity never becomes movement ready")) return 1;
+	state.dead = false;
+	state.health = 0.0f;
+	if (!check(astrabot::runtime::movementReadiness(state) == SpawnReadiness::NotReady,
+			"airborne zero-health entity never becomes movement ready")) return 1;
+	state.health = std::numeric_limits<float>::quiet_NaN();
+	if (!check(astrabot::runtime::movementReadiness(state) == SpawnReadiness::NotReady,
+			"airborne nonfinite health never becomes movement ready")) return 1;
+	state.health = 100.0f;
+	state.solid = 0;
+	if (!check(astrabot::runtime::movementReadiness(state) == SpawnReadiness::NotReady,
+			"airborne nonsolid entity never becomes movement ready")) return 1;
+	state.solid = 3;
+	state.movetype = 0;
+	if (!check(astrabot::runtime::movementReadiness(state) == SpawnReadiness::NotReady,
+			"airborne invalid movetype never becomes movement ready")) return 1;
+	state.movetype = 3;
+	state.fakeClient = false;
+	if (!check(astrabot::runtime::movementReadiness(state) == SpawnReadiness::NotReady,
+			"human entity never becomes managed movement ready")) return 1;
+	state.fakeClient = true;
+	state.entityValid = false;
+	if (!check(astrabot::runtime::movementReadiness(state) == SpawnReadiness::NotReady,
+			"invalid entity never becomes movement ready")) return 1;
 
 	return 0;
 }

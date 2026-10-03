@@ -25,7 +25,7 @@ void saturatingAdd(std::uint64_t *value, std::uint64_t amount) noexcept
 }
 
 RuntimeProfiler::RuntimeProfiler() noexcept
-	: enabled_(false), windowStartSeconds_(0.0), counters_(), searchKeys_(),
+	: enabled_(false), windowStartSeconds_(0.0), wallWindowStart_(), counters_(), searchKeys_(),
 	  searchKeyCount_(0U)
 {
 	clearCounters();
@@ -38,6 +38,8 @@ void RuntimeProfiler::setEnabled(bool enabled, double nowSeconds) noexcept
 		return;
 	}
 	enabled_ = enabled;
+	wallWindowStart_ = enabled ? std::chrono::steady_clock::now()
+		: std::chrono::steady_clock::time_point();
 	windowStartSeconds_ = std::isfinite(nowSeconds) ? nowSeconds : 0.0;
 	clearCounters();
 }
@@ -401,6 +403,10 @@ bool RuntimeProfiler::consumeReport(
 	}
 	*report = counters_;
 	report->windowSeconds = nowSeconds - windowStartSeconds_;
+	const auto wallNow = std::chrono::steady_clock::now();
+	report->wallWindowSeconds = std::chrono::duration<double>(wallNow - wallWindowStart_).count();
+	report->frameCount = counters_.stages[static_cast<std::size_t>(RuntimeProfilerStage::StartFrame)].calls;
+	wallWindowStart_ = wallNow;
 	windowStartSeconds_ = nowSeconds;
 	clearCounters();
 	return true;

@@ -13,6 +13,7 @@
 #include "astrabot/combat/combat_intent.hpp"
 #include "astrabot/compat/state_machine.hpp"
 #include "astrabot/objectives/round_objectives.hpp"
+#include "astrabot/objectives/bomb_site_route_selection.hpp"
 #include "astrabot/team/round_objective_coordinator.hpp"
 #include "astrabot/perception/perception.hpp"
 #include "astrabot/runtime/nav_roam_controller.hpp"
@@ -65,6 +66,7 @@ struct ManagedObjectiveTargetCache
 	team::TeamObjectiveKind teamObjectiveKind;
 	bool diagnosticsEmitted;
 	bool lastCacheHit;
+	float approachRouteSeconds;
 	int rawTeam;
 	int effectiveTeam;
 	bool teamInfoFresh;
@@ -326,6 +328,8 @@ struct ManagedObjectiveSiteRegistry
 	const team::TeamObjectiveAssignment *findManagedTeamObjectiveAssignment(
 		const world::ActorKey &actor) const;
 	void refreshManagedObjectiveSiteRegistry();
+	float managedRoundRemainingSeconds() const;
+	bool managedActorAtBombSite(std::size_t index) const;
 		bool roundFreezeActive() const;
 			void resetManagedBotMovement();
 		void logMovementDiagnostic(
@@ -394,7 +398,7 @@ void logTraversalOutcome(
 			CompatibilitySurface compatibilitySurface_;
 			compat::EngineRandomSource compatibilityRandomSource_;
 			ObservationAdapter observationAdapter_;
-			RuntimeProfiler runtimeProfiler_;
+			mutable RuntimeProfiler runtimeProfiler_;
 			NavLoader navLoader_;
 			nav::NavSnapshotPublisher navPublisher_;
 			NavLoadDiagnostic navLoadDiagnostic_;
@@ -439,6 +443,8 @@ void logTraversalOutcome(
 		std::array<ManagedObjectiveTargetCache,
 			NativeBotObservation::kClientSlotCount>
 			managedBotObjectiveTargets_;
+	std::array<objectives::BombApproachState, NativeBotObservation::kClientSlotCount>
+		managedBombApproaches_{};
 	team::RoundObjectiveCoordinator managedTeamObjectiveCoordinator_;
 	team::TeamObjectiveAssignmentSet managedTeamObjectiveAssignments_{};
 	std::uint32_t managedTeamObjectiveAssignmentMapGeneration_ = 0U;
@@ -525,6 +531,8 @@ void logTraversalOutcome(
 		std::array<std::uint32_t,
 			NativeBotObservation::kClientSlotCount>
 			movementGoalDiagnosticSeconds_;
+		std::array<float, NativeBotObservation::kClientSlotCount>
+			movementGateDiagnosticTimes_;
 		std::array<std::uint32_t,
 			NativeBotObservation::kClientSlotCount>
 			movementTraversalDiagnosticSeconds_;

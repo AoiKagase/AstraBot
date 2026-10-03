@@ -1,5 +1,22 @@
 # P00 Known Deviations and Blockers
 
+## 2026-10-03 remaining live and strategy limits
+
+- Airborne command continuity and landing feedback are tested with synthetic SDK
+  states. Real jump clearance, walls, hull collisions and landing remain untested.
+- UnsafeDrop retries use an Astra-specific bounded frame budget. Directed bypass
+  and another-CT handoff are exercised offline; real-map alternate-route safety
+  is not guaranteed. Total server A* cost and FPS still require live measurement.
+- Preplant variation moves toward reachable sites, not arbitrary whole-map Hunt.
+  Later nearest selection uses existing Fastest costs, not reference SAFEST costs
+  with aggression/team danger. A/B final plant ratios are neither guaranteed nor
+  used as evidence of parity. No learner or battle-result scoring is connected.
+- Added profiling distinguishes NAV, engine callbacks and synchronous runtime
+  console logs, while outer scopes remain inclusive. FakeClientManager lifecycle
+  logs outside PluginRuntime are not included in the new synchronous-log stage.
+- This offline amendment preceded the subsequent approved local release. See
+  STATUS and the execution-workspace deployment receipt for release identity.
+
 ## 2026-10-02 ground cadence and off-mesh recovery limits
 
 - Fixed ReGameDLL_CS CSBot is a public reference proxy, not a verified match

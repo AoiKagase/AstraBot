@@ -1,4 +1,7 @@
 #include "astrabot/objectives/round_objectives.hpp"
+#include "astrabot/objectives/bomb_site_route_selection.hpp"
+#include <limits>
+#include "astrabot/compat/random_source.hpp"
 
 #include "astrabot/perception/perception.hpp"
 
@@ -194,10 +197,123 @@ bool testUnknownFeedbackAndRoundStaleness()
 		"stale round generation cannot reuse objective planner state");
 }
 
+namespace
+{
+class SeedRandom : public astrabot::compat::ICompatibilityRandomSource
+{
+  public:
+	explicit SeedRandom(std::uint32_t seed) : state(seed)
+	{
+	}
+	astrabot::compat::RandomFloatResult nextFloat(const astrabot::compat::RandomRequest &r) override
+	{
+		++calls;
+		state = state * 1664525U + 1013904223U;
+		return {astrabot::compat::RandomStatus::Ok,
+				r.floatLower + (r.floatUpper - r.floatLower) * static_cast<float>(state >> 8U) / 16777216.0f};
+	}
+	astrabot::compat::RandomLongResult nextLong(const astrabot::compat::RandomRequest &r) override
+	{
+		++calls;
+		state = state * 1664525U + 1013904223U;
+		return {astrabot::compat::RandomStatus::Ok,
+				r.longLower + static_cast<std::int32_t>((state >> 8U) %
+														static_cast<std::uint32_t>(r.longUpper - r.longLower + 1))};
+	}
+	std::uint32_t state;
+	unsigned calls = 0U;
+};
+} // namespace
+
+bool testBombApproachVarietyAndPersistence()
+{
+	using namespace astrabot::objectives;
+	bool sawA = false, sawB = false;
+	for (std::uint32_t seed = 1U; seed <= 32U; ++seed)
+	{
+		SeedRandom random(seed), replay(seed);
+		BombApproachState state{}, same{};
+		const astrabot::compat::RandomActor actor = {2U, 1U};
+		const astrabot::compat::RandomTimingContext timing = {0U, 0U, 1U};
+		beginBombApproach(&state, 1U, seed, actor, 100.0f, 100.0f, 120.0f, 20.0f, &random, timing);
+		beginBombApproach(&same, 1U, seed, actor, 100.0f, 100.0f, 120.0f, 20.0f, &replay, timing);
+		const float costs[] = {4304.7f, 5032.3f};
+		const std::size_t selected = chooseBombApproachSite(costs, 2U, &random, actor, timing);
+		const std::size_t repeated = chooseBombApproachSite(costs, 2U, &replay, actor, timing);
+		sawB = sawB || selected == 0U;
+		sawA = sawA || selected == 1U;
+		if (!check(selected == repeated && state.plantAt == same.plantAt,
+				   "same seed reproduces approach site and plant timer") ||
+			!check(state.plantAt >= 110.0f && state.plantAt <= 130.0f,
+				   "plant decision starts after bounded preplant travel"))
+			return false;
+		const float deadline = state.plantAt;
+		const unsigned calls = random.calls;
+		for (unsigned frame = 2U; frame < 20U; ++frame)
+		{
+			beginBombApproach(&state, 1U, seed, actor, 101.0f, 100.0f, 119.0f, 20.0f, &random, {0U, 0U, frame});
+			if (!check(state.plantAt == deadline && random.calls == calls,
+					   "same carrier round does not restart timer or resample per update") ||
+				!check(bombApproachPhase(&state, 101.0f, 119.0f, 20.0f, true, false, false) ==
+						   BombApproachPhase::Approach,
+					   "approach stays active before deadline"))
+				return false;
+		}
+		if (!check(bombApproachPhase(&state, deadline, 90.0f, 20.0f, true, false, false) == BombApproachPhase::Plant,
+				   "deadline resumes nearest-site planting") ||
+			!check(bombApproachPhase(&state, deadline - 1.0f, 90.0f, 20.0f, true, false, false) ==
+					   BombApproachPhase::Plant,
+				   "finished approach cannot switch back"))
+			return false;
+	}
+	return check(sawA && sawB, "multiple seeds and rounds can approach either reachable site despite B being cheaper");
+}
+
+bool testBombApproachFallbackAndHumanPlant()
+{
+	using namespace astrabot::objectives;
+	SeedRandom random(7U);
+	const astrabot::compat::RandomActor actor = {2U, 1U};
+	const astrabot::compat::RandomTimingContext timing = {0U, 0U, 1U};
+	const float costs[] = {-1.0f, 5032.3f, std::numeric_limits<float>::infinity()};
+	if (!check(chooseBombApproachSite(costs, 3U, &random, actor, timing) == 1U,
+			   "unreachable sites cannot become approach destinations") ||
+		!check(chooseBombApproachSite(costs, 3U, nullptr, actor, timing) == 1U,
+			   "missing RNG falls back to reachable cheapest site"))
+		return false;
+	BombApproachState state{};
+	beginBombApproach(&state, 1U, 1U, actor, 100.0f, 100.0f, 25.0f, 20.0f, &random, timing);
+	if (!check(state.finished && state.plantAt == 100.0f,
+			   "urgent round reserves travel plus plant margin instead of delaying"))
+		return false;
+	beginBombApproach(&state, 1U, 2U, actor, 100.0f, 100.0f, 120.0f, 20.0f, &random, timing);
+	if (!check(bombApproachPhase(&state, 101.0f, 25.0f, 20.0f, true, false, false) == BombApproachPhase::Plant,
+			   "urgency interrupts approach before plant reserve is lost"))
+		return false;
+	beginBombApproach(&state, 1U, 3U, actor, 100.0f, 100.0f, 120.0f, 20.0f, &random, timing);
+	if (!check(bombApproachPhase(&state, 101.0f, 119.0f, 20.0f, true, true, false) == BombApproachPhase::Cancel,
+			   "human planted C4 cancels old carrier approach immediately"))
+		return false;
+	beginBombApproach(&state, 1U, 3U, {3U, 1U}, 102.0f, 100.0f, 118.0f, 20.0f, &random, timing);
+	if (!check(!state.finished && state.actorSlot == 3U, "actual carrier change starts a fresh approach") ||
+		!check(bombApproachPhase(&state, 103.0f, 117.0f, 20.0f, false, false, false) == BombApproachPhase::Cancel,
+			   "dropped C4 releases approach"))
+		return false;
+	beginBombApproach(&state, 1U, 4U, actor, 100.0f, 100.0f, 120.0f, 20.0f, nullptr, timing);
+	if (!check(state.finished, "missing RNG uses immediate nearest-site fallback"))
+		return false;
+	beginBombApproach(&state, 1U, 5U, actor, 140.0f, 100.0f, 120.0f, 20.0f, &random, timing);
+	if (!check(state.finished, "late bomb pickup does not start another 10 to 30 second wait"))
+		return false;
+	beginBombApproach(&state, 1U, 6U, actor, 100.0f, 100.0f, 120.0f, 20.0f, &random, timing);
+	return check(bombApproachPhase(&state, 101.0f, 119.0f, 20.0f, true, false, true) == BombApproachPhase::Plant,
+				 "arrival in a plant site permits early planting");
+}
+
 int main()
 {
-	if (!testBombHostageAndBuyProposals() ||
-			!testUnknownFeedbackAndRoundStaleness())
+	if (!testBombApproachVarietyAndPersistence() || !testBombApproachFallbackAndHumanPlant() ||
+		!testBombHostageAndBuyProposals() || !testUnknownFeedbackAndRoundStaleness())
 	{
 		return 1;
 	}

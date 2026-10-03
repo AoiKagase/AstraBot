@@ -1,5 +1,31 @@
 # P07 Navigation, Pathfinding, Movement, and Traversal Model
 
+## 2026-10-03 flight, dangerous-route identity and preplant amendment
+
+Grounding is required for initial spawn settling and new jumps, not established
+movement readiness. Flight continues the existing NAV/traversal route and landing
+tracker; public command dispatch clears IN_JUMP until grounded. Invalid player
+state and FreezeTime continue to gate movement.
+
+Objective UnsafeDrop history belongs to bomb entity id/generation and a directed
+link, with grounded XY progress measured from a fixed anchor. Assignment generation
+or temporary roam goals do not erase it. One directed-link bypass precedes bounded
+128/256/512 active-server-frame retries. Original-route reevaluation at expiry still
+passes the physical safety veto. >=64-unit grounded movement, new bomb or lifecycle
+reset releases history. Core suppression and coordinator handoff are distinct;
+timings must be examined by caller, not inferred from total A* success counts.
+
+Carrier preplant decisions are stored separately from the target cache and team
+assignment generation. The existing compatibility RNG chooses a 10..30-second
+decision timestamp from FreezeTime start and a reachable site-directed approach.
+That site remains stable until decision/arrival/urgency; then one fresh closest
+route is selected from the carrier's moved position. Both approach and remaining
+round budget reserve route travel and five seconds for planting. Missing authority
+uses nearest-route fallback. This is deliberately bounded movement variation;
+reference full-map Hunt, danger-weighted routing and learned site selection remain
+outside this change. Future learning can score choices at this existing boundary
+in the allowed runtime mode; recording more NAV data alone cannot create A actions.
+
 ## 2026-10-02 bounded cadence/recovery amendment
 
 Fresh ground samples are collected on the next full movement update, not the

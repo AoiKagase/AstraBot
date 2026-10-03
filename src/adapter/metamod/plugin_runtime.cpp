@@ -341,7 +341,7 @@ void addNavSearchStats(nav::NavSearchStats *total, const nav::NavSearchStats &sa
 			"WorldPublish", "Perception", "RuntimeInput", "RuntimeFullUpdate",
 			"FullUpdateObjective", "ObjectiveCandidateNavEvaluate",
 			"NavCurrentAreaLookup", "PathSearch", "PathRecompute", "NavMovement",
-			"MovementDispatch", "TraceSerialization"};
+			"MovementDispatch", "TraceSerialization", "RunPlayerMove", "SynchronousLog"};
 		const std::size_t index = static_cast<std::size_t>(stage);
 		return index < static_cast<std::size_t>(RuntimeProfilerStage::Count)
 			? names[index] : "Unknown";
@@ -359,34 +359,13 @@ void addNavSearchStats(nav::NavSearchStats *total, const nav::NavSearchStats &sa
 			? names[index] : "Unknown";
 	}
 
-	class RuntimeProfilerScope
+	template<typename... Args>
+	void profiledLogConsole(RuntimeProfiler &profiler, plid_t pluginId,
+		const char *format, Args... args)
 	{
-	public:
-		RuntimeProfilerScope(
-			RuntimeProfiler &profiler, RuntimeProfilerStage stage) noexcept
-			: profiler_(profiler), stage_(stage), enabled_(profiler.enabled()),
-			  start_(enabled_ ? std::chrono::steady_clock::now()
-						: std::chrono::steady_clock::time_point())
-		{
-		}
-
-		~RuntimeProfilerScope()
-		{
-			if (!enabled_)
-			{
-				return;
-			}
-			const auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(
-				std::chrono::steady_clock::now() - start_).count();
-			profiler_.record(stage_, elapsed > 0 ? static_cast<std::uint64_t>(elapsed) : 0U);
-		}
-
-	private:
-		RuntimeProfiler &profiler_;
-		RuntimeProfilerStage stage_;
-		bool enabled_;
-		std::chrono::steady_clock::time_point start_;
-	};
+		RuntimeProfilerScope logScope(profiler, RuntimeProfilerStage::SynchronousLog);
+		gpMetaUtilFuncs->pfnLogConsole(pluginId, format, args...);
+	}
 
 	bool entityObjectiveBounds(const edict_t *entity, nav::NavExtent *extent)
 	{
@@ -514,7 +493,7 @@ bool isBombTargetClassname(const char *classname)
 	};
 
 	void logObjectiveTargetDiagnostic(
-		plid_t pluginId,
+		RuntimeProfiler &profiler, plid_t pluginId,
 		std::uint32_t targetId,
 		int entityIndex,
 		const char *classname,
@@ -538,7 +517,7 @@ bool isBombTargetClassname(const char *classname)
 		{
 			return;
 		}
-		gpMetaUtilFuncs->pfnLogConsole(
+		profiledLogConsole(profiler,
 			pluginId,
 			"profile objectiveTarget target_id=%u entity_index=%d classname=%s "
 			"registered_site_count=%u registered_func_bomb_target_count=%u "
@@ -743,6 +722,7 @@ const char *const kPerformanceCvarNames[kPerformanceCvarCount] = {
 		movementPhysicsSamples_(),
 		movementReadyLogged_(),
 		movementGoalDiagnosticSeconds_(),
+		movementGateDiagnosticTimes_(),
 		movementTraversalDiagnosticSeconds_(),
 		movementTraversalPending_(),
 		movementDispatchFrames_(),
@@ -758,6 +738,7 @@ const char *const kPerformanceCvarNames[kPerformanceCvarCount] = {
 	performanceDisablePathSearch_(false),
 			  originalBotEnable_(0.0f), originalBotQuota_(0.0f)
 		{
+			movementGateDiagnosticTimes_.fill(std::numeric_limits<float>::quiet_NaN());
 		}
 
 		PluginRuntime &PluginRuntime::instance()
@@ -947,7 +928,7 @@ const char *const kPerformanceCvarNames[kPerformanceCvarCount] = {
 		if (gpMetaUtilFuncs != nullptr && gpMetaUtilFuncs->pfnLogConsole != nullptr &&
 				pluginId_ != nullptr)
 			{
-				gpMetaUtilFuncs->pfnLogConsole(
+				profiledLogConsole(runtimeProfiler_,
 					pluginId_, "give engine pointers engine=%p globals=%p",
 					static_cast<const void *>(engineFunctions), static_cast<const void *>(globals));
 			}
@@ -1286,7 +1267,7 @@ void PluginRuntime::onServerActivate(edict_t *edictList, int edictCount, int cli
 			if (gpMetaUtilFuncs != nullptr && gpMetaUtilFuncs->pfnLogConsole != nullptr &&
 				pluginId_ != nullptr)
 			{
-				gpMetaUtilFuncs->pfnLogConsole(
+				profiledLogConsole(runtimeProfiler_,
 					pluginId_, "server activate state=%d engine=%p globals=%p",
 					static_cast<int>(state_), static_cast<const void *>(engineFunctions_),
 					static_cast<const void *>(globals_));
@@ -1320,11 +1301,11 @@ void PluginRuntime::onServerActivate(edict_t *edictList, int edictCount, int cli
 							pluginId_, "VGUIMenu", &messageSize);
 						const int teamInfoId = gpMetaUtilFuncs->pfnGetUserMsgID(
 							pluginId_, "TeamInfo", &messageSize);
-						gpMetaUtilFuncs->pfnLogConsole(
+						profiledLogConsole(runtimeProfiler_,
 							pluginId_, "menu message ids show=%d vgui=%d team=%d",
 							showMenuId, vguiMenuId, teamInfoId);
 						const compat::RuntimeMode mode = compatibilitySurface_.configuration().mode;
-						gpMetaUtilFuncs->pfnLogConsole(
+						profiledLogConsole(runtimeProfiler_,
 							pluginId_, "runtime mode=%s map=%u round=%u",
 							runtimeModeName(mode), lifecycle_.mapGeneration(), lifecycle_.roundGeneration());
 					}
@@ -1382,7 +1363,7 @@ void PluginRuntime::onServerActivate(edict_t *edictList, int edictCount, int cli
 				if (gpMetaUtilFuncs != nullptr && gpMetaUtilFuncs->pfnLogConsole != nullptr &&
 					pluginId_ != nullptr)
 				{
-					gpMetaUtilFuncs->pfnLogConsole(
+					profiledLogConsole(runtimeProfiler_,
 						pluginId_, "profile load result=%d map=%u path=%s",
 						static_cast<int>(profileResult), lifecycle_.mapGeneration(), profilePath);
 				}
@@ -1443,7 +1424,7 @@ void PluginRuntime::onServerActivate(edict_t *edictList, int edictCount, int cli
 			if (gpMetaUtilFuncs != nullptr && gpMetaUtilFuncs->pfnLogConsole != nullptr &&
 					pluginId_ != nullptr)
 			{
-				gpMetaUtilFuncs->pfnLogConsole(
+				profiledLogConsole(runtimeProfiler_,
 					pluginId_,
 					"nav load result=%d reader=%d snapshot=%d valid=%d path=%s bspSize=%d",
 					static_cast<int>(result),
@@ -1540,6 +1521,10 @@ void PluginRuntime::onStartFramePost()
 					gpMetaUtilFuncs != nullptr &&
 					gpMetaUtilFuncs->pfnLogConsole != nullptr && pluginId_ != nullptr)
 				{
+					profiledLogConsole(runtimeProfiler_, pluginId_,
+						"profile window game_seconds=%.3f wall_seconds=%.6f frames=%u",
+						report.windowSeconds, report.wallWindowSeconds,
+						static_cast<unsigned int>(report.frameCount));
 					for (std::size_t stageIndex = 0U;
 						stageIndex < static_cast<std::size_t>(RuntimeProfilerStage::Count);
 						++stageIndex)
@@ -1550,7 +1535,7 @@ void PluginRuntime::onStartFramePost()
 						const double average = stats.calls == 0U ? 0.0
 							: static_cast<double>(stats.totalUsec) /
 								static_cast<double>(stats.calls);
-						gpMetaUtilFuncs->pfnLogConsole(
+						profiledLogConsole(runtimeProfiler_,
 							pluginId_,
 							"profile stage=%s calls=%u total_usec=%llu avg_usec=%.1f max_usec=%llu",
 							runtimeProfilerStageName(stage),
@@ -1558,7 +1543,7 @@ void PluginRuntime::onStartFramePost()
 							static_cast<unsigned long long>(stats.totalUsec), average,
 							static_cast<unsigned long long>(stats.maxUsec));
 					}
-					gpMetaUtilFuncs->pfnLogConsole(
+					profiledLogConsole(runtimeProfiler_,
 						pluginId_,
 						"profile counters aliveBots=%u traceLine=%llu visibilityCandidates=%llu "
 						"fovChecks=%llu losChecks=%llu bodyProbeCalls=%llu "
@@ -1598,7 +1583,7 @@ void PluginRuntime::onStartFramePost()
 						const double average = aggregate.calls == 0U ? 0.0
 							: static_cast<double>(aggregate.totalUsec) /
 								static_cast<double>(aggregate.calls);
-						gpMetaUtilFuncs->pfnLogConsole(
+						profiledLogConsole(runtimeProfiler_,
 							pluginId_,
 							"profile pathSearchByCaller.%s calls=%llu total_usec=%llu "
 							"avg_usec=%.1f max_usec=%llu expanded=%llu enqueues=%llu",
@@ -1609,7 +1594,7 @@ void PluginRuntime::onStartFramePost()
 							static_cast<unsigned long long>(aggregate.expandedAreas),
 							static_cast<unsigned long long>(aggregate.enqueues));
 					}
-					gpMetaUtilFuncs->pfnLogConsole(
+					profiledLogConsole(runtimeProfiler_,
 						pluginId_,
 						"profile objectiveCandidates evaluatedBombSites=%llu "
 						"evaluated_func_bomb_target_count=%llu "
@@ -1671,7 +1656,7 @@ void PluginRuntime::deferJoinAction(
 	if (gpMetaUtilFuncs != nullptr && gpMetaUtilFuncs->pfnLogConsole != nullptr &&
 		pluginId_ != nullptr)
 	{
-		gpMetaUtilFuncs->pfnLogConsole(
+		profiledLogConsole(runtimeProfiler_,
 			pluginId_,
 			"join action queue full slot=%u generation=%u frame=%u action=%d error=%d",
 			static_cast<unsigned int>(handle.actor.slot),
@@ -1838,7 +1823,7 @@ void PluginRuntime::notifyMenuReady(
 						engineFunctions_->pfnIndexOfEdict != nullptr
 					? engineFunctions_->pfnIndexOfEdict(entity)
 					: 0;
-				gpMetaUtilFuncs->pfnLogConsole(
+				profiledLogConsole(runtimeProfiler_,
 					pluginId_, "menu message begin kind=%d type=%d slot=%d frame=%u",
 					static_cast<int>(userMessageKind_), messageType, slot,
 					static_cast<unsigned int>(adapterFrameCount_));
@@ -2065,7 +2050,7 @@ void PluginRuntime::notifyMenuReady(
 				if (gpMetaUtilFuncs != nullptr && gpMetaUtilFuncs->pfnLogConsole != nullptr &&
 						pluginId_ != nullptr)
 				{
-					gpMetaUtilFuncs->pfnLogConsole(
+					profiledLogConsole(runtimeProfiler_,
 						pluginId_, "menu vgui value=%d frame=%u", value,
 						static_cast<unsigned int>(adapterFrameCount_));
 				}
@@ -2147,7 +2132,7 @@ void PluginRuntime::notifyMenuReady(
 				if (gpMetaUtilFuncs != nullptr && gpMetaUtilFuncs->pfnLogConsole != nullptr &&
 						pluginId_ != nullptr)
 				{
-					gpMetaUtilFuncs->pfnLogConsole(
+					profiledLogConsole(runtimeProfiler_,
 						pluginId_, "menu show team value=%s frame=%u", value,
 						static_cast<unsigned int>(adapterFrameCount_));
 				}
@@ -2159,7 +2144,7 @@ else if (std::strcmp(menuText, "#Terrorist_Select") == 0)
 				if (gpMetaUtilFuncs != nullptr && gpMetaUtilFuncs->pfnLogConsole != nullptr &&
 						pluginId_ != nullptr)
 				{
-					gpMetaUtilFuncs->pfnLogConsole(
+					profiledLogConsole(runtimeProfiler_,
 						pluginId_, "menu show class value=%s frame=%u", value,
 						static_cast<unsigned int>(adapterFrameCount_));
 				}
@@ -2172,7 +2157,7 @@ else if (std::strcmp(menuText, "#CT_Select") == 0)
 	if (gpMetaUtilFuncs != nullptr && gpMetaUtilFuncs->pfnLogConsole != nullptr &&
 			pluginId_ != nullptr)
 	{
-		gpMetaUtilFuncs->pfnLogConsole(
+		profiledLogConsole(runtimeProfiler_,
 			pluginId_, "menu show class value=%s frame=%u", value,
 			static_cast<unsigned int>(adapterFrameCount_));
 	}
@@ -2200,7 +2185,7 @@ else if (std::strcmp(menuText, "#CT_Select") == 0)
 	if (gpMetaUtilFuncs != nullptr && gpMetaUtilFuncs->pfnLogConsole != nullptr &&
 			pluginId_ != nullptr)
 	{
-		gpMetaUtilFuncs->pfnLogConsole(
+		profiledLogConsole(runtimeProfiler_,
 			pluginId_,
 			"team info slot=%u generation=%u name=%s phase=%d requested_team=%d "
 			"entity_team=%d deadflag=%d spectator=%d frame=%u",
@@ -2246,7 +2231,7 @@ void PluginRuntime::captureManagedCurrentWeapon()
 	if (runtimeProfiler_.enabled() && gpMetaUtilFuncs != nullptr &&
 		gpMetaUtilFuncs->pfnLogConsole != nullptr && pluginId_ != nullptr)
 	{
-		gpMetaUtilFuncs->pfnLogConsole(
+		profiledLogConsole(runtimeProfiler_,
 			pluginId_,
 			"profile currentWeapon actor=%u actor_generation=%u map=%u round=%u "
 			"frame=%u state=%u weapon_id=%u is_c4=%d",
@@ -2355,7 +2340,7 @@ void PluginRuntime::recordMovementPhysicsSample(
 		pluginId_ != nullptr &&
 		movementDiagnosticSamples_[index] < kMovementPhysicsLogLimit)
 	{
-		gpMetaUtilFuncs->pfnLogConsole(
+		profiledLogConsole(runtimeProfiler_,
 			pluginId_,
 			"movement physics actor=%u generation=%u frame=%u sequence=%u dispatched=%d "
 			"before=(%.1f %.1f %.1f) after=(%.1f %.1f %.1f) velocity=(%.1f %.1f %.1f) "
@@ -2385,7 +2370,7 @@ void PluginRuntime::recordMovementPhysicsSample(
 	if (jumpCommand && runtimeProfiler_.enabled() && gpMetaUtilFuncs != nullptr &&
 			gpMetaUtilFuncs->pfnLogConsole != nullptr && pluginId_ != nullptr)
 	{
-		gpMetaUtilFuncs->pfnLogConsole(
+		profiledLogConsole(runtimeProfiler_,
 			pluginId_,
 			"profile jumpFeedback bot_id=%u command_sequence=%u dispatched=%d "
 			"before_origin=(%.1f %.1f %.1f) after_origin=(%.1f %.1f %.1f) "
@@ -2416,7 +2401,8 @@ void PluginRuntime::updateManagedBotMovement()
 				movementDiagnosticSamples_.fill(0U);
 				movementDiagnosticAttempts_.fill(false);
 				movementReadyLogged_.fill(false);
-				movementGoalDiagnosticSeconds_.fill(
+				movementGateDiagnosticTimes_.fill(std::numeric_limits<float>::quiet_NaN());
+		movementGoalDiagnosticSeconds_.fill(
 					(std::numeric_limits<std::uint32_t>::max)());
 		movementTraversalDiagnosticSeconds_.fill(
 			(std::numeric_limits<std::uint32_t>::max)());
@@ -2430,7 +2416,7 @@ void PluginRuntime::updateManagedBotMovement()
 				if (!movementDiagnosticGlobal_ && gpMetaUtilFuncs != nullptr &&
 						gpMetaUtilFuncs->pfnLogConsole != nullptr && pluginId_ != nullptr)
 				{
-					gpMetaUtilFuncs->pfnLogConsole(
+					profiledLogConsole(runtimeProfiler_,
 						pluginId_,
 						"movement unavailable frame=%u enable=%.1f stop=%.1f nav=%d",
 						static_cast<unsigned int>(adapterFrameCount_),
@@ -2547,6 +2533,7 @@ void PluginRuntime::updateManagedBotMovement()
 					? (std::numeric_limits<std::uint32_t>::max)()
 					: adapterFrameCount_ + kRespawnSettleFrames;
 		movementWarmupFrames_[index] = 0U;
+		managedBombApproaches_[index] = {};
 		managedBotMovement_[index].reset();
 		movementFallLandingTrackers_[index].reset();
 			}
@@ -2568,13 +2555,21 @@ void PluginRuntime::updateManagedBotMovement()
 			movementResumeFrames_[index] = 0U;
 			movementSettledDeadFrames_[index] = 0U;
 		}
-		if (movementUnavailable || runtime::spawnReadiness(before) == runtime::SpawnReadiness::NotReady)
+		const bool movementEligible =
+			runtime::movementReadiness(before) == runtime::SpawnReadiness::Ready;
+		const bool initialSpawnPending = movementWarmupFrames_[index] < 2U &&
+			runtime::spawnReadiness(before) == runtime::SpawnReadiness::NotReady;
+		if (movementUnavailable || !movementEligible || initialSpawnPending)
 		{
 			prepareNeutralManagedBotCommand(index, handle, before);
 			const runtime::CommandReceipt receipt = executeManagedBotCommand(index, handle);
 		recordMovementPhysicsSample(index, before, receipt);
 		managedBotMovement_[index].reset();
 		movementFallLandingTrackers_[index].reset();
+		if (!movementEligible)
+		{
+			movementWarmupFrames_[index] = 0U;
+		}
 		continue;
 		}
 		if (handle.entity == nullptr ||
@@ -2594,6 +2589,7 @@ void PluginRuntime::updateManagedBotMovement()
 								: adapterFrameCount_ + kRespawnSettleFrames;
 				movementLastDeadFrames_[index] = adapterFrameCount_;
 		movementWarmupFrames_[index] = 0U;
+		managedBombApproaches_[index] = {};
 		managedBotMovement_[index].reset();
 		movementFallLandingTrackers_[index].reset();
 		continue;
@@ -2684,6 +2680,20 @@ void PluginRuntime::updateManagedBotMovement()
 		observation.landingConfirmed = landingFeedback.landingConfirmed;
 		observation.hasLandingDamage = landingFeedback.hasLandingDamage;
 		observation.landingDamage = landingFeedback.landingDamage;
+		if (runtimeProfiler_.enabled() && landingFeedback.landingConfirmed &&
+			gpMetaUtilFuncs != nullptr && gpMetaUtilFuncs->pfnLogConsole != nullptr &&
+			pluginId_ != nullptr)
+		{
+			profiledLogConsole(runtimeProfiler_,
+				pluginId_,
+				"profile landingFeedback bot_id=%u actor_generation=%u map=%u round=%u frame=%u "
+				"landing_damage_available=%d landing_damage=%.1f",
+				static_cast<unsigned int>(handle.actor.slot),
+				static_cast<unsigned int>(handle.actor.actorGeneration),
+				lifecycle_.mapGeneration(), lifecycle_.roundGeneration(),
+				static_cast<unsigned int>(adapterFrameCount_),
+				landingFeedback.hasLandingDamage ? 1 : 0, landingFeedback.landingDamage);
+		}
 		observation.ladderContact = before.onLadder;
 		observation.entryConfirmed = true;
 		observation.exitConfirmed = before.grounded;
@@ -2701,6 +2711,13 @@ void PluginRuntime::updateManagedBotMovement()
 				&observation.objectiveTarget,
 				runtimeProfiler_.enabled() ? &objectiveSearchStats : nullptr,
 				runtimeProfiler_.enabled() ? &objectiveSelectionStats : nullptr);
+		}
+		const world::ActorKey objectiveActor = {handle.actor.slot, handle.actor.actorGeneration};
+		const team::TeamObjectiveAssignment *objectiveAssignment =
+			findManagedTeamObjectiveAssignment(objectiveActor);
+		if (observation.hasObjectiveTarget && objectiveAssignment != nullptr)
+		{
+			observation.objectiveTargetEntity = objectiveAssignment->targetEntity;
 		}
 		observation.team = static_cast<std::uint8_t>(
 			managedBotObjectiveTargets_[index].effectiveTeam);
@@ -2828,8 +2845,6 @@ void PluginRuntime::updateManagedBotMovement()
 		nav::LocomotionIntent locomotionIntent = {};
 		runtime::NavRoamDecision roamDecision = {};
 		runtime::NavRoamResult roamResult = runtime::NavRoamResult::NoRoute;
-		RuntimeProfilerScope navMovementScope(
-			runtimeProfiler_, RuntimeProfilerStage::NavMovement);
 		groundLookaheadRoute.reset();
 		if (performanceDisablePathSearch_)
 		{
@@ -2845,11 +2860,12 @@ void PluginRuntime::updateManagedBotMovement()
 				lifecycle_.mapGeneration(), lifecycle_.roundGeneration());
 			managedBotMovement_[index].setReservationBoard(
 				&managedBotRoamReservationBoard_);
-			roamResult = managedBotMovement_[index].update(
-				navigation,
-				observation,
-				&locomotionIntent,
-				&roamDecision);
+			{
+				RuntimeProfilerScope navMovementScope(
+					runtimeProfiler_, RuntimeProfilerStage::NavMovement);
+				roamResult = managedBotMovement_[index].update(
+					navigation, observation, &locomotionIntent, &roamDecision);
+			}
 			const float routeDirectionLength = std::hypot(
 				locomotionIntent.direction.x,
 				locomotionIntent.direction.y);
@@ -2899,10 +2915,14 @@ void PluginRuntime::updateManagedBotMovement()
 					managedTeamObjectivePathFailureActor_ = actor;
 					managedTeamObjectivePathFailureGeneration_ =
 						assignment->generation;
+					// A portal-area switch alone does not clear a physical drop veto.
+					// Zero keeps the coordinator's bounded retry lease across that jitter.
 					managedTeamObjectivePathFailureStartArea_ =
-						roamDecision.currentArea != 0U
-							? roamDecision.currentArea
-							: roamDecision.recoveryArea;
+						roamDecision.failureReason == runtime::NavFailureReason::UnsafeDrop
+							? 0U
+							: (roamDecision.currentArea != 0U
+								? roamDecision.currentArea
+								: roamDecision.recoveryArea);
 					managedTeamObjectivePathFailureFrame_ =
 						adapterFrameCount_;
 				}
@@ -3016,7 +3036,7 @@ void PluginRuntime::updateManagedBotMovement()
 			gpMetaUtilFuncs != nullptr && gpMetaUtilFuncs->pfnLogConsole != nullptr &&
 			pluginId_ != nullptr)
 		{
-			gpMetaUtilFuncs->pfnLogConsole(
+			profiledLogConsole(runtimeProfiler_,
 				pluginId_,
 				"movement command actor=%u generation=%u frame=%u forward=%.1f side=%.1f up=%.1f yaw=%.1f buttons=%u msec=%u targetArea=%u nav=(%.2f %.2f) action=%d stop=%d",
 				static_cast<unsigned int>(handle.actor.slot),
@@ -3033,7 +3053,7 @@ void PluginRuntime::updateManagedBotMovement()
 			gpMetaUtilFuncs->pfnLogConsole != nullptr && pluginId_ != nullptr &&
 			(adapterFrameCount_ % 16U) == 0U)
 		{
-			gpMetaUtilFuncs->pfnLogConsole(
+			profiledLogConsole(runtimeProfiler_,
 				pluginId_, "bot action=%s slot=%u generation=%u frame=%u buttons=%u",
 				actionKindName(actionProposal.kind), static_cast<unsigned int>(handle.actor.slot),
 				static_cast<unsigned int>(handle.actor.actorGeneration),
@@ -3067,7 +3087,7 @@ void PluginRuntime::updateManagedBotMovement()
 							gpMetaUtilFuncs->pfnLogConsole != nullptr &&
 							pluginId_ != nullptr)
 					{
-						gpMetaUtilFuncs->pfnLogConsole(
+						profiledLogConsole(runtimeProfiler_,
 							pluginId_,
 							"movement actor=%u generation=%u frame=%u origin=(%.1f %.1f %.1f) targetArea=%u sequence=%u stage=%d currentArea=%u recoveryArea=%u",
 							static_cast<unsigned int>(handle.actor.slot),
@@ -3523,7 +3543,7 @@ void PluginRuntime::refreshManagedTeamObjectiveAssignments(std::size_t contextIn
 		{
 			const team::TeamObjectiveAssignment &assignment =
 				managedTeamObjectiveAssignments_.assignments[index];
-			gpMetaUtilFuncs->pfnLogConsole(
+			profiledLogConsole(runtimeProfiler_,
 				pluginId_,
 				"team_objective map=%u round=%u frame=%u actor=%u:%u kind=%u target=%u:%u area=%u generation=%u cost=%.2f cost_fallback=%u dropped=%u planted=%u",
 				static_cast<unsigned int>(mapGeneration),
@@ -3567,6 +3587,55 @@ PluginRuntime::findManagedTeamObjectiveAssignment(
 		}
 	}
 	return nullptr;
+}
+
+float PluginRuntime::managedRoundRemainingSeconds() const
+{
+	const float minutes = readOptionalCvarFloat(engineFunctions_, "mp_roundtime");
+	if (globals_ == nullptr || !std::isfinite(globals_->time) ||
+		!std::isfinite(minutes) || minutes <= 0.0f ||
+		roundFreezeGeneration_ != lifecycle_.roundGeneration())
+	{
+		return std::numeric_limits<float>::quiet_NaN();
+	}
+	return (std::max)(0.0f, minutes * 60.0f -
+		(std::max)(0.0f, globals_->time - roundFreezeUntil_));
+}
+
+bool PluginRuntime::managedActorAtBombSite(std::size_t index) const
+{
+	if (index >= managedBotHandles_.size() || managedBotHandles_[index].entity == nullptr ||
+		engineFunctions_ == nullptr || engineFunctions_->pfnPEntityOfEntIndex == nullptr ||
+		engineFunctions_->pfnSzFromIndex == nullptr)
+	{
+		return false;
+	}
+	const edict_t *actor = managedBotHandles_[index].entity;
+	const PlantTargetBounds actorBounds = {actor->v.absmin.x, actor->v.absmin.y,
+		actor->v.absmin.z, actor->v.absmax.x, actor->v.absmax.y, actor->v.absmax.z};
+	for (std::size_t siteIndex = 0U;
+		siteIndex < managedObjectiveSiteRegistry_.registeredCount; ++siteIndex)
+	{
+		const auto &entry = managedObjectiveSiteRegistry_.entries[siteIndex];
+		edict_t *site = engineFunctions_->pfnPEntityOfEntIndex(entry.entityIndex);
+		if (site == nullptr || site->free) continue;
+		const char *classname = engineFunctions_->pfnSzFromIndex(site->v.classname);
+		if (ActionAdapter::isLegacyInfoBombTargetClassname(classname))
+		{
+			const auto center = entityObjectiveCenter(site);
+			if (ActionAdapter::withinLegacyBombTargetRadius({center.x, center.y, center.z},
+				{actor->v.origin.x, actor->v.origin.y, actor->v.origin.z})) return true;
+		}
+		else if (isBombTargetClassname(classname))
+		{
+			const PlantTargetBounds siteBounds = {site->v.absmin.x, site->v.absmin.y,
+				site->v.absmin.z, site->v.absmax.x, site->v.absmax.y, site->v.absmax.z};
+			if (siteBounds.maximumX > siteBounds.minimumX &&
+				siteBounds.maximumY > siteBounds.minimumY &&
+				ActionAdapter::overlapsPlantTarget(siteBounds, actorBounds)) return true;
+		}
+	}
+	return false;
 }
 
 bool PluginRuntime::buildManagedObjectiveTarget(
@@ -3647,6 +3716,22 @@ bool PluginRuntime::buildManagedObjectiveTarget(
 				managedObjectiveSiteRegistry_.registeredInfoBombTargetCount;
 			objectiveStats->registeredSiteCountsAvailable = true;
 		}
+	}
+	objectives::BombApproachState &approach = managedBombApproaches_[index];
+	if (!needsBombSite)
+	{
+		approach = {};
+	}
+	else if (approach.initialized && !approach.finished &&
+		objectives::bombApproachPhase(&approach, globals_->time,
+			managedRoundRemainingSeconds(), cache.approachRouteSeconds,
+			carryingBomb, false, managedActorAtBombSite(index)) ==
+			objectives::BombApproachPhase::Plant)
+	{
+		// One phase transition permits a fresh nearest route from the moved position.
+		cache.valid = false;
+		cache.generation = cache.generation ==
+			(std::numeric_limits<std::uint32_t>::max)() ? 1U : cache.generation + 1U;
 	}
 	const bool sameObjectiveState = cache.mapGeneration == lifecycle_.mapGeneration() &&
 		cache.roundGeneration == lifecycle_.roundGeneration() &&
@@ -3731,6 +3816,14 @@ bool PluginRuntime::buildManagedObjectiveTarget(
 	float selectedPathCost = (std::numeric_limits<float>::max)();
 	int selectedBombSiteEntityIndex = 0;
 	std::uint32_t selectedSiteIdentity = 0U;
+	struct ReachableBombSite
+	{
+		std::uint32_t identity;
+		int entityIndex;
+		float cost;
+		nav::NavVector point;
+	};
+	std::vector<ReachableBombSite> reachableBombSites;
 	const nav::NavSnapshot navigation = navPublisher_.snapshot();
 	const nav::NavDocument *document = navigation.document();
 	nav::NavAreaMatch currentMatch = {};
@@ -3903,7 +3996,7 @@ bool PluginRuntime::buildManagedObjectiveTarget(
 			if (objectiveStats != nullptr && !cache.diagnosticsEmitted)
 			{
 				logObjectiveTargetDiagnostic(
-					pluginId_, targetId, entityIndex, classname,
+					runtimeProfiler_, pluginId_, targetId, entityIndex, classname,
 					managedObjectiveSiteRegistry_.registeredCount,
 					managedObjectiveSiteRegistry_.registeredFuncBombTargetCount,
 					managedObjectiveSiteRegistry_.registeredInfoBombTargetCount,
@@ -3912,6 +4005,10 @@ bool PluginRuntime::buildManagedObjectiveTarget(
 					siteUniqueCandidateAreas, siteReachableCandidateAreas,
 					pathCost == (std::numeric_limits<float>::max)() ? -1.0f : pathCost,
 					objectiveCacheState, validCandidate, rejectionReason);
+			}
+			if (validCandidate)
+			{
+				reachableBombSites.push_back({siteIdentity, entityIndex, pathCost, reachablePoint});
 			}
 		if (validCandidate && objectives::isBetterBombSiteRoute(
 				pathCost, selectedPathCost))
@@ -3937,6 +4034,54 @@ bool PluginRuntime::buildManagedObjectiveTarget(
 		if (team == 1 && carryingBomb && selectedPathCost !=
 		(std::numeric_limits<float>::max)())
 	{
+		const float speed = std::isfinite(handle.entity->v.maxspeed) &&
+			handle.entity->v.maxspeed > 0.0f ? handle.entity->v.maxspeed : 240.0f;
+		const float nearestTravel = selectedPathCost / speed;
+		const float roundRemaining = managedRoundRemainingSeconds();
+		const compat::RandomActor randomActor = {handle.actor.slot, handle.actor.actorGeneration};
+		const compat::RandomTimingContext randomTiming = {
+			managedBotCommandSequences_[index], adapterFrameCount_, managedBotFullUpdateSequences_[index]};
+		const float decisionStart = roundFreezeGeneration_ == lifecycle_.roundGeneration()
+			? roundFreezeStartTime_ : globals_->time;
+		objectives::beginBombApproach(&approach, frame.mapGeneration, frame.roundGeneration,
+			randomActor, globals_->time, decisionStart, roundRemaining, nearestTravel,
+			haveCurrentArea && document != nullptr ? &compatibilityRandomSource_ : nullptr, randomTiming);
+		const auto phase = objectives::bombApproachPhase(&approach, globals_->time,
+			roundRemaining, nearestTravel, carryingBomb, false, managedActorAtBombSite(index));
+		if (phase == objectives::BombApproachPhase::Approach)
+		{
+			if (approach.preferredSiteIdentity == 0U)
+			{
+				std::vector<float> costs;
+				const float delayLeft = (std::max)(0.0f, approach.plantAt - globals_->time);
+				for (const auto &site : reachableBombSites)
+				{
+					costs.push_back(roundRemaining > delayLeft + site.cost / speed + 5.0f
+						? site.cost : -1.0f);
+				}
+				const auto choice = objectives::chooseBombApproachSite(costs.data(), costs.size(),
+					&compatibilityRandomSource_, randomActor, randomTiming);
+				if (choice < reachableBombSites.size())
+					approach.preferredSiteIdentity = reachableBombSites[choice].identity;
+			}
+			const auto preferred = std::find_if(reachableBombSites.begin(), reachableBombSites.end(),
+				[&approach](const ReachableBombSite &site)
+				{
+					return site.identity == approach.preferredSiteIdentity;
+				});
+			if (preferred != reachableBombSites.end())
+			{
+				selectedBombSite = preferred->point;
+				selectedBombSiteEntityIndex = preferred->entityIndex;
+				selectedSiteIdentity = preferred->identity;
+				selectedPathCost = preferred->cost;
+			}
+			else
+			{
+				approach.finished = true;
+			}
+		}
+		cache.approachRouteSeconds = selectedPathCost / speed;
 		*target = selectedBombSite;
 		cache.target = *target;
 		cache.selectedEntityIndex = selectedBombSiteEntityIndex;
@@ -4007,7 +4152,7 @@ ActionProposal PluginRuntime::decideManagedBotAction(
 		if ((adapterFrameCount_ % 16U) == 0U && gpMetaUtilFuncs != nullptr &&
 			gpMetaUtilFuncs->pfnLogConsole != nullptr && pluginId_ != nullptr)
 		{
-			gpMetaUtilFuncs->pfnLogConsole(
+			profiledLogConsole(runtimeProfiler_,
 				pluginId_, "action sensor slot=%u frame=%u team=%d teamInfo=%u target=0",
 				static_cast<unsigned int>(handle.actor.slot),
 				static_cast<unsigned int>(adapterFrameCount_), static_cast<int>(handle.entity->v.team),
@@ -4119,7 +4264,7 @@ ActionProposal PluginRuntime::decideManagedBotAction(
 			gpMetaUtilFuncs != nullptr && gpMetaUtilFuncs->pfnLogConsole != nullptr &&
 			pluginId_ != nullptr)
 		{
-			gpMetaUtilFuncs->pfnLogConsole(
+			profiledLogConsole(runtimeProfiler_,
 				pluginId_,
 				"profile plantedBombScan actor=%u actor_generation=%u map=%u round=%u "
 				"frame=%u now=%.2f entities=%d grenade_count=%u "
@@ -4153,7 +4298,7 @@ ActionProposal PluginRuntime::decideManagedBotAction(
 				const int plantedEntityIndex = engineFunctions_ != nullptr &&
 					engineFunctions_->pfnIndexOfEdict != nullptr
 					? engineFunctions_->pfnIndexOfEdict(plantedBomb) : 0;
-				gpMetaUtilFuncs->pfnLogConsole(
+				profiledLogConsole(runtimeProfiler_,
 					pluginId_,
 					"profile plantConfirm actor=%u actor_generation=%u map=%u round=%u "
 					"frame=%u assignment=%u site=%d site_id=%u planted_entity=%d "
@@ -4171,7 +4316,7 @@ ActionProposal PluginRuntime::decideManagedBotAction(
 		if ((adapterFrameCount_ % 16U) == 0U && gpMetaUtilFuncs != nullptr &&
 				gpMetaUtilFuncs->pfnLogConsole != nullptr && pluginId_ != nullptr)
 		{
-			gpMetaUtilFuncs->pfnLogConsole(
+			profiledLogConsole(runtimeProfiler_,
 				pluginId_, "objective sensor slot=%u frame=%u team=%d weapons=%d carryingC4=%d bombSite=%d plantedC4=%d",
 				static_cast<unsigned int>(handle.actor.slot),
 				static_cast<unsigned int>(adapterFrameCount_), team,
@@ -4231,7 +4376,7 @@ ActionProposal PluginRuntime::decideManagedBotAction(
 	if (ActionAdapter::canBeginPlantObjective(
 		hasPlantAssignment, carryingBomb,
 		teamRole == objectives::TeamRole::Terrorist,
-		haveSelectedPlantTarget))
+		haveSelectedPlantTarget && managedBombApproaches_[index].finished))
 	{
 		objectiveKind = objectives::ObjectiveKind::Plant;
 	}
@@ -4389,7 +4534,7 @@ ActionProposal PluginRuntime::decideManagedBotAction(
 					gpMetaUtilFuncs != nullptr && gpMetaUtilFuncs->pfnLogConsole != nullptr &&
 					pluginId_ != nullptr)
 				{
-					gpMetaUtilFuncs->pfnLogConsole(
+					profiledLogConsole(runtimeProfiler_,
 						pluginId_,
 						"profile plantGate actor=%u actor_generation=%u map=%u round=%u "
 						"frame=%u assignment=%u site=%d site_id=%u bounds_available=%d "
@@ -4494,7 +4639,7 @@ ActionProposal PluginRuntime::decideManagedBotAction(
 	if ((adapterFrameCount_ % 16U) == 0U && gpMetaUtilFuncs != nullptr &&
 		gpMetaUtilFuncs->pfnLogConsole != nullptr && pluginId_ != nullptr)
 	{
-		gpMetaUtilFuncs->pfnLogConsole(
+		profiledLogConsole(runtimeProfiler_,
 			pluginId_, "action sensor slot=%u frame=%u team=%d teamInfo=%u target=1 combatResult=%d "
 			"hasAim=%d hasFire=%d",
 			static_cast<unsigned int>(handle.actor.slot), static_cast<unsigned int>(adapterFrameCount_),
@@ -4563,7 +4708,7 @@ bool PluginRuntime::dispatchManagedActionCommand(
 	{
 		const ManagedCurrentWeaponObservation &weapon =
 			managedBotCurrentWeapons_[index];
-		gpMetaUtilFuncs->pfnLogConsole(
+		profiledLogConsole(runtimeProfiler_,
 			pluginId_,
 			"profile plantCommand actor=%u actor_generation=%u map=%u round=%u "
 			"frame=%u action=%s command=%s dispatched=%d current_weapon_known=%d "
@@ -4702,13 +4847,18 @@ runtime::CommandReceipt PluginRuntime::executeManagedBotCommand(
 			command.movement.buttons,
 			static_cast<std::uint16_t>(IN_DUCK));
 	command.movement.buttons = jumpCrouchDecision.buttons;
+	if (!jumpCrouchObservation.grounded)
+	{
+		command.movement.buttons = static_cast<std::uint16_t>(
+			command.movement.buttons & ~static_cast<std::uint16_t>(IN_JUMP));
+	}
 	if (runtimeProfiler_.enabled() &&
 		jumpCrouchDecision.sequencing.transition !=
 			runtime::JumpCrouchTransition::None &&
 		gpMetaUtilFuncs != nullptr && gpMetaUtilFuncs->pfnLogConsole != nullptr &&
 		pluginId_ != nullptr)
 	{
-		gpMetaUtilFuncs->pfnLogConsole(
+		profiledLogConsole(runtimeProfiler_,
 			pluginId_,
 			"profile jumpCrouch bot_id=%u command_sequence=%u transition=%s phase=%d "
 			"elapsed=%.3f grounded=%d before_buttons=%u after_buttons=%u",
@@ -4765,8 +4915,11 @@ runtime::CommandReceipt PluginRuntime::executeManagedBotCommand(
 			command.viewAngles.roll};
 		handle.entity->v.button = 0U;
 		handle.entity->v.impulse = 0U;
-		engineFunctions_->pfnRunPlayerMove(
-			handle.entity, viewAngles, 0.0f, 0.0f, 0.0f, 0U, 0U, 0U);
+		{
+			RuntimeProfilerScope moveScope(runtimeProfiler_, RuntimeProfilerStage::RunPlayerMove);
+			engineFunctions_->pfnRunPlayerMove(
+				handle.entity, viewAngles, 0.0f, 0.0f, 0.0f, 0U, 0U, 0U);
+		}
 		receipt.sequence = command.sequence;
 		receipt.result = runtime::DispatchResult::Dispatched;
 		resetManagedBotCommandTemplate(index);
@@ -4786,7 +4939,7 @@ runtime::CommandReceipt PluginRuntime::executeManagedBotCommand(
 		{
 			const runtime::LifecycleToken currentToken =
 				lifecycle_.tokenForSlot(handle.actor.slot);
-			gpMetaUtilFuncs->pfnLogConsole(
+			profiledLogConsole(runtimeProfiler_,
 				pluginId_,
 				"profile movementReject bot_id=%u actor_generation=%u frame=%u "
 				"queue_result=%d command_valid=%d sequence=%u msec=%u "
@@ -4842,7 +4995,7 @@ runtime::CommandReceipt PluginRuntime::executeManagedBotCommand(
 				gpMetaUtilFuncs != nullptr &&
 				gpMetaUtilFuncs->pfnLogConsole != nullptr && pluginId_ != nullptr)
 			{
-				gpMetaUtilFuncs->pfnLogConsole(
+				profiledLogConsole(runtimeProfiler_,
 					pluginId_,
 					"profile plantInput actor=%u actor_generation=%u map=%u round=%u "
 					"frame=%u stage=attack_dispatched buttons=%u",
@@ -4856,9 +5009,14 @@ runtime::CommandReceipt PluginRuntime::executeManagedBotCommand(
 		}
 	}
 	if (runtimeProfiler_.enabled() && gpMetaUtilFuncs != nullptr &&
-		gpMetaUtilFuncs->pfnLogConsole != nullptr && pluginId_ != nullptr)
+		gpMetaUtilFuncs->pfnLogConsole != nullptr && pluginId_ != nullptr &&
+		globals_ != nullptr && std::isfinite(globals_->time) &&
+		(!std::isfinite(movementGateDiagnosticTimes_[index]) ||
+		 globals_->time < movementGateDiagnosticTimes_[index] ||
+		 globals_->time - movementGateDiagnosticTimes_[index] >= 1.0f))
 	{
-		gpMetaUtilFuncs->pfnLogConsole(
+		movementGateDiagnosticTimes_[index] = globals_->time;
+		profiledLogConsole(runtimeProfiler_,
 			pluginId_,
 			"profile movementGate actor=%u generation=%u map=%u round=%u frame=%u "
 			"freeze_active=%d freeze_until=%.3f explicit_frozen=%d phase=%d "
@@ -4892,7 +5050,7 @@ runtime::CommandReceipt PluginRuntime::executeManagedBotCommand(
 		gpMetaUtilFuncs != nullptr && gpMetaUtilFuncs->pfnLogConsole != nullptr &&
 		pluginId_ != nullptr)
 	{
-		gpMetaUtilFuncs->pfnLogConsole(
+		profiledLogConsole(runtimeProfiler_,
 			pluginId_,
 			"profile freezeMotion actor=%u generation=%u map=%u round=%u frame=%u "
 			"freeze_gate=%d freeze_after=%d origin=(%.1f %.1f %.1f) "
@@ -4964,7 +5122,7 @@ runtime::CommandReceipt PluginRuntime::dispatchNeutralMovement(
 		gpMetaUtilFuncs->pfnLogConsole != nullptr && pluginId_ != nullptr &&
 		(adapterFrameCount_ % 16U) == 0U)
 	{
-		gpMetaUtilFuncs->pfnLogConsole(
+		profiledLogConsole(runtimeProfiler_,
 			pluginId_, "bot action=%s slot=%u generation=%u frame=%u buttons=%u",
 			actionKindName(actionProposal.kind), static_cast<unsigned int>(handle.actor.slot),
 			static_cast<unsigned int>(handle.actor.actorGeneration),
@@ -5033,8 +5191,11 @@ runtime::CommandReceipt PluginRuntime::dispatchJoinHeartbeat(
 		const unsigned short buttons = joinControllers_[index].phase() == JoinPhase::WaitingTeamMenu
 			? static_cast<unsigned short>(IN_ATTACK)
 			: 0U;
-		engineFunctions_->pfnRunPlayerMove(
-			handle.entity, viewAngles, 0.0f, 0.0f, 0.0f, buttons, 0U, milliseconds);
+		{
+			RuntimeProfilerScope moveScope(runtimeProfiler_, RuntimeProfilerStage::RunPlayerMove);
+			engineFunctions_->pfnRunPlayerMove(
+				handle.entity, viewAngles, 0.0f, 0.0f, 0.0f, buttons, 0U, milliseconds);
+		}
 		receipt.result = runtime::DispatchResult::Dispatched;
 		return receipt;
 	}
@@ -5193,6 +5354,7 @@ void PluginRuntime::resetManagedBotMovement()
 		managedBotCombat_[index] = combat::CombatController();
 		managedBotObjectives_[index] = objectives::RoundObjectivePlanner();
 		managedBotObjectiveTargets_[index] = {};
+		managedBombApproaches_[index] = {};
 		managedBotCurrentWeapons_[index] = {};
 		managedBotObjectiveActions_[index] = {};
 		managedBotStateMachines_[index] = compat::CompatibilityStateMachine();
@@ -5215,6 +5377,7 @@ void PluginRuntime::resetManagedBotMovement()
 		movementWarmupFrames_.fill(0U);
 		movementPhysicsSamples_.fill({});
 		movementReadyLogged_.fill(false);
+		movementGateDiagnosticTimes_.fill(std::numeric_limits<float>::quiet_NaN());
 		movementGoalDiagnosticSeconds_.fill((std::numeric_limits<std::uint32_t>::max)());
 		movementTraversalDiagnosticSeconds_.fill(
 			(std::numeric_limits<std::uint32_t>::max)());
@@ -5261,7 +5424,7 @@ void PluginRuntime::resetManagedBotMovement()
 						feetPosition,
 						64.0f,
 							&area);
-			gpMetaUtilFuncs->pfnLogConsole(
+			profiledLogConsole(runtimeProfiler_,
 				pluginId_,
 				"movement diagnostic actor=%u generation=%u frame=%u reason=%s fake=%d spectator=%d team=%d deadflag=%d health=%.1f origin=(%.1f %.1f %.1f) solid=%d movetype=%d effects=%d nav=%d navAreaResult=%d area=%u runmove=%d stage=%d currentResult=%d nearestResult=%d currentArea=%u recoveryArea=%u targetArea=%u target=(%.1f %.1f %.1f) intent=(%.2f %.2f %.2f) observedVelocity=(%.1f %.1f %.1f) corridorAreas=%u corridorIndex=%u link=(%u->%u how=%u dir=%u) linkResult=%d corridorResult=%d locomotionResult=%d nearestDistanceSquared=%.1f goalPresent=%d goalKind=%d goalArea=%u pathRequested=%d pathResult=%d failureReason=%d fullUpdate=%u recomputeReason=%d searchCalls=%u expanded=%u enqueues=%u reopens=%u staleQueue=%u equalCostRepl=%u searchUsec=%llu searchMaxUsec=%llu searchFirstId=%llu searchLastId=%llu routeType=%d",
 				static_cast<unsigned int>(handle.actor.slot),
@@ -5361,7 +5524,7 @@ void PluginRuntime::logGoalAssignmentDiagnostic(
 	const char *goalSource = decision.goalKind == runtime::NavGoalKind::Objective
 		? "objective"
 		: decision.goalKind == runtime::NavGoalKind::Roam ? "roam" : "none";
-	gpMetaUtilFuncs->pfnLogConsole(
+	profiledLogConsole(runtimeProfiler_,
 		pluginId_,
 		"profile goalAssignment bot_id=%u raw_team=%d effective_team=%d "
 		"team_info=%d team_fresh=%d carrying_c4=%d state=%s task=%s "
@@ -5384,7 +5547,7 @@ void PluginRuntime::logGoalAssignmentDiagnostic(
 		static_cast<unsigned int>(intent.targetArea), decision.targetPosition.x,
 		decision.targetPosition.y, decision.targetPosition.z,
 		static_cast<unsigned int>(decision.currentArea));
-	gpMetaUtilFuncs->pfnLogConsole(
+	profiledLogConsole(runtimeProfiler_,
 		pluginId_,
 		"profile goalAssignmentCorrelation bot_id=%u actor_generation=%u "
 		"frame=%u nav_update=%u goal_generation=%u reselection_reason=%s "
@@ -5428,7 +5591,7 @@ void PluginRuntime::logGoalAssignmentDiagnostic(
 		intent.direction.x, intent.direction.y, intent.direction.z, intent.speed,
 		before.origin.x, before.origin.y, before.origin.z,
 		before.grounded ? 1 : 0);
-	gpMetaUtilFuncs->pfnLogConsole(
+	profiledLogConsole(runtimeProfiler_,
 		pluginId_,
 		"profile groundRecovery bot_id=%u frame=%u now=%.3f "
 		"full_update=%u route_frame=%u route_update=%u route_age=%.3f "
@@ -5536,7 +5699,7 @@ void PluginRuntime::logTraversalDiagnostic(
 	const float distanceToTransition = std::hypot(
 		decision.targetPosition.x - before.origin.x,
 		decision.targetPosition.y - before.origin.y);
-	gpMetaUtilFuncs->pfnLogConsole(
+	profiledLogConsole(runtimeProfiler_,
 		pluginId_,
 		"profile traversal bot_id=%u map=%u round=%u actor_generation=%u "
 		"current_area=%u next_area=%u "
@@ -5570,7 +5733,7 @@ void PluginRuntime::logTraversalDiagnostic(
 		decision.locomotionResult == nav::LocomotionResult::Stuck ? 1 : 0,
 		static_cast<int>(decision.failureReason),
 		static_cast<unsigned int>(decision.corridorIndex));
-	gpMetaUtilFuncs->pfnLogConsole(
+	profiledLogConsole(runtimeProfiler_,
 		pluginId_,
 		"profile traversalCorrelation bot_id=%u actor_generation=%u frame=%u "
 		"map=%u round=%u "
@@ -5660,7 +5823,7 @@ void PluginRuntime::logTraversalOutcome(
 	const std::uint32_t corridorAdvance = decision.corridorIndex >= pending.corridorIndex
 		? decision.corridorIndex - pending.corridorIndex
 		: 0U;
-	gpMetaUtilFuncs->pfnLogConsole(
+	profiledLogConsole(runtimeProfiler_,
 		pluginId_,
 		"profile traversalResult bot_id=%u actor_generation=%u map=%u round=%u command_frame=%u "
 		"observed_frame=%u nav_update=%u goal_generation=%u reselection_reason=%s "
@@ -5733,7 +5896,7 @@ void PluginRuntime::logMovementReversalDiagnostic(
 		if (gpMetaUtilFuncs != nullptr && gpMetaUtilFuncs->pfnLogConsole != nullptr &&
 				pluginId_ != nullptr)
 		{
-			gpMetaUtilFuncs->pfnLogConsole(
+			profiledLogConsole(runtimeProfiler_,
 				pluginId_,
 				"profile movementReversal bot_id=%u frame=%u reversal_count=%u "
 				"previous_feet=(%.1f %.1f %.1f) current_feet=(%.1f %.1f %.1f) "
@@ -6025,7 +6188,7 @@ NativeBotObservation PluginRuntime::collectNativeBotObservation() const
 			if (gpMetaUtilFuncs != nullptr && gpMetaUtilFuncs->pfnLogConsole != nullptr &&
 				pluginId_ != nullptr)
 			{
-				gpMetaUtilFuncs->pfnLogConsole(
+				profiledLogConsole(runtimeProfiler_,
 					pluginId_, "compat command=%s result=%d mode=%s map=%u round=%u frame=%u",
 					request.name != nullptr ? request.name : "<null>", static_cast<int>(result),
 					runtimeModeName(compatibilitySurface_.configuration().mode),
@@ -6229,6 +6392,7 @@ NativeBotObservation PluginRuntime::collectNativeBotObservation() const
 					movementDiagnosticSamples_[slotIndex] = 0U;
 		movementDiagnosticAttempts_[slotIndex] = false;
 		movementReadyLogged_[slotIndex] = false;
+		movementGateDiagnosticTimes_[slotIndex] = std::numeric_limits<float>::quiet_NaN();
 		movementGoalDiagnosticSeconds_[slotIndex] =
 			(std::numeric_limits<std::uint32_t>::max)();
 		movementTraversalDiagnosticSeconds_[slotIndex] =
@@ -6286,7 +6450,7 @@ NativeBotObservation PluginRuntime::collectNativeBotObservation() const
 				state_ == State::ActiveMap && nativeGuardDecision_.managedBotCreationAllowed;
 			fakeClientManager_.configure(engineFunctions_, gameDllFunctions_, allowed,
 										 gpMetaUtilFuncs, pluginId_);
-			inputDispatcher_.configure(engineFunctions_);
+			inputDispatcher_.configure(engineFunctions_, &runtimeProfiler_);
 		}
 
 		std::size_t PluginRuntime::managedBotCount() const
@@ -6364,6 +6528,7 @@ void PluginRuntime::clearManagedBot(std::size_t index)
 		managedBotCombat_[index] = combat::CombatController();
 	managedBotObjectives_[index] = objectives::RoundObjectivePlanner();
 	managedBotObjectiveTargets_[index] = {};
+	managedBombApproaches_[index] = {};
 	managedBotStateMachines_[index] = compat::CompatibilityStateMachine();
 	managedBotPerception_[index] = perception::PerceptionAssembler();
 	managedBotCommandSequences_[index] = 0U;
@@ -6381,6 +6546,7 @@ void PluginRuntime::clearManagedBot(std::size_t index)
 			movementWarmupFrames_[index] = 0U;
 			movementPhysicsSamples_[index] = {};
 		movementReadyLogged_[index] = false;
+		movementGateDiagnosticTimes_[index] = std::numeric_limits<float>::quiet_NaN();
 		movementGoalDiagnosticSeconds_[index] =
 			(std::numeric_limits<std::uint32_t>::max)();
 		movementTraversalDiagnosticSeconds_[index] =
@@ -6768,7 +6934,7 @@ void PluginRuntime::cleanupManagedJoin(std::size_t index, JoinError error)
 	if (gpMetaUtilFuncs != nullptr && gpMetaUtilFuncs->pfnLogConsole != nullptr &&
 			pluginId_ != nullptr)
 	{
-		gpMetaUtilFuncs->pfnLogConsole(
+		profiledLogConsole(runtimeProfiler_,
 			pluginId_,
 			"join cleanup slot=%u generation=%u map=%u round=%u frame=%u phase=%d team=%d "
 			"entity_team=%d deadflag=%d spectator=%d error=%d result=%d",
@@ -6804,7 +6970,7 @@ void PluginRuntime::applyJoinAction(std::size_t index, const JoinAction &action)
 				if (gpMetaUtilFuncs != nullptr && gpMetaUtilFuncs->pfnLogConsole != nullptr &&
 						pluginId_ != nullptr)
 		{
-			gpMetaUtilFuncs->pfnLogConsole(
+			profiledLogConsole(runtimeProfiler_,
 				pluginId_,
 				"join confirmed slot=%u generation=%u map=%u round=%u phase=%d team=%d "
 				"entity_team=%d deadflag=%d spectator=%d actor_result=%d frame=%u",
@@ -6827,7 +6993,7 @@ void PluginRuntime::applyJoinAction(std::size_t index, const JoinAction &action)
 				if (gpMetaUtilFuncs != nullptr && gpMetaUtilFuncs->pfnLogConsole != nullptr &&
 						pluginId_ != nullptr)
 		{
-			gpMetaUtilFuncs->pfnLogConsole(
+			profiledLogConsole(runtimeProfiler_,
 				pluginId_,
 				"join controller stopped slot=%u generation=%u action=%d error=%d map=%u "
 				"round=%u phase=%d team=%d entity_team=%d deadflag=%d spectator=%d frame=%u",
@@ -6873,7 +7039,7 @@ void PluginRuntime::applyJoinAction(std::size_t index, const JoinAction &action)
 			if (gpMetaUtilFuncs != nullptr && gpMetaUtilFuncs->pfnLogConsole != nullptr &&
 					pluginId_ != nullptr)
 			{
-				gpMetaUtilFuncs->pfnLogConsole(
+				profiledLogConsole(runtimeProfiler_,
 					pluginId_,
 					"join dispatch slot=%u generation=%u command=%s selection=%u dispatched=%d "
 					"map=%u round=%u phase=%d team=%d entity_team=%d deadflag=%d spectator=%d",

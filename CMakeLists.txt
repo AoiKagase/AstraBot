@@ -644,6 +644,7 @@ add_executable(astrabot_metamod_hooks
     add_executable(astrabot_input_dispatcher
       tests/input_dispatcher_tests.cpp
       src/adapter/metamod/input_dispatcher.cpp
+      src/adapter/metamod/runtime_profiler.cpp
     )
     target_include_directories(astrabot_input_dispatcher PRIVATE
       "${CMAKE_CURRENT_SOURCE_DIR}/include"

@@ -35,6 +35,7 @@ namespace astrabot
 			bool exitConfirmed;
 			bool collectPathStats;
 		bool movementSuppressed;
+		world::EntityKey objectiveTargetEntity;
 	};
 
 	struct GroundLookaheadRoute
@@ -282,6 +283,22 @@ class NavRoamController
 		bool blocked;
 	};
 	OffMeshRecoveryState offMeshRecovery_;
+	struct UnsafeDropFailure
+	{
+		bool valid;
+		bool bypassPending;
+		world::EntityKey entity;
+		nav::NavVector anchor;
+		nav::AreaId goalArea;
+		nav::NavDirectedLink link;
+		std::uint32_t retryFramesRemaining;
+		std::uint32_t nextBackoffFrames;
+	};
+	UnsafeDropFailure unsafeDropFailure_;
+	bool previousMovementSuppressed_;
+	void rememberUnsafeDrop(const NavRoamObservation &observation,
+		nav::AreaId goalArea, const nav::NavDirectedLink &link);
+	void delayUnsafeDropRetry();
 	struct PathFailureKey
 	{
 		std::uint32_t mapGeneration;

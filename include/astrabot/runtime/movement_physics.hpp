@@ -78,6 +78,8 @@ private:
 			SpawnReadiness readiness;
 		};
 
+		// Continuing movement eligibility does not require contact with the ground.
+		SpawnReadiness movementReadiness(const MovementPhysicsState &state) noexcept;
 		SpawnReadiness spawnReadiness(const MovementPhysicsState &state) noexcept;
 		bool isMovementDirectionReversal(
 			const PhysicsVector &previous,

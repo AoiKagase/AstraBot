@@ -21,6 +21,10 @@ constexpr std::uint32_t kOffMeshNoProgressLimit = 20U;
 constexpr float kExternalRecoveryResetDistance = 8.0f;
 	constexpr std::uint32_t kStuckRecoveryFrameLimit = 8U;
 constexpr std::uint32_t kMaximumStuckRecoveryAttempts = 2U;
+// Server-frame budget, independent of full-update cadence and assignment generation.
+constexpr std::uint32_t kInitialUnsafeDropBackoffFrames = 128U;
+constexpr std::uint32_t kMaximumUnsafeDropBackoffFrames = 512U;
+constexpr float kUnsafeDropProgressDistance = 64.0f;
 constexpr std::uint32_t kInitialPathFailureBackoffFrames = 15U;
 constexpr std::uint32_t kMaximumPathFailureBackoffFrames = 120U;
 // Keep safe falls and their run-up alive long enough to confirm landing.
@@ -492,6 +496,8 @@ NavRoamController::NavRoamController()
 
 NavRoamController::NavRoamController(compat::RuntimeMode mode)
 	: offMeshRecovery_{},
+	  unsafeDropFailure_{},
+	  previousMovementSuppressed_(false),
 	  locomotion_(roamLocomotionConfig()),
 	  activeTraversal_(nav::TraversalAction::Walk),
 	jumpDrop_(roamJumpDropConfig(mode)),
@@ -615,6 +621,33 @@ void NavRoamController::rememberPathFailure(
 	pathFailureRetryFrame_ = frame + pathFailureBackoffFrames_;
 }
 
+void NavRoamController::rememberUnsafeDrop(
+	const NavRoamObservation &observation, nav::AreaId goalArea,
+	const nav::NavDirectedLink &link)
+{
+	hasAvoidedLink_ = true;
+	avoidedLink_ = link;
+	if (!observation.hasObjectiveTarget) return;
+	if (unsafeDropFailure_.valid &&
+		unsafeDropFailure_.link.fromArea == link.fromArea &&
+		unsafeDropFailure_.link.toArea == link.toArea)
+	{
+		delayUnsafeDropRetry();
+		return;
+	}
+	unsafeDropFailure_ = {true, true, observation.objectiveTargetEntity,
+		observation.locomotion.position, goalArea, link, 0U,
+		kInitialUnsafeDropBackoffFrames};
+	// Allow one immediate attempt through the existing directed bypass flow.
+}
+
+void NavRoamController::delayUnsafeDropRetry()
+{
+	unsafeDropFailure_.retryFramesRemaining = unsafeDropFailure_.nextBackoffFrames;
+	unsafeDropFailure_.nextBackoffFrames = (std::min)(
+		kMaximumUnsafeDropBackoffFrames, unsafeDropFailure_.nextBackoffFrames * 2U);
+}
+
 void NavRoamController::clearPathFailure()
 {
 	hasPathFailure_ = false;
@@ -701,6 +734,7 @@ NavRoamResult NavRoamController::update(
 			observation.frame.roundGeneration != lastFrame_.roundGeneration)
 	{
 		offMeshRecovery_ = {};
+		unsafeDropFailure_ = {};
 		clearPathFailure();
 		hasAvoidedLink_ = false;
 		avoidedLink_ = {0U, 0U, 0U, 0U};
@@ -712,6 +746,33 @@ NavRoamResult NavRoamController::update(
 		resetRoute();
 		}
 	}
+	if (unsafeDropFailure_.valid)
+	{
+		const float dx = observation.locomotion.position.x - unsafeDropFailure_.anchor.x;
+		const float dy = observation.locomotion.position.y - unsafeDropFailure_.anchor.y;
+		const bool newBomb = observation.hasObjectiveTarget &&
+			observation.objectiveTargetEntity.isValid() &&
+			!(observation.objectiveTargetEntity == unsafeDropFailure_.entity);
+		const bool madeProgress = observation.locomotion.grounded &&
+			dx * dx + dy * dy >= kUnsafeDropProgressDistance * kUnsafeDropProgressDistance;
+		if (newBomb || madeProgress)
+		{
+			if (newBomb) resetRoute();
+			unsafeDropFailure_ = {};
+			hasAvoidedLink_ = false;
+			avoidedLink_ = {};
+			failedRoamGoalArea_ = 0U;
+			clearPathFailure();
+		}
+		else if (lastFrame_.isValid() && !observation.movementSuppressed &&
+			!previousMovementSuppressed_)
+		{
+			const std::uint32_t elapsed = observation.frame.tick - lastFrame_.tick;
+			unsafeDropFailure_.retryFramesRemaining -= (std::min)(
+				elapsed, unsafeDropFailure_.retryFramesRemaining);
+		}
+	}
+	previousMovementSuppressed_ = observation.movementSuppressed;
 	const bool objectiveTargetChanged =
 		hasObjectiveTarget_ != observation.hasObjectiveTarget ||
 		(observation.hasObjectiveTarget &&
@@ -722,10 +783,13 @@ NavRoamResult NavRoamController::update(
 	{
 		// Goal reassignment cannot make a failed recovery point traversable.
 		// Retain candidate exclusions until movement/lifecycle provides new evidence.
-		clearPathFailure();
-		hasAvoidedLink_ = false;
-		avoidedLink_ = {0U, 0U, 0U, 0U};
-		failedRoamGoalArea_ = 0U;
+		if (!unsafeDropFailure_.valid)
+		{
+			clearPathFailure();
+			hasAvoidedLink_ = false;
+			avoidedLink_ = {0U, 0U, 0U, 0U};
+			failedRoamGoalArea_ = 0U;
+		}
 		if (decision != nullptr)
 		{
 			decision->recomputeReason = lastFrame_.isValid()
@@ -1063,6 +1127,38 @@ NavRoamResult NavRoamController::update(
 				return NavRoamResult::IntentReady;
 			}
 		}
+		if (unsafeDropFailure_.valid)
+		{
+			hasAvoidedLink_ = objectiveArea == 0U || unsafeDropFailure_.bypassPending;
+			avoidedLink_ = unsafeDropFailure_.link;
+			if (objectiveArea == 0U)
+			{
+				failedRoamGoalArea_ = unsafeDropFailure_.goalArea;
+				goalSelectionReason_ = GoalSelectionPathFailed;
+			}
+			else if (unsafeDropFailure_.retryFramesRemaining > 0U)
+			{
+				if (decision != nullptr)
+				{
+					decision->goalPresent = true;
+					decision->goalKind = NavGoalKind::Objective;
+					decision->goalArea = objectiveArea;
+					decision->goalPosition = objectiveTarget_;
+					decision->linkFromArea = unsafeDropFailure_.link.fromArea;
+					decision->linkToArea = unsafeDropFailure_.link.toArea;
+					decision->linkDirection = unsafeDropFailure_.link.direction;
+					decision->linkHow = unsafeDropFailure_.link.how;
+					decision->pathResult = nav::NavQueryResult::NoRoute;
+					decision->failureReason = NavFailureReason::UnsafeDrop;
+					decision->stage = NavRoamStage::Failed;
+				}
+				return NavRoamResult::NoRoute;
+			}
+		}
+		if (objectiveArea != 0U && unsafeDropFailure_.valid)
+		{
+			unsafeDropFailure_.bypassPending = false;
+		}
 		const nav::NavRouteType routeType = nav::NavRouteType::Fastest;
 		if (objectiveArea != 0U && isPathFailureBackedOff(
 				observation.frame.mapGeneration,
@@ -1090,7 +1186,12 @@ NavRoamResult NavRoamController::update(
 	}
 	if (!selectRoute(snapshot, currentArea, objectiveArea, decision))
 		{
-		if (objectiveArea != 0U && decision != nullptr &&
+			if (objectiveArea != 0U && unsafeDropFailure_.valid)
+			{
+				delayUnsafeDropRetry();
+				clearPathFailure();
+			}
+		if (objectiveArea != 0U && !unsafeDropFailure_.valid && decision != nullptr &&
 				(decision->pathResult == nav::NavQueryResult::ResourceLimit ||
 					decision->pathResult == nav::NavQueryResult::NoRoute))
 			{
@@ -1180,6 +1281,10 @@ NavRoamResult NavRoamController::update(
 				snapshot, activeCorridor_, candidate, &traversalStartResult,
 				&observation.locomotion.position, &landingPortal))
 		{
+			if (traversalStartResult == nav::LocomotionResult::UnsafeDrop)
+			{
+				rememberUnsafeDrop(observation, objectiveArea, candidate);
+			}
 			hasAvoidedLink_ = true;
 			avoidedLink_ = candidate;
 			++nextLinkIndex_;
@@ -1192,6 +1297,10 @@ NavRoamResult NavRoamController::update(
 				goalSelectionStrategy_ = GoalSelectionStrategyNone;
 				if (decision != nullptr)
 				{
+					decision->linkFromArea = candidate.fromArea;
+					decision->linkToArea = candidate.toArea;
+					decision->linkDirection = candidate.direction;
+					decision->linkHow = candidate.how;
 					decision->locomotionResult = traversalStartResult;
 					decision->failureReason =
 						traversalStartResult == nav::LocomotionResult::UnsafeDrop
@@ -1318,6 +1427,10 @@ NavRoamResult NavRoamController::update(
 		}
 		hasAvoidedLink_ = true;
 		avoidedLink_ = activeLink_;
+		if (traversalFailure == nav::LocomotionResult::UnsafeDrop)
+		{
+			rememberUnsafeDrop(observation, objectiveArea, activeLink_);
+		}
 		++nextLinkIndex_;
 		if (objectiveArea == 0U && hasRoamGoal_)
 		{
@@ -1497,6 +1610,21 @@ NavRoamResult NavRoamController::update(
 			: NavRoamResult::ReplanRequired;
 	}
 	case nav::LocomotionResult::UnsafeDrop:
+		// The follower may have advanced past a safe prefix before the veto.
+		// Capture its rejected transition even when it is a Drop, not a Walk.
+		if (activeCorridorIndex_ > 0U &&
+			activeCorridorIndex_ - 1U < activeCorridor_.links.size())
+		{
+			activeLink_ = activeCorridor_.links[activeCorridorIndex_ - 1U];
+		}
+		if (decision != nullptr)
+		{
+			decision->linkFromArea = activeLink_.fromArea;
+			decision->linkToArea = activeLink_.toArea;
+			decision->linkDirection = activeLink_.direction;
+			decision->linkHow = activeLink_.how;
+		}
+		rememberUnsafeDrop(observation, objectiveArea, activeLink_);
 		resetRoute();
 		if (decision != nullptr)
 		{
@@ -1609,6 +1737,8 @@ void NavRoamController::reset()
 		reservationBoard_->release(actor_);
 	}
 	offMeshRecovery_ = {};
+	unsafeDropFailure_ = {};
+	previousMovementSuppressed_ = false;
 	resetRoute();
 	actor_ = {0U, LifecycleSession::kInvalidGeneration};
 	lastFrame_ = {};

@@ -55,10 +55,9 @@ void FallLandingTracker::reset() noexcept
 	airborneHealth_ = 0.0f;
 }
 
-SpawnReadiness spawnReadiness(const MovementPhysicsState &state) noexcept
+SpawnReadiness movementReadiness(const MovementPhysicsState &state) noexcept
 		{
 			if (!state.entityValid || !state.fakeClient || state.spectator || state.dead ||
-				!state.grounded ||
 				((state.team != 1 && state.team != 2) && !state.teamConfirmed) ||
 					!std::isfinite(state.health) || state.health <= 0.0f || state.solid != 3 ||
 					state.movetype != 3)
@@ -67,6 +66,11 @@ SpawnReadiness spawnReadiness(const MovementPhysicsState &state) noexcept
 			}
 			return SpawnReadiness::Ready;
 		}
+
+SpawnReadiness spawnReadiness(const MovementPhysicsState &state) noexcept
+{
+	return state.grounded ? movementReadiness(state) : SpawnReadiness::NotReady;
+}
 
 		bool isMovementDirectionReversal(
 			const PhysicsVector &previous,

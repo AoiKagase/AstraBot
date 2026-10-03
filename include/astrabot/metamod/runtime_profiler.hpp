@@ -4,6 +4,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <chrono>
 
 namespace astrabot
 {
@@ -28,6 +29,8 @@ enum class RuntimeProfilerStage : std::uint8_t
 	NavMovement,
 	MovementDispatch,
 	TraceSerialization,
+	RunPlayerMove,
+	SynchronousLog,
 	Count
 };
 
@@ -87,6 +90,8 @@ struct RuntimeProfilerStageStats
 struct RuntimeProfilerReport
 {
 	double windowSeconds;
+	double wallWindowSeconds;
+	std::uint32_t frameCount;
 	std::array<RuntimeProfilerStageStats,
 		static_cast<std::size_t>(RuntimeProfilerStage::Count)> stages;
 	std::uint32_t aliveBots;
@@ -244,9 +249,41 @@ private:
 
 	bool enabled_;
 	double windowStartSeconds_;
+	std::chrono::steady_clock::time_point wallWindowStart_;
 	RuntimeProfilerReport counters_;
 	std::array<SearchKey, 256U> searchKeys_;
 	std::size_t searchKeyCount_;
+};
+
+// No clock reads occur while profiling is disabled. Timings are inclusive;
+// callers must not sum overlapping parent and child stages.
+class RuntimeProfilerScope
+{
+public:
+	RuntimeProfilerScope(RuntimeProfiler &profiler, RuntimeProfilerStage stage) noexcept
+		: profiler_(profiler), stage_(stage), enabled_(profiler.enabled()),
+		  start_(enabled_ ? std::chrono::steady_clock::now()
+				: std::chrono::steady_clock::time_point())
+	{
+	}
+	~RuntimeProfilerScope()
+	{
+		if (!enabled_)
+		{
+			return;
+		}
+		const auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(
+			std::chrono::steady_clock::now() - start_).count();
+		profiler_.record(stage_, elapsed > 0 ? static_cast<std::uint64_t>(elapsed) : 0U);
+	}
+	RuntimeProfilerScope(const RuntimeProfilerScope &) = delete;
+	RuntimeProfilerScope &operator=(const RuntimeProfilerScope &) = delete;
+
+private:
+	RuntimeProfiler &profiler_;
+	RuntimeProfilerStage stage_;
+	bool enabled_;
+	std::chrono::steady_clock::time_point start_;
 };
 }
 }

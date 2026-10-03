@@ -1,5 +1,84 @@
 # CSBot Parity Status
 
+## 2026-10-03 approved local release
+
+The user approved committing and redeploying the three fixes below. Fresh release
+gates passed: full MSVC HostX86/x86 Debug build, CTest **56/56** (3.76 s), PE x86
+and seven exact Metamod exports. The 1,272,320-byte build retains SHA-256
+`ced3e55e32882d6123e1e886e0e559fff2a9260d539331e4f6dd6150fcafb68e`.
+Approved destination: `D:/SteamCMD/cstrike_rehlds/cstrike/addons/astrabot/dlls/astrabot_mm.dll`.
+Previous DLL SHA-256: `0599732edd351866adffebec2f02972df88cd45a57fd29d1033e90c1269a629f`.
+The exact local commit, collision-safe backup and post-copy hash are recorded in
+the execution workspace's `three-fix-deployment-receipt.json` after execution.
+The built DLL includes NavMovement, RunPlayerMove and SynchronousLog timings,
+game/wall window duration, frame count and throttled movementGate diagnostics.
+Enable with `astrabot_profile 1`; it remains off by default. No profile CVar,
+server start or push is part of this release. Physical runtime/FPS acceptance
+and same-condition ZBot differential validation remain open.
+
+## 2026-10-03 airborne continuity, physical-failure retry and preplant variation
+
+Implemented in the working tree based on `98c4d4e5e623291bf7eb373391e8f91770104981`.
+This offline amendment preceded the approved local release recorded above.
+Final HostX86/x86 MSVC 14.51 Debug full build: PASS; CTest **56/56 PASS**
+(5.70 s); PE x86 and seven exact Metamod exports: PASS. Independent direct-source
+review: no remaining Critical/Important findings. Built DLL SHA-256
+`ced3e55e32882d6123e1e886e0e559fff2a9260d539331e4f6dd6150fcafb68e` (1272320 bytes).
+Live movement, collision, plant outcomes, team behavior and FPS remain unverified.
+
+The comparison is independently interpreted public ReGameDLL_CS CSBot at
+`b0889847fe6d03898be88acc9e366660efb40ab5`, not an identified ZBot binary.
+No proprietary implementation was copied and no exact parity is claimed.
+
+- Read-only qconsole evidence SHA-256
+  `396371ce63c8ea59bb61dc14dd098933c324cd91e6470401b50974d353d240f6`:
+  all 103 observed armed jumps were followed by an airborne neutral command.
+  The continuing-movement gate incorrectly reused grounded spawn readiness.
+  Initial joined/spawn readiness still requires grounding; established live
+  movement preserves flight direction, route and landing tracker. Cached
+  IN_JUMP is stripped while airborne. FreezeTime, death and spectator gates stay.
+  Actual grounded landing feedback exposes measured health loss separately.
+- After the first human A plant, the log records a successful route repeatedly
+  vetoed as UnsafeDrop around directed link 1504 -> 1505. Assignment generation
+  changed 36 times in the sampled interval; A* success did not establish physical
+  traversal safety. Unsafe failures now retain bomb entity identity, failed link
+  and position anchor across objective/roam reassignment. One immediate directed
+  bypass is allowed; failed retry uses 128, 256 then 512 active server frames.
+  FreezeTime pauses this Core budget. Expiry permits one fresh safety evaluation
+  of the original route. New bomb, lifecycle reset or >=64-unit grounded XY
+  displacement clears the history; adjacent-area jitter does not.
+  This is a bounded Astra policy, not a recovered ZBot constant.
+- Existing coordinator failure handling hands the bomb objective to another
+  eligible CT; repeated old-owner failure reports cannot invalidate that owner.
+  Core locomotion vetoes now identify the actual rejected corridor link after
+  a safe walking prefix, rather than reporting the preceding walking link.
+- Opt-in profiler adds actual game and wall window seconds and StartFrame count,
+  and separates Core NavMovement, the engine RunPlayerMove callback and synchronous
+  runtime console logging. Parent stages remain inclusive and must not be summed.
+  movementGate emits at most one record per bot per second. Disabled scopes read
+  no additional wall clock. These diagnostics do not demonstrate an FPS gain.
+- Public CSBot manager chooses an earliest plant decision at RestartRound time
+  + random 10..30 seconds (`cs_bot_manager.cpp:114-129`); that includes FreezeTime.
+  Idle/Hunt can move the carrier before later closest-zone selection
+  (`cs_bot_idle.cpp:172-190,879-880`, `cs_bot_hunt.cpp:67-74,171-213`).
+  Astra now samples an initial reachable site through the existing compatibility
+  RNG boundary and keeps it for the carrier/round. At deadline, site arrival or
+  urgency it transitions once to the nearest currently reachable route.
+  Candidate travel plus five seconds of plant margin is reserved; missing timing,
+  RNG or NAV authority falls back to the existing nearest route. Carrier loss,
+  death, new round and observed planted bomb cancel the approach.
+  This bounded site-directed movement differs from reference whole-map Hunt and
+  SAFEST/danger-weighted route selection. It enables A/B alternatives without a
+  claimed or enforced 50:50 final plant ratio. No learning was implemented.
+- Offline regression coverage includes 10/60/90/100/128 Hz and variable command
+  cadence, airborne single-jump/landing, delayed engine/log callback attribution,
+  independently captured disabled diagnostics, dangerous-link bypass and bounded
+  expiry at multiple frame gaps, entity generation and progress resets, FreezeTime,
+  real controller failure -> CT handoff, multiple seed/round/start site choices,
+  same-seed replay, held goals, timer/arrival transitions, unreachable and urgent
+  fallback, and human-planted C4 -> CT movement/IN_USE convergence.
+  Fixtures simulate public SDK observations, not BSP collision or engine physics.
+
 ## 2026-10-02 full-update ground cadence and bounded off-mesh commands
 
 IMPLEMENTED_OFFLINE_VERIFIED for ground observation cadence and horizontal

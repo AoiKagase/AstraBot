@@ -1,6 +1,8 @@
 #include "astrabot/runtime/nav_roam_controller.hpp"
 #include "astrabot/compat/random_source.hpp"
+#include "astrabot/team/round_objective_coordinator.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <limits>
@@ -397,6 +399,7 @@ bool testObjectiveStartFailureRetainsAttemptedLink()
 	astrabot::runtime::NavRoamController controller;
 	astrabot::runtime::NavRoamObservation observation = {};
 	observation.actor = {1U, 1U};
+	observation.collectPathStats = true;
 	observation.frame = {1U, 1U, 1U};
 	observation.locomotion.position = {240.0f, 128.0f, 100.0f};
 	observation.locomotion.standingClearance = 72.0f;
@@ -430,8 +433,19 @@ bool testObjectiveStartFailureRetainsAttemptedLink()
 	{
 		return false;
 	}
-	return check(decision.linkFromArea == 1U && decision.linkToArea == 2U,
-			"no-route diagnostics preserve the link that blocked the objective");
+	if (!check(decision.linkFromArea == 1U && decision.linkToArea == 2U,
+			"no-route diagnostics preserve the link that blocked the objective")) return false;
+	// Coordinator handoff may temporarily replace the objective with Hunt.
+	for (std::uint32_t tick = 3U; tick < 100U; ++tick)
+	{
+		observation.frame.tick = tick;
+		observation.hasObjectiveTarget = (tick % 2U) == 0U;
+		controller.update(publisher.snapshot(), observation, &intent, &decision);
+		if (observation.hasObjectiveTarget && !check(
+			decision.pathSearchStats.searchCalls == 0U && intent.speed == 0.0f,
+			"same unsafe objective does not restart A* across Hunt reassignment")) return false;
+	}
+	return true;
 }
 
 bool testPathFailureChoosesAnotherCompatibilityGoal()
@@ -2055,8 +2069,236 @@ bool testRecoveryReselectsBeforeExhaustion()
 	return passed;
 }
 
+bool testUnsafeDropRetryPolicy(std::uint32_t cadence, int release, bool bypass, bool prefix = false, bool launch = false, bool handoff = false)
+{
+	using namespace astrabot;
+	nav::NavDocument document;
+	document.setSourceIdentity({5U, 100U, 200U});
+	auto start = area(1U, 0.0f, 256.0f);
+	auto goal = area(2U, prefix ? 512.0f : 256.0f, prefix ? 768.0f : 512.0f);
+	start.extent.hi.y = goal.extent.hi.y = 256.0f;
+	start.extent.lo.z = start.extent.hi.z = start.northEastZ = start.southWestZ = 100.0f;
+	start.connections[1U].push_back(prefix ? 3U : 2U);
+	if (bypass) start.connections[2U].push_back(3U);
+	document.addArea(start);
+	document.addArea(goal);
+	if (handoff)
+	{
+		auto farStart = area(5U, -512.0f, -448.0f);
+		farStart.connections[1U].push_back(2U);
+		document.addArea(farStart);
+	}
+	if (prefix)
+	{
+		auto middle = area(3U, 256.0f, 512.0f);
+		middle.extent.hi.y = 256.0f;
+		middle.extent.lo.z = middle.extent.hi.z = middle.northEastZ = middle.southWestZ = 100.0f;
+		middle.connections[1U].push_back(2U);
+		document.addArea(middle);
+	}
+	if (bypass)
+	{
+		auto side = area(3U, 0.0f, 256.0f);
+		auto corner = area(4U, 256.0f, 512.0f);
+		side.extent.lo.y = corner.extent.lo.y = 256.0f;
+		side.extent.hi.y = corner.extent.hi.y = 512.0f;
+		side.extent.lo.z = side.extent.hi.z = side.northEastZ = side.southWestZ = 60.0f;
+		corner.extent.lo.z = corner.extent.hi.z = corner.northEastZ = corner.southWestZ = 30.0f;
+		side.connections[1U].push_back(4U);
+		corner.connections[0U].push_back(2U);
+		document.addArea(side);
+		document.addArea(corner);
+	}
+	nav::NavSnapshotPublisher publisher;
+	if (!check(publisher.publish(&document, 1U) == nav::NavSnapshotResult::Published,
+		"unsafe retry policy snapshot published")) return false;
+	runtime::NavRoamController controller;
+	runtime::NavRoamObservation obs = {};
+	obs.actor = {1U, 1U};
+	obs.frame = {1U, 1U, 1U};
+	obs.collectPathStats = true;
+	obs.hasObjectiveTarget = true;
+	obs.objectiveTarget = {prefix ? 640.0f : 384.0f, 128.0f, 0.0f};
+	obs.objectiveTargetEntity = {31U, 4U};
+	// Outside the 32-unit launch tolerance, inside locomotion's 80-unit lookahead.
+	obs.locomotion.position = {190.0f, 128.0f, 100.0f};
+	obs.locomotion.grounded = true;
+	obs.locomotion.standingClearance = 72.0f;
+	obs.locomotion.crouchingClearance = 36.0f;
+	obs.locomotion.safeDropHeightAvailable = true;
+	obs.locomotion.maximumSafeDropHeight = 25.0f;
+	nav::LocomotionIntent intent = {};
+	runtime::NavRoamDecision decision = {};
+	team::RoundObjectiveCoordinator coordinator;
+	team::TeamObjectiveInput teamInput = {};
+	team::TeamObjectiveAssignmentSet assignments = {};
+	team::TeamObjectiveAssignment failedAssignment = {};
+	if (handoff)
+	{
+		teamInput.mapGeneration = teamInput.roundGeneration = teamInput.frameSequence = 1U;
+		teamInput.actorCount = 2U;
+		teamInput.actors[0] = {{1U, 1U}, objectives::TeamRole::CounterTerrorist,
+			true, false, true, {190.0f, 128.0f, 100.0f}, 1U};
+		teamInput.actors[1] = {{2U, 1U}, objectives::TeamRole::CounterTerrorist,
+			true, false, true, {-480.0f, 32.0f, 0.0f}, 5U};
+		teamInput.plantedC4 = {true, obs.objectiveTargetEntity, {384.0f, 128.0f, 0.0f}, 2U};
+		if (!check(coordinator.assign(teamInput, publisher.snapshot(), &assignments) == team::TeamObjectiveResult::Assigned &&
+			assignments.assignments[0].actor.slot == 1U,
+			"nearer CT receives bomb before actual UnsafeDrop failure")) return false;
+		failedAssignment = assignments.assignments[0];
+	}
+	if (prefix)
+	{
+		if (!check(controller.update(publisher.snapshot(), obs, &intent, &decision) == runtime::NavRoamResult::IntentReady,
+			"safe walk prefix starts before unsafe next link")) return false;
+		obs.frame.tick = 2U;
+		obs.locomotion.position.x = launch ? 466.0f : 446.0f;
+		const auto rejected = controller.update(publisher.snapshot(), obs, &intent, &decision);
+		return check(rejected == runtime::NavRoamResult::ReplanRequired &&
+			decision.failureReason == runtime::NavFailureReason::UnsafeDrop &&
+			decision.linkFromArea == 3U && decision.linkToArea == 2U,
+			"locomotion unsafe failure identifies current dangerous link after a safe prefix");
+	}
+	if (!check(controller.update(publisher.snapshot(), obs, &intent, &decision) ==
+		runtime::NavRoamResult::ReplanRequired && decision.failureReason == runtime::NavFailureReason::UnsafeDrop,
+		"unsafe objective is rejected before retry policy")) return false;
+	if (handoff)
+	{
+		coordinator.reportPathFailure(failedAssignment.actor, failedAssignment.generation, 0U, 1U);
+		teamInput.frameSequence = 2U;
+		if (!check(coordinator.assign(teamInput, publisher.snapshot(), &assignments) == team::TeamObjectiveResult::Assigned &&
+			assignments.assignments[0].actor.slot == 2U,
+			"actual controller UnsafeDrop hands bomb to another CT through existing coordinator")) return false;
+		const std::uint32_t replacementGeneration = assignments.assignments[0].generation;
+		obs.frame.tick = 2U;
+		controller.update(publisher.snapshot(), obs, &intent, &decision);
+		for (std::uint32_t tick = 3U; tick < 100U; ++tick)
+		{
+			obs.frame.tick = teamInput.frameSequence = tick;
+			obs.hasObjectiveTarget = tick % 2U == 0U;
+			controller.update(publisher.snapshot(), obs, &intent, &decision);
+			if (!check(decision.pathSearchStats.searchCalls == 0U,
+				"failed CT Hunt/objective toggles do not restart movement A* after handoff")) return false;
+			coordinator.reportPathFailure(failedAssignment.actor, failedAssignment.generation, 0U, tick);
+			if (!check(coordinator.assign(teamInput, publisher.snapshot(), &assignments) == team::TeamObjectiveResult::Assigned &&
+				assignments.assignments[0].actor.slot == 2U &&
+				assignments.assignments[0].generation == replacementGeneration,
+				"repeated old CT failure cannot evict cached replacement or rescore candidates")) return false;
+		}
+		// Adapter physical UnsafeDrop reports startArea=0: a neighboring NAV
+		// area identity alone cannot establish that the physical veto is gone.
+		runtime::NavRoamController replacementController;
+		auto replacementObs = obs;
+		replacementObs.actor = {2U, 1U};
+		replacementObs.hasObjectiveTarget = true;
+		replacementObs.frame.tick = 100U;
+		if (!check(replacementController.update(publisher.snapshot(), replacementObs, &intent, &decision) ==
+			runtime::NavRoamResult::ReplanRequired && decision.failureReason == runtime::NavFailureReason::UnsafeDrop,
+			"replacement CT also emits an actual physical UnsafeDrop")) return false;
+		coordinator.reportPathFailure(assignments.assignments[0].actor, replacementGeneration, 0U, 100U);
+		teamInput.actors[1].currentArea = 1U;
+		for (std::uint32_t tick = 101U; tick < 129U; ++tick)
+		{
+			teamInput.frameSequence = tick;
+			teamInput.actors[0].currentArea = tick % 2U == 0U ? 1U : 5U;
+			teamInput.actors[1].currentArea = tick % 2U == 0U ? 5U : 1U;
+			if (!check(coordinator.assign(teamInput, publisher.snapshot(), &assignments) == team::TeamObjectiveResult::NoObjective &&
+				assignments.count == 0U,
+				"all physically failed CTs stay excluded through NAV area jitter without candidate rescoring")) return false;
+		}
+		teamInput.frameSequence = 129U;
+		teamInput.actors[0].currentArea = teamInput.actors[1].currentArea = 1U;
+		if (!check(coordinator.assign(teamInput, publisher.snapshot(), &assignments) == team::TeamObjectiveResult::Assigned &&
+			assignments.assignments[0].actor.slot == 1U,
+			"physical exclusion still expires at 128 server frames rather than permanently blocking all CTs")) return false;
+		return true;
+	}
+	obs.frame.tick = 2U;
+	const auto alternative = controller.update(publisher.snapshot(), obs, &intent, &decision);
+	if (bypass)
+	{
+		return check(alternative == runtime::NavRoamResult::IntentReady &&
+			decision.selectedPath == std::vector<nav::AreaId>({1U, 3U, 4U, 2U}) &&
+			intent.speed > 0.0f && intent.traversal == nav::TraversalAction::Walk,
+			"existing directed alternative reaches same objective through safe descending steps");
+	}
+	if (!check(alternative == runtime::NavRoamResult::NoRoute,
+		"no bypass enters bounded retry interval")) return false;
+	// Freeze time must not spend the budget, including the first resume update.
+	obs.movementSuppressed = true;
+	obs.frame.tick = 3U;
+	controller.update(publisher.snapshot(), obs, &intent, &decision);
+	obs.frame.tick = 1000U;
+	controller.update(publisher.snapshot(), obs, &intent, &decision);
+	obs.movementSuppressed = false;
+	obs.frame.tick = 1001U;
+	if (!check(controller.update(publisher.snapshot(), obs, &intent, &decision) == runtime::NavRoamResult::NoRoute &&
+		decision.pathSearchStats.searchCalls == 0U && decision.failureReason == runtime::NavFailureReason::UnsafeDrop,
+		"freeze and resume preserve unsafe retry budget and typed failure")) return false;
+	if (release != 0)
+	{
+		obs.frame.tick++;
+		if (release == 1) obs.objectiveTargetEntity.id++;
+		if (release == 2) obs.objectiveTargetEntity.generation++;
+		if (release == 3) obs.locomotion.position.x -= 80.0f;
+		if (release == 7)
+		{
+			obs.frame.tick += 128U;
+			obs.locomotion.maximumSafeDropHeight = 156.25f;
+		}
+		if (release == 4) obs.actor.actorGeneration++;
+		if (release == 5) obs.frame.roundGeneration++;
+		if (release == 6)
+		{
+			obs.frame.mapGeneration++;
+			if (!check(publisher.publish(&document, 2U) == nav::NavSnapshotResult::Published,
+				"new map snapshot published")) return false;
+		}
+		controller.update(publisher.snapshot(), obs, &intent, &decision);
+		return check(decision.pathSearchStats.searchCalls > 0U,
+			"new bomb id or generation, grounded progress, lifecycle and expiry release old failure") &&
+			check(release != 7 || (decision.failureReason == runtime::NavFailureReason::None && intent.speed > 0.0f),
+				"expiry reevaluates the original directed link when safe physics becomes available");
+	}
+	// Full updates spaced as 0.1s at 60, 90 and approximately 128 FPS.
+	std::uint32_t lastSearchElapsed = 0U;
+	std::uint32_t expectedDelay = 128U;
+	std::uint32_t retries = 0U;
+	for (std::uint32_t elapsed = cadence; elapsed <= 1400U; elapsed += cadence)
+	{
+		obs.frame.tick = 1001U + elapsed;
+		obs.locomotion.position.y = 128.0f + ((elapsed / cadence) % 2U == 0U ? 16.0f : -16.0f);
+		const auto result = controller.update(publisher.snapshot(), obs, &intent, &decision);
+		if (!check((result == runtime::NavRoamResult::NoRoute || result == runtime::NavRoamResult::ReplanRequired) && intent.speed == 0.0f,
+			"retry remains safe and bounded without a reachable bypass")) return false;
+		if (decision.pathSearchStats.searchCalls > 0U)
+		{
+			const std::uint32_t delta = elapsed - lastSearchElapsed;
+			if (!check(delta >= expectedDelay && delta < expectedDelay + cadence,
+				"128/256/512 server-frame retry delay independent of full-update spacing")) return false;
+			lastSearchElapsed = elapsed;
+			expectedDelay = (std::min)(512U, expectedDelay * 2U);
+			++retries;
+		}
+	}
+	return check(retries == 3U, "repeated unsafe search loop replaced by capped active-frame retries");
+}
+
+
 int main()
 {
+	for (std::uint32_t cadence : {6U, 9U, 13U})
+	{
+		if (!testUnsafeDropRetryPolicy(cadence, 0, false)) return 1;
+	}
+	for (int release = 1; release <= 7; ++release)
+	{
+		if (!testUnsafeDropRetryPolicy(6U, release, false)) return 1;
+	}
+	if (!testUnsafeDropRetryPolicy(6U, 0, true)) return 1;
+	if (!testUnsafeDropRetryPolicy(6U, 0, false, true)) return 1;
+	if (!testUnsafeDropRetryPolicy(6U, 0, false, true, true)) return 1;
+	if (!testUnsafeDropRetryPolicy(6U, 0, false, false, false, true)) return 1;
 	if (!testOffMeshRecoveryHasHorizontalProgressAndBounds() ||
 		!testRecoveryBudgetAndStateTransitions() ||
 		!testRecoveryReselectsBeforeExhaustion()) return 1;

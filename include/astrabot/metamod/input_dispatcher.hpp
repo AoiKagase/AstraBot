@@ -2,6 +2,7 @@
 #define ASTRABOT_METAMOD_INPUT_DISPATCHER_HPP
 
 #include "astrabot/metamod/abi_contract.hpp"
+#include "astrabot/metamod/runtime_profiler.hpp"
 #include "astrabot/runtime/command_queue.hpp"
 
 #include <array>
@@ -17,7 +18,7 @@ namespace metamod
 	public:
 		InputDispatcher(runtime::LifecycleSession &lifecycle, runtime::ActorRegistry &registry);
 
-		void configure(enginefuncs_t *engineFunctions);
+		void configure(enginefuncs_t *engineFunctions, RuntimeProfiler *profiler = nullptr);
 		void reset();
 		runtime::QueueResult enqueue(const runtime::BotCommand &command);
 		bool bindActor(const runtime::ActorId &actor, edict_t *entity);
@@ -35,6 +36,7 @@ namespace metamod
 		runtime::ActorRegistry &registry_;
 		runtime::CommandQueue queue_;
 		enginefuncs_t *engineFunctions_;
+		RuntimeProfiler *profiler_;
 		std::array<runtime::ActorId, runtime::LifecycleSession::kClientSlotCount> boundActors_;
 		std::array<edict_t *, runtime::LifecycleSession::kClientSlotCount> boundEntities_;
 	};
