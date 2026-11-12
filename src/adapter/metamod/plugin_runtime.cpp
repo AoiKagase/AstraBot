@@ -448,9 +448,17 @@ cvar_t kManagerCvars[] = {
 	if (engineFunctions_->pfnCVarGetPointer("astrabot_profile") != nullptr &&
 		engineFunctions_->pfnCVarGetFloat != nullptr)
 		{
+			const bool wasProfiling = runtimeProfiler_.enabled();
 			runtimeProfiler_.setEnabled(
 				engineFunctions_->pfnCVarGetFloat("astrabot_profile") > 0.0f,
 			globals_ != nullptr ? static_cast<double>(globals_->time) : 0.0);
+			if (!wasProfiling && runtimeProfiler_.enabled()) navigation_.restartLoggingDiagnostics();
+			if (wasProfiling != runtimeProfiler_.enabled() && gpMetaUtilFuncs != nullptr &&
+				gpMetaUtilFuncs->pfnLogConsole != nullptr && pluginId_ != nullptr)
+				importantLogConsole(runtimeProfiler_, pluginId_,
+					"profile capture enabled=%d map=%u round=%u frame=%u now=%.3f sparse=1",
+					runtimeProfiler_.enabled() ? 1 : 0, lifecycle_.mapGeneration(), lifecycle_.roundGeneration(),
+					adapterFrameCount_, globals_ != nullptr ? globals_->time : 0.0f);
 	}
 	const bool disableVision = readOptionalCvarFloat(
 		engineFunctions_, kAstrabotPerfDisableVisionName) > 0.0f;
@@ -839,7 +847,7 @@ void PluginRuntime::onStartFramePost()
 					gpMetaUtilFuncs->pfnLogConsole != nullptr && pluginId_ != nullptr)
 				{
 					profiledLogConsole(runtimeProfiler_, pluginId_,
-						"profile window game_seconds=%.3f wall_seconds=%.6f frames=%u",
+						"profile window game_seconds=%.3f wall_seconds=%.6f frames=%u sparse=1",
 						report.windowSeconds, report.wallWindowSeconds,
 						static_cast<unsigned int>(report.frameCount));
 					for (std::size_t stageIndex = 0U;
@@ -849,6 +857,7 @@ void PluginRuntime::onStartFramePost()
 						const RuntimeProfilerStage stage =
 							static_cast<RuntimeProfilerStage>(stageIndex);
 						const RuntimeProfilerStageStats &stats = report.stages[stageIndex];
+						if (stats.calls == 0U) continue;
 						const double average = stats.calls == 0U ? 0.0
 							: static_cast<double>(stats.totalUsec) /
 								static_cast<double>(stats.calls);
@@ -897,6 +906,7 @@ void PluginRuntime::onStartFramePost()
 							static_cast<RuntimePathSearchCaller>(callerIndex);
 						const RuntimePathSearchAggregate &aggregate =
 							report.pathSearchByCaller[callerIndex];
+						if (aggregate.calls == 0U) continue;
 						const double average = aggregate.calls == 0U ? 0.0
 							: static_cast<double>(aggregate.totalUsec) /
 								static_cast<double>(aggregate.calls);

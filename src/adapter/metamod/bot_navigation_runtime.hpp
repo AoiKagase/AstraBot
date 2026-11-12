@@ -81,6 +81,7 @@ class BotNavigationRuntime
 	void resetMapDanger();
 
 	void resetAvailabilityDiagnostic();
+	void restartLoggingDiagnostics();
 
 	void resetCreatedActorRoute(std::size_t slotIndex);
 

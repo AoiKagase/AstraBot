@@ -62,7 +62,8 @@ void BotNavigationRuntime::recordMovementPhysicsSample(std::size_t index,
 	if (gpMetaUtilFuncs != nullptr && gpMetaUtilFuncs->pfnLogConsole != nullptr &&
 		services_->service_pluginId() != nullptr &&
 		services_->service_runtimeProfiler().enabled() &&
-		actors_[index].movementDiagnosticSamples < kMovementPhysicsLogLimit)
+		(actors_[index].movementDiagnosticSamples < kMovementPhysicsLogLimit ||
+		 (receipt.sequence != 0U && (receipt.sequence % 16U) == 0U)))
 	{
 		profiledLogConsole(
 			services_->service_runtimeProfiler(), services_->service_pluginId(),
@@ -70,7 +71,7 @@ void BotNavigationRuntime::recordMovementPhysicsSample(std::size_t index,
 			"before=(%.1f %.1f %.1f) after=(%.1f %.1f %.1f) velocity=(%.1f %.1f %.1f) "
 			"grounded=%d ducked=%d ladder=%d groundentity=%u flags=%d deadflag=%d "
 			"team=%d teamConfirmed=%d solid=%d movetype=%d maxspeed=%.1f health=%.1f ready=%d "
-			"result=%d map=%u round=%u",
+			"result=%d map=%u round=%u now=%.3f",
 			static_cast<unsigned int>(sample.actor.slot),
 			static_cast<unsigned int>(sample.actor.actorGeneration),
 			static_cast<unsigned int>(services_->service_adapterFrameCount()),
@@ -84,8 +85,10 @@ void BotNavigationRuntime::recordMovementPhysicsSample(std::size_t index,
 			sample.after.deadflag, sample.after.team, sample.after.teamConfirmed ? 1 : 0,
 			sample.after.solid, sample.after.movetype, maxSpeed, sample.after.health,
 			sample.readiness == runtime::SpawnReadiness::Ready ? 1 : 0,
-			static_cast<int>(receipt.result), sample.frame.mapGeneration, sample.frame.roundGeneration);
-		++actors_[index].movementDiagnosticSamples;
+			static_cast<int>(receipt.result), sample.frame.mapGeneration, sample.frame.roundGeneration,
+			services_->service_globals() != nullptr ? services_->service_globals()->time : 0.0f);
+		if (actors_[index].movementDiagnosticSamples < kMovementPhysicsLogLimit)
+			++actors_[index].movementDiagnosticSamples;
 	}
 	const bool jumpCommand =
 		index < NativeBotObservation::kClientSlotCount &&
@@ -176,6 +179,8 @@ void BotNavigationRuntime::logMovementDiagnostic(std::size_t index, const char *
 	{
 		return;
 	}
+	const bool important = decision == nullptr || decision->failureReason != runtime::NavFailureReason::None;
+	if (!important && !services_->service_runtimeProfiler().enabled()) return;
 
 	const FakeClientHandle &handle = services_->service_managedBotHandles()[index];
 	const bool fakeClient =
@@ -195,7 +200,7 @@ void BotNavigationRuntime::logMovementDiagnostic(std::size_t index, const char *
 			: nav::NavVector{0.0f, 0.0f, 0.0f};
 	const nav::NavQueryResult areaResult =
 		nav::NavQuery(navigation).findContaining(feetPosition, 64.0f, &area);
-	profiledLogConsole(
+	importantLogConsole(
 		services_->service_runtimeProfiler(), services_->service_pluginId(),
 		"movement diagnostic actor=%u generation=%u frame=%u reason=%s fake=%d spectator=%d "
 		"team=%d deadflag=%d health=%.1f origin=(%.1f %.1f %.1f) solid=%d movetype=%d effects=%d "
@@ -774,7 +779,7 @@ void BotNavigationRuntime::beginMovementUpdate(const compat::CvarSnapshot &confi
 		if (!movementDiagnosticGlobal_ && gpMetaUtilFuncs != nullptr &&
 			gpMetaUtilFuncs->pfnLogConsole != nullptr && services_->service_pluginId() != nullptr)
 		{
-			profiledLogConsole(services_->service_runtimeProfiler(), services_->service_pluginId(),
+			importantLogConsole(services_->service_runtimeProfiler(), services_->service_pluginId(),
 							   "movement unavailable frame=%u enable=%.1f stop=%.1f nav=%d",
 							   static_cast<unsigned int>(services_->service_adapterFrameCount()),
 							   configuration.botEnable, configuration.botStop,
@@ -1257,6 +1262,16 @@ void BotNavigationRuntime::resetMapDanger()
 void BotNavigationRuntime::resetAvailabilityDiagnostic()
 {
 	movementDiagnosticGlobal_ = false;
+}
+
+void BotNavigationRuntime::restartLoggingDiagnostics()
+{
+	// Only diagnostic state is reset; movement, lifecycle and route state survive.
+	movementDiagnosticGlobal_ = false;
+	fill_movementDiagnosticAttempts(false);
+	fill_movementDiagnosticSamples(0U);
+	fill_movementGoalDiagnosticSeconds((std::numeric_limits<std::uint32_t>::max)());
+	fill_movementTraversalDiagnosticSeconds((std::numeric_limits<std::uint32_t>::max)());
 }
 
 void BotNavigationRuntime::resetCreatedActorRoute(std::size_t slotIndex)

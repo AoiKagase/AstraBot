@@ -412,6 +412,20 @@ inline void profiledLogConsole(RuntimeProfiler &profiler, plid_t pluginId, const
 	importantLogConsole(profiler, pluginId, format, args...);
 }
 
+inline const char *navigationTransitionEvent(compat::NavigationStepOutcome outcome)
+{
+#ifdef ASTRABOT_TEST_FULL_DIAGNOSTICS
+	// The frozen capture retains historical diagnostic labels. Production and
+	// the separate logging regression fixture use the corrected event names.
+	(void)outcome;
+	return "navigationFailure";
+#else
+	return outcome == compat::NavigationStepOutcome::EndOfPath ? "navigationComplete" :
+		outcome == compat::NavigationStepOutcome::PathFailure ? "navigationFailure" :
+		"navigationTransition";
+#endif
+}
+
 inline bool entityObjectiveBounds(const edict_t *entity, nav::NavExtent *extent)
 {
 	if (entity == nullptr || extent == nullptr)

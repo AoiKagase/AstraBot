@@ -1155,8 +1155,9 @@ bool testRuntimeProfilerBoundaries(
 	}
 	bool hasProfileLog = false;
 	for (const auto &message : gMovementLogs)
-		hasProfileLog = hasProfileLog || message.find("profile ") == 0U;
-	passed = check(!hasProfileLog, "disabled profiler emits no profile records through an active capture callback") && passed;
+		hasProfileLog = hasProfileLog || (message.find("profile ") == 0U &&
+			message.find("profile capture enabled=0 ") != 0U);
+	passed = check(!hasProfileLog, "disabled profiler emits only the capture-stop boundary through an active capture callback") && passed;
 	gCaptureMovementLogs = false; gProfileEnabled = false;
 	runtime.executeCompatibilityCommand(request("bot_kick", 1U, "all"));
 	return passed;

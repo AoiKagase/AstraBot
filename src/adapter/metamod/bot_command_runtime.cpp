@@ -402,13 +402,12 @@ runtime::CommandReceipt BotCommandRuntime::executeManagedBotCommand(std::size_t 
 		services_->service_inputDispatcher().enqueue(command);
 	if (enqueueResult != runtime::QueueResult::Accepted)
 	{
-		if (services_->service_runtimeProfiler().enabled() &&
-			(services_->service_adapterFrameCount() % 32U) == 0U && gpMetaUtilFuncs != nullptr &&
+		if (gpMetaUtilFuncs != nullptr &&
 			gpMetaUtilFuncs->pfnLogConsole != nullptr && services_->service_pluginId() != nullptr)
 		{
 			const runtime::LifecycleToken currentToken =
 				services_->service_lifecycle().tokenForSlot(handle.actor.slot);
-			profiledLogConsole(services_->service_runtimeProfiler(), services_->service_pluginId(),
+			importantLogConsole(services_->service_runtimeProfiler(), services_->service_pluginId(),
 							   "profile movementReject bot_id=%u actor_generation=%u frame=%u "
 							   "queue_result=%d command_valid=%d sequence=%u msec=%u "
 							   "command_lifecycle=(%u,%u,%u) current_lifecycle=(%u,%u,%u) "

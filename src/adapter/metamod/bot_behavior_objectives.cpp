@@ -116,8 +116,8 @@ void BotBehaviorRuntime::finishManagedBotNavigation(std::size_t index,
 			if (services_->service_runtimeProfiler().enabled())
 				profiledLogConsole(
 					services_->service_runtimeProfiler(), services_->service_pluginId(),
-					"profile navigationFailure bot_id=%u frame=%u state_from=%s state_to=%s",
-					context.actor.slot, context.frame.tick, compat::toString(previous),
+					"profile %s bot_id=%u frame=%u state_from=%s state_to=%s",
+					navigationTransitionEvent(step.outcome), context.actor.slot, context.frame.tick, compat::toString(previous),
 					compat::toString(machine.state()));
 		}
 	}

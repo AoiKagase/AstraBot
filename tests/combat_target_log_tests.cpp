@@ -29,6 +29,12 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 	if (!check(gMovementLogs.size() == 2U &&
 		gMovementLogs[1] == "action sensor target=0 combatResult=8",
 		"detailed mode retains the machine-readable legacy format")) return false;
+	using astrabot::compat::NavigationStepOutcome;
+	using astrabot::metamod::runtime_detail::navigationTransitionEvent;
+	if (!check(std::strcmp(navigationTransitionEvent(NavigationStepOutcome::EndOfPath), "navigationComplete") == 0 &&
+		std::strcmp(navigationTransitionEvent(NavigationStepOutcome::PathFailure), "navigationFailure") == 0 &&
+		std::strcmp(navigationTransitionEvent(NavigationStepOutcome::ObservationUnavailable), "navigationTransition") == 0,
+		"navigation event names distinguish completion, failure and unavailable observations")) return false;
 	gObjectiveEntitiesAvailable = false;
 	gServerSetsEntityTeam = true;
 	engine.pfnRandomLong = &siteFixtureRandomLong;
@@ -67,8 +73,13 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 			runtime.onStartFrame(); runtime.onStartFramePost();
 		}
 		bool found = false;
+		bool physicalSample = false;
 		for (const auto &message : gMovementLogs)
 		{
+			physicalSample = physicalSample || message.find("movement physics ") == 0U;
+			if ((message.find("profile stage=") == 0U || message.find("profile pathSearchByCaller.") == 0U) &&
+				!check(message.find(" calls=0 ") == std::string::npos,
+					"sparse profiling omits zero-call aggregate records")) return false;
 			if (message.find("action sensor slot=1 ") != 0U ||
 				message.find(" combatResult=") == std::string::npos) continue;
 			if (!enemyPresent && !check(message.find(" target=0 ") != std::string::npos,
@@ -76,6 +87,7 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 			if (message.find(enemyPresent ? " target=1 " : " target=0 ") != std::string::npos)
 				found = true;
 		}
+		if (!check(physicalSample, "detailed physical samples continue beyond the initial log budget")) return false;
 		if (!found)
 		{
 			for (const auto &message : gMovementLogs)
@@ -86,8 +98,30 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 			"no-enemy case exercises the combat-result log");
 	};
 	const bool passed = observe(false) && observe(true) && observe(false);
+	// Exhausted initial sampling must not suppress a new diagnostic session.
+	gProfileEnabled = false;
+	globals.time += 0.125f;
+	runtime.onStartFrame(); runtime.onStartFramePost();
+	gMovementLogs.clear();
+	gProfileEnabled = true;
+	for (unsigned frame = 0; frame < 8U; ++frame)
+	{
+		globals.time += 0.125f;
+		runtime.onStartFrame(); runtime.onStartFramePost();
+	}
+	unsigned restartedSamples = 0U;
+	bool availabilityReplayed = false;
+	bool captureStarted = false;
+	for (const auto &message : gMovementLogs)
+	{
+		if (message.find("movement physics ") == 0U) ++restartedSamples;
+		availabilityReplayed = availabilityReplayed || message.find("movement unavailable ") == 0U;
+		captureStarted = captureStarted || message.find("profile capture enabled=1 ") == 0U;
+	}
+	const bool restartPassed = check(restartedSamples >= 8U && availabilityReplayed && captureStarted,
+		"off/on refreshes physical sampling and replays the availability diagnostic");
 	gCaptureMovementLogs = false;
 	gProfileEnabled = false;
-	return passed;
+	return passed && restartPassed;
 }
 }
