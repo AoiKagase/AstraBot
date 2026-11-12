@@ -1,0 +1,10 @@
+{
+  "build-ownership-x86/astrabot_mm.dll": {
+    "sha256": "5899adcffc36c63feb355b97cc318e1b5f5d6ff6fbaff53a93e4a2857e2410c9",
+    "bytes": 1728000
+  },
+  "build-ownership-linux-x86/libastrabot_mm.so": {
+    "sha256": "c9edd381ebb1d885d135f0e5b8c80a90b50546863936ef329c1f1cb4fc33e8bf",
+    "bytes": 7114652
+  }
+}

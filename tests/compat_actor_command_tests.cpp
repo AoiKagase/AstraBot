@@ -1,5 +1,6 @@
 #include "astrabot/metamod/abi_contract.hpp"
 #include "plugin_runtime.hpp"
+#include "runtime_characterization.hpp"
 
 #include <cstdio>
 #include <cerrno>
@@ -23,6 +24,7 @@ bool gObjectiveEntitiesAvailable = false;
 bool gObjectiveTraceVisible = false;
 void traceObjectiveVisibility(const float *, const float *end, int, edict_t *, TraceResult *result)
 {
+	astrabot_test::runtimeCharacterization().record("call traceObjectiveVisibility end=(%a,%a,%a)", end[0],end[1],end[2]);
 	*result = {};
 	result->flFraction = gObjectiveTraceVisible ? 1.0f : 0.0f;
 	result->vecEndPos = Vector(end[0], end[1], end[2]);
@@ -50,7 +52,14 @@ void captureMovementLog(plid_t, const char *format, ...)
 	std::vsnprintf(message, sizeof(message), format, args);
 #endif
 	va_end(args);
-	gMovementLogs.emplace_back(message);
+	if (std::strncmp(message, "profile navigationStep ", 23U) == 0 ||
+        std::strncmp(message, "profile currentWeapon ", 22U) == 0 ||
+        std::strncmp(message, "profile navigationFailure ", 26U) == 0 ||
+        std::strncmp(message, "profile objectiveExit ", 22U) == 0)
+    {
+        astrabot_test::runtimeCharacterization().record("%s", message);
+    }
+    gMovementLogs.emplace_back(message);
 }
 	int gCreateCount = 0;
 	int gKillCount = 0;
@@ -164,6 +173,7 @@ constexpr std::size_t kManagerCvarCount = sizeof(gManagerCvarNames) / sizeof(gMa
 
 	edict_t *createFakeClient(const char *name)
 	{
+	astrabot_test::runtimeCharacterization().record("call createFakeClient name=%s", name == nullptr ? "<null>" : name);
 		if (gCreateCount >= 5)
 		{
 			return nullptr;
@@ -178,6 +188,7 @@ constexpr std::size_t kManagerCvarCount = sizeof(gManagerCvarNames) / sizeof(gMa
 
 int indexOfEdict(const edict_t *entity)
 {
+	astrabot_test::runtimeCharacterization().record("call indexOfEdict");
 	if (entity == &gBombSite)
 	{
 		return 6;
@@ -201,6 +212,7 @@ int gFindEntityByStringCount = 0;
 
 edict_t *findEntityByString(edict_t *start, const char *field, const char *value)
 {
+	astrabot_test::runtimeCharacterization().record("call findEntityByString start=%d field=%s value=%s", start != nullptr ? 1 : 0, field == nullptr ? "<null>" : field, value == nullptr ? "<null>" : value);
 	++gFindEntityByStringCount;
 	if (!gObjectiveEntitiesAvailable || start != nullptr || field == nullptr || value == nullptr ||
 		std::strcmp(field, "classname") != 0)
@@ -220,6 +232,7 @@ edict_t *findEntityByString(edict_t *start, const char *field, const char *value
 
 	const char *szFromIndex(int index)
 	{
+	astrabot_test::runtimeCharacterization().record("call szFromIndex index=%d", index);
 	if (index >= 100 && index < 105) return gEntityNames[index - 100].c_str();
 		return index == 1 ? "func_bomb_target" :
 			index == 2 ? "grenade" :
@@ -229,6 +242,7 @@ edict_t *findEntityByString(edict_t *start, const char *field, const char *value
 
 	edict_t *entityOfIndex(int index)
 	{
+	astrabot_test::runtimeCharacterization().record("call entityOfIndex index=%d", index);
 		if (index >= 1 && index <= 5)
 		{
 			return &gEntities[index - 1];
@@ -247,6 +261,7 @@ edict_t *findEntityByString(edict_t *start, const char *field, const char *value
 
 	void getGameDir(char *buffer)
 	{
+	astrabot_test::runtimeCharacterization().record("call getGameDir");
 	if (buffer != nullptr)
 	{
 		buffer[0] = '.';
@@ -256,6 +271,7 @@ edict_t *findEntityByString(edict_t *start, const char *field, const char *value
 
 	cvar_t *getCvar(const char *name)
 	{
+	astrabot_test::runtimeCharacterization().record("call getCvar name=%s", name);
 		static cvar_t c4Timer{};
 		if (std::strcmp(name,"mp_c4timer")==0 && gTestC4Timer>0.0f) return &c4Timer;
 		for (std::size_t index = 0U; index < kManagerCvarCount; ++index)
@@ -322,6 +338,7 @@ edict_t *findEntityByString(edict_t *start, const char *field, const char *value
 
 	float getCvarFloat(const char *name)
 	{
+	astrabot_test::runtimeCharacterization().record("call getCvarFloat name=%s", name);
 		if (std::strcmp(name,"astrabot_perf_disable_pathsearch")==0) return gAvoidanceNeutralPath ? 1.0f : 0.0f;
 		if (std::strcmp(name,"mp_c4timer")==0) return gTestC4Timer;
 		if (std::strcmp(name, "bot_difficulty") == 0) return 1.0f;
@@ -354,6 +371,7 @@ edict_t *findEntityByString(edict_t *start, const char *field, const char *value
 
 	void setCvarFloat(const char *name, float value)
 	{
+	astrabot_test::runtimeCharacterization().record("call setCvarFloat name=%s value=%a", name,value);
 		for (std::size_t index = 0U; index < kManagerCvarCount; ++index)
 			if (std::strcmp(name, gManagerCvarNames[index]) == 0 && gManagerCvars[index] != nullptr)
 				gManagerCvars[index]->value = value;
@@ -369,6 +387,7 @@ edict_t *findEntityByString(edict_t *start, const char *field, const char *value
 
 	void registerCvar(cvar_t *variable)
 	{
+	astrabot_test::runtimeCharacterization().record("call registerCvar");
 		++gCvarRegisterCount;
 		if (variable == nullptr || variable->name == nullptr)
 		{
@@ -400,22 +419,28 @@ edict_t *findEntityByString(edict_t *start, const char *field, const char *value
 		}
 	}
 
-	int playerUserId(edict_t *entity) { return indexOfEdict(entity) + 100; }
+	int playerUserId(edict_t *entity) {
+	astrabot_test::runtimeCharacterization().record("call playerUserId"); return indexOfEdict(entity) + 100; }
 
-	void putInServer(edict_t *) {}
-	qboolean clientConnect(edict_t *, const char *, const char *, char[128]) { return true; }
+	void putInServer(edict_t *) {
+	astrabot_test::runtimeCharacterization().record("call putInServer");}
+	qboolean clientConnect(edict_t *, const char *, const char *, char[128]) {
+	astrabot_test::runtimeCharacterization().record("call clientConnect"); return true; }
 
 	void disconnect(edict_t *entity)
 	{
+	astrabot_test::runtimeCharacterization().record("call disconnect");
 		if (entity != nullptr)
 		{
 			entity->v.flags &= ~FL_FAKECLIENT;
 		}
 	}
 
-	void serverCommand(char *) {}
+	void serverCommand(char *) {
+	astrabot_test::runtimeCharacterization().record("call serverCommand");}
 
-	void serverExecute() {}
+	void serverExecute() {
+	astrabot_test::runtimeCharacterization().record("call serverExecute");}
 
 	void resetEntities()
 	{
@@ -442,8 +467,13 @@ edict_t *findEntityByString(edict_t *start, const char *field, const char *value
 void runPlayerMove(
 	edict_t *entity, const float *angles, float forward, float side, float up, unsigned short buttons, byte, byte msec)
 {
-	injectProfilerDelay();
-	++gRunPlayerMoveCount;
+	astrabot_test::runtimeCharacterization().record(
+        "move actor=%d view=(%a,%a,%a) input=(%a,%a,%a) buttons=%u msec=%u",
+        indexOfEdict(entity), static_cast<double>(angles[0]), static_cast<double>(angles[1]),
+        static_cast<double>(angles[2]), static_cast<double>(forward), static_cast<double>(side),
+        static_cast<double>(up), static_cast<unsigned>(buttons), static_cast<unsigned>(msec));
+    injectProfilerDelay();
+    ++gRunPlayerMoveCount;
 	gLastRunPlayerMoveButtons = buttons;
 	gLastRunPlayerMoveMsec = msec;
 	gLastRunPlayerMoveForward = forward;
@@ -460,6 +490,7 @@ void runPlayerMove(
 
 void setClientMaxspeed(const edict_t *entity, float maxspeed)
 {
+	astrabot_test::runtimeCharacterization().record("call setClientMaxspeed speed=%a", maxspeed);
 	++gSetClientMaxspeedCount;
 	gLastClientMaxspeed = maxspeed;
 	if (entity != nullptr)
@@ -478,6 +509,9 @@ char *getInfoKeyBuffer(edict_t *)
 
 	void gameClientCommand(edict_t *entity)
 	{
+        astrabot_test::runtimeCharacterization().record("client actor=%d argc=%d command=%s arg=%s",
+            indexOfEdict(entity), astrabot::metamod::HookCommandArgc(),
+            astrabot::metamod::HookCommandArgv(0), astrabot::metamod::HookCommandArgv(1));
 		++gClientCommandCount;
 		if (astrabot::metamod::HookCommandArgc() == 2)
 		{
@@ -548,19 +582,19 @@ char *getInfoKeyBuffer(edict_t *)
 	{
 		return {name, argumentCount, {firstArgument, nullptr}};
 	}
-int32 jumpFixtureRandomLong(int32, int32 high)
+int32 jumpFixtureRandomLong(int32 low, int32 high)
 {
-	return high;
+	return astrabot_test::recordRandomLong(low, high, high);
 }
 
-int32 recoveryFixtureRandomLong(int32 low, int32)
+int32 recoveryFixtureRandomLong(int32 low, int32 high)
 {
-	return low;
+	return astrabot_test::recordRandomLong(low, high, low);
 }
 
-float jumpFixtureRandomFloat(float low, float)
+float jumpFixtureRandomFloat(float low, float high)
 {
-	return low;
+	return astrabot_test::recordRandomFloat(low, high, low);
 }
 
 int gGroundProbeMode = 0;
@@ -569,6 +603,7 @@ int gNearGroundProbeCount = 0;
 
 void traceJumpGround(const float *start, const float *, int, edict_t *actor, TraceResult *trace)
 {
+	astrabot_test::runtimeCharacterization().record("call traceJumpGround start=(%a,%a,%a)", start[0],start[1],start[2]);
 	*trace = {};
 	trace->flFraction = 0.5f;
 	trace->vecEndPos[0] = start[0];
@@ -650,6 +685,7 @@ bool writeJumpNavigation(const char *path, bool recovery = false)
 bool gAvoidanceGroundAvailable = true;
 void traceAvoidanceFloor(const float *, const float *end, int, edict_t *, TraceResult *result)
 {
+	astrabot_test::runtimeCharacterization().record("call traceAvoidanceFloor end=(%a,%a,%a)", end[0],end[1],end[2]);
 	*result = {};
 	result->flFraction = gAvoidanceGroundAvailable ? 0.5f : 1.0f;
 	result->vecEndPos = Vector(end[0], end[1], 0.0f);
@@ -1135,16 +1171,17 @@ std::uint32_t nextSiteFixtureRandom()
 }
 int32 siteFixtureRandomLong(int32 low, int32 high)
 {
-	return low + static_cast<int32>(nextSiteFixtureRandom() %
-		(static_cast<std::uint32_t>(high - low) + 1U));
+	return astrabot_test::recordRandomLong(low, high, low + static_cast<int32>(nextSiteFixtureRandom() %
+		(static_cast<std::uint32_t>(high - low) + 1U)));
 }
 float siteFixtureRandomFloat(float low, float high)
 {
-	return low + static_cast<float>(nextSiteFixtureRandom() >> 8U) /
-		16777216.0f * (high - low);
+	return astrabot_test::recordRandomFloat(low, high, low + static_cast<float>(nextSiteFixtureRandom() >> 8U) /
+		16777216.0f * (high - low));
 }
 int siteFixtureUserMessageId(plid_t, const char *name, int *)
 {
+	astrabot_test::runtimeCharacterization().record("call siteFixtureUserMessageId name=%s", name);
 	return std::strcmp(name, "CurWeapon") == 0 ? 94 :
 		std::strcmp(name, "TeamInfo") == 0 ? 86 :
 		std::strcmp(name, "BombDrop") == 0 ? 95 :

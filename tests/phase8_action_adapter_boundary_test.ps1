@@ -13,28 +13,33 @@ if (-not (Test-Path -LiteralPath $AdapterPath -PathType Leaf)) {
 
 $source = Get-Content -LiteralPath $AdapterPath -Raw
 $start = $source.IndexOf('void PluginRuntime::updateManagedBotMovement()')
-$end = $source.IndexOf('runtime::CommandReceipt PluginRuntime::dispatchNeutralMovement(')
+$end = $source.IndexOf('void PluginRuntime::resetManagedBotTiming', $start)
 if ($start -lt 0 -or $end -le $start) {
     throw 'could not isolate updateManagedBotMovement adapter boundary'
 }
 
 $movementBody = $source.Substring($start, $end - $start)
-$actionAdapterPath = Join-Path (Split-Path -Parent (Split-Path -Parent $AdapterPath)) 'metamod\action_adapter.hpp'
+$adapterDirectory = Split-Path -Parent $AdapterPath
+$commandSource = Get-Content -LiteralPath (Join-Path $adapterDirectory 'bot_command_runtime.cpp') -Raw
+$behaviorHeader = Get-Content -LiteralPath (Join-Path $adapterDirectory 'bot_behavior_runtime.hpp') -Raw
+$behaviorSource = Get-Content -LiteralPath (Join-Path $adapterDirectory 'bot_behavior_runtime.cpp') -Raw
+$actionAdapterPath = Join-Path $adapterDirectory 'action_adapter.hpp'
 $actionAdapterSource = if (Test-Path -LiteralPath $actionAdapterPath) {
     Get-Content -LiteralPath $actionAdapterPath -Raw
 } else {
     ''
 }
 $result = [ordered]@{
-    MovementDispatch = $movementBody.Contains('inputDispatcher_.dispatchNext')
-    CombatCoreCall = $source.Contains('combat::CombatController') -and $source.Contains('managedBotCombat_')
-    ObjectiveCoreCall = $source.Contains('objectives::RoundObjectivePlanner') -and $source.Contains('managedBotObjectives_')
+    MovementDispatch = $movementBody.Contains('command_.buildAndExecuteMovement') -and $commandSource.Contains('service_inputDispatcher().dispatchNext')
+    CombatCoreCall = $behaviorHeader.Contains('combat::CombatController') -and $behaviorSource.Contains('managedBotCombat')
+    ObjectiveCoreCall = $behaviorHeader.Contains('objectives::RoundObjectivePlanner') -and $behaviorSource.Contains('managedBotObjectives')
     AttackButton = $actionAdapterSource.Contains('IN_ATTACK')
     UseButton = $actionAdapterSource.Contains('IN_USE')
     ReloadOrWeaponCommand = $actionAdapterSource -match '(?i)reload'
-    ActionTranslator = $source.Contains('ActionAdapter::translate')
+    ActionTranslator = $commandSource.Contains('ActionAdapter::translate') -and -not $movementBody.Contains('ActionAdapter::translate')
 }
 $result.LiveActionBoundaryAvailable = [bool](
+    $result.MovementDispatch -and
     $result.CombatCoreCall -and
     $result.ObjectiveCoreCall -and
     $result.AttackButton -and

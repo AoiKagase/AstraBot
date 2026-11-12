@@ -446,6 +446,166 @@ class NavRoamController
 	nav::AreaId roamGoalArea_;
 	nav::AreaId failedRoamGoalArea_;
 	nav::NavVector roamGoalPosition_;
+
+ // These private views name state boundaries while retaining the original
+ // storage order, object layout and constructor initialization order. A view
+ // never escapes the controller and owns no state or observation cache.
+ struct RoamGoalState
+ {
+  bool &hasObjectiveTarget;
+  nav::NavVector &objectiveTarget;
+  nav::AreaId &lastVisitedArea;
+  std::uint32_t &lastVisitedMapGeneration;
+  std::uint8_t &lastVisitedTeam;
+  std::uint32_t &roamGoalGeneration;
+  NavGoalSelectionReason &goalSelectionReason;
+  NavGoalSelectionStrategy &goalSelectionStrategy;
+  bool &hasRoamGoal;
+  nav::AreaId &roamGoalArea;
+  nav::AreaId &failedRoamGoalArea;
+  nav::NavVector &roamGoalPosition;
+ };
+ RoamGoalState roamGoalState()
+ { return {hasObjectiveTarget_, objectiveTarget_, lastVisitedArea_, lastVisitedMapGeneration_, lastVisitedTeam_, roamGoalGeneration_, goalSelectionReason_, goalSelectionStrategy_, hasRoamGoal_, roamGoalArea_, failedRoamGoalArea_, roamGoalPosition_}; }
+ struct ConstRoamGoalState
+ {
+  const bool &hasObjectiveTarget;
+  const nav::NavVector &objectiveTarget;
+  const nav::AreaId &lastVisitedArea;
+  const std::uint32_t &lastVisitedMapGeneration;
+  const std::uint8_t &lastVisitedTeam;
+  const std::uint32_t &roamGoalGeneration;
+  const NavGoalSelectionReason &goalSelectionReason;
+  const NavGoalSelectionStrategy &goalSelectionStrategy;
+  const bool &hasRoamGoal;
+  const nav::AreaId &roamGoalArea;
+  const nav::AreaId &failedRoamGoalArea;
+  const nav::NavVector &roamGoalPosition;
+ };
+ ConstRoamGoalState roamGoalState() const
+ { return {hasObjectiveTarget_, objectiveTarget_, lastVisitedArea_, lastVisitedMapGeneration_, lastVisitedTeam_, roamGoalGeneration_, goalSelectionReason_, goalSelectionStrategy_, hasRoamGoal_, roamGoalArea_, failedRoamGoalArea_, roamGoalPosition_}; }
+ struct RouteState
+ {
+  nav::NavPathCostContext &pathCostContext;
+  bool &hasPathCostContext;
+  std::size_t &nextLinkIndex;
+  nav::NavCorridor &activeCorridor;
+  nav::NavDirectedLink &activeLink;
+  nav::NavVector &activeTargetPosition;
+  nav::NavVector &lastIntentDirection;
+  std::size_t &activeCorridorIndex;
+  std::uint32_t &pathSequence;
+  bool &hasActiveRoute;
+  bool &hasAvoidedLink;
+  nav::NavDirectedLink &avoidedLink;
+ };
+ RouteState routeState()
+ { return {pathCostContext_, hasPathCostContext_, nextLinkIndex_, activeCorridor_, activeLink_, activeTargetPosition_, lastIntentDirection_, activeCorridorIndex_, pathSequence_, hasActiveRoute_, hasAvoidedLink_, avoidedLink_}; }
+ struct ConstRouteState
+ {
+  const nav::NavPathCostContext &pathCostContext;
+  const bool &hasPathCostContext;
+  const std::size_t &nextLinkIndex;
+  const nav::NavCorridor &activeCorridor;
+  const nav::NavDirectedLink &activeLink;
+  const nav::NavVector &activeTargetPosition;
+  const nav::NavVector &lastIntentDirection;
+  const std::size_t &activeCorridorIndex;
+  const std::uint32_t &pathSequence;
+  const bool &hasActiveRoute;
+  const bool &hasAvoidedLink;
+  const nav::NavDirectedLink &avoidedLink;
+ };
+ ConstRouteState routeState() const
+ { return {pathCostContext_, hasPathCostContext_, nextLinkIndex_, activeCorridor_, activeLink_, activeTargetPosition_, lastIntentDirection_, activeCorridorIndex_, pathSequence_, hasActiveRoute_, hasAvoidedLink_, avoidedLink_}; }
+ struct TraversalState
+ {
+  nav::LocomotionController &locomotion;
+  nav::TraversalAction &activeTraversal;
+  nav::JumpDropController &jumpDrop;
+  nav::SpecialTraversalController &specialTraversal;
+  float &maximumSafeDropHeight;
+  bool &safeDropHeightAvailable;
+  bool &unsafeDropRejected;
+ };
+ TraversalState traversalState()
+ { return {locomotion_, activeTraversal_, jumpDrop_, specialTraversal_, maximumSafeDropHeight_, safeDropHeightAvailable_, unsafeDropRejected_}; }
+ struct ConstTraversalState
+ {
+  const nav::LocomotionController &locomotion;
+  const nav::TraversalAction &activeTraversal;
+  const nav::JumpDropController &jumpDrop;
+  const nav::SpecialTraversalController &specialTraversal;
+  const float &maximumSafeDropHeight;
+  const bool &safeDropHeightAvailable;
+  const bool &unsafeDropRejected;
+ };
+ ConstTraversalState traversalState() const
+ { return {locomotion_, activeTraversal_, jumpDrop_, specialTraversal_, maximumSafeDropHeight_, safeDropHeightAvailable_, unsafeDropRejected_}; }
+ struct FriendWaitState
+ {
+  bool &waitingBehindFriend;
+  bool &friendInTheWay;
+  float &friendCheckAt;
+  float &friendWaitUntil;
+  bool &friendRepathPending;
+  nav::NavVector &friendPathTarget;
+ };
+ FriendWaitState friendWaitState()
+ { return {waitingBehindFriend_, friendInTheWay_, friendCheckAt_, friendWaitUntil_, friendRepathPending_, friendPathTarget_}; }
+ struct ConstFriendWaitState
+ {
+  const bool &waitingBehindFriend;
+  const bool &friendInTheWay;
+  const float &friendCheckAt;
+  const float &friendWaitUntil;
+  const bool &friendRepathPending;
+  const nav::NavVector &friendPathTarget;
+ };
+ ConstFriendWaitState friendWaitState() const
+ { return {waitingBehindFriend_, friendInTheWay_, friendCheckAt_, friendWaitUntil_, friendRepathPending_, friendPathTarget_}; }
+ struct RecoveryState
+ {
+  OffMeshRecoveryState &offMeshRecovery;
+  UnsafeDropFailure &unsafeDropFailure;
+  float &nextPathAttemptAt;
+  float &stuckRecoveryEndsAt;
+  nav::NavVector &stuckOrigin;
+  bool &stuckJumpScheduled;
+  float &nextStuckJumpAt;
+  float &lastWiggleJumpAt;
+  nav::NavVector &stuckRecoveryDirection;
+  std::uint32_t &stuckRecoveryCount;
+  std::uint32_t &stuckRecoveryFramesRemaining;
+  bool &stuckRecoveryActive;
+  bool &hasPathFailure;
+  PathFailureKey &pathFailureKey;
+  std::uint32_t &pathFailureRetryFrame;
+  std::uint32_t &pathFailureBackoffFrames;
+ };
+ RecoveryState recoveryState()
+ { return {offMeshRecovery_, unsafeDropFailure_, nextPathAttemptAt_, stuckRecoveryEndsAt_, stuckOrigin_, stuckJumpScheduled_, nextStuckJumpAt_, lastWiggleJumpAt_, stuckRecoveryDirection_, stuckRecoveryCount_, stuckRecoveryFramesRemaining_, stuckRecoveryActive_, hasPathFailure_, pathFailureKey_, pathFailureRetryFrame_, pathFailureBackoffFrames_}; }
+ struct ConstRecoveryState
+ {
+  const OffMeshRecoveryState &offMeshRecovery;
+  const UnsafeDropFailure &unsafeDropFailure;
+  const float &nextPathAttemptAt;
+  const float &stuckRecoveryEndsAt;
+  const nav::NavVector &stuckOrigin;
+  const bool &stuckJumpScheduled;
+  const float &nextStuckJumpAt;
+  const float &lastWiggleJumpAt;
+  const nav::NavVector &stuckRecoveryDirection;
+  const std::uint32_t &stuckRecoveryCount;
+  const std::uint32_t &stuckRecoveryFramesRemaining;
+  const bool &stuckRecoveryActive;
+  const bool &hasPathFailure;
+  const PathFailureKey &pathFailureKey;
+  const std::uint32_t &pathFailureRetryFrame;
+  const std::uint32_t &pathFailureBackoffFrames;
+ };
+ ConstRecoveryState recoveryState() const
+ { return {offMeshRecovery_, unsafeDropFailure_, nextPathAttemptAt_, stuckRecoveryEndsAt_, stuckOrigin_, stuckJumpScheduled_, nextStuckJumpAt_, lastWiggleJumpAt_, stuckRecoveryDirection_, stuckRecoveryCount_, stuckRecoveryFramesRemaining_, stuckRecoveryActive_, hasPathFailure_, pathFailureKey_, pathFailureRetryFrame_, pathFailureBackoffFrames_}; }
 };
 	}
 }

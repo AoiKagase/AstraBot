@@ -937,3 +937,48 @@ if(ASTRABOT_BUILD_TESTS)
     PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
   )
 endif()
+
+# Private runtime owners are shared by the DLL and adapter integration fixtures.
+if(ASTRABOT_BUILD_METAMOD)
+  set(ASTRABOT_RUNTIME_OWNER_SOURCES
+    src/adapter/metamod/bot_observation_runtime.cpp
+    src/adapter/metamod/bot_behavior_runtime.cpp
+    src/adapter/metamod/bot_navigation_runtime.cpp
+    src/adapter/metamod/bot_command_runtime.cpp
+  )
+  foreach(runtime_target astrabot_mm astrabot_metamod_hooks astrabot_fake_client_isolation astrabot_compat_actor_command)
+    if(TARGET ${runtime_target})
+      target_sources(${runtime_target} PRIVATE ${ASTRABOT_RUNTIME_OWNER_SOURCES})
+    endif()
+  endforeach()
+endif()
+
+# Source ownership and pre-refactor behavior are independent acceptance gates.
+if(ASTRABOT_BUILD_TESTS AND ASTRABOT_BUILD_METAMOD)
+  find_package(Python3 COMPONENTS Interpreter REQUIRED)
+  foreach(contract runtime_ownership runtime_movement_integration p076_performance)
+    add_test(NAME astrabot_${contract}_contract
+      COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/${contract}_contract.py")
+  endforeach()
+  if(WIN32)
+    set(characterization_platform windows-x86)
+    find_program(ASTRABOT_POWERSHELL_EXECUTABLE NAMES pwsh powershell REQUIRED)
+    add_test(NAME astrabot_action_owner_boundary
+      COMMAND "${ASTRABOT_POWERSHELL_EXECUTABLE}" -NoProfile -ExecutionPolicy Bypass
+        -File "${CMAKE_CURRENT_SOURCE_DIR}/tests/phase8_action_adapter_boundary_test.ps1"
+        -AdapterPath "${CMAKE_CURRENT_SOURCE_DIR}/src/adapter/metamod/plugin_runtime.cpp"
+        -RequireLiveActions)
+  else()
+    set(characterization_platform linux-x86)
+  endif()
+  add_test(NAME astrabot_runtime_characterization
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/runtime_characterization_contract.py"
+      --executable "$<TARGET_FILE:astrabot_compat_actor_command>"
+      --baseline "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/runtime_characterization/${characterization_platform}.txt.gz"
+      --output "${CMAKE_CURRENT_BINARY_DIR}/runtime-characterization.txt")
+  # This fixture and astrabot_compat_actor_command temporarily create the same
+  # profile files; never execute them concurrently in the source directory.
+  set_tests_properties(astrabot_compat_actor_command astrabot_runtime_characterization PROPERTIES
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+    RESOURCE_LOCK astrabot_actor_command_profile)
+endif()

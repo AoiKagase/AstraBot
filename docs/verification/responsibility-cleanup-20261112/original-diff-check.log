@@ -1,0 +1,6 @@
+warning: in the working copy of 'CMakeLists.txt', CRLF will be replaced by LF the next time Git touches it
+warning: in the working copy of 'include/astrabot/runtime/nav_roam_controller.hpp', CRLF will be replaced by LF the next time Git touches it
+warning: in the working copy of 'src/core/runtime/nav_roam_controller.cpp', CRLF will be replaced by LF the next time Git touches it
+warning: in the working copy of 'tests/compat_actor_command_tests.cpp', CRLF will be replaced by LF the next time Git touches it
+warning: in the working copy of 'tests/p076_performance_contract.py', CRLF will be replaced by LF the next time Git touches it
+warning: in the working copy of 'tests/runtime_movement_integration_contract.py', CRLF will be replaced by LF the next time Git touches it

@@ -1,0 +1,18 @@
+{
+  "input_manifest_sha256": "7916b19c4a9d154a82835e71455d25b6858f2148333628bb36de819f20af3a74",
+  "meaning": "Historical AstraBot behavior, not a CSBot correctness oracle",
+  "platforms": {
+    "windows-x86": {
+      "records": 132153,
+      "sha256": "b327fcf3a45aa422eb52ec6a455a7840c26203780c2fe41301a72082a1957280",
+      "uncompressed_bytes": 4428043,
+      "compressed_bytes": 58141
+    },
+    "linux-x86": {
+      "records": 132153,
+      "sha256": "e3b3b9aef5475f51769df124ade0030664a77a8d170dbdbbce1563646ef83b08",
+      "uncompressed_bytes": 4220177,
+      "compressed_bytes": 55867
+    }
+  }
+}

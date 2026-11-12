@@ -1,55 +1,52 @@
+"""Check orchestration and ownership of movement operations."""
 from pathlib import Path
 
+ADAPTER = Path(__file__).parents[1] / "src/adapter/metamod"
+
+def source(name):
+    return (ADAPTER / (name + ".cpp")).read_text(encoding="utf-8")
 
 def test_start_frame_dispatches_nav_movement():
-	path = Path(__file__).parents[1] / "src" / "adapter" / "metamod" / "plugin_runtime.cpp"
-	source = path.read_text(encoding="utf-8")
-	start = source.index("void PluginRuntime::onStartFrame()")
-	end = source.index("void PluginRuntime::onStartFramePost()", start)
-	body = source[start:end]
+    plugin = source("plugin_runtime")
+    start = plugin.index("void PluginRuntime::onStartFrame()")
+    post = plugin.index("void PluginRuntime::onStartFramePost()", start)
+    assert "updateManagedBotMovement" not in plugin[start:post]
+    assert "updateManagedBotMovement" in plugin[post:]
+    start = plugin.index("void PluginRuntime::updateManagedBotMovement()")
+    end = plugin.index("void PluginRuntime::resetManagedBotTiming", start)
+    body = plugin[start:end]
+    phases = (
+        "navigation_.observeFullUpdateMotion(",
+        "behavior_.updateManagedBotCompatibilityState(",
+        "navigation_.updateNavigation(",
+        "behavior_.finishManagedBotNavigation(",
+        "command_.buildAndExecuteMovement(",
+    )
+    positions = [body.index(phase) for phase in phases]
+    assert positions == sorted(positions)
+    assert "managedBotTiming_[index].advance(" in body
+    assert "ActorState::Joined" in body
+    assert "observation_.captureMovementPhysicsState(" in body
+    assert "inputDispatcher_.dispatchNext" not in body
+    assert "ActionAdapter::translate" not in body
 
-	assert "updateManagedBotMovement" not in body
-
-	post_start = source.index("void PluginRuntime::onStartFramePost()")
-	post_body = source[post_start:]
-	assert "updateManagedBotMovement" in post_body
-
-	controller_start = source.index("void PluginRuntime::updateManagedBotMovement()")
-	controller_body = source[controller_start:]
-	assert "managedBotMovement_" in controller_body
-	assert "NavRoamDecision roamDecision = {};" in controller_body
-	assert "v.mins.z" in controller_body
-	assert "&roamDecision" in controller_body
-	assert "stage=%d currentArea=%u recoveryArea=%u" in controller_body
-	assert "target=(%.1f %.1f %.1f)" in controller_body
-	assert "intent=(%.2f %.2f %.2f)" in controller_body
-	assert "observedVelocity=(%.1f %.1f %.1f)" in controller_body
-	assert "corridorAreas=%u corridorIndex=%u" in controller_body
-	assert "link=(%u->%u how=%u dir=%u)" in controller_body
-	assert "nearestDistanceSquared=%.1f" in controller_body
-	assert "goalPresent=%d goalKind=%d goalArea=%u pathRequested=%d pathResult=%d failureReason=%d" in controller_body
-	assert "NavFailureReason::NavApplyRejected" in controller_body
-	assert "inputDispatcher_.dispatchNext" in controller_body
-	assert "ActionAdapter::projectMovement" in controller_body
-	assert "actionDispatch.stopMovement" in controller_body
-	assert "pfnSetClientMaxspeed" in controller_body
-	assert "kDefaultManagedBotMaxSpeed" in source
-	assert "movementViewAngles" in controller_body
-	assert 'logMovementDiagnostic(index, "roam_no_intent", &roamDecision)' in controller_body
-	assert "dispatchNeutralMovement" in controller_body
-	assert "captureMovementPhysicsState" in controller_body
-	assert "recordMovementPhysicsSample" in controller_body
-	assert "movementReadyLogged_" in controller_body
-	assert "kMovementPhysicsLogLimit" in source
-	assert "movement physics actor=%u generation=%u frame=%u sequence=%u dispatched=%d" in source
-	assert "ActorState::Joined" in controller_body
-	assert "entityObjectiveCenter" in source
-	assert "entity->v.absmin" in source
-	assert "entity->v.absmax" in source
-	assert "collectPlantedBomb" in source
-	assert "plantedC4" in source
-	assert "carryingC4" in source
-
+    navigation = source("bot_navigation_runtime")
+    command = source("bot_command_runtime")
+    observation = source("bot_observation_runtime")
+    behavior = source("bot_behavior_runtime")
+    for field in ("v.mins.z", "NavRoamResult::MovementSuppressed", "managedBotMovement.update(",
+                  "movementReadyLogged", "movement physics actor=%u",
+                  "goalPresent=%d", "link=(%u->%u how=%u dir=%u)"):
+        assert field in navigation, field
+    for field in ("service_inputDispatcher().dispatchNext", "ActionAdapter::projectMovement",
+                  "ActionAdapter::translate", "actionDispatch.stopMovement",
+                  "pfnSetClientMaxspeed", "kDefaultManagedBotMaxSpeed",
+                  "dispatchJoinHeartbeat", "dispatchNeutralMovement"):
+        assert field in command, field
+    assert "captureMovementPhysicsState" in observation
+    assert "collectPlantedBomb" in behavior
+    assert "carryingC4" in behavior
 
 if __name__ == "__main__":
-	test_start_frame_dispatches_nav_movement()
+    test_start_frame_dispatches_nav_movement()
+    print("runtime movement owner boundaries: PASS")

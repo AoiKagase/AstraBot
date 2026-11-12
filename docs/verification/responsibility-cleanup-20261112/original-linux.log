@@ -1,0 +1,432 @@
+[rtk] /!\ No hook installed — run `rtk init -g` for automatic token savings
+-- Found Python3: /usr/bin/python3 (found version "3.13.5") found components: Interpreter
+-- Configuring done (0.2s)
+-- Generating done (4.8s)
+-- Build files have been written to: /mnt/h/sourcecode/003.Game/amxmodx/AstraBot/build-parity-linux-x86
+[  1%] Built target astrabot_map_fingerprint
+[  3%] Built target astrabot_native_bot_guard
+[  5%] Building CXX object CMakeFiles/astrabot_regamedll_provider.dir/src/adapter/metamod/regamedll_observation_provider.cpp.o
+[  5%] Built target astrabot_join_controller
+[  5%] Building CXX object CMakeFiles/astrabot_action_adapter.dir/src/adapter/metamod/action_adapter.cpp.o
+[  6%] Built target astrabot_movement_execution_gate
+[  6%] Building CXX object CMakeFiles/astrabot_runtime_profiler.dir/src/adapter/metamod/runtime_profiler.cpp.o
+[  7%] Building CXX object CMakeFiles/astrabot_runtime_profiler.dir/tests/runtime_profiler_tests.cpp.o
+[  8%] Building CXX object CMakeFiles/astrabot_core.dir/src/core/combat/weapon_state.cpp.o
+[  8%] Linking CXX static library libastrabot_regamedll_provider.a
+[  8%] Built target astrabot_regamedll_provider
+[  8%] Building CXX object CMakeFiles/astrabot_core.dir/src/core/combat/combat_intent.cpp.o
+[  8%] Building CXX object CMakeFiles/astrabot_action_adapter.dir/tests/action_adapter_tests.cpp.o
+[  8%] Building CXX object CMakeFiles/astrabot_core.dir/src/core/team/round_objective_coordinator.cpp.o
+[  8%] Linking CXX executable astrabot_runtime_profiler
+[  9%] Building CXX object CMakeFiles/astrabot_core.dir/src/core/compat/cvar_state.cpp.o
+[  9%] Building CXX object CMakeFiles/astrabot_core.dir/src/core/compat/observation.cpp.o
+[ 10%] Building CXX object CMakeFiles/astrabot_core.dir/src/core/compat/runtime_mode_policy.cpp.o
+[ 10%] Built target astrabot_runtime_profiler
+[ 10%] Building CXX object CMakeFiles/astrabot_core.dir/src/core/compat/bot_configuration.cpp.o
+[ 11%] Building CXX object CMakeFiles/astrabot_core.dir/src/core/compat/buy_controller.cpp.o
+[ 11%] Building CXX object CMakeFiles/astrabot_core.dir/src/core/compat/profile_catalog.cpp.o
+[ 11%] Building CXX object CMakeFiles/astrabot_core.dir/src/core/compat/state_machine.cpp.o
+[ 12%] Building CXX object CMakeFiles/astrabot_core.dir/src/core/nav/nav_model.cpp.o
+[ 12%] Building CXX object CMakeFiles/astrabot_core.dir/src/core/nav/legacy_nav_reader.cpp.o
+[ 12%] Building CXX object CMakeFiles/astrabot_core.dir/src/core/nav/nav_snapshot.cpp.o
+[ 13%] Linking CXX executable astrabot_action_adapter
+[ 13%] Built target astrabot_action_adapter
+[ 14%] Building CXX object CMakeFiles/astrabot_core.dir/src/core/nav/nav_query.cpp.o
+[ 14%] Building CXX object CMakeFiles/astrabot_core.dir/src/core/nav/locomotion.cpp.o
+[ 14%] Building CXX object CMakeFiles/astrabot_core.dir/src/core/nav/jump_drop.cpp.o
+[ 15%] Building CXX object CMakeFiles/astrabot_core.dir/src/core/nav/special_traversal.cpp.o
+[ 16%] Building CXX object CMakeFiles/astrabot_core.dir/src/core/runtime/nav_roam_controller.cpp.o
+[ 17%] Linking CXX static library libastrabot_core.a
+[ 22%] Built target astrabot_core
+[ 23%] Building CXX object CMakeFiles/astrabot_weapon_actions.dir/tests/weapon_actions_tests.cpp.o
+[ 23%] Building CXX object CMakeFiles/astrabot_vanilla_behavior.dir/tests/vanilla_behavior_tests.cpp.o
+[ 23%] Building CXX object CMakeFiles/astrabot_vanilla_management.dir/tests/vanilla_management_tests.cpp.o
+[ 24%] Building CXX object CMakeFiles/astrabot_public_observation.dir/tests/public_observation_tests.cpp.o
+[ 25%] Linking CXX executable astrabot_vanilla_behavior
+[ 25%] Linking CXX executable astrabot_weapon_actions
+[ 25%] Linking CXX executable astrabot_vanilla_management
+[ 25%] Linking CXX executable astrabot_public_observation
+[ 25%] Built target astrabot_weapon_actions
+[ 25%] Built target astrabot_vanilla_behavior
+[ 25%] Building CXX object CMakeFiles/astrabot_public_bomb_clock.dir/tests/public_bomb_clock_tests.cpp.o
+[ 25%] Building CXX object CMakeFiles/astrabot_scenario_behavior.dir/tests/scenario_behavior_tests.cpp.o
+[ 25%] Linking CXX executable astrabot_public_bomb_clock
+[ 25%] Built target astrabot_vanilla_management
+[ 25%] Built target astrabot_public_observation
+[ 25%] Building CXX object CMakeFiles/astrabot_bomb_navigation.dir/tests/bomb_navigation_tests.cpp.o
+[ 26%] Building CXX object CMakeFiles/astrabot_outgoing_radio.dir/tests/outgoing_radio_tests.cpp.o
+[ 26%] Built target astrabot_public_bomb_clock
+[ 27%] Building CXX object CMakeFiles/astrabot_teamwork_policy.dir/tests/teamwork_policy_tests.cpp.o
+[ 27%] Linking CXX executable astrabot_outgoing_radio
+[ 27%] Linking CXX executable astrabot_teamwork_policy
+[ 28%] Linking CXX executable astrabot_bomb_navigation
+[ 29%] Linking CXX executable astrabot_scenario_behavior
+[ 29%] Built target astrabot_outgoing_radio
+[ 29%] Building CXX object CMakeFiles/astrabot_nav_danger_memory.dir/tests/nav_danger_memory_tests.cpp.o
+[ 29%] Built target astrabot_teamwork_policy
+[ 30%] Building CXX object CMakeFiles/astrabot_grenade_trajectory.dir/tests/grenade_trajectory_tests.cpp.o
+[ 30%] Linking CXX executable astrabot_grenade_trajectory
+[ 30%] Linking CXX executable astrabot_nav_danger_memory
+[ 30%] Built target astrabot_grenade_trajectory
+[ 30%] Linking CXX executable astrabot_build_identity
+[ 31%] Built target astrabot_build_identity
+[ 31%] Linking CXX executable astrabot_lifecycle_generation
+[ 31%] Built target astrabot_lifecycle_generation
+[ 31%] Linking CXX executable astrabot_actor_registry
+[ 31%] Built target astrabot_bomb_navigation
+[ 32%] Linking CXX executable astrabot_command_queue
+[ 32%] Built target astrabot_nav_danger_memory
+[ 32%] Built target astrabot_actor_registry
+[ 32%] Building CXX object CMakeFiles/astrabot_nav_roam_controller.dir/tests/nav_roam_controller_tests.cpp.o
+[ 32%] Building CXX object CMakeFiles/astrabot_player_avoidance.dir/tests/player_avoidance_tests.cpp.o
+[ 33%] Linking CXX executable astrabot_player_avoidance
+[ 33%] Built target astrabot_command_queue
+[ 33%] Built target astrabot_scenario_behavior
+[ 34%] Linking CXX executable astrabot_compat_command_registry
+[ 34%] Building CXX object CMakeFiles/astrabot_nav_legacy_limit.dir/tests/nav_legacy_limit_tests.cpp.o
+[ 34%] Built target astrabot_player_avoidance
+[ 34%] Building CXX object CMakeFiles/astrabot_compat_cvar_state.dir/tests/compat_cvar_state_tests.cpp.o
+[ 34%] Built target astrabot_compat_command_registry
+[ 35%] Linking CXX executable astrabot_nav_legacy_limit
+[ 36%] Linking CXX executable astrabot_compat_cvar_state
+[ 36%] Building CXX object CMakeFiles/astrabot_observation_model.dir/tests/observation_model_tests.cpp.o
+[ 37%] Linking CXX executable astrabot_observation_model
+[ 37%] Built target astrabot_compat_cvar_state
+[ 37%] Building CXX object CMakeFiles/astrabot_compat_state_machine.dir/tests/compat_state_machine_tests.cpp.o
+[ 37%] Linking CXX executable astrabot_nav_roam_controller
+[ 37%] Linking CXX executable astrabot_compat_state_machine
+[ 37%] Built target astrabot_observation_model
+[ 37%] Building CXX object CMakeFiles/astrabot_profile_catalog.dir/tests/profile_catalog_tests.cpp.o
+[ 37%] Linking CXX executable astrabot_profile_catalog
+[ 37%] Built target astrabot_compat_state_machine
+[ 37%] Building CXX object CMakeFiles/astrabot_profile_loader.dir/src/adapter/metamod/profile_loader.cpp.o
+[ 37%] Built target astrabot_nav_legacy_limit
+[ 37%] Building CXX object CMakeFiles/astrabot_bot_configuration.dir/tests/bot_configuration_tests.cpp.o
+[ 37%] Built target astrabot_profile_catalog
+[ 37%] Linking CXX executable astrabot_bot_configuration
+[ 37%] Building CXX object CMakeFiles/astrabot_runtime_mode_policy.dir/tests/runtime_mode_policy_tests.cpp.o
+[ 37%] Linking CXX executable astrabot_runtime_mode_policy
+[ 38%] Building CXX object CMakeFiles/astrabot_profile_loader.dir/tests/profile_loader_tests.cpp.o
+[ 38%] Built target astrabot_bot_configuration
+[ 38%] Built target astrabot_runtime_mode_policy
+[ 38%] Linking CXX executable astrabot_runtime_timing
+[ 38%] Building CXX object CMakeFiles/astrabot_compatibility_rng.dir/tests/compatibility_rng_tests.cpp.o
+[ 39%] Linking CXX executable astrabot_profile_loader
+[ 39%] Linking CXX executable astrabot_compatibility_rng
+[ 40%] Built target astrabot_runtime_timing
+[ 40%] Built target astrabot_profile_loader
+[ 41%] Linking CXX executable astrabot_engine_random_source
+[ 42%] Building CXX object CMakeFiles/astrabot_nav_model.dir/tests/nav_model_tests.cpp.o
+[ 42%] Built target astrabot_compatibility_rng
+[ 42%] Built target astrabot_nav_roam_controller
+[ 42%] Building CXX object CMakeFiles/astrabot_legacy_nav_reader.dir/tests/legacy_nav_reader_tests.cpp.o
+[ 42%] Built target astrabot_engine_random_source
+[ 42%] Linking CXX executable astrabot_nav_model
+[ 43%] Building CXX object CMakeFiles/astrabot_nav_loader.dir/src/adapter/metamod/nav_loader.cpp.o
+[ 43%] Building CXX object CMakeFiles/astrabot_nav_external_performance.dir/src/adapter/metamod/nav_loader.cpp.o
+[ 44%] Linking CXX executable astrabot_legacy_nav_reader
+[ 44%] Building CXX object CMakeFiles/astrabot_nav_loader.dir/tests/nav_loader_tests.cpp.o
+[ 44%] Building CXX object CMakeFiles/astrabot_nav_external_performance.dir/tests/nav_external_performance_tests.cpp.o
+[ 44%] Linking CXX executable astrabot_nav_loader
+[ 44%] Linking CXX executable astrabot_nav_external_performance
+[ 44%] Built target astrabot_nav_model
+[ 44%] Building CXX object CMakeFiles/astrabot_nav_diagnostics.dir/src/adapter/metamod/nav_loader.cpp.o
+[ 44%] Built target astrabot_legacy_nav_reader
+[ 45%] Building CXX object CMakeFiles/astrabot_nav_snapshot.dir/tests/nav_snapshot_tests.cpp.o
+[ 46%] Building CXX object CMakeFiles/astrabot_nav_diagnostics.dir/tests/nav_diagnostics_tests.cpp.o
+[ 46%] Linking CXX executable astrabot_nav_snapshot
+[ 47%] Linking CXX executable astrabot_nav_diagnostics
+[ 47%] Built target astrabot_nav_loader
+[ 47%] Building CXX object CMakeFiles/astrabot_nav_query.dir/tests/nav_query_tests.cpp.o
+[ 48%] Linking CXX executable astrabot_nav_query
+[ 49%] Built target astrabot_nav_external_performance
+[ 49%] Built target astrabot_nav_snapshot
+[ 50%] Building CXX object CMakeFiles/astrabot_locomotion.dir/tests/locomotion_tests.cpp.o
+[ 51%] Building CXX object CMakeFiles/astrabot_jump_drop.dir/tests/jump_drop_tests.cpp.o
+[ 51%] Built target astrabot_nav_diagnostics
+[ 51%] Linking CXX executable astrabot_jump_drop
+[ 51%] Building CXX object CMakeFiles/astrabot_special_traversal.dir/tests/special_traversal_tests.cpp.o
+[ 51%] Linking CXX executable astrabot_locomotion
+[ 51%] Linking CXX executable astrabot_special_traversal
+[ 51%] Built target astrabot_nav_query
+[ 52%] Linking CXX executable astrabot_world_snapshot
+[ 52%] Built target astrabot_world_snapshot
+[ 53%] Linking CXX executable astrabot_perception
+[ 53%] Built target astrabot_jump_drop
+[ 53%] Built target astrabot_locomotion
+[ 53%] Linking CXX executable astrabot_behavior_state
+[ 54%] Linking CXX executable astrabot_objective_proposal
+[ 54%] Built target astrabot_special_traversal
+[ 54%] Built target astrabot_perception
+[ 55%] Building CXX object CMakeFiles/astrabot_weapon_state.dir/tests/weapon_state_tests.cpp.o
+[ 55%] Built target astrabot_behavior_state
+[ 55%] Built target astrabot_objective_proposal
+[ 56%] Building CXX object CMakeFiles/astrabot_combat_intent.dir/tests/combat_intent_tests.cpp.o
+[ 57%] Linking CXX executable astrabot_weapon_state
+[ 57%] Building CXX object CMakeFiles/astrabot_objective_state.dir/tests/objective_state_tests.cpp.o
+[ 57%] Building CXX object CMakeFiles/astrabot_round_objectives.dir/tests/round_objectives_tests.cpp.o
+[ 58%] Linking CXX executable astrabot_objective_state
+[ 58%] Linking CXX executable astrabot_combat_intent
+[ 59%] Linking CXX executable astrabot_round_objectives
+[ 59%] Built target astrabot_weapon_state
+[ 59%] Building CXX object CMakeFiles/astrabot_round_objective_coordinator.dir/tests/round_objective_coordinator_tests.cpp.o
+[ 59%] Built target astrabot_objective_state
+[ 59%] Linking CXX executable astrabot_team_report
+[ 59%] Built target astrabot_round_objectives
+[ 59%] Built target astrabot_combat_intent
+[ 59%] Linking CXX executable astrabot_movement_physics
+[ 60%] Linking CXX executable astrabot_radio_intent
+[ 61%] Built target astrabot_team_report
+[ 62%] Linking CXX executable astrabot_round_objective_coordinator
+[ 62%] Linking CXX executable astrabot_jump_crouch_sequencer
+[ 62%] Built target astrabot_movement_physics
+[ 62%] Built target astrabot_radio_intent
+[ 62%] Built target astrabot_jump_crouch_sequencer
+[ 62%] Linking CXX executable astrabot_fake_client_manager
+[ 63%] Building CXX object CMakeFiles/astrabot_mm.dir/src/adapter/metamod/action_adapter.cpp.o
+[ 63%] Building CXX object CMakeFiles/astrabot_metamod_hooks.dir/src/adapter/metamod/action_adapter.cpp.o
+[ 64%] Built target astrabot_fake_client_manager
+[ 65%] Building CXX object CMakeFiles/astrabot_metamod_hooks.dir/src/adapter/metamod/compat_surface.cpp.o
+[ 66%] Building CXX object CMakeFiles/astrabot_input_dispatcher.dir/src/adapter/metamod/input_dispatcher.cpp.o
+[ 67%] Building CXX object CMakeFiles/astrabot_mm.dir/src/adapter/metamod/compat_surface.cpp.o
+[ 68%] Building CXX object CMakeFiles/astrabot_metamod_hooks.dir/src/adapter/metamod/input_dispatcher.cpp.o
+[ 68%] Built target astrabot_round_objective_coordinator
+[ 68%] Building CXX object CMakeFiles/astrabot_mm.dir/src/adapter/metamod/input_dispatcher.cpp.o
+[ 68%] Building CXX object CMakeFiles/astrabot_input_dispatcher.dir/src/adapter/metamod/runtime_profiler.cpp.o
+[ 68%] Building CXX object CMakeFiles/astrabot_input_dispatcher.dir/tests/input_dispatcher_tests.cpp.o
+[ 69%] Building CXX object CMakeFiles/astrabot_metamod_hooks.dir/src/adapter/metamod/nav_loader.cpp.o
+[ 70%] Building CXX object CMakeFiles/astrabot_metamod_hooks.dir/src/adapter/metamod/observation_adapter.cpp.o
+[ 71%] Linking CXX executable astrabot_input_dispatcher
+[ 71%] Building CXX object CMakeFiles/astrabot_mm.dir/src/adapter/metamod/nav_loader.cpp.o
+[ 71%] Building CXX object CMakeFiles/astrabot_mm.dir/src/adapter/metamod/observation_adapter.cpp.o
+[ 71%] Built target astrabot_input_dispatcher
+[ 72%] Building CXX object CMakeFiles/astrabot_mm.dir/src/adapter/metamod/plugin_exports.cpp.o
+[ 72%] Building CXX object CMakeFiles/astrabot_metamod_hooks.dir/src/adapter/metamod/plugin_exports.cpp.o
+[ 72%] Building CXX object CMakeFiles/astrabot_metamod_hooks.dir/src/adapter/metamod/plugin_runtime.cpp.o
+[ 72%] Building CXX object CMakeFiles/astrabot_metamod_hooks.dir/src/adapter/metamod/profile_loader.cpp.o
+[ 72%] Building CXX object CMakeFiles/astrabot_mm.dir/src/adapter/metamod/plugin_runtime.cpp.o
+[ 72%] Building CXX object CMakeFiles/astrabot_mm.dir/src/adapter/metamod/profile_loader.cpp.o
+[ 73%] Building CXX object CMakeFiles/astrabot_metamod_hooks.dir/src/adapter/metamod/runtime_profiler.cpp.o
+[ 73%] Building CXX object CMakeFiles/astrabot_metamod_hooks.dir/tests/metamod_hook_table_tests.cpp.o
+[ 73%] Building CXX object CMakeFiles/astrabot_metamod_hooks.dir/src/adapter/metamod/bot_observation_runtime.cpp.o
+[ 73%] Building CXX object CMakeFiles/astrabot_fake_client_isolation.dir/src/adapter/metamod/action_adapter.cpp.o
+[ 73%] Building CXX object CMakeFiles/astrabot_fake_client_isolation.dir/src/adapter/metamod/compat_surface.cpp.o
+[ 74%] Building CXX object CMakeFiles/astrabot_fake_client_isolation.dir/src/adapter/metamod/input_dispatcher.cpp.o
+[ 75%] Building CXX object CMakeFiles/astrabot_mm.dir/src/adapter/metamod/runtime_profiler.cpp.o
+[ 75%] Building CXX object CMakeFiles/astrabot_mm.dir/src/adapter/metamod/bot_observation_runtime.cpp.o
+[ 75%] Building CXX object CMakeFiles/astrabot_metamod_hooks.dir/src/adapter/metamod/bot_behavior_runtime.cpp.o
+[ 75%] Building CXX object CMakeFiles/astrabot_fake_client_isolation.dir/src/adapter/metamod/nav_loader.cpp.o
+[ 75%] Building CXX object CMakeFiles/astrabot_fake_client_isolation.dir/src/adapter/metamod/observation_adapter.cpp.o
+[ 76%] Building CXX object CMakeFiles/astrabot_metamod_hooks.dir/src/adapter/metamod/bot_navigation_runtime.cpp.o
+[ 76%] Building CXX object CMakeFiles/astrabot_fake_client_isolation.dir/src/adapter/metamod/plugin_exports.cpp.o
+[ 76%] Building CXX object CMakeFiles/astrabot_fake_client_isolation.dir/src/adapter/metamod/plugin_runtime.cpp.o
+[ 77%] Building CXX object CMakeFiles/astrabot_mm.dir/src/adapter/metamod/bot_behavior_runtime.cpp.o
+[ 77%] Building CXX object CMakeFiles/astrabot_mm.dir/src/adapter/metamod/bot_navigation_runtime.cpp.o
+[ 77%] Building CXX object CMakeFiles/astrabot_metamod_hooks.dir/src/adapter/metamod/bot_command_runtime.cpp.o
+[ 78%] Building CXX object CMakeFiles/astrabot_fake_client_isolation.dir/src/adapter/metamod/profile_loader.cpp.o
+[ 78%] Linking CXX executable astrabot_metamod_hooks
+[ 78%] Building CXX object CMakeFiles/astrabot_fake_client_isolation.dir/src/adapter/metamod/runtime_profiler.cpp.o
+[ 78%] Building CXX object CMakeFiles/astrabot_mm.dir/src/adapter/metamod/bot_command_runtime.cpp.o
+[ 78%] Building CXX object CMakeFiles/astrabot_fake_client_isolation.dir/tests/fake_client_isolation_tests.cpp.o
+[ 79%] Building CXX object CMakeFiles/astrabot_fake_client_isolation.dir/src/adapter/metamod/bot_observation_runtime.cpp.o
+[ 79%] Building CXX object CMakeFiles/astrabot_fake_client_isolation.dir/src/adapter/metamod/bot_behavior_runtime.cpp.o
+[ 80%] Building CXX object CMakeFiles/astrabot_fake_client_isolation.dir/src/adapter/metamod/bot_navigation_runtime.cpp.o
+[ 81%] Linking CXX shared library libastrabot_mm.so
+[ 81%] Building CXX object CMakeFiles/astrabot_fake_client_isolation.dir/src/adapter/metamod/bot_command_runtime.cpp.o
+[ 82%] Built target astrabot_metamod_hooks
+[ 82%] Building CXX object CMakeFiles/astrabot_compat_surface.dir/src/adapter/metamod/compat_surface.cpp.o
+[ 82%] Building CXX object CMakeFiles/astrabot_compat_actor_command.dir/src/adapter/metamod/action_adapter.cpp.o
+[ 82%] Building CXX object CMakeFiles/astrabot_compat_surface.dir/src/adapter/metamod/profile_loader.cpp.o
+[ 82%] Building CXX object CMakeFiles/astrabot_compat_actor_command.dir/src/adapter/metamod/compat_surface.cpp.o
+[ 82%] Linking CXX executable astrabot_fake_client_isolation
+[ 83%] Building CXX object CMakeFiles/astrabot_compat_surface.dir/tests/compat_surface_tests.cpp.o
+[ 83%] Building CXX object CMakeFiles/astrabot_compat_actor_command.dir/src/adapter/metamod/input_dispatcher.cpp.o
+[ 84%] Linking CXX executable astrabot_compat_surface
+[ 84%] Building CXX object CMakeFiles/astrabot_compat_actor_command.dir/src/adapter/metamod/nav_loader.cpp.o
+[ 84%] Built target astrabot_compat_surface
+[ 84%] Building CXX object CMakeFiles/astrabot_observation_adapter.dir/src/adapter/metamod/observation_adapter.cpp.o
+[ 84%] Building CXX object CMakeFiles/astrabot_compat_actor_command.dir/src/adapter/metamod/observation_adapter.cpp.o
+[ 86%] Built target astrabot_mm
+[ 86%] Building CXX object CMakeFiles/astrabot_compat_actor_command.dir/src/adapter/metamod/plugin_exports.cpp.o
+[ 87%] Building CXX object CMakeFiles/astrabot_observation_adapter.dir/src/adapter/metamod/runtime_profiler.cpp.o
+[ 87%] Building CXX object CMakeFiles/astrabot_observation_adapter.dir/tests/observation_adapter_tests.cpp.o
+[ 88%] Building CXX object CMakeFiles/astrabot_compat_actor_command.dir/src/adapter/metamod/plugin_runtime.cpp.o
+[ 88%] Linking CXX executable astrabot_observation_adapter
+[ 89%] Building CXX object CMakeFiles/astrabot_compat_actor_command.dir/src/adapter/metamod/profile_loader.cpp.o
+[ 89%] Built target astrabot_observation_adapter
+[ 89%] Building CXX object CMakeFiles/astrabot_perception_adapter.dir/src/adapter/metamod/observation_adapter.cpp.o
+[ 90%] Building CXX object CMakeFiles/astrabot_perception_adapter.dir/src/adapter/metamod/runtime_profiler.cpp.o
+[ 90%] Building CXX object CMakeFiles/astrabot_compat_actor_command.dir/src/adapter/metamod/runtime_profiler.cpp.o
+[ 93%] Built target astrabot_fake_client_isolation
+[ 93%] Building CXX object CMakeFiles/astrabot_compat_actor_command.dir/tests/compat_actor_command_tests.cpp.o
+[ 94%] Building CXX object CMakeFiles/astrabot_compat_actor_command.dir/src/adapter/metamod/bot_observation_runtime.cpp.o
+[ 94%] Building CXX object CMakeFiles/astrabot_perception_adapter.dir/tests/perception_adapter_tests.cpp.o
+[ 94%] Building CXX object CMakeFiles/astrabot_compat_actor_command.dir/src/adapter/metamod/bot_behavior_runtime.cpp.o
+[ 94%] Linking CXX executable astrabot_perception_adapter
+[ 94%] Built target astrabot_perception_adapter
+[ 94%] Building CXX object CMakeFiles/astrabot_observation_trace.dir/src/adapter/metamod/observation_adapter.cpp.o
+[ 95%] Building CXX object CMakeFiles/astrabot_observation_trace.dir/src/adapter/metamod/runtime_profiler.cpp.o
+[ 95%] Building CXX object CMakeFiles/astrabot_compat_actor_command.dir/src/adapter/metamod/bot_navigation_runtime.cpp.o
+[ 96%] Building CXX object CMakeFiles/astrabot_compat_actor_command.dir/src/adapter/metamod/bot_command_runtime.cpp.o
+[ 96%] Building CXX object CMakeFiles/astrabot_observation_trace.dir/tests/observation_trace_tests.cpp.o
+[ 96%] Building CXX object CMakeFiles/astrabot_regamedll_observation_provider.dir/tests/regamedll_observation_provider_tests.cpp.o
+[ 96%] Linking CXX executable astrabot_observation_trace
+[ 96%] Linking CXX executable astrabot_compat_actor_command
+[ 96%] Linking CXX executable astrabot_metamod_abi
+[ 96%] Linking CXX executable astrabot_regamedll_observation_provider
+[ 97%] Built target astrabot_metamod_abi
+[ 97%] Built target astrabot_regamedll_observation_provider
+[ 97%] Built target astrabot_observation_trace
+[100%] Built target astrabot_compat_actor_command
+Internal ctest changing into directory: /mnt/h/sourcecode/003.Game/amxmodx/AstraBot/build-parity-linux-x86
+Test project /mnt/h/sourcecode/003.Game/amxmodx/AstraBot/build-parity-linux-x86
+      Start  1: astrabot_public_observation
+ 1/73 Test  #1: astrabot_public_observation ......................   Passed    0.02 sec
+      Start  2: astrabot_vanilla_management
+ 2/73 Test  #2: astrabot_vanilla_management ......................   Passed    0.01 sec
+      Start  3: astrabot_vanilla_behavior
+ 3/73 Test  #3: astrabot_vanilla_behavior ........................   Passed    0.00 sec
+      Start  4: astrabot_weapon_actions
+ 4/73 Test  #4: astrabot_weapon_actions ..........................   Passed    0.00 sec
+      Start  5: astrabot_scenario_behavior
+ 5/73 Test  #5: astrabot_scenario_behavior .......................   Passed    0.05 sec
+      Start  6: astrabot_public_bomb_clock
+ 6/73 Test  #6: astrabot_public_bomb_clock .......................   Passed    0.00 sec
+      Start  7: astrabot_bomb_navigation
+ 7/73 Test  #7: astrabot_bomb_navigation .........................   Passed    0.01 sec
+      Start  8: astrabot_outgoing_radio
+ 8/73 Test  #8: astrabot_outgoing_radio ..........................   Passed    0.01 sec
+      Start  9: astrabot_teamwork_policy
+ 9/73 Test  #9: astrabot_teamwork_policy .........................   Passed    0.01 sec
+      Start 10: astrabot_nav_danger_memory
+10/73 Test #10: astrabot_nav_danger_memory .......................   Passed    0.01 sec
+      Start 11: astrabot_grenade_trajectory
+11/73 Test #11: astrabot_grenade_trajectory ......................   Passed    0.00 sec
+      Start 12: astrabot_build_identity
+12/73 Test #12: astrabot_build_identity ..........................   Passed    0.00 sec
+      Start 13: astrabot_lifecycle_generation
+13/73 Test #13: astrabot_lifecycle_generation ....................   Passed    0.00 sec
+      Start 14: astrabot_native_bot_guard
+14/73 Test #14: astrabot_native_bot_guard ........................   Passed    0.00 sec
+      Start 15: astrabot_actor_registry
+15/73 Test #15: astrabot_actor_registry ..........................   Passed    0.00 sec
+      Start 16: astrabot_command_queue
+16/73 Test #16: astrabot_command_queue ...........................   Passed    0.00 sec
+      Start 17: astrabot_join_controller
+17/73 Test #17: astrabot_join_controller .........................   Passed    0.01 sec
+      Start 18: astrabot_nav_roam_controller
+18/73 Test #18: astrabot_nav_roam_controller .....................   Passed    0.02 sec
+      Start 19: astrabot_player_avoidance
+19/73 Test #19: astrabot_player_avoidance ........................   Passed    0.00 sec
+      Start 20: astrabot_nav_legacy_limit
+20/73 Test #20: astrabot_nav_legacy_limit ........................   Passed    0.01 sec
+      Start 21: astrabot_compat_command_registry
+21/73 Test #21: astrabot_compat_command_registry .................   Passed    0.00 sec
+      Start 22: astrabot_compat_cvar_state
+22/73 Test #22: astrabot_compat_cvar_state .......................   Passed    0.00 sec
+      Start 23: astrabot_observation_model
+23/73 Test #23: astrabot_observation_model .......................   Passed    0.01 sec
+      Start 24: astrabot_compat_state_machine
+24/73 Test #24: astrabot_compat_state_machine ....................   Passed    0.01 sec
+      Start 25: astrabot_profile_catalog
+25/73 Test #25: astrabot_profile_catalog .........................   Passed    0.01 sec
+      Start 26: astrabot_profile_loader
+26/73 Test #26: astrabot_profile_loader ..........................   Passed    0.02 sec
+      Start 27: astrabot_bot_configuration
+27/73 Test #27: astrabot_bot_configuration .......................   Passed    0.00 sec
+      Start 28: astrabot_runtime_mode_policy
+28/73 Test #28: astrabot_runtime_mode_policy .....................   Passed    0.00 sec
+      Start 29: astrabot_runtime_timing
+29/73 Test #29: astrabot_runtime_timing ..........................   Passed    0.01 sec
+      Start 30: astrabot_compatibility_rng
+30/73 Test #30: astrabot_compatibility_rng .......................   Passed    0.01 sec
+      Start 31: astrabot_engine_random_source
+31/73 Test #31: astrabot_engine_random_source ....................   Passed    0.01 sec
+      Start 32: astrabot_nav_model
+32/73 Test #32: astrabot_nav_model ...............................   Passed    0.01 sec
+      Start 33: astrabot_legacy_nav_reader
+33/73 Test #33: astrabot_legacy_nav_reader .......................   Passed    0.01 sec
+      Start 34: astrabot_nav_loader
+34/73 Test #34: astrabot_nav_loader ..............................   Passed    0.14 sec
+      Start 35: astrabot_nav_external_performance
+35/73 Test #35: astrabot_nav_external_performance ................   Passed    0.49 sec
+      Start 36: astrabot_nav_diagnostics
+36/73 Test #36: astrabot_nav_diagnostics .........................   Passed    0.03 sec
+      Start 37: astrabot_nav_snapshot
+37/73 Test #37: astrabot_nav_snapshot ............................   Passed    0.01 sec
+      Start 38: astrabot_nav_query
+38/73 Test #38: astrabot_nav_query ...............................   Passed    0.01 sec
+      Start 39: astrabot_locomotion
+39/73 Test #39: astrabot_locomotion ..............................   Passed    0.01 sec
+      Start 40: astrabot_jump_drop
+40/73 Test #40: astrabot_jump_drop ...............................   Passed    0.01 sec
+      Start 41: astrabot_special_traversal
+41/73 Test #41: astrabot_special_traversal .......................   Passed    0.01 sec
+      Start 42: astrabot_world_snapshot
+42/73 Test #42: astrabot_world_snapshot ..........................   Passed    0.01 sec
+      Start 43: astrabot_perception
+43/73 Test #43: astrabot_perception ..............................   Passed    0.01 sec
+      Start 44: astrabot_behavior_state
+44/73 Test #44: astrabot_behavior_state ..........................   Passed    0.01 sec
+      Start 45: astrabot_objective_proposal
+45/73 Test #45: astrabot_objective_proposal ......................   Passed    0.00 sec
+      Start 46: astrabot_weapon_state
+46/73 Test #46: astrabot_weapon_state ............................   Passed    0.00 sec
+      Start 47: astrabot_combat_intent
+47/73 Test #47: astrabot_combat_intent ...........................   Passed    0.01 sec
+      Start 48: astrabot_objective_state
+48/73 Test #48: astrabot_objective_state .........................   Passed    0.01 sec
+      Start 49: astrabot_round_objectives
+49/73 Test #49: astrabot_round_objectives ........................   Passed    0.01 sec
+      Start 50: astrabot_round_objective_coordinator
+50/73 Test #50: astrabot_round_objective_coordinator .............   Passed    0.01 sec
+      Start 51: astrabot_team_report
+51/73 Test #51: astrabot_team_report .............................   Passed    0.00 sec
+      Start 52: astrabot_radio_intent
+52/73 Test #52: astrabot_radio_intent ............................   Passed    0.01 sec
+      Start 53: astrabot_map_fingerprint
+53/73 Test #53: astrabot_map_fingerprint .........................   Passed    0.00 sec
+      Start 54: astrabot_movement_physics
+54/73 Test #54: astrabot_movement_physics ........................   Passed    0.00 sec
+      Start 55: astrabot_jump_crouch_sequencer
+55/73 Test #55: astrabot_jump_crouch_sequencer ...................   Passed    0.00 sec
+      Start 56: astrabot_metamod_abi
+56/73 Test #56: astrabot_metamod_abi .............................   Passed    0.02 sec
+      Start 57: astrabot_metamod_hooks
+57/73 Test #57: astrabot_metamod_hooks ...........................   Passed    0.03 sec
+      Start 58: astrabot_fake_client_manager
+58/73 Test #58: astrabot_fake_client_manager .....................   Passed    0.01 sec
+      Start 59: astrabot_input_dispatcher
+59/73 Test #59: astrabot_input_dispatcher ........................   Passed    0.01 sec
+      Start 60: astrabot_fake_client_isolation
+60/73 Test #60: astrabot_fake_client_isolation ...................   Passed    0.03 sec
+      Start 61: astrabot_compat_surface
+61/73 Test #61: astrabot_compat_surface ..........................   Passed    0.01 sec
+      Start 62: astrabot_compat_actor_command
+62/73 Test #62: astrabot_compat_actor_command ....................   Passed    0.53 sec
+      Start 63: astrabot_observation_adapter
+63/73 Test #63: astrabot_observation_adapter .....................   Passed    0.01 sec
+      Start 64: astrabot_perception_adapter
+64/73 Test #64: astrabot_perception_adapter ......................   Passed    0.01 sec
+      Start 65: astrabot_observation_trace
+65/73 Test #65: astrabot_observation_trace .......................   Passed    0.01 sec
+      Start 66: astrabot_action_adapter
+66/73 Test #66: astrabot_action_adapter ..........................   Passed    0.00 sec
+      Start 67: astrabot_movement_execution_gate
+67/73 Test #67: astrabot_movement_execution_gate .................   Passed    0.00 sec
+      Start 68: astrabot_runtime_profiler
+68/73 Test #68: astrabot_runtime_profiler ........................   Passed    0.01 sec
+      Start 69: astrabot_regamedll_observation_provider
+69/73 Test #69: astrabot_regamedll_observation_provider ..........   Passed    0.01 sec
+      Start 70: astrabot_runtime_ownership_contract
+70/73 Test #70: astrabot_runtime_ownership_contract ..............   Passed    0.64 sec
+      Start 71: astrabot_runtime_movement_integration_contract
+71/73 Test #71: astrabot_runtime_movement_integration_contract ...   Passed    0.05 sec
+      Start 72: astrabot_p076_performance_contract
+72/73 Test #72: astrabot_p076_performance_contract ...............   Passed    0.21 sec
+      Start 73: astrabot_runtime_characterization
+73/73 Test #73: astrabot_runtime_characterization ................   Passed    1.67 sec
+
+100% tests passed, 0 tests failed out of 73
+
+Total Test time (real) =   4.54 sec

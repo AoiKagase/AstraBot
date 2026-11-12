@@ -1,4 +1,23 @@
 from pathlib import Path
+import re
+
+def normalize(source):
+    # Formatting may wrap C++ tokens and concatenate adjacent log literals.
+    return re.sub(r"\s+", " ", re.sub(r'"\s*"', '', source))
+
+ROOT = Path(__file__).parents[1]
+ADAPTER = ROOT / "src/adapter/metamod"
+def adapter_source(owner):
+    return (ADAPTER / ("bot_" + owner + "_runtime.cpp")).read_text(encoding="utf-8")
+def adapter_header(owner):
+    return (ADAPTER / ("bot_" + owner + "_runtime.hpp")).read_text(encoding="utf-8")
+def adapter_support():
+    return (ADAPTER / "bot_runtime_support.hpp").read_text(encoding="utf-8")
+def adapter_types():
+    return (ADAPTER / "bot_runtime_types.hpp").read_text(encoding="utf-8")
+def adapter_facade():
+    return (ADAPTER / "plugin_runtime.cpp").read_text(encoding="utf-8")
+
 
 
 def test_non_objective_bots_skip_bomb_site_corridor_enumeration() -> None:
@@ -7,13 +26,16 @@ def test_non_objective_bots_skip_bomb_site_corridor_enumeration() -> None:
         / "src"
         / "adapter"
         / "metamod"
-        / "plugin_runtime.cpp"
+        / "bot_behavior_runtime.cpp"
     ).read_text(encoding="utf-8")
-    start = source.index("bool PluginRuntime::buildManagedObjectiveTarget(")
-    end = source.index("ActionProposal PluginRuntime::decideManagedBotAction(", start)
+    source = normalize(source)
+    start = source.index("bool BotBehaviorRuntime::buildManagedObjectiveTarget(")
+    end = source.index("ActionProposal BotBehaviorRuntime::decideManagedBotAction(", start)
     body = source[start:end]
-    assert "const bool needsBombSite = team == 1 && carryingBomb;" in body
-    assert "const bool needsPlantedBomb = team == 2;" in body
+    assert "const bool needsBombSite = team == 1 && carryingBomb &&" in body
+    assert "assignmentKind == team::TeamObjectiveKind::PlantC4;" in body
+    assert "const bool needsPlantedBomb = team == 2 &&" in body
+    assert "assignmentKind == team::TeamObjectiveKind::DefuseC4;" in body
     assert "if (!needsBombSite && !needsPlantedBomb)" in body
     assert "isBombTargetClassname(classname)" in body
 
@@ -26,6 +48,7 @@ def test_diagnostic_performance_cvars_are_present_and_default_off() -> None:
         / "metamod"
         / "plugin_runtime.cpp"
     ).read_text(encoding="utf-8")
+    source = normalize(source)
     for name in (
         "astrabot_perf_disable_vision",
         "astrabot_perf_disable_pathsearch",
@@ -43,12 +66,13 @@ def test_objective_sensor_exposes_internal_path_stats() -> None:
         / "src"
         / "adapter"
         / "metamod"
-        / "plugin_runtime.cpp"
+        / "bot_behavior_runtime.cpp"
     ).read_text(encoding="utf-8")
+    source = normalize(source)
     assert "nav::NavSearchStats *searchStats" in source
-    assert "objectiveSearchStats" in source
+    assert "objectiveSearchStats" in adapter_source("navigation")
     assert "addNavSearchStats(searchStats" in source
-    assert "pathSearchTotalUsec" in source
+    assert "pathSearchTotalUsec" in adapter_facade()
 
 
 def test_objective_site_selection_uses_one_representative_nav_area() -> None:
@@ -57,10 +81,11 @@ def test_objective_site_selection_uses_one_representative_nav_area() -> None:
         / "src"
         / "adapter"
         / "metamod"
-        / "plugin_runtime.cpp"
+        / "bot_behavior_runtime.cpp"
     ).read_text(encoding="utf-8")
-    start = source.index("bool PluginRuntime::buildManagedObjectiveTarget(")
-    end = source.index("ActionProposal PluginRuntime::decideManagedBotAction(", start)
+    source = normalize(source)
+    start = source.index("bool BotBehaviorRuntime::buildManagedObjectiveTarget(")
+    end = source.index("ActionProposal BotBehaviorRuntime::decideManagedBotAction(", start)
     body = source[start:end]
     assert "for (const nav::NavArea &area : document->areas())" not in body
     assert "query.findNearest(" in body
@@ -74,6 +99,7 @@ def test_path_recompute_updates_the_profiler_stage() -> None:
         / "metamod"
         / "runtime_profiler.cpp"
     ).read_text(encoding="utf-8")
+    source = normalize(source)
     start = source.index("void RuntimeProfiler::recordPathRecompute()")
     end = source.index("void RuntimeProfiler::recordRunPlayerMove()", start)
     body = source[start:end]
@@ -86,11 +112,12 @@ def test_objective_target_is_cached_for_unchanged_objective_state() -> None:
         / "src"
         / "adapter"
         / "metamod"
-        / "plugin_runtime.cpp"
+        / "bot_behavior_runtime.cpp"
     ).read_text(encoding="utf-8")
-    assert "managedBotObjectiveTargets_" in source
-    assert "cache.mapGeneration == lifecycle_.mapGeneration()" in source
-    assert "cache.roundGeneration == lifecycle_.roundGeneration()" in source
+    source = normalize(source)
+    assert "managedBotObjectiveTargets" in source
+    assert "cache.mapGeneration == services_->service_lifecycle().mapGeneration()" in source
+    assert "cache.roundGeneration == services_->service_lifecycle().roundGeneration()" in source
     assert "cache.carryingBomb == carryingBomb" in source
     assert "cache.selectedEntityIndex" in source
 
@@ -101,16 +128,18 @@ def test_bomb_target_enumeration_preserves_legacy_entities_and_identity() -> Non
         / "src"
         / "adapter"
         / "metamod"
-        / "plugin_runtime.cpp"
+        / "bot_behavior_runtime.cpp"
     ).read_text(encoding="utf-8")
-    start = source.index("bool PluginRuntime::buildManagedObjectiveTarget(")
+    source = normalize(source)
+    start = source.index("bool BotBehaviorRuntime::buildManagedObjectiveTarget(")
     end = source.index(
-        "ActionProposal PluginRuntime::decideManagedBotAction(", start
+        "ActionProposal BotBehaviorRuntime::decideManagedBotAction(", start
     )
     body = source[start:end]
     assert "isBombTargetClassname(classname)" in body
-    assert 'std::strcmp(classname, "func_bomb_target") == 0' in source
-    assert 'std::strcmp(classname, "info_bomb_target") == 0' in source
+    action_source = (ADAPTER / "action_adapter.cpp").read_text(encoding="utf-8")
+    assert 'equalsIgnoreCase(classname, "func_bomb_target")' in action_source
+    assert 'equalsIgnoreCase(classname, "info_bomb_target")' in action_source
     assert "selectedEntityIndex" in body
     assert "siteIdentity" in body
 
@@ -121,11 +150,12 @@ def test_bomb_target_candidates_do_not_collapse_distinct_sites_by_area() -> None
         / "src"
         / "adapter"
         / "metamod"
-        / "plugin_runtime.cpp"
+        / "bot_behavior_runtime.cpp"
     ).read_text(encoding="utf-8")
-    start = source.index("bool PluginRuntime::buildManagedObjectiveTarget(")
+    source = normalize(source)
+    start = source.index("bool BotBehaviorRuntime::buildManagedObjectiveTarget(")
     end = source.index(
-        "ActionProposal PluginRuntime::decideManagedBotAction(", start
+        "ActionProposal BotBehaviorRuntime::decideManagedBotAction(", start
     )
     body = source[start:end]
     assert "ObjectiveCandidateKey" in body
@@ -133,24 +163,26 @@ def test_bomb_target_candidates_do_not_collapse_distinct_sites_by_area() -> None
     assert "targetArea" in source
     assert "corridor.cost" in body
     assert "objectives::isBetterBombSiteRoute" in body
-    assert "target_id" in source
-    assert "nearest_nav_area" in source
-    assert "rejection_reason" in source
+    assert "target_id" in adapter_support()
+    assert "nearest_nav_area" in adapter_support()
+    assert "rejection_reason" in adapter_support()
 
 
 def test_goal_assignment_trace_keeps_actor_local_cache_scope() -> None:
     root = Path(__file__).parents[1]
     runtime_source = (
-        root / "src" / "adapter" / "metamod" / "plugin_runtime.cpp"
+        root / "src" / "adapter" / "metamod" / "bot_navigation_runtime.cpp"
     ).read_text(encoding="utf-8")
+    runtime_source = normalize(runtime_source)
     runtime_header = (
-        root / "src" / "adapter" / "metamod" / "plugin_runtime.hpp"
+        root / "src" / "adapter" / "metamod" / "bot_navigation_runtime.hpp"
     ).read_text(encoding="utf-8")
+    runtime_header = normalize(runtime_header)
     assert "logGoalAssignmentDiagnostic" in runtime_source
     assert "lastCacheHit" in runtime_source
     assert "cache_scope=actor" in runtime_source
-    assert "std::array<runtime::NavRoamController" in runtime_header
-    assert "std::array<ManagedObjectiveTargetCache" in runtime_header
+    assert "runtime::NavRoamController managedBotMovement" in runtime_header
+    assert "ManagedObjectiveTargetCache managedBotObjectiveTargets" in adapter_header("behavior")
 
 
 def test_traversal_trace_exposes_jump_execution_chain() -> None:
@@ -159,8 +191,9 @@ def test_traversal_trace_exposes_jump_execution_chain() -> None:
         / "src"
         / "adapter"
         / "metamod"
-        / "plugin_runtime.cpp"
+        / "bot_navigation_runtime.cpp"
     ).read_text(encoding="utf-8")
+    source = normalize(source)
     assert "logTraversalDiagnostic" in source
     for field in (
         "connection_how",
@@ -178,20 +211,21 @@ def test_traversal_trace_exposes_jump_execution_chain() -> None:
 def test_effective_team_is_shared_across_runtime_decisions() -> None:
     root = Path(__file__).parents[1]
     source = (
-        root / "src" / "adapter" / "metamod" / "plugin_runtime.cpp"
+        root / "src" / "adapter" / "metamod" / "bot_behavior_runtime.cpp"
     ).read_text(encoding="utf-8")
+    source = normalize(source)
     assert "resolveManagedBotTeam" in source
     state_start = source.index(
-        "void PluginRuntime::updateManagedBotCompatibilityState("
+        "void BotBehaviorRuntime::updateManagedBotCompatibilityState("
     )
     state_body = source[state_start:]
     assert "resolveManagedBotTeam" in state_body
     objective_start = source.index(
-        "bool PluginRuntime::buildManagedObjectiveTarget("
+        "bool BotBehaviorRuntime::buildManagedObjectiveTarget("
     )
     objective_body = source[objective_start:]
     assert "resolveManagedBotTeam" in objective_body
-    action_start = source.index("ActionProposal PluginRuntime::decideManagedBotAction(")
+    action_start = source.index("ActionProposal BotBehaviorRuntime::decideManagedBotAction(")
     action_body = source[action_start:]
     assert "resolveManagedBotTeam" in action_body
 
@@ -202,8 +236,9 @@ def test_runtime_diagnostic_separates_raw_and_effective_team() -> None:
         / "src"
         / "adapter"
         / "metamod"
-        / "plugin_runtime.cpp"
+        / "bot_navigation_runtime.cpp"
     ).read_text(encoding="utf-8")
+    source = normalize(source)
     for field in ("raw_team", "effective_team", "team_info", "team_fresh"):
         assert field in source
 
@@ -211,11 +246,13 @@ def test_runtime_diagnostic_separates_raw_and_effective_team() -> None:
 def test_bomb_target_registry_separates_registration_from_evaluation() -> None:
     root = Path(__file__).parents[1]
     runtime_source = (
-        root / "src" / "adapter" / "metamod" / "plugin_runtime.cpp"
+        root / "src" / "adapter" / "metamod" / "bot_behavior_runtime.cpp"
     ).read_text(encoding="utf-8")
+    runtime_source = normalize(runtime_source)
     runtime_header = (
-        root / "src" / "adapter" / "metamod" / "plugin_runtime.hpp"
+        root / "src" / "adapter" / "metamod" / "bot_behavior_runtime.hpp"
     ).read_text(encoding="utf-8")
+    runtime_header = normalize(runtime_header)
     profiler_header = (
         root / "include" / "astrabot" / "metamod" / "runtime_profiler.hpp"
     ).read_text(encoding="utf-8")
@@ -228,7 +265,7 @@ def test_bomb_target_registry_separates_registration_from_evaluation() -> None:
         "evaluated_this_window",
         "selected_site_id",
     ):
-        assert symbol in runtime_source or symbol in runtime_header
+        assert symbol in runtime_source or symbol in adapter_types() or symbol in adapter_source("navigation") or symbol in adapter_support() or symbol in adapter_facade()
     assert "objectiveRegisteredSites" in profiler_header
     assert "objectiveCacheHits" in profiler_header
 
@@ -236,8 +273,9 @@ def test_bomb_target_registry_separates_registration_from_evaluation() -> None:
 def test_bomb_site_diagnostics_separate_site_type_cost_and_cache_state() -> None:
     root = Path(__file__).parents[1]
     runtime_source = (
-        root / "src" / "adapter" / "metamod" / "plugin_runtime.cpp"
+        root / "src" / "adapter" / "metamod" / "bot_behavior_runtime.cpp"
     ).read_text(encoding="utf-8")
+    runtime_source = normalize(runtime_source)
     profiler_header = (
         root / "include" / "astrabot" / "metamod" / "runtime_profiler.hpp"
     ).read_text(encoding="utf-8")
@@ -254,7 +292,7 @@ def test_bomb_site_diagnostics_separate_site_type_cost_and_cache_state() -> None
         "cache_state=%s",
         "rejection_reason=%s",
     ):
-        assert field in runtime_source
+        assert field in runtime_source or field in adapter_support() or field in adapter_facade()
     assert "objectives::isBetterBombSiteRoute" in runtime_source
     assert "objectiveFuncBombTargetSites" in profiler_header
     assert "objectiveInfoBombTargetSites" in profiler_header
@@ -266,8 +304,9 @@ def test_goal_and_traversal_diagnostics_correlate_post_move_feedback() -> None:
         / "src"
         / "adapter"
         / "metamod"
-        / "plugin_runtime.cpp"
+        / "bot_navigation_runtime.cpp"
     ).read_text(encoding="utf-8")
+    source = normalize(source)
     for field in (
         "goalAssignmentCorrelation",
         "frame=%u nav_update=%u goal_generation=%u reselection_reason=%s",
@@ -294,12 +333,13 @@ def test_invalid_corridor_records_failure_and_avoids_objective_link() -> None:
         / "runtime"
         / "nav_roam_controller.cpp"
     ).read_text(encoding="utf-8")
+    source = normalize(source)
     invalid_corridor = source.split(
         "case nav::LocomotionResult::InvalidCorridor:", 1
     )[1].split("case nav::LocomotionResult::InvalidArgument:", 1)[0]
     assert "decision->failureReason = NavFailureReason::NavApplyRejected;" in invalid_corridor
-    assert "hasAvoidedLink_ = true;" in invalid_corridor
-    assert "avoidedLink_ = activeLink_;" in invalid_corridor
+    assert "routeState().hasAvoidedLink = true;" in invalid_corridor
+    assert "routeState().avoidedLink = routeState().activeLink;" in invalid_corridor
     route_selection = source.split(
         "bool NavRoamController::selectRoute(", 1
     )[1].split("bool NavRoamController::selectCompatibilityGoal(", 1)[0]
@@ -308,10 +348,10 @@ def test_invalid_corridor_records_failure_and_avoids_objective_link() -> None:
     assert "portalSteeringPointForLink" in source
     assert "isWithinTraversalLaunchTolerance" in source
     objective_change = source.split("if (objectiveTargetChanged)", 1)[1].split(
-        "hasObjectiveTarget_ =", 1
+        "roamGoalState().hasObjectiveTarget =", 1
     )[0]
     assert "clearPathFailure();" in objective_change
-    assert "hasAvoidedLink_ = false;" in objective_change
+    assert "routeState().hasAvoidedLink = false;" in objective_change
 
 
 if __name__ == "__main__":

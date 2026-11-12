@@ -1,0 +1,265 @@
+#ifndef ASTRABOT_ADAPTER_BOT_BEHAVIOR_RUNTIME_HPP
+#define ASTRABOT_ADAPTER_BOT_BEHAVIOR_RUNTIME_HPP
+#include "bot_runtime_services.hpp"
+#include <limits>
+namespace astrabot
+{
+namespace metamod
+{
+class BotBehaviorRuntime
+{
+  public:
+	void bindServices(BotRuntimeServices &services)
+	{
+		services_ = &services;
+	}
+	bool buildManagedObjectiveTarget(std::size_t index, nav::NavVector *target,
+									 nav::NavSearchStats *searchStats,
+									 RuntimeObjectiveSelectionStats *objectiveStats = nullptr);
+	ActionProposal decideManagedBotAction(std::size_t index,
+										  const runtime::MovementPhysicsState &before,
+										  const runtime::ViewAngles &movementAngles,
+										  std::uint16_t movementButtons);
+	const team::TeamObjectiveAssignment *findManagedTeamObjectiveAssignment(
+		const world::ActorKey &actor) const;
+	void finishManagedBotNavigation(std::size_t index, const runtime::MovementPhysicsState &before,
+									runtime::NavRoamResult result,
+									const runtime::NavRoamDecision &decision,
+									nav::LocomotionIntent *intent);
+	compat::StateUpdateContext makeManagedBotStateContext(
+		std::size_t index, const runtime::MovementPhysicsState &before,
+		compat::StateBehaviorInput *behavior = nullptr) const;
+	bool managedActorAtBombSite(std::size_t index) const;
+	float managedRoundRemainingSeconds() const;
+	void refreshManagedObjectiveSiteRegistry();
+	void refreshManagedTeamObjectiveAssignments(std::size_t contextIndex);
+	int resolveManagedBotTeam(std::size_t index,
+							  const compat::CompatibilityObservation &observation) const;
+	void updateBombGuardTarget(std::size_t index, const compat::ScenarioBehaviorInput &input,
+							   compat::ScenarioBehaviorDecision *decision);
+	void updateManagedBotCompatibilityState(std::size_t index,
+											const runtime::MovementPhysicsState &before);
+	void updateOutgoingPublicRadio(std::size_t index);
+	void updatePublicBuying(std::size_t index);
+	const compat::ProfileRecord &managedProfiles(std::size_t index) const
+	{
+		return actors_[index].managedProfiles;
+	}
+	const ManagedObjectiveTargetCache &managedBotObjectiveTargets(std::size_t index) const
+	{
+		return actors_[index].managedBotObjectiveTargets;
+	}
+	const ManagedObjectiveActionState &managedBotObjectiveActions(std::size_t index) const
+	{
+		return actors_[index].managedBotObjectiveActions;
+	}
+	const compat::CompatibilityStateMachine &managedBotStateMachines(std::size_t index) const
+	{
+		return actors_[index].managedBotStateMachines;
+	}
+	const compat::ScenarioBehaviorDecision &scenarioDecisions(std::size_t index) const
+	{
+		return actors_[index].scenarioDecisions;
+	}
+	void onActorRemoved(std::size_t index);
+
+	void onActorRemembered(std::size_t index, const FakeClientHandle &handle);
+
+	void onMovementResetShared();
+
+	void onMovementResetActor(std::size_t index);
+
+	void noteNavigationFailure(const FakeClientHandle &handle, runtime::NavRoamResult roamResult,
+							   const runtime::NavRoamDecision &roamDecision);
+
+	void resetRoundBuyingState();
+
+	void beginRoundPlantDecision();
+
+	void resetRoundTactics();
+
+	void resetRoundNoiseInvestigation();
+
+	void resetRoundObjectiveCoordination();
+
+	void beginMapPlantDecision();
+
+	void invalidateObjectiveAssignments();
+
+	void assignProfile(std::size_t index, const compat::ProfileRecord &profile);
+
+	void observeRadioReceipt(std::size_t index);
+
+	void observeRecognizedTargetChange(std::size_t index, float now);
+
+	void resetBombApproach(std::size_t index);
+
+	void observeC4SelectionDispatched(std::size_t index, const FakeClientHandle &handle);
+
+	void observeC4AttackDispatched(std::size_t index, const FakeClientHandle &handle,
+								   std::uint16_t buttons);
+
+	void observeNeutralC4AttackDispatched(std::size_t index, const FakeClientHandle &handle);
+
+  private:
+	void fill_managedBotWasDead(const bool &value)
+	{
+		for (auto &actor : actors_)
+			actor.managedBotWasDead = value;
+	}
+	void fill_managedBotStateRounds(const runtime::LifecycleGeneration &value)
+	{
+		for (auto &actor : actors_)
+			actor.managedBotStateRounds = value;
+	}
+	void reset_managedBotObjectiveActions()
+	{
+		for (auto &actor : actors_)
+			actor.managedBotObjectiveActions = {};
+	}
+	void fill_managedBotObjectiveActions(const ManagedObjectiveActionState &value)
+	{
+		for (auto &actor : actors_)
+			actor.managedBotObjectiveActions = value;
+	}
+	void reset_managedStateInputs()
+	{
+		for (auto &actor : actors_)
+			actor.managedStateInputs = {};
+	}
+	void reset_investigatedNoiseTicks()
+	{
+		for (auto &actor : actors_)
+			actor.investigatedNoiseTicks = {};
+	}
+	void reset_buyReceiptTimeoutLogged()
+	{
+		for (auto &actor : actors_)
+			actor.buyReceiptTimeoutLogged = {};
+	}
+	void reset_escapingWithKnife()
+	{
+		for (auto &actor : actors_)
+			actor.escapingWithKnife = {};
+	}
+	void reset_buyingComplete()
+	{
+		for (auto &actor : actors_)
+			actor.buyingComplete = {};
+	}
+	void reset_buyControllers()
+	{
+		for (auto &actor : actors_)
+			actor.buyControllers = {};
+	}
+	void reset_teamworkRadioApplied()
+	{
+		for (auto &actor : actors_)
+			actor.teamworkRadioApplied = {};
+	}
+	void reset_teamworkPolicies()
+	{
+		for (auto &actor : actors_)
+			actor.teamworkPolicies = {};
+	}
+	void reset_bombSearchTargets()
+	{
+		for (auto &actor : actors_)
+			actor.bombSearchTargets = {};
+	}
+	void reset_bombSearchMemory()
+	{
+		for (auto &actor : actors_)
+			actor.bombSearchMemory = {};
+	}
+	void reset_scenarioEscapeAreas()
+	{
+		for (auto &actor : actors_)
+			actor.scenarioEscapeAreas = {};
+	}
+	void fill_outgoingRadioAttemptChoices(const compat::RadioMenuChoice &value)
+	{
+		for (auto &actor : actors_)
+			actor.outgoingRadioAttemptChoices = value;
+	}
+	void fill_outgoingRadioAttemptTimes(const float &value)
+	{
+		for (auto &actor : actors_)
+			actor.outgoingRadioAttemptTimes = value;
+	}
+	void fill_outgoingRadioAttempts(const unsigned &value)
+	{
+		for (auto &actor : actors_)
+			actor.outgoingRadioAttempts = value;
+	}
+	void fill_outgoingRadioSchedulers(const compat::OutgoingRadioScheduler &value)
+	{
+		for (auto &actor : actors_)
+			actor.outgoingRadioSchedulers = value;
+	}
+	struct ActorState
+	{
+		compat::BombGuardPlanner bombGuardPlanners{};
+		compat::OutgoingRadioScheduler outgoingRadioSchedulers{};
+		compat::RadioContactMemory outgoingRadioContactMemory{};
+		std::uint32_t outgoingRadioReceipts{};
+		std::uint32_t outgoingRadioAttemptGenerations{};
+		unsigned outgoingRadioAttempts{};
+		float outgoingRadioAttemptTimes{};
+		compat::RadioMenuChoice outgoingRadioAttemptChoices{};
+		nav::AreaId scenarioEscapeAreas{};
+		compat::BombSiteSearchMemory bombSearchMemory{};
+		compat::ScenarioTarget bombSearchTargets{};
+		compat::TeamworkPolicy teamworkPolicies{};
+		std::uint32_t teamworkRadioApplied{};
+		compat::ProfileRecord managedProfiles{};
+		float lastCombatTimes{};
+		float attackReadyTimes{};
+		compat::BuyController buyControllers{};
+		bool buyingComplete{};
+		bool escapingWithKnife{};
+		bool buyReceiptTimeoutLogged{};
+		compat::WeaponActionPlanner weaponActions{};
+		std::uint32_t investigatedNoiseTicks{};
+		compat::StateBehaviorInput managedStateInputs{};
+		combat::CombatController managedBotCombat{};
+		objectives::RoundObjectivePlanner managedBotObjectives{};
+		ManagedObjectiveTargetCache managedBotObjectiveTargets{};
+		objectives::BombApproachState managedBombApproaches{};
+		team::RoundObjectiveCoordinator compatibilityObjectiveCoordinators{};
+		ManagedObjectiveActionState managedBotObjectiveActions{};
+		compat::CompatibilityStateMachine managedBotStateMachines{};
+		compat::ScenarioBehaviorPlanner scenarioPlanners{};
+		compat::ScenarioBehaviorDecision scenarioDecisions{};
+		runtime::LifecycleGeneration managedBotStateRounds{};
+		bool managedBotWasDead{};
+	};
+	std::array<ActorState, NativeBotObservation::kClientSlotCount> actors_{};
+	BotRuntimeServices *services_ = nullptr;
+	compat::ChatterRadioCatalog outgoingChatterCatalog_{};
+	std::array<float, 3U> outgoingTeamLastSpeech_{{-1.0f, -1.0f, -1.0f}};
+	std::array<float, 3U> outgoingTeamBusyUntil_{};
+	std::array<compat::ChatterPhrase, 3U> outgoingTeamCurrentPhrase_{};
+	std::array<bool, static_cast<unsigned>(compat::ChatterPhrase::Count)>
+		outgoingMissingPhraseLogged_{};
+	runtime::LifecycleGeneration outgoingRadioMap_ = runtime::LifecycleSession::kInvalidGeneration;
+	runtime::LifecycleGeneration outgoingRadioRound_ =
+		runtime::LifecycleSession::kInvalidGeneration;
+	objectives::RoundPlantDecision roundPlantDecision_{};
+	team::RoundObjectiveCoordinator managedTeamObjectiveCoordinator_{};
+	std::size_t managedTeamObjectiveAssignmentContext_ = NativeBotObservation::kClientSlotCount;
+	team::TeamObjectiveAssignmentSet managedTeamObjectiveAssignments_{};
+	std::uint32_t managedTeamObjectiveAssignmentMapGeneration_ = 0U;
+	std::uint32_t managedTeamObjectiveAssignmentRoundGeneration_ = 0U;
+	std::uint32_t managedTeamObjectiveAssignmentFrame_ = 0U;
+	bool managedTeamObjectiveAssignmentsValid_ = false;
+	bool managedTeamObjectivePathFailurePending_ = false;
+	world::ActorKey managedTeamObjectivePathFailureActor_{};
+	std::uint32_t managedTeamObjectivePathFailureGeneration_ = 0U;
+	nav::AreaId managedTeamObjectivePathFailureStartArea_ = 0U;
+	std::uint32_t managedTeamObjectivePathFailureFrame_ = 0U;
+	ManagedObjectiveSiteRegistry managedObjectiveSiteRegistry_{};
+};
+} // namespace metamod
+} // namespace astrabot
+#endif

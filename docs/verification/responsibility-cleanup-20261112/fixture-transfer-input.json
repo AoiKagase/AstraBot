@@ -1,0 +1,5 @@
+{
+  "path": "tests/compat_actor_command_tests.cpp",
+  "sha256": "1b78058968084f2a556aa3f75efd9aeaa2fdbc76d309105a60d42d078f8cf660",
+  "reason": "Current original fixture has identical normalized source to frozen fixture before instrumentation. No concurrent semantic edit."
+}

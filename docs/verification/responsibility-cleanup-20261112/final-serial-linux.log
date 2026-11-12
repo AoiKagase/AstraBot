@@ -1,0 +1,228 @@
+[rtk] /!\ No hook installed — run `rtk init -g` for automatic token savings
+-- Configuring done (0.2s)
+-- Generating done (4.4s)
+-- Build files have been written to: /mnt/c/Temp/astrabot-responsibility-20261112/work/build-ownership-linux-x86
+[  1%] Built target astrabot_map_fingerprint
+[  3%] Built target astrabot_native_bot_guard
+[  4%] Built target astrabot_regamedll_provider
+[  5%] Built target astrabot_join_controller
+[  6%] Built target astrabot_action_adapter
+[  7%] Built target astrabot_movement_execution_gate
+[  8%] Built target astrabot_runtime_profiler
+[ 22%] Built target astrabot_core
+[ 24%] Built target astrabot_weapon_actions
+[ 24%] Built target astrabot_vanilla_behavior
+[ 24%] Built target astrabot_vanilla_management
+[ 25%] Built target astrabot_public_observation
+[ 25%] Built target astrabot_public_bomb_clock
+[ 27%] Built target astrabot_scenario_behavior
+[ 27%] Built target astrabot_outgoing_radio
+[ 28%] Built target astrabot_bomb_navigation
+[ 29%] Built target astrabot_teamwork_policy
+[ 30%] Built target astrabot_build_identity
+[ 31%] Built target astrabot_grenade_trajectory
+[ 31%] Built target astrabot_nav_danger_memory
+[ 31%] Built target astrabot_actor_registry
+[ 31%] Built target astrabot_lifecycle_generation
+[ 32%] Built target astrabot_command_queue
+[ 34%] Built target astrabot_nav_legacy_limit
+[ 34%] Built target astrabot_compat_command_registry
+[ 34%] Built target astrabot_nav_roam_controller
+[ 35%] Built target astrabot_player_avoidance
+[ 36%] Built target astrabot_compat_cvar_state
+[ 36%] Built target astrabot_compat_state_machine
+[ 37%] Built target astrabot_observation_model
+[ 37%] Built target astrabot_profile_catalog
+[ 37%] Built target astrabot_bot_configuration
+[ 37%] Built target astrabot_runtime_mode_policy
+[ 40%] Built target astrabot_runtime_timing
+[ 40%] Built target astrabot_profile_loader
+[ 40%] Built target astrabot_compatibility_rng
+[ 41%] Built target astrabot_engine_random_source
+[ 43%] Built target astrabot_nav_model
+[ 43%] Built target astrabot_legacy_nav_reader
+[ 44%] Built target astrabot_nav_snapshot
+[ 45%] Built target astrabot_nav_loader
+[ 47%] Built target astrabot_nav_diagnostics
+[ 48%] Built target astrabot_nav_external_performance
+[ 49%] Built target astrabot_nav_query
+[ 50%] Built target astrabot_locomotion
+[ 51%] Built target astrabot_jump_drop
+[ 51%] Built target astrabot_special_traversal
+[ 52%] Built target astrabot_world_snapshot
+[ 53%] Built target astrabot_perception
+[ 55%] Built target astrabot_behavior_state
+[ 55%] Built target astrabot_objective_proposal
+[ 56%] Built target astrabot_weapon_state
+[ 57%] Built target astrabot_combat_intent
+[ 58%] Built target astrabot_objective_state
+[ 59%] Built target astrabot_round_objectives
+[ 60%] Built target astrabot_team_report
+[ 61%] Built target astrabot_round_objective_coordinator
+[ 61%] Built target astrabot_movement_physics
+[ 62%] Built target astrabot_radio_intent
+[ 62%] Built target astrabot_jump_crouch_sequencer
+[ 63%] Built target astrabot_fake_client_manager
+[ 65%] Built target astrabot_input_dispatcher
+[ 67%] Built target astrabot_compat_surface
+[ 75%] Built target astrabot_mm
+[ 82%] Built target astrabot_metamod_hooks
+[ 83%] Built target astrabot_observation_adapter
+[ 90%] Built target astrabot_fake_client_isolation
+[ 91%] Built target astrabot_perception_adapter
+[ 91%] Built target astrabot_regamedll_observation_provider
+[ 92%] Built target astrabot_metamod_abi
+[ 93%] Built target astrabot_observation_trace
+[100%] Built target astrabot_compat_actor_command
+Internal ctest changing into directory: /mnt/c/Temp/astrabot-responsibility-20261112/work/build-ownership-linux-x86
+Test project /mnt/c/Temp/astrabot-responsibility-20261112/work/build-ownership-linux-x86
+      Start  1: astrabot_public_observation
+ 1/73 Test  #1: astrabot_public_observation ......................   Passed    0.02 sec
+      Start  2: astrabot_vanilla_management
+ 2/73 Test  #2: astrabot_vanilla_management ......................   Passed    0.01 sec
+      Start  3: astrabot_vanilla_behavior
+ 3/73 Test  #3: astrabot_vanilla_behavior ........................   Passed    0.00 sec
+      Start  4: astrabot_weapon_actions
+ 4/73 Test  #4: astrabot_weapon_actions ..........................   Passed    0.00 sec
+      Start  5: astrabot_scenario_behavior
+ 5/73 Test  #5: astrabot_scenario_behavior .......................   Passed    0.05 sec
+      Start  6: astrabot_public_bomb_clock
+ 6/73 Test  #6: astrabot_public_bomb_clock .......................   Passed    0.00 sec
+      Start  7: astrabot_bomb_navigation
+ 7/73 Test  #7: astrabot_bomb_navigation .........................   Passed    0.01 sec
+      Start  8: astrabot_outgoing_radio
+ 8/73 Test  #8: astrabot_outgoing_radio ..........................   Passed    0.01 sec
+      Start  9: astrabot_teamwork_policy
+ 9/73 Test  #9: astrabot_teamwork_policy .........................   Passed    0.01 sec
+      Start 10: astrabot_nav_danger_memory
+10/73 Test #10: astrabot_nav_danger_memory .......................   Passed    0.01 sec
+      Start 11: astrabot_grenade_trajectory
+11/73 Test #11: astrabot_grenade_trajectory ......................   Passed    0.00 sec
+      Start 12: astrabot_build_identity
+12/73 Test #12: astrabot_build_identity ..........................   Passed    0.00 sec
+      Start 13: astrabot_lifecycle_generation
+13/73 Test #13: astrabot_lifecycle_generation ....................   Passed    0.00 sec
+      Start 14: astrabot_native_bot_guard
+14/73 Test #14: astrabot_native_bot_guard ........................   Passed    0.00 sec
+      Start 15: astrabot_actor_registry
+15/73 Test #15: astrabot_actor_registry ..........................   Passed    0.00 sec
+      Start 16: astrabot_command_queue
+16/73 Test #16: astrabot_command_queue ...........................   Passed    0.01 sec
+      Start 17: astrabot_join_controller
+17/73 Test #17: astrabot_join_controller .........................   Passed    0.01 sec
+      Start 18: astrabot_nav_roam_controller
+18/73 Test #18: astrabot_nav_roam_controller .....................   Passed    0.03 sec
+      Start 19: astrabot_player_avoidance
+19/73 Test #19: astrabot_player_avoidance ........................   Passed    0.00 sec
+      Start 20: astrabot_nav_legacy_limit
+20/73 Test #20: astrabot_nav_legacy_limit ........................   Passed    0.01 sec
+      Start 21: astrabot_compat_command_registry
+21/73 Test #21: astrabot_compat_command_registry .................   Passed    0.00 sec
+      Start 22: astrabot_compat_cvar_state
+22/73 Test #22: astrabot_compat_cvar_state .......................   Passed    0.00 sec
+      Start 23: astrabot_observation_model
+23/73 Test #23: astrabot_observation_model .......................   Passed    0.01 sec
+      Start 24: astrabot_compat_state_machine
+24/73 Test #24: astrabot_compat_state_machine ....................   Passed    0.01 sec
+      Start 25: astrabot_profile_catalog
+25/73 Test #25: astrabot_profile_catalog .........................   Passed    0.01 sec
+      Start 26: astrabot_profile_loader
+26/73 Test #26: astrabot_profile_loader ..........................   Passed    0.01 sec
+      Start 27: astrabot_bot_configuration
+27/73 Test #27: astrabot_bot_configuration .......................   Passed    0.00 sec
+      Start 28: astrabot_runtime_mode_policy
+28/73 Test #28: astrabot_runtime_mode_policy .....................   Passed    0.00 sec
+      Start 29: astrabot_runtime_timing
+29/73 Test #29: astrabot_runtime_timing ..........................   Passed    0.01 sec
+      Start 30: astrabot_compatibility_rng
+30/73 Test #30: astrabot_compatibility_rng .......................   Passed    0.01 sec
+      Start 31: astrabot_engine_random_source
+31/73 Test #31: astrabot_engine_random_source ....................   Passed    0.01 sec
+      Start 32: astrabot_nav_model
+32/73 Test #32: astrabot_nav_model ...............................   Passed    0.01 sec
+      Start 33: astrabot_legacy_nav_reader
+33/73 Test #33: astrabot_legacy_nav_reader .......................   Passed    0.01 sec
+      Start 34: astrabot_nav_loader
+34/73 Test #34: astrabot_nav_loader ..............................   Passed    0.15 sec
+      Start 35: astrabot_nav_external_performance
+35/73 Test #35: astrabot_nav_external_performance ................   Passed    0.48 sec
+      Start 36: astrabot_nav_diagnostics
+36/73 Test #36: astrabot_nav_diagnostics .........................   Passed    0.03 sec
+      Start 37: astrabot_nav_snapshot
+37/73 Test #37: astrabot_nav_snapshot ............................   Passed    0.01 sec
+      Start 38: astrabot_nav_query
+38/73 Test #38: astrabot_nav_query ...............................   Passed    0.01 sec
+      Start 39: astrabot_locomotion
+39/73 Test #39: astrabot_locomotion ..............................   Passed    0.01 sec
+      Start 40: astrabot_jump_drop
+40/73 Test #40: astrabot_jump_drop ...............................   Passed    0.01 sec
+      Start 41: astrabot_special_traversal
+41/73 Test #41: astrabot_special_traversal .......................   Passed    0.01 sec
+      Start 42: astrabot_world_snapshot
+42/73 Test #42: astrabot_world_snapshot ..........................   Passed    0.01 sec
+      Start 43: astrabot_perception
+43/73 Test #43: astrabot_perception ..............................   Passed    0.01 sec
+      Start 44: astrabot_behavior_state
+44/73 Test #44: astrabot_behavior_state ..........................   Passed    0.01 sec
+      Start 45: astrabot_objective_proposal
+45/73 Test #45: astrabot_objective_proposal ......................   Passed    0.00 sec
+      Start 46: astrabot_weapon_state
+46/73 Test #46: astrabot_weapon_state ............................   Passed    0.00 sec
+      Start 47: astrabot_combat_intent
+47/73 Test #47: astrabot_combat_intent ...........................   Passed    0.01 sec
+      Start 48: astrabot_objective_state
+48/73 Test #48: astrabot_objective_state .........................   Passed    0.01 sec
+      Start 49: astrabot_round_objectives
+49/73 Test #49: astrabot_round_objectives ........................   Passed    0.01 sec
+      Start 50: astrabot_round_objective_coordinator
+50/73 Test #50: astrabot_round_objective_coordinator .............   Passed    0.01 sec
+      Start 51: astrabot_team_report
+51/73 Test #51: astrabot_team_report .............................   Passed    0.00 sec
+      Start 52: astrabot_radio_intent
+52/73 Test #52: astrabot_radio_intent ............................   Passed    0.01 sec
+      Start 53: astrabot_map_fingerprint
+53/73 Test #53: astrabot_map_fingerprint .........................   Passed    0.00 sec
+      Start 54: astrabot_movement_physics
+54/73 Test #54: astrabot_movement_physics ........................   Passed    0.00 sec
+      Start 55: astrabot_jump_crouch_sequencer
+55/73 Test #55: astrabot_jump_crouch_sequencer ...................   Passed    0.00 sec
+      Start 56: astrabot_metamod_abi
+56/73 Test #56: astrabot_metamod_abi .............................   Passed    0.02 sec
+      Start 57: astrabot_metamod_hooks
+57/73 Test #57: astrabot_metamod_hooks ...........................   Passed    0.03 sec
+      Start 58: astrabot_fake_client_manager
+58/73 Test #58: astrabot_fake_client_manager .....................   Passed    0.01 sec
+      Start 59: astrabot_input_dispatcher
+59/73 Test #59: astrabot_input_dispatcher ........................   Passed    0.01 sec
+      Start 60: astrabot_fake_client_isolation
+60/73 Test #60: astrabot_fake_client_isolation ...................   Passed    0.04 sec
+      Start 61: astrabot_compat_surface
+61/73 Test #61: astrabot_compat_surface ..........................   Passed    0.01 sec
+      Start 62: astrabot_compat_actor_command
+62/73 Test #62: astrabot_compat_actor_command ....................   Passed    0.54 sec
+      Start 63: astrabot_observation_adapter
+63/73 Test #63: astrabot_observation_adapter .....................   Passed    0.01 sec
+      Start 64: astrabot_perception_adapter
+64/73 Test #64: astrabot_perception_adapter ......................   Passed    0.01 sec
+      Start 65: astrabot_observation_trace
+65/73 Test #65: astrabot_observation_trace .......................   Passed    0.01 sec
+      Start 66: astrabot_action_adapter
+66/73 Test #66: astrabot_action_adapter ..........................   Passed    0.00 sec
+      Start 67: astrabot_movement_execution_gate
+67/73 Test #67: astrabot_movement_execution_gate .................   Passed    0.00 sec
+      Start 68: astrabot_runtime_profiler
+68/73 Test #68: astrabot_runtime_profiler ........................   Passed    0.01 sec
+      Start 69: astrabot_regamedll_observation_provider
+69/73 Test #69: astrabot_regamedll_observation_provider ..........   Passed    0.01 sec
+      Start 70: astrabot_runtime_ownership_contract
+70/73 Test #70: astrabot_runtime_ownership_contract ..............   Passed    0.67 sec
+      Start 71: astrabot_runtime_movement_integration_contract
+71/73 Test #71: astrabot_runtime_movement_integration_contract ...   Passed    0.05 sec
+      Start 72: astrabot_p076_performance_contract
+72/73 Test #72: astrabot_p076_performance_contract ...............   Passed    0.21 sec
+      Start 73: astrabot_runtime_characterization
+73/73 Test #73: astrabot_runtime_characterization ................   Passed    0.88 sec
+
+100% tests passed, 0 tests failed out of 73
+
+Total Test time (real) =   3.85 sec

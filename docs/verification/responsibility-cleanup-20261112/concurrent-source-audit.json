@@ -1,0 +1,7 @@
+{
+  "changed": [
+    "tests/compat_actor_command_tests.cpp",
+    "tests/nav_roam_controller_tests.cpp"
+  ],
+  "new": []
+}

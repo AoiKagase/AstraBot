@@ -1,0 +1,6 @@
+{
+  "path": "CMakeLists.txt",
+  "change": "Remove only the extra blank line at EOF reported by git diff --check",
+  "before": "ccf431a3cda412a60a7f71fef2670271659a0c8709847f296405d22d8926c32b",
+  "after": "b5d4ab5fcf16cc10b574d3664e040adcff14c7a3ff682f7674e0cd0b93adfa91"
+}

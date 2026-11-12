@@ -1,405 +1,124 @@
 #ifndef ASTRABOT_ADAPTER_METAMOD_PLUGIN_RUNTIME_HPP
 #define ASTRABOT_ADAPTER_METAMOD_PLUGIN_RUNTIME_HPP
-
-#include "astrabot/metamod/abi_contract.hpp"
-#include "usercmd.h"
-#include "astrabot/metamod/compat_surface.hpp"
-#include "astrabot/metamod/fake_client_manager.hpp"
-#include "astrabot/metamod/join_controller.hpp"
-#include "astrabot/metamod/round_lifecycle_tracker.hpp"
-#include "astrabot/metamod/input_dispatcher.hpp"
-#include "astrabot/metamod/native_bot_guard.hpp"
-#include "astrabot/metamod/nav_loader.hpp"
-#include "astrabot/combat/combat_intent.hpp"
-#include "astrabot/compat/state_machine.hpp"
-#include "astrabot/compat/public_observation.hpp"
-#include "astrabot/compat/buy_controller.hpp"
-#include "astrabot/compat/outgoing_radio.hpp"
-#include "astrabot/compat/combat_behavior.hpp"
-#include "astrabot/compat/weapon_actions.hpp"
-#include "astrabot/compat/grenade_trajectory.hpp"
-#include "astrabot/compat/scenario_behavior.hpp"
-#include "astrabot/compat/public_bomb_clock.hpp"
-#include "astrabot/compat/public_bomb_radar.hpp"
-#include "astrabot/compat/bomb_guard.hpp"
-#include "astrabot/compat/bomb_search.hpp"
-#include "astrabot/compat/teamwork_policy.hpp"
-#include "astrabot/compat/scenario_behavior.hpp"
-#include "astrabot/objectives/round_objectives.hpp"
-#include "astrabot/objectives/bomb_site_route_selection.hpp"
-#include "astrabot/team/round_objective_coordinator.hpp"
-#include "astrabot/perception/perception.hpp"
-#include "astrabot/runtime/nav_roam_controller.hpp"
-#include "astrabot/runtime/player_avoidance.hpp"
-#include "astrabot/nav/danger_memory.hpp"
-#include "astrabot/runtime/movement_physics.hpp"
-#include "astrabot/runtime/bot_timing_scheduler.hpp"
-#include "astrabot/runtime/jump_crouch_sequencer.hpp"
-#include "astrabot/runtime/lifecycle.hpp"
-#include "engine_random_source.hpp"
-#include "action_adapter.hpp"
-#include "observation_adapter.hpp"
-#include "regamedll_observation_provider.hpp"
-#include "astrabot/metamod/runtime_profiler.hpp"
-
-#include <array>
-#include <cstddef>
-#include <cstdint>
+#include "bot_behavior_runtime.hpp"
+#include "bot_command_runtime.hpp"
+#include "bot_navigation_runtime.hpp"
+#include "bot_observation_runtime.hpp"
+#include "bot_runtime_types.hpp"
 
 namespace astrabot
 {
-	namespace metamod
+namespace metamod
+{
+class PluginRuntime : public BotRuntimeServices
+{
+  public:
+	enum class State
 	{
-enum class CompatibilityCommandResult
-{
-			Handled,
-			Unknown,
-			InvalidArguments,
-			InvalidOutput,
-			NotActive,
-			Disabled,
-			Stopped,
-			QuotaReached,
-			NativeGuardDenied,
-			NoTarget,
-			ProfileUnavailable,
-			NameTaken,
-	ActorOperationFailed
-};
-
-struct ManagedObjectiveTargetCache
-{
-	bool valid;
-	runtime::LifecycleGeneration mapGeneration;
-	runtime::LifecycleGeneration roundGeneration;
-	std::uint8_t team;
-	bool carryingBomb;
-	nav::NavVector target;
-	int selectedEntityIndex;
-	std::uint32_t selectedSiteIdentity;
-	std::uint32_t generation;
-	std::uint32_t teamObjectiveAssignmentGeneration;
-	team::TeamObjectiveKind teamObjectiveKind;
-	bool diagnosticsEmitted;
-	bool lastCacheHit;
-	float approachRouteSeconds;
-	int rawTeam;
-	int effectiveTeam;
-	bool teamInfoFresh;
-};
-
-struct ManagedObjectiveActionState
-{
-	bool active;
-	world::ActorKey actor;
-	team::TeamObjectiveKind kind;
-	std::uint32_t mapGeneration;
-	std::uint32_t roundGeneration;
-	std::uint32_t assignmentGeneration;
-	int targetEntityIndex;
-	std::uint32_t targetSiteIdentity;
-	bool c4SelectionCommandDispatched;
-	bool c4AttackInputDispatched;
-	PlantAttemptState plantAttempt;
-};
-
-struct ManagedCurrentWeaponObservation
-{
-	bool available;
-	bool active;
-	std::uint8_t weaponId;
-	std::uint32_t actorGeneration;
-	std::uint32_t mapGeneration;
-	std::uint32_t roundGeneration;
-	std::uint32_t frame;
-};
-
-struct ManagedObjectiveSiteRegistry
-{
-	static constexpr std::size_t kMaximumSites = 4U;
-	struct Entry
-	{
-		bool registered;
-		std::uint32_t targetId;
-		int entityIndex;
-		std::uint32_t siteIdentity;
-		nav::NavVector center;
-		nav::NavExtent extent;
-		bool hasExtent;
+		Cold,
+		Attached,
+		ActiveMap,
+		Detached
 	};
 
-	runtime::LifecycleGeneration mapGeneration;
-	runtime::LifecycleGeneration roundGeneration;
-	bool initialized;
-	std::array<Entry, kMaximumSites> entries;
-	std::uint32_t registeredCount;
-	std::uint32_t registeredFuncBombTargetCount;
-	std::uint32_t registeredInfoBombTargetCount;
-};
-
-		class PluginRuntime
-		{
-		  public:
-			enum class State
-			{
-				Cold,
-				Attached,
-				ActiveMap,
-				Detached
-			};
-
-		struct Snapshot
-		{
-			State state;
-			compat::RuntimeMode mode;
-			runtime::LifecycleGeneration mapGeneration;
-				runtime::LifecycleGeneration roundGeneration;
-			NativeBotGuardState nativeGuardState;
-			NativeBotGuardReason nativeGuardReason;
-			bool managedBotCreationAllowed;
-			bool roundFreezeActive;
-		};
-
-			static PluginRuntime &instance();
-
-			bool attach(PLUG_LOADTIME loadTime, META_FUNCTIONS *functionTable,
-						meta_globals_t *metaGlobals, gamedll_funcs_t *gameDllFunctions,
-						plid_t pluginId);
-			bool detach(PLUG_LOADTIME loadTime, PL_UNLOAD_REASON reason);
-			bool provideEntityApi(DLL_FUNCTIONS *functionTable, int *interfaceVersion);
-			bool provideEntityApiPost(DLL_FUNCTIONS *functionTable, int *interfaceVersion);
-			bool provideEngineFunctions(enginefuncs_t *engineFunctions, int *interfaceVersion);
-			void giveEnginePointers(enginefuncs_t *engineFunctions, globalvars_t *globals);
-			Snapshot snapshot() const;
-			NavLoadResult loadNavigationFile(const NavLoadRequest *request);
-			NavLoadDiagnostic navigationDiagnostic() const;
-		nav::NavSnapshot navigationSnapshot() const;
-		runtime::MovementPhysicsSample movementPhysicsSample(std::uint32_t slot) const;
-			runtime::LifecycleToken tokenForSlot(std::uint32_t slot) const;
-
-			void onClientDisconnect(edict_t *entity);
-			void onTouch(edict_t *entity, edict_t *other);
-			void onClientPutInServer(edict_t *entity);
-			void onCmdStart(const edict_t *entity, std::uint16_t buttons);
-			void onServerActivate(edict_t *edictList, int edictCount, int clientMax);
-			void onServerDeactivate();
-			void onStartFrame();
-			void onStartFramePost();
-		void notifyMenuReady(edict_t *entity, JoinMenuKind menu,
-							 std::uint16_t validSlots = 0U,
-							 JoinMenuSource source = JoinMenuSource::Unknown);
-			void onMessageBegin(int messageDestination, int messageType,
-							const float *origin, edict_t *entity);
-		void onMessageEnd();
-		void onRoundLifecycleMessage(const char *message);
-		bool beginRoundGeneration();
-		void onWriteByte(int value);
-		void onWriteChar(int value);
-		void onWriteShort(int value);
-		void onWriteLong(int value);
-		void onWriteCoord(float value);
-		void onEmitSound(edict_t *entity, const char *sample, float volume, float attenuation);
-		void onWriteString(const char *value);
-			void onAddServerCommand(char *command, void (*function)(void));
-			void onCompatibilityCommand();
-			compat::CvarUpdateResult setCompatibilityFloat(const char *name, float value);
-			compat::CvarUpdateResult setCompatibilityString(const char *name, const char *value);
-			ProfileLoadResult loadCompatibilityProfiles(const char *path);
-			CompatibilityCommandResult
-			executeCompatibilityCommand(const compat::CommandRequest &request);
-			FakeClientResult createFakeClient(const char *name, FakeClientHandle *handle);
-			FakeClientResult removeFakeClient(FakeClientHandle *handle);
-			runtime::QueueResult enqueueBotCommand(const runtime::BotCommand &command);
-			runtime::CommandReceipt dispatchBotInput(const runtime::ActorId &actor,
-													 std::uint32_t dispatchFrame);
-
-		  private:
-		static constexpr std::size_t kCompatibilityCvarCount = 7U;
-
-	enum class UserMessageKind : std::uint8_t
-		{
-			None,
-		ShowMenu,
-		VguiMenu,
-		TeamInfo,
-		CurWeapon
-	};
-	struct MovementReversalDiagnosticState
+	struct Snapshot
 	{
-		bool valid;
-		runtime::PhysicsVector feetPosition;
-		runtime::PhysicsVector direction;
-		nav::NavVector localTarget;
-		nav::AreaId currentArea;
-		nav::AreaId targetArea;
-		std::uint32_t pathSequence;
-		std::uint32_t reversalCount;
-	};
-	struct PendingTraversalDiagnostic
-	{
-		bool active;
-		std::uint32_t actorGeneration;
-		std::uint32_t commandFrame;
-	std::uint32_t navUpdateSequence;
-	std::uint32_t goalGeneration;
-	std::uint32_t mapGeneration;
-	std::uint32_t roundGeneration;
-	std::uint32_t corridorIndex;
-	runtime::NavGoalSelectionReason goalSelectionReason;
-		runtime::NavGoalSelectionStrategy goalSelectionStrategy;
-		nav::AreaId currentArea;
-		nav::AreaId targetArea;
-		nav::NavVector targetPosition;
-		nav::NavVector intentDirection;
-	float intentSpeed;
-	float sourceFloorZ;
-	float targetFloorZ;
-	float dropHeight;
-	float horizontalGap;
-	float maximumSafeDropHeight;
-	bool safeDropHeightAvailable;
-		std::uint8_t linkDirection;
-		std::uint8_t linkHow;
-		nav::TraversalAction action;
-	std::uint16_t buttons;
-	runtime::PhysicsVector startPosition;
-	float startVelocityZ;
-	bool startGrounded;
-		float startHealth;
+		State state;
+		compat::RuntimeMode mode;
+		runtime::LifecycleGeneration mapGeneration;
+		runtime::LifecycleGeneration roundGeneration;
+		NativeBotGuardState nativeGuardState;
+		NativeBotGuardReason nativeGuardReason;
+		bool managedBotCreationAllowed;
+		bool roundFreezeActive;
 	};
 
-		friend const char *HookCommandArgs();
-			friend const char *HookCommandArgv(int index);
-			friend int HookCommandArgc();
-			PluginRuntime();
-			NativeBotObservation collectNativeBotObservation() const;
-			void synchronizeNativeBotControls();
-			void synchronizeCompatibilityCvars();
-			void registerCompatibilityCvars();
-			void updateNativeBotGuard();
-			bool armNativeBotGuard();
-			void resetNativeBotGuard();
-			void restoreNativeBotControls();
-			void logNativeBotGuardTransition(const NativeBotGuardDecision &previousDecision) const;
-			void configureFakeClientManager();
-			void registerCompatibilityCommands();
-			void loadCurrentMapNavigation();
-			void updateManagedBotMovement();
-		void capturePublicMessage();
-		void appendPublicMessageInteger(int value);
-		bool observeObjective(std::size_t index, edict_t *entity, bool planted,
-			world::WorldVector *position, bool *currentlyVisible = nullptr);
-		void maintainPublicBotPopulation();
-		void updatePublicBuying(std::size_t index);
-		void updateOutgoingPublicRadio(std::size_t index);
-		bool hasObservedActiveWeapon(std::size_t index) const;
-			void resetManagedBotTiming(std::size_t index, float spawnTime);
-			void resetManagedBotCommandTemplate(std::size_t index);
-		void updateManagedBotCompatibilityState(
-			std::size_t index,
-			const runtime::MovementPhysicsState &before);
-	void finishManagedBotNavigation(std::size_t index,const runtime::MovementPhysicsState &before,
-		runtime::NavRoamResult result,const runtime::NavRoamDecision &decision,nav::LocomotionIntent *intent);
-		int resolveManagedBotTeam(
-			std::size_t index,
-			const compat::CompatibilityObservation &observation) const;
-			compat::StateUpdateContext makeManagedBotStateContext(
-				std::size_t index,
-			const runtime::MovementPhysicsState &before,
-			compat::StateBehaviorInput *behavior = nullptr) const;
-			nav::NavPathCostContext managedPathCostContext(std::size_t index);
-			void prepareNeutralManagedBotCommand(
-				std::size_t index,
-				FakeClientHandle &handle,
-				const runtime::MovementPhysicsState &before);
-			runtime::CommandReceipt executeManagedBotCommand(
-				std::size_t index,
-				FakeClientHandle &handle);
-		void processJoinControllers();
-		void processDeferredJoinActions();
-		void applyJoinAction(std::size_t index, const JoinAction &action);
-		void deferJoinAction(std::size_t index, const JoinAction &action);
-		void cleanupManagedJoin(std::size_t index, JoinError error);
-		void notifyTeamInfo(std::uint8_t slot, const char *teamName);
-		void updateBombGuardTarget(std::size_t index, const compat::ScenarioBehaviorInput &input,
-			compat::ScenarioBehaviorDecision *decision);
-		void captureManagedCurrentWeapon();
-	runtime::MovementPhysicsState captureMovementPhysicsState(
-		const edict_t *entity, bool teamConfirmed, bool managedFakeClient) const;
-		runtime::CommandReceipt dispatchNeutralMovement(
-			std::size_t index,
-			FakeClientHandle &handle,
-			std::uint8_t milliseconds);
-		runtime::CommandReceipt dispatchJoinHeartbeat(
-			std::size_t index,
-			FakeClientHandle &handle,
-			std::uint8_t milliseconds);
-			void recordMovementPhysicsSample(
-				std::size_t index,
-				const runtime::MovementPhysicsState &before,
-				const runtime::CommandReceipt &receipt);
-	ActionProposal decideManagedBotAction(
-		std::size_t index,
-		const runtime::MovementPhysicsState &before,
-		const runtime::ViewAngles &movementAngles,
-		std::uint16_t movementButtons);
-	bool dispatchManagedActionCommand(
-		std::size_t index,
-		FakeClientHandle &handle,
-		const ActionProposal &proposal,
-		const ActionDispatch &dispatch);
-			bool buildManagedWorldSnapshot(
-				std::size_t index,
-				world::WorldSnapshot *snapshot,
-				world::ActorKey *targetActor,
-				world::WorldPosition *targetPosition);
-		bool buildManagedObjectiveTarget(
-			std::size_t index,
-			nav::NavVector *target,
-			nav::NavSearchStats *searchStats,
-		RuntimeObjectiveSelectionStats *objectiveStats = nullptr);
-	void refreshManagedTeamObjectiveAssignments(std::size_t contextIndex);
-	int publicPlayerTeam(const edict_t *entity) const;
-	runtime::ActorId publicPlayerIdentity(const edict_t *entity) const;
+	static PluginRuntime &instance();
+
+	bool attach(PLUG_LOADTIME loadTime, META_FUNCTIONS *functionTable, meta_globals_t *metaGlobals,
+				gamedll_funcs_t *gameDllFunctions, plid_t pluginId);
+	bool detach(PLUG_LOADTIME loadTime, PL_UNLOAD_REASON reason);
+	bool provideEntityApi(DLL_FUNCTIONS *functionTable, int *interfaceVersion);
+	bool provideEntityApiPost(DLL_FUNCTIONS *functionTable, int *interfaceVersion);
+	bool provideEngineFunctions(enginefuncs_t *engineFunctions, int *interfaceVersion);
+	void giveEnginePointers(enginefuncs_t *engineFunctions, globalvars_t *globals);
+	Snapshot snapshot() const;
+	NavLoadResult loadNavigationFile(const NavLoadRequest *request);
+	NavLoadDiagnostic navigationDiagnostic() const;
+	nav::NavSnapshot navigationSnapshot() const;
+	runtime::MovementPhysicsSample movementPhysicsSample(std::uint32_t slot) const;
+	runtime::LifecycleToken tokenForSlot(std::uint32_t slot) const;
+
+	void onClientDisconnect(edict_t *entity);
+	void onTouch(edict_t *entity, edict_t *other);
+	void onClientPutInServer(edict_t *entity);
+	void onCmdStart(const edict_t *entity, std::uint16_t buttons);
+	void onServerActivate(edict_t *edictList, int edictCount, int clientMax);
+	void onServerDeactivate();
+	void onStartFrame();
+	void onStartFramePost();
+	void notifyMenuReady(edict_t *entity, JoinMenuKind menu, std::uint16_t validSlots = 0U,
+						 JoinMenuSource source = JoinMenuSource::Unknown);
+	void onMessageBegin(int messageDestination, int messageType, const float *origin,
+						edict_t *entity);
+	void onMessageEnd();
+	void onRoundLifecycleMessage(const char *message);
+	bool beginRoundGeneration();
+	void onWriteByte(int value);
+	void onWriteChar(int value);
+	void onWriteShort(int value);
+	void onWriteLong(int value);
+	void onWriteCoord(float value);
+	void onEmitSound(edict_t *entity, const char *sample, float volume, float attenuation);
+	void onWriteString(const char *value);
+	void onAddServerCommand(char *command, void (*function)(void));
+	void onCompatibilityCommand();
+	compat::CvarUpdateResult setCompatibilityFloat(const char *name, float value);
+	compat::CvarUpdateResult setCompatibilityString(const char *name, const char *value);
+	ProfileLoadResult loadCompatibilityProfiles(const char *path);
+	CompatibilityCommandResult executeCompatibilityCommand(const compat::CommandRequest &request);
+	FakeClientResult createFakeClient(const char *name, FakeClientHandle *handle);
+	FakeClientResult removeFakeClient(FakeClientHandle *handle);
+	runtime::QueueResult enqueueBotCommand(const runtime::BotCommand &command);
+	runtime::CommandReceipt dispatchBotInput(const runtime::ActorId &actor,
+											 std::uint32_t dispatchFrame);
+
+  private:
+	static constexpr std::size_t kCompatibilityCvarCount = 7U;
+
+	friend const char *HookCommandArgs();
+	friend const char *HookCommandArgv(int index);
+	friend int HookCommandArgc();
+	PluginRuntime();
+	NativeBotObservation collectNativeBotObservation() const;
+	void synchronizeNativeBotControls();
+	void synchronizeCompatibilityCvars();
+	void registerCompatibilityCvars();
+	void updateNativeBotGuard();
+	bool armNativeBotGuard();
+	void resetNativeBotGuard();
+	void restoreNativeBotControls();
+	void logNativeBotGuardTransition(const NativeBotGuardDecision &previousDecision) const;
+	void configureFakeClientManager();
+	void registerCompatibilityCommands();
+	void loadCurrentMapNavigation();
+	void updateManagedBotMovement();
+
+	void maintainPublicBotPopulation();
+
+	void resetManagedBotTiming(std::size_t index, float spawnTime);
+
+	void processJoinControllers();
+	void processDeferredJoinActions();
+	void applyJoinAction(std::size_t index, const JoinAction &action);
+	void deferJoinAction(std::size_t index, const JoinAction &action);
+	void cleanupManagedJoin(std::size_t index, JoinError error);
+
 	std::uint32_t publicPlayerPriority(const edict_t *entity) const;
-	std::vector<nav::NavVector> liveFriendlyPositions(std::size_t index, bool feet) const;
-	void applyPlayerAvoidance(std::size_t index, runtime::BotCommand *command);
-	const team::TeamObjectiveAssignment *findManagedTeamObjectiveAssignment(
-		const world::ActorKey &actor) const;
-	void refreshManagedObjectiveSiteRegistry();
-	float managedRoundRemainingSeconds() const;
-	bool managedActorAtBombSite(std::size_t index) const;
+
 		bool roundFreezeActive() const;
 			void resetManagedBotMovement();
-		void logMovementDiagnostic(
-			std::size_t index,
-			const char *reason,
-			const runtime::NavRoamDecision *decision = nullptr);
-		void logGoalAssignmentDiagnostic(
-			std::size_t index,
-			const runtime::MovementPhysicsState &before,
-			const runtime::NavRoamDecision &decision,
-			const nav::LocomotionIntent &intent,
-			runtime::NavRoamResult result,
-			const nav::GroundLookaheadObservation &ground,
-			const runtime::GroundLookaheadRoute &probeRoute);
-	void logTraversalDiagnostic(
-		std::size_t index,
-		const runtime::MovementPhysicsState &before,
-		const runtime::NavRoamDecision &decision,
-		const nav::LocomotionIntent &intent,
-		std::uint16_t buttons,
-		const nav::LocomotionObservation &locomotion);
-void logTraversalOutcome(
-	std::size_t index,
-	const runtime::MovementPhysicsState &after,
-		const runtime::NavRoamDecision &decision,
-		const runtime::LandingDamageObservation &landingFeedback);
-	void logMovementReversalDiagnostic(
-		std::size_t index,
-		const runtime::MovementPhysicsState &before,
-		const runtime::NavRoamDecision &decision,
-		const nav::LocomotionIntent &intent);
+
 			std::size_t managedBotCount() const;
 			FakeClientHandle *findManagedBot(const char *name);
 			void rememberManagedBot(const FakeClientHandle &handle, const char *name);
@@ -436,86 +155,10 @@ void logTraversalOutcome(
 			InputDispatcher inputDispatcher_;
 			CompatibilitySurface compatibilitySurface_;
 			compat::EngineRandomSource compatibilityRandomSource_;
-			ObservationAdapter observationAdapter_;
-		compat::PublicObservationStore publicObservations_;
-		const char *publicMessageName_ = nullptr;
-		edict_t *publicMessageTarget_ = nullptr;
-		int publicMessageDestination_ = 0;
-		world::ActorKey publicMessageActor_{};
-		world::FrameIdentity publicMessageFrame_{};
-		std::array<int, 12U> publicMessageValues_{};
-		std::array<float, 3U> publicMessageCoords_{};
-		std::uint16_t publicMessageCoordMask_ = 0U;
-		std::array<compat::PublicBombRadar, NativeBotObservation::kClientSlotCount> publicBombRadars_{};
-		std::array<compat::BombGuardPlanner, NativeBotObservation::kClientSlotCount> bombGuardPlanners_{};
-		std::uint16_t publicMessageStringMask_ = 0U;
-		std::size_t publicMessageFieldCount_ = 0U;
-		bool publicMessageMalformed_ = false;
-		std::array<char, 96U> publicMessageString_{};
-		std::array<std::array<char, 96U>, 12U> publicMessageStrings_{};
-		std::array<compat::ScenarioRadioObservation, NativeBotObservation::kClientSlotCount> scenarioRadio_{};
-		std::uint32_t radioSequence_ = 0U;
-		compat::ChatterRadioCatalog outgoingChatterCatalog_{};
-		std::array<compat::OutgoingRadioScheduler, NativeBotObservation::kClientSlotCount> outgoingRadioSchedulers_{};
-		std::array<compat::RadioContactMemory, NativeBotObservation::kClientSlotCount> outgoingRadioContactMemory_{};
-		std::array<std::uint32_t, NativeBotObservation::kClientSlotCount> outgoingRadioReceipts_{};
-		std::array<std::uint32_t, NativeBotObservation::kClientSlotCount> outgoingRadioAttemptGenerations_{};
-		std::array<unsigned, NativeBotObservation::kClientSlotCount> outgoingRadioAttempts_{};
-		std::array<float, NativeBotObservation::kClientSlotCount> outgoingRadioAttemptTimes_{};
-		std::array<compat::RadioMenuChoice, NativeBotObservation::kClientSlotCount> outgoingRadioAttemptChoices_{};
-		std::array<float, 3U> outgoingTeamLastSpeech_{{-1.0f,-1.0f,-1.0f}};
-		std::array<float, 3U> outgoingTeamBusyUntil_{};
-		std::array<compat::ChatterPhrase, 3U> outgoingTeamCurrentPhrase_{};
-		std::array<bool, static_cast<unsigned>(compat::ChatterPhrase::Count)> outgoingMissingPhraseLogged_{};
-		runtime::LifecycleGeneration outgoingRadioMap_ = runtime::LifecycleSession::kInvalidGeneration;
-		runtime::LifecycleGeneration outgoingRadioRound_ = runtime::LifecycleSession::kInvalidGeneration;
-		std::array<int, 3U> teamScores_{};
-		std::array<bool, 3U> teamScoresKnown_{};
-		struct PublicScoreStatus
-		{
-			bool known = false;
-			std::uint32_t serial = 0U;
-			world::FrameIdentity frame{};
-			int flags = 0;
-		};
-		std::array<std::array<PublicScoreStatus, NativeBotObservation::kClientSlotCount>, NativeBotObservation::kClientSlotCount> publicScoreStatuses_{};
-		std::array<bool, NativeBotObservation::kClientSlotCount> bombNoticeKnown_{};
-		std::array<bool, NativeBotObservation::kClientSlotCount> bombNoticePlanted_{};
-	std::array<compat::PublicBombClock, NativeBotObservation::kClientSlotCount> publicBombClocks_{};
-	std::array<nav::AreaId, NativeBotObservation::kClientSlotCount> scenarioEscapeAreas_{};
-	std::array<compat::BombSiteSearchMemory, NativeBotObservation::kClientSlotCount> bombSearchMemory_{};
-	std::array<compat::ScenarioTarget, NativeBotObservation::kClientSlotCount> bombSearchTargets_{};
-	std::array<compat::TeamworkPolicy, NativeBotObservation::kClientSlotCount> teamworkPolicies_{};
-	std::array<std::uint32_t, NativeBotObservation::kClientSlotCount> teamworkRadioApplied_{};
-		std::array<compat::ProfileRecord, NativeBotObservation::kClientSlotCount> managedProfiles_{};
-		std::array<compat::ReactionQueue, NativeBotObservation::kClientSlotCount> reactionQueues_{};
-		std::array<world::ActorKey, NativeBotObservation::kClientSlotCount> recognizedTargets_{};
-		std::array<world::WorldPosition, NativeBotObservation::kClientSlotCount> recognizedPoints_{};
-		std::array<std::uint32_t, NativeBotObservation::kClientSlotCount> recognitionSequences_{};
-		std::array<float, NativeBotObservation::kClientSlotCount> lastCombatTimes_{};
-		std::array<float, NativeBotObservation::kClientSlotCount> lastVisibleEnemyTimes_{};
-		std::array<float, NativeBotObservation::kClientSlotCount> attackReadyTimes_{};
-		std::array<compat::BuyController, NativeBotObservation::kClientSlotCount> buyControllers_{};
-		std::array<bool, NativeBotObservation::kClientSlotCount> buyingComplete_{};
-		std::array<bool, NativeBotObservation::kClientSlotCount> escapingWithKnife_{};
-		std::array<bool, NativeBotObservation::kClientSlotCount> buyReceiptTimeoutLogged_{};
-		std::array<compat::WeaponActionPlanner, NativeBotObservation::kClientSlotCount> weaponActions_{};
+
 		float nextPopulationUpdate_ = 0.0f;
 		bool populationAdjustment_ = false;
-		compat::SmokeObservations smokeObservations_;
-		ReGameDllObservationProvider optionalObservations_;
-		std::array<world::AudibleEvent, 64U> soundEvents_{};
-		std::array<int, 64U> soundTeams_{};
-		std::uint32_t soundSequence_ = 0U;
-		std::array<std::uint32_t, NativeBotObservation::kClientSlotCount> deliveredSoundSequences_{};
-		std::array<std::uint32_t, NativeBotObservation::kClientSlotCount> investigatedNoiseTicks_{};
-		struct PublicSmoke
-		{
-			world::EntityKey entity{};
-			world::WorldVector position{};
-		};
-		std::array<PublicSmoke, 32U> publicSmokeEntities_{};
-		std::size_t nextSmokeEntity_ = 0U;
+
 			mutable RuntimeProfiler runtimeProfiler_;
 			NavLoader navLoader_;
 			nav::NavSnapshotPublisher navPublisher_;
@@ -525,11 +168,10 @@ void logTraversalOutcome(
 			NativeBotGuard nativeBotGuard_;
 			NativeBotGuardDecision nativeGuardDecision_;
 			std::array<bool, NativeBotObservation::kClientSlotCount> managedBotSlots_;
-	std::array<runtime::PlayerAvoidance, NativeBotObservation::kClientSlotCount> playerAvoidance_{};
+
 	std::array<std::uint32_t, NativeBotObservation::kClientSlotCount> managedBotCreationIds_{};
 	std::uint32_t nextBotCreationId_ = 0U;
-			std::array<std::uint8_t, NativeBotObservation::kClientSlotCount> managedBotTeamNumbers_;
-			std::array<bool, NativeBotObservation::kClientSlotCount> publicTeamKnown_{};
+
 			std::array<FakeClientHandle, NativeBotObservation::kClientSlotCount> managedBotHandles_;
 			std::array<std::array<char, compat::ProfileRecord::kNameCapacity + 1U>,
 					   NativeBotObservation::kClientSlotCount>
@@ -538,165 +180,15 @@ void logTraversalOutcome(
 				joinControllers_;
 				DeferredJoinActionQueue pendingJoinActions_;
 		std::array<bool, NativeBotObservation::kClientSlotCount> pendingJoinActionOverflow_{};
-		UserMessageKind userMessageKind_;
-		edict_t *userMessageTarget_;
-			std::uint8_t userMessageFieldCount_;
-			std::uint8_t userMessageWeaponState_;
-			std::uint8_t userMessageWeaponId_;
-			bool userMessageWeaponMessageValid_;
-		std::uint8_t userMessageMenuType_;
-		std::uint8_t userMessageNeedMore_;
-		std::uint16_t userMessageValidSlots_;
-		std::uint8_t userMessageTeamSlot_;
-		bool userMessageShowFragmentActive_;
-		std::array<char, 257U> userMessageText_;
-		std::uint16_t userMessageTextLength_;
-	runtime::NavAreaVisitHistory managedBotAreaVisitHistory_;
-	runtime::NavRoamReservationBoard managedBotRoamReservationBoard_;
-	std::array<runtime::NavRoamController,
-					   NativeBotObservation::kClientSlotCount>
-					managedBotMovement_;
-	struct ManagedNavigationFailure
-	{
-		world::ActorKey actor;
-		world::FrameIdentity frame;
-		std::uint32_t goalGeneration;
-	};
-	std::array<ManagedNavigationFailure, NativeBotObservation::kClientSlotCount>
-		managedNavigationFailures_{};
-	std::array<compat::NavigationStep, NativeBotObservation::kClientSlotCount> managedNavigationSteps_{};
-	std::array<compat::StateBehaviorInput, NativeBotObservation::kClientSlotCount> managedStateInputs_{};
-	std::array<float, NativeBotObservation::kClientSlotCount> managedMoveSpeeds_{};
-	std::array<std::uint32_t, NativeBotObservation::kClientSlotCount> managedCommandDiagnosticUpdates_{};
-			std::array<combat::CombatController,
-					   NativeBotObservation::kClientSlotCount>
-					managedBotCombat_;
-			std::array<objectives::RoundObjectivePlanner,
-					   NativeBotObservation::kClientSlotCount>
-					managedBotObjectives_;
-		std::array<ManagedObjectiveTargetCache,
-			NativeBotObservation::kClientSlotCount>
-			managedBotObjectiveTargets_;
-	std::array<objectives::BombApproachState, NativeBotObservation::kClientSlotCount>
-		managedBombApproaches_{};
-	objectives::RoundPlantDecision roundPlantDecision_{};
-	nav::DangerMemory dangerMemory_;
-	std::array<bool, NativeBotObservation::kClientSlotCount> deathDangerRecorded_{};
-	team::RoundObjectiveCoordinator managedTeamObjectiveCoordinator_;
-	std::array<team::RoundObjectiveCoordinator, NativeBotObservation::kClientSlotCount> compatibilityObjectiveCoordinators_{};
-	struct ObjectiveKnowledge
-	{
-		world::EntityKey entity{};
-		world::WorldVector position{};
-	};
-	std::array<std::array<ObjectiveKnowledge, 2U>, NativeBotObservation::kClientSlotCount> objectiveKnowledge_{};
-	std::size_t managedTeamObjectiveAssignmentContext_ = NativeBotObservation::kClientSlotCount;
-	team::TeamObjectiveAssignmentSet managedTeamObjectiveAssignments_{};
-	std::uint32_t managedTeamObjectiveAssignmentMapGeneration_ = 0U;
-	std::uint32_t managedTeamObjectiveAssignmentRoundGeneration_ = 0U;
-	std::uint32_t managedTeamObjectiveAssignmentFrame_ = 0U;
-	bool managedTeamObjectiveAssignmentsValid_ = false;
-   	std::uint32_t externalDefuserEntityIndex_ = 0U;
-   	std::uint32_t externalDefuserEntitySerial_ = 0U;
-   	float externalDefuserLeaseUntil_ = 0.0f;
-   	std::uint32_t externalDefuserMapGeneration_ = 0U;
-   	std::uint32_t externalDefuserRoundGeneration_ = 0U;
-	bool managedTeamObjectivePathFailurePending_ = false;
-	world::ActorKey managedTeamObjectivePathFailureActor_{};
-	std::uint32_t managedTeamObjectivePathFailureGeneration_ = 0U;
-	nav::AreaId managedTeamObjectivePathFailureStartArea_ = 0U;
-	std::uint32_t managedTeamObjectivePathFailureFrame_ = 0U;
-		std::array<ManagedObjectiveActionState,
-			NativeBotObservation::kClientSlotCount> managedBotObjectiveActions_{};
-		std::array<ManagedCurrentWeaponObservation,
-			NativeBotObservation::kClientSlotCount> managedBotCurrentWeapons_{};
-	ManagedObjectiveSiteRegistry managedObjectiveSiteRegistry_;
-			std::array<compat::CompatibilityStateMachine,
-					   NativeBotObservation::kClientSlotCount>
-				managedBotStateMachines_;
-	std::array<compat::ScenarioBehaviorPlanner, NativeBotObservation::kClientSlotCount> scenarioPlanners_{};
-	std::array<compat::ScenarioBehaviorDecision, NativeBotObservation::kClientSlotCount> scenarioDecisions_{};
-			std::array<perception::PerceptionAssembler,
-					   NativeBotObservation::kClientSlotCount>
-				managedBotPerception_;
-			std::array<std::uint32_t,
-					   NativeBotObservation::kClientSlotCount>
-				managedBotPerceptionFullUpdates_;
-			std::array<std::uint32_t,
-					   NativeBotObservation::kClientSlotCount>
-				managedBotCommandSequences_;
+
 			std::array<std::uint32_t,
 					   NativeBotObservation::kClientSlotCount>
 				managedBotFullUpdateSequences_;
-			std::array<runtime::LifecycleGeneration,
-					   NativeBotObservation::kClientSlotCount>
-				managedBotStateRounds_;
-			std::array<bool, NativeBotObservation::kClientSlotCount>
-				managedBotWasDead_;
+
 			std::array<runtime::BotTimingScheduler,
 					   NativeBotObservation::kClientSlotCount>
 				managedBotTiming_;
-			std::array<runtime::JumpCrouchSequencer,
-					   NativeBotObservation::kClientSlotCount>
-				managedBotJumpCrouch_;
-			std::array<runtime::BotCommand,
-					   NativeBotObservation::kClientSlotCount>
-				managedBotCommandTemplates_;
-			std::array<bool, NativeBotObservation::kClientSlotCount>
-				managedBotCommandTemplateValid_;
-			std::array<bool, NativeBotObservation::kClientSlotCount>
-				managedBotActionStopsMovement_;
-			std::array<std::uint8_t,
-					   NativeBotObservation::kClientSlotCount>
-				movementDiagnosticSamples_;
-			std::array<bool,
-					   NativeBotObservation::kClientSlotCount>
-				movementDiagnosticAttempts_;
-			std::array<bool,
-					   NativeBotObservation::kClientSlotCount>
-				movementDiagnosticUnavailable_;
-			std::array<std::uint32_t,
-					   NativeBotObservation::kClientSlotCount>
-				movementResumeFrames_;
-			std::array<std::uint32_t,
-					   NativeBotObservation::kClientSlotCount>
-				movementLastDeadFrames_;
-			std::array<std::uint32_t,
-					   NativeBotObservation::kClientSlotCount>
-				movementSettledDeadFrames_;
-		std::array<std::uint8_t,
-				   NativeBotObservation::kClientSlotCount>
-			movementWarmupFrames_;
-		std::array<runtime::GroundLookaheadRoute,
-			NativeBotObservation::kClientSlotCount>
-			movementGroundLookaheadRoutes_;
-		std::array<runtime::MovementPhysicsSample,
-			NativeBotObservation::kClientSlotCount>
-			movementPhysicsSamples_;
-		std::array<bool, NativeBotObservation::kClientSlotCount>
-			movementReadyLogged_;
-		std::array<std::uint32_t,
-			NativeBotObservation::kClientSlotCount>
-			movementGoalDiagnosticSeconds_;
-		std::array<float, NativeBotObservation::kClientSlotCount>
-			movementGateDiagnosticTimes_;
-		std::array<std::uint32_t,
-			NativeBotObservation::kClientSlotCount>
-			movementTraversalDiagnosticSeconds_;
-		std::array<PendingTraversalDiagnostic,
-			NativeBotObservation::kClientSlotCount>
-			movementTraversalPending_;
-		std::array<std::uint32_t,
-					   NativeBotObservation::kClientSlotCount>
-			movementDispatchFrames_;
-		std::array<bool, NativeBotObservation::kClientSlotCount>
-		movementWasAirborne_;
-		std::array<runtime::FallLandingTracker,
-			NativeBotObservation::kClientSlotCount> movementFallLandingTrackers_;
-	std::array<MovementReversalDiagnosticState,
-		NativeBotObservation::kClientSlotCount> movementReversalDiagnostics_;
-			std::uint32_t movementDiagnosticRound_;
-			bool movementDiagnosticGlobal_;
+
 			CommandArgsFunction originalCommandArgs_;
 			CommandArgvFunction originalCommandArgv_;
 			CommandArgcFunction originalCommandArgc_;
@@ -712,7 +204,121 @@ void logTraversalOutcome(
 		bool performanceDisablePathSearch_;
 		float originalBotEnable_;
 			float originalBotQuota_;
-		};
+
+			void observeJoinTeamInfo(std::size_t index, const char *teamName) override
+			{
+				deferJoinAction(index, joinControllers_[index].onTeamInfo(teamName));
+			}
+			void applyNavigationRequest(const NavigationRequest &request) override
+			{
+				navigation_.applyBehaviorRequest(request);
+			}
+			std::uint8_t consumeCommandMsec(std::size_t index, float now) override
+			{
+				return managedBotTiming_[index].consumeCommandMsec(now);
+			}
+			bool runtimeIsActive() const override
+			{
+				return state_ == State::ActiveMap;
+			}
+			BotObservationRuntime observation_{};
+			BotObservationRuntime &observation() override
+			{
+				return observation_;
+			}
+			BotBehaviorRuntime behavior_{};
+			BotBehaviorRuntime &behavior() override
+			{
+				return behavior_;
+			}
+			BotNavigationRuntime navigation_{};
+			BotNavigationRuntime &navigation() override
+			{
+				return navigation_;
+			}
+			BotCommandRuntime command_{};
+			BotCommandRuntime &command() override
+			{
+				return command_;
+			}
+			const Service_adapterFrameCount &service_adapterFrameCount() override
+			{
+				return adapterFrameCount_;
+			}
+			Service_compatibilityRandomSource &service_compatibilityRandomSource() override
+			{
+				return compatibilityRandomSource_;
+			}
+			const Service_compatibilitySurface &service_compatibilitySurface() override
+			{
+				return compatibilitySurface_;
+			}
+			const Service_engineFunctions &service_engineFunctions() override
+			{
+				return engineFunctions_;
+			}
+			const Service_globals &service_globals() override
+			{
+				return globals_;
+			}
+			Service_inputDispatcher &service_inputDispatcher() override
+			{
+				return inputDispatcher_;
+			}
+			const Service_joinControllers &service_joinControllers() override
+			{
+				return joinControllers_;
+			}
+			const Service_lifecycle &service_lifecycle() override
+			{
+				return lifecycle_;
+			}
+			const Service_managedBotFullUpdateSequences &service_managedBotFullUpdateSequences()
+				override
+			{
+				return managedBotFullUpdateSequences_;
+			}
+			const Service_managedBotHandles &service_managedBotHandles() override
+			{
+				return managedBotHandles_;
+			}
+			const Service_managedBotSlots &service_managedBotSlots() override
+			{
+				return managedBotSlots_;
+			}
+			const Service_managedBotTiming &service_managedBotTiming() override
+			{
+				return managedBotTiming_;
+			}
+			const Service_navPublisher &service_navPublisher() override
+			{
+				return navPublisher_;
+			}
+			const Service_pluginId &service_pluginId() override
+			{
+				return pluginId_;
+			}
+			const Service_roundFreezeGeneration &service_roundFreezeGeneration() override
+			{
+				return roundFreezeGeneration_;
+			}
+			const Service_roundFreezeScheduled &service_roundFreezeScheduled() override
+			{
+				return roundFreezeScheduled_;
+			}
+			const Service_roundFreezeStartTime &service_roundFreezeStartTime() override
+			{
+				return roundFreezeStartTime_;
+			}
+			const Service_roundFreezeUntil &service_roundFreezeUntil() override
+			{
+				return roundFreezeUntil_;
+			}
+			Service_runtimeProfiler &service_runtimeProfiler() override
+			{
+				return runtimeProfiler_;
+			}
+};
 
 		FORCE_STACK_ALIGN void HookClientDisconnect(edict_t *entity);
 		FORCE_STACK_ALIGN void HookTouch(edict_t *entity, edict_t *other);
