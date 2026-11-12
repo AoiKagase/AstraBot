@@ -1,0 +1,18 @@
+{
+  "regamedll_head": "b0889847fe6d03898be88acc9e366660efb40ab5",
+  "rehlds_head": "0124d56c3d888d922eb045775f71c6682ad1226f",
+  "identity_observed_with": "separate rtk git rev-parse/status commands",
+  "regamedll_status": "existing changes in gitignore/MSVC project files, deleted HostageImprov archive, untracked focalspan config; inspected navigation source files not listed as modified",
+  "sha256": {
+    "../ReGameDLL_CS/regamedll/game_shared/bot/nav.h": "38fe33e20290598ab05c3f7670b339e714a5eed35f9b0f900c847c9298bf1024",
+    "../ReGameDLL_CS/regamedll/game_shared/bot/nav_area.cpp": "684e5337d15efbefa0bedd56575eabddf8891223bf339d330a65fa4164037b0d",
+    "../ReGameDLL_CS/regamedll/game_shared/bot/nav_file.cpp": "433edaf32c0dc4b6ee44b46b9d2d22849bbde1b70ce9ea4b502c4bc0dbe47d1e",
+    "../ReGameDLL_CS/regamedll/dlls/bot/cs_bot_learn.cpp": "a89043220cc402d514f7788dbcb52c414127021c06700c406b8d07183386ddbf",
+    "../ReGameDLL_CS/regamedll/dlls/bot/cs_bot_nav.cpp": "2500a74c37ab36698098d1b5634c3d71a6a4f3d63d37f55eb15fb28998229d7e",
+    "../ReGameDLL_CS/regamedll/dlls/buttons.cpp": "d7226383889b1f23201ae816b3b20c76c29a174660368c99a2a64bffbd84ce55",
+    "../ReGameDLL_CS/regamedll/dlls/doors.cpp": "486dcc14af8bc711d10d8d070782ab36dd207f69444b1a2c48b548db3f1e3296",
+    "../ReGameDLL_CS/regamedll/dlls/bmodels.cpp": "4b395c038c58d4db7bc57f4e0a9aa22e795983815b8063a9812a2fe379401843",
+    "../rehlds/rehlds/engine/model.cpp": "b49545e6220a6177753a8710a1111f4a5929f87a3ba1459157b811d0ac42eb8c",
+    "../rehlds/rehlds/engine/world.cpp": "6551ee944a5aae8bf6664d66a6196101342fb360bdc6377a66fee9c0e4c78d89"
+  }
+}
