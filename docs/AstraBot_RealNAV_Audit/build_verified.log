@@ -1,0 +1,13 @@
+[ 34%] Built target audit_nav
+[ 39%] Built target audit_repro
+[ 44%] Built target audit_existing_nav_snapshot
+[ 50%] Built target audit_existing_nav_model
+[ 55%] Built target audit_existing_nav_query
+[ 60%] Built target audit_existing_locomotion
+[ 65%] Built target audit_existing_special_traversal
+[ 71%] Built target real_nav_probe
+[ 76%] Built target official_external_nav
+[ 81%] Built target audit_existing_jump_drop
+[ 86%] Built target audit_existing_nav_roam_controller
+[ 94%] Built target real_nav_regressions
+[100%] Built target edge_diagnostics

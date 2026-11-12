@@ -1,0 +1,1 @@
+FAIL: external de_dust2.bsp is readable

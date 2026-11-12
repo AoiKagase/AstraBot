@@ -1,0 +1,58 @@
+READER result=0 bytes=413585 areas=737 places=0 version=5 bspSize=2057288 contentHash=3791816597
+GRAPH edges=2876 attrs 0:647 1:11 2:79 hows 0:2873 1:1 2:2
+ROUTE 41->90 result=0 length=30 cost=5350.271 expanded=343 enqueues=403 usec=16905 areas=41,42,1736,1735,96,114,1524,1525,116,94,7,1442,1443,1444,1445,78,1528,148,101,88,1155,1779,619,93,63,25,12,14,260,90,
+ HOLD 0 feet=(-687.500,-775.000,127.032) follow=2 idx=1 target=42 local=(-484.000,-775.000,62.532) locomotion=1 intentArea=42 action=0 dir=(1.000,0.000,0.000)
+ HOLD 1 feet=(-687.500,-775.000,127.032) follow=1 idx=1 target=42 local=(-484.000,-775.000,62.532) locomotion=1 intentArea=42 action=0 dir=(1.000,0.000,0.000)
+ HOLD 2 feet=(-687.500,-775.000,127.032) follow=1 idx=1 target=42 local=(-484.000,-775.000,62.532) locomotion=1 intentArea=42 action=0 dir=(1.000,0.000,0.000)
+ RUNTIME result=0 current=41 goal=42 locomotion=1 actualIntentArea=42 action=0 path=41,42,1736,1735,96,114,1524,1525,116,94,7,1442,1443,1444,1445,78,1528,148,101,88,1155,1779,619,93,63,25,12,14,260,90,
+ROUTE 41->1438 result=0 length=2 cost=196.135 expanded=2 enqueues=6 usec=22 areas=41,1438,
+ HOLD 0 feet=(-687.500,-775.000,127.032) follow=2 idx=1 target=1438 local=(-691.000,-916.000,140.732) locomotion=1 intentArea=1438 action=2 dir=(-0.025,-1.000,0.000)
+ HOLD 1 feet=(-687.500,-775.000,127.032) follow=1 idx=1 target=1438 local=(-691.000,-916.000,140.732) locomotion=1 intentArea=1438 action=2 dir=(-0.025,-1.000,0.000)
+ HOLD 2 feet=(-687.500,-775.000,127.032) follow=1 idx=1 target=1438 local=(-691.000,-916.000,140.732) locomotion=1 intentArea=1438 action=2 dir=(-0.025,-1.000,0.000)
+ RUNTIME result=0 current=41 goal=1438 locomotion=1 actualIntentArea=1438 action=2 path=41,1438,
+ROUTE 5->1520 result=0 length=2 cost=300.525 expanded=2 enqueues=10 usec=36 areas=5,1520,
+ HOLD 0 feet=(300.000,2287.500,-127.969) follow=2 idx=1 target=1520 local=(516.000,2084.000,-126.343) locomotion=1 intentArea=1520 action=2 dir=(0.728,-0.686,0.000)
+ HOLD 1 feet=(300.000,2287.500,-127.969) follow=1 idx=1 target=1520 local=(516.000,2084.000,-126.343) locomotion=1 intentArea=1520 action=2 dir=(0.728,-0.686,0.000)
+ HOLD 2 feet=(300.000,2287.500,-127.969) follow=1 idx=1 target=1520 local=(516.000,2084.000,-126.343) locomotion=1 intentArea=1520 action=2 dir=(0.728,-0.686,0.000)
+ RUNTIME result=0 current=5 goal=1522 locomotion=1 actualIntentArea=1522 action=2 path=5,1522,38,21,1534,47,1251,99,20,219,1231,1799,89,14,12,25,351,
+ROUTE 41->54 result=0 length=28 cost=4304.115 expanded=122 enqueues=160 usec=2453 areas=41,66,40,65,120,318,205,46,119,995,3,1700,72,110,800,289,1508,1509,237,37,1436,1437,1657,1653,1465,4,85,54,
+ HOLD 0 feet=(-687.500,-775.000,127.032) follow=2 idx=1 target=66 local=(-891.000,-775.000,128.031) locomotion=1 intentArea=66 action=2 dir=(-1.000,0.000,0.000)
+ HOLD 1 feet=(-687.500,-775.000,127.032) follow=1 idx=1 target=66 local=(-891.000,-775.000,128.031) locomotion=1 intentArea=66 action=2 dir=(-1.000,0.000,0.000)
+ HOLD 2 feet=(-687.500,-775.000,127.032) follow=1 idx=1 target=66 local=(-891.000,-775.000,128.031) locomotion=1 intentArea=66 action=2 dir=(-1.000,0.000,0.000)
+ RUNTIME result=0 current=41 goal=66 locomotion=1 actualIntentArea=66 action=2 path=41,66,40,65,120,318,205,46,119,995,3,1700,72,110,800,289,1508,1509,237,37,1436,1437,1657,1653,1465,4,85,54,
+ROUTE 46->119 result=0 length=2 cost=231.470 expanded=2 enqueues=6 usec=10 areas=46,119,
+ HOLD 0 feet=(-1525.000,-250.000,128.031) follow=2 idx=1 target=119 local=(-1559.995,-112.506,14.907) locomotion=1 intentArea=119 action=0 dir=(-0.247,0.969,0.000)
+ HOLD 1 feet=(-1525.000,-250.000,128.031) follow=1 idx=1 target=119 local=(-1559.995,-112.506,14.907) locomotion=1 intentArea=119 action=0 dir=(-0.247,0.969,0.000)
+ HOLD 2 feet=(-1525.000,-250.000,128.031) follow=1 idx=1 target=119 local=(-1559.995,-112.506,14.907) locomotion=1 intentArea=119 action=0 dir=(-0.247,0.969,0.000)
+ RUNTIME result=0 current=46 goal=119 locomotion=1 actualIntentArea=119 action=0 path=46,119,
+ROUTE 46->54 result=0 length=21 cost=3110.186 expanded=54 enqueues=81 usec=679 areas=46,119,995,3,1700,72,110,800,289,1508,1509,237,37,1436,1437,1657,1653,1465,4,85,54,
+ HOLD 0 feet=(-1525.000,-250.000,128.031) follow=2 idx=1 target=119 local=(-1559.995,-112.506,14.907) locomotion=1 intentArea=119 action=0 dir=(-0.247,0.969,0.000)
+ HOLD 1 feet=(-1525.000,-250.000,128.031) follow=1 idx=1 target=119 local=(-1559.995,-112.506,14.907) locomotion=1 intentArea=119 action=0 dir=(-0.247,0.969,0.000)
+ HOLD 2 feet=(-1525.000,-250.000,128.031) follow=1 idx=1 target=119 local=(-1559.995,-112.506,14.907) locomotion=1 intentArea=119 action=0 dir=(-0.247,0.969,0.000)
+ RUNTIME result=0 current=46 goal=119 locomotion=1 actualIntentArea=119 action=0 path=46,119,995,3,1700,72,110,800,289,1508,1509,237,37,1436,1437,1657,1653,1465,4,85,54,
+ROUTE 1505->1653 result=0 length=13 cost=1381.111 expanded=35 enqueues=50 usec=460 areas=1505,1504,734,733,732,61,23,237,37,1436,1437,1657,1653,
+ HOLD 0 feet=(-1187.500,1250.000,48.031) follow=2 idx=1 target=1504 local=(-1187.500,1209.000,48.031) locomotion=1 intentArea=1504 action=0 dir=(0.000,-1.000,0.000)
+ HOLD 1 feet=(-1187.500,1250.000,48.031) follow=1 idx=1 target=1504 local=(-1187.500,1209.000,48.031) locomotion=1 intentArea=1504 action=0 dir=(0.000,-1.000,0.000)
+ HOLD 2 feet=(-1187.500,1250.000,48.031) follow=1 idx=1 target=1504 local=(-1187.500,1209.000,48.031) locomotion=1 intentArea=1504 action=0 dir=(0.000,-1.000,0.000)
+ RUNTIME result=0 current=1505 goal=1504 locomotion=1 actualIntentArea=1504 action=0 path=1505,1504,734,733,732,61,23,237,37,1436,1437,1657,1653,
+ROUTE 1505->286 result=0 length=2 cost=190.329 expanded=2 enqueues=3 usec=22 areas=1505,286,
+ HOLD 0 feet=(-1187.500,1250.000,48.031) follow=2 idx=1 target=286 local=(-1135.144,1255.942,-111.969) locomotion=1 intentArea=286 action=0 dir=(0.994,0.113,0.000)
+ HOLD 1 feet=(-1187.500,1250.000,48.031) follow=1 idx=1 target=286 local=(-1135.144,1255.942,-111.969) locomotion=1 intentArea=286 action=0 dir=(0.994,0.113,0.000)
+ HOLD 2 feet=(-1187.500,1250.000,48.031) follow=1 idx=1 target=286 local=(-1135.144,1255.942,-111.969) locomotion=1 intentArea=286 action=0 dir=(0.994,0.113,0.000)
+ RUNTIME result=0 current=1505 goal=286 locomotion=1 actualIntentArea=286 action=0 path=1505,286,
+ROUTE 619->1445 result=0 length=9 cost=928.310 expanded=15 enqueues=27 usec=204 areas=619,1778,1155,88,101,148,1528,78,1445,
+ HOLD 0 feet=(325.000,1762.500,72.031) follow=2 idx=1 target=1778 local=(309.000,1709.000,48.031) locomotion=1 intentArea=1778 action=0 dir=(-0.287,-0.958,0.000)
+ HOLD 1 feet=(325.000,1762.500,72.031) follow=1 idx=1 target=1778 local=(309.000,1709.000,48.031) locomotion=1 intentArea=1778 action=0 dir=(-0.287,-0.958,0.000)
+ HOLD 2 feet=(325.000,1762.500,72.031) follow=1 idx=1 target=1778 local=(309.000,1709.000,48.031) locomotion=1 intentArea=1778 action=0 dir=(-0.287,-0.958,0.000)
+ RUNTIME result=0 current=619 goal=1778 locomotion=1 actualIntentArea=1778 action=0 path=619,1778,1155,88,101,148,1528,78,1445,
+ROUTE 120->320 result=0 length=3 cost=188.898 expanded=3 enqueues=9 usec=22 areas=120,210,320,
+ HOLD 0 feet=(-1200.000,-412.500,129.136) follow=2 idx=1 target=210 local=(-1134.000,-412.500,133.365) locomotion=1 intentArea=210 action=2 dir=(1.000,0.000,0.000)
+ HOLD 1 feet=(-1200.000,-412.500,129.136) follow=1 idx=1 target=210 local=(-1134.000,-412.500,133.365) locomotion=1 intentArea=210 action=2 dir=(1.000,0.000,0.000)
+ HOLD 2 feet=(-1200.000,-412.500,129.136) follow=1 idx=1 target=210 local=(-1134.000,-412.500,133.365) locomotion=1 intentArea=210 action=2 dir=(1.000,0.000,0.000)
+ RUNTIME result=0 current=120 goal=210 locomotion=1 actualIntentArea=210 action=2 path=120,210,320,
+ROUTE 320->210 result=0 length=2 cost=97.741 expanded=2 enqueues=4 usec=15 areas=320,210,
+ HOLD 0 feet=(-1050.000,-462.500,129.719) follow=2 idx=1 target=210 local=(-1091.000,-459.000,133.365) locomotion=1 intentArea=210 action=2 dir=(-0.996,0.085,0.000)
+ HOLD 1 feet=(-1050.000,-462.500,129.719) follow=1 idx=1 target=210 local=(-1091.000,-459.000,133.365) locomotion=1 intentArea=210 action=2 dir=(-0.996,0.085,0.000)
+ HOLD 2 feet=(-1050.000,-462.500,129.719) follow=1 idx=1 target=210 local=(-1091.000,-459.000,133.365) locomotion=1 intentArea=210 action=2 dir=(-0.996,0.085,0.000)
+ RUNTIME result=0 current=320 goal=210 locomotion=1 actualIntentArea=210 action=2 path=320,210,
+EXPLICIT_BUDGET_256 result=8 expanded=226 enqueues=256
