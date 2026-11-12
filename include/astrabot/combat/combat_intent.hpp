@@ -2,6 +2,8 @@
 #define ASTRABOT_COMBAT_COMBAT_INTENT_HPP
 
 #include "astrabot/combat/weapon_state.hpp"
+#include "astrabot/compat/random_source.hpp"
+#include "astrabot/compat/combat_behavior.hpp"
 
 #include <cstdint>
 
@@ -35,6 +37,15 @@ struct CombatDecisionContext
 	world::ActorKey actor;
 	world::FrameIdentity frame;
 	world::WorldPosition origin;
+	bool aimTrackingEnabled;
+	float currentPitch;
+	float currentYaw;
+	float elapsedSeconds;
+	float timestamp;
+	float skill;
+	float fieldOfView;
+	compat::ICompatibilityRandomSource* randomSource;
+	compat::RandomTimingContext randomTiming;
 
 	bool isValid() const;
 };
@@ -167,10 +178,14 @@ private:
 	static bool isFrameAfter(
 		const world::FrameIdentity &candidate,
 		const world::FrameIdentity &current);
-	static bool buildAim(
-		const CombatDecisionContext &context,
-		const TargetBelief &target,
-		AimIntent *intent);
+	bool buildAim(const CombatDecisionContext &context, const TargetBelief &target,
+				  AimIntent *intent);
+	compat::AimSpringState aimSpring_ = {};
+	world::WorldVector aimOffset_ = {};
+	world::WorldVector aimOffsetGoal_ = {};
+	float aimRefreshTime_ = 0.0f;
+	float aimFocusStart_ = 0.0f;
+	bool aimAligned_ = true;
 
 	CombatConfig config_;
 	world::ActorKey actor_;

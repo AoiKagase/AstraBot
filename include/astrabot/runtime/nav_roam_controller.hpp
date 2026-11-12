@@ -36,6 +36,12 @@ namespace astrabot
 			bool collectPathStats;
 		bool movementSuppressed;
 		world::EntityKey objectiveTargetEntity;
+		// Navigation uses feet; CSBot's friend ray uses entity origins against
+		// floor-level path points. Friends share friendRayOrigin's coordinates.
+		// Without a public origin, existing geometry-only callers use feet.
+		bool friendRayOriginAvailable = false;
+		nav::NavVector friendRayOrigin = {};
+		std::vector<nav::NavVector> nearbyFriends;
 	};
 
 	struct GroundLookaheadRoute
@@ -254,6 +260,7 @@ class NavRoamController
 	NavRoamController();
 	explicit NavRoamController(compat::RuntimeMode mode);
 		void setRandomSource(compat::ICompatibilityRandomSource *source);
+	void setPathCostContext(const nav::NavPathCostContext &context);
 	void setAreaVisitHistory(NavAreaVisitHistory *history);
 	void setReservationBoard(NavRoamReservationBoard *board);
 	void setRuntimeMode(compat::RuntimeMode mode);
@@ -267,9 +274,17 @@ class NavRoamController
 				nav::LocomotionIntent *intent,
 				NavRoamDecision *decision);
 			void reset();
+	void destroyPath();
+	void resetProgressMonitor();
+	void observeMotion(ActorId actor,world::FrameIdentity frame,const nav::LocomotionObservation &observation);
 			bool isActive() const;
 
 	private:
+	ActorId motionActor_{};
+	world::FrameIdentity motionFrame_{};
+	NavRoamResult updateInternal(const nav::NavSnapshot &snapshot,
+		const NavRoamObservation &observation, nav::LocomotionIntent *intent,
+		NavRoamDecision *decision);
 	struct OffMeshRecoveryState
 	{
 		nav::AreaId area;
@@ -328,6 +343,7 @@ class NavRoamController
 			const nav::NavDirectedLink &link,
 			nav::LocomotionResult *startResult = nullptr);
 			bool buildStuckRecoveryIntent(
+					const nav::NavSnapshot &snapshot,
 					const nav::NavAreaMatch &currentArea,
 					nav::LocomotionIntent *intent);
 			bool selectRoute(
@@ -365,6 +381,26 @@ class NavRoamController
 		void clearPathFailure();
 
 			nav::LocomotionController locomotion_;
+		nav::NavPathCostContext pathCostContext_;
+		bool hasPathCostContext_ = false;
+		bool timedCompatibility_ = false;
+		float observedAt_ = 0.0f;
+		float nextPathAttemptAt_ = 0.0f;
+		float stuckRecoveryEndsAt_ = 0.0f;
+		float corridorProgressAt_ = 0.0f;
+		bool waitingBehindFriend_ = false;
+		bool friendInTheWay_ = false;
+		float friendCheckAt_ = -1.0f;
+		float friendWaitUntil_ = 0.0f;
+		bool friendRepathPending_ = false;
+		nav::NavVector friendPathTarget_{};
+		bool viewYawAvailable_ = false;
+		float viewYaw_ = 0.0f;
+		nav::NavVector stuckOrigin_ = {};
+		nav::LocomotionObservation latestLocomotion_ = {};
+		bool stuckJumpScheduled_ = false;
+		float nextStuckJumpAt_ = 0.0f;
+		float lastWiggleJumpAt_ = -10000.0f;
 			nav::TraversalAction activeTraversal_;
 			nav::JumpDropController jumpDrop_;
 	nav::SpecialTraversalController specialTraversal_;

@@ -240,9 +240,49 @@ bool testInvalidTargetDamageAndGeneration()
 		"stale actor generation rejects combat decision");
 }
 
+bool testProfileAimAndSharedRandom()
+{
+	using namespace astrabot;
+	const auto first = snapshot(40U);
+	auto ctx = context(first);
+	ctx.aimTrackingEnabled = true;
+	ctx.currentYaw = 90.0f;
+	ctx.currentPitch = 0.0f;
+	ctx.elapsedSeconds = 0.033f;
+	ctx.timestamp = 0.0f;
+	ctx.skill = 1.0f;
+	ctx.fieldOfView = 90.0f;
+	const compat::RandomActor actor = {ctx.actor.slot, ctx.actor.generation};
+	std::vector<compat::RandomTapeEntry> tape;
+	tape.push_back(compat::RandomTapeEntry::floatEntry("AimOffsetX", actor, ctx.randomTiming, 0.0f,
+													   0.0f, 0.0f));
+	tape.push_back(compat::RandomTapeEntry::floatEntry("AimOffsetY", actor, ctx.randomTiming, 0.0f,
+													   0.0f, 0.0f));
+	tape.push_back(compat::RandomTapeEntry::floatEntry("AimOffsetZ", actor, ctx.randomTiming, 0.0f,
+													   0.0f, 0.0f));
+	tape.push_back(compat::RandomTapeEntry::floatEntry("AimOffsetRefresh", actor, ctx.randomTiming,
+													   0.25f, 1.0f, 0.5f));
+	compat::ScriptedRandomSource random(tape);
+	ctx.randomSource = &random;
+	combat::CombatController controller;
+	combat::CombatDecision decision = {};
+	if (!check(controller.decide(first, inventory(), target(), ctx, &decision) ==
+					   combat::CombatResult::NoAction &&
+				   decision.hasAim && !decision.hasFire && decision.aim.yaw > 80.0f &&
+				   decision.aim.yaw < 90.0f && random.verifyComplete(),
+			   "profile aim consumes typed shared random tape and turns before firing"))
+		return false;
+	combat::CombatController unavailable;
+	ctx.randomSource = nullptr;
+	return check(unavailable.decide(first, inventory(), target(), ctx, &decision) ==
+						 combat::CombatResult::InvalidTarget &&
+					 !decision.hasFire,
+				 "unavailable shared random never becomes perfect aim");
+}
+
 int main()
 {
-	if (!testFireIntentDoesNotClaimEngineSuccess() ||
+	if (!testProfileAimAndSharedRandom() || !testFireIntentDoesNotClaimEngineSuccess() ||
 			!testSafetyCooldownAndReloadBoundaries() ||
 			!testInvalidTargetDamageAndGeneration())
 	{

@@ -21,6 +21,18 @@ enum class BotActionResult
 	NativeGuardDenied
 };
 
+struct QuotaPopulation
+{
+	int maxClients = 0;
+	int totalClients = 0;
+	int humanClients = 0;
+	int activeHumanClients = 0;
+	int managedBotClients = 0;
+	float elapsedMapSeconds = 0.0f;
+	bool lateJoinBlocked = false;
+};
+int calculateDesiredBotCount(const CvarSnapshot &settings, const QuotaPopulation &population);
+
 class BotConfiguration
 {
 public:

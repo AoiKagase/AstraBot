@@ -29,10 +29,14 @@ constexpr std::uint32_t kInitialPathFailureBackoffFrames = 15U;
 constexpr std::uint32_t kMaximumPathFailureBackoffFrames = 120U;
 // Keep safe falls and their run-up alive long enough to confirm landing.
 constexpr std::uint32_t kCompatibilityTraversalFrameBudget = 60U;
+// CSBot b0889847 cs_bot_pathfind.cpp:1550-1577 gives up after five
+// seconds without path-area progress, even when local movement avoids Stuck.
+constexpr float kCompatibilityCorridorProgressTimeout = 5.0f;
 
-nav::LocomotionConfig roamLocomotionConfig()
+nav::LocomotionConfig roamLocomotionConfig(compat::RuntimeMode mode)
 {
-	return {32.0f, 20.0f, 64.0f, 16.0f, 240.0f, 8U};
+	return {32.0f, 20.0f, 64.0f, 16.0f, 240.0f, 8U,
+		mode == compat::RuntimeMode::Compatibility};
 }
 
 nav::JumpDropConfig roamJumpDropConfig(compat::RuntimeMode mode)
@@ -498,7 +502,7 @@ NavRoamController::NavRoamController(compat::RuntimeMode mode)
 	: offMeshRecovery_{},
 	  unsafeDropFailure_{},
 	  previousMovementSuppressed_(false),
-	  locomotion_(roamLocomotionConfig()),
+	  locomotion_(roamLocomotionConfig(mode)),
 	  activeTraversal_(nav::TraversalAction::Walk),
 	jumpDrop_(roamJumpDropConfig(mode)),
 	  specialTraversal_(),
@@ -574,9 +578,20 @@ void NavRoamController::setReservationBoard(NavRoamReservationBoard *board)
 	reservationBoard_ = board;
 }
 
+void NavRoamController::setPathCostContext(const nav::NavPathCostContext &context)
+{
+	pathCostContext_ = context;
+	hasPathCostContext_ = true;
+}
+
 void NavRoamController::setRuntimeMode(compat::RuntimeMode mode)
 {
+	if (mode == modePolicy_.mode()) return;
+	if (reservationBoard_ != nullptr) reservationBoard_->release(actor_);
 	modePolicy_ = compat::RuntimeModePolicy(mode);
+	timedCompatibility_=false;
+	resetRoute();
+	nextPathAttemptAt_ = 0.0f;
 	jumpDrop_ = nav::JumpDropController(roamJumpDropConfig(mode));
 }
 
@@ -587,7 +602,7 @@ bool NavRoamController::isPathFailureBackedOff(
 	nav::NavRouteType routeType,
 	std::uint32_t frame) const
 {
-	return hasPathFailure_ &&
+	return !timedCompatibility_ && hasPathFailure_ &&
 		pathFailureKey_.mapGeneration == mapGeneration &&
 		pathFailureKey_.startArea == startArea &&
 		pathFailureKey_.goalArea == goalArea &&
@@ -671,6 +686,29 @@ NavRoamResult NavRoamController::update(
 	nav::LocomotionIntent *intent,
 	NavRoamDecision *decision)
 {
+	const NavRoamResult result = updateInternal(snapshot, observation, intent, decision);
+	if (friendRepathPending_)
+	{
+		friendRepathPending_ = false;
+		// CSBot destroys its path on patience expiry but still moves toward the
+		// saved goal this update. Preserve the safety-checked intent, then replan.
+		resetRoute(true);
+		if (decision != nullptr && result == NavRoamResult::IntentReady)
+			decision->recomputeReason = NavRecomputeReason::PathInvalidated;
+	}
+	if (result == NavRoamResult::IntentReady && intent != nullptr &&
+		intent->traversal == nav::TraversalAction::Jump &&
+		observation.locomotion.timingAvailable)
+		lastWiggleJumpAt_ = observation.locomotion.observedAt;
+	return result;
+}
+
+NavRoamResult NavRoamController::updateInternal(
+	const nav::NavSnapshot &snapshot,
+	const NavRoamObservation &observation,
+	nav::LocomotionIntent *intent,
+	NavRoamDecision *decision)
+{
 	initializeDecision(decision);
 	if (intent == nullptr)
 	{
@@ -733,9 +771,13 @@ NavRoamResult NavRoamController::update(
 	if (observation.frame.mapGeneration != lastFrame_.mapGeneration ||
 			observation.frame.roundGeneration != lastFrame_.roundGeneration)
 	{
+		locomotion_.resetProgressMonitor();
 		offMeshRecovery_ = {};
 		unsafeDropFailure_ = {};
 		clearPathFailure();
+		nextPathAttemptAt_ = 0.0f;
+		lastWiggleJumpAt_ = -10000.0f;
+		stuckJumpScheduled_ = false;
 		hasAvoidedLink_ = false;
 		avoidedLink_ = {0U, 0U, 0U, 0U};
 		failedRoamGoalArea_ = 0U;
@@ -746,6 +788,12 @@ NavRoamResult NavRoamController::update(
 		resetRoute();
 		}
 	}
+	timedCompatibility_ = modePolicy_.mode() == compat::RuntimeMode::Compatibility &&
+		observation.locomotion.timingAvailable;
+	observedAt_ = observation.locomotion.observedAt;
+	viewYawAvailable_ = observation.locomotion.viewYawAvailable;
+	viewYaw_ = observation.locomotion.viewYaw;
+	latestLocomotion_ = observation.locomotion;
 	if (unsafeDropFailure_.valid)
 	{
 		const float dx = observation.locomotion.position.x - unsafeDropFailure_.anchor.x;
@@ -811,6 +859,11 @@ NavRoamResult NavRoamController::update(
 
 	if (observation.movementSuppressed)
 	{
+		waitingBehindFriend_ = false;
+		friendInTheWay_ = false;
+		friendCheckAt_ = -1.0f;
+		locomotion_.resetProgressMonitor();
+		corridorProgressAt_ = observedAt_;
 		if (decision != nullptr)
 		{
 			decision->stage = NavRoamStage::MovementSuppressed;
@@ -820,7 +873,89 @@ NavRoamResult NavRoamController::update(
 		return NavRoamResult::MovementSuppressed;
 	}
 
+	// CSBot polite waiting precedes ground stuck/Wiggle processing. Only current
+	// perceived friends are supplied by the adapter; no route reservations are used.
+	const bool canWait = timedCompatibility_ && hasActiveRoute_ &&
+		observation.locomotion.grounded && !observation.airborne &&
+		!observation.locomotion.onLadder && !jumpDrop_.isActive() &&
+		!specialTraversal_.isActive() && !pathCostContext_.attacking;
+	if (canWait)
+	{
+		if (friendCheckAt_ < 0.0f || observedAt_ < friendCheckAt_ ||
+			observedAt_ - friendCheckAt_ >= 0.5f)
+		{
+			friendCheckAt_ = observedAt_;
+			friendInTheWay_ = false;
+			nav::NavVector currentTarget{};
+			const bool previewReady=locomotion_.previewTarget(snapshot,observation.locomotion,&currentTarget);
+			if(previewReady)
+				friendPathTarget_=currentTarget;
+			const auto &self = observation.friendRayOriginAvailable
+				? observation.friendRayOrigin : observation.locomotion.position;
+			const float dx = friendPathTarget_.x - self.x;
+			const float dy = friendPathTarget_.y - self.y;
+			const float dz = friendPathTarget_.z - self.z;
+			const float length = previewReady || stuckRecoveryActive_
+				? std::sqrt(dx*dx + dy*dy + dz*dz) : 0.0f;
+			if (std::isfinite(length) && length > 0.0f)
+			{
+				for (const auto &other : observation.nearbyFriends)
+				{
+					const float x = other.x-self.x, y = other.y-self.y, z = other.z-self.z;
+					if (x*x+y*y+z*z > 10000.0f) continue;
+					const float along = (x*dx+y*dy+z*dz)/length;
+					if (along <= 0.0f) continue;
+					const float t = (std::min)(along/length, 1.0f);
+					const float ax=x-t*dx, ay=y-t*dy, az=z-t*dz;
+					if (ax*ax+ay*ay+az*az < 900.0f) { friendInTheWay_ = true; break; }
+				}
+			}
+		}
+		if (friendInTheWay_)
+		{
+			if (!waitingBehindFriend_)
+			{
+				waitingBehindFriend_ = true;
+				friendWaitUntil_ = observedAt_ + 5.0f - 3.0f * pathCostContext_.aggression;
+			}
+			locomotion_.resetProgressMonitor();
+			if (observedAt_ >= friendWaitUntil_)
+			{
+				friendRepathPending_ = true;
+				waitingBehindFriend_ = false;
+				if (stuckRecoveryActive_)
+				{
+					locomotion_.start(activeCorridor_);
+					stuckRecoveryActive_ = false;
+				}
+			}
+			else
+			{
+				if (decision != nullptr) decision->stage = NavRoamStage::MovementSuppressed;
+				return NavRoamResult::MovementSuppressed;
+			}
+		}
+	}
+	if (waitingBehindFriend_)
+	{
+		locomotion_.resetProgressMonitor();
+		if (stuckRecoveryActive_)
+		{
+			// The follower had stopped before the friend arrived. Its old Wiggle
+			// direction/jump deadline is no longer a valid movement decision.
+			resetRoute(true);
+			if (decision != nullptr) decision->recomputeReason = NavRecomputeReason::PathInvalidated;
+			return NavRoamResult::ReplanRequired;
+		}
+	}
+	waitingBehindFriend_ = false;
+	if (!canWait) { friendInTheWay_ = false; friendCheckAt_ = -1.0f; }
+
 	nav::NavQuery query(snapshot);
+	if (hasPathCostContext_ && !modePolicy_.allowsAdaptiveRouteWeighting())
+	{
+		query.setPathCostContext(pathCostContext_);
+	}
 	nav::NavAreaMatch currentArea = {};
 	nav::NavQueryResult currentAreaResult = query.findContaining(
 			{observation.locomotion.position.x,
@@ -831,6 +966,50 @@ NavRoamResult NavRoamController::update(
 	if (decision != nullptr)
 	{
 		decision->currentAreaResult = currentAreaResult;
+	}
+	const auto expireGroundRoute = [&]() {
+		if (!hasActiveRoute_ || !timedCompatibility_ || friendRepathPending_ ||
+			!observation.locomotion.grounded || observation.airborne ||
+			observation.locomotion.onLadder || jumpDrop_.isActive() ||
+			specialTraversal_.isActive() ||
+			observedAt_ - corridorProgressAt_ <= kCompatibilityCorridorProgressTimeout)
+			return false;
+		// CSBot's five-second progress timeout destroys the corridor without
+		// blacklisting its first edge. Otherwise the sole legal B-site approach
+		// 157->823->643 becomes a permanent NoRoute on every subsequent retry.
+		// Physical traversal failures and unsafe-drop exclusions are separate.
+		hasAvoidedLink_ = false;
+		avoidedLink_ = {};
+		++nextLinkIndex_;
+		if (!observation.hasObjectiveTarget && hasRoamGoal_)
+			failedRoamGoalArea_ = roamGoalArea_;
+		resetRoute();
+		goalSelectionReason_ = GoalSelectionPathFailed;
+		goalSelectionStrategy_ = GoalSelectionStrategyNone;
+		if (decision != nullptr)
+		{
+			decision->locomotionResult = nav::LocomotionResult::Stuck;
+			decision->failureReason = NavFailureReason::MovementNotProduced;
+			decision->goalSelectionReason = goalSelectionReason_;
+			decision->goalSelectionStrategy = goalSelectionStrategy_;
+			decision->stage = NavRoamStage::Failed;
+		}
+		*intent = {};
+		return true;
+	};
+	if (hasActiveRoute_ && timedCompatibility_)
+	{
+		if (observation.locomotion.onLadder || jumpDrop_.isActive() ||
+			specialTraversal_.isActive() || observedAt_ < corridorProgressAt_)
+		{
+			// Ground-route recovery must not interrupt a jump, drop or ladder.
+			corridorProgressAt_ = observedAt_;
+		}
+		else if (stuckRecoveryActive_ && currentArea.area != activeLink_.toArea &&
+			expireGroundRoute())
+		{
+			return NavRoamResult::ReplanRequired;
+		}
 	}
 	safeDropHeightAvailable_ =
 		observation.locomotion.safeDropHeightAvailable &&
@@ -900,6 +1079,30 @@ NavRoamResult NavRoamController::update(
 			nearestResult == nav::NavQueryResult::Found &&
 			activeLink_.fromArea == currentArea.area &&
 			activeLink_.toArea != activeLink_.fromArea;
+		// CSBot retains its path/last known area across a ledge's NAV gap.
+		// A neighboring polygon can become nearest while the same safe descent
+		// is in progress. Returning to its inset would reverse the fall run-up.
+		if (!plannedLinkContinuation && hasActiveRoute_ && locomotion_.isActive() &&
+			nearestResult == nav::NavQueryResult::Found &&
+			currentArea.distanceSquared <= 80.0f * 80.0f && safeDropHeightAvailable_)
+		{
+			const auto *document = snapshot.document();
+			const auto *nearby = document->findArea(currentArea.area);
+			const auto *landing = document->findArea(activeLink_.toArea);
+			bool connected = currentArea.area == activeLink_.toArea;
+			if (nearby != nullptr)
+				for (const auto &direction : nearby->connections)
+					connected = connected || std::find(direction.begin(),direction.end(),
+						activeLink_.toArea) != direction.end();
+			if (connected && landing != nullptr)
+			{
+				const float drop = observation.locomotion.position.z -
+					nav::surfaceZAt(*landing, observation.locomotion.position.x,
+						observation.locomotion.position.y);
+				plannedLinkContinuation = drop > nav::LocomotionConfig::kMaximumJumpHeight &&
+					drop <= maximumSafeDropHeight_;
+			}
+		}
 		if (decision != nullptr)
 		{
 			decision->nearestAreaResult = nearestResult;
@@ -909,6 +1112,12 @@ NavRoamResult NavRoamController::update(
 		}
 		if (!plannedLinkContinuation)
 		{
+			if (timedCompatibility_ && offMeshRecovery_.blocked)
+			{
+				// Candidate failures remain bounded, but Compatibility must keep
+				// trying movement/Wiggle rather than latch neutral until death.
+				offMeshRecovery_ = {};
+			}
 			const nav::NavVector &position = observation.locomotion.position;
 			const nav::NavVector &blocked = offMeshRecovery_.blockedPosition;
 			const float externalDisplacement = std::hypot(
@@ -947,6 +1156,33 @@ NavRoamResult NavRoamController::update(
 				}
 				offMeshRecovery_.area = currentArea.area;
 				offMeshRecovery_.target = currentArea.closestPoint;
+				if (timedCompatibility_ && observation.locomotion.grounded &&
+					!observation.airborne && !observation.locomotion.onLadder &&
+					offMeshRecovery_.noProgressUpdates >= kOffMeshNoProgressLimit)
+				{
+					if (!stuckRecoveryActive_ || observedAt_ < stuckRecoveryEndsAt_)
+					{
+						lastIntentDirection_ = intent->direction;
+						if (buildStuckRecoveryIntent(snapshot,currentArea,intent))
+						{
+							stuckRecoveryActive_ = true;
+							intent->targetArea = currentArea.area;
+							intent->targetPosition = currentArea.closestPoint;
+							if (decision != nullptr)
+							{
+								decision->stage = NavRoamStage::OffMeshRecovery;
+								decision->failureReason = NavFailureReason::RecoveryNoProgress;
+								decision->recoveryArea = currentArea.area;
+								decision->targetArea = currentArea.area;
+								decision->targetPosition = currentArea.closestPoint;
+								decision->recoveryNoProgressUpdates = offMeshRecovery_.noProgressUpdates;
+								decision->recoveryGeometryOnly = true;
+							}
+							return NavRoamResult::IntentReady;
+						}
+					}
+					stuckRecoveryActive_ = false;
+				}
 				if (offMeshRecovery_.noProgressUpdates >= kOffMeshNoProgressLimit)
 				{
 					if (offMeshRecovery_.failedAreaCount == 0U)
@@ -1030,6 +1266,7 @@ NavRoamResult NavRoamController::update(
 	}
 	if (currentAreaResult == nav::NavQueryResult::Found)
 	{
+		if (offMeshRecovery_.active) stuckRecoveryActive_ = false;
 		offMeshRecovery_ = {};
 	}
 	if (observation.hasObjectiveTarget && objectiveArea == 0U)
@@ -1048,9 +1285,31 @@ NavRoamResult NavRoamController::update(
 
 	if (stuckRecoveryActive_)
 	{
-		if (stuckRecoveryFramesRemaining_ != 0U)
+		const float stuckDx = observation.locomotion.position.x - stuckOrigin_.x;
+		const float stuckDy = observation.locomotion.position.y - stuckOrigin_.y;
+		const float stuckDz = observation.locomotion.position.z - stuckOrigin_.z;
+		const bool enteredNextArea = observation.locomotion.grounded &&
+			!observation.airborne && !observation.locomotion.onLadder &&
+			currentAreaResult == nav::NavQueryResult::Found &&
+			currentArea.area == activeLink_.toArea;
+		if (enteredNextArea) corridorProgressAt_ = observedAt_;
+		const bool movedOutOfStuck = timedCompatibility_ &&
+			(stuckDx * stuckDx + stuckDy * stuckDy + stuckDz * stuckDz > 75.0f * 75.0f ||
+				enteredNextArea);
+		if (timedCompatibility_ && !movedOutOfStuck && observedAt_ >= stuckRecoveryEndsAt_)
 		{
-			if (!buildStuckRecoveryIntent(currentArea, intent))
+			stuckRecoveryActive_ = false;
+			if (!buildStuckRecoveryIntent(snapshot, currentArea, intent))
+			{
+				resetRoute();
+				return NavRoamResult::ReplanRequired;
+			}
+			stuckRecoveryActive_ = true;
+		}
+		if (timedCompatibility_ ? !movedOutOfStuck && observedAt_ < stuckRecoveryEndsAt_
+			: stuckRecoveryFramesRemaining_ != 0U)
+		{
+			if (!buildStuckRecoveryIntent(snapshot, currentArea, intent))
 			{
 				resetRoute();
 				goalSelectionReason_ = GoalSelectionPathFailed;
@@ -1065,7 +1324,7 @@ NavRoamResult NavRoamController::update(
 				}
 				return NavRoamResult::ReplanRequired;
 			}
-			--stuckRecoveryFramesRemaining_;
+			if (!timedCompatibility_) --stuckRecoveryFramesRemaining_;
 			if (decision != nullptr)
 			{
 				decision->locomotionResult = nav::LocomotionResult::Stuck;
@@ -1074,6 +1333,9 @@ NavRoamResult NavRoamController::update(
 			}
 			return NavRoamResult::IntentReady;
 		}
+		// Preserve the established narrow-portal recovery exit when a grounded
+		// actor actually enters the next area; ordinary repaths are not progress.
+		if(movedOutOfStuck)locomotion_.resetProgressMonitor();
 		const nav::LocomotionResult startResult =
 			locomotion_.start(activeCorridor_);
 		if (startResult != nav::LocomotionResult::Started)
@@ -1136,7 +1398,7 @@ NavRoamResult NavRoamController::update(
 				failedRoamGoalArea_ = unsafeDropFailure_.goalArea;
 				goalSelectionReason_ = GoalSelectionPathFailed;
 			}
-			else if (unsafeDropFailure_.retryFramesRemaining > 0U)
+			else if (!timedCompatibility_ && unsafeDropFailure_.retryFramesRemaining > 0U)
 			{
 				if (decision != nullptr)
 				{
@@ -1183,6 +1445,26 @@ NavRoamResult NavRoamController::update(
 			decision->recomputeReason == NavRecomputeReason::None)
 	{
 		decision->recomputeReason = NavRecomputeReason::InitialGoal;
+	}
+	if (timedCompatibility_)
+	{
+		if (observedAt_ < nextPathAttemptAt_ || randomSource_ == nullptr)
+		{
+			if (decision != nullptr)
+			{
+				decision->stage = NavRoamStage::Failed;
+				decision->failureReason = NavFailureReason::PathSearchFailed;
+			}
+			return NavRoamResult::NoRoute;
+		}
+		const auto request = compat::RandomRequest::floatRequest("CSBOT-PATH-RETRY",
+			{actor_.slot, actor_.actorGeneration}, {0U, 0U, observation.frame.tick},
+			0.4f, 0.6f);
+		const auto interval = randomSource_->nextFloat(request);
+		if (interval.status != compat::RandomStatus::Ok ||
+			!std::isfinite(interval.value) || interval.value < 0.4f || interval.value > 0.6f)
+			return NavRoamResult::NoRoute;
+		nextPathAttemptAt_ = observedAt_ + interval.value;
 	}
 	if (!selectRoute(snapshot, currentArea, objectiveArea, decision))
 		{
@@ -1529,6 +1811,8 @@ NavRoamResult NavRoamController::update(
 		intent);
 	if (hasActiveRoute_)
 	{
+		if (locomotion_.currentCorridorIndex() > activeCorridorIndex_)
+			corridorProgressAt_ = observedAt_;
 		activeCorridorIndex_ = locomotion_.currentCorridorIndex();
 		if (!activeCorridor_.areas.empty() &&
 			activeCorridorIndex_ >= activeCorridor_.areas.size())
@@ -1547,6 +1831,8 @@ NavRoamResult NavRoamController::update(
 			}
 		}
 	}
+	if (locomotionResult == nav::LocomotionResult::IntentReady && expireGroundRoute())
+		return NavRoamResult::ReplanRequired;
 	if (decision != nullptr)
 	{
 		decision->locomotionResult = locomotionResult;
@@ -1563,6 +1849,7 @@ NavRoamResult NavRoamController::update(
 	if (locomotionResult == nav::LocomotionResult::IntentReady)
 	{
 		lastIntentDirection_ = intent->direction;
+		friendPathTarget_ = intent->targetPosition;
 	}
 	if (locomotionResult == nav::LocomotionResult::IntentReady &&
 			activeTraversal_ != nav::TraversalAction::Walk)
@@ -1587,6 +1874,7 @@ NavRoamResult NavRoamController::update(
 	case nav::LocomotionResult::TargetReached:
 	{
 		const bool goalReached =
+			activeCorridor_.hasEndpoint ||
 			(decision != nullptr && decision->goalPresent &&
 				decision->goalArea == currentArea.area) ||
 			(hasRoamGoal_ && roamGoalArea_ == currentArea.area);
@@ -1640,12 +1928,14 @@ NavRoamResult NavRoamController::update(
 		if (locomotionResult == nav::LocomotionResult::Stuck && hasActiveRoute_)
 		{
 			if (!stuckRecoveryActive_ &&
-					stuckRecoveryCount_ < kMaximumStuckRecoveryAttempts)
+					(timedCompatibility_ || stuckRecoveryCount_ < kMaximumStuckRecoveryAttempts))
 			{
 				stuckRecoveryActive_ = false;
 				stuckRecoveryFramesRemaining_ = kStuckRecoveryFrameLimit;
+				stuckOrigin_ = observation.locomotion.position;
+				stuckJumpScheduled_ = false;
 				++stuckRecoveryCount_;
-				if (buildStuckRecoveryIntent(currentArea, intent))
+				if (buildStuckRecoveryIntent(snapshot, currentArea, intent))
 				{
 					stuckRecoveryActive_ = true;
 					--stuckRecoveryFramesRemaining_;
@@ -1732,6 +2022,8 @@ NavRoamResult NavRoamController::update(
 
 void NavRoamController::reset()
 {
+	motionActor_={};motionFrame_={};
+	friendRepathPending_ = false;
 	if (reservationBoard_ != nullptr)
 	{
 		reservationBoard_->release(actor_);
@@ -1739,6 +2031,12 @@ void NavRoamController::reset()
 	offMeshRecovery_ = {};
 	unsafeDropFailure_ = {};
 	previousMovementSuppressed_ = false;
+	nextPathAttemptAt_ = 0.0f;
+	timedCompatibility_ = false;
+	observedAt_ = 0.0f;
+	stuckRecoveryEndsAt_ = 0.0f;
+	stuckJumpScheduled_ = false;
+	lastWiggleJumpAt_ = -10000.0f;
 	resetRoute();
 	actor_ = {0U, LifecycleSession::kInvalidGeneration};
 	lastFrame_ = {};
@@ -1812,6 +2110,15 @@ bool NavRoamController::isValidObservation(
 		std::isfinite(observation.locomotion.velocity.x) &&
 		std::isfinite(observation.locomotion.velocity.y) &&
 		std::isfinite(observation.locomotion.velocity.z) &&
+		(!observation.friendRayOriginAvailable ||
+			(std::isfinite(observation.friendRayOrigin.x) &&
+			 std::isfinite(observation.friendRayOrigin.y) &&
+			 std::isfinite(observation.friendRayOrigin.z))) &&
+		(!observation.locomotion.viewYawAvailable ||
+			std::isfinite(observation.locomotion.viewYaw)) &&
+		(!observation.locomotion.timingAvailable ||
+			(std::isfinite(observation.locomotion.observedAt) &&
+			 observation.locomotion.observedAt >= 0.0f)) &&
 		std::isfinite(observation.landingDamage) &&
 		(!observation.hasObjectiveTarget ||
 			(std::isfinite(observation.objectiveTarget.x) &&
@@ -1977,10 +2284,11 @@ bool NavRoamController::startRoute(
 }
 
 bool NavRoamController::buildStuckRecoveryIntent(
+	const nav::NavSnapshot &snapshot,
 	const nav::NavAreaMatch &currentArea,
 	nav::LocomotionIntent *intent)
 {
-	if (intent == nullptr || !hasActiveRoute_)
+	if (intent == nullptr || (!hasActiveRoute_ && !offMeshRecovery_.active))
 	{
 		return false;
 	}
@@ -2001,11 +2309,50 @@ bool NavRoamController::buildStuckRecoveryIntent(
 
 	if (!stuckRecoveryActive_)
 	{
-		const float sign = (stuckRecoveryCount_ % 2U) == 0U ? 1.0f : -1.0f;
-		stuckRecoveryDirection_ = {
-			-baseY / length * sign,
-			baseX / length * sign,
-			0.0f};
+		if (timedCompatibility_)
+		{
+			if (randomSource_ == nullptr) return false;
+			const compat::RandomActor actor = {actor_.slot, actor_.actorGeneration};
+			const compat::RandomTimingContext timing = {0U, 0U, lastFrame_.tick};
+			if (!stuckJumpScheduled_)
+			{
+				const auto delay = randomSource_->nextFloat(
+					compat::RandomRequest::floatRequest("CSBOT-STUCK-JUMP-DELAY",
+						actor, timing, 0.0f, 0.5f));
+				if (delay.status != compat::RandomStatus::Ok || !std::isfinite(delay.value) ||
+					delay.value < 0.0f || delay.value > 0.5f) return false;
+				nextStuckJumpAt_ = observedAt_ + delay.value;
+				stuckJumpScheduled_ = true;
+			}
+			const auto direction = randomSource_->nextLong(
+				compat::RandomRequest::longRequest("CSBOT-WIGGLE-DIRECTION",
+					actor, timing, 0, 3));
+			if (direction.status != compat::RandomStatus::Ok ||
+				direction.value < 0 || direction.value > 3) return false;
+			const auto duration = randomSource_->nextFloat(
+				compat::RandomRequest::floatRequest("CSBOT-WIGGLE-DURATION",
+					actor, timing, 0.5f, 1.5f));
+			if (duration.status != compat::RandomStatus::Ok ||
+				!std::isfinite(duration.value) || duration.value < 0.5f || duration.value > 1.5f)
+				return false;
+			const float yaw = viewYaw_ * 0.017453292519943295f;
+			const float x = viewYawAvailable_ ? std::cos(yaw) : baseX / length;
+			const float y = viewYawAvailable_ ? std::sin(yaw) : baseY / length;
+			switch (direction.value)
+			{
+			case 0: stuckRecoveryDirection_ = {x, y, 0.0f}; break;
+			case 1: stuckRecoveryDirection_ = {y, -x, 0.0f}; break;
+			case 2: stuckRecoveryDirection_ = {-x, -y, 0.0f}; break;
+			default: stuckRecoveryDirection_ = {-y, x, 0.0f}; break;
+			}
+			stuckRecoveryEndsAt_ = observedAt_ + duration.value;
+		}
+		else
+		{
+			const float sign = (stuckRecoveryCount_ % 2U) == 0U ? 1.0f : -1.0f;
+			stuckRecoveryDirection_ = {
+				-baseY / length * sign, baseX / length * sign, 0.0f};
+		}
 	}
 	intent->direction = stuckRecoveryDirection_;
 	intent->speed = kRoamSpeed;
@@ -2014,6 +2361,28 @@ bool NavRoamController::buildStuckRecoveryIntent(
 	intent->stepUp = false;
 	intent->currentArea = currentArea.area;
 	intent->targetArea = activeLink_.toArea;
+	if (timedCompatibility_ && observedAt_ >= nextStuckJumpAt_ &&
+		observedAt_ - lastWiggleJumpAt_ >= 1.0f && latestLocomotion_.grounded &&
+		!latestLocomotion_.ducked && !latestLocomotion_.onLadder)
+	{
+		const nav::NavArea *area = snapshot.document()->findArea(currentArea.area);
+		const bool crouchOnly = area != nullptr &&
+			(area->attributes & nav::NavArea::kCrouch) != 0U &&
+			(area->attributes & nav::NavArea::kJump) == 0U;
+		if (!crouchOnly)
+		{
+			const auto interval = randomSource_->nextFloat(
+				compat::RandomRequest::floatRequest("CSBOT-WIGGLE-JUMP-INTERVAL",
+					{actor_.slot, actor_.actorGeneration}, {0U, 0U, lastFrame_.tick},
+					1.0f, 2.0f));
+			if (interval.status != compat::RandomStatus::Ok ||
+				!std::isfinite(interval.value) || interval.value < 1.0f || interval.value > 2.0f)
+				return false;
+			intent->traversal = nav::TraversalAction::Jump;
+			lastWiggleJumpAt_ = observedAt_;
+			nextStuckJumpAt_ = observedAt_ + interval.value;
+		}
+	}
 	return true;
 }
 
@@ -2028,6 +2397,10 @@ bool NavRoamController::selectRoute(
 		return selectRoamRoute(snapshot, currentArea, decision);
 	}
 	nav::NavQuery query(snapshot);
+	if (hasPathCostContext_ && !modePolicy_.allowsAdaptiveRouteWeighting())
+	{
+		query.setPathCostContext(pathCostContext_);
+	}
 	std::vector<nav::NavDirectedLink> links;
 	const nav::NavQueryResult linksResult = query.outgoingLinks(currentArea.area, &links);
 	if (decision != nullptr)
@@ -2113,6 +2486,13 @@ bool NavRoamController::selectRoute(
 		}
 		nav::LocomotionResult startResult =
 			nav::LocomotionResult::InvalidArgument;
+		if (modePolicy_.mode() == compat::RuntimeMode::Compatibility)
+		{
+			corridor.hasEndpoint = true;
+			corridor.endpoint = objectiveTarget_;
+			const auto *goal = snapshot.document()->findArea(objectiveArea);
+			corridor.endpoint.z = nav::surfaceZAt(*goal, objectiveTarget_.x, objectiveTarget_.y);
+		}
 		if (startRoute(snapshot, corridor, link, &startResult))
 		{
 			hasAvoidedLink_ = false;
@@ -2304,7 +2684,7 @@ bool NavRoamController::selectCompatibilityGoal(
 			oldestVisit = lastVisited;
 		}
 	}
-	if (reservationBoard_ != nullptr)
+	if (modePolicy_.allowsTacticalTeamOverrides() && reservationBoard_ != nullptr)
 	{
 		selectedGoal = 0U;
 		struct GoalCandidate
@@ -2338,6 +2718,10 @@ bool NavRoamController::selectCompatibilityGoal(
 			});
 
 		nav::NavQuery query(snapshot);
+	if (hasPathCostContext_ && !modePolicy_.allowsAdaptiveRouteWeighting())
+	{
+		query.setPathCostContext(pathCostContext_);
+	}
 		nav::AreaId fallbackGoal = 0U;
 		std::uint32_t fallbackVisit =
 			(std::numeric_limits<std::uint32_t>::max)();
@@ -2445,7 +2829,11 @@ bool NavRoamController::selectCompatibilityGoal(
 			}
 		}
 	}
-	if (selectedGoal == 0U)
+	// In the pinned HuntState::OnUpdate, RANDOM_LONG and the following
+	// list traversal execute unconditionally and overwrite the oldest-area
+	// candidate. Preserve that draw (including current/small/failed areas)
+	// in Compatibility; Enhanced retains its reservation-based selection.
+	if (selectedGoal == 0U || !modePolicy_.allowsTacticalTeamOverrides())
 	{
 			strategy = GoalSelectionStrategyRandomFallback;
 			if (document->areas().empty() || randomSource_ == nullptr)
@@ -2527,6 +2915,10 @@ bool NavRoamController::selectCompatibilityGoal(
 	}
 
 	nav::NavQuery query(snapshot);
+	if (hasPathCostContext_ && !modePolicy_.allowsAdaptiveRouteWeighting())
+	{
+		query.setPathCostContext(pathCostContext_);
+	}
 	if (decision != nullptr)
 	{
 		decision->goalPresent = true;
@@ -2620,6 +3012,13 @@ bool NavRoamController::selectCompatibilityGoal(
 		decision->linkHow = link.how;
 		decision->linkResult = nav::NavQueryResult::Found;
 	}
+	if (modePolicy_.mode() == compat::RuntimeMode::Compatibility)
+	{
+		corridor.hasEndpoint = true;
+		corridor.endpoint = roamGoalPosition_;
+		corridor.endpoint.z = nav::surfaceZAt(*document->findArea(roamGoalArea_),
+			corridor.endpoint.x, corridor.endpoint.y);
+	}
 	if (!startRoute(snapshot, corridor, link))
 	{
 		failedRoamGoalArea_ = roamGoalArea_;
@@ -2641,7 +3040,7 @@ bool NavRoamController::selectCompatibilityGoal(
 		}
 		return false;
 	}
-	if (reservationBoard_ != nullptr)
+	if (modePolicy_.allowsTacticalTeamOverrides() && reservationBoard_ != nullptr)
 	{
 		reservationFallback =
 			reservationBoard_->goalReservedByOther(
@@ -2686,12 +3085,16 @@ bool NavRoamController::selectRoamRoute(
 		return false;
 	}
 	nav::NavQuery query(snapshot);
+	if (hasPathCostContext_ && !modePolicy_.allowsAdaptiveRouteWeighting())
+	{
+		query.setPathCostContext(pathCostContext_);
+	}
 	std::vector<nav::NavDirectedLink> links;
 	if (query.outgoingLinks(currentArea.area, &links) != nav::NavQueryResult::Found)
 	{
 		return false;
 	}
-	if (!modePolicy_.allowsAdaptiveRouteWeighting())
+	if (!modePolicy_.allowsAdaptiveRouteWeighting() || reservationBoard_ != nullptr)
 	{
 		return selectCompatibilityGoal(snapshot, currentArea, links, decision);
 	}
@@ -2816,6 +3219,7 @@ void NavRoamController::rememberRoute(
 	activeLink_ = link;
 	activeCorridorIndex_ = 0U;
 	hasActiveRoute_ = true;
+	corridorProgressAt_ = observedAt_;
 	if (pathSequence_ == (std::numeric_limits<std::uint32_t>::max)())
 	{
 		pathSequence_ = 1U;
@@ -2865,11 +3269,16 @@ void NavRoamController::populateRouteDecision(NavRoamDecision *decision) const
 
 void NavRoamController::resetRoute(bool preserveRoamGoal)
 {
+	waitingBehindFriend_ = false;
+	friendInTheWay_ = false;
+	friendCheckAt_ = -1.0f;
+	friendWaitUntil_ = 0.0f;
 	if (!preserveRoamGoal && reservationBoard_ != nullptr)
 	{
 		reservationBoard_->release(actor_);
 	}
-	locomotion_ = nav::LocomotionController(roamLocomotionConfig());
+	if(timedCompatibility_)locomotion_.clearPath();
+	else locomotion_ = nav::LocomotionController(roamLocomotionConfig(modePolicy_.mode()));
 	activeTraversal_ = nav::TraversalAction::Walk;
 	jumpDrop_ = nav::JumpDropController(roamJumpDropConfig(
 			modePolicy_.allowsAdaptiveRouteWeighting()
@@ -2892,6 +3301,29 @@ void NavRoamController::resetRoute(bool preserveRoamGoal)
 	stuckRecoveryFramesRemaining_ = 0U;
 	stuckRecoveryActive_ = false;
 	hasActiveRoute_ = false;
+}
+
+void NavRoamController::destroyPath()
+{
+	resetRoute(true);
+}
+
+void NavRoamController::resetProgressMonitor()
+{
+	locomotion_.resetProgressMonitor();
+	stuckRecoveryActive_=false;
+	stuckJumpScheduled_=false;
+}
+
+void NavRoamController::observeMotion(ActorId actor,world::FrameIdentity frame,
+	const nav::LocomotionObservation &observation)
+{
+	if(actor.slot==0U || actor.actorGeneration==0U || !frame.isValid())return;
+	if(!sameActor(actor,motionActor_) || frame.mapGeneration!=motionFrame_.mapGeneration ||
+		frame.roundGeneration!=motionFrame_.roundGeneration)resetProgressMonitor();
+	else if(frame.tick<=motionFrame_.tick)return;
+	motionActor_=actor;motionFrame_=frame;
+	locomotion_.observeMotion(observation);
 }
 }
 }

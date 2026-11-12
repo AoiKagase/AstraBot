@@ -33,6 +33,11 @@ namespace metamod
 		int difficulty,
 		std::size_t selectionIndex,
 		compat::ProfileRecord *profile) const;
+	compat::ProfileSelectionResult selectUnusedProfile(
+		const compat::CommandAction &action, int difficulty,
+		const char *const *usedNames, std::size_t usedCount,
+		compat::ICompatibilityRandomSource &random, compat::RandomActor actor,
+		compat::RandomTimingContext timing, compat::ProfileRecord *profile) const;
 
 	private:
 		static const char *const *commandNames(std::size_t *count);

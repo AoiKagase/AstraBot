@@ -2,6 +2,7 @@
 #include "plugin_runtime.hpp"
 
 #include <cstdio>
+#include <cerrno>
 #include <cstring>
 #include <cmath>
 #include <vector>
@@ -9,14 +10,23 @@
 #include <string>
 #include <chrono>
 #include <sstream>
+#include <cstdlib>
 
 namespace
 {
 edict_t gEntities[5]{};
+std::string gEntityNames[5];
 edict_t gBombSite{};
 edict_t gSecondBombSite{};
 edict_t gPlantedBomb{};
 bool gObjectiveEntitiesAvailable = false;
+bool gObjectiveTraceVisible = false;
+void traceObjectiveVisibility(const float *, const float *end, int, edict_t *, TraceResult *result)
+{
+	*result = {};
+	result->flFraction = gObjectiveTraceVisible ? 1.0f : 0.0f;
+	result->vecEndPos = Vector(end[0], end[1], end[2]);
+}
 bool gCaptureMovementLogs = false;
 bool gProfileEnabled = false;
 bool gInjectProfilerDelay = false;
@@ -56,6 +66,10 @@ float gLastRunPlayerMoveForward = 0.0f;
 float gLastRunPlayerMoveSide = 0.0f;
 float gLastRunPlayerMoveUp = 0.0f;
 float gLastRunPlayerMoveYaw = 0.0f;
+int gLastRunPlayerMoveActor = 0;
+float gAvoidanceSide[5] = {};
+float gAvoidanceForward[5] = {};
+bool gAvoidanceNeutralPath = false;
 	bool gDirectJoinCommandSeen = false;
 	bool gServerSetsEntityTeam = true;
 	char gLastClientCommand[32] = {};
@@ -71,6 +85,7 @@ bool gPerformanceCvarsRegistered[3] = {};
 	float gBotQuota = 0.0f;
 	float gMpFreezetime = 6.0f;
 	float gMpRoundtime = 5.0f;
+	float gTestC4Timer = 0.0f;
 	float gMpRoundRestartDelay = 5.0f;
 	cvar_t gBotEnableCvar{};
 	cvar_t gBotStopCvar{};
@@ -83,6 +98,10 @@ bool gPerformanceCvarsRegistered[3] = {};
 	cvar_t gMpRoundtimeCvar{};
 	cvar_t gMpRoundRestartDelayCvar{};
 cvar_t gAstrabotPerfCvars[3]{};
+cvar_t *gManagerCvars[5]{};
+const char *const gManagerCvarNames[] = {
+	"bot_quota_mode", "bot_join_after_player", "bot_auto_vacate", "bot_join_delay", "bot_allow_rogues"};
+constexpr std::size_t kManagerCvarCount = sizeof(gManagerCvarNames) / sizeof(gManagerCvarNames[0]);
 
 	bool check(bool condition, const char *description)
 	{
@@ -109,13 +128,50 @@ cvar_t gAstrabotPerfCvars[3]{};
 		return file;
 	}
 
-	edict_t *createFakeClient(const char *)
+	class ExistingProfileGuard
+	{
+	public:
+		bool capture(const char *path)
+		{
+			path_ = path;
+			errno = 0;
+			std::FILE *file = openFixture(path, "rb");
+			if (file == nullptr) return errno == ENOENT;
+			char buffer[4096];
+			std::size_t count = 0U;
+			while ((count = std::fread(buffer, 1U, sizeof(buffer), file)) != 0U)
+				contents_.insert(contents_.end(), buffer, buffer + count);
+			const bool readOk = std::ferror(file) == 0;
+			const bool closeOk = std::fclose(file) == 0;
+			restore_ = readOk && closeOk;
+			return restore_;
+		}
+		~ExistingProfileGuard()
+		{
+			if (!restore_) return;
+			std::FILE *file = openFixture(path_, "wb");
+			if (file == nullptr) std::abort();
+			const bool written = contents_.empty() ||
+				std::fwrite(contents_.data(), 1U, contents_.size(), file) == contents_.size();
+			const bool closed = std::fclose(file) == 0;
+			if (!written || !closed) std::abort();
+		}
+	private:
+		const char *path_ = nullptr;
+		bool restore_ = false;
+		std::vector<char> contents_;
+	};
+
+	edict_t *createFakeClient(const char *name)
 	{
 		if (gCreateCount >= 5)
 		{
 			return nullptr;
 		}
-		edict_t *entity = &gEntities[gCreateCount++];
+		const int slotIndex = gCreateCount++;
+		edict_t *entity = &gEntities[slotIndex];
+		gEntityNames[slotIndex] = name == nullptr ? "" : name;
+		entity->v.netname = 100 + slotIndex;
 		entity->v.flags |= FL_FAKECLIENT;
 		return entity;
 	}
@@ -164,9 +220,11 @@ edict_t *findEntityByString(edict_t *start, const char *field, const char *value
 
 	const char *szFromIndex(int index)
 	{
+	if (index >= 100 && index < 105) return gEntityNames[index - 100].c_str();
 		return index == 1 ? "func_bomb_target" :
 			index == 2 ? "grenade" :
-			index == 3 ? "models/w_c4.mdl" : "";
+			index == 3 ? "models/w_c4.mdl" :
+			index == 4 ? "weaponbox" : index == 5 ? "models/w_backpack.mdl" : index == 6 ? "de_test" : "";
 	}
 
 	edict_t *entityOfIndex(int index)
@@ -198,6 +256,10 @@ edict_t *findEntityByString(edict_t *start, const char *field, const char *value
 
 	cvar_t *getCvar(const char *name)
 	{
+		static cvar_t c4Timer{};
+		if (std::strcmp(name,"mp_c4timer")==0 && gTestC4Timer>0.0f) return &c4Timer;
+		for (std::size_t index = 0U; index < kManagerCvarCount; ++index)
+			if (std::strcmp(name, gManagerCvarNames[index]) == 0) return gManagerCvars[index];
 		if (std::strcmp(name, "mp_roundtime") == 0) return &gMpRoundtimeCvar;
 		if (std::strcmp(name, "mp_freezetime") == 0)
 		{
@@ -260,6 +322,12 @@ edict_t *findEntityByString(edict_t *start, const char *field, const char *value
 
 	float getCvarFloat(const char *name)
 	{
+		if (std::strcmp(name,"astrabot_perf_disable_pathsearch")==0) return gAvoidanceNeutralPath ? 1.0f : 0.0f;
+		if (std::strcmp(name,"mp_c4timer")==0) return gTestC4Timer;
+		if (std::strcmp(name, "bot_difficulty") == 0) return 1.0f;
+		for (std::size_t index = 0U; index < kManagerCvarCount; ++index)
+			if (std::strcmp(name, gManagerCvarNames[index]) == 0)
+				return gManagerCvars[index] == nullptr ? 0.0f : gManagerCvars[index]->value;
 		if (std::strcmp(name, "mp_roundtime") == 0) return gMpRoundtime;
 		if (std::strcmp(name, "mp_freezetime") == 0)
 		{
@@ -286,6 +354,9 @@ edict_t *findEntityByString(edict_t *start, const char *field, const char *value
 
 	void setCvarFloat(const char *name, float value)
 	{
+		for (std::size_t index = 0U; index < kManagerCvarCount; ++index)
+			if (std::strcmp(name, gManagerCvarNames[index]) == 0 && gManagerCvars[index] != nullptr)
+				gManagerCvars[index]->value = value;
 		if (std::strcmp(name, "bot_enable") == 0)
 		{
 			gBotEnable = value;
@@ -302,6 +373,15 @@ edict_t *findEntityByString(edict_t *start, const char *field, const char *value
 		if (variable == nullptr || variable->name == nullptr)
 		{
 			return;
+		}
+		for (std::size_t index = 0U; index < kManagerCvarCount; ++index)
+		{
+			if (std::strcmp(variable->name, gManagerCvarNames[index]) == 0)
+			{
+				gManagerCvars[index] = variable;
+				variable->value = variable->string == nullptr ? 0.0f : std::strtof(variable->string, nullptr);
+				return;
+			}
 		}
 	const char *const names[] = {"bot_enable", "bot_stop", "bot_difficulty", "bot_quota",
 		"bot_join_team", "astrabot_mode", "astrabot_profile",
@@ -339,6 +419,7 @@ edict_t *findEntityByString(edict_t *start, const char *field, const char *value
 
 	void resetEntities()
 	{
+		for (std::string &name : gEntityNames) name.clear();
 		for (edict_t &entity : gEntities)
 		{
 			entity = edict_t{};
@@ -359,7 +440,7 @@ edict_t *findEntityByString(edict_t *start, const char *field, const char *value
 }
 
 void runPlayerMove(
-	edict_t *, const float *angles, float forward, float side, float up, unsigned short buttons, byte, byte msec)
+	edict_t *entity, const float *angles, float forward, float side, float up, unsigned short buttons, byte, byte msec)
 {
 	injectProfilerDelay();
 	++gRunPlayerMoveCount;
@@ -369,6 +450,12 @@ void runPlayerMove(
 	gLastRunPlayerMoveSide = side;
 	gLastRunPlayerMoveUp = up;
 	gLastRunPlayerMoveYaw = angles[1];
+	gLastRunPlayerMoveActor = indexOfEdict(entity);
+	if (gLastRunPlayerMoveActor >= 1 && gLastRunPlayerMoveActor <= 5)
+	{
+		gAvoidanceSide[gLastRunPlayerMoveActor - 1] = side;
+		gAvoidanceForward[gLastRunPlayerMoveActor - 1] = forward;
+	}
 }
 
 void setClientMaxspeed(const edict_t *entity, float maxspeed)
@@ -560,6 +647,112 @@ bool writeJumpNavigation(const char *path, bool recovery = false)
 	return written == bytes.size() && closed == 0;
 }
 
+bool gAvoidanceGroundAvailable = true;
+void traceAvoidanceFloor(const float *, const float *end, int, edict_t *, TraceResult *result)
+{
+	*result = {};
+	result->flFraction = gAvoidanceGroundAvailable ? 0.5f : 1.0f;
+	result->vecEndPos = Vector(end[0], end[1], 0.0f);
+}
+
+bool testRuntimeFriendBeyondPortal(astrabot::metamod::PluginRuntime &runtime,
+	enginefuncs_t &engine, globalvars_t &globals)
+{
+	const char *path="astrabot_friend_portal.nav";
+	if (!writeJumpNavigation(path,true)) return false;
+	const astrabot::metamod::NavLoadRequest load={path,"astrabot_friend_portal",runtime.snapshot().mapGeneration,false,0U,false,0U};
+	const auto loaded=runtime.loadNavigationFile(&load);std::remove(path);
+	if (loaded!=astrabot::metamod::NavLoadResult::Loaded) return false;
+	runtime.executeCompatibilityCommand(request("bot_kick",1U,"all"));resetEntities();gCreateCount=0;
+	gObjectiveEntitiesAvailable=false;gServerSetsEntityTeam=true;
+	const auto savedTrace=engine.pfnTraceLine;engine.pfnTraceLine=nullptr;
+	runtime.giveEnginePointers(&engine,&globals);
+	runtime.onRoundLifecycleMessage("World triggered \"Round_Start\"\n");
+	runtime.setCompatibilityFloat("bot_enable",1.0f);runtime.setCompatibilityFloat("bot_quota",0.0f);
+	if (runtime.executeCompatibilityCommand(request("bot_add_t"))!=astrabot::metamod::CompatibilityCommandResult::Handled) return false;
+	for (int i=0;i<2;++i)
+	{
+		auto &v=gEntities[i].v;
+		v.flags=FL_CLIENT|FL_ONGROUND|(i==0 ? FL_FAKECLIENT:0);v.team=1;v.health=100.0f;
+		v.deadflag=DEAD_NO;v.solid=SOLID_SLIDEBOX;v.movetype=MOVETYPE_WALK;
+		v.origin=Vector(i==0 ? 16.0f:104.0f,32.0f,36.0f);
+		v.mins=Vector(-16.0f,-16.0f,-36.0f);v.maxs=Vector(16.0f,16.0f,36.0f);v.maxspeed=240.0f;
+	}
+	globals.time+=gMpFreezetime+1.0f;
+	for (int i=0;i<20;++i) {globals.time+=0.1f;runtime.onStartFrame();runtime.onStartFramePost();}
+	bool moving=false;
+	for (int i=0;i<3;++i)
+	{
+		globals.time+=0.1f;runtime.onStartFrame();runtime.onStartFramePost();
+		moving=moving || std::hypot(gLastRunPlayerMoveForward,gLastRunPlayerMoveSide)>0.0f;
+	}
+	const bool passed=check(moving,"friend beyond a short floor-level portal does not create a false polite wait using feet coordinates");
+	runtime.executeCompatibilityCommand(request("bot_kick",1U,"all"));gEntities[1].v.flags=0;
+	engine.pfnTraceLine=savedTrace;runtime.giveEnginePointers(&engine,&globals);
+	return passed;
+}
+
+bool testRuntimeTouchAvoidance(astrabot::metamod::PluginRuntime &runtime,
+	enginefuncs_t &engine, globalvars_t &globals)
+{
+	const char *path = "astrabot_touch_avoidance.nav";
+	if (!writeJumpNavigation(path)) return false;
+	const astrabot::metamod::NavLoadRequest load =
+		{path, "astrabot_touch_avoidance", runtime.snapshot().mapGeneration, false, 0U, false, 0U};
+	const auto loaded = runtime.loadNavigationFile(&load); std::remove(path);
+	if (!check(loaded == astrabot::metamod::NavLoadResult::Loaded, "touch NAV loaded")) return false;
+	runtime.executeCompatibilityCommand(request("bot_kick", 1U, "all"));
+	resetEntities(); gCreateCount = 0; gObjectiveEntitiesAvailable = false;
+	gServerSetsEntityTeam = true; gCaptureMovementLogs = true; gProfileEnabled = true;
+	const auto savedTrace = engine.pfnTraceLine; engine.pfnTraceLine = &traceAvoidanceFloor;
+	gAvoidanceNeutralPath = true; // Make-way must also run while path movement waits.
+	runtime.giveEnginePointers(&engine, &globals);
+	runtime.onRoundLifecycleMessage("World triggered \"Round_Start\"\n");
+	runtime.setCompatibilityFloat("bot_enable", 1.0f);
+	runtime.setCompatibilityFloat("bot_quota", 0.0f);
+	for (int i = 0; i < 2; ++i)
+	{
+		if (runtime.executeCompatibilityCommand(request("bot_add_t")) !=
+			astrabot::metamod::CompatibilityCommandResult::Handled) return false;
+		auto &v = gEntities[i].v;
+		v.flags = FL_CLIENT | FL_FAKECLIENT | FL_ONGROUND; v.team = 1; v.health = 100.0f;
+		v.deadflag = DEAD_NO; v.solid = SOLID_SLIDEBOX; v.movetype = MOVETYPE_WALK;
+		v.origin = Vector(16.0f + i*32.0f, 32.0f, 36.0f);
+		v.mins = Vector(-16.0f, -16.0f, -36.0f); v.maxs = Vector(16.0f,16.0f,36.0f); v.maxspeed=240.0f;
+	}
+	// The later-created bot outranks the earlier one only because it carries C4.
+	gEntities[1].v.weapons = 1 << astrabot::metamod::ActionAdapter::kC4WeaponId;
+	globals.time += gMpFreezetime + 1.0f;
+	for (int i=0;i<20;++i) { globals.time += 0.05f; runtime.onStartFrame(); runtime.onStartFramePost(); }
+	DLL_FUNCTIONS hooks{}; int version = INTERFACE_VERSION;
+	if (!runtime.provideEntityApi(&hooks, &version) || hooks.pfnTouch == nullptr) return false;
+	gAvoidanceGroundAvailable = true; gMovementLogs.clear();
+	bool moved = false;
+	for (int i=0;i<24;++i)
+	{
+		hooks.pfnTouch(&gEntities[0], &gEntities[1]);
+		globals.time += 0.025f; runtime.onStartFrame(); runtime.onStartFramePost();
+		moved = moved || (gAvoidanceForward[0] < -200.0f && gAvoidanceSide[0] == 0.0f);
+	}
+	// Diagnostic frame%16 need not intersect this actor's full-update phase.
+	// Assert actual public-engine commands instead of sampled log presence.
+	bool passed = check(moved, "pinned REGAMEDLL_FIXES make-way retreats from a player directly ahead even with neutral path input");
+	gAvoidanceGroundAvailable = false; gMovementLogs.clear();
+	bool vetoed = false;
+	for (int i=0;i<24;++i)
+	{
+		hooks.pfnTouch(&gEntities[0], &gEntities[1]);
+		globals.time += 0.025f; runtime.onStartFrame(); runtime.onStartFramePost();
+		vetoed = vetoed || (gAvoidanceSide[0] == 0.0f && gAvoidanceForward[0] == 0.0f);
+	}
+	passed = check(vetoed, "touch avoidance does not sidestep off an unobserved ledge") && passed;
+	runtime.executeCompatibilityCommand(request("bot_kick", 1U, "all"));
+	engine.pfnTraceLine = savedTrace; runtime.giveEnginePointers(&engine, &globals);
+	gAvoidanceNeutralPath = false;
+	gAvoidanceGroundAvailable = true; gCaptureMovementLogs = false; gProfileEnabled = false;
+	return passed;
+}
+
 bool testRuntimeNearJumpFallback(
 	astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &engine, globalvars_t &globals)
 {
@@ -581,7 +774,7 @@ bool testRuntimeNearJumpFallback(
 	engine.pfnRandomFloat = &jumpFixtureRandomFloat;
 	runtime.giveEnginePointers(&engine, &globals);
 	runtime.setCompatibilityFloat("bot_enable", 1.0f);
-	runtime.setCompatibilityFloat("bot_quota", 1.0f);
+	runtime.setCompatibilityFloat("bot_quota", 0.0f);
 	gObjectiveEntitiesAvailable = false;
 	gServerSetsEntityTeam = true;
 	gCaptureMovementLogs = true; gProfileEnabled = true;
@@ -594,6 +787,7 @@ bool testRuntimeNearJumpFallback(
 		gGroundProbeMode = mode;
 		gFarGroundProbeCount = 0;
 		gNearGroundProbeCount = 0;
+		runtime.setCompatibilityFloat("bot_quota", 0.0f);
 		if (!check(runtime.executeCompatibilityCommand(request("bot_add_t")) ==
 				astrabot::metamod::CompatibilityCommandResult::Handled, "near-jump actor added"))
 		{
@@ -650,13 +844,18 @@ bool testRuntimeNearJumpFallback(
 		passed = check(gFarGroundProbeCount > 0 && gNearGroundProbeCount > 0 && jumped,
 			mode == 0 ? "runtime dispatches near jump with unknown far ground"
 				: "runtime dispatches near jump with sloped far ground") && passed;
+		passed = check(gCreateCount == 1,
+			"single-actor movement fixture does not trigger extra quota population") && passed;
 		const float takeoffYaw = gLastRunPlayerMoveYaw;
 		const int probesAtTakeoff = gFarGroundProbeCount + gNearGroundProbeCount;
 		gEntities[0].v.flags &= ~FL_ONGROUND;
 		gEntities[0].v.origin.z = 52.0f;
-		gEntities[0].v.velocity = Vector(100.0f, 0.0f, 120.0f);
+		// Keep this short NAV fixture outside its final arrival tolerance while
+		// checking flight continuity. Reaching the goal correctly stops movement.
+		gEntities[0].v.velocity = Vector(20.0f, 0.0f, 120.0f);
 		bool airborneMoved = false;
 		float airborneElapsed = 0.0f;
+		const float airborneGravity = 800.0f; // This fixture uses the default sv_gravity.
 		for (int frame = 0; airborneElapsed < 0.4f; ++frame)
 		{
 			const int movesBefore = gRunPlayerMoveCount;
@@ -668,10 +867,28 @@ bool testRuntimeNearJumpFallback(
 			const float delta = cadence < 5 ? frameSteps[cadence] : variableSteps[frame % 5];
 			globals.time += delta;
 			airborneElapsed += delta;
+			gEntities[0].v.origin.x += gEntities[0].v.velocity.x * delta;
+			gEntities[0].v.origin.y += gEntities[0].v.velocity.y * delta;
+			gEntities[0].v.origin.z += gEntities[0].v.velocity.z * delta -
+				0.5f * airborneGravity * delta * delta;
+			gEntities[0].v.velocity.z -= airborneGravity * delta;
 			runtime.onStartFrame();
 			runtime.onStartFramePost();
 			if (gRunPlayerMoveCount == movesBefore) continue;
 			airborneMoved = true;
+			if (!(std::hypot(gLastRunPlayerMoveForward, gLastRunPlayerMoveSide) > 0.0f &&
+				std::fabs(gLastRunPlayerMoveYaw - takeoffYaw) < 0.01f))
+			{
+				std::fprintf(stderr, "airborne mode=%d frame=%d elapsed=%g actor=%d forward=%g side=%g yaw=%g takeoffYaw=%g buttons=%u msec=%u origin=(%g,%g,%g) velocity=(%g,%g,%g)\n",
+					mode, frame, airborneElapsed, gLastRunPlayerMoveActor,
+					gLastRunPlayerMoveForward, gLastRunPlayerMoveSide, gLastRunPlayerMoveYaw, takeoffYaw,
+					gLastRunPlayerMoveButtons, static_cast<unsigned int>(gLastRunPlayerMoveMsec),
+					gEntities[0].v.origin.x, gEntities[0].v.origin.y, gEntities[0].v.origin.z,
+					gEntities[0].v.velocity.x, gEntities[0].v.velocity.y, gEntities[0].v.velocity.z);
+				const std::size_t begin = gMovementLogs.size() > 4U ? gMovementLogs.size() - 4U : 0U;
+				for (std::size_t entry = begin; entry < gMovementLogs.size(); ++entry)
+					std::fprintf(stderr, "airborne log: %s\n", gMovementLogs[entry].c_str());
+			}
 			passed = check(std::hypot(gLastRunPlayerMoveForward, gLastRunPlayerMoveSide) > 0.0f &&
 				std::fabs(gLastRunPlayerMoveYaw - takeoffYaw) < 0.01f,
 				"public airborne RunPlayerMove preserves routed direction across full updates") && passed;
@@ -682,6 +899,7 @@ bool testRuntimeNearJumpFallback(
 			"airborne route continues without ground lookahead probes") && passed;
 		gEntities[0].v.flags |= FL_ONGROUND;
 		gEntities[0].v.origin.z = 36.0f;
+		gEntities[0].v.velocity.z = 0.0f;
 		gEntities[0].v.health = 90.0f;
 		globals.time += 0.1f;
 		runtime.onStartFrame();
@@ -755,6 +973,7 @@ bool testRuntimeRecoveryReselection(
 	engine.pfnTraceLine = nullptr;
 	engine.pfnRandomLong = &recoveryFixtureRandomLong;
 	runtime.giveEnginePointers(&engine, &globals);
+	runtime.setCompatibilityFloat("bot_quota", 0.0f);
 	runtime.onRoundLifecycleMessage("World triggered \"Round_Start\"\n");
 	if (runtime.executeCompatibilityCommand(request("bot_add_t")) !=
 		astrabot::metamod::CompatibilityCommandResult::Handled) return false;
@@ -770,11 +989,14 @@ bool testRuntimeRecoveryReselection(
 	gEntities[0].v.maxspeed = 240.0f;
 	bool first = false;
 	bool alternate = false;
+	bool continuedAfterFailures = false;
 	for (int frame = 0; frame < 100; ++frame)
 	{
 		globals.time += 0.12f;
 		runtime.onStartFrame();
 		runtime.onStartFramePost();
+		if (frame >= 80 && (gLastRunPlayerMoveForward != 0.0f || gLastRunPlayerMoveSide != 0.0f))
+			continuedAfterFailures = true;
 		if (gLastRunPlayerMoveForward > 200.0f)
 		{
 			first = first || std::fabs(gLastRunPlayerMoveYaw - 90.0f) < 1.0f;
@@ -783,8 +1005,8 @@ bool testRuntimeRecoveryReselection(
 	}
 	bool passed = check(first && alternate,
 		"public RunPlayerMove changes recovery direction to the alternate NAV candidate after failure");
-	passed = check(gLastRunPlayerMoveForward == 0.0f && gLastRunPlayerMoveSide == 0.0f,
-		"public recovery becomes neutral only after both candidates fail") && passed;
+	passed = check(continuedAfterFailures,
+		"public compatibility recovery keeps issuing movement after candidate failures") && passed;
 	gEntities[0].v.origin = Vector(96.0f, 32.0f, 36.0f);
 	bool resumed = false;
 	for (int frame = 0; frame < 6; ++frame)
@@ -817,6 +1039,7 @@ bool testRuntimeProfilerBoundaries(
 	gServerSetsEntityTeam = true;
 	engine.pfnTraceLine = nullptr;
 	runtime.giveEnginePointers(&engine, &globals);
+	runtime.setCompatibilityFloat("bot_quota", 0.0f);
 	runtime.onRoundLifecycleMessage("World triggered \"Round_Start\"\n");
 	if (runtime.executeCompatibilityCommand(request("bot_add_t")) !=
 		astrabot::metamod::CompatibilityCommandResult::Handled) return false;
@@ -873,6 +1096,15 @@ bool testRuntimeProfilerBoundaries(
 	}
 	bool passed = check(windows >= 2U && windowFields,
 		"public profiler serializes actual game/wall window duration and frame count");
+	bool scenarioStage = false, guardStage = false, costStage = false;
+	for (const auto &message : gMovementLogs)
+	{
+		scenarioStage = scenarioStage || message.find("profile stage=ScenarioUpdate ") == 0U;
+		guardStage = guardStage || message.find("profile stage=BombGuardSelection ") == 0U;
+		costStage = costStage || message.find("profile stage=PathCostContext ") == 0U;
+	}
+	passed = check(scenarioStage && guardStage && costStage,
+		"postplant state, guard search, and path-cost preparation have separate profiler boundaries") && passed;
 	passed = check(moveMax >= 500U && logMax >= 500U && navMax < moveMax && navMax < logMax,
 		"slow engine/log callbacks are measured separately from core NAV") && passed;
 	passed = check(gateLogs <= windows + 2U,
@@ -914,10 +1146,12 @@ float siteFixtureRandomFloat(float low, float high)
 int siteFixtureUserMessageId(plid_t, const char *name, int *)
 {
 	return std::strcmp(name, "CurWeapon") == 0 ? 94 :
-		std::strcmp(name, "TeamInfo") == 0 ? 86 : 0;
+		std::strcmp(name, "TeamInfo") == 0 ? 86 :
+		std::strcmp(name, "BombDrop") == 0 ? 95 :
+		std::strcmp(name, "BombPickup") == 0 ? 97 : std::strcmp(name, "TextMsg") == 0 ? 98 : 0;
 }
 
-bool writeTwoSiteNavigation(const char *path, bool rightReachable)
+bool writeTwoSiteNavigation(const char *path, bool rightReachable, bool withCover = false)
 {
 	std::vector<std::uint8_t> bytes;
 	const auto u32 = [&](std::uint32_t value)
@@ -944,7 +1178,10 @@ bool writeTwoSiteNavigation(const char *path, bool rightReachable)
 			u32(east || west ? 1U : 0U);
 			if (east || west) u32(east ? id + 1U : id - 1U);
 		}
-		bytes.push_back(0U); bytes.push_back(0U); u32(0U);
+		const bool cover = withCover && (id == 1U || id == 4U);
+		bytes.push_back(cover ? 1U : 0U);
+		if (cover) { f32(low + 32.0f); f32(50.0f); f32(0.0f); }
+		bytes.push_back(0U); u32(0U);
 	}
 	std::FILE *file = openFixture(path, "wb");
 	if (file == nullptr) return false;
@@ -969,9 +1206,9 @@ bool testRuntimeBombSiteApproach(
 	astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &engine, globalvars_t &globals)
 {
 	const char *path = "astrabot_two_site_approach.nav";
-	const auto loadNavigation = [&](bool rightReachable)
+	const auto loadNavigation = [&](bool rightReachable, bool withCover = false)
 	{
-		if (!writeTwoSiteNavigation(path, rightReachable)) return false;
+		if (!writeTwoSiteNavigation(path, rightReachable, withCover)) return false;
 		const astrabot::metamod::NavLoadRequest load =
 			{path, "astrabot_two_site_approach", runtime.snapshot().mapGeneration, false, 0U, false, 0U};
 		const auto result = runtime.loadNavigationFile(&load);
@@ -996,7 +1233,7 @@ bool testRuntimeBombSiteApproach(
 	engine.pfnTraceLine = nullptr;
 	runtime.giveEnginePointers(&engine, &globals);
 	runtime.setCompatibilityFloat("bot_enable", 1.0f);
-	runtime.setCompatibilityFloat("bot_quota", 1.0f);
+	runtime.setCompatibilityFloat("bot_quota", 0.0f);
 	if (runtime.executeCompatibilityCommand(request("bot_add_t")) !=
 		astrabot::metamod::CompatibilityCommandResult::Handled) return false;
 	gEntities[0].v.flags = FL_CLIENT | FL_FAKECLIENT | FL_ONGROUND;
@@ -1018,75 +1255,81 @@ bool testRuntimeBombSiteApproach(
 	};
 	const auto freshRound = [&](std::uint32_t seed, float startX, float roundMinutes)
 	{
-		gMpRoundtime = roundMinutes;
+		gSiteFixtureSeed = seed; gMpRoundtime = roundMinutes;
 		gEntities[0].v.origin = Vector(startX, 32.0f, 36.0f);
 		gEntities[0].v.velocity = Vector(0.0f, 0.0f, 0.0f);
 		gEntities[0].v.weapons = 1 << 6;
 		gEntities[0].v.team = 1;
 		runtime.onRoundLifecycleMessage("World triggered \"Round_End\"\n");
 		runtime.onRoundLifecycleMessage("World triggered \"Round_Start\"\n");
-		gSiteFixtureSeed = seed; gMovementLogs.clear();
+		gMovementLogs.clear();
 		for (int frame = 0; frame < 12; ++frame) tick(0.1f);
 		return latestSelectedBombSite();
 	};
 	bool passed = true;
-	std::uint32_t seedForA = 0U, seedForB = 0U;
-	for (float startX : {80.0f, 112.0f})
+	freshRound(3U, 80.0f, 5.0f);
+	passed = check(latestSelectedBombSite() == 0U,
+		"carrier hunts before shared planting decision time") && passed;
+	gMovementLogs.clear(); tick(31.0f);
+	passed = check(latestSelectedBombSite() == 1U,
+		"planting decision chooses closest reachable site after shared deadline") && passed;
+	gAvoidanceNeutralPath=true;gMovementLogs.clear();
+	for (int frame=0;frame<8;++frame) tick(0.1f);
+	bool deliveredFailure=false;
+	for (const auto &message:gMovementLogs)
+		deliveredFailure=deliveredFailure || (message.find("profile navigationFailure ")==0U &&
+			message.find("state_from=STATE-MOVE-TO state_to=STATE-IDLE")!=std::string::npos);
+	passed=check(deliveredFailure,"public navigation failure is delivered to the owning MoveTo state before retry") && passed;
+	if (!deliveredFailure)
+		for (const auto &message:gMovementLogs)
+			if (message.find("navigationFailure")!=std::string::npos || message.find("profile goalAssignment ")==0U)
+				std::fprintf(stderr,"%s\n",message.c_str());
+	gAvoidanceNeutralPath=false;
+	freshRound(5U, 32.0f, 5.0f);
+	runtime.onMessageBegin(0, 94, nullptr, &gEntities[0]);
+	runtime.onWriteByte(1); runtime.onWriteByte(6); runtime.onWriteByte(1); runtime.onMessageEnd();
+	bool plantedAtSite = false;
+	for (int frame = 0; frame < 6; ++frame)
 	{
-		bool choseA = false, choseB = false;
-		for (std::uint32_t seed = 1U; seed <= 24U; ++seed)
-		{
-			const auto first = freshRound(seed, startX, 5.0f);
-			passed = check(first == 1U || first == 2U,
-				"public carrier approach selects a reachable registered site") && passed;
-			choseA = choseA || first == 1U; choseB = choseB || first == 2U;
-			if (startX == 80.0f && first == 1U) seedForA = seed;
-			if (startX == 80.0f && first == 2U) seedForB = seed;
-			const auto repeated = freshRound(seed, startX, 5.0f);
-			passed = check(first == repeated,
-				"same public engine seed and position reproduce the approach site") && passed;
-			if (seed == 1U)
-			{
-				for (int update = 0; update < 3; ++update)
-				{
-					gMovementLogs.clear(); tick(1.1f);
-					passed = check(latestSelectedBombSite() == first,
-						"public approach holds its site across repeated objective assignment refreshes") && passed;
-				}
-			}
-		}
-		passed = check(choseA && choseB,
-			"public carrier approach can select either unequal-cost site across seeds from this initial position") && passed;
+		tick(0.1f);
+		plantedAtSite = plantedAtSite ||
+			((gLastRunPlayerMoveButtons & static_cast<unsigned short>(IN_ATTACK|IN_DUCK)) == (IN_ATTACK|IN_DUCK));
 	}
-	if (seedForB != 0U)
+	passed = check(plantedAtSite, "reference planting crouches while attacking inside the bombsite") && passed;
+	runtime.onMessageBegin(0,94,nullptr,&gEntities[0]);
+	runtime.onWriteByte(0);runtime.onWriteByte(4);runtime.onWriteByte(0);runtime.onMessageEnd();
+	tick(0.1f);
+	passed=check((gLastRunPlayerMoveButtons & (IN_ATTACK|IN_DUCK))==(IN_ATTACK|IN_DUCK),
+		"inactive grenade notification does not replace the observed active C4") && passed;
+	runtime.onMessageBegin(0,94,nullptr,&gEntities[0]);
+	runtime.onWriteByte(0);runtime.onWriteByte(6);runtime.onWriteByte(1);runtime.onMessageEnd();
+	tick(0.1f);
+	passed=check((gLastRunPlayerMoveButtons & IN_ATTACK)==0U,
+		"deactivation of the current C4 still blocks attack until selection is observed") && passed;
+	runtime.onMessageBegin(0,94,nullptr,&gEntities[0]);
+	runtime.onWriteByte(1);runtime.onWriteByte(6);runtime.onWriteByte(1);runtime.onMessageEnd();
+	// The state may begin at another valid part of a large trigger, farther
+	// than the legacy action radius from its selected route destination.
+	gBombSite.v.absmin=Vector(-160.0f,-160.0f,-4.0f);
+	gBombSite.v.absmax=Vector(224.0f,224.0f,4.0f);
+	gEntities[0].v.origin=Vector(180.0f,32.0f,36.0f);
+	bool plantedAwayFromRouteTarget=false;
+	for(int frame=0;frame<6;++frame)
 	{
-		freshRound(seedForB, 80.0f, 5.0f);
-		gMovementLogs.clear(); tick(31.0f);
-		passed = check(latestSelectedBombSite() == 1U,
-			"public approach timer expiry re-evaluates the closest site from current position") && passed;
+		tick(0.1f);
+		plantedAwayFromRouteTarget=plantedAwayFromRouteTarget ||
+			((gLastRunPlayerMoveButtons & (IN_ATTACK|IN_DUCK))==(IN_ATTACK|IN_DUCK));
 	}
-	for (std::uint32_t seed : {seedForA, seedForB})
-	{
-		if (seed == 0U) continue;
-		const auto site = freshRound(seed, 80.0f, 5.0f);
-		gEntities[0].v.origin = Vector(site == 1U ? 32.0f : 224.0f, 32.0f, 36.0f);
-		runtime.onMessageBegin(0, 94, nullptr, &gEntities[0]);
-		runtime.onWriteByte(1); runtime.onWriteByte(6); runtime.onWriteByte(1); runtime.onMessageEnd();
-		bool plantedEarly = false;
-		for (int frame = 0; frame < 6; ++frame)
-		{
-			tick(0.1f);
-			plantedEarly = plantedEarly || (gLastRunPlayerMoveButtons & static_cast<unsigned short>(IN_ATTACK)) != 0U;
-		}
-		passed = check(plantedEarly,
-			"public carrier arriving at its chosen site plants before the approach timer") && passed;
-	}
+	passed=check(plantedAwayFromRouteTarget,"PlantBomb owns attack anywhere inside a public bombsite, independent of the old route target") && passed;
+	gBombSite.v.absmin=Vector(24.0f,24.0f,-4.0f);
+	gBombSite.v.absmax=Vector(40.0f,40.0f,4.0f);
 	const auto urgent = freshRound(7U, 80.0f, 0.1f);
 	passed = check(urgent == 1U, "urgent carrier falls back to the closest reachable plant site") && passed;
 	passed = check(loadNavigation(false), "unreachable alternative site fixture loaded") && passed;
-	for (std::uint32_t seed = 1U; seed <= 6U; ++seed)
-		passed = check(freshRound(seed, 80.0f, 5.0f) == 1U,
-			"public carrier never selects the disconnected alternative site") && passed;
+	freshRound(3U, 80.0f, 5.0f);
+	gMovementLogs.clear(); tick(31.0f);
+	passed = check(latestSelectedBombSite() == 1U,
+		"planting decision excludes disconnected alternative site") && passed;
 	passed = check(loadNavigation(true), "both sites restored before planted C4 convergence") && passed;
 	freshRound(3U, 80.0f, 5.0f);
 	gEntities[0].v.weapons = 0;
@@ -1100,11 +1343,52 @@ bool testRuntimeBombSiteApproach(
 	gEntities[1].v.flags = FL_CLIENT | FL_ONGROUND;
 	gEntities[1].v.team = 1; gEntities[1].v.health = 100.0f;
 	gEntities[1].v.origin = gPlantedBomb.v.origin;
-	gMovementLogs.clear();
-	for (int frame = 0; frame < 6; ++frame) tick(0.1f);
-	passed = check(gLastRunPlayerMoveForward > 0.0f && std::fabs(gLastRunPlayerMoveYaw) < 0.01f,
-		"public CT moves toward human-planted C4 at the other site") && passed;
+	const Vector ctBeforeDiscovery = gEntities[0].v.origin;
 	gEntities[0].v.origin = gPlantedBomb.v.origin;
+	for (int frame = 0; frame < 6; ++frame)
+	{
+		tick(0.1f);
+		passed = check((gLastRunPlayerMoveButtons & static_cast<unsigned short>(IN_USE)) == 0U,
+			"CT cannot defuse unobserved planted entity even at its hidden position") && passed;
+	}
+	gEntities[0].v.origin = ctBeforeDiscovery;
+	runtime.onEmitSound(&gPlantedBomb, "weapons/c4_beep1.wav", 1.0f, 1.0f);
+	gMovementLogs.clear();
+	bool movedTowardObservedC4 = false;
+	for (int frame = 0; frame < 24; ++frame)
+	{
+		tick(0.1f);
+		// This stub reports no displacement. Its later stuck/Wiggle command
+		// is tested separately; allow the sampled recovery/path-retry intervals
+		// (up to 1.5 + 0.6 seconds) and verify the routed C4 command here.
+		if (gLastRunPlayerMoveForward > 0.0f && std::fabs(gLastRunPlayerMoveYaw) < 0.01f)
+			for (const auto &message : gMovementLogs)
+				if ((message.find("goal_source=objective") != std::string::npos ||
+					message.find("profile navigationStep ")==0U) &&
+					message.find("goal_position=(224.0 32.0 36.0)") != std::string::npos)
+					movedTowardObservedC4 = true;
+	}
+	passed = check(movedTowardObservedC4,
+		"public CT moves toward human-planted C4 after hearing its beep") && passed;
+	if (!movedTowardObservedC4)
+		for (const auto &message : gMovementLogs)
+			if (message.find("goal_") != std::string::npos || message.find("objective sensor") != std::string::npos ||
+				message.find("movementGate") != std::string::npos || message.find("traversal") != std::string::npos)
+				std::fprintf(stderr, "%s\n", message.c_str());
+	// Remembering a beep must not freeze a MoveTo actor at the legacy
+	// action adapter's wider use radius, even with an occluded bomb.
+	gEntities[0].v.origin = Vector(144.0f,32.0f,36.0f);
+	engine.pfnTraceLine = &traceObjectiveVisibility; gObjectiveTraceVisible = false;
+	runtime.giveEnginePointers(&engine,&globals);
+	for (int frame=0;frame<6;++frame)
+	{
+		tick(0.1f);
+		passed=check((gLastRunPlayerMoveButtons & static_cast<unsigned short>(IN_USE))==0U,
+			"remembered occluded C4 must not stop MoveTo with premature defuse") && passed;
+	}
+	gEntities[0].v.origin = gPlantedBomb.v.origin;
+	gObjectiveTraceVisible = true;
+	gMovementLogs.clear();
 	bool defused = false;
 	for (int frame = 0; frame < 6; ++frame)
 	{
@@ -1112,6 +1396,105 @@ bool testRuntimeBombSiteApproach(
 		defused = defused || (gLastRunPlayerMoveButtons & static_cast<unsigned short>(IN_USE)) != 0U;
 	}
 	passed = check(defused, "public CT converges to existing IN_USE defuse at human-planted C4") && passed;
+	bool defuseState=false;
+	for (const auto &message:gMovementLogs)
+		defuseState=defuseState || (message.find("profile goalAssignment ")==0U &&
+			message.find("state=STATE-DEFUSE-BOMB")!=std::string::npos) ||
+			(message.find("profile navigationStep ")==0U &&
+			message.find("state_to=STATE-DEFUSE-BOMB")!=std::string::npos);
+	passed=check(defuseState,"visible C4 use belongs to DefuseBomb state, not outer MoveTo action") && passed;
+	// A dropped bomb is visible on T radar even behind an opaque wall.
+	gPlantedBomb.v.classname = 4; gPlantedBomb.v.model = 5;
+	gPlantedBomb.serialnumber = 2;
+	gEntities[1].v.flags = 0;
+	engine.pfnTraceLine = &traceObjectiveVisibility; gObjectiveTraceVisible = false;
+	runtime.giveEnginePointers(&engine, &globals);
+	freshRound(3U, 80.0f, 5.0f);
+	gEntities[0].v.weapons = 0;
+	const auto teamNotice = [&](const char *teamName) {
+		runtime.onMessageBegin(MSG_ALL,86,nullptr,nullptr);
+		runtime.onWriteByte(1); runtime.onWriteString(teamName); runtime.onMessageEnd();
+	};
+	const auto radarDrop = [&](edict_t *recipient, int fields) {
+		runtime.onMessageBegin(MSG_ONE,95,nullptr,recipient);
+		runtime.onWriteCoord(224.0f); runtime.onWriteCoord(32.0f);
+		if (fields == 4) { runtime.onWriteCoord(36.0f); runtime.onWriteByte(0); }
+		runtime.onMessageEnd();
+	};
+	const auto sawDroppedAssignment = [&]() {
+		for (const auto &message : gMovementLogs)
+			if (message.find("team_objective ") == 0U && message.find("dropped=1") != std::string::npos) return true;
+		return false;
+	};
+	teamNotice("CT"); gEntities[0].v.team = 2;
+	gMovementLogs.clear(); radarDrop(&gEntities[0],4);
+	for (int frame=0; frame<6; ++frame) tick(0.1f);
+	passed = check(!sawDroppedAssignment(), "CT cannot receive hidden dropped C4 from T radar") && passed;
+	teamNotice("TERRORIST"); gEntities[0].v.team = 1;
+	gMovementLogs.clear(); radarDrop(&gEntities[1],4); radarDrop(&gEntities[0],2);
+	for (int frame=0; frame<6; ++frame) tick(0.1f);
+	passed = check(!sawDroppedAssignment(), "wrong recipient and incomplete radar packet reveal no C4 location") && passed;
+	gMovementLogs.clear(); radarDrop(&gEntities[0],4);
+	for (int frame=0; frame<24; ++frame) tick(0.1f);
+	passed = check(sawDroppedAssignment(), "T fetches hidden dropped C4 after its public radar update") && passed;
+	runtime.onMessageBegin(MSG_ONE,97,nullptr,&gEntities[0]); runtime.onMessageEnd();
+	gPlantedBomb.free = 1; gMovementLogs.clear();
+	for (int frame=0; frame<6; ++frame) tick(0.1f);
+	passed = check(!sawDroppedAssignment(), "pickup removes dropped C4 assignment") && passed;
+	gPlantedBomb.free = 0;
+	freshRound(3U,80.0f,5.0f); gEntities[0].v.weapons = 0;
+	gMovementLogs.clear();
+	for (int frame=0; frame<6; ++frame) tick(0.1f);
+	passed = check(!sawDroppedAssignment(), "new round cannot reuse old radar location") && passed;
+	passed = check(loadNavigation(true,true), "planted guard NAV includes cover positions") && passed;
+	globals.mapname = 6;
+	gPlantedBomb.v.classname=2; gPlantedBomb.v.model=3; gPlantedBomb.serialnumber=3;
+	freshRound(3U,80.0f,5.0f); gEntities[0].v.weapons=0;
+	gPlantedBomb.v.dmgtime=globals.time+35.0f;
+	runtime.onMessageBegin(MSG_ALL,98,nullptr,nullptr);
+	runtime.onWriteByte(4); runtime.onWriteString("#Bomb_Planted"); runtime.onMessageEnd();
+	gMovementLogs.clear();
+	bool movedToCover=false;
+	float guardX=0.0f;
+	for (int frame=0; frame<24; ++frame)
+	{
+		tick(0.1f);
+		for (const auto &message : gMovementLogs)
+			if (message.find("state=STATE-HIDE") != std::string::npos &&
+				message.find("goal_source=objective") != std::string::npos &&
+				(message.find("goal_position=(32.0 50.0 0.0)") != std::string::npos ||
+				 message.find("goal_position=(224.0 50.0 0.0)") != std::string::npos))
+			{
+				movedToCover=true;
+				guardX=message.find("goal_position=(32.0 50.0 0.0)") != std::string::npos ? 32.0f : 224.0f;
+			}
+	}
+	passed=check(movedToCover,"T Hide state routes to NAV cover rather than the planted C4") && passed;
+	gEntities[0].v.origin=Vector(guardX,50.0f,36.0f);
+	for (int frame=0; frame<6; ++frame) tick(0.1f);
+	passed=check(gLastRunPlayerMoveForward == 0.0f && gLastRunPlayerMoveSide == 0.0f,
+		"T holds its camping position after reaching NAV cover") && passed;
+	// A stopped escape path must select again, including patience expiry.
+	gTestC4Timer=35.0f;
+	gEntities[0].v.origin=Vector(80.0f,32.0f,36.0f);
+	for (int other=1;other<=2;++other)
+	{
+		gEntities[other].v.flags=FL_CLIENT|FL_ONGROUND;
+		gEntities[other].v.health=100.0f;gEntities[other].v.team=1;
+		gEntities[other].v.origin=Vector(other==1 ? 60.0f:100.0f,32.0f,36.0f);
+	}
+	gMovementLogs.clear();tick(28.0f);
+	for (int frame=0;frame<100;++frame) tick(0.1f);
+	bool escapeRetry=false,escaping=false;
+	for (const auto &message:gMovementLogs)
+	{
+		escaping=escaping || message.find("state=STATE-ESCAPE-BOMB")!=std::string::npos;
+		escapeRetry=escapeRetry || message.find("profile bombEscapeRetry ")==0U;
+	}
+	passed=check(escaping && escapeRetry,
+		"escape path failure or patience expiry invalidates cached escape destination for next update") && passed;
+	gTestC4Timer=0.0f;gEntities[1].v.flags=0;gEntities[2].v.flags=0;
+	globals.mapname=0;
 	runtime.executeCompatibilityCommand(request("bot_kick", 1U, "all"));
 	gCaptureMovementLogs = false; gProfileEnabled = false; gObjectiveEntitiesAvailable = false;
 	gBombSite = {}; gSecondBombSite = {}; gPlantedBomb = {};
@@ -1135,7 +1518,8 @@ int main()
 		"AnyProfile { Name = \"Any Bot\" Team = any Difficulty = 1 Skill = 50 }\n"
 		"CtProfile { Name = \"CT Bot\" Team = CT Difficulty = 1 Skill = 60 }\n"
 		"TProfile { Name = \"T Bot\" Team = T Difficulty = 1 Skill = 70 }\n"
-		"NamedProfile { Name = \"Named Bot\" Team = any Difficulty = 1 Skill = 80 }\n";
+		"NamedProfile { Name = \"Named Bot\" Team = any Difficulty = 1 Skill = 80 }\n"
+		"ExtraProfile { Name = \"Extra Bot\" Team = any Difficulty = 1 Skill = 55 }\n";
 	std::FILE *profileFile = openFixture(profilePath, "wb");
 	if (!check(profileFile != nullptr, "actor command profile fixture opens"))
 	{
@@ -1152,6 +1536,9 @@ int main()
 	}
 
 	const char *const defaultProfilePath = "BotProfile.db";
+	ExistingProfileGuard existingDefaultProfile;
+	if (!check(existingDefaultProfile.capture(defaultProfilePath),
+		"existing default profile is preserved before writing the fixture")) return 1;
 	std::FILE *defaultProfileFile = openFixture(defaultProfilePath, "wb");
 	if (!check(defaultProfileFile != nullptr, "default BotProfile fixture opens"))
 	{
@@ -1212,6 +1599,8 @@ int main()
 	if (!check(runtime.provideEngineFunctions(
 			&requestedEngineFunctions, &requestedEngineInterfaceVersion),
 			"runtime provides engine hook table") ||
+		!check(requestedEngineFunctions.pfnWriteCoord != nullptr,
+			"public radar bomb coordinates have an engine hook") ||
 		!check(requestedEngineFunctions.pfnAlertMessage != nullptr,
 			"public alert hook observes logged round lifecycle messages"))
 	{
@@ -1238,17 +1627,21 @@ int main()
 	engineFunctions.pfnGetPlayerUserId = &playerUserId;
 	engineFunctions.pfnServerCommand = &serverCommand;
 	engineFunctions.pfnServerExecute = &serverExecute;
+	engineFunctions.pfnRandomLong = &recoveryFixtureRandomLong;
+	engineFunctions.pfnRandomFloat = &jumpFixtureRandomFloat;
 	runtime.giveEnginePointers(&engineFunctions, &globals);
 	gBotEnable = 1.0f;
 	gBotQuota = 1.0f;
+	setCvarFloat("bot_join_after_player", 0.0f);
 	runtime.onServerActivate(nullptr, 0, 4);
 	runtime.onStartFrame();
-	if (!check(runtime.executeCompatibilityCommand(request("bot_add")) ==
-				  CompatibilityCommandResult::Handled &&
-		gCreateCount == 1 && gCvarRegisterCount == 10 &&
+	if (!check(gCreateCount == 1 && gCvarRegisterCount == 10 + static_cast<int>(kManagerCvarCount) &&
+				  getCvar("bot_allow_rogues") != nullptr &&
 				  gClientCommandCount == 0 && gClientKeyValueCount >= 2,
-			   "bot_add loads the default BotProfile database during activation"))
+			   "quota automatically loads the default profile during activation"))
 	{
+		std::fprintf(stderr, "activation counts: created=%d registered=%d commands=%d keys=%d quota=%g\n",
+			gCreateCount, gCvarRegisterCount, gClientCommandCount, gClientKeyValueCount, gBotQuota);
 		std::remove(profilePath);
 		std::remove(defaultProfilePath);
 			return 1;
@@ -1403,6 +1796,18 @@ int main()
 	const int observedTeamBeforeObjective = static_cast<int>(gEntities[0].v.team);
 	gBombSite.v.origin = gEntities[0].v.origin;
 	gBombSite.v.classname = 1;
+	// Public scenario updates need a bomb-map name and an entity count that
+	// includes index 7 (the engine's count is exclusive of its upper bound).
+	globals.mapname = 6;
+	globals.maxEntities = 8;
+	const char *defuseNav="astrabot_defuse_state.nav";
+	if(!check(writeJumpNavigation(defuseNav,true),"defuse state NAV fixture written"))return 1;
+	const astrabot::metamod::NavLoadRequest defuseLoad={defuseNav,"astrabot_defuse_state",
+		runtime.snapshot().mapGeneration,false,0U,false,0U};
+	const auto defuseLoaded=runtime.loadNavigationFile(&defuseLoad);
+	std::remove(defuseNav);
+	if(!check(defuseLoaded==astrabot::metamod::NavLoadResult::Loaded,
+		"defuse uses actual path completion instead of a no-NAV action bypass"))return 1;
 	gPlantedBomb.v.classname = 2;
 	gPlantedBomb.v.model = 3;
 	gPlantedBomb.serialnumber = 1;
@@ -1414,6 +1819,19 @@ int main()
 	gEntities[0].v.maxspeed = 0.0f;
 	gObjectiveEntitiesAvailable = true;
 	gFindEntityByStringCount = 0;
+	engineFunctions.pfnTraceLine = &traceObjectiveVisibility;
+	gObjectiveTraceVisible = false;
+	const float beforeHiddenBomb = globals.time;
+	gCaptureMovementLogs=true;gProfileEnabled=true;gMovementLogs.clear();
+	for (int frame = 0; frame < 4; ++frame)
+	{
+		globals.time = beforeHiddenBomb + (frame + 1) * 0.1f;
+		runtime.onStartFrame();
+		runtime.onStartFramePost();
+		if (!check((gLastRunPlayerMoveButtons & static_cast<unsigned short>(IN_USE)) == 0U,
+			"undiscovered C4 entity cannot make CT issue defuse use")) return 1;
+	}
+	gObjectiveTraceVisible = true;
 	runtime.onCmdStart(&gEntities[1], static_cast<std::uint16_t>(IN_USE));
 	gFindEntityByStringCount = 0;
 	gRunPlayerMoveCount = 0;
@@ -1438,10 +1856,23 @@ int main()
 	gRunPlayerMoveCount = 0;
 	runtime.onStartFrame();
 	runtime.onStartFramePost();
-	if (!check(gRunPlayerMoveCount == 1 &&
-		(gLastRunPlayerMoveButtons & static_cast<unsigned short>(IN_USE)) != 0U,
+	bool resumedDefuse=(gLastRunPlayerMoveButtons & static_cast<unsigned short>(IN_USE))!=0U;
+	for (int frame=0;frame<6 && !resumedDefuse;++frame)
+	{
+		globals.time+=0.1f;
+		runtime.onStartFrame(); runtime.onStartFramePost();
+		resumedDefuse=(gLastRunPlayerMoveButtons & static_cast<unsigned short>(IN_USE))!=0U;
+	}
+	if (!check(gRunPlayerMoveCount >= 1 && resumedDefuse,
 			"Bot defuse resumes after external CT releases C4 use"))
 	{
+		std::fprintf(stderr,"defuse fixture solid=%d movetype=%d health=%.1f origin=(%.1f %.1f %.1f)\n",
+			static_cast<int>(gEntities[0].v.solid),static_cast<int>(gEntities[0].v.movetype),
+			gEntities[0].v.health,gEntities[0].v.origin.x,gEntities[0].v.origin.y,gEntities[0].v.origin.z);
+		for(const auto &message:gMovementLogs)
+			if(message.find("profile navigationStep ")==0U || message.find("profile goalAssignment ")==0U ||
+				message.find("movement unavailable")==0U || message.find("profile movementGate ")==0U)
+				std::fprintf(stderr,"%s\n",message.c_str());
 		std::remove(profilePath);
 		std::remove(defaultProfilePath);
 		return 1;
@@ -1462,6 +1893,7 @@ int main()
 		return 1;
 	}
 	gObjectiveEntitiesAvailable = false;
+	engineFunctions.pfnTraceLine = nullptr;
 	gBombSite.v.classname = 0;
 	gPlantedBomb.v.classname = 0;
 	gPlantedBomb.v.dmgtime = 0.0f;
@@ -1722,12 +2154,14 @@ int main()
 		std::remove(profilePath);
 		return 1;
 	}
-	if (!check(runtime.setCompatibilityFloat("bot_enable", 1.0f) ==
-					   astrabot::compat::CvarUpdateResult::Updated &&
-				   runtime.setCompatibilityFloat("bot_quota", 4.0f) ==
-					   astrabot::compat::CvarUpdateResult::Updated &&
-				   runtime.setCompatibilityFloat("bot_difficulty", 1.0f) ==
-					   astrabot::compat::CvarUpdateResult::Updated,
+	const auto setDesiredFloat = [&runtime](const char *name, float value) {
+		const auto result = runtime.setCompatibilityFloat(name, value);
+		return result == astrabot::compat::CvarUpdateResult::Updated ||
+			result == astrabot::compat::CvarUpdateResult::NoChange;
+	};
+	if (!check(setDesiredFloat("bot_enable", 1.0f) &&
+				   setDesiredFloat("bot_quota", 4.0f) &&
+				   setDesiredFloat("bot_difficulty", 1.0f),
 			   "runtime accepts desired actor configuration"))
 	{
 		std::remove(profilePath);
@@ -1766,8 +2200,7 @@ int main()
 		std::remove(profilePath);
 		return 1;
 	}
-	if (!check(runtime.setCompatibilityFloat("bot_quota", 5.0f) ==
-				   astrabot::compat::CvarUpdateResult::Updated,
+	if (!check(setDesiredFloat("bot_quota", 5.0f),
 			   "quota allows identity collision check"))
 	{
 		std::remove(profilePath);
@@ -1782,24 +2215,23 @@ int main()
 		std::remove(profilePath);
 		return 1;
 	}
-	if (!check(runtime.setCompatibilityFloat("bot_quota", 4.0f) ==
-				   astrabot::compat::CvarUpdateResult::Updated,
+	if (!check(setDesiredFloat("bot_quota", 4.0f),
 			   "quota is restored for capacity check"))
 	{
 		std::remove(profilePath);
 		return 1;
 	}
 	if (!check(runtime.executeCompatibilityCommand(request("bot_add")) ==
-					   CompatibilityCommandResult::QuotaReached &&
-				   gCreateCount == 4,
-			   "quota rejects an additional actor before engine creation"))
+					   CompatibilityCommandResult::Handled &&
+				   gCreateCount == 5,
+			   "manual add exceeds previous quota and creates an unused profile"))
 	{
 		std::remove(profilePath);
 		return 1;
 	}
 	if (!check(runtime.executeCompatibilityCommand(request("bot_kill", 1U, "all")) ==
 					   CompatibilityCommandResult::Handled &&
-				   gKillCount == 4,
+				   gKillCount == 5,
 			   "bot_kill all uses the actor kill operation"))
 	{
 		std::remove(profilePath);
@@ -1881,9 +2313,12 @@ int main()
 
 	gEntities[0].v.flags &= ~FL_FAKECLIENT;
 	gBotEnable = 1.0f;
-	gBotQuota = 5.0f;
+	gBotQuota = 0.0f;
 	globals.time = 3.0f;
 	runtime.onStartFrame();
+	// The mock allocator is monotonic; explicitly make the final released slot reusable.
+	gCreateCount = 4;
+	gEntities[4] = {};
 	FakeClientHandle staleHandle{};
 	if (!check(runtime.createFakeClient("stale", &staleHandle) == FakeClientResult::Created &&
 				   runtime.removeFakeClient(&staleHandle) == FakeClientResult::Removed &&
@@ -2114,7 +2549,45 @@ int main()
 		std::remove(profilePath);
 		return 1;
 	}
+	if (!testRuntimeFriendBeyondPortal(runtime, engineFunctions, globals) ||
+		!testRuntimeTouchAvoidance(runtime, engineFunctions, globals)) return 1;
 
+	// CS exposes human teams through TeamInfo; entvars.team may remain zero.
+	runtime.executeCompatibilityCommand(request("bot_kick", 1U, "all"));
+	resetEntities();
+	gCreateCount = 0;
+	gEntities[4].v.flags = FL_CLIENT;
+	gEntities[4].v.team = 0;
+	runtime.onClientPutInServer(&gEntities[4]);
+	const auto humanTeamInfo = [&runtime](const char *team) {
+		runtime.onMessageBegin(0, 86, nullptr, nullptr);
+		runtime.onWriteByte(5); runtime.onWriteString(team); runtime.onMessageEnd();
+	};
+	humanTeamInfo("CT");
+	setCvarFloat("bot_join_after_player", 1.0f);
+	setCvarFloat("bot_enable", 1.0f);
+	setCvarFloat("bot_quota", 1.0f);
+	runtime.setCompatibilityFloat("bot_enable", 1.0f);
+	runtime.setCompatibilityFloat("bot_quota", 1.0f);
+	globals.time += 1.0f;
+	runtime.onStartFrame();
+	if (!check(gCreateCount == 1 && (gEntities[0].v.flags & FL_FAKECLIENT) != 0,
+		"public human TeamInfo satisfies join-after-player when entvars team is zero"))
+		return 1;
+	gEntities[4].v.team = 2; // A stale engine value must not override a newer message.
+	humanTeamInfo("SPECTATOR");
+	globals.time += 1.0f;
+	runtime.onStartFrame();
+	if (!check((gEntities[0].v.flags & FL_FAKECLIENT) == 0,
+		"spectator TeamInfo no longer satisfies active-human quota")) return 1;
+	humanTeamInfo("TERRORIST");
+	runtime.onClientDisconnect(&gEntities[4]);
+	gEntities[4].v.team = 0;
+	runtime.onClientPutInServer(&gEntities[4]);
+	globals.time += 1.0f;
+	runtime.onStartFrame();
+	if (!check(gCreateCount == 1 && (gEntities[0].v.flags & FL_FAKECLIENT) == 0,
+		"reused human slot does not retain the disconnected team")) return 1;
 	std::remove(profilePath);
 	runtime.onServerDeactivate();
 	if (!check(runtime.detach(PT_ANYTIME, PNL_NULL), "runtime detaches after actor command test"))

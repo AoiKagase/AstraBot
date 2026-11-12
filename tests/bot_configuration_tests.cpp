@@ -71,8 +71,8 @@ int main()
 	{
 		return 1;
 	}
-	if (!check(configuration.authorize(add, 2U, true) == BotActionResult::QuotaReached,
-			"quota rejects an additional actor"))
+	if (!check(configuration.authorize(add, 2U, true) == BotActionResult::Allowed,
+			"manual add is independent of automatic quota target"))
 	{
 		return 1;
 	}

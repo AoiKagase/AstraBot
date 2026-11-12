@@ -2,6 +2,7 @@
 
 #include <cctype>
 #include <cstring>
+#include <cmath>
 
 namespace astrabot
 {
@@ -125,6 +126,34 @@ std::size_t ProfileCatalog::size() const
 	return size_;
 }
 
+ProfileSelectionResult ProfileCatalog::selectUnused(ProfileTeam team, int difficulty,
+	const char *const *usedNames, std::size_t usedCount,
+	ICompatibilityRandomSource &random, RandomActor actor, RandomTimingContext timing,
+	ProfileRecord *profile) const
+{
+	if (profile == nullptr) return ProfileSelectionResult::InvalidOutput;
+	if (!isValidTeam(team) || difficulty < kMinimumDifficulty || difficulty > kMaximumDifficulty ||
+		(usedCount != 0U && usedNames == nullptr)) return ProfileSelectionResult::InvalidRequest;
+	std::array<std::size_t, kMaximumProfiles> candidates = {};
+	std::size_t count = 0U;
+	for (std::size_t i = 0U; i < size_; ++i)
+	{
+		const bool matchesDifficulty = profiles_[i].difficultyMask != 0 ?
+			(profiles_[i].difficultyMask & (1U << difficulty)) != 0 : profiles_[i].difficulty == difficulty;
+		if (!matchesDifficulty || !isCompatible(profiles_[i].team, team)) continue;
+		bool used = false;
+		for (std::size_t j = 0U; j < usedCount; ++j) used = used || namesEqual(profiles_[i].name, usedNames[j]);
+		if (!used) candidates[count++] = i;
+	}
+	if (count == 0U) return ProfileSelectionResult::NoMatch;
+	const RandomLongResult choice = random.nextLong(RandomRequest::longRequest(
+		"profile.select_unused", actor, timing, 0, static_cast<std::int32_t>(count - 1U)));
+	if (choice.status != RandomStatus::Ok || choice.value < 0 || static_cast<std::size_t>(choice.value) >= count)
+		return ProfileSelectionResult::InvalidRequest;
+	*profile = profiles_[candidates[static_cast<std::size_t>(choice.value)]];
+	return ProfileSelectionResult::Selected;
+}
+
 void ProfileCatalog::clear()
 {
 	size_ = 0U;
@@ -133,6 +162,9 @@ void ProfileCatalog::clear()
 bool ProfileCatalog::isValid(const ProfileRecord &profile)
 {
 	return isInputName(profile.name) && isValidTeam(profile.team) &&
+			std::isfinite(profile.reactionTimeSeconds) && profile.reactionTimeSeconds >= 0.0f &&
+			std::isfinite(profile.attackDelaySeconds) && profile.attackDelaySeconds >= 0.0f &&
+			profile.teamwork >= 0 && profile.teamwork <= 100 && profile.weaponPreferenceCount <= 16U &&
 			profile.difficulty >= kMinimumDifficulty &&
 			profile.difficulty <= kMaximumDifficulty &&
 			profile.skill >= kMinimumAttribute &&

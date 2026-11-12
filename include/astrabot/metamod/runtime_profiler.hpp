@@ -31,6 +31,9 @@ enum class RuntimeProfilerStage : std::uint8_t
 	TraceSerialization,
 	RunPlayerMove,
 	SynchronousLog,
+	ScenarioUpdate,
+	BombGuardSelection,
+	PathCostContext,
 	Count
 };
 

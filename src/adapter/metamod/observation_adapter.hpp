@@ -2,6 +2,8 @@
 #define ASTRABOT_ADAPTER_METAMOD_OBSERVATION_ADAPTER_HPP
 
 #include "astrabot/compat/observation.hpp"
+#include "astrabot/compat/public_observation.hpp"
+#include "astrabot/compat/smoke_observation.hpp"
 #include "astrabot/metamod/abi_contract.hpp"
 #include "astrabot/metamod/runtime_profiler.hpp"
 #include "astrabot/perception/perception.hpp"
@@ -54,6 +56,9 @@ public:
 		const compat::ObservationTimingContext &timing,
 		compat::DroppedC4Observation *observation) const;
 	void setTraceSink(compat::IObservationTraceSink *sink);
+	void setSmokeObservations(const compat::SmokeObservations *smoke);
+	void setObservationProviders(const compat::IObservationProvider *publicProvider,
+		const compat::IObservationProvider *optionalGameProvider = nullptr);
 	void setProfiler(RuntimeProfiler *profiler);
 	void setPerformanceToggles(bool disableVision, bool disableTrace);
 
@@ -65,6 +70,9 @@ private:
 	RuntimeProfiler *profiler_;
 	bool disableVision_;
 	bool disableTrace_;
+	const compat::IObservationProvider *publicProvider_ = nullptr;
+	const compat::IObservationProvider *optionalGameProvider_ = nullptr;
+	const compat::SmokeObservations *smoke_ = nullptr;
 };
 }
 }

@@ -24,12 +24,12 @@ bool AmmoState::isValid() const
 
 bool AmmoState::hasClipAmmo() const
 {
-	return clip > 0U;
+	return clipKnown && clip > 0U;
 }
 
 bool AmmoState::hasReserveAmmo() const
 {
-	return reserve > 0U;
+	return reserveKnown && reserve > 0U;
 }
 
 bool WeaponRecord::isValid() const
@@ -63,8 +63,8 @@ bool WeaponRecord::canReload(const world::FrameIdentity &frame) const
 {
 	return frame.isValid() && isValid() &&
 		availability == WeaponAvailability::Available &&
-		reloadState == ReloadState::NotReloading &&
-		!ammo.hasClipAmmo() && ammo.hasReserveAmmo() &&
+		(reloadState == ReloadState::NotReloading || reloadState == ReloadState::Unknown) &&
+		ammo.clipKnown && !ammo.hasClipAmmo() && ammo.hasReserveAmmo() &&
 		reloadUntilTick <= frame.tick;
 }
 

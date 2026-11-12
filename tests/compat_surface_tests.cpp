@@ -138,6 +138,19 @@ int main()
 		std::remove(profilePath);
 		return 1;
 	}
+	astrabot::compat::ScriptedRandomSource unusedRandom({astrabot::compat::RandomTapeEntry::longEntry(
+		"profile.select_unused", {}, {}, 0, 0, 0)});
+	if (!check(surface.selectUnusedProfile(action,3,nullptr,0,unusedRandom,{}, {},&profile) ==
+		astrabot::compat::ProfileSelectionResult::Selected && unusedRandom.verifyComplete(),
+		"surface selects unused profile through shared random")) { std::remove(profilePath); return 1; }
+	const char *used[] = {"surface bot"};
+	if (!check(surface.selectUnusedProfile(action,3,used,1,unusedRandom,{}, {},&profile) ==
+		astrabot::compat::ProfileSelectionResult::NoMatch,
+		"surface excludes connected names")) { std::remove(profilePath); return 1; }
+	action.target="Surface Bot";
+	if (!check(surface.selectUnusedProfile(action,3,used,1,unusedRandom,{}, {},&profile) ==
+		astrabot::compat::ProfileSelectionResult::NoMatch,
+		"named selection also excludes connected names")) { std::remove(profilePath); return 1; }
 	std::remove(profilePath);
 	return 0;
 }

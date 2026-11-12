@@ -19,7 +19,11 @@ enum class ActionKind : std::uint8_t
 	Plant,
 	PlantContinue,
 	SelectC4,
-	Defuse
+	Defuse,
+	UseEntity,
+	SelectPistol,
+	SelectKnife,
+	SelectPrimary
 };
 
 struct ActionProposal
@@ -27,6 +31,8 @@ struct ActionProposal
 	ActionKind kind;
 	runtime::ViewAngles viewAngles;
 	std::uint16_t movementButtons;
+	bool secondaryAttack = false;
+	bool stopForWeapon = false;
 };
 
 struct ActionDispatch
@@ -117,7 +123,7 @@ class ActionAdapter
 		float worldDirectionX,
 		float worldDirectionY,
 		float speed,
-		float viewYaw);
+		float viewYaw, bool compatibility = false);
 	static std::uint16_t movementButtons(float forward, float side);
 };
 } // namespace metamod

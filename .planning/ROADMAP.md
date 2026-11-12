@@ -1,5 +1,10 @@
 # Roadmap: AstraBot
 
+> Current repair status is owned by [docs/parity/STATUS.md](../docs/parity/STATUS.md)
+> and [D01-D19](../docs/parity/VANILLA_REPAIR_LEDGER.md). Approved Vanilla repair
+> stages 0-8 are separate from this historical phase numbering and P03-P12 parity
+> contracts. Existing offline checkmarks do not close current runtime differences.
+
 ## Overview
 
 The first milestone builds a standalone, source-independent Metamod-P plugin that replaces the ReGameDLL-CS CSBot runtime. Work proceeds from ABI and lifecycle safety through FakeClient control, compatibility commands, read-only legacy Nav loading, locomotion, full CSBot behavior, and cross-platform live acceptance. AstraNav authoring and advanced adaptive AI begin only after this parity milestone is accepted.

@@ -28,6 +28,42 @@ struct BombApproachState
 	std::uint32_t preferredSiteIdentity = 0U;
 };
 
+// CSBotManager owns this draw once per round; a carrier change must not draw
+// another delay or move the deadline.
+struct RoundPlantDecision
+{
+	std::uint32_t map = 0U;
+	std::uint32_t round = 0U;
+	bool sampled = false;
+	bool known = false;
+	float plantAt = 0.0f;
+
+	void begin(std::uint32_t mapGeneration, std::uint32_t roundGeneration, float restartTime,
+		compat::ICompatibilityRandomSource &random)
+	{
+		if (sampled && map == mapGeneration && round == roundGeneration)
+		{
+			return;
+		}
+		*this = {};
+		map = mapGeneration;
+		round = roundGeneration;
+		sampled = true;
+		if (map == 0U || round == 0U || !std::isfinite(restartTime))
+		{
+			return;
+		}
+		const auto delay = random.nextFloat(compat::RandomRequest::floatRequest(
+			"Bomb.RoundPlantDelay", {}, {0U, 0U, round}, 10.0f, 30.0f));
+		known = delay.status == compat::RandomStatus::Ok && std::isfinite(delay.value) &&
+			delay.value >= 10.0f && delay.value <= 30.0f;
+		if (known)
+		{
+			plantAt = restartTime + delay.value;
+		}
+	}
+};
+
 enum class BombApproachPhase
 {
 	Cancel,

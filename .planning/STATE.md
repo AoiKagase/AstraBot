@@ -3,10 +3,10 @@ gsd_state_version: "1.0"
 current_phase: "7.6"
 current_phase_name: Production Runtime Integration Audit & Repair
 status: executing
-stopped_at: P07.6 offline repair complete; live evidence pending; P08 NOT STARTED
-last_updated: "2026-09-20T00:00:00+09:00"
-last_activity: 2026-09-20
-last_activity_desc: P07.6-PERF alive-Bot audit adds exact Vision counters, default-off A/B controls, and non-objective bomb-site NAV scan guard; live HLDS/ReHLDS FPS measurement remains pending; P08 NOT STARTED
+stopped_at: D01-D19 Vanilla compatibility repair active; current acceptance is tracked in docs/parity/STATUS.md
+last_updated: "2026-10-18T00:00:00+09:00"
+last_activity: 2026-10-18
+last_activity_desc: Implement approved Vanilla CSBot repair stages 0-8; legacy P03-P12 labels are separate; no live parity acceptance or deployment
 state_head: 433235f
 progress:
   total_phases: 8
@@ -17,6 +17,15 @@ percent: 97
 ---
 
 # Project State
+
+Current authority: [parity STATUS](../docs/parity/STATUS.md) and
+[D01-D19 repair ledger](../docs/parity/VANILLA_REPAIR_LEDGER.md).
+The approved repair stages 0-8 do not renumber legacy planning phases or parity
+P03-P12 contracts. Historical offline completion/progress figures below do not
+accept the current implementation. Live acceptance and reference traces remain
+open, and no complete CSBot match is claimed.
+
+## Historical workflow snapshot
 
 ## Project Reference
 

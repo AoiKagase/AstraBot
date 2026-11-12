@@ -1,0 +1,585 @@
+#ifndef ASTRABOT_COMPAT_SCENARIO_BEHAVIOR_HPP
+#define ASTRABOT_COMPAT_SCENARIO_BEHAVIOR_HPP
+
+#include "astrabot/compat/state_machine.hpp"
+#include "astrabot/objectives/objective_state.hpp"
+#include <cmath>
+#include <cstdint>
+
+namespace astrabot
+{
+namespace compat
+{
+// The existing objective planner covers Bomb/Hostage. VIP/Escape are adapter
+// scenario identities here, without changing the persistent objective schema.
+enum class PublicScenarioKind
+{
+	Unknown,
+	Bomb,
+	Hostage,
+	Vip,
+	Escape
+};
+enum class ScenarioKnowledge
+{
+	Unknown,
+	Visible,
+	Remembered
+};
+enum class ScenarioAction
+{
+	None,
+	Move,
+	Use,
+	Guard,
+	Escape,
+	Follow,
+	Stop,
+	Hunt
+};
+enum class ScenarioRadioCommand
+{
+	None,
+	FollowMe,
+	CoverMe,
+	StickTogether,
+	Regroup,
+	NeedBackup,
+	HoldPosition,
+	GoGoGo,
+	GetOut
+};
+struct ScenarioTarget
+{
+	ScenarioKnowledge knowledge;
+	world::FrameIdentity frame;
+	world::EntityKey entity;
+	world::ActorKey actor;
+	world::WorldPosition position;
+	float pathCost;
+	bool inUseRange;
+};
+struct ScenarioLeaderObservation
+{
+	world::ActorKey actor;
+	objectives::TeamRole team;
+	bool human;
+	bool lifeKnown;
+	bool alive;
+	ScenarioTarget location;
+};
+struct ScenarioRadioObservation
+{
+	std::uint32_t sequence;
+	ScenarioRadioCommand command;
+	world::ActorKey sender;
+	objectives::TeamRole team;
+	bool senderHuman;
+	float receivedTime;
+	ScenarioTarget position;
+};
+struct ScenarioSenderValidation
+{
+	world::ActorKey actor = {};
+	bool known = false;
+	bool valid = false;
+};
+struct ScenarioBehaviorInput
+{
+	world::ActorKey actor;
+	world::FrameIdentity frame;
+	float timestamp;
+	objectives::TeamRole team;
+	bool lifeKnown;
+	bool alive;
+	bool blind;
+	PublicScenarioKind scenario;
+	ScenarioTarget hostage;
+	ScenarioTarget rescueZone;
+	ScenarioTarget escapeZone;
+	ScenarioTarget vipZone;
+	ScenarioTarget vip;
+	bool escortKnown;
+	std::uint32_t escortCount;
+	bool isVipKnown;
+	bool isVip;
+	const ScenarioRadioObservation *radio;
+	ScenarioLeaderObservation leader;
+	float reactionSeconds;
+	bool busy;
+	bool rogue;
+	bool bombPlantedKnown;
+	bool bombPlanted;
+	ScenarioTarget bomb;
+	bool timerKnown;
+	float bombSecondsRemaining;
+	bool defuseKitKnown;
+	bool defuseKit;
+	bool travelTimeKnown;
+	float travelSecondsToBomb;
+	bool humanDefusingKnown;
+	bool humanDefusing;
+	bool selfPositionKnown = false;
+	world::WorldPosition selfPosition = {};
+	bool hostageCompetitorNearby = false;
+	bool timerEstimated = false;
+	bool travelTimeEstimated = false;
+	ScenarioTarget bombSearch = {};
+	float aggression = 0.5f;
+	bool attacking = false;
+	bool currentDefusing = false;
+	bool alreadyEscapingFromBomb = false;
+	bool automaticFollowRequested = false;
+	bool stopFollowingRequested = false;
+	bool autoFollowPermissionInferred = false;
+	ScenarioLeaderObservation automaticLeader = {};
+	ScenarioSenderValidation radioSenderValidation = {};
+	ScenarioSenderValidation pendingRadioSenderValidation = {};
+};
+struct ScenarioBehaviorDecision
+{
+	CompatibilityStateId state;
+	ScenarioAction action;
+	bool hasTarget;
+	ScenarioTarget target;
+	bool awaitingReceipt;
+	bool unavailable;
+	bool escortInferred = false;
+	bool followPermissionInferred = false;
+};
+
+class ScenarioBehaviorPlanner
+{
+  public:
+	bool isFollowing() const { return following_; }
+	world::ActorKey followLeader() const { return leader_; }
+	float followSince() const { return followSince_; }
+	bool awaitingHostageEscort() const { return pendingUse_.isValid(); }
+	world::ActorKey pendingRadioSender() const { return pendingRadio_.sender; }
+	bool hasFollowingLeader(const ScenarioBehaviorInput &input) const
+	{
+		const auto &leader = input.automaticLeader.actor == leader_ ? input.automaticLeader : input.leader;
+		return following_ && leader.actor == leader_ && leader.lifeKnown && leader.alive &&
+			leader.team == input.team && targetKnown(input, leader.location);
+	}
+	static bool autoEscapeRequested(const ScenarioBehaviorInput &input)
+	{
+		if (input.scenario != PublicScenarioKind::Bomb || input.alreadyEscapingFromBomb ||
+			input.attacking || input.currentDefusing || !input.bombPlantedKnown || !input.bombPlanted ||
+			!targetKnown(input, input.bomb) || !(input.timerKnown || input.timerEstimated) ||
+			!std::isfinite(input.bombSecondsRemaining) || input.bombSecondsRemaining < 0.0f ||
+			!std::isfinite(input.aggression) || input.aggression < 0.0f || input.aggression > 1.0f)
+			return false;
+		float threshold = 8.0f - 2.0f * input.aggression;
+		if ((input.defuseKitKnown && input.defuseKit) ||
+			(!input.defuseKitKnown && input.team == objectives::TeamRole::CounterTerrorist))
+			threshold *= 0.66f; // Unknown CT kit: trigger only below both possible thresholds.
+		return input.bombSecondsRemaining < threshold;
+	}
+
+	void reset()
+	{
+		*this = ScenarioBehaviorPlanner();
+	}
+
+	ScenarioBehaviorDecision update(const ScenarioBehaviorInput &input)
+	{
+		ScenarioBehaviorDecision result = {};
+		if (!input.actor.isValid() || !input.frame.isValid() || !std::isfinite(input.timestamp) ||
+			input.timestamp < 0.0f || !std::isfinite(input.reactionSeconds) ||
+			input.reactionSeconds < 0.0f)
+		{
+			result.unavailable = true;
+			return result;
+		}
+		if (!(input.actor == actor_) || input.frame.mapGeneration != frame_.mapGeneration ||
+			input.frame.roundGeneration != frame_.roundGeneration || input.timestamp < timestamp_)
+		{
+			reset();
+		}
+		else if (frame_.isValid() && input.frame.tick <= frame_.tick)
+		{
+			return result;
+		}
+		actor_ = input.actor;
+		frame_ = input.frame;
+		timestamp_ = input.timestamp;
+		if (!input.lifeKnown || !input.alive)
+		{
+			following_ = false;
+			holding_ = false;
+			pendingRadio_ = {};
+			pendingUse_ = {};
+			result.action = ScenarioAction::Stop;
+			result.unavailable = !input.lifeKnown;
+			return result;
+		}
+		if (input.pendingRadioSenderValidation.known && input.pendingRadioSenderValidation.actor == pendingRadio_.sender &&
+			!input.pendingRadioSenderValidation.valid)
+			pendingRadio_ = {};
+		if (input.scenario == PublicScenarioKind::Bomb && input.bombPlantedKnown && input.bombPlanted &&
+			targetKnown(input, input.bomb) && (input.alreadyEscapingFromBomb || autoEscapeRequested(input)))
+			return targetDecision(input, input.escapeZone, ScenarioAction::Escape, CompatibilityStateId::EscapeFromBomb);
+		receiveRadio(input);
+		if (applyRadio(input, &result))
+		{
+			return result;
+		}
+		if (input.stopFollowingRequested)
+			following_ = false;
+		if (input.automaticFollowRequested && !following_ && input.automaticLeader.human &&
+			input.automaticLeader.actor.isValid() && input.automaticLeader.team == input.team && input.automaticLeader.lifeKnown &&
+			input.automaticLeader.alive && input.automaticLeader.location.knowledge == ScenarioKnowledge::Visible &&
+			targetKnown(input, input.automaticLeader.location))
+		{
+			following_ = true; holding_ = false; leader_ = input.automaticLeader.actor;
+			followSince_ = input.timestamp;
+			followPermissionInferred_ = input.autoFollowPermissionInferred;
+		}
+		if (following_)
+		{
+			const ScenarioLeaderObservation &leader = input.automaticLeader.actor == leader_ ? input.automaticLeader : input.leader;
+			if (!(leader.actor == leader_) || !leader.lifeKnown ||
+				!leader.alive || leader.team != input.team)
+			{
+				following_ = false;
+				result.action = ScenarioAction::Stop;
+				result.state = CompatibilityStateId::Idle;
+				return result;
+			}
+			result = targetDecision(input, leader.location, ScenarioAction::Follow,
+				CompatibilityStateId::Follow);
+			result.followPermissionInferred = followPermissionInferred_;
+			return result;
+		}
+		if (holding_)
+		{
+			return targetDecision(input, holdPosition_, ScenarioAction::Guard,
+								  CompatibilityStateId::Hide);
+		}
+		switch (input.scenario)
+		{
+		case PublicScenarioKind::Hostage:
+			return hostageDecision(input);
+		case PublicScenarioKind::Vip:
+			if (input.team == objectives::TeamRole::CounterTerrorist && input.isVipKnown &&
+				input.isVip)
+			{
+				return targetDecision(input, input.vipZone, ScenarioAction::Escape,
+									  CompatibilityStateId::MoveTo);
+			}
+			return targetDecision(input, input.vip, ScenarioAction::Guard,
+								  CompatibilityStateId::Follow);
+		case PublicScenarioKind::Escape:
+			return targetDecision(input, input.escapeZone,
+								  input.team == objectives::TeamRole::Terrorist
+									  ? ScenarioAction::Escape
+									  : ScenarioAction::Guard,
+								  CompatibilityStateId::MoveTo);
+		case PublicScenarioKind::Bomb:
+			return bombDecision(input);
+		default:
+			return result;
+		}
+	}
+
+  private:
+	static bool targetKnown(const ScenarioBehaviorInput &input, const ScenarioTarget &target)
+	{
+		return (target.knowledge == ScenarioKnowledge::Visible ||
+				target.knowledge == ScenarioKnowledge::Remembered) &&
+			   target.frame.mapGeneration == input.frame.mapGeneration &&
+			   target.frame.roundGeneration == input.frame.roundGeneration &&
+			   target.frame.tick <= input.frame.tick &&
+			   !(input.blind && target.knowledge == ScenarioKnowledge::Visible) &&
+			   std::isfinite(target.position.x) && std::isfinite(target.position.y) &&
+			   std::isfinite(target.position.z) &&
+			   std::fabs(target.position.x) <= world::WorldLimits::kMaximumCoordinate &&
+			   std::fabs(target.position.y) <= world::WorldLimits::kMaximumCoordinate &&
+			   std::fabs(target.position.z) <= world::WorldLimits::kMaximumCoordinate &&
+			   std::isfinite(target.pathCost) && target.pathCost >= 0.0f;
+	}
+	static ScenarioBehaviorDecision targetDecision(const ScenarioBehaviorInput &input,
+												   const ScenarioTarget &target,
+												   ScenarioAction action,
+												   CompatibilityStateId state)
+	{
+		ScenarioBehaviorDecision result = {};
+		if (!targetKnown(input, target))
+		{
+			result.unavailable = true;
+			return result;
+		}
+		result.state = state;
+		result.action = action;
+		result.hasTarget = true;
+		result.target = target;
+		return result;
+	}
+	void receiveRadio(const ScenarioBehaviorInput &input)
+	{
+		if (!input.radio || !input.radio->sequence || input.radio->sequence <= radioSequence_)
+		{
+			return;
+		}
+		radioSequence_ = input.radio->sequence;
+		if (input.radioSenderValidation.known && input.radioSenderValidation.actor == input.radio->sender &&
+			!input.radioSenderValidation.valid)
+		{
+			if (pendingRadio_.sender == input.radio->sender) pendingRadio_ = {};
+			return;
+		}
+		if (!input.radio->sender.isValid() || input.radio->sender == input.actor ||
+			input.radio->team != input.team || !input.radio->senderHuman || input.busy ||
+			!std::isfinite(input.radio->receivedTime) || input.radio->receivedTime < 0.0f ||
+			input.radio->receivedTime > input.timestamp)
+		{
+			return;
+		}
+		pendingRadio_ = *input.radio;
+	}
+	bool applyRadio(const ScenarioBehaviorInput &input, ScenarioBehaviorDecision *result)
+	{
+		if (pendingRadio_.command == ScenarioRadioCommand::None)
+		{
+			return false;
+		}
+		if (input.pendingRadioSenderValidation.known &&
+			input.pendingRadioSenderValidation.actor == pendingRadio_.sender && !input.pendingRadioSenderValidation.valid)
+		{
+			pendingRadio_ = {};
+			return false;
+		}
+		if (input.busy || (input.rogue && !following_))
+		{
+			pendingRadio_ = {};
+			return false;
+		}
+		const float responseDelay =
+			1.0f + 2.0f * input.reactionSeconds + (input.rogue ? 2.0f : 0.0f);
+		if (input.timestamp - pendingRadio_.receivedTime < responseDelay)
+		{
+			return false;
+		}
+		const ScenarioRadioObservation order = pendingRadio_;
+		pendingRadio_ = {};
+		switch (order.command)
+		{
+		case ScenarioRadioCommand::FollowMe:
+		case ScenarioRadioCommand::CoverMe:
+		case ScenarioRadioCommand::StickTogether:
+		case ScenarioRadioCommand::Regroup:
+		case ScenarioRadioCommand::NeedBackup:
+			if (!following_ && input.leader.actor == order.sender && input.leader.lifeKnown &&
+				input.leader.alive && input.leader.team == input.team &&
+				targetKnown(input, input.leader.location))
+			{
+				following_ = true;
+				holding_ = false;
+				leader_ = order.sender;
+				followSince_ = input.timestamp;
+				followPermissionInferred_ = false;
+			}
+			return false;
+		case ScenarioRadioCommand::HoldPosition:
+			if (targetKnown(input, order.position))
+			{
+				following_ = false;
+				holding_ = true;
+				holdPosition_ = order.position;
+			}
+			return false;
+		case ScenarioRadioCommand::GoGoGo:
+			following_ = false;
+			holding_ = false;
+			result->action = ScenarioAction::Hunt;
+			result->state = CompatibilityStateId::Hunt;
+			return true;
+		case ScenarioRadioCommand::GetOut:
+			if (input.bombPlantedKnown && input.bombPlanted)
+			{
+				following_ = false;
+				holding_ = false;
+				*result = targetDecision(input, input.escapeZone, ScenarioAction::Escape,
+										 CompatibilityStateId::EscapeFromBomb);
+				return true;
+			}
+			return false;
+		default:
+			return false;
+		}
+	}
+	ScenarioBehaviorDecision hostageDecision(const ScenarioBehaviorInput &input)
+	{
+		if (input.team != objectives::TeamRole::CounterTerrorist)
+		{
+			return targetDecision(input, input.hostage, ScenarioAction::Guard,
+								  CompatibilityStateId::Hide);
+		}
+		if (input.escortKnown && input.escortCount)
+		{
+			pendingUse_ = {};
+			return targetDecision(input, input.rescueZone, ScenarioAction::Move,
+								  CompatibilityStateId::MoveTo);
+		}
+		if (pendingUse_.isValid())
+		{
+			const bool sameVisibleHostage = pendingUse_ == input.hostage.entity &&
+				input.hostage.knowledge == ScenarioKnowledge::Visible && targetKnown(input, input.hostage);
+			if (sameVisibleHostage && input.selfPositionKnown && useSelfKnown_ &&
+				finitePosition(input.selfPosition) && !input.hostageCompetitorNearby)
+			{
+				const float selfTravel = distanceSquared(input.selfPosition, useSelfPosition_);
+				const float hostageTravel = distanceSquared(input.hostage.position, useHostage_.position);
+				const float oldDistance = distanceSquared(useHostage_.position, input.selfPosition);
+				const float newDistance = distanceSquared(input.hostage.position, input.selfPosition);
+				if (selfTravel >= 64.0f * 64.0f && hostageTravel >= 32.0f * 32.0f &&
+					newDistance < oldDistance && newDistance <= 256.0f * 256.0f)
+				{
+					// Public motion supports an inference, never an authoritative
+					// follow-leader/escort receipt. Refresh it only on new movement.
+					inferredEscort_ = true;
+					lastFollowMotion_ = input.timestamp;
+					useSelfPosition_ = input.selfPosition;
+					useHostage_ = input.hostage;
+				}
+			}
+			if (input.hostageCompetitorNearby)
+				inferredEscort_ = false;
+			const float waitLimit = inferredEscort_ ? 3.0f : 2.0f;
+			const float lastEvidence = inferredEscort_ ? lastFollowMotion_ : useSentAt_;
+			if (input.timestamp - lastEvidence < waitLimit)
+			{
+				ScenarioBehaviorDecision moving = targetDecision(input, input.rescueZone,
+					ScenarioAction::Move, CompatibilityStateId::MoveTo);
+				if (!moving.hasTarget)
+					moving = targetDecision(input, sameVisibleHostage ? input.hostage : useHostage_,
+						ScenarioAction::Move, CompatibilityStateId::MoveTo);
+				moving.awaitingReceipt = true;
+				moving.escortInferred = inferredEscort_;
+				return moving;
+			}
+			// No motion confirmation: reapproach rather than waiting forever.
+			// The next update can retry Use, at most three times per entity.
+			pendingUse_ = {};
+			inferredEscort_ = false;
+			ScenarioBehaviorDecision approach = targetDecision(input,
+				sameVisibleHostage ? input.hostage : useHostage_, ScenarioAction::Move,
+				CompatibilityStateId::MoveTo);
+			approach.awaitingReceipt = true;
+			return approach;
+		}
+		if (attemptedHostage_ == input.hostage.entity && useAttempts_ >= 3U)
+		{
+			ScenarioBehaviorDecision exhausted = {};
+			exhausted.action = ScenarioAction::Hunt;
+			exhausted.state = CompatibilityStateId::Hunt;
+			exhausted.unavailable = true;
+			return exhausted;
+		}
+		ScenarioBehaviorDecision result = targetDecision(input, input.hostage, ScenarioAction::Move,
+														 CompatibilityStateId::MoveTo);
+		if (!result.hasTarget)
+		{
+			return result;
+		}
+		if (input.hostage.entity.isValid() &&
+			input.hostage.knowledge == ScenarioKnowledge::Visible && input.hostage.inUseRange)
+		{
+			result.awaitingReceipt = true;
+			if (!(attemptedHostage_ == input.hostage.entity))
+			{
+				attemptedHostage_ = input.hostage.entity;
+				useAttempts_ = 0U;
+			}
+			if (useAttempts_ >= 3U)
+			{
+				result = {};
+				result.action = ScenarioAction::Hunt;
+				result.state = CompatibilityStateId::Hunt;
+				result.unavailable = true;
+				return result;
+			}
+			++useAttempts_;
+			pendingUse_ = input.hostage.entity;
+			useHostage_ = input.hostage;
+			useSelfKnown_ = input.selfPositionKnown && finitePosition(input.selfPosition);
+			useSelfPosition_ = input.selfPosition;
+			useSentAt_ = input.timestamp;
+			result.action = ScenarioAction::Use;
+			result.state = CompatibilityStateId::UseEntity;
+		}
+		return result;
+	}
+	ScenarioBehaviorDecision bombDecision(const ScenarioBehaviorInput &input)
+	{
+		if (!input.bombPlantedKnown || !input.bombPlanted)
+		{
+			return {};
+		}
+		if (input.team == objectives::TeamRole::CounterTerrorist)
+		{
+			if (!input.attacking && !input.currentDefusing && (input.timerKnown || input.timerEstimated) && input.defuseKitKnown &&
+				(input.travelTimeKnown || input.travelTimeEstimated) &&
+				std::isfinite(input.bombSecondsRemaining) &&
+				std::isfinite(input.travelSecondsToBomb) && input.bombSecondsRemaining >= 0.0f &&
+				input.travelSecondsToBomb >= 0.0f &&
+				input.bombSecondsRemaining <=
+					input.travelSecondsToBomb + (input.defuseKit ? 5.0f : 10.0f))
+			{
+				return targetDecision(input, input.escapeZone, ScenarioAction::Escape,
+									  CompatibilityStateId::EscapeFromBomb);
+			}
+			if (input.humanDefusingKnown && input.humanDefusing)
+			{
+				return targetDecision(input, input.bomb, ScenarioAction::Guard,
+									  CompatibilityStateId::Hide);
+			}
+			if (!targetKnown(input, input.bomb))
+				return targetDecision(input, input.bombSearch, ScenarioAction::Move, CompatibilityStateId::MoveTo);
+			ScenarioBehaviorDecision result = targetDecision(
+				input, input.bomb, ScenarioAction::Move, CompatibilityStateId::MoveTo);
+			if (result.hasTarget && input.currentDefusing)
+			{
+				result.action = ScenarioAction::Use;
+				result.state = CompatibilityStateId::DefuseBomb;
+				result.awaitingReceipt = true;
+			}
+			return result;
+		}
+		return targetDecision(input, input.bomb, ScenarioAction::Guard, CompatibilityStateId::Hide);
+	}
+
+	world::ActorKey actor_ = {};
+	world::FrameIdentity frame_ = {};
+	float timestamp_ = 0.0f;
+	std::uint32_t radioSequence_ = 0U;
+	ScenarioRadioObservation pendingRadio_ = {};
+	world::ActorKey leader_ = {};
+	bool following_ = false;
+	float followSince_ = 0.0f;
+	bool followPermissionInferred_ = false;
+	bool holding_ = false;
+	ScenarioTarget holdPosition_ = {};
+	world::EntityKey pendingUse_ = {};
+	world::EntityKey attemptedHostage_ = {};
+	ScenarioTarget useHostage_ = {};
+	world::WorldPosition useSelfPosition_ = {};
+	bool useSelfKnown_ = false;
+	bool inferredEscort_ = false;
+	float useSentAt_ = 0.0f;
+	float lastFollowMotion_ = 0.0f;
+	std::uint32_t useAttempts_ = 0U;
+	static bool finitePosition(const world::WorldPosition &position)
+	{
+		return std::isfinite(position.x) && std::isfinite(position.y) && std::isfinite(position.z);
+	}
+	static float distanceSquared(const world::WorldPosition &a, const world::WorldPosition &b)
+	{
+		const float x = a.x - b.x, y = a.y - b.y, z = a.z - b.z;
+		return x * x + y * y + z * z;
+	}
+};
+} // namespace compat
+} // namespace astrabot
+#endif

@@ -289,6 +289,10 @@ ObservationAdapterResult ObservationAdapter::collectActor(
 	observation->objective.vip = unavailableValue<bool>(
 		"OBS-OBJECTIVE-VIP", actor, frame, timing);
 
+	if (publicProvider_ != nullptr)
+		publicProvider_->supplement(observation);
+	if (optionalGameProvider_ != nullptr)
+		optionalGameProvider_->supplement(observation);
 	SequencedTraceSink sequencedTrace(traceSink_, &traceSequence_);
 	tracePlayer(*observation, traceSink_ == nullptr ? nullptr : &sequencedTrace);
 	return ObservationAdapterResult::Accepted;
@@ -360,6 +364,11 @@ ObservationAdapterResult ObservationAdapter::collectVisibility(
 
 	auto traceVisible = [&](const float point[3]) -> bool
 	{
+		if (smoke_ != nullptr && smoke_->blocks({eye[0], eye[1], eye[2]},
+			{point[0], point[1], point[2]}, globals_->time))
+		{
+			return false;
+		}
 		if (disableTrace_)
 		{
 			return false;
@@ -446,6 +455,18 @@ ObservationAdapterResult ObservationAdapter::collectVisibility(
 void ObservationAdapter::setTraceSink(compat::IObservationTraceSink *sink)
 {
 	traceSink_ = sink;
+}
+
+void ObservationAdapter::setObservationProviders(const compat::IObservationProvider *publicProvider,
+	const compat::IObservationProvider *optionalGameProvider)
+{
+	publicProvider_ = publicProvider;
+	optionalGameProvider_ = optionalGameProvider;
+}
+
+void ObservationAdapter::setSmokeObservations(const compat::SmokeObservations *smoke)
+{
+	smoke_ = smoke;
 }
 
 void ObservationAdapter::setProfiler(RuntimeProfiler *profiler)

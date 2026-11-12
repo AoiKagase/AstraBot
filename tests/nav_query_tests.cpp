@@ -313,6 +313,46 @@ bool testPathFollowerUsesDirectedPortal()
 			"directed portal target steps into the next area");
 }
 
+bool testDirectedPortalStaysInsideThinDestination()
+{
+	using namespace astrabot::nav;
+	const NavVector destinationLow[] = {
+		{0.0f, -8.0f, 0.0f}, {64.0f, 0.0f, 0.0f},
+		{0.0f, 64.0f, 0.0f}, {-8.0f, 0.0f, 0.0f}};
+	const NavVector destinationHigh[] = {
+		{64.0f, 0.0f, 0.0f}, {72.0f, 64.0f, 0.0f},
+		{64.0f, 72.0f, 0.0f}, {0.0f, 64.0f, 0.0f}};
+	for (std::uint8_t direction = 0U; direction < 4U; ++direction)
+	{
+		NavDocument document;
+		document.setSourceIdentity({5U, 100U, 200U});
+		NavArea source = area(1U, 0.0f, 64.0f, 0.0f);
+		NavArea destination = area(2U, 0.0f, 64.0f, 0.0f);
+		destination.extent.lo = destinationLow[direction];
+		destination.extent.hi = destinationHigh[direction];
+		source.connections[direction].push_back(2U);
+		document.addArea(source);
+		document.addArea(destination);
+		const NavSnapshot snapshot = snapshotFor(&document, 1U);
+		NavCorridor corridor = {};
+		NavQuery(snapshot).buildCorridor(1U, 2U, &corridor);
+		NavPathFollower follower;
+		follower.start(corridor);
+		NavVector target = {};
+		AreaId targetArea = 0U;
+		const auto result = follower.update(snapshot, {32.0f, 32.0f, 0.0f},
+			1.0f, 1.0f, &target, &targetArea);
+		if (!check(result == NavFollowerResult::Advanced && targetArea == 2U &&
+			target.x > destination.extent.lo.x && target.x < destination.extent.hi.x &&
+			target.y > destination.extent.lo.y && target.y < destination.extent.hi.y,
+			"directed portal enters an eight-unit wall top without steering past it"))
+		{
+			return false;
+		}
+	}
+	return true;
+}
+
 bool testPathFollowerProgressAndStaleRoute()
 {
 	astrabot::nav::NavDocument document;
@@ -682,6 +722,54 @@ bool testReferenceStableEqualCostTieBreak()
 			"equal-cost route keeps CSBot discovery order instead of area ID order");
 }
 
+bool testConsecutiveJumpAreasAreNotWalkable()
+{
+	using namespace astrabot::nav;
+	NavDocument document;
+	document.setSourceIdentity({5U, 100U, 200U});
+	auto first = area(1U, 0.0f, 64.0f, 0.0f);
+	auto second = area(2U, 64.0f, 128.0f, 0.0f);
+	first.attributes = NavArea::kJump;
+	second.attributes = NavArea::kJump;
+	first.connections[0U].push_back(2U);
+	document.addArea(first);
+	document.addArea(second);
+	NavQuery query(snapshotFor(&document, 1U));
+	NavCorridor corridor = {};
+	return check(query.buildCorridor(1U, 2U, &corridor) == NavQueryResult::NoRoute,
+		"jump-to-jump areas cannot be treated as a walking edge");
+}
+
+bool testReferenceDangerAndFriendDensityCost()
+{
+	using namespace astrabot::nav;
+	NavDocument document;
+	document.setSourceIdentity({5U, 100U, 200U});
+	auto first = area(1U, 0.0f, 64.0f, 0.0f);
+	auto second = area(2U, 64.0f, 128.0f, 0.0f);
+	first.connections[0U].push_back(2U);
+	second.connections[2U].push_back(1U);
+	document.addArea(first);
+	document.addArea(second);
+	NavQuery query(snapshotFor(&document, 1U));
+	NavPathCostContext context;
+	context.aggression = 1.0f;
+	context.areas = {{1U, 0.5f, 0U}, {2U, 0.25f, 2U}};
+	query.setPathCostContext(context);
+	NavCorridor corridor = {};
+	if (!check(query.buildCorridor(1U, 2U, NavRouteType::Safest, &corridor) ==
+		NavQueryResult::Found, "observed danger corridor builds")) return false;
+	// Start danger + travel + per-length danger + area crowding.
+	const float expected = 2.5f + 64.0f + 80.0f + 100000.0f / 64.0f;
+	if (!check(std::fabs(corridor.cost - expected) < 0.01f,
+		"safest cost uses aggression, start danger and teammate density")) return false;
+	context.attacking = true;
+	query.setPathCostContext(context);
+	return check(query.buildCorridor(1U, 2U, NavRouteType::Fastest, &corridor) ==
+		NavQueryResult::Found && std::fabs(corridor.cost - 64.0f) < 0.01f,
+		"attacking fastest route omits crowding and danger");
+}
+
 bool testReferenceCrouchCost()
 {
 	astrabot::nav::NavDocument document;
@@ -715,7 +803,7 @@ bool testReferenceCrouchCost()
 			"fastest route applies the CSBot crouch traversal penalty");
 }
 
-bool testAlternativeCorridorAvoidsFailedFirstLink()
+bool testAlternativeCorridorAvoidsFailedFirstLink(bool danger = false)
 {
 	astrabot::nav::NavDocument document;
 	document.setSourceIdentity({5U, 100U, 200U});
@@ -732,9 +820,18 @@ bool testAlternativeCorridorAvoidsFailedFirstLink()
 	document.addArea(alternateBranch);
 	document.addArea(goal);
 	const astrabot::nav::NavSnapshot snapshot = snapshotFor(&document, 1U);
-	const astrabot::nav::NavQuery query(snapshot);
+	astrabot::nav::NavQuery query(snapshot);
+	if (danger)
+	{
+		astrabot::nav::NavPathCostContext context;
+		context.aggression = 1.0f;
+		context.areas = {{3U, 0.5f, 0U}};
+		query.setPathCostContext(context);
+	}
 	astrabot::nav::NavCorridor primary = {};
-	if (!check(query.buildCorridor(1U, 4U, &primary) ==
+	const auto route = danger ? astrabot::nav::NavRouteType::Safest :
+		astrabot::nav::NavRouteType::Fastest;
+	if (!check(query.buildCorridor(1U, 4U, route, &primary) ==
 			astrabot::nav::NavQueryResult::Found &&
 			primary.areas == std::vector<astrabot::nav::AreaId>({1U, 2U, 4U}),
 			"primary objective route uses the shortest first link"))
@@ -755,8 +852,37 @@ bool testAlternativeCorridorAvoidsFailedFirstLink()
 		alternative.links.size() == 2U &&
 		alternative.links.front().fromArea == 1U &&
 		alternative.links.front().toArea == 3U &&
-		alternative.routeType == primary.routeType,
+		alternative.routeType == primary.routeType &&
+		std::fabs(alternative.cost - (danger ? 4372.0f : 1872.0f)) < 0.01f,
 		"alternative objective route preserves a valid corridor and route type");
+}
+
+bool testAlternativeSearchCanBypassAFormerShortestReturn()
+{
+	using namespace astrabot::nav;
+	NavDocument document; document.setSourceIdentity({5U,100U,200U});
+	auto start=area(1U,0.0f,64.0f,0.0f), failed=area(2U,64.0f,128.0f,0.0f);
+	auto alternate=area(3U,1000.0f,1064.0f,0.0f), goal=area(4U,128.0f,192.0f,0.0f);
+	auto detour=area(5U,3000.0f,3064.0f,0.0f);
+	start.connections[0U]={2U,3U}; failed.connections[0U]={4U};
+	alternate.connections[0U]={1U,5U}; detour.connections[0U]={4U};
+	document.addArea(start);document.addArea(failed);document.addArea(alternate);
+	document.addArea(goal);document.addArea(detour);
+	const auto snapshot=snapshotFor(&document,1U); NavQuery query(snapshot);
+	NavCorridor primary{}, bypass{}; NavSearchStats stats{};
+	if (!check(query.buildCorridor(1U,4U,&primary)==NavQueryResult::Found,
+		"returning-suffix fixture has a primary route")) return false;
+	if (!check(query.buildAlternativeCorridor(primary,primary.links.front(),&bypass,&stats)==NavQueryResult::Found &&
+		bypass.areas==std::vector<AreaId>{1U,3U,5U,4U} && std::fabs(bypass.cost-5872.0f)<0.01f,
+		"alternative A* finds the longer valid detour when the unrestricted suffix returns via the failed edge")) return false;
+	if (!check(stats.searchCalls==1U && stats.firstStartArea==1U && stats.firstGoalArea==4U,
+		"bypass uses a complete start-to-goal search instead of independent truncated searches")) return false;
+	NavCorridor ordinary{};
+	if (!check(query.buildCorridor(1U,4U,&ordinary)==NavQueryResult::Found && ordinary.areas==primary.areas,
+		"temporary edge exclusion does not alter later ordinary searches")) return false;
+	NavQuery limited(snapshot,{256U,2U});
+	return check(limited.buildAlternativeCorridor(primary,primary.links.front(),&bypass)==NavQueryResult::ResourceLimit,
+		"a bounded bypass reports queue exhaustion distinctly from a proven missing route");
 }
 
 bool testAStarSearchStats()
@@ -789,11 +915,29 @@ bool testAStarSearchStats()
 
 int main()
 {
+	{
+		using namespace astrabot::nav;
+		NavDocument d; d.setSourceIdentity({5U,100U,200U});
+		auto a=area(1U,0,64,0), b=area(2U,64,256,0); a.connections[1U]={2U}; d.addArea(a);d.addArea(b);
+		auto snapshot=snapshotFor(&d,1U); NavQuery query(snapshot); NavCorridor c{};query.buildCorridor(1U,2U,&c);
+		c.hasEndpoint=true;c.endpoint={180,32,0};NavPathFollower follower; follower.start(c);NavVector target{};AreaId id=0;
+		follower.update(snapshot,{32,32,0},20,64,&target,&id);
+		if(!check(follower.update(snapshot,{80,32,0},20,64,&target,&id)==NavFollowerResult::TargetReady && target.x==180,
+			"explicit endpoint keeps moving inside a large destination area"))return 1;
+		if(!check(follower.update(snapshot,{180,32,25},20,64,&target,&id)==NavFollowerResult::TargetReady,
+			"CSBot endpoint distance includes vertical separation despite area tolerance64"))return 1;
+		if(!check(follower.update(snapshot,{160,32,0},20,64,&target,&id)==NavFollowerResult::TargetReady &&
+			follower.update(snapshot,{160.1f,32,0},20,64,&target,&id)==NavFollowerResult::Reached,
+			"CSBot endpoint20 boundary is strict"))return 1;
+		c.endpoint.x=std::numeric_limits<float>::quiet_NaN();
+		if(!check(follower.start(c)==NavFollowerResult::InvalidCorridor,"invalid explicit endpoint cannot reuse old state"))return 1;
+	}
 	if (!testSpatialTieBreaking() ||
 			 !testDirectedLinksAndCorridor() ||
 		!testApproachTraversalMetadata() ||
 		!testPathFollowerUsesAreaPortalInsteadOfCenter() ||
 		!testPathFollowerUsesDirectedPortal() ||
+		!testDirectedPortalStaysInsideThinDestination() ||
 		!testAStarPrefersLowerCostPath() ||
 		!testBoundedSearch() ||
 		!testCorridorCapacityDoesNotBoundSearchRecords() ||
@@ -805,9 +949,13 @@ int main()
 		!testNearest3DUsesSurfaceHeight() ||
 			!testInvalidInputs() ||
 			!testAlternativeCorridorAvoidsFailedFirstLink() ||
+			!testAlternativeCorridorAvoidsFailedFirstLink(true) ||
+			!testAlternativeSearchCanBypassAFormerShortestReturn() ||
 			!testAStarSearchStats() ||
 			!testReferenceStableEqualCostTieBreak() ||
-			!testReferenceCrouchCost())
+			!testReferenceCrouchCost() ||
+			!testConsecutiveJumpAreasAreNotWalkable() ||
+			!testReferenceDangerAndFriendDensityCost())
 	{
 		return 1;
 	}

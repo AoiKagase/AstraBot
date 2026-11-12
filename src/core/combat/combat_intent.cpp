@@ -199,21 +199,67 @@ bool CombatController::isFrameAfter(
 	return candidate.tick > current.tick;
 }
 
-bool CombatController::buildAim(
-	const CombatDecisionContext &context,
-	const TargetBelief &target,
-	AimIntent *intent)
+bool CombatController::buildAim(const CombatDecisionContext &context, const TargetBelief &target,
+								AimIntent *intent)
 {
 	if (intent == nullptr || !context.isValid() || !target.isUsable())
 	{
 		return false;
 	}
 
-	const float deltaX = target.position.x - context.origin.x;
-	const float deltaY = target.position.y - context.origin.y;
-	const float deltaZ = target.position.z - context.origin.z;
-	const float horizontalDistance = std::sqrt(
-		deltaX * deltaX + deltaY * deltaY);
+	world::WorldPosition aimPoint = target.position;
+	aimAligned_ = true;
+	if (context.aimTrackingEnabled)
+	{
+		if (!context.randomSource || !std::isfinite(context.skill) || context.skill < 0.0f ||
+			context.skill > 1.0f || !std::isfinite(context.elapsedSeconds) ||
+			context.elapsedSeconds < 0.0f || context.elapsedSeconds > 0.25f ||
+			!std::isfinite(context.timestamp) || context.timestamp < 0.0f ||
+			!std::isfinite(context.currentPitch) || !std::isfinite(context.currentYaw) ||
+			!std::isfinite(context.fieldOfView) || context.fieldOfView <= 0.0f ||
+			context.fieldOfView > 180.0f)
+			return false;
+		if (std::fabs(aimSpring_.yawVelocity) > 100.0f ||
+			std::fabs(aimSpring_.pitchVelocity) > 100.0f)
+			aimFocusStart_ = context.timestamp;
+		if (context.timestamp >= aimRefreshTime_)
+		{
+			const float dx = target.position.x - context.origin.x,
+						dy = target.position.y - context.origin.y,
+						dz = target.position.z - context.origin.z;
+			const float focusTime = std::fmax(5.0f * (1.0f - context.skill), 2.0f);
+			const float focusAccuracy =
+				std::fmin(0.75f, std::fmax(0.0f, (context.timestamp - aimFocusStart_) / focusTime));
+			const float accuracy = std::fmax(context.skill, focusAccuracy);
+			const float error = std::sqrt(dx * dx + dy * dy + dz * dz) * context.fieldOfView /
+								90.0f * 0.1f * (1.0f - accuracy);
+			const compat::RandomActor actor = {context.actor.slot, context.actor.generation};
+			float draws[4] = {};
+			const char *ids[4] = {"AimOffsetX", "AimOffsetY", "AimOffsetZ", "AimOffsetRefresh"};
+			for (unsigned i = 0; i != 4; ++i)
+			{
+				const compat::RandomFloatResult draw =
+					context.randomSource->nextFloat(compat::RandomRequest::floatRequest(
+						ids[i], actor, context.randomTiming, i == 3 ? 0.25f : -error,
+						i == 3 ? 1.0f : error));
+				if (draw.status != compat::RandomStatus::Ok || !std::isfinite(draw.value))
+					return false;
+				draws[i] = draw.value;
+			}
+			aimOffsetGoal_ = {draws[0], draws[1], draws[2]};
+			aimRefreshTime_ = context.timestamp + draws[3];
+		}
+		aimOffset_.x += 0.1f * (aimOffsetGoal_.x - aimOffset_.x);
+		aimOffset_.y += 0.1f * (aimOffsetGoal_.y - aimOffset_.y);
+		aimOffset_.z += 0.1f * (aimOffsetGoal_.z - aimOffset_.z);
+		aimPoint.x += aimOffset_.x;
+		aimPoint.y += aimOffset_.y;
+		aimPoint.z += aimOffset_.z;
+	}
+	const float deltaX = aimPoint.x - context.origin.x;
+	const float deltaY = aimPoint.y - context.origin.y;
+	const float deltaZ = aimPoint.z - context.origin.z;
+	const float horizontalDistance = std::sqrt(deltaX * deltaX + deltaY * deltaY);
 	if (!std::isfinite(horizontalDistance) || horizontalDistance <= 0.001f)
 	{
 		return false;
@@ -223,18 +269,25 @@ bool CombatController::buildAim(
 	intent->actor = context.actor;
 	intent->frame = context.frame;
 	intent->target = target.target;
-	intent->point = target.position;
+	intent->point = aimPoint;
 	intent->yaw = std::atan2(deltaY, deltaX) * 180.0f / kPi;
 	intent->pitch = -std::atan2(deltaZ, horizontalDistance) * 180.0f / kPi;
+	if (context.aimTrackingEnabled)
+	{
+		const compat::AimStep step =
+			compat::trackAim(context.currentYaw, context.currentPitch, intent->yaw, intent->pitch,
+							 context.elapsedSeconds, context.skill, &aimSpring_);
+		intent->yaw = step.yaw;
+		intent->pitch = step.pitch;
+		aimAligned_ = step.aligned;
+	}
 	return intent->isValid();
 }
 
-CombatResult CombatController::decide(
-	const world::WorldSnapshot &snapshot,
-	const WeaponInventory &inventory,
-	const TargetBelief &target,
-	const CombatDecisionContext &context,
-	CombatDecision *decision)
+CombatResult CombatController::decide(const world::WorldSnapshot &snapshot,
+									  const WeaponInventory &inventory, const TargetBelief &target,
+									  const CombatDecisionContext &context,
+									  CombatDecision *decision)
 {
 	if (decision == nullptr)
 	{
@@ -287,6 +340,11 @@ CombatResult CombatController::decide(
 		}
 		actor_ = context.actor;
 		lastFrame_ = {};
+		aimSpring_ = {};
+		aimOffset_ = {};
+		aimOffsetGoal_ = {};
+		aimRefreshTime_ = 0.0f;
+		aimFocusStart_ = context.timestamp;
 		return CombatResult::ActorGenerationChanged;
 	}
 
@@ -299,6 +357,15 @@ CombatResult CombatController::decide(
 	{
 		return CombatResult::StaleFrame;
 	}
+	if (firstFrame || context.frame.mapGeneration != lastFrame_.mapGeneration ||
+		context.frame.roundGeneration != lastFrame_.roundGeneration)
+	{
+		aimSpring_ = {};
+		aimOffset_ = {};
+		aimOffsetGoal_ = {};
+		aimRefreshTime_ = 0.0f;
+		aimFocusStart_ = context.timestamp;
+	}
 	lastFrame_ = context.frame;
 
 	AimIntent aim = {};
@@ -308,13 +375,20 @@ CombatResult CombatController::decide(
 	}
 
 	const WeaponRecord *weapon = nullptr;
-	if (inventory.selectReady(context.frame, &weapon) ==
-			WeaponInventoryResult::Selected && weapon != nullptr)
+	if (inventory.selectReady(context.frame, &weapon) == WeaponInventoryResult::Selected &&
+		weapon != nullptr)
 	{
 		decision->actor = context.actor;
 		decision->frame = context.frame;
 		decision->hasAim = true;
 		decision->aim = aim;
+		const float dx = target.position.x - context.origin.x,
+					dy = target.position.y - context.origin.y,
+					dz = target.position.z - context.origin.z;
+		if (!compat::weaponEngagementAllowed(weapon->kind,
+											 std::sqrt(dx * dx + dy * dy + dz * dz)) ||
+			(context.aimTrackingEnabled && !aimAligned_))
+			return CombatResult::NoAction;
 		decision->hasFire = true;
 		decision->fire.actor = context.actor;
 		decision->fire.frame = context.frame;
@@ -323,8 +397,8 @@ CombatResult CombatController::decide(
 		return CombatResult::FireIntentReady;
 	}
 
-	if (inventory.selectReloadable(context.frame, &weapon) ==
-			WeaponInventoryResult::Reloadable && weapon != nullptr)
+	if (inventory.selectReloadable(context.frame, &weapon) == WeaponInventoryResult::Reloadable &&
+		weapon != nullptr)
 	{
 		decision->actor = context.actor;
 		decision->frame = context.frame;

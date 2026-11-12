@@ -136,6 +136,34 @@ bool testCrouchSelection()
 		"insufficient standing clearance selects crouch");
 }
 
+bool testTimedStuckMonitorUsesAverageSpeed()
+{
+	using namespace astrabot::nav;
+	auto document = routeDocument(0.0f);
+	const auto snapshot = snapshotFor(&document, 1U);
+	auto settings = config();
+	settings.averageVelocityStuckMonitor = true;
+	settings.stuckFrameLimit = 100U;
+	LocomotionController controller(settings);
+	controller.start(corridorFor(snapshot));
+	LocomotionObservation observation = {};
+	observation.position = {16.0f, 32.0f, 0.0f};
+	observation.standingClearance = 72.0f;
+	observation.crouchingClearance = 36.0f;
+	observation.grounded = true;
+	observation.timingAvailable = true;
+	LocomotionIntent intent = {};
+	for (int sample = 0; sample < 5; ++sample)
+	{
+		observation.observedAt = sample * 0.1f;
+		if (!check(controller.update(snapshot, observation, &intent) ==
+			LocomotionResult::IntentReady, "average monitor waits for five samples")) return false;
+	}
+	observation.observedAt = 0.5f;
+	return check(controller.update(snapshot, observation, &intent) == LocomotionResult::Stuck,
+		"five stationary timed samples detect stuck without frame-limit dependence");
+}
+
 bool testStepAndStuckRecovery()
 {
 	astrabot::nav::NavDocument highStepDocument = routeDocument(64.0f);
@@ -171,6 +199,7 @@ bool testStepAndStuckRecovery()
 	astrabot::nav::LocomotionController stuckController(config());
 	stuckController.start(corridorFor(stuckSnapshot));
 	observation.position = {16.0f, 32.0f, 0.0f};
+	observation.grounded = true;
 	if (!check(stuckController.update(
 			stuckSnapshot,
 			observation,
@@ -289,6 +318,7 @@ bool testLateralJitterDoesNotResetForwardProgress()
 	observation.position = {16.0f, 32.0f, 0.0f};
 	observation.standingClearance = 72.0f;
 	observation.crouchingClearance = 36.0f;
+	observation.grounded = true;
 	astrabot::nav::LocomotionIntent intent = {};
 	if (!check(controller.update(snapshot, observation, &intent) ==
 				astrabot::nav::LocomotionResult::IntentReady,
@@ -877,8 +907,44 @@ bool testOffPathAreaCannotTriggerJumpToNonAdjacentCorridorTarget()
 			"an unrelated current area invalidates the segment instead of fabricating Jump");
 }
 
+bool testCompatibilityProgressSurvivesRepath()
+{
+	using namespace astrabot::nav;
+	NavDocument document=routeDocument(0.0f);
+	const auto snapshot=snapshotFor(&document,1U);
+	auto settings=config();settings.averageVelocityStuckMonitor=true;
+	LocomotionController controller(settings);
+	LocomotionObservation observation{};
+	observation.position={32,32,0};observation.grounded=true;
+	observation.standingClearance=72;observation.crouchingClearance=36;
+	observation.timingAvailable=true;
+	LocomotionIntent intent{};bool stuck=false;
+	LocomotionController noPath(settings);
+	for(int i=0;i<7;++i)
+	{
+		observation.observedAt=static_cast<float>(i)*0.1f;
+		noPath.observeMotion(observation);
+	}
+	noPath.start(corridorFor(snapshot));
+	if(!check(noPath.update(snapshot,observation,&intent)==LocomotionResult::Stuck,
+		"physical monitoring runs before path intent exists and is sampled once per full think"))return false;
+	for(int i=0;i<9;++i)
+	{
+		if(!check(controller.start(corridorFor(snapshot))==LocomotionResult::Started,
+			"repath fixture uses a valid connected corridor"))return false;
+		observation.observedAt=float(i)*0.1f;
+		stuck=stuck || controller.update(snapshot,observation,&intent)==LocomotionResult::Stuck;
+	}
+	if(!check(stuck,"Compatibility re-pathing without physical movement cannot reset bot velocity history"))return false;
+	controller.start(corridorFor(snapshot));
+	observation.grounded=false;observation.observedAt=1.0f;
+	return check(controller.update(snapshot,observation,&intent)==LocomotionResult::IntentReady,
+		"a previously stuck bot retains airborne movement instead of ground Wiggle");
+}
+
 int main()
 {
+	if(!testCompatibilityProgressSurvivesRepath())return 1;
 	if (!testSafeDescendingGapWithHorizontalSeparationUsesJumpOnce() ||
 		!testDescendingGapSeparatesSafeDropFromHorizontalJump())
 	{
@@ -891,6 +957,7 @@ int main()
 	if (!testWalkAndStepIntent() ||
 		!testCrouchSelection() ||
 		!testStepAndStuckRecovery() ||
+		!testTimedStuckMonitorUsesAverageSpeed() ||
 		!testTerrainDiscontinuityRequestsJump() ||
 		!testContinuousRampUsesPortalTransitionHeight() ||
 			!testCompletionAndInvalidation() ||

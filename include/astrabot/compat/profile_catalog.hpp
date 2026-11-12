@@ -3,6 +3,7 @@
 
 #include <array>
 #include <cstddef>
+#include "astrabot/compat/random_source.hpp"
 
 namespace astrabot
 {
@@ -42,6 +43,14 @@ namespace astrabot
 			int difficulty;
 			int skill;
 			int aggression;
+			float reactionTimeSeconds = 0.3f;
+			float attackDelaySeconds = 0.0f;
+			int teamwork = 75;
+			int weaponPreferences[16] = {};
+			std::size_t weaponPreferenceCount = 0U;
+			int cost = 0;
+			int voicePitch = 100;
+			unsigned difficultyMask = 0;
 		};
 
 		class ProfileCatalog
@@ -60,6 +69,10 @@ namespace astrabot
 										  std::size_t selectionIndex, ProfileRecord *profile) const;
 			ProfileSelectionResult selectNamed(const char *name, ProfileTeam team,
 											   ProfileRecord *profile) const;
+			ProfileSelectionResult selectUnused(ProfileTeam team, int difficulty,
+				const char *const *usedNames, std::size_t usedCount,
+				ICompatibilityRandomSource &random, RandomActor actor,
+				RandomTimingContext timing, ProfileRecord *profile) const;
 
 			std::size_t size() const;
 			void clear();

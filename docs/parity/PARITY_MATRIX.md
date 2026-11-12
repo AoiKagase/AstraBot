@@ -1,5 +1,13 @@
 # P00 Parity Matrix
 
+> Current authority: [STATUS.md](STATUS.md) and the D01–D19
+> [repair ledger](VANILLA_REPAIR_LEDGER.md). The tables below are historical
+> contract audits, not acceptance of the 2026-10-18 implementation. In particular,
+> synthetic rifle input, nearest-only reaction, no smoke/sound feed, global C4
+> knowledge, site-directed Compatibility preplanting and Compatibility
+> reservations are being replaced. Their historical rows cannot establish
+> current parity. Current source, build identity and live evidence take precedence.
+
 ## P06 perception parity gate
 
 | Area | Reference evidence | AstraBot evidence | Result |

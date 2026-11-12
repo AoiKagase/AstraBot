@@ -7,6 +7,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <cmath>
 
 namespace astrabot
 {
@@ -329,6 +330,34 @@ namespace astrabot
 				return false;
 			}
 
+			bool parseExtendedField(const Token &key, const Token &value, compat::ProfileRecord *profile, unsigned *mask)
+			{
+				unsigned field = 0;
+				if (equalsIgnoreCase(key.text,"ReactionTime")) field=1;
+				else if (equalsIgnoreCase(key.text,"AttackDelay")) field=2;
+				else if (equalsIgnoreCase(key.text,"Teamwork")) field=4;
+				else if (equalsIgnoreCase(key.text,"Cost")) field=8;
+				else if (equalsIgnoreCase(key.text,"VoicePitch")) field=16;
+				else if (equalsIgnoreCase(key.text,"WeaponPreference")) field=32;
+				if (field==0) return true;
+				if (field==1 || field==2) {
+					errno=0; char *end=nullptr; const float parsed=std::strtof(value.text,&end);
+					if(errno || end==value.text || *end!='\0' || !std::isfinite(parsed) || parsed<0) return false;
+					if(field==1) profile->reactionTimeSeconds=parsed; else profile->attackDelaySeconds=parsed;
+				} else if(field==4 || field==8 || field==16) {
+					int parsed=0; if(!parseInteger(value,0,field==4?100:(field==16?255:INT_MAX),&parsed)) return false;
+					if(field==4) profile->teamwork=parsed; else if(field==8) profile->cost=parsed; else profile->voicePitch=parsed;
+				} else {
+					struct Alias { const char *name; int id; };
+					const Alias aliases[]={{"p228",1},{"scout",3},{"hegrenade",4},{"xm1014",5},{"c4",6},{"mac10",7},{"aug",8},{"smokegrenade",9},{"elite",10},{"elites",10},{"fiveseven",11},{"fn57",11},{"ump45",12},{"sg550",13},{"galil",14},{"famas",15},{"usp",16},{"glock18",17},{"glock",17},{"awp",18},{"mp5navy",19},{"mp5",19},{"m249",20},{"m3",21},{"m4a1",22},{"tmp",23},{"g3sg1",24},{"flashbang",25},{"deagle",26},{"sg552",27},{"ak47",28},{"knife",29},{"p90",30},{"shield",99}};
+					int id=0; for(const auto &alias:aliases) if(equalsIgnoreCase(value.text,alias.name)) { id=alias.id; break; }
+					if(id==0 && !equalsIgnoreCase(value.text,"none")) return false;
+					if((*mask & field)==0 || id==0) profile->weaponPreferenceCount=0;
+					if(id!=0) { if(profile->weaponPreferenceCount>=16) return false; profile->weaponPreferences[profile->weaponPreferenceCount++]=id; }
+				}
+				*mask |= field; return true;
+			}
+
 			bool parseProfileBlock(Tokenizer *tokenizer, compat::ProfileRecord *profile)
 			{
 				if (tokenizer == nullptr || profile == nullptr)
@@ -336,6 +365,7 @@ namespace astrabot
 					return false;
 				}
 				bool hasDifficulty = false;
+				unsigned extendedMask=0;
 				profile->team = compat::ProfileTeam::Any;
 				profile->difficulty = 2;
 				profile->skill = 50;
@@ -406,6 +436,7 @@ namespace astrabot
 							return false;
 						}
 					}
+					else if(!parseExtendedField(key,value,profile,&extendedMask)) return false;
 				}
 			}
 
@@ -433,6 +464,9 @@ namespace astrabot
 			bool hasSkill;
 			bool hasAggression;
 			bool hasTeam;
+			unsigned difficultyMask;
+			compat::ProfileRecord extended;
+			unsigned extendedMask;
 		};
 
 		struct CsbotTemplate
@@ -523,7 +557,7 @@ namespace astrabot
 
 		CsbotValues makeCsbotValues()
 		{
-			return {2, 50, 50, compat::ProfileTeam::Any, false, false, false, false};
+			return {2, 50, 50, compat::ProfileTeam::Any, false, false, false, false, 0, {}, 0};
 		}
 
 		bool parseCsbotField(const char *line, Token *key, Token *value)
@@ -550,7 +584,7 @@ namespace astrabot
 			return tokenizer.next().type == TokenType::End;
 		}
 
-		bool parseCsbotDifficulty(const Token &token, int *difficulty)
+		bool parseCsbotDifficulty(const Token &token, int *difficulty, unsigned *mask)
 		{
 			if (difficulty == nullptr ||
 				(token.type != TokenType::Word && token.type != TokenType::Quoted))
@@ -560,10 +594,12 @@ namespace astrabot
 			if (parseInteger(token, compat::ProfileCatalog::kMinimumDifficulty,
 							 compat::ProfileCatalog::kMaximumDifficulty, difficulty))
 			{
+				*mask = 1U << *difficulty;
 				return true;
 			}
 
 			int strongestDifficulty = -1;
+			*mask=0;
 			std::size_t begin = 0U;
 			const std::size_t length = std::strlen(token.text);
 			for (std::size_t index = 0U; index <= length; ++index)
@@ -599,6 +635,9 @@ namespace astrabot
 				{
 					return false;
 				}
+				const int actualDifficulty = equalsIgnoreCase(part,"EASY") ? 0 :
+					equalsIgnoreCase(part,"NORMAL") ? 1 : equalsIgnoreCase(part,"HARD") ? 2 : 3;
+				*mask |= 1U << actualDifficulty;
 				if (partDifficulty > strongestDifficulty)
 				{
 					strongestDifficulty = partDifficulty;
@@ -621,7 +660,7 @@ namespace astrabot
 			}
 			if (equalsIgnoreCase(key.text, "Difficulty"))
 			{
-				if (!parseCsbotDifficulty(value, &values->difficulty))
+				if (!parseCsbotDifficulty(value, &values->difficulty, &values->difficultyMask))
 				{
 					return false;
 				}
@@ -662,6 +701,8 @@ namespace astrabot
 			{
 				return false;
 			}
+			// Each block starts its own preference list, replacing inherited preferences on first assignment.
+			unsigned blockMask=0;
 			char line[ProfileLoader::kMaximumTokenLength * 2U + 1U] = {};
 			while (reader->next(line, sizeof(line)))
 			{
@@ -679,6 +720,8 @@ namespace astrabot
 				{
 					return false;
 				}
+				if(!parseExtendedField(key,value,&values->extended,&blockMask)) return false;
+				values->extendedMask |= blockMask;
 			}
 			return false;
 		}
@@ -702,9 +745,18 @@ namespace astrabot
 
 		void applyCsbotTemplate(const CsbotTemplate &source, CsbotValues *values)
 		{
+			const unsigned mask=source.values.extendedMask;
+			if(mask&1) values->extended.reactionTimeSeconds=source.values.extended.reactionTimeSeconds;
+			if(mask&2) values->extended.attackDelaySeconds=source.values.extended.attackDelaySeconds;
+			if(mask&4) values->extended.teamwork=source.values.extended.teamwork;
+			if(mask&8) values->extended.cost=source.values.extended.cost;
+			if(mask&16) values->extended.voicePitch=source.values.extended.voicePitch;
+			if(mask&32) { values->extended.weaponPreferenceCount=source.values.extended.weaponPreferenceCount; std::memcpy(values->extended.weaponPreferences,source.values.extended.weaponPreferences,sizeof(values->extended.weaponPreferences)); }
+			values->extendedMask |= mask;
 			if (source.values.hasDifficulty)
 			{
 				values->difficulty = source.values.difficulty;
+				values->difficultyMask = source.values.difficultyMask;
 				values->hasDifficulty = true;
 			}
 			if (source.values.hasSkill)
@@ -859,6 +911,14 @@ namespace astrabot
 					return ProfileLoadResult::Malformed;
 				}
 				profile.team = values.team;
+				profile.difficultyMask = values.difficultyMask;
+				profile.reactionTimeSeconds=values.extended.reactionTimeSeconds;
+				profile.attackDelaySeconds=values.extended.attackDelaySeconds;
+				profile.teamwork=values.extended.teamwork;
+				profile.cost=values.extended.cost;
+				profile.voicePitch=values.extended.voicePitch;
+				profile.weaponPreferenceCount=values.extended.weaponPreferenceCount;
+				std::memcpy(profile.weaponPreferences,values.extended.weaponPreferences,sizeof(profile.weaponPreferences));
 				profile.difficulty =
 					values.hasDifficulty ? values.difficulty : difficultyFromSkill(values.skill);
 				profile.skill = values.skill;

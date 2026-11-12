@@ -1,5 +1,11 @@
 # P00 Known Deviations and Blockers
 
+> The 2026-10-18 repair is active. [STATUS.md](STATUS.md) is the current status;
+> [VANILLA_REPAIR_LEDGER.md](VANILLA_REPAIR_LEDGER.md) owns D01–D19 dispositions.
+> Earlier site-directed preplanting, Compatibility reservation and frame-retry
+> descriptions below are historical implementations being replaced. They must
+> not be read as current accepted behavior or as permanent public-API limits.
+
 ## 2026-10-03 remaining live and strategy limits
 
 - Airborne command continuity and landing feedback are tested with synthetic SDK

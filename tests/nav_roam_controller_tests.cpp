@@ -336,6 +336,10 @@ bool testObjectiveChangeClearsFailedRoamLink()
 	astrabot::runtime::NavRoamController controller;
 	astrabot::runtime::NavAreaVisitHistory visits;
 	controller.setAreaVisitHistory(&visits);
+	astrabot::compat::ScriptedRandomSource huntRandom({
+		astrabot::compat::RandomTapeEntry::longEntry("CSBOT-HUNT-GOAL",
+			{1U, 1U}, {0U, 0U, 1U}, 0, 1, 1)});
+	controller.setRandomSource(&huntRandom);
 	astrabot::runtime::NavRoamObservation observation = {};
 	observation.actor = {1U, 1U};
 	observation.frame = {1U, 1U, 1U};
@@ -484,6 +488,12 @@ bool testPathFailureChoosesAnotherCompatibilityGoal()
 	astrabot::runtime::NavRoamReservationBoard reservationBoard;
 	reservationBoard.reset(1U, 1U);
 	controller.setReservationBoard(&reservationBoard);
+	astrabot::compat::ScriptedRandomSource huntRandom({
+		astrabot::compat::RandomTapeEntry::longEntry("CSBOT-HUNT-GOAL",
+			{1U, 1U}, {0U, 0U, 1U}, 0, 2, 1),
+		astrabot::compat::RandomTapeEntry::longEntry("CSBOT-HUNT-GOAL",
+			{1U, 1U}, {0U, 0U, 2U}, 0, 2, 2)});
+	controller.setRandomSource(&huntRandom);
 	astrabot::runtime::NavRoamObservation observation = {};
 	observation.actor = {1U, 1U};
 	observation.frame = {1U, 1U, 1U};
@@ -514,8 +524,8 @@ bool testPathFailureChoosesAnotherCompatibilityGoal()
 			astrabot::runtime::NavRoamResult::IntentReady &&
 		decision.goalArea == 3U && intent.targetArea == 3U &&
 		intent.traversal == astrabot::nav::TraversalAction::Walk &&
-		reservationBoard.goalReservedByOther(1U, {2U, 1U}, 3U),
-			"path failure skips the failed oldest goal and chooses a different route");
+		!reservationBoard.goalReservedByOther(1U, {2U, 1U}, 3U),
+			"path failure consumes the next goal draw and chooses its different route");
 }
 
 bool testLadderTraversalAction()
@@ -597,6 +607,7 @@ bool testStuckDecisionRetainsSelectedRoute()
 	observation.locomotion.position = {32.0f, 32.0f, 0.0f};
 	observation.locomotion.standingClearance = 72.0f;
 	observation.locomotion.crouchingClearance = 36.0f;
+	observation.locomotion.grounded = true;
 	astrabot::nav::LocomotionIntent intent = {};
 	astrabot::runtime::NavRoamDecision decision = {};
 	if (!check(controller.update(
@@ -887,6 +898,12 @@ bool testCompatibilityGoalReroutesAroundFailedFirstLink()
 	}
 	astrabot::runtime::NavRoamController controller(
 		astrabot::compat::RuntimeMode::Compatibility);
+	astrabot::compat::ScriptedRandomSource huntRandom({
+		astrabot::compat::RandomTapeEntry::longEntry("CSBOT-HUNT-GOAL",
+			{1U, 1U}, {0U, 0U, 1U}, 0, 3, 1),
+		astrabot::compat::RandomTapeEntry::longEntry("CSBOT-HUNT-GOAL",
+			{1U, 1U}, {0U, 0U, 2U}, 0, 3, 3)});
+	controller.setRandomSource(&huntRandom);
 	astrabot::runtime::NavRoamObservation observation = {};
 	observation.actor = {1U, 1U};
 	observation.frame = {1U, 1U, 1U};
@@ -924,7 +941,7 @@ bool testCompatibilityGoalReroutesAroundFailedFirstLink()
 	return check(rerouted == astrabot::runtime::NavRoamResult::IntentReady,
 			"Compatibility patrol finds a route after a failed link") &&
 		check(decision.goalArea == 4U,
-			"failed goal is replaced while retaining the oldest remaining goal") &&
+			"failed goal is replaced by the next source-derived random choice") &&
 		check(intent.targetArea == 3U &&
 			intent.traversal == astrabot::nav::TraversalAction::Walk,
 			"alternate route avoids the failed 1-to-2 link instead of retrying it");
@@ -1484,7 +1501,57 @@ bool testDecisionReportsActualLocalSteeringTarget()
 			"decision reports the active portal steering point instead of the final area center");
 }
 
-bool testCompatibilityGoalPrefersOldestLargeAreaAndSafestRoute()
+bool testCompatibilityHuntDrawsForEachActorEvenWithLargeAreas()
+{
+	using namespace astrabot;
+	nav::NavDocument document;
+	document.setSourceIdentity({5U, 100U, 200U});
+	for (std::uint32_t id = 1U; id <= 3U; ++id)
+	{
+		auto candidate = area(id, static_cast<float>(id - 1U) * 200.0f,
+			static_cast<float>(id) * 200.0f);
+		candidate.extent.hi.y = 200.0f;
+		if (id == 1U) candidate.connections[1U] = {2U, 3U};
+		document.addArea(candidate);
+	}
+	nav::NavSnapshotPublisher publisher;
+	publisher.publish(&document, 5U);
+	runtime::NavAreaVisitHistory visits;
+	visits.record(5U, 1U, 2U, 1U);
+	visits.record(5U, 1U, 3U, 20U);
+	// Source-derived expectation: HuntState::OnUpdate's RANDOM_LONG is
+	// unconditional, and its final loop overwrites the oldest-area candidate.
+	// This is not a trace captured from an executing CSBot.
+	for (std::uint32_t slot = 1U; slot <= 8U; ++slot)
+	{
+		const std::int32_t choice = slot % 2U == 0U ? 1 : 2;
+		compat::ScriptedRandomSource random({compat::RandomTapeEntry::longEntry(
+			"CSBOT-HUNT-GOAL", {slot, 1U}, {0U, 0U, 1U}, 0, 2, choice)});
+		runtime::NavRoamController controller(compat::RuntimeMode::Compatibility);
+		controller.setRandomSource(&random);
+		controller.setAreaVisitHistory(&visits);
+		runtime::NavRoamObservation obs{};
+		obs.actor = {slot, 1U}; obs.frame = {5U, 1U, 1U}; obs.team = 1U;
+		obs.locomotion.position = {100.0f, 100.0f, 0.0f};
+		obs.locomotion.standingClearance = 72.0f;
+		obs.locomotion.crouchingClearance = 36.0f;
+		obs.locomotion.grounded = true;
+		nav::LocomotionIntent intent{}; runtime::NavRoamDecision decision{};
+		if (!check(controller.update(publisher.snapshot(), obs, &intent, &decision) ==
+			runtime::NavRoamResult::IntentReady &&
+			decision.goalArea == static_cast<nav::AreaId>(choice + 1) &&
+			decision.routeType == nav::NavRouteType::Safest && random.verifyComplete(),
+			"each Compatibility Hunt actor consumes its draw despite shared oldest large-area history"))
+			return false;
+		obs.frame.tick = 2U;
+		if (!check(controller.update(publisher.snapshot(), obs, &intent, &decision) ==
+			runtime::NavRoamResult::IntentReady && random.verifyComplete(),
+			"continuing the same Hunt corridor does not redraw the destination")) return false;
+	}
+	return true;
+}
+
+bool testCompatibilityLargeAreaGoalUsesDrawAndSafestRoute()
 {
 	astrabot::nav::NavDocument document;
 	document.setSourceIdentity({5U, 100U, 200U});
@@ -1516,6 +1583,10 @@ bool testCompatibilityGoalPrefersOldestLargeAreaAndSafestRoute()
 	visitHistory.record(5U, 1U, 2U, 20U);
 	visitHistory.record(5U, 1U, 3U, 5U);
 	controller.setAreaVisitHistory(&visitHistory);
+	astrabot::compat::ScriptedRandomSource huntRandom({
+		astrabot::compat::RandomTapeEntry::longEntry("CSBOT-HUNT-GOAL",
+			{1U, 1U}, {0U, 0U, 10U}, 0, 2, 1)});
+	controller.setRandomSource(&huntRandom);
 	astrabot::runtime::NavRoamObservation observation = {};
 	observation.actor = {1U, 1U};
 	observation.frame = {5U, 1U, 10U};
@@ -1530,16 +1601,420 @@ bool testCompatibilityGoalPrefersOldestLargeAreaAndSafestRoute()
 		publisher.snapshot(), observation, &intent, &decision);
 	return check(result == astrabot::runtime::NavRoamResult::IntentReady,
 			"Compatibility Hunt goal has a route") &&
-		check(decision.goalArea == 3U,
-			"oldest eligible area beats the first outgoing link") &&
+		check(decision.goalArea == 2U,
+			"random choice overrides the oldest eligible large area") &&
 		check(decision.routeType == astrabot::nav::NavRouteType::Safest,
 			"Compatibility Hunt uses the safest route") &&
 		check(decision.goalSelectionStrategy ==
-				astrabot::runtime::GoalSelectionStrategyOldestVisitedArea,
-			"large NAV candidates use oldest-visited selection");
+				astrabot::runtime::GoalSelectionStrategyRandomFallback,
+			"large NAV candidates also consume a bounded goal draw") &&
+		check(huntRandom.verifyComplete(), "large-area goal consumes exactly its taped draw");
 }
 
-bool testTeamReservationsChooseDistinctGoalsAndFirstLinks()
+bool testCompatibilityPathRetryUsesEngineTime()
+{
+	using namespace astrabot;
+	nav::NavDocument document;
+	document.setSourceIdentity({5U, 100U, 200U});
+	document.addArea(area(1U, 0.0f, 64.0f));
+	document.addArea(area(2U, 128.0f, 192.0f));
+	nav::NavSnapshotPublisher publisher;
+	publisher.publish(&document, 1U);
+	compat::ScriptedRandomSource random({
+		compat::RandomTapeEntry::floatEntry("CSBOT-PATH-RETRY", {1U, 1U},
+			{0U, 0U, 1U}, 0.4f, 0.6f, 0.5f),
+		compat::RandomTapeEntry::floatEntry("CSBOT-PATH-RETRY", {1U, 1U},
+			{0U, 0U, 101U}, 0.4f, 0.6f, 0.5f)});
+	runtime::NavRoamController controller;
+	controller.setRandomSource(&random);
+	runtime::NavRoamObservation observation = {};
+	observation.actor = {1U, 1U};
+	observation.frame = {1U, 1U, 1U};
+	observation.team = 1U;
+	observation.locomotion.position = {32.0f, 32.0f, 0.0f};
+	observation.locomotion.standingClearance = 72.0f;
+	observation.locomotion.crouchingClearance = 36.0f;
+	observation.locomotion.grounded = true;
+	observation.locomotion.timingAvailable = true;
+	observation.hasObjectiveTarget = true;
+	observation.objectiveTarget = {160.0f, 32.0f, 0.0f};
+	observation.collectPathStats = true;
+	nav::LocomotionIntent intent = {};
+	runtime::NavRoamDecision decision = {};
+	controller.update(publisher.snapshot(), observation, &intent, &decision);
+	if (!check(decision.pathSearchStats.searchCalls == 1U,
+		"first timed route attempts path search")) return false;
+	observation.frame.tick = 100U;
+	observation.locomotion.observedAt = 0.1f;
+	controller.update(publisher.snapshot(), observation, &intent, &decision);
+	if (!check(decision.pathSearchStats.searchCalls == 0U,
+		"many server frames do not bypass engine-time repath delay")) return false;
+	observation.frame.tick = 101U;
+	observation.locomotion.observedAt = 0.6f;
+	controller.update(publisher.snapshot(), observation, &intent, &decision);
+	return check(decision.pathSearchStats.searchCalls == 1U && random.verifyComplete(),
+		"elapsed engine time retries once with reference random interval");
+}
+
+bool testAirborneRouteDoesNotEnterStuckRecovery()
+{
+	using namespace astrabot;
+	nav::NavDocument document;
+	document.setSourceIdentity({5U, 100U, 200U});
+	auto start = area(1U, 0.0f, 256.0f);
+	start.connections[1U].push_back(2U);
+	document.addArea(start);
+	document.addArea(area(2U, 256.0f, 512.0f));
+	nav::NavSnapshotPublisher publisher;
+	publisher.publish(&document, 1U);
+	compat::ScriptedRandomSource random({
+		compat::RandomTapeEntry::floatEntry("CSBOT-PATH-RETRY", {1U, 1U},
+			{0U, 0U, 1U}, 0.4f, 0.6f, 0.5f)});
+	runtime::NavRoamController controller;
+	controller.setRandomSource(&random);
+	runtime::NavRoamObservation observation = {};
+	observation.actor = {1U, 1U};
+	observation.frame = {1U, 1U, 1U};
+	observation.team = 1U;
+	observation.hasObjectiveTarget = true;
+	observation.objectiveTarget = {300.0f, 32.0f, 0.0f};
+	observation.locomotion.position = {32.0f, 32.0f, 0.0f};
+	observation.locomotion.standingClearance = 72.0f;
+	observation.locomotion.crouchingClearance = 36.0f;
+	observation.locomotion.grounded = true;
+	observation.locomotion.timingAvailable = true;
+	nav::LocomotionIntent intent = {};
+	if (!check(controller.update(publisher.snapshot(), observation, &intent) ==
+		runtime::NavRoamResult::IntentReady, "airborne regression route starts")) return false;
+	observation.locomotion.grounded = false;
+	observation.locomotion.position.z = 16.0f;
+	observation.locomotion.velocity = {};
+	observation.airborne = true;
+	for (std::uint32_t tick = 2U; tick <= 21U; ++tick)
+	{
+		observation.frame.tick = tick;
+		observation.locomotion.observedAt = (tick - 1U) * 0.1f;
+		if (!check(controller.update(publisher.snapshot(), observation, &intent) ==
+			runtime::NavRoamResult::IntentReady && intent.direction.x > 0.9f &&
+			std::fabs(intent.direction.y) < 0.01f && intent.traversal == nav::TraversalAction::Walk,
+			"airborne zero velocity preserves route heading without starting Wiggle")) return false;
+	}
+	return check(random.verifyComplete(), "airborne route consumes no stuck or Wiggle RNG");
+}
+
+bool testFriendWaitRepathsAroundCrowding(bool clears = false, bool attacking = false,
+	int nonBlockingFriend = 0, bool onlyCorridor = false)
+{
+	using namespace astrabot;
+	nav::NavDocument document;
+	document.setSourceIdentity({5U, 100U, 200U});
+	auto start = area(1U, 0.0f, 256.0f);
+	auto crowded = area(2U, 256.0f, 512.0f);
+	auto alternate = area(3U, 256.0f, 512.0f);
+	alternate.extent.lo.y = 128.0f; alternate.extent.hi.y = 192.0f;
+	auto goal = area(4U, 512.0f, 768.0f);
+	start.connections[1U] = {2U, 3U};
+	if (onlyCorridor) start.connections[1U] = {2U};
+	crowded.connections[1U] = {4U}; alternate.connections[1U] = {4U};
+	document.addArea(start); document.addArea(crowded);
+	document.addArea(alternate); document.addArea(goal);
+	nav::NavSnapshotPublisher publisher; publisher.publish(&document, 1U);
+	compat::ScriptedRandomSource random({
+		compat::RandomTapeEntry::floatEntry("CSBOT-PATH-RETRY", {1U, 1U},
+			{0U, 0U, 1U}, 0.4f, 0.6f, 0.5f),
+		compat::RandomTapeEntry::floatEntry("CSBOT-PATH-RETRY", {1U, 1U},
+			{0U, 0U, 5U}, 0.4f, 0.6f, 0.5f)});
+	runtime::NavRoamController controller; controller.setRandomSource(&random);
+	nav::NavPathCostContext cost{}; cost.aggression = 0.5f; cost.attacking = attacking;
+	controller.setPathCostContext(cost);
+	runtime::NavRoamObservation obs{};
+	obs.actor = {1U, 1U}; obs.frame = {1U, 1U, 1U};
+	obs.locomotion.position = {32.0f, 32.0f, 0.0f};
+	obs.locomotion.standingClearance = 72.0f; obs.locomotion.crouchingClearance = 36.0f;
+	obs.locomotion.grounded = true; obs.locomotion.timingAvailable = true;
+	obs.hasObjectiveTarget = true; obs.objectiveTarget = {600.0f, 32.0f, 0.0f};
+	nav::LocomotionIntent intent{}; runtime::NavRoamDecision decision{};
+	if (!check(controller.update(publisher.snapshot(), obs, &intent, &decision) ==
+		runtime::NavRoamResult::IntentReady && decision.selectedPath == std::vector<nav::AreaId>{1U, 2U, 4U},
+		"unoccupied reference path initially uses the direct branch")) return false;
+	obs.frame.tick = 2U; obs.locomotion.observedAt = 0.1f;
+	obs.nearbyFriends = {{82.0f, 32.0f, 0.0f}};
+	if (nonBlockingFriend == 1) obs.nearbyFriends = {{0.0f, 32.0f, 0.0f}};
+	if (nonBlockingFriend == 2) obs.nearbyFriends = {{82.0f, 80.0f, 0.0f}};
+	if (nonBlockingFriend == 3) obs.nearbyFriends = {{82.0f, 32.0f, 100.0f}};
+	const auto waiting = controller.update(publisher.snapshot(), obs, &intent, &decision);
+	if (attacking || nonBlockingFriend != 0)
+		return check(waiting == runtime::NavRoamResult::IntentReady && intent.speed > 0.0f,
+			"attack or a friend behind, beside, or on another floor does not suppress movement");
+	if (!check(waiting == runtime::NavRoamResult::MovementSuppressed && intent.speed == 0.0f &&
+		intent.traversal != nav::TraversalAction::Jump && random.position() == 1U,
+		"friend in the path suppresses pushing and Wiggle without consuming RNG")) return false;
+	obs.frame.tick = 3U; obs.locomotion.observedAt = 3.59f;
+	if (clears) obs.nearbyFriends.clear();
+	const auto before = controller.update(publisher.snapshot(), obs, &intent, &decision);
+	if (clears) return check(before == runtime::NavRoamResult::IntentReady && intent.speed > 0.0f &&
+		random.position() == 1U && !random.failed(),
+		"friend clearing resumes the route without a stale stuck jump");
+	if (!check(before == runtime::NavRoamResult::MovementSuppressed,
+		"half-aggression bot waits through 3.49 seconds")) return false;
+	obs.frame.tick = 4U; obs.locomotion.observedAt = 3.61f;
+	if (!check(controller.update(publisher.snapshot(), obs, &intent, &decision) ==
+		runtime::NavRoamResult::IntentReady && intent.speed > 0.0f && intent.direction.x > 0.9f &&
+		intent.traversal != nav::TraversalAction::Jump &&
+		decision.recomputeReason == runtime::NavRecomputeReason::PathInvalidated && !controller.isActive(),
+		"CSBot patience expiry moves this update before destroying the path")) return false;
+	cost.areas = {{2U, 0.0f, 3U}}; controller.setPathCostContext(cost);
+	obs.frame.tick = 5U; obs.locomotion.observedAt = 3.7f;
+	return check(controller.update(publisher.snapshot(), obs, &intent, &decision) ==
+		runtime::NavRoamResult::IntentReady && decision.selectedPath ==
+		(onlyCorridor ? std::vector<nav::AreaId>{1U, 2U, 4U} : std::vector<nav::AreaId>{1U, 3U, 4U}) &&
+		random.verifyComplete(), "repath selects a cheaper branch but keeps the only valid occupied corridor legal");
+}
+
+bool testCompatibilityCorridorWithoutProgressExpires(bool airborne = false,
+	bool lateArrival = false)
+{
+	using namespace astrabot;
+	nav::NavDocument document;
+	document.setSourceIdentity({5U, 100U, 200U});
+	auto start = area(1U, 0.0f, 256.0f);
+	auto goal = area(2U, 256.0f, 512.0f);
+	start.connections[1U].push_back(2U);
+	document.addArea(start);
+	document.addArea(goal);
+	nav::NavSnapshotPublisher publisher;
+	publisher.publish(&document, 1U);
+	compat::ScriptedRandomSource random({
+		compat::RandomTapeEntry::floatEntry("CSBOT-PATH-RETRY", {1U, 1U},
+			{0U, 0U, 1U}, 0.4f, 0.6f, 0.5f),
+		compat::RandomTapeEntry::floatEntry("CSBOT-PATH-RETRY", {1U, 1U},
+			{0U, 0U, 53U}, 0.4f, 0.6f, 0.5f)});
+	runtime::NavRoamController controller;
+	controller.setRandomSource(&random);
+	runtime::NavRoamObservation observation = {};
+	observation.actor = {1U, 1U};
+	observation.frame = {1U, 1U, 1U};
+	observation.locomotion.standingClearance = 72.0f;
+	observation.locomotion.crouchingClearance = 36.0f;
+	observation.locomotion.grounded = !airborne;
+	observation.airborne = airborne;
+	observation.locomotion.timingAvailable = true;
+	observation.hasObjectiveTarget = true;
+	observation.objectiveTarget = {300.0f, 32.0f, 0.0f};
+	nav::LocomotionIntent intent = {};
+	runtime::NavRoamDecision decision = {};
+	for (std::uint32_t tick = 1U; tick <= 51U; ++tick)
+	{
+		observation.frame.tick = tick;
+		observation.locomotion.observedAt = static_cast<float>(tick - 1U) * 0.1f;
+		// Fast local motion prevents the average-velocity monitor from detecting stuck.
+		observation.locomotion.position = {32.0f + (tick % 2U) * 10.0f, 32.0f, 0.0f};
+		if (!check(controller.update(publisher.snapshot(), observation, &intent, &decision) ==
+			runtime::NavRoamResult::IntentReady,
+			"corridor remains usable through the five-second progress boundary")) return false;
+	}
+	observation.frame.tick = 52U;
+	observation.locomotion.observedAt = 5.1f;
+	observation.locomotion.position.x = 32.0f;
+	if (lateArrival) observation.locomotion.position.x = 300.0f;
+	const auto result = controller.update(publisher.snapshot(), observation, &intent, &decision);
+	if (lateArrival)
+		return check(result == runtime::NavRoamResult::TargetReached &&
+			random.position() == 1U && !random.failed(),
+			"arrival is processed before the five-second path deadline");
+	if (airborne)
+	{
+		if (!check(result == runtime::NavRoamResult::IntentReady &&
+			intent.direction.x > 0.9f && random.position() == 1U && !random.failed(),
+			"airborne traversal is not interrupted by the ground progress deadline")) return false;
+		observation.frame.tick = 53U;
+		observation.locomotion.observedAt = 5.2f;
+		observation.locomotion.grounded = true;
+		observation.airborne = false;
+		return check(controller.update(publisher.snapshot(), observation, &intent, &decision) ==
+			runtime::NavRoamResult::ReplanRequired && intent.speed == 0.0f &&
+			decision.failureReason == runtime::NavFailureReason::MovementNotProduced,
+			"landing without route progress cannot renew the stuck deadline");
+	}
+	if (!check(result ==
+		runtime::NavRoamResult::ReplanRequired && intent.speed == 0.0f &&
+		decision.failureReason == runtime::NavFailureReason::MovementNotProduced &&
+		decision.linkFromArea == 1U && decision.linkToArea == 2U,
+		"moving without corridor progress fails the directed segment after five seconds")) return false;
+	observation.frame.tick = 53U;
+	observation.locomotion.observedAt = 5.2f;
+	return check(controller.update(publisher.snapshot(), observation, &intent, &decision) ==
+		runtime::NavRoamResult::IntentReady && intent.speed > 0.0f &&
+		decision.linkFromArea == 1U && decision.linkToArea == 2U && random.verifyComplete(),
+		"CSBot retry rebuilds the legal sole route after the old corridor expires");
+}
+
+bool testBsiteProgressFailureDoesNotBlacklistTheOnlyApproach()
+{
+	using namespace astrabot;
+	nav::NavDocument document;
+	document.setSourceIdentity({5U, 100U, 200U});
+	// Reduced from the deployed de_dust2 NAV. Area823 is the rising jump
+	// approach to643; no alternative exists when157->823 is removed.
+	auto start = area(157U, -1425.0f, -1350.0f);
+	start.extent.lo = {-1425.0f, 2350.0f, 0.03125f};
+	start.extent.hi = {-1350.0f, 2575.0f, 12.88872f};
+	start.northEastZ = 0.03125f; start.southWestZ = 2.17444f;
+	start.connections[2U] = {823U};
+	auto approach = area(823U, -1375.0f, -1350.0f);
+	approach.extent.lo = {-1375.0f, 2575.0f, 9.31729f};
+	approach.extent.hi = {-1350.0f, 2625.0f, 112.03125f};
+	approach.northEastZ = 12.88872f; approach.southWestZ = 112.03126f;
+	approach.attributes = nav::NavArea::kJump;
+	approach.connections[0U] = {157U}; approach.connections[3U] = {643U};
+	auto goal = area(643U, -1400.0f, -1375.0f);
+	goal.extent.lo = {-1400.0f, 2600.0f, 64.03125f};
+	goal.extent.hi = {-1375.0f, 2625.0f, 112.03126f};
+	goal.northEastZ = 64.03127f; goal.southWestZ = 64.03126f;
+	goal.connections[1U] = {823U};
+	document.addArea(start); document.addArea(approach); document.addArea(goal);
+	nav::NavSnapshotPublisher publisher; publisher.publish(&document, 1U);
+	nav::NavQuery query(publisher.snapshot()); nav::NavCorridor corridor{}, alternate{};
+	if (!check(query.buildCorridor(157U, 643U, &corridor) == nav::NavQueryResult::Found &&
+		query.buildAlternativeCorridor(corridor, corridor.links.front(), &alternate) == nav::NavQueryResult::NoRoute,
+		"recorded B-site approach has a legal corridor and no bypass")) return false;
+	compat::ScriptedRandomSource random({
+		compat::RandomTapeEntry::floatEntry("CSBOT-PATH-RETRY", {7U, 1U}, {0U, 0U, 1U}, .4f, .6f, .5f),
+		compat::RandomTapeEntry::floatEntry("CSBOT-PATH-RETRY", {7U, 1U}, {0U, 0U, 53U}, .4f, .6f, .5f)});
+	runtime::NavRoamController controller; controller.setRandomSource(&random);
+	runtime::NavRoamObservation obs{}; obs.actor = {7U, 1U}; obs.frame = {1U, 1U, 1U};
+	obs.locomotion.grounded = true; obs.locomotion.timingAvailable = true;
+	obs.locomotion.standingClearance = 72.0f; obs.locomotion.crouchingClearance = 36.0f;
+	obs.hasObjectiveTarget = true; obs.objectiveTarget = {-1387.5f, 2612.5f, 76.0f};
+	nav::LocomotionIntent intent{}; runtime::NavRoamDecision decision{};
+	for (std::uint32_t tick = 1U; tick <= 52U; ++tick)
+	{
+		obs.frame.tick = tick; obs.locomotion.observedAt = 147.0f + static_cast<float>(tick - 1U) * .1f;
+		// Local movement without area progress reproduces the reference five-second
+		// give-up check without requiring random Wiggle decisions in this test.
+		obs.locomotion.position = {-1361.3f - (tick % 2U) * 10.0f, 2447.0f, 1.9f};
+		const auto result = controller.update(publisher.snapshot(), obs, &intent, &decision);
+		if (!check(tick < 52U ? result == runtime::NavRoamResult::IntentReady :
+			(result == runtime::NavRoamResult::ReplanRequired &&
+			 decision.failureReason == runtime::NavFailureReason::MovementNotProduced),
+			"B-site corridor expires after five seconds of no area progress")) return false;
+	}
+	obs.frame.tick = 53U; obs.locomotion.observedAt = 152.2f;
+	obs.locomotion.position = {-1361.3f, 2447.0f, 1.9f};
+	return check(controller.update(publisher.snapshot(), obs, &intent, &decision) ==
+		runtime::NavRoamResult::IntentReady && intent.speed > 0.0f &&
+		decision.selectedPath == std::vector<nav::AreaId>({157U, 823U, 643U}) && random.verifyComplete(),
+		"CSBot B-site retry resumes the sole legal approach instead of latching PathSearchFailed");
+}
+
+bool testCompatibilityWiggleUsesRandomDirectionAndDuration(bool withView = false,
+	bool rewindClock = false, bool clearanceKnown = true, bool narrowArea = false,
+	bool friendAfterWiggle = false)
+{
+	using namespace astrabot;
+	nav::NavDocument document;
+	document.setSourceIdentity({5U, 100U, 200U});
+	auto start = area(1U, 0.0f, 256.0f);
+	auto goal = area(2U, 256.0f, 512.0f);
+	if (narrowArea)
+	{
+		start.extent.hi.x = 64.0f;
+		goal.extent.lo.x = 64.0f;
+		goal.extent.hi.x = 128.0f;
+	}
+	start.connections[1U].push_back(2U);
+	document.addArea(start);
+	document.addArea(goal);
+	nav::NavSnapshotPublisher publisher;
+	publisher.publish(&document, 1U);
+	std::vector<compat::RandomTapeEntry> tape = {
+		compat::RandomTapeEntry::floatEntry("CSBOT-PATH-RETRY", {1U, 1U},
+			{0U, 0U, 1U}, 0.4f, 0.6f, 0.5f),
+		compat::RandomTapeEntry::floatEntry("CSBOT-STUCK-JUMP-DELAY", {1U, 1U},
+			{0U, 0U, 6U}, 0.0f, 0.5f, 0.2f),
+		compat::RandomTapeEntry::longEntry("CSBOT-WIGGLE-DIRECTION", {1U, 1U},
+			{0U, 0U, 6U}, 0, 3, 1),
+		compat::RandomTapeEntry::floatEntry("CSBOT-WIGGLE-DURATION", {1U, 1U},
+			{0U, 0U, 6U}, 0.5f, 1.5f, 1.0f),
+		compat::RandomTapeEntry::floatEntry("CSBOT-WIGGLE-JUMP-INTERVAL", {1U, 1U},
+			{0U, 0U, 8U}, 1.0f, 2.0f, 1.0f)};
+	if (rewindClock)
+	{
+		const auto repeated = tape;
+		tape.insert(tape.end(), repeated.begin(), repeated.end());
+	}
+	if (friendAfterWiggle) tape.resize(4U);
+	compat::ScriptedRandomSource random(tape);
+	runtime::NavRoamController controller;
+	controller.setRandomSource(&random);
+	runtime::NavRoamObservation observation = {};
+	observation.actor = {1U, 1U};
+	observation.frame = {1U, 1U, 1U};
+	observation.team = 1U;
+	observation.locomotion.position = {32.0f, 32.0f, 0.0f};
+	observation.locomotion.standingClearance = 72.0f;
+	observation.locomotion.crouchingClearance = 36.0f;
+	observation.locomotion.grounded = true;
+	observation.locomotion.timingAvailable = true;
+	observation.locomotion.viewYawAvailable = withView;
+	observation.locomotion.clearanceAvailable = clearanceKnown;
+	observation.locomotion.viewYaw = 180.0f;
+	observation.hasObjectiveTarget = true;
+	observation.objectiveTarget = {300.0f, 32.0f, 0.0f};
+	if (narrowArea) observation.objectiveTarget.x = 96.0f;
+	nav::LocomotionIntent intent = {};
+	runtime::NavRoamDecision decision = {};
+	bool jumpSeen = false;
+	for (std::uint32_t tick = 1U; tick <= 10U; ++tick)
+	{
+		observation.frame.tick = tick;
+		observation.locomotion.observedAt = static_cast<float>(tick - 1U) * 0.1f;
+		if (friendAfterWiggle && tick == 7U)
+		{
+			observation.nearbyFriends = {{82.0f, 32.0f, 0.0f}};
+			observation.locomotion.observedAt = 0.7f;
+			if (!check(controller.update(publisher.snapshot(), observation, &intent, &decision) ==
+				runtime::NavRoamResult::MovementSuppressed,
+				"a newly detected friend interrupts active Wiggle")) return false;
+			observation.nearbyFriends.clear();
+			observation.frame.tick = 8U; observation.locomotion.observedAt = 1.3f;
+			return check(controller.update(publisher.snapshot(), observation, &intent, &decision) ==
+				runtime::NavRoamResult::ReplanRequired && intent.speed == 0.0f && random.verifyComplete(),
+				"clearing a friend invalidates stale Wiggle instead of resuming its delayed jump");
+		}
+		if (controller.update(publisher.snapshot(), observation, &intent, &decision) !=
+			runtime::NavRoamResult::IntentReady) return false;
+		jumpSeen = jumpSeen || intent.traversal == nav::TraversalAction::Jump;
+	}
+	if (!check((rewindClock ? random.position() == 5U && !random.failed() : random.verifyComplete()) && jumpSeen &&
+		(withView ? intent.direction.y > 0.9f : intent.direction.y < -0.9f),
+		"compatibility Wiggle uses random direction and persists for sampled seconds"))
+		return false;
+	observation.frame.tick = 11U;
+	observation.locomotion.observedAt = 1.0f;
+	observation.locomotion.position.x += 76.0f;
+	if (narrowArea) observation.locomotion.position.x = 68.0f;
+	controller.update(publisher.snapshot(), observation, &intent, &decision);
+	if (!check(intent.direction.x > 0.9f,
+		"displacement or grounded entry into the next narrow area ends stuck recovery")) return false;
+	if (!rewindClock) return true;
+	if (!check(publisher.publish(&document, 2U) == nav::NavSnapshotResult::Published,
+		"new map publishes for clock rewind regression")) return false;
+	observation.locomotion.position = {32.0f, 32.0f, 0.0f};
+	bool jumpAfterRewind = false;
+	for (std::uint32_t tick = 1U; tick <= 10U; ++tick)
+	{
+		observation.frame = {2U, 1U, tick};
+		observation.locomotion.observedAt = static_cast<float>(tick - 1U) * 0.1f;
+		if (!check(controller.update(publisher.snapshot(), observation, &intent, &decision) ==
+			runtime::NavRoamResult::IntentReady, "new-map timed route remains active")) return false;
+		jumpAfterRewind = jumpAfterRewind || intent.traversal == nav::TraversalAction::Jump;
+	}
+	return check(jumpAfterRewind && random.verifyComplete(),
+		"new-map clock rewind clears old jump cooldown and preserves RNG schedule");
+}
+
+bool testTeamReservationsChooseDistinctGoalsAndFirstLinks(bool compatibility = false)
 {
 	using astrabot::nav::NavArea;
 	using astrabot::nav::NavDocument;
@@ -1579,12 +2054,21 @@ bool testTeamReservationsChooseDistinctGoalsAndFirstLinks()
 	NavAreaVisitHistory visits;
 	NavRoamReservationBoard board;
 	board.reset(5U, 7U);
-	NavRoamController first(astrabot::compat::RuntimeMode::Compatibility);
-	NavRoamController second(astrabot::compat::RuntimeMode::Compatibility);
+	const auto mode = compatibility ? astrabot::compat::RuntimeMode::Compatibility
+		: astrabot::compat::RuntimeMode::Enhanced;
+	NavRoamController first(mode);
+	NavRoamController second(mode);
 	first.setAreaVisitHistory(&visits);
 	second.setAreaVisitHistory(&visits);
 	first.setReservationBoard(&board);
 	second.setReservationBoard(&board);
+	astrabot::compat::ScriptedRandomSource firstRandom({
+		astrabot::compat::RandomTapeEntry::longEntry("CSBOT-HUNT-GOAL",
+			{1U, 1U}, {0U, 0U, 1U}, 0, 2, 1)});
+	astrabot::compat::ScriptedRandomSource secondRandom({
+		astrabot::compat::RandomTapeEntry::longEntry("CSBOT-HUNT-GOAL",
+			{2U, 1U}, {0U, 0U, 1U}, 0, 2, 1)});
+	if (compatibility) { first.setRandomSource(&firstRandom); second.setRandomSource(&secondRandom); }
 	NavRoamObservation firstObservation = {};
 	firstObservation.actor = {1U, 1U};
 	firstObservation.frame = {5U, 7U, 1U};
@@ -1607,6 +2091,13 @@ bool testTeamReservationsChooseDistinctGoalsAndFirstLinks()
 			"second teammate obtains a distinct reserved roam route"))
 	{
 		return false;
+	}
+	if (compatibility)
+	{
+		return check(firstDecision.goalArea == secondDecision.goalArea &&
+			firstRandom.verifyComplete() && secondRandom.verifyComplete() &&
+			!board.goalReservedByOther(1U, {3U, 1U}, firstDecision.goalArea),
+			"compatibility ignores injected team reservations and creates no claims");
 	}
 	return check(firstDecision.goalArea != secondDecision.goalArea &&
 			(firstDecision.linkFromArea != secondDecision.linkFromArea ||
@@ -1650,8 +2141,8 @@ bool testTeamReservationFallbackAndLifecycle()
 	NavRoamReservationBoard board;
 	board.reset(5U, 7U);
 	NavAreaVisitHistory visits;
-	NavRoamController first(astrabot::compat::RuntimeMode::Compatibility);
-	NavRoamController second(astrabot::compat::RuntimeMode::Compatibility);
+	NavRoamController first(astrabot::compat::RuntimeMode::Enhanced);
+	NavRoamController second(astrabot::compat::RuntimeMode::Enhanced);
 	first.setAreaVisitHistory(&visits);
 	second.setAreaVisitHistory(&visits);
 	first.setReservationBoard(&board);
@@ -1785,7 +2276,7 @@ bool testReservationBudgetFallbackIsDiagnosed()
 	}
 	NavAreaVisitHistory visits;
 	NavRoamController controller(
-		astrabot::compat::RuntimeMode::Compatibility);
+		astrabot::compat::RuntimeMode::Enhanced);
 	controller.setAreaVisitHistory(&visits);
 	controller.setReservationBoard(&board);
 	NavRoamObservation observation = {};
@@ -1805,6 +2296,67 @@ bool testReservationBudgetFallbackIsDiagnosed()
 			decision.reservationFallbackReason ==
 				NavRoamReservationFallbackReason::CandidateBudgetExhausted,
 			"shared-route fallback records that the distinct-route budget ended");
+}
+
+bool testOffMeshCompatibilityKeepsTryingAfterBlockedCandidate()
+{
+	using namespace astrabot;
+	nav::NavDocument document;
+	document.setSourceIdentity({5U,100U,200U});
+	document.addArea(area(1U,0.0f,64.0f));
+	nav::NavSnapshotPublisher publisher;
+	publisher.publish(&document,1U);
+	compat::ScriptedRandomSource random({
+		compat::RandomTapeEntry::floatEntry("CSBOT-STUCK-JUMP-DELAY",{3U,1U},{0U,0U,21U},0.0f,0.5f,0.0f),
+		compat::RandomTapeEntry::longEntry("CSBOT-WIGGLE-DIRECTION",{3U,1U},{0U,0U,21U},0,3,1),
+		compat::RandomTapeEntry::floatEntry("CSBOT-WIGGLE-DURATION",{3U,1U},{0U,0U,21U},0.5f,1.5f,0.5f),
+		compat::RandomTapeEntry::floatEntry("CSBOT-WIGGLE-JUMP-INTERVAL",{3U,1U},{0U,0U,21U},1.0f,2.0f,1.0f)});
+	runtime::NavRoamController controller;
+	controller.setRandomSource(&random);
+	runtime::NavRoamObservation obs={};
+	obs.actor={3U,1U}; obs.frame={1U,1U,1U};
+	obs.locomotion.position={-8.0f,32.0f,0.0f};
+	obs.locomotion.grounded=true; obs.locomotion.timingAvailable=true;
+	nav::LocomotionIntent intent={}; runtime::NavRoamDecision decision={};
+	for (std::uint32_t tick=1U;tick<=21U;++tick)
+	{
+		obs.frame.tick=tick; obs.locomotion.observedAt=0.1f*static_cast<float>(tick-1U);
+		controller.update(publisher.snapshot(),obs,&intent,&decision);
+	}
+	if (!check(intent.speed>0.0f && std::fabs(intent.direction.y)>0.9f &&
+		intent.traversal==nav::TraversalAction::Jump && random.verifyComplete(),
+		"off-mesh compatibility failure performs timed Wiggle instead of latching neutral forever")) return false;
+	obs.frame.tick=22U; obs.locomotion.observedAt=2.1f; obs.movementSuppressed=true;
+	if (!check(controller.update(publisher.snapshot(),obs,&intent,&decision)==runtime::NavRoamResult::MovementSuppressed &&
+		intent.speed==0.0f,"freeze still suppresses off-mesh Wiggle")) return false;
+	return true;
+}
+
+bool testSafeDescentDoesNotReverseTowardNeighboringLedge()
+{
+	using namespace astrabot;
+	nav::NavDocument document;
+	document.setSourceIdentity({5U,100U,200U});
+	auto source=area(1U,0.0f,64.0f);
+	source.extent.lo.z=source.extent.hi.z=source.northEastZ=source.southWestZ=120.0f;
+	auto landing=area(2U,0.0f,64.0f); landing.extent.lo.y=89.0f;landing.extent.hi.y=189.0f;
+	auto neighbor=source;neighbor.id=3U;neighbor.extent.lo.x=-64.0f;neighbor.extent.hi.x=0.0f;
+	source.connections[2U].push_back(2U);neighbor.connections[2U].push_back(2U);
+	document.addArea(source);document.addArea(landing);document.addArea(neighbor);
+	nav::NavSnapshotPublisher publisher;publisher.publish(&document,1U);
+	runtime::NavRoamController controller;
+	runtime::NavRoamObservation obs={};obs.actor={1U,1U};obs.frame={1U,1U,1U};
+	obs.locomotion.position={32.0f,10.0f,120.0f};obs.locomotion.grounded=true;
+	obs.locomotion.standingClearance=72.0f;obs.locomotion.crouchingClearance=36.0f;
+	obs.locomotion.safeDropHeightAvailable=true;obs.locomotion.maximumSafeDropHeight=156.25f;
+	obs.hasObjectiveTarget=true;obs.objectiveTarget={32.0f,150.0f,0.0f};
+	nav::LocomotionIntent intent={};runtime::NavRoamDecision decision={};
+	controller.update(publisher.snapshot(),obs,&intent,&decision);
+	obs.frame.tick=2U;obs.locomotion.position={-20.0f,70.0f,120.0f};
+	const auto result=controller.update(publisher.snapshot(),obs,&intent,&decision);
+	return check(result==runtime::NavRoamResult::IntentReady && intent.direction.y>0.0f &&
+		decision.stage!=runtime::NavRoamStage::OffMeshRecovery,
+		"safe descent across adjacent connected ledge retains forward intent across the NAV gap");
 }
 
 bool testOffMeshRecoveryHasHorizontalProgressAndBounds()
@@ -2287,6 +2839,79 @@ bool testUnsafeDropRetryPolicy(std::uint32_t cadence, int release, bool bypass, 
 
 int main()
 {
+	{
+		using namespace astrabot;
+		nav::NavDocument document;
+		document.setSourceIdentity({5U, 100U, 200U});
+		auto start = area(1U, 0, 64);
+		auto goal = area(2U, 64, 128);
+		start.connections[1U] = {2U};
+		start.extent.lo.z = start.extent.hi.z = 42.0f;
+		start.northEastZ = start.southWestZ = 42.0f;
+		goal.northEastZ = goal.southWestZ = 42.0f;
+		document.addArea(start);
+		document.addArea(goal);
+		nav::NavSnapshotPublisher publisher;
+		publisher.publish(&document, 1U);
+		compat::ScriptedRandomSource random({compat::RandomTapeEntry::longEntry(
+			"CSBOT-HUNT-GOAL", {1U, 1U}, {0U, 0U, 1U}, 0, 1, 1)});
+		runtime::NavRoamController controller;
+		controller.setRandomSource(&random);
+		runtime::NavRoamObservation observation = {};
+		observation.actor = {1U, 1U};
+		observation.frame = {1U, 1U, 1U};
+		observation.locomotion.position = {32, 32, 42};
+		observation.locomotion.grounded = true;
+		observation.locomotion.standingClearance = 72;
+		observation.locomotion.crouchingClearance = 36;
+		nav::LocomotionIntent intent = {};
+		runtime::NavRoamDecision decision = {};
+		const auto initial = controller.update(publisher.snapshot(), observation, &intent, &decision);
+		if (!check(initial == runtime::NavRoamResult::IntentReady,
+			"nonplanar Hunt test starts a traversable route")) return 1;
+		observation.frame.tick = 2;
+		observation.locomotion.position = {96, 32, 21};
+		const auto result = controller.update(publisher.snapshot(), observation, &intent, &decision);
+		if (!check(result ==
+				runtime::NavRoamResult::TargetReached && random.verifyComplete(),
+			"Hunt endpoint uses the four-corner NAV floor height on a nonplanar area")) return 1;
+	}
+	{
+		using namespace astrabot;
+		nav::NavDocument d; d.setSourceIdentity({5U,100U,200U});
+		auto a=area(1251U,1300,1375); a.extent.lo={1300,2300,.03125f}; a.extent.hi={1375,2350,11.53222f};
+		a.northEastZ=.03125f; a.southWestZ=11.53222f; a.connections[2U]={481U};
+		auto b=area(481U,1350,1375); b.extent.lo={1350,2350,11.53222f}; b.extent.hi={1375,2400,24.03226f};
+		b.northEastZ=11.53222f; b.southWestZ=24.03227f; b.attributes=nav::NavArea::kCrouch;
+		d.addArea(a); d.addArea(b); nav::NavSnapshotPublisher p; p.publish(&d,1U);
+		compat::ScriptedRandomSource rng({compat::RandomTapeEntry::longEntry("CSBOT-HUNT-GOAL",{1U,1U},{0U,0U,1U},0,1,1)});
+		runtime::NavRoamController c; c.setRandomSource(&rng);
+		runtime::NavRoamObservation o{}; o.actor={1U,1U}; o.frame={1U,1U,1U};
+		// Recorded duck origin(1359.5,2349.7,29.9), public mins.z=-18.
+		// BSP hull3 floor at29.8577 proves a valid duck stance, not a wall.
+		o.locomotion.position={1359.5f,2349.7f,11.9f}; o.locomotion.grounded=true; o.locomotion.ducked=true;
+		o.locomotion.standingClearance=72; o.locomotion.crouchingClearance=36;
+		nav::LocomotionIntent intent{}; runtime::NavRoamDecision decision{};
+		c.update(p.snapshot(),o,&intent,&decision); o.frame.tick=2U;
+		if(!check(c.update(p.snapshot(),o,&intent,&decision)==runtime::NavRoamResult::IntentReady &&
+			intent.speed>0 && intent.direction.y>0 && intent.posture==nav::LocomotionPosture::Crouching && rng.verifyComplete(),
+			"BSP-backed1251->481 ramp keeps moving to CSBot endpoint instead of arriving before boundary")) return 1;
+	}
+	if (!testBsiteProgressFailureDoesNotBlacklistTheOnlyApproach()) return 1;
+	{
+		using namespace astrabot;
+		nav::NavDocument d;d.setSourceIdentity({5U,100U,200U});
+		auto a=area(1U,0,64),b=area(2U,64,84);a.connections[1U]={2U};d.addArea(a);d.addArea(b);
+		nav::NavSnapshotPublisher p;p.publish(&d,1U);
+		compat::ScriptedRandomSource rng({compat::RandomTapeEntry::longEntry("CSBOT-HUNT-GOAL",{1U,1U},{0U,0U,1U},0,1,1)});
+		runtime::NavRoamController c;c.setRandomSource(&rng);runtime::NavRoamObservation o{};
+		o.actor={1U,1U};o.frame={1U,1U,1U};o.locomotion.position={63,32,0};
+		o.locomotion.grounded=true;o.locomotion.standingClearance=72;o.locomotion.crouchingClearance=36;
+		nav::LocomotionIntent intent{};runtime::NavRoamDecision decision{};c.update(p.snapshot(),o,&intent,&decision);o.frame.tick=2;
+		if(!check(c.update(p.snapshot(),o,&intent,&decision)==runtime::NavRoamResult::TargetReached && rng.verifyComplete(),
+			"CSBot endpoint completion retires Hunt goal even just outside its NAV polygon"))return 1;
+	}
+	if (!testCompatibilityHuntDrawsForEachActorEvenWithLargeAreas()) return 1;
 	for (std::uint32_t cadence : {6U, 9U, 13U})
 	{
 		if (!testUnsafeDropRetryPolicy(cadence, 0, false)) return 1;
@@ -2299,7 +2924,9 @@ int main()
 	if (!testUnsafeDropRetryPolicy(6U, 0, false, true)) return 1;
 	if (!testUnsafeDropRetryPolicy(6U, 0, false, true, true)) return 1;
 	if (!testUnsafeDropRetryPolicy(6U, 0, false, false, false, true)) return 1;
-	if (!testOffMeshRecoveryHasHorizontalProgressAndBounds() ||
+	const bool offMeshWiggle = testOffMeshCompatibilityKeepsTryingAfterBlockedCandidate();
+	const bool ledgeDescent = testSafeDescentDoesNotReverseTowardNeighboringLedge();
+	if (!offMeshWiggle || !ledgeDescent || !testOffMeshRecoveryHasHorizontalProgressAndBounds() ||
 		!testRecoveryBudgetAndStateTransitions() ||
 		!testRecoveryReselectsBeforeExhaustion()) return 1;
 	if (!testGroundLookaheadRouteIsScopedToTheNextMatchingFrame())
@@ -2388,11 +3015,41 @@ int main()
 	{
 		return 1;
 	}
-	if (!testCompatibilityGoalPrefersOldestLargeAreaAndSafestRoute())
+	if (!testCompatibilityLargeAreaGoalUsesDrawAndSafestRoute())
+	{
+		return 1;
+	}
+	if (!testCompatibilityPathRetryUsesEngineTime())
+	{
+		return 1;
+	}
+	if (!testFriendWaitRepathsAroundCrowding() || !testFriendWaitRepathsAroundCrowding(true) ||
+		!testFriendWaitRepathsAroundCrowding(false, false, 0, true) ||
+		!testFriendWaitRepathsAroundCrowding(false, true) ||
+		!testFriendWaitRepathsAroundCrowding(false, false, 1) ||
+		!testFriendWaitRepathsAroundCrowding(false, false, 2) ||
+		!testFriendWaitRepathsAroundCrowding(false, false, 3) ||
+		!testCompatibilityCorridorWithoutProgressExpires() ||
+		!testCompatibilityCorridorWithoutProgressExpires(true) ||
+		!testCompatibilityCorridorWithoutProgressExpires(false, true) ||
+		!testCompatibilityWiggleUsesRandomDirectionAndDuration() ||
+		!testCompatibilityWiggleUsesRandomDirectionAndDuration(true) ||
+		!testCompatibilityWiggleUsesRandomDirectionAndDuration(false, true) ||
+		!testCompatibilityWiggleUsesRandomDirectionAndDuration(false, false, false) ||
+		!testCompatibilityWiggleUsesRandomDirectionAndDuration(false, false, true, true) ||
+		!testCompatibilityWiggleUsesRandomDirectionAndDuration(false, false, true, false, true))
+	{
+		return 1;
+	}
+	if (!testAirborneRouteDoesNotEnterStuckRecovery())
 	{
 		return 1;
 	}
 	if (!testTeamReservationsChooseDistinctGoalsAndFirstLinks())
+	{
+		return 1;
+	}
+	if (!testTeamReservationsChooseDistinctGoalsAndFirstLinks(true))
 	{
 		return 1;
 	}

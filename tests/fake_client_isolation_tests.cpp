@@ -243,6 +243,10 @@ int main()
 		return 1;
 	}
 	globals.time = 1.1f;
+	PluginRuntime::instance().setCompatibilityFloat("bot_enable", 1.0f);
+	PluginRuntime::instance().setCompatibilityFloat("bot_quota", 2.0f);
+	PluginRuntime::instance().setCompatibilityFloat("bot_auto_vacate", 0.0f);
+	PluginRuntime::instance().setCompatibilityFloat("bot_join_after_player", 0.0f);
 	entityFunctions.pfnStartFrame();
 	const auto guarded = PluginRuntime::instance().snapshot();
 	if (!check(guarded.managedBotCreationAllowed,

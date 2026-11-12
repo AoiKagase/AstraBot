@@ -17,6 +17,7 @@ namespace compat
 		Compatibility,
 		Enhanced
 	};
+	enum class QuotaMode { Normal, Fill, Match };
 
 	enum class CvarUpdateResult
 	{
@@ -34,6 +35,10 @@ namespace compat
 		int botQuota;
 		JoinTeam botJoinTeam;
 		RuntimeMode mode;
+		QuotaMode botQuotaMode = QuotaMode::Normal;
+		int botJoinAfterPlayer = 1;
+		bool botAutoVacate = true;
+		float botJoinDelay = 0.0f;
 	};
 
 	class CvarState

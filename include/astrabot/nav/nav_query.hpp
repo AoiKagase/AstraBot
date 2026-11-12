@@ -70,6 +70,24 @@ struct NavAreaMatch
 	NavVector closestPoint;
 };
 
+// Per-bot public observations, never server-wide hidden knowledge.
+struct NavAreaCostState
+{
+	AreaId area;
+	float danger;
+	std::uint32_t teammates;
+};
+
+struct NavPathCostContext
+{
+	float aggression = 0.0f;
+	float health = 100.0f;
+	std::uint32_t hostageEscortCount = 0U;
+	bool attacking = false;
+	bool zombie = false;
+	std::vector<NavAreaCostState> areas;
+};
+
 struct NavDirectedLink
 {
 	AreaId fromArea;
@@ -88,6 +106,10 @@ struct NavCorridor
 	float cost;
 	std::vector<AreaId> areas;
 	std::vector<NavDirectedLink> links;
+	// Compatibility uses CSBot's explicit 3D path endpoint. Legacy callers
+	// and Enhanced retain area/portal arrival unless they opt in.
+	bool hasEndpoint = false;
+	NavVector endpoint = {};
 
 	bool isValid() const;
 };
@@ -103,6 +125,7 @@ class NavQuery
 public:
 	explicit NavQuery(const NavSnapshot &snapshot);
 	NavQuery(const NavSnapshot &snapshot, const NavQueryLimits &limits);
+	void setPathCostContext(const NavPathCostContext &context);
 
 	NavQueryResult findContaining(
 		const NavVector &position,
@@ -154,6 +177,8 @@ private:
 
 	NavSnapshot snapshot_;
 	NavQueryLimits limits_;
+	NavPathCostContext costContext_;
+	bool hasCostContext_ = false;
 };
 
 enum class NavFollowerResult
@@ -195,6 +220,8 @@ private:
 	std::uint32_t mapGeneration_;
 	std::size_t currentIndex_;
 	bool active_;
+	bool hasEndpoint_ = false;
+	NavVector endpoint_ = {};
 };
 }
 }

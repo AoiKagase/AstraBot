@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <vector>
+#include <unordered_map>
 
 namespace astrabot
 {
@@ -125,6 +126,10 @@ class NavDocument
 {
 public:
 	NavDocument();
+	NavDocument(const NavDocument &) = default;
+	NavDocument(NavDocument &&) noexcept = default;
+	NavDocument &operator=(const NavDocument &other);
+	NavDocument &operator=(NavDocument &&) noexcept = default;
 
 	NavModelResult setSourceIdentity(const NavSourceIdentity &identity);
 	NavModelResult addPlace(const NavPlace &place);
@@ -146,6 +151,9 @@ private:
 	static bool hasHidingSpot(const std::vector<NavArea> &areas, std::uint32_t id);
 
 	std::vector<NavArea> areas_;
+	// Store vector indices, not pointers: reallocation and value copies keep
+	// lookup identities valid without changing NAV/connection iteration order.
+	std::unordered_map<AreaId, std::size_t> areaIndex_;
 	std::vector<NavPlace> places_;
 	NavSourceIdentity sourceIdentity_;
 };

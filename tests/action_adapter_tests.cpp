@@ -51,7 +51,7 @@ bool testFireAndObjectiveButtons()
 
 	const ActionProposal plant = {ActionKind::Plant, aim, 8U};
 	const auto plantDispatch = ActionAdapter::translate(plant);
-	return check(plantDispatch.buttons == (8U | ActionAdapter::kAttackButton),
+	return check(plantDispatch.buttons == ActionAdapter::kAttackButton,
 				"plant uses the primary attack input at the bombsite");
 }
 
@@ -60,10 +60,15 @@ bool testReloadAndNoOp()
 	using astrabot::metamod::ActionAdapter;
 	using astrabot::metamod::ActionKind;
 	using astrabot::metamod::ActionProposal;
+	const auto knife = ActionAdapter::translate({ActionKind::SelectKnife, {}, 8U});
+	if (!check(knife.clientCommand != nullptr &&
+		std::strcmp(knife.clientCommand, "weapon_knife") == 0 && knife.buttons == 8U && !knife.stopMovement,
+		"bomb escape selects knife through the public command while preserving movement")) return false;
 
 	const ActionProposal reload = {ActionKind::Reload, {}, 0U};
 	const auto reloadDispatch = ActionAdapter::translate(reload);
-	if (!check(reloadDispatch.clientCommand == ActionAdapter::kReloadCommand &&
+	if (!check(reloadDispatch.clientCommand != nullptr &&
+				std::strcmp(reloadDispatch.clientCommand, ActionAdapter::kReloadCommand) == 0 &&
 				reloadDispatch.buttons == 0U,
 			"reload uses the public reload command without synthetic button success"))
 	{
@@ -109,7 +114,8 @@ bool testActionStopsMovementForObjectiveUse()
 	const auto plantDispatch = ActionAdapter::translate(plant);
 	const auto defuseDispatch = ActionAdapter::translate(defuse);
 	return check(plantDispatch.stopMovement && defuseDispatch.stopMovement &&
-				plantDispatch.clientCommand == ActionAdapter::kSelectC4Command,
+				plantDispatch.clientCommand != nullptr &&
+				std::strcmp(plantDispatch.clientCommand, ActionAdapter::kSelectC4Command) == 0,
 			"plant and defuse hold the bot in place") &&
 		check(!ActionAdapter::translate({ActionKind::Fire, {}, 0U}).stopMovement,
 			"Fire preserves locomotion");
@@ -119,6 +125,9 @@ bool testWorldMovementProjectionIgnoresAimTarget()
 {
 	using astrabot::metamod::ActionAdapter;
 
+	const auto fixed=ActionAdapter::projectMovement(0.8f,0.6f,180.0f,0.0f,true);
+	if(!check(fixed.forward==180.0f && fixed.side== -180.0f,
+		"Compatibility movement uses reference directional inputs, not continuous projection"))return false;
 	const auto forward = ActionAdapter::projectMovement(1.0f, 0.0f, 100.0f, 90.0f);
 	const auto left = ActionAdapter::projectMovement(0.0f, 1.0f, 100.0f, 0.0f);
 	return check(std::fabs(forward.forward) < 0.01f &&
@@ -161,7 +170,8 @@ bool testPlantContinuationReselectsC4()
 	return check(dispatch.kind == ActionKind::PlantContinue &&
 			dispatch.stopMovement &&
 			(dispatch.buttons & ActionAdapter::kAttackButton) != 0U &&
-			dispatch.clientCommand == ActionAdapter::kSelectC4Command,
+			dispatch.clientCommand != nullptr &&
+			std::strcmp(dispatch.clientCommand, ActionAdapter::kSelectC4Command) == 0,
 		"plant continuation reselects C4 while holding attack");
 }
 
@@ -302,6 +312,15 @@ bool testPlantAttemptRequiresSiteAndTimesOutAfterDeliveredInput()
 
 int main()
 {
+	for (const auto kind : {astrabot::metamod::ActionKind::SelectC4,
+		astrabot::metamod::ActionKind::Plant, astrabot::metamod::ActionKind::PlantContinue})
+	{
+		const auto dispatch = astrabot::metamod::ActionAdapter::translate({kind, {},
+			static_cast<std::uint16_t>(IN_JUMP | IN_FORWARD | IN_MOVELEFT | IN_DUCK)});
+		if (!check((dispatch.buttons & (IN_JUMP | IN_FORWARD | IN_MOVELEFT)) == 0U &&
+			(dispatch.buttons & IN_DUCK) != 0U && dispatch.stopMovement,
+			"C4 selection and planting cancel traversal input while preserving crouch")) return 1;
+	}
 	return testFireAndObjectiveButtons() && testReloadAndNoOp() &&
 		testLiveFireRequiresWeaponBoundary() &&
 		testActionStopsMovementForObjectiveUse() &&

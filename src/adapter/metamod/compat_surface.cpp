@@ -96,6 +96,39 @@ namespace metamod
 		return profileCatalog_.select(team, difficulty, selectionIndex, profile);
 	}
 
+	compat::ProfileSelectionResult CompatibilitySurface::selectUnusedProfile(
+		const compat::CommandAction &action, int difficulty,
+		const char *const *usedNames, std::size_t usedCount,
+		compat::ICompatibilityRandomSource &random, compat::RandomActor actor,
+		compat::RandomTimingContext timing, compat::ProfileRecord *profile) const
+	{
+		if (usedCount != 0U && usedNames == nullptr) return compat::ProfileSelectionResult::InvalidRequest;
+		compat::ProfileTeam team = compat::ProfileTeam::Any;
+		const auto configured = botConfiguration_.snapshot().botJoinTeam;
+		if (action.team == compat::CommandTeam::Terrorist ||
+			(action.team == compat::CommandTeam::Any && configured == compat::JoinTeam::Terrorist)) team=compat::ProfileTeam::Terrorist;
+		else if (action.team == compat::CommandTeam::CounterTerrorist ||
+			(action.team == compat::CommandTeam::Any && configured == compat::JoinTeam::CounterTerrorist)) team=compat::ProfileTeam::CounterTerrorist;
+		if (action.target != nullptr)
+		{
+			const auto result=profileCatalog_.selectNamed(action.target,team,profile);
+			if (result!=compat::ProfileSelectionResult::Selected) return result;
+			for(std::size_t i=0;i<usedCount;++i) {
+				if(usedNames[i]==nullptr) continue;
+				std::size_t j=0;
+				for(;j<=compat::ProfileRecord::kNameCapacity;++j) {
+					const char a=profile->name[j], b=usedNames[i][j];
+					const char lowerA=a>='A' && a<='Z'? static_cast<char>(a-'A'+'a'):a;
+					const char lowerB=b>='A' && b<='Z'? static_cast<char>(b-'A'+'a'):b;
+					if(lowerA!=lowerB) break;
+					if(a=='\0') return compat::ProfileSelectionResult::NoMatch;
+				}
+			}
+			return result;
+		}
+		return profileCatalog_.selectUnused(team,difficulty,usedNames,usedCount,random,actor,timing,profile);
+	}
+
 	const char *const *CompatibilitySurface::commandNames(std::size_t *count)
 	{
 		static const char *const names[] = {

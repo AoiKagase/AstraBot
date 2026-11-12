@@ -75,6 +75,7 @@ namespace
 	bool checkLifecycleHooks(const DLL_FUNCTIONS &functionTable)
 	{
 		return check(functionTable.pfnCmdStart != nullptr, "CmdStart hook") &&
+			   check(functionTable.pfnTouch != nullptr, "public player Touch hook") &&
 			   check(functionTable.pfnClientDisconnect != nullptr, "ClientDisconnect hook") &&
 			   check(functionTable.pfnClientPutInServer != nullptr, "ClientPutInServer hook") &&
 			   check(functionTable.pfnServerActivate != nullptr, "ServerActivate hook") &&

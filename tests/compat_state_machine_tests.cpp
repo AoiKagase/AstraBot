@@ -344,9 +344,85 @@ bool testBlockedRngObservationAndLifecycleIsolation()
 }
 }
 
+bool testStateOwnedBehavior()
+{
+	CompatibilityStateMachine machine({1U, 7U});
+	StateUpdateContext initial = context(1U, 0.0f, 1U);
+	machine.initialize(initial);
+	StateBehaviorInput input = {};
+	input.goalAvailable = true;
+	input.objectiveActive = true;
+	StateUpdateContext tick = context(2U, 0.1f, 2U);
+	tick.behavior = &input;
+	if (!check(machine.update(tick) == StateResult::Updated &&
+				   machine.behaviorDecision().action == StateAction::Hunt,
+			   "Idle owns initial hunt decision"))
+		return false;
+	machine.transition(CompatibilityStateId::MoveTo, StateTransitionReason::ExplicitRequest,
+					   StateTransitionId::ExplicitStateChange, tick);
+	input.pathFailed = true;
+	tick = context(3U, 0.2f, 3U);
+	tick.behavior = &input;
+	machine.update(tick);
+	if (!check(machine.state() == CompatibilityStateId::Idle &&
+				   machine.behaviorDecision().clearPath,
+			   "reference MoveTo returns to Idle after failed path movement"))
+		return false;
+	machine.beginAttack(tick);
+	tick = context(4U, 0.3f, 4U);
+	tick.behavior = &input;
+	machine.update(tick);
+	return check(machine.behaviorDecision().action == StateAction::Attack,
+				 "attack overlay owns behavior and suppresses locomotion decision");
+}
+
+bool testStateOwnsNavigationOutcome()
+{
+	CompatibilityStateMachine machine({1U,7U});
+	auto tick=context(1U,0.0f,1U);machine.initialize(tick);
+	machine.transition(CompatibilityStateId::MoveTo,StateTransitionReason::ExplicitRequest,
+		StateTransitionId::ExplicitStateChange,tick);
+	StateBehaviorInput input{};input.goalAvailable=true;input.objectiveActive=true;
+	input.goalReached=true;input.navigationOwned=true;
+	input.navigation.outcome=NavigationStepOutcome::Progressing;
+	tick=context(2U,0.1f,2U);tick.behavior=&input;
+	machine.update(tick);
+	if(!check(machine.state()==CompatibilityStateId::MoveTo,
+		"reference MoveTo does not exit on a broad geometric goal radius while path is progressing"))return false;
+	input.navigation={tick.actor,tick.frame,1U,1U,tick.fullUpdateSequence,NavigationStepOutcome::Progressing,false};
+	input.defuseGoalKnown=true;input.withinDefuseRange=true;input.reloadKnown=true;
+	machine.finishNavigation(tick);
+	if(!check(machine.state()==CompatibilityStateId::MoveTo,"close known bomb does not bypass a progressing path"))return false;
+	input.navigation.outcome=NavigationStepOutcome::PathFailure;
+	tick=context(3U,0.2f,3U);tick.behavior=&input;
+	input.navigation.frame=tick.frame;input.navigation.fullUpdateSequence=tick.fullUpdateSequence;
+	machine.finishNavigation(tick);
+	if(!check(machine.state()==CompatibilityStateId::DefuseBomb,"non-progressing path can enter defuse using its known bomb task"))return false;
+	input.navigation.outcome=NavigationStepOutcome::NotEvaluated;
+	tick=context(4U,1.3f,4U);tick.behavior=&input;
+	machine.update(tick);
+	return check(machine.state()==CompatibilityStateId::Idle,
+		"unconfirmed defuse exits after one second without treating missing receipt as confirmed success");
+}
+
+bool testReferenceIdleAndHuntOwnTheirLifecycle()
+{
+	CompatibilityStateMachine machine({1U,7U});
+	auto tick=context(1U,0.0f,1U);machine.initialize(tick);
+	StateBehaviorInput input{};input.navigationOwned=true;input.navigationReady=true;
+	tick=context(2U,0.1f,2U);tick.behavior=&input;
+	machine.update(tick);
+	if(!check(machine.state()==CompatibilityStateId::Hunt,
+		"reference Idle assigns Hunt rather than navigating indefinitely under Idle"))return false;
+	tick=context(3U,30.2f,3U);tick.behavior=&input;
+	machine.update(tick);
+	return check(machine.state()==CompatibilityStateId::Idle,
+		"reference Hunt returns to Idle after thirty seconds for task selection");
+}
+
 int main()
 {
-	return testInitialStateAndOwnership() &&
+	return testReferenceIdleAndHuntOwnTheirLifecycle() && testStateOwnsNavigationOutcome() && testStateOwnedBehavior() && testInitialStateAndOwnership() &&
 		testReferenceSetStateOrderingAndSameState() &&
 		testFullUpdateAndTransitionTrace() &&
 		testAttackOverlayLifecycleAndInteraction() &&

@@ -59,6 +59,8 @@ struct AmmoState
 	std::uint16_t clip;
 	std::uint16_t reserve;
 	std::uint16_t clipCapacity;
+	bool clipKnown = true;
+	bool reserveKnown = true;
 
 	bool isValid() const;
 	bool hasClipAmmo() const;

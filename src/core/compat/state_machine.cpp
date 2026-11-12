@@ -250,6 +250,7 @@ StateResult CompatibilityStateMachine::initialize(const StateUpdateContext &cont
 
 StateResult CompatibilityStateMachine::update(const StateUpdateContext &context)
 {
+	behaviorDecision_ = {};
 	if (!initialized_)
 	{
 		return StateResult::NotInitialized;
@@ -313,6 +314,25 @@ StateResult CompatibilityStateMachine::transition(
 		return StateResult::InvalidContext;
 	}
 	return transitionInternal(nextState, reason, transitionId, context, false);
+}
+
+StateResult CompatibilityStateMachine::finishNavigation(const StateUpdateContext &context)
+{
+	if(!initialized_)return StateResult::NotInitialized;
+	if(!validateContext(context) || context.behavior==nullptr || !context.behavior->navigationOwned)
+		return StateResult::InvalidContext;
+	const auto &step=context.behavior->navigation;
+	if(!(step.actor==context.actor) || step.frame.mapGeneration!=context.frame.mapGeneration ||
+		step.frame.roundGeneration!=context.frame.roundGeneration || step.frame.tick!=context.frame.tick ||
+		step.fullUpdateSequence!=context.fullUpdateSequence)return StateResult::InvalidContext;
+	if(navigationCompletedFrame_.mapGeneration==context.frame.mapGeneration &&
+		navigationCompletedFrame_.roundGeneration==context.frame.roundGeneration &&
+		navigationCompletedFrame_.tick>=context.frame.tick)return StateResult::NoOp;
+	navigationCompletedFrame_=context.frame;
+	auto value=context;value.requestTransition=false;
+	const auto before=state_;
+	updateBehavior(value);
+	return before==state_ ? StateResult::Updated : StateResult::Transitioned;
 }
 
 StateResult CompatibilityStateMachine::beginAttack(const StateUpdateContext &context)
@@ -500,6 +520,7 @@ void CompatibilityStateMachine::invokeUpdate(const StateUpdateContext &context)
 {
 	if (attackOverlayActive_)
 	{
+		updateBehavior(context);
 		emit(
 			StateTraceEvent::AttackOnUpdate,
 			CompatibilityStateId::AttackOverlay,
@@ -523,34 +544,142 @@ void CompatibilityStateMachine::invokeUpdate(const StateUpdateContext &context)
 		StateTransitionReason::None,
 		StateTransitionId::None,
 		context);
+	updateBehavior(context);
 }
 
-void CompatibilityStateMachine::invokeExit(
-	CompatibilityStateId state,
-	CompatibilityStateId nextState,
-	StateTransitionReason reason,
-	StateTransitionId transitionId,
-	const StateUpdateContext &context)
+void CompatibilityStateMachine::updateBehavior(const StateUpdateContext &context)
+{
+	if (!context.behavior)
+		return;
+	const StateBehaviorInput &input = *context.behavior;
+	if (!context.alive || !context.roundActive)
+	{
+		behaviorDecision_.clearMovement = true;
+		return;
+	}
+	if (attackOverlayActive_)
+	{
+		behaviorDecision_.action = StateAction::Attack;
+		return;
+	}
+	CompatibilityStateId next = state_;
+	switch (state_)
+	{
+	case CompatibilityStateId::Idle:
+		behaviorDecision_.action = StateAction::Hunt;
+		if(input.navigationOwned && input.navigationReady)next=CompatibilityStateId::Hunt;
+		break;
+	case CompatibilityStateId::Hunt:
+		behaviorDecision_.action = StateAction::Hunt;
+		if(input.navigationOwned && context.timestamp-stateTimestamp_>30.0f)next=CompatibilityStateId::Idle;
+		break;
+	case CompatibilityStateId::MoveTo:
+		behaviorDecision_.action = StateAction::Move;
+		if(input.navigationOwned)
+		{
+			if(input.navigation.outcome==NavigationStepOutcome::EndOfPath ||
+				input.navigation.outcome==NavigationStepOutcome::PathFailure)
+				next=input.defuseGoalKnown && input.withinDefuseRange && (input.reloadKnown || input.reloadInferred) && !input.reloading
+					? CompatibilityStateId::DefuseBomb : CompatibilityStateId::Idle;
+		}
+		else if (input.pathFailed || input.goalReached || !input.goalAvailable)
+			next = CompatibilityStateId::Idle;
+		break;
+	case CompatibilityStateId::Follow:
+		behaviorDecision_.action = StateAction::Follow;
+		if (!input.leaderAvailable)
+			next = CompatibilityStateId::Idle;
+		break;
+	case CompatibilityStateId::InvestigateNoise:
+		behaviorDecision_.action = StateAction::Investigate;
+		if (!input.noiseAvailable || input.goalReached || input.pathFailed)
+			next = CompatibilityStateId::Idle;
+		break;
+	case CompatibilityStateId::Buy:
+		behaviorDecision_.action = StateAction::Buy;
+		break;
+	case CompatibilityStateId::Hide:
+		behaviorDecision_.action = StateAction::Hide;
+		if(input.navigationOwned && input.guardObjectiveEnded)next=CompatibilityStateId::Idle;
+		break;
+	case CompatibilityStateId::EscapeFromBomb:
+		behaviorDecision_.action = StateAction::Escape;
+		if (!input.objectiveActive)
+			next = CompatibilityStateId::Idle;
+		break;
+	case CompatibilityStateId::FetchBomb:
+		behaviorDecision_.action = StateAction::Fetch;
+		if (!input.objectiveActive || !input.goalAvailable)
+			next = CompatibilityStateId::Idle;
+		break;
+	case CompatibilityStateId::DefuseBomb:
+		if(input.navigationOwned)
+		{
+			behaviorDecision_.action=StateAction::Defuse;
+			behaviorDecision_.clearMovement=true;
+			if(!input.objectiveActive || (context.timestamp-stateTimestamp_>1.0f &&
+				input.defuseReceipt!=DefuseReceipt::Self))next=CompatibilityStateId::Idle;
+			break;
+		}
+		// Legacy geometry-only callers retain their original interaction contract.
+		// fall through
+	case CompatibilityStateId::PlantBomb:
+		if(state_==CompatibilityStateId::PlantBomb && input.navigationOwned &&
+			context.timestamp-stateTimestamp_>5.0f)
+		{
+			next=CompatibilityStateId::Idle;
+			break;
+		}
+		// fall through
+	case CompatibilityStateId::UseEntity:
+		if (!input.objectiveActive || input.pathFailed)
+		{
+			next = CompatibilityStateId::Idle;
+			break;
+		}
+		behaviorDecision_.action =
+			input.inInteractionRange
+				? (state_ == CompatibilityStateId::DefuseBomb  ? StateAction::Defuse
+				   : state_ == CompatibilityStateId::PlantBomb ? StateAction::Plant
+															   : StateAction::Use)
+				: StateAction::Move;
+		behaviorDecision_.clearMovement = input.inInteractionRange;
+		break;
+	default:
+		break;
+	}
+	if (next != state_ && !context.requestTransition)
+	{
+		behaviorDecision_.clearPath = true;
+		behaviorDecision_.clearMovement = true;
+		behaviorDecision_.action = StateAction::None;
+		transitionInternal(next,
+						   input.pathFailed ? StateTransitionReason::PathFailure
+											: StateTransitionReason::ObjectiveChanged,
+						   StateTransitionId::ExplicitStateChange, context, false);
+	}
+}
+
+void CompatibilityStateMachine::invokeExit(CompatibilityStateId state,
+										   CompatibilityStateId nextState,
+										   StateTransitionReason reason,
+										   StateTransitionId transitionId,
+										   const StateUpdateContext &context)
 {
 	StateInstance *instance = instanceFor(state);
 	if (instance != nullptr)
 	{
 		++instance->exitCount;
 	}
-	emit(StateTraceEvent::OnExit, state, state, nextState, reason,
-		transitionId, context);
+	emit(StateTraceEvent::OnExit, state, state, nextState, reason, transitionId, context);
 	applyExitEffects(state, nextState, reason, transitionId, context);
 }
 
-void CompatibilityStateMachine::emit(
-	StateTraceEvent event,
-	CompatibilityStateId callbackState,
-	CompatibilityStateId previousState,
-	CompatibilityStateId currentState,
-	StateTransitionReason reason,
-	StateTransitionId transitionId,
-	const StateUpdateContext &context,
-	StateSideEffect sideEffect)
+void CompatibilityStateMachine::emit(StateTraceEvent event, CompatibilityStateId callbackState,
+									 CompatibilityStateId previousState,
+									 CompatibilityStateId currentState,
+									 StateTransitionReason reason, StateTransitionId transitionId,
+									 const StateUpdateContext &context, StateSideEffect sideEffect)
 {
 	if (traceSink_ == nullptr)
 	{

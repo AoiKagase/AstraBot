@@ -2,6 +2,7 @@
 #define ASTRABOT_COMPAT_STATE_MACHINE_HPP
 
 #include "astrabot/world/world_snapshot.hpp"
+#include "astrabot/compat/navigation_step.hpp"
 
 #include <array>
 #include <cstddef>
@@ -122,6 +123,48 @@ enum class StateSideEffect : std::uint8_t
 	ClearMovement
 };
 
+enum class StateAction : std::uint8_t
+{
+	None,
+	Hunt,
+	Move,
+	Follow,
+	Investigate,
+	Buy,
+	Defuse,
+	Escape,
+	Fetch,
+	Hide,
+	Plant,
+	Use,
+	Attack
+};
+struct StateBehaviorInput
+{
+	bool goalAvailable;
+	bool goalReached;
+	bool pathFailed;
+	bool leaderAvailable;
+	bool noiseAvailable;
+	bool objectiveActive;
+	bool inInteractionRange;
+	bool navigationOwned=false;
+	bool navigationReady=false;
+	NavigationStep navigation{};
+	bool defuseGoalKnown=false;
+	bool withinDefuseRange=false;
+	bool reloadKnown=false;
+	bool reloadInferred=false;
+	bool reloading=false;
+	DefuseReceipt defuseReceipt=DefuseReceipt::Unknown;
+	bool guardObjectiveEnded=false;
+};
+struct StateBehaviorDecision
+{
+	StateAction action;
+	bool clearPath;
+	bool clearMovement;
+};
 struct StateUpdateContext
 {
 	world::ActorKey actor;
@@ -140,6 +183,7 @@ struct StateUpdateContext
 	ObservationAvailability transitionRequest;
 	ObservationAvailability attackObservation;
 	ObservationAvailability rngAvailability;
+	const StateBehaviorInput* behavior = nullptr;
 
 	bool isValid() const;
 };
@@ -194,6 +238,7 @@ public:
 		StateTransitionId transition,
 		const StateUpdateContext &context);
 	StateResult beginAttack(const StateUpdateContext &context);
+	StateResult finishNavigation(const StateUpdateContext &context);
 	StateResult stopAttack(const StateUpdateContext &context);
 	StateResult onSpawn(const StateUpdateContext &context);
 	StateResult onDeath(const StateUpdateContext &context);
@@ -206,8 +251,10 @@ public:
 	float stateTimestamp() const;
 	bool attackOverlayActive() const;
 	bool isInitialized() const;
+	const StateBehaviorDecision& behaviorDecision() const { return behaviorDecision_; }
 
 private:
+	world::FrameIdentity navigationCompletedFrame_{};
 	struct StateInstance
 	{
 		CompatibilityStateId id;
@@ -241,6 +288,7 @@ private:
 		StateTransitionId transition,
 		const StateUpdateContext &context);
 	void invokeUpdate(const StateUpdateContext &context);
+	void updateBehavior(const StateUpdateContext &context);
 	void invokeExit(
 		CompatibilityStateId state,
 		CompatibilityStateId nextState,
@@ -289,6 +337,7 @@ private:
 	bool attackOverlayActive_;
 	bool initialized_;
 	IStateTraceSink *traceSink_;
+	StateBehaviorDecision behaviorDecision_ = {};
 };
 }
 }

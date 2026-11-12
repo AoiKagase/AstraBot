@@ -48,15 +48,37 @@ ActionDispatch ActionAdapter::translate(const ActionProposal &proposal)
 			result.stopMovement = true;
 		break;
 	case ActionKind::Defuse:
+	case ActionKind::UseEntity:
 		result.buttons = static_cast<std::uint16_t>(result.buttons | kUseButton);
 		result.stopMovement = true;
 		break;
 	case ActionKind::Reload:
 		result.clientCommand = kReloadCommand;
 		break;
+	case ActionKind::SelectPistol:
+		result.clientCommand = "slot2";
+		break;
+	case ActionKind::SelectKnife:
+		result.clientCommand = "weapon_knife";
+		break;
+	case ActionKind::SelectPrimary:
+		result.clientCommand = "slot1";
+		break;
 	case ActionKind::None:
 	default:
 		break;
+	}
+	if (proposal.secondaryAttack)
+	{
+		result.buttons = static_cast<std::uint16_t>(result.buttons | IN_ATTACK2);
+	}
+	result.stopMovement = result.stopMovement || proposal.stopForWeapon;
+	if (proposal.kind == ActionKind::SelectC4 || proposal.kind == ActionKind::Plant ||
+		proposal.kind == ActionKind::PlantContinue)
+	{
+		// Zero analog speed alone does not cancel a traversal jump in RunPlayerMove.
+		result.buttons = static_cast<std::uint16_t>(result.buttons &
+			~(IN_JUMP | IN_FORWARD | IN_BACK | IN_MOVELEFT | IN_MOVERIGHT | IN_LEFT | IN_RIGHT));
 	}
 	return result;
 }
@@ -66,7 +88,7 @@ ActionProposal ActionAdapter::forLiveDispatch(
 	bool activeWeaponAvailable,
 	const runtime::ViewAngles &movementViewAngles)
 {
-	if (proposal.kind == ActionKind::Fire && !activeWeaponAvailable)
+	if ((proposal.kind == ActionKind::Fire || proposal.secondaryAttack) && !activeWeaponAvailable)
 	{
 		return {ActionKind::None, movementViewAngles, proposal.movementButtons};
 	}
@@ -229,7 +251,7 @@ MovementProjection ActionAdapter::projectMovement(
 	float worldDirectionX,
 	float worldDirectionY,
 	float speed,
-	float viewYaw)
+	float viewYaw, bool compatibility)
 {
 	if (!std::isfinite(worldDirectionX) || !std::isfinite(worldDirectionY) ||
 			!std::isfinite(speed) || !std::isfinite(viewYaw))
@@ -242,6 +264,13 @@ MovementProjection ActionAdapter::projectMovement(
 	const float forwardY = std::sin(yaw);
 	const float rightX = -forwardY;
 	const float rightY = forwardX;
+	if(compatibility)
+	{
+		const float forward=worldDirectionX*forwardX+worldDirectionY*forwardY;
+		const float side=-(worldDirectionX*rightX+worldDirectionY*rightY);
+		return {forward>0.25f ? speed : forward< -0.25f ? -speed : 0.0f,
+			side>=0.25f ? speed : side<= -0.25f ? -speed : 0.0f};
+	}
 	return {
 		(worldDirectionX * forwardX + worldDirectionY * forwardY) * speed,
 		-(worldDirectionX * rightX + worldDirectionY * rightY) * speed};

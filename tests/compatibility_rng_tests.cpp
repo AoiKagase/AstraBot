@@ -1,12 +1,18 @@
 #include "astrabot/compat/random_source.hpp"
 
 #include <cstdio>
+#include <cstring>
 #include <fstream>
 #include <string>
 #include <vector>
 
 namespace
 {
+// The tape contract preserves float32 bits, including on x87 Linux x86.
+bool sameFloat32(float actual, float expected)
+{
+	return std::memcmp(&actual, &expected, sizeof(float)) == 0;
+}
 using astrabot::compat::IRandomTraceSink;
 using astrabot::compat::RandomActor;
 using astrabot::compat::RandomFloatResult;
@@ -118,7 +124,7 @@ bool testScriptedSequence()
 	const RandomFloatResult fourth = source.nextFloat(
 		RandomRequest::floatRequest("RNG-SEQ-FLOAT-3", bot, context, 0.25f, 1.0f));
 	return check(first.value == 3.5f && second.value == -2.0f && third.value == 1 &&
-		fourth.value == 0.7f, "scripted sequence values are ordered") &&
+		sameFloat32(fourth.value, 0.7f), "scripted sequence values are ordered") &&
 		check(source.position() == 4U, "scripted sequence consumes four entries") &&
 		check(source.verifyComplete(), "scripted sequence is complete");
 }

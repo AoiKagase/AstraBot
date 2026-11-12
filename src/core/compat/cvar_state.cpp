@@ -82,6 +82,24 @@ namespace compat
 			state_.botDifficulty = difficulty;
 			return CvarUpdateResult::Updated;
 		}
+		if (std::strcmp(name, "bot_join_after_player") == 0)
+		{
+			if (!isInteger(value) || value < 0 || value > 2) return CvarUpdateResult::InvalidValue;
+			if (state_.botJoinAfterPlayer == static_cast<int>(value)) return CvarUpdateResult::NoChange;
+			state_.botJoinAfterPlayer = static_cast<int>(value); return CvarUpdateResult::Updated;
+		}
+		if (std::strcmp(name, "bot_auto_vacate") == 0)
+		{
+			if (value != 0 && value != 1) return CvarUpdateResult::InvalidValue;
+			if (state_.botAutoVacate == (value != 0)) return CvarUpdateResult::NoChange;
+			state_.botAutoVacate = value != 0; return CvarUpdateResult::Updated;
+		}
+		if (std::strcmp(name, "bot_join_delay") == 0)
+		{
+			if (value < 0) return CvarUpdateResult::InvalidValue;
+			if (state_.botJoinDelay == value) return CvarUpdateResult::NoChange;
+			state_.botJoinDelay = value; return CvarUpdateResult::Updated;
+		}
 		if (std::strcmp(name, "bot_quota") == 0)
 		{
 			if (!isInteger(value) || value < kMinimumQuota || value > kMaximumQuota)
@@ -101,6 +119,15 @@ namespace compat
 
 	CvarUpdateResult CvarState::setString(const char *name, const char *value)
 	{
+		if (name != nullptr && std::strcmp(name, "bot_quota_mode") == 0)
+		{
+			QuotaMode mode = QuotaMode::Normal;
+			if (equalsIgnoreCase(value,"fill")) mode=QuotaMode::Fill;
+			else if (equalsIgnoreCase(value,"match")) mode=QuotaMode::Match;
+			else if (!equalsIgnoreCase(value,"normal")) return CvarUpdateResult::InvalidValue;
+			if (state_.botQuotaMode == mode) return CvarUpdateResult::NoChange;
+			state_.botQuotaMode=mode; return CvarUpdateResult::Updated;
+		}
 		if (name != nullptr && std::strcmp(name, "astrabot_mode") == 0)
 		{
 			RuntimeMode mode = RuntimeMode::Compatibility;

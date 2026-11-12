@@ -53,7 +53,7 @@ world::ActorObservation actor(world::ActorKey key, world::TeamRelation relation,
 	value.visible = visible;
 	value.fovPassed = visible;
 	value.losPassed = visible;
-	value.visibleParts = visible ? parts : world::VisibleNone;
+	value.visibleParts = visible ? parts : static_cast<std::uint8_t>(world::VisibleNone);
 	return value;
 }
 }

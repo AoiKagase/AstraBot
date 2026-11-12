@@ -1,9 +1,23 @@
 #include "astrabot/compat/bot_configuration.hpp"
+#include <algorithm>
 
 namespace astrabot
 {
 namespace compat
 {
+int calculateDesiredBotCount(const CvarSnapshot &settings, const QuotaPopulation &population)
+{
+	if (settings.botEnable == 0.0f) return 0;
+	if (population.elapsedMapSeconds < settings.botJoinDelay) return 0;
+	if ((settings.botJoinAfterPlayer == 1 && population.activeHumanClients <= 0) ||
+		(settings.botJoinAfterPlayer == 2 && population.humanClients <= 0)) return 0;
+	int desired = settings.botQuota;
+	if (settings.botQuotaMode == QuotaMode::Fill) desired -= population.activeHumanClients;
+	else if (settings.botQuotaMode == QuotaMode::Match) desired *= population.activeHumanClients;
+	if (population.lateJoinBlocked && settings.botQuotaMode != QuotaMode::Normal) desired = population.managedBotClients;
+	const int capacity = population.maxClients - population.humanClients - (settings.botAutoVacate ? 1 : 0);
+	return std::max(0, std::min(desired, capacity));
+}
 BotConfiguration::BotConfiguration() : cvarState_()
 {
 }
@@ -49,10 +63,6 @@ BotActionResult BotConfiguration::authorize(
 		if (state.botStop != 0.0f)
 		{
 			return BotActionResult::Stopped;
-		}
-		if (managedActorCount >= static_cast<std::size_t>(state.botQuota))
-		{
-			return BotActionResult::QuotaReached;
 		}
 		return BotActionResult::Allowed;
 	}

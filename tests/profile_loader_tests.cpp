@@ -5,6 +5,11 @@
 
 namespace
 {
+	// Compare stored float32 values, not x87 excess-precision literal registers.
+	bool sameFloat32(float actual, float expected)
+	{
+		return std::memcmp(&actual, &expected, sizeof(float)) == 0;
+	}
 	const char *const kFixturePath = "astrabot_profile_loader_fixture.db";
 
 	std::FILE *openFixture(const char *mode)
@@ -133,11 +138,13 @@ int main()
 	}
 
 	const char csbotText[] = "Default\n"
+							 "ReactionTime = 0.45\nTeamwork = 60\nCost = 1500\nVoicePitch = 95\nWeaponPreference = ak47\n"
 							 "Skill = 50\n"
 							 "Aggression = 50\n"
 							 "Difficulty = NORMAL\n"
 							 "End\n"
 							 "Template Elite\n"
+							 "ReactionTime = 0.2\nAttackDelay = 0.1\nTeamwork = 90\nWeaponPreference = m4a1\nWeaponPreference = deagle\n"
 							 "Skill = 100\n"
 							 "Aggression = 100\n"
 							 "Difficulty = EXPERT\n"
@@ -162,11 +169,20 @@ int main()
 	astrabot::compat::ProfileRecord csbotProfile = {};
 	if (!check(catalog.selectNamed("BotOne", ProfileTeam::Any, &csbotProfile) ==
 					   ProfileSelectionResult::Selected &&
-				   csbotProfile.skill == 100 && csbotProfile.difficulty == 4,
+				   csbotProfile.skill == 100 && csbotProfile.difficulty == 4 &&
+				   sameFloat32(csbotProfile.reactionTimeSeconds, 0.2f) && sameFloat32(csbotProfile.attackDelaySeconds, 0.1f) &&
+				   csbotProfile.teamwork == 90 && csbotProfile.cost == 1500 && csbotProfile.voicePitch == 95 &&
+				   csbotProfile.weaponPreferenceCount == 2 && csbotProfile.weaponPreferences[0] == 22 && csbotProfile.weaponPreferences[1] == 26 && csbotProfile.difficultyMask==8,
 			   "CSBot profile inherits skill template"))
 	{
 		return 1;
 	}
+	const char invalidExtended[]="Bad { ReactionTime = nan }\n";
+	if (!check(loader.loadText(invalidExtended,std::strlen(invalidExtended),&catalog)==ProfileLoadResult::Malformed && catalog.size()==2,
+		"invalid reaction time rejects transaction without replacing loaded profiles")) return 1;
+	const char invalidAlias[]="Default\nEnd\nTemplate Test\nWeaponPreference = unknown_weapon\nEnd\nTest Bad\nEnd\n";
+	if (!check(loader.loadText(invalidAlias,std::strlen(invalidAlias),&catalog)==ProfileLoadResult::Malformed && catalog.size()==2,
+		"unknown preference alias is explicit and transactional")) return 1;
 
 	const char oversizedText[] = "One { Skill = 10 }\n";
 	ProfileLoadLimits smallLimits = {sizeof(oversizedText) - 1U, 1U};

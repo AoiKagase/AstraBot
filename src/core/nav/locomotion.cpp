@@ -109,10 +109,9 @@ LocomotionController::LocomotionController(
 LocomotionResult LocomotionController::start(const NavCorridor &corridor)
 {
 	active_ = false;
-	hasLastPosition_ = false;
 	jumpTargetArea_ = 0U;
 	jumpIssued_ = false;
-	stuckFrames_ = 0U;
+	if (!config_.averageVelocityStuckMonitor) resetProgressMonitor();
 	if (!isValidConfig(config_))
 	{
 		return LocomotionResult::InvalidConfig;
@@ -231,9 +230,61 @@ NavQueryResult LocomotionController::findCurrentArea(
 }
 
 bool LocomotionController::recordProgress(
-	const NavVector &position,
+	const LocomotionObservation &observation,
 	const NavVector &target)
 {
+	const NavVector &position = observation.position;
+	if(observation.timingAvailable && hasLastPosition_ && observation.observedAt<lastObservedAt_)
+		resetProgressMonitor();
+	if (!observation.grounded && !observation.onLadder)
+	{
+		// Airborne motion must not start a ground escape manoeuvre, even when
+		// horizontal displacement temporarily reaches zero at an obstruction.
+		lastPosition_ = position;
+		lastObservedAt_ = observation.observedAt;
+		hasLastPosition_ = true;
+		stuckFrames_ = 0U;
+		velocitySampleCount_ = 0U;
+		velocitySampleIndex_ = 0U;
+		return false;
+	}
+	if(config_.averageVelocityStuckMonitor && observation.timingAvailable &&
+		hasLastPosition_ && observation.observedAt==lastObservedAt_)return referenceStuck_;
+	if (config_.averageVelocityStuckMonitor && observation.timingAvailable && referenceStuck_)
+	{
+		const float x=position.x-referenceStuckSpot_.x,y=position.y-referenceStuckSpot_.y,
+			z=position.z-referenceStuckSpot_.z;
+		if(x*x+y*y+z*z<=75.0f*75.0f)return true;
+		resetProgressMonitor();
+	}
+	if (config_.averageVelocityStuckMonitor && observation.timingAvailable)
+	{
+		if (hasLastPosition_ && observation.observedAt > lastObservedAt_)
+		{
+			const float dx = position.x - lastPosition_.x;
+			const float dy = position.y - lastPosition_.y;
+			const float dz = observation.grounded || observation.onLadder ? position.z - lastPosition_.z : 0.0f;
+			velocitySamples_[velocitySampleIndex_] =
+				std::sqrt(dx * dx + dy * dy + dz * dz) /
+				0.1f; // CSBot g_flBotFullThinkInterval, including delayed full thinks.
+			velocitySampleIndex_ = (velocitySampleIndex_ + 1U) % 5U;
+			if (velocitySampleCount_ < 5U) ++velocitySampleCount_;
+		}
+		else if (hasLastPosition_ && observation.observedAt < lastObservedAt_)
+		{
+			velocitySampleCount_ = 0U;
+			velocitySampleIndex_ = 0U;
+		}
+		lastPosition_ = position;
+		lastObservedAt_ = observation.observedAt;
+		hasLastPosition_ = true;
+		if (velocitySampleCount_ < 5U) return false;
+		float total = 0.0f;
+		for (float speed : velocitySamples_) total += speed;
+		referenceStuck_=total / 5.0f < (observation.onLadder ? 10.0f : 20.0f);
+		if(referenceStuck_)referenceStuckSpot_=position;
+		return referenceStuck_;
+	}
 	if (hasLastPosition_)
 	{
 		const NavVector direction = normalizeDirection(position, target);
@@ -398,16 +449,21 @@ LocomotionResult LocomotionController::buildIntent(
 		posture = LocomotionPosture::Crouching;
 	}
 
-	if (observation.onLadder)
+	if (observation.onLadder &&
+		!(config_.averageVelocityStuckMonitor && observation.timingAvailable))
 	{
 		lastPosition_ = observation.position;
 		hasLastPosition_ = true;
 		stuckFrames_ = 0U;
 	}
-	else if (recordProgress(observation.position, target))
+	else if (recordProgress(observation, target))
 	{
-		active_ = false;
-		return LocomotionResult::Stuck;
+		if(config_.averageVelocityStuckMonitor && observation.ducked)resetProgressMonitor();
+		else
+		{
+			active_ = false;
+			return LocomotionResult::Stuck;
+		}
 	}
 	if (requiresJump)
 	{
@@ -440,6 +496,43 @@ LocomotionResult LocomotionController::buildIntent(
 bool LocomotionController::isActive() const
 {
 	return active_;
+}
+
+void LocomotionController::clearPath()
+{
+	active_=false;
+	pathFollower_={};
+	jumpTargetArea_=0U;
+	jumpIssued_=false;
+	if(!config_.averageVelocityStuckMonitor)resetProgressMonitor();
+}
+
+void LocomotionController::observeMotion(const LocomotionObservation &observation)
+{
+	if(config_.averageVelocityStuckMonitor && observation.timingAvailable &&
+		std::isfinite(observation.observedAt) && std::isfinite(observation.position.x) &&
+		std::isfinite(observation.position.y) && std::isfinite(observation.position.z))
+		(void)recordProgress(observation,{});
+}
+
+bool LocomotionController::previewTarget(const NavSnapshot &snapshot,
+	const LocomotionObservation &observation, NavVector *target) const
+{
+	if(!active_ || target==nullptr || !isFiniteObservation(observation))return false;
+	auto follower=pathFollower_;
+	AreaId area=0U;
+	const auto result=follower.update(snapshot,observation.position,config_.targetHorizontalTolerance,
+		config_.targetVerticalTolerance,target,&area);
+	return result==NavFollowerResult::TargetReady || result==NavFollowerResult::Advanced;
+}
+
+void LocomotionController::resetProgressMonitor()
+{
+	referenceStuck_=false;
+	hasLastPosition_ = false;
+	stuckFrames_ = 0U;
+	velocitySampleCount_ = 0U;
+	velocitySampleIndex_ = 0U;
 }
 
 std::size_t LocomotionController::currentCorridorIndex() const
@@ -479,6 +572,9 @@ bool LocomotionController::isFiniteObservation(
 		observation.standingClearance >= 0.0f &&
 		std::isfinite(observation.crouchingClearance) &&
 		observation.crouchingClearance >= 0.0f;
+	if (observation.timingAvailable &&
+		(!std::isfinite(observation.observedAt) || observation.observedAt < 0.0f))
+		return false;
 	if (!baseObservationIsFinite)
 	{
 		return false;

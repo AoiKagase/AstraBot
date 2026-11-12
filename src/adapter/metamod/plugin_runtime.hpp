@@ -12,11 +12,26 @@
 #include "astrabot/metamod/nav_loader.hpp"
 #include "astrabot/combat/combat_intent.hpp"
 #include "astrabot/compat/state_machine.hpp"
+#include "astrabot/compat/public_observation.hpp"
+#include "astrabot/compat/buy_controller.hpp"
+#include "astrabot/compat/outgoing_radio.hpp"
+#include "astrabot/compat/combat_behavior.hpp"
+#include "astrabot/compat/weapon_actions.hpp"
+#include "astrabot/compat/grenade_trajectory.hpp"
+#include "astrabot/compat/scenario_behavior.hpp"
+#include "astrabot/compat/public_bomb_clock.hpp"
+#include "astrabot/compat/public_bomb_radar.hpp"
+#include "astrabot/compat/bomb_guard.hpp"
+#include "astrabot/compat/bomb_search.hpp"
+#include "astrabot/compat/teamwork_policy.hpp"
+#include "astrabot/compat/scenario_behavior.hpp"
 #include "astrabot/objectives/round_objectives.hpp"
 #include "astrabot/objectives/bomb_site_route_selection.hpp"
 #include "astrabot/team/round_objective_coordinator.hpp"
 #include "astrabot/perception/perception.hpp"
 #include "astrabot/runtime/nav_roam_controller.hpp"
+#include "astrabot/runtime/player_avoidance.hpp"
+#include "astrabot/nav/danger_memory.hpp"
 #include "astrabot/runtime/movement_physics.hpp"
 #include "astrabot/runtime/bot_timing_scheduler.hpp"
 #include "astrabot/runtime/jump_crouch_sequencer.hpp"
@@ -24,6 +39,7 @@
 #include "engine_random_source.hpp"
 #include "action_adapter.hpp"
 #include "observation_adapter.hpp"
+#include "regamedll_observation_provider.hpp"
 #include "astrabot/metamod/runtime_profiler.hpp"
 
 #include <array>
@@ -162,6 +178,7 @@ struct ManagedObjectiveSiteRegistry
 			runtime::LifecycleToken tokenForSlot(std::uint32_t slot) const;
 
 			void onClientDisconnect(edict_t *entity);
+			void onTouch(edict_t *entity, edict_t *other);
 			void onClientPutInServer(edict_t *entity);
 			void onCmdStart(const edict_t *entity, std::uint16_t buttons);
 			void onServerActivate(edict_t *edictList, int edictCount, int clientMax);
@@ -179,6 +196,9 @@ struct ManagedObjectiveSiteRegistry
 		void onWriteByte(int value);
 		void onWriteChar(int value);
 		void onWriteShort(int value);
+		void onWriteLong(int value);
+		void onWriteCoord(float value);
+		void onEmitSound(edict_t *entity, const char *sample, float volume, float attenuation);
 		void onWriteString(const char *value);
 			void onAddServerCommand(char *command, void (*function)(void));
 			void onCompatibilityCommand();
@@ -265,17 +285,29 @@ struct ManagedObjectiveSiteRegistry
 			void registerCompatibilityCommands();
 			void loadCurrentMapNavigation();
 			void updateManagedBotMovement();
+		void capturePublicMessage();
+		void appendPublicMessageInteger(int value);
+		bool observeObjective(std::size_t index, edict_t *entity, bool planted,
+			world::WorldVector *position, bool *currentlyVisible = nullptr);
+		void maintainPublicBotPopulation();
+		void updatePublicBuying(std::size_t index);
+		void updateOutgoingPublicRadio(std::size_t index);
+		bool hasObservedActiveWeapon(std::size_t index) const;
 			void resetManagedBotTiming(std::size_t index, float spawnTime);
 			void resetManagedBotCommandTemplate(std::size_t index);
 		void updateManagedBotCompatibilityState(
 			std::size_t index,
 			const runtime::MovementPhysicsState &before);
+	void finishManagedBotNavigation(std::size_t index,const runtime::MovementPhysicsState &before,
+		runtime::NavRoamResult result,const runtime::NavRoamDecision &decision,nav::LocomotionIntent *intent);
 		int resolveManagedBotTeam(
 			std::size_t index,
 			const compat::CompatibilityObservation &observation) const;
 			compat::StateUpdateContext makeManagedBotStateContext(
 				std::size_t index,
-				const runtime::MovementPhysicsState &before) const;
+			const runtime::MovementPhysicsState &before,
+			compat::StateBehaviorInput *behavior = nullptr) const;
+			nav::NavPathCostContext managedPathCostContext(std::size_t index);
 			void prepareNeutralManagedBotCommand(
 				std::size_t index,
 				FakeClientHandle &handle,
@@ -289,6 +321,8 @@ struct ManagedObjectiveSiteRegistry
 		void deferJoinAction(std::size_t index, const JoinAction &action);
 		void cleanupManagedJoin(std::size_t index, JoinError error);
 		void notifyTeamInfo(std::uint8_t slot, const char *teamName);
+		void updateBombGuardTarget(std::size_t index, const compat::ScenarioBehaviorInput &input,
+			compat::ScenarioBehaviorDecision *decision);
 		void captureManagedCurrentWeapon();
 	runtime::MovementPhysicsState captureMovementPhysicsState(
 		const edict_t *entity, bool teamConfirmed, bool managedFakeClient) const;
@@ -325,6 +359,11 @@ struct ManagedObjectiveSiteRegistry
 			nav::NavSearchStats *searchStats,
 		RuntimeObjectiveSelectionStats *objectiveStats = nullptr);
 	void refreshManagedTeamObjectiveAssignments(std::size_t contextIndex);
+	int publicPlayerTeam(const edict_t *entity) const;
+	runtime::ActorId publicPlayerIdentity(const edict_t *entity) const;
+	std::uint32_t publicPlayerPriority(const edict_t *entity) const;
+	std::vector<nav::NavVector> liveFriendlyPositions(std::size_t index, bool feet) const;
+	void applyPlayerAvoidance(std::size_t index, runtime::BotCommand *command);
 	const team::TeamObjectiveAssignment *findManagedTeamObjectiveAssignment(
 		const world::ActorKey &actor) const;
 	void refreshManagedObjectiveSiteRegistry();
@@ -398,6 +437,85 @@ void logTraversalOutcome(
 			CompatibilitySurface compatibilitySurface_;
 			compat::EngineRandomSource compatibilityRandomSource_;
 			ObservationAdapter observationAdapter_;
+		compat::PublicObservationStore publicObservations_;
+		const char *publicMessageName_ = nullptr;
+		edict_t *publicMessageTarget_ = nullptr;
+		int publicMessageDestination_ = 0;
+		world::ActorKey publicMessageActor_{};
+		world::FrameIdentity publicMessageFrame_{};
+		std::array<int, 12U> publicMessageValues_{};
+		std::array<float, 3U> publicMessageCoords_{};
+		std::uint16_t publicMessageCoordMask_ = 0U;
+		std::array<compat::PublicBombRadar, NativeBotObservation::kClientSlotCount> publicBombRadars_{};
+		std::array<compat::BombGuardPlanner, NativeBotObservation::kClientSlotCount> bombGuardPlanners_{};
+		std::uint16_t publicMessageStringMask_ = 0U;
+		std::size_t publicMessageFieldCount_ = 0U;
+		bool publicMessageMalformed_ = false;
+		std::array<char, 96U> publicMessageString_{};
+		std::array<std::array<char, 96U>, 12U> publicMessageStrings_{};
+		std::array<compat::ScenarioRadioObservation, NativeBotObservation::kClientSlotCount> scenarioRadio_{};
+		std::uint32_t radioSequence_ = 0U;
+		compat::ChatterRadioCatalog outgoingChatterCatalog_{};
+		std::array<compat::OutgoingRadioScheduler, NativeBotObservation::kClientSlotCount> outgoingRadioSchedulers_{};
+		std::array<compat::RadioContactMemory, NativeBotObservation::kClientSlotCount> outgoingRadioContactMemory_{};
+		std::array<std::uint32_t, NativeBotObservation::kClientSlotCount> outgoingRadioReceipts_{};
+		std::array<std::uint32_t, NativeBotObservation::kClientSlotCount> outgoingRadioAttemptGenerations_{};
+		std::array<unsigned, NativeBotObservation::kClientSlotCount> outgoingRadioAttempts_{};
+		std::array<float, NativeBotObservation::kClientSlotCount> outgoingRadioAttemptTimes_{};
+		std::array<compat::RadioMenuChoice, NativeBotObservation::kClientSlotCount> outgoingRadioAttemptChoices_{};
+		std::array<float, 3U> outgoingTeamLastSpeech_{{-1.0f,-1.0f,-1.0f}};
+		std::array<float, 3U> outgoingTeamBusyUntil_{};
+		std::array<compat::ChatterPhrase, 3U> outgoingTeamCurrentPhrase_{};
+		std::array<bool, static_cast<unsigned>(compat::ChatterPhrase::Count)> outgoingMissingPhraseLogged_{};
+		runtime::LifecycleGeneration outgoingRadioMap_ = runtime::LifecycleSession::kInvalidGeneration;
+		runtime::LifecycleGeneration outgoingRadioRound_ = runtime::LifecycleSession::kInvalidGeneration;
+		std::array<int, 3U> teamScores_{};
+		std::array<bool, 3U> teamScoresKnown_{};
+		struct PublicScoreStatus
+		{
+			bool known = false;
+			std::uint32_t serial = 0U;
+			world::FrameIdentity frame{};
+			int flags = 0;
+		};
+		std::array<std::array<PublicScoreStatus, NativeBotObservation::kClientSlotCount>, NativeBotObservation::kClientSlotCount> publicScoreStatuses_{};
+		std::array<bool, NativeBotObservation::kClientSlotCount> bombNoticeKnown_{};
+		std::array<bool, NativeBotObservation::kClientSlotCount> bombNoticePlanted_{};
+	std::array<compat::PublicBombClock, NativeBotObservation::kClientSlotCount> publicBombClocks_{};
+	std::array<nav::AreaId, NativeBotObservation::kClientSlotCount> scenarioEscapeAreas_{};
+	std::array<compat::BombSiteSearchMemory, NativeBotObservation::kClientSlotCount> bombSearchMemory_{};
+	std::array<compat::ScenarioTarget, NativeBotObservation::kClientSlotCount> bombSearchTargets_{};
+	std::array<compat::TeamworkPolicy, NativeBotObservation::kClientSlotCount> teamworkPolicies_{};
+	std::array<std::uint32_t, NativeBotObservation::kClientSlotCount> teamworkRadioApplied_{};
+		std::array<compat::ProfileRecord, NativeBotObservation::kClientSlotCount> managedProfiles_{};
+		std::array<compat::ReactionQueue, NativeBotObservation::kClientSlotCount> reactionQueues_{};
+		std::array<world::ActorKey, NativeBotObservation::kClientSlotCount> recognizedTargets_{};
+		std::array<world::WorldPosition, NativeBotObservation::kClientSlotCount> recognizedPoints_{};
+		std::array<std::uint32_t, NativeBotObservation::kClientSlotCount> recognitionSequences_{};
+		std::array<float, NativeBotObservation::kClientSlotCount> lastCombatTimes_{};
+		std::array<float, NativeBotObservation::kClientSlotCount> lastVisibleEnemyTimes_{};
+		std::array<float, NativeBotObservation::kClientSlotCount> attackReadyTimes_{};
+		std::array<compat::BuyController, NativeBotObservation::kClientSlotCount> buyControllers_{};
+		std::array<bool, NativeBotObservation::kClientSlotCount> buyingComplete_{};
+		std::array<bool, NativeBotObservation::kClientSlotCount> escapingWithKnife_{};
+		std::array<bool, NativeBotObservation::kClientSlotCount> buyReceiptTimeoutLogged_{};
+		std::array<compat::WeaponActionPlanner, NativeBotObservation::kClientSlotCount> weaponActions_{};
+		float nextPopulationUpdate_ = 0.0f;
+		bool populationAdjustment_ = false;
+		compat::SmokeObservations smokeObservations_;
+		ReGameDllObservationProvider optionalObservations_;
+		std::array<world::AudibleEvent, 64U> soundEvents_{};
+		std::array<int, 64U> soundTeams_{};
+		std::uint32_t soundSequence_ = 0U;
+		std::array<std::uint32_t, NativeBotObservation::kClientSlotCount> deliveredSoundSequences_{};
+		std::array<std::uint32_t, NativeBotObservation::kClientSlotCount> investigatedNoiseTicks_{};
+		struct PublicSmoke
+		{
+			world::EntityKey entity{};
+			world::WorldVector position{};
+		};
+		std::array<PublicSmoke, 32U> publicSmokeEntities_{};
+		std::size_t nextSmokeEntity_ = 0U;
 			mutable RuntimeProfiler runtimeProfiler_;
 			NavLoader navLoader_;
 			nav::NavSnapshotPublisher navPublisher_;
@@ -407,7 +525,11 @@ void logTraversalOutcome(
 			NativeBotGuard nativeBotGuard_;
 			NativeBotGuardDecision nativeGuardDecision_;
 			std::array<bool, NativeBotObservation::kClientSlotCount> managedBotSlots_;
+	std::array<runtime::PlayerAvoidance, NativeBotObservation::kClientSlotCount> playerAvoidance_{};
+	std::array<std::uint32_t, NativeBotObservation::kClientSlotCount> managedBotCreationIds_{};
+	std::uint32_t nextBotCreationId_ = 0U;
 			std::array<std::uint8_t, NativeBotObservation::kClientSlotCount> managedBotTeamNumbers_;
+			std::array<bool, NativeBotObservation::kClientSlotCount> publicTeamKnown_{};
 			std::array<FakeClientHandle, NativeBotObservation::kClientSlotCount> managedBotHandles_;
 			std::array<std::array<char, compat::ProfileRecord::kNameCapacity + 1U>,
 					   NativeBotObservation::kClientSlotCount>
@@ -434,6 +556,18 @@ void logTraversalOutcome(
 	std::array<runtime::NavRoamController,
 					   NativeBotObservation::kClientSlotCount>
 					managedBotMovement_;
+	struct ManagedNavigationFailure
+	{
+		world::ActorKey actor;
+		world::FrameIdentity frame;
+		std::uint32_t goalGeneration;
+	};
+	std::array<ManagedNavigationFailure, NativeBotObservation::kClientSlotCount>
+		managedNavigationFailures_{};
+	std::array<compat::NavigationStep, NativeBotObservation::kClientSlotCount> managedNavigationSteps_{};
+	std::array<compat::StateBehaviorInput, NativeBotObservation::kClientSlotCount> managedStateInputs_{};
+	std::array<float, NativeBotObservation::kClientSlotCount> managedMoveSpeeds_{};
+	std::array<std::uint32_t, NativeBotObservation::kClientSlotCount> managedCommandDiagnosticUpdates_{};
 			std::array<combat::CombatController,
 					   NativeBotObservation::kClientSlotCount>
 					managedBotCombat_;
@@ -445,7 +579,18 @@ void logTraversalOutcome(
 			managedBotObjectiveTargets_;
 	std::array<objectives::BombApproachState, NativeBotObservation::kClientSlotCount>
 		managedBombApproaches_{};
+	objectives::RoundPlantDecision roundPlantDecision_{};
+	nav::DangerMemory dangerMemory_;
+	std::array<bool, NativeBotObservation::kClientSlotCount> deathDangerRecorded_{};
 	team::RoundObjectiveCoordinator managedTeamObjectiveCoordinator_;
+	std::array<team::RoundObjectiveCoordinator, NativeBotObservation::kClientSlotCount> compatibilityObjectiveCoordinators_{};
+	struct ObjectiveKnowledge
+	{
+		world::EntityKey entity{};
+		world::WorldVector position{};
+	};
+	std::array<std::array<ObjectiveKnowledge, 2U>, NativeBotObservation::kClientSlotCount> objectiveKnowledge_{};
+	std::size_t managedTeamObjectiveAssignmentContext_ = NativeBotObservation::kClientSlotCount;
 	team::TeamObjectiveAssignmentSet managedTeamObjectiveAssignments_{};
 	std::uint32_t managedTeamObjectiveAssignmentMapGeneration_ = 0U;
 	std::uint32_t managedTeamObjectiveAssignmentRoundGeneration_ = 0U;
@@ -469,6 +614,8 @@ void logTraversalOutcome(
 			std::array<compat::CompatibilityStateMachine,
 					   NativeBotObservation::kClientSlotCount>
 				managedBotStateMachines_;
+	std::array<compat::ScenarioBehaviorPlanner, NativeBotObservation::kClientSlotCount> scenarioPlanners_{};
+	std::array<compat::ScenarioBehaviorDecision, NativeBotObservation::kClientSlotCount> scenarioDecisions_{};
 			std::array<perception::PerceptionAssembler,
 					   NativeBotObservation::kClientSlotCount>
 				managedBotPerception_;
@@ -568,6 +715,7 @@ void logTraversalOutcome(
 		};
 
 		FORCE_STACK_ALIGN void HookClientDisconnect(edict_t *entity);
+		FORCE_STACK_ALIGN void HookTouch(edict_t *entity, edict_t *other);
 		FORCE_STACK_ALIGN void HookCmdStart(const edict_t *entity, const usercmd_t *command, unsigned int randomSeed);
 		FORCE_STACK_ALIGN void HookClientPutInServer(edict_t *entity);
 		FORCE_STACK_ALIGN void HookServerActivate(edict_t *edictList, int edictCount,
@@ -581,6 +729,10 @@ void logTraversalOutcome(
 		FORCE_STACK_ALIGN void HookWriteByte(int value);
 		FORCE_STACK_ALIGN void HookWriteChar(int value);
 		FORCE_STACK_ALIGN void HookWriteShort(int value);
+		FORCE_STACK_ALIGN void HookWriteLong(int value);
+		FORCE_STACK_ALIGN void HookWriteCoord(float value);
+		FORCE_STACK_ALIGN void HookEmitSound(edict_t *entity, int channel, const char *sample,
+			float volume, float attenuation, int flags, int pitch);
 		FORCE_STACK_ALIGN void HookWriteString(const char *value);
 		FORCE_STACK_ALIGN void HookAlertMessage(ALERT_TYPE type, char *format, ...);
 		FORCE_STACK_ALIGN void HookAddServerCommand(char *command, void (*function)(void));

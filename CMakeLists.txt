@@ -40,6 +40,7 @@ include(cmake/AstraBotBuild.cmake)
   src/core/compat/runtime_mode_policy.cpp
   src/core/compat/random_source.cpp
   src/core/compat/bot_configuration.cpp
+  src/core/compat/buy_controller.cpp
   src/core/compat/profile_catalog.cpp
   src/core/compat/state_machine.cpp
   src/core/nav/nav_model.cpp
@@ -74,6 +75,61 @@ astrabot_apply_warnings(astrabot_core)
 
 if(ASTRABOT_BUILD_TESTS)
   enable_testing()
+
+  add_executable(astrabot_public_observation tests/public_observation_tests.cpp)
+  target_link_libraries(astrabot_public_observation PRIVATE astrabot_core)
+  astrabot_apply_warnings(astrabot_public_observation)
+  add_test(NAME astrabot_public_observation COMMAND astrabot_public_observation)
+
+  add_executable(astrabot_vanilla_management tests/vanilla_management_tests.cpp)
+  target_link_libraries(astrabot_vanilla_management PRIVATE astrabot_core)
+  astrabot_apply_warnings(astrabot_vanilla_management)
+  add_test(NAME astrabot_vanilla_management COMMAND astrabot_vanilla_management)
+
+  add_executable(astrabot_vanilla_behavior tests/vanilla_behavior_tests.cpp)
+  target_link_libraries(astrabot_vanilla_behavior PRIVATE astrabot_core)
+  astrabot_apply_warnings(astrabot_vanilla_behavior)
+  add_test(NAME astrabot_vanilla_behavior COMMAND astrabot_vanilla_behavior)
+
+  add_executable(astrabot_weapon_actions tests/weapon_actions_tests.cpp)
+  target_link_libraries(astrabot_weapon_actions PRIVATE astrabot_core)
+  astrabot_apply_warnings(astrabot_weapon_actions)
+  add_test(NAME astrabot_weapon_actions COMMAND astrabot_weapon_actions)
+
+  add_executable(astrabot_scenario_behavior tests/scenario_behavior_tests.cpp)
+  target_link_libraries(astrabot_scenario_behavior PRIVATE astrabot_core)
+  astrabot_apply_warnings(astrabot_scenario_behavior)
+  add_test(NAME astrabot_scenario_behavior COMMAND astrabot_scenario_behavior)
+
+  add_executable(astrabot_public_bomb_clock tests/public_bomb_clock_tests.cpp)
+  target_link_libraries(astrabot_public_bomb_clock PRIVATE astrabot_core)
+  astrabot_apply_warnings(astrabot_public_bomb_clock)
+  add_test(NAME astrabot_public_bomb_clock COMMAND astrabot_public_bomb_clock)
+
+  add_executable(astrabot_bomb_navigation tests/bomb_navigation_tests.cpp)
+  target_link_libraries(astrabot_bomb_navigation PRIVATE astrabot_core)
+  astrabot_apply_warnings(astrabot_bomb_navigation)
+  add_test(NAME astrabot_bomb_navigation COMMAND astrabot_bomb_navigation)
+
+  add_executable(astrabot_outgoing_radio tests/outgoing_radio_tests.cpp)
+  target_link_libraries(astrabot_outgoing_radio PRIVATE astrabot_core)
+  astrabot_apply_warnings(astrabot_outgoing_radio)
+  add_test(NAME astrabot_outgoing_radio COMMAND astrabot_outgoing_radio)
+
+  add_executable(astrabot_teamwork_policy tests/teamwork_policy_tests.cpp)
+  target_link_libraries(astrabot_teamwork_policy PRIVATE astrabot_core)
+  astrabot_apply_warnings(astrabot_teamwork_policy)
+  add_test(NAME astrabot_teamwork_policy COMMAND astrabot_teamwork_policy)
+
+  add_executable(astrabot_nav_danger_memory tests/nav_danger_memory_tests.cpp)
+  target_link_libraries(astrabot_nav_danger_memory PRIVATE astrabot_core)
+  astrabot_apply_warnings(astrabot_nav_danger_memory)
+  add_test(NAME astrabot_nav_danger_memory COMMAND astrabot_nav_danger_memory)
+
+  add_executable(astrabot_grenade_trajectory tests/grenade_trajectory_tests.cpp)
+  target_link_libraries(astrabot_grenade_trajectory PRIVATE astrabot_core)
+  astrabot_apply_warnings(astrabot_grenade_trajectory)
+  add_test(NAME astrabot_grenade_trajectory COMMAND astrabot_grenade_trajectory)
 
   add_executable(astrabot_build_identity
     tests/build_identity_tests.cpp
@@ -150,6 +206,12 @@ if(ASTRABOT_BUILD_TESTS)
   target_link_libraries(astrabot_nav_roam_controller PRIVATE astrabot_core)
   astrabot_apply_warnings(astrabot_nav_roam_controller)
   add_test(NAME astrabot_nav_roam_controller COMMAND astrabot_nav_roam_controller)
+
+  add_executable(astrabot_player_avoidance tests/player_avoidance_tests.cpp)
+  target_include_directories(astrabot_player_avoidance PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
+  target_link_libraries(astrabot_player_avoidance PRIVATE astrabot_core)
+  astrabot_apply_warnings(astrabot_player_avoidance)
+  add_test(NAME astrabot_player_avoidance COMMAND astrabot_player_avoidance)
 
   add_executable(astrabot_nav_legacy_limit
     tests/nav_legacy_limit_tests.cpp
@@ -794,6 +856,78 @@ add_executable(astrabot_observation_trace
 	astrabot_apply_warnings(astrabot_runtime_profiler)
 	add_test(NAME astrabot_runtime_profiler COMMAND astrabot_runtime_profiler)
 endif()
+endif()
+
+if(ASTRABOT_BUILD_METAMOD)
+  # The bundled public API header also includes incomplete GameDLL private
+  # headers. Project its exact official interface declaration, not a handwritten
+  # vtable. Configuration fails if that declaration changes shape.
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/third_party/cssdk/dlls/regamedll_api.h" regame_api_source)
+  string(REPLACE "\r\n" "\n" regame_api_source "${regame_api_source}")
+  string(FIND "${regame_api_source}" "class IReGameApi {" regame_api_begin)
+  string(FIND "${regame_api_source}" "#pragma once" regame_license_end)
+  if(regame_api_begin LESS 0 OR regame_license_end LESS 0)
+    message(FATAL_ERROR "Official IReGameApi declaration or license preamble was not found")
+  endif()
+  string(SUBSTRING "${regame_api_source}" 0 ${regame_license_end} regame_license)
+  string(SUBSTRING "${regame_api_source}" ${regame_api_begin} -1 regame_api_tail)
+  string(FIND "${regame_api_tail}" "\n};" regame_api_end)
+  if(regame_api_end LESS 0)
+    message(FATAL_ERROR "Official IReGameApi declaration has no closing boundary")
+  endif()
+  math(EXPR regame_api_length "${regame_api_end} + 3")
+  string(SUBSTRING "${regame_api_tail}" 0 ${regame_api_length} regame_api_declaration)
+  set(regame_api_defines "")
+  foreach(regame_define REGAMEDLL_API_VERSION_MAJOR REGAMEDLL_API_VERSION_MINOR VRE_GAMEDLL_API_VERSION)
+    string(REGEX MATCH "#define ${regame_define} [^\n]+" regame_definition "${regame_api_source}")
+    if(NOT regame_definition)
+      message(FATAL_ERROR "Official ${regame_define} definition was not found")
+    endif()
+    string(APPEND regame_api_defines "${regame_definition}\n")
+  endforeach()
+  file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/generated")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/third_party/cssdk/dlls/weapontype.h" regame_weapon_types)
+  set(regame_api_types "")
+  foreach(regame_type WeaponIdType AmmoType)
+    string(REGEX MATCH "enum ${regame_type}[^{}]*\\{[^{}]*\\};" regame_enum "${regame_weapon_types}")
+    if(NOT regame_enum)
+      message(FATAL_ERROR "Official ${regame_type} enum was not found")
+    endif()
+    string(APPEND regame_api_types "${regame_enum}\n")
+  endforeach()
+  file(CONFIGURE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/generated/astrabot_regamedll_api_view.hpp"
+    CONTENT "${regame_license}#pragma once\n${regame_api_types}\nstruct ReGameFuncs_t;\nclass IReGameHookchains;\n${regame_api_declaration}\n${regame_api_defines}" @ONLY)
+  add_library(astrabot_regamedll_provider STATIC
+    src/adapter/metamod/regamedll_observation_provider.cpp)
+  set_target_properties(astrabot_regamedll_provider PROPERTIES POSITION_INDEPENDENT_CODE ON)
+  target_include_directories(astrabot_regamedll_provider PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_BINARY_DIR}/generated"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/adapter/metamod")
+  target_include_directories(astrabot_regamedll_provider SYSTEM PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/third_party/cssdk/dlls")
+  target_link_libraries(astrabot_regamedll_provider PUBLIC ${CMAKE_DL_LIBS})
+  astrabot_apply_warnings(astrabot_regamedll_provider)
+  foreach(runtime_target astrabot_mm astrabot_metamod_hooks astrabot_fake_client_isolation astrabot_compat_actor_command)
+    if(TARGET ${runtime_target})
+      target_link_libraries(${runtime_target} PRIVATE astrabot_regamedll_provider)
+      if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+        # The pinned HLSDK Vector has a copy constructor and an implicit copy
+        # assignment operator. GCC 14 warns at valid C++14 adapter call sites.
+        target_compile_options(${runtime_target} PRIVATE -Wno-deprecated-copy)
+      endif()
+    endif()
+  endforeach()
+  if(ASTRABOT_BUILD_TESTS)
+    add_executable(astrabot_regamedll_observation_provider tests/regamedll_observation_provider_tests.cpp)
+    target_include_directories(astrabot_regamedll_observation_provider PRIVATE
+      "${CMAKE_CURRENT_SOURCE_DIR}/include"
+      "${CMAKE_CURRENT_BINARY_DIR}/generated"
+      "${CMAKE_CURRENT_SOURCE_DIR}/src/adapter/metamod")
+    target_include_directories(astrabot_regamedll_observation_provider SYSTEM PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/third_party/cssdk/dlls")
+    target_link_libraries(astrabot_regamedll_observation_provider PRIVATE astrabot_regamedll_provider astrabot_core)
+    astrabot_apply_warnings(astrabot_regamedll_observation_provider)
+    add_test(NAME astrabot_regamedll_observation_provider COMMAND astrabot_regamedll_observation_provider)
+  endif()
 endif()
 
 if(ASTRABOT_BUILD_TESTS)

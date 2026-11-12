@@ -64,6 +64,7 @@ struct LocomotionConfig
 	float maximumStepHeight;
 	float maximumSpeed;
 	std::uint32_t stuckFrameLimit;
+	bool averageVelocityStuckMonitor = false;
 };
 
 struct GroundProbeObservation
@@ -94,10 +95,14 @@ struct LocomotionObservation
 	bool grounded;
 	bool ducked;
 	bool onLadder;
-	bool clearanceAvailable;
-	float maximumSafeDropHeight;
-	bool safeDropHeightAvailable;
-	GroundLookaheadObservation groundLookahead;
+	bool clearanceAvailable = false;
+	float maximumSafeDropHeight = 0.0f;
+	bool safeDropHeightAvailable = false;
+	GroundLookaheadObservation groundLookahead = {};
+	bool timingAvailable = false;
+	float observedAt = 0.0f;
+	bool viewYawAvailable = false;
+	float viewYaw = 0.0f;
 };
 
 struct LocomotionIntent
@@ -124,6 +129,11 @@ public:
 		const LocomotionObservation &observation,
 		LocomotionIntent *intent);
 	bool isActive() const;
+	void clearPath();
+	void observeMotion(const LocomotionObservation &observation);
+	bool previewTarget(const NavSnapshot &snapshot, const LocomotionObservation &observation,
+		NavVector *target) const;
+	void resetProgressMonitor();
 	std::size_t currentCorridorIndex() const;
 
 private:
@@ -140,7 +150,7 @@ private:
 		const NavSnapshot &snapshot,
 		const LocomotionObservation &observation,
 		NavAreaMatch *match) const;
-	bool recordProgress(const NavVector &position, const NavVector &target);
+	bool recordProgress(const LocomotionObservation &observation, const NavVector &target);
 	LocomotionResult buildIntent(
 		const NavSnapshot &snapshot,
 		const LocomotionObservation &observation,
@@ -154,9 +164,15 @@ private:
 	NavVector lastPosition_;
 	AreaId jumpTargetArea_;
 	std::uint32_t stuckFrames_;
+	float lastObservedAt_ = 0.0f;
+	float velocitySamples_[5] = {};
+	std::size_t velocitySampleCount_ = 0U;
+	std::size_t velocitySampleIndex_ = 0U;
 	bool hasLastPosition_;
 	bool jumpIssued_;
 	bool active_;
+	bool referenceStuck_ = false;
+	NavVector referenceStuckSpot_ = {};
 };
 }
 }

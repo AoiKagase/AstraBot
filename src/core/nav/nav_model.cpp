@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cstring>
 #include <new>
+#include <utility>
 
 namespace astrabot
 {
@@ -21,8 +22,20 @@ namespace
 		}
 }
 
-NavDocument::NavDocument() : areas_(), places_(), sourceIdentity_{0U, 0U, 0U}
+NavDocument::NavDocument() : areas_(), areaIndex_(), places_(), sourceIdentity_{0U, 0U, 0U}
 {
+}
+
+NavDocument &NavDocument::operator=(const NavDocument &other)
+{
+	if (this != &other)
+	{
+		// Allocate all copied storage before committing either areas or index.
+		// LegacyNavReader can recover from bad_alloc and retain this document.
+		NavDocument candidate(other);
+		*this = std::move(candidate);
+	}
+	return *this;
 }
 
 NavModelResult NavDocument::setSourceIdentity(const NavSourceIdentity &identity)
@@ -96,7 +109,16 @@ NavModelResult NavDocument::addArea(const NavArea &area)
 	}
 	try
 	{
-		areas_.push_back(area);
+		const auto inserted = areaIndex_.emplace(area.id, areas_.size());
+		try
+		{
+			areas_.push_back(area);
+		}
+		catch (const std::bad_alloc &)
+		{
+			areaIndex_.erase(inserted.first);
+			return NavModelResult::ResourceLimit;
+		}
 	}
 	catch (const std::bad_alloc &)
 	{
@@ -208,14 +230,9 @@ const NavSourceIdentity &NavDocument::sourceIdentity() const
 
 const NavArea *NavDocument::findArea(AreaId id) const
 {
-	for (const NavArea &area : areas_)
-	{
-		if (area.id == id)
-		{
-			return &area;
-		}
-	}
-	return nullptr;
+	const auto found = areaIndex_.find(id);
+	return found != areaIndex_.end() && found->second < areas_.size()
+		? &areas_[found->second] : nullptr;
 }
 
 const std::vector<NavArea> &NavDocument::areas() const

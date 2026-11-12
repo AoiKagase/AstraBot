@@ -1,6 +1,7 @@
 #include "plugin_runtime.hpp"
 #include "astrabot/metamod/movement_execution_gate.hpp"
 #include "astrabot/objectives/bomb_site_route_selection.hpp"
+#include "astrabot/compat/bomb_navigation.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -53,6 +54,14 @@ const char *actionKindName(ActionKind kind)
 			return "select_c4";
 		case ActionKind::Defuse:
 			return "defuse";
+		case ActionKind::UseEntity:
+			return "use_entity";
+		case ActionKind::SelectPistol:
+			return "select_pistol";
+		case ActionKind::SelectKnife:
+			return "select_knife";
+		case ActionKind::SelectPrimary:
+			return "select_primary";
 		case ActionKind::None:
 		default:
 			return "none";
@@ -341,7 +350,8 @@ void addNavSearchStats(nav::NavSearchStats *total, const nav::NavSearchStats &sa
 			"WorldPublish", "Perception", "RuntimeInput", "RuntimeFullUpdate",
 			"FullUpdateObjective", "ObjectiveCandidateNavEvaluate",
 			"NavCurrentAreaLookup", "PathSearch", "PathRecompute", "NavMovement",
-			"MovementDispatch", "TraceSerialization", "RunPlayerMove", "SynchronousLog"};
+			"MovementDispatch", "TraceSerialization", "RunPlayerMove", "SynchronousLog",
+			"ScenarioUpdate", "BombGuardSelection", "PathCostContext"};
 		const std::size_t index = static_cast<std::size_t>(stage);
 		return index < static_cast<std::size_t>(RuntimeProfilerStage::Count)
 			? names[index] : "Unknown";
@@ -675,6 +685,23 @@ const char *const kPerformanceCvarNames[kPerformanceCvarCount] = {
 	kAstrabotPerfDisablePathSearchName,
 	kAstrabotPerfDisableTraceName};
 
+char kQuotaModeName[] = "bot_quota_mode";
+char kQuotaModeDefault[] = "normal";
+char kJoinAfterPlayerName[] = "bot_join_after_player";
+char kJoinAfterPlayerDefault[] = "1";
+char kAutoVacateName[] = "bot_auto_vacate";
+char kAutoVacateDefault[] = "1";
+char kJoinDelayName[] = "bot_join_delay";
+char kJoinDelayDefault[] = "0";
+char kAllowRoguesName[] = "bot_allow_rogues";
+char kAllowRoguesDefault[] = "1";
+cvar_t kManagerCvars[] = {
+	{kQuotaModeName, kQuotaModeDefault, FCVAR_SERVER, 0.0f, nullptr},
+	{kJoinAfterPlayerName, kJoinAfterPlayerDefault, FCVAR_SERVER, 1.0f, nullptr},
+	{kAutoVacateName, kAutoVacateDefault, FCVAR_SERVER, 1.0f, nullptr},
+	{kJoinDelayName, kJoinDelayDefault, FCVAR_SERVER, 0.0f, nullptr},
+	{kAllowRoguesName, kAllowRoguesDefault, FCVAR_SERVER, 1.0f, nullptr}};
+
 		} // namespace
 
 		PluginRuntime::PluginRuntime()
@@ -855,6 +882,7 @@ const char *const kPerformanceCvarNames[kPerformanceCvarCount] = {
 
 			DLL_FUNCTIONS requestedFunctions{};
 			requestedFunctions.pfnCmdStart = &HookCmdStart;
+			requestedFunctions.pfnTouch = &HookTouch;
 			requestedFunctions.pfnClientDisconnect = &HookClientDisconnect;
 			requestedFunctions.pfnClientPutInServer = &HookClientPutInServer;
 			requestedFunctions.pfnServerActivate = &HookServerActivate;
@@ -913,6 +941,9 @@ const char *const kPerformanceCvarNames[kPerformanceCvarCount] = {
 			requestedFunctions.pfnCmd_Argc = &HookCommandArgc;
 			requestedFunctions.pfnMessageBegin = &HookMessageBegin;
 			requestedFunctions.pfnMessageEnd = &HookMessageEnd;
+			requestedFunctions.pfnWriteLong = &HookWriteLong;
+			requestedFunctions.pfnWriteCoord = &HookWriteCoord;
+			requestedFunctions.pfnEmitSound = &HookEmitSound;
 		requestedFunctions.pfnWriteByte = &HookWriteByte;
 		requestedFunctions.pfnWriteChar = &HookWriteChar;
 		requestedFunctions.pfnWriteShort = &HookWriteShort;
@@ -956,6 +987,8 @@ const char *const kPerformanceCvarNames[kPerformanceCvarCount] = {
 				globals_ = globals;
 			}
 		observationAdapter_.configure(engineFunctions_, globals_);
+		observationAdapter_.setObservationProviders(&publicObservations_, &optionalObservations_);
+		observationAdapter_.setSmokeObservations(&smokeObservations_);
 		observationAdapter_.setProfiler(&runtimeProfiler_);
 			registerCompatibilityCvars();
 			configureFakeClientManager();
@@ -982,6 +1015,13 @@ const char *const kPerformanceCvarNames[kPerformanceCvarCount] = {
 		if (engineFunctions_->pfnCVarGetPointer(kPerformanceCvarNames[index]) == nullptr)
 		{
 			engineFunctions_->pfnCvar_RegisterVariable(kPerformanceCvars[index]);
+		}
+	}
+	for (cvar_t &variable : kManagerCvars)
+	{
+		if (engineFunctions_->pfnCVarGetPointer(variable.name) == nullptr)
+		{
+			engineFunctions_->pfnCvar_RegisterVariable(&variable);
 		}
 	}
 }
@@ -1070,6 +1110,46 @@ const char *const kPerformanceCvarNames[kPerformanceCvarCount] = {
 				return false;
 			}
 			managedBotCurrentWeapons_.fill(ManagedCurrentWeaponObservation{});
+			buyingComplete_ = {};
+			escapingWithKnife_ = {};
+			buyReceiptTimeoutLogged_ = {};
+			deathDangerRecorded_ = {};
+			buyControllers_ = {};
+			if (globals_ != nullptr && compatibilitySurface_.configuration().mode == compat::RuntimeMode::Compatibility)
+			{
+				roundPlantDecision_.begin(lifecycle_.mapGeneration(), lifecycle_.roundGeneration(),
+					globals_->time, compatibilityRandomSource_);
+			}
+			objectiveKnowledge_ = {};
+			publicScoreStatuses_ = {};
+			bombNoticeKnown_ = {};
+			bombNoticePlanted_ = {};
+			publicBombClocks_ = {};
+			scenarioEscapeAreas_ = {};
+			bombSearchMemory_ = {};
+			bombSearchTargets_ = {};
+			teamworkPolicies_ = {};
+			teamworkRadioApplied_ = {};
+			soundEvents_ = {};
+			scenarioRadio_ = {};
+			radioSequence_ = 0U;
+			soundSequence_ = 0U;
+			deliveredSoundSequences_ = {};
+			investigatedNoiseTicks_ = {};
+			smokeObservations_.reset();
+			publicSmokeEntities_ = {};
+			nextSmokeEntity_ = 0U;
+			recognizedTargets_ = {};
+			recognitionSequences_ = {};
+			reactionQueues_ = {};
+			for (std::size_t i = 0U; i < managedBotHandles_.size(); ++i)
+			{
+				publicObservations_.resetSlot(static_cast<std::uint32_t>(i + 1U));
+				const auto &handle = managedBotHandles_[i];
+				if (handle.actor.actorGeneration != 0U)
+					publicObservations_.bind({handle.actor.slot, handle.actor.actorGeneration},
+						{lifecycle_.mapGeneration(), lifecycle_.roundGeneration(), adapterFrameCount_});
+			}
 			managedBotObjectiveActions_.fill(ManagedObjectiveActionState{});
 			managedTeamObjectiveAssignmentsValid_ = false;
 			managedTeamObjectivePathFailurePending_ = false;
@@ -1277,6 +1357,32 @@ void PluginRuntime::onServerActivate(edict_t *edictList, int edictCount, int cli
 			{
 		if (lifecycle_.activateMap())
 		{
+			optionalObservations_.probeLoadedGameDll();
+			dangerMemory_.reset(lifecycle_.mapGeneration());
+			if (gpMetaUtilFuncs != nullptr && gpMetaUtilFuncs->pfnLogConsole != nullptr && pluginId_ != nullptr)
+			{
+				profiledLogConsole(runtimeProfiler_, pluginId_, "observation provider: %s (API %d.%d)",
+					optionalObservations_.diagnostic(), optionalObservations_.majorVersion(), optionalObservations_.minorVersion());
+			}
+			publicObservations_.reset();
+			teamScores_ = {};
+			teamScoresKnown_ = {};
+			scenarioRadio_ = {};
+			radioSequence_ = 0U;
+			roundPlantDecision_ = {};
+			if (globals_ != nullptr && compatibilitySurface_.configuration().mode == compat::RuntimeMode::Compatibility)
+			{
+				roundPlantDecision_.begin(lifecycle_.mapGeneration(), lifecycle_.roundGeneration(),
+					globals_->time, compatibilityRandomSource_);
+			}
+			soundEvents_ = {};
+			soundSequence_ = 0U;
+			deliveredSoundSequences_ = {};
+			smokeObservations_.reset();
+			publicSmokeEntities_ = {};
+			nextSmokeEntity_ = 0U;
+			nextPopulationUpdate_ = 0.0f;
+			objectiveKnowledge_ = {};
 			roundLifecycleTracker_.reset();
 			roundFreezeScheduled_ = false;
 				roundFreezeStartTime_ = 0.0f;
@@ -1325,6 +1431,7 @@ void PluginRuntime::onServerActivate(edict_t *edictList, int edictCount, int cli
 				roundFreezeUntil_ = 0.0f;
 				roundFreezeGeneration_ = runtime::LifecycleSession::kInvalidGeneration;
 				lifecycle_.deactivateMap();
+				optionalObservations_.reset();
 				navPublisher_.invalidate(lifecycle_.mapGeneration());
 				navLoadDiagnostic_ = {};
 				adapterFrameCount_ = 0U;
@@ -1456,6 +1563,22 @@ void PluginRuntime::onServerActivate(edict_t *edictList, int edictCount, int cli
 				++adapterFrameCount_;
 			}
 			lifecycle_.observeFrame(adapterFrameCount_, globals_->time);
+			if (engineFunctions_ != nullptr && engineFunctions_->pfnPEntityOfEntIndex != nullptr)
+			{
+				for (const PublicSmoke &smoke : publicSmokeEntities_)
+				{
+					if (!smoke.entity.isValid())
+					{
+						continue;
+					}
+					edict_t *entity = engineFunctions_->pfnPEntityOfEntIndex(static_cast<int>(smoke.entity.id));
+					if (entity != nullptr && !entity->free &&
+						static_cast<std::uint32_t>(entity->serialnumber) == smoke.entity.generation)
+					{
+						smokeObservations_.observe(smoke.entity, smoke.position, globals_->time + 4.0f);
+					}
+				}
+			}
 			if (roundFreezeActive())
 			{
 				for (std::size_t index = 0U; index < managedBotHandles_.size(); ++index)
@@ -1484,6 +1607,7 @@ void PluginRuntime::onServerActivate(edict_t *edictList, int edictCount, int cli
 				synchronizeCompatibilityCvars();
 				updateNativeBotGuard();
 				configureFakeClientManager();
+				maintainPublicBotPopulation();
 			}
 
 void PluginRuntime::onStartFramePost()
@@ -1742,6 +1866,45 @@ void PluginRuntime::notifyMenuReady(
 		{
 			(void)messageDestination;
 			(void)origin;
+			publicMessageName_ = nullptr;
+			publicMessageTarget_ = entity;
+			publicMessageDestination_ = messageDestination;
+			publicMessageActor_ = {};
+			publicMessageValues_ = {};
+			publicMessageCoords_ = {};
+			publicMessageCoordMask_ = 0U;
+			publicMessageString_.fill('\0');
+			publicMessageStringMask_ = 0U;
+			publicMessageFieldCount_ = 0U;
+			publicMessageMalformed_ = false;
+			publicMessageFrame_ = {lifecycle_.mapGeneration(), lifecycle_.roundGeneration(), adapterFrameCount_};
+			if (gpMetaUtilFuncs != nullptr && gpMetaUtilFuncs->pfnGetUserMsgID != nullptr && pluginId_ != nullptr)
+			{
+				const char *const names[] = {"WeaponList", "CurWeapon", "AmmoX", "AmmoPickup", "WeapPickup",
+					"Money", "StatusIcon", "ScreenFade", "BarTime", "DeathMsg", "ResetHUD", "TextMsg", "TeamScore", "SendAudio", "ScoreAttrib", "ArmorType", "BombDrop", "BombPickup"};
+				for (const char *name : names)
+				{
+					int size = 0;
+					const int id = gpMetaUtilFuncs->pfnGetUserMsgID(pluginId_, name, &size);
+					if (id > 0 && id == messageType)
+					{
+						publicMessageName_ = name;
+						break;
+					}
+				}
+			}
+			if (publicMessageName_ != nullptr && entity != nullptr)
+			{
+				for (const FakeClientHandle &handle : managedBotHandles_)
+				{
+					if (handle.entity == entity && handle.actor.actorGeneration != 0U)
+					{
+						publicMessageActor_ = {handle.actor.slot, handle.actor.actorGeneration};
+						publicObservations_.bind(publicMessageActor_, publicMessageFrame_);
+						break;
+					}
+				}
+			}
 			const bool continueShowMenu = userMessageShowFragmentActive_;
 			userMessageKind_ = UserMessageKind::None;
 			userMessageTarget_ = nullptr;
@@ -1833,6 +1996,7 @@ void PluginRuntime::notifyMenuReady(
 
 		void PluginRuntime::onMessageEnd()
 		{
+			capturePublicMessage();
 			if (userMessageKind_ == UserMessageKind::CurWeapon)
 			{
 				captureManagedCurrentWeapon();
@@ -2021,6 +2185,7 @@ void PluginRuntime::notifyMenuReady(
 
 		void PluginRuntime::onWriteByte(int value)
 		{
+			appendPublicMessageInteger(value);
 			if (userMessageKind_ == UserMessageKind::CurWeapon)
 			{
 				if (userMessageFieldCount_ == 0U && (value == 0 || value == 1))
@@ -2072,6 +2237,7 @@ void PluginRuntime::notifyMenuReady(
 
 		void PluginRuntime::onWriteShort(int value)
 		{
+			appendPublicMessageInteger(value);
 			const bool showMenuSlots = userMessageKind_ == UserMessageKind::ShowMenu &&
 				userMessageFieldCount_ == 0U;
 			const bool vguiMenuSlots = userMessageKind_ == UserMessageKind::VguiMenu &&
@@ -2088,6 +2254,19 @@ void PluginRuntime::notifyMenuReady(
 
 		void PluginRuntime::onWriteString(const char *value)
 		{
+			if (publicMessageName_ != nullptr)
+			{
+				if (value == nullptr || publicMessageFieldCount_ >= publicMessageValues_.size() ||
+					std::strlen(value) >= publicMessageString_.size())
+					publicMessageMalformed_ = true;
+				else
+				{
+					publicMessageStringMask_ |= static_cast<std::uint16_t>(1U << publicMessageFieldCount_);
+					std::memcpy(publicMessageString_.data(), value, std::strlen(value) + 1U);
+					std::memcpy(publicMessageStrings_[publicMessageFieldCount_].data(), value, std::strlen(value) + 1U);
+					++publicMessageFieldCount_;
+				}
+			}
 			if (value == nullptr)
 			{
 				return;
@@ -2177,6 +2356,7 @@ else if (std::strcmp(menuText, "#CT_Select") == 0)
 	const std::size_t index = static_cast<std::size_t>(slot - 1U);
 	managedBotTeamNumbers_[index] = equalsIgnoreCase(teamName, "TERRORIST") ? 1U :
 		equalsIgnoreCase(teamName, "CT") || equalsIgnoreCase(teamName, "COUNTER-TERRORIST") ? 2U : 0U;
+publicTeamKnown_[index] = true;
 	if (!managedBotSlots_[index] || managedBotHandles_[index].entity == nullptr)
 	{
 		return;
@@ -2200,6 +2380,692 @@ else if (std::strcmp(menuText, "#CT_Select") == 0)
 	deferJoinAction(index, joinControllers_[index].onTeamInfo(teamName));
 }
 
+bool PluginRuntime::hasObservedActiveWeapon(std::size_t index) const
+{
+	if (index >= managedBotHandles_.size())
+	{
+		return false;
+	}
+	const auto &handle = managedBotHandles_[index];
+	compat::PublicActorState state{};
+	return publicObservations_.read({handle.actor.slot, handle.actor.actorGeneration},
+		{lifecycle_.mapGeneration(), lifecycle_.roundGeneration(), adapterFrameCount_}, &state) && state.weaponKnown;
+}
+
+void PluginRuntime::maintainPublicBotPopulation()
+{
+	if (globals_ == nullptr || engineFunctions_ == nullptr ||
+		engineFunctions_->pfnPEntityOfEntIndex == nullptr || globals_->time < nextPopulationUpdate_)
+		return;
+	nextPopulationUpdate_ = globals_->time + 0.3f;
+	if (!nativeGuardDecision_.managedBotCreationAllowed)
+		return;
+	const char *const floatNames[] = {"bot_join_after_player", "bot_auto_vacate", "bot_join_delay"};
+	for (const char *name : floatNames)
+	{
+		if (engineFunctions_->pfnCVarGetPointer == nullptr || engineFunctions_->pfnCVarGetPointer(name) == nullptr)
+			continue;
+		const float value = readOptionalCvarFloat(engineFunctions_, name);
+		if (std::isfinite(value))
+			(void)compatibilitySurface_.setFloat(name, value);
+	}
+	if (engineFunctions_->pfnCVarGetPointer != nullptr && engineFunctions_->pfnCVarGetString != nullptr &&
+		engineFunctions_->pfnCVarGetPointer("bot_quota_mode") != nullptr)
+		(void)compatibilitySurface_.setString("bot_quota_mode", engineFunctions_->pfnCVarGetString("bot_quota_mode"));
+	compat::QuotaPopulation population{};
+	population.maxClients = globals_->maxClients;
+	population.managedBotClients = static_cast<int>(managedBotCount());
+	population.elapsedMapSeconds = globals_->time;
+	// The original public CS round rules accept respawns for 20 seconds.
+	// ReGameDLL exposes the override as mp_roundrespawn_time (-1 means unlimited).
+	// RoundStart/End are public notifications; an ended round must not pin fill/match.
+	float respawnWindow = 20.0f;
+	if (engineFunctions_->pfnCVarGetPointer != nullptr &&
+		engineFunctions_->pfnCVarGetPointer("mp_roundrespawn_time") != nullptr)
+	{
+		const float observed = readOptionalCvarFloat(engineFunctions_, "mp_roundrespawn_time");
+		if (std::isfinite(observed) && observed >= -1.0f) respawnWindow = observed;
+	}
+	population.lateJoinBlocked = roundLifecycleTracker_.isDuplicateRoundStart() &&
+		roundFreezeGeneration_ == lifecycle_.roundGeneration() &&
+		std::isfinite(roundFreezeUntil_) && globals_->time >= roundFreezeUntil_ &&
+		respawnWindow >= 0.0f && globals_->time - roundFreezeUntil_ >= respawnWindow;
+	std::array<int, 3U> teamCounts{};
+	for (int slot = 1; slot <= (std::min)(32, globals_->maxClients); ++slot)
+	{
+		edict_t *entity = engineFunctions_->pfnPEntityOfEntIndex(slot);
+		if (entity == nullptr || entity->free || (entity->v.flags & FL_CLIENT) == 0)
+			continue;
+		++population.totalClients;
+		// TeamInfo is authoritative for humans too: CS can leave entvars.team at zero.
+		const int team = publicTeamKnown_[static_cast<std::size_t>(slot - 1)]
+			? managedBotTeamNumbers_[static_cast<std::size_t>(slot - 1)] : entity->v.team;
+		if (team == 1 || team == 2)
+		{
+			++teamCounts[team];
+		}
+		if ((entity->v.flags & FL_FAKECLIENT) == 0)
+		{
+			++population.humanClients;
+			if (team == 1 || team == 2)
+				++population.activeHumanClients;
+		}
+	}
+	const compat::CvarSnapshot settings = compatibilitySurface_.configuration();
+	const int desired = compat::calculateDesiredBotCount(settings, population);
+	if (desired > population.managedBotClients && settings.botStop == 0.0f)
+	{
+		const char *command = settings.botJoinTeam == compat::JoinTeam::Terrorist ? "bot_add_t"
+			: settings.botJoinTeam == compat::JoinTeam::CounterTerrorist ? "bot_add_ct" : "bot_add";
+		populationAdjustment_ = true;
+		(void)executeCompatibilityCommand({command, 0U, {nullptr, nullptr}});
+		populationAdjustment_ = false;
+	}
+	else if (desired < population.managedBotClients)
+	{
+		const auto removeFromTeam = [this](int team) -> bool
+		{
+			for (std::size_t index = 0U; index < managedBotSlots_.size(); ++index)
+			{
+				if (!managedBotSlots_[index] || managedBotTeamNumbers_[index] != team)
+				{
+					continue;
+				}
+				if (removeFakeClient(&managedBotHandles_[index]) == FakeClientResult::Removed)
+				{
+					clearManagedBot(index);
+					return true;
+				}
+			}
+			return false;
+		};
+		if (removeFromTeam(0))
+		{
+			return;
+		}
+		int team = teamCounts[1] > teamCounts[2] ? 1 : teamCounts[2] > teamCounts[1] ? 2 : 0;
+		if (team == 0 && teamScoresKnown_[1] && teamScoresKnown_[2])
+		{
+			team = teamScores_[1] > teamScores_[2] ? 1 : teamScores_[2] > teamScores_[1] ? 2 : 0;
+		}
+		if (team == 0)
+		{
+			const auto choice = compatibilityRandomSource_.nextLong(compat::RandomRequest::longRequest(
+				"Quota.KickTeam", {}, {adapterFrameCount_, 0U, 0U}, 0, 1));
+			if (choice.status != compat::RandomStatus::Ok)
+			{
+				return;
+			}
+			team = choice.value == 0 ? 2 : 1;
+		}
+		if (!removeFromTeam(team))
+		{
+			(void)removeFromTeam(team == 1 ? 2 : 1);
+		}
+	}
+}
+
+void PluginRuntime::updateOutgoingPublicRadio(std::size_t index)
+{
+	if (index >= managedBotHandles_.size() || globals_ == nullptr || engineFunctions_ == nullptr ||
+		engineFunctions_->pfnPEntityOfEntIndex == nullptr) return;
+	const auto &handle = managedBotHandles_[index];
+	if (handle.entity == nullptr || handle.entity->free) return;
+	const char *verbosity = engineFunctions_->pfnCVarGetString != nullptr ?
+		engineFunctions_->pfnCVarGetString("bot_chatter") : nullptr;
+	if (outgoingRadioMap_ != lifecycle_.mapGeneration())
+	{
+		outgoingRadioMap_ = lifecycle_.mapGeneration();
+		outgoingChatterCatalog_ = {};
+		outgoingMissingPhraseLogged_.fill(false);
+		if (engineFunctions_->pfnLoadFileForMe != nullptr && engineFunctions_->pfnFreeFile != nullptr)
+		{
+			int length = 0;
+			char filename[] = "BotChatter.db";
+			unsigned char *bytes = engineFunctions_->pfnLoadFileForMe(filename, &length);
+			if (bytes != nullptr)
+			{
+				if (length > 0 && length <= 1024 * 1024)
+					(void)outgoingChatterCatalog_.loadText(reinterpret_cast<const char *>(bytes), static_cast<std::size_t>(length));
+				engineFunctions_->pfnFreeFile(bytes);
+			}
+		}
+	}
+	if (outgoingRadioRound_ != lifecycle_.roundGeneration())
+	{
+		outgoingRadioRound_ = lifecycle_.roundGeneration();
+		outgoingRadioSchedulers_.fill(compat::OutgoingRadioScheduler{});
+		outgoingRadioAttempts_.fill(0U);
+		outgoingRadioAttemptTimes_.fill(-1.0f);
+		outgoingRadioAttemptChoices_.fill(compat::RadioMenuChoice{});
+		outgoingTeamLastSpeech_.fill(-1.0f);
+		outgoingTeamBusyUntil_.fill(0.0f);
+		outgoingTeamCurrentPhrase_.fill(compat::ChatterPhrase::None);
+	}
+	compat::OutgoingRadioInput input{};
+	input.actor = {handle.actor.slot, handle.actor.actorGeneration};
+	input.frame = {lifecycle_.mapGeneration(), lifecycle_.roundGeneration(), adapterFrameCount_};
+	input.now = globals_->time;
+	input.alive = handle.entity->v.deadflag == DEAD_NO && handle.entity->v.health > 0.0f;
+	input.team = managedBotTeamNumbers_[index];
+	if (input.team != 1 && input.team != 2) return;
+	input.teamLastSpeech = outgoingTeamLastSpeech_[input.team];
+	input.teamBusyUntil = outgoingTeamBusyUntil_[input.team];
+	input.teamCurrentPhrase = outgoingTeamCurrentPhrase_[input.team];
+	input.reactionSeconds = managedProfiles_[index].reactionTimeSeconds;
+	input.inCombat = managedBotStateMachines_[index].attackOverlayActive();
+	for (int slot = 1; slot <= (std::min)(32, globals_->maxClients); ++slot)
+	{
+		edict_t *player = engineFunctions_->pfnPEntityOfEntIndex(slot);
+		if (player == nullptr || player == handle.entity || player->free ||
+			(player->v.flags & FL_CLIENT) == 0 || player->v.deadflag != DEAD_NO || player->v.health <= 0) continue;
+		if (player->v.team == input.team)
+		{
+			++input.friendCount;
+		}
+		else if (player->v.team == 1 || player->v.team == 2) ++input.enemiesRemaining;
+	}
+	// Count the observer's current public FOV/LOS/smoke-filtered contacts. A
+	// selected combat target is only one contact and cannot express outnumbering.
+	world::WorldSnapshot belief;
+	world::ActorKey selected{};
+	world::WorldPosition selectedPosition{};
+	compat::PublicActorState ownObservation{};
+	const bool blind = publicObservations_.read(input.actor, input.frame, &ownObservation) &&
+		globals_->time < ownObservation.blindUntil;
+	const bool haveBelief = !blind && buildManagedWorldSnapshot(index, &belief, &selected, &selectedPosition);
+	const auto contacts = outgoingRadioContactMemory_[index].update(input.actor, input.frame, input.now,
+		haveBelief ? &belief : nullptr, blind, input.friendCount, input.enemiesRemaining);
+	input.visibleEnemyCount = contacts.enemies;
+	input.nearbyFriends = contacts.friends;
+	const auto &order = scenarioRadio_[index];
+	const auto &decision = scenarioDecisions_[index];
+	if (order.senderHuman && static_cast<int>(order.team) == input.team)
+	{
+		input.humanOrderSequence = order.sequence;
+		input.humanOrderReceived = order.receivedTime;
+		input.humanOrderAccepted = decision.action == compat::ScenarioAction::Follow ||
+			decision.action == compat::ScenarioAction::Guard || decision.action == compat::ScenarioAction::Hunt ||
+			decision.action == compat::ScenarioAction::Escape;
+		input.humanOrderHelp = order.command == compat::ScenarioRadioCommand::NeedBackup;
+		outgoingTeamLastSpeech_[input.team] = (std::max)(outgoingTeamLastSpeech_[input.team], order.receivedTime);
+	}
+	const char *mapName = engineFunctions_->pfnSzFromIndex != nullptr ? engineFunctions_->pfnSzFromIndex(globals_->mapname) : nullptr;
+	input.vipEscaping = mapName != nullptr && std::strncmp(mapName, "as_", 3U) == 0 && input.team == 2 &&
+		decision.action == compat::ScenarioAction::Escape;
+	input.plantingBomb = managedBotStateMachines_[index].state() == compat::CompatibilityStateId::PlantBomb;
+	input.escortingHostages = decision.escortInferred;
+	input.bombLocationUnknown = input.team == 2 && bombNoticeKnown_[index] && bombNoticePlanted_[index] &&
+		decision.action == compat::ScenarioAction::Move && decision.hasTarget &&
+		bombSearchTargets_[index].knowledge != compat::ScenarioKnowledge::Unknown &&
+		bombSearchTargets_[index].frame.mapGeneration == input.frame.mapGeneration &&
+		bombSearchTargets_[index].frame.roundGeneration == input.frame.roundGeneration &&
+		decision.target.entity == bombSearchTargets_[index].entity;
+	const auto output = outgoingRadioSchedulers_[index].update(input, outgoingChatterCatalog_);
+	if (verbosity != nullptr && std::strcmp(verbosity, "off") == 0 && output.phrase != compat::ChatterPhrase::None)
+	{
+		outgoingRadioSchedulers_[index].discardPending();
+		return;
+	}
+	if (output.status == compat::OutgoingRadioStatus::MissingPhrase)
+	{
+		const auto phrase = static_cast<unsigned>(output.phrase);
+		if (phrase < outgoingMissingPhraseLogged_.size() && !outgoingMissingPhraseLogged_[phrase])
+		{
+			outgoingMissingPhraseLogged_[phrase] = true;
+			if (gpMetaUtilFuncs != nullptr && gpMetaUtilFuncs->pfnLogConsole != nullptr && pluginId_ != nullptr)
+				gpMetaUtilFuncs->pfnLogConsole(pluginId_, "outgoing chatter unavailable phrase=%s host_radio_mapping=%d voice_bank=unavailable",
+					compat::ChatterRadioCatalog::name(output.phrase), outgoingChatterCatalog_.loaded() ? 1 : 0);
+		}
+		return;
+	}
+	if (output.status != compat::OutgoingRadioStatus::Ready) return;
+	if (verbosity != nullptr && std::strcmp(verbosity, "minimal") == 0 &&
+		output.phrase != compat::ChatterPhrase::None && !outgoingChatterCatalog_.important(output.phrase))
+	{
+		outgoingRadioSchedulers_[index].discardPending();
+		return;
+	}
+	const char *menu = output.menu == 1 ? "radio1" : output.menu == 2 ? "radio2" : "radio3";
+	if (outgoingRadioAttemptGenerations_[index] != handle.actor.actorGeneration ||
+		outgoingRadioAttemptChoices_[index].menu != output.menu ||
+		outgoingRadioAttemptChoices_[index].slot != output.slot)
+	{
+		outgoingRadioAttemptGenerations_[index] = handle.actor.actorGeneration;
+		outgoingRadioAttemptChoices_[index] = {output.menu, output.slot};
+		outgoingRadioAttempts_[index] = 0U;
+		outgoingRadioAttemptTimes_[index] = -1.0f;
+	}
+	if (outgoingRadioAttempts_[index] >= 3U)
+	{
+		outgoingRadioSchedulers_[index].discardPending();
+		outgoingRadioAttemptChoices_[index] = {};
+		if (gpMetaUtilFuncs != nullptr && gpMetaUtilFuncs->pfnLogConsole != nullptr && pluginId_ != nullptr)
+			gpMetaUtilFuncs->pfnLogConsole(pluginId_, "outgoing radio receipt unavailable bot=%u menu=%d slot=%d attempts=3",
+				static_cast<unsigned>(handle.actor.slot), output.menu, output.slot);
+		return;
+	}
+	if (outgoingRadioAttemptTimes_[index] >= 0.0f &&
+		globals_->time - outgoingRadioAttemptTimes_[index] < 0.2f) return;
+	outgoingRadioAttemptTimes_[index] = globals_->time;
+	++outgoingRadioAttempts_[index];
+	const std::uint32_t receiptBefore = outgoingRadioReceipts_[index];
+	char slot[] = {static_cast<char>('0' + output.slot), '\0'};
+	const bool opened = dispatchClientCommand(handle.entity, menu, nullptr);
+	const bool menuSelected = opened && dispatchClientCommand(handle.entity, "menuselect", slot);
+	if (opened) (void)dispatchClientCommand(handle.entity, "menuselect", "10");
+	// A client command reaching the GameDLL does not prove that its radio
+	// quota/cooldown accepted it. Only public SendAudio confirms a sent phrase.
+	if (menuSelected && outgoingRadioReceipts_[index] != receiptBefore)
+	{
+		outgoingRadioSchedulers_[index].confirmSent(input, output);
+		outgoingRadioAttempts_[index] = 0U;
+		outgoingRadioAttemptChoices_[index] = {};
+		outgoingTeamLastSpeech_[input.team] = globals_->time;
+		outgoingTeamBusyUntil_[input.team] = globals_->time + 2.1f;
+		outgoingTeamCurrentPhrase_[input.team] = output.phrase;
+	}
+}
+
+void PluginRuntime::updatePublicBuying(std::size_t index)
+{
+	if (index >= managedBotHandles_.size() || globals_ == nullptr)
+		return;
+	const FakeClientHandle &handle = managedBotHandles_[index];
+	if (handle.entity == nullptr || handle.entity->free || handle.entity->v.deadflag != DEAD_NO)
+		return;
+	compat::PublicActorState observation{};
+	if (!publicObservations_.read({handle.actor.slot, handle.actor.actorGeneration},
+		{lifecycle_.mapGeneration(), lifecycle_.roundGeneration(), adapterFrameCount_}, &observation))
+		return;
+	compat::BuyContext context{};
+	context.nowSeconds = globals_->time;
+	context.stateEnteredSeconds = roundFreezeStartTime_;
+	context.generation = handle.actor.actorGeneration;
+	context.round = lifecycle_.roundGeneration();
+	context.alive = true;
+	context.inBuyZone = observation.buyZoneKnown && observation.inBuyZone;
+	const float buyTime = readOptionalCvarFloat(engineFunctions_, "mp_buytime");
+	context.buyTimeOpen = std::isfinite(buyTime) && globals_->time <= roundFreezeStartTime_ + buyTime * 60.0f;
+	context.team = managedBotTeamNumbers_[index] == 1U ? compat::ProfileTeam::Terrorist
+		: managedBotTeamNumbers_[index] == 2U ? compat::ProfileTeam::CounterTerrorist : compat::ProfileTeam::Any;
+	context.moneyKnown = observation.moneyKnown;
+	context.money = observation.money;
+	context.weaponMaskKnown = true;
+	context.weaponMask = static_cast<std::uint32_t>(handle.entity->v.weapons);
+	const auto allowed = [this](const char *name) {
+		if (engineFunctions_ == nullptr || engineFunctions_->pfnCVarGetPointer == nullptr ||
+			engineFunctions_->pfnCVarGetPointer(name) == nullptr)
+			return true;
+		const float value = readOptionalCvarFloat(engineFunctions_, name);
+		return !std::isfinite(value) || value != 0.0f;
+	};
+	context.allowRifles = allowed("bot_allow_rifles");
+	context.allowSnipers = allowed("bot_allow_snipers");
+	context.allowShotguns = allowed("bot_allow_shotguns");
+	context.allowMachineGuns = allowed("bot_allow_machine_guns");
+	context.allowSubMachineGuns = allowed("bot_allow_sub_machine_guns");
+	context.allowPistols = allowed("bot_allow_pistols");
+	context.allowGrenades = allowed("bot_allow_grenades");
+	context.allowArmor = true;
+	context.armorKnown = std::isfinite(handle.entity->v.armorvalue);
+	context.armor = static_cast<int>(handle.entity->v.armorvalue);
+	context.helmetKnown = observation.helmetKnown;
+	context.hasHelmet = observation.hasHelmet;
+	context.allowDefuseKit = true;
+	context.defuseKitKnown = observation.defuseKitKnown;
+	context.hasDefuseKit = observation.hasDefuseKit;
+	context.random = &compatibilityRandomSource_;
+	context.randomActor = {handle.actor.slot, handle.actor.actorGeneration};
+	context.randomTiming = {managedBotCommandSequences_[index], 0U, managedBotFullUpdateSequences_[index]};
+	context.bombScenario = managedObjectiveSiteRegistry_.registeredCount != 0U;
+	const compat::PublicWeaponDefinition weapon = publicObservations_.definition(observation.weaponId);
+	context.ammoKnown = observation.weaponKnown && weapon.known && weapon.ammoIndex >= 0 &&
+		observation.ammoKnown[static_cast<std::size_t>(weapon.ammoIndex)];
+	if (context.ammoKnown)
+	{
+		const bool needsAmmo = observation.ammo[static_cast<std::size_t>(weapon.ammoIndex)] < weapon.maxAmmo;
+		context.needsPrimaryAmmo = weapon.slot == 0 && needsAmmo;
+		context.needsSecondaryAmmo = weapon.slot == 1 && needsAmmo;
+	}
+	const compat::BuyDecision decision = buyControllers_[index].update(context, managedProfiles_[index]);
+	buyingComplete_[index] = decision.status == compat::BuyStatus::Complete;
+	if (decision.status != compat::BuyStatus::ReceiptTimeout)
+		buyReceiptTimeoutLogged_[index] = false;
+	if (decision.status == compat::BuyStatus::ReceiptTimeout && !buyReceiptTimeoutLogged_[index] && gpMetaUtilFuncs != nullptr &&
+		gpMetaUtilFuncs->pfnLogConsole != nullptr && pluginId_ != nullptr)
+	{
+		buyReceiptTimeoutLogged_[index] = true;
+		profiledLogConsole(runtimeProfiler_, pluginId_, "buy receipt unconfirmed actor=%u map=%u round=%u; equipment remains unknown",
+			static_cast<unsigned int>(handle.actor.slot), lifecycle_.mapGeneration(), lifecycle_.roundGeneration());
+	}
+	if (decision.status == compat::BuyStatus::Command && decision.command != nullptr)
+		(void)dispatchClientCommand(handle.entity, decision.command, "");
+}
+
+void PluginRuntime::onEmitSound(edict_t *entity, const char *sample, float volume, float attenuation)
+{
+	if (entity == nullptr || entity->free || sample == nullptr || globals_ == nullptr ||
+		engineFunctions_ == nullptr || engineFunctions_->pfnIndexOfEdict == nullptr ||
+		!std::isfinite(volume) || volume <= 0.0f || volume > 1.0f || !std::isfinite(attenuation))
+	{
+		return;
+	}
+	const int entityIndex = engineFunctions_->pfnIndexOfEdict(entity);
+	const world::WorldVector origin{entity->v.origin.x, entity->v.origin.y, entity->v.origin.z};
+	const bool bombBeep = std::strstr(sample, "c4_beep") != nullptr;
+	if (std::strstr(sample, "sg_explode") != nullptr && entityIndex > 0 && entity->serialnumber != 0)
+	{
+		const world::EntityKey key{static_cast<std::uint32_t>(entityIndex),
+			static_cast<std::uint32_t>(entity->serialnumber)};
+		publicSmokeEntities_[nextSmokeEntity_++ % publicSmokeEntities_.size()] = {key, origin};
+		smokeObservations_.observe(key, origin, globals_->time + 4.0f);
+	}
+	world::AudibleEvent event{};
+	event.id = ++soundSequence_;
+	if (event.id == 0U)
+	{
+		event.id = ++soundSequence_;
+		deliveredSoundSequences_ = {};
+		soundEvents_ = {};
+		soundTeams_ = {};
+	}
+	event.kind = bombBeep ? world::SoundKind::Objective
+		: std::strstr(sample, "pl_step") != nullptr ? world::SoundKind::Footstep
+		: std::strncmp(sample, "weapons/", 8U) == 0 ? world::SoundKind::WeaponFire : world::SoundKind::Other;
+	event.origin = origin;
+	event.loudness = volume;
+	event.confidence = {1.0f, 0U};
+	event.priority = bombBeep ? world::NoisePriority::High : world::NoisePriority::Medium;
+	// Derived public sound attenuation, not an exact GameEvent audibility observation.
+	event.distance = bombBeep ? 1000.0f
+		: attenuation > 0.0f ? (std::min)(4096.0f, 1000.0f * volume / attenuation) : 4096.0f;
+	event.timestampTick = adapterFrameCount_;
+	if (entityIndex >= 1 && entityIndex <= 32 && (entity->v.flags & FL_CLIENT) != 0)
+	{
+		event.source = {static_cast<std::uint32_t>(entityIndex), static_cast<std::uint32_t>(entity->serialnumber) + 1U};
+	}
+	// Multiple callbacks for one public sound in the same tick are one receipt.
+	for (const auto &previous : soundEvents_)
+	{
+		if (previous.id != 0U && previous.timestampTick == event.timestampTick &&
+			previous.kind == event.kind && previous.source == event.source &&
+			previous.origin.x == event.origin.x && previous.origin.y == event.origin.y && previous.origin.z == event.origin.z)
+		{
+			--soundSequence_;
+			return;
+		}
+	}
+	soundEvents_[event.id % soundEvents_.size()] = event;
+	soundTeams_[event.id % soundEvents_.size()] = event.source.isValid() ? entity->v.team : 0;
+	if (bombBeep && entityIndex > 0)
+	{
+		for (std::size_t index = 0U; index < managedBotHandles_.size(); ++index)
+		{
+			const auto &handle = managedBotHandles_[index];
+			if (!managedBotSlots_[index] || handle.entity == nullptr || handle.entity->v.deadflag != DEAD_NO)
+			{
+				continue;
+			}
+			const float dx = handle.entity->v.origin.x - origin.x;
+			const float dy = handle.entity->v.origin.y - origin.y;
+			const float dz = handle.entity->v.origin.z - origin.z;
+			if (dx * dx + dy * dy + dz * dz < 1000.0f * 1000.0f)
+			{
+				objectiveKnowledge_[index][1U] = {
+					{static_cast<std::uint32_t>(entityIndex), static_cast<std::uint32_t>(entity->serialnumber)}, origin};
+			}
+		}
+		managedTeamObjectiveAssignmentsValid_ = false;
+	}
+}
+
+void PluginRuntime::appendPublicMessageInteger(int value)
+{
+	if (publicMessageName_ == nullptr)
+		return;
+	if (publicMessageFieldCount_ >= publicMessageValues_.size())
+	{
+		publicMessageMalformed_ = true;
+		return;
+	}
+	publicMessageValues_[publicMessageFieldCount_++] = value;
+}
+
+void PluginRuntime::onWriteLong(int value)
+{
+	appendPublicMessageInteger(value);
+}
+
+void PluginRuntime::onWriteCoord(float value)
+{
+	if (publicMessageName_ == nullptr) return;
+	if (publicMessageFieldCount_ >= publicMessageCoords_.size() || !std::isfinite(value))
+	{
+		publicMessageMalformed_ = true;
+		return;
+	}
+	publicMessageCoords_[publicMessageFieldCount_] = value;
+	publicMessageCoordMask_ |= static_cast<std::uint16_t>(1U << publicMessageFieldCount_);
+	++publicMessageFieldCount_;
+}
+
+void PluginRuntime::capturePublicMessage()
+{
+	const char *name = publicMessageName_;
+	publicMessageName_ = nullptr;
+	if (name == nullptr || publicMessageMalformed_ || !publicMessageFrame_.isValid())
+		return;
+	const std::size_t count = publicMessageFieldCount_;
+	const auto &v = publicMessageValues_;
+	if (std::strcmp(name, "BombDrop") == 0 || std::strcmp(name, "BombPickup") == 0)
+	{
+		// Vanilla sends radar updates individually to T. Never redistribute a
+		// message sent to a human, CT, or an unrelated/reused client slot.
+		if (!publicMessageActor_.isValid() || publicMessageTarget_ == nullptr ||
+			(publicMessageDestination_ != MSG_ONE && publicMessageDestination_ != MSG_ONE_UNRELIABLE)) return;
+		const std::size_t index = static_cast<std::size_t>(publicMessageActor_.slot - 1U);
+		if (index >= managedBotSlots_.size() || !managedBotSlots_[index] ||
+			managedBotHandles_[index].entity != publicMessageTarget_ ||
+			managedBotHandles_[index].actor.actorGeneration != publicMessageActor_.generation ||
+			managedBotTeamNumbers_[index] != 1U) return;
+		if (std::strcmp(name, "BombPickup") == 0 && count == 0U)
+			publicBombRadars_[index].reset();
+		else if (std::strcmp(name, "BombDrop") == 0 && count == 4U &&
+			publicMessageCoordMask_ == 7U && publicMessageStringMask_ == 0U && (v[3] == 0 || v[3] == 1))
+		{
+			if (v[3] == 0) publicBombRadars_[index].drop(publicMessageFrame_,
+				{publicMessageCoords_[0], publicMessageCoords_[1], publicMessageCoords_[2]});
+			else publicBombRadars_[index].reset();
+		}
+		return;
+	}
+	if (publicMessageCoordMask_ != 0U) return;
+	const auto integers = [this](std::uint16_t mask) {
+		return publicMessageStringMask_ == mask;
+	};
+	if (std::strcmp(name, "WeaponList") == 0 && count == 9U && integers(1U))
+	{
+		(void)publicObservations_.weaponDefinition(v[7], v[1] == 255 ? -1 : v[1],
+			v[2] == 255 ? -1 : v[2], v[5]);
+		return;
+	}
+	if (std::strcmp(name, "DeathMsg") == 0 && count == 4U && integers(8U) && v[1] > 0 && v[1] <= 32)
+	{
+		const std::size_t victim = static_cast<std::size_t>(v[1] - 1);
+		if (managedBotSlots_[victim] && !deathDangerRecorded_[victim] && globals_ != nullptr &&
+			managedBotHandles_[victim].entity != nullptr)
+		{
+			const auto navigation = navPublisher_.snapshot();
+			const auto *document = navigation.document();
+			const auto *entity = managedBotHandles_[victim].entity;
+			nav::NavAreaMatch area{};
+			nav::NavQuery query(navigation);
+			const nav::NavVector position{entity->v.origin.x, entity->v.origin.y, entity->v.origin.z};
+			if (document != nullptr && query.findContaining(position, 64.0f, &area) == nav::NavQueryResult::Found)
+			{
+				(void)dangerMemory_.recordDeath(*document, lifecycle_.mapGeneration(), managedBotTeamNumbers_[victim],
+					area.area, position, globals_->time);
+			}
+			deathDangerRecorded_[victim] = true;
+		}
+		publicObservations_.resetSlot(static_cast<std::uint32_t>(v[1]));
+		reactionQueues_[static_cast<std::size_t>(v[1] - 1)] = {};
+		return;
+	}
+	if (std::strcmp(name, "TeamScore") == 0 && count == 2U && integers(1U))
+	{
+		const char *teamName = publicMessageStrings_[0U].data();
+		const int team = std::strcmp(teamName, "TERRORIST") == 0 ? 1 : std::strcmp(teamName, "CT") == 0 ? 2 : 0;
+		if (team != 0 && v[1] >= 0)
+		{
+			teamScores_[team] = v[1];
+			teamScoresKnown_[team] = true;
+		}
+		return;
+	}
+	if (std::strcmp(name, "ScoreAttrib") == 0 && count == 2U && integers(0U) && v[0] >= 1 && v[0] <= 32 &&
+		v[1] >= 0 && v[1] <= 255 && engineFunctions_ != nullptr && engineFunctions_->pfnPEntityOfEntIndex != nullptr)
+	{
+		edict_t *player = engineFunctions_->pfnPEntityOfEntIndex(v[0]);
+		if (player != nullptr && !player->free)
+		{
+			for (std::size_t i = 0U; i < publicScoreStatuses_.size(); ++i)
+			{
+				if ((publicMessageTarget_ == nullptr && (publicMessageDestination_ == MSG_ALL || publicMessageDestination_ == MSG_BROADCAST)) ||
+					(publicMessageActor_.isValid() && publicMessageActor_.slot == i + 1U))
+				{
+					publicScoreStatuses_[i][static_cast<std::size_t>(v[0] - 1)] =
+						{true, static_cast<std::uint32_t>(player->serialnumber), publicMessageFrame_, v[1]};
+				}
+			}
+		}
+		return;
+	}
+	if (std::strcmp(name, "TextMsg") == 0 && count >= 2U && (publicMessageStringMask_ & 2U) != 0U)
+	{
+		const char *token = publicMessageStrings_[1U].data();
+		const bool planted = std::strcmp(token, "#Bomb_Planted") == 0;
+		const bool cleared = std::strcmp(token, "#Bomb_Defused") == 0 || std::strcmp(token, "#Target_Bombed") == 0;
+		if (planted || cleared)
+		{
+			for (std::size_t i = 0U; i < bombNoticeKnown_.size(); ++i)
+			{
+				if ((publicMessageTarget_ == nullptr && (publicMessageDestination_ == MSG_ALL || publicMessageDestination_ == MSG_BROADCAST)) ||
+					(publicMessageActor_.isValid() && publicMessageActor_.slot == i + 1U))
+				{
+					bombNoticeKnown_[i] = true;
+					bombNoticePlanted_[i] = planted;
+					if (globals_ != nullptr)
+						publicBombClocks_[i].observe(publicMessageFrame_, globals_->time, planted);
+				}
+			}
+		}
+		return;
+	}
+	if (std::strcmp(name, "SendAudio") == 0 && count == 3U && integers(2U) &&
+		v[0] >= 1 && v[0] <= 32 && globals_ != nullptr && engineFunctions_ != nullptr &&
+		engineFunctions_->pfnPEntityOfEntIndex != nullptr)
+	{
+		edict_t *sender = engineFunctions_->pfnPEntityOfEntIndex(v[0]);
+		// Observe our own public radio receipt before excluding bot-originated
+		// commands from the human-order planner below.
+		if (sender != nullptr && !sender->free && (sender->v.flags & FL_FAKECLIENT) != 0 &&
+			(publicMessageStringMask_ & 2U) != 0U &&
+			std::strncmp(publicMessageStrings_[1U].data(), "%!MRAD_", 7U) == 0)
+		{
+			const std::size_t senderIndex = static_cast<std::size_t>(v[0] - 1);
+			if (managedBotSlots_[senderIndex] && managedBotHandles_[senderIndex].entity == sender)
+				++outgoingRadioReceipts_[senderIndex];
+		}
+		if ((publicMessageTarget_ != nullptr && !publicMessageActor_.isValid()) ||
+			(publicMessageTarget_ == nullptr && publicMessageDestination_ != MSG_ALL && publicMessageDestination_ != MSG_BROADCAST))
+		{
+			return;
+		}
+		if (sender == nullptr || sender->free || (sender->v.flags & FL_FAKECLIENT) != 0 || sender->serialnumber <= 0)
+		{
+			return;
+		}
+		const char *token = publicMessageStrings_[1U].data();
+		const char *const names[] = {"%!MRAD_FOLLOWME", "%!MRAD_COVERME", "%!MRAD_STICKTOG", "%!MRAD_REGROUP",
+			"%!MRAD_BACKUP", "%!MRAD_POSITION", "%!MRAD_GO", "%!MRAD_GETOUT"};
+		const compat::ScenarioRadioCommand commands[] = {compat::ScenarioRadioCommand::FollowMe,
+			compat::ScenarioRadioCommand::CoverMe, compat::ScenarioRadioCommand::StickTogether,
+			compat::ScenarioRadioCommand::Regroup, compat::ScenarioRadioCommand::NeedBackup,
+			compat::ScenarioRadioCommand::HoldPosition, compat::ScenarioRadioCommand::GoGoGo,
+			compat::ScenarioRadioCommand::GetOut};
+		compat::ScenarioRadioObservation radio{};
+		for (std::size_t i = 0U; i < 8U; ++i)
+		{
+			if (std::strcmp(names[i], token) == 0)
+			{
+				radio.command = commands[i];
+				break;
+			}
+		}
+		if (radio.command == compat::ScenarioRadioCommand::None)
+		{
+			return;
+		}
+		radio.sequence = ++radioSequence_;
+		radio.sender = {static_cast<std::uint32_t>(v[0]), static_cast<std::uint32_t>(sender->serialnumber)};
+		radio.senderHuman = true;
+		radio.team = sender->v.team == 1 ? objectives::TeamRole::Terrorist :
+			sender->v.team == 2 ? objectives::TeamRole::CounterTerrorist : objectives::TeamRole::Unknown;
+		radio.receivedTime = globals_->time;
+		// A radio receipt reveals the order and sender, never the sender's coordinates.
+		for (std::size_t i = 0U; i < managedBotHandles_.size(); ++i)
+		{
+			if (managedBotSlots_[i] && managedBotTeamNumbers_[i] == sender->v.team &&
+				(!publicMessageActor_.isValid() || publicMessageActor_.slot == i + 1U))
+			{
+				if (scenarioRadio_[i].sender == radio.sender &&
+					scenarioRadio_[i].command == radio.command && scenarioRadio_[i].receivedTime == radio.receivedTime)
+				{
+					continue;
+				}
+				scenarioRadio_[i] = radio;
+			}
+		}
+		return;
+	}
+	if (!publicMessageActor_.isValid())
+		return;
+	if (std::strcmp(name, "CurWeapon") == 0 && count == 3U && integers(0U))
+		(void)publicObservations_.currentWeapon(publicMessageActor_, publicMessageFrame_, v[0], v[1],
+			v[2] == 255 ? -1 : v[2]);
+	else if (std::strcmp(name, "AmmoX") == 0 && count == 2U && integers(0U))
+		(void)publicObservations_.ammo(publicMessageActor_, publicMessageFrame_, v[0], v[1]);
+	else if (std::strcmp(name, "AmmoPickup") == 0 && count == 2U && integers(0U))
+		(void)publicObservations_.ammoPickup(publicMessageActor_, publicMessageFrame_, v[0], v[1]);
+	else if (std::strcmp(name, "WeapPickup") == 0 && count == 1U && integers(0U))
+		(void)publicObservations_.weaponPickup(publicMessageActor_, publicMessageFrame_, v[0]);
+	else if (std::strcmp(name, "Money") == 0 && (count == 1U || count == 2U) && integers(0U))
+		(void)publicObservations_.money(publicMessageActor_, publicMessageFrame_, v[0]);
+	else if (std::strcmp(name, "ArmorType") == 0 && count == 1U && integers(0U))
+		(void)publicObservations_.armorType(publicMessageActor_, publicMessageFrame_, v[0]);
+	else if (std::strcmp(name, "StatusIcon") == 0 && (count == 2U || count == 5U) && integers(2U))
+		(void)publicObservations_.statusIcon(publicMessageActor_, publicMessageFrame_,
+			publicMessageString_.data(), v[0]);
+	else if (std::strcmp(name, "BarTime") == 0 && count == 1U && integers(0U))
+		(void)publicObservations_.progress(publicMessageActor_, publicMessageFrame_, v[0],
+			globals_!=nullptr ? globals_->time : 0.0f);
+	else if (std::strcmp(name, "ScreenFade") == 0 && count == 7U && integers(0U) &&
+		globals_ != nullptr && v[3] == 255 && v[4] == 255 && v[5] == 255 && v[6] > 180)
+	{
+		// HUD fade duration is fixed point (1 << 12); private blindness remains unavailable.
+		const float duration = static_cast<float>((std::max)(0, v[0]) + (std::max)(0, v[1])) / 4096.0f;
+		(void)publicObservations_.blind(publicMessageActor_, publicMessageFrame_, globals_->time + duration);
+	}
+	else if (std::strcmp(name, "ResetHUD") == 0)
+	{
+		deathDangerRecorded_[publicMessageActor_.slot - 1U] = false;
+		publicObservations_.resetSlot(publicMessageActor_.slot);
+		publicObservations_.bind(publicMessageActor_, publicMessageFrame_);
+	}
+}
+
 void PluginRuntime::captureManagedCurrentWeapon()
 {
 	if (!userMessageWeaponMessageValid_ || userMessageFieldCount_ < 2U ||
@@ -2220,7 +3086,15 @@ void PluginRuntime::captureManagedCurrentWeapon()
 		return;
 	}
 	const FakeClientHandle &handle = managedBotHandles_[index];
-	managedBotCurrentWeapons_[index] = {
+	const auto &current=managedBotCurrentWeapons_[index];
+	// CurWeapon also reports inactive inventory entries, sometimes after the
+	// active entry. Only deactivation of the current weapon invalidates it.
+	const bool inactiveOther=userMessageWeaponState_==0U && userMessageWeaponId_>0U &&
+		userMessageWeaponId_<=30U && current.available && current.active &&
+		current.actorGeneration==handle.actor.actorGeneration &&
+		current.mapGeneration==lifecycle_.mapGeneration() && current.roundGeneration==lifecycle_.roundGeneration() &&
+		current.weaponId!=userMessageWeaponId_;
+	if(!inactiveOther)managedBotCurrentWeapons_[index] = {
 		true,
 		userMessageWeaponState_ != 0U,
 		userMessageWeaponId_,
@@ -2522,7 +3396,23 @@ void PluginRuntime::updateManagedBotMovement()
 		{
 			++managedBotFullUpdateSequences_[index];
 		}
+		managedBotMovement_[index].setRuntimeMode(configuration.mode);
+		if(!before.dead && !roundFreezeActive() && (handle.entity->v.flags&FL_FROZEN)==0)
+		{
+			nav::LocomotionObservation motion{};
+			motion.position={before.origin.x,before.origin.y,before.origin.z};
+			motion.grounded=before.grounded;motion.onLadder=before.onLadder;motion.ducked=before.ducked;
+			motion.timingAvailable=true;motion.observedAt=globals_->time;
+			managedBotMovement_[index].observeMotion(handle.actor,
+				{lifecycle_.mapGeneration(),lifecycle_.roundGeneration(),adapterFrameCount_},motion);
+		}
+		else managedBotMovement_[index].resetProgressMonitor();
 		updateManagedBotCompatibilityState(index, before);
+		updateOutgoingPublicRadio(index);
+		if (managedBotStateMachines_[index].behaviorDecision().action == compat::StateAction::Buy)
+		{
+			updatePublicBuying(index);
+		}
 		if (before.dead)
 		{
 			if (movementLastDeadFrames_[index] == 0U)
@@ -2653,6 +3543,14 @@ void PluginRuntime::updateManagedBotMovement()
 	observation.locomotion.grounded = before.grounded;
 	observation.locomotion.ducked = before.ducked;
 	observation.locomotion.onLadder = before.onLadder;
+	observation.locomotion.timingAvailable = std::isfinite(globals_->time);
+	observation.locomotion.observedAt = globals_->time;
+	observation.locomotion.viewYawAvailable = std::isfinite(handle.entity->v.v_angle.y);
+	observation.locomotion.viewYaw = handle.entity->v.v_angle.y;
+	if (compatibilitySurface_.configuration().mode == compat::RuntimeMode::Compatibility)
+	{
+		managedBotMovement_[index].setPathCostContext(managedPathCostContext(index));
+	}
 	if (engineFunctions_ != nullptr &&
 		engineFunctions_->pfnCVarGetFloat != nullptr)
 	{
@@ -2722,6 +3620,19 @@ void PluginRuntime::updateManagedBotMovement()
 		observation.team = static_cast<std::uint8_t>(
 			managedBotObjectiveTargets_[index].effectiveTeam);
 		observation.movementSuppressed = roundFreezeActive();
+		const auto &objectiveAction = managedBotObjectiveActions_[index];
+		observation.movementSuppressed = observation.movementSuppressed ||
+			(objectiveAction.active && objectiveAction.kind == team::TeamObjectiveKind::PlantC4 &&
+			 objectiveAction.actor.slot == handle.actor.slot &&
+			 objectiveAction.actor.generation == handle.actor.actorGeneration &&
+			 objectiveAction.mapGeneration == lifecycle_.mapGeneration() &&
+			 objectiveAction.roundGeneration == lifecycle_.roundGeneration() &&
+			 objectiveAction.plantAttempt.active);
+		// Navigation-only teammate occupancy follows CSBot's live player scan.
+		// Enemy perception and objective knowledge retain their existing gates.
+		observation.friendRayOriginAvailable = true;
+		observation.friendRayOrigin = {before.origin.x,before.origin.y,before.origin.z};
+		observation.nearbyFriends = liveFriendlyPositions(index, false);
 		runtime::GroundLookaheadRoute &groundLookaheadRoute =
 			movementGroundLookaheadRoutes_[index];
 		const runtime::GroundLookaheadRoute probeRoute = groundLookaheadRoute;
@@ -2846,10 +3757,36 @@ void PluginRuntime::updateManagedBotMovement()
 		runtime::NavRoamDecision roamDecision = {};
 		runtime::NavRoamResult roamResult = runtime::NavRoamResult::NoRoute;
 		groundLookaheadRoute.reset();
-		if (performanceDisablePathSearch_)
+		const auto &previousStep=managedNavigationSteps_[index];
+		const bool destroyedPath=previousStep.pathDestroyedAfterMovement &&
+			previousStep.actor==objectiveActor && previousStep.frame.mapGeneration==observation.frame.mapGeneration &&
+			previousStep.frame.roundGeneration==observation.frame.roundGeneration && previousStep.frame.tick<observation.frame.tick &&
+			previousStep.goalGeneration==managedBotObjectiveTargets_[index].generation &&
+			(managedBotStateMachines_[index].state()==compat::CompatibilityStateId::MoveTo ||
+			 managedBotStateMachines_[index].state()==compat::CompatibilityStateId::EscapeFromBomb) &&
+			!managedBotStateMachines_[index].attackOverlayActive();
+		const auto navigationState=managedBotStateMachines_[index].state();
+		const bool stateHold=compatibilitySurface_.configuration().mode==compat::RuntimeMode::Compatibility &&
+			(navigationState==compat::CompatibilityStateId::DefuseBomb || navigationState==compat::CompatibilityStateId::PlantBomb ||
+			 navigationState==compat::CompatibilityStateId::Buy ||
+			 (navigationState==compat::CompatibilityStateId::Hide && scenarioDecisions_[index].action==compat::ScenarioAction::Guard &&
+			  scenarioDecisions_[index].hasTarget && scenarioDecisions_[index].target.inUseRange));
+		if(stateHold)
+		{
+			roamResult=runtime::NavRoamResult::MovementSuppressed;
+			roamDecision.stage=runtime::NavRoamStage::MovementSuppressed;
+		}
+		else if (performanceDisablePathSearch_)
 		{
 			roamDecision.failureReason = runtime::NavFailureReason::PathSearchFailed;
 			roamDecision.stage = runtime::NavRoamStage::Failed;
+		}
+		else if(destroyedPath)
+		{
+			// The preceding update moved before DestroyPath. This update must
+			// report the missing path to MoveTo instead of silently rebuilding it.
+			roamDecision.failureReason=runtime::NavFailureReason::MovementNotProduced;
+			roamDecision.stage=runtime::NavRoamStage::Failed;
 		}
 		else
 		{
@@ -2928,6 +3865,7 @@ void PluginRuntime::updateManagedBotMovement()
 				}
 			}
 		}
+		finishManagedBotNavigation(index,before,roamResult,roamDecision,&locomotionIntent);
 			runtimeProfiler_.recordPathSearchResults(
 				 navSearchCaller(roamDecision),
 			managedBotHandles_[index].actor.slot,
@@ -2958,7 +3896,9 @@ void PluginRuntime::updateManagedBotMovement()
 		}
 		if (roamResult != runtime::NavRoamResult::IntentReady)
 		{
-			if (roamDecision.failureReason == runtime::NavFailureReason::None)
+			if (roamDecision.failureReason == runtime::NavFailureReason::None &&
+				roamResult!=runtime::NavRoamResult::MovementSuppressed && roamResult!=runtime::NavRoamResult::TargetReached &&
+				roamResult!=runtime::NavRoamResult::ReplanRequired)
 			{
 				roamDecision.failureReason = runtime::NavFailureReason::MovementNotProduced;
 			}
@@ -3008,16 +3948,28 @@ void PluginRuntime::updateManagedBotMovement()
 			1U};
 		const ActionProposal actionProposal = ActionAdapter::forLiveDispatch(
 			decideManagedBotAction(index, before, movementViewAngles, movementButtons),
-			false,
+			hasObservedActiveWeapon(index),
 			movementViewAngles);
 		const ActionDispatch actionDispatch = ActionAdapter::translate(actionProposal);
 		command.viewAngles = actionDispatch.viewAngles;
 		command.movement.buttons = actionDispatch.buttons;
+		const bool compatibilityMovement=compatibilitySurface_.configuration().mode==compat::RuntimeMode::Compatibility;
+		float commandSpeed=locomotionIntent.speed;
+		if(compatibilityMovement && commandSpeed>0.0f && std::isfinite(handle.entity->v.maxspeed) && handle.entity->v.maxspeed>0.0f)
+		{
+			commandSpeed=handle.entity->v.maxspeed;
+			const auto &goal=managedBotObjectiveTargets_[index];
+			const float x=goal.target.x-before.origin.x,y=goal.target.y-before.origin.y;
+			const bool finalArea=roamDecision.currentArea!=0U && roamDecision.currentArea==roamDecision.goalArea;
+			if(goal.valid && finalArea && x*x+y*y<200.0f*200.0f &&
+				locomotionIntent.posture!=nav::LocomotionPosture::Crouching)commandSpeed*=0.4f;
+		}
+		managedMoveSpeeds_[index]=commandSpeed;
 		const MovementProjection movementProjection = ActionAdapter::projectMovement(
 			locomotionIntent.direction.x,
 			locomotionIntent.direction.y,
-			locomotionIntent.speed,
-			command.viewAngles.yaw);
+			commandSpeed,
+			command.viewAngles.yaw,compatibilityMovement);
 		command.movement.forward = actionDispatch.stopMovement ? 0.0f : movementProjection.forward;
 		command.movement.side = actionDispatch.stopMovement ? 0.0f : movementProjection.side;
 		if (!actionDispatch.stopMovement)
@@ -3107,6 +4059,99 @@ void PluginRuntime::updateManagedBotMovement()
 
 }
 
+void PluginRuntime::finishManagedBotNavigation(std::size_t index,
+	const runtime::MovementPhysicsState &before,runtime::NavRoamResult result,
+	const runtime::NavRoamDecision &decision,nav::LocomotionIntent *intent)
+{
+	if(compatibilitySurface_.configuration().mode!=compat::RuntimeMode::Compatibility ||
+		index>=managedBotHandles_.size() || globals_==nullptr)return;
+	compat::StateBehaviorInput input{};
+	auto context=makeManagedBotStateContext(index,before,&input);
+	const auto &prepared=managedStateInputs_[index];
+	if(!(prepared.navigation.actor==context.actor) || prepared.navigation.frame.tick!=context.frame.tick ||
+		prepared.navigation.frame.mapGeneration!=context.frame.mapGeneration ||
+		prepared.navigation.frame.roundGeneration!=context.frame.roundGeneration)return;
+	input=prepared;
+	compat::NavigationStep step{};
+	step.actor=context.actor;step.frame=context.frame;
+	step.goalGeneration=managedBotObjectiveTargets_[index].generation;
+	step.pathSequence=decision.pathSequence;step.fullUpdateSequence=context.fullUpdateSequence;
+	using Outcome=compat::NavigationStepOutcome;
+	if(result==runtime::NavRoamResult::IntentReady || result==runtime::NavRoamResult::MovementSuppressed ||
+		(result==runtime::NavRoamResult::ReplanRequired && decision.failureReason==runtime::NavFailureReason::None))
+		step.outcome=Outcome::Progressing;
+	else if(result==runtime::NavRoamResult::TargetReached)step.outcome=Outcome::EndOfPath;
+	else if(result==runtime::NavRoamResult::NoRoute || result==runtime::NavRoamResult::ReplanRequired)
+		step.outcome=Outcome::PathFailure;
+	else step.outcome=Outcome::ObservationUnavailable;
+	const auto currentState=managedBotStateMachines_[index].state();
+	if(currentState==compat::CompatibilityStateId::DefuseBomb || currentState==compat::CompatibilityStateId::PlantBomb ||
+		currentState==compat::CompatibilityStateId::Buy)step.outcome=Outcome::NotEvaluated;
+	step.pathDestroyedAfterMovement=step.outcome==Outcome::Progressing &&
+		decision.recomputeReason==runtime::NavRecomputeReason::PathInvalidated;
+	input.navigation=step;
+	if(currentState==compat::CompatibilityStateId::EscapeFromBomb &&
+		(step.outcome==Outcome::EndOfPath || step.outcome==Outcome::PathFailure) && scenarioEscapeAreas_[index]!=0U)
+	{
+		if(runtimeProfiler_.enabled())profiledLogConsole(runtimeProfiler_,pluginId_,
+			"profile bombEscapeRetry bot_id=%u frame=%u previous_area=%u result=%d reason=%d",
+			context.actor.slot,context.frame.tick,scenarioEscapeAreas_[index],static_cast<int>(result),static_cast<int>(decision.recomputeReason));
+		scenarioEscapeAreas_[index]=0U;
+	}
+	const auto &target=scenarioDecisions_[index].target;
+	const auto &bomb=objectiveKnowledge_[index][1U];
+	input.defuseGoalKnown=publicPlayerTeam(managedBotHandles_[index].entity)==2 &&
+		scenarioDecisions_[index].hasTarget && bomb.entity.id!=0U && target.entity.id==bomb.entity.id;
+	if(input.defuseGoalKnown)
+	{
+		const auto *entity=managedBotHandles_[index].entity;
+		const float footOffset=entity->v.mins.z<0.0f ? entity->v.mins.z : -kStandingHalfHumanHeight;
+		const float x=bomb.position.x-before.origin.x,y=bomb.position.y-before.origin.y,
+			z=bomb.position.z-before.origin.z-footOffset;
+		input.withinDefuseRange=x*x+y*y+z*z<100.0f*100.0f;
+	}
+	compat::CompatibilityObservation observation{};
+	const compat::ObservationTimingContext timing={managedBotCommandSequences_[index],0U,context.fullUpdateSequence};
+	if(observationAdapter_.collectActor(managedBotHandles_[index].entity,context.actor,context.frame,timing,&observation)==ObservationAdapterResult::Accepted &&
+		observation.weapon.reloadState.isAvailable() && observation.weapon.reloadState.value!=combat::ReloadState::Unknown)
+	{
+		input.reloadKnown=true;
+		input.reloading=observation.weapon.reloadState.value==combat::ReloadState::Reloading;
+	}
+	else
+	{
+		// Vanilla cannot expose the internal reload flag. Own delivered reload
+		// requests conservatively block use; no pending request is an inference.
+		input.reloadInferred=true;
+		input.reloading=publicObservations_.pendingReloadRequest(context.actor,context.frame,context.timestamp);
+	}
+	auto &machine=managedBotStateMachines_[index];
+	const auto previous=machine.state();
+	(void)machine.finishNavigation(context);
+	if(!machine.attackOverlayActive())managedNavigationSteps_[index]=step;
+	if(machine.state()!=previous)
+	{
+		managedBotMovement_[index].destroyPath();
+		if(machine.state()==compat::CompatibilityStateId::Idle)
+		{
+			managedBotObjectiveTargets_[index]={};scenarioDecisions_[index]={};
+			if(runtimeProfiler_.enabled())profiledLogConsole(runtimeProfiler_,pluginId_,
+				"profile navigationFailure bot_id=%u frame=%u state_from=%s state_to=%s",
+				context.actor.slot,context.frame.tick,compat::toString(previous),compat::toString(machine.state()));
+		}
+	}
+	if(machine.state()==compat::CompatibilityStateId::DefuseBomb && intent!=nullptr)*intent={};
+	if(runtimeProfiler_.enabled())
+		profiledLogConsole(runtimeProfiler_,pluginId_,
+			"profile navigationStep bot_id=%u frame=%u update=%u goal_generation=%u path=%u outcome=%u destroyed=%d state_from=%s state_to=%s reload_known=%d reload_inferred=%d goal_position=(%.1f %.1f %.1f) failure_reason=%d current_area=%u goal_area=%u path_link=(%u->%u)",
+			context.actor.slot,context.frame.tick,context.fullUpdateSequence,step.goalGeneration,step.pathSequence,
+			static_cast<unsigned>(step.outcome),step.pathDestroyedAfterMovement?1:0,
+			compat::toString(previous),compat::toString(machine.state()),input.reloadKnown?1:0,input.reloadInferred?1:0,
+			decision.goalPosition.x,decision.goalPosition.y,decision.goalPosition.z,
+			static_cast<int>(decision.failureReason),decision.currentArea,decision.goalArea,
+			decision.linkFromArea,decision.linkToArea);
+}
+
 bool PluginRuntime::buildManagedWorldSnapshot(
 	std::size_t index,
 	world::WorldSnapshot *snapshot,
@@ -3125,13 +4170,15 @@ bool PluginRuntime::buildManagedWorldSnapshot(
 	{
 		return false;
 	}
-	const auto selectVisibleTarget = [targetActor, targetPosition](
+	const auto selectVisibleTarget = [this, index, targetActor, targetPosition](
 		const world::WorldSnapshot &belief,
 		const world::ActorKey &observer) -> bool
 	{
 		world::ActorKey selected = {};
 		world::WorldPosition selectedPosition = {};
 		float selectedDistanceSquared = (std::numeric_limits<float>::max)();
+		std::array<compat::ThreatCandidate, 32U> candidates{};
+		std::size_t candidateCount = 0U;
 		const world::ActorObservation *observerObservation = nullptr;
 		if (belief.findActor(observer, &observerObservation) !=
 			world::ContactLookupResult::Found || observerObservation == nullptr ||
@@ -3152,6 +4199,34 @@ bool PluginRuntime::buildManagedWorldSnapshot(
 			const float dy = candidate->position.y - observerObservation->position.y;
 			const float dz = candidate->position.z - observerObservation->position.z;
 			const float distanceSquared = dx * dx + dy * dy + dz * dz;
+			if (candidateCount < candidates.size())
+			{
+				world::WorldPosition visiblePoint = candidate->position;
+				if ((candidate->visibleParts & world::VisibleHead) != 0U)
+					visiblePoint.z += 25.0f;
+				else if ((candidate->visibleParts & world::VisibleChest) == 0U &&
+					(candidate->visibleParts & world::VisibleFeet) != 0U)
+					visiblePoint.z -= 14.0f;
+				bool attackingObserver = false;
+				if (engineFunctions_ != nullptr && engineFunctions_->pfnPEntityOfEntIndex != nullptr &&
+					engineFunctions_->pfnTraceLine != nullptr)
+				{
+					edict_t *enemy = engineFunctions_->pfnPEntityOfEntIndex(static_cast<int>(candidate->actor.slot));
+					if (enemy != nullptr && !enemy->free && (enemy->v.button & IN_ATTACK) != 0)
+					{
+						const float yaw = enemy->v.v_angle.y * 3.14159265358979323846f / 180.0f;
+						const float pitch = enemy->v.v_angle.x * 3.14159265358979323846f / 180.0f;
+						const float eye[] = {enemy->v.origin.x + enemy->v.view_ofs.x,
+							enemy->v.origin.y + enemy->v.view_ofs.y, enemy->v.origin.z + enemy->v.view_ofs.z};
+						const float end[] = {eye[0] + 8192.0f * std::cos(pitch) * std::cos(yaw),
+							eye[1] + 8192.0f * std::cos(pitch) * std::sin(yaw), eye[2] - 8192.0f * std::sin(pitch)};
+						TraceResult trace{};
+						engineFunctions_->pfnTraceLine(eye, end, 0, enemy, &trace);
+						attackingObserver = trace.pHit == managedBotHandles_[index].entity;
+					}
+				}
+				candidates[candidateCount++] = {candidate->actor, visiblePoint, std::sqrt(distanceSquared), attackingObserver};
+			}
 			if (distanceSquared < selectedDistanceSquared)
 			{
 				selectedDistanceSquared = distanceSquared;
@@ -3159,6 +4234,33 @@ bool PluginRuntime::buildManagedWorldSnapshot(
 				selectedPosition = candidate->position;
 			}
 		}
+		if (recognitionSequences_[index] != managedBotFullUpdateSequences_[index])
+		{
+			recognitionSequences_[index] = managedBotFullUpdateSequences_[index];
+			compat::ThreatCandidate threat{};
+			compat::PublicActorState publicState{};
+			const bool blinded = publicObservations_.read(observer, belief.identity().frame, &publicState) &&
+				globals_ != nullptr && globals_->time < publicState.blindUntil;
+			if (!blinded && candidateCount != 0U && globals_ != nullptr)
+			{
+				lastVisibleEnemyTimes_[index] = globals_->time;
+			}
+			if (globals_ != nullptr && reactionQueues_[index].update(observer, belief.identity().frame,
+				globals_->time, managedProfiles_[index].reactionTimeSeconds, candidates.data(), candidateCount,
+				blinded, &threat))
+			{
+				if (!(recognizedTargets_[index] == threat.actor))
+				{
+					attackReadyTimes_[index] = globals_->time + managedProfiles_[index].attackDelaySeconds;
+				}
+				recognizedTargets_[index] = threat.actor;
+				recognizedPoints_[index] = threat.visiblePoint;
+			}
+			else
+				recognizedTargets_[index] = {};
+		}
+		selected = recognizedTargets_[index];
+		selectedPosition = recognizedPoints_[index];
 		if (!selected.isValid())
 			return false;
 		*targetActor = selected;
@@ -3275,6 +4377,29 @@ bool PluginRuntime::buildManagedWorldSnapshot(
 			return false;
 		}
 	}
+	const std::uint64_t firstSound = (std::max)(std::uint64_t(deliveredSoundSequences_[index]) + 1U,
+		soundSequence_ > soundEvents_.size() ? std::uint64_t(soundSequence_ - soundEvents_.size() + 1U) : std::uint64_t(1U));
+	for (std::uint64_t sequence = firstSound; sequence <= soundSequence_; ++sequence)
+	{
+		const auto &observed = soundEvents_[sequence % soundEvents_.size()];
+		if (observed.id != sequence || observed.source.slot == handle.actor.slot ||
+			(soundTeams_[sequence % soundTeams_.size()] != 0 &&
+			 soundTeams_[sequence % soundTeams_.size()] == managedBotTeamNumbers_[index]))
+		{
+			continue;
+		}
+		const float dx = observed.origin.x - handle.entity->v.origin.x;
+		const float dy = observed.origin.y - handle.entity->v.origin.y;
+		const float dz = observed.origin.z - handle.entity->v.origin.z;
+		const float distance = std::sqrt(dx * dx + dy * dy + dz * dz);
+		if (std::isfinite(distance) && distance < observed.distance)
+		{
+			world::AudibleEvent audible = observed;
+			audible.distance = distance;
+			(void)input.addSound(audible);
+		}
+	}
+	deliveredSoundSequences_[index] = soundSequence_;
 	perception::PerceptionAssembler &assembler = managedBotPerception_[index];
 	RuntimeProfilerScope worldPublishScope(
 		runtimeProfiler_, RuntimeProfilerStage::WorldPublish);
@@ -3347,13 +4472,342 @@ void PluginRuntime::refreshManagedObjectiveSiteRegistry()
 	}
 }
 
+bool PluginRuntime::observeObjective(std::size_t index, edict_t *entity, bool planted,
+	world::WorldVector *position, bool *currentlyVisible)
+{
+	if (currentlyVisible != nullptr) *currentlyVisible = false;
+	if (index >= managedBotHandles_.size() || entity == nullptr || entity->free != 0 ||
+		position == nullptr || engineFunctions_ == nullptr || engineFunctions_->pfnIndexOfEdict == nullptr)
+		return false;
+	const FakeClientHandle &handle = managedBotHandles_[index];
+	if (handle.entity == nullptr)
+		return false;
+	const bool compatibility = compatibilitySurface_.configuration().mode == compat::RuntimeMode::Compatibility;
+	ObjectiveKnowledge &knowledge = objectiveKnowledge_[index][planted ? 1U : 0U];
+	const world::EntityKey key{static_cast<std::uint32_t>(engineFunctions_->pfnIndexOfEdict(entity)),
+		static_cast<std::uint32_t>(entity->serialnumber)};
+	const float eye[] = {handle.entity->v.origin.x + handle.entity->v.view_ofs.x,
+		handle.entity->v.origin.y + handle.entity->v.view_ofs.y,
+		handle.entity->v.origin.z + handle.entity->v.view_ofs.z};
+	const float target[] = {entity->v.origin.x, entity->v.origin.y, entity->v.origin.z};
+	const float dx = target[0] - eye[0];
+	const float dy = target[1] - eye[1];
+	const float length = std::hypot(dx, dy);
+	const float angle = handle.entity->v.v_angle.y * 3.14159265358979323846f / 180.0f;
+	// The reference gives T the planted location on the announced plant event,
+	// not merely because the server scan found a grenade (CSGameState::OnEvent).
+	bool visible = !compatibility || (planted && managedBotTeamNumbers_[index] == 1U &&
+		bombNoticeKnown_[index] && bombNoticePlanted_[index]);
+	if (!planted && compatibility && managedBotTeamNumbers_[index] == 1U)
+	{
+		world::WorldVector radar{};
+		if (publicBombRadars_[index].read(
+			{lifecycle_.mapGeneration(), lifecycle_.roundGeneration(), adapterFrameCount_}, &radar))
+		{
+			knowledge.entity = key;
+			knowledge.position = radar;
+			*position = radar;
+			return true;
+		}
+	}
+	compat::PublicActorState publicState{};
+	const bool blind = globals_ != nullptr && publicObservations_.read(
+		{handle.actor.slot, handle.actor.actorGeneration},
+		{lifecycle_.mapGeneration(), lifecycle_.roundGeneration(), adapterFrameCount_}, &publicState) &&
+		globals_->time < publicState.blindUntil;
+	const bool smokeBlocked = globals_ != nullptr && smokeObservations_.blocks(
+		{eye[0], eye[1], eye[2]}, {target[0], target[1], target[2]}, globals_->time);
+	if (!visible && !blind && !smokeBlocked && engineFunctions_->pfnTraceLine != nullptr &&
+		(length < 0.001f || (dx * std::cos(angle) + dy * std::sin(angle)) / length > 0.5f))
+	{
+		TraceResult trace{};
+		engineFunctions_->pfnTraceLine(eye, target, 1, handle.entity, &trace);
+		visible = trace.flFraction == 1.0f || trace.pHit == entity;
+	}
+	if (visible)
+	{
+		knowledge.entity = key;
+		knowledge.position = {target[0], target[1], target[2]};
+	}
+	if (!visible && (!key.isValid() || knowledge.entity.id != key.id ||
+		knowledge.entity.generation != key.generation))
+		return false;
+	*position = knowledge.position;
+	if (currentlyVisible != nullptr) *currentlyVisible = visible;
+	return true;
+}
+
+void PluginRuntime::updateBombGuardTarget(std::size_t index,
+	const compat::ScenarioBehaviorInput &input, compat::ScenarioBehaviorDecision *decision)
+{
+	RuntimeProfilerScope guardScope(runtimeProfiler_, RuntimeProfilerStage::BombGuardSelection);
+	if (index >= bombGuardPlanners_.size() || decision == nullptr) return;
+	if (!input.bombPlantedKnown || !input.bombPlanted || !decision->hasTarget ||
+		decision->action != compat::ScenarioAction::Guard ||
+		!(decision->target.entity == input.bomb.entity))
+	{
+		bombGuardPlanners_[index].reset(); return;
+	}
+	const auto &handle = managedBotHandles_[index];
+	if (handle.entity == nullptr || engineFunctions_ == nullptr || globals_ == nullptr) return;
+	const nav::NavVector self = {handle.entity->v.origin.x, handle.entity->v.origin.y,
+		handle.entity->v.origin.z + handle.entity->v.mins.z};
+	std::vector<nav::NavVector> occupied;
+	compat::PublicActorState weapon{};
+	const bool publicStateKnown = publicObservations_.read(input.actor, input.frame, &weapon);
+	const bool blind = publicStateKnown && input.timestamp < weapon.blindUntil;
+	if (!blind && engineFunctions_->pfnPEntityOfEntIndex != nullptr)
+	{
+		for (int slot = 1; slot <= (std::min)(32, globals_->maxClients); ++slot)
+		{
+			edict_t *other = engineFunctions_->pfnPEntityOfEntIndex(slot);
+			if (other == nullptr || other == handle.entity || other->free ||
+				(other->v.flags & FL_CLIENT) == 0 || other->v.deadflag != DEAD_NO || other->v.health <= 0.0f) continue;
+			const float eye[] = {handle.entity->v.origin.x + handle.entity->v.view_ofs.x,
+				handle.entity->v.origin.y + handle.entity->v.view_ofs.y,
+				handle.entity->v.origin.z + handle.entity->v.view_ofs.z};
+			const float point[] = {other->v.origin.x, other->v.origin.y, other->v.origin.z};
+			const float dx = point[0] - eye[0], dy = point[1] - eye[1];
+			const float length = std::hypot(dx,dy);
+			const float yaw = handle.entity->v.v_angle.y * 0.017453292519943295f;
+			if (length > 75.0f && (dx*std::cos(yaw) + dy*std::sin(yaw)) < 0.5f*length) continue;
+			if (engineFunctions_->pfnTraceLine == nullptr) continue;
+			TraceResult trace{};
+			engineFunctions_->pfnTraceLine(eye, point, 1, handle.entity, &trace);
+			if (trace.flFraction != 1.0f && trace.pHit != other) continue;
+			occupied.push_back({point[0], point[1], point[2] + other->v.mins.z});
+		}
+	}
+	const bool sniper = publicStateKnown && weapon.weaponKnown &&
+		(weapon.weaponId == 3 || weapon.weaponId == 13 || weapon.weaponId == 18 || weapon.weaponId == 24);
+	nav::NavVector spot{};
+	const auto navigation = navPublisher_.snapshot();
+	const nav::NavVector bombPosition = {input.bomb.position.x, input.bomb.position.y, input.bomb.position.z};
+	// The active guard target is checked before constructing the danger/team
+	// path-cost context. Retained choices need neither a new route nor new costs.
+	nav::NavPathCostContext cost{};
+	if (bombGuardPlanners_[index].needsSelection(navigation, input.frame, input.bomb.entity,
+		bombPosition, self, occupied, input.timestamp)) cost = managedPathCostContext(index);
+	if (!bombGuardPlanners_[index].update(navigation, input.frame, input.bomb.entity,
+		{input.bomb.position.x, input.bomb.position.y, input.bomb.position.z}, self, sniper, occupied,
+		input.timestamp, compatibilityRandomSource_, {input.actor.slot, input.actor.generation},
+		{managedBotCommandSequences_[index], 0U, managedBotFullUpdateSequences_[index]}, &spot,
+		cost))
+	{
+		// Unknown NAV/RNG does not authorize converging on the C4 as cover.
+		spot = self;
+	}
+	decision->target.position = {spot.x, spot.y, spot.z};
+	decision->target.frame = input.frame;
+	const float dx = spot.x - self.x, dy = spot.y - self.y, dz = spot.z - self.z;
+	decision->target.pathCost = std::sqrt(dx*dx + dy*dy + dz*dz);
+	decision->target.inUseRange = decision->target.pathCost <= 20.0f;
+}
+
+int PluginRuntime::publicPlayerTeam(const edict_t *entity) const
+{
+	if (entity == nullptr || engineFunctions_ == nullptr || engineFunctions_->pfnIndexOfEdict == nullptr) return 0;
+	const int slot = engineFunctions_->pfnIndexOfEdict(entity);
+	if (slot >= 1 && slot <= 32 && publicTeamKnown_[static_cast<std::size_t>(slot - 1)])
+		return managedBotTeamNumbers_[static_cast<std::size_t>(slot - 1)];
+	return entity->v.team >= 1 && entity->v.team <= 2 ? entity->v.team : 0;
+}
+
+runtime::ActorId PluginRuntime::publicPlayerIdentity(const edict_t *entity) const
+{
+	if (entity == nullptr || entity->free || engineFunctions_ == nullptr ||
+		engineFunctions_->pfnIndexOfEdict == nullptr) return {};
+	const int slot = engineFunctions_->pfnIndexOfEdict(entity);
+	if (slot < 1 || slot > 32) return {};
+	const auto index = static_cast<std::size_t>(slot - 1);
+	if (managedBotSlots_[index] && managedBotHandles_[index].entity == entity)
+		return managedBotHandles_[index].actor;
+	return {static_cast<std::uint32_t>(slot), static_cast<std::uint32_t>(entity->serialnumber) + 1U};
+}
+
+std::uint32_t PluginRuntime::publicPlayerPriority(const edict_t *entity) const
+{
+	const auto actor = publicPlayerIdentity(entity);
+	if (actor.slot == 0U) return (std::numeric_limits<std::uint32_t>::max)();
+	const auto index = static_cast<std::size_t>(actor.slot - 1U);
+	const int team = publicPlayerTeam(entity);
+	bool important = team == 1 && (static_cast<std::uint32_t>(entity->v.weapons) & (1U << ActionAdapter::kC4WeaponId)) != 0U;
+	const auto &score = publicScoreStatuses_[index][index];
+	if (team == 2 && score.known && score.serial == static_cast<std::uint32_t>(entity->serialnumber) &&
+		score.frame.mapGeneration == lifecycle_.mapGeneration() && score.frame.roundGeneration == lifecycle_.roundGeneration())
+		important = (score.flags & 4) != 0;
+	return runtime::playerAvoidancePriority((entity->v.flags & FL_FAKECLIENT) == 0,
+		important, managedBotSlots_[index] && managedBotHandles_[index].entity == entity
+			? managedBotCreationIds_[index] : 0U);
+}
+
+std::vector<nav::NavVector> PluginRuntime::liveFriendlyPositions(std::size_t index, bool feet) const
+{
+	std::vector<nav::NavVector> positions;
+	if (index >= managedBotHandles_.size() || globals_ == nullptr || engineFunctions_ == nullptr ||
+		engineFunctions_->pfnPEntityOfEntIndex == nullptr) return positions;
+	const auto *self = managedBotHandles_[index].entity;
+	const int team = publicPlayerTeam(self);
+	if (team == 0) return positions;
+	for (int slot = 1; slot <= (std::min)(32, globals_->maxClients); ++slot)
+	{
+		const auto *other = engineFunctions_->pfnPEntityOfEntIndex(slot);
+		if (other == nullptr || other == self || other->free || (other->v.flags & FL_CLIENT) == 0 ||
+			other->v.deadflag != DEAD_NO || other->v.health <= 0.0f || publicPlayerTeam(other) != team) continue;
+		const float offset = feet ? other->v.mins.z : 0.0f;
+		const nav::NavVector position = {other->v.origin.x, other->v.origin.y, other->v.origin.z + offset};
+		if (std::isfinite(position.x) && std::isfinite(position.y) && std::isfinite(position.z)) positions.push_back(position);
+	}
+	return positions;
+}
+
+void PluginRuntime::onTouch(edict_t *entity, edict_t *other)
+{
+	if (state_ != State::ActiveMap || globals_ == nullptr || !std::isfinite(globals_->time) ||
+		compatibilitySurface_.configuration().mode != compat::RuntimeMode::Compatibility) return;
+	const auto observe = [&](edict_t *self, edict_t *contact) {
+		if (self == nullptr || contact == nullptr || self == contact || self->free || contact->free ||
+			(self->v.flags & FL_CLIENT) == 0 || (contact->v.flags & FL_CLIENT) == 0 ||
+			self->v.deadflag != DEAD_NO || contact->v.deadflag != DEAD_NO || self->v.health <= 0.0f || contact->v.health <= 0.0f) return;
+		const auto actor = publicPlayerIdentity(self), touched = publicPlayerIdentity(contact);
+		if (actor.slot == 0U || touched.slot == 0U) return;
+		const auto index = static_cast<std::size_t>(actor.slot - 1U);
+		if (!managedBotSlots_[index] || managedBotHandles_[index].entity != self ||
+			!lifecycle_.isCurrent(lifecycle_.tokenForSlot(actor.slot))) return;
+		const world::FrameIdentity frame = {lifecycle_.mapGeneration(), lifecycle_.roundGeneration(), adapterFrameCount_};
+		runtime::PlayerAvoidanceTouch touch = {actor, frame, touched, publicPlayerPriority(self),
+			publicPlayerPriority(contact), globals_->time,
+			managedBotStateMachines_[index].state() == compat::CompatibilityStateId::DefuseBomb};
+		runtime::ActorId previous{};
+		if (playerAvoidance_[index].target(actor, frame, globals_->time, &previous) &&
+			engineFunctions_ != nullptr && engineFunctions_->pfnPEntityOfEntIndex != nullptr)
+		{
+			const auto *incumbent = engineFunctions_->pfnPEntityOfEntIndex(static_cast<int>(previous.slot));
+			const auto current = publicPlayerIdentity(incumbent);
+			if (current.slot == previous.slot && current.actorGeneration == previous.actorGeneration)
+			{
+				touch.currentTargetPriority = publicPlayerPriority(incumbent);
+				touch.currentTargetPriorityKnown = true;
+			}
+			else playerAvoidance_[index].reset();
+		}
+		playerAvoidance_[index].touch(touch);
+	};
+	observe(entity, other);
+	observe(other, entity);
+}
+
+void PluginRuntime::applyPlayerAvoidance(std::size_t index, runtime::BotCommand *command)
+{
+	if (command == nullptr || index >= managedBotHandles_.size() || globals_ == nullptr ||
+		compatibilitySurface_.configuration().mode != compat::RuntimeMode::Compatibility ||
+		engineFunctions_ == nullptr || engineFunctions_->pfnPEntityOfEntIndex == nullptr) return;
+	const auto &handle = managedBotHandles_[index];
+	runtime::ActorId target{};
+	const world::FrameIdentity frame = {lifecycle_.mapGeneration(), lifecycle_.roundGeneration(), adapterFrameCount_};
+	if (!playerAvoidance_[index].target(handle.actor, frame, globals_->time, &target)) return;
+	const auto *other = engineFunctions_->pfnPEntityOfEntIndex(static_cast<int>(target.slot));
+	const auto identity = publicPlayerIdentity(other);
+	const auto *self = handle.entity;
+	if (identity.slot != target.slot || identity.actorGeneration != target.actorGeneration ||
+		other == nullptr || other->v.deadflag != DEAD_NO || other->v.health <= 0.0f ||
+		self == nullptr || self->v.deadflag != DEAD_NO || self->v.health <= 0.0f)
+	{
+		playerAvoidance_[index].reset(); return;
+	}
+	if ((self->v.flags & FL_ONGROUND) == 0 || self->v.movetype == MOVETYPE_FLY ||
+		engineFunctions_->pfnTraceLine == nullptr) return;
+	const float yaw = command->viewAngles.yaw * 0.017453292519943295f;
+	const float dx = other->v.origin.x - self->v.origin.x, dy = other->v.origin.y - self->v.origin.y;
+	const float length = std::hypot(dx, dy);
+	if (!std::isfinite(length) || length <= 0.0f || !std::isfinite(yaw)) return;
+	const auto move=runtime::playerAvoidanceMove(command->viewAngles.yaw,dx,dy,
+		command->movement.forward,command->movement.side,
+		managedMoveSpeeds_[index]>0.0f ? managedMoveSpeeds_[index] : self->v.maxspeed);
+	if (!move.valid) return;
+	const float worldX = move.forward * std::cos(yaw) + move.side * std::sin(yaw);
+	const float worldY = move.forward * std::sin(yaw) - move.side * std::cos(yaw);
+	const float speed = std::hypot(worldX, worldY);
+	const float feetZ = self->v.origin.z + self->v.mins.z;
+	const float start[3] = {self->v.origin.x + 30.0f * worldX / speed,
+		self->v.origin.y + 30.0f * worldY / speed, feetZ + 36.0f};
+	const float end[3] = {start[0], start[1], feetZ - nav::LocomotionConfig::kMaximumStepHeight};
+	TraceResult ground{};
+	engineFunctions_->pfnTraceLine(start, end, 1, handle.entity, &ground);
+	const bool safe = !ground.fStartSolid && !ground.fAllSolid && std::isfinite(ground.flFraction) &&
+		ground.flFraction < 1.0f && std::isfinite(ground.vecEndPos[2]) &&
+		std::fabs(ground.vecEndPos[2] - feetZ) <= nav::LocomotionConfig::kMaximumStepHeight;
+	if (safe)
+	{
+		command->movement.forward = move.forward;
+		command->movement.side = move.side;
+		command->movement.buttons = static_cast<std::uint16_t>((command->movement.buttons &
+			~(IN_FORWARD | IN_BACK | IN_MOVELEFT | IN_MOVERIGHT)) |
+			ActionAdapter::movementButtons(move.forward, move.side));
+	}
+	if (runtimeProfiler_.enabled() && (adapterFrameCount_ % 16U) == 0U && gpMetaUtilFuncs != nullptr &&
+		gpMetaUtilFuncs->pfnLogConsole != nullptr && pluginId_ != nullptr)
+		profiledLogConsole(runtimeProfiler_, pluginId_,
+			"profile playerAvoidance bot_id=%u target=%u frame=%u applied=%d side=%.1f ground_safe=%d forward=%.1f",
+			handle.actor.slot, target.slot, adapterFrameCount_, safe ? 1 : 0, move.side, safe ? 1 : 0, move.forward);
+}
+
+nav::NavPathCostContext PluginRuntime::managedPathCostContext(std::size_t index)
+{
+	RuntimeProfilerScope costScope(runtimeProfiler_, RuntimeProfilerStage::PathCostContext);
+	nav::NavPathCostContext cost{};
+	if (index >= managedBotHandles_.size() || managedBotHandles_[index].entity == nullptr)
+	{
+		return cost;
+	}
+	const auto &handle = managedBotHandles_[index];
+	cost.health = std::isfinite(handle.entity->v.health) ? (std::max)(0.0f, handle.entity->v.health) : 0.0f;
+	cost.aggression = static_cast<float>(managedProfiles_[index].aggression) / 100.0f;
+	cost.attacking = managedBotStateMachines_[index].attackOverlayActive();
+	const auto navigation = navPublisher_.snapshot();
+	const auto *document = navigation.document();
+	if (document == nullptr || globals_ == nullptr)
+	{
+		return cost;
+	}
+	for (const auto &area : document->areas())
+	{
+		float danger = 0.0f;
+		if (dangerMemory_.mapGeneration() == lifecycle_.mapGeneration() &&
+			dangerMemory_.query(globals_->time, managedBotTeamNumbers_[index], area.id, &danger) && danger > 0.0f)
+		{
+			cost.areas.push_back({area.id, danger, 0U});
+		}
+	}
+	nav::NavQuery query(navigation);
+	for (const auto &position : liveFriendlyPositions(index, true))
+	{
+		nav::NavAreaMatch area{};
+		if (query.findContaining(position, 64.0f, &area) != nav::NavQueryResult::Found)
+		{
+			continue;
+		}
+		auto found = std::find_if(cost.areas.begin(), cost.areas.end(), [&area](const nav::NavAreaCostState &entry) { return entry.area == area.area; });
+		if (found == cost.areas.end())
+		{
+			cost.areas.push_back({area.area, 0.0f, 1U});
+		}
+		else
+		{
+			++found->teammates;
+		}
+	}
+	return cost;
+}
+
 void PluginRuntime::refreshManagedTeamObjectiveAssignments(std::size_t contextIndex)
 {
+	const bool compatibility = compatibilitySurface_.configuration().mode == compat::RuntimeMode::Compatibility;
 	const std::uint32_t mapGeneration = lifecycle_.mapGeneration();
 	const std::uint32_t roundGeneration = lifecycle_.roundGeneration();
 	const world::FrameIdentity frame = {
 		mapGeneration, roundGeneration, adapterFrameCount_};
-	if (managedTeamObjectiveAssignmentsValid_ &&
+	if (managedTeamObjectiveAssignmentsValid_ && (!compatibility || managedTeamObjectiveAssignmentContext_ == contextIndex) &&
 		managedTeamObjectiveAssignmentMapGeneration_ == mapGeneration &&
 		managedTeamObjectiveAssignmentRoundGeneration_ == roundGeneration &&
 		managedTeamObjectiveAssignmentFrame_ == adapterFrameCount_)
@@ -3373,6 +4827,9 @@ void PluginRuntime::refreshManagedTeamObjectiveAssignments(std::size_t contextIn
 	}
 
 	const FakeClientHandle &contextHandle = managedBotHandles_[contextIndex];
+	managedTeamObjectiveAssignmentContext_ = contextIndex;
+	team::RoundObjectiveCoordinator &coordinator = compatibility
+		? compatibilityObjectiveCoordinators_[contextIndex] : managedTeamObjectiveCoordinator_;
 	const world::ActorKey contextActor = {
 		contextHandle.actor.slot, contextHandle.actor.actorGeneration};
 	const compat::ObservationTimingContext timing = {
@@ -3384,12 +4841,16 @@ void PluginRuntime::refreshManagedTeamObjectiveAssignments(std::size_t contextIn
 	const nav::NavSnapshot navigation = navPublisher_.snapshot();
 	const nav::NavDocument *document = navigation.document();
 	nav::NavQuery query(navigation);
+	if (compatibility)
+	{
+		query.setPathCostContext(managedPathCostContext(contextIndex));
+	}
 
 	for (std::size_t index = 0U; index < managedBotHandles_.size() &&
 		input.actorCount < team::kMaximumTeamObjectiveActors; ++index)
 	{
 		if (!managedBotSlots_[index] || managedBotHandles_[index].entity == nullptr ||
-			managedBotHandles_[index].entity->free != 0)
+			managedBotHandles_[index].entity->free != 0 || (compatibility && index != contextIndex))
 		{
 			continue;
 		}
@@ -3471,7 +4932,13 @@ void PluginRuntime::refreshManagedTeamObjectiveAssignments(std::size_t contextIn
 				droppedObservation = candidate;
 				input.droppedC4.available = true;
 				input.droppedC4.entity = candidate.entity;
-				input.droppedC4.position = candidate.position;
+				world::WorldVector knownPosition{};
+				if (!observeObjective(contextIndex, entity, false, &knownPosition))
+				{
+					input.droppedC4 = {};
+					continue;
+				}
+				input.droppedC4.position = knownPosition;
 			}
 		}
 		if (!input.plantedC4.available &&
@@ -3489,8 +4956,13 @@ void PluginRuntime::refreshManagedTeamObjectiveAssignments(std::size_t contextIn
 				input.plantedC4.entity = {
 					static_cast<std::uint32_t>(plantedIndex),
 					static_cast<std::uint32_t>(entity->serialnumber)};
-				input.plantedC4.position =
-					plantedObservation.bombPosition.value;
+				world::WorldVector knownPosition{};
+				if (!observeObjective(contextIndex, entity, true, &knownPosition))
+				{
+					input.plantedC4 = {};
+					continue;
+				}
+				input.plantedC4.position = knownPosition;
 			}
 		}
 	}
@@ -3516,7 +4988,7 @@ void PluginRuntime::refreshManagedTeamObjectiveAssignments(std::size_t contextIn
 
 	if (managedTeamObjectivePathFailurePending_)
 	{
-		managedTeamObjectiveCoordinator_.reportPathFailure(
+		coordinator.reportPathFailure(
 			managedTeamObjectivePathFailureActor_,
 			managedTeamObjectivePathFailureGeneration_,
 			managedTeamObjectivePathFailureStartArea_,
@@ -3533,7 +5005,7 @@ void PluginRuntime::refreshManagedTeamObjectiveAssignments(std::size_t contextIn
 		std::isfinite(globals_->time) && std::isfinite(externalDefuserLeaseUntil_) &&
 		globals_->time <= externalDefuserLeaseUntil_;
 	input.externalDefuserActive = externalDefuserActive;
-	(void)managedTeamObjectiveCoordinator_.assign(
+	(void)coordinator.assign(
 		input, navigation, &managedTeamObjectiveAssignments_);
 	if (runtimeProfiler_.enabled() && gpMetaUtilFuncs != nullptr &&
 		gpMetaUtilFuncs->pfnLogConsole != nullptr && pluginId_ != nullptr)
@@ -3660,6 +5132,28 @@ bool PluginRuntime::buildManagedObjectiveTarget(
 	{
 		return false;
 	}
+	if (compatibilitySurface_.configuration().mode == compat::RuntimeMode::Compatibility)
+	{
+		const auto &belief = managedBotPerception_[index].snapshot();
+		if (managedBotStateMachines_[index].state() == compat::CompatibilityStateId::InvestigateNoise &&
+			belief.isValid() && belief.identity().frame.mapGeneration == lifecycle_.mapGeneration() &&
+			belief.identity().frame.roundGeneration == lifecycle_.roundGeneration() &&
+			belief.noise().active && belief.noise().ready)
+		{
+			const auto &position = belief.noise().position;
+			*target = {position.x, position.y, position.z};
+			return true;
+		}
+		const auto &scenario = scenarioDecisions_[index];
+		if (scenario.hasTarget && !scenario.unavailable &&
+			scenario.target.frame.mapGeneration == lifecycle_.mapGeneration() &&
+			scenario.target.frame.roundGeneration == lifecycle_.roundGeneration() &&
+			scenario.target.frame.tick <= adapterFrameCount_)
+		{
+			*target = {scenario.target.position.x, scenario.target.position.y, scenario.target.position.z};
+			return true;
+		}
+	}
 	const world::FrameIdentity frame = {
 		lifecycle_.mapGeneration(), lifecycle_.roundGeneration(), adapterFrameCount_};
 	const world::ActorKey actor = {handle.actor.slot, handle.actor.actorGeneration};
@@ -3704,6 +5198,23 @@ bool PluginRuntime::buildManagedObjectiveTarget(
 		assignmentKind == team::TeamObjectiveKind::PlantC4;
 	const bool needsPlantedBomb = team == 2 &&
 		assignmentKind == team::TeamObjectiveKind::DefuseC4;
+	objectives::BombApproachState &approach = managedBombApproaches_[index];
+	if (needsBombSite && compatibilitySurface_.configuration().mode == compat::RuntimeMode::Compatibility)
+	{
+		approach.mapGeneration = frame.mapGeneration;
+		approach.roundGeneration = frame.roundGeneration;
+		approach.actorSlot = actor.slot;
+		approach.actorGeneration = actor.generation;
+		approach.initialized = true;
+		approach.plantAt = roundPlantDecision_.plantAt;
+		approach.finished = (roundPlantDecision_.known && globals_->time >= approach.plantAt) ||
+			(managedActorAtBombSite(index) && globals_->time - lastVisibleEnemyTimes_[index] > 3.0f);
+		if (!approach.finished)
+		{
+			cache.valid = false;
+			return false;
+		}
+	}
 	if (needsBombSite)
 	{
 		refreshManagedObjectiveSiteRegistry();
@@ -3717,7 +5228,6 @@ bool PluginRuntime::buildManagedObjectiveTarget(
 			objectiveStats->registeredSiteCountsAvailable = true;
 		}
 	}
-	objectives::BombApproachState &approach = managedBombApproaches_[index];
 	if (!needsBombSite)
 	{
 		approach = {};
@@ -3890,6 +5400,11 @@ bool PluginRuntime::buildManagedObjectiveTarget(
 			if (haveCurrentArea && document != nullptr && hasSiteExtent)
 			{
 				nav::NavQuery query(navigation);
+				const bool compatibility = compatibilitySurface_.configuration().mode == compat::RuntimeMode::Compatibility;
+				if (compatibility)
+				{
+					query.setPathCostContext(managedPathCostContext(index));
+				}
 				const nav::NavVector samplePoints[] = {
 					candidate,
 					{siteExtent.lo.x, (siteExtent.lo.y + siteExtent.hi.y) * 0.5f, candidate.z},
@@ -3963,7 +5478,8 @@ bool PluginRuntime::buildManagedObjectiveTarget(
 					const nav::NavArea &area = *siteArea;
 					nav::NavCorridor corridor = {};
 					nav::NavSearchStats sample = {};
-					if (query.buildCorridor(currentMatch.area, area.id, &corridor,
+					if (query.buildCorridor(currentMatch.area, area.id,
+							compatibility ? nav::NavRouteType::Safest : nav::NavRouteType::Fastest, &corridor,
 							searchStats == nullptr ? nullptr : &sample) ==
 						nav::NavQueryResult::Found && std::isfinite(corridor.cost))
 					{
@@ -4024,7 +5540,11 @@ bool PluginRuntime::buildManagedObjectiveTarget(
 			entity, classname, model, globals_->time, actor, frame,
 			observationTiming, &plantedObservation) == ObservationAdapterResult::Accepted)
 		{
-			plantedBomb = entity;
+			world::WorldVector knownPosition{};
+			if (observeObjective(index, entity, true, &knownPosition))
+			{
+				plantedBomb = entity;
+			}
 			}
 		}
 		if (objectiveStats != nullptr)
@@ -4094,10 +5614,12 @@ bool PluginRuntime::buildManagedObjectiveTarget(
 	}
 	else if (team == 2 && plantedBomb != nullptr)
 	{
-		*target = {
-			plantedBomb->v.origin.x,
-			plantedBomb->v.origin.y,
-			plantedBomb->v.origin.z};
+		world::WorldVector knownPosition{};
+		if (!observeObjective(index, plantedBomb, true, &knownPosition))
+		{
+			return false;
+		}
+		*target = {knownPosition.x, knownPosition.y, knownPosition.z};
 	}
 	else
 	{
@@ -4115,8 +5637,52 @@ ActionProposal PluginRuntime::decideManagedBotAction(
 	std::uint16_t movementButtons)
 {
 	ActionProposal proposal = {ActionKind::None, movementAngles, movementButtons};
+	if(index<managedBotStateMachines_.size() &&
+		compatibilitySurface_.configuration().mode==compat::RuntimeMode::Compatibility &&
+		!managedBotStateMachines_[index].attackOverlayActive() &&
+		(managedBotStateMachines_[index].state()==compat::CompatibilityStateId::PlantBomb ||
+		 managedBotStateMachines_[index].state()==compat::CompatibilityStateId::DefuseBomb))
+	{
+		proposal.stopForWeapon=true;
+		proposal.movementButtons=static_cast<std::uint16_t>((proposal.movementButtons &
+			~(IN_JUMP|IN_FORWARD|IN_BACK|IN_MOVELEFT|IN_MOVERIGHT))|IN_DUCK);
+	}
 	bool objectiveActionDispatched = false;
 	bool preserveObjectiveActionState = false;
+	const auto cancelHeldGrenade = [&]() -> bool
+	{
+		if (index >= managedBotHandles_.size() || !weaponActions_[index].grenadeInProgress())
+			return false;
+		const FakeClientHandle &cancelHandle = managedBotHandles_[index];
+		compat::WeaponActionInput cancel = {};
+		cancel.actor = {cancelHandle.actor.slot,cancelHandle.actor.actorGeneration};
+		cancel.frame = {lifecycle_.mapGeneration(),lifecycle_.roundGeneration(),adapterFrameCount_};
+		cancel.timestamp = globals_ != nullptr ? globals_->time : 0.0f;
+		cancel.weaponId = weaponActions_[index].currentWeaponId();
+		compat::PublicActorState activeWeapon = {};
+		if (publicObservations_.read(cancel.actor,cancel.frame,&activeWeapon) && activeWeapon.weaponKnown &&
+			activeWeapon.weaponId != static_cast<int>(cancel.weaponId))
+		{
+			weaponActions_[index].reset();
+			return false;
+		}
+		const auto ammoDefinition = publicObservations_.definition(cancel.weaponId);
+		if (activeWeapon.bound && ammoDefinition.known && ammoDefinition.ammoIndex >= 0 &&
+			static_cast<std::size_t>(ammoDefinition.ammoIndex) < activeWeapon.ammo.size() &&
+			activeWeapon.ammoKnown[static_cast<std::size_t>(ammoDefinition.ammoIndex)])
+		{
+			const auto ammoIndex = static_cast<std::size_t>(ammoDefinition.ammoIndex);
+			cancel.reserveKnown = true;
+			cancel.reserve = static_cast<std::uint16_t>(activeWeapon.ammo[ammoIndex]);
+			cancel.reserveObservationTick = activeWeapon.ammoTicks[ammoIndex];
+		}
+		const auto canceled = weaponActions_[index].update(cancel);
+		proposal.kind = canceled.primary ? ActionKind::Fire : ActionKind::None;
+		proposal.stopForWeapon = canceled.stopMovement;
+		if (canceled.hasRetainedGrenadeAim)
+			proposal.viewAngles = {canceled.grenadePitch,canceled.grenadeYaw,movementAngles.roll};
+		return true;
+	};
 	if (index >= managedBotHandles_.size())
 	{
 		return proposal;
@@ -4124,6 +5690,8 @@ ActionProposal PluginRuntime::decideManagedBotAction(
 	if (before.dead || managedBotHandles_[index].entity == nullptr)
 	{
 		managedBotObjectiveActions_[index].active = false;
+		weaponActions_[index].reset();
+		escapingWithKnife_[index] = false;
 		return proposal;
 	}
 	const FakeClientHandle &handle = managedBotHandles_[index];
@@ -4138,7 +5706,50 @@ ActionProposal PluginRuntime::decideManagedBotAction(
 		ObservationAdapterResult::Accepted)
 	{
 		managedBotObjectiveActions_[index].active = false;
+		(void)cancelHeldGrenade();
 		return proposal;
+	}
+	if(compatibilitySurface_.configuration().mode==compat::RuntimeMode::Compatibility &&
+		managedBotStateMachines_[index].state()==compat::CompatibilityStateId::PlantBomb &&
+		!managedBotStateMachines_[index].attackOverlayActive() &&
+		compatObservation.objective.carryingC4.isAvailable() && compatObservation.objective.carryingC4.value &&
+		managedActorAtBombSite(index))
+	{
+		// Plant owns the interaction after arrival. A cleared corridor or an old
+		// destination farther than96 must not suppress its C4 selection/attack.
+		if(cancelHeldGrenade())return proposal;
+		auto &action=managedBotObjectiveActions_[index];
+		action.active=true;action.actor=actor;action.kind=team::TeamObjectiveKind::PlantC4;
+		action.mapGeneration=frame.mapGeneration;action.roundGeneration=frame.roundGeneration;
+		const auto &weapon=managedBotCurrentWeapons_[index];
+		const bool current=weapon.available && weapon.actorGeneration==actor.generation &&
+			weapon.mapGeneration==frame.mapGeneration && weapon.roundGeneration==frame.roundGeneration;
+		proposal.kind=ActionAdapter::plantActionForWeaponObservation(current,current && weapon.active,
+			weapon.weaponId,action.c4AttackInputDispatched);
+		proposal.stopForWeapon=true;
+		proposal.movementButtons=IN_DUCK;
+		proposal.viewAngles={90.0f,movementAngles.yaw,movementAngles.roll};
+		return proposal;
+	}
+	if (compatibilitySurface_.configuration().mode == compat::RuntimeMode::Compatibility &&
+		scenarioDecisions_[index].action == compat::ScenarioAction::Escape &&
+		managedBotStateMachines_[index].state() == compat::CompatibilityStateId::EscapeFromBomb)
+	{
+		if (cancelHeldGrenade()) return proposal;
+		escapingWithKnife_[index] = true;
+		if (!compatObservation.weapon.activeWeaponId.isAvailable() ||
+			compatObservation.weapon.activeWeaponId.value != 29U)
+			proposal.kind = ActionKind::SelectKnife;
+		return proposal;
+	}
+	if (escapingWithKnife_[index])
+	{
+		escapingWithKnife_[index] = false;
+		const auto inventory = static_cast<std::uint32_t>(handle.entity->v.weapons);
+		for (const unsigned id : {3U,5U,7U,8U,12U,13U,14U,15U,18U,19U,20U,21U,22U,23U,24U,27U,28U,30U})
+			if ((inventory & (1U << id)) != 0U) { proposal.kind = ActionKind::SelectPrimary; return proposal; }
+		for (const unsigned id : {1U,10U,11U,16U,17U,26U})
+			if ((inventory & (1U << id)) != 0U) { proposal.kind = ActionKind::SelectPistol; return proposal; }
 	}
 	refreshManagedTeamObjectiveAssignments(index);
 	const team::TeamObjectiveAssignment *objectiveAssignment =
@@ -4149,6 +5760,7 @@ ActionProposal PluginRuntime::decideManagedBotAction(
 	if (!buildManagedWorldSnapshot(index, &snapshot, &targetActor, &targetPosition))
 	{
 		managedBotObjectiveActions_[index].active = false;
+		(void)cancelHeldGrenade();
 		if ((adapterFrameCount_ % 16U) == 0U && gpMetaUtilFuncs != nullptr &&
 			gpMetaUtilFuncs->pfnLogConsole != nullptr && pluginId_ != nullptr)
 		{
@@ -4164,6 +5776,36 @@ ActionProposal PluginRuntime::decideManagedBotAction(
 	const objectives::TeamRole teamRole =
 		team == 1 ? objectives::TeamRole::Terrorist :
 		team == 2 ? objectives::TeamRole::CounterTerrorist : objectives::TeamRole::Unknown;
+	if (!targetActor.isValid() && compatibilitySurface_.configuration().mode == compat::RuntimeMode::Compatibility)
+	{
+		if (cancelHeldGrenade())
+			return proposal;
+		const auto &scenario = scenarioDecisions_[index];
+		if (!scenario.unavailable)
+		{
+			if (scenario.action == compat::ScenarioAction::Stop ||
+				(scenario.action == compat::ScenarioAction::Guard && scenario.hasTarget && scenario.target.inUseRange))
+			{
+				proposal.stopForWeapon = true;
+				return proposal;
+			}
+			if (scenario.action == compat::ScenarioAction::Use && scenario.hasTarget &&
+				scenario.target.entity.isValid() && engineFunctions_ != nullptr &&
+				engineFunctions_->pfnPEntityOfEntIndex != nullptr)
+			{
+				edict_t *useEntity = engineFunctions_->pfnPEntityOfEntIndex(static_cast<int>(scenario.target.entity.id));
+				if (useEntity != nullptr && !useEntity->free &&
+					static_cast<std::uint32_t>(useEntity->serialnumber) + 1U == scenario.target.entity.generation)
+				{
+					const float dx = scenario.target.position.x - handle.entity->v.origin.x;
+					const float dy = scenario.target.position.y - handle.entity->v.origin.y;
+					proposal.kind = ActionKind::UseEntity;
+					proposal.viewAngles.yaw = std::atan2(dy, dx) * 180.0f / 3.14159265358979323846f;
+					return proposal;
+				}
+			}
+		}
+	}
 	if (teamRole != objectives::TeamRole::Unknown && engineFunctions_ != nullptr &&
 		engineFunctions_->pfnPEntityOfEntIndex != nullptr &&
 		engineFunctions_->pfnSzFromIndex != nullptr && globals_ != nullptr)
@@ -4255,8 +5897,12 @@ ActionProposal PluginRuntime::decideManagedBotAction(
 			}
 		if (plantedResult == ObservationAdapterResult::Accepted)
 		{
-			plantedBomb = entity;
-			break;
+			world::WorldVector knownPosition{};
+			if (observeObjective(index, entity, true, &knownPosition))
+			{
+				plantedBomb = entity;
+				break;
+			}
 		}
 	}
 		if (plantedBomb == nullptr && teamRole == objectives::TeamRole::CounterTerrorist &&
@@ -4393,6 +6039,12 @@ ActionProposal PluginRuntime::decideManagedBotAction(
 	{
 		objectiveKind = objectives::ObjectiveKind::None;
 	}
+	// MoveTo owns the approach. A legacy wider action radius must not stop
+	// an actor before its observed scenario has entered the defuse state.
+	if (objectiveKind == objectives::ObjectiveKind::Defuse &&
+		compatibilitySurface_.configuration().mode == compat::RuntimeMode::Compatibility &&
+		managedBotStateMachines_[index].state() != compat::CompatibilityStateId::DefuseBomb)
+		objectiveKind = objectives::ObjectiveKind::None;
 	if (objectiveKind == objectives::ObjectiveKind::Plant ||
 			objectiveKind == objectives::ObjectiveKind::Defuse)
 			{
@@ -4419,7 +6071,10 @@ ActionProposal PluginRuntime::decideManagedBotAction(
 					const float dx = objectivePosition.x - handle.entity->v.origin.x;
 					const float dy = objectivePosition.y - handle.entity->v.origin.y;
 					const float dz = objectivePosition.z - handle.entity->v.origin.z;
-		if (dx * dx + dy * dy + dz * dz <= 96.0f * 96.0f)
+		if ((objectiveKind==objectives::ObjectiveKind::Defuse &&
+			compatibilitySurface_.configuration().mode==compat::RuntimeMode::Compatibility &&
+			managedBotStateMachines_[index].state()==compat::CompatibilityStateId::DefuseBomb) ||
+			dx * dx + dy * dy + dz * dz <= 96.0f * 96.0f)
 		{
 			ManagedObjectiveActionState &actionState =
 				managedBotObjectiveActions_[index];
@@ -4576,6 +6231,9 @@ ActionProposal PluginRuntime::decideManagedBotAction(
 			else
 			{
 				proposal.kind = ActionKind::Defuse;
+				if(compatibilitySurface_.configuration().mode==compat::RuntimeMode::Compatibility)
+					proposal.movementButtons=static_cast<std::uint16_t>((proposal.movementButtons &
+						~(IN_JUMP|IN_FORWARD|IN_BACK|IN_MOVELEFT|IN_MOVERIGHT))|IN_DUCK);
 			}
 			proposal.viewAngles = {
 				-kRadiansToDegrees * std::atan2(dz, std::sqrt(dx * dx + dy * dy)),
@@ -4596,14 +6254,53 @@ ActionProposal PluginRuntime::decideManagedBotAction(
 	}
 	combat::WeaponInventory inventory;
 	combat::WeaponRecord weapon = {};
-	const int weaponValue = 1;
+	compat::PublicActorState observedWeapon{};
+	if (!publicObservations_.read(actor, frame, &observedWeapon) || !observedWeapon.weaponKnown)
+		return proposal;
+	const int weaponValue = observedWeapon.weaponId;
 	weapon.weapon = {static_cast<std::uint16_t>(weaponValue)};
-	weapon.slot = 1U;
-	weapon.kind = combat::WeaponKind::Rifle;
+	const compat::PublicWeaponDefinition definition = publicObservations_.definition(weaponValue);
+	weapon.slot = static_cast<std::uint8_t>(definition.known ? definition.slot : 0);
+	switch (weaponValue)
+	{
+	case 1: case 10: case 11: case 16: case 17: case 26:
+		weapon.kind = combat::WeaponKind::Pistol;
+		break;
+	case 5: case 21:
+		weapon.kind = combat::WeaponKind::Shotgun;
+		break;
+	case 7: case 12: case 19: case 23: case 30:
+		weapon.kind = combat::WeaponKind::Smg;
+		break;
+	case 3: case 13: case 18: case 24:
+		weapon.kind = combat::WeaponKind::Sniper;
+		break;
+	case 20:
+		weapon.kind = combat::WeaponKind::Heavy;
+		break;
+	case 29:
+		weapon.kind = combat::WeaponKind::Knife;
+		break;
+	case 4: case 9: case 25:
+		weapon.kind = combat::WeaponKind::Grenade;
+		break;
+	case 8: case 14: case 15: case 22: case 27: case 28:
+		weapon.kind = combat::WeaponKind::Rifle;
+		break;
+	default:
+		return proposal;
+	}
 	weapon.availability = combat::WeaponAvailability::Available;
 	weapon.priority = 1U;
-	weapon.ammo = {30U, 90U, 90U};
-	weapon.reloadState = combat::ReloadState::NotReloading;
+	const bool knife = weapon.kind == combat::WeaponKind::Knife;
+	const bool reserveKnown = definition.known && definition.ammoIndex >= 0 &&
+		observedWeapon.ammoKnown[static_cast<std::size_t>(definition.ammoIndex)];
+	const std::uint16_t reserve = reserveKnown
+		? static_cast<std::uint16_t>(observedWeapon.ammo[static_cast<std::size_t>(definition.ammoIndex)]) : 0U;
+	weapon.ammo = {static_cast<std::uint16_t>(knife ? 1 : (std::max)(0, observedWeapon.clip)), reserve, 255U,
+		knife || observedWeapon.clip >= 0, reserveKnown};
+	weapon.reloadState = compatObservation.weapon.reloadState.isAvailable()
+		? compatObservation.weapon.reloadState.value : combat::ReloadState::Unknown;
 	if (inventory.add(weapon) != combat::WeaponInventoryResult::Accepted)
 	{
 		return proposal;
@@ -4615,17 +6312,47 @@ ActionProposal PluginRuntime::decideManagedBotAction(
 	target.confidence = 1.0f;
 	target.ageTicks = 0U;
 	target.friendlyFireRisk = false;
+	if (engineFunctions_->pfnTraceLine != nullptr)
+	{
+		const float eye[] = {handle.entity->v.origin.x + handle.entity->v.view_ofs.x,
+			handle.entity->v.origin.y + handle.entity->v.view_ofs.y,
+			handle.entity->v.origin.z + handle.entity->v.view_ofs.z};
+		const float aim[] = {targetPosition.x, targetPosition.y, targetPosition.z};
+		TraceResult trace{};
+		engineFunctions_->pfnTraceLine(eye, aim, 0, handle.entity, &trace);
+		if (trace.pHit != nullptr && trace.pHit != handle.entity && trace.pHit->v.deadflag == DEAD_NO)
+		{
+			int hitTeam = static_cast<int>(trace.pHit->v.team);
+			for (std::size_t slot = 0U; slot < managedBotHandles_.size(); ++slot)
+				if (managedBotHandles_[slot].entity == trace.pHit && managedBotTeamNumbers_[slot] != 0U)
+					hitTeam = managedBotTeamNumbers_[slot];
+			target.friendlyFireRisk = hitTeam == team && hitTeam != 0;
+		}
+	}
 	combat::CombatDecisionContext context = {};
 	context.actor = {handle.actor.slot, handle.actor.actorGeneration};
 	context.frame = snapshot.identity().frame;
 	context.origin = {
-		handle.entity->v.origin.x, handle.entity->v.origin.y, handle.entity->v.origin.z};
+		handle.entity->v.origin.x + handle.entity->v.view_ofs.x,
+		handle.entity->v.origin.y + handle.entity->v.view_ofs.y,
+		handle.entity->v.origin.z + handle.entity->v.view_ofs.z};
+	context.aimTrackingEnabled = true;
+	context.currentPitch = handle.entity->v.v_angle.x;
+	context.currentYaw = handle.entity->v.v_angle.y;
+	context.elapsedSeconds = lastCombatTimes_[index] > 0.0f
+		? (std::max)(0.0f, (std::min)(0.1f, globals_->time - lastCombatTimes_[index])) : 1.0f / 30.0f;
+	context.timestamp = globals_->time;
+	context.skill = static_cast<float>(managedProfiles_[index].skill) / 100.0f;
+	context.fieldOfView = handle.entity->v.fov > 0.0f ? handle.entity->v.fov : 90.0f;
+	context.randomSource = &compatibilityRandomSource_;
+	context.randomTiming = {managedBotCommandSequences_[index], 0U, managedBotFullUpdateSequences_[index]};
+	lastCombatTimes_[index] = globals_->time;
 	combat::CombatDecision decision = {};
 	const combat::CombatResult result = managedBotCombat_[index].decide(
 		snapshot, inventory, target, context, &decision);
 	const bool fireIntentReady =
 		result == combat::CombatResult::FireIntentReady &&
-		decision.hasFire && decision.hasAim;
+		decision.hasFire && decision.hasAim && globals_->time >= attackReadyTimes_[index];
 	const compat::StateUpdateContext stateContext =
 		makeManagedBotStateContext(index, before);
 	if (fireIntentReady)
@@ -4657,6 +6384,187 @@ ActionProposal PluginRuntime::decideManagedBotAction(
 	{
 		proposal.kind = ActionKind::Reload;
 	}
+	if (decision.hasAim)
+	{
+		proposal.viewAngles = {decision.aim.pitch, decision.aim.yaw, movementAngles.roll};
+	}
+	compat::WeaponActionInput weaponInput{};
+	weaponInput.actor = actor;
+	weaponInput.frame = frame;
+	weaponInput.timestamp = globals_->time;
+	weaponInput.weaponId = static_cast<std::uint16_t>(weaponValue);
+	weaponInput.clipKnown = observedWeapon.clip >= 0;
+	weaponInput.clip = static_cast<std::uint16_t>((std::max)(0, observedWeapon.clip));
+	weaponInput.fovKnown = std::isfinite(handle.entity->v.fov);
+	weaponInput.fieldOfView = handle.entity->v.fov > 0.0f ? handle.entity->v.fov : 90.0f;
+	weaponInput.targetDistance =
+		std::sqrt((targetPosition.x - context.origin.x) * (targetPosition.x - context.origin.x) +
+				  (targetPosition.y - context.origin.y) * (targetPosition.y - context.origin.y) +
+				  (targetPosition.z - context.origin.z) * (targetPosition.z - context.origin.z));
+	weaponInput.reactionSeconds = managedProfiles_[index].reactionTimeSeconds;
+	weaponInput.targetVisible = targetActor.isValid();
+	const float weaponDx = targetPosition.x - context.origin.x;
+	const float weaponDy = targetPosition.y - context.origin.y;
+	const float weaponDz = targetPosition.z - context.origin.z;
+	const float desiredYaw = std::atan2(weaponDy, weaponDx) * 180.0f / 3.14159265358979323846f;
+	const float desiredPitch =
+		-std::atan2(weaponDz, std::hypot(weaponDx, weaponDy)) * 180.0f / 3.14159265358979323846f;
+	weaponInput.aimAligned =
+		fireIntentReady ||
+		(decision.hasAim &&
+		 std::fabs(compat::normalizedAimAngle(desiredYaw - handle.entity->v.v_angle.y)) <= 1.0f &&
+		 std::fabs(compat::normalizedAimAngle(desiredPitch - handle.entity->v.v_angle.x)) <= 1.0f);
+	weaponInput.stationary =
+		std::hypot(handle.entity->v.velocity.x, handle.entity->v.velocity.y) < 10.0f;
+	weaponInput.requestFire = weaponInput.targetVisible && weaponInput.aimAligned &&
+							  !target.friendlyFireRisk &&
+							  globals_->time >= attackReadyTimes_[index];
+	weaponInput.attacking = managedBotStateMachines_[index].attackOverlayActive();
+	compat::CompatibilityObservation publicWeapon = {};
+	const compat::ObservationTimingContext weaponTiming = {managedBotCommandSequences_[index], 0U,
+														   managedBotFullUpdateSequences_[index]};
+	if (observationAdapter_.collectActor(handle.entity, actor, frame, weaponTiming,
+										 &publicWeapon) == ObservationAdapterResult::Accepted)
+	{
+		if (publicWeapon.weapon.silencer.isAvailable())
+			weaponInput.silenced = {true, publicWeapon.weapon.silencer.value};
+		if (publicWeapon.weapon.reserve.isAvailable() &&
+			publicWeapon.weapon.reserve.context.delayTicks <= frame.tick)
+		{
+			weaponInput.reserveKnown = true;
+			weaponInput.reserve = publicWeapon.weapon.reserve.value;
+			weaponInput.reserveObservationTick = frame.tick - publicWeapon.weapon.reserve.context.delayTicks;
+		}
+		if (publicWeapon.weapon.burst.isAvailable())
+			weaponInput.burstMode = {true, publicWeapon.weapon.burst.value};
+		if (publicWeapon.weapon.reloadState.isAvailable() &&
+			publicWeapon.weapon.reloadState.value != combat::ReloadState::Unknown)
+			weaponInput.reloading = {true, publicWeapon.weapon.reloadState.value ==
+											   combat::ReloadState::Reloading};
+		if (publicWeapon.weapon.nextPrimaryAttack.isAvailable() &&
+			publicWeapon.weapon.nextPrimaryAttack.value > globals_->time)
+			weaponInput.requestFire = false;
+		if (publicWeapon.weapon.nextSecondaryAttack.isAvailable())
+			weaponInput.secondaryReady = {true, publicWeapon.weapon.nextSecondaryAttack.value <= globals_->time};
+	}
+	const std::uint32_t inventoryMask = static_cast<std::uint32_t>(handle.entity->v.weapons);
+	bool havePistol = false;
+	for (const unsigned id : {1U, 10U, 11U, 16U, 17U, 26U})
+		havePistol = havePistol || (inventoryMask & (1U << id)) != 0U;
+	if (weaponValue == 29 && weaponInput.requestFire && weaponInput.targetDistance < 75.0f)
+	{
+		edict_t *enemy =
+			engineFunctions_->pfnPEntityOfEntIndex != nullptr
+				? engineFunctions_->pfnPEntityOfEntIndex(static_cast<int>(targetActor.slot))
+				: nullptr;
+		if (enemy != nullptr && enemy->free == 0)
+		{
+			const float toUsX = handle.entity->v.origin.x - enemy->v.origin.x;
+			const float toUsY = handle.entity->v.origin.y - enemy->v.origin.y;
+			const float pitchDegrees = enemy->v.v_angle.x + enemy->v.punchangle.x;
+			const float yawDegrees = enemy->v.v_angle.y + enemy->v.punchangle.y;
+			const float rollDegrees = enemy->v.v_angle.z + enemy->v.punchangle.z;
+			if (std::isfinite(pitchDegrees) && std::isfinite(yawDegrees) &&
+				std::isfinite(rollDegrees) && std::isfinite(toUsX) && std::isfinite(toUsY))
+			{
+				const float yaw = yawDegrees * 3.14159265358979323846f / 180.0f;
+				const float pitch = pitchDegrees * 3.14159265358979323846f / 180.0f;
+				weaponInput.enemyFacingObserver = {
+					true, std::cos(pitch) * (toUsX * std::cos(yaw) + toUsY * std::sin(yaw)) > 0.0f};
+			}
+		}
+		if (!weaponInput.enemyFacingObserver.known || weaponInput.enemyFacingObserver.value)
+		{
+			const auto choice =
+				compatibilityRandomSource_.nextFloat(compat::RandomRequest::floatRequest(
+					"Knife.AttackChoice", {actor.slot, actor.generation},
+					{managedBotCommandSequences_[index], adapterFrameCount_,
+					 managedBotFullUpdateSequences_[index]},
+					0.0f, 100.0f));
+			weaponInput.knifeRollKnown = choice.status == compat::RandomStatus::Ok;
+			weaponInput.knifeRoll = choice.value;
+		}
+	}
+	if (compat::WeaponActionPlanner::isGrenade(static_cast<std::uint16_t>(weaponValue)) &&
+		weaponInput.targetVisible && !target.friendlyFireRisk &&
+		engineFunctions_->pfnCVarGetFloat != nullptr && engineFunctions_->pfnTraceLine != nullptr &&
+		engineFunctions_->pfnTraceHull != nullptr)
+	{
+		const auto launch = compat::solveGrenadeLaunch(
+			context.origin,
+			{handle.entity->v.velocity.x, handle.entity->v.velocity.y, handle.entity->v.velocity.z},
+			targetPosition, engineFunctions_->pfnCVarGetFloat("sv_gravity"), 16.0f);
+		if (launch.valid)
+		{
+			edict_t *intendedTarget =
+				engineFunctions_->pfnPEntityOfEntIndex != nullptr
+					? engineFunctions_->pfnPEntityOfEntIndex(static_cast<int>(targetActor.slot))
+					: nullptr;
+			bool lineClear = true, hullClear = true;
+			world::WorldPosition previous = context.origin;
+			const unsigned steps = static_cast<unsigned>(std::ceil(launch.flightSeconds / 0.05f));
+			for (unsigned step = 0U; step <= steps && lineClear && hullClear; ++step)
+			{
+				const auto next =
+					step == 0U ? launch.origin
+							   : compat::grenadePosition(launch, launch.flightSeconds *
+																	 static_cast<float>(step) /
+																	 static_cast<float>(steps));
+				const float start[] = {previous.x, previous.y, previous.z};
+				const float end[] = {next.x, next.y, next.z};
+				TraceResult line = {}, hull = {};
+				engineFunctions_->pfnTraceLine(start, end, 0, handle.entity, &line);
+				engineFunctions_->pfnTraceHull(start, end, 0, 3, handle.entity, &hull);
+				lineClear = (line.flFraction >= 1.0f ||
+							 (intendedTarget != nullptr && line.pHit == intendedTarget)) &&
+							line.fStartSolid == 0 && line.fAllSolid == 0;
+				hullClear = (hull.flFraction >= 1.0f ||
+							 (intendedTarget != nullptr && hull.pHit == intendedTarget)) &&
+							hull.fStartSolid == 0 && hull.fAllSolid == 0;
+				previous = next;
+				if (lineClear && hullClear && intendedTarget != nullptr &&
+					(line.pHit == intendedTarget || hull.pHit == intendedTarget))
+					break;
+			}
+			const auto landing = compat::grenadePosition(launch, launch.flightSeconds);
+			const float groundStart[] = {landing.x, landing.y, landing.z};
+			const float groundEnd[] = {landing.x, landing.y, landing.z - 72.0f};
+			TraceResult ground = {};
+			engineFunctions_->pfnTraceHull(
+				groundStart, groundEnd, 0, 3,
+				intendedTarget != nullptr ? intendedTarget : handle.entity, &ground);
+			const bool landingSafe = ground.flFraction < 1.0f && ground.fStartSolid == 0 &&
+									 ground.fAllSolid == 0 && ground.vecPlaneNormal.z >= 0.7f;
+			weaponInput.trajectory = {true, lineClear, hullClear, landingSafe};
+			weaponInput.grenadeAimKnown = lineClear && hullClear && landingSafe;
+			weaponInput.grenadePitch = launch.pitch - handle.entity->v.punchangle.x;
+			weaponInput.grenadeYaw = launch.yaw - handle.entity->v.punchangle.y;
+			weaponInput.requestGrenade =
+				lineClear && hullClear && landingSafe && globals_->time >= attackReadyTimes_[index];
+			weaponInput.aimAligned =
+				std::fabs(compat::normalizedAimAngle(launch.yaw - handle.entity->v.v_angle.y -
+													 handle.entity->v.punchangle.y)) <= 1.0f &&
+				std::fabs(compat::normalizedAimAngle(launch.pitch - handle.entity->v.v_angle.x -
+													 handle.entity->v.punchangle.x)) <= 1.0f;
+			if (weaponInput.requestGrenade)
+				proposal.viewAngles = {launch.pitch - handle.entity->v.punchangle.x,
+									   launch.yaw - handle.entity->v.punchangle.y,
+									   movementAngles.roll};
+		}
+	}
+	const compat::WeaponActionDecision weaponDecision = weaponActions_[index].update(weaponInput);
+	if (proposal.kind == ActionKind::Fire && !weaponDecision.primary)
+	{
+		proposal.kind = ActionKind::None;
+	}
+	if (weaponDecision.primary)
+		proposal.kind = ActionKind::Fire;
+	if (weaponDecision.switchToPistol && havePistol)
+		proposal.kind = ActionKind::SelectPistol;
+	proposal.secondaryAttack = weaponDecision.secondary;
+	proposal.stopForWeapon = weaponDecision.stopMovement;
+	if (weaponDecision.hasRetainedGrenadeAim)
+		proposal.viewAngles = {weaponDecision.grenadePitch,weaponDecision.grenadeYaw,movementAngles.roll};
 	return proposal;
 }
 
@@ -4683,6 +6591,11 @@ bool PluginRuntime::dispatchManagedActionCommand(
 	}
 	const bool commandDispatched = dispatchClientCommand(
 		handle.entity, dispatch.clientCommand, "");
+	if (commandDispatched && proposal.kind == ActionKind::Reload && globals_ != nullptr)
+	{
+		publicObservations_.requestReload({handle.actor.slot, handle.actor.actorGeneration},
+			{lifecycle_.mapGeneration(), lifecycle_.roundGeneration(), adapterFrameCount_}, globals_->time);
+	}
 	const bool c4SelectionRequest = proposal.kind == ActionKind::SelectC4 ||
 		proposal.kind == ActionKind::Plant ||
 		proposal.kind == ActionKind::PlantContinue;
@@ -4763,7 +6676,7 @@ void PluginRuntime::prepareNeutralManagedBotCommand(
 	command.movement = {0.0f, 0.0f, 0.0f, 0U, 0U, 1U};
 	const ActionProposal actionProposal = ActionAdapter::forLiveDispatch(
 		decideManagedBotAction(index, before, command.viewAngles, command.movement.buttons),
-		false,
+		hasObservedActiveWeapon(index),
 		command.viewAngles);
 	const ActionDispatch actionDispatch = ActionAdapter::translate(actionProposal);
 	command.viewAngles = actionDispatch.viewAngles;
@@ -4832,6 +6745,13 @@ runtime::CommandReceipt PluginRuntime::executeManagedBotCommand(
 	const float maxSpeed = handle.entity->v.maxspeed;
 	const bool explicitFrozen = (handle.entity->v.flags & FL_FROZEN) != 0;
 	const bool roundFreeze = roundFreezeActive();
+	if (!explicitFrozen && !roundFreeze && !managedBotActionStopsMovement_[index])
+		applyPlayerAvoidance(index, &command);
+	if (managedBotActionStopsMovement_[index])
+	{
+		// Do not let a delayed jump-crouch sequence survive an objective hold.
+		managedBotJumpCrouch_[index].reset();
+	}
 	const std::uint16_t buttonsBeforeJumpCrouch = command.movement.buttons;
 	const runtime::JumpCrouchObservation jumpCrouchObservation = {
 		globals_->time,
@@ -4974,8 +6894,33 @@ runtime::CommandReceipt PluginRuntime::executeManagedBotCommand(
 		resetManagedBotCommandTemplate(index);
 		return receipt;
 	}
+	const Vector commandStart=handle.entity->v.origin;
 	const runtime::CommandReceipt dispatchReceipt =
 		inputDispatcher_.dispatchNext(handle.actor, adapterFrameCount_);
+	if(runtimeProfiler_.enabled() && managedCommandDiagnosticUpdates_[index]!=managedBotFullUpdateSequences_[index] &&
+		handle.entity!=nullptr && !handle.entity->free)
+	{
+		managedCommandDiagnosticUpdates_[index]=managedBotFullUpdateSequences_[index];
+		const auto &step=managedNavigationSteps_[index];
+		profiledLogConsole(runtimeProfiler_,pluginId_,
+			"profile motionCommand bot_id=%u actor_generation=%u map=%u round=%u frame=%u update=%u now=%.3f state=%s outcome=%u path=%u input=(%.1f %.1f %.1f) buttons=%u msec=%u dispatched=%d start=(%.1f %.1f %.1f) after=(%.1f %.1f %.1f)",
+			handle.actor.slot,handle.actor.actorGeneration,lifecycle_.mapGeneration(),lifecycle_.roundGeneration(),
+			adapterFrameCount_,managedBotFullUpdateSequences_[index],globals_->time,
+			compat::toString(managedBotStateMachines_[index].state()),static_cast<unsigned>(step.outcome),step.pathSequence,
+			command.movement.forward,command.movement.side,command.movement.up,
+			static_cast<unsigned>(command.movement.buttons),static_cast<unsigned>(command.movement.msec),
+			dispatchReceipt.result==runtime::DispatchResult::Dispatched?1:0,
+			commandStart.x,commandStart.y,commandStart.z,
+			handle.entity->v.origin.x,handle.entity->v.origin.y,handle.entity->v.origin.z);
+	}
+	if (dispatchReceipt.result == runtime::DispatchResult::Dispatched &&
+		(command.movement.buttons & IN_RELOAD) != 0U && globals_ != nullptr)
+	{
+		publicObservations_.requestReload(
+			{handle.actor.slot, handle.actor.actorGeneration},
+			{lifecycle_.mapGeneration(), lifecycle_.roundGeneration(), adapterFrameCount_},
+			globals_->time);
+	}
 	if (dispatchReceipt.result == runtime::DispatchResult::Dispatched &&
 		(command.movement.buttons & ActionAdapter::kAttackButton) != 0U)
 	{
@@ -5113,7 +7058,7 @@ runtime::CommandReceipt PluginRuntime::dispatchNeutralMovement(
 	}
 	const ActionProposal actionProposal = ActionAdapter::forLiveDispatch(
 		decideManagedBotAction(index, before, command.viewAngles, command.movement.buttons),
-		false,
+		hasObservedActiveWeapon(index),
 		command.viewAngles);
 	const ActionDispatch actionDispatch = ActionAdapter::translate(actionProposal);
 	command.viewAngles = actionDispatch.viewAngles;
@@ -5202,7 +7147,8 @@ runtime::CommandReceipt PluginRuntime::dispatchJoinHeartbeat(
 
 compat::StateUpdateContext PluginRuntime::makeManagedBotStateContext(
 	std::size_t index,
-	const runtime::MovementPhysicsState &before) const
+	const runtime::MovementPhysicsState &before,
+	compat::StateBehaviorInput *behavior) const
 {
 	compat::StateUpdateContext context = {};
 	if (index >= managedBotHandles_.size())
@@ -5231,6 +7177,38 @@ compat::StateUpdateContext PluginRuntime::makeManagedBotStateContext(
 	context.transitionRequest = compat::ObservationAvailability::Available;
 	context.attackObservation = compat::ObservationAvailability::Available;
 	context.rngAvailability = compat::ObservationAvailability::Available;
+	if (behavior != nullptr)
+	{
+		*behavior = {};
+		behavior->navigationOwned=compatibilitySurface_.configuration().mode==compat::RuntimeMode::Compatibility;
+		behavior->navigationReady=navPublisher_.snapshot().isValid();
+		const ManagedObjectiveTargetCache &target = managedBotObjectiveTargets_[index];
+		behavior->goalAvailable = target.valid && target.mapGeneration == lifecycle_.mapGeneration() &&
+			target.roundGeneration == lifecycle_.roundGeneration();
+		if (behavior->goalAvailable)
+		{
+			const float dx = before.origin.x - target.target.x;
+			const float dy = before.origin.y - target.target.y;
+			const float dz = before.origin.z - target.target.z;
+			behavior->goalReached = dx * dx + dy * dy + dz * dz <= 64.0f * 64.0f;
+		}
+		const auto &failure=managedNavigationFailures_[index];
+		const bool ownPathFailed=failure.actor==context.actor && failure.frame.isValid() &&
+			failure.frame.mapGeneration==context.frame.mapGeneration &&
+			failure.frame.roundGeneration==context.frame.roundGeneration &&
+			failure.frame.tick<context.frame.tick && failure.goalGeneration==target.generation &&
+			managedBotStateMachines_[index].state()==compat::CompatibilityStateId::MoveTo;
+		behavior->pathFailed = ownPathFailed || (managedTeamObjectivePathFailurePending_ &&
+			managedTeamObjectivePathFailureActor_ == context.actor);
+		behavior->objectiveActive = behavior->goalAvailable;
+		if(behavior->navigationOwned && managedBotStateMachines_[index].state()==compat::CompatibilityStateId::DefuseBomb)
+		{
+			behavior->objectiveActive=bombNoticeKnown_[index] && bombNoticePlanted_[index];
+			behavior->defuseReceipt=publicObservations_.progressReceipt(context.actor,context.frame,
+				context.timestamp,managedBotStateMachines_[index].stateTimestamp());
+		}
+		context.behavior = behavior;
+	}
 	return context;
 }
 
@@ -5257,22 +7235,27 @@ void PluginRuntime::updateManagedBotCompatibilityState(
 	std::size_t index,
 	const runtime::MovementPhysicsState &before)
 {
+	RuntimeProfilerScope scenarioScope(runtimeProfiler_, RuntimeProfilerStage::ScenarioUpdate);
 	if (index >= managedBotStateMachines_.size() ||
 		!managedBotSlots_[index] || managedBotHandles_[index].entity == nullptr)
 	{
 		return;
 	}
-	compat::StateUpdateContext context = makeManagedBotStateContext(index, before);
+	compat::StateBehaviorInput stateBehavior = {};
+	compat::StateUpdateContext context = makeManagedBotStateContext(index, before, &stateBehavior);
 	compat::CompatibilityStateMachine &machine = managedBotStateMachines_[index];
+	scenarioDecisions_[index] = {};
 	if (managedBotStateRounds_[index] != 0U &&
 		managedBotStateRounds_[index] != lifecycle_.roundGeneration() &&
 		machine.isInitialized())
 	{
+		scenarioPlanners_[index].reset();
 		(void)machine.onRoundReset(context);
 	}
 	managedBotStateRounds_[index] = lifecycle_.roundGeneration();
 	if (!machine.isInitialized())
 	{
+		scenarioPlanners_[index].reset();
 		(void)machine.initialize(context);
 		if (before.dead)
 		{
@@ -5283,6 +7266,8 @@ void PluginRuntime::updateManagedBotCompatibilityState(
 	}
 	if (before.dead)
 	{
+		scenarioPlanners_[index].reset();
+		managedNavigationFailures_[index] = {};
 		if (!managedBotWasDead_[index])
 		{
 			(void)machine.onDeath(context);
@@ -5292,6 +7277,7 @@ void PluginRuntime::updateManagedBotCompatibilityState(
 	}
 	if (managedBotWasDead_[index])
 	{
+		scenarioPlanners_[index].reset();
 		(void)machine.onRespawn(context);
 		managedBotWasDead_[index] = false;
 		return;
@@ -5312,24 +7298,626 @@ void PluginRuntime::updateManagedBotCompatibilityState(
 			&observation);
 		if (observationResult == ObservationAdapterResult::Accepted)
 		{
+			compat::ScenarioBehaviorInput scenario = {};
+			scenario.actor = context.actor;
+			scenario.frame = context.frame;
+			scenario.timestamp = context.timestamp;
+			scenario.selfPositionKnown = std::isfinite(before.origin.x) &&
+				std::isfinite(before.origin.y) && std::isfinite(before.origin.z);
+			scenario.selfPosition = {before.origin.x, before.origin.y, before.origin.z};
+			scenario.lifeKnown = context.lifeAvailability == compat::ObservationAvailability::Available;
+			scenario.alive = context.alive;
+			scenario.reactionSeconds = managedProfiles_[index].reactionTimeSeconds;
+			scenario.aggression = static_cast<float>(managedProfiles_[index].aggression) / 100.0f;
+			scenario.attacking = machine.attackOverlayActive();
+			scenario.currentDefusing = machine.state() == compat::CompatibilityStateId::DefuseBomb;
+			scenario.alreadyEscapingFromBomb = machine.state() == compat::CompatibilityStateId::EscapeFromBomb;
+			const int observedTeam = resolveManagedBotTeam(index, observation);
+			scenario.team = observedTeam == 1 ? objectives::TeamRole::Terrorist :
+				observedTeam == 2 ? objectives::TeamRole::CounterTerrorist : objectives::TeamRole::Unknown;
+			compat::PublicActorState publicState = {};
+			scenario.blind = publicObservations_.read(context.actor, context.frame, &publicState) &&
+				context.timestamp < publicState.blindUntil;
+			scenario.isVipKnown = observation.objective.vip.isAvailable();
+			scenario.isVip = scenario.isVipKnown && observation.objective.vip.value;
+			scenario.bombPlantedKnown = observation.objective.bombPlanted.isAvailable();
+			scenario.bombPlanted = scenario.bombPlantedKnown && observation.objective.bombPlanted.value;
+			if (observation.objective.bombPosition.isAvailable())
+			{
+				const auto &position = observation.objective.bombPosition.value;
+				scenario.bomb.knowledge = compat::ScenarioKnowledge::Remembered;
+				scenario.bomb.frame = context.frame;
+				scenario.bomb.position = {position.x, position.y, position.z};
+				const float dx = position.x - before.origin.x, dy = position.y - before.origin.y,
+					dz = position.z - before.origin.z;
+				scenario.bomb.pathCost = std::sqrt(dx * dx + dy * dy + dz * dz);
+			}
+			if (bombNoticeKnown_[index])
+			{
+				scenario.bombPlantedKnown = true;
+				scenario.bombPlanted = bombNoticePlanted_[index];
+			}
+			if (scenario.bombPlantedKnown && scenario.bombPlanted)
+			{
+				const float publicFuse = readOptionalCvarFloat(engineFunctions_, "mp_c4timer");
+				scenario.timerEstimated = publicBombClocks_[index].estimate(context.frame,
+					context.timestamp, publicFuse, &scenario.bombSecondsRemaining);
+			}
+			const auto &score = publicScoreStatuses_[index][index];
+			if (score.known && score.serial == static_cast<std::uint32_t>(managedBotHandles_[index].entity->serialnumber) &&
+				score.frame.mapGeneration == context.frame.mapGeneration && score.frame.roundGeneration == context.frame.roundGeneration)
+			{
+				scenario.isVipKnown = true;
+				scenario.isVip = (score.flags & 4) != 0;
+			}
+			scenario.defuseKitKnown = observation.objective.hasDefuseKit.isAvailable();
+			scenario.defuseKit = scenario.defuseKitKnown && observation.objective.hasDefuseKit.value;
+			scenario.radio = &scenarioRadio_[index];
+			float automaticLeaderRange = (std::numeric_limits<float>::max)();
+			if (engineFunctions_ != nullptr && globals_ != nullptr &&
+				engineFunctions_->pfnSzFromIndex != nullptr && engineFunctions_->pfnPEntityOfEntIndex != nullptr)
+			{
+				const char *map = engineFunctions_->pfnSzFromIndex(globals_->mapname);
+				scenario.scenario = map != nullptr && std::strncmp(map, "cs_", 3U) == 0 ? compat::PublicScenarioKind::Hostage :
+					map != nullptr && std::strncmp(map, "as_", 3U) == 0 ? compat::PublicScenarioKind::Vip :
+					map != nullptr && std::strncmp(map, "es_", 3U) == 0 ? compat::PublicScenarioKind::Escape :
+					map != nullptr && std::strncmp(map, "de_", 3U) == 0 ? compat::PublicScenarioKind::Bomb : compat::PublicScenarioKind::Unknown;
+				const float eye[] = {before.origin.x + managedBotHandles_[index].entity->v.view_ofs.x,
+					before.origin.y + managedBotHandles_[index].entity->v.view_ofs.y,
+					before.origin.z + managedBotHandles_[index].entity->v.view_ofs.z};
+				const auto project = [&](edict_t *entity, int entityIndex, bool mapKnown) -> compat::ScenarioTarget
+				{
+					compat::ScenarioTarget target = {};
+					if (entity == nullptr || entity->free != 0)
+					{
+						return target;
+					}
+					const bool brush = entity->v.solid == SOLID_BSP || entity->v.solid == SOLID_TRIGGER;
+					const float point[] = {brush ? (entity->v.absmin.x + entity->v.absmax.x) * 0.5f : entity->v.origin.x,
+						brush ? (entity->v.absmin.y + entity->v.absmax.y) * 0.5f : entity->v.origin.y,
+						brush ? (entity->v.absmin.z + entity->v.absmax.z) * 0.5f : entity->v.origin.z};
+					const float dx = point[0] - eye[0], dy = point[1] - eye[1], dz = point[2] - eye[2];
+					const float planar = std::hypot(dx, dy);
+					const float yaw = managedBotHandles_[index].entity->v.v_angle.y * 3.14159265358979323846f / 180.0f;
+					bool visible = false;
+					if (!mapKnown && !scenario.blind && engineFunctions_->pfnTraceLine != nullptr &&
+						!smokeObservations_.blocks({eye[0],eye[1],eye[2]}, {point[0],point[1],point[2]}, context.timestamp) &&
+						(planar < 0.001f || (dx * std::cos(yaw) + dy * std::sin(yaw)) / planar > 0.5f))
+					{
+						TraceResult trace = {};
+						engineFunctions_->pfnTraceLine(eye, point, 1, managedBotHandles_[index].entity, &trace);
+						visible = trace.flFraction == 1.0f || trace.pHit == entity;
+					}
+					if (!mapKnown && !visible)
+					{
+						return target;
+					}
+					target.knowledge = mapKnown ? compat::ScenarioKnowledge::Remembered : compat::ScenarioKnowledge::Visible;
+					target.frame = context.frame;
+					// Core generations reserve zero; map entities may publicly have serial zero.
+					target.entity = {static_cast<std::uint32_t>(entityIndex), static_cast<std::uint32_t>(entity->serialnumber) + 1U};
+					target.position = {point[0],point[1],point[2]};
+					target.pathCost = std::sqrt(dx * dx + dy * dy + dz * dz);
+					target.inUseRange = target.pathCost <= 64.0f;
+					return target;
+				};
+				const auto nearer = [](const compat::ScenarioTarget &candidate, const compat::ScenarioTarget &current)
+				{
+					return candidate.knowledge != compat::ScenarioKnowledge::Unknown &&
+						(current.knowledge == compat::ScenarioKnowledge::Unknown || candidate.pathCost < current.pathCost);
+				};
+				const int maxEntities = (std::max)(0, (std::min)(globals_->maxEntities, 2048));
+				for (int entityIndex = 1; entityIndex < maxEntities; ++entityIndex)
+				{
+					edict_t *entity = engineFunctions_->pfnPEntityOfEntIndex(entityIndex);
+					if (entity == nullptr || entity->free != 0)
+					{
+						continue;
+					}
+					const char *name = engineFunctions_->pfnSzFromIndex(entity->v.classname);
+					if (name == nullptr)
+					{
+						continue;
+					}
+					if (entityIndex <= 32)
+					{
+						const auto &vipScore = publicScoreStatuses_[index][static_cast<std::size_t>(entityIndex - 1)];
+						if (vipScore.known && vipScore.serial == static_cast<std::uint32_t>(entity->serialnumber) &&
+							vipScore.frame.mapGeneration == context.frame.mapGeneration && vipScore.frame.roundGeneration == context.frame.roundGeneration &&
+							(vipScore.flags & 4) != 0 && entity->v.deadflag == DEAD_NO)
+						{
+							scenario.vip = project(entity, entityIndex, false);
+							scenario.vip.actor = {static_cast<std::uint32_t>(entityIndex), static_cast<std::uint32_t>(entity->serialnumber) + 1U};
+						}
+					}
+					if (entityIndex <= globals_->maxClients && (entity->v.flags & FL_FAKECLIENT) == 0 &&
+						entity->v.team == observedTeam && entity->v.deadflag == DEAD_NO && entity->v.health > 0.0f)
+					{
+						const auto location = project(entity,entityIndex,false);
+						if (location.knowledge == compat::ScenarioKnowledge::Visible)
+						{
+							const float dx=location.position.x-before.origin.x, dy=location.position.y-before.origin.y,
+								dz=location.position.z-before.origin.z;
+							const float distance=std::sqrt(dx*dx+dy*dy+dz*dz);
+							if (distance < automaticLeaderRange)
+							{
+								automaticLeaderRange=distance;
+								scenario.automaticLeader={{static_cast<std::uint32_t>(entityIndex),static_cast<std::uint32_t>(entity->serialnumber)+1U},
+									scenario.team,true,true,true,location};
+								scenario.automaticLeader.location.actor=scenario.automaticLeader.actor;
+							}
+						}
+					}
+					if (std::strcmp(name, "grenade") == 0)
+					{
+						compat::ObjectiveObservation planted{};
+						world::WorldVector knownPosition{};
+						bool bombVisible = false;
+						if (observationAdapter_.collectPlantedBomb(entity, name, engineFunctions_->pfnSzFromIndex(entity->v.model),
+							context.timestamp, context.actor, context.frame, timing, &planted) == ObservationAdapterResult::Accepted &&
+							observeObjective(index, entity, true, &knownPosition, &bombVisible))
+						{
+							scenario.bombPlantedKnown = true;
+							scenario.bombPlanted = true;
+							scenario.bomb.knowledge = bombVisible ? compat::ScenarioKnowledge::Visible
+								: compat::ScenarioKnowledge::Remembered;
+							scenario.bomb.frame = context.frame;
+							scenario.bomb.entity = {static_cast<std::uint32_t>(entityIndex), static_cast<std::uint32_t>(entity->serialnumber) + 1U};
+							scenario.bomb.position = {knownPosition.x, knownPosition.y, knownPosition.z};
+							const float dx = knownPosition.x - before.origin.x, dy = knownPosition.y - before.origin.y, dz = knownPosition.z - before.origin.z;
+							scenario.bomb.pathCost = std::sqrt(dx * dx + dy * dy + dz * dz);
+							scenario.bomb.inUseRange = scenario.bomb.pathCost <= 64.0f;
+							scenario.humanDefusingKnown = true;
+							scenario.humanDefusing = externalDefuserEntityIndex_ != 0U && externalDefuserLeaseUntil_ >= context.timestamp &&
+								externalDefuserMapGeneration_ == context.frame.mapGeneration && externalDefuserRoundGeneration_ == context.frame.roundGeneration;
+						}
+					}
+					compat::ScenarioTarget *destination = nullptr;
+					bool mapKnown = true;
+					if (std::strcmp(name, "hostage_entity") == 0 && entity->v.health > 0.0f)
+					{
+						destination = &scenario.hostage;
+						mapKnown = false;
+					}
+					else if (std::strcmp(name, "func_hostage_rescue") == 0 || std::strcmp(name, "info_hostage_rescue") == 0)
+					{
+						destination = &scenario.rescueZone;
+					}
+					else if (std::strcmp(name, "func_vip_safetyzone") == 0)
+					{
+						destination = &scenario.vipZone;
+					}
+					else if (std::strcmp(name, "func_escapezone") == 0)
+					{
+						destination = &scenario.escapeZone;
+					}
+					if (destination != nullptr)
+					{
+						const auto target = project(entity, entityIndex, mapKnown);
+						if (nearer(target, *destination))
+						{
+							*destination = target;
+						}
+					}
+				}
+				// Nearby CTs veto motion-based ownership inference. Their public
+				// positions never establish escort ownership or provide a target.
+				if (scenario.hostage.entity.isValid())
+				{
+					for (int player = 1; player <= globals_->maxClients; ++player)
+					{
+						edict_t *other = engineFunctions_->pfnPEntityOfEntIndex(player);
+						if (other == nullptr || other == managedBotHandles_[index].entity ||
+							other->free != 0 || other->v.team != 2 || other->v.deadflag != DEAD_NO || other->v.health <= 0.0f)
+							continue;
+						const float dx = other->v.origin.x - scenario.hostage.position.x;
+						const float dy = other->v.origin.y - scenario.hostage.position.y;
+						const float dz = other->v.origin.z - scenario.hostage.position.z;
+						if (dx * dx + dy * dy + dz * dz <= 256.0f * 256.0f)
+						{
+							scenario.hostageCompetitorNearby = true;
+							break;
+						}
+					}
+				}
+				const auto tracked = scenarioPlanners_[index].followLeader();
+				if (scenarioPlanners_[index].isFollowing() && tracked.isValid() && tracked.slot <= static_cast<std::uint32_t>(globals_->maxClients))
+				{
+					edict_t *human=engineFunctions_->pfnPEntityOfEntIndex(static_cast<int>(tracked.slot));
+					if (human != nullptr && !human->free && static_cast<std::uint32_t>(human->serialnumber)+1U == tracked.generation)
+					{
+						scenario.automaticLeader={tracked,human->v.team==1 ? objectives::TeamRole::Terrorist :
+							human->v.team==2 ? objectives::TeamRole::CounterTerrorist : objectives::TeamRole::Unknown,
+							(human->v.flags & FL_FAKECLIENT)==0,true,human->v.deadflag==DEAD_NO && human->v.health>0.0f,
+							project(human,static_cast<int>(tracked.slot),false)};
+						scenario.automaticLeader.location.actor=tracked;
+					}
+				}
+				const auto sender = scenarioRadio_[index].sender;
+				if (sender.isValid() && sender.slot <= static_cast<std::uint32_t>(globals_->maxClients))
+				{
+					edict_t *leader = engineFunctions_->pfnPEntityOfEntIndex(static_cast<int>(sender.slot));
+					if (leader != nullptr && leader->free == 0 && static_cast<std::uint32_t>(leader->serialnumber) == sender.generation)
+					{
+						scenario.leader.actor = sender;
+						scenario.leader.team = leader->v.team == 1 ? objectives::TeamRole::Terrorist :
+							leader->v.team == 2 ? objectives::TeamRole::CounterTerrorist : objectives::TeamRole::Unknown;
+						scenario.leader.human = (leader->v.flags & FL_FAKECLIENT) == 0;
+						scenario.leader.lifeKnown = true;
+						scenario.leader.alive = leader->v.deadflag == DEAD_NO && leader->v.health > 0.0f;
+						scenario.leader.location = project(leader, static_cast<int>(sender.slot), false);
+						scenario.leader.location.actor = sender;
+						if (scenario.leader.location.knowledge == compat::ScenarioKnowledge::Visible)
+						{
+							scenarioRadio_[index].position = scenario.leader.location;
+						}
+					}
+				}
+			}
+			const nav::NavSnapshot scenarioNavigation = navPublisher_.snapshot();
+			const nav::NavDocument *scenarioDocument = scenarioNavigation.document();
+			if (scenario.scenario == compat::PublicScenarioKind::Bomb && scenario.team == objectives::TeamRole::CounterTerrorist &&
+				scenario.bombPlantedKnown && scenario.bombPlanted && scenario.bomb.knowledge == compat::ScenarioKnowledge::Unknown &&
+				scenarioNavigation.isValid() && scenarioNavigation.mapGeneration() == context.frame.mapGeneration && scenarioDocument != nullptr && globals_ != nullptr && engineFunctions_ != nullptr &&
+				engineFunctions_->pfnPEntityOfEntIndex != nullptr && engineFunctions_->pfnSzFromIndex != nullptr)
+			{
+				compat::ScenarioTarget &search = bombSearchTargets_[index];
+				if (search.knowledge != compat::ScenarioKnowledge::Unknown)
+				{
+					const float dx = search.position.x - before.origin.x, dy = search.position.y - before.origin.y,
+						dz = search.position.z - before.origin.z;
+					if (dx*dx + dy*dy + dz*dz <= 64.0f*64.0f)
+					{ bombSearchMemory_[index].clear(search.entity); search = {}; }
+				}
+				if (search.knowledge == compat::ScenarioKnowledge::Unknown)
+				{
+					std::vector<compat::BombSearchSite> sites;
+					nav::NavQuery query(scenarioNavigation);
+					nav::NavAreaMatch start{};
+					const nav::NavVector self = {before.origin.x, before.origin.y, before.origin.z};
+					const bool haveStart = query.findNearest3D(self, kMaximumObjectiveDistance, &start) == nav::NavQueryResult::Found;
+					const int limit = (std::min)(globals_->maxEntities, 2048);
+					for (int entityIndex = 1; entityIndex < limit; ++entityIndex)
+					{
+						edict_t *entity = engineFunctions_->pfnPEntityOfEntIndex(entityIndex);
+						if (entity == nullptr || entity->free) continue;
+						const char *name = engineFunctions_->pfnSzFromIndex(entity->v.classname);
+						if (name == nullptr || (std::strcmp(name,"func_bomb_target") != 0 && std::strcmp(name,"info_bomb_target") != 0)) continue;
+						compat::BombSearchSite site{};
+						site.entity = {static_cast<std::uint32_t>(entityIndex), static_cast<std::uint32_t>(entity->serialnumber)+1U};
+						site.legacy = std::strcmp(name,"info_bomb_target") == 0;
+						if (site.legacy)
+						{
+							site.center = {entity->v.origin.x,entity->v.origin.y,entity->v.origin.z};
+							site.extent = {{site.center.x-256.0f,site.center.y-256.0f,site.center.z-256.0f},
+								{site.center.x+256.0f,site.center.y+256.0f,site.center.z+256.0f}};
+						}
+						else
+						{
+							site.extent = {{entity->v.absmin.x,entity->v.absmin.y,entity->v.absmin.z},
+								{entity->v.absmax.x,entity->v.absmax.y,entity->v.absmax.z}};
+							site.center = {(site.extent.lo.x+site.extent.hi.x)*0.5f,(site.extent.lo.y+site.extent.hi.y)*0.5f,
+								(site.extent.lo.z+site.extent.hi.z)*0.5f};
+						}
+						site.extent.lo.z -= 50.0f; site.extent.hi.z += 50.0f;
+						nav::NavAreaMatch finish{}; nav::NavCorridor route{};
+						if (haveStart && query.findNearest3D(site.center,kMaximumObjectiveDistance,&finish) == nav::NavQueryResult::Found &&
+							query.buildCorridor(start.area,finish.area,nav::NavRouteType::Fastest,&route) == nav::NavQueryResult::Found)
+							site.travel = route.cost;
+						sites.push_back(site);
+					}
+					const compat::RandomActor randomActor = {context.actor.slot,context.actor.generation};
+					const compat::RandomTimingContext randomTiming = {managedBotCommandSequences_[index],0U,managedBotFullUpdateSequences_[index]};
+					std::size_t selected = 0U;
+					if (bombSearchMemory_[index].choose(context.frame,sites,compatibilityRandomSource_,randomActor,randomTiming,&selected))
+					{
+						nav::NavVector point{};
+						nav::NavAreaMatch chosenArea{}; nav::NavCorridor chosenRoute{};
+						if (compat::bombSitePoint(*scenarioDocument,sites[selected],16U,compatibilityRandomSource_,randomActor,randomTiming,&point) &&
+							haveStart && query.findNearest3D(point,kMaximumObjectiveDistance,&chosenArea) == nav::NavQueryResult::Found &&
+							query.buildCorridor(start.area,chosenArea.area,nav::NavRouteType::Fastest,&chosenRoute) == nav::NavQueryResult::Found)
+						{
+							search.knowledge = compat::ScenarioKnowledge::Remembered; search.frame = context.frame;
+							search.entity = sites[selected].entity; search.position = {point.x,point.y,point.z};
+							search.pathCost = chosenRoute.cost;
+						}
+						else bombSearchMemory_[index].clear(sites[selected].entity);
+					}
+				}
+				if (search.knowledge != compat::ScenarioKnowledge::Unknown)
+				{ search.frame = context.frame; scenario.bombSearch = search; }
+			}
+			if (scenario.scenario == compat::PublicScenarioKind::Bomb && scenario.bombPlantedKnown &&
+				scenario.bombPlanted && scenario.bomb.knowledge != compat::ScenarioKnowledge::Unknown &&
+				scenarioNavigation.isValid() && scenarioNavigation.mapGeneration() == context.frame.mapGeneration && scenarioDocument != nullptr)
+			{
+				const nav::NavVector self = {before.origin.x, before.origin.y, before.origin.z};
+				const nav::NavVector bomb = {scenario.bomb.position.x, scenario.bomb.position.y, scenario.bomb.position.z};
+					scenario.travelTimeEstimated = scenario.team==objectives::TeamRole::CounterTerrorist &&
+						!scenario.alreadyEscapingFromBomb && !scenario.currentDefusing &&
+						compat::estimateBombTravel(scenarioNavigation, self, bomb,
+					managedBotHandles_[index].entity->v.maxspeed, kMaximumObjectiveDistance, &scenario.travelSecondsToBomb);
+				const bool lateDefuse = scenario.team == objectives::TeamRole::CounterTerrorist &&
+					scenario.timerEstimated && scenario.travelTimeEstimated && scenario.defuseKitKnown &&
+					scenario.bombSecondsRemaining <= scenario.travelSecondsToBomb + (scenario.defuseKit ? 5.0f : 10.0f);
+				const bool requestedEscape = compat::ScenarioBehaviorPlanner::autoEscapeRequested(scenario) ||
+					(lateDefuse && !scenario.attacking && !scenario.currentDefusing) || scenario.alreadyEscapingFromBomb ||
+					(scenario.radio != nullptr && scenario.radio->command == compat::ScenarioRadioCommand::GetOut);
+				if (requestedEscape)
+				{
+					nav::AreaId &goal = scenarioEscapeAreas_[index];
+					const nav::NavArea *area = scenarioDocument->findArea(goal);
+					if (area == nullptr)
+					{
+						const compat::RandomActor randomActor = {context.actor.slot, context.actor.generation};
+						const compat::RandomTimingContext randomTiming = {managedBotCommandSequences_[index], 0U,
+							managedBotFullUpdateSequences_[index]};
+						if (compat::selectBombEscapeArea(*scenarioDocument, bomb, compatibilityRandomSource_, randomActor, randomTiming, &goal))
+							area = scenarioDocument->findArea(goal);
+					}
+					if (area != nullptr)
+					{
+						const auto point = compat::bombAreaCenter(*area);
+						scenario.escapeZone.knowledge = compat::ScenarioKnowledge::Remembered;
+						scenario.escapeZone.frame = context.frame;
+						scenario.escapeZone.position = {point.x,point.y,point.z};
+						const float dx=point.x-self.x,dy=point.y-self.y,dz=point.z-self.z;
+						// A lower-bound ordering value; actual reachability belongs
+						// to the state-owned navigation step, not a preflight search.
+						scenario.escapeZone.pathCost=std::sqrt(dx*dx+dy*dy+dz*dz);
+					}
+				}
+			}
+			const auto validateRadioSender = [&](world::ActorKey sender) -> compat::ScenarioSenderValidation
+			{
+				compat::ScenarioSenderValidation validation{sender,false,false};
+				if (!sender.isValid() || globals_==nullptr || engineFunctions_==nullptr || engineFunctions_->pfnPEntityOfEntIndex==nullptr)
+					return validation;
+				validation.known=true;
+				if (sender.slot>static_cast<std::uint32_t>(globals_->maxClients)) return validation;
+				edict_t *human=engineFunctions_->pfnPEntityOfEntIndex(static_cast<int>(sender.slot));
+				validation.valid=(observedTeam==1 || observedTeam==2) && human!=nullptr && !human->free && (human->v.flags&FL_CLIENT)!=0 &&
+					(human->v.flags&FL_FAKECLIENT)==0 && human->v.team==observedTeam &&
+					static_cast<std::uint32_t>(human->serialnumber)==sender.generation;
+				return validation;
+			};
+			if (scenario.radio!=nullptr) scenario.radioSenderValidation=validateRadioSender(scenario.radio->sender);
+			scenario.pendingRadioSenderValidation=validateRadioSender(scenarioPlanners_[index].pendingRadioSender());
+			const bool wasFollowing = scenarioPlanners_[index].isFollowing();
+			compat::TeamworkInput teamwork{};
+			teamwork.actor=context.actor; teamwork.frame=context.frame; teamwork.now=context.timestamp;
+			teamwork.teamwork=static_cast<float>(managedProfiles_[index].teamwork)/100.0f;
+			teamwork.roundTimeKnown=roundFreezeGeneration_==lifecycle_.roundGeneration() &&
+				std::isfinite(roundFreezeStartTime_) && context.timestamp>=roundFreezeStartTime_;
+			teamwork.elapsedRound=context.timestamp-roundFreezeStartTime_;
+			teamwork.allowRoguesKnown=engineFunctions_!=nullptr && engineFunctions_->pfnCVarGetFloat!=nullptr && engineFunctions_->pfnCVarGetPointer!=nullptr &&
+				engineFunctions_->pfnCVarGetPointer("bot_allow_rogues")!=nullptr;
+			const float allowRogues=readOptionalCvarFloat(engineFunctions_,"bot_allow_rogues");
+			teamwork.allowRoguesKnown=teamwork.allowRoguesKnown && std::isfinite(allowRogues);
+			teamwork.allowRogues=allowRogues!=0.0f;
+			const auto currentState=machine.state();
+			const bool sniper=observation.weapon.activeWeaponId.isAvailable() &&
+				(observation.weapon.activeWeaponId.value==3U || observation.weapon.activeWeaponId.value==18U ||
+				 observation.weapon.activeWeaponId.value==13U || observation.weapon.activeWeaponId.value==24U);
+			scenario.busy=scenario.attacking || currentState==compat::CompatibilityStateId::Buy ||
+				currentState==compat::CompatibilityStateId::DefuseBomb || currentState==compat::CompatibilityStateId::PlantBomb ||
+				scenarioPlanners_[index].awaitingHostageEscort() || (currentState==compat::CompatibilityStateId::Hide && sniper);
+			teamwork.busy=scenario.busy; teamwork.following=wasFollowing;
+			teamwork.followDuration=wasFollowing ? context.timestamp-scenarioPlanners_[index].followSince() : 0.0f;
+			teamwork.candidate=scenario.automaticLeader.actor;
+			teamwork.candidateVisibleHumanFriend=scenario.automaticLeader.human && scenario.automaticLeader.lifeKnown &&
+				scenario.automaticLeader.alive && scenario.automaticLeader.team==scenario.team &&
+				scenario.automaticLeader.location.knowledge==compat::ScenarioKnowledge::Visible;
+			teamwork.candidateRange=automaticLeaderRange;
+			if (teamwork.candidateVisibleHumanFriend && scenarioNavigation.isValid() && scenarioDocument!=nullptr &&
+				scenarioNavigation.mapGeneration()==context.frame.mapGeneration)
+			{
+				nav::NavQuery query(scenarioNavigation); nav::NavAreaMatch selfArea{},humanArea{}; nav::NavCorridor route{};
+				const auto &position=scenario.automaticLeader.location.position;
+				if (query.findNearest3D({before.origin.x,before.origin.y,before.origin.z},kMaximumObjectiveDistance,&selfArea)==nav::NavQueryResult::Found &&
+					query.findContaining({position.x,position.y,position.z},64.0f,&humanArea)==nav::NavQueryResult::Found &&
+					query.buildCorridor(selfArea.area,humanArea.area,nav::NavRouteType::Fastest,&route)==nav::NavQueryResult::Found)
+				{ teamwork.candidateReachable=true; teamwork.candidateTravel=route.cost; }
+				for (std::size_t bot=0U;bot<scenarioPlanners_.size();++bot)
+					if (scenarioPlanners_[bot].isFollowing() && scenarioPlanners_[bot].followLeader().slot==teamwork.candidate.slot)
+						++teamwork.followerCount;
+			}
+			if (scenario.bombPlantedKnown && scenario.bombPlanted && scenario.bomb.knowledge!=compat::ScenarioKnowledge::Unknown &&
+				engineFunctions_!=nullptr && engineFunctions_->pfnPEntityOfEntIndex!=nullptr && engineFunctions_->pfnSzFromIndex!=nullptr && globals_!=nullptr)
+			{
+				for (int entityIndex=1;entityIndex<(std::min)(globals_->maxEntities,2048);++entityIndex)
+				{
+					edict_t *zone=engineFunctions_->pfnPEntityOfEntIndex(entityIndex);
+					if(zone==nullptr || zone->free) continue;
+					const char *name=engineFunctions_->pfnSzFromIndex(zone->v.classname);
+					if(name==nullptr || (std::strcmp(name,"func_bomb_target")!=0 && std::strcmp(name,"info_bomb_target")!=0)) continue;
+					const bool legacy=std::strcmp(name,"info_bomb_target")==0;
+					const float loX=legacy?zone->v.origin.x-256.0f:zone->v.absmin.x;
+					const float loY=legacy?zone->v.origin.y-256.0f:zone->v.absmin.y;
+					const float loZ=(legacy?zone->v.origin.z-256.0f:zone->v.absmin.z)-50.0f;
+					const float hiX=legacy?zone->v.origin.x+256.0f:zone->v.absmax.x;
+					const float hiY=legacy?zone->v.origin.y+256.0f:zone->v.absmax.y;
+					const float hiZ=(legacy?zone->v.origin.z+256.0f:zone->v.absmax.z)+50.0f;
+					const auto contains=[&](float x,float y,float z){return x>=loX && x<=hiX && y>=loY && y<=hiY && z>=loZ && z<=hiZ;};
+					if(contains(before.origin.x,before.origin.y,before.origin.z) &&
+						contains(scenario.bomb.position.x,scenario.bomb.position.y,scenario.bomb.position.z))
+					{ teamwork.atPlantedBombsite=true; break; }
+				}
+			}
+			compat::TeamworkDecision cooperative{};
+			if (scenario.lifeKnown && scenario.alive)
+				cooperative=teamworkPolicies_[index].update(teamwork,compatibilityRandomSource_,
+					{context.actor.slot,context.actor.generation},{managedBotCommandSequences_[index],0U,managedBotFullUpdateSequences_[index]});
+			scenario.rogue=cooperative.rogue;
+			scenario.automaticFollowRequested=cooperative.available && cooperative.startFollowing;
+			scenario.stopFollowingRequested=cooperative.available && cooperative.stopFollowing;
+			scenario.autoFollowPermissionInferred=cooperative.humanPermissionInferred;
+			if (!cooperative.rogueKnown && !wasFollowing) scenario.radio=nullptr;
+			scenarioDecisions_[index] = scenarioPlanners_[index].update(scenario);
+			updateBombGuardTarget(index, scenario, &scenarioDecisions_[index]);
+			if (wasFollowing && !scenarioPlanners_[index].isFollowing()) teamworkPolicies_[index].followingStopped(context.timestamp);
+			if (scenario.radio!=nullptr && scenario.radio->sequence>teamworkRadioApplied_[index] && scenario.radio->senderHuman &&
+				scenario.radio->team==scenario.team && !scenario.busy && (!scenario.rogue || wasFollowing) &&
+				context.timestamp-scenario.radio->receivedTime>=1.0f+2.0f*scenario.reactionSeconds+(scenario.rogue?2.0f:0.0f))
+			{
+				const auto &decision=scenarioDecisions_[index]; const auto command=scenario.radio->command;
+				const bool allow=decision.action==compat::ScenarioAction::Follow && scenarioPlanners_[index].followLeader()==scenario.radio->sender;
+				const bool inhibit=(command==compat::ScenarioRadioCommand::HoldPosition && decision.action==compat::ScenarioAction::Guard &&
+					scenario.radio->position.knowledge!=compat::ScenarioKnowledge::Unknown) ||
+					(command==compat::ScenarioRadioCommand::GoGoGo && decision.action==compat::ScenarioAction::Hunt) ||
+					(command==compat::ScenarioRadioCommand::GetOut && decision.action==compat::ScenarioAction::Escape && scenario.bombPlantedKnown && scenario.bombPlanted);
+				if ((allow || inhibit) && scenario.radioSenderValidation.known && scenario.radioSenderValidation.valid &&
+					scenario.radioSenderValidation.actor==scenario.radio->sender)
+				{
+					world::ActorKey human=scenario.radio->sender;
+					edict_t *entity=engineFunctions_->pfnPEntityOfEntIndex(static_cast<int>(human.slot));
+					if(entity!=nullptr && !entity->free && (entity->v.flags&FL_CLIENT)!=0 &&
+						(entity->v.flags&FL_FAKECLIENT)==0 && entity->v.team==observedTeam &&
+						static_cast<std::uint32_t>(entity->serialnumber)==human.generation)
+					{
+						human.generation=static_cast<std::uint32_t>(entity->serialnumber)+1U;
+						teamworkPolicies_[index].observeHumanPolicy(human,context.timestamp,allow);
+						teamworkRadioApplied_[index]=scenario.radio->sequence;
+					}
+				}
+			}
+			const compat::ScenarioBehaviorDecision &scenarioDecision = scenarioDecisions_[index];
+			stateBehavior.goalAvailable = scenarioDecision.hasTarget || stateBehavior.goalAvailable;
+			stateBehavior.leaderAvailable = scenarioPlanners_[index].hasFollowingLeader(scenario);
+			stateBehavior.objectiveActive = scenarioDecision.hasTarget || stateBehavior.objectiveActive;
+			if(machine.state()==compat::CompatibilityStateId::DefuseBomb || machine.state()==compat::CompatibilityStateId::EscapeFromBomb)
+				stateBehavior.objectiveActive=scenario.bombPlantedKnown && scenario.bombPlanted;
+			stateBehavior.inInteractionRange = scenarioDecision.hasTarget && scenarioDecision.target.inUseRange;
+			stateBehavior.guardObjectiveEnded=machine.state()==compat::CompatibilityStateId::Hide &&
+				scenario.team==objectives::TeamRole::CounterTerrorist && scenario.humanDefusingKnown &&
+				!scenario.humanDefusing && scenarioDecision.state==compat::CompatibilityStateId::MoveTo;
+			if(machine.state()==compat::CompatibilityStateId::DefuseBomb && scenario.humanDefusing &&
+				scenario.bomb.knowledge==compat::ScenarioKnowledge::Visible)
+				stateBehavior.defuseReceipt=compat::DefuseReceipt::Other;
+			const bool ownsCurrentTask=machine.state()!=compat::CompatibilityStateId::Idle &&
+				machine.state()!=compat::CompatibilityStateId::Hunt && machine.state()!=compat::CompatibilityStateId::MoveTo;
+			if (scenarioDecision.action != compat::ScenarioAction::None && scenarioDecision.state != compat::CompatibilityStateId::None &&
+				!(ownsCurrentTask && scenarioDecision.state==compat::CompatibilityStateId::MoveTo) &&
+				!(machine.state()==compat::CompatibilityStateId::DefuseBomb && scenarioDecision.state!=compat::CompatibilityStateId::DefuseBomb))
+			{
+				context.requestedState = scenarioDecision.state;
+				context.requestTransition = machine.state() != context.requestedState;
+				context.transitionId = compat::StateTransitionId::ExplicitStateChange;
+				context.transitionReason = compat::StateTransitionReason::ObjectiveChanged;
+			}
 			const bool carryingC4 = observation.objective.carryingC4.isAvailable() &&
 				observation.objective.carryingC4.value;
 			const int team = resolveManagedBotTeam(index, observation);
 			if (carryingC4 && team == 1)
 			{
-				context.requestTransition = machine.state() !=
-					compat::CompatibilityStateId::PlantBomb;
-				context.requestedState = compat::CompatibilityStateId::PlantBomb;
+				const bool atBombsite = managedActorAtBombSite(index);
+				const bool plantPhase = managedBombApproaches_[index].initialized &&
+					managedBombApproaches_[index].mapGeneration == context.frame.mapGeneration &&
+					managedBombApproaches_[index].roundGeneration == context.frame.roundGeneration &&
+					managedBombApproaches_[index].finished;
+				stateBehavior.objectiveActive = true;
+				stateBehavior.inInteractionRange = plantPhase && atBombsite;
+				context.requestedState = plantPhase && atBombsite ? compat::CompatibilityStateId::PlantBomb :
+					plantPhase && stateBehavior.goalAvailable ? compat::CompatibilityStateId::MoveTo : compat::CompatibilityStateId::Hunt;
+				context.requestTransition = machine.state() != context.requestedState;
 				context.transitionId = compat::StateTransitionId::ExplicitStateChange;
 				context.transitionReason = compat::StateTransitionReason::ObjectiveChanged;
 			}
 		}
 	}
+	compat::PublicActorState buyingObservation{};
+	const float buyMinutes = readOptionalCvarFloat(engineFunctions_, "mp_buytime");
+	const bool shouldBuy = !buyingComplete_[index] && context.alive && globals_ != nullptr &&
+		std::isfinite(buyMinutes) && buyMinutes > 0.0f &&
+		globals_->time <= roundFreezeStartTime_ + buyMinutes * 60.0f &&
+		publicObservations_.read(context.actor, context.frame, &buyingObservation) &&
+		buyingObservation.buyZoneKnown && buyingObservation.inBuyZone;
+	if (shouldBuy || machine.state() == compat::CompatibilityStateId::Buy)
+	{
+		context.requestedState = shouldBuy ? compat::CompatibilityStateId::Buy : compat::CompatibilityStateId::Idle;
+		context.requestTransition = machine.state() != context.requestedState;
+		context.transitionId = compat::StateTransitionId::ExplicitStateChange;
+		context.transitionReason = compat::StateTransitionReason::ObjectiveChanged;
+	}
+	else if (!context.requestTransition && !machine.attackOverlayActive())
+	{
+		const auto &belief = managedBotPerception_[index].snapshot();
+		const auto &noise = belief.noise();
+		stateBehavior.noiseAvailable = belief.isValid() &&
+			belief.identity().frame.mapGeneration == context.frame.mapGeneration &&
+			belief.identity().frame.roundGeneration == context.frame.roundGeneration &&
+			noise.active && noise.ready && noise.timestampTick > investigatedNoiseTicks_[index];
+		if (stateBehavior.noiseAvailable)
+		{
+			const float dx = before.origin.x - noise.position.x;
+			const float dy = before.origin.y - noise.position.y;
+			const float dz = before.origin.z - noise.position.z;
+			if (dx * dx + dy * dy + dz * dz <= 50.0f * 50.0f)
+			{
+				investigatedNoiseTicks_[index] = noise.timestampTick;
+				stateBehavior.noiseAvailable = false;
+				stateBehavior.goalReached = true;
+			}
+			else if (machine.state() == compat::CompatibilityStateId::Hunt || machine.state() == compat::CompatibilityStateId::Idle)
+			{
+				context.requestedState = compat::CompatibilityStateId::InvestigateNoise;
+				context.requestTransition = true;
+				context.transitionId = compat::StateTransitionId::ExplicitStateChange;
+				context.transitionReason = compat::StateTransitionReason::ObjectiveChanged;
+			}
+		}
+	}
+	const auto previousState=machine.state();
+	const float previousStateTimestamp=machine.stateTimestamp();
+	stateBehavior.navigation.actor=context.actor;
+	stateBehavior.navigation.frame=context.frame;
+	stateBehavior.navigation.fullUpdateSequence=context.fullUpdateSequence;
+	managedStateInputs_[index]=stateBehavior;
 	(void)machine.update(context);
+	if(previousState!=machine.state())
+	{
+		managedNavigationSteps_[index]={};
+		// Reference state entry computes or abandons its own path. Never carry
+		// Idle's roam corridor into a newly assigned MoveTo task.
+		managedBotMovement_[index].destroyPath();
+		if(previousState==compat::CompatibilityStateId::DefuseBomb || previousState==compat::CompatibilityStateId::PlantBomb ||
+			previousState==compat::CompatibilityStateId::Hide)
+			managedBotMovement_[index].resetProgressMonitor();
+		if(machine.state()==compat::CompatibilityStateId::Idle &&
+			(previousState==compat::CompatibilityStateId::DefuseBomb || previousState==compat::CompatibilityStateId::PlantBomb))
+		{
+			managedBotObjectiveActions_[index]={};
+			scenarioDecisions_[index]={};
+			if(runtimeProfiler_.enabled())profiledLogConsole(runtimeProfiler_,pluginId_,
+				"profile objectiveExit bot_id=%u frame=%u state_from=%s receipt=%u elapsed=%.3f",
+				context.actor.slot,context.frame.tick,compat::toString(previousState),
+				static_cast<unsigned>(stateBehavior.defuseReceipt),context.timestamp-previousStateTimestamp);
+		}
+	}
+	if (stateBehavior.pathFailed && previousState==compat::CompatibilityStateId::MoveTo &&
+		machine.state()==compat::CompatibilityStateId::Idle)
+	{
+		// The reference state's failure exit abandons this path/goal. Do not
+		// let the outer objective loop immediately reuse its old MoveTo intent.
+		managedBotMovement_[index].destroyPath();
+		managedBotObjectiveTargets_[index] = {};
+		scenarioDecisions_[index] = {};
+		if (runtimeProfiler_.enabled())
+			profiledLogConsole(runtimeProfiler_,pluginId_,
+				"profile navigationFailure bot_id=%u frame=%u state_from=%s state_to=%s",
+				context.actor.slot,context.frame.tick,compat::toString(previousState),compat::toString(machine.state()));
+	}
+	if (!stateBehavior.pathFailed || !machine.attackOverlayActive())
+		managedNavigationFailures_[index] = {};
 }
 
 void PluginRuntime::resetManagedBotMovement()
 {
+	managedNavigationFailures_ = {};
+	managedNavigationSteps_={};
+	managedStateInputs_={};
+	managedMoveSpeeds_={};
+	managedCommandDiagnosticUpdates_={};
 	managedBotRoamReservationBoard_.reset(
 		lifecycle_.mapGeneration(), lifecycle_.roundGeneration());
 	managedTeamObjectiveCoordinator_.reset(
@@ -6247,11 +8835,27 @@ NativeBotObservation PluginRuntime::collectNativeBotObservation() const
 			switch (action.id)
 			{
 			case compat::CommandId::Add: {
+				if (action.target != nullptr && findManagedBot(action.target) != nullptr)
+				{
+					return CompatibilityCommandResult::NameTaken;
+				}
 				const compat::CvarSnapshot configuration = compatibilitySurface_.configuration();
 				compat::ProfileRecord profile = {};
+				std::array<const char *, 32U> usedNames{};
+				std::size_t usedCount = 0U;
+				if (engineFunctions_ != nullptr && engineFunctions_->pfnPEntityOfEntIndex != nullptr &&
+					engineFunctions_->pfnSzFromIndex != nullptr && globals_ != nullptr)
+				{
+					for (int slot = 1; slot <= (std::min)(32, globals_->maxClients); ++slot)
+					{
+						edict_t *entity = engineFunctions_->pfnPEntityOfEntIndex(slot);
+						if (entity != nullptr && !entity->free && entity->v.netname != 0)
+							usedNames[usedCount++] = engineFunctions_->pfnSzFromIndex(entity->v.netname);
+					}
+				}
 				const compat::ProfileSelectionResult profileResult =
-					compatibilitySurface_.selectProfile(action, configuration.botDifficulty,
-														managedBotCount(), &profile);
+					compatibilitySurface_.selectUnusedProfile(action, configuration.botDifficulty,
+						usedNames.data(), usedCount, compatibilityRandomSource_, {}, {}, &profile);
 				if (profileResult != compat::ProfileSelectionResult::Selected &&
 					profileResult != compat::ProfileSelectionResult::Fallback)
 				{
@@ -6274,12 +8878,23 @@ NativeBotObservation PluginRuntime::collectNativeBotObservation() const
 					return CompatibilityCommandResult::ActorOperationFailed;
 				}
 				const std::size_t slotIndex = static_cast<std::size_t>(handle.actor.slot - 1U);
+				managedProfiles_[slotIndex] = profile;
 				const JoinAction beginAction =
 					joinControllers_[slotIndex].begin(handle.actor, action.team, adapterFrameCount_);
 				if (beginAction.kind == JoinActionKind::Failed)
 				{
 					(void)removeFakeClient(&handle);
 					return CompatibilityCommandResult::ActorOperationFailed;
+				}
+				if (!populationAdjustment_)
+				{
+					const int quota = (std::min)(globals_ != nullptr ? globals_->maxClients : 32,
+						configuration.botQuota + 1);
+					(void)compatibilitySurface_.setFloat("bot_quota", static_cast<float>(quota));
+					if (engineFunctions_ != nullptr && engineFunctions_->pfnCVarSetFloat != nullptr)
+					{
+						engineFunctions_->pfnCVarSetFloat("bot_quota", static_cast<float>(quota));
+					}
 				}
 				return CompatibilityCommandResult::Handled;
 			}
@@ -6492,7 +9107,11 @@ void PluginRuntime::rememberManagedBot(const FakeClientHandle &handle, const cha
 			}
 	const std::size_t index = static_cast<std::size_t>(handle.actor.slot - 1U);
 	managedBotHandles_[index] = handle;
+	if (++nextBotCreationId_ == 0U) ++nextBotCreationId_;
+	managedBotCreationIds_[index] = nextBotCreationId_;
+	playerAvoidance_[index].reset();
 	managedBotTeamNumbers_[index] = 0U;
+	publicTeamKnown_[index] = false;
 	const world::ActorKey actor = {handle.actor.slot, handle.actor.actorGeneration};
 	managedBotCombat_[index] = combat::CombatController(actor);
 	managedBotObjectives_[index] = objectives::RoundObjectivePlanner(actor);
@@ -6501,6 +9120,16 @@ void PluginRuntime::rememberManagedBot(const FakeClientHandle &handle, const cha
 	managedBotStateRounds_[index] = lifecycle_.roundGeneration();
 	managedBotWasDead_[index] = false;
 	managedBotSlots_[index] = true;
+	publicObservations_.bind(actor,
+		{lifecycle_.mapGeneration(), lifecycle_.roundGeneration(), adapterFrameCount_});
+	reactionQueues_[index].reset();
+	recognizedTargets_[index] = {};
+	recognitionSequences_[index] = 0U;
+	lastCombatTimes_[index] = 0.0f;
+	buyControllers_[index].reset();
+	buyingComplete_[index] = false;
+	escapingWithKnife_[index] = false;
+	buyReceiptTimeoutLogged_[index] = false;
 			const std::size_t length = std::strlen(name);
 			const std::size_t copyLength = length < compat::ProfileRecord::kNameCapacity
 											   ? length
@@ -6519,7 +9148,35 @@ void PluginRuntime::clearManagedBot(std::size_t index)
 				return;
 			}
 	managedBotSlots_[index] = false;
+	managedBotCreationIds_[index] = 0U;
+	playerAvoidance_[index].reset();
+	publicObservations_.resetSlot(static_cast<std::uint32_t>(index + 1U));
+	publicBombRadars_[index].reset();
+	bombGuardPlanners_[index].reset();
+	scenarioRadio_[index] = {};
+	publicScoreStatuses_[index] = {};
+	bombNoticeKnown_[index] = false;
+	bombNoticePlanted_[index] = false;
+	publicBombClocks_[index].reset();
+	scenarioEscapeAreas_[index] = 0U;
+	managedNavigationFailures_[index] = {};
+	bombSearchMemory_[index].reset();
+	managedNavigationSteps_[index]={};
+	managedMoveSpeeds_[index]=0.0f;
+	managedCommandDiagnosticUpdates_[index]=0U;
+	managedStateInputs_[index]={};
+	bombSearchTargets_[index] = {};
+	teamworkPolicies_[index].reset();
+	teamworkRadioApplied_[index] = 0U;
+	deliveredSoundSequences_[index] = soundSequence_;
+	investigatedNoiseTicks_[index] = 0U;
+	weaponActions_[index].reset();
+	reactionQueues_[index].reset();
+	recognizedTargets_[index] = {};
+	objectiveKnowledge_[index] = {};
+	buyControllers_[index].reset();
 	managedBotTeamNumbers_[index] = 0U;
+	publicTeamKnown_[index] = false;
 	managedBotTiming_[index] = runtime::BotTimingScheduler();
 	managedBotJumpCrouch_[index].reset();
 	resetManagedBotCommandTemplate(index);
@@ -6572,6 +9229,15 @@ void PluginRuntime::clearManagedBot(std::size_t index)
 		PluginRuntime::executeRemoveCommand(const compat::CommandAction &action)
 		{
 			const bool removeAll = action.allTargets || action.target == nullptr;
+			const auto reduceQuota = [this](std::size_t count)
+			{
+				const int quota = (std::max)(0, compatibilitySurface_.configuration().botQuota - static_cast<int>(count));
+				(void)compatibilitySurface_.setFloat("bot_quota", static_cast<float>(quota));
+				if (engineFunctions_ != nullptr && engineFunctions_->pfnCVarSetFloat != nullptr)
+				{
+					engineFunctions_->pfnCVarSetFloat("bot_quota", static_cast<float>(quota));
+				}
+			};
 			if (!removeAll)
 			{
 				FakeClientHandle *handle = findManagedBot(action.target);
@@ -6579,7 +9245,12 @@ void PluginRuntime::clearManagedBot(std::size_t index)
 				{
 					return CompatibilityCommandResult::NoTarget;
 				}
-				return mapFakeClientResult(removeFakeClient(handle));
+				const auto result = removeFakeClient(handle);
+				if (result == FakeClientResult::Removed)
+				{
+					reduceQuota(1U);
+				}
+				return mapFakeClientResult(result);
 			}
 
 			std::size_t removedCount = 0U;
@@ -6605,6 +9276,7 @@ void PluginRuntime::clearManagedBot(std::size_t index)
 				return operationFailed ? CompatibilityCommandResult::ActorOperationFailed
 									   : CompatibilityCommandResult::NoTarget;
 			}
+			reduceQuota(removedCount);
 			return operationFailed ? CompatibilityCommandResult::ActorOperationFailed
 								   : CompatibilityCommandResult::Handled;
 		}
@@ -6709,6 +9381,11 @@ void PluginRuntime::clearManagedBot(std::size_t index)
 			PluginRuntime::instance().onClientDisconnect(entity);
 			setMetaResult(MRES_IGNORED);
 		}
+		void HookTouch(edict_t *entity, edict_t *other)
+		{
+			PluginRuntime::instance().onTouch(entity, other);
+			setMetaResult(MRES_IGNORED);
+		}
 		void HookCmdStart(const edict_t *entity, const usercmd_t *command, unsigned int randomSeed)
 		{
 			(void)randomSeed;
@@ -6775,6 +9452,28 @@ void PluginRuntime::clearManagedBot(std::size_t index)
 		void HookWriteShort(int value)
 		{
 			PluginRuntime::instance().onWriteShort(value);
+			setMetaResult(MRES_IGNORED);
+		}
+
+		void HookWriteLong(int value)
+		{
+			PluginRuntime::instance().onWriteLong(value);
+			setMetaResult(MRES_IGNORED);
+		}
+
+		void HookWriteCoord(float value)
+		{
+			PluginRuntime::instance().onWriteCoord(value);
+			setMetaResult(MRES_IGNORED);
+		}
+
+		void HookEmitSound(edict_t *entity, int channel, const char *sample,
+			float volume, float attenuation, int flags, int pitch)
+		{
+			(void)channel;
+			(void)flags;
+			(void)pitch;
+			PluginRuntime::instance().onEmitSound(entity, sample, volume, attenuation);
 			setMetaResult(MRES_IGNORED);
 		}
 

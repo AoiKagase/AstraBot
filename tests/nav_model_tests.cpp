@@ -156,5 +156,22 @@ int main()
 	{
 		return 1;
 	}
+	NavDocument sparse;
+	for (const auto id : {900U, 2U, 65000U, 17U})
+		if (!check(sparse.addArea(area(id)) == NavModelResult::Accepted,
+			"sparse unordered IDs keep file insertion order")) return 1;
+	NavDocument independent = sparse;
+	for (std::uint32_t id = 1000U; id < 1800U; ++id)
+		if (independent.addArea(area(id)) != NavModelResult::Accepted) return 1;
+	if (!check(independent.findArea(900U) != nullptr && independent.findArea(65000U) != nullptr &&
+		independent.findArea(1799U) != nullptr && sparse.findArea(1799U) == nullptr &&
+		independent.areas()[0].id == 900U && independent.areas()[1].id == 2U &&
+		independent.findArea(0U) == nullptr && independent.findArea(999999U) == nullptr,
+		"area lookup survives copies and vector growth without reordering or cross-document pointers")) return 1;
+	NavDocument assigned; assigned = independent;
+	independent = NavDocument();
+	if (!check(assigned.findArea(17U) != nullptr && assigned.findArea(1799U) != nullptr &&
+		independent.findArea(17U) == nullptr,
+		"assigned lookup owns its values independently of source reset")) return 1;
 	return 0;
 }
