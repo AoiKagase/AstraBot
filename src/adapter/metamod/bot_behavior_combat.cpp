@@ -394,8 +394,11 @@ ActionProposal BotBehaviorRuntime::decideCombatAction(ManagedActionContext &ctx)
 									   movementAngles.roll};
 		}
 	}
+	const compat::FireCadenceContext cadence = {context.skill, context.randomSource,
+		{services_->command_managedBotCommandSequences(index), services_->service_adapterFrameCount(),
+		 services_->service_managedBotFullUpdateSequences()[index]}, std::hypot(weaponDx, weaponDy)};
 	const compat::WeaponActionDecision weaponDecision =
-		actors_[index].weaponActions.update(weaponInput);
+		actors_[index].weaponActions.update(weaponInput, cadence);
 	if (proposal.kind == ActionKind::Fire && !weaponDecision.primary)
 	{
 		proposal.kind = ActionKind::None;
@@ -434,6 +437,7 @@ ActionProposal BotBehaviorRuntime::decideCombatAction(ManagedActionContext &ctx)
 		else if (weaponDecision.secondary) weaponReason = "secondary";
 		else if (weaponDecision.switchToPistol) weaponReason = "switch_pistol";
 		else if (weaponDecision.releasePrimary) weaponReason = "primary_release";
+		else if (weaponDecision.waitingForCadence) weaponReason = "cadence_wait";
 		else if (weaponInput.reloading.known && weaponInput.reloading.value) weaponReason = "reloading";
 		else if (weaponDecision.waitingForObservation) weaponReason = "observation_wait";
 		else if (weaponDecision.unavailableMode) weaponReason = "mode_unavailable";
@@ -449,7 +453,8 @@ ActionProposal BotBehaviorRuntime::decideCombatAction(ManagedActionContext &ctx)
 		profiledLogConsole(services_->service_runtimeProfiler(), services_->service_pluginId(),
 			"action sensor slot=%u frame=%u team=%d teamInfo=%u target=%d combatResult=%d "
 			"hasAim=%d hasFire=%d core_reason=%s weapon_reason=%s weapon=%d clip=%d range=%.1f "
-			"dt=%.4f current=(%.2f %.2f) aim=(%.2f %.2f) action=%d primary=%d secondary=%d",
+			"dt=%.4f current=(%.2f %.2f) aim=(%.2f %.2f) action=%d primary=%d secondary=%d "
+			"now=%.3f skill=%.2f cadence_range=%.1f fire_ready_at=%.3f",
 			static_cast<unsigned int>(handle.actor.slot),
 			static_cast<unsigned int>(services_->service_adapterFrameCount()),
 			static_cast<int>(handle.entity->v.team),
@@ -458,7 +463,9 @@ ActionProposal BotBehaviorRuntime::decideCombatAction(ManagedActionContext &ctx)
 			decision.hasFire ? 1 : 0, coreReason, weaponReason, weaponValue, observedWeapon.clip,
 			weaponInput.targetDistance, context.elapsedSeconds, context.currentPitch, context.currentYaw,
 			proposal.viewAngles.pitch, proposal.viewAngles.yaw, static_cast<int>(proposal.kind),
-			weaponDecision.primary ? 1 : 0, weaponDecision.secondary ? 1 : 0);
+			weaponDecision.primary ? 1 : 0, weaponDecision.secondary ? 1 : 0,
+			context.timestamp, context.skill, cadence.targetRange,
+			actors_[index].weaponActions.fireReadyTimestamp());
 	}
 	return proposal;
 }

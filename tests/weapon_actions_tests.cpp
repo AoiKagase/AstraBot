@@ -1,5 +1,6 @@
 #include "astrabot/compat/weapon_actions.hpp"
 #include <cstdio>
+#include <limits>
 
 namespace
 {
@@ -36,10 +37,109 @@ astrabot::compat::WeaponActionInput input(std::uint16_t weapon)
 }
 } // namespace
 
+bool testReferenceFireCadence()
+{
+	using namespace astrabot::compat;
+	struct Case { std::uint16_t weapon; float skill, range, lower, upper; };
+	const Case cases[] = {
+		{28U, .5f, 399.99f, 0, 0}, {28U, .499f, 900, 0, 0},
+		{28U, .5f, 400, .15f, .5f}, {28U, 1, 800, .15f, .5f},
+		{28U, .5f, 800.01f, .3f, .7f}, {28U, 1, 900, .3f, .7f},
+		{20U, 1, 900, 0, 0}, {18U, 1, 900, .15f, .5f},
+		{1U, .75f, 900, .15f, .4f}, {1U, .751f, 900, 0, 0},
+		{19U, 1, 600, .15f, .5f}, {21U, 1, 900, .3f, .7f}
+	};
+	for (const auto &c : cases)
+	{
+		std::vector<RandomTapeEntry> tape;
+		const RandomTimingContext timing = {90U, 91U, 92U};
+		const float delay = (c.lower + c.upper) * .5f;
+		if (delay > 0)
+			for (unsigned i = 0; i < 2; ++i)
+				tape.push_back(RandomTapeEntry::floatEntry("Combat.FireInterval", {1U,1U}, timing,
+					c.lower, c.upper, delay));
+		ScriptedRandomSource random(tape);
+		const FireCadenceContext cadence = {c.skill, &random, timing, c.range};
+		WeaponActionPlanner planner;
+		auto value = input(c.weapon);
+		value.timestamp = 10.0f;
+		value.fieldOfView = 40.0f;
+		value.targetDistance = c.range;
+		if (!check(planner.update(value, cadence).primary, "cadence starts with an eligible shot")) return false;
+		if (!check(!planner.update(value, cadence).primary && !random.failed() &&
+			random.position() == (delay > 0 ? 1U : 0U),
+			"duplicate full-update frame cannot fire or draw again")) return false;
+		value.frame.tick++;
+		value.timestamp = 10.01f;
+		auto result = planner.update(value, cadence);
+		if (delay == 0)
+		{
+			if (!check(result.primary && random.verifyComplete(), "spray branch neither pauses nor draws RNG")) return false;
+			continue;
+		}
+		if (!check(!result.primary && result.waitingForCadence && random.position() == 1U,
+			"middle/far skilled shot releases trigger during its reference delay")) return false;
+		value.frame.tick++;
+		value.timestamp = 10.0f + (delay - .1f);
+		if (!check(planner.update(value, cadence).waitingForCadence && random.position() == 1U,
+			"strict reference deadline and fixed full-think subtraction are preserved")) return false;
+		value.frame.tick++;
+		value.timestamp = std::nextafter(value.timestamp, std::numeric_limits<float>::infinity());
+		if (!check(planner.update(value, cadence).primary && random.verifyComplete(),
+			"first update after deadline fires and draws exactly once")) return false;
+	}
+	return true;
+}
+
+bool testCadenceGatesAndReset()
+{
+	using namespace astrabot::compat;
+	ScriptedRandomSource random({});
+	const FireCadenceContext cadence = {1, &random, {}, 900};
+	for (unsigned gate = 0; gate < 5; ++gate)
+	{
+		WeaponActionPlanner planner;
+		auto value = input(28U); value.timestamp = 10;
+		if (gate == 0) value.targetVisible = false;
+		if (gate == 1) value.aimAligned = false;
+		if (gate == 2) value.clip = 0;
+		if (gate == 3) value.reloading = {true, true};
+		if (gate == 4) value.requestFire = false;
+		if (!check(!planner.update(value,cadence).primary && random.verifyComplete(),
+			"ineligible fire neither consumes cadence RNG nor sends primary")) return false;
+	}
+	WeaponActionPlanner unavailable;
+	auto value = input(28U); value.timestamp = 10;
+	const FireCadenceContext missing = {1, nullptr, {}, 900};
+	if (!check(!unavailable.update(value,missing).primary, "unavailable cadence RNG fails closed")) return false;
+	for (unsigned reset = 0; reset < 5; ++reset)
+	{
+		std::vector<RandomTapeEntry> tape;
+		tape.push_back(RandomTapeEntry::floatEntry("Combat.FireInterval", {1U,1U}, {}, .3f, .7f, .7f));
+		ScriptedRandomSource source(tape);
+		FireCadenceContext ctx = {1, &source, {}, 900};
+		WeaponActionPlanner planner;
+		value = input(28U); value.timestamp = 10;
+		if (!check(planner.update(value,ctx).primary, "reset fixture fires before entering cadence wait")) return false;
+		value.frame.tick++; value.timestamp = 10.01f;
+		if (reset == 0) value.actor.generation++;
+		if (reset == 1) value.frame.roundGeneration++;
+		if (reset == 2) value.frame.mapGeneration++;
+		if (reset == 3) value.weaponId = 20U;
+		if (reset == 4) { planner.reset(); value.timestamp = 1; }
+		ctx.skill = .49f;
+		if (!check(planner.update(value,ctx).primary && source.verifyComplete(),
+			"actor, round, map, weapon and explicit reset clear old cadence deadline")) return false;
+	}
+	return true;
+}
+
 int main()
 {
 	using namespace astrabot::compat;
 	bool ok = true;
+	ok &= testReferenceFireCadence();
+	ok &= testCadenceGatesAndReset();
 	WeaponActionPlanner sniper;
 	auto value = input(18U);
 	auto result = sniper.update(value);

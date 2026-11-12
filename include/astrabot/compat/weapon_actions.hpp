@@ -2,6 +2,7 @@
 #define ASTRABOT_COMPAT_WEAPON_ACTIONS_HPP
 
 #include "astrabot/world/world_snapshot.hpp"
+#include "astrabot/compat/random_source.hpp"
 #include <cmath>
 #include <cstdint>
 
@@ -84,6 +85,15 @@ struct WeaponActionDecision
 	bool hasRetainedGrenadeAim = false;
 	float grenadePitch = 0.0f;
 	float grenadeYaw = 0.0f;
+	bool waitingForCadence = false;
+};
+
+struct FireCadenceContext
+{
+	float skill;
+	ICompatibilityRandomSource *randomSource;
+	RandomTimingContext randomTiming;
+	float targetRange;
 };
 
 class WeaponActionPlanner
@@ -98,12 +108,26 @@ class WeaponActionPlanner
 	{
 		return weaponId_;
 	}
+	float fireReadyTimestamp() const
+	{
+		return fireReadyTimestamp_;
+	}
 	void reset()
 	{
 		*this = WeaponActionPlanner();
 	}
 
 	WeaponActionDecision update(const WeaponActionInput &input)
+	{
+		return updateInternal(input, nullptr);
+	}
+	WeaponActionDecision update(const WeaponActionInput &input, const FireCadenceContext &cadence)
+	{
+		return updateInternal(input, &cadence);
+	}
+
+  private:
+	WeaponActionDecision updateInternal(const WeaponActionInput &input, const FireCadenceContext *cadence)
 	{
 		WeaponActionDecision result = {};
 		if (!input.actor.isValid() || !input.frame.isValid() || !std::isfinite(input.timestamp) ||
@@ -220,6 +244,18 @@ class WeaponActionPlanner
 			result.waitingForObservation = !input.clipKnown;
 			return result;
 		}
+		if (cadence && (!std::isfinite(cadence->skill) || cadence->skill < 0.0f || cadence->skill > 1.0f ||
+			!std::isfinite(cadence->targetRange) || cadence->targetRange < 0.0f))
+		{
+			result.unavailableMode = true;
+			return result;
+		}
+		if (cadence && input.timestamp <= fireReadyTimestamp_)
+		{
+			result.waitingForCadence = true;
+			heldPrimary_ = false;
+			return result;
+		}
 		if (isPistol(input.weaponId) && heldPrimary_ && clipKnown_ && input.clip < clip_)
 		{
 			result.releasePrimary = true;
@@ -232,9 +268,45 @@ class WeaponActionPlanner
 		}
 		clipKnown_ = input.clipKnown;
 		clip_ = input.clip;
+		if (cadence && result.primary)
+		{
+			float delay = 0.0f;
+			const bool pistol = isPistol(input.weaponId);
+			const bool spray = !pistol && (cadence->skill < 0.5f ||
+				cadence->targetRange < 400.0f || input.weaponId == 20U);
+			const bool rapidPistol = pistol && cadence->skill > 0.75f && cadence->targetRange < 999999.9f;
+			if (!spray && !rapidPistol)
+			{
+				const bool distant = !pistol && !isSniper(input.weaponId) && cadence->targetRange > 800.0f;
+				const float lower = distant ? 0.3f : 0.15f;
+				const float upper = pistol ? 0.4f : distant ? 0.7f : 0.5f;
+				if (!cadence->randomSource)
+				{
+					result.primary = false;
+					result.unavailableMode = true;
+					heldPrimary_ = false;
+					return result;
+				}
+				const auto draw = cadence->randomSource->nextFloat(RandomRequest::floatRequest(
+					"Combat.FireInterval", {input.actor.slot, input.actor.generation},
+					cadence->randomTiming, lower, upper));
+				if (draw.status != RandomStatus::Ok || !std::isfinite(draw.value) ||
+					draw.value < lower || draw.value > upper)
+				{
+					result.primary = false;
+					result.unavailableMode = true;
+					heldPrimary_ = false;
+					return result;
+				}
+				delay = draw.value;
+			}
+			// CSBot subtracts the fixed full-think latency, not the observed frame delta.
+			fireReadyTimestamp_ = input.timestamp + (delay - 0.1f);
+		}
 		return result;
 	}
 
+  public:
 	static bool isSniper(std::uint16_t id)
 	{
 		return id == 3U || id == 13U || id == 18U || id == 24U;
@@ -405,6 +477,7 @@ class WeaponActionPlanner
 	std::uint16_t weaponId_ = 0U;
 	float timestamp_ = 0.0f;
 	float scopeTimestamp_ = 0.0f;
+	float fireReadyTimestamp_ = 0.0f;
 	float grenadeTimestamp_ = 0.0f;
 	bool pendingSecondary_ = false;
 	std::uint8_t secondaryAttempts_ = 0U;

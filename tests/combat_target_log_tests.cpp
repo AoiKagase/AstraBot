@@ -11,6 +11,8 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &, enginefuncs_t &, gl
 namespace
 {
 unsigned combatAttackCommands = 0U;
+const std::uint32_t *combatFrameCounter = nullptr;
+std::vector<std::pair<std::uint32_t, unsigned short>> combatSentInputs;
 void runCombatPlayerMove(edict_t *entity, const float *angles, float forward, float side,
 	float up, unsigned short buttons, byte impulse, byte msec)
 {
@@ -18,6 +20,8 @@ void runCombatPlayerMove(edict_t *entity, const float *angles, float forward, fl
 	// Feed the public engine angle result back on the next full update.
 	entity->v.v_angle = Vector(angles[0], angles[1], angles[2]);
 	if (entity == &gEntities[0] && (buttons & IN_ATTACK) != 0U) ++combatAttackCommands;
+	if (entity == &gEntities[0] && combatFrameCounter)
+		combatSentInputs.push_back({*combatFrameCounter, buttons});
 }
 
 bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &engine,
@@ -51,6 +55,8 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 	engine.pfnRandomFloat = &siteFixtureRandomFloat;
 	engine.pfnTraceLine = &traceObjectiveVisibility;
 	engine.pfnRunPlayerMove = &runCombatPlayerMove;
+	combatFrameCounter = &static_cast<astrabot::metamod::BotObservationServices &>(runtime).
+		service_adapterFrameCount();
 	gObjectiveTraceVisible = true;
 	runtime.giveEnginePointers(&engine, &globals);
 	gEntities[0].v.flags = FL_CLIENT | FL_FAKECLIENT | FL_ONGROUND;
@@ -68,14 +74,16 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 	runtime.onMessageEnd();
 	gCaptureMovementLogs = true;
 	gProfileEnabled = true;
+	float enemyDistance = 100.0f;
 	const auto observe = [&](bool enemyPresent) {
 		combatAttackCommands = 0U;
+		combatSentInputs.clear();
 		gEntities[0].v.v_angle = Vector(20.0f, 30.0f, 0.0f);
 		gEntities[1].v.flags = enemyPresent ? FL_CLIENT : 0;
 		gEntities[1].v.team = 2;
 		gEntities[1].v.health = enemyPresent ? 100.0f : 0.0f;
 		gEntities[1].v.deadflag = enemyPresent ? DEAD_NO : DEAD_DEAD;
-		gEntities[1].v.origin = Vector(180.0f, 32.0f, 36.0f);
+		gEntities[1].v.origin = Vector(80.0f + enemyDistance, 32.0f, 36.0f);
 		gMovementLogs.clear();
 		for (unsigned frame = 0; frame < 128U; ++frame)
 		{
@@ -87,6 +95,7 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 		}
 		bool found = false;
 		bool physicalSample = false;
+		bool cadenceWait = false;
 		for (const auto &message : gMovementLogs)
 		{
 			physicalSample = physicalSample || message.find("movement physics ") == 0U;
@@ -95,6 +104,23 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 					"sparse profiling omits zero-call aggregate records")) return false;
 			if (message.find("action sensor slot=1 ") != 0U ||
 				message.find(" combatResult=") == std::string::npos) continue;
+			cadenceWait = cadenceWait || message.find(" weapon_reason=cadence_wait ") != std::string::npos;
+			if (message.find(" weapon_reason=cadence_wait ") != std::string::npos)
+			{
+				const auto frameKey = message.find(" frame=");
+				if (!check(frameKey != std::string::npos,
+					"cadence record identifies the dispatched frame")) return false;
+				const auto frame = static_cast<std::uint32_t>(std::stoul(message.substr(frameKey + 7U)));
+				bool sent = false;
+				for (const auto &command : combatSentInputs)
+					if (command.first == frame)
+					{
+						sent = true;
+						if (!check((command.second & IN_ATTACK) == 0U,
+							"cadence wait clears IN_ATTACK in the actual engine command")) return false;
+					}
+				if (!check(sent, "cadence wait reaches engine dispatch")) return false;
+			}
 			if (!check(message.find(" core_reason=") != std::string::npos &&
 				message.find(" weapon_reason=") != std::string::npos &&
 				message.find(" dt=") != std::string::npos,
@@ -107,6 +133,8 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 		if (!check(physicalSample, "detailed physical samples continue beyond the initial log budget")) return false;
 		if (!check(enemyPresent ? combatAttackCommands > 0U : combatAttackCommands == 0U,
 			"engine angle feedback reaches fire with a visible enemy and holds fire without one")) return false;
+		if (enemyPresent && enemyDistance > 800.0f &&
+			!check(cadenceWait, "skilled distant rifle alternates fire and reference cadence waits")) return false;
 		if (!found)
 		{
 			for (const auto &message : gMovementLogs)
@@ -116,7 +144,11 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 		return check(found, enemyPresent ? "combat sensor reports an acquired visible enemy" :
 			"no-enemy case exercises the combat-result log");
 	};
-	const bool passed = observe(false) && observe(true) && observe(false);
+	bool passed = observe(false) && observe(true) && observe(false);
+	enemyDistance = 900.0f;
+	passed = check(static_cast<astrabot::metamod::BotObservationServices &>(runtime).
+		behavior_managedProfiles(0U).skill >= 50U,
+		"distant cadence fixture uses a skilled profile") && observe(true) && passed;
 	// Exhausted initial sampling must not suppress a new diagnostic session.
 	gProfileEnabled = false;
 	globals.time += 0.125f;
