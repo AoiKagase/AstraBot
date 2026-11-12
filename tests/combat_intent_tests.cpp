@@ -310,13 +310,37 @@ bool testLoadedFirearmConvergesAtFullUpdateCadence()
 			fired = result == combat::CombatResult::FireIntentReady;
 			yaw = decision.aim.yaw; pitch = decision.aim.pitch;
 		}
-		if (!check(waited && fired,"loaded firearm leaves aim NoAction instead of oscillating at full-update cadence")) return false;
+		if (!check(fired && (interval > .125f || waited),"loaded firearm leaves aim NoAction within reference range tolerance")) return false;
 	}
 	return true;
 }
 
 int main()
 {
+	for (float skill : {0.5f, 0.501f, 1.0f})
+	{
+		const auto world = snapshot(200U);
+		auto ctx = context(world);
+		ctx.aimTrackingEnabled = true; ctx.elapsedSeconds = 1.0f / 30.0f;
+		ctx.skill = skill; ctx.fieldOfView = 90.0f; ctx.predictMovement = true;
+		ctx.targetVelocity = {0, 300, 0}; ctx.observerVelocity = {0, 50, 0};
+		const float error = 128.0f * .1f * (1.0f - skill);
+		std::vector<astrabot::compat::RandomTapeEntry> tape;
+		for (const char *id : {"AimOffsetX", "AimOffsetY", "AimOffsetZ"})
+			tape.push_back(astrabot::compat::RandomTapeEntry::floatEntry(id,{1,5},{},-error,error,0));
+		tape.push_back(astrabot::compat::RandomTapeEntry::floatEntry("AimOffsetRefresh",{1,5},{},.25f,1,.5f));
+		astrabot::compat::ScriptedRandomSource random(tape); ctx.randomSource = &random;
+		astrabot::combat::CombatController controller; astrabot::combat::CombatDecision decision{};
+		controller.decide(world, inventory(), target(), ctx, &decision);
+		if (!check(decision.hasAim && std::fabs(decision.aim.point.y - (skill > .5f ? 25.0f : 0.0f)) < .001f &&
+			random.verifyComplete(), "reference movement lead uses relative velocity only above skill .5")) return 1;
+		ctx.frame.tick++; ctx.timestamp += 1.0f / 30.0f;
+		astrabot::combat::AimIntent aim{};
+		if (!check(controller.upkeepAim(target(),ctx,&aim) && random.verifyComplete(),
+			"upkeep advances aim without repeating a full decision or RNG refresh")) return 1;
+		ctx.actor.generation++;
+		if (!check(!controller.upkeepAim(target(),ctx,&aim), "upkeep rejects recycled actor generation")) return 1;
+	}
 	if (!testLoadedFirearmConvergesAtFullUpdateCadence()) return 1;
 	if (!testProfileAimAndSharedRandom() || !testFireIntentDoesNotClaimEngineSuccess() ||
 			!testSafetyCooldownAndReloadBoundaries() ||

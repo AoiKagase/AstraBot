@@ -41,6 +41,14 @@ class BotBehaviorRuntime
 											const runtime::MovementPhysicsState &before);
 	void updateOutgoingPublicRadio(std::size_t index);
 	void updatePublicBuying(std::size_t index);
+	CombatUpkeepUpdate upkeepCombat(std::size_t index, const runtime::MovementPhysicsState &before,
+		std::uint16_t cachedButtons);
+	void clearCombatUpkeep(std::size_t index)
+	{
+		if (index >= actors_.size()) return;
+		actors_[index].managedBotCombat.clearAim(); actors_[index].weaponActions.stopRapidFire();
+	}
+	bool combatMovementActive(std::size_t index) const { return index < actors_.size() && actors_[index].managedBotCombat.movementActive(); }
 	const compat::ProfileRecord &managedProfiles(std::size_t index) const
 	{
 		return actors_[index].managedProfiles;

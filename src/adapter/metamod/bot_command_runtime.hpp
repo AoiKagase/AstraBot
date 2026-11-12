@@ -70,6 +70,7 @@ class BotCommandRuntime
 	void resetGateDiagnostics();
 
 	void stabilizeFrozenActors();
+	void applyCombatUpkeep(std::size_t index, const CombatUpkeepUpdate &update);
 	runtime::QueueResult enqueue(const runtime::BotCommand &command);
 	runtime::CommandReceipt dispatchInput(const runtime::ActorId &actor,
 										  std::uint32_t dispatchFrame);

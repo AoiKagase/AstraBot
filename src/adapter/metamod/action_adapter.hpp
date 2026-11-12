@@ -33,6 +33,18 @@ struct ActionProposal
 	std::uint16_t movementButtons;
 	bool secondaryAttack = false;
 	bool stopForWeapon = false;
+	bool combatMovement = false;
+	float combatForward = 0, combatSide = 0;
+	bool hasCombatAim = false;
+};
+
+struct CombatUpkeepUpdate
+{
+	bool hasAim = false;
+	runtime::ViewAngles angles = {};
+	bool setPrimary = false;
+	bool primary = false;
+	bool movementRelativeToAim = false;
 };
 
 struct ActionDispatch
@@ -84,6 +96,8 @@ enum class PlantAttemptResult : std::uint8_t {
 class ActionAdapter
 {
   public:
+	static MovementProjection reprojectMovement(float forward, float side, float oldYaw, float newYaw);
+	static void applyCombatMovement(runtime::BotCommand &command, const ActionProposal &proposal, float maxSpeed);
 	static constexpr std::uint16_t kAttackButton = static_cast<std::uint16_t>(IN_ATTACK);
 	static constexpr std::uint16_t kUseButton = static_cast<std::uint16_t>(IN_USE);
 	static constexpr std::uint16_t kForwardButton = static_cast<std::uint16_t>(IN_FORWARD);

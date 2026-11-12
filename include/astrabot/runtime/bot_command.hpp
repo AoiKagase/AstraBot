@@ -34,6 +34,7 @@ namespace runtime
 		std::uint32_t issueFrame;
 		ViewAngles viewAngles;
 		MovementInput movement;
+		bool synchronizeCombatView = false;
 
 		bool isValid() const;
 	};

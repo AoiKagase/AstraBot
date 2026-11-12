@@ -5,6 +5,113 @@ namespace astrabot
 namespace metamod
 {
 using namespace runtime_detail;
+namespace {
+struct CrouchTraceContext { enginefuncs_t *engine; edict_t *self; edict_t *enemy; bool ducked; };
+bool crouchTargetVisible(void *opaque)
+{
+	const auto &ctx = *static_cast<CrouchTraceContext *>(opaque);
+	if (!ctx.engine || !ctx.engine->pfnTraceLine || !ctx.self || !ctx.enemy) return false;
+	const float start[] = {ctx.self->v.origin.x,ctx.self->v.origin.y,ctx.self->v.origin.z-(ctx.ducked?0.0f:20.0f)};
+	const float end[] = {ctx.enemy->v.origin.x+ctx.enemy->v.view_ofs.x,ctx.enemy->v.origin.y+ctx.enemy->v.view_ofs.y,
+		ctx.enemy->v.origin.z+ctx.enemy->v.view_ofs.z};
+	TraceResult trace{};ctx.engine->pfnTraceLine(start,end,1,ctx.self,&trace);
+	return trace.flFraction >= 1.0f && trace.fStartSolid == 0 && trace.fAllSolid == 0;
+}
+}
+
+CombatUpkeepUpdate BotBehaviorRuntime::upkeepCombat(std::size_t index,
+	const runtime::MovementPhysicsState &before, std::uint16_t cachedButtons)
+{
+	CombatUpkeepUpdate update{};
+	if (before.dead)
+	{
+		clearCombatUpkeep(index); update.setPrimary = true; return update;
+	}
+	if (index >= actors_.size() || !services_ || !services_->service_globals() || before.dead ||
+		(before.flags & FL_FROZEN) != 0 ||
+		(cachedButtons & (IN_USE | IN_RELOAD | IN_ATTACK2)) != 0) return update;
+	auto &state = actors_[index];
+	const auto tracked = state.managedBotCombat.trackedAim();
+	if (!tracked.isValid() || state.weaponActions.grenadeInProgress()) return update;
+	const auto &handle = services_->service_managedBotHandles()[index];
+	const auto &engine = services_->service_engineFunctions();
+	const float now = services_->service_globals()->time;
+	const world::FrameIdentity frame = {services_->service_lifecycle().mapGeneration(),
+		services_->service_lifecycle().roundGeneration(), services_->service_adapterFrameCount()};
+	if (!handle.entity || !engine || !engine->pfnPEntityOfEntIndex ||
+		!(tracked.actor == world::ActorKey{handle.actor.slot, handle.actor.actorGeneration}) ||
+		tracked.frame.mapGeneration != frame.mapGeneration || tracked.frame.roundGeneration != frame.roundGeneration ||
+		(services_->service_roundFreezeGeneration() == frame.roundGeneration &&
+		 now < services_->service_roundFreezeUntil())) return update;
+	compat::PublicActorState activeWeapon{};
+	if (!services_->observation_publicObservations().read(tracked.actor, frame, &activeWeapon) ||
+		!activeWeapon.weaponKnown || activeWeapon.weaponId != state.weaponActions.currentWeaponId() || activeWeapon.blindUntil > now)
+	{
+		state.managedBotCombat.clearAim(); state.weaponActions.stopRapidFire(); update.setPrimary = true;
+		return update;
+	}
+	const auto token = services_->service_lifecycle().tokenForSlot(tracked.target.slot);
+	const auto generation = token.slotGeneration == 0U ? 1U : token.slotGeneration;
+	edict_t *enemy = engine->pfnPEntityOfEntIndex(static_cast<int>(tracked.target.slot));
+	perception::VisionObservation visible{};
+	const int ownTeam = services_->observation_publicPlayerTeam(handle.entity);
+	const bool friendly = enemy && ownTeam != 0 && services_->observation_publicPlayerTeam(enemy) == ownTeam;
+	if (generation != tracked.target.generation || !enemy || enemy->free || enemy->v.deadflag != DEAD_NO ||
+		enemy->v.health <= 0 || friendly || services_->observation_observationAdapter().collectVisibility(
+			handle.entity, enemy, tracked.target, frame, &visible) != ObservationAdapterResult::Accepted || !visible.visible)
+	{
+		state.managedBotCombat.clearAim(); state.weaponActions.stopRapidFire();
+		update.setPrimary = true;
+		return update;
+	}
+	combat::TargetBelief target{};
+	target.target = tracked.target; target.state = combat::TargetBeliefState::Visible;
+	target.confidence = 1.0f; target.position = {enemy->v.origin.x, enemy->v.origin.y, enemy->v.origin.z};
+	const world::WorldPosition enemyOrigin = target.position;
+	compat::CompatibilityObservation weaponObservation{};
+	const compat::ObservationTimingContext timing = {services_->command_managedBotCommandSequences(index), frame.tick,
+		services_->service_managedBotFullUpdateSequences()[index]};
+	services_->observation_observationAdapter().collectActor(handle.entity, tracked.actor, frame, timing, &weaponObservation);
+	target.position = compat::combatAimPoint(enemyOrigin, {handle.entity->v.origin.x, handle.entity->v.origin.y, handle.entity->v.origin.z},
+		visible.visibleParts, state.weaponActions.currentWeaponId(), static_cast<float>(state.managedProfiles.skill) / 100,
+		before.ducked ? 18.0f : 36.0f, weaponObservation.weapon.accuracy.isAvailable(), weaponObservation.weapon.accuracy.value);
+	combat::CombatDecisionContext context{};
+	context.actor = {handle.actor.slot, handle.actor.actorGeneration}; context.frame = frame;
+	context.origin = {handle.entity->v.origin.x, handle.entity->v.origin.y, handle.entity->v.origin.z};
+	context.aimTrackingEnabled = true; context.currentPitch = handle.entity->v.v_angle.x;
+	context.currentYaw = handle.entity->v.v_angle.y;
+	context.elapsedSeconds = (std::max)(0.0f, (std::min)(.1f, now - state.lastCombatTimes));
+	context.timestamp = now; context.skill = static_cast<float>(state.managedProfiles.skill) / 100.0f;
+	context.fieldOfView = handle.entity->v.fov > 0 ? handle.entity->v.fov : 90.0f;
+	context.randomSource = &services_->service_compatibilityRandomSource();
+	context.randomTiming = {services_->command_managedBotCommandSequences(index), frame.tick,
+		services_->service_managedBotFullUpdateSequences()[index]};
+	context.observerVelocity = {handle.entity->v.velocity.x, handle.entity->v.velocity.y, handle.entity->v.velocity.z};
+	context.targetVelocity = {enemy->v.velocity.x, enemy->v.velocity.y, enemy->v.velocity.z};
+	context.predictMovement = true;
+	context.aimErrorRange = std::sqrt((enemyOrigin.x-context.origin.x)*(enemyOrigin.x-context.origin.x) +
+		(enemyOrigin.y-context.origin.y)*(enemyOrigin.y-context.origin.y) + (enemyOrigin.z-context.origin.z)*(enemyOrigin.z-context.origin.z));
+	combat::AimIntent aim{};
+	if (state.managedBotCombat.upkeepAim(target, context, &aim))
+	{
+		state.lastCombatTimes = now; update.hasAim = true; update.angles = {aim.pitch, aim.yaw, 0};
+		update.movementRelativeToAim = state.managedBotCombat.movementActive();
+		if (state.weaponActions.rapidFiring())
+		{
+			update.setPrimary = true; update.primary = (cachedButtons & IN_ATTACK) == 0U;
+		}
+		if (services_->service_runtimeProfiler().enabled() && gpMetaUtilFuncs && gpMetaUtilFuncs->pfnLogConsole && services_->service_pluginId())
+			profiledLogConsole(services_->service_runtimeProfiler(),services_->service_pluginId(),
+				"combat upkeep slot=%u frame=%u full=%u now=%.3f dt=%.4f target=%u skill=%.2f "
+				"enemy=(%.2f %.2f %.2f) relative=(%.2f %.2f %.2f) point=(%.2f %.2f %.2f) view=(%.2f %.2f) rapid=%d primary=%d",
+				handle.actor.slot,frame.tick,services_->service_managedBotFullUpdateSequences()[index],now,context.elapsedSeconds,
+				tracked.target.slot,context.skill,enemyOrigin.x,enemyOrigin.y,enemyOrigin.z,
+				context.targetVelocity.x-context.observerVelocity.x,context.targetVelocity.y-context.observerVelocity.y,
+				context.targetVelocity.z-context.observerVelocity.z,aim.point.x,aim.point.y,aim.point.z,aim.pitch,aim.yaw,
+				state.weaponActions.rapidFiring()?1:0,update.setPrimary?(update.primary?1:0):-1);
+	}
+	return update;
+}
 
 bool BotBehaviorRuntime::cancelHeldGrenade(std::size_t index,
 										   const runtime::ViewAngles &movementAngles,
@@ -28,7 +135,8 @@ bool BotBehaviorRuntime::cancelHeldGrenade(std::size_t index,
 														 &activeWeapon) &&
 		activeWeapon.weaponKnown && activeWeapon.weaponId != static_cast<int>(cancel.weaponId))
 	{
-		actors_[index].weaponActions.reset();
+		cancel.weaponId = static_cast<std::uint16_t>(activeWeapon.weaponId);
+		(void)actors_[index].weaponActions.update(cancel);
 		return false;
 	}
 	const auto ammoDefinition =
@@ -46,7 +154,10 @@ bool BotBehaviorRuntime::cancelHeldGrenade(std::size_t index,
 	proposal.kind = canceled.primary ? ActionKind::Fire : ActionKind::None;
 	proposal.stopForWeapon = canceled.stopMovement;
 	if (canceled.hasRetainedGrenadeAim)
+	{
 		proposal.viewAngles = {canceled.grenadePitch, canceled.grenadeYaw, movementAngles.roll};
+		proposal.hasCombatAim = true;
+	}
 	return true;
 }
 
@@ -144,6 +255,14 @@ ActionProposal BotBehaviorRuntime::decideCombatAction(ManagedActionContext &ctx)
 		return proposal;
 	}
 	combat::TargetBelief target = {};
+	const world::ActorObservation *currentEnemy = nullptr;
+	if (weapon.kind != combat::WeaponKind::Grenade &&
+		snapshot.findActor(targetActor, &currentEnemy) == world::ContactLookupResult::Found && currentEnemy && currentEnemy->visible)
+		targetPosition = compat::combatAimPoint(currentEnemy->position,
+			{handle.entity->v.origin.x, handle.entity->v.origin.y, handle.entity->v.origin.z},
+			currentEnemy->visibleParts, static_cast<std::uint16_t>(weaponValue),
+			static_cast<float>(actors_[index].managedProfiles.skill) / 100, before.ducked ? 18.0f : 36.0f,
+			compatObservation.weapon.accuracy.isAvailable(), compatObservation.weapon.accuracy.value);
 	target.target = targetActor;
 	target.state = combat::TargetBeliefState::Visible;
 	target.position = targetPosition;
@@ -176,6 +295,8 @@ ActionProposal BotBehaviorRuntime::decideCombatAction(ManagedActionContext &ctx)
 	context.origin = {handle.entity->v.origin.x + handle.entity->v.view_ofs.x,
 					  handle.entity->v.origin.y + handle.entity->v.view_ofs.y,
 					  handle.entity->v.origin.z + handle.entity->v.view_ofs.z};
+	if (weapon.kind != combat::WeaponKind::Grenade)
+		context.origin = {handle.entity->v.origin.x, handle.entity->v.origin.y, handle.entity->v.origin.z};
 	context.aimTrackingEnabled = true;
 	context.currentPitch = handle.entity->v.v_angle.x;
 	context.currentYaw = handle.entity->v.v_angle.y;
@@ -190,15 +311,58 @@ ActionProposal BotBehaviorRuntime::decideCombatAction(ManagedActionContext &ctx)
 	context.randomSource = &services_->service_compatibilityRandomSource();
 	context.randomTiming = {services_->command_managedBotCommandSequences(index), 0U,
 							services_->service_managedBotFullUpdateSequences()[index]};
+	const world::ActorObservation *visibleEnemy = nullptr;
+	if (snapshot.findActor(targetActor, &visibleEnemy) == world::ContactLookupResult::Found &&
+		visibleEnemy && visibleEnemy->visible)
+	{
+		context.predictMovement = true;
+		context.targetVelocity = visibleEnemy->velocity;
+		context.observerVelocity = {handle.entity->v.velocity.x, handle.entity->v.velocity.y, handle.entity->v.velocity.z};
+		const auto &p = visibleEnemy->position;
+		context.aimErrorRange = std::sqrt((p.x-context.origin.x)*(p.x-context.origin.x) +
+			(p.y-context.origin.y)*(p.y-context.origin.y) + (p.z-context.origin.z)*(p.z-context.origin.z));
+	}
 	actors_[index].lastCombatTimes = services_->service_globals()->time;
 	combat::CombatDecision decision = {};
 	const combat::CombatResult result =
 		actors_[index].managedBotCombat.decide(snapshot, inventory, target, context, &decision);
+	compat::CombatMovementInput movementInput{};
+	compat::CombatMovementDecision movementEntry{};
+	CrouchTraceContext crouch{services_->service_engineFunctions(),handle.entity,nullptr,before.ducked};
+	const bool combatVisible = targetActor.isValid() && currentEnemy && currentEnemy->visible;
+	if (combatVisible && weapon.kind != combat::WeaponKind::Knife && weapon.kind != combat::WeaponKind::Grenade)
+	{
+		auto &move = movementInput;
+		move.actor = actor; move.target = targetActor; move.frame = frame; move.now = context.timestamp;
+		move.skill = context.skill; move.aggression = static_cast<float>(actors_[index].managedProfiles.aggression) / 100;
+		const float dx = currentEnemy->position.x - handle.entity->v.origin.x;
+		const float dy = currentEnemy->position.y - handle.entity->v.origin.y;
+		const float dz = currentEnemy->position.z - handle.entity->v.origin.z;
+		move.range = std::sqrt(dx*dx+dy*dy+dz*dz); move.weapon = static_cast<std::uint16_t>(weaponValue);
+		move.planarRange = std::hypot(dx,dy);
+		move.sniper = weapon.kind == combat::WeaponKind::Sniper;
+		move.moving = std::hypot(handle.entity->v.velocity.x,handle.entity->v.velocity.y) >= 10;
+		edict_t *enemy = services_->service_engineFunctions()->pfnPEntityOfEntIndex ?
+			services_->service_engineFunctions()->pfnPEntityOfEntIndex(static_cast<int>(targetActor.slot)) : nullptr;
+		if (enemy)
+		{
+			const float yaw = enemy->v.v_angle.y * .01745329251994329577f;
+			move.enemyFacing = -dx*std::cos(yaw)-dy*std::sin(yaw) > 0;
+		}
+		move.knowledge = &snapshot;
+		crouch.enemy = enemy;
+		move.crouchVisible = &crouchTargetVisible; move.crouchContext = &crouch;
+		move.random = context.randomSource;
+		move.timing = {services_->command_managedBotCommandSequences(index),frame.tick,
+			services_->service_managedBotFullUpdateSequences()[index]};
+		movementEntry = actors_[index].managedBotCombat.prepareMovement(move);
+	}
+	else actors_[index].managedBotCombat.stopMovement();
 	const bool fireIntentReady =
 		result == combat::CombatResult::FireIntentReady && decision.hasFire && decision.hasAim &&
 		services_->service_globals()->time >= actors_[index].attackReadyTimes;
 	const compat::StateUpdateContext stateContext = makeManagedBotStateContext(index, before);
-	if (fireIntentReady)
+	if (combatVisible)
 	{
 		(void)actors_[index].managedBotStateMachines.beginAttack(stateContext);
 	}
@@ -217,6 +381,7 @@ ActionProposal BotBehaviorRuntime::decideCombatAction(ManagedActionContext &ctx)
 	}
 	if (decision.hasAim)
 	{
+		proposal.hasCombatAim = true;
 		proposal.viewAngles = {decision.aim.pitch, decision.aim.yaw, movementAngles.roll};
 	}
 	compat::WeaponActionInput weaponInput{};
@@ -234,17 +399,10 @@ ActionProposal BotBehaviorRuntime::decideCombatAction(ManagedActionContext &ctx)
 				  (targetPosition.z - context.origin.z) * (targetPosition.z - context.origin.z));
 	weaponInput.reactionSeconds = actors_[index].managedProfiles.reactionTimeSeconds;
 	weaponInput.targetVisible = targetActor.isValid();
-	const float weaponDx = targetPosition.x - context.origin.x;
-	const float weaponDy = targetPosition.y - context.origin.y;
-	const float weaponDz = targetPosition.z - context.origin.z;
-	const float desiredYaw = std::atan2(weaponDy, weaponDx) * 180.0f / 3.14159265358979323846f;
-	const float desiredPitch =
-		-std::atan2(weaponDz, std::hypot(weaponDx, weaponDy)) * 180.0f / 3.14159265358979323846f;
 	weaponInput.aimAligned =
 		fireIntentReady ||
-		(decision.hasAim &&
-		 std::fabs(compat::normalizedAimAngle(desiredYaw - handle.entity->v.v_angle.y)) <= 1.0f &&
-		 std::fabs(compat::normalizedAimAngle(desiredPitch - handle.entity->v.v_angle.x)) <= 1.0f);
+		(decision.hasAim && compat::combatAimOnTarget(decision.aim.point, context.origin,
+			decision.aim.yaw, weapon.kind == combat::WeaponKind::Sniper));
 	weaponInput.stationary =
 		std::hypot(handle.entity->v.velocity.x, handle.entity->v.velocity.y) < 10.0f;
 	weaponInput.requestFire = weaponInput.targetVisible && weaponInput.aimAligned &&
@@ -286,7 +444,9 @@ ActionProposal BotBehaviorRuntime::decideCombatAction(ManagedActionContext &ctx)
 	bool havePistol = false;
 	for (const unsigned id : {1U, 10U, 11U, 16U, 17U, 26U})
 		havePistol = havePistol || (inventoryMask & (1U << id)) != 0U;
-	if (weaponValue == 29 && weaponInput.requestFire && weaponInput.targetDistance < 75.0f)
+	weaponInput.pistolAvailable = havePistol;
+	if (weaponValue == 29 && weaponInput.requestFire && weaponInput.targetDistance < 75.0f &&
+		weaponInput.timestamp > actors_[index].weaponActions.fireReadyTimestamp())
 	{
 		edict_t *enemy = services_->service_engineFunctions()->pfnPEntityOfEntIndex != nullptr
 							 ? services_->service_engineFunctions()->pfnPEntityOfEntIndex(
@@ -389,16 +549,36 @@ ActionProposal BotBehaviorRuntime::decideCombatAction(ManagedActionContext &ctx)
 				std::fabs(compat::normalizedAimAngle(launch.pitch - handle.entity->v.v_angle.x -
 													 handle.entity->v.punchangle.x)) <= 1.0f;
 			if (weaponInput.requestGrenade)
+			{
 				proposal.viewAngles = {launch.pitch - handle.entity->v.punchangle.x,
 									   launch.yaw - handle.entity->v.punchangle.y,
 									   movementAngles.roll};
+				proposal.hasCombatAim = true;
+			}
 		}
 	}
+	const auto &cadencePoint = decision.hasAim ? decision.aim.point : targetPosition;
 	const compat::FireCadenceContext cadence = {context.skill, context.randomSource,
 		{services_->command_managedBotCommandSequences(index), services_->service_adapterFrameCount(),
-		 services_->service_managedBotFullUpdateSequences()[index]}, std::hypot(weaponDx, weaponDy)};
+		 services_->service_managedBotFullUpdateSequences()[index]},
+		 std::hypot(cadencePoint.x-handle.entity->v.origin.x,cadencePoint.y-handle.entity->v.origin.y)};
 	const compat::WeaponActionDecision weaponDecision =
 		actors_[index].weaponActions.update(weaponInput, cadence);
+	if (movementEntry.active)
+	{
+		const auto movement = actors_[index].managedBotCombat.finishMovement(movementInput);
+		if(movement.active)
+		{
+			proposal.combatMovement = true; proposal.combatForward = movement.forward; proposal.combatSide = movement.side;
+			proposal.stopForWeapon = movement.crouch || movementInput.sniper;
+			proposal.movementButtons = static_cast<std::uint16_t>(proposal.movementButtons &
+				~(IN_FORWARD|IN_BACK|IN_MOVELEFT|IN_MOVERIGHT|IN_JUMP|IN_DUCK|IN_LEFT|IN_RIGHT));
+			if(movement.crouch)proposal.movementButtons=static_cast<std::uint16_t>(proposal.movementButtons|IN_DUCK);
+			if(movement.jump)proposal.movementButtons=static_cast<std::uint16_t>(proposal.movementButtons|IN_JUMP);
+			if(movementEntry.entered)services_->applyNavigationRequest({index,NavigationRequestKind::DestroyPath});
+			services_->applyNavigationRequest({index,NavigationRequestKind::ResetProgress});
+		}
+	}
 	if (proposal.kind == ActionKind::Fire && !weaponDecision.primary)
 	{
 		proposal.kind = ActionKind::None;
@@ -408,10 +588,13 @@ ActionProposal BotBehaviorRuntime::decideCombatAction(ManagedActionContext &ctx)
 	if (weaponDecision.switchToPistol && havePistol)
 		proposal.kind = ActionKind::SelectPistol;
 	proposal.secondaryAttack = weaponDecision.secondary;
-	proposal.stopForWeapon = weaponDecision.stopMovement;
+	proposal.stopForWeapon = proposal.stopForWeapon || weaponDecision.stopMovement;
 	if (weaponDecision.hasRetainedGrenadeAim)
+	{
 		proposal.viewAngles = {weaponDecision.grenadePitch, weaponDecision.grenadeYaw,
 							   movementAngles.roll};
+		proposal.hasCombatAim = true;
+	}
 	if ((services_->service_adapterFrameCount() % 16U) == 0U && gpMetaUtilFuncs != nullptr &&
 		gpMetaUtilFuncs->pfnLogConsole != nullptr && services_->service_pluginId() != nullptr)
 	{
@@ -454,7 +637,8 @@ ActionProposal BotBehaviorRuntime::decideCombatAction(ManagedActionContext &ctx)
 			"action sensor slot=%u frame=%u team=%d teamInfo=%u target=%d combatResult=%d "
 			"hasAim=%d hasFire=%d core_reason=%s weapon_reason=%s weapon=%d clip=%d range=%.1f "
 			"dt=%.4f current=(%.2f %.2f) aim=(%.2f %.2f) action=%d primary=%d secondary=%d "
-			"now=%.3f skill=%.2f cadence_range=%.1f fire_ready_at=%.3f",
+			"now=%.3f skill=%.2f cadence_range=%.1f fire_ready_at=%.3f aim_point=(%.2f %.2f %.2f) "
+			"fov=%.1f recoil_known=%d combat_move=%d attack=(%.1f %.1f) crouch=%d",
 			static_cast<unsigned int>(handle.actor.slot),
 			static_cast<unsigned int>(services_->service_adapterFrameCount()),
 			static_cast<int>(handle.entity->v.team),
@@ -465,7 +649,9 @@ ActionProposal BotBehaviorRuntime::decideCombatAction(ManagedActionContext &ctx)
 			proposal.viewAngles.pitch, proposal.viewAngles.yaw, static_cast<int>(proposal.kind),
 			weaponDecision.primary ? 1 : 0, weaponDecision.secondary ? 1 : 0,
 			context.timestamp, context.skill, cadence.targetRange,
-			actors_[index].weaponActions.fireReadyTimestamp());
+			actors_[index].weaponActions.fireReadyTimestamp(), decision.aim.point.x,decision.aim.point.y,decision.aim.point.z,
+			weaponInput.fieldOfView,compatObservation.weapon.accuracy.isAvailable()?1:0,
+			proposal.combatMovement?1:0,proposal.combatForward,proposal.combatSide,(proposal.movementButtons&IN_DUCK)!=0?1:0);
 	}
 	return proposal;
 }

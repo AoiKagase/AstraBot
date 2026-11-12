@@ -1465,6 +1465,7 @@ void PluginRuntime::updateManagedBotMovement()
 		bool commandResetDue = false;
 		bool fullUpdateDue = false;
 		bool commandExecuteDue = false;
+		bool upkeepDue = false;
 		for (std::size_t eventIndex = 0U; eventIndex < timingStep.eventCount; ++eventIndex)
 		{
 			switch (timingStep.events[eventIndex])
@@ -1479,6 +1480,7 @@ void PluginRuntime::updateManagedBotMovement()
 				commandExecuteDue = true;
 				break;
 			case runtime::BotTimingEvent::Upkeep:
+				upkeepDue = true;
 				break;
 			}
 		}
@@ -1496,6 +1498,9 @@ void PluginRuntime::updateManagedBotMovement()
 			{
 				prepareNeutralManagedBotCommand(index, handle, before);
 			}
+			if (upkeepDue && command_.managedBotCommandTemplateValid(index))
+				command_.applyCombatUpkeep(index, behavior_.upkeepCombat(index, before,
+					command_.managedBotCommandTemplates(index).movement.buttons));
 			const runtime::CommandReceipt receipt =
 				command_.executeManagedBotCommand(index, handle);
 			navigation_.recordMovementPhysicsSample(index, before, receipt);
@@ -1503,6 +1508,7 @@ void PluginRuntime::updateManagedBotMovement()
 		}
 		RuntimeProfilerScope fullUpdateScope(
 			runtimeProfiler_, RuntimeProfilerStage::RuntimeFullUpdate);
+		behavior_.clearCombatUpkeep(index);
 		if (managedBotFullUpdateSequences_[index] ==
 			(std::numeric_limits<std::uint32_t>::max)())
 		{
@@ -1523,6 +1529,8 @@ void PluginRuntime::updateManagedBotMovement()
 		const auto preparation = navigation_.prepareMovement(index, handle, before, movementUnavailable);
 		if (preparation.kind != MovementPreparationKind::Ready)
 		{
+			CombatUpkeepUpdate clearFire{}; clearFire.setPrimary = true;
+			command_.applyCombatUpkeep(index, clearFire);
 			if (preparation.kind == MovementPreparationKind::Neutral)
 			{
 				prepareNeutralManagedBotCommand(index, handle, before);
@@ -1530,6 +1538,13 @@ void PluginRuntime::updateManagedBotMovement()
 				navigation_.recordMovementPhysicsSample(index, before, receipt);
 				navigation_.completePreparation(index, preparation.completion);
 			}
+			continue;
+		}
+		if (behavior_.combatMovementActive(index))
+		{
+			prepareNeutralManagedBotCommand(index, handle, before);
+			const auto receipt = command_.executeManagedBotCommand(index, handle);
+			navigation_.recordMovementPhysicsSample(index, before, receipt);
 			continue;
 		}
 		NavigationUpdate movement = navigation_.updateNavigation(index, handle, before, navigation,

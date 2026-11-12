@@ -4,6 +4,33 @@ namespace astrabot
 {
 namespace metamod
 {
+
+void BotCommandRuntime::applyCombatUpkeep(std::size_t index, const CombatUpkeepUpdate &update)
+{
+	if (index >= actors_.size() || !actors_[index].managedBotCommandTemplateValid) return;
+	auto &command = actors_[index].managedBotCommandTemplates;
+	if (update.hasAim)
+	{
+		if (!update.movementRelativeToAim)
+		{
+			const auto movement = ActionAdapter::reprojectMovement(command.movement.forward,
+				command.movement.side, command.viewAngles.yaw, update.angles.yaw);
+			command.movement.forward = movement.forward; command.movement.side = movement.side;
+			command.movement.buttons = static_cast<std::uint16_t>(command.movement.buttons &
+				~(IN_FORWARD | IN_BACK | IN_MOVELEFT | IN_MOVERIGHT));
+			command.movement.buttons = static_cast<std::uint16_t>(command.movement.buttons |
+				ActionAdapter::movementButtons(movement.forward, movement.side));
+		}
+		command.viewAngles = update.angles;
+		command.synchronizeCombatView = true;
+	}
+	if (update.setPrimary)
+	{
+		if (!update.hasAim) command.synchronizeCombatView = false;
+		command.movement.buttons = static_cast<std::uint16_t>(command.movement.buttons & ~IN_ATTACK);
+		if (update.primary) command.movement.buttons = static_cast<std::uint16_t>(command.movement.buttons | IN_ATTACK);
+	}
+}
 using namespace runtime_detail;
 
 void BotCommandRuntime::onTouch(edict_t *entity, edict_t *other)
@@ -147,8 +174,18 @@ bool BotCommandRuntime::dispatchManagedActionCommand(std::size_t index, FakeClie
 	{
 		return true;
 	}
+	const char *clientCommand = dispatch.clientCommand;
+	if (proposal.kind == ActionKind::SelectPistol)
+	{
+		const unsigned ids[] = {1,10,11,16,17,26};
+		const char *names[] = {"weapon_p228","weapon_elite","weapon_fiveseven","weapon_usp","weapon_glock18","weapon_deagle"};
+		clientCommand = nullptr;
+		const auto mask = static_cast<std::uint32_t>(handle.entity->v.weapons);
+		for(std::size_t i=0;i<6;++i)if((mask&(1U<<ids[i]))!=0U){clientCommand=names[i];break;}
+		if(!clientCommand)return false;
+	}
 	const bool commandDispatched =
-		services_->dispatchClientCommand(handle.entity, dispatch.clientCommand, "");
+		services_->dispatchClientCommand(handle.entity, clientCommand, "");
 	if (commandDispatched && proposal.kind == ActionKind::Reload &&
 		services_->service_globals() != nullptr)
 	{
@@ -234,7 +271,9 @@ void BotCommandRuntime::finishNeutralCommand(std::size_t index, FakeClientHandle
 		requestedAction, services_->observation_hasObservedActiveWeapon(index), command.viewAngles);
 	const ActionDispatch actionDispatch = ActionAdapter::translate(actionProposal);
 	command.viewAngles = actionDispatch.viewAngles;
+	command.synchronizeCombatView = actionProposal.hasCombatAim;
 	command.movement.buttons = actionDispatch.buttons;
+	ActionAdapter::applyCombatMovement(command, actionProposal, handle.entity->v.maxspeed);
 	if (actionDispatch.clientCommand != nullptr)
 	{
 		(void)dispatchManagedActionCommand(index, handle, actionProposal, actionDispatch);
@@ -597,7 +636,9 @@ runtime::CommandReceipt BotCommandRuntime::finishDirectNeutralCommand(std::size_
 		requestedAction, services_->observation_hasObservedActiveWeapon(index), command.viewAngles);
 	const ActionDispatch actionDispatch = ActionAdapter::translate(actionProposal);
 	command.viewAngles = actionDispatch.viewAngles;
+	command.synchronizeCombatView = actionProposal.hasCombatAim;
 	command.movement.buttons = actionDispatch.buttons;
+	ActionAdapter::applyCombatMovement(command, actionProposal, handle.entity->v.maxspeed);
 	if (actionProposal.kind != ActionKind::None && gpMetaUtilFuncs != nullptr &&
 		gpMetaUtilFuncs->pfnLogConsole != nullptr && services_->service_pluginId() != nullptr &&
 		(services_->service_adapterFrameCount() % 16U) == 0U)
@@ -746,6 +787,7 @@ void BotCommandRuntime::finishMovementCommand(std::size_t index, FakeClientHandl
 		requestedAction, services_->observation_hasObservedActiveWeapon(index), movementViewAngles);
 	const ActionDispatch actionDispatch = ActionAdapter::translate(actionProposal);
 	command.viewAngles = actionDispatch.viewAngles;
+	command.synchronizeCombatView = actionProposal.hasCombatAim;
 	command.movement.buttons = actionDispatch.buttons;
 	const bool compatibilityMovement =
 		services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility;
@@ -767,6 +809,7 @@ void BotCommandRuntime::finishMovementCommand(std::size_t index, FakeClientHandl
 									   command.viewAngles.yaw, compatibilityMovement);
 	command.movement.forward = actionDispatch.stopMovement ? 0.0f : movementProjection.forward;
 	command.movement.side = actionDispatch.stopMovement ? 0.0f : movementProjection.side;
+	ActionAdapter::applyCombatMovement(command, actionProposal, handle.entity->v.maxspeed);
 	if (!actionDispatch.stopMovement)
 	{
 		command.movement.buttons = static_cast<std::uint16_t>(
@@ -806,12 +849,15 @@ void BotCommandRuntime::finishMovementCommand(std::size_t index, FakeClientHandl
 	{
 		(void)dispatchManagedActionCommand(index, handle, actionProposal, actionDispatch);
 	}
-	handle.entity->v.v_angle[0] = command.viewAngles.pitch;
-	handle.entity->v.v_angle[1] = command.viewAngles.yaw;
-	handle.entity->v.v_angle[2] = command.viewAngles.roll;
-	handle.entity->v.angles[0] = -command.viewAngles.pitch / 3.0f;
-	handle.entity->v.angles[1] = command.viewAngles.yaw;
-	handle.entity->v.angles[2] = command.viewAngles.roll;
+	if (!command.synchronizeCombatView)
+	{
+		handle.entity->v.v_angle[0] = command.viewAngles.pitch;
+		handle.entity->v.v_angle[1] = command.viewAngles.yaw;
+		handle.entity->v.v_angle[2] = command.viewAngles.roll;
+		handle.entity->v.angles[0] = -command.viewAngles.pitch / 3.0f;
+		handle.entity->v.angles[1] = command.viewAngles.yaw;
+		handle.entity->v.angles[2] = command.viewAngles.roll;
+	}
 	actors_[index].managedBotCommandTemplates = command;
 	actors_[index].managedBotCommandTemplateValid = true;
 	actors_[index].managedBotActionStopsMovement = actionDispatch.stopMovement;

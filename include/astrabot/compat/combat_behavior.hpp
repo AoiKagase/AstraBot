@@ -117,6 +117,41 @@ struct AimStep
 	float pitch;
 	bool aligned;
 };
+
+inline world::WorldPosition combatAimPoint(world::WorldPosition enemy, world::WorldPosition observer,
+	std::uint8_t visibleParts, std::uint16_t weapon, float skill, float feetOffset,
+	bool recoilKnown, float accuracy)
+{
+	const bool pistol = weapon == 1 || weapon == 10 || weapon == 11 || weapon == 16 || weapon == 17 || weapon == 26;
+	const bool sniper = weapon == 3 || weapon == 13 || weapon == 18 || weapon == 24;
+	const bool chest = (visibleParts & world::VisibleChest) != 0U;
+	if (chest && (weapon == 18 || weapon == 5 || weapon == 21 || weapon == 20 || skill < .8f ||
+		(recoilKnown && accuracy > .4f && !pistol && !sniper))) enemy.z -= feetOffset * .25f;
+	else if ((visibleParts & world::VisibleHead) == 0U)
+	{
+		if (chest) enemy.z -= feetOffset * .5f;
+		else if ((visibleParts & (world::VisibleLeftSide | world::VisibleRightSide)) != 0U)
+		{
+			const float dx = enemy.x - observer.x, dy = enemy.y - observer.y;
+			const float length = std::hypot(dx, dy);
+			const float side = (visibleParts & world::VisibleLeftSide) != 0U ? 1.0f : -1.0f;
+			if (length > .001f) { enemy.x -= side * dy / length * 16; enemy.y += side * dx / length * 16; }
+			enemy.z -= feetOffset * .5f;
+		}
+		else enemy.z -= feetOffset * 2.0f;
+	}
+	return enemy;
+}
+
+inline bool combatAimOnTarget(world::WorldPosition point, world::WorldPosition origin, float yaw, bool sniper)
+{
+	const float dx = point.x - origin.x, dy = point.y - origin.y;
+	const float range = std::hypot(dx, dy);
+	if (!std::isfinite(range) || range <= .001f || !std::isfinite(yaw)) return false;
+	const float radians = yaw * .01745329251994329577f;
+	const float dot = (dx * std::cos(radians) + dy * std::sin(radians)) / range;
+	return dot > std::cos(std::atan((sniper ? 16.0f : 32.0f) / range));
+}
 struct AimSpringState
 {
 	float yawVelocity;

@@ -312,6 +312,9 @@ bool testPlantAttemptRequiresSiteAndTimesOutAfterDeliveredInput()
 
 int main()
 {
+	const auto rotated = astrabot::metamod::ActionAdapter::reprojectMovement(100, 0, 0, 90);
+	if (!check(std::fabs(rotated.forward) < .001f && std::fabs(rotated.side - 100) < .001f,
+		"upkeep aim change preserves world movement direction")) return 1;
 	for (const auto kind : {astrabot::metamod::ActionKind::SelectC4,
 		astrabot::metamod::ActionKind::Plant, astrabot::metamod::ActionKind::PlantContinue})
 	{

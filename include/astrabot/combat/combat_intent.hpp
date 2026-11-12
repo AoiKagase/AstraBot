@@ -4,6 +4,7 @@
 #include "astrabot/combat/weapon_state.hpp"
 #include "astrabot/compat/random_source.hpp"
 #include "astrabot/compat/combat_behavior.hpp"
+#include "astrabot/compat/combat_movement.hpp"
 
 #include <cstdint>
 
@@ -46,6 +47,10 @@ struct CombatDecisionContext
 	float fieldOfView;
 	compat::ICompatibilityRandomSource* randomSource;
 	compat::RandomTimingContext randomTiming;
+	world::WorldVelocity observerVelocity = {};
+	world::WorldVelocity targetVelocity = {};
+	bool predictMovement = false;
+	float aimErrorRange = -1.0f;
 
 	bool isValid() const;
 };
@@ -164,6 +169,14 @@ public:
 		const CombatDecisionContext &context,
 		CombatDecision *decision);
 	CombatResult observeDamage(const DamageObservation &observation) const;
+	bool upkeepAim(const TargetBelief &target, const CombatDecisionContext &context, AimIntent *aim);
+	const AimIntent &trackedAim() const { return trackedAim_; }
+	void clearAim() { trackedAim_ = {}; }
+	compat::CombatMovementDecision planMovement(const compat::CombatMovementInput &input) { return movement_.update(input); }
+	compat::CombatMovementDecision prepareMovement(const compat::CombatMovementInput &input) { return movement_.prepare(input); }
+	compat::CombatMovementDecision finishMovement(const compat::CombatMovementInput &input) { return movement_.finish(input); }
+	void stopMovement() { movement_.stop(); }
+	bool movementActive() const { return movement_.active(); }
 
 	const world::ActorKey &actor() const;
 	bool isInitialized() const;
@@ -186,6 +199,8 @@ private:
 	float aimRefreshTime_ = 0.0f;
 	float aimFocusStart_ = 0.0f;
 	bool aimAligned_ = true;
+	AimIntent trackedAim_ = {};
+	compat::CombatMovementPlanner movement_{};
 
 	CombatConfig config_;
 	world::ActorKey actor_;

@@ -208,6 +208,14 @@ bool CombatController::buildAim(const CombatDecisionContext &context, const Targ
 	}
 
 	world::WorldPosition aimPoint = target.position;
+	if (context.predictMovement && context.skill > 0.5f)
+	{
+		if (!isFiniteVector(context.observerVelocity) || !isFiniteVector(context.targetVelocity)) return false;
+		const float lead = (1.0f / 30.0f) * 3.0f;
+		aimPoint.x += (context.targetVelocity.x - context.observerVelocity.x) * lead;
+		aimPoint.y += (context.targetVelocity.y - context.observerVelocity.y) * lead;
+		aimPoint.z += (context.targetVelocity.z - context.observerVelocity.z) * lead;
+	}
 	aimAligned_ = true;
 	if (context.aimTrackingEnabled)
 	{
@@ -231,7 +239,8 @@ bool CombatController::buildAim(const CombatDecisionContext &context, const Targ
 			const float focusAccuracy =
 				std::fmin(0.75f, std::fmax(0.0f, (context.timestamp - aimFocusStart_) / focusTime));
 			const float accuracy = std::fmax(context.skill, focusAccuracy);
-			const float error = std::sqrt(dx * dx + dy * dy + dz * dz) * context.fieldOfView /
+			const float errorRange = context.aimErrorRange >= 0.0f ? context.aimErrorRange : std::sqrt(dx * dx + dy * dy + dz * dz);
+			const float error = errorRange * context.fieldOfView /
 								90.0f * 0.1f * (1.0f - accuracy);
 			const compat::RandomActor actor = {context.actor.slot, context.actor.generation};
 			float draws[4] = {};
@@ -287,7 +296,21 @@ bool CombatController::buildAim(const CombatDecisionContext &context, const Targ
 		intent->pitch = step.pitch;
 		aimAligned_ = step.aligned;
 	}
-	return intent->isValid();
+	if (!intent->isValid()) return false;
+	trackedAim_ = *intent;
+	return true;
+}
+
+bool CombatController::upkeepAim(const TargetBelief &target, const CombatDecisionContext &context,
+	AimIntent *aim)
+{
+	if (!initialized_ || !(actor_ == context.actor) || !trackedAim_.isValid() ||
+		!(trackedAim_.actor == context.actor) ||
+		!(trackedAim_.target == target.target) ||
+		trackedAim_.frame.mapGeneration != context.frame.mapGeneration ||
+		trackedAim_.frame.roundGeneration != context.frame.roundGeneration ||
+		!isFrameAfter(context.frame, trackedAim_.frame)) return false;
+	return buildAim(context, target, aim);
 }
 
 CombatResult CombatController::decide(const world::WorldSnapshot &snapshot,
@@ -300,6 +323,7 @@ CombatResult CombatController::decide(const world::WorldSnapshot &snapshot,
 		return CombatResult::InvalidArgument;
 	}
 	*decision = {};
+	trackedAim_ = {};
 	if (!config_.isValid())
 	{
 		return CombatResult::InvalidConfig;
@@ -393,7 +417,8 @@ CombatResult CombatController::decide(const world::WorldSnapshot &snapshot,
 					dz = target.position.z - context.origin.z;
 		if (!compat::weaponEngagementAllowed(weapon->kind,
 											 std::sqrt(dx * dx + dy * dy + dz * dz)) ||
-			(context.aimTrackingEnabled && !aimAligned_))
+			(context.aimTrackingEnabled && !compat::combatAimOnTarget(aim.point, context.origin, aim.yaw,
+				weapon->kind == WeaponKind::Sniper)))
 			return CombatResult::NoAction;
 		decision->hasFire = true;
 		decision->fire.actor = context.actor;

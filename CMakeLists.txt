@@ -91,6 +91,11 @@ if(ASTRABOT_BUILD_TESTS)
   astrabot_apply_warnings(astrabot_vanilla_behavior)
   add_test(NAME astrabot_vanilla_behavior COMMAND astrabot_vanilla_behavior)
 
+  add_executable(astrabot_combat_policy tests/combat_policy_tests.cpp)
+  target_link_libraries(astrabot_combat_policy PRIVATE astrabot_core)
+  astrabot_apply_warnings(astrabot_combat_policy)
+  add_test(NAME astrabot_combat_policy COMMAND astrabot_combat_policy)
+
   add_executable(astrabot_weapon_actions tests/weapon_actions_tests.cpp)
   target_link_libraries(astrabot_weapon_actions PRIVATE astrabot_core)
   astrabot_apply_warnings(astrabot_weapon_actions)

@@ -10,14 +10,21 @@ ActionProposal BotBehaviorRuntime::decideManagedBotAction(
 	std::size_t index, const runtime::MovementPhysicsState &before,
 	const runtime::ViewAngles &movementAngles, std::uint16_t movementButtons)
 {
+	if (index < actors_.size())
+	{
+		actors_[index].managedBotCombat.clearAim();
+		actors_[index].weaponActions.stopRapidFire();
+	}
 	ManagedActionContext ctx{index, before, movementAngles};
 	ctx.proposal = {ActionKind::None, movementAngles, movementButtons};
 	if (prepareManagedAction(ctx) == BehaviorPhaseResult::Complete)
 	{
+		actors_[index].managedBotCombat.stopMovement();
 		return ctx.proposal;
 	}
 	if (decideObjectiveAction(ctx) == BehaviorPhaseResult::Complete)
 	{
+		actors_[index].managedBotCombat.stopMovement();
 		return ctx.proposal;
 	}
 	return decideCombatAction(ctx);

@@ -70,6 +70,7 @@ struct WeaponActionInput
 	bool reserveKnown = false;
 	std::uint16_t reserve = 0U;
 	std::uint32_t reserveObservationTick = 0U;
+	bool pistolAvailable = true;
 };
 
 struct WeaponActionDecision
@@ -112,6 +113,8 @@ class WeaponActionPlanner
 	{
 		return fireReadyTimestamp_;
 	}
+	bool rapidFiring() const { return rapidFiring_; }
+	void stopRapidFire() { rapidFiring_ = false; }
 	void reset()
 	{
 		*this = WeaponActionPlanner();
@@ -138,7 +141,7 @@ class WeaponActionPlanner
 			return result;
 		}
 		if (!(input.actor == actor_) || input.frame.mapGeneration != frame_.mapGeneration ||
-			input.frame.roundGeneration != frame_.roundGeneration || input.weaponId != weaponId_ ||
+			input.frame.roundGeneration != frame_.roundGeneration ||
 			input.timestamp < timestamp_)
 		{
 			reset();
@@ -146,6 +149,12 @@ class WeaponActionPlanner
 		else if (frame_.isValid() && input.frame.tick <= frame_.tick)
 		{
 			return result;
+		}
+		else if (input.weaponId != weaponId_)
+		{
+			const float fireDeadline = fireReadyTimestamp_;
+			reset();
+			fireReadyTimestamp_ = fireDeadline;
 		}
 		actor_ = input.actor;
 		frame_ = input.frame;
@@ -167,6 +176,7 @@ class WeaponActionPlanner
 		}
 		if (!input.requestFire || !input.targetVisible)
 		{
+			rapidFiring_ = false;
 			heldPrimary_ = false;
 			result.stopMovement = isSniper(input.weaponId) && input.targetVisible;
 			return result;
@@ -174,7 +184,7 @@ class WeaponActionPlanner
 		if (isSniper(input.weaponId))
 		{
 			result.stopMovement = true;
-			if (input.targetDistance < 310.0f)
+			if (input.targetDistance < 310.0f && input.pistolAvailable)
 			{
 				result.switchToPistol = true;
 				return result;
@@ -191,7 +201,8 @@ class WeaponActionPlanner
 				result.waitingForObservation = true;
 				return result;
 			}
-			if (input.fieldOfView > 60.0f)
+			// AttackState calls AdjustZoom only at NO_ZOOM, even beyond 1500 units.
+			if (input.fieldOfView > 60.0f && (input.pistolAvailable || input.targetDistance > 300.0f))
 			{
 				requestSecondary(input, &result);
 				if (result.secondary)
@@ -210,6 +221,18 @@ class WeaponActionPlanner
 		}
 		if (!input.aimAligned)
 		{
+			return result;
+		}
+		if (cadence && (!std::isfinite(cadence->skill) || cadence->skill < 0.0f || cadence->skill > 1.0f ||
+			!std::isfinite(cadence->targetRange) || cadence->targetRange < 0.0f))
+		{
+			result.unavailableMode = true;
+			return result;
+		}
+		if (cadence && input.timestamp <= fireReadyTimestamp_)
+		{
+			result.waitingForCadence = true;
+			heldPrimary_ = false;
 			return result;
 		}
 		if (input.weaponId == 29U)
@@ -232,6 +255,7 @@ class WeaponActionPlanner
 			{
 				result.unavailableMode = true;
 			}
+			if (cadence && (result.primary || result.secondary)) fireReadyTimestamp_ = input.timestamp - .1f;
 			return result;
 		}
 		if (!isFirearm(input.weaponId))
@@ -244,19 +268,8 @@ class WeaponActionPlanner
 			result.waitingForObservation = !input.clipKnown;
 			return result;
 		}
-		if (cadence && (!std::isfinite(cadence->skill) || cadence->skill < 0.0f || cadence->skill > 1.0f ||
-			!std::isfinite(cadence->targetRange) || cadence->targetRange < 0.0f))
-		{
-			result.unavailableMode = true;
-			return result;
-		}
-		if (cadence && input.timestamp <= fireReadyTimestamp_)
-		{
-			result.waitingForCadence = true;
-			heldPrimary_ = false;
-			return result;
-		}
-		if (isPistol(input.weaponId) && heldPrimary_ && clipKnown_ && input.clip < clip_)
+		if (isPistol(input.weaponId) && heldPrimary_ && clipKnown_ && input.clip < clip_ &&
+			!(cadence && cadence->skill > 0.75f && cadence->targetRange < 999999.9f))
 		{
 			result.releasePrimary = true;
 			heldPrimary_ = false;
@@ -275,6 +288,7 @@ class WeaponActionPlanner
 			const bool spray = !pistol && (cadence->skill < 0.5f ||
 				cadence->targetRange < 400.0f || input.weaponId == 20U);
 			const bool rapidPistol = pistol && cadence->skill > 0.75f && cadence->targetRange < 999999.9f;
+			rapidFiring_ = rapidPistol;
 			if (!spray && !rapidPistol)
 			{
 				const bool distant = !pistol && !isSniper(input.weaponId) && cadence->targetRange > 800.0f;
@@ -478,6 +492,7 @@ class WeaponActionPlanner
 	float timestamp_ = 0.0f;
 	float scopeTimestamp_ = 0.0f;
 	float fireReadyTimestamp_ = 0.0f;
+	bool rapidFiring_ = false;
 	float grenadeTimestamp_ = 0.0f;
 	bool pendingSecondary_ = false;
 	std::uint8_t secondaryAttempts_ = 0U;

@@ -1,5 +1,6 @@
 #include "plugin_runtime.hpp"
 #include "bot_runtime_support.hpp"
+#include <sstream>
 
 namespace
 {
@@ -11,15 +12,30 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &, enginefuncs_t &, gl
 namespace
 {
 unsigned combatAttackCommands = 0U;
+float combatCommandYaw = 0.0f;
+float combatCommandPitch = 0.0f;
+unsigned combatMovingFireCommands = 0U;
+bool combatPistolSelected = false;
+void combatGameClientCommand(edict_t *entity)
+{
+	if(entity==&gEntities[0] && std::strcmp(astrabot::metamod::HookCommandArgv(0),"weapon_glock18")==0)
+		combatPistolSelected=true;
+	hookedGameClientCommand(entity);
+}
 const std::uint32_t *combatFrameCounter = nullptr;
 std::vector<std::pair<std::uint32_t, unsigned short>> combatSentInputs;
 void runCombatPlayerMove(edict_t *entity, const float *angles, float forward, float side,
 	float up, unsigned short buttons, byte impulse, byte msec)
 {
 	runPlayerMove(entity, angles, forward, side, up, buttons, impulse, msec);
-	// Feed the public engine angle result back on the next full update.
-	entity->v.v_angle = Vector(angles[0], angles[1], angles[2]);
+	// HLDS RunPlayerMove does not publish FakeClient v_angle; the input owner must.
 	if (entity == &gEntities[0] && (buttons & IN_ATTACK) != 0U) ++combatAttackCommands;
+	if (entity == &gEntities[0]) combatCommandYaw = angles[1];
+	if (entity == &gEntities[0])
+	{
+		combatCommandPitch = angles[0];
+		if ((buttons & IN_ATTACK) != 0U && std::hypot(forward, side) > .01f) ++combatMovingFireCommands;
+	}
 	if (entity == &gEntities[0] && combatFrameCounter)
 		combatSentInputs.push_back({*combatFrameCounter, buttons});
 }
@@ -55,6 +71,7 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 	engine.pfnRandomFloat = &siteFixtureRandomFloat;
 	engine.pfnTraceLine = &traceObjectiveVisibility;
 	engine.pfnRunPlayerMove = &runCombatPlayerMove;
+	gHookedGameDllTable.pfnClientCommand = &combatGameClientCommand;
 	combatFrameCounter = &static_cast<astrabot::metamod::BotObservationServices &>(runtime).
 		service_adapterFrameCount();
 	gObjectiveTraceVisible = true;
@@ -77,6 +94,7 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 	float enemyDistance = 100.0f;
 	const auto observe = [&](bool enemyPresent) {
 		combatAttackCommands = 0U;
+		combatMovingFireCommands = 0U;
 		combatSentInputs.clear();
 		gEntities[0].v.v_angle = Vector(20.0f, 30.0f, 0.0f);
 		gEntities[1].v.flags = enemyPresent ? FL_CLIENT : 0;
@@ -125,6 +143,16 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 				message.find(" weapon_reason=") != std::string::npos &&
 				message.find(" dt=") != std::string::npos,
 				"combat diagnostics distinguish Core waiting from final weapon gates")) return false;
+			if (message.find(" hasAim=1 ") != std::string::npos)
+			{
+				const auto pointKey=message.find(" aim_point=("), rangeKey=message.find(" cadence_range=");
+				if(!check(pointKey!=std::string::npos&&rangeKey!=std::string::npos,"cadence record contains its actual aim point"))return false;
+				float x=0,y=0,z=0;std::istringstream point(message.substr(pointKey+12U));point>>x>>y>>z;
+				const float actual=std::stof(message.substr(rangeKey+15U));
+				const float expected=std::hypot(x-gEntities[0].v.origin.x,y-gEntities[0].v.origin.y);
+				if(!check(!point.fail()&&std::fabs(actual-expected)<.2f,
+					"fire cadence uses aim error and prediction rather than raw enemy distance"))return false;
+			}
 			if (!enemyPresent && !check(message.find(" target=0 ") != std::string::npos,
 				"combat sensor reports no target when no enemy was acquired")) return false;
 			if (message.find(enemyPresent ? " target=1 " : " target=0 ") != std::string::npos)
@@ -133,6 +161,8 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 		if (!check(physicalSample, "detailed physical samples continue beyond the initial log budget")) return false;
 		if (!check(enemyPresent ? combatAttackCommands > 0U : combatAttackCommands == 0U,
 			"engine angle feedback reaches fire with a visible enemy and holds fire without one")) return false;
+		if (enemyPresent && enemyDistance == 100.0f &&
+			!check(combatCommandPitch > 0.0f, "low-skill rifle selects the reference chest aim instead of visible head")) return false;
 		if (enemyPresent && enemyDistance > 800.0f &&
 			!check(cadenceWait, "skilled distant rifle alternates fire and reference cadence waits")) return false;
 		if (!found)
@@ -149,6 +179,29 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 	passed = check(static_cast<astrabot::metamod::BotObservationServices &>(runtime).
 		behavior_managedProfiles(0U).skill >= 50U,
 		"distant cadence fixture uses a skilled profile") && observe(true) && passed;
+	bool upkeepTurned = false;
+	for (unsigned step = 0; step < 60U; ++step)
+	{
+		auto &ports = static_cast<astrabot::metamod::BotObservationServices &>(runtime);
+		const auto fullBefore = ports.service_managedBotFullUpdateSequences()[0];
+		const float yawBefore = combatCommandYaw;
+		gEntities[1].v.velocity = Vector(0.0f, 250.0f, 0.0f);
+		gEntities[1].v.origin.y += 250.0f / 30.0f;
+		globals.time += 1.0f / 30.0f;
+		runtime.onStartFrame(); runtime.onStartFramePost();
+		if (ports.service_managedBotFullUpdateSequences()[0] == fullBefore &&
+			std::fabs(combatCommandYaw - yawBefore) > 0.001f) upkeepTurned = true;
+	}
+	passed = check(upkeepTurned, "combat upkeep tracks a moving target between full decisions") && passed;
+	gEntities[1].v.velocity = Vector(0.0f, 0.0f, 0.0f);
+	gEntities[0].v.weapons = (1<<18)|(1<<17);gEntities[1].v.origin=Vector(180,32,36);
+	for(unsigned step=0;step<64;++step)
+	{
+		runtime.onMessageBegin(1,94,nullptr,&gEntities[0]);
+		runtime.onWriteByte(1);runtime.onWriteByte(18);runtime.onWriteByte(10);runtime.onMessageEnd();
+		globals.time+=.125f;runtime.onStartFrame();runtime.onStartFramePost();
+	}
+	passed=check(combatPistolSelected,"pistol switching dispatches a GameDLL weapon classname instead of a client-only slot command")&&passed;
 	// Exhausted initial sampling must not suppress a new diagnostic session.
 	gProfileEnabled = false;
 	globals.time += 0.125f;

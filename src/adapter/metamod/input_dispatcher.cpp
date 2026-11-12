@@ -139,6 +139,11 @@ namespace metamod
 		};
 		boundEntities_[index]->v.button = command.movement.buttons;
 		boundEntities_[index]->v.impulse = command.movement.impulse;
+		if (command.synchronizeCombatView)
+		{
+			boundEntities_[index]->v.v_angle = Vector(viewAngles[0],viewAngles[1],viewAngles[2]);
+			boundEntities_[index]->v.angles = Vector(-viewAngles[0]/3.0f,viewAngles[1],viewAngles[2]);
+		}
 		const bool profileMove = profiler_ != nullptr && profiler_->enabled();
 		const auto moveStart = profileMove ? std::chrono::steady_clock::now()
 			: std::chrono::steady_clock::time_point();

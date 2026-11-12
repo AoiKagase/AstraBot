@@ -128,18 +128,64 @@ bool testCadenceGatesAndReset()
 		if (reset == 3) value.weaponId = 20U;
 		if (reset == 4) { planner.reset(); value.timestamp = 1; }
 		ctx.skill = .49f;
-		if (!check(planner.update(value,ctx).primary && source.verifyComplete(),
-			"actor, round, map, weapon and explicit reset clear old cadence deadline")) return false;
+		const auto afterReset = planner.update(value,ctx);
+		if (!check((reset == 3 ? afterReset.waitingForCadence && !afterReset.primary : afterReset.primary) && source.verifyComplete(),
+			"lifecycle resets clear cadence, while weapon switches preserve it")) return false;
 	}
 	return true;
+}
+
+bool testWeaponSwitchKeepsFireDeadline()
+{
+	using namespace astrabot::compat;
+	const auto sample = RandomTapeEntry::floatEntry("Combat.FireInterval",{1,1},{},.3f,.7f,.7f);
+	ScriptedRandomSource random({sample,sample}); FireCadenceContext cadence{1,&random,{},900};
+	WeaponActionPlanner planner; auto v=input(28);v.timestamp=10;
+	if(!check(planner.update(v,cadence).primary,"switch fixture starts a distant rifle shot"))return false;
+	v.frame.tick++;v.timestamp=10.01f;v.weaponId=22;
+	auto result=planner.update(v,cadence);
+	if(!check(!result.primary&&result.waitingForCadence&&random.position()==1,
+		"weapon switch cannot erase the existing fire deadline or consume another interval"))return false;
+	v.frame.tick++;v.timestamp=10.6f;
+	if(!check(planner.update(v,cadence).waitingForCadence,"switch retains strict deadline equality"))return false;
+	v.frame.tick++;v.timestamp=10.61f;
+	if(!check(planner.update(v,cadence).primary&&random.verifyComplete(),"switched weapon resumes after original deadline"))return false;
+	v.frame.tick++;v.timestamp=10.62f;v.weaponId=29;v.targetDistance=74;v.enemyFacingObserver={true,false};
+	result=planner.update(v,cadence);
+	return check(result.waitingForCadence&&!result.primary&&!result.secondary,
+		"switching to knife also preserves the shared fire deadline");
 }
 
 int main()
 {
 	using namespace astrabot::compat;
 	bool ok = true;
+	for (float fov : {40.0f, 10.0f})
+	{
+		WeaponActionPlanner scoped; auto v=input(18U);v.timestamp=10;v.targetDistance=1600;v.fieldOfView=fov;
+		const auto held=scoped.update(v);
+		ok &= check(held.primary&&!held.secondary,
+			"CSBot AttackState retains an existing zoom level at long range");
+	}
+	{
+		WeaponActionPlanner noPistol; auto v=input(18);v.timestamp=10;v.targetDistance=200;
+		v.fieldOfView=90;v.pistolAvailable=false;const auto action=noPistol.update(v);
+		ok &= check(action.primary&&!action.secondary&&!action.switchToPistol,
+			"missing pistol does not suppress a close-range stationary sniper shot");
+	}
+	ok &= testWeaponSwitchKeepsFireDeadline();
 	ok &= testReferenceFireCadence();
 	ok &= testCadenceGatesAndReset();
+	{
+		ScriptedRandomSource source({}); FireCadenceContext cadence{1, &source, {}, 500};
+		WeaponActionPlanner rapid; auto v = input(1U); v.timestamp = 10;
+		ok &= check(rapid.update(v,cadence).primary && rapid.rapidFiring(), "skilled pistol enables upkeep rapid fire");
+		v.frame.tick++; v.timestamp += .1f; v.clip--;
+		ok &= check(rapid.update(v,cadence).primary && source.verifyComplete(),
+			"rapid pistol does not wait for a clip-receipt release at full-think cadence");
+		v.frame.tick++; v.targetVisible = false;
+		ok &= check(!rapid.update(v,cadence).primary && !rapid.rapidFiring(), "lost target stops rapid fire");
+	}
 	WeaponActionPlanner sniper;
 	auto value = input(18U);
 	auto result = sniper.update(value);

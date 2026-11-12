@@ -79,6 +79,7 @@ namespace
 		command.sequence = sequence;
 		command.issueFrame = 10U;
 		command.viewAngles = {1.0f, 2.0f, 3.0f};
+		command.synchronizeCombatView = true;
 		command.movement = {100.0f, 20.0f, 0.0f, 4U, 5U, 10U};
 		return command;
 	}
@@ -141,6 +142,9 @@ int main()
 	{
 		return 1;
 	}
+	if (!check(firstEntity.v.v_angle.x == 1.0f && firstEntity.v.v_angle.y == 2.0f &&
+		firstEntity.v.v_angle.z == 3.0f && firstEntity.v.angles.y == 2.0f,
+		"combat command publishes view angles without relying on engine feedback")) return 1;
 
 	const auto queuedToken = lifecycle.tokenForSlot(1U);
 	if (!check(dispatcher.enqueue(commandFor(firstActor, queuedToken, 2U)) ==

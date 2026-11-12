@@ -276,6 +276,23 @@ MovementProjection ActionAdapter::projectMovement(
 		-(worldDirectionX * rightX + worldDirectionY * rightY) * speed};
 }
 
+MovementProjection ActionAdapter::reprojectMovement(float forward, float side, float oldYaw, float newYaw)
+{
+	const float delta = (newYaw - oldYaw) * 0.01745329251994329577f;
+	return {forward * std::cos(delta) - side * std::sin(delta),
+		forward * std::sin(delta) + side * std::cos(delta)};
+}
+
+void ActionAdapter::applyCombatMovement(runtime::BotCommand &command, const ActionProposal &proposal, float maxSpeed)
+{
+	if (!proposal.combatMovement || !std::isfinite(maxSpeed) || maxSpeed <= 0) return;
+	command.movement.forward = proposal.stopForWeapon ? 0.0f : proposal.combatForward * maxSpeed;
+	command.movement.side = proposal.stopForWeapon ? 0.0f : proposal.combatSide * maxSpeed;
+	command.movement.buttons = static_cast<std::uint16_t>(command.movement.buttons & ~(IN_FORWARD|IN_BACK|IN_MOVELEFT|IN_MOVERIGHT));
+	command.movement.buttons = static_cast<std::uint16_t>(command.movement.buttons |
+		movementButtons(command.movement.forward,command.movement.side));
+}
+
 std::uint16_t ActionAdapter::movementButtons(float forward, float side)
 {
 	constexpr float kInputEpsilon = 0.01f;
