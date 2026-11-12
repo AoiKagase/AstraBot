@@ -4,7 +4,21 @@ from pathlib import Path
 ADAPTER = Path(__file__).parents[1] / "src/adapter/metamod"
 
 def source(name):
+    if name == "bot_behavior_runtime":
+        return "\n".join(path.read_text(encoding="utf-8")
+                         for path in sorted(ADAPTER.glob("bot_behavior_*.cpp")))
     return (ADAPTER / (name + ".cpp")).read_text(encoding="utf-8")
+
+
+def assert_neutral_preparation_order(body):
+    operations = (
+        "prepareNeutralManagedBotCommand(",
+        "command_.executeManagedBotCommand(",
+        "navigation_.recordMovementPhysicsSample(",
+        "navigation_.completePreparation(",
+    )
+    positions = [body.index(operation) for operation in operations]
+    assert positions == sorted(positions), "neutral preparation must complete after send and observation"
 
 def test_start_frame_dispatches_nav_movement():
     plugin = source("plugin_runtime")
@@ -20,7 +34,7 @@ def test_start_frame_dispatches_nav_movement():
         "behavior_.updateManagedBotCompatibilityState(",
         "navigation_.updateNavigation(",
         "behavior_.finishManagedBotNavigation(",
-        "command_.buildAndExecuteMovement(",
+        "buildAndExecuteMovement(",
     )
     positions = [body.index(phase) for phase in phases]
     assert positions == sorted(positions)
@@ -29,6 +43,8 @@ def test_start_frame_dispatches_nav_movement():
     assert "observation_.captureMovementPhysicsState(" in body
     assert "inputDispatcher_.dispatchNext" not in body
     assert "ActionAdapter::translate" not in body
+    preparation = body[body.index("if (preparation.kind !="):body.index("NavigationUpdate movement")]
+    assert_neutral_preparation_order(preparation)
 
     navigation = source("bot_navigation_runtime")
     command = source("bot_command_runtime")
@@ -41,7 +57,7 @@ def test_start_frame_dispatches_nav_movement():
     for field in ("service_inputDispatcher().dispatchNext", "ActionAdapter::projectMovement",
                   "ActionAdapter::translate", "actionDispatch.stopMovement",
                   "pfnSetClientMaxspeed", "kDefaultManagedBotMaxSpeed",
-                  "dispatchJoinHeartbeat", "dispatchNeutralMovement"):
+                  "dispatchJoinHeartbeat", "beginDirectNeutralCommand"):
         assert field in command, field
     assert "captureMovementPhysicsState" in observation
     assert "collectPlantedBomb" in behavior

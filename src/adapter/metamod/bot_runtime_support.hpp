@@ -395,11 +395,21 @@ inline const char *runtimePathSearchCallerName(RuntimePathSearchCaller caller)
 }
 
 template <typename... Args>
-inline void profiledLogConsole(RuntimeProfiler &profiler, plid_t pluginId, const char *format,
+inline void importantLogConsole(RuntimeProfiler &profiler, plid_t pluginId, const char *format,
 							   Args... args)
 {
 	RuntimeProfilerScope logScope(profiler, RuntimeProfilerStage::SynchronousLog);
 	gpMetaUtilFuncs->pfnLogConsole(pluginId, format, args...);
+}
+
+template <typename... Args>
+inline void profiledLogConsole(RuntimeProfiler &profiler, plid_t pluginId, const char *format,
+	Args... args)
+{
+#ifndef ASTRABOT_TEST_FULL_DIAGNOSTICS
+	if (!profiler.enabled()) return;
+#endif
+	importantLogConsole(profiler, pluginId, format, args...);
 }
 
 inline bool entityObjectiveBounds(const edict_t *entity, nav::NavExtent *extent)

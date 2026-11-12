@@ -10,7 +10,8 @@ namespace astrabot
 {
 namespace metamod
 {
-class PluginRuntime : public BotRuntimeServices
+class PluginRuntime : public BotObservationServices, public BotBehaviorServices,
+	public BotNavigationServices, public BotCommandServices
 {
   public:
 	enum class State
@@ -84,6 +85,12 @@ class PluginRuntime : public BotRuntimeServices
 											 std::uint32_t dispatchFrame);
 
   private:
+	void prepareNeutralManagedBotCommand(std::size_t index, FakeClientHandle &handle,
+										 const runtime::MovementPhysicsState &before);
+	runtime::CommandReceipt dispatchNeutralMovement(std::size_t index, FakeClientHandle &handle,
+													std::uint8_t milliseconds);
+	void buildAndExecuteMovement(std::size_t index, FakeClientHandle &handle, const runtime::LifecycleToken &token,
+								 const runtime::MovementPhysicsState &before, NavigationUpdate &movement);
 	static constexpr std::size_t kCompatibilityCvarCount = 7U;
 
 	friend const char *HookCommandArgs();
@@ -222,25 +229,9 @@ class PluginRuntime : public BotRuntimeServices
 				return state_ == State::ActiveMap;
 			}
 			BotObservationRuntime observation_{};
-			BotObservationRuntime &observation() override
-			{
-				return observation_;
-			}
 			BotBehaviorRuntime behavior_{};
-			BotBehaviorRuntime &behavior() override
-			{
-				return behavior_;
-			}
 			BotNavigationRuntime navigation_{};
-			BotNavigationRuntime &navigation() override
-			{
-				return navigation_;
-			}
 			BotCommandRuntime command_{};
-			BotCommandRuntime &command() override
-			{
-				return command_;
-			}
 			const Service_adapterFrameCount &service_adapterFrameCount() override
 			{
 				return adapterFrameCount_;
@@ -286,10 +277,6 @@ class PluginRuntime : public BotRuntimeServices
 			{
 				return managedBotSlots_;
 			}
-			const Service_managedBotTiming &service_managedBotTiming() override
-			{
-				return managedBotTiming_;
-			}
 			const Service_navPublisher &service_navPublisher() override
 			{
 				return navPublisher_;
@@ -317,6 +304,265 @@ class PluginRuntime : public BotRuntimeServices
 			Service_runtimeProfiler &service_runtimeProfiler() override
 			{
 				return runtimeProfiler_;
+			}
+			void behavior_invalidateObjectiveAssignments() override
+			{
+				return behavior_.invalidateObjectiveAssignments();
+			}
+			const compat::ProfileRecord &behavior_managedProfiles(std::size_t index) const override
+			{
+				return behavior_.managedProfiles(index);
+			}
+			void behavior_observeRadioReceipt(std::size_t index) override
+			{
+				return behavior_.observeRadioReceipt(index);
+			}
+			void behavior_observeRecognizedTargetChange(std::size_t index, float now) override
+			{
+				return behavior_.observeRecognizedTargetChange(index, now);
+			}
+			const std::uint32_t &command_managedBotCommandSequences(std::size_t index) const override
+			{
+				return command_.managedBotCommandSequences(index);
+			}
+			void navigation_observePublicDeath(std::size_t victim) override
+			{
+				return navigation_.observePublicDeath(victim);
+			}
+			void navigation_observeResetHud(std::size_t index) override
+			{
+				return navigation_.observeResetHud(index);
+			}
+			bool command_dispatchClientCommand(edict_t *entity, const char *name, const char *argument) override
+			{
+				return command_.dispatchClientCommand(entity, name, argument);
+			}
+			const ManagedNavigationFailure &navigation_managedNavigationFailures(std::size_t index) const override
+			{
+				return navigation_.managedNavigationFailures(index);
+			}
+			nav::NavPathCostContext navigation_managedPathCostContext(std::size_t index) override
+			{
+				return navigation_.managedPathCostContext(index);
+			}
+			const bool &observation_bombNoticeKnown(std::size_t index) const override
+			{
+				return observation_.bombNoticeKnown(index);
+			}
+			const bool &observation_bombNoticePlanted(std::size_t index) const override
+			{
+				return observation_.bombNoticePlanted(index);
+			}
+			bool observation_buildManagedWorldSnapshot(std::size_t index, world::WorldSnapshot *snapshot,
+													   world::ActorKey *targetActor,
+													   world::WorldPosition *targetPosition) override
+			{
+				return observation_.buildManagedWorldSnapshot(index, snapshot, targetActor, targetPosition);
+			}
+			const std::uint32_t &observation_externalDefuserEntityIndex() const override
+			{
+				return observation_.externalDefuserEntityIndex();
+			}
+			const float &observation_externalDefuserLeaseUntil() const override
+			{
+				return observation_.externalDefuserLeaseUntil();
+			}
+			const std::uint32_t &observation_externalDefuserMapGeneration() const override
+			{
+				return observation_.externalDefuserMapGeneration();
+			}
+			const std::uint32_t &observation_externalDefuserRoundGeneration() const override
+			{
+				return observation_.externalDefuserRoundGeneration();
+			}
+			const float &observation_lastVisibleEnemyTimes(std::size_t index) const override
+			{
+				return observation_.lastVisibleEnemyTimes(index);
+			}
+			const ManagedCurrentWeaponObservation &observation_managedBotCurrentWeapons(
+				std::size_t index) const override
+			{
+				return observation_.managedBotCurrentWeapons(index);
+			}
+			const perception::PerceptionAssembler &observation_managedBotPerception(std::size_t index) const override
+			{
+				return observation_.managedBotPerception(index);
+			}
+			const std::uint8_t &observation_managedBotTeamNumbers(std::size_t index) const override
+			{
+				return observation_.managedBotTeamNumbers(index);
+			}
+			const std::array<ObjectiveKnowledge, 2U> &observation_objectiveKnowledge(std::size_t index) const override
+			{
+				return observation_.objectiveKnowledge(index);
+			}
+			const ObservationAdapter &observation_observationAdapter() const override
+			{
+				return observation_.observationAdapter();
+			}
+			bool observation_observeObjective(std::size_t index, edict_t *entity, bool planted,
+											  world::WorldVector *position, bool *currentlyVisible) override
+			{
+				return observation_.observeObjective(index, entity, planted, position, currentlyVisible);
+			}
+			void observation_observeRadioLeaderPosition(std::size_t index,
+														const compat::ScenarioTarget &position) override
+			{
+				return observation_.observeRadioLeaderPosition(index, position);
+			}
+			const compat::PublicBombClock &observation_publicBombClocks(std::size_t index) const override
+			{
+				return observation_.publicBombClocks(index);
+			}
+			const compat::PublicObservationStore &observation_publicObservations() const override
+			{
+				return observation_.publicObservations();
+			}
+			int observation_publicPlayerTeam(const edict_t *entity) const override
+			{
+				return observation_.publicPlayerTeam(entity);
+			}
+			const std::array<PublicScoreStatus, NativeBotObservation::kClientSlotCount>
+				&observation_publicScoreStatuses(std::size_t index) const override
+			{
+				return observation_.publicScoreStatuses(index);
+			}
+			const compat::ScenarioRadioObservation &observation_scenarioRadio(std::size_t index) const override
+			{
+				return observation_.scenarioRadio(index);
+			}
+			const compat::SmokeObservations &observation_smokeObservations() const override
+			{
+				return observation_.smokeObservations();
+			}
+			bool behavior_buildManagedObjectiveTarget(std::size_t index, nav::NavVector *target,
+													  nav::NavSearchStats *searchStats,
+													  RuntimeObjectiveSelectionStats *objectiveStats) override
+			{
+				return behavior_.buildManagedObjectiveTarget(index, target, searchStats, objectiveStats);
+			}
+			const team::TeamObjectiveAssignment *behavior_findManagedTeamObjectiveAssignment(
+				const world::ActorKey &actor) const override
+			{
+				return behavior_.findManagedTeamObjectiveAssignment(actor);
+			}
+			const ManagedObjectiveActionState &behavior_managedBotObjectiveActions(std::size_t index) const override
+			{
+				return behavior_.managedBotObjectiveActions(index);
+			}
+			const ManagedObjectiveTargetCache &behavior_managedBotObjectiveTargets(std::size_t index) const override
+			{
+				return behavior_.managedBotObjectiveTargets(index);
+			}
+			const compat::CompatibilityStateMachine &behavior_managedBotStateMachines(std::size_t index) const override
+			{
+				return behavior_.managedBotStateMachines(index);
+			}
+			void behavior_noteNavigationFailure(const FakeClientHandle &handle, runtime::NavRoamResult roamResult,
+												const runtime::NavRoamDecision &roamDecision) override
+			{
+				return behavior_.noteNavigationFailure(handle, roamResult, roamDecision);
+			}
+			void behavior_resetBombApproach(std::size_t index) override
+			{
+				return behavior_.resetBombApproach(index);
+			}
+			const compat::ScenarioBehaviorDecision &behavior_scenarioDecisions(std::size_t index) const override
+			{
+				return behavior_.scenarioDecisions(index);
+			}
+
+			const bool &command_managedBotCommandTemplateValid(std::size_t index) const override
+			{
+				return command_.managedBotCommandTemplateValid(index);
+			}
+			const runtime::BotCommand &command_managedBotCommandTemplates(std::size_t index) const override
+			{
+				return command_.managedBotCommandTemplates(index);
+			}
+
+			void command_resetGateDiagnostics() override
+			{
+				return command_.resetGateDiagnostics();
+			}
+			runtime::MovementPhysicsState observation_captureMovementPhysicsState(const edict_t *entity,
+																				  bool teamConfirmed,
+																				  bool managedFakeClient) const override
+			{
+				return observation_.captureMovementPhysicsState(entity, teamConfirmed, managedFakeClient);
+			}
+			std::vector<nav::NavVector> observation_liveFriendlyPositions(std::size_t index, bool feet) const override
+			{
+				return observation_.liveFriendlyPositions(index, feet);
+			}
+
+			void behavior_observeC4AttackDispatched(std::size_t index, const FakeClientHandle &handle,
+													std::uint16_t buttons) override
+			{
+				return behavior_.observeC4AttackDispatched(index, handle, buttons);
+			}
+			void behavior_observeC4SelectionDispatched(std::size_t index, const FakeClientHandle &handle) override
+			{
+				return behavior_.observeC4SelectionDispatched(index, handle);
+			}
+			void behavior_observeNeutralC4AttackDispatched(std::size_t index, const FakeClientHandle &handle) override
+			{
+				return behavior_.observeNeutralC4AttackDispatched(index, handle);
+			}
+			void navigation_logMovementDiagnostic(std::size_t index, const char *reason,
+												  const runtime::NavRoamDecision *decision) override
+			{
+				return navigation_.logMovementDiagnostic(index, reason, decision);
+			}
+			void navigation_logMovementReversalDiagnostic(std::size_t index,
+														  const runtime::MovementPhysicsState &before,
+														  const runtime::NavRoamDecision &decision,
+														  const nav::LocomotionIntent &intent) override
+			{
+				return navigation_.logMovementReversalDiagnostic(index, before, decision, intent);
+			}
+			void navigation_logTraversalDiagnostic(std::size_t index, const runtime::MovementPhysicsState &before,
+												   const runtime::NavRoamDecision &decision,
+												   const nav::LocomotionIntent &intent, std::uint16_t buttons,
+												   const nav::LocomotionObservation &locomotion) override
+			{
+				return navigation_.logTraversalDiagnostic(index, before, decision, intent, buttons, locomotion);
+			}
+			void navigation_logTraversalOutcome(std::size_t index, const runtime::MovementPhysicsState &after,
+												const runtime::NavRoamDecision &decision,
+												const runtime::LandingDamageObservation &landingFeedback) override
+			{
+				return navigation_.logTraversalOutcome(index, after, decision, landingFeedback);
+			}
+			const compat::NavigationStep &navigation_managedNavigationSteps(std::size_t index) const override
+			{
+				return navigation_.managedNavigationSteps(index);
+			}
+			const std::uint8_t &navigation_movementDiagnosticSamples(std::size_t index) const override
+			{
+				return navigation_.movementDiagnosticSamples(index);
+			}
+			void navigation_noteMovementDiagnosticSample(std::size_t index) override
+			{
+				return navigation_.noteMovementDiagnosticSample(index);
+			}
+			void navigation_recordMovementPhysicsSample(std::size_t index, const runtime::MovementPhysicsState &before,
+														const runtime::CommandReceipt &receipt) override
+			{
+				return navigation_.recordMovementPhysicsSample(index, before, receipt);
+			}
+			bool observation_hasObservedActiveWeapon(std::size_t index) const override
+			{
+				return observation_.hasObservedActiveWeapon(index);
+			}
+			void observation_observeReloadDispatched(world::ActorKey actor, world::FrameIdentity frame,
+													 float now) override
+			{
+				return observation_.observeReloadDispatched(actor, frame, now);
+			}
+			runtime::ActorId observation_publicPlayerIdentity(const edict_t *entity) const override
+			{
+				return observation_.publicPlayerIdentity(entity);
 			}
 };
 

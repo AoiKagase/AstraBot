@@ -7,8 +7,11 @@ def normalize(source):
 
 ROOT = Path(__file__).parents[1]
 ADAPTER = ROOT / "src/adapter/metamod"
+def behavior_source():
+    return "\n".join((ADAPTER / ("bot_behavior_" + name + ".cpp")).read_text(encoding="utf-8") for name in ("objectives", "runtime", "scenario", "combat", "buying", "radio"))
+
 def adapter_source(owner):
-    return (ADAPTER / ("bot_" + owner + "_runtime.cpp")).read_text(encoding="utf-8")
+    return behavior_source() if owner == "behavior" else (ADAPTER / ("bot_" + owner + "_runtime.cpp")).read_text(encoding="utf-8")
 def adapter_header(owner):
     return (ADAPTER / ("bot_" + owner + "_runtime.hpp")).read_text(encoding="utf-8")
 def adapter_support():
@@ -21,13 +24,7 @@ def adapter_facade():
 
 
 def test_non_objective_bots_skip_bomb_site_corridor_enumeration() -> None:
-    source = (
-        Path(__file__).parents[1]
-        / "src"
-        / "adapter"
-        / "metamod"
-        / "bot_behavior_runtime.cpp"
-    ).read_text(encoding="utf-8")
+    source = behavior_source()
     source = normalize(source)
     start = source.index("bool BotBehaviorRuntime::buildManagedObjectiveTarget(")
     end = source.index("ActionProposal BotBehaviorRuntime::decideManagedBotAction(", start)
@@ -61,13 +58,7 @@ def test_diagnostic_performance_cvars_are_present_and_default_off() -> None:
 
 
 def test_objective_sensor_exposes_internal_path_stats() -> None:
-    source = (
-        Path(__file__).parents[1]
-        / "src"
-        / "adapter"
-        / "metamod"
-        / "bot_behavior_runtime.cpp"
-    ).read_text(encoding="utf-8")
+    source = behavior_source()
     source = normalize(source)
     assert "nav::NavSearchStats *searchStats" in source
     assert "objectiveSearchStats" in adapter_source("navigation")
@@ -76,13 +67,7 @@ def test_objective_sensor_exposes_internal_path_stats() -> None:
 
 
 def test_objective_site_selection_uses_one_representative_nav_area() -> None:
-    source = (
-        Path(__file__).parents[1]
-        / "src"
-        / "adapter"
-        / "metamod"
-        / "bot_behavior_runtime.cpp"
-    ).read_text(encoding="utf-8")
+    source = behavior_source()
     source = normalize(source)
     start = source.index("bool BotBehaviorRuntime::buildManagedObjectiveTarget(")
     end = source.index("ActionProposal BotBehaviorRuntime::decideManagedBotAction(", start)
@@ -107,13 +92,7 @@ def test_path_recompute_updates_the_profiler_stage() -> None:
 
 
 def test_objective_target_is_cached_for_unchanged_objective_state() -> None:
-    source = (
-        Path(__file__).parents[1]
-        / "src"
-        / "adapter"
-        / "metamod"
-        / "bot_behavior_runtime.cpp"
-    ).read_text(encoding="utf-8")
+    source = behavior_source()
     source = normalize(source)
     assert "managedBotObjectiveTargets" in source
     assert "cache.mapGeneration == services_->service_lifecycle().mapGeneration()" in source
@@ -123,13 +102,7 @@ def test_objective_target_is_cached_for_unchanged_objective_state() -> None:
 
 
 def test_bomb_target_enumeration_preserves_legacy_entities_and_identity() -> None:
-    source = (
-        Path(__file__).parents[1]
-        / "src"
-        / "adapter"
-        / "metamod"
-        / "bot_behavior_runtime.cpp"
-    ).read_text(encoding="utf-8")
+    source = behavior_source()
     source = normalize(source)
     start = source.index("bool BotBehaviorRuntime::buildManagedObjectiveTarget(")
     end = source.index(
@@ -145,13 +118,7 @@ def test_bomb_target_enumeration_preserves_legacy_entities_and_identity() -> Non
 
 
 def test_bomb_target_candidates_do_not_collapse_distinct_sites_by_area() -> None:
-    source = (
-        Path(__file__).parents[1]
-        / "src"
-        / "adapter"
-        / "metamod"
-        / "bot_behavior_runtime.cpp"
-    ).read_text(encoding="utf-8")
+    source = behavior_source()
     source = normalize(source)
     start = source.index("bool BotBehaviorRuntime::buildManagedObjectiveTarget(")
     end = source.index(
@@ -210,9 +177,7 @@ def test_traversal_trace_exposes_jump_execution_chain() -> None:
 
 def test_effective_team_is_shared_across_runtime_decisions() -> None:
     root = Path(__file__).parents[1]
-    source = (
-        root / "src" / "adapter" / "metamod" / "bot_behavior_runtime.cpp"
-    ).read_text(encoding="utf-8")
+    source = behavior_source()
     source = normalize(source)
     assert "resolveManagedBotTeam" in source
     state_start = source.index(
@@ -245,9 +210,7 @@ def test_runtime_diagnostic_separates_raw_and_effective_team() -> None:
 
 def test_bomb_target_registry_separates_registration_from_evaluation() -> None:
     root = Path(__file__).parents[1]
-    runtime_source = (
-        root / "src" / "adapter" / "metamod" / "bot_behavior_runtime.cpp"
-    ).read_text(encoding="utf-8")
+    runtime_source = behavior_source()
     runtime_source = normalize(runtime_source)
     runtime_header = (
         root / "src" / "adapter" / "metamod" / "bot_behavior_runtime.hpp"
@@ -272,9 +235,7 @@ def test_bomb_target_registry_separates_registration_from_evaluation() -> None:
 
 def test_bomb_site_diagnostics_separate_site_type_cost_and_cache_state() -> None:
     root = Path(__file__).parents[1]
-    runtime_source = (
-        root / "src" / "adapter" / "metamod" / "bot_behavior_runtime.cpp"
-    ).read_text(encoding="utf-8")
+    runtime_source = behavior_source()
     runtime_source = normalize(runtime_source)
     profiler_header = (
         root / "include" / "astrabot" / "metamod" / "runtime_profiler.hpp"

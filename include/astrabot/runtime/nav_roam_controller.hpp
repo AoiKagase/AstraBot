@@ -285,6 +285,40 @@ class NavRoamController
 	NavRoamResult updateInternal(const nav::NavSnapshot &snapshot,
 		const NavRoamObservation &observation, nav::LocomotionIntent *intent,
 		NavRoamDecision *decision);
+
+	struct NavigationPhaseResult
+	{
+		bool complete;
+		NavRoamResult result;
+	};
+	struct NavigationUpdateContext
+	{
+		const nav::NavSnapshot &snapshot;
+		const NavRoamObservation &observation;
+		nav::LocomotionIntent *intent;
+		NavRoamDecision *decision;
+		nav::NavQuery &query;
+		nav::NavAreaMatch currentArea{};
+		nav::NavQueryResult currentAreaResult = nav::NavQueryResult::NoAreaContaining;
+		nav::AreaId objectiveArea = 0U;
+	};
+	NavigationPhaseResult validateNavigationUpdate(const nav::NavSnapshot &snapshot,
+												   const NavRoamObservation &observation,
+												   nav::LocomotionIntent *intent,
+												   NavRoamDecision *decision);
+	NavigationPhaseResult updateFriendWaiting(const nav::NavSnapshot &snapshot,
+											  const NavRoamObservation &observation,
+											  NavRoamDecision *decision);
+	NavigationPhaseResult locateUpdateAreas(NavigationUpdateContext &ctx);
+	NavigationPhaseResult recoverOffMeshUpdate(NavigationUpdateContext &ctx);
+	NavigationPhaseResult recoverStuckUpdate(NavigationUpdateContext &ctx);
+	NavigationPhaseResult selectUpdateRoute(NavigationUpdateContext &ctx);
+	NavigationPhaseResult startUpdateTraversal(NavigationUpdateContext &ctx);
+	NavigationPhaseResult updateJumpDropTraversal(NavigationUpdateContext &ctx);
+	NavigationPhaseResult updateSpecialTraversal(NavigationUpdateContext &ctx);
+	NavigationPhaseResult updateGroundLocomotion(NavigationUpdateContext &ctx);
+	bool expireGroundRoute(const NavRoamObservation &observation, nav::LocomotionIntent *intent,
+						   NavRoamDecision *decision);
 	struct OffMeshRecoveryState
 	{
 		nav::AreaId area;

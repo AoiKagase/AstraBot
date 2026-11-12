@@ -1,4 +1,4 @@
-#include "plugin_runtime.hpp"
+#include "bot_observation_runtime.hpp"
 #include "bot_runtime_support.hpp"
 namespace astrabot
 {
@@ -486,7 +486,7 @@ void BotObservationRuntime::onEmitSound(edict_t *entity, const char *sample, flo
 					origin};
 			}
 		}
-		services_->behavior().invalidateObjectiveAssignments();
+		services_->behavior_invalidateObjectiveAssignments();
 	}
 }
 
@@ -572,7 +572,7 @@ void BotObservationRuntime::capturePublicMessage()
 	if (std::strcmp(name, "DeathMsg") == 0 && count == 4U && integers(8U) && v[1] > 0 && v[1] <= 32)
 	{
 		const std::size_t victim = static_cast<std::size_t>(v[1] - 1);
-		services_->navigation().observePublicDeath(victim);
+		services_->navigation_observePublicDeath(victim);
 		publicObservations_.resetSlot(static_cast<std::uint32_t>(v[1]));
 		actors_[static_cast<std::size_t>(v[1] - 1)].reactionQueues = {};
 		return;
@@ -652,7 +652,7 @@ void BotObservationRuntime::capturePublicMessage()
 			const std::size_t senderIndex = static_cast<std::size_t>(v[0] - 1);
 			if (services_->service_managedBotSlots()[senderIndex] &&
 				services_->service_managedBotHandles()[senderIndex].entity == sender)
-				services_->behavior().observeRadioReceipt(senderIndex);
+				services_->behavior_observeRadioReceipt(senderIndex);
 		}
 		if ((publicMessageTarget_ != nullptr && !publicMessageActor_.isValid()) ||
 			(publicMessageTarget_ == nullptr && publicMessageDestination_ != MSG_ALL &&
@@ -747,7 +747,7 @@ void BotObservationRuntime::capturePublicMessage()
 	}
 	else if (std::strcmp(name, "ResetHUD") == 0)
 	{
-		services_->navigation().observeResetHud(publicMessageActor_.slot - 1U);
+		services_->navigation_observeResetHud(publicMessageActor_.slot - 1U);
 		publicObservations_.resetSlot(publicMessageActor_.slot);
 		publicObservations_.bind(publicMessageActor_, publicMessageFrame_);
 	}
@@ -956,12 +956,12 @@ bool BotObservationRuntime::buildManagedWorldSnapshot(std::size_t index,
 			if (services_->service_globals() != nullptr &&
 				actors_[index].reactionQueues.update(
 					observer, belief.identity().frame, services_->service_globals()->time,
-					services_->behavior().managedProfiles(index).reactionTimeSeconds,
+					services_->behavior_managedProfiles(index).reactionTimeSeconds,
 					candidates.data(), candidateCount, blinded, &threat))
 			{
 				if (!(actors_[index].recognizedTargets == threat.actor))
 				{
-					services_->behavior().observeRecognizedTargetChange(
+					services_->behavior_observeRecognizedTargetChange(
 						index, services_->service_globals()->time);
 				}
 				actors_[index].recognizedTargets = threat.actor;
@@ -993,7 +993,7 @@ bool BotObservationRuntime::buildManagedWorldSnapshot(std::size_t index,
 	const world::SnapshotIdentity identity = {frame, observer, 0U};
 	perception::PerceptionInput input(identity);
 	const compat::ObservationTimingContext observationTiming = {
-		services_->command().managedBotCommandSequences(index), 0U, 0U};
+		services_->command_managedBotCommandSequences(index), 0U, 0U};
 	const auto effectiveTeam = [this](edict_t *entity) {
 		int team = entity == nullptr ? 0 : static_cast<int>(entity->v.team);
 		if (team >= 1)
@@ -1371,7 +1371,7 @@ void BotObservationRuntime::resetMapPublicObservations()
 	if (gpMetaUtilFuncs != nullptr && gpMetaUtilFuncs->pfnLogConsole != nullptr &&
 		services_->service_pluginId() != nullptr)
 	{
-		profiledLogConsole(services_->service_runtimeProfiler(), services_->service_pluginId(),
+		importantLogConsole(services_->service_runtimeProfiler(), services_->service_pluginId(),
 						   "observation provider: %s (API %d.%d)",
 						   optionalObservations_.diagnostic(), optionalObservations_.majorVersion(),
 						   optionalObservations_.minorVersion());
@@ -1448,7 +1448,7 @@ void BotObservationRuntime::observeExternalCommand(const edict_t *entity, std::u
 			externalDefuserEntityIndex_ = 0U;
 			externalDefuserEntitySerial_ = 0U;
 			externalDefuserLeaseUntil_ = 0.0f;
-			services_->behavior().invalidateObjectiveAssignments();
+			services_->behavior_invalidateObjectiveAssignments();
 		}
 		return;
 	}
@@ -1504,7 +1504,7 @@ void BotObservationRuntime::observeExternalCommand(const edict_t *entity, std::u
 			externalDefuserEntityIndex_ = 0U;
 			externalDefuserEntitySerial_ = 0U;
 			externalDefuserLeaseUntil_ = 0.0f;
-			services_->behavior().invalidateObjectiveAssignments();
+			services_->behavior_invalidateObjectiveAssignments();
 		}
 		return;
 	}
@@ -1514,7 +1514,7 @@ void BotObservationRuntime::observeExternalCommand(const edict_t *entity, std::u
 	externalDefuserLeaseUntil_ = services_->service_globals()->time + 0.25f;
 	externalDefuserMapGeneration_ = services_->service_lifecycle().mapGeneration();
 	externalDefuserRoundGeneration_ = services_->service_lifecycle().roundGeneration();
-	services_->behavior().invalidateObjectiveAssignments();
+	services_->behavior_invalidateObjectiveAssignments();
 }
 
 void BotObservationRuntime::refreshPublicSmoke()

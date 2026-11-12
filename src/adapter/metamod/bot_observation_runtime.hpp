@@ -9,7 +9,7 @@ namespace metamod
 class BotObservationRuntime
 {
   public:
-	void bindServices(BotRuntimeServices &services)
+	void bindServices(BotObservationServices &services)
 	{
 		services_ = &services;
 	}
@@ -250,7 +250,7 @@ class BotObservationRuntime
 		std::uint32_t managedBotPerceptionFullUpdates{};
 	};
 	std::array<ActorState, NativeBotObservation::kClientSlotCount> actors_{};
-	BotRuntimeServices *services_ = nullptr;
+	BotObservationServices *services_ = nullptr;
 	ObservationAdapter observationAdapter_{};
 	compat::PublicObservationStore publicObservations_{};
 	const char *publicMessageName_ = nullptr;

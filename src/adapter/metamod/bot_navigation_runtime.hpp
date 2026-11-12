@@ -9,7 +9,7 @@ namespace metamod
 class BotNavigationRuntime
 {
   public:
-	void bindServices(BotRuntimeServices &services)
+	void bindServices(BotNavigationServices &services)
 	{
 		services_ = &services;
 	}
@@ -64,9 +64,10 @@ class BotNavigationRuntime
 								 const runtime::MovementPhysicsState &before,
 								 const compat::CvarSnapshot &configuration);
 
-	bool prepareMovement(std::size_t index, FakeClientHandle &handle,
+	MovementPreparation prepareMovement(std::size_t index, FakeClientHandle &handle,
 						 const runtime::MovementPhysicsState &before, bool movementUnavailable);
 
+	void completePreparation(std::size_t index, MovementPreparationCompletion completion);
 	NavigationUpdate updateNavigation(std::size_t index, const FakeClientHandle &handle,
 									  const runtime::MovementPhysicsState &before,
 									  const nav::NavSnapshot &navigation,
@@ -216,7 +217,7 @@ class BotNavigationRuntime
 		MovementReversalDiagnosticState movementReversalDiagnostics{};
 	};
 	std::array<ActorState, NativeBotObservation::kClientSlotCount> actors_{};
-	BotRuntimeServices *services_ = nullptr;
+	BotNavigationServices *services_ = nullptr;
 	runtime::NavAreaVisitHistory managedBotAreaVisitHistory_{};
 	runtime::NavRoamReservationBoard managedBotRoamReservationBoard_{};
 	nav::DangerMemory dangerMemory_{};

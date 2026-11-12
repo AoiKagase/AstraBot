@@ -1,4 +1,4 @@
-#include "plugin_runtime.hpp"
+#include "bot_navigation_runtime.hpp"
 #include "bot_runtime_support.hpp"
 namespace astrabot
 {
@@ -23,7 +23,7 @@ void BotNavigationRuntime::recordMovementPhysicsSample(std::size_t index,
 					services_->service_adapterFrameCount()};
 	sample.commandSequence = receipt.sequence;
 	sample.before = before;
-	sample.after = services_->observation().captureMovementPhysicsState(
+	sample.after = services_->observation_captureMovementPhysicsState(
 		handle.entity, services_->service_joinControllers()[index].teamConfirmed(), true);
 	sample.dispatched = receipt.result == runtime::DispatchResult::Dispatched;
 	if (sample.dispatched)
@@ -61,6 +61,7 @@ void BotNavigationRuntime::recordMovementPhysicsSample(std::size_t index,
 
 	if (gpMetaUtilFuncs != nullptr && gpMetaUtilFuncs->pfnLogConsole != nullptr &&
 		services_->service_pluginId() != nullptr &&
+		services_->service_runtimeProfiler().enabled() &&
 		actors_[index].movementDiagnosticSamples < kMovementPhysicsLogLimit)
 	{
 		profiledLogConsole(
@@ -69,7 +70,7 @@ void BotNavigationRuntime::recordMovementPhysicsSample(std::size_t index,
 			"before=(%.1f %.1f %.1f) after=(%.1f %.1f %.1f) velocity=(%.1f %.1f %.1f) "
 			"grounded=%d ducked=%d ladder=%d groundentity=%u flags=%d deadflag=%d "
 			"team=%d teamConfirmed=%d solid=%d movetype=%d maxspeed=%.1f health=%.1f ready=%d "
-			"result=%d",
+			"result=%d map=%u round=%u",
 			static_cast<unsigned int>(sample.actor.slot),
 			static_cast<unsigned int>(sample.actor.actorGeneration),
 			static_cast<unsigned int>(services_->service_adapterFrameCount()),
@@ -83,13 +84,13 @@ void BotNavigationRuntime::recordMovementPhysicsSample(std::size_t index,
 			sample.after.deadflag, sample.after.team, sample.after.teamConfirmed ? 1 : 0,
 			sample.after.solid, sample.after.movetype, maxSpeed, sample.after.health,
 			sample.readiness == runtime::SpawnReadiness::Ready ? 1 : 0,
-			static_cast<int>(receipt.result));
+			static_cast<int>(receipt.result), sample.frame.mapGeneration, sample.frame.roundGeneration);
 		++actors_[index].movementDiagnosticSamples;
 	}
 	const bool jumpCommand =
 		index < NativeBotObservation::kClientSlotCount &&
-		services_->command().managedBotCommandTemplateValid(index) &&
-		(services_->command().managedBotCommandTemplates(index).movement.buttons &
+		services_->command_managedBotCommandTemplateValid(index) &&
+		(services_->command_managedBotCommandTemplates(index).movement.buttons &
 		 static_cast<std::uint16_t>(IN_JUMP)) != 0U;
 	if (jumpCommand && services_->service_runtimeProfiler().enabled() &&
 		gpMetaUtilFuncs != nullptr && gpMetaUtilFuncs->pfnLogConsole != nullptr &&
@@ -123,8 +124,8 @@ nav::NavPathCostContext BotNavigationRuntime::managedPathCostContext(std::size_t
 	cost.health =
 		std::isfinite(handle.entity->v.health) ? (std::max)(0.0f, handle.entity->v.health) : 0.0f;
 	cost.aggression =
-		static_cast<float>(services_->behavior().managedProfiles(index).aggression) / 100.0f;
-	cost.attacking = services_->behavior().managedBotStateMachines(index).attackOverlayActive();
+		static_cast<float>(services_->behavior_managedProfiles(index).aggression) / 100.0f;
+	cost.attacking = services_->behavior_managedBotStateMachines(index).attackOverlayActive();
 	const auto navigation = services_->service_navPublisher().snapshot();
 	const auto *document = navigation.document();
 	if (document == nullptr || services_->service_globals() == nullptr)
@@ -136,7 +137,7 @@ nav::NavPathCostContext BotNavigationRuntime::managedPathCostContext(std::size_t
 		float danger = 0.0f;
 		if (dangerMemory_.mapGeneration() == services_->service_lifecycle().mapGeneration() &&
 			dangerMemory_.query(services_->service_globals()->time,
-								services_->observation().managedBotTeamNumbers(index), area.id,
+								services_->observation_managedBotTeamNumbers(index), area.id,
 								&danger) &&
 			danger > 0.0f)
 		{
@@ -144,7 +145,7 @@ nav::NavPathCostContext BotNavigationRuntime::managedPathCostContext(std::size_t
 		}
 	}
 	nav::NavQuery query(navigation);
-	for (const auto &position : services_->observation().liveFriendlyPositions(index, true))
+	for (const auto &position : services_->observation_liveFriendlyPositions(index, true))
 	{
 		nav::NavAreaMatch area{};
 		if (query.findContaining(position, 64.0f, &area) != nav::NavQueryResult::Found)
@@ -300,7 +301,7 @@ void BotNavigationRuntime::logGoalAssignmentDiagnostic(
 	}
 	actors_[index].movementGoalDiagnosticSeconds = second;
 	const ManagedObjectiveTargetCache &cache =
-		services_->behavior().managedBotObjectiveTargets(index);
+		services_->behavior_managedBotObjectiveTargets(index);
 	const int rawTeam = before.team != 0 ? before.team : cache.rawTeam;
 	const char *goalSource = decision.goalKind == runtime::NavGoalKind::Objective ? "objective"
 							 : decision.goalKind == runtime::NavGoalKind::Roam	  ? "roam"
@@ -316,8 +317,8 @@ void BotNavigationRuntime::logGoalAssignmentDiagnostic(
 		static_cast<unsigned int>(services_->service_managedBotHandles()[index].actor.slot),
 		rawTeam, cache.effectiveTeam, cache.teamInfoFresh ? cache.effectiveTeam : 0,
 		cache.teamInfoFresh ? 1 : 0, cache.carryingBomb ? 1 : 0,
-		compat::toString(services_->behavior().managedBotStateMachines(index).state()),
-		compat::toString(services_->behavior().managedBotStateMachines(index).task()),
+		compat::toString(services_->behavior_managedBotStateMachines(index).state()),
+		compat::toString(services_->behavior_managedBotStateMachines(index).task()),
 		decision.goalPresent ? 1 : 0, static_cast<int>(decision.goalKind),
 		static_cast<unsigned int>(decision.goalArea), decision.goalPosition.x,
 		decision.goalPosition.y, decision.goalPosition.z, goalSource,
@@ -761,7 +762,7 @@ void BotNavigationRuntime::beginMovementUpdate(const compat::CvarSnapshot &confi
 		fill_movementDiagnosticSamples(0U);
 		fill_movementDiagnosticAttempts(false);
 		fill_movementReadyLogged(false);
-		services_->command().resetGateDiagnostics();
+		services_->command_resetGateDiagnostics();
 		fill_movementGoalDiagnosticSeconds((std::numeric_limits<std::uint32_t>::max)());
 		fill_movementTraversalDiagnosticSeconds((std::numeric_limits<std::uint32_t>::max)());
 		fill_movementTraversalPending({});
@@ -810,9 +811,9 @@ void BotNavigationRuntime::observeFullUpdateMotion(std::size_t index,
 		actors_[index].managedBotMovement.resetProgressMonitor();
 }
 
-bool BotNavigationRuntime::prepareMovement(std::size_t index, FakeClientHandle &handle,
-										   const runtime::MovementPhysicsState &before,
-										   bool movementUnavailable)
+MovementPreparation BotNavigationRuntime::prepareMovement(std::size_t index, FakeClientHandle &handle,
+														  const runtime::MovementPhysicsState &before,
+														  bool movementUnavailable)
 {
 	if (before.dead)
 	{
@@ -825,51 +826,32 @@ bool BotNavigationRuntime::prepareMovement(std::size_t index, FakeClientHandle &
 					? (std::numeric_limits<std::uint32_t>::max)()
 					: services_->service_adapterFrameCount() + kRespawnSettleFrames;
 			actors_[index].movementWarmupFrames = 0U;
-			services_->behavior().resetBombApproach(index);
+			services_->behavior_resetBombApproach(index);
 			actors_[index].managedBotMovement.reset();
 			actors_[index].movementFallLandingTrackers.reset();
 		}
-		services_->command().prepareNeutralManagedBotCommand(index, handle, before);
-		const runtime::CommandReceipt receipt =
-			services_->command().executeManagedBotCommand(index, handle);
-		recordMovementPhysicsSample(index, before, receipt);
-		return false;
+		return {MovementPreparationKind::Neutral, MovementPreparationCompletion::None};
 	}
 	if (actors_[index].movementLastDeadFrames != 0U)
 	{
 		if (services_->service_adapterFrameCount() < actors_[index].movementResumeFrames)
 		{
-			services_->command().prepareNeutralManagedBotCommand(index, handle, before);
-			const runtime::CommandReceipt receipt =
-				services_->command().executeManagedBotCommand(index, handle);
-			recordMovementPhysicsSample(index, before, receipt);
-			return false;
+			return {MovementPreparationKind::Neutral, MovementPreparationCompletion::None};
 		}
 		actors_[index].movementLastDeadFrames = 0U;
 		actors_[index].movementResumeFrames = 0U;
 		actors_[index].movementSettledDeadFrames = 0U;
 	}
-	const bool movementEligible =
-		runtime::movementReadiness(before) == runtime::SpawnReadiness::Ready;
-	const bool initialSpawnPending =
-		actors_[index].movementWarmupFrames < 2U &&
-		runtime::spawnReadiness(before) == runtime::SpawnReadiness::NotReady;
+	const bool movementEligible = runtime::movementReadiness(before) == runtime::SpawnReadiness::Ready;
+	const bool initialSpawnPending = actors_[index].movementWarmupFrames < 2U &&
+									 runtime::spawnReadiness(before) == runtime::SpawnReadiness::NotReady;
 	if (movementUnavailable || !movementEligible || initialSpawnPending)
 	{
-		services_->command().prepareNeutralManagedBotCommand(index, handle, before);
-		const runtime::CommandReceipt receipt =
-			services_->command().executeManagedBotCommand(index, handle);
-		recordMovementPhysicsSample(index, before, receipt);
-		actors_[index].managedBotMovement.reset();
-		actors_[index].movementFallLandingTrackers.reset();
-		if (!movementEligible)
-		{
-			actors_[index].movementWarmupFrames = 0U;
-		}
-		return false;
+		return {MovementPreparationKind::Neutral, movementEligible
+													  ? MovementPreparationCompletion::ResetRoute
+													  : MovementPreparationCompletion::ResetRouteAndWarmup};
 	}
-	if (handle.entity == nullptr || handle.entity->v.deadflag != DEAD_NO ||
-		handle.entity->v.health <= 0.0f)
+	if (handle.entity == nullptr || handle.entity->v.deadflag != DEAD_NO || handle.entity->v.health <= 0.0f)
 	{
 		if (!actors_[index].movementDiagnosticUnavailable)
 		{
@@ -877,53 +859,64 @@ bool BotNavigationRuntime::prepareMovement(std::size_t index, FakeClientHandle &
 			actors_[index].movementDiagnosticUnavailable = true;
 		}
 		actors_[index].movementResumeFrames =
-			services_->service_adapterFrameCount() >
-					(std::numeric_limits<std::uint32_t>::max)() - kRespawnSettleFrames
+			services_->service_adapterFrameCount() > (std::numeric_limits<std::uint32_t>::max)() - kRespawnSettleFrames
 				? (std::numeric_limits<std::uint32_t>::max)()
 				: services_->service_adapterFrameCount() + kRespawnSettleFrames;
 		actors_[index].movementLastDeadFrames = services_->service_adapterFrameCount();
 		actors_[index].movementWarmupFrames = 0U;
-		services_->behavior().resetBombApproach(index);
+		services_->behavior_resetBombApproach(index);
 		actors_[index].managedBotMovement.reset();
 		actors_[index].movementFallLandingTrackers.reset();
-		return false;
+		return {MovementPreparationKind::Skip, MovementPreparationCompletion::None};
 	}
 	if (actors_[index].movementLastDeadFrames != 0U &&
 		actors_[index].movementLastDeadFrames != actors_[index].movementSettledDeadFrames)
 	{
 		actors_[index].movementSettledDeadFrames = actors_[index].movementLastDeadFrames;
 		actors_[index].movementResumeFrames =
-			services_->service_adapterFrameCount() >
-					(std::numeric_limits<std::uint32_t>::max)() - kRespawnSettleFrames
+			services_->service_adapterFrameCount() > (std::numeric_limits<std::uint32_t>::max)() - kRespawnSettleFrames
 				? (std::numeric_limits<std::uint32_t>::max)()
 				: services_->service_adapterFrameCount() + kRespawnSettleFrames;
 	}
 	if (actors_[index].movementResumeFrames != 0U &&
 		services_->service_adapterFrameCount() < actors_[index].movementResumeFrames)
 	{
-		return false;
+		return {MovementPreparationKind::Skip, MovementPreparationCompletion::None};
 	}
 	if (actors_[index].movementDiagnosticUnavailable)
 	{
 		if (services_->service_adapterFrameCount() < actors_[index].movementResumeFrames)
 		{
-			return false;
+			return {MovementPreparationKind::Skip, MovementPreparationCompletion::None};
 		}
 		actors_[index].movementDiagnosticAttempts = false;
 		actors_[index].movementDiagnosticUnavailable = false;
 	}
 	if (actors_[index].movementWarmupFrames < 2U)
 	{
-		services_->command().prepareNeutralManagedBotCommand(index, handle, before);
-		const runtime::CommandReceipt receipt =
-			services_->command().executeManagedBotCommand(index, handle);
-		recordMovementPhysicsSample(index, before, receipt);
-		++actors_[index].movementWarmupFrames;
-		return false;
+		return {MovementPreparationKind::Neutral, MovementPreparationCompletion::AdvanceWarmup};
 	}
 	handle.entity->v.flags |= (FL_CLIENT | FL_FAKECLIENT);
 
-	return true;
+	return {MovementPreparationKind::Ready, MovementPreparationCompletion::None};
+}
+
+void BotNavigationRuntime::completePreparation(std::size_t index, MovementPreparationCompletion completion)
+{
+	if (completion == MovementPreparationCompletion::ResetRoute ||
+		completion == MovementPreparationCompletion::ResetRouteAndWarmup)
+	{
+		actors_[index].managedBotMovement.reset();
+		actors_[index].movementFallLandingTrackers.reset();
+	}
+	if (completion == MovementPreparationCompletion::ResetRouteAndWarmup)
+	{
+		actors_[index].movementWarmupFrames = 0U;
+	}
+	if (completion == MovementPreparationCompletion::AdvanceWarmup)
+	{
+		++actors_[index].movementWarmupFrames;
+	}
 }
 
 NavigationUpdate BotNavigationRuntime::updateNavigation(std::size_t index,
@@ -1011,22 +1004,22 @@ NavigationUpdate BotNavigationRuntime::updateNavigation(std::size_t index,
 											RuntimeProfilerStage::FullUpdateObjective);
 		RuntimeProfilerScope candidateNavScope(services_->service_runtimeProfiler(),
 											   RuntimeProfilerStage::ObjectiveCandidateNavEvaluate);
-		observation.hasObjectiveTarget = services_->behavior().buildManagedObjectiveTarget(
+		observation.hasObjectiveTarget = services_->behavior_buildManagedObjectiveTarget(
 			index, &observation.objectiveTarget,
 			services_->service_runtimeProfiler().enabled() ? &objectiveSearchStats : nullptr,
 			services_->service_runtimeProfiler().enabled() ? &objectiveSelectionStats : nullptr);
 	}
 	const world::ActorKey objectiveActor = {handle.actor.slot, handle.actor.actorGeneration};
 	const team::TeamObjectiveAssignment *objectiveAssignment =
-		services_->behavior().findManagedTeamObjectiveAssignment(objectiveActor);
+		services_->behavior_findManagedTeamObjectiveAssignment(objectiveActor);
 	if (observation.hasObjectiveTarget && objectiveAssignment != nullptr)
 	{
 		observation.objectiveTargetEntity = objectiveAssignment->targetEntity;
 	}
 	observation.team = static_cast<std::uint8_t>(
-		services_->behavior().managedBotObjectiveTargets(index).effectiveTeam);
+		services_->behavior_managedBotObjectiveTargets(index).effectiveTeam);
 	observation.movementSuppressed = services_->roundFreezeActive();
-	const auto &objectiveAction = services_->behavior().managedBotObjectiveActions(index);
+	const auto &objectiveAction = services_->behavior_managedBotObjectiveActions(index);
 	observation.movementSuppressed =
 		observation.movementSuppressed ||
 		(objectiveAction.active && objectiveAction.kind == team::TeamObjectiveKind::PlantC4 &&
@@ -1039,7 +1032,7 @@ NavigationUpdate BotNavigationRuntime::updateNavigation(std::size_t index,
 	// Enemy perception and objective knowledge retain their existing gates.
 	observation.friendRayOriginAvailable = true;
 	observation.friendRayOrigin = {before.origin.x, before.origin.y, before.origin.z};
-	observation.nearbyFriends = services_->observation().liveFriendlyPositions(index, false);
+	observation.nearbyFriends = services_->observation_liveFriendlyPositions(index, false);
 	runtime::GroundLookaheadRoute &groundLookaheadRoute =
 		actors_[index].movementGroundLookaheadRoutes;
 	output.probeRoute = groundLookaheadRoute;
@@ -1123,7 +1116,7 @@ NavigationUpdate BotNavigationRuntime::updateNavigation(std::size_t index,
 		RuntimePathSearchCaller::ObjectiveCandidateEvaluation,
 		services_->service_managedBotHandles()[index].actor.slot,
 		services_->service_managedBotFullUpdateSequences()[index],
-		services_->behavior().managedBotObjectiveTargets(index).generation,
+		services_->behavior_managedBotObjectiveTargets(index).generation,
 		objectiveSearchStats.firstStartArea, objectiveSearchStats.firstGoalArea,
 		objectiveSearchStats.firstRouteType, objectiveSearchStats.searchCalls != 0U,
 		objectiveSearchStats.searchCalls, objectiveSearchStats.successCount,
@@ -1145,13 +1138,13 @@ NavigationUpdate BotNavigationRuntime::updateNavigation(std::size_t index,
 		previousStep.frame.roundGeneration == observation.frame.roundGeneration &&
 		previousStep.frame.tick < observation.frame.tick &&
 		previousStep.goalGeneration ==
-			services_->behavior().managedBotObjectiveTargets(index).generation &&
-		(services_->behavior().managedBotStateMachines(index).state() ==
+			services_->behavior_managedBotObjectiveTargets(index).generation &&
+		(services_->behavior_managedBotStateMachines(index).state() ==
 			 compat::CompatibilityStateId::MoveTo ||
-		 services_->behavior().managedBotStateMachines(index).state() ==
+		 services_->behavior_managedBotStateMachines(index).state() ==
 			 compat::CompatibilityStateId::EscapeFromBomb) &&
-		!services_->behavior().managedBotStateMachines(index).attackOverlayActive();
-	const auto navigationState = services_->behavior().managedBotStateMachines(index).state();
+		!services_->behavior_managedBotStateMachines(index).attackOverlayActive();
+	const auto navigationState = services_->behavior_managedBotStateMachines(index).state();
 	const bool stateHold =
 		services_->service_compatibilitySurface().configuration().mode ==
 			compat::RuntimeMode::Compatibility &&
@@ -1159,9 +1152,9 @@ NavigationUpdate BotNavigationRuntime::updateNavigation(std::size_t index,
 		 navigationState == compat::CompatibilityStateId::PlantBomb ||
 		 navigationState == compat::CompatibilityStateId::Buy ||
 		 (navigationState == compat::CompatibilityStateId::Hide &&
-		  services_->behavior().scenarioDecisions(index).action == compat::ScenarioAction::Guard &&
-		  services_->behavior().scenarioDecisions(index).hasTarget &&
-		  services_->behavior().scenarioDecisions(index).target.inUseRange));
+		  services_->behavior_scenarioDecisions(index).action == compat::ScenarioAction::Guard &&
+		  services_->behavior_scenarioDecisions(index).hasTarget &&
+		  services_->behavior_scenarioDecisions(index).target.inUseRange));
 	if (stateHold)
 	{
 		roamResult = runtime::NavRoamResult::MovementSuppressed;
@@ -1215,7 +1208,7 @@ NavigationUpdate BotNavigationRuntime::updateNavigation(std::size_t index,
 				locomotionIntent.speed >= 200.0f;
 			groundLookaheadRoute.active = true;
 		}
-		services_->behavior().noteNavigationFailure(handle, roamResult, roamDecision);
+		services_->behavior_noteNavigationFailure(handle, roamResult, roamDecision);
 	}
 
 	return output;
@@ -1233,7 +1226,7 @@ void BotNavigationRuntime::recordNavigationUpdate(std::size_t index,
 	services_->service_runtimeProfiler().recordPathSearchResults(
 		navSearchCaller(roamDecision), services_->service_managedBotHandles()[index].actor.slot,
 		services_->service_managedBotFullUpdateSequences()[index],
-		services_->behavior().managedBotObjectiveTargets(index).generation,
+		services_->behavior_managedBotObjectiveTargets(index).generation,
 		roamDecision.pathSearchStats.firstStartArea, roamDecision.pathSearchStats.firstGoalArea,
 		roamDecision.pathSearchStats.firstRouteType, roamDecision.pathRequested,
 		roamDecision.pathSearchStats.searchCalls, roamDecision.pathSearchStats.successCount,
@@ -1308,7 +1301,7 @@ void BotNavigationRuntime::observePublicDeath(std::size_t victim)
 		{
 			(void)dangerMemory_.recordDeath(
 				*document, services_->service_lifecycle().mapGeneration(),
-				services_->observation().managedBotTeamNumbers(victim), area.area, position,
+				services_->observation_managedBotTeamNumbers(victim), area.area, position,
 				services_->service_globals()->time);
 		}
 		actors_[victim].deathDangerRecorded = true;

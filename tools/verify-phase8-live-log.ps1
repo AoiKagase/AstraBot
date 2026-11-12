@@ -27,8 +27,6 @@ function Parse-MovementSample {
 	if (-not $match.Success) {
 		return $null
 	}
-	$dx = [double]$match.Groups['ax'].Value - [double]$match.Groups['bx'].Value
-	$dy = [double]$match.Groups['ay'].Value - [double]$match.Groups['by'].Value
 	[pscustomobject]@{
 		Actor = [int]$match.Groups['actor'].Value
 		Generation = [int]$match.Groups['generation'].Value
@@ -38,7 +36,6 @@ function Parse-MovementSample {
 		Team = [int]$match.Groups['team'].Value
 		TeamConfirmed = if ($match.Groups['teamConfirmed'].Success) { [int]$match.Groups['teamConfirmed'].Value } else { 0 }
 		Ready = [int]$match.Groups['ready'].Value
-		HorizontalDelta = [math]::Sqrt(($dx * $dx) + ($dy * $dy))
 		AfterX = [double]$match.Groups['ax'].Value
 		AfterY = [double]$match.Groups['ay'].Value
 		Line = $Line
@@ -46,82 +43,92 @@ function Parse-MovementSample {
 }
 
 function Get-LiveLogResult {
-	param([string[]]$Lines)
-	$samples = @($Lines | ForEach-Object { Parse-MovementSample $_ } | Where-Object { $null -ne $_ })
-	$readySamples = @($samples | Where-Object { $_.Dispatched -eq 1 -and $_.Deadflag -eq 0 -and $_.Ready -eq 1 })
-	$movingSamples = @()
-	$movementWindowSamples = 8
-	$minimumNetProgress = 8.0
-	$maximumSampleJump = 128.0
-	foreach ($actorSamples in @($readySamples | Group-Object Actor)) {
-		$ordered = @($actorSamples.Group | Sort-Object Frame)
-		for ($start = 0; $start -le $ordered.Count - $movementWindowSamples; ++$start) {
-			$first = $ordered[$start]
-			$last = $ordered[$start + $movementWindowSamples - 1]
-			$progressSamples = 0
-			$pathDistance = 0.0
-			$validWindow = $true
-			for ($offset = 1; $offset -lt $movementWindowSamples; ++$offset) {
-				$previous = $ordered[$start + $offset - 1]
-				$sample = $ordered[$start + $offset]
-				$dx = $sample.AfterX - $previous.AfterX
-				$dy = $sample.AfterY - $previous.AfterY
-				$delta = [math]::Sqrt(($dx * $dx) + ($dy * $dy))
-				if ($delta -gt $maximumSampleJump) {
-					$validWindow = $false
-					break
-				}
-				$pathDistance += $delta
-				if ($delta -ge 0.01) {
-					++$progressSamples
-				}
+	param([System.Collections.IEnumerable]$Lines, [int]$SkipLines = 0)
+	$windows = @{}
+	$moving = @{}
+	$movementEvidence = [System.Collections.Generic.List[string]]::new()
+	$attackEvidence = [System.Collections.Generic.List[string]]::new()
+	$plantEvidence = [System.Collections.Generic.List[string]]::new()
+	$defuseEvidence = [System.Collections.Generic.List[string]]::new()
+	$attackPattern = [regex]::new('"[^"\r\n]*<BOT>[^"\r\n]*"\s+attacked\s+"[^"\r\n]*<BOT>[^"\r\n]*"', 'Compiled')
+	$scopePattern = [regex]::new('(?:^| )(map|round)=(\d+)', 'Compiled')
+	$readyCount = 0; $idleCount = 0; $attackCount = 0; $plantCount = 0; $defuseCount = 0
+	$totalLines = 0; $logLines = 0
+	foreach ($line in $Lines) {
+		++$totalLines
+		if ($totalLines -le $SkipLines) { continue }
+		++$logLines
+		if ($line.Contains('triggered "Round_Start"') -or $line.Contains('Loading map "') -or
+			$line.StartsWith('Protocol version ')) { $windows.Clear() }
+		if ($line.Contains('Game_idle_kick')) { ++$idleCount }
+		if ($line.StartsWith('movement physics ')) {
+			$sample = Parse-MovementSample $line
+			if ($null -eq $sample) { continue }
+			$actor = $sample.Actor
+			$scope = "$($sample.Generation)"
+			foreach ($match in $scopePattern.Matches($line)) { $scope += "/$($match.Groups[1].Value)=$($match.Groups[2].Value)" }
+			if ($sample.Dispatched -ne 1 -or $sample.Deadflag -ne 0 -or $sample.Ready -ne 1) {
+				$windows.Remove($actor)
+				continue
 			}
-			$netDx = $last.AfterX - $first.AfterX
-			$netDy = $last.AfterY - $first.AfterY
-			$netProgress = [math]::Sqrt(($netDx * $netDx) + ($netDy * $netDy))
-			if ($validWindow -and $progressSamples -ge 4 -and
-				$pathDistance -ge $minimumNetProgress -and
-				$netProgress -ge $minimumNetProgress) {
-				$movingSamples += $last
-				break
+			++$readyCount
+			if (-not $windows.ContainsKey($actor) -or $windows[$actor].Scope -ne $scope -or
+				($windows[$actor].Samples.Count -gt 0 -and $sample.Frame -le $windows[$actor].Samples[-1].Frame)) {
+				$windows[$actor] = @{ Scope = $scope; Samples = [System.Collections.Generic.List[object]]::new() }
 			}
+			$window = $windows[$actor].Samples
+			$window.Add($sample)
+			if ($window.Count -gt 8) { $window.RemoveAt(0) }
+			if ($window.Count -lt 8 -or $moving.ContainsKey($actor)) { continue }
+			$progress = 0; $distance = 0.0; $valid = $true
+			for ($index = 1; $index -lt 8; ++$index) {
+				$dx = $window[$index].AfterX - $window[$index - 1].AfterX
+				$dy = $window[$index].AfterY - $window[$index - 1].AfterY
+				$delta = [math]::Sqrt($dx * $dx + $dy * $dy)
+				if ($delta -gt 128.0) { $valid = $false; break }
+				$distance += $delta
+				if ($delta -ge 0.01) { ++$progress }
+			}
+			$dx = $window[7].AfterX - $window[0].AfterX
+			$dy = $window[7].AfterY - $window[0].AfterY
+			if ($valid -and $progress -ge 4 -and $distance -ge 8.0 -and
+				[math]::Sqrt($dx * $dx + $dy * $dy) -ge 8.0) {
+				$moving[$actor] = $true
+				if ($movementEvidence.Count -lt 5) { $movementEvidence.Add($line) }
+			}
+			continue
+		}
+		if (-not $line.Contains('<BOT>')) { continue }
+		if ($line.Contains(' attacked ') -and $line.Contains('damage') -and $attackPattern.IsMatch($line)) {
+			++$attackCount
+			if ($attackEvidence.Count -lt 5) { $attackEvidence.Add($line) }
+		}
+		if ($line -match '(?i)(Planted_The_Bomb|Bomb_Planted)') {
+			++$plantCount
+			if ($plantEvidence.Count -lt 3) { $plantEvidence.Add($line) }
+		}
+		if ($line -match '(?i)(Defused_The_Bomb|Bomb_Defused)') {
+			++$defuseCount
+			if ($defuseEvidence.Count -lt 3) { $defuseEvidence.Add($line) }
 		}
 	}
-	$idleKickLines = @($Lines | Where-Object { $_ -match 'Game_idle_kick' })
-	$botAttackLines = @($Lines | Where-Object {
-		$_ -match '"[^"\r\n]*<BOT>[^"\r\n]*"\s+attacked\s+"[^"\r\n]*<BOT>[^"\r\n]*"' -and
-		$_ -match 'damage'
-	})
-	$plantLines = @($Lines | Where-Object {
-		$_ -match '(?i)(Planted_The_Bomb|Bomb_Planted)' -and $_ -match '<BOT>'
-	})
-	$defuseLines = @($Lines | Where-Object {
-		$_ -match '(?i)(Defused_The_Bomb|Bomb_Defused)' -and $_ -match '<BOT>'
-	})
+	if ($SkipLines -lt 0 -or $SkipLines -gt $totalLines) { throw "FromLine is outside the log: $SkipLines / $totalLines" }
 	$objectiveGate = [pscustomobject]@{
-		Passed = ($plantLines.Count -gt 0 -and $defuseLines.Count -gt 0)
-		PlantLines = $plantLines.Count
-		DefuseLines = $defuseLines.Count
-		Evidence = @($plantLines | Select-Object -First 3) + @($defuseLines | Select-Object -First 3)
+		Passed = ($plantCount -gt 0 -and $defuseCount -gt 0)
+		PlantLines = $plantCount; DefuseLines = $defuseCount
+		Evidence = @($plantEvidence.ToArray()) + @($defuseEvidence.ToArray())
 	}
 	[pscustomobject]@{
 		Movement = [pscustomobject]@{
-			Passed = ($readySamples.Count -gt 0 -and $movingSamples.Count -gt 0 -and $idleKickLines.Count -eq 0)
-			ReadySamples = $readySamples.Count
-			MovingSamples = $movingSamples.Count
-			IdleKickLines = $idleKickLines.Count
-			Evidence = @($movingSamples | Select-Object -First 5 | ForEach-Object { $_.Line })
+			Passed = ($readyCount -gt 0 -and $moving.Count -gt 0 -and $idleCount -eq 0)
+			ReadySamples = $readyCount; MovingSamples = $moving.Count; IdleKickLines = $idleCount
+			Evidence = @($movementEvidence.ToArray())
 		}
 		Combat = [pscustomobject]@{
-			Passed = ($botAttackLines.Count -gt 0)
-			BotAttackLines = $botAttackLines.Count
-			Evidence = @($botAttackLines | Select-Object -First 5)
+			Passed = ($attackCount -gt 0); BotAttackLines = $attackCount
+			Evidence = @($attackEvidence.ToArray())
 		}
-		# Keep C4 as the historical name while exposing the objective gate
-		# explicitly for phase acceptance and independent -Require selection.
-		C4 = $objectiveGate
-		Objective = $objectiveGate
-		LogLines = $Lines.Count
+		C4 = $objectiveGate; Objective = $objectiveGate; LogLines = $logLines
 	}
 }
 
@@ -148,6 +155,23 @@ if ($SelfTest) {
 		'10:00: "PlantBot<1><BOT><TERRORIST>" triggered "Planted_The_Bomb"'
 	)
 	Assert-Condition (-not $objectiveMissingDefuse.Objective.Passed) 'objective requires both plant and defuse'
+	$mixedGeneration = @($sample[0..7])
+	for ($index = 4; $index -lt 8; ++$index) {
+		$mixedGeneration[$index] = $mixedGeneration[$index].Replace('generation=1', 'generation=2')
+	}
+	Assert-Condition (-not (Get-LiveLogResult $mixedGeneration).Movement.Passed) 'movement cannot span slot reuse'
+	$mixedRound = @($sample[0..7])
+	for ($index = 0; $index -lt 8; ++$index) {
+		$round = if ($index -lt 4) { 1 } else { 2 }
+		$mixedRound[$index] += " map=1 round=$round"
+	}
+	Assert-Condition (-not (Get-LiveLogResult $mixedRound).Movement.Passed) 'movement cannot span round changes'
+	$legacyRound = @($sample[0..3]) + @('World triggered "Round_Start"') + @($sample[4..7])
+	Assert-Condition (-not (Get-LiveLogResult $legacyRound).Movement.Passed) 'legacy logs respect round boundary events'
+	$backwards = @($sample[7..0])
+	Assert-Condition (-not (Get-LiveLogResult $backwards).Movement.Passed) 'out-of-order frames cannot establish movement'
+	Assert-Condition (-not (Get-LiveLogResult -Lines $sample -SkipLines 4).Movement.Passed) 'offset excludes earlier movement evidence'
+	Assert-Condition (-not (Get-LiveLogResult @('profile window game_seconds=1 wall_seconds=1 frames=100')).Movement.Passed) 'summary alone cannot prove physical movement'
 	if ($Json) {
 		$result | ConvertTo-Json -Depth 6
 	}
@@ -163,12 +187,8 @@ if ([string]::IsNullOrWhiteSpace($LogPath)) {
 if (-not (Test-Path -LiteralPath $LogPath -PathType Leaf)) {
 	throw "log file not found: $LogPath"
 }
-$allLines = @(Get-Content -LiteralPath $LogPath)
-if ($FromLine -lt 0 -or $FromLine -gt $allLines.Count) {
-	throw "FromLine is outside the log: $FromLine / $($allLines.Count)"
-}
-$lines = @($allLines | Select-Object -Skip $FromLine)
-$result = Get-LiveLogResult $lines
+$resolvedLogPath = (Resolve-Path -LiteralPath $LogPath).ProviderPath
+$result = Get-LiveLogResult -Lines ([System.IO.File]::ReadLines($resolvedLogPath, [System.Text.Encoding]::Default)) -SkipLines $FromLine
 
 if ($Json) {
 	$result | ConvertTo-Json -Depth 6

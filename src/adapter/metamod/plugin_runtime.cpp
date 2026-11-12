@@ -642,7 +642,7 @@ void PluginRuntime::onServerActivate(edict_t *edictList, int edictCount, int cli
 							pluginId_, "menu message ids show=%d vgui=%d team=%d",
 							showMenuId, vguiMenuId, teamInfoId);
 						const compat::RuntimeMode mode = compatibilitySurface_.configuration().mode;
-						profiledLogConsole(runtimeProfiler_,
+						importantLogConsole(runtimeProfiler_,
 							pluginId_, "runtime mode=%s map=%u round=%u",
 							runtimeModeName(mode), lifecycle_.mapGeneration(), lifecycle_.roundGeneration());
 					}
@@ -701,7 +701,7 @@ void PluginRuntime::onServerActivate(edict_t *edictList, int edictCount, int cli
 				if (gpMetaUtilFuncs != nullptr && gpMetaUtilFuncs->pfnLogConsole != nullptr &&
 					pluginId_ != nullptr)
 				{
-					profiledLogConsole(runtimeProfiler_,
+					importantLogConsole(runtimeProfiler_,
 						pluginId_, "profile load result=%d map=%u path=%s",
 						static_cast<int>(profileResult), lifecycle_.mapGeneration(), profilePath);
 				}
@@ -762,7 +762,7 @@ void PluginRuntime::onServerActivate(edict_t *edictList, int edictCount, int cli
 			if (gpMetaUtilFuncs != nullptr && gpMetaUtilFuncs->pfnLogConsole != nullptr &&
 					pluginId_ != nullptr)
 			{
-				profiledLogConsole(runtimeProfiler_,
+				importantLogConsole(runtimeProfiler_,
 					pluginId_,
 					"nav load result=%d reader=%d snapshot=%d valid=%d path=%s bspSize=%d",
 					static_cast<int>(result),
@@ -973,7 +973,7 @@ void PluginRuntime::deferJoinAction(
 	if (gpMetaUtilFuncs != nullptr && gpMetaUtilFuncs->pfnLogConsole != nullptr &&
 		pluginId_ != nullptr)
 	{
-		profiledLogConsole(runtimeProfiler_,
+		importantLogConsole(runtimeProfiler_,
 			pluginId_,
 			"join action queue full slot=%u generation=%u frame=%u action=%d error=%d",
 			static_cast<unsigned int>(handle.actor.slot),
@@ -1359,6 +1359,46 @@ void PluginRuntime::onWriteCoord(float value)
 	observation_.onWriteCoord(value);
 }
 
+void PluginRuntime::prepareNeutralManagedBotCommand(std::size_t index, FakeClientHandle &handle,
+													const runtime::MovementPhysicsState &before)
+{
+	const auto draft = command_.beginNeutralCommand(index, handle, before);
+	if (!draft.ready)
+	{
+		return;
+	}
+	const auto action =
+		behavior_.decideManagedBotAction(index, before, draft.command.viewAngles, draft.command.movement.buttons);
+	command_.finishNeutralCommand(index, handle, before, draft, action);
+}
+
+runtime::CommandReceipt PluginRuntime::dispatchNeutralMovement(std::size_t index, FakeClientHandle &handle,
+															   std::uint8_t milliseconds)
+{
+	const auto draft = command_.beginDirectNeutralCommand(index, handle, milliseconds);
+	if (!draft.ready)
+	{
+		return draft.receipt;
+	}
+	const auto action =
+		behavior_.decideManagedBotAction(index, draft.before, draft.command.viewAngles, draft.command.movement.buttons);
+	return command_.finishDirectNeutralCommand(index, handle, milliseconds, draft, action);
+}
+
+void PluginRuntime::buildAndExecuteMovement(std::size_t index, FakeClientHandle &handle,
+											const runtime::LifecycleToken &token,
+											const runtime::MovementPhysicsState &before, NavigationUpdate &movement)
+{
+	const auto draft = command_.beginMovementCommand(index, handle, token, before, movement);
+	if (!draft.ready)
+	{
+		return;
+	}
+	const auto action =
+		behavior_.decideManagedBotAction(index, before, draft.command.viewAngles, draft.command.movement.buttons);
+	command_.finishMovementCommand(index, handle, token, before, movement, draft, action);
+}
+
 void PluginRuntime::updateManagedBotMovement()
 {
 	const compat::CvarSnapshot configuration = compatibilitySurface_.configuration();
@@ -1444,7 +1484,7 @@ void PluginRuntime::updateManagedBotMovement()
 		{
 			if (!command_.managedBotCommandTemplateValid(index))
 			{
-				command_.prepareNeutralManagedBotCommand(index, handle, before);
+				prepareNeutralManagedBotCommand(index, handle, before);
 			}
 			const runtime::CommandReceipt receipt =
 				command_.executeManagedBotCommand(index, handle);
@@ -1470,8 +1510,18 @@ void PluginRuntime::updateManagedBotMovement()
 		{
 			behavior_.updatePublicBuying(index);
 		}
-		if (!navigation_.prepareMovement(index, handle, before, movementUnavailable))
+		const auto preparation = navigation_.prepareMovement(index, handle, before, movementUnavailable);
+		if (preparation.kind != MovementPreparationKind::Ready)
+		{
+			if (preparation.kind == MovementPreparationKind::Neutral)
+			{
+				prepareNeutralManagedBotCommand(index, handle, before);
+				const auto receipt = command_.executeManagedBotCommand(index, handle);
+				navigation_.recordMovementPhysicsSample(index, before, receipt);
+				navigation_.completePreparation(index, preparation.completion);
+			}
 			continue;
+		}
 		NavigationUpdate movement = navigation_.updateNavigation(index, handle, before, navigation,
 																 performanceDisablePathSearch_);
 		auto &locomotionIntent = movement.locomotionIntent;
@@ -1489,7 +1539,7 @@ void PluginRuntime::updateManagedBotMovement()
 				roamDecision.failureReason = runtime::NavFailureReason::MovementNotProduced;
 			}
 			navigation_.logMovementDiagnostic(index, "roam_no_intent", &roamDecision);
-			command_.prepareNeutralManagedBotCommand(index, handle, before);
+			prepareNeutralManagedBotCommand(index, handle, before);
 			const runtime::CommandReceipt receipt =
 				command_.executeManagedBotCommand(index, handle);
 			navigation_.recordMovementPhysicsSample(index, before, receipt);
@@ -1502,7 +1552,7 @@ void PluginRuntime::updateManagedBotMovement()
 			continue;
 				}
 
-				command_.buildAndExecuteMovement(index, handle, token, before, movement);
+				buildAndExecuteMovement(index, handle, token, before, movement);
 }
 
 }
@@ -1804,7 +1854,7 @@ NativeBotObservation PluginRuntime::collectNativeBotObservation() const
 			if (gpMetaUtilFuncs != nullptr && gpMetaUtilFuncs->pfnLogConsole != nullptr &&
 				pluginId_ != nullptr)
 			{
-				profiledLogConsole(runtimeProfiler_,
+				importantLogConsole(runtimeProfiler_,
 					pluginId_, "compat command=%s result=%d mode=%s map=%u round=%u frame=%u",
 					request.name != nullptr ? request.name : "<null>", static_cast<int>(result),
 					runtimeModeName(compatibilitySurface_.configuration().mode),
@@ -2588,7 +2638,7 @@ void PluginRuntime::cleanupManagedJoin(std::size_t index, JoinError error)
 	if (gpMetaUtilFuncs != nullptr && gpMetaUtilFuncs->pfnLogConsole != nullptr &&
 			pluginId_ != nullptr)
 	{
-		profiledLogConsole(runtimeProfiler_,
+		importantLogConsole(runtimeProfiler_,
 			pluginId_,
 			"join cleanup slot=%u generation=%u map=%u round=%u frame=%u phase=%d team=%d "
 			"entity_team=%d deadflag=%d spectator=%d error=%d result=%d",
@@ -2624,7 +2674,7 @@ void PluginRuntime::applyJoinAction(std::size_t index, const JoinAction &action)
 				if (gpMetaUtilFuncs != nullptr && gpMetaUtilFuncs->pfnLogConsole != nullptr &&
 						pluginId_ != nullptr)
 		{
-			profiledLogConsole(runtimeProfiler_,
+			importantLogConsole(runtimeProfiler_,
 				pluginId_,
 				"join confirmed slot=%u generation=%u map=%u round=%u phase=%d team=%d "
 				"entity_team=%d deadflag=%d spectator=%d actor_result=%d frame=%u",
@@ -2647,7 +2697,7 @@ void PluginRuntime::applyJoinAction(std::size_t index, const JoinAction &action)
 				if (gpMetaUtilFuncs != nullptr && gpMetaUtilFuncs->pfnLogConsole != nullptr &&
 						pluginId_ != nullptr)
 		{
-			profiledLogConsole(runtimeProfiler_,
+			importantLogConsole(runtimeProfiler_,
 				pluginId_,
 				"join controller stopped slot=%u generation=%u action=%d error=%d map=%u "
 				"round=%u phase=%d team=%d entity_team=%d deadflag=%d spectator=%d frame=%u",

@@ -228,6 +228,32 @@ struct NavigationUpdate
 	runtime::NavRoamDecision roamDecision{};
 	runtime::NavRoamResult roamResult = runtime::NavRoamResult::NoRoute;
 };
+// Stack-local command preparation; no owner state or observations are cached across updates.
+struct MovementCommandDraft
+{
+	runtime::BotCommand command{};
+	runtime::MovementPhysicsState before{};
+	runtime::CommandReceipt receipt{};
+	bool ready = false;
+};
+enum class MovementPreparationKind
+{
+	Ready,
+	Skip,
+	Neutral
+};
+enum class MovementPreparationCompletion
+{
+	None,
+	ResetRoute,
+	ResetRouteAndWarmup,
+	AdvanceWarmup
+};
+struct MovementPreparation
+{
+	MovementPreparationKind kind;
+	MovementPreparationCompletion completion;
+};
 enum class NavigationRequestKind
 {
 	PublishStep,

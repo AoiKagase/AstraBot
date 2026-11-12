@@ -1,4 +1,4 @@
-#include "plugin_runtime.hpp"
+#include "bot_command_runtime.hpp"
 #include "bot_runtime_support.hpp"
 namespace astrabot
 {
@@ -19,8 +19,8 @@ void BotCommandRuntime::onTouch(edict_t *entity, edict_t *other)
 			(contact->v.flags & FL_CLIENT) == 0 || self->v.deadflag != DEAD_NO ||
 			contact->v.deadflag != DEAD_NO || self->v.health <= 0.0f || contact->v.health <= 0.0f)
 			return;
-		const auto actor = services_->observation().publicPlayerIdentity(self),
-				   touched = services_->observation().publicPlayerIdentity(contact);
+		const auto actor = services_->observation_publicPlayerIdentity(self),
+				   touched = services_->observation_publicPlayerIdentity(contact);
 		if (actor.slot == 0U || touched.slot == 0U)
 			return;
 		const auto index = static_cast<std::size_t>(actor.slot - 1U);
@@ -39,7 +39,7 @@ void BotCommandRuntime::onTouch(edict_t *entity, edict_t *other)
 			services_->publicPlayerPriority(self),
 			services_->publicPlayerPriority(contact),
 			services_->service_globals()->time,
-			services_->behavior().managedBotStateMachines(index).state() ==
+			services_->behavior_managedBotStateMachines(index).state() ==
 				compat::CompatibilityStateId::DefuseBomb};
 		runtime::ActorId previous{};
 		if (actors_[index].playerAvoidance.target(actor, frame, services_->service_globals()->time,
@@ -49,7 +49,7 @@ void BotCommandRuntime::onTouch(edict_t *entity, edict_t *other)
 		{
 			const auto *incumbent = services_->service_engineFunctions()->pfnPEntityOfEntIndex(
 				static_cast<int>(previous.slot));
-			const auto current = services_->observation().publicPlayerIdentity(incumbent);
+			const auto current = services_->observation_publicPlayerIdentity(incumbent);
 			if (current.slot == previous.slot &&
 				current.actorGeneration == previous.actorGeneration)
 			{
@@ -84,7 +84,7 @@ void BotCommandRuntime::applyPlayerAvoidance(std::size_t index, runtime::BotComm
 		return;
 	const auto *other =
 		services_->service_engineFunctions()->pfnPEntityOfEntIndex(static_cast<int>(target.slot));
-	const auto identity = services_->observation().publicPlayerIdentity(other);
+	const auto identity = services_->observation_publicPlayerIdentity(other);
 	const auto *self = handle.entity;
 	if (identity.slot != target.slot || identity.actorGeneration != target.actorGeneration ||
 		other == nullptr || other->v.deadflag != DEAD_NO || other->v.health <= 0.0f ||
@@ -152,7 +152,7 @@ bool BotCommandRuntime::dispatchManagedActionCommand(std::size_t index, FakeClie
 	if (commandDispatched && proposal.kind == ActionKind::Reload &&
 		services_->service_globals() != nullptr)
 	{
-		services_->observation().observeReloadDispatched(
+		services_->observation_observeReloadDispatched(
 			{handle.actor.slot, handle.actor.actorGeneration},
 			{services_->service_lifecycle().mapGeneration(),
 			 services_->service_lifecycle().roundGeneration(),
@@ -164,14 +164,14 @@ bool BotCommandRuntime::dispatchManagedActionCommand(std::size_t index, FakeClie
 									proposal.kind == ActionKind::PlantContinue;
 	if (commandDispatched && c4SelectionRequest && index < NativeBotObservation::kClientSlotCount)
 	{
-		services_->behavior().observeC4SelectionDispatched(index, handle);
+		services_->behavior_observeC4SelectionDispatched(index, handle);
 	}
 	if (c4SelectionRequest && services_->service_runtimeProfiler().enabled() &&
 		(services_->service_adapterFrameCount() % 16U) == 0U && gpMetaUtilFuncs != nullptr &&
 		gpMetaUtilFuncs->pfnLogConsole != nullptr && services_->service_pluginId() != nullptr)
 	{
 		const ManagedCurrentWeaponObservation &weapon =
-			services_->observation().managedBotCurrentWeapons(index);
+			services_->observation_managedBotCurrentWeapons(index);
 		profiledLogConsole(
 			services_->service_runtimeProfiler(), services_->service_pluginId(),
 			"profile plantCommand actor=%u actor_generation=%u map=%u round=%u "
@@ -202,30 +202,36 @@ void BotCommandRuntime::resetManagedBotCommandTemplate(std::size_t index)
 	actors_[index].managedBotActionStopsMovement = false;
 }
 
-void BotCommandRuntime::prepareNeutralManagedBotCommand(std::size_t index, FakeClientHandle &handle,
-														const runtime::MovementPhysicsState &before)
+MovementCommandDraft BotCommandRuntime::beginNeutralCommand(std::size_t index, FakeClientHandle &handle,
+															const runtime::MovementPhysicsState &)
 {
+	MovementCommandDraft draft{};
 	if (index >= NativeBotObservation::kClientSlotCount || handle.entity == nullptr)
 	{
-		return;
+		return draft;
 	}
-	const runtime::LifecycleToken token =
-		services_->service_lifecycle().tokenForSlot(handle.actor.slot);
+	const runtime::LifecycleToken token = services_->service_lifecycle().tokenForSlot(handle.actor.slot);
 	if (!services_->service_lifecycle().isCurrent(token))
 	{
 		resetManagedBotCommandTemplate(index);
-		return;
+		return draft;
 	}
-	runtime::BotCommand command = {};
+	runtime::BotCommand &command = draft.command;
 	command.actor = handle.actor;
 	command.lifecycle = token;
-	command.viewAngles = {handle.entity->v.v_angle[0], handle.entity->v.v_angle[1],
-						  handle.entity->v.v_angle[2]};
+	command.viewAngles = {handle.entity->v.v_angle[0], handle.entity->v.v_angle[1], handle.entity->v.v_angle[2]};
 	command.movement = {0.0f, 0.0f, 0.0f, 0U, 0U, 1U};
+	draft.ready = true;
+	return draft;
+}
+
+void BotCommandRuntime::finishNeutralCommand(std::size_t index, FakeClientHandle &handle,
+											 const runtime::MovementPhysicsState &, MovementCommandDraft draft,
+											 const ActionProposal &requestedAction)
+{
+	runtime::BotCommand command = draft.command;
 	const ActionProposal actionProposal = ActionAdapter::forLiveDispatch(
-		services_->behavior().decideManagedBotAction(index, before, command.viewAngles,
-													 command.movement.buttons),
-		services_->observation().hasObservedActiveWeapon(index), command.viewAngles);
+		requestedAction, services_->observation_hasObservedActiveWeapon(index), command.viewAngles);
 	const ActionDispatch actionDispatch = ActionAdapter::translate(actionProposal);
 	command.viewAngles = actionDispatch.viewAngles;
 	command.movement.buttons = actionDispatch.buttons;
@@ -443,7 +449,7 @@ runtime::CommandReceipt BotCommandRuntime::executeManagedBotCommand(std::size_t 
 	{
 		actors_[index].managedCommandDiagnosticUpdates =
 			services_->service_managedBotFullUpdateSequences()[index];
-		const auto &step = services_->navigation().managedNavigationSteps(index);
+		const auto &step = services_->navigation_managedNavigationSteps(index);
 		profiledLogConsole(
 			services_->service_runtimeProfiler(), services_->service_pluginId(),
 			"profile motionCommand bot_id=%u actor_generation=%u map=%u round=%u frame=%u "
@@ -455,7 +461,7 @@ runtime::CommandReceipt BotCommandRuntime::executeManagedBotCommand(std::size_t 
 			services_->service_adapterFrameCount(),
 			services_->service_managedBotFullUpdateSequences()[index],
 			services_->service_globals()->time,
-			compat::toString(services_->behavior().managedBotStateMachines(index).state()),
+			compat::toString(services_->behavior_managedBotStateMachines(index).state()),
 			static_cast<unsigned>(step.outcome), step.pathSequence, command.movement.forward,
 			command.movement.side, command.movement.up,
 			static_cast<unsigned>(command.movement.buttons),
@@ -467,7 +473,7 @@ runtime::CommandReceipt BotCommandRuntime::executeManagedBotCommand(std::size_t 
 	if (dispatchReceipt.result == runtime::DispatchResult::Dispatched &&
 		(command.movement.buttons & IN_RELOAD) != 0U && services_->service_globals() != nullptr)
 	{
-		services_->observation().observeReloadDispatched(
+		services_->observation_observeReloadDispatched(
 			{handle.actor.slot, handle.actor.actorGeneration},
 			{services_->service_lifecycle().mapGeneration(),
 			 services_->service_lifecycle().roundGeneration(),
@@ -477,7 +483,7 @@ runtime::CommandReceipt BotCommandRuntime::executeManagedBotCommand(std::size_t 
 	if (dispatchReceipt.result == runtime::DispatchResult::Dispatched &&
 		(command.movement.buttons & ActionAdapter::kAttackButton) != 0U)
 	{
-		services_->behavior().observeC4AttackDispatched(index, handle, command.movement.buttons);
+		services_->behavior_observeC4AttackDispatched(index, handle, command.movement.buttons);
 	}
 	if (services_->service_runtimeProfiler().enabled() && gpMetaUtilFuncs != nullptr &&
 		gpMetaUtilFuncs->pfnLogConsole != nullptr && services_->service_pluginId() != nullptr &&
@@ -540,46 +546,56 @@ runtime::CommandReceipt BotCommandRuntime::executeManagedBotCommand(std::size_t 
 	return dispatchReceipt;
 }
 
-runtime::CommandReceipt BotCommandRuntime::dispatchNeutralMovement(std::size_t index,
-																   FakeClientHandle &handle,
-																   std::uint8_t milliseconds)
+MovementCommandDraft BotCommandRuntime::beginDirectNeutralCommand(std::size_t index, FakeClientHandle &handle,
+																  std::uint8_t milliseconds)
 {
+	MovementCommandDraft draft{};
 	runtime::CommandReceipt receipt = {handle.actor, 0U, services_->service_adapterFrameCount(),
 									   runtime::DispatchResult::NoCommand};
 	if (index >= NativeBotObservation::kClientSlotCount || handle.entity == nullptr ||
 		actors_[index].managedBotCommandSequences == (std::numeric_limits<std::uint32_t>::max)())
 	{
-		return receipt;
+		draft.receipt = receipt;
+		return draft;
 	}
 
-	const runtime::LifecycleToken token =
-		services_->service_lifecycle().tokenForSlot(handle.actor.slot);
+	const runtime::LifecycleToken token = services_->service_lifecycle().tokenForSlot(handle.actor.slot);
 	if (!services_->service_lifecycle().isCurrent(token))
 	{
 		receipt.result = runtime::DispatchResult::StaleActor;
-		return receipt;
+		draft.receipt = receipt;
+		return draft;
 	}
 
-	runtime::BotCommand command = {};
+	runtime::BotCommand &command = draft.command;
 	command.actor = handle.actor;
 	command.lifecycle = token;
 	command.sequence = ++actors_[index].managedBotCommandSequences;
 	command.issueFrame = services_->service_adapterFrameCount();
-	command.viewAngles = {handle.entity->v.v_angle[0], handle.entity->v.v_angle[1],
-						  handle.entity->v.v_angle[2]};
+	command.viewAngles = {handle.entity->v.v_angle[0], handle.entity->v.v_angle[1], handle.entity->v.v_angle[2]};
 	command.movement = {0.0f, 0.0f, 0.0f, 0U, 0U, milliseconds};
-	const runtime::MovementPhysicsState before =
-		services_->observation().captureMovementPhysicsState(
-			handle.entity, services_->service_joinControllers()[index].teamConfirmed(), true);
+	runtime::MovementPhysicsState &before = draft.before;
+	before = services_->observation_captureMovementPhysicsState(
+		handle.entity, services_->service_joinControllers()[index].teamConfirmed(), true);
 	if (before.dead)
 	{
 		receipt.result = runtime::DispatchResult::NoCommand;
-		return receipt;
+		draft.receipt = receipt;
+		return draft;
 	}
+	draft.receipt = receipt;
+	draft.ready = true;
+	return draft;
+}
+
+runtime::CommandReceipt BotCommandRuntime::finishDirectNeutralCommand(std::size_t index, FakeClientHandle &handle,
+																	  std::uint8_t, MovementCommandDraft draft,
+																	  const ActionProposal &requestedAction)
+{
+	runtime::BotCommand command = draft.command;
+	runtime::CommandReceipt receipt = draft.receipt;
 	const ActionProposal actionProposal = ActionAdapter::forLiveDispatch(
-		services_->behavior().decideManagedBotAction(index, before, command.viewAngles,
-													 command.movement.buttons),
-		services_->observation().hasObservedActiveWeapon(index), command.viewAngles);
+		requestedAction, services_->observation_hasObservedActiveWeapon(index), command.viewAngles);
 	const ActionDispatch actionDispatch = ActionAdapter::translate(actionProposal);
 	command.viewAngles = actionDispatch.viewAngles;
 	command.movement.buttons = actionDispatch.buttons;
@@ -589,8 +605,7 @@ runtime::CommandReceipt BotCommandRuntime::dispatchNeutralMovement(std::size_t i
 	{
 		profiledLogConsole(services_->service_runtimeProfiler(), services_->service_pluginId(),
 						   "bot action=%s slot=%u generation=%u frame=%u buttons=%u",
-						   actionKindName(actionProposal.kind),
-						   static_cast<unsigned int>(handle.actor.slot),
+						   actionKindName(actionProposal.kind), static_cast<unsigned int>(handle.actor.slot),
 						   static_cast<unsigned int>(handle.actor.actorGeneration),
 						   static_cast<unsigned int>(services_->service_adapterFrameCount()),
 						   static_cast<unsigned int>(actionDispatch.buttons));
@@ -605,12 +620,11 @@ runtime::CommandReceipt BotCommandRuntime::dispatchNeutralMovement(std::size_t i
 		return receipt;
 	}
 	const runtime::CommandReceipt dispatchReceipt =
-		services_->service_inputDispatcher().dispatchNext(handle.actor,
-														  services_->service_adapterFrameCount());
+		services_->service_inputDispatcher().dispatchNext(handle.actor, services_->service_adapterFrameCount());
 	if (dispatchReceipt.result == runtime::DispatchResult::Dispatched &&
 		(actionDispatch.buttons & ActionAdapter::kAttackButton) != 0U)
 	{
-		services_->behavior().observeNeutralC4AttackDispatched(index, handle);
+		services_->behavior_observeNeutralC4AttackDispatched(index, handle);
 	}
 	return dispatchReceipt;
 }
@@ -687,22 +701,19 @@ void BotCommandRuntime::onMovementResetActor(std::size_t index)
 	resetManagedBotCommandTemplate(index);
 }
 
-void BotCommandRuntime::buildAndExecuteMovement(std::size_t index, FakeClientHandle &handle,
-												const runtime::LifecycleToken &token,
-												const runtime::MovementPhysicsState &before,
-												NavigationUpdate &movement)
+MovementCommandDraft BotCommandRuntime::beginMovementCommand(std::size_t, FakeClientHandle &handle,
+															 const runtime::LifecycleToken &token,
+															 const runtime::MovementPhysicsState &,
+															 NavigationUpdate &movement)
 {
-	auto &roamDecision = movement.roamDecision;
+	MovementCommandDraft draft{};
 	const auto &locomotionIntent = movement.locomotionIntent;
-	const auto &observation = movement.observation;
-	const auto &landingFeedback = movement.landingFeedback;
-	runtime::BotCommand command = {};
+	runtime::BotCommand &command = draft.command;
 	command.actor = handle.actor;
 	command.lifecycle = token;
 	command.sequence = 0U;
 	command.issueFrame = 0U;
-	const runtime::ViewAngles movementViewAngles = {0.0f, movementYaw(locomotionIntent.direction),
-													0.0f};
+	const runtime::ViewAngles movementViewAngles = {0.0f, movementYaw(locomotionIntent.direction), 0.0f};
 	command.viewAngles = movementViewAngles;
 	std::uint16_t movementButtons = locomotionIntent.posture == nav::LocomotionPosture::Crouching
 										? static_cast<std::uint16_t>(IN_DUCK)
@@ -717,48 +728,56 @@ void BotCommandRuntime::buildAndExecuteMovement(std::size_t index, FakeClientHan
 		movementButtons = static_cast<std::uint16_t>(movementButtons | IN_DUCK);
 	}
 	command.movement = {0.0f, 0.0f, 0.0f, movementButtons, 0U, 1U};
+	draft.ready = true;
+	return draft;
+}
+
+void BotCommandRuntime::finishMovementCommand(std::size_t index, FakeClientHandle &handle,
+											  const runtime::LifecycleToken &,
+											  const runtime::MovementPhysicsState &before, NavigationUpdate &movement,
+											  MovementCommandDraft draft, const ActionProposal &requestedAction)
+{
+	runtime::BotCommand command = draft.command;
+	auto &roamDecision = movement.roamDecision;
+	const auto &locomotionIntent = movement.locomotionIntent;
+	const auto &observation = movement.observation;
+	const auto &landingFeedback = movement.landingFeedback;
+	const runtime::ViewAngles movementViewAngles = {0.0f, movementYaw(locomotionIntent.direction), 0.0f};
 	const ActionProposal actionProposal = ActionAdapter::forLiveDispatch(
-		services_->behavior().decideManagedBotAction(index, before, movementViewAngles,
-													 movementButtons),
-		services_->observation().hasObservedActiveWeapon(index), movementViewAngles);
+		requestedAction, services_->observation_hasObservedActiveWeapon(index), movementViewAngles);
 	const ActionDispatch actionDispatch = ActionAdapter::translate(actionProposal);
 	command.viewAngles = actionDispatch.viewAngles;
 	command.movement.buttons = actionDispatch.buttons;
 	const bool compatibilityMovement =
-		services_->service_compatibilitySurface().configuration().mode ==
-		compat::RuntimeMode::Compatibility;
+		services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility;
 	float commandSpeed = locomotionIntent.speed;
 	if (compatibilityMovement && commandSpeed > 0.0f && std::isfinite(handle.entity->v.maxspeed) &&
 		handle.entity->v.maxspeed > 0.0f)
 	{
 		commandSpeed = handle.entity->v.maxspeed;
-		const auto &goal = services_->behavior().managedBotObjectiveTargets(index);
+		const auto &goal = services_->behavior_managedBotObjectiveTargets(index);
 		const float x = goal.target.x - before.origin.x, y = goal.target.y - before.origin.y;
-		const bool finalArea =
-			roamDecision.currentArea != 0U && roamDecision.currentArea == roamDecision.goalArea;
+		const bool finalArea = roamDecision.currentArea != 0U && roamDecision.currentArea == roamDecision.goalArea;
 		if (goal.valid && finalArea && x * x + y * y < 200.0f * 200.0f &&
 			locomotionIntent.posture != nav::LocomotionPosture::Crouching)
 			commandSpeed *= 0.4f;
 	}
 	actors_[index].managedMoveSpeeds = commandSpeed;
 	const MovementProjection movementProjection =
-		ActionAdapter::projectMovement(locomotionIntent.direction.x, locomotionIntent.direction.y,
-									   commandSpeed, command.viewAngles.yaw, compatibilityMovement);
+		ActionAdapter::projectMovement(locomotionIntent.direction.x, locomotionIntent.direction.y, commandSpeed,
+									   command.viewAngles.yaw, compatibilityMovement);
 	command.movement.forward = actionDispatch.stopMovement ? 0.0f : movementProjection.forward;
 	command.movement.side = actionDispatch.stopMovement ? 0.0f : movementProjection.side;
 	if (!actionDispatch.stopMovement)
 	{
 		command.movement.buttons = static_cast<std::uint16_t>(
-			command.movement.buttons |
-			ActionAdapter::movementButtons(command.movement.forward, command.movement.side));
+			command.movement.buttons | ActionAdapter::movementButtons(command.movement.forward, command.movement.side));
 	}
-	services_->navigation().logTraversalOutcome(index, before, roamDecision, landingFeedback);
-	services_->navigation().logTraversalDiagnostic(index, before, roamDecision, locomotionIntent,
-												   command.movement.buttons,
-												   observation.locomotion);
-	services_->navigation().logMovementReversalDiagnostic(index, before, roamDecision,
-														  locomotionIntent);
-	if (services_->navigation().movementDiagnosticSamples(index) < kMovementPhysicsLogLimit &&
+	services_->navigation_logTraversalOutcome(index, before, roamDecision, landingFeedback);
+	services_->navigation_logTraversalDiagnostic(index, before, roamDecision, locomotionIntent,
+												 command.movement.buttons, observation.locomotion);
+	services_->navigation_logMovementReversalDiagnostic(index, before, roamDecision, locomotionIntent);
+	if (services_->navigation_movementDiagnosticSamples(index) < kMovementPhysicsLogLimit &&
 		gpMetaUtilFuncs != nullptr && gpMetaUtilFuncs->pfnLogConsole != nullptr &&
 		services_->service_pluginId() != nullptr)
 	{
@@ -766,15 +785,12 @@ void BotCommandRuntime::buildAndExecuteMovement(std::size_t index, FakeClientHan
 			services_->service_runtimeProfiler(), services_->service_pluginId(),
 			"movement command actor=%u generation=%u frame=%u forward=%.1f side=%.1f up=%.1f "
 			"yaw=%.1f buttons=%u msec=%u targetArea=%u nav=(%.2f %.2f) action=%d stop=%d",
-			static_cast<unsigned int>(handle.actor.slot),
-			static_cast<unsigned int>(handle.actor.actorGeneration),
-			static_cast<unsigned int>(services_->service_adapterFrameCount()),
-			command.movement.forward, command.movement.side, command.movement.up,
-			command.viewAngles.yaw, static_cast<unsigned int>(command.movement.buttons),
-			static_cast<unsigned int>(command.movement.msec),
+			static_cast<unsigned int>(handle.actor.slot), static_cast<unsigned int>(handle.actor.actorGeneration),
+			static_cast<unsigned int>(services_->service_adapterFrameCount()), command.movement.forward,
+			command.movement.side, command.movement.up, command.viewAngles.yaw,
+			static_cast<unsigned int>(command.movement.buttons), static_cast<unsigned int>(command.movement.msec),
 			static_cast<unsigned int>(locomotionIntent.targetArea), locomotionIntent.direction.x,
-			locomotionIntent.direction.y, static_cast<int>(actionProposal.kind),
-			actionDispatch.stopMovement ? 1 : 0);
+			locomotionIntent.direction.y, static_cast<int>(actionProposal.kind), actionDispatch.stopMovement ? 1 : 0);
 	}
 	if (actionProposal.kind != ActionKind::None && gpMetaUtilFuncs != nullptr &&
 		gpMetaUtilFuncs->pfnLogConsole != nullptr && services_->service_pluginId() != nullptr &&
@@ -782,8 +798,7 @@ void BotCommandRuntime::buildAndExecuteMovement(std::size_t index, FakeClientHan
 	{
 		profiledLogConsole(services_->service_runtimeProfiler(), services_->service_pluginId(),
 						   "bot action=%s slot=%u generation=%u frame=%u buttons=%u",
-						   actionKindName(actionProposal.kind),
-						   static_cast<unsigned int>(handle.actor.slot),
+						   actionKindName(actionProposal.kind), static_cast<unsigned int>(handle.actor.slot),
 						   static_cast<unsigned int>(handle.actor.actorGeneration),
 						   static_cast<unsigned int>(services_->service_adapterFrameCount()),
 						   static_cast<unsigned int>(actionDispatch.buttons));
@@ -805,27 +820,24 @@ void BotCommandRuntime::buildAndExecuteMovement(std::size_t index, FakeClientHan
 	if (receipt.result != runtime::DispatchResult::Dispatched)
 	{
 		roamDecision.failureReason = runtime::NavFailureReason::NavApplyRejected;
-		services_->navigation().logMovementDiagnostic(index, "nav_apply_rejected", &roamDecision);
+		services_->navigation_logMovementDiagnostic(index, "nav_apply_rejected", &roamDecision);
 	}
-	services_->navigation().recordMovementPhysicsSample(index, before, receipt);
+	services_->navigation_recordMovementPhysicsSample(index, before, receipt);
 	if (receipt.result == runtime::DispatchResult::Dispatched &&
-		services_->navigation().movementDiagnosticSamples(index) < 4U &&
-		gpMetaUtilFuncs != nullptr && gpMetaUtilFuncs->pfnLogConsole != nullptr &&
-		services_->service_pluginId() != nullptr)
+		services_->navigation_movementDiagnosticSamples(index) < 4U && gpMetaUtilFuncs != nullptr &&
+		gpMetaUtilFuncs->pfnLogConsole != nullptr && services_->service_pluginId() != nullptr)
 	{
 		profiledLogConsole(
 			services_->service_runtimeProfiler(), services_->service_pluginId(),
 			"movement actor=%u generation=%u frame=%u origin=(%.1f %.1f %.1f) targetArea=%u "
 			"sequence=%u stage=%d currentArea=%u recoveryArea=%u",
-			static_cast<unsigned int>(handle.actor.slot),
-			static_cast<unsigned int>(handle.actor.actorGeneration),
-			static_cast<unsigned int>(services_->service_adapterFrameCount()),
-			handle.entity->v.origin.x, handle.entity->v.origin.y, handle.entity->v.origin.z,
-			static_cast<unsigned int>(locomotionIntent.targetArea),
-			static_cast<unsigned int>(command.sequence), static_cast<int>(roamDecision.stage),
-			static_cast<unsigned int>(roamDecision.currentArea),
+			static_cast<unsigned int>(handle.actor.slot), static_cast<unsigned int>(handle.actor.actorGeneration),
+			static_cast<unsigned int>(services_->service_adapterFrameCount()), handle.entity->v.origin.x,
+			handle.entity->v.origin.y, handle.entity->v.origin.z,
+			static_cast<unsigned int>(locomotionIntent.targetArea), static_cast<unsigned int>(command.sequence),
+			static_cast<int>(roamDecision.stage), static_cast<unsigned int>(roamDecision.currentArea),
 			static_cast<unsigned int>(roamDecision.recoveryArea));
-		services_->navigation().noteMovementDiagnosticSample(index);
+		services_->navigation_noteMovementDiagnosticSample(index);
 	}
 }
 

@@ -780,6 +780,8 @@ add_executable(astrabot_compat_actor_command
       ${ASTRABOT_METAMOD_INCLUDE_DIRS}
     )
     target_link_libraries(astrabot_compat_actor_command PRIVATE astrabot_core)
+    # Preserve the frozen full-diagnostic capture independently of normal logging.
+    target_compile_definitions(astrabot_compat_actor_command PRIVATE ASTRABOT_TEST_FULL_DIAGNOSTICS)
     astrabot_apply_warnings(astrabot_compat_actor_command)
 	add_test(NAME astrabot_compat_actor_command COMMAND astrabot_compat_actor_command)
 
@@ -943,6 +945,11 @@ if(ASTRABOT_BUILD_METAMOD)
   set(ASTRABOT_RUNTIME_OWNER_SOURCES
     src/adapter/metamod/bot_observation_runtime.cpp
     src/adapter/metamod/bot_behavior_runtime.cpp
+    src/adapter/metamod/bot_behavior_radio.cpp
+    src/adapter/metamod/bot_behavior_buying.cpp
+    src/adapter/metamod/bot_behavior_objectives.cpp
+    src/adapter/metamod/bot_behavior_scenario.cpp
+    src/adapter/metamod/bot_behavior_combat.cpp
     src/adapter/metamod/bot_navigation_runtime.cpp
     src/adapter/metamod/bot_command_runtime.cpp
   )
@@ -956,7 +963,7 @@ endif()
 # Source ownership and pre-refactor behavior are independent acceptance gates.
 if(ASTRABOT_BUILD_TESTS AND ASTRABOT_BUILD_METAMOD)
   find_package(Python3 COMPONENTS Interpreter REQUIRED)
-  foreach(contract runtime_ownership runtime_movement_integration p076_performance)
+  foreach(contract runtime_ports runtime_ownership runtime_movement_integration runtime_behavior runtime_navigation p076_performance)
     add_test(NAME astrabot_${contract}_contract
       COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/${contract}_contract.py")
   endforeach()
@@ -981,4 +988,37 @@ if(ASTRABOT_BUILD_TESTS AND ASTRABOT_BUILD_METAMOD)
   set_tests_properties(astrabot_compat_actor_command astrabot_runtime_characterization PROPERTIES
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
     RESOURCE_LOCK astrabot_actor_command_profile)
+endif()
+
+if(ASTRABOT_BUILD_TESTS AND ASTRABOT_BUILD_METAMOD)
+  get_target_property(combat_target_log_sources astrabot_compat_actor_command SOURCES)
+  list(REMOVE_ITEM combat_target_log_sources tests/compat_actor_command_tests.cpp)
+  add_executable(astrabot_combat_target_log tests/combat_target_log_tests.cpp ${combat_target_log_sources})
+  get_target_property(combat_target_log_includes astrabot_compat_actor_command INCLUDE_DIRECTORIES)
+  target_include_directories(astrabot_combat_target_log PRIVATE ${combat_target_log_includes})
+  target_link_libraries(astrabot_combat_target_log PRIVATE astrabot_core astrabot_regamedll_provider)
+  astrabot_apply_warnings(astrabot_combat_target_log)
+  add_test(NAME astrabot_combat_target_log COMMAND astrabot_combat_target_log --target-log)
+  set_tests_properties(astrabot_combat_target_log PROPERTIES
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+    RESOURCE_LOCK astrabot_actor_command_profile)
+  add_executable(astrabot_runtime_command_scenarios
+    tests/runtime_command_scenarios.cpp
+    src/adapter/metamod/compat_surface.cpp
+    src/adapter/metamod/profile_loader.cpp
+    src/adapter/metamod/join_controller.cpp
+    src/adapter/metamod/bot_command_runtime.cpp
+    src/adapter/metamod/input_dispatcher.cpp
+    src/adapter/metamod/runtime_profiler.cpp
+    src/adapter/metamod/movement_execution_gate.cpp
+    src/adapter/metamod/action_adapter.cpp)
+  target_include_directories(astrabot_runtime_command_scenarios PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/adapter/metamod
+    ${ASTRABOT_METAMOD_INCLUDE_DIRS})
+  target_link_libraries(astrabot_runtime_command_scenarios PRIVATE astrabot_core)
+  astrabot_apply_warnings(astrabot_runtime_command_scenarios)
+  add_test(NAME astrabot_runtime_command_scenarios COMMAND astrabot_runtime_command_scenarios)
+  add_test(NAME astrabot_runtime_architecture_checker
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/runtime_architecture_checker_tests.py)
 endif()

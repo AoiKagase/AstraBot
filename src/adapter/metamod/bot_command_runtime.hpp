@@ -9,7 +9,7 @@ namespace metamod
 class BotCommandRuntime
 {
   public:
-	void bindServices(BotRuntimeServices &services)
+	void bindServices(BotCommandServices &services)
 	{
 		services_ = &services;
 	}
@@ -19,12 +19,18 @@ class BotCommandRuntime
 	bool dispatchManagedActionCommand(std::size_t index, FakeClientHandle &handle,
 									  const ActionProposal &proposal,
 									  const ActionDispatch &dispatch);
-	runtime::CommandReceipt dispatchNeutralMovement(std::size_t index, FakeClientHandle &handle,
-													std::uint8_t milliseconds);
+	MovementCommandDraft beginDirectNeutralCommand(std::size_t index,
+																   FakeClientHandle &handle,
+																   std::uint8_t milliseconds);
+	runtime::CommandReceipt finishDirectNeutralCommand(std::size_t index,
+																   FakeClientHandle &handle,
+																   std::uint8_t milliseconds, MovementCommandDraft draft, const ActionProposal &requestedAction);
 	runtime::CommandReceipt executeManagedBotCommand(std::size_t index, FakeClientHandle &handle);
 	void onTouch(edict_t *entity, edict_t *other);
-	void prepareNeutralManagedBotCommand(std::size_t index, FakeClientHandle &handle,
-										 const runtime::MovementPhysicsState &before);
+	MovementCommandDraft beginNeutralCommand(std::size_t index, FakeClientHandle &handle,
+											 const runtime::MovementPhysicsState &before);
+	void finishNeutralCommand(std::size_t index, FakeClientHandle &handle, const runtime::MovementPhysicsState &before,
+							  MovementCommandDraft draft, const ActionProposal &requestedAction);
 	void resetManagedBotCommandTemplate(std::size_t index);
 	const std::uint32_t &managedBotCommandSequences(std::size_t index) const
 	{
@@ -46,10 +52,12 @@ class BotCommandRuntime
 
 	void onMovementResetActor(std::size_t index);
 
-	void buildAndExecuteMovement(std::size_t index, FakeClientHandle &handle,
-								 const runtime::LifecycleToken &token,
-								 const runtime::MovementPhysicsState &before,
-								 NavigationUpdate &movement);
+	MovementCommandDraft beginMovementCommand(std::size_t index, FakeClientHandle &handle,
+											  const runtime::LifecycleToken &token,
+											  const runtime::MovementPhysicsState &before, NavigationUpdate &movement);
+	void finishMovementCommand(std::size_t index, FakeClientHandle &handle, const runtime::LifecycleToken &token,
+							   const runtime::MovementPhysicsState &before, NavigationUpdate &movement,
+							   MovementCommandDraft draft, const ActionProposal &requestedAction);
 
 	void resetCreatedActorCommand(std::size_t slotIndex);
 
@@ -100,7 +108,7 @@ class BotCommandRuntime
 		float movementGateDiagnosticTimes = std::numeric_limits<float>::quiet_NaN();
 	};
 	std::array<ActorState, NativeBotObservation::kClientSlotCount> actors_{};
-	BotRuntimeServices *services_ = nullptr;
+	BotCommandServices *services_ = nullptr;
 };
 } // namespace metamod
 } // namespace astrabot

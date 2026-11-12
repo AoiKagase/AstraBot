@@ -30,7 +30,7 @@ $actionAdapterSource = if (Test-Path -LiteralPath $actionAdapterPath) {
     ''
 }
 $result = [ordered]@{
-    MovementDispatch = $movementBody.Contains('command_.buildAndExecuteMovement') -and $commandSource.Contains('service_inputDispatcher().dispatchNext')
+    MovementDispatch = $movementBody.Contains('buildAndExecuteMovement') -and $commandSource.Contains('service_inputDispatcher().dispatchNext')
     CombatCoreCall = $behaviorHeader.Contains('combat::CombatController') -and $behaviorSource.Contains('managedBotCombat')
     ObjectiveCoreCall = $behaviorHeader.Contains('objectives::RoundObjectivePlanner') -and $behaviorSource.Contains('managedBotObjectives')
     AttackButton = $actionAdapterSource.Contains('IN_ATTACK')

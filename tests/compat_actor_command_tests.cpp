@@ -1543,8 +1543,9 @@ bool testRuntimeBombSiteApproach(
 
 } // namespace
 
-int main()
+int main(int argc, char **)
 {
+	(void)argc;
 	using astrabot::metamod::CompatibilityCommandResult;
 	using astrabot::metamod::FakeClientHandle;
 	using astrabot::metamod::FakeClientResult;
@@ -1769,6 +1770,17 @@ int main()
 		std::remove(defaultProfilePath);
 		return 1;
 	}
+#ifdef ASTRABOT_EXTRA_ACTOR_TEST
+	if (argc > 1)
+	{
+		const bool extraPassed = ASTRABOT_EXTRA_ACTOR_TEST(runtime, engineFunctions, globals);
+		std::remove(profilePath);
+		std::remove(defaultProfilePath);
+		runtime.onServerDeactivate();
+		runtime.detach(PT_ANYTIME, PNL_NULL);
+		return extraPassed ? 0 : 1;
+	}
+#endif
 	const float timingStart = globals.time;
 	gRunPlayerMoveCount = 0;
 	globals.time = timingStart + 0.010f;
