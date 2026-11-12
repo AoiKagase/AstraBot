@@ -2332,6 +2332,87 @@ bool testOffMeshCompatibilityKeepsTryingAfterBlockedCandidate()
 	return true;
 }
 
+bool testRepeated1773DropFailureRearmsDirectedBypass()
+{
+	using namespace astrabot;
+	// Reduced de_dust2 NAV: the saved 1773->243 route begins 1773->139;
+	// excluding that edge gives 1773->78->1772->139. Keep actual corner heights.
+	nav::NavDocument document;
+	document.setSourceIdentity({5U, 100U, 200U});
+	auto ledge = area(1773U, -250.0f, -225.0f);
+	ledge.extent.lo = {-250.0f, 1525.0f, 32.03125f};
+	ledge.extent.hi = {-225.0f, 1575.0f, 0.03125f};
+	ledge.northEastZ = 0.03125f; ledge.southWestZ = 32.03125f;
+	ledge.attributes = nav::NavArea::kJump;
+	ledge.connections[0U] = {1772U}; ledge.connections[1U] = {78U};
+	ledge.connections[3U] = {139U};
+	auto lowerLedge = ledge;
+	lowerLedge.id = 1772U;
+	lowerLedge.extent.lo.y = 1475.0f; lowerLedge.extent.hi.y = 1525.0f;
+	lowerLedge.connections[0U].clear(); lowerLedge.connections[2U] = {1773U};
+	auto approach = area(78U, -225.0f, -75.0f);
+	approach.extent.lo = {-225.0f, 1400.0f, 0.03125f};
+	approach.extent.hi = {-75.0f, 1550.0f, 0.03125f};
+	approach.northEastZ = approach.southWestZ = 0.03125f;
+	approach.connections[3U] = {1772U, 1773U};
+	auto landing = area(139U, -375.0f, -275.0f);
+	landing.extent.lo = {-375.0f, 1475.0f, -127.96874f};
+	landing.extent.hi = {-275.0f, 1575.0f, -127.96874f};
+	landing.northEastZ = landing.southWestZ = -127.96874f;
+	for (const auto &entry : {ledge, lowerLedge, approach, landing}) document.addArea(entry);
+	nav::NavSnapshotPublisher publisher; publisher.publish(&document, 1U);
+	compat::ScriptedRandomSource random({
+		compat::RandomTapeEntry::floatEntry("CSBOT-PATH-RETRY", {7U,1U}, {0U,0U,1U}, .4f,.6f,.5f),
+		compat::RandomTapeEntry::floatEntry("CSBOT-PATH-RETRY", {7U,1U}, {0U,0U,7U}, .4f,.6f,.5f),
+		compat::RandomTapeEntry::floatEntry("CSBOT-PATH-RETRY", {7U,1U}, {0U,0U,13U}, .4f,.6f,.5f),
+		compat::RandomTapeEntry::floatEntry("CSBOT-PATH-RETRY", {7U,1U}, {0U,0U,19U}, .4f,.6f,.5f)});
+	runtime::NavRoamController controller; controller.setRandomSource(&random);
+	runtime::NavRoamObservation observation{};
+	observation.actor = {7U,1U}; observation.frame = {1U,5U,1U};
+	// Saved standing origin (-236.7,1561,68), mins.z=-36: feet.z=32.
+	observation.locomotion.position = {-236.7f,1561.0f,32.0f};
+	observation.locomotion.grounded = true;
+	observation.locomotion.standingClearance = 72.0f;
+	observation.locomotion.crouchingClearance = 36.0f;
+	observation.locomotion.safeDropHeightAvailable = true;
+	observation.locomotion.maximumSafeDropHeight = 156.25f;
+	observation.locomotion.timingAvailable = true;
+	observation.hasObjectiveTarget = true;
+	observation.objectiveTarget = {-325.0f,1525.0f,-127.96874f};
+	nav::LocomotionIntent intent{}; runtime::NavRoamDecision decision{};
+	for (unsigned update = 0U; update < 4U; ++update)
+	{
+		observation.frame.tick = 1U + 6U * update;
+		observation.locomotion.observedAt = 1.0f + .6f * update;
+		if (update == 2U) controller.destroyPath();
+		const auto result = controller.update(publisher.snapshot(), observation, &intent, &decision);
+		if ((update % 2U) == 0U)
+		{
+			if (!check(result == runtime::NavRoamResult::ReplanRequired &&
+				decision.failureReason == runtime::NavFailureReason::UnsafeDrop && intent.speed == 0.0f,
+				"recorded1773->139 unsafe drop remains rejected after a discarded bypass")) return false;
+		}
+		else if (!check(result == runtime::NavRoamResult::IntentReady &&
+			intent.targetArea == 78U && intent.speed > 0.0f && intent.direction.x > 0.0f,
+			"repeated1773->139 failure retries directed bypass instead of latching neutral")) return false;
+		if ((update % 2U) == 0U)
+		{
+			const auto consumed = random.position();
+			// Actual full updates continue while the 0.5-second retry is pending.
+			// They must neither consume the bypass nor request another random delay.
+			for (unsigned waiting = 1U; waiting <= 4U; ++waiting)
+			{
+				observation.frame.tick = 1U + 6U * update + waiting;
+				observation.locomotion.observedAt = 1.0f + .6f * update + .1f * waiting;
+				if (!check(controller.update(publisher.snapshot(), observation, &intent, &decision) ==
+					runtime::NavRoamResult::NoRoute && intent.speed == 0.0f && random.position() == consumed,
+					"retry cooldown remains neutral and consumes no bypass search RNG")) return false;
+			}
+		}
+	}
+	return check(random.verifyComplete(), "repeated drop preserves path retry RNG timing and consumption");
+}
+
 bool testSafeDescentDoesNotReverseTowardNeighboringLedge()
 {
 	using namespace astrabot;
@@ -2839,6 +2920,7 @@ bool testUnsafeDropRetryPolicy(std::uint32_t cadence, int release, bool bypass, 
 
 int main()
 {
+	if (!testRepeated1773DropFailureRearmsDirectedBypass()) return 1;
 	{
 		using namespace astrabot;
 		nav::NavDocument document;

@@ -648,6 +648,10 @@ void NavRoamController::rememberUnsafeDrop(
 		recoveryState().unsafeDropFailure.link.toArea == link.toArea)
 	{
 		delayUnsafeDropRetry();
+		// A discarded bypass can return the actor to the same unsafe edge.
+		// Each new physical rejection must permit another directed bypass;
+		// otherwise timed retries repeatedly choose only the rejected edge.
+		if (timedCompatibility_) recoveryState().unsafeDropFailure.bypassPending = true;
 		return;
 	}
 	recoveryState().unsafeDropFailure = {true, true, observation.objectiveTargetEntity,
@@ -1582,10 +1586,6 @@ NavRoamController::selectUpdateRoute(NavigationUpdateContext &ctx)
 				return {true, NavRoamResult::NoRoute};
 			}
 		}
-		if (objectiveArea != 0U && recoveryState().unsafeDropFailure.valid)
-		{
-			recoveryState().unsafeDropFailure.bypassPending = false;
-		}
 		const nav::NavRouteType routeType = nav::NavRouteType::Fastest;
 		if (objectiveArea != 0U &&
 			isPathFailureBackedOff(observation.frame.mapGeneration, currentArea.area, objectiveArea,
@@ -1628,6 +1628,10 @@ NavRoamController::selectUpdateRoute(NavigationUpdateContext &ctx)
 				return {true, NavRoamResult::NoRoute};
 			recoveryState().nextPathAttemptAt = observedAt_ + interval.value;
 		}
+		// Consume the bypass only when a route search is actually attempted.
+		// Full updates during the retry cooldown must retain it.
+		if (objectiveArea != 0U && recoveryState().unsafeDropFailure.valid)
+			recoveryState().unsafeDropFailure.bypassPending = false;
 		if (!selectRoute(snapshot, currentArea, objectiveArea, decision))
 		{
 			if (objectiveArea != 0U && recoveryState().unsafeDropFailure.valid)
