@@ -1,0 +1,15 @@
+{
+  "machine": "x86_64",
+  "platform": "Linux-6.18.44-x86_64-with-glibc2.41",
+  "compiler": "g++ (Debian 14.2.0-19) 14.2.0",
+  "product_sources_modified": false,
+  "official_x86_build_tested": false,
+  "hlds_tested": false,
+  "diagnostic_exit": 0,
+  "core_safety_exit": 1,
+  "standalone_ctest_exit": 8,
+  "standalone_tests_passed": 8,
+  "standalone_tests_failed": 1,
+  "python_contract_passed": 12,
+  "python_contract_failed": 1
+}

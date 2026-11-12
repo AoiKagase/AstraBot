@@ -1,0 +1,37 @@
+............F                                                            [100%]
+=================================== FAILURES ===================================
+____________________ test_p076_state_keeps_phase8_unstarted ____________________
+
+    def test_p076_state_keeps_phase8_unstarted():
+>       state = (ROOT / ".planning" / "STATE.md").read_text(encoding="utf-8")
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/p076_production_runtime_docs.py:36: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/lib/python3.13/pathlib/_local.py:548: in read_text
+    return PathBase.read_text(self, encoding, errors, newline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.13/pathlib/_abc.py:632: in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors, newline=newline) as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = PosixPath('/mnt/data/astrabot_audit_input/AstraBot/.planning/STATE.md')
+mode = 'r', buffering = -1, encoding = 'utf-8', errors = None, newline = None
+
+    def open(self, mode='r', buffering=-1, encoding=None,
+             errors=None, newline=None):
+        """
+        Open the file pointed to by this path and return a file object, as
+        the built-in open() function does.
+        """
+        if "b" not in mode:
+            encoding = io.text_encoding(encoding)
+>       return io.open(self, mode, buffering, encoding, errors, newline)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       FileNotFoundError: [Errno 2] No such file or directory: '/mnt/data/astrabot_audit_input/AstraBot/.planning/STATE.md'
+
+/usr/lib/python3.13/pathlib/_local.py:539: FileNotFoundError
+=========================== short test summary info ============================
+FAILED tests/p076_production_runtime_docs.py::test_p076_state_keeps_phase8_unstarted - FileNotFoundError: [Errno 2] No such file or directory: '/mnt/data/astrabot_audit_input/AstraBot/.planning/STATE.md'
+1 failed, 12 passed in 0.12s

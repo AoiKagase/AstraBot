@@ -1,0 +1,40 @@
+Internal ctest changing into directory: /mnt/data/astrabot_source_audit/cmake-build
+Test project /mnt/data/astrabot_source_audit/cmake-build
+    Start 1: existing_nav_model
+1/9 Test #1: existing_nav_model ...............   Passed    0.00 sec
+    Start 2: existing_nav_snapshot
+2/9 Test #2: existing_nav_snapshot ............   Passed    0.00 sec
+    Start 3: existing_nav_query
+3/9 Test #3: existing_nav_query ...............   Passed    0.00 sec
+    Start 4: existing_locomotion
+4/9 Test #4: existing_locomotion ..............   Passed    0.00 sec
+    Start 5: existing_jump_drop
+5/9 Test #5: existing_jump_drop ...............   Passed    0.00 sec
+    Start 6: existing_special_traversal
+6/9 Test #6: existing_special_traversal .......   Passed    0.00 sec
+    Start 7: existing_nav_roam_controller
+7/9 Test #7: existing_nav_roam_controller .....   Passed    0.00 sec
+    Start 8: audit_diagnostic_observations
+8/9 Test #8: audit_diagnostic_observations ....   Passed    0.00 sec
+    Start 9: audit_core_safety
+9/9 Test #9: audit_core_safety ................***Failed    0.00 sec
+R1 initial goals: bot1=2 bot2=2 bot3=2 bot4=2
+R2 roam goals: 2 1 2 1 2 1 (available branch=3)
+R3 first target: area=2 pos=(116.0,20.0) index=1
+R3 unchanged-position target: area=3 pos=(156.0,116.0) index=2 entered_B=0 leaves_walkable_union=1 first_outside=(140.16,92.96)
+R4 continuous ramp: result=3 locomotion=4 StepTooHigh=1 shared_edge_height_delta=0
+R5 NAV_JUMP rise=32: result=3 locomotion=4 StepTooHigh=1 traversal=0
+R6 same B->C link: via_A action=0 target=3; starting_at_B action=3 skipped_jump=1
+R7 nearest at z=0 maxDistance=16: area=1 selected_z=200.0 distanceSquared=0.0 wrong_floor=1
+R8 500 updates, x progress=0, y creep=0.02/update: stuck_events=0 still_active=1
+SUMMARY: reproduced 8 / 8 diagnostic observations
+CORE SAFETY: 4 violations among R3-R6
+
+
+89% tests passed, 1 tests failed out of 9
+
+Total Test time (real) =   0.03 sec
+
+The following tests FAILED:
+	  9 - audit_core_safety (Failed)
+Errors while running CTest
