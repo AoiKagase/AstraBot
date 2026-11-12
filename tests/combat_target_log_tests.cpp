@@ -10,6 +10,16 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &, enginefuncs_t &, gl
 
 namespace
 {
+unsigned combatAttackCommands = 0U;
+void runCombatPlayerMove(edict_t *entity, const float *angles, float forward, float side,
+	float up, unsigned short buttons, byte impulse, byte msec)
+{
+	runPlayerMove(entity, angles, forward, side, up, buttons, impulse, msec);
+	// Feed the public engine angle result back on the next full update.
+	entity->v.v_angle = Vector(angles[0], angles[1], angles[2]);
+	if (entity == &gEntities[0] && (buttons & IN_ATTACK) != 0U) ++combatAttackCommands;
+}
+
 bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &engine,
 	globalvars_t &globals)
 {
@@ -40,6 +50,7 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 	engine.pfnRandomLong = &siteFixtureRandomLong;
 	engine.pfnRandomFloat = &siteFixtureRandomFloat;
 	engine.pfnTraceLine = &traceObjectiveVisibility;
+	engine.pfnRunPlayerMove = &runCombatPlayerMove;
 	gObjectiveTraceVisible = true;
 	runtime.giveEnginePointers(&engine, &globals);
 	gEntities[0].v.flags = FL_CLIENT | FL_FAKECLIENT | FL_ONGROUND;
@@ -58,6 +69,8 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 	gCaptureMovementLogs = true;
 	gProfileEnabled = true;
 	const auto observe = [&](bool enemyPresent) {
+		combatAttackCommands = 0U;
+		gEntities[0].v.v_angle = Vector(20.0f, 30.0f, 0.0f);
 		gEntities[1].v.flags = enemyPresent ? FL_CLIENT : 0;
 		gEntities[1].v.team = 2;
 		gEntities[1].v.health = enemyPresent ? 100.0f : 0.0f;
@@ -82,12 +95,18 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 					"sparse profiling omits zero-call aggregate records")) return false;
 			if (message.find("action sensor slot=1 ") != 0U ||
 				message.find(" combatResult=") == std::string::npos) continue;
+			if (!check(message.find(" core_reason=") != std::string::npos &&
+				message.find(" weapon_reason=") != std::string::npos &&
+				message.find(" dt=") != std::string::npos,
+				"combat diagnostics distinguish Core waiting from final weapon gates")) return false;
 			if (!enemyPresent && !check(message.find(" target=0 ") != std::string::npos,
 				"combat sensor reports no target when no enemy was acquired")) return false;
 			if (message.find(enemyPresent ? " target=1 " : " target=0 ") != std::string::npos)
 				found = true;
 		}
 		if (!check(physicalSample, "detailed physical samples continue beyond the initial log budget")) return false;
+		if (!check(enemyPresent ? combatAttackCommands > 0U : combatAttackCommands == 0U,
+			"engine angle feedback reaches fire with a visible enemy and holds fire without one")) return false;
 		if (!found)
 		{
 			for (const auto &message : gMovementLogs)

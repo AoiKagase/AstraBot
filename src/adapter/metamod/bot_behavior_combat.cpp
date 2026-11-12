@@ -206,20 +206,6 @@ ActionProposal BotBehaviorRuntime::decideCombatAction(ManagedActionContext &ctx)
 	{
 		(void)actors_[index].managedBotStateMachines.stopAttack(stateContext);
 	}
-	if ((services_->service_adapterFrameCount() % 16U) == 0U && gpMetaUtilFuncs != nullptr &&
-		gpMetaUtilFuncs->pfnLogConsole != nullptr && services_->service_pluginId() != nullptr)
-	{
-		profiledLogConsole(
-			services_->service_runtimeProfiler(), services_->service_pluginId(),
-			"action sensor slot=%u frame=%u team=%d teamInfo=%u target=%d combatResult=%d "
-			"hasAim=%d hasFire=%d",
-			static_cast<unsigned int>(handle.actor.slot),
-			static_cast<unsigned int>(services_->service_adapterFrameCount()),
-			static_cast<int>(handle.entity->v.team),
-			static_cast<unsigned int>(services_->observation_managedBotTeamNumbers(index)),
-			targetActor.isValid() ? 1 : 0,
-			static_cast<int>(result), decision.hasAim ? 1 : 0, decision.hasFire ? 1 : 0);
-	}
 	if (fireIntentReady)
 	{
 		proposal.kind = ActionKind::Fire;
@@ -423,6 +409,57 @@ ActionProposal BotBehaviorRuntime::decideCombatAction(ManagedActionContext &ctx)
 	if (weaponDecision.hasRetainedGrenadeAim)
 		proposal.viewAngles = {weaponDecision.grenadePitch, weaponDecision.grenadeYaw,
 							   movementAngles.roll};
+	if ((services_->service_adapterFrameCount() % 16U) == 0U && gpMetaUtilFuncs != nullptr &&
+		gpMetaUtilFuncs->pfnLogConsole != nullptr && services_->service_pluginId() != nullptr)
+	{
+		const char *coreReason = "state_gate";
+		if (result == combat::CombatResult::FireIntentReady) coreReason = "fire_ready";
+		else if (result == combat::CombatResult::ReloadIntentReady) coreReason = "reload_ready";
+		else if (result == combat::CombatResult::FriendlyFireRisk) coreReason = "friendly_fire";
+		else if (result == combat::CombatResult::InvalidTarget) coreReason = "target_invalid";
+		else if (result == combat::CombatResult::InvalidObservation)
+			coreReason = targetActor.isValid() ? "observation_invalid" : "no_target";
+		else if (result == combat::CombatResult::NoAction)
+		{
+			if (decision.hasAim)
+				coreReason = compat::weaponEngagementAllowed(weapon.kind, weaponInput.targetDistance)
+					? "aim_alignment" : "weapon_range";
+			else if (weapon.reloadState == combat::ReloadState::Reloading) coreReason = "reloading";
+			else if (!weapon.ammo.clipKnown) coreReason = "clip_unknown";
+			else if (weapon.ammo.clip == 0U) coreReason = "clip_empty";
+			else coreReason = "weapon_not_ready";
+		}
+		const char *weaponReason = "weapon_wait";
+		if (weaponDecision.primary) weaponReason = "primary";
+		else if (weaponDecision.secondary) weaponReason = "secondary";
+		else if (weaponDecision.switchToPistol) weaponReason = "switch_pistol";
+		else if (weaponDecision.releasePrimary) weaponReason = "primary_release";
+		else if (weaponInput.reloading.known && weaponInput.reloading.value) weaponReason = "reloading";
+		else if (weaponDecision.waitingForObservation) weaponReason = "observation_wait";
+		else if (weaponDecision.unavailableMode) weaponReason = "mode_unavailable";
+		else if (compat::WeaponActionPlanner::isGrenade(weaponInput.weaponId)) weaponReason = "grenade_wait";
+		else if (!weaponInput.targetVisible) weaponReason = "no_target";
+		else if (target.friendlyFireRisk) weaponReason = "friendly_fire";
+		else if (!weaponInput.aimAligned) weaponReason = "aim_alignment";
+		else if (context.timestamp < actors_[index].attackReadyTimes) weaponReason = "attack_delay";
+		else if (!weaponInput.requestFire) weaponReason = "attack_cooldown";
+		else if (weaponDecision.stopMovement) weaponReason = "scope_or_stop_wait";
+		else if (!weaponInput.clipKnown) weaponReason = "clip_unknown";
+		else if (weaponInput.clip == 0U) weaponReason = "clip_empty";
+		profiledLogConsole(services_->service_runtimeProfiler(), services_->service_pluginId(),
+			"action sensor slot=%u frame=%u team=%d teamInfo=%u target=%d combatResult=%d "
+			"hasAim=%d hasFire=%d core_reason=%s weapon_reason=%s weapon=%d clip=%d range=%.1f "
+			"dt=%.4f current=(%.2f %.2f) aim=(%.2f %.2f) action=%d primary=%d secondary=%d",
+			static_cast<unsigned int>(handle.actor.slot),
+			static_cast<unsigned int>(services_->service_adapterFrameCount()),
+			static_cast<int>(handle.entity->v.team),
+			static_cast<unsigned int>(services_->observation_managedBotTeamNumbers(index)),
+			targetActor.isValid() ? 1 : 0, static_cast<int>(result), decision.hasAim ? 1 : 0,
+			decision.hasFire ? 1 : 0, coreReason, weaponReason, weaponValue, observedWeapon.clip,
+			weaponInput.targetDistance, context.elapsedSeconds, context.currentPitch, context.currentYaw,
+			proposal.viewAngles.pitch, proposal.viewAngles.yaw, static_cast<int>(proposal.kind),
+			weaponDecision.primary ? 1 : 0, weaponDecision.secondary ? 1 : 0);
+	}
 	return proposal;
 }
 

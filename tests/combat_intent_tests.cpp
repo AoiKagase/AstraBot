@@ -280,8 +280,44 @@ bool testProfileAimAndSharedRandom()
 				 "unavailable shared random never becomes perfect aim");
 }
 
+bool testLoadedFirearmConvergesAtFullUpdateCadence()
+{
+	using namespace astrabot;
+	for (float interval : {0.1f, 0.125f, 0.25f})
+	{
+		std::vector<compat::RandomTapeEntry> tape;
+		for (unsigned refresh = 0U; refresh < 10U; ++refresh)
+		{
+			for (const char *id : {"AimOffsetX", "AimOffsetY", "AimOffsetZ"})
+				tape.push_back(compat::RandomTapeEntry::floatEntry(id,{1U,5U},{},0.0f,0.0f,0.0f));
+			tape.push_back(compat::RandomTapeEntry::floatEntry("AimOffsetRefresh",{1U,5U},{},.25f,1.0f,.5f));
+		}
+		compat::ScriptedRandomSource random(tape);
+		combat::CombatController controller;
+		float yaw = 90.0f, pitch = 20.0f;
+		bool fired = false, waited = false;
+		for (unsigned update = 0U; update < 20U && !fired; ++update)
+		{
+			const auto world = snapshot(100U + update);
+			auto ctx = context(world);
+			ctx.aimTrackingEnabled = true; ctx.skill = 1.0f; ctx.fieldOfView = 90.0f;
+			ctx.elapsedSeconds = interval; ctx.timestamp = interval * update;
+			ctx.currentYaw = yaw; ctx.currentPitch = pitch; ctx.randomSource = &random;
+			combat::CombatDecision decision{};
+			const auto result = controller.decide(world,inventory(),target(),ctx,&decision);
+			if (!check(decision.hasAim && !random.failed(),"visible loaded firearm retains bounded aim and valid shared RNG")) return false;
+			waited = waited || result == combat::CombatResult::NoAction;
+			fired = result == combat::CombatResult::FireIntentReady;
+			yaw = decision.aim.yaw; pitch = decision.aim.pitch;
+		}
+		if (!check(waited && fired,"loaded firearm leaves aim NoAction instead of oscillating at full-update cadence")) return false;
+	}
+	return true;
+}
+
 int main()
 {
+	if (!testLoadedFirearmConvergesAtFullUpdateCadence()) return 1;
 	if (!testProfileAimAndSharedRandom() || !testFireIntentDoesNotClaimEngineSuccess() ||
 			!testSafetyCooldownAndReloadBoundaries() ||
 			!testInvalidTargetDamageAndGeneration())

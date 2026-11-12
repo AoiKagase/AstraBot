@@ -274,9 +274,15 @@ bool CombatController::buildAim(const CombatDecisionContext &context, const Targ
 	intent->pitch = -std::atan2(deltaZ, horizontalDistance) * 180.0f / kPi;
 	if (context.aimTrackingEnabled)
 	{
-		const compat::AimStep step =
-			compat::trackAim(context.currentYaw, context.currentPitch, intent->yaw, intent->pitch,
-							 context.elapsedSeconds, context.skill, &aimSpring_);
+		// The reference spring is tuned for 30 Hz upkeep. Full decisions arrive less
+		// often: integrate bounded steps without repeating observations or RNG draws.
+		const unsigned steps = (std::max)(1U, static_cast<unsigned>(
+			std::ceil(context.elapsedSeconds / (1.0f / 30.0f))));
+		const float elapsed = context.elapsedSeconds / static_cast<float>(steps);
+		compat::AimStep step = {context.currentYaw, context.currentPitch, false};
+		for (unsigned i = 0U; i < steps; ++i)
+			step = compat::trackAim(step.yaw, step.pitch, intent->yaw, intent->pitch,
+				elapsed, context.skill, &aimSpring_);
 		intent->yaw = step.yaw;
 		intent->pitch = step.pitch;
 		aimAligned_ = step.aligned;
