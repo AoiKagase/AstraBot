@@ -27,7 +27,8 @@ constexpr std::uint32_t kMaximumUnsafeDropBackoffFrames = 512U;
 constexpr float kUnsafeDropProgressDistance = 64.0f;
 constexpr std::uint32_t kInitialPathFailureBackoffFrames = 15U;
 constexpr std::uint32_t kMaximumPathFailureBackoffFrames = 120U;
-// Keep safe falls and their run-up alive long enough to confirm landing.
+// Timed Compatibility drops use sixty30Hz command ticks (two seconds).
+// Other traversals retain their existing raw-frame budget.
 constexpr std::uint32_t kCompatibilityTraversalFrameBudget = 60U;
 // CSBot b0889847 cs_bot_pathfind.cpp:1550-1577 gives up after five
 // seconds without path-area progress, even when local movement avoids Stuck.
@@ -1781,14 +1782,38 @@ NavRoamController::updateJumpDropTraversal(NavigationUpdateContext &ctx)
 		nav::JumpDropObservation traversalObservation = {};
 		traversalObservation.position = observation.locomotion.position;
 		traversalObservation.frame = observation.frame.tick;
+		if (timedCompatibility_ && traversalState().activeTraversal == nav::TraversalAction::Drop)
+			traversalObservation.frame = static_cast<std::uint32_t>(std::fmod(
+				static_cast<double>(observedAt_) * 30.0,
+				static_cast<double>((std::numeric_limits<std::uint32_t>::max)()) + 1.0));
 		traversalObservation.actorGeneration = observation.actor.actorGeneration;
 		traversalObservation.airborne = observation.airborne;
 		traversalObservation.landingConfirmed = observation.landingConfirmed;
 		traversalObservation.hasLandingDamage = observation.hasLandingDamage;
 		traversalObservation.landingDamage = observation.landingDamage;
 		nav::JumpDropIntent traversalIntent = {};
-		const nav::JumpDropResult traversalResult =
+		nav::JumpDropResult traversalResult =
 			traversalState().jumpDrop.update(snapshot, traversalObservation, &traversalIntent);
+		if (timedCompatibility_ && traversalState().activeTraversal == nav::TraversalAction::Drop &&
+			traversalResult == nav::JumpDropResult::InvalidObservation &&
+			observation.landingConfirmed && !observation.airborne &&
+			observation.hasLandingDamage && observation.landingDamage == 0.0f)
+		{
+			// Engine momentum can carry a safe fall past its nominal landing point.
+			// Accept confirmed, damage-free ground contact only on the landing
+			// area or its forward corridor suffix; never infer a landing receipt.
+			nav::NavAreaMatch landing{};
+			const auto &areas = routeState().activeCorridor.areas;
+			const auto destination = std::find(areas.begin(), areas.end(), routeState().activeLink.toArea);
+			if (ctx.query.findContaining(observation.locomotion.position,
+					nav::JumpDropConfig::kDefaultLandingTolerance, &landing) == nav::NavQueryResult::Found &&
+				destination != areas.end() && std::find(destination, areas.end(), landing.area) != areas.end())
+			{
+				currentArea = landing;
+				if (decision != nullptr) decision->currentArea = landing.area;
+				traversalResult = nav::JumpDropResult::Landed;
+			}
+		}
 		if (traversalResult == nav::JumpDropResult::Emitted)
 		{
 			intent->direction = traversalIntent.direction;

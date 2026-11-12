@@ -11,6 +11,7 @@ namespace
 {
 constexpr float kMinimumHeight = 0.0f;
 constexpr float kMaximumObservedDamage = 10000.0f;
+constexpr float kGroundedDropAreaTolerance = 64.0f;
 
 float nonNegativeDifference(float value)
 {
@@ -132,10 +133,16 @@ JumpDropResult JumpDropController::update(
 	{
 		NavQuery query(snapshot);
 		NavAreaMatch match = {};
+		// A grounded Drop retains NavRoam's area association on sloped NAV.
+		// This tolerance identifies the supporting layer; actual displacement
+		// from the captured launch point still uses the configured limits below.
+		const float areaTolerance = envelope_.kind == JumpDropKind::Drop
+			? std::max(config_.launchVerticalTolerance, kGroundedDropAreaTolerance)
+			: config_.launchVerticalTolerance;
 		if (observation.airborne || observation.landingConfirmed ||
 				query.findContaining(
 					observation.position,
-					config_.launchVerticalTolerance,
+					areaTolerance,
 					&match) != NavQueryResult::Found ||
 				match.area != envelope_.launch.area ||
 				!isNearPoint(

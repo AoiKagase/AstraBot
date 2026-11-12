@@ -2332,6 +2332,81 @@ bool testOffMeshCompatibilityKeepsTryingAfterBlockedCandidate()
 	return true;
 }
 
+bool test1734DropLaunchAcceptsRecordedGroundedFeet(unsigned completion)
+{
+	using namespace astrabot;
+	nav::NavDocument document;
+	document.setSourceIdentity({5U,100U,200U});
+	auto ledge = area(1734U,-500.0f,-425.0f);
+	ledge.extent.lo = {-500.0f,-650.0f,125.03221f};
+	ledge.extent.hi = {-425.0f,-625.0f,133.48207f};
+	ledge.northEastZ = 106.28207f; ledge.southWestZ = 157.03221f;
+	ledge.attributes = nav::NavArea::kJump;
+	ledge.connections[2U] = {96U};
+	auto landing = area(96U,-500.0f,-375.0f);
+	landing.extent.lo = {-500.0f,-600.0f,.03125f};
+	landing.extent.hi = {-375.0f,-475.0f,.03125f};
+	landing.northEastZ = landing.southWestZ = .03125f;
+	if (completion == 5U) landing.connections[1U] = {999U};
+	document.addArea(ledge); document.addArea(landing);
+	if (completion >= 4U)
+	{
+		// A synthetic neighboring floor checks corridor membership at landing.
+		auto neighbor = area(999U,-375.0f,-250.0f);
+		neighbor.extent.lo = {-375.0f,-600.0f,.03125f};
+		neighbor.extent.hi = {-250.0f,-475.0f,.03125f};
+		neighbor.northEastZ = neighbor.southWestZ = .03125f;
+		document.addArea(neighbor);
+	}
+	nav::NavSnapshotPublisher publisher; publisher.publish(&document,1U);
+	compat::ScriptedRandomSource random({compat::RandomTapeEntry::floatEntry(
+		"CSBOT-PATH-RETRY", {2U,1U}, {0U,0U,1U}, .4f,.6f,.5f)});
+	runtime::NavRoamController controller; controller.setRandomSource(&random);
+	runtime::NavRoamObservation observation{};
+	observation.actor = {2U,1U}; observation.frame = {1U,2U,1U};
+	// Saved stationary origin (-443.9,-632.1,178.9), standing mins.z=-36.
+	// The actual grounded feet are about11.55 above the interpolated NAV surface.
+	observation.locomotion.position = {-443.9f,-632.1f,142.9f};
+	observation.locomotion.grounded = true;
+	observation.locomotion.standingClearance = 72.0f;
+	observation.locomotion.crouchingClearance = 36.0f;
+	observation.locomotion.safeDropHeightAvailable = true;
+	observation.locomotion.maximumSafeDropHeight = 156.25f;
+	observation.locomotion.timingAvailable = true;
+	observation.locomotion.observedAt = 1.0f;
+	observation.hasObjectiveTarget = true;
+	observation.objectiveTarget = {-437.5f,-537.5f,.03125f};
+	if (completion == 5U) observation.objectiveTarget.x = -300.0f;
+	nav::LocomotionIntent intent{}; runtime::NavRoamDecision decision{};
+	const auto result = controller.update(publisher.snapshot(),observation,&intent,&decision);
+	if (!check(result == runtime::NavRoamResult::IntentReady &&
+		intent.traversal == nav::TraversalAction::Drop && intent.currentArea == 1734U &&
+		intent.targetArea == 96U && intent.speed > 0.0f && intent.direction.y > 0.0f &&
+		decision.failureReason == runtime::NavFailureReason::None && random.verifyComplete(),
+		"recorded1734->96 grounded feet start safe descent without NAV launch mismatch")) return false;
+	observation.frame.tick = 501U;
+	observation.locomotion.observedAt = completion == 1U ? 3.1f : 1.8f;
+	observation.locomotion.position = {-443.9f,-520.0f,20.0f};
+	observation.locomotion.grounded = false; observation.airborne = true;
+	const auto flying = controller.update(publisher.snapshot(),observation,&intent,&decision);
+	if (completion == 1U)
+		return check(flying == runtime::NavRoamResult::ReplanRequired && intent.speed == 0.0f,
+			"timed descent still expires after its two-second compatibility budget");
+	if (!check(flying == runtime::NavRoamResult::IntentReady,
+		"1734 descent survives high server FPS until physical landing feedback")) return false;
+	observation.frame.tick = 601U; observation.locomotion.observedAt = 1.9f;
+	observation.locomotion.position = {-443.9f,-500.0f,.03125f};
+	if (completion >= 4U) observation.locomotion.position.x = -370.0f;
+	observation.locomotion.grounded = true; observation.airborne = false;
+	observation.landingConfirmed = true; observation.hasLandingDamage = completion != 2U;
+	observation.landingDamage = completion == 3U ? 1.0f : 0.0f;
+	const auto landed = controller.update(publisher.snapshot(),observation,&intent,&decision);
+	return check((completion == 0U || completion == 5U)
+		? (landed == runtime::NavRoamResult::TargetReached && decision.failureReason == runtime::NavFailureReason::None)
+		: (landed == runtime::NavRoamResult::ReplanRequired && decision.failureReason != runtime::NavFailureReason::None),
+		"safe landing in corridor completes descent despite overshoot; unknown/damaged landing stays rejected");
+}
+
 bool testRepeated1773DropFailureRearmsDirectedBypass()
 {
 	using namespace astrabot;
@@ -2920,6 +2995,8 @@ bool testUnsafeDropRetryPolicy(std::uint32_t cadence, int release, bool bypass, 
 
 int main()
 {
+	for (unsigned completion = 0U; completion < 6U; ++completion)
+		if (!test1734DropLaunchAcceptsRecordedGroundedFeet(completion)) return 1;
 	if (!testRepeated1773DropFailureRearmsDirectedBypass()) return 1;
 	{
 		using namespace astrabot;

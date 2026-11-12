@@ -301,6 +301,55 @@ bool testLandingAreaAndGenerationInvalidation()
 		"changed map generation invalidates traversal");
 }
 
+bool testSlopedDropSeparatesAreaAssociationFromLaunchDisplacement()
+{
+	using namespace astrabot::nav;
+	for (unsigned scenario = 0U; scenario < 7U; ++scenario)
+	{
+		NavDocument document; document.setSourceIdentity({5U,100U,200U});
+		auto ledge = area(1734U,-500.0f,-425.0f,0.0f);
+		ledge.extent.lo = {-500.0f,-650.0f,125.03221f};
+		ledge.extent.hi = {-425.0f,-625.0f,133.48207f};
+		ledge.northEastZ = 106.28207f; ledge.southWestZ = 157.03221f;
+		ledge.connections[2U] = {96U};
+		auto landing = area(96U,-500.0f,-375.0f,.03125f);
+		landing.extent.lo.y = -600.0f; landing.extent.hi.y = -475.0f;
+		document.addArea(ledge); document.addArea(landing);
+		if (scenario == 5U)
+		{
+			auto upper = area(999U,-500.0f,-425.0f,142.9f);
+			upper.extent.lo.y = -650.0f; upper.extent.hi.y = -625.0f;
+			document.addArea(upper);
+		}
+		const auto snapshot = snapshotFor(&document,1U);
+		NavCorridor corridor{}; NavQuery(snapshot).buildCorridor(1734U,96U,&corridor);
+		JumpDropEnvelope descent{};
+		descent.kind = scenario == 1U ? JumpDropKind::Jump : JumpDropKind::Drop;
+		descent.launch = {{-443.9f,-632.1f,142.9f},1734U};
+		descent.landing = {{-443.9f,-584.0f,.03125f},96U};
+		descent.maximumRise = 200.0f; descent.maximumDrop = 200.0f;
+		descent.horizontalReach = 64.0f;
+		descent.damageRisk = {scenario == 6U ? 100.0f : 156.25f,0.0f};
+		JumpDropController controller(config());
+		const auto start = controller.start(corridor,descent,7U);
+		if (scenario == 6U)
+		{
+			if (!check(start == JumpDropResult::Unsafe,
+				"drop risk retains actual grounded height instead of snapping feet to NAV")) return false;
+			continue;
+		}
+		if (!check(start == JumpDropResult::Ready,"sloped launch fixture starts a bounded envelope")) return false;
+		auto launch = observation(descent.launch.position,7U,1U,scenario == 2U,false,false,0.0f);
+		if (scenario == 3U) launch.position.x += 9.0f;
+		if (scenario == 4U) launch.position.z += 9.0f;
+		JumpDropIntent intent{};
+		const auto result = controller.update(snapshot,launch,&intent);
+		if (!check(result == (scenario == 0U ? JumpDropResult::Emitted : JumpDropResult::InvalidObservation),
+			"grounded sloped drop associates with NAV; Jump, air, launch drift and another floor stay rejected")) return false;
+	}
+	return true;
+}
+
 bool testInvalidObservationAndActorGeneration()
 {
 	astrabot::nav::NavDocument document = routeDocument(32.0f);
@@ -342,6 +391,7 @@ bool testInvalidObservationAndActorGeneration()
 
 int main()
 {
+	if (!testSlopedDropSeparatesAreaAssociationFromLaunchDisplacement()) return 1;
 	if (!testValidLaunchAndLandingFeedback() ||
 			!testHeightAndHorizontalReachBounds() ||
 			!testDropDamageRiskAndUnknownLanding() ||
