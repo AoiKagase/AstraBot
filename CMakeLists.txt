@@ -954,6 +954,7 @@ if(ASTRABOT_BUILD_METAMOD)
   set(ASTRABOT_RUNTIME_OWNER_SOURCES
     src/adapter/metamod/bot_observation_runtime.cpp
     src/adapter/metamod/bot_behavior_runtime.cpp
+    src/adapter/metamod/bot_behavior_perception.cpp
     src/adapter/metamod/bot_behavior_radio.cpp
     src/adapter/metamod/bot_behavior_buying.cpp
     src/adapter/metamod/bot_behavior_objectives.cpp

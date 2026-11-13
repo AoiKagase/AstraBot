@@ -320,22 +320,22 @@
     "member": "managedProfiles"
   },
   {
-    "header": "src/adapter/metamod/bot_observation_runtime.hpp",
+    "header": "src/adapter/metamod/bot_behavior_runtime.hpp",
     "scope": "ActorState",
     "member": "reactionQueues"
   },
   {
-    "header": "src/adapter/metamod/bot_observation_runtime.hpp",
+    "header": "src/adapter/metamod/bot_behavior_runtime.hpp",
     "scope": "ActorState",
     "member": "recognizedTargets"
   },
   {
-    "header": "src/adapter/metamod/bot_observation_runtime.hpp",
+    "header": "src/adapter/metamod/bot_behavior_runtime.hpp",
     "scope": "ActorState",
     "member": "recognizedPoints"
   },
   {
-    "header": "src/adapter/metamod/bot_observation_runtime.hpp",
+    "header": "src/adapter/metamod/bot_behavior_runtime.hpp",
     "scope": "ActorState",
     "member": "recognitionSequences"
   },
@@ -345,7 +345,7 @@
     "member": "lastCombatTimes"
   },
   {
-    "header": "src/adapter/metamod/bot_observation_runtime.hpp",
+    "header": "src/adapter/metamod/bot_behavior_runtime.hpp",
     "scope": "ActorState",
     "member": "lastVisibleEnemyTimes"
   },

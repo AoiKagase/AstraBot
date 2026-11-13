@@ -14,9 +14,9 @@ class BotObservationRuntime
 		services_ = &services;
 	}
 	void appendPublicMessageInteger(int value);
-	bool buildManagedWorldSnapshot(std::size_t index, world::WorldSnapshot *snapshot,
-								   world::ActorKey *targetActor,
-								   world::WorldPosition *targetPosition);
+	bool collectManagedPerception(std::size_t index, world::WorldSnapshot *snapshot,
+		ThreatObservation *threats);
+	bool readManagedWorldSnapshot(std::size_t index, world::WorldSnapshot *snapshot) const;
 	void captureManagedCurrentWeapon();
 	runtime::MovementPhysicsState captureMovementPhysicsState(const edict_t *entity,
 															  bool teamConfirmed,
@@ -79,10 +79,6 @@ class BotObservationRuntime
 	const compat::PublicBombClock &publicBombClocks(std::size_t index) const
 	{
 		return actors_[index].publicBombClocks;
-	}
-	const float &lastVisibleEnemyTimes(std::size_t index) const
-	{
-		return actors_[index].lastVisibleEnemyTimes;
 	}
 	using View_smokeObservations = compat::SmokeObservations;
 	const View_smokeObservations &smokeObservations() const
@@ -188,21 +184,6 @@ class BotObservationRuntime
 		for (auto &actor : actors_)
 			actor.deliveredSoundSequences = {};
 	}
-	void reset_recognitionSequences()
-	{
-		for (auto &actor : actors_)
-			actor.recognitionSequences = {};
-	}
-	void reset_recognizedTargets()
-	{
-		for (auto &actor : actors_)
-			actor.recognizedTargets = {};
-	}
-	void reset_reactionQueues()
-	{
-		for (auto &actor : actors_)
-			actor.reactionQueues = {};
-	}
 	void reset_publicBombClocks()
 	{
 		for (auto &actor : actors_)
@@ -236,11 +217,6 @@ class BotObservationRuntime
 		bool bombNoticeKnown{};
 		bool bombNoticePlanted{};
 		compat::PublicBombClock publicBombClocks{};
-		compat::ReactionQueue reactionQueues{};
-		world::ActorKey recognizedTargets{};
-		world::WorldPosition recognizedPoints{};
-		std::uint32_t recognitionSequences{};
-		float lastVisibleEnemyTimes{};
 		std::uint32_t deliveredSoundSequences{};
 		std::uint8_t teamInfoTeams{};
 		bool publicTeamKnown{};

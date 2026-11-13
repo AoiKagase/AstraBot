@@ -71,6 +71,13 @@ enum class CompatibilityCommandResult
 	ActorOperationFailed
 };
 
+struct ThreatObservation
+{
+	std::array<compat::ThreatCandidate, 32U> candidates{};
+	std::size_t count = 0U;
+	bool observerAvailable = false;
+};
+
 struct ManagedObjectiveTargetCache
 {
 	bool valid;

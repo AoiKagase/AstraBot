@@ -90,7 +90,7 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index)
 	const bool blind = services_->observation_publicObservations().read(input.actor, input.frame,
 																		&ownObservation) &&
 					   services_->service_globals()->time < ownObservation.blindUntil;
-	const bool haveBelief = !blind && services_->observation_buildManagedWorldSnapshot(
+	const bool haveBelief = !blind && prepareManagedPerception(
 										  index, &belief, &selected, &selectedPosition);
 	const auto contacts = actors_[index].outgoingRadioContactMemory.update(
 		input.actor, input.frame, input.now, haveBelief ? &belief : nullptr, blind,

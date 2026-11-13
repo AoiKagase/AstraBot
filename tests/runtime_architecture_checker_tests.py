@@ -6,6 +6,16 @@ from runtime_movement_integration_contract import assert_neutral_preparation_ord
 
 
 class ArchitectureCheckerTests(unittest.TestCase):
+    def test_observation_cannot_own_or_mutate_threat_recognition(self):
+        for source in ('compat::ReactionQueue reactionQueues;',
+                       'services_->behavior_observeRecognizedTargetChange(index, now);'):
+            with self.subTest(source=source), self.assertRaisesRegex(ArchitectureError, 'recognition'):
+                check_dependencies('src/adapter/metamod/bot_observation_runtime.cpp', source)
+
+    def test_observation_recognition_guard_ignores_documentation(self):
+        check_dependencies('src/adapter/metamod/bot_observation_runtime.hpp',
+                           '// compat::ReactionQueue\nconst char *text = "behavior_observeRecognizedTargetChange";')
+
     def test_const_reference_alias_does_not_make_referent_const(self):
         for alias in ('using Ref = int &;', 'using Ref = int &&;', 'using Ref = int *;',
                       'using Base = int &; using Ref = Base;', 'typedef int & Ref;'):

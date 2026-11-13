@@ -575,7 +575,7 @@ void BotObservationRuntime::capturePublicMessage()
 		services_->navigation_observePublicDeath(victim);
 		services_->behavior_resetEquipment(victim);
 		publicObservations_.resetSlot(static_cast<std::uint32_t>(v[1]));
-		actors_[static_cast<std::size_t>(v[1] - 1)].reactionQueues = {};
+		services_->behavior_observePublicDeath(victim);
 		return;
 	}
 	if (std::strcmp(name, "TeamScore") == 0 && count == 2U && integers(1U))
@@ -851,15 +851,25 @@ runtime::MovementPhysicsState BotObservationRuntime::captureMovementPhysicsState
 	return state;
 }
 
-bool BotObservationRuntime::buildManagedWorldSnapshot(std::size_t index,
-													  world::WorldSnapshot *snapshot,
-													  world::ActorKey *targetActor,
-													  world::WorldPosition *targetPosition)
+bool BotObservationRuntime::readManagedWorldSnapshot(std::size_t index,
+	world::WorldSnapshot *snapshot) const
+{
+	if (index >= actors_.size() || snapshot == nullptr ||
+		!actors_[index].managedBotPerception.snapshot().isValid())
+	{
+		return false;
+	}
+	*snapshot = actors_[index].managedBotPerception.snapshot();
+	return true;
+}
+
+bool BotObservationRuntime::collectManagedPerception(std::size_t index,
+	world::WorldSnapshot *snapshot, ThreatObservation *threats)
 {
 	RuntimeProfilerScope profilerScope(services_->service_runtimeProfiler(),
 									   RuntimeProfilerStage::Observation);
 	if (index >= services_->service_managedBotHandles().size() || snapshot == nullptr ||
-		targetActor == nullptr || targetPosition == nullptr ||
+		threats == nullptr ||
 		services_->service_engineFunctions() == nullptr ||
 		services_->service_engineFunctions()->pfnPEntityOfEntIndex == nullptr ||
 		services_->service_globals() == nullptr)
@@ -871,20 +881,19 @@ bool BotObservationRuntime::buildManagedWorldSnapshot(std::size_t index,
 	{
 		return false;
 	}
-	const auto selectVisibleTarget = [this, index, targetActor,
-									  targetPosition](const world::WorldSnapshot &belief,
-													  const world::ActorKey &observer) -> bool {
-		world::ActorKey selected = {};
-		world::WorldPosition selectedPosition = {};
-		float selectedDistanceSquared = (std::numeric_limits<float>::max)();
-		std::array<compat::ThreatCandidate, 32U> candidates{};
-		std::size_t candidateCount = 0U;
+	const auto collectVisibleThreats = [this, index, threats](const world::WorldSnapshot &belief,
+		const world::ActorKey &observer) -> bool
+	{
+		*threats = {};
+		auto &candidates = threats->candidates;
+		auto &candidateCount = threats->count;
 		const world::ActorObservation *observerObservation = nullptr;
 		if (belief.findActor(observer, &observerObservation) != world::ContactLookupResult::Found ||
 			observerObservation == nullptr || !observerObservation->hasCurrentPosition())
 		{
 			return false;
 		}
+		threats->observerAvailable = true;
 		for (std::size_t actorIndex = 0U; actorIndex < belief.actorCount(); ++actorIndex)
 		{
 			const world::ActorObservation *candidate = belief.actorAt(actorIndex);
@@ -902,10 +911,14 @@ bool BotObservationRuntime::buildManagedWorldSnapshot(std::size_t index,
 			{
 				world::WorldPosition visiblePoint = candidate->position;
 				if ((candidate->visibleParts & world::VisibleHead) != 0U)
+				{
 					visiblePoint.z += 25.0f;
+				}
 				else if ((candidate->visibleParts & world::VisibleChest) == 0U &&
 						 (candidate->visibleParts & world::VisibleFeet) != 0U)
+				{
 					visiblePoint.z -= 14.0f;
+				}
 				bool attackingObserver = false;
 				if (services_->service_engineFunctions() != nullptr &&
 					services_->service_engineFunctions()->pfnPEntityOfEntIndex != nullptr &&
@@ -933,51 +946,7 @@ bool BotObservationRuntime::buildManagedWorldSnapshot(std::size_t index,
 				candidates[candidateCount++] = {candidate->actor, visiblePoint,
 												std::sqrt(distanceSquared), attackingObserver};
 			}
-			if (distanceSquared < selectedDistanceSquared)
-			{
-				selectedDistanceSquared = distanceSquared;
-				selected = candidate->actor;
-				selectedPosition = candidate->position;
-			}
 		}
-		if (actors_[index].recognitionSequences !=
-			services_->service_managedBotFullUpdateSequences()[index])
-		{
-			actors_[index].recognitionSequences =
-				services_->service_managedBotFullUpdateSequences()[index];
-			compat::ThreatCandidate threat{};
-			compat::PublicActorState publicState{};
-			const bool blinded =
-				publicObservations_.read(observer, belief.identity().frame, &publicState) &&
-				services_->service_globals() != nullptr &&
-				services_->service_globals()->time < publicState.blindUntil;
-			if (!blinded && candidateCount != 0U && services_->service_globals() != nullptr)
-			{
-				actors_[index].lastVisibleEnemyTimes = services_->service_globals()->time;
-			}
-			if (services_->service_globals() != nullptr &&
-				actors_[index].reactionQueues.update(
-					observer, belief.identity().frame, services_->service_globals()->time,
-					services_->behavior_managedProfiles(index).reactionTimeSeconds,
-					candidates.data(), candidateCount, blinded, &threat))
-			{
-				if (!(actors_[index].recognizedTargets == threat.actor))
-				{
-					services_->behavior_observeRecognizedTargetChange(
-						index, services_->service_globals()->time);
-				}
-				actors_[index].recognizedTargets = threat.actor;
-				actors_[index].recognizedPoints = threat.visiblePoint;
-			}
-			else
-				actors_[index].recognizedTargets = {};
-		}
-		selected = actors_[index].recognizedTargets;
-		selectedPosition = actors_[index].recognizedPoints;
-		if (!selected.isValid())
-			return false;
-		*targetActor = selected;
-		*targetPosition = selectedPosition;
 		return true;
 	};
 	const world::ActorKey observer = {handle.actor.slot, handle.actor.actorGeneration};
@@ -986,7 +955,7 @@ bool BotObservationRuntime::buildManagedWorldSnapshot(std::size_t index,
 		actors_[index].managedBotPerception.snapshot().isValid())
 	{
 		*snapshot = actors_[index].managedBotPerception.snapshot();
-		(void)selectVisibleTarget(*snapshot, observer);
+		(void)collectVisibleThreats(*snapshot, observer);
 		return true;
 	}
 	const world::FrameIdentity frame = {services_->service_lifecycle().mapGeneration(),
@@ -1095,7 +1064,7 @@ bool BotObservationRuntime::buildManagedWorldSnapshot(std::size_t index,
 	actors_[index].managedBotPerceptionFullUpdates =
 		services_->service_managedBotFullUpdateSequences()[index];
 	*snapshot = assembler.snapshot();
-	(void)selectVisibleTarget(*snapshot, observer);
+	(void)collectVisibleThreats(*snapshot, observer);
 	return true;
 }
 
@@ -1245,8 +1214,6 @@ void BotObservationRuntime::onActorRemoved(std::size_t index)
 	actors_[index].bombNoticePlanted = false;
 	actors_[index].publicBombClocks.reset();
 	actors_[index].deliveredSoundSequences = soundSequence_;
-	actors_[index].reactionQueues.reset();
-	actors_[index].recognizedTargets = {};
 	actors_[index].objectiveKnowledge = {};
 	actors_[index].teamInfoTeams = 0U;
 	actors_[index].publicTeamKnown = false;
@@ -1262,9 +1229,6 @@ void BotObservationRuntime::onActorRemembered(std::size_t index, const FakeClien
 	publicObservations_.bind(actor, {services_->service_lifecycle().mapGeneration(),
 									 services_->service_lifecycle().roundGeneration(),
 									 services_->service_adapterFrameCount()});
-	actors_[index].reactionQueues.reset();
-	actors_[index].recognizedTargets = {};
-	actors_[index].recognitionSequences = 0U;
 }
 
 void BotObservationRuntime::onMovementResetShared()
@@ -1315,9 +1279,6 @@ void BotObservationRuntime::rebindRoundObservations()
 	smokeObservations_.reset();
 	publicSmokeEntities_ = {};
 	nextSmokeEntity_ = 0U;
-	reset_recognizedTargets();
-	reset_recognitionSequences();
-	reset_reactionQueues();
 	for (std::size_t i = 0U; i < services_->service_managedBotHandles().size(); ++i)
 	{
 		publicObservations_.resetSlot(static_cast<std::uint32_t>(i + 1U));

@@ -11,6 +11,8 @@ namespace metamod
 class BotBehaviorRuntime
 {
   public:
+	void resetRoundRecognition();
+	void observePublicDeath(std::size_t index);
 	void bindServices(BotBehaviorServices &services)
 	{
 		services_ = &services;
@@ -128,7 +130,7 @@ class BotBehaviorRuntime
 		world::ActorKey actor{};
 		compat::CompatibilityObservation observation{};
 		compat::ObservationTimingContext observationTiming{};
-		world::WorldSnapshot snapshot;
+		world::WorldSnapshot snapshot{};
 		world::ActorKey targetActor{};
 		world::WorldPosition targetPosition{};
 		int team = 0;
@@ -141,6 +143,8 @@ class BotBehaviorRuntime
 		nav::NavSnapshot navigation;
 		bool wasFollowing = false;
 	};
+	bool prepareManagedPerception(std::size_t index, world::WorldSnapshot *snapshot,
+		world::ActorKey *targetActor, world::WorldPosition *targetPosition);
 	BehaviorPhaseResult prepareManagedAction(ManagedActionContext &ctx);
 	BehaviorPhaseResult decideObjectiveAction(ManagedActionContext &ctx);
 	ActionProposal decideCombatAction(ManagedActionContext &ctx);
@@ -283,6 +287,11 @@ class BotBehaviorRuntime
 	}
 	struct ActorState
 	{
+		compat::ReactionQueue reactionQueues{};
+		world::ActorKey recognizedTargets{};
+		world::WorldPosition recognizedPoints{};
+		std::uint32_t recognitionSequences{};
+		float lastVisibleEnemyTimes{};
 		compat::BombGuardPlanner bombGuardPlanners{};
 		compat::GuardLookPlanner guardLook{};
 		compat::WeaponEquipmentPlanner equipment{};

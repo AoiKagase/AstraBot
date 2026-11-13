@@ -50,7 +50,7 @@ class BotObservationServices : public BotRuntimeServiceTypes
 	virtual const compat::ProfileRecord &behavior_managedProfiles(std::size_t index) const = 0;
 	virtual void behavior_observeRadioReceipt(std::size_t index) = 0;
 	virtual void behavior_resetEquipment(std::size_t index) = 0;
-	virtual void behavior_observeRecognizedTargetChange(std::size_t index, float now) = 0;
+	virtual void behavior_observePublicDeath(std::size_t index) = 0;
 	virtual const std::uint32_t &command_managedBotCommandSequences(std::size_t index) const = 0;
 	virtual void navigation_observePublicDeath(std::size_t victim) = 0;
 	virtual void navigation_observeResetHud(std::size_t index) = 0;
@@ -82,14 +82,13 @@ class BotBehaviorServices : public BotRuntimeServiceTypes
 	virtual nav::NavPathCostContext navigation_managedPathCostContext(std::size_t index) = 0;
 	virtual const bool &observation_bombNoticeKnown(std::size_t index) const = 0;
 	virtual const bool &observation_bombNoticePlanted(std::size_t index) const = 0;
-	virtual bool observation_buildManagedWorldSnapshot(std::size_t index, world::WorldSnapshot *snapshot,
-													   world::ActorKey *targetActor,
-													   world::WorldPosition *targetPosition) = 0;
+	virtual bool observation_collectManagedPerception(std::size_t index, world::WorldSnapshot *snapshot,
+		ThreatObservation *threats) = 0;
+	virtual bool observation_readManagedWorldSnapshot(std::size_t index, world::WorldSnapshot *snapshot) const = 0;
 	virtual const std::uint32_t &observation_externalDefuserEntityIndex() const = 0;
 	virtual const float &observation_externalDefuserLeaseUntil() const = 0;
 	virtual const std::uint32_t &observation_externalDefuserMapGeneration() const = 0;
 	virtual const std::uint32_t &observation_externalDefuserRoundGeneration() const = 0;
-	virtual const float &observation_lastVisibleEnemyTimes(std::size_t index) const = 0;
 	virtual const ManagedCurrentWeaponObservation &observation_managedBotCurrentWeapons(std::size_t index) const = 0;
 	virtual const perception::PerceptionAssembler &observation_managedBotPerception(std::size_t index) const = 0;
 	virtual const std::uint8_t &observation_teamInfoTeams(std::size_t index) const = 0;

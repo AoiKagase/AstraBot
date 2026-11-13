@@ -59,6 +59,8 @@ void BotBehaviorRuntime::updateManagedBotCompatibilityState(
 
 void BotBehaviorRuntime::onActorRemoved(std::size_t index)
 {
+	actors_[index].reactionQueues.reset();
+	actors_[index].recognizedTargets = {};
 	actors_[index].bombGuardPlanners.reset();
 	actors_[index].guardLook.reset();
 	actors_[index].equipment.reset();
@@ -82,6 +84,9 @@ void BotBehaviorRuntime::onActorRemoved(std::size_t index)
 
 void BotBehaviorRuntime::onActorRemembered(std::size_t index, const FakeClientHandle &handle)
 {
+	actors_[index].reactionQueues.reset();
+	actors_[index].recognizedTargets = {};
+	actors_[index].recognitionSequences = 0U;
 	const world::ActorKey actor = {handle.actor.slot, handle.actor.actorGeneration};
 	actors_[index].guardLook.reset();
 	actors_[index].equipment.reset();

@@ -510,6 +510,7 @@ cvar_t kManagerCvars[] = {
 			observation_.resetRoundRadioAndSound();
 
 			behavior_.resetRoundNoiseInvestigation();
+			behavior_.resetRoundRecognition();
 			observation_.rebindRoundObservations();
 
 			behavior_.resetRoundObjectiveCoordination();

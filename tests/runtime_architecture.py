@@ -295,6 +295,9 @@ def check_dependencies(path, source):
     owner = re.search(r'/bot_(observation|behavior|navigation|command)_', path)
     if owner:
         name = owner[1]
+        if name == 'observation' and re.search(
+                r'\b(?:ReactionQueue|behavior_observeRecognizedTargetChange)\b', code):
+            raise ArchitectureError('observation owns or mutates threat recognition')
         if re.search(r'\bconst_cast\b', code):
             raise ArchitectureError('writable ownership bypass through const_cast')
         for include in includes:

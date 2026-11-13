@@ -317,10 +317,6 @@ class PluginRuntime : public BotObservationServices, public BotBehaviorServices,
 			{
 				return behavior_.observeRadioReceipt(index);
 			}
-			void behavior_observeRecognizedTargetChange(std::size_t index, float now) override
-			{
-				return behavior_.observeRecognizedTargetChange(index, now);
-			}
 			const std::uint32_t &command_managedBotCommandSequences(std::size_t index) const override
 			{
 				return command_.managedBotCommandSequences(index);
@@ -353,11 +349,14 @@ class PluginRuntime : public BotObservationServices, public BotBehaviorServices,
 			{
 				return observation_.bombNoticePlanted(index);
 			}
-			bool observation_buildManagedWorldSnapshot(std::size_t index, world::WorldSnapshot *snapshot,
-													   world::ActorKey *targetActor,
-													   world::WorldPosition *targetPosition) override
+			bool observation_collectManagedPerception(std::size_t index, world::WorldSnapshot *snapshot,
+				ThreatObservation *threats) override
 			{
-				return observation_.buildManagedWorldSnapshot(index, snapshot, targetActor, targetPosition);
+				return observation_.collectManagedPerception(index, snapshot, threats);
+			}
+			bool observation_readManagedWorldSnapshot(std::size_t index, world::WorldSnapshot *snapshot) const override
+			{
+				return observation_.readManagedWorldSnapshot(index, snapshot);
 			}
 			const std::uint32_t &observation_externalDefuserEntityIndex() const override
 			{
@@ -374,10 +373,6 @@ class PluginRuntime : public BotObservationServices, public BotBehaviorServices,
 			const std::uint32_t &observation_externalDefuserRoundGeneration() const override
 			{
 				return observation_.externalDefuserRoundGeneration();
-			}
-			const float &observation_lastVisibleEnemyTimes(std::size_t index) const override
-			{
-				return observation_.lastVisibleEnemyTimes(index);
 			}
 			const ManagedCurrentWeaponObservation &observation_managedBotCurrentWeapons(
 				std::size_t index) const override
@@ -514,6 +509,10 @@ class PluginRuntime : public BotObservationServices, public BotBehaviorServices,
 				behavior_.observeEquipmentDispatched(index, weapon, success);
 			}
 			void behavior_resetEquipment(std::size_t index) override { behavior_.resetEquipment(index); }
+			void behavior_observePublicDeath(std::size_t index) override
+			{
+				behavior_.observePublicDeath(index);
+			}
 			void behavior_observeNeutralC4AttackDispatched(std::size_t index, const FakeClientHandle &handle) override
 			{
 				return behavior_.observeNeutralC4AttackDispatched(index, handle);

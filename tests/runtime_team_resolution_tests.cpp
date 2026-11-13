@@ -10,6 +10,15 @@ bool testRuntimeTeams(astrabot::metamod::PluginRuntime &, enginefuncs_t &, globa
 
 namespace
 {
+unsigned teamTraceCount = 0U;
+
+void traceTeamVisibility(const float *start, const float *end, int flags,
+	edict_t *entity, TraceResult *result)
+{
+	++teamTraceCount;
+	traceObjectiveVisibility(start, end, flags, entity, result);
+}
+
 bool testRuntimeTeams(astrabot::metamod::PluginRuntime &runtime,
 	enginefuncs_t &engine, globalvars_t &globals)
 {
@@ -36,7 +45,7 @@ bool testRuntimeTeams(astrabot::metamod::PluginRuntime &runtime,
 	{
 		return false;
 	}
-	engine.pfnTraceLine = &traceObjectiveVisibility;
+	engine.pfnTraceLine = &traceTeamVisibility;
 	engine.pfnRandomFloat = &siteFixtureRandomFloat;
 	engine.pfnRandomLong = &siteFixtureRandomLong;
 	runtime.giveEnginePointers(&engine, &globals);
@@ -109,6 +118,24 @@ bool testRuntimeTeams(astrabot::metamod::PluginRuntime &runtime,
 	runtime.onStartFramePost();
 	auto &views = static_cast<metamod::BotBehaviorServices &>(runtime);
 	const auto &belief = views.observation_managedBotPerception(0U).snapshot();
+	const unsigned tracesBeforeRead = teamTraceCount;
+	const int movesBeforeRead = gRunPlayerMoveCount;
+	for (unsigned read = 0U; read < 8U; ++read)
+	{
+		world::WorldSnapshot copy;
+		if (!check(views.observation_readManagedWorldSnapshot(0U, &copy) &&
+			copy.identity().frame.tick == belief.identity().frame.tick &&
+			copy.identity().observer == belief.identity().observer,
+			"snapshot reads return the published observation without advancing it"))
+		{
+			return false;
+		}
+	}
+	if (!check(teamTraceCount == tracesBeforeRead && gRunPlayerMoveCount == movesBeforeRead,
+		"repeated snapshot reads perform no sensing or command callbacks"))
+	{
+		return false;
+	}
 	const world::ActorObservation *observer = nullptr;
 	if (!check(belief.findActor(belief.identity().observer, &observer) ==
 		world::ContactLookupResult::Found && observer != nullptr &&

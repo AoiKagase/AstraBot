@@ -701,7 +701,7 @@ bool BotBehaviorRuntime::buildManagedObjectiveTarget(std::size_t index, nav::Nav
 			(roundPlantDecision_.known && services_->service_globals()->time >= approach.plantAt) ||
 			(managedActorAtBombSite(index) &&
 			 services_->service_globals()->time -
-					 services_->observation_lastVisibleEnemyTimes(index) >
+					 actors_[index].lastVisibleEnemyTimes >
 				 3.0f);
 		if (!approach.finished)
 		{
@@ -1401,7 +1401,7 @@ BotBehaviorRuntime::decideObjectiveAction(ManagedActionContext &ctx)
 	const team::TeamObjectiveAssignment *objectiveAssignment =
 		findManagedTeamObjectiveAssignment(actor);
 
-	if (!services_->observation_buildManagedWorldSnapshot(index, &snapshot, &targetActor,
+	if (!prepareManagedPerception(index, &snapshot, &targetActor,
 														  &targetPosition))
 	{
 		actors_[index].managedBotObjectiveActions.active = false;
