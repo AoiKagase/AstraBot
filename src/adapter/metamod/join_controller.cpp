@@ -131,6 +131,14 @@ JoinAction JoinController::onMenu(
 			classMenuSource_ = source;
 			return JoinAction::noOp();
 		}
+		if (phase_ == JoinPhase::WaitingConfirmation)
+		{
+			// A new class prompt is an explicit rejection, not silent spawn waiting.
+			classSelectionCompleted_ = false;
+			phase_ = JoinPhase::WaitingClassMenu;
+			nextFrame_ = addFrames(pendingFrame_, kRetryFrames);
+			deadline_ = addFrames(frame, kTimeoutFrames);
+		}
 		if (phase_ == JoinPhase::WaitingTeamMenu || phase_ == JoinPhase::WaitingClassMenu)
 		{
 			if (!selectionAvailable(validSlots, kClassSelection))
@@ -148,7 +156,7 @@ JoinAction JoinController::onMenu(
 			promptGraceFrames_ = 0U;
 			return JoinAction::noOp();
 		}
-		if (phase_ == JoinPhase::ClassCommandPending || phase_ == JoinPhase::WaitingConfirmation)
+		if (phase_ == JoinPhase::ClassCommandPending)
 		{
 			if (selectionAvailable(validSlots, kClassSelection))
 			{
@@ -158,6 +166,11 @@ JoinAction JoinController::onMenu(
 		return JoinAction::noOp();
 	}
 
+	if (menu == JoinMenuKind::Team && phase_ == JoinPhase::WaitingClassMenu && !teamConfirmed_)
+	{
+		phase_ = JoinPhase::WaitingTeamMenu;
+		nextFrame_ = addFrames(pendingFrame_, kRetryFrames);
+	}
 	if (menu == JoinMenuKind::Team && phase_ == JoinPhase::WaitingTeamMenu)
 	{
 		teamMenuReceived_ = true;
@@ -267,6 +280,8 @@ JoinAction JoinController::onFrame(const edict_t *entity, std::uint32_t frame) n
 		return JoinAction::noOp();
 	}
 	nextFrame_ = addFrames(frame, kRetryFrames);
+	// Retain the actual send frame when completion installs a different fallback.
+	pendingFrame_ = frame;
 	return sendPendingSelection();
 }
 

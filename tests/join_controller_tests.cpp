@@ -66,6 +66,88 @@ bool completeClassSelection(astrabot::metamod::JoinController &controller)
 				 "class command completion enters confirmation");
 }
 
+bool testDelayedClassRejection()
+{
+	using namespace astrabot::metamod;
+	JoinController controller;
+	controller.begin({3U, 2U}, astrabot::compat::CommandTeam::Terrorist, 10U);
+	if (!completeTeamSelection(controller)) return false;
+	controller.onTeamInfo("TERRORIST");
+	if (!completeClassSelection(controller)) return false;
+	controller.onMenu(JoinMenuKind::TerroristClass, 1U, 15U, JoinMenuSource::LegacyShowMenu);
+	auto ready = makeReadyEntity();
+	if (!check(controller.phase() == JoinPhase::WaitingClassMenu &&
+		!controller.classSelectionCompleted() && controller.onFrame(&ready, 45U).kind == JoinActionKind::None &&
+		controller.onFrame(46U).kind == JoinActionKind::SendMenuSelect,
+		"delayed class rejection reopens admission without accepting readiness or bypassing cooldown")) return false;
+	controller.commandCompleted(46U);
+	controller.onMenu(JoinMenuKind::TerroristClass, 1U, 47U, JoinMenuSource::LegacyShowMenu);
+	for (unsigned frame = 48U; frame < 78U; ++frame)
+	{
+		controller.onTeamInfo("TERRORIST");
+		controller.onMenu(JoinMenuKind::TerroristClass, 1U, frame, JoinMenuSource::LegacyShowMenu);
+		if (!check(controller.onFrame(frame).kind == JoinActionKind::None && controller.attempts() == 2U,
+			"duplicate delayed class menus retain cooldown and finite budget")) return false;
+	}
+	if (!check(controller.onFrame(78U).kind == JoinActionKind::SendMenuSelect,
+		"third delayed class attempt respects cooldown")) return false;
+	controller.commandCompleted(78U);
+	controller.onMenu(JoinMenuKind::TerroristClass, 1U, 79U, JoinMenuSource::LegacyShowMenu);
+	if (!check(controller.onFrame(110U).error == JoinError::CommandAttemptsExhausted && !controller.active(),
+		"persistent delayed class rejection terminates instead of waiting forever")) return false;
+
+	controller.reset();
+	controller.begin({3U, 3U}, astrabot::compat::CommandTeam::Terrorist, 10U);
+	if (!completeTeamSelection(controller)) return false;
+	controller.onTeamInfo("TERRORIST");
+	if (!completeClassSelection(controller)) return false;
+	if (!check(controller.onFrame(1000U).kind == JoinActionKind::None &&
+		controller.phase() == JoinPhase::WaitingConfirmation,
+		"silent respawn confirmation may still wait beyond the admission deadline")) return false;
+	controller.onMenu(JoinMenuKind::TerroristClass, 1U, 1001U, JoinMenuSource::Vgui);
+	const auto late = controller.onFrame(1001U);
+	if (!check(late.kind == JoinActionKind::SendMenuSelect && late.command == JoinCommandKind::JoinClass,
+		"explicit rejection after a long spawn wait has a bounded chance to retry")) return false;
+	controller.commandCompleted(1001U);
+	return check(controller.onFrame(&ready, 1002U).kind == JoinActionKind::Joined,
+		"delayed class retry can finish with the same actor");
+}
+
+bool testDelayedTeamRejection()
+{
+	using namespace astrabot::metamod;
+	JoinController controller;
+	controller.begin({3U, 4U}, astrabot::compat::CommandTeam::Terrorist, 10U);
+	if (!completeTeamSelection(controller)) return false;
+	controller.onMenu(JoinMenuKind::Team, 0xFFFFU, 14U, JoinMenuSource::LegacyShowMenu);
+	if (!check(controller.phase() == JoinPhase::WaitingTeamMenu &&
+		controller.onFrame(44U).kind == JoinActionKind::None &&
+		controller.onFrame(45U).kind == JoinActionKind::SendMenuSelect,
+		"delayed team rejection retries at the original cooldown instead of timing out")) return false;
+	controller.commandCompleted(45U);
+	controller.onMenu(JoinMenuKind::Team, 0xFFFFU, 46U, JoinMenuSource::Vgui);
+	controller.onTeamInfo("TERRORIST");
+	controller.onMenu(JoinMenuKind::Team, 0xFFFFU, 47U, JoinMenuSource::LegacyShowMenu);
+	controller.onMenu(JoinMenuKind::TerroristClass, 1U, 47U, JoinMenuSource::LegacyShowMenu);
+	const auto klass = controller.onFrame(47U);
+	if (!check(klass.kind == JoinActionKind::SendMenuSelect && controller.phase() == JoinPhase::ClassCommandPending,
+		"positive TeamInfo cancels a delayed team retry and stale team menus cannot undo progress")) return false;
+	controller.commandCompleted(47U);
+	auto ready = makeReadyEntity();
+	if (!check(controller.onFrame(&ready, 48U).kind == JoinActionKind::Joined,
+		"delayed team retry finishes without recreating the actor")) return false;
+	controller.reset(); controller.begin({3U, 5U}, astrabot::compat::CommandTeam::CounterTerrorist, 10U);
+	controller.onFrame(13U); controller.commandCompleted(13U);
+	controller.onMenu(JoinMenuKind::Team, 0xFFFFU, 14U, JoinMenuSource::Vgui);
+	controller.cancel(JoinError::Disconnected);
+	if (!check(controller.onFrame(45U).kind == JoinActionKind::None,
+		"disconnect cancels a pending delayed retry")) return false;
+	controller.reset(); controller.begin({3U, 6U}, astrabot::compat::CommandTeam::CounterTerrorist, 20U);
+	controller.onMenu(JoinMenuKind::Team, 0xFFFFU, 21U, JoinMenuSource::Vgui);
+	return check(controller.onFrame(21U).kind == JoinActionKind::SendMenuSelect && controller.attempts() == 1U,
+		"slot reuse starts with a fresh cooldown and retry budget");
+}
+
 bool testRejectedTeamRetry()
 {
 	using namespace astrabot::metamod;
@@ -153,6 +235,9 @@ bool testRejectedTeamRetry()
 
 int main()
 {
+	const bool delayedClass = testDelayedClassRejection();
+	const bool delayedTeam = testDelayedTeamRejection();
+	if (!delayedClass || !delayedTeam) return 1;
 	if (!testRejectedTeamRetry()) return 1;
 	using astrabot::compat::CommandTeam;
 	using astrabot::metamod::JoinActionKind;
