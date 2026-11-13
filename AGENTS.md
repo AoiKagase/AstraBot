@@ -48,8 +48,8 @@ call "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\Tools\VsDevC
 Then, in that same `cmd.exe` process, verify `where cl` resolves to the cached `Hostx86\x86\cl.exe` and build the complete target set before running CTest:
 
 ```cmd
-cmake --build build-action-adapter-x86-1451 --config Debug
-ctest --test-dir build-action-adapter-x86-1451 -C Debug --output-on-failure
+cmake --build build/windows-x86-debug --config Debug
+ctest --test-dir build/windows-x86-debug -C Debug --output-on-failure
 ```
 
 If MSVC reports `fatal error C1083: 'windows.h': No such file or directory`, treat it as an uninitialized or mismatched developer environment first. Do not add ad-hoc Windows SDK include paths or change the CMake cache. Reopen/reinitialize the developer command environment, confirm the compiler architecture against `CMakeCache.txt`, and rebuild the affected target. A focused target build can leave other CTest executables absent; a full CTest run will then report those cases as `Not Run`, not as source regressions. Build the complete directory before interpreting the full CTest result.

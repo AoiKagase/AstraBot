@@ -1,0 +1,12 @@
+﻿[
+    {
+        "TimeCreated":  "\/Date(1794562673688)\/",
+        "Id":  1001,
+        "Message":  "Fault bucket 1943363736919088258, type 5\r\nEvent Name: BEX\r\nResponse: 使用不可\r\nCab Id: 0\r\n\r\nProblem signature:\r\nP1: hlds.exe\r\nP2: 4.1.1.1\r\nP3: 64ae586c\r\nP4: steamclient.dll\r\nP5: 11.15.70.27\r\nP6: 6ad92a62\r\nP7: 009605ba\r\nP8: c0000409\r\nP9: 00000005\r\nP10: \r\n\r\nAttached files:\r\n\\\\?\\C:\\ProgramData\\Microsoft\\Windows\\WER\\Temp\\WER.e4ed4579-883d-44a1-a8f4-f04210cb7d68.tmp.dmp\r\n\\\\?\\C:\\ProgramData\\Microsoft\\Windows\\WER\\Temp\\WER.e0b7b33c-a0ca-4c63-af49-8100be409622.tmp.WERInternalMetadata.xml\r\n\\\\?\\C:\\ProgramData\\Microsoft\\Windows\\WER\\Temp\\WER.77f2d849-6929-4567-b79f-808751f088ba.tmp.csv\r\n\\\\?\\C:\\ProgramData\\Microsoft\\Windows\\WER\\Temp\\WER.831aee92-1499-44bd-bf64-90ea7b087fb4.tmp.txt\r\n\\\\?\\C:\\ProgramData\\Microsoft\\Windows\\WER\\Temp\\WER.674d819f-5e17-4635-93f0-1e578c3c2b55.tmp.xml\r\n\r\nThese files may be available here:\r\n\\\\?\\C:\\ProgramData\\Microsoft\\Windows\\WER\\ReportArchive\\AppCrash_hlds.exe_16414421d123cbb43bebf8997c8c6a88ab88be1_0eaa3e0d_edee024d-2c00-4896-a888-3cbdedf1313e\r\n\r\nAnalysis symbol: \r\nRechecking for solution: 0\r\nReport Id: a5f251e2-a571-4e2e-862a-de19d6092369\r\nReport Status: 268435456\r\nHashed bucket: 8563d70175816521daf83705b8701c82\r\nCab Guid: 0"
+    },
+    {
+        "TimeCreated":  "\/Date(1794562671312)\/",
+        "Id":  1000,
+        "Message":  "Faulting application name: hlds.exe, version: 4.1.1.1, time stamp: 0x64ae586c\r\nFaulting module name: steamclient.dll, version: 11.15.70.27, time stamp: 0x6ad92a62\r\nException code: 0xc0000409\r\nFault offset: 0x009605ba\r\nFaulting process id: 0xCC44\r\nFaulting application start time: 0x1DD7351CD33993F\r\nFaulting application path: D:\\SteamCMD\\cstrike_rehlds\\hlds.exe\r\nFaulting module path: D:\\Program Files (x86)\\Steam\\steamclient.dll\r\nReport Id: a5f251e2-a571-4e2e-862a-de19d6092369\r\nFaulting package full name: \r\nFaulting package-relative application ID: "
+    }
+]

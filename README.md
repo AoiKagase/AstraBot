@@ -22,13 +22,20 @@ CSBot互換動作をオフライン検証と実機検証で確認します。
 Windows x86は[AGENTS.md](AGENTS.md)のVisual Studio環境で、全ターゲットのビルド後にCTestを実行してください。
 
 ```cmd
-cmake --build build-action-adapter-x86-1451 --config Debug
-ctest --test-dir build-action-adapter-x86-1451 -C Debug --output-on-failure
+cmake --build build/windows-x86-debug --config Debug
+ctest --test-dir build/windows-x86-debug -C Debug --output-on-failure
 ```
 
-既存の`build-*`はキャッシュの絶対パスと検証証跡を保つため、その場所を維持します。
-新規ビルドは`build/windows-x86-debug`や`build/linux-x86-debug`など、`build/`配下に構成してください。
-既存キャッシュをフォルダごと移動したり、別アーキテクチャのコンパイラで再利用したりしないでください。
+現用ビルドは`build/windows-x86-debug/`と`build/linux-x86-debug/`にまとめています。
+新規構成では、旧キャッシュの設定値を確認してCMakeを再生成してください。
+絶対パスを含む既存キャッシュをフォルダーごと移動して再利用したり、別アーキテクチャのコンパイラーへ流用したりしないでください。
+
+Linux x86 Debugのビルドとテストは次のコマンドで実行します。
+
+```sh
+cmake --build build/linux-x86-debug --parallel 4
+ctest --test-dir build/linux-x86-debug --output-on-failure
+```
 
 ## 設定とローカル成果物
 

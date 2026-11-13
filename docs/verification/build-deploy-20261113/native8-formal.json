@@ -1,0 +1,68 @@
+{
+  "Scope": "latest session/map after FromLine",
+  "ScopeStartLine": 1,
+  "Movement": {
+    "Passed": false,
+    "Status": "InsufficientEvidence",
+    "ReadySamples": 2487,
+    "MovingSamples": 0,
+    "IdleKickLines": 0,
+    "ExpectedBots": 8,
+    "ObservedActors": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ],
+    "VerifiedActors": [],
+    "UnverifiedActors": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ],
+    "MissingActorCount": 0,
+    "Coverage": "all observed/expected actors; current generation/round; motion within 2s of latest telemetry (legacy: 128 frames)",
+    "Evidence": []
+  },
+  "Combat": {
+    "Passed": true,
+    "BotAttackLines": 71,
+    "Evidence": [
+      "L 11/13/2026 - 18:32:09: \"Brett<4><BOT><CT>\" attacked \"Shark<3><BOT><TERRORIST>\" with \"usp\" (damage \"12\") (damage_armor \"6\") (health \"87\") (armor \"93\")",
+      "L 11/13/2026 - 18:32:09: \"Brett<4><BOT><CT>\" attacked \"Shark<3><BOT><TERRORIST>\" with \"usp\" (damage \"12\") (damage_armor \"5\") (health \"75\") (armor \"87\")",
+      "L 11/13/2026 - 18:32:09: \"Brett<4><BOT><CT>\" attacked \"Shark<3><BOT><TERRORIST>\" with \"usp\" (damage \"12\") (damage_armor \"5\") (health \"64\") (armor \"81\")",
+      "L 11/13/2026 - 18:32:10: \"Kyle<5><BOT><CT>\" attacked \"Pheonix<1><BOT><TERRORIST>\" with \"usp\" (damage \"14\") (damage_armor \"7\") (health \"86\") (armor \"93\")",
+      "L 11/13/2026 - 18:32:10: \"Pheonix<1><BOT><TERRORIST>\" attacked \"Kyle<5><BOT><CT>\" with \"glock18\" (damage \"10\") (damage_armor \"4\") (health \"89\") (armor \"95\")"
+    ]
+  },
+  "C4": {
+    "Passed": true,
+    "PlantLines": 2,
+    "DefuseLines": 1,
+    "Evidence": [
+      "L 11/13/2026 - 18:32:21: \"Shark<3><BOT><TERRORIST>\" triggered \"Planted_The_Bomb\"",
+      "L 11/13/2026 - 18:33:32: \"Arnold<6><BOT><TERRORIST>\" triggered \"Planted_The_Bomb\"",
+      "L 11/13/2026 - 18:32:52: \"Brett<4><BOT><CT>\" triggered \"Defused_The_Bomb\""
+    ]
+  },
+  "Objective": {
+    "Passed": true,
+    "PlantLines": 2,
+    "DefuseLines": 1,
+    "Evidence": [
+      "L 11/13/2026 - 18:32:21: \"Shark<3><BOT><TERRORIST>\" triggered \"Planted_The_Bomb\"",
+      "L 11/13/2026 - 18:33:32: \"Arnold<6><BOT><TERRORIST>\" triggered \"Planted_The_Bomb\"",
+      "L 11/13/2026 - 18:32:52: \"Brett<4><BOT><CT>\" triggered \"Defused_The_Bomb\""
+    ]
+  },
+  "LogLines": 36550
+}
