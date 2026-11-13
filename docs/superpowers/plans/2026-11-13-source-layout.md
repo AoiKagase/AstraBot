@@ -39,3 +39,5 @@ Recovery/evidence: C:/Temp/astrabot-source-layout-state.json and related logs.
   Architecture checker: 49 tests PASS. Current documentation path fixes included.
 - Existing build caches, user edits, historical records and .serena remain in
   place. Live HLDS/ReHLDS acceptance was not performed.
+- Integration tests recreated a root BotProfile.db; it was preserved separately
+  in artifacts/local/test-fixtures with its own verification_moves hash record.

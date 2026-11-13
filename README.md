@@ -33,7 +33,8 @@ ctest --test-dir build-action-adapter-x86-1451 -C Debug --output-on-failure
 ## 設定とローカル成果物
 
 [config/](config/README.md)にローカル設定、[artifacts/](artifacts/README.md)に手元の配布物・生成物を分類しています。
-移動した6ファイルは内容を変更せず、[移動記録](artifacts/local/source-root-moves.json)に旧パス・新パス・SHA256を保存しています。
+元の6ファイルは内容を変更せず、[移動記録](artifacts/local/source-root-moves.json)に旧パス・新パス・SHA256を保存しています。
+検証後に再生成されたプロフィールは`artifacts/local/test-fixtures/`に保存しています。
 サーバーへの配置は別途行います。
 
 ## 設計・作業記録

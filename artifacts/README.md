@@ -4,6 +4,7 @@
 |---|---|
 | `local/windows-x86/` | プロジェクト直下にあった既存DLL |
 | `local/debug/` | HLDSデバッグ用の既存OBJファイル |
+| `local/test-fixtures/` | 検証によって再生成されたプロフィール |
 | `imports/` | 元のParity Roadmap配布ZIP |
 | `local/source-root-moves.json` | 2026-11-13の旧パス・新パス・サイズ・SHA256 |
 
