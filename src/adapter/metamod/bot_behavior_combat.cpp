@@ -54,8 +54,8 @@ CombatUpkeepUpdate BotBehaviorRuntime::upkeepCombat(std::size_t index,
 	const auto generation = token.slotGeneration == 0U ? 1U : token.slotGeneration;
 	edict_t *enemy = engine->pfnPEntityOfEntIndex(static_cast<int>(tracked.target.slot));
 	perception::VisionObservation visible{};
-	const int ownTeam = services_->observation_publicPlayerTeam(handle.entity);
-	const bool friendly = enemy && ownTeam != 0 && services_->observation_publicPlayerTeam(enemy) == ownTeam;
+	const int ownTeam = services_->observation_resolvePlayerTeam(handle.entity);
+	const bool friendly = enemy && ownTeam != 0 && services_->observation_resolvePlayerTeam(enemy) == ownTeam;
 	if (generation != tracked.target.generation || !enemy || enemy->free || enemy->v.deadflag != DEAD_NO ||
 		enemy->v.health <= 0 || friendly || services_->observation_observationAdapter().collectVisibility(
 			handle.entity, enemy, tracked.target, frame, &visible) != ObservationAdapterResult::Accepted || !visible.visible)
@@ -82,7 +82,7 @@ CombatUpkeepUpdate BotBehaviorRuntime::upkeepCombat(std::size_t index,
 		const float end[] = {target.position.x, target.position.y, target.position.z};
 		TraceResult shot{}; engine->pfnTraceLine(eye, end, 0, handle.entity, &shot);
 		if (shot.pHit && shot.pHit != handle.entity && shot.pHit->v.deadflag == DEAD_NO &&
-			services_->observation_publicPlayerTeam(shot.pHit) == ownTeam)
+			services_->observation_resolvePlayerTeam(shot.pHit) == ownTeam)
 		{
 			state.weaponActions.stopRapidFire(); update.setPrimary = true; return update;
 		}
@@ -292,7 +292,7 @@ ActionProposal BotBehaviorRuntime::decideCombatAction(ManagedActionContext &ctx)
 		if (trace.pHit != nullptr && trace.pHit != handle.entity &&
 			trace.pHit->v.deadflag == DEAD_NO)
 		{
-			const int hitTeam = services_->observation_publicPlayerTeam(trace.pHit);
+			const int hitTeam = services_->observation_resolvePlayerTeam(trace.pHit);
 			target.friendlyFireRisk = hitTeam == team && hitTeam != 0;
 		}
 	}
@@ -651,7 +651,7 @@ ActionProposal BotBehaviorRuntime::decideCombatAction(ManagedActionContext &ctx)
 			static_cast<unsigned int>(handle.actor.slot),
 			static_cast<unsigned int>(services_->service_adapterFrameCount()),
 			static_cast<int>(handle.entity->v.team),
-			static_cast<unsigned int>(services_->observation_managedBotTeamNumbers(index)),
+			static_cast<unsigned int>(services_->observation_teamInfoTeams(index)),
 			targetActor.isValid() ? 1 : 0, static_cast<int>(result), decision.hasAim ? 1 : 0,
 			decision.hasFire ? 1 : 0, coreReason, weaponReason, weaponValue, observedWeapon.clip,
 			weaponInput.targetDistance, context.elapsedSeconds, context.currentPitch, context.currentYaw,

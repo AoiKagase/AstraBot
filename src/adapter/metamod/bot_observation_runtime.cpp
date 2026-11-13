@@ -357,7 +357,7 @@ void BotObservationRuntime::notifyTeamInfo(std::uint8_t slot, const char *teamNa
 		return;
 	}
 	const std::size_t index = static_cast<std::size_t>(slot - 1U);
-	actors_[index].managedBotTeamNumbers =
+	actors_[index].teamInfoTeams =
 		equalsIgnoreCase(teamName, "TERRORIST")												  ? 1U
 		: equalsIgnoreCase(teamName, "CT") || equalsIgnoreCase(teamName, "COUNTER-TERRORIST") ? 2U
 																							  : 0U;
@@ -464,7 +464,7 @@ void BotObservationRuntime::onEmitSound(edict_t *entity, const char *sample, flo
 		}
 	}
 	soundEvents_[event.id % soundEvents_.size()] = event;
-	soundTeams_[event.id % soundEvents_.size()] = event.source.isValid() ? entity->v.team : 0;
+	soundTeams_[event.id % soundEvents_.size()] = event.source.isValid() ? resolvePlayerTeam(entity) : 0;
 	if (bombBeep && entityIndex > 0)
 	{
 		for (std::size_t index = 0U; index < services_->service_managedBotHandles().size(); ++index)
@@ -543,7 +543,7 @@ void BotObservationRuntime::capturePublicMessage()
 			services_->service_managedBotHandles()[index].entity != publicMessageTarget_ ||
 			services_->service_managedBotHandles()[index].actor.actorGeneration !=
 				publicMessageActor_.generation ||
-			actors_[index].managedBotTeamNumbers != 1U)
+			actors_[index].teamInfoTeams != 1U)
 			return;
 		if (std::strcmp(name, "BombPickup") == 0 && count == 0U)
 			actors_[index].publicBombRadars.reset();
@@ -692,15 +692,15 @@ void BotObservationRuntime::capturePublicMessage()
 		radio.sender = {static_cast<std::uint32_t>(v[0]),
 						static_cast<std::uint32_t>(sender->serialnumber)};
 		radio.senderHuman = true;
-		radio.team = sender->v.team == 1   ? objectives::TeamRole::Terrorist
-					 : sender->v.team == 2 ? objectives::TeamRole::CounterTerrorist
+		radio.team = resolvePlayerTeam(sender) == 1   ? objectives::TeamRole::Terrorist
+					 : resolvePlayerTeam(sender) == 2 ? objectives::TeamRole::CounterTerrorist
 										   : objectives::TeamRole::Unknown;
 		radio.receivedTime = services_->service_globals()->time;
 		// A radio receipt reveals the order and sender, never the sender's coordinates.
 		for (std::size_t i = 0U; i < services_->service_managedBotHandles().size(); ++i)
 		{
 			if (services_->service_managedBotSlots()[i] &&
-				actors_[i].managedBotTeamNumbers == sender->v.team &&
+				actors_[i].teamInfoTeams == resolvePlayerTeam(sender) &&
 				(!publicMessageActor_.isValid() || publicMessageActor_.slot == i + 1U))
 			{
 				if (actors_[i].scenarioRadio.sender == radio.sender &&
@@ -831,7 +831,7 @@ runtime::MovementPhysicsState BotObservationRuntime::captureMovementPhysicsState
 	state.onLadder = entity->v.movetype == MOVETYPE_FLY;
 	state.flags = entity->v.flags;
 	state.deadflag = entity->v.deadflag;
-	state.team = entity->v.team;
+	state.team = resolvePlayerTeam(entity);
 	state.teamConfirmed = teamConfirmed;
 	state.solid = entity->v.solid;
 	state.movetype = entity->v.movetype;
@@ -996,41 +996,6 @@ bool BotObservationRuntime::buildManagedWorldSnapshot(std::size_t index,
 	perception::PerceptionInput input(identity);
 	const compat::ObservationTimingContext observationTiming = {
 		services_->command_managedBotCommandSequences(index), 0U, 0U};
-	const auto effectiveTeam = [this](edict_t *entity, int slot) {
-		if (entity == nullptr || entity->free)
-			return 0;
-		if (slot >= 1 && slot <= 32 && actors_[slot - 1].publicTeamKnown)
-			return static_cast<int>(actors_[slot - 1].managedBotTeamNumbers);
-		const int team = static_cast<int>(entity->v.team);
-		if (team >= 1 && team <= 2)
-		{
-			return team;
-		}
-		for (std::size_t managedIndex = 0U;
-			 managedIndex < services_->service_managedBotHandles().size(); ++managedIndex)
-		{
-			if (services_->service_managedBotHandles()[managedIndex].entity != entity)
-			{
-				continue;
-			}
-			if (actors_[managedIndex].managedBotTeamNumbers >= 1U &&
-				actors_[managedIndex].managedBotTeamNumbers <= 2U)
-			{
-				return static_cast<int>(actors_[managedIndex].managedBotTeamNumbers);
-			}
-			switch (services_->service_joinControllers()[managedIndex].requestedTeam())
-			{
-			case compat::CommandTeam::Terrorist:
-				return 1;
-			case compat::CommandTeam::CounterTerrorist:
-				return 2;
-			case compat::CommandTeam::Any:
-			default:
-				return 0;
-			}
-		}
-		return 0;
-	};
 	compat::CompatibilityObservation observerObservation = {};
 	if (observationAdapter_.collectActor(handle.entity, observer, frame, observationTiming,
 										 &observerObservation) !=
@@ -1038,15 +1003,12 @@ bool BotObservationRuntime::buildManagedWorldSnapshot(std::size_t index,
 	{
 		return false;
 	}
-	const int observedObserverTeam =
-		observerObservation.player.team.isAvailable() ? observerObservation.player.team.value : 0;
-	const int observerTeam =
-		observedObserverTeam >= 1 ? observedObserverTeam : effectiveTeam(handle.entity, handle.actor.slot);
+	const int observerTeam = resolvePlayerTeam(handle.entity);
 	const int maxClients = std::max(0, std::min(services_->service_globals()->maxClients, 32));
 	for (int slot = 1; slot <= maxClients; ++slot)
 	{
 		edict_t *entity = services_->service_engineFunctions()->pfnPEntityOfEntIndex(slot);
-		const int entityTeam = effectiveTeam(entity, slot);
+		const int entityTeam = resolvePlayerTeam(entity);
 		if (entity == nullptr || entity->v.deadflag != DEAD_NO || entity->v.health <= 0.0f ||
 			(entity->v.flags & FL_SPECTATOR) != 0 || entityTeam < 1)
 		{
@@ -1107,7 +1069,7 @@ bool BotObservationRuntime::buildManagedWorldSnapshot(std::size_t index,
 		const auto &observed = soundEvents_[sequence % soundEvents_.size()];
 		if (observed.id != sequence || observed.source.slot == handle.actor.slot ||
 			(soundTeams_[sequence % soundTeams_.size()] != 0 &&
-			 soundTeams_[sequence % soundTeams_.size()] == actors_[index].managedBotTeamNumbers))
+			 soundTeams_[sequence % soundTeams_.size()] == actors_[index].teamInfoTeams))
 		{
 			continue;
 		}
@@ -1167,9 +1129,9 @@ bool BotObservationRuntime::observeObjective(std::size_t index, edict_t *entity,
 	// The reference gives T the planted location on the announced plant event,
 	// not merely because the server scan found a grenade (CSGameState::OnEvent).
 	bool visible =
-		!compatibility || (planted && actors_[index].managedBotTeamNumbers == 1U &&
+		!compatibility || (planted && actors_[index].teamInfoTeams == 1U &&
 						   actors_[index].bombNoticeKnown && actors_[index].bombNoticePlanted);
-	if (!planted && compatibility && actors_[index].managedBotTeamNumbers == 1U)
+	if (!planted && compatibility && actors_[index].teamInfoTeams == 1U)
 	{
 		world::WorldVector radar{};
 		if (actors_[index].publicBombRadars.read({services_->service_lifecycle().mapGeneration(),
@@ -1217,14 +1179,14 @@ bool BotObservationRuntime::observeObjective(std::size_t index, edict_t *entity,
 	return true;
 }
 
-int BotObservationRuntime::publicPlayerTeam(const edict_t *entity) const
+int BotObservationRuntime::resolvePlayerTeam(const edict_t *entity) const
 {
-	if (entity == nullptr || services_->service_engineFunctions() == nullptr ||
+	if (entity == nullptr || entity->free || services_->service_engineFunctions() == nullptr ||
 		services_->service_engineFunctions()->pfnIndexOfEdict == nullptr)
 		return 0;
 	const int slot = services_->service_engineFunctions()->pfnIndexOfEdict(entity);
 	if (slot >= 1 && slot <= 32 && actors_[static_cast<std::size_t>(slot - 1)].publicTeamKnown)
-		return actors_[static_cast<std::size_t>(slot - 1)].managedBotTeamNumbers;
+		return actors_[static_cast<std::size_t>(slot - 1)].teamInfoTeams;
 	return entity->v.team >= 1 && entity->v.team <= 2 ? entity->v.team : 0;
 }
 
@@ -1254,7 +1216,7 @@ std::vector<nav::NavVector> BotObservationRuntime::liveFriendlyPositions(std::si
 		services_->service_engineFunctions()->pfnPEntityOfEntIndex == nullptr)
 		return positions;
 	const auto *self = services_->service_managedBotHandles()[index].entity;
-	const int team = publicPlayerTeam(self);
+	const int team = resolvePlayerTeam(self);
 	if (team == 0)
 		return positions;
 	for (int slot = 1; slot <= (std::min)(32, services_->service_globals()->maxClients); ++slot)
@@ -1262,7 +1224,7 @@ std::vector<nav::NavVector> BotObservationRuntime::liveFriendlyPositions(std::si
 		const auto *other = services_->service_engineFunctions()->pfnPEntityOfEntIndex(slot);
 		if (other == nullptr || other == self || other->free || (other->v.flags & FL_CLIENT) == 0 ||
 			other->v.deadflag != DEAD_NO || other->v.health <= 0.0f ||
-			publicPlayerTeam(other) != team)
+			resolvePlayerTeam(other) != team)
 			continue;
 		const float offset = feet ? other->v.mins.z : 0.0f;
 		const nav::NavVector position = {other->v.origin.x, other->v.origin.y,
@@ -1286,7 +1248,7 @@ void BotObservationRuntime::onActorRemoved(std::size_t index)
 	actors_[index].reactionQueues.reset();
 	actors_[index].recognizedTargets = {};
 	actors_[index].objectiveKnowledge = {};
-	actors_[index].managedBotTeamNumbers = 0U;
+	actors_[index].teamInfoTeams = 0U;
 	actors_[index].publicTeamKnown = false;
 	actors_[index].managedBotPerception = perception::PerceptionAssembler();
 	actors_[index].managedBotPerceptionFullUpdates = (std::numeric_limits<std::uint32_t>::max)();
@@ -1295,7 +1257,7 @@ void BotObservationRuntime::onActorRemoved(std::size_t index)
 void BotObservationRuntime::onActorRemembered(std::size_t index, const FakeClientHandle &handle)
 {
 	const world::ActorKey actor = {handle.actor.slot, handle.actor.actorGeneration};
-	actors_[index].managedBotTeamNumbers = 0U;
+	actors_[index].teamInfoTeams = 0U;
 	actors_[index].publicTeamKnown = false;
 	publicObservations_.bind(actor, {services_->service_lifecycle().mapGeneration(),
 									 services_->service_lifecycle().roundGeneration(),
@@ -1444,7 +1406,7 @@ void BotObservationRuntime::observeExternalCommand(const edict_t *entity, std::u
 		static_cast<std::uint32_t>(entityIndex) == externalDefuserEntityIndex_ &&
 		static_cast<std::uint32_t>(entity->serialnumber) == externalDefuserEntitySerial_;
 	const bool usingButton = (buttons & static_cast<std::uint16_t>(IN_USE)) != 0U;
-	const bool livingCounterTerrorist = static_cast<int>(entity->v.team) == 2 &&
+	const bool livingCounterTerrorist = resolvePlayerTeam(entity) == 2 &&
 										entity->v.deadflag == DEAD_NO &&
 										std::isfinite(entity->v.health) && entity->v.health > 0.0f;
 	if (!usingButton || !livingCounterTerrorist || !std::isfinite(entity->v.origin.x) ||

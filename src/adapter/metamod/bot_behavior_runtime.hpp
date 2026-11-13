@@ -35,8 +35,6 @@ class BotBehaviorRuntime
 	float managedRoundRemainingSeconds() const;
 	void refreshManagedObjectiveSiteRegistry();
 	void refreshManagedTeamObjectiveAssignments(std::size_t contextIndex);
-	int resolveManagedBotTeam(std::size_t index,
-							  const compat::CompatibilityObservation &observation) const;
 	void updateBombGuardTarget(std::size_t index, const compat::ScenarioBehaviorInput &input,
 							   compat::ScenarioBehaviorDecision *decision);
 	void updateManagedBotCompatibilityState(std::size_t index,

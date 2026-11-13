@@ -59,7 +59,7 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index)
 				   services_->service_adapterFrameCount()};
 	input.now = services_->service_globals()->time;
 	input.alive = handle.entity->v.deadflag == DEAD_NO && handle.entity->v.health > 0.0f;
-	input.team = services_->observation_managedBotTeamNumbers(index);
+	input.team = services_->observation_resolvePlayerTeam(handle.entity);
 	if (input.team != 1 && input.team != 2)
 		return;
 	input.teamLastSpeech = outgoingTeamLastSpeech_[input.team];
@@ -74,11 +74,11 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index)
 			(player->v.flags & FL_CLIENT) == 0 || player->v.deadflag != DEAD_NO ||
 			player->v.health <= 0)
 			continue;
-		if (player->v.team == input.team)
+		if (services_->observation_resolvePlayerTeam(player) == input.team)
 		{
 			++input.friendCount;
 		}
-		else if (player->v.team == 1 || player->v.team == 2)
+		else if (services_->observation_resolvePlayerTeam(player) == 1 || services_->observation_resolvePlayerTeam(player) == 2)
 			++input.enemiesRemaining;
 	}
 	// Count the observer's current public FOV/LOS/smoke-filtered contacts. A

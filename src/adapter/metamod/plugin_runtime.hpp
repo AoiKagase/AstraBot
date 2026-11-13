@@ -388,9 +388,9 @@ class PluginRuntime : public BotObservationServices, public BotBehaviorServices,
 			{
 				return observation_.managedBotPerception(index);
 			}
-			const std::uint8_t &observation_managedBotTeamNumbers(std::size_t index) const override
+			const std::uint8_t &observation_teamInfoTeams(std::size_t index) const override
 			{
-				return observation_.managedBotTeamNumbers(index);
+				return observation_.teamInfoTeams(index);
 			}
 			const std::array<ObjectiveKnowledge, 2U> &observation_objectiveKnowledge(std::size_t index) const override
 			{
@@ -418,9 +418,13 @@ class PluginRuntime : public BotObservationServices, public BotBehaviorServices,
 			{
 				return observation_.publicObservations();
 			}
-			int observation_publicPlayerTeam(const edict_t *entity) const override
+			const bool &observation_publicTeamKnown(std::size_t index) const override
 			{
-				return observation_.publicPlayerTeam(entity);
+				return observation_.publicTeamKnown(index);
+			}
+			int observation_resolvePlayerTeam(const edict_t *entity) const override
+			{
+				return observation_.resolvePlayerTeam(entity);
 			}
 			const std::array<PublicScoreStatus, NativeBotObservation::kClientSlotCount>
 				&observation_publicScoreStatuses(std::size_t index) const override

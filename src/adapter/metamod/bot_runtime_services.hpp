@@ -92,7 +92,7 @@ class BotBehaviorServices : public BotRuntimeServiceTypes
 	virtual const float &observation_lastVisibleEnemyTimes(std::size_t index) const = 0;
 	virtual const ManagedCurrentWeaponObservation &observation_managedBotCurrentWeapons(std::size_t index) const = 0;
 	virtual const perception::PerceptionAssembler &observation_managedBotPerception(std::size_t index) const = 0;
-	virtual const std::uint8_t &observation_managedBotTeamNumbers(std::size_t index) const = 0;
+	virtual const std::uint8_t &observation_teamInfoTeams(std::size_t index) const = 0;
 	virtual const std::array<ObjectiveKnowledge, 2U> &observation_objectiveKnowledge(std::size_t index) const = 0;
 	virtual const ObservationAdapter &observation_observationAdapter() const = 0;
 	virtual bool observation_observeObjective(std::size_t index, edict_t *entity, bool planted,
@@ -100,7 +100,7 @@ class BotBehaviorServices : public BotRuntimeServiceTypes
 	virtual void observation_observeRadioLeaderPosition(std::size_t index, const compat::ScenarioTarget &position) = 0;
 	virtual const compat::PublicBombClock &observation_publicBombClocks(std::size_t index) const = 0;
 	virtual const compat::PublicObservationStore &observation_publicObservations() const = 0;
-	virtual int observation_publicPlayerTeam(const edict_t *entity) const = 0;
+	virtual int observation_resolvePlayerTeam(const edict_t *entity) const = 0;
 	virtual const std::array<PublicScoreStatus, NativeBotObservation::kClientSlotCount>
 		&observation_publicScoreStatuses(std::size_t index) const = 0;
 	virtual const compat::ScenarioRadioObservation &observation_scenarioRadio(std::size_t index) const = 0;
@@ -144,7 +144,9 @@ class BotNavigationServices : public BotRuntimeServiceTypes
 																				  bool teamConfirmed,
 																				  bool managedFakeClient) const = 0;
 	virtual std::vector<nav::NavVector> observation_liveFriendlyPositions(std::size_t index, bool feet) const = 0;
-	virtual const std::uint8_t &observation_managedBotTeamNumbers(std::size_t index) const = 0;
+	virtual const std::uint8_t &observation_teamInfoTeams(std::size_t index) const = 0;
+	virtual int observation_resolvePlayerTeam(const edict_t *entity) const = 0;
+	virtual const bool &observation_publicTeamKnown(std::size_t index) const = 0;
 };
 class BotCommandServices : public BotRuntimeServiceTypes
 {

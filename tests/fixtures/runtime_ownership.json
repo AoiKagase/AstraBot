@@ -497,7 +497,7 @@
   {
     "header": "src/adapter/metamod/bot_observation_runtime.hpp",
     "scope": "ActorState",
-    "member": "managedBotTeamNumbers"
+    "member": "teamInfoTeams"
   },
   {
     "header": "src/adapter/metamod/bot_observation_runtime.hpp",

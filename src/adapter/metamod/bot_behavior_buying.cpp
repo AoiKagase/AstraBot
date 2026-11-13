@@ -33,9 +33,9 @@ void BotBehaviorRuntime::updatePublicBuying(std::size_t index)
 	context.buyTimeOpen =
 		std::isfinite(buyTime) && services_->service_globals()->time <=
 									  services_->service_roundFreezeStartTime() + buyTime * 60.0f;
-	context.team = services_->observation_managedBotTeamNumbers(index) == 1U
+	context.team = services_->observation_resolvePlayerTeam(handle.entity) == 1U
 					   ? compat::ProfileTeam::Terrorist
-				   : services_->observation_managedBotTeamNumbers(index) == 2U
+				   : services_->observation_resolvePlayerTeam(handle.entity) == 2U
 					   ? compat::ProfileTeam::CounterTerrorist
 					   : compat::ProfileTeam::Any;
 	context.moneyKnown = observation.moneyKnown;

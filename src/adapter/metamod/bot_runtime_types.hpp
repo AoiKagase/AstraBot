@@ -87,9 +87,6 @@ struct ManagedObjectiveTargetCache
 	bool diagnosticsEmitted;
 	bool lastCacheHit;
 	float approachRouteSeconds;
-	int rawTeam;
-	int effectiveTeam;
-	bool teamInfoFresh;
 };
 
 struct ManagedObjectiveActionState

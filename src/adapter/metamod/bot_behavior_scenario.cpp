@@ -85,24 +85,6 @@ BotBehaviorRuntime::makeManagedBotStateContext(std::size_t index,
 	return context;
 }
 
-int BotBehaviorRuntime::resolveManagedBotTeam(
-	std::size_t index, const compat::CompatibilityObservation &observation) const
-{
-	if (index < NativeBotObservation::kClientSlotCount &&
-		services_->service_joinControllers()[index].teamConfirmed() &&
-		services_->observation_managedBotTeamNumbers(index) >= 1U &&
-		services_->observation_managedBotTeamNumbers(index) <= 2U)
-	{
-		return static_cast<int>(services_->observation_managedBotTeamNumbers(index));
-	}
-	if (observation.player.team.isAvailable() && observation.player.team.value >= 1 &&
-		observation.player.team.value <= 2)
-	{
-		return observation.player.team.value;
-	}
-	return 0;
-}
-
 BotBehaviorRuntime::BehaviorPhaseResult
 BotBehaviorRuntime::updateBehaviorLifecycle(std::size_t index,
 											const runtime::MovementPhysicsState &before,
@@ -209,7 +191,7 @@ void BotBehaviorRuntime::populateScenarioPublicState(
 	scenario.currentDefusing = machine.state() == compat::CompatibilityStateId::DefuseBomb;
 	scenario.alreadyEscapingFromBomb =
 		machine.state() == compat::CompatibilityStateId::EscapeFromBomb;
-	data.observedTeam = resolveManagedBotTeam(index, observation);
+	data.observedTeam = services_->observation_resolvePlayerTeam(services_->service_managedBotHandles()[index].entity);
 	const int observedTeam = data.observedTeam;
 	scenario.team = observedTeam == 1	? objectives::TeamRole::Terrorist
 					: observedTeam == 2 ? objectives::TeamRole::CounterTerrorist
@@ -371,7 +353,7 @@ void BotBehaviorRuntime::observeScenarioEntities(
 				}
 			}
 			if (entityIndex <= services_->service_globals()->maxClients &&
-				(entity->v.flags & FL_FAKECLIENT) == 0 && entity->v.team == observedTeam &&
+				(entity->v.flags & FL_FAKECLIENT) == 0 && services_->observation_resolvePlayerTeam(entity) == observedTeam &&
 				entity->v.deadflag == DEAD_NO && entity->v.health > 0.0f)
 			{
 				const auto location = project(entity, entityIndex, false);
@@ -470,7 +452,7 @@ void BotBehaviorRuntime::observeScenarioEntities(
 				edict_t *other = services_->service_engineFunctions()->pfnPEntityOfEntIndex(player);
 				if (other == nullptr ||
 					other == services_->service_managedBotHandles()[index].entity ||
-					other->free != 0 || other->v.team != 2 || other->v.deadflag != DEAD_NO ||
+					other->free != 0 || services_->observation_resolvePlayerTeam(other) != 2 || other->v.deadflag != DEAD_NO ||
 					other->v.health <= 0.0f)
 					continue;
 				const float dx = other->v.origin.x - scenario.hostage.position.x;
@@ -493,8 +475,8 @@ void BotBehaviorRuntime::observeScenarioEntities(
 				static_cast<std::uint32_t>(human->serialnumber) + 1U == tracked.generation)
 			{
 				scenario.automaticLeader = {tracked,
-											human->v.team == 1 ? objectives::TeamRole::Terrorist
-											: human->v.team == 2
+											services_->observation_resolvePlayerTeam(human) == 1 ? objectives::TeamRole::Terrorist
+											: services_->observation_resolvePlayerTeam(human) == 2
 												? objectives::TeamRole::CounterTerrorist
 												: objectives::TeamRole::Unknown,
 											(human->v.flags & FL_FAKECLIENT) == 0,
@@ -514,8 +496,8 @@ void BotBehaviorRuntime::observeScenarioEntities(
 				static_cast<std::uint32_t>(leader->serialnumber) == sender.generation)
 			{
 				scenario.leader.actor = sender;
-				scenario.leader.team = leader->v.team == 1 ? objectives::TeamRole::Terrorist
-									   : leader->v.team == 2
+				scenario.leader.team = services_->observation_resolvePlayerTeam(leader) == 1 ? objectives::TeamRole::Terrorist
+									   : services_->observation_resolvePlayerTeam(leader) == 2
 										   ? objectives::TeamRole::CounterTerrorist
 										   : objectives::TeamRole::Unknown;
 				scenario.leader.human = (leader->v.flags & FL_FAKECLIENT) == 0;
@@ -725,7 +707,7 @@ void BotBehaviorRuntime::updateScenarioNavigation(
 			static_cast<int>(sender.slot));
 		validation.valid = (observedTeam == 1 || observedTeam == 2) && human != nullptr &&
 						   !human->free && (human->v.flags & FL_CLIENT) != 0 &&
-						   (human->v.flags & FL_FAKECLIENT) == 0 && human->v.team == observedTeam &&
+						   (human->v.flags & FL_FAKECLIENT) == 0 && services_->observation_resolvePlayerTeam(human) == observedTeam &&
 						   static_cast<std::uint32_t>(human->serialnumber) == sender.generation;
 		return validation;
 	};
@@ -898,7 +880,7 @@ void BotBehaviorRuntime::updateScenarioTeamwork(std::size_t index,
 			edict_t *entity = services_->service_engineFunctions()->pfnPEntityOfEntIndex(
 				static_cast<int>(human.slot));
 			if (entity != nullptr && !entity->free && (entity->v.flags & FL_CLIENT) != 0 &&
-				(entity->v.flags & FL_FAKECLIENT) == 0 && entity->v.team == observedTeam &&
+				(entity->v.flags & FL_FAKECLIENT) == 0 && services_->observation_resolvePlayerTeam(entity) == observedTeam &&
 				static_cast<std::uint32_t>(entity->serialnumber) == human.generation)
 			{
 				human.generation = static_cast<std::uint32_t>(entity->serialnumber) + 1U;
@@ -952,7 +934,7 @@ void BotBehaviorRuntime::applyScenarioDecision(std::size_t index,
 	}
 	const bool carryingC4 =
 		observation.objective.carryingC4.isAvailable() && observation.objective.carryingC4.value;
-	const int team = resolveManagedBotTeam(index, observation);
+	const int team = services_->observation_resolvePlayerTeam(services_->service_managedBotHandles()[index].entity);
 	if (carryingC4 && team == 1)
 	{
 		const bool atBombsite = managedActorAtBombSite(index);

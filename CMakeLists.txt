@@ -1029,6 +1029,13 @@ if(ASTRABOT_BUILD_TESTS AND ASTRABOT_BUILD_METAMOD)
   target_link_libraries(astrabot_actor_identity_runtime PRIVATE astrabot_core astrabot_regamedll_provider)
   astrabot_apply_warnings(astrabot_actor_identity_runtime)
   add_test(NAME astrabot_actor_identity_runtime COMMAND astrabot_actor_identity_runtime --target-log)
+  add_executable(astrabot_runtime_team_resolution tests/runtime_team_resolution_tests.cpp ${combat_target_log_sources})
+  target_include_directories(astrabot_runtime_team_resolution PRIVATE ${combat_target_log_includes})
+  target_link_libraries(astrabot_runtime_team_resolution PRIVATE astrabot_core astrabot_regamedll_provider)
+  astrabot_apply_warnings(astrabot_runtime_team_resolution)
+  add_test(NAME astrabot_runtime_team_resolution COMMAND astrabot_runtime_team_resolution --target-log)
+  set_tests_properties(astrabot_runtime_team_resolution PROPERTIES
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" RESOURCE_LOCK astrabot_actor_command_profile)
   set_tests_properties(astrabot_actor_identity_runtime PROPERTIES
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" RESOURCE_LOCK astrabot_actor_command_profile)
   set_tests_properties(astrabot_weapon_switch_runtime PROPERTIES

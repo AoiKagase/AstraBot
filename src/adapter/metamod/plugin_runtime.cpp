@@ -1285,7 +1285,7 @@ void PluginRuntime::maintainPublicBotPopulation()
 		// TeamInfo is authoritative for humans too: CS can leave entvars.team at zero.
 		const int team =
 			observation_.publicTeamKnown(static_cast<std::size_t>(slot - 1))
-				? observation_.managedBotTeamNumbers(static_cast<std::size_t>(slot - 1))
+				? observation_.teamInfoTeams(static_cast<std::size_t>(slot - 1))
 				: entity->v.team;
 		if (team == 1 || team == 2)
 		{
@@ -1314,7 +1314,7 @@ void PluginRuntime::maintainPublicBotPopulation()
 		{
 			for (std::size_t index = 0U; index < managedBotSlots_.size(); ++index)
 			{
-				if (!managedBotSlots_[index] || observation_.managedBotTeamNumbers(index) != team)
+				if (!managedBotSlots_[index] || observation_.teamInfoTeams(index) != team)
 				{
 					continue;
 				}
@@ -1587,7 +1587,7 @@ std::uint32_t PluginRuntime::publicPlayerPriority(const edict_t *entity) const
 	const auto actor = observation_.publicPlayerIdentity(entity);
 	if (actor.slot == 0U) return (std::numeric_limits<std::uint32_t>::max)();
 	const auto index = static_cast<std::size_t>(actor.slot - 1U);
-	const int team = observation_.publicPlayerTeam(entity);
+	const int team = observation_.resolvePlayerTeam(entity);
 	bool important = team == 1 && (static_cast<std::uint32_t>(entity->v.weapons) & (1U << ActionAdapter::kC4WeaponId)) != 0U;
 	const auto &score = observation_.publicScoreStatuses(index)[index];
 	if (team == 2 && score.known && score.serial == static_cast<std::uint32_t>(entity->serialnumber) &&

@@ -140,7 +140,7 @@ nav::NavPathCostContext BotNavigationRuntime::managedPathCostContext(std::size_t
 		float danger = 0.0f;
 		if (dangerMemory_.mapGeneration() == services_->service_lifecycle().mapGeneration() &&
 			dangerMemory_.query(services_->service_globals()->time,
-								services_->observation_managedBotTeamNumbers(index), area.id,
+								static_cast<std::uint8_t>(services_->observation_resolvePlayerTeam(handle.entity)), area.id,
 								&danger) &&
 			danger > 0.0f)
 		{
@@ -307,7 +307,10 @@ void BotNavigationRuntime::logGoalAssignmentDiagnostic(
 	actors_[index].movementGoalDiagnosticSeconds = second;
 	const ManagedObjectiveTargetCache &cache =
 		services_->behavior_managedBotObjectiveTargets(index);
-	const int rawTeam = before.team != 0 ? before.team : cache.rawTeam;
+	const auto *entity = services_->service_managedBotHandles()[index].entity;
+	const int rawTeam = entity != nullptr ? entity->v.team : 0;
+	const int effectiveTeam = services_->observation_resolvePlayerTeam(entity);
+	const bool teamInfoKnown = services_->observation_publicTeamKnown(index);
 	const char *goalSource = decision.goalKind == runtime::NavGoalKind::Objective ? "objective"
 							 : decision.goalKind == runtime::NavGoalKind::Roam	  ? "roam"
 																				  : "none";
@@ -320,8 +323,8 @@ void BotNavigationRuntime::logGoalAssignmentDiagnostic(
 		"goal_generation=%u cache_hit=%d cache_scope=actor corridor_goal_area=%u "
 		"next_area=%u movement_target=(%.1f %.1f %.1f) current_area=%u",
 		static_cast<unsigned int>(services_->service_managedBotHandles()[index].actor.slot),
-		rawTeam, cache.effectiveTeam, cache.teamInfoFresh ? cache.effectiveTeam : 0,
-		cache.teamInfoFresh ? 1 : 0, cache.carryingBomb ? 1 : 0,
+		rawTeam, effectiveTeam, teamInfoKnown ? effectiveTeam : 0,
+		teamInfoKnown ? 1 : 0, cache.carryingBomb ? 1 : 0,
 		compat::toString(services_->behavior_managedBotStateMachines(index).state()),
 		compat::toString(services_->behavior_managedBotStateMachines(index).task()),
 		decision.goalPresent ? 1 : 0, static_cast<int>(decision.goalKind),
@@ -1022,7 +1025,7 @@ NavigationUpdate BotNavigationRuntime::updateNavigation(std::size_t index,
 		observation.objectiveTargetEntity = objectiveAssignment->targetEntity;
 	}
 	observation.team = static_cast<std::uint8_t>(
-		services_->behavior_managedBotObjectiveTargets(index).effectiveTeam);
+		services_->observation_resolvePlayerTeam(handle.entity));
 	observation.movementSuppressed = services_->roundFreezeActive();
 	const auto &objectiveAction = services_->behavior_managedBotObjectiveActions(index);
 	observation.movementSuppressed =
@@ -1316,7 +1319,7 @@ void BotNavigationRuntime::observePublicDeath(std::size_t victim)
 		{
 			(void)dangerMemory_.recordDeath(
 				*document, services_->service_lifecycle().mapGeneration(),
-				services_->observation_managedBotTeamNumbers(victim), area.area, position,
+				static_cast<std::uint8_t>(services_->observation_resolvePlayerTeam(entity)), area.area, position,
 				services_->service_globals()->time);
 		}
 		actors_[victim].deathDangerRecorded = true;

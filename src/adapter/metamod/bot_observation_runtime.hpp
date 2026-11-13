@@ -38,7 +38,7 @@ class BotObservationRuntime
 	void onWriteShort(int value);
 	void onWriteString(const char *value);
 	runtime::ActorId publicPlayerIdentity(const edict_t *entity) const;
-	int publicPlayerTeam(const edict_t *entity) const;
+	int resolvePlayerTeam(const edict_t *entity) const;
 	using View_observationAdapter = ObservationAdapter;
 	const View_observationAdapter &observationAdapter() const
 	{
@@ -89,9 +89,9 @@ class BotObservationRuntime
 	{
 		return smokeObservations_;
 	}
-	const std::uint8_t &managedBotTeamNumbers(std::size_t index) const
+	const std::uint8_t &teamInfoTeams(std::size_t index) const
 	{
-		return actors_[index].managedBotTeamNumbers;
+		return actors_[index].teamInfoTeams;
 	}
 	const bool &publicTeamKnown(std::size_t index) const
 	{
@@ -242,7 +242,7 @@ class BotObservationRuntime
 		std::uint32_t recognitionSequences{};
 		float lastVisibleEnemyTimes{};
 		std::uint32_t deliveredSoundSequences{};
-		std::uint8_t managedBotTeamNumbers{};
+		std::uint8_t teamInfoTeams{};
 		bool publicTeamKnown{};
 		std::array<ObjectiveKnowledge, 2U> objectiveKnowledge{};
 		ManagedCurrentWeaponObservation managedBotCurrentWeapons{};

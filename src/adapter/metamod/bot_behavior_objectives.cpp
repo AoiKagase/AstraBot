@@ -68,7 +68,7 @@ void BotBehaviorRuntime::finishManagedBotNavigation(std::size_t index,
 	}
 	const auto &target = actors_[index].scenarioDecisions.target;
 	const auto &bomb = services_->observation_objectiveKnowledge(index)[1U];
-	input.defuseGoalKnown = services_->observation_publicPlayerTeam(
+	input.defuseGoalKnown = services_->observation_resolvePlayerTeam(
 								services_->service_managedBotHandles()[index].entity) == 2 &&
 							actors_[index].scenarioDecisions.hasTarget && bomb.entity.id != 0U &&
 							target.entity.id == bomb.entity.id;
@@ -363,12 +363,11 @@ void BotBehaviorRuntime::refreshManagedTeamObjectiveAssignments(std::size_t cont
 		team::TeamObjectiveActorObservation &actor = input.actors[input.actorCount];
 		actor = {};
 		actor.actor = {handle.actor.slot, handle.actor.actorGeneration};
-		const bool teamInfoConfirmed =
-			services_->service_joinControllers()[index].teamConfirmed() &&
-			services_->observation_managedBotTeamNumbers(index) >= 1U &&
-			services_->observation_managedBotTeamNumbers(index) <= 2U;
-		actor.team = !teamInfoConfirmed ? objectives::TeamRole::Unknown
-					 : services_->observation_managedBotTeamNumbers(index) == 1U
+		const int observedTeam = services_->observation_resolvePlayerTeam(handle.entity);
+		const bool teamConfirmed = services_->service_joinControllers()[index].teamConfirmed() &&
+			observedTeam >= 1 && observedTeam <= 2;
+		actor.team = !teamConfirmed ? objectives::TeamRole::Unknown
+					 : observedTeam == 1
 						 ? objectives::TeamRole::Terrorist
 						 : objectives::TeamRole::CounterTerrorist;
 		actor.alive = observation.player.deadflag.isAvailable() &&
@@ -670,16 +669,8 @@ bool BotBehaviorRuntime::buildManagedObjectiveTarget(std::size_t index, nav::Nav
 	{
 		return false;
 	}
-	const int rawTeam = compatObservation.player.team.isAvailable()
-							? compatObservation.player.team.value
-							: static_cast<int>(handle.entity->v.team);
-	const int team = resolveManagedBotTeam(index, compatObservation);
+	const int team = services_->observation_resolvePlayerTeam(handle.entity);
 	ManagedObjectiveTargetCache &cache = actors_[index].managedBotObjectiveTargets;
-	cache.rawTeam = rawTeam;
-	cache.effectiveTeam = team;
-	cache.teamInfoFresh = services_->service_joinControllers()[index].teamConfirmed() &&
-						  services_->observation_managedBotTeamNumbers(index) >= 1U &&
-						  services_->observation_managedBotTeamNumbers(index) <= 2U;
 	if (team != 1 && team != 2)
 	{
 		return false;
@@ -1424,12 +1415,12 @@ BotBehaviorRuntime::decideObjectiveAction(ManagedActionContext &ctx)
 				static_cast<unsigned int>(handle.actor.slot),
 				static_cast<unsigned int>(services_->service_adapterFrameCount()),
 				static_cast<int>(handle.entity->v.team),
-				static_cast<unsigned int>(services_->observation_managedBotTeamNumbers(index)));
+				static_cast<unsigned int>(services_->observation_teamInfoTeams(index)));
 		}
 		return BehaviorPhaseResult::Complete;
 	}
 	if (targetActor.isValid()) actors_[index].guardLook.reset();
-	ctx.team = resolveManagedBotTeam(index, compatObservation);
+	ctx.team = services_->observation_resolvePlayerTeam(handle.entity);
 	const int team = ctx.team;
 	const objectives::TeamRole teamRole = team == 1	  ? objectives::TeamRole::Terrorist
 										  : team == 2 ? objectives::TeamRole::CounterTerrorist
