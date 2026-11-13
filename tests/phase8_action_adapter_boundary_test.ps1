@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$AdapterPath = 'src\adapter\metamod\plugin_runtime.cpp',
+    [string]$AdapterPath = 'src\adapter\metamod\plugin\plugin_runtime.cpp',
     [switch]$RequireLiveActions,
     [switch]$Json
 )
@@ -19,11 +19,11 @@ if ($start -lt 0 -or $end -le $start) {
 }
 
 $movementBody = $source.Substring($start, $end - $start)
-$adapterDirectory = Split-Path -Parent $AdapterPath
-$commandSource = Get-Content -LiteralPath (Join-Path $adapterDirectory 'bot_command_runtime.cpp') -Raw
-$behaviorHeader = Get-Content -LiteralPath (Join-Path $adapterDirectory 'bot_behavior_runtime.hpp') -Raw
-$behaviorSource = Get-Content -LiteralPath (Join-Path $adapterDirectory 'bot_behavior_runtime.cpp') -Raw
-$actionAdapterPath = Join-Path $adapterDirectory 'action_adapter.hpp'
+$adapterDirectory = Split-Path -Parent (Split-Path -Parent $AdapterPath)
+$commandSource = Get-Content -LiteralPath (Join-Path $adapterDirectory 'runtime\command\bot_command_runtime.cpp') -Raw
+$behaviorHeader = Get-Content -LiteralPath (Join-Path $adapterDirectory 'runtime\behavior\bot_behavior_runtime.hpp') -Raw
+$behaviorSource = Get-Content -LiteralPath (Join-Path $adapterDirectory 'runtime\behavior\bot_behavior_runtime.cpp') -Raw
+$actionAdapterPath = Join-Path $adapterDirectory 'bridge\action_adapter.hpp'
 $actionAdapterSource = if (Test-Path -LiteralPath $actionAdapterPath) {
     Get-Content -LiteralPath $actionAdapterPath -Raw
 } else {

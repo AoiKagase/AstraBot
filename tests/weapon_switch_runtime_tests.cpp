@@ -1,4 +1,4 @@
-#include "plugin_runtime.hpp"
+#include "plugin/plugin_runtime.hpp"
 namespace { bool testWeaponSwitch(astrabot::metamod::PluginRuntime &,enginefuncs_t &,globalvars_t &); }
 #define ASTRABOT_EXTRA_ACTOR_TEST testWeaponSwitch
 #define ASTRABOT_ACTOR_PROFILE_TEXT "AnyProfile { Name = \"Any Bot\" Team = any Difficulty = 1 Skill = 70 }\n"

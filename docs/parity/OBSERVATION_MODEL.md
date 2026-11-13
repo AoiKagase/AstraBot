@@ -26,7 +26,7 @@ public edict_t / Engine callbacks / public GameDLL messages
 ```
 
 `ObservationAdapter` is implemented in
-`src/adapter/metamod/observation_adapter.{hpp,cpp}`. The Core contract is in
+`src/adapter/metamod/bridge/observation_adapter.{hpp,cpp}`. The Core contract is in
 `include/astrabot/compat/observation.hpp` and
 `src/core/compat/observation.cpp`. `PluginRuntime` configures the adapter from
 the existing Engine pointers and routes managed world/player and bomb facts

@@ -1,6 +1,6 @@
 #include "astrabot/compat/observation.hpp"
 #include "astrabot/metamod/abi_contract.hpp"
-#include "observation_adapter.hpp"
+#include "bridge/observation_adapter.hpp"
 
 #include <cstdio>
 #include <limits>

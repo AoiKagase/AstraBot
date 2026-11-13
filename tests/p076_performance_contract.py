@@ -1,3 +1,4 @@
+from source_layout_contract import adapter_path
 from pathlib import Path
 import re
 
@@ -8,18 +9,18 @@ def normalize(source):
 ROOT = Path(__file__).parents[1]
 ADAPTER = ROOT / "src/adapter/metamod"
 def behavior_source():
-    return "\n".join((ADAPTER / ("bot_behavior_" + name + ".cpp")).read_text(encoding="utf-8") for name in ("objectives", "runtime", "scenario", "combat", "buying", "radio"))
+    return "\n".join(adapter_path("bot_behavior_" + name + ".cpp").read_text(encoding="utf-8") for name in ("objectives", "runtime", "scenario", "combat", "buying", "radio"))
 
 def adapter_source(owner):
-    return behavior_source() if owner == "behavior" else (ADAPTER / ("bot_" + owner + "_runtime.cpp")).read_text(encoding="utf-8")
+    return behavior_source() if owner == "behavior" else adapter_path("bot_" + owner + "_runtime.cpp").read_text(encoding="utf-8")
 def adapter_header(owner):
-    return (ADAPTER / ("bot_" + owner + "_runtime.hpp")).read_text(encoding="utf-8")
+    return adapter_path("bot_" + owner + "_runtime.hpp").read_text(encoding="utf-8")
 def adapter_support():
-    return (ADAPTER / "bot_runtime_support.hpp").read_text(encoding="utf-8")
+    return (ADAPTER / "runtime/shared/bot_runtime_support.hpp").read_text(encoding="utf-8")
 def adapter_types():
-    return (ADAPTER / "bot_runtime_types.hpp").read_text(encoding="utf-8")
+    return (ADAPTER / "runtime/shared/bot_runtime_types.hpp").read_text(encoding="utf-8")
 def adapter_facade():
-    return (ADAPTER / "plugin_runtime.cpp").read_text(encoding="utf-8")
+    return (ADAPTER / "plugin/plugin_runtime.cpp").read_text(encoding="utf-8")
 
 
 
@@ -43,7 +44,7 @@ def test_diagnostic_performance_cvars_are_present_and_default_off() -> None:
         / "src"
         / "adapter"
         / "metamod"
-        / "plugin_runtime.cpp"
+        / "plugin/plugin_runtime.cpp"
     ).read_text(encoding="utf-8")
     source = normalize(source)
     for name in (
@@ -82,7 +83,7 @@ def test_path_recompute_updates_the_profiler_stage() -> None:
         / "src"
         / "adapter"
         / "metamod"
-        / "runtime_profiler.cpp"
+        / "diagnostics/runtime_profiler.cpp"
     ).read_text(encoding="utf-8")
     source = normalize(source)
     start = source.index("void RuntimeProfiler::recordPathRecompute()")
@@ -110,7 +111,7 @@ def test_bomb_target_enumeration_preserves_legacy_entities_and_identity() -> Non
     )
     body = source[start:end]
     assert "isBombTargetClassname(classname)" in body
-    action_source = (ADAPTER / "action_adapter.cpp").read_text(encoding="utf-8")
+    action_source = (ADAPTER / "bridge/action_adapter.cpp").read_text(encoding="utf-8")
     assert 'equalsIgnoreCase(classname, "func_bomb_target")' in action_source
     assert 'equalsIgnoreCase(classname, "info_bomb_target")' in action_source
     assert "selectedEntityIndex" in body
@@ -138,11 +139,11 @@ def test_bomb_target_candidates_do_not_collapse_distinct_sites_by_area() -> None
 def test_goal_assignment_trace_keeps_actor_local_cache_scope() -> None:
     root = Path(__file__).parents[1]
     runtime_source = (
-        root / "src" / "adapter" / "metamod" / "bot_navigation_runtime.cpp"
+        root / "src" / "adapter" / "metamod" / "runtime/navigation/bot_navigation_runtime.cpp"
     ).read_text(encoding="utf-8")
     runtime_source = normalize(runtime_source)
     runtime_header = (
-        root / "src" / "adapter" / "metamod" / "bot_navigation_runtime.hpp"
+        root / "src" / "adapter" / "metamod" / "runtime/navigation/bot_navigation_runtime.hpp"
     ).read_text(encoding="utf-8")
     runtime_header = normalize(runtime_header)
     assert "logGoalAssignmentDiagnostic" in runtime_source
@@ -158,7 +159,7 @@ def test_traversal_trace_exposes_jump_execution_chain() -> None:
         / "src"
         / "adapter"
         / "metamod"
-        / "bot_navigation_runtime.cpp"
+        / "runtime/navigation/bot_navigation_runtime.cpp"
     ).read_text(encoding="utf-8")
     source = normalize(source)
     assert "logTraversalDiagnostic" in source
@@ -193,7 +194,7 @@ def test_effective_team_is_shared_across_runtime_decisions() -> None:
     action_start = source.index("ActionProposal BotBehaviorRuntime::decideManagedBotAction(")
     action_body = source[action_start:]
     assert "observation_resolvePlayerTeam" in action_body
-    navigation = normalize((root / "src/adapter/metamod/bot_navigation_runtime.cpp").read_text(encoding="utf-8"))
+    navigation = normalize((root / "src/adapter/metamod/runtime/navigation/bot_navigation_runtime.cpp").read_text(encoding="utf-8"))
     assert re.search(r"observation_resolvePlayerTeam\s*\(\s*handle\.entity\s*\)", navigation)
     assert not re.search(r"managedBotObjectiveTargets\s*\(\s*index\s*\)\s*\.\s*effectiveTeam", navigation)
 
@@ -204,7 +205,7 @@ def test_runtime_diagnostic_separates_raw_and_effective_team() -> None:
         / "src"
         / "adapter"
         / "metamod"
-        / "bot_navigation_runtime.cpp"
+        / "runtime/navigation/bot_navigation_runtime.cpp"
     ).read_text(encoding="utf-8")
     source = normalize(source)
     for field in ("raw_team", "effective_team", "team_info", "team_fresh"):
@@ -216,7 +217,7 @@ def test_bomb_target_registry_separates_registration_from_evaluation() -> None:
     runtime_source = behavior_source()
     runtime_source = normalize(runtime_source)
     runtime_header = (
-        root / "src" / "adapter" / "metamod" / "bot_behavior_runtime.hpp"
+        root / "src" / "adapter" / "metamod" / "runtime/behavior/bot_behavior_runtime.hpp"
     ).read_text(encoding="utf-8")
     runtime_header = normalize(runtime_header)
     profiler_header = (
@@ -268,7 +269,7 @@ def test_goal_and_traversal_diagnostics_correlate_post_move_feedback() -> None:
         / "src"
         / "adapter"
         / "metamod"
-        / "bot_navigation_runtime.cpp"
+        / "runtime/navigation/bot_navigation_runtime.cpp"
     ).read_text(encoding="utf-8")
     source = normalize(source)
     for field in (

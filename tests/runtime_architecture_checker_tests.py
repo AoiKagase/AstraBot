@@ -6,25 +6,32 @@ from runtime_movement_integration_contract import assert_neutral_preparation_ord
 
 
 class ArchitectureCheckerTests(unittest.TestCase):
+    def test_runtime_cannot_include_root_owner_through_alternate_spellings(self):
+        for include in ('plugin_runtime.hpp', 'plugin/plugin_runtime.hpp',
+                        '../../plugin/./plugin_runtime.hpp'):
+            with self.subTest(include=include), self.assertRaisesRegex(ArchitectureError, 'peer include'):
+                check_dependencies('src/adapter/metamod/runtime/behavior/bot_behavior_combat.cpp',
+                                   '#include "' + include + '"')
+
     def test_buying_cannot_own_general_priority_arbitration(self):
         with self.assertRaisesRegex(ArchitectureError, 'priority'):
-            check_dependencies('src/adapter/metamod/bot_behavior_buying.cpp',
+            check_dependencies('src/adapter/metamod/runtime/behavior/bot_behavior_buying.cpp',
                                'void BotBehaviorRuntime::updateBehaviorPriorities() {}')
 
     def test_action_adapter_cannot_own_plant_attempt_policy(self):
         for source in ('struct PlantAttemptState { bool active; };',
                        'PlantAttemptResult ActionAdapter::evaluatePlantAttempt() {}'):
             with self.subTest(source=source), self.assertRaisesRegex(ArchitectureError, 'plant policy'):
-                check_dependencies('src/adapter/metamod/action_adapter.hpp', source)
+                check_dependencies('src/adapter/metamod/bridge/action_adapter.hpp', source)
 
     def test_observation_cannot_own_or_mutate_threat_recognition(self):
         for source in ('compat::ReactionQueue reactionQueues;',
                        'services_->behavior_observeRecognizedTargetChange(index, now);'):
             with self.subTest(source=source), self.assertRaisesRegex(ArchitectureError, 'recognition'):
-                check_dependencies('src/adapter/metamod/bot_observation_runtime.cpp', source)
+                check_dependencies('src/adapter/metamod/runtime/observation/bot_observation_runtime.cpp', source)
 
     def test_observation_recognition_guard_ignores_documentation(self):
-        check_dependencies('src/adapter/metamod/bot_observation_runtime.hpp',
+        check_dependencies('src/adapter/metamod/runtime/observation/bot_observation_runtime.hpp',
                            '// compat::ReactionQueue\nconst char *text = "behavior_observeRecognizedTargetChange";')
 
     def test_const_reference_alias_does_not_make_referent_const(self):
@@ -155,10 +162,10 @@ class ArchitectureCheckerTests(unittest.TestCase):
                        'send(inputDispatcher_);', 'return inputDispatcher_;',
                        'auto send = &InputDispatcher::dispatchNext; (inputDispatcher_.*send)(actor, frame);'):
             with self.subTest(source=source), self.assertRaisesRegex(ArchitectureError, 'dispatch'):
-                check_dependencies('src/adapter/metamod/plugin_runtime.cpp', source)
+                check_dependencies('src/adapter/metamod/plugin/plugin_runtime.cpp', source)
 
     def test_root_dispatcher_management_remains_allowed(self):
-        check_dependencies('src/adapter/metamod/plugin_runtime.cpp',
+        check_dependencies('src/adapter/metamod/plugin/plugin_runtime.cpp',
                            'inputDispatcher_.configure(engine, profiler); inputDispatcher_.reset(); '
                            'inputDispatcher_.bindActor(actor, entity); inputDispatcher_.unbindActor(actor);')
 
@@ -167,10 +174,10 @@ class ArchitectureCheckerTests(unittest.TestCase):
                        'auto *out = &this->service_inputDispatcher();',
                        'auto get = &PluginRuntime::service_inputDispatcher;'):
             with self.subTest(source=source), self.assertRaisesRegex(ArchitectureError, 'dispatch'):
-                check_dependencies('src/adapter/metamod/plugin_runtime.cpp', source)
+                check_dependencies('src/adapter/metamod/plugin/plugin_runtime.cpp', source)
 
     def test_command_port_is_the_only_root_dispatcher_return(self):
-        path = 'src/adapter/metamod/plugin_runtime.hpp'
+        path = 'src/adapter/metamod/plugin/plugin_runtime.hpp'
         check_dependencies(path, 'InputDispatcher inputDispatcher_; '
                            'Service_inputDispatcher &service_inputDispatcher() override { return inputDispatcher_; }')
         with self.assertRaisesRegex(ArchitectureError, 'dispatch'):
@@ -220,7 +227,7 @@ class ArchitectureCheckerTests(unittest.TestCase):
 
     def test_function_pointer_alias_cannot_bypass_dispatch_boundary(self):
         with self.assertRaisesRegex(ArchitectureError, 'dispatch'):
-            check_dependencies('src/adapter/metamod/bot_navigation_runtime.cpp',
+            check_dependencies('src/adapter/metamod/runtime/navigation/bot_navigation_runtime.cpp',
                                'auto run = engine->pfnRunPlayerMove; run(entity, angles);')
 
     def test_private_actor_storage_is_counted(self):
@@ -252,34 +259,34 @@ class ArchitectureCheckerTests(unittest.TestCase):
 
     def test_dispatch_outside_command_is_forbidden(self):
         with self.assertRaisesRegex(ArchitectureError, 'dispatch'):
-            check_dependencies('src/adapter/metamod/bot_navigation_runtime.cpp',
+            check_dependencies('src/adapter/metamod/runtime/navigation/bot_navigation_runtime.cpp',
                                'engine->pfnRunPlayerMove(entity, angles);')
 
     def test_dispatcher_alias_acquisition_is_forbidden(self):
         with self.assertRaisesRegex(ArchitectureError, 'dispatcher'):
-            check_dependencies('src/adapter/metamod/bot_behavior_combat.cpp',
+            check_dependencies('src/adapter/metamod/runtime/behavior/bot_behavior_combat.cpp',
                                'auto &dispatcher = services_->service_inputDispatcher();')
 
     def test_availability_check_is_allowed(self):
-        check_dependencies('src/adapter/metamod/bot_navigation_runtime.cpp',
+        check_dependencies('src/adapter/metamod/runtime/navigation/bot_navigation_runtime.cpp',
                            'bool available = engine->pfnRunPlayerMove != nullptr;')
 
     def test_root_bind_allowed_but_root_dispatch_is_not(self):
-        check_dependencies('src/adapter/metamod/plugin_runtime.cpp', 'inputDispatcher_.bindActor(actor, entity);')
+        check_dependencies('src/adapter/metamod/plugin/plugin_runtime.cpp', 'inputDispatcher_.bindActor(actor, entity);')
         with self.assertRaisesRegex(ArchitectureError, 'dispatch'):
-            check_dependencies('src/adapter/metamod/plugin_runtime.cpp', 'inputDispatcher_.dispatchNext(actor, frame);')
+            check_dependencies('src/adapter/metamod/plugin/plugin_runtime.cpp', 'inputDispatcher_.dispatchNext(actor, frame);')
 
     def test_fake_dependency_code_in_comments_and_strings_is_ignored(self):
-        check_dependencies('src/adapter/metamod/bot_behavior_combat.cpp', '''
-            // #include "plugin_runtime.hpp"
+        check_dependencies('src/adapter/metamod/runtime/behavior/bot_behavior_combat.cpp', '''
+            // #include "plugin/plugin_runtime.hpp"
             const char *sample = "services_->command().enqueue(command);";
             const char *raw = R"(engine->pfnRunPlayerMove(entity);)";
         ''')
 
     def test_split_owner_cannot_include_peer(self):
         with self.assertRaisesRegex(ArchitectureError, 'peer'):
-            check_dependencies('src/adapter/metamod/bot_behavior_combat.cpp',
-                               '#include "bot_command_runtime.hpp"')
+            check_dependencies('src/adapter/metamod/runtime/behavior/bot_behavior_combat.cpp',
+                               '#include "runtime/command/bot_command_runtime.hpp"')
 
     def test_core_cannot_include_sdk(self):
         with self.assertRaisesRegex(ArchitectureError, 'SDK'):

@@ -1,5 +1,5 @@
 #include "astrabot/perception/perception.hpp"
-#include "observation_adapter.hpp"
+#include "bridge/observation_adapter.hpp"
 
 #include <cmath>
 #include <cstdio>

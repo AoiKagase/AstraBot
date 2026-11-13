@@ -1,4 +1,4 @@
-#include "../src/adapter/metamod/regamedll_observation_provider.hpp"
+#include "bridge/regamedll_observation_provider.hpp"
 #include "astrabot_regamedll_api_view.hpp"
 
 #include <cstdio>

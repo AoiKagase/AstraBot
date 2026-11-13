@@ -275,7 +275,7 @@ bool testNoDirectCompatibilityBypass()
 {
 	const char *paths[] = {
 		"src/core/compat/random_source.cpp",
-		"src/adapter/metamod/engine_random_source.cpp"};
+		"src/adapter/metamod/bridge/engine_random_source.cpp"};
 	const char *forbidden[] = {"RANDOM_FLOAT", "RANDOM_LONG", "std::mt19937", "xorshift", "PCG", "rand("};
 	for (const char *path : paths)
 	{

@@ -9,11 +9,11 @@ ADAPTER = ROOT / "src/adapter/metamod"
 
 def main():
     ports = ' '.join(token.value if token.kind == 'code' else '<literal>' for token in
-                     lex((ADAPTER / "bot_runtime_services.hpp").read_text(encoding="utf-8")))
+                     lex((ADAPTER / "runtime/shared/bot_runtime_services.hpp").read_text(encoding="utf-8")))
     assert "class BotRuntimeServices" not in ports, "all-owner service locator remains"
     for owner in ("Observation", "Behavior", "Navigation", "Command"):
         assert "class Bot" + owner + "Services" in ports
-    nav = (ADAPTER / "bot_navigation_runtime.cpp").read_text(encoding="utf-8")
+    nav = (ADAPTER / "runtime/navigation/bot_navigation_runtime.cpp").read_text(encoding="utf-8")
     assert "MovementPreparation" in nav
     # Include every split implementation and public Core header, not just four
     # original entrypoint files. Comment/string contents are not executable code.

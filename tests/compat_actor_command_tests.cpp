@@ -1,5 +1,5 @@
 #include "astrabot/metamod/abi_contract.hpp"
-#include "plugin_runtime.hpp"
+#include "plugin/plugin_runtime.hpp"
 #include "runtime_characterization.hpp"
 
 #include <cstdio>

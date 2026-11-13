@@ -36,7 +36,7 @@ registered as the three highest priorities at implementation start.
 ## D01-D19 implementation inventory
 
 Test names below omit the common `astrabot_` prefix. Runtime integration is in
-`src/adapter/metamod/plugin_runtime.cpp`; helpers are SDK-free Core headers.
+`src/adapter/metamod/plugin/plugin_runtime.cpp`; helpers are SDK-free Core headers.
 
 | ID | Difference; repair stage | Implemented treatment | Legacy contract; checks |
 |---|---|---|---|

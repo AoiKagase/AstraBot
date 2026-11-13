@@ -1,3 +1,4 @@
+from source_layout_contract import adapter_path
 """Check orchestration and ownership of movement operations."""
 from pathlib import Path
 
@@ -6,8 +7,8 @@ ADAPTER = Path(__file__).parents[1] / "src/adapter/metamod"
 def source(name):
     if name == "bot_behavior_runtime":
         return "\n".join(path.read_text(encoding="utf-8")
-                         for path in sorted(ADAPTER.glob("bot_behavior_*.cpp")))
-    return (ADAPTER / (name + ".cpp")).read_text(encoding="utf-8")
+                         for path in sorted(ADAPTER.rglob("bot_behavior_*.cpp")))
+    return adapter_path(name + ".cpp").read_text(encoding="utf-8")
 
 
 def assert_neutral_preparation_order(body):

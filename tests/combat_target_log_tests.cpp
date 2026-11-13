@@ -1,5 +1,5 @@
-#include "plugin_runtime.hpp"
-#include "bot_runtime_support.hpp"
+#include "plugin/plugin_runtime.hpp"
+#include "runtime/shared/bot_runtime_support.hpp"
 #include <sstream>
 
 namespace

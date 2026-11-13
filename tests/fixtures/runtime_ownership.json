@@ -1,1086 +1,1086 @@
 [
   {
-    "header": "src/adapter/metamod/plugin_runtime.hpp",
+    "header": "src/adapter/metamod/plugin/plugin_runtime.hpp",
     "scope": "owner",
     "member": "state_"
   },
   {
-    "header": "src/adapter/metamod/plugin_runtime.hpp",
+    "header": "src/adapter/metamod/plugin/plugin_runtime.hpp",
     "scope": "owner",
     "member": "metaGlobals_"
   },
   {
-    "header": "src/adapter/metamod/plugin_runtime.hpp",
+    "header": "src/adapter/metamod/plugin/plugin_runtime.hpp",
     "scope": "owner",
     "member": "gameDllFunctions_"
   },
   {
-    "header": "src/adapter/metamod/plugin_runtime.hpp",
+    "header": "src/adapter/metamod/plugin/plugin_runtime.hpp",
     "scope": "owner",
     "member": "hookedGameDllFunctions_"
   },
   {
-    "header": "src/adapter/metamod/plugin_runtime.hpp",
+    "header": "src/adapter/metamod/plugin/plugin_runtime.hpp",
     "scope": "owner",
     "member": "engineFunctions_"
   },
   {
-    "header": "src/adapter/metamod/plugin_runtime.hpp",
+    "header": "src/adapter/metamod/plugin/plugin_runtime.hpp",
     "scope": "owner",
     "member": "globals_"
   },
   {
-    "header": "src/adapter/metamod/plugin_runtime.hpp",
+    "header": "src/adapter/metamod/plugin/plugin_runtime.hpp",
     "scope": "owner",
     "member": "roundFreezeScheduled_"
   },
   {
-    "header": "src/adapter/metamod/plugin_runtime.hpp",
+    "header": "src/adapter/metamod/plugin/plugin_runtime.hpp",
     "scope": "owner",
     "member": "roundFreezeStartTime_"
   },
   {
-    "header": "src/adapter/metamod/plugin_runtime.hpp",
+    "header": "src/adapter/metamod/plugin/plugin_runtime.hpp",
     "scope": "owner",
     "member": "roundFreezeUntil_"
   },
   {
-    "header": "src/adapter/metamod/plugin_runtime.hpp",
+    "header": "src/adapter/metamod/plugin/plugin_runtime.hpp",
     "scope": "owner",
     "member": "roundFreezeGeneration_"
   },
   {
-    "header": "src/adapter/metamod/plugin_runtime.hpp",
+    "header": "src/adapter/metamod/plugin/plugin_runtime.hpp",
     "scope": "owner",
     "member": "roundLifecycleTracker_"
   },
   {
-    "header": "src/adapter/metamod/plugin_runtime.hpp",
+    "header": "src/adapter/metamod/plugin/plugin_runtime.hpp",
     "scope": "owner",
     "member": "lifecycle_"
   },
   {
-    "header": "src/adapter/metamod/plugin_runtime.hpp",
+    "header": "src/adapter/metamod/plugin/plugin_runtime.hpp",
     "scope": "owner",
     "member": "actorRegistry_"
   },
   {
-    "header": "src/adapter/metamod/plugin_runtime.hpp",
+    "header": "src/adapter/metamod/plugin/plugin_runtime.hpp",
     "scope": "owner",
     "member": "fakeClientManager_"
   },
   {
-    "header": "src/adapter/metamod/plugin_runtime.hpp",
+    "header": "src/adapter/metamod/plugin/plugin_runtime.hpp",
     "scope": "owner",
     "member": "inputDispatcher_"
   },
   {
-    "header": "src/adapter/metamod/plugin_runtime.hpp",
+    "header": "src/adapter/metamod/plugin/plugin_runtime.hpp",
     "scope": "owner",
     "member": "compatibilitySurface_"
   },
   {
-    "header": "src/adapter/metamod/plugin_runtime.hpp",
+    "header": "src/adapter/metamod/plugin/plugin_runtime.hpp",
     "scope": "owner",
     "member": "compatibilityRandomSource_"
   },
   {
-    "header": "src/adapter/metamod/bot_observation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/observation/bot_observation_runtime.hpp",
     "scope": "owner",
     "member": "observationAdapter_"
   },
   {
-    "header": "src/adapter/metamod/bot_observation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/observation/bot_observation_runtime.hpp",
     "scope": "owner",
     "member": "publicObservations_"
   },
   {
-    "header": "src/adapter/metamod/bot_observation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/observation/bot_observation_runtime.hpp",
     "scope": "owner",
     "member": "publicMessageName_"
   },
   {
-    "header": "src/adapter/metamod/bot_observation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/observation/bot_observation_runtime.hpp",
     "scope": "owner",
     "member": "publicMessageTarget_"
   },
   {
-    "header": "src/adapter/metamod/bot_observation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/observation/bot_observation_runtime.hpp",
     "scope": "owner",
     "member": "publicMessageDestination_"
   },
   {
-    "header": "src/adapter/metamod/bot_observation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/observation/bot_observation_runtime.hpp",
     "scope": "owner",
     "member": "publicMessageActor_"
   },
   {
-    "header": "src/adapter/metamod/bot_observation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/observation/bot_observation_runtime.hpp",
     "scope": "owner",
     "member": "publicMessageFrame_"
   },
   {
-    "header": "src/adapter/metamod/bot_observation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/observation/bot_observation_runtime.hpp",
     "scope": "owner",
     "member": "publicMessageValues_"
   },
   {
-    "header": "src/adapter/metamod/bot_observation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/observation/bot_observation_runtime.hpp",
     "scope": "owner",
     "member": "publicMessageCoords_"
   },
   {
-    "header": "src/adapter/metamod/bot_observation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/observation/bot_observation_runtime.hpp",
     "scope": "owner",
     "member": "publicMessageCoordMask_"
   },
   {
-    "header": "src/adapter/metamod/bot_observation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/observation/bot_observation_runtime.hpp",
     "scope": "ActorState",
     "member": "publicBombRadars"
   },
   {
-    "header": "src/adapter/metamod/bot_behavior_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
     "scope": "ActorState",
     "member": "bombGuardPlanners"
   },
   {
-    "header": "src/adapter/metamod/bot_behavior_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
     "scope": "ActorState",
     "member": "guardLook"
   },
   {
-    "header": "src/adapter/metamod/bot_behavior_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
     "scope": "ActorState",
     "member": "equipment"
   },
   {
-    "header": "src/adapter/metamod/bot_observation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/observation/bot_observation_runtime.hpp",
     "scope": "owner",
     "member": "publicMessageStringMask_"
   },
   {
-    "header": "src/adapter/metamod/bot_observation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/observation/bot_observation_runtime.hpp",
     "scope": "owner",
     "member": "publicMessageFieldCount_"
   },
   {
-    "header": "src/adapter/metamod/bot_observation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/observation/bot_observation_runtime.hpp",
     "scope": "owner",
     "member": "publicMessageMalformed_"
   },
   {
-    "header": "src/adapter/metamod/bot_observation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/observation/bot_observation_runtime.hpp",
     "scope": "owner",
     "member": "publicMessageString_"
   },
   {
-    "header": "src/adapter/metamod/bot_observation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/observation/bot_observation_runtime.hpp",
     "scope": "owner",
     "member": "publicMessageStrings_"
   },
   {
-    "header": "src/adapter/metamod/bot_observation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/observation/bot_observation_runtime.hpp",
     "scope": "ActorState",
     "member": "scenarioRadio"
   },
   {
-    "header": "src/adapter/metamod/bot_observation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/observation/bot_observation_runtime.hpp",
     "scope": "owner",
     "member": "radioSequence_"
   },
   {
-    "header": "src/adapter/metamod/bot_behavior_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
     "scope": "owner",
     "member": "outgoingChatterCatalog_"
   },
   {
-    "header": "src/adapter/metamod/bot_behavior_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
     "scope": "ActorState",
     "member": "outgoingRadioSchedulers"
   },
   {
-    "header": "src/adapter/metamod/bot_behavior_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
     "scope": "ActorState",
     "member": "outgoingRadioContactMemory"
   },
   {
-    "header": "src/adapter/metamod/bot_behavior_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
     "scope": "ActorState",
     "member": "outgoingRadioReceipts"
   },
   {
-    "header": "src/adapter/metamod/bot_behavior_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
     "scope": "ActorState",
     "member": "outgoingRadioAttemptGenerations"
   },
   {
-    "header": "src/adapter/metamod/bot_behavior_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
     "scope": "ActorState",
     "member": "outgoingRadioAttempts"
   },
   {
-    "header": "src/adapter/metamod/bot_behavior_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
     "scope": "ActorState",
     "member": "outgoingRadioAttemptTimes"
   },
   {
-    "header": "src/adapter/metamod/bot_behavior_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
     "scope": "ActorState",
     "member": "outgoingRadioAttemptChoices"
   },
   {
-    "header": "src/adapter/metamod/bot_behavior_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
     "scope": "owner",
     "member": "outgoingTeamLastSpeech_"
   },
   {
-    "header": "src/adapter/metamod/bot_behavior_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
     "scope": "owner",
     "member": "outgoingTeamBusyUntil_"
   },
   {
-    "header": "src/adapter/metamod/bot_behavior_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
     "scope": "owner",
     "member": "outgoingTeamCurrentPhrase_"
   },
   {
-    "header": "src/adapter/metamod/bot_behavior_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
     "scope": "owner",
     "member": "outgoingMissingPhraseLogged_"
   },
   {
-    "header": "src/adapter/metamod/bot_behavior_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
     "scope": "owner",
     "member": "outgoingRadioMap_"
   },
   {
-    "header": "src/adapter/metamod/bot_behavior_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
     "scope": "owner",
     "member": "outgoingRadioRound_"
   },
   {
-    "header": "src/adapter/metamod/bot_observation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/observation/bot_observation_runtime.hpp",
     "scope": "owner",
     "member": "teamScores_"
   },
   {
-    "header": "src/adapter/metamod/bot_observation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/observation/bot_observation_runtime.hpp",
     "scope": "owner",
     "member": "teamScoresKnown_"
   },
   {
-    "header": "src/adapter/metamod/bot_observation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/observation/bot_observation_runtime.hpp",
     "scope": "ActorState",
     "member": "publicScoreStatuses"
   },
   {
-    "header": "src/adapter/metamod/bot_observation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/observation/bot_observation_runtime.hpp",
     "scope": "ActorState",
     "member": "bombNoticeKnown"
   },
   {
-    "header": "src/adapter/metamod/bot_observation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/observation/bot_observation_runtime.hpp",
     "scope": "ActorState",
     "member": "bombNoticePlanted"
   },
   {
-    "header": "src/adapter/metamod/bot_observation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/observation/bot_observation_runtime.hpp",
     "scope": "ActorState",
     "member": "publicBombClocks"
   },
   {
-    "header": "src/adapter/metamod/bot_behavior_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
     "scope": "ActorState",
     "member": "scenarioEscapeAreas"
   },
   {
-    "header": "src/adapter/metamod/bot_behavior_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
     "scope": "ActorState",
     "member": "bombSearchMemory"
   },
   {
-    "header": "src/adapter/metamod/bot_behavior_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
     "scope": "ActorState",
     "member": "bombSearchTargets"
   },
   {
-    "header": "src/adapter/metamod/bot_behavior_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
     "scope": "ActorState",
     "member": "teamworkPolicies"
   },
   {
-    "header": "src/adapter/metamod/bot_behavior_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
     "scope": "ActorState",
     "member": "teamworkRadioApplied"
   },
   {
-    "header": "src/adapter/metamod/bot_behavior_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
     "scope": "ActorState",
     "member": "managedProfiles"
   },
   {
-    "header": "src/adapter/metamod/bot_behavior_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
     "scope": "ActorState",
     "member": "reactionQueues"
   },
   {
-    "header": "src/adapter/metamod/bot_behavior_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
     "scope": "ActorState",
     "member": "recognizedTargets"
   },
   {
-    "header": "src/adapter/metamod/bot_behavior_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
     "scope": "ActorState",
     "member": "recognizedPoints"
   },
   {
-    "header": "src/adapter/metamod/bot_behavior_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
     "scope": "ActorState",
     "member": "recognitionSequences"
   },
   {
-    "header": "src/adapter/metamod/bot_behavior_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
     "scope": "ActorState",
     "member": "lastCombatTimes"
   },
   {
-    "header": "src/adapter/metamod/bot_behavior_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
     "scope": "ActorState",
     "member": "lastVisibleEnemyTimes"
   },
   {
-    "header": "src/adapter/metamod/bot_behavior_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
     "scope": "ActorState",
     "member": "attackReadyTimes"
   },
   {
-    "header": "src/adapter/metamod/bot_behavior_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
     "scope": "ActorState",
     "member": "buyControllers"
   },
   {
-    "header": "src/adapter/metamod/bot_behavior_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
     "scope": "ActorState",
     "member": "buyingComplete"
   },
   {
-    "header": "src/adapter/metamod/bot_behavior_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
     "scope": "ActorState",
     "member": "escapingWithKnife"
   },
   {
-    "header": "src/adapter/metamod/bot_behavior_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
     "scope": "ActorState",
     "member": "buyReceiptTimeoutLogged"
   },
   {
-    "header": "src/adapter/metamod/bot_behavior_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
     "scope": "ActorState",
     "member": "weaponActions"
   },
   {
-    "header": "src/adapter/metamod/plugin_runtime.hpp",
+    "header": "src/adapter/metamod/plugin/plugin_runtime.hpp",
     "scope": "owner",
     "member": "nextPopulationUpdate_"
   },
   {
-    "header": "src/adapter/metamod/plugin_runtime.hpp",
+    "header": "src/adapter/metamod/plugin/plugin_runtime.hpp",
     "scope": "owner",
     "member": "populationAdjustment_"
   },
   {
-    "header": "src/adapter/metamod/bot_observation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/observation/bot_observation_runtime.hpp",
     "scope": "owner",
     "member": "smokeObservations_"
   },
   {
-    "header": "src/adapter/metamod/bot_observation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/observation/bot_observation_runtime.hpp",
     "scope": "owner",
     "member": "optionalObservations_"
   },
   {
-    "header": "src/adapter/metamod/bot_observation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/observation/bot_observation_runtime.hpp",
     "scope": "owner",
     "member": "soundEvents_"
   },
   {
-    "header": "src/adapter/metamod/bot_observation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/observation/bot_observation_runtime.hpp",
     "scope": "owner",
     "member": "soundTeams_"
   },
   {
-    "header": "src/adapter/metamod/bot_observation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/observation/bot_observation_runtime.hpp",
     "scope": "owner",
     "member": "soundSequence_"
   },
   {
-    "header": "src/adapter/metamod/bot_observation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/observation/bot_observation_runtime.hpp",
     "scope": "ActorState",
     "member": "deliveredSoundSequences"
   },
   {
-    "header": "src/adapter/metamod/bot_behavior_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
     "scope": "ActorState",
     "member": "investigatedNoiseTicks"
   },
   {
-    "header": "src/adapter/metamod/bot_observation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/observation/bot_observation_runtime.hpp",
     "scope": "owner",
     "member": "publicSmokeEntities_"
   },
   {
-    "header": "src/adapter/metamod/bot_observation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/observation/bot_observation_runtime.hpp",
     "scope": "owner",
     "member": "nextSmokeEntity_"
   },
   {
-    "header": "src/adapter/metamod/plugin_runtime.hpp",
+    "header": "src/adapter/metamod/plugin/plugin_runtime.hpp",
     "scope": "owner",
     "member": "runtimeProfiler_"
   },
   {
-    "header": "src/adapter/metamod/plugin_runtime.hpp",
+    "header": "src/adapter/metamod/plugin/plugin_runtime.hpp",
     "scope": "owner",
     "member": "navLoader_"
   },
   {
-    "header": "src/adapter/metamod/plugin_runtime.hpp",
+    "header": "src/adapter/metamod/plugin/plugin_runtime.hpp",
     "scope": "owner",
     "member": "navPublisher_"
   },
   {
-    "header": "src/adapter/metamod/plugin_runtime.hpp",
+    "header": "src/adapter/metamod/plugin/plugin_runtime.hpp",
     "scope": "owner",
     "member": "navLoadDiagnostic_"
   },
   {
-    "header": "src/adapter/metamod/plugin_runtime.hpp",
+    "header": "src/adapter/metamod/plugin/plugin_runtime.hpp",
     "scope": "owner",
     "member": "adapterFrameCount_"
   },
   {
-    "header": "src/adapter/metamod/plugin_runtime.hpp",
+    "header": "src/adapter/metamod/plugin/plugin_runtime.hpp",
     "scope": "owner",
     "member": "pluginId_"
   },
   {
-    "header": "src/adapter/metamod/plugin_runtime.hpp",
+    "header": "src/adapter/metamod/plugin/plugin_runtime.hpp",
     "scope": "owner",
     "member": "nativeBotGuard_"
   },
   {
-    "header": "src/adapter/metamod/plugin_runtime.hpp",
+    "header": "src/adapter/metamod/plugin/plugin_runtime.hpp",
     "scope": "owner",
     "member": "nativeGuardDecision_"
   },
   {
-    "header": "src/adapter/metamod/plugin_runtime.hpp",
+    "header": "src/adapter/metamod/plugin/plugin_runtime.hpp",
     "scope": "owner",
     "member": "managedBotSlots_"
   },
   {
-    "header": "src/adapter/metamod/bot_command_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/command/bot_command_runtime.hpp",
     "scope": "ActorState",
     "member": "playerAvoidance"
   },
   {
-    "header": "src/adapter/metamod/plugin_runtime.hpp",
+    "header": "src/adapter/metamod/plugin/plugin_runtime.hpp",
     "scope": "owner",
     "member": "managedBotCreationIds_"
   },
   {
-    "header": "src/adapter/metamod/plugin_runtime.hpp",
+    "header": "src/adapter/metamod/plugin/plugin_runtime.hpp",
     "scope": "owner",
     "member": "nextBotCreationId_"
   },
   {
-    "header": "src/adapter/metamod/bot_observation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/observation/bot_observation_runtime.hpp",
     "scope": "ActorState",
     "member": "teamInfoTeams"
   },
   {
-    "header": "src/adapter/metamod/bot_observation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/observation/bot_observation_runtime.hpp",
     "scope": "ActorState",
     "member": "publicTeamKnown"
   },
   {
-    "header": "src/adapter/metamod/plugin_runtime.hpp",
+    "header": "src/adapter/metamod/plugin/plugin_runtime.hpp",
     "scope": "owner",
     "member": "managedBotHandles_"
   },
   {
-    "header": "src/adapter/metamod/plugin_runtime.hpp",
+    "header": "src/adapter/metamod/plugin/plugin_runtime.hpp",
     "scope": "owner",
     "member": "managedBotNames_"
   },
   {
-    "header": "src/adapter/metamod/plugin_runtime.hpp",
+    "header": "src/adapter/metamod/plugin/plugin_runtime.hpp",
     "scope": "owner",
     "member": "joinControllers_"
   },
   {
-    "header": "src/adapter/metamod/plugin_runtime.hpp",
+    "header": "src/adapter/metamod/plugin/plugin_runtime.hpp",
     "scope": "owner",
     "member": "pendingJoinActions_"
   },
   {
-    "header": "src/adapter/metamod/plugin_runtime.hpp",
+    "header": "src/adapter/metamod/plugin/plugin_runtime.hpp",
     "scope": "owner",
     "member": "pendingJoinActionOverflow_"
   },
   {
-    "header": "src/adapter/metamod/bot_observation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/observation/bot_observation_runtime.hpp",
     "scope": "owner",
     "member": "userMessageKind_"
   },
   {
-    "header": "src/adapter/metamod/bot_observation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/observation/bot_observation_runtime.hpp",
     "scope": "owner",
     "member": "userMessageTarget_"
   },
   {
-    "header": "src/adapter/metamod/bot_observation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/observation/bot_observation_runtime.hpp",
     "scope": "owner",
     "member": "userMessageFieldCount_"
   },
   {
-    "header": "src/adapter/metamod/bot_observation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/observation/bot_observation_runtime.hpp",
     "scope": "owner",
     "member": "userMessageWeaponState_"
   },
   {
-    "header": "src/adapter/metamod/bot_observation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/observation/bot_observation_runtime.hpp",
     "scope": "owner",
     "member": "userMessageWeaponId_"
   },
   {
-    "header": "src/adapter/metamod/bot_observation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/observation/bot_observation_runtime.hpp",
     "scope": "owner",
     "member": "userMessageWeaponMessageValid_"
   },
   {
-    "header": "src/adapter/metamod/bot_observation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/observation/bot_observation_runtime.hpp",
     "scope": "owner",
     "member": "userMessageMenuType_"
   },
   {
-    "header": "src/adapter/metamod/bot_observation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/observation/bot_observation_runtime.hpp",
     "scope": "owner",
     "member": "userMessageNeedMore_"
   },
   {
-    "header": "src/adapter/metamod/bot_observation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/observation/bot_observation_runtime.hpp",
     "scope": "owner",
     "member": "userMessageValidSlots_"
   },
   {
-    "header": "src/adapter/metamod/bot_observation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/observation/bot_observation_runtime.hpp",
     "scope": "owner",
     "member": "userMessageTeamSlot_"
   },
   {
-    "header": "src/adapter/metamod/bot_observation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/observation/bot_observation_runtime.hpp",
     "scope": "owner",
     "member": "userMessageShowFragmentActive_"
   },
   {
-    "header": "src/adapter/metamod/bot_observation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/observation/bot_observation_runtime.hpp",
     "scope": "owner",
     "member": "userMessageText_"
   },
   {
-    "header": "src/adapter/metamod/bot_observation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/observation/bot_observation_runtime.hpp",
     "scope": "owner",
     "member": "userMessageTextLength_"
   },
   {
-    "header": "src/adapter/metamod/bot_navigation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/navigation/bot_navigation_runtime.hpp",
     "scope": "owner",
     "member": "managedBotAreaVisitHistory_"
   },
   {
-    "header": "src/adapter/metamod/bot_navigation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/navigation/bot_navigation_runtime.hpp",
     "scope": "owner",
     "member": "managedBotRoamReservationBoard_"
   },
   {
-    "header": "src/adapter/metamod/bot_navigation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/navigation/bot_navigation_runtime.hpp",
     "scope": "ActorState",
     "member": "managedBotMovement"
   },
   {
-    "header": "src/adapter/metamod/bot_navigation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/navigation/bot_navigation_runtime.hpp",
     "scope": "ActorState",
     "member": "managedNavigationFailures"
   },
   {
-    "header": "src/adapter/metamod/bot_navigation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/navigation/bot_navigation_runtime.hpp",
     "scope": "ActorState",
     "member": "managedNavigationSteps"
   },
   {
-    "header": "src/adapter/metamod/bot_behavior_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
     "scope": "ActorState",
     "member": "managedStateInputs"
   },
   {
-    "header": "src/adapter/metamod/bot_command_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/command/bot_command_runtime.hpp",
     "scope": "ActorState",
     "member": "managedMoveSpeeds"
   },
   {
-    "header": "src/adapter/metamod/bot_command_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/command/bot_command_runtime.hpp",
     "scope": "ActorState",
     "member": "managedCommandDiagnosticUpdates"
   },
   {
-    "header": "src/adapter/metamod/bot_behavior_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
     "scope": "ActorState",
     "member": "managedBotCombat"
   },
   {
-    "header": "src/adapter/metamod/bot_behavior_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
     "scope": "ActorState",
     "member": "managedBotObjectives"
   },
   {
-    "header": "src/adapter/metamod/bot_behavior_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
     "scope": "ActorState",
     "member": "managedBotObjectiveTargets"
   },
   {
-    "header": "src/adapter/metamod/bot_behavior_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
     "scope": "ActorState",
     "member": "managedBombApproaches"
   },
   {
-    "header": "src/adapter/metamod/bot_behavior_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
     "scope": "owner",
     "member": "roundPlantDecision_"
   },
   {
-    "header": "src/adapter/metamod/bot_navigation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/navigation/bot_navigation_runtime.hpp",
     "scope": "owner",
     "member": "dangerMemory_"
   },
   {
-    "header": "src/adapter/metamod/bot_navigation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/navigation/bot_navigation_runtime.hpp",
     "scope": "ActorState",
     "member": "deathDangerRecorded"
   },
   {
-    "header": "src/adapter/metamod/bot_behavior_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
     "scope": "owner",
     "member": "managedTeamObjectiveCoordinator_"
   },
   {
-    "header": "src/adapter/metamod/bot_behavior_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
     "scope": "ActorState",
     "member": "compatibilityObjectiveCoordinators"
   },
   {
-    "header": "src/adapter/metamod/bot_observation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/observation/bot_observation_runtime.hpp",
     "scope": "ActorState",
     "member": "objectiveKnowledge"
   },
   {
-    "header": "src/adapter/metamod/bot_behavior_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
     "scope": "owner",
     "member": "managedTeamObjectiveAssignmentContext_"
   },
   {
-    "header": "src/adapter/metamod/bot_behavior_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
     "scope": "owner",
     "member": "managedTeamObjectiveAssignments_"
   },
   {
-    "header": "src/adapter/metamod/bot_behavior_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
     "scope": "owner",
     "member": "managedTeamObjectiveAssignmentMapGeneration_"
   },
   {
-    "header": "src/adapter/metamod/bot_behavior_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
     "scope": "owner",
     "member": "managedTeamObjectiveAssignmentRoundGeneration_"
   },
   {
-    "header": "src/adapter/metamod/bot_behavior_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
     "scope": "owner",
     "member": "managedTeamObjectiveAssignmentFrame_"
   },
   {
-    "header": "src/adapter/metamod/bot_behavior_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
     "scope": "owner",
     "member": "managedTeamObjectiveAssignmentsValid_"
   },
   {
-    "header": "src/adapter/metamod/bot_observation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/observation/bot_observation_runtime.hpp",
     "scope": "owner",
     "member": "externalDefuserEntityIndex_"
   },
   {
-    "header": "src/adapter/metamod/bot_observation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/observation/bot_observation_runtime.hpp",
     "scope": "owner",
     "member": "externalDefuserEntitySerial_"
   },
   {
-    "header": "src/adapter/metamod/bot_observation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/observation/bot_observation_runtime.hpp",
     "scope": "owner",
     "member": "externalDefuserLeaseUntil_"
   },
   {
-    "header": "src/adapter/metamod/bot_observation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/observation/bot_observation_runtime.hpp",
     "scope": "owner",
     "member": "externalDefuserMapGeneration_"
   },
   {
-    "header": "src/adapter/metamod/bot_observation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/observation/bot_observation_runtime.hpp",
     "scope": "owner",
     "member": "externalDefuserRoundGeneration_"
   },
   {
-    "header": "src/adapter/metamod/bot_behavior_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
     "scope": "owner",
     "member": "managedTeamObjectivePathFailurePending_"
   },
   {
-    "header": "src/adapter/metamod/bot_behavior_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
     "scope": "owner",
     "member": "managedTeamObjectivePathFailureActor_"
   },
   {
-    "header": "src/adapter/metamod/bot_behavior_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
     "scope": "owner",
     "member": "managedTeamObjectivePathFailureGeneration_"
   },
   {
-    "header": "src/adapter/metamod/bot_behavior_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
     "scope": "owner",
     "member": "managedTeamObjectivePathFailureStartArea_"
   },
   {
-    "header": "src/adapter/metamod/bot_behavior_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
     "scope": "owner",
     "member": "managedTeamObjectivePathFailureFrame_"
   },
   {
-    "header": "src/adapter/metamod/bot_behavior_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
     "scope": "ActorState",
     "member": "managedBotObjectiveActions"
   },
   {
-    "header": "src/adapter/metamod/bot_observation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/observation/bot_observation_runtime.hpp",
     "scope": "ActorState",
     "member": "managedBotCurrentWeapons"
   },
   {
-    "header": "src/adapter/metamod/bot_behavior_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
     "scope": "owner",
     "member": "managedObjectiveSiteRegistry_"
   },
   {
-    "header": "src/adapter/metamod/bot_behavior_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
     "scope": "ActorState",
     "member": "managedBotStateMachines"
   },
   {
-    "header": "src/adapter/metamod/bot_behavior_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
     "scope": "ActorState",
     "member": "scenarioPlanners"
   },
   {
-    "header": "src/adapter/metamod/bot_behavior_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
     "scope": "ActorState",
     "member": "scenarioDecisions"
   },
   {
-    "header": "src/adapter/metamod/bot_observation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/observation/bot_observation_runtime.hpp",
     "scope": "ActorState",
     "member": "managedBotPerception"
   },
   {
-    "header": "src/adapter/metamod/bot_observation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/observation/bot_observation_runtime.hpp",
     "scope": "ActorState",
     "member": "managedBotPerceptionFullUpdates"
   },
   {
-    "header": "src/adapter/metamod/bot_command_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/command/bot_command_runtime.hpp",
     "scope": "ActorState",
     "member": "managedBotCommandSequences"
   },
   {
-    "header": "src/adapter/metamod/plugin_runtime.hpp",
+    "header": "src/adapter/metamod/plugin/plugin_runtime.hpp",
     "scope": "owner",
     "member": "managedBotFullUpdateSequences_"
   },
   {
-    "header": "src/adapter/metamod/bot_behavior_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
     "scope": "ActorState",
     "member": "managedBotStateRounds"
   },
   {
-    "header": "src/adapter/metamod/bot_behavior_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
     "scope": "ActorState",
     "member": "managedBotWasDead"
   },
   {
-    "header": "src/adapter/metamod/plugin_runtime.hpp",
+    "header": "src/adapter/metamod/plugin/plugin_runtime.hpp",
     "scope": "owner",
     "member": "managedBotTiming_"
   },
   {
-    "header": "src/adapter/metamod/bot_command_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/command/bot_command_runtime.hpp",
     "scope": "ActorState",
     "member": "managedBotJumpCrouch"
   },
   {
-    "header": "src/adapter/metamod/bot_command_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/command/bot_command_runtime.hpp",
     "scope": "ActorState",
     "member": "managedBotCommandTemplates"
   },
   {
-    "header": "src/adapter/metamod/bot_command_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/command/bot_command_runtime.hpp",
     "scope": "ActorState",
     "member": "managedBotCommandTemplateValid"
   },
   {
-    "header": "src/adapter/metamod/bot_command_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/command/bot_command_runtime.hpp",
     "scope": "ActorState",
     "member": "managedBotActionStopsMovement"
   },
   {
-    "header": "src/adapter/metamod/bot_navigation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/navigation/bot_navigation_runtime.hpp",
     "scope": "ActorState",
     "member": "movementDiagnosticSamples"
   },
   {
-    "header": "src/adapter/metamod/bot_navigation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/navigation/bot_navigation_runtime.hpp",
     "scope": "ActorState",
     "member": "movementDiagnosticAttempts"
   },
   {
-    "header": "src/adapter/metamod/bot_navigation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/navigation/bot_navigation_runtime.hpp",
     "scope": "ActorState",
     "member": "movementDiagnosticUnavailable"
   },
   {
-    "header": "src/adapter/metamod/bot_navigation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/navigation/bot_navigation_runtime.hpp",
     "scope": "ActorState",
     "member": "movementResumeFrames"
   },
   {
-    "header": "src/adapter/metamod/bot_navigation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/navigation/bot_navigation_runtime.hpp",
     "scope": "ActorState",
     "member": "movementLastDeadFrames"
   },
   {
-    "header": "src/adapter/metamod/bot_navigation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/navigation/bot_navigation_runtime.hpp",
     "scope": "ActorState",
     "member": "movementSettledDeadFrames"
   },
   {
-    "header": "src/adapter/metamod/bot_navigation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/navigation/bot_navigation_runtime.hpp",
     "scope": "ActorState",
     "member": "movementWarmupFrames"
   },
   {
-    "header": "src/adapter/metamod/bot_navigation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/navigation/bot_navigation_runtime.hpp",
     "scope": "ActorState",
     "member": "movementGroundLookaheadRoutes"
   },
   {
-    "header": "src/adapter/metamod/bot_navigation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/navigation/bot_navigation_runtime.hpp",
     "scope": "ActorState",
     "member": "movementPhysicsSamples"
   },
   {
-    "header": "src/adapter/metamod/bot_navigation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/navigation/bot_navigation_runtime.hpp",
     "scope": "ActorState",
     "member": "movementReadyLogged"
   },
   {
-    "header": "src/adapter/metamod/bot_navigation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/navigation/bot_navigation_runtime.hpp",
     "scope": "ActorState",
     "member": "movementGoalDiagnosticSeconds"
   },
   {
-    "header": "src/adapter/metamod/bot_command_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/command/bot_command_runtime.hpp",
     "scope": "ActorState",
     "member": "movementGateDiagnosticTimes"
   },
   {
-    "header": "src/adapter/metamod/bot_navigation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/navigation/bot_navigation_runtime.hpp",
     "scope": "ActorState",
     "member": "movementTraversalDiagnosticSeconds"
   },
   {
-    "header": "src/adapter/metamod/bot_navigation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/navigation/bot_navigation_runtime.hpp",
     "scope": "ActorState",
     "member": "movementTraversalPending"
   },
   {
-    "header": "src/adapter/metamod/bot_navigation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/navigation/bot_navigation_runtime.hpp",
     "scope": "ActorState",
     "member": "movementDispatchFrames"
   },
   {
-    "header": "src/adapter/metamod/bot_navigation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/navigation/bot_navigation_runtime.hpp",
     "scope": "ActorState",
     "member": "movementWasAirborne"
   },
   {
-    "header": "src/adapter/metamod/bot_navigation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/navigation/bot_navigation_runtime.hpp",
     "scope": "ActorState",
     "member": "movementFallLandingTrackers"
   },
   {
-    "header": "src/adapter/metamod/bot_navigation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/navigation/bot_navigation_runtime.hpp",
     "scope": "ActorState",
     "member": "movementReversalDiagnostics"
   },
   {
-    "header": "src/adapter/metamod/bot_navigation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/navigation/bot_navigation_runtime.hpp",
     "scope": "owner",
     "member": "movementDiagnosticRound_"
   },
   {
-    "header": "src/adapter/metamod/bot_navigation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/navigation/bot_navigation_runtime.hpp",
     "scope": "owner",
     "member": "movementDiagnosticGlobal_"
   },
   {
-    "header": "src/adapter/metamod/plugin_runtime.hpp",
+    "header": "src/adapter/metamod/plugin/plugin_runtime.hpp",
     "scope": "owner",
     "member": "originalCommandArgs_"
   },
   {
-    "header": "src/adapter/metamod/plugin_runtime.hpp",
+    "header": "src/adapter/metamod/plugin/plugin_runtime.hpp",
     "scope": "owner",
     "member": "originalCommandArgv_"
   },
   {
-    "header": "src/adapter/metamod/plugin_runtime.hpp",
+    "header": "src/adapter/metamod/plugin/plugin_runtime.hpp",
     "scope": "owner",
     "member": "originalCommandArgc_"
   },
   {
-    "header": "src/adapter/metamod/plugin_runtime.hpp",
+    "header": "src/adapter/metamod/plugin/plugin_runtime.hpp",
     "scope": "owner",
     "member": "clientCommandContextActive_"
   },
   {
-    "header": "src/adapter/metamod/plugin_runtime.hpp",
+    "header": "src/adapter/metamod/plugin/plugin_runtime.hpp",
     "scope": "owner",
     "member": "clientCommandArgumentCount_"
   },
   {
-    "header": "src/adapter/metamod/plugin_runtime.hpp",
+    "header": "src/adapter/metamod/plugin/plugin_runtime.hpp",
     "scope": "owner",
     "member": "clientCommandArgv0_"
   },
   {
-    "header": "src/adapter/metamod/plugin_runtime.hpp",
+    "header": "src/adapter/metamod/plugin/plugin_runtime.hpp",
     "scope": "owner",
     "member": "clientCommandArgv1_"
   },
   {
-    "header": "src/adapter/metamod/plugin_runtime.hpp",
+    "header": "src/adapter/metamod/plugin/plugin_runtime.hpp",
     "scope": "owner",
     "member": "clientCommandArgs_"
   },
   {
-    "header": "src/adapter/metamod/plugin_runtime.hpp",
+    "header": "src/adapter/metamod/plugin/plugin_runtime.hpp",
     "scope": "owner",
     "member": "nativeGuardEnabled_"
   },
   {
-    "header": "src/adapter/metamod/plugin_runtime.hpp",
+    "header": "src/adapter/metamod/plugin/plugin_runtime.hpp",
     "scope": "owner",
     "member": "compatibilityCvarOwned_"
   },
   {
-    "header": "src/adapter/metamod/plugin_runtime.hpp",
+    "header": "src/adapter/metamod/plugin/plugin_runtime.hpp",
     "scope": "owner",
     "member": "compatibilityRegistrationInProgress_"
   },
   {
-    "header": "src/adapter/metamod/plugin_runtime.hpp",
+    "header": "src/adapter/metamod/plugin/plugin_runtime.hpp",
     "scope": "owner",
     "member": "nativeControlsCaptured_"
   },
   {
-    "header": "src/adapter/metamod/plugin_runtime.hpp",
+    "header": "src/adapter/metamod/plugin/plugin_runtime.hpp",
     "scope": "owner",
     "member": "performanceDisablePathSearch_"
   },
   {
-    "header": "src/adapter/metamod/plugin_runtime.hpp",
+    "header": "src/adapter/metamod/plugin/plugin_runtime.hpp",
     "scope": "owner",
     "member": "originalBotEnable_"
   },
   {
-    "header": "src/adapter/metamod/plugin_runtime.hpp",
+    "header": "src/adapter/metamod/plugin/plugin_runtime.hpp",
     "scope": "owner",
     "member": "originalBotQuota_"
   },
   {
-    "header": "src/adapter/metamod/bot_behavior_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
     "scope": "owner",
     "member": "actors_"
   },
   {
-    "header": "src/adapter/metamod/bot_behavior_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
     "scope": "owner",
     "member": "services_"
   },
   {
-    "header": "src/adapter/metamod/bot_command_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/command/bot_command_runtime.hpp",
     "scope": "owner",
     "member": "actors_"
   },
   {
-    "header": "src/adapter/metamod/bot_command_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/command/bot_command_runtime.hpp",
     "scope": "owner",
     "member": "services_"
   },
   {
-    "header": "src/adapter/metamod/bot_navigation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/navigation/bot_navigation_runtime.hpp",
     "scope": "owner",
     "member": "actors_"
   },
   {
-    "header": "src/adapter/metamod/bot_navigation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/navigation/bot_navigation_runtime.hpp",
     "scope": "owner",
     "member": "services_"
   },
   {
-    "header": "src/adapter/metamod/bot_observation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/observation/bot_observation_runtime.hpp",
     "scope": "owner",
     "member": "actors_"
   },
   {
-    "header": "src/adapter/metamod/bot_observation_runtime.hpp",
+    "header": "src/adapter/metamod/runtime/observation/bot_observation_runtime.hpp",
     "scope": "owner",
     "member": "services_"
   },
   {
-    "header": "src/adapter/metamod/plugin_runtime.hpp",
+    "header": "src/adapter/metamod/plugin/plugin_runtime.hpp",
     "scope": "owner",
     "member": "behavior_"
   },
   {
-    "header": "src/adapter/metamod/plugin_runtime.hpp",
+    "header": "src/adapter/metamod/plugin/plugin_runtime.hpp",
     "scope": "owner",
     "member": "command_"
   },
   {
-    "header": "src/adapter/metamod/plugin_runtime.hpp",
+    "header": "src/adapter/metamod/plugin/plugin_runtime.hpp",
     "scope": "owner",
     "member": "navigation_"
   },
   {
-    "header": "src/adapter/metamod/plugin_runtime.hpp",
+    "header": "src/adapter/metamod/plugin/plugin_runtime.hpp",
     "scope": "owner",
     "member": "observation_"
   }

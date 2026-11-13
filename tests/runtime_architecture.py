@@ -307,7 +307,7 @@ def check_dependencies(path, source):
             raise ArchitectureError('writable ownership bypass through const_cast')
         for include in includes:
             peer = re.search(r'bot_(observation|behavior|navigation|command)_runtime\.hpp$', include)
-            if include.endswith('plugin_runtime.hpp') or (peer and peer[1] != name):
+            if PurePosixPath(include).name == 'plugin_runtime.hpp' or (peer and peer[1] != name):
                 raise ArchitectureError('forbidden peer include: ' + include)
         if re.search(r'\bservices_ -> (?:observation|behavior|navigation|command) \(', code):
             raise ArchitectureError('forbidden peer owner accessor')
@@ -326,14 +326,14 @@ def check_dependencies(path, source):
                 if suffix not in (['!=', 'nullptr'], ['==', 'nullptr']):
                     raise ArchitectureError('forbidden input dispatch capability acquisition or call')
         values = [t.value if t.kind == 'code' else '<literal>' for t in tokens]
-        root_cpp = path == 'src/adapter/metamod/plugin_runtime.cpp'
-        root_header = path == 'src/adapter/metamod/plugin_runtime.hpp'
+        root_cpp = path == 'src/adapter/metamod/plugin/plugin_runtime.cpp'
+        root_header = path == 'src/adapter/metamod/plugin/plugin_runtime.hpp'
         for i, value in enumerate(values):
             if value == 'service_inputDispatcher':
                 signature = values[i - 2:i] == ['Service_inputDispatcher', '&']
                 definition = (root_header and signature and
                               values[i + 1:i + 6] == ['(', ')', 'override', '{', 'return'])
-                interface = (path == 'src/adapter/metamod/bot_runtime_services.hpp' and signature and
+                interface = (path == 'src/adapter/metamod/runtime/shared/bot_runtime_services.hpp' and signature and
                              values[i + 1:i + 6] == ['(', ')', '=', '0', ';'])
                 if not (definition or interface):
                     raise ArchitectureError('forbidden input dispatcher getter acquisition')

@@ -168,7 +168,7 @@ if(ASTRABOT_BUILD_TESTS)
 
   add_executable(astrabot_native_bot_guard
     tests/native_bot_guard_tests.cpp
-    src/adapter/metamod/native_bot_guard.cpp
+    src/adapter/metamod/lifecycle/native_bot_guard.cpp
   )
   target_include_directories(astrabot_native_bot_guard PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/include"
@@ -198,7 +198,7 @@ if(ASTRABOT_BUILD_TESTS)
 
   add_executable(astrabot_join_controller
     tests/join_controller_tests.cpp
-    src/adapter/metamod/join_controller.cpp
+    src/adapter/metamod/lifecycle/join_controller.cpp
   )
   target_include_directories(astrabot_join_controller PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/include"
@@ -290,7 +290,7 @@ if(ASTRABOT_BUILD_TESTS)
 
   add_executable(astrabot_profile_loader
     tests/profile_loader_tests.cpp
-    src/adapter/metamod/profile_loader.cpp
+    src/adapter/metamod/config/profile_loader.cpp
   )
   target_include_directories(astrabot_profile_loader PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/include"
@@ -342,7 +342,7 @@ if(ASTRABOT_BUILD_TESTS)
 
   add_executable(astrabot_engine_random_source
     tests/engine_random_source_tests.cpp
-    src/adapter/metamod/engine_random_source.cpp
+    src/adapter/metamod/bridge/engine_random_source.cpp
   )
   target_include_directories(astrabot_engine_random_source PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/include"
@@ -374,8 +374,8 @@ if(ASTRABOT_BUILD_TESTS)
 
   add_executable(astrabot_nav_loader
     tests/nav_loader_tests.cpp
-    src/adapter/metamod/nav_loader.cpp
-    src/adapter/metamod/map_fingerprint.cpp
+    src/adapter/metamod/navigation/nav_loader.cpp
+    src/adapter/metamod/navigation/map_fingerprint.cpp
   )
   target_link_libraries(astrabot_nav_loader PRIVATE astrabot_core)
   target_include_directories(astrabot_nav_loader PRIVATE
@@ -386,8 +386,8 @@ add_test(NAME astrabot_nav_loader COMMAND astrabot_nav_loader)
 
 add_executable(astrabot_nav_external_performance
 	tests/nav_external_performance_tests.cpp
-	src/adapter/metamod/nav_loader.cpp
-	src/adapter/metamod/map_fingerprint.cpp
+	src/adapter/metamod/navigation/nav_loader.cpp
+	src/adapter/metamod/navigation/map_fingerprint.cpp
 )
 target_link_libraries(astrabot_nav_external_performance PRIVATE astrabot_core)
 target_include_directories(astrabot_nav_external_performance PRIVATE
@@ -403,8 +403,8 @@ endif()
 
 add_executable(astrabot_nav_diagnostics
     tests/nav_diagnostics_tests.cpp
-    src/adapter/metamod/nav_loader.cpp
-    src/adapter/metamod/map_fingerprint.cpp
+    src/adapter/metamod/navigation/nav_loader.cpp
+    src/adapter/metamod/navigation/map_fingerprint.cpp
   )
   target_link_libraries(astrabot_nav_diagnostics PRIVATE astrabot_core)
   target_include_directories(astrabot_nav_diagnostics PRIVATE
@@ -575,7 +575,7 @@ add_executable(astrabot_nav_diagnostics
 
   add_executable(astrabot_map_fingerprint
     tests/map_fingerprint_tests.cpp
-    src/adapter/metamod/map_fingerprint.cpp
+    src/adapter/metamod/navigation/map_fingerprint.cpp
   )
   target_include_directories(astrabot_map_fingerprint PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/include"
@@ -623,23 +623,24 @@ if(ASTRABOT_BUILD_METAMOD)
   )
 
 add_library(astrabot_mm SHARED
-    src/adapter/metamod/compat_surface.cpp
-    src/adapter/metamod/profile_loader.cpp
-    src/adapter/metamod/fake_client_manager.cpp
-    src/adapter/metamod/join_controller.cpp
-    src/adapter/metamod/input_dispatcher.cpp
-    src/adapter/metamod/plugin_exports.cpp
-    src/adapter/metamod/native_bot_guard.cpp
-	src/adapter/metamod/plugin_runtime.cpp
-	src/adapter/metamod/runtime_profiler.cpp
-	src/adapter/metamod/movement_execution_gate.cpp
-	src/adapter/metamod/engine_random_source.cpp
-	src/adapter/metamod/map_fingerprint.cpp
-	src/adapter/metamod/nav_loader.cpp
-	src/adapter/metamod/action_adapter.cpp
-	src/adapter/metamod/observation_adapter.cpp
+    src/adapter/metamod/config/compat_surface.cpp
+    src/adapter/metamod/config/profile_loader.cpp
+    src/adapter/metamod/lifecycle/fake_client_manager.cpp
+    src/adapter/metamod/lifecycle/join_controller.cpp
+    src/adapter/metamod/bridge/input_dispatcher.cpp
+    src/adapter/metamod/plugin/plugin_exports.cpp
+    src/adapter/metamod/lifecycle/native_bot_guard.cpp
+	src/adapter/metamod/plugin/plugin_runtime.cpp
+	src/adapter/metamod/diagnostics/runtime_profiler.cpp
+	src/adapter/metamod/navigation/movement_execution_gate.cpp
+	src/adapter/metamod/bridge/engine_random_source.cpp
+	src/adapter/metamod/navigation/map_fingerprint.cpp
+	src/adapter/metamod/navigation/nav_loader.cpp
+	src/adapter/metamod/bridge/action_adapter.cpp
+	src/adapter/metamod/bridge/observation_adapter.cpp
 	)
   target_include_directories(astrabot_mm PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/adapter/metamod"
     "${CMAKE_CURRENT_SOURCE_DIR}/include"
     ${ASTRABOT_METAMOD_INCLUDE_DIRS}
     ${ASTRABOT_CSSDK_INCLUDE_DIRS}
@@ -655,12 +656,12 @@ add_library(astrabot_mm SHARED
       VISIBILITY_INLINES_HIDDEN ON
     )
     target_link_options(astrabot_mm PRIVATE
-      "-Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/src/adapter/metamod/astrabot_mm.map"
+      "-Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/src/adapter/metamod/plugin/astrabot_mm.map"
     )
   endif()
   if(MSVC)
     target_sources(astrabot_mm PRIVATE
-      src/adapter/metamod/astrabot_mm.def
+      src/adapter/metamod/plugin/astrabot_mm.def
     )
   endif()
   astrabot_apply_warnings(astrabot_mm)
@@ -686,21 +687,21 @@ add_executable(astrabot_metamod_hooks
       ${ASTRABOT_METAMOD_INCLUDE_DIRS}
     )
     target_sources(astrabot_metamod_hooks PRIVATE
-      src/adapter/metamod/compat_surface.cpp
-      src/adapter/metamod/profile_loader.cpp
-      src/adapter/metamod/fake_client_manager.cpp
-      src/adapter/metamod/input_dispatcher.cpp
-      src/adapter/metamod/native_bot_guard.cpp
-      src/adapter/metamod/plugin_exports.cpp
-      src/adapter/metamod/join_controller.cpp
-	src/adapter/metamod/plugin_runtime.cpp
-	src/adapter/metamod/runtime_profiler.cpp
-	src/adapter/metamod/movement_execution_gate.cpp
-		src/adapter/metamod/engine_random_source.cpp
-		src/adapter/metamod/nav_loader.cpp
-		src/adapter/metamod/map_fingerprint.cpp
-		src/adapter/metamod/action_adapter.cpp
-		src/adapter/metamod/observation_adapter.cpp
+      src/adapter/metamod/config/compat_surface.cpp
+      src/adapter/metamod/config/profile_loader.cpp
+      src/adapter/metamod/lifecycle/fake_client_manager.cpp
+      src/adapter/metamod/bridge/input_dispatcher.cpp
+      src/adapter/metamod/lifecycle/native_bot_guard.cpp
+      src/adapter/metamod/plugin/plugin_exports.cpp
+      src/adapter/metamod/lifecycle/join_controller.cpp
+	src/adapter/metamod/plugin/plugin_runtime.cpp
+	src/adapter/metamod/diagnostics/runtime_profiler.cpp
+	src/adapter/metamod/navigation/movement_execution_gate.cpp
+		src/adapter/metamod/bridge/engine_random_source.cpp
+		src/adapter/metamod/navigation/nav_loader.cpp
+		src/adapter/metamod/navigation/map_fingerprint.cpp
+		src/adapter/metamod/bridge/action_adapter.cpp
+		src/adapter/metamod/bridge/observation_adapter.cpp
 	)
     target_link_libraries(astrabot_metamod_hooks PRIVATE astrabot_core)
     astrabot_apply_warnings(astrabot_metamod_hooks)
@@ -708,7 +709,7 @@ add_executable(astrabot_metamod_hooks
 
     add_executable(astrabot_fake_client_manager
       tests/fake_client_manager_tests.cpp
-      src/adapter/metamod/fake_client_manager.cpp
+      src/adapter/metamod/lifecycle/fake_client_manager.cpp
     )
     target_include_directories(astrabot_fake_client_manager PRIVATE
       "${CMAKE_CURRENT_SOURCE_DIR}/include"
@@ -720,8 +721,8 @@ add_executable(astrabot_metamod_hooks
 
     add_executable(astrabot_input_dispatcher
       tests/input_dispatcher_tests.cpp
-      src/adapter/metamod/input_dispatcher.cpp
-      src/adapter/metamod/runtime_profiler.cpp
+      src/adapter/metamod/bridge/input_dispatcher.cpp
+      src/adapter/metamod/diagnostics/runtime_profiler.cpp
     )
     target_include_directories(astrabot_input_dispatcher PRIVATE
       "${CMAKE_CURRENT_SOURCE_DIR}/include"
@@ -733,21 +734,21 @@ add_executable(astrabot_metamod_hooks
 
 add_executable(astrabot_fake_client_isolation
     tests/fake_client_isolation_tests.cpp
-    src/adapter/metamod/compat_surface.cpp
-    src/adapter/metamod/profile_loader.cpp
-    src/adapter/metamod/fake_client_manager.cpp
-      src/adapter/metamod/input_dispatcher.cpp
-      src/adapter/metamod/native_bot_guard.cpp
-      src/adapter/metamod/plugin_exports.cpp
-      src/adapter/metamod/join_controller.cpp
-	src/adapter/metamod/plugin_runtime.cpp
-	src/adapter/metamod/runtime_profiler.cpp
-	src/adapter/metamod/movement_execution_gate.cpp
-		src/adapter/metamod/engine_random_source.cpp
-		src/adapter/metamod/nav_loader.cpp
-		src/adapter/metamod/map_fingerprint.cpp
-		src/adapter/metamod/action_adapter.cpp
-		src/adapter/metamod/observation_adapter.cpp
+    src/adapter/metamod/config/compat_surface.cpp
+    src/adapter/metamod/config/profile_loader.cpp
+    src/adapter/metamod/lifecycle/fake_client_manager.cpp
+      src/adapter/metamod/bridge/input_dispatcher.cpp
+      src/adapter/metamod/lifecycle/native_bot_guard.cpp
+      src/adapter/metamod/plugin/plugin_exports.cpp
+      src/adapter/metamod/lifecycle/join_controller.cpp
+	src/adapter/metamod/plugin/plugin_runtime.cpp
+	src/adapter/metamod/diagnostics/runtime_profiler.cpp
+	src/adapter/metamod/navigation/movement_execution_gate.cpp
+		src/adapter/metamod/bridge/engine_random_source.cpp
+		src/adapter/metamod/navigation/nav_loader.cpp
+		src/adapter/metamod/navigation/map_fingerprint.cpp
+		src/adapter/metamod/bridge/action_adapter.cpp
+		src/adapter/metamod/bridge/observation_adapter.cpp
 	)
     target_include_directories(astrabot_fake_client_isolation PRIVATE
       "${CMAKE_CURRENT_SOURCE_DIR}/include"
@@ -760,8 +761,8 @@ add_executable(astrabot_fake_client_isolation
 
     add_executable(astrabot_compat_surface
       tests/compat_surface_tests.cpp
-      src/adapter/metamod/compat_surface.cpp
-      src/adapter/metamod/profile_loader.cpp
+      src/adapter/metamod/config/compat_surface.cpp
+      src/adapter/metamod/config/profile_loader.cpp
     )
     target_include_directories(astrabot_compat_surface PRIVATE
       "${CMAKE_CURRENT_SOURCE_DIR}/include"
@@ -773,21 +774,21 @@ add_executable(astrabot_fake_client_isolation
 
 add_executable(astrabot_compat_actor_command
 	tests/compat_actor_command_tests.cpp
-      src/adapter/metamod/compat_surface.cpp
-      src/adapter/metamod/profile_loader.cpp
-      src/adapter/metamod/fake_client_manager.cpp
-      src/adapter/metamod/input_dispatcher.cpp
-      src/adapter/metamod/native_bot_guard.cpp
-      src/adapter/metamod/plugin_exports.cpp
-      src/adapter/metamod/join_controller.cpp
-	src/adapter/metamod/plugin_runtime.cpp
-	src/adapter/metamod/runtime_profiler.cpp
-	src/adapter/metamod/movement_execution_gate.cpp
-      src/adapter/metamod/engine_random_source.cpp
-	src/adapter/metamod/nav_loader.cpp
-	src/adapter/metamod/map_fingerprint.cpp
-	src/adapter/metamod/action_adapter.cpp
-	src/adapter/metamod/observation_adapter.cpp
+      src/adapter/metamod/config/compat_surface.cpp
+      src/adapter/metamod/config/profile_loader.cpp
+      src/adapter/metamod/lifecycle/fake_client_manager.cpp
+      src/adapter/metamod/bridge/input_dispatcher.cpp
+      src/adapter/metamod/lifecycle/native_bot_guard.cpp
+      src/adapter/metamod/plugin/plugin_exports.cpp
+      src/adapter/metamod/lifecycle/join_controller.cpp
+	src/adapter/metamod/plugin/plugin_runtime.cpp
+	src/adapter/metamod/diagnostics/runtime_profiler.cpp
+	src/adapter/metamod/navigation/movement_execution_gate.cpp
+      src/adapter/metamod/bridge/engine_random_source.cpp
+	src/adapter/metamod/navigation/nav_loader.cpp
+	src/adapter/metamod/navigation/map_fingerprint.cpp
+	src/adapter/metamod/bridge/action_adapter.cpp
+	src/adapter/metamod/bridge/observation_adapter.cpp
 )
     target_include_directories(astrabot_compat_actor_command PRIVATE
       "${CMAKE_CURRENT_SOURCE_DIR}/include"
@@ -802,8 +803,8 @@ add_executable(astrabot_compat_actor_command
 
 add_executable(astrabot_observation_adapter
 	tests/observation_adapter_tests.cpp
-	src/adapter/metamod/observation_adapter.cpp
-	src/adapter/metamod/runtime_profiler.cpp
+	src/adapter/metamod/bridge/observation_adapter.cpp
+	src/adapter/metamod/diagnostics/runtime_profiler.cpp
   )
 	target_include_directories(astrabot_observation_adapter PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/include"
@@ -816,8 +817,8 @@ add_executable(astrabot_observation_adapter
 
 add_executable(astrabot_perception_adapter
 	tests/perception_adapter_tests.cpp
-	src/adapter/metamod/observation_adapter.cpp
-	src/adapter/metamod/runtime_profiler.cpp
+	src/adapter/metamod/bridge/observation_adapter.cpp
+	src/adapter/metamod/diagnostics/runtime_profiler.cpp
 	)
 	target_include_directories(astrabot_perception_adapter PRIVATE
 		"${CMAKE_CURRENT_SOURCE_DIR}/include"
@@ -830,8 +831,8 @@ add_executable(astrabot_perception_adapter
 
 add_executable(astrabot_observation_trace
 	tests/observation_trace_tests.cpp
-	src/adapter/metamod/observation_adapter.cpp
-	src/adapter/metamod/runtime_profiler.cpp
+	src/adapter/metamod/bridge/observation_adapter.cpp
+	src/adapter/metamod/diagnostics/runtime_profiler.cpp
 	)
 	target_include_directories(astrabot_observation_trace PRIVATE
 		"${CMAKE_CURRENT_SOURCE_DIR}/include"
@@ -844,7 +845,7 @@ add_executable(astrabot_observation_trace
 
 	add_executable(astrabot_action_adapter
 		tests/action_adapter_tests.cpp
-		src/adapter/metamod/action_adapter.cpp
+		src/adapter/metamod/bridge/action_adapter.cpp
 	)
 	target_include_directories(astrabot_action_adapter PRIVATE
 		"${CMAKE_CURRENT_SOURCE_DIR}/include"
@@ -855,7 +856,7 @@ add_executable(astrabot_observation_trace
 	add_test(NAME astrabot_action_adapter COMMAND astrabot_action_adapter)
 	add_executable(astrabot_movement_execution_gate
 		tests/movement_execution_gate_tests.cpp
-		src/adapter/metamod/movement_execution_gate.cpp
+		src/adapter/metamod/navigation/movement_execution_gate.cpp
 	)
 	target_include_directories(astrabot_movement_execution_gate PRIVATE
 		"${CMAKE_CURRENT_SOURCE_DIR}/include"
@@ -865,7 +866,7 @@ add_executable(astrabot_observation_trace
 	add_test(NAME astrabot_movement_execution_gate COMMAND astrabot_movement_execution_gate)
 	add_executable(astrabot_runtime_profiler
 		tests/runtime_profiler_tests.cpp
-		src/adapter/metamod/runtime_profiler.cpp
+		src/adapter/metamod/diagnostics/runtime_profiler.cpp
 	)
 	target_include_directories(astrabot_runtime_profiler PRIVATE
 		"${CMAKE_CURRENT_SOURCE_DIR}/include"
@@ -915,7 +916,7 @@ if(ASTRABOT_BUILD_METAMOD)
   file(CONFIGURE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/generated/astrabot_regamedll_api_view.hpp"
     CONTENT "${regame_license}#pragma once\n${regame_api_types}\nstruct ReGameFuncs_t;\nclass IReGameHookchains;\n${regame_api_declaration}\n${regame_api_defines}" @ONLY)
   add_library(astrabot_regamedll_provider STATIC
-    src/adapter/metamod/regamedll_observation_provider.cpp)
+    src/adapter/metamod/bridge/regamedll_observation_provider.cpp)
   set_target_properties(astrabot_regamedll_provider PROPERTIES POSITION_INDEPENDENT_CODE ON)
   target_include_directories(astrabot_regamedll_provider PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/include"
@@ -958,19 +959,19 @@ endif()
 # Private runtime owners are shared by the DLL and adapter integration fixtures.
 if(ASTRABOT_BUILD_METAMOD)
   set(ASTRABOT_RUNTIME_OWNER_SOURCES
-    src/adapter/metamod/bot_observation_runtime.cpp
-    src/adapter/metamod/bot_behavior_runtime.cpp
-    src/adapter/metamod/bot_behavior_perception.cpp
-    src/adapter/metamod/bot_behavior_radio.cpp
-    src/adapter/metamod/bot_behavior_buying.cpp
-    src/adapter/metamod/bot_behavior_priorities.cpp
-    src/adapter/metamod/bot_behavior_objectives.cpp
-    src/adapter/metamod/bot_behavior_guard.cpp
-    src/adapter/metamod/bot_behavior_equipment.cpp
-    src/adapter/metamod/bot_behavior_scenario.cpp
-    src/adapter/metamod/bot_behavior_combat.cpp
-    src/adapter/metamod/bot_navigation_runtime.cpp
-    src/adapter/metamod/bot_command_runtime.cpp
+    src/adapter/metamod/runtime/observation/bot_observation_runtime.cpp
+    src/adapter/metamod/runtime/behavior/bot_behavior_runtime.cpp
+    src/adapter/metamod/runtime/behavior/bot_behavior_perception.cpp
+    src/adapter/metamod/runtime/behavior/bot_behavior_radio.cpp
+    src/adapter/metamod/runtime/behavior/bot_behavior_buying.cpp
+    src/adapter/metamod/runtime/behavior/bot_behavior_priorities.cpp
+    src/adapter/metamod/runtime/behavior/bot_behavior_objectives.cpp
+    src/adapter/metamod/runtime/behavior/bot_behavior_guard.cpp
+    src/adapter/metamod/runtime/behavior/bot_behavior_equipment.cpp
+    src/adapter/metamod/runtime/behavior/bot_behavior_scenario.cpp
+    src/adapter/metamod/runtime/behavior/bot_behavior_combat.cpp
+    src/adapter/metamod/runtime/navigation/bot_navigation_runtime.cpp
+    src/adapter/metamod/runtime/command/bot_command_runtime.cpp
   )
   foreach(runtime_target astrabot_mm astrabot_metamod_hooks astrabot_fake_client_isolation astrabot_compat_actor_command)
     if(TARGET ${runtime_target})
@@ -982,7 +983,7 @@ endif()
 # Source ownership and pre-refactor behavior are independent acceptance gates.
 if(ASTRABOT_BUILD_TESTS AND ASTRABOT_BUILD_METAMOD)
   find_package(Python3 COMPONENTS Interpreter REQUIRED)
-  foreach(contract runtime_ports runtime_ownership runtime_movement_integration runtime_behavior runtime_navigation p076_performance)
+  foreach(contract source_layout runtime_ports runtime_ownership runtime_movement_integration runtime_behavior runtime_navigation p076_performance)
     add_test(NAME astrabot_${contract}_contract
       COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/${contract}_contract.py")
   endforeach()
@@ -992,7 +993,7 @@ if(ASTRABOT_BUILD_TESTS AND ASTRABOT_BUILD_METAMOD)
     add_test(NAME astrabot_action_owner_boundary
       COMMAND "${ASTRABOT_POWERSHELL_EXECUTABLE}" -NoProfile -ExecutionPolicy Bypass
         -File "${CMAKE_CURRENT_SOURCE_DIR}/tests/phase8_action_adapter_boundary_test.ps1"
-        -AdapterPath "${CMAKE_CURRENT_SOURCE_DIR}/src/adapter/metamod/plugin_runtime.cpp"
+        -AdapterPath "${CMAKE_CURRENT_SOURCE_DIR}/src/adapter/metamod/plugin/plugin_runtime.cpp"
         -RequireLiveActions)
   else()
     set(characterization_platform linux-x86)
@@ -1056,14 +1057,14 @@ if(ASTRABOT_BUILD_TESTS AND ASTRABOT_BUILD_METAMOD)
     RESOURCE_LOCK astrabot_actor_command_profile)
   add_executable(astrabot_runtime_command_scenarios
     tests/runtime_command_scenarios.cpp
-    src/adapter/metamod/compat_surface.cpp
-    src/adapter/metamod/profile_loader.cpp
-    src/adapter/metamod/join_controller.cpp
-    src/adapter/metamod/bot_command_runtime.cpp
-    src/adapter/metamod/input_dispatcher.cpp
-    src/adapter/metamod/runtime_profiler.cpp
-    src/adapter/metamod/movement_execution_gate.cpp
-    src/adapter/metamod/action_adapter.cpp)
+    src/adapter/metamod/config/compat_surface.cpp
+    src/adapter/metamod/config/profile_loader.cpp
+    src/adapter/metamod/lifecycle/join_controller.cpp
+    src/adapter/metamod/runtime/command/bot_command_runtime.cpp
+    src/adapter/metamod/bridge/input_dispatcher.cpp
+    src/adapter/metamod/diagnostics/runtime_profiler.cpp
+    src/adapter/metamod/navigation/movement_execution_gate.cpp
+    src/adapter/metamod/bridge/action_adapter.cpp)
   target_include_directories(astrabot_runtime_command_scenarios PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/src/adapter/metamod

@@ -44,8 +44,8 @@ AstraBot Core or public Metamod adapter.
 
 P04 implementation files are `include/astrabot/compat/observation.hpp`,
 `src/core/compat/observation.cpp`,
-`src/adapter/metamod/observation_adapter.{hpp,cpp}`, and the integration in
-`src/adapter/metamod/plugin_runtime.{hpp,cpp}`. The Core remains SDK-free.
+`src/adapter/metamod/bridge/observation_adapter.{hpp,cpp}`, and the integration in
+`src/adapter/metamod/plugin/plugin_runtime.{hpp,cpp}`. The Core remains SDK-free.
 
 ## Method and limits
 
@@ -63,8 +63,8 @@ not evidence of CSBot parity.
 | Reference file | Primary symbols/role | AstraBot correspondence | Status / notes |
 |---|---|---|---|
 | `game_shared/bot/bot_constants.h` | shared bot constants | `include/astrabot/*`, engine button constants | DIFFERENT; no shared CSBot constant set |
-| `game_shared/bot/bot.h` | `CBot`, 30Hz command and 10Hz full-think contract, `BotThink`, `ExecuteCommand` | `include/astrabot/runtime/bot_timing_scheduler.hpp`, `src/adapter/metamod/plugin_runtime.cpp`, `runtime/bot_command.cpp`, `metamod/input_dispatcher.cpp` | IMPLEMENTED_UNVERIFIED; deterministic timing and template tests pass, live/private state remain open |
-| `game_shared/bot/bot.cpp` | base movement, weapon buttons, `BotThink`, `ExecuteCommand` | `src/core/runtime/bot_timing_scheduler.cpp`, `src/adapter/metamod/plugin_runtime.cpp`, `action_adapter.cpp`, `input_dispatcher.cpp` | IMPLEMENTED_UNVERIFIED public command cadence boundary; decision/private state is not CSBot parity |
+| `game_shared/bot/bot.h` | `CBot`, 30Hz command and 10Hz full-think contract, `BotThink`, `ExecuteCommand` | `include/astrabot/runtime/bot_timing_scheduler.hpp`, `src/adapter/metamod/plugin/plugin_runtime.cpp`, `runtime/bot_command.cpp`, `metamod/input_dispatcher.cpp` | IMPLEMENTED_UNVERIFIED; deterministic timing and template tests pass, live/private state remain open |
+| `game_shared/bot/bot.cpp` | base movement, weapon buttons, `BotThink`, `ExecuteCommand` | `src/core/runtime/bot_timing_scheduler.cpp`, `src/adapter/metamod/plugin/plugin_runtime.cpp`, `action_adapter.cpp`, `input_dispatcher.cpp` | IMPLEMENTED_UNVERIFIED public command cadence boundary; decision/private state is not CSBot parity |
 | `game_shared/bot/bot_manager.h` | `CBotManager`, server-frame management | `plugin_runtime` StartFrame hooks, `FakeClientManager` | DIFFERENT; no equivalent manager scheduling |
 | `game_shared/bot/bot_manager.cpp` | bot creation/maintenance and `StartFrame` | `plugin_runtime.cpp` | PARTIAL; lifecycle exists, quota/manager behavior does not |
 | `game_shared/bot/bot_profile.h` | profile values, difficulty/team/profile manager contract | `compat/profile_catalog.hpp`, `metamod/profile_loader.cpp` | PARTIAL; parsed profile data is not the runtime CSBot profile |

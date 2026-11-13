@@ -1,4 +1,4 @@
-#include "plugin_runtime.hpp"
+#include "plugin/plugin_runtime.hpp"
 namespace { bool testActorIdentity(astrabot::metamod::PluginRuntime &,enginefuncs_t &,globalvars_t &); }
 #define ASTRABOT_EXTRA_ACTOR_TEST testActorIdentity
 #define ASTRABOT_ACTOR_PROFILE_TEXT "TProfile { Name = \"T Bot\" Team = T Difficulty = 1 Skill = 70 }\nCtProfile { Name = \"CT Bot\" Team = CT Difficulty = 1 Skill = 70 }\n"

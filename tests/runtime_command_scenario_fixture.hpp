@@ -1,6 +1,6 @@
 #ifndef ASTRABOT_TEST_RUNTIME_COMMAND_SCENARIO_FIXTURE_HPP
 #define ASTRABOT_TEST_RUNTIME_COMMAND_SCENARIO_FIXTURE_HPP
-#include "bot_command_runtime.hpp"
+#include "runtime/command/bot_command_runtime.hpp"
 #include <cstdio>
 #include <cstdlib>
 

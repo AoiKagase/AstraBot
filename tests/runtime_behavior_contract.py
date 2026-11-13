@@ -1,3 +1,4 @@
+from source_layout_contract import adapter_path
 """Keep behavior entrypoints as ordered orchestration, not mixed implementations."""
 from pathlib import Path
 
@@ -16,7 +17,7 @@ def body(text, signature):
 
 
 def main():
-    source = (ADAPTER / "bot_behavior_runtime.cpp").read_text(encoding="utf-8")
+    source = (ADAPTER / "runtime/behavior/bot_behavior_runtime.cpp").read_text(encoding="utf-8")
     action = body(source, "BotBehaviorRuntime::decideManagedBotAction(")
     state = body(source, "BotBehaviorRuntime::updateManagedBotCompatibilityState(")
     assert len(action.splitlines()) < 60, "action entrypoint still mixes implementations"
@@ -27,7 +28,7 @@ def main():
         positions = [text.index(phase) for phase in phases]
         assert positions == sorted(positions), "behavior phase order changed"
     for unit in ("buying", "radio", "objectives", "combat", "scenario", "perception", "priorities"):
-        assert (ADAPTER / ("bot_behavior_" + unit + ".cpp")).is_file(), unit
+        assert adapter_path("bot_behavior_" + unit + ".cpp").is_file(), unit
     print("behavior responsibility and phase boundaries: PASS")
 
 

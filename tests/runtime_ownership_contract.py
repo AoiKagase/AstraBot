@@ -1,3 +1,4 @@
+from source_layout_contract import adapter_path
 """Check the ownership boundary promised by the responsibility cleanup."""
 from pathlib import Path
 import re
@@ -20,7 +21,7 @@ def main():
     declarations = {}
     owners = dict(OWNERS, plugin_runtime="PluginRuntime")
     for stem, owner in owners.items():
-        path = "src/adapter/metamod/" + stem + ".hpp"
+        path = adapter_path(stem + ".hpp").relative_to(ROOT).as_posix()
         declarations[path] = collect_members((ROOT / path).read_text(encoding="utf-8"), owner)
     expected = {(entry["header"], entry["scope"], entry["member"]) for entry in inventory}
     assert len(expected) == len(inventory), "duplicate ownership fixture entry"

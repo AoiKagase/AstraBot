@@ -1,4 +1,4 @@
-#include "plugin_runtime.hpp"
+#include "plugin/plugin_runtime.hpp"
 #include "astrabot/compat/guard_look.hpp"
 namespace { bool testBombGuardLook(astrabot::metamod::PluginRuntime &,enginefuncs_t &,globalvars_t &); }
 #define ASTRABOT_EXTRA_ACTOR_TEST testBombGuardLook
