@@ -1,0 +1,2448 @@
+{
+  "reason": "Self observation must use SnapshotIdentity.observer after actor/connection counters diverge. Remove self-visibility probes; permit consequent recognition callbacks and signed-zero defuse aim only.",
+  "validated_runtime_platforms": [
+    "windows-x86"
+  ],
+  "platforms": {
+    "windows-x86": {
+      "baseline_sha256": "b327fcf3a45aa422eb52ec6a455a7840c26203780c2fe41301a72082a1957280",
+      "corrected_sha256": "d1857d27a134e58e0aeab951f5efcf47a547b9d70188fcf9210d6e0bfaacbaae",
+      "records": 131028
+    },
+    "linux-x86": {
+      "baseline_sha256": "e3b3b9aef5475f51769df124ade0030664a77a8d170dbdbbce1563646ef83b08",
+      "corrected_sha256": "ea9a4bac22539080bbf8c8e53adb885560d8f92da30f4c17842d4d6e9aad7486",
+      "records": 131028
+    }
+  },
+  "patterns": [
+    {
+      "windows-x86": {
+        "before": [
+          "call traceJumpGround start=(0x1.0000000000000p+4,0x1.0000000000000p+5,0x1.2000000000000p+5)",
+          "call traceJumpGround start=(0x1.0000000000000p+4,0x1.0000000000000p+5,0x1.2000000000000p+5)",
+          "call traceJumpGround start=(0x1.0000000000000p+4,0x1.0000000000000p+5,0x1.2000000000000p+5)"
+        ],
+        "after": []
+      },
+      "linux-x86": {
+        "before": [
+          "call traceJumpGround start=(0x1p+4,0x1p+5,0x1.2p+5)",
+          "call traceJumpGround start=(0x1p+4,0x1p+5,0x1.2p+5)",
+          "call traceJumpGround start=(0x1p+4,0x1p+5,0x1.2p+5)"
+        ],
+        "after": []
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "call traceJumpGround start=(0x1.2000000000000p+4,0x1.0000000000000p+5,0x1.e000000000000p+5)",
+          "call traceJumpGround start=(0x1.2000000000000p+4,0x1.0000000000000p+5,0x1.e000000000000p+5)",
+          "call traceJumpGround start=(0x1.2000000000000p+4,0x1.0000000000000p+5,0x1.e000000000000p+5)"
+        ],
+        "after": []
+      },
+      "linux-x86": {
+        "before": [
+          "call traceJumpGround start=(0x1.2p+4,0x1p+5,0x1.ep+5)",
+          "call traceJumpGround start=(0x1.2p+4,0x1p+5,0x1.ep+5)",
+          "call traceJumpGround start=(0x1.2p+4,0x1p+5,0x1.ep+5)"
+        ],
+        "after": []
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "call traceJumpGround start=(0x1.4000000000000p+4,0x1.0000000000000p+5,0x1.e000000000000p+5)",
+          "call traceJumpGround start=(0x1.4000000000000p+4,0x1.0000000000000p+5,0x1.e000000000000p+5)",
+          "call traceJumpGround start=(0x1.4000000000000p+4,0x1.0000000000000p+5,0x1.e000000000000p+5)"
+        ],
+        "after": []
+      },
+      "linux-x86": {
+        "before": [
+          "call traceJumpGround start=(0x1.4p+4,0x1p+5,0x1.ep+5)",
+          "call traceJumpGround start=(0x1.4p+4,0x1p+5,0x1.ep+5)",
+          "call traceJumpGround start=(0x1.4p+4,0x1p+5,0x1.ep+5)"
+        ],
+        "after": []
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "call traceJumpGround start=(0x1.6000000000000p+4,0x1.0000000000000p+5,0x1.a000000000000p+5)",
+          "call traceJumpGround start=(0x1.6000000000000p+4,0x1.0000000000000p+5,0x1.a000000000000p+5)",
+          "call traceJumpGround start=(0x1.6000000000000p+4,0x1.0000000000000p+5,0x1.a000000000000p+5)"
+        ],
+        "after": []
+      },
+      "linux-x86": {
+        "before": [
+          "call traceJumpGround start=(0x1.6p+4,0x1p+5,0x1.ap+5)",
+          "call traceJumpGround start=(0x1.6p+4,0x1p+5,0x1.ap+5)",
+          "call traceJumpGround start=(0x1.6p+4,0x1p+5,0x1.ap+5)"
+        ],
+        "after": []
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "call traceJumpGround start=(0x1.8000000000000p+4,0x1.0000000000000p+5,0x1.2000000000000p+5)",
+          "call traceJumpGround start=(0x1.8000000000000p+4,0x1.0000000000000p+5,0x1.2000000000000p+5)",
+          "call traceJumpGround start=(0x1.8000000000000p+4,0x1.0000000000000p+5,0x1.2000000000000p+5)"
+        ],
+        "after": []
+      },
+      "linux-x86": {
+        "before": [
+          "call traceJumpGround start=(0x1.8p+4,0x1p+5,0x1.2p+5)",
+          "call traceJumpGround start=(0x1.8p+4,0x1p+5,0x1.2p+5)",
+          "call traceJumpGround start=(0x1.8p+4,0x1p+5,0x1.2p+5)"
+        ],
+        "after": []
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "call traceJumpGround start=(0x1.2000040000000p+4,0x1.0000000000000p+5,0x1.e000000000000p+5)",
+          "call traceJumpGround start=(0x1.2000040000000p+4,0x1.0000000000000p+5,0x1.e000000000000p+5)",
+          "call traceJumpGround start=(0x1.2000040000000p+4,0x1.0000000000000p+5,0x1.e000000000000p+5)"
+        ],
+        "after": []
+      },
+      "linux-x86": {
+        "before": [
+          "call traceJumpGround start=(0x1.200004p+4,0x1p+5,0x1.ep+5)",
+          "call traceJumpGround start=(0x1.200004p+4,0x1p+5,0x1.ep+5)",
+          "call traceJumpGround start=(0x1.200004p+4,0x1p+5,0x1.ep+5)"
+        ],
+        "after": []
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "call traceJumpGround start=(0x1.4000080000000p+4,0x1.0000000000000p+5,0x1.e000000000000p+5)",
+          "call traceJumpGround start=(0x1.4000080000000p+4,0x1.0000000000000p+5,0x1.e000000000000p+5)",
+          "call traceJumpGround start=(0x1.4000080000000p+4,0x1.0000000000000p+5,0x1.e000000000000p+5)"
+        ],
+        "after": []
+      },
+      "linux-x86": {
+        "before": [
+          "call traceJumpGround start=(0x1.400008p+4,0x1p+5,0x1.dffffep+5)",
+          "call traceJumpGround start=(0x1.400008p+4,0x1p+5,0x1.dffffep+5)",
+          "call traceJumpGround start=(0x1.400008p+4,0x1p+5,0x1.dffffep+5)"
+        ],
+        "after": []
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "call traceJumpGround start=(0x1.60000c0000000p+4,0x1.0000000000000p+5,0x1.9ffffe0000000p+5)",
+          "call traceJumpGround start=(0x1.60000c0000000p+4,0x1.0000000000000p+5,0x1.9ffffe0000000p+5)",
+          "call traceJumpGround start=(0x1.60000c0000000p+4,0x1.0000000000000p+5,0x1.9ffffe0000000p+5)"
+        ],
+        "after": []
+      },
+      "linux-x86": {
+        "before": [
+          "call traceJumpGround start=(0x1.60000cp+4,0x1p+5,0x1.9ffffcp+5)",
+          "call traceJumpGround start=(0x1.60000cp+4,0x1p+5,0x1.9ffffcp+5)",
+          "call traceJumpGround start=(0x1.60000cp+4,0x1p+5,0x1.9ffffcp+5)"
+        ],
+        "after": []
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "call traceJumpGround start=(0x1.8000100000000p+4,0x1.0000000000000p+5,0x1.1ffffc0000000p+5)",
+          "call traceJumpGround start=(0x1.8000100000000p+4,0x1.0000000000000p+5,0x1.1ffffc0000000p+5)",
+          "call traceJumpGround start=(0x1.8000100000000p+4,0x1.0000000000000p+5,0x1.1ffffc0000000p+5)"
+        ],
+        "after": []
+      },
+      "linux-x86": {
+        "before": [
+          "call traceJumpGround start=(0x1.80001p+4,0x1p+5,0x1.1ffffcp+5)",
+          "call traceJumpGround start=(0x1.80001p+4,0x1p+5,0x1.1ffffcp+5)",
+          "call traceJumpGround start=(0x1.80001p+4,0x1p+5,0x1.1ffffcp+5)"
+        ],
+        "after": []
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "call traceJumpGround start=(0x1.8000100000000p+4,0x1.0000000000000p+5,0x1.2000000000000p+5)",
+          "call traceJumpGround start=(0x1.8000100000000p+4,0x1.0000000000000p+5,0x1.2000000000000p+5)",
+          "call traceJumpGround start=(0x1.8000100000000p+4,0x1.0000000000000p+5,0x1.2000000000000p+5)"
+        ],
+        "after": []
+      },
+      "linux-x86": {
+        "before": [
+          "call traceJumpGround start=(0x1.80001p+4,0x1p+5,0x1.2p+5)",
+          "call traceJumpGround start=(0x1.80001p+4,0x1p+5,0x1.2p+5)",
+          "call traceJumpGround start=(0x1.80001p+4,0x1p+5,0x1.2p+5)"
+        ],
+        "after": []
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "call traceJumpGround start=(0x1.2aaaa00000000p+4,0x1.0000000000000p+5,0x1.e71c720000000p+5)",
+          "call traceJumpGround start=(0x1.2aaaa00000000p+4,0x1.0000000000000p+5,0x1.e71c720000000p+5)",
+          "call traceJumpGround start=(0x1.2aaaa00000000p+4,0x1.0000000000000p+5,0x1.e71c720000000p+5)"
+        ],
+        "after": []
+      },
+      "linux-x86": {
+        "before": [
+          "call traceJumpGround start=(0x1.2aaaap+4,0x1p+5,0x1.e71c72p+5)",
+          "call traceJumpGround start=(0x1.2aaaap+4,0x1p+5,0x1.e71c72p+5)",
+          "call traceJumpGround start=(0x1.2aaaap+4,0x1p+5,0x1.e71c72p+5)"
+        ],
+        "after": []
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "call traceJumpGround start=(0x1.5555400000000p+4,0x1.0000000000000p+5,0x1.bc71c80000000p+5)",
+          "call traceJumpGround start=(0x1.5555400000000p+4,0x1.0000000000000p+5,0x1.bc71c80000000p+5)",
+          "call traceJumpGround start=(0x1.5555400000000p+4,0x1.0000000000000p+5,0x1.bc71c80000000p+5)"
+        ],
+        "after": []
+      },
+      "linux-x86": {
+        "before": [
+          "call traceJumpGround start=(0x1.55554p+4,0x1p+5,0x1.bc71c8p+5)",
+          "call traceJumpGround start=(0x1.55554p+4,0x1p+5,0x1.bc71c8p+5)",
+          "call traceJumpGround start=(0x1.55554p+4,0x1p+5,0x1.bc71c8p+5)"
+        ],
+        "after": []
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "call traceJumpGround start=(0x1.7fffe00000000p+4,0x1.0000000000000p+5,0x1.2000040000000p+5)",
+          "call traceJumpGround start=(0x1.7fffe00000000p+4,0x1.0000000000000p+5,0x1.2000040000000p+5)",
+          "call traceJumpGround start=(0x1.7fffe00000000p+4,0x1.0000000000000p+5,0x1.2000040000000p+5)"
+        ],
+        "after": []
+      },
+      "linux-x86": {
+        "before": [
+          "call traceJumpGround start=(0x1.7fffep+4,0x1p+5,0x1.200004p+5)",
+          "call traceJumpGround start=(0x1.7fffep+4,0x1p+5,0x1.200004p+5)",
+          "call traceJumpGround start=(0x1.7fffep+4,0x1p+5,0x1.200004p+5)"
+        ],
+        "after": []
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "call traceJumpGround start=(0x1.7fffe00000000p+4,0x1.0000000000000p+5,0x1.2000000000000p+5)",
+          "call traceJumpGround start=(0x1.7fffe00000000p+4,0x1.0000000000000p+5,0x1.2000000000000p+5)",
+          "call traceJumpGround start=(0x1.7fffe00000000p+4,0x1.0000000000000p+5,0x1.2000000000000p+5)"
+        ],
+        "after": []
+      },
+      "linux-x86": {
+        "before": [
+          "call traceJumpGround start=(0x1.7fffep+4,0x1p+5,0x1.2p+5)",
+          "call traceJumpGround start=(0x1.7fffep+4,0x1p+5,0x1.2p+5)",
+          "call traceJumpGround start=(0x1.7fffep+4,0x1p+5,0x1.2p+5)"
+        ],
+        "after": []
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "call traceJumpGround start=(0x1.2666700000000p+4,0x1.0000000000000p+5,0x1.e51eb60000000p+5)",
+          "call traceJumpGround start=(0x1.2666700000000p+4,0x1.0000000000000p+5,0x1.e51eb60000000p+5)",
+          "call traceJumpGround start=(0x1.2666700000000p+4,0x1.0000000000000p+5,0x1.e51eb60000000p+5)"
+        ],
+        "after": []
+      },
+      "linux-x86": {
+        "before": [
+          "call traceJumpGround start=(0x1.26667p+4,0x1p+5,0x1.e51eb6p+5)",
+          "call traceJumpGround start=(0x1.26667p+4,0x1p+5,0x1.e51eb6p+5)",
+          "call traceJumpGround start=(0x1.26667p+4,0x1p+5,0x1.e51eb6p+5)"
+        ],
+        "after": []
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "call traceJumpGround start=(0x1.4ccce00000000p+4,0x1.0000000000000p+5,0x1.ce147a0000000p+5)",
+          "call traceJumpGround start=(0x1.4ccce00000000p+4,0x1.0000000000000p+5,0x1.ce147a0000000p+5)",
+          "call traceJumpGround start=(0x1.4ccce00000000p+4,0x1.0000000000000p+5,0x1.ce147a0000000p+5)"
+        ],
+        "after": []
+      },
+      "linux-x86": {
+        "before": [
+          "call traceJumpGround start=(0x1.4cccep+4,0x1p+5,0x1.ce147ap+5)",
+          "call traceJumpGround start=(0x1.4cccep+4,0x1p+5,0x1.ce147ap+5)",
+          "call traceJumpGround start=(0x1.4cccep+4,0x1p+5,0x1.ce147ap+5)"
+        ],
+        "after": []
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "call traceJumpGround start=(0x1.7333500000000p+4,0x1.0000000000000p+5,0x1.5ae1480000000p+5)",
+          "call traceJumpGround start=(0x1.7333500000000p+4,0x1.0000000000000p+5,0x1.5ae1480000000p+5)",
+          "call traceJumpGround start=(0x1.7333500000000p+4,0x1.0000000000000p+5,0x1.5ae1480000000p+5)"
+        ],
+        "after": []
+      },
+      "linux-x86": {
+        "before": [
+          "call traceJumpGround start=(0x1.73335p+4,0x1p+5,0x1.5ae148p+5)",
+          "call traceJumpGround start=(0x1.73335p+4,0x1p+5,0x1.5ae148p+5)",
+          "call traceJumpGround start=(0x1.73335p+4,0x1p+5,0x1.5ae148p+5)"
+        ],
+        "after": []
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "call traceJumpGround start=(0x1.8333540000000p+4,0x1.0000000000000p+5,0x1.2000000000000p+5)",
+          "call traceJumpGround start=(0x1.8333540000000p+4,0x1.0000000000000p+5,0x1.2000000000000p+5)",
+          "call traceJumpGround start=(0x1.8333540000000p+4,0x1.0000000000000p+5,0x1.2000000000000p+5)"
+        ],
+        "after": []
+      },
+      "linux-x86": {
+        "before": [
+          "call traceJumpGround start=(0x1.833354p+4,0x1p+5,0x1.2p+5)",
+          "call traceJumpGround start=(0x1.833354p+4,0x1p+5,0x1.2p+5)",
+          "call traceJumpGround start=(0x1.833354p+4,0x1p+5,0x1.2p+5)"
+        ],
+        "after": []
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "call traceJumpGround start=(0x1.2580000000000p+4,0x1.0000000000000p+5,0x1.e48e000000000p+5)",
+          "call traceJumpGround start=(0x1.2580000000000p+4,0x1.0000000000000p+5,0x1.e48e000000000p+5)",
+          "call traceJumpGround start=(0x1.2580000000000p+4,0x1.0000000000000p+5,0x1.e48e000000000p+5)"
+        ],
+        "after": []
+      },
+      "linux-x86": {
+        "before": [
+          "call traceJumpGround start=(0x1.258p+4,0x1p+5,0x1.e48ep+5)",
+          "call traceJumpGround start=(0x1.258p+4,0x1p+5,0x1.e48ep+5)",
+          "call traceJumpGround start=(0x1.258p+4,0x1p+5,0x1.e48ep+5)"
+        ],
+        "after": []
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "call traceJumpGround start=(0x1.4b00000000000p+4,0x1.0000000000000p+5,0x1.d138000000000p+5)",
+          "call traceJumpGround start=(0x1.4b00000000000p+4,0x1.0000000000000p+5,0x1.d138000000000p+5)",
+          "call traceJumpGround start=(0x1.4b00000000000p+4,0x1.0000000000000p+5,0x1.d138000000000p+5)"
+        ],
+        "after": []
+      },
+      "linux-x86": {
+        "before": [
+          "call traceJumpGround start=(0x1.4bp+4,0x1p+5,0x1.d138p+5)",
+          "call traceJumpGround start=(0x1.4bp+4,0x1p+5,0x1.d138p+5)",
+          "call traceJumpGround start=(0x1.4bp+4,0x1p+5,0x1.d138p+5)"
+        ],
+        "after": []
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "call traceJumpGround start=(0x1.7080000000000p+4,0x1.0000000000000p+5,0x1.65fe000000000p+5)",
+          "call traceJumpGround start=(0x1.7080000000000p+4,0x1.0000000000000p+5,0x1.65fe000000000p+5)",
+          "call traceJumpGround start=(0x1.7080000000000p+4,0x1.0000000000000p+5,0x1.65fe000000000p+5)"
+        ],
+        "after": []
+      },
+      "linux-x86": {
+        "before": [
+          "call traceJumpGround start=(0x1.708p+4,0x1p+5,0x1.65fep+5)",
+          "call traceJumpGround start=(0x1.708p+4,0x1p+5,0x1.65fep+5)",
+          "call traceJumpGround start=(0x1.708p+4,0x1p+5,0x1.65fep+5)"
+        ],
+        "after": []
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "call traceJumpGround start=(0x1.8200000000000p+4,0x1.0000000000000p+5,0x1.2000000000000p+5)",
+          "call traceJumpGround start=(0x1.8200000000000p+4,0x1.0000000000000p+5,0x1.2000000000000p+5)",
+          "call traceJumpGround start=(0x1.8200000000000p+4,0x1.0000000000000p+5,0x1.2000000000000p+5)"
+        ],
+        "after": []
+      },
+      "linux-x86": {
+        "before": [
+          "call traceJumpGround start=(0x1.82p+4,0x1p+5,0x1.2p+5)",
+          "call traceJumpGround start=(0x1.82p+4,0x1p+5,0x1.2p+5)",
+          "call traceJumpGround start=(0x1.82p+4,0x1p+5,0x1.2p+5)"
+        ],
+        "after": []
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "call traceJumpGround start=(0x1.24d2800000000p+4,0x1.0000000000000p+5,0x1.e418740000000p+5)",
+          "call traceJumpGround start=(0x1.24d2800000000p+4,0x1.0000000000000p+5,0x1.e418740000000p+5)",
+          "call traceJumpGround start=(0x1.24d2800000000p+4,0x1.0000000000000p+5,0x1.e418740000000p+5)"
+        ],
+        "after": []
+      },
+      "linux-x86": {
+        "before": [
+          "call traceJumpGround start=(0x1.24d28p+4,0x1p+5,0x1.e41874p+5)",
+          "call traceJumpGround start=(0x1.24d28p+4,0x1p+5,0x1.e41874p+5)",
+          "call traceJumpGround start=(0x1.24d28p+4,0x1p+5,0x1.e41874p+5)"
+        ],
+        "after": []
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "call traceJumpGround start=(0x1.4d5de20000000p+4,0x1.0000000000000p+5,0x1.cd0cca0000000p+5)",
+          "call traceJumpGround start=(0x1.4d5de20000000p+4,0x1.0000000000000p+5,0x1.cd0cca0000000p+5)",
+          "call traceJumpGround start=(0x1.4d5de20000000p+4,0x1.0000000000000p+5,0x1.cd0cca0000000p+5)"
+        ],
+        "after": []
+      },
+      "linux-x86": {
+        "before": [
+          "call traceJumpGround start=(0x1.4d5de2p+4,0x1p+5,0x1.cd0ccap+5)",
+          "call traceJumpGround start=(0x1.4d5de2p+4,0x1p+5,0x1.cd0ccap+5)",
+          "call traceJumpGround start=(0x1.4d5de2p+4,0x1p+5,0x1.cd0ccap+5)"
+        ],
+        "after": []
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "call traceJumpGround start=(0x1.7230620000000p+4,0x1.0000000000000p+5,0x1.5f183e0000000p+5)",
+          "call traceJumpGround start=(0x1.7230620000000p+4,0x1.0000000000000p+5,0x1.5f183e0000000p+5)",
+          "call traceJumpGround start=(0x1.7230620000000p+4,0x1.0000000000000p+5,0x1.5f183e0000000p+5)"
+        ],
+        "after": []
+      },
+      "linux-x86": {
+        "before": [
+          "call traceJumpGround start=(0x1.723062p+4,0x1p+5,0x1.5f183ep+5)",
+          "call traceJumpGround start=(0x1.723062p+4,0x1p+5,0x1.5f183ep+5)",
+          "call traceJumpGround start=(0x1.723062p+4,0x1p+5,0x1.5f183ep+5)"
+        ],
+        "after": []
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "call traceJumpGround start=(0x1.80f1ce0000000p+4,0x1.0000000000000p+5,0x1.2000000000000p+5)",
+          "call traceJumpGround start=(0x1.80f1ce0000000p+4,0x1.0000000000000p+5,0x1.2000000000000p+5)",
+          "call traceJumpGround start=(0x1.80f1ce0000000p+4,0x1.0000000000000p+5,0x1.2000000000000p+5)"
+        ],
+        "after": []
+      },
+      "linux-x86": {
+        "before": [
+          "call traceJumpGround start=(0x1.80f1cep+4,0x1p+5,0x1.2p+5)",
+          "call traceJumpGround start=(0x1.80f1cep+4,0x1p+5,0x1.2p+5)",
+          "call traceJumpGround start=(0x1.80f1cep+4,0x1p+5,0x1.2p+5)"
+        ],
+        "after": []
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "call traceObjectiveVisibility end=(0x1.2000000000000p+7,0x1.0000000000000p+5,0x1.2000000000000p+5)",
+          "call traceObjectiveVisibility end=(0x1.2000000000000p+7,0x1.0000000000000p+5,0x1.e800000000000p+5)",
+          "call traceObjectiveVisibility end=(0x1.2000000000000p+7,0x1.0000000000000p+5,0x1.0000000000000p+1)"
+        ],
+        "after": []
+      },
+      "linux-x86": {
+        "before": [
+          "call traceObjectiveVisibility end=(0x1.2p+7,0x1p+5,0x1.2p+5)",
+          "call traceObjectiveVisibility end=(0x1.2p+7,0x1p+5,0x1.e8p+5)",
+          "call traceObjectiveVisibility end=(0x1.2p+7,0x1p+5,0x1p+1)"
+        ],
+        "after": []
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "call traceObjectiveVisibility end=(0x1.c000000000000p+7,0x1.0000000000000p+5,0x1.2000000000000p+5)",
+          "call traceObjectiveVisibility end=(0x1.c000000000000p+7,0x1.0000000000000p+5,0x1.e800000000000p+5)",
+          "call traceObjectiveVisibility end=(0x1.c000000000000p+7,0x1.0000000000000p+5,0x1.0000000000000p+1)"
+        ],
+        "after": []
+      },
+      "linux-x86": {
+        "before": [
+          "call traceObjectiveVisibility end=(0x1.cp+7,0x1p+5,0x1.2p+5)",
+          "call traceObjectiveVisibility end=(0x1.cp+7,0x1p+5,0x1.e8p+5)",
+          "call traceObjectiveVisibility end=(0x1.cp+7,0x1p+5,0x1p+1)"
+        ],
+        "after": []
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [],
+        "after": [
+          "call entityOfIndex index=2"
+        ]
+      },
+      "linux-x86": {
+        "before": [],
+        "after": [
+          "call entityOfIndex index=2"
+        ]
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [],
+        "after": [
+          "call entityOfIndex index=2",
+          "call entityOfIndex index=1",
+          "call szFromIndex index=0",
+          "call entityOfIndex index=2",
+          "call szFromIndex index=0",
+          "call entityOfIndex index=3",
+          "call szFromIndex index=0",
+          "call entityOfIndex index=4",
+          "call szFromIndex index=0",
+          "call entityOfIndex index=5",
+          "call szFromIndex index=0",
+          "call entityOfIndex index=6",
+          "call szFromIndex index=1",
+          "call entityOfIndex index=1",
+          "call szFromIndex index=0",
+          "call szFromIndex index=0",
+          "call entityOfIndex index=2",
+          "call szFromIndex index=0",
+          "call szFromIndex index=0",
+          "call entityOfIndex index=3",
+          "call szFromIndex index=0",
+          "call szFromIndex index=0",
+          "call entityOfIndex index=4",
+          "call szFromIndex index=0",
+          "call szFromIndex index=0",
+          "call entityOfIndex index=5",
+          "call szFromIndex index=0",
+          "call szFromIndex index=0",
+          "call entityOfIndex index=6",
+          "call szFromIndex index=1",
+          "call szFromIndex index=0"
+        ]
+      },
+      "linux-x86": {
+        "before": [],
+        "after": [
+          "call entityOfIndex index=2",
+          "call entityOfIndex index=1",
+          "call szFromIndex index=0",
+          "call entityOfIndex index=2",
+          "call szFromIndex index=0",
+          "call entityOfIndex index=3",
+          "call szFromIndex index=0",
+          "call entityOfIndex index=4",
+          "call szFromIndex index=0",
+          "call entityOfIndex index=5",
+          "call szFromIndex index=0",
+          "call entityOfIndex index=6",
+          "call szFromIndex index=1",
+          "call entityOfIndex index=1",
+          "call szFromIndex index=0",
+          "call szFromIndex index=0",
+          "call entityOfIndex index=2",
+          "call szFromIndex index=0",
+          "call szFromIndex index=0",
+          "call entityOfIndex index=3",
+          "call szFromIndex index=0",
+          "call szFromIndex index=0",
+          "call entityOfIndex index=4",
+          "call szFromIndex index=0",
+          "call szFromIndex index=0",
+          "call entityOfIndex index=5",
+          "call szFromIndex index=0",
+          "call szFromIndex index=0",
+          "call entityOfIndex index=6",
+          "call szFromIndex index=1",
+          "call szFromIndex index=0"
+        ]
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [],
+        "after": [
+          "call szFromIndex index=2",
+          "call szFromIndex index=3",
+          "call indexOfEdict",
+          "call traceObjectiveVisibility end=(0x1.c000000000000p+7,0x1.0000000000000p+5,0x1.2000000000000p+5)"
+        ]
+      },
+      "linux-x86": {
+        "before": [],
+        "after": [
+          "call szFromIndex index=2",
+          "call szFromIndex index=3",
+          "call indexOfEdict",
+          "call traceObjectiveVisibility end=(0x1.cp+7,0x1p+5,0x1.2p+5)"
+        ]
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "move actor=1 view=(0x0.0000000000000p+0,0x0.0000000000000p+0,0x0.0000000000000p+0) input=(0x0.0000000000000p+0,0x0.0000000000000p+0,0x0.0000000000000p+0) buttons=36 msec=100"
+        ],
+        "after": [
+          "move actor=1 view=(-0x0.0000000000000p+0,0x0.0000000000000p+0,0x0.0000000000000p+0) input=(0x0.0000000000000p+0,0x0.0000000000000p+0,0x0.0000000000000p+0) buttons=36 msec=100"
+        ]
+      },
+      "linux-x86": {
+        "before": [
+          "move actor=1 view=(0x0p+0,0x0p+0,0x0p+0) input=(0x0p+0,0x0p+0,0x0p+0) buttons=36 msec=100"
+        ],
+        "after": [
+          "move actor=1 view=(-0x0p+0,0x0p+0,0x0p+0) input=(0x0p+0,0x0p+0,0x0p+0) buttons=36 msec=100"
+        ]
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "call traceObjectiveVisibility end=(0x1.4000000000000p+6,0x1.0000000000000p+5,0x1.2000000000000p+5)",
+          "call traceObjectiveVisibility end=(0x1.4000000000000p+6,0x1.0000000000000p+5,0x1.e800000000000p+5)",
+          "call traceObjectiveVisibility end=(0x1.4000000000000p+6,0x1.0000000000000p+5,0x1.0000000000000p+1)"
+        ],
+        "after": []
+      },
+      "linux-x86": {
+        "before": [
+          "call traceObjectiveVisibility end=(0x1.4p+6,0x1p+5,0x1.2p+5)",
+          "call traceObjectiveVisibility end=(0x1.4p+6,0x1p+5,0x1.e8p+5)",
+          "call traceObjectiveVisibility end=(0x1.4p+6,0x1p+5,0x1p+1)"
+        ],
+        "after": []
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "call traceObjectiveVisibility end=(0x1.0000000000000p+5,0x1.9000000000000p+5,0x1.2000000000000p+5)",
+          "call traceObjectiveVisibility end=(0x1.0000000000000p+5,0x1.9000000000000p+5,0x1.e800000000000p+5)",
+          "call traceObjectiveVisibility end=(0x1.0000000000000p+5,0x1.9000000000000p+5,0x1.0000000000000p+1)"
+        ],
+        "after": []
+      },
+      "linux-x86": {
+        "before": [
+          "call traceObjectiveVisibility end=(0x1p+5,0x1.9p+5,0x1.2p+5)",
+          "call traceObjectiveVisibility end=(0x1p+5,0x1.9p+5,0x1.e8p+5)",
+          "call traceObjectiveVisibility end=(0x1p+5,0x1.9p+5,0x1p+1)"
+        ],
+        "after": []
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "call traceAvoidanceFloor end=(0x1.0000000000000p+4,0x1.0000000000000p+5,0x1.2000000000000p+5)",
+          "call traceAvoidanceFloor end=(0x1.0000000000000p+4,0x1.0000000000000p+5,0x1.e800000000000p+5)",
+          "call traceAvoidanceFloor end=(0x1.0000000000000p+4,0x1.0000000000000p+5,0x1.0000000000000p+1)"
+        ],
+        "after": []
+      },
+      "linux-x86": {
+        "before": [
+          "call traceAvoidanceFloor end=(0x1p+4,0x1p+5,0x1.2p+5)",
+          "call traceAvoidanceFloor end=(0x1p+4,0x1p+5,0x1.e8p+5)",
+          "call traceAvoidanceFloor end=(0x1p+4,0x1p+5,0x1p+1)"
+        ],
+        "after": []
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "call traceAvoidanceFloor end=(0x1.8000000000000p+5,0x1.0000000000000p+5,0x1.2000000000000p+5)",
+          "call traceAvoidanceFloor end=(0x1.8000000000000p+5,0x1.0000000000000p+5,0x1.e800000000000p+5)",
+          "call traceAvoidanceFloor end=(0x1.8000000000000p+5,0x1.0000000000000p+5,0x1.0000000000000p+1)"
+        ],
+        "after": []
+      },
+      "linux-x86": {
+        "before": [
+          "call traceAvoidanceFloor end=(0x1.8p+5,0x1p+5,0x1.2p+5)",
+          "call traceAvoidanceFloor end=(0x1.8p+5,0x1p+5,0x1.e8p+5)",
+          "call traceAvoidanceFloor end=(0x1.8p+5,0x1p+5,0x1p+1)"
+        ],
+        "after": []
+      }
+    }
+  ],
+  "edits": [
+    [
+      4509,
+      0
+    ],
+    [
+      4657,
+      0
+    ],
+    [
+      4788,
+      0
+    ],
+    [
+      4919,
+      0
+    ],
+    [
+      5067,
+      0
+    ],
+    [
+      5231,
+      1
+    ],
+    [
+      5377,
+      2
+    ],
+    [
+      5523,
+      3
+    ],
+    [
+      5669,
+      4
+    ],
+    [
+      5830,
+      4
+    ],
+    [
+      5998,
+      4
+    ],
+    [
+      6144,
+      4
+    ],
+    [
+      6290,
+      4
+    ],
+    [
+      6451,
+      4
+    ],
+    [
+      6833,
+      0
+    ],
+    [
+      6966,
+      0
+    ],
+    [
+      7097,
+      0
+    ],
+    [
+      7228,
+      0
+    ],
+    [
+      7391,
+      0
+    ],
+    [
+      7540,
+      1
+    ],
+    [
+      7686,
+      2
+    ],
+    [
+      7832,
+      3
+    ],
+    [
+      7993,
+      4
+    ],
+    [
+      8139,
+      4
+    ],
+    [
+      8307,
+      4
+    ],
+    [
+      8453,
+      4
+    ],
+    [
+      8599,
+      4
+    ],
+    [
+      8760,
+      4
+    ],
+    [
+      9142,
+      0
+    ],
+    [
+      9400,
+      0
+    ],
+    [
+      9656,
+      0
+    ],
+    [
+      9912,
+      0
+    ],
+    [
+      10200,
+      0
+    ],
+    [
+      10474,
+      5
+    ],
+    [
+      10745,
+      6
+    ],
+    [
+      11031,
+      7
+    ],
+    [
+      11302,
+      8
+    ],
+    [
+      11448,
+      9
+    ],
+    [
+      11616,
+      9
+    ],
+    [
+      11762,
+      9
+    ],
+    [
+      11908,
+      9
+    ],
+    [
+      12069,
+      9
+    ],
+    [
+      12451,
+      0
+    ],
+    [
+      12709,
+      0
+    ],
+    [
+      12965,
+      0
+    ],
+    [
+      13221,
+      0
+    ],
+    [
+      13509,
+      0
+    ],
+    [
+      13783,
+      5
+    ],
+    [
+      14054,
+      6
+    ],
+    [
+      14340,
+      7
+    ],
+    [
+      14611,
+      8
+    ],
+    [
+      14757,
+      9
+    ],
+    [
+      14925,
+      9
+    ],
+    [
+      15071,
+      9
+    ],
+    [
+      15217,
+      9
+    ],
+    [
+      15363,
+      9
+    ],
+    [
+      15745,
+      0
+    ],
+    [
+      16156,
+      0
+    ],
+    [
+      16550,
+      0
+    ],
+    [
+      16959,
+      0
+    ],
+    [
+      17370,
+      0
+    ],
+    [
+      17797,
+      10
+    ],
+    [
+      18206,
+      11
+    ],
+    [
+      18615,
+      12
+    ],
+    [
+      18776,
+      13
+    ],
+    [
+      18944,
+      13
+    ],
+    [
+      19090,
+      13
+    ],
+    [
+      19236,
+      13
+    ],
+    [
+      19382,
+      13
+    ],
+    [
+      19764,
+      0
+    ],
+    [
+      20175,
+      0
+    ],
+    [
+      20569,
+      0
+    ],
+    [
+      20978,
+      0
+    ],
+    [
+      21389,
+      0
+    ],
+    [
+      21816,
+      10
+    ],
+    [
+      22225,
+      11
+    ],
+    [
+      22634,
+      12
+    ],
+    [
+      22795,
+      13
+    ],
+    [
+      22963,
+      13
+    ],
+    [
+      23109,
+      13
+    ],
+    [
+      23255,
+      13
+    ],
+    [
+      23401,
+      13
+    ],
+    [
+      23783,
+      0
+    ],
+    [
+      24194,
+      0
+    ],
+    [
+      24588,
+      0
+    ],
+    [
+      24997,
+      0
+    ],
+    [
+      25408,
+      0
+    ],
+    [
+      25820,
+      14
+    ],
+    [
+      26244,
+      15
+    ],
+    [
+      26653,
+      16
+    ],
+    [
+      26934,
+      17
+    ],
+    [
+      27102,
+      17
+    ],
+    [
+      27248,
+      17
+    ],
+    [
+      27394,
+      17
+    ],
+    [
+      27540,
+      17
+    ],
+    [
+      27922,
+      0
+    ],
+    [
+      28333,
+      0
+    ],
+    [
+      28727,
+      0
+    ],
+    [
+      29136,
+      0
+    ],
+    [
+      29547,
+      0
+    ],
+    [
+      29959,
+      14
+    ],
+    [
+      30383,
+      15
+    ],
+    [
+      30792,
+      16
+    ],
+    [
+      31073,
+      17
+    ],
+    [
+      31241,
+      17
+    ],
+    [
+      31387,
+      17
+    ],
+    [
+      31533,
+      17
+    ],
+    [
+      31679,
+      17
+    ],
+    [
+      32061,
+      0
+    ],
+    [
+      32541,
+      0
+    ],
+    [
+      33004,
+      0
+    ],
+    [
+      33482,
+      0
+    ],
+    [
+      33962,
+      0
+    ],
+    [
+      34443,
+      18
+    ],
+    [
+      34936,
+      19
+    ],
+    [
+      35414,
+      20
+    ],
+    [
+      35741,
+      21
+    ],
+    [
+      35909,
+      21
+    ],
+    [
+      36055,
+      21
+    ],
+    [
+      36201,
+      21
+    ],
+    [
+      36347,
+      21
+    ],
+    [
+      36729,
+      0
+    ],
+    [
+      37209,
+      0
+    ],
+    [
+      37672,
+      0
+    ],
+    [
+      38150,
+      0
+    ],
+    [
+      38630,
+      0
+    ],
+    [
+      39111,
+      18
+    ],
+    [
+      39604,
+      19
+    ],
+    [
+      40082,
+      20
+    ],
+    [
+      40409,
+      21
+    ],
+    [
+      40577,
+      21
+    ],
+    [
+      40723,
+      21
+    ],
+    [
+      40869,
+      21
+    ],
+    [
+      41015,
+      21
+    ],
+    [
+      41397,
+      0
+    ],
+    [
+      41716,
+      0
+    ],
+    [
+      41995,
+      0
+    ],
+    [
+      42312,
+      0
+    ],
+    [
+      42608,
+      0
+    ],
+    [
+      42928,
+      22
+    ],
+    [
+      43237,
+      23
+    ],
+    [
+      43554,
+      24
+    ],
+    [
+      43766,
+      25
+    ],
+    [
+      43934,
+      25
+    ],
+    [
+      44080,
+      25
+    ],
+    [
+      44226,
+      25
+    ],
+    [
+      44372,
+      25
+    ],
+    [
+      44754,
+      0
+    ],
+    [
+      45073,
+      0
+    ],
+    [
+      45352,
+      0
+    ],
+    [
+      45669,
+      0
+    ],
+    [
+      45965,
+      0
+    ],
+    [
+      46285,
+      22
+    ],
+    [
+      46594,
+      23
+    ],
+    [
+      46911,
+      24
+    ],
+    [
+      47123,
+      25
+    ],
+    [
+      47291,
+      25
+    ],
+    [
+      47437,
+      25
+    ],
+    [
+      47583,
+      25
+    ],
+    [
+      47729,
+      25
+    ],
+    [
+      91392,
+      26
+    ],
+    [
+      91557,
+      26
+    ],
+    [
+      91741,
+      26
+    ],
+    [
+      91913,
+      26
+    ],
+    [
+      92085,
+      26
+    ],
+    [
+      92272,
+      26
+    ],
+    [
+      92444,
+      27
+    ],
+    [
+      92454,
+      28
+    ],
+    [
+      92509,
+      28
+    ],
+    [
+      92614,
+      27
+    ],
+    [
+      92624,
+      28
+    ],
+    [
+      92676,
+      28
+    ],
+    [
+      92762,
+      27
+    ],
+    [
+      92772,
+      28
+    ],
+    [
+      92824,
+      28
+    ],
+    [
+      92895,
+      27
+    ],
+    [
+      92905,
+      28
+    ],
+    [
+      92957,
+      29
+    ],
+    [
+      92958,
+      30
+    ],
+    [
+      92961,
+      31
+    ],
+    [
+      93028,
+      27
+    ],
+    [
+      93038,
+      28
+    ],
+    [
+      93090,
+      29
+    ],
+    [
+      93091,
+      30
+    ],
+    [
+      93094,
+      31
+    ],
+    [
+      93176,
+      27
+    ],
+    [
+      93186,
+      28
+    ],
+    [
+      93238,
+      29
+    ],
+    [
+      93239,
+      30
+    ],
+    [
+      93242,
+      31
+    ],
+    [
+      93314,
+      32
+    ],
+    [
+      93466,
+      32
+    ],
+    [
+      93634,
+      32
+    ],
+    [
+      93787,
+      32
+    ],
+    [
+      93940,
+      32
+    ],
+    [
+      94108,
+      32
+    ],
+    [
+      94261,
+      32
+    ],
+    [
+      94417,
+      32
+    ],
+    [
+      94585,
+      32
+    ],
+    [
+      94738,
+      32
+    ],
+    [
+      94891,
+      32
+    ],
+    [
+      95059,
+      32
+    ],
+    [
+      95256,
+      32
+    ],
+    [
+      95409,
+      32
+    ],
+    [
+      95577,
+      32
+    ],
+    [
+      95730,
+      32
+    ],
+    [
+      95885,
+      32
+    ],
+    [
+      96047,
+      32
+    ],
+    [
+      96258,
+      32
+    ],
+    [
+      96405,
+      32
+    ],
+    [
+      96567,
+      32
+    ],
+    [
+      96714,
+      32
+    ],
+    [
+      96861,
+      32
+    ],
+    [
+      97027,
+      32
+    ],
+    [
+      97202,
+      32
+    ],
+    [
+      97358,
+      32
+    ],
+    [
+      97520,
+      32
+    ],
+    [
+      97667,
+      32
+    ],
+    [
+      97814,
+      32
+    ],
+    [
+      97976,
+      32
+    ],
+    [
+      98123,
+      32
+    ],
+    [
+      98270,
+      32
+    ],
+    [
+      98432,
+      32
+    ],
+    [
+      98580,
+      32
+    ],
+    [
+      98729,
+      32
+    ],
+    [
+      98891,
+      32
+    ],
+    [
+      99038,
+      32
+    ],
+    [
+      99185,
+      32
+    ],
+    [
+      99347,
+      32
+    ],
+    [
+      99494,
+      32
+    ],
+    [
+      99641,
+      32
+    ],
+    [
+      99803,
+      32
+    ],
+    [
+      99950,
+      32
+    ],
+    [
+      100097,
+      32
+    ],
+    [
+      100259,
+      32
+    ],
+    [
+      100408,
+      32
+    ],
+    [
+      100556,
+      32
+    ],
+    [
+      100718,
+      32
+    ],
+    [
+      100886,
+      32
+    ],
+    [
+      101029,
+      32
+    ],
+    [
+      101181,
+      32
+    ],
+    [
+      101318,
+      32
+    ],
+    [
+      101455,
+      32
+    ],
+    [
+      101607,
+      32
+    ],
+    [
+      101761,
+      32
+    ],
+    [
+      101920,
+      32
+    ],
+    [
+      102101,
+      32
+    ],
+    [
+      102267,
+      32
+    ],
+    [
+      102433,
+      32
+    ],
+    [
+      102614,
+      32
+    ],
+    [
+      102780,
+      32
+    ],
+    [
+      102949,
+      32
+    ],
+    [
+      103130,
+      32
+    ],
+    [
+      103296,
+      32
+    ],
+    [
+      103462,
+      32
+    ],
+    [
+      103643,
+      32
+    ],
+    [
+      103806,
+      32
+    ],
+    [
+      103960,
+      32
+    ],
+    [
+      104129,
+      32
+    ],
+    [
+      104283,
+      32
+    ],
+    [
+      104438,
+      32
+    ],
+    [
+      104600,
+      32
+    ],
+    [
+      104760,
+      32
+    ],
+    [
+      104923,
+      32
+    ],
+    [
+      105109,
+      32
+    ],
+    [
+      105280,
+      32
+    ],
+    [
+      105451,
+      32
+    ],
+    [
+      105637,
+      32
+    ],
+    [
+      105808,
+      32
+    ],
+    [
+      105982,
+      32
+    ],
+    [
+      106168,
+      32
+    ],
+    [
+      106339,
+      32
+    ],
+    [
+      106510,
+      32
+    ],
+    [
+      106696,
+      32
+    ],
+    [
+      106907,
+      32
+    ],
+    [
+      107083,
+      32
+    ],
+    [
+      107265,
+      32
+    ],
+    [
+      107432,
+      32
+    ],
+    [
+      107599,
+      32
+    ],
+    [
+      107781,
+      32
+    ],
+    [
+      107948,
+      32
+    ],
+    [
+      108115,
+      32
+    ],
+    [
+      108297,
+      32
+    ],
+    [
+      108464,
+      32
+    ],
+    [
+      108632,
+      32
+    ],
+    [
+      108814,
+      32
+    ],
+    [
+      108981,
+      32
+    ],
+    [
+      109150,
+      32
+    ],
+    [
+      109332,
+      32
+    ],
+    [
+      109499,
+      32
+    ],
+    [
+      109666,
+      32
+    ],
+    [
+      109848,
+      32
+    ],
+    [
+      110015,
+      32
+    ],
+    [
+      110182,
+      32
+    ],
+    [
+      110364,
+      32
+    ],
+    [
+      110531,
+      32
+    ],
+    [
+      110700,
+      32
+    ],
+    [
+      110882,
+      32
+    ],
+    [
+      111049,
+      33
+    ],
+    [
+      111182,
+      33
+    ],
+    [
+      111327,
+      33
+    ],
+    [
+      111457,
+      33
+    ],
+    [
+      111587,
+      33
+    ],
+    [
+      111732,
+      33
+    ],
+    [
+      111877,
+      32
+    ],
+    [
+      111982,
+      32
+    ],
+    [
+      112092,
+      32
+    ],
+    [
+      112213,
+      32
+    ],
+    [
+      112319,
+      32
+    ],
+    [
+      112425,
+      32
+    ],
+    [
+      112546,
+      32
+    ],
+    [
+      112652,
+      32
+    ],
+    [
+      112758,
+      32
+    ],
+    [
+      112879,
+      32
+    ],
+    [
+      112985,
+      32
+    ],
+    [
+      113091,
+      32
+    ],
+    [
+      113212,
+      32
+    ],
+    [
+      113318,
+      32
+    ],
+    [
+      113424,
+      32
+    ],
+    [
+      113545,
+      32
+    ],
+    [
+      113651,
+      32
+    ],
+    [
+      113757,
+      32
+    ],
+    [
+      113878,
+      32
+    ],
+    [
+      113984,
+      32
+    ],
+    [
+      114090,
+      32
+    ],
+    [
+      114211,
+      32
+    ],
+    [
+      114317,
+      32
+    ],
+    [
+      114423,
+      32
+    ],
+    [
+      114544,
+      32
+    ],
+    [
+      114650,
+      32
+    ],
+    [
+      114756,
+      32
+    ],
+    [
+      114877,
+      32
+    ],
+    [
+      114983,
+      32
+    ],
+    [
+      115089,
+      32
+    ],
+    [
+      115210,
+      32
+    ],
+    [
+      115316,
+      32
+    ],
+    [
+      115422,
+      32
+    ],
+    [
+      115543,
+      32
+    ],
+    [
+      115649,
+      32
+    ],
+    [
+      115755,
+      32
+    ],
+    [
+      115876,
+      32
+    ],
+    [
+      115982,
+      32
+    ],
+    [
+      116092,
+      32
+    ],
+    [
+      116214,
+      32
+    ],
+    [
+      116323,
+      32
+    ],
+    [
+      116429,
+      32
+    ],
+    [
+      116550,
+      32
+    ],
+    [
+      116656,
+      32
+    ],
+    [
+      116762,
+      32
+    ],
+    [
+      116883,
+      32
+    ],
+    [
+      116989,
+      32
+    ],
+    [
+      117095,
+      32
+    ],
+    [
+      117216,
+      32
+    ],
+    [
+      117322,
+      32
+    ],
+    [
+      117428,
+      32
+    ],
+    [
+      117549,
+      32
+    ],
+    [
+      117655,
+      32
+    ],
+    [
+      117761,
+      32
+    ],
+    [
+      117882,
+      32
+    ],
+    [
+      117988,
+      32
+    ],
+    [
+      118094,
+      32
+    ],
+    [
+      118215,
+      32
+    ],
+    [
+      118321,
+      32
+    ],
+    [
+      118427,
+      32
+    ],
+    [
+      118548,
+      32
+    ],
+    [
+      118654,
+      32
+    ],
+    [
+      118760,
+      32
+    ],
+    [
+      118881,
+      32
+    ],
+    [
+      118987,
+      32
+    ],
+    [
+      119093,
+      32
+    ],
+    [
+      119214,
+      32
+    ],
+    [
+      119320,
+      32
+    ],
+    [
+      119426,
+      32
+    ],
+    [
+      119547,
+      32
+    ],
+    [
+      119653,
+      32
+    ],
+    [
+      119759,
+      32
+    ],
+    [
+      119880,
+      32
+    ],
+    [
+      119986,
+      32
+    ],
+    [
+      120092,
+      32
+    ],
+    [
+      120213,
+      32
+    ],
+    [
+      120323,
+      32
+    ],
+    [
+      120429,
+      32
+    ],
+    [
+      120553,
+      32
+    ],
+    [
+      120662,
+      32
+    ],
+    [
+      120771,
+      32
+    ],
+    [
+      120895,
+      32
+    ],
+    [
+      121004,
+      32
+    ],
+    [
+      121113,
+      32
+    ],
+    [
+      121237,
+      32
+    ],
+    [
+      121346,
+      32
+    ],
+    [
+      121455,
+      32
+    ],
+    [
+      121579,
+      32
+    ],
+    [
+      121688,
+      32
+    ],
+    [
+      121797,
+      32
+    ],
+    [
+      121921,
+      32
+    ],
+    [
+      122030,
+      32
+    ],
+    [
+      122139,
+      32
+    ],
+    [
+      122263,
+      32
+    ],
+    [
+      122372,
+      32
+    ],
+    [
+      122481,
+      32
+    ],
+    [
+      122605,
+      32
+    ],
+    [
+      122714,
+      32
+    ],
+    [
+      122823,
+      32
+    ],
+    [
+      122947,
+      32
+    ],
+    [
+      123056,
+      32
+    ],
+    [
+      125984,
+      34
+    ],
+    [
+      126066,
+      35
+    ],
+    [
+      126209,
+      34
+    ],
+    [
+      126297,
+      35
+    ],
+    [
+      126508,
+      34
+    ],
+    [
+      126617,
+      35
+    ],
+    [
+      126841,
+      34
+    ],
+    [
+      126965,
+      35
+    ],
+    [
+      127212,
+      34
+    ],
+    [
+      127336,
+      35
+    ],
+    [
+      127707,
+      34
+    ],
+    [
+      127834,
+      35
+    ],
+    [
+      128252,
+      34
+    ],
+    [
+      128379,
+      35
+    ],
+    [
+      128812,
+      34
+    ],
+    [
+      128939,
+      35
+    ],
+    [
+      129357,
+      34
+    ],
+    [
+      129484,
+      35
+    ],
+    [
+      129902,
+      34
+    ],
+    [
+      130029,
+      35
+    ],
+    [
+      130462,
+      34
+    ],
+    [
+      130589,
+      35
+    ],
+    [
+      131007,
+      34
+    ],
+    [
+      131134,
+      35
+    ],
+    [
+      131567,
+      34
+    ],
+    [
+      131694,
+      35
+    ]
+  ]
+}

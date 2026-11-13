@@ -1052,10 +1052,11 @@ bool BotObservationRuntime::buildManagedWorldSnapshot(std::size_t index,
 		{
 			continue;
 		}
-		const runtime::LifecycleToken token =
-			services_->service_lifecycle().tokenForSlot(static_cast<std::uint32_t>(slot));
-		const std::uint32_t generation = token.slotGeneration == 0U ? 1U : token.slotGeneration;
-		const world::ActorKey actor = {static_cast<std::uint32_t>(slot), generation};
+		const auto token = services_->service_lifecycle().tokenForSlot(static_cast<std::uint32_t>(slot));
+		// Self belongs to SnapshotIdentity's managed observer. Contacts remain
+		// connection-scoped, so replacing any client invalidates old target keys.
+		const world::ActorKey actor = entity == handle.entity ? observer :
+			world::ActorKey{static_cast<std::uint32_t>(slot), token.slotGeneration == 0U ? 1U : token.slotGeneration};
 		compat::CompatibilityObservation compatObservation = {};
 		if (observationAdapter_.collectActor(entity, actor, frame, observationTiming,
 											 &compatObservation) !=

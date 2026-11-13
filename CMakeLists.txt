@@ -993,7 +993,11 @@ if(ASTRABOT_BUILD_TESTS AND ASTRABOT_BUILD_METAMOD)
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/runtime_characterization_contract.py"
       --executable "$<TARGET_FILE:astrabot_compat_actor_command>"
       --baseline "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/runtime_characterization/${characterization_platform}.txt.gz"
+      --correction "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/runtime_characterization/actor-generation-correction.json"
+      --platform "${characterization_platform}"
       --output "${CMAKE_CURRENT_BINARY_DIR}/runtime-characterization.txt")
+  add_test(NAME astrabot_runtime_characterization_checker
+    COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_CURRENT_SOURCE_DIR}/tests/runtime_characterization_checker_tests.py")
   # This fixture and astrabot_compat_actor_command temporarily create the same
   # profile files; never execute them concurrently in the source directory.
   set_tests_properties(astrabot_compat_actor_command astrabot_runtime_characterization PROPERTIES
@@ -1020,6 +1024,13 @@ if(ASTRABOT_BUILD_TESTS AND ASTRABOT_BUILD_METAMOD)
   target_link_libraries(astrabot_weapon_switch_runtime PRIVATE astrabot_core astrabot_regamedll_provider)
   astrabot_apply_warnings(astrabot_weapon_switch_runtime)
   add_test(NAME astrabot_weapon_switch_runtime COMMAND astrabot_weapon_switch_runtime --target-log)
+  add_executable(astrabot_actor_identity_runtime tests/actor_identity_runtime_tests.cpp ${combat_target_log_sources})
+  target_include_directories(astrabot_actor_identity_runtime PRIVATE ${combat_target_log_includes})
+  target_link_libraries(astrabot_actor_identity_runtime PRIVATE astrabot_core astrabot_regamedll_provider)
+  astrabot_apply_warnings(astrabot_actor_identity_runtime)
+  add_test(NAME astrabot_actor_identity_runtime COMMAND astrabot_actor_identity_runtime --target-log)
+  set_tests_properties(astrabot_actor_identity_runtime PROPERTIES
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" RESOURCE_LOCK astrabot_actor_command_profile)
   set_tests_properties(astrabot_weapon_switch_runtime PROPERTIES
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" RESOURCE_LOCK astrabot_actor_command_profile)
   set_tests_properties(astrabot_bomb_guard_look PROPERTIES
