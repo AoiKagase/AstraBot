@@ -79,22 +79,6 @@ struct PlantTargetPoint {
 	float z;
 };
 
-struct PlantAttemptState {
-	bool active;
-	float startedAt;
-	float retryAfter;
-};
-
-enum class PlantAttemptResult : std::uint8_t {
-	OutsideSite,
-	RetryPending,
-	Ready,
-	Continuing,
-	TimedOut,
-	Confirmed,
-	InvalidTime
-};
-
 class ActionAdapter
 {
   public:
@@ -114,19 +98,11 @@ class ActionAdapter
 	static constexpr float kLegacyBombTargetRadius = 256.0f;
 	static bool isBombTargetClassname(const char *classname) noexcept;
 	static bool isLegacyInfoBombTargetClassname(const char *classname) noexcept;
-	static bool canBeginPlantObjective(bool hasPlantAssignment,
-		bool carryingBomb, bool isTerrorist, bool selectedTargetAvailable) noexcept;
 	static bool withinLegacyBombTargetRadius(
 		const PlantTargetPoint &center, const PlantTargetPoint &actor) noexcept;
-	static constexpr float kPlantAttemptTimeoutSeconds = 5.0f;
-	static constexpr float kPlantAttemptRetrySeconds = 1.0f;
 	static bool validPlantTargetBounds(const PlantTargetBounds &bounds) noexcept;
 	static bool overlapsPlantTarget(const PlantTargetBounds &site,
 		const PlantTargetBounds &actor) noexcept;
-	static bool plantAttemptExpired(float elapsedSeconds) noexcept;
-	static PlantAttemptResult evaluatePlantAttempt(PlantAttemptState &state,
-		bool actorOverlapsSite, bool plantedConfirmed, float now) noexcept;
-	static void recordPlantAttemptDispatched(PlantAttemptState &state, float now) noexcept;
 	static ActionKind plantActionForWeaponObservation(bool observationAvailable,
 		bool active, std::uint8_t weaponId, bool attackAlreadyDispatched) noexcept;
 

@@ -1208,8 +1208,7 @@ void BotBehaviorRuntime::observeC4SelectionDispatched(std::size_t index,
 		state.kind == team::TeamObjectiveKind::PlantC4)
 	{
 		state.c4SelectionCommandDispatched = true;
-		ActionAdapter::recordPlantAttemptDispatched(state.plantAttempt,
-													services_->service_globals() != nullptr
+		state.plantAttempt.recordDispatched(services_->service_globals() != nullptr
 														? services_->service_globals()->time
 														: std::numeric_limits<float>::quiet_NaN());
 	}
@@ -1227,8 +1226,7 @@ void BotBehaviorRuntime::observeC4AttackDispatched(std::size_t index,
 		actionState.roundGeneration == services_->service_lifecycle().roundGeneration())
 	{
 		actionState.c4AttackInputDispatched = true;
-		ActionAdapter::recordPlantAttemptDispatched(actionState.plantAttempt,
-													services_->service_globals() != nullptr
+		actionState.plantAttempt.recordDispatched(services_->service_globals() != nullptr
 														? services_->service_globals()->time
 														: std::numeric_limits<float>::quiet_NaN());
 		if (services_->service_runtimeProfiler().enabled() &&
@@ -1258,8 +1256,7 @@ void BotBehaviorRuntime::observeNeutralC4AttackDispatched(std::size_t index,
 		actionState.kind == team::TeamObjectiveKind::PlantC4)
 	{
 		actionState.c4AttackInputDispatched = true;
-		ActionAdapter::recordPlantAttemptDispatched(actionState.plantAttempt,
-													services_->service_globals() != nullptr
+		actionState.plantAttempt.recordDispatched(services_->service_globals() != nullptr
 														? services_->service_globals()->time
 														: std::numeric_limits<float>::quiet_NaN());
 	}
@@ -1596,8 +1593,7 @@ BotBehaviorRuntime::decideObjectiveAction(ManagedActionContext &ctx)
 		if (plantedBomb != nullptr && plantState.active && plantState.actor == actor &&
 			plantState.kind == team::TeamObjectiveKind::PlantC4)
 		{
-			(void)ActionAdapter::evaluatePlantAttempt(
-				plantState.plantAttempt, false, true,
+			(void)plantState.plantAttempt.evaluate(false, true,
 				services_->service_globals() != nullptr ? services_->service_globals()->time
 														: std::numeric_limits<float>::quiet_NaN());
 			if (services_->service_runtimeProfiler().enabled() && gpMetaUtilFuncs != nullptr &&
@@ -1686,7 +1682,7 @@ BotBehaviorRuntime::decideObjectiveAction(ManagedActionContext &ctx)
 			{
 				objectiveKind = objective.objective.kind;
 			}
-			if (ActionAdapter::canBeginPlantObjective(
+			if (objectives::PlantAttemptController::canBeginObjective(
 					hasPlantAssignment, carryingBomb, teamRole == objectives::TeamRole::Terrorist,
 					haveSelectedPlantTarget && actors_[index].managedBombApproaches.finished))
 			{
@@ -1843,9 +1839,8 @@ BotBehaviorRuntime::decideObjectiveAction(ManagedActionContext &ctx)
 							const float now = services_->service_globals() != nullptr
 												  ? services_->service_globals()->time
 												  : std::numeric_limits<float>::quiet_NaN();
-							const PlantAttemptResult attempt = ActionAdapter::evaluatePlantAttempt(
-								actionState.plantAttempt, actorInSite, plantedBomb != nullptr, now);
-							if (attempt == PlantAttemptResult::TimedOut)
+							const objectives::PlantAttemptResult attempt = actionState.plantAttempt.evaluate(actorInSite, plantedBomb != nullptr, now);
+							if (attempt == objectives::PlantAttemptResult::TimedOut)
 							{
 								actionState.c4SelectionCommandDispatched = false;
 								actionState.c4AttackInputDispatched = false;
@@ -1864,8 +1859,8 @@ BotBehaviorRuntime::decideObjectiveAction(ManagedActionContext &ctx)
 									services_->service_lifecycle().mapGeneration() &&
 								weapon.roundGeneration ==
 									services_->service_lifecycle().roundGeneration();
-							const bool canContinuePlant = attempt == PlantAttemptResult::Ready ||
-														  attempt == PlantAttemptResult::Continuing;
+							const bool canContinuePlant = attempt == objectives::PlantAttemptResult::Ready ||
+														  attempt == objectives::PlantAttemptResult::Continuing;
 							if (services_->service_runtimeProfiler().enabled() &&
 								(services_->service_adapterFrameCount() % 16U) == 0U &&
 								gpMetaUtilFuncs != nullptr &&

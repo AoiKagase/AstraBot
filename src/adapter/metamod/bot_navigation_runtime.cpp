@@ -1035,7 +1035,7 @@ NavigationUpdate BotNavigationRuntime::updateNavigation(std::size_t index,
 		 objectiveAction.actor.generation == handle.actor.actorGeneration &&
 		 objectiveAction.mapGeneration == services_->service_lifecycle().mapGeneration() &&
 		 objectiveAction.roundGeneration == services_->service_lifecycle().roundGeneration() &&
-		 objectiveAction.plantAttempt.active);
+		 objectiveAction.plantAttempt.active());
 	// Navigation-only teammate occupancy follows CSBot's live player scan.
 	// Enemy perception and objective knowledge retain their existing gates.
 	observation.friendRayOriginAvailable = true;

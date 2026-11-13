@@ -30,6 +30,7 @@ include(cmake/AstraBotBuild.cmake)
   src/core/combat/combat_intent.cpp
   src/core/objectives/objective_state.cpp
   src/core/objectives/round_objectives.cpp
+  src/core/objectives/plant_attempt.cpp
   src/core/team/team_report.cpp
   src/core/team/round_objective_coordinator.cpp
   src/core/team/radio_intent.cpp
@@ -75,6 +76,11 @@ astrabot_apply_warnings(astrabot_core)
 
 if(ASTRABOT_BUILD_TESTS)
   enable_testing()
+
+  add_executable(astrabot_plant_attempt tests/plant_attempt_tests.cpp)
+  target_link_libraries(astrabot_plant_attempt PRIVATE astrabot_core)
+  astrabot_apply_warnings(astrabot_plant_attempt)
+  add_test(NAME astrabot_plant_attempt COMMAND astrabot_plant_attempt)
 
   add_executable(astrabot_public_observation tests/public_observation_tests.cpp)
   target_link_libraries(astrabot_public_observation PRIVATE astrabot_core)

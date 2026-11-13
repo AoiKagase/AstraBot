@@ -28,6 +28,7 @@
 #include "astrabot/compat/teamwork_policy.hpp"
 #include "astrabot/compat/scenario_behavior.hpp"
 #include "astrabot/objectives/round_objectives.hpp"
+#include "astrabot/objectives/plant_attempt.hpp"
 #include "astrabot/objectives/bomb_site_route_selection.hpp"
 #include "astrabot/team/round_objective_coordinator.hpp"
 #include "astrabot/perception/perception.hpp"
@@ -108,7 +109,7 @@ struct ManagedObjectiveActionState
 	std::uint32_t targetSiteIdentity;
 	bool c4SelectionCommandDispatched;
 	bool c4AttackInputDispatched;
-	PlantAttemptState plantAttempt;
+	objectives::PlantAttemptController plantAttempt;
 };
 
 struct ManagedCurrentWeaponObservation

@@ -9,6 +9,8 @@ namespace compat
 {
 namespace
 {
+// State residence begins on entry, independently of delivered plant inputs.
+constexpr float kPlantStateTimeoutSeconds = 5.0f;
 const std::array<CompatibilityStateId, CompatibilityStateMachine::kNormalStateCount>
 	kNormalStates = {{
 		CompatibilityStateId::Idle,
@@ -625,7 +627,7 @@ void CompatibilityStateMachine::updateBehavior(const StateUpdateContext &context
 		// fall through
 	case CompatibilityStateId::PlantBomb:
 		if(state_==CompatibilityStateId::PlantBomb && input.navigationOwned &&
-			context.timestamp-stateTimestamp_>5.0f)
+			context.timestamp-stateTimestamp_>kPlantStateTimeoutSeconds)
 		{
 			next=CompatibilityStateId::Idle;
 			break;

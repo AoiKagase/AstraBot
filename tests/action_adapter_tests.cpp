@@ -227,10 +227,6 @@ bool testPlantObjectiveAcceptsAnySelectedBombTargetClass()
 		check(ActionAdapter::isLegacyInfoBombTargetClassname("INFO_BOMB_TARGET") &&
 			!ActionAdapter::isLegacyInfoBombTargetClassname("func_bomb_target"),
 			"legacy info radius classifier is case-insensitive") &&
-		check(ActionAdapter::canBeginPlantObjective(true, true, true, true),
-			"selected info-only site permits a C4-carrying Terrorist to plant") &&
-		check(!ActionAdapter::canBeginPlantObjective(true, true, true, false),
-			"plant action requires a target selected by the shared BombTarget selector") &&
 		check(ActionAdapter::withinLegacyBombTargetRadius(
 				infoTargetCenter, atLegacyRadius) &&
 			!ActionAdapter::withinLegacyBombTargetRadius(
@@ -238,7 +234,7 @@ bool testPlantObjectiveAcceptsAnySelectedBombTargetClass()
 			"info_bomb_target plant region follows the public 256-unit boundary");
 }
 
-bool testPlantZoneBoundsAndTimeout()
+bool testPlantZoneBounds()
 {
 	using astrabot::metamod::ActionAdapter;
 	using astrabot::metamod::PlantTargetBounds;
@@ -252,63 +248,9 @@ bool testPlantZoneBoundsAndTimeout()
 		check(!ActionAdapter::overlapsPlantTarget(site, outside),
 			"plant attempt is blocked outside the selected bomb-target bounds") &&
 		check(!ActionAdapter::overlapsPlantTarget(site, invalid),
-			"invalid site bounds fail closed") &&
-		check(!ActionAdapter::plantAttemptExpired(4.99f),
-			"plant attempt is live before ZBot timeout") &&
-		check(ActionAdapter::plantAttemptExpired(5.0f),
-			"plant attempt times out at five seconds") &&
-		check(!ActionAdapter::plantAttemptExpired(
-			std::numeric_limits<float>::quiet_NaN()),
-			"nonfinite plant elapsed time does not trigger timeout");
+			"invalid site bounds fail closed");
 }
 
-bool testPlantAttemptRequiresSiteAndTimesOutAfterDeliveredInput()
-{
-	using astrabot::metamod::ActionAdapter;
-	using astrabot::metamod::PlantAttemptResult;
-	using astrabot::metamod::PlantAttemptState;
-	PlantAttemptState state{};
-	if (!check(ActionAdapter::evaluatePlantAttempt(state, false, false, 10.0f) ==
-			PlantAttemptResult::OutsideSite,
-			"plant attempt is suppressed outside selected target bounds"))
-	{
-		return false;
-	}
-	if (!check(ActionAdapter::evaluatePlantAttempt(state, true, false, 10.0f) ==
-			PlantAttemptResult::Ready,
-			"plant attempt may start after entering selected target bounds"))
-	{
-		return false;
-	}
-	ActionAdapter::recordPlantAttemptDispatched(state, 10.0f);
-	if (!check(ActionAdapter::evaluatePlantAttempt(state, true, false, 14.99f) ==
-			PlantAttemptResult::Continuing,
-			"delivered attack input keeps the plant attempt active for five seconds"))
-	{
-		return false;
-	}
-	if (!check(ActionAdapter::evaluatePlantAttempt(state, true, false, 15.0f) ==
-			PlantAttemptResult::TimedOut && !state.active,
-			"unconfirmed plant times out and releases the action state"))
-	{
-		return false;
-	}
-	if (!check(ActionAdapter::evaluatePlantAttempt(state, true, false, 15.5f) ==
-			PlantAttemptResult::RetryPending,
-			"timed out plant waits before replanning an attempt"))
-	{
-		return false;
-	}
-	if (!check(ActionAdapter::evaluatePlantAttempt(state, true, false, 16.0f) ==
-			PlantAttemptResult::Ready,
-			"plant attempt can restart after its retry delay"))
-	{
-		return false;
-	}
-	return check(ActionAdapter::evaluatePlantAttempt(state, true, true, 16.0f) ==
-			PlantAttemptResult::Confirmed && !state.active,
-			"observed planted bomb clears the attack attempt");
-}
 
 int main()
 {
@@ -330,8 +272,7 @@ int main()
 			testPlantContinuationReselectsC4() &&
 			testPlantAttackWaitsForObservedC4Selection() &&
 			testPlantObjectiveAcceptsAnySelectedBombTargetClass() &&
-			testPlantZoneBoundsAndTimeout() &&
-			testPlantAttemptRequiresSiteAndTimesOutAfterDeliveredInput() &&
+			testPlantZoneBounds() &&
 		testWorldMovementProjectionIgnoresAimTarget() &&
 		testMovementButtonsFollowProjectedInput() ? 0 : 1;
 }

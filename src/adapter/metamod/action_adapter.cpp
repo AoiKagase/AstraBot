@@ -124,11 +124,6 @@ bool ActionAdapter::overlapsPlantTarget(
 		actor.maximumZ >= site.minimumZ && actor.minimumZ <= site.maximumZ;
 }
 
-bool ActionAdapter::plantAttemptExpired(float elapsedSeconds) noexcept
-{
-	return std::isfinite(elapsedSeconds) &&
-		elapsedSeconds >= kPlantAttemptTimeoutSeconds;
-}
 
 bool ActionAdapter::isBombTargetClassname(const char *classname) noexcept
 {
@@ -141,15 +136,6 @@ bool ActionAdapter::isLegacyInfoBombTargetClassname(const char *classname) noexc
 	return equalsIgnoreCase(classname, "info_bomb_target");
 }
 
-bool ActionAdapter::canBeginPlantObjective(
-	bool hasPlantAssignment,
-	bool carryingBomb,
-	bool isTerrorist,
-	bool selectedTargetAvailable) noexcept
-{
-	return hasPlantAssignment && carryingBomb && isTerrorist &&
-		selectedTargetAvailable;
-}
 
 bool ActionAdapter::withinLegacyBombTargetRadius(
 	const PlantTargetPoint &center,
@@ -170,69 +156,7 @@ bool ActionAdapter::withinLegacyBombTargetRadius(
 	return dx * dx + dy * dy + dz * dz <= radiusSquared;
 }
 
-PlantAttemptResult ActionAdapter::evaluatePlantAttempt(
-	PlantAttemptState &state,
-	bool actorOverlapsSite,
-	bool plantedConfirmed,
-	float now) noexcept
-{
-	if (plantedConfirmed)
-	{
-		state.active = false;
-		state.startedAt = 0.0f;
-		state.retryAfter = 0.0f;
-		return PlantAttemptResult::Confirmed;
-	}
-	if (!std::isfinite(now))
-	{
-		return PlantAttemptResult::InvalidTime;
-	}
-	if (!actorOverlapsSite)
-	{
-		state.active = false;
-		state.startedAt = 0.0f;
-		return PlantAttemptResult::OutsideSite;
-	}
-	if (state.active)
-	{
-		const float elapsed = now - state.startedAt;
-		if (!std::isfinite(elapsed) || elapsed < 0.0f)
-		{
-			state.active = false;
-			state.startedAt = 0.0f;
-		}
-		else if (plantAttemptExpired(elapsed))
-		{
-			state.active = false;
-			state.startedAt = 0.0f;
-			state.retryAfter = now + kPlantAttemptRetrySeconds;
-			return PlantAttemptResult::TimedOut;
-		}
-		else
-		{
-			return PlantAttemptResult::Continuing;
-		}
-	}
-	if (!std::isfinite(state.retryAfter))
-	{
-		state.retryAfter = now;
-	}
-	return now < state.retryAfter
-		? PlantAttemptResult::RetryPending
-		: PlantAttemptResult::Ready;
-}
 
-void ActionAdapter::recordPlantAttemptDispatched(
-	PlantAttemptState &state,
-	float now) noexcept
-{
-	if (state.active || !std::isfinite(now) || now < state.retryAfter)
-	{
-		return;
-	}
-	state.active = true;
-	state.startedAt = now;
-}
 
 ActionKind ActionAdapter::plantActionForWeaponObservation(
 	bool observationAvailable,
