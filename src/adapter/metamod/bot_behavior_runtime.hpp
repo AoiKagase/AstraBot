@@ -2,6 +2,7 @@
 #define ASTRABOT_ADAPTER_BOT_BEHAVIOR_RUNTIME_HPP
 #include "bot_runtime_services.hpp"
 #include "astrabot/compat/guard_look.hpp"
+#include "astrabot/compat/weapon_equipment.hpp"
 #include <limits>
 namespace astrabot
 {
@@ -104,6 +105,8 @@ class BotBehaviorRuntime
 	void resetBombApproach(std::size_t index);
 
 	void observeC4SelectionDispatched(std::size_t index, const FakeClientHandle &handle);
+	void observeEquipmentDispatched(std::size_t index, std::uint16_t weapon, bool success);
+	void resetEquipment(std::size_t index) { if(index<actors_.size())actors_[index].equipment.reset(); }
 
 	void observeC4AttackDispatched(std::size_t index, const FakeClientHandle &handle,
 								   std::uint16_t buttons);
@@ -144,6 +147,7 @@ class BotBehaviorRuntime
 	BehaviorPhaseResult decideObjectiveAction(ManagedActionContext &ctx);
 	ActionProposal decideCombatAction(ManagedActionContext &ctx);
 	void updateGuardLook(ManagedActionContext &ctx);
+	bool decideEquipmentAction(ManagedActionContext &ctx, const compat::PublicActorState &weapon, bool attacking);
 	bool cancelHeldGrenade(std::size_t index, const runtime::ViewAngles &movementAngles,
 						   ActionProposal &proposal);
 	BehaviorPhaseResult updateBehaviorLifecycle(std::size_t index,
@@ -283,6 +287,7 @@ class BotBehaviorRuntime
 	{
 		compat::BombGuardPlanner bombGuardPlanners{};
 		compat::GuardLookPlanner guardLook{};
+		compat::WeaponEquipmentPlanner equipment{};
 		compat::OutgoingRadioScheduler outgoingRadioSchedulers{};
 		compat::RadioContactMemory outgoingRadioContactMemory{};
 		std::uint32_t outgoingRadioReceipts{};

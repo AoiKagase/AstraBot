@@ -573,6 +573,7 @@ void BotObservationRuntime::capturePublicMessage()
 	{
 		const std::size_t victim = static_cast<std::size_t>(v[1] - 1);
 		services_->navigation_observePublicDeath(victim);
+		services_->behavior_resetEquipment(victim);
 		publicObservations_.resetSlot(static_cast<std::uint32_t>(v[1]));
 		actors_[static_cast<std::size_t>(v[1] - 1)].reactionQueues = {};
 		return;
@@ -747,6 +748,7 @@ void BotObservationRuntime::capturePublicMessage()
 	}
 	else if (std::strcmp(name, "ResetHUD") == 0)
 	{
+		services_->behavior_resetEquipment(publicMessageActor_.slot - 1U);
 		services_->navigation_observeResetHud(publicMessageActor_.slot - 1U);
 		publicObservations_.resetSlot(publicMessageActor_.slot);
 		publicObservations_.bind(publicMessageActor_, publicMessageFrame_);

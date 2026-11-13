@@ -37,6 +37,7 @@ struct ActionProposal
 	float combatForward = 0, combatSide = 0;
 	bool hasCombatAim = false;
 	bool hasGuardLook = false;
+	std::uint16_t equipmentWeaponId = 0;
 };
 
 struct CombatUpkeepUpdate

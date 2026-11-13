@@ -377,6 +377,8 @@ ActionProposal BotBehaviorRuntime::decideCombatAction(ManagedActionContext &ctx)
 	{
 		(void)actors_[index].managedBotStateMachines.stopAttack(stateContext);
 	}
+	if (decideEquipmentAction(ctx, observedWeapon, actors_[index].managedBotStateMachines.attackOverlayActive()))
+		return proposal;
 	if (fireIntentReady)
 	{
 		proposal.kind = ActionKind::Fire;

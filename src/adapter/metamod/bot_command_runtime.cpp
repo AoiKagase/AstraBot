@@ -175,6 +175,7 @@ bool BotCommandRuntime::dispatchManagedActionCommand(std::size_t index, FakeClie
 		return true;
 	}
 	const char *clientCommand = dispatch.clientCommand;
+	std::uint16_t selectedEquipment = proposal.kind == ActionKind::SelectKnife ? 29U : 0U;
 	if (proposal.kind == ActionKind::SelectPrimary)
 	{
 		const unsigned ids[] = {3,5,7,8,12,13,14,15,18,19,20,21,22,23,24,27,28,30};
@@ -184,7 +185,7 @@ bool BotCommandRuntime::dispatchManagedActionCommand(std::size_t index, FakeClie
 		clientCommand = nullptr;
 		const auto mask = static_cast<std::uint32_t>(handle.entity->v.weapons);
 		for(std::size_t i=0;i<sizeof(ids)/sizeof(ids[0]);++i)
-			if((mask&(1U<<ids[i]))!=0U){clientCommand=names[i];break;}
+			if((mask&(1U<<ids[i]))!=0U){clientCommand=names[i];selectedEquipment=static_cast<std::uint16_t>(ids[i]);break;}
 		if(!clientCommand)return false;
 	}
 	if (proposal.kind == ActionKind::SelectPistol)
@@ -193,11 +194,15 @@ bool BotCommandRuntime::dispatchManagedActionCommand(std::size_t index, FakeClie
 		const char *names[] = {"weapon_p228","weapon_elite","weapon_fiveseven","weapon_usp","weapon_glock18","weapon_deagle"};
 		clientCommand = nullptr;
 		const auto mask = static_cast<std::uint32_t>(handle.entity->v.weapons);
-		for(std::size_t i=0;i<6;++i)if((mask&(1U<<ids[i]))!=0U){clientCommand=names[i];break;}
+		for(std::size_t i=0;i<6;++i)if((mask&(1U<<ids[i]))!=0U &&
+			(proposal.equipmentWeaponId==0 || proposal.equipmentWeaponId==ids[i]))
+		{clientCommand=names[i];selectedEquipment=static_cast<std::uint16_t>(ids[i]);break;}
 		if(!clientCommand)return false;
 	}
 	const bool commandDispatched =
 		services_->dispatchClientCommand(handle.entity, clientCommand, "");
+	if (selectedEquipment!=0)
+		services_->behavior_observeEquipmentDispatched(index,selectedEquipment,commandDispatched);
 	if (commandDispatched && proposal.kind == ActionKind::Reload &&
 		services_->service_globals() != nullptr)
 	{

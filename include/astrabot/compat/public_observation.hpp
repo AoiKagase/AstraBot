@@ -46,6 +46,9 @@ struct PublicActorState
 	int weaponId = 0;
 	int clip = 0;
 	std::uint32_t weaponTick = 0U;
+	std::array<int, 31U> weaponClips{};
+	std::array<bool, 31U> weaponClipKnown{};
+	std::array<std::uint32_t, 31U> weaponClipTicks{};
 	std::array<int, 32U> ammo{};
 	std::array<bool, 32U> ammoKnown{};
 	std::array<std::uint32_t, 32U> ammoTicks{};
@@ -133,6 +136,9 @@ public:
 		PublicActorState *state = edit(actor, frame);
 		if (state == nullptr)
 			return false;
+		state->weaponClips[static_cast<std::size_t>(id)] = clip;
+		state->weaponClipKnown[static_cast<std::size_t>(id)] = clip >= 0;
+		state->weaponClipTicks[static_cast<std::size_t>(id)] = frame.tick;
 		if (active != 0)
 		{
 			if (state->weaponId != id || clip > state->clip)

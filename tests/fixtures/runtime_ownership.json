@@ -150,6 +150,11 @@
     "member": "guardLook"
   },
   {
+    "header": "src/adapter/metamod/bot_behavior_runtime.hpp",
+    "scope": "ActorState",
+    "member": "equipment"
+  },
+  {
     "header": "src/adapter/metamod/bot_observation_runtime.hpp",
     "scope": "owner",
     "member": "publicMessageStringMask_"

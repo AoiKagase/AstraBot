@@ -52,6 +52,9 @@ void BotBehaviorRuntime::updateGuardLook(ManagedActionContext &ctx)
 	// A guard must have a usable weapon before settling into an armed watch.
 	const auto inventory=static_cast<std::uint32_t>(self->v.weapons);
 	if((inventory & ~((1U<<6)|(1U<<4)|(1U<<9)|(1U<<25)))==0)return;
+	compat::PublicActorState equipment{};
+	if(services_->observation_publicObservations().read(ctx.actor,ctx.frame,&equipment))
+		(void)decideEquipmentAction(ctx,equipment,false);
 	const auto &weapon=services_->observation_managedBotCurrentWeapons(ctx.index);
 	if(weapon.available && weapon.active && weapon.weaponId==6)
 	{

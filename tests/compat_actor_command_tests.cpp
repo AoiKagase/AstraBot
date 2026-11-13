@@ -1554,11 +1554,15 @@ int main(int argc, char **)
 
 	const char *const profilePath = "astrabot_actor_command_profile.db";
 	const char profileText[] =
+#ifdef ASTRABOT_ACTOR_PROFILE_TEXT
+		ASTRABOT_ACTOR_PROFILE_TEXT;
+#else
 		"AnyProfile { Name = \"Any Bot\" Team = any Difficulty = 1 Skill = 50 }\n"
 		"CtProfile { Name = \"CT Bot\" Team = CT Difficulty = 1 Skill = 60 }\n"
 		"TProfile { Name = \"T Bot\" Team = T Difficulty = 1 Skill = 70 }\n"
 		"NamedProfile { Name = \"Named Bot\" Team = any Difficulty = 1 Skill = 80 }\n"
 		"ExtraProfile { Name = \"Extra Bot\" Team = any Difficulty = 1 Skill = 55 }\n";
+#endif
 	std::FILE *profileFile = openFixture(profilePath, "wb");
 	if (!check(profileFile != nullptr, "actor command profile fixture opens"))
 	{

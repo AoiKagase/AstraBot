@@ -49,6 +49,7 @@ class BotObservationServices : public BotRuntimeServiceTypes
 	virtual void behavior_invalidateObjectiveAssignments() = 0;
 	virtual const compat::ProfileRecord &behavior_managedProfiles(std::size_t index) const = 0;
 	virtual void behavior_observeRadioReceipt(std::size_t index) = 0;
+	virtual void behavior_resetEquipment(std::size_t index) = 0;
 	virtual void behavior_observeRecognizedTargetChange(std::size_t index, float now) = 0;
 	virtual const std::uint32_t &command_managedBotCommandSequences(std::size_t index) const = 0;
 	virtual void navigation_observePublicDeath(std::size_t victim) = 0;
@@ -173,6 +174,7 @@ class BotCommandServices : public BotRuntimeServiceTypes
 	virtual void behavior_observeC4AttackDispatched(std::size_t index, const FakeClientHandle &handle,
 													std::uint16_t buttons) = 0;
 	virtual void behavior_observeC4SelectionDispatched(std::size_t index, const FakeClientHandle &handle) = 0;
+	virtual void behavior_observeEquipmentDispatched(std::size_t index, std::uint16_t weapon, bool success) = 0;
 	virtual void behavior_observeNeutralC4AttackDispatched(std::size_t index, const FakeClientHandle &handle) = 0;
 	virtual void navigation_logMovementDiagnostic(std::size_t index, const char *reason,
 												  const runtime::NavRoamDecision *decision = nullptr) = 0;

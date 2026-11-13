@@ -1305,6 +1305,7 @@ BotBehaviorRuntime::prepareManagedAction(ManagedActionContext &ctx)
 	}
 	if (before.dead || services_->service_managedBotHandles()[index].entity == nullptr)
 	{
+		actors_[index].equipment.reset();
 		actors_[index].managedBotObjectiveActions.active = false;
 		actors_[index].weaponActions.reset();
 		actors_[index].escapingWithKnife = false;

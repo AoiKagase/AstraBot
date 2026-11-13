@@ -131,6 +131,7 @@ BotBehaviorRuntime::updateBehaviorLifecycle(std::size_t index,
 	}
 	if (before.dead)
 	{
+		actors_[index].equipment.reset();
 		actors_[index].scenarioPlanners.reset();
 		services_->applyNavigationRequest({index, NavigationRequestKind::ClearFailure});
 		if (!actors_[index].managedBotWasDead)
@@ -142,6 +143,7 @@ BotBehaviorRuntime::updateBehaviorLifecycle(std::size_t index,
 	}
 	if (actors_[index].managedBotWasDead)
 	{
+		actors_[index].equipment.reset();
 		actors_[index].scenarioPlanners.reset();
 		(void)machine.onRespawn(context);
 		actors_[index].managedBotWasDead = false;

@@ -92,6 +92,10 @@ if(ASTRABOT_BUILD_TESTS)
   add_test(NAME astrabot_vanilla_behavior COMMAND astrabot_vanilla_behavior)
 
   add_executable(astrabot_combat_policy tests/combat_policy_tests.cpp)
+  add_executable(astrabot_weapon_equipment tests/weapon_equipment_tests.cpp)
+  target_link_libraries(astrabot_weapon_equipment PRIVATE astrabot_core)
+  astrabot_apply_warnings(astrabot_weapon_equipment)
+  add_test(NAME astrabot_weapon_equipment COMMAND astrabot_weapon_equipment)
   target_link_libraries(astrabot_combat_policy PRIVATE astrabot_core)
   astrabot_apply_warnings(astrabot_combat_policy)
   add_test(NAME astrabot_combat_policy COMMAND astrabot_combat_policy)
@@ -954,6 +958,7 @@ if(ASTRABOT_BUILD_METAMOD)
     src/adapter/metamod/bot_behavior_buying.cpp
     src/adapter/metamod/bot_behavior_objectives.cpp
     src/adapter/metamod/bot_behavior_guard.cpp
+    src/adapter/metamod/bot_behavior_equipment.cpp
     src/adapter/metamod/bot_behavior_scenario.cpp
     src/adapter/metamod/bot_behavior_combat.cpp
     src/adapter/metamod/bot_navigation_runtime.cpp
@@ -1010,6 +1015,13 @@ if(ASTRABOT_BUILD_TESTS AND ASTRABOT_BUILD_METAMOD)
   target_link_libraries(astrabot_bomb_guard_look PRIVATE astrabot_core astrabot_regamedll_provider)
   astrabot_apply_warnings(astrabot_bomb_guard_look)
   add_test(NAME astrabot_bomb_guard_look COMMAND astrabot_bomb_guard_look --target-log)
+  add_executable(astrabot_weapon_switch_runtime tests/weapon_switch_runtime_tests.cpp ${combat_target_log_sources})
+  target_include_directories(astrabot_weapon_switch_runtime PRIVATE ${combat_target_log_includes})
+  target_link_libraries(astrabot_weapon_switch_runtime PRIVATE astrabot_core astrabot_regamedll_provider)
+  astrabot_apply_warnings(astrabot_weapon_switch_runtime)
+  add_test(NAME astrabot_weapon_switch_runtime COMMAND astrabot_weapon_switch_runtime --target-log)
+  set_tests_properties(astrabot_weapon_switch_runtime PROPERTIES
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" RESOURCE_LOCK astrabot_actor_command_profile)
   set_tests_properties(astrabot_bomb_guard_look PROPERTIES
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" RESOURCE_LOCK astrabot_actor_command_profile)
   set_tests_properties(astrabot_combat_target_log PROPERTIES

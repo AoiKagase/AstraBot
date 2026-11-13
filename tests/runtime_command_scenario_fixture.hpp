@@ -193,6 +193,7 @@ class ScenarioServices : public BotCommandServices
 	void behavior_observeC4SelectionDispatched(std::size_t, const FakeClientHandle &) override
 	{
 	}
+	void behavior_observeEquipmentDispatched(std::size_t, std::uint16_t, bool) override {}
 
 	void behavior_observeNeutralC4AttackDispatched(std::size_t, const FakeClientHandle &) override
 	{

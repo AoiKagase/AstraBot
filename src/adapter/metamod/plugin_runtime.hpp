@@ -505,6 +505,11 @@ class PluginRuntime : public BotObservationServices, public BotBehaviorServices,
 			{
 				return behavior_.observeC4SelectionDispatched(index, handle);
 			}
+			void behavior_observeEquipmentDispatched(std::size_t index, std::uint16_t weapon, bool success) override
+			{
+				behavior_.observeEquipmentDispatched(index, weapon, success);
+			}
+			void behavior_resetEquipment(std::size_t index) override { behavior_.resetEquipment(index); }
 			void behavior_observeNeutralC4AttackDispatched(std::size_t index, const FakeClientHandle &handle) override
 			{
 				return behavior_.observeNeutralC4AttackDispatched(index, handle);
