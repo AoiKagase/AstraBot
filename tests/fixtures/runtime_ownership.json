@@ -145,6 +145,11 @@
     "member": "bombGuardPlanners"
   },
   {
+    "header": "src/adapter/metamod/bot_behavior_runtime.hpp",
+    "scope": "ActorState",
+    "member": "guardLook"
+  },
+  {
     "header": "src/adapter/metamod/bot_observation_runtime.hpp",
     "scope": "owner",
     "member": "publicMessageStringMask_"

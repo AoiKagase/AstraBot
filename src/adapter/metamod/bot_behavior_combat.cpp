@@ -75,6 +75,18 @@ CombatUpkeepUpdate BotBehaviorRuntime::upkeepCombat(std::size_t index,
 	target.position = compat::combatAimPoint(enemyOrigin, {handle.entity->v.origin.x, handle.entity->v.origin.y, handle.entity->v.origin.z},
 		visible.visibleParts, state.weaponActions.currentWeaponId(), static_cast<float>(state.managedProfiles.skill) / 100,
 		before.ducked ? 18.0f : 36.0f, weaponObservation.weapon.accuracy.isAvailable(), weaponObservation.weapon.accuracy.value);
+	if (engine->pfnTraceLine && ownTeam != 0)
+	{
+		const float eye[] = {handle.entity->v.origin.x + handle.entity->v.view_ofs.x,
+			handle.entity->v.origin.y + handle.entity->v.view_ofs.y, handle.entity->v.origin.z + handle.entity->v.view_ofs.z};
+		const float end[] = {target.position.x, target.position.y, target.position.z};
+		TraceResult shot{}; engine->pfnTraceLine(eye, end, 0, handle.entity, &shot);
+		if (shot.pHit && shot.pHit != handle.entity && shot.pHit->v.deadflag == DEAD_NO &&
+			services_->observation_publicPlayerTeam(shot.pHit) == ownTeam)
+		{
+			state.weaponActions.stopRapidFire(); update.setPrimary = true; return update;
+		}
+	}
 	combat::CombatDecisionContext context{};
 	context.actor = {handle.actor.slot, handle.actor.actorGeneration}; context.frame = frame;
 	context.origin = {handle.entity->v.origin.x, handle.entity->v.origin.y, handle.entity->v.origin.z};
@@ -280,12 +292,7 @@ ActionProposal BotBehaviorRuntime::decideCombatAction(ManagedActionContext &ctx)
 		if (trace.pHit != nullptr && trace.pHit != handle.entity &&
 			trace.pHit->v.deadflag == DEAD_NO)
 		{
-			int hitTeam = static_cast<int>(trace.pHit->v.team);
-			for (std::size_t slot = 0U; slot < services_->service_managedBotHandles().size();
-				 ++slot)
-				if (services_->service_managedBotHandles()[slot].entity == trace.pHit &&
-					services_->observation_managedBotTeamNumbers(slot) != 0U)
-					hitTeam = services_->observation_managedBotTeamNumbers(slot);
+			const int hitTeam = services_->observation_publicPlayerTeam(trace.pHit);
 			target.friendlyFireRisk = hitTeam == team && hitTeam != 0;
 		}
 	}

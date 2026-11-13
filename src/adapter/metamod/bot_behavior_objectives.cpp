@@ -1427,6 +1427,7 @@ BotBehaviorRuntime::decideObjectiveAction(ManagedActionContext &ctx)
 		}
 		return BehaviorPhaseResult::Complete;
 	}
+	if (targetActor.isValid()) actors_[index].guardLook.reset();
 	ctx.team = resolveManagedBotTeam(index, compatObservation);
 	const int team = ctx.team;
 	const objectives::TeamRole teamRole = team == 1	  ? objectives::TeamRole::Terrorist
@@ -1445,6 +1446,8 @@ BotBehaviorRuntime::decideObjectiveAction(ManagedActionContext &ctx)
 				 scenario.target.inUseRange))
 			{
 				proposal.stopForWeapon = true;
+				if (scenario.action == compat::ScenarioAction::Guard)
+					updateGuardLook(ctx);
 				return BehaviorPhaseResult::Complete;
 			}
 			if (scenario.action == compat::ScenarioAction::Use && scenario.hasTarget &&

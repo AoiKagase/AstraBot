@@ -36,6 +36,7 @@ struct ActionProposal
 	bool combatMovement = false;
 	float combatForward = 0, combatSide = 0;
 	bool hasCombatAim = false;
+	bool hasGuardLook = false;
 };
 
 struct CombatUpkeepUpdate

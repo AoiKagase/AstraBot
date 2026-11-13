@@ -16,6 +16,13 @@ float combatCommandYaw = 0.0f;
 float combatCommandPitch = 0.0f;
 unsigned combatMovingFireCommands = 0U;
 bool combatPistolSelected = false;
+bool humanFriendlyBlocks = false;
+void traceCombatVisibility(const float *start, const float *end, int ignoreMonsters,
+	edict_t *self, TraceResult *result)
+{
+	traceObjectiveVisibility(start, end, ignoreMonsters, self, result);
+	if (humanFriendlyBlocks && ignoreMonsters == 0) result->pHit = &gEntities[2];
+}
 void combatGameClientCommand(edict_t *entity)
 {
 	if(entity==&gEntities[0] && std::strcmp(astrabot::metamod::HookCommandArgv(0),"weapon_glock18")==0)
@@ -69,7 +76,7 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 	gServerSetsEntityTeam = true;
 	engine.pfnRandomLong = &siteFixtureRandomLong;
 	engine.pfnRandomFloat = &siteFixtureRandomFloat;
-	engine.pfnTraceLine = &traceObjectiveVisibility;
+	engine.pfnTraceLine = &traceCombatVisibility;
 	engine.pfnRunPlayerMove = &runCombatPlayerMove;
 	gHookedGameDllTable.pfnClientCommand = &combatGameClientCommand;
 	combatFrameCounter = &static_cast<astrabot::metamod::BotObservationServices &>(runtime).
@@ -92,13 +99,17 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 	gCaptureMovementLogs = true;
 	gProfileEnabled = true;
 	float enemyDistance = 100.0f;
-	const auto observe = [&](bool enemyPresent) {
+	const auto observe = [&](bool enemyPresent, const char *publicTeam = "CT") {
+		const bool hostile = enemyPresent && std::strcmp(publicTeam, "CT") == 0;
 		combatAttackCommands = 0U;
 		combatMovingFireCommands = 0U;
 		combatSentInputs.clear();
 		gEntities[0].v.v_angle = Vector(20.0f, 30.0f, 0.0f);
 		gEntities[1].v.flags = enemyPresent ? FL_CLIENT : 0;
-		gEntities[1].v.team = 2;
+		// Real CS clients publish their team in TeamInfo, not necessarily entvars.
+		gEntities[1].v.team = 0;
+		runtime.onMessageBegin(2, 86, nullptr, nullptr);
+		runtime.onWriteByte(2); runtime.onWriteString(publicTeam); runtime.onMessageEnd();
 		gEntities[1].v.health = enemyPresent ? 100.0f : 0.0f;
 		gEntities[1].v.deadflag = enemyPresent ? DEAD_NO : DEAD_DEAD;
 		gEntities[1].v.origin = Vector(80.0f + enemyDistance, 32.0f, 36.0f);
@@ -153,17 +164,17 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 				if(!check(!point.fail()&&std::fabs(actual-expected)<.2f,
 					"fire cadence uses aim error and prediction rather than raw enemy distance"))return false;
 			}
-			if (!enemyPresent && !check(message.find(" target=0 ") != std::string::npos,
+			if (!hostile && !check(message.find(" target=0 ") != std::string::npos,
 				"combat sensor reports no target when no enemy was acquired")) return false;
-			if (message.find(enemyPresent ? " target=1 " : " target=0 ") != std::string::npos)
+			if (message.find(hostile ? " target=1 " : " target=0 ") != std::string::npos)
 				found = true;
 		}
 		if (!check(physicalSample, "detailed physical samples continue beyond the initial log budget")) return false;
-		if (!check(enemyPresent ? combatAttackCommands > 0U : combatAttackCommands == 0U,
+		if (!check(hostile && !humanFriendlyBlocks ? combatAttackCommands > 0U : combatAttackCommands == 0U,
 			"engine angle feedback reaches fire with a visible enemy and holds fire without one")) return false;
-		if (enemyPresent && enemyDistance == 100.0f &&
+		if (hostile && enemyDistance == 100.0f &&
 			!check(combatCommandPitch > 0.0f, "low-skill rifle selects the reference chest aim instead of visible head")) return false;
-		if (enemyPresent && enemyDistance > 800.0f &&
+		if (hostile && enemyDistance > 800.0f &&
 			!check(cadenceWait, "skilled distant rifle alternates fire and reference cadence waits")) return false;
 		if (!found)
 		{
@@ -174,7 +185,16 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 		return check(found, enemyPresent ? "combat sensor reports an acquired visible enemy" :
 			"no-enemy case exercises the combat-result log");
 	};
-	bool passed = observe(false) && observe(true) && observe(false);
+	bool passed = observe(false) && observe(true) && observe(false) &&
+		observe(true, "TERRORIST") && observe(true, "SPECTATOR");
+	gEntities[2].v.flags = FL_CLIENT; gEntities[2].v.team = 0;
+	gEntities[2].v.health = 100; gEntities[2].v.deadflag = DEAD_NO;
+	gEntities[2].v.origin = Vector(130,32,36);
+	runtime.onMessageBegin(2,86,nullptr,nullptr);
+	runtime.onWriteByte(3); runtime.onWriteString("TERRORIST"); runtime.onMessageEnd();
+	humanFriendlyBlocks = true;
+	passed = observe(true) && passed;
+	humanFriendlyBlocks = false; gEntities[2].v.health = 0; gEntities[2].v.flags = 0;
 	enemyDistance = 900.0f;
 	passed = check(static_cast<astrabot::metamod::BotObservationServices &>(runtime).
 		behavior_managedProfiles(0U).skill >= 50U,
@@ -193,6 +213,25 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 			std::fabs(combatCommandYaw - yawBefore) > 0.001f) upkeepTurned = true;
 	}
 	passed = check(upkeepTurned, "combat upkeep tracks a moving target between full decisions") && passed;
+	bool blockedBetweenFull = false;
+	for (unsigned step = 0; step < 40U && !blockedBetweenFull; ++step)
+	{
+		auto &ports = static_cast<astrabot::metamod::BotObservationServices &>(runtime);
+		const auto full = ports.service_managedBotFullUpdateSequences()[0];
+		combatAttackCommands = 0;
+		globals.time += .04f; runtime.onStartFrame(); runtime.onStartFramePost();
+		if (ports.service_managedBotFullUpdateSequences()[0] == full || combatAttackCommands == 0) continue;
+		humanFriendlyBlocks = true;
+		gEntities[2].v.flags = FL_CLIENT; gEntities[2].v.health = 100;
+		const auto firingFull = ports.service_managedBotFullUpdateSequences()[0];
+		combatAttackCommands = 0;
+		globals.time += .04f; runtime.onStartFrame(); runtime.onStartFramePost();
+		blockedBetweenFull = ports.service_managedBotFullUpdateSequences()[0] == firingFull;
+		passed = check(combatAttackCommands == 0,
+			"upkeep clears cached fire when a human teammate enters the shot line") && passed;
+		humanFriendlyBlocks = false; gEntities[2].v.flags = 0; gEntities[2].v.health = 0;
+	}
+	passed = check(blockedBetweenFull, "friendly obstruction exercises a frame between full decisions") && passed;
 	gEntities[1].v.velocity = Vector(0.0f, 0.0f, 0.0f);
 	gEntities[0].v.weapons = (1<<18)|(1<<17);gEntities[1].v.origin=Vector(180,32,36);
 	for(unsigned step=0;step<64;++step)

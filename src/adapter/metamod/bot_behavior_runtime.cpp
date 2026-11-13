@@ -14,6 +14,10 @@ ActionProposal BotBehaviorRuntime::decideManagedBotAction(
 	{
 		actors_[index].managedBotCombat.clearAim();
 		actors_[index].weaponActions.stopRapidFire();
+		const auto &scenario = actors_[index].scenarioDecisions;
+		if (scenario.action != compat::ScenarioAction::Guard || !scenario.hasTarget ||
+			!scenario.target.inUseRange || scenario.state != compat::CompatibilityStateId::Hide)
+			actors_[index].guardLook.reset();
 	}
 	ManagedActionContext ctx{index, before, movementAngles};
 	ctx.proposal = {ActionKind::None, movementAngles, movementButtons};
@@ -56,6 +60,7 @@ void BotBehaviorRuntime::updateManagedBotCompatibilityState(
 void BotBehaviorRuntime::onActorRemoved(std::size_t index)
 {
 	actors_[index].bombGuardPlanners.reset();
+	actors_[index].guardLook.reset();
 	actors_[index].scenarioEscapeAreas = 0U;
 	actors_[index].bombSearchMemory.reset();
 	actors_[index].managedStateInputs = {};
@@ -77,6 +82,7 @@ void BotBehaviorRuntime::onActorRemoved(std::size_t index)
 void BotBehaviorRuntime::onActorRemembered(std::size_t index, const FakeClientHandle &handle)
 {
 	const world::ActorKey actor = {handle.actor.slot, handle.actor.actorGeneration};
+	actors_[index].guardLook.reset();
 	actors_[index].managedBotCombat = combat::CombatController(actor);
 	actors_[index].managedBotObjectives = objectives::RoundObjectivePlanner(actor);
 	actors_[index].managedBotStateMachines = compat::CompatibilityStateMachine(actor);

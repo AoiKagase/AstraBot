@@ -953,6 +953,7 @@ if(ASTRABOT_BUILD_METAMOD)
     src/adapter/metamod/bot_behavior_radio.cpp
     src/adapter/metamod/bot_behavior_buying.cpp
     src/adapter/metamod/bot_behavior_objectives.cpp
+    src/adapter/metamod/bot_behavior_guard.cpp
     src/adapter/metamod/bot_behavior_scenario.cpp
     src/adapter/metamod/bot_behavior_combat.cpp
     src/adapter/metamod/bot_navigation_runtime.cpp
@@ -1004,6 +1005,13 @@ if(ASTRABOT_BUILD_TESTS AND ASTRABOT_BUILD_METAMOD)
   target_link_libraries(astrabot_combat_target_log PRIVATE astrabot_core astrabot_regamedll_provider)
   astrabot_apply_warnings(astrabot_combat_target_log)
   add_test(NAME astrabot_combat_target_log COMMAND astrabot_combat_target_log --target-log)
+  add_executable(astrabot_bomb_guard_look tests/bomb_guard_look_tests.cpp ${combat_target_log_sources})
+  target_include_directories(astrabot_bomb_guard_look PRIVATE ${combat_target_log_includes})
+  target_link_libraries(astrabot_bomb_guard_look PRIVATE astrabot_core astrabot_regamedll_provider)
+  astrabot_apply_warnings(astrabot_bomb_guard_look)
+  add_test(NAME astrabot_bomb_guard_look COMMAND astrabot_bomb_guard_look --target-log)
+  set_tests_properties(astrabot_bomb_guard_look PROPERTIES
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" RESOURCE_LOCK astrabot_actor_command_profile)
   set_tests_properties(astrabot_combat_target_log PROPERTIES
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
     RESOURCE_LOCK astrabot_actor_command_profile)

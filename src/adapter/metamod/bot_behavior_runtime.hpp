@@ -1,6 +1,7 @@
 #ifndef ASTRABOT_ADAPTER_BOT_BEHAVIOR_RUNTIME_HPP
 #define ASTRABOT_ADAPTER_BOT_BEHAVIOR_RUNTIME_HPP
 #include "bot_runtime_services.hpp"
+#include "astrabot/compat/guard_look.hpp"
 #include <limits>
 namespace astrabot
 {
@@ -142,6 +143,7 @@ class BotBehaviorRuntime
 	BehaviorPhaseResult prepareManagedAction(ManagedActionContext &ctx);
 	BehaviorPhaseResult decideObjectiveAction(ManagedActionContext &ctx);
 	ActionProposal decideCombatAction(ManagedActionContext &ctx);
+	void updateGuardLook(ManagedActionContext &ctx);
 	bool cancelHeldGrenade(std::size_t index, const runtime::ViewAngles &movementAngles,
 						   ActionProposal &proposal);
 	BehaviorPhaseResult updateBehaviorLifecycle(std::size_t index,
@@ -280,6 +282,7 @@ class BotBehaviorRuntime
 	struct ActorState
 	{
 		compat::BombGuardPlanner bombGuardPlanners{};
+		compat::GuardLookPlanner guardLook{};
 		compat::OutgoingRadioScheduler outgoingRadioSchedulers{};
 		compat::RadioContactMemory outgoingRadioContactMemory{};
 		std::uint32_t outgoingRadioReceipts{};

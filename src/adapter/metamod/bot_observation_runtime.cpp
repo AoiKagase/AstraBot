@@ -994,9 +994,13 @@ bool BotObservationRuntime::buildManagedWorldSnapshot(std::size_t index,
 	perception::PerceptionInput input(identity);
 	const compat::ObservationTimingContext observationTiming = {
 		services_->command_managedBotCommandSequences(index), 0U, 0U};
-	const auto effectiveTeam = [this](edict_t *entity) {
-		int team = entity == nullptr ? 0 : static_cast<int>(entity->v.team);
-		if (team >= 1)
+	const auto effectiveTeam = [this](edict_t *entity, int slot) {
+		if (entity == nullptr || entity->free)
+			return 0;
+		if (slot >= 1 && slot <= 32 && actors_[slot - 1].publicTeamKnown)
+			return static_cast<int>(actors_[slot - 1].managedBotTeamNumbers);
+		const int team = static_cast<int>(entity->v.team);
+		if (team >= 1 && team <= 2)
 		{
 			return team;
 		}
@@ -1035,12 +1039,12 @@ bool BotObservationRuntime::buildManagedWorldSnapshot(std::size_t index,
 	const int observedObserverTeam =
 		observerObservation.player.team.isAvailable() ? observerObservation.player.team.value : 0;
 	const int observerTeam =
-		observedObserverTeam >= 1 ? observedObserverTeam : effectiveTeam(handle.entity);
+		observedObserverTeam >= 1 ? observedObserverTeam : effectiveTeam(handle.entity, handle.actor.slot);
 	const int maxClients = std::max(0, std::min(services_->service_globals()->maxClients, 32));
 	for (int slot = 1; slot <= maxClients; ++slot)
 	{
 		edict_t *entity = services_->service_engineFunctions()->pfnPEntityOfEntIndex(slot);
-		const int entityTeam = effectiveTeam(entity);
+		const int entityTeam = effectiveTeam(entity, slot);
 		if (entity == nullptr || entity->v.deadflag != DEAD_NO || entity->v.health <= 0.0f ||
 			(entity->v.flags & FL_SPECTATOR) != 0 || entityTeam < 1)
 		{

@@ -175,6 +175,18 @@ bool BotCommandRuntime::dispatchManagedActionCommand(std::size_t index, FakeClie
 		return true;
 	}
 	const char *clientCommand = dispatch.clientCommand;
+	if (proposal.kind == ActionKind::SelectPrimary)
+	{
+		const unsigned ids[] = {3,5,7,8,12,13,14,15,18,19,20,21,22,23,24,27,28,30};
+		const char *names[] = {"weapon_scout","weapon_xm1014","weapon_mac10","weapon_aug","weapon_ump45","weapon_sg550",
+			"weapon_galil","weapon_famas","weapon_awp","weapon_mp5navy","weapon_m249","weapon_m3","weapon_m4a1",
+			"weapon_tmp","weapon_g3sg1","weapon_sg552","weapon_ak47","weapon_p90"};
+		clientCommand = nullptr;
+		const auto mask = static_cast<std::uint32_t>(handle.entity->v.weapons);
+		for(std::size_t i=0;i<sizeof(ids)/sizeof(ids[0]);++i)
+			if((mask&(1U<<ids[i]))!=0U){clientCommand=names[i];break;}
+		if(!clientCommand)return false;
+	}
 	if (proposal.kind == ActionKind::SelectPistol)
 	{
 		const unsigned ids[] = {1,10,11,16,17,26};
@@ -271,7 +283,7 @@ void BotCommandRuntime::finishNeutralCommand(std::size_t index, FakeClientHandle
 		requestedAction, services_->observation_hasObservedActiveWeapon(index), command.viewAngles);
 	const ActionDispatch actionDispatch = ActionAdapter::translate(actionProposal);
 	command.viewAngles = actionDispatch.viewAngles;
-	command.synchronizeCombatView = actionProposal.hasCombatAim;
+	command.synchronizeCombatView = actionProposal.hasCombatAim || actionProposal.hasGuardLook;
 	command.movement.buttons = actionDispatch.buttons;
 	ActionAdapter::applyCombatMovement(command, actionProposal, handle.entity->v.maxspeed);
 	if (actionDispatch.clientCommand != nullptr)
@@ -636,7 +648,7 @@ runtime::CommandReceipt BotCommandRuntime::finishDirectNeutralCommand(std::size_
 		requestedAction, services_->observation_hasObservedActiveWeapon(index), command.viewAngles);
 	const ActionDispatch actionDispatch = ActionAdapter::translate(actionProposal);
 	command.viewAngles = actionDispatch.viewAngles;
-	command.synchronizeCombatView = actionProposal.hasCombatAim;
+	command.synchronizeCombatView = actionProposal.hasCombatAim || actionProposal.hasGuardLook;
 	command.movement.buttons = actionDispatch.buttons;
 	ActionAdapter::applyCombatMovement(command, actionProposal, handle.entity->v.maxspeed);
 	if (actionProposal.kind != ActionKind::None && gpMetaUtilFuncs != nullptr &&
@@ -787,7 +799,7 @@ void BotCommandRuntime::finishMovementCommand(std::size_t index, FakeClientHandl
 		requestedAction, services_->observation_hasObservedActiveWeapon(index), movementViewAngles);
 	const ActionDispatch actionDispatch = ActionAdapter::translate(actionProposal);
 	command.viewAngles = actionDispatch.viewAngles;
-	command.synchronizeCombatView = actionProposal.hasCombatAim;
+	command.synchronizeCombatView = actionProposal.hasCombatAim || actionProposal.hasGuardLook;
 	command.movement.buttons = actionDispatch.buttons;
 	const bool compatibilityMovement =
 		services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility;
