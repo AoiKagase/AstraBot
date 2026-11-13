@@ -109,16 +109,13 @@ void BotBehaviorRuntime::resetRoundBuyingState()
 	reset_buyReceiptTimeoutLogged();
 }
 
-void BotBehaviorRuntime::updateBehaviorPriorities(std::size_t index,
-												  const runtime::MovementPhysicsState &before,
-												  compat::StateUpdateContext &context,
-												  compat::StateBehaviorInput &stateBehavior)
+bool BotBehaviorRuntime::shouldBuy(std::size_t index,
+	const compat::StateUpdateContext &context) const
 {
-	auto &machine = actors_[index].managedBotStateMachines;
 	compat::PublicActorState buyingObservation{};
 	const float buyMinutes =
 		readOptionalCvarFloat(services_->service_engineFunctions(), "mp_buytime");
-	const bool shouldBuy =
+	return
 		!actors_[index].buyingComplete && context.alive &&
 		services_->service_globals() != nullptr && std::isfinite(buyMinutes) && buyMinutes > 0.0f &&
 		services_->service_globals()->time <=
@@ -126,45 +123,6 @@ void BotBehaviorRuntime::updateBehaviorPriorities(std::size_t index,
 		services_->observation_publicObservations().read(context.actor, context.frame,
 														 &buyingObservation) &&
 		buyingObservation.buyZoneKnown && buyingObservation.inBuyZone;
-	if (shouldBuy || machine.state() == compat::CompatibilityStateId::Buy)
-	{
-		context.requestedState =
-			shouldBuy ? compat::CompatibilityStateId::Buy : compat::CompatibilityStateId::Idle;
-		context.requestTransition = machine.state() != context.requestedState;
-		context.transitionId = compat::StateTransitionId::ExplicitStateChange;
-		context.transitionReason = compat::StateTransitionReason::ObjectiveChanged;
-	}
-	else if (!context.requestTransition && !machine.attackOverlayActive())
-	{
-		const auto &belief = services_->observation_managedBotPerception(index).snapshot();
-		const auto &noise = belief.noise();
-		stateBehavior.noiseAvailable =
-			belief.isValid() &&
-			belief.identity().frame.mapGeneration == context.frame.mapGeneration &&
-			belief.identity().frame.roundGeneration == context.frame.roundGeneration &&
-			noise.active && noise.ready &&
-			noise.timestampTick > actors_[index].investigatedNoiseTicks;
-		if (stateBehavior.noiseAvailable)
-		{
-			const float dx = before.origin.x - noise.position.x;
-			const float dy = before.origin.y - noise.position.y;
-			const float dz = before.origin.z - noise.position.z;
-			if (dx * dx + dy * dy + dz * dz <= 50.0f * 50.0f)
-			{
-				actors_[index].investigatedNoiseTicks = noise.timestampTick;
-				stateBehavior.noiseAvailable = false;
-				stateBehavior.goalReached = true;
-			}
-			else if (machine.state() == compat::CompatibilityStateId::Hunt ||
-					 machine.state() == compat::CompatibilityStateId::Idle)
-			{
-				context.requestedState = compat::CompatibilityStateId::InvestigateNoise;
-				context.requestTransition = true;
-				context.transitionId = compat::StateTransitionId::ExplicitStateChange;
-				context.transitionReason = compat::StateTransitionReason::ObjectiveChanged;
-			}
-		}
-	}
 }
 
 } // namespace metamod

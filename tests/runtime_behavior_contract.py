@@ -26,7 +26,7 @@ def main():
     for text, phases in ((action, action_phases), (state, state_phases)):
         positions = [text.index(phase) for phase in phases]
         assert positions == sorted(positions), "behavior phase order changed"
-    for unit in ("buying", "radio", "objectives", "combat", "scenario"):
+    for unit in ("buying", "radio", "objectives", "combat", "scenario", "perception", "priorities"):
         assert (ADAPTER / ("bot_behavior_" + unit + ".cpp")).is_file(), unit
     print("behavior responsibility and phase boundaries: PASS")
 

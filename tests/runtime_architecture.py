@@ -283,6 +283,11 @@ def check_dependencies(path, source):
     path = str(PurePosixPath(path.replace('\\', '/')))
     tokens = lex(source)
     code = ' '.join(t.value if t.kind == 'code' else '<literal>' for t in tokens)
+    if path.endswith('/bot_behavior_buying.cpp') and re.search(r'\bupdateBehaviorPriorities\b', code):
+        raise ArchitectureError('buying owns general behavior priority arbitration')
+    if path.endswith(('/action_adapter.cpp', '/action_adapter.hpp')) and re.search(
+            r'\b(?:PlantAttemptState|PlantAttemptController|evaluatePlantAttempt|kPlantAttemptTimeoutSeconds)\b', code):
+        raise ArchitectureError('adapter owns plant policy')
     includes = []
     for i, token in enumerate(tokens[:-2]):
         if token.value == '#' and tokens[i + 1].value == 'include':

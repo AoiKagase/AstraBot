@@ -140,7 +140,7 @@ class BotBehaviorRuntime
 		const compat::ObservationTimingContext &timing;
 		int observedTeam = 0;
 		float automaticLeaderRange = (std::numeric_limits<float>::max)();
-		nav::NavSnapshot navigation;
+		nav::NavSnapshot navigation{};
 		bool wasFollowing = false;
 	};
 	bool prepareManagedPerception(std::size_t index, world::WorldSnapshot *snapshot,
@@ -155,6 +155,7 @@ class BotBehaviorRuntime
 	BehaviorPhaseResult updateBehaviorLifecycle(std::size_t index,
 												const runtime::MovementPhysicsState &before,
 												compat::StateUpdateContext &context);
+	bool shouldBuy(std::size_t index, const compat::StateUpdateContext &context) const;
 	void updateBehaviorPriorities(std::size_t index, const runtime::MovementPhysicsState &before,
 								  compat::StateUpdateContext &context,
 								  compat::StateBehaviorInput &stateBehavior);

@@ -5,9 +5,23 @@ import json
 from pathlib import Path
 import unittest
 from runtime_characterization_contract import apply_correction
+import runtime_characterization_contract as contract
 
 
 class CorrectionChecks(unittest.TestCase):
+    def test_reviewed_corrections_compose_in_pinned_order(self):
+        apply_chain = getattr(contract, 'apply_corrections', None)
+        self.assertTrue(callable(apply_chain), 'multiple reviewed corrections need an explicit ordered chain')
+        second = {
+            'platforms': {'test': {
+                'baseline_sha256': hashlib.sha256(self.expected).hexdigest(),
+                'corrected_sha256': hashlib.sha256(b'a\nlookup\nb\n').hexdigest(), 'records': 3}},
+            'patterns': [{'test': {'before': [], 'after': ['lookup']}}],
+            'edits': [[1, 0]]}
+        self.assertEqual(apply_chain(self.baseline, [self.fixture, second], 'test'), b'a\nlookup\nb\n')
+        with self.assertRaises(ValueError):
+            apply_chain(self.baseline, [second, self.fixture], 'test')
+
     def setUp(self):
         self.baseline = b'a\nself-probe\nb\n'
         self.expected = b'a\nb\n'
@@ -60,6 +74,22 @@ class CorrectionChecks(unittest.TestCase):
             baseline = gzip.decompress((root / (platform + '.txt.gz')).read_bytes())
             self.assertEqual(hashlib.sha256(baseline).hexdigest(), provenance['platforms'][platform]['sha256'])
             self.assertEqual(len(apply_correction(baseline, fixture, platform).splitlines()), 131028)
+
+    def test_observed_team_correction_only_inserts_pinned_read_callbacks(self):
+        root = Path(__file__).parent / 'fixtures/runtime_characterization'
+        actor = json.loads((root / 'actor-generation-correction.json').read_text())
+        team = json.loads((root / 'observed-team-correction.json').read_text())
+        for platform in ('windows-x86', 'linux-x86'):
+            for pattern in team['patterns']:
+                self.assertEqual(pattern[platform]['before'], [])
+                self.assertTrue(pattern[platform]['after'])
+                self.assertEqual(set(pattern[platform]['after']), {'call indexOfEdict'})
+            original = gzip.decompress((root / (platform + '.txt.gz')).read_bytes())
+            previous = apply_correction(original, actor, platform)
+            current = contract.apply_corrections(original, [actor, team], platform)
+            without_lookups = lambda data: [line for line in data.splitlines() if line != b'call indexOfEdict']
+            self.assertEqual(without_lookups(previous), without_lookups(current))
+            self.assertEqual(len(current.splitlines()) - len(previous.splitlines()), 18127)
 
 
 if __name__ == '__main__':

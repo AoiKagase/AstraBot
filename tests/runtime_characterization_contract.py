@@ -36,12 +36,18 @@ def apply_correction(baseline, fixture, platform):
     return corrected
 
 
+def apply_corrections(baseline, corrections, platform):
+    for correction in corrections:
+        baseline = apply_correction(baseline, correction, platform)
+    return baseline
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--executable', type=Path, required=True)
     parser.add_argument('--baseline', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
-    parser.add_argument('--correction', type=Path)
+    parser.add_argument('--correction', type=Path, action='append', default=[])
     parser.add_argument('--platform')
     args = parser.parse_args()
     args.output.unlink(missing_ok=True)
@@ -50,8 +56,8 @@ def main():
     if result.returncode:
         raise SystemExit(result.returncode)
     expected = gzip.decompress(args.baseline.read_bytes())
-    if args.correction:
-        expected = apply_correction(expected, json.loads(args.correction.read_text()), args.platform)
+    expected = apply_corrections(expected,
+                                 [json.loads(path.read_text()) for path in args.correction], args.platform)
     actual = args.output.read_bytes()
     if actual != expected:
         delta = difflib.unified_diff(expected.decode().splitlines(), actual.decode().splitlines(),
@@ -59,7 +65,7 @@ def main():
         for _, line in zip(range(40), delta):
             print(line)
         raise SystemExit('runtime characterization differs; inspect output, do not regenerate baseline from candidate')
-    label = 'match reviewed actor-generation correction; historical baseline retained' if args.correction else 'identical'
+    label = 'match reviewed corrections; historical baseline retained' if args.correction else 'identical'
     print(f'runtime characterization: {len(actual.splitlines())} records {label}; SHA256={hashlib.sha256(actual).hexdigest()}')
 
 if __name__ == '__main__':

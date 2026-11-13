@@ -3,6 +3,13 @@
 対象は自作ソース・ヘッダーと関連するビルド・検証。外部SDK、生成された成果物、NAV/BSPデータは変更しない。
 本表は2026-11-12の責任分離の管理表であり、CSBotとの互換性や既知不具合の修正を認定するものではない。
 
+2026-11-13更新: 所属の解決はObservationの`resolvePlayerTeam`に集約し、
+TeamInfoを生のEntity値より優先する。目的地キャッシュは所属情報を所有しない。
+`collectManagedPerception`は観測を更新し、`readManagedWorldSnapshot`は公開済みSnapshotを参照する。
+反応キュー・標的認識・攻撃待ち時間はBehavior、入力送信を起点とする設置試行は
+Coreの`PlantAttemptController`が所有する。設置状態への遷移を起点とする互換タイマーは別責務である。
+購入条件と購入実行はbuying、行動全体の優先順位と音源調査はprioritiesに配置する。
+
 ## 担当と受け渡し
 
 | 担当 | 保持状態・変更権限 | 入力 | 出力 | 初期化・寿命 |
@@ -38,7 +45,8 @@
 | round・map・detach | round通知は武器/公開知識/無線/音/煙/認識を所定順で解除し再bind。行動は購入/plant乱数/戦術/連携を同じ位置で初期化。mapはprovider probeとmap共有観測を準備、deactivateでproviderを解除 | roundの経路世代確認はNavRoamControllerの既存更新に任せる。attach/deactivate/detachの`resetSharedExecutionState/Actor`は元のreset集合を保持。死亡danger受付はround、danger記憶はmapで解除 | Rootがmap/round世代・freeze・NavSnapshot・入力bind・Bot登録を管理。重複round通知の扱いも維持。`metamod_hooks`、`compat_actor_command`、`round_lifecycle_tracker` |
 | 失敗・受付 | 行動が経路失敗を連携要求に反映。reload/C4選択/攻撃の受付は専用通知で観測/行動に戻す | 行動の`NavigationRequest`をRootが同期適用し、経路破棄・step公開・failure解除を元の位置で実施。移動更新結果は`NavigationUpdate`値で返す。入力は受付を`CommandReceipt`で返す | `NavigationUpdate`はその更新だけの戻り値。共有の可変ActorStateではない。`runtime_characterization`と各Coreテスト |
 
-`BotRuntimeServices`はインフラの読み取りと名前付き操作のポートであり、ActorStateへの可変参照を返さない。
+担当別の`BotObservationServices`、`BotBehaviorServices`、`BotNavigationServices`、
+`BotCommandServices`はインフラの読み取りと名前付き操作のポートであり、ActorStateへの可変参照を返さない。
 経路要求を更新末尾へ遅延すると同じ更新の判断が変わるため、型付き要求は同期適用する。
 通常移動・待機・join heartbeat・購入・無線の送信入口は`BotCommandRuntime`に集約。
 Rootの`dispatchClientCommand`は既存GameDLL hook/argvエミュレーションの転送先として残す。

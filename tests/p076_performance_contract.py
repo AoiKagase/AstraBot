@@ -179,20 +179,23 @@ def test_effective_team_is_shared_across_runtime_decisions() -> None:
     root = Path(__file__).parents[1]
     source = behavior_source()
     source = normalize(source)
-    assert "resolveManagedBotTeam" in source
+    assert "resolveManagedBotTeam" not in source
     state_start = source.index(
         "void BotBehaviorRuntime::updateManagedBotCompatibilityState("
     )
     state_body = source[state_start:]
-    assert "resolveManagedBotTeam" in state_body
+    assert "observation_resolvePlayerTeam" in state_body
     objective_start = source.index(
         "bool BotBehaviorRuntime::buildManagedObjectiveTarget("
     )
     objective_body = source[objective_start:]
-    assert "resolveManagedBotTeam" in objective_body
+    assert "observation_resolvePlayerTeam" in objective_body
     action_start = source.index("ActionProposal BotBehaviorRuntime::decideManagedBotAction(")
     action_body = source[action_start:]
-    assert "resolveManagedBotTeam" in action_body
+    assert "observation_resolvePlayerTeam" in action_body
+    navigation = normalize((root / "src/adapter/metamod/bot_navigation_runtime.cpp").read_text(encoding="utf-8"))
+    assert re.search(r"observation_resolvePlayerTeam\s*\(\s*handle\.entity\s*\)", navigation)
+    assert not re.search(r"managedBotObjectiveTargets\s*\(\s*index\s*\)\s*\.\s*effectiveTeam", navigation)
 
 
 def test_runtime_diagnostic_separates_raw_and_effective_team() -> None:

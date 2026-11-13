@@ -6,6 +6,17 @@ from runtime_movement_integration_contract import assert_neutral_preparation_ord
 
 
 class ArchitectureCheckerTests(unittest.TestCase):
+    def test_buying_cannot_own_general_priority_arbitration(self):
+        with self.assertRaisesRegex(ArchitectureError, 'priority'):
+            check_dependencies('src/adapter/metamod/bot_behavior_buying.cpp',
+                               'void BotBehaviorRuntime::updateBehaviorPriorities() {}')
+
+    def test_action_adapter_cannot_own_plant_attempt_policy(self):
+        for source in ('struct PlantAttemptState { bool active; };',
+                       'PlantAttemptResult ActionAdapter::evaluatePlantAttempt() {}'):
+            with self.subTest(source=source), self.assertRaisesRegex(ArchitectureError, 'plant policy'):
+                check_dependencies('src/adapter/metamod/action_adapter.hpp', source)
+
     def test_observation_cannot_own_or_mutate_threat_recognition(self):
         for source in ('compat::ReactionQueue reactionQueues;',
                        'services_->behavior_observeRecognizedTargetChange(index, now);'):

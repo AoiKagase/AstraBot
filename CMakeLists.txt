@@ -963,6 +963,7 @@ if(ASTRABOT_BUILD_METAMOD)
     src/adapter/metamod/bot_behavior_perception.cpp
     src/adapter/metamod/bot_behavior_radio.cpp
     src/adapter/metamod/bot_behavior_buying.cpp
+    src/adapter/metamod/bot_behavior_priorities.cpp
     src/adapter/metamod/bot_behavior_objectives.cpp
     src/adapter/metamod/bot_behavior_guard.cpp
     src/adapter/metamod/bot_behavior_equipment.cpp
@@ -1001,6 +1002,7 @@ if(ASTRABOT_BUILD_TESTS AND ASTRABOT_BUILD_METAMOD)
       --executable "$<TARGET_FILE:astrabot_compat_actor_command>"
       --baseline "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/runtime_characterization/${characterization_platform}.txt.gz"
       --correction "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/runtime_characterization/actor-generation-correction.json"
+      --correction "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/runtime_characterization/observed-team-correction.json"
       --platform "${characterization_platform}"
       --output "${CMAKE_CURRENT_BINARY_DIR}/runtime-characterization.txt")
   add_test(NAME astrabot_runtime_characterization_checker
@@ -1071,4 +1073,13 @@ if(ASTRABOT_BUILD_TESTS AND ASTRABOT_BUILD_METAMOD)
   add_test(NAME astrabot_runtime_command_scenarios COMMAND astrabot_runtime_command_scenarios)
   add_test(NAME astrabot_runtime_architecture_checker
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/runtime_architecture_checker_tests.py)
+  if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    # These fixtures share the pinned HLSDK Vector and runtime sources with
+    # astrabot_compat_actor_command; retain its existing GCC SDK exception.
+    foreach(runtime_fixture astrabot_combat_target_log astrabot_bomb_guard_look
+        astrabot_weapon_switch_runtime astrabot_actor_identity_runtime
+        astrabot_runtime_team_resolution astrabot_runtime_command_scenarios)
+      target_compile_options(${runtime_fixture} PRIVATE -Wno-deprecated-copy)
+    endforeach()
+  endif()
 endif()
