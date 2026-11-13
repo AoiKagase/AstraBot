@@ -64,7 +64,8 @@ struct MovementProjection
 	float side;
 };
 
-struct PlantTargetBounds {
+struct PlantTargetBounds
+{
 	float minimumX;
 	float minimumY;
 	float minimumZ;
@@ -73,7 +74,8 @@ struct PlantTargetBounds {
 	float maximumZ;
 };
 
-struct PlantTargetPoint {
+struct PlantTargetPoint
+{
 	float x;
 	float y;
 	float z;
@@ -81,7 +83,7 @@ struct PlantTargetPoint {
 
 class ActionAdapter
 {
-  public:
+public:
 	static MovementProjection reprojectMovement(float forward, float side, float oldYaw, float newYaw);
 	static void applyCombatMovement(runtime::BotCommand &command, const ActionProposal &proposal, float maxSpeed);
 	static constexpr std::uint16_t kAttackButton = static_cast<std::uint16_t>(IN_ATTACK);
@@ -98,24 +100,17 @@ class ActionAdapter
 	static constexpr float kLegacyBombTargetRadius = 256.0f;
 	static bool isBombTargetClassname(const char *classname) noexcept;
 	static bool isLegacyInfoBombTargetClassname(const char *classname) noexcept;
-	static bool withinLegacyBombTargetRadius(
-		const PlantTargetPoint &center, const PlantTargetPoint &actor) noexcept;
+	static bool withinLegacyBombTargetRadius(const PlantTargetPoint &center, const PlantTargetPoint &actor) noexcept;
 	static bool validPlantTargetBounds(const PlantTargetBounds &bounds) noexcept;
-	static bool overlapsPlantTarget(const PlantTargetBounds &site,
-		const PlantTargetBounds &actor) noexcept;
-	static ActionKind plantActionForWeaponObservation(bool observationAvailable,
-		bool active, std::uint8_t weaponId, bool attackAlreadyDispatched) noexcept;
+	static bool overlapsPlantTarget(const PlantTargetBounds &site, const PlantTargetBounds &actor) noexcept;
+	static ActionKind plantActionForWeaponObservation(
+		bool observationAvailable, bool active, std::uint8_t weaponId, bool attackAlreadyDispatched) noexcept;
 
 	static ActionDispatch translate(const ActionProposal &proposal);
 	static ActionProposal forLiveDispatch(
-		const ActionProposal &proposal,
-		bool activeWeaponAvailable,
-		const runtime::ViewAngles &movementViewAngles);
+		const ActionProposal &proposal, bool activeWeaponAvailable, const runtime::ViewAngles &movementViewAngles);
 	static MovementProjection projectMovement(
-		float worldDirectionX,
-		float worldDirectionY,
-		float speed,
-		float viewYaw, bool compatibility = false);
+		float worldDirectionX, float worldDirectionY, float speed, float viewYaw, bool compatibility = false);
 	static std::uint16_t movementButtons(float forward, float side);
 };
 } // namespace metamod

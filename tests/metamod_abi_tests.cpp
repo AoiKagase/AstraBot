@@ -20,8 +20,8 @@ int main()
 	assert(detach != nullptr);
 	assert(entityApi != nullptr);
 	assert(engine != nullptr);
-	static_assert(std::is_same<decltype(&astrabot::metamod::GiveFnptrsToDll),
-		astrabot::metamod::EngineBootstrapFunction>::value,
+	static_assert(
+		std::is_same<decltype(&astrabot::metamod::GiveFnptrsToDll), astrabot::metamod::EngineBootstrapFunction>::value,
 		"GiveFnptrsToDll must retain the SDK WINAPI signature");
 	assert(astrabot::metamod::Meta_Query(interfaceVersion, &info, &metaUtils) == TRUE);
 	assert(info != nullptr);

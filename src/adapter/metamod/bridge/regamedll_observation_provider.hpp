@@ -27,9 +27,21 @@ public:
 	void reset();
 	void probe(Factory factory);
 	void probeLoadedGameDll();
-	ReGameDllProbeStatus status() const { return status_; }
-	int majorVersion() const { return major_; }
-	int minorVersion() const { return minor_; }
+	ReGameDllProbeStatus status() const
+	{
+		return status_;
+	}
+
+	int majorVersion() const
+	{
+		return major_;
+	}
+
+	int minorVersion() const
+	{
+		return minor_;
+	}
+
 	const char *diagnostic() const;
 	compat::ObservationCapabilities capabilities() const override;
 	void supplement(compat::CompatibilityObservation *observation) const override;

@@ -60,8 +60,7 @@ std::vector<std::uint8_t> makeNavWithManyEncounters()
 	output.appendU32(1U);
 	output.appendU32(1U);
 	output.appendU8(0U);
-	const float extentAndHeights[] = {0.0f, 0.0f, 0.0f, 64.0f,
-			64.0f, 0.0f, 0.0f, 0.0f};
+	const float extentAndHeights[] = {0.0f, 0.0f, 0.0f, 64.0f, 64.0f, 0.0f, 0.0f, 0.0f};
 	for (std::size_t index = 0U; index < 8U; ++index)
 	{
 		output.appendFloat(extentAndHeights[index]);
@@ -91,14 +90,12 @@ int main()
 	const std::vector<std::uint8_t> bytes = makeNavWithManyEncounters();
 	astrabot::nav::NavDocument document;
 	astrabot::nav::LegacyNavReader reader;
-	if (!check(reader.read(bytes.data(), bytes.size(), &document) ==
-			astrabot::nav::NavReadResult::Loaded,
+	if (!check(reader.read(bytes.data(), bytes.size(), &document) == astrabot::nav::NavReadResult::Loaded,
 			"legacy reader accepts encounter count above one-byte limit"))
 	{
 		return 1;
 	}
-	if (!check(document.areaCount() == 1U &&
-				document.areas()[0].encounters.size() == 256U,
+	if (!check(document.areaCount() == 1U && document.areas()[0].encounters.size() == 256U,
 			"encounter paths are retained"))
 	{
 		return 1;

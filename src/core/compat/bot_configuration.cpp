@@ -7,17 +7,26 @@ namespace compat
 {
 int calculateDesiredBotCount(const CvarSnapshot &settings, const QuotaPopulation &population)
 {
-	if (settings.botEnable == 0.0f) return 0;
-	if (population.elapsedMapSeconds < settings.botJoinDelay) return 0;
-	if ((settings.botJoinAfterPlayer == 1 && population.activeHumanClients <= 0) ||
-		(settings.botJoinAfterPlayer == 2 && population.humanClients <= 0)) return 0;
+	constexpr int kWaitForActiveHuman = 1;
+	constexpr int kWaitForConnectedHuman = 2;
+	if (settings.botEnable == 0.0f)
+		return 0;
+	if (population.elapsedMapSeconds < settings.botJoinDelay)
+		return 0;
+	if ((settings.botJoinAfterPlayer == kWaitForActiveHuman && population.activeHumanClients <= 0) ||
+		(settings.botJoinAfterPlayer == kWaitForConnectedHuman && population.humanClients <= 0))
+		return 0;
 	int desired = settings.botQuota;
-	if (settings.botQuotaMode == QuotaMode::Fill) desired -= population.activeHumanClients;
-	else if (settings.botQuotaMode == QuotaMode::Match) desired *= population.activeHumanClients;
-	if (population.lateJoinBlocked && settings.botQuotaMode != QuotaMode::Normal) desired = population.managedBotClients;
+	if (settings.botQuotaMode == QuotaMode::Fill)
+		desired -= population.activeHumanClients;
+	else if (settings.botQuotaMode == QuotaMode::Match)
+		desired *= population.activeHumanClients;
+	if (population.lateJoinBlocked && settings.botQuotaMode != QuotaMode::Normal)
+		desired = population.managedBotClients;
 	const int capacity = population.maxClients - population.humanClients - (settings.botAutoVacate ? 1 : 0);
 	return std::max(0, std::min(desired, capacity));
 }
+
 BotConfiguration::BotConfiguration() : cvarState_()
 {
 }
@@ -38,9 +47,7 @@ CvarSnapshot BotConfiguration::snapshot() const
 }
 
 BotActionResult BotConfiguration::authorize(
-	const CommandAction &action,
-	std::size_t managedActorCount,
-	bool nativeGuardAllowsCreation) const
+	const CommandAction &action, std::size_t managedActorCount, bool nativeGuardAllowsCreation) const
 {
 	if (!isValidTeam(action.team))
 	{
@@ -68,8 +75,7 @@ BotActionResult BotConfiguration::authorize(
 	}
 	case CommandId::Kick:
 	case CommandId::Kill:
-		return managedActorCount == 0U ? BotActionResult::NoTarget :
-			BotActionResult::Allowed;
+		return managedActorCount == 0U ? BotActionResult::NoTarget : BotActionResult::Allowed;
 	case CommandId::About:
 	case CommandId::KnivesOnly:
 	case CommandId::PistolsOnly:
@@ -83,8 +89,7 @@ BotActionResult BotConfiguration::authorize(
 
 bool BotConfiguration::isValidTeam(CommandTeam team)
 {
-	return team == CommandTeam::Any || team == CommandTeam::Terrorist ||
-			team == CommandTeam::CounterTerrorist;
+	return team == CommandTeam::Any || team == CommandTeam::Terrorist || team == CommandTeam::CounterTerrorist;
 }
 }
 }

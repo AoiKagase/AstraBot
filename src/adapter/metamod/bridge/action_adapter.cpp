@@ -30,22 +30,21 @@ bool equalsIgnoreCase(const char *left, const char *right) noexcept
 
 ActionDispatch ActionAdapter::translate(const ActionProposal &proposal)
 {
-	ActionDispatch result = {
-		proposal.kind, proposal.viewAngles, proposal.movementButtons, nullptr, false};
+	ActionDispatch result = {proposal.kind, proposal.viewAngles, proposal.movementButtons, nullptr, false};
 	switch (proposal.kind)
 	{
-		case ActionKind::Fire:
-			result.buttons = static_cast<std::uint16_t>(result.buttons | kAttackButton);
-			break;
-		case ActionKind::Plant:
-		case ActionKind::PlantContinue:
-			result.buttons = static_cast<std::uint16_t>(result.buttons | kAttackButton);
-			result.clientCommand = kSelectC4Command;
-			result.stopMovement = true;
-			break;
-		case ActionKind::SelectC4:
-			result.clientCommand = kSelectC4Command;
-			result.stopMovement = true;
+	case ActionKind::Fire:
+		result.buttons = static_cast<std::uint16_t>(result.buttons | kAttackButton);
+		break;
+	case ActionKind::Plant:
+	case ActionKind::PlantContinue:
+		result.buttons = static_cast<std::uint16_t>(result.buttons | kAttackButton);
+		result.clientCommand = kSelectC4Command;
+		result.stopMovement = true;
+		break;
+	case ActionKind::SelectC4:
+		result.clientCommand = kSelectC4Command;
+		result.stopMovement = true;
 		break;
 	case ActionKind::Defuse:
 	case ActionKind::UseEntity:
@@ -77,16 +76,14 @@ ActionDispatch ActionAdapter::translate(const ActionProposal &proposal)
 		proposal.kind == ActionKind::PlantContinue)
 	{
 		// Zero analog speed alone does not cancel a traversal jump in RunPlayerMove.
-		result.buttons = static_cast<std::uint16_t>(result.buttons &
-			~(IN_JUMP | IN_FORWARD | IN_BACK | IN_MOVELEFT | IN_MOVERIGHT | IN_LEFT | IN_RIGHT));
+		result.buttons = static_cast<std::uint16_t>(
+			result.buttons & ~(IN_JUMP | IN_FORWARD | IN_BACK | IN_MOVELEFT | IN_MOVERIGHT | IN_LEFT | IN_RIGHT));
 	}
 	return result;
 }
 
 ActionProposal ActionAdapter::forLiveDispatch(
-	const ActionProposal &proposal,
-	bool activeWeaponAvailable,
-	const runtime::ViewAngles &movementViewAngles)
+	const ActionProposal &proposal, bool activeWeaponAvailable, const runtime::ViewAngles &movementViewAngles)
 {
 	if ((proposal.kind == ActionKind::Fire || proposal.secondaryAttack) && !activeWeaponAvailable)
 	{
@@ -97,8 +94,8 @@ ActionProposal ActionAdapter::forLiveDispatch(
 
 bool ActionAdapter::validPlantTargetBounds(const PlantTargetBounds &bounds) noexcept
 {
-	const float values[] = {bounds.minimumX, bounds.minimumY, bounds.minimumZ,
-		bounds.maximumX, bounds.maximumY, bounds.maximumZ};
+	const float values[] = {
+		bounds.minimumX, bounds.minimumY, bounds.minimumZ, bounds.maximumX, bounds.maximumY, bounds.maximumZ};
 	for (const float value : values)
 	{
 		if (!std::isfinite(value))
@@ -106,29 +103,23 @@ bool ActionAdapter::validPlantTargetBounds(const PlantTargetBounds &bounds) noex
 			return false;
 		}
 	}
-	return bounds.minimumX <= bounds.maximumX &&
-		bounds.minimumY <= bounds.maximumY &&
+	return bounds.minimumX <= bounds.maximumX && bounds.minimumY <= bounds.maximumY &&
 		bounds.minimumZ <= bounds.maximumZ;
 }
 
-bool ActionAdapter::overlapsPlantTarget(
-	const PlantTargetBounds &site,
-	const PlantTargetBounds &actor) noexcept
+bool ActionAdapter::overlapsPlantTarget(const PlantTargetBounds &site, const PlantTargetBounds &actor) noexcept
 {
 	if (!validPlantTargetBounds(site) || !validPlantTargetBounds(actor))
 	{
 		return false;
 	}
-	return actor.maximumX >= site.minimumX && actor.minimumX <= site.maximumX &&
-		actor.maximumY >= site.minimumY && actor.minimumY <= site.maximumY &&
-		actor.maximumZ >= site.minimumZ && actor.minimumZ <= site.maximumZ;
+	return actor.maximumX >= site.minimumX && actor.minimumX <= site.maximumX && actor.maximumY >= site.minimumY &&
+		actor.minimumY <= site.maximumY && actor.maximumZ >= site.minimumZ && actor.minimumZ <= site.maximumZ;
 }
-
 
 bool ActionAdapter::isBombTargetClassname(const char *classname) noexcept
 {
-	return equalsIgnoreCase(classname, "func_bomb_target") ||
-		isLegacyInfoBombTargetClassname(classname);
+	return equalsIgnoreCase(classname, "func_bomb_target") || isLegacyInfoBombTargetClassname(classname);
 }
 
 bool ActionAdapter::isLegacyInfoBombTargetClassname(const char *classname) noexcept
@@ -136,10 +127,7 @@ bool ActionAdapter::isLegacyInfoBombTargetClassname(const char *classname) noexc
 	return equalsIgnoreCase(classname, "info_bomb_target");
 }
 
-
-bool ActionAdapter::withinLegacyBombTargetRadius(
-	const PlantTargetPoint &center,
-	const PlantTargetPoint &actor) noexcept
+bool ActionAdapter::withinLegacyBombTargetRadius(const PlantTargetPoint &center, const PlantTargetPoint &actor) noexcept
 {
 	const float values[] = {center.x, center.y, center.z, actor.x, actor.y, actor.z};
 	for (const float value : values)
@@ -156,13 +144,8 @@ bool ActionAdapter::withinLegacyBombTargetRadius(
 	return dx * dx + dy * dy + dz * dz <= radiusSquared;
 }
 
-
-
 ActionKind ActionAdapter::plantActionForWeaponObservation(
-	bool observationAvailable,
-	bool active,
-	std::uint8_t weaponId,
-	bool attackAlreadyDispatched) noexcept
+	bool observationAvailable, bool active, std::uint8_t weaponId, bool attackAlreadyDispatched) noexcept
 {
 	if (!observationAvailable || !active || weaponId != kC4WeaponId)
 	{
@@ -172,13 +155,10 @@ ActionKind ActionAdapter::plantActionForWeaponObservation(
 }
 
 MovementProjection ActionAdapter::projectMovement(
-	float worldDirectionX,
-	float worldDirectionY,
-	float speed,
-	float viewYaw, bool compatibility)
+	float worldDirectionX, float worldDirectionY, float speed, float viewYaw, bool compatibility)
 {
-	if (!std::isfinite(worldDirectionX) || !std::isfinite(worldDirectionY) ||
-			!std::isfinite(speed) || !std::isfinite(viewYaw))
+	if (!std::isfinite(worldDirectionX) || !std::isfinite(worldDirectionY) || !std::isfinite(speed) ||
+		!std::isfinite(viewYaw))
 	{
 		return {0.0f, 0.0f};
 	}
@@ -188,33 +168,42 @@ MovementProjection ActionAdapter::projectMovement(
 	const float forwardY = std::sin(yaw);
 	const float rightX = -forwardY;
 	const float rightY = forwardX;
-	if(compatibility)
+	if (compatibility)
 	{
-		const float forward=worldDirectionX*forwardX+worldDirectionY*forwardY;
-		const float side=-(worldDirectionX*rightX+worldDirectionY*rightY);
-		return {forward>0.25f ? speed : forward< -0.25f ? -speed : 0.0f,
-			side>=0.25f ? speed : side<= -0.25f ? -speed : 0.0f};
+		constexpr float kPositiveProjectionThreshold = 0.25f;
+		constexpr float kNegativeProjectionThreshold = -0.25f;
+		const float forward = worldDirectionX * forwardX + worldDirectionY * forwardY;
+		const float side = -(worldDirectionX * rightX + worldDirectionY * rightY);
+		return {forward > kPositiveProjectionThreshold	 ? speed
+				: forward < kNegativeProjectionThreshold ? -speed
+														 : 0.0f,
+			side >= kPositiveProjectionThreshold	   ? speed
+				: side <= kNegativeProjectionThreshold ? -speed
+													   : 0.0f};
 	}
-	return {
-		(worldDirectionX * forwardX + worldDirectionY * forwardY) * speed,
+	return {(worldDirectionX * forwardX + worldDirectionY * forwardY) * speed,
 		-(worldDirectionX * rightX + worldDirectionY * rightY) * speed};
 }
 
 MovementProjection ActionAdapter::reprojectMovement(float forward, float side, float oldYaw, float newYaw)
 {
-	const float delta = (newYaw - oldYaw) * 0.01745329251994329577f;
-	return {forward * std::cos(delta) - side * std::sin(delta),
-		forward * std::sin(delta) + side * std::cos(delta)};
+// Keep literal evaluation precision on x87; each macro is undefined below.
+#define ASTRABOT_ACTION_ADAPTER_DEGREES_TO_RADIANS 0.01745329251994329577f
+	const float delta = (newYaw - oldYaw) * ASTRABOT_ACTION_ADAPTER_DEGREES_TO_RADIANS;
+	return {forward * std::cos(delta) - side * std::sin(delta), forward * std::sin(delta) + side * std::cos(delta)};
 }
+#undef ASTRABOT_ACTION_ADAPTER_DEGREES_TO_RADIANS
 
 void ActionAdapter::applyCombatMovement(runtime::BotCommand &command, const ActionProposal &proposal, float maxSpeed)
 {
-	if (!proposal.combatMovement || !std::isfinite(maxSpeed) || maxSpeed <= 0) return;
+	if (!proposal.combatMovement || !std::isfinite(maxSpeed) || maxSpeed <= 0)
+		return;
 	command.movement.forward = proposal.stopForWeapon ? 0.0f : proposal.combatForward * maxSpeed;
 	command.movement.side = proposal.stopForWeapon ? 0.0f : proposal.combatSide * maxSpeed;
-	command.movement.buttons = static_cast<std::uint16_t>(command.movement.buttons & ~(IN_FORWARD|IN_BACK|IN_MOVELEFT|IN_MOVERIGHT));
-	command.movement.buttons = static_cast<std::uint16_t>(command.movement.buttons |
-		movementButtons(command.movement.forward,command.movement.side));
+	command.movement.buttons =
+		static_cast<std::uint16_t>(command.movement.buttons & ~(IN_FORWARD | IN_BACK | IN_MOVELEFT | IN_MOVERIGHT));
+	command.movement.buttons = static_cast<std::uint16_t>(
+		command.movement.buttons | movementButtons(command.movement.forward, command.movement.side));
 }
 
 std::uint16_t ActionAdapter::movementButtons(float forward, float side)

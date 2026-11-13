@@ -13,15 +13,13 @@ bool sameActor(const RandomActor &left, const RandomActor &right)
 
 bool sameTiming(const RandomTimingContext &left, const RandomTimingContext &right)
 {
-	return left.commandSequence == right.commandSequence &&
-		left.upkeepSequence == right.upkeepSequence &&
+	return left.commandSequence == right.commandSequence && left.upkeepSequence == right.upkeepSequence &&
 		left.fullUpdateSequence == right.fullUpdateSequence;
 }
 
 bool sameSite(const RandomTapeEntry &entry, const RandomRequest &request)
 {
-	return !entry.requireSemanticId ||
-		(entry.semanticId == (request.semanticId == nullptr ? "" : request.semanticId));
+	return !entry.requireSemanticId || (entry.semanticId == (request.semanticId == nullptr ? "" : request.semanticId));
 }
 
 bool sameRequest(const RandomTapeEntry &entry, const RandomRequest &request)
@@ -33,20 +31,14 @@ bool sameRequest(const RandomTapeEntry &entry, const RandomRequest &request)
 	}
 	if (request.type == RandomType::Float)
 	{
-		return entry.request.floatLower == request.floatLower &&
-			entry.request.floatUpper == request.floatUpper;
+		return entry.request.floatLower == request.floatLower && entry.request.floatUpper == request.floatUpper;
 	}
-	return entry.request.longLower == request.longLower &&
-		entry.request.longUpper == request.longUpper;
+	return entry.request.longLower == request.longLower && entry.request.longUpper == request.longUpper;
 }
 }
 
 RandomRequest RandomRequest::floatRequest(
-	const char *semanticId,
-	RandomActor actor,
-	RandomTimingContext timing,
-	float lower,
-	float upper)
+	const char *semanticId, RandomActor actor, RandomTimingContext timing, float lower, float upper)
 {
 	RandomRequest request = {};
 	request.type = RandomType::Float;
@@ -59,11 +51,7 @@ RandomRequest RandomRequest::floatRequest(
 }
 
 RandomRequest RandomRequest::longRequest(
-	const char *semanticId,
-	RandomActor actor,
-	RandomTimingContext timing,
-	std::int32_t lower,
-	std::int32_t upper)
+	const char *semanticId, RandomActor actor, RandomTimingContext timing, std::int32_t lower, std::int32_t upper)
 {
 	RandomRequest request = {};
 	request.type = RandomType::Long;
@@ -76,12 +64,7 @@ RandomRequest RandomRequest::longRequest(
 }
 
 RandomTapeEntry RandomTapeEntry::floatEntry(
-	const char *semanticId,
-	RandomActor actor,
-	RandomTimingContext timing,
-	float lower,
-	float upper,
-	float value)
+	const char *semanticId, RandomActor actor, RandomTimingContext timing, float lower, float upper, float value)
 {
 	RandomTapeEntry entry = {};
 	entry.request = RandomRequest::floatRequest(semanticId, actor, timing, lower, upper);
@@ -92,13 +75,8 @@ RandomTapeEntry RandomTapeEntry::floatEntry(
 	return entry;
 }
 
-RandomTapeEntry RandomTapeEntry::longEntry(
-	const char *semanticId,
-	RandomActor actor,
-	RandomTimingContext timing,
-	std::int32_t lower,
-	std::int32_t upper,
-	std::int32_t value)
+RandomTapeEntry RandomTapeEntry::longEntry(const char *semanticId, RandomActor actor, RandomTimingContext timing,
+	std::int32_t lower, std::int32_t upper, std::int32_t value)
 {
 	RandomTapeEntry entry = {};
 	entry.request = RandomRequest::longRequest(semanticId, actor, timing, lower, upper);

@@ -33,8 +33,8 @@ public:
 private:
 	friend class NavSnapshotPublisher;
 
-	NavSnapshot(const std::shared_ptr<const NavDocument> &document,
-		std::uint64_t revision, std::uint32_t mapGeneration);
+	NavSnapshot(
+		const std::shared_ptr<const NavDocument> &document, std::uint64_t revision, std::uint32_t mapGeneration);
 
 	std::shared_ptr<const NavDocument> document_;
 	std::uint64_t revision_;
@@ -46,8 +46,7 @@ class NavSnapshotPublisher
 public:
 	NavSnapshotPublisher();
 
-	NavSnapshotResult publish(const NavDocument *document,
-		std::uint32_t mapGeneration);
+	NavSnapshotResult publish(const NavDocument *document, std::uint32_t mapGeneration);
 	NavSnapshotResult invalidate(std::uint32_t mapGeneration);
 
 	NavSnapshot snapshot() const;

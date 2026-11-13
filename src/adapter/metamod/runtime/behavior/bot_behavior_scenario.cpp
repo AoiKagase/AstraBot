@@ -4,12 +4,39 @@ namespace astrabot
 {
 namespace metamod
 {
+namespace
+{
+constexpr int kTerroristTeam = 1;
+constexpr int kCounterTerroristTeam = 2;
+constexpr unsigned kScoutWeaponId = 3U;
+constexpr unsigned kSg550WeaponId = 13U;
+constexpr unsigned kAwpWeaponId = 18U;
+constexpr unsigned kG3sg1WeaponId = 24U;
+constexpr float kGoalArrivalRange = 64.0f;
+constexpr float kProfilePercentScale = 100.0f;
+constexpr int kVipScoreFlag = 4;
+constexpr unsigned kScenarioMapPrefixLength = 3U;
+// Keep literal evaluation precision on x87; each macro is undefined below.
+#define ASTRABOT_BOT_BEHAVIOR_SCENARIO_MINIMUM_PLANAR_SIGHT_RANGE 0.001f
+constexpr float kVisibleFacingCosine = 0.5f;
+constexpr float kEntityUseRange = 64.0f;
+constexpr int kMaximumEntityIndex = 2048;
+constexpr int kMaximumClientSlots = 32;
+constexpr float kHostageCompetitorRange = 256.0f;
+constexpr float kLegacyZoneHalfExtent = 256.0f;
+constexpr float kZoneVerticalPadding = 50.0f;
+constexpr unsigned kMaximumBombSiteAreas = 16U;
+constexpr float kDefuseWithKitSeconds = 5.0f;
+constexpr float kDefuseWithoutKitSeconds = 10.0f;
+constexpr float kHumanNavTolerance = 64.0f;
+constexpr float kRadioResponseBaseSeconds = 1.0f;
+constexpr float kRadioReactionScale = 2.0f;
+constexpr float kRogueRadioDelaySeconds = 2.0f;
+}
 using namespace runtime_detail;
 
-compat::StateUpdateContext
-BotBehaviorRuntime::makeManagedBotStateContext(std::size_t index,
-											   const runtime::MovementPhysicsState &before,
-											   compat::StateBehaviorInput *behavior) const
+compat::StateUpdateContext BotBehaviorRuntime::makeManagedBotStateContext(
+	std::size_t index, const runtime::MovementPhysicsState &before, compat::StateBehaviorInput *behavior) const
 {
 	compat::StateUpdateContext context = {};
 	if (index >= services_->service_managedBotHandles().size())
@@ -18,20 +45,17 @@ BotBehaviorRuntime::makeManagedBotStateContext(std::size_t index,
 	}
 	const FakeClientHandle &handle = services_->service_managedBotHandles()[index];
 	context.actor = {handle.actor.slot, handle.actor.actorGeneration};
-	context.frame = {services_->service_lifecycle().mapGeneration(),
-					 services_->service_lifecycle().roundGeneration(),
-					 services_->service_adapterFrameCount()};
-	context.timestamp =
-		services_->service_globals() != nullptr ? services_->service_globals()->time : 0.0f;
+	context.frame = {services_->service_lifecycle().mapGeneration(), services_->service_lifecycle().roundGeneration(),
+		services_->service_adapterFrameCount()};
+	context.timestamp = services_->service_globals() != nullptr ? services_->service_globals()->time : 0.0f;
 	context.fullUpdateSequence = services_->service_managedBotFullUpdateSequences()[index];
 	context.fullUpdate = true;
-	context.lifeAvailability = handle.entity != nullptr
-								   ? compat::ObservationAvailability::Available
-								   : compat::ObservationAvailability::Unavailable;
+	context.lifeAvailability = handle.entity != nullptr ? compat::ObservationAvailability::Available
+														: compat::ObservationAvailability::Unavailable;
 	context.alive = !before.dead;
 	context.roundAvailability = services_->service_lifecycle().isMapActive()
-									? compat::ObservationAvailability::Available
-									: compat::ObservationAvailability::Unavailable;
+		? compat::ObservationAvailability::Available
+		: compat::ObservationAvailability::Unavailable;
 	context.roundActive = services_->service_lifecycle().isMapActive();
 	context.requestTransition = false;
 	context.requestedState = compat::CompatibilityStateId::None;
@@ -44,12 +68,10 @@ BotBehaviorRuntime::makeManagedBotStateContext(std::size_t index,
 	{
 		*behavior = {};
 		behavior->navigationOwned =
-			services_->service_compatibilitySurface().configuration().mode ==
-			compat::RuntimeMode::Compatibility;
+			services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility;
 		behavior->navigationReady = services_->service_navPublisher().snapshot().isValid();
 		const ManagedObjectiveTargetCache &target = actors_[index].managedBotObjectiveTargets;
-		behavior->goalAvailable =
-			target.valid &&
+		behavior->goalAvailable = target.valid &&
 			target.mapGeneration == services_->service_lifecycle().mapGeneration() &&
 			target.roundGeneration == services_->service_lifecycle().roundGeneration();
 		if (behavior->goalAvailable)
@@ -57,38 +79,32 @@ BotBehaviorRuntime::makeManagedBotStateContext(std::size_t index,
 			const float dx = before.origin.x - target.target.x;
 			const float dy = before.origin.y - target.target.y;
 			const float dz = before.origin.z - target.target.z;
-			behavior->goalReached = dx * dx + dy * dy + dz * dz <= 64.0f * 64.0f;
+			behavior->goalReached = dx * dx + dy * dy + dz * dz <= kGoalArrivalRange * kGoalArrivalRange;
 		}
 		const auto &failure = services_->navigation_managedNavigationFailures(index);
-		const bool ownPathFailed =
-			failure.actor == context.actor && failure.frame.isValid() &&
+		const bool ownPathFailed = failure.actor == context.actor && failure.frame.isValid() &&
 			failure.frame.mapGeneration == context.frame.mapGeneration &&
-			failure.frame.roundGeneration == context.frame.roundGeneration &&
-			failure.frame.tick < context.frame.tick &&
+			failure.frame.roundGeneration == context.frame.roundGeneration && failure.frame.tick < context.frame.tick &&
 			failure.goalGeneration == target.generation &&
 			actors_[index].managedBotStateMachines.state() == compat::CompatibilityStateId::MoveTo;
-		behavior->pathFailed =
-			ownPathFailed || (managedTeamObjectivePathFailurePending_ &&
-							  managedTeamObjectivePathFailureActor_ == context.actor);
+		behavior->pathFailed = ownPathFailed ||
+			(managedTeamObjectivePathFailurePending_ && managedTeamObjectivePathFailureActor_ == context.actor);
 		behavior->objectiveActive = behavior->goalAvailable;
-		if (behavior->navigationOwned && actors_[index].managedBotStateMachines.state() ==
-											 compat::CompatibilityStateId::DefuseBomb)
+		if (behavior->navigationOwned &&
+			actors_[index].managedBotStateMachines.state() == compat::CompatibilityStateId::DefuseBomb)
 		{
-			behavior->objectiveActive = services_->observation_bombNoticeKnown(index) &&
-										services_->observation_bombNoticePlanted(index);
-			behavior->defuseReceipt = services_->observation_publicObservations().progressReceipt(
-				context.actor, context.frame, context.timestamp,
-				actors_[index].managedBotStateMachines.stateTimestamp());
+			behavior->objectiveActive =
+				services_->observation_bombNoticeKnown(index) && services_->observation_bombNoticePlanted(index);
+			behavior->defuseReceipt = services_->observation_publicObservations().progressReceipt(context.actor,
+				context.frame, context.timestamp, actors_[index].managedBotStateMachines.stateTimestamp());
 		}
 		context.behavior = behavior;
 	}
 	return context;
 }
 
-BotBehaviorRuntime::BehaviorPhaseResult
-BotBehaviorRuntime::updateBehaviorLifecycle(std::size_t index,
-											const runtime::MovementPhysicsState &before,
-											compat::StateUpdateContext &context)
+BotBehaviorRuntime::BehaviorPhaseResult BotBehaviorRuntime::updateBehaviorLifecycle(
+	std::size_t index, const runtime::MovementPhysicsState &before, compat::StateUpdateContext &context)
 {
 	auto &machine = actors_[index].managedBotStateMachines;
 	actors_[index].scenarioDecisions = {};
@@ -135,42 +151,31 @@ BotBehaviorRuntime::updateBehaviorLifecycle(std::size_t index,
 	return BehaviorPhaseResult::Continue;
 }
 
-void BotBehaviorRuntime::updateScenarioState(std::size_t index,
-											 const runtime::MovementPhysicsState &before,
-											 compat::StateUpdateContext &context,
-											 compat::StateBehaviorInput &stateBehavior)
+void BotBehaviorRuntime::updateScenarioState(std::size_t index, const runtime::MovementPhysicsState &before,
+	compat::StateUpdateContext &context, compat::StateBehaviorInput &stateBehavior)
 {
 	const compat::RuntimeMode mode = services_->service_compatibilitySurface().configuration().mode;
 	if (mode == compat::RuntimeMode::Compatibility)
 	{
-		const compat::ObservationTimingContext timing = {
-			services_->command_managedBotCommandSequences(index), 0U,
+		const compat::ObservationTimingContext timing = {services_->command_managedBotCommandSequences(index), 0U,
 			services_->service_managedBotFullUpdateSequences()[index]};
 		compat::CompatibilityObservation observation = {};
-		const ObservationAdapterResult observationResult =
-			services_->observation_observationAdapter().collectActor(
-				services_->service_managedBotHandles()[index].entity, context.actor, context.frame,
-				timing, &observation);
+		const ObservationAdapterResult observationResult = services_->observation_observationAdapter().collectActor(
+			services_->service_managedBotHandles()[index].entity, context.actor, context.frame, timing, &observation);
 		if (observationResult == ObservationAdapterResult::Accepted)
 		{
 			compat::ScenarioBehaviorInput scenario = {};
 			ScenarioUpdateData data{timing};
-			populateScenarioPublicState(index, before, context, stateBehavior, observation,
-										scenario, data);
-			observeScenarioEntities(index, before, context, stateBehavior, observation, scenario,
-									data);
-			updateScenarioNavigation(index, before, context, stateBehavior, observation, scenario,
-									 data);
-			updateScenarioTeamwork(index, before, context, stateBehavior, observation, scenario,
-								   data);
-			applyScenarioDecision(index, before, context, stateBehavior, observation, scenario,
-								  data);
+			populateScenarioPublicState(index, before, context, stateBehavior, observation, scenario, data);
+			observeScenarioEntities(index, before, context, stateBehavior, observation, scenario, data);
+			updateScenarioNavigation(index, before, context, stateBehavior, observation, scenario, data);
+			updateScenarioTeamwork(index, before, context, stateBehavior, observation, scenario, data);
+			applyScenarioDecision(index, before, context, stateBehavior, observation, scenario, data);
 		}
 	}
 }
 
-void BotBehaviorRuntime::populateScenarioPublicState(
-	std::size_t index, const runtime::MovementPhysicsState &before,
+void BotBehaviorRuntime::populateScenarioPublicState(std::size_t index, const runtime::MovementPhysicsState &before,
 	compat::StateUpdateContext &context, compat::StateBehaviorInput &stateBehavior,
 	const compat::CompatibilityObservation &observation, compat::ScenarioBehaviorInput &scenario,
 	ScenarioUpdateData &data)
@@ -180,26 +185,24 @@ void BotBehaviorRuntime::populateScenarioPublicState(
 	scenario.actor = context.actor;
 	scenario.frame = context.frame;
 	scenario.timestamp = context.timestamp;
-	scenario.selfPositionKnown = std::isfinite(before.origin.x) && std::isfinite(before.origin.y) &&
-								 std::isfinite(before.origin.z);
+	scenario.selfPositionKnown =
+		std::isfinite(before.origin.x) && std::isfinite(before.origin.y) && std::isfinite(before.origin.z);
 	scenario.selfPosition = {before.origin.x, before.origin.y, before.origin.z};
 	scenario.lifeKnown = context.lifeAvailability == compat::ObservationAvailability::Available;
 	scenario.alive = context.alive;
 	scenario.reactionSeconds = actors_[index].managedProfiles.reactionTimeSeconds;
-	scenario.aggression = static_cast<float>(actors_[index].managedProfiles.aggression) / 100.0f;
+	scenario.aggression = static_cast<float>(actors_[index].managedProfiles.aggression) / kProfilePercentScale;
 	scenario.attacking = machine.attackOverlayActive();
 	scenario.currentDefusing = machine.state() == compat::CompatibilityStateId::DefuseBomb;
-	scenario.alreadyEscapingFromBomb =
-		machine.state() == compat::CompatibilityStateId::EscapeFromBomb;
+	scenario.alreadyEscapingFromBomb = machine.state() == compat::CompatibilityStateId::EscapeFromBomb;
 	data.observedTeam = services_->observation_resolvePlayerTeam(services_->service_managedBotHandles()[index].entity);
 	const int observedTeam = data.observedTeam;
-	scenario.team = observedTeam == 1	? objectives::TeamRole::Terrorist
-					: observedTeam == 2 ? objectives::TeamRole::CounterTerrorist
-										: objectives::TeamRole::Unknown;
+	scenario.team = observedTeam == kTerroristTeam ? objectives::TeamRole::Terrorist
+		: observedTeam == kCounterTerroristTeam	   ? objectives::TeamRole::CounterTerrorist
+												   : objectives::TeamRole::Unknown;
 	compat::PublicActorState publicState = {};
-	scenario.blind = services_->observation_publicObservations().read(context.actor, context.frame,
-																	  &publicState) &&
-					 context.timestamp < publicState.blindUntil;
+	scenario.blind = services_->observation_publicObservations().read(context.actor, context.frame, &publicState) &&
+		context.timestamp < publicState.blindUntil;
 	scenario.isVipKnown = observation.objective.vip.isAvailable();
 	scenario.isVip = scenario.isVipKnown && observation.objective.vip.value;
 	scenario.bombPlantedKnown = observation.objective.bombPlanted.isAvailable();
@@ -221,28 +224,26 @@ void BotBehaviorRuntime::populateScenarioPublicState(
 	}
 	if (scenario.bombPlantedKnown && scenario.bombPlanted)
 	{
-		const float publicFuse =
-			readOptionalCvarFloat(services_->service_engineFunctions(), "mp_c4timer");
+		const float publicFuse = readOptionalCvarFloat(services_->service_engineFunctions(), "mp_c4timer");
 		scenario.timerEstimated = services_->observation_publicBombClocks(index).estimate(
 			context.frame, context.timestamp, publicFuse, &scenario.bombSecondsRemaining);
 	}
 	const auto &score = services_->observation_publicScoreStatuses(index)[index];
 	if (score.known &&
-		score.serial == static_cast<std::uint32_t>(
-							services_->service_managedBotHandles()[index].entity->serialnumber) &&
+		score.serial ==
+			static_cast<std::uint32_t>(services_->service_managedBotHandles()[index].entity->serialnumber) &&
 		score.frame.mapGeneration == context.frame.mapGeneration &&
 		score.frame.roundGeneration == context.frame.roundGeneration)
 	{
 		scenario.isVipKnown = true;
-		scenario.isVip = (score.flags & 4) != 0;
+		scenario.isVip = (score.flags & kVipScoreFlag) != 0;
 	}
 	scenario.defuseKitKnown = observation.objective.hasDefuseKit.isAvailable();
 	scenario.defuseKit = scenario.defuseKitKnown && observation.objective.hasDefuseKit.value;
 	scenario.radio = &services_->observation_scenarioRadio(index);
 }
 
-void BotBehaviorRuntime::observeScenarioEntities(
-	std::size_t index, const runtime::MovementPhysicsState &before,
+void BotBehaviorRuntime::observeScenarioEntities(std::size_t index, const runtime::MovementPhysicsState &before,
 	compat::StateUpdateContext &context, compat::StateBehaviorInput &stateBehavior,
 	const compat::CompatibilityObservation &observation, compat::ScenarioBehaviorInput &scenario,
 	ScenarioUpdateData &data)
@@ -252,48 +253,44 @@ void BotBehaviorRuntime::observeScenarioEntities(
 	const int observedTeam = data.observedTeam;
 	auto &automaticLeaderRange = data.automaticLeaderRange;
 
-	if (services_->service_engineFunctions() != nullptr &&
-		services_->service_globals() != nullptr &&
+	if (services_->service_engineFunctions() != nullptr && services_->service_globals() != nullptr &&
 		services_->service_engineFunctions()->pfnSzFromIndex != nullptr &&
 		services_->service_engineFunctions()->pfnPEntityOfEntIndex != nullptr)
 	{
-		const char *map = services_->service_engineFunctions()->pfnSzFromIndex(
-			services_->service_globals()->mapname);
-		scenario.scenario = map != nullptr && std::strncmp(map, "cs_", 3U) == 0
-								? compat::PublicScenarioKind::Hostage
-							: map != nullptr && std::strncmp(map, "as_", 3U) == 0
-								? compat::PublicScenarioKind::Vip
-							: map != nullptr && std::strncmp(map, "es_", 3U) == 0
-								? compat::PublicScenarioKind::Escape
-							: map != nullptr && std::strncmp(map, "de_", 3U) == 0
-								? compat::PublicScenarioKind::Bomb
-								: compat::PublicScenarioKind::Unknown;
-		const float eye[] = {
-			before.origin.x + services_->service_managedBotHandles()[index].entity->v.view_ofs.x,
+		const char *map = services_->service_engineFunctions()->pfnSzFromIndex(services_->service_globals()->mapname);
+		scenario.scenario = map != nullptr && std::strncmp(map, "cs_", kScenarioMapPrefixLength) == 0
+			? compat::PublicScenarioKind::Hostage
+			: map != nullptr && std::strncmp(map, "as_", kScenarioMapPrefixLength) == 0
+			? compat::PublicScenarioKind::Vip
+			: map != nullptr && std::strncmp(map, "es_", kScenarioMapPrefixLength) == 0
+			? compat::PublicScenarioKind::Escape
+			: map != nullptr && std::strncmp(map, "de_", kScenarioMapPrefixLength) == 0
+			? compat::PublicScenarioKind::Bomb
+			: compat::PublicScenarioKind::Unknown;
+		const float eye[] = {before.origin.x + services_->service_managedBotHandles()[index].entity->v.view_ofs.x,
 			before.origin.y + services_->service_managedBotHandles()[index].entity->v.view_ofs.y,
 			before.origin.z + services_->service_managedBotHandles()[index].entity->v.view_ofs.z};
-		const auto project = [&](edict_t *entity, int entityIndex,
-								 bool mapKnown) -> compat::ScenarioTarget {
+		const auto project = [&](edict_t *entity, int entityIndex, bool mapKnown) -> compat::ScenarioTarget
+		{
 			compat::ScenarioTarget target = {};
 			if (entity == nullptr || entity->free != 0)
 			{
 				return target;
 			}
 			const bool brush = entity->v.solid == SOLID_BSP || entity->v.solid == SOLID_TRIGGER;
-			const float point[] = {
-				brush ? (entity->v.absmin.x + entity->v.absmax.x) * 0.5f : entity->v.origin.x,
+			const float point[] = {brush ? (entity->v.absmin.x + entity->v.absmax.x) * 0.5f : entity->v.origin.x,
 				brush ? (entity->v.absmin.y + entity->v.absmax.y) * 0.5f : entity->v.origin.y,
 				brush ? (entity->v.absmin.z + entity->v.absmax.z) * 0.5f : entity->v.origin.z};
 			const float dx = point[0] - eye[0], dy = point[1] - eye[1], dz = point[2] - eye[2];
 			const float planar = std::hypot(dx, dy);
-			const float yaw = services_->service_managedBotHandles()[index].entity->v.v_angle.y *
-							  3.14159265358979323846f / 180.0f;
+			const float yaw =
+				services_->service_managedBotHandles()[index].entity->v.v_angle.y * 3.14159265358979323846f / 180.0f;
 			bool visible = false;
-			if (!mapKnown && !scenario.blind &&
-				services_->service_engineFunctions()->pfnTraceLine != nullptr &&
+			if (!mapKnown && !scenario.blind && services_->service_engineFunctions()->pfnTraceLine != nullptr &&
 				!services_->observation_smokeObservations().blocks(
 					{eye[0], eye[1], eye[2]}, {point[0], point[1], point[2]}, context.timestamp) &&
-				(planar < 0.001f || (dx * std::cos(yaw) + dy * std::sin(yaw)) / planar > 0.5f))
+				(planar < ASTRABOT_BOT_BEHAVIOR_SCENARIO_MINIMUM_PLANAR_SIGHT_RANGE ||
+					(dx * std::cos(yaw) + dy * std::sin(yaw)) / planar > kVisibleFacingCosine))
 			{
 				TraceResult trace = {};
 				services_->service_engineFunctions()->pfnTraceLine(
@@ -304,76 +301,65 @@ void BotBehaviorRuntime::observeScenarioEntities(
 			{
 				return target;
 			}
-			target.knowledge = mapKnown ? compat::ScenarioKnowledge::Remembered
-										: compat::ScenarioKnowledge::Visible;
+			target.knowledge = mapKnown ? compat::ScenarioKnowledge::Remembered : compat::ScenarioKnowledge::Visible;
 			target.frame = context.frame;
 			// Core generations reserve zero; map entities may publicly have serial zero.
-			target.entity = {static_cast<std::uint32_t>(entityIndex),
-							 static_cast<std::uint32_t>(entity->serialnumber) + 1U};
+			target.entity = {
+				static_cast<std::uint32_t>(entityIndex), static_cast<std::uint32_t>(entity->serialnumber) + 1U};
 			target.position = {point[0], point[1], point[2]};
 			target.pathCost = std::sqrt(dx * dx + dy * dy + dz * dz);
-			target.inUseRange = target.pathCost <= 64.0f;
+			target.inUseRange = target.pathCost <= kEntityUseRange;
 			return target;
 		};
-		const auto nearer = [](const compat::ScenarioTarget &candidate,
-							   const compat::ScenarioTarget &current) {
+		const auto nearer = [](const compat::ScenarioTarget &candidate, const compat::ScenarioTarget &current)
+		{
 			return candidate.knowledge != compat::ScenarioKnowledge::Unknown &&
-				   (current.knowledge == compat::ScenarioKnowledge::Unknown ||
-					candidate.pathCost < current.pathCost);
+				(current.knowledge == compat::ScenarioKnowledge::Unknown || candidate.pathCost < current.pathCost);
 		};
 		const int maxEntities =
-			(std::max)(0, (std::min)(services_->service_globals()->maxEntities, 2048));
+			(std::max)(0, (std::min)(services_->service_globals()->maxEntities, kMaximumEntityIndex));
 		for (int entityIndex = 1; entityIndex < maxEntities; ++entityIndex)
 		{
-			edict_t *entity =
-				services_->service_engineFunctions()->pfnPEntityOfEntIndex(entityIndex);
+			edict_t *entity = services_->service_engineFunctions()->pfnPEntityOfEntIndex(entityIndex);
 			if (entity == nullptr || entity->free != 0)
 			{
 				continue;
 			}
-			const char *name =
-				services_->service_engineFunctions()->pfnSzFromIndex(entity->v.classname);
+			const char *name = services_->service_engineFunctions()->pfnSzFromIndex(entity->v.classname);
 			if (name == nullptr)
 			{
 				continue;
 			}
-			if (entityIndex <= 32)
+			if (entityIndex <= kMaximumClientSlots)
 			{
-				const auto &vipScore = services_->observation_publicScoreStatuses(
-					index)[static_cast<std::size_t>(entityIndex - 1)];
-				if (vipScore.known &&
-					vipScore.serial == static_cast<std::uint32_t>(entity->serialnumber) &&
+				const auto &vipScore =
+					services_->observation_publicScoreStatuses(index)[static_cast<std::size_t>(entityIndex - 1)];
+				if (vipScore.known && vipScore.serial == static_cast<std::uint32_t>(entity->serialnumber) &&
 					vipScore.frame.mapGeneration == context.frame.mapGeneration &&
 					vipScore.frame.roundGeneration == context.frame.roundGeneration &&
-					(vipScore.flags & 4) != 0 && entity->v.deadflag == DEAD_NO)
+					(vipScore.flags & kVipScoreFlag) != 0 && entity->v.deadflag == DEAD_NO)
 				{
 					scenario.vip = project(entity, entityIndex, false);
-					scenario.vip.actor = {static_cast<std::uint32_t>(entityIndex),
-										  static_cast<std::uint32_t>(entity->serialnumber) + 1U};
+					scenario.vip.actor = {
+						static_cast<std::uint32_t>(entityIndex), static_cast<std::uint32_t>(entity->serialnumber) + 1U};
 				}
 			}
-			if (entityIndex <= services_->service_globals()->maxClients &&
-				(entity->v.flags & FL_FAKECLIENT) == 0 && services_->observation_resolvePlayerTeam(entity) == observedTeam &&
-				entity->v.deadflag == DEAD_NO && entity->v.health > 0.0f)
+			if (entityIndex <= services_->service_globals()->maxClients && (entity->v.flags & FL_FAKECLIENT) == 0 &&
+				services_->observation_resolvePlayerTeam(entity) == observedTeam && entity->v.deadflag == DEAD_NO &&
+				entity->v.health > 0.0f)
 			{
 				const auto location = project(entity, entityIndex, false);
 				if (location.knowledge == compat::ScenarioKnowledge::Visible)
 				{
-					const float dx = location.position.x - before.origin.x,
-								dy = location.position.y - before.origin.y,
+					const float dx = location.position.x - before.origin.x, dy = location.position.y - before.origin.y,
 								dz = location.position.z - before.origin.z;
 					const float distance = std::sqrt(dx * dx + dy * dy + dz * dz);
 					if (distance < automaticLeaderRange)
 					{
 						automaticLeaderRange = distance;
-						scenario.automaticLeader = {
-							{static_cast<std::uint32_t>(entityIndex),
-							 static_cast<std::uint32_t>(entity->serialnumber) + 1U},
-							scenario.team,
-							true,
-							true,
-							true,
-							location};
+						scenario.automaticLeader = {{static_cast<std::uint32_t>(entityIndex),
+														static_cast<std::uint32_t>(entity->serialnumber) + 1U},
+							scenario.team, true, true, true, location};
 						scenario.automaticLeader.location.actor = scenario.automaticLeader.actor;
 					}
 				}
@@ -383,35 +369,28 @@ void BotBehaviorRuntime::observeScenarioEntities(
 				compat::ObjectiveObservation planted{};
 				world::WorldVector knownPosition{};
 				bool bombVisible = false;
-				if (services_->observation_observationAdapter().collectPlantedBomb(
-						entity, name,
-						services_->service_engineFunctions()->pfnSzFromIndex(entity->v.model),
-						context.timestamp, context.actor, context.frame, data.timing,
-						&planted) == ObservationAdapterResult::Accepted &&
-					services_->observation_observeObjective(index, entity, true, &knownPosition,
-															&bombVisible))
+				if (services_->observation_observationAdapter().collectPlantedBomb(entity, name,
+						services_->service_engineFunctions()->pfnSzFromIndex(entity->v.model), context.timestamp,
+						context.actor, context.frame, data.timing, &planted) == ObservationAdapterResult::Accepted &&
+					services_->observation_observeObjective(index, entity, true, &knownPosition, &bombVisible))
 				{
 					scenario.bombPlantedKnown = true;
 					scenario.bombPlanted = true;
-					scenario.bomb.knowledge = bombVisible ? compat::ScenarioKnowledge::Visible
-														  : compat::ScenarioKnowledge::Remembered;
+					scenario.bomb.knowledge =
+						bombVisible ? compat::ScenarioKnowledge::Visible : compat::ScenarioKnowledge::Remembered;
 					scenario.bomb.frame = context.frame;
-					scenario.bomb.entity = {static_cast<std::uint32_t>(entityIndex),
-											static_cast<std::uint32_t>(entity->serialnumber) + 1U};
+					scenario.bomb.entity = {
+						static_cast<std::uint32_t>(entityIndex), static_cast<std::uint32_t>(entity->serialnumber) + 1U};
 					scenario.bomb.position = {knownPosition.x, knownPosition.y, knownPosition.z};
-					const float dx = knownPosition.x - before.origin.x,
-								dy = knownPosition.y - before.origin.y,
+					const float dx = knownPosition.x - before.origin.x, dy = knownPosition.y - before.origin.y,
 								dz = knownPosition.z - before.origin.z;
 					scenario.bomb.pathCost = std::sqrt(dx * dx + dy * dy + dz * dz);
-					scenario.bomb.inUseRange = scenario.bomb.pathCost <= 64.0f;
+					scenario.bomb.inUseRange = scenario.bomb.pathCost <= kEntityUseRange;
 					scenario.humanDefusingKnown = true;
-					scenario.humanDefusing =
-						services_->observation_externalDefuserEntityIndex() != 0U &&
+					scenario.humanDefusing = services_->observation_externalDefuserEntityIndex() != 0U &&
 						services_->observation_externalDefuserLeaseUntil() >= context.timestamp &&
-						services_->observation_externalDefuserMapGeneration() ==
-							context.frame.mapGeneration &&
-						services_->observation_externalDefuserRoundGeneration() ==
-							context.frame.roundGeneration;
+						services_->observation_externalDefuserMapGeneration() == context.frame.mapGeneration &&
+						services_->observation_externalDefuserRoundGeneration() == context.frame.roundGeneration;
 				}
 			}
 			compat::ScenarioTarget *destination = nullptr;
@@ -421,8 +400,7 @@ void BotBehaviorRuntime::observeScenarioEntities(
 				destination = &scenario.hostage;
 				mapKnown = false;
 			}
-			else if (std::strcmp(name, "func_hostage_rescue") == 0 ||
-					 std::strcmp(name, "info_hostage_rescue") == 0)
+			else if (std::strcmp(name, "func_hostage_rescue") == 0 || std::strcmp(name, "info_hostage_rescue") == 0)
 			{
 				destination = &scenario.rescueZone;
 			}
@@ -450,15 +428,14 @@ void BotBehaviorRuntime::observeScenarioEntities(
 			for (int player = 1; player <= services_->service_globals()->maxClients; ++player)
 			{
 				edict_t *other = services_->service_engineFunctions()->pfnPEntityOfEntIndex(player);
-				if (other == nullptr ||
-					other == services_->service_managedBotHandles()[index].entity ||
-					other->free != 0 || services_->observation_resolvePlayerTeam(other) != 2 || other->v.deadflag != DEAD_NO ||
-					other->v.health <= 0.0f)
+				if (other == nullptr || other == services_->service_managedBotHandles()[index].entity ||
+					other->free != 0 || services_->observation_resolvePlayerTeam(other) != kCounterTerroristTeam ||
+					other->v.deadflag != DEAD_NO || other->v.health <= 0.0f)
 					continue;
 				const float dx = other->v.origin.x - scenario.hostage.position.x;
 				const float dy = other->v.origin.y - scenario.hostage.position.y;
 				const float dz = other->v.origin.z - scenario.hostage.position.z;
-				if (dx * dx + dy * dy + dz * dz <= 256.0f * 256.0f)
+				if (dx * dx + dy * dy + dz * dz <= kHostageCompetitorRange * kHostageCompetitorRange)
 				{
 					scenario.hostageCompetitorNearby = true;
 					break;
@@ -469,37 +446,33 @@ void BotBehaviorRuntime::observeScenarioEntities(
 		if (actors_[index].scenarioPlanners.isFollowing() && tracked.isValid() &&
 			tracked.slot <= static_cast<std::uint32_t>(services_->service_globals()->maxClients))
 		{
-			edict_t *human = services_->service_engineFunctions()->pfnPEntityOfEntIndex(
-				static_cast<int>(tracked.slot));
+			edict_t *human = services_->service_engineFunctions()->pfnPEntityOfEntIndex(static_cast<int>(tracked.slot));
 			if (human != nullptr && !human->free &&
 				static_cast<std::uint32_t>(human->serialnumber) + 1U == tracked.generation)
 			{
 				scenario.automaticLeader = {tracked,
-											services_->observation_resolvePlayerTeam(human) == 1 ? objectives::TeamRole::Terrorist
-											: services_->observation_resolvePlayerTeam(human) == 2
-												? objectives::TeamRole::CounterTerrorist
-												: objectives::TeamRole::Unknown,
-											(human->v.flags & FL_FAKECLIENT) == 0,
-											true,
-											human->v.deadflag == DEAD_NO && human->v.health > 0.0f,
-											project(human, static_cast<int>(tracked.slot), false)};
+					services_->observation_resolvePlayerTeam(human) == kTerroristTeam ? objectives::TeamRole::Terrorist
+						: services_->observation_resolvePlayerTeam(human) == kCounterTerroristTeam
+						? objectives::TeamRole::CounterTerrorist
+						: objectives::TeamRole::Unknown,
+					(human->v.flags & FL_FAKECLIENT) == 0, true, human->v.deadflag == DEAD_NO && human->v.health > 0.0f,
+					project(human, static_cast<int>(tracked.slot), false)};
 				scenario.automaticLeader.location.actor = tracked;
 			}
 		}
 		const auto sender = services_->observation_scenarioRadio(index).sender;
-		if (sender.isValid() &&
-			sender.slot <= static_cast<std::uint32_t>(services_->service_globals()->maxClients))
+		if (sender.isValid() && sender.slot <= static_cast<std::uint32_t>(services_->service_globals()->maxClients))
 		{
-			edict_t *leader = services_->service_engineFunctions()->pfnPEntityOfEntIndex(
-				static_cast<int>(sender.slot));
+			edict_t *leader = services_->service_engineFunctions()->pfnPEntityOfEntIndex(static_cast<int>(sender.slot));
 			if (leader != nullptr && leader->free == 0 &&
 				static_cast<std::uint32_t>(leader->serialnumber) == sender.generation)
 			{
 				scenario.leader.actor = sender;
-				scenario.leader.team = services_->observation_resolvePlayerTeam(leader) == 1 ? objectives::TeamRole::Terrorist
-									   : services_->observation_resolvePlayerTeam(leader) == 2
-										   ? objectives::TeamRole::CounterTerrorist
-										   : objectives::TeamRole::Unknown;
+				scenario.leader.team = services_->observation_resolvePlayerTeam(leader) == kTerroristTeam
+					? objectives::TeamRole::Terrorist
+					: services_->observation_resolvePlayerTeam(leader) == kCounterTerroristTeam
+					? objectives::TeamRole::CounterTerrorist
+					: objectives::TeamRole::Unknown;
 				scenario.leader.human = (leader->v.flags & FL_FAKECLIENT) == 0;
 				scenario.leader.lifeKnown = true;
 				scenario.leader.alive = leader->v.deadflag == DEAD_NO && leader->v.health > 0.0f;
@@ -507,16 +480,14 @@ void BotBehaviorRuntime::observeScenarioEntities(
 				scenario.leader.location.actor = sender;
 				if (scenario.leader.location.knowledge == compat::ScenarioKnowledge::Visible)
 				{
-					services_->observation_observeRadioLeaderPosition(index,
-																	  scenario.leader.location);
+					services_->observation_observeRadioLeaderPosition(index, scenario.leader.location);
 				}
 			}
 		}
 	}
 }
 
-void BotBehaviorRuntime::updateScenarioNavigation(
-	std::size_t index, const runtime::MovementPhysicsState &before,
+void BotBehaviorRuntime::updateScenarioNavigation(std::size_t index, const runtime::MovementPhysicsState &before,
 	compat::StateUpdateContext &context, compat::StateBehaviorInput &stateBehavior,
 	const compat::CompatibilityObservation &observation, compat::ScenarioBehaviorInput &scenario,
 	ScenarioUpdateData &data)
@@ -528,22 +499,19 @@ void BotBehaviorRuntime::updateScenarioNavigation(
 	const auto &scenarioNavigation = data.navigation;
 	const nav::NavDocument *scenarioDocument = scenarioNavigation.document();
 	if (scenario.scenario == compat::PublicScenarioKind::Bomb &&
-		scenario.team == objectives::TeamRole::CounterTerrorist && scenario.bombPlantedKnown &&
-		scenario.bombPlanted && scenario.bomb.knowledge == compat::ScenarioKnowledge::Unknown &&
-		scenarioNavigation.isValid() &&
-		scenarioNavigation.mapGeneration() == context.frame.mapGeneration &&
-		scenarioDocument != nullptr && services_->service_globals() != nullptr &&
-		services_->service_engineFunctions() != nullptr &&
+		scenario.team == objectives::TeamRole::CounterTerrorist && scenario.bombPlantedKnown && scenario.bombPlanted &&
+		scenario.bomb.knowledge == compat::ScenarioKnowledge::Unknown && scenarioNavigation.isValid() &&
+		scenarioNavigation.mapGeneration() == context.frame.mapGeneration && scenarioDocument != nullptr &&
+		services_->service_globals() != nullptr && services_->service_engineFunctions() != nullptr &&
 		services_->service_engineFunctions()->pfnPEntityOfEntIndex != nullptr &&
 		services_->service_engineFunctions()->pfnSzFromIndex != nullptr)
 	{
 		compat::ScenarioTarget &search = actors_[index].bombSearchTargets;
 		if (search.knowledge != compat::ScenarioKnowledge::Unknown)
 		{
-			const float dx = search.position.x - before.origin.x,
-						dy = search.position.y - before.origin.y,
+			const float dx = search.position.x - before.origin.x, dy = search.position.y - before.origin.y,
 						dz = search.position.z - before.origin.z;
-			if (dx * dx + dy * dy + dz * dz <= 64.0f * 64.0f)
+			if (dx * dx + dy * dy + dz * dz <= kGoalArrivalRange * kGoalArrivalRange)
 			{
 				actors_[index].bombSearchMemory.clear(search.entity);
 				search = {};
@@ -555,71 +523,65 @@ void BotBehaviorRuntime::updateScenarioNavigation(
 			nav::NavQuery query(scenarioNavigation);
 			nav::NavAreaMatch start{};
 			const nav::NavVector self = {before.origin.x, before.origin.y, before.origin.z};
-			const bool haveStart = query.findNearest3D(self, kMaximumObjectiveDistance, &start) ==
-								   nav::NavQueryResult::Found;
-			const int limit = (std::min)(services_->service_globals()->maxEntities, 2048);
+			const bool haveStart =
+				query.findNearest3D(self, kMaximumObjectiveDistance, &start) == nav::NavQueryResult::Found;
+			const int limit = (std::min)(services_->service_globals()->maxEntities, kMaximumEntityIndex);
 			for (int entityIndex = 1; entityIndex < limit; ++entityIndex)
 			{
-				edict_t *entity =
-					services_->service_engineFunctions()->pfnPEntityOfEntIndex(entityIndex);
+				edict_t *entity = services_->service_engineFunctions()->pfnPEntityOfEntIndex(entityIndex);
 				if (entity == nullptr || entity->free)
 					continue;
-				const char *name =
-					services_->service_engineFunctions()->pfnSzFromIndex(entity->v.classname);
-				if (name == nullptr || (std::strcmp(name, "func_bomb_target") != 0 &&
-										std::strcmp(name, "info_bomb_target") != 0))
+				const char *name = services_->service_engineFunctions()->pfnSzFromIndex(entity->v.classname);
+				if (name == nullptr ||
+					(std::strcmp(name, "func_bomb_target") != 0 && std::strcmp(name, "info_bomb_target") != 0))
 					continue;
 				compat::BombSearchSite site{};
-				site.entity = {static_cast<std::uint32_t>(entityIndex),
-							   static_cast<std::uint32_t>(entity->serialnumber) + 1U};
+				site.entity = {
+					static_cast<std::uint32_t>(entityIndex), static_cast<std::uint32_t>(entity->serialnumber) + 1U};
 				site.legacy = std::strcmp(name, "info_bomb_target") == 0;
 				if (site.legacy)
 				{
 					site.center = {entity->v.origin.x, entity->v.origin.y, entity->v.origin.z};
-					site.extent = {
-						{site.center.x - 256.0f, site.center.y - 256.0f, site.center.z - 256.0f},
-						{site.center.x + 256.0f, site.center.y + 256.0f, site.center.z + 256.0f}};
+					site.extent = {{site.center.x - kLegacyZoneHalfExtent, site.center.y - kLegacyZoneHalfExtent,
+									   site.center.z - kLegacyZoneHalfExtent},
+						{site.center.x + kLegacyZoneHalfExtent, site.center.y + kLegacyZoneHalfExtent,
+							site.center.z + kLegacyZoneHalfExtent}};
 				}
 				else
 				{
 					site.extent = {{entity->v.absmin.x, entity->v.absmin.y, entity->v.absmin.z},
-								   {entity->v.absmax.x, entity->v.absmax.y, entity->v.absmax.z}};
+						{entity->v.absmax.x, entity->v.absmax.y, entity->v.absmax.z}};
 					site.center = {(site.extent.lo.x + site.extent.hi.x) * 0.5f,
-								   (site.extent.lo.y + site.extent.hi.y) * 0.5f,
-								   (site.extent.lo.z + site.extent.hi.z) * 0.5f};
+						(site.extent.lo.y + site.extent.hi.y) * 0.5f, (site.extent.lo.z + site.extent.hi.z) * 0.5f};
 				}
-				site.extent.lo.z -= 50.0f;
-				site.extent.hi.z += 50.0f;
+				site.extent.lo.z -= kZoneVerticalPadding;
+				site.extent.hi.z += kZoneVerticalPadding;
 				nav::NavAreaMatch finish{};
 				nav::NavCorridor route{};
 				if (haveStart &&
 					query.findNearest3D(site.center, kMaximumObjectiveDistance, &finish) ==
 						nav::NavQueryResult::Found &&
-					query.buildCorridor(start.area, finish.area, nav::NavRouteType::Fastest,
-										&route) == nav::NavQueryResult::Found)
+					query.buildCorridor(start.area, finish.area, nav::NavRouteType::Fastest, &route) ==
+						nav::NavQueryResult::Found)
 					site.travel = route.cost;
 				sites.push_back(site);
 			}
 			const compat::RandomActor randomActor = {context.actor.slot, context.actor.generation};
-			const compat::RandomTimingContext randomTiming = {
-				services_->command_managedBotCommandSequences(index), 0U,
+			const compat::RandomTimingContext randomTiming = {services_->command_managedBotCommandSequences(index), 0U,
 				services_->service_managedBotFullUpdateSequences()[index]};
 			std::size_t selected = 0U;
-			if (actors_[index].bombSearchMemory.choose(
-					context.frame, sites, services_->service_compatibilityRandomSource(),
-					randomActor, randomTiming, &selected))
+			if (actors_[index].bombSearchMemory.choose(context.frame, sites,
+					services_->service_compatibilityRandomSource(), randomActor, randomTiming, &selected))
 			{
 				nav::NavVector point{};
 				nav::NavAreaMatch chosenArea{};
 				nav::NavCorridor chosenRoute{};
-				if (compat::bombSitePoint(*scenarioDocument, sites[selected], 16U,
-										  services_->service_compatibilityRandomSource(),
-										  randomActor, randomTiming, &point) &&
+				if (compat::bombSitePoint(*scenarioDocument, sites[selected], kMaximumBombSiteAreas,
+						services_->service_compatibilityRandomSource(), randomActor, randomTiming, &point) &&
 					haveStart &&
-					query.findNearest3D(point, kMaximumObjectiveDistance, &chosenArea) ==
-						nav::NavQueryResult::Found &&
-					query.buildCorridor(start.area, chosenArea.area, nav::NavRouteType::Fastest,
-										&chosenRoute) == nav::NavQueryResult::Found)
+					query.findNearest3D(point, kMaximumObjectiveDistance, &chosenArea) == nav::NavQueryResult::Found &&
+					query.buildCorridor(start.area, chosenArea.area, nav::NavRouteType::Fastest, &chosenRoute) ==
+						nav::NavQueryResult::Found)
 				{
 					search.knowledge = compat::ScenarioKnowledge::Remembered;
 					search.frame = context.frame;
@@ -637,47 +599,35 @@ void BotBehaviorRuntime::updateScenarioNavigation(
 			scenario.bombSearch = search;
 		}
 	}
-	if (scenario.scenario == compat::PublicScenarioKind::Bomb && scenario.bombPlantedKnown &&
-		scenario.bombPlanted && scenario.bomb.knowledge != compat::ScenarioKnowledge::Unknown &&
-		scenarioNavigation.isValid() &&
-		scenarioNavigation.mapGeneration() == context.frame.mapGeneration &&
-		scenarioDocument != nullptr)
+	if (scenario.scenario == compat::PublicScenarioKind::Bomb && scenario.bombPlantedKnown && scenario.bombPlanted &&
+		scenario.bomb.knowledge != compat::ScenarioKnowledge::Unknown && scenarioNavigation.isValid() &&
+		scenarioNavigation.mapGeneration() == context.frame.mapGeneration && scenarioDocument != nullptr)
 	{
 		const nav::NavVector self = {before.origin.x, before.origin.y, before.origin.z};
-		const nav::NavVector bomb = {scenario.bomb.position.x, scenario.bomb.position.y,
-									 scenario.bomb.position.z};
-		scenario.travelTimeEstimated =
-			scenario.team == objectives::TeamRole::CounterTerrorist &&
+		const nav::NavVector bomb = {scenario.bomb.position.x, scenario.bomb.position.y, scenario.bomb.position.z};
+		scenario.travelTimeEstimated = scenario.team == objectives::TeamRole::CounterTerrorist &&
 			!scenario.alreadyEscapingFromBomb && !scenario.currentDefusing &&
-			compat::estimateBombTravel(
-				scenarioNavigation, self, bomb,
-				services_->service_managedBotHandles()[index].entity->v.maxspeed,
-				kMaximumObjectiveDistance, &scenario.travelSecondsToBomb);
-		const bool lateDefuse =
-			scenario.team == objectives::TeamRole::CounterTerrorist && scenario.timerEstimated &&
+			compat::estimateBombTravel(scenarioNavigation, self, bomb,
+				services_->service_managedBotHandles()[index].entity->v.maxspeed, kMaximumObjectiveDistance,
+				&scenario.travelSecondsToBomb);
+		const bool lateDefuse = scenario.team == objectives::TeamRole::CounterTerrorist && scenario.timerEstimated &&
 			scenario.travelTimeEstimated && scenario.defuseKitKnown &&
 			scenario.bombSecondsRemaining <=
-				scenario.travelSecondsToBomb + (scenario.defuseKit ? 5.0f : 10.0f);
-		const bool requestedEscape =
-			compat::ScenarioBehaviorPlanner::autoEscapeRequested(scenario) ||
-			(lateDefuse && !scenario.attacking && !scenario.currentDefusing) ||
-			scenario.alreadyEscapingFromBomb ||
-			(scenario.radio != nullptr &&
-			 scenario.radio->command == compat::ScenarioRadioCommand::GetOut);
+				scenario.travelSecondsToBomb + (scenario.defuseKit ? kDefuseWithKitSeconds : kDefuseWithoutKitSeconds);
+		const bool requestedEscape = compat::ScenarioBehaviorPlanner::autoEscapeRequested(scenario) ||
+			(lateDefuse && !scenario.attacking && !scenario.currentDefusing) || scenario.alreadyEscapingFromBomb ||
+			(scenario.radio != nullptr && scenario.radio->command == compat::ScenarioRadioCommand::GetOut);
 		if (requestedEscape)
 		{
 			nav::AreaId &goal = actors_[index].scenarioEscapeAreas;
 			const nav::NavArea *area = scenarioDocument->findArea(goal);
 			if (area == nullptr)
 			{
-				const compat::RandomActor randomActor = {context.actor.slot,
-														 context.actor.generation};
-				const compat::RandomTimingContext randomTiming = {
-					services_->command_managedBotCommandSequences(index), 0U,
-					services_->service_managedBotFullUpdateSequences()[index]};
+				const compat::RandomActor randomActor = {context.actor.slot, context.actor.generation};
+				const compat::RandomTimingContext randomTiming = {services_->command_managedBotCommandSequences(index),
+					0U, services_->service_managedBotFullUpdateSequences()[index]};
 				if (compat::selectBombEscapeArea(*scenarioDocument, bomb,
-												 services_->service_compatibilityRandomSource(),
-												 randomActor, randomTiming, &goal))
+						services_->service_compatibilityRandomSource(), randomActor, randomTiming, &goal))
 					area = scenarioDocument->findArea(goal);
 			}
 			if (area != nullptr)
@@ -693,8 +643,8 @@ void BotBehaviorRuntime::updateScenarioNavigation(
 			}
 		}
 	}
-	const auto validateRadioSender =
-		[&](world::ActorKey sender) -> compat::ScenarioSenderValidation {
+	const auto validateRadioSender = [&](world::ActorKey sender) -> compat::ScenarioSenderValidation
+	{
 		compat::ScenarioSenderValidation validation{sender, false, false};
 		if (!sender.isValid() || services_->service_globals() == nullptr ||
 			services_->service_engineFunctions() == nullptr ||
@@ -703,27 +653,22 @@ void BotBehaviorRuntime::updateScenarioNavigation(
 		validation.known = true;
 		if (sender.slot > static_cast<std::uint32_t>(services_->service_globals()->maxClients))
 			return validation;
-		edict_t *human = services_->service_engineFunctions()->pfnPEntityOfEntIndex(
-			static_cast<int>(sender.slot));
-		validation.valid = (observedTeam == 1 || observedTeam == 2) && human != nullptr &&
-						   !human->free && (human->v.flags & FL_CLIENT) != 0 &&
-						   (human->v.flags & FL_FAKECLIENT) == 0 && services_->observation_resolvePlayerTeam(human) == observedTeam &&
-						   static_cast<std::uint32_t>(human->serialnumber) == sender.generation;
+		edict_t *human = services_->service_engineFunctions()->pfnPEntityOfEntIndex(static_cast<int>(sender.slot));
+		validation.valid = (observedTeam == kTerroristTeam || observedTeam == kCounterTerroristTeam) &&
+			human != nullptr && !human->free && (human->v.flags & FL_CLIENT) != 0 &&
+			(human->v.flags & FL_FAKECLIENT) == 0 && services_->observation_resolvePlayerTeam(human) == observedTeam &&
+			static_cast<std::uint32_t>(human->serialnumber) == sender.generation;
 		return validation;
 	};
 	if (scenario.radio != nullptr)
 		scenario.radioSenderValidation = validateRadioSender(scenario.radio->sender);
-	scenario.pendingRadioSenderValidation =
-		validateRadioSender(actors_[index].scenarioPlanners.pendingRadioSender());
+	scenario.pendingRadioSenderValidation = validateRadioSender(actors_[index].scenarioPlanners.pendingRadioSender());
 }
 
-void BotBehaviorRuntime::updateScenarioTeamwork(std::size_t index,
-												const runtime::MovementPhysicsState &before,
-												compat::StateUpdateContext &context,
-												compat::StateBehaviorInput &stateBehavior,
-												const compat::CompatibilityObservation &observation,
-												compat::ScenarioBehaviorInput &scenario,
-												ScenarioUpdateData &data)
+void BotBehaviorRuntime::updateScenarioTeamwork(std::size_t index, const runtime::MovementPhysicsState &before,
+	compat::StateUpdateContext &context, compat::StateBehaviorInput &stateBehavior,
+	const compat::CompatibilityObservation &observation, compat::ScenarioBehaviorInput &scenario,
+	ScenarioUpdateData &data)
 {
 	(void)stateBehavior;
 	auto &machine = actors_[index].managedBotStateMachines;
@@ -737,57 +682,51 @@ void BotBehaviorRuntime::updateScenarioTeamwork(std::size_t index,
 	teamwork.actor = context.actor;
 	teamwork.frame = context.frame;
 	teamwork.now = context.timestamp;
-	teamwork.teamwork = static_cast<float>(actors_[index].managedProfiles.teamwork) / 100.0f;
-	teamwork.roundTimeKnown = services_->service_roundFreezeGeneration() ==
-								  services_->service_lifecycle().roundGeneration() &&
-							  std::isfinite(services_->service_roundFreezeStartTime()) &&
-							  context.timestamp >= services_->service_roundFreezeStartTime();
+	teamwork.teamwork = static_cast<float>(actors_[index].managedProfiles.teamwork) / kProfilePercentScale;
+	teamwork.roundTimeKnown =
+		services_->service_roundFreezeGeneration() == services_->service_lifecycle().roundGeneration() &&
+		std::isfinite(services_->service_roundFreezeStartTime()) &&
+		context.timestamp >= services_->service_roundFreezeStartTime();
 	teamwork.elapsedRound = context.timestamp - services_->service_roundFreezeStartTime();
-	teamwork.allowRoguesKnown =
-		services_->service_engineFunctions() != nullptr &&
+	teamwork.allowRoguesKnown = services_->service_engineFunctions() != nullptr &&
 		services_->service_engineFunctions()->pfnCVarGetFloat != nullptr &&
 		services_->service_engineFunctions()->pfnCVarGetPointer != nullptr &&
 		services_->service_engineFunctions()->pfnCVarGetPointer("bot_allow_rogues") != nullptr;
-	const float allowRogues =
-		readOptionalCvarFloat(services_->service_engineFunctions(), "bot_allow_rogues");
+	const float allowRogues = readOptionalCvarFloat(services_->service_engineFunctions(), "bot_allow_rogues");
 	teamwork.allowRoguesKnown = teamwork.allowRoguesKnown && std::isfinite(allowRogues);
 	teamwork.allowRogues = allowRogues != 0.0f;
 	const auto currentState = machine.state();
 	const bool sniper = observation.weapon.activeWeaponId.isAvailable() &&
-						(observation.weapon.activeWeaponId.value == 3U ||
-						 observation.weapon.activeWeaponId.value == 18U ||
-						 observation.weapon.activeWeaponId.value == 13U ||
-						 observation.weapon.activeWeaponId.value == 24U);
+		(observation.weapon.activeWeaponId.value == kScoutWeaponId ||
+			observation.weapon.activeWeaponId.value == kAwpWeaponId ||
+			observation.weapon.activeWeaponId.value == kSg550WeaponId ||
+			observation.weapon.activeWeaponId.value == kG3sg1WeaponId);
 	scenario.busy = scenario.attacking || currentState == compat::CompatibilityStateId::Buy ||
-					currentState == compat::CompatibilityStateId::DefuseBomb ||
-					currentState == compat::CompatibilityStateId::PlantBomb ||
-					actors_[index].scenarioPlanners.awaitingHostageEscort() ||
-					(currentState == compat::CompatibilityStateId::Hide && sniper);
+		currentState == compat::CompatibilityStateId::DefuseBomb ||
+		currentState == compat::CompatibilityStateId::PlantBomb ||
+		actors_[index].scenarioPlanners.awaitingHostageEscort() ||
+		(currentState == compat::CompatibilityStateId::Hide && sniper);
 	teamwork.busy = scenario.busy;
 	teamwork.following = wasFollowing;
-	teamwork.followDuration =
-		wasFollowing ? context.timestamp - actors_[index].scenarioPlanners.followSince() : 0.0f;
+	teamwork.followDuration = wasFollowing ? context.timestamp - actors_[index].scenarioPlanners.followSince() : 0.0f;
 	teamwork.candidate = scenario.automaticLeader.actor;
-	teamwork.candidateVisibleHumanFriend =
-		scenario.automaticLeader.human && scenario.automaticLeader.lifeKnown &&
+	teamwork.candidateVisibleHumanFriend = scenario.automaticLeader.human && scenario.automaticLeader.lifeKnown &&
 		scenario.automaticLeader.alive && scenario.automaticLeader.team == scenario.team &&
 		scenario.automaticLeader.location.knowledge == compat::ScenarioKnowledge::Visible;
 	teamwork.candidateRange = automaticLeaderRange;
-	if (teamwork.candidateVisibleHumanFriend && scenarioNavigation.isValid() &&
-		scenarioDocument != nullptr &&
+	if (teamwork.candidateVisibleHumanFriend && scenarioNavigation.isValid() && scenarioDocument != nullptr &&
 		scenarioNavigation.mapGeneration() == context.frame.mapGeneration)
 	{
 		nav::NavQuery query(scenarioNavigation);
 		nav::NavAreaMatch selfArea{}, humanArea{};
 		nav::NavCorridor route{};
 		const auto &position = scenario.automaticLeader.location.position;
-		if (query.findNearest3D({before.origin.x, before.origin.y, before.origin.z},
-								kMaximumObjectiveDistance,
-								&selfArea) == nav::NavQueryResult::Found &&
-			query.findContaining({position.x, position.y, position.z}, 64.0f, &humanArea) ==
+		if (query.findNearest3D({before.origin.x, before.origin.y, before.origin.z}, kMaximumObjectiveDistance,
+				&selfArea) == nav::NavQueryResult::Found &&
+			query.findContaining({position.x, position.y, position.z}, kHumanNavTolerance, &humanArea) ==
 				nav::NavQueryResult::Found &&
-			query.buildCorridor(selfArea.area, humanArea.area, nav::NavRouteType::Fastest,
-								&route) == nav::NavQueryResult::Found)
+			query.buildCorridor(selfArea.area, humanArea.area, nav::NavRouteType::Fastest, &route) ==
+				nav::NavQueryResult::Found)
 		{
 			teamwork.candidateReachable = true;
 			teamwork.candidateTravel = route.cost;
@@ -801,34 +740,33 @@ void BotBehaviorRuntime::updateScenarioTeamwork(std::size_t index,
 		scenario.bomb.knowledge != compat::ScenarioKnowledge::Unknown &&
 		services_->service_engineFunctions() != nullptr &&
 		services_->service_engineFunctions()->pfnPEntityOfEntIndex != nullptr &&
-		services_->service_engineFunctions()->pfnSzFromIndex != nullptr &&
-		services_->service_globals() != nullptr)
+		services_->service_engineFunctions()->pfnSzFromIndex != nullptr && services_->service_globals() != nullptr)
 	{
 		for (int entityIndex = 1;
-			 entityIndex < (std::min)(services_->service_globals()->maxEntities, 2048);
-			 ++entityIndex)
+			 entityIndex < (std::min)(services_->service_globals()->maxEntities, kMaximumEntityIndex); ++entityIndex)
 		{
 			edict_t *zone = services_->service_engineFunctions()->pfnPEntityOfEntIndex(entityIndex);
 			if (zone == nullptr || zone->free)
 				continue;
-			const char *name =
-				services_->service_engineFunctions()->pfnSzFromIndex(zone->v.classname);
-			if (name == nullptr || (std::strcmp(name, "func_bomb_target") != 0 &&
-									std::strcmp(name, "info_bomb_target") != 0))
+			const char *name = services_->service_engineFunctions()->pfnSzFromIndex(zone->v.classname);
+			if (name == nullptr ||
+				(std::strcmp(name, "func_bomb_target") != 0 && std::strcmp(name, "info_bomb_target") != 0))
 				continue;
 			const bool legacy = std::strcmp(name, "info_bomb_target") == 0;
-			const float loX = legacy ? zone->v.origin.x - 256.0f : zone->v.absmin.x;
-			const float loY = legacy ? zone->v.origin.y - 256.0f : zone->v.absmin.y;
-			const float loZ = (legacy ? zone->v.origin.z - 256.0f : zone->v.absmin.z) - 50.0f;
-			const float hiX = legacy ? zone->v.origin.x + 256.0f : zone->v.absmax.x;
-			const float hiY = legacy ? zone->v.origin.y + 256.0f : zone->v.absmax.y;
-			const float hiZ = (legacy ? zone->v.origin.z + 256.0f : zone->v.absmax.z) + 50.0f;
-			const auto contains = [&](float x, float y, float z) {
+			const float loX = legacy ? zone->v.origin.x - kLegacyZoneHalfExtent : zone->v.absmin.x;
+			const float loY = legacy ? zone->v.origin.y - kLegacyZoneHalfExtent : zone->v.absmin.y;
+			const float loZ =
+				(legacy ? zone->v.origin.z - kLegacyZoneHalfExtent : zone->v.absmin.z) - kZoneVerticalPadding;
+			const float hiX = legacy ? zone->v.origin.x + kLegacyZoneHalfExtent : zone->v.absmax.x;
+			const float hiY = legacy ? zone->v.origin.y + kLegacyZoneHalfExtent : zone->v.absmax.y;
+			const float hiZ =
+				(legacy ? zone->v.origin.z + kLegacyZoneHalfExtent : zone->v.absmax.z) + kZoneVerticalPadding;
+			const auto contains = [&](float x, float y, float z)
+			{
 				return x >= loX && x <= hiX && y >= loY && y <= hiY && z >= loZ && z <= hiZ;
 			};
 			if (contains(before.origin.x, before.origin.y, before.origin.z) &&
-				contains(scenario.bomb.position.x, scenario.bomb.position.y,
-						 scenario.bomb.position.z))
+				contains(scenario.bomb.position.x, scenario.bomb.position.y, scenario.bomb.position.z))
 			{
 				teamwork.atPlantedBombsite = true;
 				break;
@@ -837,11 +775,10 @@ void BotBehaviorRuntime::updateScenarioTeamwork(std::size_t index,
 	}
 	compat::TeamworkDecision cooperative{};
 	if (scenario.lifeKnown && scenario.alive)
-		cooperative = actors_[index].teamworkPolicies.update(
-			teamwork, services_->service_compatibilityRandomSource(),
+		cooperative = actors_[index].teamworkPolicies.update(teamwork, services_->service_compatibilityRandomSource(),
 			{context.actor.slot, context.actor.generation},
 			{services_->command_managedBotCommandSequences(index), 0U,
-			 services_->service_managedBotFullUpdateSequences()[index]});
+				services_->service_managedBotFullUpdateSequences()[index]});
 	scenario.rogue = cooperative.rogue;
 	scenario.automaticFollowRequested = cooperative.available && cooperative.startFollowing;
 	scenario.stopFollowingRequested = cooperative.available && cooperative.stopFollowing;
@@ -852,35 +789,30 @@ void BotBehaviorRuntime::updateScenarioTeamwork(std::size_t index,
 	updateBombGuardTarget(index, scenario, &actors_[index].scenarioDecisions);
 	if (wasFollowing && !actors_[index].scenarioPlanners.isFollowing())
 		actors_[index].teamworkPolicies.followingStopped(context.timestamp);
-	if (scenario.radio != nullptr &&
-		scenario.radio->sequence > actors_[index].teamworkRadioApplied &&
+	if (scenario.radio != nullptr && scenario.radio->sequence > actors_[index].teamworkRadioApplied &&
 		scenario.radio->senderHuman && scenario.radio->team == scenario.team && !scenario.busy &&
 		(!scenario.rogue || wasFollowing) &&
-		context.timestamp - scenario.radio->receivedTime >=
-			1.0f + 2.0f * scenario.reactionSeconds + (scenario.rogue ? 2.0f : 0.0f))
+		context.timestamp - scenario.radio->receivedTime >= kRadioResponseBaseSeconds +
+				kRadioReactionScale * scenario.reactionSeconds + (scenario.rogue ? kRogueRadioDelaySeconds : 0.0f))
 	{
 		const auto &decision = actors_[index].scenarioDecisions;
 		const auto command = scenario.radio->command;
 		const bool allow = decision.action == compat::ScenarioAction::Follow &&
-						   actors_[index].scenarioPlanners.followLeader() == scenario.radio->sender;
-		const bool inhibit =
-			(command == compat::ScenarioRadioCommand::HoldPosition &&
-			 decision.action == compat::ScenarioAction::Guard &&
-			 scenario.radio->position.knowledge != compat::ScenarioKnowledge::Unknown) ||
-			(command == compat::ScenarioRadioCommand::GoGoGo &&
-			 decision.action == compat::ScenarioAction::Hunt) ||
-			(command == compat::ScenarioRadioCommand::GetOut &&
-			 decision.action == compat::ScenarioAction::Escape && scenario.bombPlantedKnown &&
-			 scenario.bombPlanted);
-		if ((allow || inhibit) && scenario.radioSenderValidation.known &&
-			scenario.radioSenderValidation.valid &&
+			actors_[index].scenarioPlanners.followLeader() == scenario.radio->sender;
+		const bool inhibit = (command == compat::ScenarioRadioCommand::HoldPosition &&
+								 decision.action == compat::ScenarioAction::Guard &&
+								 scenario.radio->position.knowledge != compat::ScenarioKnowledge::Unknown) ||
+			(command == compat::ScenarioRadioCommand::GoGoGo && decision.action == compat::ScenarioAction::Hunt) ||
+			(command == compat::ScenarioRadioCommand::GetOut && decision.action == compat::ScenarioAction::Escape &&
+				scenario.bombPlantedKnown && scenario.bombPlanted);
+		if ((allow || inhibit) && scenario.radioSenderValidation.known && scenario.radioSenderValidation.valid &&
 			scenario.radioSenderValidation.actor == scenario.radio->sender)
 		{
 			world::ActorKey human = scenario.radio->sender;
-			edict_t *entity = services_->service_engineFunctions()->pfnPEntityOfEntIndex(
-				static_cast<int>(human.slot));
+			edict_t *entity = services_->service_engineFunctions()->pfnPEntityOfEntIndex(static_cast<int>(human.slot));
 			if (entity != nullptr && !entity->free && (entity->v.flags & FL_CLIENT) != 0 &&
-				(entity->v.flags & FL_FAKECLIENT) == 0 && services_->observation_resolvePlayerTeam(entity) == observedTeam &&
+				(entity->v.flags & FL_FAKECLIENT) == 0 &&
+				services_->observation_resolvePlayerTeam(entity) == observedTeam &&
 				static_cast<std::uint32_t>(entity->serialnumber) == human.generation)
 			{
 				human.generation = static_cast<std::uint32_t>(entity->serialnumber) + 1U;
@@ -891,13 +823,10 @@ void BotBehaviorRuntime::updateScenarioTeamwork(std::size_t index,
 	}
 }
 
-void BotBehaviorRuntime::applyScenarioDecision(std::size_t index,
-											   const runtime::MovementPhysicsState &before,
-											   compat::StateUpdateContext &context,
-											   compat::StateBehaviorInput &stateBehavior,
-											   const compat::CompatibilityObservation &observation,
-											   compat::ScenarioBehaviorInput &scenario,
-											   ScenarioUpdateData &data)
+void BotBehaviorRuntime::applyScenarioDecision(std::size_t index, const runtime::MovementPhysicsState &before,
+	compat::StateUpdateContext &context, compat::StateBehaviorInput &stateBehavior,
+	const compat::CompatibilityObservation &observation, compat::ScenarioBehaviorInput &scenario,
+	ScenarioUpdateData &data)
 {
 	(void)before;
 	(void)data;
@@ -909,54 +838,49 @@ void BotBehaviorRuntime::applyScenarioDecision(std::size_t index,
 	if (machine.state() == compat::CompatibilityStateId::DefuseBomb ||
 		machine.state() == compat::CompatibilityStateId::EscapeFromBomb)
 		stateBehavior.objectiveActive = scenario.bombPlantedKnown && scenario.bombPlanted;
-	stateBehavior.inInteractionRange =
-		scenarioDecision.hasTarget && scenarioDecision.target.inUseRange;
-	stateBehavior.guardObjectiveEnded =
-		machine.state() == compat::CompatibilityStateId::Hide &&
+	stateBehavior.inInteractionRange = scenarioDecision.hasTarget && scenarioDecision.target.inUseRange;
+	stateBehavior.guardObjectiveEnded = machine.state() == compat::CompatibilityStateId::Hide &&
 		scenario.team == objectives::TeamRole::CounterTerrorist && scenario.humanDefusingKnown &&
 		!scenario.humanDefusing && scenarioDecision.state == compat::CompatibilityStateId::MoveTo;
 	if (machine.state() == compat::CompatibilityStateId::DefuseBomb && scenario.humanDefusing &&
 		scenario.bomb.knowledge == compat::ScenarioKnowledge::Visible)
 		stateBehavior.defuseReceipt = compat::DefuseReceipt::Other;
 	const bool ownsCurrentTask = machine.state() != compat::CompatibilityStateId::Idle &&
-								 machine.state() != compat::CompatibilityStateId::Hunt &&
-								 machine.state() != compat::CompatibilityStateId::MoveTo;
+		machine.state() != compat::CompatibilityStateId::Hunt &&
+		machine.state() != compat::CompatibilityStateId::MoveTo;
 	if (scenarioDecision.action != compat::ScenarioAction::None &&
 		scenarioDecision.state != compat::CompatibilityStateId::None &&
 		!(ownsCurrentTask && scenarioDecision.state == compat::CompatibilityStateId::MoveTo) &&
 		!(machine.state() == compat::CompatibilityStateId::DefuseBomb &&
-		  scenarioDecision.state != compat::CompatibilityStateId::DefuseBomb))
+			scenarioDecision.state != compat::CompatibilityStateId::DefuseBomb))
 	{
 		context.requestedState = scenarioDecision.state;
 		context.requestTransition = machine.state() != context.requestedState;
 		context.transitionId = compat::StateTransitionId::ExplicitStateChange;
 		context.transitionReason = compat::StateTransitionReason::ObjectiveChanged;
 	}
-	const bool carryingC4 =
-		observation.objective.carryingC4.isAvailable() && observation.objective.carryingC4.value;
+	const bool carryingC4 = observation.objective.carryingC4.isAvailable() && observation.objective.carryingC4.value;
 	const int team = services_->observation_resolvePlayerTeam(services_->service_managedBotHandles()[index].entity);
-	if (carryingC4 && team == 1)
+	if (carryingC4 && team == kTerroristTeam)
 	{
 		const bool atBombsite = managedActorAtBombSite(index);
-		const bool plantPhase =
-			actors_[index].managedBombApproaches.initialized &&
+		const bool plantPhase = actors_[index].managedBombApproaches.initialized &&
 			actors_[index].managedBombApproaches.mapGeneration == context.frame.mapGeneration &&
 			actors_[index].managedBombApproaches.roundGeneration == context.frame.roundGeneration &&
 			actors_[index].managedBombApproaches.finished;
 		stateBehavior.objectiveActive = true;
 		stateBehavior.inInteractionRange = plantPhase && atBombsite;
 		context.requestedState = plantPhase && atBombsite ? compat::CompatibilityStateId::PlantBomb
-								 : plantPhase && stateBehavior.goalAvailable
-									 ? compat::CompatibilityStateId::MoveTo
-									 : compat::CompatibilityStateId::Hunt;
+			: plantPhase && stateBehavior.goalAvailable	  ? compat::CompatibilityStateId::MoveTo
+														  : compat::CompatibilityStateId::Hunt;
 		context.requestTransition = machine.state() != context.requestedState;
 		context.transitionId = compat::StateTransitionId::ExplicitStateChange;
 		context.transitionReason = compat::StateTransitionReason::ObjectiveChanged;
 	}
 }
 
-void BotBehaviorRuntime::commitBehaviorState(std::size_t index, compat::StateUpdateContext &context,
-											 compat::StateBehaviorInput &stateBehavior)
+void BotBehaviorRuntime::commitBehaviorState(
+	std::size_t index, compat::StateUpdateContext &context, compat::StateBehaviorInput &stateBehavior)
 {
 	auto &machine = actors_[index].managedBotStateMachines;
 	const auto previousState = machine.state();
@@ -978,18 +902,16 @@ void BotBehaviorRuntime::commitBehaviorState(std::size_t index, compat::StateUpd
 			services_->applyNavigationRequest({index, NavigationRequestKind::ResetProgress});
 		if (machine.state() == compat::CompatibilityStateId::Idle &&
 			(previousState == compat::CompatibilityStateId::DefuseBomb ||
-			 previousState == compat::CompatibilityStateId::PlantBomb))
+				previousState == compat::CompatibilityStateId::PlantBomb))
 		{
 			actors_[index].managedBotObjectiveActions = {};
 			actors_[index].scenarioDecisions = {};
 			if (services_->service_runtimeProfiler().enabled())
-				profiledLogConsole(
-					services_->service_runtimeProfiler(), services_->service_pluginId(),
+				profiledLogConsole(services_->service_runtimeProfiler(), services_->service_pluginId(),
 					"profile objectiveExit bot_id=%u frame=%u state_from=%s receipt=%u "
 					"elapsed=%.3f",
 					context.actor.slot, context.frame.tick, compat::toString(previousState),
-					static_cast<unsigned>(stateBehavior.defuseReceipt),
-					context.timestamp - previousStateTimestamp);
+					static_cast<unsigned>(stateBehavior.defuseReceipt), context.timestamp - previousStateTimestamp);
 		}
 	}
 	if (stateBehavior.pathFailed && previousState == compat::CompatibilityStateId::MoveTo &&
@@ -1001,11 +923,9 @@ void BotBehaviorRuntime::commitBehaviorState(std::size_t index, compat::StateUpd
 		actors_[index].managedBotObjectiveTargets = {};
 		actors_[index].scenarioDecisions = {};
 		if (services_->service_runtimeProfiler().enabled())
-			profiledLogConsole(
-				services_->service_runtimeProfiler(), services_->service_pluginId(),
-				"profile navigationFailure bot_id=%u frame=%u state_from=%s state_to=%s",
-				context.actor.slot, context.frame.tick, compat::toString(previousState),
-				compat::toString(machine.state()));
+			profiledLogConsole(services_->service_runtimeProfiler(), services_->service_pluginId(),
+				"profile navigationFailure bot_id=%u frame=%u state_from=%s state_to=%s", context.actor.slot,
+				context.frame.tick, compat::toString(previousState), compat::toString(machine.state()));
 	}
 	if (!stateBehavior.pathFailed || !machine.attackOverlayActive())
 		services_->applyNavigationRequest({index, NavigationRequestKind::ClearFailure});
@@ -1013,3 +933,4 @@ void BotBehaviorRuntime::commitBehaviorState(std::size_t index, compat::StateUpd
 
 } // namespace metamod
 } // namespace astrabot
+#undef ASTRABOT_BOT_BEHAVIOR_SCENARIO_MINIMUM_PLANAR_SIGHT_RANGE

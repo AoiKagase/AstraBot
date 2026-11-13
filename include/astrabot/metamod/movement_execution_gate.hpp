@@ -50,11 +50,8 @@ struct MovementExecutionDecision
 class MovementExecutionGate
 {
 public:
-	static MovementVelocity stabilizeVelocity(
-		MovementExecutionPhase phase,
-		MovementVelocity velocity) noexcept;
-	static MovementExecutionDecision evaluate(
-		const MovementExecutionObservation &observation) noexcept;
+	static MovementVelocity stabilizeVelocity(MovementExecutionPhase phase, MovementVelocity velocity) noexcept;
+	static MovementExecutionDecision evaluate(const MovementExecutionObservation &observation) noexcept;
 };
 }
 }

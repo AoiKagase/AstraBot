@@ -18,8 +18,8 @@ bool WeaponId::operator==(const WeaponId &other) const
 
 bool AmmoState::isValid() const
 {
-	return clipCapacity > 0U && clipCapacity <= WeaponLimits::kMaximumAmmo &&
-		clip <= clipCapacity && reserve <= WeaponLimits::kMaximumAmmo;
+	return clipCapacity > 0U && clipCapacity <= WeaponLimits::kMaximumAmmo && clip <= clipCapacity &&
+		reserve <= WeaponLimits::kMaximumAmmo;
 }
 
 bool AmmoState::hasClipAmmo() const
@@ -34,43 +34,31 @@ bool AmmoState::hasReserveAmmo() const
 
 bool WeaponRecord::isValid() const
 {
-	return weapon.isValid() &&
-		slot < WeaponLimits::kMaximumInventorySlots &&
-		kind != WeaponKind::Unknown &&
-		(kind == WeaponKind::Knife || kind == WeaponKind::Pistol ||
-		 kind == WeaponKind::Shotgun || kind == WeaponKind::Smg ||
-		 kind == WeaponKind::Rifle || kind == WeaponKind::Sniper ||
-		 kind == WeaponKind::Heavy || kind == WeaponKind::Grenade) &&
-		(availability == WeaponAvailability::Unknown ||
-		 availability == WeaponAvailability::Unavailable ||
-		 availability == WeaponAvailability::Available) &&
+	return weapon.isValid() && slot < WeaponLimits::kMaximumInventorySlots && kind != WeaponKind::Unknown &&
+		(kind == WeaponKind::Knife || kind == WeaponKind::Pistol || kind == WeaponKind::Shotgun ||
+			kind == WeaponKind::Smg || kind == WeaponKind::Rifle || kind == WeaponKind::Sniper ||
+			kind == WeaponKind::Heavy || kind == WeaponKind::Grenade) &&
+		(availability == WeaponAvailability::Unknown || availability == WeaponAvailability::Unavailable ||
+			availability == WeaponAvailability::Available) &&
 		ammo.isValid() &&
-		(reloadState == ReloadState::Unknown ||
-		 reloadState == ReloadState::NotReloading ||
-		 reloadState == ReloadState::Reloading ||
-		 reloadState == ReloadState::Complete);
+		(reloadState == ReloadState::Unknown || reloadState == ReloadState::NotReloading ||
+			reloadState == ReloadState::Reloading || reloadState == ReloadState::Complete);
 }
 
 bool WeaponRecord::canFire(const world::FrameIdentity &frame) const
 {
-	return frame.isValid() && isValid() &&
-		availability == WeaponAvailability::Available &&
-		reloadState != ReloadState::Reloading && ammo.hasClipAmmo() &&
-		cooldownUntilTick <= frame.tick;
+	return frame.isValid() && isValid() && availability == WeaponAvailability::Available &&
+		reloadState != ReloadState::Reloading && ammo.hasClipAmmo() && cooldownUntilTick <= frame.tick;
 }
 
 bool WeaponRecord::canReload(const world::FrameIdentity &frame) const
 {
-	return frame.isValid() && isValid() &&
-		availability == WeaponAvailability::Available &&
-		(reloadState == ReloadState::NotReloading || reloadState == ReloadState::Unknown) &&
-		ammo.clipKnown && !ammo.hasClipAmmo() && ammo.hasReserveAmmo() &&
-		reloadUntilTick <= frame.tick;
+	return frame.isValid() && isValid() && availability == WeaponAvailability::Available &&
+		(reloadState == ReloadState::NotReloading || reloadState == ReloadState::Unknown) && ammo.clipKnown &&
+		!ammo.hasClipAmmo() && ammo.hasReserveAmmo() && reloadUntilTick <= frame.tick;
 }
 
-WeaponInventory::WeaponInventory()
-	: weapons_(),
-	  weaponCount_(0U)
+WeaponInventory::WeaponInventory() : weapons_(), weaponCount_(0U)
 {
 }
 
@@ -83,8 +71,7 @@ WeaponInventoryResult WeaponInventory::add(const WeaponRecord &weapon)
 
 	for (std::size_t index = 0U; index < weaponCount_; ++index)
 	{
-		if (weapons_[index].slot == weapon.slot ||
-				weapons_[index].weapon == weapon.weapon)
+		if (weapons_[index].slot == weapon.slot || weapons_[index].weapon == weapon.weapon)
 		{
 			return WeaponInventoryResult::DuplicateWeapon;
 		}
@@ -100,9 +87,7 @@ WeaponInventoryResult WeaponInventory::add(const WeaponRecord &weapon)
 	return WeaponInventoryResult::Accepted;
 }
 
-WeaponInventoryResult WeaponInventory::selectReady(
-	const world::FrameIdentity &frame,
-	const WeaponRecord **weapon) const
+WeaponInventoryResult WeaponInventory::selectReady(const world::FrameIdentity &frame, const WeaponRecord **weapon) const
 {
 	if (weapon == nullptr)
 	{
@@ -126,13 +111,11 @@ WeaponInventoryResult WeaponInventory::selectReady(
 		}
 	}
 
-	return *weapon == nullptr ? WeaponInventoryResult::NoAvailableWeapon :
-		WeaponInventoryResult::Selected;
+	return *weapon == nullptr ? WeaponInventoryResult::NoAvailableWeapon : WeaponInventoryResult::Selected;
 }
 
 WeaponInventoryResult WeaponInventory::selectReloadable(
-	const world::FrameIdentity &frame,
-	const WeaponRecord **weapon) const
+	const world::FrameIdentity &frame, const WeaponRecord **weapon) const
 {
 	if (weapon == nullptr)
 	{
@@ -156,8 +139,7 @@ WeaponInventoryResult WeaponInventory::selectReloadable(
 		}
 	}
 
-	return *weapon == nullptr ? WeaponInventoryResult::NoAvailableWeapon :
-		WeaponInventoryResult::Reloadable;
+	return *weapon == nullptr ? WeaponInventoryResult::NoAvailableWeapon : WeaponInventoryResult::Reloadable;
 }
 
 void WeaponInventory::clear()
@@ -198,21 +180,17 @@ bool WeaponInventory::isValidWeaponKind(WeaponKind kind)
 
 bool WeaponInventory::isValidAvailability(WeaponAvailability availability)
 {
-	return availability == WeaponAvailability::Unknown ||
-		availability == WeaponAvailability::Unavailable ||
+	return availability == WeaponAvailability::Unknown || availability == WeaponAvailability::Unavailable ||
 		availability == WeaponAvailability::Available;
 }
 
 bool WeaponInventory::isValidReloadState(ReloadState state)
 {
-	return state == ReloadState::Unknown ||
-		state == ReloadState::NotReloading || state == ReloadState::Reloading ||
+	return state == ReloadState::Unknown || state == ReloadState::NotReloading || state == ReloadState::Reloading ||
 		state == ReloadState::Complete;
 }
 
-bool WeaponInventory::isBetter(
-	const WeaponRecord &candidate,
-	const WeaponRecord &current)
+bool WeaponInventory::isBetter(const WeaponRecord &candidate, const WeaponRecord &current)
 {
 	if (candidate.priority != current.priority)
 	{

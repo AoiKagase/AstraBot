@@ -5,27 +5,27 @@
 
 namespace
 {
-	bool check(bool condition, const char *description)
+bool check(bool condition, const char *description)
+{
+	if (condition)
 	{
-		if (condition)
-		{
-			return true;
-		}
-
-		std::fprintf(stderr, "check failed: %s\n", description);
-		return false;
+		return true;
 	}
 
-	astrabot::metamod::NativeBotObservation cleanObservation()
-	{
-		astrabot::metamod::NativeBotObservation observation{};
-		observation.controlsAvailable = true;
-		observation.controlsWritable = true;
-		observation.clientObservationAvailable = true;
-		observation.botEnable = 0.0f;
-		observation.botQuota = 0.0f;
-		return observation;
-	}
+	std::fprintf(stderr, "check failed: %s\n", description);
+	return false;
+}
+
+astrabot::metamod::NativeBotObservation cleanObservation()
+{
+	astrabot::metamod::NativeBotObservation observation{};
+	observation.controlsAvailable = true;
+	observation.controlsWritable = true;
+	observation.clientObservationAvailable = true;
+	observation.botEnable = 0.0f;
+	observation.botQuota = 0.0f;
+	return observation;
+}
 } // namespace
 
 int main()
@@ -44,13 +44,13 @@ int main()
 	{
 		return 1;
 	}
-	const auto suppressed = [&guard]() {
+	const auto suppressed = [&guard]()
+	{
 		auto observation = cleanObservation();
 		observation.suppressionApplied = true;
 		return guard.evaluate(observation);
 	}();
-	if (!check(suppressed.state == NativeBotGuardState::Suppressed,
-			   "suppressed controls expose suppressed state"))
+	if (!check(suppressed.state == NativeBotGuardState::Suppressed, "suppressed controls expose suppressed state"))
 	{
 		return 1;
 	}
@@ -59,17 +59,16 @@ int main()
 	missingControls.controlsAvailable = false;
 	const auto unsupported = guard.evaluate(missingControls);
 	if (!check(unsupported.state == NativeBotGuardState::Clean,
-			   "missing native controls are clean when clients are observable"))
+			"missing native controls are clean when clients are observable"))
 	{
 		return 1;
 	}
-	if (!check(unsupported.reason == NativeBotGuardReason::None,
-			   "missing native controls expose a clean reason"))
+	if (!check(unsupported.reason == NativeBotGuardReason::None, "missing native controls expose a clean reason"))
 	{
 		return 1;
 	}
 	if (!check(unsupported.managedBotCreationAllowed,
-			   "missing native controls allow managed creation when clients are observable"))
+			"missing native controls allow managed creation when clients are observable"))
 	{
 		return 1;
 	}
@@ -77,8 +76,7 @@ int main()
 	unobservableClients.controlsAvailable = false;
 	unobservableClients.clientObservationAvailable = false;
 	const auto unobservableDecision = guard.evaluate(unobservableClients);
-	if (!check(!unobservableDecision.managedBotCreationAllowed,
-			   "unobservable client slots fail closed"))
+	if (!check(!unobservableDecision.managedBotCreationAllowed, "unobservable client slots fail closed"))
 	{
 		return 1;
 	}
@@ -86,13 +84,11 @@ int main()
 	auto activeControls = cleanObservation();
 	activeControls.botEnable = 1.0f;
 	const auto active = guard.evaluate(activeControls);
-	if (!check(active.state == NativeBotGuardState::Conflict,
-			   "enabled native controls are a conflict"))
+	if (!check(active.state == NativeBotGuardState::Conflict, "enabled native controls are a conflict"))
 	{
 		return 1;
 	}
-	if (!check(active.reason == NativeBotGuardReason::NativeControlsActive,
-			   "active controls expose a stable reason"))
+	if (!check(active.reason == NativeBotGuardReason::NativeControlsActive, "active controls expose a stable reason"))
 	{
 		return 1;
 	}
@@ -100,13 +96,12 @@ int main()
 	auto unmanaged = cleanObservation();
 	unmanaged.fakeClientSlots[0U] = true;
 	const auto unmanagedDecision = guard.evaluate(unmanaged);
-	if (!check(unmanagedDecision.state == NativeBotGuardState::Conflict,
-			   "unmanaged fake clients are a conflict"))
+	if (!check(unmanagedDecision.state == NativeBotGuardState::Conflict, "unmanaged fake clients are a conflict"))
 	{
 		return 1;
 	}
 	if (!check(unmanagedDecision.reason == NativeBotGuardReason::UnmanagedFakeClient,
-			   "unmanaged clients expose a stable reason"))
+			"unmanaged clients expose a stable reason"))
 	{
 		return 1;
 	}
@@ -136,8 +131,7 @@ int main()
 	{
 		return 1;
 	}
-	if (!check(!guard.shouldBlockServerCommand("bot_custom"),
-			   "unknown bot command is not blanket blocked"))
+	if (!check(!guard.shouldBlockServerCommand("bot_custom"), "unknown bot command is not blanket blocked"))
 	{
 		return 1;
 	}

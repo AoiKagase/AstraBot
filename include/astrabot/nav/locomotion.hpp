@@ -9,23 +9,23 @@ namespace astrabot
 {
 namespace nav
 {
-	enum class LocomotionPosture
+enum class LocomotionPosture
 {
 	Standing,
-		Crouching
-	};
+	Crouching
+};
 
-	enum class TraversalAction
-	{
-		Walk,
-		Crouch,
-		Step,
-		Jump,
-		Drop,
-		Ladder,
-		Door,
-		NarrowPassage
-	};
+enum class TraversalAction
+{
+	Walk,
+	Crouch,
+	Step,
+	Jump,
+	Drop,
+	Ladder,
+	Door,
+	NarrowPassage
+};
 
 enum class LocomotionResult
 {
@@ -88,10 +88,10 @@ struct GroundLookaheadObservation
 
 struct LocomotionObservation
 {
-		NavVector position;
-		float standingClearance;
-		float crouchingClearance;
-		NavVector velocity;
+	NavVector position;
+	float standingClearance;
+	float crouchingClearance;
+	NavVector velocity;
 	bool grounded;
 	bool ducked;
 	bool onLadder;
@@ -110,9 +110,9 @@ struct LocomotionIntent
 	NavVector direction;
 	NavVector targetPosition;
 	float speed;
-		LocomotionPosture posture;
-		TraversalAction traversal;
-		bool stepUp;
+	LocomotionPosture posture;
+	TraversalAction traversal;
+	bool stepUp;
 	AreaId currentArea;
 	AreaId targetArea;
 };
@@ -125,39 +125,24 @@ public:
 
 	LocomotionResult start(const NavCorridor &corridor);
 	LocomotionResult update(
-		const NavSnapshot &snapshot,
-		const LocomotionObservation &observation,
-		LocomotionIntent *intent);
+		const NavSnapshot &snapshot, const LocomotionObservation &observation, LocomotionIntent *intent);
 	bool isActive() const;
 	void clearPath();
 	void observeMotion(const LocomotionObservation &observation);
-	bool previewTarget(const NavSnapshot &snapshot, const LocomotionObservation &observation,
-		NavVector *target) const;
+	bool previewTarget(const NavSnapshot &snapshot, const LocomotionObservation &observation, NavVector *target) const;
 	void resetProgressMonitor();
 	std::size_t currentCorridorIndex() const;
 
 private:
 	static bool isValidConfig(const LocomotionConfig &config);
-	static bool isFiniteObservation(
-		const LocomotionObservation &observation);
-	static NavVector normalizeDirection(
-		const NavVector &from,
-		const NavVector &to);
-	static float horizontalDistance(
-		const NavVector &from,
-		const NavVector &to);
+	static bool isFiniteObservation(const LocomotionObservation &observation);
+	static NavVector normalizeDirection(const NavVector &from, const NavVector &to);
+	static float horizontalDistance(const NavVector &from, const NavVector &to);
 	NavQueryResult findCurrentArea(
-		const NavSnapshot &snapshot,
-		const LocomotionObservation &observation,
-		NavAreaMatch *match) const;
+		const NavSnapshot &snapshot, const LocomotionObservation &observation, NavAreaMatch *match) const;
 	bool recordProgress(const LocomotionObservation &observation, const NavVector &target);
-	LocomotionResult buildIntent(
-		const NavSnapshot &snapshot,
-		const LocomotionObservation &observation,
-		const NavAreaMatch &currentMatch,
-		const NavVector &target,
-		AreaId targetArea,
-		LocomotionIntent *intent);
+	LocomotionResult buildIntent(const NavSnapshot &snapshot, const LocomotionObservation &observation,
+		const NavAreaMatch &currentMatch, const NavVector &target, AreaId targetArea, LocomotionIntent *intent);
 
 	NavPathFollower pathFollower_;
 	LocomotionConfig config_;
@@ -165,7 +150,8 @@ private:
 	AreaId jumpTargetArea_;
 	std::uint32_t stuckFrames_;
 	float lastObservedAt_ = 0.0f;
-	float velocitySamples_[5] = {};
+	static constexpr int kVelocitySampleCapacity = 5;
+	float velocitySamples_[kVelocitySampleCapacity] = {};
 	std::size_t velocitySampleCount_ = 0U;
 	std::size_t velocitySampleIndex_ = 0U;
 	bool hasLastPosition_;

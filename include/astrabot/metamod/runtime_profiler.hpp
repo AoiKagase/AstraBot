@@ -95,8 +95,7 @@ struct RuntimeProfilerReport
 	double windowSeconds;
 	double wallWindowSeconds;
 	std::uint32_t frameCount;
-	std::array<RuntimeProfilerStageStats,
-		static_cast<std::size_t>(RuntimeProfilerStage::Count)> stages;
+	std::array<RuntimeProfilerStageStats, static_cast<std::size_t>(RuntimeProfilerStage::Count)> stages;
 	std::uint32_t aliveBots;
 	std::uint64_t traceLineCalls;
 	std::uint64_t visibilityCandidates;
@@ -117,9 +116,7 @@ struct RuntimeProfilerReport
 	std::uint64_t pathFirstSearchId;
 	std::uint64_t pathLastSearchId;
 	std::uint64_t runPlayerMoves;
-	std::array<RuntimePathSearchAggregate,
-		static_cast<std::size_t>(RuntimePathSearchCaller::Count)>
-		pathSearchByCaller;
+	std::array<RuntimePathSearchAggregate, static_cast<std::size_t>(RuntimePathSearchCaller::Count)> pathSearchByCaller;
 	std::uint64_t duplicateSearchSameFullUpdate;
 	std::uint64_t duplicateSearchSameObjectiveGeneration;
 	std::uint64_t uniqueSearchKeys;
@@ -152,75 +149,32 @@ public:
 	void recordVisionLosCheck() noexcept;
 	void recordBodyProbe() noexcept;
 	void record(RuntimeProfilerStage stage, std::uint64_t elapsedUsec) noexcept;
-	void recordTraceLine(
-		std::uint64_t calls,
-		std::uint64_t visibilityCandidates,
-		std::uint64_t bodyProbes) noexcept;
+	void recordTraceLine(std::uint64_t calls, std::uint64_t visibilityCandidates, std::uint64_t bodyProbes) noexcept;
 	void recordPathSearch(bool success, bool requested) noexcept;
-	void recordPathSearchStats(
-		bool success,
-		bool requested,
-		std::uint32_t expandedAreas,
-		std::uint32_t enqueues,
-		std::uint32_t reopens,
-		std::uint32_t staleQueueEntries,
-		std::uint32_t equalCostReplacements) noexcept;
-	void recordPathSearchResults(
-		bool requested,
-		std::uint32_t searchCalls,
-		std::uint32_t successCount,
-		std::uint32_t failureCount,
-		std::uint32_t expandedAreas,
-		std::uint32_t enqueues,
-		std::uint32_t reopens,
-		std::uint32_t staleQueueEntries,
-		std::uint32_t equalCostReplacements,
-		std::uint64_t totalUsec,
-		std::uint64_t maxUsec,
-		std::uint64_t firstSearchId,
-		std::uint64_t lastSearchId) noexcept;
-	void recordPathSearchResults(
-		RuntimePathSearchCaller caller,
-		std::uint32_t bot,
-		std::uint32_t fullUpdateId,
-		std::uint32_t objectiveGeneration,
-		std::uint32_t startArea,
-		std::uint32_t goalArea,
-		std::uint8_t routeType,
-		bool requested,
-		std::uint32_t searchCalls,
-		std::uint32_t successCount,
-		std::uint32_t failureCount,
-		std::uint32_t expandedAreas,
-		std::uint32_t enqueues,
-		std::uint32_t reopens,
-		std::uint32_t staleQueueEntries,
-		std::uint32_t equalCostReplacements,
-		std::uint64_t totalUsec,
-		std::uint64_t maxUsec,
-		std::uint64_t firstSearchId,
-		std::uint64_t lastSearchId) noexcept;
-	void recordObjectiveSelection(
-		std::uint32_t bombSites,
-		std::uint32_t funcBombTargetSites,
-		std::uint32_t infoBombTargetSites,
-		std::uint32_t candidateAreas,
-		std::uint32_t uniqueCandidateAreas,
-		std::uint32_t candidateQueries,
-		std::uint32_t duplicateCandidateAreas,
-		std::uint32_t selectedGoalArea,
-		std::uint32_t registeredSites,
-		std::uint32_t registeredFuncBombTargetSites,
-		std::uint32_t registeredInfoBombTargetSites,
-		bool registeredSiteCountsAvailable,
-		std::uint32_t evaluatedSites,
-		std::uint32_t cacheHits,
-		std::uint32_t selectedSiteIdentity) noexcept;
+	void recordPathSearchStats(bool success, bool requested, std::uint32_t expandedAreas, std::uint32_t enqueues,
+		std::uint32_t reopens, std::uint32_t staleQueueEntries, std::uint32_t equalCostReplacements) noexcept;
+	void recordPathSearchResults(bool requested, std::uint32_t searchCalls, std::uint32_t successCount,
+		std::uint32_t failureCount, std::uint32_t expandedAreas, std::uint32_t enqueues, std::uint32_t reopens,
+		std::uint32_t staleQueueEntries, std::uint32_t equalCostReplacements, std::uint64_t totalUsec,
+		std::uint64_t maxUsec, std::uint64_t firstSearchId, std::uint64_t lastSearchId) noexcept;
+	void recordPathSearchResults(RuntimePathSearchCaller caller, std::uint32_t bot, std::uint32_t fullUpdateId,
+		std::uint32_t objectiveGeneration, std::uint32_t startArea, std::uint32_t goalArea, std::uint8_t routeType,
+		bool requested, std::uint32_t searchCalls, std::uint32_t successCount, std::uint32_t failureCount,
+		std::uint32_t expandedAreas, std::uint32_t enqueues, std::uint32_t reopens, std::uint32_t staleQueueEntries,
+		std::uint32_t equalCostReplacements, std::uint64_t totalUsec, std::uint64_t maxUsec,
+		std::uint64_t firstSearchId, std::uint64_t lastSearchId) noexcept;
+	void recordObjectiveSelection(std::uint32_t bombSites, std::uint32_t funcBombTargetSites,
+		std::uint32_t infoBombTargetSites, std::uint32_t candidateAreas, std::uint32_t uniqueCandidateAreas,
+		std::uint32_t candidateQueries, std::uint32_t duplicateCandidateAreas, std::uint32_t selectedGoalArea,
+		std::uint32_t registeredSites, std::uint32_t registeredFuncBombTargetSites,
+		std::uint32_t registeredInfoBombTargetSites, bool registeredSiteCountsAvailable, std::uint32_t evaluatedSites,
+		std::uint32_t cacheHits, std::uint32_t selectedSiteIdentity) noexcept;
 	void recordPathRecompute() noexcept;
 	void recordRunPlayerMove() noexcept;
 	bool consumeReport(double nowSeconds, RuntimeProfilerReport *report) noexcept;
 
 private:
+	static constexpr unsigned kSearchKeyCapacity = 256U;
 	struct SearchKey
 	{
 		bool valid;
@@ -233,20 +187,10 @@ private:
 		RuntimePathSearchCaller caller;
 	};
 
-	void recordPathSearchAggregate(
-		RuntimePathSearchCaller caller,
-		std::uint32_t searchCalls,
-		std::uint32_t expandedAreas,
-		std::uint32_t enqueues,
-		std::uint64_t totalUsec,
-		std::uint64_t maxUsec) noexcept;
-	void recordSearchKey(
-		RuntimePathSearchCaller caller,
-		std::uint32_t bot,
-		std::uint32_t fullUpdateId,
-		std::uint32_t objectiveGeneration,
-		std::uint32_t startArea,
-		std::uint32_t goalArea,
+	void recordPathSearchAggregate(RuntimePathSearchCaller caller, std::uint32_t searchCalls,
+		std::uint32_t expandedAreas, std::uint32_t enqueues, std::uint64_t totalUsec, std::uint64_t maxUsec) noexcept;
+	void recordSearchKey(RuntimePathSearchCaller caller, std::uint32_t bot, std::uint32_t fullUpdateId,
+		std::uint32_t objectiveGeneration, std::uint32_t startArea, std::uint32_t goalArea,
 		std::uint8_t routeType) noexcept;
 	void clearCounters() noexcept;
 
@@ -254,7 +198,7 @@ private:
 	double windowStartSeconds_;
 	std::chrono::steady_clock::time_point wallWindowStart_;
 	RuntimeProfilerReport counters_;
-	std::array<SearchKey, 256U> searchKeys_;
+	std::array<SearchKey, kSearchKeyCapacity> searchKeys_;
 	std::size_t searchKeyCount_;
 };
 
@@ -265,20 +209,21 @@ class RuntimeProfilerScope
 public:
 	RuntimeProfilerScope(RuntimeProfiler &profiler, RuntimeProfilerStage stage) noexcept
 		: profiler_(profiler), stage_(stage), enabled_(profiler.enabled()),
-		  start_(enabled_ ? std::chrono::steady_clock::now()
-				: std::chrono::steady_clock::time_point())
+		  start_(enabled_ ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point())
 	{
 	}
+
 	~RuntimeProfilerScope()
 	{
 		if (!enabled_)
 		{
 			return;
 		}
-		const auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(
-			std::chrono::steady_clock::now() - start_).count();
+		const auto elapsed =
+			std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start_).count();
 		profiler_.record(stage_, elapsed > 0 ? static_cast<std::uint64_t>(elapsed) : 0U);
 	}
+
 	RuntimeProfilerScope(const RuntimeProfilerScope &) = delete;
 	RuntimeProfilerScope &operator=(const RuntimeProfilerScope &) = delete;
 

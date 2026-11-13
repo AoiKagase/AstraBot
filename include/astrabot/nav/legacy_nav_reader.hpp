@@ -44,10 +44,7 @@ public:
 	LegacyNavReader();
 	explicit LegacyNavReader(const LegacyNavReaderLimits &limits);
 
-	NavReadResult read(
-		const std::uint8_t *data,
-		std::size_t size,
-		NavDocument *document) const;
+	NavReadResult read(const std::uint8_t *data, std::size_t size, NavDocument *document) const;
 
 private:
 	LegacyNavReaderLimits limits_;

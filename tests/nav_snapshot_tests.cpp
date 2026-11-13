@@ -46,15 +46,14 @@ int main()
 	}
 
 	NavDocument document = makeDocument(1U);
-	if (!check(publisher.publish(&document, 11U) == NavSnapshotResult::Published,
-			"valid document is published"))
+	if (!check(publisher.publish(&document, 11U) == NavSnapshotResult::Published, "valid document is published"))
 	{
 		return 1;
 	}
 
 	const auto first = publisher.snapshot();
-	if (!check(first.document() != nullptr && first.revision() == 1U &&
-			first.mapGeneration() == 11U, "snapshot metadata is published"))
+	if (!check(first.document() != nullptr && first.revision() == 1U && first.mapGeneration() == 11U,
+			"snapshot metadata is published"))
 	{
 		return 1;
 	}
@@ -68,8 +67,7 @@ int main()
 	{
 		return 1;
 	}
-	if (!check(first.document()->areaCount() == 1U,
-			"snapshot owns an immutable document copy"))
+	if (!check(first.document()->areaCount() == 1U, "snapshot owns an immutable document copy"))
 	{
 		return 1;
 	}
@@ -80,19 +78,16 @@ int main()
 	{
 		return 1;
 	}
-	if (!check(publisher.isCurrent(first) && publisher.revision() == 1U,
-			"failed replacement preserves prior snapshot"))
+	if (!check(publisher.isCurrent(first) && publisher.revision() == 1U, "failed replacement preserves prior snapshot"))
 	{
 		return 1;
 	}
-	if (!check(publisher.publish(nullptr, 11U) == NavSnapshotResult::InvalidArgument,
-			"null replacement is rejected"))
+	if (!check(publisher.publish(nullptr, 11U) == NavSnapshotResult::InvalidArgument, "null replacement is rejected"))
 	{
 		return 1;
 	}
 
-	if (!check(publisher.invalidate(12U) == NavSnapshotResult::Invalidated,
-			"map invalidation succeeds"))
+	if (!check(publisher.invalidate(12U) == NavSnapshotResult::Invalidated, "map invalidation succeeds"))
 	{
 		return 1;
 	}
@@ -106,12 +101,13 @@ int main()
 		return 1;
 	}
 
-	if (!check(publisher.publish(&document, 12U) == NavSnapshotResult::Published,
-			"new map snapshot is published"))
+	if (!check(publisher.publish(&document, 12U) == NavSnapshotResult::Published, "new map snapshot is published"))
 	{
 		return 1;
 	}
 	const auto second = publisher.snapshot();
-	return check(second.revision() == 3U && second.mapGeneration() == 12U &&
-			publisher.isCurrent(second), "new map receives a new current revision") ? 0 : 1;
+	return check(second.revision() == 3U && second.mapGeneration() == 12U && publisher.isCurrent(second),
+			   "new map receives a new current revision")
+		? 0
+		: 1;
 }

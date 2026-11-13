@@ -11,22 +11,17 @@ namespace
 {
 bool isValidTeam(TeamRole team)
 {
-	return team == TeamRole::Terrorist ||
-		team == TeamRole::CounterTerrorist;
+	return team == TeamRole::Terrorist || team == TeamRole::CounterTerrorist;
 }
 }
 
 bool RadioIntent::isValid() const
 {
-	return actor.isValid() && isValidTeam(team) && frame.isValid() &&
-		category != RadioCategory::Unknown &&
-		(priority == RadioPriority::Low || priority == RadioPriority::Normal ||
-		priority == RadioPriority::High || priority == RadioPriority::Critical) &&
-		messageCode != 0U && isValidTeam(recipientTeam) &&
-		recipientCount <= RadioLimits::kMaximumRecipients &&
-		std::all_of(
-			recipients.begin(),
-			recipients.begin() + recipientCount,
+	return actor.isValid() && isValidTeam(team) && frame.isValid() && category != RadioCategory::Unknown &&
+		(priority == RadioPriority::Low || priority == RadioPriority::Normal || priority == RadioPriority::High ||
+			priority == RadioPriority::Critical) &&
+		messageCode != 0U && isValidTeam(recipientTeam) && recipientCount <= RadioLimits::kMaximumRecipients &&
+		std::all_of(recipients.begin(), recipients.begin() + recipientCount,
 			[](const world::ActorKey &recipient)
 			{
 				return recipient.isValid();
@@ -43,63 +38,36 @@ bool RadioIntent::isDelivered() const
 	return false;
 }
 
-RadioConfig::RadioConfig()
-	: cooldownTicks(3U),
-	  maximumReportAgeTicks(128U),
-	  minimumReportConfidence(0.25f)
+RadioConfig::RadioConfig() : cooldownTicks(3U), maximumReportAgeTicks(128U), minimumReportConfidence(0.25f)
 {
 }
 
 bool RadioConfig::isValid() const
 {
 	return cooldownTicks <= RadioLimits::kMaximumCooldownTicks &&
-		maximumReportAgeTicks <= TeamReportLimits::kMaximumAgeTicks &&
-		std::isfinite(minimumReportConfidence) &&
+		maximumReportAgeTicks <= TeamReportLimits::kMaximumAgeTicks && std::isfinite(minimumReportConfidence) &&
 		minimumReportConfidence >= 0.0f && minimumReportConfidence <= 1.0f;
 }
 
 RadioController::RadioController()
-	: config_(),
-	  actor_(),
-	  team_(TeamRole::Unknown),
-	  reporterGenerations_(),
-	  lastSentTick_(0U),
-	  initialized_(false),
+	: config_(), actor_(), team_(TeamRole::Unknown), reporterGenerations_(), lastSentTick_(0U), initialized_(false),
 	  hasLastSent_(false)
 {
 }
 
-RadioController::RadioController(
-	const world::ActorKey &actor,
-	TeamRole team)
-	: config_(),
-	  actor_(actor),
-	  team_(team),
-	  reporterGenerations_(),
-	  lastSentTick_(0U),
-	  initialized_(actor.isValid() && isValidTeam(team)),
-	  hasLastSent_(false)
+RadioController::RadioController(const world::ActorKey &actor, TeamRole team)
+	: config_(), actor_(actor), team_(team), reporterGenerations_(), lastSentTick_(0U),
+	  initialized_(actor.isValid() && isValidTeam(team)), hasLastSent_(false)
 {
 }
 
-RadioController::RadioController(
-	const world::ActorKey &actor,
-	TeamRole team,
-	const RadioConfig &config)
-	: config_(config),
-	  actor_(actor),
-	  team_(team),
-	  reporterGenerations_(),
-	  lastSentTick_(0U),
-	  initialized_(actor.isValid() && isValidTeam(team) && config.isValid()),
-	  hasLastSent_(false)
+RadioController::RadioController(const world::ActorKey &actor, TeamRole team, const RadioConfig &config)
+	: config_(config), actor_(actor), team_(team), reporterGenerations_(), lastSentTick_(0U),
+	  initialized_(actor.isValid() && isValidTeam(team) && config.isValid()), hasLastSent_(false)
 {
 }
 
-RadioResult RadioController::compose(
-	const TeamReport &report,
-	const world::FrameIdentity &frame,
-	RadioIntent *intent)
+RadioResult RadioController::compose(const TeamReport &report, const world::FrameIdentity &frame, RadioIntent *intent)
 {
 	if (intent == nullptr || !frame.isValid())
 	{
@@ -118,22 +86,20 @@ RadioResult RadioController::compose(
 	{
 		return RadioResult::WrongTeam;
 	}
-	const std::size_t reporterIndex = static_cast<std::size_t>(
-		report.source.actor.slot - 1U);
+	const std::size_t reporterIndex = static_cast<std::size_t>(report.source.actor.slot - 1U);
 	if (reporterGenerations_[reporterIndex] != 0U &&
-			report.source.actor.generation < reporterGenerations_[reporterIndex])
+		report.source.actor.generation < reporterGenerations_[reporterIndex])
 	{
 		return RadioResult::StaleGeneration;
 	}
 	reporterGenerations_[reporterIndex] = report.source.actor.generation;
-	if (!sameRound(report.source.frame, frame) ||
-			frame.tick < report.source.frame.tick ||
-			report.source.frame.tick + config_.maximumReportAgeTicks < frame.tick)
+	if (!sameRound(report.source.frame, frame) || frame.tick < report.source.frame.tick ||
+		report.source.frame.tick + config_.maximumReportAgeTicks < frame.tick)
 	{
 		return RadioResult::StaleFrame;
 	}
 	if (report.state != ReportState::Observed || report.confidence <= 0.0f ||
-			report.confidence < config_.minimumReportConfidence)
+		report.confidence < config_.minimumReportConfidence)
 	{
 		return RadioResult::UnknownInformation;
 	}
@@ -173,12 +139,9 @@ TeamRole RadioController::team() const
 	return team_;
 }
 
-bool RadioController::sameRound(
-	const world::FrameIdentity &left,
-	const world::FrameIdentity &right)
+bool RadioController::sameRound(const world::FrameIdentity &left, const world::FrameIdentity &right)
 {
-	return left.mapGeneration == right.mapGeneration &&
-		left.roundGeneration == right.roundGeneration;
+	return left.mapGeneration == right.mapGeneration && left.roundGeneration == right.roundGeneration;
 }
 
 RadioCategory RadioController::categoryFor(ReportKind kind)
@@ -206,8 +169,7 @@ RadioCategory RadioController::categoryFor(ReportKind kind)
 
 RadioPriority RadioController::priorityFor(ReportKind kind)
 {
-	return kind == ReportKind::NeedBackup ? RadioPriority::High :
-		RadioPriority::Normal;
+	return kind == ReportKind::NeedBackup ? RadioPriority::High : RadioPriority::Normal;
 }
 
 bool RadioController::isValidCategory(RadioCategory category)
@@ -217,8 +179,8 @@ bool RadioController::isValidCategory(RadioCategory category)
 
 bool RadioController::isValidPriority(RadioPriority priority)
 {
-	return priority == RadioPriority::Low || priority == RadioPriority::Normal ||
-		priority == RadioPriority::High || priority == RadioPriority::Critical;
+	return priority == RadioPriority::Low || priority == RadioPriority::Normal || priority == RadioPriority::High ||
+		priority == RadioPriority::Critical;
 }
 }
 }

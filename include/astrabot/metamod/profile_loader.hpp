@@ -37,13 +37,8 @@ public:
 	ProfileLoader();
 	explicit ProfileLoader(const ProfileLoadLimits &limits);
 
-	ProfileLoadResult loadFile(
-		const char *path,
-		compat::ProfileCatalog *catalog) const;
-	ProfileLoadResult loadText(
-		const char *data,
-		std::size_t size,
-		compat::ProfileCatalog *catalog) const;
+	ProfileLoadResult loadFile(const char *path, compat::ProfileCatalog *catalog) const;
+	ProfileLoadResult loadText(const char *data, std::size_t size, compat::ProfileCatalog *catalog) const;
 
 private:
 	ProfileLoadLimits limits_;

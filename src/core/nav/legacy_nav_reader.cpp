@@ -11,11 +11,14 @@ namespace nav
 {
 namespace
 {
+constexpr auto kDirectionalEncounterVersion = 3U;
+constexpr auto kBspSizeVersion = 4U;
+constexpr auto kPlaceDirectoryVersion = 5U;
+
 class ByteCursor
 {
 public:
-	ByteCursor(const std::uint8_t *data, std::size_t size) :
-		data_(data), size_(size), position_(0U)
+	ByteCursor(const std::uint8_t *data, std::size_t size) : data_(data), size_(size), position_(0U)
 	{
 	}
 
@@ -35,8 +38,7 @@ public:
 		{
 			return false;
 		}
-		*value = static_cast<std::uint16_t>(data_[position_]) |
-			static_cast<std::uint16_t>(data_[position_ + 1U] << 8U);
+		*value = static_cast<std::uint16_t>(data_[position_]) | static_cast<std::uint16_t>(data_[position_ + 1U] << 8U);
 		position_ += 2U;
 		return true;
 	}
@@ -95,19 +97,20 @@ private:
 
 std::uint32_t hashBytes(const std::uint8_t *data, std::size_t size)
 {
-	std::uint32_t hash = 2166136261U;
+	constexpr auto kFnvOffsetBasis = 2166136261U;
+	constexpr auto kFnvPrime = 16777619U;
+	std::uint32_t hash = kFnvOffsetBasis;
 	for (std::size_t index = 0U; index < size; ++index)
 	{
 		hash ^= data[index];
-		hash *= 16777619U;
+		hash *= kFnvPrime;
 	}
 	return hash;
 }
 
 bool finiteVector(const NavVector &value)
 {
-	return std::isfinite(value.x) && std::isfinite(value.y) &&
-			std::isfinite(value.z);
+	return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
 }
 
 enum class SectionReadResult
@@ -150,8 +153,8 @@ NavReadResult mapModelResult(NavModelResult result)
 
 bool readVector(ByteCursor *cursor, NavVector *value)
 {
-	return cursor != nullptr && value != nullptr && cursor->readFloat(&value->x) &&
-			cursor->readFloat(&value->y) && cursor->readFloat(&value->z);
+	return cursor != nullptr && value != nullptr && cursor->readFloat(&value->x) && cursor->readFloat(&value->y) &&
+		cursor->readFloat(&value->z);
 }
 
 SectionReadResult readPlaceDirectory(ByteCursor *cursor, NavDocument *document)
@@ -198,22 +201,19 @@ SectionReadResult readPlaceDirectory(ByteCursor *cursor, NavDocument *document)
 		const NavModelResult result = document->addPlace(place);
 		if (result != NavModelResult::Accepted)
 		{
-			return result == NavModelResult::ResourceLimit ?
-				SectionReadResult::ResourceLimit : SectionReadResult::Invalid;
+			return result == NavModelResult::ResourceLimit ? SectionReadResult::ResourceLimit
+														   : SectionReadResult::Invalid;
 		}
 	}
 	return SectionReadResult::Loaded;
 }
 
-SectionReadResult readArea(ByteCursor *cursor, std::uint32_t version, std::uint32_t *nextSpotId,
-		NavArea *area)
+SectionReadResult readArea(ByteCursor *cursor, std::uint32_t version, std::uint32_t *nextSpotId, NavArea *area)
 {
-	if (cursor == nullptr || nextSpotId == nullptr || area == nullptr ||
-			!cursor->readU32(&area->id) || !cursor->readU8(&area->attributes) ||
-			!readVector(cursor, &area->extent.lo) ||
-			!readVector(cursor, &area->extent.hi) ||
-			!cursor->readFloat(&area->northEastZ) ||
-			!cursor->readFloat(&area->southWestZ))
+	if (cursor == nullptr || nextSpotId == nullptr || area == nullptr || !cursor->readU32(&area->id) ||
+		!cursor->readU8(&area->attributes) || !readVector(cursor, &area->extent.lo) ||
+		!readVector(cursor, &area->extent.hi) || !cursor->readFloat(&area->northEastZ) ||
+		!cursor->readFloat(&area->southWestZ))
 	{
 		return SectionReadResult::Truncated;
 	}
@@ -257,8 +257,7 @@ SectionReadResult readArea(ByteCursor *cursor, std::uint32_t version, std::uint3
 				return SectionReadResult::Truncated;
 			}
 		}
-		else if (!cursor->readU32(&spot.id) || !readVector(cursor, &spot.position) ||
-					!cursor->readU8(&spot.flags))
+		else if (!cursor->readU32(&spot.id) || !readVector(cursor, &spot.position) || !cursor->readU8(&spot.flags))
 		{
 			return SectionReadResult::Truncated;
 		}
@@ -277,11 +276,9 @@ SectionReadResult readArea(ByteCursor *cursor, std::uint32_t version, std::uint3
 	for (std::uint8_t index = 0U; index < approachCount; ++index)
 	{
 		NavApproach approach = {};
-		if (!cursor->readU32(&approach.here) ||
-				!cursor->readU32(&approach.previous) ||
-				!cursor->readU8(&approach.previousToHereHow) ||
-				!cursor->readU32(&approach.next) ||
-				!cursor->readU8(&approach.hereToNextHow))
+		if (!cursor->readU32(&approach.here) || !cursor->readU32(&approach.previous) ||
+			!cursor->readU8(&approach.previousToHereHow) || !cursor->readU32(&approach.next) ||
+			!cursor->readU8(&approach.hereToNextHow))
 		{
 			return SectionReadResult::Truncated;
 		}
@@ -300,13 +297,12 @@ SectionReadResult readArea(ByteCursor *cursor, std::uint32_t version, std::uint3
 	for (std::uint32_t index = 0U; index < encounterCount; ++index)
 	{
 		NavEncounter encounter = {};
-		if (version < 3U)
+		if (version < kDirectionalEncounterVersion)
 		{
 			NavVector pathFrom = {};
 			NavVector pathTo = {};
-			if (!cursor->readU32(&encounter.fromArea) ||
-					!cursor->readU32(&encounter.toArea) ||
-					!readVector(cursor, &pathFrom) || !readVector(cursor, &pathTo))
+			if (!cursor->readU32(&encounter.fromArea) || !cursor->readU32(&encounter.toArea) ||
+				!readVector(cursor, &pathFrom) || !readVector(cursor, &pathTo))
 			{
 				return SectionReadResult::Truncated;
 			}
@@ -335,10 +331,8 @@ SectionReadResult readArea(ByteCursor *cursor, std::uint32_t version, std::uint3
 		}
 		else
 		{
-			if (!cursor->readU32(&encounter.fromArea) ||
-					!cursor->readU8(&encounter.fromDirection) ||
-					!cursor->readU32(&encounter.toArea) ||
-					!cursor->readU8(&encounter.toDirection))
+			if (!cursor->readU32(&encounter.fromArea) || !cursor->readU8(&encounter.fromDirection) ||
+				!cursor->readU32(&encounter.toArea) || !cursor->readU8(&encounter.toDirection))
 			{
 				return SectionReadResult::Truncated;
 			}
@@ -356,13 +350,14 @@ SectionReadResult readArea(ByteCursor *cursor, std::uint32_t version, std::uint3
 				{
 					return SectionReadResult::Truncated;
 				}
-				order.t = static_cast<float>(t) / 255.0f;
+				constexpr float kEncodedEncounterPositionMaximum = 255.0f;
+				order.t = static_cast<float>(t) / kEncodedEncounterPositionMaximum;
 				encounter.spots.push_back(order);
 			}
 		}
 		area->encounters.push_back(encounter);
 	}
-	if (version >= 5U && !cursor->readU16(&area->placeId))
+	if (version >= kPlaceDirectoryVersion && !cursor->readU16(&area->placeId))
 	{
 		return SectionReadResult::Truncated;
 	}
@@ -370,8 +365,8 @@ SectionReadResult readArea(ByteCursor *cursor, std::uint32_t version, std::uint3
 }
 }
 
-LegacyNavReader::LegacyNavReader() :
-	limits_{kMaximumFileBytes, NavLimits::kMaximumAreas}
+LegacyNavReader::LegacyNavReader() : limits_{kMaximumFileBytes, NavLimits::kMaximumAreas}
+
 {
 }
 
@@ -387,10 +382,7 @@ LegacyNavReader::LegacyNavReader(const LegacyNavReaderLimits &limits) : limits_(
 	}
 }
 
-NavReadResult LegacyNavReader::read(
-	const std::uint8_t *data,
-	std::size_t size,
-	NavDocument *document) const
+NavReadResult LegacyNavReader::read(const std::uint8_t *data, std::size_t size, NavDocument *document) const
 {
 	if (document == nullptr || (data == nullptr && size != 0U))
 	{
@@ -427,12 +419,12 @@ NavReadResult LegacyNavReader::read(
 			return NavReadResult::UnsupportedVersion;
 		}
 		std::uint32_t bspSize = 0U;
-		if (version >= 4U && !cursor.readU32(&bspSize))
+		if (version >= kBspSizeVersion && !cursor.readU32(&bspSize))
 		{
 			return NavReadResult::Truncated;
 		}
 		NavDocument candidate;
-		if (version >= 5U)
+		if (version >= kPlaceDirectoryVersion)
 		{
 			const SectionReadResult placeResult = readPlaceDirectory(&cursor, &candidate);
 			if (placeResult != SectionReadResult::Loaded)
@@ -441,8 +433,8 @@ NavReadResult LegacyNavReader::read(
 				{
 					return NavReadResult::ResourceLimit;
 				}
-				return placeResult == SectionReadResult::Truncated ?
-					NavReadResult::Truncated : NavReadResult::InvalidPlace;
+				return placeResult == SectionReadResult::Truncated ? NavReadResult::Truncated
+																   : NavReadResult::InvalidPlace;
 			}
 		}
 		std::uint32_t areaCount = 0U;
@@ -458,8 +450,7 @@ NavReadResult LegacyNavReader::read(
 		{
 			return NavReadResult::ResourceLimit;
 		}
-		if (candidate.setSourceIdentity({version, bspSize, hashBytes(data, size)}) !=
-				NavModelResult::Accepted)
+		if (candidate.setSourceIdentity({version, bspSize, hashBytes(data, size)}) != NavModelResult::Accepted)
 		{
 			return NavReadResult::ResourceLimit;
 		}
@@ -467,14 +458,12 @@ NavReadResult LegacyNavReader::read(
 		for (std::uint32_t index = 0U; index < areaCount; ++index)
 		{
 			NavArea area = {};
-			const SectionReadResult sectionResult =
-				readArea(&cursor, version, &nextSpotId, &area);
+			const SectionReadResult sectionResult = readArea(&cursor, version, &nextSpotId, &area);
 			if (sectionResult != SectionReadResult::Loaded)
 			{
-				return sectionResult == SectionReadResult::ResourceLimit ?
-					NavReadResult::ResourceLimit :
-					sectionResult == SectionReadResult::InvalidGeometry ?
-					NavReadResult::InvalidGeometry : NavReadResult::Truncated;
+				return sectionResult == SectionReadResult::ResourceLimit  ? NavReadResult::ResourceLimit
+					: sectionResult == SectionReadResult::InvalidGeometry ? NavReadResult::InvalidGeometry
+																		  : NavReadResult::Truncated;
 			}
 			const NavModelResult modelResult = candidate.addArea(area);
 			if (modelResult != NavModelResult::Accepted)

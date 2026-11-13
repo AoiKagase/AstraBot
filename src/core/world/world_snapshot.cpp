@@ -10,14 +10,13 @@ namespace
 {
 bool isFiniteVector(const WorldVector &value)
 {
-	return std::isfinite(value.x) && std::isfinite(value.y) &&
-		std::isfinite(value.z);
+	return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
 }
 
 bool isBoundedVector(const WorldVector &value, float limit)
 {
-	return isFiniteVector(value) && std::fabs(value.x) <= limit &&
-		std::fabs(value.y) <= limit && std::fabs(value.z) <= limit;
+	return isFiniteVector(value) && std::fabs(value.x) <= limit && std::fabs(value.y) <= limit &&
+		std::fabs(value.z) <= limit;
 }
 }
 
@@ -48,8 +47,7 @@ bool FrameIdentity::isValid() const
 
 bool FrameIdentity::operator==(const FrameIdentity &other) const
 {
-	return mapGeneration == other.mapGeneration &&
-		roundGeneration == other.roundGeneration && tick == other.tick;
+	return mapGeneration == other.mapGeneration && roundGeneration == other.roundGeneration && tick == other.tick;
 }
 
 bool SnapshotIdentity::isValid() const
@@ -59,28 +57,23 @@ bool SnapshotIdentity::isValid() const
 
 bool SnapshotIdentity::operator==(const SnapshotIdentity &other) const
 {
-	return frame == other.frame && observer == other.observer &&
-		navRevision == other.navRevision;
+	return frame == other.frame && observer == other.observer && navRevision == other.navRevision;
 }
 
 bool ContactConfidence::isValid() const
 {
-	return std::isfinite(value) && value >= 0.0f && value <= 1.0f &&
-		ageTicks <= WorldLimits::kMaximumAgeTicks;
+	return std::isfinite(value) && value >= 0.0f && value <= 1.0f && ageTicks <= WorldLimits::kMaximumAgeTicks;
 }
 
 bool MemorySample::isUsable() const
 {
-	return state == MemoryState::Remembered &&
-		knowledge != KnowledgeState::Unknown && actor.isValid() &&
-		isBoundedVector(position, WorldLimits::kMaximumCoordinate) &&
-		confidence.isValid();
+	return state == MemoryState::Remembered && knowledge != KnowledgeState::Unknown && actor.isValid() &&
+		isBoundedVector(position, WorldLimits::kMaximumCoordinate) && confidence.isValid();
 }
 
 bool ActorObservation::isConfirmed() const
 {
-	return state == ObservationState::ObservedPresent &&
-		confidence.isValid() && confidence.value > 0.0f &&
+	return state == ObservationState::ObservedPresent && confidence.isValid() && confidence.value > 0.0f &&
 		isBoundedVector(position, WorldLimits::kMaximumCoordinate);
 }
 
@@ -91,14 +84,13 @@ bool ActorObservation::hasCurrentPosition() const
 
 bool EntityObservation::isConfirmed() const
 {
-	return state == ObservationState::ObservedPresent &&
-		confidence.isValid() && confidence.value > 0.0f &&
+	return state == ObservationState::ObservedPresent && confidence.isValid() && confidence.value > 0.0f &&
 		isBoundedVector(position, WorldLimits::kMaximumCoordinate);
 }
 
 WorldSnapshot::WorldSnapshot()
-	: identity_(), actors_(), actorCount_(0U), entities_(), entityCount_(0U),
-	  sounds_(), soundCount_(0U), noise_(), memories_(), memoryCount_(0U)
+	: identity_(), actors_(), actorCount_(0U), entities_(), entityCount_(0U), sounds_(), soundCount_(0U), noise_(),
+	  memories_(), memoryCount_(0U)
 {
 	noise_.active = false;
 	noise_.ready = false;
@@ -114,21 +106,26 @@ WorldSnapshot::WorldSnapshot()
 
 bool WorldSnapshot::isValid() const
 {
-	return identity_.isValid() && actorCount_ <= actors_.size() &&
-		entityCount_ <= entities_.size() && soundCount_ <= sounds_.size() &&
-		memoryCount_ <= memories_.size();
+	return identity_.isValid() && actorCount_ <= actors_.size() && entityCount_ <= entities_.size() &&
+		soundCount_ <= sounds_.size() && memoryCount_ <= memories_.size();
 }
 
-const SnapshotIdentity &WorldSnapshot::identity() const { return identity_; }
-std::size_t WorldSnapshot::actorCount() const { return actorCount_; }
+const SnapshotIdentity &WorldSnapshot::identity() const
+{
+	return identity_;
+}
+
+std::size_t WorldSnapshot::actorCount() const
+{
+	return actorCount_;
+}
 
 const ActorObservation *WorldSnapshot::actorAt(std::size_t index) const
 {
 	return index < actorCount_ ? &actors_[index] : nullptr;
 }
 
-ContactLookupResult WorldSnapshot::findActor(
-	const ActorKey &actor, const ActorObservation **observation) const
+ContactLookupResult WorldSnapshot::findActor(const ActorKey &actor, const ActorObservation **observation) const
 {
 	if (observation == nullptr || !actor.isValid())
 		return ContactLookupResult::InvalidArgument;
@@ -144,15 +141,17 @@ ContactLookupResult WorldSnapshot::findActor(
 	return ContactLookupResult::Unknown;
 }
 
-std::size_t WorldSnapshot::entityCount() const { return entityCount_; }
+std::size_t WorldSnapshot::entityCount() const
+{
+	return entityCount_;
+}
 
 const EntityObservation *WorldSnapshot::entityAt(std::size_t index) const
 {
 	return index < entityCount_ ? &entities_[index] : nullptr;
 }
 
-ContactLookupResult WorldSnapshot::findEntity(
-	const EntityKey &entity, const EntityObservation **observation) const
+ContactLookupResult WorldSnapshot::findEntity(const EntityKey &entity, const EntityObservation **observation) const
 {
 	if (observation == nullptr || !entity.isValid())
 		return ContactLookupResult::InvalidArgument;
@@ -168,17 +167,22 @@ ContactLookupResult WorldSnapshot::findEntity(
 	return ContactLookupResult::Unknown;
 }
 
-std::size_t WorldSnapshot::soundCount() const { return soundCount_; }
+std::size_t WorldSnapshot::soundCount() const
+{
+	return soundCount_;
+}
 
 const AudibleEvent *WorldSnapshot::soundAt(std::size_t index) const
 {
 	return index < soundCount_ ? &sounds_[index] : nullptr;
 }
 
-const NoiseMemory &WorldSnapshot::noise() const { return noise_; }
+const NoiseMemory &WorldSnapshot::noise() const
+{
+	return noise_;
+}
 
-MemoryLookupResult WorldSnapshot::memoryFor(
-	const ActorKey &actor, const MemorySample **memory) const
+MemoryLookupResult WorldSnapshot::memoryFor(const ActorKey &actor, const MemorySample **memory) const
 {
 	if (memory == nullptr || !actor.isValid())
 		return MemoryLookupResult::InvalidArgument;
@@ -188,8 +192,8 @@ MemoryLookupResult WorldSnapshot::memoryFor(
 		if (memories_[index].actor == actor)
 		{
 			*memory = &memories_[index];
-			return memories_[index].state == MemoryState::Expired
-				? MemoryLookupResult::Expired : MemoryLookupResult::Found;
+			return memories_[index].state == MemoryState::Expired ? MemoryLookupResult::Expired
+																  : MemoryLookupResult::Found;
 		}
 	}
 	return MemoryLookupResult::NotFound;

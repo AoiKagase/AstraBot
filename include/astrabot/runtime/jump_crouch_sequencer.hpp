@@ -61,16 +61,12 @@ public:
 
 	JumpCrouchDecision update(const JumpCrouchObservation &observation);
 	JumpCrouchCommandDecision updateCommand(
-		const JumpCrouchObservation &observation,
-		std::uint16_t buttons,
-		std::uint16_t duckButton);
+		const JumpCrouchObservation &observation, std::uint16_t buttons, std::uint16_t duckButton);
 	void reset();
 	JumpCrouchPhase phase() const;
 
 private:
-	JumpCrouchDecision finish(
-		JumpCrouchTransition transition,
-		float elapsed);
+	JumpCrouchDecision finish(JumpCrouchTransition transition, float elapsed);
 
 	JumpCrouchPhase phase_;
 	float launchTime_;

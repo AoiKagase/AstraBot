@@ -35,6 +35,7 @@ struct TargetBelief
 
 struct CombatDecisionContext
 {
+	static constexpr float kAutomaticAimErrorRange = -1.0f;
 	world::ActorKey actor;
 	world::FrameIdentity frame;
 	world::WorldPosition origin;
@@ -45,12 +46,12 @@ struct CombatDecisionContext
 	float timestamp;
 	float skill;
 	float fieldOfView;
-	compat::ICompatibilityRandomSource* randomSource;
+	compat::ICompatibilityRandomSource *randomSource;
 	compat::RandomTimingContext randomTiming;
 	world::WorldVelocity observerVelocity = {};
 	world::WorldVelocity targetVelocity = {};
 	bool predictMovement = false;
-	float aimErrorRange = -1.0f;
+	float aimErrorRange = kAutomaticAimErrorRange;
 
 	bool isValid() const;
 };
@@ -158,25 +159,46 @@ class CombatController
 public:
 	CombatController();
 	explicit CombatController(const world::ActorKey &actor);
-	CombatController(
-		const world::ActorKey &actor,
-		const CombatConfig &config);
+	CombatController(const world::ActorKey &actor, const CombatConfig &config);
 
-	CombatResult decide(
-		const world::WorldSnapshot &snapshot,
-		const WeaponInventory &inventory,
-		const TargetBelief &target,
-		const CombatDecisionContext &context,
-		CombatDecision *decision);
+	CombatResult decide(const world::WorldSnapshot &snapshot, const WeaponInventory &inventory,
+		const TargetBelief &target, const CombatDecisionContext &context, CombatDecision *decision);
 	CombatResult observeDamage(const DamageObservation &observation) const;
 	bool upkeepAim(const TargetBelief &target, const CombatDecisionContext &context, AimIntent *aim);
-	const AimIntent &trackedAim() const { return trackedAim_; }
-	void clearAim() { trackedAim_ = {}; }
-	compat::CombatMovementDecision planMovement(const compat::CombatMovementInput &input) { return movement_.update(input); }
-	compat::CombatMovementDecision prepareMovement(const compat::CombatMovementInput &input) { return movement_.prepare(input); }
-	compat::CombatMovementDecision finishMovement(const compat::CombatMovementInput &input) { return movement_.finish(input); }
-	void stopMovement() { movement_.stop(); }
-	bool movementActive() const { return movement_.active(); }
+	const AimIntent &trackedAim() const
+	{
+		return trackedAim_;
+	}
+
+	void clearAim()
+	{
+		trackedAim_ = {};
+	}
+
+	compat::CombatMovementDecision planMovement(const compat::CombatMovementInput &input)
+	{
+		return movement_.update(input);
+	}
+
+	compat::CombatMovementDecision prepareMovement(const compat::CombatMovementInput &input)
+	{
+		return movement_.prepare(input);
+	}
+
+	compat::CombatMovementDecision finishMovement(const compat::CombatMovementInput &input)
+	{
+		return movement_.finish(input);
+	}
+
+	void stopMovement()
+	{
+		movement_.stop();
+	}
+
+	bool movementActive() const
+	{
+		return movement_.active();
+	}
 
 	const world::ActorKey &actor() const;
 	bool isInitialized() const;
@@ -185,14 +207,9 @@ private:
 	static bool isValidTargetState(TargetBeliefState state);
 	static bool isFiniteVector(const world::WorldVector &value);
 	static bool isBoundedPosition(const world::WorldPosition &value);
-	static bool sameFrame(
-		const world::FrameIdentity &left,
-		const world::FrameIdentity &right);
-	static bool isFrameAfter(
-		const world::FrameIdentity &candidate,
-		const world::FrameIdentity &current);
-	bool buildAim(const CombatDecisionContext &context, const TargetBelief &target,
-				  AimIntent *intent);
+	static bool sameFrame(const world::FrameIdentity &left, const world::FrameIdentity &right);
+	static bool isFrameAfter(const world::FrameIdentity &candidate, const world::FrameIdentity &current);
+	bool buildAim(const CombatDecisionContext &context, const TargetBelief &target, AimIntent *intent);
 	compat::AimSpringState aimSpring_ = {};
 	world::WorldVector aimOffset_ = {};
 	world::WorldVector aimOffsetGoal_ = {};

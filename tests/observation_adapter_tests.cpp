@@ -25,7 +25,10 @@ bool check(bool condition, const char *message)
 
 struct Fixture
 {
-	Fixture() : engine{}, globals{}, entity{}, adapter() {}
+	Fixture() : engine{}, globals{}, entity{}, adapter()
+
+	{
+	}
 
 	enginefuncs_t engine;
 	globalvars_t globals;
@@ -68,8 +71,7 @@ void configureFixture(Fixture *fixture)
 
 bool collect(Fixture *fixture, astrabot::compat::CompatibilityObservation *observation)
 {
-	return fixture->adapter.collectActor(
-		&fixture->entity, {4U, 9U}, frame(), timing(), observation) ==
+	return fixture->adapter.collectActor(&fixture->entity, {4U, 9U}, frame(), timing(), observation) ==
 		astrabot::metamod::ObservationAdapterResult::Accepted;
 }
 
@@ -82,17 +84,12 @@ bool testPublicPlayerFieldsAreExactAtCollectionTick()
 	{
 		return false;
 	}
-	return check(observation.player.health.value == 87.0f,
-			"public health is copied") &&
-		check(observation.player.armor.value == 50.0f,
-			"public armor is copied") &&
-		check(observation.player.fov.value == 110.0f,
-			"public FOV is copied") &&
-		check(observation.player.health.context.quality ==
-			astrabot::compat::ObservationQuality::ExactEngineApi,
+	return check(observation.player.health.value == 87.0f, "public health is copied") &&
+		check(observation.player.armor.value == 50.0f, "public armor is copied") &&
+		check(observation.player.fov.value == 110.0f, "public FOV is copied") &&
+		check(observation.player.health.context.quality == astrabot::compat::ObservationQuality::ExactEngineApi,
 			"public player quality is explicit") &&
-		check(observation.player.health.context.freshness ==
-			astrabot::compat::ObservationFreshness::SameTick,
+		check(observation.player.health.context.freshness == astrabot::compat::ObservationFreshness::SameTick,
 			"public player freshness is same tick");
 }
 
@@ -105,12 +102,9 @@ bool testPrivateWeaponFieldsAreUnavailableNotSyntheticExact()
 	{
 		return false;
 	}
-	return check(!observation.weapon.activeWeaponId.valid,
-			"active private weapon is invalid") &&
-		check(!observation.weapon.activeWeaponId.isAvailable(),
-			"active private weapon is unavailable") &&
-		check(observation.weapon.accuracy.context.quality ==
-			astrabot::compat::ObservationQuality::Unavailable,
+	return check(!observation.weapon.activeWeaponId.valid, "active private weapon is invalid") &&
+		check(!observation.weapon.activeWeaponId.isAvailable(), "active private weapon is unavailable") &&
+		check(observation.weapon.accuracy.context.quality == astrabot::compat::ObservationQuality::Unavailable,
 			"accuracy is not promoted to exact");
 }
 
@@ -123,10 +117,8 @@ bool testObjectiveProxyKeepsInferredQuality()
 	{
 		return false;
 	}
-	return check(observation.objective.carryingC4.value,
-			"public C4 bit is observed") &&
-		check(observation.objective.carryingC4.context.quality ==
-			astrabot::compat::ObservationQuality::Inferred,
+	return check(observation.objective.carryingC4.value, "public C4 bit is observed") &&
+		check(observation.objective.carryingC4.context.quality == astrabot::compat::ObservationQuality::Inferred,
 			"C4 bit remains inferred");
 }
 
@@ -139,11 +131,9 @@ bool testAdapterPreservesActorAndFrameIdentity()
 	{
 		return false;
 	}
-	return check(observation.actor == astrabot::world::ActorKey{4U, 9U},
-			"actor identity is preserved") &&
+	return check(observation.actor == astrabot::world::ActorKey{4U, 9U}, "actor identity is preserved") &&
 		check(observation.frame == frame(), "frame identity is preserved") &&
-		check(observation.player.health.context.timing.commandSequence == 18U,
-			"timing context is preserved");
+		check(observation.player.health.context.timing.commandSequence == 18U, "timing context is preserved");
 }
 
 bool testAdapterHandlesMissingEnginePointers()
@@ -151,10 +141,10 @@ bool testAdapterHandlesMissingEnginePointers()
 	astrabot::metamod::ObservationAdapter adapter;
 	edict_t entity = {};
 	astrabot::compat::CompatibilityObservation observation = {};
-	const astrabot::metamod::ObservationAdapterResult result = adapter.collectActor(
-		&entity, {4U, 9U}, frame(), timing(), &observation);
-	return check(result == astrabot::metamod::ObservationAdapterResult::EngineUnavailable,
-		"missing engine context is explicit");
+	const astrabot::metamod::ObservationAdapterResult result =
+		adapter.collectActor(&entity, {4U, 9U}, frame(), timing(), &observation);
+	return check(
+		result == astrabot::metamod::ObservationAdapterResult::EngineUnavailable, "missing engine context is explicit");
 }
 
 bool testPlantedBombEntityIsInferred()
@@ -163,19 +153,13 @@ bool testPlantedBombEntityIsInferred()
 	configureFixture(&fixture);
 	fixture.entity.v.dmgtime = 30.0f;
 	astrabot::compat::ObjectiveObservation objective = {};
-	const astrabot::metamod::ObservationAdapterResult result =
-		fixture.adapter.collectPlantedBomb(
-			&fixture.entity, "grenade", "models/w_c4.mdl", 5.0f,
-			{4U, 9U}, frame(), timing(), &objective);
-	return check(result == astrabot::metamod::ObservationAdapterResult::Accepted,
-		"planted bomb entity is accepted") &&
-		check(objective.bombPlanted.isAvailable() && objective.bombPlanted.value,
-			"planted bomb state is available") &&
-		check(objective.bombPlanted.context.quality ==
-			astrabot::compat::ObservationQuality::Inferred,
+	const astrabot::metamod::ObservationAdapterResult result = fixture.adapter.collectPlantedBomb(
+		&fixture.entity, "grenade", "models/w_c4.mdl", 5.0f, {4U, 9U}, frame(), timing(), &objective);
+	return check(result == astrabot::metamod::ObservationAdapterResult::Accepted, "planted bomb entity is accepted") &&
+		check(objective.bombPlanted.isAvailable() && objective.bombPlanted.value, "planted bomb state is available") &&
+		check(objective.bombPlanted.context.quality == astrabot::compat::ObservationQuality::Inferred,
 			"planted bomb state is inferred") &&
-		check(objective.bombTimer.value == 30.0f,
-			"planted bomb timer is preserved");
+		check(objective.bombTimer.value == 30.0f, "planted bomb timer is preserved");
 }
 
 bool testPlantedBombWithoutPublicDamageTimeKeepsTimerUnavailable()
@@ -184,17 +168,14 @@ bool testPlantedBombWithoutPublicDamageTimeKeepsTimerUnavailable()
 	configureFixture(&fixture);
 	fixture.entity.v.dmgtime = 0.0f;
 	astrabot::compat::ObjectiveObservation objective = {};
-	const astrabot::metamod::ObservationAdapterResult result =
-		fixture.adapter.collectPlantedBomb(
-			&fixture.entity, "grenade", "models/w_c4.mdl", 5.0f,
-			{4U, 9U}, frame(), timing(), &objective);
+	const astrabot::metamod::ObservationAdapterResult result = fixture.adapter.collectPlantedBomb(
+		&fixture.entity, "grenade", "models/w_c4.mdl", 5.0f, {4U, 9U}, frame(), timing(), &objective);
 	return check(result == astrabot::metamod::ObservationAdapterResult::Accepted,
-			"public C4 grenade/model identifies a planted bomb without dmgtime") &&
+			   "public C4 grenade/model identifies a planted bomb without dmgtime") &&
 		check(objective.bombPlanted.isAvailable() && objective.bombPlanted.value,
 			"planted state remains available without a public bomb timer") &&
 		check(!objective.bombTimer.isAvailable() &&
-			objective.bombTimer.context.quality ==
-				astrabot::compat::ObservationQuality::Unavailable,
+				objective.bombTimer.context.quality == astrabot::compat::ObservationQuality::Unavailable,
 			"private C4 countdown remains explicitly unavailable");
 }
 
@@ -208,15 +189,13 @@ bool testDroppedC4RequiresVerifiedWeaponBoxIdentityAndTracksReuse()
 
 	astrabot::compat::DroppedC4Observation dropped = {};
 	const auto result = fixture.adapter.collectDroppedC4(
-		&fixture.entity, "weaponbox", "models/w_backpack.mdl",
-		{4U, 9U}, frame(), timing(), &dropped);
+		&fixture.entity, "weaponbox", "models/w_backpack.mdl", {4U, 9U}, frame(), timing(), &dropped);
 	if (!check(result == astrabot::metamod::ObservationAdapterResult::Accepted,
 			"verified ReGameDLL C4 weaponbox is accepted") ||
 		!check(dropped.isAvailable(), "verified dropped C4 is available") ||
 		!check(dropped.entity.id == 21U && dropped.entity.generation == 9U,
 			"dropped C4 identity uses edict index and serial generation") ||
-		!check(dropped.position.x == 128.0f && dropped.position.z == 32.0f,
-			"dropped C4 public origin is preserved"))
+		!check(dropped.position.x == 128.0f && dropped.position.z == 32.0f, "dropped C4 public origin is preserved"))
 	{
 		gExpectedIndexedEntity = nullptr;
 		return false;
@@ -224,21 +203,17 @@ bool testDroppedC4RequiresVerifiedWeaponBoxIdentityAndTracksReuse()
 
 	const astrabot::world::EntityKey previousIdentity = dropped.entity;
 	fixture.entity.serialnumber = 10;
-	if (!check(fixture.adapter.collectDroppedC4(
-				&fixture.entity, "weaponbox", "models/w_backpack.mdl",
-				{4U, 9U}, frame(), timing(), &dropped) ==
-				astrabot::metamod::ObservationAdapterResult::Accepted,
+	if (!check(fixture.adapter.collectDroppedC4(&fixture.entity, "weaponbox", "models/w_backpack.mdl", {4U, 9U},
+				   frame(), timing(), &dropped) == astrabot::metamod::ObservationAdapterResult::Accepted,
 			"reused dropped C4 slot is recollected") ||
-		!check(!(dropped.entity == previousIdentity),
-			"edict reuse changes the dropped C4 generation"))
+		!check(!(dropped.entity == previousIdentity), "edict reuse changes the dropped C4 generation"))
 	{
 		gExpectedIndexedEntity = nullptr;
 		return false;
 	}
 
 	const auto unknown = fixture.adapter.collectDroppedC4(
-		&fixture.entity, "weaponbox", "models/w_ak47.mdl",
-		{4U, 9U}, frame(), timing(), &dropped);
+		&fixture.entity, "weaponbox", "models/w_ak47.mdl", {4U, 9U}, frame(), timing(), &dropped);
 	if (!check(unknown == astrabot::metamod::ObservationAdapterResult::InvalidEntity,
 			"unknown weaponbox model stays unavailable") ||
 		!check(!dropped.isAvailable(), "unknown weaponbox is not C4 ground truth"))
@@ -250,25 +225,21 @@ bool testDroppedC4RequiresVerifiedWeaponBoxIdentityAndTracksReuse()
 	gExpectedIndexedEntity = &fixture.entity;
 	fixture.entity.free = 1;
 	const auto freed = fixture.adapter.collectDroppedC4(
-		&fixture.entity, "weaponbox", "models/w_backpack.mdl",
-		{4U, 9U}, frame(), timing(), &dropped);
+		&fixture.entity, "weaponbox", "models/w_backpack.mdl", {4U, 9U}, frame(), timing(), &dropped);
 	fixture.entity.free = 0;
-	if (!check(freed == astrabot::metamod::ObservationAdapterResult::InvalidEntity &&
-			!dropped.isAvailable(), "freed C4 entity remains unavailable"))
+	if (!check(freed == astrabot::metamod::ObservationAdapterResult::InvalidEntity && !dropped.isAvailable(),
+			"freed C4 entity remains unavailable"))
 	{
 		gExpectedIndexedEntity = nullptr;
 		return false;
 	}
 
-	fixture.entity.v.origin[1] =
-		(std::numeric_limits<float>::quiet_NaN)();
+	fixture.entity.v.origin[1] = (std::numeric_limits<float>::quiet_NaN)();
 	const auto invalidPosition = fixture.adapter.collectDroppedC4(
-		&fixture.entity, "weaponbox", "models/w_backpack.mdl",
-		{4U, 9U}, frame(), timing(), &dropped);
+		&fixture.entity, "weaponbox", "models/w_backpack.mdl", {4U, 9U}, frame(), timing(), &dropped);
 	gExpectedIndexedEntity = nullptr;
-	return check(invalidPosition ==
-			astrabot::metamod::ObservationAdapterResult::InvalidEntity &&
-			!dropped.isAvailable(),
+	return check(
+		invalidPosition == astrabot::metamod::ObservationAdapterResult::InvalidEntity && !dropped.isAvailable(),
 		"non-finite dropped C4 origin remains unavailable");
 }
 }
@@ -276,11 +247,10 @@ bool testDroppedC4RequiresVerifiedWeaponBoxIdentityAndTracksReuse()
 int main()
 {
 	return testPublicPlayerFieldsAreExactAtCollectionTick() &&
-		testPrivateWeaponFieldsAreUnavailableNotSyntheticExact() &&
-		testObjectiveProxyKeepsInferredQuality() &&
-		testAdapterPreservesActorAndFrameIdentity() &&
-		testAdapterHandlesMissingEnginePointers() &&
-		testPlantedBombEntityIsInferred() &&
-		testPlantedBombWithoutPublicDamageTimeKeepsTimerUnavailable() &&
-		testDroppedC4RequiresVerifiedWeaponBoxIdentityAndTracksReuse() ? 0 : 1;
+			testPrivateWeaponFieldsAreUnavailableNotSyntheticExact() && testObjectiveProxyKeepsInferredQuality() &&
+			testAdapterPreservesActorAndFrameIdentity() && testAdapterHandlesMissingEnginePointers() &&
+			testPlantedBombEntityIsInferred() && testPlantedBombWithoutPublicDamageTimeKeepsTimerUnavailable() &&
+			testDroppedC4RequiresVerifiedWeaponBoxIdentityAndTracksReuse()
+		? 0
+		: 1;
 }

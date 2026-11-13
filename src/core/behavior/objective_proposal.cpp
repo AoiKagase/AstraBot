@@ -6,26 +6,20 @@ namespace behavior
 {
 namespace
 {
-bool sameFrameGeneration(
-	const world::FrameIdentity &left,
-	const world::FrameIdentity &right)
+bool sameFrameGeneration(const world::FrameIdentity &left, const world::FrameIdentity &right)
 {
-	return left.mapGeneration == right.mapGeneration &&
-		left.roundGeneration == right.roundGeneration;
+	return left.mapGeneration == right.mapGeneration && left.roundGeneration == right.roundGeneration;
 }
 
 }
 
 bool ObjectiveProposal::isValid() const
 {
-	if (!actor.isValid() || !sourceFrame.isValid() ||
-			objective == ObjectiveKind::None ||
-			(priority != ObjectivePriority::Low &&
-			 priority != ObjectivePriority::Normal &&
-			 priority != ObjectivePriority::High &&
-			 priority != ObjectivePriority::Critical) ||
-			issuedTick != sourceFrame.tick || issuedTick >= expiresAtTick ||
-			expiresAtTick - issuedTick > ObjectiveLimits::kMaximumLifetimeTicks)
+	if (!actor.isValid() || !sourceFrame.isValid() || objective == ObjectiveKind::None ||
+		(priority != ObjectivePriority::Low && priority != ObjectivePriority::Normal &&
+			priority != ObjectivePriority::High && priority != ObjectivePriority::Critical) ||
+		issuedTick != sourceFrame.tick || issuedTick >= expiresAtTick ||
+		expiresAtTick - issuedTick > ObjectiveLimits::kMaximumLifetimeTicks)
 	{
 		return false;
 	}
@@ -35,16 +29,13 @@ bool ObjectiveProposal::isValid() const
 		return false;
 	}
 
-	return objective == ObjectiveKind::Roam ||
-		objective == ObjectiveKind::Seek ||
-		objective == ObjectiveKind::Engage ||
+	return objective == ObjectiveKind::Roam || objective == ObjectiveKind::Seek || objective == ObjectiveKind::Engage ||
 		objective == ObjectiveKind::Retreat;
 }
 
 bool ObjectiveProposal::isExpired(const world::FrameIdentity &frame) const
 {
-	return !frame.isValid() || !sourceFrame.isValid() ||
-		!sameFrameGeneration(frame, sourceFrame) ||
+	return !frame.isValid() || !sourceFrame.isValid() || !sameFrameGeneration(frame, sourceFrame) ||
 		frame.tick >= expiresAtTick;
 }
 
@@ -63,17 +54,11 @@ bool ObjectiveProposal::isCompletionFeedback() const
 	return false;
 }
 
-ObjectiveProposalSet::ObjectiveProposalSet()
-	: owner_(),
-	  proposals_(),
-	  proposalCount_(0U)
+ObjectiveProposalSet::ObjectiveProposalSet() : owner_(), proposals_(), proposalCount_(0U)
 {
 }
 
-ObjectiveProposalSet::ObjectiveProposalSet(const world::ActorKey &owner)
-	: owner_(),
-	  proposals_(),
-	  proposalCount_(0U)
+ObjectiveProposalSet::ObjectiveProposalSet(const world::ActorKey &owner) : owner_(), proposals_(), proposalCount_(0U)
 {
 	setOwner(owner);
 }
@@ -90,8 +75,7 @@ ProposalResult ObjectiveProposalSet::setOwner(const world::ActorKey &owner)
 	return ProposalResult::Accepted;
 }
 
-ProposalResult ObjectiveProposalSet::add(
-	const ObjectiveProposal &proposal)
+ProposalResult ObjectiveProposalSet::add(const ObjectiveProposal &proposal)
 {
 	if (!owner_.isValid() || !proposal.actor.isValid())
 	{
@@ -131,9 +115,7 @@ ProposalResult ObjectiveProposalSet::add(
 	return ProposalResult::Accepted;
 }
 
-ProposalResult ObjectiveProposalSet::select(
-	const world::FrameIdentity &frame,
-	ObjectiveProposal *proposal) const
+ProposalResult ObjectiveProposalSet::select(const world::FrameIdentity &frame, ObjectiveProposal *proposal) const
 {
 	if (proposal == nullptr || !frame.isValid())
 	{
@@ -168,8 +150,7 @@ ProposalResult ObjectiveProposalSet::select(
 
 	if (!found)
 	{
-		return sawStaleFrame ? ProposalResult::StaleFrame :
-			ProposalResult::NoProposal;
+		return sawStaleFrame ? ProposalResult::StaleFrame : ProposalResult::NoProposal;
 	}
 
 	*proposal = selected;
@@ -193,30 +174,22 @@ const world::ActorKey &ObjectiveProposalSet::owner() const
 
 bool ObjectiveProposalSet::isValidObjective(ObjectiveKind objective)
 {
-	return objective == ObjectiveKind::Roam ||
-		objective == ObjectiveKind::Seek ||
-		objective == ObjectiveKind::Engage ||
+	return objective == ObjectiveKind::Roam || objective == ObjectiveKind::Seek || objective == ObjectiveKind::Engage ||
 		objective == ObjectiveKind::Retreat;
 }
 
 bool ObjectiveProposalSet::isValidPriority(ObjectivePriority priority)
 {
-	return priority == ObjectivePriority::Low ||
-		priority == ObjectivePriority::Normal ||
-		priority == ObjectivePriority::High ||
-		priority == ObjectivePriority::Critical;
+	return priority == ObjectivePriority::Low || priority == ObjectivePriority::Normal ||
+		priority == ObjectivePriority::High || priority == ObjectivePriority::Critical;
 }
 
-bool ObjectiveProposalSet::sameProposal(
-	const ObjectiveProposal &left,
-	const ObjectiveProposal &right)
+bool ObjectiveProposalSet::sameProposal(const ObjectiveProposal &left, const ObjectiveProposal &right)
 {
 	return left.actor == right.actor && left.sourceFrame == right.sourceFrame &&
-		left.sourceNavRevision == right.sourceNavRevision &&
-		left.objective == right.objective && left.priority == right.priority &&
-		left.issuedTick == right.issuedTick &&
-		left.expiresAtTick == right.expiresAtTick &&
-		left.hasTarget == right.hasTarget &&
+		left.sourceNavRevision == right.sourceNavRevision && left.objective == right.objective &&
+		left.priority == right.priority && left.issuedTick == right.issuedTick &&
+		left.expiresAtTick == right.expiresAtTick && left.hasTarget == right.hasTarget &&
 		(!left.hasTarget || left.target == right.target);
 }
 
@@ -230,14 +203,11 @@ int ObjectiveProposalSet::objectiveValue(ObjectiveKind objective)
 	return static_cast<int>(objective);
 }
 
-bool ObjectiveProposalSet::isBetter(
-	const ObjectiveProposal &candidate,
-	const ObjectiveProposal &current)
+bool ObjectiveProposalSet::isBetter(const ObjectiveProposal &candidate, const ObjectiveProposal &current)
 {
 	if (priorityValue(candidate.priority) != priorityValue(current.priority))
 	{
-		return priorityValue(candidate.priority) >
-			priorityValue(current.priority);
+		return priorityValue(candidate.priority) > priorityValue(current.priority);
 	}
 
 	if (candidate.expiresAtTick != current.expiresAtTick)
@@ -250,11 +220,9 @@ bool ObjectiveProposalSet::isBetter(
 		return candidate.issuedTick > current.issuedTick;
 	}
 
-	if (objectiveValue(candidate.objective) !=
-			objectiveValue(current.objective))
+	if (objectiveValue(candidate.objective) != objectiveValue(current.objective))
 	{
-		return objectiveValue(candidate.objective) <
-			objectiveValue(current.objective);
+		return objectiveValue(candidate.objective) < objectiveValue(current.objective);
 	}
 
 	if (candidate.hasTarget != current.hasTarget)

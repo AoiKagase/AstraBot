@@ -8,42 +8,43 @@ namespace metamod
 {
 class BotCommandRuntime
 {
-  public:
+public:
 	void bindServices(BotCommandServices &services)
 	{
 		services_ = &services;
 	}
+
 	void applyPlayerAvoidance(std::size_t index, runtime::BotCommand *command);
-	runtime::CommandReceipt dispatchJoinHeartbeat(std::size_t index, FakeClientHandle &handle,
-												  std::uint8_t milliseconds);
-	bool dispatchManagedActionCommand(std::size_t index, FakeClientHandle &handle,
-									  const ActionProposal &proposal,
-									  const ActionDispatch &dispatch);
-	MovementCommandDraft beginDirectNeutralCommand(std::size_t index,
-																   FakeClientHandle &handle,
-																   std::uint8_t milliseconds);
-	runtime::CommandReceipt finishDirectNeutralCommand(std::size_t index,
-																   FakeClientHandle &handle,
-																   std::uint8_t milliseconds, MovementCommandDraft draft, const ActionProposal &requestedAction);
+	runtime::CommandReceipt dispatchJoinHeartbeat(
+		std::size_t index, FakeClientHandle &handle, std::uint8_t milliseconds);
+	bool dispatchManagedActionCommand(
+		std::size_t index, FakeClientHandle &handle, const ActionProposal &proposal, const ActionDispatch &dispatch);
+	MovementCommandDraft beginDirectNeutralCommand(
+		std::size_t index, FakeClientHandle &handle, std::uint8_t milliseconds);
+	runtime::CommandReceipt finishDirectNeutralCommand(std::size_t index, FakeClientHandle &handle,
+		std::uint8_t milliseconds, MovementCommandDraft draft, const ActionProposal &requestedAction);
 	runtime::CommandReceipt executeManagedBotCommand(std::size_t index, FakeClientHandle &handle);
 	void onTouch(edict_t *entity, edict_t *other);
-	MovementCommandDraft beginNeutralCommand(std::size_t index, FakeClientHandle &handle,
-											 const runtime::MovementPhysicsState &before);
+	MovementCommandDraft beginNeutralCommand(
+		std::size_t index, FakeClientHandle &handle, const runtime::MovementPhysicsState &before);
 	void finishNeutralCommand(std::size_t index, FakeClientHandle &handle, const runtime::MovementPhysicsState &before,
-							  MovementCommandDraft draft, const ActionProposal &requestedAction);
+		MovementCommandDraft draft, const ActionProposal &requestedAction);
 	void resetManagedBotCommandTemplate(std::size_t index);
 	const std::uint32_t &managedBotCommandSequences(std::size_t index) const
 	{
 		return actors_[index].managedBotCommandSequences;
 	}
+
 	const runtime::BotCommand &managedBotCommandTemplates(std::size_t index) const
 	{
 		return actors_[index].managedBotCommandTemplates;
 	}
+
 	const bool &managedBotCommandTemplateValid(std::size_t index) const
 	{
 		return actors_[index].managedBotCommandTemplateValid;
 	}
+
 	void onActorRemoved(std::size_t index);
 
 	void onActorRemembered(std::size_t index);
@@ -53,11 +54,10 @@ class BotCommandRuntime
 	void resetActorExecutionState(std::size_t index);
 
 	MovementCommandDraft beginMovementCommand(std::size_t index, FakeClientHandle &handle,
-											  const runtime::LifecycleToken &token,
-											  const runtime::MovementPhysicsState &before, NavigationUpdate &movement);
+		const runtime::LifecycleToken &token, const runtime::MovementPhysicsState &before, NavigationUpdate &movement);
 	void finishMovementCommand(std::size_t index, FakeClientHandle &handle, const runtime::LifecycleToken &token,
-							   const runtime::MovementPhysicsState &before, NavigationUpdate &movement,
-							   MovementCommandDraft draft, const ActionProposal &requestedAction);
+		const runtime::MovementPhysicsState &before, NavigationUpdate &movement, MovementCommandDraft draft,
+		const ActionProposal &requestedAction);
 
 	void resetCreatedActorCommand(std::size_t slotIndex);
 
@@ -72,30 +72,33 @@ class BotCommandRuntime
 	void stabilizeFrozenActors();
 	void applyCombatUpkeep(std::size_t index, const CombatUpkeepUpdate &update);
 	runtime::QueueResult enqueue(const runtime::BotCommand &command);
-	runtime::CommandReceipt dispatchInput(const runtime::ActorId &actor,
-										  std::uint32_t dispatchFrame);
+	runtime::CommandReceipt dispatchInput(const runtime::ActorId &actor, std::uint32_t dispatchFrame);
 
-  private:
+private:
 	void fill_movementGateDiagnosticTimes(const float &value)
 	{
 		for (auto &actor : actors_)
 			actor.movementGateDiagnosticTimes = value;
 	}
+
 	void fill_managedBotCommandSequences(const std::uint32_t &value)
 	{
 		for (auto &actor : actors_)
 			actor.managedBotCommandSequences = value;
 	}
+
 	void reset_managedCommandDiagnosticUpdates()
 	{
 		for (auto &actor : actors_)
 			actor.managedCommandDiagnosticUpdates = {};
 	}
+
 	void reset_managedMoveSpeeds()
 	{
 		for (auto &actor : actors_)
 			actor.managedMoveSpeeds = {};
 	}
+
 	struct ActorState
 	{
 		runtime::PlayerAvoidance playerAvoidance{};

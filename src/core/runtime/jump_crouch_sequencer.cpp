@@ -11,29 +11,23 @@ constexpr float JumpCrouchSequencer::kDuckRelease;
 constexpr float JumpCrouchSequencer::kTraversalTimeout;
 
 JumpCrouchSequencer::JumpCrouchSequencer()
-	: phase_(JumpCrouchPhase::Idle), launchTime_(0.0f), duckStarted_(false),
-	  duckReleased_(false)
+	: phase_(JumpCrouchPhase::Idle), launchTime_(0.0f), duckStarted_(false), duckReleased_(false)
 {
 }
 
-JumpCrouchDecision JumpCrouchSequencer::update(
-	const JumpCrouchObservation &observation)
+JumpCrouchDecision JumpCrouchSequencer::update(const JumpCrouchObservation &observation)
 {
 	if (phase_ != JumpCrouchPhase::Idle &&
-		(!observation.actorValid || observation.dead || observation.onLadder ||
-			observation.movementFrozen))
+		(!observation.actorValid || observation.dead || observation.onLadder || observation.movementFrozen))
 	{
-		const float elapsed = std::isfinite(observation.time)
-			? observation.time - launchTime_
-			: 0.0f;
+		const float elapsed = std::isfinite(observation.time) ? observation.time - launchTime_ : 0.0f;
 		return finish(JumpCrouchTransition::Cancelled, elapsed);
 	}
 
 	if (phase_ == JumpCrouchPhase::Idle)
 	{
-		if (observation.actorValid && !observation.dead && !observation.onLadder &&
-			!observation.movementFrozen && observation.grounded &&
-			observation.jumpRequested && std::isfinite(observation.time))
+		if (observation.actorValid && !observation.dead && !observation.onLadder && !observation.movementFrozen &&
+			observation.grounded && observation.jumpRequested && std::isfinite(observation.time))
 		{
 			phase_ = JumpCrouchPhase::AwaitingAirborne;
 			launchTime_ = observation.time;
@@ -92,17 +86,11 @@ JumpCrouchDecision JumpCrouchSequencer::update(
 		duckStarted_ = true;
 		return {phase_, JumpCrouchTransition::DuckStarted, true, elapsed};
 	}
-	return {
-		phase_,
-		JumpCrouchTransition::None,
-		duckStarted_ && !duckReleased_,
-		elapsed};
+	return {phase_, JumpCrouchTransition::None, duckStarted_ && !duckReleased_, elapsed};
 }
 
 JumpCrouchCommandDecision JumpCrouchSequencer::updateCommand(
-	const JumpCrouchObservation &observation,
-	std::uint16_t buttons,
-	std::uint16_t duckButton)
+	const JumpCrouchObservation &observation, std::uint16_t buttons, std::uint16_t duckButton)
 {
 	const JumpCrouchDecision sequencing = update(observation);
 	if (sequencing.applyDuck)
@@ -125,9 +113,7 @@ JumpCrouchPhase JumpCrouchSequencer::phase() const
 	return phase_;
 }
 
-JumpCrouchDecision JumpCrouchSequencer::finish(
-	JumpCrouchTransition transition,
-	float elapsed)
+JumpCrouchDecision JumpCrouchSequencer::finish(JumpCrouchTransition transition, float elapsed)
 {
 	reset();
 	return {JumpCrouchPhase::Idle, transition, false, elapsed};

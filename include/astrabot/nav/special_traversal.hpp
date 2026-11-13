@@ -146,13 +146,9 @@ public:
 	explicit SpecialTraversalController(const SpecialTraversalConfig &config);
 
 	SpecialTraversalResult start(
-		const NavCorridor &corridor,
-		const SpecialTraversalCapability &capability,
-		std::uint32_t actorGeneration);
+		const NavCorridor &corridor, const SpecialTraversalCapability &capability, std::uint32_t actorGeneration);
 	SpecialTraversalResult update(
-		const NavSnapshot &snapshot,
-		const SpecialTraversalObservation &observation,
-		SpecialTraversalIntent *intent);
+		const NavSnapshot &snapshot, const SpecialTraversalObservation &observation, SpecialTraversalIntent *intent);
 	bool isActive() const;
 	SpecialTraversalState state() const;
 	SpecialTraversalFailureReason failureReason() const;
@@ -160,57 +156,27 @@ public:
 private:
 	static bool isValidConfig(const SpecialTraversalConfig &config);
 	static bool isFiniteVector(const NavVector &value);
-	static bool isValidCapability(
-		const SpecialTraversalCapability &capability);
-	static bool isFiniteObservation(
-		const SpecialTraversalObservation &observation);
-	static float horizontalDistance(
-		const NavVector &from,
-		const NavVector &to);
+	static bool isValidCapability(const SpecialTraversalCapability &capability);
+	static bool isFiniteObservation(const SpecialTraversalObservation &observation);
+	static float horizontalDistance(const NavVector &from, const NavVector &to);
 	static float floorDistance(const NavArea &area, float height);
-	static bool isPointInArea(
-		const NavArea &area,
-		const SpecialTraversalPoint &point,
-		float verticalTolerance);
-	static bool isNearPoint(
-		const NavVector &position,
-		const SpecialTraversalPoint &point,
-		float tolerance);
-	static bool hasDirectedLink(
-		const NavArea &area,
-		std::uint8_t direction,
-		AreaId target);
+	static bool isPointInArea(const NavArea &area, const SpecialTraversalPoint &point, float verticalTolerance);
+	static bool isNearPoint(const NavVector &position, const SpecialTraversalPoint &point, float tolerance);
+	static bool hasDirectedLink(const NavArea &area, std::uint8_t direction, AreaId target);
 	bool validateCapability(const NavSnapshot &snapshot) const;
-	bool isAtPoint(
-		const NavSnapshot &snapshot,
-		const NavVector &position,
-		const SpecialTraversalPoint &point) const;
-	bool selectPosture(
-		const SpecialTraversalObservation &observation,
-		SpecialTraversalPosture *posture) const;
-	SpecialTraversalResult recover(
-		SpecialTraversalFailureReason reason);
-	SpecialTraversalResult emitIntent(
-		const SpecialTraversalObservation &observation,
-		const SpecialTraversalPoint &target,
-		SpecialTraversalIntentPhase phase,
-		SpecialTraversalPosture posture,
+	bool isAtPoint(const NavSnapshot &snapshot, const NavVector &position, const SpecialTraversalPoint &point) const;
+	bool selectPosture(const SpecialTraversalObservation &observation, SpecialTraversalPosture *posture) const;
+	SpecialTraversalResult recover(SpecialTraversalFailureReason reason);
+	SpecialTraversalResult emitIntent(const SpecialTraversalObservation &observation,
+		const SpecialTraversalPoint &target, SpecialTraversalIntentPhase phase, SpecialTraversalPosture posture,
 		SpecialTraversalIntent *intent) const;
-	SpecialTraversalResult updateEntering(
-		const NavSnapshot &snapshot,
-		const SpecialTraversalObservation &observation,
-		SpecialTraversalPosture posture,
+	SpecialTraversalResult updateEntering(const NavSnapshot &snapshot, const SpecialTraversalObservation &observation,
+		SpecialTraversalPosture posture, SpecialTraversalIntent *intent);
+	SpecialTraversalResult updateMaintaining(const NavSnapshot &snapshot,
+		const SpecialTraversalObservation &observation, SpecialTraversalPosture posture,
 		SpecialTraversalIntent *intent);
-	SpecialTraversalResult updateMaintaining(
-		const NavSnapshot &snapshot,
-		const SpecialTraversalObservation &observation,
-		SpecialTraversalPosture posture,
-		SpecialTraversalIntent *intent);
-	SpecialTraversalResult updateExiting(
-		const NavSnapshot &snapshot,
-		const SpecialTraversalObservation &observation,
-		SpecialTraversalPosture posture,
-		SpecialTraversalIntent *intent);
+	SpecialTraversalResult updateExiting(const NavSnapshot &snapshot, const SpecialTraversalObservation &observation,
+		SpecialTraversalPosture posture, SpecialTraversalIntent *intent);
 
 	SpecialTraversalConfig config_;
 	SpecialTraversalCapability capability_;

@@ -13,8 +13,7 @@ constexpr std::uint32_t kPathFailureRetryFrames = 128U;
 
 bool isFinitePosition(const world::WorldVector &position)
 {
-	return std::isfinite(position.x) && std::isfinite(position.y) &&
-		std::isfinite(position.z) &&
+	return std::isfinite(position.x) && std::isfinite(position.y) && std::isfinite(position.z) &&
 		std::fabs(position.x) <= world::WorldLimits::kMaximumCoordinate &&
 		std::fabs(position.y) <= world::WorldLimits::kMaximumCoordinate &&
 		std::fabs(position.z) <= world::WorldLimits::kMaximumCoordinate;
@@ -22,12 +21,10 @@ bool isFinitePosition(const world::WorldVector &position)
 
 bool actorKeyBefore(const world::ActorKey &left, const world::ActorKey &right)
 {
-	return left.slot < right.slot ||
-		(left.slot == right.slot && left.generation < right.generation);
+	return left.slot < right.slot || (left.slot == right.slot && left.generation < right.generation);
 }
 
-const TeamObjectiveActorObservation *findActor(
-	const TeamObjectiveInput &input, const world::ActorKey &actor)
+const TeamObjectiveActorObservation *findActor(const TeamObjectiveInput &input, const world::ActorKey &actor)
 {
 	for (std::size_t index = 0U; index < input.actorCount; ++index)
 	{
@@ -50,19 +47,14 @@ bool sameTarget(const TeamObjectiveAssignment &assignment, const TeamBombTargetO
 }
 
 world::WorldVector assignmentTargetPosition(
-	TeamObjectiveKind kind,
-	const TeamBombTargetObservation &target,
-	const nav::NavSnapshot &navigation)
+	TeamObjectiveKind kind, const TeamBombTargetObservation &target, const nav::NavSnapshot &navigation)
 {
-	if (kind != TeamObjectiveKind::GuardBombDefuser || target.area == 0U ||
-		!navigation.isValid())
+	if (kind != TeamObjectiveKind::GuardBombDefuser || target.area == 0U || !navigation.isValid())
 	{
 		return target.position;
 	}
 	const nav::NavDocument *document = navigation.document();
-	const nav::NavArea *area = document != nullptr
-		? document->findArea(target.area)
-		: nullptr;
+	const nav::NavArea *area = document != nullptr ? document->findArea(target.area) : nullptr;
 	if (area == nullptr)
 	{
 		return target.position;
@@ -73,8 +65,7 @@ world::WorldVector assignmentTargetPosition(
 	return isFinitePosition(position) ? position : target.position;
 }
 
-bool actorCanKeepAssignment(
-	const TeamObjectiveActorObservation &actor, TeamObjectiveKind kind)
+bool actorCanKeepAssignment(const TeamObjectiveActorObservation &actor, TeamObjectiveKind kind)
 {
 	switch (kind)
 	{
@@ -91,12 +82,8 @@ bool actorCanKeepAssignment(
 	}
 }
 
-bool routeCost(
-	const TeamObjectiveActorObservation &actor,
-	const TeamBombTargetObservation &target,
-	const nav::NavSnapshot &navigation,
-	const nav::NavQuery *query,
-	float *cost)
+bool routeCost(const TeamObjectiveActorObservation &actor, const TeamBombTargetObservation &target,
+	const nav::NavSnapshot &navigation, const nav::NavQuery *query, float *cost)
 {
 	if (cost == nullptr || !target.available || !isFinitePosition(target.position))
 	{
@@ -134,10 +121,8 @@ bool routeCost(
 			return false;
 		}
 		nav::NavAreaMatch match = {};
-		if (query->findNearest3D(
-				{actor.position.x, actor.position.y, actor.position.z},
-				world::WorldLimits::kMaximumCoordinate,
-				&match) != nav::NavQueryResult::Found)
+		if (query->findNearest3D({actor.position.x, actor.position.y, actor.position.z},
+				world::WorldLimits::kMaximumCoordinate, &match) != nav::NavQueryResult::Found)
 		{
 			return false;
 		}
@@ -148,10 +133,8 @@ bool routeCost(
 	if (targetArea == 0U)
 	{
 		nav::NavAreaMatch match = {};
-		if (query->findNearest3D(
-				{target.position.x, target.position.y, target.position.z},
-				world::WorldLimits::kMaximumCoordinate,
-				&match) != nav::NavQueryResult::Found)
+		if (query->findNearest3D({target.position.x, target.position.y, target.position.z},
+				world::WorldLimits::kMaximumCoordinate, &match) != nav::NavQueryResult::Found)
 		{
 			return false;
 		}
@@ -159,8 +142,7 @@ bool routeCost(
 	}
 
 	nav::NavCorridor corridor = {};
-	if (query->buildCorridor(
-			startArea, targetArea, nav::NavRouteType::Fastest, &corridor) !=
+	if (query->buildCorridor(startArea, targetArea, nav::NavRouteType::Fastest, &corridor) !=
 			nav::NavQueryResult::Found ||
 		!corridor.isValid() || !std::isfinite(corridor.cost) || corridor.cost < 0.0f)
 	{
@@ -172,35 +154,26 @@ bool routeCost(
 }
 
 RoundObjectiveCoordinator::RoundObjectiveCoordinator()
-: hasAssignment_(false),
-  mapGeneration_(0U),
-  roundGeneration_(0U),
-  nextAssignmentGeneration_(0U),
-	assignment_{},
-	hasFailedPathAssignment_(false),
-	failedPathKind_(TeamObjectiveKind::None),
-	failedPathTarget_{},
-	failedPathActorCount_(0U),
-	failedPathActors_{}
+	: hasAssignment_(false), mapGeneration_(0U), roundGeneration_(0U), nextAssignmentGeneration_(0U), assignment_{},
+
+	  hasFailedPathAssignment_(false), failedPathKind_(TeamObjectiveKind::None), failedPathTarget_{},
+
+	  failedPathActorCount_(0U), failedPathActors_{}
+
 {
 }
 
-void RoundObjectiveCoordinator::reportPathFailure(
-	const world::ActorKey &actor,
-	std::uint32_t assignmentGeneration,
-	nav::AreaId startArea,
-	std::uint32_t frameSequence)
+void RoundObjectiveCoordinator::reportPathFailure(const world::ActorKey &actor, std::uint32_t assignmentGeneration,
+	nav::AreaId startArea, std::uint32_t frameSequence)
 {
-	if (!hasAssignment_ || !actor.isValid() ||
-		!(assignment_.actor == actor) ||
+	if (!hasAssignment_ || !actor.isValid() || !(assignment_.actor == actor) ||
 		assignment_.generation != assignmentGeneration)
 	{
 		return;
 	}
 	if (assignment_.kind != TeamObjectiveKind::PlantC4)
 	{
-		if (!hasFailedPathAssignment_ ||
-			failedPathKind_ != assignment_.kind ||
+		if (!hasFailedPathAssignment_ || failedPathKind_ != assignment_.kind ||
 			!(failedPathTarget_ == assignment_.targetEntity))
 		{
 			hasFailedPathAssignment_ = true;
@@ -209,8 +182,7 @@ void RoundObjectiveCoordinator::reportPathFailure(
 			failedPathActorCount_ = 0U;
 		}
 		bool alreadyRecorded = false;
-		for (std::size_t index = 0U;
-			index < failedPathActorCount_; ++index)
+		for (std::size_t index = 0U; index < failedPathActorCount_; ++index)
 		{
 			if (failedPathActors_[index].actor == actor)
 			{
@@ -220,11 +192,9 @@ void RoundObjectiveCoordinator::reportPathFailure(
 				break;
 			}
 		}
-		if (!alreadyRecorded &&
-			failedPathActorCount_ < kMaximumTeamObjectiveActors)
+		if (!alreadyRecorded && failedPathActorCount_ < kMaximumTeamObjectiveActors)
 		{
-			failedPathActors_[failedPathActorCount_++] = {
-				actor, startArea, frameSequence};
+			failedPathActors_[failedPathActorCount_++] = {actor, startArea, frameSequence};
 		}
 	}
 	hasAssignment_ = false;
@@ -232,12 +202,10 @@ void RoundObjectiveCoordinator::reportPathFailure(
 }
 
 TeamObjectiveResult RoundObjectiveCoordinator::assign(
-	const TeamObjectiveInput &input,
-	const nav::NavSnapshot &navigation,
-	TeamObjectiveAssignmentSet *assignments)
+	const TeamObjectiveInput &input, const nav::NavSnapshot &navigation, TeamObjectiveAssignmentSet *assignments)
 {
-	if (assignments == nullptr || input.actorCount > kMaximumTeamObjectiveActors ||
-		input.mapGeneration == 0U || input.roundGeneration == 0U)
+	if (assignments == nullptr || input.actorCount > kMaximumTeamObjectiveActors || input.mapGeneration == 0U ||
+		input.roundGeneration == 0U)
 	{
 		return TeamObjectiveResult::InvalidInput;
 	}
@@ -272,9 +240,7 @@ TeamObjectiveResult RoundObjectiveCoordinator::assign(
 		{
 			return TeamObjectiveResult::InvalidInput;
 		}
-		wantedKind = input.externalDefuserActive
-			? TeamObjectiveKind::GuardBombDefuser
-			: TeamObjectiveKind::DefuseC4;
+		wantedKind = input.externalDefuserActive ? TeamObjectiveKind::GuardBombDefuser : TeamObjectiveKind::DefuseC4;
 		wantedTeam = objectives::TeamRole::CounterTerrorist;
 		target = &input.plantedC4;
 	}
@@ -302,8 +268,7 @@ TeamObjectiveResult RoundObjectiveCoordinator::assign(
 		return TeamObjectiveResult::NoObjective;
 	}
 
-	const bool failedObjectiveStillCurrent =
-		hasFailedPathAssignment_ && failedPathKind_ == wantedKind &&
+	const bool failedObjectiveStillCurrent = hasFailedPathAssignment_ && failedPathKind_ == wantedKind &&
 		target != nullptr && failedPathTarget_ == target->entity;
 	if (!failedObjectiveStillCurrent)
 	{
@@ -316,28 +281,20 @@ TeamObjectiveResult RoundObjectiveCoordinator::assign(
 		while (failedIndex < failedPathActorCount_)
 		{
 			const FailedPathActor &failed = failedPathActors_[failedIndex];
-			const TeamObjectiveActorObservation *actor =
-				findActor(input, failed.actor);
-			const bool actorInvalid = actor == nullptr ||
-				!actorCanKeepAssignment(*actor, wantedKind);
-			const bool routeStartChanged = actor != nullptr &&
-				failed.startArea != 0U && actor->currentArea != 0U &&
+			const TeamObjectiveActorObservation *actor = findActor(input, failed.actor);
+			const bool actorInvalid = actor == nullptr || !actorCanKeepAssignment(*actor, wantedKind);
+			const bool routeStartChanged = actor != nullptr && failed.startArea != 0U && actor->currentArea != 0U &&
 				actor->currentArea != failed.startArea;
-			const bool retryWindowElapsed =
-				input.frameSequence != 0U && failed.frameSequence != 0U &&
-				static_cast<std::uint32_t>(
-					input.frameSequence - failed.frameSequence) >=
-					kPathFailureRetryFrames;
+			const bool retryWindowElapsed = input.frameSequence != 0U && failed.frameSequence != 0U &&
+				static_cast<std::uint32_t>(input.frameSequence - failed.frameSequence) >= kPathFailureRetryFrames;
 			if (!actorInvalid && !routeStartChanged && !retryWindowElapsed)
 			{
 				++failedIndex;
 				continue;
 			}
-			for (std::size_t moveIndex = failedIndex + 1U;
-				moveIndex < failedPathActorCount_; ++moveIndex)
+			for (std::size_t moveIndex = failedIndex + 1U; moveIndex < failedPathActorCount_; ++moveIndex)
 			{
-				failedPathActors_[moveIndex - 1U] =
-					failedPathActors_[moveIndex];
+				failedPathActors_[moveIndex - 1U] = failedPathActors_[moveIndex];
 			}
 			--failedPathActorCount_;
 		}
@@ -345,18 +302,15 @@ TeamObjectiveResult RoundObjectiveCoordinator::assign(
 	}
 
 	if (hasAssignment_ && assignment_.kind == wantedKind &&
-		(assignment_.kind == TeamObjectiveKind::PlantC4 ||
-			(target != nullptr && sameTarget(assignment_, *target))))
+		(assignment_.kind == TeamObjectiveKind::PlantC4 || (target != nullptr && sameTarget(assignment_, *target))))
 	{
-		const TeamObjectiveActorObservation *assignedActor =
-			findActor(input, assignment_.actor);
+		const TeamObjectiveActorObservation *assignedActor = findActor(input, assignment_.actor);
 		if (assignedActor != nullptr && actorCanKeepAssignment(*assignedActor, wantedKind) &&
 			(fixedOwner == nullptr || fixedOwner->actor == assignedActor->actor))
 		{
-		if (target != nullptr)
-		{
-				assignment_.targetPosition = assignmentTargetPosition(
-					wantedKind, *target, navigation);
+			if (target != nullptr)
+			{
+				assignment_.targetPosition = assignmentTargetPosition(wantedKind, *target, navigation);
 				assignment_.targetArea = target->area;
 			}
 			assignments->count = 1U;
@@ -375,22 +329,21 @@ TeamObjectiveResult RoundObjectiveCoordinator::assign(
 		float bestCost = (std::numeric_limits<float>::max)();
 		for (std::size_t index = 0U; index < input.actorCount; ++index)
 		{
-		const TeamObjectiveActorObservation &candidate = input.actors[index];
-		bool actorPathFailed = false;
-		if (failedObjectiveStillCurrent)
-		{
-			for (std::size_t failedIndex = 0U;
-				failedIndex < failedPathActorCount_; ++failedIndex)
+			const TeamObjectiveActorObservation &candidate = input.actors[index];
+			bool actorPathFailed = false;
+			if (failedObjectiveStillCurrent)
 			{
-				if (failedPathActors_[failedIndex].actor == candidate.actor)
+				for (std::size_t failedIndex = 0U; failedIndex < failedPathActorCount_; ++failedIndex)
 				{
-					actorPathFailed = true;
-					break;
+					if (failedPathActors_[failedIndex].actor == candidate.actor)
+					{
+						actorPathFailed = true;
+						break;
+					}
 				}
 			}
-		}
-		if (!isEligible(candidate, wantedTeam) || actorPathFailed ||
-			(wantedKind == TeamObjectiveKind::RetrieveDroppedC4 && candidate.carryingC4))
+			if (!isEligible(candidate, wantedTeam) || actorPathFailed ||
+				(wantedKind == TeamObjectiveKind::RetrieveDroppedC4 && candidate.carryingC4))
 			{
 				continue;
 			}
@@ -402,10 +355,10 @@ TeamObjectiveResult RoundObjectiveCoordinator::assign(
 			if (selectedActor == nullptr || candidateCost < bestCost ||
 				(candidateCost == bestCost && actorKeyBefore(candidate.actor, selectedActor->actor)))
 			{
-			selectedActor = &candidate;
-			bestCost = candidateCost;
-			selectedCost = candidateCost;
-			selectedCostAvailable = true;
+				selectedActor = &candidate;
+				bestCost = candidateCost;
+				selectedCost = candidateCost;
+				selectedCostAvailable = true;
 			}
 		}
 	}
@@ -436,15 +389,13 @@ TeamObjectiveResult RoundObjectiveCoordinator::assign(
 	if (target != nullptr)
 	{
 		assignment_.targetEntity = target->entity;
-		assignment_.targetPosition = assignmentTargetPosition(
-			wantedKind, *target, navigation);
+		assignment_.targetPosition = assignmentTargetPosition(wantedKind, *target, navigation);
 		assignment_.targetArea = target->area;
 	}
 	assignment_.generation = nextAssignmentGeneration_;
 	assignment_.routeCostAvailable = selectedCostAvailable;
 	assignment_.routeCost = selectedCost;
-	assignment_.routeCostGeometricFallback =
-		selectedCostAvailable && !navigation.isValid();
+	assignment_.routeCostGeometricFallback = selectedCostAvailable && !navigation.isValid();
 	mapGeneration_ = input.mapGeneration;
 	roundGeneration_ = input.roundGeneration;
 	hasAssignment_ = true;
@@ -453,8 +404,7 @@ TeamObjectiveResult RoundObjectiveCoordinator::assign(
 	return TeamObjectiveResult::Assigned;
 }
 
-void RoundObjectiveCoordinator::reset(
-	std::uint32_t mapGeneration, std::uint32_t roundGeneration)
+void RoundObjectiveCoordinator::reset(std::uint32_t mapGeneration, std::uint32_t roundGeneration)
 {
 	hasAssignment_ = false;
 	mapGeneration_ = mapGeneration;

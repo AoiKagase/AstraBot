@@ -139,8 +139,7 @@ public:
 	explicit ObjectiveState(const world::ActorKey &actor);
 
 	ObjectiveStateResult acceptProposal(const ObjectiveProposal &proposal);
-	ObjectiveStateResult applyFeedback(
-		const ObjectiveCompletionFeedback &feedback);
+	ObjectiveStateResult applyFeedback(const ObjectiveCompletionFeedback &feedback);
 	ObjectiveStateResult expire(const world::FrameIdentity &frame);
 	ObjectiveStateResult current(ObjectiveStateRecord *record) const;
 

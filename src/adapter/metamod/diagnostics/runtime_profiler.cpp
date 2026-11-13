@@ -25,8 +25,7 @@ void saturatingAdd(std::uint64_t *value, std::uint64_t amount) noexcept
 }
 
 RuntimeProfiler::RuntimeProfiler() noexcept
-	: enabled_(false), windowStartSeconds_(0.0), wallWindowStart_(), counters_(), searchKeys_(),
-	  searchKeyCount_(0U)
+	: enabled_(false), windowStartSeconds_(0.0), wallWindowStart_(), counters_(), searchKeys_(), searchKeyCount_(0U)
 {
 	clearCounters();
 }
@@ -38,8 +37,7 @@ void RuntimeProfiler::setEnabled(bool enabled, double nowSeconds) noexcept
 		return;
 	}
 	enabled_ = enabled;
-	wallWindowStart_ = enabled ? std::chrono::steady_clock::now()
-		: std::chrono::steady_clock::time_point();
+	wallWindowStart_ = enabled ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point();
 	windowStartSeconds_ = std::isfinite(nowSeconds) ? nowSeconds : 0.0;
 	clearCounters();
 }
@@ -89,15 +87,13 @@ void RuntimeProfiler::recordBodyProbe() noexcept
 	}
 }
 
-void RuntimeProfiler::record(
-	RuntimeProfilerStage stage, std::uint64_t elapsedUsec) noexcept
+void RuntimeProfiler::record(RuntimeProfilerStage stage, std::uint64_t elapsedUsec) noexcept
 {
 	if (!enabled_ || stage >= RuntimeProfilerStage::Count)
 	{
 		return;
 	}
-	RuntimeProfilerStageStats &stats =
-		counters_.stages[static_cast<std::size_t>(stage)];
+	RuntimeProfilerStageStats &stats = counters_.stages[static_cast<std::size_t>(stage)];
 	if (stats.calls != (std::numeric_limits<std::uint32_t>::max)())
 	{
 		++stats.calls;
@@ -117,9 +113,7 @@ void RuntimeProfiler::record(
 }
 
 void RuntimeProfiler::recordTraceLine(
-	std::uint64_t calls,
-	std::uint64_t visibilityCandidates,
-	std::uint64_t bodyProbes) noexcept
+	std::uint64_t calls, std::uint64_t visibilityCandidates, std::uint64_t bodyProbes) noexcept
 {
 	if (!enabled_)
 	{
@@ -148,13 +142,8 @@ void RuntimeProfiler::recordPathSearch(bool success, bool requested) noexcept
 	record(RuntimeProfilerStage::PathSearch, 0U);
 }
 
-void RuntimeProfiler::recordPathSearchStats(
-	bool success,
-	bool requested,
-	std::uint32_t expandedAreas,
-	std::uint32_t enqueues,
-	std::uint32_t reopens,
-	std::uint32_t staleQueueEntries,
+void RuntimeProfiler::recordPathSearchStats(bool success, bool requested, std::uint32_t expandedAreas,
+	std::uint32_t enqueues, std::uint32_t reopens, std::uint32_t staleQueueEntries,
 	std::uint32_t equalCostReplacements) noexcept
 {
 	if (!enabled_ || !requested)
@@ -169,20 +158,10 @@ void RuntimeProfiler::recordPathSearchStats(
 	saturatingAdd(&counters_.pathEqualCostReplacements, equalCostReplacements);
 }
 
-void RuntimeProfiler::recordPathSearchResults(
-	bool requested,
-	std::uint32_t searchCalls,
-	std::uint32_t successCount,
-	std::uint32_t failureCount,
-	std::uint32_t expandedAreas,
-	std::uint32_t enqueues,
-	std::uint32_t reopens,
-	std::uint32_t staleQueueEntries,
-	std::uint32_t equalCostReplacements,
-	std::uint64_t totalUsec,
-	std::uint64_t maxUsec,
-	std::uint64_t firstSearchId,
-	std::uint64_t lastSearchId) noexcept
+void RuntimeProfiler::recordPathSearchResults(bool requested, std::uint32_t searchCalls, std::uint32_t successCount,
+	std::uint32_t failureCount, std::uint32_t expandedAreas, std::uint32_t enqueues, std::uint32_t reopens,
+	std::uint32_t staleQueueEntries, std::uint32_t equalCostReplacements, std::uint64_t totalUsec,
+	std::uint64_t maxUsec, std::uint64_t firstSearchId, std::uint64_t lastSearchId) noexcept
 {
 	if (!enabled_ || !requested || searchCalls == 0U)
 	{
@@ -209,12 +188,10 @@ void RuntimeProfiler::recordPathSearchResults(
 		}
 		counters_.pathLastSearchId = lastSearchId;
 	}
-	RuntimeProfilerStageStats &stage = counters_.stages[
-		static_cast<std::size_t>(RuntimeProfilerStage::PathSearch)];
+	RuntimeProfilerStageStats &stage = counters_.stages[static_cast<std::size_t>(RuntimeProfilerStage::PathSearch)];
 	const std::uint64_t maxCalls = (std::numeric_limits<std::uint32_t>::max)();
-	stage.calls = searchCalls > maxCalls - stage.calls
-		? (std::numeric_limits<std::uint32_t>::max)()
-		: stage.calls + searchCalls;
+	stage.calls =
+		searchCalls > maxCalls - stage.calls ? (std::numeric_limits<std::uint32_t>::max)() : stage.calls + searchCalls;
 	saturatingAdd(&stage.totalUsec, totalUsec);
 	if (maxUsec > stage.maxUsec)
 	{
@@ -222,74 +199,41 @@ void RuntimeProfiler::recordPathSearchResults(
 	}
 }
 
-void RuntimeProfiler::recordPathSearchResults(
-	RuntimePathSearchCaller caller,
-	std::uint32_t bot,
-	std::uint32_t fullUpdateId,
-	std::uint32_t objectiveGeneration,
-	std::uint32_t startArea,
-	std::uint32_t goalArea,
-	std::uint8_t routeType,
-	bool requested,
-	std::uint32_t searchCalls,
-	std::uint32_t successCount,
-	std::uint32_t failureCount,
-	std::uint32_t expandedAreas,
-	std::uint32_t enqueues,
-	std::uint32_t reopens,
-	std::uint32_t staleQueueEntries,
-	std::uint32_t equalCostReplacements,
-	std::uint64_t totalUsec,
-	std::uint64_t maxUsec,
-	std::uint64_t firstSearchId,
-	std::uint64_t lastSearchId) noexcept
+void RuntimeProfiler::recordPathSearchResults(RuntimePathSearchCaller caller, std::uint32_t bot,
+	std::uint32_t fullUpdateId, std::uint32_t objectiveGeneration, std::uint32_t startArea, std::uint32_t goalArea,
+	std::uint8_t routeType, bool requested, std::uint32_t searchCalls, std::uint32_t successCount,
+	std::uint32_t failureCount, std::uint32_t expandedAreas, std::uint32_t enqueues, std::uint32_t reopens,
+	std::uint32_t staleQueueEntries, std::uint32_t equalCostReplacements, std::uint64_t totalUsec,
+	std::uint64_t maxUsec, std::uint64_t firstSearchId, std::uint64_t lastSearchId) noexcept
 {
 	if (!enabled_ || !requested || searchCalls == 0U)
 	{
 		return;
 	}
-	recordPathSearchResults(
-		requested, searchCalls, successCount, failureCount, expandedAreas,
-		enqueues, reopens, staleQueueEntries, equalCostReplacements, totalUsec,
-		maxUsec, firstSearchId, lastSearchId);
-	recordPathSearchAggregate(
-		caller, searchCalls, expandedAreas, enqueues, totalUsec, maxUsec);
-	recordSearchKey(
-		caller, bot, fullUpdateId, objectiveGeneration, startArea, goalArea,
-		routeType);
+	recordPathSearchResults(requested, searchCalls, successCount, failureCount, expandedAreas, enqueues, reopens,
+		staleQueueEntries, equalCostReplacements, totalUsec, maxUsec, firstSearchId, lastSearchId);
+	recordPathSearchAggregate(caller, searchCalls, expandedAreas, enqueues, totalUsec, maxUsec);
+	recordSearchKey(caller, bot, fullUpdateId, objectiveGeneration, startArea, goalArea, routeType);
 }
 
-void RuntimeProfiler::recordObjectiveSelection(
-	std::uint32_t bombSites,
-	std::uint32_t funcBombTargetSites,
-	std::uint32_t infoBombTargetSites,
-	std::uint32_t candidateAreas,
-	std::uint32_t uniqueCandidateAreas,
-	std::uint32_t candidateQueries,
-	std::uint32_t duplicateCandidateAreas,
-	std::uint32_t selectedGoalArea,
-	std::uint32_t registeredSites,
-	std::uint32_t registeredFuncBombTargetSites,
-	std::uint32_t registeredInfoBombTargetSites,
-	bool registeredSiteCountsAvailable,
-	std::uint32_t evaluatedSites,
-	std::uint32_t cacheHits,
-	std::uint32_t selectedSiteIdentity) noexcept
+void RuntimeProfiler::recordObjectiveSelection(std::uint32_t bombSites, std::uint32_t funcBombTargetSites,
+	std::uint32_t infoBombTargetSites, std::uint32_t candidateAreas, std::uint32_t uniqueCandidateAreas,
+	std::uint32_t candidateQueries, std::uint32_t duplicateCandidateAreas, std::uint32_t selectedGoalArea,
+	std::uint32_t registeredSites, std::uint32_t registeredFuncBombTargetSites,
+	std::uint32_t registeredInfoBombTargetSites, bool registeredSiteCountsAvailable, std::uint32_t evaluatedSites,
+	std::uint32_t cacheHits, std::uint32_t selectedSiteIdentity) noexcept
 {
 	if (!enabled_)
 	{
 		return;
 	}
 	saturatingAdd(&counters_.objectiveBombSites, bombSites);
-	saturatingAdd(
-		&counters_.objectiveFuncBombTargetSites, funcBombTargetSites);
-	saturatingAdd(
-		&counters_.objectiveInfoBombTargetSites, infoBombTargetSites);
+	saturatingAdd(&counters_.objectiveFuncBombTargetSites, funcBombTargetSites);
+	saturatingAdd(&counters_.objectiveInfoBombTargetSites, infoBombTargetSites);
 	saturatingAdd(&counters_.objectiveCandidateAreas, candidateAreas);
 	saturatingAdd(&counters_.objectiveUniqueCandidateAreas, uniqueCandidateAreas);
 	saturatingAdd(&counters_.objectiveCandidateQueries, candidateQueries);
-	saturatingAdd(
-		&counters_.objectiveDuplicateCandidateAreas, duplicateCandidateAreas);
+	saturatingAdd(&counters_.objectiveDuplicateCandidateAreas, duplicateCandidateAreas);
 	if (selectedGoalArea != 0U)
 	{
 		counters_.selectedObjectiveGoalArea = selectedGoalArea;
@@ -297,10 +241,8 @@ void RuntimeProfiler::recordObjectiveSelection(
 	if (registeredSiteCountsAvailable)
 	{
 		counters_.objectiveRegisteredSites = registeredSites;
-		counters_.objectiveRegisteredFuncBombTargetSites =
-			registeredFuncBombTargetSites;
-		counters_.objectiveRegisteredInfoBombTargetSites =
-			registeredInfoBombTargetSites;
+		counters_.objectiveRegisteredFuncBombTargetSites = registeredFuncBombTargetSites;
+		counters_.objectiveRegisteredInfoBombTargetSites = registeredInfoBombTargetSites;
 	}
 	saturatingAdd(&counters_.objectiveEvaluatedSites, evaluatedSites);
 	saturatingAdd(&counters_.objectiveCacheHits, cacheHits);
@@ -310,16 +252,11 @@ void RuntimeProfiler::recordObjectiveSelection(
 	}
 }
 
-void RuntimeProfiler::recordPathSearchAggregate(
-	RuntimePathSearchCaller caller,
-	std::uint32_t searchCalls,
-	std::uint32_t expandedAreas,
-	std::uint32_t enqueues,
-	std::uint64_t totalUsec,
-	std::uint64_t maxUsec) noexcept
+void RuntimeProfiler::recordPathSearchAggregate(RuntimePathSearchCaller caller, std::uint32_t searchCalls,
+	std::uint32_t expandedAreas, std::uint32_t enqueues, std::uint64_t totalUsec, std::uint64_t maxUsec) noexcept
 {
-	const std::size_t index = static_cast<std::size_t>(caller) <
-			static_cast<std::size_t>(RuntimePathSearchCaller::Count)
+	const std::size_t index =
+		static_cast<std::size_t>(caller) < static_cast<std::size_t>(RuntimePathSearchCaller::Count)
 		? static_cast<std::size_t>(caller)
 		: static_cast<std::size_t>(RuntimePathSearchCaller::Unknown);
 	RuntimePathSearchAggregate &aggregate = counters_.pathSearchByCaller[index];
@@ -333,32 +270,20 @@ void RuntimeProfiler::recordPathSearchAggregate(
 	}
 }
 
-void RuntimeProfiler::recordSearchKey(
-	RuntimePathSearchCaller caller,
-	std::uint32_t bot,
-	std::uint32_t fullUpdateId,
-	std::uint32_t objectiveGeneration,
-	std::uint32_t startArea,
-	std::uint32_t goalArea,
-	std::uint8_t routeType) noexcept
+void RuntimeProfiler::recordSearchKey(RuntimePathSearchCaller caller, std::uint32_t bot, std::uint32_t fullUpdateId,
+	std::uint32_t objectiveGeneration, std::uint32_t startArea, std::uint32_t goalArea, std::uint8_t routeType) noexcept
 {
-	SearchKey key = {
-		true, bot, fullUpdateId, objectiveGeneration, startArea, goalArea,
-		routeType, caller};
+	SearchKey key = {true, bot, fullUpdateId, objectiveGeneration, startArea, goalArea, routeType, caller};
 	for (std::size_t index = 0U; index < searchKeyCount_; ++index)
 	{
 		const SearchKey &existing = searchKeys_[index];
-		const bool sameQuery = existing.bot == key.bot &&
-			existing.startArea == key.startArea &&
-			existing.goalArea == key.goalArea &&
-			existing.routeType == key.routeType &&
-			existing.caller == key.caller;
+		const bool sameQuery = existing.bot == key.bot && existing.startArea == key.startArea &&
+			existing.goalArea == key.goalArea && existing.routeType == key.routeType && existing.caller == key.caller;
 		if (sameQuery && existing.fullUpdateId == key.fullUpdateId)
 		{
 			saturatingAdd(&counters_.duplicateSearchSameFullUpdate, 1U);
 		}
-		if (sameQuery && existing.objectiveGeneration != 0U &&
-			existing.objectiveGeneration == key.objectiveGeneration)
+		if (sameQuery && existing.objectiveGeneration != 0U && existing.objectiveGeneration == key.objectiveGeneration)
 		{
 			saturatingAdd(&counters_.duplicateSearchSameObjectiveGeneration, 1U);
 		}
@@ -392,12 +317,11 @@ void RuntimeProfiler::recordRunPlayerMove() noexcept
 	}
 }
 
-bool RuntimeProfiler::consumeReport(
-	double nowSeconds, RuntimeProfilerReport *report) noexcept
+bool RuntimeProfiler::consumeReport(double nowSeconds, RuntimeProfilerReport *report) noexcept
 {
-	if (!enabled_ || report == nullptr || !std::isfinite(nowSeconds) ||
-		!std::isfinite(windowStartSeconds_) || nowSeconds < windowStartSeconds_ ||
-		nowSeconds - windowStartSeconds_ < 1.0)
+	constexpr double kMinimumReportIntervalSeconds = 1.0;
+	if (!enabled_ || report == nullptr || !std::isfinite(nowSeconds) || !std::isfinite(windowStartSeconds_) ||
+		nowSeconds < windowStartSeconds_ || nowSeconds - windowStartSeconds_ < kMinimumReportIntervalSeconds)
 	{
 		return false;
 	}

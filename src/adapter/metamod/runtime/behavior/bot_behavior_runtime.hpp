@@ -10,67 +10,72 @@ namespace metamod
 {
 class BotBehaviorRuntime
 {
-  public:
+public:
 	void resetRoundRecognition();
 	void observePublicDeath(std::size_t index);
 	void bindServices(BotBehaviorServices &services)
 	{
 		services_ = &services;
 	}
-	bool buildManagedObjectiveTarget(std::size_t index, nav::NavVector *target,
-									 nav::NavSearchStats *searchStats,
-									 RuntimeObjectiveSelectionStats *objectiveStats = nullptr);
-	ActionProposal decideManagedBotAction(std::size_t index,
-										  const runtime::MovementPhysicsState &before,
-										  const runtime::ViewAngles &movementAngles,
-										  std::uint16_t movementButtons);
-	const team::TeamObjectiveAssignment *findManagedTeamObjectiveAssignment(
-		const world::ActorKey &actor) const;
+
+	bool buildManagedObjectiveTarget(std::size_t index, nav::NavVector *target, nav::NavSearchStats *searchStats,
+		RuntimeObjectiveSelectionStats *objectiveStats = nullptr);
+	ActionProposal decideManagedBotAction(std::size_t index, const runtime::MovementPhysicsState &before,
+		const runtime::ViewAngles &movementAngles, std::uint16_t movementButtons);
+	const team::TeamObjectiveAssignment *findManagedTeamObjectiveAssignment(const world::ActorKey &actor) const;
 	void finishManagedBotNavigation(std::size_t index, const runtime::MovementPhysicsState &before,
-									runtime::NavRoamResult result,
-									const runtime::NavRoamDecision &decision,
-									nav::LocomotionIntent *intent);
-	compat::StateUpdateContext makeManagedBotStateContext(
-		std::size_t index, const runtime::MovementPhysicsState &before,
-		compat::StateBehaviorInput *behavior = nullptr) const;
+		runtime::NavRoamResult result, const runtime::NavRoamDecision &decision, nav::LocomotionIntent *intent);
+	compat::StateUpdateContext makeManagedBotStateContext(std::size_t index,
+		const runtime::MovementPhysicsState &before, compat::StateBehaviorInput *behavior = nullptr) const;
 	bool managedActorAtBombSite(std::size_t index) const;
 	float managedRoundRemainingSeconds() const;
 	void refreshManagedObjectiveSiteRegistry();
 	void refreshManagedTeamObjectiveAssignments(std::size_t contextIndex);
-	void updateBombGuardTarget(std::size_t index, const compat::ScenarioBehaviorInput &input,
-							   compat::ScenarioBehaviorDecision *decision);
-	void updateManagedBotCompatibilityState(std::size_t index,
-											const runtime::MovementPhysicsState &before);
+	void updateBombGuardTarget(
+		std::size_t index, const compat::ScenarioBehaviorInput &input, compat::ScenarioBehaviorDecision *decision);
+	void updateManagedBotCompatibilityState(std::size_t index, const runtime::MovementPhysicsState &before);
 	void updateOutgoingPublicRadio(std::size_t index);
 	void updatePublicBuying(std::size_t index);
-	CombatUpkeepUpdate upkeepCombat(std::size_t index, const runtime::MovementPhysicsState &before,
-		std::uint16_t cachedButtons);
+	CombatUpkeepUpdate upkeepCombat(
+		std::size_t index, const runtime::MovementPhysicsState &before, std::uint16_t cachedButtons);
 	void clearCombatUpkeep(std::size_t index)
 	{
-		if (index >= actors_.size()) return;
-		actors_[index].managedBotCombat.clearAim(); actors_[index].weaponActions.stopRapidFire();
+		if (index >= actors_.size())
+			return;
+		actors_[index].managedBotCombat.clearAim();
+		actors_[index].weaponActions.stopRapidFire();
 	}
-	bool combatMovementActive(std::size_t index) const { return index < actors_.size() && actors_[index].managedBotCombat.movementActive(); }
+
+	bool combatMovementActive(std::size_t index) const
+	{
+		return index < actors_.size() && actors_[index].managedBotCombat.movementActive();
+	}
+
 	const compat::ProfileRecord &managedProfiles(std::size_t index) const
 	{
 		return actors_[index].managedProfiles;
 	}
+
 	const ManagedObjectiveTargetCache &managedBotObjectiveTargets(std::size_t index) const
 	{
 		return actors_[index].managedBotObjectiveTargets;
 	}
+
 	const ManagedObjectiveActionState &managedBotObjectiveActions(std::size_t index) const
 	{
 		return actors_[index].managedBotObjectiveActions;
 	}
+
 	const compat::CompatibilityStateMachine &managedBotStateMachines(std::size_t index) const
 	{
 		return actors_[index].managedBotStateMachines;
 	}
+
 	const compat::ScenarioBehaviorDecision &scenarioDecisions(std::size_t index) const
 	{
 		return actors_[index].scenarioDecisions;
 	}
+
 	void onActorRemoved(std::size_t index);
 
 	void onActorRemembered(std::size_t index, const FakeClientHandle &handle);
@@ -80,7 +85,7 @@ class BotBehaviorRuntime
 	void resetActorExecutionState(std::size_t index);
 
 	void noteNavigationFailure(const FakeClientHandle &handle, runtime::NavRoamResult roamResult,
-							   const runtime::NavRoamDecision &roamDecision);
+		const runtime::NavRoamDecision &roamDecision);
 
 	void resetRoundBuyingState();
 
@@ -106,14 +111,17 @@ class BotBehaviorRuntime
 
 	void observeC4SelectionDispatched(std::size_t index, const FakeClientHandle &handle);
 	void observeEquipmentDispatched(std::size_t index, std::uint16_t weapon, bool success);
-	void resetEquipment(std::size_t index) { if(index<actors_.size())actors_[index].equipment.reset(); }
+	void resetEquipment(std::size_t index)
+	{
+		if (index < actors_.size())
+			actors_[index].equipment.reset();
+	}
 
-	void observeC4AttackDispatched(std::size_t index, const FakeClientHandle &handle,
-								   std::uint16_t buttons);
+	void observeC4AttackDispatched(std::size_t index, const FakeClientHandle &handle, std::uint16_t buttons);
 
 	void observeNeutralC4AttackDispatched(std::size_t index, const FakeClientHandle &handle);
 
-  private:
+private:
 	enum class BehaviorPhaseResult
 	{
 		Continue,
@@ -143,149 +151,157 @@ class BotBehaviorRuntime
 		nav::NavSnapshot navigation{};
 		bool wasFollowing = false;
 	};
-	bool prepareManagedPerception(std::size_t index, world::WorldSnapshot *snapshot,
-		world::ActorKey *targetActor, world::WorldPosition *targetPosition);
+	bool prepareManagedPerception(std::size_t index, world::WorldSnapshot *snapshot, world::ActorKey *targetActor,
+		world::WorldPosition *targetPosition);
 	BehaviorPhaseResult prepareManagedAction(ManagedActionContext &ctx);
 	BehaviorPhaseResult decideObjectiveAction(ManagedActionContext &ctx);
 	ActionProposal decideCombatAction(ManagedActionContext &ctx);
 	void updateGuardLook(ManagedActionContext &ctx);
 	bool decideEquipmentAction(ManagedActionContext &ctx, const compat::PublicActorState &weapon, bool attacking);
-	bool cancelHeldGrenade(std::size_t index, const runtime::ViewAngles &movementAngles,
-						   ActionProposal &proposal);
-	BehaviorPhaseResult updateBehaviorLifecycle(std::size_t index,
-												const runtime::MovementPhysicsState &before,
-												compat::StateUpdateContext &context);
+	bool cancelHeldGrenade(std::size_t index, const runtime::ViewAngles &movementAngles, ActionProposal &proposal);
+	BehaviorPhaseResult updateBehaviorLifecycle(
+		std::size_t index, const runtime::MovementPhysicsState &before, compat::StateUpdateContext &context);
 	bool shouldBuy(std::size_t index, const compat::StateUpdateContext &context) const;
 	void updateBehaviorPriorities(std::size_t index, const runtime::MovementPhysicsState &before,
-								  compat::StateUpdateContext &context,
-								  compat::StateBehaviorInput &stateBehavior);
-	void commitBehaviorState(std::size_t index, compat::StateUpdateContext &context,
-							 compat::StateBehaviorInput &stateBehavior);
+		compat::StateUpdateContext &context, compat::StateBehaviorInput &stateBehavior);
+	void commitBehaviorState(
+		std::size_t index, compat::StateUpdateContext &context, compat::StateBehaviorInput &stateBehavior);
 	void updateScenarioState(std::size_t index, const runtime::MovementPhysicsState &before,
-							 compat::StateUpdateContext &context,
-							 compat::StateBehaviorInput &stateBehavior);
+		compat::StateUpdateContext &context, compat::StateBehaviorInput &stateBehavior);
 	void populateScenarioPublicState(std::size_t index, const runtime::MovementPhysicsState &before,
-									 compat::StateUpdateContext &context,
-									 compat::StateBehaviorInput &stateBehavior,
-									 const compat::CompatibilityObservation &observation,
-									 compat::ScenarioBehaviorInput &scenario,
-									 ScenarioUpdateData &data);
+		compat::StateUpdateContext &context, compat::StateBehaviorInput &stateBehavior,
+		const compat::CompatibilityObservation &observation, compat::ScenarioBehaviorInput &scenario,
+		ScenarioUpdateData &data);
 	void observeScenarioEntities(std::size_t index, const runtime::MovementPhysicsState &before,
-								 compat::StateUpdateContext &context,
-								 compat::StateBehaviorInput &stateBehavior,
-								 const compat::CompatibilityObservation &observation,
-								 compat::ScenarioBehaviorInput &scenario, ScenarioUpdateData &data);
+		compat::StateUpdateContext &context, compat::StateBehaviorInput &stateBehavior,
+		const compat::CompatibilityObservation &observation, compat::ScenarioBehaviorInput &scenario,
+		ScenarioUpdateData &data);
 	void updateScenarioNavigation(std::size_t index, const runtime::MovementPhysicsState &before,
-								  compat::StateUpdateContext &context,
-								  compat::StateBehaviorInput &stateBehavior,
-								  const compat::CompatibilityObservation &observation,
-								  compat::ScenarioBehaviorInput &scenario,
-								  ScenarioUpdateData &data);
+		compat::StateUpdateContext &context, compat::StateBehaviorInput &stateBehavior,
+		const compat::CompatibilityObservation &observation, compat::ScenarioBehaviorInput &scenario,
+		ScenarioUpdateData &data);
 	void updateScenarioTeamwork(std::size_t index, const runtime::MovementPhysicsState &before,
-	                            compat::StateUpdateContext &context,
-	                            compat::StateBehaviorInput &stateBehavior,
-	                            const compat::CompatibilityObservation &observation,
-	                            compat::ScenarioBehaviorInput &scenario, ScenarioUpdateData &data);
+		compat::StateUpdateContext &context, compat::StateBehaviorInput &stateBehavior,
+		const compat::CompatibilityObservation &observation, compat::ScenarioBehaviorInput &scenario,
+		ScenarioUpdateData &data);
 	void applyScenarioDecision(std::size_t index, const runtime::MovementPhysicsState &before,
-	                           compat::StateUpdateContext &context,
-	                           compat::StateBehaviorInput &stateBehavior,
-	                           const compat::CompatibilityObservation &observation,
-	                           compat::ScenarioBehaviorInput &scenario, ScenarioUpdateData &data);
+		compat::StateUpdateContext &context, compat::StateBehaviorInput &stateBehavior,
+		const compat::CompatibilityObservation &observation, compat::ScenarioBehaviorInput &scenario,
+		ScenarioUpdateData &data);
 	void fill_managedBotWasDead(const bool &value)
 	{
 		for (auto &actor : actors_)
 			actor.managedBotWasDead = value;
 	}
+
 	void fill_managedBotStateRounds(const runtime::LifecycleGeneration &value)
 	{
 		for (auto &actor : actors_)
 			actor.managedBotStateRounds = value;
 	}
+
 	void reset_managedBotObjectiveActions()
 	{
 		for (auto &actor : actors_)
 			actor.managedBotObjectiveActions = {};
 	}
+
 	void fill_managedBotObjectiveActions(const ManagedObjectiveActionState &value)
 	{
 		for (auto &actor : actors_)
 			actor.managedBotObjectiveActions = value;
 	}
+
 	void reset_managedStateInputs()
 	{
 		for (auto &actor : actors_)
 			actor.managedStateInputs = {};
 	}
+
 	void reset_investigatedNoiseTicks()
 	{
 		for (auto &actor : actors_)
 			actor.investigatedNoiseTicks = {};
 	}
+
 	void reset_buyReceiptTimeoutLogged()
 	{
 		for (auto &actor : actors_)
 			actor.buyReceiptTimeoutLogged = {};
 	}
+
 	void reset_escapingWithKnife()
 	{
 		for (auto &actor : actors_)
 			actor.escapingWithKnife = {};
 	}
+
 	void reset_buyingComplete()
 	{
 		for (auto &actor : actors_)
 			actor.buyingComplete = {};
 	}
+
 	void reset_buyControllers()
 	{
 		for (auto &actor : actors_)
 			actor.buyControllers = {};
 	}
+
 	void reset_teamworkRadioApplied()
 	{
 		for (auto &actor : actors_)
 			actor.teamworkRadioApplied = {};
 	}
+
 	void reset_teamworkPolicies()
 	{
 		for (auto &actor : actors_)
 			actor.teamworkPolicies = {};
 	}
+
 	void reset_bombSearchTargets()
 	{
 		for (auto &actor : actors_)
 			actor.bombSearchTargets = {};
 	}
+
 	void reset_bombSearchMemory()
 	{
 		for (auto &actor : actors_)
 			actor.bombSearchMemory = {};
 	}
+
 	void reset_scenarioEscapeAreas()
 	{
 		for (auto &actor : actors_)
 			actor.scenarioEscapeAreas = {};
 	}
+
 	void fill_outgoingRadioAttemptChoices(const compat::RadioMenuChoice &value)
 	{
 		for (auto &actor : actors_)
 			actor.outgoingRadioAttemptChoices = value;
 	}
+
 	void fill_outgoingRadioAttemptTimes(const float &value)
 	{
 		for (auto &actor : actors_)
 			actor.outgoingRadioAttemptTimes = value;
 	}
+
 	void fill_outgoingRadioAttempts(const unsigned &value)
 	{
 		for (auto &actor : actors_)
 			actor.outgoingRadioAttempts = value;
 	}
+
 	void fill_outgoingRadioSchedulers(const compat::OutgoingRadioScheduler &value)
 	{
 		for (auto &actor : actors_)
 			actor.outgoingRadioSchedulers = value;
 	}
+
 	struct ActorState
 	{
 		compat::ReactionQueue reactionQueues{};
@@ -333,14 +349,14 @@ class BotBehaviorRuntime
 	std::array<ActorState, NativeBotObservation::kClientSlotCount> actors_{};
 	BotBehaviorServices *services_ = nullptr;
 	compat::ChatterRadioCatalog outgoingChatterCatalog_{};
-	std::array<float, 3U> outgoingTeamLastSpeech_{{-1.0f, -1.0f, -1.0f}};
-	std::array<float, 3U> outgoingTeamBusyUntil_{};
-	std::array<compat::ChatterPhrase, 3U> outgoingTeamCurrentPhrase_{};
-	std::array<bool, static_cast<unsigned>(compat::ChatterPhrase::Count)>
-		outgoingMissingPhraseLogged_{};
+	static constexpr unsigned kTeamRadioSlotCount = 3U;
+	std::array<float, kTeamRadioSlotCount> outgoingTeamLastSpeech_{{-1.0f, -1.0f, -1.0f}};
+	std::array<float, kTeamRadioSlotCount> outgoingTeamBusyUntil_{};
+	std::array<compat::ChatterPhrase, kTeamRadioSlotCount> outgoingTeamCurrentPhrase_{};
+	std::array<bool, static_cast<unsigned>(compat::ChatterPhrase::Count)> outgoingMissingPhraseLogged_{};
+
 	runtime::LifecycleGeneration outgoingRadioMap_ = runtime::LifecycleSession::kInvalidGeneration;
-	runtime::LifecycleGeneration outgoingRadioRound_ =
-		runtime::LifecycleSession::kInvalidGeneration;
+	runtime::LifecycleGeneration outgoingRadioRound_ = runtime::LifecycleSession::kInvalidGeneration;
 	objectives::RoundPlantDecision roundPlantDecision_{};
 	team::RoundObjectiveCoordinator managedTeamObjectiveCoordinator_{};
 	std::size_t managedTeamObjectiveAssignmentContext_ = NativeBotObservation::kClientSlotCount;

@@ -21,8 +21,8 @@ public:
 
 	void observe(world::EntityKey entity, world::WorldVector position, float until)
 	{
-		if (!entity.isValid() || !std::isfinite(until) || !std::isfinite(position.x) ||
-			!std::isfinite(position.y) || !std::isfinite(position.z))
+		if (!entity.isValid() || !std::isfinite(until) || !std::isfinite(position.x) || !std::isfinite(position.y) ||
+			!std::isfinite(position.z))
 		{
 			return;
 		}
@@ -39,6 +39,10 @@ public:
 
 	bool blocks(world::WorldVector from, world::WorldVector to, float now) const
 	{
+// Keep literal evaluation precision on x87; each macro is undefined below.
+#define ASTRABOT_SMOKE_OBSERVATION_MINIMUM_RAY_LENGTH 0.001f
+		constexpr float kSmokeRadius = 115.0f;
+#define ASTRABOT_SMOKE_OBSERVATION_OBSCURED_RADIUS_FRACTION 0.7f
 		if (!std::isfinite(now))
 		{
 			return false;
@@ -47,12 +51,12 @@ public:
 		const float dy = to.y - from.y;
 		const float dz = to.z - from.z;
 		const float length = std::sqrt(dx * dx + dy * dy + dz * dz);
-		if (!std::isfinite(length) || length <= 0.001f)
+		if (!std::isfinite(length) || length <= ASTRABOT_SMOKE_OBSERVATION_MINIMUM_RAY_LENGTH)
 		{
 			return false;
 		}
 		// Publicly observed CSBot smoke geometry: radius 115, obscured length > 0.7 radius.
-		const float radius = 115.0f;
+		const float radius = kSmokeRadius;
 		float covered = 0.0f;
 		for (const Cloud &cloud : clouds_)
 		{
@@ -74,17 +78,20 @@ public:
 			const float end = (std::min)(length, along + halfChord);
 			covered += (std::max)(0.0f, end - begin);
 		}
-		return covered > 0.7f * radius;
+		return covered > ASTRABOT_SMOKE_OBSERVATION_OBSCURED_RADIUS_FRACTION * radius;
 	}
+#undef ASTRABOT_SMOKE_OBSERVATION_MINIMUM_RAY_LENGTH
+#undef ASTRABOT_SMOKE_OBSERVATION_OBSCURED_RADIUS_FRACTION
 
 private:
+	static constexpr unsigned kMaximumClouds = 32U;
 	struct Cloud
 	{
 		world::EntityKey entity;
 		world::WorldVector position;
 		float until;
 	};
-	std::array<Cloud, 32U> clouds_{};
+	std::array<Cloud, kMaximumClouds> clouds_{};
 	std::size_t next_ = 0U;
 };
 }

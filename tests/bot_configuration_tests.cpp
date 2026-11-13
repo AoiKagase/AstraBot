@@ -26,8 +26,8 @@ int main()
 	using astrabot::compat::CvarUpdateResult;
 
 	BotConfiguration configuration;
-	if (!check(configuration.setFloat("bot_enable", 1.0f) == CvarUpdateResult::Updated,
-			"enable desired state is updated"))
+	if (!check(
+			configuration.setFloat("bot_enable", 1.0f) == CvarUpdateResult::Updated, "enable desired state is updated"))
 	{
 		return 1;
 	}
@@ -36,9 +36,8 @@ int main()
 	{
 		return 1;
 	}
-	if (!check(configuration.setFloat("bot_difficulty", 3.0f) ==
-			CvarUpdateResult::Updated &&
-			configuration.setFloat("bot_quota", 2.0f) == CvarUpdateResult::Updated,
+	if (!check(configuration.setFloat("bot_difficulty", 3.0f) == CvarUpdateResult::Updated &&
+				configuration.setFloat("bot_quota", 2.0f) == CvarUpdateResult::Updated,
 			"difficulty and quota desired states are updated"))
 	{
 		return 1;
@@ -50,16 +49,14 @@ int main()
 	}
 
 	const astrabot::compat::CvarSnapshot beforeInvalid = configuration.snapshot();
-	if (!check(configuration.setFloat("bot_quota", 33.0f) ==
-			CvarUpdateResult::InvalidValue &&
-			configuration.snapshot().botQuota == beforeInvalid.botQuota,
+	if (!check(configuration.setFloat("bot_quota", 33.0f) == CvarUpdateResult::InvalidValue &&
+				configuration.snapshot().botQuota == beforeInvalid.botQuota,
 			"invalid quota leaves desired state unchanged"))
 	{
 		return 1;
 	}
-	if (!check(configuration.setString("bot_join_team", "invalid") ==
-			CvarUpdateResult::InvalidValue &&
-			configuration.snapshot().botJoinTeam == beforeInvalid.botJoinTeam,
+	if (!check(configuration.setString("bot_join_team", "invalid") == CvarUpdateResult::InvalidValue &&
+				configuration.snapshot().botJoinTeam == beforeInvalid.botJoinTeam,
 			"invalid team leaves desired state unchanged"))
 	{
 		return 1;
@@ -82,14 +79,14 @@ int main()
 		return 1;
 	}
 	if (!check(configuration.setFloat("bot_stop", 1.0f) == CvarUpdateResult::Updated &&
-			configuration.authorize(add, 0U, true) == BotActionResult::Stopped,
+				configuration.authorize(add, 0U, true) == BotActionResult::Stopped,
 			"stop state rejects an additional actor"))
 	{
 		return 1;
 	}
 	if (!check(configuration.setFloat("bot_stop", 0.0f) == CvarUpdateResult::Updated &&
-			configuration.setFloat("bot_enable", 0.0f) == CvarUpdateResult::Updated &&
-			configuration.authorize(add, 0U, true) == BotActionResult::Disabled,
+				configuration.setFloat("bot_enable", 0.0f) == CvarUpdateResult::Updated &&
+				configuration.authorize(add, 0U, true) == BotActionResult::Disabled,
 			"disabled state rejects an additional actor"))
 	{
 		return 1;
@@ -107,8 +104,7 @@ int main()
 		return 1;
 	}
 
-	const CommandAction invalid = {
-		static_cast<CommandId>(99), CommandTeam::Any, false, nullptr};
+	const CommandAction invalid = {static_cast<CommandId>(99), CommandTeam::Any, false, nullptr};
 	if (!check(configuration.authorize(invalid, 0U, true) == BotActionResult::InvalidRequest,
 			"unknown action is rejected without state changes"))
 	{

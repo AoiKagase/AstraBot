@@ -22,7 +22,11 @@ int main()
 	int failures = 0;
 	const auto check = [&failures](bool condition, const char *message)
 	{
-		if (!condition) { ++failures; std::fprintf(stderr, "FAIL: %s\n", message); }
+		if (!condition)
+		{
+			++failures;
+			std::fprintf(stderr, "FAIL: %s\n", message);
+		}
 	};
 	NavDocument document;
 	NavArea start = makeArea(1U, 0.0f);
@@ -69,16 +73,18 @@ int main()
 	expect(180, 1, 1, 1.5f, "second team event does not change first team");
 	value = 42;
 	check(!memory.query(179, 1, 1, &value) && value == 42, "query time reversal rejected");
-	check(!memory.query(-1, 1, 1, &value) && !memory.query(180, 0, 1, &value) &&
-		!memory.query(180, 1, 0, &value) && !memory.query(180, 1, 1, nullptr), "invalid query arguments rejected");
+	check(!memory.query(-1, 1, 1, &value) && !memory.query(180, 0, 1, &value) && !memory.query(180, 1, 0, &value) &&
+			!memory.query(180, 1, 1, nullptr),
+		"invalid query arguments rejected");
 	const float nan = std::numeric_limits<float>::quiet_NaN();
 	check(!memory.recordDeath(document, 10, 1, 1, {0, 0, 0}, 179), "death time reversal rejected");
 	check(!memory.recordDeath(document, 11, 1, 1, {nan, 0, 0}, 0) &&
-		!memory.recordDeath(document, 11, 1, 1, {0, 0, 0}, -1) &&
-		!memory.recordDeath(document, 11, 1, 1, {0, 0, 0}, 0, -1) &&
-		!memory.recordDeath(document, 11, 1, 1, {0, 0, 0}, 0, nan) &&
-		!memory.recordDeath(document, 11, 3, 1, {0, 0, 0}, 0) &&
-		!memory.recordDeath(document, 11, 1, 999, {0, 0, 0}, 0), "invalid death input rejected transactionally");
+			!memory.recordDeath(document, 11, 1, 1, {0, 0, 0}, -1) &&
+			!memory.recordDeath(document, 11, 1, 1, {0, 0, 0}, 0, -1) &&
+			!memory.recordDeath(document, 11, 1, 1, {0, 0, 0}, 0, nan) &&
+			!memory.recordDeath(document, 11, 3, 1, {0, 0, 0}, 0) &&
+			!memory.recordDeath(document, 11, 1, 999, {0, 0, 0}, 0),
+		"invalid death input rejected transactionally");
 	check(memory.mapGeneration() == 10, "invalid new-map event does not clear previous map");
 	expect(180, 1, 1, 1.5f, "invalid observations preserve existing memory");
 	check(memory.recordDeath(document, 11, 2, 1, {0, 0, 0}, 0), "new map resets memory and accepts restarted clock");
@@ -87,6 +93,7 @@ int main()
 	memory.reset(12U);
 	expect(0, 2, 1, 0.0f, "explicit map reset clears knowledge");
 	check(!memory.query(std::numeric_limits<double>::infinity(), 1, 1, &value), "nonfinite query time rejected");
-	check(!memory.recordDeath(document, 12, 1, 1, {0, 0, 0}, std::numeric_limits<double>::infinity()), "nonfinite death time rejected");
+	check(!memory.recordDeath(document, 12, 1, 1, {0, 0, 0}, std::numeric_limits<double>::infinity()),
+		"nonfinite death time rejected");
 	return failures == 0 ? 0 : 1;
 }

@@ -19,10 +19,9 @@ bool equalsBspSuffix(const char *value, std::size_t length)
 	{
 		return false;
 	}
-	return (value[length - 4U] == '.' &&
-			(value[length - 3U] == 'b' || value[length - 3U] == 'B') &&
-			(value[length - 2U] == 's' || value[length - 2U] == 'S') &&
-			(value[length - 1U] == 'p' || value[length - 1U] == 'P'));
+	return (value[length - 4U] == '.' && (value[length - 3U] == 'b' || value[length - 3U] == 'B') &&
+		(value[length - 2U] == 's' || value[length - 2U] == 'S') &&
+		(value[length - 1U] == 'p' || value[length - 1U] == 'P'));
 }
 
 char toLowerAscii(char value)
@@ -90,9 +89,8 @@ bool normalizeMapName(const char *input, char *output)
 }
 }
 
-MapFingerprintResult createMapFingerprint(const char *mapName,
-	std::uint32_t bspSize, std::uint32_t navSourceHash,
-	MapFingerprint *fingerprint)
+MapFingerprintResult createMapFingerprint(
+	const char *mapName, std::uint32_t bspSize, std::uint32_t navSourceHash, MapFingerprint *fingerprint)
 {
 	if (mapName == nullptr || fingerprint == nullptr)
 	{
@@ -110,15 +108,13 @@ MapFingerprintResult createMapFingerprint(const char *mapName,
 	return MapFingerprintResult::Created;
 }
 
-MapFingerprintResult compareMapFingerprints(const MapFingerprint *expected,
-	const MapFingerprint *actual)
+MapFingerprintResult compareMapFingerprints(const MapFingerprint *expected, const MapFingerprint *actual)
 {
 	if (expected == nullptr || actual == nullptr)
 	{
 		return MapFingerprintResult::InvalidArgument;
 	}
-	if (std::strncmp(expected->mapName, actual->mapName,
-			MapFingerprint::kMapNameCapacity + 1U) != 0)
+	if (std::strncmp(expected->mapName, actual->mapName, MapFingerprint::kMapNameCapacity + 1U) != 0)
 	{
 		return MapFingerprintResult::MapNameMismatch;
 	}

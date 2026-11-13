@@ -5,34 +5,34 @@
 
 namespace
 {
-	int gRegistrationCount = 0;
-	char gRegisteredCommands[16][32]{};
+int gRegistrationCount = 0;
+char gRegisteredCommands[16][32]{};
 
-	bool check(bool condition, const char *description)
+bool check(bool condition, const char *description)
+{
+	if (condition)
 	{
-		if (condition)
-		{
-			return true;
-		}
-
-		std::fprintf(stderr, "check failed: %s\n", description);
-		return false;
+		return true;
 	}
 
-	void recordCommand(char *name, void (*)(void))
+	std::fprintf(stderr, "check failed: %s\n", description);
+	return false;
+}
+
+void recordCommand(char *name, void (*)(void))
+{
+	if (gRegistrationCount < 16)
 	{
-		if (gRegistrationCount < 16)
+		std::size_t index = 0U;
+		while (name[index] != '\0' && index + 1U < sizeof(gRegisteredCommands[0]))
 		{
-			std::size_t index = 0U;
-			while (name[index] != '\0' && index + 1U < sizeof(gRegisteredCommands[0]))
-			{
-				gRegisteredCommands[gRegistrationCount][index] = name[index];
-				++index;
-			}
-			gRegisteredCommands[gRegistrationCount][index] = '\0';
+			gRegisteredCommands[gRegistrationCount][index] = name[index];
+			++index;
 		}
-		++gRegistrationCount;
+		gRegisteredCommands[gRegistrationCount][index] = '\0';
 	}
+	++gRegistrationCount;
+}
 
 void compatibilityCallback()
 {
@@ -86,19 +86,17 @@ int main()
 	}
 	CommandAction action{};
 	const CommandRequest request = {"bot_add_ct", 0U, {nullptr, nullptr}};
-	if (!check(surface.resolve(request, &action) == CommandResult::Handled,
-			"registered command resolves through surface"))
+	if (!check(
+			surface.resolve(request, &action) == CommandResult::Handled, "registered command resolves through surface"))
 	{
 		return 1;
 	}
-	if (!check(surface.setFloat("bot_quota", 2.0f) ==
-			astrabot::compat::CvarUpdateResult::Updated,
+	if (!check(surface.setFloat("bot_quota", 2.0f) == astrabot::compat::CvarUpdateResult::Updated,
 			"surface updates desired CVar state"))
 	{
 		return 1;
 	}
-	if (!check(surface.setString("bot_join_team", "T") ==
-			astrabot::compat::CvarUpdateResult::Updated,
+	if (!check(surface.setString("bot_join_team", "T") == astrabot::compat::CvarUpdateResult::Updated,
 			"surface updates desired team state"))
 	{
 		return 1;
@@ -109,48 +107,56 @@ int main()
 	{
 		return 1;
 	}
-	const char profileText[] =
-		"SurfaceBot { Name = \"Surface Bot\" Team = CT Difficulty = 3 "
-		"Skill = 88 Aggression = 72 }\n";
+	const char profileText[] = "SurfaceBot { Name = \"Surface Bot\" Team = CT Difficulty = 3 "
+							   "Skill = 88 Aggression = 72 }\n";
 	const std::size_t profileLength = std::strlen(profileText);
-	const std::size_t profileWritten =
-		std::fwrite(profileText, 1U, profileLength, profileFile);
+	const std::size_t profileWritten = std::fwrite(profileText, 1U, profileLength, profileFile);
 	const int profileCloseResult = std::fclose(profileFile);
-	if (!check(profileWritten == profileLength && profileCloseResult == 0,
-			"surface profile fixture is written"))
+	if (!check(profileWritten == profileLength && profileCloseResult == 0, "surface profile fixture is written"))
 	{
 		std::remove(profilePath);
 		return 1;
 	}
-	if (!check(surface.loadProfiles(profilePath) ==
-			astrabot::metamod::ProfileLoadResult::Loaded,
+	if (!check(surface.loadProfiles(profilePath) == astrabot::metamod::ProfileLoadResult::Loaded,
 			"surface loads profile catalog"))
 	{
 		std::remove(profilePath);
 		return 1;
 	}
 	astrabot::compat::ProfileRecord profile = {};
-	if (!check(surface.selectProfile(action, 3, 0U, &profile) ==
-			astrabot::compat::ProfileSelectionResult::Selected &&
-			std::strcmp(profile.name, "Surface Bot") == 0,
+	if (!check(surface.selectProfile(action, 3, 0U, &profile) == astrabot::compat::ProfileSelectionResult::Selected &&
+				std::strcmp(profile.name, "Surface Bot") == 0,
 			"bot_add action resolves a loaded profile"))
 	{
 		std::remove(profilePath);
 		return 1;
 	}
-	astrabot::compat::ScriptedRandomSource unusedRandom({astrabot::compat::RandomTapeEntry::longEntry(
-		"profile.select_unused", {}, {}, 0, 0, 0)});
-	if (!check(surface.selectUnusedProfile(action,3,nullptr,0,unusedRandom,{}, {},&profile) ==
-		astrabot::compat::ProfileSelectionResult::Selected && unusedRandom.verifyComplete(),
-		"surface selects unused profile through shared random")) { std::remove(profilePath); return 1; }
+	astrabot::compat::ScriptedRandomSource unusedRandom(
+		{astrabot::compat::RandomTapeEntry::longEntry("profile.select_unused", {}, {}, 0, 0, 0)});
+	if (!check(surface.selectUnusedProfile(action, 3, nullptr, 0, unusedRandom, {}, {}, &profile) ==
+					astrabot::compat::ProfileSelectionResult::Selected &&
+				unusedRandom.verifyComplete(),
+			"surface selects unused profile through shared random"))
+	{
+		std::remove(profilePath);
+		return 1;
+	}
 	const char *used[] = {"surface bot"};
-	if (!check(surface.selectUnusedProfile(action,3,used,1,unusedRandom,{}, {},&profile) ==
-		astrabot::compat::ProfileSelectionResult::NoMatch,
-		"surface excludes connected names")) { std::remove(profilePath); return 1; }
-	action.target="Surface Bot";
-	if (!check(surface.selectUnusedProfile(action,3,used,1,unusedRandom,{}, {},&profile) ==
-		astrabot::compat::ProfileSelectionResult::NoMatch,
-		"named selection also excludes connected names")) { std::remove(profilePath); return 1; }
+	if (!check(surface.selectUnusedProfile(action, 3, used, 1, unusedRandom, {}, {}, &profile) ==
+				astrabot::compat::ProfileSelectionResult::NoMatch,
+			"surface excludes connected names"))
+	{
+		std::remove(profilePath);
+		return 1;
+	}
+	action.target = "Surface Bot";
+	if (!check(surface.selectUnusedProfile(action, 3, used, 1, unusedRandom, {}, {}, &profile) ==
+				astrabot::compat::ProfileSelectionResult::NoMatch,
+			"named selection also excludes connected names"))
+	{
+		std::remove(profilePath);
+		return 1;
+	}
 	std::remove(profilePath);
 	return 0;
 }

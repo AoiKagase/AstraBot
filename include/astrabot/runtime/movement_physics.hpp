@@ -8,33 +8,33 @@
 
 namespace astrabot
 {
-	namespace runtime
-	{
-		struct PhysicsVector
-		{
-			float x;
-			float y;
-			float z;
-		};
+namespace runtime
+{
+struct PhysicsVector
+{
+	float x;
+	float y;
+	float z;
+};
 
 struct MovementPhysicsState
 {
-			PhysicsVector origin;
-			PhysicsVector velocity;
-			bool entityValid;
-			bool fakeClient;
-			bool spectator;
-			bool dead;
-			bool grounded;
-			bool ducked;
-			bool onLadder;
-			std::uint32_t groundEntityIndex;
-			int flags;
+	PhysicsVector origin;
+	PhysicsVector velocity;
+	bool entityValid;
+	bool fakeClient;
+	bool spectator;
+	bool dead;
+	bool grounded;
+	bool ducked;
+	bool onLadder;
+	std::uint32_t groundEntityIndex;
+	int flags;
 	int deadflag;
 	int team;
 	bool teamConfirmed;
 	int solid;
-			int movetype;
+	int movetype;
 	float health;
 };
 
@@ -48,9 +48,7 @@ struct LandingDamageObservation
 class FallLandingTracker
 {
 public:
-	LandingDamageObservation observe(
-		std::uint32_t actorGeneration,
-		const MovementPhysicsState &state) noexcept;
+	LandingDamageObservation observe(std::uint32_t actorGeneration, const MovementPhysicsState &state) noexcept;
 	void reset() noexcept;
 
 private:
@@ -61,30 +59,28 @@ private:
 	float airborneHealth_ = 0.0f;
 };
 
-		enum class SpawnReadiness : std::uint8_t
-		{
-			NotReady,
-			Ready
-		};
+enum class SpawnReadiness : std::uint8_t
+{
+	NotReady,
+	Ready
+};
 
-		struct MovementPhysicsSample
-		{
-			ActorId actor;
-			world::FrameIdentity frame;
-			std::uint32_t commandSequence;
-			MovementPhysicsState before;
-			MovementPhysicsState after;
-			bool dispatched;
-			SpawnReadiness readiness;
-		};
+struct MovementPhysicsSample
+{
+	ActorId actor;
+	world::FrameIdentity frame;
+	std::uint32_t commandSequence;
+	MovementPhysicsState before;
+	MovementPhysicsState after;
+	bool dispatched;
+	SpawnReadiness readiness;
+};
 
-		// Continuing movement eligibility does not require contact with the ground.
-		SpawnReadiness movementReadiness(const MovementPhysicsState &state) noexcept;
-		SpawnReadiness spawnReadiness(const MovementPhysicsState &state) noexcept;
-		bool isMovementDirectionReversal(
-			const PhysicsVector &previous,
-			const PhysicsVector &current) noexcept;
-	}
+// Continuing movement eligibility does not require contact with the ground.
+SpawnReadiness movementReadiness(const MovementPhysicsState &state) noexcept;
+SpawnReadiness spawnReadiness(const MovementPhysicsState &state) noexcept;
+bool isMovementDirectionReversal(const PhysicsVector &previous, const PhysicsVector &current) noexcept;
+}
 }
 
 #endif

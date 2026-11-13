@@ -63,23 +63,25 @@ void ReGameDllObservationProvider::probeLoadedGameDll()
 #elif defined(RTLD_NOLOAD)
 	// Resolve the actual already-loaded path. Do not load a second GameDLL or
 	// depend on the server's current working directory / dynamic linker path.
-	dl_iterate_phdr([](dl_phdr_info *info, std::size_t, void *data) -> int
-	{
-		if (info->dlpi_name == nullptr || info->dlpi_name[0] == '\0')
-			return 0;
-		const char *base = std::strrchr(info->dlpi_name, '/');
-		base = base != nullptr ? base + 1 : info->dlpi_name;
-		if (std::strcmp(base, "cs.so") != 0 && std::strcmp(base, "cs_i386.so") != 0 &&
-			std::strcmp(base, "mp.so") != 0 && std::strcmp(base, "mp_i386.so") != 0)
-			return 0;
-		void *module = dlopen(info->dlpi_name, RTLD_NOW | RTLD_NOLOAD);
-		if (module == nullptr)
-			return 0;
-		auto *provider = static_cast<ReGameDllObservationProvider *>(data);
-		provider->probe(reinterpret_cast<Factory>(dlsym(module, "CreateInterface")));
-		dlclose(module);
-		return 1;
-	}, this);
+	dl_iterate_phdr(
+		[](dl_phdr_info *info, std::size_t, void *data) -> int
+		{
+			if (info->dlpi_name == nullptr || info->dlpi_name[0] == '\0')
+				return 0;
+			const char *base = std::strrchr(info->dlpi_name, '/');
+			base = base != nullptr ? base + 1 : info->dlpi_name;
+			if (std::strcmp(base, "cs.so") != 0 && std::strcmp(base, "cs_i386.so") != 0 &&
+				std::strcmp(base, "mp.so") != 0 && std::strcmp(base, "mp_i386.so") != 0)
+				return 0;
+			void *module = dlopen(info->dlpi_name, RTLD_NOW | RTLD_NOLOAD);
+			if (module == nullptr)
+				return 0;
+			auto *provider = static_cast<ReGameDllObservationProvider *>(data);
+			provider->probe(reinterpret_cast<Factory>(dlsym(module, "CreateInterface")));
+			dlclose(module);
+			return 1;
+		},
+		this);
 #endif
 }
 
@@ -87,11 +89,16 @@ const char *ReGameDllObservationProvider::diagnostic() const
 {
 	switch (status_)
 	{
-	case ReGameDllProbeStatus::NotPresent: return "ReGameDLL absent: public Vanilla observations remain active";
-	case ReGameDllProbeStatus::NoFactory: return "GameDLL has no CreateInterface: public Vanilla observations remain active";
-	case ReGameDllProbeStatus::NoInterface: return "GameDLL has no ReGameDLL API: public Vanilla observations remain active";
-	case ReGameDllProbeStatus::IncompatibleVersion: return "ReGameDLL API version unsupported: no supplemental reads";
-	case ReGameDllProbeStatus::MetadataOnly: return "ReGameDLL API negotiated; no public per-actor weapon timer/accuracy getters; no supplemental reads";
+	case ReGameDllProbeStatus::NotPresent:
+		return "ReGameDLL absent: public Vanilla observations remain active";
+	case ReGameDllProbeStatus::NoFactory:
+		return "GameDLL has no CreateInterface: public Vanilla observations remain active";
+	case ReGameDllProbeStatus::NoInterface:
+		return "GameDLL has no ReGameDLL API: public Vanilla observations remain active";
+	case ReGameDllProbeStatus::IncompatibleVersion:
+		return "ReGameDLL API version unsupported: no supplemental reads";
+	case ReGameDllProbeStatus::MetadataOnly:
+		return "ReGameDLL API negotiated; no public per-actor weapon timer/accuracy getters; no supplemental reads";
 	}
 	return "ReGameDLL probe status unknown";
 }

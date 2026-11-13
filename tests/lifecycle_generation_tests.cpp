@@ -7,14 +7,14 @@
 namespace
 {
 bool check(bool condition, const char *description)
+{
+	if (condition)
 	{
-		if (condition)
-		{
-			return true;
-		}
+		return true;
+	}
 
-		std::fprintf(stderr, "check failed: %s\n", description);
-		return false;
+	std::fprintf(stderr, "check failed: %s\n", description);
+	return false;
 }
 
 bool testRoundLifecycleSignalsAdvanceExactlyOncePerRound()
@@ -43,8 +43,8 @@ bool testRoundLifecycleSignalsAdvanceExactlyOncePerRound()
 		return false;
 	}
 	if (!check(tracker.shouldBeginNewGeneration(RoundLifecycleEvent::RoundEnd) &&
-			!tracker.shouldBeginNewGeneration(RoundLifecycleEvent::RestartScheduled) &&
-			!tracker.shouldBeginNewGeneration(RoundLifecycleEvent::RoundStart),
+				!tracker.shouldBeginNewGeneration(RoundLifecycleEvent::RestartScheduled) &&
+				!tracker.shouldBeginNewGeneration(RoundLifecycleEvent::RoundStart),
 			"restart scheduling and Round_Start do not double-advance a round"))
 	{
 		return false;
@@ -52,25 +52,22 @@ bool testRoundLifecycleSignalsAdvanceExactlyOncePerRound()
 	tracker.reset();
 	return check(tracker.shouldBeginNewGeneration(RoundLifecycleEvent::GameCommencing) &&
 			!tracker.shouldBeginNewGeneration(RoundLifecycleEvent::RoundStart),
-			"Game_Commencing preparation is consumed by the first Round_Start");
+		"Game_Commencing preparation is consumed by the first Round_Start");
 }
 
 bool testRoundFreezeWindowUsesRoundStartAndFiniteExpiry()
 {
 	using astrabot::metamod::RoundFreezeSchedule;
 	const RoundFreezeSchedule freeze = RoundFreezeSchedule::create(20.0f, 5.0f);
-	if (!check(freeze.scheduled && freeze.isActive(20.0f) &&
-			freeze.isActive(24.99f) && !freeze.isActive(25.0f),
+	if (!check(freeze.scheduled && freeze.isActive(20.0f) && freeze.isActive(24.99f) && !freeze.isActive(25.0f),
 			"freezetime is active from Round_Start through its exclusive expiry"))
 	{
 		return false;
 	}
 	const RoundFreezeSchedule noFreeze = RoundFreezeSchedule::create(20.0f, -1.0f);
 	const RoundFreezeSchedule capped = RoundFreezeSchedule::create(20.0f, 120.0f);
-	return check(!noFreeze.scheduled && !noFreeze.isActive(20.0f),
-			"negative freezetime produces no freeze") &&
-		check(capped.scheduled && capped.untilTime == 80.0f,
-			"freezetime is bounded to sixty seconds");
+	return check(!noFreeze.scheduled && !noFreeze.isActive(20.0f), "negative freezetime produces no freeze") &&
+		check(capped.scheduled && capped.untilTime == 80.0f, "freezetime is bounded to sixty seconds");
 }
 }
 
@@ -140,8 +137,7 @@ int main()
 		return 1;
 	}
 	const LifecycleToken reusedToken = session.tokenForSlot(1U);
-	if (!check(reusedToken.slotGeneration != firstToken.slotGeneration,
-			"slot reuse advances slot generation"))
+	if (!check(reusedToken.slotGeneration != firstToken.slotGeneration, "slot reuse advances slot generation"))
 	{
 		return 1;
 	}
@@ -159,8 +155,7 @@ int main()
 	{
 		return 1;
 	}
-	if (!check(session.roundGeneration() == beforeFrameReset,
-			"monotonic frame does not change round generation"))
+	if (!check(session.roundGeneration() == beforeFrameReset, "monotonic frame does not change round generation"))
 	{
 		return 1;
 	}
@@ -168,8 +163,7 @@ int main()
 	{
 		return 1;
 	}
-	if (!check(session.roundGeneration() != beforeFrameReset,
-			"frame reset invalidates the old round"))
+	if (!check(session.roundGeneration() != beforeFrameReset, "frame reset invalidates the old round"))
 	{
 		return 1;
 	}

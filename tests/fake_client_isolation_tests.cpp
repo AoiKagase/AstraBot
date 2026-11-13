@@ -6,157 +6,147 @@
 
 namespace
 {
-	edict_t gEntities[2]{};
-	int gCreateCount = 0;
-	int gMoveCount = 0;
-	edict_t *gLastMoveEntity = nullptr;
-	float gBotEnable = 0.0f;
-	float gBotQuota = 0.0f;
-	cvar_t gBotEnableCvar{};
-	cvar_t gBotQuotaCvar{};
+edict_t gEntities[2]{};
+int gCreateCount = 0;
+int gMoveCount = 0;
+edict_t *gLastMoveEntity = nullptr;
+float gBotEnable = 0.0f;
+float gBotQuota = 0.0f;
+cvar_t gBotEnableCvar{};
+cvar_t gBotQuotaCvar{};
 
-	bool check(bool condition, const char *description)
-	{
-		if (condition)
-		{
-			return true;
-		}
-
-		std::fprintf(stderr, "check failed: %s\n", description);
-		return false;
-	}
-
-	edict_t *createFakeClient(const char *)
-	{
-		if (gCreateCount >= 2)
-		{
-			return nullptr;
-		}
-		edict_t *entity = &gEntities[gCreateCount++];
-		entity->v.flags |= FL_FAKECLIENT;
-		return entity;
-	}
-
-	int indexOfEdict(const edict_t *entity)
-	{
-		if (entity == &gEntities[0])
-		{
-			return 1;
-		}
-		if (entity == &gEntities[1])
-		{
-			return 2;
-		}
-		return -1;
-	}
-
-	edict_t *entityOfIndex(int index)
-	{
-		return index >= 1 && index <= 2 ? &gEntities[index - 1] : nullptr;
-	}
-
-	cvar_t *getCvar(const char *name)
-	{
-		if (std::strcmp(name, "bot_enable") == 0)
-		{
-			return &gBotEnableCvar;
-		}
-		if (std::strcmp(name, "bot_quota") == 0)
-		{
-			return &gBotQuotaCvar;
-		}
-		return nullptr;
-	}
-
-	float getCvarFloat(const char *name)
-	{
-		if (std::strcmp(name, "bot_enable") == 0)
-		{
-			return gBotEnable;
-		}
-		if (std::strcmp(name, "bot_quota") == 0)
-		{
-			return gBotQuota;
-		}
-		return 0.0f;
-	}
-
-	void setCvarFloat(const char *name, float value)
-	{
-		if (std::strcmp(name, "bot_enable") == 0)
-		{
-			gBotEnable = value;
-		}
-		else if (std::strcmp(name, "bot_quota") == 0)
-		{
-			gBotQuota = value;
-		}
-	}
-
-	int playerUserId(edict_t *entity)
-	{
-		return indexOfEdict(entity) + 100;
-	}
-
-	char *getInfoKeyBuffer(edict_t *)
-	{
-		static char buffer[128] = {};
-		return buffer;
-	}
-
-	void setClientKeyValue(int, char *, char *, char *)
-	{
-	}
-
-	qboolean clientConnect(edict_t *, const char *, const char *, char[128])
+bool check(bool condition, const char *description)
+{
+	if (condition)
 	{
 		return true;
 	}
 
-	void putInServer(edict_t *)
-	{
-	}
+	std::fprintf(stderr, "check failed: %s\n", description);
+	return false;
+}
 
-	void disconnect(edict_t *)
+edict_t *createFakeClient(const char *)
+{
+	if (gCreateCount >= 2)
 	{
+		return nullptr;
 	}
+	edict_t *entity = &gEntities[gCreateCount++];
+	entity->v.flags |= FL_FAKECLIENT;
+	return entity;
+}
 
-	void serverCommand(char *)
+int indexOfEdict(const edict_t *entity)
+{
+	if (entity == &gEntities[0])
 	{
+		return 1;
 	}
+	if (entity == &gEntities[1])
+	{
+		return 2;
+	}
+	return -1;
+}
 
-	void serverExecute()
-	{
-	}
+edict_t *entityOfIndex(int index)
+{
+	return index >= 1 && index <= 2 ? &gEntities[index - 1] : nullptr;
+}
 
-	void runPlayerMove(
-		edict_t *entity,
-		const float *,
-		float,
-		float,
-		float,
-		unsigned short,
-		byte,
-		byte)
+cvar_t *getCvar(const char *name)
+{
+	if (std::strcmp(name, "bot_enable") == 0)
 	{
-		gLastMoveEntity = entity;
-		++gMoveCount;
+		return &gBotEnableCvar;
 	}
+	if (std::strcmp(name, "bot_quota") == 0)
+	{
+		return &gBotQuotaCvar;
+	}
+	return nullptr;
+}
 
-	astrabot::runtime::BotCommand commandFor(
-		const astrabot::runtime::ActorId &actor,
-		const astrabot::runtime::LifecycleToken &token,
-		std::uint32_t sequence)
+float getCvarFloat(const char *name)
+{
+	if (std::strcmp(name, "bot_enable") == 0)
 	{
-		astrabot::runtime::BotCommand command{};
-		command.actor = actor;
-		command.lifecycle = token;
-		command.sequence = sequence;
-		command.issueFrame = 1U;
-		command.viewAngles = {0.0f, 90.0f, 0.0f};
-		command.movement = {100.0f, 0.0f, 0.0f, 1U, 0U, 10U};
-		return command;
+		return gBotEnable;
 	}
+	if (std::strcmp(name, "bot_quota") == 0)
+	{
+		return gBotQuota;
+	}
+	return 0.0f;
+}
+
+void setCvarFloat(const char *name, float value)
+{
+	if (std::strcmp(name, "bot_enable") == 0)
+	{
+		gBotEnable = value;
+	}
+	else if (std::strcmp(name, "bot_quota") == 0)
+	{
+		gBotQuota = value;
+	}
+}
+
+int playerUserId(edict_t *entity)
+{
+	return indexOfEdict(entity) + 100;
+}
+
+char *getInfoKeyBuffer(edict_t *)
+{
+	static char buffer[128] = {};
+	return buffer;
+}
+
+void setClientKeyValue(int, char *, char *, char *)
+{
+}
+
+qboolean clientConnect(edict_t *, const char *, const char *, char[128])
+{
+	return true;
+}
+
+void putInServer(edict_t *)
+{
+}
+
+void disconnect(edict_t *)
+{
+}
+
+void serverCommand(char *)
+{
+}
+
+void serverExecute()
+{
+}
+
+void runPlayerMove(edict_t *entity, const float *, float, float, float, unsigned short, byte, byte)
+{
+	gLastMoveEntity = entity;
+	++gMoveCount;
+}
+
+astrabot::runtime::BotCommand commandFor(
+	const astrabot::runtime::ActorId &actor, const astrabot::runtime::LifecycleToken &token, std::uint32_t sequence)
+{
+	astrabot::runtime::BotCommand command{};
+	command.actor = actor;
+	command.lifecycle = token;
+	command.sequence = sequence;
+	command.issueFrame = 1U;
+	command.viewAngles = {0.0f, 90.0f, 0.0f};
+	command.movement = {100.0f, 0.0f, 0.0f, 1U, 0U, 10U};
+	return command;
+}
 }
 
 int main()
@@ -178,23 +168,19 @@ int main()
 	gameDllTable.pfnClientPutInServer = &putInServer;
 	gameDllTable.pfnClientDisconnect = &disconnect;
 	gameDllFunctions.dllapi_table = &gameDllTable;
-	if (!check(astrabot::metamod::Meta_Query(
-			interfaceVersion, &pluginInfo, &metaUtils) == TRUE,
-			"Meta_Query succeeds"))
+	if (!check(astrabot::metamod::Meta_Query(interfaceVersion, &pluginInfo, &metaUtils) == TRUE, "Meta_Query succeeds"))
 	{
 		return 1;
 	}
 	META_FUNCTIONS metaFunctions{};
-	if (!check(astrabot::metamod::Meta_Attach(
-			PT_ANYTIME, &metaFunctions, &metaGlobals, &gameDllFunctions) == TRUE,
+	if (!check(astrabot::metamod::Meta_Attach(PT_ANYTIME, &metaFunctions, &metaGlobals, &gameDllFunctions) == TRUE,
 			"Meta_Attach succeeds"))
 	{
 		return 1;
 	}
 	int entityVersion = INTERFACE_VERSION;
 	DLL_FUNCTIONS entityFunctions{};
-	if (!check(metaFunctions.pfnGetEntityAPI2(&entityFunctions, &entityVersion) == TRUE,
-			"entity hook table succeeds"))
+	if (!check(metaFunctions.pfnGetEntityAPI2(&entityFunctions, &entityVersion) == TRUE, "entity hook table succeeds"))
 	{
 		return 1;
 	}
@@ -224,7 +210,7 @@ int main()
 	entityFunctions.pfnServerActivate(nullptr, 0, 32);
 	const auto active = PluginRuntime::instance().snapshot();
 	if (!check(active.state == PluginRuntime::State::ActiveMap &&
-			active.nativeGuardState == astrabot::metamod::NativeBotGuardState::Suppressed,
+				active.nativeGuardState == astrabot::metamod::NativeBotGuardState::Suppressed,
 			"activation arms native guard"))
 	{
 		return 1;
@@ -232,13 +218,13 @@ int main()
 
 	FakeClientHandle first{};
 	FakeClientHandle second{};
-	if (!check(PluginRuntime::instance().createFakeClient("Astra-1", &first) ==
-			FakeClientResult::Created, "first managed FakeClient is created"))
+	if (!check(PluginRuntime::instance().createFakeClient("Astra-1", &first) == FakeClientResult::Created,
+			"first managed FakeClient is created"))
 	{
 		return 1;
 	}
-	if (!check(PluginRuntime::instance().createFakeClient("Astra-2", &second) ==
-			FakeClientResult::Created, "second managed FakeClient is created"))
+	if (!check(PluginRuntime::instance().createFakeClient("Astra-2", &second) == FakeClientResult::Created,
+			"second managed FakeClient is created"))
 	{
 		return 1;
 	}
@@ -249,8 +235,7 @@ int main()
 	PluginRuntime::instance().setCompatibilityFloat("bot_join_after_player", 0.0f);
 	entityFunctions.pfnStartFrame();
 	const auto guarded = PluginRuntime::instance().snapshot();
-	if (!check(guarded.managedBotCreationAllowed,
-			"owned FakeClients remain allowed"))
+	if (!check(guarded.managedBotCreationAllowed, "owned FakeClients remain allowed"))
 	{
 		return 1;
 	}
@@ -258,43 +243,38 @@ int main()
 	const auto secondToken = PluginRuntime::instance().tokenForSlot(second.actor.slot);
 	BotCommand firstCommand = commandFor(first.actor, firstToken, 1U);
 	BotCommand secondCommand = commandFor(second.actor, secondToken, 1U);
-	if (!check(PluginRuntime::instance().enqueueBotCommand(firstCommand) ==
-			   QueueResult::StaleActor &&
-			PluginRuntime::instance().enqueueBotCommand(secondCommand) ==
-			QueueResult::StaleActor, "joining actors cannot queue movement commands"))
+	if (!check(PluginRuntime::instance().enqueueBotCommand(firstCommand) == QueueResult::StaleActor &&
+				PluginRuntime::instance().enqueueBotCommand(secondCommand) == QueueResult::StaleActor,
+			"joining actors cannot queue movement commands"))
 	{
 		return 1;
 	}
-	if (!check(PluginRuntime::instance().dispatchBotInput(first.actor, 2U).result ==
-			   DispatchResult::NoCommand,
-			   "joining first actor does not dispatch movement"))
+	if (!check(PluginRuntime::instance().dispatchBotInput(first.actor, 2U).result == DispatchResult::NoCommand,
+			"joining first actor does not dispatch movement"))
 	{
 		return 1;
 	}
-	if (!check(PluginRuntime::instance().dispatchBotInput(second.actor, 2U).result ==
-			   DispatchResult::NoCommand,
-			   "joining second actor does not dispatch movement"))
+	if (!check(PluginRuntime::instance().dispatchBotInput(second.actor, 2U).result == DispatchResult::NoCommand,
+			"joining second actor does not dispatch movement"))
 	{
 		return 1;
 	}
 	const auto staleToken = PluginRuntime::instance().tokenForSlot(first.actor.slot);
-	if (!check(PluginRuntime::instance().enqueueBotCommand(
-			commandFor(first.actor, staleToken, 2U)) == QueueResult::StaleActor,
+	if (!check(PluginRuntime::instance().enqueueBotCommand(commandFor(first.actor, staleToken, 2U)) ==
+				QueueResult::StaleActor,
 			"joining actor rejects a stale movement candidate"))
 	{
 		return 1;
 	}
 	globals.time = 0.0f;
 	entityFunctions.pfnStartFrame();
-	if (!check(PluginRuntime::instance().dispatchBotInput(first.actor, 3U).result ==
-			DispatchResult::NoCommand,
+	if (!check(PluginRuntime::instance().dispatchBotInput(first.actor, 3U).result == DispatchResult::NoCommand,
 			"round reset leaves no movement command for a joining actor"))
 	{
 		return 1;
 	}
 	entityFunctions.pfnClientDisconnect(first.entity);
-	if (!check(PluginRuntime::instance().dispatchBotInput(first.actor, 4U).result ==
-			DispatchResult::NoCommand,
+	if (!check(PluginRuntime::instance().dispatchBotInput(first.actor, 4U).result == DispatchResult::NoCommand,
 			"external disconnect clears actor input"))
 	{
 		return 1;
@@ -314,22 +294,20 @@ int main()
 	globals.time = 2.0f;
 	entityFunctions.pfnStartFrame();
 	const auto conflict = PluginRuntime::instance().snapshot();
-	if (!check(!conflict.managedBotCreationAllowed,
-			"native control re-enable disables managed creation"))
+	if (!check(!conflict.managedBotCreationAllowed, "native control re-enable disables managed creation"))
 	{
 		return 1;
 	}
 	const int createCountBeforeDenied = gCreateCount;
 	FakeClientHandle denied{};
-	if (!check(PluginRuntime::instance().createFakeClient("denied", &denied) ==
-			FakeClientResult::NativeGuardDenied && gCreateCount == createCountBeforeDenied,
+	if (!check(PluginRuntime::instance().createFakeClient("denied", &denied) == FakeClientResult::NativeGuardDenied &&
+				gCreateCount == createCountBeforeDenied,
 			"native conflict prevents engine creation"))
 	{
 		return 1;
 	}
 	entityFunctions.pfnServerDeactivate();
-	if (!check(astrabot::metamod::Meta_Detach(PT_ANYTIME, PNL_NULL) == TRUE,
-			"Meta_Detach succeeds"))
+	if (!check(astrabot::metamod::Meta_Detach(PT_ANYTIME, PNL_NULL) == TRUE, "Meta_Detach succeeds"))
 	{
 		return 1;
 	}

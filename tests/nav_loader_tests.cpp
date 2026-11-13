@@ -147,9 +147,7 @@ int main()
 	NavLoader loader;
 	NavSnapshotPublisher publisher;
 	NavLoadDiagnostic diagnostic = {};
-	NavLoadRequest request = {
-		kNavPath, "DE_DUST2.BSP", 7U, true, kBspSize, false, 0U
-	};
+	NavLoadRequest request = {kNavPath, "DE_DUST2.BSP", 7U, true, kBspSize, false, 0U};
 	for (std::uint32_t version = 1U; version <= 5U; ++version)
 	{
 		const std::vector<std::uint8_t> original = makeNav(version);
@@ -157,19 +155,17 @@ int main()
 		{
 			return 1;
 		}
-		if (!check(loader.loadFile(&request, &publisher, &diagnostic) ==
-				NavLoadResult::Loaded, "valid v1-v5 file loads"))
+		if (!check(
+				loader.loadFile(&request, &publisher, &diagnostic) == NavLoadResult::Loaded, "valid v1-v5 file loads"))
 		{
 			return 1;
 		}
-		if (!check(diagnostic.mapGeneration == 7U &&
-				std::strcmp(diagnostic.mapName, "de_dust2") == 0,
+		if (!check(diagnostic.mapGeneration == 7U && std::strcmp(diagnostic.mapName, "de_dust2") == 0,
 				"diagnostic retains normalized map identity"))
 		{
 			return 1;
 		}
-		if (!check(readFile(kNavPath) == original,
-				"loader does not modify source bytes"))
+		if (!check(readFile(kNavPath) == original, "loader does not modify source bytes"))
 		{
 			return 1;
 		}
@@ -177,13 +173,12 @@ int main()
 
 	const auto previous = publisher.snapshot();
 	request.navPath = "missing.nav";
-	if (!check(loader.loadFile(&request, &publisher, &diagnostic) ==
-			NavLoadResult::MissingFile, "missing nav file is explicit"))
+	if (!check(loader.loadFile(&request, &publisher, &diagnostic) == NavLoadResult::MissingFile,
+			"missing nav file is explicit"))
 	{
 		return 1;
 	}
-	if (!check(publisher.isCurrent(previous),
-			"missing file preserves prior snapshot"))
+	if (!check(publisher.isCurrent(previous), "missing file preserves prior snapshot"))
 	{
 		return 1;
 	}
@@ -195,13 +190,12 @@ int main()
 	{
 		return 1;
 	}
-	if (!check(loader.loadFile(&request, &publisher, &diagnostic) ==
-			NavLoadResult::Truncated, "truncated nav file is explicit"))
+	if (!check(loader.loadFile(&request, &publisher, &diagnostic) == NavLoadResult::Truncated,
+			"truncated nav file is explicit"))
 	{
 		return 1;
 	}
-	if (!check(publisher.isCurrent(previous),
-			"corrupt file preserves prior snapshot"))
+	if (!check(publisher.isCurrent(previous), "corrupt file preserves prior snapshot"))
 	{
 		return 1;
 	}
@@ -212,8 +206,8 @@ int main()
 	{
 		return 1;
 	}
-	if (!check(smallLoader.loadFile(&request, &publisher, &diagnostic) ==
-			NavLoadResult::TooLarge, "oversized nav file is explicit"))
+	if (!check(smallLoader.loadFile(&request, &publisher, &diagnostic) == NavLoadResult::TooLarge,
+			"oversized nav file is explicit"))
 	{
 		return 1;
 	}
@@ -223,8 +217,8 @@ int main()
 	{
 		return 1;
 	}
-	if (!check(loader.loadFile(&request, &publisher, &diagnostic) ==
-			NavLoadResult::MapNameMismatch, "map mismatch is explicit"))
+	if (!check(loader.loadFile(&request, &publisher, &diagnostic) == NavLoadResult::MapNameMismatch,
+			"map mismatch is explicit"))
 	{
 		return 1;
 	}
@@ -234,8 +228,8 @@ int main()
 	{
 		return 1;
 	}
-	if (!check(loader.loadFile(&request, &publisher, &diagnostic) ==
-			NavLoadResult::BspSizeMismatch, "BSP mismatch is explicit"))
+	if (!check(loader.loadFile(&request, &publisher, &diagnostic) == NavLoadResult::BspSizeMismatch,
+			"BSP mismatch is explicit"))
 	{
 		return 1;
 	}

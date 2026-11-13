@@ -12,32 +12,27 @@ namespace
 {
 bool isValidObservationState(world::ObservationState state)
 {
-	return state == world::ObservationState::Unknown ||
-		state == world::ObservationState::ObservedAbsent ||
+	return state == world::ObservationState::Unknown || state == world::ObservationState::ObservedAbsent ||
 		state == world::ObservationState::ObservedPresent;
 }
 
 bool isValidTeamRelation(world::TeamRelation relation)
 {
-	return relation == world::TeamRelation::Unknown ||
-		relation == world::TeamRelation::Friendly ||
-		relation == world::TeamRelation::Hostile ||
-		relation == world::TeamRelation::Neutral;
+	return relation == world::TeamRelation::Unknown || relation == world::TeamRelation::Friendly ||
+		relation == world::TeamRelation::Hostile || relation == world::TeamRelation::Neutral;
 }
 
 bool isValidEntityKind(world::EntityKind kind)
 {
-	return kind == world::EntityKind::Unknown ||
-		kind == world::EntityKind::Objective || kind == world::EntityKind::Weapon ||
-		kind == world::EntityKind::Projectile || kind == world::EntityKind::Other;
+	return kind == world::EntityKind::Unknown || kind == world::EntityKind::Objective ||
+		kind == world::EntityKind::Weapon || kind == world::EntityKind::Projectile || kind == world::EntityKind::Other;
 }
 
 bool isValidSoundKind(world::SoundKind kind)
 {
-	return kind == world::SoundKind::Unknown ||
-		kind == world::SoundKind::Footstep || kind == world::SoundKind::WeaponFire ||
-		kind == world::SoundKind::Grenade || kind == world::SoundKind::Objective ||
-		kind == world::SoundKind::Other;
+	return kind == world::SoundKind::Unknown || kind == world::SoundKind::Footstep ||
+		kind == world::SoundKind::WeaponFire || kind == world::SoundKind::Grenade ||
+		kind == world::SoundKind::Objective || kind == world::SoundKind::Other;
 }
 
 bool isValidEventType(world::PerceptionEventType type)
@@ -45,28 +40,24 @@ bool isValidEventType(world::PerceptionEventType type)
 	return type != world::PerceptionEventType::None;
 }
 
-std::uint32_t elapsedTicks(
-	const world::FrameIdentity &now, const world::FrameIdentity &then)
+std::uint32_t elapsedTicks(const world::FrameIdentity &now, const world::FrameIdentity &then)
 {
-	return now.tick >= then.tick ? now.tick - then.tick :
-		(std::numeric_limits<std::uint32_t>::max)();
+	return now.tick >= then.tick ? now.tick - then.tick : (std::numeric_limits<std::uint32_t>::max)();
 }
 }
 
 PerceptionInput::PerceptionInput()
-	: identity_(), actors_(), actorCount_(0U), entities_(), entityCount_(0U),
-	  sounds_(), soundCount_(0U), events_(), eventCount_(0U)
+	: identity_(), actors_(), actorCount_(0U), entities_(), entityCount_(0U), sounds_(), soundCount_(0U), events_(),
+	  eventCount_(0U)
 {
 }
 
-PerceptionInput::PerceptionInput(const world::SnapshotIdentity &identity)
-	: PerceptionInput()
+PerceptionInput::PerceptionInput(const world::SnapshotIdentity &identity) : PerceptionInput()
 {
 	setIdentity(identity);
 }
 
-PerceptionInputResult PerceptionInput::setIdentity(
-	const world::SnapshotIdentity &identity)
+PerceptionInputResult PerceptionInput::setIdentity(const world::SnapshotIdentity &identity)
 {
 	if (!identity.isValid())
 		return PerceptionInputResult::InvalidIdentity;
@@ -83,12 +74,10 @@ const world::SnapshotIdentity &PerceptionInput::identity() const
 	return identity_;
 }
 
-PerceptionInputResult PerceptionInput::addActor(
-	const world::ActorObservation &observation)
+PerceptionInputResult PerceptionInput::addActor(const world::ActorObservation &observation)
 {
 	if (!observation.actor.isValid() || !isValidObservationState(observation.state) ||
-		!isValidTeamRelation(observation.relation) ||
-		!PerceptionAssembler::isValidActorObservation(observation))
+		!isValidTeamRelation(observation.relation) || !PerceptionAssembler::isValidActorObservation(observation))
 		return PerceptionInputResult::InvalidObservation;
 	for (std::size_t index = 0U; index < actorCount_; ++index)
 		if (actors_[index].actor.slot == observation.actor.slot)
@@ -99,12 +88,10 @@ PerceptionInputResult PerceptionInput::addActor(
 	return PerceptionInputResult::Accepted;
 }
 
-PerceptionInputResult PerceptionInput::addEntity(
-	const world::EntityObservation &observation)
+PerceptionInputResult PerceptionInput::addEntity(const world::EntityObservation &observation)
 {
 	if (!observation.entity.isValid() || !isValidObservationState(observation.state) ||
-		!isValidEntityKind(observation.kind) ||
-		!PerceptionAssembler::isValidEntityObservation(observation))
+		!isValidEntityKind(observation.kind) || !PerceptionAssembler::isValidEntityObservation(observation))
 		return PerceptionInputResult::InvalidObservation;
 	for (std::size_t index = 0U; index < entityCount_; ++index)
 		if (entities_[index].entity.id == observation.entity.id)
@@ -115,8 +102,7 @@ PerceptionInputResult PerceptionInput::addEntity(
 	return PerceptionInputResult::Accepted;
 }
 
-PerceptionInputResult PerceptionInput::addSound(
-	const world::AudibleEvent &sound)
+PerceptionInputResult PerceptionInput::addSound(const world::AudibleEvent &sound)
 {
 	if (!PerceptionAssembler::isValidSound(sound))
 		return PerceptionInputResult::InvalidObservation;
@@ -142,31 +128,49 @@ PerceptionInputResult PerceptionInput::addEvent(const PerceptionEvent &event)
 	return PerceptionInputResult::Accepted;
 }
 
-std::size_t PerceptionInput::actorCount() const { return actorCount_; }
+std::size_t PerceptionInput::actorCount() const
+{
+	return actorCount_;
+}
+
 const world::ActorObservation *PerceptionInput::actorAt(std::size_t index) const
 {
 	return index < actorCount_ ? &actors_[index] : nullptr;
 }
-std::size_t PerceptionInput::entityCount() const { return entityCount_; }
+
+std::size_t PerceptionInput::entityCount() const
+{
+	return entityCount_;
+}
+
 const world::EntityObservation *PerceptionInput::entityAt(std::size_t index) const
 {
 	return index < entityCount_ ? &entities_[index] : nullptr;
 }
-std::size_t PerceptionInput::soundCount() const { return soundCount_; }
+
+std::size_t PerceptionInput::soundCount() const
+{
+	return soundCount_;
+}
+
 const world::AudibleEvent *PerceptionInput::soundAt(std::size_t index) const
 {
 	return index < soundCount_ ? &sounds_[index] : nullptr;
 }
-std::size_t PerceptionInput::eventCount() const { return eventCount_; }
+
+std::size_t PerceptionInput::eventCount() const
+{
+	return eventCount_;
+}
+
 const PerceptionEvent *PerceptionInput::eventAt(std::size_t index) const
 {
 	return index < eventCount_ ? &events_[index] : nullptr;
 }
 
 PerceptionAssemblerConfig::PerceptionAssemblerConfig()
-	: maximumObservationAgeTicks(64U), maximumMemoryAgeTicks(256U),
-	  maximumNoiseAgeTicks(600U), noiseReactionDelayTicks(8U),
-	  maximumHearingDistance(2000U)
+	: maximumObservationAgeTicks(64U), maximumMemoryAgeTicks(256U), maximumNoiseAgeTicks(600U),
+	  noiseReactionDelayTicks(8U), maximumHearingDistance(2000U)
 {
 }
 
@@ -180,16 +184,15 @@ bool PerceptionAssemblerConfig::isValid() const
 }
 
 PerceptionAssembler::PerceptionAssembler()
-	: config_(), memory_(), snapshot_(), lastIdentity_(), traceSink_(nullptr),
-	  traceSequence_(0U), hasPublished_(false)
+	: config_(), memory_(), snapshot_(), lastIdentity_(), traceSink_(nullptr), traceSequence_(0U), hasPublished_(false)
 {
 	for (MemoryRecord &record : memory_)
 		clearMemory(&record);
 }
 
 PerceptionAssembler::PerceptionAssembler(const PerceptionAssemblerConfig &config)
-	: config_(config), memory_(), snapshot_(), lastIdentity_(), traceSink_(nullptr),
-	  traceSequence_(0U), hasPublished_(false)
+	: config_(config), memory_(), snapshot_(), lastIdentity_(), traceSink_(nullptr), traceSequence_(0U),
+	  hasPublished_(false)
 {
 	for (MemoryRecord &record : memory_)
 		clearMemory(&record);
@@ -197,51 +200,48 @@ PerceptionAssembler::PerceptionAssembler(const PerceptionAssemblerConfig &config
 
 bool PerceptionAssembler::isFiniteVector(const world::WorldVector &value)
 {
-	return std::isfinite(value.x) && std::isfinite(value.y) &&
-		std::isfinite(value.z);
+	return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
 }
 
-bool PerceptionAssembler::isBoundedVector(
-	const world::WorldVector &value, float limit)
+bool PerceptionAssembler::isBoundedVector(const world::WorldVector &value, float limit)
 {
-	return isFiniteVector(value) && std::fabs(value.x) <= limit &&
-		std::fabs(value.y) <= limit && std::fabs(value.z) <= limit;
+	return isFiniteVector(value) && std::fabs(value.x) <= limit && std::fabs(value.y) <= limit &&
+		std::fabs(value.z) <= limit;
 }
 
 bool PerceptionAssembler::isValidObservationState(world::ObservationState state)
 {
 	return ::astrabot::perception::isValidObservationState(state);
 }
+
 bool PerceptionAssembler::isValidTeamRelation(world::TeamRelation relation)
 {
 	return ::astrabot::perception::isValidTeamRelation(relation);
 }
+
 bool PerceptionAssembler::isValidEntityKind(world::EntityKind kind)
 {
 	return ::astrabot::perception::isValidEntityKind(kind);
 }
+
 bool PerceptionAssembler::isValidSoundKind(world::SoundKind kind)
 {
 	return ::astrabot::perception::isValidSoundKind(kind);
 }
 
-bool PerceptionAssembler::isValidActorObservation(
-	const world::ActorObservation &observation)
+bool PerceptionAssembler::isValidActorObservation(const world::ActorObservation &observation)
 {
 	return isFiniteVector(observation.position) &&
 		isBoundedVector(observation.position, world::WorldLimits::kMaximumCoordinate) &&
 		isFiniteVector(observation.velocity) &&
 		isBoundedVector(observation.velocity, world::WorldLimits::kMaximumVelocity) &&
-		std::isfinite(observation.viewPitch) &&
-		std::fabs(observation.viewPitch) <= world::WorldLimits::kMaximumAngle &&
-		std::isfinite(observation.viewYaw) &&
-		std::fabs(observation.viewYaw) <= world::WorldLimits::kMaximumAngle &&
+		std::isfinite(observation.viewPitch) && std::fabs(observation.viewPitch) <= world::WorldLimits::kMaximumAngle &&
+		std::isfinite(observation.viewYaw) && std::fabs(observation.viewYaw) <= world::WorldLimits::kMaximumAngle &&
 		std::isfinite(observation.confidence.value) &&
 		observation.confidence.ageTicks <= world::WorldLimits::kMaximumAgeTicks;
 }
 
-bool PerceptionAssembler::isValidEntityObservation(
-	const world::EntityObservation &observation)
+bool PerceptionAssembler::isValidEntityObservation(const world::EntityObservation &observation)
 {
 	return isBoundedVector(observation.position, world::WorldLimits::kMaximumCoordinate) &&
 		isBoundedVector(observation.velocity, world::WorldLimits::kMaximumVelocity) &&
@@ -254,10 +254,8 @@ bool PerceptionAssembler::isValidSound(const world::AudibleEvent &sound)
 	return sound.id != 0U && isBoundedVector(sound.origin, world::WorldLimits::kMaximumCoordinate) &&
 		std::isfinite(sound.loudness) && sound.loudness >= 0.0f && sound.loudness <= 1.0f &&
 		std::isfinite(sound.distance) && sound.distance >= 0.0f &&
-		sound.distance <= world::WorldLimits::kMaximumCoordinate &&
-		std::isfinite(sound.confidence.value) &&
-		sound.confidence.ageTicks <= world::WorldLimits::kMaximumAgeTicks &&
-		isValidSoundKind(sound.kind);
+		sound.distance <= world::WorldLimits::kMaximumCoordinate && std::isfinite(sound.confidence.value) &&
+		sound.confidence.ageTicks <= world::WorldLimits::kMaximumAgeTicks && isValidSoundKind(sound.kind);
 }
 
 float PerceptionAssembler::normalizeConfidence(float value)
@@ -270,14 +268,12 @@ std::size_t PerceptionAssembler::actorIndex(const world::ActorKey &actor)
 	return static_cast<std::size_t>(actor.slot - 1U);
 }
 
-bool PerceptionAssembler::sameFrame(
-	const world::FrameIdentity &left, const world::FrameIdentity &right)
+bool PerceptionAssembler::sameFrame(const world::FrameIdentity &left, const world::FrameIdentity &right)
 {
 	return left == right;
 }
 
-bool PerceptionAssembler::isFrameAfter(
-	const world::FrameIdentity &candidate, const world::FrameIdentity &current)
+bool PerceptionAssembler::isFrameAfter(const world::FrameIdentity &candidate, const world::FrameIdentity &current)
 {
 	if (candidate.mapGeneration != current.mapGeneration)
 		return candidate.mapGeneration > current.mapGeneration;
@@ -341,8 +337,7 @@ void PerceptionAssembler::clearNoise(world::NoiseMemory *noise)
 	noise->priority = world::NoisePriority::Low;
 }
 
-PerceptionResult PerceptionAssembler::validateInput(
-	const PerceptionInput &input) const
+PerceptionResult PerceptionAssembler::validateInput(const PerceptionInput &input) const
 {
 	if (!config_.isValid())
 		return PerceptionResult::InvalidConfig;
@@ -351,10 +346,8 @@ PerceptionResult PerceptionAssembler::validateInput(
 	for (std::size_t index = 0U; index < input.actorCount(); ++index)
 	{
 		const world::ActorObservation *observation = input.actorAt(index);
-		if (observation == nullptr || !observation->actor.isValid() ||
-			!isValidObservationState(observation->state) ||
-			!isValidTeamRelation(observation->relation) ||
-			!isValidActorObservation(*observation))
+		if (observation == nullptr || !observation->actor.isValid() || !isValidObservationState(observation->state) ||
+			!isValidTeamRelation(observation->relation) || !isValidActorObservation(*observation))
 			return PerceptionResult::InvalidObservation;
 		if (observation->confidence.ageTicks > config_.maximumObservationAgeTicks)
 			return PerceptionResult::StaleObservation;
@@ -362,10 +355,8 @@ PerceptionResult PerceptionAssembler::validateInput(
 	for (std::size_t index = 0U; index < input.entityCount(); ++index)
 	{
 		const world::EntityObservation *observation = input.entityAt(index);
-		if (observation == nullptr || !observation->entity.isValid() ||
-			!isValidObservationState(observation->state) ||
-			!isValidEntityKind(observation->kind) ||
-			!isValidEntityObservation(*observation))
+		if (observation == nullptr || !observation->entity.isValid() || !isValidObservationState(observation->state) ||
+			!isValidEntityKind(observation->kind) || !isValidEntityObservation(*observation))
 			return PerceptionResult::InvalidObservation;
 		if (observation->confidence.ageTicks > config_.maximumObservationAgeTicks)
 			return PerceptionResult::StaleObservation;
@@ -388,8 +379,7 @@ PerceptionResult PerceptionAssembler::validateInput(
 }
 
 void PerceptionAssembler::advanceMemory(
-	std::array<MemoryRecord, world::WorldLimits::kMaximumActors> *memory,
-	const world::FrameIdentity &frame) const
+	std::array<MemoryRecord, world::WorldLimits::kMaximumActors> *memory, const world::FrameIdentity &frame) const
 {
 	if (memory == nullptr)
 		return;
@@ -397,8 +387,8 @@ void PerceptionAssembler::advanceMemory(
 	{
 		if (!record.active || record.state != world::MemoryState::Remembered)
 			continue;
-		const std::uint64_t age = static_cast<std::uint64_t>(record.confidence.ageTicks) +
-			elapsedTicks(frame, record.lastFrame);
+		const std::uint64_t age =
+			static_cast<std::uint64_t>(record.confidence.ageTicks) + elapsedTicks(frame, record.lastFrame);
 		if (age > config_.maximumMemoryAgeTicks)
 		{
 			record.confidence.ageTicks = world::WorldLimits::kMaximumAgeTicks;
@@ -409,10 +399,8 @@ void PerceptionAssembler::advanceMemory(
 	}
 }
 
-void PerceptionAssembler::updateMemory(
-	std::array<MemoryRecord, world::WorldLimits::kMaximumActors> *memory,
-	const world::ActorObservation &observation,
-	const world::FrameIdentity &frame) const
+void PerceptionAssembler::updateMemory(std::array<MemoryRecord, world::WorldLimits::kMaximumActors> *memory,
+	const world::ActorObservation &observation, const world::FrameIdentity &frame) const
 {
 	if (memory == nullptr || !observation.actor.isValid())
 		return;
@@ -433,14 +421,12 @@ void PerceptionAssembler::updateMemory(
 	record.lastSeenFrame = frame;
 }
 
-void PerceptionAssembler::advanceNoise(
-	world::NoiseMemory *noise, const world::FrameIdentity &frame) const
+void PerceptionAssembler::advanceNoise(world::NoiseMemory *noise, const world::FrameIdentity &frame) const
 {
 	if (noise == nullptr || !noise->active)
 		return;
-	const std::uint32_t age = frame.tick >= noise->timestampTick
-		? frame.tick - noise->timestampTick
-		: (std::numeric_limits<std::uint32_t>::max)();
+	const std::uint32_t age = frame.tick >= noise->timestampTick ? frame.tick - noise->timestampTick
+																 : (std::numeric_limits<std::uint32_t>::max)();
 	if (age > config_.maximumNoiseAgeTicks)
 	{
 		clearNoise(noise);
@@ -450,25 +436,21 @@ void PerceptionAssembler::advanceNoise(
 	noise->confidence.ageTicks = age;
 }
 
-void PerceptionAssembler::updateNoise(
-	world::NoiseMemory *noise, const world::AudibleEvent &sound,
+void PerceptionAssembler::updateNoise(world::NoiseMemory *noise, const world::AudibleEvent &sound,
 	const world::ActorKey &observer, const world::FrameIdentity &frame) const
 {
 	(void)observer;
 	if (noise == nullptr || sound.distance > static_cast<float>(config_.maximumHearingDistance))
 		return;
-	const std::uint32_t soundTick = sound.timestampTick == 0U
-		? frame.tick : sound.timestampTick;
+	const std::uint32_t soundTick = sound.timestampTick == 0U ? frame.tick : sound.timestampTick;
 	if (noise->active)
 	{
-		const std::uint32_t age = frame.tick >= noise->timestampTick
-			? frame.tick - noise->timestampTick
-			: (std::numeric_limits<std::uint32_t>::max)();
+		const std::uint32_t age = frame.tick >= noise->timestampTick ? frame.tick - noise->timestampTick
+																	 : (std::numeric_limits<std::uint32_t>::max)();
 		const std::uint32_t shortTermTicks = 90U;
 		if (age < shortTermTicks)
 		{
-			if (static_cast<std::uint8_t>(sound.priority) <
-				static_cast<std::uint8_t>(noise->priority))
+			if (static_cast<std::uint8_t>(sound.priority) < static_cast<std::uint8_t>(noise->priority))
 				return;
 			if (sound.priority == noise->priority && sound.distance >= noise->distance)
 				return;
@@ -486,13 +468,10 @@ void PerceptionAssembler::updateNoise(
 	noise->positionApproximated = true;
 }
 
-void PerceptionAssembler::applyEvent(
-	std::array<MemoryRecord, world::WorldLimits::kMaximumActors> *memory,
-	world::NoiseMemory *noise, const PerceptionEvent &event,
-	const world::FrameIdentity &frame) const
+void PerceptionAssembler::applyEvent(std::array<MemoryRecord, world::WorldLimits::kMaximumActors> *memory,
+	world::NoiseMemory *noise, const PerceptionEvent &event, const world::FrameIdentity &frame) const
 {
-	if (event.type == world::PerceptionEventType::RoundStart ||
-		event.type == world::PerceptionEventType::RoundEnd)
+	if (event.type == world::PerceptionEventType::RoundStart || event.type == world::PerceptionEventType::RoundEnd)
 	{
 		if (memory != nullptr)
 			for (MemoryRecord &record : *memory)
@@ -528,8 +507,7 @@ void PerceptionAssembler::emit(const PerceptionTraceRecord &record) const
 	traceSink_->record(value);
 }
 
-PerceptionResult PerceptionAssembler::publish(
-	const PerceptionInput &input, world::WorldSnapshot *snapshot)
+PerceptionResult PerceptionAssembler::publish(const PerceptionInput &input, world::WorldSnapshot *snapshot)
 {
 	if (snapshot == nullptr)
 		return PerceptionResult::InvalidArgument;
@@ -547,7 +525,7 @@ PerceptionResult PerceptionAssembler::publish(
 	world::NoiseMemory candidateNoise = snapshot_.noise();
 	if (hasPublished_ &&
 		(input.identity().frame.mapGeneration != lastIdentity_.frame.mapGeneration ||
-		 input.identity().frame.roundGeneration != lastIdentity_.frame.roundGeneration))
+			input.identity().frame.roundGeneration != lastIdentity_.frame.roundGeneration))
 	{
 		for (MemoryRecord &record : candidateMemory)
 			clearMemory(&record);
@@ -580,8 +558,7 @@ PerceptionResult PerceptionAssembler::publish(
 	for (std::size_t index = 0U; index < input.actorCount(); ++index)
 	{
 		candidate.actors_[index] = *input.actorAt(index);
-		candidate.actors_[index].confidence.value = normalizeConfidence(
-			candidate.actors_[index].confidence.value);
+		candidate.actors_[index].confidence.value = normalizeConfidence(candidate.actors_[index].confidence.value);
 		candidate.actors_[index].memory = {};
 		if (candidate.actors_[index].state != world::ObservationState::ObservedPresent)
 		{
@@ -625,8 +602,7 @@ PerceptionResult PerceptionAssembler::publish(
 	for (std::size_t index = 0U; index < input.entityCount(); ++index)
 	{
 		candidate.entities_[index] = *input.entityAt(index);
-		candidate.entities_[index].confidence.value = normalizeConfidence(
-			candidate.entities_[index].confidence.value);
+		candidate.entities_[index].confidence.value = normalizeConfidence(candidate.entities_[index].confidence.value);
 		if (candidate.entities_[index].state != world::ObservationState::ObservedPresent)
 		{
 			candidate.entities_[index].position = {};
@@ -638,13 +614,11 @@ PerceptionResult PerceptionAssembler::publish(
 	for (std::size_t index = 0U; index < input.soundCount(); ++index)
 	{
 		candidate.sounds_[index] = *input.soundAt(index);
-		candidate.sounds_[index].confidence.value = normalizeConfidence(
-			candidate.sounds_[index].confidence.value);
+		candidate.sounds_[index].confidence.value = normalizeConfidence(candidate.sounds_[index].confidence.value);
 		if (candidate.sounds_[index].timestampTick == 0U)
 			candidate.sounds_[index].timestampTick = input.identity().frame.tick;
 		const world::NoiseMemory beforeNoise = candidateNoise;
-		updateNoise(&candidateNoise, candidate.sounds_[index], input.identity().observer,
-			input.identity().frame);
+		updateNoise(&candidateNoise, candidate.sounds_[index], input.identity().observer, input.identity().frame);
 		PerceptionTraceRecord noise = {};
 		noise.kind = PerceptionTraceKind::Noise;
 		noise.actor = input.identity().observer;
@@ -653,11 +627,10 @@ PerceptionResult PerceptionAssembler::publish(
 		noise.noisePriority = candidate.sounds_[index].priority;
 		noise.position = candidate.sounds_[index].origin;
 		noise.hasPosition = true;
-		noise.heard = candidateNoise.active &&
-			(candidateNoise.timestampTick == candidate.sounds_[index].timestampTick);
+		noise.heard = candidateNoise.active && (candidateNoise.timestampTick == candidate.sounds_[index].timestampTick);
 		noise.rejected = !noise.heard ||
 			(beforeNoise.active && candidateNoise.timestampTick == beforeNoise.timestampTick &&
-			 candidateNoise.kind == beforeNoise.kind);
+				candidateNoise.kind == beforeNoise.kind);
 		emit(noise);
 	}
 
@@ -695,8 +668,19 @@ PerceptionResult PerceptionAssembler::invalidateActor(const world::ActorKey &act
 	return PerceptionResult::Invalidated;
 }
 
-const PerceptionAssemblerConfig &PerceptionAssembler::config() const { return config_; }
-const world::WorldSnapshot &PerceptionAssembler::snapshot() const { return snapshot_; }
-void PerceptionAssembler::setTraceSink(IPerceptionTraceSink *sink) { traceSink_ = sink; }
+const PerceptionAssemblerConfig &PerceptionAssembler::config() const
+{
+	return config_;
+}
+
+const world::WorldSnapshot &PerceptionAssembler::snapshot() const
+{
+	return snapshot_;
+}
+
+void PerceptionAssembler::setTraceSink(IPerceptionTraceSink *sink)
+{
+	traceSink_ = sink;
+}
 }
 }

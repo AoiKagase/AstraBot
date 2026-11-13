@@ -10,10 +10,17 @@ namespace astrabot
 {
 namespace objectives
 {
+namespace bomb_approach_detail
+{
+constexpr float kMinimumPlantDelaySeconds = 10.0f;
+constexpr float kMaximumPlantDelaySeconds = 30.0f;
+constexpr float kPlantTimeReserveSeconds = 5.0f;
+}
 inline bool isBetterBombSiteRoute(float candidatePathCost, float selectedPathCost) noexcept
 {
 	return std::isfinite(candidatePathCost) && candidatePathCost >= 0.0f && candidatePathCost < selectedPathCost;
 }
+
 // A bounded preplant move. This deliberately does not reproduce whole-map Hunt.
 // Identity belongs to the actual carrier and round, not assignment generations.
 struct BombApproachState
@@ -53,10 +60,12 @@ struct RoundPlantDecision
 		{
 			return;
 		}
-		const auto delay = random.nextFloat(compat::RandomRequest::floatRequest(
-			"Bomb.RoundPlantDelay", {}, {0U, 0U, round}, 10.0f, 30.0f));
+		const auto delay =
+			random.nextFloat(compat::RandomRequest::floatRequest("Bomb.RoundPlantDelay", {}, {0U, 0U, round},
+				bomb_approach_detail::kMinimumPlantDelaySeconds, bomb_approach_detail::kMaximumPlantDelaySeconds));
 		known = delay.status == compat::RandomStatus::Ok && std::isfinite(delay.value) &&
-			delay.value >= 10.0f && delay.value <= 30.0f;
+			delay.value >= bomb_approach_detail::kMinimumPlantDelaySeconds &&
+			delay.value <= bomb_approach_detail::kMaximumPlantDelaySeconds;
 		if (known)
 		{
 			plantAt = restartTime + delay.value;
@@ -72,9 +81,8 @@ enum class BombApproachPhase
 };
 
 inline void beginBombApproach(BombApproachState *state, std::uint32_t mapGeneration, std::uint32_t roundGeneration,
-							  compat::RandomActor actor, float now, float roundStartTime, float roundRemaining,
-							  float nearestRouteSeconds, compat::ICompatibilityRandomSource *random,
-							  compat::RandomTimingContext timing)
+	compat::RandomActor actor, float now, float roundStartTime, float roundRemaining, float nearestRouteSeconds,
+	compat::ICompatibilityRandomSource *random, compat::RandomTimingContext timing)
 {
 	if (state == nullptr)
 		return;
@@ -92,20 +100,22 @@ inline void beginBombApproach(BombApproachState *state, std::uint32_t mapGenerat
 	// Keep travel plus plant time available; missing authority fails to nearest.
 	if (!std::isfinite(now) || !std::isfinite(roundStartTime) || !std::isfinite(roundRemaining) ||
 		!std::isfinite(nearestRouteSeconds) || nearestRouteSeconds < 0.0f || random == nullptr ||
-		roundRemaining <= 30.0f + nearestRouteSeconds + 5.0f)
+		roundRemaining <= bomb_approach_detail::kMaximumPlantDelaySeconds + nearestRouteSeconds +
+				bomb_approach_detail::kPlantTimeReserveSeconds)
 		return;
-	const compat::RandomRequest request =
-		compat::RandomRequest::floatRequest("Bomb.PreplantDelay", actor, timing, 10.0f, 30.0f);
+	const compat::RandomRequest request = compat::RandomRequest::floatRequest("Bomb.PreplantDelay", actor, timing,
+		bomb_approach_detail::kMinimumPlantDelaySeconds, bomb_approach_detail::kMaximumPlantDelaySeconds);
 	const compat::RandomFloatResult delay = random->nextFloat(request);
-	if (delay.status != compat::RandomStatus::Ok || !std::isfinite(delay.value) || delay.value < 10.0f ||
-		delay.value > 30.0f)
+	if (delay.status != compat::RandomStatus::Ok || !std::isfinite(delay.value) ||
+		delay.value < bomb_approach_detail::kMinimumPlantDelaySeconds ||
+		delay.value > bomb_approach_detail::kMaximumPlantDelaySeconds)
 		return;
 	state->plantAt = roundStartTime + delay.value;
 	state->finished = !std::isfinite(state->plantAt) || now >= state->plantAt;
 }
 
 inline BombApproachPhase bombApproachPhase(BombApproachState *state, float now, float roundRemaining,
-										   float nearestRouteSeconds, bool carrying, bool planted, bool atSite)
+	float nearestRouteSeconds, bool carrying, bool planted, bool atSite)
 {
 	if (state == nullptr || !carrying || planted)
 	{
@@ -116,7 +126,8 @@ inline BombApproachPhase bombApproachPhase(BombApproachState *state, float now, 
 	if (!state->initialized || state->finished)
 		return BombApproachPhase::Plant;
 	if (atSite || !std::isfinite(now) || !std::isfinite(roundRemaining) || !std::isfinite(nearestRouteSeconds) ||
-		nearestRouteSeconds < 0.0f || now >= state->plantAt || roundRemaining <= nearestRouteSeconds + 5.0f)
+		nearestRouteSeconds < 0.0f || now >= state->plantAt ||
+		roundRemaining <= nearestRouteSeconds + bomb_approach_detail::kPlantTimeReserveSeconds)
 	{
 		state->finished = true;
 		return BombApproachPhase::Plant;
@@ -127,8 +138,7 @@ inline BombApproachPhase bombApproachPhase(BombApproachState *state, float now, 
 // Return the supplied array index; count is the no-reachable-site sentinel.
 // Selection is sampled once by the caller and kept in BombApproachState.
 inline std::size_t chooseBombApproachSite(const float *costs, std::size_t count,
-										  compat::ICompatibilityRandomSource *random, compat::RandomActor actor,
-										  compat::RandomTimingContext timing)
+	compat::ICompatibilityRandomSource *random, compat::RandomActor actor, compat::RandomTimingContext timing)
 {
 	if (costs == nullptr)
 		return count;
@@ -148,8 +158,8 @@ inline std::size_t chooseBombApproachSite(const float *costs, std::size_t count,
 	if (reachable <= 1U || random == nullptr ||
 		reachable > static_cast<std::size_t>((std::numeric_limits<std::int32_t>::max)()))
 		return nearest;
-	const compat::RandomRequest request = compat::RandomRequest::longRequest("Bomb.PreplantSite", actor, timing, 0,
-																			 static_cast<std::int32_t>(reachable - 1U));
+	const compat::RandomRequest request = compat::RandomRequest::longRequest(
+		"Bomb.PreplantSite", actor, timing, 0, static_cast<std::int32_t>(reachable - 1U));
 	const compat::RandomLongResult choice = random->nextLong(request);
 	if (choice.status != compat::RandomStatus::Ok || choice.value < 0 ||
 		static_cast<std::size_t>(choice.value) >= reachable)

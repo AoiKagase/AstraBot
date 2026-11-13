@@ -13,72 +13,47 @@ constexpr float kMinimumHeight = 0.0f;
 
 bool isValidKind(SpecialTraversalKind kind)
 {
-	return kind == SpecialTraversalKind::Ladder ||
-		kind == SpecialTraversalKind::Door ||
+	return kind == SpecialTraversalKind::Ladder || kind == SpecialTraversalKind::Door ||
 		kind == SpecialTraversalKind::NarrowPassage;
 }
 
 bool isValidAvailability(SpecialTraversalAvailability availability)
 {
 	return availability == SpecialTraversalAvailability::Unknown ||
-		availability == SpecialTraversalAvailability::Closed ||
-		availability == SpecialTraversalAvailability::Open;
+		availability == SpecialTraversalAvailability::Closed || availability == SpecialTraversalAvailability::Open;
 }
 
 bool isValidPosture(SpecialTraversalPosture posture)
 {
-	return posture == SpecialTraversalPosture::Standing ||
-		posture == SpecialTraversalPosture::Crouching;
+	return posture == SpecialTraversalPosture::Standing || posture == SpecialTraversalPosture::Crouching;
 }
 }
 
-SpecialTraversalController::SpecialTraversalController() :
-	config_{
-		SpecialTraversalConfig::kDefaultPositionTolerance,
-		SpecialTraversalConfig::kDefaultSpeed,
-		SpecialTraversalConfig::kDefaultTraversalFrames,
-		SpecialTraversalConfig::kDefaultNoProgressSamples,
-		SpecialTraversalConfig::kDefaultMinimumProgressDistance
-	},
-	capability_{},
-	firstNextArea_(0U),
-	navRevision_(0U),
-	mapGeneration_(0U),
-	actorGeneration_(0U),
-	startFrame_(0U),
-	noProgressSamples_(0U),
-	lastPosition_{0.0f, 0.0f, 0.0f},
-	state_(SpecialTraversalState::Idle),
-	failureReason_(SpecialTraversalFailureReason::None),
-	hasStartFrame_(false),
-	hasLastPosition_(false),
-	active_(false)
+SpecialTraversalController::SpecialTraversalController()
+	: config_{SpecialTraversalConfig::kDefaultPositionTolerance, SpecialTraversalConfig::kDefaultSpeed,
+		  SpecialTraversalConfig::kDefaultTraversalFrames, SpecialTraversalConfig::kDefaultNoProgressSamples,
+		  SpecialTraversalConfig::kDefaultMinimumProgressDistance},
+
+	  capability_{}, firstNextArea_(0U), navRevision_(0U), mapGeneration_(0U), actorGeneration_(0U), startFrame_(0U),
+	  noProgressSamples_(0U), lastPosition_{0.0f, 0.0f, 0.0f}, state_(SpecialTraversalState::Idle),
+
+	  failureReason_(SpecialTraversalFailureReason::None), hasStartFrame_(false), hasLastPosition_(false),
+	  active_(false)
 {
 }
 
-SpecialTraversalController::SpecialTraversalController(
-	const SpecialTraversalConfig &config) :
-	config_(config),
-	capability_{},
-	firstNextArea_(0U),
-	navRevision_(0U),
-	mapGeneration_(0U),
-	actorGeneration_(0U),
-	startFrame_(0U),
-	noProgressSamples_(0U),
-	lastPosition_{0.0f, 0.0f, 0.0f},
-	state_(SpecialTraversalState::Idle),
-	failureReason_(SpecialTraversalFailureReason::None),
-	hasStartFrame_(false),
-	hasLastPosition_(false),
-	active_(false)
+SpecialTraversalController::SpecialTraversalController(const SpecialTraversalConfig &config)
+	: config_(config), capability_{}, firstNextArea_(0U), navRevision_(0U), mapGeneration_(0U), actorGeneration_(0U),
+
+	  startFrame_(0U), noProgressSamples_(0U), lastPosition_{0.0f, 0.0f, 0.0f}, state_(SpecialTraversalState::Idle),
+
+	  failureReason_(SpecialTraversalFailureReason::None), hasStartFrame_(false), hasLastPosition_(false),
+	  active_(false)
 {
 }
 
 SpecialTraversalResult SpecialTraversalController::start(
-	const NavCorridor &corridor,
-	const SpecialTraversalCapability &capability,
-	std::uint32_t actorGeneration)
+	const NavCorridor &corridor, const SpecialTraversalCapability &capability, std::uint32_t actorGeneration)
 {
 	active_ = false;
 	hasStartFrame_ = false;
@@ -94,14 +69,13 @@ SpecialTraversalResult SpecialTraversalController::start(
 	{
 		return SpecialTraversalResult::InvalidArgument;
 	}
-	if (!corridor.isValid() || corridor.areas.size() < 2U)
+	constexpr auto kMinimumCorridorAreaCount = 2U;
+	if (!corridor.isValid() || corridor.areas.size() < kMinimumCorridorAreaCount)
 	{
 		return SpecialTraversalResult::InvalidCorridor;
 	}
-	if (!isValidCapability(capability) ||
-		capability.entry.area != corridor.areas.front() ||
-		capability.exit.area != corridor.areas.back() ||
-		capability.entry.area == capability.exit.area)
+	if (!isValidCapability(capability) || capability.entry.area != corridor.areas.front() ||
+		capability.exit.area != corridor.areas.back() || capability.entry.area == capability.exit.area)
 	{
 		return SpecialTraversalResult::InvalidCapability;
 	}
@@ -117,9 +91,7 @@ SpecialTraversalResult SpecialTraversalController::start(
 }
 
 SpecialTraversalResult SpecialTraversalController::update(
-	const NavSnapshot &snapshot,
-	const SpecialTraversalObservation &observation,
-	SpecialTraversalIntent *intent)
+	const NavSnapshot &snapshot, const SpecialTraversalObservation &observation, SpecialTraversalIntent *intent)
 {
 	if (intent == nullptr)
 	{
@@ -136,8 +108,7 @@ SpecialTraversalResult SpecialTraversalController::update(
 		state_ = SpecialTraversalState::Recovering;
 		return SpecialTraversalResult::InvalidSnapshot;
 	}
-	if (snapshot.revision() != navRevision_ ||
-		snapshot.mapGeneration() != mapGeneration_ ||
+	if (snapshot.revision() != navRevision_ || snapshot.mapGeneration() != mapGeneration_ ||
 		observation.actorGeneration != actorGeneration_)
 	{
 		active_ = false;
@@ -151,9 +122,8 @@ SpecialTraversalResult SpecialTraversalController::update(
 	{
 		active_ = false;
 		state_ = SpecialTraversalState::Recovering;
-		return !observationValid ?
-			SpecialTraversalResult::InvalidObservation :
-			SpecialTraversalResult::InvalidCapability;
+		return !observationValid ? SpecialTraversalResult::InvalidObservation
+								 : SpecialTraversalResult::InvalidCapability;
 	}
 	if (!hasStartFrame_)
 	{
@@ -171,49 +141,40 @@ SpecialTraversalResult SpecialTraversalController::update(
 			state_ = SpecialTraversalState::Recovering;
 			return SpecialTraversalResult::InvalidObservation;
 		}
-		if (observation.frame - startFrame_ >
-				config_.maximumTraversalFrames)
+		if (observation.frame - startFrame_ > config_.maximumTraversalFrames)
 		{
 			active_ = false;
 			state_ = SpecialTraversalState::Recovering;
 			return SpecialTraversalResult::TimedOut;
 		}
-		const float progress = horizontalDistance(
-			observation.position, lastPosition_);
+		const float progress = horizontalDistance(observation.position, lastPosition_);
 		if (progress < config_.minimumProgressDistance)
 		{
-			noProgressSamples_ = std::min(
-				config_.maximumNoProgressSamples,
-				noProgressSamples_ + 1U);
+			noProgressSamples_ = std::min(config_.maximumNoProgressSamples, noProgressSamples_ + 1U);
 		}
 		else
 		{
 			noProgressSamples_ = 0U;
 		}
 		lastPosition_ = observation.position;
-		if (noProgressSamples_ >=
-				config_.maximumNoProgressSamples)
+		if (noProgressSamples_ >= config_.maximumNoProgressSamples)
 		{
 			return recover(SpecialTraversalFailureReason::NoProgress);
 		}
 	}
 
-	SpecialTraversalPosture posture =
-		SpecialTraversalPosture::Standing;
+	SpecialTraversalPosture posture = SpecialTraversalPosture::Standing;
 	if (!selectPosture(observation, &posture))
 	{
 		return recover(SpecialTraversalFailureReason::InsufficientClearance);
 	}
 	if (capability_.kind == SpecialTraversalKind::Door)
 	{
-		if (observation.availability ==
-				SpecialTraversalAvailability::Unknown)
+		if (observation.availability == SpecialTraversalAvailability::Unknown)
 		{
-			return recover(
-				SpecialTraversalFailureReason::UnknownAvailability);
+			return recover(SpecialTraversalFailureReason::UnknownAvailability);
 		}
-		if (observation.availability ==
-				SpecialTraversalAvailability::Closed)
+		if (observation.availability == SpecialTraversalAvailability::Closed)
 		{
 			return recover(SpecialTraversalFailureReason::Unavailable);
 		}
@@ -251,76 +212,49 @@ SpecialTraversalFailureReason SpecialTraversalController::failureReason() const
 	return failureReason_;
 }
 
-bool SpecialTraversalController::isValidConfig(
-	const SpecialTraversalConfig &config)
+bool SpecialTraversalController::isValidConfig(const SpecialTraversalConfig &config)
 {
-	return std::isfinite(config.positionTolerance) &&
-		config.positionTolerance >= 0.0f &&
-		config.positionTolerance <= SpecialTraversalConfig::kMaximumTolerance &&
-		std::isfinite(config.maximumSpeed) &&
-		config.maximumSpeed > 0.0f &&
-		config.maximumSpeed <= SpecialTraversalConfig::kMaximumSpeed &&
+	return std::isfinite(config.positionTolerance) && config.positionTolerance >= 0.0f &&
+		config.positionTolerance <= SpecialTraversalConfig::kMaximumTolerance && std::isfinite(config.maximumSpeed) &&
+		config.maximumSpeed > 0.0f && config.maximumSpeed <= SpecialTraversalConfig::kMaximumSpeed &&
 		config.maximumTraversalFrames != 0U &&
-		config.maximumTraversalFrames <=
-			SpecialTraversalConfig::kMaximumTraversalFrames &&
+		config.maximumTraversalFrames <= SpecialTraversalConfig::kMaximumTraversalFrames &&
 		config.maximumNoProgressSamples != 0U &&
-		config.maximumNoProgressSamples <=
-			SpecialTraversalConfig::kMaximumNoProgressSamples &&
-		std::isfinite(config.minimumProgressDistance) &&
-		config.minimumProgressDistance >= 0.0f &&
-		config.minimumProgressDistance <=
-			SpecialTraversalConfig::kMaximumTolerance;
+		config.maximumNoProgressSamples <= SpecialTraversalConfig::kMaximumNoProgressSamples &&
+		std::isfinite(config.minimumProgressDistance) && config.minimumProgressDistance >= 0.0f &&
+		config.minimumProgressDistance <= SpecialTraversalConfig::kMaximumTolerance;
 }
 
 bool SpecialTraversalController::isFiniteVector(const NavVector &value)
 {
-	return std::isfinite(value.x) &&
-		std::isfinite(value.y) &&
-		std::isfinite(value.z);
+	return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
 }
 
-bool SpecialTraversalController::isValidCapability(
-	const SpecialTraversalCapability &capability)
+bool SpecialTraversalController::isValidCapability(const SpecialTraversalCapability &capability)
 {
-	return isValidKind(capability.kind) &&
-		capability.entry.area != 0U &&
-		capability.exit.area != 0U &&
-		capability.sourceDirection < NavArea::kDirectionCount &&
-		isValidPosture(capability.minimumPosture) &&
-		isFiniteVector(capability.entry.position) &&
-		isFiniteVector(capability.exit.position) &&
-		std::isfinite(capability.requiredClearance) &&
-		capability.requiredClearance >= 0.0f &&
-		capability.requiredClearance <=
-			SpecialTraversalCapability::kMaximumRequiredClearance;
+	return isValidKind(capability.kind) && capability.entry.area != 0U && capability.exit.area != 0U &&
+		capability.sourceDirection < NavArea::kDirectionCount && isValidPosture(capability.minimumPosture) &&
+		isFiniteVector(capability.entry.position) && isFiniteVector(capability.exit.position) &&
+		std::isfinite(capability.requiredClearance) && capability.requiredClearance >= 0.0f &&
+		capability.requiredClearance <= SpecialTraversalCapability::kMaximumRequiredClearance;
 }
 
-bool SpecialTraversalController::isFiniteObservation(
-	const SpecialTraversalObservation &observation)
+bool SpecialTraversalController::isFiniteObservation(const SpecialTraversalObservation &observation)
 {
-	return observation.actorGeneration != 0U &&
-		isFiniteVector(observation.position) &&
-		std::isfinite(observation.standingClearance) &&
-		observation.standingClearance >= 0.0f &&
-		observation.standingClearance <=
-			SpecialTraversalCapability::kMaximumRequiredClearance &&
-		std::isfinite(observation.crouchingClearance) &&
-		observation.crouchingClearance >= 0.0f &&
-		observation.crouchingClearance <=
-			SpecialTraversalCapability::kMaximumRequiredClearance &&
+	return observation.actorGeneration != 0U && isFiniteVector(observation.position) &&
+		std::isfinite(observation.standingClearance) && observation.standingClearance >= 0.0f &&
+		observation.standingClearance <= SpecialTraversalCapability::kMaximumRequiredClearance &&
+		std::isfinite(observation.crouchingClearance) && observation.crouchingClearance >= 0.0f &&
+		observation.crouchingClearance <= SpecialTraversalCapability::kMaximumRequiredClearance &&
 		isValidAvailability(observation.availability);
 }
 
-float SpecialTraversalController::horizontalDistance(
-	const NavVector &from,
-	const NavVector &to)
+float SpecialTraversalController::horizontalDistance(const NavVector &from, const NavVector &to)
 {
 	return std::hypot(to.x - from.x, to.y - from.y);
 }
 
-float SpecialTraversalController::floorDistance(
-	const NavArea &area,
-	float height)
+float SpecialTraversalController::floorDistance(const NavArea &area, float height)
 {
 	const float low = std::min(area.northEastZ, area.southWestZ);
 	const float high = std::max(area.northEastZ, area.southWestZ);
@@ -336,32 +270,21 @@ float SpecialTraversalController::floorDistance(
 }
 
 bool SpecialTraversalController::isPointInArea(
-	const NavArea &area,
-	const SpecialTraversalPoint &point,
-	float verticalTolerance)
+	const NavArea &area, const SpecialTraversalPoint &point, float verticalTolerance)
 {
-	return point.position.x >= area.extent.lo.x &&
-		point.position.x <= area.extent.hi.x &&
-		point.position.y >= area.extent.lo.y &&
-		point.position.y <= area.extent.hi.y &&
+	return point.position.x >= area.extent.lo.x && point.position.x <= area.extent.hi.x &&
+		point.position.y >= area.extent.lo.y && point.position.y <= area.extent.hi.y &&
 		floorDistance(area, point.position.z) <= verticalTolerance;
 }
 
 bool SpecialTraversalController::isNearPoint(
-	const NavVector &position,
-	const SpecialTraversalPoint &point,
-	float tolerance)
+	const NavVector &position, const SpecialTraversalPoint &point, float tolerance)
 {
 	const float distance = horizontalDistance(position, point.position);
-	return std::isfinite(distance) &&
-		distance <= tolerance &&
-		std::fabs(position.z - point.position.z) <= tolerance;
+	return std::isfinite(distance) && distance <= tolerance && std::fabs(position.z - point.position.z) <= tolerance;
 }
 
-bool SpecialTraversalController::hasDirectedLink(
-	const NavArea &area,
-	std::uint8_t direction,
-	AreaId target)
+bool SpecialTraversalController::hasDirectedLink(const NavArea &area, std::uint8_t direction, AreaId target)
 {
 	for (const AreaId candidate : area.connections[direction])
 	{
@@ -373,8 +296,7 @@ bool SpecialTraversalController::hasDirectedLink(
 	return false;
 }
 
-bool SpecialTraversalController::validateCapability(
-	const NavSnapshot &snapshot) const
+bool SpecialTraversalController::validateCapability(const NavSnapshot &snapshot) const
 {
 	const NavDocument *document = snapshot.document();
 	if (document == nullptr)
@@ -383,64 +305,43 @@ bool SpecialTraversalController::validateCapability(
 	}
 	const NavArea *entryArea = document->findArea(capability_.entry.area);
 	const NavArea *exitArea = document->findArea(capability_.exit.area);
-	return entryArea != nullptr &&
-		exitArea != nullptr &&
-		isPointInArea(
-			*entryArea,
-			capability_.entry,
-			config_.positionTolerance) &&
-		isPointInArea(
-			*exitArea,
-			capability_.exit,
-			config_.positionTolerance) &&
-		hasDirectedLink(
-			*entryArea,
-			capability_.sourceDirection,
-			firstNextArea_);
+	return entryArea != nullptr && exitArea != nullptr &&
+		isPointInArea(*entryArea, capability_.entry, config_.positionTolerance) &&
+		isPointInArea(*exitArea, capability_.exit, config_.positionTolerance) &&
+		hasDirectedLink(*entryArea, capability_.sourceDirection, firstNextArea_);
 }
 
 bool SpecialTraversalController::isAtPoint(
-	const NavSnapshot &snapshot,
-	const NavVector &position,
-	const SpecialTraversalPoint &point) const
+	const NavSnapshot &snapshot, const NavVector &position, const SpecialTraversalPoint &point) const
 {
 	NavQuery query(snapshot);
 	NavAreaMatch match = {};
-	return query.findContaining(
-			position,
-			config_.positionTolerance,
-			&match) == NavQueryResult::Found &&
-		match.area == point.area &&
-		isNearPoint(position, point, config_.positionTolerance);
+	return query.findContaining(position, config_.positionTolerance, &match) == NavQueryResult::Found &&
+		match.area == point.area && isNearPoint(position, point, config_.positionTolerance);
 }
 
 bool SpecialTraversalController::selectPosture(
-	const SpecialTraversalObservation &observation,
-	SpecialTraversalPosture *posture) const
+	const SpecialTraversalObservation &observation, SpecialTraversalPosture *posture) const
 {
 	if (posture == nullptr)
 	{
 		return false;
 	}
-	if (capability_.minimumPosture ==
-			SpecialTraversalPosture::Crouching)
+	if (capability_.minimumPosture == SpecialTraversalPosture::Crouching)
 	{
-		if (observation.crouchingClearance <
-				capability_.requiredClearance)
+		if (observation.crouchingClearance < capability_.requiredClearance)
 		{
 			return false;
 		}
 		*posture = SpecialTraversalPosture::Crouching;
 		return true;
 	}
-	if (observation.standingClearance >=
-			capability_.requiredClearance)
+	if (observation.standingClearance >= capability_.requiredClearance)
 	{
 		*posture = SpecialTraversalPosture::Standing;
 		return true;
 	}
-	if (observation.crouchingClearance >=
-			capability_.requiredClearance)
+	if (observation.crouchingClearance >= capability_.requiredClearance)
 	{
 		*posture = SpecialTraversalPosture::Crouching;
 		return true;
@@ -448,8 +349,7 @@ bool SpecialTraversalController::selectPosture(
 	return false;
 }
 
-SpecialTraversalResult SpecialTraversalController::recover(
-	SpecialTraversalFailureReason reason)
+SpecialTraversalResult SpecialTraversalController::recover(SpecialTraversalFailureReason reason)
 {
 	active_ = false;
 	state_ = SpecialTraversalState::Recovering;
@@ -457,26 +357,19 @@ SpecialTraversalResult SpecialTraversalController::recover(
 	return SpecialTraversalResult::RecoverableFailure;
 }
 
-SpecialTraversalResult SpecialTraversalController::emitIntent(
-	const SpecialTraversalObservation &observation,
-	const SpecialTraversalPoint &target,
-	SpecialTraversalIntentPhase phase,
-	SpecialTraversalPosture posture,
+SpecialTraversalResult SpecialTraversalController::emitIntent(const SpecialTraversalObservation &observation,
+	const SpecialTraversalPoint &target, SpecialTraversalIntentPhase phase, SpecialTraversalPosture posture,
 	SpecialTraversalIntent *intent) const
 {
-	const float distance = horizontalDistance(
-		observation.position, target.position);
+	const float distance = horizontalDistance(observation.position, target.position);
 	if (!std::isfinite(distance))
 	{
 		return SpecialTraversalResult::InvalidObservation;
 	}
 	if (distance > 0.0f)
 	{
-		intent->direction = {
-			(target.position.x - observation.position.x) / distance,
-			(target.position.y - observation.position.y) / distance,
-			0.0f
-		};
+		intent->direction = {(target.position.x - observation.position.x) / distance,
+			(target.position.y - observation.position.y) / distance, 0.0f};
 	}
 	else
 	{
@@ -501,25 +394,16 @@ SpecialTraversalResult SpecialTraversalController::emitIntent(
 	return SpecialTraversalResult::InvalidObservation;
 }
 
-SpecialTraversalResult SpecialTraversalController::updateEntering(
-	const NavSnapshot &snapshot,
-	const SpecialTraversalObservation &observation,
-	SpecialTraversalPosture posture,
-	SpecialTraversalIntent *intent)
+SpecialTraversalResult SpecialTraversalController::updateEntering(const NavSnapshot &snapshot,
+	const SpecialTraversalObservation &observation, SpecialTraversalPosture posture, SpecialTraversalIntent *intent)
 {
-	if (capability_.kind == SpecialTraversalKind::Ladder &&
-			observation.entryConfirmed && !observation.ladderContact)
+	if (capability_.kind == SpecialTraversalKind::Ladder && observation.entryConfirmed && !observation.ladderContact)
 	{
 		return recover(SpecialTraversalFailureReason::MissingContact);
 	}
 	if (!observation.entryConfirmed)
 	{
-		return emitIntent(
-			observation,
-			capability_.entry,
-			SpecialTraversalIntentPhase::Enter,
-			posture,
-			intent);
+		return emitIntent(observation, capability_.entry, SpecialTraversalIntentPhase::Enter, posture, intent);
 	}
 	if (!isAtPoint(snapshot, observation.position, capability_.entry))
 	{
@@ -528,33 +412,19 @@ SpecialTraversalResult SpecialTraversalController::updateEntering(
 		return SpecialTraversalResult::InvalidObservation;
 	}
 	state_ = SpecialTraversalState::Maintaining;
-	return emitIntent(
-		observation,
-		capability_.exit,
-		SpecialTraversalIntentPhase::Maintain,
-		posture,
-		intent);
+	return emitIntent(observation, capability_.exit, SpecialTraversalIntentPhase::Maintain, posture, intent);
 }
 
-SpecialTraversalResult SpecialTraversalController::updateMaintaining(
-	const NavSnapshot &snapshot,
-	const SpecialTraversalObservation &observation,
-	SpecialTraversalPosture posture,
-	SpecialTraversalIntent *intent)
+SpecialTraversalResult SpecialTraversalController::updateMaintaining(const NavSnapshot &snapshot,
+	const SpecialTraversalObservation &observation, SpecialTraversalPosture posture, SpecialTraversalIntent *intent)
 {
-	if (capability_.kind == SpecialTraversalKind::Ladder &&
-			!observation.ladderContact)
+	if (capability_.kind == SpecialTraversalKind::Ladder && !observation.ladderContact)
 	{
 		return recover(SpecialTraversalFailureReason::MissingContact);
 	}
 	if (!observation.exitConfirmed)
 	{
-		return emitIntent(
-			observation,
-			capability_.exit,
-			SpecialTraversalIntentPhase::Maintain,
-			posture,
-			intent);
+		return emitIntent(observation, capability_.exit, SpecialTraversalIntentPhase::Maintain, posture, intent);
 	}
 	if (!isAtPoint(snapshot, observation.position, capability_.exit))
 	{
@@ -563,22 +433,13 @@ SpecialTraversalResult SpecialTraversalController::updateMaintaining(
 		return SpecialTraversalResult::InvalidObservation;
 	}
 	state_ = SpecialTraversalState::Exiting;
-	return emitIntent(
-		observation,
-		capability_.exit,
-		SpecialTraversalIntentPhase::Exit,
-		posture,
-		intent);
+	return emitIntent(observation, capability_.exit, SpecialTraversalIntentPhase::Exit, posture, intent);
 }
 
-SpecialTraversalResult SpecialTraversalController::updateExiting(
-	const NavSnapshot &snapshot,
-	const SpecialTraversalObservation &observation,
-	SpecialTraversalPosture posture,
-	SpecialTraversalIntent *intent)
+SpecialTraversalResult SpecialTraversalController::updateExiting(const NavSnapshot &snapshot,
+	const SpecialTraversalObservation &observation, SpecialTraversalPosture posture, SpecialTraversalIntent *intent)
 {
-	if (capability_.kind == SpecialTraversalKind::Ladder &&
-			!observation.ladderContact)
+	if (capability_.kind == SpecialTraversalKind::Ladder && !observation.ladderContact)
 	{
 		return recover(SpecialTraversalFailureReason::MissingContact);
 	}
@@ -590,12 +451,7 @@ SpecialTraversalResult SpecialTraversalController::updateExiting(
 	}
 	if (!isAtPoint(snapshot, observation.position, capability_.exit))
 	{
-		return emitIntent(
-			observation,
-			capability_.exit,
-			SpecialTraversalIntentPhase::Exit,
-			posture,
-			intent);
+		return emitIntent(observation, capability_.exit, SpecialTraversalIntentPhase::Exit, posture, intent);
 	}
 	active_ = false;
 	state_ = SpecialTraversalState::Completed;

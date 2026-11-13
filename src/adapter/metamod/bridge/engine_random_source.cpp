@@ -4,8 +4,8 @@ namespace astrabot
 {
 namespace compat
 {
-EngineRandomSource::EngineRandomSource()
-	: callbacks_({nullptr, nullptr}), sequence_(0U), traceSink_(nullptr)
+EngineRandomSource::EngineRandomSource() : callbacks_({nullptr, nullptr}), sequence_(0U), traceSink_(nullptr)
+
 {
 }
 

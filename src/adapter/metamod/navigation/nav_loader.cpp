@@ -11,8 +11,7 @@ namespace metamod
 {
 namespace
 {
-bool boundedStringLength(const char *value, std::size_t maximum,
-	std::size_t *length)
+bool boundedStringLength(const char *value, std::size_t maximum, std::size_t *length)
 {
 	if (value == nullptr || length == nullptr)
 	{
@@ -29,12 +28,10 @@ bool boundedStringLength(const char *value, std::size_t maximum,
 	return false;
 }
 
-bool equalsSuffixIgnoreCase(const char *value, std::size_t length,
-	const char *suffix)
+bool equalsSuffixIgnoreCase(const char *value, std::size_t length, const char *suffix)
 {
 	std::size_t suffixLength = 0U;
-	if (!boundedStringLength(suffix, 16U, &suffixLength) ||
-			length < suffixLength)
+	if (!boundedStringLength(suffix, 16U, &suffixLength) || length < suffixLength)
 	{
 		return false;
 	}
@@ -61,8 +58,7 @@ bool equalsSuffixIgnoreCase(const char *value, std::size_t length,
 bool extractNavMapName(const char *path, char *name)
 {
 	std::size_t pathLength = 0U;
-	if (!boundedStringLength(path, NavLoader::kMaximumPathLength, &pathLength) ||
-			name == nullptr)
+	if (!boundedStringLength(path, NavLoader::kMaximumPathLength, &pathLength) || name == nullptr)
 	{
 		return false;
 	}
@@ -148,8 +144,7 @@ NavLoadResult finish(NavLoadDiagnostic *diagnostic, NavLoadResult result)
 	return result;
 }
 
-void initializeDiagnostic(const NavLoadRequest *request,
-	NavLoadDiagnostic *diagnostic)
+void initializeDiagnostic(const NavLoadRequest *request, NavLoadDiagnostic *diagnostic)
 {
 	*diagnostic = {};
 	diagnostic->result = NavLoadResult::InvalidArgument;
@@ -163,6 +158,7 @@ void initializeDiagnostic(const NavLoadRequest *request,
 }
 
 NavLoader::NavLoader() : limits_{nav::LegacyNavReader::kMaximumFileBytes}, reader_()
+
 {
 }
 
@@ -174,23 +170,21 @@ NavLoader::NavLoader(const NavLoadLimits &limits) : limits_(limits), reader_()
 	}
 }
 
-NavLoadResult NavLoader::loadFile(const NavLoadRequest *request,
-	nav::NavSnapshotPublisher *publisher, NavLoadDiagnostic *diagnostic) const
+NavLoadResult NavLoader::loadFile(
+	const NavLoadRequest *request, nav::NavSnapshotPublisher *publisher, NavLoadDiagnostic *diagnostic) const
 {
 	if (diagnostic == nullptr)
 	{
 		return NavLoadResult::InvalidArgument;
 	}
 	initializeDiagnostic(request, diagnostic);
-	if (request == nullptr || publisher == nullptr || request->navPath == nullptr ||
-			request->mapName == nullptr)
+	if (request == nullptr || publisher == nullptr || request->navPath == nullptr || request->mapName == nullptr)
 	{
 		return finish(diagnostic, NavLoadResult::InvalidArgument);
 	}
 
 	MapFingerprint currentMap = {};
-	const MapFingerprintResult mapResult = createMapFingerprint(
-		request->mapName, 0U, 0U, &currentMap);
+	const MapFingerprintResult mapResult = createMapFingerprint(request->mapName, 0U, 0U, &currentMap);
 	if (mapResult == MapFingerprintResult::InvalidMapName)
 	{
 		return finish(diagnostic, NavLoadResult::InvalidMapName);
@@ -199,11 +193,9 @@ NavLoadResult NavLoader::loadFile(const NavLoadRequest *request,
 	{
 		return finish(diagnostic, NavLoadResult::InvalidArgument);
 	}
-	std::memcpy(diagnostic->mapName, currentMap.mapName,
-		sizeof(diagnostic->mapName));
+	std::memcpy(diagnostic->mapName, currentMap.mapName, sizeof(diagnostic->mapName));
 	std::size_t pathLength = 0U;
-	if (!boundedStringLength(request->navPath, kMaximumPathLength, &pathLength) ||
-			pathLength == 0U)
+	if (!boundedStringLength(request->navPath, kMaximumPathLength, &pathLength) || pathLength == 0U)
 	{
 		return finish(diagnostic, NavLoadResult::InvalidPath);
 	}
@@ -256,18 +248,17 @@ NavLoadResult NavLoader::loadFile(const NavLoadRequest *request,
 		return finish(diagnostic, NavLoadResult::InvalidPath);
 	}
 	MapFingerprint navMap = {};
-	if (createMapFingerprint(navMapName, 0U, 0U, &navMap) !=
-			MapFingerprintResult::Created)
+	if (createMapFingerprint(navMapName, 0U, 0U, &navMap) != MapFingerprintResult::Created)
 	{
 		return finish(diagnostic, NavLoadResult::InvalidPath);
 	}
-	if (compareMapFingerprints(&currentMap, &navMap) !=
-			MapFingerprintResult::Matched)
+	if (compareMapFingerprints(&currentMap, &navMap) != MapFingerprintResult::Matched)
 	{
 		return finish(diagnostic, NavLoadResult::MapNameMismatch);
 	}
 
-	if (source.sourceVersion >= 4U)
+	constexpr auto kBspSizeVersion = 4U;
+	if (source.sourceVersion >= kBspSizeVersion)
 	{
 		if (!request->hasBspSize)
 		{
@@ -277,22 +268,19 @@ NavLoadResult NavLoader::loadFile(const NavLoadRequest *request,
 		MapFingerprint actualBsp = {};
 		createMapFingerprint(request->mapName, request->bspSize, 0U, &expectedBsp);
 		createMapFingerprint(navMapName, source.bspSize, 0U, &actualBsp);
-		if (compareMapFingerprints(&expectedBsp, &actualBsp) ==
-				MapFingerprintResult::BspSizeMismatch)
+		if (compareMapFingerprints(&expectedBsp, &actualBsp) == MapFingerprintResult::BspSizeMismatch)
 		{
 			diagnostic->bspSize = request->bspSize;
 			return finish(diagnostic, NavLoadResult::BspSizeMismatch);
 		}
 	}
 
-	if (request->hasExpectedSourceHash &&
-			source.contentHash != request->expectedSourceHash)
+	if (request->hasExpectedSourceHash && source.contentHash != request->expectedSourceHash)
 	{
 		return finish(diagnostic, NavLoadResult::SourceHashMismatch);
 	}
 
-	diagnostic->snapshotResult = publisher->publish(&candidate,
-		request->mapGeneration);
+	diagnostic->snapshotResult = publisher->publish(&candidate, request->mapGeneration);
 	if (diagnostic->snapshotResult != nav::NavSnapshotResult::Published)
 	{
 		if (diagnostic->snapshotResult == nav::NavSnapshotResult::ResourceLimit)

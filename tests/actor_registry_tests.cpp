@@ -4,23 +4,21 @@
 
 namespace
 {
-	bool check(bool condition, const char *description)
+bool check(bool condition, const char *description)
+{
+	if (condition)
 	{
-		if (condition)
-		{
-			return true;
-		}
-
-		std::fprintf(stderr, "check failed: %s\n", description);
-		return false;
+		return true;
 	}
 
-	astrabot::runtime::LifecycleToken tokenForSlot(
-		std::uint32_t slot,
-		std::uint32_t slotGeneration)
-	{
-		return {1U, 1U, slotGeneration, slot};
-	}
+	std::fprintf(stderr, "check failed: %s\n", description);
+	return false;
+}
+
+astrabot::runtime::LifecycleToken tokenForSlot(std::uint32_t slot, std::uint32_t slotGeneration)
+{
+	return {1U, 1U, slotGeneration, slot};
+}
 }
 
 int main()
@@ -33,69 +31,57 @@ int main()
 	ActorRegistry registry;
 	ActorId firstActor{};
 	const auto firstToken = tokenForSlot(1U, 1U);
-	if (!check(registry.reserve(1U, firstToken, &firstActor) == ActorResult::Accepted,
-			"first actor reservation succeeds"))
+	if (!check(
+			registry.reserve(1U, firstToken, &firstActor) == ActorResult::Accepted, "first actor reservation succeeds"))
 	{
 		return 1;
 	}
-	if (!check(firstActor.slot == 1U && firstActor.actorGeneration != 0U,
-			"first actor has stable identity"))
+	if (!check(firstActor.slot == 1U && firstActor.actorGeneration != 0U, "first actor has stable identity"))
 	{
 		return 1;
 	}
-	if (!check(registry.state(firstActor) == ActorState::Reserved,
-			"reservation enters reserved state"))
+	if (!check(registry.state(firstActor) == ActorState::Reserved, "reservation enters reserved state"))
 	{
 		return 1;
 	}
-	if (!check(registry.reserve(1U, firstToken, nullptr) == ActorResult::SlotBusy,
-			"duplicate reservation is rejected"))
+	if (!check(registry.reserve(1U, firstToken, nullptr) == ActorResult::SlotBusy, "duplicate reservation is rejected"))
 	{
 		return 1;
 	}
-	if (!check(registry.beginJoin(firstActor) == ActorResult::Accepted,
-			"join transition succeeds"))
+	if (!check(registry.beginJoin(firstActor) == ActorResult::Accepted, "join transition succeeds"))
 	{
 		return 1;
 	}
-	if (!check(registry.markJoined(firstActor) == ActorResult::Accepted,
-			"joined transition succeeds"))
+	if (!check(registry.markJoined(firstActor) == ActorResult::Accepted, "joined transition succeeds"))
 	{
 		return 1;
 	}
-	if (!check(registry.state(firstActor) == ActorState::Joined,
-			"actor reaches joined state"))
+	if (!check(registry.state(firstActor) == ActorState::Joined, "actor reaches joined state"))
 	{
 		return 1;
 	}
-	if (!check(registry.isCurrent(firstActor, firstToken),
-			"current actor and lifecycle token are accepted"))
+	if (!check(registry.isCurrent(firstActor, firstToken), "current actor and lifecycle token are accepted"))
 	{
 		return 1;
 	}
 	const astrabot::runtime::LifecycleToken nextRoundToken = {1U, 2U, 1U, 1U};
-	if (!check(registry.isCurrent(firstActor, nextRoundToken),
-			"joined actor persists across round changes"))
+	if (!check(registry.isCurrent(firstActor, nextRoundToken), "joined actor persists across round changes"))
 	{
 		return 1;
 	}
-	if (!check(registry.beginRemoval(firstActor) == ActorResult::Accepted,
-			"removal transition succeeds"))
+	if (!check(registry.beginRemoval(firstActor) == ActorResult::Accepted, "removal transition succeeds"))
 	{
 		return 1;
 	}
-	if (!check(registry.release(firstActor) == ActorResult::Accepted,
-			"actor release succeeds"))
+	if (!check(registry.release(firstActor) == ActorResult::Accepted, "actor release succeeds"))
 	{
 		return 1;
 	}
-	if (!check(!registry.isCurrent(firstActor, firstToken),
-			"released actor is stale"))
+	if (!check(!registry.isCurrent(firstActor, firstToken), "released actor is stale"))
 	{
 		return 1;
 	}
-	if (!check(registry.release(firstActor) == ActorResult::NotFound,
-			"repeated release is harmless"))
+	if (!check(registry.release(firstActor) == ActorResult::NotFound, "repeated release is harmless"))
 	{
 		return 1;
 	}
@@ -107,23 +93,20 @@ int main()
 	{
 		return 1;
 	}
-	if (!check(reusedActor.actorGeneration != firstActor.actorGeneration,
-			"slot reuse advances actor generation"))
+	if (!check(reusedActor.actorGeneration != firstActor.actorGeneration, "slot reuse advances actor generation"))
 	{
 		return 1;
 	}
-	if (!check(!registry.isCurrent(firstActor, reusedToken),
-			"old actor cannot address reused slot"))
+	if (!check(!registry.isCurrent(firstActor, reusedToken), "old actor cannot address reused slot"))
 	{
 		return 1;
 	}
-	if (!check(registry.reserve(0U, reusedToken, nullptr) == ActorResult::InvalidSlot,
-			"zero slot is rejected"))
+	if (!check(registry.reserve(0U, reusedToken, nullptr) == ActorResult::InvalidSlot, "zero slot is rejected"))
 	{
 		return 1;
 	}
-	if (!check(registry.reserve(33U, reusedToken, nullptr) == ActorResult::InvalidSlot,
-			"out of range slot is rejected"))
+	if (!check(
+			registry.reserve(33U, reusedToken, nullptr) == ActorResult::InvalidSlot, "out of range slot is rejected"))
 	{
 		return 1;
 	}

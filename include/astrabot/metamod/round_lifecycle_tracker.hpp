@@ -25,6 +25,7 @@ struct RoundFreezeSchedule
 
 	static RoundFreezeSchedule create(float startTime, float freezeSeconds) noexcept
 	{
+		constexpr float kMaximumFreezeSeconds = 60.0f;
 		if (!std::isfinite(startTime))
 		{
 			return {false, 0.0f, 0.0f};
@@ -33,29 +34,26 @@ struct RoundFreezeSchedule
 		{
 			freezeSeconds = 0.0f;
 		}
-		freezeSeconds = (std::min)(freezeSeconds, 60.0f);
+		freezeSeconds = (std::min)(freezeSeconds, kMaximumFreezeSeconds);
 		const float untilTime = startTime + freezeSeconds;
 		if (!std::isfinite(untilTime) || untilTime < startTime)
 		{
 			return {false, startTime, startTime};
 		}
-		return {freezeSeconds > 0.0f && untilTime > startTime,
-			startTime, untilTime};
+		return {freezeSeconds > 0.0f && untilTime > startTime, startTime, untilTime};
 	}
 
 	bool isActive(float currentTime) const noexcept
 	{
-		return scheduled && std::isfinite(currentTime) &&
-			std::isfinite(startTime) && std::isfinite(untilTime) &&
+		return scheduled && std::isfinite(currentTime) && std::isfinite(startTime) && std::isfinite(untilTime) &&
 			currentTime >= startTime && currentTime < untilTime;
 	}
 };
 
 class RoundLifecycleTracker
 {
-  public:
-	RoundLifecycleTracker() noexcept
-		: generationPreparedForStart_(false), roundStartObserved_(false)
+public:
+	RoundLifecycleTracker() noexcept : generationPreparedForStart_(false), roundStartObserved_(false)
 	{
 	}
 
@@ -110,7 +108,7 @@ class RoundLifecycleTracker
 		return false;
 	}
 
-  private:
+private:
 	bool generationPreparedForStart_;
 	bool roundStartObserved_;
 };

@@ -1,0 +1,671 @@
+{
+  "reason": "Preserve original floating-literal evaluation precision; no extra storage rounding",
+  "compiler_probe": "GCC 14.2 x86, -std=c++14; .4f input: baseline z=91, constexpr z=100, macro z=91",
+  "files": [
+    {
+      "path": "include/astrabot/compat/combat_behavior.hpp",
+      "constants": [
+        {
+          "name": "kReactionTimeToleranceSeconds",
+          "macro": "ASTRABOT_COMBAT_BEHAVIOR_REACTION_TIME_TOLERANCE_SECONDS",
+          "type": "float",
+          "literal": "0.00001f",
+          "scope": "function"
+        },
+        {
+          "name": "kHeadAimMinimumSkill",
+          "macro": "ASTRABOT_COMBAT_BEHAVIOR_HEAD_AIM_MINIMUM_SKILL",
+          "type": "float",
+          "literal": ".8f",
+          "scope": "function"
+        },
+        {
+          "name": "kChestAimAccuracyThreshold",
+          "macro": "ASTRABOT_COMBAT_BEHAVIOR_CHEST_AIM_ACCURACY_THRESHOLD",
+          "type": "float",
+          "literal": ".4f",
+          "scope": "function"
+        },
+        {
+          "name": "kMinimumSideAimRange",
+          "macro": "ASTRABOT_COMBAT_BEHAVIOR_MINIMUM_SIDE_AIM_RANGE",
+          "type": "float",
+          "literal": ".001f",
+          "scope": "function"
+        },
+        {
+          "name": "kMinimumAimRange",
+          "macro": "ASTRABOT_COMBAT_BEHAVIOR_MINIMUM_AIM_RANGE",
+          "type": "float",
+          "literal": ".001f",
+          "scope": "function"
+        },
+        {
+          "name": "kDegreesToRadians",
+          "macro": "ASTRABOT_COMBAT_BEHAVIOR_DEGREES_TO_RADIANS",
+          "type": "float",
+          "literal": ".01745329251994329577f",
+          "scope": "function"
+        }
+      ],
+      "before_sha256": "0b7d6f16a29469b0bf1dc90108d2f389c0c3812da4fd0aa458c6cd9fa1f1ce10",
+      "after_sha256": "c16f6f958d2616bd4bc8004b9465bb5a68bd1c2cbfd780ac8a5eee1e914069d3"
+    },
+    {
+      "path": "include/astrabot/compat/combat_movement.hpp",
+      "constants": [
+        {
+          "name": "kRangeAdjustmentMaximumSkill",
+          "macro": "ASTRABOT_COMBAT_MOVEMENT_RANGE_ADJUSTMENT_MAXIMUM_SKILL",
+          "type": "float",
+          "literal": ".66f",
+          "scope": "function"
+        },
+        {
+          "name": "kJumpChance",
+          "macro": "ASTRABOT_COMBAT_MOVEMENT_JUMP_CHANCE",
+          "type": "float",
+          "literal": "33.3f",
+          "scope": "function"
+        },
+        {
+          "name": "kMinimumDodgeSeconds",
+          "macro": "ASTRABOT_COMBAT_MOVEMENT_MINIMUM_DODGE_SECONDS",
+          "type": "float",
+          "literal": ".3f",
+          "scope": "function"
+        }
+      ],
+      "before_sha256": "2249335eee9d064d5cc711ade038dca83f410588e09f3eb517db8cc3e38c69f3",
+      "after_sha256": "a5252231a168d619e2c1ed1cdabd096f414e5d27de1ca8850b80a3df5bfd5b75"
+    },
+    {
+      "path": "include/astrabot/compat/grenade_trajectory.hpp",
+      "constants": [
+        {
+          "name": "kPi",
+          "macro": "ASTRABOT_GRENADE_TRAJECTORY_PI",
+          "type": "float",
+          "literal": "3.14159265358979323846f",
+          "scope": "function"
+        },
+        {
+          "name": "kMinimumHorizontalSpeedSquared",
+          "macro": "ASTRABOT_GRENADE_TRAJECTORY_MINIMUM_HORIZONTAL_SPEED_SQUARED",
+          "type": "float",
+          "literal": "0.001f",
+          "scope": "function"
+        }
+      ],
+      "before_sha256": "0da6e69219af6296e0f5cdfdd00fccec8d5b0a143e999ee6164b0356d6ca7085",
+      "after_sha256": "d421f8a6c4cdf8fb0148dd4184e3a23137f1fa3435329c937226c24789381584"
+    },
+    {
+      "path": "include/astrabot/compat/guard_look.hpp",
+      "constants": [
+        {
+          "name": "kRadiansToDegrees",
+          "macro": "ASTRABOT_GUARD_LOOK_RADIANS_TO_DEGREES",
+          "type": "float",
+          "literal": "57.295779513f",
+          "scope": "function"
+        },
+        {
+          "name": "kMaximumUpdateSeconds",
+          "macro": "ASTRABOT_GUARD_LOOK_MAXIMUM_UPDATE_SECONDS",
+          "type": "float",
+          "literal": ".1f",
+          "scope": "function"
+        }
+      ],
+      "before_sha256": "f914ca1236c4461cb360011bf68e470f0a17ec2c25c398371cbf8301157b2d50",
+      "after_sha256": "f2d935989189858ab86e483b5cd55bef5d4e0929df6589432525814c842d94bf"
+    },
+    {
+      "path": "include/astrabot/compat/scenario_behavior.hpp",
+      "constants": [
+        {
+          "name": "kDefuseKitEscapeScale",
+          "macro": "ASTRABOT_SCENARIO_BEHAVIOR_DEFUSE_KIT_ESCAPE_SCALE",
+          "type": "float",
+          "literal": "0.66f",
+          "scope": "function"
+        }
+      ],
+      "before_sha256": "9a49a4dab309289f64fad05ab3a30babb6f3aa77069116b1d7d5962094d37cf8",
+      "after_sha256": "3f8cad2809b8a61c63852a7d2ca090af4fcf4f3f4b99c2f77d6c6105ae15003e"
+    },
+    {
+      "path": "include/astrabot/compat/smoke_observation.hpp",
+      "constants": [
+        {
+          "name": "kMinimumRayLength",
+          "macro": "ASTRABOT_SMOKE_OBSERVATION_MINIMUM_RAY_LENGTH",
+          "type": "float",
+          "literal": "0.001f",
+          "scope": "function"
+        },
+        {
+          "name": "kObscuredRadiusFraction",
+          "macro": "ASTRABOT_SMOKE_OBSERVATION_OBSCURED_RADIUS_FRACTION",
+          "type": "float",
+          "literal": "0.7f",
+          "scope": "function"
+        }
+      ],
+      "before_sha256": "97c1ada8e9aec03839236f2e24e680e305cff961193048cf47a0ded13365d063",
+      "after_sha256": "7c98a1e84d24b19915c2a43623c581b7f2ad65e8c1159f08e04d0ac814ea34dc"
+    },
+    {
+      "path": "include/astrabot/compat/teamwork_policy.hpp",
+      "constants": [
+        {
+          "name": "kPersistentFollowTeamwork",
+          "macro": "ASTRABOT_TEAMWORK_POLICY_PERSISTENT_FOLLOW_TEAMWORK",
+          "type": "float",
+          "literal": "0.85f",
+          "scope": "function"
+        },
+        {
+          "name": "kMinimumAutoFollowTeamwork",
+          "macro": "ASTRABOT_TEAMWORK_POLICY_MINIMUM_AUTO_FOLLOW_TEAMWORK",
+          "type": "float",
+          "literal": "0.4f",
+          "scope": "function"
+        }
+      ],
+      "before_sha256": "4f963448729e4d84b9f28b472397af9221524cf8b7aaa33b8c3a2ff434782827",
+      "after_sha256": "0b45f0e762babeb5f5c70b634a2b3e348573378baa017b8e8f5d943d3bef2ba5"
+    },
+    {
+      "path": "include/astrabot/compat/weapon_actions.hpp",
+      "constants": [
+        {
+          "name": "kScopeSettleSeconds",
+          "macro": "ASTRABOT_WEAPON_ACTIONS_SCOPE_SETTLE_SECONDS",
+          "type": "float",
+          "literal": "0.2f",
+          "scope": "function"
+        },
+        {
+          "name": "kKnifeSecondaryChance",
+          "macro": "ASTRABOT_WEAPON_ACTIONS_KNIFE_SECONDARY_CHANCE",
+          "type": "float",
+          "literal": "33.3f",
+          "scope": "function"
+        },
+        {
+          "name": "kThinkLatencySeconds",
+          "macro": "ASTRABOT_WEAPON_ACTIONS_THINK_LATENCY_SECONDS",
+          "type": "float",
+          "literal": ".1f",
+          "scope": "function"
+        },
+        {
+          "name": "kRapidPistolMaximumRange",
+          "macro": "ASTRABOT_WEAPON_ACTIONS_RAPID_PISTOL_MAXIMUM_RANGE",
+          "type": "float",
+          "literal": "999999.9f",
+          "scope": "function"
+        },
+        {
+          "name": "kDistantMinimumFireIntervalSeconds",
+          "macro": "ASTRABOT_WEAPON_ACTIONS_DISTANT_MINIMUM_FIRE_INTERVAL_SECONDS",
+          "type": "float",
+          "literal": "0.3f",
+          "scope": "function"
+        },
+        {
+          "name": "kMinimumFireIntervalSeconds",
+          "macro": "ASTRABOT_WEAPON_ACTIONS_MINIMUM_FIRE_INTERVAL_SECONDS",
+          "type": "float",
+          "literal": "0.15f",
+          "scope": "function"
+        },
+        {
+          "name": "kPistolMaximumFireIntervalSeconds",
+          "macro": "ASTRABOT_WEAPON_ACTIONS_PISTOL_MAXIMUM_FIRE_INTERVAL_SECONDS",
+          "type": "float",
+          "literal": "0.4f",
+          "scope": "function"
+        },
+        {
+          "name": "kDistantMaximumFireIntervalSeconds",
+          "macro": "ASTRABOT_WEAPON_ACTIONS_DISTANT_MAXIMUM_FIRE_INTERVAL_SECONDS",
+          "type": "float",
+          "literal": "0.7f",
+          "scope": "function"
+        }
+      ],
+      "before_sha256": "797a587f460b26065eb47b2cda0e22bc5636d6ef7340ee0f2e453d1c54cd1cfb",
+      "after_sha256": "95f3737f4f68b990ddcfd6c6972f7558ef9e28880c2667054fca720d81666ef5"
+    },
+    {
+      "path": "include/astrabot/runtime/player_avoidance.hpp",
+      "constants": [
+        {
+          "name": "kDegreesToRadians",
+          "macro": "ASTRABOT_PLAYER_AVOIDANCE_DEGREES_TO_RADIANS",
+          "type": "float",
+          "literal": "0.017453292519943295f",
+          "scope": "function"
+        },
+        {
+          "name": "kContactLifetimeSeconds",
+          "macro": "ASTRABOT_PLAYER_AVOIDANCE_CONTACT_LIFETIME_SECONDS",
+          "type": "float",
+          "literal": "0.33f",
+          "scope": "function"
+        }
+      ],
+      "before_sha256": "3ebb7a23015044db17402cb7f6054fc4bc3a9c906419d7d382331f48c3928db8",
+      "after_sha256": "7f6d6774e4d02c75fa041e44dcabd006766d28cea3c6594c9e7e24c1a7741004"
+    },
+    {
+      "path": "src/adapter/metamod/bridge/action_adapter.cpp",
+      "constants": [
+        {
+          "name": "kDegreesToRadians",
+          "macro": "ASTRABOT_ACTION_ADAPTER_DEGREES_TO_RADIANS",
+          "type": "float",
+          "literal": "0.01745329251994329577f",
+          "scope": "function"
+        }
+      ],
+      "before_sha256": "0cf21da3415566ff3434f5d67887c45148b56992b30a3c44078f8493711a4677",
+      "after_sha256": "8fad3ff7ee201ed675a0b3bc5c389ebaf3153b8e42335cf64cc12fa7db6d6cc2"
+    },
+    {
+      "path": "src/adapter/metamod/bridge/observation_adapter.cpp",
+      "constants": [
+        {
+          "name": "kPi",
+          "macro": "ASTRABOT_OBSERVATION_ADAPTER_PI",
+          "type": "float",
+          "literal": "3.14159265358979323846f",
+          "scope": "function"
+        },
+        {
+          "name": "kMinimumViewDirectionLength",
+          "macro": "ASTRABOT_OBSERVATION_ADAPTER_MINIMUM_VIEW_DIRECTION_LENGTH",
+          "type": "float",
+          "literal": "0.001f",
+          "scope": "function"
+        }
+      ],
+      "before_sha256": "77bccd8b7dac9ad151d689e5afa9ee4996cfe4aec6e878f336713149ab5db737",
+      "after_sha256": "f6e37efe70b6ccc6f525f8eeaf9fcf346b6085e9d8dabc5bd1a3ed09a3843eea"
+    },
+    {
+      "path": "src/adapter/metamod/plugin/plugin_runtime.cpp",
+      "constants": [
+        {
+          "name": "kPopulationUpdateIntervalSeconds",
+          "macro": "ASTRABOT_PLUGIN_RUNTIME_POPULATION_UPDATE_INTERVAL_SECONDS",
+          "type": "float",
+          "literal": "0.3f",
+          "scope": "function"
+        }
+      ],
+      "before_sha256": "63f041ce6fb8b64147ad7d22b3f7f15040962affe085861d361ca80a0630ec6b",
+      "after_sha256": "b241fc355874a8e87d645c22f90afe28a07b3d9c222cd0ce794db1046d06e4fc"
+    },
+    {
+      "path": "src/adapter/metamod/runtime/behavior/bot_behavior_combat.cpp",
+      "constants": [
+        {
+          "name": "kMaximumCombatElapsedSeconds",
+          "macro": "ASTRABOT_BOT_BEHAVIOR_COMBAT_MAXIMUM_COMBAT_ELAPSED_SECONDS",
+          "type": "float",
+          "literal": ".1f",
+          "scope": "translation unit"
+        },
+        {
+          "name": "kDegreesToRadians",
+          "macro": "ASTRABOT_BOT_BEHAVIOR_COMBAT_DEGREES_TO_RADIANS",
+          "type": "float",
+          "literal": ".01745329251994329577f",
+          "scope": "function"
+        },
+        {
+          "name": "kPi",
+          "macro": "ASTRABOT_BOT_BEHAVIOR_COMBAT_PI",
+          "type": "float",
+          "literal": "3.14159265358979323846f",
+          "scope": "function"
+        },
+        {
+          "name": "kGrenadeTraceStepSeconds",
+          "macro": "ASTRABOT_BOT_BEHAVIOR_COMBAT_GRENADE_TRACE_STEP_SECONDS",
+          "type": "float",
+          "literal": "0.05f",
+          "scope": "function"
+        },
+        {
+          "name": "kMinimumLandingGroundNormalZ",
+          "macro": "ASTRABOT_BOT_BEHAVIOR_COMBAT_MINIMUM_LANDING_GROUND_NORMAL_Z",
+          "type": "float",
+          "literal": "0.7f",
+          "scope": "function"
+        }
+      ],
+      "before_sha256": "cea24f4fafe448462fe24129b687ac153ff5144615ae8895dcad35049ce75df1",
+      "after_sha256": "d8132142d4665a11c7df0779f7d2f2b310f87436da201bf998f2fc3a05d88992"
+    },
+    {
+      "path": "src/adapter/metamod/runtime/behavior/bot_behavior_guard.cpp",
+      "constants": [
+        {
+          "name": "kDegreesToRadians",
+          "macro": "ASTRABOT_BOT_BEHAVIOR_GUARD_DEGREES_TO_RADIANS",
+          "type": "float",
+          "literal": ".01745329252f",
+          "scope": "translation unit"
+        }
+      ],
+      "before_sha256": "cca997986d5c76b0600eb716291de91bcaef4d89d7ee80e354fda78df0790987",
+      "after_sha256": "6e4348b290b54f71031863b16aac695f4a41ce83914d0bb857e3be46ca195908"
+    },
+    {
+      "path": "src/adapter/metamod/runtime/behavior/bot_behavior_objectives.cpp",
+      "constants": [
+        {
+          "name": "kDegreesToRadians",
+          "macro": "ASTRABOT_BOT_BEHAVIOR_OBJECTIVES_DEGREES_TO_RADIANS",
+          "type": "float",
+          "literal": "0.017453292519943295f",
+          "scope": "translation unit"
+        }
+      ],
+      "before_sha256": "53306f5a2970900b3e65ee1a98052aa0415ba75144d21b8d2034c194af5c93da",
+      "after_sha256": "1f5514be08116dbd3862c79fff2067fe2f353fce461ae4a616b66db3fab9778f"
+    },
+    {
+      "path": "src/adapter/metamod/runtime/behavior/bot_behavior_radio.cpp",
+      "constants": [
+        {
+          "name": "kRadioReceiptRetrySeconds",
+          "macro": "ASTRABOT_BOT_BEHAVIOR_RADIO_RADIO_RECEIPT_RETRY_SECONDS",
+          "type": "float",
+          "literal": "0.2f",
+          "scope": "translation unit"
+        },
+        {
+          "name": "kTeamSpeechBusySeconds",
+          "macro": "ASTRABOT_BOT_BEHAVIOR_RADIO_TEAM_SPEECH_BUSY_SECONDS",
+          "type": "float",
+          "literal": "2.1f",
+          "scope": "translation unit"
+        }
+      ],
+      "before_sha256": "f9fb6d46eb3b6b68d74df9ce14cea9b09ce1c4c88d48d339c8744e8fa08a3e10",
+      "after_sha256": "85b8e4cfb49b830ab3acd1faaf7673abdb27b2491792f389463e693043f2c0be"
+    },
+    {
+      "path": "src/adapter/metamod/runtime/behavior/bot_behavior_scenario.cpp",
+      "constants": [
+        {
+          "name": "kMinimumPlanarSightRange",
+          "macro": "ASTRABOT_BOT_BEHAVIOR_SCENARIO_MINIMUM_PLANAR_SIGHT_RANGE",
+          "type": "float",
+          "literal": "0.001f",
+          "scope": "translation unit"
+        }
+      ],
+      "before_sha256": "516a3b0dd6faa2a3f5712d62c56f32b752e8dd0f10d3837d9d6cdce3e1ccd440",
+      "after_sha256": "fcd21f4e454d8ba67a476f390781e90fd6fd97369fb8a7aa22dc9cd2e22082c3"
+    },
+    {
+      "path": "src/adapter/metamod/runtime/command/bot_command_runtime.cpp",
+      "constants": [
+        {
+          "name": "kDegreesToRadians",
+          "macro": "ASTRABOT_BOT_COMMAND_RUNTIME_DEGREES_TO_RADIANS",
+          "type": "float",
+          "literal": "0.017453292519943295f",
+          "scope": "translation unit"
+        },
+        {
+          "name": "kFreezeMovementInputTolerance",
+          "macro": "ASTRABOT_BOT_COMMAND_RUNTIME_FREEZE_MOVEMENT_INPUT_TOLERANCE",
+          "type": "float",
+          "literal": "0.01f",
+          "scope": "translation unit"
+        },
+        {
+          "name": "kGoalSlowdownFactor",
+          "macro": "ASTRABOT_BOT_COMMAND_RUNTIME_GOAL_SLOWDOWN_FACTOR",
+          "type": "float",
+          "literal": "0.4f",
+          "scope": "function"
+        }
+      ],
+      "before_sha256": "15db0471e75f10335954aeb5ba78b2ee52cce671fb1289ee714e752910aec785",
+      "after_sha256": "35b7cef20dd40883d7143f1fc23ea18adcc9d196b754ccf5af020037cf8c96cd"
+    },
+    {
+      "path": "src/adapter/metamod/runtime/navigation/bot_navigation_runtime.cpp",
+      "constants": [
+        {
+          "name": "kMinimumUnitDirectionLength",
+          "macro": "ASTRABOT_BOT_NAVIGATION_RUNTIME_MINIMUM_UNIT_DIRECTION_LENGTH",
+          "type": "float",
+          "literal": "0.9f",
+          "scope": "translation unit"
+        },
+        {
+          "name": "kMaximumUnitDirectionLength",
+          "macro": "ASTRABOT_BOT_NAVIGATION_RUNTIME_MAXIMUM_UNIT_DIRECTION_LENGTH",
+          "type": "float",
+          "literal": "1.1f",
+          "scope": "translation unit"
+        }
+      ],
+      "before_sha256": "d05d61ed450fc26e6fb26c645be5897495f47f52f5d777fe305a8fa46ca67a4a",
+      "after_sha256": "af8315fddf8e1b04ea47f2fed03932d808215aed9b5e2edeac6c9223c4b784b5"
+    },
+    {
+      "path": "src/adapter/metamod/runtime/observation/bot_observation_runtime.cpp",
+      "constants": [
+        {
+          "name": "kPi",
+          "macro": "ASTRABOT_BOT_OBSERVATION_RUNTIME_PI",
+          "type": "float",
+          "literal": "3.14159265358979323846f",
+          "scope": "translation unit"
+        },
+        {
+          "name": "kMinimumViewDirectionLength",
+          "macro": "ASTRABOT_BOT_OBSERVATION_RUNTIME_MINIMUM_VIEW_DIRECTION_LENGTH",
+          "type": "float",
+          "literal": "0.001f",
+          "scope": "translation unit"
+        }
+      ],
+      "before_sha256": "78de5ec57400f2c54a9eecc079462746ad48092a9bfd819738916a9c6a67fa2b",
+      "after_sha256": "c108d8969d0eefb012c9571b8a0a91e63a9e4a3abd04e754796b06ed536b0590"
+    },
+    {
+      "path": "src/core/combat/combat_intent.cpp",
+      "constants": [
+        {
+          "name": "kAimErrorScale",
+          "macro": "ASTRABOT_COMBAT_INTENT_AIM_ERROR_SCALE",
+          "type": "float",
+          "literal": "0.1f",
+          "scope": "function"
+        },
+        {
+          "name": "kAimOffsetSmoothing",
+          "macro": "ASTRABOT_COMBAT_INTENT_AIM_OFFSET_SMOOTHING",
+          "type": "float",
+          "literal": "0.1f",
+          "scope": "function"
+        },
+        {
+          "name": "kMinimumHorizontalAimDistance",
+          "macro": "ASTRABOT_COMBAT_INTENT_MINIMUM_HORIZONTAL_AIM_DISTANCE",
+          "type": "float",
+          "literal": "0.001f",
+          "scope": "function"
+        }
+      ],
+      "before_sha256": "e5d3771b71420e9566b8b7eccc03c07e39a92d259c417b76941a966d7d4ca56b",
+      "after_sha256": "42055108363b3e6b777d29bc196a823e7f2f6d4a7475d71f698b9804525f1d39"
+    },
+    {
+      "path": "src/core/compat/buy_controller.cpp",
+      "constants": [
+        {
+          "name": "kLowMoneyShieldChance",
+          "macro": "ASTRABOT_BUY_CONTROLLER_LOW_MONEY_SHIELD_CHANCE",
+          "type": "float",
+          "literal": "33.3f",
+          "scope": "translation unit"
+        },
+        {
+          "name": "kGrenadeBuyChance",
+          "macro": "ASTRABOT_BUY_CONTROLLER_GRENADE_BUY_CHANCE",
+          "type": "float",
+          "literal": "33.3f",
+          "scope": "translation unit"
+        },
+        {
+          "name": "kNormalPistolBuyChance",
+          "macro": "ASTRABOT_BUY_CONTROLLER_NORMAL_PISTOL_BUY_CHANCE",
+          "type": "float",
+          "literal": "33.3f",
+          "scope": "translation unit"
+        },
+        {
+          "name": "kReceiptWaitSeconds",
+          "macro": "ASTRABOT_BUY_CONTROLLER_RECEIPT_WAIT_SECONDS",
+          "type": "double",
+          "literal": "0.2",
+          "scope": "translation unit"
+        }
+      ],
+      "before_sha256": "bfa089c13bec2e3d0f195e8933d3cce347c4e67535746c1b68a7b949efda901f",
+      "after_sha256": "5df07ac909dbd2db97330f81da3c4197b05ac1a606d19fded7f3beb8dc591ea4"
+    },
+    {
+      "path": "src/core/nav/locomotion.cpp",
+      "constants": [
+        {
+          "name": "kReferenceFullThinkIntervalSeconds",
+          "macro": "ASTRABOT_LOCOMOTION_REFERENCE_FULL_THINK_INTERVAL_SECONDS",
+          "type": "float",
+          "literal": "0.1f",
+          "scope": "translation unit"
+        },
+        {
+          "name": "kMinimumUnitDirectionLength",
+          "macro": "ASTRABOT_LOCOMOTION_MINIMUM_UNIT_DIRECTION_LENGTH",
+          "type": "float",
+          "literal": "0.9f",
+          "scope": "translation unit"
+        },
+        {
+          "name": "kMaximumUnitDirectionLength",
+          "macro": "ASTRABOT_LOCOMOTION_MAXIMUM_UNIT_DIRECTION_LENGTH",
+          "type": "float",
+          "literal": "1.1f",
+          "scope": "translation unit"
+        },
+        {
+          "name": "kMinimumLookaheadAlignment",
+          "macro": "ASTRABOT_LOCOMOTION_MINIMUM_LOOKAHEAD_ALIGNMENT",
+          "type": "float",
+          "literal": "0.9f",
+          "scope": "translation unit"
+        },
+        {
+          "name": "kMinimumJumpGroundNormalZ",
+          "macro": "ASTRABOT_LOCOMOTION_MINIMUM_JUMP_GROUND_NORMAL_Z",
+          "type": "float",
+          "literal": "0.9f",
+          "scope": "translation unit"
+        }
+      ],
+      "before_sha256": "95f4bcfcb2c7fe01f0cb54f11cfa621f3e2f2bc01f7c18cbccd224f180bfc3a5",
+      "after_sha256": "7ffbd31a6fd07b80d945ed2c7163e2554dc6477ab25ba35dd080b477f05d5f4f"
+    },
+    {
+      "path": "src/core/nav/nav_query.cpp",
+      "constants": [
+        {
+          "name": "kAggressionDangerReduction",
+          "macro": "ASTRABOT_NAV_QUERY_AGGRESSION_DANGER_REDUCTION",
+          "type": "float",
+          "literal": "0.95f",
+          "scope": "translation unit"
+        },
+        {
+          "name": "kEstimatedFallDamagePerUnit",
+          "macro": "ASTRABOT_NAV_QUERY_ESTIMATED_FALL_DAMAGE_PER_UNIT",
+          "type": "float",
+          "literal": "0.2178f",
+          "scope": "translation unit"
+        }
+      ],
+      "before_sha256": "bf23d9d8e990a1d510fd2001f5e3335debb4de3739761f7a657682cffdb190dc",
+      "after_sha256": "4c38efa8030d8633af28a3c8d4684960f2eaa7867728c02fc56814b2e923cd73"
+    },
+    {
+      "path": "src/core/runtime/nav_roam_controller.cpp",
+      "constants": [
+        {
+          "name": "kMinimumHorizontalRecoverySquared",
+          "macro": "ASTRABOT_NAV_ROAM_CONTROLLER_MINIMUM_HORIZONTAL_RECOVERY_SQUARED",
+          "type": "float",
+          "literal": "0.00000001f",
+          "scope": "translation unit"
+        },
+        {
+          "name": "kMinimumDirectionLength",
+          "macro": "ASTRABOT_NAV_ROAM_CONTROLLER_MINIMUM_DIRECTION_LENGTH",
+          "type": "float",
+          "literal": "0.0001f",
+          "scope": "translation unit"
+        },
+        {
+          "name": "kMinimumUnitDirectionLength",
+          "macro": "ASTRABOT_NAV_ROAM_CONTROLLER_MINIMUM_UNIT_DIRECTION_LENGTH",
+          "type": "float",
+          "literal": "0.9f",
+          "scope": "translation unit"
+        },
+        {
+          "name": "kMaximumUnitDirectionLength",
+          "macro": "ASTRABOT_NAV_ROAM_CONTROLLER_MAXIMUM_UNIT_DIRECTION_LENGTH",
+          "type": "float",
+          "literal": "1.1f",
+          "scope": "translation unit"
+        },
+        {
+          "name": "kMinimumPathRetryIntervalSeconds",
+          "macro": "ASTRABOT_NAV_ROAM_CONTROLLER_MINIMUM_PATH_RETRY_INTERVAL_SECONDS",
+          "type": "float",
+          "literal": "0.4f",
+          "scope": "translation unit"
+        },
+        {
+          "name": "kMaximumPathRetryIntervalSeconds",
+          "macro": "ASTRABOT_NAV_ROAM_CONTROLLER_MAXIMUM_PATH_RETRY_INTERVAL_SECONDS",
+          "type": "float",
+          "literal": "0.6f",
+          "scope": "translation unit"
+        },
+        {
+          "name": "kDegreesToRadians",
+          "macro": "ASTRABOT_NAV_ROAM_CONTROLLER_DEGREES_TO_RADIANS",
+          "type": "float",
+          "literal": "0.017453292519943295f",
+          "scope": "function"
+        }
+      ],
+      "before_sha256": "563607d7819796b89d4f3cb2da54bfb80162d23b5a4c692d7f0e4b562d5f9e4a",
+      "after_sha256": "9b1ee88b5096c5fb60b53f92ae920527620069a91752ae94029e839247d47443"
+    }
+  ]
+}

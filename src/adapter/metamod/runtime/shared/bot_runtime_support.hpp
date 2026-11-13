@@ -28,8 +28,7 @@ struct ObjectiveCandidateKey
 
 	bool operator==(const ObjectiveCandidateKey &other) const
 	{
-		return entityIndex == other.entityIndex && siteIdentity == other.siteIdentity &&
-			   targetArea == other.targetArea;
+		return entityIndex == other.entityIndex && siteIdentity == other.siteIdentity && targetArea == other.targetArea;
 	}
 };
 
@@ -118,8 +117,8 @@ inline RuntimePathSearchCaller navSearchCaller(const runtime::NavRoamDecision &d
 	if (decision.goalKind == runtime::NavGoalKind::Objective)
 	{
 		return decision.recomputeReason == runtime::NavRecomputeReason::InitialGoal
-				   ? RuntimePathSearchCaller::CorridorInitial
-				   : RuntimePathSearchCaller::CorridorRecompute;
+			? RuntimePathSearchCaller::CorridorInitial
+			: RuntimePathSearchCaller::CorridorRecompute;
 	}
 	if (decision.goalKind == runtime::NavGoalKind::Roam)
 	{
@@ -202,8 +201,7 @@ inline bool boundedStringLength(const char *value, std::size_t maximum, std::siz
 	return false;
 }
 
-template <std::size_t Capacity>
-inline bool copyCommandText(std::array<char, Capacity> *destination, const char *source)
+template <std::size_t Capacity> inline bool copyCommandText(std::array<char, Capacity> *destination, const char *source)
 {
 	if (destination == nullptr || source == nullptr)
 	{
@@ -219,25 +217,25 @@ inline bool copyCommandText(std::array<char, Capacity> *destination, const char 
 	return true;
 }
 
-inline bool buildMapPath(const char *gameDirectory, const char *mapName, const char *extension,
-						 char *path, std::size_t pathCapacity)
+inline bool buildMapPath(
+	const char *gameDirectory, const char *mapName, const char *extension, char *path, std::size_t pathCapacity)
 {
+	constexpr auto kMapDirectoryPrefixLength = 5U;
 	std::size_t gameDirectoryLength = 0U;
 	std::size_t mapNameLength = 0U;
 	std::size_t extensionLength = 0U;
 	if (!boundedStringLength(gameDirectory, pathCapacity, &gameDirectoryLength) ||
 		!boundedStringLength(mapName, pathCapacity, &mapNameLength) ||
-		!boundedStringLength(extension, pathCapacity, &extensionLength) || path == nullptr ||
-		gameDirectoryLength == 0U)
+		!boundedStringLength(extension, pathCapacity, &extensionLength) || path == nullptr || gameDirectoryLength == 0U)
 	{
 		return false;
 	}
 
-	const bool needsSeparator = gameDirectory[gameDirectoryLength - 1U] != '/' &&
-								gameDirectory[gameDirectoryLength - 1U] != '\\';
+	const bool needsSeparator =
+		gameDirectory[gameDirectoryLength - 1U] != '/' && gameDirectory[gameDirectoryLength - 1U] != '\\';
 	const std::size_t separatorLength = needsSeparator ? 1U : 0U;
 	const std::size_t requiredLength =
-		gameDirectoryLength + separatorLength + 5U + mapNameLength + extensionLength;
+		gameDirectoryLength + separatorLength + kMapDirectoryPrefixLength + mapNameLength + extensionLength;
 	if (requiredLength >= pathCapacity)
 	{
 		return false;
@@ -250,8 +248,8 @@ inline bool buildMapPath(const char *gameDirectory, const char *mapName, const c
 	{
 		path[position++] = '/';
 	}
-	std::memcpy(path + position, "maps/", 5U);
-	position += 5U;
+	std::memcpy(path + position, "maps/", kMapDirectoryPrefixLength);
+	position += kMapDirectoryPrefixLength;
 	std::memcpy(path + position, mapName, mapNameLength);
 	position += mapNameLength;
 	std::memcpy(path + position, extension, extensionLength);
@@ -259,20 +257,19 @@ inline bool buildMapPath(const char *gameDirectory, const char *mapName, const c
 	return true;
 }
 
-inline bool buildGameFilePath(const char *gameDirectory, const char *fileName, char *path,
-							  std::size_t pathCapacity)
+inline bool buildGameFilePath(const char *gameDirectory, const char *fileName, char *path, std::size_t pathCapacity)
 {
 	std::size_t gameDirectoryLength = 0U;
 	std::size_t fileNameLength = 0U;
 	if (!boundedStringLength(gameDirectory, pathCapacity, &gameDirectoryLength) ||
-		!boundedStringLength(fileName, pathCapacity, &fileNameLength) || path == nullptr ||
-		gameDirectoryLength == 0U || fileNameLength == 0U)
+		!boundedStringLength(fileName, pathCapacity, &fileNameLength) || path == nullptr || gameDirectoryLength == 0U ||
+		fileNameLength == 0U)
 	{
 		return false;
 	}
 
-	const bool needsSeparator = gameDirectory[gameDirectoryLength - 1U] != '/' &&
-								gameDirectory[gameDirectoryLength - 1U] != '\\';
+	const bool needsSeparator =
+		gameDirectory[gameDirectoryLength - 1U] != '/' && gameDirectory[gameDirectoryLength - 1U] != '\\';
 	const std::size_t separatorLength = needsSeparator ? 1U : 0U;
 	const std::size_t requiredLength = gameDirectoryLength + separatorLength + fileNameLength;
 	if (requiredLength >= pathCapacity)
@@ -303,10 +300,8 @@ inline float movementYaw(const nav::NavVector &direction)
 
 inline float readOptionalCvarFloat(enginefuncs_t *engineFunctions, const char *name)
 {
-	if (engineFunctions == nullptr || name == nullptr ||
-		engineFunctions->pfnCVarGetPointer == nullptr ||
-		engineFunctions->pfnCVarGetFloat == nullptr ||
-		engineFunctions->pfnCVarGetPointer(name) == nullptr)
+	if (engineFunctions == nullptr || name == nullptr || engineFunctions->pfnCVarGetPointer == nullptr ||
+		engineFunctions->pfnCVarGetFloat == nullptr || engineFunctions->pfnCVarGetPointer(name) == nullptr)
 	{
 		return 0.0f;
 	}
@@ -350,64 +345,37 @@ inline void addNavSearchStats(nav::NavSearchStats *total, const nav::NavSearchSt
 
 inline const char *runtimeProfilerStageName(RuntimeProfilerStage stage)
 {
-	static const char *const names[] = {"StartFrame",
-										"RegistryLifecycle",
-										"Observation",
-										"Vision",
-										"TraceLine",
-										"WorldPublish",
-										"Perception",
-										"RuntimeInput",
-										"RuntimeFullUpdate",
-										"FullUpdateObjective",
-										"ObjectiveCandidateNavEvaluate",
-										"NavCurrentAreaLookup",
-										"PathSearch",
-										"PathRecompute",
-										"NavMovement",
-										"MovementDispatch",
-										"TraceSerialization",
-										"RunPlayerMove",
-										"SynchronousLog",
-										"ScenarioUpdate",
-										"BombGuardSelection",
-										"PathCostContext"};
+	static const char *const names[] = {"StartFrame", "RegistryLifecycle", "Observation", "Vision", "TraceLine",
+		"WorldPublish", "Perception", "RuntimeInput", "RuntimeFullUpdate", "FullUpdateObjective",
+		"ObjectiveCandidateNavEvaluate", "NavCurrentAreaLookup", "PathSearch", "PathRecompute", "NavMovement",
+		"MovementDispatch", "TraceSerialization", "RunPlayerMove", "SynchronousLog", "ScenarioUpdate",
+		"BombGuardSelection", "PathCostContext"};
 	const std::size_t index = static_cast<std::size_t>(stage);
 	return index < static_cast<std::size_t>(RuntimeProfilerStage::Count) ? names[index] : "Unknown";
 }
 
 inline const char *runtimePathSearchCallerName(RuntimePathSearchCaller caller)
 {
-	static const char *const names[] = {"CorridorInitial",
-										"CorridorRecompute",
-										"ObjectiveCandidateEvaluation",
-										"BombSiteSelection",
-										"BombTargetSelection",
-										"RoamGoalEvaluation",
-										"RecoveryAreaEvaluation",
-										"TraversalRecovery",
-										"OffPathRecovery",
-										"DebugOrDiagnostic",
-										"Unknown"};
+	static const char *const names[] = {"CorridorInitial", "CorridorRecompute", "ObjectiveCandidateEvaluation",
+		"BombSiteSelection", "BombTargetSelection", "RoamGoalEvaluation", "RecoveryAreaEvaluation", "TraversalRecovery",
+		"OffPathRecovery", "DebugOrDiagnostic", "Unknown"};
 	const std::size_t index = static_cast<std::size_t>(caller);
-	return index < static_cast<std::size_t>(RuntimePathSearchCaller::Count) ? names[index]
-																			: "Unknown";
+	return index < static_cast<std::size_t>(RuntimePathSearchCaller::Count) ? names[index] : "Unknown";
 }
 
 template <typename... Args>
-inline void importantLogConsole(RuntimeProfiler &profiler, plid_t pluginId, const char *format,
-							   Args... args)
+inline void importantLogConsole(RuntimeProfiler &profiler, plid_t pluginId, const char *format, Args... args)
 {
 	RuntimeProfilerScope logScope(profiler, RuntimeProfilerStage::SynchronousLog);
 	gpMetaUtilFuncs->pfnLogConsole(pluginId, format, args...);
 }
 
 template <typename... Args>
-inline void profiledLogConsole(RuntimeProfiler &profiler, plid_t pluginId, const char *format,
-	Args... args)
+inline void profiledLogConsole(RuntimeProfiler &profiler, plid_t pluginId, const char *format, Args... args)
 {
 #ifndef ASTRABOT_TEST_FULL_DIAGNOSTICS
-	if (!profiler.enabled()) return;
+	if (!profiler.enabled())
+		return;
 #endif
 	importantLogConsole(profiler, pluginId, format, args...);
 }
@@ -420,63 +388,59 @@ inline const char *navigationTransitionEvent(compat::NavigationStepOutcome outco
 	(void)outcome;
 	return "navigationFailure";
 #else
-	return outcome == compat::NavigationStepOutcome::EndOfPath ? "navigationComplete" :
-		outcome == compat::NavigationStepOutcome::PathFailure ? "navigationFailure" :
-		"navigationTransition";
+	return outcome == compat::NavigationStepOutcome::EndOfPath	? "navigationComplete"
+		: outcome == compat::NavigationStepOutcome::PathFailure ? "navigationFailure"
+																: "navigationTransition";
 #endif
 }
 
 inline bool entityObjectiveBounds(const edict_t *entity, nav::NavExtent *extent)
 {
+	constexpr float kMinimumObjectiveBoundsExtent = 1.0f;
 	if (entity == nullptr || extent == nullptr)
 	{
 		return false;
 	}
-	const bool hasAbsoluteBounds =
-		std::isfinite(entity->v.absmin.x) && std::isfinite(entity->v.absmin.y) &&
-		std::isfinite(entity->v.absmin.z) && std::isfinite(entity->v.absmax.x) &&
-		std::isfinite(entity->v.absmax.y) && std::isfinite(entity->v.absmax.z) &&
-		entity->v.absmax.x >= entity->v.absmin.x && entity->v.absmax.y >= entity->v.absmin.y &&
-		entity->v.absmax.z >= entity->v.absmin.z &&
-		(entity->v.absmax.x - entity->v.absmin.x > 1.0f ||
-		 entity->v.absmax.y - entity->v.absmin.y > 1.0f ||
-		 entity->v.absmax.z - entity->v.absmin.z > 1.0f);
+	const bool hasAbsoluteBounds = std::isfinite(entity->v.absmin.x) && std::isfinite(entity->v.absmin.y) &&
+		std::isfinite(entity->v.absmin.z) && std::isfinite(entity->v.absmax.x) && std::isfinite(entity->v.absmax.y) &&
+		std::isfinite(entity->v.absmax.z) && entity->v.absmax.x >= entity->v.absmin.x &&
+		entity->v.absmax.y >= entity->v.absmin.y && entity->v.absmax.z >= entity->v.absmin.z &&
+		(entity->v.absmax.x - entity->v.absmin.x > kMinimumObjectiveBoundsExtent ||
+			entity->v.absmax.y - entity->v.absmin.y > kMinimumObjectiveBoundsExtent ||
+			entity->v.absmax.z - entity->v.absmin.z > kMinimumObjectiveBoundsExtent);
 	if (hasAbsoluteBounds)
 	{
 		extent->lo = {entity->v.absmin.x, entity->v.absmin.y, entity->v.absmin.z};
 		extent->hi = {entity->v.absmax.x, entity->v.absmax.y, entity->v.absmax.z};
 		return true;
 	}
-	const bool hasLocalBounds =
-		std::isfinite(entity->v.mins.x) && std::isfinite(entity->v.mins.y) &&
-		std::isfinite(entity->v.mins.z) && std::isfinite(entity->v.maxs.x) &&
-		std::isfinite(entity->v.maxs.y) && std::isfinite(entity->v.maxs.z) &&
-		entity->v.maxs.x >= entity->v.mins.x && entity->v.maxs.y >= entity->v.mins.y &&
-		entity->v.maxs.z >= entity->v.mins.z &&
-		(entity->v.maxs.x - entity->v.mins.x > 1.0f || entity->v.maxs.y - entity->v.mins.y > 1.0f ||
-		 entity->v.maxs.z - entity->v.mins.z > 1.0f);
+	const bool hasLocalBounds = std::isfinite(entity->v.mins.x) && std::isfinite(entity->v.mins.y) &&
+		std::isfinite(entity->v.mins.z) && std::isfinite(entity->v.maxs.x) && std::isfinite(entity->v.maxs.y) &&
+		std::isfinite(entity->v.maxs.z) && entity->v.maxs.x >= entity->v.mins.x &&
+		entity->v.maxs.y >= entity->v.mins.y && entity->v.maxs.z >= entity->v.mins.z &&
+		(entity->v.maxs.x - entity->v.mins.x > kMinimumObjectiveBoundsExtent ||
+			entity->v.maxs.y - entity->v.mins.y > kMinimumObjectiveBoundsExtent ||
+			entity->v.maxs.z - entity->v.mins.z > kMinimumObjectiveBoundsExtent);
 	if (!hasLocalBounds)
 	{
-		const bool hasWorldSize =
-			std::isfinite(entity->v.size.x) && std::isfinite(entity->v.size.y) &&
+		const bool hasWorldSize = std::isfinite(entity->v.size.x) && std::isfinite(entity->v.size.y) &&
 			std::isfinite(entity->v.size.z) &&
-			(entity->v.size.x > 1.0f || entity->v.size.y > 1.0f || entity->v.size.z > 1.0f);
+			(entity->v.size.x > kMinimumObjectiveBoundsExtent || entity->v.size.y > kMinimumObjectiveBoundsExtent ||
+				entity->v.size.z > kMinimumObjectiveBoundsExtent);
 		if (!hasWorldSize)
 		{
 			return false;
 		}
-		extent->lo = {entity->v.origin.x - entity->v.size.x * 0.5f,
-					  entity->v.origin.y - entity->v.size.y * 0.5f,
-					  entity->v.origin.z - entity->v.size.z * 0.5f};
-		extent->hi = {entity->v.origin.x + entity->v.size.x * 0.5f,
-					  entity->v.origin.y + entity->v.size.y * 0.5f,
-					  entity->v.origin.z + entity->v.size.z * 0.5f};
+		extent->lo = {entity->v.origin.x - entity->v.size.x * 0.5f, entity->v.origin.y - entity->v.size.y * 0.5f,
+			entity->v.origin.z - entity->v.size.z * 0.5f};
+		extent->hi = {entity->v.origin.x + entity->v.size.x * 0.5f, entity->v.origin.y + entity->v.size.y * 0.5f,
+			entity->v.origin.z + entity->v.size.z * 0.5f};
 		return true;
 	}
 	extent->lo = {entity->v.origin.x + entity->v.mins.x, entity->v.origin.y + entity->v.mins.y,
-				  entity->v.origin.z + entity->v.mins.z};
+		entity->v.origin.z + entity->v.mins.z};
 	extent->hi = {entity->v.origin.x + entity->v.maxs.x, entity->v.origin.y + entity->v.maxs.y,
-				  entity->v.origin.z + entity->v.maxs.z};
+		entity->v.origin.z + entity->v.maxs.z};
 	return true;
 }
 
@@ -485,12 +449,11 @@ inline nav::NavVector entityObjectiveCenter(const edict_t *entity)
 	nav::NavExtent extent = {};
 	if (entityObjectiveBounds(entity, &extent))
 	{
-		return {(extent.lo.x + extent.hi.x) * 0.5f, (extent.lo.y + extent.hi.y) * 0.5f,
-				(extent.lo.z + extent.hi.z) * 0.5f};
+		return {
+			(extent.lo.x + extent.hi.x) * 0.5f, (extent.lo.y + extent.hi.y) * 0.5f, (extent.lo.z + extent.hi.z) * 0.5f};
 	}
-	return entity == nullptr
-			   ? nav::NavVector{0.0f, 0.0f, 0.0f}
-			   : nav::NavVector{entity->v.origin.x, entity->v.origin.y, entity->v.origin.z};
+	return entity == nullptr ? nav::NavVector{0.0f, 0.0f, 0.0f}
+							 : nav::NavVector{entity->v.origin.x, entity->v.origin.y, entity->v.origin.z};
 }
 
 inline bool isBombTargetClassname(const char *classname)
@@ -498,8 +461,7 @@ inline bool isBombTargetClassname(const char *classname)
 	return ActionAdapter::isBombTargetClassname(classname);
 }
 
-inline bool objectiveSiteExtent(const edict_t *entity, const char *classname,
-								nav::NavExtent *extent)
+inline bool objectiveSiteExtent(const edict_t *entity, const char *classname, nav::NavExtent *extent)
 {
 	if (entity == nullptr || extent == nullptr)
 	{
@@ -513,32 +475,27 @@ inline bool objectiveSiteExtent(const edict_t *entity, const char *classname,
 			return false;
 		}
 		extent->lo = {center.x - ActionAdapter::kLegacyBombTargetRadius,
-					  center.y - ActionAdapter::kLegacyBombTargetRadius,
-					  center.z - ActionAdapter::kLegacyBombTargetRadius};
+			center.y - ActionAdapter::kLegacyBombTargetRadius, center.z - ActionAdapter::kLegacyBombTargetRadius};
 		extent->hi = {center.x + ActionAdapter::kLegacyBombTargetRadius,
-					  center.y + ActionAdapter::kLegacyBombTargetRadius,
-					  center.z + ActionAdapter::kLegacyBombTargetRadius};
+			center.y + ActionAdapter::kLegacyBombTargetRadius, center.z + ActionAdapter::kLegacyBombTargetRadius};
 		return true;
 	}
 	return entityObjectiveBounds(entity, extent);
 }
 
-inline void logObjectiveTargetDiagnostic(
-	RuntimeProfiler &profiler, plid_t pluginId, std::uint32_t targetId, int entityIndex,
-	const char *classname, std::uint32_t registeredSites,
-	std::uint32_t registeredFuncBombTargetSites, std::uint32_t registeredInfoBombTargetSites,
-	const edict_t *entity, const nav::NavVector &center, nav::AreaId nearestNavArea,
-	nav::AreaId candidateNavArea, std::uint32_t candidateAreaSamples,
-	std::uint32_t uniqueCandidateAreas, std::uint32_t reachableCandidateAreas,
-	float bestReachableCost, const char *cacheState, bool valid, const char *rejectionReason)
+inline void logObjectiveTargetDiagnostic(RuntimeProfiler &profiler, plid_t pluginId, std::uint32_t targetId,
+	int entityIndex, const char *classname, std::uint32_t registeredSites, std::uint32_t registeredFuncBombTargetSites,
+	std::uint32_t registeredInfoBombTargetSites, const edict_t *entity, const nav::NavVector &center,
+	nav::AreaId nearestNavArea, nav::AreaId candidateNavArea, std::uint32_t candidateAreaSamples,
+	std::uint32_t uniqueCandidateAreas, std::uint32_t reachableCandidateAreas, float bestReachableCost,
+	const char *cacheState, bool valid, const char *rejectionReason)
 {
-	if (pluginId == nullptr || gpMetaUtilFuncs == nullptr ||
-		gpMetaUtilFuncs->pfnLogConsole == nullptr || entity == nullptr)
+	if (pluginId == nullptr || gpMetaUtilFuncs == nullptr || gpMetaUtilFuncs->pfnLogConsole == nullptr ||
+		entity == nullptr)
 	{
 		return;
 	}
-	profiledLogConsole(
-		profiler, pluginId,
+	profiledLogConsole(profiler, pluginId,
 		"profile objectiveTarget target_id=%u entity_index=%d classname=%s "
 		"registered_site_count=%u registered_func_bomb_target_count=%u "
 		"registered_info_bomb_target_count=%u "
@@ -549,15 +506,12 @@ inline void logObjectiveTargetDiagnostic(
 		"reachable_nav_candidate_areas=%u best_reachable_cost=%.1f "
 		"cache_state=%s valid=%d rejection_reason=%s",
 		static_cast<unsigned int>(targetId), entityIndex, classname == nullptr ? "" : classname,
-		static_cast<unsigned int>(registeredSites),
-		static_cast<unsigned int>(registeredFuncBombTargetSites),
-		static_cast<unsigned int>(registeredInfoBombTargetSites), entity->v.origin.x,
-		entity->v.origin.y, entity->v.origin.z, entity->v.mins.x, entity->v.mins.y,
-		entity->v.mins.z, entity->v.maxs.x, entity->v.maxs.y, entity->v.maxs.z, center.x, center.y,
-		center.z, static_cast<unsigned int>(nearestNavArea),
+		static_cast<unsigned int>(registeredSites), static_cast<unsigned int>(registeredFuncBombTargetSites),
+		static_cast<unsigned int>(registeredInfoBombTargetSites), entity->v.origin.x, entity->v.origin.y,
+		entity->v.origin.z, entity->v.mins.x, entity->v.mins.y, entity->v.mins.z, entity->v.maxs.x, entity->v.maxs.y,
+		entity->v.maxs.z, center.x, center.y, center.z, static_cast<unsigned int>(nearestNavArea),
 		static_cast<unsigned int>(candidateNavArea), static_cast<unsigned int>(targetId),
-		static_cast<unsigned int>(candidateAreaSamples),
-		static_cast<unsigned int>(uniqueCandidateAreas),
+		static_cast<unsigned int>(candidateAreaSamples), static_cast<unsigned int>(uniqueCandidateAreas),
 		static_cast<unsigned int>(reachableCandidateAreas), bestReachableCost,
 		cacheState == nullptr ? "unknown" : cacheState, valid ? 1 : 0,
 		rejectionReason == nullptr ? "unknown" : rejectionReason);
@@ -565,19 +519,25 @@ inline void logObjectiveTargetDiagnostic(
 
 inline std::uint8_t movementMilliseconds(const globalvars_t *globals)
 {
+	constexpr auto kFallbackMilliseconds = 50U;
+	constexpr auto kMinimumMilliseconds = 1U;
+	constexpr auto kMaximumMilliseconds = 255U;
+	constexpr float kMillisecondsPerSecond = 1000.0f;
+	constexpr float kMinimumMillisecondsThreshold = 1.0f;
+	constexpr float kMaximumMillisecondsThreshold = 255.0f;
 	if (globals == nullptr || !std::isfinite(globals->frametime) || globals->frametime <= 0.0f)
 	{
-		return 50U;
+		return kFallbackMilliseconds;
 	}
 
-	const float milliseconds = globals->frametime * 1000.0f;
-	if (milliseconds < 1.0f)
+	const float milliseconds = globals->frametime * kMillisecondsPerSecond;
+	if (milliseconds < kMinimumMillisecondsThreshold)
 	{
-		return 1U;
+		return kMinimumMilliseconds;
 	}
-	if (milliseconds >= 255.0f)
+	if (milliseconds >= kMaximumMillisecondsThreshold)
 	{
-		return 255U;
+		return kMaximumMilliseconds;
 	}
 	return static_cast<std::uint8_t>(milliseconds + 0.5f);
 }

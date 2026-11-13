@@ -17,11 +17,7 @@ bool check(bool condition, const char *description)
 	return false;
 }
 
-astrabot::nav::NavArea area(
-	astrabot::nav::AreaId id,
-	float lowX,
-	float highX,
-	float floorZ)
+astrabot::nav::NavArea area(astrabot::nav::AreaId id, float lowX, float highX, float floorZ)
 {
 	astrabot::nav::NavArea result = {};
 	result.id = id;
@@ -44,17 +40,14 @@ astrabot::nav::NavDocument routeDocument(float destinationFloor)
 	return document;
 }
 
-astrabot::nav::NavSnapshot snapshotFor(
-	astrabot::nav::NavDocument *document,
-	std::uint32_t mapGeneration)
+astrabot::nav::NavSnapshot snapshotFor(astrabot::nav::NavDocument *document, std::uint32_t mapGeneration)
 {
 	astrabot::nav::NavSnapshotPublisher publisher;
 	publisher.publish(document, mapGeneration);
 	return publisher.snapshot();
 }
 
-astrabot::nav::NavCorridor corridorFor(
-	const astrabot::nav::NavSnapshot &snapshot)
+astrabot::nav::NavCorridor corridorFor(const astrabot::nav::NavSnapshot &snapshot)
 {
 	astrabot::nav::NavQuery query(snapshot);
 	astrabot::nav::NavCorridor corridor = {};
@@ -64,18 +57,10 @@ astrabot::nav::NavCorridor corridorFor(
 
 astrabot::nav::JumpDropConfig config()
 {
-	return {
-		8.0f,
-		8.0f,
-		8.0f,
-		100.0f,
-		4U
-	};
+	return {8.0f, 8.0f, 8.0f, 100.0f, 4U};
 }
 
-astrabot::nav::JumpDropEnvelope envelope(
-	astrabot::nav::JumpDropKind kind,
-	float landingZ)
+astrabot::nav::JumpDropEnvelope envelope(astrabot::nav::JumpDropKind kind, float landingZ)
 {
 	astrabot::nav::JumpDropEnvelope result = {};
 	result.kind = kind;
@@ -88,24 +73,10 @@ astrabot::nav::JumpDropEnvelope envelope(
 	return result;
 }
 
-astrabot::nav::JumpDropObservation observation(
-	const astrabot::nav::NavVector &position,
-	std::uint32_t actorGeneration,
-	std::uint32_t frame,
-	bool airborne,
-	bool landingConfirmed,
-	bool hasLandingDamage,
-	float landingDamage)
+astrabot::nav::JumpDropObservation observation(const astrabot::nav::NavVector &position, std::uint32_t actorGeneration,
+	std::uint32_t frame, bool airborne, bool landingConfirmed, bool hasLandingDamage, float landingDamage)
 {
-	return {
-		position,
-		frame,
-		actorGeneration,
-		airborne,
-		landingConfirmed,
-		hasLandingDamage,
-		landingDamage
-	};
+	return {position, frame, actorGeneration, airborne, landingConfirmed, hasLandingDamage, landingDamage};
 }
 
 bool testValidLaunchAndLandingFeedback()
@@ -113,25 +84,19 @@ bool testValidLaunchAndLandingFeedback()
 	astrabot::nav::NavDocument document = routeDocument(32.0f);
 	const astrabot::nav::NavSnapshot snapshot = snapshotFor(&document, 1U);
 	astrabot::nav::JumpDropController controller(config());
-	const astrabot::nav::JumpDropEnvelope jump =
-		envelope(astrabot::nav::JumpDropKind::Jump, 32.0f);
-	if (!check(controller.start(corridorFor(snapshot), jump, 7U) ==
-			astrabot::nav::JumpDropResult::Ready,
+	const astrabot::nav::JumpDropEnvelope jump = envelope(astrabot::nav::JumpDropKind::Jump, 32.0f);
+	if (!check(controller.start(corridorFor(snapshot), jump, 7U) == astrabot::nav::JumpDropResult::Ready,
 			"valid jump envelope is ready"))
 	{
 		return false;
 	}
 
 	astrabot::nav::JumpDropIntent intent = {};
-	const astrabot::nav::JumpDropObservation launch = observation(
-		{32.0f, 32.0f, 0.0f}, 7U, 100U, false, false, false, 0.0f);
-	if (!check(controller.update(snapshot, launch, &intent) ==
-			astrabot::nav::JumpDropResult::Emitted &&
-			controller.isActive() &&
-			intent.kind == astrabot::nav::JumpDropKind::Jump &&
-			intent.launchArea == 1U &&
-			intent.landingArea == 2U &&
-			intent.direction.x > 0.9f,
+	const astrabot::nav::JumpDropObservation launch =
+		observation({32.0f, 32.0f, 0.0f}, 7U, 100U, false, false, false, 0.0f);
+	if (!check(controller.update(snapshot, launch, &intent) == astrabot::nav::JumpDropResult::Emitted &&
+				controller.isActive() && intent.kind == astrabot::nav::JumpDropKind::Jump && intent.launchArea == 1U &&
+				intent.landingArea == 2U && intent.direction.x > 0.9f,
 			"launch emits bounded intent without completion"))
 	{
 		return false;
@@ -139,45 +104,38 @@ bool testValidLaunchAndLandingFeedback()
 
 	const astrabot::nav::JumpDropObservation unconfirmedLanding =
 		observation({96.0f, 32.0f, 32.0f}, 7U, 101U, false, false, false, 0.0f);
-	if (!check(controller.update(snapshot, unconfirmedLanding, &intent) ==
-			astrabot::nav::JumpDropResult::Ready &&
-			controller.isActive() &&
-			intent.speed == 0.0f,
+	if (!check(controller.update(snapshot, unconfirmedLanding, &intent) == astrabot::nav::JumpDropResult::Ready &&
+				controller.isActive() && intent.speed == 0.0f,
 			"jump input is released while awaiting airborne or landing feedback"))
 	{
 		return false;
 	}
 
-	const astrabot::nav::JumpDropObservation confirmedLanding = observation(
-		{96.0f, 32.0f, 32.0f}, 7U, 102U, false, true, false, 0.0f);
-	return check(controller.update(snapshot, confirmedLanding, &intent) ==
-			astrabot::nav::JumpDropResult::Landed &&
+	const astrabot::nav::JumpDropObservation confirmedLanding =
+		observation({96.0f, 32.0f, 32.0f}, 7U, 102U, false, true, false, 0.0f);
+	return check(controller.update(snapshot, confirmedLanding, &intent) == astrabot::nav::JumpDropResult::Landed &&
 			!controller.isActive(),
-			"explicit landing feedback completes the jump");
+		"explicit landing feedback completes the jump");
 }
 
 bool testHeightAndHorizontalReachBounds()
 {
 	astrabot::nav::NavDocument document = routeDocument(32.0f);
 	const astrabot::nav::NavSnapshot snapshot = snapshotFor(&document, 1U);
-	astrabot::nav::JumpDropEnvelope tooHigh =
-		envelope(astrabot::nav::JumpDropKind::Jump, 32.0f);
+	astrabot::nav::JumpDropEnvelope tooHigh = envelope(astrabot::nav::JumpDropKind::Jump, 32.0f);
 	tooHigh.maximumRise = 31.0f;
 	astrabot::nav::JumpDropController highController(config());
-	if (!check(highController.start(corridorFor(snapshot), tooHigh, 7U) ==
-			astrabot::nav::JumpDropResult::Unsafe &&
-			!highController.isActive(),
+	if (!check(highController.start(corridorFor(snapshot), tooHigh, 7U) == astrabot::nav::JumpDropResult::Unsafe &&
+				!highController.isActive(),
 			"jump above maximum rise is rejected"))
 	{
 		return false;
 	}
 
-	astrabot::nav::JumpDropEnvelope tooFar =
-		envelope(astrabot::nav::JumpDropKind::Jump, 32.0f);
+	astrabot::nav::JumpDropEnvelope tooFar = envelope(astrabot::nav::JumpDropKind::Jump, 32.0f);
 	tooFar.horizontalReach = 63.0f;
 	astrabot::nav::JumpDropController reachController(config());
-	return check(reachController.start(corridorFor(snapshot), tooFar, 7U) ==
-			astrabot::nav::JumpDropResult::Unsafe &&
+	return check(reachController.start(corridorFor(snapshot), tooFar, 7U) == astrabot::nav::JumpDropResult::Unsafe &&
 			!reachController.isActive(),
 		"horizontal reach beyond the envelope is rejected");
 }
@@ -186,49 +144,37 @@ bool testDropDamageRiskAndUnknownLanding()
 {
 	astrabot::nav::NavDocument document = routeDocument(-40.0f);
 	const astrabot::nav::NavSnapshot snapshot = snapshotFor(&document, 1U);
-	astrabot::nav::JumpDropEnvelope unsafeDrop =
-		envelope(astrabot::nav::JumpDropKind::Drop, -40.0f);
+	astrabot::nav::JumpDropEnvelope unsafeDrop = envelope(astrabot::nav::JumpDropKind::Drop, -40.0f);
 	unsafeDrop.damageRisk.maximumSafeDropHeight = 32.0f;
 	astrabot::nav::JumpDropController unsafeController(config());
-	if (!check(unsafeController.start(
-			corridorFor(snapshot), unsafeDrop, 7U) ==
-			astrabot::nav::JumpDropResult::Unsafe &&
-			!unsafeController.isActive(),
+	if (!check(unsafeController.start(corridorFor(snapshot), unsafeDrop, 7U) == astrabot::nav::JumpDropResult::Unsafe &&
+				!unsafeController.isActive(),
 			"drop damage height policy rejects unsafe traversal"))
 	{
 		return false;
 	}
 
 	astrabot::nav::JumpDropController unknownController(config());
-	unknownController.start(
-		corridorFor(snapshot),
-		envelope(astrabot::nav::JumpDropKind::Drop, -40.0f),
-		7U);
+	unknownController.start(corridorFor(snapshot), envelope(astrabot::nav::JumpDropKind::Drop, -40.0f), 7U);
 	astrabot::nav::JumpDropIntent unknownIntent = {};
-	unknownController.update(snapshot,
-		observation({32.0f, 32.0f, 0.0f}, 7U, 1U, false, false, false, 0.0f),
-		&unknownIntent);
-	if (!check(unknownController.update(snapshot,
-			observation({96.0f, 32.0f, -40.0f}, 7U, 2U, false, true, false, 0.0f),
-			&unknownIntent) == astrabot::nav::JumpDropResult::InvalidObservation &&
-			!unknownController.isActive(),
+	unknownController.update(
+		snapshot, observation({32.0f, 32.0f, 0.0f}, 7U, 1U, false, false, false, 0.0f), &unknownIntent);
+	if (!check(unknownController.update(snapshot, observation({96.0f, 32.0f, -40.0f}, 7U, 2U, false, true, false, 0.0f),
+				   &unknownIntent) == astrabot::nav::JumpDropResult::InvalidObservation &&
+				!unknownController.isActive(),
 			"unknown drop landing damage fails closed"))
 	{
 		return false;
 	}
 
-	astrabot::nav::JumpDropEnvelope observedDrop =
-		envelope(astrabot::nav::JumpDropKind::Drop, -40.0f);
+	astrabot::nav::JumpDropEnvelope observedDrop = envelope(astrabot::nav::JumpDropKind::Drop, -40.0f);
 	astrabot::nav::JumpDropController controller(config());
 	controller.start(corridorFor(snapshot), observedDrop, 7U);
 	astrabot::nav::JumpDropIntent intent = {};
-	controller.update(snapshot,
-		observation({32.0f, 32.0f, 0.0f}, 7U, 1U, false, false, false, 0.0f),
-		&intent);
-	const astrabot::nav::JumpDropObservation unsafeLanding = observation(
-		{96.0f, 32.0f, -40.0f}, 7U, 2U, false, true, true, 26.0f);
-	return check(controller.update(snapshot, unsafeLanding, &intent) ==
-			astrabot::nav::JumpDropResult::Unsafe &&
+	controller.update(snapshot, observation({32.0f, 32.0f, 0.0f}, 7U, 1U, false, false, false, 0.0f), &intent);
+	const astrabot::nav::JumpDropObservation unsafeLanding =
+		observation({96.0f, 32.0f, -40.0f}, 7U, 2U, false, true, true, 26.0f);
+	return check(controller.update(snapshot, unsafeLanding, &intent) == astrabot::nav::JumpDropResult::Unsafe &&
 			!controller.isActive(),
 		"landing damage beyond the policy is rejected");
 }
@@ -240,27 +186,18 @@ bool testMissingFeedbackTimesOut()
 	astrabot::nav::JumpDropConfig shortConfig = config();
 	shortConfig.maximumTraversalFrames = 2U;
 	astrabot::nav::JumpDropController controller(shortConfig);
-	controller.start(
-		corridorFor(snapshot),
-		envelope(astrabot::nav::JumpDropKind::Jump, 32.0f),
-		7U);
+	controller.start(corridorFor(snapshot), envelope(astrabot::nav::JumpDropKind::Jump, 32.0f), 7U);
 	astrabot::nav::JumpDropIntent intent = {};
-	controller.update(snapshot,
-		observation({32.0f, 32.0f, 0.0f}, 7U, 10U, false, false, false, 0.0f),
-		&intent);
-	controller.update(snapshot,
-		observation({96.0f, 32.0f, 32.0f}, 7U, 11U, false, false, false, 0.0f),
-		&intent);
-	if (!check(controller.isActive(),
-			"missing landing feedback keeps traversal pending"))
+	controller.update(snapshot, observation({32.0f, 32.0f, 0.0f}, 7U, 10U, false, false, false, 0.0f), &intent);
+	controller.update(snapshot, observation({96.0f, 32.0f, 32.0f}, 7U, 11U, false, false, false, 0.0f), &intent);
+	if (!check(controller.isActive(), "missing landing feedback keeps traversal pending"))
 	{
 		return false;
 	}
 
-	return check(controller.update(snapshot,
-		observation({96.0f, 32.0f, 32.0f}, 7U, 13U, false, false, false, 0.0f),
-		&intent) == astrabot::nav::JumpDropResult::TimedOut &&
-		!controller.isActive(),
+	return check(controller.update(snapshot, observation({96.0f, 32.0f, 32.0f}, 7U, 13U, false, false, false, 0.0f),
+					 &intent) == astrabot::nav::JumpDropResult::TimedOut &&
+			!controller.isActive(),
 		"missing landing feedback times out safely");
 }
 
@@ -269,35 +206,25 @@ bool testLandingAreaAndGenerationInvalidation()
 	astrabot::nav::NavDocument document = routeDocument(32.0f);
 	const astrabot::nav::NavSnapshot snapshot = snapshotFor(&document, 1U);
 	astrabot::nav::JumpDropController wrongAreaController(config());
-	wrongAreaController.start(
-		corridorFor(snapshot),
-		envelope(astrabot::nav::JumpDropKind::Jump, 32.0f),
-		7U);
+	wrongAreaController.start(corridorFor(snapshot), envelope(astrabot::nav::JumpDropKind::Jump, 32.0f), 7U);
 	astrabot::nav::JumpDropIntent intent = {};
-	wrongAreaController.update(snapshot,
-		observation({32.0f, 32.0f, 0.0f}, 7U, 1U, false, false, false, 0.0f),
-		&intent);
-	if (!check(wrongAreaController.update(snapshot,
-			observation({32.0f, 32.0f, 0.0f}, 7U, 2U, false, true, false, 0.0f),
-			&intent) == astrabot::nav::JumpDropResult::InvalidObservation &&
-			!wrongAreaController.isActive(),
+	wrongAreaController.update(snapshot, observation({32.0f, 32.0f, 0.0f}, 7U, 1U, false, false, false, 0.0f), &intent);
+	if (!check(wrongAreaController.update(snapshot, observation({32.0f, 32.0f, 0.0f}, 7U, 2U, false, true, false, 0.0f),
+				   &intent) == astrabot::nav::JumpDropResult::InvalidObservation &&
+				!wrongAreaController.isActive(),
 			"confirmed landing in the launch area is rejected"))
 	{
 		return false;
 	}
 
 	astrabot::nav::JumpDropController staleController(config());
-	staleController.start(
-		corridorFor(snapshot),
-		envelope(astrabot::nav::JumpDropKind::Jump, 32.0f),
-		7U);
+	staleController.start(corridorFor(snapshot), envelope(astrabot::nav::JumpDropKind::Jump, 32.0f), 7U);
 	astrabot::nav::NavDocument replacement = routeDocument(32.0f);
-	const astrabot::nav::NavSnapshot changedSnapshot =
-		snapshotFor(&replacement, 2U);
-	return check(staleController.update(changedSnapshot,
-		observation({32.0f, 32.0f, 0.0f}, 7U, 1U, false, false, false, 0.0f),
-		&intent) == astrabot::nav::JumpDropResult::Invalidated &&
-		!staleController.isActive(),
+	const astrabot::nav::NavSnapshot changedSnapshot = snapshotFor(&replacement, 2U);
+	return check(
+		staleController.update(changedSnapshot, observation({32.0f, 32.0f, 0.0f}, 7U, 1U, false, false, false, 0.0f),
+			&intent) == astrabot::nav::JumpDropResult::Invalidated &&
+			!staleController.isActive(),
 		"changed map generation invalidates traversal");
 }
 
@@ -306,46 +233,58 @@ bool testSlopedDropSeparatesAreaAssociationFromLaunchDisplacement()
 	using namespace astrabot::nav;
 	for (unsigned scenario = 0U; scenario < 7U; ++scenario)
 	{
-		NavDocument document; document.setSourceIdentity({5U,100U,200U});
-		auto ledge = area(1734U,-500.0f,-425.0f,0.0f);
-		ledge.extent.lo = {-500.0f,-650.0f,125.03221f};
-		ledge.extent.hi = {-425.0f,-625.0f,133.48207f};
-		ledge.northEastZ = 106.28207f; ledge.southWestZ = 157.03221f;
+		NavDocument document;
+		document.setSourceIdentity({5U, 100U, 200U});
+		auto ledge = area(1734U, -500.0f, -425.0f, 0.0f);
+		ledge.extent.lo = {-500.0f, -650.0f, 125.03221f};
+		ledge.extent.hi = {-425.0f, -625.0f, 133.48207f};
+		ledge.northEastZ = 106.28207f;
+		ledge.southWestZ = 157.03221f;
 		ledge.connections[2U] = {96U};
-		auto landing = area(96U,-500.0f,-375.0f,.03125f);
-		landing.extent.lo.y = -600.0f; landing.extent.hi.y = -475.0f;
-		document.addArea(ledge); document.addArea(landing);
+		auto landing = area(96U, -500.0f, -375.0f, .03125f);
+		landing.extent.lo.y = -600.0f;
+		landing.extent.hi.y = -475.0f;
+		document.addArea(ledge);
+		document.addArea(landing);
 		if (scenario == 5U)
 		{
-			auto upper = area(999U,-500.0f,-425.0f,142.9f);
-			upper.extent.lo.y = -650.0f; upper.extent.hi.y = -625.0f;
+			auto upper = area(999U, -500.0f, -425.0f, 142.9f);
+			upper.extent.lo.y = -650.0f;
+			upper.extent.hi.y = -625.0f;
 			document.addArea(upper);
 		}
-		const auto snapshot = snapshotFor(&document,1U);
-		NavCorridor corridor{}; NavQuery(snapshot).buildCorridor(1734U,96U,&corridor);
+		const auto snapshot = snapshotFor(&document, 1U);
+		NavCorridor corridor{};
+		NavQuery(snapshot).buildCorridor(1734U, 96U, &corridor);
 		JumpDropEnvelope descent{};
 		descent.kind = scenario == 1U ? JumpDropKind::Jump : JumpDropKind::Drop;
-		descent.launch = {{-443.9f,-632.1f,142.9f},1734U};
-		descent.landing = {{-443.9f,-584.0f,.03125f},96U};
-		descent.maximumRise = 200.0f; descent.maximumDrop = 200.0f;
+		descent.launch = {{-443.9f, -632.1f, 142.9f}, 1734U};
+		descent.landing = {{-443.9f, -584.0f, .03125f}, 96U};
+		descent.maximumRise = 200.0f;
+		descent.maximumDrop = 200.0f;
 		descent.horizontalReach = 64.0f;
-		descent.damageRisk = {scenario == 6U ? 100.0f : 156.25f,0.0f};
+		descent.damageRisk = {scenario == 6U ? 100.0f : 156.25f, 0.0f};
 		JumpDropController controller(config());
-		const auto start = controller.start(corridor,descent,7U);
+		const auto start = controller.start(corridor, descent, 7U);
 		if (scenario == 6U)
 		{
 			if (!check(start == JumpDropResult::Unsafe,
-				"drop risk retains actual grounded height instead of snapping feet to NAV")) return false;
+					"drop risk retains actual grounded height instead of snapping feet to NAV"))
+				return false;
 			continue;
 		}
-		if (!check(start == JumpDropResult::Ready,"sloped launch fixture starts a bounded envelope")) return false;
-		auto launch = observation(descent.launch.position,7U,1U,scenario == 2U,false,false,0.0f);
-		if (scenario == 3U) launch.position.x += 9.0f;
-		if (scenario == 4U) launch.position.z += 9.0f;
+		if (!check(start == JumpDropResult::Ready, "sloped launch fixture starts a bounded envelope"))
+			return false;
+		auto launch = observation(descent.launch.position, 7U, 1U, scenario == 2U, false, false, 0.0f);
+		if (scenario == 3U)
+			launch.position.x += 9.0f;
+		if (scenario == 4U)
+			launch.position.z += 9.0f;
 		JumpDropIntent intent{};
-		const auto result = controller.update(snapshot,launch,&intent);
+		const auto result = controller.update(snapshot, launch, &intent);
 		if (!check(result == (scenario == 0U ? JumpDropResult::Emitted : JumpDropResult::InvalidObservation),
-			"grounded sloped drop associates with NAV; Jump, air, launch drift and another floor stay rejected")) return false;
+				"grounded sloped drop associates with NAV; Jump, air, launch drift and another floor stay rejected"))
+			return false;
 	}
 	return true;
 }
@@ -355,49 +294,33 @@ bool testInvalidObservationAndActorGeneration()
 	astrabot::nav::NavDocument document = routeDocument(32.0f);
 	const astrabot::nav::NavSnapshot snapshot = snapshotFor(&document, 1U);
 	astrabot::nav::JumpDropController controller(config());
-	controller.start(
-		corridorFor(snapshot),
-		envelope(astrabot::nav::JumpDropKind::Jump, 32.0f),
-		7U);
+	controller.start(corridorFor(snapshot), envelope(astrabot::nav::JumpDropKind::Jump, 32.0f), 7U);
 	astrabot::nav::JumpDropIntent intent = {};
-	const astrabot::nav::JumpDropObservation invalid = observation(
-		{std::numeric_limits<float>::quiet_NaN(), 32.0f, 0.0f},
-		7U,
-		1U,
-		false,
-		false,
-		false,
-		0.0f);
-	if (!check(controller.update(snapshot, invalid, &intent) ==
-			astrabot::nav::JumpDropResult::InvalidObservation &&
-			!controller.isActive(),
+	const astrabot::nav::JumpDropObservation invalid =
+		observation({std::numeric_limits<float>::quiet_NaN(), 32.0f, 0.0f}, 7U, 1U, false, false, false, 0.0f);
+	if (!check(controller.update(snapshot, invalid, &intent) == astrabot::nav::JumpDropResult::InvalidObservation &&
+				!controller.isActive(),
 			"non-finite physics observation fails closed"))
 	{
 		return false;
 	}
 
 	astrabot::nav::JumpDropController actorController(config());
-	actorController.start(
-		corridorFor(snapshot),
-		envelope(astrabot::nav::JumpDropKind::Jump, 32.0f),
-		7U);
-	return check(actorController.update(snapshot,
-		observation({32.0f, 32.0f, 0.0f}, 8U, 1U, false, false, false, 0.0f),
-		&intent) == astrabot::nav::JumpDropResult::Invalidated &&
-		!actorController.isActive(),
+	actorController.start(corridorFor(snapshot), envelope(astrabot::nav::JumpDropKind::Jump, 32.0f), 7U);
+	return check(actorController.update(snapshot, observation({32.0f, 32.0f, 0.0f}, 8U, 1U, false, false, false, 0.0f),
+					 &intent) == astrabot::nav::JumpDropResult::Invalidated &&
+			!actorController.isActive(),
 		"changed actor generation invalidates traversal");
 }
 }
 
 int main()
 {
-	if (!testSlopedDropSeparatesAreaAssociationFromLaunchDisplacement()) return 1;
-	if (!testValidLaunchAndLandingFeedback() ||
-			!testHeightAndHorizontalReachBounds() ||
-			!testDropDamageRiskAndUnknownLanding() ||
-			!testMissingFeedbackTimesOut() ||
-			!testLandingAreaAndGenerationInvalidation() ||
-			!testInvalidObservationAndActorGeneration())
+	if (!testSlopedDropSeparatesAreaAssociationFromLaunchDisplacement())
+		return 1;
+	if (!testValidLaunchAndLandingFeedback() || !testHeightAndHorizontalReachBounds() ||
+		!testDropDamageRiskAndUnknownLanding() || !testMissingFeedbackTimesOut() ||
+		!testLandingAreaAndGenerationInvalidation() || !testInvalidObservationAndActorGeneration())
 	{
 		return 1;
 	}

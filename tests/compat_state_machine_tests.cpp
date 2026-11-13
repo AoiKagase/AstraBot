@@ -29,10 +29,7 @@ struct TraceCollector : public IStateTraceSink
 };
 
 StateUpdateContext context(
-	std::uint32_t tick,
-	float timestamp,
-	std::uint32_t fullUpdateSequence,
-	astrabot::world::ActorKey actor = {1U, 7U})
+	std::uint32_t tick, float timestamp, std::uint32_t fullUpdateSequence, astrabot::world::ActorKey actor = {1U, 7U})
 {
 	StateUpdateContext value = {};
 	value.actor = actor;
@@ -50,10 +47,7 @@ StateUpdateContext context(
 	return value;
 }
 
-bool initialize(
-	CompatibilityStateMachine *machine,
-	TraceCollector *trace,
-	const StateUpdateContext &value)
+bool initialize(CompatibilityStateMachine *machine, TraceCollector *trace, const StateUpdateContext &value)
 {
 	machine->setTraceSink(trace);
 	return machine->initialize(value) == StateResult::Transitioned;
@@ -69,14 +63,12 @@ bool testInitialStateAndOwnership()
 		return false;
 	}
 
-	return check(machine.state() == CompatibilityStateId::Idle,
-			"initial state is Idle") &&
+	return check(machine.state() == CompatibilityStateId::Idle, "initial state is Idle") &&
 		check(!machine.attackOverlayActive(), "initial attack overlay is inactive") &&
 		check(machine.stateTimestamp() == 1.0f, "initial timestamp is injected time") &&
-		check(trace.records.size() >= 2U &&
-			trace.records[0].event == StateTraceEvent::OnEnter &&
-			trace.records[0].callbackState == CompatibilityStateId::Idle &&
-			trace.records[0].machineState == CompatibilityStateId::None,
+		check(trace.records.size() >= 2U && trace.records[0].event == StateTraceEvent::OnEnter &&
+				trace.records[0].callbackState == CompatibilityStateId::Idle &&
+				trace.records[0].machineState == CompatibilityStateId::None,
 			"state instance owns initial OnEnter before pointer publication");
 }
 
@@ -84,24 +76,19 @@ bool testReferenceSetStateOrderingAndSameState()
 {
 	TraceCollector trace;
 	CompatibilityStateMachine machine({1U, 7U});
-	if (!check(initialize(&machine, &trace, context(10U, 1.0f, 1U)),
-			"ordering setup initializes"))
+	if (!check(initialize(&machine, &trace, context(10U, 1.0f, 1U)), "ordering setup initializes"))
 	{
 		return false;
 	}
 	trace.records.clear();
 	const StateUpdateContext value = context(11U, 2.0f, 2U);
-	if (!check(machine.transition(
-			CompatibilityStateId::MoveTo,
-			StateTransitionReason::ExplicitRequest,
-			StateTransitionId::IdleToMoveTo,
-			value) == StateResult::Transitioned,
+	if (!check(machine.transition(CompatibilityStateId::MoveTo, StateTransitionReason::ExplicitRequest,
+				   StateTransitionId::IdleToMoveTo, value) == StateResult::Transitioned,
 			"Idle to MoveTo transitions"))
 	{
 		return false;
 	}
-	if (!check(trace.records.size() >= 4U,
-			"transition emits lifecycle records"))
+	if (!check(trace.records.size() >= 4U, "transition emits lifecycle records"))
 	{
 		return false;
 	}
@@ -119,27 +106,22 @@ bool testReferenceSetStateOrderingAndSameState()
 		}
 	}
 	if (!check(trace.records[0].event == StateTraceEvent::OnExit &&
-			trace.records[0].callbackState == CompatibilityStateId::Idle &&
-			trace.records[1].event == StateTraceEvent::OnEnter &&
-			trace.records[1].callbackState == CompatibilityStateId::MoveTo &&
-			trace.records[1].machineState == CompatibilityStateId::Idle &&
-			published > 1U && timestamp == published + 1U,
+				trace.records[0].callbackState == CompatibilityStateId::Idle &&
+				trace.records[1].event == StateTraceEvent::OnEnter &&
+				trace.records[1].callbackState == CompatibilityStateId::MoveTo &&
+				trace.records[1].machineState == CompatibilityStateId::Idle && published > 1U &&
+				timestamp == published + 1U,
 			"SetState ordering is OnExit, OnEnter, side effects, publish, timestamp"))
 	{
 		return false;
 	}
 
 	trace.records.clear();
-	return check(machine.transition(
-			CompatibilityStateId::MoveTo,
-			StateTransitionReason::ExplicitRequest,
-			StateTransitionId::ExplicitStateChange,
-			context(12U, 3.0f, 3U)) == StateResult::Transitioned,
-			"same-state request runs reference lifecycle") &&
-		check(trace.records.size() >= 4U &&
-			trace.records[0].callbackState == CompatibilityStateId::MoveTo &&
-			trace.records[1].callbackState == CompatibilityStateId::MoveTo &&
-			machine.stateTimestamp() == 3.0f,
+	return check(machine.transition(CompatibilityStateId::MoveTo, StateTransitionReason::ExplicitRequest,
+					 StateTransitionId::ExplicitStateChange, context(12U, 3.0f, 3U)) == StateResult::Transitioned,
+			   "same-state request runs reference lifecycle") &&
+		check(trace.records.size() >= 4U && trace.records[0].callbackState == CompatibilityStateId::MoveTo &&
+				trace.records[1].callbackState == CompatibilityStateId::MoveTo && machine.stateTimestamp() == 3.0f,
 			"same-state transition refreshes lifecycle and timestamp");
 }
 
@@ -147,16 +129,14 @@ bool testFullUpdateAndTransitionTrace()
 {
 	TraceCollector trace;
 	CompatibilityStateMachine machine({1U, 7U});
-	if (!check(initialize(&machine, &trace, context(10U, 1.0f, 1U)),
-			"update setup initializes"))
+	if (!check(initialize(&machine, &trace, context(10U, 1.0f, 1U)), "update setup initializes"))
 	{
 		return false;
 	}
 	trace.records.clear();
 	StateUpdateContext notFull = context(11U, 1.1f, 1U);
 	notFull.fullUpdate = false;
-	if (!check(machine.update(notFull) == StateResult::SkippedNotFullUpdate,
-			"non-full update does not update state"))
+	if (!check(machine.update(notFull) == StateResult::SkippedNotFullUpdate, "non-full update does not update state"))
 	{
 		return false;
 	}
@@ -165,16 +145,13 @@ bool testFullUpdateAndTransitionTrace()
 	step.requestedState = CompatibilityStateId::Hunt;
 	step.transitionReason = StateTransitionReason::EnemyVisible;
 	step.transitionId = StateTransitionId::MoveToHunt;
-	if (!check(machine.update(step) == StateResult::Transitioned,
-			"full update dispatches transition"))
+	if (!check(machine.update(step) == StateResult::Transitioned, "full update dispatches transition"))
 	{
 		return false;
 	}
-	return check(machine.state() == CompatibilityStateId::Hunt,
-			"multi-step update publishes requested state") &&
-		check(trace.records.size() >= 5U &&
-			trace.records[0].event == StateTraceEvent::OnUpdate &&
-			trace.records[1].event == StateTraceEvent::OnExit,
+	return check(machine.state() == CompatibilityStateId::Hunt, "multi-step update publishes requested state") &&
+		check(trace.records.size() >= 5U && trace.records[0].event == StateTraceEvent::OnUpdate &&
+				trace.records[1].event == StateTraceEvent::OnExit,
 			"update trace contains update before transition lifecycle");
 }
 
@@ -182,40 +159,33 @@ bool testAttackOverlayLifecycleAndInteraction()
 {
 	TraceCollector trace;
 	CompatibilityStateMachine machine({1U, 7U});
-	if (!check(initialize(&machine, &trace, context(10U, 1.0f, 1U)),
-			"attack setup initializes"))
+	if (!check(initialize(&machine, &trace, context(10U, 1.0f, 1U)), "attack setup initializes"))
 	{
 		return false;
 	}
-	if (!check(machine.transition(
-			CompatibilityStateId::Hide,
-			StateTransitionReason::ExplicitRequest,
-			StateTransitionId::ExplicitStateChange,
-			context(11U, 2.0f, 2U)) == StateResult::Transitioned,
+	if (!check(machine.transition(CompatibilityStateId::Hide, StateTransitionReason::ExplicitRequest,
+				   StateTransitionId::ExplicitStateChange, context(11U, 2.0f, 2U)) == StateResult::Transitioned,
 			"attack overlay setup enters Hide"))
 	{
 		return false;
 	}
 	trace.records.clear();
 	const StateUpdateContext attackContext = context(12U, 3.0f, 3U);
-	if (!check(machine.beginAttack(attackContext) == StateResult::Transitioned,
-			"attack overlay activates"))
+	if (!check(machine.beginAttack(attackContext) == StateResult::Transitioned, "attack overlay activates"))
 	{
 		return false;
 	}
-	if (!check(machine.state() == CompatibilityStateId::Hide &&
-			machine.attackOverlayActive() && machine.stateTimestamp() == 2.0f,
+	if (!check(machine.state() == CompatibilityStateId::Hide && machine.attackOverlayActive() &&
+				machine.stateTimestamp() == 2.0f,
 			"attack retains underlying state and timestamp"))
 	{
 		return false;
 	}
-	if (!check(machine.update(context(13U, 4.0f, 4U)) == StateResult::Updated,
-			"attack update is dispatched"))
+	if (!check(machine.update(context(13U, 4.0f, 4U)) == StateResult::Updated, "attack update is dispatched"))
 	{
 		return false;
 	}
-	if (!check(machine.stopAttack(context(14U, 5.0f, 5U)) == StateResult::Transitioned,
-			"attack overlay deactivates"))
+	if (!check(machine.stopAttack(context(14U, 5.0f, 5U)) == StateResult::Transitioned, "attack overlay deactivates"))
 	{
 		return false;
 	}
@@ -237,9 +207,8 @@ bool testAttackOverlayLifecycleAndInteraction()
 			attackExit = index;
 		}
 	}
-	return check(machine.state() == CompatibilityStateId::Hide &&
-			!machine.attackOverlayActive(),
-			"underlying state continues after attack") &&
+	return check(machine.state() == CompatibilityStateId::Hide && !machine.attackOverlayActive(),
+			   "underlying state continues after attack") &&
 		check(attackEnter < attackUpdate && attackUpdate < attackExit,
 			"attack trace records activation update deactivation");
 }
@@ -248,17 +217,13 @@ bool testMultiStepAndTransitionDuringAttack()
 {
 	TraceCollector trace;
 	CompatibilityStateMachine machine({1U, 7U});
-	if (!check(initialize(&machine, &trace, context(20U, 1.0f, 1U)),
-			"multi-step setup initializes"))
+	if (!check(initialize(&machine, &trace, context(20U, 1.0f, 1U)), "multi-step setup initializes"))
 	{
 		return false;
 	}
-	if (!check(machine.transition(
-			CompatibilityStateId::MoveTo,
-			StateTransitionReason::ExplicitRequest,
-			StateTransitionId::IdleToMoveTo,
-			context(21U, 2.0f, 2U)) == StateResult::Transitioned &&
-			machine.state() == CompatibilityStateId::MoveTo,
+	if (!check(machine.transition(CompatibilityStateId::MoveTo, StateTransitionReason::ExplicitRequest,
+				   StateTransitionId::IdleToMoveTo, context(21U, 2.0f, 2U)) == StateResult::Transitioned &&
+				machine.state() == CompatibilityStateId::MoveTo,
 			"multi-step first transition enters MoveTo"))
 	{
 		return false;
@@ -268,8 +233,7 @@ bool testMultiStepAndTransitionDuringAttack()
 	hunt.requestedState = CompatibilityStateId::Hunt;
 	hunt.transitionId = StateTransitionId::MoveToHunt;
 	hunt.transitionReason = StateTransitionReason::EnemyVisible;
-	if (!check(machine.update(hunt) == StateResult::Transitioned &&
-			machine.state() == CompatibilityStateId::Hunt,
+	if (!check(machine.update(hunt) == StateResult::Transitioned && machine.state() == CompatibilityStateId::Hunt,
 			"multi-step second transition enters Hunt"))
 	{
 		return false;
@@ -279,18 +243,14 @@ bool testMultiStepAndTransitionDuringAttack()
 	{
 		return false;
 	}
-	if (!check(machine.transition(
-			CompatibilityStateId::Hide,
-			StateTransitionReason::PathFailure,
-			StateTransitionId::ExplicitStateChange,
-			context(24U, 5.0f, 5U)) == StateResult::Transitioned,
+	if (!check(machine.transition(CompatibilityStateId::Hide, StateTransitionReason::PathFailure,
+				   StateTransitionId::ExplicitStateChange, context(24U, 5.0f, 5U)) == StateResult::Transitioned,
 			"state transition during attack is accepted"))
 	{
 		return false;
 	}
-	return check(machine.state() == CompatibilityStateId::Hide &&
-			!machine.attackOverlayActive(),
-			"state transition stops overlay and publishes destination");
+	return check(machine.state() == CompatibilityStateId::Hide && !machine.attackOverlayActive(),
+		"state transition stops overlay and publishes destination");
 }
 
 bool testBlockedRngObservationAndLifecycleIsolation()
@@ -299,7 +259,7 @@ bool testBlockedRngObservationAndLifecycleIsolation()
 	CompatibilityStateMachine machineA({1U, 7U});
 	CompatibilityStateMachine machineB({2U, 8U});
 	if (!check(initialize(&machineA, &trace, context(10U, 1.0f, 1U)) &&
-			initialize(&machineB, &trace, context(10U, 1.0f, 1U, {2U, 8U})),
+				initialize(&machineB, &trace, context(10U, 1.0f, 1U, {2U, 8U})),
 			"two machines initialize independently"))
 	{
 		return false;
@@ -309,7 +269,7 @@ bool testBlockedRngObservationAndLifecycleIsolation()
 	blocked.requestTransition = true;
 	blocked.requestedState = CompatibilityStateId::Buy;
 	if (!check(machineA.update(blocked) == StateResult::BlockedByObservation &&
-			machineA.state() == CompatibilityStateId::Idle,
+				machineA.state() == CompatibilityStateId::Idle,
 			"unavailable observation blocks transition"))
 	{
 		return false;
@@ -319,27 +279,23 @@ bool testBlockedRngObservationAndLifecycleIsolation()
 	rngBlocked.requestTransition = true;
 	rngBlocked.requestedState = CompatibilityStateId::Follow;
 	rngBlocked.transitionId = StateTransitionId::RngDependent;
-	if (!check(machineA.update(rngBlocked) == StateResult::BlockedByRng,
-			"unavailable RNG blocks random transition"))
+	if (!check(machineA.update(rngBlocked) == StateResult::BlockedByRng, "unavailable RNG blocks random transition"))
 	{
 		return false;
 	}
-	if (!check(machineB.transition(
-			CompatibilityStateId::MoveTo,
-			StateTransitionReason::ExplicitRequest,
-			StateTransitionId::ExplicitStateChange,
-			context(13U, 4.0f, 4U, {2U, 8U})) == StateResult::Transitioned &&
-			machineA.state() == CompatibilityStateId::Idle &&
-			machineB.state() == CompatibilityStateId::MoveTo,
+	if (!check(machineB.transition(CompatibilityStateId::MoveTo, StateTransitionReason::ExplicitRequest,
+				   StateTransitionId::ExplicitStateChange,
+				   context(13U, 4.0f, 4U, {2U, 8U})) == StateResult::Transitioned &&
+				machineA.state() == CompatibilityStateId::Idle && machineB.state() == CompatibilityStateId::MoveTo,
 			"two actors keep independent state") ||
 		!check(machineA.onDeath(context(14U, 5.0f, 5U)) == StateResult::Transitioned &&
-			machineA.state() == CompatibilityStateId::Idle,
+				machineA.state() == CompatibilityStateId::Idle,
 			"death reset is per actor"))
 	{
 		return false;
 	}
 	return check(machineA.onRespawn(context(15U, 6.0f, 6U)) == StateResult::Transitioned,
-			"respawn re-enters Idle lifecycle") &&
+			   "respawn re-enters Idle lifecycle") &&
 		check(!(machineA.actor() == machineB.actor()), "actor identities remain isolated");
 }
 }
@@ -354,78 +310,97 @@ bool testStateOwnedBehavior()
 	input.objectiveActive = true;
 	StateUpdateContext tick = context(2U, 0.1f, 2U);
 	tick.behavior = &input;
-	if (!check(machine.update(tick) == StateResult::Updated &&
-				   machine.behaviorDecision().action == StateAction::Hunt,
-			   "Idle owns initial hunt decision"))
+	if (!check(machine.update(tick) == StateResult::Updated && machine.behaviorDecision().action == StateAction::Hunt,
+			"Idle owns initial hunt decision"))
 		return false;
 	machine.transition(CompatibilityStateId::MoveTo, StateTransitionReason::ExplicitRequest,
-					   StateTransitionId::ExplicitStateChange, tick);
+		StateTransitionId::ExplicitStateChange, tick);
 	input.pathFailed = true;
 	tick = context(3U, 0.2f, 3U);
 	tick.behavior = &input;
 	machine.update(tick);
-	if (!check(machine.state() == CompatibilityStateId::Idle &&
-				   machine.behaviorDecision().clearPath,
-			   "reference MoveTo returns to Idle after failed path movement"))
+	if (!check(machine.state() == CompatibilityStateId::Idle && machine.behaviorDecision().clearPath,
+			"reference MoveTo returns to Idle after failed path movement"))
 		return false;
 	machine.beginAttack(tick);
 	tick = context(4U, 0.3f, 4U);
 	tick.behavior = &input;
 	machine.update(tick);
 	return check(machine.behaviorDecision().action == StateAction::Attack,
-				 "attack overlay owns behavior and suppresses locomotion decision");
+		"attack overlay owns behavior and suppresses locomotion decision");
 }
 
 bool testStateOwnsNavigationOutcome()
 {
-	CompatibilityStateMachine machine({1U,7U});
-	auto tick=context(1U,0.0f,1U);machine.initialize(tick);
-	machine.transition(CompatibilityStateId::MoveTo,StateTransitionReason::ExplicitRequest,
-		StateTransitionId::ExplicitStateChange,tick);
-	StateBehaviorInput input{};input.goalAvailable=true;input.objectiveActive=true;
-	input.goalReached=true;input.navigationOwned=true;
-	input.navigation.outcome=NavigationStepOutcome::Progressing;
-	tick=context(2U,0.1f,2U);tick.behavior=&input;
+	CompatibilityStateMachine machine({1U, 7U});
+	auto tick = context(1U, 0.0f, 1U);
+	machine.initialize(tick);
+	machine.transition(CompatibilityStateId::MoveTo, StateTransitionReason::ExplicitRequest,
+		StateTransitionId::ExplicitStateChange, tick);
+	StateBehaviorInput input{};
+	input.goalAvailable = true;
+	input.objectiveActive = true;
+	input.goalReached = true;
+	input.navigationOwned = true;
+	input.navigation.outcome = NavigationStepOutcome::Progressing;
+	tick = context(2U, 0.1f, 2U);
+	tick.behavior = &input;
 	machine.update(tick);
-	if(!check(machine.state()==CompatibilityStateId::MoveTo,
-		"reference MoveTo does not exit on a broad geometric goal radius while path is progressing"))return false;
-	input.navigation={tick.actor,tick.frame,1U,1U,tick.fullUpdateSequence,NavigationStepOutcome::Progressing,false};
-	input.defuseGoalKnown=true;input.withinDefuseRange=true;input.reloadKnown=true;
+	if (!check(machine.state() == CompatibilityStateId::MoveTo,
+			"reference MoveTo does not exit on a broad geometric goal radius while path is progressing"))
+		return false;
+	input.navigation = {
+		tick.actor, tick.frame, 1U, 1U, tick.fullUpdateSequence, NavigationStepOutcome::Progressing, false};
+	input.defuseGoalKnown = true;
+	input.withinDefuseRange = true;
+	input.reloadKnown = true;
 	machine.finishNavigation(tick);
-	if(!check(machine.state()==CompatibilityStateId::MoveTo,"close known bomb does not bypass a progressing path"))return false;
-	input.navigation.outcome=NavigationStepOutcome::PathFailure;
-	tick=context(3U,0.2f,3U);tick.behavior=&input;
-	input.navigation.frame=tick.frame;input.navigation.fullUpdateSequence=tick.fullUpdateSequence;
+	if (!check(machine.state() == CompatibilityStateId::MoveTo, "close known bomb does not bypass a progressing path"))
+		return false;
+	input.navigation.outcome = NavigationStepOutcome::PathFailure;
+	tick = context(3U, 0.2f, 3U);
+	tick.behavior = &input;
+	input.navigation.frame = tick.frame;
+	input.navigation.fullUpdateSequence = tick.fullUpdateSequence;
 	machine.finishNavigation(tick);
-	if(!check(machine.state()==CompatibilityStateId::DefuseBomb,"non-progressing path can enter defuse using its known bomb task"))return false;
-	input.navigation.outcome=NavigationStepOutcome::NotEvaluated;
-	tick=context(4U,1.3f,4U);tick.behavior=&input;
+	if (!check(machine.state() == CompatibilityStateId::DefuseBomb,
+			"non-progressing path can enter defuse using its known bomb task"))
+		return false;
+	input.navigation.outcome = NavigationStepOutcome::NotEvaluated;
+	tick = context(4U, 1.3f, 4U);
+	tick.behavior = &input;
 	machine.update(tick);
-	return check(machine.state()==CompatibilityStateId::Idle,
+	return check(machine.state() == CompatibilityStateId::Idle,
 		"unconfirmed defuse exits after one second without treating missing receipt as confirmed success");
 }
 
 bool testReferenceIdleAndHuntOwnTheirLifecycle()
 {
-	CompatibilityStateMachine machine({1U,7U});
-	auto tick=context(1U,0.0f,1U);machine.initialize(tick);
-	StateBehaviorInput input{};input.navigationOwned=true;input.navigationReady=true;
-	tick=context(2U,0.1f,2U);tick.behavior=&input;
+	CompatibilityStateMachine machine({1U, 7U});
+	auto tick = context(1U, 0.0f, 1U);
+	machine.initialize(tick);
+	StateBehaviorInput input{};
+	input.navigationOwned = true;
+	input.navigationReady = true;
+	tick = context(2U, 0.1f, 2U);
+	tick.behavior = &input;
 	machine.update(tick);
-	if(!check(machine.state()==CompatibilityStateId::Hunt,
-		"reference Idle assigns Hunt rather than navigating indefinitely under Idle"))return false;
-	tick=context(3U,30.2f,3U);tick.behavior=&input;
+	if (!check(machine.state() == CompatibilityStateId::Hunt,
+			"reference Idle assigns Hunt rather than navigating indefinitely under Idle"))
+		return false;
+	tick = context(3U, 30.2f, 3U);
+	tick.behavior = &input;
 	machine.update(tick);
-	return check(machine.state()==CompatibilityStateId::Idle,
+	return check(machine.state() == CompatibilityStateId::Idle,
 		"reference Hunt returns to Idle after thirty seconds for task selection");
 }
 
 int main()
 {
-	return testReferenceIdleAndHuntOwnTheirLifecycle() && testStateOwnsNavigationOutcome() && testStateOwnedBehavior() && testInitialStateAndOwnership() &&
-		testReferenceSetStateOrderingAndSameState() &&
-		testFullUpdateAndTransitionTrace() &&
-		testAttackOverlayLifecycleAndInteraction() &&
-		testMultiStepAndTransitionDuringAttack() &&
-		testBlockedRngObservationAndLifecycleIsolation() ? 0 : 1;
+	return testReferenceIdleAndHuntOwnTheirLifecycle() && testStateOwnsNavigationOutcome() &&
+			testStateOwnedBehavior() && testInitialStateAndOwnership() && testReferenceSetStateOrderingAndSameState() &&
+			testFullUpdateAndTransitionTrace() && testAttackOverlayLifecycleAndInteraction() &&
+			testMultiStepAndTransitionDuringAttack() && testBlockedRngObservationAndLifecycleIsolation()
+		? 0
+		: 1;
 }

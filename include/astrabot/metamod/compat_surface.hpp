@@ -13,34 +13,25 @@ namespace astrabot
 {
 namespace metamod
 {
-	class CompatibilitySurface
-	{
-	public:
-		bool registerCommands(enginefuncs_t *engineFunctions, void (*callback)(void)) const;
-		compat::CommandResult resolve(
-			const compat::CommandRequest &request,
-			compat::CommandAction *action) const;
+class CompatibilitySurface
+{
+public:
+	bool registerCommands(enginefuncs_t *engineFunctions, void (*callback)(void)) const;
+	compat::CommandResult resolve(const compat::CommandRequest &request, compat::CommandAction *action) const;
 	compat::CvarUpdateResult setFloat(const char *name, float value);
 	compat::CvarUpdateResult setString(const char *name, const char *value);
 	compat::CvarSnapshot configuration() const;
 	compat::BotActionResult authorize(
-		const compat::CommandAction &action,
-		std::size_t managedActorCount,
-		bool nativeGuardAllowsCreation) const;
+		const compat::CommandAction &action, std::size_t managedActorCount, bool nativeGuardAllowsCreation) const;
 	ProfileLoadResult loadProfiles(const char *path);
-	compat::ProfileSelectionResult selectProfile(
-		const compat::CommandAction &action,
-		int difficulty,
-		std::size_t selectionIndex,
-		compat::ProfileRecord *profile) const;
-	compat::ProfileSelectionResult selectUnusedProfile(
-		const compat::CommandAction &action, int difficulty,
-		const char *const *usedNames, std::size_t usedCount,
-		compat::ICompatibilityRandomSource &random, compat::RandomActor actor,
-		compat::RandomTimingContext timing, compat::ProfileRecord *profile) const;
+	compat::ProfileSelectionResult selectProfile(const compat::CommandAction &action, int difficulty,
+		std::size_t selectionIndex, compat::ProfileRecord *profile) const;
+	compat::ProfileSelectionResult selectUnusedProfile(const compat::CommandAction &action, int difficulty,
+		const char *const *usedNames, std::size_t usedCount, compat::ICompatibilityRandomSource &random,
+		compat::RandomActor actor, compat::RandomTimingContext timing, compat::ProfileRecord *profile) const;
 
-	private:
-		static const char *const *commandNames(std::size_t *count);
+private:
+	static const char *const *commandNames(std::size_t *count);
 	compat::CommandRegistry commandRegistry_;
 	compat::BotConfiguration botConfiguration_;
 	compat::ProfileCatalog profileCatalog_;

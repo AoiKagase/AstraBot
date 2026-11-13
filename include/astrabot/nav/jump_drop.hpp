@@ -106,14 +106,8 @@ public:
 	JumpDropController();
 	explicit JumpDropController(const JumpDropConfig &config);
 
-	JumpDropResult start(
-		const NavCorridor &corridor,
-		const JumpDropEnvelope &envelope,
-		std::uint32_t actorGeneration);
-	JumpDropResult update(
-		const NavSnapshot &snapshot,
-		const JumpDropObservation &observation,
-		JumpDropIntent *intent);
+	JumpDropResult start(const NavCorridor &corridor, const JumpDropEnvelope &envelope, std::uint32_t actorGeneration);
+	JumpDropResult update(const NavSnapshot &snapshot, const JumpDropObservation &observation, JumpDropIntent *intent);
 	bool isActive() const;
 
 private:
@@ -121,25 +115,14 @@ private:
 	static bool isFiniteVector(const NavVector &value);
 	static bool isValidEnvelope(const JumpDropEnvelope &envelope);
 	static bool exceedsEnvelope(const JumpDropEnvelope &envelope);
-	static bool isFiniteObservation(
-		const JumpDropObservation &observation);
+	static bool isFiniteObservation(const JumpDropObservation &observation);
 	static float floorDistance(const NavArea &area, float height);
-	static float horizontalDistance(
-		const NavVector &from,
-		const NavVector &to);
+	static float horizontalDistance(const NavVector &from, const NavVector &to);
 	static bool isNearPoint(
-		const NavVector &position,
-		const JumpDropPoint &point,
-		float horizontalTolerance,
-		float verticalTolerance);
-	static bool isPointInArea(
-		const NavArea &area,
-		const JumpDropPoint &point,
-		float verticalTolerance);
+		const NavVector &position, const JumpDropPoint &point, float horizontalTolerance, float verticalTolerance);
+	static bool isPointInArea(const NavArea &area, const JumpDropPoint &point, float verticalTolerance);
 	bool validateEnvelopeAreas(const NavSnapshot &snapshot) const;
-	JumpDropResult emitLaunchIntent(
-		const JumpDropObservation &observation,
-		JumpDropIntent *intent);
+	JumpDropResult emitLaunchIntent(const JumpDropObservation &observation, JumpDropIntent *intent);
 
 	JumpDropConfig config_;
 	JumpDropEnvelope envelope_;

@@ -78,53 +78,35 @@ std::string externalNavPath()
 std::string siblingBsp(const std::string &navPath)
 {
 	const std::size_t slash = navPath.find_last_of("/\\");
-	const std::string directory = slash == std::string::npos
-		? std::string()
-		: navPath.substr(0U, slash + 1U);
+	const std::string directory = slash == std::string::npos ? std::string() : navPath.substr(0U, slash + 1U);
 	return directory + "de_dust2.bsp";
 }
 
-bool runCase(
-	const astrabot::nav::NavSnapshot &snapshot,
-	astrabot::nav::AreaId start,
-	astrabot::nav::AreaId goal,
-	const char *name,
-	bool requireFound,
-	const astrabot::nav::NavQueryLimits *limits = nullptr,
+bool runCase(const astrabot::nav::NavSnapshot &snapshot, astrabot::nav::AreaId start, astrabot::nav::AreaId goal,
+	const char *name, bool requireFound, const astrabot::nav::NavQueryLimits *limits = nullptr,
 	bool expectResourceLimit = false)
 {
-	const astrabot::nav::NavQuery query = limits == nullptr
-		? astrabot::nav::NavQuery(snapshot)
-		: astrabot::nav::NavQuery(snapshot, *limits);
+	const astrabot::nav::NavQuery query =
+		limits == nullptr ? astrabot::nav::NavQuery(snapshot) : astrabot::nav::NavQuery(snapshot, *limits);
 	astrabot::nav::NavCorridor corridor = {};
 	astrabot::nav::NavSearchStats stats = {};
 	const auto begin = std::chrono::steady_clock::now();
-	const astrabot::nav::NavQueryResult result = query.buildCorridor(
-		start, goal, astrabot::nav::NavRouteType::Fastest, &corridor, &stats);
-	const auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(
-		std::chrono::steady_clock::now() - begin).count();
-	std::cout << "nav_case=" << name
-		<< " start=" << start
-		<< " goal=" << goal
-		<< " corridor_limit=" << (limits == nullptr
-			? astrabot::nav::NavQueryLimits::kDefaultMaximumCorridorAreas
-			: limits->maximumCorridorAreas)
-		<< " search_limit=" << (limits == nullptr
-			? astrabot::nav::NavQueryLimits::kDefaultMaximumSearchQueue
-			: limits->maximumSearchQueue)
-		<< " result=" << static_cast<int>(result)
-		<< " wall_usec=" << elapsed
-		<< " expanded=" << stats.expandedUniqueAreas
-		<< " enqueues=" << stats.enqueueCount
-		<< " reopens=" << stats.reopenCount
-		<< " staleQueue=" << stats.staleQueueEntries
-		<< " equalCostRepl=" << stats.equalCostReplacements
-		<< " route_length=" << corridor.areas.size()
-		<< " first_search_id=" << stats.firstSearchId
-		<< " last_search_id=" << stats.lastSearchId
-		<< " search_usec=" << stats.totalUsec
-		<< " search_max_usec=" << stats.maxUsec
-		<< '\n';
+	const astrabot::nav::NavQueryResult result =
+		query.buildCorridor(start, goal, astrabot::nav::NavRouteType::Fastest, &corridor, &stats);
+	const auto elapsed =
+		std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - begin).count();
+	std::cout << "nav_case=" << name << " start=" << start << " goal=" << goal << " corridor_limit="
+			  << (limits == nullptr ? astrabot::nav::NavQueryLimits::kDefaultMaximumCorridorAreas
+									: limits->maximumCorridorAreas)
+			  << " search_limit="
+			  << (limits == nullptr ? astrabot::nav::NavQueryLimits::kDefaultMaximumSearchQueue
+									: limits->maximumSearchQueue)
+			  << " result=" << static_cast<int>(result) << " wall_usec=" << elapsed
+			  << " expanded=" << stats.expandedUniqueAreas << " enqueues=" << stats.enqueueCount
+			  << " reopens=" << stats.reopenCount << " staleQueue=" << stats.staleQueueEntries
+			  << " equalCostRepl=" << stats.equalCostReplacements << " route_length=" << corridor.areas.size()
+			  << " first_search_id=" << stats.firstSearchId << " last_search_id=" << stats.lastSearchId
+			  << " search_usec=" << stats.totalUsec << " search_max_usec=" << stats.maxUsec << '\n';
 	if (result == astrabot::nav::NavQueryResult::ResourceLimit && expectResourceLimit)
 	{
 		return true;
@@ -140,16 +122,14 @@ bool runCase(
 		return false;
 	}
 	return !requireFound ||
-		(check(result == astrabot::nav::NavQueryResult::Found,
-			"required route must be found") &&
-		 check(corridor.areas.size() <= (limits == nullptr
-			? astrabot::nav::NavQueryLimits::kDefaultMaximumCorridorAreas
-			: limits->maximumCorridorAreas),
-			"found route fits final corridor capacity"));
+		(check(result == astrabot::nav::NavQueryResult::Found, "required route must be found") &&
+			check(corridor.areas.size() <= (limits == nullptr
+												   ? astrabot::nav::NavQueryLimits::kDefaultMaximumCorridorAreas
+												   : limits->maximumCorridorAreas),
+				"found route fits final corridor capacity"));
 }
 
-bool realNavArea46To119UsesOneJumpAcrossSafeHorizontalGap(
-	const astrabot::nav::NavSnapshot &snapshot)
+bool realNavArea46To119UsesOneJumpAcrossSafeHorizontalGap(const astrabot::nav::NavSnapshot &snapshot)
 {
 	const astrabot::nav::NavDocument *document = snapshot.document();
 	if (!check(document != nullptr, "real NAV document is available for traversal"))
@@ -158,13 +138,12 @@ bool realNavArea46To119UsesOneJumpAcrossSafeHorizontalGap(
 	}
 	const astrabot::nav::NavArea *from = document->findArea(46U);
 	const astrabot::nav::NavArea *to = document->findArea(119U);
-	if (!check(from != nullptr && to != nullptr,
-			"real NAV jump-gap areas 46 and 119 exist"))
+	if (!check(from != nullptr && to != nullptr, "real NAV jump-gap areas 46 and 119 exist"))
 	{
 		return false;
 	}
-	auto axisGap = [](float firstLow, float firstHigh,
-			float secondLow, float secondHigh) {
+	auto axisGap = [](float firstLow, float firstHigh, float secondLow, float secondHigh)
+	{
 		if (firstHigh < secondLow)
 		{
 			return secondLow - firstHigh;
@@ -175,35 +154,28 @@ bool realNavArea46To119UsesOneJumpAcrossSafeHorizontalGap(
 		}
 		return 0.0f;
 	};
-	const float gapX = axisGap(
-		from->extent.lo.x, from->extent.hi.x,
-		to->extent.lo.x, to->extent.hi.x);
-	const float gapY = axisGap(
-		from->extent.lo.y, from->extent.hi.y,
-		to->extent.lo.y, to->extent.hi.y);
-	if (!check(gapX > 1.0f || gapY > 1.0f,
-			"real NAV areas 46 and 119 have a horizontal gap"))
+	const float gapX = axisGap(from->extent.lo.x, from->extent.hi.x, to->extent.lo.x, to->extent.hi.x);
+	const float gapY = axisGap(from->extent.lo.y, from->extent.hi.y, to->extent.lo.y, to->extent.hi.y);
+	if (!check(gapX > 1.0f || gapY > 1.0f, "real NAV areas 46 and 119 have a horizontal gap"))
 	{
 		return false;
 	}
-	if (!check((to->attributes & astrabot::nav::NavArea::kNoJump) == 0U,
-			"real NAV landing area does not prohibit Jump"))
+	if (!check(
+			(to->attributes & astrabot::nav::NavArea::kNoJump) == 0U, "real NAV landing area does not prohibit Jump"))
 	{
 		return false;
 	}
 	const astrabot::nav::NavQuery query(snapshot);
 	astrabot::nav::NavCorridor corridor = {};
-	if (!check(query.buildCorridor(
-			46U, 119U, astrabot::nav::NavRouteType::Fastest, &corridor) ==
-			astrabot::nav::NavQueryResult::Found &&
-			corridor.areas.size() == 2U,
+	if (!check(query.buildCorridor(46U, 119U, astrabot::nav::NavRouteType::Fastest, &corridor) ==
+					astrabot::nav::NavQueryResult::Found &&
+				corridor.areas.size() == 2U,
 			"real NAV area 46 routes directly to area 119"))
 	{
 		return false;
 	}
 	astrabot::nav::LocomotionController controller;
-	if (!check(controller.start(corridor) ==
-			astrabot::nav::LocomotionResult::Started,
+	if (!check(controller.start(corridor) == astrabot::nav::LocomotionResult::Started,
 			"real NAV 46-to-119 locomotion starts"))
 	{
 		return false;
@@ -217,29 +189,24 @@ bool realNavArea46To119UsesOneJumpAcrossSafeHorizontalGap(
 	observation.safeDropHeightAvailable = true;
 	observation.maximumSafeDropHeight = 150.0f;
 	astrabot::nav::LocomotionIntent intent = {};
-	const astrabot::nav::LocomotionResult result =
-		controller.update(snapshot, observation, &intent);
-	std::cout << "real_nav_traversal=46_to_119 gapX=" << gapX
-		<< " gapY=" << gapY
-		<< " safeDropHeight=" << observation.maximumSafeDropHeight
-		<< " result=" << static_cast<int>(result)
-		<< " action=" << static_cast<int>(intent.traversal) << '\n';
+	const astrabot::nav::LocomotionResult result = controller.update(snapshot, observation, &intent);
+	std::cout << "real_nav_traversal=46_to_119 gapX=" << gapX << " gapY=" << gapY
+			  << " safeDropHeight=" << observation.maximumSafeDropHeight << " result=" << static_cast<int>(result)
+			  << " action=" << static_cast<int>(intent.traversal) << '\n';
 	if (!check(result == astrabot::nav::LocomotionResult::IntentReady &&
-			intent.traversal == astrabot::nav::TraversalAction::Jump,
+				intent.traversal == astrabot::nav::TraversalAction::Jump,
 			"a safe descent across real NAV horizontal gap 46-to-119 starts Jump"))
 	{
 		return false;
 	}
 	observation.position = {-1556.7f, -160.0f, 150.0f};
 	observation.grounded = false;
-	return check(controller.update(snapshot, observation, &intent) ==
-			astrabot::nav::LocomotionResult::IntentReady &&
+	return check(controller.update(snapshot, observation, &intent) == astrabot::nav::LocomotionResult::IntentReady &&
 			intent.traversal == astrabot::nav::TraversalAction::Walk,
-			"real NAV gap Jump is emitted once while airborne");
+		"real NAV gap Jump is emitted once while airborne");
 }
 
-bool productionLikeObjectiveEvaluation(
-	const astrabot::nav::NavSnapshot &snapshot)
+bool productionLikeObjectiveEvaluation(const astrabot::nav::NavSnapshot &snapshot)
 {
 	const astrabot::nav::NavDocument *document = snapshot.document();
 	if (document == nullptr)
@@ -260,18 +227,15 @@ bool productionLikeObjectiveEvaluation(
 		{
 			return false;
 		}
-		const astrabot::nav::NavVector point = {
-			(sourceArea->extent.lo.x + sourceArea->extent.hi.x) * 0.5f,
+		const astrabot::nav::NavVector point = {(sourceArea->extent.lo.x + sourceArea->extent.hi.x) * 0.5f,
 			(sourceArea->extent.lo.y + sourceArea->extent.hi.y) * 0.5f,
 			(sourceArea->southWestZ + sourceArea->northEastZ) * 0.5f};
 		astrabot::nav::NavAreaMatch match = {};
-		if (query.findNearest(point, 10000.0f, &match) !=
-			astrabot::nav::NavQueryResult::Found)
+		if (query.findNearest(point, 10000.0f, &match) != astrabot::nav::NavQueryResult::Found)
 		{
 			return false;
 		}
-		if (std::find(uniqueCandidates.begin(), uniqueCandidates.end(), match.area) !=
-			uniqueCandidates.end())
+		if (std::find(uniqueCandidates.begin(), uniqueCandidates.end(), match.area) != uniqueCandidates.end())
 		{
 			++duplicateCandidates;
 			continue;
@@ -279,11 +243,10 @@ bool productionLikeObjectiveEvaluation(
 		uniqueCandidates.push_back(match.area);
 		astrabot::nav::NavCorridor corridor = {};
 		astrabot::nav::NavSearchStats stats = {};
-		const astrabot::nav::NavQueryResult result = query.buildCorridor(
-			41U, match.area, astrabot::nav::NavRouteType::Fastest, &corridor, &stats);
+		const astrabot::nav::NavQueryResult result =
+			query.buildCorridor(41U, match.area, astrabot::nav::NavRouteType::Fastest, &corridor, &stats);
 		++candidateQueries;
-		if (result != astrabot::nav::NavQueryResult::Found ||
-			stats.searchCalls != 1U)
+		if (result != astrabot::nav::NavQueryResult::Found || stats.searchCalls != 1U)
 		{
 			return false;
 		}
@@ -295,31 +258,21 @@ bool productionLikeObjectiveEvaluation(
 	}
 	astrabot::nav::NavCorridor finalCorridor = {};
 	astrabot::nav::NavSearchStats finalStats = {};
-	const astrabot::nav::NavQueryResult finalResult = query.buildCorridor(
-		41U, selectedGoal, astrabot::nav::NavRouteType::Fastest, &finalCorridor,
-		&finalStats);
-	std::cout << "objective_case=production_like bombSites=2 candidateAreas="
-		<< candidateSources.size() << " uniqueCandidateAreas="
-		<< uniqueCandidates.size() << " candidateQueries=" << candidateQueries
-		<< " duplicateCandidateAreas=" << duplicateCandidates
-		<< " selectedGoalArea=" << selectedGoal
-		<< " finalSearchCalls=" << finalStats.searchCalls << '\n';
-	return uniqueCandidates.size() == 2U && candidateQueries == 2U &&
-		duplicateCandidates == 1U && selectedGoal != 0U &&
-		finalResult == astrabot::nav::NavQueryResult::Found &&
-		finalStats.searchCalls == 1U;
+	const astrabot::nav::NavQueryResult finalResult =
+		query.buildCorridor(41U, selectedGoal, astrabot::nav::NavRouteType::Fastest, &finalCorridor, &finalStats);
+	std::cout << "objective_case=production_like bombSites=2 candidateAreas=" << candidateSources.size()
+			  << " uniqueCandidateAreas=" << uniqueCandidates.size() << " candidateQueries=" << candidateQueries
+			  << " duplicateCandidateAreas=" << duplicateCandidates << " selectedGoalArea=" << selectedGoal
+			  << " finalSearchCalls=" << finalStats.searchCalls << '\n';
+	return uniqueCandidates.size() == 2U && candidateQueries == 2U && duplicateCandidates == 1U && selectedGoal != 0U &&
+		finalResult == astrabot::nav::NavQueryResult::Found && finalStats.searchCalls == 1U;
 }
 
-bool directedBfs(
-	const astrabot::nav::NavSnapshot &snapshot,
-	astrabot::nav::AreaId start,
-	astrabot::nav::AreaId goal,
-	std::size_t *visitedCount,
-	std::size_t *routeLength)
+bool directedBfs(const astrabot::nav::NavSnapshot &snapshot, astrabot::nav::AreaId start, astrabot::nav::AreaId goal,
+	std::size_t *visitedCount, std::size_t *routeLength)
 {
 	const astrabot::nav::NavDocument *document = snapshot.document();
-	if (document == nullptr || document->findArea(start) == nullptr ||
-		document->findArea(goal) == nullptr)
+	if (document == nullptr || document->findArea(start) == nullptr || document->findArea(goal) == nullptr)
 	{
 		return false;
 	}
@@ -348,9 +301,7 @@ bool directedBfs(
 			}
 			return true;
 		}
-		for (std::size_t direction = 0U;
-			direction < astrabot::nav::NavArea::kDirectionCount;
-			++direction)
+		for (std::size_t direction = 0U; direction < astrabot::nav::NavArea::kDirectionCount; ++direction)
 		{
 			for (const astrabot::nav::AreaId next : area->connections[direction])
 			{
@@ -385,27 +336,22 @@ int main()
 	astrabot::metamod::NavLoader loader;
 	astrabot::nav::NavSnapshotPublisher publisher;
 	astrabot::metamod::NavLoadDiagnostic diagnostic = {};
-	astrabot::metamod::NavLoadRequest request = {
-		navPath.c_str(), "DE_DUST2.BSP", 1U, true, bspSize, false, 0U};
-	astrabot::metamod::NavLoadResult loadResult =
-		loader.loadFile(&request, &publisher, &diagnostic);
+	astrabot::metamod::NavLoadRequest request = {navPath.c_str(), "DE_DUST2.BSP", 1U, true, bspSize, false, 0U};
+	astrabot::metamod::NavLoadResult loadResult = loader.loadFile(&request, &publisher, &diagnostic);
 	bool bspIdentityVerified = loadResult == astrabot::metamod::NavLoadResult::Loaded;
 	if (loadResult == astrabot::metamod::NavLoadResult::BspSizeMismatch)
 	{
 		std::cout << "external_nav_load bspIdentity=BLOCKED_BY_ARTIFACT_MISMATCH"
-			<< " requestedBspSize=" << bspSize << '\n';
+				  << " requestedBspSize=" << bspSize << '\n';
 		request.hasBspSize = false;
 		request.bspSize = 0U;
 		loadResult = loader.loadFile(&request, &publisher, &diagnostic);
 	}
 	std::cout << "external_nav_load result=" << static_cast<int>(loadResult)
-		<< " reader=" << static_cast<int>(diagnostic.readerResult)
-		<< " mapName=" << diagnostic.mapName
-		<< " bspSize=" << diagnostic.bspSize
-		<< " sourceHash=" << diagnostic.sourceHash
-		<< " bspIdentityVerified=" << (bspIdentityVerified ? 1 : 0) << '\n';
-	if (!check(loadResult == astrabot::metamod::NavLoadResult::Loaded,
-		"external de_dust2.nav loads through NavLoader"))
+			  << " reader=" << static_cast<int>(diagnostic.readerResult) << " mapName=" << diagnostic.mapName
+			  << " bspSize=" << diagnostic.bspSize << " sourceHash=" << diagnostic.sourceHash
+			  << " bspIdentityVerified=" << (bspIdentityVerified ? 1 : 0) << '\n';
+	if (!check(loadResult == astrabot::metamod::NavLoadResult::Loaded, "external de_dust2.nav loads through NavLoader"))
 	{
 		return 1;
 	}
@@ -415,38 +361,31 @@ int main()
 	{
 		return 1;
 	}
-	if (!check(snapshot.document() != nullptr &&
-		snapshot.document()->findArea(41U) != nullptr &&
-		snapshot.document()->findArea(90U) != nullptr &&
-		snapshot.document()->findArea(1438U) != nullptr &&
-		snapshot.document()->findArea(5U) != nullptr &&
-		snapshot.document()->findArea(1520U) != nullptr,
-		"required de_dust2 areas exist"))
+	if (!check(snapshot.document() != nullptr && snapshot.document()->findArea(41U) != nullptr &&
+				snapshot.document()->findArea(90U) != nullptr && snapshot.document()->findArea(1438U) != nullptr &&
+				snapshot.document()->findArea(5U) != nullptr && snapshot.document()->findArea(1520U) != nullptr,
+			"required de_dust2 areas exist"))
 	{
 		return 1;
 	}
 	std::size_t bfsVisited = 0U;
 	std::size_t bfsLength = 0U;
-	const bool bfsReachable = directedBfs(
-		snapshot, 41U, 90U, &bfsVisited, &bfsLength);
-	std::cout << "bfs_case=41_to_90 reachable=" << (bfsReachable ? 1 : 0)
-		<< " visited=" << bfsVisited << " route_length=" << bfsLength << '\n';
+	const bool bfsReachable = directedBfs(snapshot, 41U, 90U, &bfsVisited, &bfsLength);
+	std::cout << "bfs_case=41_to_90 reachable=" << (bfsReachable ? 1 : 0) << " visited=" << bfsVisited
+			  << " route_length=" << bfsLength << '\n';
 	if (!check(bfsReachable, "directed NAV BFS reaches area 90 from area 41"))
 	{
 		return 1;
 	}
 
-	const bool objectivePass = runCase(
-		snapshot, 41U, 90U, "objective_41_to_90_default", true);
+	const bool objectivePass = runCase(snapshot, 41U, 90U, "objective_41_to_90_default", true);
 	const astrabot::nav::NavQueryLimits explicitBudget256 = {256U, 256U};
-	const bool explicitBudgetPass = runCase(
-		snapshot, 41U, 90U, "objective_41_to_90_explicit_budget_256", false,
-		&explicitBudget256, true);
-	const bool firstControlPass = runCase(
-		snapshot, 41U, 1438U, "control_41_to_1438", true);
-	const bool secondControlPass = runCase(
-		snapshot, 5U, 1520U, "control_5_to_1520", true);
+	const bool explicitBudgetPass =
+		runCase(snapshot, 41U, 90U, "objective_41_to_90_explicit_budget_256", false, &explicitBudget256, true);
+	const bool firstControlPass = runCase(snapshot, 41U, 1438U, "control_41_to_1438", true);
+	const bool secondControlPass = runCase(snapshot, 5U, 1520U, "control_5_to_1520", true);
 	const bool productionLikeObjectivePass = productionLikeObjectiveEvaluation(snapshot);
-	return objectivePass && explicitBudgetPass && firstControlPass && secondControlPass &&
-		productionLikeObjectivePass ? 0 : 1;
+	return objectivePass && explicitBudgetPass && firstControlPass && secondControlPass && productionLikeObjectivePass
+		? 0
+		: 1;
 }

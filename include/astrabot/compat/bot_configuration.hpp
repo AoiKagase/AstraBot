@@ -42,9 +42,7 @@ public:
 	CvarUpdateResult setString(const char *name, const char *value);
 	CvarSnapshot snapshot() const;
 	BotActionResult authorize(
-		const CommandAction &action,
-		std::size_t managedActorCount,
-		bool nativeGuardAllowsCreation) const;
+		const CommandAction &action, std::size_t managedActorCount, bool nativeGuardAllowsCreation) const;
 
 private:
 	static bool isValidTeam(CommandTeam team);

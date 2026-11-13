@@ -261,23 +261,17 @@ public:
 
 	std::size_t actorCount() const;
 	const ActorObservation *actorAt(std::size_t index) const;
-	ContactLookupResult findActor(
-		const ActorKey &actor,
-		const ActorObservation **observation) const;
+	ContactLookupResult findActor(const ActorKey &actor, const ActorObservation **observation) const;
 
 	std::size_t entityCount() const;
 	const EntityObservation *entityAt(std::size_t index) const;
-	ContactLookupResult findEntity(
-		const EntityKey &entity,
-		const EntityObservation **observation) const;
+	ContactLookupResult findEntity(const EntityKey &entity, const EntityObservation **observation) const;
 
 	std::size_t soundCount() const;
 	const AudibleEvent *soundAt(std::size_t index) const;
 	const NoiseMemory &noise() const;
 
-	MemoryLookupResult memoryFor(
-		const ActorKey &actor,
-		const MemorySample **memory) const;
+	MemoryLookupResult memoryFor(const ActorKey &actor, const MemorySample **memory) const;
 
 private:
 	friend class astrabot::perception::PerceptionAssembler;

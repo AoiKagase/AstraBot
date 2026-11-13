@@ -54,6 +54,8 @@ namespace astrabot
 {
 namespace metamod
 {
+constexpr auto kObjectiveKnowledgeStateCount = 2U;
+constexpr auto kTeamScoreEntryCount = 3U;
 enum class CompatibilityCommandResult
 {
 	Handled,
@@ -73,7 +75,8 @@ enum class CompatibilityCommandResult
 
 struct ThreatObservation
 {
-	std::array<compat::ThreatCandidate, 32U> candidates{};
+	static constexpr auto kMaximumThreatCandidates = 32U;
+	std::array<compat::ThreatCandidate, kMaximumThreatCandidates> candidates{};
 	std::size_t count = 0U;
 	bool observerAvailable = false;
 };

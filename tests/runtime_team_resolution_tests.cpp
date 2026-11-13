@@ -12,15 +12,13 @@ namespace
 {
 unsigned teamTraceCount = 0U;
 
-void traceTeamVisibility(const float *start, const float *end, int flags,
-	edict_t *entity, TraceResult *result)
+void traceTeamVisibility(const float *start, const float *end, int flags, edict_t *entity, TraceResult *result)
 {
 	++teamTraceCount;
 	traceObjectiveVisibility(start, end, flags, entity, result);
 }
 
-bool testRuntimeTeams(astrabot::metamod::PluginRuntime &runtime,
-	enginefuncs_t &engine, globalvars_t &globals)
+bool testRuntimeTeams(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &engine, globalvars_t &globals)
 {
 	using namespace astrabot;
 	const char *path = "astrabot_runtime_teams.nav";
@@ -28,8 +26,8 @@ bool testRuntimeTeams(astrabot::metamod::PluginRuntime &runtime,
 	{
 		return false;
 	}
-	const metamod::NavLoadRequest load = {path, "astrabot_runtime_teams",
-		runtime.snapshot().mapGeneration, false, 0U, false, 0U};
+	const metamod::NavLoadRequest load = {
+		path, "astrabot_runtime_teams", runtime.snapshot().mapGeneration, false, 0U, false, 0U};
 	const auto loaded = runtime.loadNavigationFile(&load);
 	std::remove(path);
 	if (!check(loaded == metamod::NavLoadResult::Loaded, "team regression NAV loaded"))
@@ -41,7 +39,8 @@ bool testRuntimeTeams(astrabot::metamod::PluginRuntime &runtime,
 	gCreateCount = 0;
 	gServerSetsEntityTeam = true;
 	if (!check(runtime.executeCompatibilityCommand(request("bot_add_t", 1U, "T Bot")) ==
-		metamod::CompatibilityCommandResult::Handled, "fresh team regression bot created"))
+				metamod::CompatibilityCommandResult::Handled,
+			"fresh team regression bot created"))
 	{
 		return false;
 	}
@@ -93,12 +92,11 @@ bool testRuntimeTeams(astrabot::metamod::PluginRuntime &runtime,
 	bool scenarioGoalObserved = false;
 	for (const auto &message : gMovementLogs)
 	{
-		if (message.find("profile goalAssignment ") == 0U &&
-			message.find("goal_source=objective") != std::string::npos)
+		if (message.find("profile goalAssignment ") == 0U && message.find("goal_source=objective") != std::string::npos)
 		{
 			scenarioGoalObserved = true;
 			if (!check(message.find("effective_team=1 ") != std::string::npos,
-				"scenario target without an objective cache still resolves the navigation team"))
+					"scenario target without an objective cache still resolves the navigation team"))
 			{
 				return false;
 			}
@@ -124,23 +122,22 @@ bool testRuntimeTeams(astrabot::metamod::PluginRuntime &runtime,
 	{
 		world::WorldSnapshot copy;
 		if (!check(views.observation_readManagedWorldSnapshot(0U, &copy) &&
-			copy.identity().frame.tick == belief.identity().frame.tick &&
-			copy.identity().observer == belief.identity().observer,
-			"snapshot reads return the published observation without advancing it"))
+					copy.identity().frame.tick == belief.identity().frame.tick &&
+					copy.identity().observer == belief.identity().observer,
+				"snapshot reads return the published observation without advancing it"))
 		{
 			return false;
 		}
 	}
 	if (!check(teamTraceCount == tracesBeforeRead && gRunPlayerMoveCount == movesBeforeRead,
-		"repeated snapshot reads perform no sensing or command callbacks"))
+			"repeated snapshot reads perform no sensing or command callbacks"))
 	{
 		return false;
 	}
 	const world::ActorObservation *observer = nullptr;
-	if (!check(belief.findActor(belief.identity().observer, &observer) ==
-		world::ContactLookupResult::Found && observer != nullptr &&
-		observer->relation == world::TeamRelation::Friendly,
-		"TeamInfo wins over stale raw team for the snapshot observer too"))
+	if (!check(belief.findActor(belief.identity().observer, &observer) == world::ContactLookupResult::Found &&
+				observer != nullptr && observer->relation == world::TeamRelation::Friendly,
+			"TeamInfo wins over stale raw team for the snapshot observer too"))
 	{
 		return false;
 	}
@@ -156,26 +153,25 @@ bool testRuntimeTeams(astrabot::metamod::PluginRuntime &runtime,
 		runtime.onMessageEnd();
 	};
 	if (!check(views.observation_resolvePlayerTeam(&human) == 1,
-		"a player without TeamInfo uses the valid public raw team"))
+			"a player without TeamInfo uses the valid public raw team"))
 	{
 		return false;
 	}
 	teamInfo("CT");
-	if (!check(views.observation_resolvePlayerTeam(&human) == 2,
-		"human TeamInfo overrides a conflicting raw team"))
+	if (!check(views.observation_resolvePlayerTeam(&human) == 2, "human TeamInfo overrides a conflicting raw team"))
 	{
 		return false;
 	}
 	teamInfo("SPECTATOR");
 	if (!check(views.observation_resolvePlayerTeam(&human) == 0,
-		"known spectator TeamInfo overrides a stale active raw team"))
+			"known spectator TeamInfo overrides a stale active raw team"))
 	{
 		return false;
 	}
 	runtime.onClientDisconnect(&human);
 	runtime.onClientPutInServer(&human);
 	if (!check(views.observation_resolvePlayerTeam(&human) == 1,
-		"a reused human slot cannot retain the previous TeamInfo"))
+			"a reused human slot cannot retain the previous TeamInfo"))
 	{
 		return false;
 	}

@@ -8,73 +8,69 @@ namespace metamod
 {
 class BotNavigationRuntime
 {
-  public:
+public:
 	void bindServices(BotNavigationServices &services)
 	{
 		services_ = &services;
 	}
+
 	void logGoalAssignmentDiagnostic(std::size_t index, const runtime::MovementPhysicsState &before,
-									 const runtime::NavRoamDecision &decision,
-									 const nav::LocomotionIntent &intent,
-									 runtime::NavRoamResult result,
-									 const nav::GroundLookaheadObservation &ground,
-									 const runtime::GroundLookaheadRoute &probeRoute);
-	void logMovementDiagnostic(std::size_t index, const char *reason,
-							   const runtime::NavRoamDecision *decision = nullptr);
-	void logMovementReversalDiagnostic(std::size_t index,
-									   const runtime::MovementPhysicsState &before,
-									   const runtime::NavRoamDecision &decision,
-									   const nav::LocomotionIntent &intent);
+		const runtime::NavRoamDecision &decision, const nav::LocomotionIntent &intent, runtime::NavRoamResult result,
+		const nav::GroundLookaheadObservation &ground, const runtime::GroundLookaheadRoute &probeRoute);
+	void logMovementDiagnostic(
+		std::size_t index, const char *reason, const runtime::NavRoamDecision *decision = nullptr);
+	void logMovementReversalDiagnostic(std::size_t index, const runtime::MovementPhysicsState &before,
+		const runtime::NavRoamDecision &decision, const nav::LocomotionIntent &intent);
 	void logTraversalDiagnostic(std::size_t index, const runtime::MovementPhysicsState &before,
-								const runtime::NavRoamDecision &decision,
-								const nav::LocomotionIntent &intent, std::uint16_t buttons,
-								const nav::LocomotionObservation &locomotion);
+		const runtime::NavRoamDecision &decision, const nav::LocomotionIntent &intent, std::uint16_t buttons,
+		const nav::LocomotionObservation &locomotion);
 	void logTraversalOutcome(std::size_t index, const runtime::MovementPhysicsState &after,
-							 const runtime::NavRoamDecision &decision,
-							 const runtime::LandingDamageObservation &landingFeedback);
+		const runtime::NavRoamDecision &decision, const runtime::LandingDamageObservation &landingFeedback);
 	nav::NavPathCostContext managedPathCostContext(std::size_t index);
-	void recordMovementPhysicsSample(std::size_t index, const runtime::MovementPhysicsState &before,
-									 const runtime::CommandReceipt &receipt);
+	void recordMovementPhysicsSample(
+		std::size_t index, const runtime::MovementPhysicsState &before, const runtime::CommandReceipt &receipt);
 	const ManagedNavigationFailure &managedNavigationFailures(std::size_t index) const
 	{
 		return actors_[index].managedNavigationFailures;
 	}
+
 	const compat::NavigationStep &managedNavigationSteps(std::size_t index) const
 	{
 		return actors_[index].managedNavigationSteps;
 	}
+
 	const std::uint8_t &movementDiagnosticSamples(std::size_t index) const
 	{
 		return actors_[index].movementDiagnosticSamples;
 	}
+
 	const runtime::MovementPhysicsSample &movementPhysicsSamples(std::size_t index) const
 	{
 		return actors_[index].movementPhysicsSamples;
 	}
+
 	void onActorRemoved(std::size_t index);
 
 	void resetSharedExecutionState();
 
 	void resetActorExecutionState(std::size_t index);
 
-	void beginMovementUpdate(const compat::CvarSnapshot &configuration,
-							 const nav::NavSnapshot &navigation, bool movementUnavailable);
+	void beginMovementUpdate(
+		const compat::CvarSnapshot &configuration, const nav::NavSnapshot &navigation, bool movementUnavailable);
 
 	void observeFullUpdateMotion(std::size_t index, const FakeClientHandle &handle,
-								 const runtime::MovementPhysicsState &before,
-								 const compat::CvarSnapshot &configuration);
+		const runtime::MovementPhysicsState &before, const compat::CvarSnapshot &configuration);
 
 	MovementPreparation prepareMovement(std::size_t index, FakeClientHandle &handle,
-						 const runtime::MovementPhysicsState &before, bool movementUnavailable);
+		const runtime::MovementPhysicsState &before, bool movementUnavailable);
 
 	void completePreparation(std::size_t index, MovementPreparationCompletion completion);
 	NavigationUpdate updateNavigation(std::size_t index, const FakeClientHandle &handle,
-									  const runtime::MovementPhysicsState &before,
-									  const nav::NavSnapshot &navigation,
-									  bool performanceDisablePathSearch_);
+		const runtime::MovementPhysicsState &before, const nav::NavSnapshot &navigation,
+		bool performanceDisablePathSearch_);
 
-	void recordNavigationUpdate(std::size_t index, const runtime::MovementPhysicsState &before,
-								NavigationUpdate &movement);
+	void recordNavigationUpdate(
+		std::size_t index, const runtime::MovementPhysicsState &before, NavigationUpdate &movement);
 
 	void resetRoundDeathReceipts();
 
@@ -97,102 +93,121 @@ class BotNavigationRuntime
 
 	void noteMovementDiagnosticSample(std::size_t index);
 
-  private:
+private:
 	void fill_movementReversalDiagnostics(const MovementReversalDiagnosticState &value)
 	{
 		for (auto &actor : actors_)
 			actor.movementReversalDiagnostics = value;
 	}
+
 	void fill_movementWasAirborne(const bool &value)
 	{
 		for (auto &actor : actors_)
 			actor.movementWasAirborne = value;
 	}
+
 	void fill_movementDispatchFrames(const std::uint32_t &value)
 	{
 		for (auto &actor : actors_)
 			actor.movementDispatchFrames = value;
 	}
+
 	void fill_movementTraversalPending(const PendingTraversalDiagnostic &value)
 	{
 		for (auto &actor : actors_)
 			actor.movementTraversalPending = value;
 	}
+
 	void fill_movementTraversalDiagnosticSeconds(const std::uint32_t &value)
 	{
 		for (auto &actor : actors_)
 			actor.movementTraversalDiagnosticSeconds = value;
 	}
+
 	void fill_movementGoalDiagnosticSeconds(const std::uint32_t &value)
 	{
 		for (auto &actor : actors_)
 			actor.movementGoalDiagnosticSeconds = value;
 	}
+
 	void fill_movementReadyLogged(const bool &value)
 	{
 		for (auto &actor : actors_)
 			actor.movementReadyLogged = value;
 	}
+
 	void fill_movementPhysicsSamples(const runtime::MovementPhysicsSample &value)
 	{
 		for (auto &actor : actors_)
 			actor.movementPhysicsSamples = value;
 	}
+
 	void fill_movementGroundLookaheadRoutes(const runtime::GroundLookaheadRoute &value)
 	{
 		for (auto &actor : actors_)
 			actor.movementGroundLookaheadRoutes = value;
 	}
+
 	void fill_movementWarmupFrames(const std::uint8_t &value)
 	{
 		for (auto &actor : actors_)
 			actor.movementWarmupFrames = value;
 	}
+
 	void fill_movementSettledDeadFrames(const std::uint32_t &value)
 	{
 		for (auto &actor : actors_)
 			actor.movementSettledDeadFrames = value;
 	}
+
 	void fill_movementLastDeadFrames(const std::uint32_t &value)
 	{
 		for (auto &actor : actors_)
 			actor.movementLastDeadFrames = value;
 	}
+
 	void fill_movementResumeFrames(const std::uint32_t &value)
 	{
 		for (auto &actor : actors_)
 			actor.movementResumeFrames = value;
 	}
+
 	void fill_movementDiagnosticUnavailable(const bool &value)
 	{
 		for (auto &actor : actors_)
 			actor.movementDiagnosticUnavailable = value;
 	}
+
 	void fill_movementDiagnosticAttempts(const bool &value)
 	{
 		for (auto &actor : actors_)
 			actor.movementDiagnosticAttempts = value;
 	}
+
 	void fill_movementDiagnosticSamples(const std::uint8_t &value)
 	{
 		for (auto &actor : actors_)
 			actor.movementDiagnosticSamples = value;
 	}
+
 	void reset_deathDangerRecorded()
 	{
 		for (auto &actor : actors_)
 			actor.deathDangerRecorded = {};
 	}
+
 	void reset_managedNavigationSteps()
 	{
 		for (auto &actor : actors_)
 			actor.managedNavigationSteps = {};
 	}
+
 	void reset_managedNavigationFailures()
 	{
 		for (auto &actor : actors_)
 			actor.managedNavigationFailures = {};
 	}
+
 	struct ActorState
 	{
 		runtime::NavRoamController managedBotMovement{};

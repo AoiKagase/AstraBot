@@ -101,15 +101,10 @@ class RoundObjectivePlanner
 public:
 	RoundObjectivePlanner();
 	explicit RoundObjectivePlanner(const world::ActorKey &actor);
-	RoundObjectivePlanner(
-		const world::ActorKey &actor,
-		const RoundObjectiveConfig &config);
+	RoundObjectivePlanner(const world::ActorKey &actor, const RoundObjectiveConfig &config);
 
-	ObjectiveResult plan(
-		const world::WorldSnapshot &snapshot,
-		behavior::BehaviorState behaviorState,
-		const ScenarioObservation &observation,
-		const ObjectiveCompletionFeedback *feedback,
+	ObjectiveResult plan(const world::WorldSnapshot &snapshot, behavior::BehaviorState behaviorState,
+		const ScenarioObservation &observation, const ObjectiveCompletionFeedback *feedback,
 		ObjectiveProposal *proposal);
 
 	const world::ActorKey &actor() const;
@@ -120,29 +115,14 @@ private:
 	static bool isValidAvailability(Availability availability);
 	static bool isValidEventKind(ScenarioEventKind kind);
 	static bool isValidEventState(EventState state);
-	static bool sameRound(
-		const world::FrameIdentity &left,
-		const world::FrameIdentity &right);
-	static bool isFrameAfter(
-		const world::FrameIdentity &candidate,
-		const world::FrameIdentity &current);
-	static bool makeProposal(
-		const ScenarioObservation &observation,
-		ObjectiveKind kind,
-		ObjectivePriority priority,
-		std::uint32_t subjectId,
-		ObjectiveProposal *proposal,
-		std::uint32_t lifetimeTicks);
-	static bool findEvent(
-		const ScenarioObservation &observation,
-		ScenarioEventKind kind,
-		ScenarioEvent *event);
+	static bool sameRound(const world::FrameIdentity &left, const world::FrameIdentity &right);
+	static bool isFrameAfter(const world::FrameIdentity &candidate, const world::FrameIdentity &current);
+	static bool makeProposal(const ScenarioObservation &observation, ObjectiveKind kind, ObjectivePriority priority,
+		std::uint32_t subjectId, ObjectiveProposal *proposal, std::uint32_t lifetimeTicks);
+	static bool findEvent(const ScenarioObservation &observation, ScenarioEventKind kind, ScenarioEvent *event);
 
-	ObjectiveResult proposalForScenario(
-		const world::WorldSnapshot &snapshot,
-		behavior::BehaviorState behaviorState,
-		const ScenarioObservation &observation,
-		ObjectiveProposal *proposal);
+	ObjectiveResult proposalForScenario(const world::WorldSnapshot &snapshot, behavior::BehaviorState behaviorState,
+		const ScenarioObservation &observation, ObjectiveProposal *proposal);
 
 	RoundObjectiveConfig config_;
 	world::ActorKey actor_;

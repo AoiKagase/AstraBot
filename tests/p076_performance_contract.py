@@ -25,14 +25,17 @@ def adapter_facade():
 
 
 def test_non_objective_bots_skip_bomb_site_corridor_enumeration() -> None:
+    objectives = normalize(adapter_path("bot_behavior_objectives.cpp").read_text(encoding="utf-8"))
+    assert "constexpr int kTerroristTeam = 1;" in objectives
+    assert "constexpr int kCounterTerroristTeam = 2;" in objectives
     source = behavior_source()
     source = normalize(source)
     start = source.index("bool BotBehaviorRuntime::buildManagedObjectiveTarget(")
     end = source.index("ActionProposal BotBehaviorRuntime::decideManagedBotAction(", start)
     body = source[start:end]
-    assert "const bool needsBombSite = team == 1 && carryingBomb &&" in body
+    assert "const bool needsBombSite = team == kTerroristTeam && carryingBomb &&" in body
     assert "assignmentKind == team::TeamObjectiveKind::PlantC4;" in body
-    assert "const bool needsPlantedBomb = team == 2 &&" in body
+    assert "const bool needsPlantedBomb = team == kCounterTerroristTeam &&" in body
     assert "assignmentKind == team::TeamObjectiveKind::DefuseC4;" in body
     assert "if (!needsBombSite && !needsPlantedBomb)" in body
     assert "isBombTargetClassname(classname)" in body

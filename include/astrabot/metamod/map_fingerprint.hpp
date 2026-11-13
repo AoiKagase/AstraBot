@@ -28,11 +28,9 @@ enum class MapFingerprintResult
 	SourceHashMismatch
 };
 
-MapFingerprintResult createMapFingerprint(const char *mapName,
-	std::uint32_t bspSize, std::uint32_t navSourceHash,
-	MapFingerprint *fingerprint);
-MapFingerprintResult compareMapFingerprints(const MapFingerprint *expected,
-	const MapFingerprint *actual);
+MapFingerprintResult createMapFingerprint(
+	const char *mapName, std::uint32_t bspSize, std::uint32_t navSourceHash, MapFingerprint *fingerprint);
+MapFingerprintResult compareMapFingerprints(const MapFingerprint *expected, const MapFingerprint *actual);
 }
 }
 

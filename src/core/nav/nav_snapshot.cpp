@@ -11,9 +11,9 @@ NavSnapshot::NavSnapshot() : document_(), revision_(0U), mapGeneration_(0U)
 {
 }
 
-NavSnapshot::NavSnapshot(const std::shared_ptr<const NavDocument> &document,
-	std::uint64_t revision, std::uint32_t mapGeneration) :
-	document_(document), revision_(revision), mapGeneration_(mapGeneration)
+NavSnapshot::NavSnapshot(
+	const std::shared_ptr<const NavDocument> &document, std::uint64_t revision, std::uint32_t mapGeneration)
+	: document_(document), revision_(revision), mapGeneration_(mapGeneration)
 {
 }
 
@@ -37,13 +37,11 @@ const NavDocument *NavSnapshot::document() const
 	return document_.get();
 }
 
-NavSnapshotPublisher::NavSnapshotPublisher() :
-	document_(), revision_(0U), mapGeneration_(0U)
+NavSnapshotPublisher::NavSnapshotPublisher() : document_(), revision_(0U), mapGeneration_(0U)
 {
 }
 
-NavSnapshotResult NavSnapshotPublisher::publish(const NavDocument *document,
-	std::uint32_t mapGeneration)
+NavSnapshotResult NavSnapshotPublisher::publish(const NavDocument *document, std::uint32_t mapGeneration)
 {
 	if (document == nullptr)
 	{
@@ -94,8 +92,7 @@ NavSnapshot NavSnapshotPublisher::snapshot() const
 
 bool NavSnapshotPublisher::isCurrent(const NavSnapshot &snapshot) const
 {
-	return snapshot.isValid() && document_ == snapshot.document_ &&
-		revision_ == snapshot.revision_ &&
+	return snapshot.isValid() && document_ == snapshot.document_ && revision_ == snapshot.revision_ &&
 		mapGeneration_ == snapshot.mapGeneration_;
 }
 

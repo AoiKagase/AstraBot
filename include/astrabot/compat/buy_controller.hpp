@@ -4,8 +4,19 @@
 #include "astrabot/compat/profile_catalog.hpp"
 #include <cstdint>
 
-namespace astrabot { namespace compat {
-enum class BuyStatus { Command, UnknownObservation, WaitingReceipt, Complete, Unavailable, ReceiptTimeout };
+namespace astrabot
+{
+namespace compat
+{
+enum class BuyStatus
+{
+	Command,
+	UnknownObservation,
+	WaitingReceipt,
+	Complete,
+	Unavailable,
+	ReceiptTimeout
+};
 struct BuyContext
 {
 	double nowSeconds = 0;
@@ -31,13 +42,19 @@ struct BuyContext
 	bool bombScenario = false, career = false, teamAllBots = false;
 	bool shieldKnown = false, hasShield = false;
 };
-struct BuyDecision { BuyStatus status; const char *command; int weaponId; };
+struct BuyDecision
+{
+	BuyStatus status;
+	const char *command;
+	int weaponId;
+};
 // Receipts use inventory observations: sending an alias never mutates observed money/loadout.
 class BuyController
 {
 public:
 	BuyDecision update(const BuyContext &context, const ProfileRecord &profile);
 	void reset();
+
 private:
 	std::uint32_t generation_ = 0, round_ = 0;
 	int pendingWeapon_ = 0, retries_ = 0;
@@ -51,5 +68,6 @@ private:
 	bool receiptFailed_ = false;
 	int initializationStep_ = 0;
 };
-} }
+}
+}
 #endif

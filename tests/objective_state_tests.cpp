@@ -6,73 +6,65 @@
 
 namespace
 {
-	bool check(bool condition, const char *description);
+bool check(bool condition, const char *description);
 
-	bool testBombSiteSelectionUsesLowestReachableRouteCost()
+bool testBombSiteSelectionUsesLowestReachableRouteCost()
+{
+	struct SiteRoute
 	{
-		struct SiteRoute
+		std::uint32_t siteIdentity;
+		float pathCost;
+	};
+	const SiteRoute routes[] = {
+		{11U, 40.0f}, {12U, (std::numeric_limits<float>::infinity)()}, {13U, 18.0f}, {14U, 18.0f}};
+	std::uint32_t selectedSite = 0U;
+	float selectedPathCost = (std::numeric_limits<float>::max)();
+	for (const SiteRoute &route : routes)
+	{
+		if (astrabot::objectives::isBetterBombSiteRoute(route.pathCost, selectedPathCost))
 		{
-			std::uint32_t siteIdentity;
-			float pathCost;
-		};
-		const SiteRoute routes[] = {
-			{11U, 40.0f},
-			{12U, (std::numeric_limits<float>::infinity)()},
-			{13U, 18.0f},
-			{14U, 18.0f}};
-		std::uint32_t selectedSite = 0U;
-		float selectedPathCost = (std::numeric_limits<float>::max)();
-		for (const SiteRoute &route : routes)
-		{
-			if (astrabot::objectives::isBetterBombSiteRoute(
-					route.pathCost, selectedPathCost))
-			{
-				selectedSite = route.siteIdentity;
-				selectedPathCost = route.pathCost;
-			}
+			selectedSite = route.siteIdentity;
+			selectedPathCost = route.pathCost;
 		}
-		return check(
-			selectedSite == 13U && selectedPathCost == 18.0f,
-			"all bomb sites compete by reachable route cost with NAV order for ties");
 	}
+	return check(selectedSite == 13U && selectedPathCost == 18.0f,
+		"all bomb sites compete by reachable route cost with NAV order for ties");
+}
 
-	bool check(bool condition, const char *description)
+bool check(bool condition, const char *description)
+{
+	if (condition)
 	{
-		if (condition)
-		{
-			return true;
-		}
-
-		std::fprintf(stderr, "check failed: %s\n", description);
-		return false;
+		return true;
 	}
 
-	astrabot::objectives::ScenarioIdentity scenario(
-		std::uint32_t roundGeneration,
-		std::uint32_t tick)
-	{
-		astrabot::objectives::ScenarioIdentity value = {};
-		value.frame = {3U, roundGeneration, tick};
-		value.scenarioGeneration = 8U;
-		value.kind = astrabot::objectives::ScenarioKind::Bomb;
-		value.team = astrabot::objectives::TeamRole::CounterTerrorist;
-		return value;
-	}
+	std::fprintf(stderr, "check failed: %s\n", description);
+	return false;
+}
 
-	astrabot::objectives::ObjectiveProposal proposal(
-		const astrabot::objectives::ScenarioIdentity &identity)
-	{
-		astrabot::objectives::ObjectiveProposal value = {};
-		value.actor = {1U, 5U};
-		value.scenario = identity;
-		value.objective.scenario = identity;
-		value.objective.kind = astrabot::objectives::ObjectiveKind::Defend;
-		value.objective.subjectId = 2U;
-		value.priority = astrabot::objectives::ObjectivePriority::High;
-		value.issuedTick = identity.frame.tick;
-		value.expiresAtTick = identity.frame.tick + 32U;
-		return value;
-	}
+astrabot::objectives::ScenarioIdentity scenario(std::uint32_t roundGeneration, std::uint32_t tick)
+{
+	astrabot::objectives::ScenarioIdentity value = {};
+	value.frame = {3U, roundGeneration, tick};
+	value.scenarioGeneration = 8U;
+	value.kind = astrabot::objectives::ScenarioKind::Bomb;
+	value.team = astrabot::objectives::TeamRole::CounterTerrorist;
+	return value;
+}
+
+astrabot::objectives::ObjectiveProposal proposal(const astrabot::objectives::ScenarioIdentity &identity)
+{
+	astrabot::objectives::ObjectiveProposal value = {};
+	value.actor = {1U, 5U};
+	value.scenario = identity;
+	value.objective.scenario = identity;
+	value.objective.kind = astrabot::objectives::ObjectiveKind::Defend;
+	value.objective.subjectId = 2U;
+	value.priority = astrabot::objectives::ObjectivePriority::High;
+	value.issuedTick = identity.frame.tick;
+	value.expiresAtTick = identity.frame.tick + 32U;
+	return value;
+}
 }
 
 bool testProposalLifecycleNeedsExplicitFeedback()
@@ -87,16 +79,15 @@ bool testProposalLifecycleNeedsExplicitFeedback()
 	ObjectiveState state({1U, 5U});
 	const auto candidate = proposal(identity);
 	if (!check(candidate.isProposal() && !candidate.isCompletionFeedback() &&
-			state.acceptProposal(candidate) == ObjectiveStateResult::Accepted,
+				state.acceptProposal(candidate) == ObjectiveStateResult::Accepted,
 			"actor-owned objective proposal is accepted"))
 	{
 		return false;
 	}
 
 	ObjectiveStateRecord record = {};
-	if (!check(state.current(&record) == ObjectiveStateResult::Found &&
-			record.status == ObjectiveStatus::Proposed &&
-			!state.isComplete(),
+	if (!check(state.current(&record) == ObjectiveStateResult::Found && record.status == ObjectiveStatus::Proposed &&
+				!state.isComplete(),
 			"proposal does not imply objective completion"))
 	{
 		return false;
@@ -107,8 +98,7 @@ bool testProposalLifecycleNeedsExplicitFeedback()
 	unknown.objective = record.objective;
 	unknown.scenario = identity;
 	unknown.status = ObjectiveStatus::Unknown;
-	if (!check(state.applyFeedback(unknown) ==
-			ObjectiveStateResult::FeedbackUnavailable && !state.isComplete(),
+	if (!check(state.applyFeedback(unknown) == ObjectiveStateResult::FeedbackUnavailable && !state.isComplete(),
 			"unknown feedback cannot complete objective"))
 	{
 		return false;
@@ -118,8 +108,7 @@ bool testProposalLifecycleNeedsExplicitFeedback()
 	completed.status = ObjectiveStatus::Completed;
 	completed.scenario.frame.tick = 11U;
 	completed.objective.scenario = completed.scenario;
-	if (!check(state.applyFeedback(completed) ==
-			ObjectiveStateResult::Completed && state.isComplete(),
+	if (!check(state.applyFeedback(completed) == ObjectiveStateResult::Completed && state.isComplete(),
 			"explicit completion feedback completes objective"))
 	{
 		return false;
@@ -127,9 +116,8 @@ bool testProposalLifecycleNeedsExplicitFeedback()
 
 	ObjectiveCompletionFeedback stale = completed;
 	stale.actor.generation = 4U;
-	return check(state.applyFeedback(stale) ==
-			ObjectiveStateResult::StaleGeneration,
-		"stale actor feedback is rejected");
+	return check(
+		state.applyFeedback(stale) == ObjectiveStateResult::StaleGeneration, "stale actor feedback is rejected");
 }
 
 bool testExpiryAndRoundGeneration()
@@ -145,30 +133,26 @@ bool testExpiryAndRoundGeneration()
 		return false;
 	}
 
-	if (!check(state.expire({3U, 4U, 52U}) ==
-			ObjectiveStateResult::Expired,
-			"objective expiry is explicit"))
+	if (!check(state.expire({3U, 4U, 52U}) == ObjectiveStateResult::Expired, "objective expiry is explicit"))
 	{
 		return false;
 	}
 
 	const auto staleProposal = proposal(scenario(3U, 10U));
-	if (!check(state.acceptProposal(staleProposal) ==
-			ObjectiveStateResult::StaleFrame,
+	if (!check(state.acceptProposal(staleProposal) == ObjectiveStateResult::StaleFrame,
 			"proposal from another round is rejected"))
 	{
 		return false;
 	}
 
-	return check(state.current(nullptr) == ObjectiveStateResult::InvalidArgument,
-		"null objective state output is rejected");
+	return check(
+		state.current(nullptr) == ObjectiveStateResult::InvalidArgument, "null objective state output is rejected");
 }
 
 int main()
 {
-	if (!testBombSiteSelectionUsesLowestReachableRouteCost() ||
-			!testProposalLifecycleNeedsExplicitFeedback() ||
-			!testExpiryAndRoundGeneration())
+	if (!testBombSiteSelectionUsesLowestReachableRouteCost() || !testProposalLifecycleNeedsExplicitFeedback() ||
+		!testExpiryAndRoundGeneration())
 	{
 		return 1;
 	}

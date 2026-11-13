@@ -26,34 +26,16 @@ public:
 	ObservationAdapter();
 
 	void configure(enginefuncs_t *engineFunctions, globalvars_t *globals);
-	ObservationAdapterResult collectActor(
-		edict_t *entity,
-		const world::ActorKey &actor,
-		const world::FrameIdentity &frame,
-		const compat::ObservationTimingContext &timing,
+	ObservationAdapterResult collectActor(edict_t *entity, const world::ActorKey &actor,
+		const world::FrameIdentity &frame, const compat::ObservationTimingContext &timing,
 		compat::CompatibilityObservation *observation) const;
-	ObservationAdapterResult collectVisibility(
-		edict_t *observer,
-		edict_t *target,
-		const world::ActorKey &targetActor,
-		const world::FrameIdentity &frame,
-		perception::VisionObservation *observation) const;
-	ObservationAdapterResult collectPlantedBomb(
-		edict_t *entity,
-		const char *classname,
-		const char *model,
-		float currentTime,
-		const world::ActorKey &actor,
-		const world::FrameIdentity &frame,
-		const compat::ObservationTimingContext &timing,
-		compat::ObjectiveObservation *observation) const;
-	ObservationAdapterResult collectDroppedC4(
-		edict_t *entity,
-		const char *classname,
-		const char *model,
-		const world::ActorKey &actor,
-		const world::FrameIdentity &frame,
-		const compat::ObservationTimingContext &timing,
+	ObservationAdapterResult collectVisibility(edict_t *observer, edict_t *target, const world::ActorKey &targetActor,
+		const world::FrameIdentity &frame, perception::VisionObservation *observation) const;
+	ObservationAdapterResult collectPlantedBomb(edict_t *entity, const char *classname, const char *model,
+		float currentTime, const world::ActorKey &actor, const world::FrameIdentity &frame,
+		const compat::ObservationTimingContext &timing, compat::ObjectiveObservation *observation) const;
+	ObservationAdapterResult collectDroppedC4(edict_t *entity, const char *classname, const char *model,
+		const world::ActorKey &actor, const world::FrameIdentity &frame, const compat::ObservationTimingContext &timing,
 		compat::DroppedC4Observation *observation) const;
 	void setTraceSink(compat::IObservationTraceSink *sink);
 	void setSmokeObservations(const compat::SmokeObservations *smoke);

@@ -109,17 +109,15 @@ int main()
 	NavLoader loader;
 	NavSnapshotPublisher publisher;
 	NavLoadDiagnostic diagnostic = {};
-	NavLoadRequest request = {
-		kNavPath, "de_dust2", 22U, true, kBspSize, false, 0U
-	};
-	if (!check(loader.loadFile(&request, &publisher, &diagnostic) ==
-			NavLoadResult::Loaded, "diagnostic fixture publishes"))
+	NavLoadRequest request = {kNavPath, "de_dust2", 22U, true, kBspSize, false, 0U};
+	if (!check(loader.loadFile(&request, &publisher, &diagnostic) == NavLoadResult::Loaded,
+			"diagnostic fixture publishes"))
 	{
 		return 1;
 	}
 	const auto previous = publisher.snapshot();
-	if (!check(diagnostic.snapshotRevision == previous.revision() &&
-			diagnostic.sourceHash != 0U && diagnostic.mapGeneration == 22U,
+	if (!check(diagnostic.snapshotRevision == previous.revision() && diagnostic.sourceHash != 0U &&
+				diagnostic.mapGeneration == 22U,
 			"diagnostic contains publication identity"))
 	{
 		return 1;
@@ -127,20 +125,18 @@ int main()
 
 	request.hasExpectedSourceHash = true;
 	request.expectedSourceHash = diagnostic.sourceHash + 1U;
-	if (!check(loader.loadFile(&request, &publisher, &diagnostic) ==
-			NavLoadResult::SourceHashMismatch, "source hash mismatch is explicit"))
+	if (!check(loader.loadFile(&request, &publisher, &diagnostic) == NavLoadResult::SourceHashMismatch,
+			"source hash mismatch is explicit"))
 	{
 		return 1;
 	}
-	if (!check(publisher.isCurrent(previous),
-			"source mismatch preserves prior snapshot"))
+	if (!check(publisher.isCurrent(previous), "source mismatch preserves prior snapshot"))
 	{
 		return 1;
 	}
 
-	if (!check(loader.loadFile(nullptr, &publisher, &diagnostic) ==
-			NavLoadResult::InvalidArgument &&
-			diagnostic.result == NavLoadResult::InvalidArgument,
+	if (!check(loader.loadFile(nullptr, &publisher, &diagnostic) == NavLoadResult::InvalidArgument &&
+				diagnostic.result == NavLoadResult::InvalidArgument,
 			"invalid loader arguments are diagnosed"))
 	{
 		return 1;

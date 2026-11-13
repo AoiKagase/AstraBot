@@ -103,12 +103,8 @@ public:
 	WeaponInventory();
 
 	WeaponInventoryResult add(const WeaponRecord &weapon);
-	WeaponInventoryResult selectReady(
-		const world::FrameIdentity &frame,
-		const WeaponRecord **weapon) const;
-	WeaponInventoryResult selectReloadable(
-		const world::FrameIdentity &frame,
-		const WeaponRecord **weapon) const;
+	WeaponInventoryResult selectReady(const world::FrameIdentity &frame, const WeaponRecord **weapon) const;
+	WeaponInventoryResult selectReloadable(const world::FrameIdentity &frame, const WeaponRecord **weapon) const;
 
 	void clear();
 	std::size_t size() const;
@@ -119,9 +115,7 @@ private:
 	static bool isValidWeaponKind(WeaponKind kind);
 	static bool isValidAvailability(WeaponAvailability availability);
 	static bool isValidReloadState(ReloadState state);
-	static bool isBetter(
-		const WeaponRecord &candidate,
-		const WeaponRecord &current);
+	static bool isBetter(const WeaponRecord &candidate, const WeaponRecord &current);
 
 	std::array<WeaponRecord, WeaponLimits::kMaximumInventorySlots> weapons_;
 	std::size_t weaponCount_;

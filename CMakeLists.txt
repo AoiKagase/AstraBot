@@ -106,6 +106,11 @@ if(ASTRABOT_BUILD_TESTS)
   astrabot_apply_warnings(astrabot_combat_policy)
   add_test(NAME astrabot_combat_policy COMMAND astrabot_combat_policy)
 
+  add_executable(astrabot_literal_precision tests/literal_precision_tests.cpp)
+  target_link_libraries(astrabot_literal_precision PRIVATE astrabot_core)
+  astrabot_apply_warnings(astrabot_literal_precision)
+  add_test(NAME astrabot_literal_precision COMMAND astrabot_literal_precision)
+
   add_executable(astrabot_weapon_actions tests/weapon_actions_tests.cpp)
   target_link_libraries(astrabot_weapon_actions PRIVATE astrabot_core)
   astrabot_apply_warnings(astrabot_weapon_actions)

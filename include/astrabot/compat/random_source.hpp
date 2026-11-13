@@ -27,7 +27,10 @@ struct RandomLongResult
 class ICompatibilityRandomSource
 {
 public:
-	virtual ~ICompatibilityRandomSource() { }
+	virtual ~ICompatibilityRandomSource()
+	{
+	}
+
 	virtual RandomFloatResult nextFloat(const RandomRequest &request) = 0;
 	virtual RandomLongResult nextLong(const RandomRequest &request) = 0;
 };
@@ -41,19 +44,9 @@ struct RandomTapeEntry
 	std::string semanticId;
 
 	static RandomTapeEntry floatEntry(
-		const char *semanticId,
-		RandomActor actor,
-		RandomTimingContext timing,
-		float lower,
-		float upper,
-		float value);
-	static RandomTapeEntry longEntry(
-		const char *semanticId,
-		RandomActor actor,
-		RandomTimingContext timing,
-		std::int32_t lower,
-		std::int32_t upper,
-		std::int32_t value);
+		const char *semanticId, RandomActor actor, RandomTimingContext timing, float lower, float upper, float value);
+	static RandomTapeEntry longEntry(const char *semanticId, RandomActor actor, RandomTimingContext timing,
+		std::int32_t lower, std::int32_t upper, std::int32_t value);
 };
 
 class ScriptedRandomSource : public ICompatibilityRandomSource

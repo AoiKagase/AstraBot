@@ -59,14 +59,8 @@ bool check(bool condition, const char *description)
 	return false;
 }
 
-void appendArea(
-	Bytes *output,
-	std::uint32_t version,
-	std::uint32_t id,
-	bool invalidConnection,
-	bool invalidGeometry,
-	bool invalidConnectionCount,
-	bool firstArea)
+void appendArea(Bytes *output, std::uint32_t version, std::uint32_t id, bool invalidConnection, bool invalidGeometry,
+	bool invalidConnectionCount, bool firstArea)
 {
 	output->appendU32(id);
 	output->appendU8(firstArea ? 1U : 0U);
@@ -82,10 +76,9 @@ void appendArea(
 	{
 		if (firstArea && direction == 1U)
 		{
-			output->appendU32(invalidConnectionCount ?
-				static_cast<std::uint32_t>(
-					astrabot::nav::NavLimits::kMaximumConnectionsPerDirection + 1U) :
-				1U);
+			output->appendU32(invalidConnectionCount
+					? static_cast<std::uint32_t>(astrabot::nav::NavLimits::kMaximumConnectionsPerDirection + 1U)
+					: 1U);
 			if (!invalidConnectionCount)
 			{
 				output->appendU32(invalidConnection ? 99U : 2U);
@@ -154,13 +147,8 @@ void appendArea(
 	}
 }
 
-std::vector<std::uint8_t> fixture(
-	std::uint32_t version,
-	bool invalidConnection = false,
-	bool invalidGeometry = false,
-	bool invalidPlace = false,
-	bool duplicateArea = false,
-	bool invalidConnectionCount = false)
+std::vector<std::uint8_t> fixture(std::uint32_t version, bool invalidConnection = false, bool invalidGeometry = false,
+	bool invalidPlace = false, bool duplicateArea = false, bool invalidConnectionCount = false)
 {
 	Bytes output;
 	output.appendU32(0xFEEDFACEU);
@@ -184,8 +172,7 @@ std::vector<std::uint8_t> fixture(
 		}
 	}
 	output.appendU32(2U);
-	appendArea(&output, version, 1U, invalidConnection, invalidGeometry,
-		invalidConnectionCount, true);
+	appendArea(&output, version, 1U, invalidConnection, invalidGeometry, invalidConnectionCount, true);
 	appendArea(&output, version, duplicateArea ? 1U : 2U, false, false, false, false);
 	return output.bytes;
 }
@@ -205,8 +192,8 @@ int main()
 		const std::vector<std::uint8_t> bytes = fixture(version);
 		const std::vector<std::uint8_t> original = bytes;
 		NavDocument document;
-		if (!check(LegacyNavReader().read(bytes.data(), bytes.size(), &document) ==
-				NavReadResult::Loaded, "legacy version loads"))
+		if (!check(LegacyNavReader().read(bytes.data(), bytes.size(), &document) == NavReadResult::Loaded,
+				"legacy version loads"))
 		{
 			return 1;
 		}
@@ -215,28 +202,27 @@ int main()
 		{
 			return 1;
 		}
-		if (version >= 4U && !check(document.sourceIdentity().bspSize == 1234U,
-				"v4 source BSP size is retained"))
+		if (version >= 4U && !check(document.sourceIdentity().bspSize == 1234U, "v4 source BSP size is retained"))
 		{
 			return 1;
 		}
-		if (version == 5U && !check(document.placeCount() == 1U &&
-				document.areas()[0].placeId == 1U,
+		if (version == 5U &&
+			!check(document.placeCount() == 1U && document.areas()[0].placeId == 1U,
 				"v5 place directory and area entry are normalized"))
 		{
 			return 1;
 		}
 		if (!check(document.areas()[0].hidingSpots.size() == 1U &&
-				(version != 1U ? document.areas()[0].hidingSpots[0].id == 7U :
-					document.areas()[0].hidingSpots[0].id == 1U) &&
-				(version != 1U || (document.areas()[0].hidingSpots[0].flags &
-					NavHidingSpot::kInCover) != 0U),
+					(version != 1U ? document.areas()[0].hidingSpots[0].id == 7U
+								   : document.areas()[0].hidingSpots[0].id == 1U) &&
+					(version != 1U || (document.areas()[0].hidingSpots[0].flags & NavHidingSpot::kInCover) != 0U),
 				"hiding spots are normalized by version"))
 		{
 			return 1;
 		}
-		if (version >= 3U && !check(document.areas()[0].encounters.size() == 1U &&
-				document.areas()[0].encounters[0].spots[0].hidingSpotId == 7U,
+		if (version >= 3U &&
+			!check(document.areas()[0].encounters.size() == 1U &&
+					document.areas()[0].encounters[0].spots[0].hidingSpotId == 7U,
 				"v3 encounter spot IDs are retained"))
 		{
 			return 1;
@@ -257,33 +243,33 @@ int main()
 	}
 	std::vector<std::uint8_t> truncated = fixture(3U);
 	truncated.pop_back();
-	if (!check(reader.read(truncated.data(), truncated.size(), &existing) ==
-			NavReadResult::Truncated && existing.areaCount() == 2U,
+	if (!check(reader.read(truncated.data(), truncated.size(), &existing) == NavReadResult::Truncated &&
+				existing.areaCount() == 2U,
 			"truncated read preserves previous document"))
 	{
 		return 1;
 	}
 	std::vector<std::uint8_t> badMagic = fixture(1U);
 	badMagic[0] = 0U;
-	if (!check(reader.read(badMagic.data(), badMagic.size(), &existing) ==
-			NavReadResult::InvalidMagic, "bad magic is rejected"))
+	if (!check(reader.read(badMagic.data(), badMagic.size(), &existing) == NavReadResult::InvalidMagic,
+			"bad magic is rejected"))
 	{
 		return 1;
 	}
 	const std::vector<std::uint8_t> badVersion = fixture(6U);
-	if (!check(reader.read(badVersion.data(), badVersion.size(), &existing) ==
-			NavReadResult::UnsupportedVersion, "unknown version is rejected"))
+	if (!check(reader.read(badVersion.data(), badVersion.size(), &existing) == NavReadResult::UnsupportedVersion,
+			"unknown version is rejected"))
 	{
 		return 1;
 	}
-	if (!check(reader.read(valid.data(), valid.size(), nullptr) ==
-			NavReadResult::InvalidArgument, "null output is rejected"))
+	if (!check(reader.read(valid.data(), valid.size(), nullptr) == NavReadResult::InvalidArgument,
+			"null output is rejected"))
 	{
 		return 1;
 	}
 	LegacyNavReader smallReader({8U, NavLimits::kMaximumAreas});
-	if (!check(smallReader.read(valid.data(), valid.size(), &existing) ==
-			NavReadResult::TooLarge, "file byte limit is enforced"))
+	if (!check(smallReader.read(valid.data(), valid.size(), &existing) == NavReadResult::TooLarge,
+			"file byte limit is enforced"))
 	{
 		return 1;
 	}
@@ -291,8 +277,8 @@ int main()
 	zeroCount.appendU32(0xFEEDFACEU);
 	zeroCount.appendU32(1U);
 	zeroCount.appendU32(0U);
-	if (!check(reader.read(zeroCount.bytes.data(), zeroCount.bytes.size(), &existing) ==
-			NavReadResult::InvalidCount, "zero area count is rejected"))
+	if (!check(reader.read(zeroCount.bytes.data(), zeroCount.bytes.size(), &existing) == NavReadResult::InvalidCount,
+			"zero area count is rejected"))
 	{
 		return 1;
 	}
@@ -300,46 +286,47 @@ int main()
 	hugeCount.appendU32(0xFEEDFACEU);
 	hugeCount.appendU32(1U);
 	hugeCount.appendU32(static_cast<std::uint32_t>(NavLimits::kMaximumAreas + 1U));
-	if (!check(reader.read(hugeCount.bytes.data(), hugeCount.bytes.size(), &existing) ==
-			NavReadResult::ResourceLimit, "area count limit is enforced"))
+	if (!check(reader.read(hugeCount.bytes.data(), hugeCount.bytes.size(), &existing) == NavReadResult::ResourceLimit,
+			"area count limit is enforced"))
 	{
 		return 1;
 	}
-	const std::vector<std::uint8_t> tooManyConnections =
-		fixture(1U, false, false, false, false, true);
+	const std::vector<std::uint8_t> tooManyConnections = fixture(1U, false, false, false, false, true);
 	if (!check(reader.read(tooManyConnections.data(), tooManyConnections.size(), &existing) ==
-			NavReadResult::ResourceLimit, "connection count limit is enforced"))
+				NavReadResult::ResourceLimit,
+			"connection count limit is enforced"))
 	{
 		return 1;
 	}
 	const std::vector<std::uint8_t> invalidReference = fixture(5U, true);
-	if (!check(reader.read(invalidReference.data(), invalidReference.size(), &existing) ==
-			NavReadResult::InvalidReference, "unknown connection is rejected"))
+	if (!check(
+			reader.read(invalidReference.data(), invalidReference.size(), &existing) == NavReadResult::InvalidReference,
+			"unknown connection is rejected"))
 	{
 		return 1;
 	}
 	const std::vector<std::uint8_t> invalidGeometry = fixture(5U, false, true);
-	if (!check(reader.read(invalidGeometry.data(), invalidGeometry.size(), &existing) ==
-			NavReadResult::InvalidGeometry, "invalid geometry is rejected"))
+	if (!check(reader.read(invalidGeometry.data(), invalidGeometry.size(), &existing) == NavReadResult::InvalidGeometry,
+			"invalid geometry is rejected"))
 	{
 		return 1;
 	}
 	const std::vector<std::uint8_t> invalidPlace = fixture(5U, false, false, true);
-	if (!check(reader.read(invalidPlace.data(), invalidPlace.size(), &existing) ==
-			NavReadResult::InvalidPlace, "invalid place entry is rejected"))
+	if (!check(reader.read(invalidPlace.data(), invalidPlace.size(), &existing) == NavReadResult::InvalidPlace,
+			"invalid place entry is rejected"))
 	{
 		return 1;
 	}
 	const std::vector<std::uint8_t> duplicateArea = fixture(5U, false, false, false, true);
-	if (!check(reader.read(duplicateArea.data(), duplicateArea.size(), &existing) ==
-			NavReadResult::DuplicateIdentity, "duplicate area IDs are rejected"))
+	if (!check(reader.read(duplicateArea.data(), duplicateArea.size(), &existing) == NavReadResult::DuplicateIdentity,
+			"duplicate area IDs are rejected"))
 	{
 		return 1;
 	}
 	std::vector<std::uint8_t> trailing = fixture(5U);
 	trailing.push_back(0U);
-	if (!check(reader.read(trailing.data(), trailing.size(), &existing) ==
-			NavReadResult::TrailingData, "trailing data is rejected"))
+	if (!check(reader.read(trailing.data(), trailing.size(), &existing) == NavReadResult::TrailingData,
+			"trailing data is rejected"))
 	{
 		return 1;
 	}

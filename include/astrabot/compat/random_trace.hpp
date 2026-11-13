@@ -47,17 +47,9 @@ struct RandomRequest
 	std::int32_t longUpper;
 
 	static RandomRequest floatRequest(
-		const char *semanticId,
-		RandomActor actor,
-		RandomTimingContext timing,
-		float lower,
-		float upper);
+		const char *semanticId, RandomActor actor, RandomTimingContext timing, float lower, float upper);
 	static RandomRequest longRequest(
-		const char *semanticId,
-		RandomActor actor,
-		RandomTimingContext timing,
-		std::int32_t lower,
-		std::int32_t upper);
+		const char *semanticId, RandomActor actor, RandomTimingContext timing, std::int32_t lower, std::int32_t upper);
 };
 
 struct RandomTraceRecord
@@ -71,7 +63,10 @@ struct RandomTraceRecord
 class IRandomTraceSink
 {
 public:
-	virtual ~IRandomTraceSink() { }
+	virtual ~IRandomTraceSink()
+	{
+	}
+
 	virtual void record(const RandomTraceRecord &record) = 0;
 };
 }

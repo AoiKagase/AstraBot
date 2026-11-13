@@ -148,16 +148,16 @@ struct StateBehaviorInput
 	bool noiseAvailable;
 	bool objectiveActive;
 	bool inInteractionRange;
-	bool navigationOwned=false;
-	bool navigationReady=false;
+	bool navigationOwned = false;
+	bool navigationReady = false;
 	NavigationStep navigation{};
-	bool defuseGoalKnown=false;
-	bool withinDefuseRange=false;
-	bool reloadKnown=false;
-	bool reloadInferred=false;
-	bool reloading=false;
-	DefuseReceipt defuseReceipt=DefuseReceipt::Unknown;
-	bool guardObjectiveEnded=false;
+	bool defuseGoalKnown = false;
+	bool withinDefuseRange = false;
+	bool reloadKnown = false;
+	bool reloadInferred = false;
+	bool reloading = false;
+	DefuseReceipt defuseReceipt = DefuseReceipt::Unknown;
+	bool guardObjectiveEnded = false;
 };
 struct StateBehaviorDecision
 {
@@ -183,7 +183,7 @@ struct StateUpdateContext
 	ObservationAvailability transitionRequest;
 	ObservationAvailability attackObservation;
 	ObservationAvailability rngAvailability;
-	const StateBehaviorInput* behavior = nullptr;
+	const StateBehaviorInput *behavior = nullptr;
 
 	bool isValid() const;
 };
@@ -211,7 +211,10 @@ struct StateTraceRecord
 class IStateTraceSink
 {
 public:
-	virtual ~IStateTraceSink() { }
+	virtual ~IStateTraceSink()
+	{
+	}
+
 	virtual void record(const StateTraceRecord &record) = 0;
 };
 
@@ -232,10 +235,7 @@ public:
 	void setTraceSink(IStateTraceSink *sink);
 	StateResult initialize(const StateUpdateContext &context);
 	StateResult update(const StateUpdateContext &context);
-	StateResult transition(
-		CompatibilityStateId nextState,
-		StateTransitionReason reason,
-		StateTransitionId transition,
+	StateResult transition(CompatibilityStateId nextState, StateTransitionReason reason, StateTransitionId transition,
 		const StateUpdateContext &context);
 	StateResult beginAttack(const StateUpdateContext &context);
 	StateResult finishNavigation(const StateUpdateContext &context);
@@ -251,7 +251,10 @@ public:
 	float stateTimestamp() const;
 	bool attackOverlayActive() const;
 	bool isInitialized() const;
-	const StateBehaviorDecision& behaviorDecision() const { return behaviorDecision_; }
+	const StateBehaviorDecision &behaviorDecision() const
+	{
+		return behaviorDecision_;
+	}
 
 private:
 	world::FrameIdentity navigationCompletedFrame_{};
@@ -268,62 +271,29 @@ private:
 	static bool isAvailable(ObservationAvailability availability);
 	static std::size_t stateIndex(CompatibilityStateId state);
 	static StateUpdateContext resetContextFor(
-		const StateUpdateContext &context,
-		StateTransitionReason reason,
-		StateTransitionId transition);
+		const StateUpdateContext &context, StateTransitionReason reason, StateTransitionId transition);
 
 	bool validateContext(const StateUpdateContext &context) const;
 	StateInstance *instanceFor(CompatibilityStateId state);
-	StateResult transitionInternal(
-		CompatibilityStateId nextState,
-		StateTransitionReason reason,
-		StateTransitionId transition,
-		const StateUpdateContext &context,
-		bool forceLifecycle);
+	StateResult transitionInternal(CompatibilityStateId nextState, StateTransitionReason reason,
+		StateTransitionId transition, const StateUpdateContext &context, bool forceLifecycle);
 	StateResult stopAttackInternal(const StateUpdateContext &context);
-	void invokeEnter(
-		CompatibilityStateId state,
-		CompatibilityStateId previousState,
-		StateTransitionReason reason,
-		StateTransitionId transition,
-		const StateUpdateContext &context);
+	void invokeEnter(CompatibilityStateId state, CompatibilityStateId previousState, StateTransitionReason reason,
+		StateTransitionId transition, const StateUpdateContext &context);
 	void invokeUpdate(const StateUpdateContext &context);
 	void updateBehavior(const StateUpdateContext &context);
-	void invokeExit(
-		CompatibilityStateId state,
-		CompatibilityStateId nextState,
-		StateTransitionReason reason,
-		StateTransitionId transition,
-		const StateUpdateContext &context);
-	void emit(
-		StateTraceEvent event,
-		CompatibilityStateId callbackState,
-		CompatibilityStateId previousState,
-		CompatibilityStateId currentState,
-		StateTransitionReason reason,
-		StateTransitionId transition,
-		const StateUpdateContext &context,
-		StateSideEffect sideEffect = StateSideEffect::None);
-	void applyEnterEffects(
-		CompatibilityStateId state,
-		CompatibilityStateId previousState,
-		StateTransitionReason reason,
-		StateTransitionId transition,
-		const StateUpdateContext &context);
-	void applyExitEffects(
-		CompatibilityStateId state,
-		CompatibilityStateId nextState,
-		StateTransitionReason reason,
-		StateTransitionId transition,
-		const StateUpdateContext &context);
-	void emitSideEffect(
-		CompatibilityStateId callbackState,
-		CompatibilityStateId previousState,
-		CompatibilityStateId currentState,
-		StateTransitionReason reason,
-		StateTransitionId transition,
-		const StateUpdateContext &context,
-		StateSideEffect sideEffect);
+	void invokeExit(CompatibilityStateId state, CompatibilityStateId nextState, StateTransitionReason reason,
+		StateTransitionId transition, const StateUpdateContext &context);
+	void emit(StateTraceEvent event, CompatibilityStateId callbackState, CompatibilityStateId previousState,
+		CompatibilityStateId currentState, StateTransitionReason reason, StateTransitionId transition,
+		const StateUpdateContext &context, StateSideEffect sideEffect = StateSideEffect::None);
+	void applyEnterEffects(CompatibilityStateId state, CompatibilityStateId previousState, StateTransitionReason reason,
+		StateTransitionId transition, const StateUpdateContext &context);
+	void applyExitEffects(CompatibilityStateId state, CompatibilityStateId nextState, StateTransitionReason reason,
+		StateTransitionId transition, const StateUpdateContext &context);
+	void emitSideEffect(CompatibilityStateId callbackState, CompatibilityStateId previousState,
+		CompatibilityStateId currentState, StateTransitionReason reason, StateTransitionId transition,
+		const StateUpdateContext &context, StateSideEffect sideEffect);
 
 	std::array<StateInstance, kNormalStateCount> stateInstances_;
 	world::ActorKey actor_;

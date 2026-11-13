@@ -56,13 +56,13 @@
       "reference_only": false
     },
     {
-      "path": "src/adapter/metamod/astrabot_mm.def",
+      "path": "src/adapter/metamod/plugin/astrabot_mm.def",
       "origin": "AstraBot",
       "license_status": "pending_release_review",
       "reference_only": false
     },
     {
-      "path": "src/adapter/metamod/plugin_exports.cpp",
+      "path": "src/adapter/metamod/plugin/plugin_exports.cpp",
       "origin": "AstraBot",
       "license_status": "pending_release_review",
       "reference_only": false
@@ -134,19 +134,19 @@
       "reference_only": false
     },
     {
-      "path": "src/adapter/metamod/plugin_runtime.hpp",
+      "path": "src/adapter/metamod/plugin/plugin_runtime.hpp",
       "origin": "AstraBot",
       "license_status": "pending_release_review",
       "reference_only": false
     },
     {
-      "path": "src/adapter/metamod/plugin_runtime.cpp",
+      "path": "src/adapter/metamod/plugin/plugin_runtime.cpp",
       "origin": "AstraBot",
       "license_status": "pending_release_review",
       "reference_only": false
     },
     {
-      "path": "src/adapter/metamod/native_bot_guard.cpp",
+      "path": "src/adapter/metamod/lifecycle/native_bot_guard.cpp",
       "origin": "AstraBot",
       "license_status": "pending_release_review",
       "reference_only": false
@@ -194,13 +194,13 @@
       "reference_only": false
     },
     {
-      "path": "src/adapter/metamod/fake_client_manager.cpp",
+      "path": "src/adapter/metamod/lifecycle/fake_client_manager.cpp",
       "origin": "AstraBot",
       "license_status": "pending_release_review",
       "reference_only": false
     },
     {
-      "path": "src/adapter/metamod/join_controller.cpp",
+      "path": "src/adapter/metamod/lifecycle/join_controller.cpp",
       "origin": "AstraBot",
       "license_status": "pending_release_review",
       "reference_only": false
@@ -248,7 +248,7 @@
       "reference_only": false
     },
     {
-      "path": "src/adapter/metamod/input_dispatcher.cpp",
+      "path": "src/adapter/metamod/bridge/input_dispatcher.cpp",
       "origin": "AstraBot",
       "license_status": "pending_release_review",
       "reference_only": false
@@ -302,13 +302,13 @@
       "reference_only": false
     },
     {
-      "path": "src/adapter/metamod/compat_surface.cpp",
+      "path": "src/adapter/metamod/config/compat_surface.cpp",
       "origin": "AstraBot",
       "license_status": "pending_release_review",
       "reference_only": false
     },
     {
-      "path": "src/adapter/metamod/profile_loader.cpp",
+      "path": "src/adapter/metamod/config/profile_loader.cpp",
       "origin": "AstraBot",
       "license_status": "pending_release_review",
       "reference_only": false
@@ -518,7 +518,7 @@
       "reference_only": false
     },
     {
-      "path": "src/adapter/metamod/map_fingerprint.cpp",
+      "path": "src/adapter/metamod/navigation/map_fingerprint.cpp",
       "origin": "AstraBot",
       "license_status": "pending_release_review",
       "reference_only": false
@@ -536,13 +536,13 @@
       "reference_only": false
     },
     {
-      "path": "src/adapter/metamod/nav_loader.cpp",
+      "path": "src/adapter/metamod/navigation/nav_loader.cpp",
       "origin": "AstraBot",
       "license_status": "pending_release_review",
       "reference_only": false
     },
     {
-      "path": "src/adapter/metamod/astrabot_mm.map",
+      "path": "src/adapter/metamod/plugin/astrabot_mm.map",
       "origin": "AstraBot",
       "license_status": "pending_release_review",
       "reference_only": false
@@ -781,47 +781,677 @@
       "license_status": "pending_release_review",
       "reference_only": false
     },
-		{
-			"path": "tests/join_controller_tests.cpp",
-			"origin": "AstraBot",
-			"license_status": "pending_release_review",
-			"reference_only": false
-		},
-		{
-			"path": "include/astrabot/runtime/movement_physics.hpp",
-			"origin": "AstraBot",
-			"license_status": "pending_release_review",
-			"reference_only": false
-		},
-		{
-			"path": "src/core/runtime/movement_physics.cpp",
-			"origin": "AstraBot",
-			"license_status": "pending_release_review",
-			"reference_only": false
-		},
-		{
-			"path": "tests/movement_physics_tests.cpp",
-			"origin": "AstraBot",
-			"license_status": "pending_release_review",
-			"reference_only": false
-		},
-		{
-			"path": "include/astrabot/runtime/jump_crouch_sequencer.hpp",
-			"origin": "AstraBot",
-			"license_status": "pending_release_review",
-			"reference_only": false
-		},
-		{
-			"path": "src/core/runtime/jump_crouch_sequencer.cpp",
-			"origin": "AstraBot",
-			"license_status": "pending_release_review",
-			"reference_only": false
-		},
-		{
-			"path": "tests/jump_crouch_sequencer_tests.cpp",
-			"origin": "AstraBot",
-			"license_status": "pending_release_review",
-			"reference_only": false
-		}
+    {
+      "path": "tests/join_controller_tests.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "include/astrabot/runtime/movement_physics.hpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "src/core/runtime/movement_physics.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "tests/movement_physics_tests.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "include/astrabot/runtime/jump_crouch_sequencer.hpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "src/core/runtime/jump_crouch_sequencer.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "tests/jump_crouch_sequencer_tests.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "include/astrabot/compat/bomb_guard.hpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "include/astrabot/compat/bomb_navigation.hpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "include/astrabot/compat/bomb_search.hpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "include/astrabot/compat/buy_controller.hpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "include/astrabot/compat/combat_behavior.hpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "include/astrabot/compat/combat_movement.hpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "include/astrabot/compat/grenade_trajectory.hpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "include/astrabot/compat/guard_look.hpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "include/astrabot/compat/navigation_step.hpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "include/astrabot/compat/observation.hpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "include/astrabot/compat/outgoing_radio.hpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "include/astrabot/compat/public_bomb_clock.hpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "include/astrabot/compat/public_bomb_radar.hpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "include/astrabot/compat/public_observation.hpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "include/astrabot/compat/random_source.hpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "include/astrabot/compat/random_trace.hpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "include/astrabot/compat/runtime_mode_policy.hpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "include/astrabot/compat/scenario_behavior.hpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "include/astrabot/compat/smoke_observation.hpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "include/astrabot/compat/state_machine.hpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "include/astrabot/compat/teamwork_policy.hpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "include/astrabot/compat/weapon_actions.hpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "include/astrabot/compat/weapon_equipment.hpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "include/astrabot/metamod/movement_execution_gate.hpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "include/astrabot/metamod/runtime_profiler.hpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "include/astrabot/nav/danger_memory.hpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "include/astrabot/objectives/bomb_site_route_selection.hpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "include/astrabot/objectives/plant_attempt.hpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "include/astrabot/runtime/bot_timing_scheduler.hpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "include/astrabot/runtime/player_avoidance.hpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "src/adapter/metamod/bridge/action_adapter.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "src/adapter/metamod/bridge/action_adapter.hpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "src/adapter/metamod/bridge/engine_random_source.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "src/adapter/metamod/bridge/engine_random_source.hpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "src/adapter/metamod/bridge/observation_adapter.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "src/adapter/metamod/bridge/observation_adapter.hpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "src/adapter/metamod/bridge/regamedll_observation_provider.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "src/adapter/metamod/bridge/regamedll_observation_provider.hpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "src/adapter/metamod/diagnostics/runtime_profiler.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "src/adapter/metamod/navigation/movement_execution_gate.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "src/adapter/metamod/runtime/behavior/bot_behavior_buying.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "src/adapter/metamod/runtime/behavior/bot_behavior_combat.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "src/adapter/metamod/runtime/behavior/bot_behavior_equipment.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "src/adapter/metamod/runtime/behavior/bot_behavior_guard.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "src/adapter/metamod/runtime/behavior/bot_behavior_objectives.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "src/adapter/metamod/runtime/behavior/bot_behavior_perception.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "src/adapter/metamod/runtime/behavior/bot_behavior_priorities.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "src/adapter/metamod/runtime/behavior/bot_behavior_radio.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "src/adapter/metamod/runtime/behavior/bot_behavior_scenario.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "src/adapter/metamod/runtime/command/bot_command_runtime.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "src/adapter/metamod/runtime/command/bot_command_runtime.hpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "src/adapter/metamod/runtime/navigation/bot_navigation_runtime.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "src/adapter/metamod/runtime/navigation/bot_navigation_runtime.hpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "src/adapter/metamod/runtime/observation/bot_observation_runtime.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "src/adapter/metamod/runtime/observation/bot_observation_runtime.hpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "src/adapter/metamod/runtime/shared/bot_runtime_services.hpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "src/adapter/metamod/runtime/shared/bot_runtime_support.hpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "src/adapter/metamod/runtime/shared/bot_runtime_types.hpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "src/core/compat/buy_controller.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "src/core/compat/observation.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "src/core/compat/random_source.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "src/core/compat/runtime_mode_policy.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "src/core/compat/state_machine.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "src/core/objectives/plant_attempt.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "src/core/runtime/bot_timing_scheduler.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "tests/action_adapter_tests.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "tests/actor_identity_runtime_tests.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "tests/bomb_guard_look_tests.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "tests/bomb_navigation_tests.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "tests/combat_policy_tests.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "tests/combat_target_log_tests.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "tests/compat_state_machine_tests.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "tests/compatibility_rng_tests.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "tests/engine_random_source_tests.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "tests/grenade_trajectory_tests.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "tests/movement_execution_gate_tests.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "tests/nav_danger_memory_tests.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "tests/nav_external_performance_tests.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "tests/observation_adapter_tests.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "tests/observation_model_tests.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "tests/observation_trace_tests.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "tests/outgoing_radio_tests.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "tests/perception_adapter_tests.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "tests/plant_attempt_tests.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "tests/player_avoidance_tests.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "tests/public_bomb_clock_tests.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "tests/public_observation_tests.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "tests/regamedll_observation_provider_tests.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "tests/runtime_characterization.hpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "tests/runtime_command_scenario_fixture.hpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "tests/runtime_command_scenarios.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "tests/runtime_mode_policy_tests.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "tests/runtime_profiler_tests.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "tests/runtime_team_resolution_tests.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "tests/runtime_timing_tests.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "tests/scenario_behavior_tests.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "tests/teamwork_policy_tests.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "tests/vanilla_behavior_tests.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "tests/vanilla_management_tests.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "tests/weapon_actions_tests.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "tests/weapon_equipment_tests.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "tests/weapon_switch_runtime_tests.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "tests/literal_precision_tests.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    }
   ]
 }

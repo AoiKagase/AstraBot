@@ -1,0 +1,532 @@
+-- Configuring done (0.6s)
+-- Generating done (3.3s)
+-- Build files have been written to: H:/sourcecode/003.Game/amxmodx/AstraBot/build-action-adapter-x86-1451
+[  0%] Building CXX object CMakeFiles/astrabot_core.dir/src/core/combat/combat_intent.cpp.obj
+combat_intent.cpp
+[  0%] Building CXX object CMakeFiles/astrabot_core.dir/src/core/compat/buy_controller.cpp.obj
+buy_controller.cpp
+[  0%] Building CXX object CMakeFiles/astrabot_core.dir/src/core/nav/nav_query.cpp.obj
+nav_query.cpp
+[  0%] Building CXX object CMakeFiles/astrabot_core.dir/src/core/nav/locomotion.cpp.obj
+locomotion.cpp
+[  0%] Building CXX object CMakeFiles/astrabot_core.dir/src/core/runtime/nav_roam_controller.cpp.obj
+nav_roam_controller.cpp
+[  1%] Linking CXX static library astrabot_core.lib
+[  8%] Built target astrabot_core
+[  8%] Linking CXX executable astrabot_plant_attempt.exe
+[  8%] Built target astrabot_plant_attempt
+[  8%] Building CXX object CMakeFiles/astrabot_public_observation.dir/tests/public_observation_tests.cpp.obj
+public_observation_tests.cpp
+[  8%] Linking CXX executable astrabot_public_observation.exe
+[  8%] Built target astrabot_public_observation
+[  9%] Linking CXX executable astrabot_vanilla_management.exe
+[  9%] Built target astrabot_vanilla_management
+[  9%] Building CXX object CMakeFiles/astrabot_vanilla_behavior.dir/tests/vanilla_behavior_tests.cpp.obj
+vanilla_behavior_tests.cpp
+[  9%] Linking CXX executable astrabot_vanilla_behavior.exe
+[  9%] Built target astrabot_vanilla_behavior
+[  9%] Building CXX object CMakeFiles/astrabot_combat_policy.dir/tests/combat_policy_tests.cpp.obj
+combat_policy_tests.cpp
+[  9%] Linking CXX executable astrabot_combat_policy.exe
+[  9%] Built target astrabot_combat_policy
+[  9%] Linking CXX executable astrabot_weapon_equipment.exe
+[  9%] Built target astrabot_weapon_equipment
+[  9%] Building CXX object CMakeFiles/astrabot_literal_precision.dir/tests/literal_precision_tests.cpp.obj
+literal_precision_tests.cpp
+[  9%] Linking CXX executable astrabot_literal_precision.exe
+[  9%] Built target astrabot_literal_precision
+[  9%] Building CXX object CMakeFiles/astrabot_weapon_actions.dir/tests/weapon_actions_tests.cpp.obj
+weapon_actions_tests.cpp
+[  9%] Linking CXX executable astrabot_weapon_actions.exe
+[  9%] Built target astrabot_weapon_actions
+[  9%] Building CXX object CMakeFiles/astrabot_scenario_behavior.dir/tests/scenario_behavior_tests.cpp.obj
+scenario_behavior_tests.cpp
+[ 10%] Linking CXX executable astrabot_scenario_behavior.exe
+[ 10%] Built target astrabot_scenario_behavior
+[ 10%] Linking CXX executable astrabot_public_bomb_clock.exe
+[ 10%] Built target astrabot_public_bomb_clock
+[ 10%] Linking CXX executable astrabot_bomb_navigation.exe
+[ 11%] Built target astrabot_bomb_navigation
+[ 11%] Linking CXX executable astrabot_outgoing_radio.exe
+[ 11%] Built target astrabot_outgoing_radio
+[ 12%] Building CXX object CMakeFiles/astrabot_teamwork_policy.dir/tests/teamwork_policy_tests.cpp.obj
+teamwork_policy_tests.cpp
+[ 12%] Linking CXX executable astrabot_teamwork_policy.exe
+[ 12%] Built target astrabot_teamwork_policy
+[ 13%] Linking CXX executable astrabot_nav_danger_memory.exe
+[ 13%] Built target astrabot_nav_danger_memory
+[ 13%] Building CXX object CMakeFiles/astrabot_grenade_trajectory.dir/tests/grenade_trajectory_tests.cpp.obj
+grenade_trajectory_tests.cpp
+[ 13%] Linking CXX executable astrabot_grenade_trajectory.exe
+[ 13%] Built target astrabot_grenade_trajectory
+[ 14%] Linking CXX executable astrabot_build_identity.exe
+[ 14%] Built target astrabot_build_identity
+[ 15%] Linking CXX executable astrabot_lifecycle_generation.exe
+[ 15%] Built target astrabot_lifecycle_generation
+[ 15%] Built target astrabot_native_bot_guard
+[ 15%] Linking CXX executable astrabot_actor_registry.exe
+[ 16%] Built target astrabot_actor_registry
+[ 16%] Linking CXX executable astrabot_command_queue.exe
+[ 16%] Built target astrabot_command_queue
+[ 17%] Built target astrabot_join_controller
+[ 17%] Linking CXX executable astrabot_nav_roam_controller.exe
+[ 18%] Built target astrabot_nav_roam_controller
+[ 18%] Building CXX object CMakeFiles/astrabot_player_avoidance.dir/tests/player_avoidance_tests.cpp.obj
+player_avoidance_tests.cpp
+[ 19%] Linking CXX executable astrabot_player_avoidance.exe
+[ 19%] Built target astrabot_player_avoidance
+[ 20%] Linking CXX executable astrabot_nav_legacy_limit.exe
+[ 20%] Built target astrabot_nav_legacy_limit
+[ 21%] Linking CXX executable astrabot_compat_command_registry.exe
+[ 21%] Built target astrabot_compat_command_registry
+[ 21%] Linking CXX executable astrabot_compat_cvar_state.exe
+[ 21%] Built target astrabot_compat_cvar_state
+[ 21%] Linking CXX executable astrabot_observation_model.exe
+[ 21%] Built target astrabot_observation_model
+[ 21%] Linking CXX executable astrabot_compat_state_machine.exe
+[ 21%] Built target astrabot_compat_state_machine
+[ 21%] Linking CXX executable astrabot_profile_catalog.exe
+[ 21%] Built target astrabot_profile_catalog
+[ 22%] Linking CXX executable astrabot_profile_loader.exe
+[ 22%] Built target astrabot_profile_loader
+[ 22%] Linking CXX executable astrabot_bot_configuration.exe
+[ 22%] Built target astrabot_bot_configuration
+[ 22%] Linking CXX executable astrabot_runtime_mode_policy.exe
+[ 22%] Built target astrabot_runtime_mode_policy
+[ 22%] Linking CXX executable astrabot_runtime_timing.exe
+[ 22%] Built target astrabot_runtime_timing
+[ 23%] Linking CXX executable astrabot_compatibility_rng.exe
+[ 23%] Built target astrabot_compatibility_rng
+[ 23%] Linking CXX executable astrabot_engine_random_source.exe
+[ 23%] Built target astrabot_engine_random_source
+[ 23%] Linking CXX executable astrabot_nav_model.exe
+[ 23%] Built target astrabot_nav_model
+[ 23%] Linking CXX executable astrabot_legacy_nav_reader.exe
+[ 23%] Built target astrabot_legacy_nav_reader
+[ 24%] Linking CXX executable astrabot_nav_loader.exe
+[ 24%] Built target astrabot_nav_loader
+[ 24%] Linking CXX executable astrabot_nav_external_performance.exe
+[ 25%] Built target astrabot_nav_external_performance
+[ 25%] Linking CXX executable astrabot_nav_diagnostics.exe
+[ 25%] Built target astrabot_nav_diagnostics
+[ 25%] Linking CXX executable astrabot_nav_snapshot.exe
+[ 25%] Built target astrabot_nav_snapshot
+[ 25%] Linking CXX executable astrabot_nav_query.exe
+[ 25%] Built target astrabot_nav_query
+[ 25%] Linking CXX executable astrabot_locomotion.exe
+[ 25%] Built target astrabot_locomotion
+[ 26%] Linking CXX executable astrabot_jump_drop.exe
+[ 26%] Built target astrabot_jump_drop
+[ 26%] Linking CXX executable astrabot_special_traversal.exe
+[ 26%] Built target astrabot_special_traversal
+[ 27%] Linking CXX executable astrabot_world_snapshot.exe
+[ 27%] Built target astrabot_world_snapshot
+[ 27%] Linking CXX executable astrabot_perception.exe
+[ 28%] Built target astrabot_perception
+[ 28%] Linking CXX executable astrabot_behavior_state.exe
+[ 28%] Built target astrabot_behavior_state
+[ 29%] Linking CXX executable astrabot_objective_proposal.exe
+[ 29%] Built target astrabot_objective_proposal
+[ 29%] Linking CXX executable astrabot_weapon_state.exe
+[ 30%] Built target astrabot_weapon_state
+[ 30%] Building CXX object CMakeFiles/astrabot_combat_intent.dir/tests/combat_intent_tests.cpp.obj
+combat_intent_tests.cpp
+[ 30%] Linking CXX executable astrabot_combat_intent.exe
+[ 30%] Built target astrabot_combat_intent
+[ 30%] Linking CXX executable astrabot_objective_state.exe
+[ 30%] Built target astrabot_objective_state
+[ 30%] Linking CXX executable astrabot_round_objectives.exe
+[ 30%] Built target astrabot_round_objectives
+[ 30%] Linking CXX executable astrabot_round_objective_coordinator.exe
+[ 30%] Built target astrabot_round_objective_coordinator
+[ 30%] Linking CXX executable astrabot_team_report.exe
+[ 30%] Built target astrabot_team_report
+[ 30%] Linking CXX executable astrabot_radio_intent.exe
+[ 31%] Built target astrabot_radio_intent
+[ 32%] Built target astrabot_map_fingerprint
+[ 33%] Linking CXX executable astrabot_movement_physics.exe
+[ 33%] Built target astrabot_movement_physics
+[ 33%] Linking CXX executable astrabot_jump_crouch_sequencer.exe
+[ 33%] Built target astrabot_jump_crouch_sequencer
+[ 34%] Built target astrabot_regamedll_provider
+[ 34%] Building CXX object CMakeFiles/astrabot_mm.dir/src/adapter/metamod/plugin/plugin_exports.cpp.obj
+plugin_exports.cpp
+[ 34%] Building CXX object CMakeFiles/astrabot_mm.dir/src/adapter/metamod/plugin/plugin_runtime.cpp.obj
+plugin_runtime.cpp
+[ 34%] Building CXX object CMakeFiles/astrabot_mm.dir/src/adapter/metamod/bridge/action_adapter.cpp.obj
+action_adapter.cpp
+[ 35%] Building CXX object CMakeFiles/astrabot_mm.dir/src/adapter/metamod/bridge/observation_adapter.cpp.obj
+observation_adapter.cpp
+[ 35%] Building CXX object CMakeFiles/astrabot_mm.dir/src/adapter/metamod/runtime/observation/bot_observation_runtime.cpp.obj
+bot_observation_runtime.cpp
+[ 35%] Building CXX object CMakeFiles/astrabot_mm.dir/src/adapter/metamod/runtime/behavior/bot_behavior_runtime.cpp.obj
+bot_behavior_runtime.cpp
+[ 35%] Building CXX object CMakeFiles/astrabot_mm.dir/src/adapter/metamod/runtime/behavior/bot_behavior_perception.cpp.obj
+bot_behavior_perception.cpp
+[ 35%] Building CXX object CMakeFiles/astrabot_mm.dir/src/adapter/metamod/runtime/behavior/bot_behavior_radio.cpp.obj
+bot_behavior_radio.cpp
+[ 36%] Building CXX object CMakeFiles/astrabot_mm.dir/src/adapter/metamod/runtime/behavior/bot_behavior_buying.cpp.obj
+bot_behavior_buying.cpp
+[ 36%] Building CXX object CMakeFiles/astrabot_mm.dir/src/adapter/metamod/runtime/behavior/bot_behavior_priorities.cpp.obj
+bot_behavior_priorities.cpp
+[ 36%] Building CXX object CMakeFiles/astrabot_mm.dir/src/adapter/metamod/runtime/behavior/bot_behavior_objectives.cpp.obj
+bot_behavior_objectives.cpp
+[ 36%] Building CXX object CMakeFiles/astrabot_mm.dir/src/adapter/metamod/runtime/behavior/bot_behavior_guard.cpp.obj
+bot_behavior_guard.cpp
+[ 37%] Building CXX object CMakeFiles/astrabot_mm.dir/src/adapter/metamod/runtime/behavior/bot_behavior_equipment.cpp.obj
+bot_behavior_equipment.cpp
+[ 37%] Building CXX object CMakeFiles/astrabot_mm.dir/src/adapter/metamod/runtime/behavior/bot_behavior_scenario.cpp.obj
+bot_behavior_scenario.cpp
+[ 37%] Building CXX object CMakeFiles/astrabot_mm.dir/src/adapter/metamod/runtime/behavior/bot_behavior_combat.cpp.obj
+bot_behavior_combat.cpp
+[ 37%] Building CXX object CMakeFiles/astrabot_mm.dir/src/adapter/metamod/runtime/navigation/bot_navigation_runtime.cpp.obj
+bot_navigation_runtime.cpp
+[ 37%] Building CXX object CMakeFiles/astrabot_mm.dir/src/adapter/metamod/runtime/command/bot_command_runtime.cpp.obj
+bot_command_runtime.cpp
+[ 38%] Linking CXX shared library astrabot_mm.dll
+[ 40%] Built target astrabot_mm
+[ 40%] Built target astrabot_metamod_abi
+[ 41%] Building CXX object CMakeFiles/astrabot_metamod_hooks.dir/tests/metamod_hook_table_tests.cpp.obj
+metamod_hook_table_tests.cpp
+[ 41%] Building CXX object CMakeFiles/astrabot_metamod_hooks.dir/src/adapter/metamod/plugin/plugin_exports.cpp.obj
+plugin_exports.cpp
+[ 41%] Building CXX object CMakeFiles/astrabot_metamod_hooks.dir/src/adapter/metamod/plugin/plugin_runtime.cpp.obj
+plugin_runtime.cpp
+[ 41%] Building CXX object CMakeFiles/astrabot_metamod_hooks.dir/src/adapter/metamod/bridge/action_adapter.cpp.obj
+action_adapter.cpp
+[ 42%] Building CXX object CMakeFiles/astrabot_metamod_hooks.dir/src/adapter/metamod/bridge/observation_adapter.cpp.obj
+observation_adapter.cpp
+[ 42%] Building CXX object CMakeFiles/astrabot_metamod_hooks.dir/src/adapter/metamod/runtime/observation/bot_observation_runtime.cpp.obj
+bot_observation_runtime.cpp
+[ 42%] Building CXX object CMakeFiles/astrabot_metamod_hooks.dir/src/adapter/metamod/runtime/behavior/bot_behavior_runtime.cpp.obj
+bot_behavior_runtime.cpp
+[ 42%] Building CXX object CMakeFiles/astrabot_metamod_hooks.dir/src/adapter/metamod/runtime/behavior/bot_behavior_perception.cpp.obj
+bot_behavior_perception.cpp
+[ 42%] Building CXX object CMakeFiles/astrabot_metamod_hooks.dir/src/adapter/metamod/runtime/behavior/bot_behavior_radio.cpp.obj
+bot_behavior_radio.cpp
+[ 43%] Building CXX object CMakeFiles/astrabot_metamod_hooks.dir/src/adapter/metamod/runtime/behavior/bot_behavior_buying.cpp.obj
+bot_behavior_buying.cpp
+[ 43%] Building CXX object CMakeFiles/astrabot_metamod_hooks.dir/src/adapter/metamod/runtime/behavior/bot_behavior_priorities.cpp.obj
+bot_behavior_priorities.cpp
+[ 43%] Building CXX object CMakeFiles/astrabot_metamod_hooks.dir/src/adapter/metamod/runtime/behavior/bot_behavior_objectives.cpp.obj
+bot_behavior_objectives.cpp
+[ 43%] Building CXX object CMakeFiles/astrabot_metamod_hooks.dir/src/adapter/metamod/runtime/behavior/bot_behavior_guard.cpp.obj
+bot_behavior_guard.cpp
+[ 44%] Building CXX object CMakeFiles/astrabot_metamod_hooks.dir/src/adapter/metamod/runtime/behavior/bot_behavior_equipment.cpp.obj
+bot_behavior_equipment.cpp
+[ 44%] Building CXX object CMakeFiles/astrabot_metamod_hooks.dir/src/adapter/metamod/runtime/behavior/bot_behavior_scenario.cpp.obj
+bot_behavior_scenario.cpp
+[ 44%] Building CXX object CMakeFiles/astrabot_metamod_hooks.dir/src/adapter/metamod/runtime/behavior/bot_behavior_combat.cpp.obj
+bot_behavior_combat.cpp
+[ 44%] Building CXX object CMakeFiles/astrabot_metamod_hooks.dir/src/adapter/metamod/runtime/navigation/bot_navigation_runtime.cpp.obj
+bot_navigation_runtime.cpp
+[ 44%] Building CXX object CMakeFiles/astrabot_metamod_hooks.dir/src/adapter/metamod/runtime/command/bot_command_runtime.cpp.obj
+bot_command_runtime.cpp
+[ 45%] Linking CXX executable astrabot_metamod_hooks.exe
+[ 47%] Built target astrabot_metamod_hooks
+[ 47%] Linking CXX executable astrabot_fake_client_manager.exe
+[ 48%] Built target astrabot_fake_client_manager
+[ 48%] Linking CXX executable astrabot_input_dispatcher.exe
+[ 49%] Built target astrabot_input_dispatcher
+[ 49%] Building CXX object CMakeFiles/astrabot_fake_client_isolation.dir/tests/fake_client_isolation_tests.cpp.obj
+fake_client_isolation_tests.cpp
+[ 50%] Building CXX object CMakeFiles/astrabot_fake_client_isolation.dir/src/adapter/metamod/plugin/plugin_exports.cpp.obj
+plugin_exports.cpp
+[ 50%] Building CXX object CMakeFiles/astrabot_fake_client_isolation.dir/src/adapter/metamod/plugin/plugin_runtime.cpp.obj
+plugin_runtime.cpp
+[ 50%] Building CXX object CMakeFiles/astrabot_fake_client_isolation.dir/src/adapter/metamod/bridge/action_adapter.cpp.obj
+action_adapter.cpp
+[ 50%] Building CXX object CMakeFiles/astrabot_fake_client_isolation.dir/src/adapter/metamod/bridge/observation_adapter.cpp.obj
+observation_adapter.cpp
+[ 51%] Building CXX object CMakeFiles/astrabot_fake_client_isolation.dir/src/adapter/metamod/runtime/observation/bot_observation_runtime.cpp.obj
+bot_observation_runtime.cpp
+[ 51%] Building CXX object CMakeFiles/astrabot_fake_client_isolation.dir/src/adapter/metamod/runtime/behavior/bot_behavior_runtime.cpp.obj
+bot_behavior_runtime.cpp
+[ 51%] Building CXX object CMakeFiles/astrabot_fake_client_isolation.dir/src/adapter/metamod/runtime/behavior/bot_behavior_perception.cpp.obj
+bot_behavior_perception.cpp
+[ 51%] Building CXX object CMakeFiles/astrabot_fake_client_isolation.dir/src/adapter/metamod/runtime/behavior/bot_behavior_radio.cpp.obj
+bot_behavior_radio.cpp
+[ 52%] Building CXX object CMakeFiles/astrabot_fake_client_isolation.dir/src/adapter/metamod/runtime/behavior/bot_behavior_buying.cpp.obj
+bot_behavior_buying.cpp
+[ 52%] Building CXX object CMakeFiles/astrabot_fake_client_isolation.dir/src/adapter/metamod/runtime/behavior/bot_behavior_priorities.cpp.obj
+bot_behavior_priorities.cpp
+[ 52%] Building CXX object CMakeFiles/astrabot_fake_client_isolation.dir/src/adapter/metamod/runtime/behavior/bot_behavior_objectives.cpp.obj
+bot_behavior_objectives.cpp
+[ 52%] Building CXX object CMakeFiles/astrabot_fake_client_isolation.dir/src/adapter/metamod/runtime/behavior/bot_behavior_guard.cpp.obj
+bot_behavior_guard.cpp
+[ 52%] Building CXX object CMakeFiles/astrabot_fake_client_isolation.dir/src/adapter/metamod/runtime/behavior/bot_behavior_equipment.cpp.obj
+bot_behavior_equipment.cpp
+[ 53%] Building CXX object CMakeFiles/astrabot_fake_client_isolation.dir/src/adapter/metamod/runtime/behavior/bot_behavior_scenario.cpp.obj
+bot_behavior_scenario.cpp
+[ 53%] Building CXX object CMakeFiles/astrabot_fake_client_isolation.dir/src/adapter/metamod/runtime/behavior/bot_behavior_combat.cpp.obj
+bot_behavior_combat.cpp
+[ 53%] Building CXX object CMakeFiles/astrabot_fake_client_isolation.dir/src/adapter/metamod/runtime/navigation/bot_navigation_runtime.cpp.obj
+bot_navigation_runtime.cpp
+[ 53%] Building CXX object CMakeFiles/astrabot_fake_client_isolation.dir/src/adapter/metamod/runtime/command/bot_command_runtime.cpp.obj
+bot_command_runtime.cpp
+[ 53%] Linking CXX executable astrabot_fake_client_isolation.exe
+[ 55%] Built target astrabot_fake_client_isolation
+[ 55%] Linking CXX executable astrabot_compat_surface.exe
+[ 56%] Built target astrabot_compat_surface
+[ 56%] Building CXX object CMakeFiles/astrabot_compat_actor_command.dir/tests/compat_actor_command_tests.cpp.obj
+compat_actor_command_tests.cpp
+[ 56%] Building CXX object CMakeFiles/astrabot_compat_actor_command.dir/src/adapter/metamod/plugin/plugin_exports.cpp.obj
+plugin_exports.cpp
+[ 56%] Building CXX object CMakeFiles/astrabot_compat_actor_command.dir/src/adapter/metamod/plugin/plugin_runtime.cpp.obj
+plugin_runtime.cpp
+[ 56%] Building CXX object CMakeFiles/astrabot_compat_actor_command.dir/src/adapter/metamod/bridge/action_adapter.cpp.obj
+action_adapter.cpp
+[ 56%] Building CXX object CMakeFiles/astrabot_compat_actor_command.dir/src/adapter/metamod/bridge/observation_adapter.cpp.obj
+observation_adapter.cpp
+[ 57%] Building CXX object CMakeFiles/astrabot_compat_actor_command.dir/src/adapter/metamod/runtime/observation/bot_observation_runtime.cpp.obj
+bot_observation_runtime.cpp
+[ 57%] Building CXX object CMakeFiles/astrabot_compat_actor_command.dir/src/adapter/metamod/runtime/behavior/bot_behavior_runtime.cpp.obj
+bot_behavior_runtime.cpp
+[ 57%] Building CXX object CMakeFiles/astrabot_compat_actor_command.dir/src/adapter/metamod/runtime/behavior/bot_behavior_perception.cpp.obj
+bot_behavior_perception.cpp
+[ 57%] Building CXX object CMakeFiles/astrabot_compat_actor_command.dir/src/adapter/metamod/runtime/behavior/bot_behavior_radio.cpp.obj
+bot_behavior_radio.cpp
+[ 57%] Building CXX object CMakeFiles/astrabot_compat_actor_command.dir/src/adapter/metamod/runtime/behavior/bot_behavior_buying.cpp.obj
+bot_behavior_buying.cpp
+[ 58%] Building CXX object CMakeFiles/astrabot_compat_actor_command.dir/src/adapter/metamod/runtime/behavior/bot_behavior_priorities.cpp.obj
+bot_behavior_priorities.cpp
+[ 58%] Building CXX object CMakeFiles/astrabot_compat_actor_command.dir/src/adapter/metamod/runtime/behavior/bot_behavior_objectives.cpp.obj
+bot_behavior_objectives.cpp
+[ 58%] Building CXX object CMakeFiles/astrabot_compat_actor_command.dir/src/adapter/metamod/runtime/behavior/bot_behavior_guard.cpp.obj
+bot_behavior_guard.cpp
+[ 58%] Building CXX object CMakeFiles/astrabot_compat_actor_command.dir/src/adapter/metamod/runtime/behavior/bot_behavior_equipment.cpp.obj
+bot_behavior_equipment.cpp
+[ 58%] Building CXX object CMakeFiles/astrabot_compat_actor_command.dir/src/adapter/metamod/runtime/behavior/bot_behavior_scenario.cpp.obj
+bot_behavior_scenario.cpp
+[ 59%] Building CXX object CMakeFiles/astrabot_compat_actor_command.dir/src/adapter/metamod/runtime/behavior/bot_behavior_combat.cpp.obj
+bot_behavior_combat.cpp
+[ 59%] Building CXX object CMakeFiles/astrabot_compat_actor_command.dir/src/adapter/metamod/runtime/navigation/bot_navigation_runtime.cpp.obj
+bot_navigation_runtime.cpp
+[ 59%] Building CXX object CMakeFiles/astrabot_compat_actor_command.dir/src/adapter/metamod/runtime/command/bot_command_runtime.cpp.obj
+bot_command_runtime.cpp
+[ 59%] Linking CXX executable astrabot_compat_actor_command.exe
+[ 62%] Built target astrabot_compat_actor_command
+[ 62%] Building CXX object CMakeFiles/astrabot_observation_adapter.dir/tests/observation_adapter_tests.cpp.obj
+observation_adapter_tests.cpp
+[ 62%] Building CXX object CMakeFiles/astrabot_observation_adapter.dir/src/adapter/metamod/bridge/observation_adapter.cpp.obj
+observation_adapter.cpp
+[ 62%] Linking CXX executable astrabot_observation_adapter.exe
+[ 63%] Built target astrabot_observation_adapter
+[ 63%] Building CXX object CMakeFiles/astrabot_perception_adapter.dir/tests/perception_adapter_tests.cpp.obj
+perception_adapter_tests.cpp
+[ 63%] Building CXX object CMakeFiles/astrabot_perception_adapter.dir/src/adapter/metamod/bridge/observation_adapter.cpp.obj
+observation_adapter.cpp
+[ 63%] Linking CXX executable astrabot_perception_adapter.exe
+[ 64%] Built target astrabot_perception_adapter
+[ 64%] Building CXX object CMakeFiles/astrabot_observation_trace.dir/tests/observation_trace_tests.cpp.obj
+observation_trace_tests.cpp
+[ 65%] Building CXX object CMakeFiles/astrabot_observation_trace.dir/src/adapter/metamod/bridge/observation_adapter.cpp.obj
+observation_adapter.cpp
+[ 65%] Linking CXX executable astrabot_observation_trace.exe
+[ 65%] Built target astrabot_observation_trace
+[ 65%] Building CXX object CMakeFiles/astrabot_action_adapter.dir/src/adapter/metamod/bridge/action_adapter.cpp.obj
+action_adapter.cpp
+[ 65%] Linking CXX executable astrabot_action_adapter.exe
+[ 65%] Built target astrabot_action_adapter
+[ 65%] Built target astrabot_movement_execution_gate
+[ 66%] Built target astrabot_runtime_profiler
+[ 66%] Linking CXX executable astrabot_regamedll_observation_provider.exe
+[ 66%] Built target astrabot_regamedll_observation_provider
+[ 67%] Building CXX object CMakeFiles/astrabot_combat_target_log.dir/tests/combat_target_log_tests.cpp.obj
+combat_target_log_tests.cpp
+[ 67%] Building CXX object CMakeFiles/astrabot_combat_target_log.dir/src/adapter/metamod/plugin/plugin_exports.cpp.obj
+plugin_exports.cpp
+[ 67%] Building CXX object CMakeFiles/astrabot_combat_target_log.dir/src/adapter/metamod/plugin/plugin_runtime.cpp.obj
+plugin_runtime.cpp
+[ 68%] Building CXX object CMakeFiles/astrabot_combat_target_log.dir/src/adapter/metamod/bridge/action_adapter.cpp.obj
+action_adapter.cpp
+[ 68%] Building CXX object CMakeFiles/astrabot_combat_target_log.dir/src/adapter/metamod/bridge/observation_adapter.cpp.obj
+observation_adapter.cpp
+[ 68%] Building CXX object CMakeFiles/astrabot_combat_target_log.dir/src/adapter/metamod/runtime/observation/bot_observation_runtime.cpp.obj
+bot_observation_runtime.cpp
+[ 68%] Building CXX object CMakeFiles/astrabot_combat_target_log.dir/src/adapter/metamod/runtime/behavior/bot_behavior_runtime.cpp.obj
+bot_behavior_runtime.cpp
+[ 68%] Building CXX object CMakeFiles/astrabot_combat_target_log.dir/src/adapter/metamod/runtime/behavior/bot_behavior_perception.cpp.obj
+bot_behavior_perception.cpp
+[ 69%] Building CXX object CMakeFiles/astrabot_combat_target_log.dir/src/adapter/metamod/runtime/behavior/bot_behavior_radio.cpp.obj
+bot_behavior_radio.cpp
+[ 69%] Building CXX object CMakeFiles/astrabot_combat_target_log.dir/src/adapter/metamod/runtime/behavior/bot_behavior_buying.cpp.obj
+bot_behavior_buying.cpp
+[ 69%] Building CXX object CMakeFiles/astrabot_combat_target_log.dir/src/adapter/metamod/runtime/behavior/bot_behavior_priorities.cpp.obj
+bot_behavior_priorities.cpp
+[ 69%] Building CXX object CMakeFiles/astrabot_combat_target_log.dir/src/adapter/metamod/runtime/behavior/bot_behavior_objectives.cpp.obj
+bot_behavior_objectives.cpp
+[ 69%] Building CXX object CMakeFiles/astrabot_combat_target_log.dir/src/adapter/metamod/runtime/behavior/bot_behavior_guard.cpp.obj
+bot_behavior_guard.cpp
+[ 70%] Building CXX object CMakeFiles/astrabot_combat_target_log.dir/src/adapter/metamod/runtime/behavior/bot_behavior_equipment.cpp.obj
+bot_behavior_equipment.cpp
+[ 70%] Building CXX object CMakeFiles/astrabot_combat_target_log.dir/src/adapter/metamod/runtime/behavior/bot_behavior_scenario.cpp.obj
+bot_behavior_scenario.cpp
+[ 70%] Building CXX object CMakeFiles/astrabot_combat_target_log.dir/src/adapter/metamod/runtime/behavior/bot_behavior_combat.cpp.obj
+bot_behavior_combat.cpp
+[ 70%] Building CXX object CMakeFiles/astrabot_combat_target_log.dir/src/adapter/metamod/runtime/navigation/bot_navigation_runtime.cpp.obj
+bot_navigation_runtime.cpp
+[ 70%] Building CXX object CMakeFiles/astrabot_combat_target_log.dir/src/adapter/metamod/runtime/command/bot_command_runtime.cpp.obj
+bot_command_runtime.cpp
+[ 71%] Linking CXX executable astrabot_combat_target_log.exe
+[ 73%] Built target astrabot_combat_target_log
+[ 73%] Building CXX object CMakeFiles/astrabot_bomb_guard_look.dir/tests/bomb_guard_look_tests.cpp.obj
+bomb_guard_look_tests.cpp
+[ 74%] Building CXX object CMakeFiles/astrabot_bomb_guard_look.dir/src/adapter/metamod/plugin/plugin_exports.cpp.obj
+plugin_exports.cpp
+[ 74%] Building CXX object CMakeFiles/astrabot_bomb_guard_look.dir/src/adapter/metamod/plugin/plugin_runtime.cpp.obj
+plugin_runtime.cpp
+[ 74%] Building CXX object CMakeFiles/astrabot_bomb_guard_look.dir/src/adapter/metamod/bridge/action_adapter.cpp.obj
+action_adapter.cpp
+[ 74%] Building CXX object CMakeFiles/astrabot_bomb_guard_look.dir/src/adapter/metamod/bridge/observation_adapter.cpp.obj
+observation_adapter.cpp
+[ 75%] Building CXX object CMakeFiles/astrabot_bomb_guard_look.dir/src/adapter/metamod/runtime/observation/bot_observation_runtime.cpp.obj
+bot_observation_runtime.cpp
+[ 75%] Building CXX object CMakeFiles/astrabot_bomb_guard_look.dir/src/adapter/metamod/runtime/behavior/bot_behavior_runtime.cpp.obj
+bot_behavior_runtime.cpp
+[ 75%] Building CXX object CMakeFiles/astrabot_bomb_guard_look.dir/src/adapter/metamod/runtime/behavior/bot_behavior_perception.cpp.obj
+bot_behavior_perception.cpp
+[ 75%] Building CXX object CMakeFiles/astrabot_bomb_guard_look.dir/src/adapter/metamod/runtime/behavior/bot_behavior_radio.cpp.obj
+bot_behavior_radio.cpp
+[ 75%] Building CXX object CMakeFiles/astrabot_bomb_guard_look.dir/src/adapter/metamod/runtime/behavior/bot_behavior_buying.cpp.obj
+bot_behavior_buying.cpp
+[ 76%] Building CXX object CMakeFiles/astrabot_bomb_guard_look.dir/src/adapter/metamod/runtime/behavior/bot_behavior_priorities.cpp.obj
+bot_behavior_priorities.cpp
+[ 76%] Building CXX object CMakeFiles/astrabot_bomb_guard_look.dir/src/adapter/metamod/runtime/behavior/bot_behavior_objectives.cpp.obj
+bot_behavior_objectives.cpp
+[ 76%] Building CXX object CMakeFiles/astrabot_bomb_guard_look.dir/src/adapter/metamod/runtime/behavior/bot_behavior_guard.cpp.obj
+bot_behavior_guard.cpp
+[ 76%] Building CXX object CMakeFiles/astrabot_bomb_guard_look.dir/src/adapter/metamod/runtime/behavior/bot_behavior_equipment.cpp.obj
+bot_behavior_equipment.cpp
+[ 77%] Building CXX object CMakeFiles/astrabot_bomb_guard_look.dir/src/adapter/metamod/runtime/behavior/bot_behavior_scenario.cpp.obj
+bot_behavior_scenario.cpp
+[ 77%] Building CXX object CMakeFiles/astrabot_bomb_guard_look.dir/src/adapter/metamod/runtime/behavior/bot_behavior_combat.cpp.obj
+bot_behavior_combat.cpp
+[ 77%] Building CXX object CMakeFiles/astrabot_bomb_guard_look.dir/src/adapter/metamod/runtime/navigation/bot_navigation_runtime.cpp.obj
+bot_navigation_runtime.cpp
+[ 77%] Building CXX object CMakeFiles/astrabot_bomb_guard_look.dir/src/adapter/metamod/runtime/command/bot_command_runtime.cpp.obj
+bot_command_runtime.cpp
+[ 77%] Linking CXX executable astrabot_bomb_guard_look.exe
+[ 79%] Built target astrabot_bomb_guard_look
+[ 79%] Building CXX object CMakeFiles/astrabot_weapon_switch_runtime.dir/tests/weapon_switch_runtime_tests.cpp.obj
+weapon_switch_runtime_tests.cpp
+[ 79%] Building CXX object CMakeFiles/astrabot_weapon_switch_runtime.dir/src/adapter/metamod/plugin/plugin_exports.cpp.obj
+plugin_exports.cpp
+[ 79%] Building CXX object CMakeFiles/astrabot_weapon_switch_runtime.dir/src/adapter/metamod/plugin/plugin_runtime.cpp.obj
+plugin_runtime.cpp
+[ 79%] Building CXX object CMakeFiles/astrabot_weapon_switch_runtime.dir/src/adapter/metamod/bridge/action_adapter.cpp.obj
+action_adapter.cpp
+[ 79%] Building CXX object CMakeFiles/astrabot_weapon_switch_runtime.dir/src/adapter/metamod/bridge/observation_adapter.cpp.obj
+observation_adapter.cpp
+[ 79%] Building CXX object CMakeFiles/astrabot_weapon_switch_runtime.dir/src/adapter/metamod/runtime/observation/bot_observation_runtime.cpp.obj
+bot_observation_runtime.cpp
+[ 80%] Building CXX object CMakeFiles/astrabot_weapon_switch_runtime.dir/src/adapter/metamod/runtime/behavior/bot_behavior_runtime.cpp.obj
+bot_behavior_runtime.cpp
+[ 80%] Building CXX object CMakeFiles/astrabot_weapon_switch_runtime.dir/src/adapter/metamod/runtime/behavior/bot_behavior_perception.cpp.obj
+bot_behavior_perception.cpp
+[ 80%] Building CXX object CMakeFiles/astrabot_weapon_switch_runtime.dir/src/adapter/metamod/runtime/behavior/bot_behavior_radio.cpp.obj
+bot_behavior_radio.cpp
+[ 80%] Building CXX object CMakeFiles/astrabot_weapon_switch_runtime.dir/src/adapter/metamod/runtime/behavior/bot_behavior_buying.cpp.obj
+bot_behavior_buying.cpp
+[ 80%] Building CXX object CMakeFiles/astrabot_weapon_switch_runtime.dir/src/adapter/metamod/runtime/behavior/bot_behavior_priorities.cpp.obj
+bot_behavior_priorities.cpp
+[ 81%] Building CXX object CMakeFiles/astrabot_weapon_switch_runtime.dir/src/adapter/metamod/runtime/behavior/bot_behavior_objectives.cpp.obj
+bot_behavior_objectives.cpp
+[ 81%] Building CXX object CMakeFiles/astrabot_weapon_switch_runtime.dir/src/adapter/metamod/runtime/behavior/bot_behavior_guard.cpp.obj
+bot_behavior_guard.cpp
+[ 81%] Building CXX object CMakeFiles/astrabot_weapon_switch_runtime.dir/src/adapter/metamod/runtime/behavior/bot_behavior_equipment.cpp.obj
+bot_behavior_equipment.cpp
+[ 81%] Building CXX object CMakeFiles/astrabot_weapon_switch_runtime.dir/src/adapter/metamod/runtime/behavior/bot_behavior_scenario.cpp.obj
+bot_behavior_scenario.cpp
+[ 81%] Building CXX object CMakeFiles/astrabot_weapon_switch_runtime.dir/src/adapter/metamod/runtime/behavior/bot_behavior_combat.cpp.obj
+bot_behavior_combat.cpp
+[ 82%] Building CXX object CMakeFiles/astrabot_weapon_switch_runtime.dir/src/adapter/metamod/runtime/navigation/bot_navigation_runtime.cpp.obj
+bot_navigation_runtime.cpp
+[ 82%] Building CXX object CMakeFiles/astrabot_weapon_switch_runtime.dir/src/adapter/metamod/runtime/command/bot_command_runtime.cpp.obj
+bot_command_runtime.cpp
+[ 82%] Linking CXX executable astrabot_weapon_switch_runtime.exe
+[ 85%] Built target astrabot_weapon_switch_runtime
+[ 85%] Building CXX object CMakeFiles/astrabot_actor_identity_runtime.dir/tests/actor_identity_runtime_tests.cpp.obj
+actor_identity_runtime_tests.cpp
+[ 86%] Building CXX object CMakeFiles/astrabot_actor_identity_runtime.dir/src/adapter/metamod/plugin/plugin_exports.cpp.obj
+plugin_exports.cpp
+[ 86%] Building CXX object CMakeFiles/astrabot_actor_identity_runtime.dir/src/adapter/metamod/plugin/plugin_runtime.cpp.obj
+plugin_runtime.cpp
+[ 86%] Building CXX object CMakeFiles/astrabot_actor_identity_runtime.dir/src/adapter/metamod/bridge/action_adapter.cpp.obj
+action_adapter.cpp
+[ 86%] Building CXX object CMakeFiles/astrabot_actor_identity_runtime.dir/src/adapter/metamod/bridge/observation_adapter.cpp.obj
+observation_adapter.cpp
+[ 87%] Building CXX object CMakeFiles/astrabot_actor_identity_runtime.dir/src/adapter/metamod/runtime/observation/bot_observation_runtime.cpp.obj
+bot_observation_runtime.cpp
+[ 87%] Building CXX object CMakeFiles/astrabot_actor_identity_runtime.dir/src/adapter/metamod/runtime/behavior/bot_behavior_runtime.cpp.obj
+bot_behavior_runtime.cpp
+[ 87%] Building CXX object CMakeFiles/astrabot_actor_identity_runtime.dir/src/adapter/metamod/runtime/behavior/bot_behavior_perception.cpp.obj
+bot_behavior_perception.cpp
+[ 87%] Building CXX object CMakeFiles/astrabot_actor_identity_runtime.dir/src/adapter/metamod/runtime/behavior/bot_behavior_radio.cpp.obj
+bot_behavior_radio.cpp
+[ 87%] Building CXX object CMakeFiles/astrabot_actor_identity_runtime.dir/src/adapter/metamod/runtime/behavior/bot_behavior_buying.cpp.obj
+bot_behavior_buying.cpp
+[ 88%] Building CXX object CMakeFiles/astrabot_actor_identity_runtime.dir/src/adapter/metamod/runtime/behavior/bot_behavior_priorities.cpp.obj
+bot_behavior_priorities.cpp
+[ 88%] Building CXX object CMakeFiles/astrabot_actor_identity_runtime.dir/src/adapter/metamod/runtime/behavior/bot_behavior_objectives.cpp.obj
+bot_behavior_objectives.cpp
+[ 88%] Building CXX object CMakeFiles/astrabot_actor_identity_runtime.dir/src/adapter/metamod/runtime/behavior/bot_behavior_guard.cpp.obj
+bot_behavior_guard.cpp
+[ 88%] Building CXX object CMakeFiles/astrabot_actor_identity_runtime.dir/src/adapter/metamod/runtime/behavior/bot_behavior_equipment.cpp.obj
+bot_behavior_equipment.cpp
+[ 88%] Building CXX object CMakeFiles/astrabot_actor_identity_runtime.dir/src/adapter/metamod/runtime/behavior/bot_behavior_scenario.cpp.obj
+bot_behavior_scenario.cpp
+[ 89%] Building CXX object CMakeFiles/astrabot_actor_identity_runtime.dir/src/adapter/metamod/runtime/behavior/bot_behavior_combat.cpp.obj
+bot_behavior_combat.cpp
+[ 89%] Building CXX object CMakeFiles/astrabot_actor_identity_runtime.dir/src/adapter/metamod/runtime/navigation/bot_navigation_runtime.cpp.obj
+bot_navigation_runtime.cpp
+[ 89%] Building CXX object CMakeFiles/astrabot_actor_identity_runtime.dir/src/adapter/metamod/runtime/command/bot_command_runtime.cpp.obj
+bot_command_runtime.cpp
+[ 89%] Linking CXX executable astrabot_actor_identity_runtime.exe
+[ 91%] Built target astrabot_actor_identity_runtime
+[ 91%] Building CXX object CMakeFiles/astrabot_runtime_team_resolution.dir/tests/runtime_team_resolution_tests.cpp.obj
+runtime_team_resolution_tests.cpp
+[ 91%] Building CXX object CMakeFiles/astrabot_runtime_team_resolution.dir/src/adapter/metamod/plugin/plugin_exports.cpp.obj
+plugin_exports.cpp
+[ 91%] Building CXX object CMakeFiles/astrabot_runtime_team_resolution.dir/src/adapter/metamod/plugin/plugin_runtime.cpp.obj
+plugin_runtime.cpp
+[ 92%] Building CXX object CMakeFiles/astrabot_runtime_team_resolution.dir/src/adapter/metamod/bridge/action_adapter.cpp.obj
+action_adapter.cpp
+[ 92%] Building CXX object CMakeFiles/astrabot_runtime_team_resolution.dir/src/adapter/metamod/bridge/observation_adapter.cpp.obj
+observation_adapter.cpp
+[ 92%] Building CXX object CMakeFiles/astrabot_runtime_team_resolution.dir/src/adapter/metamod/runtime/observation/bot_observation_runtime.cpp.obj
+bot_observation_runtime.cpp
+[ 92%] Building CXX object CMakeFiles/astrabot_runtime_team_resolution.dir/src/adapter/metamod/runtime/behavior/bot_behavior_runtime.cpp.obj
+bot_behavior_runtime.cpp
+[ 92%] Building CXX object CMakeFiles/astrabot_runtime_team_resolution.dir/src/adapter/metamod/runtime/behavior/bot_behavior_perception.cpp.obj
+bot_behavior_perception.cpp
+[ 93%] Building CXX object CMakeFiles/astrabot_runtime_team_resolution.dir/src/adapter/metamod/runtime/behavior/bot_behavior_radio.cpp.obj
+bot_behavior_radio.cpp
+[ 93%] Building CXX object CMakeFiles/astrabot_runtime_team_resolution.dir/src/adapter/metamod/runtime/behavior/bot_behavior_buying.cpp.obj
+bot_behavior_buying.cpp
+[ 93%] Building CXX object CMakeFiles/astrabot_runtime_team_resolution.dir/src/adapter/metamod/runtime/behavior/bot_behavior_priorities.cpp.obj
+bot_behavior_priorities.cpp
+[ 93%] Building CXX object CMakeFiles/astrabot_runtime_team_resolution.dir/src/adapter/metamod/runtime/behavior/bot_behavior_objectives.cpp.obj
+bot_behavior_objectives.cpp
+[ 94%] Building CXX object CMakeFiles/astrabot_runtime_team_resolution.dir/src/adapter/metamod/runtime/behavior/bot_behavior_guard.cpp.obj
+bot_behavior_guard.cpp
+[ 94%] Building CXX object CMakeFiles/astrabot_runtime_team_resolution.dir/src/adapter/metamod/runtime/behavior/bot_behavior_equipment.cpp.obj
+bot_behavior_equipment.cpp
+[ 94%] Building CXX object CMakeFiles/astrabot_runtime_team_resolution.dir/src/adapter/metamod/runtime/behavior/bot_behavior_scenario.cpp.obj
+bot_behavior_scenario.cpp
+[ 94%] Building CXX object CMakeFiles/astrabot_runtime_team_resolution.dir/src/adapter/metamod/runtime/behavior/bot_behavior_combat.cpp.obj
+bot_behavior_combat.cpp
+[ 94%] Building CXX object CMakeFiles/astrabot_runtime_team_resolution.dir/src/adapter/metamod/runtime/navigation/bot_navigation_runtime.cpp.obj
+bot_navigation_runtime.cpp
+[ 95%] Building CXX object CMakeFiles/astrabot_runtime_team_resolution.dir/src/adapter/metamod/runtime/command/bot_command_runtime.cpp.obj
+bot_command_runtime.cpp
+[ 95%] Linking CXX executable astrabot_runtime_team_resolution.exe
+[ 97%] Built target astrabot_runtime_team_resolution
+[ 98%] Building CXX object CMakeFiles/astrabot_runtime_command_scenarios.dir/tests/runtime_command_scenarios.cpp.obj
+runtime_command_scenarios.cpp
+[ 98%] Building CXX object CMakeFiles/astrabot_runtime_command_scenarios.dir/src/adapter/metamod/runtime/command/bot_command_runtime.cpp.obj
+bot_command_runtime.cpp
+[ 98%] Building CXX object CMakeFiles/astrabot_runtime_command_scenarios.dir/src/adapter/metamod/bridge/action_adapter.cpp.obj
+action_adapter.cpp
+[ 99%] Linking CXX executable astrabot_runtime_command_scenarios.exe
+[100%] Built target astrabot_runtime_command_scenarios

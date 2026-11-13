@@ -6,17 +6,17 @@ namespace metamod
 {
 using namespace runtime_detail;
 
-ActionProposal BotBehaviorRuntime::decideManagedBotAction(
-	std::size_t index, const runtime::MovementPhysicsState &before,
-	const runtime::ViewAngles &movementAngles, std::uint16_t movementButtons)
+ActionProposal BotBehaviorRuntime::decideManagedBotAction(std::size_t index,
+	const runtime::MovementPhysicsState &before, const runtime::ViewAngles &movementAngles,
+	std::uint16_t movementButtons)
 {
 	if (index < actors_.size())
 	{
 		actors_[index].managedBotCombat.clearAim();
 		actors_[index].weaponActions.stopRapidFire();
 		const auto &scenario = actors_[index].scenarioDecisions;
-		if (scenario.action != compat::ScenarioAction::Guard || !scenario.hasTarget ||
-			!scenario.target.inUseRange || scenario.state != compat::CompatibilityStateId::Hide)
+		if (scenario.action != compat::ScenarioAction::Guard || !scenario.hasTarget || !scenario.target.inUseRange ||
+			scenario.state != compat::CompatibilityStateId::Hide)
 			actors_[index].guardLook.reset();
 	}
 	ManagedActionContext ctx{index, before, movementAngles};
@@ -37,10 +37,8 @@ ActionProposal BotBehaviorRuntime::decideManagedBotAction(
 void BotBehaviorRuntime::updateManagedBotCompatibilityState(
 	std::size_t index, const runtime::MovementPhysicsState &before)
 {
-	RuntimeProfilerScope scenarioScope(services_->service_runtimeProfiler(),
-									   RuntimeProfilerStage::ScenarioUpdate);
-	if (index >= NativeBotObservation::kClientSlotCount ||
-		!services_->service_managedBotSlots()[index] ||
+	RuntimeProfilerScope scenarioScope(services_->service_runtimeProfiler(), RuntimeProfilerStage::ScenarioUpdate);
+	if (index >= NativeBotObservation::kClientSlotCount || !services_->service_managedBotSlots()[index] ||
 		services_->service_managedBotHandles()[index].entity == nullptr)
 	{
 		return;
@@ -105,12 +103,11 @@ void BotBehaviorRuntime::onActorRemembered(std::size_t index, const FakeClientHa
 void BotBehaviorRuntime::resetSharedExecutionState()
 {
 	reset_managedStateInputs();
-	managedTeamObjectiveCoordinator_.reset(services_->service_lifecycle().mapGeneration(),
-										   services_->service_lifecycle().roundGeneration());
+	managedTeamObjectiveCoordinator_.reset(
+		services_->service_lifecycle().mapGeneration(), services_->service_lifecycle().roundGeneration());
 	managedTeamObjectiveAssignments_ = {};
 	managedTeamObjectiveAssignmentMapGeneration_ = services_->service_lifecycle().mapGeneration();
-	managedTeamObjectiveAssignmentRoundGeneration_ =
-		services_->service_lifecycle().roundGeneration();
+	managedTeamObjectiveAssignmentRoundGeneration_ = services_->service_lifecycle().roundGeneration();
 	managedTeamObjectiveAssignmentFrame_ = 0U;
 	managedTeamObjectiveAssignmentsValid_ = false;
 	managedTeamObjectivePathFailurePending_ = false;

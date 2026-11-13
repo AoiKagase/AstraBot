@@ -19,22 +19,12 @@ char kPluginAuthor[] = "AstraBot contributors";
 char kPluginUrl[] = "";
 char kPluginLogTag[] = "ASTRABOT";
 
-plugin_info_t gPluginInfo = {
-	kInterfaceVersion,
-	kPluginName,
-	kPluginVersion,
-	kPluginDate,
-	kPluginAuthor,
-	kPluginUrl,
-	kPluginLogTag,
-	PT_ANYTIME,
-	PT_ANYTIME
-};
+plugin_info_t gPluginInfo = {kInterfaceVersion, kPluginName, kPluginVersion, kPluginDate, kPluginAuthor, kPluginUrl,
+	kPluginLogTag, PT_ANYTIME, PT_ANYTIME};
 
 } // namespace
 
-C_DLLEXPORT int Meta_Query(char *interfaceVersion, plugin_info_t **pluginInfo,
-	mutil_funcs_t *metaUtils)
+C_DLLEXPORT int Meta_Query(char *interfaceVersion, plugin_info_t **pluginInfo, mutil_funcs_t *metaUtils)
 {
 	if (interfaceVersion == nullptr || pluginInfo == nullptr || metaUtils == nullptr)
 	{
@@ -51,11 +41,12 @@ C_DLLEXPORT int Meta_Query(char *interfaceVersion, plugin_info_t **pluginInfo,
 	return TRUE;
 }
 
-C_DLLEXPORT int Meta_Attach(PLUG_LOADTIME loadTime, META_FUNCTIONS *functionTable,
-		meta_globals_t *metaGlobals, gamedll_funcs_t *gameDllFunctions)
+C_DLLEXPORT int Meta_Attach(PLUG_LOADTIME loadTime, META_FUNCTIONS *functionTable, meta_globals_t *metaGlobals,
+	gamedll_funcs_t *gameDllFunctions)
 {
-	return PluginRuntime::instance().attach(
-			loadTime, functionTable, metaGlobals, gameDllFunctions, &gPluginInfo) ? TRUE : FALSE;
+	return PluginRuntime::instance().attach(loadTime, functionTable, metaGlobals, gameDllFunctions, &gPluginInfo)
+		? TRUE
+		: FALSE;
 }
 
 C_DLLEXPORT int Meta_Detach(PLUG_LOADTIME loadTime, PL_UNLOAD_REASON reason)
@@ -63,24 +54,19 @@ C_DLLEXPORT int Meta_Detach(PLUG_LOADTIME loadTime, PL_UNLOAD_REASON reason)
 	return PluginRuntime::instance().detach(loadTime, reason) ? TRUE : FALSE;
 }
 
-C_DLLEXPORT FORCE_STACK_ALIGN int GetEntityAPI2(DLL_FUNCTIONS *functionTable,
-		int *interfaceVersion)
+C_DLLEXPORT FORCE_STACK_ALIGN int GetEntityAPI2(DLL_FUNCTIONS *functionTable, int *interfaceVersion)
 {
-	return PluginRuntime::instance().provideEntityApi(functionTable, interfaceVersion)
-			? TRUE : FALSE;
+	return PluginRuntime::instance().provideEntityApi(functionTable, interfaceVersion) ? TRUE : FALSE;
 }
 
-C_DLLEXPORT FORCE_STACK_ALIGN int GetEntityAPI2_Post(DLL_FUNCTIONS *functionTable,
-		int *interfaceVersion)
+C_DLLEXPORT FORCE_STACK_ALIGN int GetEntityAPI2_Post(DLL_FUNCTIONS *functionTable, int *interfaceVersion)
 {
-	return PluginRuntime::instance().provideEntityApiPost(functionTable, interfaceVersion)
-			? TRUE : FALSE;
+	return PluginRuntime::instance().provideEntityApiPost(functionTable, interfaceVersion) ? TRUE : FALSE;
 }
 
 C_DLLEXPORT int GetEngineFunctions(enginefuncs_t *engineFunctions, int *interfaceVersion)
 {
-	return PluginRuntime::instance().provideEngineFunctions(engineFunctions, interfaceVersion)
-			? TRUE : FALSE;
+	return PluginRuntime::instance().provideEngineFunctions(engineFunctions, interfaceVersion) ? TRUE : FALSE;
 }
 
 #ifdef _WIN32

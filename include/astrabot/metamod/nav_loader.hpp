@@ -77,9 +77,8 @@ public:
 	NavLoader();
 	explicit NavLoader(const NavLoadLimits &limits);
 
-	NavLoadResult loadFile(const NavLoadRequest *request,
-		nav::NavSnapshotPublisher *publisher,
-		NavLoadDiagnostic *diagnostic) const;
+	NavLoadResult loadFile(
+		const NavLoadRequest *request, nav::NavSnapshotPublisher *publisher, NavLoadDiagnostic *diagnostic) const;
 
 private:
 	NavLoadLimits limits_;

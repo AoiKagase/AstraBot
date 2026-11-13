@@ -1,0 +1,186 @@
+Internal ctest changing into directory: H:/sourcecode/003.Game/amxmodx/AstraBot/build-action-adapter-x86-1451
+Test project H:/sourcecode/003.Game/amxmodx/AstraBot/build-action-adapter-x86-1451
+      Start  1: astrabot_plant_attempt
+ 1/90 Test  #1: astrabot_plant_attempt ...........................   Passed    0.04 sec
+      Start  2: astrabot_public_observation
+ 2/90 Test  #2: astrabot_public_observation ......................   Passed    0.06 sec
+      Start  3: astrabot_vanilla_management
+ 3/90 Test  #3: astrabot_vanilla_management ......................   Passed    0.05 sec
+      Start  4: astrabot_vanilla_behavior
+ 4/90 Test  #4: astrabot_vanilla_behavior ........................   Passed    0.04 sec
+      Start  5: astrabot_weapon_equipment
+ 5/90 Test  #5: astrabot_weapon_equipment ........................   Passed    0.03 sec
+      Start  6: astrabot_combat_policy
+ 6/90 Test  #6: astrabot_combat_policy ...........................   Passed    0.03 sec
+      Start  7: astrabot_literal_precision
+ 7/90 Test  #7: astrabot_literal_precision .......................   Passed    0.03 sec
+      Start  8: astrabot_weapon_actions
+ 8/90 Test  #8: astrabot_weapon_actions ..........................   Passed    0.04 sec
+      Start  9: astrabot_scenario_behavior
+ 9/90 Test  #9: astrabot_scenario_behavior .......................   Passed    0.20 sec
+      Start 10: astrabot_public_bomb_clock
+10/90 Test #10: astrabot_public_bomb_clock .......................   Passed    0.04 sec
+      Start 11: astrabot_bomb_navigation
+11/90 Test #11: astrabot_bomb_navigation .........................   Passed    0.05 sec
+      Start 12: astrabot_outgoing_radio
+12/90 Test #12: astrabot_outgoing_radio ..........................   Passed    0.04 sec
+      Start 13: astrabot_teamwork_policy
+13/90 Test #13: astrabot_teamwork_policy .........................   Passed    0.04 sec
+      Start 14: astrabot_nav_danger_memory
+14/90 Test #14: astrabot_nav_danger_memory .......................   Passed    0.04 sec
+      Start 15: astrabot_grenade_trajectory
+15/90 Test #15: astrabot_grenade_trajectory ......................   Passed    0.04 sec
+      Start 16: astrabot_build_identity
+16/90 Test #16: astrabot_build_identity ..........................   Passed    0.03 sec
+      Start 17: astrabot_lifecycle_generation
+17/90 Test #17: astrabot_lifecycle_generation ....................   Passed    0.04 sec
+      Start 18: astrabot_native_bot_guard
+18/90 Test #18: astrabot_native_bot_guard ........................   Passed    0.02 sec
+      Start 19: astrabot_actor_registry
+19/90 Test #19: astrabot_actor_registry ..........................   Passed    0.03 sec
+      Start 20: astrabot_command_queue
+20/90 Test #20: astrabot_command_queue ...........................   Passed    0.03 sec
+      Start 21: astrabot_join_controller
+21/90 Test #21: astrabot_join_controller .........................   Passed    0.02 sec
+      Start 22: astrabot_nav_roam_controller
+22/90 Test #22: astrabot_nav_roam_controller .....................   Passed    0.10 sec
+      Start 23: astrabot_player_avoidance
+23/90 Test #23: astrabot_player_avoidance ........................   Passed    0.04 sec
+      Start 24: astrabot_nav_legacy_limit
+24/90 Test #24: astrabot_nav_legacy_limit ........................   Passed    0.04 sec
+      Start 25: astrabot_compat_command_registry
+25/90 Test #25: astrabot_compat_command_registry .................   Passed    0.05 sec
+      Start 26: astrabot_compat_cvar_state
+26/90 Test #26: astrabot_compat_cvar_state .......................   Passed    0.05 sec
+      Start 27: astrabot_observation_model
+27/90 Test #27: astrabot_observation_model .......................   Passed    0.04 sec
+      Start 28: astrabot_compat_state_machine
+28/90 Test #28: astrabot_compat_state_machine ....................   Passed    0.04 sec
+      Start 29: astrabot_profile_catalog
+29/90 Test #29: astrabot_profile_catalog .........................   Passed    0.04 sec
+      Start 30: astrabot_profile_loader
+30/90 Test #30: astrabot_profile_loader ..........................   Passed    0.05 sec
+      Start 31: astrabot_bot_configuration
+31/90 Test #31: astrabot_bot_configuration .......................   Passed    0.03 sec
+      Start 32: astrabot_runtime_mode_policy
+32/90 Test #32: astrabot_runtime_mode_policy .....................   Passed    0.04 sec
+      Start 33: astrabot_runtime_timing
+33/90 Test #33: astrabot_runtime_timing ..........................   Passed    0.04 sec
+      Start 34: astrabot_compatibility_rng
+34/90 Test #34: astrabot_compatibility_rng .......................   Passed    0.05 sec
+      Start 35: astrabot_engine_random_source
+35/90 Test #35: astrabot_engine_random_source ....................   Passed    0.04 sec
+      Start 36: astrabot_nav_model
+36/90 Test #36: astrabot_nav_model ...............................   Passed    0.06 sec
+      Start 37: astrabot_legacy_nav_reader
+37/90 Test #37: astrabot_legacy_nav_reader .......................   Passed    0.04 sec
+      Start 38: astrabot_nav_loader
+38/90 Test #38: astrabot_nav_loader ..............................   Passed    0.23 sec
+      Start 39: astrabot_nav_external_performance
+39/90 Test #39: astrabot_nav_external_performance ................   Passed    0.29 sec
+      Start 40: astrabot_nav_diagnostics
+40/90 Test #40: astrabot_nav_diagnostics .........................   Passed    0.08 sec
+      Start 41: astrabot_nav_snapshot
+41/90 Test #41: astrabot_nav_snapshot ............................   Passed    0.04 sec
+      Start 42: astrabot_nav_query
+42/90 Test #42: astrabot_nav_query ...............................   Passed    0.04 sec
+      Start 43: astrabot_locomotion
+43/90 Test #43: astrabot_locomotion ..............................   Passed    0.05 sec
+      Start 44: astrabot_jump_drop
+44/90 Test #44: astrabot_jump_drop ...............................   Passed    0.04 sec
+      Start 45: astrabot_special_traversal
+45/90 Test #45: astrabot_special_traversal .......................   Passed    0.04 sec
+      Start 46: astrabot_world_snapshot
+46/90 Test #46: astrabot_world_snapshot ..........................   Passed    0.03 sec
+      Start 47: astrabot_perception
+47/90 Test #47: astrabot_perception ..............................   Passed    0.03 sec
+      Start 48: astrabot_behavior_state
+48/90 Test #48: astrabot_behavior_state ..........................   Passed    0.03 sec
+      Start 49: astrabot_objective_proposal
+49/90 Test #49: astrabot_objective_proposal ......................   Passed    0.04 sec
+      Start 50: astrabot_weapon_state
+50/90 Test #50: astrabot_weapon_state ............................   Passed    0.03 sec
+      Start 51: astrabot_combat_intent
+51/90 Test #51: astrabot_combat_intent ...........................   Passed    0.04 sec
+      Start 52: astrabot_objective_state
+52/90 Test #52: astrabot_objective_state .........................   Passed    0.03 sec
+      Start 53: astrabot_round_objectives
+53/90 Test #53: astrabot_round_objectives ........................   Passed    0.04 sec
+      Start 54: astrabot_round_objective_coordinator
+54/90 Test #54: astrabot_round_objective_coordinator .............   Passed    0.06 sec
+      Start 55: astrabot_team_report
+55/90 Test #55: astrabot_team_report .............................   Passed    0.03 sec
+      Start 56: astrabot_radio_intent
+56/90 Test #56: astrabot_radio_intent ............................   Passed    0.03 sec
+      Start 57: astrabot_map_fingerprint
+57/90 Test #57: astrabot_map_fingerprint .........................   Passed    0.02 sec
+      Start 58: astrabot_movement_physics
+58/90 Test #58: astrabot_movement_physics ........................   Passed    0.03 sec
+      Start 59: astrabot_jump_crouch_sequencer
+59/90 Test #59: astrabot_jump_crouch_sequencer ...................   Passed    0.04 sec
+      Start 60: astrabot_metamod_abi
+60/90 Test #60: astrabot_metamod_abi .............................   Passed    0.04 sec
+      Start 61: astrabot_metamod_hooks
+61/90 Test #61: astrabot_metamod_hooks ...........................   Passed    0.04 sec
+      Start 62: astrabot_fake_client_manager
+62/90 Test #62: astrabot_fake_client_manager .....................   Passed    0.04 sec
+      Start 63: astrabot_input_dispatcher
+63/90 Test #63: astrabot_input_dispatcher ........................   Passed    0.04 sec
+      Start 64: astrabot_fake_client_isolation
+64/90 Test #64: astrabot_fake_client_isolation ...................   Passed    0.05 sec
+      Start 65: astrabot_compat_surface
+65/90 Test #65: astrabot_compat_surface ..........................   Passed    0.05 sec
+      Start 66: astrabot_compat_actor_command
+66/90 Test #66: astrabot_compat_actor_command ....................   Passed    0.72 sec
+      Start 67: astrabot_observation_adapter
+67/90 Test #67: astrabot_observation_adapter .....................   Passed    0.05 sec
+      Start 68: astrabot_perception_adapter
+68/90 Test #68: astrabot_perception_adapter ......................   Passed    0.05 sec
+      Start 69: astrabot_observation_trace
+69/90 Test #69: astrabot_observation_trace .......................   Passed    0.06 sec
+      Start 70: astrabot_action_adapter
+70/90 Test #70: astrabot_action_adapter ..........................   Passed    0.03 sec
+      Start 71: astrabot_movement_execution_gate
+71/90 Test #71: astrabot_movement_execution_gate .................   Passed    0.02 sec
+      Start 72: astrabot_runtime_profiler
+72/90 Test #72: astrabot_runtime_profiler ........................   Passed    0.02 sec
+      Start 73: astrabot_regamedll_observation_provider
+73/90 Test #73: astrabot_regamedll_observation_provider ..........   Passed    0.04 sec
+      Start 74: astrabot_source_layout_contract
+74/90 Test #74: astrabot_source_layout_contract ..................   Passed    0.08 sec
+      Start 75: astrabot_runtime_ports_contract
+75/90 Test #75: astrabot_runtime_ports_contract ..................   Passed    1.39 sec
+      Start 76: astrabot_runtime_ownership_contract
+76/90 Test #76: astrabot_runtime_ownership_contract ..............   Passed    0.10 sec
+      Start 77: astrabot_runtime_movement_integration_contract
+77/90 Test #77: astrabot_runtime_movement_integration_contract ...   Passed    0.06 sec
+      Start 78: astrabot_runtime_behavior_contract
+78/90 Test #78: astrabot_runtime_behavior_contract ...............   Passed    0.06 sec
+      Start 79: astrabot_runtime_navigation_contract
+79/90 Test #79: astrabot_runtime_navigation_contract .............   Passed    0.06 sec
+      Start 80: astrabot_p076_performance_contract
+80/90 Test #80: astrabot_p076_performance_contract ...............   Passed    0.17 sec
+      Start 81: astrabot_action_owner_boundary
+81/90 Test #81: astrabot_action_owner_boundary ...................   Passed    0.56 sec
+      Start 82: astrabot_runtime_characterization
+82/90 Test #82: astrabot_runtime_characterization ................   Passed    1.54 sec
+      Start 83: astrabot_runtime_characterization_checker
+83/90 Test #83: astrabot_runtime_characterization_checker ........   Passed    0.43 sec
+      Start 84: astrabot_combat_target_log
+84/90 Test #84: astrabot_combat_target_log .......................   Passed    0.23 sec
+      Start 85: astrabot_bomb_guard_look
+85/90 Test #85: astrabot_bomb_guard_look .........................   Passed    0.09 sec
+      Start 86: astrabot_weapon_switch_runtime
+86/90 Test #86: astrabot_weapon_switch_runtime ...................   Passed    0.06 sec
+      Start 87: astrabot_actor_identity_runtime
+87/90 Test #87: astrabot_actor_identity_runtime ..................   Passed    0.11 sec
+      Start 88: astrabot_runtime_team_resolution
+88/90 Test #88: astrabot_runtime_team_resolution .................   Passed    0.08 sec
+      Start 89: astrabot_runtime_command_scenarios
+89/90 Test #89: astrabot_runtime_command_scenarios ...............   Passed    0.05 sec
+      Start 90: astrabot_runtime_architecture_checker
+90/90 Test #90: astrabot_runtime_architecture_checker ............   Passed    0.11 sec
+
+100% tests passed, 0 tests failed out of 90
+
+Total Test time (real) =   9.48 sec

@@ -66,11 +66,9 @@ public:
 
 private:
 	world::SnapshotIdentity identity_;
-	std::array<world::ActorObservation, world::WorldLimits::kMaximumActors>
-		actors_;
+	std::array<world::ActorObservation, world::WorldLimits::kMaximumActors> actors_;
 	std::size_t actorCount_;
-	std::array<world::EntityObservation, world::WorldLimits::kMaximumEntities>
-		entities_;
+	std::array<world::EntityObservation, world::WorldLimits::kMaximumEntities> entities_;
 	std::size_t entityCount_;
 	std::array<world::AudibleEvent, world::WorldLimits::kMaximumSounds> sounds_;
 	std::size_t soundCount_;
@@ -138,7 +136,10 @@ struct PerceptionTraceRecord
 class IPerceptionTraceSink
 {
 public:
-	virtual ~IPerceptionTraceSink() {}
+	virtual ~IPerceptionTraceSink()
+	{
+	}
+
 	virtual void record(const PerceptionTraceRecord &record) = 0;
 };
 
@@ -148,9 +149,7 @@ public:
 	PerceptionAssembler();
 	explicit PerceptionAssembler(const PerceptionAssemblerConfig &config);
 
-	PerceptionResult publish(
-		const PerceptionInput &input,
-		world::WorldSnapshot *snapshot);
+	PerceptionResult publish(const PerceptionInput &input, world::WorldSnapshot *snapshot);
 	PerceptionResult invalidateActor(const world::ActorKey &actor);
 
 	const PerceptionAssemblerConfig &config() const;
@@ -179,19 +178,13 @@ private:
 	static bool isValidTeamRelation(world::TeamRelation relation);
 	static bool isValidEntityKind(world::EntityKind kind);
 	static bool isValidSoundKind(world::SoundKind kind);
-	static bool isValidActorObservation(
-		const world::ActorObservation &observation);
-	static bool isValidEntityObservation(
-		const world::EntityObservation &observation);
+	static bool isValidActorObservation(const world::ActorObservation &observation);
+	static bool isValidEntityObservation(const world::EntityObservation &observation);
 	static bool isValidSound(const world::AudibleEvent &sound);
 	static float normalizeConfidence(float value);
 	static std::size_t actorIndex(const world::ActorKey &actor);
-	static bool sameFrame(
-		const world::FrameIdentity &left,
-		const world::FrameIdentity &right);
-	static bool isFrameAfter(
-		const world::FrameIdentity &candidate,
-		const world::FrameIdentity &current);
+	static bool sameFrame(const world::FrameIdentity &left, const world::FrameIdentity &right);
+	static bool isFrameAfter(const world::FrameIdentity &candidate, const world::FrameIdentity &current);
 	static void clearMemory(MemoryRecord *record);
 	static void expireMemory(MemoryRecord *record);
 	static world::MemorySample sampleFor(const MemoryRecord &record);
@@ -199,23 +192,14 @@ private:
 
 	PerceptionResult validateInput(const PerceptionInput &input) const;
 	void advanceMemory(
-		std::array<MemoryRecord, world::WorldLimits::kMaximumActors> *memory,
+		std::array<MemoryRecord, world::WorldLimits::kMaximumActors> *memory, const world::FrameIdentity &frame) const;
+	void updateMemory(std::array<MemoryRecord, world::WorldLimits::kMaximumActors> *memory,
+		const world::ActorObservation &observation, const world::FrameIdentity &frame) const;
+	void advanceNoise(world::NoiseMemory *noise, const world::FrameIdentity &frame) const;
+	void updateNoise(world::NoiseMemory *noise, const world::AudibleEvent &sound, const world::ActorKey &observer,
 		const world::FrameIdentity &frame) const;
-	void updateMemory(
-		std::array<MemoryRecord, world::WorldLimits::kMaximumActors> *memory,
-		const world::ActorObservation &observation,
-		const world::FrameIdentity &frame) const;
-	void advanceNoise(world::NoiseMemory *noise,
-		const world::FrameIdentity &frame) const;
-	void updateNoise(world::NoiseMemory *noise,
-		const world::AudibleEvent &sound,
-		const world::ActorKey &observer,
-		const world::FrameIdentity &frame) const;
-	void applyEvent(
-		std::array<MemoryRecord, world::WorldLimits::kMaximumActors> *memory,
-		world::NoiseMemory *noise,
-		const PerceptionEvent &event,
-		const world::FrameIdentity &frame) const;
+	void applyEvent(std::array<MemoryRecord, world::WorldLimits::kMaximumActors> *memory, world::NoiseMemory *noise,
+		const PerceptionEvent &event, const world::FrameIdentity &frame) const;
 	void emit(const PerceptionTraceRecord &record) const;
 
 	PerceptionAssemblerConfig config_;

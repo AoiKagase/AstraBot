@@ -52,8 +52,7 @@ public:
 		}
 		for (const std::string &line : lines_)
 		{
-			if (std::fwrite(line.data(), 1U, line.size(), file) != line.size() ||
-				std::fputc('\n', file) == EOF)
+			if (std::fwrite(line.data(), 1U, line.size(), file) != line.size() || std::fputc('\n', file) == EOF)
 			{
 				std::abort();
 			}
@@ -93,18 +92,17 @@ inline RuntimeCharacterization &runtimeCharacterization()
 	return recorder;
 }
 
-template <typename Integer>
-Integer recordRandomLong(Integer low, Integer high, Integer value)
+template <typename Integer> Integer recordRandomLong(Integer low, Integer high, Integer value)
 {
-	runtimeCharacterization().record("rng long %ld %ld %ld",
-		static_cast<long>(low), static_cast<long>(high), static_cast<long>(value));
+	runtimeCharacterization().record(
+		"rng long %ld %ld %ld", static_cast<long>(low), static_cast<long>(high), static_cast<long>(value));
 	return value;
 }
 
 inline float recordRandomFloat(float low, float high, float value)
 {
-	runtimeCharacterization().record("rng float %a %a %a",
-		static_cast<double>(low), static_cast<double>(high), static_cast<double>(value));
+	runtimeCharacterization().record(
+		"rng float %a %a %a", static_cast<double>(low), static_cast<double>(high), static_cast<double>(value));
 	return value;
 }
 }

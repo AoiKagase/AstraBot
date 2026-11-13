@@ -5,71 +5,72 @@
 
 namespace
 {
-	// Compare stored float32 values, not x87 excess-precision literal registers.
-	bool sameFloat32(float actual, float expected)
-	{
-		return std::memcmp(&actual, &expected, sizeof(float)) == 0;
-	}
-	const char *const kFixturePath = "astrabot_profile_loader_fixture.db";
+// Compare stored float32 values, not x87 excess-precision literal registers.
+bool sameFloat32(float actual, float expected)
+{
+	return std::memcmp(&actual, &expected, sizeof(float)) == 0;
+}
 
-	std::FILE *openFixture(const char *mode)
-	{
-		std::FILE *file = nullptr;
+const char *const kFixturePath = "astrabot_profile_loader_fixture.db";
+
+std::FILE *openFixture(const char *mode)
+{
+	std::FILE *file = nullptr;
 #ifdef _WIN32
-		if (fopen_s(&file, kFixturePath, mode) != 0)
-		{
-			return nullptr;
-		}
+	if (fopen_s(&file, kFixturePath, mode) != 0)
+	{
+		return nullptr;
+	}
 #else
-		file = std::fopen(kFixturePath, mode);
+	file = std::fopen(kFixturePath, mode);
 #endif
-		return file;
+	return file;
+}
+
+bool check(bool condition, const char *description)
+{
+	if (condition)
+	{
+		return true;
 	}
 
-	bool check(bool condition, const char *description)
-	{
-		if (condition)
-		{
-			return true;
-		}
+	std::fprintf(stderr, "check failed: %s\n", description);
+	return false;
+}
 
-		std::fprintf(stderr, "check failed: %s\n", description);
+bool writeFixture(const char *contents)
+{
+	std::FILE *file = openFixture("wb");
+	if (file == nullptr)
+	{
 		return false;
 	}
 
-	bool writeFixture(const char *contents)
-	{
-		std::FILE *file = openFixture("wb");
-		if (file == nullptr)
-		{
-			return false;
-		}
+	const std::size_t length = std::strlen(contents);
+	const std::size_t written = std::fwrite(contents, 1U, length, file);
+	const int closeResult = std::fclose(file);
+	return written == length && closeResult == 0;
+}
 
-		const std::size_t length = std::strlen(contents);
-		const std::size_t written = std::fwrite(contents, 1U, length, file);
-		const int closeResult = std::fclose(file);
-		return written == length && closeResult == 0;
+bool readFixture(char *buffer, std::size_t capacity, std::size_t *length)
+{
+	if (buffer == nullptr || capacity == 0U || length == nullptr)
+	{
+		return false;
 	}
 
-	bool readFixture(char *buffer, std::size_t capacity, std::size_t *length)
+	std::FILE *file = openFixture("rb");
+	if (file == nullptr)
 	{
-		if (buffer == nullptr || capacity == 0U || length == nullptr)
-		{
-			return false;
-		}
-
-		std::FILE *file = openFixture("rb");
-		if (file == nullptr)
-		{
-			return false;
-		}
-
-		const std::size_t bytesRead = std::fread(buffer, 1U, capacity - 1U, file);
-		const int closeResult = std::fclose(file);
-		buffer[bytesRead] = '\0';
-		*length = bytesRead;
-		return closeResult == 0;
+		return false;
 	}
+
+	const std::size_t bytesRead = std::fread(buffer, 1U, capacity - 1U, file);
+	const int closeResult = std::fclose(file);
+	buffer[bytesRead] = '\0';
+	*length = bytesRead;
+	return closeResult == 0;
+}
 } // namespace
 
 int main()
@@ -99,9 +100,8 @@ int main()
 
 	ProfileCatalog catalog;
 	ProfileLoader loader;
-	if (!check(loader.loadText(validText, std::strlen(validText), &catalog) ==
-				   ProfileLoadResult::Loaded,
-			   "valid profile text loads"))
+	if (!check(loader.loadText(validText, std::strlen(validText), &catalog) == ProfileLoadResult::Loaded,
+			"valid profile text loads"))
 	{
 		return 1;
 	}
@@ -111,18 +111,17 @@ int main()
 	}
 	astrabot::compat::ProfileRecord selected = {};
 	if (!check(catalog.selectNamed("Quoted Alpha", ProfileTeam::CounterTerrorist, &selected) ==
-					   ProfileSelectionResult::Selected &&
-				   selected.skill == 90 && selected.aggression == 80,
-			   "quoted profile fields are preserved"))
+					ProfileSelectionResult::Selected &&
+				selected.skill == 90 && selected.aggression == 80,
+			"quoted profile fields are preserved"))
 	{
 		return 1;
 	}
 
 	const char malformedText[] = "Broken { Skill = 50\n";
-	if (!check(loader.loadText(malformedText, std::strlen(malformedText), &catalog) ==
-					   ProfileLoadResult::Malformed &&
-				   catalog.size() == 2U,
-			   "malformed input does not publish a partial catalog"))
+	if (!check(loader.loadText(malformedText, std::strlen(malformedText), &catalog) == ProfileLoadResult::Malformed &&
+				catalog.size() == 2U,
+			"malformed input does not publish a partial catalog"))
 	{
 		return 1;
 	}
@@ -130,68 +129,74 @@ int main()
 	const char duplicateText[] = "One { Skill = 10 }\n"
 								 "one { Skill = 20 }\n";
 	if (!check(loader.loadText(duplicateText, std::strlen(duplicateText), &catalog) ==
-					   ProfileLoadResult::DuplicateProfile &&
-				   catalog.size() == 2U,
-			   "duplicate profiles are rejected transactionally"))
+					ProfileLoadResult::DuplicateProfile &&
+				catalog.size() == 2U,
+			"duplicate profiles are rejected transactionally"))
 	{
 		return 1;
 	}
 
-	const char csbotText[] = "Default\n"
-							 "ReactionTime = 0.45\nTeamwork = 60\nCost = 1500\nVoicePitch = 95\nWeaponPreference = ak47\n"
-							 "Skill = 50\n"
-							 "Aggression = 50\n"
-							 "Difficulty = NORMAL\n"
-							 "End\n"
-							 "Template Elite\n"
-							 "ReactionTime = 0.2\nAttackDelay = 0.1\nTeamwork = 90\nWeaponPreference = m4a1\nWeaponPreference = deagle\n"
-							 "Skill = 100\n"
-							 "Aggression = 100\n"
-							 "Difficulty = EXPERT\n"
-							 "End\n"
-							 "Template Normal\n"
-							 "Skill = 50\n"
-							 "Aggression = 50\n"
-							 "Difficulty = NORMAL\n"
-							 "End\n"
-							 "Elite BotOne\n"
-							 "End\n"
-							 "Normal BotTwo\n"
-							 "Skill = 45\n"
-							 "End\n";
-	if (!check(loader.loadText(csbotText, std::strlen(csbotText), &catalog) ==
-					   ProfileLoadResult::Loaded &&
-				   catalog.size() == 2U,
-			   "CSBot profile database syntax loads"))
+	const char csbotText[] =
+		"Default\n"
+		"ReactionTime = 0.45\nTeamwork = 60\nCost = 1500\nVoicePitch = 95\nWeaponPreference = ak47\n"
+		"Skill = 50\n"
+		"Aggression = 50\n"
+		"Difficulty = NORMAL\n"
+		"End\n"
+		"Template Elite\n"
+		"ReactionTime = 0.2\nAttackDelay = 0.1\nTeamwork = 90\nWeaponPreference = m4a1\nWeaponPreference = deagle\n"
+		"Skill = 100\n"
+		"Aggression = 100\n"
+		"Difficulty = EXPERT\n"
+		"End\n"
+		"Template Normal\n"
+		"Skill = 50\n"
+		"Aggression = 50\n"
+		"Difficulty = NORMAL\n"
+		"End\n"
+		"Elite BotOne\n"
+		"End\n"
+		"Normal BotTwo\n"
+		"Skill = 45\n"
+		"End\n";
+	if (!check(loader.loadText(csbotText, std::strlen(csbotText), &catalog) == ProfileLoadResult::Loaded &&
+				catalog.size() == 2U,
+			"CSBot profile database syntax loads"))
 	{
 		return 1;
 	}
 	astrabot::compat::ProfileRecord csbotProfile = {};
-	if (!check(catalog.selectNamed("BotOne", ProfileTeam::Any, &csbotProfile) ==
-					   ProfileSelectionResult::Selected &&
-				   csbotProfile.skill == 100 && csbotProfile.difficulty == 4 &&
-				   sameFloat32(csbotProfile.reactionTimeSeconds, 0.2f) && sameFloat32(csbotProfile.attackDelaySeconds, 0.1f) &&
-				   csbotProfile.teamwork == 90 && csbotProfile.cost == 1500 && csbotProfile.voicePitch == 95 &&
-				   csbotProfile.weaponPreferenceCount == 2 && csbotProfile.weaponPreferences[0] == 22 && csbotProfile.weaponPreferences[1] == 26 && csbotProfile.difficultyMask==8,
-			   "CSBot profile inherits skill template"))
+	if (!check(catalog.selectNamed("BotOne", ProfileTeam::Any, &csbotProfile) == ProfileSelectionResult::Selected &&
+				csbotProfile.skill == 100 && csbotProfile.difficulty == 4 &&
+				sameFloat32(csbotProfile.reactionTimeSeconds, 0.2f) &&
+				sameFloat32(csbotProfile.attackDelaySeconds, 0.1f) && csbotProfile.teamwork == 90 &&
+				csbotProfile.cost == 1500 && csbotProfile.voicePitch == 95 && csbotProfile.weaponPreferenceCount == 2 &&
+				csbotProfile.weaponPreferences[0] == 22 && csbotProfile.weaponPreferences[1] == 26 &&
+				csbotProfile.difficultyMask == 8,
+			"CSBot profile inherits skill template"))
 	{
 		return 1;
 	}
-	const char invalidExtended[]="Bad { ReactionTime = nan }\n";
-	if (!check(loader.loadText(invalidExtended,std::strlen(invalidExtended),&catalog)==ProfileLoadResult::Malformed && catalog.size()==2,
-		"invalid reaction time rejects transaction without replacing loaded profiles")) return 1;
-	const char invalidAlias[]="Default\nEnd\nTemplate Test\nWeaponPreference = unknown_weapon\nEnd\nTest Bad\nEnd\n";
-	if (!check(loader.loadText(invalidAlias,std::strlen(invalidAlias),&catalog)==ProfileLoadResult::Malformed && catalog.size()==2,
-		"unknown preference alias is explicit and transactional")) return 1;
+	const char invalidExtended[] = "Bad { ReactionTime = nan }\n";
+	if (!check(
+			loader.loadText(invalidExtended, std::strlen(invalidExtended), &catalog) == ProfileLoadResult::Malformed &&
+				catalog.size() == 2,
+			"invalid reaction time rejects transaction without replacing loaded profiles"))
+		return 1;
+	const char invalidAlias[] = "Default\nEnd\nTemplate Test\nWeaponPreference = unknown_weapon\nEnd\nTest Bad\nEnd\n";
+	if (!check(loader.loadText(invalidAlias, std::strlen(invalidAlias), &catalog) == ProfileLoadResult::Malformed &&
+				catalog.size() == 2,
+			"unknown preference alias is explicit and transactional"))
+		return 1;
 
 	const char oversizedText[] = "One { Skill = 10 }\n";
 	ProfileLoadLimits smallLimits = {sizeof(oversizedText) - 1U, 1U};
 	ProfileLoader boundedLoader(smallLimits);
 	const char tooLargeText[] = "One { Skill = 10 }\nTwo { Skill = 20 }\n";
-	if (!check(boundedLoader.loadText(tooLargeText, std::strlen(tooLargeText), &catalog) ==
-					   ProfileLoadResult::TooLarge &&
-				   catalog.size() == 2U,
-			   "oversized input is rejected before publication"))
+	if (!check(
+			boundedLoader.loadText(tooLargeText, std::strlen(tooLargeText), &catalog) == ProfileLoadResult::TooLarge &&
+				catalog.size() == 2U,
+			"oversized input is rejected before publication"))
 	{
 		return 1;
 	}
@@ -200,10 +205,10 @@ int main()
 									   "Two { Skill = 20 }\n";
 	const ProfileLoadLimits profileLimits = {sizeof(boundedProfilesText), 1U};
 	ProfileLoader profileCountLoader(profileLimits);
-	if (!check(profileCountLoader.loadText(boundedProfilesText, std::strlen(boundedProfilesText),
-										   &catalog) == ProfileLoadResult::CatalogFull &&
-				   catalog.size() == 2U,
-			   "profile count bound rejects extra records transactionally"))
+	if (!check(profileCountLoader.loadText(boundedProfilesText, std::strlen(boundedProfilesText), &catalog) ==
+					ProfileLoadResult::CatalogFull &&
+				catalog.size() == 2U,
+			"profile count bound rejects extra records transactionally"))
 	{
 		return 1;
 	}
@@ -216,21 +221,20 @@ int main()
 	char after[512] = {};
 	std::size_t beforeLength = 0U;
 	std::size_t afterLength = 0U;
-	if (!check(readFixture(before, sizeof(before), &beforeLength),
-			   "fixture bytes are readable before load"))
+	if (!check(readFixture(before, sizeof(before), &beforeLength), "fixture bytes are readable before load"))
 	{
 		std::remove(kFixturePath);
 		return 1;
 	}
 	if (!check(loader.loadFile(kFixturePath, &catalog) == ProfileLoadResult::Loaded,
-			   "profile file loads through adapter boundary"))
+			"profile file loads through adapter boundary"))
 	{
 		std::remove(kFixturePath);
 		return 1;
 	}
 	if (!check(readFixture(after, sizeof(after), &afterLength) && beforeLength == afterLength &&
-				   std::memcmp(before, after, beforeLength) == 0,
-			   "profile source bytes remain unchanged"))
+				std::memcmp(before, after, beforeLength) == 0,
+			"profile source bytes remain unchanged"))
 	{
 		std::remove(kFixturePath);
 		return 1;
@@ -238,7 +242,7 @@ int main()
 	std::remove(kFixturePath);
 
 	if (!check(loader.loadFile("missing-profile.db", &catalog) == ProfileLoadResult::MissingFile,
-			   "missing profile file is explicit"))
+			"missing profile file is explicit"))
 	{
 		return 1;
 	}

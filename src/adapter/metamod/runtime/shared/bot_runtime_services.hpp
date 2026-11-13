@@ -29,10 +29,10 @@ struct BotRuntimeServiceTypes
 };
 class BotObservationServices : public BotRuntimeServiceTypes
 {
-  public:
+public:
 	virtual ~BotObservationServices() = default;
 	virtual void notifyMenuReady(edict_t *entity, JoinMenuKind menu, std::uint16_t validSlots = 0U,
-								 JoinMenuSource source = JoinMenuSource::Unknown) = 0;
+		JoinMenuSource source = JoinMenuSource::Unknown) = 0;
 	virtual void observeJoinTeamInfo(std::size_t index, const char *teamName) = 0;
 	virtual bool runtimeIsActive() const = 0;
 	virtual const Service_adapterFrameCount &service_adapterFrameCount() = 0;
@@ -57,7 +57,7 @@ class BotObservationServices : public BotRuntimeServiceTypes
 };
 class BotBehaviorServices : public BotRuntimeServiceTypes
 {
-  public:
+public:
 	virtual ~BotBehaviorServices() = default;
 	virtual void applyNavigationRequest(const NavigationRequest &request) = 0;
 	virtual const Service_adapterFrameCount &service_adapterFrameCount() = 0;
@@ -82,8 +82,8 @@ class BotBehaviorServices : public BotRuntimeServiceTypes
 	virtual nav::NavPathCostContext navigation_managedPathCostContext(std::size_t index) = 0;
 	virtual const bool &observation_bombNoticeKnown(std::size_t index) const = 0;
 	virtual const bool &observation_bombNoticePlanted(std::size_t index) const = 0;
-	virtual bool observation_collectManagedPerception(std::size_t index, world::WorldSnapshot *snapshot,
-		ThreatObservation *threats) = 0;
+	virtual bool observation_collectManagedPerception(
+		std::size_t index, world::WorldSnapshot *snapshot, ThreatObservation *threats) = 0;
 	virtual bool observation_readManagedWorldSnapshot(std::size_t index, world::WorldSnapshot *snapshot) const = 0;
 	virtual const std::uint32_t &observation_externalDefuserEntityIndex() const = 0;
 	virtual const float &observation_externalDefuserLeaseUntil() const = 0;
@@ -92,22 +92,23 @@ class BotBehaviorServices : public BotRuntimeServiceTypes
 	virtual const ManagedCurrentWeaponObservation &observation_managedBotCurrentWeapons(std::size_t index) const = 0;
 	virtual const perception::PerceptionAssembler &observation_managedBotPerception(std::size_t index) const = 0;
 	virtual const std::uint8_t &observation_teamInfoTeams(std::size_t index) const = 0;
-	virtual const std::array<ObjectiveKnowledge, 2U> &observation_objectiveKnowledge(std::size_t index) const = 0;
+	virtual const std::array<ObjectiveKnowledge, kObjectiveKnowledgeStateCount> &observation_objectiveKnowledge(
+		std::size_t index) const = 0;
 	virtual const ObservationAdapter &observation_observationAdapter() const = 0;
 	virtual bool observation_observeObjective(std::size_t index, edict_t *entity, bool planted,
-											  world::WorldVector *position, bool *currentlyVisible = nullptr) = 0;
+		world::WorldVector *position, bool *currentlyVisible = nullptr) = 0;
 	virtual void observation_observeRadioLeaderPosition(std::size_t index, const compat::ScenarioTarget &position) = 0;
 	virtual const compat::PublicBombClock &observation_publicBombClocks(std::size_t index) const = 0;
 	virtual const compat::PublicObservationStore &observation_publicObservations() const = 0;
 	virtual int observation_resolvePlayerTeam(const edict_t *entity) const = 0;
-	virtual const std::array<PublicScoreStatus, NativeBotObservation::kClientSlotCount>
-		&observation_publicScoreStatuses(std::size_t index) const = 0;
+	virtual const std::array<PublicScoreStatus, NativeBotObservation::kClientSlotCount> &
+	observation_publicScoreStatuses(std::size_t index) const = 0;
 	virtual const compat::ScenarioRadioObservation &observation_scenarioRadio(std::size_t index) const = 0;
 	virtual const compat::SmokeObservations &observation_smokeObservations() const = 0;
 };
 class BotNavigationServices : public BotRuntimeServiceTypes
 {
-  public:
+public:
 	virtual ~BotNavigationServices() = default;
 	virtual bool roundFreezeActive() const = 0;
 	virtual const Service_adapterFrameCount &service_adapterFrameCount() = 0;
@@ -124,8 +125,7 @@ class BotNavigationServices : public BotRuntimeServiceTypes
 	virtual const Service_pluginId &service_pluginId() = 0;
 	virtual Service_runtimeProfiler &service_runtimeProfiler() = 0;
 	virtual bool behavior_buildManagedObjectiveTarget(std::size_t index, nav::NavVector *target,
-													  nav::NavSearchStats *searchStats,
-													  RuntimeObjectiveSelectionStats *objectiveStats = nullptr) = 0;
+		nav::NavSearchStats *searchStats, RuntimeObjectiveSelectionStats *objectiveStats = nullptr) = 0;
 	virtual const team::TeamObjectiveAssignment *behavior_findManagedTeamObjectiveAssignment(
 		const world::ActorKey &actor) const = 0;
 	virtual const ManagedObjectiveActionState &behavior_managedBotObjectiveActions(std::size_t index) const = 0;
@@ -133,15 +133,14 @@ class BotNavigationServices : public BotRuntimeServiceTypes
 	virtual const compat::CompatibilityStateMachine &behavior_managedBotStateMachines(std::size_t index) const = 0;
 	virtual const compat::ProfileRecord &behavior_managedProfiles(std::size_t index) const = 0;
 	virtual void behavior_noteNavigationFailure(const FakeClientHandle &handle, runtime::NavRoamResult roamResult,
-												const runtime::NavRoamDecision &roamDecision) = 0;
+		const runtime::NavRoamDecision &roamDecision) = 0;
 	virtual void behavior_resetBombApproach(std::size_t index) = 0;
 	virtual const compat::ScenarioBehaviorDecision &behavior_scenarioDecisions(std::size_t index) const = 0;
 	virtual const bool &command_managedBotCommandTemplateValid(std::size_t index) const = 0;
 	virtual const runtime::BotCommand &command_managedBotCommandTemplates(std::size_t index) const = 0;
 	virtual void command_resetGateDiagnostics() = 0;
-	virtual runtime::MovementPhysicsState observation_captureMovementPhysicsState(const edict_t *entity,
-																				  bool teamConfirmed,
-																				  bool managedFakeClient) const = 0;
+	virtual runtime::MovementPhysicsState observation_captureMovementPhysicsState(
+		const edict_t *entity, bool teamConfirmed, bool managedFakeClient) const = 0;
 	virtual std::vector<nav::NavVector> observation_liveFriendlyPositions(std::size_t index, bool feet) const = 0;
 	virtual const std::uint8_t &observation_teamInfoTeams(std::size_t index) const = 0;
 	virtual int observation_resolvePlayerTeam(const edict_t *entity) const = 0;
@@ -149,7 +148,7 @@ class BotNavigationServices : public BotRuntimeServiceTypes
 };
 class BotCommandServices : public BotRuntimeServiceTypes
 {
-  public:
+public:
 	virtual ~BotCommandServices() = default;
 	virtual std::uint8_t consumeCommandMsec(std::size_t index, float now) = 0;
 	virtual bool dispatchClientCommand(edict_t *entity, const char *name, const char *argument) = 0;
@@ -172,32 +171,28 @@ class BotCommandServices : public BotRuntimeServiceTypes
 	virtual Service_runtimeProfiler &service_runtimeProfiler() = 0;
 	virtual const ManagedObjectiveTargetCache &behavior_managedBotObjectiveTargets(std::size_t index) const = 0;
 	virtual const compat::CompatibilityStateMachine &behavior_managedBotStateMachines(std::size_t index) const = 0;
-	virtual void behavior_observeC4AttackDispatched(std::size_t index, const FakeClientHandle &handle,
-													std::uint16_t buttons) = 0;
+	virtual void behavior_observeC4AttackDispatched(
+		std::size_t index, const FakeClientHandle &handle, std::uint16_t buttons) = 0;
 	virtual void behavior_observeC4SelectionDispatched(std::size_t index, const FakeClientHandle &handle) = 0;
 	virtual void behavior_observeEquipmentDispatched(std::size_t index, std::uint16_t weapon, bool success) = 0;
 	virtual void behavior_observeNeutralC4AttackDispatched(std::size_t index, const FakeClientHandle &handle) = 0;
-	virtual void navigation_logMovementDiagnostic(std::size_t index, const char *reason,
-												  const runtime::NavRoamDecision *decision = nullptr) = 0;
+	virtual void navigation_logMovementDiagnostic(
+		std::size_t index, const char *reason, const runtime::NavRoamDecision *decision = nullptr) = 0;
 	virtual void navigation_logMovementReversalDiagnostic(std::size_t index,
-														  const runtime::MovementPhysicsState &before,
-														  const runtime::NavRoamDecision &decision,
-														  const nav::LocomotionIntent &intent) = 0;
+		const runtime::MovementPhysicsState &before, const runtime::NavRoamDecision &decision,
+		const nav::LocomotionIntent &intent) = 0;
 	virtual void navigation_logTraversalDiagnostic(std::size_t index, const runtime::MovementPhysicsState &before,
-												   const runtime::NavRoamDecision &decision,
-												   const nav::LocomotionIntent &intent, std::uint16_t buttons,
-												   const nav::LocomotionObservation &locomotion) = 0;
+		const runtime::NavRoamDecision &decision, const nav::LocomotionIntent &intent, std::uint16_t buttons,
+		const nav::LocomotionObservation &locomotion) = 0;
 	virtual void navigation_logTraversalOutcome(std::size_t index, const runtime::MovementPhysicsState &after,
-												const runtime::NavRoamDecision &decision,
-												const runtime::LandingDamageObservation &landingFeedback) = 0;
+		const runtime::NavRoamDecision &decision, const runtime::LandingDamageObservation &landingFeedback) = 0;
 	virtual const compat::NavigationStep &navigation_managedNavigationSteps(std::size_t index) const = 0;
 	virtual const std::uint8_t &navigation_movementDiagnosticSamples(std::size_t index) const = 0;
 	virtual void navigation_noteMovementDiagnosticSample(std::size_t index) = 0;
-	virtual void navigation_recordMovementPhysicsSample(std::size_t index, const runtime::MovementPhysicsState &before,
-														const runtime::CommandReceipt &receipt) = 0;
-	virtual runtime::MovementPhysicsState observation_captureMovementPhysicsState(const edict_t *entity,
-																				  bool teamConfirmed,
-																				  bool managedFakeClient) const = 0;
+	virtual void navigation_recordMovementPhysicsSample(
+		std::size_t index, const runtime::MovementPhysicsState &before, const runtime::CommandReceipt &receipt) = 0;
+	virtual runtime::MovementPhysicsState observation_captureMovementPhysicsState(
+		const edict_t *entity, bool teamConfirmed, bool managedFakeClient) const = 0;
 	virtual bool observation_hasObservedActiveWeapon(std::size_t index) const = 0;
 	virtual const ManagedCurrentWeaponObservation &observation_managedBotCurrentWeapons(std::size_t index) const = 0;
 	virtual void observation_observeReloadDispatched(world::ActorKey actor, world::FrameIdentity frame, float now) = 0;

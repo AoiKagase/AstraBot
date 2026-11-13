@@ -21,9 +21,10 @@ bool check(bool condition, const char *message)
 	}
 	return condition;
 }
+
 class ScenarioServices : public BotCommandServices
 {
-  public:
+public:
 	runtime::LifecycleSession lifecycle;
 	runtime::ActorRegistry registry;
 	InputDispatcher dispatcher{lifecycle, registry};
@@ -75,6 +76,7 @@ class ScenarioServices : public BotCommandServices
 		if (!dispatcher.bindActor(actor, &actorEntity))
 			std::abort();
 	}
+
 	std::uint8_t consumeCommandMsec(std::size_t, float) override
 	{
 		return 10U;
@@ -186,14 +188,16 @@ class ScenarioServices : public BotCommandServices
 
 	void behavior_observeC4AttackDispatched(std::size_t, const FakeClientHandle &handle, std::uint16_t) override
 	{
-		attackNoticeSawMovedOrigin = moves == attackMovesBefore + 1U &&
-			handle.entity->v.origin.x > attackOriginBefore;
+		attackNoticeSawMovedOrigin = moves == attackMovesBefore + 1U && handle.entity->v.origin.x > attackOriginBefore;
 	}
 
 	void behavior_observeC4SelectionDispatched(std::size_t, const FakeClientHandle &) override
 	{
 	}
-	void behavior_observeEquipmentDispatched(std::size_t, std::uint16_t, bool) override {}
+
+	void behavior_observeEquipmentDispatched(std::size_t, std::uint16_t, bool) override
+	{
+	}
 
 	void behavior_observeNeutralC4AttackDispatched(std::size_t, const FakeClientHandle &) override
 	{
@@ -204,20 +208,18 @@ class ScenarioServices : public BotCommandServices
 	}
 
 	void navigation_logMovementReversalDiagnostic(std::size_t, const runtime::MovementPhysicsState &,
-												  const runtime::NavRoamDecision &,
-												  const nav::LocomotionIntent &) override
+		const runtime::NavRoamDecision &, const nav::LocomotionIntent &) override
 	{
 	}
 
 	void navigation_logTraversalDiagnostic(std::size_t, const runtime::MovementPhysicsState &,
-										   const runtime::NavRoamDecision &, const nav::LocomotionIntent &,
-										   std::uint16_t, const nav::LocomotionObservation &) override
+		const runtime::NavRoamDecision &, const nav::LocomotionIntent &, std::uint16_t,
+		const nav::LocomotionObservation &) override
 	{
 	}
 
 	void navigation_logTraversalOutcome(std::size_t, const runtime::MovementPhysicsState &,
-										const runtime::NavRoamDecision &,
-										const runtime::LandingDamageObservation &) override
+		const runtime::NavRoamDecision &, const runtime::LandingDamageObservation &) override
 	{
 	}
 
@@ -237,13 +239,13 @@ class ScenarioServices : public BotCommandServices
 	{
 	}
 
-	void navigation_recordMovementPhysicsSample(std::size_t, const runtime::MovementPhysicsState &,
-												const runtime::CommandReceipt &) override
+	void navigation_recordMovementPhysicsSample(
+		std::size_t, const runtime::MovementPhysicsState &, const runtime::CommandReceipt &) override
 	{
 	}
 
-	runtime::MovementPhysicsState observation_captureMovementPhysicsState(const edict_t *entity, bool,
-																		  bool) const override
+	runtime::MovementPhysicsState observation_captureMovementPhysicsState(
+		const edict_t *entity, bool, bool) const override
 	{
 		runtime::MovementPhysicsState state{};
 		state.dead = entity->v.deadflag != DEAD_NO;

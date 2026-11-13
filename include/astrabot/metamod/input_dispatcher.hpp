@@ -13,33 +13,31 @@ namespace astrabot
 {
 namespace metamod
 {
-	class InputDispatcher
-	{
-	public:
-		InputDispatcher(runtime::LifecycleSession &lifecycle, runtime::ActorRegistry &registry);
+class InputDispatcher
+{
+public:
+	InputDispatcher(runtime::LifecycleSession &lifecycle, runtime::ActorRegistry &registry);
 
-		void configure(enginefuncs_t *engineFunctions, RuntimeProfiler *profiler = nullptr);
-		void reset();
-		runtime::QueueResult enqueue(const runtime::BotCommand &command);
-		bool bindActor(const runtime::ActorId &actor, edict_t *entity);
-		void unbindActor(const runtime::ActorId &actor);
-		runtime::CommandReceipt dispatchNext(
-			const runtime::ActorId &actor,
-			std::uint32_t dispatchFrame);
+	void configure(enginefuncs_t *engineFunctions, RuntimeProfiler *profiler = nullptr);
+	void reset();
+	runtime::QueueResult enqueue(const runtime::BotCommand &command);
+	bool bindActor(const runtime::ActorId &actor, edict_t *entity);
+	void unbindActor(const runtime::ActorId &actor);
+	runtime::CommandReceipt dispatchNext(const runtime::ActorId &actor, std::uint32_t dispatchFrame);
 
-	private:
-		static bool isSlotValid(std::uint32_t slot);
-		static std::size_t slotIndex(std::uint32_t slot);
-		static bool sameActor(const runtime::ActorId &left, const runtime::ActorId &right);
+private:
+	static bool isSlotValid(std::uint32_t slot);
+	static std::size_t slotIndex(std::uint32_t slot);
+	static bool sameActor(const runtime::ActorId &left, const runtime::ActorId &right);
 
-		runtime::LifecycleSession &lifecycle_;
-		runtime::ActorRegistry &registry_;
-		runtime::CommandQueue queue_;
-		enginefuncs_t *engineFunctions_;
-		RuntimeProfiler *profiler_;
-		std::array<runtime::ActorId, runtime::LifecycleSession::kClientSlotCount> boundActors_;
-		std::array<edict_t *, runtime::LifecycleSession::kClientSlotCount> boundEntities_;
-	};
+	runtime::LifecycleSession &lifecycle_;
+	runtime::ActorRegistry &registry_;
+	runtime::CommandQueue queue_;
+	enginefuncs_t *engineFunctions_;
+	RuntimeProfiler *profiler_;
+	std::array<runtime::ActorId, runtime::LifecycleSession::kClientSlotCount> boundActors_;
+	std::array<edict_t *, runtime::LifecycleSession::kClientSlotCount> boundEntities_;
+};
 }
 }
 

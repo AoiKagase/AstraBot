@@ -59,8 +59,7 @@ struct RadioIntent
 	RadioPriority priority;
 	std::uint16_t messageCode;
 	TeamRole recipientTeam;
-	std::array<world::ActorKey, RadioLimits::kMaximumRecipients>
-		recipients;
+	std::array<world::ActorKey, RadioLimits::kMaximumRecipients> recipients;
 	std::size_t recipientCount;
 
 	bool isValid() const;
@@ -83,23 +82,15 @@ class RadioController
 public:
 	RadioController();
 	RadioController(const world::ActorKey &actor, TeamRole team);
-	RadioController(
-		const world::ActorKey &actor,
-		TeamRole team,
-		const RadioConfig &config);
+	RadioController(const world::ActorKey &actor, TeamRole team, const RadioConfig &config);
 
-	RadioResult compose(
-		const TeamReport &report,
-		const world::FrameIdentity &frame,
-		RadioIntent *intent);
+	RadioResult compose(const TeamReport &report, const world::FrameIdentity &frame, RadioIntent *intent);
 
 	const world::ActorKey &actor() const;
 	TeamRole team() const;
 
 private:
-	static bool sameRound(
-		const world::FrameIdentity &left,
-		const world::FrameIdentity &right);
+	static bool sameRound(const world::FrameIdentity &left, const world::FrameIdentity &right);
 	static RadioCategory categoryFor(ReportKind kind);
 	static RadioPriority priorityFor(ReportKind kind);
 	static bool isValidCategory(RadioCategory category);
@@ -108,8 +99,7 @@ private:
 	RadioConfig config_;
 	world::ActorKey actor_;
 	TeamRole team_;
-	std::array<std::uint32_t, world::WorldLimits::kMaximumActors>
-		reporterGenerations_;
+	std::array<std::uint32_t, world::WorldLimits::kMaximumActors> reporterGenerations_;
 	std::uint32_t lastSentTick_;
 	bool initialized_;
 	bool hasLastSent_;

@@ -18,7 +18,8 @@ enum class BotTimingEvent
 
 struct BotTimingStep
 {
-	std::array<BotTimingEvent, 4U> events;
+	static constexpr unsigned kMaximumEventsPerStep = 4U;
+	std::array<BotTimingEvent, kMaximumEventsPerStep> events;
 	std::uint8_t eventCount;
 };
 

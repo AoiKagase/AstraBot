@@ -34,8 +34,7 @@ astrabot::nav::NavPlace place(std::uint16_t id, const char *name)
 	result.id = id;
 	const std::size_t length = std::strlen(name);
 	const std::size_t copyLength =
-		length < astrabot::nav::NavPlace::kNameCapacity ?
-		length : astrabot::nav::NavPlace::kNameCapacity;
+		length < astrabot::nav::NavPlace::kNameCapacity ? length : astrabot::nav::NavPlace::kNameCapacity;
 	for (std::size_t index = 0U; index < copyLength; ++index)
 	{
 		result.name[index] = name[index];
@@ -54,18 +53,16 @@ int main()
 
 	NavDocument document;
 	astrabot::nav::NavSourceIdentity identity = {5U, 1234U, 0xABCD1234U};
-	if (!check(document.setSourceIdentity(identity) == NavModelResult::Accepted,
-			"source identity is accepted"))
+	if (!check(document.setSourceIdentity(identity) == NavModelResult::Accepted, "source identity is accepted"))
 	{
 		return 1;
 	}
-	if (!check(document.addPlace(place(1U, "Bombsite A")) == NavModelResult::Accepted,
-			"place is accepted"))
+	if (!check(document.addPlace(place(1U, "Bombsite A")) == NavModelResult::Accepted, "place is accepted"))
 	{
 		return 1;
 	}
-	if (!check(document.addPlace(place(1U, "Duplicate")) ==
-			NavModelResult::DuplicatePlace, "duplicate places are rejected"))
+	if (!check(document.addPlace(place(1U, "Duplicate")) == NavModelResult::DuplicatePlace,
+			"duplicate places are rejected"))
 	{
 		return 1;
 	}
@@ -76,20 +73,19 @@ int main()
 	first.approaches.push_back({2U, 0U, 2U, 7U, 4U});
 	first.encounters.push_back({1U, 1U, 2U, 3U, {{7U, 0.5f}}});
 	astrabot::nav::NavArea second = area(2U);
-	if (!check(document.addArea(first) == NavModelResult::Accepted &&
-			document.addArea(second) == NavModelResult::Accepted,
+	if (!check(
+			document.addArea(first) == NavModelResult::Accepted && document.addArea(second) == NavModelResult::Accepted,
 			"valid areas are accepted"))
 	{
 		return 1;
 	}
-	if (!check(document.validate() == NavModelResult::Accepted &&
-			document.areaCount() == 2U && document.findArea(2U) != nullptr,
+	if (!check(document.validate() == NavModelResult::Accepted && document.areaCount() == 2U &&
+				document.findArea(2U) != nullptr,
 			"valid geometry and directed references validate"))
 	{
 		return 1;
 	}
-	if (!check(document.addArea(second) == NavModelResult::DuplicateArea,
-			"duplicate area IDs are rejected"))
+	if (!check(document.addArea(second) == NavModelResult::DuplicateArea, "duplicate area IDs are rejected"))
 	{
 		return 1;
 	}
@@ -99,8 +95,8 @@ int main()
 	astrabot::nav::NavArea secondSpotArea = area(21U);
 	secondSpotArea.hidingSpots.push_back({1U, {72.0f, 8.0f, 0.0f}, 0U});
 	if (!check(duplicateSpotDocument.addArea(firstSpotArea) == NavModelResult::Accepted &&
-			duplicateSpotDocument.addArea(secondSpotArea) == NavModelResult::Accepted &&
-			duplicateSpotDocument.validate() == NavModelResult::DuplicateHidingSpot,
+				duplicateSpotDocument.addArea(secondSpotArea) == NavModelResult::Accepted &&
+				duplicateSpotDocument.validate() == NavModelResult::DuplicateHidingSpot,
 			"hiding spot IDs are globally unique"))
 	{
 		return 1;
@@ -108,27 +104,22 @@ int main()
 
 	astrabot::nav::NavArea degenerate = area(3U);
 	degenerate.extent.hi.x = degenerate.extent.lo.x;
-	if (!check(document.addArea(degenerate) == NavModelResult::InvalidGeometry,
-			"degenerate extents are rejected"))
+	if (!check(document.addArea(degenerate) == NavModelResult::InvalidGeometry, "degenerate extents are rejected"))
 	{
 		return 1;
 	}
 	astrabot::nav::NavArea nonFinite = area(4U);
 	nonFinite.extent.lo.z = std::nanf("");
-	if (!check(document.addArea(nonFinite) == NavModelResult::InvalidGeometry,
-			"non-finite geometry is rejected"))
+	if (!check(document.addArea(nonFinite) == NavModelResult::InvalidGeometry, "non-finite geometry is rejected"))
 	{
 		return 1;
 	}
 	astrabot::nav::NavArea tooManyConnections = area(5U);
-	for (std::size_t index = 0U;
-			index <= astrabot::nav::NavLimits::kMaximumConnectionsPerDirection;
-			++index)
+	for (std::size_t index = 0U; index <= astrabot::nav::NavLimits::kMaximumConnectionsPerDirection; ++index)
 	{
 		tooManyConnections.connections[0U].push_back(100U + index);
 	}
-	if (!check(document.addArea(tooManyConnections) == NavModelResult::ResourceLimit,
-			"connection limits are enforced"))
+	if (!check(document.addArea(tooManyConnections) == NavModelResult::ResourceLimit, "connection limits are enforced"))
 	{
 		return 1;
 	}
@@ -136,42 +127,44 @@ int main()
 	NavDocument invalidReferenceDocument;
 	astrabot::nav::NavArea invalidReference = area(10U);
 	invalidReference.connections[0U].push_back(99U);
-	if (!check(invalidReferenceDocument.addArea(invalidReference) ==
-			NavModelResult::Accepted &&
-			invalidReferenceDocument.validate() == NavModelResult::InvalidReference,
+	if (!check(invalidReferenceDocument.addArea(invalidReference) == NavModelResult::Accepted &&
+				invalidReferenceDocument.validate() == NavModelResult::InvalidReference,
 			"unknown directed references fail validation"))
 	{
 		return 1;
 	}
-	if (!check(NavDocument().validate() == NavModelResult::EmptyDocument,
-			"empty documents are explicit"))
+	if (!check(NavDocument().validate() == NavModelResult::EmptyDocument, "empty documents are explicit"))
 	{
 		return 1;
 	}
 
 	NavDocument copied = document;
-	if (!check(copied.areaCount() == document.areaCount() &&
-			copied.findArea(1U) != nullptr,
+	if (!check(copied.areaCount() == document.areaCount() && copied.findArea(1U) != nullptr,
 			"Nav documents can be handed off by value"))
 	{
 		return 1;
 	}
 	NavDocument sparse;
 	for (const auto id : {900U, 2U, 65000U, 17U})
-		if (!check(sparse.addArea(area(id)) == NavModelResult::Accepted,
-			"sparse unordered IDs keep file insertion order")) return 1;
+		if (!check(
+				sparse.addArea(area(id)) == NavModelResult::Accepted, "sparse unordered IDs keep file insertion order"))
+			return 1;
 	NavDocument independent = sparse;
 	for (std::uint32_t id = 1000U; id < 1800U; ++id)
-		if (independent.addArea(area(id)) != NavModelResult::Accepted) return 1;
+		if (independent.addArea(area(id)) != NavModelResult::Accepted)
+			return 1;
 	if (!check(independent.findArea(900U) != nullptr && independent.findArea(65000U) != nullptr &&
-		independent.findArea(1799U) != nullptr && sparse.findArea(1799U) == nullptr &&
-		independent.areas()[0].id == 900U && independent.areas()[1].id == 2U &&
-		independent.findArea(0U) == nullptr && independent.findArea(999999U) == nullptr,
-		"area lookup survives copies and vector growth without reordering or cross-document pointers")) return 1;
-	NavDocument assigned; assigned = independent;
+				independent.findArea(1799U) != nullptr && sparse.findArea(1799U) == nullptr &&
+				independent.areas()[0].id == 900U && independent.areas()[1].id == 2U &&
+				independent.findArea(0U) == nullptr && independent.findArea(999999U) == nullptr,
+			"area lookup survives copies and vector growth without reordering or cross-document pointers"))
+		return 1;
+	NavDocument assigned;
+	assigned = independent;
 	independent = NavDocument();
 	if (!check(assigned.findArea(17U) != nullptr && assigned.findArea(1799U) != nullptr &&
-		independent.findArea(17U) == nullptr,
-		"assigned lookup owns its values independently of source reset")) return 1;
+				independent.findArea(17U) == nullptr,
+			"assigned lookup owns its values independently of source reset"))
+		return 1;
 	return 0;
 }

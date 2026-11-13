@@ -1,0 +1,190 @@
+Internal ctest changing into directory: /mnt/h/sourcecode/003.Game/amxmodx/AstraBot/build-parity-linux-x86
+Test project /mnt/h/sourcecode/003.Game/amxmodx/AstraBot/build-parity-linux-x86
+      Start  1: astrabot_plant_attempt
+ 1/89 Test  #1: astrabot_plant_attempt ...........................   Passed    0.01 sec
+      Start  2: astrabot_public_observation
+ 2/89 Test  #2: astrabot_public_observation ......................   Passed    0.02 sec
+      Start  3: astrabot_vanilla_management
+ 3/89 Test  #3: astrabot_vanilla_management ......................   Passed    0.01 sec
+      Start  4: astrabot_vanilla_behavior
+ 4/89 Test  #4: astrabot_vanilla_behavior ........................   Passed    0.01 sec
+      Start  5: astrabot_weapon_equipment
+ 5/89 Test  #5: astrabot_weapon_equipment ........................   Passed    0.01 sec
+      Start  6: astrabot_combat_policy
+ 6/89 Test  #6: astrabot_combat_policy ...........................***Failed    0.01 sec
+weapon/skill/recoil chest policy matches reference thresholds
+
+      Start  7: astrabot_literal_precision
+ 7/89 Test  #7: astrabot_literal_precision .......................   Passed    0.00 sec
+      Start  8: astrabot_weapon_actions
+ 8/89 Test  #8: astrabot_weapon_actions ..........................   Passed    0.01 sec
+      Start  9: astrabot_scenario_behavior
+ 9/89 Test  #9: astrabot_scenario_behavior .......................   Passed    0.07 sec
+      Start 10: astrabot_public_bomb_clock
+10/89 Test #10: astrabot_public_bomb_clock .......................   Passed    0.00 sec
+      Start 11: astrabot_bomb_navigation
+11/89 Test #11: astrabot_bomb_navigation .........................   Passed    0.01 sec
+      Start 12: astrabot_outgoing_radio
+12/89 Test #12: astrabot_outgoing_radio ..........................   Passed    0.01 sec
+      Start 13: astrabot_teamwork_policy
+13/89 Test #13: astrabot_teamwork_policy .........................   Passed    0.01 sec
+      Start 14: astrabot_nav_danger_memory
+14/89 Test #14: astrabot_nav_danger_memory .......................   Passed    0.01 sec
+      Start 15: astrabot_grenade_trajectory
+15/89 Test #15: astrabot_grenade_trajectory ......................   Passed    0.00 sec
+      Start 16: astrabot_build_identity
+16/89 Test #16: astrabot_build_identity ..........................   Passed    0.00 sec
+      Start 17: astrabot_lifecycle_generation
+17/89 Test #17: astrabot_lifecycle_generation ....................   Passed    0.00 sec
+      Start 18: astrabot_native_bot_guard
+18/89 Test #18: astrabot_native_bot_guard ........................   Passed    0.00 sec
+      Start 19: astrabot_actor_registry
+19/89 Test #19: astrabot_actor_registry ..........................   Passed    0.00 sec
+      Start 20: astrabot_command_queue
+20/89 Test #20: astrabot_command_queue ...........................   Passed    0.01 sec
+      Start 21: astrabot_join_controller
+21/89 Test #21: astrabot_join_controller .........................   Passed    0.01 sec
+      Start 22: astrabot_nav_roam_controller
+22/89 Test #22: astrabot_nav_roam_controller .....................   Passed    0.03 sec
+      Start 23: astrabot_player_avoidance
+23/89 Test #23: astrabot_player_avoidance ........................   Passed    0.00 sec
+      Start 24: astrabot_nav_legacy_limit
+24/89 Test #24: astrabot_nav_legacy_limit ........................   Passed    0.01 sec
+      Start 25: astrabot_compat_command_registry
+25/89 Test #25: astrabot_compat_command_registry .................   Passed    0.00 sec
+      Start 26: astrabot_compat_cvar_state
+26/89 Test #26: astrabot_compat_cvar_state .......................   Passed    0.00 sec
+      Start 27: astrabot_observation_model
+27/89 Test #27: astrabot_observation_model .......................   Passed    0.01 sec
+      Start 28: astrabot_compat_state_machine
+28/89 Test #28: astrabot_compat_state_machine ....................   Passed    0.01 sec
+      Start 29: astrabot_profile_catalog
+29/89 Test #29: astrabot_profile_catalog .........................   Passed    0.01 sec
+      Start 30: astrabot_profile_loader
+30/89 Test #30: astrabot_profile_loader ..........................   Passed    0.01 sec
+      Start 31: astrabot_bot_configuration
+31/89 Test #31: astrabot_bot_configuration .......................   Passed    0.00 sec
+      Start 32: astrabot_runtime_mode_policy
+32/89 Test #32: astrabot_runtime_mode_policy .....................   Passed    0.00 sec
+      Start 33: astrabot_runtime_timing
+33/89 Test #33: astrabot_runtime_timing ..........................   Passed    0.01 sec
+      Start 34: astrabot_compatibility_rng
+34/89 Test #34: astrabot_compatibility_rng .......................   Passed    0.01 sec
+      Start 35: astrabot_engine_random_source
+35/89 Test #35: astrabot_engine_random_source ....................   Passed    0.01 sec
+      Start 36: astrabot_nav_model
+36/89 Test #36: astrabot_nav_model ...............................   Passed    0.01 sec
+      Start 37: astrabot_legacy_nav_reader
+37/89 Test #37: astrabot_legacy_nav_reader .......................   Passed    0.01 sec
+      Start 38: astrabot_nav_loader
+38/89 Test #38: astrabot_nav_loader ..............................   Passed    0.15 sec
+      Start 39: astrabot_nav_external_performance
+39/89 Test #39: astrabot_nav_external_performance ................   Passed    0.47 sec
+      Start 40: astrabot_nav_diagnostics
+40/89 Test #40: astrabot_nav_diagnostics .........................   Passed    0.03 sec
+      Start 41: astrabot_nav_snapshot
+41/89 Test #41: astrabot_nav_snapshot ............................   Passed    0.01 sec
+      Start 42: astrabot_nav_query
+42/89 Test #42: astrabot_nav_query ...............................   Passed    0.01 sec
+      Start 43: astrabot_locomotion
+43/89 Test #43: astrabot_locomotion ..............................   Passed    0.01 sec
+      Start 44: astrabot_jump_drop
+44/89 Test #44: astrabot_jump_drop ...............................   Passed    0.01 sec
+      Start 45: astrabot_special_traversal
+45/89 Test #45: astrabot_special_traversal .......................   Passed    0.01 sec
+      Start 46: astrabot_world_snapshot
+46/89 Test #46: astrabot_world_snapshot ..........................   Passed    0.01 sec
+      Start 47: astrabot_perception
+47/89 Test #47: astrabot_perception ..............................   Passed    0.01 sec
+      Start 48: astrabot_behavior_state
+48/89 Test #48: astrabot_behavior_state ..........................   Passed    0.01 sec
+      Start 49: astrabot_objective_proposal
+49/89 Test #49: astrabot_objective_proposal ......................   Passed    0.00 sec
+      Start 50: astrabot_weapon_state
+50/89 Test #50: astrabot_weapon_state ............................   Passed    0.00 sec
+      Start 51: astrabot_combat_intent
+51/89 Test #51: astrabot_combat_intent ...........................   Passed    0.01 sec
+      Start 52: astrabot_objective_state
+52/89 Test #52: astrabot_objective_state .........................   Passed    0.01 sec
+      Start 53: astrabot_round_objectives
+53/89 Test #53: astrabot_round_objectives ........................   Passed    0.01 sec
+      Start 54: astrabot_round_objective_coordinator
+54/89 Test #54: astrabot_round_objective_coordinator .............   Passed    0.02 sec
+      Start 55: astrabot_team_report
+55/89 Test #55: astrabot_team_report .............................   Passed    0.01 sec
+      Start 56: astrabot_radio_intent
+56/89 Test #56: astrabot_radio_intent ............................   Passed    0.01 sec
+      Start 57: astrabot_map_fingerprint
+57/89 Test #57: astrabot_map_fingerprint .........................   Passed    0.00 sec
+      Start 58: astrabot_movement_physics
+58/89 Test #58: astrabot_movement_physics ........................   Passed    0.00 sec
+      Start 59: astrabot_jump_crouch_sequencer
+59/89 Test #59: astrabot_jump_crouch_sequencer ...................   Passed    0.00 sec
+      Start 60: astrabot_metamod_abi
+60/89 Test #60: astrabot_metamod_abi .............................   Passed    0.02 sec
+      Start 61: astrabot_metamod_hooks
+61/89 Test #61: astrabot_metamod_hooks ...........................   Passed    0.04 sec
+      Start 62: astrabot_fake_client_manager
+62/89 Test #62: astrabot_fake_client_manager .....................   Passed    0.01 sec
+      Start 63: astrabot_input_dispatcher
+63/89 Test #63: astrabot_input_dispatcher ........................   Passed    0.01 sec
+      Start 64: astrabot_fake_client_isolation
+64/89 Test #64: astrabot_fake_client_isolation ...................   Passed    0.04 sec
+      Start 65: astrabot_compat_surface
+65/89 Test #65: astrabot_compat_surface ..........................   Passed    0.01 sec
+      Start 66: astrabot_compat_actor_command
+66/89 Test #66: astrabot_compat_actor_command ....................   Passed    0.50 sec
+      Start 67: astrabot_observation_adapter
+67/89 Test #67: astrabot_observation_adapter .....................   Passed    0.01 sec
+      Start 68: astrabot_perception_adapter
+68/89 Test #68: astrabot_perception_adapter ......................   Passed    0.01 sec
+      Start 69: astrabot_observation_trace
+69/89 Test #69: astrabot_observation_trace .......................   Passed    0.01 sec
+      Start 70: astrabot_action_adapter
+70/89 Test #70: astrabot_action_adapter ..........................   Passed    0.00 sec
+      Start 71: astrabot_movement_execution_gate
+71/89 Test #71: astrabot_movement_execution_gate .................   Passed    0.01 sec
+      Start 72: astrabot_runtime_profiler
+72/89 Test #72: astrabot_runtime_profiler ........................   Passed    0.01 sec
+      Start 73: astrabot_regamedll_observation_provider
+73/89 Test #73: astrabot_regamedll_observation_provider ..........   Passed    0.01 sec
+      Start 74: astrabot_source_layout_contract
+74/89 Test #74: astrabot_source_layout_contract ..................   Passed    0.64 sec
+      Start 75: astrabot_runtime_ports_contract
+75/89 Test #75: astrabot_runtime_ports_contract ..................   Passed    1.31 sec
+      Start 76: astrabot_runtime_ownership_contract
+76/89 Test #76: astrabot_runtime_ownership_contract ..............   Passed    0.37 sec
+      Start 77: astrabot_runtime_movement_integration_contract
+77/89 Test #77: astrabot_runtime_movement_integration_contract ...   Passed    0.38 sec
+      Start 78: astrabot_runtime_behavior_contract
+78/89 Test #78: astrabot_runtime_behavior_contract ...............   Passed    0.41 sec
+      Start 79: astrabot_runtime_navigation_contract
+79/89 Test #79: astrabot_runtime_navigation_contract .............   Passed    0.04 sec
+      Start 80: astrabot_p076_performance_contract
+80/89 Test #80: astrabot_p076_performance_contract ...............   Passed    3.58 sec
+      Start 81: astrabot_runtime_characterization
+81/89 Test #81: astrabot_runtime_characterization ................   Passed    1.78 sec
+      Start 82: astrabot_runtime_characterization_checker
+82/89 Test #82: astrabot_runtime_characterization_checker ........   Passed    0.35 sec
+      Start 83: astrabot_combat_target_log
+83/89 Test #83: astrabot_combat_target_log .......................   Passed    0.10 sec
+      Start 84: astrabot_bomb_guard_look
+84/89 Test #84: astrabot_bomb_guard_look .........................   Passed    0.08 sec
+      Start 85: astrabot_weapon_switch_runtime
+85/89 Test #85: astrabot_weapon_switch_runtime ...................   Passed    0.05 sec
+      Start 86: astrabot_actor_identity_runtime
+86/89 Test #86: astrabot_actor_identity_runtime ..................   Passed    0.08 sec
+      Start 87: astrabot_runtime_team_resolution
+87/89 Test #87: astrabot_runtime_team_resolution .................   Passed    0.07 sec
+      Start 88: astrabot_runtime_command_scenarios
+88/89 Test #88: astrabot_runtime_command_scenarios ...............   Passed    0.01 sec
+      Start 89: astrabot_runtime_architecture_checker
+89/89 Test #89: astrabot_runtime_architecture_checker ............   Passed    0.11 sec
+
+99% tests passed, 1 tests failed out of 89
+
+Total Test time (real) =  11.54 sec
+
+The following tests FAILED:
+	  6 - astrabot_combat_policy (Failed)
+Errors while running CTest

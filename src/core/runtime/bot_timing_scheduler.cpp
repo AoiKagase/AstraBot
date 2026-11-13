@@ -20,10 +20,7 @@ constexpr float BotTimingScheduler::kCommandInterval;
 constexpr float BotTimingScheduler::kFullUpdateInterval;
 
 BotTimingScheduler::BotTimingScheduler()
-	: nextCommandDeadline_(0.0f),
-	  nextFullUpdateDeadline_(0.0f),
-	  previousCommandTime_(0.0f),
-	  initialized_(false)
+	: nextCommandDeadline_(0.0f), nextFullUpdateDeadline_(0.0f), previousCommandTime_(0.0f), initialized_(false)
 {
 }
 
@@ -59,11 +56,12 @@ BotTimingStep BotTimingScheduler::advance(float currentTime)
 
 std::uint8_t BotTimingScheduler::consumeCommandMsec(float currentTime)
 {
-	int milliseconds = static_cast<int>(
-		(currentTime - previousCommandTime_) * 1000.0f);
-	if (milliseconds > 255)
+	constexpr float kMillisecondsPerSecond = 1000.0f;
+	constexpr int kMaximumCommandMilliseconds = 255;
+	int milliseconds = static_cast<int>((currentTime - previousCommandTime_) * kMillisecondsPerSecond);
+	if (milliseconds > kMaximumCommandMilliseconds)
 	{
-		milliseconds = 255;
+		milliseconds = kMaximumCommandMilliseconds;
 	}
 	previousCommandTime_ = currentTime;
 	return static_cast<std::uint8_t>(milliseconds);

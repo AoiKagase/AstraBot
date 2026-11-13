@@ -24,7 +24,8 @@ int main()
 	const RuntimeModePolicy compatibility(RuntimeMode::Compatibility);
 	if (!check(!compatibility.allowsEnhancedDecisionOverrides(), "compatibility blocks enhanced decisions") ||
 		!check(!compatibility.allowsAdaptiveRouteWeighting(), "compatibility blocks adaptive routes") ||
-		!check(!compatibility.allowsOpponentProfileDecisionChanges(), "compatibility blocks opponent profile changes") ||
+		!check(
+			!compatibility.allowsOpponentProfileDecisionChanges(), "compatibility blocks opponent profile changes") ||
 		!check(!compatibility.allowsTacticalTeamOverrides(), "compatibility blocks tactical team overrides") ||
 		!check(!compatibility.allowsLearningSideEffects(), "compatibility blocks learning side effects"))
 	{

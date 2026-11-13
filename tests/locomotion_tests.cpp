@@ -17,11 +17,7 @@ bool check(bool condition, const char *description)
 	return false;
 }
 
-astrabot::nav::NavArea area(
-	astrabot::nav::AreaId id,
-	float lowX,
-	float highX,
-	float floorZ)
+astrabot::nav::NavArea area(astrabot::nav::AreaId id, float lowX, float highX, float floorZ)
 {
 	astrabot::nav::NavArea result = {};
 	result.id = id;
@@ -32,9 +28,7 @@ astrabot::nav::NavArea area(
 	return result;
 }
 
-astrabot::nav::NavSnapshot snapshotFor(
-	astrabot::nav::NavDocument *document,
-	std::uint32_t mapGeneration)
+astrabot::nav::NavSnapshot snapshotFor(astrabot::nav::NavDocument *document, std::uint32_t mapGeneration)
 {
 	astrabot::nav::NavSnapshotPublisher publisher;
 	publisher.publish(document, mapGeneration);
@@ -53,8 +47,7 @@ astrabot::nav::NavDocument routeDocument(float destinationFloor)
 	return document;
 }
 
-astrabot::nav::NavCorridor corridorFor(
-	const astrabot::nav::NavSnapshot &snapshot)
+astrabot::nav::NavCorridor corridorFor(const astrabot::nav::NavSnapshot &snapshot)
 {
 	astrabot::nav::NavQuery query(snapshot);
 	astrabot::nav::NavCorridor corridor = {};
@@ -64,14 +57,7 @@ astrabot::nav::NavCorridor corridorFor(
 
 astrabot::nav::LocomotionConfig config()
 {
-	return {
-		32.0f,
-		1.0f,
-		1.0f,
-		16.0f,
-		100.0f,
-		2U
-	};
+	return {32.0f, 1.0f, 1.0f, 16.0f, 100.0f, 2U};
 }
 
 bool testWalkAndStepIntent()
@@ -79,38 +65,25 @@ bool testWalkAndStepIntent()
 	astrabot::nav::NavDocument document = routeDocument(8.0f);
 	const astrabot::nav::NavSnapshot snapshot = snapshotFor(&document, 1U);
 	astrabot::nav::LocomotionController controller(config());
-	if (!check(controller.start(corridorFor(snapshot)) ==
-			astrabot::nav::LocomotionResult::Started,
+	if (!check(controller.start(corridorFor(snapshot)) == astrabot::nav::LocomotionResult::Started,
 			"locomotion accepts a valid corridor"))
 	{
 		return false;
 	}
 
 	astrabot::nav::LocomotionObservation observation = {
-		{32.0f, 32.0f, 0.0f},
-		64.0f,
-		64.0f,
-		{0.0f, 0.0f, 0.0f},
-		false,
-		false,
-		false
-	};
+		{32.0f, 32.0f, 0.0f}, 64.0f, 64.0f, {0.0f, 0.0f, 0.0f}, false, false, false};
 	astrabot::nav::LocomotionIntent intent = {};
-	if (!check(controller.update(snapshot, observation, &intent) ==
-			astrabot::nav::LocomotionResult::IntentReady &&
-			intent.currentArea == 1U &&
-			intent.targetArea == 2U &&
-			intent.posture == astrabot::nav::LocomotionPosture::Standing &&
-			intent.stepUp &&
-			intent.direction.x > 0.9f &&
-			intent.speed == 100.0f,
+	if (!check(controller.update(snapshot, observation, &intent) == astrabot::nav::LocomotionResult::IntentReady &&
+				intent.currentArea == 1U && intent.targetArea == 2U &&
+				intent.posture == astrabot::nav::LocomotionPosture::Standing && intent.stepUp &&
+				intent.direction.x > 0.9f && intent.speed == 100.0f,
 			"walk step intent is bounded and directed"))
 	{
 		return false;
 	}
 
-	return check(controller.isActive(),
-		"intent emission does not claim movement completion");
+	return check(controller.isActive(), "intent emission does not claim movement completion");
 }
 
 bool testCrouchSelection()
@@ -120,19 +93,10 @@ bool testCrouchSelection()
 	astrabot::nav::LocomotionController controller(config());
 	controller.start(corridorFor(snapshot));
 	const astrabot::nav::LocomotionObservation observation = {
-		{16.0f, 32.0f, 0.0f},
-		24.0f,
-		64.0f,
-		{0.0f, 0.0f, 0.0f},
-		false,
-		false,
-		false
-	};
+		{16.0f, 32.0f, 0.0f}, 24.0f, 64.0f, {0.0f, 0.0f, 0.0f}, false, false, false};
 	astrabot::nav::LocomotionIntent intent = {};
-	return check(controller.update(snapshot, observation, &intent) ==
-			astrabot::nav::LocomotionResult::IntentReady &&
-			intent.posture == astrabot::nav::LocomotionPosture::Crouching &&
-			!intent.stepUp,
+	return check(controller.update(snapshot, observation, &intent) == astrabot::nav::LocomotionResult::IntentReady &&
+			intent.posture == astrabot::nav::LocomotionPosture::Crouching && !intent.stepUp,
 		"insufficient standing clearance selects crouch");
 }
 
@@ -156,8 +120,9 @@ bool testTimedStuckMonitorUsesAverageSpeed()
 	for (int sample = 0; sample < 5; ++sample)
 	{
 		observation.observedAt = sample * 0.1f;
-		if (!check(controller.update(snapshot, observation, &intent) ==
-			LocomotionResult::IntentReady, "average monitor waits for five samples")) return false;
+		if (!check(controller.update(snapshot, observation, &intent) == LocomotionResult::IntentReady,
+				"average monitor waits for five samples"))
+			return false;
 	}
 	observation.observedAt = 0.5f;
 	return check(controller.update(snapshot, observation, &intent) == LocomotionResult::Stuck,
@@ -167,52 +132,34 @@ bool testTimedStuckMonitorUsesAverageSpeed()
 bool testStepAndStuckRecovery()
 {
 	astrabot::nav::NavDocument highStepDocument = routeDocument(64.0f);
-	const astrabot::nav::NavSnapshot highStepSnapshot =
-		snapshotFor(&highStepDocument, 1U);
+	const astrabot::nav::NavSnapshot highStepSnapshot = snapshotFor(&highStepDocument, 1U);
 	astrabot::nav::LocomotionConfig stepConfig = config();
 	stepConfig.maximumStepHeight = 16.0f;
 	astrabot::nav::LocomotionController stepController(stepConfig);
 	stepController.start(corridorFor(highStepSnapshot));
 	astrabot::nav::LocomotionObservation observation = {
-		{32.0f, 32.0f, 0.0f},
-		64.0f,
-		64.0f,
-		{0.0f, 0.0f, 0.0f},
-		false,
-		false,
-		false
-	};
+		{32.0f, 32.0f, 0.0f}, 64.0f, 64.0f, {0.0f, 0.0f, 0.0f}, false, false, false};
 	astrabot::nav::LocomotionIntent intent = {};
-	if (!check(stepController.update(
-			highStepSnapshot,
-			observation,
-			&intent) == astrabot::nav::LocomotionResult::StepTooHigh &&
-			!stepController.isActive(),
+	if (!check(stepController.update(highStepSnapshot, observation, &intent) ==
+					astrabot::nav::LocomotionResult::StepTooHigh &&
+				!stepController.isActive(),
 			"excessive step requests recovery"))
 	{
 		return false;
 	}
 
 	astrabot::nav::NavDocument stuckDocument = routeDocument(0.0f);
-	const astrabot::nav::NavSnapshot stuckSnapshot =
-		snapshotFor(&stuckDocument, 1U);
+	const astrabot::nav::NavSnapshot stuckSnapshot = snapshotFor(&stuckDocument, 1U);
 	astrabot::nav::LocomotionController stuckController(config());
 	stuckController.start(corridorFor(stuckSnapshot));
 	observation.position = {16.0f, 32.0f, 0.0f};
 	observation.grounded = true;
-	if (!check(stuckController.update(
-			stuckSnapshot,
-			observation,
-			&intent) == astrabot::nav::LocomotionResult::IntentReady &&
-			stuckController.update(
-				stuckSnapshot,
-				observation,
-				&intent) == astrabot::nav::LocomotionResult::IntentReady &&
-			stuckController.update(
-				stuckSnapshot,
-				observation,
-				&intent) == astrabot::nav::LocomotionResult::Stuck &&
-			!stuckController.isActive(),
+	if (!check(stuckController.update(stuckSnapshot, observation, &intent) ==
+					astrabot::nav::LocomotionResult::IntentReady &&
+				stuckController.update(stuckSnapshot, observation, &intent) ==
+					astrabot::nav::LocomotionResult::IntentReady &&
+				stuckController.update(stuckSnapshot, observation, &intent) == astrabot::nav::LocomotionResult::Stuck &&
+				!stuckController.isActive(),
 			"unchanged position reaches bounded stuck recovery"))
 	{
 		return false;
@@ -228,9 +175,8 @@ bool testTerrainDiscontinuityRequestsJump()
 	astrabot::nav::LocomotionConfig jumpConfig = config();
 	jumpConfig.maximumStepHeight = 16.0f;
 	astrabot::nav::LocomotionController controller(jumpConfig);
-	if (!check(controller.start(corridorFor(snapshot)) ==
-				astrabot::nav::LocomotionResult::Started,
-				"terrain discontinuity jump controller starts"))
+	if (!check(controller.start(corridorFor(snapshot)) == astrabot::nav::LocomotionResult::Started,
+			"terrain discontinuity jump controller starts"))
 	{
 		return false;
 	}
@@ -240,17 +186,15 @@ bool testTerrainDiscontinuityRequestsJump()
 	observation.crouchingClearance = 36.0f;
 	observation.grounded = true;
 	astrabot::nav::LocomotionIntent intent = {};
-	if (!check(controller.update(snapshot, observation, &intent) ==
-			astrabot::nav::LocomotionResult::IntentReady &&
-			intent.traversal == astrabot::nav::TraversalAction::Jump,
+	if (!check(controller.update(snapshot, observation, &intent) == astrabot::nav::LocomotionResult::IntentReady &&
+				intent.traversal == astrabot::nav::TraversalAction::Jump,
 			"bounded terrain discontinuity requests Jump before StepTooHigh"))
 	{
 		return false;
 	}
 
-	if (!check(controller.update(snapshot, observation, &intent) ==
-			astrabot::nav::LocomotionResult::IntentReady &&
-			intent.traversal == astrabot::nav::TraversalAction::Walk,
+	if (!check(controller.update(snapshot, observation, &intent) == astrabot::nav::LocomotionResult::IntentReady &&
+				intent.traversal == astrabot::nav::TraversalAction::Walk,
 			"the same terrain transition does not hold Jump after launch"))
 	{
 		return false;
@@ -258,10 +202,9 @@ bool testTerrainDiscontinuityRequestsJump()
 
 	observation.position.x = 17.0f;
 	observation.grounded = false;
-	return check(controller.update(snapshot, observation, &intent) ==
-			astrabot::nav::LocomotionResult::IntentReady &&
+	return check(controller.update(snapshot, observation, &intent) == astrabot::nav::LocomotionResult::IntentReady &&
 			intent.traversal == astrabot::nav::TraversalAction::Walk,
-			"an airborne terrain jump keeps forward movement without re-pressing Jump");
+		"an airborne terrain jump keeps forward movement without re-pressing Jump");
 }
 
 bool testContinuousRampUsesPortalTransitionHeight()
@@ -282,9 +225,8 @@ bool testContinuousRampUsesPortalTransitionHeight()
 	astrabot::nav::LocomotionConfig locomotionConfig = config();
 	locomotionConfig.maximumStepHeight = 16.0f;
 	astrabot::nav::LocomotionController controller(locomotionConfig);
-	if (!check(controller.start(corridorFor(snapshot)) ==
-				astrabot::nav::LocomotionResult::Started,
-				"continuous ramp controller starts"))
+	if (!check(controller.start(corridorFor(snapshot)) == astrabot::nav::LocomotionResult::Started,
+			"continuous ramp controller starts"))
 	{
 		return false;
 	}
@@ -294,11 +236,9 @@ bool testContinuousRampUsesPortalTransitionHeight()
 	observation.crouchingClearance = 36.0f;
 	observation.grounded = true;
 	astrabot::nav::LocomotionIntent intent = {};
-	return check(controller.update(snapshot, observation, &intent) ==
-				astrabot::nav::LocomotionResult::IntentReady &&
-				intent.targetArea == 2U && !intent.stepUp &&
-				intent.traversal == astrabot::nav::TraversalAction::Walk,
-				"continuous ramp does not become a center-height step");
+	return check(controller.update(snapshot, observation, &intent) == astrabot::nav::LocomotionResult::IntentReady &&
+			intent.targetArea == 2U && !intent.stepUp && intent.traversal == astrabot::nav::TraversalAction::Walk,
+		"continuous ramp does not become a center-height step");
 }
 
 bool testLateralJitterDoesNotResetForwardProgress()
@@ -308,9 +248,8 @@ bool testLateralJitterDoesNotResetForwardProgress()
 	astrabot::nav::LocomotionConfig jitterConfig = config();
 	jitterConfig.stuckFrameLimit = 2U;
 	astrabot::nav::LocomotionController controller(jitterConfig);
-	if (!check(controller.start(corridorFor(snapshot)) ==
-				astrabot::nav::LocomotionResult::Started,
-				"jitter progress controller starts"))
+	if (!check(controller.start(corridorFor(snapshot)) == astrabot::nav::LocomotionResult::Started,
+			"jitter progress controller starts"))
 	{
 		return false;
 	}
@@ -320,23 +259,20 @@ bool testLateralJitterDoesNotResetForwardProgress()
 	observation.crouchingClearance = 36.0f;
 	observation.grounded = true;
 	astrabot::nav::LocomotionIntent intent = {};
-	if (!check(controller.update(snapshot, observation, &intent) ==
-				astrabot::nav::LocomotionResult::IntentReady,
-				"jitter progress establishes baseline"))
+	if (!check(controller.update(snapshot, observation, &intent) == astrabot::nav::LocomotionResult::IntentReady,
+			"jitter progress establishes baseline"))
 	{
 		return false;
 	}
 	observation.position.y = 32.02f;
-	if (!check(controller.update(snapshot, observation, &intent) ==
-				astrabot::nav::LocomotionResult::IntentReady,
-				"small lateral jitter remains a live intent"))
+	if (!check(controller.update(snapshot, observation, &intent) == astrabot::nav::LocomotionResult::IntentReady,
+			"small lateral jitter remains a live intent"))
 	{
 		return false;
 	}
 	observation.position.y = 31.98f;
-	return check(controller.update(snapshot, observation, &intent) ==
-				astrabot::nav::LocomotionResult::Stuck,
-				"lateral jitter does not reset forward no-progress window");
+	return check(controller.update(snapshot, observation, &intent) == astrabot::nav::LocomotionResult::Stuck,
+		"lateral jitter does not reset forward no-progress window");
 }
 
 bool testUnavailableClearanceIsExplicit()
@@ -356,9 +292,8 @@ bool testUnavailableClearanceIsExplicit()
 	observation.position = {16.0f, 32.0f, 0.0f};
 	observation.clearanceAvailable = false;
 	astrabot::nav::LocomotionIntent intent = {};
-	return check(controller.update(snapshot, observation, &intent) ==
-				astrabot::nav::LocomotionResult::InvalidClearance,
-				"unavailable clearance is not replaced by guessed hull values");
+	return check(controller.update(snapshot, observation, &intent) == astrabot::nav::LocomotionResult::InvalidClearance,
+		"unavailable clearance is not replaced by guessed hull values");
 }
 
 bool testCompletionAndInvalidation()
@@ -368,20 +303,12 @@ bool testCompletionAndInvalidation()
 	astrabot::nav::LocomotionController controller(config());
 	controller.start(corridorFor(snapshot));
 	astrabot::nav::LocomotionObservation observation = {
-		{32.0f, 32.0f, 0.0f},
-		64.0f,
-		64.0f,
-		{0.0f, 0.0f, 0.0f},
-		false,
-		false,
-		false
-	};
+		{32.0f, 32.0f, 0.0f}, 64.0f, 64.0f, {0.0f, 0.0f, 0.0f}, false, false, false};
 	astrabot::nav::LocomotionIntent intent = {};
 	controller.update(snapshot, observation, &intent);
 	observation.position = {96.0f, 32.0f, 0.0f};
-	if (!check(controller.update(snapshot, observation, &intent) ==
-			astrabot::nav::LocomotionResult::TargetReached &&
-			!controller.isActive(),
+	if (!check(controller.update(snapshot, observation, &intent) == astrabot::nav::LocomotionResult::TargetReached &&
+				!controller.isActive(),
 			"final position feedback completes the route"))
 	{
 		return false;
@@ -390,12 +317,9 @@ bool testCompletionAndInvalidation()
 	astrabot::nav::LocomotionController staleController(config());
 	staleController.start(corridorFor(snapshot));
 	astrabot::nav::NavDocument replacement = routeDocument(0.0f);
-	const astrabot::nav::NavSnapshot changedSnapshot =
-		snapshotFor(&replacement, 2U);
-	return check(staleController.update(
-			changedSnapshot,
-			observation,
-			&intent) == astrabot::nav::LocomotionResult::StaleSnapshot &&
+	const astrabot::nav::NavSnapshot changedSnapshot = snapshotFor(&replacement, 2U);
+	return check(staleController.update(changedSnapshot, observation, &intent) ==
+				astrabot::nav::LocomotionResult::StaleSnapshot &&
 			!staleController.isActive(),
 		"changed map generation invalidates locomotion");
 }
@@ -405,8 +329,7 @@ bool testCorridorIndexTracksPortalProgress()
 	astrabot::nav::NavDocument document = routeDocument(0.0f);
 	const astrabot::nav::NavSnapshot snapshot = snapshotFor(&document, 1U);
 	astrabot::nav::LocomotionController controller(config());
-	if (!check(controller.start(corridorFor(snapshot)) ==
-			astrabot::nav::LocomotionResult::Started,
+	if (!check(controller.start(corridorFor(snapshot)) == astrabot::nav::LocomotionResult::Started,
 			"portal progress test starts"))
 	{
 		return false;
@@ -416,15 +339,13 @@ bool testCorridorIndexTracksPortalProgress()
 	observation.standingClearance = 72.0f;
 	observation.crouchingClearance = 36.0f;
 	astrabot::nav::LocomotionIntent intent = {};
-	if (!check(controller.update(snapshot, observation, &intent) ==
-			astrabot::nav::LocomotionResult::IntentReady &&
-			controller.currentCorridorIndex() == 1U,
+	if (!check(controller.update(snapshot, observation, &intent) == astrabot::nav::LocomotionResult::IntentReady &&
+				controller.currentCorridorIndex() == 1U,
 			"locomotion exposes the advanced portal index"))
 	{
 		return false;
 	}
-	return check(controller.currentCorridorIndex() == 1U,
-			"portal index remains tied to the active route");
+	return check(controller.currentCorridorIndex() == 1U, "portal index remains tied to the active route");
 }
 
 bool testInvalidInputs()
@@ -432,11 +353,9 @@ bool testInvalidInputs()
 	astrabot::nav::NavDocument document = routeDocument(0.0f);
 	const astrabot::nav::NavSnapshot snapshot = snapshotFor(&document, 1U);
 	astrabot::nav::LocomotionConfig invalidConfig = config();
-	invalidConfig.maximumSpeed =
-		astrabot::nav::LocomotionConfig::kMaximumSpeed + 1.0f;
+	invalidConfig.maximumSpeed = astrabot::nav::LocomotionConfig::kMaximumSpeed + 1.0f;
 	astrabot::nav::LocomotionController invalidController(invalidConfig);
-	if (!check(invalidController.start(corridorFor(snapshot)) ==
-			astrabot::nav::LocomotionResult::InvalidConfig,
+	if (!check(invalidController.start(corridorFor(snapshot)) == astrabot::nav::LocomotionResult::InvalidConfig,
 			"unbounded speed configuration is rejected"))
 	{
 		return false;
@@ -444,32 +363,20 @@ bool testInvalidInputs()
 
 	astrabot::nav::LocomotionController controller(config());
 	astrabot::nav::LocomotionObservation observation = {
-		{std::numeric_limits<float>::quiet_NaN(), 32.0f, 0.0f},
-		64.0f,
-		64.0f,
-		{0.0f, 0.0f, 0.0f},
-		false,
-		false,
-		false
-	};
+		{std::numeric_limits<float>::quiet_NaN(), 32.0f, 0.0f}, 64.0f, 64.0f, {0.0f, 0.0f, 0.0f}, false, false, false};
 	astrabot::nav::LocomotionIntent intent = {};
-	if (!check(controller.start({}) ==
-			astrabot::nav::LocomotionResult::InvalidCorridor,
-			"empty corridor is rejected"))
+	if (!check(controller.start({}) == astrabot::nav::LocomotionResult::InvalidCorridor, "empty corridor is rejected"))
 	{
 		return false;
 	}
 	controller.start(corridorFor(snapshot));
-	if (!check(controller.update(snapshot, observation, &intent) ==
-			astrabot::nav::LocomotionResult::InvalidObservation,
+	if (!check(controller.update(snapshot, observation, &intent) == astrabot::nav::LocomotionResult::InvalidObservation,
 			"non-finite observation is rejected"))
 	{
 		return false;
 	}
-	return check(controller.update(
-			snapshot,
-		{{0.0f, 0.0f, 0.0f}, 64.0f, 64.0f,
-			{0.0f, 0.0f, 0.0f}, false, false, false},
+	return check(
+		controller.update(snapshot, {{0.0f, 0.0f, 0.0f}, 64.0f, 64.0f, {0.0f, 0.0f, 0.0f}, false, false, false},
 			nullptr) == astrabot::nav::LocomotionResult::InvalidArgument,
 		"null intent output is rejected");
 }
@@ -480,8 +387,7 @@ bool testReferenceArrivalTolerance()
 	astrabot::nav::NavDocument document = routeDocument(0.0f);
 	const astrabot::nav::NavSnapshot snapshot = snapshotFor(&document, 1U);
 	astrabot::nav::LocomotionController controller;
-	if (!check(controller.start(corridorFor(snapshot)) ==
-				astrabot::nav::LocomotionResult::Started,
+	if (!check(controller.start(corridorFor(snapshot)) == astrabot::nav::LocomotionResult::Started,
 			"reference arrival controller starts"))
 	{
 		return false;
@@ -491,16 +397,14 @@ bool testReferenceArrivalTolerance()
 	observation.standingClearance = 72.0f;
 	observation.crouchingClearance = 36.0f;
 	astrabot::nav::LocomotionIntent intent = {};
-	if (!check(controller.update(snapshot, observation, &intent) ==
-				astrabot::nav::LocomotionResult::IntentReady,
+	if (!check(controller.update(snapshot, observation, &intent) == astrabot::nav::LocomotionResult::IntentReady,
 			"reference arrival emits an approach intent"))
 	{
 		return false;
 	}
 	observation.position = {60.0f, 32.0f, 0.0f};
-	return check(controller.update(snapshot, observation, &intent) ==
-				astrabot::nav::LocomotionResult::TargetReached,
-			"reference arrival accepts a point within 20 units of the next area");
+	return check(controller.update(snapshot, observation, &intent) == astrabot::nav::LocomotionResult::TargetReached,
+		"reference arrival accepts a point within 20 units of the next area");
 }
 
 bool testNavAttributesSelectTraversal()
@@ -513,8 +417,7 @@ bool testNavAttributesSelectTraversal()
 	crouchGoal.attributes = astrabot::nav::NavArea::kCrouch;
 	crouchDocument.addArea(crouchStart);
 	crouchDocument.addArea(crouchGoal);
-	const astrabot::nav::NavSnapshot crouchSnapshot =
-			snapshotFor(&crouchDocument, 1U);
+	const astrabot::nav::NavSnapshot crouchSnapshot = snapshotFor(&crouchDocument, 1U);
 	astrabot::nav::LocomotionController crouchController;
 	crouchController.start(corridorFor(crouchSnapshot));
 	astrabot::nav::LocomotionObservation observation = {};
@@ -523,7 +426,7 @@ bool testNavAttributesSelectTraversal()
 	observation.crouchingClearance = 36.0f;
 	astrabot::nav::LocomotionIntent intent = {};
 	if (!check(crouchController.update(crouchSnapshot, observation, &intent) ==
-				astrabot::nav::LocomotionResult::IntentReady &&
+					astrabot::nav::LocomotionResult::IntentReady &&
 				intent.traversal == astrabot::nav::TraversalAction::Crouch,
 			"NAV_CROUCH forces crouch traversal"))
 	{
@@ -541,10 +444,10 @@ bool testNavAttributesSelectTraversal()
 	const astrabot::nav::NavSnapshot jumpSnapshot = snapshotFor(&jumpDocument, 1U);
 	astrabot::nav::LocomotionController jumpController;
 	jumpController.start(corridorFor(jumpSnapshot));
-	return check(jumpController.update(jumpSnapshot, observation, &intent) ==
-				astrabot::nav::LocomotionResult::IntentReady &&
-				intent.traversal == astrabot::nav::TraversalAction::Jump,
-			"NAV_JUMP selects jump traversal before ordinary walking");
+	return check(
+		jumpController.update(jumpSnapshot, observation, &intent) == astrabot::nav::LocomotionResult::IntentReady &&
+			intent.traversal == astrabot::nav::TraversalAction::Jump,
+		"NAV_JUMP selects jump traversal before ordinary walking");
 }
 
 bool testJumpAttributesOverrideStepHeight()
@@ -560,9 +463,8 @@ bool testJumpAttributesOverrideStepHeight()
 	jumpDocument.addArea(jumpGoal);
 	const astrabot::nav::NavSnapshot snapshot = snapshotFor(&jumpDocument, 1U);
 	astrabot::nav::LocomotionController controller(config());
-	if (!check(controller.start(corridorFor(snapshot)) ==
-				astrabot::nav::LocomotionResult::Started,
-				"jump step-height fixture starts"))
+	if (!check(controller.start(corridorFor(snapshot)) == astrabot::nav::LocomotionResult::Started,
+			"jump step-height fixture starts"))
 	{
 		return false;
 	}
@@ -571,10 +473,9 @@ bool testJumpAttributesOverrideStepHeight()
 	observation.standingClearance = 72.0f;
 	observation.crouchingClearance = 36.0f;
 	astrabot::nav::LocomotionIntent intent = {};
-	return check(controller.update(snapshot, observation, &intent) ==
-				astrabot::nav::LocomotionResult::IntentReady &&
-				intent.traversal == astrabot::nav::TraversalAction::Jump,
-				"NAV_JUMP takes precedence over ordinary step rejection");
+	return check(controller.update(snapshot, observation, &intent) == astrabot::nav::LocomotionResult::IntentReady &&
+			intent.traversal == astrabot::nav::TraversalAction::Jump,
+		"NAV_JUMP takes precedence over ordinary step rejection");
 }
 
 bool testCurrentAreaNoJumpSuppressesDestinationJump()
@@ -590,9 +491,8 @@ bool testCurrentAreaNoJumpSuppressesDestinationJump()
 	document.addArea(destination);
 	const astrabot::nav::NavSnapshot snapshot = snapshotFor(&document, 1U);
 	astrabot::nav::LocomotionController controller(config());
-	if (!check(controller.start(corridorFor(snapshot)) ==
-				astrabot::nav::LocomotionResult::Started,
-				"NAV_NO_JUMP source fixture starts"))
+	if (!check(controller.start(corridorFor(snapshot)) == astrabot::nav::LocomotionResult::Started,
+			"NAV_NO_JUMP source fixture starts"))
 	{
 		return false;
 	}
@@ -602,9 +502,8 @@ bool testCurrentAreaNoJumpSuppressesDestinationJump()
 	observation.crouchingClearance = 36.0f;
 	observation.grounded = true;
 	astrabot::nav::LocomotionIntent intent = {};
-	return check(controller.update(snapshot, observation, &intent) ==
-			astrabot::nav::LocomotionResult::StepTooHigh,
-			"source NAV_NO_JUMP suppresses destination NAV_JUMP");
+	return check(controller.update(snapshot, observation, &intent) == astrabot::nav::LocomotionResult::StepTooHigh,
+		"source NAV_NO_JUMP suppresses destination NAV_JUMP");
 }
 
 bool testGroundLookaheadRequestsJumpForUnmarkedWall()
@@ -618,9 +517,8 @@ bool testGroundLookaheadRequestsJumpForUnmarkedWall()
 	document.addArea(destination);
 	const astrabot::nav::NavSnapshot snapshot = snapshotFor(&document, 1U);
 	astrabot::nav::LocomotionController controller(config());
-	if (!check(controller.start(corridorFor(snapshot)) ==
-				astrabot::nav::LocomotionResult::Started,
-				"ground-lookahead wall fixture starts"))
+	if (!check(controller.start(corridorFor(snapshot)) == astrabot::nav::LocomotionResult::Started,
+			"ground-lookahead wall fixture starts"))
 	{
 		return false;
 	}
@@ -637,11 +535,9 @@ bool testGroundLookaheadRequestsJumpForUnmarkedWall()
 	observation.groundLookahead.near30 = {true, true, 32.0f, 1.0f};
 	observation.groundLookahead.gap10 = {true, true, 0.0f, 1.0f};
 	astrabot::nav::LocomotionIntent intent = {};
-	return check(controller.update(snapshot, observation, &intent) ==
-			astrabot::nav::LocomotionResult::IntentReady &&
-			intent.targetArea == 2U &&
-			intent.traversal == astrabot::nav::TraversalAction::Jump,
-			"30-unit ground probe requests a bounded jump over an unmarked wall");
+	return check(controller.update(snapshot, observation, &intent) == astrabot::nav::LocomotionResult::IntentReady &&
+			intent.targetArea == 2U && intent.traversal == astrabot::nav::TraversalAction::Jump,
+		"30-unit ground probe requests a bounded jump over an unmarked wall");
 }
 
 bool testNearGroundJumpFallbackAndSafety()
@@ -660,26 +556,28 @@ bool testNearGroundJumpFallbackAndSafety()
 		bool matchingDirection;
 		bool expectedJump;
 	};
-	const Case cases[] =
-	{
-		{"unknown far ground permits near jump", {true, false, 0.0f, 0.0f}, 32.0f, true, true, true, false, true, false, true, true},
+	const Case cases[] = {{"unknown far ground permits near jump", {true, false, 0.0f, 0.0f}, 32.0f, true, true, true,
+							  false, true, false, true, true},
 		{"unsampled far ground permits near jump", {}, 32.0f, true, true, true, false, true, false, true, true},
-		{"sloped far ground permits near jump", {true, true, 0.0f, 0.8f}, 32.0f, true, true, true, false, true, false, true, true},
-		{"far normal at threshold permits near jump", {true, true, 0.0f, 0.9f}, 32.0f, true, true, true, false, true, false, true, true},
-		{"flat far ground permits near jump", {true, true, 0.0f, 1.0f}, 32.0f, true, true, true, false, true, false, true, true},
+		{"sloped far ground permits near jump", {true, true, 0.0f, 0.8f}, 32.0f, true, true, true, false, true, false,
+			true, true},
+		{"far normal at threshold permits near jump", {true, true, 0.0f, 0.9f}, 32.0f, true, true, true, false, true,
+			false, true, true},
+		{"flat far ground permits near jump", {true, true, 0.0f, 1.0f}, 32.0f, true, true, true, false, true, false,
+			true, true},
 		{"walking permits near jump without far probe", {}, 32.0f, true, true, false, false, true, false, true, true},
 		{"configured step height needs no jump", {}, 16.0f, true, true, true, false, true, false, true, false},
 		{"height above configured step requests jump", {}, 16.1f, true, true, true, false, true, false, true, true},
 		{"maximum jump height permits jump", {}, 41.8f, true, true, true, false, true, false, true, true},
 		{"height above maximum jump rejects jump", {}, 41.9f, true, true, true, false, true, false, true, false},
 		{"unknown near ground rejects jump", {}, 32.0f, false, true, true, false, true, false, true, false},
-		{"known far drop retains safety veto", {true, true, -64.0f, 1.0f}, 32.0f, true, true, true, false, true, false, true, false},
+		{"known far drop retains safety veto", {true, true, -64.0f, 1.0f}, 32.0f, true, true, true, false, true, false,
+			true, false},
 		{"unknown immediate ground retains safety veto", {}, 32.0f, true, false, true, false, true, false, true, false},
 		{"current NAV_NO_JUMP rejects near jump", {}, 32.0f, true, true, true, true, true, false, true, false},
 		{"airborne actor rejects near jump", {}, 32.0f, true, true, true, false, false, false, true, false},
 		{"ladder actor rejects near jump", {}, 32.0f, true, true, true, false, true, true, true, false},
-		{"changed direction rejects near jump", {}, 32.0f, true, true, true, false, true, false, false, false}
-	};
+		{"changed direction rejects near jump", {}, 32.0f, true, true, true, false, true, false, false, false}};
 	bool passed = true;
 	for (const Case &test : cases)
 	{
@@ -695,8 +593,8 @@ bool testNearGroundJumpFallbackAndSafety()
 		document.addArea(area(2U, 64.0f, 128.0f, 0.0f));
 		const auto snapshot = snapshotFor(&document, 1U);
 		astrabot::nav::LocomotionController controller(config());
-		if (!check(controller.start(corridorFor(snapshot)) ==
-				astrabot::nav::LocomotionResult::Started, test.description))
+		if (!check(
+				controller.start(corridorFor(snapshot)) == astrabot::nav::LocomotionResult::Started, test.description))
 		{
 			return false;
 		}
@@ -708,20 +606,18 @@ bool testNearGroundJumpFallbackAndSafety()
 		observation.onLadder = test.onLadder;
 		observation.groundLookahead.valid = true;
 		observation.groundLookahead.targetArea = 2U;
-		observation.groundLookahead.direction = test.matchingDirection
-			? astrabot::nav::NavVector{1.0f, 0.0f, 0.0f}
-			: astrabot::nav::NavVector{0.0f, 1.0f, 0.0f};
+		observation.groundLookahead.direction = test.matchingDirection ? astrabot::nav::NavVector{1.0f, 0.0f, 0.0f}
+																	   : astrabot::nav::NavVector{0.0f, 1.0f, 0.0f};
 		observation.groundLookahead.running = test.running;
 		observation.groundLookahead.far80 = test.farGround;
-		observation.groundLookahead.near30 =
-			{true, test.nearGroundAvailable, test.nearHeight, 1.0f};
-		observation.groundLookahead.gap10 =
-			{true, test.gapGroundAvailable, 0.0f, 1.0f};
+		observation.groundLookahead.near30 = {true, test.nearGroundAvailable, test.nearHeight, 1.0f};
+		observation.groundLookahead.gap10 = {true, test.gapGroundAvailable, 0.0f, 1.0f};
 		astrabot::nav::LocomotionIntent intent = {};
 		const auto result = controller.update(snapshot, observation, &intent);
 		const bool jumped = intent.traversal == astrabot::nav::TraversalAction::Jump;
-		passed = check(result == astrabot::nav::LocomotionResult::IntentReady &&
-			jumped == test.expectedJump, test.description) && passed;
+		passed = check(result == astrabot::nav::LocomotionResult::IntentReady && jumped == test.expectedJump,
+					 test.description) &&
+			passed;
 	}
 	return passed;
 }
@@ -737,8 +633,7 @@ bool testStaleGroundLookaheadTargetDoesNotRequestJump()
 	document.addArea(destination);
 	const astrabot::nav::NavSnapshot snapshot = snapshotFor(&document, 1U);
 	astrabot::nav::LocomotionController controller(config());
-	if (!check(controller.start(corridorFor(snapshot)) ==
-			astrabot::nav::LocomotionResult::Started,
+	if (!check(controller.start(corridorFor(snapshot)) == astrabot::nav::LocomotionResult::Started,
 			"stale ground-lookahead fixture starts"))
 	{
 		return false;
@@ -757,10 +652,9 @@ bool testStaleGroundLookaheadTargetDoesNotRequestJump()
 	observation.groundLookahead.near30 = {true, true, 32.0f, 1.0f};
 	observation.groundLookahead.gap10 = {true, true, 0.0f, 1.0f};
 	astrabot::nav::LocomotionIntent intent = {};
-	return check(controller.update(snapshot, observation, &intent) ==
-			astrabot::nav::LocomotionResult::IntentReady &&
+	return check(controller.update(snapshot, observation, &intent) == astrabot::nav::LocomotionResult::IntentReady &&
 			intent.traversal != astrabot::nav::TraversalAction::Jump,
-			"ground sample for another target is ignored");
+		"ground sample for another target is ignored");
 }
 
 bool testSafeDescendingGapWithHorizontalSeparationUsesJumpOnce()
@@ -774,8 +668,7 @@ bool testSafeDescendingGapWithHorizontalSeparationUsesJumpOnce()
 	document.addArea(landing);
 	const astrabot::nav::NavSnapshot snapshot = snapshotFor(&document, 1U);
 	astrabot::nav::LocomotionController controller(config());
-	if (!check(controller.start(corridorFor(snapshot)) ==
-			astrabot::nav::LocomotionResult::Started,
+	if (!check(controller.start(corridorFor(snapshot)) == astrabot::nav::LocomotionResult::Started,
 			"descending gap fixture starts"))
 	{
 		return false;
@@ -788,49 +681,44 @@ bool testSafeDescendingGapWithHorizontalSeparationUsesJumpOnce()
 	observation.safeDropHeightAvailable = true;
 	observation.maximumSafeDropHeight = 150.0f;
 	astrabot::nav::LocomotionIntent intent = {};
-	if (!check(controller.update(snapshot, observation, &intent) ==
-			astrabot::nav::LocomotionResult::IntentReady &&
-			intent.traversal == astrabot::nav::TraversalAction::Walk,
+	if (!check(controller.update(snapshot, observation, &intent) == astrabot::nav::LocomotionResult::IntentReady &&
+				intent.traversal == astrabot::nav::TraversalAction::Walk,
 			"a distant descending gap remains an approach walk"))
 	{
 		return false;
 	}
 	observation.position = {190.0f, 32.0f, 128.0f};
-	if (!check(controller.update(snapshot, observation, &intent) ==
-				astrabot::nav::LocomotionResult::IntentReady &&
+	if (!check(controller.update(snapshot, observation, &intent) == astrabot::nav::LocomotionResult::IntentReady &&
 				intent.traversal == astrabot::nav::TraversalAction::Jump,
-				"a safe descending landing across a horizontal gap starts one Jump"))
+			"a safe descending landing across a horizontal gap starts one Jump"))
 	{
 		return false;
 	}
 
 	observation.position = {198.0f, 32.0f, 150.0f};
 	observation.grounded = false;
-	return check(controller.update(snapshot, observation, &intent) ==
-			astrabot::nav::LocomotionResult::IntentReady &&
-		intent.traversal == astrabot::nav::TraversalAction::Walk,
+	return check(controller.update(snapshot, observation, &intent) == astrabot::nav::LocomotionResult::IntentReady &&
+			intent.traversal == astrabot::nav::TraversalAction::Walk,
 		"an airborne descending-gap jump continues forward without re-pressing Jump");
 }
 
 bool testDescendingGapSeparatesSafeDropFromHorizontalJump()
 {
-	auto runCase = [](std::uint8_t sourceAttributes, float horizontalGap,
-			float landingFloor, bool safeDropAvailable, float maximumSafeDropHeight,
-			astrabot::nav::LocomotionResult expectedResult,
-			astrabot::nav::TraversalAction expectedTraversal) {
+	auto runCase = [](std::uint8_t sourceAttributes, float horizontalGap, float landingFloor, bool safeDropAvailable,
+					   float maximumSafeDropHeight, astrabot::nav::LocomotionResult expectedResult,
+					   astrabot::nav::TraversalAction expectedTraversal)
+	{
 		astrabot::nav::NavDocument document;
 		document.setSourceIdentity({5U, 100U, 200U});
 		astrabot::nav::NavArea launch = area(1U, 0.0f, 200.0f, 128.0f);
-		astrabot::nav::NavArea landing = area(
-			2U, 200.0f + horizontalGap, 300.0f + horizontalGap, landingFloor);
+		astrabot::nav::NavArea landing = area(2U, 200.0f + horizontalGap, 300.0f + horizontalGap, landingFloor);
 		launch.attributes = sourceAttributes;
 		launch.connections[1U].push_back(2U);
 		document.addArea(launch);
 		document.addArea(landing);
 		const astrabot::nav::NavSnapshot snapshot = snapshotFor(&document, 1U);
 		astrabot::nav::LocomotionController controller(config());
-		if (controller.start(corridorFor(snapshot)) !=
-				astrabot::nav::LocomotionResult::Started)
+		if (controller.start(corridorFor(snapshot)) != astrabot::nav::LocomotionResult::Started)
 		{
 			return false;
 		}
@@ -842,35 +730,27 @@ bool testDescendingGapSeparatesSafeDropFromHorizontalJump()
 		observation.safeDropHeightAvailable = safeDropAvailable;
 		observation.maximumSafeDropHeight = maximumSafeDropHeight;
 		astrabot::nav::LocomotionIntent intent = {};
-		const astrabot::nav::LocomotionResult result =
-			controller.update(snapshot, observation, &intent);
+		const astrabot::nav::LocomotionResult result = controller.update(snapshot, observation, &intent);
 		return result == expectedResult &&
-			(result != astrabot::nav::LocomotionResult::IntentReady ||
-				intent.traversal == expectedTraversal);
+			(result != astrabot::nav::LocomotionResult::IntentReady || intent.traversal == expectedTraversal);
 	};
-	return check(runCase(astrabot::nav::NavArea::kNoJump, 0.0f, 30.0f,
-			true, 150.0f, astrabot::nav::LocomotionResult::IntentReady,
-			astrabot::nav::TraversalAction::Drop),
-			"a safe vertical fall with touching areas needs no Jump") &&
-		check(runCase(0U, 48.0f, 30.0f, true, 150.0f,
-			astrabot::nav::LocomotionResult::IntentReady,
-			astrabot::nav::TraversalAction::Jump),
+	return check(runCase(astrabot::nav::NavArea::kNoJump, 0.0f, 30.0f, true, 150.0f,
+					 astrabot::nav::LocomotionResult::IntentReady, astrabot::nav::TraversalAction::Drop),
+			   "a safe vertical fall with touching areas needs no Jump") &&
+		check(runCase(0U, 48.0f, 30.0f, true, 150.0f, astrabot::nav::LocomotionResult::IntentReady,
+				  astrabot::nav::TraversalAction::Jump),
 			"a safe fall across a horizontal gap uses Jump") &&
-		check(runCase(astrabot::nav::NavArea::kNoJump, 48.0f, 30.0f,
-			true, 150.0f, astrabot::nav::LocomotionResult::UnsafeDrop,
-			astrabot::nav::TraversalAction::Walk),
+		check(runCase(astrabot::nav::NavArea::kNoJump, 48.0f, 30.0f, true, 150.0f,
+				  astrabot::nav::LocomotionResult::UnsafeDrop, astrabot::nav::TraversalAction::Walk),
 			"NAV_NO_JUMP fails closed when a horizontal gap needs crossing") &&
-		check(runCase(0U, 100.0f, 30.0f, true, 150.0f,
-			astrabot::nav::LocomotionResult::UnsafeDrop,
-			astrabot::nav::TraversalAction::Walk),
+		check(runCase(0U, 100.0f, 30.0f, true, 150.0f, astrabot::nav::LocomotionResult::UnsafeDrop,
+				  astrabot::nav::TraversalAction::Walk),
 			"a horizontal gap outside jump reach fails near the launch edge") &&
-		check(runCase(0U, 48.0f, -128.0f, true, 150.0f,
-			astrabot::nav::LocomotionResult::UnsafeDrop,
-			astrabot::nav::TraversalAction::Walk),
+		check(runCase(0U, 48.0f, -128.0f, true, 150.0f, astrabot::nav::LocomotionResult::UnsafeDrop,
+				  astrabot::nav::TraversalAction::Walk),
 			"a drop outside the safe fall envelope is a typed failure") &&
-		check(runCase(0U, 48.0f, 30.0f, false, 0.0f,
-			astrabot::nav::LocomotionResult::UnsafeDrop,
-			astrabot::nav::TraversalAction::Walk),
+		check(runCase(0U, 48.0f, 30.0f, false, 0.0f, astrabot::nav::LocomotionResult::UnsafeDrop,
+				  astrabot::nav::TraversalAction::Walk),
 			"an unmeasured fall envelope fails closed");
 }
 
@@ -880,8 +760,7 @@ bool testOffPathAreaCannotTriggerJumpToNonAdjacentCorridorTarget()
 	document.addArea(area(3U, 192.0f, 256.0f, 0.0f));
 	const astrabot::nav::NavSnapshot snapshot = snapshotFor(&document, 1U);
 	astrabot::nav::LocomotionController controller(config());
-	if (!check(controller.start(corridorFor(snapshot)) ==
-			astrabot::nav::LocomotionResult::Started,
+	if (!check(controller.start(corridorFor(snapshot)) == astrabot::nav::LocomotionResult::Started,
 			"off-path fixture starts its valid corridor"))
 	{
 		return false;
@@ -893,58 +772,65 @@ bool testOffPathAreaCannotTriggerJumpToNonAdjacentCorridorTarget()
 	observation.crouchingClearance = 36.0f;
 	observation.grounded = true;
 	astrabot::nav::LocomotionIntent intent = {};
-	if (!check(controller.update(snapshot, observation, &intent) ==
-			astrabot::nav::LocomotionResult::IntentReady &&
-			controller.currentCorridorIndex() == 1U,
+	if (!check(controller.update(snapshot, observation, &intent) == astrabot::nav::LocomotionResult::IntentReady &&
+				controller.currentCorridorIndex() == 1U,
 			"off-path fixture advances to the connected target segment"))
 	{
 		return false;
 	}
 
 	observation.position = {224.0f, 32.0f, 0.0f};
-	return check(controller.update(snapshot, observation, &intent) ==
-			astrabot::nav::LocomotionResult::InvalidCorridor,
-			"an unrelated current area invalidates the segment instead of fabricating Jump");
+	return check(controller.update(snapshot, observation, &intent) == astrabot::nav::LocomotionResult::InvalidCorridor,
+		"an unrelated current area invalidates the segment instead of fabricating Jump");
 }
 
 bool testCompatibilityProgressSurvivesRepath()
 {
 	using namespace astrabot::nav;
-	NavDocument document=routeDocument(0.0f);
-	const auto snapshot=snapshotFor(&document,1U);
-	auto settings=config();settings.averageVelocityStuckMonitor=true;
+	NavDocument document = routeDocument(0.0f);
+	const auto snapshot = snapshotFor(&document, 1U);
+	auto settings = config();
+	settings.averageVelocityStuckMonitor = true;
 	LocomotionController controller(settings);
 	LocomotionObservation observation{};
-	observation.position={32,32,0};observation.grounded=true;
-	observation.standingClearance=72;observation.crouchingClearance=36;
-	observation.timingAvailable=true;
-	LocomotionIntent intent{};bool stuck=false;
+	observation.position = {32, 32, 0};
+	observation.grounded = true;
+	observation.standingClearance = 72;
+	observation.crouchingClearance = 36;
+	observation.timingAvailable = true;
+	LocomotionIntent intent{};
+	bool stuck = false;
 	LocomotionController noPath(settings);
-	for(int i=0;i<7;++i)
+	for (int i = 0; i < 7; ++i)
 	{
-		observation.observedAt=static_cast<float>(i)*0.1f;
+		observation.observedAt = static_cast<float>(i) * 0.1f;
 		noPath.observeMotion(observation);
 	}
 	noPath.start(corridorFor(snapshot));
-	if(!check(noPath.update(snapshot,observation,&intent)==LocomotionResult::Stuck,
-		"physical monitoring runs before path intent exists and is sampled once per full think"))return false;
-	for(int i=0;i<9;++i)
+	if (!check(noPath.update(snapshot, observation, &intent) == LocomotionResult::Stuck,
+			"physical monitoring runs before path intent exists and is sampled once per full think"))
+		return false;
+	for (int i = 0; i < 9; ++i)
 	{
-		if(!check(controller.start(corridorFor(snapshot))==LocomotionResult::Started,
-			"repath fixture uses a valid connected corridor"))return false;
-		observation.observedAt=float(i)*0.1f;
-		stuck=stuck || controller.update(snapshot,observation,&intent)==LocomotionResult::Stuck;
+		if (!check(controller.start(corridorFor(snapshot)) == LocomotionResult::Started,
+				"repath fixture uses a valid connected corridor"))
+			return false;
+		observation.observedAt = float(i) * 0.1f;
+		stuck = stuck || controller.update(snapshot, observation, &intent) == LocomotionResult::Stuck;
 	}
-	if(!check(stuck,"Compatibility re-pathing without physical movement cannot reset bot velocity history"))return false;
+	if (!check(stuck, "Compatibility re-pathing without physical movement cannot reset bot velocity history"))
+		return false;
 	controller.start(corridorFor(snapshot));
-	observation.grounded=false;observation.observedAt=1.0f;
-	return check(controller.update(snapshot,observation,&intent)==LocomotionResult::IntentReady,
+	observation.grounded = false;
+	observation.observedAt = 1.0f;
+	return check(controller.update(snapshot, observation, &intent) == LocomotionResult::IntentReady,
 		"a previously stuck bot retains airborne movement instead of ground Wiggle");
 }
 
 int main()
 {
-	if(!testCompatibilityProgressSurvivesRepath())return 1;
+	if (!testCompatibilityProgressSurvivesRepath())
+		return 1;
 	if (!testSafeDescendingGapWithHorizontalSeparationUsesJumpOnce() ||
 		!testDescendingGapSeparatesSafeDropFromHorizontalJump())
 	{
@@ -954,24 +840,14 @@ int main()
 	{
 		return 1;
 	}
-	if (!testWalkAndStepIntent() ||
-		!testCrouchSelection() ||
-		!testStepAndStuckRecovery() ||
-		!testTimedStuckMonitorUsesAverageSpeed() ||
-		!testTerrainDiscontinuityRequestsJump() ||
-		!testContinuousRampUsesPortalTransitionHeight() ||
-			!testCompletionAndInvalidation() ||
-			!testCorridorIndexTracksPortalProgress() ||
-			!testInvalidInputs() ||
-			!testReferenceArrivalTolerance() ||
-			!testNavAttributesSelectTraversal() ||
-			!testLateralJitterDoesNotResetForwardProgress() ||
-			!testUnavailableClearanceIsExplicit() ||
-			!testJumpAttributesOverrideStepHeight() ||
-			!testCurrentAreaNoJumpSuppressesDestinationJump() ||
-			!testGroundLookaheadRequestsJumpForUnmarkedWall() ||
-			!testNearGroundJumpFallbackAndSafety() ||
-			!testStaleGroundLookaheadTargetDoesNotRequestJump())
+	if (!testWalkAndStepIntent() || !testCrouchSelection() || !testStepAndStuckRecovery() ||
+		!testTimedStuckMonitorUsesAverageSpeed() || !testTerrainDiscontinuityRequestsJump() ||
+		!testContinuousRampUsesPortalTransitionHeight() || !testCompletionAndInvalidation() ||
+		!testCorridorIndexTracksPortalProgress() || !testInvalidInputs() || !testReferenceArrivalTolerance() ||
+		!testNavAttributesSelectTraversal() || !testLateralJitterDoesNotResetForwardProgress() ||
+		!testUnavailableClearanceIsExplicit() || !testJumpAttributesOverrideStepHeight() ||
+		!testCurrentAreaNoJumpSuppressesDestinationJump() || !testGroundLookaheadRequestsJumpForUnmarkedWall() ||
+		!testNearGroundJumpFallbackAndSafety() || !testStaleGroundLookaheadTargetDoesNotRequestJump())
 	{
 		return 1;
 	}

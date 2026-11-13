@@ -104,14 +104,10 @@ class BehaviorStateMachine
 {
 public:
 	BehaviorStateMachine();
-	BehaviorStateMachine(
-		const world::ActorKey &actor,
-		const BehaviorStateConfig &config);
+	BehaviorStateMachine(const world::ActorKey &actor, const BehaviorStateConfig &config);
 
 	BehaviorResult update(
-		const world::WorldSnapshot &snapshot,
-		const ActorDecisionContext &context,
-		BehaviorTransition *transition);
+		const world::WorldSnapshot &snapshot, const ActorDecisionContext &context, BehaviorTransition *transition);
 
 	BehaviorState state() const;
 	const world::ActorKey &actor() const;
@@ -122,38 +118,19 @@ private:
 
 	static bool isValidAvailability(Availability availability);
 	static bool isValidLifeStatus(LifeStatus life);
-	static bool sameFrame(
-		const world::FrameIdentity &left,
-		const world::FrameIdentity &right);
-	static bool isFrameAfter(
-		const world::FrameIdentity &candidate,
-		const world::FrameIdentity &current);
+	static bool sameFrame(const world::FrameIdentity &left, const world::FrameIdentity &right);
+	static bool isFrameAfter(const world::FrameIdentity &candidate, const world::FrameIdentity &current);
 	static bool findVisibleEnemy(
-		const world::WorldSnapshot &snapshot,
-		const world::ActorKey &observer,
-		world::ActorKey *enemy);
+		const world::WorldSnapshot &snapshot, const world::ActorKey &observer, world::ActorKey *enemy);
 	static bool isTargetMemoryCurrent(
-		const world::FrameIdentity &frame,
-		const world::FrameIdentity &targetFrame,
-		std::uint32_t maximumAgeTicks);
+		const world::FrameIdentity &frame, const world::FrameIdentity &targetFrame, std::uint32_t maximumAgeTicks);
 	static ObjectivePriority priorityFor(BehaviorState state);
 	static ObjectiveKind objectiveFor(BehaviorState state);
-	static bool makeProposal(
-		const world::WorldSnapshot &snapshot,
-		const world::ActorKey &actor,
-		BehaviorState state,
-		TransitionReason reason,
-		const world::ActorKey &target,
-		bool hasTarget,
-		ObjectiveProposal *proposal);
+	static bool makeProposal(const world::WorldSnapshot &snapshot, const world::ActorKey &actor, BehaviorState state,
+		TransitionReason reason, const world::ActorKey &target, bool hasTarget, ObjectiveProposal *proposal);
 
-	BehaviorResult transitionTo(
-		const world::WorldSnapshot &snapshot,
-		BehaviorState nextState,
-		TransitionReason reason,
-		const world::ActorKey &target,
-		bool hasTarget,
-		BehaviorTransition *transition);
+	BehaviorResult transitionTo(const world::WorldSnapshot &snapshot, BehaviorState nextState, TransitionReason reason,
+		const world::ActorKey &target, bool hasTarget, BehaviorTransition *transition);
 
 	BehaviorStateConfig config_;
 	world::ActorKey actor_;

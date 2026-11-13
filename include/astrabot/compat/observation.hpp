@@ -78,8 +78,7 @@ const char *toString(ObservationQuality quality);
 const char *toString(ObservationFreshness freshness);
 const char *toString(ObservationSource source);
 
-template <typename T>
-struct ObservationValue
+template <typename T> struct ObservationValue
 {
 	T value;
 	bool valid;
@@ -92,8 +91,7 @@ struct ObservationValue
 
 	bool isCurrent(const world::FrameIdentity &frameValue) const
 	{
-		return isAvailable() && context.freshness != ObservationFreshness::Stale &&
-			context.isCurrent(frameValue);
+		return isAvailable() && context.freshness != ObservationFreshness::Stale && context.isCurrent(frameValue);
 	}
 };
 
@@ -156,15 +154,12 @@ struct DroppedC4Observation
 
 	bool isAvailable() const
 	{
-		return available && entity.isValid() && context.isValid() &&
-			isAvailableQuality(context.quality);
+		return available && entity.isValid() && context.isValid() && isAvailableQuality(context.quality);
 	}
 
 	bool isCurrent(const world::FrameIdentity &frame) const
 	{
-		return isAvailable() &&
-			context.freshness != ObservationFreshness::Stale &&
-			context.isCurrent(frame);
+		return isAvailable() && context.freshness != ObservationFreshness::Stale && context.isCurrent(frame);
 	}
 };
 
@@ -193,26 +188,19 @@ struct ObservationTraceRecord
 class IObservationTraceSink
 {
 public:
-	virtual ~IObservationTraceSink() {}
+	virtual ~IObservationTraceSink()
+	{
+	}
+
 	virtual void record(const ObservationTraceRecord &record) = 0;
 };
 
+void emitObservationTrace(const ObservationValue<float> &value, ObservationValueKind kind, IObservationTraceSink *sink);
 void emitObservationTrace(
-	const ObservationValue<float> &value,
-	ObservationValueKind kind,
-	IObservationTraceSink *sink);
+	const ObservationValue<std::int32_t> &value, ObservationValueKind kind, IObservationTraceSink *sink);
+void emitObservationTrace(const ObservationValue<bool> &value, ObservationValueKind kind, IObservationTraceSink *sink);
 void emitObservationTrace(
-	const ObservationValue<std::int32_t> &value,
-	ObservationValueKind kind,
-	IObservationTraceSink *sink);
-void emitObservationTrace(
-	const ObservationValue<bool> &value,
-	ObservationValueKind kind,
-	IObservationTraceSink *sink);
-void emitObservationTrace(
-	const ObservationValue<world::WorldVector> &value,
-	ObservationValueKind kind,
-	IObservationTraceSink *sink);
+	const ObservationValue<world::WorldVector> &value, ObservationValueKind kind, IObservationTraceSink *sink);
 }
 }
 

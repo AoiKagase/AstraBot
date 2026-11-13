@@ -5,54 +5,59 @@ namespace astrabot
 {
 namespace compat
 {
-	enum class JoinTeam
-	{
-		Any,
-		Terrorist,
-		CounterTerrorist
-	};
+enum class JoinTeam
+{
+	Any,
+	Terrorist,
+	CounterTerrorist
+};
 
-	enum class RuntimeMode
-	{
-		Compatibility,
-		Enhanced
-	};
-	enum class QuotaMode { Normal, Fill, Match };
+enum class RuntimeMode
+{
+	Compatibility,
+	Enhanced
+};
+enum class QuotaMode
+{
+	Normal,
+	Fill,
+	Match
+};
 
-	enum class CvarUpdateResult
-	{
-		Updated,
-		NoChange,
-		Unknown,
-		InvalidValue
-	};
+enum class CvarUpdateResult
+{
+	Updated,
+	NoChange,
+	Unknown,
+	InvalidValue
+};
 
-	struct CvarSnapshot
-	{
-		float botEnable;
-		float botStop;
-		int botDifficulty;
-		int botQuota;
-		JoinTeam botJoinTeam;
-		RuntimeMode mode;
-		QuotaMode botQuotaMode = QuotaMode::Normal;
-		int botJoinAfterPlayer = 1;
-		bool botAutoVacate = true;
-		float botJoinDelay = 0.0f;
-	};
+struct CvarSnapshot
+{
+	float botEnable;
+	float botStop;
+	int botDifficulty;
+	int botQuota;
+	JoinTeam botJoinTeam;
+	RuntimeMode mode;
+	QuotaMode botQuotaMode = QuotaMode::Normal;
+	int botJoinAfterPlayer = 1;
+	bool botAutoVacate = true;
+	float botJoinDelay = 0.0f;
+};
 
-	class CvarState
-	{
-	public:
-		CvarState();
+class CvarState
+{
+public:
+	CvarState();
 
-		CvarUpdateResult setFloat(const char *name, float value);
-		CvarUpdateResult setString(const char *name, const char *value);
-		CvarSnapshot snapshot() const;
+	CvarUpdateResult setFloat(const char *name, float value);
+	CvarUpdateResult setString(const char *name, const char *value);
+	CvarSnapshot snapshot() const;
 
-	private:
-		CvarSnapshot state_;
-	};
+private:
+	CvarSnapshot state_;
+};
 }
 }
 

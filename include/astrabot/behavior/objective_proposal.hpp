@@ -83,9 +83,7 @@ public:
 
 	ProposalResult setOwner(const world::ActorKey &owner);
 	ProposalResult add(const ObjectiveProposal &proposal);
-	ProposalResult select(
-		const world::FrameIdentity &frame,
-		ObjectiveProposal *proposal) const;
+	ProposalResult select(const world::FrameIdentity &frame, ObjectiveProposal *proposal) const;
 
 	void clear();
 	std::size_t size() const;
@@ -94,18 +92,13 @@ public:
 private:
 	static bool isValidObjective(ObjectiveKind objective);
 	static bool isValidPriority(ObjectivePriority priority);
-	static bool sameProposal(
-		const ObjectiveProposal &left,
-		const ObjectiveProposal &right);
+	static bool sameProposal(const ObjectiveProposal &left, const ObjectiveProposal &right);
 	static int priorityValue(ObjectivePriority priority);
 	static int objectiveValue(ObjectiveKind objective);
-	static bool isBetter(
-		const ObjectiveProposal &candidate,
-		const ObjectiveProposal &current);
+	static bool isBetter(const ObjectiveProposal &candidate, const ObjectiveProposal &current);
 
 	world::ActorKey owner_;
-	std::array<ObjectiveProposal, ObjectiveLimits::kMaximumProposals>
-		proposals_;
+	std::array<ObjectiveProposal, ObjectiveLimits::kMaximumProposals> proposals_;
 	std::size_t proposalCount_;
 };
 }

@@ -8,24 +8,16 @@ namespace objectives
 {
 bool PlantAttemptController::expired(float elapsedSeconds) noexcept
 {
-	return std::isfinite(elapsedSeconds) &&
-		elapsedSeconds >= kPlantAttemptTimeoutSeconds;
+	return std::isfinite(elapsedSeconds) && elapsedSeconds >= kPlantAttemptTimeoutSeconds;
 }
 
 bool PlantAttemptController::canBeginObjective(
-	bool hasPlantAssignment,
-	bool carryingBomb,
-	bool isTerrorist,
-	bool selectedTargetAvailable) noexcept
+	bool hasPlantAssignment, bool carryingBomb, bool isTerrorist, bool selectedTargetAvailable) noexcept
 {
-	return hasPlantAssignment && carryingBomb && isTerrorist &&
-		selectedTargetAvailable;
+	return hasPlantAssignment && carryingBomb && isTerrorist && selectedTargetAvailable;
 }
 
-PlantAttemptResult PlantAttemptController::evaluate(
-	bool actorOverlapsSite,
-	bool plantedConfirmed,
-	float now) noexcept
+PlantAttemptResult PlantAttemptController::evaluate(bool actorOverlapsSite, bool plantedConfirmed, float now) noexcept
 {
 	if (plantedConfirmed)
 	{
@@ -68,13 +60,10 @@ PlantAttemptResult PlantAttemptController::evaluate(
 	{
 		retryAfter_ = now;
 	}
-	return now < retryAfter_
-		? PlantAttemptResult::RetryPending
-		: PlantAttemptResult::Ready;
+	return now < retryAfter_ ? PlantAttemptResult::RetryPending : PlantAttemptResult::Ready;
 }
 
-void PlantAttemptController::recordDispatched(
-	float now) noexcept
+void PlantAttemptController::recordDispatched(float now) noexcept
 {
 	if (active_ || !std::isfinite(now) || now < retryAfter_)
 	{

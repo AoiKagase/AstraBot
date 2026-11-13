@@ -88,9 +88,7 @@ public:
 	TeamReportBoard(const world::ActorKey &owner, TeamRole team);
 
 	ReportResult add(const TeamReport &report);
-	ReportResult select(
-		const world::FrameIdentity &frame,
-		TeamReport *report) const;
+	ReportResult select(const world::FrameIdentity &frame, TeamReport *report) const;
 
 	void clear();
 	std::size_t size() const;
@@ -98,23 +96,16 @@ public:
 	TeamRole team() const;
 
 private:
-	static bool sameRound(
-		const world::FrameIdentity &left,
-		const world::FrameIdentity &right);
-	static bool sameReport(
-		const TeamReport &left,
-		const TeamReport &right);
-	static bool isBetter(
-		const TeamReport &candidate,
-		const TeamReport &current);
+	static bool sameRound(const world::FrameIdentity &left, const world::FrameIdentity &right);
+	static bool sameReport(const TeamReport &left, const TeamReport &right);
+	static bool isBetter(const TeamReport &candidate, const TeamReport &current);
 
 	world::ActorKey owner_;
 	TeamRole team_;
 	std::array<TeamReport, TeamReportLimits::kMaximumReports> reports_;
 	std::size_t reportCount_;
 	world::FrameIdentity lastFrame_;
-	std::array<std::uint32_t, world::WorldLimits::kMaximumActors>
-		reporterGenerations_;
+	std::array<std::uint32_t, world::WorldLimits::kMaximumActors> reporterGenerations_;
 };
 }
 }

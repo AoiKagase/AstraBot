@@ -13,48 +13,37 @@ bool isValidScenarioKind(ScenarioKind kind)
 
 bool isValidTeamRole(TeamRole team)
 {
-	return team == TeamRole::Terrorist ||
-		team == TeamRole::CounterTerrorist;
+	return team == TeamRole::Terrorist || team == TeamRole::CounterTerrorist;
 }
 
 bool isValidObjectiveKind(ObjectiveKind kind)
 {
-	return kind == ObjectiveKind::Attack ||
-		kind == ObjectiveKind::Defend || kind == ObjectiveKind::Retake ||
-		kind == ObjectiveKind::Save || kind == ObjectiveKind::Rescue ||
-		kind == ObjectiveKind::Escort || kind == ObjectiveKind::Buy ||
-		kind == ObjectiveKind::Plant || kind == ObjectiveKind::Defuse;
+	return kind == ObjectiveKind::Attack || kind == ObjectiveKind::Defend || kind == ObjectiveKind::Retake ||
+		kind == ObjectiveKind::Save || kind == ObjectiveKind::Rescue || kind == ObjectiveKind::Escort ||
+		kind == ObjectiveKind::Buy || kind == ObjectiveKind::Plant || kind == ObjectiveKind::Defuse;
 }
 
-bool sameRound(
-	const world::FrameIdentity &left,
-	const world::FrameIdentity &right)
+bool sameRound(const world::FrameIdentity &left, const world::FrameIdentity &right)
 {
-	return left.mapGeneration == right.mapGeneration &&
-		left.roundGeneration == right.roundGeneration;
+	return left.mapGeneration == right.mapGeneration && left.roundGeneration == right.roundGeneration;
 }
 
-bool sameScenarioVersion(
-	const ScenarioIdentity &left,
-	const ScenarioIdentity &right)
+bool sameScenarioVersion(const ScenarioIdentity &left, const ScenarioIdentity &right)
 {
-	return sameRound(left.frame, right.frame) &&
-		left.scenarioGeneration == right.scenarioGeneration &&
+	return sameRound(left.frame, right.frame) && left.scenarioGeneration == right.scenarioGeneration &&
 		left.kind == right.kind && left.team == right.team;
 }
 }
 
 bool ScenarioIdentity::isValid() const
 {
-	return frame.isValid() && scenarioGeneration != 0U &&
-		isValidScenarioKind(kind) && isValidTeamRole(team);
+	return frame.isValid() && scenarioGeneration != 0U && isValidScenarioKind(kind) && isValidTeamRole(team);
 }
 
 bool ScenarioIdentity::operator==(const ScenarioIdentity &other) const
 {
-	return frame == other.frame &&
-		scenarioGeneration == other.scenarioGeneration &&
-		kind == other.kind && team == other.team;
+	return frame == other.frame && scenarioGeneration == other.scenarioGeneration && kind == other.kind &&
+		team == other.team;
 }
 
 bool ObjectiveIdentity::isValid() const
@@ -64,26 +53,21 @@ bool ObjectiveIdentity::isValid() const
 
 bool ObjectiveIdentity::operator==(const ObjectiveIdentity &other) const
 {
-	return scenario == other.scenario && kind == other.kind &&
-		subjectId == other.subjectId;
+	return scenario == other.scenario && kind == other.kind && subjectId == other.subjectId;
 }
 
 bool ObjectiveProposal::isValid() const
 {
-	return actor.isValid() && scenario.isValid() && objective.isValid() &&
-		objective.scenario == scenario && issuedTick == scenario.frame.tick &&
-		issuedTick < expiresAtTick &&
+	return actor.isValid() && scenario.isValid() && objective.isValid() && objective.scenario == scenario &&
+		issuedTick == scenario.frame.tick && issuedTick < expiresAtTick &&
 		expiresAtTick - issuedTick <= ObjectiveLimits::kMaximumLifetimeTicks &&
-		(priority == ObjectivePriority::Low ||
-		 priority == ObjectivePriority::Normal ||
-		 priority == ObjectivePriority::High ||
-		 priority == ObjectivePriority::Critical);
+		(priority == ObjectivePriority::Low || priority == ObjectivePriority::Normal ||
+			priority == ObjectivePriority::High || priority == ObjectivePriority::Critical);
 }
 
 bool ObjectiveProposal::isExpired(const world::FrameIdentity &frame) const
 {
-	return !frame.isValid() || !sameRound(frame, scenario.frame) ||
-		frame.tick >= expiresAtTick;
+	return !frame.isValid() || !sameRound(frame, scenario.frame) || frame.tick >= expiresAtTick;
 }
 
 bool ObjectiveProposal::isProposal() const
@@ -98,13 +82,10 @@ bool ObjectiveProposal::isCompletionFeedback() const
 
 bool ObjectiveCompletionFeedback::isValid() const
 {
-	return actor.isValid() && scenario.isValid() && objective.isValid() &&
-		objective.scenario == scenario &&
-		(status == ObjectiveStatus::Unknown ||
-		 status == ObjectiveStatus::Active ||
-		 status == ObjectiveStatus::Completed ||
-		 status == ObjectiveStatus::Failed ||
-		 status == ObjectiveStatus::Expired);
+	return actor.isValid() && scenario.isValid() && objective.isValid() && objective.scenario == scenario &&
+		(status == ObjectiveStatus::Unknown || status == ObjectiveStatus::Active ||
+			status == ObjectiveStatus::Completed || status == ObjectiveStatus::Failed ||
+			status == ObjectiveStatus::Expired);
 }
 
 bool ObjectiveCompletionFeedback::isConfirmed() const
@@ -112,22 +93,15 @@ bool ObjectiveCompletionFeedback::isConfirmed() const
 	return isValid() && status == ObjectiveStatus::Completed;
 }
 
-ObjectiveState::ObjectiveState()
-	: actor_(),
-	  record_(),
-	  hasRecord_(false)
+ObjectiveState::ObjectiveState() : actor_(), record_(), hasRecord_(false)
 {
 }
 
-ObjectiveState::ObjectiveState(const world::ActorKey &actor)
-	: actor_(actor),
-	  record_(),
-	  hasRecord_(false)
+ObjectiveState::ObjectiveState(const world::ActorKey &actor) : actor_(actor), record_(), hasRecord_(false)
 {
 }
 
-ObjectiveStateResult ObjectiveState::acceptProposal(
-	const ObjectiveProposal &proposal)
+ObjectiveStateResult ObjectiveState::acceptProposal(const ObjectiveProposal &proposal)
 {
 	if (!actor_.isValid() || !proposal.actor.isValid())
 	{
@@ -145,9 +119,7 @@ ObjectiveStateResult ObjectiveState::acceptProposal(
 	{
 		return ObjectiveStateResult::InvalidProposal;
 	}
-	if (hasRecord_ && !sameRound(
-			proposal.scenario.frame,
-			record_.objective.scenario.frame))
+	if (hasRecord_ && !sameRound(proposal.scenario.frame, record_.objective.scenario.frame))
 	{
 		return ObjectiveStateResult::StaleFrame;
 	}
@@ -162,8 +134,7 @@ ObjectiveStateResult ObjectiveState::acceptProposal(
 	return ObjectiveStateResult::Accepted;
 }
 
-ObjectiveStateResult ObjectiveState::applyFeedback(
-	const ObjectiveCompletionFeedback &feedback)
+ObjectiveStateResult ObjectiveState::applyFeedback(const ObjectiveCompletionFeedback &feedback)
 {
 	if (!actor_.isValid() || !feedback.actor.isValid())
 	{
@@ -186,8 +157,8 @@ ObjectiveStateResult ObjectiveState::applyFeedback(
 		return ObjectiveStateResult::NotFound;
 	}
 	if (!sameScenarioVersion(feedback.scenario, record_.objective.scenario) ||
-			feedback.objective.kind != record_.objective.kind ||
-			feedback.objective.subjectId != record_.objective.subjectId)
+		feedback.objective.kind != record_.objective.kind ||
+		feedback.objective.subjectId != record_.objective.subjectId)
 	{
 		return ObjectiveStateResult::StaleFrame;
 	}
@@ -197,8 +168,8 @@ ObjectiveStateResult ObjectiveState::applyFeedback(
 	}
 
 	record_.status = feedback.status;
-	return feedback.status == ObjectiveStatus::Completed ?
-		ObjectiveStateResult::Completed : ObjectiveStateResult::Accepted;
+	return feedback.status == ObjectiveStatus::Completed ? ObjectiveStateResult::Completed
+														 : ObjectiveStateResult::Accepted;
 }
 
 ObjectiveStateResult ObjectiveState::expire(const world::FrameIdentity &frame)

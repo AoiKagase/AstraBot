@@ -11,18 +11,19 @@ namespace nav
 {
 namespace
 {
-		bool isDirectionValid(std::uint8_t direction)
-		{
-			return direction < NavArea::kDirectionCount;
-		}
+bool isDirectionValid(std::uint8_t direction)
+{
+	return direction < NavArea::kDirectionCount;
+}
 
-		bool isTraverseTypeValid(std::uint8_t traverseType)
-		{
-			return traverseType < NavLimits::kTraverseTypeCount;
-		}
+bool isTraverseTypeValid(std::uint8_t traverseType)
+{
+	return traverseType < NavLimits::kTraverseTypeCount;
+}
 }
 
 NavDocument::NavDocument() : areas_(), areaIndex_(), places_(), sourceIdentity_{0U, 0U, 0U}
+
 {
 }
 
@@ -86,8 +87,8 @@ NavModelResult NavDocument::addArea(const NavArea &area)
 		}
 	}
 	if (area.hidingSpots.size() > NavLimits::kMaximumHidingSpotsPerArea ||
-			area.approaches.size() > NavLimits::kMaximumApproachesPerArea ||
-			area.encounters.size() > NavLimits::kMaximumEncountersPerArea)
+		area.approaches.size() > NavLimits::kMaximumApproachesPerArea ||
+		area.encounters.size() > NavLimits::kMaximumEncountersPerArea)
 	{
 		return NavModelResult::ResourceLimit;
 	}
@@ -175,16 +176,15 @@ NavModelResult NavDocument::validate() const
 		for (const NavApproach &approach : area.approaches)
 		{
 			if (findArea(approach.here) == nullptr ||
-					(approach.previous != 0U && findArea(approach.previous) == nullptr) ||
-					(approach.next != 0U && findArea(approach.next) == nullptr))
+				(approach.previous != 0U && findArea(approach.previous) == nullptr) ||
+				(approach.next != 0U && findArea(approach.next) == nullptr))
 			{
 				return NavModelResult::InvalidReference;
 			}
 		}
 		for (const NavEncounter &encounter : area.encounters)
 		{
-			if (findArea(encounter.fromArea) == nullptr ||
-					findArea(encounter.toArea) == nullptr)
+			if (findArea(encounter.fromArea) == nullptr || findArea(encounter.toArea) == nullptr)
 			{
 				return NavModelResult::InvalidReference;
 			}
@@ -199,20 +199,16 @@ NavModelResult NavDocument::validate() const
 	}
 	for (std::size_t areaIndex = 0U; areaIndex < areas_.size(); ++areaIndex)
 	{
-		for (std::size_t spotIndex = 0U;
-				spotIndex < areas_[areaIndex].hidingSpots.size(); ++spotIndex)
+		for (std::size_t spotIndex = 0U; spotIndex < areas_[areaIndex].hidingSpots.size(); ++spotIndex)
 		{
-			for (std::size_t otherAreaIndex = 0U;
-					otherAreaIndex <= areaIndex; ++otherAreaIndex)
+			for (std::size_t otherAreaIndex = 0U; otherAreaIndex <= areaIndex; ++otherAreaIndex)
 			{
-				const std::size_t firstSpot = otherAreaIndex == areaIndex ?
-					spotIndex + 1U : 0U;
-				for (std::size_t otherSpotIndex = firstSpot;
-						otherSpotIndex < areas_[otherAreaIndex].hidingSpots.size();
-						++otherSpotIndex)
+				const std::size_t firstSpot = otherAreaIndex == areaIndex ? spotIndex + 1U : 0U;
+				for (std::size_t otherSpotIndex = firstSpot; otherSpotIndex < areas_[otherAreaIndex].hidingSpots.size();
+					 ++otherSpotIndex)
 				{
 					if (areas_[areaIndex].hidingSpots[spotIndex].id ==
-							areas_[otherAreaIndex].hidingSpots[otherSpotIndex].id)
+						areas_[otherAreaIndex].hidingSpots[otherSpotIndex].id)
 					{
 						return NavModelResult::DuplicateHidingSpot;
 					}
@@ -231,8 +227,7 @@ const NavSourceIdentity &NavDocument::sourceIdentity() const
 const NavArea *NavDocument::findArea(AreaId id) const
 {
 	const auto found = areaIndex_.find(id);
-	return found != areaIndex_.end() && found->second < areas_.size()
-		? &areas_[found->second] : nullptr;
+	return found != areaIndex_.end() && found->second < areas_.size() ? &areas_[found->second] : nullptr;
 }
 
 const std::vector<NavArea> &NavDocument::areas() const
@@ -257,8 +252,7 @@ std::size_t NavDocument::placeCount() const
 
 bool NavDocument::isFiniteVector(const NavVector &value)
 {
-	return std::isfinite(value.x) && std::isfinite(value.y) &&
-			std::isfinite(value.z);
+	return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
 }
 
 bool NavDocument::isValidName(const char *name)
@@ -279,10 +273,9 @@ bool NavDocument::isValidName(const char *name)
 
 bool NavDocument::isValidArea(const NavArea &area)
 {
-	if (area.id == 0U || !isFiniteVector(area.extent.lo) ||
-			!isFiniteVector(area.extent.hi) || !std::isfinite(area.northEastZ) ||
-			!std::isfinite(area.southWestZ) || area.extent.lo.x >= area.extent.hi.x ||
-			area.extent.lo.y >= area.extent.hi.y)
+	if (area.id == 0U || !isFiniteVector(area.extent.lo) || !isFiniteVector(area.extent.hi) ||
+		!std::isfinite(area.northEastZ) || !std::isfinite(area.southWestZ) || area.extent.lo.x >= area.extent.hi.x ||
+		area.extent.lo.y >= area.extent.hi.y)
 	{
 		return false;
 	}
@@ -310,40 +303,36 @@ bool NavDocument::isValidArea(const NavArea &area)
 		}
 	}
 	if (area.hidingSpots.size() > NavLimits::kMaximumHidingSpotsPerArea ||
-			area.approaches.size() > NavLimits::kMaximumApproachesPerArea ||
-			area.encounters.size() > NavLimits::kMaximumEncountersPerArea)
+		area.approaches.size() > NavLimits::kMaximumApproachesPerArea ||
+		area.encounters.size() > NavLimits::kMaximumEncountersPerArea)
 	{
 		return false;
 	}
 	for (const NavHidingSpot &spot : area.hidingSpots)
 	{
-			if (!isFiniteVector(spot.position))
+		if (!isFiniteVector(spot.position))
 		{
 			return false;
 		}
 	}
 	for (const NavApproach &approach : area.approaches)
 	{
-			if (approach.here == 0U ||
-						!isTraverseTypeValid(approach.previousToHereHow) ||
-						!isTraverseTypeValid(approach.hereToNextHow))
+		if (approach.here == 0U || !isTraverseTypeValid(approach.previousToHereHow) ||
+			!isTraverseTypeValid(approach.hereToNextHow))
 		{
 			return false;
 		}
 	}
 	for (const NavEncounter &encounter : area.encounters)
 	{
-		if (encounter.fromArea == 0U || encounter.toArea == 0U ||
-				!isDirectionValid(encounter.fromDirection) ||
-				!isDirectionValid(encounter.toDirection) ||
-				encounter.spots.size() > NavLimits::kMaximumEncounterSpots)
+		if (encounter.fromArea == 0U || encounter.toArea == 0U || !isDirectionValid(encounter.fromDirection) ||
+			!isDirectionValid(encounter.toDirection) || encounter.spots.size() > NavLimits::kMaximumEncounterSpots)
 		{
 			return false;
 		}
 		for (const NavEncounterSpot &spot : encounter.spots)
 		{
-				if (!std::isfinite(spot.t) ||
-					spot.t < 0.0f || spot.t > 1.0f)
+			if (!std::isfinite(spot.t) || spot.t < 0.0f || spot.t > 1.0f)
 			{
 				return false;
 			}
@@ -357,9 +346,7 @@ bool NavDocument::isValidPlace(const NavPlace &place)
 	return place.id != 0U && isValidName(place.name);
 }
 
-bool NavDocument::hasHidingSpot(
-	const std::vector<NavArea> &areas,
-	std::uint32_t id)
+bool NavDocument::hasHidingSpot(const std::vector<NavArea> &areas, std::uint32_t id)
 {
 	for (const NavArea &area : areas)
 	{

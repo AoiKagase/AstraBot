@@ -1,0 +1,49 @@
+# clang-format 11 compatible. Format only project-owned src/include/tests.
+# Keep SDKs, generated files, include order, literals and comments unchanged.
+BasedOnStyle: LLVM
+Standard: c++14
+UseTab: Always
+TabWidth: 4
+IndentWidth: 4
+ContinuationIndentWidth: 4
+AccessModifierOffset: -4
+NamespaceIndentation: None
+ColumnLimit: 120
+AlignAfterOpenBracket: DontAlign
+AlignOperands: DontAlign
+AlignTrailingComments: false
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterCaseLabel: true
+  AfterClass: true
+  AfterControlStatement: Always
+  AfterEnum: true
+  AfterFunction: true
+  AfterNamespace: true
+  AfterStruct: true
+  AfterUnion: true
+  AfterExternBlock: true
+  BeforeCatch: true
+  BeforeElse: true
+  BeforeLambdaBody: true
+  BeforeWhile: true
+  IndentBraces: false
+AllowShortBlocksOnASingleLine: Never
+AllowShortCaseLabelsOnASingleLine: false
+AllowShortEnumsOnASingleLine: false
+AllowShortFunctionsOnASingleLine: None
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLambdasOnASingleLine: None
+AllowShortLoopsOnASingleLine: false
+SpaceBeforeParens: ControlStatements
+DerivePointerAlignment: true
+PointerAlignment: Right
+SortIncludes: false
+SortUsingDeclarations: false
+IncludeBlocks: Preserve
+FixNamespaceComments: false
+ReflowComments: false
+BreakStringLiterals: false
+DeriveLineEnding: false
+UseCRLF: false
+MaxEmptyLinesToKeep: 1

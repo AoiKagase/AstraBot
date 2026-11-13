@@ -10,8 +10,7 @@ namespace
 {
 bool isValidTeam(TeamRole team)
 {
-	return team == TeamRole::Terrorist ||
-		team == TeamRole::CounterTerrorist;
+	return team == TeamRole::Terrorist || team == TeamRole::CounterTerrorist;
 }
 
 bool isValidKind(ReportKind kind)
@@ -21,14 +20,13 @@ bool isValidKind(ReportKind kind)
 
 bool isValidState(ReportState state)
 {
-	return state == ReportState::Unknown || state == ReportState::Observed ||
-		state == ReportState::Unverified || state == ReportState::Unavailable;
+	return state == ReportState::Unknown || state == ReportState::Observed || state == ReportState::Unverified ||
+		state == ReportState::Unavailable;
 }
 
 bool isBoundedPosition(const world::WorldPosition &position)
 {
-	return std::isfinite(position.x) && std::isfinite(position.y) &&
-		std::isfinite(position.z) &&
+	return std::isfinite(position.x) && std::isfinite(position.y) && std::isfinite(position.z) &&
 		std::fabs(position.x) <= world::WorldLimits::kMaximumCoordinate &&
 		std::fabs(position.y) <= world::WorldLimits::kMaximumCoordinate &&
 		std::fabs(position.z) <= world::WorldLimits::kMaximumCoordinate;
@@ -42,27 +40,22 @@ bool ReportSource::isValid() const
 
 bool TeamReport::isValid() const
 {
-	return id != 0U && source.isValid() && isValidKind(kind) &&
-		isValidState(state) && subject.isValid() && isBoundedPosition(position) &&
-		std::isfinite(confidence) && confidence >= 0.0f && confidence <= 1.0f &&
-		ageTicks <= TeamReportLimits::kMaximumAgeTicks &&
-		expiresAtTick > source.frame.tick &&
+	return id != 0U && source.isValid() && isValidKind(kind) && isValidState(state) && subject.isValid() &&
+		isBoundedPosition(position) && std::isfinite(confidence) && confidence >= 0.0f && confidence <= 1.0f &&
+		ageTicks <= TeamReportLimits::kMaximumAgeTicks && expiresAtTick > source.frame.tick &&
 		expiresAtTick - source.frame.tick <= TeamReportLimits::kMaximumAgeTicks;
 }
 
 bool TeamReport::isUsable(const world::FrameIdentity &frame) const
 {
-	if (!isValid() || state != ReportState::Observed ||
-		confidence <= 0.0f || !frame.isValid() ||
-		frame.mapGeneration != source.frame.mapGeneration ||
-		frame.roundGeneration != source.frame.roundGeneration ||
+	if (!isValid() || state != ReportState::Observed || confidence <= 0.0f || !frame.isValid() ||
+		frame.mapGeneration != source.frame.mapGeneration || frame.roundGeneration != source.frame.roundGeneration ||
 		frame.tick < source.frame.tick || frame.tick >= expiresAtTick)
 	{
 		return false;
 	}
 
-	return static_cast<std::uint64_t>(ageTicks) +
-		frame.tick - source.frame.tick <= TeamReportLimits::kMaximumAgeTicks;
+	return static_cast<std::uint64_t>(ageTicks) + frame.tick - source.frame.tick <= TeamReportLimits::kMaximumAgeTicks;
 }
 
 bool TeamReport::isConfirmedFact() const
@@ -71,24 +64,12 @@ bool TeamReport::isConfirmedFact() const
 }
 
 TeamReportBoard::TeamReportBoard()
-	: owner_(),
-	  team_(TeamRole::Unknown),
-	  reports_(),
-	  reportCount_(0U),
-	  lastFrame_(),
-	  reporterGenerations_()
+	: owner_(), team_(TeamRole::Unknown), reports_(), reportCount_(0U), lastFrame_(), reporterGenerations_()
 {
 }
 
-TeamReportBoard::TeamReportBoard(
-	const world::ActorKey &owner,
-	TeamRole team)
-	: owner_(owner),
-	  team_(team),
-	  reports_(),
-	  reportCount_(0U),
-	  lastFrame_(),
-	  reporterGenerations_()
+TeamReportBoard::TeamReportBoard(const world::ActorKey &owner, TeamRole team)
+	: owner_(owner), team_(team), reports_(), reportCount_(0U), lastFrame_(), reporterGenerations_()
 {
 }
 
@@ -106,17 +87,14 @@ ReportResult TeamReportBoard::add(const TeamReport &report)
 	{
 		return ReportResult::WrongTeam;
 	}
-	const std::size_t reporterIndex = static_cast<std::size_t>(
-		report.source.actor.slot - 1U);
+	const std::size_t reporterIndex = static_cast<std::size_t>(report.source.actor.slot - 1U);
 	if (reporterGenerations_[reporterIndex] != 0U &&
-			report.source.actor.generation <
-			reporterGenerations_[reporterIndex])
+		report.source.actor.generation < reporterGenerations_[reporterIndex])
 	{
 		return ReportResult::StaleGeneration;
 	}
 	if (lastFrame_.isValid() &&
-			(!sameRound(report.source.frame, lastFrame_) ||
-			 report.source.frame.tick < lastFrame_.tick))
+		(!sameRound(report.source.frame, lastFrame_) || report.source.frame.tick < lastFrame_.tick))
 	{
 		return ReportResult::StaleFrame;
 	}
@@ -141,9 +119,7 @@ ReportResult TeamReportBoard::add(const TeamReport &report)
 	return ReportResult::Accepted;
 }
 
-ReportResult TeamReportBoard::select(
-	const world::FrameIdentity &frame,
-	TeamReport *report) const
+ReportResult TeamReportBoard::select(const world::FrameIdentity &frame, TeamReport *report) const
 {
 	if (report == nullptr || !frame.isValid())
 	{
@@ -157,10 +133,8 @@ ReportResult TeamReportBoard::select(
 		{
 			continue;
 		}
-		const std::size_t reporterIndex = static_cast<std::size_t>(
-			reports_[index].source.actor.slot - 1U);
-		if (reporterGenerations_[reporterIndex] !=
-				reports_[index].source.actor.generation)
+		const std::size_t reporterIndex = static_cast<std::size_t>(reports_[index].source.actor.slot - 1U);
+		if (reporterGenerations_[reporterIndex] != reports_[index].source.actor.generation)
 		{
 			continue;
 		}
@@ -203,25 +177,17 @@ TeamRole TeamReportBoard::team() const
 	return team_;
 }
 
-bool TeamReportBoard::sameRound(
-	const world::FrameIdentity &left,
-	const world::FrameIdentity &right)
+bool TeamReportBoard::sameRound(const world::FrameIdentity &left, const world::FrameIdentity &right)
 {
-	return left.mapGeneration == right.mapGeneration &&
-		left.roundGeneration == right.roundGeneration;
+	return left.mapGeneration == right.mapGeneration && left.roundGeneration == right.roundGeneration;
 }
 
-bool TeamReportBoard::sameReport(
-	const TeamReport &left,
-	const TeamReport &right)
+bool TeamReportBoard::sameReport(const TeamReport &left, const TeamReport &right)
 {
-	return left.id == right.id && left.source.actor == right.source.actor &&
-		left.source.frame == right.source.frame;
+	return left.id == right.id && left.source.actor == right.source.actor && left.source.frame == right.source.frame;
 }
 
-bool TeamReportBoard::isBetter(
-	const TeamReport &candidate,
-	const TeamReport &current)
+bool TeamReportBoard::isBetter(const TeamReport &candidate, const TeamReport &current)
 {
 	if (candidate.confidence != current.confidence)
 	{

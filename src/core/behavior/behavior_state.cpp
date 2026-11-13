@@ -7,25 +7,26 @@ namespace astrabot
 {
 namespace behavior
 {
+namespace
+{
+constexpr float kMaximumHealth = 100.0f;
+}
+
 BehaviorStateConfig::BehaviorStateConfig()
-	: retreatHealth(25.0f),
-	  maximumRecoveryTicks(64U),
-	  maximumTargetMemoryTicks(128U)
+	: retreatHealth(25.0f), maximumRecoveryTicks(64U), maximumTargetMemoryTicks(128U)
 {
 }
 
 bool BehaviorStateConfig::isValid() const
 {
-	return std::isfinite(retreatHealth) && retreatHealth >= 0.0f &&
-		retreatHealth <= 100.0f &&
+	return std::isfinite(retreatHealth) && retreatHealth >= 0.0f && retreatHealth <= kMaximumHealth &&
 		maximumRecoveryTicks <= world::WorldLimits::kMaximumAgeTicks &&
 		maximumTargetMemoryTicks <= world::WorldLimits::kMaximumAgeTicks;
 }
 
 bool ActorDecisionContext::isValid() const
 {
-	if (!actor.isValid() || !frame.isValid() ||
-		!BehaviorStateMachine::isValidLifeStatus(life) ||
+	if (!actor.isValid() || !frame.isValid() || !BehaviorStateMachine::isValidLifeStatus(life) ||
 		!BehaviorStateMachine::isValidAvailability(roundAvailability) ||
 		!BehaviorStateMachine::isValidAvailability(healthAvailability))
 	{
@@ -33,60 +34,38 @@ bool ActorDecisionContext::isValid() const
 	}
 
 	return healthAvailability != Availability::Available ||
-		(std::isfinite(health) && health >= 0.0f && health <= 100.0f);
+		(std::isfinite(health) && health >= 0.0f && health <= kMaximumHealth);
 }
 
 BehaviorStateMachine::BehaviorStateMachine()
-	: config_(),
-	  actor_(),
-	  lastFrame_(),
-	  rememberedTarget_(),
-	  targetFrame_(),
-	  state_(BehaviorState::Initial),
-	  recoveryTicks_(0U),
-	  hasRememberedTarget_(false),
-	  initialized_(false)
+	: config_(), actor_(), lastFrame_(), rememberedTarget_(), targetFrame_(), state_(BehaviorState::Initial),
+	  recoveryTicks_(0U), hasRememberedTarget_(false), initialized_(false)
 {
 }
 
-BehaviorStateMachine::BehaviorStateMachine(
-	const world::ActorKey &actor,
-	const BehaviorStateConfig &config)
-	: config_(config),
-	  actor_(actor),
-	  lastFrame_(),
-	  rememberedTarget_(),
-	  targetFrame_(),
-	  state_(BehaviorState::Initial),
-	  recoveryTicks_(0U),
-	  hasRememberedTarget_(false),
-	  initialized_(actor.isValid() && config.isValid())
+BehaviorStateMachine::BehaviorStateMachine(const world::ActorKey &actor, const BehaviorStateConfig &config)
+	: config_(config), actor_(actor), lastFrame_(), rememberedTarget_(), targetFrame_(), state_(BehaviorState::Initial),
+	  recoveryTicks_(0U), hasRememberedTarget_(false), initialized_(actor.isValid() && config.isValid())
 {
 }
 
 bool BehaviorStateMachine::isValidAvailability(Availability availability)
 {
-	return availability == Availability::Unknown ||
-		availability == Availability::Available ||
+	return availability == Availability::Unknown || availability == Availability::Available ||
 		availability == Availability::Unavailable;
 }
 
 bool BehaviorStateMachine::isValidLifeStatus(LifeStatus life)
 {
-	return life == LifeStatus::Unknown || life == LifeStatus::Alive ||
-		life == LifeStatus::Dead;
+	return life == LifeStatus::Unknown || life == LifeStatus::Alive || life == LifeStatus::Dead;
 }
 
-bool BehaviorStateMachine::sameFrame(
-	const world::FrameIdentity &left,
-	const world::FrameIdentity &right)
+bool BehaviorStateMachine::sameFrame(const world::FrameIdentity &left, const world::FrameIdentity &right)
 {
 	return left == right;
 }
 
-bool BehaviorStateMachine::isFrameAfter(
-	const world::FrameIdentity &candidate,
-	const world::FrameIdentity &current)
+bool BehaviorStateMachine::isFrameAfter(const world::FrameIdentity &candidate, const world::FrameIdentity &current)
 {
 	if (candidate.mapGeneration != current.mapGeneration)
 	{
@@ -102,9 +81,7 @@ bool BehaviorStateMachine::isFrameAfter(
 }
 
 bool BehaviorStateMachine::findVisibleEnemy(
-	const world::WorldSnapshot &snapshot,
-	const world::ActorKey &observer,
-	world::ActorKey *enemy)
+	const world::WorldSnapshot &snapshot, const world::ActorKey &observer, world::ActorKey *enemy)
 {
 	if (enemy == nullptr)
 	{
@@ -116,8 +93,7 @@ bool BehaviorStateMachine::findVisibleEnemy(
 	{
 		const world::ActorObservation *observation = snapshot.actorAt(index);
 		if (observation == nullptr || observation->actor == observer ||
-				observation->relation != world::TeamRelation::Hostile ||
-				!observation->isConfirmed())
+			observation->relation != world::TeamRelation::Hostile || !observation->isConfirmed())
 		{
 			continue;
 		}
@@ -130,14 +106,10 @@ bool BehaviorStateMachine::findVisibleEnemy(
 }
 
 bool BehaviorStateMachine::isTargetMemoryCurrent(
-	const world::FrameIdentity &frame,
-	const world::FrameIdentity &targetFrame,
-	std::uint32_t maximumAgeTicks)
+	const world::FrameIdentity &frame, const world::FrameIdentity &targetFrame, std::uint32_t maximumAgeTicks)
 {
-	return frame.mapGeneration == targetFrame.mapGeneration &&
-		frame.roundGeneration == targetFrame.roundGeneration &&
-		frame.tick >= targetFrame.tick &&
-		frame.tick - targetFrame.tick <= maximumAgeTicks;
+	return frame.mapGeneration == targetFrame.mapGeneration && frame.roundGeneration == targetFrame.roundGeneration &&
+		frame.tick >= targetFrame.tick && frame.tick - targetFrame.tick <= maximumAgeTicks;
 }
 
 ObjectivePriority BehaviorStateMachine::priorityFor(BehaviorState state)
@@ -182,30 +154,26 @@ ObjectiveKind BehaviorStateMachine::objectiveFor(BehaviorState state)
 	return ObjectiveKind::None;
 }
 
-bool BehaviorStateMachine::makeProposal(
-	const world::WorldSnapshot &snapshot,
-	const world::ActorKey &actor,
-	BehaviorState state,
-	TransitionReason reason,
-	const world::ActorKey &target,
-	bool hasTarget,
+bool BehaviorStateMachine::makeProposal(const world::WorldSnapshot &snapshot, const world::ActorKey &actor,
+	BehaviorState state, TransitionReason reason, const world::ActorKey &target, bool hasTarget,
 	ObjectiveProposal *proposal)
 {
-	if (proposal == nullptr || !actor.isValid() ||
-		!(snapshot.identity().observer == actor) ||
+	if (proposal == nullptr || !actor.isValid() || !(snapshot.identity().observer == actor) ||
 		objectiveFor(state) == ObjectiveKind::None)
 	{
 		return false;
 	}
 
-	std::uint32_t lifetime = state == BehaviorState::Engage ? 16U : 64U;
+	constexpr auto kEngageLifetimeTicks = 16U;
+	constexpr auto kDefaultLifetimeTicks = 64U;
+	constexpr auto kSeekLifetimeTicks = 32U;
+	std::uint32_t lifetime = state == BehaviorState::Engage ? kEngageLifetimeTicks : kDefaultLifetimeTicks;
 	if (state == BehaviorState::Seek)
 	{
-		lifetime = 32U;
+		lifetime = kSeekLifetimeTicks;
 	}
 
-	if (snapshot.identity().frame.tick >
-			std::numeric_limits<std::uint32_t>::max() - lifetime)
+	if (snapshot.identity().frame.tick > std::numeric_limits<std::uint32_t>::max() - lifetime)
 	{
 		return false;
 	}
@@ -218,20 +186,14 @@ bool BehaviorStateMachine::makeProposal(
 	proposal->priority = priorityFor(state);
 	proposal->issuedTick = snapshot.identity().frame.tick;
 	proposal->expiresAtTick = proposal->issuedTick + lifetime;
-	proposal->hasTarget = hasTarget &&
-		(state == BehaviorState::Seek || state == BehaviorState::Engage);
+	proposal->hasTarget = hasTarget && (state == BehaviorState::Seek || state == BehaviorState::Engage);
 	proposal->target = proposal->hasTarget ? target : world::ActorKey{};
 	(void)reason;
 	return proposal->isValid();
 }
 
-BehaviorResult BehaviorStateMachine::transitionTo(
-	const world::WorldSnapshot &snapshot,
-	BehaviorState nextState,
-	TransitionReason reason,
-	const world::ActorKey &target,
-	bool hasTarget,
-	BehaviorTransition *transition)
+BehaviorResult BehaviorStateMachine::transitionTo(const world::WorldSnapshot &snapshot, BehaviorState nextState,
+	TransitionReason reason, const world::ActorKey &target, bool hasTarget, BehaviorTransition *transition)
 {
 	if (transition == nullptr)
 	{
@@ -239,10 +201,8 @@ BehaviorResult BehaviorStateMachine::transitionTo(
 	}
 
 	const BehaviorState previous = state_;
-	const bool forcedTransition =
-		reason == TransitionReason::ActorGenerationChanged ||
-		reason == TransitionReason::MapGenerationChanged ||
-		reason == TransitionReason::RoundReset;
+	const bool forcedTransition = reason == TransitionReason::ActorGenerationChanged ||
+		reason == TransitionReason::MapGenerationChanged || reason == TransitionReason::RoundReset;
 	const bool changed = previous != nextState || forcedTransition;
 	state_ = nextState;
 	transition->actor = actor_;
@@ -250,14 +210,8 @@ BehaviorResult BehaviorStateMachine::transitionTo(
 	transition->from = previous;
 	transition->to = nextState;
 	transition->reason = reason;
-	transition->hasObjectiveProposal = changed && makeProposal(
-		snapshot,
-		actor_,
-		nextState,
-		reason,
-		target,
-		hasTarget,
-		&transition->proposal);
+	transition->hasObjectiveProposal =
+		changed && makeProposal(snapshot, actor_, nextState, reason, target, hasTarget, &transition->proposal);
 	if (!transition->hasObjectiveProposal)
 	{
 		transition->proposal = {};
@@ -267,9 +221,7 @@ BehaviorResult BehaviorStateMachine::transitionTo(
 }
 
 BehaviorResult BehaviorStateMachine::update(
-	const world::WorldSnapshot &snapshot,
-	const ActorDecisionContext &context,
-	BehaviorTransition *transition)
+	const world::WorldSnapshot &snapshot, const ActorDecisionContext &context, BehaviorTransition *transition)
 {
 	if (transition == nullptr)
 	{
@@ -287,8 +239,7 @@ BehaviorResult BehaviorStateMachine::update(
 	{
 		return BehaviorResult::InvalidObservation;
 	}
-	if (!(snapshot.identity().frame == context.frame) ||
-		!(snapshot.identity().observer == context.actor))
+	if (!(snapshot.identity().frame == context.frame) || !(snapshot.identity().observer == context.actor))
 	{
 		return BehaviorResult::InvalidIdentity;
 	}
@@ -303,8 +254,7 @@ BehaviorResult BehaviorStateMachine::update(
 	}
 	else if (!(context.actor == actor_))
 	{
-		if (context.actor.slot != actor_.slot ||
-				context.actor.generation <= actor_.generation)
+		if (context.actor.slot != actor_.slot || context.actor.generation <= actor_.generation)
 		{
 			return BehaviorResult::StaleGeneration;
 		}
@@ -315,12 +265,7 @@ BehaviorResult BehaviorStateMachine::update(
 		recoveryTicks_ = 0U;
 		hasRememberedTarget_ = false;
 		return transitionTo(
-			snapshot,
-			BehaviorState::Initial,
-			TransitionReason::ActorGenerationChanged,
-			{},
-			false,
-			transition);
+			snapshot, BehaviorState::Initial, TransitionReason::ActorGenerationChanged, {}, false, transition);
 	}
 
 	const bool firstFrame = !lastFrame_.isValid();
@@ -339,33 +284,20 @@ BehaviorResult BehaviorStateMachine::update(
 		hasRememberedTarget_ = false;
 		recoveryTicks_ = 0U;
 		return transitionTo(
-			snapshot,
-			BehaviorState::Initial,
-			TransitionReason::MapGenerationChanged,
-			{},
-			false,
-			transition);
+			snapshot, BehaviorState::Initial, TransitionReason::MapGenerationChanged, {}, false, transition);
 	}
 
-	if (!firstFrame &&
-			context.frame.roundGeneration != lastFrame_.roundGeneration)
+	if (!firstFrame && context.frame.roundGeneration != lastFrame_.roundGeneration)
 	{
 		lastFrame_ = context.frame;
 		hasRememberedTarget_ = false;
 		recoveryTicks_ = 0U;
-		return transitionTo(
-			snapshot,
-			BehaviorState::Initial,
-			TransitionReason::RoundReset,
-			{},
-			false,
-			transition);
+		return transitionTo(snapshot, BehaviorState::Initial, TransitionReason::RoundReset, {}, false, transition);
 	}
 
 	lastFrame_ = context.frame;
-	if (context.life == LifeStatus::Unknown ||
-			context.roundAvailability != Availability::Available ||
-			!context.roundActive)
+	if (context.life == LifeStatus::Unknown || context.roundAvailability != Availability::Available ||
+		!context.roundActive)
 	{
 		++recoveryTicks_;
 		if (recoveryTicks_ > config_.maximumRecoveryTicks)
@@ -373,96 +305,49 @@ BehaviorResult BehaviorStateMachine::update(
 			recoveryTicks_ = config_.maximumRecoveryTicks;
 			hasRememberedTarget_ = false;
 			return transitionTo(
-				snapshot,
-				BehaviorState::Initial,
-				TransitionReason::RecoveryTimeout,
-				{},
-				false,
-				transition);
+				snapshot, BehaviorState::Initial, TransitionReason::RecoveryTimeout, {}, false, transition);
 		}
 
 		const BehaviorResult result = transitionTo(
-			snapshot,
-			BehaviorState::Recovering,
-			TransitionReason::UnavailableObservation,
-			{},
-			false,
-			transition);
-		return result == BehaviorResult::InvalidArgument ? result :
-			BehaviorResult::RecoveryPending;
+			snapshot, BehaviorState::Recovering, TransitionReason::UnavailableObservation, {}, false, transition);
+		return result == BehaviorResult::InvalidArgument ? result : BehaviorResult::RecoveryPending;
 	}
 
 	recoveryTicks_ = 0U;
 	if (context.life == LifeStatus::Dead)
 	{
 		hasRememberedTarget_ = false;
-		return transitionTo(
-			snapshot,
-			BehaviorState::Dead,
-			TransitionReason::DeathObserved,
-			{},
-			false,
-			transition);
+		return transitionTo(snapshot, BehaviorState::Dead, TransitionReason::DeathObserved, {}, false, transition);
 	}
 
-	if (context.healthAvailability == Availability::Available &&
-			context.health <= config_.retreatHealth)
+	if (context.healthAvailability == Availability::Available && context.health <= config_.retreatHealth)
 	{
-		return transitionTo(
-			snapshot,
-			BehaviorState::Retreat,
-			TransitionReason::LowHealth,
-			{},
-			false,
-			transition);
+		return transitionTo(snapshot, BehaviorState::Retreat, TransitionReason::LowHealth, {}, false, transition);
 	}
 
 	world::ActorKey visibleEnemy = {};
-	const bool enemyVisible = findVisibleEnemy(
-		snapshot,
-		context.actor,
-		&visibleEnemy);
+	const bool enemyVisible = findVisibleEnemy(snapshot, context.actor, &visibleEnemy);
 	if (enemyVisible)
 	{
 		rememberedTarget_ = visibleEnemy;
 		targetFrame_ = context.frame;
 		hasRememberedTarget_ = true;
 		return transitionTo(
-			snapshot,
-			BehaviorState::Engage,
-			TransitionReason::EnemyVisible,
-			visibleEnemy,
-			true,
-			transition);
+			snapshot, BehaviorState::Engage, TransitionReason::EnemyVisible, visibleEnemy, true, transition);
 	}
 
-	if (hasRememberedTarget_ && isTargetMemoryCurrent(
-			context.frame,
-			targetFrame_,
-			config_.maximumTargetMemoryTicks))
+	if (hasRememberedTarget_ && isTargetMemoryCurrent(context.frame, targetFrame_, config_.maximumTargetMemoryTicks))
 	{
 		return transitionTo(
-			snapshot,
-			BehaviorState::Seek,
-			TransitionReason::EnemyLost,
-			rememberedTarget_,
-			true,
-			transition);
+			snapshot, BehaviorState::Seek, TransitionReason::EnemyLost, rememberedTarget_, true, transition);
 	}
 
 	hasRememberedTarget_ = false;
-	const TransitionReason noContactReason = firstFrame ?
-		TransitionReason::Initial :
-		(state_ == BehaviorState::Recovering ?
-			TransitionReason::RecoveryComplete :
-			TransitionReason::NoConfirmedContact);
-	return transitionTo(
-		snapshot,
-		BehaviorState::Roam,
-		noContactReason,
-		{},
-		false,
-		transition);
+	const TransitionReason noContactReason = firstFrame
+		? TransitionReason::Initial
+		: (state_ == BehaviorState::Recovering ? TransitionReason::RecoveryComplete
+											   : TransitionReason::NoConfirmedContact);
+	return transitionTo(snapshot, BehaviorState::Roam, noContactReason, {}, false, transition);
 }
 
 BehaviorState BehaviorStateMachine::state() const

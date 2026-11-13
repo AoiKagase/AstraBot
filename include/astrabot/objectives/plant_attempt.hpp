@@ -26,8 +26,8 @@ public:
 	static constexpr float kPlantAttemptTimeoutSeconds = 5.0f;
 	static constexpr float kPlantAttemptRetrySeconds = 1.0f;
 	static bool expired(float elapsedSeconds) noexcept;
-	static bool canBeginObjective(bool hasPlantAssignment, bool carryingBomb,
-		bool isTerrorist, bool selectedTargetAvailable) noexcept;
+	static bool canBeginObjective(
+		bool hasPlantAssignment, bool carryingBomb, bool isTerrorist, bool selectedTargetAvailable) noexcept;
 	PlantAttemptResult evaluate(bool actorOverlapsSite, bool plantedConfirmed, float now) noexcept;
 	void recordDispatched(float now) noexcept;
 	bool active() const noexcept

@@ -22,18 +22,21 @@ struct ThreatCandidate
 
 class ReactionQueue
 {
-  public:
+public:
 	ReactionQueue() : samples_(), observer_(), frame_(), head_(0U), count_(0U), lastTime_(0.0f)
 	{
 	}
+
 	void reset()
 	{
 		*this = ReactionQueue();
 	}
-	bool update(world::ActorKey observer, world::FrameIdentity frame, float now,
-				float reactionSeconds, const ThreatCandidate *candidates, std::size_t count,
-				bool blind, ThreatCandidate *selected)
+
+	bool update(world::ActorKey observer, world::FrameIdentity frame, float now, float reactionSeconds,
+		const ThreatCandidate *candidates, std::size_t count, bool blind, ThreatCandidate *selected)
 	{
+// Keep literal evaluation precision on x87; each macro is undefined below.
+#define ASTRABOT_COMBAT_BEHAVIOR_REACTION_TIME_TOLERANCE_SECONDS 0.00001f
 		if (selected == nullptr)
 			return false;
 		*selected = {};
@@ -55,14 +58,12 @@ class ReactionQueue
 			for (std::size_t i = 0; i < count; ++i)
 			{
 				const ThreatCandidate &c = candidates[i];
-				if (!c.actor.isValid() || c.actor == observer || !std::isfinite(c.distance) ||
-					c.distance < 0.0f || !std::isfinite(c.visiblePoint.x) ||
-					!std::isfinite(c.visiblePoint.y) || !std::isfinite(c.visiblePoint.z))
+				if (!c.actor.isValid() || c.actor == observer || !std::isfinite(c.distance) || c.distance < 0.0f ||
+					!std::isfinite(c.visiblePoint.x) || !std::isfinite(c.visiblePoint.y) ||
+					!std::isfinite(c.visiblePoint.z))
 					continue;
-				if (!sample.hasThreat ||
-					(c.attackingObserver && !sample.threat.attackingObserver) ||
-					(c.attackingObserver == sample.threat.attackingObserver &&
-					 c.distance < sample.threat.distance))
+				if (!sample.hasThreat || (c.attackingObserver && !sample.threat.attackingObserver) ||
+					(c.attackingObserver == sample.threat.attackingObserver && c.distance < sample.threat.distance))
 				{
 					sample.threat = c;
 					sample.hasThreat = true;
@@ -78,9 +79,8 @@ class ReactionQueue
 		// Select the most recent complete recognition snapshot old enough for the profile.
 		for (std::size_t age = 0; age < count_; ++age)
 		{
-			const Sample &historical =
-				samples_[(head_ + samples_.size() - 1U - age) % samples_.size()];
-			if (historical.time <= now - reactionSeconds + 0.00001f)
+			const Sample &historical = samples_[(head_ + samples_.size() - 1U - age) % samples_.size()];
+			if (historical.time <= now - reactionSeconds + ASTRABOT_COMBAT_BEHAVIOR_REACTION_TIME_TOLERANCE_SECONDS)
 			{
 				if (!historical.hasThreat)
 					return false;
@@ -96,15 +96,17 @@ class ReactionQueue
 		}
 		return false;
 	}
+#undef ASTRABOT_COMBAT_BEHAVIOR_REACTION_TIME_TOLERANCE_SECONDS
 
-  private:
+private:
+	static constexpr unsigned kReactionHistoryCapacity = 64U;
 	struct Sample
 	{
 		float time;
 		bool hasThreat;
 		ThreatCandidate threat;
 	};
-	std::array<Sample, 64U> samples_;
+	std::array<Sample, kReactionHistoryCapacity> samples_;
 	world::ActorKey observer_;
 	world::FrameIdentity frame_;
 	std::size_t head_, count_;
@@ -119,39 +121,79 @@ struct AimStep
 };
 
 inline world::WorldPosition combatAimPoint(world::WorldPosition enemy, world::WorldPosition observer,
-	std::uint8_t visibleParts, std::uint16_t weapon, float skill, float feetOffset,
-	bool recoilKnown, float accuracy)
+	std::uint8_t visibleParts, std::uint16_t weapon, float skill, float feetOffset, bool recoilKnown, float accuracy)
 {
-	const bool pistol = weapon == 1 || weapon == 10 || weapon == 11 || weapon == 16 || weapon == 17 || weapon == 26;
-	const bool sniper = weapon == 3 || weapon == 13 || weapon == 18 || weapon == 24;
+	constexpr int kP228 = 1;
+	constexpr int kElite = 10;
+	constexpr int kFiveSeven = 11;
+	constexpr int kUsp = 16;
+	constexpr int kGlock18 = 17;
+	constexpr int kDeagle = 26;
+	constexpr int kScout = 3;
+	constexpr int kSg550 = 13;
+	constexpr int kAwp = 18;
+	constexpr int kG3sg1 = 24;
+	constexpr int kXm1014 = 5;
+	constexpr int kM3 = 21;
+	constexpr int kM249 = 20;
+#define ASTRABOT_COMBAT_BEHAVIOR_HEAD_AIM_MINIMUM_SKILL .8f
+#define ASTRABOT_COMBAT_BEHAVIOR_CHEST_AIM_ACCURACY_THRESHOLD .4f
+	constexpr float kChestAimFeetScale = .25f;
+	constexpr float kHeadOccludedFeetScale = .5f;
+#define ASTRABOT_COMBAT_BEHAVIOR_MINIMUM_SIDE_AIM_RANGE .001f
+	constexpr int kSideAimOffset = 16;
+	constexpr float kFeetAimScale = 2.0f;
+	const bool pistol = weapon == kP228 || weapon == kElite || weapon == kFiveSeven || weapon == kUsp ||
+		weapon == kGlock18 || weapon == kDeagle;
+	const bool sniper = weapon == kScout || weapon == kSg550 || weapon == kAwp || weapon == kG3sg1;
 	const bool chest = (visibleParts & world::VisibleChest) != 0U;
-	if (chest && (weapon == 18 || weapon == 5 || weapon == 21 || weapon == 20 || skill < .8f ||
-		(recoilKnown && accuracy > .4f && !pistol && !sniper))) enemy.z -= feetOffset * .25f;
+	if (chest &&
+		(weapon == kAwp || weapon == kXm1014 || weapon == kM3 || weapon == kM249 ||
+			skill < ASTRABOT_COMBAT_BEHAVIOR_HEAD_AIM_MINIMUM_SKILL ||
+			(recoilKnown && accuracy > ASTRABOT_COMBAT_BEHAVIOR_CHEST_AIM_ACCURACY_THRESHOLD && !pistol && !sniper)))
+		enemy.z -= feetOffset * kChestAimFeetScale;
 	else if ((visibleParts & world::VisibleHead) == 0U)
 	{
-		if (chest) enemy.z -= feetOffset * .5f;
+		if (chest)
+			enemy.z -= feetOffset * kHeadOccludedFeetScale;
 		else if ((visibleParts & (world::VisibleLeftSide | world::VisibleRightSide)) != 0U)
 		{
 			const float dx = enemy.x - observer.x, dy = enemy.y - observer.y;
 			const float length = std::hypot(dx, dy);
 			const float side = (visibleParts & world::VisibleLeftSide) != 0U ? 1.0f : -1.0f;
-			if (length > .001f) { enemy.x -= side * dy / length * 16; enemy.y += side * dx / length * 16; }
-			enemy.z -= feetOffset * .5f;
+			if (length > ASTRABOT_COMBAT_BEHAVIOR_MINIMUM_SIDE_AIM_RANGE)
+			{
+				enemy.x -= side * dy / length * kSideAimOffset;
+				enemy.y += side * dx / length * kSideAimOffset;
+			}
+			enemy.z -= feetOffset * kHeadOccludedFeetScale;
 		}
-		else enemy.z -= feetOffset * 2.0f;
+		else
+			enemy.z -= feetOffset * kFeetAimScale;
 	}
 	return enemy;
 }
+#undef ASTRABOT_COMBAT_BEHAVIOR_HEAD_AIM_MINIMUM_SKILL
+#undef ASTRABOT_COMBAT_BEHAVIOR_CHEST_AIM_ACCURACY_THRESHOLD
+#undef ASTRABOT_COMBAT_BEHAVIOR_MINIMUM_SIDE_AIM_RANGE
 
 inline bool combatAimOnTarget(world::WorldPosition point, world::WorldPosition origin, float yaw, bool sniper)
 {
+#define ASTRABOT_COMBAT_BEHAVIOR_MINIMUM_AIM_RANGE .001f
+#define ASTRABOT_COMBAT_BEHAVIOR_DEGREES_TO_RADIANS .01745329251994329577f
+	constexpr float kSniperAimRadius = 16.0f;
+	constexpr float kFirearmAimRadius = 32.0f;
 	const float dx = point.x - origin.x, dy = point.y - origin.y;
 	const float range = std::hypot(dx, dy);
-	if (!std::isfinite(range) || range <= .001f || !std::isfinite(yaw)) return false;
-	const float radians = yaw * .01745329251994329577f;
+	if (!std::isfinite(range) || range <= ASTRABOT_COMBAT_BEHAVIOR_MINIMUM_AIM_RANGE || !std::isfinite(yaw))
+		return false;
+	const float radians = yaw * ASTRABOT_COMBAT_BEHAVIOR_DEGREES_TO_RADIANS;
 	const float dot = (dx * std::cos(radians) + dy * std::sin(radians)) / range;
-	return dot > std::cos(std::atan((sniper ? 16.0f : 32.0f) / range));
+	return dot > std::cos(std::atan((sniper ? kSniperAimRadius : kFirearmAimRadius) / range));
 }
+#undef ASTRABOT_COMBAT_BEHAVIOR_MINIMUM_AIM_RANGE
+#undef ASTRABOT_COMBAT_BEHAVIOR_DEGREES_TO_RADIANS
+
 struct AimSpringState
 {
 	float yawVelocity;
@@ -159,30 +201,47 @@ struct AimSpringState
 };
 inline float normalizedAimAngle(float angle)
 {
-	angle = std::fmod(angle + 180.0f, 360.0f);
+	constexpr float kHalfTurnDegrees = 180.0f;
+	constexpr float kFullTurnDegrees = 360.0f;
+	angle = std::fmod(angle + kHalfTurnDegrees, kFullTurnDegrees);
 	if (angle < 0.0f)
-		angle += 360.0f;
-	return angle - 180.0f;
+		angle += kFullTurnDegrees;
+	return angle - kHalfTurnDegrees;
 }
-inline AimStep trackAim(float yaw, float pitch, float desiredYaw, float desiredPitch, float elapsed,
-						float skill, AimSpringState *persistent = nullptr, bool attacking = true)
+
+inline AimStep trackAim(float yaw, float pitch, float desiredYaw, float desiredPitch, float elapsed, float skill,
+	AimSpringState *persistent = nullptr, bool attacking = true)
 {
+	constexpr float kAttackingStiffness = 300.0f;
+	constexpr float kIdleStiffness = 200.0f;
+	constexpr float kAttackingDamping = 30.0f;
+	constexpr float kIdleDamping = 25.0f;
+	constexpr float kPitchStiffnessScale = 2.0f;
+	constexpr float kMaximumAcceleration = 3000.0f;
+	constexpr float kMinimumAcceleration = -3000.0f;
+	constexpr float kYawSnapDegrees = 1.0f;
+	constexpr float kMinimumPitchDegrees = -89.0f;
+	constexpr float kMaximumPitchDegrees = 89.0f;
+	constexpr float kAlignmentToleranceDegrees = 1.0f;
 	AimStep result = {yaw, pitch, false};
-	if (!std::isfinite(yaw) || !std::isfinite(pitch) || !std::isfinite(desiredYaw) ||
-		!std::isfinite(desiredPitch) || !std::isfinite(elapsed) || elapsed < 0.0f ||
-		!std::isfinite(skill) || skill < 0.0f || skill > 1.0f)
+	if (!std::isfinite(yaw) || !std::isfinite(pitch) || !std::isfinite(desiredYaw) || !std::isfinite(desiredPitch) ||
+		!std::isfinite(elapsed) || elapsed < 0.0f || !std::isfinite(skill) || skill < 0.0f || skill > 1.0f)
 		return result;
 	AimSpringState temporary = {};
 	AimSpringState &state = persistent ? *persistent : temporary;
-	const float stiffness = attacking ? 300.0f : 200.0f;
-	const float damping = attacking ? 30.0f : 25.0f;
+	const float stiffness = attacking ? kAttackingStiffness : kIdleStiffness;
+	const float damping = attacking ? kAttackingDamping : kIdleDamping;
 	const float dy = normalizedAimAngle(desiredYaw - yaw);
 	const float dp = normalizedAimAngle(desiredPitch - pitch);
 	float yawAccel = stiffness * dy - damping * state.yawVelocity;
-	float pitchAccel = 2.0f * stiffness * dp - damping * state.pitchVelocity;
-	yawAccel = yawAccel > 3000.0f ? 3000.0f : yawAccel < -3000.0f ? -3000.0f : yawAccel;
-	pitchAccel = pitchAccel > 3000.0f ? 3000.0f : pitchAccel < -3000.0f ? -3000.0f : pitchAccel;
-	if (std::fabs(dy) < 1.0f)
+	float pitchAccel = kPitchStiffnessScale * stiffness * dp - damping * state.pitchVelocity;
+	yawAccel = yawAccel > kMaximumAcceleration ? kMaximumAcceleration
+		: yawAccel < kMinimumAcceleration	   ? kMinimumAcceleration
+											   : yawAccel;
+	pitchAccel = pitchAccel > kMaximumAcceleration ? kMaximumAcceleration
+		: pitchAccel < kMinimumAcceleration		   ? kMinimumAcceleration
+												   : pitchAccel;
+	if (std::fabs(dy) < kYawSnapDegrees)
 	{
 		result.yaw = desiredYaw;
 		state.yawVelocity = 0.0f;
@@ -194,21 +253,23 @@ inline AimStep trackAim(float yaw, float pitch, float desiredYaw, float desiredP
 	}
 	state.pitchVelocity += elapsed * pitchAccel;
 	result.pitch = pitch + elapsed * state.pitchVelocity;
-	if (result.pitch < -89.0f)
-		result.pitch = -89.0f;
-	if (result.pitch > 89.0f)
-		result.pitch = 89.0f;
-	result.aligned = std::fabs(normalizedAimAngle(desiredYaw - result.yaw)) <= 1.0f &&
-					 std::fabs(desiredPitch - result.pitch) <= 1.0f;
+	if (result.pitch < kMinimumPitchDegrees)
+		result.pitch = kMinimumPitchDegrees;
+	if (result.pitch > kMaximumPitchDegrees)
+		result.pitch = kMaximumPitchDegrees;
+	result.aligned = std::fabs(normalizedAimAngle(desiredYaw - result.yaw)) <= kAlignmentToleranceDegrees &&
+		std::fabs(desiredPitch - result.pitch) <= kAlignmentToleranceDegrees;
 	return result;
 }
+
 inline bool weaponEngagementAllowed(combat::WeaponKind kind, float distance)
 {
+	constexpr float kMaximumKnifeEngagementRange = 75.0f;
 	if (!std::isfinite(distance) || distance < 0.0f)
 		return false;
 	if (kind == combat::WeaponKind::Unknown || kind == combat::WeaponKind::Grenade)
 		return false;
-	return kind != combat::WeaponKind::Knife || distance <= 75.0f;
+	return kind != combat::WeaponKind::Knife || distance <= kMaximumKnifeEngagementRange;
 }
 } // namespace compat
 } // namespace astrabot

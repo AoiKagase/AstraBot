@@ -47,20 +47,16 @@ JoinAction JoinAction::cancelled(JoinError error) noexcept
 }
 
 JoinController::JoinController() noexcept
-	: phase_(JoinPhase::Idle), error_(JoinError::None), actor_(),
-	  team_(compat::CommandTeam::Any), deadline_(0U), nextFrame_(0U), attempts_(0U),
-	  teamConfirmed_(false), teamInfoReceived_(false), classSelectionCompleted_(false),
+	: phase_(JoinPhase::Idle), error_(JoinError::None), actor_(), team_(compat::CommandTeam::Any), deadline_(0U),
+	  nextFrame_(0U), attempts_(0U), teamConfirmed_(false), teamInfoReceived_(false), classSelectionCompleted_(false),
 	  postClassFrameAdvanced_(false), teamMenuReceived_(false), classMenuReceived_(false),
-	  teamMenuSource_(JoinMenuSource::Unknown), classMenuSource_(JoinMenuSource::Unknown),
-	  pendingSelection_(false), repeatedPrompt_(false),
-	  pendingValue_(0U), pendingFrame_(0U), promptGraceFrames_(0U)
+	  teamMenuSource_(JoinMenuSource::Unknown), classMenuSource_(JoinMenuSource::Unknown), pendingSelection_(false),
+	  repeatedPrompt_(false), pendingValue_(0U), pendingFrame_(0U), promptGraceFrames_(0U)
 {
 }
 
 JoinAction JoinController::begin(
-	const runtime::ActorId &actor,
-	compat::CommandTeam team,
-	std::uint32_t startFrame) noexcept
+	const runtime::ActorId &actor, compat::CommandTeam team, std::uint32_t startFrame) noexcept
 {
 	if (active())
 	{
@@ -68,7 +64,7 @@ JoinAction JoinController::begin(
 	}
 	if (actor.slot == 0U || actor.actorGeneration == 0U ||
 		(team != compat::CommandTeam::Any && team != compat::CommandTeam::Terrorist &&
-		 team != compat::CommandTeam::CounterTerrorist))
+			team != compat::CommandTeam::CounterTerrorist))
 	{
 		return fail(JoinError::InvalidRequest);
 	}
@@ -97,23 +93,17 @@ JoinAction JoinController::begin(
 }
 
 JoinAction JoinController::onMenu(
-	JoinMenuKind menu,
-	std::uint16_t validSlots,
-	std::uint32_t frame,
-	JoinMenuSource source) noexcept
+	JoinMenuKind menu, std::uint16_t validSlots, std::uint32_t frame, JoinMenuSource source) noexcept
 {
 	if (!active())
 	{
 		return JoinAction::noOp();
 	}
 
-	if (menu == JoinMenuKind::TerroristClass ||
-			menu == JoinMenuKind::CounterTerroristClass)
+	if (menu == JoinMenuKind::TerroristClass || menu == JoinMenuKind::CounterTerroristClass)
 	{
-		if ((team_ == compat::CommandTeam::Terrorist &&
-				menu != JoinMenuKind::TerroristClass) ||
-			(team_ == compat::CommandTeam::CounterTerrorist &&
-				menu != JoinMenuKind::CounterTerroristClass))
+		if ((team_ == compat::CommandTeam::Terrorist && menu != JoinMenuKind::TerroristClass) ||
+			(team_ == compat::CommandTeam::CounterTerrorist && menu != JoinMenuKind::CounterTerroristClass))
 		{
 			return JoinAction::noOp();
 		}
@@ -234,9 +224,9 @@ JoinAction JoinController::onTeamInfo(const char *teamName) noexcept
 }
 
 JoinAction JoinController::onFrame(std::uint32_t frame) noexcept
-	{
-		return onFrame(nullptr, frame);
-	}
+{
+	return onFrame(nullptr, frame);
+}
 
 JoinAction JoinController::onFrame(const edict_t *entity, std::uint32_t frame) noexcept
 {
@@ -268,8 +258,8 @@ JoinAction JoinController::onFrame(const edict_t *entity, std::uint32_t frame) n
 		return JoinAction::noOp();
 	}
 
-	if ((phase_ == JoinPhase::WaitingTeamMenu || phase_ == JoinPhase::WaitingClassMenu) &&
-		!pendingSelection_ && frame >= nextFrame_)
+	if ((phase_ == JoinPhase::WaitingTeamMenu || phase_ == JoinPhase::WaitingClassMenu) && !pendingSelection_ &&
+		frame >= nextFrame_)
 	{
 		pendingSelection_ = true;
 		pendingFrame_ = frame;
@@ -291,15 +281,13 @@ JoinAction JoinController::commandCompleted(std::uint32_t frame) noexcept
 	{
 		return JoinAction::noOp();
 	}
-	if (repeatedPrompt_ &&
-		(phase_ != JoinPhase::TeamCommandPending || !teamConfirmed_))
+	if (repeatedPrompt_ && (phase_ != JoinPhase::TeamCommandPending || !teamConfirmed_))
 	{
 		pendingSelection_ = true;
 		pendingValue_ = phase_ == JoinPhase::TeamCommandPending ? teamSelection() : kClassSelection;
 		pendingFrame_ = frame;
 		// Repeated rejection menus must preserve the send's cooldown.
-		phase_ = phase_ == JoinPhase::TeamCommandPending ? JoinPhase::WaitingTeamMenu
-														 : JoinPhase::WaitingClassMenu;
+		phase_ = phase_ == JoinPhase::TeamCommandPending ? JoinPhase::WaitingTeamMenu : JoinPhase::WaitingClassMenu;
 		repeatedPrompt_ = false;
 		return JoinAction::noOp();
 	}
@@ -365,8 +353,8 @@ void JoinController::reset() noexcept
 
 bool JoinController::active() const noexcept
 {
-	return phase_ != JoinPhase::Idle && phase_ != JoinPhase::Joined &&
-			phase_ != JoinPhase::Failed && phase_ != JoinPhase::Cancelled;
+	return phase_ != JoinPhase::Idle && phase_ != JoinPhase::Joined && phase_ != JoinPhase::Failed &&
+		phase_ != JoinPhase::Cancelled;
 }
 
 bool JoinController::isCurrent(const runtime::ActorId &actor) const noexcept
@@ -438,31 +426,33 @@ JoinCommandKind JoinController::pendingCommand() const noexcept
 {
 	if (phase_ == JoinPhase::WaitingTeamMenu)
 	{
-		return teamMenuReceived_ && teamMenuSource_ == JoinMenuSource::LegacyShowMenu
-				? JoinCommandKind::MenuSelect
-				: JoinCommandKind::JoinTeam;
+		return teamMenuReceived_ && teamMenuSource_ == JoinMenuSource::LegacyShowMenu ? JoinCommandKind::MenuSelect
+																					  : JoinCommandKind::JoinTeam;
 	}
 	if (phase_ == JoinPhase::WaitingClassMenu)
 	{
-		return classMenuReceived_ && classMenuSource_ == JoinMenuSource::LegacyShowMenu
-				? JoinCommandKind::MenuSelect
-				: JoinCommandKind::JoinClass;
+		return classMenuReceived_ && classMenuSource_ == JoinMenuSource::LegacyShowMenu ? JoinCommandKind::MenuSelect
+																						: JoinCommandKind::JoinClass;
 	}
 	return JoinCommandKind::MenuSelect;
 }
 
 std::uint8_t JoinController::teamSelection() const noexcept
 {
+	constexpr auto kAutoTeamSelection = 5U;
+	constexpr auto kCounterTerroristSelection = 2U;
+	constexpr auto kTerroristSelection = 1U;
 	if (team_ == compat::CommandTeam::Any)
 	{
-		return 5U;
+		return kAutoTeamSelection;
 	}
-	return team_ == compat::CommandTeam::CounterTerrorist ? 2U : 1U;
+	return team_ == compat::CommandTeam::CounterTerrorist ? kCounterTerroristSelection : kTerroristSelection;
 }
 
 bool JoinController::selectionAvailable(std::uint16_t validSlots, std::uint8_t selection) const noexcept
 {
-	if (selection == 0U || selection > 16U)
+	constexpr auto kMaximumMenuSelection = 16U;
+	if (selection == 0U || selection > kMaximumMenuSelection)
 	{
 		return false;
 	}
@@ -475,10 +465,8 @@ bool JoinController::selectionAvailable(std::uint16_t validSlots, std::uint8_t s
 
 bool JoinController::readyEntity(const edict_t *entity) const noexcept
 {
-	if (entity == nullptr || (entity->v.flags & FL_SPECTATOR) != 0 ||
-		entity->v.deadflag != DEAD_NO || entity->v.health <= 0.0f ||
-		entity->v.solid != SOLID_SLIDEBOX ||
-		entity->v.movetype != MOVETYPE_WALK)
+	if (entity == nullptr || (entity->v.flags & FL_SPECTATOR) != 0 || entity->v.deadflag != DEAD_NO ||
+		entity->v.health <= 0.0f || entity->v.solid != SOLID_SLIDEBOX || entity->v.movetype != MOVETYPE_WALK)
 	{
 		return false;
 	}
@@ -489,12 +477,10 @@ bool JoinController::expectedTeamName(const char *teamName) const noexcept
 {
 	if (team_ == compat::CommandTeam::Any)
 	{
-		return textEqualsIgnoreCase(teamName, "TERRORIST") ||
-				textEqualsIgnoreCase(teamName, "CT");
+		return textEqualsIgnoreCase(teamName, "TERRORIST") || textEqualsIgnoreCase(teamName, "CT");
 	}
-	return team_ == compat::CommandTeam::CounterTerrorist
-			? textEqualsIgnoreCase(teamName, "CT")
-			: textEqualsIgnoreCase(teamName, "TERRORIST");
+	return team_ == compat::CommandTeam::CounterTerrorist ? textEqualsIgnoreCase(teamName, "CT")
+														  : textEqualsIgnoreCase(teamName, "TERRORIST");
 }
 
 bool JoinController::oppositeTeamName(const char *teamName) const noexcept
@@ -503,9 +489,8 @@ bool JoinController::oppositeTeamName(const char *teamName) const noexcept
 	{
 		return false;
 	}
-	return team_ == compat::CommandTeam::CounterTerrorist
-			? textEqualsIgnoreCase(teamName, "TERRORIST")
-			: textEqualsIgnoreCase(teamName, "CT");
+	return team_ == compat::CommandTeam::CounterTerrorist ? textEqualsIgnoreCase(teamName, "TERRORIST")
+														  : textEqualsIgnoreCase(teamName, "CT");
 }
 
 bool JoinController::textEqualsIgnoreCase(const char *left, const char *right) noexcept
@@ -535,55 +520,49 @@ bool JoinController::textEqualsIgnoreCase(const char *left, const char *right) n
 	}
 	return left[index] == '\0' && right[index] == '\0';
 }
-	bool DeferredJoinActionQueue::enqueue(
-		const runtime::ActorId &actor,
-		const runtime::LifecycleToken &token,
-		std::uint32_t frame,
-		const JoinAction &action) noexcept
-	{
-		if (action.kind == JoinActionKind::None ||
-			actor.slot < runtime::LifecycleSession::kFirstClientSlot ||
-			actor.slot > runtime::LifecycleSession::kLastClientSlot ||
-			actor.actorGeneration == runtime::LifecycleSession::kInvalidGeneration ||
-			token.slot != actor.slot ||
-			token.mapGeneration == runtime::LifecycleSession::kInvalidGeneration ||
-			token.slotGeneration == runtime::LifecycleSession::kInvalidGeneration ||
-			count_ >= kCapacity)
-		{
-			return false;
-		}
 
-		const std::size_t tail = (head_ + count_) % kCapacity;
-		actions_[tail] = {
-			actor, token.mapGeneration, token.slotGeneration, frame, action};
-		++count_;
-		return true;
+bool DeferredJoinActionQueue::enqueue(const runtime::ActorId &actor, const runtime::LifecycleToken &token,
+	std::uint32_t frame, const JoinAction &action) noexcept
+{
+	if (action.kind == JoinActionKind::None || actor.slot < runtime::LifecycleSession::kFirstClientSlot ||
+		actor.slot > runtime::LifecycleSession::kLastClientSlot ||
+		actor.actorGeneration == runtime::LifecycleSession::kInvalidGeneration || token.slot != actor.slot ||
+		token.mapGeneration == runtime::LifecycleSession::kInvalidGeneration ||
+		token.slotGeneration == runtime::LifecycleSession::kInvalidGeneration || count_ >= kCapacity)
+	{
+		return false;
 	}
 
-	bool DeferredJoinActionQueue::dequeue(DeferredJoinAction *action) noexcept
-	{
-		if (action == nullptr || count_ == 0U)
-		{
-			return false;
-		}
+	const std::size_t tail = (head_ + count_) % kCapacity;
+	actions_[tail] = {actor, token.mapGeneration, token.slotGeneration, frame, action};
+	++count_;
+	return true;
+}
 
-		*action = actions_[head_];
-		actions_[head_] = {};
-		head_ = (head_ + 1U) % kCapacity;
-		--count_;
-		return true;
+bool DeferredJoinActionQueue::dequeue(DeferredJoinAction *action) noexcept
+{
+	if (action == nullptr || count_ == 0U)
+	{
+		return false;
 	}
 
-	void DeferredJoinActionQueue::clear() noexcept
-	{
-		actions_.fill({});
-		head_ = 0U;
-		count_ = 0U;
-	}
+	*action = actions_[head_];
+	actions_[head_] = {};
+	head_ = (head_ + 1U) % kCapacity;
+	--count_;
+	return true;
+}
 
-	std::size_t DeferredJoinActionQueue::size() const noexcept
-	{
-		return count_;
-	}
+void DeferredJoinActionQueue::clear() noexcept
+{
+	actions_.fill({});
+	head_ = 0U;
+	count_ = 0U;
+}
+
+std::size_t DeferredJoinActionQueue::size() const noexcept
+{
+	return count_;
+}
 }
 }

@@ -25,16 +25,19 @@ public:
 		hasTime_ = false;
 	}
 
-	std::uint32_t mapGeneration() const { return generation_; }
-
-	bool recordDeath(const NavDocument &document, std::uint32_t mapGeneration,
-		std::uint8_t team, AreaId startArea, const NavVector &deathPosition,
-		double nowSeconds, float amount = 1.0f)
+	std::uint32_t mapGeneration() const
 	{
-		if (mapGeneration == 0U || !validTeam(team) || startArea == 0U ||
-			!validTime(nowSeconds) || !std::isfinite(amount) || amount < 0.0f ||
-			!std::isfinite(deathPosition.x) || !std::isfinite(deathPosition.y) ||
-			!std::isfinite(deathPosition.z) || document.findArea(startArea) == nullptr ||
+		return generation_;
+	}
+
+	bool recordDeath(const NavDocument &document, std::uint32_t mapGeneration, std::uint8_t team, AreaId startArea,
+		const NavVector &deathPosition, double nowSeconds, float amount = 1.0f)
+	{
+		constexpr double kDeathPropagationRadius = 500.0;
+		if (mapGeneration == 0U || !validTeam(team) || startArea == 0U || !validTime(nowSeconds) ||
+			!std::isfinite(amount) || amount < 0.0f || !std::isfinite(deathPosition.x) ||
+			!std::isfinite(deathPosition.y) || !std::isfinite(deathPosition.z) ||
+			document.findArea(startArea) == nullptr ||
 			(mapGeneration == generation_ && hasTime_ && nowSeconds < lastTime_))
 			return false;
 
@@ -63,11 +66,11 @@ public:
 					const double distance = std::sqrt(dx * dx + dy * dy + dz * dz);
 					if (!std::isfinite(distance))
 						return false;
-					if (distance > 500.0)
+					if (distance > kDeathPropagationRadius)
 						continue;
 					// Intentionally grows with distance: this is the reference
 					// propagation formula, not inverse-distance falloff.
-					if (!add(next, team, adjacentId, nowSeconds, double(amount) * distance / 500.0))
+					if (!add(next, team, adjacentId, nowSeconds, double(amount) * distance / kDeathPropagationRadius))
 						return false;
 					queue.push_back(adjacentId);
 				}
@@ -84,8 +87,8 @@ public:
 	// danger, independently for each team. Time is monotonic within one map.
 	bool query(double nowSeconds, std::uint8_t team, AreaId area, float *danger)
 	{
-		if (danger == nullptr || generation_ == 0U || !validTeam(team) || area == 0U ||
-			!validTime(nowSeconds) || (hasTime_ && nowSeconds < lastTime_))
+		if (danger == nullptr || generation_ == 0U || !validTeam(team) || area == 0U || !validTime(nowSeconds) ||
+			(hasTime_ && nowSeconds < lastTime_))
 			return false;
 		double value = 0.0;
 		for (const Entry &entry : entries_)
@@ -109,15 +112,26 @@ private:
 		double observedAt;
 	};
 
-	static bool validTeam(std::uint8_t team) { return team == 1U || team == 2U; }
-	static bool validTime(double time) { return std::isfinite(time) && time >= 0.0; }
+	static bool validTeam(std::uint8_t team)
+	{
+		constexpr auto kTerroristTeam = 1U;
+		constexpr auto kCounterTerroristTeam = 2U;
+		return team == kTerroristTeam || team == kCounterTerroristTeam;
+	}
+
+	static bool validTime(double time)
+	{
+		return std::isfinite(time) && time >= 0.0;
+	}
+
 	static double decayed(const Entry &entry, double now)
 	{
-		const double value = entry.value - (now - entry.observedAt) / 120.0;
+		constexpr double kDangerDecaySecondsPerUnit = 120.0;
+		const double value = entry.value - (now - entry.observedAt) / kDangerDecaySecondsPerUnit;
 		return value > 0.0 ? value : 0.0;
 	}
-	static bool add(std::vector<Entry> &entries, std::uint8_t team, AreaId area,
-		double now, double amount)
+
+	static bool add(std::vector<Entry> &entries, std::uint8_t team, AreaId area, double now, double amount)
 	{
 		for (Entry &entry : entries)
 			if (entry.team == team && entry.area == area)

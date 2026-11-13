@@ -9,52 +9,52 @@ namespace astrabot
 {
 namespace runtime
 {
-	struct ViewAngles
-	{
-		float pitch;
-		float yaw;
-		float roll;
-	};
+struct ViewAngles
+{
+	float pitch;
+	float yaw;
+	float roll;
+};
 
-	struct MovementInput
-	{
-		float forward;
-		float side;
-		float up;
-		std::uint16_t buttons;
-		std::uint8_t impulse;
-		std::uint8_t msec;
-	};
+struct MovementInput
+{
+	float forward;
+	float side;
+	float up;
+	std::uint16_t buttons;
+	std::uint8_t impulse;
+	std::uint8_t msec;
+};
 
-	struct BotCommand
-	{
-		ActorId actor;
-		LifecycleToken lifecycle;
-		std::uint32_t sequence;
-		std::uint32_t issueFrame;
-		ViewAngles viewAngles;
-		MovementInput movement;
-		bool synchronizeCombatView = false;
+struct BotCommand
+{
+	ActorId actor;
+	LifecycleToken lifecycle;
+	std::uint32_t sequence;
+	std::uint32_t issueFrame;
+	ViewAngles viewAngles;
+	MovementInput movement;
+	bool synchronizeCombatView = false;
 
-		bool isValid() const;
-	};
+	bool isValid() const;
+};
 
-	enum class DispatchResult
-	{
-		Dispatched,
-		NoCommand,
-		StaleActor,
-		EngineUnavailable,
-		InvalidCommand
-	};
+enum class DispatchResult
+{
+	Dispatched,
+	NoCommand,
+	StaleActor,
+	EngineUnavailable,
+	InvalidCommand
+};
 
-	struct CommandReceipt
-	{
-		ActorId actor;
-		std::uint32_t sequence;
-		std::uint32_t dispatchFrame;
-		DispatchResult result;
-	};
+struct CommandReceipt
+{
+	ActorId actor;
+	std::uint32_t sequence;
+	std::uint32_t dispatchFrame;
+	DispatchResult result;
+};
 }
 }
 

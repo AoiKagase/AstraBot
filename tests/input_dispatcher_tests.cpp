@@ -4,85 +4,74 @@
 
 namespace
 {
-	edict_t *gDispatchedEntity = nullptr;
-	float gDispatchedAngles[3]{};
-	float gDispatchedForward = 0.0f;
-	float gDispatchedSide = 0.0f;
-	float gDispatchedUp = 0.0f;
-	unsigned short gDispatchedButtons = 0U;
-	byte gDispatchedImpulse = 0U;
-	byte gDispatchedMsec = 0U;
-	int gDispatchCount = 0;
+edict_t *gDispatchedEntity = nullptr;
+float gDispatchedAngles[3]{};
+float gDispatchedForward = 0.0f;
+float gDispatchedSide = 0.0f;
+float gDispatchedUp = 0.0f;
+unsigned short gDispatchedButtons = 0U;
+byte gDispatchedImpulse = 0U;
+byte gDispatchedMsec = 0U;
+int gDispatchCount = 0;
 
-	bool check(bool condition, const char *description)
+bool check(bool condition, const char *description)
+{
+	if (condition)
 	{
-		if (condition)
-		{
-			return true;
-		}
-
-		std::fprintf(stderr, "check failed: %s\n", description);
-		return false;
+		return true;
 	}
 
-	void runPlayerMove(
-		edict_t *entity,
-		const float *viewAngles,
-		float forward,
-		float side,
-		float up,
-		unsigned short buttons,
-		byte impulse,
-		byte msec)
-	{
-		gDispatchedEntity = entity;
-		gDispatchedAngles[0] = viewAngles[0];
-		gDispatchedAngles[1] = viewAngles[1];
-		gDispatchedAngles[2] = viewAngles[2];
-		gDispatchedForward = forward;
-		gDispatchedSide = side;
-		gDispatchedUp = up;
-		gDispatchedButtons = buttons;
-		gDispatchedImpulse = impulse;
-		gDispatchedMsec = msec;
-		++gDispatchCount;
-	}
+	std::fprintf(stderr, "check failed: %s\n", description);
+	return false;
+}
 
-	astrabot::runtime::ActorId joinActor(
-		astrabot::runtime::LifecycleSession &lifecycle,
-		astrabot::runtime::ActorRegistry &registry,
-		std::uint32_t slot)
-	{
-		if (!lifecycle.connectSlot(slot))
-		{
-			return {};
-		}
-		const auto token = lifecycle.tokenForSlot(slot);
-		astrabot::runtime::ActorId actor{};
-		if (registry.reserve(slot, token, &actor) != astrabot::runtime::ActorResult::Accepted ||
-				registry.beginJoin(actor) != astrabot::runtime::ActorResult::Accepted ||
-				registry.markJoined(actor) != astrabot::runtime::ActorResult::Accepted)
-		{
-			return {};
-		}
-		return actor;
-	}
+void runPlayerMove(edict_t *entity, const float *viewAngles, float forward, float side, float up,
+	unsigned short buttons, byte impulse, byte msec)
+{
+	gDispatchedEntity = entity;
+	gDispatchedAngles[0] = viewAngles[0];
+	gDispatchedAngles[1] = viewAngles[1];
+	gDispatchedAngles[2] = viewAngles[2];
+	gDispatchedForward = forward;
+	gDispatchedSide = side;
+	gDispatchedUp = up;
+	gDispatchedButtons = buttons;
+	gDispatchedImpulse = impulse;
+	gDispatchedMsec = msec;
+	++gDispatchCount;
+}
 
-	astrabot::runtime::BotCommand commandFor(
-		const astrabot::runtime::ActorId &actor,
-		const astrabot::runtime::LifecycleToken &token,
-		std::uint32_t sequence)
+astrabot::runtime::ActorId joinActor(
+	astrabot::runtime::LifecycleSession &lifecycle, astrabot::runtime::ActorRegistry &registry, std::uint32_t slot)
+{
+	if (!lifecycle.connectSlot(slot))
 	{
-		astrabot::runtime::BotCommand command{};
-		command.actor = actor;
-		command.lifecycle = token;
-		command.sequence = sequence;
-		command.issueFrame = 10U;
-		command.viewAngles = {1.0f, 2.0f, 3.0f};
-		command.synchronizeCombatView = true;
-		command.movement = {100.0f, 20.0f, 0.0f, 4U, 5U, 10U};
-		return command;
+		return {};
 	}
+	const auto token = lifecycle.tokenForSlot(slot);
+	astrabot::runtime::ActorId actor{};
+	if (registry.reserve(slot, token, &actor) != astrabot::runtime::ActorResult::Accepted ||
+		registry.beginJoin(actor) != astrabot::runtime::ActorResult::Accepted ||
+		registry.markJoined(actor) != astrabot::runtime::ActorResult::Accepted)
+	{
+		return {};
+	}
+	return actor;
+}
+
+astrabot::runtime::BotCommand commandFor(
+	const astrabot::runtime::ActorId &actor, const astrabot::runtime::LifecycleToken &token, std::uint32_t sequence)
+{
+	astrabot::runtime::BotCommand command{};
+	command.actor = actor;
+	command.lifecycle = token;
+	command.sequence = sequence;
+	command.issueFrame = 10U;
+	command.viewAngles = {1.0f, 2.0f, 3.0f};
+	command.synchronizeCombatView = true;
+	command.movement = {100.0f, 20.0f, 0.0f, 4U, 5U, 10U};
+	return command;
+}
 }
 
 int main()
@@ -113,42 +102,40 @@ int main()
 		return 1;
 	}
 	const auto firstToken = lifecycle.tokenForSlot(1U);
-	if (!check(dispatcher.enqueue(commandFor(firstActor, firstToken, 1U)) ==
-			astrabot::runtime::QueueResult::Accepted, "first input is queued"))
+	if (!check(dispatcher.enqueue(commandFor(firstActor, firstToken, 1U)) == astrabot::runtime::QueueResult::Accepted,
+			"first input is queued"))
 	{
 		return 1;
 	}
 	const auto firstReceipt = dispatcher.dispatchNext(firstActor, 20U);
-	if (!check(firstReceipt.result == DispatchResult::Dispatched,
-			"first input is dispatched"))
+	if (!check(firstReceipt.result == DispatchResult::Dispatched, "first input is dispatched"))
 	{
 		return 1;
 	}
-	if (!check(gDispatchCount == 1 && gDispatchedEntity == &firstEntity,
-			"engine receives first actor entity once"))
+	if (!check(gDispatchCount == 1 && gDispatchedEntity == &firstEntity, "engine receives first actor entity once"))
 	{
 		return 1;
 	}
-	if (!check(gDispatchedAngles[0] == 1.0f && gDispatchedAngles[1] == 2.0f &&
-				gDispatchedAngles[2] == 3.0f && gDispatchedForward == 100.0f &&
-				gDispatchedSide == 20.0f && gDispatchedButtons == 4U &&
+	if (!check(gDispatchedAngles[0] == 1.0f && gDispatchedAngles[1] == 2.0f && gDispatchedAngles[2] == 3.0f &&
+				gDispatchedForward == 100.0f && gDispatchedSide == 20.0f && gDispatchedButtons == 4U &&
 				gDispatchedImpulse == 5U && gDispatchedMsec == 10U,
-				"engine receives converted command values"))
+			"engine receives converted command values"))
 	{
 		return 1;
 	}
 	if (!check(firstEntity.v.button == 4 && firstEntity.v.impulse == 5,
-				"FakeClient entvars retain dispatched button and impulse state"))
+			"FakeClient entvars retain dispatched button and impulse state"))
 	{
 		return 1;
 	}
-	if (!check(firstEntity.v.v_angle.x == 1.0f && firstEntity.v.v_angle.y == 2.0f &&
-		firstEntity.v.v_angle.z == 3.0f && firstEntity.v.angles.y == 2.0f,
-		"combat command publishes view angles without relying on engine feedback")) return 1;
+	if (!check(firstEntity.v.v_angle.x == 1.0f && firstEntity.v.v_angle.y == 2.0f && firstEntity.v.v_angle.z == 3.0f &&
+				firstEntity.v.angles.y == 2.0f,
+			"combat command publishes view angles without relying on engine feedback"))
+		return 1;
 
 	const auto queuedToken = lifecycle.tokenForSlot(1U);
-	if (!check(dispatcher.enqueue(commandFor(firstActor, queuedToken, 2U)) ==
-			astrabot::runtime::QueueResult::Accepted, "stale candidate is queued"))
+	if (!check(dispatcher.enqueue(commandFor(firstActor, queuedToken, 2U)) == astrabot::runtime::QueueResult::Accepted,
+			"stale candidate is queued"))
 	{
 		return 1;
 	}
@@ -157,8 +144,7 @@ int main()
 		return 1;
 	}
 	const auto staleReceipt = dispatcher.dispatchNext(firstActor, 21U);
-	if (!check(staleReceipt.result == DispatchResult::StaleActor,
-			"stale queued input is rejected"))
+	if (!check(staleReceipt.result == DispatchResult::StaleActor, "stale queued input is rejected"))
 	{
 		return 1;
 	}
@@ -173,15 +159,14 @@ int main()
 		return 1;
 	}
 	const auto secondToken = lifecycle.tokenForSlot(2U);
-	if (!check(dispatcher.enqueue(commandFor(secondActor, secondToken, 1U)) ==
-			astrabot::runtime::QueueResult::Accepted, "current input is queued"))
+	if (!check(dispatcher.enqueue(commandFor(secondActor, secondToken, 1U)) == astrabot::runtime::QueueResult::Accepted,
+			"current input is queued"))
 	{
 		return 1;
 	}
 	dispatcher.configure(nullptr);
 	const auto unavailableReceipt = dispatcher.dispatchNext(secondActor, 22U);
-	if (!check(unavailableReceipt.result == DispatchResult::EngineUnavailable,
-			"missing engine is reported"))
+	if (!check(unavailableReceipt.result == DispatchResult::EngineUnavailable, "missing engine is reported"))
 	{
 		return 1;
 	}
@@ -191,8 +176,8 @@ int main()
 	}
 
 	dispatcher.configure(&engineFunctions);
-	if (!check(dispatcher.enqueue(commandFor(secondActor, secondToken, 2U)) ==
-			astrabot::runtime::QueueResult::Accepted, "second input is queued"))
+	if (!check(dispatcher.enqueue(commandFor(secondActor, secondToken, 2U)) == astrabot::runtime::QueueResult::Accepted,
+			"second input is queued"))
 	{
 		return 1;
 	}

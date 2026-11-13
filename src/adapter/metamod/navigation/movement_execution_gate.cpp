@@ -9,8 +9,7 @@ namespace astrabot
 namespace metamod
 {
 MovementVelocity MovementExecutionGate::stabilizeVelocity(
-	MovementExecutionPhase phase,
-	MovementVelocity velocity) noexcept
+	MovementExecutionPhase phase, MovementVelocity velocity) noexcept
 {
 	if (phase == MovementExecutionPhase::RoundFreeze)
 	{
@@ -20,17 +19,10 @@ MovementVelocity MovementExecutionGate::stabilizeVelocity(
 	return velocity;
 }
 
-MovementExecutionDecision MovementExecutionGate::evaluate(
-	const MovementExecutionObservation &observation) noexcept
+MovementExecutionDecision MovementExecutionGate::evaluate(const MovementExecutionObservation &observation) noexcept
 {
-	MovementExecutionDecision result = {
-		MovementExecutionPhase::Live,
-		observation.forward,
-		observation.side,
-		observation.up,
-		observation.buttons,
-		observation.msec,
-		false};
+	MovementExecutionDecision result = {MovementExecutionPhase::Live, observation.forward, observation.side,
+		observation.up, observation.buttons, observation.msec, false};
 	if (observation.explicitFrozen)
 	{
 		result.phase = MovementExecutionPhase::ControlFrozen;
@@ -52,8 +44,8 @@ MovementExecutionDecision MovementExecutionGate::evaluate(
 	result.forward = 0.0f;
 	result.side = 0.0f;
 	result.up = 0.0f;
-	result.buttons = static_cast<std::uint16_t>(
-		result.buttons & ~(IN_FORWARD | IN_BACK | IN_MOVELEFT | IN_MOVERIGHT | IN_ATTACK));
+	result.buttons =
+		static_cast<std::uint16_t>(result.buttons & ~(IN_FORWARD | IN_BACK | IN_MOVELEFT | IN_MOVERIGHT | IN_ATTACK));
 	if (!(std::isfinite(observation.freezetimeDuck) && observation.freezetimeDuck > 0.0f))
 	{
 		result.buttons = static_cast<std::uint16_t>(result.buttons & ~IN_DUCK);

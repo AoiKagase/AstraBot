@@ -7,59 +7,58 @@ namespace astrabot
 {
 namespace compat
 {
-	enum class CommandId
-	{
-		About,
-		Add,
-		Kick,
-		Kill,
-		KnivesOnly,
-		PistolsOnly,
-		SnipersOnly,
-		AllWeapons
-	};
+enum class CommandId
+{
+	About,
+	Add,
+	Kick,
+	Kill,
+	KnivesOnly,
+	PistolsOnly,
+	SnipersOnly,
+	AllWeapons
+};
 
-	enum class CommandTeam
-	{
-		Any,
-		Terrorist,
-		CounterTerrorist
-	};
+enum class CommandTeam
+{
+	Any,
+	Terrorist,
+	CounterTerrorist
+};
 
-	enum class CommandResult
-	{
-		Handled,
-		Unknown,
-		InvalidArguments,
-		InvalidOutput
-	};
+enum class CommandResult
+{
+	Handled,
+	Unknown,
+	InvalidArguments,
+	InvalidOutput
+};
 
-	struct CommandRequest
-	{
-		const char *name;
-		std::size_t argumentCount;
-		const char *arguments[2];
-	};
+struct CommandRequest
+{
+	static constexpr int kArgumentCapacity = 2;
+	const char *name;
+	std::size_t argumentCount;
+	const char *arguments[kArgumentCapacity];
+};
 
-	struct CommandAction
-	{
-		CommandId id;
-		CommandTeam team;
-		bool allTargets;
-		const char *target;
-	};
+struct CommandAction
+{
+	CommandId id;
+	CommandTeam team;
+	bool allTargets;
+	const char *target;
+};
 
-	class CommandRegistry
-	{
-	public:
-		CommandResult resolve(
-			const CommandRequest &request,
-			CommandAction *action) const;
+class CommandRegistry
+{
+public:
+	CommandResult resolve(const CommandRequest &request, CommandAction *action) const;
 
-	private:
-		static bool isKnownCommand(const char *name, CommandId *id, CommandTeam *team);
-		static bool isTargetCommand(CommandId id);
-	};
+private:
+	static bool isKnownCommand(const char *name, CommandId *id, CommandTeam *team);
+	static bool isTargetCommand(CommandId id);
+};
 }
 }
 

@@ -39,6 +39,8 @@ struct PublicWeaponDefinition
 
 struct PublicActorState
 {
+	static constexpr unsigned kWeaponStateCapacity = 31U;
+	static constexpr unsigned kAmmoStateCapacity = 32U;
 	world::ActorKey actor{};
 	world::FrameIdentity frame{};
 	bool bound = false;
@@ -46,14 +48,14 @@ struct PublicActorState
 	int weaponId = 0;
 	int clip = 0;
 	std::uint32_t weaponTick = 0U;
-	std::array<int, 31U> weaponClips{};
-	std::array<bool, 31U> weaponClipKnown{};
-	std::array<std::uint32_t, 31U> weaponClipTicks{};
-	std::array<int, 32U> ammo{};
-	std::array<bool, 32U> ammoKnown{};
-	std::array<std::uint32_t, 32U> ammoTicks{};
-	std::array<int, 32U> lastAmmoPickup{};
-	std::array<std::uint32_t, 32U> ammoPickupTicks{};
+	std::array<int, kWeaponStateCapacity> weaponClips{};
+	std::array<bool, kWeaponStateCapacity> weaponClipKnown{};
+	std::array<std::uint32_t, kWeaponStateCapacity> weaponClipTicks{};
+	std::array<int, kAmmoStateCapacity> ammo{};
+	std::array<bool, kAmmoStateCapacity> ammoKnown{};
+	std::array<std::uint32_t, kAmmoStateCapacity> ammoTicks{};
+	std::array<int, kAmmoStateCapacity> lastAmmoPickup{};
+	std::array<std::uint32_t, kAmmoStateCapacity> ammoPickupTicks{};
 	std::uint32_t pickupWeaponMask = 0U;
 	bool moneyKnown = false;
 	int money = 0;
@@ -93,8 +95,7 @@ public:
 		if (!actor.isValid() || !frame.isValid() || actor.slot > actors_.size())
 			return;
 		PublicActorState &state = actors_[actor.slot - 1U];
-		if (!state.bound || !(state.actor == actor) ||
-			state.frame.mapGeneration != frame.mapGeneration ||
+		if (!state.bound || !(state.actor == actor) || state.frame.mapGeneration != frame.mapGeneration ||
 			state.frame.roundGeneration != frame.roundGeneration)
 		{
 			state = {};
@@ -121,8 +122,7 @@ public:
 		if (out == nullptr || !actor.isValid() || actor.slot > actors_.size())
 			return false;
 		const PublicActorState &state = actors_[actor.slot - 1U];
-		if (!state.bound || !(state.actor == actor) ||
-			state.frame.mapGeneration != frame.mapGeneration ||
+		if (!state.bound || !(state.actor == actor) || state.frame.mapGeneration != frame.mapGeneration ||
 			state.frame.roundGeneration != frame.roundGeneration || state.frame.tick > frame.tick)
 			return false;
 		*out = state;
@@ -131,7 +131,8 @@ public:
 
 	bool currentWeapon(world::ActorKey actor, world::FrameIdentity frame, int active, int id, int clip)
 	{
-		if ((active != 0 && active != 1) || id <= 0 || id > 30 || clip < -1 || clip > 255)
+		if ((active != 0 && active != 1) || id <= 0 || id > kMaximumWeaponId || clip < kUnknownAmmoValue ||
+			clip > kMaximumByteValue)
 			return false;
 		PublicActorState *state = edit(actor, frame);
 		if (state == nullptr)
@@ -153,8 +154,9 @@ public:
 
 	bool weaponDefinition(int id, int ammoIndex, int maxAmmo, int slot)
 	{
-		if (id <= 0 || id > 30 || ammoIndex < -1 || ammoIndex >= 32 ||
-			maxAmmo < -1 || maxAmmo > 255 || slot < 0 || slot > 5)
+		constexpr int kMaximumWeaponSlot = 5;
+		if (id <= 0 || id > kMaximumWeaponId || ammoIndex < kUnknownAmmoValue || ammoIndex >= kAmmoIndexLimit ||
+			maxAmmo < kUnknownAmmoValue || maxAmmo > kMaximumByteValue || slot < 0 || slot > kMaximumWeaponSlot)
 			return false;
 		definitions_[static_cast<std::size_t>(id)] = {true, ammoIndex, maxAmmo, slot};
 		return true;
@@ -162,13 +164,13 @@ public:
 
 	PublicWeaponDefinition definition(int id) const
 	{
-		return id > 0 && id < static_cast<int>(definitions_.size())
-			? definitions_[static_cast<std::size_t>(id)] : PublicWeaponDefinition{};
+		return id > 0 && id < static_cast<int>(definitions_.size()) ? definitions_[static_cast<std::size_t>(id)]
+																	: PublicWeaponDefinition{};
 	}
 
 	bool ammo(world::ActorKey actor, world::FrameIdentity frame, int index, int amount)
 	{
-		if (index < 0 || index >= 32 || amount < 0 || amount > 255)
+		if (index < 0 || index >= kAmmoIndexLimit || amount < 0 || amount > kMaximumByteValue)
 			return false;
 		PublicActorState *state = edit(actor, frame);
 		if (state == nullptr)
@@ -181,7 +183,7 @@ public:
 
 	bool ammoPickup(world::ActorKey actor, world::FrameIdentity frame, int index, int amount)
 	{
-		if (index < 0 || index >= 32 || amount < 0 || amount > 255)
+		if (index < 0 || index >= kAmmoIndexLimit || amount < 0 || amount > kMaximumByteValue)
 		{
 			return false;
 		}
@@ -199,7 +201,7 @@ public:
 
 	bool weaponPickup(world::ActorKey actor, world::FrameIdentity frame, int id)
 	{
-		if (id <= 0 || id > 30)
+		if (id <= 0 || id > kMaximumWeaponId)
 		{
 			return false;
 		}
@@ -214,7 +216,8 @@ public:
 
 	bool money(world::ActorKey actor, world::FrameIdentity frame, int amount)
 	{
-		if (amount < 0 || amount > 1000000)
+		constexpr int kMaximumMoney = 1000000;
+		if (amount < 0 || amount > kMaximumMoney)
 			return false;
 		PublicActorState *state = edit(actor, frame);
 		if (state == nullptr)
@@ -226,19 +229,23 @@ public:
 
 	bool armorType(world::ActorKey actor, world::FrameIdentity frame, int type)
 	{
-		if (type != 0 && type != 1)
+		constexpr int kArmorWithoutHelmet = 0;
+		constexpr int kArmorWithHelmet = 1;
+		if (type != kArmorWithoutHelmet && type != kArmorWithHelmet)
 			return false;
 		PublicActorState *state = edit(actor, frame);
 		if (state == nullptr)
 			return false;
 		state->helmetKnown = true;
-		state->hasHelmet = type == 1;
+		state->hasHelmet = type == kArmorWithHelmet;
 		return true;
 	}
 
 	bool statusIcon(world::ActorKey actor, world::FrameIdentity frame, const char *name, int enabled)
 	{
-		if (name == nullptr || enabled < 0 || enabled > 2)
+		constexpr int kMaximumStatusIconMode = 2;
+		constexpr int kFlashingStatusIcon = 2;
+		if (name == nullptr || enabled < 0 || enabled > kMaximumStatusIconMode)
 			return false;
 		PublicActorState *state = edit(actor, frame);
 		if (state == nullptr)
@@ -251,7 +258,7 @@ public:
 		else if (std::strcmp(name, "c4") == 0)
 		{
 			state->bombZoneKnown = true;
-			state->inBombZone = enabled == 2;
+			state->inBombZone = enabled == kFlashingStatusIcon;
 			state->bombZoneTick = frame.tick;
 		}
 		else if (std::strcmp(name, "defuser") == 0)
@@ -279,28 +286,31 @@ public:
 		return true;
 	}
 
-	DefuseReceipt progressReceipt(world::ActorKey actor,world::FrameIdentity frame,float now,float attemptAt) const
+	DefuseReceipt progressReceipt(world::ActorKey actor, world::FrameIdentity frame, float now, float attemptAt) const
 	{
 		PublicActorState state{};
-		if(!std::isfinite(now) || !std::isfinite(attemptAt) || now<attemptAt ||
-			!read(actor,frame,&state) || !state.progressKnown || state.progressTick>frame.tick ||
-			state.progressObservedAt<attemptAt || state.progressObservedAt>now)
+		if (!std::isfinite(now) || !std::isfinite(attemptAt) || now < attemptAt || !read(actor, frame, &state) ||
+			!state.progressKnown || state.progressTick > frame.tick || state.progressObservedAt < attemptAt ||
+			state.progressObservedAt > now)
 			return DefuseReceipt::Unknown;
-		if(!state.progressActive)return DefuseReceipt::None;
-		return now<state.progressExpiresAt ? DefuseReceipt::Self : DefuseReceipt::Unknown;
+		if (!state.progressActive)
+			return DefuseReceipt::None;
+		return now < state.progressExpiresAt ? DefuseReceipt::Self : DefuseReceipt::Unknown;
 	}
-	bool progress(world::ActorKey actor, world::FrameIdentity frame, int duration,float now=0.0f)
+
+	bool progress(world::ActorKey actor, world::FrameIdentity frame, int duration, float now = 0.0f)
 	{
-		if (duration < 0 || duration > 65535 || !std::isfinite(now) || now<0.0f)
+		constexpr int kMaximumProgressSeconds = 65535;
+		if (duration < 0 || duration > kMaximumProgressSeconds || !std::isfinite(now) || now < 0.0f)
 			return false;
 		PublicActorState *state = edit(actor, frame);
 		if (state == nullptr)
 			return false;
 		state->progressKnown = true;
 		state->progressActive = duration != 0;
-		state->progressTick=frame.tick;
-		state->progressObservedAt=now;
-		state->progressExpiresAt=now+static_cast<float>(duration);
+		state->progressTick = frame.tick;
+		state->progressObservedAt = now;
+		state->progressExpiresAt = now + static_cast<float>(duration);
 		return true;
 	}
 
@@ -325,12 +335,13 @@ public:
 		}
 	}
 
-	bool pendingReloadRequest(world::ActorKey actor,world::FrameIdentity frame,float now) const
+	bool pendingReloadRequest(world::ActorKey actor, world::FrameIdentity frame, float now) const
 	{
+		constexpr float kReloadInferenceSeconds = 5.0f;
 		PublicActorState state{};
 		// This is an inferred command lease, not the GameDLL's reload timer.
-		return read(actor,frame,&state) && state.reloadRequested && std::isfinite(now) &&
-			now>=state.reloadRequestedAt && now-state.reloadRequestedAt<5.0f;
+		return read(actor, frame, &state) && state.reloadRequested && std::isfinite(now) &&
+			now >= state.reloadRequestedAt && now - state.reloadRequestedAt < kReloadInferenceSeconds;
 	}
 
 	ObservationCapabilities capabilities() const override
@@ -353,23 +364,29 @@ public:
 				observation->weapon.clip = value<std::uint16_t>(
 					"OBS-WEAPON-CLIP", state.weaponTick, *observation, static_cast<std::uint16_t>(state.clip));
 			const PublicWeaponDefinition weapon = definition(state.weaponId);
-			if (weapon.known && weapon.ammoIndex >= 0 &&
-				state.ammoKnown[static_cast<std::size_t>(weapon.ammoIndex)])
-				observation->weapon.reserve = value<std::uint16_t>("OBS-WEAPON-RESERVE-AMMO", state.ammoTicks[static_cast<std::size_t>(weapon.ammoIndex)],
-					*observation, static_cast<std::uint16_t>(state.ammo[static_cast<std::size_t>(weapon.ammoIndex)]));
+			if (weapon.known && weapon.ammoIndex >= 0 && state.ammoKnown[static_cast<std::size_t>(weapon.ammoIndex)])
+				observation->weapon.reserve = value<std::uint16_t>("OBS-WEAPON-RESERVE-AMMO",
+					state.ammoTicks[static_cast<std::size_t>(weapon.ammoIndex)], *observation,
+					static_cast<std::uint16_t>(state.ammo[static_cast<std::size_t>(weapon.ammoIndex)]));
 		}
 		if (state.defuseKitKnown)
-			observation->objective.hasDefuseKit = value<bool>("OBS-OBJECTIVE-DEFUSE-KIT", state.defuseKitTick,
-				*observation, state.hasDefuseKit);
+			observation->objective.hasDefuseKit =
+				value<bool>("OBS-OBJECTIVE-DEFUSE-KIT", state.defuseKitTick, *observation, state.hasDefuseKit);
 		if (state.bombZoneKnown)
-			observation->objective.inBombZone = value<bool>("OBS-OBJECTIVE-BOMB-ZONE", state.bombZoneTick,
-				*observation, state.inBombZone);
+			observation->objective.inBombZone =
+				value<bool>("OBS-OBJECTIVE-BOMB-ZONE", state.bombZoneTick, *observation, state.inBombZone);
 		if (state.rescueZoneKnown)
-			observation->objective.inRescueZone = value<bool>("OBS-OBJECTIVE-RESCUE-ZONE", state.rescueZoneTick,
-				*observation, state.inRescueZone);
+			observation->objective.inRescueZone =
+				value<bool>("OBS-OBJECTIVE-RESCUE-ZONE", state.rescueZoneTick, *observation, state.inRescueZone);
 	}
 
 private:
+	static constexpr int kMaximumWeaponId = 30;
+	static constexpr int kUnknownAmmoValue = -1;
+	static constexpr int kMaximumByteValue = 255;
+	static constexpr int kAmmoIndexLimit = 32;
+	static constexpr unsigned kWeaponStateCapacity = 31U;
+	static constexpr unsigned kActorStateCapacity = 32U;
 	PublicActorState *edit(world::ActorKey actor, world::FrameIdentity frame)
 	{
 		PublicActorState state{};
@@ -381,17 +398,17 @@ private:
 	}
 
 	template <typename T>
-	static ObservationValue<T> value(const char *id, std::uint32_t observedTick,
-		const CompatibilityObservation &observation, T data)
+	static ObservationValue<T> value(
+		const char *id, std::uint32_t observedTick, const CompatibilityObservation &observation, T data)
 	{
-		const ObservationContext context{id, observation.actor, observation.frame,
-			ObservationQuality::Delayed, ObservationFreshness::EventDrivenCached,
-			ObservationSource::PublicGameDll, observation.frame.tick - observedTick, observation.player.origin.context.timing};
+		const ObservationContext context{id, observation.actor, observation.frame, ObservationQuality::Delayed,
+			ObservationFreshness::EventDrivenCached, ObservationSource::PublicGameDll,
+			observation.frame.tick - observedTick, observation.player.origin.context.timing};
 		return {data, true, context};
 	}
 
-	std::array<PublicActorState, 32U> actors_{};
-	std::array<PublicWeaponDefinition, 31U> definitions_{};
+	std::array<PublicActorState, kActorStateCapacity> actors_{};
+	std::array<PublicWeaponDefinition, kWeaponStateCapacity> definitions_{};
 };
 }
 }
