@@ -47,6 +47,7 @@ bool testActorIdentity(astrabot::metamod::PluginRuntime &runtime,enginefuncs_t &
 			auto &e=gEntities[i];e.v.flags=FL_CLIENT|FL_FAKECLIENT|FL_ONGROUND;
 			e.v.team=static_cast<int>(i+1);e.v.health=100;e.v.deadflag=DEAD_NO;e.v.solid=SOLID_SLIDEBOX;e.v.movetype=MOVETYPE_WALK;
 			e.v.origin=Vector(i?280.0f:80.0f,32,36);e.v.view_ofs=Vector(0,0,17);e.v.v_angle=Vector(0,i?180.0f:0.0f,0);
+			e.v.angles=e.v.v_angle; // Initialize both engine pose fields used by aim and vision.
 			e.v.maxspeed=240;e.v.fov=90;e.v.weapons=1<<22;
 			runtime.onMessageBegin(2,86,nullptr,nullptr);runtime.onWriteByte(static_cast<int>(i+1));runtime.onWriteString(i?"CT":"TERRORIST");runtime.onMessageEnd();
 			const auto &handle=ports.service_managedBotHandles()[i];
@@ -98,6 +99,7 @@ bool testActorIdentity(astrabot::metamod::PluginRuntime &runtime,enginefuncs_t &
 				"target slot can change from unmanaged client to managed bot")&&passed;
 			auto &enemy=gEntities[1];enemy.v.flags=FL_CLIENT|FL_FAKECLIENT|FL_ONGROUND;enemy.v.health=100;enemy.v.deadflag=DEAD_NO;enemy.v.team=2;
 			enemy.v.origin=Vector(280,32,36);enemy.v.view_ofs=Vector(0,0,17);enemy.v.v_angle=Vector(0,180,0);
+			enemy.v.angles=enemy.v.v_angle;
 			enemy.v.solid=SOLID_SLIDEBOX;enemy.v.movetype=MOVETYPE_WALK;enemy.v.maxspeed=240;enemy.v.fov=90;enemy.v.weapons=1<<22;
 			gEntities[0].v.v_angle=Vector(0,0,0);identityShots={};
 			for(unsigned n=0;n<48;++n)tick(.125f);

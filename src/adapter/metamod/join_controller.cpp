@@ -143,7 +143,8 @@ JoinAction JoinController::onMenu(
 			pendingSelection_ = true;
 			pendingValue_ = kClassSelection;
 			pendingFrame_ = frame;
-			nextFrame_ = frame;
+			if (attempts_ == 0U || nextFrame_ < frame)
+				nextFrame_ = frame;
 			promptGraceFrames_ = 0U;
 			return JoinAction::noOp();
 		}
@@ -175,7 +176,8 @@ JoinAction JoinController::onMenu(
 		pendingSelection_ = true;
 		pendingValue_ = teamSelection();
 		pendingFrame_ = frame;
-		nextFrame_ = frame;
+		if (attempts_ == 0U || nextFrame_ < frame)
+			nextFrame_ = frame;
 		promptGraceFrames_ = 0U;
 		return JoinAction::noOp();
 	}
@@ -198,7 +200,17 @@ JoinAction JoinController::onTeamInfo(const char *teamName) noexcept
 		const bool changed = !teamConfirmed_;
 		teamConfirmed_ = true;
 		teamInfoReceived_ = true;
-		(void)changed;
+		if (changed)
+		{
+			// Team admission is progress; class selection owns a fresh retry budget.
+			attempts_ = 0U;
+			if (phase_ == JoinPhase::WaitingTeamMenu)
+			{
+				phase_ = JoinPhase::WaitingClassMenu;
+				pendingSelection_ = false;
+				nextFrame_ = 0U;
+			}
+		}
 		return JoinAction::noOp();
 	}
 	if (oppositeTeamName(teamName))
@@ -250,10 +262,11 @@ JoinAction JoinController::onFrame(const edict_t *entity, std::uint32_t frame) n
 		pendingFrame_ = frame;
 		pendingValue_ = phase_ == JoinPhase::WaitingTeamMenu ? teamSelection() : kClassSelection;
 	}
-	if (!pendingSelection_)
+	if (!pendingSelection_ || frame < nextFrame_)
 	{
 		return JoinAction::noOp();
 	}
+	nextFrame_ = addFrames(frame, kRetryFrames);
 	return sendPendingSelection();
 }
 
@@ -263,17 +276,19 @@ JoinAction JoinController::commandCompleted(std::uint32_t frame) noexcept
 	{
 		return JoinAction::noOp();
 	}
-	if (repeatedPrompt_)
+	if (repeatedPrompt_ &&
+		(phase_ != JoinPhase::TeamCommandPending || !teamConfirmed_))
 	{
 		pendingSelection_ = true;
 		pendingValue_ = phase_ == JoinPhase::TeamCommandPending ? teamSelection() : kClassSelection;
 		pendingFrame_ = frame;
-		nextFrame_ = frame;
+		// Repeated rejection menus must preserve the send's cooldown.
 		phase_ = phase_ == JoinPhase::TeamCommandPending ? JoinPhase::WaitingTeamMenu
 														 : JoinPhase::WaitingClassMenu;
 		repeatedPrompt_ = false;
 		return JoinAction::noOp();
 	}
+	repeatedPrompt_ = false;
 
 	if (phase_ == JoinPhase::TeamCommandPending)
 	{

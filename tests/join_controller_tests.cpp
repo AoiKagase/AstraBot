@@ -65,10 +65,95 @@ bool completeClassSelection(astrabot::metamod::JoinController &controller)
 	return check(controller.commandCompleted(14U).kind == JoinActionKind::None,
 				 "class command completion enters confirmation");
 }
+
+bool testRejectedTeamRetry()
+{
+	using namespace astrabot::metamod;
+	using astrabot::compat::CommandTeam;
+	JoinController controller;
+	controller.begin({3U, 2U}, CommandTeam::Terrorist, 100U);
+	controller.onMenu(JoinMenuKind::Team, 0xFFFFU, 101U, JoinMenuSource::LegacyShowMenu);
+	if (!check(controller.onFrame(101U).kind == JoinActionKind::SendMenuSelect,
+		"initial team menu dispatches immediately")) return false;
+	// ReGameDLL rejects a stacked team with #Too_Many_Terrorists and
+	// synchronously displays the same menu. Repeated prompts are not progress.
+	controller.onMenu(JoinMenuKind::Team, 0xFFFFU, 101U, JoinMenuSource::LegacyShowMenu);
+	controller.commandCompleted(101U);
+	for (unsigned frame = 102U; frame < 133U; ++frame)
+	{
+		controller.onMenu(JoinMenuKind::Team, 0xFFFFU, frame, JoinMenuSource::LegacyShowMenu);
+		if (!check(controller.onFrame(frame).kind == JoinActionKind::None && controller.attempts() == 1U,
+			"rejected team and duplicate prompts cannot consume retries before cooldown")) return false;
+	}
+	if (!check(controller.onFrame(133U).kind == JoinActionKind::SendMenuSelect,
+		"team retry starts exactly at its bounded cooldown")) return false;
+	controller.onMenu(JoinMenuKind::Team, 0xFFFFU, 133U, JoinMenuSource::LegacyShowMenu);
+	controller.commandCompleted(133U);
+	if (!check(controller.onFrame(164U).kind == JoinActionKind::None &&
+		controller.onFrame(165U).kind == JoinActionKind::SendMenuSelect,
+		"third team attempt remains spaced")) return false;
+	controller.onTeamInfo("TERRORIST");
+	controller.commandCompleted(165U);
+	controller.onMenu(JoinMenuKind::TerroristClass, 1U, 166U, JoinMenuSource::LegacyShowMenu);
+	if (!check(controller.onFrame(166U).kind == JoinActionKind::SendMenuSelect,
+		"successful third team attempt leaves a fresh class selection budget")) return false;
+	controller.onMenu(JoinMenuKind::TerroristClass, 1U, 166U, JoinMenuSource::LegacyShowMenu);
+	controller.commandCompleted(166U);
+	for (unsigned frame = 167U; frame < 198U; ++frame)
+	{
+		controller.onTeamInfo("TERRORIST");
+		controller.onMenu(JoinMenuKind::TerroristClass, 1U, frame, JoinMenuSource::LegacyShowMenu);
+		if (!check(controller.onFrame(frame).kind == JoinActionKind::None && controller.attempts() == 1U,
+			"duplicate TeamInfo and class menus do not refill or bypass retry budget")) return false;
+	}
+	if (!check(controller.onFrame(198U).kind == JoinActionKind::SendMenuSelect,
+		"class retry also respects cooldown")) return false;
+	controller.commandCompleted(198U);
+	auto ready = makeReadyEntity();
+	if (!check(controller.onFrame(&ready, 199U).kind == JoinActionKind::Joined,
+		"temporarily rejected bot eventually joins without recreating its actor")) return false;
+
+	controller.reset(); controller.begin({3U, 3U}, CommandTeam::CounterTerrorist, 300U);
+	for (unsigned attempt = 0; attempt < 3; ++attempt)
+	{
+		const unsigned frame = 301U + 32U * attempt;
+		controller.onMenu(JoinMenuKind::Team, 0xFFFFU, frame, JoinMenuSource::LegacyShowMenu);
+		if (!check(controller.onFrame(frame).kind == JoinActionKind::SendMenuSelect,
+			"persistent rejection has a bounded number of paced sends")) return false;
+		controller.onMenu(JoinMenuKind::Team, 0xFFFFU, frame, JoinMenuSource::LegacyShowMenu);
+		controller.commandCompleted(frame);
+	}
+	if (!check(controller.onFrame(396U).kind == JoinActionKind::None &&
+		controller.onFrame(397U).error == JoinError::CommandAttemptsExhausted,
+		"persistent team rejection exhausts only after paced attempts")) return false;
+	controller.reset(); controller.begin({3U, 4U}, CommandTeam::Terrorist, 500U);
+	controller.onMenu(JoinMenuKind::Team, 0xFFFFU, 501U);
+	controller.onFrame(501U);
+	controller.onMenu(JoinMenuKind::Team, 0xFFFFU, 501U);
+	controller.commandCompleted(501U);
+	controller.onTeamInfo("TERRORIST");
+	controller.onMenu(JoinMenuKind::TerroristClass, 1U, 502U);
+	const auto late = controller.onFrame(502U);
+	if (!check(late.kind == JoinActionKind::SendMenuSelect && late.command == JoinCommandKind::JoinClass,
+		"delayed positive TeamInfo cancels the pending team retry and advances class selection")) return false;
+	controller.reset(); controller.begin({3U, 5U}, CommandTeam::Terrorist, 600U);
+	controller.onMenu(JoinMenuKind::Team, 0xFFFFU, 601U, JoinMenuSource::LegacyShowMenu);
+	controller.onFrame(601U);
+	controller.onMenu(JoinMenuKind::Team, 0xFFFFU, 601U, JoinMenuSource::LegacyShowMenu);
+	controller.onTeamInfo("TERRORIST");
+	controller.onMenu(JoinMenuKind::TerroristClass, 1U, 601U, JoinMenuSource::LegacyShowMenu);
+	controller.commandCompleted(601U);
+	const auto synchronous = controller.onFrame(604U);
+	return check(synchronous.kind == JoinActionKind::SendMenuSelect &&
+		synchronous.command == JoinCommandKind::MenuSelect &&
+		controller.phase() == JoinPhase::ClassCommandPending,
+		"matching TeamInfo takes priority over an earlier repeated team prompt in the same dispatch");
+}
 }
 
 int main()
 {
+	if (!testRejectedTeamRetry()) return 1;
 	using astrabot::compat::CommandTeam;
 	using astrabot::metamod::JoinActionKind;
 	using astrabot::metamod::JoinCommandKind;

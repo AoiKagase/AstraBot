@@ -151,7 +151,7 @@ namespace metamod
 		static constexpr std::uint8_t kClassSelection = 1U;
 		static constexpr std::uint32_t kTimeoutFrames = 128U;
 		static constexpr std::uint32_t kInitialFallbackFrames = 3U;
-		static constexpr std::uint32_t kRetryFrames = 8U;
+		static constexpr std::uint32_t kRetryFrames = 32U;
 		static constexpr std::uint16_t kAllMenuSelections = 0xFFFFU;
 
 		JoinAction fail(JoinError error) noexcept;
