@@ -184,7 +184,7 @@ cvar_t kManagerCvars[] = {
 			engineFunctions_ = nullptr;
 			lifecycle_ = runtime::LifecycleSession();
 			actorRegistry_ = runtime::ActorRegistry();
-			resetManagedBotMovement();
+			resetManagedBotExecutionState();
 			navigation_.resetAvailabilityDiagnostic();
 			inputDispatcher_.reset();
 			navPublisher_.invalidate(0U);
@@ -221,7 +221,7 @@ cvar_t kManagerCvars[] = {
 			restoreNativeBotControls();
 			inputDispatcher_.reset();
 			actorRegistry_ = runtime::ActorRegistry();
-			resetManagedBotMovement();
+			resetManagedBotExecutionState();
 			navigation_.resetAvailabilityDiagnostic();
 			navPublisher_.invalidate(lifecycle_.mapGeneration());
 			navLoadDiagnostic_ = {};
@@ -679,7 +679,7 @@ void PluginRuntime::onServerActivate(edict_t *edictList, int edictCount, int cli
 			inputDispatcher_.reset();
 			clearManagedBots();
 			actorRegistry_ = runtime::ActorRegistry();
-			resetManagedBotMovement();
+			resetManagedBotExecutionState();
 			navigation_.resetAvailabilityDiagnostic();
 			state_ = State::Attached;
 				compatibilityRegistrationInProgress_ = false;
@@ -837,7 +837,7 @@ void PluginRuntime::onStartFramePost()
 				}
 				runtimeProfiler_.setAliveBots(aliveBots);
 			}
-			updateManagedBotMovement();
+			updateManagedBots();
 			}
 			if (globals_ != nullptr && runtimeProfiler_.enabled())
 			{
@@ -1410,7 +1410,7 @@ void PluginRuntime::buildAndExecuteMovement(std::size_t index, FakeClientHandle 
 	command_.finishMovementCommand(index, handle, token, before, movement, draft, action);
 }
 
-void PluginRuntime::updateManagedBotMovement()
+void PluginRuntime::updateManagedBots()
 {
 	const compat::CvarSnapshot configuration = compatibilitySurface_.configuration();
 	const nav::NavSnapshot navigation = navPublisher_.snapshot();
@@ -1615,27 +1615,27 @@ void PluginRuntime::resetManagedBotTiming(std::size_t index, float spawnTime)
 	command_.resetManagedBotCommandTemplate(index);
 }
 
-void PluginRuntime::resetManagedBotMovement()
+void PluginRuntime::resetManagedBotExecutionState()
 {
-	navigation_.onMovementResetShared();
+	navigation_.resetSharedExecutionState();
 
-	behavior_.onMovementResetShared();
-	command_.onMovementResetShared();
+	behavior_.resetSharedExecutionState();
+	command_.resetSharedExecutionState();
 
 	for (std::size_t index = 0U; index < NativeBotObservation::kClientSlotCount; ++index)
 	{
-		navigation_.onMovementResetActor(index);
+		navigation_.resetActorExecutionState(index);
 
-		behavior_.onMovementResetActor(index);
+		behavior_.resetActorExecutionState(index);
 
-		observation_.onMovementResetActor(index);
+		observation_.resetActorExecutionState(index);
 
 		managedBotTiming_[index] = runtime::BotTimingScheduler();
-		command_.onMovementResetActor(index);
+		command_.resetActorExecutionState(index);
 	}
 
 	managedBotFullUpdateSequences_.fill(0U);
-	observation_.onMovementResetShared();
+	observation_.resetSharedExecutionState();
 		}
 
 NativeBotObservation PluginRuntime::collectNativeBotObservation() const

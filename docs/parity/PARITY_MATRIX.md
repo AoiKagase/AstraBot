@@ -80,7 +80,7 @@ below. Those rows are retained as an audit trail of the pre-P05 baseline.
 
 | Domain | Reference behavior | AstraBot location | Status | Evidence / gap |
 |---|---|---|---|---|
-| Runtime | `CBot::BotThink` 30Hz command and 10Hz full-think scheduling | `runtime::BotTimingScheduler` / `PluginRuntime::onStartFramePost` / `updateManagedBotMovement` | IMPLEMENTED_UNVERIFIED | Absolute `now + interval`, nested due gate, reference ordering, no catch-up; deterministic CTest evidence, live parity remains open |
+| Runtime | `CBot::BotThink` 30Hz command and 10Hz full-think scheduling | `runtime::BotTimingScheduler` / `PluginRuntime::onStartFramePost` / `updateManagedBots` | IMPLEMENTED_UNVERIFIED | Absolute `now + interval`, nested due gate, reference ordering, no catch-up; deterministic CTest evidence, live parity remains open |
 | Runtime | `CBot::ExecuteCommand` usercmd generation and execution | `BotCommand` template, `CommandQueue`, `InputDispatcher::dispatchNext` | IMPLEMENTED_UNVERIFIED | Persisted Full Update command state, per-execution sequence/msec materialization, public `pfnRunPlayerMove` boundary; private state/live acceptance remain open |
 | Lifecycle | create, initialize, spawn, disconnect and reset | `FakeClientManager`, `LifecycleSession`, `ActorRegistry`, `JoinController` | PARTIAL | current Windows evidence confirms load/join/spawn layers separately; full CSBot initialization not equivalent |
 | State | `SetState` with `OnExit`, `OnEnter`, timestamp and task side effects | `BehaviorStateMachine` | DIFFERENT | enum machine has seven broad states, not CSBot's state objects or side effects |

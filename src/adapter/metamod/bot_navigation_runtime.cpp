@@ -726,7 +726,7 @@ void BotNavigationRuntime::onActorRemoved(std::size_t index)
 	actors_[index].movementReversalDiagnostics = {};
 }
 
-void BotNavigationRuntime::onMovementResetShared()
+void BotNavigationRuntime::resetSharedExecutionState()
 {
 	reset_managedNavigationFailures();
 	reset_managedNavigationSteps();
@@ -750,7 +750,7 @@ void BotNavigationRuntime::onMovementResetShared()
 	movementDiagnosticRound_ = 0U;
 }
 
-void BotNavigationRuntime::onMovementResetActor(std::size_t index)
+void BotNavigationRuntime::resetActorExecutionState(std::size_t index)
 {
 	actors_[index].managedBotMovement.reset();
 	actors_[index].movementFallLandingTrackers.reset();

@@ -75,9 +75,9 @@ class BotBehaviorRuntime
 
 	void onActorRemembered(std::size_t index, const FakeClientHandle &handle);
 
-	void onMovementResetShared();
+	void resetSharedExecutionState();
 
-	void onMovementResetActor(std::size_t index);
+	void resetActorExecutionState(std::size_t index);
 
 	void noteNavigationFailure(const FakeClientHandle &handle, runtime::NavRoamResult roamResult,
 							   const runtime::NavRoamDecision &roamDecision);

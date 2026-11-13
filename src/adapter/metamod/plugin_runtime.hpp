@@ -109,7 +109,7 @@ class PluginRuntime : public BotObservationServices, public BotBehaviorServices,
 	void configureFakeClientManager();
 	void registerCompatibilityCommands();
 	void loadCurrentMapNavigation();
-	void updateManagedBotMovement();
+	void updateManagedBots();
 
 	void maintainPublicBotPopulation();
 
@@ -124,7 +124,7 @@ class PluginRuntime : public BotObservationServices, public BotBehaviorServices,
 	std::uint32_t publicPlayerPriority(const edict_t *entity) const;
 
 		bool roundFreezeActive() const;
-			void resetManagedBotMovement();
+			void resetManagedBotExecutionState();
 
 			std::size_t managedBotCount() const;
 			FakeClientHandle *findManagedBot(const char *name);

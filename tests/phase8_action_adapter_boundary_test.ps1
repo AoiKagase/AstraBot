@@ -12,10 +12,10 @@ if (-not (Test-Path -LiteralPath $AdapterPath -PathType Leaf)) {
 }
 
 $source = Get-Content -LiteralPath $AdapterPath -Raw
-$start = $source.IndexOf('void PluginRuntime::updateManagedBotMovement()')
+$start = $source.IndexOf('void PluginRuntime::updateManagedBots()')
 $end = $source.IndexOf('void PluginRuntime::resetManagedBotTiming', $start)
 if ($start -lt 0 -or $end -le $start) {
-    throw 'could not isolate updateManagedBotMovement adapter boundary'
+    throw 'could not isolate updateManagedBots adapter boundary'
 }
 
 $movementBody = $source.Substring($start, $end - $start)

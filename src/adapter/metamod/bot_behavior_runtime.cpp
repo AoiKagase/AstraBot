@@ -102,7 +102,7 @@ void BotBehaviorRuntime::onActorRemembered(std::size_t index, const FakeClientHa
 	actors_[index].buyReceiptTimeoutLogged = false;
 }
 
-void BotBehaviorRuntime::onMovementResetShared()
+void BotBehaviorRuntime::resetSharedExecutionState()
 {
 	reset_managedStateInputs();
 	managedTeamObjectiveCoordinator_.reset(services_->service_lifecycle().mapGeneration(),
@@ -123,7 +123,7 @@ void BotBehaviorRuntime::onMovementResetShared()
 	fill_managedBotWasDead(false);
 }
 
-void BotBehaviorRuntime::onMovementResetActor(std::size_t index)
+void BotBehaviorRuntime::resetActorExecutionState(std::size_t index)
 {
 	actors_[index].managedBotCombat = combat::CombatController();
 	actors_[index].managedBotObjectives = objectives::RoundObjectivePlanner();

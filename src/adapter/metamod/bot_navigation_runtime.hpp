@@ -53,9 +53,9 @@ class BotNavigationRuntime
 	}
 	void onActorRemoved(std::size_t index);
 
-	void onMovementResetShared();
+	void resetSharedExecutionState();
 
-	void onMovementResetActor(std::size_t index);
+	void resetActorExecutionState(std::size_t index);
 
 	void beginMovementUpdate(const compat::CvarSnapshot &configuration,
 							 const nav::NavSnapshot &navigation, bool movementUnavailable);

@@ -48,9 +48,9 @@ class BotCommandRuntime
 
 	void onActorRemembered(std::size_t index);
 
-	void onMovementResetShared();
+	void resetSharedExecutionState();
 
-	void onMovementResetActor(std::size_t index);
+	void resetActorExecutionState(std::size_t index);
 
 	MovementCommandDraft beginMovementCommand(std::size_t index, FakeClientHandle &handle,
 											  const runtime::LifecycleToken &token,

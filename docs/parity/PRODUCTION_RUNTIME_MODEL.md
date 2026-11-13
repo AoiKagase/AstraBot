@@ -118,7 +118,7 @@ managed movement. The per-actor runtime inventory is:
 | scheduler upkeep/command | `BotTimingScheduler::advance` | 30 Hz command gate |
 | observation, candidate enumeration, Vision FOV/LOS/body probes | `buildManagedWorldSnapshot` / `ObservationAdapter::collectVisibility` | 10 Hz Full Update; cached on command ticks |
 | WorldModel publish | `PerceptionAssembler::publish` | 10 Hz Full Update |
-| Compatibility state and NAV decision | `updateManagedBotMovement` / `NavRoamController::update` | 10 Hz Full Update |
+| Compatibility state and NAV decision | `updateManagedBots` / `NavRoamController::update` | 10 Hz Full Update |
 | current-area lookup and route selection | `NavRoamController` | on Full Update; route retained between updates |
 | NAV movement intent | `NavRoamController` / locomotion | 10 Hz Full Update |
 | public movement dispatch | `executeManagedBotCommand` / `InputDispatcher` | 30 Hz command gate |

@@ -744,7 +744,7 @@ void BotCommandRuntime::onActorRemembered(std::size_t index)
 	actors_[index].playerAvoidance.reset();
 }
 
-void BotCommandRuntime::onMovementResetShared()
+void BotCommandRuntime::resetSharedExecutionState()
 {
 	reset_managedMoveSpeeds();
 	reset_managedCommandDiagnosticUpdates();
@@ -752,7 +752,7 @@ void BotCommandRuntime::onMovementResetShared()
 	fill_movementGateDiagnosticTimes(std::numeric_limits<float>::quiet_NaN());
 }
 
-void BotCommandRuntime::onMovementResetActor(std::size_t index)
+void BotCommandRuntime::resetActorExecutionState(std::size_t index)
 {
 	actors_[index].managedBotJumpCrouch.reset();
 	resetManagedBotCommandTemplate(index);

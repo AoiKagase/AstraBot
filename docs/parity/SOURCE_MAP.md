@@ -20,7 +20,7 @@ ReGameDLL private class, pdata offset, or implementation code was copied.
 | Reference surface | Pinned source | AstraBot current boundary | P05 status |
 |---|---|---|---|
 | State owner / `SetState` | `regamedll/dlls/bot/cs_bot.h`, `cs_bot_statemachine.cpp` | `include/astrabot/compat/state_machine.hpp`, `src/core/compat/state_machine.cpp` | IMPLEMENTED_OFFLINE_VERIFIED |
-| Full Update dispatch | `regamedll/dlls/bot/cs_bot_update.cpp` | `PluginRuntime::updateManagedBotMovement`, existing `BotTimingScheduler` | IMPLEMENTED_UNVERIFIED; scheduler unchanged |
+| Full Update dispatch | `regamedll/dlls/bot/cs_bot_update.cpp` | `PluginRuntime::updateManagedBots`, existing `BotTimingScheduler` | IMPLEMENTED_UNVERIFIED; scheduler unchanged |
 | Ordinary state lifecycle | `regamedll/dlls/bot/states/cs_bot_*.cpp` | `CompatibilityStateMachine::invokeEnter/Update/Exit` and owned instances | IMPLEMENTED_UNVERIFIED; internals deferred |
 | Attack overlay | `CCSBot::m_attackState`, `Attack()`, `StopAttacking()` | `attackOverlayActive_`, `beginAttack`, `stopAttack`, existing combat intent handoff | IMPLEMENTED_UNVERIFIED; no live trace |
 | Managed actor ownership | `CCSBot` instance lifecycle | `PluginRuntime::managedBotStateMachines_`, reset on actor/map/round lifecycle | IMPLEMENTED_UNVERIFIED |
@@ -91,7 +91,7 @@ not evidence of CSBot parity.
 | `dlls/bot/cs_bot.cpp` | CSBot base behavior, scenario helpers, enemy/task access | plugin runtime and core contracts | PARTIAL; public edict-only approximation |
 | `dlls/bot/cs_bot_init.cpp` | construction, initialization, spawn/reset | fake-client manager, lifecycle, join controller | PARTIAL; physical spawn is externally observed, not GameDLL-private initialization |
 | `dlls/bot/cs_bot_init.h` | init declarations | no direct header | DIFFERENT |
-| `dlls/bot/cs_bot_update.cpp` | `Upkeep`, `Update`, full decision loop | `onStartFramePost` / `updateManagedBotMovement` | DIFFERENT; one per-frame adapter loop, no 30/10 split |
+| `dlls/bot/cs_bot_update.cpp` | `Upkeep`, `Update`, full decision loop | `onStartFramePost` / `updateManagedBots` | DIFFERENT; one per-frame adapter loop, no 30/10 split |
 | `dlls/bot/cs_bot_statemachine.cpp` | `SetState`, task changes, attack overlay | `behavior_state.cpp`, objective planner | DIFFERENT; no `OnEnter/OnUpdate/OnExit` state set |
 | `dlls/bot/cs_bot_vision.cpp` | FOV/trace visibility, enemy recognition, reaction queue | `perception.cpp`, world snapshot | DIFFERENT; current live sensor enumerates hostile edicts without CSBot trace/FOV |
 | `dlls/bot/cs_bot_listen.cpp` | hearing/noise investigation | perception sound schema only | MISSING from live integration |

@@ -24,9 +24,9 @@ def test_start_frame_dispatches_nav_movement():
     plugin = source("plugin_runtime")
     start = plugin.index("void PluginRuntime::onStartFrame()")
     post = plugin.index("void PluginRuntime::onStartFramePost()", start)
-    assert "updateManagedBotMovement" not in plugin[start:post]
-    assert "updateManagedBotMovement" in plugin[post:]
-    start = plugin.index("void PluginRuntime::updateManagedBotMovement()")
+    assert "updateManagedBots" not in plugin[start:post]
+    assert "updateManagedBots" in plugin[post:]
+    start = plugin.index("void PluginRuntime::updateManagedBots()")
     end = plugin.index("void PluginRuntime::resetManagedBotTiming", start)
     body = plugin[start:end]
     phases = (

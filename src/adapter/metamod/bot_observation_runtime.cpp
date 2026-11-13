@@ -1231,12 +1231,12 @@ void BotObservationRuntime::onActorRemembered(std::size_t index, const FakeClien
 									 services_->service_adapterFrameCount()});
 }
 
-void BotObservationRuntime::onMovementResetShared()
+void BotObservationRuntime::resetSharedExecutionState()
 {
 	fill_managedBotPerceptionFullUpdates((std::numeric_limits<std::uint32_t>::max)());
 }
 
-void BotObservationRuntime::onMovementResetActor(std::size_t index)
+void BotObservationRuntime::resetActorExecutionState(std::size_t index)
 {
 	actors_[index].managedBotCurrentWeapons = {};
 	actors_[index].managedBotPerception = perception::PerceptionAssembler();
