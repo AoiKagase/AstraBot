@@ -197,7 +197,7 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 	humanFriendlyBlocks = false; gEntities[2].v.health = 0; gEntities[2].v.flags = 0;
 	enemyDistance = 900.0f;
 	passed = check(static_cast<astrabot::metamod::BotObservationServices &>(runtime).
-		behavior_managedProfiles(0U).skill >= 50U,
+		behavior_managedProfiles(0U).skill >= 50,
 		"distant cadence fixture uses a skilled profile") && observe(true) && passed;
 	bool upkeepTurned = false;
 	for (unsigned step = 0; step < 60U; ++step)

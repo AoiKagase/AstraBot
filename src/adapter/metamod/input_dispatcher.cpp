@@ -141,8 +141,14 @@ namespace metamod
 		boundEntities_[index]->v.impulse = command.movement.impulse;
 		if (command.synchronizeCombatView)
 		{
-			boundEntities_[index]->v.v_angle = Vector(viewAngles[0],viewAngles[1],viewAngles[2]);
-			boundEntities_[index]->v.angles = Vector(-viewAngles[0]/3.0f,viewAngles[1],viewAngles[2]);
+			auto &view = boundEntities_[index]->v.v_angle;
+			view.x = viewAngles[0];
+			view.y = viewAngles[1];
+			view.z = viewAngles[2];
+			auto &model = boundEntities_[index]->v.angles;
+			model.x = -viewAngles[0] / 3.0f;
+			model.y = viewAngles[1];
+			model.z = viewAngles[2];
 		}
 		const bool profileMove = profiler_ != nullptr && profiler_->enabled();
 		const auto moveStart = profileMove ? std::chrono::steady_clock::now()
