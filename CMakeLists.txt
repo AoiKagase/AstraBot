@@ -661,6 +661,7 @@ add_library(astrabot_mm SHARED
     src/adapter/metamod/plugin/plugin_exports.cpp
     src/adapter/metamod/lifecycle/native_bot_guard.cpp
 	src/adapter/metamod/plugin/plugin_runtime.cpp
+	src/adapter/metamod/plugin/plugin_movement_sound.cpp
 	src/adapter/metamod/diagnostics/runtime_profiler.cpp
 	src/adapter/metamod/navigation/movement_execution_gate.cpp
 	src/adapter/metamod/bridge/engine_random_source.cpp
@@ -725,6 +726,7 @@ add_executable(astrabot_metamod_hooks
       src/adapter/metamod/plugin/plugin_exports.cpp
       src/adapter/metamod/lifecycle/join_controller.cpp
 	src/adapter/metamod/plugin/plugin_runtime.cpp
+	src/adapter/metamod/plugin/plugin_movement_sound.cpp
 	src/adapter/metamod/diagnostics/runtime_profiler.cpp
 	src/adapter/metamod/navigation/movement_execution_gate.cpp
 		src/adapter/metamod/bridge/engine_random_source.cpp
@@ -772,6 +774,7 @@ add_executable(astrabot_fake_client_isolation
       src/adapter/metamod/plugin/plugin_exports.cpp
       src/adapter/metamod/lifecycle/join_controller.cpp
 	src/adapter/metamod/plugin/plugin_runtime.cpp
+	src/adapter/metamod/plugin/plugin_movement_sound.cpp
 	src/adapter/metamod/diagnostics/runtime_profiler.cpp
 	src/adapter/metamod/navigation/movement_execution_gate.cpp
 		src/adapter/metamod/bridge/engine_random_source.cpp
@@ -812,6 +815,7 @@ add_executable(astrabot_compat_actor_command
       src/adapter/metamod/plugin/plugin_exports.cpp
       src/adapter/metamod/lifecycle/join_controller.cpp
 	src/adapter/metamod/plugin/plugin_runtime.cpp
+	src/adapter/metamod/plugin/plugin_movement_sound.cpp
 	src/adapter/metamod/diagnostics/runtime_profiler.cpp
 	src/adapter/metamod/navigation/movement_execution_gate.cpp
       src/adapter/metamod/bridge/engine_random_source.cpp
@@ -1057,6 +1061,11 @@ if(ASTRABOT_BUILD_TESTS AND ASTRABOT_BUILD_METAMOD)
   add_executable(astrabot_combat_target_log tests/combat_target_log_tests.cpp ${combat_target_log_sources})
   get_target_property(combat_target_log_includes astrabot_compat_actor_command INCLUDE_DIRECTORIES)
   target_include_directories(astrabot_combat_target_log PRIVATE ${combat_target_log_includes})
+  add_executable(astrabot_movement_sound_bridge tests/movement_sound_bridge_tests.cpp)
+  target_include_directories(astrabot_movement_sound_bridge PRIVATE ${combat_target_log_includes})
+  target_link_libraries(astrabot_movement_sound_bridge PRIVATE astrabot_core)
+  astrabot_apply_warnings(astrabot_movement_sound_bridge)
+  add_test(NAME astrabot_movement_sound_bridge COMMAND astrabot_movement_sound_bridge)
   target_link_libraries(astrabot_combat_target_log PRIVATE astrabot_core astrabot_regamedll_provider)
   astrabot_apply_warnings(astrabot_combat_target_log)
   add_test(NAME astrabot_combat_target_log COMMAND astrabot_combat_target_log --target-log)
@@ -1104,6 +1113,13 @@ if(ASTRABOT_BUILD_TESTS AND ASTRABOT_BUILD_METAMOD)
   astrabot_apply_warnings(astrabot_noise_investigation_runtime)
   add_test(NAME astrabot_noise_investigation_runtime COMMAND astrabot_noise_investigation_runtime --investigation)
   set_tests_properties(astrabot_noise_investigation_runtime PROPERTIES
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" RESOURCE_LOCK astrabot_actor_command_profile)
+  add_executable(astrabot_pm_move_footsteps tests/pm_move_footstep_runtime_tests.cpp ${combat_target_log_sources})
+  target_include_directories(astrabot_pm_move_footsteps PRIVATE ${combat_target_log_includes})
+  target_link_libraries(astrabot_pm_move_footsteps PRIVATE astrabot_core astrabot_regamedll_provider)
+  astrabot_apply_warnings(astrabot_pm_move_footsteps)
+  add_test(NAME astrabot_pm_move_footsteps COMMAND astrabot_pm_move_footsteps --pm-move)
+  set_tests_properties(astrabot_pm_move_footsteps PROPERTIES
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" RESOURCE_LOCK astrabot_actor_command_profile)
   add_executable(astrabot_gunshot_runtime tests/gunshot_runtime_tests.cpp ${combat_target_log_sources})
   target_include_directories(astrabot_gunshot_runtime PRIVATE ${combat_target_log_includes})
@@ -1158,7 +1174,7 @@ if(ASTRABOT_BUILD_TESTS AND ASTRABOT_BUILD_METAMOD)
     foreach(runtime_fixture astrabot_combat_target_log astrabot_bomb_guard_look
         astrabot_weapon_switch_runtime astrabot_actor_identity_runtime
         astrabot_runtime_team_resolution astrabot_runtime_command_scenarios astrabot_obstacle_interaction_runtime
-        astrabot_weapon_pickup_runtime astrabot_chatter_voice_runtime astrabot_noise_look_runtime astrabot_gunshot_runtime astrabot_noise_investigation_runtime)
+        astrabot_weapon_pickup_runtime astrabot_chatter_voice_runtime astrabot_noise_look_runtime astrabot_gunshot_runtime astrabot_noise_investigation_runtime astrabot_pm_move_footsteps)
       target_compile_options(${runtime_fixture} PRIVATE -Wno-deprecated-copy)
     endforeach()
   endif()

@@ -1,3 +1,60 @@
+## 2026-11-15 PM_Move footstep intake
+
+Source base dc3f3ca; read-only behavior oracle ReGameDLL-CS
+b0889847fe6d03898be88acc9e366660efb40ab5, public HLSDK PM definitions and
+ReHLDS public movement callback plumbing. Independently observes actual movement
+sounds that bypass the normal EmitSound hook; does not infer steps from timers.
+
+- Paired public PM_Move pre/post hooks temporarily wrap PM_PlaySound. A bounded
+  eight-scope adapter stack supports same/different-move nesting, forwards original
+  sound arguments exactly once and restores only callback fields still owned by us.
+  Foreign saved-thunk chains resolve their outer callback without replaying a wrapper
+  already in flight. Capture stays suspended during forwarding. No new exports.
+- Only actual standard material steps enter existing Low/strict1100 footstep hearing,
+  NAV localization, looking, investigation, reports and raw<300 sniper equipment.
+  Live movement origin replaces stale edict origin for the observation without
+  writing the edict. A scoped public EmitSound echo shares that position and dedups.
+- Server/runfuncs, current slot range, alive nonspectator client identity/serial
+  (including zero), map/round, finite monotonic clock and bounded coordinates are
+  checked before intake. Rejected, STOP and non-step calls still reach original audio.
+  Map/round/reset/overflow cancel capture and restore owned fields; logical scopes
+  remain active until their paired posts. Active detach is refused before mutation.
+- Tests pin exact float32 argument bits, nested forwarding/reset/overflow/foreign
+  ownership/orphan thunks, actual registered hooks, stale edict/live movement origin,
+  dual-feed dedup, invalid source/client/clock conditions, lifecycle/unload and actual
+  near-footstep pistol command. Public SDK and ReHLDS x86 PM layouts independently
+  compile to identical accessed-member offsets and sizes; product uses public fields.
+  Independent review found1 Important and0 Critical/Minor; the foreign-chain audio
+  loss reproduced RED and passed GREEN after the single fix pass. No deferred findings.
+
+Offline gates: complete MSVC14.51.36231 HostX86/x86 Debug build PASS; CTest
+**104/104 PASS** (10.82 seconds). Complete Debian Linux x86 Debug build PASS; CTest
+**102/103 PASS** (12.80 seconds). Only the pre-existing astrabot_combat_policy
+weapon/skill/recoil chest-policy failure remains, with its code/expectations unchanged
+from [the baseline](../verification/coding-conventions-20261113/VERIFICATION.md).
+Frozen runtime characterization passes without regeneration on both OSes. Ownership,
+ports, architecture, manifest (270 entries,263 C/C++ files) and whitespace gates pass.
+Independent PE/ELF gates confirm x86 and seven exact exports; all273 tested inputs,
+verified artifacts and preserved user files/profile match after the final suites.
+
+Verified local artifact SHA-256 (not deployed):
+- Windows DLL: 1d1104039f149ba496e19273b14ba0bb187678fbb06f6b32210c8453dcc04cdb
+- Linux SO: 23cd63b2f59d7c87d4f8bde0f365564d23594fd148e66a23a26e2b04dcdc549c
+
+Evidence: .agent-state/sessions/csbot-pm-move-footsteps-4a9c034c-421a-45a5-bbc8-faf81c9299e4/
+(source/artifact/profile fingerprints, SDK/engine ABI comparison, RED/GREEN/review
+logs, complete builds and sequential CTests). ReHLDS public reference identity:
+0124d56c3d888d922eb045775f71c6682ad1226f; public SDK Metamod-P identity:
+7ec9b014f8c0a947a724644aebe34eb33706e44b. References remained read-only.
+
+Rulings/limits: eight live scopes are supported; overflow/unmatched posts cancel
+capture and restore owned fields while retaining logical scopes until correct unwind.
+Orphan thunks cannot revive a callback after its scope ends. Foreign wrappers must
+respect the public pre/post callback lifetime; callbacks retained beyond it have no
+valid observation scope. The public PM sound bridge does not synthesize native
+player-animation GameEvents or establish complete native scheduling equivalence.
+Live HLDS/ReHLDS, client audibility/FPS/multiplayer acceptance are NOT RUN. No push/deploy.
+
 ## 2026-11-15 close-footstep sniper equipment
 
 Source base3a7fd83; behavior-only oracle ReGameDLL-CS

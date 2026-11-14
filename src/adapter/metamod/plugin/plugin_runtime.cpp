@@ -205,6 +205,9 @@ bool PluginRuntime::attach(PLUG_LOADTIME loadTime, META_FUNCTIONS *functionTable
 
 bool PluginRuntime::detach(PLUG_LOADTIME loadTime, PL_UNLOAD_REASON reason)
 {
+	if (movementSounds_.active())
+		return false;
+	movementSounds_.reset();
 	observation_.resetGunshotEvents();
 	(void)loadTime;
 	(void)reason;
@@ -256,6 +259,7 @@ bool PluginRuntime::provideEntityApi(DLL_FUNCTIONS *functionTable, int *interfac
 
 	DLL_FUNCTIONS requestedFunctions{};
 	requestedFunctions.pfnCmdStart = &HookCmdStart;
+	requestedFunctions.pfnPM_Move = &HookPmMove;
 	requestedFunctions.pfnTouch = &HookTouch;
 	requestedFunctions.pfnKeyValue = &HookKeyValue;
 	requestedFunctions.pfnClientDisconnect = &HookClientDisconnect;
@@ -285,6 +289,7 @@ bool PluginRuntime::provideEntityApiPost(DLL_FUNCTIONS *functionTable, int *inte
 
 	DLL_FUNCTIONS requestedFunctions{};
 	requestedFunctions.pfnStartFrame = &HookStartFramePost;
+	requestedFunctions.pfnPM_Move = &HookPmMovePost;
 	*functionTable = requestedFunctions;
 	return true;
 }
@@ -485,6 +490,7 @@ bool PluginRuntime::beginRoundGeneration()
 	{
 		return false;
 	}
+	movementSounds_.reset();
 	observation_.resetRoundWeapons();
 	behavior_.resetRoundBuyingState();
 
@@ -587,6 +593,7 @@ void PluginRuntime::onCmdStart(const edict_t *entity, std::uint16_t buttons)
 
 void PluginRuntime::onServerActivate(edict_t *edictList, int edictCount, int clientMax)
 {
+	movementSounds_.reset();
 	(void)edictList;
 	(void)edictCount;
 	(void)clientMax;
@@ -642,6 +649,7 @@ void PluginRuntime::onServerActivate(edict_t *edictList, int edictCount, int cli
 
 void PluginRuntime::onServerDeactivate()
 {
+	movementSounds_.reset();
 	observation_.resetGunshotEvents();
 	behavior_.resetObstacleMaterials();
 	pendingJoinActions_.clear();
@@ -1302,7 +1310,11 @@ void PluginRuntime::onPlaybackEvent(
 
 void PluginRuntime::onEmitSound(edict_t *entity, const char *sample, float volume, float attenuation)
 {
-	observation_.onEmitSound(entity, sample, volume, attenuation);
+	world::WorldVector origin{};
+	if (compat::isStandardFootstepSample(sample) && movementSoundOrigin(entity, &origin))
+		observation_.onEmitSoundAt(entity, sample, volume, attenuation, origin);
+	else
+		observation_.onEmitSound(entity, sample, volume, attenuation);
 }
 
 void PluginRuntime::onWriteLong(int value)

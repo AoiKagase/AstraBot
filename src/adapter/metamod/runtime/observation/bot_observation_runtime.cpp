@@ -584,6 +584,13 @@ void BotObservationRuntime::notifyCloseFootstep(const world::AudibleEvent &event
 
 void BotObservationRuntime::onEmitSound(edict_t *entity, const char *sample, float volume, float attenuation)
 {
+	if (entity)
+		onEmitSoundAt(entity, sample, volume, attenuation, {entity->v.origin.x, entity->v.origin.y, entity->v.origin.z});
+}
+
+void BotObservationRuntime::onEmitSoundAt(edict_t *entity, const char *sample, float volume, float attenuation,
+	const world::WorldVector &origin)
+{
 	if (entity == nullptr || entity->free || sample == nullptr || services_->service_globals() == nullptr ||
 		services_->service_engineFunctions() == nullptr ||
 		services_->service_engineFunctions()->pfnIndexOfEdict == nullptr || !std::isfinite(volume) || volume <= 0.0f ||
@@ -592,7 +599,6 @@ void BotObservationRuntime::onEmitSound(edict_t *entity, const char *sample, flo
 		return;
 	}
 	const int entityIndex = services_->service_engineFunctions()->pfnIndexOfEdict(entity);
-	const world::WorldVector origin{entity->v.origin.x, entity->v.origin.y, entity->v.origin.z};
 	const bool bombBeep = std::strstr(sample, "c4_beep") != nullptr;
 	const bool footstep = compat::isStandardFootstepSample(sample);
 	if (std::strstr(sample, "sg_explode") != nullptr && entityIndex > 0 && entity->serialnumber != 0)

@@ -32,6 +32,8 @@ public:
 	bool observeObjective(std::size_t index, edict_t *entity, bool planted, world::WorldVector *position,
 		bool *currentlyVisible = nullptr);
 	void onEmitSound(edict_t *entity, const char *sample, float volume, float attenuation);
+	void onEmitSoundAt(edict_t *entity, const char *sample, float volume, float attenuation,
+		const world::WorldVector &origin);
 	void onPrecacheEvent(int type, const char *script, unsigned short index);
 	void onPlaybackEvent(
 		int flags, const edict_t *invoker, unsigned short index, float delay, int bparam1, int bparam2);

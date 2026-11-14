@@ -5,6 +5,7 @@
 #include "runtime/navigation/bot_navigation_runtime.hpp"
 #include "runtime/observation/bot_observation_runtime.hpp"
 #include "runtime/shared/bot_runtime_types.hpp"
+#include "bridge/movement_sound_bridge.hpp"
 
 namespace astrabot
 {
@@ -74,6 +75,9 @@ public:
 	void onWriteLong(int value);
 	void onWriteCoord(float value);
 	void onEmitSound(edict_t *entity, const char *sample, float volume, float attenuation);
+	void onPmMove(playermove_t *move, int server);
+	void onPmMovePost(playermove_t *move, int server);
+	void onMovementSound(int channel, const char *sample, float volume, float attenuation, int flags, int pitch);
 	void onPrecacheEvent(int type, const char *script, unsigned short index);
 	void onPlaybackEvent(
 		int flags, const edict_t *invoker, unsigned short index, float delay, int bparam1, int bparam2);
@@ -90,6 +94,7 @@ public:
 	runtime::CommandReceipt dispatchBotInput(const runtime::ActorId &actor, std::uint32_t dispatchFrame);
 
 private:
+	bool movementSoundOrigin(const edict_t *source, world::WorldVector *origin) const;
 	void prepareNeutralManagedBotCommand(
 		std::size_t index, FakeClientHandle &handle, const runtime::MovementPhysicsState &before);
 	runtime::CommandReceipt dispatchNeutralMovement(
@@ -232,6 +237,7 @@ private:
 		return state_ == State::ActiveMap;
 	}
 
+	MovementSoundBridge movementSounds_{};
 	BotObservationRuntime observation_{};
 	BotBehaviorRuntime behavior_{};
 	BotNavigationRuntime navigation_{};
@@ -694,6 +700,9 @@ FORCE_STACK_ALIGN void HookServerActivate(edict_t *edictList, int edictCount, in
 FORCE_STACK_ALIGN void HookServerDeactivate();
 FORCE_STACK_ALIGN void HookStartFrame();
 FORCE_STACK_ALIGN void HookStartFramePost();
+FORCE_STACK_ALIGN void HookPmMove(playermove_t *move, int server);
+FORCE_STACK_ALIGN void HookPmMovePost(playermove_t *move, int server);
+FORCE_STACK_ALIGN void HookMovementSound(int channel, const char *sample, float volume, float attenuation, int flags, int pitch);
 FORCE_STACK_ALIGN void HookMessageBegin(int messageDestination, int messageType, const float *origin, edict_t *entity);
 FORCE_STACK_ALIGN void HookMessageEnd();
 FORCE_STACK_ALIGN void HookWriteByte(int value);
