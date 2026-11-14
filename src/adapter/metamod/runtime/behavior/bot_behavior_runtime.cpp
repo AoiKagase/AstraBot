@@ -43,6 +43,11 @@ void BotBehaviorRuntime::updateManagedBotCompatibilityState(
 	{
 		return;
 	}
+	if (actors_[index].noiseInvestigation.active() && !noiseInvestigationCurrent(index))
+	{
+		actors_[index].noiseInvestigation.reset();
+		actors_[index].investigationWalking = false;
+	}
 	compat::StateBehaviorInput stateBehavior = {};
 	compat::StateUpdateContext context = makeManagedBotStateContext(index, before, &stateBehavior);
 
@@ -75,7 +80,8 @@ void BotBehaviorRuntime::onActorRemoved(std::size_t index)
 	actors_[index].bombSearchTargets = {};
 	actors_[index].teamworkPolicies.reset();
 	actors_[index].teamworkRadioApplied = 0U;
-	actors_[index].investigatedNoiseTicks = 0U;
+	actors_[index].noiseInvestigation.reset();
+	actors_[index].investigationWalking = false;
 	actors_[index].weaponActions.reset();
 	actors_[index].buyControllers.reset();
 	actors_[index].managedBotCombat = combat::CombatController();
@@ -134,6 +140,8 @@ void BotBehaviorRuntime::resetSharedExecutionState()
 
 void BotBehaviorRuntime::resetActorExecutionState(std::size_t index)
 {
+	actors_[index].noiseInvestigation.reset();
+	actors_[index].investigationWalking = false;
 	actors_[index].noiseLook.reset();
 	actors_[index].noiseBend = {};
 	actors_[index].noiseLookUpdate = 0U;
@@ -165,7 +173,7 @@ void BotBehaviorRuntime::resetRoundTactics()
 
 void BotBehaviorRuntime::resetRoundNoiseInvestigation()
 {
-	reset_investigatedNoiseTicks();
+	reset_noiseInvestigation();
 }
 
 void BotBehaviorRuntime::resetRoundObjectiveCoordination()

@@ -25,6 +25,7 @@ struct NavRoamObservation
 	std::uint8_t team;
 	nav::LocomotionObservation locomotion;
 	bool hasObjectiveTarget;
+	nav::NavRouteType objectiveRouteType = nav::NavRouteType::Fastest;
 	nav::NavVector objectiveTarget;
 	bool airborne;
 	bool landingConfirmed;
@@ -343,7 +344,7 @@ private:
 	bool buildStuckRecoveryIntent(
 		const nav::NavSnapshot &snapshot, const nav::NavAreaMatch &currentArea, nav::LocomotionIntent *intent);
 	bool selectRoute(const nav::NavSnapshot &snapshot, const nav::NavAreaMatch &currentArea, nav::AreaId objectiveArea,
-		NavRoamDecision *decision);
+		NavRoamDecision *decision, nav::NavRouteType routeType = nav::NavRouteType::Fastest);
 	bool selectRoamRoute(
 		const nav::NavSnapshot &snapshot, const nav::NavAreaMatch &currentArea, NavRoamDecision *decision);
 	bool selectCompatibilityGoal(const nav::NavSnapshot &snapshot, const nav::NavAreaMatch &currentArea,

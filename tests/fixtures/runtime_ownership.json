@@ -422,7 +422,7 @@
   {
     "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
     "scope": "ActorState",
-    "member": "investigatedNoiseTicks"
+    "member": "noiseInvestigation"
   },
   {
     "header": "src/adapter/metamod/runtime/observation/bot_observation_runtime.hpp",
@@ -1153,5 +1153,10 @@
     "header": "src/adapter/metamod/runtime/observation/bot_observation_runtime.hpp",
     "scope": "owner",
     "member": "gunshotEvents_"
+  },
+  {
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
+    "scope": "ActorState",
+    "member": "investigationWalking"
   }
 ]

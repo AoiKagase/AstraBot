@@ -9,6 +9,7 @@ bool testGunshot(astrabot::metamod::PluginRuntime &, enginefuncs_t &, globalvars
 #define ASTRABOT_ACTOR_PROFILE_TEXT                                                                                    \
 	"Any { Name = \"Hearing Bot\" Team = any Difficulty = 1 Skill = 70 ReactionTime = 0.125 }\n"
 #include "compat_actor_command_tests.cpp"
+#include "fixtures/noise_runtime_nav.hpp"
 namespace
 {
 bool precacheGun(unsigned short index, const char *script, bool overridden = false, int type = 1)
@@ -46,6 +47,9 @@ void gunTrace(const float *, const float *end, int flags, edict_t *, TraceResult
 }
 bool testGunshot(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &engine, globalvars_t &globals)
 {
+	if (!check(loadHearingNav(runtime), "hearing fixture supplies real NAV"))
+		return false;
+	engine.pfnRandomFloat = &hearingFixtureRandomFloat;
 	using namespace astrabot;
 	engine.pfnTraceLine = &gunTrace;
 	runtime.giveEnginePointers(&engine, &globals);
@@ -215,6 +219,8 @@ bool testGunshot(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &engin
 	if (!check(precacheGun(27, "events/ak47.sc"), "next map precaches before activation"))
 		return false;
 	runtime.onServerActivate(nullptr, 0, 5);
+	if (!check(loadHearingNav(runtime), "next map supplies its own NAV"))
+		return false;
 	runtime.setCompatibilityFloat("bot_enable", 1.0f);
 	runtime.setCompatibilityFloat("bot_quota", 0.0f);
 	const auto addResult = runtime.executeCompatibilityCommand(request("bot_add_t"));

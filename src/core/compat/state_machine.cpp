@@ -570,7 +570,10 @@ void CompatibilityStateMachine::updateBehavior(const StateUpdateContext &context
 		break;
 	case CompatibilityStateId::InvestigateNoise:
 		behaviorDecision_.action = StateAction::Investigate;
-		if (!input.noiseAvailable || input.goalReached || input.pathFailed)
+		if (!input.noiseAvailable || input.goalReached || input.pathFailed ||
+			(input.navigationOwned &&
+				(input.navigation.outcome == NavigationStepOutcome::EndOfPath ||
+					input.navigation.outcome == NavigationStepOutcome::PathFailure)))
 			next = CompatibilityStateId::Idle;
 		break;
 	case CompatibilityStateId::Buy:

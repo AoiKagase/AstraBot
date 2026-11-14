@@ -932,6 +932,8 @@ NavigationUpdate BotNavigationRuntime::updateNavigation(std::size_t index, const
 		observation.objectiveTargetEntity = objectiveAssignment->targetEntity;
 	}
 	observation.team = static_cast<std::uint8_t>(services_->observation_resolvePlayerTeam(handle.entity));
+	if (services_->behavior_managedBotStateMachines(index).state() == compat::CompatibilityStateId::InvestigateNoise)
+		observation.objectiveRouteType = nav::NavRouteType::Safest;
 	observation.movementSuppressed = services_->roundFreezeActive();
 	const auto &objectiveAction = services_->behavior_managedBotObjectiveActions(index);
 	observation.movementSuppressed = observation.movementSuppressed ||
@@ -1083,6 +1085,11 @@ NavigationUpdate BotNavigationRuntime::updateNavigation(std::size_t index, const
 			roamResult =
 				actors_[index].managedBotMovement.update(navigation, observation, &locomotionIntent, &roamDecision);
 		}
+		if (services_->behavior_noiseInvestigationWalking(index) &&
+			services_->behavior_managedBotStateMachines(index).state() ==
+				compat::CompatibilityStateId::InvestigateNoise &&
+			locomotionIntent.posture == nav::LocomotionPosture::Standing && before.grounded && !before.onLadder)
+			locomotionIntent.speed = (std::min)(locomotionIntent.speed, .4f * handle.entity->v.maxspeed);
 		const float routeDirectionLength = std::hypot(locomotionIntent.direction.x, locomotionIntent.direction.y);
 		if (roamResult == runtime::NavRoamResult::IntentReady && !observation.movementSuppressed && before.grounded &&
 			!before.onLadder && locomotionIntent.targetArea != 0U && std::isfinite(locomotionIntent.direction.x) &&

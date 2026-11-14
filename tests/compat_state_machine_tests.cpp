@@ -395,12 +395,43 @@ bool testReferenceIdleAndHuntOwnTheirLifecycle()
 		"reference Hunt returns to Idle after thirty seconds for task selection");
 }
 
+bool testNoiseInvestigationNavigationCompletion()
+{
+	for (const auto outcome : {NavigationStepOutcome::EndOfPath, NavigationStepOutcome::PathFailure})
+	{
+		CompatibilityStateMachine machine({1U, 7U});
+		auto tick = context(1, 0, 1);
+		machine.initialize(tick);
+		machine.transition(CompatibilityStateId::InvestigateNoise, StateTransitionReason::ExplicitRequest,
+			StateTransitionId::ExplicitStateChange, tick);
+		StateBehaviorInput input{};
+		input.noiseAvailable = true;
+		input.navigationOwned = true;
+		tick = context(2, .1f, 2);
+		tick.behavior = &input;
+		input.navigation = {
+			tick.actor, tick.frame, 1, 1, tick.fullUpdateSequence, NavigationStepOutcome::Progressing, false};
+		machine.finishNavigation(tick);
+		if (!check(machine.state() == CompatibilityStateId::InvestigateNoise,
+				"progressing investigation retains consumed noise target"))
+			return false;
+		tick = context(3, .2f, 3);
+		tick.behavior = &input;
+		input.navigation = {tick.actor, tick.frame, 1, 1, tick.fullUpdateSequence, outcome, false};
+		machine.finishNavigation(tick);
+		if (!check(machine.state() == CompatibilityStateId::Idle, "investigation abandons completed or failed path"))
+			return false;
+	}
+	return true;
+}
+
 int main()
 {
-	return testReferenceIdleAndHuntOwnTheirLifecycle() && testStateOwnsNavigationOutcome() &&
-			testStateOwnedBehavior() && testInitialStateAndOwnership() && testReferenceSetStateOrderingAndSameState() &&
-			testFullUpdateAndTransitionTrace() && testAttackOverlayLifecycleAndInteraction() &&
-			testMultiStepAndTransitionDuringAttack() && testBlockedRngObservationAndLifecycleIsolation()
+	return testNoiseInvestigationNavigationCompletion() && testReferenceIdleAndHuntOwnTheirLifecycle() &&
+			testStateOwnsNavigationOutcome() && testStateOwnedBehavior() && testInitialStateAndOwnership() &&
+			testReferenceSetStateOrderingAndSameState() && testFullUpdateAndTransitionTrace() &&
+			testAttackOverlayLifecycleAndInteraction() && testMultiStepAndTransitionDuringAttack() &&
+			testBlockedRngObservationAndLifecycleIsolation()
 		? 0
 		: 1;
 }

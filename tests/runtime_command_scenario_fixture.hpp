@@ -186,6 +186,10 @@ public:
 		return value;
 	}
 
+	bool behavior_noiseInvestigationWalking(std::size_t) const override
+	{
+		return false;
+	}
 	void behavior_applyNoiseLookCommand(std::size_t, runtime::BotCommand &) override
 	{
 	}

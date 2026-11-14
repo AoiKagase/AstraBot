@@ -1,6 +1,7 @@
 #include "runtime/observation/bot_observation_runtime.hpp"
 #include "runtime/shared/bot_runtime_support.hpp"
 #include "astrabot/compat/noise_look.hpp"
+#include "astrabot/compat/noise_navigation.hpp"
 namespace astrabot
 {
 namespace metamod
@@ -8,6 +9,38 @@ namespace metamod
 using namespace runtime_detail;
 namespace
 {
+class PublicNoiseNavProbe : public compat::INoiseNavProbe
+{
+	enginefuncs_t *engine_;
+
+public:
+	explicit PublicNoiseNavProbe(enginefuncs_t *engine) : engine_(engine)
+	{
+	}
+	bool groundHeight(const nav::NavVector &position, float *z) override
+	{
+		if (!engine_ || !engine_->pfnTraceLine || !z)
+			return false;
+		const float from[] = {position.x, position.y, position.z};
+		const float to[] = {position.x, position.y, position.z - 4096};
+		TraceResult trace{};
+		engine_->pfnTraceLine(from, to, 0x101, nullptr, &trace);
+		if (trace.fStartSolid || trace.fAllSolid || trace.flFraction >= 1 || trace.flFraction < 0 ||
+			!std::isfinite(trace.vecEndPos.z))
+			return false;
+		*z = trace.vecEndPos.z;
+		return true;
+	}
+	bool clearLine(const nav::NavVector &a, const nav::NavVector &b) override
+	{
+		if (!engine_ || !engine_->pfnTraceLine)
+			return false;
+		const float from[] = {a.x, a.y, a.z}, to[] = {b.x, b.y, b.z};
+		TraceResult trace{};
+		engine_->pfnTraceLine(from, to, 0x101, nullptr, &trace);
+		return trace.flFraction == 1 && !trace.fStartSolid && !trace.fAllSolid;
+	}
+};
 constexpr float kSmokeObservationLifetimeSeconds = 4.0f;
 constexpr float kMaximumSoundDistance = 4096.0f;
 constexpr float kSoundAttenuationDistanceScale = 1000.0f;
@@ -1054,6 +1087,14 @@ bool BotObservationRuntime::collectManagedPerception(
 		services_->service_lifecycle().roundGeneration(), services_->service_adapterFrameCount()};
 	const world::SnapshotIdentity identity = {frame, observer, 0U};
 	perception::PerceptionInput input(identity);
+	PublicNoiseNavProbe noiseProbe(services_->service_engineFunctions());
+	compat::NavNoisePositionResolver noiseResolver(services_->service_navPublisher().snapshot(),
+		services_->service_compatibilityRandomSource(), {observer.slot, observer.generation},
+		{services_->command_managedBotCommandSequences(index), 0U,
+			services_->service_managedBotFullUpdateSequences()[index]},
+		&noiseProbe);
+	if (services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility)
+		input.setNoisePositionResolver(&noiseResolver);
 	if (input.setHearingTime(
 			services_->service_globals()->time, services_->behavior_managedProfiles(index).reactionTimeSeconds) !=
 		perception::PerceptionInputResult::Accepted)

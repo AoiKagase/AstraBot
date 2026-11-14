@@ -41,6 +41,14 @@ struct PerceptionEvent
 	world::ActorKey subject;
 };
 
+class INoisePositionResolver
+{
+public:
+	virtual ~INoisePositionResolver() = default;
+	virtual bool resolve(const world::AudibleEvent &sound, world::WorldPosition *position, std::uint32_t *area,
+		std::uint64_t *revision) = 0;
+};
+
 class PerceptionInput
 {
 public:
@@ -50,6 +58,14 @@ public:
 	PerceptionInputResult setIdentity(const world::SnapshotIdentity &identity);
 	const world::SnapshotIdentity &identity() const;
 	PerceptionInputResult setHearingTime(float nowSeconds, float reactionSeconds);
+	void setNoisePositionResolver(INoisePositionResolver *resolver)
+	{
+		noisePositionResolver_ = resolver;
+	}
+	INoisePositionResolver *noisePositionResolver() const
+	{
+		return noisePositionResolver_;
+	}
 	float hearingTimeSeconds() const
 	{
 		return hearingTimeSeconds_;
@@ -74,6 +90,7 @@ public:
 	const PerceptionEvent *eventAt(std::size_t index) const;
 
 private:
+	INoisePositionResolver *noisePositionResolver_ = nullptr;
 	float hearingTimeSeconds_ = -1.0f;
 	float hearingReactionSeconds_ = 0.0f;
 	world::SnapshotIdentity identity_;
@@ -162,6 +179,7 @@ public:
 
 	PerceptionResult publish(const PerceptionInput &input, world::WorldSnapshot *snapshot);
 	PerceptionResult invalidateActor(const world::ActorKey &actor);
+	bool consumeNoise(const world::NoiseMemory &expected);
 
 	const PerceptionAssemblerConfig &config() const;
 	const world::WorldSnapshot &snapshot() const;

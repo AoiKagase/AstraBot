@@ -252,6 +252,8 @@ struct NoiseMemory
 	ActorKey source;
 	bool positionApproximated;
 	float timestampSeconds = -1.0f;
+	std::uint32_t navArea = 0U;
+	std::uint64_t navRevision = 0U;
 };
 
 class WorldSnapshot

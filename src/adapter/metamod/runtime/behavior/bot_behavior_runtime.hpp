@@ -1,6 +1,7 @@
 #ifndef ASTRABOT_ADAPTER_BOT_BEHAVIOR_RUNTIME_HPP
 #define ASTRABOT_ADAPTER_BOT_BEHAVIOR_RUNTIME_HPP
 #include "runtime/shared/bot_runtime_services.hpp"
+#include "astrabot/compat/noise_investigation.hpp"
 #include "astrabot/compat/guard_look.hpp"
 #include "astrabot/compat/weapon_equipment.hpp"
 #include "astrabot/compat/chatter_voice.hpp"
@@ -13,6 +14,28 @@ namespace metamod
 class BotBehaviorRuntime
 {
 public:
+	bool noiseInvestigationCurrent(std::size_t index) const
+	{
+		if (index >= actors_.size() || !actors_[index].noiseInvestigation.active() || !services_)
+			return false;
+		const auto &handle = services_->service_managedBotHandles()[index];
+		const auto globals = services_->service_globals();
+		if (!handle.entity || handle.entity->free || handle.entity->v.deadflag != DEAD_NO ||
+			handle.entity->v.health <= 0 || !globals)
+			return false;
+		const auto nav = services_->service_navPublisher().snapshot();
+		const auto &lifecycle = services_->service_lifecycle();
+		return nav.isValid() &&
+			actors_[index].noiseInvestigation.current({handle.actor.slot, handle.actor.actorGeneration},
+				{lifecycle.mapGeneration(), lifecycle.roundGeneration(), services_->service_adapterFrameCount()},
+				globals->time, nav.revision());
+	}
+	bool noiseInvestigationWalking(std::size_t index) const
+	{
+		return actors_[index].investigationWalking &&
+			actors_[index].managedBotStateMachines.state() == compat::CompatibilityStateId::InvestigateNoise &&
+			!actors_[index].managedBotStateMachines.attackOverlayActive() && noiseInvestigationCurrent(index);
+	}
 	void updateVoiceFeedback(bool force = false);
 	void observeRadioPreference(edict_t *recipient, bool ignored);
 	void observeObstacleKeyValue(edict_t *entity, const KeyValueData *data);
@@ -172,6 +195,8 @@ private:
 	BehaviorPhaseResult updateBehaviorLifecycle(
 		std::size_t index, const runtime::MovementPhysicsState &before, compat::StateUpdateContext &context);
 	bool shouldBuy(std::size_t index, const compat::StateUpdateContext &context) const;
+	void updateNoiseInvestigation(std::size_t index, const runtime::MovementPhysicsState &before,
+		compat::StateUpdateContext &context, compat::StateBehaviorInput &stateBehavior);
 	void updateBehaviorPriorities(std::size_t index, const runtime::MovementPhysicsState &before,
 		compat::StateUpdateContext &context, compat::StateBehaviorInput &stateBehavior);
 	void commitBehaviorState(
@@ -228,10 +253,10 @@ private:
 			actor.managedStateInputs = {};
 	}
 
-	void reset_investigatedNoiseTicks()
+	void reset_noiseInvestigation()
 	{
 		for (auto &actor : actors_)
-			actor.investigatedNoiseTicks = {};
+			actor.noiseInvestigation.reset();
 	}
 
 	void reset_buyReceiptTimeoutLogged()
@@ -353,8 +378,8 @@ private:
 	};
 	compat::ChatterVoiceCatalog *chatterBank(std::size_t index);
 	void stopVoiceFeedback(std::size_t index);
-	bool sendChatterVoice(std::size_t index, compat::ChatterPhrase phrase, int count,
-		compat::ChatterVoiceCatalog &bank, float *duration);
+	bool sendChatterVoice(
+		std::size_t index, compat::ChatterPhrase phrase, int count, compat::ChatterVoiceCatalog &bank, float *duration);
 	struct NoiseBendCache
 	{
 		bool valid = false;
@@ -404,7 +429,8 @@ private:
 		bool escapingWithKnife{};
 		bool buyReceiptTimeoutLogged{};
 		compat::WeaponActionPlanner weaponActions{};
-		std::uint32_t investigatedNoiseTicks{};
+		compat::NoiseInvestigationPlanner noiseInvestigation{};
+		bool investigationWalking = false;
 		compat::StateBehaviorInput managedStateInputs{};
 		combat::CombatController managedBotCombat{};
 		objectives::RoundObjectivePlanner managedBotObjectives{};

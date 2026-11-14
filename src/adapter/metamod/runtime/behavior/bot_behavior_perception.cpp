@@ -63,6 +63,8 @@ void BotBehaviorRuntime::resetRoundRecognition()
 	updateVoiceFeedback(true);
 	for (auto &actor : actors_)
 	{
+		actor.noiseInvestigation.reset();
+		actor.investigationWalking = false;
 		actor.noiseLook.reset();
 		actor.noiseBend = {};
 		actor.noiseLookUpdate = 0U;
@@ -76,6 +78,8 @@ void BotBehaviorRuntime::resetRoundRecognition()
 void BotBehaviorRuntime::observePublicDeath(std::size_t index)
 {
 	stopVoiceFeedback(index);
+	actors_[index].noiseInvestigation.reset();
+	actors_[index].investigationWalking = false;
 	actors_[index].noiseLook.reset();
 	actors_[index].noiseBend = {};
 	actors_[index].noiseLookUpdate = 0U;

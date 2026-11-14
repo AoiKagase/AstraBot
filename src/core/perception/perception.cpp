@@ -70,6 +70,7 @@ PerceptionInputResult PerceptionInput::setIdentity(const world::SnapshotIdentity
 {
 	if (!identity.isValid())
 		return PerceptionInputResult::InvalidIdentity;
+	noisePositionResolver_ = nullptr;
 	hearingTimeSeconds_ = -1.0f;
 	hearingReactionSeconds_ = 0.0f;
 	identity_ = identity;
@@ -510,10 +511,21 @@ void PerceptionAssembler::updateNoise(
 				return;
 		}
 	}
+	world::WorldPosition position = sound.origin;
+	std::uint32_t navArea = 0;
+	std::uint64_t navRevision = 0;
+	if (input.noisePositionResolver() && sound.kind != world::SoundKind::Objective)
+	{
+		if (!input.noisePositionResolver()->resolve(sound, &position, &navArea, &navRevision) || navArea == 0 ||
+			navRevision == 0 || !isBoundedVector(position, world::WorldLimits::kMaximumCoordinate))
+			return;
+	}
 	noise->active = true;
 	noise->ready = config_.noiseReactionDelayTicks == 0U;
 	noise->kind = sound.kind;
-	noise->position = sound.origin;
+	noise->position = position;
+	noise->navArea = navArea;
+	noise->navRevision = navRevision;
 	noise->distance = sound.distance;
 	noise->priority = sound.priority;
 	noise->timestampTick = soundTick;
@@ -523,6 +535,18 @@ void PerceptionAssembler::updateNoise(
 	noise->positionApproximated = true;
 	if (timed)
 		advanceNoise(noise, input);
+}
+
+bool PerceptionAssembler::consumeNoise(const world::NoiseMemory &expected)
+{
+	const auto &current = snapshot_.noise_;
+	if (!current.active || !expected.active || current.timestampTick != expected.timestampTick ||
+		current.timestampSeconds != expected.timestampSeconds || current.navRevision != expected.navRevision ||
+		current.navArea != expected.navArea || current.position.x != expected.position.x ||
+		current.position.y != expected.position.y || current.position.z != expected.position.z)
+		return false;
+	clearNoise(&snapshot_.noise_);
+	return true;
 }
 
 void PerceptionAssembler::applyEvent(std::array<MemoryRecord, world::WorldLimits::kMaximumActors> *memory,

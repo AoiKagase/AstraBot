@@ -1,3 +1,78 @@
+## 2026-11-14 NAV-constrained sound positions and investigation decisions
+
+Source base bd5db00; behavior-only oracle ReGameDLL-CS
+b0889847fe6d03898be88acc9e366660efb40ab5 (read-only). This independently
+implements the NAV localization and investigation slice for Compatibility mode.
+
+- Only admitted non-objective sounds draw localization RNG. The highest XY-overlapping
+  NAV floor at/below origin+5 and no more than120 below is selected; absent containment,
+  public ground/ignore-glass LOS probes select the nearest eligible area within10000.
+  Uniform XY error is400*heardDistance/2000; the result is clamped to the SAME area and
+  its sloped floor. Memory retains area/revision and original receipt seconds without
+  exposing a hidden actor identity. No NAV/ground/LOS/RNG result means no noise destination.
+  Optional resolution leaves core fixtures independent of a live NAV adapter; C4 beeps
+  retain their separate objective knowledge path.
+- Investigation uses current receipt age against profile ReactionTime, rather than a
+  previous Full Update's cached ready flag. Safe time is15+5*aggression; strict well-past
+  safety is elapsed>1.25*safeTime, adjusted by early public enemy contact. Free-task,
+  life/round, visible enemy, blind/freeze/configuration and disposition gates precede
+  admission. Checks are limited to0.25-second intervals. More than120 units of vertical
+  separation requests one bounded route check per accepted noise. Unreachable or travel
+  distance>1500 rejects; center-to-center physical path length is kept separate from
+  weighted route cost and replaces straight-line distance if longer. Hiding radius is
+  100+400*aggression. Probability is1-distance/2000, minus min(.5,.05*livingFriends) when
+  at least3 teammates remain, using the native inclusive RNG comparison.
+- Attending consumes the expected noise memory and retains its own target. New noise
+  redirects only when more than100 units closer. Actual objective routing passes SAFEST
+  through to the corridor query and retry recursion. Knife/few-friend/hurry rules select
+  walking; standing walk speed is capped at0.4*maxspeed through command construction,
+  avoidance and command-cadence delivery. Path end/failure or a visible, smoke-free point
+  within200 and strict20-degree pitch/yaw alignment finishes investigation. Objective,
+  follow and guard ownership remain prior to free investigation.
+- Active destination/posture exports validate actor, map, round, NAV revision, clock and
+  life even during an attack overlay; unconditional lifetime validation precedes priority
+  gating. Death, removal, round/map/NAV/clock changes clear held state. Objective-only
+  sounds do not add teammate scans. Scans/traces/path queries are exercised through the
+  existing ownership/service boundaries; no private GameDLL fields or offsets are used.
+- Tests cover layered/sloped floors, visible nearest fallback, admission/RNG order,
+  stale consumption, current-time reaction, safe/cadence/friend/hiding/height boundaries,
+  physical travel versus weighted cost, retained/closer targets, SAFEST selection and
+  actual transmitted walking speed. The runtime fixture traverses two connected NAV
+  areas and covers consumption, later sound, close visibility completion, combat NAV
+  replacement and death. Independent review's Important stale-destination finding was
+  reproduced RED then fixed GREEN. Additional RED-to-GREEN checks found death posture,
+  command speed overwrite, a missed route-type query argument, cached ready use, and
+  unnecessary C4 friend scans. The latter was fixed against the unchanged frozen record.
+  No remaining Critical/Important findings or deferred minors.
+
+Offline gates: complete MSVC HostX86/x86 Debug build PASS; CTest **101/101 PASS**
+(8.01 seconds). Complete Debian Linux x86 Debug build PASS; CTest **99/100 PASS**
+(12.98 seconds). The only failure is the pre-existing astrabot_combat_policy
+weapon/skill/recoil chest-policy case from
+[the coding-conventions baseline](../verification/coding-conventions-20261113/VERIFICATION.md).
+Its implementation/expectations and the frozen characterization inputs are unchanged.
+Frozen runtime characterization passes on both OSes without regeneration. PE and ELF
+independently verify x86 and seven exact exports; source manifest, ownership, ports and
+whitespace gates pass. All266 recorded source inputs and the user's BotProfile.db stayed
+unchanged across the final verification runs.
+
+Verified local artifact SHA-256 (not deployed):
+- Windows DLL: 523ada45a16092017ec56fef816ec99ff47da48d0e75a13b0f9dc5b49aa4c9c3
+- Linux SO: 4fc60ef0d68153af1fcc2bd3fab3613ec4ecd8a50366a22ba3bd5c3897a13d61
+
+Evidence: .agent-state/sessions/csbot-noise-navigation-8eb6dca0-0d17-4b2f-a54c-24cc0b7bb7ef/ (RESULT.json, source fingerprints,
+review/RED logs, complete builds, compiler identity and sequential full CTest logs).
+
+Rulings/limits: the existing native0.4–0.6-second ComputePath throttle is preserved:
+if attending during that interval produces no path, the noise is consumed and the
+investigation ends, as in cs_bot_pathfind.cpp1608 and cs_bot_investigate_noise.cpp32–76.
+Runtime acceptance fixtures separate observation publication from the later decision
+rather than resetting that throttle. Disposition/hurry use available public/task state;
+private hurry timers and additional HeardNoise chatter concepts are not synthesized.
+Observations retain the existing Full Update publication cadence. This is not a claim
+of complete native scheduling or Enhanced-mode hearing parity. Live HLDS/ReHLDS behavior,
+camera comfort, FPS and multiplayer acceptance are NOT RUN. No push/deployment.
+
 ## 2026-11-14 native gunshot ingestion and seconds-based sound memory
 
 Source base 6fc332d; read-only behavioral oracle ReGameDLL-CS

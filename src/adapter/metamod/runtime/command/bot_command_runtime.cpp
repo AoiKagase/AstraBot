@@ -357,6 +357,16 @@ runtime::CommandReceipt BotCommandRuntime::executeManagedBotCommand(std::size_t 
 	const bool roundFreeze = services_->roundFreezeActive();
 	if (!explicitFrozen && !roundFreeze && !actors_[index].managedBotActionStopsMovement)
 		applyPlayerAvoidance(index, &command);
+	if (services_->behavior_noiseInvestigationWalking(index) && (handle.entity->v.flags & FL_ONGROUND) &&
+		handle.entity->v.movetype != MOVETYPE_FLY && !(command.movement.buttons & IN_DUCK))
+	{
+		const float speed = std::hypot(command.movement.forward, command.movement.side), limit = .4f * maxSpeed;
+		if (std::isfinite(speed) && std::isfinite(limit) && limit > 0 && speed > limit)
+		{
+			command.movement.forward *= limit / speed;
+			command.movement.side *= limit / speed;
+		}
+	}
 	if (actors_[index].managedBotActionStopsMovement)
 	{
 		// Do not let a delayed jump-crouch sequence survive an objective hold.
@@ -775,6 +785,9 @@ void BotCommandRuntime::finishMovementCommand(std::size_t index, FakeClientHandl
 			locomotionIntent.posture != nav::LocomotionPosture::Crouching)
 			commandSpeed *= ASTRABOT_BOT_COMMAND_RUNTIME_GOAL_SLOWDOWN_FACTOR;
 	}
+	if (compatibilityMovement && services_->behavior_noiseInvestigationWalking(index) &&
+		locomotionIntent.posture == nav::LocomotionPosture::Standing)
+		commandSpeed = (std::min)(commandSpeed, .4f * handle.entity->v.maxspeed);
 	actors_[index].managedMoveSpeeds = commandSpeed;
 	const MovementProjection movementProjection = ActionAdapter::projectMovement(locomotionIntent.direction.x,
 		locomotionIntent.direction.y, commandSpeed, command.viewAngles.yaw, compatibilityMovement);

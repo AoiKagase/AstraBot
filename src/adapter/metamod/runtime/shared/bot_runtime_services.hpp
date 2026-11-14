@@ -35,6 +35,8 @@ public:
 		JoinMenuSource source = JoinMenuSource::Unknown) = 0;
 	virtual void observeJoinTeamInfo(std::size_t index, const char *teamName) = 0;
 	virtual bool runtimeIsActive() const = 0;
+	virtual Service_compatibilityRandomSource &service_compatibilityRandomSource() = 0;
+	virtual const Service_navPublisher &service_navPublisher() = 0;
 	virtual const Service_adapterFrameCount &service_adapterFrameCount() = 0;
 	virtual const Service_compatibilitySurface &service_compatibilitySurface() = 0;
 	virtual const Service_engineFunctions &service_engineFunctions() = 0;
@@ -93,6 +95,7 @@ public:
 	virtual const std::uint32_t &observation_externalDefuserRoundGeneration() const = 0;
 	virtual const ManagedCurrentWeaponObservation &observation_managedBotCurrentWeapons(std::size_t index) const = 0;
 	virtual const perception::PerceptionAssembler &observation_managedBotPerception(std::size_t index) const = 0;
+	virtual bool observation_consumeNoise(std::size_t index, const world::NoiseMemory &expected) = 0;
 	virtual const std::uint8_t &observation_teamInfoTeams(std::size_t index) const = 0;
 	virtual const std::array<ObjectiveKnowledge, kObjectiveKnowledgeStateCount> &observation_objectiveKnowledge(
 		std::size_t index) const = 0;
@@ -126,6 +129,7 @@ public:
 	virtual const Service_navPublisher &service_navPublisher() = 0;
 	virtual const Service_pluginId &service_pluginId() = 0;
 	virtual Service_runtimeProfiler &service_runtimeProfiler() = 0;
+	virtual bool behavior_noiseInvestigationWalking(std::size_t index) const = 0;
 	virtual bool behavior_buildManagedObjectiveTarget(std::size_t index, nav::NavVector *target,
 		nav::NavSearchStats *searchStats, RuntimeObjectiveSelectionStats *objectiveStats = nullptr) = 0;
 	virtual const team::TeamObjectiveAssignment *behavior_findManagedTeamObjectiveAssignment(
@@ -172,6 +176,7 @@ public:
 	virtual const Service_roundFreezeUntil &service_roundFreezeUntil() = 0;
 	virtual Service_runtimeProfiler &service_runtimeProfiler() = 0;
 	virtual void behavior_applyObstacleCommand(std::size_t index, runtime::BotCommand &command) = 0;
+	virtual bool behavior_noiseInvestigationWalking(std::size_t index) const = 0;
 	virtual void behavior_applyNoiseLookCommand(std::size_t index, runtime::BotCommand &command) = 0;
 	virtual const ManagedObjectiveTargetCache &behavior_managedBotObjectiveTargets(std::size_t index) const = 0;
 	virtual const compat::CompatibilityStateMachine &behavior_managedBotStateMachines(std::size_t index) const = 0;

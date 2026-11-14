@@ -397,6 +397,14 @@ private:
 		return observation_.collectManagedPerception(index, snapshot, threats);
 	}
 
+	bool observation_consumeNoise(std::size_t index, const world::NoiseMemory &expected) override
+	{
+		return observation_.consumeNoise(index, expected);
+	}
+	bool behavior_noiseInvestigationWalking(std::size_t index) const override
+	{
+		return behavior_.noiseInvestigationWalking(index);
+	}
 	bool observation_readManagedWorldSnapshot(std::size_t index, world::WorldSnapshot *snapshot) const override
 	{
 		return observation_.readManagedWorldSnapshot(index, snapshot);

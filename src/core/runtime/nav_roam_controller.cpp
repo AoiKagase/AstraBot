@@ -1468,7 +1468,7 @@ NavRoamController::NavigationPhaseResult NavRoamController::selectUpdateRoute(Na
 				return {true, NavRoamResult::NoRoute};
 			}
 		}
-		const nav::NavRouteType routeType = nav::NavRouteType::Fastest;
+		const nav::NavRouteType routeType = observation.objectiveRouteType;
 		if (objectiveArea != 0U &&
 			isPathFailureBackedOff(
 				observation.frame.mapGeneration, currentArea.area, objectiveArea, routeType, observation.frame.tick))
@@ -1516,7 +1516,7 @@ NavRoamController::NavigationPhaseResult NavRoamController::selectUpdateRoute(Na
 		// Full updates during the retry cooldown must retain it.
 		if (objectiveArea != 0U && recoveryState().unsafeDropFailure.valid)
 			recoveryState().unsafeDropFailure.bypassPending = false;
-		if (!selectRoute(snapshot, currentArea, objectiveArea, decision))
+		if (!selectRoute(snapshot, currentArea, objectiveArea, decision, routeType))
 		{
 			if (objectiveArea != 0U && recoveryState().unsafeDropFailure.valid)
 			{
@@ -2452,7 +2452,7 @@ bool NavRoamController::buildStuckRecoveryIntent(
 #undef ASTRABOT_NAV_ROAM_CONTROLLER_DEGREES_TO_RADIANS
 
 bool NavRoamController::selectRoute(const nav::NavSnapshot &snapshot, const nav::NavAreaMatch &currentArea,
-	nav::AreaId objectiveArea, NavRoamDecision *decision)
+	nav::AreaId objectiveArea, NavRoamDecision *decision, nav::NavRouteType routeType)
 {
 	if (objectiveArea == 0U)
 	{
@@ -2485,8 +2485,8 @@ bool NavRoamController::selectRoute(const nav::NavSnapshot &snapshot, const nav:
 			decision->pathRequested = true;
 		}
 		nav::NavCorridor corridor = {};
-		const nav::NavQueryResult corridorResult = buildCorridor(query, currentArea.area, objectiveArea, &corridor,
-			decision == nullptr || !collectPathStats_ ? nullptr : &decision->pathSearchStats);
+		const nav::NavQueryResult corridorResult = buildCorridor(query, currentArea.area, objectiveArea, routeType,
+			&corridor, decision == nullptr || !collectPathStats_ ? nullptr : &decision->pathSearchStats);
 		if (decision != nullptr)
 		{
 			decision->corridorResult = corridorResult;
@@ -2665,7 +2665,7 @@ bool NavRoamController::selectRoute(const nav::NavSnapshot &snapshot, const nav:
 	if (routeState().hasAvoidedLink)
 	{
 		routeState().hasAvoidedLink = false;
-		return selectRoute(snapshot, currentArea, objectiveArea, decision);
+		return selectRoute(snapshot, currentArea, objectiveArea, decision, routeType);
 	}
 	return false;
 }

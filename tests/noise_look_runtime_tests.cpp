@@ -7,6 +7,7 @@ bool testNoiseLook(astrabot::metamod::PluginRuntime &, enginefuncs_t &, globalva
 #define ASTRABOT_ACTOR_PROFILE_TEXT                                                                                    \
 	"Any { Name = \"Noise Bot\" Team = any Difficulty = 1 Skill = 70 ReactionTime = 0.125 }\n"
 #include "compat_actor_command_tests.cpp"
+#include "fixtures/noise_runtime_nav.hpp"
 namespace
 {
 bool noiseRayBlocked = false;
@@ -76,6 +77,9 @@ bool writeNoiseApproachNav(const char *path)
 }
 bool testNoiseLook(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &engine, globalvars_t &globals)
 {
+	if (!check(loadHearingNav(runtime), "hearing fixture supplies real NAV"))
+		return false;
+	engine.pfnRandomFloat = &hearingFixtureRandomFloat;
 	engine.pfnTraceLine = &noiseLookTrace;
 	runtime.giveEnginePointers(&engine, &globals);
 	gObjectiveEntitiesAvailable = false;
@@ -271,6 +275,7 @@ bool testNoiseLook(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &eng
 	noiseRayBlocked = true;
 	noiseApproachVisible = true;
 	noiseApproachRays = 0;
+	source.v.origin = Vector(224, 32, 0); // The heard point belongs to area4; its route is occluded.
 	emit("player/pl_step1.wav");
 	step(.2f);
 	if (!check(noiseApproachRays == 1 && self.v.v_angle.y > 0 && self.v.v_angle.y < 90,

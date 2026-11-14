@@ -129,6 +129,8 @@ BotBehaviorRuntime::BehaviorPhaseResult BotBehaviorRuntime::updateBehaviorLifecy
 	}
 	if (before.dead)
 	{
+		actors_[index].noiseInvestigation.reset();
+		actors_[index].investigationWalking = false;
 		actors_[index].equipment.reset();
 		actors_[index].scenarioPlanners.reset();
 		services_->applyNavigationRequest({index, NavigationRequestKind::ClearFailure});
@@ -892,6 +894,11 @@ void BotBehaviorRuntime::commitBehaviorState(
 	(void)machine.update(context);
 	if (previousState != machine.state())
 	{
+		if (previousState == compat::CompatibilityStateId::InvestigateNoise)
+		{
+			actors_[index].noiseInvestigation.cancel();
+			actors_[index].investigationWalking = false;
+		}
 		services_->applyNavigationRequest({index, NavigationRequestKind::ClearStep});
 		// Reference state entry computes or abandons its own path. Never carry
 		// Idle's roam corridor into a newly assigned MoveTo task.

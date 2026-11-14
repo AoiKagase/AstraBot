@@ -3039,8 +3039,47 @@ bool testUnsafeDropRetryPolicy(
 	return check(retries == 3U, "repeated unsafe search loop replaced by capped active-frame retries");
 }
 
+bool testInvestigationSafestRoute()
+{
+	using namespace astrabot;
+	nav::NavDocument doc;
+	doc.setSourceIdentity({1, 0, 0});
+	nav::NavArea first{};
+	first.id = 1;
+	first.extent.lo = {0, 0, 0};
+	first.extent.hi = {100, 100, 0};
+	first.connections[1].push_back(2);
+	auto second = first;
+	second.id = 2;
+	second.extent.lo.x = 100;
+	second.extent.hi.x = 200;
+	second.connections[1].clear();
+	doc.addArea(first);
+	doc.addArea(second);
+	nav::NavSnapshotPublisher publisher;
+	publisher.publish(&doc, 1);
+	runtime::NavRoamController controller;
+	runtime::NavRoamObservation observation{};
+	observation.actor = {1, 1};
+	observation.frame = {1, 1, 1};
+	observation.locomotion.position = {16, 50, 0};
+	observation.locomotion.standingClearance = 72;
+	observation.locomotion.crouchingClearance = 36;
+	observation.locomotion.grounded = true;
+	observation.hasObjectiveTarget = true;
+	observation.objectiveTarget = {180, 50, 0};
+	observation.objectiveRouteType = nav::NavRouteType::Safest;
+	nav::LocomotionIntent intent{};
+	runtime::NavRoamDecision decision{};
+	const auto result = controller.update(publisher.snapshot(), observation, &intent, &decision);
+	return check(result == runtime::NavRoamResult::IntentReady && decision.routeType == nav::NavRouteType::Safest,
+		"investigation objective requests SAFEST route through movement controller");
+}
+
 int main()
 {
+	if (!testInvestigationSafestRoute())
+		return 1;
 	for (unsigned completion = 0U; completion < 6U; ++completion)
 		if (!test1734DropLaunchAcceptsRecordedGroundedFeet(completion))
 			return 1;

@@ -122,6 +122,11 @@ void BotBehaviorRuntime::finishManagedBotNavigation(std::size_t index, const run
 		services_->applyNavigationRequest({index, NavigationRequestKind::PublishStep, step});
 	if (machine.state() != previous)
 	{
+		if (previous == compat::CompatibilityStateId::InvestigateNoise)
+		{
+			actors_[index].noiseInvestigation.cancel();
+			actors_[index].investigationWalking = false;
+		}
 		services_->applyNavigationRequest({index, NavigationRequestKind::DestroyPath});
 		if (machine.state() == compat::CompatibilityStateId::Idle)
 		{
@@ -590,14 +595,10 @@ bool BotBehaviorRuntime::buildManagedObjectiveTarget(std::size_t index, nav::Nav
 	}
 	if (services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility)
 	{
-		const auto &belief = services_->observation_managedBotPerception(index).snapshot();
 		if (actors_[index].managedBotStateMachines.state() == compat::CompatibilityStateId::InvestigateNoise &&
-			belief.isValid() &&
-			belief.identity().frame.mapGeneration == services_->service_lifecycle().mapGeneration() &&
-			belief.identity().frame.roundGeneration == services_->service_lifecycle().roundGeneration() &&
-			belief.noise().active && belief.noise().ready)
+			noiseInvestigationCurrent(index))
 		{
-			const auto &position = belief.noise().position;
+			const auto position = actors_[index].noiseInvestigation.target();
 			*target = {position.x, position.y, position.z};
 			return true;
 		}

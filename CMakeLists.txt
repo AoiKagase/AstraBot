@@ -24,6 +24,7 @@ include(cmake/AstraBotBuild.cmake)
   src/core/build_identity.cpp
   src/core/world/world_snapshot.cpp
   src/core/perception/perception.cpp
+  src/core/compat/noise_navigation.cpp
   src/core/behavior/objective_proposal.cpp
   src/core/behavior/behavior_state.cpp
   src/core/combat/weapon_state.cpp
@@ -131,6 +132,14 @@ if(ASTRABOT_BUILD_TESTS)
   astrabot_apply_warnings(astrabot_bomb_navigation)
   add_test(NAME astrabot_bomb_navigation COMMAND astrabot_bomb_navigation)
 
+  add_executable(astrabot_noise_investigation tests/noise_investigation_tests.cpp)
+  target_link_libraries(astrabot_noise_investigation PRIVATE astrabot_core)
+  astrabot_apply_warnings(astrabot_noise_investigation)
+  add_test(NAME astrabot_noise_investigation COMMAND astrabot_noise_investigation)
+  add_executable(astrabot_noise_navigation tests/noise_navigation_tests.cpp)
+  target_link_libraries(astrabot_noise_navigation PRIVATE astrabot_core)
+  astrabot_apply_warnings(astrabot_noise_navigation)
+  add_test(NAME astrabot_noise_navigation COMMAND astrabot_noise_navigation)
   add_executable(astrabot_gunshot_events tests/gunshot_event_tests.cpp)
   target_link_libraries(astrabot_gunshot_events PRIVATE astrabot_core)
   astrabot_apply_warnings(astrabot_gunshot_events)
@@ -983,6 +992,7 @@ if(ASTRABOT_BUILD_METAMOD)
     src/adapter/metamod/runtime/behavior/bot_behavior_voice.cpp
     src/adapter/metamod/runtime/behavior/bot_behavior_buying.cpp
     src/adapter/metamod/runtime/behavior/bot_behavior_priorities.cpp
+    src/adapter/metamod/runtime/behavior/bot_behavior_investigation.cpp
     src/adapter/metamod/runtime/behavior/bot_behavior_objectives.cpp
     src/adapter/metamod/runtime/behavior/bot_behavior_guard.cpp
     src/adapter/metamod/runtime/behavior/bot_behavior_equipment.cpp
@@ -1084,6 +1094,13 @@ if(ASTRABOT_BUILD_TESTS AND ASTRABOT_BUILD_METAMOD)
   add_test(NAME astrabot_obstacle_interaction_runtime COMMAND astrabot_obstacle_interaction_runtime --obstacles)
   set_tests_properties(astrabot_obstacle_interaction_runtime PROPERTIES
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" RESOURCE_LOCK astrabot_actor_command_profile)
+  add_executable(astrabot_noise_investigation_runtime tests/noise_investigation_runtime_tests.cpp ${combat_target_log_sources})
+  target_include_directories(astrabot_noise_investigation_runtime PRIVATE ${combat_target_log_includes})
+  target_link_libraries(astrabot_noise_investigation_runtime PRIVATE astrabot_core astrabot_regamedll_provider)
+  astrabot_apply_warnings(astrabot_noise_investigation_runtime)
+  add_test(NAME astrabot_noise_investigation_runtime COMMAND astrabot_noise_investigation_runtime --investigation)
+  set_tests_properties(astrabot_noise_investigation_runtime PROPERTIES
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" RESOURCE_LOCK astrabot_actor_command_profile)
   add_executable(astrabot_gunshot_runtime tests/gunshot_runtime_tests.cpp ${combat_target_log_sources})
   target_include_directories(astrabot_gunshot_runtime PRIVATE ${combat_target_log_includes})
   target_link_libraries(astrabot_gunshot_runtime PRIVATE astrabot_core astrabot_regamedll_provider)
@@ -1137,7 +1154,7 @@ if(ASTRABOT_BUILD_TESTS AND ASTRABOT_BUILD_METAMOD)
     foreach(runtime_fixture astrabot_combat_target_log astrabot_bomb_guard_look
         astrabot_weapon_switch_runtime astrabot_actor_identity_runtime
         astrabot_runtime_team_resolution astrabot_runtime_command_scenarios astrabot_obstacle_interaction_runtime
-        astrabot_weapon_pickup_runtime astrabot_chatter_voice_runtime astrabot_noise_look_runtime astrabot_gunshot_runtime)
+        astrabot_weapon_pickup_runtime astrabot_chatter_voice_runtime astrabot_noise_look_runtime astrabot_gunshot_runtime astrabot_noise_investigation_runtime)
       target_compile_options(${runtime_fixture} PRIVATE -Wno-deprecated-copy)
     endforeach()
   endif()
