@@ -249,6 +249,7 @@ bool PluginRuntime::provideEntityApi(DLL_FUNCTIONS *functionTable, int *interfac
 	DLL_FUNCTIONS requestedFunctions{};
 	requestedFunctions.pfnCmdStart = &HookCmdStart;
 	requestedFunctions.pfnTouch = &HookTouch;
+	requestedFunctions.pfnKeyValue = &HookKeyValue;
 	requestedFunctions.pfnClientDisconnect = &HookClientDisconnect;
 	requestedFunctions.pfnClientPutInServer = &HookClientPutInServer;
 	requestedFunctions.pfnServerActivate = &HookServerActivate;
@@ -615,6 +616,7 @@ void PluginRuntime::onServerActivate(edict_t *edictList, int edictCount, int cli
 
 void PluginRuntime::onServerDeactivate()
 {
+	behavior_.resetObstacleMaterials();
 	pendingJoinActions_.clear();
 	pendingJoinActionOverflow_.fill(false);
 	if (state_ == State::ActiveMap)
@@ -1499,9 +1501,16 @@ std::uint32_t PluginRuntime::publicPlayerPriority(const edict_t *entity) const
 		managedBotSlots_[index] && managedBotHandles_[index].entity == entity ? managedBotCreationIds_[index] : 0U);
 }
 
+void PluginRuntime::onKeyValue(edict_t *entity, KeyValueData *data)
+{
+	behavior_.observeObstacleKeyValue(entity, data);
+}
+
 void PluginRuntime::onTouch(edict_t *entity, edict_t *other)
 {
 	command_.onTouch(entity, other);
+	if (state_ == State::ActiveMap)
+		behavior_.observeObstacleTouch(entity, other);
 }
 
 void PluginRuntime::resetManagedBotTiming(std::size_t index, float spawnTime)
@@ -2271,6 +2280,12 @@ void HookClientDisconnect(edict_t *entity)
 {
 	PluginRuntime::instance().onClientDisconnect(entity);
 	setMetaResult(MRES_IGNORED);
+}
+
+void HookKeyValue(edict_t *entity, KeyValueData *data)
+{
+	PluginRuntime::instance().onKeyValue(entity, data);
+	RETURN_META(MRES_IGNORED);
 }
 
 void HookTouch(edict_t *entity, edict_t *other)

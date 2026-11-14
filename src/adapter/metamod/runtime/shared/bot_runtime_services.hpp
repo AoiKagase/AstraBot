@@ -78,6 +78,7 @@ public:
 	virtual Service_runtimeProfiler &service_runtimeProfiler() = 0;
 	virtual bool command_dispatchClientCommand(edict_t *entity, const char *name, const char *argument) = 0;
 	virtual const std::uint32_t &command_managedBotCommandSequences(std::size_t index) const = 0;
+	virtual bool navigation_hasActivePath(std::size_t index) const = 0;
 	virtual const ManagedNavigationFailure &navigation_managedNavigationFailures(std::size_t index) const = 0;
 	virtual nav::NavPathCostContext navigation_managedPathCostContext(std::size_t index) = 0;
 	virtual const bool &observation_bombNoticeKnown(std::size_t index) const = 0;
@@ -169,6 +170,7 @@ public:
 	virtual const Service_roundFreezeScheduled &service_roundFreezeScheduled() = 0;
 	virtual const Service_roundFreezeUntil &service_roundFreezeUntil() = 0;
 	virtual Service_runtimeProfiler &service_runtimeProfiler() = 0;
+	virtual void behavior_applyObstacleCommand(std::size_t index, runtime::BotCommand &command) = 0;
 	virtual const ManagedObjectiveTargetCache &behavior_managedBotObjectiveTargets(std::size_t index) const = 0;
 	virtual const compat::CompatibilityStateMachine &behavior_managedBotStateMachines(std::size_t index) const = 0;
 	virtual void behavior_observeC4AttackDispatched(

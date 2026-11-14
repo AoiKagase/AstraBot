@@ -973,6 +973,7 @@ if(ASTRABOT_BUILD_METAMOD)
     src/adapter/metamod/runtime/behavior/bot_behavior_objectives.cpp
     src/adapter/metamod/runtime/behavior/bot_behavior_guard.cpp
     src/adapter/metamod/runtime/behavior/bot_behavior_equipment.cpp
+    src/adapter/metamod/runtime/behavior/bot_behavior_obstacles.cpp
     src/adapter/metamod/runtime/behavior/bot_behavior_scenario.cpp
     src/adapter/metamod/runtime/behavior/bot_behavior_combat.cpp
     src/adapter/metamod/runtime/navigation/bot_navigation_runtime.cpp
@@ -1060,6 +1061,13 @@ if(ASTRABOT_BUILD_TESTS AND ASTRABOT_BUILD_METAMOD)
   set_tests_properties(astrabot_combat_target_log PROPERTIES
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
     RESOURCE_LOCK astrabot_actor_command_profile)
+  add_executable(astrabot_obstacle_interaction_runtime tests/obstacle_interaction_runtime_tests.cpp ${combat_target_log_sources})
+  target_include_directories(astrabot_obstacle_interaction_runtime PRIVATE ${combat_target_log_includes})
+  target_link_libraries(astrabot_obstacle_interaction_runtime PRIVATE astrabot_core astrabot_regamedll_provider)
+  astrabot_apply_warnings(astrabot_obstacle_interaction_runtime)
+  add_test(NAME astrabot_obstacle_interaction_runtime COMMAND astrabot_obstacle_interaction_runtime --obstacles)
+  set_tests_properties(astrabot_obstacle_interaction_runtime PROPERTIES
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" RESOURCE_LOCK astrabot_actor_command_profile)
   add_executable(astrabot_runtime_command_scenarios
     tests/runtime_command_scenarios.cpp
     src/adapter/metamod/config/compat_surface.cpp
@@ -1084,7 +1092,7 @@ if(ASTRABOT_BUILD_TESTS AND ASTRABOT_BUILD_METAMOD)
     # astrabot_compat_actor_command; retain its existing GCC SDK exception.
     foreach(runtime_fixture astrabot_combat_target_log astrabot_bomb_guard_look
         astrabot_weapon_switch_runtime astrabot_actor_identity_runtime
-        astrabot_runtime_team_resolution astrabot_runtime_command_scenarios)
+        astrabot_runtime_team_resolution astrabot_runtime_command_scenarios astrabot_obstacle_interaction_runtime)
       target_compile_options(${runtime_fixture} PRIVATE -Wno-deprecated-copy)
     endforeach()
   endif()

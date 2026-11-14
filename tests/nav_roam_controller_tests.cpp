@@ -2420,7 +2420,11 @@ bool testRepeated1773DropFailureRearmsDirectedBypass()
 		observation.frame.tick = 1U + 6U * update;
 		observation.locomotion.observedAt = 1.0f + .6f * update;
 		if (update == 2U)
+		{
 			controller.destroyPath();
+			if (!check(!controller.hasPath(), "destroyed corridor has no authoritative path despite prior decision"))
+				return false;
+		}
 		const auto result = controller.update(publisher.snapshot(), observation, &intent, &decision);
 		if ((update % 2U) == 0U)
 		{

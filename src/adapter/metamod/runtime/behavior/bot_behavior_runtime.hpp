@@ -11,6 +11,10 @@ namespace metamod
 class BotBehaviorRuntime
 {
 public:
+	void observeObstacleKeyValue(edict_t *entity, const KeyValueData *data);
+	void observeObstacleTouch(edict_t *entity, edict_t *other);
+	void applyObstacleCommand(std::size_t index, runtime::BotCommand &command);
+	void resetObstacleMaterials();
 	void resetRoundRecognition();
 	void observePublicDeath(std::size_t index);
 	void bindServices(BotBehaviorServices &services)
@@ -302,8 +306,33 @@ private:
 			actor.outgoingRadioSchedulers = value;
 	}
 
+	struct ObstacleLook
+	{
+		edict_t *entity = nullptr;
+		int serial = 0;
+		runtime::LifecycleToken lifecycle{};
+		nav::NavVector point{};
+		compat::AimSpringState spring{};
+		runtime::ViewAngles angles{};
+		float touchedAt = 0.0f;
+		float alignedAt = -1.0f;
+		std::uint32_t attackUpdate = 0;
+		bool pendingAttack = false;
+	};
+
+	struct BreakableMaterial
+	{
+		const edict_t *entity = nullptr;
+		int serial = 0;
+		int material = -1;
+	};
+
 	struct ActorState
 	{
+		ObstacleLook obstacleLook{};
+		float obstacleNextEquipAt = 0.0f;
+		bool obstaclePathActive = false;
+		nav::NavVector obstaclePathGoal{};
 		compat::ReactionQueue reactionQueues{};
 		world::ActorKey recognizedTargets{};
 		world::WorldPosition recognizedPoints{};
@@ -347,6 +376,7 @@ private:
 		bool managedBotWasDead{};
 	};
 	std::array<ActorState, NativeBotObservation::kClientSlotCount> actors_{};
+	std::array<BreakableMaterial, 2048U> breakableMaterials_{};
 	BotBehaviorServices *services_ = nullptr;
 	compat::ChatterRadioCatalog outgoingChatterCatalog_{};
 	static constexpr unsigned kTeamRadioSlotCount = 3U;

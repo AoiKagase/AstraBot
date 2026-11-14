@@ -186,6 +186,10 @@ public:
 		return value;
 	}
 
+	void behavior_applyObstacleCommand(std::size_t, runtime::BotCommand &) override
+	{
+	}
+
 	void behavior_observeC4AttackDispatched(std::size_t, const FakeClientHandle &handle, std::uint16_t) override
 	{
 		attackNoticeSawMovedOrigin = moves == attackMovesBefore + 1U && handle.entity->v.origin.x > attackOriginBefore;

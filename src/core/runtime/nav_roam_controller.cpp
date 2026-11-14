@@ -2136,6 +2136,11 @@ void NavRoamController::reset()
 	initialized_ = false;
 }
 
+bool NavRoamController::hasPath() const
+{
+	return routeState().hasActiveRoute;
+}
+
 bool NavRoamController::isActive() const
 {
 	return traversalState().locomotion.isActive() || traversalState().jumpDrop.isActive() ||

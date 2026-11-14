@@ -39,6 +39,8 @@ void BotBehaviorRuntime::finishManagedBotNavigation(std::size_t index, const run
 	if (services_->service_compatibilitySurface().configuration().mode != compat::RuntimeMode::Compatibility ||
 		index >= services_->service_managedBotHandles().size() || services_->service_globals() == nullptr)
 		return;
+	actors_[index].obstaclePathActive = decision.pathSequence != 0U && decision.goalPresent;
+	actors_[index].obstaclePathGoal = decision.targetPosition;
 	compat::StateBehaviorInput input{};
 	auto context = makeManagedBotStateContext(index, before, &input);
 	const auto &prepared = actors_[index].managedStateInputs;

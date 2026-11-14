@@ -255,6 +255,7 @@ public:
 	void resetProgressMonitor();
 	void observeMotion(ActorId actor, world::FrameIdentity frame, const nav::LocomotionObservation &observation);
 	bool isActive() const;
+	bool hasPath() const;
 
 private:
 	ActorId motionActor_{};

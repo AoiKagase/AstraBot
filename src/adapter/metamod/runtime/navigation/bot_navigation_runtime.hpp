@@ -34,6 +34,11 @@ public:
 		return actors_[index].managedNavigationFailures;
 	}
 
+	bool hasActivePath(std::size_t index) const
+	{
+		return index < actors_.size() && actors_[index].managedBotMovement.hasPath();
+	}
+
 	const compat::NavigationStep &managedNavigationSteps(std::size_t index) const
 	{
 		return actors_[index].managedNavigationSteps;

@@ -57,6 +57,9 @@ void BotBehaviorRuntime::updateManagedBotCompatibilityState(
 
 void BotBehaviorRuntime::onActorRemoved(std::size_t index)
 {
+	actors_[index].obstacleLook = {};
+	actors_[index].obstacleNextEquipAt = 0.0f;
+	actors_[index].obstaclePathActive = false;
 	actors_[index].reactionQueues.reset();
 	actors_[index].recognizedTargets = {};
 	actors_[index].bombGuardPlanners.reset();
@@ -122,6 +125,9 @@ void BotBehaviorRuntime::resetSharedExecutionState()
 
 void BotBehaviorRuntime::resetActorExecutionState(std::size_t index)
 {
+	actors_[index].obstacleLook = {};
+	actors_[index].obstacleNextEquipAt = 0.0f;
+	actors_[index].obstaclePathActive = false;
 	actors_[index].managedBotCombat = combat::CombatController();
 	actors_[index].managedBotObjectives = objectives::RoundObjectivePlanner();
 	actors_[index].managedBotObjectiveTargets = {};
@@ -132,6 +138,12 @@ void BotBehaviorRuntime::resetActorExecutionState(std::size_t index)
 
 void BotBehaviorRuntime::resetRoundTactics()
 {
+	for (auto &actor : actors_)
+	{
+		actor.obstacleLook = {};
+		actor.obstaclePathActive = false;
+	}
+
 	reset_scenarioEscapeAreas();
 	reset_bombSearchMemory();
 	reset_bombSearchTargets();

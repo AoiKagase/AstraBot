@@ -53,6 +53,7 @@ public:
 	runtime::LifecycleToken tokenForSlot(std::uint32_t slot) const;
 
 	void onClientDisconnect(edict_t *entity);
+	void onKeyValue(edict_t *entity, KeyValueData *data);
 	void onTouch(edict_t *entity, edict_t *other);
 	void onClientPutInServer(edict_t *entity);
 	void onCmdStart(const edict_t *entity, std::uint16_t buttons);
@@ -356,6 +357,11 @@ private:
 		return command_.dispatchClientCommand(entity, name, argument);
 	}
 
+	bool navigation_hasActivePath(std::size_t index) const override
+	{
+		return navigation_.hasActivePath(index);
+	}
+
 	const ManagedNavigationFailure &navigation_managedNavigationFailures(std::size_t index) const override
 	{
 		return navigation_.managedNavigationFailures(index);
@@ -549,6 +555,11 @@ private:
 		return observation_.liveFriendlyPositions(index, feet);
 	}
 
+	void behavior_applyObstacleCommand(std::size_t index, runtime::BotCommand &command) override
+	{
+		behavior_.applyObstacleCommand(index, command);
+	}
+
 	void behavior_observeC4AttackDispatched(
 		std::size_t index, const FakeClientHandle &handle, std::uint16_t buttons) override
 	{
@@ -643,6 +654,7 @@ private:
 };
 
 FORCE_STACK_ALIGN void HookClientDisconnect(edict_t *entity);
+FORCE_STACK_ALIGN void HookKeyValue(edict_t *entity, KeyValueData *data);
 FORCE_STACK_ALIGN void HookTouch(edict_t *entity, edict_t *other);
 FORCE_STACK_ALIGN void HookCmdStart(const edict_t *entity, const usercmd_t *command, unsigned int randomSeed);
 FORCE_STACK_ALIGN void HookClientPutInServer(edict_t *entity);

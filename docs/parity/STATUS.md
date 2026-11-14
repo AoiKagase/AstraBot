@@ -1,3 +1,55 @@
+## 2026-11-14 CSBot contact-driven obstacle interaction
+
+Source base: AstraBot bee8026; behavioral reference ReGameDLL-CS
+b0889847fe6d03898be88acc9e366660efb40ab5. This entry records implementation
+and offline evidence only; native door/breakable map acceptance is open.
+
+- Ordinary func_door / func_door_rotating movement remains touch-open, as
+  assumed by the reference game_shared/bot/nav.h. The pinned bot has no
+  remote-button search routine; no invented USE or attack is sent to doors.
+- Public Touch detects damageable func_breakable outside enemy attack. A
+  local-path box-side rejection preserves the conservative BotTouch contract,
+  using the local movement goal raised 36 units. A current controller path
+  query prevents a destroyed corridor's old diagnostic goal rejecting contacts.
+- Actor-local center look runs with the non-attacking spring at the command
+  boundary, five-degree alignment and 0.2-second hold. Contact requests primary
+  input without constructing an enemy or stopping movement; world direction
+  is reprojected when the view turns. Pending contact survives a look expiry
+  between Touch and the next scheduled command.
+- Active grenades select an allowed carried primary, pistol, then knife, with
+  a five-second equip-request throttle surviving look expiry. Publicly known
+  fully empty weapons are skipped. Unknown ammunition remains unknown.
+- Public KeyValue captures material and entity serial, excluding material 7
+  unbreakable glass and trigger-only/nondamageable brushes. Missing material
+  provenance is conservatively skipped (including late plugin attachment).
+  No private CBreakable fields, pdata, offsets or per-frame entity scans.
+- Death/removal, entity reuse, round/map changes and freeze invalidate or gate
+  contact commands. Existing player avoidance, USE/C4 interaction ownership,
+  compatibility mode isolation and public Metamod exports are preserved.
+
+Verification receipts: .agent-state/sessions/csbot-obstacles-e16ecfdf-ed93-458e-93fc-1f72d0d61e43/.
+Windows baseline 90/90 passed. The new adapter test first failed for absent
+KeyValue support, then passed; expanded regressions exposed and verified
+look-expiry/equip-throttle and known-empty-primary fixes. Tests cover reverse
+Touch order, unbreakable/trigger-only/unknown/reused entities, door command
+preservation, local-path geometry, world movement direction, grenade selection,
+freeze, enemy-attack precedence and round invalidation. Source review found two P2 issues (ammo selection
+and stale path ownership), both corrected; follow-up has no Important/Critical
+findings. Source manifest check passes. PE and ELF independently pass x86 and
+seven exact Metamod exports. Final Windows x86 Debug full build and CTest: **91/91 PASS** (7.41 seconds).
+Final Debian Linux x86 Debug full build: PASS; CTest: **89/90 PASS**, only
+pre-existing astrabot_combat_policy threshold test fails with
+"weapon/skill/recoil chest policy matches reference thresholds". The same failure
+is recorded in docs/verification/coding-conventions-20261113/VERIFICATION.md and
+its baseline-linux-combat-policy.log; the combat policy files are unchanged.
+The new obstacle regression passes on both OSes. Ownership inventory was
+registered and both suites rerun. No tested source changed after fingerprinting.
+
+Limits: no new native obstacle-map run or deployment was performed. Material
+provenance and unknown ammo are public-information limits, not full CSBot parity.
+General-purpose button solving and arbitrary func_pushable destruction are not
+part of the pinned BotTouch behavior.
+
 ## 2026-11-12 A-side ramp / explicit path endpoint repair
 
 MC11: source correction, RED/GREEN regression, both x86 builds and backed-up
