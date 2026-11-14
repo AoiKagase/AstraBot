@@ -143,7 +143,8 @@ void BotBehaviorRuntime::updateNoiseInvestigation(std::size_t index, const runti
 		const auto &weapon = services_->observation_managedBotCurrentWeapons(index);
 		const bool knife = weapon.available && weapon.active && weapon.weaponId == 29;
 		const bool hurry =
-			services_->observation_bombNoticeKnown(index) && services_->observation_bombNoticePlanted(index);
+			reactionHurrying(index) ||
+			(services_->observation_bombNoticeKnown(index) && services_->observation_bombNoticePlanted(index));
 		actor.investigationWalking = compat::investigationShouldWalk(distance, in.friends, knife, hurry);
 		if (distance < 200 && !blind && services_->service_engineFunctions() &&
 			services_->service_engineFunctions()->pfnTraceLine)

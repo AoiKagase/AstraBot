@@ -205,7 +205,7 @@ ObservationAdapterResult ObservationAdapter::collectActor(edict_t *entity, const
 
 ObservationAdapterResult ObservationAdapter::collectVisibility(edict_t *observer, edict_t *target,
 	const world::ActorKey &targetActor, const world::FrameIdentity &frame,
-	perception::VisionObservation *observation) const
+	perception::VisionObservation *observation, bool checkFov) const
 {
 	if (observation == nullptr || !targetActor.isValid() || !frame.isValid())
 		return ObservationAdapterResult::InvalidArgument;
@@ -300,10 +300,13 @@ ObservationAdapterResult ObservationAdapter::collectVisibility(edict_t *observer
 	{
 		if (profileVision)
 		{
-			profiler_->recordVisionFovCheck();
+			if (checkFov)
+			{
+				profiler_->recordVisionFovCheck();
+			}
 			profiler_->recordBodyProbe();
 		}
-		if (!inViewCone(point))
+		if (checkFov && !inViewCone(point))
 			return;
 		observation->fovPassed = true;
 		if (traceVisible(point))

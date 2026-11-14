@@ -4,6 +4,7 @@
 #include "astrabot/compat/enemy_count_chatter.hpp"
 #include "astrabot/compat/kill_praise.hpp"
 #include "astrabot/compat/knife_run.hpp"
+#include "astrabot/compat/friend_death.hpp"
 #include "astrabot/compat/noise_investigation.hpp"
 #include "astrabot/compat/guard_look.hpp"
 #include "astrabot/compat/weapon_equipment.hpp"
@@ -35,6 +36,17 @@ public:
 	}
 	bool noiseInvestigationWalking(std::size_t index) const
 	{
+		if (index < actors_.size() && reactionPursuing(index) && !actors_[index].managedBotStateMachines.attackOverlayActive())
+		{
+			const auto &weapon = services_->observation_managedBotCurrentWeapons(index);
+			const auto context = reactionContext(index);
+			const float roundStart = services_->service_roundFreezeGeneration() == context.frame.roundGeneration
+				? services_->service_roundFreezeUntil() : 0.0f;
+			constexpr unsigned kKnife = 29;
+			return weapon.available && weapon.active && weapon.weaponId == kKnife && !reactionHurrying(index) &&
+				actors_[index].enemyReaction.wellPastSafe(context.now - roundStart,
+					static_cast<float>(actors_[index].managedProfiles.aggression) / 100.0f);
+		}
 		return actors_[index].investigationWalking &&
 			actors_[index].managedBotStateMachines.state() == compat::CompatibilityStateId::InvestigateNoise &&
 			!actors_[index].managedBotStateMachines.attackOverlayActive() && noiseInvestigationCurrent(index);
@@ -51,6 +63,7 @@ public:
 	void observePublicDeath(std::size_t index);
 	void observeEnemyWeaponFire(const edict_t *source, const world::FrameIdentity &frame, float now);
 	bool forcedRunning(std::size_t index);
+	world::EntityKey currentEnemySource(std::size_t index) const;
 	void observePlayerDeath(int victimSlot, int killerSlot, edict_t *recipient, const world::FrameIdentity &frame);
 	void bindServices(BotBehaviorServices &services)
 	{
@@ -166,6 +179,8 @@ public:
 	void observeNeutralC4AttackDispatched(std::size_t index, const FakeClientHandle &handle);
 
 private:
+	bool reactionEnemyCurrent(world::ActorKey enemy) const;
+	bool receiptConnectionCurrent(world::ActorKey connection) const;
 	enum class BehaviorPhaseResult
 	{
 		Continue,
@@ -395,7 +410,16 @@ private:
 	compat::ChatterVoiceCatalog *chatterBank(std::size_t index);
 	void ensureOutgoingChatterCatalog();
 	std::uint32_t allowedKillPraisePhrases(const char *verbosity);
-	bool killVictimVisible(std::size_t index, const edict_t *victim, const world::FrameIdentity &frame) const;
+	bool killVictimVisible(std::size_t index, const edict_t *victim, const world::FrameIdentity &frame, bool checkFov = true) const;
+	compat::ReactionContext reactionContext(std::size_t index) const;
+	void observeFriendDeath(std::size_t index, const edict_t *victim, const edict_t *killer,
+		const world::FrameIdentity &frame, world::ActorKey victimConnection, world::ActorKey killerConnection);
+	void changeReactionState(std::size_t index, compat::CompatibilityStateId next, bool pursue = false);
+	void updateEnemyReaction(std::size_t index, const runtime::MovementPhysicsState &before);
+	bool reactionPursuing(std::size_t index) const;
+	bool reactionIgnoring(std::size_t index) const;
+	compat::ReactionDisposition reactionDisposition(std::size_t index) const;
+	bool reactionHurrying(std::size_t index) const;
 	void stopVoiceFeedback(std::size_t index);
 	bool sendChatterVoice(
 		std::size_t index, compat::ChatterPhrase phrase, int count, compat::ChatterVoiceCatalog &bank, float *duration, std::uint16_t reportPlace);
@@ -433,6 +457,7 @@ private:
 		compat::EnemyCountChatterPolicy enemyCountChatter{};
 		compat::KillPraisePolicy killPraise{};
 		compat::KnifeRunTimer knifeRun{};
+		compat::EnemyReactionMemory enemyReaction{};
 		world::EntityKey enemyWeaponSource{};
 		compat::RadioContactMemory outgoingRadioContactMemory{};
 		std::uint32_t outgoingRadioReceipts{};

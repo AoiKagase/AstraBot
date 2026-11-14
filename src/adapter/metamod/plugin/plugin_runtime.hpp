@@ -619,6 +619,11 @@ private:
 		behavior_.resetEquipment(index);
 	}
 
+	world::EntityKey behavior_currentEnemySource(std::size_t index) const override
+	{
+		return behavior_.currentEnemySource(index);
+	}
+
 	void behavior_observeEnemyWeaponFire(const edict_t *source, const world::FrameIdentity &frame, float now) override
 	{
 		behavior_.observeEnemyWeaponFire(source, frame, now);

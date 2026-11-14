@@ -25,23 +25,45 @@ void BotBehaviorRuntime::observePlayerDeath(
 		frame.tick != services_->service_adapterFrameCount())
 		return;
 	const int maximum = (std::min)(kMaximumClientSlots, globals->maxClients);
-	if (victimSlot < 1 || victimSlot > maximum || killerSlot < 1 || killerSlot > maximum)
+	if (victimSlot < 1 || victimSlot > maximum || killerSlot < 0 || killerSlot > maximum)
 		return;
+	const auto &life = services_->service_lifecycle();
+	const world::ActorKey victimConnection{static_cast<std::uint32_t>(victimSlot),
+		life.slotGeneration(static_cast<std::uint32_t>(victimSlot))};
+	const world::ActorKey killerConnection{static_cast<std::uint32_t>(killerSlot),
+		life.slotGeneration(static_cast<std::uint32_t>(killerSlot))};
+	struct ObserverReceipt
+	{
+		edict_t *entity = nullptr;
+		int serial = -1;
+		std::uint32_t actorGeneration = 0;
+		world::ActorKey connection{};
+	};
+	std::array<ObserverReceipt, kMaximumClientSlots> observers{};
+	for (std::size_t index = 0; index < observers.size(); ++index)
+	{
+		const auto &handle = services_->service_managedBotHandles()[index];
+		if (services_->service_managedBotSlots()[index] && handle.entity)
+		{
+			observers[index] = {handle.entity, handle.entity->serialnumber, handle.actor.actorGeneration,
+				{static_cast<std::uint32_t>(index + 1), life.slotGeneration(static_cast<std::uint32_t>(index + 1))}};
+		}
+	}
+	const float receiptTime = globals->time;
 	auto *victim = engine->pfnPEntityOfEntIndex(victimSlot);
-	auto *killer = engine->pfnPEntityOfEntIndex(killerSlot);
+	auto *killer = killerSlot > 0 ? engine->pfnPEntityOfEntIndex(killerSlot) : nullptr;
 	const auto player = [](const edict_t *entity)
 	{
 		return entity && !entity->free && entity->serialnumber >= 0 && (entity->v.flags & FL_CLIENT) != 0 &&
 			(entity->v.flags & (FL_SPECTATOR | FL_DORMANT)) == 0;
 	};
-	if (!player(victim) || !player(killer))
+	if (!player(victim))
 		return;
 	const int victimSerial = victim->serialnumber;
-	const int killerSerial = killer->serialnumber;
+	const int killerSerial = killer ? killer->serialnumber : -1;
 	const int victimTeam = services_->observation_resolvePlayerTeam(victim);
-	const int killerTeam = services_->observation_resolvePlayerTeam(killer);
-	if ((victimTeam != kTerroristTeam && victimTeam != kCounterTerroristTeam) ||
-		(killerTeam != kTerroristTeam && killerTeam != kCounterTerroristTeam) || victimTeam == killerTeam)
+	const int killerTeam = player(killer) ? services_->observation_resolvePlayerTeam(killer) : 0;
+	if (victimTeam != kTerroristTeam && victimTeam != kCounterTerroristTeam)
 		return;
 	std::array<int, kCounterTerroristTeam + 1> alive{};
 	for (int slot = 1; slot <= maximum; ++slot)
@@ -58,13 +80,38 @@ void BotBehaviorRuntime::observePlayerDeath(
 	for (std::size_t index = 0; index < actors_.size() && index < static_cast<std::size_t>(maximum); ++index)
 	{
 		const auto &handle = services_->service_managedBotHandles()[index];
+		const auto &original = observers[index];
 		auto *self = handle.entity;
-		if (!services_->service_managedBotSlots()[index] || !player(self) || (recipient && recipient != self) ||
+		const auto observerCurrent = [&]()
+		{
+			return self && original.entity == self && original.serial == self->serialnumber &&
+				handle.actor.actorGeneration == original.actorGeneration && receiptConnectionCurrent(original.connection);
+		};
+		if (!observerCurrent() || !services_->service_managedBotSlots()[index] || !player(self) || (recipient && recipient != self) ||
 			index + 1 == static_cast<std::size_t>(victimSlot) || handle.actor.actorGeneration == 0 ||
 			self->v.deadflag != DEAD_NO || !(self->v.health > 0) ||
-			engine->pfnPEntityOfEntIndex(static_cast<int>(index + 1)) != self ||
-			services_->observation_resolvePlayerTeam(self) != killerTeam)
+			engine->pfnPEntityOfEntIndex(static_cast<int>(index + 1)) != self)
 			continue;
+		if (!receiptConnectionCurrent(victimConnection) || !receiptConnectionCurrent(killerConnection) ||
+			victim->free || victim->serialnumber != victimSerial ||
+			(killer && (killer->free || killer->serialnumber != killerSerial)) || globals->time != receiptTime ||
+			frame.mapGeneration != services_->service_lifecycle().mapGeneration() ||
+			frame.roundGeneration != services_->service_lifecycle().roundGeneration())
+		{
+			continue;
+		}
+		const int ownTeam = services_->observation_resolvePlayerTeam(self);
+		if (!observerCurrent() || !receiptConnectionCurrent(victimConnection) || !receiptConnectionCurrent(killerConnection))
+			continue;
+		if (ownTeam == victimTeam)
+		{
+			observeFriendDeath(index, victim, player(killer) ? killer : nullptr, frame, victimConnection, killerConnection);
+			continue;
+		}
+		if (!player(killer) || ownTeam != killerTeam || victimTeam == killerTeam)
+		{
+			continue;
+		}
 		const int selfSerial = self->serialnumber;
 		compat::EnemyCountDeathInput in{};
 		in.actor = {handle.actor.slot, handle.actor.actorGeneration};
@@ -118,7 +165,7 @@ void BotBehaviorRuntime::observePlayerDeath(
 	}
 }
 bool BotBehaviorRuntime::killVictimVisible(
-	std::size_t index, const edict_t *victim, const world::FrameIdentity &frame) const
+	std::size_t index, const edict_t *victim, const world::FrameIdentity &frame, bool checkFov) const
 {
 	if (!services_ || index >= actors_.size() || !victim)
 		return false;
@@ -140,8 +187,8 @@ bool BotBehaviorRuntime::killVictimVisible(
 	for (float value : {eye.x, eye.y, eye.z, point.x, point.y, point.z, self->v.origin.x, self->v.origin.y})
 		if (!std::isfinite(value) || std::fabs(value) > kMaximumCoordinate)
 			return false;
-	if (!compat::killPraiseViewCone(
-			point.x - self->v.origin.x, point.y - self->v.origin.y, self->v.angles.x, self->v.angles.y) ||
+	if ((checkFov && !compat::killPraiseViewCone(
+			point.x - self->v.origin.x, point.y - self->v.origin.y, self->v.angles.x, self->v.angles.y)) ||
 		services_->observation_smokeObservations().blocks(eye, point, globals->time))
 		return false;
 	const float from[]{eye.x, eye.y, eye.z};

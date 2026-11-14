@@ -62,6 +62,12 @@ void BotBehaviorRuntime::updateManagedBotCompatibilityState(
 	{
 		return;
 	}
+	if (services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility &&
+		actors_[index].enemyReaction.eventActive(reactionContext(index)))
+	{
+		updateEnemyReaction(index, before);
+		context = makeManagedBotStateContext(index, before, &stateBehavior);
+	}
 	updateScenarioState(index, before, context, stateBehavior);
 	updateBehaviorPriorities(index, before, context, stateBehavior);
 	commitBehaviorState(index, context, stateBehavior);
@@ -72,6 +78,7 @@ void BotBehaviorRuntime::onActorRemoved(std::size_t index)
 	actors_[index].noiseLook.reset();
 	actors_[index].closeFootstep = {};
 	actors_[index].knifeRun.reset();
+	actors_[index].enemyReaction.reset();
 	actors_[index].enemyWeaponSource = {};
 	actors_[index].noiseBend = {};
 	actors_[index].noiseLookUpdate = 0U;
@@ -112,6 +119,7 @@ void BotBehaviorRuntime::onActorRemembered(std::size_t index, const FakeClientHa
 	actors_[index].noiseLook.reset();
 	actors_[index].closeFootstep = {};
 	actors_[index].knifeRun.reset();
+	actors_[index].enemyReaction.reset();
 	actors_[index].enemyWeaponSource = {};
 	actors_[index].noiseBend = {};
 	actors_[index].noiseLookUpdate = 0U;
@@ -145,6 +153,7 @@ void BotBehaviorRuntime::resetSharedExecutionState()
 		actor.enemyCountChatter.reset();
 		actor.killPraise.reset();
 		actor.knifeRun.reset();
+		actor.enemyReaction.reset();
 		actor.enemyWeaponSource = {};
 	}
 	updateVoiceFeedback(true);
@@ -177,6 +186,7 @@ void BotBehaviorRuntime::resetActorExecutionState(std::size_t index)
 	actors_[index].noiseLook.reset();
 	actors_[index].closeFootstep = {};
 	actors_[index].knifeRun.reset();
+	actors_[index].enemyReaction.reset();
 	actors_[index].enemyWeaponSource = {};
 	actors_[index].noiseBend = {};
 	actors_[index].noiseLookUpdate = 0U;

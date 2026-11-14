@@ -122,6 +122,7 @@ void BotBehaviorRuntime::finishManagedBotNavigation(std::size_t index, const run
 		services_->applyNavigationRequest({index, NavigationRequestKind::PublishStep, step});
 	if (machine.state() != previous)
 	{
+		actors_[index].enemyReaction.onStateChange(reactionContext(index), previous, machine.state());
 		if (previous == compat::CompatibilityStateId::InvestigateNoise)
 		{
 			actors_[index].noiseInvestigation.cancel();
@@ -595,6 +596,20 @@ bool BotBehaviorRuntime::buildManagedObjectiveTarget(std::size_t index, nav::Nav
 	}
 	if (services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility)
 	{
+		if (reactionPursuing(index) && actors_[index].managedBotStateMachines.state() == compat::CompatibilityStateId::MoveTo)
+		{
+			const auto context = reactionContext(index);
+			const auto point = actors_[index].enemyReaction.pursuitPosition(context);
+			*target = {point.x, point.y, point.z};
+			auto &cache = actors_[index].managedBotObjectiveTargets;
+			cache.valid = true;
+			cache.mapGeneration = context.frame.mapGeneration;
+			cache.roundGeneration = context.frame.roundGeneration;
+			cache.generation = actors_[index].enemyReaction.pursuitGeneration();
+			cache.target = *target;
+			cache.selectedEntityIndex = static_cast<int>(actors_[index].enemyReaction.pursuitSource(context).id);
+			return true;
+		}
 		if (actors_[index].managedBotStateMachines.state() == compat::CompatibilityStateId::InvestigateNoise &&
 			noiseInvestigationCurrent(index))
 		{
@@ -1311,7 +1326,16 @@ BotBehaviorRuntime::BehaviorPhaseResult BotBehaviorRuntime::decideObjectiveActio
 	const objectives::TeamRole teamRole = team == kTerroristTeam ? objectives::TeamRole::Terrorist
 		: team == kCounterTerroristTeam							 ? objectives::TeamRole::CounterTerrorist
 																 : objectives::TeamRole::Unknown;
-	if (!targetActor.isValid() &&
+	if (reactionPursuing(index))
+	{
+		actors_[index].managedBotObjectiveActions.active = false;
+		return cancelHeldGrenade(index, movementAngles, proposal) ? BehaviorPhaseResult::Complete
+			: BehaviorPhaseResult::Continue;
+	}
+	const world::ActorObservation *actionTarget = nullptr;
+	const bool targetCurrentlyVisible = targetActor.isValid() &&
+		snapshot.findActor(targetActor, &actionTarget) == world::ContactLookupResult::Found && actionTarget && actionTarget->visible;
+	if ((!targetActor.isValid() || !targetCurrentlyVisible) &&
 		services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility)
 	{
 		if (cancelHeldGrenade(index, movementAngles, proposal))

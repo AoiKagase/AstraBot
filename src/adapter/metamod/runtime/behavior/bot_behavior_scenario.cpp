@@ -132,6 +132,7 @@ BotBehaviorRuntime::BehaviorPhaseResult BotBehaviorRuntime::updateBehaviorLifecy
 		actors_[index].noiseInvestigation.reset();
 		actors_[index].investigationWalking = false;
 		actors_[index].knifeRun.reset();
+		actors_[index].enemyReaction.reset();
 		actors_[index].enemyWeaponSource = {};
 		actors_[index].equipment.reset();
 		actors_[index].scenarioPlanners.reset();
@@ -790,7 +791,10 @@ void BotBehaviorRuntime::updateScenarioTeamwork(std::size_t index, const runtime
 	if (!cooperative.rogueKnown && !wasFollowing)
 		scenario.radio = nullptr;
 	actors_[index].scenarioDecisions = actors_[index].scenarioPlanners.update(scenario);
-	updateBombGuardTarget(index, scenario, &actors_[index].scenarioDecisions);
+	if (!reactionPursuing(index))
+	{
+		updateBombGuardTarget(index, scenario, &actors_[index].scenarioDecisions);
+	}
 	if (wasFollowing && !actors_[index].scenarioPlanners.isFollowing())
 		actors_[index].teamworkPolicies.followingStopped(context.timestamp);
 	if (scenario.radio != nullptr && scenario.radio->sequence > actors_[index].teamworkRadioApplied &&
@@ -834,6 +838,21 @@ void BotBehaviorRuntime::applyScenarioDecision(std::size_t index, const runtime:
 {
 	(void)before;
 	(void)data;
+	if (reactionPursuing(index))
+	{
+		const auto &order = services_->observation_scenarioRadio(index);
+		const auto &decision = actors_[index].scenarioDecisions;
+		const bool movementOrder = (order.command == compat::ScenarioRadioCommand::HoldPosition &&
+			decision.action == compat::ScenarioAction::Guard) ||
+			(order.command == compat::ScenarioRadioCommand::GoGoGo && decision.action == compat::ScenarioAction::Hunt) ||
+			(order.command == compat::ScenarioRadioCommand::GetOut && decision.action == compat::ScenarioAction::Escape) ||
+			(decision.action == compat::ScenarioAction::Follow && actors_[index].scenarioPlanners.followLeader() == order.sender);
+		if (order.sequence == 0 || order.receivedTime <= actors_[index].managedBotStateMachines.stateTimestamp() || !movementOrder)
+		{
+			actors_[index].scenarioDecisions = {};
+			return;
+		}
+	}
 	auto &machine = actors_[index].managedBotStateMachines;
 	const compat::ScenarioBehaviorDecision &scenarioDecision = actors_[index].scenarioDecisions;
 	stateBehavior.goalAvailable = scenarioDecision.hasTarget || stateBehavior.goalAvailable;
@@ -896,6 +915,7 @@ void BotBehaviorRuntime::commitBehaviorState(
 	(void)machine.update(context);
 	if (previousState != machine.state())
 	{
+		actors_[index].enemyReaction.onStateChange(reactionContext(index), previousState, machine.state());
 		if (previousState == compat::CompatibilityStateId::InvestigateNoise)
 		{
 			actors_[index].noiseInvestigation.cancel();

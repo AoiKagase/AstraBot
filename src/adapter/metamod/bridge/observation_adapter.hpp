@@ -30,7 +30,7 @@ public:
 		const world::FrameIdentity &frame, const compat::ObservationTimingContext &timing,
 		compat::CompatibilityObservation *observation) const;
 	ObservationAdapterResult collectVisibility(edict_t *observer, edict_t *target, const world::ActorKey &targetActor,
-		const world::FrameIdentity &frame, perception::VisionObservation *observation) const;
+		const world::FrameIdentity &frame, perception::VisionObservation *observation, bool checkFov = true) const;
 	ObservationAdapterResult collectPlantedBomb(edict_t *entity, const char *classname, const char *model,
 		float currentTime, const world::ActorKey &actor, const world::FrameIdentity &frame,
 		const compat::ObservationTimingContext &timing, compat::ObjectiveObservation *observation) const;

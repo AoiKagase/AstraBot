@@ -184,6 +184,7 @@ struct StateUpdateContext
 	ObservationAvailability attackObservation;
 	ObservationAvailability rngAvailability;
 	const StateBehaviorInput *behavior = nullptr;
+	CompatibilityTaskId moveToTask = CompatibilityTaskId::None;
 
 	bool isValid() const;
 };

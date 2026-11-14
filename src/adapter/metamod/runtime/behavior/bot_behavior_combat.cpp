@@ -83,11 +83,19 @@ CombatUpkeepUpdate BotBehaviorRuntime::upkeepCombat(
 	perception::VisionObservation visible{};
 	const int ownTeam = services_->observation_resolvePlayerTeam(handle.entity);
 	const bool friendly = enemy && ownTeam != 0 && services_->observation_resolvePlayerTeam(enemy) == ownTeam;
-	if (generation != tracked.target.generation || !enemy || enemy->free || enemy->v.deadflag != DEAD_NO ||
-		enemy->v.health <= 0 || friendly ||
+	const bool validEnemy = generation == tracked.target.generation && reactionEnemyCurrent(tracked.target) && enemy && !enemy->free &&
+		enemy->serialnumber >= 0 && enemy->v.deadflag == DEAD_NO && enemy->v.health > 0 && !friendly;
+	const bool currentlyVisible = validEnemy &&
 		services_->observation_observationAdapter().collectVisibility(
-			handle.entity, enemy, tracked.target, frame, &visible) != ObservationAdapterResult::Accepted ||
-		!visible.visible)
+			handle.entity, enemy, tracked.target, frame, &visible,
+			!(currentEnemySource(index) == world::EntityKey{tracked.target.slot,
+				static_cast<std::uint32_t>(enemy->serialnumber) + 1U})) == ObservationAdapterResult::Accepted && visible.visible;
+	const auto reaction = reactionContext(index);
+	const bool remembered = services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility &&
+		validEnemy && state.enemyReaction.enemy(reaction) == tracked.target &&
+		state.enemyReaction.source(reaction) == world::EntityKey{tracked.target.slot,
+			static_cast<std::uint32_t>(enemy->serialnumber) + 1U} && state.enemyReaction.shouldAim(reaction);
+	if (!currentlyVisible && !remembered)
 	{
 		state.managedBotCombat.clearAim();
 		state.weaponActions.stopRapidFire();
@@ -96,22 +104,26 @@ CombatUpkeepUpdate BotBehaviorRuntime::upkeepCombat(
 	}
 	combat::TargetBelief target{};
 	target.target = tracked.target;
-	target.state = combat::TargetBeliefState::Visible;
+	target.state = currentlyVisible ? combat::TargetBeliefState::Visible : combat::TargetBeliefState::Remembered;
 	target.confidence = 1.0f;
-	target.position = {enemy->v.origin.x, enemy->v.origin.y, enemy->v.origin.z};
+	target.position = currentlyVisible ? world::WorldPosition{enemy->v.origin.x, enemy->v.origin.y, enemy->v.origin.z}
+		: state.enemyReaction.position(reaction);
 	const world::WorldPosition enemyOrigin = target.position;
 	compat::CompatibilityObservation weaponObservation{};
 	const compat::ObservationTimingContext timing = {services_->command_managedBotCommandSequences(index), frame.tick,
 		services_->service_managedBotFullUpdateSequences()[index]};
 	services_->observation_observationAdapter().collectActor(
 		handle.entity, tracked.actor, frame, timing, &weaponObservation);
-	target.position = compat::combatAimPoint(enemyOrigin,
-		{handle.entity->v.origin.x, handle.entity->v.origin.y, handle.entity->v.origin.z}, visible.visibleParts,
-		state.weaponActions.currentWeaponId(),
-		static_cast<float>(state.managedProfiles.skill) / kProfilePercentageScale,
-		before.ducked ? kDuckedFeetOffset : kStandingFeetOffset, weaponObservation.weapon.accuracy.isAvailable(),
-		weaponObservation.weapon.accuracy.value);
-	if (engine->pfnTraceLine && ownTeam != 0)
+	if (currentlyVisible)
+	{
+		target.position = compat::combatAimPoint(enemyOrigin,
+			{handle.entity->v.origin.x, handle.entity->v.origin.y, handle.entity->v.origin.z}, visible.visibleParts,
+			state.weaponActions.currentWeaponId(),
+			static_cast<float>(state.managedProfiles.skill) / kProfilePercentageScale,
+			before.ducked ? kDuckedFeetOffset : kStandingFeetOffset, weaponObservation.weapon.accuracy.isAvailable(),
+			weaponObservation.weapon.accuracy.value);
+	}
+	if (currentlyVisible && engine->pfnTraceLine && ownTeam != 0)
 	{
 		const float eye[] = {handle.entity->v.origin.x + handle.entity->v.view_ofs.x,
 			handle.entity->v.origin.y + handle.entity->v.view_ofs.y,
@@ -143,8 +155,9 @@ CombatUpkeepUpdate BotBehaviorRuntime::upkeepCombat(
 	context.randomTiming = {services_->command_managedBotCommandSequences(index), frame.tick,
 		services_->service_managedBotFullUpdateSequences()[index]};
 	context.observerVelocity = {handle.entity->v.velocity.x, handle.entity->v.velocity.y, handle.entity->v.velocity.z};
-	context.targetVelocity = {enemy->v.velocity.x, enemy->v.velocity.y, enemy->v.velocity.z};
-	context.predictMovement = true;
+	context.targetVelocity = currentlyVisible
+		? world::WorldVelocity{enemy->v.velocity.x, enemy->v.velocity.y, enemy->v.velocity.z} : world::WorldVelocity{};
+	context.predictMovement = currentlyVisible;
 	context.aimErrorRange = std::sqrt((enemyOrigin.x - context.origin.x) * (enemyOrigin.x - context.origin.x) +
 		(enemyOrigin.y - context.origin.y) * (enemyOrigin.y - context.origin.y) +
 		(enemyOrigin.z - context.origin.z) * (enemyOrigin.z - context.origin.z));
@@ -155,7 +168,12 @@ CombatUpkeepUpdate BotBehaviorRuntime::upkeepCombat(
 		update.hasAim = true;
 		update.angles = {aim.pitch, aim.yaw, 0};
 		update.movementRelativeToAim = state.managedBotCombat.movementActive();
-		if (state.weaponActions.rapidFiring())
+		if (!currentlyVisible)
+		{
+			update.setPrimary = true;
+			state.weaponActions.stopRapidFire();
+		}
+		else if (state.weaponActions.rapidFiring())
 		{
 			update.setPrimary = true;
 			update.primary = (cachedButtons & IN_ATTACK) == 0U;
@@ -358,7 +376,8 @@ ActionProposal BotBehaviorRuntime::decideCombatAction(ManagedActionContext &ctx)
 			before.ducked ? kDuckedFeetOffset : kStandingFeetOffset, compatObservation.weapon.accuracy.isAvailable(),
 			compatObservation.weapon.accuracy.value);
 	target.target = targetActor;
-	target.state = combat::TargetBeliefState::Visible;
+	target.state = currentEnemy && currentEnemy->visible
+		? combat::TargetBeliefState::Visible : combat::TargetBeliefState::Remembered;
 	target.position = targetPosition;
 	target.confidence = 1.0f;
 	target.ageTicks = 0U;
@@ -419,7 +438,7 @@ ActionProposal BotBehaviorRuntime::decideCombatAction(ManagedActionContext &ctx)
 	compat::CombatMovementDecision movementEntry{};
 	CrouchTraceContext crouch{services_->service_engineFunctions(), handle.entity, nullptr, before.ducked};
 	const bool combatVisible = targetActor.isValid() && currentEnemy && currentEnemy->visible;
-	if (combatVisible && weapon.kind != combat::WeaponKind::Knife && weapon.kind != combat::WeaponKind::Grenade)
+	if (combatVisible && !reactionIgnoring(index) && weapon.kind != combat::WeaponKind::Knife && weapon.kind != combat::WeaponKind::Grenade)
 	{
 		auto &move = movementInput;
 		move.actor = actor;
@@ -455,14 +474,21 @@ ActionProposal BotBehaviorRuntime::decideCombatAction(ManagedActionContext &ctx)
 	}
 	else
 		actors_[index].managedBotCombat.stopMovement();
-	const bool fireIntentReady = result == combat::CombatResult::FireIntentReady && decision.hasFire &&
+	const bool fireIntentReady = combatVisible && result == combat::CombatResult::FireIntentReady && decision.hasFire &&
 		decision.hasAim && services_->service_globals()->time >= actors_[index].attackReadyTimes;
 	const compat::StateUpdateContext stateContext = makeManagedBotStateContext(index, before);
-	if (combatVisible)
+	if (combatVisible && !reactionIgnoring(index))
 	{
 		(void)actors_[index].managedBotStateMachines.beginAttack(stateContext);
 	}
-	else if (actors_[index].managedBotStateMachines.attackOverlayActive())
+	else if (actors_[index].managedBotStateMachines.attackOverlayActive() &&
+		(services_->service_compatibilitySurface().configuration().mode != compat::RuntimeMode::Compatibility ||
+			!actors_[index].enemyReaction.enemy(reactionContext(index)).isValid() ||
+			services_->service_globals()->time - actors_[index].enemyReaction.lastSaw(reactionContext(index)) >
+				(reactionDisposition(index) == compat::ReactionDisposition::Engage
+					? 2.0f + 2.0f * (1.0f - static_cast<float>(actors_[index].managedProfiles.aggression) / 100.0f) +
+						(weapon.kind == combat::WeaponKind::Sniper ? 3.0f : before.ducked ? 1.0f : 0.0f)
+					: .1f)))
 	{
 		(void)actors_[index].managedBotStateMachines.stopAttack(stateContext);
 	}
@@ -496,7 +522,7 @@ ActionProposal BotBehaviorRuntime::decideCombatAction(ManagedActionContext &ctx)
 			(targetPosition.y - context.origin.y) * (targetPosition.y - context.origin.y) +
 			(targetPosition.z - context.origin.z) * (targetPosition.z - context.origin.z));
 	weaponInput.reactionSeconds = actors_[index].managedProfiles.reactionTimeSeconds;
-	weaponInput.targetVisible = targetActor.isValid();
+	weaponInput.targetVisible = combatVisible;
 	weaponInput.aimAligned = fireIntentReady ||
 		(decision.hasAim &&
 			compat::combatAimOnTarget(

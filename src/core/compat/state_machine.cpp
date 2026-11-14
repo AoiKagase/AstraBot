@@ -726,7 +726,8 @@ void CompatibilityStateMachine::applyEnterEffects(CompatibilityStateId state, Co
 		task_ = CompatibilityTaskId::InvestigateNoise;
 		break;
 	case CompatibilityStateId::MoveTo:
-		task_ = CompatibilityTaskId::MoveTo;
+		task_ = context.moveToTask == CompatibilityTaskId::MoveToLastKnownEnemyPosition
+			? context.moveToTask : CompatibilityTaskId::MoveTo;
 		break;
 	case CompatibilityStateId::PlantBomb:
 		task_ = CompatibilityTaskId::PlantBomb;

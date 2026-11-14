@@ -1,3 +1,19 @@
+## 2026-11-15 friend-death behavioral reactions
+
+Source base18a2cc4; oracle ReGameDLL-CS b0889847fe6d03898be88acc9e366660efb40ab5, cs_bot_event.cpp71–155, cs_bot_statemachine.cpp293–367, cs_bot_update.cpp429–480 and native MoveTo/Attack/state disposition exits.
+
+- Witnessing a teammate death without a victim FOV limit starts native Hurry10–15; inventory snipers are excluded, hiding knife ambush rolls strictly below50, and rejected reload/zombie/mimic Attack retains the early return. Otherwise Hunt reconsiders before the lost-sight attack branch, including world/friendly kills.
+- A qualifying native Attack receipt captures the killer public origin once as an event exception. Hidden contacts stay absent and cannot grant firing. Acquired enemy LOS skips FOV while unknown contacts retain it; blind/smoke/public LOS still apply. Full and cached Aim use the retained point until actual visibility updates it.
+- Lost sight strictly over0.4seconds while attacking starts native IgnoreEnemies1 and fixed-goal fastest-route MoveTo. Ignore permits actual visible-target fire while moving, cancels on native state exits (including same-state MoveTo and nested Follow/Idle), and expires after its inclusive deadline.
+- Current combat enemy and pursuit task entity have separate serial/connection identities. Death/disconnect/reuse/map/round/owner/time rollback invalidate stale memory. Actual arrival/path failure and CT planted-bomb notice end pursuit; ordinary scenario planning cannot replace it. Hurry influences native walking decisions rather than forcing all commands to run.
+- Registered DeathMsg/public vision/flash/smoke/CurWeapon/NAV/full-cached command tests exercise the complete branch matrix, fixed hidden point, moving fire, source reuse, disconnect, cached Aim and real path end/failure. Frozen baselines remain unchanged. Speech (KilledFriend/CommanderDown), broader general attack parity and live multi-player/FPS acceptance remain open.
+
+Independent final review:0Critical/2Important/0Minor. Both Important findings were reproduced and fixed in one pass: receipt-time connection replacement across callbacks, and ordinary Guard/Use/Stop actions leaking into protected pursuit. The parent also reproduced/fixed native safe-time boundary handling (negative early sighting and no adjustment after the prior safe deadline). Existing ForceRun command coverage now explicitly releases Attack before isolating noise walking; native knife Attack retains pursuit after sight loss, so sight loss alone is not a noise-investigation handoff. Original speed/cached/expiry assertions remain.
+
+Final offline verification: Windows x86 full build and CTest112/112 PASS8.64s under VS18/MSVC14.51 Hostx86/x86. Linux x86 full build and CTest110/111 PASS12.55s; only the unchanged combat_policy weapon/skill/recoil chest threshold failure remains open. New friend-death and existing gunshot/frozen/architecture contracts pass. PE and ELF x86 each expose exactly the existing7symbols. Manifest283entries/276C-C++ files passes;286source/build inputs,2artifacts and4user files match their recorded identities. No baseline regeneration, push, deployment or live acceptance.
+
+Final artifacts (SHA-256): DLL7bf9a8b6f64676b37be03fccf7976af292f25019475ddbd6e88a18f04ee919ef; SO6bb69c272023c7853c760ef2c427fb4bd50a87c7ca111e247cc2da9e13a461de. Evidence: .agent-state/sessions/csbot-friend-death-5dbf62ae-a71b-498a-8bed-88b211bf4657/ (STATE, review, RED/GREEN, OS suites, PE/ELF and identity records).
+
 ## 2026-11-15 knife enemy fire run
 
 Source base3452978; oracle ReGameDLL-CS b0889847fe6d03898be88acc9e366660efb40ab5, cs_bot_event.cpp267–273, cs_bot.h1328–1332, cs_bot.cpp67–77 and game_shared/bot/bot_util.h63–73.

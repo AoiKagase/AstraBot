@@ -195,6 +195,25 @@ bool testKnifeRun(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &engi
 	knifeSight = false;
 	step(.3f);
 	step(.3f);
+	// Isolate the run override from Attack ownership. Native knife Attack keeps
+	// pursuing after sight loss; losing vision does not authorize sound investigation.
+	auto &machine = const_cast<compat::CompatibilityStateMachine &>(nav.behavior_managedBotStateMachines(0));
+	auto &services = static_cast<metamod::BotBehaviorServices &>(runtime);
+	const auto &life = services.service_lifecycle();
+	const auto &handle = services.service_managedBotHandles()[0];
+	compat::StateUpdateContext stopped{};
+	stopped.actor = {handle.actor.slot, handle.actor.actorGeneration};
+	stopped.frame = {life.mapGeneration(), life.roundGeneration(), services.service_adapterFrameCount()};
+	stopped.timestamp = globals.time;
+	stopped.fullUpdate = true;
+	stopped.fullUpdateSequence = services.service_managedBotFullUpdateSequences()[0];
+	stopped.alive = true;
+	stopped.roundActive = true;
+	(void)machine.stopAttack(stopped);
+	if (!check(!machine.attackOverlayActive(), "run fixture explicitly releases Attack before noise investigation"))
+	{
+		return false;
+	}
 	hooks.pfnEmitSound(&source, 1, "weapons/ak47-1.wav", 1, 1, 0, 100);
 	step(.12f); // Publish before reaction; defer the next decision beyond the existing path throttle.
 	step(.6f);

@@ -20,6 +20,16 @@ bool BotBehaviorRuntime::prepareManagedPerception(std::size_t index, world::Worl
 	}
 	const auto &belief = *snapshot;
 	const auto observer = belief.identity().observer;
+	const auto reaction = reactionContext(index);
+	auto &memory = actors_[index].enemyReaction;
+	(void)memory.update(reaction);
+	const world::ActorObservation *retained = nullptr;
+	const auto retainedEnemy = memory.enemy(reaction);
+	if (retainedEnemy.isValid() && (!reactionEnemyCurrent(retainedEnemy) ||
+		belief.findActor(retainedEnemy, &retained) != world::ContactLookupResult::Found))
+	{
+		memory.clearEnemy(!memory.pursuing(reaction) || memory.pursuitEnemy(reaction) == retainedEnemy);
+	}
 	const auto &candidates = threats.candidates;
 	const auto candidateCount = threats.count;
 	if (actors_[index].recognitionSequences != services_->service_managedBotFullUpdateSequences()[index])
@@ -55,16 +65,43 @@ bool BotBehaviorRuntime::prepareManagedPerception(std::size_t index, world::Worl
 					break;
 				}
 			}
+			const world::ActorObservation *seen = nullptr;
+			if (belief.findActor(threat.actor, &seen) == world::ContactLookupResult::Found && seen && seen->visible)
+			{
+				memory.rememberVisible(reaction, threat.actor, actors_[index].enemyWeaponSource, seen->position);
+				const float roundStart = services_->service_roundFreezeGeneration() == reaction.frame.roundGeneration
+					? services_->service_roundFreezeUntil()
+					: 0.0f;
+				memory.adjustSafeTime(
+					reaction.now - roundStart, static_cast<float>(actors_[index].managedProfiles.aggression) / 100.0f);
+			}
 		}
 		else
 		{
 			actors_[index].recognizedTargets = {};
 		}
 	}
-	if (actors_[index].recognizedTargets.isValid())
+	compat::PublicActorState sight{};
+	const bool blinded = services_->observation_publicObservations().read(observer, belief.identity().frame, &sight) &&
+		reaction.now < sight.blindUntil;
+	const world::ActorObservation *currentEnemy = nullptr;
+	if (!blinded && memory.enemy(reaction).isValid() &&
+		belief.findActor(memory.enemy(reaction), &currentEnemy) == world::ContactLookupResult::Found && currentEnemy &&
+		currentEnemy->visible)
+	{
+		memory.rememberVisible(reaction, currentEnemy->actor, memory.source(reaction), currentEnemy->position);
+	}
+	if (actors_[index].recognizedTargets.isValid() && !blinded)
 	{
 		*targetActor = actors_[index].recognizedTargets;
 		*targetPosition = actors_[index].recognizedPoints;
+	}
+	else if (!blinded &&
+		services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility &&
+		memory.shouldAim(reaction))
+	{
+		*targetActor = memory.enemy(reaction);
+		*targetPosition = memory.position(reaction);
 	}
 	return true;
 }
@@ -144,6 +181,7 @@ bool BotBehaviorRuntime::forcedRunning(std::size_t index)
 		!services_->service_managedBotSlots()[index])
 	{
 		actors_[index].knifeRun.reset();
+		actors_[index].enemyReaction.reset();
 		return false;
 	}
 	return actors_[index].knifeRun.active({handle.actor.slot, handle.actor.actorGeneration},
@@ -162,6 +200,7 @@ void BotBehaviorRuntime::resetRoundRecognition()
 		actor.enemyCountChatter.reset();
 		actor.killPraise.reset();
 		actor.knifeRun.reset();
+		actor.enemyReaction.reset();
 		actor.enemyWeaponSource = {};
 		actor.noiseReport = {};
 		actor.investigationWalking = false;
@@ -178,8 +217,13 @@ void BotBehaviorRuntime::resetRoundRecognition()
 
 void BotBehaviorRuntime::observePublicDeath(std::size_t index)
 {
-	for (auto &actor : actors_)
+	for (std::size_t observer = 0; observer < actors_.size(); ++observer)
 	{
+		auto &actor = actors_[observer];
+		if (actor.enemyReaction.source(reactionContext(observer)).id == index + 1U)
+		{
+			actor.enemyReaction.markDead();
+		}
 		if (actor.enemyWeaponSource.id == index + 1U)
 		{
 			actor.enemyWeaponSource = {};
@@ -192,6 +236,7 @@ void BotBehaviorRuntime::observePublicDeath(std::size_t index)
 	actors_[index].enemyCountChatter.reset();
 	actors_[index].killPraise.reset();
 	actors_[index].knifeRun.reset();
+	actors_[index].enemyReaction.reset();
 	actors_[index].enemyWeaponSource = {};
 	actors_[index].noiseReport = {};
 	actors_[index].investigationWalking = false;

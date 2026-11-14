@@ -132,6 +132,10 @@ if(ASTRABOT_BUILD_TESTS)
   astrabot_apply_warnings(astrabot_bomb_navigation)
   add_test(NAME astrabot_bomb_navigation COMMAND astrabot_bomb_navigation)
 
+  add_executable(astrabot_friend_death tests/friend_death_tests.cpp)
+  target_link_libraries(astrabot_friend_death PRIVATE astrabot_core)
+  astrabot_apply_warnings(astrabot_friend_death)
+  add_test(NAME astrabot_friend_death COMMAND astrabot_friend_death)
   add_executable(astrabot_knife_run tests/knife_run_tests.cpp)
   target_link_libraries(astrabot_knife_run PRIVATE astrabot_core)
   astrabot_apply_warnings(astrabot_knife_run)
@@ -1012,6 +1016,7 @@ if(ASTRABOT_BUILD_METAMOD)
     src/adapter/metamod/runtime/behavior/bot_behavior_perception.cpp
     src/adapter/metamod/runtime/behavior/bot_behavior_radio.cpp
 	src/adapter/metamod/runtime/behavior/bot_behavior_death.cpp
+    src/adapter/metamod/runtime/behavior/bot_behavior_friend_death.cpp
     src/adapter/metamod/runtime/behavior/bot_behavior_voice.cpp
     src/adapter/metamod/runtime/behavior/bot_behavior_buying.cpp
     src/adapter/metamod/runtime/behavior/bot_behavior_priorities.cpp
@@ -1129,6 +1134,13 @@ if(ASTRABOT_BUILD_TESTS AND ASTRABOT_BUILD_METAMOD)
   add_test(NAME astrabot_noise_investigation_runtime COMMAND astrabot_noise_investigation_runtime --investigation)
   set_tests_properties(astrabot_noise_investigation_runtime PROPERTIES
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" RESOURCE_LOCK astrabot_actor_command_profile)
+  add_executable(astrabot_friend_death_runtime tests/friend_death_runtime_tests.cpp ${combat_target_log_sources})
+  target_include_directories(astrabot_friend_death_runtime PRIVATE ${combat_target_log_includes})
+  target_link_libraries(astrabot_friend_death_runtime PRIVATE astrabot_core astrabot_regamedll_provider)
+  astrabot_apply_warnings(astrabot_friend_death_runtime)
+  add_test(NAME astrabot_friend_death_runtime COMMAND astrabot_friend_death_runtime --friend-death)
+  set_tests_properties(astrabot_friend_death_runtime PROPERTIES
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" RESOURCE_LOCK astrabot_actor_command_profile)
   add_executable(astrabot_kill_praise_runtime tests/kill_praise_runtime_tests.cpp ${combat_target_log_sources})
   target_include_directories(astrabot_kill_praise_runtime PRIVATE ${combat_target_log_includes})
   target_link_libraries(astrabot_kill_praise_runtime PRIVATE astrabot_core astrabot_regamedll_provider)
@@ -1208,7 +1220,7 @@ if(ASTRABOT_BUILD_TESTS AND ASTRABOT_BUILD_METAMOD)
     foreach(runtime_fixture astrabot_combat_target_log astrabot_bomb_guard_look
         astrabot_weapon_switch_runtime astrabot_actor_identity_runtime
         astrabot_runtime_team_resolution astrabot_runtime_command_scenarios astrabot_obstacle_interaction_runtime
-        astrabot_weapon_pickup_runtime astrabot_chatter_voice_runtime astrabot_noise_look_runtime astrabot_gunshot_runtime astrabot_noise_investigation_runtime astrabot_pm_move_footsteps astrabot_enemy_count_chatter_runtime astrabot_kill_praise_runtime)
+        astrabot_weapon_pickup_runtime astrabot_chatter_voice_runtime astrabot_noise_look_runtime astrabot_gunshot_runtime astrabot_noise_investigation_runtime astrabot_pm_move_footsteps astrabot_enemy_count_chatter_runtime astrabot_kill_praise_runtime astrabot_friend_death_runtime)
       target_compile_options(${runtime_fixture} PRIVATE -Wno-deprecated-copy)
     endforeach()
   endif()

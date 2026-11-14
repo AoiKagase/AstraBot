@@ -1194,6 +1194,10 @@ bool BotObservationRuntime::collectManagedPerception(
 	{
 		return false;
 	}
+	const auto acquiredEnemy = services_->behavior_currentEnemySource(index);
+	compat::PublicActorState sightState{};
+	const bool blinded = publicObservations_.read(observer, frame, &sightState) &&
+		services_->service_globals()->time < sightState.blindUntil;
 	const int observerTeam = resolvePlayerTeam(handle.entity);
 	const int maxClients = std::max(0, std::min(services_->service_globals()->maxClients, kMaximumClientSlot));
 	for (int slot = 1; slot <= maxClients; ++slot)
@@ -1221,7 +1225,9 @@ bool BotObservationRuntime::collectManagedPerception(
 		perception::VisionObservation visibility = {};
 		const bool isObserver = actor == observer;
 		const bool visible = isObserver ||
-			(observationAdapter_.collectVisibility(handle.entity, entity, actor, frame, &visibility) ==
+			(!blinded && observationAdapter_.collectVisibility(handle.entity, entity, actor, frame, &visibility,
+				!(acquiredEnemy == world::EntityKey{static_cast<std::uint32_t>(slot),
+					static_cast<std::uint32_t>(entity->serialnumber) + 1U})) ==
 					ObservationAdapterResult::Accepted &&
 				visibility.visible);
 		world::ActorObservation observation = {};
