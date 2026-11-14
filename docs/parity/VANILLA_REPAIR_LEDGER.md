@@ -70,9 +70,15 @@ reports MetadataOnly and preserves Vanilla values. See
 Plant notice plus `mp_c4timer` and NAV cost/public maxspeed are explicit
 estimates, never exact internal countdown/travel values. Unknown kit stays
 unknown. Hostage motion is inferred ownership, not an authoritative follower
-receipt. Custom chatter voice playback is not implemented: only public standard
-radio equivalents from the host's own BotChatter.db are sent. Missing mappings
-are diagnosed rather than invented. Complete grenade bounce/landing outcomes
+receipt. The eight existing outgoing chatter concepts now support host-owned voice-bank
+playback, profile VoiceBank/VoicePitch, Count/Place criteria, and public
+SendAudio/BotVoice transport. Radio mode or unavailable voice falls back only
+to explicit standard-radio metadata from the default BotChatter.db. Other
+CSBot statement concepts/composition remain unimplemented. Unknown private
+ignore-radio state on late attachment is not recovered; observed public
+ignore/accept receipts are honored. Engine shuffling approximates the reference
+CRT variant order rather than proving its RNG tape equivalence. Missing voices
+and mappings are diagnosed rather than invented. Complete grenade bounce/landing outcomes
 still need live acceptance. The human's private auto-follow permission timer is
 not read: accepted public radio supplies an explicitly inferred permission proxy.
 

@@ -308,7 +308,8 @@ class OutgoingRadioScheduler
 {
 
 public:
-	OutgoingRadioDecision update(const OutgoingRadioInput &in, const ChatterRadioCatalog &catalog)
+	OutgoingRadioDecision update(const OutgoingRadioInput &in, const ChatterRadioCatalog &catalog,
+		std::uint32_t voicePhrases = 0U)
 	{
 		constexpr int kTerroristTeam = 1;
 		constexpr int kCounterTerroristTeam = 2;
@@ -429,13 +430,16 @@ public:
 			return {OutgoingRadioStatus::WaitingTeam, pending_, 0, 0};
 		}
 		const auto choice = directFollow_ ? RadioMenuChoice{kFollowMenu, kFollowSlot} : catalog.lookup(pending_);
+		if (!choice.menu && pending_ != ChatterPhrase::None &&
+			(voicePhrases & (1U << static_cast<unsigned>(pending_))) != 0U)
+			return {OutgoingRadioStatus::Ready, pending_, 0, 0};
 		if (!choice.menu)
 		{
 			const auto missing = pending_;
 			pending_ = ChatterPhrase::None;
 			return {OutgoingRadioStatus::MissingPhrase, missing, 0, 0};
 		}
-		return {OutgoingRadioStatus::Ready, pending_, choice.menu, choice.slot};
+		return {OutgoingRadioStatus::Ready, directFollow_ ? ChatterPhrase::None : pending_, choice.menu, choice.slot};
 	}
 
 	void confirmSent(const OutgoingRadioInput &in, const OutgoingRadioDecision &out)

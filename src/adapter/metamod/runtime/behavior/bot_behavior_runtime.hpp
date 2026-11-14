@@ -3,6 +3,7 @@
 #include "runtime/shared/bot_runtime_services.hpp"
 #include "astrabot/compat/guard_look.hpp"
 #include "astrabot/compat/weapon_equipment.hpp"
+#include "astrabot/compat/chatter_voice.hpp"
 #include <limits>
 namespace astrabot
 {
@@ -11,6 +12,8 @@ namespace metamod
 class BotBehaviorRuntime
 {
 public:
+	void updateVoiceFeedback(bool force = false);
+	void observeRadioPreference(edict_t *recipient, bool ignored);
 	void observeObstacleKeyValue(edict_t *entity, const KeyValueData *data);
 	void observeObstacleTouch(edict_t *entity, edict_t *other);
 	void observeWeaponTouch(edict_t *box, edict_t *self);
@@ -328,6 +331,28 @@ private:
 		int material = -1;
 	};
 
+	struct ChatterBank
+	{
+		std::string name;
+		compat::ChatterVoiceCatalog catalog;
+		runtime::LifecycleGeneration shuffledRound = 0U;
+		bool filesChecked = false;
+	};
+	struct RadioPreference
+	{
+		int serial = 0;
+		runtime::LifecycleGeneration map = 0U;
+		bool ignored = false;
+	};
+	struct VoiceFeedback
+	{
+		int serial = 0;
+		float until = 0.0f;
+	};
+	compat::ChatterVoiceCatalog *chatterBank(std::size_t index);
+	void stopVoiceFeedback(std::size_t index);
+	bool sendChatterVoice(std::size_t index, compat::ChatterPhrase phrase, int count,
+		compat::ChatterVoiceCatalog &bank, float *duration);
 	struct ActorState
 	{
 		ObstacleLook obstacleLook{};
@@ -342,6 +367,7 @@ private:
 		compat::BombGuardPlanner bombGuardPlanners{};
 		compat::GuardLookPlanner guardLook{};
 		compat::WeaponEquipmentPlanner equipment{};
+		VoiceFeedback outgoingVoiceFeedback{};
 		compat::OutgoingRadioScheduler outgoingRadioSchedulers{};
 		compat::RadioContactMemory outgoingRadioContactMemory{};
 		std::uint32_t outgoingRadioReceipts{};
@@ -380,6 +406,9 @@ private:
 	std::array<BreakableMaterial, 2048U> breakableMaterials_{};
 	BotBehaviorServices *services_ = nullptr;
 	compat::ChatterRadioCatalog outgoingChatterCatalog_{};
+	std::vector<ChatterBank> outgoingVoiceBanks_{};
+	std::array<RadioPreference, NativeBotObservation::kClientSlotCount> outgoingRadioPreferences_{};
+	std::uint32_t outgoingVoiceMask_ = 0U;
 	static constexpr unsigned kTeamRadioSlotCount = 3U;
 	std::array<float, kTeamRadioSlotCount> outgoingTeamLastSpeech_{{-1.0f, -1.0f, -1.0f}};
 	std::array<float, kTeamRadioSlotCount> outgoingTeamBusyUntil_{};

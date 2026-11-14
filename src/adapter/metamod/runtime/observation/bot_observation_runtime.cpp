@@ -661,6 +661,10 @@ void BotObservationRuntime::capturePublicMessage()
 		(publicMessageStringMask_ & kTextMessageTokenMask) != 0U)
 	{
 		const char *token = publicMessageStrings_[1U].data();
+		if (publicMessageTarget_ != nullptr &&
+			(publicMessageDestination_ == MSG_ONE || publicMessageDestination_ == MSG_ONE_UNRELIABLE) &&
+			(std::strcmp(token, "#Ignore_Radio") == 0 || std::strcmp(token, "#Accept_Radio") == 0))
+			services_->behavior_observeRadioPreference(publicMessageTarget_, std::strcmp(token, "#Ignore_Radio") == 0);
 		const bool planted = std::strcmp(token, "#Bomb_Planted") == 0;
 		const bool cleared = std::strcmp(token, "#Bomb_Defused") == 0 || std::strcmp(token, "#Target_Bombed") == 0;
 		if (planted || cleared)

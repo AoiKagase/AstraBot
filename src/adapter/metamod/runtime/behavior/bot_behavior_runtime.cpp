@@ -57,6 +57,7 @@ void BotBehaviorRuntime::updateManagedBotCompatibilityState(
 
 void BotBehaviorRuntime::onActorRemoved(std::size_t index)
 {
+	stopVoiceFeedback(index);
 	actors_[index].obstacleLook = {};
 	actors_[index].obstacleNextEquipAt = 0.0f;
 	actors_[index].obstaclePathActive = false;
@@ -106,6 +107,7 @@ void BotBehaviorRuntime::onActorRemembered(std::size_t index, const FakeClientHa
 
 void BotBehaviorRuntime::resetSharedExecutionState()
 {
+	updateVoiceFeedback(true);
 	reset_managedStateInputs();
 	managedTeamObjectiveCoordinator_.reset(
 		services_->service_lifecycle().mapGeneration(), services_->service_lifecycle().roundGeneration());

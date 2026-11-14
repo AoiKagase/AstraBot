@@ -1,3 +1,56 @@
+## 2026-11-14 CSBot chatter voice transport for existing concepts
+
+Source base aa6abd5; pinned read-only behavioral oracle ReGameDLL-CS
+b0889847fe6d03898be88acc9e366660efb40ab5. Independent implementation; host
+BotChatter.db and audio are read through public Engine APIs, never distributed.
+
+- The eight existing outgoing concepts can play host voice samples in normal
+  and important-only minimal modes. Radio mode uses the existing GameDLL menu
+  path; off suppresses chatter. A voice-only concept no longer requires a
+  standard-radio mapping. Missing voice/transport falls back only to the
+  default bank's explicitly declared radio equivalent.
+- Profile VoiceBank now inherits through defaults/templates with VoicePitch.
+  The bounded parser handles BaseDir, Count (Many=4), Place, Radio, Important
+  and End. Shared cyclic cursors and per-round shuffling avoid repeated variants.
+  Current read-only NAV place and public visual enemy count filter selections.
+  Missing samples are removed once on bank initialization when GetFileSize is
+  available. Database loads, absent-bank results and duration lookups are cached.
+- Public SendAudio sends speaker byte, sample string and profile pitch short to
+  same-team clients, including dead teammates, plus public observer targets
+  matching that team. Audio is never broadcast to enemies. Observed recipient-only
+  TextMsg ignore/accept-radio receipts gate recipient audio by map/entity serial.
+- Optional registered BotVoice feedback starts per recipient and broadcasts its
+  stop after sample duration+1 second, on death, removal, round or map cleanup.
+  A zero-active fast exit keeps ordinary frames free of voice polling callbacks;
+  active feedback expires even while bot_stop is set. Team speech occupancy uses
+  audio duration+0.1 second; GetApproxWavePlayLen supplies milliseconds, with the
+  reference 1-second duration fallback. No per-frame file loads/world scans.
+- Independent review found two Important issues: feedback with all audio ignored
+  was not tracked, and VIP direct FollowMe could be replaced by queued chatter.
+  Both were reproduced RED then fixed GREEN. Direct radio retains precedence;
+  all-ignored feedback still expires. No Critical findings or deferred minors.
+
+Offline gates: full MSVC HostX86/x86 Debug build PASS; Windows CTest **94/94 PASS**
+(9.00 seconds). Full Debian WSL Linux x86 Debug build PASS; CTest **92/93 PASS**
+(11.54 seconds). Only pre-existing astrabot_combat_policy fails with the same
+weapon/skill/recoil chest-policy message as the coding-conventions-20261113
+baseline. Combat-policy sources/expectations are unchanged. New catalog/profile/
+scheduler/actual-message regressions pass on both OSes; frozen characterization
+baselines remain unchanged and match. Source/ownership/ports manifests and
+whitespace checks pass. PE and ELF independently verify x86 and seven exact
+Metamod exports. The installed host DB parsed all eight supported concepts.
+
+Verified local artifact SHA-256 (not deployed):
+- Windows DLL: b68dc2a620aa24a61365cb779acb5dad7d0aeb84157190f639fd3d471266624d
+- Linux SO: 8139ec131aecce219ff9ffeb4e29dc66a89d73833044d298307c5d98d185b764
+
+Receipts: .agent-state/sessions/csbot-chatter-voice-61b98bd2-eed8-4863-8e6b-0faf7101e201/.
+Native client audibility/UI acceptance is NOT RUN; no deployment or remote push.
+Other CSBot statement generation/composition remains open. Engine-RNG shuffle
+is a portable approximation of reference CRT random_shuffle consumption, not
+reference replay equivalence. Unobserved private ignore-radio state on late
+attachment cannot be recovered; public observer fields may be incomplete.
+
 ## 2026-11-14 CSBot contact-driven primary weapon exchange
 
 Obstacle work was committed as 30cd290 and fast-forward merged into master.

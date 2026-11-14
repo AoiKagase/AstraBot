@@ -54,6 +54,7 @@ struct ProfileRecord
 	std::size_t weaponPreferenceCount = 0U;
 	int cost = 0;
 	int voicePitch = kDefaultVoicePitch;
+	char voiceBank[128] = {}; // Empty selects the default BotChatter.db bank.
 	unsigned difficultyMask = 0;
 };
 

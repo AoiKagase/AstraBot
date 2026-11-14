@@ -21,6 +21,7 @@ constexpr int kTeamworkFieldMask = 4;
 constexpr int kCostFieldMask = 8;
 constexpr int kVoicePitchFieldMask = 16;
 constexpr int kWeaponPreferenceFieldMask = 32;
+constexpr int kVoiceBankFieldMask = 64;
 constexpr unsigned kMaximumCsbotTemplates = 64U;
 constexpr unsigned kMaximumCsbotTemplateNames = 8U;
 constexpr int kDefaultDifficulty = 2;
@@ -350,11 +351,20 @@ bool parseExtendedField(const Token &key, const Token &value, compat::ProfileRec
 		field = kCostFieldMask;
 	else if (equalsIgnoreCase(key.text, "VoicePitch"))
 		field = kVoicePitchFieldMask;
+	else if (equalsIgnoreCase(key.text, "VoiceBank"))
+		field = kVoiceBankFieldMask;
 	else if (equalsIgnoreCase(key.text, "WeaponPreference"))
 		field = kWeaponPreferenceFieldMask;
 	if (field == 0)
 		return true;
-	if (field == kReactionTimeFieldMask || field == kAttackDelayFieldMask)
+	if (field == kVoiceBankFieldMask)
+	{
+		const auto length = std::strlen(value.text);
+		if (length == 0 || length >= sizeof(profile->voiceBank))
+			return false;
+		std::memcpy(profile->voiceBank, value.text, length + 1U);
+	}
+	else if (field == kReactionTimeFieldMask || field == kAttackDelayFieldMask)
 	{
 		errno = 0;
 		char *end = nullptr;
@@ -823,6 +833,8 @@ void applyCsbotTemplate(const CsbotTemplate &source, CsbotValues *values)
 		values->extended.cost = source.values.extended.cost;
 	if (mask & kVoicePitchFieldMask)
 		values->extended.voicePitch = source.values.extended.voicePitch;
+	if (mask & kVoiceBankFieldMask)
+		std::memcpy(values->extended.voiceBank, source.values.extended.voiceBank, sizeof(values->extended.voiceBank));
 	if (mask & kWeaponPreferenceFieldMask)
 	{
 		values->extended.weaponPreferenceCount = source.values.extended.weaponPreferenceCount;
@@ -993,6 +1005,7 @@ ProfileLoadResult loadCsbotText(
 		profile.teamwork = values.extended.teamwork;
 		profile.cost = values.extended.cost;
 		profile.voicePitch = values.extended.voicePitch;
+		std::memcpy(profile.voiceBank, values.extended.voiceBank, sizeof(profile.voiceBank));
 		profile.weaponPreferenceCount = values.extended.weaponPreferenceCount;
 		std::memcpy(profile.weaponPreferences, values.extended.weaponPreferences, sizeof(profile.weaponPreferences));
 		profile.difficulty = values.hasDifficulty ? values.difficulty : difficultyFromSkill(values.skill);

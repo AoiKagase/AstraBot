@@ -83,6 +83,19 @@ int main()
 	out = unknown.update(in, empty);
 	check(out.status == OutgoingRadioStatus::Ready && out.menu == 1 && out.slot == 5,
 		"VIP escape uses reference direct FollowMe radio");
+	OutgoingRadioScheduler vipWithHelp;
+	in.frame.roundGeneration = 30;
+	in.visibleEnemyCount = 4;
+	in.nearbyFriends = 0;
+	out = vipWithHelp.update(in, catalog, 1U << static_cast<unsigned>(ChatterPhrase::Help));
+	check(out.status == OutgoingRadioStatus::Ready && out.menu == 1 && out.slot == 5 &&
+		out.phrase == ChatterPhrase::None, "direct VIP FollowMe cannot be substituted by queued Help voice");
+	OutgoingRadioScheduler voiceOnly;
+	auto voiceInput = in; voiceInput.frame.roundGeneration=31;
+	voiceInput.vipEscaping=false; voiceInput.visibleEnemyCount=0; voiceInput.bombLocationUnknown=true;
+	out=voiceOnly.update(voiceInput, empty, 1U<<static_cast<unsigned>(ChatterPhrase::WhereIsTheBomb));
+	check(out.status==OutgoingRadioStatus::Ready && out.menu==0 && out.phrase==ChatterPhrase::WhereIsTheBomb,
+		"a host voice without a standard-radio equivalent is still speakable");
 	OutgoingRadioScheduler backup;
 	in.vipEscaping = false;
 	in.now = 2;

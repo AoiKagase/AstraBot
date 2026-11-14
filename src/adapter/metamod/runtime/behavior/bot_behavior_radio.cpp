@@ -36,6 +36,7 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index)
 	{
 		outgoingRadioMap_ = services_->service_lifecycle().mapGeneration();
 		outgoingChatterCatalog_ = {};
+		outgoingVoiceBanks_.clear();
 		outgoingMissingPhraseLogged_.fill(false);
 		if (services_->service_engineFunctions()->pfnLoadFileForMe != nullptr &&
 			services_->service_engineFunctions()->pfnFreeFile != nullptr)
@@ -46,8 +47,13 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index)
 			if (bytes != nullptr)
 			{
 				if (length > 0 && length <= kMaximumChatterFileBytes)
+				{
 					(void)outgoingChatterCatalog_.loadText(
 						reinterpret_cast<const char *>(bytes), static_cast<std::size_t>(length));
+					outgoingVoiceBanks_.push_back({"BotChatter.db", {}, 0U});
+					(void)outgoingVoiceBanks_.back().catalog.loadText(
+						reinterpret_cast<const char *>(bytes), static_cast<std::size_t>(length));
+				}
 				services_->service_engineFunctions()->pfnFreeFile(bytes);
 			}
 		}
@@ -129,11 +135,43 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index)
 		actors_[index].bombSearchTargets.frame.mapGeneration == input.frame.mapGeneration &&
 		actors_[index].bombSearchTargets.frame.roundGeneration == input.frame.roundGeneration &&
 		decision.target.entity == actors_[index].bombSearchTargets.entity;
-	const auto output = actors_[index].outgoingRadioSchedulers.update(input, outgoingChatterCatalog_);
+	const bool voiceMode = !verbosity || (std::strcmp(verbosity, "off") != 0 && std::strcmp(verbosity, "radio") != 0);
+	auto *voice = voiceMode ? chatterBank(index) : nullptr;
+	std::uint32_t voicePhrases = 0U;
+	if (voice)
+		for (unsigned phrase = 1U; phrase < static_cast<unsigned>(compat::ChatterPhrase::Count); ++phrase)
+			if (voice->has(static_cast<compat::ChatterPhrase>(phrase)))
+				voicePhrases |= 1U << phrase;
+	auto output = actors_[index].outgoingRadioSchedulers.update(input, outgoingChatterCatalog_, voicePhrases);
 	if (verbosity != nullptr && std::strcmp(verbosity, "off") == 0 && output.phrase != compat::ChatterPhrase::None)
 	{
 		actors_[index].outgoingRadioSchedulers.discardPending();
 		return;
+	}
+	if (verbosity != nullptr && std::strcmp(verbosity, "minimal") == 0 &&
+		output.phrase != compat::ChatterPhrase::None && !outgoingChatterCatalog_.important(output.phrase))
+	{
+		actors_[index].outgoingRadioSchedulers.discardPending();
+		return;
+	}
+	if (output.status == compat::OutgoingRadioStatus::Ready && voice && output.phrase != compat::ChatterPhrase::None)
+	{
+		float duration = 0.0f;
+		if (sendChatterVoice(index, output.phrase, input.visibleEnemyCount, *voice, &duration))
+		{
+			actors_[index].outgoingRadioSchedulers.confirmSent(input, output);
+			actors_[index].outgoingRadioAttempts = 0U;
+			actors_[index].outgoingRadioAttemptChoices = {};
+			outgoingTeamLastSpeech_[input.team] = input.now;
+			outgoingTeamBusyUntil_[input.team] = input.now + duration + 0.1f;
+			outgoingTeamCurrentPhrase_[input.team] = output.phrase;
+			return;
+		}
+	}
+	if (output.status == compat::OutgoingRadioStatus::Ready && output.menu == 0)
+	{
+		output.status = compat::OutgoingRadioStatus::MissingPhrase;
+		actors_[index].outgoingRadioSchedulers.discardPending();
 	}
 	if (output.status == compat::OutgoingRadioStatus::MissingPhrase)
 	{
@@ -152,12 +190,6 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index)
 	}
 	if (output.status != compat::OutgoingRadioStatus::Ready)
 		return;
-	if (verbosity != nullptr && std::strcmp(verbosity, "minimal") == 0 &&
-		output.phrase != compat::ChatterPhrase::None && !outgoingChatterCatalog_.important(output.phrase))
-	{
-		actors_[index].outgoingRadioSchedulers.discardPending();
-		return;
-	}
 	const char *menu = output.menu == kCommandRadioMenu ? "radio1"
 		: output.menu == kGroupRadioMenu				? "radio2"
 														: "radio3";

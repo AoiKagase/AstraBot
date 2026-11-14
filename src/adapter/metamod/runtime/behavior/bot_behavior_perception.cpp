@@ -59,6 +59,7 @@ bool BotBehaviorRuntime::prepareManagedPerception(std::size_t index, world::Worl
 
 void BotBehaviorRuntime::resetRoundRecognition()
 {
+	updateVoiceFeedback(true);
 	for (auto &actor : actors_)
 	{
 		actor.lastVisibleEnemyTimes = 0.0f;
@@ -70,6 +71,7 @@ void BotBehaviorRuntime::resetRoundRecognition()
 
 void BotBehaviorRuntime::observePublicDeath(std::size_t index)
 {
+	stopVoiceFeedback(index);
 	actors_[index].reactionQueues.reset();
 }
 } // namespace metamod

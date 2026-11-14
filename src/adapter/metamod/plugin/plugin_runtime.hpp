@@ -332,6 +332,11 @@ private:
 		return behavior_.managedProfiles(index);
 	}
 
+	void behavior_observeRadioPreference(edict_t *recipient, bool ignored) override
+	{
+		behavior_.observeRadioPreference(recipient, ignored);
+	}
+
 	void behavior_observeRadioReceipt(std::size_t index) override
 	{
 		return behavior_.observeRadioReceipt(index);

@@ -743,6 +743,7 @@ void PluginRuntime::onStartFrame()
 		++adapterFrameCount_;
 	}
 	lifecycle_.observeFrame(adapterFrameCount_, globals_->time);
+	behavior_.updateVoiceFeedback();
 	observation_.refreshPublicSmoke();
 	command_.stabilizeFrozenActors();
 	synchronizeNativeBotControls();

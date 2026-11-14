@@ -138,13 +138,13 @@ int main()
 
 	const char csbotText[] =
 		"Default\n"
-		"ReactionTime = 0.45\nTeamwork = 60\nCost = 1500\nVoicePitch = 95\nWeaponPreference = ak47\n"
+		"ReactionTime = 0.45\nTeamwork = 60\nCost = 1500\nVoicePitch = 95\nVoiceBank = default-voice.db\nWeaponPreference = ak47\n"
 		"Skill = 50\n"
 		"Aggression = 50\n"
 		"Difficulty = NORMAL\n"
 		"End\n"
 		"Template Elite\n"
-		"ReactionTime = 0.2\nAttackDelay = 0.1\nTeamwork = 90\nWeaponPreference = m4a1\nWeaponPreference = deagle\n"
+		"ReactionTime = 0.2\nAttackDelay = 0.1\nVoiceBank = elite-voice.db\nTeamwork = 90\nWeaponPreference = m4a1\nWeaponPreference = deagle\n"
 		"Skill = 100\n"
 		"Aggression = 100\n"
 		"Difficulty = EXPERT\n"
@@ -170,13 +170,17 @@ int main()
 				csbotProfile.skill == 100 && csbotProfile.difficulty == 4 &&
 				sameFloat32(csbotProfile.reactionTimeSeconds, 0.2f) &&
 				sameFloat32(csbotProfile.attackDelaySeconds, 0.1f) && csbotProfile.teamwork == 90 &&
-				csbotProfile.cost == 1500 && csbotProfile.voicePitch == 95 && csbotProfile.weaponPreferenceCount == 2 &&
+				csbotProfile.cost == 1500 && csbotProfile.voicePitch == 95 &&
+				std::strcmp(csbotProfile.voiceBank, "elite-voice.db") == 0 && csbotProfile.weaponPreferenceCount == 2 &&
 				csbotProfile.weaponPreferences[0] == 22 && csbotProfile.weaponPreferences[1] == 26 &&
 				csbotProfile.difficultyMask == 8,
 			"CSBot profile inherits skill template"))
 	{
 		return 1;
 	}
+	if (!check(catalog.selectNamed("BotTwo", ProfileTeam::Any, &csbotProfile) == ProfileSelectionResult::Selected &&
+			std::strcmp(csbotProfile.voiceBank, "default-voice.db") == 0, "profile retains inherited default voice bank"))
+		return 1;
 	const char invalidExtended[] = "Bad { ReactionTime = nan }\n";
 	if (!check(
 			loader.loadText(invalidExtended, std::strlen(invalidExtended), &catalog) == ProfileLoadResult::Malformed &&

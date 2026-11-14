@@ -1108,5 +1108,25 @@
     "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
     "scope": "owner",
     "member": "breakableMaterials_"
+  },
+  {
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
+    "scope": "owner",
+    "member": "outgoingVoiceBanks_"
+  },
+  {
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
+    "scope": "owner",
+    "member": "outgoingRadioPreferences_"
+  },
+  {
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
+    "scope": "owner",
+    "member": "outgoingVoiceMask_"
+  },
+  {
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
+    "scope": "ActorState",
+    "member": "outgoingVoiceFeedback"
   }
 ]

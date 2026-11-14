@@ -1896,6 +1896,9 @@ int main(int argc, char **)
 	engineFunctions.pfnServerExecute = &serverExecute;
 	engineFunctions.pfnRandomLong = &recoveryFixtureRandomLong;
 	engineFunctions.pfnRandomFloat = &jumpFixtureRandomFloat;
+#ifdef ASTRABOT_ACTOR_ENGINE_SETUP
+	ASTRABOT_ACTOR_ENGINE_SETUP(engineFunctions, globals);
+#endif
 	runtime.giveEnginePointers(&engineFunctions, &globals);
 	gBotEnable = 1.0f;
 	gBotQuota = 1.0f;
