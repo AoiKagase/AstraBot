@@ -56,8 +56,13 @@ independently verify x86 and seven exact exports; source manifest, ownership, po
 whitespace gates pass. All266 recorded source inputs and the user's BotProfile.db stayed
 unchanged across the final verification runs.
 
+Post-merge verification at implementation commit 50be3f9: complete builds PASS;
+Windows CTest 101/101 PASS (10.10 seconds), Linux CTest 99/100 PASS (12.28 seconds),
+with the same pre-existing combat-policy failure. PE/ELF exact-export gates pass again;
+all 266 source fingerprints and BotProfile.db still match. Logs use the post-merge-* prefix.
+
 Verified local artifact SHA-256 (not deployed):
-- Windows DLL: 523ada45a16092017ec56fef816ec99ff47da48d0e75a13b0f9dc5b49aa4c9c3
+- Windows DLL: d5e63d1cc379cb7a43f8e418935b143b3d5ab93f26ce4d3ef8e05cfee05fcb4e
 - Linux SO: 4fc60ef0d68153af1fcc2bd3fab3613ec4ecd8a50366a22ba3bd5c3897a13d61
 
 Evidence: .agent-state/sessions/csbot-noise-navigation-8eb6dca0-0d17-4b2f-a54c-24cc0b7bb7ef/ (RESULT.json, source fingerprints,
