@@ -139,6 +139,20 @@ int main()
 		return 1;
 	}
 
+	enginefuncs_t postEngineFunctions{};
+	int postVersion = ENGINE_INTERFACE_VERSION;
+	if (!check(metaFunctions.pfnGetEngineFunctions_Post &&
+				metaFunctions.pfnGetEngineFunctions_Post(&postEngineFunctions, &postVersion) == TRUE &&
+				postEngineFunctions.pfnPrecacheEvent,
+			"public post provider observes final PrecacheEvent indices without an extra export"))
+		return 1;
+	unsigned short precached = 42;
+	metaGlobals.orig_ret = &precached;
+	metaGlobals.status = MRES_IGNORED;
+	postEngineFunctions.pfnPrecacheEvent(1, "events/ak47.sc");
+	if (!check(metaGlobals.mres == MRES_IGNORED, "post observer does not replace precache result"))
+		return 1;
+	metaGlobals.orig_ret = nullptr;
 	int engineVersion = ENGINE_INTERFACE_VERSION;
 	enginefuncs_t engineFunctions{};
 	if (!check(metaFunctions.pfnGetEngineFunctions(&engineFunctions, &engineVersion) == TRUE,

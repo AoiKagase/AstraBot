@@ -44,6 +44,7 @@ public:
 	bool provideEntityApi(DLL_FUNCTIONS *functionTable, int *interfaceVersion);
 	bool provideEntityApiPost(DLL_FUNCTIONS *functionTable, int *interfaceVersion);
 	bool provideEngineFunctions(enginefuncs_t *engineFunctions, int *interfaceVersion);
+	bool provideEngineFunctionsPost(enginefuncs_t *engineFunctions, int *interfaceVersion);
 	void giveEnginePointers(enginefuncs_t *engineFunctions, globalvars_t *globals);
 	Snapshot snapshot() const;
 	NavLoadResult loadNavigationFile(const NavLoadRequest *request);
@@ -73,6 +74,9 @@ public:
 	void onWriteLong(int value);
 	void onWriteCoord(float value);
 	void onEmitSound(edict_t *entity, const char *sample, float volume, float attenuation);
+	void onPrecacheEvent(int type, const char *script, unsigned short index);
+	void onPlaybackEvent(
+		int flags, const edict_t *invoker, unsigned short index, float delay, int bparam1, int bparam2);
 	void onWriteString(const char *value);
 	void onAddServerCommand(char *command, void (*function)(void));
 	void onCompatibilityCommand();
@@ -681,6 +685,9 @@ FORCE_STACK_ALIGN void HookWriteLong(int value);
 FORCE_STACK_ALIGN void HookWriteCoord(float value);
 FORCE_STACK_ALIGN void HookEmitSound(
 	edict_t *entity, int channel, const char *sample, float volume, float attenuation, int flags, int pitch);
+FORCE_STACK_ALIGN unsigned short HookPrecacheEventPost(int type, const char *script);
+FORCE_STACK_ALIGN void HookPlaybackEvent(int flags, const edict_t *invoker, unsigned short index, float delay,
+	float *origin, float *angles, float fparam1, float fparam2, int iparam1, int iparam2, int bparam1, int bparam2);
 FORCE_STACK_ALIGN void HookWriteString(const char *value);
 FORCE_STACK_ALIGN void HookAlertMessage(ALERT_TYPE type, char *format, ...);
 FORCE_STACK_ALIGN void HookAddServerCommand(char *command, void (*function)(void));

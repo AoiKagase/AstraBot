@@ -1,3 +1,63 @@
+## 2026-11-14 native gunshot ingestion and seconds-based sound memory
+
+Source base 6fc332d; read-only behavioral oracle ReGameDLL-CS
+b0889847fe6d03898be88acc9e366660efb40ab5. Independently implemented
+public-event intake and hearing-time slice; this supersedes the upstream
+frame-clock/PlaybackEvent limitations recorded in the earlier auditory-look entry.
+
+- A public PrecacheEvent post table maps 25 standard gun scripts to the final
+  engine index (including override results). META_FUNCTIONS supplies this private
+  provider without adding an eighth exported symbol. Public PlaybackEvent observes
+  zero-delay server firing without changing playback or inventing attack commands.
+  Unknown/non-gun scripts, client/host-only events, invalid/dead/non-player/reused
+  invokers fail closed. Precache entries survive activation and rounds, then clear
+  on map deactivation, detach and fresh attach.
+- Native gun receipts are High priority: ordinary guns 2000 units, TMP1000,
+  AWP99999; M4A1 bparam1 and USP bparam2 select silenced1000-unit range. Position
+  comes from public invoker origin, rather than the native zero event origin.
+  Per-observer strict-radius, self/team and source-generation filters feed the
+  shared bounded ring. Dual EmitSound/PlaybackEvent receipts coalesce; incidental
+  same-frame weapon audio cannot suppress a High shot or widen its known range.
+- Perception receives global seconds and profile ReactionTime. Noise becomes ready
+  at age >=reaction, remains recent for <3 seconds, and expires only after20 seconds.
+  Recent replacement requires equal/higher priority AND strictly closer distance
+  measured from the current observer. Receipt time is retained across delayed
+  publication; stale/future receipts and clock rollback cannot renew memory.
+  Tick IDs remain frame identities/diagnostics. Clock-less offline inputs retain
+  their legacy tick policy. Explicit audibility range permits valid AWP endpoints
+  more than32768 units apart; diagnostic tick age saturates independently.
+- New tests cover20/100/500-FPS equivalent timing and3/20-second boundaries,
+  moving observers, actual pre/post callbacks, override selection, silencer range,
+  AWP beyond2000/32768, duplicates, teams, serial reuse, map resets and preactivation
+  precache preservation. Independent review found host-only events audible to enemies
+  and an explicit-AWP validation cap; parent also reproduced invalid serial receipts.
+  All three regression assertions failed RED before their fixes and pass GREEN.
+  Linux exposed a C++14 constexpr-reference linkage issue, fixed with a value argument.
+  No remaining Critical/Important findings or deferred minors.
+
+Offline evidence: complete MSVC HostX86/x86 Debug build PASS, CTest **98/98 PASS**
+(9.69 seconds). Complete Debian Linux x86 Debug build PASS, CTest **96/97 PASS**
+(11.47 seconds). The only failure is the pre-existing astrabot_combat_policy
+weapon/skill/recoil chest-policy case recorded in
+[the coding-conventions baseline](../verification/coding-conventions-20261113/VERIFICATION.md).
+Combat-policy source/expectations are unchanged. Frozen runtime characterization
+passes unchanged on both OSes; it was not regenerated from the candidate. Source
+manifest, ownership, ports and whitespace gates pass. PE and ELF separately PASS
+x86 and seven exact exports. All258 recorded source inputs and root BotProfile.db
+remain unchanged across verification.
+
+Verified local artifact SHA-256 (not deployed):
+- Windows DLL: 333e4b75a8d06db9d9991df794c93c61962c147f709126158049ba94e9d4299c
+- Linux SO: bc5f47057a7c221957c0ec2056d88c65d0094f915e8c36abd605e48acbb5383e
+
+Evidence: .agent-state/sessions/csbot-gunshot-hearing-time-bde84cb0-bce1-442d-8782-5bc804c44bdf/ (RESULT.json, tested-source-identity.json,
+review.md, RED logs, compiler identity, complete builds and sequential OS CTest logs).
+Limits/rulings: NAV-constrained noise randomization and exact investigate policy
+remain existing differences; PM_Move footsteps and custom delayed playback intake
+are separate work. Late attach without prior public precache receipts does not
+infer unknown indices. Live HLDS/ReHLDS gunshot/camera/FPS acceptance is NOT RUN;
+offline and artifact gates do not establish live acceptance. No push/deployment.
+
 ## 2026-11-14 auditory look reactions for the public sound feed
 
 Source base f326cad; behavioral oracle ReGameDLL-CS

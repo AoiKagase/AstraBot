@@ -424,6 +424,88 @@ bool BotObservationRuntime::hasObservedActiveWeapon(std::size_t index) const
 		state.weaponKnown;
 }
 
+void BotObservationRuntime::onPrecacheEvent(int type, const char *script, unsigned short index)
+{
+	gunshotEvents_.observe(index, type == 1 ? script : nullptr);
+}
+
+void BotObservationRuntime::onPlaybackEvent(
+	int flags, const edict_t *invoker, unsigned short index, float delay, int bparam1, int bparam2)
+{
+	constexpr int privatePlayback = (1 << 4) | (1 << 6); // FEV_HOSTONLY or FEV_CLIENT.
+	if ((flags & privatePlayback) != 0 || !std::isfinite(delay) || delay != 0 || !invoker || invoker->free ||
+		(invoker->v.flags & FL_CLIENT) == 0 || invoker->serialnumber < 0 || invoker->v.deadflag != DEAD_NO ||
+		invoker->v.health <= 0 || !services_->service_globals() || !services_->service_engineFunctions() ||
+		!services_->service_engineFunctions()->pfnIndexOfEdict ||
+		!services_->service_engineFunctions()->pfnPEntityOfEntIndex)
+		return;
+	const int slot = services_->service_engineFunctions()->pfnIndexOfEdict(invoker);
+	if (slot < 1 || slot > services_->service_globals()->maxClients || slot > kMaximumClientSlot ||
+		services_->service_engineFunctions()->pfnPEntityOfEntIndex(slot) != invoker)
+		return;
+	const float range = gunshotEvents_.range(index, bparam1, bparam2);
+	if (range <= 0)
+		return;
+	world::AudibleEvent event{};
+	event.kind = world::SoundKind::WeaponFire;
+	event.origin = {invoker->v.origin.x, invoker->v.origin.y, invoker->v.origin.z};
+	event.loudness = 1;
+	event.confidence = {1, 0};
+	event.priority = world::NoisePriority::High;
+	event.source = {static_cast<std::uint32_t>(slot), static_cast<std::uint32_t>(invoker->serialnumber) + 1U};
+	event.distance = range;
+	event.hearingRange = range;
+	event.timestampTick = services_->service_adapterFrameCount();
+	event.timestampSeconds = services_->service_globals()->time;
+	recordSound(event, invoker);
+}
+
+void BotObservationRuntime::recordSound(world::AudibleEvent event, const edict_t *source)
+{
+	if (!std::isfinite(event.timestampSeconds) || event.timestampSeconds < 0 || !std::isfinite(event.origin.x) ||
+		!std::isfinite(event.origin.y) || !std::isfinite(event.origin.z))
+		return;
+	// A gun's client playback and EmitSound may both describe the same firing.
+	// Upgrade incidental weapon samples atomically before per-observer delivery.
+	for (auto &previous : soundEvents_)
+	{
+		if (previous.id == 0 || previous.timestampTick != event.timestampTick ||
+			previous.timestampSeconds != event.timestampSeconds || previous.kind != event.kind ||
+			!(previous.source == event.source) || previous.origin.x != event.origin.x ||
+			previous.origin.y != event.origin.y || previous.origin.z != event.origin.z)
+			continue;
+		if (previous.priority == event.priority)
+		{
+			if (previous.hearingRange == 0 && event.hearingRange > 0)
+			{
+				previous.hearingRange = event.hearingRange;
+				previous.distance = event.distance;
+			}
+			return;
+		}
+		if (event.kind == world::SoundKind::WeaponFire &&
+			(previous.priority == world::NoisePriority::High || event.priority == world::NoisePriority::High))
+		{
+			if (event.priority == world::NoisePriority::High)
+			{
+				event.id = previous.id;
+				previous = event;
+			}
+			return;
+		}
+	}
+	event.id = ++soundSequence_;
+	if (event.id == 0)
+	{
+		event.id = ++soundSequence_;
+		reset_deliveredSoundSequences();
+		soundEvents_ = {};
+		soundTeams_ = {};
+	}
+	soundEvents_[event.id % soundEvents_.size()] = event;
+	soundTeams_[event.id % soundEvents_.size()] = event.source.isValid() ? resolvePlayerTeam(source) : 0;
+}
+
 void BotObservationRuntime::onEmitSound(edict_t *entity, const char *sample, float volume, float attenuation)
 {
 	if (entity == nullptr || entity->free || sample == nullptr || services_->service_globals() == nullptr ||
@@ -444,14 +526,6 @@ void BotObservationRuntime::onEmitSound(edict_t *entity, const char *sample, flo
 		smokeObservations_.observe(key, origin, services_->service_globals()->time + kSmokeObservationLifetimeSeconds);
 	}
 	world::AudibleEvent event{};
-	event.id = ++soundSequence_;
-	if (event.id == 0U)
-	{
-		event.id = ++soundSequence_;
-		reset_deliveredSoundSequences();
-		soundEvents_ = {};
-		soundTeams_ = {};
-	}
 	event.kind = bombBeep												  ? world::SoundKind::Objective
 		: std::strstr(sample, "pl_step") != nullptr						  ? world::SoundKind::Footstep
 		: std::strncmp(sample, "weapons/", kWeaponSoundPrefixLength) == 0 ? world::SoundKind::WeaponFire
@@ -459,7 +533,8 @@ void BotObservationRuntime::onEmitSound(edict_t *entity, const char *sample, flo
 	event.origin = origin;
 	event.loudness = volume;
 	event.confidence = {1.0f, 0U};
-	event.priority = bombBeep || compat::isStandardShotSample(sample) ? world::NoisePriority::High : world::NoisePriority::Medium;
+	event.priority =
+		bombBeep || compat::isStandardShotSample(sample) ? world::NoisePriority::High : world::NoisePriority::Medium;
 	// Derived public sound attenuation, not an exact GameEvent audibility observation.
 	event.distance = bombBeep ? kBombBeepHearingDistance
 		: attenuation > 0.0f  ? (std::min)(kMaximumSoundDistance, kSoundAttenuationDistanceScale * volume / attenuation)
@@ -470,20 +545,7 @@ void BotObservationRuntime::onEmitSound(edict_t *entity, const char *sample, flo
 	{
 		event.source = {static_cast<std::uint32_t>(entityIndex), static_cast<std::uint32_t>(entity->serialnumber) + 1U};
 	}
-	// Multiple callbacks for one public sound in the same tick are one receipt.
-	for (const auto &previous : soundEvents_)
-	{
-		if (previous.id != 0U && previous.timestampTick == event.timestampTick && previous.kind == event.kind &&
-			previous.priority == event.priority &&
-			previous.source == event.source && previous.origin.x == event.origin.x &&
-			previous.origin.y == event.origin.y && previous.origin.z == event.origin.z)
-		{
-			--soundSequence_;
-			return;
-		}
-	}
-	soundEvents_[event.id % soundEvents_.size()] = event;
-	soundTeams_[event.id % soundEvents_.size()] = event.source.isValid() ? resolvePlayerTeam(entity) : 0;
+	recordSound(event, entity);
 	if (bombBeep && entityIndex > 0)
 	{
 		for (std::size_t index = 0U; index < services_->service_managedBotHandles().size(); ++index)
@@ -992,6 +1054,10 @@ bool BotObservationRuntime::collectManagedPerception(
 		services_->service_lifecycle().roundGeneration(), services_->service_adapterFrameCount()};
 	const world::SnapshotIdentity identity = {frame, observer, 0U};
 	perception::PerceptionInput input(identity);
+	if (input.setHearingTime(
+			services_->service_globals()->time, services_->behavior_managedProfiles(index).reactionTimeSeconds) !=
+		perception::PerceptionInputResult::Accepted)
+		return false;
 	const compat::ObservationTimingContext observationTiming = {
 		services_->command_managedBotCommandSequences(index), 0U, 0U};
 	compat::CompatibilityObservation observerObservation = {};
@@ -1062,6 +1128,14 @@ bool BotObservationRuntime::collectManagedPerception(
 				soundTeams_[sequence % soundTeams_.size()] == actors_[index].teamInfoTeams))
 		{
 			continue;
+		}
+		if (observed.source.isValid())
+		{
+			const auto *source =
+				services_->service_engineFunctions()->pfnPEntityOfEntIndex(static_cast<int>(observed.source.slot));
+			if (!source || source->free ||
+				static_cast<std::uint32_t>(source->serialnumber) + 1U != observed.source.generation)
+				continue;
 		}
 		const float dx = observed.origin.x - handle.entity->v.origin.x;
 		const float dy = observed.origin.y - handle.entity->v.origin.y;

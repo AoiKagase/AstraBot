@@ -52,6 +52,15 @@ PerceptionInput::PerceptionInput()
 {
 }
 
+PerceptionInputResult PerceptionInput::setHearingTime(float nowSeconds, float reactionSeconds)
+{
+	if (!std::isfinite(nowSeconds) || nowSeconds < 0 || !std::isfinite(reactionSeconds) || reactionSeconds < 0)
+		return PerceptionInputResult::InvalidArgument;
+	hearingTimeSeconds_ = nowSeconds;
+	hearingReactionSeconds_ = reactionSeconds;
+	return PerceptionInputResult::Accepted;
+}
+
 PerceptionInput::PerceptionInput(const world::SnapshotIdentity &identity) : PerceptionInput()
 {
 	setIdentity(identity);
@@ -61,6 +70,8 @@ PerceptionInputResult PerceptionInput::setIdentity(const world::SnapshotIdentity
 {
 	if (!identity.isValid())
 		return PerceptionInputResult::InvalidIdentity;
+	hearingTimeSeconds_ = -1.0f;
+	hearingReactionSeconds_ = 0.0f;
 	identity_ = identity;
 	actorCount_ = 0U;
 	entityCount_ = 0U;
@@ -254,8 +265,11 @@ bool PerceptionAssembler::isValidSound(const world::AudibleEvent &sound)
 	return sound.id != 0U && isBoundedVector(sound.origin, world::WorldLimits::kMaximumCoordinate) &&
 		std::isfinite(sound.loudness) && sound.loudness >= 0.0f && sound.loudness <= 1.0f &&
 		std::isfinite(sound.distance) && sound.distance >= 0.0f &&
-		sound.distance <= world::WorldLimits::kMaximumCoordinate && std::isfinite(sound.confidence.value) &&
-		sound.confidence.ageTicks <= world::WorldLimits::kMaximumAgeTicks && isValidSoundKind(sound.kind);
+		sound.distance <= (sound.hearingRange > 0 ? sound.hearingRange : world::WorldLimits::kMaximumCoordinate) &&
+		std::isfinite(sound.timestampSeconds) && (sound.timestampSeconds == -1.0f || sound.timestampSeconds >= 0) &&
+		std::isfinite(sound.hearingRange) && sound.hearingRange >= 0 && sound.hearingRange <= 99999.0f &&
+		std::isfinite(sound.confidence.value) && sound.confidence.ageTicks <= world::WorldLimits::kMaximumAgeTicks &&
+		isValidSoundKind(sound.kind);
 }
 
 float PerceptionAssembler::normalizeConfidence(float value)
@@ -421,38 +435,78 @@ void PerceptionAssembler::updateMemory(std::array<MemoryRecord, world::WorldLimi
 	record.lastSeenFrame = frame;
 }
 
-void PerceptionAssembler::advanceNoise(world::NoiseMemory *noise, const world::FrameIdentity &frame) const
+void PerceptionAssembler::advanceNoise(world::NoiseMemory *noise, const PerceptionInput &input) const
 {
 	if (noise == nullptr || !noise->active)
 		return;
+	const auto &frame = input.identity().frame;
 	const std::uint32_t age = frame.tick >= noise->timestampTick ? frame.tick - noise->timestampTick
 																 : (std::numeric_limits<std::uint32_t>::max)();
-	if (age > config_.maximumNoiseAgeTicks)
+	if (input.hearingTimeSeconds() >= 0)
 	{
-		clearNoise(noise);
-		return;
+		const float seconds = input.hearingTimeSeconds() - noise->timestampSeconds;
+		if (noise->timestampSeconds < 0 || seconds < 0 || seconds > 20.0f)
+		{
+			clearNoise(noise);
+			return;
+		}
+		noise->ready = seconds >= input.hearingReactionSeconds();
 	}
-	noise->ready = age >= config_.noiseReactionDelayTicks;
-	noise->confidence.ageTicks = age;
+	else
+	{
+		if (age > config_.maximumNoiseAgeTicks)
+		{
+			clearNoise(noise);
+			return;
+		}
+		noise->ready = age >= config_.noiseReactionDelayTicks;
+	}
+	noise->confidence.ageTicks = (std::min)(age, std::uint32_t(world::WorldLimits::kMaximumAgeTicks));
 }
 
-void PerceptionAssembler::updateNoise(world::NoiseMemory *noise, const world::AudibleEvent &sound,
-	const world::ActorKey &observer, const world::FrameIdentity &frame) const
+void PerceptionAssembler::updateNoise(
+	world::NoiseMemory *noise, const world::AudibleEvent &sound, const PerceptionInput &input) const
 {
-	(void)observer;
-	if (noise == nullptr || sound.distance > static_cast<float>(config_.maximumHearingDistance))
+	const float range =
+		sound.hearingRange > 0 ? sound.hearingRange : static_cast<float>(config_.maximumHearingDistance);
+	if (noise == nullptr || sound.distance > range)
+		return;
+	const auto &frame = input.identity().frame;
+	const bool timed = input.hearingTimeSeconds() >= 0;
+	if (timed &&
+		(sound.timestampSeconds < 0 || sound.timestampSeconds > input.hearingTimeSeconds() ||
+			input.hearingTimeSeconds() - sound.timestampSeconds > 20.0f))
 		return;
 	const std::uint32_t soundTick = sound.timestampTick == 0U ? frame.tick : sound.timestampTick;
 	if (noise->active)
 	{
 		const std::uint32_t age = frame.tick >= noise->timestampTick ? frame.tick - noise->timestampTick
 																	 : (std::numeric_limits<std::uint32_t>::max)();
-		const std::uint32_t shortTermTicks = 90U;
-		if (age < shortTermTicks)
+		const bool recent = timed ? input.hearingTimeSeconds() - noise->timestampSeconds < 3.0f : age < 90U;
+		if (timed && sound.timestampSeconds < noise->timestampSeconds)
+			return;
+		if (recent)
 		{
 			if (static_cast<std::uint8_t>(sound.priority) < static_cast<std::uint8_t>(noise->priority))
 				return;
-			if (sound.priority == noise->priority && sound.distance >= noise->distance)
+			float oldDistance = noise->distance;
+			if (timed)
+			{
+				for (std::size_t i = 0; i < input.actorCount(); ++i)
+				{
+					const auto *actor = input.actorAt(i);
+					if (actor->actor == input.identity().observer &&
+						actor->state == world::ObservationState::ObservedPresent)
+					{
+						const float dx = actor->position.x - noise->position.x,
+									dy = actor->position.y - noise->position.y,
+									dz = actor->position.z - noise->position.z;
+						oldDistance = std::sqrt(dx * dx + dy * dy + dz * dz);
+						break;
+					}
+				}
+			}
+			if ((timed || sound.priority == noise->priority) && sound.distance >= oldDistance)
 				return;
 		}
 	}
@@ -467,6 +521,8 @@ void PerceptionAssembler::updateNoise(world::NoiseMemory *noise, const world::Au
 	noise->confidence = sound.confidence;
 	noise->source = {};
 	noise->positionApproximated = true;
+	if (timed)
+		advanceNoise(noise, input);
 }
 
 void PerceptionAssembler::applyEvent(std::array<MemoryRecord, world::WorldLimits::kMaximumActors> *memory,
@@ -535,7 +591,9 @@ PerceptionResult PerceptionAssembler::publish(const PerceptionInput &input, worl
 	else
 	{
 		advanceMemory(&candidateMemory, input.identity().frame);
-		advanceNoise(&candidateNoise, input.identity().frame);
+		if (input.hearingTimeSeconds() >= 0 && lastHearingTimeSeconds_ > input.hearingTimeSeconds())
+			clearNoise(&candidateNoise);
+		advanceNoise(&candidateNoise, input);
 	}
 
 	for (std::size_t index = 0U; index < input.eventCount(); ++index)
@@ -619,7 +677,7 @@ PerceptionResult PerceptionAssembler::publish(const PerceptionInput &input, worl
 		if (candidate.sounds_[index].timestampTick == 0U)
 			candidate.sounds_[index].timestampTick = input.identity().frame.tick;
 		const world::NoiseMemory beforeNoise = candidateNoise;
-		updateNoise(&candidateNoise, candidate.sounds_[index], input.identity().observer, input.identity().frame);
+		updateNoise(&candidateNoise, candidate.sounds_[index], input);
 		PerceptionTraceRecord noise = {};
 		noise.kind = PerceptionTraceKind::Noise;
 		noise.actor = input.identity().observer;
@@ -647,6 +705,7 @@ PerceptionResult PerceptionAssembler::publish(const PerceptionInput &input, worl
 	snapshot_ = candidate;
 	memory_ = candidateMemory;
 	lastIdentity_ = input.identity();
+	lastHearingTimeSeconds_ = input.hearingTimeSeconds();
 	hasPublished_ = true;
 	return PerceptionResult::Published;
 }

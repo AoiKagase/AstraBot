@@ -49,6 +49,15 @@ public:
 
 	PerceptionInputResult setIdentity(const world::SnapshotIdentity &identity);
 	const world::SnapshotIdentity &identity() const;
+	PerceptionInputResult setHearingTime(float nowSeconds, float reactionSeconds);
+	float hearingTimeSeconds() const
+	{
+		return hearingTimeSeconds_;
+	}
+	float hearingReactionSeconds() const
+	{
+		return hearingReactionSeconds_;
+	}
 
 	PerceptionInputResult addActor(const world::ActorObservation &observation);
 	PerceptionInputResult addEntity(const world::EntityObservation &observation);
@@ -65,6 +74,8 @@ public:
 	const PerceptionEvent *eventAt(std::size_t index) const;
 
 private:
+	float hearingTimeSeconds_ = -1.0f;
+	float hearingReactionSeconds_ = 0.0f;
 	world::SnapshotIdentity identity_;
 	std::array<world::ActorObservation, world::WorldLimits::kMaximumActors> actors_;
 	std::size_t actorCount_;
@@ -195,9 +206,8 @@ private:
 		std::array<MemoryRecord, world::WorldLimits::kMaximumActors> *memory, const world::FrameIdentity &frame) const;
 	void updateMemory(std::array<MemoryRecord, world::WorldLimits::kMaximumActors> *memory,
 		const world::ActorObservation &observation, const world::FrameIdentity &frame) const;
-	void advanceNoise(world::NoiseMemory *noise, const world::FrameIdentity &frame) const;
-	void updateNoise(world::NoiseMemory *noise, const world::AudibleEvent &sound, const world::ActorKey &observer,
-		const world::FrameIdentity &frame) const;
+	void advanceNoise(world::NoiseMemory *noise, const PerceptionInput &input) const;
+	void updateNoise(world::NoiseMemory *noise, const world::AudibleEvent &sound, const PerceptionInput &input) const;
 	void applyEvent(std::array<MemoryRecord, world::WorldLimits::kMaximumActors> *memory, world::NoiseMemory *noise,
 		const PerceptionEvent &event, const world::FrameIdentity &frame) const;
 	void emit(const PerceptionTraceRecord &record) const;
@@ -209,6 +219,7 @@ private:
 	IPerceptionTraceSink *traceSink_;
 	mutable std::uint64_t traceSequence_;
 	bool hasPublished_;
+	float lastHearingTimeSeconds_ = -1.0f;
 };
 }
 }

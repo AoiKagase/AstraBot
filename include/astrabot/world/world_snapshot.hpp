@@ -236,6 +236,7 @@ struct AudibleEvent
 	float distance;
 	std::uint32_t timestampTick;
 	float timestampSeconds = -1.0f; // Unknown unless supplied by a real-time public receipt.
+	float hearingRange = 0.0f; // Explicit public audibility range; zero retains the legacy configuration cap.
 };
 
 struct NoiseMemory

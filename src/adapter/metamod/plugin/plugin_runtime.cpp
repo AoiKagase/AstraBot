@@ -31,6 +31,11 @@ namespace
 // plugin utility lookup is available.  Keep the public lookup as the
 // first choice, but retain the engine's stable IDs as a bounded fallback.
 
+FORCE_STACK_ALIGN int provideEnginePost(enginefuncs_t *table, int *version)
+{
+	return PluginRuntime::instance().provideEngineFunctionsPost(table, version) ? TRUE : FALSE;
+}
+
 constexpr int kMaximumClientSlot = 32;
 constexpr int kTerroristTeam = 1;
 constexpr int kCounterTerroristTeam = 2;
@@ -160,6 +165,8 @@ bool PluginRuntime::attach(PLUG_LOADTIME loadTime, META_FUNCTIONS *functionTable
 	requestedFunctions.pfnGetEntityAPI2 = &GetEntityAPI2;
 	requestedFunctions.pfnGetEntityAPI2_Post = &GetEntityAPI2_Post;
 	requestedFunctions.pfnGetEngineFunctions = &GetEngineFunctions;
+	requestedFunctions.pfnGetEngineFunctions_Post = &provideEnginePost;
+	observation_.resetGunshotEvents();
 	*functionTable = requestedFunctions;
 
 	metaGlobals_ = metaGlobals;
@@ -198,6 +205,7 @@ bool PluginRuntime::attach(PLUG_LOADTIME loadTime, META_FUNCTIONS *functionTable
 
 bool PluginRuntime::detach(PLUG_LOADTIME loadTime, PL_UNLOAD_REASON reason)
 {
+	observation_.resetGunshotEvents();
 	(void)loadTime;
 	(void)reason;
 
@@ -309,12 +317,30 @@ bool PluginRuntime::provideEngineFunctions(enginefuncs_t *engineFunctions, int *
 	requestedFunctions.pfnWriteLong = &HookWriteLong;
 	requestedFunctions.pfnWriteCoord = &HookWriteCoord;
 	requestedFunctions.pfnEmitSound = &HookEmitSound;
+	requestedFunctions.pfnPlaybackEvent = &HookPlaybackEvent;
 	requestedFunctions.pfnWriteByte = &HookWriteByte;
 	requestedFunctions.pfnWriteChar = &HookWriteChar;
 	requestedFunctions.pfnWriteShort = &HookWriteShort;
 	requestedFunctions.pfnWriteString = &HookWriteString;
 	requestedFunctions.pfnAlertMessage = &HookAlertMessage;
 	*engineFunctions = requestedFunctions;
+	return true;
+}
+
+bool PluginRuntime::provideEngineFunctionsPost(enginefuncs_t *engineFunctions, int *interfaceVersion)
+{
+	if (!interfaceVersion)
+		return false;
+	if (*interfaceVersion != ENGINE_INTERFACE_VERSION)
+	{
+		*interfaceVersion = ENGINE_INTERFACE_VERSION;
+		return false;
+	}
+	if (!engineFunctions || state_ == State::Cold || state_ == State::Detached)
+		return false;
+	enginefuncs_t table{};
+	table.pfnPrecacheEvent = &HookPrecacheEventPost;
+	*engineFunctions = table;
 	return true;
 }
 
@@ -616,6 +642,7 @@ void PluginRuntime::onServerActivate(edict_t *edictList, int edictCount, int cli
 
 void PluginRuntime::onServerDeactivate()
 {
+	observation_.resetGunshotEvents();
 	behavior_.resetObstacleMaterials();
 	pendingJoinActions_.clear();
 	pendingJoinActionOverflow_.fill(false);
@@ -1261,6 +1288,17 @@ void PluginRuntime::maintainPublicBotPopulation()
 	}
 }
 #undef ASTRABOT_PLUGIN_RUNTIME_POPULATION_UPDATE_INTERVAL_SECONDS
+
+void PluginRuntime::onPrecacheEvent(int type, const char *script, unsigned short index)
+{
+	observation_.onPrecacheEvent(type, script, index);
+}
+void PluginRuntime::onPlaybackEvent(
+	int flags, const edict_t *invoker, unsigned short index, float delay, int bparam1, int bparam2)
+{
+	if (state_ == State::ActiveMap)
+		observation_.onPlaybackEvent(flags, invoker, index, delay, bparam1, bparam2);
+}
 
 void PluginRuntime::onEmitSound(edict_t *entity, const char *sample, float volume, float attenuation)
 {
@@ -2385,6 +2423,31 @@ void HookEmitSound(
 	constexpr int kStopSoundFlag = 1 << 5;
 	if ((flags & kStopSoundFlag) == 0)
 		PluginRuntime::instance().onEmitSound(entity, sample, volume, attenuation);
+	setMetaResult(MRES_IGNORED);
+}
+
+unsigned short HookPrecacheEventPost(int type, const char *script)
+{
+	if (gpMetaGlobals)
+	{
+		const void *result =
+			gpMetaGlobals->status >= MRES_OVERRIDE ? gpMetaGlobals->override_ret : gpMetaGlobals->orig_ret;
+		if (result)
+			PluginRuntime::instance().onPrecacheEvent(type, script, *static_cast<const unsigned short *>(result));
+	}
+	setMetaResult(MRES_IGNORED);
+	return 0;
+}
+void HookPlaybackEvent(int flags, const edict_t *invoker, unsigned short index, float delay, float *origin,
+	float *angles, float fparam1, float fparam2, int iparam1, int iparam2, int bparam1, int bparam2)
+{
+	(void)origin;
+	(void)angles;
+	(void)fparam1;
+	(void)fparam2;
+	(void)iparam1;
+	(void)iparam2;
+	PluginRuntime::instance().onPlaybackEvent(flags, invoker, index, delay, bparam1, bparam2);
 	setMetaResult(MRES_IGNORED);
 }
 

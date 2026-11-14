@@ -427,10 +427,144 @@ bool testP06EventsIsolationAndTrace()
 	return check(!trace.records.empty(), "perception trace remains bounded and observable");
 }
 
+bool testHearingSecondsAcrossFrameRates()
+{
+	using namespace astrabot;
+	for (const unsigned fps : {20U, 100U, 500U})
+	{
+		perception::PerceptionAssembler assembler;
+		world::WorldSnapshot snapshot;
+		auto self = visibleActor({1U, 11U});
+		self.position = {};
+		self.relation = world::TeamRelation::Friendly;
+		unsigned tick = 1;
+		world::AudibleEvent sound{};
+		sound.id = 1;
+		sound.kind = world::SoundKind::WeaponFire;
+		sound.origin = {300, 0, 0};
+		sound.distance = 300;
+		sound.priority = world::NoisePriority::Medium;
+		sound.loudness = 1;
+		sound.confidence = {1, 0};
+		sound.timestampSeconds = 10;
+		sound.timestampTick = 1;
+		const auto publish = [&](float now, const world::AudibleEvent *event)
+		{
+			perception::PerceptionInput input(identity(tick));
+			if (input.setHearingTime(now, .125f) != perception::PerceptionInputResult::Accepted)
+				return false;
+			input.addActor(self);
+			if (event)
+				input.addSound(*event);
+			return assembler.publish(input, &snapshot) == perception::PerceptionResult::Published;
+		};
+		if (!check(publish(10, &sound) && snapshot.noise().active && !snapshot.noise().ready,
+				"seconds clock initially waits for profile reaction"))
+			return false;
+		tick += fps;
+		if (!check(publish(10.124f, nullptr) && !snapshot.noise().ready, "many frames cannot shorten reaction time"))
+			return false;
+		tick += fps;
+		if (!check(publish(10.125f, nullptr) && snapshot.noise().ready, "reaction boundary is seconds at every FPS"))
+			return false;
+		sound.id = 2;
+		sound.timestampSeconds = 12.999f;
+		sound.timestampTick = tick + 1;
+		sound.origin = {400, 0, 0};
+		sound.distance = 400;
+		sound.priority = world::NoisePriority::High;
+		tick += fps;
+		if (!check(publish(12.999f, &sound) && snapshot.noise().timestampSeconds == 10,
+				"recent farther shot cannot replace even at higher priority"))
+			return false;
+		sound.id = 3;
+		sound.timestampSeconds = 13;
+		sound.timestampTick = tick + 1;
+		sound.priority = world::NoisePriority::Low;
+		tick += fps;
+		if (!check(publish(13, &sound) && snapshot.noise().timestampSeconds == 13,
+				"three second boundary permits replacement"))
+			return false;
+		// Observer moved toward the old noise: compare against its CURRENT distance (50), not old stored 400.
+		self.position = {350, 0, 0};
+		sound.id = 4;
+		sound.timestampSeconds = 13.2f;
+		sound.timestampTick = tick + 1;
+		sound.origin = {450, 0, 0};
+		sound.distance = 100;
+		sound.priority = world::NoisePriority::High;
+		tick += fps;
+		if (!check(publish(13.2f, &sound) && snapshot.noise().timestampSeconds == 13,
+				"replacement uses current observer distance"))
+			return false;
+		tick += fps;
+		if (!check(publish(33, nullptr) && snapshot.noise().active, "twenty second boundary is inclusive"))
+			return false;
+		tick += fps;
+		if (!check(publish(33.01f, nullptr) && !snapshot.noise().active,
+				"noise forgotten after twenty seconds independent of FPS"))
+			return false;
+		sound.id = 5;
+		sound.timestampSeconds = 34;
+		sound.timestampTick = tick;
+		tick += fps;
+		if (!check(publish(34, &sound) && snapshot.noise().active, "fresh sound accepted after expiry"))
+			return false;
+		tick += fps;
+		if (!check(publish(33.9f, nullptr) && !snapshot.noise().active, "clock rollback cannot retain future noise"))
+			return false;
+		sound.id = 6;
+		sound.timestampSeconds = 2;
+		sound.timestampTick = tick;
+		tick += fps;
+		if (!check(publish(35, &sound) && !snapshot.noise().active, "delayed stale receipt cannot renew memory"))
+			return false;
+		sound.timestampSeconds = 36;
+		sound.id = 7;
+		tick += fps;
+		if (!check(publish(35.1f, &sound) && !snapshot.noise().active, "future receipt rejected"))
+			return false;
+	}
+	perception::PerceptionInput invalid(identity(1));
+	return check(invalid.setHearingTime(-1, .1f) == perception::PerceptionInputResult::InvalidArgument &&
+			invalid.setHearingTime(1, -.1f) == perception::PerceptionInputResult::InvalidArgument,
+		"invalid hearing context rejected");
+}
+
+bool testExplicitHearingRangeAcrossDistantPositions()
+{
+	using namespace astrabot;
+	perception::PerceptionAssembler assembler;
+	world::WorldSnapshot snapshot;
+	auto self = visibleActor({1U, 11U});
+	self.position = {-20000, 0, 0};
+	self.relation = world::TeamRelation::Friendly;
+	world::AudibleEvent sound{};
+	sound.id = 1;
+	sound.kind = world::SoundKind::WeaponFire;
+	sound.origin = {20000, 0, 0};
+	sound.distance = 40000;
+	sound.hearingRange = 99999;
+	sound.timestampSeconds = 10;
+	sound.loudness = 1;
+	sound.confidence = {1, 0};
+	sound.priority = world::NoisePriority::High;
+	perception::PerceptionInput input(identity(1));
+	input.setHearingTime(10, .125f);
+	input.addActor(self);
+	if (!check(input.addSound(sound) == perception::PerceptionInputResult::Accepted,
+			"valid endpoints can be farther apart than one coordinate bound"))
+		return false;
+	return check(
+		assembler.publish(input, &snapshot) == perception::PerceptionResult::Published && snapshot.noise().active,
+		"explicit AWP range bypasses legacy distance validation cap");
+}
+
 int main()
 {
 	if (!testDuplicateAndStaleFramesPreservePublication() || !testMemoryExpiryAndGenerationInvalidation() ||
 		!testInputLimitsAndInvalidIdentity() || !testP06VisionBeliefLossAndExpiry() ||
+		!testExplicitHearingRangeAcrossDistantPositions() || !testHearingSecondsAcrossFrameRates() ||
 		!testP06NoisePriorityExpiryAndHeardNotSeen() || !testP06EventsIsolationAndTrace())
 	{
 		return 1;

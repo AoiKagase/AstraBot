@@ -1,6 +1,7 @@
 #ifndef ASTRABOT_ADAPTER_BOT_OBSERVATION_RUNTIME_HPP
 #define ASTRABOT_ADAPTER_BOT_OBSERVATION_RUNTIME_HPP
 #include "runtime/shared/bot_runtime_services.hpp"
+#include "astrabot/compat/gunshot_events.hpp"
 #include <limits>
 namespace astrabot
 {
@@ -27,6 +28,13 @@ public:
 	bool observeObjective(std::size_t index, edict_t *entity, bool planted, world::WorldVector *position,
 		bool *currentlyVisible = nullptr);
 	void onEmitSound(edict_t *entity, const char *sample, float volume, float attenuation);
+	void onPrecacheEvent(int type, const char *script, unsigned short index);
+	void onPlaybackEvent(
+		int flags, const edict_t *invoker, unsigned short index, float delay, int bparam1, int bparam2);
+	void resetGunshotEvents()
+	{
+		gunshotEvents_.reset();
+	}
 	void onMessageBegin(int messageDestination, int messageType, const float *origin, edict_t *entity);
 	void onMessageEnd();
 	void onWriteByte(int value);
@@ -282,6 +290,8 @@ private:
 	std::array<world::AudibleEvent, kMaximumSoundEvents> soundEvents_{};
 	std::array<int, kMaximumSoundEvents> soundTeams_{};
 	std::uint32_t soundSequence_ = 0U;
+	compat::GunshotEventCatalog gunshotEvents_{};
+	void recordSound(world::AudibleEvent event, const edict_t *source);
 	std::array<PublicSmoke, kMaximumPublicSmokeEntities> publicSmokeEntities_{};
 	std::size_t nextSmokeEntity_ = 0U;
 	UserMessageKind userMessageKind_{};
