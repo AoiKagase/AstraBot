@@ -272,6 +272,7 @@ private:
 	const char *publicMessageName_ = nullptr;
 	edict_t *publicMessageTarget_ = nullptr;
 	int publicMessageDestination_ = 0;
+	int publicMessageSerial_ = -1;
 	world::ActorKey publicMessageActor_{};
 	world::FrameIdentity publicMessageFrame_{};
 	static constexpr auto kPublicMessageIntegerFieldCount = 12U;

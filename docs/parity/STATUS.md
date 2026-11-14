@@ -1,3 +1,65 @@
+## 2026-11-15 remaining-enemy death reports
+
+Source base7c7de92; read-only behavioral oracle ReGameDLL-CS
+b0889847fe6d03898be88acc9e366660efb40ab5, cs_bot_event.cpp159–169 and
+cs_bot_chatter.cpp1884–1893/context statement playback and redundancy.
+
+- Valid public DeathMsg feeds alive managed recipients only. An enemy victim,
+  friendly player killer and at most one recent watched living enemy admit the
+  report without requiring victim sight. World/friendly-fire/unknown sources,
+  unrelated targeted recipients and reused recipient generations are rejected.
+  Source serial0 remains valid. No enemy target/position/Aim is manufactured.
+- Shared named float(2,4) is drawn before AddStatement-equivalent OFF/MINIMAL and
+  duplicate checks. This remaining-count context is non-important even if the
+  host eventual count phrase is Important. Earliest redundant pending report
+  remains; later valid deaths still draw. Cached three-second contact counts
+  validate observer/map/round/clock identity; event-time scans do not add a new
+  per-frame visibility scan.
+- Original event time owns strict now>created+5 expiry. At the selected speech
+  slot, current living opponents choose host NoEnemiesLeft/OneEnemyLeft/
+  TwoEnemiesLeft/ThreeEnemiesLeft; outside0..3 or no living friends consumes the
+  statement silently. Spectators/dormant/invalid/dead players are excluded.
+  Older generic topics retain the slot, including silent delays; count context
+  is not consumed while waiting behind them. Unselected generic topics remain.
+- Any teammate currently speaking a count phrase makes the same topic redundant,
+  even before our start. Actor/entity serial/map/round/death/removal/clock changes
+  and current OFF/MINIMAL cancel it. Public death cancels immediately, preventing
+  revival before the next Full Update from replaying it. Existing profile banks,
+  SendAudio/BotVoice, explicit host radio mappings and normal receipt transport
+  remain; unavailable voice without a mapping consumes rather than invents audio.
+- Policy and registered-hook runtime regressions cover exact RNG/time ordering,
+  strict lifetime, dynamic0..3, duplicates/teams, cached watch identity, targeted
+  receipt reuse, serial0, modes, current living counts, hidden death/no firing,
+  round/death cancellation and unavailable transport. Independent review found
+  one Important premature-context-consumption bug, reproduced RED and fixed
+  GREEN with an actual older generic scheduler topic and later dynamic count.
+  No Critical/Minor or deferred findings.
+
+Offline gates: complete MSVC14.51.36231 HostX86/x86 Debug build PASS; CTest
+**106/106 PASS** (8.57 seconds). Complete Debian Linux x86 Debug build PASS; CTest
+**104/105 PASS** (12.33 seconds), only the unchanged astrabot_combat_policy
+weapon/skill/recoil chest-policy baseline remains. Combat code/expectations and
+frozen characterization inputs are unchanged. Frozen runtime characterization
+passes on both OSes without regeneration; source manifest274 entries/267 C/C++,
+ownership/ports/architecture/whitespace and independent x86 PE/ELF7exports pass.
+All277 tested source inputs, verified artifacts and preserved user files/profile
+match after the suites.
+
+Verified local artifact SHA-256 (not deployed):
+- Windows DLL: 764a7e40045edffc92252eae02cd09847102a3816032f95ae58b30f1582ec851
+- Linux SO: c46754f561c75048840446063318087de8ed54b8b0eea441a0a7643ff92376b5
+
+Evidence: .agent-state/sessions/csbot-enemy-count-chatter-75575d0e-760e-4351-a7cc-354789b15e8e/
+(RESULT.json,source/artifact/user fingerprints,RED/GREEN/review logs,compiler identity,
+complete builds and sequential full CTests).
+
+Limits: this implements the remaining-count statement path, not the full native
+statement list/global arbitration or other death reactions. Existing bounded generic
+scheduler and public-message timing remain; those broader implementation gaps are
+tracked in [IMPLEMENTATION_BACKLOG.md](IMPLEMENTATION_BACKLOG.md). Live HLDS/ReHLDS,
+client audibility/FPS/multiplayer acceptance are NOT RUN. No push/deploy. The user
+goal remains active for the other implementation items; this entry does not close it.
+
 ## 2026-11-15 PM_Move footstep intake
 
 Source base dc3f3ca; read-only behavior oracle ReGameDLL-CS

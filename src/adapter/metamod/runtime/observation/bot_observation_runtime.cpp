@@ -78,6 +78,7 @@ void BotObservationRuntime::onMessageBegin(
 	publicMessageName_ = nullptr;
 	publicMessageTarget_ = entity;
 	publicMessageDestination_ = messageDestination;
+	publicMessageSerial_ = entity ? entity->serialnumber : -1;
 	publicMessageActor_ = {};
 	publicMessageValues_ = {};
 	publicMessageCoords_ = {};
@@ -775,6 +776,21 @@ void BotObservationRuntime::capturePublicMessage()
 		services_->behavior_resetEquipment(victim);
 		publicObservations_.resetSlot(static_cast<std::uint32_t>(v[1]));
 		services_->behavior_observePublicDeath(victim);
+		const bool broadcast = publicMessageTarget_ == nullptr &&
+			(publicMessageDestination_ == MSG_ALL || publicMessageDestination_ == MSG_BROADCAST);
+		bool targeted = publicMessageActor_.isValid() && publicMessageTarget_ != nullptr &&
+			publicMessageSerial_ >= 0 && publicMessageTarget_->serialnumber == publicMessageSerial_ &&
+			(publicMessageDestination_ == MSG_ONE || publicMessageDestination_ == MSG_ONE_UNRELIABLE);
+		if (targeted)
+		{
+			const auto recipientIndex = static_cast<std::size_t>(publicMessageActor_.slot - 1U);
+			targeted = recipientIndex < services_->service_managedBotSlots().size() &&
+				services_->service_managedBotSlots()[recipientIndex] &&
+				services_->service_managedBotHandles()[recipientIndex].entity == publicMessageTarget_ &&
+				services_->service_managedBotHandles()[recipientIndex].actor.actorGeneration == publicMessageActor_.generation;
+		}
+		if ((broadcast || targeted) && (v[2] == 0 || v[2] == 1))
+			services_->behavior_observePlayerDeath(v[1], v[0], publicMessageTarget_, publicMessageFrame_);
 		return;
 	}
 	if (std::strcmp(name, "TeamScore") == 0 && count == kTeamScoreFieldCount && integers(kTeamScoreStringMask))

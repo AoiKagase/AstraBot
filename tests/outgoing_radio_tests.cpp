@@ -88,13 +88,17 @@ int main()
 	in.visibleEnemyCount = 4;
 	in.nearbyFriends = 0;
 	out = vipWithHelp.update(in, catalog, 1U << static_cast<unsigned>(ChatterPhrase::Help));
-	check(out.status == OutgoingRadioStatus::Ready && out.menu == 1 && out.slot == 5 &&
-		out.phrase == ChatterPhrase::None, "direct VIP FollowMe cannot be substituted by queued Help voice");
+	check(
+		out.status == OutgoingRadioStatus::Ready && out.menu == 1 && out.slot == 5 && out.phrase == ChatterPhrase::None,
+		"direct VIP FollowMe cannot be substituted by queued Help voice");
 	OutgoingRadioScheduler voiceOnly;
-	auto voiceInput = in; voiceInput.frame.roundGeneration=31;
-	voiceInput.vipEscaping=false; voiceInput.visibleEnemyCount=0; voiceInput.bombLocationUnknown=true;
-	out=voiceOnly.update(voiceInput, empty, 1U<<static_cast<unsigned>(ChatterPhrase::WhereIsTheBomb));
-	check(out.status==OutgoingRadioStatus::Ready && out.menu==0 && out.phrase==ChatterPhrase::WhereIsTheBomb,
+	auto voiceInput = in;
+	voiceInput.frame.roundGeneration = 31;
+	voiceInput.vipEscaping = false;
+	voiceInput.visibleEnemyCount = 0;
+	voiceInput.bombLocationUnknown = true;
+	out = voiceOnly.update(voiceInput, empty, 1U << static_cast<unsigned>(ChatterPhrase::WhereIsTheBomb));
+	check(out.status == OutgoingRadioStatus::Ready && out.menu == 0 && out.phrase == ChatterPhrase::WhereIsTheBomb,
 		"a host voice without a standard-radio equivalent is still speakable");
 	OutgoingRadioScheduler backup;
 	in.vipEscaping = false;
@@ -142,6 +146,16 @@ int main()
 	RadioContactMemory watch;
 	auto counts = watch.update(identity.observer, identity.frame, 1, &belief, false, 1, 4);
 	check(counts.enemies == 4 && counts.friends == 1, "nearby counts come from all public visible contacts");
+	check(watch.counts(identity.observer, identity.frame, 1.1f, 1, 4).enemies == 4,
+		"event count reuses current visual watch without fresh traces");
+	check(watch.counts({1, 99}, identity.frame, 1.1f, 1, 4).enemies == 0,
+		"event count rejects former observer generation");
+	auto otherRound = identity.frame;
+	otherRound.roundGeneration++;
+	check(
+		watch.counts(identity.observer, otherRound, 1.1f, 1, 4).enemies == 0, "event count rejects former round watch");
+	check(watch.counts(identity.observer, identity.frame, .5f, 1, 4).enemies == 0,
+		"event count rejects clock rollback before watch update");
 	identity.frame.tick++;
 	counts = watch.update(identity.observer, identity.frame, 3.9f, nullptr, true, 1, 4);
 	check(counts.enemies == 4 && counts.friends == 1,

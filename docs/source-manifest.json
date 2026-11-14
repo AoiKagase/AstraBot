@@ -46,7 +46,9 @@
     "docs/superpowers/specs/2026-11-14-csbot-gunshot-hearing-time-design.md",
     "docs/superpowers/plans/2026-11-14-csbot-gunshot-hearing-time.md",
     "docs/superpowers/specs/2026-11-14-csbot-noise-navigation-design.md",
-    "docs/superpowers/plans/2026-11-14-csbot-noise-navigation.md"
+    "docs/superpowers/plans/2026-11-14-csbot-noise-navigation.md",
+    "docs/superpowers/specs/2026-11-15-csbot-enemy-count-chatter-design.md",
+    "docs/superpowers/plans/2026-11-15-csbot-enemy-count-chatter.md"
   ],
   "source_files": [
     {
@@ -1665,6 +1667,30 @@
     },
     {
       "path": "tests/pm_move_footstep_runtime_tests.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "include/astrabot/compat/enemy_count_chatter.hpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "src/adapter/metamod/runtime/behavior/bot_behavior_death.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "tests/enemy_count_chatter_tests.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "tests/enemy_count_chatter_runtime_tests.cpp",
       "origin": "AstraBot",
       "license_status": "pending_release_review",
       "reference_only": false

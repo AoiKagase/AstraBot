@@ -619,6 +619,11 @@ private:
 		behavior_.observeCloseFootstep(index, receipt);
 	}
 
+	void behavior_observePlayerDeath(int victimSlot, int killerSlot, edict_t *recipient, const world::FrameIdentity &frame) override
+	{
+		behavior_.observePlayerDeath(victimSlot, killerSlot, recipient, frame);
+	}
+
 	void behavior_observePublicDeath(std::size_t index) override
 	{
 		behavior_.observePublicDeath(index);

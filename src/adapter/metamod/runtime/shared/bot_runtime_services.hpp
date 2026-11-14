@@ -55,6 +55,7 @@ public:
 	virtual void behavior_observeRadioPreference(edict_t *recipient, bool ignored) = 0;
 	virtual void behavior_resetEquipment(std::size_t index) = 0;
 	virtual void behavior_observePublicDeath(std::size_t index) = 0;
+	virtual void behavior_observePlayerDeath(int victimSlot, int killerSlot, edict_t *recipient, const world::FrameIdentity &frame) = 0;
 	virtual void behavior_observeCloseFootstep(std::size_t index, const compat::FootstepEquipmentReceipt &receipt) = 0;
 	virtual const std::uint32_t &command_managedBotCommandSequences(std::size_t index) const = 0;
 	virtual void navigation_observePublicDeath(std::size_t victim) = 0;

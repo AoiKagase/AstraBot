@@ -25,8 +25,25 @@ enum class ChatterPhrase : unsigned
 	WhereIsTheBomb,
 	EscortingHostages,
 	HeardNoise,
+	NoEnemiesLeft,
+	OneEnemyLeft,
+	TwoEnemiesLeft,
+	ThreeEnemiesLeft,
 	Count
 };
+inline ChatterPhrase remainingEnemyPhrase(int count)
+{
+	constexpr int kMaximumReportedEnemies = 3;
+	return count >= 0 && count <= kMaximumReportedEnemies
+		? static_cast<ChatterPhrase>(static_cast<unsigned>(ChatterPhrase::NoEnemiesLeft) + static_cast<unsigned>(count))
+		: ChatterPhrase::None;
+}
+
+inline bool isRemainingEnemyPhrase(ChatterPhrase phrase)
+{
+	return phrase >= ChatterPhrase::NoEnemiesLeft && phrase <= ChatterPhrase::ThreeEnemiesLeft;
+}
+
 struct RadioMenuChoice
 {
 	int menu = 0, slot = 0;
@@ -106,7 +123,8 @@ public:
 	static const char *name(ChatterPhrase p)
 	{
 		const char *names[] = {"None", "EnemySpotted", "Help", "RequestReport", "Affirmative", "OnMyWay",
-			"PlantingBomb", "WhereIsTheBomb", "EscortingHostages", "HeardNoise"};
+			"PlantingBomb", "WhereIsTheBomb", "EscortingHostages", "HeardNoise", "NoEnemiesLeft", "OneEnemyLeft",
+			"TwoEnemiesLeft", "ThreeEnemiesLeft"};
 		const auto i = static_cast<unsigned>(p);
 		return i < static_cast<unsigned>(ChatterPhrase::Count) ? names[i] : "Unknown";
 	}
@@ -231,7 +249,6 @@ public:
 	RadioContactCounts update(const world::ActorKey &observer, const world::FrameIdentity &frame, float now,
 		const world::WorldSnapshot *belief, bool blind, int remainingFriends, int remainingEnemies)
 	{
-		constexpr float kContactWatchSeconds = 3.0f;
 		if (!(observer == observer_) || frame.mapGeneration != frame_.mapGeneration ||
 			frame.roundGeneration != frame_.roundGeneration || now < previousTime_)
 		{
@@ -257,6 +274,21 @@ public:
 				watches_[contact->actor.slot - 1] = {contact->actor, now, contact->relation};
 			}
 		}
+		return counts(now, remainingFriends, remainingEnemies);
+	}
+
+	RadioContactCounts counts(const world::ActorKey &observer, const world::FrameIdentity &frame, float now,
+		int remainingFriends, int remainingEnemies) const
+	{
+		if (!(observer == observer_) || frame.mapGeneration != frame_.mapGeneration ||
+			frame.roundGeneration != frame_.roundGeneration || !std::isfinite(now) || now < previousTime_)
+			return {};
+		return counts(now, remainingFriends, remainingEnemies);
+	}
+
+	RadioContactCounts counts(float now, int remainingFriends, int remainingEnemies) const
+	{
+		constexpr float kContactWatchSeconds = 3.0f;
 		RadioContactCounts counts{};
 		for (const auto &watch : watches_)
 		{
@@ -315,8 +347,8 @@ class OutgoingRadioScheduler
 {
 
 public:
-	OutgoingRadioDecision update(const OutgoingRadioInput &in, const ChatterRadioCatalog &catalog,
-		std::uint32_t voicePhrases = 0U)
+	OutgoingRadioDecision update(
+		const OutgoingRadioInput &in, const ChatterRadioCatalog &catalog, std::uint32_t voicePhrases = 0U)
 	{
 		constexpr int kTerroristTeam = 1;
 		constexpr int kCounterTerroristTeam = 2;
@@ -362,8 +394,7 @@ public:
 		}
 		if (pending_ == ChatterPhrase::HeardNoise &&
 			(in.roundOver || in.navRevision != pendingNoiseRevision_ || !in.noiseReport.active ||
-				!(in.noiseReport.actor == in.actor) ||
-				in.noiseReport.frame.mapGeneration != in.frame.mapGeneration ||
+				!(in.noiseReport.actor == in.actor) || in.noiseReport.frame.mapGeneration != in.frame.mapGeneration ||
 				in.noiseReport.frame.roundGeneration != in.frame.roundGeneration ||
 				in.noiseReport.created != lastNoiseReport_ || in.noiseReport.frame.tick != lastNoiseReportTick_))
 		{
@@ -391,6 +422,7 @@ public:
 		if (in.vipEscaping && in.friendCount > 0 && (lastVip_ < 0 || in.now - lastVip_ > kVipReportCooldownSeconds))
 		{
 			directFollow_ = true;
+			directFollowStart_ = in.now;
 			lastVip_ = in.now;
 			expires_ = in.now + kVipFollowLifetimeSeconds;
 		}
@@ -494,6 +526,16 @@ public:
 			directFollow_ ? std::uint16_t{0} : pendingPlace_};
 	}
 
+	bool hasPending() const
+	{
+		return pending_ != ChatterPhrase::None || directFollow_;
+	}
+
+	float scheduledStart() const
+	{
+		return directFollow_ ? directFollowStart_ : pendingStart_;
+	}
+
 	void confirmSent(const OutgoingRadioInput &in, const OutgoingRadioDecision &out)
 	{
 		if (out.status != OutgoingRadioStatus::Ready)
@@ -531,6 +573,7 @@ private:
 		if (pending_ != ChatterPhrase::None)
 			return;
 		pending_ = p;
+		pendingStart_ = now;
 		pendingPlace_ = 0;
 		expires_ = now + lifetime;
 	}
@@ -542,6 +585,8 @@ private:
 	bool reportedEnemies_ = false, wasPlanting_ = false, askedBomb_ = false, directFollow_ = false;
 	std::uint32_t orderSequence_ = 0;
 	ChatterPhrase pending_ = ChatterPhrase::None, ack_ = ChatterPhrase::None;
+	float pendingStart_ = 0;
+	float directFollowStart_ = 0;
 	float lastNoiseReport_ = -1;
 	std::uint32_t lastNoiseReportTick_ = 0;
 	std::uint16_t pendingPlace_ = 0;

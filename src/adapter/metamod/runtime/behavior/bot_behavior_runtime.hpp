@@ -1,6 +1,7 @@
 #ifndef ASTRABOT_ADAPTER_BOT_BEHAVIOR_RUNTIME_HPP
 #define ASTRABOT_ADAPTER_BOT_BEHAVIOR_RUNTIME_HPP
 #include "runtime/shared/bot_runtime_services.hpp"
+#include "astrabot/compat/enemy_count_chatter.hpp"
 #include "astrabot/compat/noise_investigation.hpp"
 #include "astrabot/compat/guard_look.hpp"
 #include "astrabot/compat/weapon_equipment.hpp"
@@ -46,6 +47,7 @@ public:
 	void resetObstacleMaterials();
 	void resetRoundRecognition();
 	void observePublicDeath(std::size_t index);
+	void observePlayerDeath(int victimSlot, int killerSlot, edict_t *recipient, const world::FrameIdentity &frame);
 	void bindServices(BotBehaviorServices &services)
 	{
 		services_ = &services;
@@ -421,6 +423,7 @@ private:
 		compat::FootstepEquipmentReceipt closeFootstep{};
 		VoiceFeedback outgoingVoiceFeedback{};
 		compat::OutgoingRadioScheduler outgoingRadioSchedulers{};
+		compat::EnemyCountChatterPolicy enemyCountChatter{};
 		compat::RadioContactMemory outgoingRadioContactMemory{};
 		std::uint32_t outgoingRadioReceipts{};
 		std::uint32_t outgoingRadioAttemptGenerations{};

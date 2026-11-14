@@ -93,7 +93,9 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index)
 	{
 		edict_t *player = services_->service_engineFunctions()->pfnPEntityOfEntIndex(slot);
 		if (player == nullptr || player == handle.entity || player->free || (player->v.flags & FL_CLIENT) == 0 ||
-			player->v.deadflag != DEAD_NO || player->v.health <= 0)
+			player->serialnumber < 0 ||
+			(player->v.flags & (FL_SPECTATOR | FL_DORMANT)) != 0 ||
+			player->v.deadflag != DEAD_NO || !(player->v.health > 0))
 			continue;
 		if (services_->observation_resolvePlayerTeam(player) == input.team)
 		{
@@ -148,7 +150,50 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index)
 		for (unsigned phrase = 1U; phrase < static_cast<unsigned>(compat::ChatterPhrase::Count); ++phrase)
 			if (voice->has(static_cast<compat::ChatterPhrase>(phrase)))
 				voicePhrases |= 1U << phrase;
+	compat::EnemyCountSpeechInput countInput{};
+	countInput.actor = input.actor;
+	countInput.frame = input.frame;
+	countInput.entityGeneration = handle.entity->serialnumber >= 0
+		? static_cast<std::uint32_t>(handle.entity->serialnumber) + 1U : 0;
+	countInput.now = input.now;
+	countInput.alive = input.alive;
+	countInput.roundOver = input.roundOver;
+	countInput.friendsRemaining = input.friendCount;
+	countInput.enemiesRemaining = input.enemiesRemaining;
+	countInput.teamBusyUntil = input.teamBusyUntil;
+	countInput.teamReportingRemaining = compat::isRemainingEnemyPhrase(input.teamCurrentPhrase);
+	// REMAINING_ENEMY_COUNT is a context statement, not an Important phrase.
+	countInput.enabled = !verbosity || (std::strcmp(verbosity, "off") != 0 && std::strcmp(verbosity, "minimal") != 0);
 	auto output = actors_[index].outgoingRadioSchedulers.update(input, outgoingChatterCatalog_, voicePhrases);
+	// Maintain lifetime on every update, but evaluate dynamic context only for
+	// the statement that owns this speech slot (including silent pending delays).
+	countInput.canStart = output.status != compat::OutgoingRadioStatus::MissingPhrase &&
+		(!actors_[index].outgoingRadioSchedulers.hasPending() ||
+		 actors_[index].enemyCountChatter.scheduledStart() < actors_[index].outgoingRadioSchedulers.scheduledStart());
+	const auto countOutput = actors_[index].enemyCountChatter.update(countInput);
+	const bool countChosen = countOutput.ready;
+	if (countChosen)
+	{
+		const auto phrase = compat::remainingEnemyPhrase(countOutput.enemiesRemaining);
+		const auto choice = outgoingChatterCatalog_.lookup(phrase);
+		const bool available = choice.menu != 0 || (voicePhrases & (1U << static_cast<unsigned>(phrase))) != 0;
+		output = {available ? compat::OutgoingRadioStatus::Ready : compat::OutgoingRadioStatus::MissingPhrase,
+			phrase, choice.menu, choice.slot, 0};
+	}
+	const auto discardOutput = [&]()
+	{
+		if (countChosen)
+			actors_[index].enemyCountChatter.discard();
+		else
+			actors_[index].outgoingRadioSchedulers.discardPending();
+	};
+	const auto confirmOutput = [&]()
+	{
+		if (countChosen)
+			actors_[index].enemyCountChatter.discard();
+		else
+			actors_[index].outgoingRadioSchedulers.confirmSent(input, output);
+	};
 	const bool suppressNoise = verbosity && (std::strcmp(verbosity, "off") == 0 ||
 		(std::strcmp(verbosity, "minimal") == 0 &&
 			!outgoingChatterCatalog_.important(compat::ChatterPhrase::HeardNoise)));
@@ -158,21 +203,22 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index)
 	}
 	if (verbosity != nullptr && std::strcmp(verbosity, "off") == 0 && output.phrase != compat::ChatterPhrase::None)
 	{
-		actors_[index].outgoingRadioSchedulers.discardPending();
+		discardOutput();
 		return;
 	}
 	if (verbosity != nullptr && std::strcmp(verbosity, "minimal") == 0 &&
 		output.phrase != compat::ChatterPhrase::None && !outgoingChatterCatalog_.important(output.phrase))
 	{
-		actors_[index].outgoingRadioSchedulers.discardPending();
+		discardOutput();
 		return;
 	}
 	if (output.status == compat::OutgoingRadioStatus::Ready && voice && output.phrase != compat::ChatterPhrase::None)
 	{
 		float duration = 0.0f;
-		if (sendChatterVoice(index, output.phrase, input.visibleEnemyCount, *voice, &duration, output.place))
+		if (sendChatterVoice(index, output.phrase, countChosen ? countOutput.enemiesRemaining : input.visibleEnemyCount,
+			*voice, &duration, output.place))
 		{
-			actors_[index].outgoingRadioSchedulers.confirmSent(input, output);
+			confirmOutput();
 			actors_[index].outgoingRadioAttempts = 0U;
 			actors_[index].outgoingRadioAttemptChoices = {};
 			outgoingTeamLastSpeech_[input.team] = input.now;
@@ -185,10 +231,12 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index)
 	if (output.status == compat::OutgoingRadioStatus::Ready && output.menu == 0)
 	{
 		output.status = compat::OutgoingRadioStatus::MissingPhrase;
-		actors_[index].outgoingRadioSchedulers.discardPending();
+		discardOutput();
 	}
 	if (output.status == compat::OutgoingRadioStatus::MissingPhrase)
 	{
+		if (countChosen)
+			actors_[index].enemyCountChatter.discard();
 		const auto phrase = static_cast<unsigned>(output.phrase);
 		if (phrase < outgoingMissingPhraseLogged_.size() && !outgoingMissingPhraseLogged_[phrase])
 		{
@@ -218,7 +266,7 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index)
 	}
 	if (actors_[index].outgoingRadioAttempts >= kMaximumRadioAttempts)
 	{
-		actors_[index].outgoingRadioSchedulers.discardPending();
+		discardOutput();
 		actors_[index].outgoingRadioAttemptChoices = {};
 		if (gpMetaUtilFuncs != nullptr && gpMetaUtilFuncs->pfnLogConsole != nullptr &&
 			services_->service_pluginId() != nullptr)
@@ -243,7 +291,7 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index)
 	// quota/cooldown accepted it. Only public SendAudio confirms a sent phrase.
 	if (menuSelected && actors_[index].outgoingRadioReceipts != receiptBefore)
 	{
-		actors_[index].outgoingRadioSchedulers.confirmSent(input, output);
+		confirmOutput();
 		actors_[index].outgoingRadioAttempts = 0U;
 		actors_[index].outgoingRadioAttemptChoices = {};
 		outgoingTeamLastSpeech_[input.team] = services_->service_globals()->time;
