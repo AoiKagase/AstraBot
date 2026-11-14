@@ -143,10 +143,25 @@ void BotBehaviorRuntime::stopVoiceFeedback(std::size_t index)
 {
 	if (index >= actors_.size() || !(outgoingVoiceMask_ & (1U << index)))
 		return;
+	const auto stopContext = reactionContext(index);
+	const auto stopRevision = actors_[index].confirmedSpeech.revision();
+	const auto stopConnection =
+		services_ ? services_->service_lifecycle().slotGeneration(static_cast<std::uint32_t>(index + 1)) : 0;
 	outgoingVoiceMask_ &= ~(1U << index);
 	actors_[index].outgoingVoiceFeedback = {};
 	const auto engine = services_ ? services_->service_engineFunctions() : nullptr;
 	const int message = services_ ? voiceMessageId(services_->service_pluginId(), "BotVoice") : 0;
+	const auto currentContext = reactionContext(index);
+	if ((outgoingVoiceMask_ & (1U << index)) || stopRevision != actors_[index].confirmedSpeech.revision() ||
+		!(stopContext.actor == currentContext.actor) ||
+		stopContext.entityGeneration != currentContext.entityGeneration ||
+		!(stopContext.frame == currentContext.frame) || stopContext.alive != currentContext.alive ||
+		std::memcmp(&stopContext.now, &currentContext.now, sizeof(stopContext.now)) != 0 ||
+		(services_ &&
+			stopConnection != services_->service_lifecycle().slotGeneration(static_cast<std::uint32_t>(index + 1))))
+	{
+		return;
+	}
 	if (message > 0 && engine && engine->pfnMessageBegin && engine->pfnWriteByte && engine->pfnMessageEnd)
 	{
 		engine->pfnMessageBegin(MSG_ALL, message, nullptr, nullptr);
@@ -172,16 +187,95 @@ void BotBehaviorRuntime::updateVoiceFeedback(bool force)
 			stopVoiceFeedback(i);
 	}
 }
+void BotBehaviorRuntime::finishDeathChatter(
+	std::size_t index, const compat::ConfirmedChatterSpeech &previous, const world::FrameIdentity &deathFrame)
+{
+	const auto receipt = reactionContext(index);
+	if (!previous.wasTalking(receipt) || (deathFrame.isValid() && !(deathFrame == receipt.frame)))
+	{
+		stopVoiceFeedback(index);
+		return;
+	}
+	const auto revision = actors_[index].confirmedSpeech.revision();
+	const world::ActorKey connection{
+		receipt.actor.slot, services_->service_lifecycle().slotGeneration(receipt.actor.slot)};
+	const auto current = [&]()
+	{
+		return actors_[index].confirmedSpeech.revision() == revision &&
+			compat::sameChatterUpdateReceipt(receipt, reactionContext(index)) && receiptConnectionCurrent(connection);
+	};
+	const auto engine = services_->service_engineFunctions();
+	const auto *self = services_->service_managedBotHandles()[index].entity;
+	const int team = services_->observation_resolvePlayerTeam(self);
+	if (!current())
+	{
+		return;
+	}
+	constexpr int kTerroristTeam = 1;
+	constexpr int kCounterTerroristTeam = 2;
+	if (team == kTerroristTeam || team == kCounterTerroristTeam)
+	{
+		if (previous.ownsSpeech(receipt, outgoingTeamCurrentPhrase_[team], outgoingTeamBusyUntil_[team]))
+		{
+			outgoingTeamBusyUntil_[team] = 0;
+			outgoingTeamCurrentPhrase_[team] = compat::ChatterPhrase::None;
+			outgoingTeamCurrentPlace_[team] = 0;
+		}
+		const bool emitPain = deathFrame.isValid();
+		const char *verbosity = emitPain && engine && engine->pfnCVarGetString ? engine->pfnCVarGetString("bot_chatter") : nullptr;
+		if (!current())
+		{
+			return;
+		}
+		if (emitPain && compat::deathInterruptVoiceEnabled(verbosity))
+		{
+			ensureOutgoingChatterCatalog();
+			if (!current())
+			{
+				return;
+			}
+			if (outgoingChatterCatalog_.defined(compat::ChatterPhrase::Pain))
+			{
+				auto *bank = chatterBank(index);
+				if (!current())
+				{
+					return;
+				}
+				if (bank)
+				{
+					float unusedDuration = 0;
+					(void)sendChatterVoice(index, compat::ChatterPhrase::Pain, -1, *bank, &unusedDuration, 0,
+						ChatterVoicePurpose::DeathInterrupt);
+					if (!current())
+					{
+						return;
+					}
+				}
+				// OnDeath resets silence for a defined pain phrase even without a speakable.
+				outgoingTeamLastSpeech_[team] = receipt.now;
+			}
+		}
+	}
+	stopVoiceFeedback(index);
+}
+
 bool BotBehaviorRuntime::sendChatterVoice(std::size_t index, compat::ChatterPhrase phrase, int count,
-	compat::ChatterVoiceCatalog &bank, float *duration, std::uint16_t reportPlace)
+	compat::ChatterVoiceCatalog &bank, float *duration, std::uint16_t reportPlace, ChatterVoicePurpose purpose)
 {
 	if (!services_ || index >= actors_.size() || !duration)
 		return false;
+	const bool deathInterrupt = purpose == ChatterVoicePurpose::DeathInterrupt;
 	const auto receiptContext = reactionContext(index);
+	const world::ActorKey connection{
+		receiptContext.actor.slot, services_->service_lifecycle().slotGeneration(receiptContext.actor.slot)};
 	const auto speechRevision = actors_[index].confirmedSpeech.revision();
 	const auto current = [&]()
 	{
-		return actors_[index].confirmedSpeech.canComplete(receiptContext, reactionContext(index), speechRevision);
+		return deathInterrupt
+			? actors_[index].confirmedSpeech.revision() == speechRevision &&
+				compat::sameChatterUpdateReceipt(receiptContext, reactionContext(index)) &&
+				receiptConnectionCurrent(connection)
+			: actors_[index].confirmedSpeech.canComplete(receiptContext, reactionContext(index), speechRevision);
 	};
 	if (!current())
 		return false;
@@ -192,13 +286,14 @@ bool BotBehaviorRuntime::sendChatterVoice(std::size_t index, compat::ChatterPhra
 	const int message = voiceMessageId(services_->service_pluginId(), "SendAudio");
 	if (!current())
 		return false;
-	if (message <= 0 || !engine || !globals || !self || self->free || self->v.deadflag != DEAD_NO ||
-		self->v.health <= 0 || !engine->pfnMessageBegin || !engine->pfnWriteByte || !engine->pfnWriteString ||
-		!engine->pfnWriteShort || !engine->pfnMessageEnd || !engine->pfnPEntityOfEntIndex)
+	if (message <= 0 || !engine || !globals || !self || self->free ||
+		(!deathInterrupt && (self->v.deadflag != DEAD_NO || self->v.health <= 0)) || !engine->pfnMessageBegin ||
+		!engine->pfnWriteByte || !engine->pfnWriteString || !engine->pfnWriteShort || !engine->pfnMessageEnd ||
+		!engine->pfnPEntityOfEntIndex)
 		return false;
 	std::string place;
 	const auto navigation = services_->service_navPublisher().snapshot();
-	if (!compat::usesUndefinedChatterPlace(phrase) && navigation.isValid() &&
+	if (!deathInterrupt && !compat::usesUndefinedChatterPlace(phrase) && navigation.isValid() &&
 		navigation.mapGeneration() == services_->service_lifecycle().mapGeneration())
 	{
 		nav::NavAreaMatch match{};
@@ -225,12 +320,12 @@ bool BotBehaviorRuntime::sendChatterVoice(std::size_t index, compat::ChatterPhra
 					}
 		}
 	}
-	auto *speakable = bank.select(phrase, count, place.c_str());
+	auto *speakable = bank.select(phrase, count, deathInterrupt ? "ANY" : place.c_str());
 	if (!speakable)
 		return false;
 	const std::string sample = speakable->sample;
 	const int pitch = actors_[index].managedProfiles.voicePitch;
-	if (speakable->duration < 0.0f)
+	if (!deathInterrupt && speakable->duration < 0.0f)
 	{
 		std::string filepath = "sound/" + sample;
 		const auto milliseconds =
@@ -239,17 +334,24 @@ bool BotBehaviorRuntime::sendChatterVoice(std::size_t index, compat::ChatterPhra
 			return false;
 		speakable->duration = milliseconds ? static_cast<float>(milliseconds) / 1000.0f : 1.0f;
 	}
-	const float clipDuration = speakable->duration;
-	if (clipDuration <= 0.0f)
+	const float clipDuration = deathInterrupt ? 0.0f : speakable->duration;
+	if (!deathInterrupt && clipDuration <= 0.0f)
 		return false;
 	const int team = services_->observation_resolvePlayerTeam(self);
 	if (!current())
 		return false;
 	if (team != 1 && team != 2)
 		return false;
-	const int feedbackMessage = voiceMessageId(services_->service_pluginId(), "BotVoice");
+	const int feedbackMessage = deathInterrupt ? 0 : voiceMessageId(services_->service_pluginId(), "BotVoice");
 	if (!current())
 		return false;
+	// Native marks the statement speaking before Radio, including reentrant death.
+	constexpr float kStatementGapSeconds = .1f;
+	if (!deathInterrupt && !actors_[index].confirmedSpeech.beginSpeaking(receiptContext, phrase,
+			receiptContext.now + clipDuration + kStatementGapSeconds, speechRevision))
+	{
+		return false;
+	}
 	unsigned eligible = 0;
 	for (int slot = 1; slot <= (std::min)(32, globals->maxClients); ++slot)
 	{
@@ -296,6 +398,9 @@ bool BotBehaviorRuntime::sendChatterVoice(std::size_t index, compat::ChatterPhra
 		}
 		if (feedbackMessage > 0)
 		{
+			// Publish ownership before the first externally observable feedback start.
+			outgoingVoiceMask_ |= 1U << index;
+			actors_[index].outgoingVoiceFeedback = {self->serialnumber, receiptContext.now + clipDuration + 1.0f};
 			engine->pfnMessageBegin(MSG_ONE, feedbackMessage, nullptr, recipient);
 			engine->pfnWriteByte(1);
 			engine->pfnWriteByte(static_cast<int>(receiptContext.actor.slot));
@@ -308,11 +413,6 @@ bool BotBehaviorRuntime::sendChatterVoice(std::size_t index, compat::ChatterPhra
 	// BotVoice feedback must still receive its own tracked stop.
 	if (!eligible)
 		return false;
-	if (feedbackMessage > 0)
-	{
-		outgoingVoiceMask_ |= 1U << index;
-		actors_[index].outgoingVoiceFeedback = {self->serialnumber, globals->time + clipDuration + 1.0f};
-	}
 	*duration = clipDuration;
 	return true;
 }

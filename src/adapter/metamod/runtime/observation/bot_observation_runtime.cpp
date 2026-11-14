@@ -781,11 +781,12 @@ void BotObservationRuntime::capturePublicMessage()
 	if (std::strcmp(name, "DeathMsg") == 0 && count == kDeathMessageFieldCount && integers(kDeathMessageStringMask) &&
 		v[1] > 0 && v[1] <= kMaximumClientSlot)
 	{
-		const std::size_t victim = static_cast<std::size_t>(v[1] - 1);
-		services_->navigation_observePublicDeath(victim);
-		services_->behavior_resetEquipment(victim);
-		publicObservations_.resetSlot(static_cast<std::uint32_t>(v[1]));
-		services_->behavior_observePublicDeath(victim);
+		const int victimSlot = v[1];
+		const int killerSlot = v[0];
+		const bool validHeadshot = v[2] == 0 || v[2] == 1;
+		const auto deathFrame = publicMessageFrame_;
+		auto *const deathRecipient = publicMessageTarget_;
+		const std::size_t victim = static_cast<std::size_t>(victimSlot - 1);
 		const bool broadcast = publicMessageTarget_ == nullptr &&
 			(publicMessageDestination_ == MSG_ALL || publicMessageDestination_ == MSG_BROADCAST);
 		bool targeted = publicMessageActor_.isValid() && publicMessageTarget_ != nullptr &&
@@ -799,8 +800,64 @@ void BotObservationRuntime::capturePublicMessage()
 				services_->service_managedBotHandles()[recipientIndex].entity == publicMessageTarget_ &&
 				services_->service_managedBotHandles()[recipientIndex].actor.actorGeneration == publicMessageActor_.generation;
 		}
-		if ((broadcast || targeted) && (v[2] == 0 || v[2] == 1))
-			services_->behavior_observePlayerDeath(v[1], v[0], publicMessageTarget_, publicMessageFrame_);
+		const bool ownDeathReceipt = validHeadshot && killerSlot >= 0 && killerSlot <= kMaximumClientSlot &&
+			(broadcast || (targeted && publicMessageActor_.slot == static_cast<std::uint32_t>(victimSlot)));
+		const auto originalHandle = services_->service_managedBotHandles()[victim];
+		const bool originalManaged = services_->service_managedBotSlots()[victim];
+		const int originalSerial = originalHandle.entity ? originalHandle.entity->serialnumber : -1;
+		const auto originalConnection =
+			services_->service_lifecycle().slotGeneration(static_cast<std::uint32_t>(victimSlot));
+		const auto originalRevision = services_->behavior_chatterRevision(victim);
+		const auto deathGlobals = services_->service_globals();
+		if (!deathGlobals)
+		{
+			return;
+		}
+		const float deathTime = deathGlobals->time;
+		auto resetRevision = originalRevision + 1;
+		if (resetRevision == 0)
+		{
+			++resetRevision;
+		}
+		const auto current = [&](bool reset = false)
+		{
+			const auto &handle = services_->service_managedBotHandles()[victim];
+			return services_->service_globals() == deathGlobals &&
+				services_->service_managedBotSlots()[victim] == originalManaged &&
+				handle.entity == originalHandle.entity && handle.actor.slot == originalHandle.actor.slot &&
+				handle.actor.actorGeneration == originalHandle.actor.actorGeneration &&
+				(!originalHandle.entity ||
+					(!originalHandle.entity->free && originalHandle.entity->serialnumber == originalSerial)) &&
+				services_->service_lifecycle().slotGeneration(static_cast<std::uint32_t>(victimSlot)) ==
+				originalConnection &&
+				services_->behavior_chatterRevision(victim) == (reset ? resetRevision : originalRevision) &&
+				services_->service_lifecycle().mapGeneration() == deathFrame.mapGeneration &&
+				services_->service_lifecycle().roundGeneration() == deathFrame.roundGeneration &&
+				services_->service_adapterFrameCount() == deathFrame.tick &&
+				services_->service_globals()->time == deathTime;
+		};
+		if (!current())
+		{
+			return;
+		}
+		services_->navigation_observePublicDeath(victim);
+		if (!current())
+		{
+			return;
+		}
+		services_->behavior_resetEquipment(victim);
+		if (!current())
+		{
+			return;
+		}
+		publicObservations_.resetSlot(static_cast<std::uint32_t>(victimSlot));
+		services_->behavior_observePublicDeath(victim, ownDeathReceipt ? deathFrame : world::FrameIdentity{});
+		if (!current(true))
+		{
+			return;
+		}
+		if ((broadcast || targeted) && validHeadshot)
+			services_->behavior_observePlayerDeath(victimSlot, killerSlot, deathRecipient, deathFrame);
 		return;
 	}
 	if (std::strcmp(name, "TeamScore") == 0 && count == kTeamScoreFieldCount && integers(kTeamScoreStringMask))

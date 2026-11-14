@@ -61,7 +61,11 @@ public:
 	void applyObstacleCommand(std::size_t index, runtime::BotCommand &command);
 	void resetObstacleMaterials();
 	void resetRoundRecognition();
-	void observePublicDeath(std::size_t index);
+	void observePublicDeath(std::size_t index, const world::FrameIdentity &deathFrame = {});
+	std::uint64_t chatterRevision(std::size_t index) const
+	{
+		return actors_[index].confirmedSpeech.revision();
+	}
 	void observeEnemyWeaponFire(const edict_t *source, const world::FrameIdentity &frame, float now);
 	bool forcedRunning(std::size_t index);
 	world::EntityKey currentEnemySource(std::size_t index) const;
@@ -422,8 +426,15 @@ private:
 	compat::ReactionDisposition reactionDisposition(std::size_t index) const;
 	bool reactionHurrying(std::size_t index) const;
 	void stopVoiceFeedback(std::size_t index);
+	enum class ChatterVoicePurpose
+	{
+		Statement,
+		DeathInterrupt
+	};
+	void finishDeathChatter(std::size_t index, const compat::ConfirmedChatterSpeech &previous,
+		const world::FrameIdentity &deathFrame);
 	bool sendChatterVoice(
-		std::size_t index, compat::ChatterPhrase phrase, int count, compat::ChatterVoiceCatalog &bank, float *duration, std::uint16_t reportPlace);
+		std::size_t index, compat::ChatterPhrase phrase, int count, compat::ChatterVoiceCatalog &bank, float *duration, std::uint16_t reportPlace, ChatterVoicePurpose purpose = ChatterVoicePurpose::Statement);
 	struct NoiseBendCache
 	{
 		bool valid = false;

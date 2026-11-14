@@ -217,8 +217,9 @@ void BotBehaviorRuntime::resetRoundRecognition()
 	}
 }
 
-void BotBehaviorRuntime::observePublicDeath(std::size_t index)
+void BotBehaviorRuntime::observePublicDeath(std::size_t index, const world::FrameIdentity &deathFrame)
 {
+	const auto previousSpeech = actors_[index].confirmedSpeech;
 	for (std::size_t observer = 0; observer < actors_.size(); ++observer)
 	{
 		auto &actor = actors_[observer];
@@ -231,8 +232,11 @@ void BotBehaviorRuntime::observePublicDeath(std::size_t index)
 			actor.enemyWeaponSource = {};
 		}
 	}
-	stopVoiceFeedback(index);
 	actors_[index].outgoingRadioSchedulers.discardNoiseReport(actors_[index].noiseReport);
+	actors_[index].outgoingRadioSchedulers.cancelOnDeath(services_->observation_scenarioRadio(index).sequence);
+	actors_[index].outgoingRadioAttempts = 0;
+	actors_[index].outgoingRadioAttemptTimes = -1;
+	actors_[index].outgoingRadioAttemptChoices = {};
 	actors_[index].noiseInvestigation.reset();
 	actors_[index].noiseReportPolicy = {};
 	actors_[index].enemyCountChatter.reset();
@@ -249,6 +253,7 @@ void BotBehaviorRuntime::observePublicDeath(std::size_t index)
 	actors_[index].noiseBend = {};
 	actors_[index].noiseLookUpdate = 0U;
 	actors_[index].reactionQueues.reset();
+	finishDeathChatter(index, previousSpeech, deathFrame);
 }
 } // namespace metamod
 } // namespace astrabot

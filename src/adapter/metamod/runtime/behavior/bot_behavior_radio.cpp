@@ -381,6 +381,12 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index)
 	char slot[] = {static_cast<char>('0' + output.slot), '\0'};
 	if (!actors_[index].confirmedSpeech.canComplete(receiptContext, reactionContext(index), speechRevision))
 		return;
+	if (output.phrase != compat::ChatterPhrase::None &&
+		!actors_[index].confirmedSpeech.beginSpeaking(deathInput.context, output.phrase,
+			input.now + ASTRABOT_BOT_BEHAVIOR_RADIO_TEAM_SPEECH_BUSY_SECONDS, speechRevision))
+	{
+		return;
+	}
 	const bool opened = services_->command_dispatchClientCommand(handle.entity, menu, nullptr);
 	if (!actors_[index].confirmedSpeech.canComplete(receiptContext, reactionContext(index), speechRevision))
 		return;
@@ -395,7 +401,8 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index)
 		return;
 	if (menuSelected && actors_[index].outgoingRadioReceipts != receiptBefore)
 	{
-		if (!actors_[index].confirmedSpeech.record(deathInput.context, output.phrase,
+		if (output.phrase != compat::ChatterPhrase::None &&
+			!actors_[index].confirmedSpeech.record(deathInput.context, output.phrase,
 				services_->service_globals()->time + ASTRABOT_BOT_BEHAVIOR_RADIO_TEAM_SPEECH_BUSY_SECONDS,
 				speechRevision))
 			return;
@@ -403,10 +410,13 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index)
 		actors_[index].outgoingRadioAttempts = 0U;
 		actors_[index].outgoingRadioAttemptChoices = {};
 		outgoingTeamLastSpeech_[input.team] = services_->service_globals()->time;
-		outgoingTeamBusyUntil_[input.team] =
-			services_->service_globals()->time + ASTRABOT_BOT_BEHAVIOR_RADIO_TEAM_SPEECH_BUSY_SECONDS;
-		outgoingTeamCurrentPhrase_[input.team] = output.phrase;
-		outgoingTeamCurrentPlace_[input.team] = output.place;
+		if (output.phrase != compat::ChatterPhrase::None)
+		{
+			outgoingTeamBusyUntil_[input.team] =
+				services_->service_globals()->time + ASTRABOT_BOT_BEHAVIOR_RADIO_TEAM_SPEECH_BUSY_SECONDS;
+			outgoingTeamCurrentPhrase_[input.team] = output.phrase;
+			outgoingTeamCurrentPlace_[input.team] = output.place;
+		}
 	}
 }
 

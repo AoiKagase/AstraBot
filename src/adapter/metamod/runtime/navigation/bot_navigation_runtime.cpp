@@ -1196,6 +1196,28 @@ void BotNavigationRuntime::observePublicDeath(std::size_t victim)
 	if (services_->service_managedBotSlots()[victim] && !actors_[victim].deathDangerRecorded &&
 		services_->service_globals() != nullptr && services_->service_managedBotHandles()[victim].entity != nullptr)
 	{
+		const auto originalHandle = services_->service_managedBotHandles()[victim];
+		const int serial = originalHandle.entity->serialnumber;
+		const auto map = services_->service_lifecycle().mapGeneration();
+		const auto round = services_->service_lifecycle().roundGeneration();
+		const auto frame = services_->service_adapterFrameCount();
+		const auto deathGlobals = services_->service_globals();
+		const float time = deathGlobals->time;
+		const auto connection = services_->service_lifecycle().slotGeneration(static_cast<std::uint32_t>(victim + 1));
+		const auto revision = services_->behavior_chatterRevision(victim);
+		const auto current = [&]()
+		{
+			const auto &handle = services_->service_managedBotHandles()[victim];
+			return services_->service_globals() == deathGlobals && services_->service_managedBotSlots()[victim] &&
+				handle.entity == originalHandle.entity && handle.actor.slot == originalHandle.actor.slot &&
+				handle.actor.actorGeneration == originalHandle.actor.actorGeneration && !originalHandle.entity->free &&
+				originalHandle.entity->serialnumber == serial &&
+				services_->service_lifecycle().mapGeneration() == map &&
+				services_->service_lifecycle().roundGeneration() == round &&
+				services_->service_adapterFrameCount() == frame && services_->service_globals()->time == time &&
+				services_->service_lifecycle().slotGeneration(static_cast<std::uint32_t>(victim + 1)) == connection &&
+				services_->behavior_chatterRevision(victim) == revision;
+		};
 		const auto navigation = services_->service_navPublisher().snapshot();
 		const auto *document = navigation.document();
 		const auto *entity = services_->service_managedBotHandles()[victim].entity;
@@ -1205,9 +1227,12 @@ void BotNavigationRuntime::observePublicDeath(std::size_t victim)
 		if (document != nullptr &&
 			query.findContaining(position, kAreaVerticalTolerance, &area) == nav::NavQueryResult::Found)
 		{
-			(void)dangerMemory_.recordDeath(*document, services_->service_lifecycle().mapGeneration(),
-				static_cast<std::uint8_t>(services_->observation_resolvePlayerTeam(entity)), area.area, position,
-				services_->service_globals()->time);
+			const auto team = services_->observation_resolvePlayerTeam(entity);
+			if (!current())
+			{
+				return;
+			}
+			(void)dangerMemory_.recordDeath(*document, map, static_cast<std::uint8_t>(team), area.area, position, time);
 		}
 		actors_[victim].deathDangerRecorded = true;
 	}

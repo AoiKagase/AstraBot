@@ -54,7 +54,8 @@ public:
 	virtual void behavior_observeRadioReceipt(std::size_t index) = 0;
 	virtual void behavior_observeRadioPreference(edict_t *recipient, bool ignored) = 0;
 	virtual void behavior_resetEquipment(std::size_t index) = 0;
-	virtual void behavior_observePublicDeath(std::size_t index) = 0;
+	virtual std::uint64_t behavior_chatterRevision(std::size_t index) const = 0;
+	virtual void behavior_observePublicDeath(std::size_t index, const world::FrameIdentity &deathFrame = {}) = 0;
 	virtual void behavior_observePlayerDeath(int victimSlot, int killerSlot, edict_t *recipient, const world::FrameIdentity &frame) = 0;
 	virtual world::EntityKey behavior_currentEnemySource(std::size_t index) const = 0;
 	virtual void behavior_observeEnemyWeaponFire(const edict_t *source, const world::FrameIdentity &frame, float now) = 0;
@@ -148,6 +149,7 @@ public:
 		const runtime::NavRoamDecision &roamDecision) = 0;
 	virtual void behavior_resetBombApproach(std::size_t index) = 0;
 	virtual const compat::ScenarioBehaviorDecision &behavior_scenarioDecisions(std::size_t index) const = 0;
+	virtual std::uint64_t behavior_chatterRevision(std::size_t index) const = 0;
 	virtual const bool &command_managedBotCommandTemplateValid(std::size_t index) const = 0;
 	virtual const runtime::BotCommand &command_managedBotCommandTemplates(std::size_t index) const = 0;
 	virtual void command_resetGateDiagnostics() = 0;

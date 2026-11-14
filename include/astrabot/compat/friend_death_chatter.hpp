@@ -10,6 +10,23 @@ namespace astrabot
 {
 namespace compat
 {
+inline bool sameChatterUpdateReceipt(const ReactionContext &expected, const ReactionContext &current)
+{
+	return expected.actor.isValid() && expected.frame.isValid() && expected.entityGeneration != 0 &&
+		std::isfinite(expected.now) && expected.now >= 0 && expected.actor == current.actor &&
+		expected.entityGeneration == current.entityGeneration && expected.frame == current.frame &&
+		expected.now == current.now && expected.alive == current.alive;
+}
+
+inline bool deathInterruptVoiceEnabled(const char *verbosity)
+{
+	if (!verbosity)
+	{
+		return true;
+	}
+	return verbosity[0] != 'o' && verbosity[0] != 'O' && verbosity[0] != 'r' && verbosity[0] != 'R';
+}
+
 inline bool sameChatterReceipt(const ReactionContext &expected, const ReactionContext &current)
 {
 	return expected.valid() && current.valid() && expected.actor == current.actor &&
@@ -59,7 +76,7 @@ public:
 		return revision == revision_ && matches(expected) && sameChatterReceipt(expected, current);
 	}
 
-	bool record(const ReactionContext &context, ChatterPhrase phrase, float until, std::uint64_t revision)
+	bool beginSpeaking(const ReactionContext &context, ChatterPhrase phrase, float until, std::uint64_t revision)
 	{
 		if (revision != revision_ || !matches(context) || phrase == ChatterPhrase::None || !std::isfinite(until) ||
 			until <= context.now)
@@ -68,6 +85,15 @@ public:
 		}
 		phrase_ = phrase;
 		until_ = until;
+		return true;
+	}
+
+	bool record(const ReactionContext &context, ChatterPhrase phrase, float until, std::uint64_t revision)
+	{
+		if (!beginSpeaking(context, phrase, until, revision))
+		{
+			return false;
+		}
 		advanceRevision();
 		return true;
 	}
@@ -79,10 +105,27 @@ public:
 				(phrase_ == ChatterPhrase::KilledFriend && phrase == ChatterPhrase::KilledFriend));
 	}
 
+	bool wasTalking(const ReactionContext &context) const
+	{
+		// Native IsTalking observes the retained speaking statement until Update removes it.
+		return phrase_ != ChatterPhrase::None && matchesOwner(context);
+	}
+
+	bool ownsSpeech(const ReactionContext &context, ChatterPhrase phrase, float until) const
+	{
+		return wasTalking(context) && phrase_ == phrase && until_ == until;
+	}
+
 private:
 	bool matches(const ReactionContext &context) const
 	{
-		return context.valid() && context_.valid() && context.actor == context_.actor &&
+		return context.valid() && matchesOwner(context);
+	}
+
+	bool matchesOwner(const ReactionContext &context) const
+	{
+		return context.actor.isValid() && context.frame.isValid() && context.entityGeneration != 0 &&
+			std::isfinite(context.now) && context_.valid() && context.actor == context_.actor &&
 			context.entityGeneration == context_.entityGeneration &&
 			context.frame.mapGeneration == context_.frame.mapGeneration &&
 			context.frame.roundGeneration == context_.frame.roundGeneration &&

@@ -639,9 +639,13 @@ private:
 		behavior_.observePlayerDeath(victimSlot, killerSlot, recipient, frame);
 	}
 
-	void behavior_observePublicDeath(std::size_t index) override
+	std::uint64_t behavior_chatterRevision(std::size_t index) const override
 	{
-		behavior_.observePublicDeath(index);
+		return behavior_.chatterRevision(index);
+	}
+	void behavior_observePublicDeath(std::size_t index, const world::FrameIdentity &deathFrame = {}) override
+	{
+		behavior_.observePublicDeath(index, deathFrame);
 	}
 
 	void behavior_observeNeutralC4AttackDispatched(std::size_t index, const FakeClientHandle &handle) override

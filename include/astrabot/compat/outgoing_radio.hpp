@@ -34,6 +34,7 @@ enum class ChatterPhrase : unsigned
 	NiceShotCommander,
 	CommanderDown,
 	KilledFriend,
+	Pain,
 	Count
 };
 inline ChatterPhrase remainingEnemyPhrase(int count)
@@ -153,7 +154,7 @@ public:
 	{
 		const char *names[] = {"None", "EnemySpotted", "Help", "RequestReport", "Affirmative", "OnMyWay",
 			"PlantingBomb", "WhereIsTheBomb", "EscortingHostages", "HeardNoise", "NoEnemiesLeft", "OneEnemyLeft",
-			"TwoEnemiesLeft", "ThreeEnemiesLeft", "NiceShot", "NiceShotSir", "NiceShotCommander", "CommanderDown", "KilledFriend"};
+			"TwoEnemiesLeft", "ThreeEnemiesLeft", "NiceShot", "NiceShotSir", "NiceShotCommander", "CommanderDown", "KilledFriend", "pain"};
 		const auto i = static_cast<unsigned>(p);
 		return i < static_cast<unsigned>(ChatterPhrase::Count) ? names[i] : "Unknown";
 	}
@@ -418,7 +419,7 @@ public:
 		lastUpdate_ = in.now;
 		if (!in.alive || in.team < kTerroristTeam || in.team > kCounterTerroristTeam)
 		{
-			pending_ = ChatterPhrase::None;
+			cancelOnDeath(in.humanOrderSequence);
 			lastNoiseReport_ = in.noiseReport.created;
 			lastNoiseReportTick_ = in.noiseReport.frame.tick;
 			return {};
@@ -590,6 +591,14 @@ public:
 		{
 			pending_ = ChatterPhrase::None;
 		}
+	}
+
+	void cancelOnDeath(std::uint32_t consumedOrder = 0)
+	{
+		pending_ = ChatterPhrase::None;
+		ack_ = ChatterPhrase::None;
+		directFollow_ = false;
+		orderSequence_ = (std::max)(orderSequence_, consumedOrder);
 	}
 
 	void discardPending()
