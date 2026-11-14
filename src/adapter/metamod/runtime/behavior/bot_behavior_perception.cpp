@@ -64,6 +64,8 @@ void BotBehaviorRuntime::resetRoundRecognition()
 	for (auto &actor : actors_)
 	{
 		actor.noiseInvestigation.reset();
+		actor.noiseReportPolicy = {};
+		actor.noiseReport = {};
 		actor.investigationWalking = false;
 		actor.noiseLook.reset();
 		actor.noiseBend = {};
@@ -78,7 +80,10 @@ void BotBehaviorRuntime::resetRoundRecognition()
 void BotBehaviorRuntime::observePublicDeath(std::size_t index)
 {
 	stopVoiceFeedback(index);
+	actors_[index].outgoingRadioSchedulers.discardNoiseReport(actors_[index].noiseReport);
 	actors_[index].noiseInvestigation.reset();
+	actors_[index].noiseReportPolicy = {};
+	actors_[index].noiseReport = {};
 	actors_[index].investigationWalking = false;
 	actors_[index].noiseLook.reset();
 	actors_[index].noiseBend = {};

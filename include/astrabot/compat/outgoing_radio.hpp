@@ -2,6 +2,7 @@
 #define ASTRABOT_COMPAT_OUTGOING_RADIO_HPP
 
 #include "astrabot/world/world_snapshot.hpp"
+#include "astrabot/compat/noise_report.hpp"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -23,6 +24,7 @@ enum class ChatterPhrase : unsigned
 	PlantingBomb,
 	WhereIsTheBomb,
 	EscortingHostages,
+	HeardNoise,
 	Count
 };
 struct RadioMenuChoice
@@ -104,7 +106,7 @@ public:
 	static const char *name(ChatterPhrase p)
 	{
 		const char *names[] = {"None", "EnemySpotted", "Help", "RequestReport", "Affirmative", "OnMyWay",
-			"PlantingBomb", "WhereIsTheBomb", "EscortingHostages"};
+			"PlantingBomb", "WhereIsTheBomb", "EscortingHostages", "HeardNoise"};
 		const auto i = static_cast<unsigned>(p);
 		return i < static_cast<unsigned>(ChatterPhrase::Count) ? names[i] : "Unknown";
 	}
@@ -293,6 +295,10 @@ struct OutgoingRadioInput
 	bool inCombat = false;
 	float teamLastSpeech = -1, teamBusyUntil = 0;
 	ChatterPhrase teamCurrentPhrase = ChatterPhrase::None;
+	std::uint16_t teamCurrentPlace = 0;
+	std::uint64_t navRevision = 0;
+	bool roundOver = false;
+	HeardNoiseReport noiseReport{};
 	std::uint32_t humanOrderSequence = 0;
 	float humanOrderReceived = 0, reactionSeconds = .3f;
 	bool humanOrderAccepted = false, humanOrderHelp = false;
@@ -303,6 +309,7 @@ struct OutgoingRadioDecision
 	OutgoingRadioStatus status = OutgoingRadioStatus::None;
 	ChatterPhrase phrase = ChatterPhrase::None;
 	int menu = 0, slot = 0;
+	std::uint16_t place = 0;
 };
 class OutgoingRadioScheduler
 {
@@ -329,6 +336,8 @@ public:
 		constexpr int kFollowSlot = 5;
 		if (!in.actor.isValid() || !in.frame.isValid() || !std::isfinite(in.now) || in.now < 0)
 			return {};
+		const bool clockRewound = in.actor == actor_ && in.frame.mapGeneration == frame_.mapGeneration &&
+			in.frame.roundGeneration == frame_.roundGeneration && in.now < lastUpdate_;
 		if (!(in.actor == actor_) || in.frame.mapGeneration != frame_.mapGeneration ||
 			in.frame.roundGeneration != frame_.roundGeneration || in.now < lastUpdate_)
 		{
@@ -336,13 +345,29 @@ public:
 			actor_ = in.actor;
 			frame_ = in.frame;
 			start_ = in.now;
+			if (clockRewound && in.noiseReport.active)
+			{
+				lastNoiseReport_ = in.noiseReport.created;
+				lastNoiseReportTick_ = in.noiseReport.frame.tick;
+			}
 		}
 		frame_ = in.frame;
 		lastUpdate_ = in.now;
 		if (!in.alive || in.team < kTerroristTeam || in.team > kCounterTerroristTeam)
 		{
 			pending_ = ChatterPhrase::None;
+			lastNoiseReport_ = in.noiseReport.created;
+			lastNoiseReportTick_ = in.noiseReport.frame.tick;
 			return {};
+		}
+		if (pending_ == ChatterPhrase::HeardNoise &&
+			(in.roundOver || in.navRevision != pendingNoiseRevision_ || !in.noiseReport.active ||
+				!(in.noiseReport.actor == in.actor) ||
+				in.noiseReport.frame.mapGeneration != in.frame.mapGeneration ||
+				in.noiseReport.frame.roundGeneration != in.frame.roundGeneration ||
+				in.noiseReport.created != lastNoiseReport_ || in.noiseReport.frame.tick != lastNoiseReportTick_))
+		{
+			pending_ = ChatterPhrase::None;
 		}
 		if (!in.visibleEnemyCount)
 		{
@@ -404,7 +429,30 @@ public:
 				queue(ChatterPhrase::RequestReport, in.now, kReportLifetimeSeconds);
 		}
 		wasPlanting_ = in.plantingBomb;
-		if ((pending_ != ChatterPhrase::None || directFollow_) && in.now >= expires_)
+		const auto &report = in.noiseReport;
+		constexpr float kNoiseReportLifetimeSeconds = 5.0f;
+		if (report.active && report.actor == in.actor && report.frame.mapGeneration == in.frame.mapGeneration &&
+			report.frame.roundGeneration == in.frame.roundGeneration && std::isfinite(report.created) &&
+			report.created >= 0 && report.created <= in.now &&
+			(report.created != lastNoiseReport_ || report.frame.tick != lastNoiseReportTick_))
+		{
+			if (in.roundOver || in.now > report.created + kNoiseReportLifetimeSeconds)
+			{
+				lastNoiseReport_ = report.created;
+				lastNoiseReportTick_ = report.frame.tick;
+			}
+			else if (report.navRevision != 0 && report.navRevision == in.navRevision &&
+				pending_ == ChatterPhrase::None && !directFollow_)
+			{
+				queue(ChatterPhrase::HeardNoise, report.created, kNoiseReportLifetimeSeconds);
+				pendingPlace_ = report.place;
+				pendingNoiseRevision_ = report.navRevision;
+				lastNoiseReport_ = report.created;
+				lastNoiseReportTick_ = report.frame.tick;
+			}
+		}
+		const bool expired = pending_ == ChatterPhrase::HeardNoise ? in.now > expires_ : in.now >= expires_;
+		if ((pending_ != ChatterPhrase::None || directFollow_) && expired)
 		{
 			pending_ = ChatterPhrase::None;
 			directFollow_ = false;
@@ -422,7 +470,10 @@ public:
 		if (in.now < in.teamBusyUntil)
 		{
 			// Same topic without place/subject is redundant while a teammate says it.
-			if (pending_ == in.teamCurrentPhrase && !directFollow_)
+			const bool samePlace = (pendingPlace_ == 0 && in.teamCurrentPlace == 0) ||
+				(pendingPlace_ != 0 && pendingPlace_ == in.teamCurrentPlace);
+			if (pending_ == in.teamCurrentPhrase && !directFollow_ &&
+				(pending_ != ChatterPhrase::HeardNoise || samePlace))
 			{
 				pending_ = ChatterPhrase::None;
 				return {};
@@ -432,14 +483,15 @@ public:
 		const auto choice = directFollow_ ? RadioMenuChoice{kFollowMenu, kFollowSlot} : catalog.lookup(pending_);
 		if (!choice.menu && pending_ != ChatterPhrase::None &&
 			(voicePhrases & (1U << static_cast<unsigned>(pending_))) != 0U)
-			return {OutgoingRadioStatus::Ready, pending_, 0, 0};
+			return {OutgoingRadioStatus::Ready, pending_, 0, 0, pendingPlace_};
 		if (!choice.menu)
 		{
 			const auto missing = pending_;
 			pending_ = ChatterPhrase::None;
 			return {OutgoingRadioStatus::MissingPhrase, missing, 0, 0};
 		}
-		return {OutgoingRadioStatus::Ready, directFollow_ ? ChatterPhrase::None : pending_, choice.menu, choice.slot};
+		return {OutgoingRadioStatus::Ready, directFollow_ ? ChatterPhrase::None : pending_, choice.menu, choice.slot,
+			directFollow_ ? std::uint16_t{0} : pendingPlace_};
 	}
 
 	void confirmSent(const OutgoingRadioInput &in, const OutgoingRadioDecision &out)
@@ -449,6 +501,22 @@ public:
 		lastSent_ = in.now;
 		pending_ = ChatterPhrase::None;
 		directFollow_ = false;
+	}
+
+	// AddStatement drops a new OFF/non-important MINIMAL statement independently of older topics.
+	void discardNoiseReport(const HeardNoiseReport &report)
+	{
+		if (!report.active || !(report.actor == actor_) || report.frame.mapGeneration != frame_.mapGeneration ||
+			report.frame.roundGeneration != frame_.roundGeneration)
+		{
+			return;
+		}
+		lastNoiseReport_ = report.created;
+		lastNoiseReportTick_ = report.frame.tick;
+		if (pending_ == ChatterPhrase::HeardNoise)
+		{
+			pending_ = ChatterPhrase::None;
+		}
 	}
 
 	void discardPending()
@@ -463,6 +531,7 @@ private:
 		if (pending_ != ChatterPhrase::None)
 			return;
 		pending_ = p;
+		pendingPlace_ = 0;
 		expires_ = now + lifetime;
 	}
 
@@ -473,6 +542,10 @@ private:
 	bool reportedEnemies_ = false, wasPlanting_ = false, askedBomb_ = false, directFollow_ = false;
 	std::uint32_t orderSequence_ = 0;
 	ChatterPhrase pending_ = ChatterPhrase::None, ack_ = ChatterPhrase::None;
+	float lastNoiseReport_ = -1;
+	std::uint32_t lastNoiseReportTick_ = 0;
+	std::uint16_t pendingPlace_ = 0;
+	std::uint64_t pendingNoiseRevision_ = 0;
 };
 } // namespace compat
 } // namespace astrabot

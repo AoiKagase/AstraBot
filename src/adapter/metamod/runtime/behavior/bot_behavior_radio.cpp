@@ -68,6 +68,7 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index)
 		outgoingTeamLastSpeech_.fill(-1.0f);
 		outgoingTeamBusyUntil_.fill(0.0f);
 		outgoingTeamCurrentPhrase_.fill(compat::ChatterPhrase::None);
+		outgoingTeamCurrentPlace_.fill(0);
 	}
 	compat::OutgoingRadioInput input{};
 	input.actor = {handle.actor.slot, handle.actor.actorGeneration};
@@ -81,6 +82,11 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index)
 	input.teamLastSpeech = outgoingTeamLastSpeech_[input.team];
 	input.teamBusyUntil = outgoingTeamBusyUntil_[input.team];
 	input.teamCurrentPhrase = outgoingTeamCurrentPhrase_[input.team];
+	input.teamCurrentPlace = outgoingTeamCurrentPlace_[input.team];
+	const auto reportNav = services_->service_navPublisher().snapshot();
+	input.navRevision = reportNav.isValid() ? reportNav.revision() : 0;
+	input.roundOver = services_->service_roundOver();
+	input.noiseReport = actors_[index].noiseReport;
 	input.reactionSeconds = actors_[index].managedProfiles.reactionTimeSeconds;
 	input.inCombat = actors_[index].managedBotStateMachines.attackOverlayActive();
 	for (int slot = 1; slot <= (std::min)(kMaximumClientSlots, services_->service_globals()->maxClients); ++slot)
@@ -143,6 +149,13 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index)
 			if (voice->has(static_cast<compat::ChatterPhrase>(phrase)))
 				voicePhrases |= 1U << phrase;
 	auto output = actors_[index].outgoingRadioSchedulers.update(input, outgoingChatterCatalog_, voicePhrases);
+	const bool suppressNoise = verbosity && (std::strcmp(verbosity, "off") == 0 ||
+		(std::strcmp(verbosity, "minimal") == 0 &&
+			!outgoingChatterCatalog_.important(compat::ChatterPhrase::HeardNoise)));
+	if (suppressNoise)
+	{
+		actors_[index].outgoingRadioSchedulers.discardNoiseReport(input.noiseReport);
+	}
 	if (verbosity != nullptr && std::strcmp(verbosity, "off") == 0 && output.phrase != compat::ChatterPhrase::None)
 	{
 		actors_[index].outgoingRadioSchedulers.discardPending();
@@ -157,7 +170,7 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index)
 	if (output.status == compat::OutgoingRadioStatus::Ready && voice && output.phrase != compat::ChatterPhrase::None)
 	{
 		float duration = 0.0f;
-		if (sendChatterVoice(index, output.phrase, input.visibleEnemyCount, *voice, &duration))
+		if (sendChatterVoice(index, output.phrase, input.visibleEnemyCount, *voice, &duration, output.place))
 		{
 			actors_[index].outgoingRadioSchedulers.confirmSent(input, output);
 			actors_[index].outgoingRadioAttempts = 0U;
@@ -165,6 +178,7 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index)
 			outgoingTeamLastSpeech_[input.team] = input.now;
 			outgoingTeamBusyUntil_[input.team] = input.now + duration + 0.1f;
 			outgoingTeamCurrentPhrase_[input.team] = output.phrase;
+		outgoingTeamCurrentPlace_[input.team] = output.place;
 			return;
 		}
 	}
@@ -236,6 +250,7 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index)
 		outgoingTeamBusyUntil_[input.team] =
 			services_->service_globals()->time + ASTRABOT_BOT_BEHAVIOR_RADIO_TEAM_SPEECH_BUSY_SECONDS;
 		outgoingTeamCurrentPhrase_[input.team] = output.phrase;
+			outgoingTeamCurrentPlace_[input.team] = output.place;
 	}
 }
 

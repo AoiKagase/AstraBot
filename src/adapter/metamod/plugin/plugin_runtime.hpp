@@ -321,6 +321,11 @@ private:
 		return roundFreezeUntil_;
 	}
 
+	bool service_roundOver() override
+	{
+		return roundLifecycleTracker_.isRoundOver();
+	}
+
 	Service_runtimeProfiler &service_runtimeProfiler() override
 	{
 		return runtimeProfiler_;

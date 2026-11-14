@@ -123,7 +123,8 @@ void BotBehaviorRuntime::updateVoiceFeedback(bool force)
 	}
 }
 bool BotBehaviorRuntime::sendChatterVoice(
-	std::size_t index, compat::ChatterPhrase phrase, int count, compat::ChatterVoiceCatalog &bank, float *duration)
+	std::size_t index, compat::ChatterPhrase phrase, int count, compat::ChatterVoiceCatalog &bank, float *duration,
+	std::uint16_t reportPlace)
 {
 	if (!services_ || index >= actors_.size() || !duration)
 		return false;
@@ -141,7 +142,16 @@ bool BotBehaviorRuntime::sendChatterVoice(
 	if (navigation.isValid() && navigation.mapGeneration() == services_->service_lifecycle().mapGeneration())
 	{
 		nav::NavAreaMatch match{};
-		if (nav::NavQuery(navigation)
+		if (phrase == compat::ChatterPhrase::HeardNoise)
+		{
+			for (const auto &known : navigation.document()->places())
+				if (known.id == reportPlace)
+				{
+					place = known.name;
+					break;
+				}
+		}
+		else if (nav::NavQuery(navigation)
 				.findContaining({self->v.origin.x, self->v.origin.y, self->v.origin.z}, 64.0f, &match) ==
 			nav::NavQueryResult::Found)
 		{

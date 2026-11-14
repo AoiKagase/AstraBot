@@ -46,6 +46,8 @@ void BotBehaviorRuntime::updateManagedBotCompatibilityState(
 	if (actors_[index].noiseInvestigation.active() && !noiseInvestigationCurrent(index))
 	{
 		actors_[index].noiseInvestigation.reset();
+	actors_[index].noiseReportPolicy = {};
+	actors_[index].noiseReport = {};
 		actors_[index].investigationWalking = false;
 	}
 	compat::StateBehaviorInput stateBehavior = {};
@@ -81,6 +83,8 @@ void BotBehaviorRuntime::onActorRemoved(std::size_t index)
 	actors_[index].teamworkPolicies.reset();
 	actors_[index].teamworkRadioApplied = 0U;
 	actors_[index].noiseInvestigation.reset();
+	actors_[index].noiseReportPolicy = {};
+	actors_[index].noiseReport = {};
 	actors_[index].investigationWalking = false;
 	actors_[index].weaponActions.reset();
 	actors_[index].buyControllers.reset();
@@ -111,6 +115,8 @@ void BotBehaviorRuntime::onActorRemembered(std::size_t index, const FakeClientHa
 	actors_[index].managedBotWasDead = false;
 	actors_[index].lastCombatTimes = 0.0f;
 	actors_[index].lastVisibleEnemyTimes = 0.0f;
+	actors_[index].noiseReportPolicy = {};
+	actors_[index].noiseReport = {};
 	actors_[index].buyControllers.reset();
 	actors_[index].buyingComplete = false;
 	actors_[index].escapingWithKnife = false;
@@ -141,6 +147,8 @@ void BotBehaviorRuntime::resetSharedExecutionState()
 void BotBehaviorRuntime::resetActorExecutionState(std::size_t index)
 {
 	actors_[index].noiseInvestigation.reset();
+	actors_[index].noiseReportPolicy = {};
+	actors_[index].noiseReport = {};
 	actors_[index].investigationWalking = false;
 	actors_[index].noiseLook.reset();
 	actors_[index].noiseBend = {};

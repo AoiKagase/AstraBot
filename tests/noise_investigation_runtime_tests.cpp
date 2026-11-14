@@ -2,8 +2,10 @@
 namespace
 {
 bool testInvestigation(astrabot::metamod::PluginRuntime &, enginefuncs_t &, globalvars_t &);
+void setupHeardNoise(enginefuncs_t &, globalvars_t &);
 }
 #define ASTRABOT_EXTRA_ACTOR_TEST testInvestigation
+#define ASTRABOT_ACTOR_ENGINE_SETUP setupHeardNoise
 #define ASTRABOT_ACTOR_PROFILE_TEXT                                                                                    \
 	"Any { Name = \"Investigation Bot\" Team = any Difficulty = 1 Skill = 70 Aggression = 50 ReactionTime = 0.125 }\n"
 #include "compat_actor_command_tests.cpp"
@@ -11,17 +13,122 @@ bool testInvestigation(astrabot::metamod::PluginRuntime &, enginefuncs_t &, glob
 namespace
 {
 bool closeNoiseVisible = false;
+unsigned heardReportDraws = 0;
+int heardMessageType = 0;
+const char *heardMode = "normal";
+std::vector<std::string> heardSamples;
+
+struct HeardTrace : astrabot::compat::IRandomTraceSink
+{
+	void record(const astrabot::compat::RandomTraceRecord &record) override
+	{
+		if (std::strcmp(record.request.semanticId, "RNG-CSBOT-HEARD-NOISE-REPORT") == 0)
+			++heardReportDraws;
+	}
+};
+HeardTrace heardTrace;
+
+float heardRandom(float low, float high)
+{
+	if (low == 0 && high == 100)
+	{
+		return 0;
+	}
+	return hearingFixtureRandomFloat(low, high);
+}
+
+unsigned char *heardLoad(char *name, int *length)
+{
+	if (std::strcmp(name, "BotChatter.db") != 0)
+	{
+		*length = 0;
+		return nullptr;
+	}
+	const char text[] = "BaseDir radio/test/ Chatter HeardNoise Place Speaker wrong.wav Place Noise heard.wav End";
+	*length = static_cast<int>(sizeof(text) - 1);
+	auto *bytes = new unsigned char[sizeof(text)];
+	std::memcpy(bytes, text, sizeof(text));
+	return bytes;
+}
+
+void heardFree(void *data)
+{
+	delete[] static_cast<unsigned char *>(data);
+}
+
+int heardFileSize(char *)
+{
+	return 100;
+}
+
+unsigned heardWaveLength(const char *)
+{
+	return 200;
+}
+
+int heardMessageId(plid_t id, const char *name, int *size)
+{
+	if (std::strcmp(name, "SendAudio") == 0)
+		return 101;
+	if (std::strcmp(name, "BotVoice") == 0)
+		return 102;
+	return siteFixtureUserMessageId(id, name, size);
+}
+
+void heardBegin(int, int type, const float *, edict_t *)
+{
+	heardMessageType = type;
+}
+
+void heardNumber(int)
+{
+}
+
+void heardString(const char *sample)
+{
+	if (heardMessageType == 101)
+		heardSamples.push_back(sample);
+}
+
+void heardEnd()
+{
+}
+
 void investigationTrace(const float *, const float *end, int flags, edict_t *, TraceResult *trace)
 {
 	*trace = {};
 	trace->flFraction = flags == 0x101 && closeNoiseVisible ? 1.0f : 0.0f;
 	trace->vecEndPos = Vector(end[0], end[1], end[2]);
 }
+const char *heardCvar(const char *name)
+{
+	if (std::strcmp(name, "bot_chatter") == 0)
+		return heardMode;
+	const auto *value = getCvar(name);
+	return value && value->string ? value->string : "";
+}
+
+void setupHeardNoise(enginefuncs_t &engine, globalvars_t &)
+{
+	engine.pfnCVarGetString = &heardCvar;
+	engine.pfnLoadFileForMe = &heardLoad;
+	engine.pfnFreeFile = &heardFree;
+	engine.pfnGetFileSize = &heardFileSize;
+	engine.pfnGetApproxWavePlayLen = &heardWaveLength;
+	engine.pfnMessageBegin = &heardBegin;
+	engine.pfnWriteByte = &heardNumber;
+	engine.pfnWriteShort = &heardNumber;
+	engine.pfnWriteString = &heardString;
+	engine.pfnMessageEnd = &heardEnd;
+	gpMetaUtilFuncs->pfnGetUserMsgID = &heardMessageId;
+}
+
 bool testInvestigation(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &engine, globalvars_t &globals)
 {
 	using namespace astrabot;
 	engine.pfnTraceLine = &investigationTrace;
-	engine.pfnRandomFloat = &hearingFixtureRandomFloat;
+	engine.pfnRandomFloat = &heardRandom;
+	setupHeardNoise(engine, globals);
 	runtime.giveEnginePointers(&engine, &globals);
 	gObjectiveEntitiesAvailable = false;
 	for (unsigned i = 1; i < 4; ++i)
@@ -49,6 +156,7 @@ bool testInvestigation(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t 
 	runtime.onWriteString("CT");
 	runtime.onMessageEnd();
 	auto &behavior = static_cast<metamod::BotBehaviorServices &>(runtime);
+	static_cast<compat::EngineRandomSource &>(behavior.service_compatibilityRandomSource()).setTraceSink(&heardTrace);
 	auto &navigation = static_cast<metamod::BotNavigationServices &>(runtime);
 	world::WorldSnapshot belief;
 	nav::NavVector target{};
@@ -183,6 +291,93 @@ bool testInvestigation(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t 
 	self.v.deadflag = DEAD_DEAD;
 	self.v.health = 0;
 	step(.12f);
-	return check(!navigation.behavior_noiseInvestigationWalking(0), "death resets held investigation posture");
+	if (!check(!navigation.behavior_noiseInvestigationWalking(0), "death resets held investigation posture"))
+		return false;
+	if (!check(heardReportDraws == 0 && heardSamples.empty(), "high-priority gunshots never generate heard-noise chatter"))
+		return false;
+	self.v.deadflag = DEAD_NO;
+	self.v.health = 100;
+	self.v.origin = Vector(0, 0, 36);
+	runtime.beginRoundGeneration();
+	// Enrich the existing two-area NAV through the SDK-free publisher's public API.
+	const auto original = behavior.service_navPublisher().snapshot();
+	nav::NavDocument placed;
+	placed.setSourceIdentity(original.document()->sourceIdentity());
+	nav::NavPlace speakerPlace{};
+	speakerPlace.id = 1;
+	std::memcpy(speakerPlace.name, "Speaker", sizeof("Speaker"));
+	nav::NavPlace noisePlace{};
+	noisePlace.id = 2;
+	std::memcpy(noisePlace.name, "Noise", sizeof("Noise"));
+	placed.addPlace(speakerPlace);
+	placed.addPlace(noisePlace);
+	for (auto area : original.document()->areas())
+	{
+		area.placeId = static_cast<std::uint16_t>(area.id);
+		placed.addArea(area);
+	}
+	auto &publisher = const_cast<nav::NavSnapshotPublisher &>(behavior.service_navPublisher());
+	if (!check(publisher.publish(&placed, runtime.snapshot().mapGeneration) == nav::NavSnapshotResult::Published,
+			"public NAV test has different speaker and noise places"))
+		return false;
+	step(31);
+	step(.25f);
+	source.v.origin.y = 500;
+	runtime.onEmitSound(&source, "player/pl_step1.wav", 1, 1);
+	step(.15f);
+	step(.5f);
+	for (int i = 0; i < 6 && heardSamples.empty(); ++i)
+		step(.12f);
+	if (!check(heardReportDraws == 1 && !heardSamples.empty(),
+			"attending medium noise emits a probabilistic teammate report"))
+		return false;
+	for (const auto &sample : heardSamples)
+		if (!check(sample == "radio/test/heard.wav", "report voice uses the noise place rather than speaker place"))
+			return false;
+	const auto sent = heardSamples.size();
+	source.v.origin.y = 250;
+	runtime.onEmitSound(&source, "player/pl_step1.wav", 1, 1);
+	step(.15f);
+	step(.5f);
+	if (!check(heardReportDraws == 1 && heardSamples.size() == sent,
+			"closer attended sound inside20 seconds does not draw or repeat chatter"))
+		return false;
+	runtime.beginRoundGeneration();
+	heardMode = "off";
+	step(31);
+	step(.25f);
+	source.v.origin.y = 500;
+	runtime.onEmitSound(&source, "player/pl_step1.wav", 1, 1);
+	step(.15f);
+	step(.5f);
+	if (!check(heardReportDraws == 2 && heardSamples.size() == sent,
+			"chatter off still consumes report chance and cooldown without sending audio"))
+		return false;
+	heardMode = "normal";
+	source.v.origin.y = 250;
+	runtime.onEmitSound(&source, "player/pl_step1.wav", 1, 1);
+	step(.15f);
+	step(.5f);
+	if (!check(heardReportDraws == 2 && heardSamples.size() == sent,
+			"enabling chatter cannot replay the suppressed report inside cooldown"))
+		return false;
+	runtime.onRoundLifecycleMessage("World triggered \"Round_Start\"\n");
+	runtime.onRoundLifecycleMessage("World triggered \"Round_End\"\n");
+	step(31);
+	source.v.origin.y = 500;
+	runtime.onEmitSound(&source, "player/pl_step1.wav", 1, 1);
+	step(.15f);
+	step(.5f);
+	if (!check(heardReportDraws == 2 && heardSamples.size() == sent,
+			"public round end suppresses new noise reports until round start"))
+		return false;
+	runtime.onRoundLifecycleMessage("World triggered \"Round_Start\"\n");
+	step(31);
+	step(.25f);
+	runtime.onEmitSound(&source, "player/pl_step1.wav", 1, 1);
+	step(.15f);
+	step(.5f);
+	return check(heardReportDraws == 3 && heardSamples.size() > sent,
+		"public round start permits fresh heard-noise reports again");
 }
 }

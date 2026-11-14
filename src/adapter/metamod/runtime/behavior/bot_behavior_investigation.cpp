@@ -110,6 +110,22 @@ void BotBehaviorRuntime::updateNoiseInvestigation(std::size_t index, const runti
 		}
 		else
 		{
+			compat::NoiseReportInput report{};
+			report.actor = in.actor;
+			report.frame = in.frame;
+			report.timing = in.timing;
+			report.now = in.now;
+			report.lastSawEnemy = actor.lastVisibleEnemyTimes;
+			report.alive = in.alive;
+			report.roundOver = services_->service_roundOver();
+			report.wellPastSafe = true; // Attend is reachable only after the planner's strict safe-time gate.
+			report.priority = in.noise.priority;
+			if (actor.noiseReportPolicy.attend(report, services_->service_compatibilityRandomSource()))
+			{
+				const auto *area = nav.document()->findArea(in.noise.navArea);
+				actor.noiseReport = {true, in.actor, in.frame, in.now, area ? area->placeId : std::uint16_t{0},
+					in.navRevision};
+			}
 			services_->applyNavigationRequest({index, NavigationRequestKind::DestroyPath});
 			context.requestedState = compat::CompatibilityStateId::InvestigateNoise;
 			context.requestTransition = current != context.requestedState;

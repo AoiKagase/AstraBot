@@ -53,7 +53,7 @@ struct RoundFreezeSchedule
 class RoundLifecycleTracker
 {
 public:
-	RoundLifecycleTracker() noexcept : generationPreparedForStart_(false), roundStartObserved_(false)
+	RoundLifecycleTracker() noexcept : generationPreparedForStart_(false), roundStartObserved_(false), roundOver_(false)
 	{
 	}
 
@@ -61,6 +61,12 @@ public:
 	{
 		generationPreparedForStart_ = false;
 		roundStartObserved_ = false;
+		roundOver_ = false;
+	}
+
+	bool isRoundOver() const noexcept
+	{
+		return roundOver_;
 	}
 
 	bool isDuplicateRoundStart() const noexcept
@@ -74,6 +80,7 @@ public:
 		{
 		case RoundLifecycleEvent::GameCommencing:
 		case RoundLifecycleEvent::RestartScheduled:
+			roundOver_ = true;
 			if (generationPreparedForStart_)
 			{
 				return false;
@@ -83,6 +90,7 @@ public:
 			return true;
 
 		case RoundLifecycleEvent::RoundEnd:
+			roundOver_ = true;
 			if (!roundStartObserved_ || generationPreparedForStart_)
 			{
 				return false;
@@ -92,6 +100,7 @@ public:
 			return true;
 
 		case RoundLifecycleEvent::RoundStart:
+			roundOver_ = false;
 			if (generationPreparedForStart_)
 			{
 				generationPreparedForStart_ = false;
@@ -111,6 +120,7 @@ public:
 private:
 	bool generationPreparedForStart_;
 	bool roundStartObserved_;
+	bool roundOver_;
 };
 } // namespace metamod
 } // namespace astrabot

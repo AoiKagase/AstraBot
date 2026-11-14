@@ -1,3 +1,64 @@
+## 2026-11-14 HeardNoise investigation reports
+
+Source base efb307c; behavioral oracle ReGameDLL-CS
+b0889847fe6d03898be88acc9e366660efb40ab5 (read-only). Independently implements
+HeardNoise for successful Compatibility-mode noise attendance using existing host voice transport.
+
+- Attendance is already gated by well-past-safe investigation. Reports additionally
+  require strictly more than30 seconds since the last public visible enemy and a
+  priority other than High. Public observed round-over suppresses new reports.
+  A named shared RNG float(0,100)<33 selects reports; the20-second CountdownTimer
+  starts before that draw, including failed chance/unavailable RNG and chatter OFF.
+  Eligibility resumes strictly after the cooldown deadline.
+- Report creation seconds, actor/map/round identity and noise NAV place/revision are
+  retained independently of speaker movement. The existing bounded outgoing scheduler
+  preserves the original five-second lifetime (strictly now>expiry), team speech delay
+  and host metadata fallback. HeardNoise uses the noise place for voice criteria;
+  other concepts preserve their existing speaker-place criteria. Same-topic reports
+  are redundant only for equal defined places or both undefined, not different places
+  or one undefined place. No private enemy identity or extra per-frame entity scan.
+- Normal/minimal/radio/off reuse existing recipients, host assets, pitch and BotVoice
+  cleanup. OFF and unimportant MINIMAL consume each new report independently of any
+  older pending topic, preventing later re-enabling from reviving it. No equivalent
+  radio mapping or voice is invented when host assets are absent.
+- Observed round-over is separate from generation preparation, so even the first
+  Round_End after late attachment suppresses reports. Public death cancels queued
+  noise immediately; active receipt validation also protects revival between outgoing
+  updates. Actor/map/round/clock changes and NAV replacement reject stale reports.
+  Same-identity clock reversal retains a discarded receipt identity through catch-up.
+- Policy/scheduler tests pin gates, RNG ownership/bounds, cooldown ordering, strict
+  expiry, places, cancellation and clock catch-up. Runtime tests attend real public
+  medium noise through NAV and inspect noise-place SendAudio; gunshots remain silent,
+  closer noise respects cooldown, OFF/on does not replay, and Round_End/Start suppress
+  and resume. Independent review found3 Important and0 Critical; all3 were reproduced
+  RED then fixed GREEN. No remaining Important/Critical or deferred production minors.
+
+Offline verification: complete MSVC HostX86/x86 Debug build PASS; CTest **102/102 PASS**
+(9.63 seconds). Complete Debian Linux x86 Debug build PASS; CTest **100/101 PASS**
+(12.62 seconds). Sole failure remains astrabot_combat_policy, weapon/skill/recoil
+chest policy, unchanged from [the baseline](../verification/coding-conventions-20261113/VERIFICATION.md).
+Its source/expectations and frozen characterization fixtures are unchanged. Frozen runtime
+characterization passes on both OSes without regeneration; ports, ownership, architecture,
+source manifest (265 entries,258 C/C++ files) and whitespace gates pass. Independent PE/ELF
+checks pass x86 and seven exact exports. All268 input fingerprints and BotProfile.db
+match before/after the final suites.
+
+Verified local artifact SHA-256 (not deployed):
+- Windows DLL: b4d58dd1ab8e902279fa338475eb1a316975bd54d6a646767f9d6d1f41468c65
+- Linux SO: ba611fadf7f32a04f913ef898211ea8533dc49aa08647ae7521753921ca284ba
+
+Evidence: .agent-state/sessions/csbot-heard-noise-report-a4f77913-6d15-4f01-a014-a79c110385b6/ (RESULT.json, source fingerprints,
+RED/GREEN/review logs, complete build/compiler identities and sequential full CTests).
+
+Ruling/limits: clock rollback between attendances is handled by the existing public
+LifecycleSession frame observer advancing round generation, which resets this policy
+on its next attendance; standalone callers must supply those generations. If they do
+not, an earlier cooldown deadline can remain until the former20-second deadline.
+Existing bounded scheduling and Full Update cadence are retained, not full native
+statement-list or reference-wide RNG-tape equivalence. Late attachment cannot infer an
+unobserved round end. Host voice assets are required; client audibility and live
+HLDS/ReHLDS/FPS/multiplayer acceptance are NOT RUN. No push/deployment.
+
 ## 2026-11-14 NAV-constrained sound positions and investigation decisions
 
 Source base bd5db00; behavior-only oracle ReGameDLL-CS

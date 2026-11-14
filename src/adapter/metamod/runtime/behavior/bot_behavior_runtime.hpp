@@ -256,7 +256,11 @@ private:
 	void reset_noiseInvestigation()
 	{
 		for (auto &actor : actors_)
+		{
 			actor.noiseInvestigation.reset();
+			actor.noiseReportPolicy = {};
+			actor.noiseReport = {};
+		}
 	}
 
 	void reset_buyReceiptTimeoutLogged()
@@ -379,7 +383,7 @@ private:
 	compat::ChatterVoiceCatalog *chatterBank(std::size_t index);
 	void stopVoiceFeedback(std::size_t index);
 	bool sendChatterVoice(
-		std::size_t index, compat::ChatterPhrase phrase, int count, compat::ChatterVoiceCatalog &bank, float *duration);
+		std::size_t index, compat::ChatterPhrase phrase, int count, compat::ChatterVoiceCatalog &bank, float *duration, std::uint16_t reportPlace);
 	struct NoiseBendCache
 	{
 		bool valid = false;
@@ -430,6 +434,8 @@ private:
 		bool buyReceiptTimeoutLogged{};
 		compat::WeaponActionPlanner weaponActions{};
 		compat::NoiseInvestigationPlanner noiseInvestigation{};
+		compat::NoiseReportPolicy noiseReportPolicy{};
+		compat::HeardNoiseReport noiseReport{};
 		bool investigationWalking = false;
 		compat::StateBehaviorInput managedStateInputs{};
 		combat::CombatController managedBotCombat{};
@@ -455,6 +461,7 @@ private:
 	std::array<float, kTeamRadioSlotCount> outgoingTeamLastSpeech_{{-1.0f, -1.0f, -1.0f}};
 	std::array<float, kTeamRadioSlotCount> outgoingTeamBusyUntil_{};
 	std::array<compat::ChatterPhrase, kTeamRadioSlotCount> outgoingTeamCurrentPhrase_{};
+	std::array<std::uint16_t, kTeamRadioSlotCount> outgoingTeamCurrentPlace_{};
 	std::array<bool, static_cast<unsigned>(compat::ChatterPhrase::Count)> outgoingMissingPhraseLogged_{};
 
 	runtime::LifecycleGeneration outgoingRadioMap_ = runtime::LifecycleSession::kInvalidGeneration;
