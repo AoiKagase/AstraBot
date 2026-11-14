@@ -97,7 +97,7 @@ void BotCommandRuntime::onTouch(edict_t *entity, edict_t *other)
 	observe(other, entity);
 }
 
-void BotCommandRuntime::applyPlayerAvoidance(std::size_t index, runtime::BotCommand *command)
+void BotCommandRuntime::applyPlayerAvoidance(std::size_t index, runtime::BotCommand *command, float desiredSpeed)
 {
 	if (command == nullptr || index >= services_->service_managedBotHandles().size() ||
 		services_->service_globals() == nullptr ||
@@ -131,7 +131,7 @@ void BotCommandRuntime::applyPlayerAvoidance(std::size_t index, runtime::BotComm
 		return;
 	const auto move =
 		runtime::playerAvoidanceMove(command->viewAngles.yaw, dx, dy, command->movement.forward, command->movement.side,
-			actors_[index].managedMoveSpeeds > 0.0f ? actors_[index].managedMoveSpeeds : self->v.maxspeed);
+			desiredSpeed);
 	if (!move.valid)
 		return;
 	const float worldX = move.forward * std::cos(yaw) + move.side * std::sin(yaw);
@@ -355,12 +355,30 @@ runtime::CommandReceipt BotCommandRuntime::executeManagedBotCommand(std::size_t 
 	const float maxSpeed = handle.entity->v.maxspeed;
 	const bool explicitFrozen = (handle.entity->v.flags & FL_FROZEN) != 0;
 	const bool roundFreeze = services_->roundFreezeActive();
-	if (!explicitFrozen && !roundFreeze && !actors_[index].managedBotActionStopsMovement)
-		applyPlayerAvoidance(index, &command);
-	if (services_->behavior_noiseInvestigationWalking(index) && (handle.entity->v.flags & FL_ONGROUND) &&
-		handle.entity->v.movetype != MOVETYPE_FLY && !(command.movement.buttons & IN_DUCK))
+	const bool walking = !services_->behavior_forcedRunning(index) &&
+		services_->behavior_noiseInvestigationWalking(index) && (handle.entity->v.flags & FL_ONGROUND) &&
+		handle.entity->v.movetype != MOVETYPE_FLY && !(command.movement.buttons & IN_DUCK);
+	const float movementSpeed = actors_[index].managedMoveSpeeds > 0.0f
+		? actors_[index].managedMoveSpeeds : maxSpeed;
+	constexpr float kWalkingSpeedFraction = .4f;
+	const float walkingLimit = kWalkingSpeedFraction * maxSpeed;
+	if (walking)
 	{
-		const float speed = std::hypot(command.movement.forward, command.movement.side), limit = .4f * maxSpeed;
+		const float speed = std::hypot(command.movement.forward, command.movement.side);
+		if (std::isfinite(speed) && std::isfinite(walkingLimit) && walkingLimit > 0 && speed > walkingLimit)
+		{
+			command.movement.forward *= walkingLimit / speed;
+			command.movement.side *= walkingLimit / speed;
+		}
+	}
+	if (!explicitFrozen && !roundFreeze && !actors_[index].managedBotActionStopsMovement)
+	{
+		applyPlayerAvoidance(index, &command, walking ? (std::min)(movementSpeed, walkingLimit) : movementSpeed);
+	}
+	if (walking)
+	{
+		const float speed = std::hypot(command.movement.forward, command.movement.side);
+		const float limit = walkingLimit;
 		if (std::isfinite(speed) && std::isfinite(limit) && limit > 0 && speed > limit)
 		{
 			command.movement.forward *= limit / speed;
@@ -785,9 +803,9 @@ void BotCommandRuntime::finishMovementCommand(std::size_t index, FakeClientHandl
 			locomotionIntent.posture != nav::LocomotionPosture::Crouching)
 			commandSpeed *= ASTRABOT_BOT_COMMAND_RUNTIME_GOAL_SLOWDOWN_FACTOR;
 	}
-	if (compatibilityMovement && services_->behavior_noiseInvestigationWalking(index) &&
-		locomotionIntent.posture == nav::LocomotionPosture::Standing)
-		commandSpeed = (std::min)(commandSpeed, .4f * handle.entity->v.maxspeed);
+	// Retain movement before walking reduction: events between full updates
+	// must be able to restore running on the next cached command.
+	// executeManagedBotCommand applies the current walk/run decision.
 	actors_[index].managedMoveSpeeds = commandSpeed;
 	const MovementProjection movementProjection = ActionAdapter::projectMovement(locomotionIntent.direction.x,
 		locomotionIntent.direction.y, commandSpeed, command.viewAngles.yaw, compatibilityMovement);

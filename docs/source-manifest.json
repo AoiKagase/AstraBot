@@ -1714,6 +1714,18 @@
       "origin": "AstraBot",
       "license_status": "pending_release_review",
       "reference_only": false
+    },
+    {
+      "path": "include/astrabot/compat/knife_run.hpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "tests/knife_run_tests.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
     }
   ]
 }

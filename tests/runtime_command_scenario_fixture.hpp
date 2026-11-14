@@ -186,6 +186,11 @@ public:
 		return value;
 	}
 
+	bool behavior_forcedRunning(std::size_t) override
+	{
+		return false;
+	}
+
 	bool behavior_noiseInvestigationWalking(std::size_t) const override
 	{
 		return false;

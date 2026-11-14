@@ -14,7 +14,7 @@ public:
 		services_ = &services;
 	}
 
-	void applyPlayerAvoidance(std::size_t index, runtime::BotCommand *command);
+	void applyPlayerAvoidance(std::size_t index, runtime::BotCommand *command, float desiredSpeed);
 	runtime::CommandReceipt dispatchJoinHeartbeat(
 		std::size_t index, FakeClientHandle &handle, std::uint8_t milliseconds);
 	bool dispatchManagedActionCommand(

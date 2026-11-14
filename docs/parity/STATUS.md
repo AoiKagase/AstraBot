@@ -1,3 +1,21 @@
+## 2026-11-15 knife enemy fire run
+
+Source base3452978; oracle ReGameDLL-CS b0889847fe6d03898be88acc9e366660efb40ab5, cs_bot_event.cpp267–273, cs_bot.h1328–1332, cs_bot.cpp67–77 and game_shared/bot/bot_util.h63–73.
+
+- A knife-equipped managed actor reacts only to its previously recognized enemy's public firing/dry-fire receipt. Public edict serial retention prevents reused slots from triggering a former enemy reaction; no enemy position or visibility is invented. Direct dispatch precedes sound deduplication and hearing/NAV/noise admission. No new trace, asset I/O or RNG is added.
+- Existing mapped server gun PlaybackEvent and exact standard fire/dryfire samples establish receipts. Private/delayed/unmapped playback and incidental/reload samples do not. The five-second timer restarts on new eligible events, remains active at the exact deadline, and survives loss of sight or switching away from the knife. Native walking requests yield to running during the timer; crouch, ladder, freeze, objective holds and ordinary goal slowdown retain their existing controls.
+- Observer/serial/map/round/life/clock/frame checks and public death, actor removal/remember, execution reset and round reset cancel stale timers. Enemy death clears retained target identity without cancelling another living observer's already started run timer.
+- Core policy and actual registered-hook runtime tests cover exact deadline, refresh, identity/life/clock, genuine enemy recognition, range/sight independence, knife/private/unknown/reload gates, source reuse, weapon switch, public death/round and actual full/cached command speed240 versus walk96, including expiry restoration. The inert engine fixture resets its unrelated stuck-progress history after a5.1second gap and respects the existing native path throttle.
+- This is a bounded public receipt slice. Native reload/knife/grenade animation event intake and friend-death reactions remain open. No live HLDS/ReHLDS acceptance, deployment or push is claimed.
+
+Independent final review:0Critical/2Important/0Minor. Fixed the cached-walking-start reaction and the extra recognition callback in one pass. The cached-start regression now advances40ms (beyond native30Hz command upkeep), asserts a new command with no full update, and detects the original early walking cap in a temporary RED control before restored GREEN. Frozen characterization also reproduced RED on extra callbacks and is now unchanged/GREEN. No control/debug code or regenerated golden input remains.
+
+Final offline gates: Windows110/110 PASS9.77s; Linux108/109 PASS12.72s, only the unchanged combat_policy chest-threshold baseline fails. Complete directories were built under matching Windows Hostx86/x86 MSVC14.51.36231 and Linux x86; OS suites ran sequentially. PE/ELF32bit exact7exports PASS independently. Manifest279entries/272C-C++ files; source282input hashes and4preserved user files unchanged across final gates.
+
+Artifact SHA256: DLL f3fc9dc35538abb4918fb845529de4388572840561ed13f50f0a7410548f734e; SO9295c1d7e64c122cdf9cd4d96db608cb16b7e5d461ecc90ba8dc04ba3654f7dc. Local commit/FF receipt lives in the feature session; no push/deploy.
+
+Decisions retained: existing checkout/caches and evidence are preserved to avoid disturbing user files; exact-path staging and input/artifact hashes control the risk of mixing work. Native receipts beyond this slice stay in the backlog (missing behavior remains); live acceptance stays open (runtime differences remain possible). Full suite/artifact gates declined by the source reviewer were executed by the parent. The known Linux failure remains an open issue, not overall completion.
+
 ## 2026-11-15 kill congratulations
 
 Source based1878dd; read-only behavior oracle ReGameDLL-CS

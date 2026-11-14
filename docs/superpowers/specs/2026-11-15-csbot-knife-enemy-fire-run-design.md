@@ -1,0 +1,9 @@
+# Knife enemy fire run override
+
+Implement the native ForceRun(5) reaction for a knife-equipped observer's current enemy firing or dry firing. Oracle: read-only ReGameDLL-CS b0889847fe6d03898be88acc9e366660efb40ab5, cs_bot_event.cpp267–273, cs_bot.h1328–1332, cs_bot.cpp67–77, bot_util.h63–73. CountdownTimer expires strictly after its deadline. A new event restarts the five-second timer. Weapon changes and loss of sight do not cancel an already started timer. It overrides walking requests, not crouch/ladder/freeze/objective holds.
+
+Use existing mapped public server PlaybackEvent shots and exact standard fire/dryfire samples. Deliver directly before hearing-memory deduplication/admission; native event reaction has no hearing radius, FOV, blind, NAV or noise-priority condition. Only a previously recognized hostile player with matching public edict serial is eligible. Remember that enemy identity without adding hidden coordinates or changing target acquisition. Validate observer/entity/map/round/life and finite clock; clear on death/removal/respawn/round/map/clock regression. No SDK in Core, private weapon fields, new exports, deployment or push.
+
+This bounded slice does not claim all native EVENT_WEAPON_FIRED sources (knife/grenade attack animations) or EVENT_WEAPON_RELOADED coverage. Public generic weapon/reload samples cannot establish those animation events. Keep reload and friend-death reactions in the backlog.
+
+Acceptance: independent Core tests for five-second exact boundary, refresh, identity/life/clock rejection; actual registered runtime hooks for recognition, current enemy vs other actor, knife gate, private/delayed/unmapped playback, incidental samples, serial reuse and lifecycle; movement override exercised through the existing walking command path. Full x86 suites, separate artifact gates, one fresh final review, explicit-path commit/local FF.

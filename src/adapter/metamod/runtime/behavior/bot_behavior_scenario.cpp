@@ -131,6 +131,8 @@ BotBehaviorRuntime::BehaviorPhaseResult BotBehaviorRuntime::updateBehaviorLifecy
 	{
 		actors_[index].noiseInvestigation.reset();
 		actors_[index].investigationWalking = false;
+		actors_[index].knifeRun.reset();
+		actors_[index].enemyWeaponSource = {};
 		actors_[index].equipment.reset();
 		actors_[index].scenarioPlanners.reset();
 		services_->applyNavigationRequest({index, NavigationRequestKind::ClearFailure});

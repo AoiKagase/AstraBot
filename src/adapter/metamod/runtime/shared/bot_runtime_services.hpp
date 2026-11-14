@@ -56,6 +56,7 @@ public:
 	virtual void behavior_resetEquipment(std::size_t index) = 0;
 	virtual void behavior_observePublicDeath(std::size_t index) = 0;
 	virtual void behavior_observePlayerDeath(int victimSlot, int killerSlot, edict_t *recipient, const world::FrameIdentity &frame) = 0;
+	virtual void behavior_observeEnemyWeaponFire(const edict_t *source, const world::FrameIdentity &frame, float now) = 0;
 	virtual void behavior_observeCloseFootstep(std::size_t index, const compat::FootstepEquipmentReceipt &receipt) = 0;
 	virtual const std::uint32_t &command_managedBotCommandSequences(std::size_t index) const = 0;
 	virtual void navigation_observePublicDeath(std::size_t victim) = 0;
@@ -180,6 +181,7 @@ public:
 	virtual const Service_roundFreezeUntil &service_roundFreezeUntil() = 0;
 	virtual Service_runtimeProfiler &service_runtimeProfiler() = 0;
 	virtual void behavior_applyObstacleCommand(std::size_t index, runtime::BotCommand &command) = 0;
+	virtual bool behavior_forcedRunning(std::size_t index) = 0;
 	virtual bool behavior_noiseInvestigationWalking(std::size_t index) const = 0;
 	virtual void behavior_applyNoiseLookCommand(std::size_t index, runtime::BotCommand &command) = 0;
 	virtual const ManagedObjectiveTargetCache &behavior_managedBotObjectiveTargets(std::size_t index) const = 0;

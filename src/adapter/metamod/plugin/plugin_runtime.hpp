@@ -412,6 +412,11 @@ private:
 	{
 		return observation_.consumeNoise(index, expected);
 	}
+	bool behavior_forcedRunning(std::size_t index) override
+	{
+		return behavior_.forcedRunning(index);
+	}
+
 	bool behavior_noiseInvestigationWalking(std::size_t index) const override
 	{
 		return behavior_.noiseInvestigationWalking(index);
@@ -612,6 +617,11 @@ private:
 	void behavior_resetEquipment(std::size_t index) override
 	{
 		behavior_.resetEquipment(index);
+	}
+
+	void behavior_observeEnemyWeaponFire(const edict_t *source, const world::FrameIdentity &frame, float now) override
+	{
+		behavior_.observeEnemyWeaponFire(source, frame, now);
 	}
 
 	void behavior_observeCloseFootstep(std::size_t index, const compat::FootstepEquipmentReceipt &receipt) override

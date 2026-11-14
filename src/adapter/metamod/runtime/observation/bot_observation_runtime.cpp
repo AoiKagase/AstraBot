@@ -1,4 +1,5 @@
 #include "runtime/observation/bot_observation_runtime.hpp"
+#include "astrabot/compat/knife_run.hpp"
 #include "runtime/shared/bot_runtime_support.hpp"
 #include "astrabot/compat/noise_look.hpp"
 #include "astrabot/compat/noise_navigation.hpp"
@@ -491,6 +492,9 @@ void BotObservationRuntime::onPlaybackEvent(
 	event.hearingRange = range;
 	event.timestampTick = services_->service_adapterFrameCount();
 	event.timestampSeconds = services_->service_globals()->time;
+	services_->behavior_observeEnemyWeaponFire(invoker,
+		{services_->service_lifecycle().mapGeneration(), services_->service_lifecycle().roundGeneration(),
+			services_->service_adapterFrameCount()}, event.timestampSeconds);
 	recordSound(event, invoker);
 }
 
@@ -634,6 +638,12 @@ void BotObservationRuntime::onEmitSoundAt(edict_t *entity, const char *sample, f
 	if (entityIndex >= 1 && entityIndex <= kMaximumClientSlot && (entity->v.flags & FL_CLIENT) != 0)
 	{
 		event.source = {static_cast<std::uint32_t>(entityIndex), static_cast<std::uint32_t>(entity->serialnumber) + 1U};
+	}
+	if (compat::isStandardShotSample(sample) || compat::isStandardDryFireSample(sample))
+	{
+		services_->behavior_observeEnemyWeaponFire(entity,
+			{services_->service_lifecycle().mapGeneration(), services_->service_lifecycle().roundGeneration(),
+				services_->service_adapterFrameCount()}, event.timestampSeconds);
 	}
 	recordSound(event, entity);
 	if (bombBeep && entityIndex > 0)
@@ -1126,6 +1136,11 @@ bool BotObservationRuntime::collectManagedPerception(
 				{
 					edict_t *enemy = services_->service_engineFunctions()->pfnPEntityOfEntIndex(
 						static_cast<int>(candidate->actor.slot));
+					if (enemy != nullptr && !enemy->free && enemy->serialnumber >= 0)
+					{
+						threats->sourceEntities[candidateCount] = {candidate->actor.slot,
+							static_cast<std::uint32_t>(enemy->serialnumber) + 1U};
+					}
 					if (enemy != nullptr && !enemy->free && (enemy->v.button & IN_ATTACK) != 0)
 					{
 						const float yaw = enemy->v.v_angle.y * ASTRABOT_BOT_OBSERVATION_RUNTIME_PI / kHalfTurnDegrees;

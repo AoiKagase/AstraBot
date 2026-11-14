@@ -3,6 +3,7 @@
 #include "runtime/shared/bot_runtime_services.hpp"
 #include "astrabot/compat/enemy_count_chatter.hpp"
 #include "astrabot/compat/kill_praise.hpp"
+#include "astrabot/compat/knife_run.hpp"
 #include "astrabot/compat/noise_investigation.hpp"
 #include "astrabot/compat/guard_look.hpp"
 #include "astrabot/compat/weapon_equipment.hpp"
@@ -48,6 +49,8 @@ public:
 	void resetObstacleMaterials();
 	void resetRoundRecognition();
 	void observePublicDeath(std::size_t index);
+	void observeEnemyWeaponFire(const edict_t *source, const world::FrameIdentity &frame, float now);
+	bool forcedRunning(std::size_t index);
 	void observePlayerDeath(int victimSlot, int killerSlot, edict_t *recipient, const world::FrameIdentity &frame);
 	void bindServices(BotBehaviorServices &services)
 	{
@@ -429,6 +432,8 @@ private:
 		compat::OutgoingRadioScheduler outgoingRadioSchedulers{};
 		compat::EnemyCountChatterPolicy enemyCountChatter{};
 		compat::KillPraisePolicy killPraise{};
+		compat::KnifeRunTimer knifeRun{};
+		world::EntityKey enemyWeaponSource{};
 		compat::RadioContactMemory outgoingRadioContactMemory{};
 		std::uint32_t outgoingRadioReceipts{};
 		std::uint32_t outgoingRadioAttemptGenerations{};

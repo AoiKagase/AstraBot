@@ -45,6 +45,211 @@ void gunTrace(const float *, const float *end, int flags, edict_t *, TraceResult
 	trace->flFraction = flags == 0x101 ? 1.0f : 0.0f;
 	trace->vecEndPos = Vector(end[0], end[1], end[2]);
 }
+bool knifeSight = true;
+void knifeTrace(const float *, const float *end, int, edict_t *, TraceResult *trace)
+{
+	*trace = {};
+	trace->flFraction = knifeSight ? 1.0f : 0.0f;
+	trace->vecEndPos = Vector(end[0], end[1], end[2]);
+}
+
+bool testKnifeRun(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &engine, globalvars_t &globals)
+{
+	using namespace astrabot;
+	auto &self = gEntities[0];
+	auto &source = gEntities[4];
+	runtime.beginRoundGeneration();
+	engine.pfnTraceLine = &knifeTrace;
+	knifeSight = true;
+	runtime.giveEnginePointers(&engine, &globals);
+	self.v.v_angle = Vector(0, 90, 0);
+	self.v.angles = self.v.v_angle;
+	self.v.maxspeed = 240;
+	source.v.origin = Vector(0, 500, 36);
+	source.v.team = 2;
+	enginefuncs_t hooks{};
+	int version = ENGINE_INTERFACE_VERSION;
+	if (!runtime.provideEngineFunctions(&hooks, &version))
+	{
+		return false;
+	}
+	const auto weapon = [&](int id)
+	{
+		hooks.pfnMessageBegin(MSG_ONE, 94, nullptr, &self);
+		hooks.pfnWriteByte(1);
+		hooks.pfnWriteByte(id);
+		hooks.pfnWriteByte(1);
+		hooks.pfnMessageEnd();
+	};
+	const auto step = [&](float dt)
+	{
+		globals.time += dt;
+		runtime.onStartFrame();
+		runtime.onStartFramePost();
+	};
+	const auto fire = [&](const edict_t *entity, int flags = 1, float delay = 0, unsigned short index = 17)
+	{
+		float zero[3]{};
+		hooks.pfnPlaybackEvent(flags, entity, index, delay, zero, zero, 0, 0, 0, 0, 0, 0);
+	};
+	weapon(29);
+	for (int i = 0; i < 6; ++i)
+	{
+		self.v.v_angle = Vector(0, 90, 0);
+		self.v.angles = self.v.v_angle;
+		step(.12f);
+	}
+	auto &nav = static_cast<metamod::BotNavigationServices &>(runtime);
+	auto &commands = static_cast<metamod::BotCommandServices &>(runtime);
+	if (!check(nav.behavior_managedBotStateMachines(0).attackOverlayActive(),
+			"knife fixture recognizes enemy through real perception"))
+	{
+		return false;
+	}
+	knifeSight = false;
+	source.v.origin = Vector(0, 10000, 36);
+	fire(&source);
+	if (!check(commands.behavior_forcedRunning(0), "current enemy shot forces knife run outside hearing and sight"))
+	{
+		return false;
+	}
+	const float started = globals.time;
+	globals.time = started + 5;
+	if (!check(commands.behavior_forcedRunning(0), "runtime preserves native exact five-second boundary"))
+	{
+		return false;
+	}
+	globals.time += .01f;
+	if (!check(!commands.behavior_forcedRunning(0), "runtime expires after five seconds"))
+	{
+		return false;
+	}
+	fire(&source, 1 << 4);
+	fire(&source, 1 << 6);
+	fire(&source, 1, .1f);
+	fire(&source, 1, 0, 999);
+	hooks.pfnEmitSound(&source, 1, "weapons/ak47_clipin.wav", 1, 1, 0, 100);
+	if (!check(!commands.behavior_forcedRunning(0),
+			"private delayed unknown playback and reload samples do not force run"))
+	{
+		return false;
+	}
+	weapon(28);
+	fire(&source);
+	if (!check(!commands.behavior_forcedRunning(0), "rifle-equipped observer ignores enemy firing reaction"))
+	{
+		return false;
+	}
+	weapon(29);
+	fire(&self);
+	if (!check(!commands.behavior_forcedRunning(0), "self is not the current enemy"))
+	{
+		return false;
+	}
+	++source.serialnumber;
+	fire(&source);
+	if (!check(!commands.behavior_forcedRunning(0), "reused enemy slot cannot trigger old enemy reaction"))
+	{
+		return false;
+	}
+	--source.serialnumber;
+	hooks.pfnEmitSound(&source, 1, "weapons/dryfire_rifle.wav", .8f, 1, 0, 100);
+	if (!check(commands.behavior_forcedRunning(0), "exact standard dry fire starts run without audibility gate"))
+	{
+		return false;
+	}
+	weapon(28);
+	if (!check(commands.behavior_forcedRunning(0), "weapon switch does not cancel started native run timer"))
+	{
+		return false;
+	}
+	static_cast<metamod::BotObservationServices &>(runtime).behavior_observePublicDeath(0);
+	if (!check(!commands.behavior_forcedRunning(0), "public death cancels even before the next full update"))
+	{
+		return false;
+	}
+	runtime.beginRoundGeneration();
+	if (!check(!commands.behavior_forcedRunning(0), "round clears run timer and enemy identity"))
+	{
+		return false;
+	}
+	weapon(29);
+	fire(&source);
+	if (!check(!commands.behavior_forcedRunning(0), "unrecognized enemy cannot restart timer after round reset"))
+	{
+		return false;
+	}
+	if (!check(loadInvestigationNav(runtime), "knife run uses actual investigation movement fixture"))
+	{
+		return false;
+	}
+	step(30);
+	knifeSight = true;
+	source.v.origin = Vector(0, 500, 36);
+	for (int i = 0; i < 6; ++i)
+	{
+		self.v.v_angle = Vector(0, 90, 0);
+		self.v.angles = self.v.v_angle;
+		step(.12f);
+	}
+	knifeSight = false;
+	step(.3f);
+	step(.3f);
+	hooks.pfnEmitSound(&source, 1, "weapons/ak47-1.wav", 1, 1, 0, 100);
+	step(.12f); // Publish before reaction; defer the next decision beyond the existing path throttle.
+	step(.6f);
+	for (int i = 0; i < 12; ++i)
+	{
+		step(.12f);
+		if (nav.behavior_noiseInvestigationWalking(0))
+		{
+			break;
+		}
+	}
+	if (!check(nav.behavior_noiseInvestigationWalking(0) && commands.behavior_forcedRunning(0) &&
+				std::hypot(gLastRunPlayerMoveForward, gLastRunPlayerMoveSide) > 96.01f,
+			"forced run overrides actual full-update noise walking speed"))
+	{
+		return false;
+	}
+	step(.04f);
+	if (!check(std::hypot(gLastRunPlayerMoveForward, gLastRunPlayerMoveSide) > 96.01f,
+			"cached command preserves forced running speed"))
+	{
+		return false;
+	}
+	// The fake engine does not move the edict. Reset its unrelated stuck-progress window.
+	globals.time += 5.1f;
+	static_cast<metamod::BotBehaviorServices &>(runtime).applyNavigationRequest(
+		{0, metamod::NavigationRequestKind::ResetProgress});
+	step(.12f);
+	if (!check(!commands.behavior_forcedRunning(0) && nav.behavior_noiseInvestigationWalking(0) &&
+				std::hypot(gLastRunPlayerMoveForward, gLastRunPlayerMoveSide) > 0 &&
+				std::hypot(gLastRunPlayerMoveForward, gLastRunPlayerMoveSide) <= 96.01f,
+			"expiry restores quiet walking on the actual command path"))
+	{
+		return false;
+	}
+	const auto commandBefore =
+		static_cast<metamod::BotObservationServices &>(runtime).command_managedBotCommandSequences(0);
+	const auto fullBefore =
+		static_cast<metamod::BotBehaviorServices &>(runtime).service_managedBotFullUpdateSequences()[0];
+	hooks.pfnEmitSound(&source, 1, "weapons/dryfire_pistol.wav", .8f, 1, 0, 100);
+	step(.04f);
+	if (!check(static_cast<metamod::BotBehaviorServices &>(runtime).service_managedBotFullUpdateSequences()[0] ==
+					fullBefore &&
+				static_cast<metamod::BotObservationServices &>(runtime).command_managedBotCommandSequences(0) >
+					commandBefore &&
+				commands.behavior_forcedRunning(0) &&
+				std::hypot(gLastRunPlayerMoveForward, gLastRunPlayerMoveSide) > 96.01f,
+			"enemy firing immediately restores an already cached walking command without a full update"))
+	{
+		return false;
+	}
+	engine.pfnTraceLine = &gunTrace;
+	return true;
+}
+
 bool testGunshot(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &engine, globalvars_t &globals)
 {
 	if (!check(loadHearingNav(runtime), "hearing fixture supplies real NAV"))
@@ -211,6 +416,10 @@ bool testGunshot(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &engin
 	step(20.1f);
 	if (!check(!belief.noise().active, "delayed publication cannot renew expired gunshot"))
 		return false;
+	if (!testKnifeRun(runtime, engine, globals))
+	{
+		return false;
+	}
 	runtime.onServerDeactivate();
 	resetEntities(); // GameDLL destroys the previous map edicts before precaching the next map.
 	gCreateCount = 0;

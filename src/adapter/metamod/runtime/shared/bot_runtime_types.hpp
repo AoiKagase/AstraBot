@@ -77,6 +77,7 @@ struct ThreatObservation
 {
 	static constexpr auto kMaximumThreatCandidates = 32U;
 	std::array<compat::ThreatCandidate, kMaximumThreatCandidates> candidates{};
+	std::array<world::EntityKey, kMaximumThreatCandidates> sourceEntities{};
 	std::size_t count = 0U;
 	bool observerAvailable = false;
 };
