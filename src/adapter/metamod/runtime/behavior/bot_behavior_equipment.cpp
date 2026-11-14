@@ -14,8 +14,13 @@ bool BotBehaviorRuntime::decideEquipmentAction(
 	constexpr unsigned kPistolWeaponIds[] = {1U, 10U, 11U, 16U, 17U, 26U};
 	const auto &store = services_->observation_publicObservations();
 	const auto definition = store.definition(weapon.weaponId);
-	if (!weapon.weaponKnown || !definition.known || definition.slot != kPrimaryWeaponSlot || weapon.clip < 0 ||
-		weapon.clip != 0)
+	if (ctx.proposal.kind == ActionKind::SelectPistol && ctx.proposal.equipmentWeaponId != 0)
+	{
+		return true;
+	}
+	const bool closeFootstep = ctx.closeFootstepDistance >= 0;
+	if (!weapon.weaponKnown || !definition.known || definition.slot != kPrimaryWeaponSlot ||
+		(!closeFootstep && (weapon.clip < 0 || weapon.clip != 0)))
 		return false;
 	compat::EquipmentInput in{};
 	in.actor = ctx.actor;
@@ -25,7 +30,8 @@ bool BotBehaviorRuntime::decideEquipmentAction(
 	in.primary = true;
 	in.currentWeapon = static_cast<std::uint16_t>(weapon.weaponId);
 	in.weaponObservationTick = weapon.weaponTick;
-	in.clipKnown = true;
+	in.closeFootstepDistance = ctx.closeFootstepDistance;
+	in.clipKnown = weapon.clip >= 0;
 	in.clip = static_cast<unsigned>(weapon.clip);
 	in.attacking = attacking;
 	if (definition.ammoIndex >= 0 && definition.ammoIndex < kAmmoTypeCount)
@@ -82,11 +88,34 @@ bool BotBehaviorRuntime::decideEquipmentAction(
 	return true;
 }
 
+void BotBehaviorRuntime::observeCloseFootstep(std::size_t index, const compat::FootstepEquipmentReceipt &receipt)
+{
+	if (!services_ || !services_->service_globals() || index >= actors_.size())
+	{
+		return;
+	}
+	const auto config = services_->service_compatibilitySurface().configuration();
+	const auto &handle = services_->service_managedBotHandles()[index];
+	const world::ActorKey actor{handle.actor.slot, handle.actor.actorGeneration};
+	const world::FrameIdentity frame{services_->service_lifecycle().mapGeneration(),
+		services_->service_lifecycle().roundGeneration(), services_->service_adapterFrameCount()};
+	const float now = services_->service_globals()->time;
+	if (config.mode != compat::RuntimeMode::Compatibility || config.botEnable <= 0 || config.botStop > 0 ||
+		!handle.entity || handle.entity->free || handle.entity->v.deadflag != DEAD_NO || handle.entity->v.health <= 0 ||
+		(handle.entity->v.flags & (FL_FROZEN | FL_SPECTATOR)) != 0 || !receipt.current(actor, frame, now) ||
+		(services_->service_roundFreezeGeneration() == frame.roundGeneration && now < services_->service_roundFreezeUntil()))
+	{
+		return;
+	}
+	actors_[index].closeFootstep = receipt;
+}
+
 void BotBehaviorRuntime::observeEquipmentDispatched(std::size_t index, std::uint16_t weapon, bool success)
 {
 	if (index >= actors_.size() || !services_->service_globals())
 		return;
 	const auto &handle = services_->service_managedBotHandles()[index];
+	actors_[index].closeFootstep = {};
 	actors_[index].equipment.dispatched({handle.actor.slot, handle.actor.actorGeneration},
 		{services_->service_lifecycle().mapGeneration(), services_->service_lifecycle().roundGeneration(),
 			services_->service_adapterFrameCount()},

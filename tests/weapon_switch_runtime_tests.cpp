@@ -6,10 +6,17 @@ bool testWeaponSwitch(astrabot::metamod::PluginRuntime &, enginefuncs_t &, globa
 #define ASTRABOT_EXTRA_ACTOR_TEST testWeaponSwitch
 #define ASTRABOT_ACTOR_PROFILE_TEXT "AnyProfile { Name = \"Any Bot\" Team = any Difficulty = 1 Skill = 70 }\n"
 #include "compat_actor_command_tests.cpp"
+#include "fixtures/noise_runtime_nav.hpp"
 namespace
 {
 unsigned switchRequests = 0, pistolShots = 0;
 int activeEquipment = 22;
+float equipmentStop = 0;
+
+float equipmentFloat(const char *name)
+{
+	return std::strcmp(name, "bot_stop") == 0 ? equipmentStop : getCvarFloat(name);
+}
 astrabot::metamod::PluginRuntime *equipmentRuntime = nullptr;
 int equipmentMessageId(plid_t id, const char *name, int *size)
 {
@@ -214,6 +221,171 @@ bool testWeaponSwitch(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &
 						 "DeathMsg and ResetHUD between full updates clear the old 5-second equip wait") &&
 				passed;
 		}
+	}
+	gObjectiveTraceVisible = false;
+	engine.pfnRandomFloat = &hearingFixtureRandomFloat;
+	engine.pfnCVarGetFloat = &equipmentFloat;
+	runtime.giveEnginePointers(&engine, &globals);
+	for (unsigned i = 2; i < 4; ++i)
+	{
+		gEntities[i].v.deadflag = DEAD_DEAD;
+		gEntities[i].v.health = 0;
+	}
+	const auto step = [&](float dt)
+	{
+		globals.time += dt;
+		runtime.onStartFrame();
+		runtime.onStartFramePost();
+	};
+	for (int sniper : {3, 13, 18, 24})
+	{
+		runtime.beginRoundGeneration();
+		auto &self = gEntities[0];
+		auto &source = gEntities[1];
+		self.v.flags = FL_CLIENT | FL_FAKECLIENT | FL_ONGROUND;
+		self.v.health = 100;
+		self.v.deadflag = DEAD_NO;
+		self.v.weapons = (1 << sniper) | (1 << 17) | (1 << 29);
+		self.v.origin = Vector(80, 32, 36);
+		self.v.v_angle = Vector(0, 0, 0);
+		self.v.fov = 90;
+		source.v.flags = FL_CLIENT | FL_ONGROUND;
+		source.v.health = 100;
+		source.v.deadflag = DEAD_NO;
+		source.serialnumber = 23;
+		source.v.team = 2;
+		source.v.origin = Vector(-220, 32, 36);
+		runtime.onMessageBegin(2, 86, nullptr, nullptr);
+		runtime.onWriteByte(2);
+		runtime.onWriteString("CT");
+		runtime.onMessageEnd();
+		const char *names[] = {"weapon_scout", "weapon_sg550", "weapon_awp", "weapon_g3sg1"};
+		const int at = sniper == 3 ? 0 : sniper == 13 ? 1 : sniper == 18 ? 2 : 3;
+		runtime.onMessageBegin(1, 101, nullptr, &self);
+		runtime.onWriteString(names[at]);
+		for (int v : {4, 90, 255, 255, 0, 0, sniper, 0})
+			runtime.onWriteByte(v);
+		runtime.onMessageEnd();
+		for (int id : {17, sniper})
+		{
+			runtime.onMessageBegin(1, 94, nullptr, &self);
+			runtime.onWriteByte(id == sniper ? 1 : 0);
+			runtime.onWriteByte(id);
+			runtime.onWriteByte(id == sniper ? 10 : 20);
+			runtime.onMessageEnd();
+		}
+		activeEquipment = sniper;
+		const auto before = switchRequests;
+		step(.125f);
+		runtime.onEmitSound(&source, "player/pl_metal1.wav", 1, 1);
+		step(.125f);
+		if (!check(switchRequests == before, "exactly300-unit footstep does not switch loaded sniper"))
+			return false;
+		source.v.origin.x = -219;
+		runtime.onEmitSound(&self, "player/pl_metal1.wav", 1, 1);
+		step(.125f);
+		if (!check(switchRequests == before, "own footsteps do not switch weapons"))
+			return false;
+		source.v.team = 1;
+		runtime.onMessageBegin(2, 86, nullptr, nullptr);
+		runtime.onWriteByte(2);
+		runtime.onWriteString("TERRORIST");
+		runtime.onMessageEnd();
+		runtime.onEmitSound(&source, "player/pl_metal1.wav", 1, 1);
+		step(.125f);
+		if (!check(switchRequests == before, "friendly footsteps do not switch weapons"))
+			return false;
+		source.v.team = 2;
+		runtime.onMessageBegin(2, 86, nullptr, nullptr);
+		runtime.onWriteByte(2);
+		runtime.onWriteString("CT");
+		runtime.onMessageEnd();
+		source.v.health = 0;
+		runtime.onEmitSound(&source, "player/pl_metal1.wav", 1, 1);
+		step(.125f);
+		if (!check(switchRequests == before, "dead sound sources do not request a switch"))
+			return false;
+		source.v.health = 100;
+		equipmentStop = 1;
+		step(.125f);
+		runtime.onEmitSound(&source, "player/pl_metal1.wav", 1, 1);
+		equipmentStop = 0;
+		step(.125f);
+		if (!check(switchRequests == before, "stopped-AI sound cannot replay when AI resumes"))
+			return false;
+		runtime.onEmitSound(&source, "player/pl_metal1.wav", 1, 1);
+		step(.3f);
+		if (!check(switchRequests == before, "receipt delayed beyond next decision window is discarded"))
+			return false;
+		const auto pistolAmmo = [&](int clip, int reserve)
+		{
+			runtime.onMessageBegin(1, 94, nullptr, &self);
+			runtime.onWriteByte(0);
+			runtime.onWriteByte(17);
+			runtime.onWriteByte(clip);
+			runtime.onMessageEnd();
+			runtime.onMessageBegin(1, 102, nullptr, &self);
+			runtime.onWriteByte(10);
+			runtime.onWriteByte(reserve);
+			runtime.onMessageEnd();
+		};
+		pistolAmmo(0, 0);
+		runtime.onEmitSound(&source, "player/pl_metal1.wav", 1, 1);
+		step(.125f);
+		if (!check(switchRequests == before, "empty pistol rejects the first footstep decision"))
+			return false;
+		pistolAmmo(20, 40);
+		step(.1f);
+		if (!check(switchRequests == before, "new ammo cannot replay a footstep rejected by the previous decision"))
+			return false;
+		runtime.onEmitSound(&source, "player/pl_metal1.wav", 1, 1);
+		runtime.onMessageBegin(1, 104, nullptr, &self);
+		runtime.onMessageEnd();
+		pistolAmmo(20, 40);
+		runtime.onMessageBegin(1, 94, nullptr, &self);
+		runtime.onWriteByte(1);
+		runtime.onWriteByte(sniper);
+		runtime.onWriteByte(10);
+		runtime.onMessageEnd();
+		step(.125f);
+		if (!check(switchRequests == before, "ResetHUD discards the pending close-footstep request"))
+			return false;
+		if (sniper == 3)
+		{
+			// First-use engine edicts legitimately have serial zero (identity generation one).
+			source.serialnumber = 0;
+			runtime.onMessageBegin(2, 86, nullptr, nullptr);
+			runtime.onWriteByte(2);
+			runtime.onWriteString("CT");
+			runtime.onMessageEnd();
+		}
+		// A high-priority shot may own noise memory; equipment reacts before its replacement gate.
+		runtime.onEmitSound(&source, "weapons/ak47-1.wav", 1, 1);
+		runtime.onEmitSound(&source, "player/pl_metal1.wav", 1, 1);
+		step(.125f);
+		if (!check(switchRequests == before + 1 && activeEquipment == 17,
+				"hidden enemy footstep inside300 switches every loaded sniper despite stronger noise memory"))
+			return false;
+		if (sniper != 3)
+		{
+			const auto &noise = static_cast<astrabot::metamod::BotBehaviorServices &>(runtime)
+				.observation_managedBotPerception(0).snapshot().noise();
+			if (!check(noise.active && noise.priority == astrabot::world::NoisePriority::High,
+					"stronger accepted noise remains unchanged by close-footstep equipment"))
+				return false;
+		}
+		if (!check((gLastRunPlayerMoveButtons & (IN_ATTACK | IN_ATTACK2)) == 0,
+				"heard footstep cannot invent a visible target or firing"))
+			return false;
+		for (int i = 0; i < 4; ++i)
+		{
+			runtime.onEmitSound(&source, "player/pl_step1.wav", 1, 1);
+			step(.125f);
+		}
+		if (!check(switchRequests == before + 1, "CurWeapon receipt prevents repeated pistol commands"))
+			return false;
+		if (sniper == 3 && !check(loadHearingNav(runtime), "remaining snipers use actual NAV-corrected noise memory"))
+			return false;
 	}
 	return passed;
 }

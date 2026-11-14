@@ -144,10 +144,15 @@ public:
 
 	void observeC4SelectionDispatched(std::size_t index, const FakeClientHandle &handle);
 	void observeEquipmentDispatched(std::size_t index, std::uint16_t weapon, bool success);
+
+	void observeCloseFootstep(std::size_t index, const compat::FootstepEquipmentReceipt &receipt);
 	void resetEquipment(std::size_t index)
 	{
 		if (index < actors_.size())
+		{
 			actors_[index].equipment.reset();
+			actors_[index].closeFootstep = {};
+		}
 	}
 
 	void observeC4AttackDispatched(std::size_t index, const FakeClientHandle &handle, std::uint16_t buttons);
@@ -175,6 +180,7 @@ private:
 		world::ActorKey targetActor{};
 		world::WorldPosition targetPosition{};
 		int team = 0;
+		float closeFootstepDistance = -1;
 	};
 	struct ScenarioUpdateData
 	{
@@ -412,6 +418,7 @@ private:
 		compat::BombGuardPlanner bombGuardPlanners{};
 		compat::GuardLookPlanner guardLook{};
 		compat::WeaponEquipmentPlanner equipment{};
+		compat::FootstepEquipmentReceipt closeFootstep{};
 		VoiceFeedback outgoingVoiceFeedback{};
 		compat::OutgoingRadioScheduler outgoingRadioSchedulers{};
 		compat::RadioContactMemory outgoingRadioContactMemory{};

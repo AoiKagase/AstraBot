@@ -1,6 +1,7 @@
 #ifndef ASTRABOT_COMPAT_WEAPON_EQUIPMENT_HPP
 #define ASTRABOT_COMPAT_WEAPON_EQUIPMENT_HPP
 #include "astrabot/world/world_snapshot.hpp"
+#include "astrabot/compat/footstep_equipment.hpp"
 #include <cmath>
 #include <cstdint>
 namespace astrabot
@@ -24,6 +25,7 @@ struct EquipmentInput
 	unsigned clip = 0, reserve = 0;
 	bool attacking = false, reloading = false, defusing = false, allowPistols = true, hasKnife = false;
 	EquipmentAmmo pistolAmmo = EquipmentAmmo::Unknown;
+	float closeFootstepDistance = -1;
 };
 struct EquipmentDecision
 {
@@ -59,12 +61,19 @@ public:
 			else
 				pending_ = 0;
 		}
-		if (in.defusing || in.reloading || !in.primary || !in.clipKnown || in.clip != 0)
+		if (in.defusing || in.reloading || !in.primary)
 			return {};
 		const bool usablePistol = in.allowPistols && in.pistolWeapon != 0 && in.pistolAmmo == EquipmentAmmo::Usable;
+		constexpr float kCloseFootstepRange = 300.0f;
+		const bool closeFootstep = isFootstepSniper(in.currentWeapon) && std::isfinite(in.closeFootstepDistance) &&
+			in.closeFootstepDistance >= 0 && in.closeFootstepDistance < kCloseFootstepRange && usablePistol;
+		if (!closeFootstep && (!in.clipKnown || in.clip != 0))
+		{
+			return {};
+		}
 		const bool tactical = in.skill > kTacticalPistolMinimumSkill && in.attacking && usablePistol;
 		const bool exhausted = in.reserveKnown && in.reserve == 0;
-		if (!tactical && !exhausted)
+		if (!closeFootstep && !tactical && !exhausted)
 			return {};
 		std::uint16_t target = 0;
 		if (usablePistol)

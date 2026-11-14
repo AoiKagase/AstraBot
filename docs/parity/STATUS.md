@@ -1,3 +1,63 @@
+## 2026-11-15 close-footstep sniper equipment
+
+Source base3a7fd83; behavior-only oracle ReGameDLL-CS
+b0889847fe6d03898be88acc9e366660efb40ab5 (read-only), CCSBot::OnEvent,
+EquipPistol/DoEquip and IsGameEventAudible. Independently implements the public
+sound-driven close-footstep equipment slice in Compatibility mode.
+
+- Known concrete/metal/dirt/duct/grate/tile/slosh/wade/ladder/snow step samples
+  are classified as Footstep, Low priority with strict1100-unit hearing range.
+  Invalid/custom prefixes are not presumed to be native footsteps. Existing STOP,
+  volume and stale-source validation remains; serial0 is valid generation1, only
+  negative serials are rejected. Per-event managed-handle iteration is prefiltered
+  by the cached observed sniper; no extra per-frame entity scan was added.
+- A living hostile player's public footstep at raw3D distance<300 can request a
+  pistol for Scout, SG550, AWP or G3SG1. Own/friendly/unknown-team/dead sources do
+  not trigger it. Receipt creation precedes noise attention/replacement and NAV
+  randomization; neither a visible contact, NAV destination nor vacant noise memory
+  is needed. No hidden target identity, Aim or fire is manufactured.
+- Loaded or unknown sniper clips and low skill/no combat target do not suppress
+  this reason. An owned allowed pistol still needs observed usable clip/reserve
+  ammunition. Existing shared five-second equipment interval, normal action/command
+  dispatch and CurWeapon acknowledgement remain in effect. USE/C4, grenade, reload,
+  freeze, disabled AI and death retain existing priority/suppression.
+- The receipt is moved into one transient normal-decision context and cleared on
+  every exit, including failed ammo/priority gates. Actor/map/round/death/reset clear
+  it, and ResetHUD clears it with equipment. New ammo cannot revive a previously
+  rejected request. Duplicate guard/combat passes preserve an already-selected
+  typed pistol proposal; no extra command transport or new engine ABI/export.
+- Pure tests cover material samples, strict300, all4 sniper IDs, clip/skill/combat
+  independence, ammo/allow/exclusions and receipt identity/age. Actual runtime tests
+  pin hidden enemies, no-NAV Scout, positive and valid zero serials, stronger High
+  noise retained under NAV, self/friendly/dead/stop/stale rejection, ammo-rejection
+  replay, ResetHUD, real pistol command/CurWeapon and no fabricated firing.
+  Independent review found2 Important and0 Critical; both were reproduced in runtime
+  RED logs and fixed GREEN. No remaining Important/Critical or deferred minors.
+
+Offline gates: complete MSVC HostX86/x86 Debug build PASS; CTest **102/102 PASS**
+(8.59 seconds). Complete Debian Linux x86 Debug build PASS; CTest **100/101 PASS**
+(12.41 seconds). Only pre-existing astrabot_combat_policy chest-policy failure remains,
+with its code/expectations unchanged from [the baseline](../verification/coding-conventions-20261113/VERIFICATION.md).
+Frozen runtime characterization passes on both OSes without regeneration. Ownership,
+ports, architecture, source manifest (266 entries,259 C/C++ files) and whitespace gates
+pass; independent PE/ELF checks confirm x86 and seven exact exports. All269 tested
+source inputs and the user's BotProfile.db match before/after the final verification.
+
+Verified local artifact SHA-256 (not deployed):
+- Windows DLL: bfa758798a49255965c0f07059c72b26216d326c40274d6565bf2dd02c91597f
+- Linux SO: 03dd20261dd36c4d123649d0e7e0d7733e9fecc3d3bd9c596ed917e6111086c4
+
+Evidence: .agent-state/sessions/csbot-close-footstep-equipment-490402ca-24a2-436f-b7a1-a0abcfcd9470/ (RESULT.json, source/profile
+fingerprints, RED/GREEN/review logs, complete builds and sequential CTests).
+
+Rulings/limits: this uses actual public EmitSound samples; PM_Move-only sounds and
+native player-animation GameEvent generation remain outside this slice, so some
+native footsteps may still never arrive. A0.25-second event-to-next-Full-Update window
+bounds delayed equipment requests; a slower decision drops the request. Observation
+never issues an immediate weapon command. These are adapter constraints rather than
+complete native scheduling equivalence. Live HLDS/ReHLDS, client feel/FPS/multiplayer
+acceptance are NOT RUN. No push/deployment.
+
 ## 2026-11-14 HeardNoise investigation reports
 
 Source base efb307c; behavioral oracle ReGameDLL-CS

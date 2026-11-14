@@ -608,6 +608,11 @@ private:
 		behavior_.resetEquipment(index);
 	}
 
+	void behavior_observeCloseFootstep(std::size_t index, const compat::FootstepEquipmentReceipt &receipt) override
+	{
+		behavior_.observeCloseFootstep(index, receipt);
+	}
+
 	void behavior_observePublicDeath(std::size_t index) override
 	{
 		behavior_.observePublicDeath(index);

@@ -1,4 +1,5 @@
 #include "astrabot/compat/weapon_equipment.hpp"
+#include "astrabot/compat/footstep_equipment.hpp"
 #include "astrabot/compat/public_observation.hpp"
 #include <cstdio>
 using namespace astrabot;
@@ -190,7 +191,64 @@ bool testPublicClipHistory()
 	return check(!store.read(actor, frame, &state), "removed actor cannot reuse ammo history");
 }
 }
+bool testCloseFootsteps()
+{
+	for (const char *sample : {"player/pl_step1.wav", "player/pl_metal4.wav", "player/pl_tile5.wav",
+		"player/pl_dirt2.wav", "player/pl_duct3.wav", "player/pl_grate1.wav", "player/pl_slosh4.wav",
+		"player/pl_wade2.wav", "player/pl_ladder4.wav", "player/pl_snow1.wav"})
+		if (!check(compat::isStandardFootstepSample(sample), "standard surface footsteps recognized"))
+			return false;
+	for (const char *sample : {"player/pl_step0.wav", "player/pl_step5.wav", "player/pl_tile6.wav",
+		"player/pl_step1.wav.extra", "weapons/ak47-1.wav", "player/pl_fallpain3.wav", "custom/pl_step1.wav"})
+		if (!check(!compat::isStandardFootstepSample(sample), "non-step/custom/invalid sample is not footsteps"))
+			return false;
+	compat::FootstepEquipmentReceipt receipt{{1, 1}, {1, 1, 1}, 10, 299};
+	if (!check(receipt.current({1, 1}, {1, 1, 2}, 10.125f) &&
+			!receipt.current({1, 1}, {1, 1, 3}, 10.251f) && !receipt.current({1, 1}, {1, 1, 3}, 9) &&
+			!receipt.current({1, 2}, {1, 1, 3}, 10.125f) && !receipt.current({1, 1}, {1, 2, 3}, 10.125f),
+			"footstep receipt is bounded to current actor/round and next full update"))
+		return false;
+	for (unsigned id : {3U, 13U, 18U, 24U})
+	{
+		for (float distance : {299.0f, 300.0f, 301.0f})
+		{
+			auto in = input();
+			in.currentWeapon = static_cast<std::uint16_t>(id);
+			in.clip = 10;
+			in.clipKnown = false;
+			in.skill = 0;
+			in.attacking = false;
+			in.closeFootstepDistance = distance;
+			compat::WeaponEquipmentPlanner planner;
+			if (!check(planner.update(in).selectWeapon == (distance < 300 ? 17 : 0),
+					"raw close-footstep threshold selects pistol for all snipers independent of clip/skill/combat"))
+				return false;
+		}
+	}
+	for (unsigned variant = 0; variant < 6; ++variant)
+	{
+		auto in = input();
+		in.currentWeapon = variant == 0 ? 22 : 18;
+		in.clip = 10;
+		in.closeFootstepDistance = 100;
+		if (variant == 1)
+			in.allowPistols = false;
+		if (variant == 2)
+			in.pistolAmmo = compat::EquipmentAmmo::Unknown;
+		if (variant == 3)
+			in.pistolAmmo = compat::EquipmentAmmo::Empty;
+		if (variant == 4)
+			in.defusing = true;
+		if (variant == 5)
+			in.reloading = true;
+		compat::WeaponEquipmentPlanner planner;
+		if (!check(!planner.update(in).ownsAction, "footsteps preserve ammo/pistol permission and interaction exclusions"))
+			return false;
+	}
+	return true;
+}
+
 int main()
 {
-	return testConditions() && testReceiptAndClock() && testPublicClipHistory() ? 0 : 1;
+	return testCloseFootsteps() && testConditions() && testReceiptAndClock() && testPublicClipHistory() ? 0 : 1;
 }

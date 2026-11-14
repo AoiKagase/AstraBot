@@ -537,6 +537,49 @@ void BotObservationRuntime::recordSound(world::AudibleEvent event, const edict_t
 	}
 	soundEvents_[event.id % soundEvents_.size()] = event;
 	soundTeams_[event.id % soundEvents_.size()] = event.source.isValid() ? resolvePlayerTeam(source) : 0;
+	notifyCloseFootstep(event, source);
+}
+
+void BotObservationRuntime::notifyCloseFootstep(const world::AudibleEvent &event, const edict_t *source)
+{
+	constexpr float kCloseFootstepRange = 300.0f;
+	if (event.kind != world::SoundKind::Footstep || !source || !event.source.isValid() || source->free ||
+		source->serialnumber < 0 || (source->v.flags & FL_CLIENT) == 0 || (source->v.flags & FL_SPECTATOR) != 0 ||
+		source->v.deadflag != DEAD_NO || source->v.health <= 0)
+	{
+		return;
+	}
+	const int sourceTeam = soundTeams_[event.id % soundTeams_.size()];
+	if (sourceTeam != kTerroristTeam && sourceTeam != kCounterTerroristTeam)
+	{
+		return;
+	}
+	const auto &handles = services_->service_managedBotHandles();
+	for (std::size_t i = 0; i < handles.size(); ++i)
+	{
+		const auto &weapon = actors_[i].managedBotCurrentWeapons;
+		const auto &handle = handles[i];
+		if (!weapon.available || !weapon.active || !compat::isFootstepSniper(weapon.weaponId) || !handle.entity ||
+			handle.entity == source || handle.entity->free || handle.entity->v.deadflag != DEAD_NO || handle.entity->v.health <= 0)
+		{
+			continue;
+		}
+		const int team = resolvePlayerTeam(handle.entity);
+		if ((team != kTerroristTeam && team != kCounterTerroristTeam) || team == sourceTeam)
+		{
+			continue;
+		}
+		const float dx = event.origin.x - handle.entity->v.origin.x;
+		const float dy = event.origin.y - handle.entity->v.origin.y;
+		const float dz = event.origin.z - handle.entity->v.origin.z;
+		const float distance = std::sqrt(dx * dx + dy * dy + dz * dz);
+		if (std::isfinite(distance) && distance < kCloseFootstepRange && distance < event.distance)
+		{
+			services_->behavior_observeCloseFootstep(i, {{handle.actor.slot, handle.actor.actorGeneration},
+				{services_->service_lifecycle().mapGeneration(), services_->service_lifecycle().roundGeneration(),
+					services_->service_adapterFrameCount()}, event.timestampSeconds, distance});
+		}
+	}
 }
 
 void BotObservationRuntime::onEmitSound(edict_t *entity, const char *sample, float volume, float attenuation)
@@ -551,6 +594,7 @@ void BotObservationRuntime::onEmitSound(edict_t *entity, const char *sample, flo
 	const int entityIndex = services_->service_engineFunctions()->pfnIndexOfEdict(entity);
 	const world::WorldVector origin{entity->v.origin.x, entity->v.origin.y, entity->v.origin.z};
 	const bool bombBeep = std::strstr(sample, "c4_beep") != nullptr;
+	const bool footstep = compat::isStandardFootstepSample(sample);
 	if (std::strstr(sample, "sg_explode") != nullptr && entityIndex > 0 && entity->serialnumber != 0)
 	{
 		const world::EntityKey key{
@@ -560,18 +604,24 @@ void BotObservationRuntime::onEmitSound(edict_t *entity, const char *sample, flo
 	}
 	world::AudibleEvent event{};
 	event.kind = bombBeep												  ? world::SoundKind::Objective
-		: std::strstr(sample, "pl_step") != nullptr						  ? world::SoundKind::Footstep
+		: footstep						  ? world::SoundKind::Footstep
 		: std::strncmp(sample, "weapons/", kWeaponSoundPrefixLength) == 0 ? world::SoundKind::WeaponFire
 																		  : world::SoundKind::Other;
 	event.origin = origin;
 	event.loudness = volume;
 	event.confidence = {1.0f, 0U};
 	event.priority =
-		bombBeep || compat::isStandardShotSample(sample) ? world::NoisePriority::High : world::NoisePriority::Medium;
+		bombBeep || compat::isStandardShotSample(sample) ? world::NoisePriority::High
+		: footstep ? world::NoisePriority::Low : world::NoisePriority::Medium;
 	// Derived public sound attenuation, not an exact GameEvent audibility observation.
 	event.distance = bombBeep ? kBombBeepHearingDistance
 		: attenuation > 0.0f  ? (std::min)(kMaximumSoundDistance, kSoundAttenuationDistanceScale * volume / attenuation)
 							  : kMaximumSoundDistance;
+	if (footstep)
+	{
+		event.distance = compat::kStandardFootstepHearingRange;
+		event.hearingRange = compat::kStandardFootstepHearingRange;
+	}
 	event.timestampTick = services_->service_adapterFrameCount();
 	event.timestampSeconds = services_->service_globals()->time;
 	if (entityIndex >= 1 && entityIndex <= kMaximumClientSlot && (entity->v.flags & FL_CLIENT) != 0)

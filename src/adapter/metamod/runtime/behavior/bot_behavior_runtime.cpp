@@ -10,8 +10,11 @@ ActionProposal BotBehaviorRuntime::decideManagedBotAction(std::size_t index,
 	const runtime::MovementPhysicsState &before, const runtime::ViewAngles &movementAngles,
 	std::uint16_t movementButtons)
 {
+	compat::FootstepEquipmentReceipt footstep{};
 	if (index < actors_.size())
 	{
+		footstep = actors_[index].closeFootstep;
+		actors_[index].closeFootstep = {};
 		actors_[index].managedBotCombat.clearAim();
 		actors_[index].weaponActions.stopRapidFire();
 		const auto &scenario = actors_[index].scenarioDecisions;
@@ -26,6 +29,8 @@ ActionProposal BotBehaviorRuntime::decideManagedBotAction(std::size_t index,
 		actors_[index].managedBotCombat.stopMovement();
 		return ctx.proposal;
 	}
+	ctx.closeFootstepDistance = footstep.current(ctx.actor, ctx.frame, services_->service_globals()->time)
+		? footstep.distance : -1;
 	if (decideObjectiveAction(ctx) == BehaviorPhaseResult::Complete)
 	{
 		actors_[index].managedBotCombat.stopMovement();
@@ -65,6 +70,7 @@ void BotBehaviorRuntime::updateManagedBotCompatibilityState(
 void BotBehaviorRuntime::onActorRemoved(std::size_t index)
 {
 	actors_[index].noiseLook.reset();
+	actors_[index].closeFootstep = {};
 	actors_[index].noiseBend = {};
 	actors_[index].noiseLookUpdate = 0U;
 	stopVoiceFeedback(index);
@@ -100,6 +106,7 @@ void BotBehaviorRuntime::onActorRemoved(std::size_t index)
 void BotBehaviorRuntime::onActorRemembered(std::size_t index, const FakeClientHandle &handle)
 {
 	actors_[index].noiseLook.reset();
+	actors_[index].closeFootstep = {};
 	actors_[index].noiseBend = {};
 	actors_[index].noiseLookUpdate = 0U;
 	actors_[index].reactionQueues.reset();
@@ -151,6 +158,7 @@ void BotBehaviorRuntime::resetActorExecutionState(std::size_t index)
 	actors_[index].noiseReport = {};
 	actors_[index].investigationWalking = false;
 	actors_[index].noiseLook.reset();
+	actors_[index].closeFootstep = {};
 	actors_[index].noiseBend = {};
 	actors_[index].noiseLookUpdate = 0U;
 	actors_[index].obstacleLook = {};

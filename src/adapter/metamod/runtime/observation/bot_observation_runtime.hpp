@@ -296,6 +296,7 @@ private:
 	std::uint32_t soundSequence_ = 0U;
 	compat::GunshotEventCatalog gunshotEvents_{};
 	void recordSound(world::AudibleEvent event, const edict_t *source);
+	void notifyCloseFootstep(const world::AudibleEvent &event, const edict_t *source);
 	std::array<PublicSmoke, kMaximumPublicSmokeEntities> publicSmokeEntities_{};
 	std::size_t nextSmokeEntity_ = 0U;
 	UserMessageKind userMessageKind_{};
