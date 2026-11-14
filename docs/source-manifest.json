@@ -48,7 +48,9 @@
     "docs/superpowers/specs/2026-11-14-csbot-noise-navigation-design.md",
     "docs/superpowers/plans/2026-11-14-csbot-noise-navigation.md",
     "docs/superpowers/specs/2026-11-15-csbot-enemy-count-chatter-design.md",
-    "docs/superpowers/plans/2026-11-15-csbot-enemy-count-chatter.md"
+    "docs/superpowers/plans/2026-11-15-csbot-enemy-count-chatter.md",
+    "docs/superpowers/specs/2026-11-15-csbot-kill-praise-design.md",
+    "docs/superpowers/plans/2026-11-15-csbot-kill-praise.md"
   ],
   "source_files": [
     {
@@ -1691,6 +1693,24 @@
     },
     {
       "path": "tests/enemy_count_chatter_runtime_tests.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "include/astrabot/compat/kill_praise.hpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "tests/kill_praise_tests.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "tests/kill_praise_runtime_tests.cpp",
       "origin": "AstraBot",
       "license_status": "pending_release_review",
       "reference_only": false

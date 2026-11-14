@@ -1,3 +1,72 @@
+## 2026-11-15 kill congratulations
+
+Source based1878dd; read-only behavior oracle ReGameDLL-CS
+b0889847fe6d03898be88acc9e366660efb40ab5, cs_bot_event.cpp159–189,
+cs_bot_vision.cpp229–251, basemonster.cpp630–649, player.cpp5959,
+cs_bot_chatter.h612–621 and phrase/statement playback in cs_bot_chatter.cpp.
+Public SDK pfnIsCareerMatch directly supplies the ordinary/Career distinction.
+
+- Eligible public DeathMsg first executes the existing remaining-count draw.
+  Only another friendly player's enemy kill, with <=1 recently watched living
+  enemy and a currently visible victim origin, can request congratulations.
+  Visibility uses current public blind/smoke receipts, native2D forward projection
+  (including body pitch), strict0.5 cone and ignore-actors/glass LOS fraction1.
+  Source reuse across the count RNG/visibility/admission callbacks is rejected.
+  No target, Aim, firing or hidden contact is created.
+- Shared named float(2,3) delay precedes the Bot killer float(0,100)<40 chance.
+  Human killers choose NiceShotSir or NiceShotCommander from the public Career
+  getter; an unavailable getter does not invent a human variant. Delay/chance
+  precede mute, missing default definition and redundant-topic admission. The
+  three variants share one pending REPORT_MY_INTENTION topic; later eligible
+  kills draw but retain the earliest statement. Original event+3 expires strictly
+  after its deadline, and no-friends speech context is evaluated only when selected.
+- Default BotChatter.db alone defines phrase existence, Important and radio
+  metadata. Profile banks supply speakables and cannot add a global definition
+  or grant Important. Event admission does not load profile banks, probe wave
+  files or shuffle variants; playback preparation retains the existing behavior.
+  Fixed praise and remaining-count messages use UNDEFINED_PLACE and native
+  UNDEFINED_COUNT0xFFFF (saturating to Count Many), never the speaker's NAV place
+  or a wildcard matching arbitrary explicit counts. Other phrase behavior remains.
+- Generic, remaining-count and praise topics maintain life/time/admission first,
+  then arbitrate by pending start while preserving every unselected topic and
+  older silent delays. Per-topic send/discard owns only the selected statement.
+  Same-team praise makes all3 variants redundant even before their start.
+  Actor/entity serial/map/round/clock/death/removal changes cancel; public death
+  prevents revival before the next full update from replaying pending praise.
+- Policy/catalog and registered-hook runtime tests cover all variants, exact RNG
+  order/chance, strict lifetime/duplicates, source reuse, named NAV and conflicting
+  count/place criteria, default-missing profile and conflicting Important flags,
+  no event-time wave probes, hidden/rear/self/off/unreceived cases, public flash/
+  smoke, queue coexistence, round/death and transport cancellation. Independent
+  review found3 Important and1 Minor; corrected native criteria/default authority
+  tests reproduced RED, then all7 related tests passed GREEN. All findings fixed;
+  no deferred findings. MSVC's test-only getenv warning was fixed with its owned
+  environment-copy API, without disabling warnings or changing production code.
+
+Offline gates: complete MSVC14.51.36231 HostX86/x86 Debug build PASS; CTest
+**109/109 PASS** (8.64 seconds). Complete Debian Linux x86 Debug build PASS; CTest
+**107/108 PASS** (12.50 seconds); sole failure is the unchanged
+astrabot_combat_policy weapon/skill/recoil chest-policy baseline. Its code/expectations
+and frozen characterization inputs are unchanged; frozen characterization passes
+without regeneration on both OSes. Manifest277 entries/270 C/C++, ports, ownership,
+architecture/whitespace and independent PE/ELF x86/7exact exports pass. All280
+tested inputs, verified artifacts and preserved user files/profile match after suites.
+
+Verified local artifact SHA-256 (not deployed):
+- Windows DLL: c9efd45d23bfa76b089bb2f79892293ade0947f4148a9b47f21819035a1775ca
+- Linux SO: 6ec93b9ff116cbce4bd3d52f851a735afe05ccadd88c14d4da1acbea3595290b
+
+Evidence: .agent-state/sessions/csbot-kill-praise-ec407381-2fe6-4b6b-8926-827593e2710a/
+(RESULT.json,fingerprints,corrected RED/GREEN/review and compiler/build logs,
+sequential full CTests). Referenced GameDLL/SDK files are unchanged at their
+pinned commits b0889847fe6d03898be88acc9e366660efb40ab5 and
+7ec9b014f8c0a947a724644aebe34eb33706e44b.
+
+Limits: full native global statement-list/phrase-parser composition and other death
+reactions are still tracked in IMPLEMENTATION_BACKLOG.md; this does not close the
+full user goal. Private blind/smoke/timing state is not recovered by public receipts.
+Live HLDS/ReHLDS, client audibility/FPS/multiplayer acceptance are NOT RUN. No push/deploy.
+
 ## 2026-11-15 remaining-enemy death reports
 
 Source base7c7de92; read-only behavioral oracle ReGameDLL-CS

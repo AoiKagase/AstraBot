@@ -91,6 +91,7 @@ void BotBehaviorRuntime::onActorRemoved(std::size_t index)
 	actors_[index].noiseInvestigation.reset();
 	actors_[index].noiseReportPolicy = {};
 	actors_[index].enemyCountChatter.reset();
+	actors_[index].killPraise.reset();
 	actors_[index].noiseReport = {};
 	actors_[index].investigationWalking = false;
 	actors_[index].weaponActions.reset();
@@ -125,6 +126,7 @@ void BotBehaviorRuntime::onActorRemembered(std::size_t index, const FakeClientHa
 	actors_[index].lastVisibleEnemyTimes = 0.0f;
 	actors_[index].noiseReportPolicy = {};
 	actors_[index].enemyCountChatter.reset();
+	actors_[index].killPraise.reset();
 	actors_[index].noiseReport = {};
 	actors_[index].buyControllers.reset();
 	actors_[index].buyingComplete = false;
@@ -135,7 +137,10 @@ void BotBehaviorRuntime::onActorRemembered(std::size_t index, const FakeClientHa
 void BotBehaviorRuntime::resetSharedExecutionState()
 {
 	for (auto &actor : actors_)
+	{
 		actor.enemyCountChatter.reset();
+		actor.killPraise.reset();
+	}
 	updateVoiceFeedback(true);
 	reset_managedStateInputs();
 	managedTeamObjectiveCoordinator_.reset(
@@ -160,6 +165,7 @@ void BotBehaviorRuntime::resetActorExecutionState(std::size_t index)
 	actors_[index].noiseInvestigation.reset();
 	actors_[index].noiseReportPolicy = {};
 	actors_[index].enemyCountChatter.reset();
+	actors_[index].killPraise.reset();
 	actors_[index].noiseReport = {};
 	actors_[index].investigationWalking = false;
 	actors_[index].noiseLook.reset();

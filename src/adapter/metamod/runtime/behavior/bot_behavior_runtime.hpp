@@ -2,6 +2,7 @@
 #define ASTRABOT_ADAPTER_BOT_BEHAVIOR_RUNTIME_HPP
 #include "runtime/shared/bot_runtime_services.hpp"
 #include "astrabot/compat/enemy_count_chatter.hpp"
+#include "astrabot/compat/kill_praise.hpp"
 #include "astrabot/compat/noise_investigation.hpp"
 #include "astrabot/compat/guard_look.hpp"
 #include "astrabot/compat/weapon_equipment.hpp"
@@ -389,6 +390,9 @@ private:
 		float until = 0.0f;
 	};
 	compat::ChatterVoiceCatalog *chatterBank(std::size_t index);
+	void ensureOutgoingChatterCatalog();
+	std::uint32_t allowedKillPraisePhrases(const char *verbosity);
+	bool killVictimVisible(std::size_t index, const edict_t *victim, const world::FrameIdentity &frame) const;
 	void stopVoiceFeedback(std::size_t index);
 	bool sendChatterVoice(
 		std::size_t index, compat::ChatterPhrase phrase, int count, compat::ChatterVoiceCatalog &bank, float *duration, std::uint16_t reportPlace);
@@ -424,6 +428,7 @@ private:
 		VoiceFeedback outgoingVoiceFeedback{};
 		compat::OutgoingRadioScheduler outgoingRadioSchedulers{};
 		compat::EnemyCountChatterPolicy enemyCountChatter{};
+		compat::KillPraisePolicy killPraise{};
 		compat::RadioContactMemory outgoingRadioContactMemory{};
 		std::uint32_t outgoingRadioReceipts{};
 		std::uint32_t outgoingRadioAttemptGenerations{};

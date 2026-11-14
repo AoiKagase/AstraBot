@@ -129,6 +129,10 @@ public:
 		const auto i = static_cast<unsigned>(phrase);
 		if (i >= variants_.size() || variants_[i].empty())
 			return nullptr;
+		// Native unspecified criteria use0xFFFF, which saturates to Count Many.
+		constexpr int kUndefinedCount = 0xFFFF;
+		constexpr int kManyCount = 4;
+		const int criteria = count < 0 ? kUndefinedCount : count;
 		auto &variants = variants_[i];
 		for (std::size_t attempt = 0; attempt < variants.size(); ++attempt)
 		{
@@ -136,7 +140,7 @@ public:
 			cursors_[i] = (cursors_[i] + 1U) % variants.size();
 			const bool placeMatches = equal(variant.place, "ANY") ||
 				(equal(variant.place, "UNDEFINED") && (!place || !*place)) || (place && equal(variant.place, place));
-			if (placeMatches && (variant.count < 0 || variant.count == (std::min)(count, 4)))
+			if (placeMatches && (variant.count < 0 || variant.count == (std::min)(criteria, kManyCount)))
 				return &variant;
 		}
 		return nullptr;

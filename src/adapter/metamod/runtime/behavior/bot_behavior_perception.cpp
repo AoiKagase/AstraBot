@@ -66,6 +66,7 @@ void BotBehaviorRuntime::resetRoundRecognition()
 		actor.noiseInvestigation.reset();
 		actor.noiseReportPolicy = {};
 		actor.enemyCountChatter.reset();
+		actor.killPraise.reset();
 		actor.noiseReport = {};
 		actor.investigationWalking = false;
 		actor.noiseLook.reset();
@@ -86,6 +87,7 @@ void BotBehaviorRuntime::observePublicDeath(std::size_t index)
 	actors_[index].noiseInvestigation.reset();
 	actors_[index].noiseReportPolicy = {};
 	actors_[index].enemyCountChatter.reset();
+	actors_[index].killPraise.reset();
 	actors_[index].noiseReport = {};
 	actors_[index].investigationWalking = false;
 	actors_[index].noiseLook.reset();

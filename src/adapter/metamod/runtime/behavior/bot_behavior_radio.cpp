@@ -11,7 +11,6 @@ constexpr int kCounterTerroristTeam = 2;
 constexpr int kCommandRadioMenu = 1;
 constexpr int kGroupRadioMenu = 2;
 constexpr unsigned kVipMapPrefixLength = 3U;
-constexpr int kMaximumChatterFileBytes = 1024 * 1024;
 constexpr int kMaximumClientSlots = 32;
 constexpr unsigned kMaximumRadioAttempts = 3U;
 // Keep literal evaluation precision on x87; each macro is undefined below.
@@ -32,32 +31,7 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index)
 	const char *verbosity = services_->service_engineFunctions()->pfnCVarGetString != nullptr
 		? services_->service_engineFunctions()->pfnCVarGetString("bot_chatter")
 		: nullptr;
-	if (outgoingRadioMap_ != services_->service_lifecycle().mapGeneration())
-	{
-		outgoingRadioMap_ = services_->service_lifecycle().mapGeneration();
-		outgoingChatterCatalog_ = {};
-		outgoingVoiceBanks_.clear();
-		outgoingMissingPhraseLogged_.fill(false);
-		if (services_->service_engineFunctions()->pfnLoadFileForMe != nullptr &&
-			services_->service_engineFunctions()->pfnFreeFile != nullptr)
-		{
-			int length = 0;
-			char filename[] = "BotChatter.db";
-			unsigned char *bytes = services_->service_engineFunctions()->pfnLoadFileForMe(filename, &length);
-			if (bytes != nullptr)
-			{
-				if (length > 0 && length <= kMaximumChatterFileBytes)
-				{
-					(void)outgoingChatterCatalog_.loadText(
-						reinterpret_cast<const char *>(bytes), static_cast<std::size_t>(length));
-					outgoingVoiceBanks_.push_back({"BotChatter.db", {}, 0U});
-					(void)outgoingVoiceBanks_.back().catalog.loadText(
-						reinterpret_cast<const char *>(bytes), static_cast<std::size_t>(length));
-				}
-				services_->service_engineFunctions()->pfnFreeFile(bytes);
-			}
-		}
-	}
+	ensureOutgoingChatterCatalog();
 	if (outgoingRadioRound_ != services_->service_lifecycle().roundGeneration())
 	{
 		outgoingRadioRound_ = services_->service_lifecycle().roundGeneration();
@@ -93,8 +67,7 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index)
 	{
 		edict_t *player = services_->service_engineFunctions()->pfnPEntityOfEntIndex(slot);
 		if (player == nullptr || player == handle.entity || player->free || (player->v.flags & FL_CLIENT) == 0 ||
-			player->serialnumber < 0 ||
-			(player->v.flags & (FL_SPECTATOR | FL_DORMANT)) != 0 ||
+			player->serialnumber < 0 || (player->v.flags & (FL_SPECTATOR | FL_DORMANT)) != 0 ||
 			player->v.deadflag != DEAD_NO || !(player->v.health > 0))
 			continue;
 		if (services_->observation_resolvePlayerTeam(player) == input.team)
@@ -153,8 +126,8 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index)
 	compat::EnemyCountSpeechInput countInput{};
 	countInput.actor = input.actor;
 	countInput.frame = input.frame;
-	countInput.entityGeneration = handle.entity->serialnumber >= 0
-		? static_cast<std::uint32_t>(handle.entity->serialnumber) + 1U : 0;
+	countInput.entityGeneration =
+		handle.entity->serialnumber >= 0 ? static_cast<std::uint32_t>(handle.entity->serialnumber) + 1U : 0;
 	countInput.now = input.now;
 	countInput.alive = input.alive;
 	countInput.roundOver = input.roundOver;
@@ -165,38 +138,88 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index)
 	// REMAINING_ENEMY_COUNT is a context statement, not an Important phrase.
 	countInput.enabled = !verbosity || (std::strcmp(verbosity, "off") != 0 && std::strcmp(verbosity, "minimal") != 0);
 	auto output = actors_[index].outgoingRadioSchedulers.update(input, outgoingChatterCatalog_, voicePhrases);
-	// Maintain lifetime on every update, but evaluate dynamic context only for
-	// the statement that owns this speech slot (including silent pending delays).
-	countInput.canStart = output.status != compat::OutgoingRadioStatus::MissingPhrase &&
-		(!actors_[index].outgoingRadioSchedulers.hasPending() ||
-		 actors_[index].enemyCountChatter.scheduledStart() < actors_[index].outgoingRadioSchedulers.scheduledStart());
-	const auto countOutput = actors_[index].enemyCountChatter.update(countInput);
-	const bool countChosen = countOutput.ready;
-	if (countChosen)
+	// All topics maintain lifetime before arbitration; only the selected topic
+	// evaluates speech context, including when an older topic is still delayed.
+	countInput.canStart = false;
+	actors_[index].enemyCountChatter.update(countInput);
+	compat::KillPraiseSpeechInput praiseInput{};
+	praiseInput.actor = input.actor;
+	praiseInput.frame = input.frame;
+	praiseInput.entityGeneration = countInput.entityGeneration;
+	praiseInput.now = input.now;
+	praiseInput.alive = input.alive;
+	praiseInput.roundOver = input.roundOver;
+	praiseInput.friendsRemaining = input.friendCount;
+	praiseInput.teamBusyUntil = input.teamBusyUntil;
+	praiseInput.teamPraising = compat::isKillPraisePhrase(input.teamCurrentPhrase);
+	praiseInput.allowedPhrases = actors_[index].killPraise.active() ? allowedKillPraisePhrases(verbosity) : 0;
+	praiseInput.canStart = false;
+	actors_[index].killPraise.update(praiseInput);
+	enum class SpeechOwner
 	{
-		const auto phrase = compat::remainingEnemyPhrase(countOutput.enemiesRemaining);
-		const auto choice = outgoingChatterCatalog_.lookup(phrase);
-		const bool available = choice.menu != 0 || (voicePhrases & (1U << static_cast<unsigned>(phrase))) != 0;
-		output = {available ? compat::OutgoingRadioStatus::Ready : compat::OutgoingRadioStatus::MissingPhrase,
-			phrase, choice.menu, choice.slot, 0};
+		Generic,
+		EnemyCount,
+		KillPraise
+	};
+	SpeechOwner owner = SpeechOwner::Generic;
+	bool havePending = actors_[index].outgoingRadioSchedulers.hasPending();
+	float earliest = actors_[index].outgoingRadioSchedulers.scheduledStart();
+	if (output.status != compat::OutgoingRadioStatus::MissingPhrase)
+	{
+		if (actors_[index].enemyCountChatter.active() &&
+			(!havePending || actors_[index].enemyCountChatter.scheduledStart() < earliest))
+		{
+			owner = SpeechOwner::EnemyCount;
+			havePending = true;
+			earliest = actors_[index].enemyCountChatter.scheduledStart();
+		}
+		if (actors_[index].killPraise.active() &&
+			(!havePending || actors_[index].killPraise.scheduledStart() < earliest))
+			owner = SpeechOwner::KillPraise;
+	}
+	const bool countChosen = owner == SpeechOwner::EnemyCount;
+	const bool praiseChosen = owner == SpeechOwner::KillPraise;
+	countInput.canStart = countChosen;
+	praiseInput.canStart = praiseChosen;
+	const auto countOutput = actors_[index].enemyCountChatter.update(countInput);
+	const auto praiseOutput = actors_[index].killPraise.update(praiseInput);
+	if (countChosen || praiseChosen)
+	{
+		output = {};
+		const auto phrase = countChosen && countOutput.ready
+			? compat::remainingEnemyPhrase(countOutput.enemiesRemaining)
+			: praiseChosen && praiseOutput.ready ? praiseOutput.phrase
+												 : compat::ChatterPhrase::None;
+		if (phrase != compat::ChatterPhrase::None)
+		{
+			const auto choice = outgoingChatterCatalog_.lookup(phrase);
+			const bool available = choice.menu != 0 || (voicePhrases & (1U << static_cast<unsigned>(phrase))) != 0;
+			output = {available ? compat::OutgoingRadioStatus::Ready : compat::OutgoingRadioStatus::MissingPhrase,
+				phrase, choice.menu, choice.slot, 0};
+		}
 	}
 	const auto discardOutput = [&]()
 	{
-		if (countChosen)
+		if (praiseChosen)
+			actors_[index].killPraise.discard();
+		else if (countChosen)
 			actors_[index].enemyCountChatter.discard();
 		else
 			actors_[index].outgoingRadioSchedulers.discardPending();
 	};
 	const auto confirmOutput = [&]()
 	{
-		if (countChosen)
+		if (praiseChosen)
+			actors_[index].killPraise.discard();
+		else if (countChosen)
 			actors_[index].enemyCountChatter.discard();
 		else
 			actors_[index].outgoingRadioSchedulers.confirmSent(input, output);
 	};
-	const bool suppressNoise = verbosity && (std::strcmp(verbosity, "off") == 0 ||
-		(std::strcmp(verbosity, "minimal") == 0 &&
-			!outgoingChatterCatalog_.important(compat::ChatterPhrase::HeardNoise)));
+	const bool suppressNoise = verbosity &&
+		(std::strcmp(verbosity, "off") == 0 ||
+			(std::strcmp(verbosity, "minimal") == 0 &&
+				!outgoingChatterCatalog_.important(compat::ChatterPhrase::HeardNoise)));
 	if (suppressNoise)
 	{
 		actors_[index].outgoingRadioSchedulers.discardNoiseReport(input.noiseReport);
@@ -215,8 +238,8 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index)
 	if (output.status == compat::OutgoingRadioStatus::Ready && voice && output.phrase != compat::ChatterPhrase::None)
 	{
 		float duration = 0.0f;
-		if (sendChatterVoice(index, output.phrase, countChosen ? countOutput.enemiesRemaining : input.visibleEnemyCount,
-			*voice, &duration, output.place))
+		if (sendChatterVoice(index, output.phrase, countChosen || praiseChosen ? -1 : input.visibleEnemyCount, *voice,
+				&duration, output.place))
 		{
 			confirmOutput();
 			actors_[index].outgoingRadioAttempts = 0U;
@@ -224,7 +247,7 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index)
 			outgoingTeamLastSpeech_[input.team] = input.now;
 			outgoingTeamBusyUntil_[input.team] = input.now + duration + 0.1f;
 			outgoingTeamCurrentPhrase_[input.team] = output.phrase;
-		outgoingTeamCurrentPlace_[input.team] = output.place;
+			outgoingTeamCurrentPlace_[input.team] = output.place;
 			return;
 		}
 	}
@@ -235,8 +258,8 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index)
 	}
 	if (output.status == compat::OutgoingRadioStatus::MissingPhrase)
 	{
-		if (countChosen)
-			actors_[index].enemyCountChatter.discard();
+		if (countChosen || praiseChosen)
+			discardOutput();
 		const auto phrase = static_cast<unsigned>(output.phrase);
 		if (phrase < outgoingMissingPhraseLogged_.size() && !outgoingMissingPhraseLogged_[phrase])
 		{
@@ -298,7 +321,7 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index)
 		outgoingTeamBusyUntil_[input.team] =
 			services_->service_globals()->time + ASTRABOT_BOT_BEHAVIOR_RADIO_TEAM_SPEECH_BUSY_SECONDS;
 		outgoingTeamCurrentPhrase_[input.team] = output.phrase;
-			outgoingTeamCurrentPlace_[input.team] = output.place;
+		outgoingTeamCurrentPlace_[input.team] = output.place;
 	}
 }
 

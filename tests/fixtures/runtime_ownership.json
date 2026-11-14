@@ -1193,5 +1193,10 @@
     "header": "src/adapter/metamod/runtime/observation/bot_observation_runtime.hpp",
     "scope": "owner",
     "member": "publicMessageSerial_"
+  },
+  {
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
+    "scope": "ActorState",
+    "member": "killPraise"
   }
 ]

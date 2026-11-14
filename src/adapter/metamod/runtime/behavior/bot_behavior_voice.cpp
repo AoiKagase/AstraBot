@@ -14,6 +14,37 @@ int voiceMessageId(plid_t plugin, const char *name)
 		: 0;
 }
 }
+void BotBehaviorRuntime::ensureOutgoingChatterCatalog()
+{
+	constexpr int kMaximumChatterFileBytes = 1024 * 1024;
+	if (outgoingRadioMap_ != services_->service_lifecycle().mapGeneration())
+	{
+		outgoingRadioMap_ = services_->service_lifecycle().mapGeneration();
+		outgoingChatterCatalog_ = {};
+		outgoingVoiceBanks_.clear();
+		outgoingMissingPhraseLogged_.fill(false);
+		if (services_->service_engineFunctions()->pfnLoadFileForMe != nullptr &&
+			services_->service_engineFunctions()->pfnFreeFile != nullptr)
+		{
+			int length = 0;
+			char filename[] = "BotChatter.db";
+			unsigned char *bytes = services_->service_engineFunctions()->pfnLoadFileForMe(filename, &length);
+			if (bytes != nullptr)
+			{
+				if (length > 0 && length <= kMaximumChatterFileBytes)
+				{
+					(void)outgoingChatterCatalog_.loadText(
+						reinterpret_cast<const char *>(bytes), static_cast<std::size_t>(length));
+					outgoingVoiceBanks_.push_back({"BotChatter.db", {}, 0U});
+					(void)outgoingVoiceBanks_.back().catalog.loadText(
+						reinterpret_cast<const char *>(bytes), static_cast<std::size_t>(length));
+				}
+				services_->service_engineFunctions()->pfnFreeFile(bytes);
+			}
+		}
+	}
+}
+
 compat::ChatterVoiceCatalog *BotBehaviorRuntime::chatterBank(std::size_t index)
 {
 	if (!services_ || index >= actors_.size())
@@ -76,6 +107,25 @@ compat::ChatterVoiceCatalog *BotBehaviorRuntime::chatterBank(std::size_t index)
 	}
 	return &found->catalog;
 }
+std::uint32_t BotBehaviorRuntime::allowedKillPraisePhrases(const char *verbosity)
+{
+	// The native global phrase definitions/flags belong to the default catalog.
+	// Profile banks provide speakables only; do not load/probe them in a death event.
+	if (verbosity && std::strcmp(verbosity, "off") == 0)
+		return 0;
+	ensureOutgoingChatterCatalog();
+	const bool minimal = verbosity && std::strcmp(verbosity, "minimal") == 0;
+	std::uint32_t mask = 0;
+	for (unsigned i = static_cast<unsigned>(compat::ChatterPhrase::NiceShot);
+		i <= static_cast<unsigned>(compat::ChatterPhrase::NiceShotCommander); ++i)
+	{
+		const auto phrase = static_cast<compat::ChatterPhrase>(i);
+		if (outgoingChatterCatalog_.defined(phrase) && (!minimal || outgoingChatterCatalog_.important(phrase)))
+			mask |= 1U << i;
+	}
+	return mask;
+}
+
 void BotBehaviorRuntime::observeRadioPreference(edict_t *recipient, bool ignored)
 {
 	if (!services_ || !recipient || recipient->free || !(recipient->v.flags & FL_CLIENT))
@@ -139,7 +189,8 @@ bool BotBehaviorRuntime::sendChatterVoice(
 		return false;
 	std::string place;
 	const auto navigation = services_->service_navPublisher().snapshot();
-	if (navigation.isValid() && navigation.mapGeneration() == services_->service_lifecycle().mapGeneration())
+	if (!compat::isKillPraisePhrase(phrase) && !compat::isRemainingEnemyPhrase(phrase) &&
+		navigation.isValid() && navigation.mapGeneration() == services_->service_lifecycle().mapGeneration())
 	{
 		nav::NavAreaMatch match{};
 		if (phrase == compat::ChatterPhrase::HeardNoise)

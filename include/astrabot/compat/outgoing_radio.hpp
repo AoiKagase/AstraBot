@@ -29,6 +29,9 @@ enum class ChatterPhrase : unsigned
 	OneEnemyLeft,
 	TwoEnemiesLeft,
 	ThreeEnemiesLeft,
+	NiceShot,
+	NiceShotSir,
+	NiceShotCommander,
 	Count
 };
 inline ChatterPhrase remainingEnemyPhrase(int count)
@@ -42,6 +45,11 @@ inline ChatterPhrase remainingEnemyPhrase(int count)
 inline bool isRemainingEnemyPhrase(ChatterPhrase phrase)
 {
 	return phrase >= ChatterPhrase::NoEnemiesLeft && phrase <= ChatterPhrase::ThreeEnemiesLeft;
+}
+
+inline bool isKillPraisePhrase(ChatterPhrase phrase)
+{
+	return phrase >= ChatterPhrase::NiceShot && phrase <= ChatterPhrase::NiceShotCommander;
 }
 
 struct RadioMenuChoice
@@ -61,6 +69,7 @@ public:
 		auto candidate = *this;
 		candidate.choices_ = {};
 		candidate.important_ = {};
+		candidate.defined_ = {};
 		candidate.loaded_ = false;
 		std::size_t pos = 0;
 		std::string token;
@@ -72,6 +81,8 @@ public:
 			if (!next(data, length, pos, token))
 				return false;
 			const ChatterPhrase phrase = chatter ? phraseFor(token) : ChatterPhrase::None;
+			if (phrase != ChatterPhrase::None)
+				candidate.defined_[static_cast<unsigned>(phrase)] = true;
 			bool ended = false;
 			while (next(data, length, pos, token))
 			{
@@ -109,6 +120,12 @@ public:
 		return i < choices_.size() ? choices_[i] : RadioMenuChoice{};
 	}
 
+	bool defined(ChatterPhrase phrase) const
+	{
+		const auto i = static_cast<unsigned>(phrase);
+		return i < defined_.size() && defined_[i];
+	}
+
 	bool loaded() const
 	{
 		return loaded_;
@@ -124,7 +141,7 @@ public:
 	{
 		const char *names[] = {"None", "EnemySpotted", "Help", "RequestReport", "Affirmative", "OnMyWay",
 			"PlantingBomb", "WhereIsTheBomb", "EscortingHostages", "HeardNoise", "NoEnemiesLeft", "OneEnemyLeft",
-			"TwoEnemiesLeft", "ThreeEnemiesLeft"};
+			"TwoEnemiesLeft", "ThreeEnemiesLeft", "NiceShot", "NiceShotSir", "NiceShotCommander"};
 		const auto i = static_cast<unsigned>(p);
 		return i < static_cast<unsigned>(ChatterPhrase::Count) ? names[i] : "Unknown";
 	}
@@ -222,6 +239,8 @@ private:
 	std::array<RadioMenuChoice, static_cast<unsigned>(ChatterPhrase::Count)> choices_{};
 
 	std::array<bool, static_cast<unsigned>(ChatterPhrase::Count)> important_{};
+
+	std::array<bool, static_cast<unsigned>(ChatterPhrase::Count)> defined_{};
 
 	bool loaded_ = false;
 };
