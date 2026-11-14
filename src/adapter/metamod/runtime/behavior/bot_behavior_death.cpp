@@ -152,7 +152,9 @@ void BotBehaviorRuntime::observePlayerDeath(
 		praise.victimVisible = true;
 		praise.careerKnown = engine->pfnIsCareerMatch != nullptr;
 		praise.career = !praise.killerBot && praise.careerKnown && engine->pfnIsCareerMatch() != FALSE;
-		praise.allowedPhrases = allowedKillPraisePhrases(mode);
+		praise.allowedPhrases = allowedFixedChatterPhrases(mode, compat::ChatterPhrase::NiceShot, compat::ChatterPhrase::NiceShotCommander);
+		praise.intentionPending = actors_[index].friendDeathChatter.hasCommander(reactionContext(index)) ||
+			actors_[index].confirmedSpeech.blocks(compat::ChatterPhrase::NiceShot, reactionContext(index));
 		if (!services_->service_lifecycle().isMapActive() ||
 			frame.mapGeneration != services_->service_lifecycle().mapGeneration() ||
 			frame.roundGeneration != services_->service_lifecycle().roundGeneration() ||

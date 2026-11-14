@@ -1,3 +1,21 @@
+## 2026-11-15 friend-death chatter
+
+Source basea146109; oracle ReGameDLL-CS b0889847fe6d03898be88acc9e366660efb40ab5, cs_bot_event.cpp71–155, cs_bot_chatter.cpp2254–2262 and native Say/AddStatement/IsRedundant/playback.
+
+- The native friend-death retaliation early return, including a rejected Attack attempt, suppresses speech. Otherwise a Career human teammate death requests CommanderDown before Hunt/reposition; a human friendly non-self killer requests KilledFriend. Neither requires victim visibility or proximity. Original observer/victim/killer receipt identities are revalidated across callbacks.
+- CommanderDown uses REPORT_MY_INTENTION and20seconds from creation, sharing pending/current redundancy with NiceShot variants. KilledFriend uses its own topic, draws float(0.5,1) before verbosity/default-catalog/duplicate admission, and expires strictly after2seconds from creation. Both preserve start/insertion order, selected-only no-friends checks and teammate speaking redundancy.
+- Default catalog owns existence/Important/radio metadata; profile banks only provide speakables. Fixed phrases select UNDEFINED_PLACE and CountMany even on named NAV. Missing unavailable speech releases following statements. Event admission does no profile/wave I/O.
+- Actual voice and mapped GameDLL radio/public SendAudio confirmation retain qualified own currently-speaking admission. Monotonic reset revisions, captured owner/frame and strict callback completion checks reject stale completion without discarding fresh statements or publishing cancelled feedback/team busy state. Death/serial/connection/map/round/clock lifecycle resets are covered.
+- Core and registered-hook runtime tests cover native branch/RNG/boundary matrices, two independently capable managed speakers, OFF/MINIMAL/profile-only definitions, pending/current shared intention, exact lifetimes, named NAV, callback reconnect and same-owner reset during voice/radio transport. Frozen inputs remain unchanged.
+
+Independent final review:0Critical/3Important/0Minor. One combined RED→GREEN fix pass resolved unavailable CommanderDown starvation, named-NAV fixed-phrase criteria, and stale voice/radio completion. No second review was used. Broader native global statement ordering/composition and other reports remain in IMPLEMENTATION_BACKLOG.md; the overall user goal remains active.
+
+Final offline verification: Windows x86 full build/CTest115/115 PASS10.29s under VS18/MSVC14.51 Hostx86/x86. Linux x86 full build/CTest113/114 PASS12.69s; only the unchanged combat_policy weapon/skill/recoil chest threshold failure remains open. Full-suite frozen characterization first exposed a dead/spectator update callback regression; the update receipt now allows stable dead/spectator maintenance while actual transport still requires a living receipt. The unchanged frozen test and new3tests passed4/4 after correction, then both complete directories/suites were refreshed. No baseline regeneration.
+
+PE/ELF x86 exact7exports PASS independently. Manifest286entries/279C-C++ PASS;289source/build inputs,2artifacts and4user files match saved identities. Final SHA256: DLL40aff4ca2e840877286b438314f7a5a2f93f29f73c65fd8fe1932dfbac1f0135; SOcddcb78b70d790405da2ad1f54a8beeb91aa294b9804a02a9aa4d27adaf6d85e. Evidence: .agent-state/sessions/csbot-death-chatter-54c45e32-e249-4604-9e34-6f5d5042d654/ (STATE, final review, RED/GREEN, OS suites, separate PE/ELF and identity records).
+
+Decisions retained: preserve the shared checkout/caches/evidence/user edits, using exact-path staging and forced affected-object rebuild plus fingerprints to control mixed-evidence risk. The broad global scheduler/composition audit remains separate, so bounded speech-path completion does not overstate full parity. Source/offline/binary evidence remains distinct from live HLDS/ReHLDS, real audio, multiplayer/FPS acceptance; live differences remain possible. No Minor review findings. Local commit/FF receipt is recorded in session RESULT.json; no push/deployment.
+
 ## 2026-11-15 friend-death behavioral reactions
 
 Source base18a2cc4; oracle ReGameDLL-CS b0889847fe6d03898be88acc9e366660efb40ab5, cs_bot_event.cpp71–155, cs_bot_statemachine.cpp293–367, cs_bot_update.cpp429–480 and native MoveTo/Attack/state disposition exits.

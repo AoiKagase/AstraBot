@@ -271,11 +271,65 @@ void BotBehaviorRuntime::observeFriendDeath(std::size_t index, const edict_t *vi
 		services_->applyNavigationRequest({index, NavigationRequestKind::ResetProgress});
 		return;
 	}
-	if (decision.action == compat::FriendDeathAction::RethinkHunt)
+	compat::FriendDeathChatterEvent speech{};
+	speech.context = context;
+	speech.timing = in.timing;
+	speech.victimFriendly = true;
+	speech.victimHuman = (victim->v.flags & FL_FAKECLIENT) == 0;
+	speech.careerKnown = engine->pfnIsCareerMatch != nullptr;
+	speech.career = speech.victimHuman && speech.careerKnown && engine->pfnIsCareerMatch() != FALSE;
+	if (!current())
+	{
+		return;
+	}
+	if (compat::commanderDownEligible(speech))
+	{
+		const char *verbosity = engine->pfnCVarGetString ? engine->pfnCVarGetString("bot_chatter") : nullptr;
+		const auto allowed = allowedFixedChatterPhrases(
+			verbosity, compat::ChatterPhrase::CommanderDown, compat::ChatterPhrase::KilledFriend);
+		if (!current())
+		{
+			return;
+		}
+		(void)actor.friendDeathChatter.admitCommander(context, allowed,
+			actor.killPraise.active() || actor.confirmedSpeech.blocks(compat::ChatterPhrase::CommanderDown, context));
+	}
+	speech.killerSelf = killer == self;
+	speech.killerHumanFriendly = killer && (killer->v.flags & FL_FAKECLIENT) == 0 &&
+		services_->observation_resolvePlayerTeam(killer) == services_->observation_resolvePlayerTeam(self);
+	if (!current())
+	{
+		return;
+	}
+	const auto delay = compat::prepareKilledFriend(speech, services_->service_compatibilityRandomSource());
+	if (!current())
+	{
+		return;
+	}
+	if (delay.valid)
+	{
+		const char *verbosity = engine->pfnCVarGetString ? engine->pfnCVarGetString("bot_chatter") : nullptr;
+		const auto allowed = allowedFixedChatterPhrases(
+			verbosity, compat::ChatterPhrase::CommanderDown, compat::ChatterPhrase::KilledFriend);
+		if (!current())
+		{
+			return;
+		}
+		(void)actor.friendDeathChatter.admitKilled(
+			context, delay, allowed, actor.confirmedSpeech.blocks(compat::ChatterPhrase::KilledFriend, context));
+	}
+	// Speech callbacks may change our state. Native evaluates these tail branches
+	// after chatter admission, without repeating retaliation or its RNG.
+	in.state = actor.managedBotStateMachines.state();
+	in.attacking = actor.managedBotStateMachines.attackOverlayActive();
+	in.enemyKnown = actor.enemyReaction.enemy(context).isValid();
+	in.lastSawEnemy = actor.enemyReaction.lastSaw(context);
+	const auto tail = compat::decideFriendDeathTail(in);
+	if (tail == compat::FriendDeathAction::RethinkHunt)
 	{
 		changeReactionState(index, compat::CompatibilityStateId::Idle);
 	}
-	else if (decision.action == compat::FriendDeathAction::Reposition)
+	else if (tail == compat::FriendDeathAction::Reposition)
 	{
 		actor.enemyReaction.beginPursuit(context, true, in.state);
 		changeReactionState(index, compat::CompatibilityStateId::MoveTo, true);

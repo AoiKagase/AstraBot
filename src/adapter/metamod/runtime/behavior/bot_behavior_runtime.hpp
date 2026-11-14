@@ -3,6 +3,7 @@
 #include "runtime/shared/bot_runtime_services.hpp"
 #include "astrabot/compat/enemy_count_chatter.hpp"
 #include "astrabot/compat/kill_praise.hpp"
+#include "astrabot/compat/friend_death_chatter.hpp"
 #include "astrabot/compat/knife_run.hpp"
 #include "astrabot/compat/friend_death.hpp"
 #include "astrabot/compat/noise_investigation.hpp"
@@ -409,7 +410,7 @@ private:
 	};
 	compat::ChatterVoiceCatalog *chatterBank(std::size_t index);
 	void ensureOutgoingChatterCatalog();
-	std::uint32_t allowedKillPraisePhrases(const char *verbosity);
+	std::uint32_t allowedFixedChatterPhrases(const char *verbosity, compat::ChatterPhrase first, compat::ChatterPhrase last);
 	bool killVictimVisible(std::size_t index, const edict_t *victim, const world::FrameIdentity &frame, bool checkFov = true) const;
 	compat::ReactionContext reactionContext(std::size_t index) const;
 	void observeFriendDeath(std::size_t index, const edict_t *victim, const edict_t *killer,
@@ -456,6 +457,8 @@ private:
 		compat::OutgoingRadioScheduler outgoingRadioSchedulers{};
 		compat::EnemyCountChatterPolicy enemyCountChatter{};
 		compat::KillPraisePolicy killPraise{};
+		compat::FriendDeathChatterPolicy friendDeathChatter{};
+		compat::ConfirmedChatterSpeech confirmedSpeech{};
 		compat::KnifeRunTimer knifeRun{};
 		compat::EnemyReactionMemory enemyReaction{};
 		world::EntityKey enemyWeaponSource{};

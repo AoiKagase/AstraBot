@@ -107,7 +107,8 @@ compat::ChatterVoiceCatalog *BotBehaviorRuntime::chatterBank(std::size_t index)
 	}
 	return &found->catalog;
 }
-std::uint32_t BotBehaviorRuntime::allowedKillPraisePhrases(const char *verbosity)
+std::uint32_t BotBehaviorRuntime::allowedFixedChatterPhrases(
+	const char *verbosity, compat::ChatterPhrase first, compat::ChatterPhrase last)
 {
 	// The native global phrase definitions/flags belong to the default catalog.
 	// Profile banks provide speakables only; do not load/probe them in a death event.
@@ -116,8 +117,7 @@ std::uint32_t BotBehaviorRuntime::allowedKillPraisePhrases(const char *verbosity
 	ensureOutgoingChatterCatalog();
 	const bool minimal = verbosity && std::strcmp(verbosity, "minimal") == 0;
 	std::uint32_t mask = 0;
-	for (unsigned i = static_cast<unsigned>(compat::ChatterPhrase::NiceShot);
-		i <= static_cast<unsigned>(compat::ChatterPhrase::NiceShotCommander); ++i)
+	for (unsigned i = static_cast<unsigned>(first); i <= static_cast<unsigned>(last); ++i)
 	{
 		const auto phrase = static_cast<compat::ChatterPhrase>(i);
 		if (outgoingChatterCatalog_.defined(phrase) && (!minimal || outgoingChatterCatalog_.important(phrase)))
@@ -172,25 +172,34 @@ void BotBehaviorRuntime::updateVoiceFeedback(bool force)
 			stopVoiceFeedback(i);
 	}
 }
-bool BotBehaviorRuntime::sendChatterVoice(
-	std::size_t index, compat::ChatterPhrase phrase, int count, compat::ChatterVoiceCatalog &bank, float *duration,
-	std::uint16_t reportPlace)
+bool BotBehaviorRuntime::sendChatterVoice(std::size_t index, compat::ChatterPhrase phrase, int count,
+	compat::ChatterVoiceCatalog &bank, float *duration, std::uint16_t reportPlace)
 {
 	if (!services_ || index >= actors_.size() || !duration)
+		return false;
+	const auto receiptContext = reactionContext(index);
+	const auto speechRevision = actors_[index].confirmedSpeech.revision();
+	const auto current = [&]()
+	{
+		return actors_[index].confirmedSpeech.canComplete(receiptContext, reactionContext(index), speechRevision);
+	};
+	if (!current())
 		return false;
 	const auto engine = services_->service_engineFunctions();
 	const auto globals = services_->service_globals();
 	const auto &handle = services_->service_managedBotHandles()[index];
 	auto *self = handle.entity;
 	const int message = voiceMessageId(services_->service_pluginId(), "SendAudio");
+	if (!current())
+		return false;
 	if (message <= 0 || !engine || !globals || !self || self->free || self->v.deadflag != DEAD_NO ||
 		self->v.health <= 0 || !engine->pfnMessageBegin || !engine->pfnWriteByte || !engine->pfnWriteString ||
 		!engine->pfnWriteShort || !engine->pfnMessageEnd || !engine->pfnPEntityOfEntIndex)
 		return false;
 	std::string place;
 	const auto navigation = services_->service_navPublisher().snapshot();
-	if (!compat::isKillPraisePhrase(phrase) && !compat::isRemainingEnemyPhrase(phrase) &&
-		navigation.isValid() && navigation.mapGeneration() == services_->service_lifecycle().mapGeneration())
+	if (!compat::usesUndefinedChatterPlace(phrase) && navigation.isValid() &&
+		navigation.mapGeneration() == services_->service_lifecycle().mapGeneration())
 	{
 		nav::NavAreaMatch match{};
 		if (phrase == compat::ChatterPhrase::HeardNoise)
@@ -203,7 +212,7 @@ bool BotBehaviorRuntime::sendChatterVoice(
 				}
 		}
 		else if (nav::NavQuery(navigation)
-				.findContaining({self->v.origin.x, self->v.origin.y, self->v.origin.z}, 64.0f, &match) ==
+					 .findContaining({self->v.origin.x, self->v.origin.y, self->v.origin.z}, 64.0f, &match) ==
 			nav::NavQueryResult::Found)
 		{
 			const auto *area = navigation.document()->findArea(match.area);
@@ -219,26 +228,39 @@ bool BotBehaviorRuntime::sendChatterVoice(
 	auto *speakable = bank.select(phrase, count, place.c_str());
 	if (!speakable)
 		return false;
+	const std::string sample = speakable->sample;
+	const int pitch = actors_[index].managedProfiles.voicePitch;
 	if (speakable->duration < 0.0f)
 	{
-		std::string filepath = "sound/" + speakable->sample;
+		std::string filepath = "sound/" + sample;
 		const auto milliseconds =
 			engine->pfnGetApproxWavePlayLen ? engine->pfnGetApproxWavePlayLen(filepath.c_str()) : 0U;
+		if (!current())
+			return false;
 		speakable->duration = milliseconds ? static_cast<float>(milliseconds) / 1000.0f : 1.0f;
 	}
-	if (speakable->duration <= 0.0f)
+	const float clipDuration = speakable->duration;
+	if (clipDuration <= 0.0f)
 		return false;
 	const int team = services_->observation_resolvePlayerTeam(self);
+	if (!current())
+		return false;
 	if (team != 1 && team != 2)
 		return false;
 	const int feedbackMessage = voiceMessageId(services_->service_pluginId(), "BotVoice");
+	if (!current())
+		return false;
 	unsigned eligible = 0;
 	for (int slot = 1; slot <= (std::min)(32, globals->maxClients); ++slot)
 	{
 		auto *recipient = engine->pfnPEntityOfEntIndex(slot);
+		if (!current())
+			return false;
 		if (!recipient || recipient->free || !(recipient->v.flags & FL_CLIENT) || (recipient->v.flags & FL_DORMANT))
 			continue;
 		const int recipientTeam = services_->observation_resolvePlayerTeam(recipient);
+		if (!current())
+			return false;
 		bool receives = !(recipient->v.flags & FL_SPECTATOR) && recipientTeam == team;
 		if ((recipient->v.flags & FL_SPECTATOR) || recipientTeam == 0)
 		{
@@ -246,12 +268,16 @@ bool BotBehaviorRuntime::sendChatterVoice(
 			if ((mode == 1 || mode == 2 || mode == 4) && targetSlot >= 1 && targetSlot <= globals->maxClients)
 			{
 				const auto *target = engine->pfnPEntityOfEntIndex(targetSlot);
+				if (!current())
+					return false;
 				receives = target && !target->free && !(target->v.flags & FL_DORMANT) &&
 					services_->observation_resolvePlayerTeam(target) == team;
 			}
 			else if (recipient->v.flags & FL_SPECTATOR)
 				receives = false;
 		}
+		if (!current())
+			return false;
 		if (!receives)
 			continue;
 		++eligible;
@@ -261,17 +287,21 @@ bool BotBehaviorRuntime::sendChatterVoice(
 		if (!ignored)
 		{
 			engine->pfnMessageBegin(MSG_ONE, message, nullptr, recipient);
-			engine->pfnWriteByte(static_cast<int>(handle.actor.slot));
-			engine->pfnWriteString(speakable->sample.c_str());
-			engine->pfnWriteShort(actors_[index].managedProfiles.voicePitch);
+			engine->pfnWriteByte(static_cast<int>(receiptContext.actor.slot));
+			engine->pfnWriteString(sample.c_str());
+			engine->pfnWriteShort(pitch);
 			engine->pfnMessageEnd();
+			if (!current())
+				return false;
 		}
 		if (feedbackMessage > 0)
 		{
 			engine->pfnMessageBegin(MSG_ONE, feedbackMessage, nullptr, recipient);
 			engine->pfnWriteByte(1);
-			engine->pfnWriteByte(static_cast<int>(handle.actor.slot));
+			engine->pfnWriteByte(static_cast<int>(receiptContext.actor.slot));
 			engine->pfnMessageEnd();
+			if (!current())
+				return false;
 		}
 	}
 	// Radio() advances the statement even when all eligible listeners ignore audio.
@@ -281,9 +311,9 @@ bool BotBehaviorRuntime::sendChatterVoice(
 	if (feedbackMessage > 0)
 	{
 		outgoingVoiceMask_ |= 1U << index;
-		actors_[index].outgoingVoiceFeedback = {self->serialnumber, globals->time + speakable->duration + 1.0f};
+		actors_[index].outgoingVoiceFeedback = {self->serialnumber, globals->time + clipDuration + 1.0f};
 	}
-	*duration = speakable->duration;
+	*duration = clipDuration;
 	return true;
 }
 } // namespace metamod

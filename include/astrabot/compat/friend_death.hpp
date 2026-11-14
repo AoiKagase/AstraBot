@@ -57,6 +57,28 @@ struct FriendDeathDecision
 	float hurrySeconds = 0;
 };
 
+inline FriendDeathAction decideFriendDeathTail(const FriendDeathInput &in)
+{
+	if (!in.context.valid() || !in.victimFriendly)
+	{
+		return FriendDeathAction::None;
+	}
+	if (in.state == CompatibilityStateId::Hunt)
+	{
+		return FriendDeathAction::RethinkHunt;
+	}
+	else
+	{
+		constexpr float kRepositionLostSightSeconds = .4f;
+		if (in.attacking && in.enemyKnown && std::isfinite(in.lastSawEnemy) &&
+			in.context.now - in.lastSawEnemy > kRepositionLostSightSeconds)
+		{
+			return FriendDeathAction::Reposition;
+		}
+	}
+	return FriendDeathAction::None;
+}
+
 inline FriendDeathDecision decideFriendDeath(const FriendDeathInput &in, ICompatibilityRandomSource &random)
 {
 	FriendDeathDecision out{};
@@ -94,19 +116,7 @@ inline FriendDeathDecision decideFriendDeath(const FriendDeathInput &in, ICompat
 			return out;
 		}
 	}
-	if (in.state == CompatibilityStateId::Hunt)
-	{
-		out.action = FriendDeathAction::RethinkHunt;
-	}
-	else
-	{
-		constexpr float kRepositionLostSightSeconds = .4f;
-		if (in.attacking && in.enemyKnown && std::isfinite(in.lastSawEnemy) &&
-			in.context.now - in.lastSawEnemy > kRepositionLostSightSeconds)
-		{
-			out.action = FriendDeathAction::Reposition;
-		}
-	}
+	out.action = decideFriendDeathTail(in);
 	return out;
 }
 

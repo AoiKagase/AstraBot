@@ -32,6 +32,8 @@ enum class ChatterPhrase : unsigned
 	NiceShot,
 	NiceShotSir,
 	NiceShotCommander,
+	CommanderDown,
+	KilledFriend,
 	Count
 };
 inline ChatterPhrase remainingEnemyPhrase(int count)
@@ -50,6 +52,16 @@ inline bool isRemainingEnemyPhrase(ChatterPhrase phrase)
 inline bool isKillPraisePhrase(ChatterPhrase phrase)
 {
 	return phrase >= ChatterPhrase::NiceShot && phrase <= ChatterPhrase::NiceShotCommander;
+}
+
+inline bool isIntentionPhrase(ChatterPhrase phrase)
+{
+	return isKillPraisePhrase(phrase) || phrase == ChatterPhrase::CommanderDown;
+}
+
+inline bool usesUndefinedChatterPlace(ChatterPhrase phrase)
+{
+	return isRemainingEnemyPhrase(phrase) || isIntentionPhrase(phrase) || phrase == ChatterPhrase::KilledFriend;
 }
 
 struct RadioMenuChoice
@@ -141,7 +153,7 @@ public:
 	{
 		const char *names[] = {"None", "EnemySpotted", "Help", "RequestReport", "Affirmative", "OnMyWay",
 			"PlantingBomb", "WhereIsTheBomb", "EscortingHostages", "HeardNoise", "NoEnemiesLeft", "OneEnemyLeft",
-			"TwoEnemiesLeft", "ThreeEnemiesLeft", "NiceShot", "NiceShotSir", "NiceShotCommander"};
+			"TwoEnemiesLeft", "ThreeEnemiesLeft", "NiceShot", "NiceShotSir", "NiceShotCommander", "CommanderDown", "KilledFriend"};
 		const auto i = static_cast<unsigned>(p);
 		return i < static_cast<unsigned>(ChatterPhrase::Count) ? names[i] : "Unknown";
 	}

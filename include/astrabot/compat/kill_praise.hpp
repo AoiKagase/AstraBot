@@ -40,6 +40,7 @@ struct KillPraiseDeathInput
 	bool victimVisible = false;
 	bool careerKnown = false;
 	bool career = false;
+	bool intentionPending = false;
 };
 
 struct KillPraiseSpeechInput
@@ -97,7 +98,7 @@ public:
 		{
 			phrase = in.career ? ChatterPhrase::NiceShotCommander : ChatterPhrase::NiceShotSir;
 		}
-		if (phrase == ChatterPhrase::None || !(in.allowedPhrases & (1U << static_cast<unsigned>(phrase))) || active())
+		if (phrase == ChatterPhrase::None || !(in.allowedPhrases & (1U << static_cast<unsigned>(phrase))) || in.intentionPending || active())
 			return false;
 		phrase_ = phrase;
 		created_ = in.now;

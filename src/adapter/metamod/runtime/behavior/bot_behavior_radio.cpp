@@ -16,6 +16,7 @@ constexpr unsigned kMaximumRadioAttempts = 3U;
 // Keep literal evaluation precision on x87; each macro is undefined below.
 #define ASTRABOT_BOT_BEHAVIOR_RADIO_RADIO_RECEIPT_RETRY_SECONDS 0.2f
 #define ASTRABOT_BOT_BEHAVIOR_RADIO_TEAM_SPEECH_BUSY_SECONDS 2.1f
+#define ASTRABOT_BOT_BEHAVIOR_RADIO_NEXT_PHRASE_GAP_SECONDS 0.1f
 }
 using namespace runtime_detail;
 
@@ -28,10 +29,26 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index)
 	const auto &handle = services_->service_managedBotHandles()[index];
 	if (handle.entity == nullptr || handle.entity->free)
 		return;
+	const auto receiptContext = reactionContext(index);
+	const auto receiptCurrent = [&]()
+	{
+		// Dead/spectating observers still maintain the existing public radio update.
+		// Transport completion separately requires a valid living speech receipt.
+		const auto current = reactionContext(index);
+		return receiptContext.actor.isValid() && receiptContext.frame.isValid() &&
+			receiptContext.entityGeneration != 0 && std::isfinite(receiptContext.now) && receiptContext.now >= 0 &&
+			receiptContext.actor == current.actor && receiptContext.entityGeneration == current.entityGeneration &&
+			receiptContext.frame == current.frame && receiptContext.now == current.now &&
+			receiptContext.alive == current.alive;
+	};
+	if (!receiptCurrent())
+		return;
 	const char *verbosity = services_->service_engineFunctions()->pfnCVarGetString != nullptr
 		? services_->service_engineFunctions()->pfnCVarGetString("bot_chatter")
 		: nullptr;
 	ensureOutgoingChatterCatalog();
+	if (!receiptCurrent())
+		return;
 	if (outgoingRadioRound_ != services_->service_lifecycle().roundGeneration())
 	{
 		outgoingRadioRound_ = services_->service_lifecycle().roundGeneration();
@@ -45,12 +62,13 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index)
 		outgoingTeamCurrentPlace_.fill(0);
 	}
 	compat::OutgoingRadioInput input{};
-	input.actor = {handle.actor.slot, handle.actor.actorGeneration};
-	input.frame = {services_->service_lifecycle().mapGeneration(), services_->service_lifecycle().roundGeneration(),
-		services_->service_adapterFrameCount()};
-	input.now = services_->service_globals()->time;
+	input.actor = receiptContext.actor;
+	input.frame = receiptContext.frame;
+	input.now = receiptContext.now;
 	input.alive = handle.entity->v.deadflag == DEAD_NO && handle.entity->v.health > 0.0f;
 	input.team = services_->observation_resolvePlayerTeam(handle.entity);
+	if (!receiptCurrent())
+		return;
 	if (input.team != kTerroristTeam && input.team != kCounterTerroristTeam)
 		return;
 	input.teamLastSpeech = outgoingTeamLastSpeech_[input.team];
@@ -78,6 +96,8 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index)
 			services_->observation_resolvePlayerTeam(player) == kCounterTerroristTeam)
 			++input.enemiesRemaining;
 	}
+	if (!receiptCurrent())
+		return;
 	// Count the observer's current public FOV/LOS/smoke-filtered contacts. A
 	// selected combat target is only one contact and cannot express outnumbering.
 	world::WorldSnapshot belief;
@@ -87,6 +107,8 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index)
 	const bool blind = services_->observation_publicObservations().read(input.actor, input.frame, &ownObservation) &&
 		services_->service_globals()->time < ownObservation.blindUntil;
 	const bool haveBelief = !blind && prepareManagedPerception(index, &belief, &selected, &selectedPosition);
+	if (!receiptCurrent())
+		return;
 	const auto contacts = actors_[index].outgoingRadioContactMemory.update(input.actor, input.frame, input.now,
 		haveBelief ? &belief : nullptr, blind, input.friendCount, input.enemiesRemaining);
 	input.visibleEnemyCount = contacts.enemies;
@@ -106,6 +128,8 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index)
 	const char *mapName = services_->service_engineFunctions()->pfnSzFromIndex != nullptr
 		? services_->service_engineFunctions()->pfnSzFromIndex(services_->service_globals()->mapname)
 		: nullptr;
+	if (!receiptCurrent())
+		return;
 	input.vipEscaping = mapName != nullptr && std::strncmp(mapName, "as_", kVipMapPrefixLength) == 0 &&
 		input.team == kCounterTerroristTeam && decision.action == compat::ScenarioAction::Escape;
 	input.plantingBomb = actors_[index].managedBotStateMachines.state() == compat::CompatibilityStateId::PlantBomb;
@@ -118,6 +142,8 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index)
 		decision.target.entity == actors_[index].bombSearchTargets.entity;
 	const bool voiceMode = !verbosity || (std::strcmp(verbosity, "off") != 0 && std::strcmp(verbosity, "radio") != 0);
 	auto *voice = voiceMode ? chatterBank(index) : nullptr;
+	if (!receiptCurrent())
+		return;
 	std::uint32_t voicePhrases = 0U;
 	if (voice)
 		for (unsigned phrase = 1U; phrase < static_cast<unsigned>(compat::ChatterPhrase::Count); ++phrase)
@@ -151,15 +177,36 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index)
 	praiseInput.roundOver = input.roundOver;
 	praiseInput.friendsRemaining = input.friendCount;
 	praiseInput.teamBusyUntil = input.teamBusyUntil;
-	praiseInput.teamPraising = compat::isKillPraisePhrase(input.teamCurrentPhrase);
-	praiseInput.allowedPhrases = actors_[index].killPraise.active() ? allowedKillPraisePhrases(verbosity) : 0;
+	praiseInput.teamPraising = compat::isIntentionPhrase(input.teamCurrentPhrase);
+	praiseInput.allowedPhrases = actors_[index].killPraise.active()
+		? allowedFixedChatterPhrases(
+			  verbosity, compat::ChatterPhrase::NiceShot, compat::ChatterPhrase::NiceShotCommander)
+		: 0;
+	if (!receiptCurrent())
+		return;
 	praiseInput.canStart = false;
 	actors_[index].killPraise.update(praiseInput);
+	compat::FriendDeathChatterSpeechInput deathInput{};
+	deathInput.context = {input.actor, input.frame, countInput.entityGeneration, input.now, input.alive};
+	actors_[index].confirmedSpeech.maintain(deathInput.context);
+	deathInput.allowedPhrases = actors_[index].friendDeathChatter.active()
+		? allowedFixedChatterPhrases(
+			  verbosity, compat::ChatterPhrase::CommanderDown, compat::ChatterPhrase::KilledFriend)
+		: 0;
+	if (!receiptCurrent())
+		return;
+	deathInput.teamBusyUntil = input.teamBusyUntil;
+	deathInput.teamPhrase = input.teamCurrentPhrase;
+	deathInput.friendsRemaining = input.friendCount;
+	deathInput.roundOver = input.roundOver;
+	deathInput.canStart = false;
+	(void)actors_[index].friendDeathChatter.update(deathInput);
 	enum class SpeechOwner
 	{
 		Generic,
 		EnemyCount,
-		KillPraise
+		KillPraise,
+		FriendDeath
 	};
 	SpeechOwner owner = SpeechOwner::Generic;
 	bool havePending = actors_[index].outgoingRadioSchedulers.hasPending();
@@ -175,20 +222,33 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index)
 		}
 		if (actors_[index].killPraise.active() &&
 			(!havePending || actors_[index].killPraise.scheduledStart() < earliest))
+		{
 			owner = SpeechOwner::KillPraise;
+			havePending = true;
+			earliest = actors_[index].killPraise.scheduledStart();
+		}
+		if (actors_[index].friendDeathChatter.active() &&
+			(!havePending || actors_[index].friendDeathChatter.scheduledStart() < earliest))
+		{
+			owner = SpeechOwner::FriendDeath;
+		}
 	}
 	const bool countChosen = owner == SpeechOwner::EnemyCount;
 	const bool praiseChosen = owner == SpeechOwner::KillPraise;
+	const bool deathChosen = owner == SpeechOwner::FriendDeath;
 	countInput.canStart = countChosen;
 	praiseInput.canStart = praiseChosen;
 	const auto countOutput = actors_[index].enemyCountChatter.update(countInput);
 	const auto praiseOutput = actors_[index].killPraise.update(praiseInput);
-	if (countChosen || praiseChosen)
+	deathInput.canStart = deathChosen;
+	const auto deathOutput = actors_[index].friendDeathChatter.update(deathInput);
+	if (countChosen || praiseChosen || deathChosen)
 	{
 		output = {};
 		const auto phrase = countChosen && countOutput.ready
 			? compat::remainingEnemyPhrase(countOutput.enemiesRemaining)
 			: praiseChosen && praiseOutput.ready ? praiseOutput.phrase
+			: deathChosen && deathOutput.ready	 ? deathOutput.phrase
 												 : compat::ChatterPhrase::None;
 		if (phrase != compat::ChatterPhrase::None)
 		{
@@ -200,7 +260,9 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index)
 	}
 	const auto discardOutput = [&]()
 	{
-		if (praiseChosen)
+		if (deathChosen)
+			actors_[index].friendDeathChatter.discard(deathOutput);
+		else if (praiseChosen)
 			actors_[index].killPraise.discard();
 		else if (countChosen)
 			actors_[index].enemyCountChatter.discard();
@@ -209,7 +271,9 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index)
 	};
 	const auto confirmOutput = [&]()
 	{
-		if (praiseChosen)
+		if (deathChosen)
+			actors_[index].friendDeathChatter.discard(deathOutput);
+		else if (praiseChosen)
 			actors_[index].killPraise.discard();
 		else if (countChosen)
 			actors_[index].enemyCountChatter.discard();
@@ -238,14 +302,22 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index)
 	if (output.status == compat::OutgoingRadioStatus::Ready && voice && output.phrase != compat::ChatterPhrase::None)
 	{
 		float duration = 0.0f;
-		if (sendChatterVoice(index, output.phrase, countChosen || praiseChosen ? -1 : input.visibleEnemyCount, *voice,
-				&duration, output.place))
+		const auto speechRevision = actors_[index].confirmedSpeech.revision();
+		const bool sent = sendChatterVoice(index, output.phrase,
+			countChosen || praiseChosen || deathChosen ? -1 : input.visibleEnemyCount, *voice, &duration, output.place);
+		if (!actors_[index].confirmedSpeech.canComplete(receiptContext, reactionContext(index), speechRevision))
+			return;
+		if (sent)
 		{
+			if (!actors_[index].confirmedSpeech.record(deathInput.context, output.phrase,
+					input.now + duration + ASTRABOT_BOT_BEHAVIOR_RADIO_NEXT_PHRASE_GAP_SECONDS, speechRevision))
+				return;
 			confirmOutput();
 			actors_[index].outgoingRadioAttempts = 0U;
 			actors_[index].outgoingRadioAttemptChoices = {};
 			outgoingTeamLastSpeech_[input.team] = input.now;
-			outgoingTeamBusyUntil_[input.team] = input.now + duration + 0.1f;
+			outgoingTeamBusyUntil_[input.team] =
+				input.now + duration + ASTRABOT_BOT_BEHAVIOR_RADIO_NEXT_PHRASE_GAP_SECONDS;
 			outgoingTeamCurrentPhrase_[input.team] = output.phrase;
 			outgoingTeamCurrentPlace_[input.team] = output.place;
 			return;
@@ -258,7 +330,7 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index)
 	}
 	if (output.status == compat::OutgoingRadioStatus::MissingPhrase)
 	{
-		if (countChosen || praiseChosen)
+		if (countChosen || praiseChosen || deathChosen)
 			discardOutput();
 		const auto phrase = static_cast<unsigned>(output.phrase);
 		if (phrase < outgoingMissingPhraseLogged_.size() && !outgoingMissingPhraseLogged_[phrase])
@@ -304,16 +376,29 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index)
 		return;
 	actors_[index].outgoingRadioAttemptTimes = services_->service_globals()->time;
 	++actors_[index].outgoingRadioAttempts;
+	const auto speechRevision = actors_[index].confirmedSpeech.revision();
 	const std::uint32_t receiptBefore = actors_[index].outgoingRadioReceipts;
 	char slot[] = {static_cast<char>('0' + output.slot), '\0'};
+	if (!actors_[index].confirmedSpeech.canComplete(receiptContext, reactionContext(index), speechRevision))
+		return;
 	const bool opened = services_->command_dispatchClientCommand(handle.entity, menu, nullptr);
+	if (!actors_[index].confirmedSpeech.canComplete(receiptContext, reactionContext(index), speechRevision))
+		return;
 	const bool menuSelected = opened && services_->command_dispatchClientCommand(handle.entity, "menuselect", slot);
+	if (!actors_[index].confirmedSpeech.canComplete(receiptContext, reactionContext(index), speechRevision))
+		return;
 	if (opened)
 		(void)services_->command_dispatchClientCommand(handle.entity, "menuselect", "10");
 	// A client command reaching the GameDLL does not prove that its radio
 	// quota/cooldown accepted it. Only public SendAudio confirms a sent phrase.
+	if (!actors_[index].confirmedSpeech.canComplete(receiptContext, reactionContext(index), speechRevision))
+		return;
 	if (menuSelected && actors_[index].outgoingRadioReceipts != receiptBefore)
 	{
+		if (!actors_[index].confirmedSpeech.record(deathInput.context, output.phrase,
+				services_->service_globals()->time + ASTRABOT_BOT_BEHAVIOR_RADIO_TEAM_SPEECH_BUSY_SECONDS,
+				speechRevision))
+			return;
 		confirmOutput();
 		actors_[index].outgoingRadioAttempts = 0U;
 		actors_[index].outgoingRadioAttemptChoices = {};
@@ -334,3 +419,4 @@ void BotBehaviorRuntime::observeRadioReceipt(std::size_t index)
 } // namespace astrabot
 #undef ASTRABOT_BOT_BEHAVIOR_RADIO_RADIO_RECEIPT_RETRY_SECONDS
 #undef ASTRABOT_BOT_BEHAVIOR_RADIO_TEAM_SPEECH_BUSY_SECONDS
+#undef ASTRABOT_BOT_BEHAVIOR_RADIO_NEXT_PHRASE_GAP_SECONDS
