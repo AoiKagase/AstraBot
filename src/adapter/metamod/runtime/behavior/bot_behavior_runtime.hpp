@@ -4,6 +4,7 @@
 #include "astrabot/compat/guard_look.hpp"
 #include "astrabot/compat/weapon_equipment.hpp"
 #include "astrabot/compat/chatter_voice.hpp"
+#include "astrabot/compat/noise_look.hpp"
 #include <limits>
 namespace astrabot
 {
@@ -17,6 +18,7 @@ public:
 	void observeObstacleKeyValue(edict_t *entity, const KeyValueData *data);
 	void observeObstacleTouch(edict_t *entity, edict_t *other);
 	void observeWeaponTouch(edict_t *box, edict_t *self);
+	void applyNoiseLookCommand(std::size_t index, runtime::BotCommand &command);
 	void applyObstacleCommand(std::size_t index, runtime::BotCommand &command);
 	void resetObstacleMaterials();
 	void resetRoundRecognition();
@@ -353,6 +355,16 @@ private:
 	void stopVoiceFeedback(std::size_t index);
 	bool sendChatterVoice(std::size_t index, compat::ChatterPhrase phrase, int count,
 		compat::ChatterVoiceCatalog &bank, float *duration);
+	struct NoiseBendCache
+	{
+		bool valid = false;
+		bool hasPoint = false;
+		float noiseTime = -1.0f;
+		std::uint64_t navRevision = 0U;
+		world::WorldPosition origin{};
+		world::WorldPosition noiseOrigin{};
+		world::WorldPosition point{};
+	};
 	struct ActorState
 	{
 		ObstacleLook obstacleLook{};
@@ -364,6 +376,10 @@ private:
 		world::WorldPosition recognizedPoints{};
 		std::uint32_t recognitionSequences{};
 		float lastVisibleEnemyTimes{};
+		world::WorldPosition lastVisibleEnemyPositions{};
+		compat::NoiseLookPlanner noiseLook{};
+		NoiseBendCache noiseBend{};
+		std::uint32_t noiseLookUpdate = 0U;
 		compat::BombGuardPlanner bombGuardPlanners{};
 		compat::GuardLookPlanner guardLook{};
 		compat::WeaponEquipmentPlanner equipment{};

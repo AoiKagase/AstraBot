@@ -2381,9 +2381,10 @@ void HookEmitSound(
 	edict_t *entity, int channel, const char *sample, float volume, float attenuation, int flags, int pitch)
 {
 	(void)channel;
-	(void)flags;
 	(void)pitch;
-	PluginRuntime::instance().onEmitSound(entity, sample, volume, attenuation);
+	constexpr int kStopSoundFlag = 1 << 5;
+	if ((flags & kStopSoundFlag) == 0)
+		PluginRuntime::instance().onEmitSound(entity, sample, volume, attenuation);
 	setMetaResult(MRES_IGNORED);
 }
 

@@ -463,6 +463,7 @@ void PerceptionAssembler::updateNoise(world::NoiseMemory *noise, const world::Au
 	noise->distance = sound.distance;
 	noise->priority = sound.priority;
 	noise->timestampTick = soundTick;
+	noise->timestampSeconds = sound.timestampSeconds;
 	noise->confidence = sound.confidence;
 	noise->source = {};
 	noise->positionApproximated = true;

@@ -31,6 +31,7 @@ bool BotBehaviorRuntime::prepareManagedPerception(std::size_t index, world::Worl
 		if (!blinded && candidateCount != 0U && services_->service_globals() != nullptr)
 		{
 			actors_[index].lastVisibleEnemyTimes = services_->service_globals()->time;
+			actors_[index].lastVisibleEnemyPositions = candidates[0].visiblePoint;
 		}
 		if (services_->service_globals() != nullptr &&
 			actors_[index].reactionQueues.update(observer, belief.identity().frame, services_->service_globals()->time,
@@ -62,6 +63,9 @@ void BotBehaviorRuntime::resetRoundRecognition()
 	updateVoiceFeedback(true);
 	for (auto &actor : actors_)
 	{
+		actor.noiseLook.reset();
+		actor.noiseBend = {};
+		actor.noiseLookUpdate = 0U;
 		actor.lastVisibleEnemyTimes = 0.0f;
 		actor.recognizedTargets = {};
 		actor.recognitionSequences = 0U;
@@ -72,6 +76,9 @@ void BotBehaviorRuntime::resetRoundRecognition()
 void BotBehaviorRuntime::observePublicDeath(std::size_t index)
 {
 	stopVoiceFeedback(index);
+	actors_[index].noiseLook.reset();
+	actors_[index].noiseBend = {};
+	actors_[index].noiseLookUpdate = 0U;
 	actors_[index].reactionQueues.reset();
 }
 } // namespace metamod

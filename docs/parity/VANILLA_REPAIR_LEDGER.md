@@ -60,6 +60,17 @@ Test names below omit the common `astrabot_` prefix. Runtime integration is in
 | D18 | Quota only Add; 7 | Timed fixed/fill/match, join window, autovacate, manual quota accounting/team/removal rules. Standard radio uses host-provided metadata and delayed team scheduling. | P10; bot_configuration, compat_surface, outgoing_radio, fake_client_isolation |
 | D19 | RNG ownership/order; 2/8 | Named call sites, shared round ownership and scripted type/range/actor/timing/order/exhaustion checks. Full reference-wide consumption equivalence remains unverified. | P03/P11; compatibility_rng, vanilla_behavior, bomb_navigation; reference traces still required |
 
+## Auditory look addition (2026-11-14)
+
+Accepted public non-objective sounds now drive command-cadence, non-attacking
+look reactions with CSBot freshness/reaction/hold rules, glass-ignoring direct
+rays and bounded NAV approach bending. Known standard EmitSound gunshots get
+High priority; SND_STOP cannot create a receipt. Enemy Aim, USE/C4, grenade,
+freeze and breakable actions retain precedence, and movement is reprojected.
+Existing hearing delivery/replacement/expiry still uses frame-based memory;
+client PlaybackEvent-only shots are not supplied by this EmitSound adapter.
+This is an implemented public auditory-look slice, not full native hearing parity.
+
 ## Capabilities and remaining limits
 
 The optional official ReGameDLL API exposes metadata/hooks/GameRules/playerMove,

@@ -1,5 +1,6 @@
 #include "runtime/observation/bot_observation_runtime.hpp"
 #include "runtime/shared/bot_runtime_support.hpp"
+#include "astrabot/compat/noise_look.hpp"
 namespace astrabot
 {
 namespace metamod
@@ -458,12 +459,13 @@ void BotObservationRuntime::onEmitSound(edict_t *entity, const char *sample, flo
 	event.origin = origin;
 	event.loudness = volume;
 	event.confidence = {1.0f, 0U};
-	event.priority = bombBeep ? world::NoisePriority::High : world::NoisePriority::Medium;
+	event.priority = bombBeep || compat::isStandardShotSample(sample) ? world::NoisePriority::High : world::NoisePriority::Medium;
 	// Derived public sound attenuation, not an exact GameEvent audibility observation.
 	event.distance = bombBeep ? kBombBeepHearingDistance
 		: attenuation > 0.0f  ? (std::min)(kMaximumSoundDistance, kSoundAttenuationDistanceScale * volume / attenuation)
 							  : kMaximumSoundDistance;
 	event.timestampTick = services_->service_adapterFrameCount();
+	event.timestampSeconds = services_->service_globals()->time;
 	if (entityIndex >= 1 && entityIndex <= kMaximumClientSlot && (entity->v.flags & FL_CLIENT) != 0)
 	{
 		event.source = {static_cast<std::uint32_t>(entityIndex), static_cast<std::uint32_t>(entity->serialnumber) + 1U};
@@ -472,6 +474,7 @@ void BotObservationRuntime::onEmitSound(edict_t *entity, const char *sample, flo
 	for (const auto &previous : soundEvents_)
 	{
 		if (previous.id != 0U && previous.timestampTick == event.timestampTick && previous.kind == event.kind &&
+			previous.priority == event.priority &&
 			previous.source == event.source && previous.origin.x == event.origin.x &&
 			previous.origin.y == event.origin.y && previous.origin.z == event.origin.z)
 		{

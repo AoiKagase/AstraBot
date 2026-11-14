@@ -1,5 +1,6 @@
 #include "runtime/behavior/bot_behavior_runtime.hpp"
 #include "runtime/shared/bot_runtime_support.hpp"
+#include "runtime/behavior/bot_look_geometry.hpp"
 #include <algorithm>
 #include <cmath>
 namespace astrabot
@@ -12,18 +13,9 @@ constexpr int kScoutWeaponId = 3;
 constexpr int kSg550WeaponId = 13;
 constexpr int kAwpWeaponId = 18;
 constexpr int kG3sg1WeaponId = 24;
-constexpr int kIgnoreMonstersTrace = 1;
 constexpr int kIgnoreMonstersAndGlassTrace = 0x101;
-constexpr int kApproachChestHeight = 36;
-constexpr int kMinimumApproachLength = 1;
-constexpr int kMaximumApproachLength = 8192;
-constexpr int kBendAngleStepDegrees = 10;
-constexpr int kMaximumBendAngleDegrees = 135;
-constexpr int kBendSides = 2;
 // Keep literal evaluation precision on x87; each macro is undefined below.
 #define ASTRABOT_BOT_BEHAVIOR_GUARD_DEGREES_TO_RADIANS .01745329252f
-constexpr int kRaySampleStep = 50;
-constexpr int kGroundProbeDepth = 1000;
 constexpr int kOpenYawDirections = 8;
 constexpr float kOpenYawStepDegrees = 45.0f;
 constexpr int kOpenYawRayLength = 1000;
@@ -31,59 +23,7 @@ constexpr int kContainingAreaTolerance = 120;
 constexpr int kMaximumApproachPoints = 16;
 constexpr int kC4WeaponId = 6;
 constexpr unsigned kUnarmedInventoryMask = (1U << 6) | (1U << 4) | (1U << 9) | (1U << 25);
-bool clearRay(
-	enginefuncs_t &engine, edict_t *self, const nav::NavVector &from, const nav::NavVector &to, TraceResult *result)
-{
-	const float a[] = {from.x, from.y, from.z}, b[] = {to.x, to.y, to.z};
-	*result = {};
-	engine.pfnTraceLine(a, b, kIgnoreMonstersTrace, self, result);
-	return result->flFraction >= 1 && !result->fStartSolid && !result->fAllSolid;
-}
 
-bool bendApproach(
-	enginefuncs_t &engine, edict_t *self, const nav::NavVector &eye, const nav::NavVector &point, nav::NavVector *bend)
-{
-	const nav::NavVector chest = {point.x, point.y, point.z + kApproachChestHeight};
-	TraceResult trace{};
-	if (clearRay(engine, self, eye, chest, &trace))
-	{
-		*bend = point;
-		return true;
-	}
-	const float length = std::hypot(point.x - eye.x, point.y - eye.y);
-	if (!std::isfinite(length) || length < kMinimumApproachLength || length > kMaximumApproachLength)
-		return false;
-	const float start = std::atan2(point.y - eye.y, point.x - eye.x);
-	for (int angle = kBendAngleStepDegrees; angle <= kMaximumBendAngleDegrees; angle += kBendAngleStepDegrees)
-		for (int side = 0; side < kBendSides; ++side)
-		{
-			const float yaw = start + (side ? angle : -angle) * ASTRABOT_BOT_BEHAVIOR_GUARD_DEGREES_TO_RADIANS;
-			const nav::NavVector rotated = {eye.x + length * std::cos(yaw), eye.y + length * std::sin(yaw), point.z};
-			const nav::NavVector rotatedChest = {rotated.x, rotated.y, rotated.z + kApproachChestHeight};
-			clearRay(engine, self, eye, rotatedChest, &trace);
-			if (trace.fStartSolid || trace.fAllSolid)
-				continue;
-			const float dz = rotated.z - eye.z, rayLength = std::sqrt(length * length + dz * dz);
-			const float visible = rayLength * std::max(0.0f, std::min(1.0f, trace.flFraction));
-			for (float distance = kRaySampleStep; distance <= visible; distance += kRaySampleStep)
-			{
-				const float t = distance / rayLength;
-				nav::NavVector ray = {eye.x + t * (rotated.x - eye.x), eye.y + t * (rotated.y - eye.y), eye.z + t * dz};
-				if (!clearRay(engine, self, ray, chest, &trace))
-					continue;
-				TraceResult ground{};
-				if (!clearRay(engine, self, {ray.x, ray.y, ray.z + kApproachChestHeight},
-						{ray.x, ray.y, ray.z - kGroundProbeDepth}, &ground) &&
-					!ground.fStartSolid && !ground.fAllSolid)
-					ray.z = ground.vecEndPos.z;
-				else
-					ray.z = point.z;
-				*bend = ray;
-				return true;
-			}
-		}
-	return false;
-}
 }
 void BotBehaviorRuntime::updateGuardLook(ManagedActionContext &ctx)
 {
@@ -112,6 +52,8 @@ void BotBehaviorRuntime::updateGuardLook(ManagedActionContext &ctx)
 			: (inventory & pistols) != 0			   ? ActionKind::SelectPistol
 													   : ActionKind::SelectKnife;
 	}
+	if (state.noiseLook.active() || state.noiseLook.inhibited(services_->service_globals()->time))
+		return;
 	const auto navigation = services_->service_navPublisher().snapshot();
 	const float now = services_->service_globals()->time;
 	const nav::NavVector spot = {scenario.target.position.x, scenario.target.position.y, scenario.target.position.z};
@@ -153,7 +95,7 @@ void BotBehaviorRuntime::updateGuardLook(ManagedActionContext &ctx)
 						continue;
 					const auto point = compat::guardApproachPoint(*previous, *here, approach.previousToHereHow);
 					nav::NavVector bend{};
-					if (bendApproach(
+					if (bendLookApproach(
 							*engine, self, {self->v.origin.x, self->v.origin.y, self->v.origin.z}, point, &bend))
 						points.push_back(bend);
 				}

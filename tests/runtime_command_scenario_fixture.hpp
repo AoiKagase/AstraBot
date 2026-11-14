@@ -186,6 +186,10 @@ public:
 		return value;
 	}
 
+	void behavior_applyNoiseLookCommand(std::size_t, runtime::BotCommand &) override
+	{
+	}
+
 	void behavior_applyObstacleCommand(std::size_t, runtime::BotCommand &) override
 	{
 	}

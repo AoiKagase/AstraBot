@@ -350,6 +350,7 @@ runtime::CommandReceipt BotCommandRuntime::executeManagedBotCommand(std::size_t 
 		return receipt;
 	}
 	command.movement.msec = services_->consumeCommandMsec(index, services_->service_globals()->time);
+	services_->behavior_applyNoiseLookCommand(index, command);
 	services_->behavior_applyObstacleCommand(index, command);
 	const float maxSpeed = handle.entity->v.maxspeed;
 	const bool explicitFrozen = (handle.entity->v.flags & FL_FROZEN) != 0;

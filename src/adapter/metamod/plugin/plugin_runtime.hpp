@@ -560,6 +560,11 @@ private:
 		return observation_.liveFriendlyPositions(index, feet);
 	}
 
+	void behavior_applyNoiseLookCommand(std::size_t index, runtime::BotCommand &command) override
+	{
+		behavior_.applyNoiseLookCommand(index, command);
+	}
+
 	void behavior_applyObstacleCommand(std::size_t index, runtime::BotCommand &command) override
 	{
 		behavior_.applyObstacleCommand(index, command);

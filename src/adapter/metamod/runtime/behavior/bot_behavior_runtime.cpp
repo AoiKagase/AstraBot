@@ -57,6 +57,9 @@ void BotBehaviorRuntime::updateManagedBotCompatibilityState(
 
 void BotBehaviorRuntime::onActorRemoved(std::size_t index)
 {
+	actors_[index].noiseLook.reset();
+	actors_[index].noiseBend = {};
+	actors_[index].noiseLookUpdate = 0U;
 	stopVoiceFeedback(index);
 	actors_[index].obstacleLook = {};
 	actors_[index].obstacleNextEquipAt = 0.0f;
@@ -86,6 +89,9 @@ void BotBehaviorRuntime::onActorRemoved(std::size_t index)
 
 void BotBehaviorRuntime::onActorRemembered(std::size_t index, const FakeClientHandle &handle)
 {
+	actors_[index].noiseLook.reset();
+	actors_[index].noiseBend = {};
+	actors_[index].noiseLookUpdate = 0U;
 	actors_[index].reactionQueues.reset();
 	actors_[index].recognizedTargets = {};
 	actors_[index].recognitionSequences = 0U;
@@ -128,6 +134,9 @@ void BotBehaviorRuntime::resetSharedExecutionState()
 
 void BotBehaviorRuntime::resetActorExecutionState(std::size_t index)
 {
+	actors_[index].noiseLook.reset();
+	actors_[index].noiseBend = {};
+	actors_[index].noiseLookUpdate = 0U;
 	actors_[index].obstacleLook = {};
 	actors_[index].obstacleNextEquipAt = 0.0f;
 	actors_[index].obstaclePathActive = false;

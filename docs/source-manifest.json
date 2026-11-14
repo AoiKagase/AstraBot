@@ -40,7 +40,9 @@
     "docs/superpowers/specs/2026-11-14-csbot-weapon-pickup-design.md",
     "docs/superpowers/plans/2026-11-14-csbot-weapon-pickup.md",
     "docs/superpowers/specs/2026-11-14-csbot-chatter-voice-design.md",
-    "docs/superpowers/plans/2026-11-14-csbot-chatter-voice.md"
+    "docs/superpowers/plans/2026-11-14-csbot-chatter-voice.md",
+    "docs/superpowers/specs/2026-11-14-csbot-noise-look-design.md",
+    "docs/superpowers/plans/2026-11-14-csbot-noise-look.md"
   ],
   "source_files": [
     {
@@ -1515,6 +1517,42 @@
     },
     {
       "path": "tests/chatter_voice_runtime_tests.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "include/astrabot/compat/noise_look.hpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "src/adapter/metamod/runtime/behavior/bot_behavior_noise.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "src/adapter/metamod/runtime/behavior/bot_look_geometry.hpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "src/adapter/metamod/runtime/behavior/bot_look_geometry.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "tests/noise_look_tests.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "tests/noise_look_runtime_tests.cpp",
       "origin": "AstraBot",
       "license_status": "pending_release_review",
       "reference_only": false

@@ -1,3 +1,56 @@
+## 2026-11-14 auditory look reactions for the public sound feed
+
+Source base f326cad; behavioral oracle ReGameDLL-CS
+b0889847fe6d03898be88acc9e366660efb40ab5, read-only. This is an independent
+implementation of the auditory-look slice, not full native hearing parity.
+
+- AudibleEvent and NoiseMemory retain explicit public receipt seconds separately
+  from frame IDs. Fresh generic sounds require profile reaction delay and age
+  <=0.5 seconds. A clear, nearby (<1000 units) High-priority sound without a
+  visible enemy starts a 0.25-second look and random 2-4-second inhibition.
+- Ordinary looks use 1-2-second holds; stationary Hide uses 2-5 seconds, or
+  5-15 with one enemy remaining. Five-degree alignment starts the hold timer;
+  ordinary targets within 100 units clear. Shared scripted RNG requests pin the
+  bounds. The existing non-attacking spring runs at command cadence, with world
+  movement reprojection and no synthesized firing or enemy identity.
+- Direct auditory rays ignore monsters/glass and use neither FOV nor smoke as
+  hearing occlusion. Blocked rays use the nearest read-only NAV approach and
+  the existing guard bend routine, now shared without changing its geometry.
+  Bend results are cached by received time/position, NAV revision and own pose
+  within 10 units. Absent approaches conservatively skip the look.
+- Visible enemy/attack, USE/C4, grenade, freeze/configuration, ladder and
+  breakable ownership gate the modifier. Actor/map/round/death/clock changes
+  invalidate held state. Ordinary guard scanning respects auditory inhibition.
+- Known standard shot samples establish High priority in the EmitSound feed.
+  SND_STOP creates no receipt. Independent review found same-frame Medium
+  weapon audio could deduplicate away a later High shot; its actual callback
+  regression failed RED, then passed after priority was included in the key.
+  No Critical findings or deferred minors.
+
+Offline gates: complete Windows HostX86/x86 Debug build PASS; CTest **96/96 PASS**
+(9.28 seconds). Complete Debian Linux x86 Debug build PASS; CTest **94/95 PASS**
+(11.52 seconds). Only pre-existing astrabot_combat_policy fails with the exact
+weapon/skill/recoil chest-policy message in the coding-conventions-20261113
+baseline; its source and expectations are unchanged. New pure and actual
+EmitSound-to-RunPlayerMove regressions pass on both OSes, including reaction,
+command smoothing, movement/USE ownership, no fire, stop notification, frozen/
+stale/visible-enemy/beep rejection, positive NAV approach/cache reuse, death and
+round reset. Pure tests also exercise actor-generation and clock reversal.
+Shared guard regressions and unchanged frozen characterizations pass. Source,
+ownership, ports and whitespace checks pass. PE/ELF independently verify x86
+and seven exact public Metamod exports. Tested source/artifact hashes stayed fixed.
+
+Verified local artifact SHA-256 (not deployed):
+- Windows DLL: e51346b5db1f1d9cbee617a6efd4d1a21ea67c748b12dc22c6c6196ca3da3172
+- Linux SO: 8b2bd125d113901fc0080cb13876fc00046fa46cbf6a6e93bff819bccc1ce872
+
+Receipts: .agent-state/sessions/csbot-noise-look-9bf0ec08-83d5-4573-beb8-7ea7b5e57783/.
+Native camera comfort/FPS/real-server acceptance is NOT RUN. No deployment/push.
+Limits: client PlaybackEvent-only gunshots are not supplied by the existing
+EmitSound adapter. Upstream hearing range/position and frame-based replacement/
+expiry remain the previous inferred pipeline; explicit seconds fix look freshness,
+not the whole hearing system. Dynamic approach data is inferred from compiled NAV.
+
 ## 2026-11-14 CSBot chatter voice transport for existing concepts
 
 Source base aa6abd5; pinned read-only behavioral oracle ReGameDLL-CS

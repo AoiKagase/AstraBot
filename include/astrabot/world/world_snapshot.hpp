@@ -235,6 +235,7 @@ struct AudibleEvent
 	NoisePriority priority;
 	float distance;
 	std::uint32_t timestampTick;
+	float timestampSeconds = -1.0f; // Unknown unless supplied by a real-time public receipt.
 };
 
 struct NoiseMemory
@@ -249,6 +250,7 @@ struct NoiseMemory
 	ContactConfidence confidence;
 	ActorKey source;
 	bool positionApproximated;
+	float timestampSeconds = -1.0f;
 };
 
 class WorldSnapshot

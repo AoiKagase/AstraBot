@@ -307,6 +307,7 @@ bool testP06NoisePriorityExpiryAndHeardNotSeen()
 	high.priority = world::NoisePriority::High;
 	high.distance = 100.0f;
 	high.timestampTick = 10U;
+	high.timestampSeconds = 123.5f;
 	high.confidence = {1.0f, 0U};
 	perception::PerceptionInput input(identity(10U));
 	input.addActor(self);
@@ -315,7 +316,7 @@ bool testP06NoisePriorityExpiryAndHeardNotSeen()
 			"noise publication succeeds"))
 		return false;
 	if (!check(snapshot.noise().active && !snapshot.noise().ready && snapshot.noise().source.slot == 0U &&
-				snapshot.noise().kind == world::SoundKind::WeaponFire,
+				snapshot.noise().kind == world::SoundKind::WeaponFire && snapshot.noise().timestampSeconds == 123.5f,
 			"heard-but-not-seen exposes category and position without identity"))
 		return false;
 

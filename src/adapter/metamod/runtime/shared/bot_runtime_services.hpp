@@ -172,6 +172,7 @@ public:
 	virtual const Service_roundFreezeUntil &service_roundFreezeUntil() = 0;
 	virtual Service_runtimeProfiler &service_runtimeProfiler() = 0;
 	virtual void behavior_applyObstacleCommand(std::size_t index, runtime::BotCommand &command) = 0;
+	virtual void behavior_applyNoiseLookCommand(std::size_t index, runtime::BotCommand &command) = 0;
 	virtual const ManagedObjectiveTargetCache &behavior_managedBotObjectiveTargets(std::size_t index) const = 0;
 	virtual const compat::CompatibilityStateMachine &behavior_managedBotStateMachines(std::size_t index) const = 0;
 	virtual void behavior_observeC4AttackDispatched(
