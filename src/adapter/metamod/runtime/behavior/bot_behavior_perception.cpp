@@ -61,6 +61,7 @@ void BotBehaviorRuntime::resetRoundRecognition()
 {
 	for (auto &actor : actors_)
 	{
+		actor.lastVisibleEnemyTimes = 0.0f;
 		actor.recognizedTargets = {};
 		actor.recognitionSequences = 0U;
 		actor.reactionQueues.reset();

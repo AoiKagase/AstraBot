@@ -97,6 +97,7 @@ void BotBehaviorRuntime::onActorRemembered(std::size_t index, const FakeClientHa
 	actors_[index].managedBotStateRounds = services_->service_lifecycle().roundGeneration();
 	actors_[index].managedBotWasDead = false;
 	actors_[index].lastCombatTimes = 0.0f;
+	actors_[index].lastVisibleEnemyTimes = 0.0f;
 	actors_[index].buyControllers.reset();
 	actors_[index].buyingComplete = false;
 	actors_[index].escapingWithKnife = false;

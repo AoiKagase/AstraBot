@@ -1,3 +1,44 @@
+## 2026-11-14 CSBot contact-driven primary weapon exchange
+
+Obstacle work was committed as 30cd290 and fast-forward merged into master.
+This follow-on starts from 30cd290; pinned behavioral reference remains
+ReGameDLL-CS b0889847fe6d03898be88acc9e366660efb40ab5, read-only.
+
+- Grounded weaponbox-first Touch exchanges an existing primary only when the
+  dropped primary comes first in the profile's ordered preferences and the
+  last visible enemy was at least 2.5 seconds ago. Pistol preferences do not
+  affect the choice. No distant weapon scan or weapon-seeking route is added.
+- Standard world models infer ordinary primary contents; public entvars.weapons
+  identifies the carried primary. Unknown/custom/shield models and ambiguous
+  inventories skip exchange. Empty primary slots retain ordinary GameDLL pickup.
+- A synchronous public drop command names the current primary classname before
+  the original GameDLL Touch continues, including while a pistol is active.
+  Inventory and pickup confirmation remain GameDLL-owned. No private layouts.
+- VIP public ScoreAttrib, actor ownership/join state, map lifecycle, death,
+  spectator/freeze and configuration gate the request. Enemy visibility history
+  resets with a new actor/round. Player-first contacts exit before engine calls.
+
+Offline verification: Windows x86 Debug complete build PASS; CTest **92/92 PASS**
+(7.79 seconds). Debian Linux x86 Debug complete build PASS; CTest **90/91 PASS**
+(11.11 seconds), with only the pre-existing astrabot_combat_policy threshold
+failure. Its exact message matches the coding-conventions-20261113 baseline;
+combat-policy sources and expectations are unchanged. The new weapon pickup
+fixture and frozen runtime characterizations pass on both OSes. An initial
+characterization delta consisted entirely of 48 extra classname queries on
+player-as-box contacts; the early FL_CLIENT rejection removed those calls.
+Historical baselines were not regenerated. Independent review and follow-up
+found no Critical/Important findings. Source manifest and whitespace checks pass.
+PE/ELF independently verify x86 and seven exact public Metamod exports.
+
+Verified local artifact SHA-256 (not deployed):
+- Windows DLL: 7986efa38846eadfb5f72eaf82c198e077e0fe006c4555f406b27959289df2df
+- Linux SO: 438631d9bf4b51d4c0b99c0769699b45af6e78be35d37e4bf9da68319df0d0ff
+
+Receipts: .agent-state/sessions/csbot-weapon-pickup-bbdb03c5-3039-48d9-a33a-b1e549a82baa/.
+Native HLDS/ReHLDS pickup/physics acceptance is still open; no server deployment
+or remote push was performed. Public model inference does not establish exact
+private weaponbox contents on modified servers.
+
 ## 2026-11-14 CSBot contact-driven obstacle interaction
 
 Source base: AstraBot bee8026; behavioral reference ReGameDLL-CS

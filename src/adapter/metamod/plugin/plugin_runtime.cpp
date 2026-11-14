@@ -1510,7 +1510,10 @@ void PluginRuntime::onTouch(edict_t *entity, edict_t *other)
 {
 	command_.onTouch(entity, other);
 	if (state_ == State::ActiveMap)
+	{
 		behavior_.observeObstacleTouch(entity, other);
+		behavior_.observeWeaponTouch(entity, other);
+	}
 }
 
 void PluginRuntime::resetManagedBotTiming(std::size_t index, float spawnTime)

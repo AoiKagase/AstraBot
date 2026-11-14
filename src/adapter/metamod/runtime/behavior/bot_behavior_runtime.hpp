@@ -13,6 +13,7 @@ class BotBehaviorRuntime
 public:
 	void observeObstacleKeyValue(edict_t *entity, const KeyValueData *data);
 	void observeObstacleTouch(edict_t *entity, edict_t *other);
+	void observeWeaponTouch(edict_t *box, edict_t *self);
 	void applyObstacleCommand(std::size_t index, runtime::BotCommand &command);
 	void resetObstacleMaterials();
 	void resetRoundRecognition();
