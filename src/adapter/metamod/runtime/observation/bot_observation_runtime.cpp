@@ -74,6 +74,9 @@ constexpr auto kWeaponSoundPrefixLength = 8U;
 void BotObservationRuntime::onMessageBegin(
 	int messageDestination, int messageType, const float *origin, edict_t *entity)
 {
+	std::array<std::uint64_t, NativeBotObservation::kClientSlotCount> radioRevisions{};
+	for (std::size_t index = 0; index < actors_.size(); ++index)
+		radioRevisions[index] = actors_[index].radioInputRevision;
 	(void)messageDestination;
 	(void)origin;
 	publicMessageName_ = nullptr;
@@ -170,6 +173,9 @@ void BotObservationRuntime::onMessageBegin(
 			curWeaponId = resolvedCurWeaponId;
 		}
 	}
+	// Keep the entry receipt even if message-ID callbacks reset an actor or
+	// decode a nested message before this SendAudio begins writing its fields.
+	publicMessageRadioRevisions_ = radioRevisions;
 	if (showMenuId > 0 && messageType == showMenuId)
 	{
 		userMessageKind_ = UserMessageKind::ShowMenu;
@@ -849,6 +855,7 @@ void BotObservationRuntime::capturePublicMessage()
 		{
 			return;
 		}
+		invalidateRadioInput(victim);
 		publicObservations_.resetSlot(static_cast<std::uint32_t>(victimSlot));
 		services_->behavior_observePublicDeath(victim, ownDeathReceipt ? deathFrame : world::FrameIdentity{});
 		if (!current(true))
@@ -926,18 +933,49 @@ void BotObservationRuntime::capturePublicMessage()
 		services_->service_engineFunctions() != nullptr &&
 		services_->service_engineFunctions()->pfnPEntityOfEntIndex != nullptr)
 	{
-		edict_t *sender = services_->service_engineFunctions()->pfnPEntityOfEntIndex(v[0]);
-		if ((publicMessageTarget_ != nullptr && !publicMessageActor_.isValid()) ||
-			(publicMessageTarget_ == nullptr && publicMessageDestination_ != MSG_ALL &&
-				publicMessageDestination_ != MSG_BROADCAST))
+		// Radio callbacks may reset input or decode another packet. No mutable
+		// message buffer or receiving-life receipt is borrowed across them.
+		const int senderSlot = v[0];
+		const auto token = publicMessageStrings_[1U];
+		const auto receivingActor = publicMessageActor_;
+		auto *const receivingTarget = publicMessageTarget_;
+		const int destination = publicMessageDestination_;
+		const auto frame = publicMessageFrame_;
+		const auto revisions = publicMessageRadioRevisions_;
+		const auto previousSequence = radioSequence_;
+		const auto globals = services_->service_globals();
+		const float receivedTime = globals->time;
+		const auto senderConnection =
+			services_->service_lifecycle().slotGeneration(static_cast<std::uint32_t>(senderSlot));
+		const bool senderTeamKnown = actors_[static_cast<std::size_t>(senderSlot - 1)].publicTeamKnown;
+		const auto senderPublicTeam = actors_[static_cast<std::size_t>(senderSlot - 1)].teamInfoTeams;
+		const auto frameCurrent = [&]()
 		{
+			return services_->service_globals() == globals && std::isfinite(receivedTime) &&
+				globals->time == receivedTime &&
+				services_->service_lifecycle().mapGeneration() == frame.mapGeneration &&
+				services_->service_lifecycle().roundGeneration() == frame.roundGeneration &&
+				services_->service_adapterFrameCount() == frame.tick;
+		};
+		edict_t *sender = services_->service_engineFunctions()->pfnPEntityOfEntIndex(senderSlot);
+		if (!frameCurrent() || (receivingTarget != nullptr && !receivingActor.isValid()) ||
+			(receivingTarget == nullptr && destination != MSG_ALL && destination != MSG_BROADCAST))
 			return;
-		}
 		if (sender == nullptr || sender->free || (sender->v.flags & FL_FAKECLIENT) != 0 || sender->serialnumber <= 0)
-		{
 			return;
-		}
-		const char *token = publicMessageStrings_[1U].data();
+		const int senderSerial = sender->serialnumber;
+		const int senderEntityTeam = sender->v.team;
+		const auto senderCurrent = [&]()
+		{
+			return frameCurrent() && !sender->free && sender->serialnumber == senderSerial &&
+				(sender->v.flags & FL_FAKECLIENT) == 0 && sender->v.team == senderEntityTeam &&
+				services_->service_lifecycle().slotGeneration(static_cast<std::uint32_t>(senderSlot)) ==
+				senderConnection &&
+				actors_[static_cast<std::size_t>(senderSlot - 1)].publicTeamKnown == senderTeamKnown &&
+				actors_[static_cast<std::size_t>(senderSlot - 1)].teamInfoTeams == senderPublicTeam;
+		};
+		if (!senderCurrent())
+			return;
 		const char *const names[] = {"%!MRAD_FOLLOWME", "%!MRAD_COVERME", "%!MRAD_STICKTOG", "%!MRAD_REGROUP",
 			"%!MRAD_BACKUP", "%!MRAD_POSITION", "%!MRAD_GO", "%!MRAD_GETOUT"};
 		const compat::ScenarioRadioCommand commands[] = {compat::ScenarioRadioCommand::FollowMe,
@@ -946,39 +984,47 @@ void BotObservationRuntime::capturePublicMessage()
 			compat::ScenarioRadioCommand::HoldPosition, compat::ScenarioRadioCommand::GoGoGo,
 			compat::ScenarioRadioCommand::GetOut};
 		compat::ScenarioRadioObservation radio{};
-		for (std::size_t i = 0U; i < kRadioCommandCount; ++i)
-		{
-			if (std::strcmp(names[i], token) == 0)
+		for (std::size_t i = 0; i < kRadioCommandCount; ++i)
+			if (std::strcmp(names[i], token.data()) == 0)
 			{
 				radio.command = commands[i];
 				break;
 			}
-		}
 		if (radio.command == compat::ScenarioRadioCommand::None)
-		{
 			return;
-		}
 		radio.sequence = ++radioSequence_;
-		radio.sender = {static_cast<std::uint32_t>(v[0]), static_cast<std::uint32_t>(sender->serialnumber)};
+		radio.sender = {static_cast<std::uint32_t>(senderSlot), static_cast<std::uint32_t>(senderSerial)};
 		radio.senderHuman = true;
-		radio.team = resolvePlayerTeam(sender) == kTerroristTeam ? objectives::TeamRole::Terrorist
-			: resolvePlayerTeam(sender) == kCounterTerroristTeam ? objectives::TeamRole::CounterTerrorist
-																 : objectives::TeamRole::Unknown;
-		radio.receivedTime = services_->service_globals()->time;
-		// A radio receipt reveals the order and sender, never the sender's coordinates.
-		for (std::size_t i = 0U; i < services_->service_managedBotHandles().size(); ++i)
+		int team = resolvePlayerTeam(sender);
+		if (!senderCurrent())
+			return;
+		if (team == kTerroristTeam)
+			radio.team = objectives::TeamRole::Terrorist;
+		else
 		{
-			if (services_->service_managedBotSlots()[i] && actors_[i].teamInfoTeams == resolvePlayerTeam(sender) &&
-				(!publicMessageActor_.isValid() || publicMessageActor_.slot == i + 1U))
-			{
-				if (actors_[i].scenarioRadio.sender == radio.sender &&
-					actors_[i].scenarioRadio.command == radio.command &&
-					actors_[i].scenarioRadio.receivedTime == radio.receivedTime)
-				{
-					continue;
-				}
-				actors_[i].scenarioRadio = radio;
-			}
+			team = resolvePlayerTeam(sender);
+			if (!senderCurrent())
+				return;
+			radio.team =
+				team == kCounterTerroristTeam ? objectives::TeamRole::CounterTerrorist : objectives::TeamRole::Unknown;
+		}
+		radio.receivedTime = receivedTime;
+		// A radio receipt reveals the order and sender, never coordinates.
+		for (std::size_t i = 0; i < services_->service_managedBotHandles().size(); ++i)
+		{
+			if (!services_->service_managedBotSlots()[i])
+				continue;
+			const int currentSenderTeam = resolvePlayerTeam(sender);
+			if (!senderCurrent())
+				return;
+			if (actors_[i].teamInfoTeams != currentSenderTeam ||
+				(receivingActor.isValid() && receivingActor.slot != i + 1U) ||
+				revisions[i] != actors_[i].radioInputRevision || actors_[i].scenarioRadio.sequence > previousSequence)
+				continue;
+			if (actors_[i].scenarioRadio.sender == radio.sender && actors_[i].scenarioRadio.command == radio.command &&
+				actors_[i].scenarioRadio.receivedTime == radio.receivedTime)
+				continue;
+			actors_[i].scenarioRadio = radio;
 		}
 		return;
 	}
@@ -1471,7 +1517,7 @@ void BotObservationRuntime::onActorRemoved(std::size_t index)
 {
 	publicObservations_.resetSlot(static_cast<std::uint32_t>(index + 1U));
 	actors_[index].publicBombRadars.reset();
-	actors_[index].scenarioRadio = {};
+	invalidateRadioInput(index);
 	actors_[index].publicScoreStatuses = {};
 	actors_[index].bombNoticeKnown = false;
 	actors_[index].bombNoticePlanted = false;
@@ -1486,6 +1532,7 @@ void BotObservationRuntime::onActorRemoved(std::size_t index)
 
 void BotObservationRuntime::onActorRemembered(std::size_t index, const FakeClientHandle &handle)
 {
+	invalidateRadioInput(index);
 	const world::ActorKey actor = {handle.actor.slot, handle.actor.actorGeneration};
 	actors_[index].teamInfoTeams = 0U;
 	actors_[index].publicTeamKnown = false;
@@ -1496,11 +1543,13 @@ void BotObservationRuntime::onActorRemembered(std::size_t index, const FakeClien
 
 void BotObservationRuntime::resetSharedExecutionState()
 {
+	reset_scenarioRadio();
 	fill_managedBotPerceptionFullUpdates((std::numeric_limits<std::uint32_t>::max)());
 }
 
 void BotObservationRuntime::resetActorExecutionState(std::size_t index)
 {
+	invalidateRadioInput(index);
 	actors_[index].managedBotCurrentWeapons = {};
 	actors_[index].managedBotPerception = perception::PerceptionAssembler();
 }

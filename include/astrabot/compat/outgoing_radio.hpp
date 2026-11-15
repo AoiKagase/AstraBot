@@ -211,7 +211,10 @@ public:
 			lastNoiseReportTick_ = in.noiseReport.frame.tick;
 			return;
 		}
-		pending_.synchronize(admission(in));
+		const auto currentAdmission = admission(in);
+		pending_.synchronize(currentAdmission);
+		if (ack_ != ChatterPhrase::None && !acknowledgementOwnerMatches(currentAdmission))
+			cancelAcknowledgement();
 		if (!in.visibleEnemyCount)
 			reportedEnemies_ = false;
 		if (in.humanOrderSequence > orderSequence_ && in.humanOrderAccepted && std::isfinite(in.reactionSeconds) &&
@@ -221,11 +224,12 @@ public:
 			ackAt_ = in.humanOrderReceived + kAcknowledgementBaseSeconds +
 				kAcknowledgementReactionScale * in.reactionSeconds;
 			ack_ = in.humanOrderHelp ? ChatterPhrase::OnMyWay : ChatterPhrase::Affirmative;
+			ackAdmission_ = currentAdmission;
 		}
 		if (ack_ != ChatterPhrase::None && in.now >= ackAt_)
 		{
 			queue(ack_, in.now, kAcknowledgementLifetimeSeconds, in, catalog);
-			ack_ = ChatterPhrase::None;
+			cancelAcknowledgement();
 		}
 		if (!directFollow_ && in.vipEscaping && in.friendCount > 0 && in.now - in.teamFollowRadioAt > kVipReportCooldownSeconds)
 		{
@@ -442,17 +446,34 @@ public:
 	void cancelOnDeath(std::uint32_t consumedOrder = 0)
 	{
 		pending_.clear();
-		ack_ = ChatterPhrase::None;
+		cancelAcknowledgement();
 		discardDirect();
 		orderSequence_ = (std::max)(orderSequence_, consumedOrder);
 	}
 	void discardPending()
 	{
 		pending_.clear();
+		cancelAcknowledgement();
 		discardDirect();
 	}
 
 private:
+	void cancelAcknowledgement()
+	{
+		ack_ = ChatterPhrase::None;
+		ackAt_ = 0;
+		ackAdmission_ = {};
+	}
+	bool acknowledgementOwnerMatches(const ChatterScheduleAdmission &current) const
+	{
+		const auto &expected = ackAdmission_;
+		return expected.owner.valid() && current.owner.valid() && expected.owner.actor == current.owner.actor &&
+			expected.owner.entityGeneration == current.owner.entityGeneration &&
+			expected.owner.frame.mapGeneration == current.owner.frame.mapGeneration &&
+			expected.owner.frame.roundGeneration == current.owner.frame.roundGeneration &&
+			expected.owner.frame.tick <= current.owner.frame.tick && expected.owner.now <= current.owner.now &&
+			expected.connection == current.connection && expected.ownerRevision == current.ownerRevision;
+	}
 	void resetMetadata()
 	{
 		actor_ = {};
@@ -462,13 +483,12 @@ private:
 		lastSent_ = -1;
 		lastHelp_ = -1;
 		lastEscort_ = -1;
-		ackAt_ = 0;
+		cancelAcknowledgement();
 		reportedEnemies_ = false;
 		wasPlanting_ = false;
 		askedBomb_ = false;
 		directFollow_ = false;
 		orderSequence_ = 0;
-		ack_ = ChatterPhrase::None;
 		directFollowStart_ = 0;
 		directFollowExpires_ = 0;
 		lastNoiseReport_ = -1;
@@ -522,6 +542,7 @@ private:
 	bool reportedEnemies_ = false, wasPlanting_ = false, askedBomb_ = false, directFollow_ = false;
 	std::uint32_t orderSequence_ = 0;
 	ChatterPhrase ack_ = ChatterPhrase::None;
+	ChatterScheduleAdmission ackAdmission_{};
 	float directFollowStart_ = 0, directFollowExpires_ = 0, lastNoiseReport_ = -1;
 	std::uint32_t lastNoiseReportTick_ = 0;
 	std::uint64_t directToken_ = 0;

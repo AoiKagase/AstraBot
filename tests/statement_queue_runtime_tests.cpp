@@ -9,11 +9,16 @@ void setupStatementQueue(enginefuncs_t &, globalvars_t &);
 #define ASTRABOT_ACTOR_PROFILE_TEXT                                                                                    \
 	"Any { Name = \"Queue Speaker\" Team = any Difficulty = 1 Skill = 70 VoiceBank = queue_speech.db }\n"
 #include "compat_actor_command_tests.cpp"
+#include "runtime/observation/bot_observation_runtime.hpp"
+#include <memory>
 #include "fixtures/noise_runtime_nav.hpp"
 namespace
 {
 bool queueEnemiesVisible = false;
 const char *queueMode = "normal";
+astrabot::metamod::BotObservationRuntime *queueInputObserver = nullptr;
+unsigned queueInputMutation = 0;
+bool queueInputBeginReset = false;
 int queueMessage = 0;
 edict_t *queueRecipient = nullptr;
 std::vector<std::string> queueSamples;
@@ -69,6 +74,11 @@ int queueMessageId(plid_t id, const char *name, int *size)
 {
 	if (std::strcmp(name, "SendAudio") == 0)
 	{
+		if (queueInputBeginReset && queueInputObserver)
+		{
+			queueInputBeginReset = false;
+			queueInputObserver->resetActorExecutionState(0);
+		}
 		return 101;
 	}
 	if (std::strcmp(name, "BotVoice") == 0)
@@ -116,6 +126,120 @@ void setupStatementQueue(enginefuncs_t &engine, globalvars_t &)
 	engine.pfnMessageEnd = &queueEnd;
 	engine.pfnTraceLine = &queueVisibility;
 	gpMetaUtilFuncs->pfnGetUserMsgID = &queueMessageId;
+}
+void queueInputRadio(astrabot::metamod::BotObservationRuntime &observer, const char *token)
+{
+	observer.onMessageBegin(MSG_ONE, 101, nullptr, &gEntities[0]);
+	observer.onWriteByte(5);
+	observer.onWriteString(token);
+	observer.onWriteShort(100);
+	observer.onMessageEnd();
+}
+edict_t *queueInputEntity(int slot)
+{
+	if (slot == 5 && queueInputObserver && queueInputMutation)
+	{
+		const auto mutation = queueInputMutation;
+		queueInputMutation = 0;
+		if (mutation != 4)
+			queueInputObserver->resetActorExecutionState(0);
+		if (mutation == 2 || mutation == 4)
+			queueInputRadio(*queueInputObserver, "%!MRAD_BACKUP");
+		if (mutation == 3)
+			queueInputRadio(*queueInputObserver, "radio/test/unrelated.wav");
+	}
+	return entityOfIndex(slot);
+}
+bool testQueueRadioReset(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &engine)
+{
+	using namespace astrabot;
+	auto observer = std::make_unique<metamod::BotObservationRuntime>();
+	observer->bindServices(static_cast<metamod::BotObservationServices &>(runtime));
+	auto &services = static_cast<metamod::BotObservationServices &>(runtime);
+	const auto actor = services.service_managedBotHandles()[0].actor;
+	const auto frame = runtime.snapshot();
+	const auto frameTick = services.service_adapterFrameCount();
+	const int serial = gEntities[0].serialnumber;
+	observer->notifyTeamInfo(1, "TERRORIST");
+	observer->notifyTeamInfo(5, "TERRORIST");
+	queueInputObserver = observer.get();
+	struct RestoreInputEngine
+	{
+		enginefuncs_t &engine;
+		edict_t *(*original)(int);
+		~RestoreInputEngine()
+		{
+			engine.pfnPEntityOfEntIndex = original;
+			queueInputObserver = nullptr;
+			queueInputMutation = 0;
+			queueInputBeginReset = false;
+		}
+	} restore{engine, engine.pfnPEntityOfEntIndex};
+	engine.pfnPEntityOfEntIndex = &queueInputEntity;
+	bool ok = true;
+	queueInputRadio(*observer, "%!MRAD_GO");
+	const auto first = observer->scenarioRadio(0).sequence;
+	ok = check(first != 0 && observer->scenarioRadio(0).command == compat::ScenarioRadioCommand::GoGoGo,
+			 "actual public decoder records the current human order before any reset") &&
+		ok;
+	observer->resetActorExecutionState(0);
+	ok = check(observer->scenarioRadio(0).command == compat::ScenarioRadioCommand::None,
+			 "same-owner actor execution reset clears an unprepared human order") &&
+		ok;
+	queueInputRadio(*observer, "%!MRAD_GO");
+	ok = check(observer->scenarioRadio(0).sequence > first &&
+				 observer->scenarioRadio(0).command == compat::ScenarioRadioCommand::GoGoGo,
+			 "same-time identical new order after reset is not suppressed as the old duplicate") &&
+		ok;
+	observer->onActorRemembered(0, services.service_managedBotHandles()[0]);
+	ok = check(observer->scenarioRadio(0).command == compat::ScenarioRadioCommand::None,
+			 "same-serial actor refresh cannot retain an old radio subject") &&
+		ok;
+	observer->notifyTeamInfo(1, "TERRORIST");
+	observer->notifyTeamInfo(5, "TERRORIST");
+	queueInputRadio(*observer, "%!MRAD_GO");
+	observer->resetSharedExecutionState();
+	ok = check(observer->scenarioRadio(0).command == compat::ScenarioRadioCommand::None,
+			 "shared execution reset invalidates all old unprepared radio input") &&
+		ok;
+	observer->onMessageBegin(MSG_ONE, 101, nullptr, &gEntities[0]);
+	observer->onWriteByte(5);
+	observer->onWriteString("%!MRAD_GO");
+	observer->onWriteShort(100);
+	observer->resetActorExecutionState(0);
+	observer->onMessageEnd();
+	ok = check(observer->scenarioRadio(0).command == compat::ScenarioRadioCommand::None,
+			 "radio packet begun before reset cannot complete into the new input life") &&
+		ok;
+	observer->resetActorExecutionState(0);
+	queueInputBeginReset = true;
+	queueInputRadio(*observer, "%!MRAD_GO");
+	ok = check(!queueInputBeginReset && observer->scenarioRadio(0).command == compat::ScenarioRadioCommand::None,
+			 "message-ID callback reset cannot requalify the packet that was already beginning") &&
+		ok;
+	for (unsigned mutation = 1; mutation <= 4; ++mutation)
+	{
+		observer->resetActorExecutionState(0);
+		queueInputMutation = mutation;
+		queueInputRadio(*observer, "%!MRAD_GO");
+		const auto expected = (mutation == 2 || mutation == 4) ? compat::ScenarioRadioCommand::NeedBackup
+															   : compat::ScenarioRadioCommand::None;
+		ok = check(queueInputMutation == 0 && observer->scenarioRadio(0).command == expected,
+				 "reset during sender lookup drops old input and preserves only a fresh current command") &&
+			ok;
+	}
+	queueInputRadio(*observer, "%!MRAD_GO");
+	ok = check(observer->scenarioRadio(0).command == compat::ScenarioRadioCommand::GoGoGo,
+			 "current source remains usable after all reset callback cases") &&
+		ok;
+	const auto &current = services.service_managedBotHandles()[0].actor;
+	const auto after = runtime.snapshot();
+	ok = check(actor.slot == current.slot && actor.actorGeneration == current.actorGeneration &&
+				 serial == gEntities[0].serialnumber && frame.mapGeneration == after.mapGeneration &&
+				 frame.roundGeneration == after.roundGeneration && frameTick == services.service_adapterFrameCount(),
+			 "reset controls retain the same real actor key, serial and map/round") &&
+		ok;
+	return ok;
 }
 bool testStatementQueue(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &engine, globalvars_t &globals)
 {
@@ -217,8 +341,10 @@ bool testStatementQueue(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t
 		}
 		std::fprintf(stderr, "\n");
 	}
-	return acknowledgementControl &&
-		check(queueSamples == std::vector<std::string>{"radio/test/ack.wav", "radio/test/help.wav"},
-			"both statements survive simultaneous admission, fixed count criteria and later OFF mode");
+	if (!(acknowledgementControl &&
+			check(queueSamples == std::vector<std::string>{"radio/test/ack.wav", "radio/test/help.wav"},
+				"both statements survive simultaneous admission, fixed count criteria and later OFF mode")))
+		return false;
+	return testQueueRadioReset(runtime, engine);
 }
 }

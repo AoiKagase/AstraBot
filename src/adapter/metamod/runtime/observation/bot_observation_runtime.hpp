@@ -243,16 +243,24 @@ private:
 			actor.publicScoreStatuses = {};
 	}
 
+	void invalidateRadioInput(std::size_t index)
+	{
+		auto &actor = actors_[index];
+		actor.scenarioRadio = {};
+		if (++actor.radioInputRevision == 0)
+			++actor.radioInputRevision;
+	}
 	void reset_scenarioRadio()
 	{
-		for (auto &actor : actors_)
-			actor.scenarioRadio = {};
+		for (std::size_t index = 0; index < actors_.size(); ++index)
+			invalidateRadioInput(index);
 	}
 
 	struct ActorState
 	{
 		compat::PublicBombRadar publicBombRadars{};
 		compat::ScenarioRadioObservation scenarioRadio{};
+		std::uint64_t radioInputRevision = 0;
 		std::array<PublicScoreStatus, NativeBotObservation::kClientSlotCount> publicScoreStatuses{};
 		bool bombNoticeKnown{};
 		bool bombNoticePlanted{};
@@ -275,6 +283,7 @@ private:
 	int publicMessageSerial_ = -1;
 	world::ActorKey publicMessageActor_{};
 	world::FrameIdentity publicMessageFrame_{};
+	std::array<std::uint64_t, NativeBotObservation::kClientSlotCount> publicMessageRadioRevisions_{};
 	static constexpr auto kPublicMessageIntegerFieldCount = 12U;
 	std::array<int, kPublicMessageIntegerFieldCount> publicMessageValues_{};
 	std::array<float, 3U> publicMessageCoords_{};

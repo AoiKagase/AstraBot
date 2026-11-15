@@ -246,5 +246,85 @@ int main()
 	identity.frame.tick++;
 	counts = watch.update(identity.observer, identity.frame, 4, nullptr, false, 1, 4);
 	check(counts.enemies == 0 && counts.friends == 0, "visual watch expires exactly at three seconds");
+	ChatterRadioCatalog acknowledgementCatalog;
+	const char *acknowledgementText = "Chatter Affirmative ack.wav End Chatter OnMyWay way.wav End";
+	check(acknowledgementCatalog.loadText(acknowledgementText, std::strlen(acknowledgementText)),
+		"reset fixture declares both native acknowledgement phrases");
+	const auto acknowledgementVoices = (1U << static_cast<unsigned>(ChatterPhrase::Affirmative)) |
+		(1U << static_cast<unsigned>(ChatterPhrase::OnMyWay));
+	for (bool help : {false, true})
+	{
+		for (unsigned reset = 0; reset < 4; ++reset)
+		{
+			OutgoingRadioScheduler delayed;
+			ChatterAdmissionClock clock;
+			OutgoingRadioInput order{};
+			order.actor = {1, 2};
+			order.frame = {3, 4, 5};
+			order.now = 10;
+			order.alive = true;
+			order.team = 1;
+			order.friendCount = order.nearbyFriends = 1;
+			order.humanOrderSequence = 1;
+			order.humanOrderAccepted = true;
+			order.humanOrderHelp = help;
+			order.humanOrderReceived = 10;
+			order.reactionSeconds = .3f;
+			order.admission = {{order.actor, order.frame, 6, 10, true}, 7, 8, &clock};
+			check(delayed.update(order, acknowledgementCatalog, acknowledgementVoices).status ==
+					OutgoingRadioStatus::None,
+				"human response is reserved before its reaction delay");
+			if (reset == 0)
+				delayed.discardPending();
+			if (reset == 1)
+				++order.admission.ownerRevision;
+			if (reset == 2)
+				++order.admission.connection;
+			if (reset == 3)
+				++order.admission.owner.entityGeneration;
+			order.now = 12;
+			++order.frame.tick;
+			order.admission.owner.frame = order.frame;
+			order.admission.owner.now = 12;
+			auto old = delayed.update(order, acknowledgementCatalog, acknowledgementVoices);
+			check(old.status == OutgoingRadioStatus::None,
+				"reset or changed owner receipt cannot materialize the old delayed acknowledgement");
+			if (old.status == OutgoingRadioStatus::Ready)
+				delayed.confirmSent(order, old);
+			order.humanOrderSequence = 2;
+			order.humanOrderReceived = 12;
+			check(delayed.update(order, acknowledgementCatalog, acknowledgementVoices).status ==
+					OutgoingRadioStatus::None,
+				"new post-reset order retains its own reaction delay");
+			order.now = 14;
+			++order.frame.tick;
+			order.admission.owner.frame = order.frame;
+			order.admission.owner.now = 14;
+			auto fresh = delayed.update(order, acknowledgementCatalog, acknowledgementVoices);
+			check(fresh.status == OutgoingRadioStatus::Ready &&
+					fresh.phrase == (help ? ChatterPhrase::OnMyWay : ChatterPhrase::Affirmative),
+				"fresh order after cancellation still produces the correct native response");
+		}
+		OutgoingRadioScheduler advancing;
+		OutgoingRadioInput forward{};
+		forward.actor = {1, 2};
+		forward.frame = {3, 4, 5};
+		forward.now = 10;
+		forward.alive = true;
+		forward.team = 1;
+		forward.friendCount = forward.nearbyFriends = 1;
+		forward.humanOrderSequence = 1;
+		forward.humanOrderAccepted = true;
+		forward.humanOrderHelp = help;
+		forward.humanOrderReceived = 10;
+		forward.reactionSeconds = .3f;
+		(void)advancing.update(forward, acknowledgementCatalog, acknowledgementVoices);
+		forward.now = 12;
+		++forward.frame.tick;
+		const auto ready = advancing.update(forward, acknowledgementCatalog, acknowledgementVoices);
+		check(ready.status == OutgoingRadioStatus::Ready &&
+				ready.phrase == (help ? ChatterPhrase::OnMyWay : ChatterPhrase::Affirmative),
+			"ordinary forward time and legacy admission0 preserve a valid delayed response");
+	}
 	return failures ? 1 : 0;
 }
