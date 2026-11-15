@@ -152,6 +152,7 @@ void BotBehaviorRuntime::observeFriendDeath(std::size_t index, const edict_t *vi
 	}
 	auto &actor = actors_[index];
 	auto context = reactionContext(index);
+	const auto admission = chatterAdmission(index);
 	if (!actor.enemyReaction.update(context))
 	{
 		return;
@@ -167,11 +168,12 @@ void BotBehaviorRuntime::observeFriendDeath(std::size_t index, const edict_t *vi
 	const auto current = [&]()
 	{
 		const auto now = reactionContext(index);
-		return now.valid() && now.actor == context.actor && now.frame == frame && now.now == context.now &&
-			receiptConnectionCurrent(victimConnection) && receiptConnectionCurrent(killerConnection) &&
-			receiptConnectionCurrent(observerConnection) && self->serialnumber == selfSerial &&
-			(self->v.flags & FL_CLIENT) != 0 && !victim->free && victim->serialnumber == victimSerial &&
-			(victim->v.flags & FL_CLIENT) != 0 &&
+		return now.valid() && admission.ownerRevision == actor.confirmedSpeech.lifetimeRevision() &&
+			now.entityGeneration == context.entityGeneration && now.actor == context.actor && now.frame == frame &&
+			now.now == context.now && receiptConnectionCurrent(victimConnection) &&
+			receiptConnectionCurrent(killerConnection) && receiptConnectionCurrent(observerConnection) &&
+			self->serialnumber == selfSerial && (self->v.flags & FL_CLIENT) != 0 && !victim->free &&
+			victim->serialnumber == victimSerial && (victim->v.flags & FL_CLIENT) != 0 &&
 			(!killer ||
 				(!killer->free && killer->serialnumber == killerSerial && (killer->v.flags & FL_CLIENT) != 0)) &&
 			services_->service_managedBotHandles()[index].entity == self;
@@ -285,15 +287,22 @@ void BotBehaviorRuntime::observeFriendDeath(std::size_t index, const edict_t *vi
 	if (compat::commanderDownEligible(speech))
 	{
 		const char *verbosity = engine->pfnCVarGetString ? engine->pfnCVarGetString("bot_chatter") : nullptr;
-		const auto allowed = allowedFixedChatterPhrases(
-			verbosity, compat::ChatterPhrase::CommanderDown, compat::ChatterPhrase::KilledFriend);
+		const auto mode = compat::parseChatterVerbosity(verbosity);
+		ensureOutgoingChatterCatalog();
 		if (!current())
 		{
 			return;
 		}
-		(void)actor.friendDeathChatter.admitCommander(context, allowed,
-			actor.killPraise.active() || actor.confirmedSpeech.blocks(compat::ChatterPhrase::CommanderDown, context),
-			chatterAdmission(index));
+		compat::ChatterStatementRequest request{};
+		request.source = compat::ChatterScheduleSource::CommanderDown;
+		request.topic = compat::ChatterStatementTopic::MyIntention;
+		request.phrase = compat::ChatterPhrase::CommanderDown;
+		request.created = context.now;
+		request.start = context.now;
+		request.readyAt = context.now;
+		request.expires = context.now + 20.0f;
+		actor.outgoingRadioSchedulers.statements().admit(
+			request, admission, outgoingChatterCatalog_, mode, actor.confirmedSpeech.scheduledStatement());
 	}
 	speech.killerSelf = killer == self;
 	speech.killerHumanFriendly = killer && (killer->v.flags & FL_FAKECLIENT) == 0 &&
@@ -310,14 +319,22 @@ void BotBehaviorRuntime::observeFriendDeath(std::size_t index, const edict_t *vi
 	if (delay.valid)
 	{
 		const char *verbosity = engine->pfnCVarGetString ? engine->pfnCVarGetString("bot_chatter") : nullptr;
-		const auto allowed = allowedFixedChatterPhrases(
-			verbosity, compat::ChatterPhrase::CommanderDown, compat::ChatterPhrase::KilledFriend);
+		const auto mode = compat::parseChatterVerbosity(verbosity);
+		ensureOutgoingChatterCatalog();
 		if (!current())
 		{
 			return;
 		}
-		(void)actor.friendDeathChatter.admitKilled(context, delay, allowed,
-			actor.confirmedSpeech.blocks(compat::ChatterPhrase::KilledFriend, context), chatterAdmission(index));
+		compat::ChatterStatementRequest request{};
+		request.source = compat::ChatterScheduleSource::KilledFriend;
+		request.topic = compat::ChatterStatementTopic::KilledFriend;
+		request.phrase = compat::ChatterPhrase::KilledFriend;
+		request.created = context.now;
+		request.start = context.now + delay.seconds;
+		request.readyAt = request.start;
+		request.expires = context.now + 2.0f;
+		actor.outgoingRadioSchedulers.statements().admit(
+			request, admission, outgoingChatterCatalog_, mode, actor.confirmedSpeech.scheduledStatement());
 	}
 	// Speech callbacks may change our state. Native evaluates these tail branches
 	// after chatter admission, without repeating retaliation or its RNG.

@@ -183,6 +183,9 @@ int main()
 	olderInput.plantingBomb = true;
 	olderInput.teamBusyUntil = 101;
 	ChatterRadioCatalog emptyCatalog;
+	const char definition[] = "Chatter PlantingBomb Important End";
+	check(emptyCatalog.loadText(definition, sizeof(definition) - 1),
+		"native default metadata exists independently of voice-only transport");
 	const auto olderVoice = 1U << static_cast<unsigned>(ChatterPhrase::PlantingBomb);
 	older.update(olderInput, emptyCatalog, olderVoice);
 	olderInput.now = 102;

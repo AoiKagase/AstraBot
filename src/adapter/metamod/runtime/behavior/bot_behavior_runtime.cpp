@@ -99,9 +99,7 @@ void BotBehaviorRuntime::onActorRemoved(std::size_t index)
 	actors_[index].teamworkRadioApplied = 0U;
 	actors_[index].noiseInvestigation.reset();
 	actors_[index].noiseReportPolicy = {};
-	actors_[index].enemyCountChatter.reset();
-	actors_[index].killPraise.reset();
-	actors_[index].friendDeathChatter.reset();
+	actors_[index].outgoingRadioSchedulers.discardPending();
 	actors_[index].confirmedSpeech.reset();
 	actors_[index].noiseReport = {};
 	actors_[index].investigationWalking = false;
@@ -139,9 +137,7 @@ void BotBehaviorRuntime::onActorRemembered(std::size_t index, const FakeClientHa
 	actors_[index].lastCombatTimes = 0.0f;
 	actors_[index].lastVisibleEnemyTimes = 0.0f;
 	actors_[index].noiseReportPolicy = {};
-	actors_[index].enemyCountChatter.reset();
-	actors_[index].killPraise.reset();
-	actors_[index].friendDeathChatter.reset();
+	actors_[index].outgoingRadioSchedulers.discardPending();
 	actors_[index].confirmedSpeech.reset();
 	actors_[index].noiseReport = {};
 	actors_[index].buyControllers.reset();
@@ -154,9 +150,7 @@ void BotBehaviorRuntime::resetSharedExecutionState()
 {
 	for (auto &actor : actors_)
 	{
-		actor.enemyCountChatter.reset();
-		actor.killPraise.reset();
-		actor.friendDeathChatter.reset();
+		actor.outgoingRadioSchedulers.discardPending();
 		actor.confirmedSpeech.reset();
 		actor.knifeRun.reset();
 		actor.enemyReaction.reset();
@@ -185,9 +179,7 @@ void BotBehaviorRuntime::resetActorExecutionState(std::size_t index)
 {
 	actors_[index].noiseInvestigation.reset();
 	actors_[index].noiseReportPolicy = {};
-	actors_[index].enemyCountChatter.reset();
-	actors_[index].killPraise.reset();
-	actors_[index].friendDeathChatter.reset();
+	actors_[index].outgoingRadioSchedulers.discardPending();
 	actors_[index].confirmedSpeech.reset();
 	actors_[index].noiseReport = {};
 	actors_[index].investigationWalking = false;

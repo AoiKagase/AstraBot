@@ -92,6 +92,40 @@ inline bool validChatterScheduleEntry(const ChatterScheduleEntry &entry)
 		std::isfinite(entry.start) && entry.start >= 0;
 }
 
+class ChatterTeamSelection
+{
+public:
+	bool consider(const ChatterScheduleEntry &entry)
+	{
+		if (speaking_ || !validChatterScheduleEntry(entry))
+			return !speaking_;
+		if (entry.speaking)
+		{
+			earliest_ = entry;
+			speaking_ = true;
+			return false;
+		}
+		if (entry.start < earlyTime_)
+		{
+			earlyTime_ = entry.created;
+			earliest_ = entry;
+		}
+		return true;
+	}
+	ChatterScheduleEntry finish(float now) const
+	{
+		if (!std::isfinite(now) || now < 0)
+			return {};
+		return speaking_ || (validChatterScheduleEntry(earliest_) && earliest_.start <= now) ? earliest_
+																							 : ChatterScheduleEntry{};
+	}
+
+private:
+	float earlyTime_ = 999999999.9f;
+	ChatterScheduleEntry earliest_{};
+	bool speaking_ = false;
+};
+
 inline ChatterScheduleEntry selectActiveChatter(ChatterScheduleEntry *entries, std::size_t count, float now)
 {
 	if (!entries || !std::isfinite(now) || now < 0)

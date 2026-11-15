@@ -160,6 +160,11 @@ target_link_libraries(astrabot_chatter_schedule PRIVATE astrabot_core)
 astrabot_apply_warnings(astrabot_chatter_schedule)
 add_test(NAME astrabot_chatter_schedule COMMAND astrabot_chatter_schedule)
 
+add_executable(astrabot_chatter_statements tests/chatter_statements_tests.cpp)
+target_link_libraries(astrabot_chatter_statements PRIVATE astrabot_core)
+astrabot_apply_warnings(astrabot_chatter_statements)
+add_test(NAME astrabot_chatter_statements COMMAND astrabot_chatter_statements)
+
 add_executable(astrabot_enemy_count_chatter tests/enemy_count_chatter_tests.cpp)
   target_link_libraries(astrabot_enemy_count_chatter PRIVATE astrabot_core)
   astrabot_apply_warnings(astrabot_enemy_count_chatter)
@@ -1149,6 +1154,13 @@ if(ASTRABOT_BUILD_TESTS AND ASTRABOT_BUILD_METAMOD)
   add_test(NAME astrabot_noise_investigation_runtime COMMAND astrabot_noise_investigation_runtime --investigation)
   set_tests_properties(astrabot_noise_investigation_runtime PROPERTIES
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" RESOURCE_LOCK astrabot_actor_command_profile)
+  add_executable(astrabot_statement_queue_runtime tests/statement_queue_runtime_tests.cpp ${combat_target_log_sources})
+  target_include_directories(astrabot_statement_queue_runtime PRIVATE ${combat_target_log_includes})
+  target_link_libraries(astrabot_statement_queue_runtime PRIVATE astrabot_core astrabot_regamedll_provider)
+  astrabot_apply_warnings(astrabot_statement_queue_runtime)
+  add_test(NAME astrabot_statement_queue_runtime COMMAND astrabot_statement_queue_runtime --statement-queue)
+  set_tests_properties(astrabot_statement_queue_runtime PROPERTIES
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" RESOURCE_LOCK astrabot_actor_command_profile)
   add_executable(astrabot_death_interrupt_runtime tests/death_interrupt_runtime_tests.cpp ${combat_target_log_sources})
   target_include_directories(astrabot_death_interrupt_runtime PRIVATE ${combat_target_log_includes})
   target_link_libraries(astrabot_death_interrupt_runtime PRIVATE astrabot_core astrabot_regamedll_provider)
@@ -1257,7 +1269,7 @@ if(ASTRABOT_BUILD_TESTS AND ASTRABOT_BUILD_METAMOD)
     foreach(runtime_fixture astrabot_combat_target_log astrabot_bomb_guard_look
         astrabot_weapon_switch_runtime astrabot_actor_identity_runtime
         astrabot_runtime_team_resolution astrabot_runtime_command_scenarios astrabot_obstacle_interaction_runtime
-        astrabot_weapon_pickup_runtime astrabot_chatter_voice_runtime astrabot_noise_look_runtime astrabot_gunshot_runtime astrabot_noise_investigation_runtime astrabot_pm_move_footsteps astrabot_enemy_count_chatter_runtime astrabot_kill_praise_runtime astrabot_friend_death_runtime astrabot_friend_death_chatter_runtime astrabot_death_interrupt_runtime)
+        astrabot_statement_queue_runtime astrabot_weapon_pickup_runtime astrabot_chatter_voice_runtime astrabot_noise_look_runtime astrabot_gunshot_runtime astrabot_noise_investigation_runtime astrabot_pm_move_footsteps astrabot_enemy_count_chatter_runtime astrabot_kill_praise_runtime astrabot_friend_death_runtime astrabot_friend_death_chatter_runtime astrabot_death_interrupt_runtime)
       target_compile_options(${runtime_fixture} PRIVATE -Wno-deprecated-copy)
     endforeach()
   endif()

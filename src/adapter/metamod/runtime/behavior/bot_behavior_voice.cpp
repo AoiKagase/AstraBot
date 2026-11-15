@@ -113,10 +113,10 @@ std::uint32_t BotBehaviorRuntime::allowedFixedChatterPhrases(
 {
 	// The native global phrase definitions/flags belong to the default catalog.
 	// Profile banks provide speakables only; do not load/probe them in a death event.
-	if (verbosity && std::strcmp(verbosity, "off") == 0)
+	if (compat::parseChatterVerbosity(verbosity) == compat::ChatterVerbosity::Off)
 		return 0;
 	ensureOutgoingChatterCatalog();
-	const bool minimal = verbosity && std::strcmp(verbosity, "minimal") == 0;
+	const bool minimal = compat::parseChatterVerbosity(verbosity) == compat::ChatterVerbosity::Minimal;
 	std::uint32_t mask = 0;
 	for (unsigned i = static_cast<unsigned>(first); i <= static_cast<unsigned>(last); ++i)
 	{

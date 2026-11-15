@@ -320,6 +320,16 @@ bool testInvestigation(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t 
 	if (!check(publisher.publish(&placed, runtime.snapshot().mapGeneration) == nav::NavSnapshotResult::Published,
 			"public NAV test has different speaker and noise places"))
 		return false;
+	// A native non-emote statement requires a living teammate at playback.
+	auto &teammate = gEntities[1];
+	teammate.v.flags = FL_CLIENT | FL_ONGROUND;
+	teammate.v.health = 100;
+	teammate.v.deadflag = DEAD_NO;
+	teammate.v.origin = Vector(-500, 0, 36);
+	runtime.onMessageBegin(MSG_ALL, 86, nullptr, nullptr);
+	runtime.onWriteByte(2);
+	runtime.onWriteString("TERRORIST");
+	runtime.onMessageEnd();
 	step(31);
 	step(.25f);
 	source.v.origin.y = 500;

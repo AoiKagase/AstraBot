@@ -4,6 +4,7 @@
 #include "astrabot/world/world_snapshot.hpp"
 #include "astrabot/compat/noise_report.hpp"
 #include "astrabot/compat/chatter_schedule.hpp"
+#include "astrabot/compat/chatter_statements.hpp"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -14,282 +15,6 @@ namespace astrabot
 {
 namespace compat
 {
-enum class ChatterPhrase : unsigned
-{
-	None,
-	EnemySpotted,
-	Help,
-	RequestReport,
-	Affirmative,
-	OnMyWay,
-	PlantingBomb,
-	WhereIsTheBomb,
-	EscortingHostages,
-	HeardNoise,
-	NoEnemiesLeft,
-	OneEnemyLeft,
-	TwoEnemiesLeft,
-	ThreeEnemiesLeft,
-	NiceShot,
-	NiceShotSir,
-	NiceShotCommander,
-	CommanderDown,
-	KilledFriend,
-	Pain,
-	Count
-};
-inline ChatterPhrase remainingEnemyPhrase(int count)
-{
-	constexpr int kMaximumReportedEnemies = 3;
-	return count >= 0 && count <= kMaximumReportedEnemies
-		? static_cast<ChatterPhrase>(static_cast<unsigned>(ChatterPhrase::NoEnemiesLeft) + static_cast<unsigned>(count))
-		: ChatterPhrase::None;
-}
-
-inline bool isRemainingEnemyPhrase(ChatterPhrase phrase)
-{
-	return phrase >= ChatterPhrase::NoEnemiesLeft && phrase <= ChatterPhrase::ThreeEnemiesLeft;
-}
-
-inline bool isKillPraisePhrase(ChatterPhrase phrase)
-{
-	return phrase >= ChatterPhrase::NiceShot && phrase <= ChatterPhrase::NiceShotCommander;
-}
-
-inline bool isIntentionPhrase(ChatterPhrase phrase)
-{
-	return isKillPraisePhrase(phrase) || phrase == ChatterPhrase::CommanderDown;
-}
-
-inline bool usesUndefinedChatterPlace(ChatterPhrase phrase)
-{
-	return isRemainingEnemyPhrase(phrase) || isIntentionPhrase(phrase) || phrase == ChatterPhrase::KilledFriend;
-}
-
-inline ChatterStatementTopic chatterStatementTopic(ChatterPhrase phrase)
-{
-	if (isRemainingEnemyPhrase(phrase))
-		return ChatterStatementTopic::EnemiesRemaining;
-	if (isIntentionPhrase(phrase))
-		return ChatterStatementTopic::MyIntention;
-	switch (phrase)
-	{
-	case ChatterPhrase::EnemySpotted:
-		return ChatterStatementTopic::VisibleEnemies;
-	case ChatterPhrase::Help:
-		return ChatterStatementTopic::RequestHelp;
-	case ChatterPhrase::RequestReport:
-	case ChatterPhrase::WhereIsTheBomb:
-		return ChatterStatementTopic::RequestInformation;
-	case ChatterPhrase::Affirmative:
-		return ChatterStatementTopic::Acknowledge;
-	case ChatterPhrase::OnMyWay:
-		return ChatterStatementTopic::MyIntention;
-	case ChatterPhrase::PlantingBomb:
-		return ChatterStatementTopic::CriticalEvent;
-	case ChatterPhrase::EscortingHostages:
-		return ChatterStatementTopic::MyPlan;
-	case ChatterPhrase::HeardNoise:
-		return ChatterStatementTopic::Information;
-	case ChatterPhrase::KilledFriend:
-		return ChatterStatementTopic::KilledFriend;
-	default:
-		return ChatterStatementTopic::None;
-	}
-}
-
-struct RadioMenuChoice
-{
-	int menu = 0, slot = 0;
-};
-// Reads only public phrase-to-standard-radio metadata from the host's own DB.
-// No voice samples, proprietary phrase text, or presumed fallback equivalents.
-class ChatterRadioCatalog
-{
-
-public:
-	bool loadText(const char *data, std::size_t length)
-	{
-		if (!data && length)
-			return false;
-		auto candidate = *this;
-		candidate.choices_ = {};
-		candidate.important_ = {};
-		candidate.defined_ = {};
-		candidate.loaded_ = false;
-		std::size_t pos = 0;
-		std::string token;
-		while (next(data, length, pos, token))
-		{
-			if (!equal(token, "Chatter") && !equal(token, "Place"))
-				continue;
-			const bool chatter = equal(token, "Chatter");
-			if (!next(data, length, pos, token))
-				return false;
-			const ChatterPhrase phrase = chatter ? phraseFor(token) : ChatterPhrase::None;
-			if (phrase != ChatterPhrase::None)
-				candidate.defined_[static_cast<unsigned>(phrase)] = true;
-			bool ended = false;
-			while (next(data, length, pos, token))
-			{
-				if (equal(token, "End"))
-				{
-					ended = true;
-					break;
-				}
-				if (equal(token, "Important") && phrase != ChatterPhrase::None)
-					candidate.important_[static_cast<unsigned>(phrase)] = true;
-				if (equal(token, "Radio"))
-				{
-					if (!next(data, length, pos, token))
-						return false;
-					if (equal(token, "=") && !next(data, length, pos, token))
-						return false;
-					const auto choice = eventFor(token);
-					if (!choice.menu)
-						return false;
-					if (phrase != ChatterPhrase::None)
-						candidate.choices_[static_cast<unsigned>(phrase)] = choice;
-				}
-			}
-			if (!ended)
-				return false;
-		}
-		candidate.loaded_ = true;
-		*this = candidate;
-		return true;
-	}
-
-	RadioMenuChoice lookup(ChatterPhrase phrase) const
-	{
-		const auto i = static_cast<unsigned>(phrase);
-		return i < choices_.size() ? choices_[i] : RadioMenuChoice{};
-	}
-
-	bool defined(ChatterPhrase phrase) const
-	{
-		const auto i = static_cast<unsigned>(phrase);
-		return i < defined_.size() && defined_[i];
-	}
-
-	bool loaded() const
-	{
-		return loaded_;
-	}
-
-	bool important(ChatterPhrase p) const
-	{
-		const auto i = static_cast<unsigned>(p);
-		return i < important_.size() && important_[i];
-	}
-
-	static const char *name(ChatterPhrase p)
-	{
-		const char *names[] = {"None", "EnemySpotted", "Help", "RequestReport", "Affirmative", "OnMyWay",
-			"PlantingBomb", "WhereIsTheBomb", "EscortingHostages", "HeardNoise", "NoEnemiesLeft", "OneEnemyLeft",
-			"TwoEnemiesLeft", "ThreeEnemiesLeft", "NiceShot", "NiceShotSir", "NiceShotCommander", "CommanderDown", "KilledFriend", "pain"};
-		const auto i = static_cast<unsigned>(p);
-		return i < static_cast<unsigned>(ChatterPhrase::Count) ? names[i] : "Unknown";
-	}
-
-private:
-	static bool equal(const std::string &a, const char *b)
-	{
-		if (a.size() != std::strlen(b))
-			return false;
-		for (std::size_t i = 0; i < a.size(); ++i)
-		{
-			const char x = a[i] >= 'a' && a[i] <= 'z' ? static_cast<char>(a[i] - 'a' + 'A') : a[i];
-			const char y = b[i] >= 'a' && b[i] <= 'z' ? static_cast<char>(b[i] - 'a' + 'A') : b[i];
-			if (x != y)
-				return false;
-		}
-		return true;
-	}
-
-	static bool next(const char *d, std::size_t n, std::size_t &p, std::string &out)
-	{
-		constexpr int kMaximumTokenLength = 512;
-		out.clear();
-		while (p < n)
-		{
-			if (d[p] == ' ' || d[p] == '\t' || d[p] == '\r' || d[p] == '\n')
-			{
-				++p;
-				continue;
-			}
-			if (p + 1 < n && d[p] == '/' && d[p + 1] == '/')
-			{
-				while (p < n && d[p] != '\n')
-					++p;
-				continue;
-			}
-			break;
-		}
-		if (p >= n)
-			return false;
-		const bool quote = d[p] == '"';
-		if (quote)
-			++p;
-		while (p < n)
-		{
-			const char c = d[p++];
-			if ((quote && c == '"') || (!quote && (c == ' ' || c == '\t' || c == '\r' || c == '\n')))
-				break;
-			out.push_back(c);
-			if (out.size() > kMaximumTokenLength)
-				return false;
-		}
-		return !out.empty();
-	}
-
-	static ChatterPhrase phraseFor(const std::string &s)
-	{
-		for (unsigned i = 1; i < static_cast<unsigned>(ChatterPhrase::Count); ++i)
-			if (equal(s, name(static_cast<ChatterPhrase>(i))))
-				return static_cast<ChatterPhrase>(i);
-		return ChatterPhrase::None;
-	}
-
-	static RadioMenuChoice eventFor(std::string s)
-	{
-		constexpr int kEventPrefixLength = 6;
-		constexpr int kRadioEventCount = 21;
-		constexpr int kFirstMenuEventLimit = 6;
-		constexpr int kSecondMenuEventLimit = 12;
-		constexpr int kCommandRadioMenu = 1;
-		constexpr int kGroupRadioMenu = 2;
-		constexpr int kReportRadioMenu = 3;
-		constexpr int kSecondMenuSlotOffset = 5;
-		constexpr int kThirdMenuSlotOffset = 11;
-		if (s.size() > kEventPrefixLength && equal(s.substr(0, kEventPrefixLength), "EVENT_"))
-			s = s.substr(kEventPrefixLength);
-		const char *events[] = {"RADIO_COVER_ME", "RADIO_YOU_TAKE_THE_POINT", "RADIO_HOLD_THIS_POSITION",
-			"RADIO_REGROUP_TEAM", "RADIO_FOLLOW_ME", "RADIO_TAKING_FIRE", "RADIO_GO_GO_GO", "RADIO_TEAM_FALL_BACK",
-			"RADIO_STICK_TOGETHER_TEAM", "RADIO_GET_IN_POSITION_AND_WAIT", "RADIO_STORM_THE_FRONT",
-			"RADIO_REPORT_IN_TEAM", "RADIO_AFFIRMATIVE", "RADIO_ENEMY_SPOTTED", "RADIO_NEED_BACKUP",
-			"RADIO_SECTOR_CLEAR", "RADIO_IN_POSITION", "RADIO_REPORTING_IN", "RADIO_GET_OUT_OF_THERE", "RADIO_NEGATIVE",
-			"RADIO_ENEMY_DOWN"};
-		for (unsigned i = 0; i < kRadioEventCount; ++i)
-		{
-			if (equal(s, events[i]))
-				return {i < kFirstMenuEventLimit ? kCommandRadioMenu
-												 : (i < kSecondMenuEventLimit ? kGroupRadioMenu : kReportRadioMenu),
-					static_cast<int>(i < kFirstMenuEventLimit
-							? i + 1
-							: (i < kSecondMenuEventLimit ? i - kSecondMenuSlotOffset : i - kThirdMenuSlotOffset))};
-		}
-		return {};
-	}
-
-	std::array<RadioMenuChoice, static_cast<unsigned>(ChatterPhrase::Count)> choices_{};
-
-	std::array<bool, static_cast<unsigned>(ChatterPhrase::Count)> important_{};
-
-	std::array<bool, static_cast<unsigned>(ChatterPhrase::Count)> defined_{};
-
-	bool loaded_ = false;
-};
 enum class OutgoingRadioStatus
 {
 	None,
@@ -402,6 +127,8 @@ struct OutgoingRadioInput
 	bool vipEscaping = false, plantingBomb = false, bombLocationUnknown = false, escortingHostages = false;
 	bool canStart = true;
 	ChatterScheduleAdmission admission{};
+	ChatterVerbosity verbosity = ChatterVerbosity::Normal;
+	ChatterScheduleEntry speaking{};
 };
 struct OutgoingRadioDecision
 {
@@ -409,70 +136,69 @@ struct OutgoingRadioDecision
 	ChatterPhrase phrase = ChatterPhrase::None;
 	int menu = 0, slot = 0;
 	std::uint16_t place = 0;
+	ChatterStatementHandle statement{};
+	std::uint64_t directToken = 0;
 };
 class OutgoingRadioScheduler
 {
-
 public:
-	OutgoingRadioDecision update(
-		const OutgoingRadioInput &in, const ChatterRadioCatalog &catalog, std::uint32_t voicePhrases = 0U)
+	void reset()
 	{
-		constexpr int kTerroristTeam = 1;
-		constexpr int kCounterTerroristTeam = 2;
-		constexpr float kAcknowledgementBaseSeconds = 1.0f;
-		constexpr int kAcknowledgementReactionScale = 2;
-		constexpr int kAcknowledgementLifetimeSeconds = 3;
-		constexpr int kVipReportCooldownSeconds = 30;
-		constexpr int kVipFollowLifetimeSeconds = 10;
-		constexpr int kHelpCooldownSeconds = 10;
-		constexpr int kReportLifetimeSeconds = 10;
-		constexpr float kEnemyReportDelaySeconds = 2.0f;
-		constexpr int kEscortCooldownSeconds = 10;
-		constexpr int kEscortReportLifetimeSeconds = 5;
-		constexpr int kTeamSilenceSeconds = 30;
-		constexpr int kImmediateEnemyReportCount = 3;
-		constexpr int kFollowMenu = 1;
-		constexpr int kFollowSlot = 5;
+		pending_.clear();
+		resetMetadata();
+	}
+
+	ChatterPendingQueue &statements()
+	{
+		return pending_;
+	}
+	const ChatterPendingQueue &statements() const
+	{
+		return pending_;
+	}
+	void prepare(const OutgoingRadioInput &in, const ChatterRadioCatalog &catalog)
+	{
+		constexpr int kAcknowledgementBaseSeconds = 1, kAcknowledgementReactionScale = 2,
+					  kAcknowledgementLifetimeSeconds = 3;
+		constexpr int kVipReportCooldownSeconds = 30, kVipFollowLifetimeSeconds = 10, kHelpCooldownSeconds = 10;
+		constexpr int kReportLifetimeSeconds = 10, kEscortCooldownSeconds = 10, kEscortReportLifetimeSeconds = 5,
+					  kTeamSilenceSeconds = 30;
+		constexpr float kEnemyReportDelaySeconds = 2;
 		if (!in.actor.isValid() || !in.frame.isValid() || !std::isfinite(in.now) || in.now < 0)
-			return {};
-		const bool clockRewound = in.actor == actor_ && in.frame.mapGeneration == frame_.mapGeneration &&
+			return;
+		const bool rewound = in.actor == actor_ && in.frame.mapGeneration == frame_.mapGeneration &&
 			in.frame.roundGeneration == frame_.roundGeneration && in.now < lastUpdate_;
-		if (!(in.actor == actor_) || in.frame.mapGeneration != frame_.mapGeneration ||
-			in.frame.roundGeneration != frame_.roundGeneration || in.now < lastUpdate_)
+		if (actor_.isValid() &&
+			(!(in.actor == actor_) || in.frame.mapGeneration != frame_.mapGeneration ||
+				in.frame.roundGeneration != frame_.roundGeneration || in.now < lastUpdate_))
 		{
-			*this = OutgoingRadioScheduler();
+			// Event admission may already own this life; reset only ordinary trigger metadata.
+			resetMetadata();
 			actor_ = in.actor;
-			frame_ = in.frame;
 			start_ = in.now;
-			if (clockRewound && in.noiseReport.active)
+			if (rewound && in.noiseReport.active)
 			{
 				lastNoiseReport_ = in.noiseReport.created;
 				lastNoiseReportTick_ = in.noiseReport.frame.tick;
 			}
 		}
+		if (!actor_.isValid())
+		{
+			actor_ = in.actor;
+			start_ = in.now;
+		}
 		frame_ = in.frame;
 		lastUpdate_ = in.now;
-		if (!in.alive || in.team < kTerroristTeam || in.team > kCounterTerroristTeam)
+		if (!in.alive || in.team < 1 || in.team > 2)
 		{
 			cancelOnDeath(in.humanOrderSequence);
 			lastNoiseReport_ = in.noiseReport.created;
 			lastNoiseReportTick_ = in.noiseReport.frame.tick;
-			return {};
+			return;
 		}
-		if (pending_ == ChatterPhrase::HeardNoise &&
-			(in.roundOver || in.navRevision != pendingNoiseRevision_ || !in.noiseReport.active ||
-				!(in.noiseReport.actor == in.actor) || in.noiseReport.frame.mapGeneration != in.frame.mapGeneration ||
-				in.noiseReport.frame.roundGeneration != in.frame.roundGeneration ||
-				in.noiseReport.created != lastNoiseReport_ || in.noiseReport.frame.tick != lastNoiseReportTick_))
-		{
-			pending_ = ChatterPhrase::None;
-		}
+		pending_.synchronize(admission(in));
 		if (!in.visibleEnemyCount)
-		{
 			reportedEnemies_ = false;
-			if (pending_ == ChatterPhrase::EnemySpotted)
-				pending_ = ChatterPhrase::None;
-		}
 		if (in.humanOrderSequence > orderSequence_ && in.humanOrderAccepted && std::isfinite(in.reactionSeconds) &&
 			in.reactionSeconds >= 0)
 		{
@@ -483,12 +209,13 @@ public:
 		}
 		if (ack_ != ChatterPhrase::None && in.now >= ackAt_)
 		{
-			queue(ack_, in.now, kAcknowledgementLifetimeSeconds, in.admission);
+			queue(ack_, in.now, kAcknowledgementLifetimeSeconds, in, catalog);
 			ack_ = ChatterPhrase::None;
 		}
 		if (in.vipEscaping && in.friendCount > 0 && (lastVip_ < 0 || in.now - lastVip_ > kVipReportCooldownSeconds))
 		{
 			directFollow_ = true;
+			++directToken_;
 			directFollowStart_ = in.now;
 			lastVip_ = in.now;
 			directFollowExpires_ = in.now + kVipFollowLifetimeSeconds;
@@ -501,31 +228,30 @@ public:
 				if (in.visibleEnemyCount > in.nearbyFriends + 1 &&
 					(lastHelp_ < 0 || in.now - lastHelp_ >= kHelpCooldownSeconds))
 				{
-					queue(ChatterPhrase::Help, in.now, kReportLifetimeSeconds, in.admission);
+					queue(ChatterPhrase::Help, in.now, kReportLifetimeSeconds, in, catalog);
 					lastHelp_ = in.now;
 				}
 				else
 				{
-					queue(ChatterPhrase::EnemySpotted, in.now, kReportLifetimeSeconds, in.admission);
-					enemyReportAt_ = in.now + kEnemyReportDelaySeconds;
+					queue(ChatterPhrase::EnemySpotted, in.now, kReportLifetimeSeconds, in, catalog, 0,
+						in.now + kEnemyReportDelaySeconds);
 				}
 			}
 			if (in.plantingBomb && !wasPlanting_)
-				queue(ChatterPhrase::PlantingBomb, in.now, kReportLifetimeSeconds, in.admission);
+				queue(ChatterPhrase::PlantingBomb, in.now, kReportLifetimeSeconds, in, catalog);
 			if (in.bombLocationUnknown && !askedBomb_)
 			{
-				queue(ChatterPhrase::WhereIsTheBomb, in.now, kReportLifetimeSeconds, in.admission);
+				queue(ChatterPhrase::WhereIsTheBomb, in.now, kReportLifetimeSeconds, in, catalog);
 				askedBomb_ = true;
 			}
 			if (in.escortingHostages && (lastEscort_ < 0 || in.now - lastEscort_ >= kEscortCooldownSeconds))
 			{
-				queue(ChatterPhrase::EscortingHostages, in.now, kEscortReportLifetimeSeconds, in.admission);
+				queue(ChatterPhrase::EscortingHostages, in.now, kEscortReportLifetimeSeconds, in, catalog);
 				lastEscort_ = in.now;
 			}
 			const float silence = in.teamLastSpeech >= 0 ? in.teamLastSpeech : (lastSent_ >= 0 ? lastSent_ : start_);
-			if (in.enemiesRemaining > 0 && in.nearbyFriends != in.friendCount &&
-				in.now - silence > kTeamSilenceSeconds && pending_ == ChatterPhrase::None)
-				queue(ChatterPhrase::RequestReport, in.now, kReportLifetimeSeconds, in.admission);
+			if (in.enemiesRemaining > 0 && in.nearbyFriends != in.friendCount && in.now - silence > kTeamSilenceSeconds)
+				queue(ChatterPhrase::RequestReport, in.now, kReportLifetimeSeconds, in, catalog);
 		}
 		wasPlanting_ = in.plantingBomb;
 		const auto &report = in.noiseReport;
@@ -540,164 +266,239 @@ public:
 				lastNoiseReport_ = report.created;
 				lastNoiseReportTick_ = report.frame.tick;
 			}
-			else if (report.navRevision != 0 && report.navRevision == in.navRevision &&
-				pending_ == ChatterPhrase::None && !directFollow_)
+			else if (report.navRevision != 0 && report.navRevision == in.navRevision && true)
 			{
-				queue(ChatterPhrase::HeardNoise, report.created, kNoiseReportLifetimeSeconds, in.admission);
-				pendingPlace_ = report.place;
-				schedule_.place = report.place;
-				pendingNoiseRevision_ = report.navRevision;
+				queue(
+					ChatterPhrase::HeardNoise, report.created, kNoiseReportLifetimeSeconds, in, catalog, report.place);
 				lastNoiseReport_ = report.created;
 				lastNoiseReportTick_ = report.frame.tick;
 			}
 		}
-		const bool expired = pending_ == ChatterPhrase::HeardNoise ? in.now > expires_ : in.now >= expires_;
-		if (pending_ != ChatterPhrase::None && expired)
-		{
-			pending_ = ChatterPhrase::None;
-		}
+
 		if (directFollow_ && in.now >= directFollowExpires_)
-		{
 			directFollow_ = false;
-		}
-		if (pending_ == ChatterPhrase::None && !directFollow_)
+	}
+	OutgoingRadioDecision decide(const OutgoingRadioInput &in, const ChatterRadioCatalog &catalog,
+		std::uint32_t voicePhrases, const ChatterStatementHandle &selected)
+	{
+		if (directFollow_)
+			return {OutgoingRadioStatus::Ready, ChatterPhrase::None, 1, 5, 0, {}, directToken_};
+		ChatterPendingStatement node{};
+		if (!pending_.read(selected, &node))
 			return {};
-		if (pending_ == ChatterPhrase::EnemySpotted && !in.inCombat)
+		legacySelected_ = selected;
+		if (node.request.phrase == ChatterPhrase::HeardNoise &&
+			(in.roundOver || !in.noiseReport.active || node.request.navRevision != in.navRevision ||
+				node.request.created != in.noiseReport.created || node.request.noiseTick != in.noiseReport.frame.tick))
 		{
-			pending_ = ChatterPhrase::None;
+			pending_.erase(selected);
 			return {};
 		}
-		if (pending_ == ChatterPhrase::EnemySpotted && in.visibleEnemyCount <= kImmediateEnemyReportCount &&
-			in.now <= enemyReportAt_)
-			return {};
-		if ((!in.canStart || in.now < in.teamBusyUntil) && !directFollow_)
+		if (!in.canStart || in.now < in.teamBusyUntil)
+			return {OutgoingRadioStatus::WaitingTeam, node.request.phrase, 0, 0, node.request.place, selected, 0};
+		if (in.friendCount <= 0 || (node.request.requiresCombat && !in.inCombat))
 		{
-			// Same topic without place/subject is redundant while a teammate says it.
-			const bool samePlace = (pendingPlace_ == 0 && in.teamCurrentPlace == 0) ||
-				(pendingPlace_ != 0 && pendingPlace_ == in.teamCurrentPlace);
-			if (in.now < in.teamBusyUntil && pending_ == in.teamCurrentPhrase && !directFollow_ &&
-				(pending_ != ChatterPhrase::HeardNoise || samePlace))
+			pending_.erase(selected);
+			return {};
+		}
+		auto phrase = node.request.phrase;
+		if (node.request.content == ChatterStatementContent::RemainingEnemies)
+		{
+			phrase = remainingEnemyPhrase(in.enemiesRemaining);
+			if (phrase == ChatterPhrase::None)
 			{
-				pending_ = ChatterPhrase::None;
+				pending_.erase(selected);
 				return {};
 			}
-			return {OutgoingRadioStatus::WaitingTeam, pending_, 0, 0};
 		}
-		const auto choice = directFollow_ ? RadioMenuChoice{kFollowMenu, kFollowSlot} : catalog.lookup(pending_);
-		if (!choice.menu && pending_ != ChatterPhrase::None &&
-			(voicePhrases & (1U << static_cast<unsigned>(pending_))) != 0U)
-			return {OutgoingRadioStatus::Ready, pending_, 0, 0, pendingPlace_};
-		if (!choice.menu)
-		{
-			const auto missing = pending_;
-			pending_ = ChatterPhrase::None;
-			return {OutgoingRadioStatus::MissingPhrase, missing, 0, 0};
-		}
-		return {OutgoingRadioStatus::Ready, directFollow_ ? ChatterPhrase::None : pending_, choice.menu, choice.slot,
-			directFollow_ ? std::uint16_t{0} : pendingPlace_};
+		constexpr int kImmediateEnemyReportCount = 3;
+		if (phrase == ChatterPhrase::EnemySpotted && in.visibleEnemyCount <= kImmediateEnemyReportCount &&
+			in.now <= node.request.readyAt)
+			return {};
+		if (in.now < node.request.start)
+			return {};
+		const auto choice = catalog.lookup(phrase);
+		const bool available = choice.menu || ((voicePhrases & (1U << static_cast<unsigned>(phrase))) != 0);
+		return {available ? OutgoingRadioStatus::Ready : OutgoingRadioStatus::MissingPhrase, phrase, choice.menu,
+			choice.slot, node.request.place, selected, 0};
 	}
-
+	void maintain(const OutgoingRadioInput &in, const ChatterScheduleEntry &teammate = {})
+	{
+		ChatterPendingMaintenance maintenance{};
+		maintenance.admission = admission(in);
+		maintenance.inCombat = in.inCombat;
+		maintenance.speaking = in.speaking;
+		maintenance.teammate = teammate;
+		maintenance.roundOver = in.roundOver;
+		maintenance.noiseActive = in.noiseReport.active && in.noiseReport.actor == in.actor &&
+			in.noiseReport.frame.mapGeneration == in.frame.mapGeneration &&
+			in.noiseReport.frame.roundGeneration == in.frame.roundGeneration;
+		maintenance.noiseCreated = in.noiseReport.created;
+		maintenance.noiseTick = in.noiseReport.frame.tick;
+		maintenance.navRevision = in.navRevision;
+		pending_.maintain(maintenance);
+	}
+	OutgoingRadioDecision update(
+		const OutgoingRadioInput &in, const ChatterRadioCatalog &catalog, std::uint32_t voicePhrases = 0)
+	{
+		prepare(in, catalog);
+		ChatterTeamSelection selection;
+		pending_.visitSchedules(
+			[&](const ChatterScheduleEntry &entry)
+			{
+				return selection.consider(entry);
+			});
+		const auto selected = selection.finish(in.now);
+		auto out = decide(in, catalog, voicePhrases, pending_.handle(selected));
+		ChatterScheduleEntry teammate{};
+		if (in.now < in.teamBusyUntil && in.teamCurrentPhrase != ChatterPhrase::None)
+			teammate.topic = chatterStatementTopic(in.teamCurrentPhrase), teammate.place = in.teamCurrentPlace;
+		maintain(in, teammate);
+		if (out.status == OutgoingRadioStatus::MissingPhrase)
+			pending_.erase(out.statement);
+		ChatterPendingStatement retained{};
+		if (out.status == OutgoingRadioStatus::WaitingTeam && !pending_.read(out.statement, &retained))
+			return {};
+		return out;
+	}
 	ChatterScheduleEntry scheduledStatement() const
 	{
-		return pending_ != ChatterPhrase::None ? schedule_ : ChatterScheduleEntry{};
+		ChatterScheduleEntry first{};
+		pending_.visitSchedules(
+			[&](const ChatterScheduleEntry &entry)
+			{
+				first = entry;
+				return false;
+			});
+		return first;
 	}
-
 	bool hasDirect() const
 	{
 		return directFollow_;
 	}
-
+	std::uint64_t directToken() const
+	{
+		return directToken_;
+	}
 	void discardDirect()
 	{
 		directFollow_ = false;
+		++directToken_;
 	}
-
+	void discardDirect(std::uint64_t token)
+	{
+		if (token == directToken_)
+			discardDirect();
+	}
 	void discardStatement()
 	{
-		pending_ = ChatterPhrase::None;
+		pending_.erase(legacySelected_);
 	}
-
 	bool hasPending() const
 	{
-		return pending_ != ChatterPhrase::None || directFollow_;
+		return !pending_.empty() || directFollow_;
 	}
-
 	float scheduledStart() const
 	{
-		return directFollow_ ? directFollowStart_ : pendingStart_;
+		return directFollow_ ? directFollowStart_ : scheduledStatement().start;
 	}
-
 	void confirmSent(const OutgoingRadioInput &in, const OutgoingRadioDecision &out)
 	{
 		if (out.status != OutgoingRadioStatus::Ready)
 			return;
-		lastSent_ = in.now;
-		if (directFollow_ && out.phrase == ChatterPhrase::None)
+		if (out.directToken)
 		{
-			directFollow_ = false;
-			return;
+			if (out.directToken != directToken_)
+				return;
+			discardDirect();
 		}
-		pending_ = ChatterPhrase::None;
+		else if (!pending_.erase(out.statement))
+			return;
+		lastSent_ = in.now;
 	}
-
-	// AddStatement drops a new OFF/non-important MINIMAL statement independently of older topics.
 	void discardNoiseReport(const HeardNoiseReport &report)
 	{
 		if (!report.active || !(report.actor == actor_) || report.frame.mapGeneration != frame_.mapGeneration ||
 			report.frame.roundGeneration != frame_.roundGeneration)
-		{
 			return;
-		}
 		lastNoiseReport_ = report.created;
 		lastNoiseReportTick_ = report.frame.tick;
-		if (pending_ == ChatterPhrase::HeardNoise)
-		{
-			pending_ = ChatterPhrase::None;
-		}
 	}
-
 	void cancelOnDeath(std::uint32_t consumedOrder = 0)
 	{
-		pending_ = ChatterPhrase::None;
+		pending_.clear();
 		ack_ = ChatterPhrase::None;
-		directFollow_ = false;
+		discardDirect();
 		orderSequence_ = (std::max)(orderSequence_, consumedOrder);
 	}
-
 	void discardPending()
 	{
-		pending_ = ChatterPhrase::None;
-		directFollow_ = false;
+		pending_.clear();
+		discardDirect();
 	}
 
 private:
-	void queue(ChatterPhrase p, float now, float lifetime, const ChatterScheduleAdmission &admission)
+	void resetMetadata()
 	{
-		if (pending_ != ChatterPhrase::None)
-			return;
-		pending_ = p;
-		pendingStart_ = now;
-		schedule_ = admission.make(ChatterScheduleSource::Generic, chatterStatementTopic(p), now, now);
-		pendingPlace_ = 0;
-		expires_ = now + lifetime;
+		actor_ = {};
+		frame_ = {};
+		lastUpdate_ = 0;
+		start_ = 0;
+		lastSent_ = -1;
+		lastHelp_ = -1;
+		lastEscort_ = -1;
+		lastVip_ = -1;
+		ackAt_ = 0;
+		reportedEnemies_ = false;
+		wasPlanting_ = false;
+		askedBomb_ = false;
+		directFollow_ = false;
+		orderSequence_ = 0;
+		ack_ = ChatterPhrase::None;
+		directFollowStart_ = 0;
+		directFollowExpires_ = 0;
+		lastNoiseReport_ = -1;
+		lastNoiseReportTick_ = 0;
+		legacySelected_ = {};
+		++directToken_;
 	}
-
+	ChatterScheduleAdmission admission(const OutgoingRadioInput &in) const
+	{
+		if (in.admission.owner.actor.isValid())
+			return in.admission;
+		return {{in.actor, in.frame, 1, in.now, in.alive}, 0, 0, nullptr};
+	}
+	void queue(ChatterPhrase phrase, float created, float lifetime, const OutgoingRadioInput &in,
+		const ChatterRadioCatalog &catalog, std::uint16_t place = 0, float readyAt = 0)
+	{
+		ChatterStatementRequest request{};
+		request.source = ChatterScheduleSource::Generic;
+		request.topic = chatterStatementTopic(phrase);
+		request.phrase = phrase;
+		request.created = created;
+		request.start = created;
+		request.expires = created + lifetime;
+		request.readyAt = readyAt;
+		request.place = place;
+		request.requiresCombat = phrase == ChatterPhrase::EnemySpotted;
+		request.content =
+			request.requiresCombat ? ChatterStatementContent::EnemyReport : ChatterStatementContent::Fixed;
+		request.navRevision = in.noiseReport.navRevision;
+		request.noiseTick = in.noiseReport.frame.tick;
+		pending_.admit(request, admission(in), catalog, in.verbosity, in.speaking);
+	}
+	ChatterPendingQueue pending_{};
 	world::ActorKey actor_{};
 	world::FrameIdentity frame_{};
-	float lastUpdate_ = 0, start_ = 0, lastSent_ = -1, lastHelp_ = -1, lastEscort_ = -1, lastVip_ = -1, ackAt_ = 0,
-		  expires_ = 0, enemyReportAt_ = 0;
+	float lastUpdate_ = 0, start_ = 0, lastSent_ = -1, lastHelp_ = -1, lastEscort_ = -1, lastVip_ = -1, ackAt_ = 0;
 	bool reportedEnemies_ = false, wasPlanting_ = false, askedBomb_ = false, directFollow_ = false;
 	std::uint32_t orderSequence_ = 0;
-	ChatterPhrase pending_ = ChatterPhrase::None, ack_ = ChatterPhrase::None;
-	float pendingStart_ = 0;
-	ChatterScheduleEntry schedule_{};
-	float directFollowStart_ = 0;
-	float directFollowExpires_ = 0;
-	float lastNoiseReport_ = -1;
+	ChatterPhrase ack_ = ChatterPhrase::None;
+	float directFollowStart_ = 0, directFollowExpires_ = 0, lastNoiseReport_ = -1;
 	std::uint32_t lastNoiseReportTick_ = 0;
-	std::uint16_t pendingPlace_ = 0;
-	std::uint64_t pendingNoiseRevision_ = 0;
+	std::uint64_t directToken_ = 0;
+	ChatterStatementHandle legacySelected_{};
 };
-} // namespace compat
-} // namespace astrabot
+}
+}
 #endif

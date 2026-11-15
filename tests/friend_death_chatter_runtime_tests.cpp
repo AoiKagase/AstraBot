@@ -660,13 +660,15 @@ bool testDeathChatter(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &
 	begin();
 	death(0);
 	step(20.01f);
-	if (!check(deathSpeechSamples.empty(), "unpublished CommanderDown expires after20seconds"))
+	if (!check(deathSpeechSamples == std::vector<std::string>{"radio/test/down.wav"},
+			"selected CommanderDown updates before obsolete cleanup after20seconds"))
 		return false;
 	begin();
 	deathSpeechCareer = 0;
 	death();
 	step(2.01f);
-	if (!check(deathSpeechSamples.empty(), "unpublished KilledFriend expires from creation after2seconds"))
+	if (!check(deathSpeechSamples == std::vector<std::string>{"radio/test/killed.wav"},
+			"selected KilledFriend updates before obsolete cleanup after2seconds"))
 		return false;
 	mutatingSpeechRuntime = &runtime;
 	for (const auto mutation : {SpeechMutation::Career, SpeechMutation::Delay})
@@ -854,33 +856,50 @@ bool testDeathChatter(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &
 	step(.12f);
 	const bool afterPeerCompletion =
 		check(deathSpeechSenders == std::vector<int>{1}, "queued slot1 speech starts after retained peer completion");
-	bool qualifiedPeers = true;
-	for (int variant = 0; variant < 4; ++variant)
-	{
-		begin();
-		deathSpeechCareer = 0;
-		deathSpeechSenders.clear();
-		death(3, 2, MSG_ONE, &gEntities[4]);
-		globals.time += .875f;
-		death(3, 2, MSG_ONE, &self);
-		const auto peerFlags = gEntities[4].v.flags;
-		const auto peerName = gEntityNames[4];
-		if (variant == 0)
-			team(5, "CT");
-		if (variant == 1)
-			gEntities[4].v.flags |= FL_DORMANT;
-		if (variant == 2)
-			gEntityNames[4].clear();
-		if (variant == 3)
-			++gEntities[4].serialnumber;
-		step(.8f);
-		qualifiedPeers = check(deathSpeechSenders == std::vector<int>{1},
-							 "enemy/dormant/unnamed/reused peer cannot block a qualified current speaker") &&
-			qualifiedPeers;
-		gEntities[4].v.flags = peerFlags;
-		gEntityNames[4] = peerName;
-		team(5, "TERRORIST");
-	}
+ // Unselected owners still prune their own entire list after the selected action.
+ begin();
+ deathSpeechSenders.clear();
+ death(0,2,MSG_ONE,&gEntities[4]);
+ step(.12f);
+ deathSpeechSamples.clear();
+ deathSpeechSenders.clear();
+ deathSpeechCareer = 0;
+ death(3, 2, MSG_ONE, &self);
+ step(2.01f);
+ const bool unselectedExpired =
+	 check(deathSpeechSamples.empty(), "retained teammate blocks an expired own KilledFriend before maintenance");
+ step(.12f);
+ const bool expiredCannotResume = check(deathSpeechSamples.empty(),
+	 "unselected owner maintenance removes expired KilledFriend before teammate releases speech");
+ if (!unselectedExpired || !expiredCannotResume)
+	 return false;
+ bool qualifiedPeers = true;
+ for (int variant = 0; variant < 4; ++variant)
+ {
+	 begin();
+	 deathSpeechCareer = 0;
+	 deathSpeechSenders.clear();
+	 death(3, 2, MSG_ONE, &gEntities[4]);
+	 globals.time += .875f;
+	 death(3, 2, MSG_ONE, &self);
+	 const auto peerFlags = gEntities[4].v.flags;
+	 const auto peerName = gEntityNames[4];
+	 if (variant == 0)
+		 team(5, "CT");
+	 if (variant == 1)
+		 gEntities[4].v.flags |= FL_DORMANT;
+	 if (variant == 2)
+		 gEntityNames[4].clear();
+	 if (variant == 3)
+		 ++gEntities[4].serialnumber;
+	 step(.8f);
+	 qualifiedPeers = check(deathSpeechSenders == std::vector<int>{1},
+						  "enemy/dormant/unnamed/reused peer cannot block a qualified current speaker") &&
+		 qualifiedPeers;
+	 gEntities[4].v.flags = peerFlags;
+	 gEntityNames[4] = peerName;
+	 team(5, "TERRORIST");
+ }
 	begin();
 	deathSpeechCareer = 0;
 	deathSpeechSenders.clear();

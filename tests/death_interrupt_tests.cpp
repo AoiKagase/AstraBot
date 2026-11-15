@@ -78,7 +78,8 @@ int main()
 		check(deathInterruptVoiceEnabled(mode), "native normal/minimal first-letter mode allows pain");
 	for (const char *mode : {"off", "OFF", "o", "radio", "Radio", "r"})
 		check(!deathInterruptVoiceEnabled(mode), "native off/radio first-letter mode suppresses pain");
-	const char *metadata = "Chatter pain Radio = EVENT_RADIO_NEED_BACKUP End";
+	const char *metadata =
+		"Chatter pain Radio = EVENT_RADIO_NEED_BACKUP End Chatter Affirmative End Chatter PlantingBomb Important End";
 	ChatterRadioCatalog catalog;
 	check(catalog.loadText(metadata, std::strlen(metadata)) && catalog.defined(ChatterPhrase::Pain),
 		"default catalog registers native pain definition");

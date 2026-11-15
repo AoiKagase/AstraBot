@@ -37,7 +37,6 @@ compat::ChatterScheduleEntry BotBehaviorRuntime::activeTeamChatter(std::size_t i
 	const auto engine = services_->service_engineFunctions();
 	const auto &handles = services_->service_managedBotHandles();
 	constexpr int kEligibilityFlags = FL_CLIENT | FL_DORMANT | FL_SPECTATOR;
-	constexpr std::size_t kStatementsPerActor = 6;
 	struct PeerReceipt
 	{
 		bool managed = false;
@@ -53,7 +52,9 @@ compat::ChatterScheduleEntry BotBehaviorRuntime::activeTeamChatter(std::size_t i
 		std::uint8_t publicTeam = 0;
 		int entityTeam = 0;
 		string_t name = 0;
-		std::array<compat::ChatterScheduleEntry, kStatementsPerActor> statements{};
+		std::uint64_t queueRevision = 0;
+		bool hasPending = false;
+		compat::ChatterScheduleEntry speaking{};
 	};
 	const auto snapshotPeer = [&](std::size_t peerIndex)
 	{
@@ -79,11 +80,9 @@ compat::ChatterScheduleEntry BotBehaviorRuntime::activeTeamChatter(std::size_t i
 			receipt.entityTeam = receipt.entity->v.team;
 			receipt.name = receipt.entity->v.netname;
 		}
-		const auto friendStatements = actors_[peerIndex].friendDeathChatter.scheduledStatements();
-		receipt.statements = {{actors_[peerIndex].outgoingRadioSchedulers.scheduledStatement(),
-			actors_[peerIndex].enemyCountChatter.scheduledStatement(),
-			actors_[peerIndex].killPraise.scheduledStatement(), friendStatements[0], friendStatements[1],
-			actors_[peerIndex].confirmedSpeech.scheduledStatement()}};
+		receipt.queueRevision = actors_[peerIndex].outgoingRadioSchedulers.statements().revision();
+		receipt.hasPending = !actors_[peerIndex].outgoingRadioSchedulers.statements().empty();
+		receipt.speaking = actors_[peerIndex].confirmedSpeech.scheduledStatement();
 		return receipt;
 	};
 	const auto sameStatement = [](const compat::ChatterScheduleEntry &a, const compat::ChatterScheduleEntry &b)
@@ -111,12 +110,8 @@ compat::ChatterScheduleEntry BotBehaviorRuntime::activeTeamChatter(std::size_t i
 				a.teamKnown == b.teamKnown && a.publicTeam == b.publicTeam && a.entityTeam == b.entityTeam &&
 				a.name == b.name))
 			return false;
-		for (std::size_t i = 0; i < a.statements.size(); ++i)
-		{
-			if (!sameStatement(a.statements[i], b.statements[i]))
-				return false;
-		}
-		return true;
+		return a.queueRevision == b.queueRevision && a.hasPending == b.hasPending &&
+			sameStatement(a.speaking, b.speaking);
 	};
 	std::array<PeerReceipt, kMaximumClientSlots> peers{};
 	for (std::size_t i = 0; i < peers.size(); ++i)
@@ -127,8 +122,7 @@ compat::ChatterScheduleEntry BotBehaviorRuntime::activeTeamChatter(std::size_t i
 	{
 		return samePeer(peers[index], snapshotPeer(index));
 	};
-	std::array<compat::ChatterScheduleEntry, kMaximumClientSlots * kStatementsPerActor> entries{};
-	std::size_t count = 0;
+	compat::ChatterTeamSelection selection;
 	for (std::size_t peerIndex = 0; peerIndex < peers.size(); ++peerIndex)
 	{
 		const auto &peer = peers[peerIndex];
@@ -138,12 +132,7 @@ compat::ChatterScheduleEntry BotBehaviorRuntime::activeTeamChatter(std::size_t i
 		{
 			continue;
 		}
-		bool hasStatement = false;
-		for (const auto &entry : peer.statements)
-		{
-			hasStatement = hasStatement || compat::validChatterScheduleEntry(entry);
-		}
-		if (!hasStatement)
+		if (!peer.hasPending && !compat::validChatterScheduleEntry(peer.speaking))
 			continue;
 		const int peerTeam = services_->observation_resolvePlayerTeam(peer.entity);
 		if (!ownCurrent() || !samePeer(peer, snapshotPeer(peerIndex)))
@@ -168,7 +157,7 @@ compat::ChatterScheduleEntry BotBehaviorRuntime::activeTeamChatter(std::size_t i
 		{
 			if (!compat::validChatterScheduleEntry(entry))
 			{
-				return;
+				return true;
 			}
 			if (!(entry.owner.actor == context.actor) || entry.owner.entityGeneration != context.entityGeneration ||
 				entry.owner.frame.mapGeneration != context.frame.mapGeneration ||
@@ -177,12 +166,32 @@ compat::ChatterScheduleEntry BotBehaviorRuntime::activeTeamChatter(std::size_t i
 				entry.connection != peer.connection ||
 				entry.ownerRevision != actors_[peerIndex].confirmedSpeech.lifetimeRevision())
 			{
-				return;
+				return true;
 			}
-			entries[count++] = entry;
+			return selection.consider(entry);
 		};
-		for (const auto &entry : peer.statements)
-			append(entry);
+		// Retained speech retains its native insertion position among pending nodes.
+		bool visitedSpeaker = false;
+		actors_[peerIndex].outgoingRadioSchedulers.statements().visitSchedules(
+			[&](const compat::ChatterScheduleEntry &entry)
+			{
+				if (!visitedSpeaker && compat::validChatterScheduleEntry(peer.speaking) &&
+					(peer.speaking.start < entry.start ||
+						(peer.speaking.start == entry.start && peer.speaking.order < entry.order)))
+				{
+					visitedSpeaker = true;
+					if (!append(peer.speaking))
+						return false;
+				}
+				if (compat::sameChatterStatement(entry, peer.speaking))
+				{
+					visitedSpeaker = true;
+					return append(peer.speaking);
+				}
+				return append(entry);
+			});
+		if (!visitedSpeaker)
+			append(peer.speaking);
 	}
 	// Exclusion is part of the receipt: later callbacks may requalify an earlier peer.
 	if (!ownCurrent())
@@ -197,7 +206,7 @@ compat::ChatterScheduleEntry BotBehaviorRuntime::activeTeamChatter(std::size_t i
 		}
 	}
 	*current = true;
-	return compat::selectActiveChatter(entries.data(), count, peers[index].context.now);
+	return selection.finish(peers[index].context.now);
 }
 
 void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index)
@@ -241,7 +250,7 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index)
 	if (outgoingRadioRound_ != services_->service_lifecycle().roundGeneration())
 	{
 		outgoingRadioRound_ = services_->service_lifecycle().roundGeneration();
-		fill_outgoingRadioSchedulers(compat::OutgoingRadioScheduler{});
+		// Round recognition already cleared old nodes before current-round event admission.
 		fill_outgoingRadioAttempts(0U);
 		fill_outgoingRadioAttemptTimes(-1.0f);
 		fill_outgoingRadioAttemptChoices(compat::RadioMenuChoice{});
@@ -330,7 +339,8 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index)
 		actors_[index].bombSearchTargets.frame.mapGeneration == input.frame.mapGeneration &&
 		actors_[index].bombSearchTargets.frame.roundGeneration == input.frame.roundGeneration &&
 		decision.target.entity == actors_[index].bombSearchTargets.entity;
-	const bool voiceMode = !verbosity || (std::strcmp(verbosity, "off") != 0 && std::strcmp(verbosity, "radio") != 0);
+	const auto mode = compat::parseChatterVerbosity(verbosity);
+	const bool voiceMode = mode != compat::ChatterVerbosity::Radio;
 	auto *voice = voiceMode ? chatterBank(index) : nullptr;
 	if (!receiptCurrent())
 		return;
@@ -339,60 +349,11 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index)
 		for (unsigned phrase = 1U; phrase < static_cast<unsigned>(compat::ChatterPhrase::Count); ++phrase)
 			if (voice->has(static_cast<compat::ChatterPhrase>(phrase)))
 				voicePhrases |= 1U << phrase;
-	compat::EnemyCountSpeechInput countInput{};
-	countInput.actor = input.actor;
-	countInput.frame = input.frame;
-	countInput.entityGeneration =
-		handle.entity->serialnumber >= 0 ? static_cast<std::uint32_t>(handle.entity->serialnumber) + 1U : 0;
-	countInput.now = input.now;
-	countInput.alive = input.alive;
-	countInput.roundOver = input.roundOver;
-	countInput.friendsRemaining = input.friendCount;
-	countInput.enemiesRemaining = input.enemiesRemaining;
-	countInput.teamBusyUntil = input.teamBusyUntil;
-	countInput.teamReportingRemaining = compat::isRemainingEnemyPhrase(input.teamCurrentPhrase);
-	// REMAINING_ENEMY_COUNT is a context statement, not an Important phrase.
-	countInput.enabled = !verbosity || (std::strcmp(verbosity, "off") != 0 && std::strcmp(verbosity, "minimal") != 0);
 	input.admission = chatterAdmission(index);
-	input.canStart = false;
-	auto output = actors_[index].outgoingRadioSchedulers.update(input, outgoingChatterCatalog_, voicePhrases);
-	// All topics maintain lifetime before arbitration; only the selected topic
-	// evaluates speech context, including when an older topic is still delayed.
-	countInput.canStart = false;
-	actors_[index].enemyCountChatter.update(countInput);
-	compat::KillPraiseSpeechInput praiseInput{};
-	praiseInput.actor = input.actor;
-	praiseInput.frame = input.frame;
-	praiseInput.entityGeneration = countInput.entityGeneration;
-	praiseInput.now = input.now;
-	praiseInput.alive = input.alive;
-	praiseInput.roundOver = input.roundOver;
-	praiseInput.friendsRemaining = input.friendCount;
-	praiseInput.teamBusyUntil = input.teamBusyUntil;
-	praiseInput.teamPraising = compat::isIntentionPhrase(input.teamCurrentPhrase);
-	praiseInput.allowedPhrases = actors_[index].killPraise.active()
-		? allowedFixedChatterPhrases(
-			  verbosity, compat::ChatterPhrase::NiceShot, compat::ChatterPhrase::NiceShotCommander)
-		: 0;
-	if (!receiptCurrent())
-		return;
-	praiseInput.canStart = false;
-	actors_[index].killPraise.update(praiseInput);
-	compat::FriendDeathChatterSpeechInput deathInput{};
-	deathInput.context = {input.actor, input.frame, countInput.entityGeneration, input.now, input.alive};
-
-	deathInput.allowedPhrases = actors_[index].friendDeathChatter.active()
-		? allowedFixedChatterPhrases(
-			  verbosity, compat::ChatterPhrase::CommanderDown, compat::ChatterPhrase::KilledFriend)
-		: 0;
-	if (!receiptCurrent())
-		return;
-	deathInput.teamBusyUntil = input.teamBusyUntil;
-	deathInput.teamPhrase = input.teamCurrentPhrase;
-	deathInput.friendsRemaining = input.friendCount;
-	deathInput.roundOver = input.roundOver;
-	deathInput.canStart = false;
-	(void)actors_[index].friendDeathChatter.update(deathInput);
+	input.verbosity = mode;
+	input.speaking = actors_[index].confirmedSpeech.scheduledStatement();
+	actors_[index].outgoingRadioSchedulers.prepare(input, outgoingChatterCatalog_);
+	compat::OutgoingRadioDecision output{};
 	const bool direct = actors_[index].outgoingRadioSchedulers.hasDirect();
 	bool scanCurrent = true;
 	compat::ChatterScheduleEntry selectedStatement{};
@@ -405,238 +366,175 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index)
 	if (direct)
 	{
 		// Escape direct radio has no dependency on another bot's statement scan.
-		(void)actors_[index].confirmedSpeech.completeIfElapsed(deathInput.context, input.friendCount == 0);
+		(void)actors_[index].confirmedSpeech.completeIfElapsed(receiptContext, input.friendCount == 0);
 	}
-	const auto discardRedundant = [&](const compat::ChatterScheduleEntry &friendSay)
+	const auto action = [&]()
 	{
-		if (friendSay.source == compat::ChatterScheduleSource::None || friendSay.owner.actor == input.actor)
-			return;
-		auto &actor = actors_[index];
-		if (compat::chatterStatementsRedundant(actor.outgoingRadioSchedulers.scheduledStatement(), friendSay))
-			actor.outgoingRadioSchedulers.discardStatement();
-		if (compat::chatterStatementsRedundant(actor.enemyCountChatter.scheduledStatement(), friendSay))
-			actor.enemyCountChatter.discard();
-		if (compat::chatterStatementsRedundant(actor.killPraise.scheduledStatement(), friendSay))
-			actor.killPraise.discard();
-		for (const auto &entry : actor.friendDeathChatter.scheduledStatements())
+		const bool ownSelected = selectedStatement.source != compat::ChatterScheduleSource::None &&
+			selectedStatement.owner.actor == input.actor;
+		if (ownSelected && selectedStatement.speaking)
 		{
-			if (compat::chatterStatementsRedundant(entry, friendSay))
-				actor.friendDeathChatter.discardSource(entry.source);
-		}
-	};
-	discardRedundant(selectedStatement);
-	const bool ownSelected =
-		selectedStatement.source != compat::ChatterScheduleSource::None && selectedStatement.owner.actor == input.actor;
-	if (ownSelected && selectedStatement.speaking)
-	{
-		if (actors_[index].confirmedSpeech.completeIfElapsed(deathInput.context, input.friendCount == 0))
-		{
-			const auto friendSay = activeTeamChatter(index, input.team, &scanCurrent);
-			if (!scanCurrent)
+			(void)actors_[index].confirmedSpeech.completeIfElapsed(receiptContext, input.friendCount == 0);
+			if (!direct)
 				return;
-			discardRedundant(friendSay);
 		}
-		if (!direct)
+		if (!direct && !ownSelected)
 			return;
-	}
-	if (!direct && !ownSelected)
-		return;
-	using SpeechOwner = compat::ChatterScheduleSource;
-	const auto owner = direct ? SpeechOwner::Generic : selectedStatement.source;
-	if (owner == SpeechOwner::Generic)
-	{
+		const auto selectedHandle = actors_[index].outgoingRadioSchedulers.statements().handle(selectedStatement);
 		input.canStart = true;
-		output = actors_[index].outgoingRadioSchedulers.update(input, outgoingChatterCatalog_, voicePhrases);
-	}
-	const bool countChosen = owner == SpeechOwner::EnemyCount;
-	const bool praiseChosen = owner == SpeechOwner::KillPraise;
-	const bool deathChosen = owner == SpeechOwner::CommanderDown || owner == SpeechOwner::KilledFriend;
-	countInput.canStart = countChosen;
-	praiseInput.canStart = praiseChosen;
-	const auto countOutput = actors_[index].enemyCountChatter.update(countInput);
-	const auto praiseOutput = actors_[index].killPraise.update(praiseInput);
-	deathInput.canStart = deathChosen;
-	const auto deathOutput = actors_[index].friendDeathChatter.update(deathInput);
-	if (countChosen || praiseChosen || deathChosen)
-	{
-		output = {};
-		const auto phrase = countChosen && countOutput.ready
-			? compat::remainingEnemyPhrase(countOutput.enemiesRemaining)
-			: praiseChosen && praiseOutput.ready ? praiseOutput.phrase
-			: deathChosen && deathOutput.ready	 ? deathOutput.phrase
-												 : compat::ChatterPhrase::None;
-		if (phrase != compat::ChatterPhrase::None)
+		output =
+			actors_[index].outgoingRadioSchedulers.decide(input, outgoingChatterCatalog_, voicePhrases, selectedHandle);
+		const auto discardOutput = [&]()
 		{
-			const auto choice = outgoingChatterCatalog_.lookup(phrase);
-			const bool available = choice.menu != 0 || (voicePhrases & (1U << static_cast<unsigned>(phrase))) != 0;
-			output = {available ? compat::OutgoingRadioStatus::Ready : compat::OutgoingRadioStatus::MissingPhrase,
-				phrase, choice.menu, choice.slot, 0};
-		}
-	}
-	const auto discardOutput = [&]()
-	{
-		if (deathChosen)
-			actors_[index].friendDeathChatter.discard(deathOutput);
-		else if (praiseChosen)
-			actors_[index].killPraise.discard();
-		else if (countChosen)
-			actors_[index].enemyCountChatter.discard();
-		else if (direct)
-			actors_[index].outgoingRadioSchedulers.discardDirect();
-		else
-			actors_[index].outgoingRadioSchedulers.discardStatement();
-	};
-	const auto confirmOutput = [&]()
-	{
-		if (deathChosen)
-			actors_[index].friendDeathChatter.discard(deathOutput);
-		else if (praiseChosen)
-			actors_[index].killPraise.discard();
-		else if (countChosen)
-			actors_[index].enemyCountChatter.discard();
-		else
+			if (direct)
+				actors_[index].outgoingRadioSchedulers.discardDirect(output.directToken);
+			else
+				actors_[index].outgoingRadioSchedulers.statements().erase(selectedHandle);
+		};
+		const auto confirmOutput = [&]()
+		{
 			actors_[index].outgoingRadioSchedulers.confirmSent(input, output);
-	};
-	const bool suppressNoise = verbosity &&
-		(std::strcmp(verbosity, "off") == 0 ||
-			(std::strcmp(verbosity, "minimal") == 0 &&
-				!outgoingChatterCatalog_.important(compat::ChatterPhrase::HeardNoise)));
-	if (suppressNoise)
-	{
-		actors_[index].outgoingRadioSchedulers.discardNoiseReport(input.noiseReport);
-	}
-	if (verbosity != nullptr && std::strcmp(verbosity, "off") == 0 && output.phrase != compat::ChatterPhrase::None)
-	{
-		discardOutput();
-		return;
-	}
-	if (verbosity != nullptr && std::strcmp(verbosity, "minimal") == 0 &&
-		output.phrase != compat::ChatterPhrase::None && !outgoingChatterCatalog_.important(output.phrase))
-	{
-		discardOutput();
-		return;
-	}
-	if (!direct)
-		actors_[index].confirmedSpeech.prepareSchedule(selectedStatement);
-	if (output.status == compat::OutgoingRadioStatus::Ready && voice && output.phrase != compat::ChatterPhrase::None)
-	{
-		float duration = 0.0f;
+		};
+		if (!direct)
+			actors_[index].confirmedSpeech.prepareSchedule(selectedStatement);
+		if (output.status == compat::OutgoingRadioStatus::Ready && voice &&
+			output.phrase != compat::ChatterPhrase::None)
+		{
+			float duration = 0.0f;
+			const auto speechRevision = actors_[index].confirmedSpeech.revision();
+			const bool sent = sendChatterVoice(index, output.phrase,
+				output.phrase == compat::ChatterPhrase::EnemySpotted ? input.visibleEnemyCount : -1, *voice, &duration,
+				output.place);
+			if (!actors_[index].confirmedSpeech.canComplete(receiptContext, reactionContext(index), speechRevision))
+				return;
+			if (sent)
+			{
+				if (!actors_[index].confirmedSpeech.record(receiptContext, output.phrase,
+						input.now + duration + ASTRABOT_BOT_BEHAVIOR_RADIO_NEXT_PHRASE_GAP_SECONDS, speechRevision))
+					return;
+				confirmOutput();
+				actors_[index].outgoingRadioAttempts = 0U;
+				actors_[index].outgoingRadioAttemptChoices = {};
+				outgoingTeamLastSpeech_[input.team] = input.now;
+				outgoingTeamBusyUntil_[input.team] =
+					input.now + duration + ASTRABOT_BOT_BEHAVIOR_RADIO_NEXT_PHRASE_GAP_SECONDS;
+				outgoingTeamCurrentPhrase_[input.team] = output.phrase;
+				outgoingTeamCurrentPlace_[input.team] = output.place;
+				return;
+			}
+		}
+		if (output.status == compat::OutgoingRadioStatus::Ready && output.menu == 0)
+		{
+			output.status = compat::OutgoingRadioStatus::MissingPhrase;
+			discardOutput();
+		}
+		if (output.status == compat::OutgoingRadioStatus::MissingPhrase)
+		{
+			discardOutput();
+			const auto phrase = static_cast<unsigned>(output.phrase);
+			if (phrase < outgoingMissingPhraseLogged_.size() && !outgoingMissingPhraseLogged_[phrase])
+			{
+				outgoingMissingPhraseLogged_[phrase] = true;
+				if (gpMetaUtilFuncs != nullptr && gpMetaUtilFuncs->pfnLogConsole != nullptr &&
+					services_->service_pluginId() != nullptr)
+					gpMetaUtilFuncs->pfnLogConsole(services_->service_pluginId(),
+						"outgoing chatter unavailable phrase=%s "
+						"host_radio_mapping=%d voice_bank=unavailable",
+						compat::ChatterRadioCatalog::name(output.phrase), outgoingChatterCatalog_.loaded() ? 1 : 0);
+			}
+			return;
+		}
+		if (output.status != compat::OutgoingRadioStatus::Ready)
+			return;
+		const char *menu = output.menu == kCommandRadioMenu ? "radio1"
+			: output.menu == kGroupRadioMenu				? "radio2"
+															: "radio3";
+		if (actors_[index].outgoingRadioAttemptGenerations != handle.actor.actorGeneration ||
+			actors_[index].outgoingRadioAttemptChoices.menu != output.menu ||
+			actors_[index].outgoingRadioAttemptChoices.slot != output.slot)
+		{
+			actors_[index].outgoingRadioAttemptGenerations = handle.actor.actorGeneration;
+			actors_[index].outgoingRadioAttemptChoices = {output.menu, output.slot};
+			actors_[index].outgoingRadioAttempts = 0U;
+			actors_[index].outgoingRadioAttemptTimes = -1.0f;
+		}
+		if (actors_[index].outgoingRadioAttempts >= kMaximumRadioAttempts)
+		{
+			discardOutput();
+			actors_[index].outgoingRadioAttemptChoices = {};
+			if (gpMetaUtilFuncs != nullptr && gpMetaUtilFuncs->pfnLogConsole != nullptr &&
+				services_->service_pluginId() != nullptr)
+				gpMetaUtilFuncs->pfnLogConsole(services_->service_pluginId(),
+					"outgoing radio receipt unavailable bot=%u menu=%d slot=%d attempts=3",
+					static_cast<unsigned>(handle.actor.slot), output.menu, output.slot);
+			return;
+		}
+		if (actors_[index].outgoingRadioAttemptTimes >= 0.0f &&
+			services_->service_globals()->time - actors_[index].outgoingRadioAttemptTimes <
+				ASTRABOT_BOT_BEHAVIOR_RADIO_RADIO_RECEIPT_RETRY_SECONDS)
+			return;
+		actors_[index].outgoingRadioAttemptTimes = services_->service_globals()->time;
+		++actors_[index].outgoingRadioAttempts;
 		const auto speechRevision = actors_[index].confirmedSpeech.revision();
-		const bool sent = sendChatterVoice(index, output.phrase,
-			countChosen || praiseChosen || deathChosen ? -1 : input.visibleEnemyCount, *voice, &duration, output.place);
+		const std::uint32_t receiptBefore = actors_[index].outgoingRadioReceipts;
+		char slot[] = {static_cast<char>('0' + output.slot), '\0'};
 		if (!actors_[index].confirmedSpeech.canComplete(receiptContext, reactionContext(index), speechRevision))
 			return;
-		if (sent)
+		if (output.phrase != compat::ChatterPhrase::None &&
+			!actors_[index].confirmedSpeech.beginSpeaking(receiptContext, output.phrase,
+				input.now + ASTRABOT_BOT_BEHAVIOR_RADIO_TEAM_SPEECH_BUSY_SECONDS, speechRevision))
 		{
-			if (!actors_[index].confirmedSpeech.record(deathInput.context, output.phrase,
-					input.now + duration + ASTRABOT_BOT_BEHAVIOR_RADIO_NEXT_PHRASE_GAP_SECONDS, speechRevision))
+			return;
+		}
+		const bool opened = services_->command_dispatchClientCommand(handle.entity, menu, nullptr);
+		if (!actors_[index].confirmedSpeech.canComplete(receiptContext, reactionContext(index), speechRevision))
+			return;
+		const bool menuSelected = opened && services_->command_dispatchClientCommand(handle.entity, "menuselect", slot);
+		if (!actors_[index].confirmedSpeech.canComplete(receiptContext, reactionContext(index), speechRevision))
+			return;
+		if (opened)
+			(void)services_->command_dispatchClientCommand(handle.entity, "menuselect", "10");
+		// A client command reaching the GameDLL does not prove that its radio
+		// quota/cooldown accepted it. Only public SendAudio confirms a sent phrase.
+		if (!actors_[index].confirmedSpeech.canComplete(receiptContext, reactionContext(index), speechRevision))
+			return;
+		if (menuSelected && actors_[index].outgoingRadioReceipts != receiptBefore)
+		{
+			if (output.phrase != compat::ChatterPhrase::None &&
+				!actors_[index].confirmedSpeech.record(receiptContext, output.phrase,
+					services_->service_globals()->time + ASTRABOT_BOT_BEHAVIOR_RADIO_TEAM_SPEECH_BUSY_SECONDS,
+					speechRevision))
 				return;
 			confirmOutput();
 			actors_[index].outgoingRadioAttempts = 0U;
 			actors_[index].outgoingRadioAttemptChoices = {};
-			outgoingTeamLastSpeech_[input.team] = input.now;
-			outgoingTeamBusyUntil_[input.team] =
-				input.now + duration + ASTRABOT_BOT_BEHAVIOR_RADIO_NEXT_PHRASE_GAP_SECONDS;
-			outgoingTeamCurrentPhrase_[input.team] = output.phrase;
-			outgoingTeamCurrentPlace_[input.team] = output.place;
+			outgoingTeamLastSpeech_[input.team] = services_->service_globals()->time;
+			if (output.phrase != compat::ChatterPhrase::None)
+			{
+				outgoingTeamBusyUntil_[input.team] =
+					services_->service_globals()->time + ASTRABOT_BOT_BEHAVIOR_RADIO_TEAM_SPEECH_BUSY_SECONDS;
+				outgoingTeamCurrentPhrase_[input.team] = output.phrase;
+				outgoingTeamCurrentPlace_[input.team] = output.place;
+			}
+		}
+	};
+	action();
+	const auto currentContext = reactionContext(index);
+	if (!compat::sameChatterReceipt(receiptContext, currentContext) ||
+		services_->service_lifecycle().slotGeneration(receiptContext.actor.slot) != receiptConnection ||
+		actors_[index].confirmedSpeech.lifetimeRevision() != input.admission.ownerRevision)
+		return;
+	compat::ChatterScheduleEntry teammate{};
+	if (!direct)
+	{
+		teammate = activeTeamChatter(index, input.team, &scanCurrent);
+		if (!scanCurrent)
 			return;
-		}
+		if (teammate.owner.actor == input.actor)
+			teammate = {};
 	}
-	if (output.status == compat::OutgoingRadioStatus::Ready && output.menu == 0)
-	{
-		output.status = compat::OutgoingRadioStatus::MissingPhrase;
-		discardOutput();
-	}
-	if (output.status == compat::OutgoingRadioStatus::MissingPhrase)
-	{
-		if (countChosen || praiseChosen || deathChosen)
-			discardOutput();
-		const auto phrase = static_cast<unsigned>(output.phrase);
-		if (phrase < outgoingMissingPhraseLogged_.size() && !outgoingMissingPhraseLogged_[phrase])
-		{
-			outgoingMissingPhraseLogged_[phrase] = true;
-			if (gpMetaUtilFuncs != nullptr && gpMetaUtilFuncs->pfnLogConsole != nullptr &&
-				services_->service_pluginId() != nullptr)
-				gpMetaUtilFuncs->pfnLogConsole(services_->service_pluginId(),
-					"outgoing chatter unavailable phrase=%s "
-					"host_radio_mapping=%d voice_bank=unavailable",
-					compat::ChatterRadioCatalog::name(output.phrase), outgoingChatterCatalog_.loaded() ? 1 : 0);
-		}
-		return;
-	}
-	if (output.status != compat::OutgoingRadioStatus::Ready)
-		return;
-	const char *menu = output.menu == kCommandRadioMenu ? "radio1"
-		: output.menu == kGroupRadioMenu				? "radio2"
-														: "radio3";
-	if (actors_[index].outgoingRadioAttemptGenerations != handle.actor.actorGeneration ||
-		actors_[index].outgoingRadioAttemptChoices.menu != output.menu ||
-		actors_[index].outgoingRadioAttemptChoices.slot != output.slot)
-	{
-		actors_[index].outgoingRadioAttemptGenerations = handle.actor.actorGeneration;
-		actors_[index].outgoingRadioAttemptChoices = {output.menu, output.slot};
-		actors_[index].outgoingRadioAttempts = 0U;
-		actors_[index].outgoingRadioAttemptTimes = -1.0f;
-	}
-	if (actors_[index].outgoingRadioAttempts >= kMaximumRadioAttempts)
-	{
-		discardOutput();
-		actors_[index].outgoingRadioAttemptChoices = {};
-		if (gpMetaUtilFuncs != nullptr && gpMetaUtilFuncs->pfnLogConsole != nullptr &&
-			services_->service_pluginId() != nullptr)
-			gpMetaUtilFuncs->pfnLogConsole(services_->service_pluginId(),
-				"outgoing radio receipt unavailable bot=%u menu=%d slot=%d attempts=3",
-				static_cast<unsigned>(handle.actor.slot), output.menu, output.slot);
-		return;
-	}
-	if (actors_[index].outgoingRadioAttemptTimes >= 0.0f &&
-		services_->service_globals()->time - actors_[index].outgoingRadioAttemptTimes <
-			ASTRABOT_BOT_BEHAVIOR_RADIO_RADIO_RECEIPT_RETRY_SECONDS)
-		return;
-	actors_[index].outgoingRadioAttemptTimes = services_->service_globals()->time;
-	++actors_[index].outgoingRadioAttempts;
-	const auto speechRevision = actors_[index].confirmedSpeech.revision();
-	const std::uint32_t receiptBefore = actors_[index].outgoingRadioReceipts;
-	char slot[] = {static_cast<char>('0' + output.slot), '\0'};
-	if (!actors_[index].confirmedSpeech.canComplete(receiptContext, reactionContext(index), speechRevision))
-		return;
-	if (output.phrase != compat::ChatterPhrase::None &&
-		!actors_[index].confirmedSpeech.beginSpeaking(deathInput.context, output.phrase,
-			input.now + ASTRABOT_BOT_BEHAVIOR_RADIO_TEAM_SPEECH_BUSY_SECONDS, speechRevision))
-	{
-		return;
-	}
-	const bool opened = services_->command_dispatchClientCommand(handle.entity, menu, nullptr);
-	if (!actors_[index].confirmedSpeech.canComplete(receiptContext, reactionContext(index), speechRevision))
-		return;
-	const bool menuSelected = opened && services_->command_dispatchClientCommand(handle.entity, "menuselect", slot);
-	if (!actors_[index].confirmedSpeech.canComplete(receiptContext, reactionContext(index), speechRevision))
-		return;
-	if (opened)
-		(void)services_->command_dispatchClientCommand(handle.entity, "menuselect", "10");
-	// A client command reaching the GameDLL does not prove that its radio
-	// quota/cooldown accepted it. Only public SendAudio confirms a sent phrase.
-	if (!actors_[index].confirmedSpeech.canComplete(receiptContext, reactionContext(index), speechRevision))
-		return;
-	if (menuSelected && actors_[index].outgoingRadioReceipts != receiptBefore)
-	{
-		if (output.phrase != compat::ChatterPhrase::None &&
-			!actors_[index].confirmedSpeech.record(deathInput.context, output.phrase,
-				services_->service_globals()->time + ASTRABOT_BOT_BEHAVIOR_RADIO_TEAM_SPEECH_BUSY_SECONDS,
-				speechRevision))
-			return;
-		confirmOutput();
-		actors_[index].outgoingRadioAttempts = 0U;
-		actors_[index].outgoingRadioAttemptChoices = {};
-		outgoingTeamLastSpeech_[input.team] = services_->service_globals()->time;
-		if (output.phrase != compat::ChatterPhrase::None)
-		{
-			outgoingTeamBusyUntil_[input.team] =
-				services_->service_globals()->time + ASTRABOT_BOT_BEHAVIOR_RADIO_TEAM_SPEECH_BUSY_SECONDS;
-			outgoingTeamCurrentPhrase_[input.team] = output.phrase;
-			outgoingTeamCurrentPlace_[input.team] = output.place;
-		}
-	}
+	input.speaking = actors_[index].confirmedSpeech.scheduledStatement();
+	actors_[index].outgoingRadioSchedulers.maintain(input, teammate);
 }
 
 void BotBehaviorRuntime::observeRadioReceipt(std::size_t index)

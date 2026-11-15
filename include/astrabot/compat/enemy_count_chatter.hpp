@@ -2,7 +2,7 @@
 #define ASTRABOT_COMPAT_ENEMY_COUNT_CHATTER_HPP
 
 #include "astrabot/compat/random_source.hpp"
-#include "astrabot/compat/chatter_schedule.hpp"
+#include "astrabot/compat/chatter_statements.hpp"
 #include "astrabot/world/world_snapshot.hpp"
 #include <cmath>
 
@@ -48,6 +48,37 @@ struct EnemyCountSpeechDecision
 	float startTime = 0;
 };
 
+inline ChatterStatementRequest prepareRemainingEnemyStatement(
+	const EnemyCountDeathInput &in, ICompatibilityRandomSource &rng)
+{
+	constexpr int kMaximumNearbyEnemies = 1;
+	constexpr float kMinimumDelaySeconds = 2.0f;
+	constexpr float kMaximumDelaySeconds = 4.0f;
+	if (!ReactionContext{in.actor, in.frame, in.entityGeneration, in.now, in.alive}.valid() || !in.alive ||
+		!in.victimEnemy || !in.killerFriendly || in.nearbyEnemies < 0 || in.nearbyEnemies > kMaximumNearbyEnemies)
+	{
+		return {};
+	}
+	// EnemiesRemaining draws before AddStatement checks mute and redundancy.
+	const auto delay = rng.nextFloat(RandomRequest::floatRequest("RNG-CSBOT-ENEMIES-REMAINING-DELAY",
+		{in.actor.slot, in.actor.generation}, in.timing, kMinimumDelaySeconds, kMaximumDelaySeconds));
+	if (delay.status != RandomStatus::Ok || !std::isfinite(delay.value) || delay.value < kMinimumDelaySeconds ||
+		delay.value > kMaximumDelaySeconds)
+	{
+		return {};
+	}
+	ChatterStatementRequest request{};
+	request.source = ChatterScheduleSource::EnemyCount;
+	request.topic = ChatterStatementTopic::EnemiesRemaining;
+	request.content = ChatterStatementContent::RemainingEnemies;
+	request.created = in.now;
+	request.start = in.now + delay.value;
+	request.readyAt = request.start;
+	request.expires = in.now + 5.0f;
+	return request;
+}
+
+// Legacy standalone policy: production pending ownership is ChatterPendingQueue.
 // One pending statement is sufficient: native remaining-count topics are redundant.
 class EnemyCountChatterPolicy
 {

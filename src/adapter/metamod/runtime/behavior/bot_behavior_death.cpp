@@ -38,6 +38,7 @@ void BotBehaviorRuntime::observePlayerDeath(
 		int serial = -1;
 		std::uint32_t actorGeneration = 0;
 		world::ActorKey connection{};
+		compat::ChatterScheduleAdmission admission{};
 	};
 	std::array<ObserverReceipt, kMaximumClientSlots> observers{};
 	for (std::size_t index = 0; index < observers.size(); ++index)
@@ -46,7 +47,8 @@ void BotBehaviorRuntime::observePlayerDeath(
 		if (services_->service_managedBotSlots()[index] && handle.entity)
 		{
 			observers[index] = {handle.entity, handle.entity->serialnumber, handle.actor.actorGeneration,
-				{static_cast<std::uint32_t>(index + 1), life.slotGeneration(static_cast<std::uint32_t>(index + 1))}};
+				{static_cast<std::uint32_t>(index + 1), life.slotGeneration(static_cast<std::uint32_t>(index + 1))},
+				chatterAdmission(index)};
 		}
 	}
 	const float receiptTime = globals->time;
@@ -76,7 +78,7 @@ void BotBehaviorRuntime::observePlayerDeath(
 			++alive[team];
 	}
 	const char *mode = engine->pfnCVarGetString ? engine->pfnCVarGetString("bot_chatter") : nullptr;
-	const bool enabled = !mode || (std::strcmp(mode, "off") != 0 && std::strcmp(mode, "minimal") != 0);
+	const auto verbosity = compat::parseChatterVerbosity(mode);
 	for (std::size_t index = 0; index < actors_.size() && index < static_cast<std::size_t>(maximum); ++index)
 	{
 		const auto &handle = services_->service_managedBotHandles()[index];
@@ -85,7 +87,10 @@ void BotBehaviorRuntime::observePlayerDeath(
 		const auto observerCurrent = [&]()
 		{
 			return self && original.entity == self && original.serial == self->serialnumber &&
-				handle.actor.actorGeneration == original.actorGeneration && receiptConnectionCurrent(original.connection);
+				handle.actor.actorGeneration == original.actorGeneration &&
+				receiptConnectionCurrent(original.connection) &&
+				compat::sameChatterReceipt(original.admission.owner, reactionContext(index)) &&
+				original.admission.ownerRevision == actors_[index].confirmedSpeech.lifetimeRevision();
 		};
 		if (!observerCurrent() || !services_->service_managedBotSlots()[index] || !player(self) || (recipient && recipient != self) ||
 			index + 1 == static_cast<std::size_t>(victimSlot) || handle.actor.actorGeneration == 0 ||
@@ -121,15 +126,26 @@ void BotBehaviorRuntime::observePlayerDeath(
 		in.alive = true;
 		in.victimEnemy = true;
 		in.killerFriendly = true;
-		in.enabled = enabled;
+		in.enabled = true;
 		in.nearbyEnemies =
 			actors_[index]
 				.outgoingRadioContactMemory.counts(in.actor, in.frame, in.now, alive[killerTeam] - 1, alive[victimTeam])
 				.enemies;
 		in.timing = {services_->command_managedBotCommandSequences(index), 0U,
 			services_->service_managedBotFullUpdateSequences()[index]};
-		in.admission = chatterAdmission(index);
-		actors_[index].enemyCountChatter.observe(in, services_->service_compatibilityRandomSource());
+		in.admission = original.admission;
+		const auto remaining =
+			compat::prepareRemainingEnemyStatement(in, services_->service_compatibilityRandomSource());
+		if (!observerCurrent())
+			continue;
+		if (remaining.source != compat::ChatterScheduleSource::None)
+		{
+			ensureOutgoingChatterCatalog();
+			if (!observerCurrent())
+				continue;
+			actors_[index].outgoingRadioSchedulers.statements().admit(remaining, original.admission,
+				outgoingChatterCatalog_, verbosity, actors_[index].confirmedSpeech.scheduledStatement());
+		}
 		if (in.nearbyEnemies > 1 || killer == self)
 			continue;
 		if (self->serialnumber != selfSerial || victim->serialnumber != victimSerial ||
@@ -153,9 +169,6 @@ void BotBehaviorRuntime::observePlayerDeath(
 		praise.victimVisible = true;
 		praise.careerKnown = engine->pfnIsCareerMatch != nullptr;
 		praise.career = !praise.killerBot && praise.careerKnown && engine->pfnIsCareerMatch() != FALSE;
-		praise.allowedPhrases = allowedFixedChatterPhrases(mode, compat::ChatterPhrase::NiceShot, compat::ChatterPhrase::NiceShotCommander);
-		praise.intentionPending = actors_[index].friendDeathChatter.hasCommander(reactionContext(index)) ||
-			actors_[index].confirmedSpeech.blocks(compat::ChatterPhrase::NiceShot, reactionContext(index));
 		if (!services_->service_lifecycle().isMapActive() ||
 			frame.mapGeneration != services_->service_lifecycle().mapGeneration() ||
 			frame.roundGeneration != services_->service_lifecycle().roundGeneration() ||
@@ -164,8 +177,19 @@ void BotBehaviorRuntime::observePlayerDeath(
 			killer->serialnumber != killerSerial || services_->service_managedBotHandles()[index].entity != self ||
 			services_->service_managedBotHandles()[index].actor.actorGeneration != in.actor.generation)
 			continue;
-		praise.admission = chatterAdmission(index);
-		actors_[index].killPraise.observe(praise, services_->service_compatibilityRandomSource());
+		praise.admission = original.admission;
+		const auto praiseStatement =
+			compat::prepareKillPraiseStatement(praise, services_->service_compatibilityRandomSource());
+		if (!observerCurrent())
+			continue;
+		if (praiseStatement.source != compat::ChatterScheduleSource::None)
+		{
+			ensureOutgoingChatterCatalog();
+			if (!observerCurrent())
+				continue;
+			actors_[index].outgoingRadioSchedulers.statements().admit(praiseStatement, original.admission,
+				outgoingChatterCatalog_, verbosity, actors_[index].confirmedSpeech.scheduledStatement());
+		}
 	}
 }
 bool BotBehaviorRuntime::killVictimVisible(

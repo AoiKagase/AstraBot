@@ -91,6 +91,8 @@ int main()
 	check(!policy.attend(in, rng), "nonfinite RNG emits nothing");
 
 	ChatterRadioCatalog catalog;
+	const char definitions[] = "Chatter HeardNoise End Chatter PlantingBomb Important End";
+	check(catalog.loadText(definitions, sizeof(definitions) - 1), "native default metadata defines voice-only phrases");
 	OutgoingRadioScheduler scheduler;
 	OutgoingRadioInput radio{};
 	radio.actor = {1, 2};
@@ -98,6 +100,7 @@ int main()
 	radio.now = 100;
 	radio.alive = true;
 	radio.team = 1;
+	radio.friendCount = 1;
 	radio.navRevision = 7;
 	radio.noiseReport = {true, radio.actor, radio.frame, 100, 9, 7};
 	const auto voice = 1U << static_cast<unsigned>(ChatterPhrase::HeardNoise);
@@ -112,8 +115,10 @@ int main()
 	check(out.status == OutgoingRadioStatus::Ready && out.phrase == ChatterPhrase::HeardNoise && out.place == 9,
 		"exactly five seconds remains speakable with original noise place");
 	radio.now = 105.01f;
+	radio.canStart = false;
 	check(scheduler.update(radio, catalog, voice).status == OutgoingRadioStatus::None,
-		"report expires strictly after five seconds");
+		"unselected owner maintenance expires report strictly after five seconds");
+	radio.canStart = true;
 	for (unsigned place : {0U, 9U})
 	{
 		OutgoingRadioScheduler duplicate;

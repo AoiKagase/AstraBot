@@ -65,6 +65,9 @@ int main()
 	check(out.status == OutgoingRadioStatus::Ready && out.menu == 2 && out.slot == 6,
 		"thirty second radio silence requests team report");
 	ChatterRadioCatalog empty;
+	const char defaultOnly[] = "Chatter WhereIsTheBomb End";
+	check(empty.loadText(defaultOnly, sizeof(defaultOnly) - 1),
+		"default definition exists independently of radio mapping/profile speakables");
 	OutgoingRadioScheduler unknown;
 	in.now = 1;
 	in.frame = {1, 2, 1};

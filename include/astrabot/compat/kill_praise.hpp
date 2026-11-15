@@ -66,6 +66,50 @@ struct KillPraiseDecision
 	float startTime = 0;
 };
 
+inline ChatterStatementRequest prepareKillPraiseStatement(
+	const KillPraiseDeathInput &in, ICompatibilityRandomSource &rng)
+{
+	constexpr int kMaximumNearbyEnemies = 1;
+	constexpr float kMinimumDelay = 2.0f;
+	constexpr float kMaximumDelay = 3.0f;
+	constexpr float kChanceMaximum = 100.0f;
+	constexpr float kBotPraiseChance = 40.0f;
+	if (!ReactionContext{in.actor, in.frame, in.entityGeneration, in.now, in.alive}.valid() || !in.alive ||
+		!in.victimEnemy || !in.killerFriendly || in.killerSelf || !in.victimVisible || in.nearbyEnemies < 0 ||
+		in.nearbyEnemies > kMaximumNearbyEnemies)
+		return {};
+	const auto delay = rng.nextFloat(RandomRequest::floatRequest(
+		"RNG-CSBOT-KILL-PRAISE-DELAY", {in.actor.slot, in.actor.generation}, in.timing, kMinimumDelay, kMaximumDelay));
+	if (delay.status != RandomStatus::Ok || !std::isfinite(delay.value) || delay.value < kMinimumDelay ||
+		delay.value > kMaximumDelay)
+		return {};
+	ChatterPhrase phrase = ChatterPhrase::None;
+	if (in.killerBot)
+	{
+		const auto chance = rng.nextFloat(RandomRequest::floatRequest(
+			"RNG-CSBOT-KILL-PRAISE-BOT-CHANCE", {in.actor.slot, in.actor.generation}, in.timing, 0.0f, kChanceMaximum));
+		if (chance.status != RandomStatus::Ok || !std::isfinite(chance.value) || chance.value < 0 ||
+			chance.value >= kBotPraiseChance)
+			return {};
+		phrase = ChatterPhrase::NiceShot;
+	}
+	else if (in.careerKnown)
+	{
+		phrase = in.career ? ChatterPhrase::NiceShotCommander : ChatterPhrase::NiceShotSir;
+	}
+	if (phrase == ChatterPhrase::None)
+		return {};
+	ChatterStatementRequest request{};
+	request.source = ChatterScheduleSource::KillPraise;
+	request.topic = ChatterStatementTopic::MyIntention;
+	request.phrase = phrase;
+	request.created = in.now;
+	request.start = in.now + delay.value;
+	request.readyAt = request.start;
+	request.expires = in.now + 3.0f;
+	return request;
+}
+
 class KillPraisePolicy
 {
 public:

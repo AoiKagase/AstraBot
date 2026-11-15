@@ -369,12 +369,6 @@ private:
 			actor.outgoingRadioAttempts = value;
 	}
 
-	void fill_outgoingRadioSchedulers(const compat::OutgoingRadioScheduler &value)
-	{
-		for (auto &actor : actors_)
-			actor.outgoingRadioSchedulers = value;
-	}
-
 	struct ObstacleLook
 	{
 		edict_t *entity = nullptr;
@@ -468,9 +462,6 @@ private:
 		compat::FootstepEquipmentReceipt closeFootstep{};
 		VoiceFeedback outgoingVoiceFeedback{};
 		compat::OutgoingRadioScheduler outgoingRadioSchedulers{};
-		compat::EnemyCountChatterPolicy enemyCountChatter{};
-		compat::KillPraisePolicy killPraise{};
-		compat::FriendDeathChatterPolicy friendDeathChatter{};
 		compat::ConfirmedChatterSpeech confirmedSpeech{};
 		compat::ChatterAdmissionClock chatterAdmissions{};
 		compat::KnifeRunTimer knifeRun{};
