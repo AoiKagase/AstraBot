@@ -1,6 +1,6 @@
 # Remaining CSBot implementation work
 
-Completed repair units01–06 are recorded below and in STATUS.md, including production compound playback and native one-shot standard/direct radio plus delayed acknowledgement reset and same-plan agreement conversion. Each unit retains its exact source/test/artifact/commit identity in its session RESULT.json.
+Completed repair units01–06 and the07A NAV-center prerequisite are recorded below and in STATUS.md, including production compound playback and native one-shot standard/direct radio plus delayed acknowledgement reset and same-plan agreement conversion. Original07 Help transmission/reaction remains unfinished;07A only repairs its required route geometry. Each unit retains its exact source/test/artifact/commit identity in its session RESULT.json.
 The user goal remains active: proceed through remaining features, commit and locally merge each.
 This is an evidence-driven queue, not a complete parity/completion claim. Historical P00 matrices are not current feature inventories.
 
@@ -31,7 +31,8 @@ The user requests01 onward in order, each repaired unit committed and locally FF
 | ID | 修正単位 | 現在の作業／残件 |
 |---|---|---|
 |06|同計画への同意|実装・オフライン検証済み。同じ場所はAgreeWithPlanへ変換して0.5〜1秒待機、別の場所は元の計画を3〜4秒延期。Windows135/135、Linux133/134（既知22のみ）。統合記録はunit06 session RESULT.json|
-|07|援護要請の行動連動|発話完了後Help伝達／反応|
+|07A（前提）|NAV経路の参照中心|実装・オフライン検証済み。CompatibilityのA*をCSBotの領域中心へ合わせ、距離0を保持。Windows135/135、Linux133/134（既知22のみ）。元の07は未完了。統合記録はunit07A session RESULT.json|
+|07|援護要請の行動連動|前提07A完了。本体の発話完了後Help伝達／反応と公開ラダー由来の経路情報を継続実装|
 |08|追従要請の行動連動|Follow伝達／距離・任務・性格|
 |09|防衛要請の行動連動|DefendHere伝達／防衛・隠れ場所|
 |10|状況報告応答|RequestReport／ReportingIn|
@@ -56,6 +57,6 @@ The user requests01 onward in order, each repaired unit committed and locally FF
 |---|---|---|
 |21|音声候補の乱数整合|Engine RNG shuffle近似とnative CRT順の差分|
 |22|Linux combat_policy|既知のweapon/skill/recoil chest閾値失敗|
-|23|全13状態と周辺の現行監査|NAV／戦闘／武器／目的／管理／profile／command。既存noise ground probeとnative ground-layer規則の差、chatter NAV線形検索の空間索引／性能も確認。追加差分は明示的に追加|
+|23|全13状態と周辺の現行監査|NAV／戦闘／武器／目的／管理／profile／command。既存noise ground probeとnative ground-layer規則の差、chatter NAV線形検索の空間索引／性能、他の経路コンテキストの参照中心選択も確認。追加差分は明示的に追加|
 |24|実参照との差分リプレイ|判断／event／RNG消費順の比較|
 |25|両OS実機受入れ|C4／視認後Aim／旋回／多人数FPS・lag|

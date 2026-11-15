@@ -86,6 +86,7 @@ struct NavPathCostContext
 	bool attacking = false;
 	bool zombie = false;
 	std::vector<NavAreaCostState> areas;
+	bool useExtentCenters = false;
 };
 
 struct NavDirectedLink
@@ -97,6 +98,7 @@ struct NavDirectedLink
 };
 
 float surfaceZAt(const NavArea &area, float x, float y);
+NavVector extentCenterOf(const NavArea &area);
 
 struct NavCorridor
 {

@@ -294,6 +294,12 @@ float surfaceZAt(const NavArea &area, float x, float y)
 	return surfaceZAtInternal(area, x, y);
 }
 
+NavVector extentCenterOf(const NavArea &area)
+{
+	return {(area.extent.lo.x + area.extent.hi.x) / 2.0f, (area.extent.lo.y + area.extent.hi.y) / 2.0f,
+		(area.extent.lo.z + area.extent.hi.z) / 2.0f};
+}
+
 bool NavCorridor::isValid() const
 {
 	if (navRevision == 0U || mapGeneration == 0U || !std::isfinite(cost) || areas.empty() ||
@@ -632,14 +638,17 @@ NavQueryResult buildAStarCorridor(const NavSnapshot &snapshot, const NavQueryLim
 	{
 		return std::find(areas.begin(), areas.end(), area) != areas.end();
 	};
-	const auto distanceBetween = [](const NavArea &left, const NavArea &right)
+	const auto distanceBetween = [context](const NavArea &left, const NavArea &right)
 	{
-		const NavVector leftCenter = centerOf(left);
-		const NavVector rightCenter = centerOf(right);
+		const bool extentCenters = context != nullptr && context->useExtentCenters;
+		const NavVector leftCenter = extentCenters ? extentCenterOf(left) : centerOf(left);
+		const NavVector rightCenter = extentCenters ? extentCenterOf(right) : centerOf(right);
 		const float dx = rightCenter.x - leftCenter.x;
 		const float dy = rightCenter.y - leftCenter.y;
 		const float dz = rightCenter.z - leftCenter.z;
 		const float distance = std::sqrt(dx * dx + dy * dy + dz * dz);
+		if (extentCenters && std::isfinite(distance))
+			return distance;
 		return std::isfinite(distance) && distance > kMinimumTraversalDistance ? distance : kMinimumTraversalDistance;
 	};
 	if (context != nullptr &&

@@ -36,6 +36,79 @@ astrabot::nav::NavSnapshot snapshotFor(astrabot::nav::NavDocument *document, std
 	return publisher.snapshot();
 }
 
+bool testReferenceExtentCenters()
+{
+	using namespace astrabot::nav;
+	NavDocument document;
+	document.setSourceIdentity({5U, 100U, 200U});
+	auto first = area(1, 0, 64, 0);
+	auto saddle = area(2, 64, 128, 0);
+	saddle.northEastZ = saddle.southWestZ = 200;
+	auto detour = area(3, 64, 128, 0);
+	detour.extent.lo.y = 64;
+	detour.extent.hi.y = 128;
+	auto goal = area(4, 128, 192, 0);
+	first.connections[1] = {2, 3};
+	saddle.connections[3] = {1};
+	saddle.connections[1] = {4};
+	detour.connections[0] = {1};
+	detour.connections[1] = {4};
+	goal.connections[3] = {2, 3};
+	for (const auto &item : {first, saddle, detour, goal})
+		document.addArea(item);
+	const auto snapshot = snapshotFor(&document, 1);
+	NavQuery query(snapshot);
+	NavCorridor route{};
+	NavPathCostContext cost{};
+	query.setPathCostContext(cost);
+	bool ok = check(query.buildCorridor(1, 4, NavRouteType::Safest, &route) == NavQueryResult::Found &&
+			route.areas == std::vector<AreaId>{1, 3, 4},
+		"default route retains surface-center geometry on a saddle");
+	cost.useExtentCenters = true;
+	query.setPathCostContext(cost);
+	ok = check(query.buildCorridor(1, 4, NavRouteType::Safest, &route) == NavQueryResult::Found &&
+				 route.areas == std::vector<AreaId>{1, 2, 4} && route.cost == 128,
+			 "native route uses extent midpoint rather than saddle floor height") &&
+		ok;
+	cost.areas = {{2, .1f, 0}};
+	query.setPathCostContext(cost);
+	ok = check(query.buildCorridor(1, 4, NavRouteType::Safest, &route) == NavQueryResult::Found &&
+				 route.areas == std::vector<AreaId>{1, 3, 4},
+			 "native center geometry retains Safest danger weighting") &&
+		ok;
+
+	NavDocument overlap;
+	overlap.setSourceIdentity({5U, 100U, 200U});
+	auto flat = area(10, 0, 64, 0), raisedFloor = area(11, 0, 64, 0);
+	raisedFloor.northEastZ = raisedFloor.southWestZ = 200;
+	flat.connections[1] = {11};
+	raisedFloor.connections[3] = {10};
+	overlap.addArea(flat);
+	overlap.addArea(raisedFloor);
+	NavQuery overlapQuery(snapshotFor(&overlap, 1));
+	cost.areas.clear();
+	overlapQuery.setPathCostContext(cost);
+	ok = check(overlapQuery.buildCorridor(10, 11, NavRouteType::Fastest, &route) == NavQueryResult::Found &&
+				 route.cost == 0 && route.isValid(),
+			 "distinct native areas at the same center retain a valid zero-cost edge") &&
+		ok;
+
+	NavDocument drop;
+	drop.setSourceIdentity({5U, 100U, 200U});
+	auto highSurface = area(20, 0, 64, 0), lowSurface = area(21, 64, 128, 0);
+	highSurface.northEastZ = highSurface.southWestZ = 1000;
+	highSurface.connections[1] = {21};
+	drop.addArea(highSurface);
+	drop.addArea(lowSurface);
+	NavQuery dropQuery(snapshotFor(&drop, 1));
+	cost.health = 5;
+	dropQuery.setPathCostContext(cost);
+	ok = check(dropQuery.buildCorridor(20, 21, NavRouteType::Safest, &route) == NavQueryResult::NoRoute,
+			 "native traversal centers do not erase the lethal drop between interpolated floors") &&
+		ok;
+	return ok;
+}
+
 bool testSpatialTieBreaking()
 {
 	astrabot::nav::NavDocument document;
@@ -878,7 +951,8 @@ int main()
 		!testNearest3DUsesSurfaceHeight() || !testInvalidInputs() || !testAlternativeCorridorAvoidsFailedFirstLink() ||
 		!testAlternativeCorridorAvoidsFailedFirstLink(true) || !testAlternativeSearchCanBypassAFormerShortestReturn() ||
 		!testAStarSearchStats() || !testReferenceStableEqualCostTieBreak() || !testReferenceCrouchCost() ||
-		!testConsecutiveJumpAreasAreNotWalkable() || !testReferenceDangerAndFriendDensityCost())
+		!testConsecutiveJumpAreasAreNotWalkable() || !testReferenceDangerAndFriendDensityCost() ||
+		!testReferenceExtentCenters())
 	{
 		return 1;
 	}

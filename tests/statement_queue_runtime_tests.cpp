@@ -12,6 +12,7 @@ void setupStatementQueue(enginefuncs_t &, globalvars_t &);
 #include "compat_actor_command_tests.cpp"
 #include "runtime/observation/bot_observation_runtime.hpp"
 #include "runtime/behavior/bot_behavior_runtime.hpp"
+#include "astrabot/nav/nav_query.hpp"
 #include <memory>
 #include "fixtures/noise_runtime_nav.hpp"
 namespace
@@ -353,6 +354,64 @@ bool testPlanAgreementRuntime(astrabot::metamod::PluginRuntime &runtime, globalv
 	}
 	return ok;
 }
+bool testProductionNavCenters(astrabot::metamod::PluginRuntime &runtime)
+{
+	using namespace astrabot;
+	auto &ports = static_cast<metamod::BotBehaviorServices &>(runtime);
+	const auto previous = ports.service_compatibilitySurface().configuration().mode;
+	struct RestoreMode
+	{
+		metamod::PluginRuntime &runtime;
+		compat::RuntimeMode mode;
+		~RestoreMode()
+		{
+			runtime.setCompatibilityString(
+				"astrabot_mode", mode == compat::RuntimeMode::Compatibility ? "compatibility" : "enhanced");
+		}
+	} restore{runtime, previous};
+	nav::NavDocument document;
+	document.setSourceIdentity({5U, 100U, 200U});
+	const auto area = [](nav::AreaId id, float x, float y)
+	{
+		nav::NavArea item{};
+		item.id = id;
+		item.extent.lo = {x, y, 0};
+		item.extent.hi = {x + 64, y + 64, 0};
+		return item;
+	};
+	auto first = area(101, 0, 0), saddle = area(102, 64, 0), detour = area(103, 64, 64), goal = area(104, 128, 0);
+	saddle.northEastZ = saddle.southWestZ = 200;
+	first.connections[1] = {102, 103};
+	saddle.connections[3] = {101};
+	saddle.connections[1] = {104};
+	detour.connections[0] = {101};
+	detour.connections[1] = {104};
+	goal.connections[3] = {102, 103};
+	for (const auto &item : {first, saddle, detour, goal})
+		document.addArea(item);
+	nav::NavSnapshotPublisher publisher;
+	publisher.publish(&document, runtime.snapshot().mapGeneration);
+	struct Case
+	{
+		const char *mode;
+		std::vector<nav::AreaId> expected;
+	};
+	const Case cases[] = {
+		{"compatibility", {101, 102, 104}}, {"enhanced", {101, 103, 104}}, {"compatibility", {101, 102, 104}}};
+	bool ok = true;
+	for (const auto &item : cases)
+	{
+		runtime.setCompatibilityString("astrabot_mode", item.mode);
+		nav::NavQuery query(publisher.snapshot());
+		query.setPathCostContext(ports.navigation_managedPathCostContext(0));
+		nav::NavCorridor route{};
+		ok = check(query.buildCorridor(101, 104, nav::NavRouteType::Safest, &route) == nav::NavQueryResult::Found &&
+					 route.areas == item.expected,
+				 "production mode cost context selects the actual native or Enhanced route") &&
+			ok;
+	}
+	return ok;
+}
 bool testStatementQueue(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &engine, globalvars_t &globals)
 {
 	using namespace astrabot;
@@ -457,6 +516,7 @@ bool testStatementQueue(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t
 			check(queueSamples == std::vector<std::string>{"radio/test/ack.wav", "radio/test/help.wav"},
 				"both statements survive simultaneous admission, fixed count criteria and later OFF mode")))
 		return false;
-	return testQueueRadioReset(runtime, engine) && testPlanAgreementRuntime(runtime, globals);
+	return testQueueRadioReset(runtime, engine) && testPlanAgreementRuntime(runtime, globals) &&
+		testProductionNavCenters(runtime);
 }
 }

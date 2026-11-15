@@ -119,6 +119,8 @@ nav::NavPathCostContext BotNavigationRuntime::managedPathCostContext(std::size_t
 {
 	RuntimeProfilerScope costScope(services_->service_runtimeProfiler(), RuntimeProfilerStage::PathCostContext);
 	nav::NavPathCostContext cost{};
+	cost.useExtentCenters =
+		services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility;
 	if (index >= services_->service_managedBotHandles().size() ||
 		services_->service_managedBotHandles()[index].entity == nullptr)
 	{
