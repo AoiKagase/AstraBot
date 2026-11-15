@@ -88,6 +88,8 @@ public:
 	virtual bool service_roundOver() = 0;
 	virtual bool command_dispatchClientCommand(edict_t *entity, const char *name, const char *argument) = 0;
 	virtual const std::uint32_t &command_managedBotCommandSequences(std::size_t index) const = 0;
+	virtual nav::AreaId navigation_knownArea(
+		std::size_t index, world::ActorKey actor, world::FrameIdentity frame, std::uint64_t revision) const = 0;
 	virtual bool navigation_hasActivePath(std::size_t index) const = 0;
 	virtual const ManagedNavigationFailure &navigation_managedNavigationFailures(std::size_t index) const = 0;
 	virtual nav::NavPathCostContext navigation_managedPathCostContext(std::size_t index) = 0;

@@ -1213,5 +1213,25 @@
     "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
     "scope": "ActorState",
     "member": "chatterAdmissions"
+  },
+  {
+    "header": "src/adapter/metamod/runtime/navigation/bot_navigation_runtime.hpp",
+    "scope": "ActorState",
+    "member": "knownNavArea"
+  },
+  {
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
+    "scope": "ActorState",
+    "member": "outgoingRadioPart"
+  },
+  {
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
+    "scope": "owner",
+    "member": "outgoingPlaceHistory_"
+  },
+  {
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
+    "scope": "owner",
+    "member": "outgoingCatalogRevision_"
   }
 ]

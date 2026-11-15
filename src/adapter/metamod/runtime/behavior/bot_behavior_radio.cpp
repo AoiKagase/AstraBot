@@ -1,5 +1,6 @@
 #include "runtime/behavior/bot_behavior_runtime.hpp"
 #include "runtime/shared/bot_runtime_support.hpp"
+#include "runtime/shared/public_nav_probe.hpp"
 namespace astrabot
 {
 namespace metamod
@@ -258,6 +259,7 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index)
 		outgoingTeamBusyUntil_.fill(0.0f);
 		outgoingTeamCurrentPhrase_.fill(compat::ChatterPhrase::None);
 		outgoingTeamCurrentPlace_.fill(0);
+		outgoingPlaceHistory_.reset();
 	}
 	compat::OutgoingRadioInput input{};
 	input.actor = receiptContext.actor;
@@ -312,6 +314,93 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index)
 		haveBelief ? &belief : nullptr, blind, input.friendCount, input.enemiesRemaining);
 	input.visibleEnemyCount = contacts.enemies;
 	input.nearbyFriends = contacts.friends;
+	if (reportNav.isValid() && reportNav.mapGeneration() == input.frame.mapGeneration)
+	{
+		const auto metadataPlace = [&](std::uint16_t place)
+		{
+			for (const auto &name : reportNav.document()->places())
+				if (name.id == place)
+				{
+					const auto id = outgoingChatterCatalog_.nameToId(name.name);
+					return id || outgoingChatterCatalog_.hasPlaceBefore() ? id
+																		  : compat::defaultChatterPlaceId(name.name);
+				}
+			return 0U;
+		};
+		const auto areaPlace = [&](nav::AreaId area)
+		{
+			const auto *definition = reportNav.document()->findArea(area);
+			return definition ? definition->placeId : std::uint16_t{0};
+		};
+		auto ownArea = services_->navigation_knownArea(index, input.actor, input.frame, reportNav.revision());
+		if (!ownArea)
+			ownArea = compat::findBotNavArea(
+				reportNav, {handle.entity->v.origin.x, handle.entity->v.origin.y, handle.entity->v.origin.z}, nullptr);
+		input.ownPlace = areaPlace(ownArea);
+		input.ownPlacePhrase = metadataPlace(input.ownPlace);
+		input.noisePlacePhrase = metadataPlace(input.noiseReport.place);
+		std::array<compat::ChatterVisiblePlace, kMaximumClientSlots> visiblePlaces{};
+		struct PlacePeerReceipt
+		{
+			std::uint32_t connection;
+			bool known;
+			std::uint8_t team;
+		};
+		std::array<PlacePeerReceipt, kMaximumClientSlots> peers{};
+		for (std::size_t peer = 0; peer < peers.size(); ++peer)
+			peers[peer] = {services_->service_lifecycle().slotGeneration(static_cast<std::uint32_t>(peer + 1)),
+				services_->observation_publicTeamKnown(peer), services_->observation_teamInfoTeams(peer)};
+		const auto queryCurrent = [&]()
+		{
+			const auto currentNav = services_->service_navPublisher().snapshot();
+			if (!receiptCurrent() || !currentNav.isValid() || currentNav.revision() != reportNav.revision())
+				return false;
+			for (std::size_t peer = 0; peer < peers.size(); ++peer)
+				if (peers[peer].connection !=
+						services_->service_lifecycle().slotGeneration(static_cast<std::uint32_t>(peer + 1)) ||
+					peers[peer].known != services_->observation_publicTeamKnown(peer) ||
+					peers[peer].team != services_->observation_teamInfoTeams(peer))
+					return false;
+			return true;
+		};
+		PublicNavProbe probe(services_->service_engineFunctions(), queryCurrent);
+		if (haveBelief && outgoingChatterCatalog_.hasPlaceBefore() &&
+			actors_[index].outgoingRadioSchedulers.needsEnemyPlace(input))
+			for (std::size_t i = 0; i < belief.actorCount(); ++i)
+			{
+				const auto *contact = belief.actorAt(i);
+				if (!contact || !contact->visible || !contact->hasCurrentPosition() ||
+					contact->relation != world::TeamRelation::Hostile || !contact->actor.slot ||
+					contact->actor.slot > actors_.size())
+					continue;
+				const auto connection = services_->service_lifecycle().slotGeneration(contact->actor.slot);
+				if (contact->actor.generation != (connection ? connection : 1U))
+					continue;
+				nav::AreaId area = 0;
+				const auto peer = static_cast<std::size_t>(contact->actor.slot - 1);
+				if (services_->service_managedBotSlots()[peer])
+				{
+					const auto &managed = services_->service_managedBotHandles()[peer];
+					area = services_->navigation_knownArea(
+						peer, {managed.actor.slot, managed.actor.actorGeneration}, input.frame, reportNav.revision());
+				}
+				else
+				{
+					area = compat::findBotNavArea(reportNav,{contact->position.x,contact->position.y,contact->position.z},&probe);
+					if(!queryCurrent())
+						return;
+				}
+				const float dx = contact->position.x - handle.entity->v.origin.x;
+				const float dy = contact->position.y - handle.entity->v.origin.y;
+				const float dz = contact->position.z - handle.entity->v.origin.z;
+				// Input index is the native client-slot tie order, independent of snapshot storage.
+				visiblePlaces[peer] = {areaPlace(area), dx * dx + dy * dy + dz * dz};
+			}
+		input.enemyPlace = compat::chooseChatterEnemyPlace(visiblePlaces.data(), visiblePlaces.size());
+		input.enemyPlacePhrase = metadataPlace(input.enemyPlace);
+		if(!queryCurrent())
+			return;
+	}
 	const auto &order = services_->observation_scenarioRadio(index);
 	const auto &decision = actors_[index].scenarioDecisions;
 	if (order.senderHuman && static_cast<int>(order.team) == input.team)
@@ -341,14 +430,10 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index)
 		decision.target.entity == actors_[index].bombSearchTargets.entity;
 	const auto mode = compat::parseChatterVerbosity(verbosity);
 	const bool voiceMode = mode != compat::ChatterVerbosity::Radio;
-	auto *voice = voiceMode ? chatterBank(index) : nullptr;
+	auto voice = voiceMode ? chatterBank(index) : std::shared_ptr<compat::ChatterVoiceCatalog>{};
 	if (!receiptCurrent())
 		return;
-	std::uint32_t voicePhrases = 0U;
-	if (voice)
-		for (unsigned phrase = 1U; phrase < static_cast<unsigned>(compat::ChatterPhrase::Count); ++phrase)
-			if (voice->has(static_cast<compat::ChatterPhrase>(phrase)))
-				voicePhrases |= 1U << phrase;
+
 	input.admission = chatterAdmission(index);
 	input.verbosity = mode;
 	input.speaking = actors_[index].confirmedSpeech.scheduledStatement();
@@ -370,82 +455,187 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index)
 	}
 	const auto action = [&]()
 	{
-		const bool ownSelected = selectedStatement.source != compat::ChatterScheduleSource::None &&
-			selectedStatement.owner.actor == input.actor;
-		if (ownSelected && selectedStatement.speaking)
+		if (!direct)
 		{
-			(void)actors_[index].confirmedSpeech.completeIfElapsed(receiptContext, input.friendCount == 0);
-			if (!direct)
+			if (!(selectedStatement.owner.actor == input.actor))
 				return;
-		}
-		if (!direct && !ownSelected)
+			auto &queue = actors_[index].outgoingRadioSchedulers.statements();
+			const auto selectedHandle = queue.handle(selectedStatement);
+			compat::ChatterPendingStatement node{};
+			if (!queue.read(selectedHandle, &node))
+				return;
+			if (node.request.phrase == compat::ChatterPhrase::HeardNoise &&
+				(input.roundOver || !input.noiseReport.active || node.request.navRevision != input.navRevision ||
+					node.request.created != input.noiseReport.created ||
+					node.request.noiseTick != input.noiseReport.frame.tick))
+			{
+				queue.erase(selectedHandle);
+				(void)actors_[index].confirmedSpeech.finishStatement(
+					receiptContext, selectedStatement, actors_[index].confirmedSpeech.revision());
+				return;
+			}
+			compat::ChatterPlaybackInput playback{};
+			playback.now = input.now;
+			playback.enemies = input.visibleEnemyCount;
+			playback.nearbyFriends = input.nearbyFriends;
+			playback.enemiesRemaining = input.enemiesRemaining;
+			playback.friendsRemaining = input.friendCount;
+			playback.emote = selectedStatement.topic == compat::ChatterStatementTopic::Emote;
+			compat::ChatterStatementStep step{};
+			const auto saved = actors_[index].outgoingRadioPart.token;
+			const bool retry = input.friendCount > 0 &&
+				compat::sameChatterStatement(saved.statement.owner, selectedStatement) &&
+				queue.currentPart(saved, &step);
+			if (!retry)
+				step = queue.advance(selectedHandle, playback);
+			if (step.playback.kind == compat::ChatterPlaybackKind::Finished)
+			{
+				(void)actors_[index].confirmedSpeech.finishStatement(
+					receiptContext, selectedStatement, actors_[index].confirmedSpeech.revision());
+				actors_[index].outgoingRadioPart = {};
+				actors_[index].outgoingRadioPart.attempts = 0;
+				return;
+			}
+			if (!step.schedule.speaking ||
+				!actors_[index].confirmedSpeech.beginStatement(
+					receiptContext, step.schedule, actors_[index].confirmedSpeech.revision()))
+				return;
+			if (step.playback.kind == compat::ChatterPlaybackKind::Waiting ||
+				step.playback.kind == compat::ChatterPlaybackKind::Null)
+				return;
+			const auto speechRevision = actors_[index].confirmedSpeech.revision();
+			const auto catalogRevision = outgoingCatalogRevision_;
+			const auto bankRevision = voice ? voice->revision() : 0;
+			const auto partCurrent = [&]()
+			{
+				compat::ChatterStatementStep current{};
+				return actors_[index].confirmedSpeech.canComplete(
+						   receiptContext, reactionContext(index), speechRevision) &&
+					receiptConnectionCurrent({input.actor.slot, receiptConnection}) &&
+					outgoingCatalogRevision_ == catalogRevision && (!voice || voice->revision() == bankRevision) &&
+					queue.currentPart(step.token, &current);
+			};
+			if (step.playback.kind == compat::ChatterPlaybackKind::Delay)
+			{
+				const compat::RandomTimingContext timing{services_->command_managedBotCommandSequences(index), 0U,
+					services_->service_managedBotFullUpdateSequences()[index]};
+				const char *site =
+					step.playback.low == .1f ? "RNG-CSBOT-CHATTER-SHORT-DELAY" : "RNG-CSBOT-CHATTER-LONG-DELAY";
+				const auto result =
+					services_->service_compatibilityRandomSource().nextFloat(compat::RandomRequest::floatRequest(site,
+						{input.actor.slot, input.actor.generation}, timing, step.playback.low, step.playback.high));
+				if (!partCurrent() || result.status != compat::RandomStatus::Ok ||
+					!queue.finishDelay(step.token, result.value))
+					queue.cancelPart(step.token);
+				return;
+			}
+			const auto phrase = step.playback.phrase;
+			const auto *place = outgoingChatterCatalog_.place(step.playback.placePhrase);
+			const bool defined = step.playback.placePhrase ? place != nullptr : outgoingChatterCatalog_.defined(phrase);
+			if (!defined)
+			{
+				queue.finishPart(step.token, 0, true);
+				return;
+			}
+			const auto choice = place ? place->choice : outgoingChatterCatalog_.lookup(phrase);
+			const auto finish = [&](float duration, bool silence)
+			{
+				if (!partCurrent() || !queue.finishPart(step.token, duration))
+					return;
+				(void)actors_[index].confirmedSpeech.record(receiptContext, phrase,
+					input.now + duration + ASTRABOT_BOT_BEHAVIOR_RADIO_NEXT_PHRASE_GAP_SECONDS, speechRevision);
+				actors_[index].outgoingRadioPart = {};
+				actors_[index].outgoingRadioPart.attempts = 0;
+
+				if (silence)
+				{
+					outgoingTeamLastSpeech_[input.team] = input.now;
+					outgoingTeamBusyUntil_[input.team] =
+						input.now + duration + ASTRABOT_BOT_BEHAVIOR_RADIO_NEXT_PHRASE_GAP_SECONDS;
+					outgoingTeamCurrentPhrase_[input.team] = phrase;
+					outgoingTeamCurrentPlace_[input.team] = step.schedule.place;
+				}
+			};
+			if (voiceMode)
+			{
+				float duration = 0;
+				bool hasSample = false, suppressed = false;
+				if (voice)
+					(void)sendChatterVoice(index, phrase, step.playback.enemyCount, voice, &duration,
+						step.criteriaPlace, ChatterVoicePurpose::Statement, step.playback.placePhrase, &hasSample,
+						&suppressed);
+				else if (step.playback.placePhrase)
+					suppressed = !outgoingPlaceHistory_.allow(step.playback.placePhrase, input.now);
+				if (!partCurrent())
+				{
+					queue.cancelPart(step.token);
+					return;
+				}
+				if (hasSample || suppressed)
+				{
+					finish(duration, hasSample && !suppressed);
+					return;
+				}
+			}
+			if (!choice.menu)
+			{
+				// Native's defined but inaudible phrase still reserves duration0 + .1.
+				finish(0, false);
+				return;
+			}
+			// The existing receipt retry policy is deliberately retained until repair04.
+			// The exact in-flight statement/part stays qualified across those retries.
+			if (!retry)
+			{
+				actors_[index].outgoingRadioPart.token = step.token;
+				actors_[index].outgoingRadioPart.attempts = 0;
+				actors_[index].outgoingRadioPart.lastTime = -1;
+			}
+			if (actors_[index].outgoingRadioPart.attempts >= kMaximumRadioAttempts)
+			{
+				finish(0, false);
+				return;
+			}
+			if (actors_[index].outgoingRadioPart.lastTime >= 0 &&
+				input.now - actors_[index].outgoingRadioPart.lastTime <
+					ASTRABOT_BOT_BEHAVIOR_RADIO_RADIO_RECEIPT_RETRY_SECONDS)
+				return;
+			actors_[index].outgoingRadioPart.lastTime = input.now;
+			++actors_[index].outgoingRadioPart.attempts;
+			const char *menu = choice.menu == kCommandRadioMenu ? "radio1"
+				: choice.menu == kGroupRadioMenu				? "radio2"
+																: "radio3";
+			char slot[] = {static_cast<char>('0' + choice.slot), '\0'};
+			const auto before = actors_[index].outgoingRadioReceipts;
+			(void)actors_[index].confirmedSpeech.beginSpeaking(receiptContext, phrase,
+				input.now + ASTRABOT_BOT_BEHAVIOR_RADIO_TEAM_SPEECH_BUSY_SECONDS, speechRevision);
+			const bool opened = services_->command_dispatchClientCommand(handle.entity, menu, nullptr);
+			if (!partCurrent())
+				return;
+			const bool selected = opened && services_->command_dispatchClientCommand(handle.entity, "menuselect", slot);
+			if (!partCurrent())
+				return;
+			if (opened)
+				(void)services_->command_dispatchClientCommand(handle.entity, "menuselect", "10");
+			if (!partCurrent())
+				return;
+			if (selected && actors_[index].outgoingRadioReceipts != before)
+				finish(2, true);
 			return;
-		const auto selectedHandle = actors_[index].outgoingRadioSchedulers.statements().handle(selectedStatement);
-		input.canStart = true;
-		output =
-			actors_[index].outgoingRadioSchedulers.decide(input, outgoingChatterCatalog_, voicePhrases, selectedHandle);
+		}
+
+		// Direct VIP radio remains separate from ordinary program progression.
+		output = actors_[index].outgoingRadioSchedulers.decide(input, outgoingChatterCatalog_, 0, {});
+		if (output.status != compat::OutgoingRadioStatus::Ready)
+			return;
 		const auto discardOutput = [&]()
 		{
-			if (direct)
-				actors_[index].outgoingRadioSchedulers.discardDirect(output.directToken);
-			else
-				actors_[index].outgoingRadioSchedulers.statements().erase(selectedHandle);
+			actors_[index].outgoingRadioSchedulers.discardDirect(output.directToken);
 		};
 		const auto confirmOutput = [&]()
 		{
 			actors_[index].outgoingRadioSchedulers.confirmSent(input, output);
 		};
-		if (!direct)
-			actors_[index].confirmedSpeech.prepareSchedule(selectedStatement);
-		if (output.status == compat::OutgoingRadioStatus::Ready && voice &&
-			output.phrase != compat::ChatterPhrase::None)
-		{
-			float duration = 0.0f;
-			const auto speechRevision = actors_[index].confirmedSpeech.revision();
-			const bool sent = sendChatterVoice(index, output.phrase,
-				output.phrase == compat::ChatterPhrase::EnemySpotted ? input.visibleEnemyCount : -1, *voice, &duration,
-				output.place);
-			if (!actors_[index].confirmedSpeech.canComplete(receiptContext, reactionContext(index), speechRevision))
-				return;
-			if (sent)
-			{
-				if (!actors_[index].confirmedSpeech.record(receiptContext, output.phrase,
-						input.now + duration + ASTRABOT_BOT_BEHAVIOR_RADIO_NEXT_PHRASE_GAP_SECONDS, speechRevision))
-					return;
-				confirmOutput();
-				actors_[index].outgoingRadioAttempts = 0U;
-				actors_[index].outgoingRadioAttemptChoices = {};
-				outgoingTeamLastSpeech_[input.team] = input.now;
-				outgoingTeamBusyUntil_[input.team] =
-					input.now + duration + ASTRABOT_BOT_BEHAVIOR_RADIO_NEXT_PHRASE_GAP_SECONDS;
-				outgoingTeamCurrentPhrase_[input.team] = output.phrase;
-				outgoingTeamCurrentPlace_[input.team] = output.place;
-				return;
-			}
-		}
-		if (output.status == compat::OutgoingRadioStatus::Ready && output.menu == 0)
-		{
-			output.status = compat::OutgoingRadioStatus::MissingPhrase;
-			discardOutput();
-		}
-		if (output.status == compat::OutgoingRadioStatus::MissingPhrase)
-		{
-			discardOutput();
-			const auto phrase = static_cast<unsigned>(output.phrase);
-			if (phrase < outgoingMissingPhraseLogged_.size() && !outgoingMissingPhraseLogged_[phrase])
-			{
-				outgoingMissingPhraseLogged_[phrase] = true;
-				if (gpMetaUtilFuncs != nullptr && gpMetaUtilFuncs->pfnLogConsole != nullptr &&
-					services_->service_pluginId() != nullptr)
-					gpMetaUtilFuncs->pfnLogConsole(services_->service_pluginId(),
-						"outgoing chatter unavailable phrase=%s "
-						"host_radio_mapping=%d voice_bank=unavailable",
-						compat::ChatterRadioCatalog::name(output.phrase), outgoingChatterCatalog_.loaded() ? 1 : 0);
-			}
-			return;
-		}
-		if (output.status != compat::OutgoingRadioStatus::Ready)
-			return;
 		const char *menu = output.menu == kCommandRadioMenu ? "radio1"
 			: output.menu == kGroupRadioMenu				? "radio2"
 															: "radio3";
@@ -535,6 +725,11 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index)
 	}
 	input.speaking = actors_[index].confirmedSpeech.scheduledStatement();
 	actors_[index].outgoingRadioSchedulers.maintain(input, teammate);
+	const auto retained = actors_[index].confirmedSpeech.scheduledStatement();
+	if (compat::validChatterScheduleEntry(retained) &&
+		!actors_[index].outgoingRadioSchedulers.statements().handle(retained).id)
+		(void)actors_[index].confirmedSpeech.finishStatement(
+			reactionContext(index), retained, actors_[index].confirmedSpeech.revision());
 }
 
 void BotBehaviorRuntime::observeRadioReceipt(std::size_t index)

@@ -216,6 +216,26 @@ public:
 		auto *group = const_cast<PlaceVariants *>(findPlace(id, definitions));
 		return group ? selectVariant(group->variants, group->cursor, count, criteria) : nullptr;
 	}
+	bool cacheDuration(const std::string &sample, std::uint64_t revision, float duration)
+	{
+		if (revision != revision_ || !std::isfinite(duration) || duration <= 0)
+			return false;
+		bool found = false;
+		const auto cache = [&](std::vector<ChatterSpeakable> &variants)
+		{
+			for (auto &speakable : variants)
+				if (speakable.sample == sample)
+				{
+					speakable.duration = duration;
+					found = true;
+				}
+		};
+		for (auto &place : places_)
+			cache(place.variants);
+		for (auto &phrase : variants_)
+			cache(phrase);
+		return found;
+	}
 	bool shuffle(ICompatibilityRandomSource &random, RandomActor actor, RandomTimingContext timing)
 	{
 		// Engine RNG remains an explicit portable approximation of native CRT order.

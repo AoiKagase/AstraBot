@@ -24,7 +24,7 @@ The user requests01 onward in order, each repaired unit committed and locally FF
 |---|---|---|
 |01|複数パーツ再生Core|本節のCore実装。最終ゲート／統合記録はunit01 session RESULT.json|
 |02|場所音声・共有20秒抑制|既定Place ID／属性・プロフィール候補・数値条件・共有64件20秒履歴を実装。全体ゲート／統合記録はunit02 session RESULT.json。03が本番接続を担当|
-|03|本番複数パーツ・文脈判定|未接続。場所→待機→敵数、最多敵場所、戦闘条件、無音中の死亡割込み。01review Minorのskip/nullと0+.1を含む|
+|03|本番複数パーツ・文脈判定|実装・オフライン検証済み。場所→待機→動的敵数／Help、最多敵場所、戦闘条件、無音死亡割込み、共有抑制とコールバック取消。Windows135/135、Linux133/134（既知22のみ）。統合記録はunit03 session RESULT.json|
 |04|標準無線の送信回数|最大3回再試行からネイティブ1回へ|
 |05|同一Botリセット時の遅延応答|古いAck破棄|
 
@@ -56,6 +56,6 @@ The user requests01 onward in order, each repaired unit committed and locally FF
 |---|---|---|
 |21|音声候補の乱数整合|Engine RNG shuffle近似とnative CRT順の差分|
 |22|Linux combat_policy|既知のweapon/skill/recoil chest閾値失敗|
-|23|全13状態と周辺の現行監査|NAV／戦闘／武器／目的／管理／profile／command。追加差分が見つかれば明示的に追加|
+|23|全13状態と周辺の現行監査|NAV／戦闘／武器／目的／管理／profile／command。既存noise ground probeとnative ground-layer規則の差、chatter NAV線形検索の空間索引／性能も確認。追加差分は明示的に追加|
 |24|実参照との差分リプレイ|判断／event／RNG消費順の比較|
 |25|両OS実機受入れ|C4／視認後Aim／旋回／多人数FPS・lag|

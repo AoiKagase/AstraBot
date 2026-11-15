@@ -12,6 +12,9 @@
 #include "astrabot/compat/chatter_voice.hpp"
 #include "astrabot/compat/noise_look.hpp"
 #include <limits>
+#include <memory>
+#include "astrabot/compat/chatter_place_history.hpp"
+#include "astrabot/compat/chatter_enemy_place.hpp"
 namespace astrabot
 {
 namespace metamod
@@ -396,6 +399,7 @@ private:
 		compat::ChatterVoiceCatalog catalog;
 		runtime::LifecycleGeneration shuffledRound = 0U;
 		bool filesChecked = false;
+		bool loading = false, checking = false, shuffling = false;
 	};
 	struct RadioPreference
 	{
@@ -408,7 +412,7 @@ private:
 		int serial = 0;
 		float until = 0.0f;
 	};
-	compat::ChatterVoiceCatalog *chatterBank(std::size_t index);
+	std::shared_ptr<compat::ChatterVoiceCatalog> chatterBank(std::size_t index);
 	void ensureOutgoingChatterCatalog();
 	std::uint32_t allowedFixedChatterPhrases(const char *verbosity, compat::ChatterPhrase first, compat::ChatterPhrase last);
 	bool killVictimVisible(std::size_t index, const edict_t *victim, const world::FrameIdentity &frame, bool checkFov = true) const;
@@ -429,8 +433,10 @@ private:
 	};
 	void finishDeathChatter(std::size_t index, const compat::ConfirmedChatterSpeech &previous,
 		const world::FrameIdentity &deathFrame);
-	bool sendChatterVoice(
-		std::size_t index, compat::ChatterPhrase phrase, int count, compat::ChatterVoiceCatalog &bank, float *duration, std::uint16_t reportPlace, ChatterVoicePurpose purpose = ChatterVoicePurpose::Statement);
+	bool sendChatterVoice(std::size_t index, compat::ChatterPhrase phrase, int count,
+		std::shared_ptr<compat::ChatterVoiceCatalog> bank, float *duration, std::uint32_t criteriaPlace,
+		ChatterVoicePurpose purpose = ChatterVoicePurpose::Statement, std::uint32_t placePhrase = 0,
+		bool *selected = nullptr, bool *suppressed = nullptr);
 	struct NoiseBendCache
 	{
 		bool valid = false;
@@ -440,6 +446,12 @@ private:
 		world::WorldPosition origin{};
 		world::WorldPosition noiseOrigin{};
 		world::WorldPosition point{};
+	};
+	struct PartRadioAttempt
+	{
+		compat::ChatterPartToken token{};
+		unsigned attempts = 0;
+		float lastTime = -1;
 	};
 	struct ActorState
 	{
@@ -470,6 +482,7 @@ private:
 		compat::RadioContactMemory outgoingRadioContactMemory{};
 		std::uint32_t outgoingRadioReceipts{};
 		std::uint32_t outgoingRadioAttemptGenerations{};
+		PartRadioAttempt outgoingRadioPart{};
 		unsigned outgoingRadioAttempts{};
 		float outgoingRadioAttemptTimes{};
 		compat::RadioMenuChoice outgoingRadioAttemptChoices{};
@@ -507,7 +520,9 @@ private:
 	std::array<BreakableMaterial, 2048U> breakableMaterials_{};
 	BotBehaviorServices *services_ = nullptr;
 	compat::ChatterRadioCatalog outgoingChatterCatalog_{};
-	std::vector<ChatterBank> outgoingVoiceBanks_{};
+	std::vector<std::shared_ptr<ChatterBank>> outgoingVoiceBanks_{};
+	compat::ChatterPlaceHistory outgoingPlaceHistory_{};
+	std::uint64_t outgoingCatalogRevision_ = 0;
 	std::array<RadioPreference, NativeBotObservation::kClientSlotCount> outgoingRadioPreferences_{};
 	std::uint32_t outgoingVoiceMask_ = 0U;
 	static constexpr unsigned kTeamRadioSlotCount = 3U;

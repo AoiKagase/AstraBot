@@ -114,6 +114,8 @@ struct OutgoingRadioInput
 	bool alive = false;
 	int team = 0;
 	int friendCount = 0, nearbyFriends = 0, visibleEnemyCount = 0, enemiesRemaining = 0;
+	std::uint16_t ownPlace = 0, enemyPlace = 0;
+	std::uint32_t ownPlacePhrase = 0, enemyPlacePhrase = 0, noisePlacePhrase = 0;
 	bool inCombat = false;
 	float teamLastSpeech = -1, teamBusyUntil = 0;
 	ChatterPhrase teamCurrentPhrase = ChatterPhrase::None;
@@ -155,6 +157,18 @@ public:
 	const ChatterPendingQueue &statements() const
 	{
 		return pending_;
+	}
+	bool needsEnemyPlace(const OutgoingRadioInput &in) const
+	{
+		if (!in.actor.isValid() || !in.frame.isValid() || !std::isfinite(in.now) || in.now < 0 || !in.alive || in.friendCount <= 0 || in.visibleEnemyCount <= 0)
+			return false;
+		const bool fresh = !(in.actor == actor_) || in.frame.mapGeneration != frame_.mapGeneration ||
+			in.frame.roundGeneration != frame_.roundGeneration || in.now < lastUpdate_;
+		if (!fresh && reportedEnemies_)
+			return false;
+		constexpr float kHelpCooldownSeconds = 10.0f;
+		const float lastHelp = fresh ? -1.0f : lastHelp_;
+		return !(in.visibleEnemyCount > in.nearbyFriends + 1 && (lastHelp < 0 || in.now - lastHelp >= kHelpCooldownSeconds));
 	}
 	void prepare(const OutgoingRadioInput &in, const ChatterRadioCatalog &catalog)
 	{
@@ -479,7 +493,21 @@ private:
 		request.start = created;
 		request.expires = created + lifetime;
 		request.readyAt = readyAt;
-		request.place = place;
+		request.place = phrase == ChatterPhrase::PlantingBomb ? in.ownPlace : place;
+		request.criteriaPlace = phrase == ChatterPhrase::PlantingBomb ? in.ownPlacePhrase
+			: phrase == ChatterPhrase::HeardNoise					  ? in.noisePlacePhrase
+																	  : 0;
+		if (phrase == ChatterPhrase::Help)
+		{
+			request.program.append({ChatterPartKind::Place, ChatterPhrase::None, in.ownPlace, in.ownPlacePhrase});
+			request.program.append({ChatterPartKind::Fixed, ChatterPhrase::Help, 0, 0});
+		}
+		else if (phrase == ChatterPhrase::EnemySpotted)
+		{
+			request.program.append({ChatterPartKind::Place, ChatterPhrase::None, in.enemyPlace, in.enemyPlacePhrase});
+			request.program.append({ChatterPartKind::AccumulateEnemies, ChatterPhrase::None, 0, 0});
+			request.program.append({ChatterPartKind::CurrentEnemyCount, ChatterPhrase::None, 0, 0});
+		}
 		request.requiresCombat = phrase == ChatterPhrase::EnemySpotted;
 		request.content =
 			request.requiresCombat ? ChatterStatementContent::EnemyReport : ChatterStatementContent::Fixed;

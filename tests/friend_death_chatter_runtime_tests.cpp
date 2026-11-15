@@ -712,6 +712,10 @@ bool testDeathChatter(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &
 	death();
 	step(.8f);
 	step(.4f);
+	reviewRegressions =
+		check(deathRadioRequests == 0, "native completion-only update does not also start the next statement") &&
+		reviewRegressions;
+	step(.125f);
 	gHookedGameDllTable.pfnClientCommand = originalClientCommand;
 	reviewRegressions = check(deathRadioRequests == 1,
 							"review: unavailable CommanderDown must release mapped KilledFriend before its expiry") &&

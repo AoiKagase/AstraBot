@@ -65,6 +65,24 @@ int main(int argc, char **argv)
 		tooMany += "help.wav ";
 	tooMany += "End";
 	check(!voice.loadText(tooMany.data(), tooMany.size()), "per-concept sample capacity is bounded");
+	ChatterVoiceCatalog durationBank;
+	const char durationText[] = "Chatter Help cached.wav End";
+	check(durationBank.loadText(durationText, sizeof(durationText) - 1), "duration cache fixture loads real bank");
+	const auto *durationBorrowed = durationBank.select(ChatterPhrase::Help, -1, "");
+	const auto immutableClip = durationBorrowed ? *durationBorrowed : ChatterSpeakable{};
+	const auto durationRevision = durationBank.revision();
+	check(durationBank.cacheDuration("cached.wav", durationRevision, .5f),
+		"current bank generation accepts measured sample duration");
+	durationBorrowed = durationBank.select(ChatterPhrase::Help, -1, "");
+	check(durationBorrowed && durationBorrowed->duration == .5f && immutableClip.duration == -1.0f,
+		"real selected duration cache updates without modifying immutable transport copy");
+	check(durationBank.loadText(durationText, sizeof(durationText) - 1),
+		"replacement bank can reuse exact same asset name");
+	check(!durationBank.cacheDuration("cached.wav", durationRevision, 1.0f),
+		"old waveform callback cannot update fresh same-named bank");
+	durationBorrowed = durationBank.select(ChatterPhrase::Help, -1, "");
+	check(durationBorrowed && durationBorrowed->duration < 0,
+		"fresh bank duration remains unknown after stale cache callback");
 	if (argc > 1)
 	{
 		std::ifstream file(argv[1], std::ios::binary);

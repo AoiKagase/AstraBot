@@ -377,6 +377,11 @@ private:
 		return command_.dispatchClientCommand(entity, name, argument);
 	}
 
+	nav::AreaId navigation_knownArea(
+		std::size_t index, world::ActorKey actor, world::FrameIdentity frame, std::uint64_t revision) const override
+	{
+		return navigation_.knownArea(index, actor, frame, revision);
+	}
 	bool navigation_hasActivePath(std::size_t index) const override
 	{
 		return navigation_.hasActivePath(index);

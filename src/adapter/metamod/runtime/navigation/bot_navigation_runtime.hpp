@@ -2,6 +2,7 @@
 #define ASTRABOT_ADAPTER_BOT_NAVIGATION_RUNTIME_HPP
 #include "runtime/shared/bot_runtime_services.hpp"
 #include <limits>
+#include "astrabot/compat/chatter_enemy_place.hpp"
 namespace astrabot
 {
 namespace metamod
@@ -34,6 +35,11 @@ public:
 		return actors_[index].managedNavigationFailures;
 	}
 
+	nav::AreaId knownArea(
+		std::size_t index, world::ActorKey actor, world::FrameIdentity frame, std::uint64_t revision) const
+	{
+		return index < actors_.size() ? actors_[index].knownNavArea.read(actor, frame, revision) : 0;
+	}
 	bool hasActivePath(std::size_t index) const
 	{
 		return index < actors_.size() && actors_[index].managedBotMovement.hasPath();
@@ -216,6 +222,7 @@ private:
 	struct ActorState
 	{
 		runtime::NavRoamController managedBotMovement{};
+		compat::ChatterKnownArea knownNavArea{};
 		ManagedNavigationFailure managedNavigationFailures{};
 		compat::NavigationStep managedNavigationSteps{};
 		bool deathDangerRecorded{};

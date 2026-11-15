@@ -35,7 +35,7 @@ inline bool sameChatterReceipt(const ReactionContext &expected, const ReactionCo
 }
 
 // Native keeps a spoken statement in the owner's list until its next update.
-// Preserve that admission guard after transport confirms and the pending slot is removed.
+// Managed programs retain logical ownership independently of individual audio parts.
 class ConfirmedChatterSpeech
 {
 public:
@@ -49,6 +49,7 @@ public:
 		if (lifetimeRevision_ == 0)
 			++lifetimeRevision_;
 		schedule_ = {};
+		managedStatement_ = false;
 	}
 
 	void synchronizeOwner(const ReactionContext &context)
@@ -65,9 +66,39 @@ public:
 		context_ = context;
 	}
 
+	bool beginStatement(const ReactionContext &context, const ChatterScheduleEntry &schedule, std::uint64_t revision)
+	{
+		if (revision != revision_ || !matches(context) || !validChatterScheduleEntry(schedule) ||
+			!(schedule.owner.actor == context.actor) || schedule.owner.entityGeneration != context.entityGeneration ||
+			schedule.owner.frame.mapGeneration != context.frame.mapGeneration ||
+			schedule.owner.frame.roundGeneration != context.frame.roundGeneration ||
+			schedule.ownerRevision != lifetimeRevision_ ||
+			(managedStatement_ && !sameChatterStatement(schedule_, schedule)))
+			return false;
+		if (!managedStatement_)
+		{
+			phrase_ = ChatterPhrase::None;
+			until_ = 0;
+		}
+		managedStatement_ = true;
+		prepareSchedule(schedule);
+		return true;
+	}
+	bool finishStatement(const ReactionContext &context, const ChatterScheduleEntry &schedule, std::uint64_t revision)
+	{
+		if (revision != revision_ || !matches(context) || !managedStatement_ ||
+			!sameChatterStatement(schedule_, schedule))
+			return false;
+		managedStatement_ = false;
+		phrase_ = ChatterPhrase::None;
+		until_ = 0;
+		schedule_ = {};
+		advanceRevision();
+		return true;
+	}
 	bool completeIfElapsed(const ReactionContext &context, bool noFriends = false)
 	{
-		if (wasTalking(context) && (noFriends || context.now > until_))
+		if (!managedStatement_ && wasTalking(context) && (noFriends || context.now > until_))
 		{
 			phrase_ = ChatterPhrase::None;
 			schedule_ = {};
@@ -97,7 +128,7 @@ public:
 
 	ChatterScheduleEntry scheduledStatement() const
 	{
-		return phrase_ != ChatterPhrase::None ? schedule_ : ChatterScheduleEntry{};
+		return managedStatement_ || phrase_ != ChatterPhrase::None ? schedule_ : ChatterScheduleEntry{};
 	}
 
 	std::uint64_t revision() const
@@ -112,8 +143,8 @@ public:
 
 	bool beginSpeaking(const ReactionContext &context, ChatterPhrase phrase, float until, std::uint64_t revision)
 	{
-		if (revision != revision_ || !matches(context) || phrase == ChatterPhrase::None || !std::isfinite(until) ||
-			until <= context.now)
+		if (revision != revision_ || !matches(context) || (phrase == ChatterPhrase::None && !managedStatement_) ||
+			!std::isfinite(until) || until <= context.now)
 		{
 			return false;
 		}
@@ -142,7 +173,7 @@ public:
 	bool wasTalking(const ReactionContext &context) const
 	{
 		// Native IsTalking observes the retained speaking statement until Update removes it.
-		return phrase_ != ChatterPhrase::None && matchesOwner(context);
+		return (managedStatement_ || phrase_ != ChatterPhrase::None) && matchesOwner(context);
 	}
 
 	bool ownsSpeech(const ReactionContext &context, ChatterPhrase phrase, float until) const
@@ -181,6 +212,7 @@ private:
 	std::uint64_t revision_ = 0;
 	std::uint64_t lifetimeRevision_ = 0;
 	ChatterScheduleEntry schedule_{};
+	bool managedStatement_ = false;
 };
 
 struct FriendDeathChatterEvent

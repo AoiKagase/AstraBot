@@ -631,6 +631,7 @@ void BotNavigationRuntime::logMovementReversalDiagnostic(std::size_t index, cons
 
 void BotNavigationRuntime::onActorRemoved(std::size_t index)
 {
+	actors_[index].knownNavArea.reset();
 	actors_[index].managedNavigationFailures = {};
 	actors_[index].managedNavigationSteps = {};
 	actors_[index].managedBotMovement.reset();
@@ -654,6 +655,8 @@ void BotNavigationRuntime::onActorRemoved(std::size_t index)
 
 void BotNavigationRuntime::resetSharedExecutionState()
 {
+	for (auto &actor : actors_)
+		actor.knownNavArea.reset();
 	reset_managedNavigationFailures();
 	reset_managedNavigationSteps();
 	managedBotRoamReservationBoard_.reset(
@@ -678,6 +681,7 @@ void BotNavigationRuntime::resetSharedExecutionState()
 
 void BotNavigationRuntime::resetActorExecutionState(std::size_t index)
 {
+	actors_[index].knownNavArea.reset();
 	actors_[index].managedBotMovement.reset();
 	actors_[index].movementFallLandingTrackers.reset();
 }
@@ -719,6 +723,13 @@ void BotNavigationRuntime::beginMovementUpdate(
 void BotNavigationRuntime::observeFullUpdateMotion(std::size_t index, const FakeClientHandle &handle,
 	const runtime::MovementPhysicsState &before, const compat::CvarSnapshot &configuration)
 {
+	if(!before.dead && configuration.botStop==0)
+	{
+		const auto navigation=services_->service_navPublisher().snapshot();
+		actors_[index].knownNavArea.update(navigation,{handle.actor.slot,handle.actor.actorGeneration},
+			{services_->service_lifecycle().mapGeneration(),services_->service_lifecycle().roundGeneration(),services_->service_adapterFrameCount()},
+			{before.origin.x,before.origin.y,before.origin.z});
+	}
 	actors_[index].managedBotMovement.setRuntimeMode(configuration.mode);
 	if (!before.dead && !services_->roundFreezeActive() && (handle.entity->v.flags & FL_FROZEN) == 0)
 	{
@@ -1169,6 +1180,7 @@ void BotNavigationRuntime::restartLoggingDiagnostics()
 
 void BotNavigationRuntime::resetCreatedActorRoute(std::size_t slotIndex)
 {
+	actors_[slotIndex].knownNavArea.reset();
 	actors_[slotIndex].managedBotMovement.reset();
 }
 
@@ -1193,6 +1205,7 @@ void BotNavigationRuntime::resetCreatedActorReadiness(std::size_t slotIndex)
 
 void BotNavigationRuntime::observePublicDeath(std::size_t victim)
 {
+	actors_[victim].knownNavArea.reset();
 	if (services_->service_managedBotSlots()[victim] && !actors_[victim].deathDangerRecorded &&
 		services_->service_globals() != nullptr && services_->service_managedBotHandles()[victim].entity != nullptr)
 	{
@@ -1240,6 +1253,7 @@ void BotNavigationRuntime::observePublicDeath(std::size_t victim)
 
 void BotNavigationRuntime::observeResetHud(std::size_t index)
 {
+	actors_[index].knownNavArea.reset();
 	actors_[index].deathDangerRecorded = false;
 }
 

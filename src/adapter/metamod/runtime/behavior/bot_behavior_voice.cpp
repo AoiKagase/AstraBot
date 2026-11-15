@@ -1,4 +1,5 @@
 #include "runtime/behavior/bot_behavior_runtime.hpp"
+#include <algorithm>
 #include <cstring>
 #include <limits>
 namespace astrabot
@@ -17,96 +18,142 @@ int voiceMessageId(plid_t plugin, const char *name)
 }
 void BotBehaviorRuntime::ensureOutgoingChatterCatalog()
 {
-	constexpr int kMaximumChatterFileBytes = 1024 * 1024;
-	if (outgoingRadioMap_ != services_->service_lifecycle().mapGeneration())
+	const auto map = services_->service_lifecycle().mapGeneration();
+	if (outgoingRadioMap_ == map)
+		return;
+	outgoingRadioMap_ = map;
+	const auto revision = ++outgoingCatalogRevision_;
+	outgoingChatterCatalog_ = {};
+	outgoingVoiceBanks_.clear();
+	outgoingVoiceBanks_.reserve(16);
+	outgoingPlaceHistory_.reset();
+	outgoingMissingPhraseLogged_.fill(false);
+	auto bank = std::make_shared<ChatterBank>();
+	bank->name = "BotChatter.db";
+	bank->loading = true;
+	outgoingVoiceBanks_.push_back(bank);
+	const auto engine = services_->service_engineFunctions();
+	compat::ChatterRadioCatalog metadata;
+	compat::ChatterVoiceCatalog samples;
+	if (engine && engine->pfnLoadFileForMe && engine->pfnFreeFile)
 	{
-		outgoingRadioMap_ = services_->service_lifecycle().mapGeneration();
-		outgoingChatterCatalog_ = {};
-		outgoingVoiceBanks_.clear();
-		outgoingMissingPhraseLogged_.fill(false);
-		if (services_->service_engineFunctions()->pfnLoadFileForMe != nullptr &&
-			services_->service_engineFunctions()->pfnFreeFile != nullptr)
+		int length = 0;
+		char filename[] = "BotChatter.db";
+		auto *bytes = engine->pfnLoadFileForMe(filename, &length);
+		if (bytes)
 		{
-			int length = 0;
-			char filename[] = "BotChatter.db";
-			unsigned char *bytes = services_->service_engineFunctions()->pfnLoadFileForMe(filename, &length);
-			if (bytes != nullptr)
+			if (length > 0 && length <= static_cast<int>(compat::ChatterVoiceCatalog::kMaximumFileBytes))
 			{
-				if (length > 0 && length <= kMaximumChatterFileBytes)
-				{
-					(void)outgoingChatterCatalog_.loadText(
-						reinterpret_cast<const char *>(bytes), static_cast<std::size_t>(length));
-					outgoingVoiceBanks_.push_back({"BotChatter.db", {}, 0U});
-					(void)outgoingVoiceBanks_.back().catalog.loadText(
-						reinterpret_cast<const char *>(bytes), static_cast<std::size_t>(length));
-				}
-				services_->service_engineFunctions()->pfnFreeFile(bytes);
+				(void)metadata.loadText(reinterpret_cast<const char *>(bytes), static_cast<std::size_t>(length));
+				(void)samples.loadText(reinterpret_cast<const char *>(bytes), static_cast<std::size_t>(length));
 			}
+			engine->pfnFreeFile(bytes);
 		}
 	}
+	bank->loading = false;
+	if (revision != outgoingCatalogRevision_ || map != outgoingRadioMap_ ||
+		map != services_->service_lifecycle().mapGeneration())
+		return;
+	outgoingChatterCatalog_ = std::move(metadata);
+	bank->catalog = std::move(samples);
 }
 
-compat::ChatterVoiceCatalog *BotBehaviorRuntime::chatterBank(std::size_t index)
+std::shared_ptr<compat::ChatterVoiceCatalog> BotBehaviorRuntime::chatterBank(std::size_t index)
 {
 	if (!services_ || index >= actors_.size())
-		return nullptr;
+		return {};
 	const auto engine = services_->service_engineFunctions();
+	const auto map = services_->service_lifecycle().mapGeneration();
+	const auto epoch = outgoingCatalogRevision_;
+	const auto round = services_->service_lifecycle().roundGeneration();
+	const auto current = [&]()
+	{
+		return outgoingCatalogRevision_ == epoch && outgoingRadioMap_ == map &&
+			services_->service_lifecycle().mapGeneration() == map &&
+			services_->service_lifecycle().roundGeneration() == round;
+	};
 	const char *configured = actors_[index].managedProfiles.voiceBank;
 	std::string name = *configured ? configured : "BotChatter.db";
 	for (auto &c : name)
 		if (c == '\\')
 			c = '/';
 	if (!compat::ChatterVoiceCatalog::validPath(name))
-		return nullptr;
-	ChatterBank *found = nullptr;
-	for (auto &bank : outgoingVoiceBanks_)
-		if (bank.name == name)
+		return {};
+	std::shared_ptr<ChatterBank> bank;
+	for (const auto &candidate : outgoingVoiceBanks_)
+		if (candidate->name == name)
 		{
-			found = &bank;
+			bank = candidate;
 			break;
 		}
-	if (!found)
+	if (!bank)
 	{
 		if (outgoingVoiceBanks_.size() >= 16U)
-			return nullptr;
-		outgoingVoiceBanks_.push_back({name, {}, 0U});
-		found = &outgoingVoiceBanks_.back(); // Negative loads are cached for this map too.
+			return {};
+		bank = std::make_shared<ChatterBank>();
+		bank->name = name;
+		bank->loading = true;
+		outgoingVoiceBanks_.push_back(bank);
+		const auto definitions = outgoingChatterCatalog_;
+		compat::ChatterVoiceCatalog candidate;
 		if (engine && engine->pfnLoadFileForMe && engine->pfnFreeFile)
 		{
 			int length = 0;
-			auto *data = engine->pfnLoadFileForMe(&name[0], &length);
-			if (data)
+			auto *bytes = engine->pfnLoadFileForMe(&name[0], &length);
+			if (bytes)
 			{
 				if (length > 0 && length <= static_cast<int>(compat::ChatterVoiceCatalog::kMaximumFileBytes))
-					(void)found->catalog.loadText(reinterpret_cast<const char *>(data),
-						static_cast<std::size_t>(length), &outgoingChatterCatalog_);
-				engine->pfnFreeFile(data);
+					(void)candidate.loadText(
+						reinterpret_cast<const char *>(bytes), static_cast<std::size_t>(length), &definitions);
+				engine->pfnFreeFile(bytes);
 			}
 		}
+		bank->loading = false;
+		if (!current())
+		{
+			// Only this unpublished bank is retryable. A reentrant map load may
+			// already own a different entry with the same name.
+			outgoingVoiceBanks_.erase(
+				std::remove(outgoingVoiceBanks_.begin(), outgoingVoiceBanks_.end(), bank), outgoingVoiceBanks_.end());
+			return {};
+		}
+		bank->catalog = std::move(candidate);
 	}
-	if (!found->filesChecked)
+	if (bank->loading || bank->checking || bank->shuffling || !current())
+		return {};
+	if (!bank->filesChecked)
 	{
+		bank->checking = true;
+		auto candidate = bank->catalog;
 		if (engine && engine->pfnGetFileSize)
-			found->catalog.retainAvailable(
+			candidate.retainAvailable(
 				[engine](const std::string &sample)
 				{
 					std::string path = "sound/" + sample;
 					return engine->pfnGetFileSize(&path[0]) > 0;
 				});
-		found->filesChecked = true;
+		bank->checking = false;
+		if (!current())
+			return {};
+		bank->catalog = std::move(candidate);
+		bank->filesChecked = true;
 	}
-	const auto round = services_->service_lifecycle().roundGeneration();
-	if (found->shuffledRound != round)
+	if (bank->shuffledRound != round)
 	{
-		const auto &handle = services_->service_managedBotHandles()[index];
-		const compat::RandomTimingContext timing = {services_->command_managedBotCommandSequences(index), 0U,
+		bank->shuffling = true;
+		auto candidate = bank->catalog;
+		const auto handle = services_->service_managedBotHandles()[index];
+		const compat::RandomTimingContext timing{services_->command_managedBotCommandSequences(index), 0U,
 			services_->service_managedBotFullUpdateSequences()[index]};
-		if (!found->catalog.shuffle(services_->service_compatibilityRandomSource(),
-				{handle.actor.slot, handle.actor.actorGeneration}, timing))
-			return nullptr;
-		found->shuffledRound = round;
+		const bool shuffled = candidate.shuffle(
+			services_->service_compatibilityRandomSource(), {handle.actor.slot, handle.actor.actorGeneration}, timing);
+		bank->shuffling = false;
+		if (!current() || !shuffled)
+			return {};
+		bank->catalog = std::move(candidate);
+		bank->shuffledRound = round;
 	}
-	return &found->catalog;
+	return std::shared_ptr<compat::ChatterVoiceCatalog>(bank, &bank->catalog);
 }
 std::uint32_t BotBehaviorRuntime::allowedFixedChatterPhrases(
 	const char *verbosity, compat::ChatterPhrase first, compat::ChatterPhrase last)
@@ -237,7 +284,7 @@ void BotBehaviorRuntime::finishDeathChatter(
 			}
 			if (outgoingChatterCatalog_.defined(compat::ChatterPhrase::Pain))
 			{
-				auto *bank = chatterBank(index);
+				auto bank = chatterBank(index);
 				if (!current())
 				{
 					return;
@@ -245,7 +292,7 @@ void BotBehaviorRuntime::finishDeathChatter(
 				if (bank)
 				{
 					float unusedDuration = 0;
-					(void)sendChatterVoice(index, compat::ChatterPhrase::Pain, -1, *bank, &unusedDuration, 0,
+					(void)sendChatterVoice(index, compat::ChatterPhrase::Pain, -1, bank, &unusedDuration, 0,
 						ChatterVoicePurpose::DeathInterrupt);
 					if (!current())
 					{
@@ -261,88 +308,85 @@ void BotBehaviorRuntime::finishDeathChatter(
 }
 
 bool BotBehaviorRuntime::sendChatterVoice(std::size_t index, compat::ChatterPhrase phrase, int count,
-	compat::ChatterVoiceCatalog &bank, float *duration, std::uint16_t reportPlace, ChatterVoicePurpose purpose)
+	std::shared_ptr<compat::ChatterVoiceCatalog> bank, float *duration, std::uint32_t criteriaPlace,
+	ChatterVoicePurpose purpose, std::uint32_t placePhrase, bool *selected, bool *suppressed)
 {
-	if (!services_ || index >= actors_.size() || !duration)
+	if (duration)
+		*duration = 0;
+	if (selected)
+		*selected = false;
+	if (suppressed)
+		*suppressed = false;
+	if (!services_ || index >= actors_.size() || !duration || !bank)
 		return false;
 	const bool deathInterrupt = purpose == ChatterVoicePurpose::DeathInterrupt;
 	const auto receiptContext = reactionContext(index);
 	const world::ActorKey connection{
 		receiptContext.actor.slot, services_->service_lifecycle().slotGeneration(receiptContext.actor.slot)};
 	const auto speechRevision = actors_[index].confirmedSpeech.revision();
+	const auto bankRevision = bank->revision();
+	const auto catalogRevision = outgoingCatalogRevision_;
 	const auto current = [&]()
 	{
-		return deathInterrupt
+		const bool owner = deathInterrupt
 			? actors_[index].confirmedSpeech.revision() == speechRevision &&
 				compat::sameChatterUpdateReceipt(receiptContext, reactionContext(index)) &&
 				receiptConnectionCurrent(connection)
 			: actors_[index].confirmedSpeech.canComplete(receiptContext, reactionContext(index), speechRevision);
+		return owner && bank->revision() == bankRevision && outgoingCatalogRevision_ == catalogRevision;
 	};
 	if (!current())
 		return false;
 	const auto engine = services_->service_engineFunctions();
 	const auto globals = services_->service_globals();
-	const auto &handle = services_->service_managedBotHandles()[index];
+	const auto handle = services_->service_managedBotHandles()[index];
 	auto *self = handle.entity;
-	const int message = voiceMessageId(services_->service_pluginId(), "SendAudio");
-	if (!current())
+	if (!engine || !globals || !self || self->free ||
+		(!deathInterrupt && (self->v.deadflag != DEAD_NO || self->v.health <= 0)))
 		return false;
-	if (message <= 0 || !engine || !globals || !self || self->free ||
-		(!deathInterrupt && (self->v.deadflag != DEAD_NO || self->v.health <= 0)) || !engine->pfnMessageBegin ||
-		!engine->pfnWriteByte || !engine->pfnWriteString || !engine->pfnWriteShort || !engine->pfnMessageEnd ||
-		!engine->pfnPEntityOfEntIndex)
-		return false;
-	std::string place;
-	const auto navigation = services_->service_navPublisher().snapshot();
-	if (!deathInterrupt && !compat::usesUndefinedChatterPlace(phrase) && navigation.isValid() &&
-		navigation.mapGeneration() == services_->service_lifecycle().mapGeneration())
+	const std::uint32_t criteria = deathInterrupt ? 0xFFFF : criteriaPlace;
+	const auto *borrowed = placePhrase ? bank->selectPlaceAt(placePhrase, outgoingChatterCatalog_, count, criteria)
+									   : bank->selectAtPlace(phrase, count, criteria);
+	const bool hasSample = borrowed != nullptr;
+	// Never retain a vector element across an Engine callback or catalog mutation.
+	const compat::ChatterSpeakable clip = borrowed ? *borrowed : compat::ChatterSpeakable{};
+	const std::string sample = clip.sample;
+	float clipDuration = hasSample && !deathInterrupt ? clip.duration : 0.0f;
+	if (hasSample && !deathInterrupt && clipDuration < 0)
 	{
-		nav::NavAreaMatch match{};
-		if (phrase == compat::ChatterPhrase::HeardNoise)
-		{
-			for (const auto &known : navigation.document()->places())
-				if (known.id == reportPlace)
-				{
-					place = known.name;
-					break;
-				}
-		}
-		else if (nav::NavQuery(navigation)
-					 .findContaining({self->v.origin.x, self->v.origin.y, self->v.origin.z}, 64.0f, &match) ==
-			nav::NavQueryResult::Found)
-		{
-			const auto *area = navigation.document()->findArea(match.area);
-			if (area)
-				for (const auto &known : navigation.document()->places())
-					if (known.id == area->placeId)
-					{
-						place = known.name;
-						break;
-					}
-		}
-	}
-	auto *speakable = bank.select(phrase, count, deathInterrupt ? "ANY" : place.c_str());
-	if (!speakable)
-		return false;
-	const std::string sample = speakable->sample;
-	const int pitch = actors_[index].managedProfiles.voicePitch;
-	if (!deathInterrupt && speakable->duration < 0.0f)
-	{
-		std::string filepath = "sound/" + sample;
-		const auto milliseconds =
-			engine->pfnGetApproxWavePlayLen ? engine->pfnGetApproxWavePlayLen(filepath.c_str()) : 0U;
+		const std::string path = "sound/" + sample;
+		const auto milliseconds = engine->pfnGetApproxWavePlayLen ? engine->pfnGetApproxWavePlayLen(path.c_str()) : 0U;
 		if (!current())
 			return false;
-		speakable->duration = milliseconds ? static_cast<float>(milliseconds) / 1000.0f : 1.0f;
+		clipDuration = milliseconds ? static_cast<float>(milliseconds) / 1000.0f : 1.0f;
+		if (!bank->cacheDuration(sample, bankRevision, clipDuration))
+			return false;
 	}
-	const float clipDuration = deathInterrupt ? 0.0f : speakable->duration;
-	if (!deathInterrupt && clipDuration <= 0.0f)
+	if (!current())
+		return false;
+	*duration = clipDuration;
+	if (!deathInterrupt && placePhrase && !outgoingPlaceHistory_.allow(placePhrase, receiptContext.now))
+	{
+		if (suppressed)
+			*suppressed = true;
+		return false;
+	}
+	if (!hasSample)
+		return false;
+	const int pitch = actors_[index].managedProfiles.voicePitch;
+	const int message = voiceMessageId(services_->service_pluginId(), "SendAudio");
+	if (!current() || message <= 0 || !engine->pfnMessageBegin || !engine->pfnWriteByte || !engine->pfnWriteString ||
+		!engine->pfnWriteShort || !engine->pfnMessageEnd || !engine->pfnPEntityOfEntIndex)
 		return false;
 	const int team = services_->observation_resolvePlayerTeam(self);
 	if (!current())
 		return false;
 	if (team != 1 && team != 2)
 		return false;
+	// A usable public transport consumes the selected sample even with no
+	// eligible listeners. Missing transport still permits mapped radio fallback.
+	if (selected)
+		*selected = true;
 	const int feedbackMessage = deathInterrupt ? 0 : voiceMessageId(services_->service_pluginId(), "BotVoice");
 	if (!current())
 		return false;
