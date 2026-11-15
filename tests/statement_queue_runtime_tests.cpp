@@ -13,6 +13,7 @@ void setupStatementQueue(enginefuncs_t &, globalvars_t &);
 #include "runtime/observation/bot_observation_runtime.hpp"
 #include "runtime/behavior/bot_behavior_runtime.hpp"
 #include "astrabot/nav/nav_query.hpp"
+#include "runtime/shared/public_nav_ladders.hpp"
 #include <memory>
 #include "fixtures/noise_runtime_nav.hpp"
 namespace
@@ -354,6 +355,211 @@ bool testPlanAgreementRuntime(astrabot::metamod::PluginRuntime &runtime, globalv
 	}
 	return ok;
 }
+
+edict_t queueLadder{};
+unsigned queueLadderFinds = 0, queueLadderTraces = 0;
+bool queueLadderStale = false;
+unsigned queueGroundMode = 0;
+enginefuncs_t *queueLadderEngine = nullptr;
+astrabot::metamod::PluginRuntime *queueLadderRuntime = nullptr;
+unsigned queueLadderMutation = 0;
+edict_t *queueFindLadder(edict_t *after, const char *, const char *value)
+{
+	++queueLadderFinds;
+	return !after && std::strcmp(value, "func_ladder") == 0 ? &queueLadder : nullptr;
+}
+int queueLadderIndex(const edict_t *entity)
+{
+	if (entity == &queueLadder && queueLadderMutation == 6)
+	{
+		++queueLadder.serialnumber;
+		queueLadderMutation = 0;
+	}
+	return entity == &queueLadder ? 6 : 0;
+}
+void queueLadderTrace(const float *, const float *to, int flags, edict_t *ignored, TraceResult *result)
+{
+	++queueLadderTraces;
+	*result = {};
+	result->flFraction = 1;
+	result->vecEndPos = Vector(to[0], to[1], to[2]);
+	if (flags == 1 && ignored == nullptr)
+	{
+		result->vecEndPos.z = 0;
+		result->flFraction = queueGroundMode == 1 ? 2.0f : .5f;
+		result->fStartSolid = queueGroundMode == 2;
+		if (queueGroundMode == 3 && queueLadderEngine)
+		{
+			result->pHit = &queueLadder;
+			queueLadderEngine->pfnSzFromIndex = nullptr;
+		}
+	}
+	if (flags == 1 && ignored == &queueLadder)
+	{
+		if (queueLadderMutation == 1)
+			++queueLadder.serialnumber;
+		if (queueLadderMutation == 2)
+			queueLadder.v.absmax.z += 1;
+		if (queueLadderMutation == 3)
+			queueLadderStale = true;
+		if (queueLadderMutation == 4 && queueLadderEngine)
+			queueLadderEngine->pfnTraceLine = nullptr;
+		if (queueLadderMutation == 5 && queueLadderRuntime)
+			queueLadderRuntime->beginRoundGeneration();
+		queueLadderMutation = 0;
+	}
+}
+bool testPublicNavLadders(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &engine)
+{
+	using namespace astrabot;
+	const auto find = engine.pfnFindEntityByString;
+	const auto index = engine.pfnIndexOfEdict;
+	const auto name = engine.pfnSzFromIndex;
+	const auto trace = engine.pfnTraceLine;
+	engine.pfnFindEntityByString = queueFindLadder;
+	engine.pfnIndexOfEdict = queueLadderIndex;
+	engine.pfnTraceLine = queueLadderTrace;
+	struct Restore
+	{
+		enginefuncs_t &engine;
+		decltype(engine.pfnFindEntityByString) savedFind;
+		decltype(engine.pfnTraceLine) savedTrace;
+		decltype(engine.pfnIndexOfEdict) savedIndex;
+		~Restore()
+		{
+			engine.pfnFindEntityByString = savedFind;
+			engine.pfnTraceLine = savedTrace;
+			engine.pfnIndexOfEdict = savedIndex;
+		}
+	} restore{engine, find, trace, index};
+	queueLadder = {};
+	queueLadder.serialnumber = 99;
+	queueLadderEngine = &engine;
+	queueLadderRuntime = &runtime;
+	queueLadder.v.absmin = Vector(-20, -2, 0);
+	queueLadder.v.absmax = Vector(20, 2, 100);
+	auto &ports = static_cast<metamod::BotBehaviorServices &>(runtime);
+	nav::NavLadderTopology topology;
+	bool ok = check(ports.navigation_ladderTopology(&topology) && topology.ladders.size() == 1 &&
+			topology.navRevision == runtime.navigationSnapshot().revision() && topology.ladders[0].bottomArea == 1,
+		"real runtime service reconstructs public func_ladder topology against current NAV");
+	nav::NavDocument document;
+	document.setSourceIdentity({5, 100, 200});
+	nav::NavArea bottom{}, top{};
+	bottom.id = 10;
+	bottom.extent = {{-100, -100, 0}, {100, 100, 0}};
+	top.id = 20;
+	top.extent = {{-20, -70, 100}, {20, 0, 100}};
+	top.northEastZ = top.southWestZ = 100;
+	document.addArea(bottom);
+	document.addArea(top);
+	nav::NavSnapshotPublisher publisher;
+	publisher.publish(&document, 4);
+	metamod::PublicNavLadderCache cache;
+	queueLadderStale = false;
+	const auto current = []
+	{
+		return !queueLadderStale;
+	};
+	ok = check(cache.read(&engine, publisher.snapshot(), current, &topology) && topology.ladders.size() == 1 &&
+				 topology.ladders[0].topAreas[0] == 20,
+			 "public adapter reconstructs actual upward connectivity") &&
+		ok;
+	float distance = -1;
+	nav::NavQuery query(publisher.snapshot());
+	ok = check(query.travelDistance(10, 20, nav::NavRouteType::Safest, topology, &distance) ==
+					 nav::NavQueryResult::Found &&
+				 std::fabs(distance - std::sqrt(10000.0f + 1225.0f)) < .001f,
+			 "public adapter topology feeds the real native range query") &&
+		ok;
+	const auto finds = queueLadderFinds, traces = queueLadderTraces;
+	ok = check(cache.read(&engine, publisher.snapshot(), current, &topology) && queueLadderFinds == finds &&
+				 queueLadderTraces == traces,
+			 "accepted map NAV topology reuses cache without per-bot public scans") &&
+		ok;
+	for (unsigned mutation : {1U, 2U, 3U, 4U, 6U})
+	{
+		metamod::PublicNavLadderCache interrupted;
+		queueLadderMutation = mutation;
+		queueLadderStale = false;
+		ok = check(!interrupted.read(&engine, publisher.snapshot(), current, &topology) && topology.navRevision == 0 &&
+					 topology.ladders.empty(),
+				 "callback entity serial, bounds or frame replacement rejects the partial graph") &&
+			ok;
+		queueLadderStale = false;
+		engine.pfnTraceLine = queueLadderTrace;
+		ok = check(interrupted.read(&engine, publisher.snapshot(), current, &topology) && topology.ladders.size() == 1,
+				 "failed build does not cache empty or stale topology") &&
+			ok;
+	}
+	engine.pfnFindEntityByString = nullptr;
+	ok = check(!cache.read(&engine, publisher.snapshot(), current, &topology) && topology.navRevision == 0,
+			 "engine enumeration replacement cannot reuse an accepted graph") &&
+		ok;
+	engine.pfnFindEntityByString = queueFindLadder;
+	publisher.publish(&document, 5);
+	const auto previousFinds = queueLadderFinds;
+	ok = check(cache.read(&engine, publisher.snapshot(), current, &topology) && topology.mapGeneration == 5 &&
+				 queueLadderFinds > previousFinds,
+			 "new NAV publication invalidates map graph cache") &&
+		ok;
+	ok = check(loadHearingNav(runtime), "reload actual NAV to require a new public ladder snapshot") && ok;
+	queueLadderMutation = 5;
+	ok = check(!ports.navigation_ladderTopology(&topology) && topology.navRevision == 0,
+			 "actual round reset during trace invalidates runtime provider publication") &&
+		ok;
+	ok = check(ports.navigation_ladderTopology(&topology) && topology.ladders.size() == 1,
+			 "runtime provider can rebuild for the new round after stale callback cancellation") &&
+		ok;
+
+	// Bottom is outside the containing rectangles, so native nearest lookup needs ground probes.
+	nav::NavDocument fallbackDoc;
+	fallbackDoc.setSourceIdentity({5, 100, 200});
+	auto nearFloor = bottom;
+	nearFloor.extent = {{110, -100, 0}, {190, 100, 0}};
+	auto highExit = top;
+	highExit.extent = {{180, -70, 100}, {220, 0, 100}};
+	fallbackDoc.addArea(nearFloor);
+	fallbackDoc.addArea(highExit);
+	nav::NavSnapshotPublisher fallbackPublisher;
+	fallbackPublisher.publish(&fallbackDoc, 6);
+	queueLadder.v.absmin.x = 180;
+	queueLadder.v.absmax.x = 220;
+	for (unsigned badGround : {1U, 3U})
+	{
+		metamod::PublicNavLadderCache partial;
+		queueGroundMode = badGround;
+		ok = check(!partial.read(&engine, fallbackPublisher.snapshot(), current, &topology) &&
+					 topology.navRevision == 0 && topology.ladders.empty(),
+				 "invalid ground fallback must reject the whole public ladder snapshot") &&
+			ok;
+		queueGroundMode = 0;
+		engine.pfnSzFromIndex = name;
+		ok = check(partial.read(&engine, fallbackPublisher.snapshot(), current, &topology) &&
+					 topology.ladders.size() == 1 && topology.ladders[0].bottomArea == 10 &&
+					 topology.ladders[0].topAreas[0] == 20,
+				 "valid ground retry rebuilds connectivity instead of reusing a poisoned empty bottom") &&
+			ok;
+	}
+	metamod::PublicNavLadderCache noFloor;
+	queueGroundMode = 2;
+	ok = check(noFloor.read(&engine, fallbackPublisher.snapshot(), current, &topology) &&
+				 topology.ladders.size() == 1 && topology.ladders[0].bottomArea == 0,
+			 "completed start-solid ground probes legitimately retain an unconnected ladder bottom") &&
+		ok;
+	const auto noFloorTraces = queueLadderTraces;
+	queueGroundMode = 0;
+	ok =
+		check(noFloor.read(&engine, fallbackPublisher.snapshot(), current, &topology) && topology.ladders.size() == 1 &&
+				topology.ladders[0].bottomArea == 0 && queueLadderTraces == noFloorTraces,
+			"legitimate no-ground result remains an accepted per-map cache entry") &&
+		ok;
+
+	queueLadderRuntime = nullptr;
+	queueLadderEngine = nullptr;
+	return ok;
+}
+
 bool testProductionNavCenters(astrabot::metamod::PluginRuntime &runtime)
 {
 	using namespace astrabot;
@@ -517,6 +723,6 @@ bool testStatementQueue(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t
 				"both statements survive simultaneous admission, fixed count criteria and later OFF mode")))
 		return false;
 	return testQueueRadioReset(runtime, engine) && testPlanAgreementRuntime(runtime, globals) &&
-		testProductionNavCenters(runtime);
+		testProductionNavCenters(runtime) && testPublicNavLadders(runtime, engine);
 }
 }

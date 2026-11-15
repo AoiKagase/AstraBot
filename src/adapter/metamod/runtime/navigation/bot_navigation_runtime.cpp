@@ -115,6 +115,24 @@ void BotNavigationRuntime::recordMovementPhysicsSample(
 	}
 }
 
+bool BotNavigationRuntime::ladderTopology(nav::NavLadderTopology *topology)
+{
+	const auto navigation = services_->service_navPublisher().snapshot();
+	const auto tick = services_->service_adapterFrameCount();
+	const auto map = services_->service_lifecycle().mapGeneration();
+	const auto round = services_->service_lifecycle().roundGeneration();
+	auto *engine = services_->service_engineFunctions();
+	const auto current = [&, tick, map, round, engine]()
+	{
+		const auto active = services_->service_navPublisher().snapshot();
+		return engine == services_->service_engineFunctions() && tick == services_->service_adapterFrameCount() &&
+			map == services_->service_lifecycle().mapGeneration() &&
+			round == services_->service_lifecycle().roundGeneration() && map == navigation.mapGeneration() &&
+			active.revision() == navigation.revision() && active.document() == navigation.document();
+	};
+	return ladderCache_.read(engine, navigation, current, topology);
+}
+
 nav::NavPathCostContext BotNavigationRuntime::managedPathCostContext(std::size_t index)
 {
 	RuntimeProfilerScope costScope(services_->service_runtimeProfiler(), RuntimeProfilerStage::PathCostContext);

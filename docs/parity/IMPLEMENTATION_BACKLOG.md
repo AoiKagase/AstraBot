@@ -1,6 +1,6 @@
 # Remaining CSBot implementation work
 
-Completed repair units01–06 and the07A NAV-center prerequisite are recorded below and in STATUS.md, including production compound playback and native one-shot standard/direct radio plus delayed acknowledgement reset and same-plan agreement conversion. Original07 Help transmission/reaction remains unfinished;07A only repairs its required route geometry. Each unit retains its exact source/test/artifact/commit identity in its session RESULT.json.
+Completed repair units01–06 and the07A NAV-center and07B public-ladder travel prerequisites are recorded below and in STATUS.md, including production compound playback and native one-shot standard/direct radio plus delayed acknowledgement reset and same-plan agreement conversion. Original07 Help transmission/reaction remains unfinished;07A/07B repair required route geometry/topology and read-only range queries. Each unit retains its exact source/test/artifact/commit identity in its session RESULT.json.
 The user goal remains active: proceed through remaining features, commit and locally merge each.
 This is an evidence-driven queue, not a complete parity/completion claim. Historical P00 matrices are not current feature inventories.
 
@@ -32,7 +32,8 @@ The user requests01 onward in order, each repaired unit committed and locally FF
 |---|---|---|
 |06|同計画への同意|実装・オフライン検証済み。同じ場所はAgreeWithPlanへ変換して0.5〜1秒待機、別の場所は元の計画を3〜4秒延期。Windows135/135、Linux133/134（既知22のみ）。統合記録はunit06 session RESULT.json|
 |07A（前提）|NAV経路の参照中心|実装・オフライン検証済み。CompatibilityのA*をCSBotの領域中心へ合わせ、距離0を保持。Windows135/135、Linux133/134（既知22のみ）。元の07は未完了。統合記録はunit07A session RESULT.json|
-|07|援護要請の行動連動|前提07A完了。本体の発話完了後Help伝達／反応と公開ラダー由来の経路情報を継続実装|
+|07B（前提）|公開ラダーの復元・到達距離|実装・オフライン検証済み。公開bounds／traceから復元し、CSBotの経路コストで選んだ経路の中心間距離を返す。Windows135/135、Linux133/134（既知22のみ）。元の07は未完了。統合記録はunit07B session RESULT.json|
+|07|援護要請の行動連動|前提07A／07B完了。本体の発話完了後Help伝達／反応と実移動（ラダー含む）を継続実装|
 |08|追従要請の行動連動|Follow伝達／距離・任務・性格|
 |09|防衛要請の行動連動|DefendHere伝達／防衛・隠れ場所|
 |10|状況報告応答|RequestReport／ReportingIn|

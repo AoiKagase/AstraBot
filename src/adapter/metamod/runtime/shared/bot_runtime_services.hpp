@@ -92,6 +92,7 @@ public:
 	virtual bool navigation_hasActivePath(std::size_t index) const = 0;
 	virtual const ManagedNavigationFailure &navigation_managedNavigationFailures(std::size_t index) const = 0;
 	virtual nav::NavPathCostContext navigation_managedPathCostContext(std::size_t index) = 0;
+	virtual bool navigation_ladderTopology(nav::NavLadderTopology *topology) = 0;
 	virtual const bool &observation_bombNoticeKnown(std::size_t index) const = 0;
 	virtual const bool &observation_bombNoticePlanted(std::size_t index) const = 0;
 	virtual bool observation_collectManagedPerception(

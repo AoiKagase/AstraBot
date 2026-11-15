@@ -78,6 +78,26 @@ struct NavAreaCostState
 	std::uint32_t teammates;
 };
 
+// Runtime topology rebuilt from public map observations; never serialized to NAV.
+struct NavLadder
+{
+	NavVector top{};
+	NavVector bottom{};
+	float length = 0.0f;
+	std::uint8_t direction = 0U;
+	AreaId bottomArea = 0U;
+	// Forward, left, right, behind in native enumeration order.
+	std::array<AreaId, 4> topAreas{};
+	bool dangling = false;
+};
+
+struct NavLadderTopology
+{
+	std::uint64_t navRevision = 0U;
+	std::uint32_t mapGeneration = 0U;
+	std::vector<NavLadder> ladders;
+};
+
 struct NavPathCostContext
 {
 	float aggression = 0.0f;
@@ -129,6 +149,9 @@ public:
 	NavQueryResult findContaining(const NavVector &position, float floorTolerance, NavAreaMatch *match) const;
 	NavQueryResult findNearest(const NavVector &position, float maximumDistance, NavAreaMatch *match) const;
 	NavQueryResult findNearest3D(const NavVector &position, float maximumDistance, NavAreaMatch *match) const;
+	// A read-only native range query. Ladder edges are never handed to the ground follower.
+	NavQueryResult travelDistance(
+		AreaId start, AreaId goal, NavRouteType routeType, const NavLadderTopology &ladders, float *distance) const;
 	NavQueryResult outgoingLinks(AreaId fromArea, std::vector<NavDirectedLink> *links) const;
 	NavQueryResult buildCorridor(AreaId start, AreaId goal, NavCorridor *corridor) const;
 	NavQueryResult buildCorridor(AreaId start, AreaId goal, NavCorridor *corridor, NavSearchStats *stats) const;

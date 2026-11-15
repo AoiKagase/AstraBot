@@ -1,4 +1,5 @@
 #include "astrabot/nav/nav_query.hpp"
+#include "astrabot/compat/nav_ladders.hpp"
 
 #include <cmath>
 #include <cstdio>
@@ -34,6 +35,289 @@ astrabot::nav::NavSnapshot snapshotFor(astrabot::nav::NavDocument *document, std
 	astrabot::nav::NavSnapshotPublisher publisher;
 	publisher.publish(document, mapGeneration);
 	return publisher.snapshot();
+}
+
+struct LadderProbe : astrabot::compat::ILadderNavProbe
+{
+	bool blockEnds = false;
+	bool facingSolid = false;
+	bool fail = false;
+	bool invalidFraction = false;
+	bool ignoreMismatch = false;
+	unsigned traces = 0;
+	bool groundHeight(const astrabot::nav::NavVector &, float *height) override
+	{
+		*height = 0;
+		return true;
+	}
+	bool clearLine(const astrabot::nav::NavVector &, const astrabot::nav::NavVector &) override
+	{
+		return true;
+	}
+	bool traceLadder(const astrabot::nav::NavVector &from, const astrabot::nav::NavVector &to, std::uintptr_t ignored,
+		astrabot::compat::LadderTrace *result) override
+	{
+		++traces;
+		ignoreMismatch = ignoreMismatch || ignored != 42;
+		if (fail)
+			return false;
+		result->fraction = invalidFraction ? std::numeric_limits<float>::quiet_NaN() : 1;
+		result->startSolid = facingSolid && from.z != to.z;
+		if (blockEnds && from.z == to.z && (from.z < 20 || from.z > 180))
+			result->fraction = 0;
+		return true;
+	}
+};
+bool testPublicLadderReconstruction()
+{
+	using namespace astrabot;
+	nav::NavDocument document;
+	document.setSourceIdentity({5, 100, 200});
+	const auto rectangle = [](nav::AreaId id, float x0, float y0, float x1, float y1, float z)
+	{
+		auto item = area(id, x0, x1, z);
+		item.extent.lo.y = y0;
+		item.extent.hi.y = y1;
+		return item;
+	};
+	for (const auto &item : {rectangle(1, -100, -100, 100, 100, 0), rectangle(2, -20, -70, 20, 0, 200),
+			 rectangle(3, 25, 0, 60, 32, 210), rectangle(4, -60, 0, -25, 32, 190), rectangle(5, -20, 40, 20, 100, 220)})
+		document.addArea(item);
+	const auto snapshot = snapshotFor(&document, 7);
+	LadderProbe probe;
+	const std::vector<compat::PublicLadderBounds> bounds{{42, {{-20, -2, 0}, {20, 2, 200}}}};
+	nav::NavLadderTopology topology;
+	bool ok = check(compat::buildBotNavLadders(snapshot, bounds, probe, &topology) &&
+			topology.navRevision == snapshot.revision() && topology.mapGeneration == 7 && topology.ladders.size() == 1,
+		"public bounds and traces produce a NAV-qualified ladder graph");
+	if (!topology.ladders.empty())
+	{
+		const auto &ladder = topology.ladders.front();
+		ok = check(ladder.direction == 2 && ladder.bottomArea == 1 &&
+					 ladder.topAreas == std::array<nav::AreaId, 4>{{2, 3, 4, 5}} && ladder.bottom.z == 0 &&
+					 ladder.top.z == 220 && ladder.length == 200 && !ladder.dangling && !probe.ignoreMismatch,
+				 "native south facing, directional top order and pre-adjustment length are retained") &&
+			ok;
+	}
+	probe.blockEnds = true;
+	ok = check(compat::buildBotNavLadders(snapshot, bounds, probe, &topology) && !topology.ladders.empty() &&
+				 topology.ladders[0].bottom.z == 20 && topology.ladders[0].length == 160,
+			 "ten-unit clearance scans adjust both ends before measuring length") &&
+		ok;
+	probe.blockEnds = false;
+	for (bool thinX : {false, true})
+		for (bool solid : {false, true})
+		{
+			probe.facingSolid = solid;
+			auto input = bounds;
+			if (thinX)
+				input[0].bounds = {{-2, -20, 0}, {2, 20, 200}};
+			const unsigned direction = thinX ? (solid ? 3 : 1) : (solid ? 0 : 2);
+			ok = check(compat::buildBotNavLadders(snapshot, input, probe, &topology) && !topology.ladders.empty() &&
+						 topology.ladders[0].direction == direction,
+					 "facing uses both axis dimensions and start-solid even with a clear fraction") &&
+				ok;
+		}
+	probe.facingSolid = false;
+	for (float z : {72.0f, 72.01f})
+	{
+		auto input = bounds;
+		input[0].bounds.lo.z = z;
+		ok = check(compat::buildBotNavLadders(snapshot, input, probe, &topology) && !topology.ladders.empty() &&
+					 topology.ladders[0].dangling == (z > 72),
+				 "dangling gap is strictly greater than human height72") &&
+			ok;
+	}
+	probe.fail = true;
+	ok = check(!compat::buildBotNavLadders(snapshot, bounds, probe, &topology) && topology.navRevision == 0 &&
+				 topology.ladders.empty(),
+			 "unavailable public trace discards the entire prior graph") &&
+		ok;
+	probe.fail = false;
+	probe.invalidFraction = true;
+	ok = check(!compat::buildBotNavLadders(snapshot, bounds, probe, &topology),
+			 "nonfinite trace cannot become a made-up blocked facing") &&
+		ok;
+	probe.invalidFraction = false;
+	ok = check(compat::buildBotNavLadders(snapshot, {}, probe, &topology) &&
+				 topology.navRevision == snapshot.revision() && topology.ladders.empty(),
+			 "accepted map without ladders is distinct from unavailable input") &&
+		ok;
+	return ok;
+}
+bool testNativeLadderTravel()
+{
+	using namespace astrabot::nav;
+	NavDocument document;
+	document.setSourceIdentity({5, 100, 200});
+	auto bottom = area(10, 0, 64, 0), forward = area(20, 0, 64, 100), left = area(30, 64, 128, 100),
+		 right = area(40, -64, 0, 100), behind = area(50, 0, 64, 100);
+	behind.extent.lo.y = 64;
+	behind.extent.hi.y = 128;
+	for (const auto &item : {bottom, forward, left, right, behind})
+		document.addArea(item);
+	const auto snapshot = snapshotFor(&document, 3);
+	NavLadderTopology topology{snapshot.revision(), 3, {}};
+	NavLadder ladder;
+	ladder.bottom = {32, 32, 0};
+	ladder.top = {32, 32, 100};
+	ladder.length = 25;
+	ladder.bottomArea = 10;
+	ladder.topAreas = {{20, 30, 40, 50}};
+	topology.ladders.push_back(ladder);
+	NavQuery query(snapshot);
+	float distance = -9;
+	bool ok = true;
+	for (AreaId goal : {20U, 30U, 40U})
+	{
+		const float expected = goal == 20 ? 100 : std::sqrt(10000.0f + 4096.0f);
+		ok = check(query.travelDistance(10, goal, NavRouteType::Safest, topology, &distance) == NavQueryResult::Found &&
+					 std::fabs(distance - expected) < .001f,
+				 "upward ladder range sums area centers instead of ladder length") &&
+			ok;
+	}
+	ok = check(query.travelDistance(10, 50, NavRouteType::Safest, topology, &distance) == NavQueryResult::NoRoute &&
+				 distance == -1,
+			 "behind connection cannot be climbed upward") &&
+		ok;
+	for (AreaId start : {20U, 30U, 40U, 50U})
+		ok = check(query.travelDistance(start, 10, NavRouteType::Safest, topology, &distance) == NavQueryResult::Found,
+				 "all four top connections allow downward travel") &&
+			ok;
+	auto second = ladder;
+	second.topAreas = {{50, 0, 0, 0}};
+	topology.ladders.push_back(second);
+	ok = check(query.travelDistance(10, 50, NavRouteType::Safest, topology, &distance) == NavQueryResult::NoRoute,
+			 "pinned native upward iterator exhausts top directions before subsequent ladders") &&
+		ok;
+	topology.ladders[0].dangling = true;
+	ok = check(query.travelDistance(10, 50, NavRouteType::Safest, topology, &distance) == NavQueryResult::Found,
+			 "skipping a dangling first ladder preserves top directions for the next one") &&
+		ok;
+	topology.ladders.pop_back();
+	topology.ladders[0].dangling = true;
+	ok = check(query.travelDistance(10, 20, NavRouteType::Safest, topology, &distance) == NavQueryResult::NoRoute &&
+				 query.travelDistance(20, 10, NavRouteType::Safest, topology, &distance) == NavQueryResult::Found,
+			 "dangling ladders are rejected upward but retained downward") &&
+		ok;
+	NavCorridor corridor;
+	ok = check(query.buildCorridor(10, 20, &corridor) == NavQueryResult::NoRoute,
+			 "read-only ladder query does not inject edges into existing ground movement") &&
+		ok;
+	++topology.navRevision;
+	ok = check(query.travelDistance(20, 10, NavRouteType::Safest, topology, &distance) ==
+					 NavQueryResult::InvalidArgument &&
+				 distance == -1,
+			 "stale topology is rejected without a previous successful range") &&
+		ok;
+	topology.navRevision = snapshot.revision();
+	++topology.mapGeneration;
+	ok = check(
+			 query.travelDistance(20, 10, NavRouteType::Safest, topology, &distance) == NavQueryResult::InvalidArgument,
+			 "different map topology cannot be reused") &&
+		ok;
+	return ok;
+}
+
+bool testLadderReverseConnectionPreventsFalseFall()
+{
+	using namespace astrabot::nav;
+	NavDocument doc;
+	doc.setSourceIdentity({5, 100, 200});
+	doc.addArea(area(1, 0, 64, 0));
+	doc.addArea(area(2, 0, 64, 1000));
+	const auto snapshot = snapshotFor(&doc, 1);
+	NavLadderTopology topology{snapshot.revision(), 1, {}};
+	NavLadder ladder;
+	ladder.bottomArea = 1;
+	ladder.topAreas = {{2, 0, 0, 0}};
+	ladder.length = 1000;
+	ladder.dangling = true;
+	topology.ladders.push_back(ladder);
+	NavQuery query(snapshot);
+	NavPathCostContext cost;
+	cost.health = 5;
+	query.setPathCostContext(cost);
+	float distance = -1;
+	return check(query.travelDistance(2, 1, NavRouteType::Safest, topology, &distance) == NavQueryResult::Found &&
+			distance == 1000,
+		"native IsConnected includes even dangling reverse ladders instead of treating descent as a lethal fall");
+}
+bool testNativeTravelCostAndOrdering()
+{
+	using namespace astrabot::nav;
+	NavDocument doc;
+	doc.setSourceIdentity({5, 100, 200});
+	auto start = area(1, 0, 64, 0), upper = area(2, 64, 128, 100), detour = area(3, 64, 128, 0),
+		 goal = area(4, 128, 192, 100);
+	detour.extent.lo.y = 64;
+	detour.extent.hi.y = 128;
+	start.connections[1] = {3};
+	detour.connections[1] = {4};
+	upper.connections[1] = {4};
+	for (const auto &item : {start, upper, detour, goal})
+		doc.addArea(item);
+	const auto snapshot = snapshotFor(&doc, 1);
+	NavLadderTopology topology{snapshot.revision(), 1, {}};
+	NavLadder ladder;
+	ladder.bottomArea = 1;
+	ladder.topAreas = {{2, 0, 0, 0}};
+	ladder.length = 10;
+	topology.ladders.push_back(ladder);
+	NavQuery query(snapshot);
+	NavPathCostContext cost;
+	float distance = -1;
+	const float ladderTravel = std::sqrt(14096.0f) + 64;
+	const float floorTravel = std::sqrt(8192.0f) + std::sqrt(18192.0f);
+	bool ok = check(query.travelDistance(1, 4, NavRouteType::Safest, topology, &distance) == NavQueryResult::Found &&
+			std::fabs(distance - ladderTravel) < .001f,
+		"short ladder cost selects a route with distinct center travel distance");
+	cost.areas = {{2, 1, 0}};
+	query.setPathCostContext(cost);
+	ok = check(query.travelDistance(1, 4, NavRouteType::Safest, topology, &distance) == NavQueryResult::Found &&
+				 std::fabs(distance - floorTravel) < .001f,
+			 "Safest danger selects floor detour then returns its unweighted distance") &&
+		ok;
+	ok = check(query.travelDistance(1, 4, NavRouteType::Fastest, topology, &distance) == NavQueryResult::Found &&
+				 std::fabs(distance - ladderTravel) < .001f,
+			 "Fastest ignores danger on the same ladder graph") &&
+		ok;
+	cost.areas = {{2, 0, 1}};
+	query.setPathCostContext(cost);
+	ok = check(query.travelDistance(1, 4, NavRouteType::Safest, topology, &distance) == NavQueryResult::Found &&
+				 std::fabs(distance - floorTravel) < .001f,
+			 "native crowd cost still applies to ladder destination areas") &&
+		ok;
+	cost.attacking = true;
+	query.setPathCostContext(cost);
+	ok = check(query.travelDistance(1, 4, NavRouteType::Safest, topology, &distance) == NavQueryResult::Found &&
+				 std::fabs(distance - ladderTravel) < .001f,
+			 "attack overlay ignores teammate crowd cost on ladder routes") &&
+		ok;
+	topology.ladders[0].topAreas[0] = 999;
+	ok = check(
+			 query.travelDistance(1, 4, NavRouteType::Safest, topology, &distance) == NavQueryResult::InvalidArgument &&
+				 distance == -1,
+			 "invalid ladder area reference cannot leak a previously computed range") &&
+		ok;
+	topology.ladders[0].topAreas[0] = 2;
+	NavDocument tie;
+	tie.setSourceIdentity({5, 100, 200});
+	auto a = area(1, 0, 64, 0), up = area(2, 64, 128, 48), floor = area(3, 64, 128, 0), end = area(4, 128, 192, 0);
+	a.connections[1] = {3};
+	up.connections[1] = {4};
+	floor.connections[1] = {4};
+	for (const auto &item : {a, up, floor, end})
+		tie.addArea(item);
+	const auto tieSnapshot = snapshotFor(&tie, 1);
+	topology.navRevision = tieSnapshot.revision();
+	topology.ladders[0].length = 48;
+	NavQuery tieQuery(tieSnapshot);
+	ok = check(tieQuery.travelDistance(1, 4, NavRouteType::Safest, topology, &distance) == NavQueryResult::Found &&
+				 distance == 128,
+			 "equal-cost floor path retains its parent before the longer center-distance ladder route") &&
+		ok;
+	return ok;
 }
 
 bool testReferenceExtentCenters()
@@ -942,6 +1226,9 @@ int main()
 				"invalid explicit endpoint cannot reuse old state"))
 			return 1;
 	}
+	if (!testPublicLadderReconstruction() | !testNativeLadderTravel() | !testNativeTravelCostAndOrdering() |
+		!testLadderReverseConnectionPreventsFalseFall())
+		return 1;
 	if (!testSpatialTieBreaking() || !testDirectedLinksAndCorridor() || !testApproachTraversalMetadata() ||
 		!testPathFollowerUsesAreaPortalInsteadOfCenter() || !testPathFollowerUsesDirectedPortal() ||
 		!testDirectedPortalStaysInsideThinDestination() || !testAStarPrefersLowerCostPath() || !testBoundedSearch() ||

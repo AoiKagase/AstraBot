@@ -1,6 +1,7 @@
 #ifndef ASTRABOT_ADAPTER_BOT_NAVIGATION_RUNTIME_HPP
 #define ASTRABOT_ADAPTER_BOT_NAVIGATION_RUNTIME_HPP
 #include "runtime/shared/bot_runtime_services.hpp"
+#include "runtime/shared/public_nav_ladders.hpp"
 #include <limits>
 #include "astrabot/compat/chatter_enemy_place.hpp"
 namespace astrabot
@@ -28,6 +29,7 @@ public:
 	void logTraversalOutcome(std::size_t index, const runtime::MovementPhysicsState &after,
 		const runtime::NavRoamDecision &decision, const runtime::LandingDamageObservation &landingFeedback);
 	nav::NavPathCostContext managedPathCostContext(std::size_t index);
+	bool ladderTopology(nav::NavLadderTopology *topology);
 	void recordMovementPhysicsSample(
 		std::size_t index, const runtime::MovementPhysicsState &before, const runtime::CommandReceipt &receipt);
 	const ManagedNavigationFailure &managedNavigationFailures(std::size_t index) const
@@ -105,6 +107,7 @@ public:
 	void noteMovementDiagnosticSample(std::size_t index);
 
 private:
+	PublicNavLadderCache ladderCache_;
 	void fill_movementReversalDiagnostics(const MovementReversalDiagnosticState &value)
 	{
 		for (auto &actor : actors_)

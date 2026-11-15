@@ -1,0 +1,12 @@
+# Native ladder travel foundation (07B)
+
+Original07 Help transmission/reaction remains the parent deliverable. BuildLadders reconstructs runtime topology from public func_ladder bounds and public trace outcomes after NAV load. No NAV file authoring, private API, hidden native graph or native body import is allowed.
+
+1. SDK-free reconstruction: preserve public enumeration order, orientation via 25-unit offset traces, 10-unit bottom/top clearance scans, 32-unit clearance, nearest bottom with anyZ, directional top scans at25-unit increments (75 forward/left/right,150 behind, beneath120). Preserve the originally computed length before top-height adjustment. Dangling iff bottom gap >72. Reject unavailable/invalid public inputs atomically.
+2. Ladder-aware read-only travel query: floor then up forward/left/right then down including behind; no upward dangling or behind edge. Use ladder length for PathCost including native penalties; return sum of extent-center edges along the selected route, not cost or ladder length. Preserve existing A* strict ties/reopening/order and native fall rule. Scope topology to map/NAV revision. Expose travel result without sending ladder edges to the existing ground follower.
+3. Public adapter provider: lazily snapshot func_ladder via public engine enumeration/entvars/TraceLine, qualify map/NAV/frame, entity serial/bounds and engine interface across callbacks. Cache accepted topology once per map/NAV; unavailable/stale builds do not poison cache. Default existing movement and Enhanced paths stay unchanged.
+4. Meaningful offline tests cover geometry, orientation, obstruction, directional links, dangling boundaries, length timing, route/cost versus travel distance, unreachable/stale/invalid topology, floor-vs-ladder ordering and public callback replacement. Required full Windows/Linux builds, CTest (known22 separately), independent PE/ELF7-export gates and manifest. Live ladder/Help behavior is not accepted by these offline tests.
+
+Pinned-source iterator detail: nav_area.h706/728/787–793 initializes the upward top-direction iterator once and does not reset it when advancing ladders. Only the first non-dangling upward ladder is searched; skipping dangling ladders does not consume directions. Preserve this behavior, not an intended repaired iterator.
+
+Native reverse connectivity for fall estimation uses all ladder references, including behind/dangling, not just traversable upward edges (nav_area.cpp564–600). Preserve this independently from path adjacency.

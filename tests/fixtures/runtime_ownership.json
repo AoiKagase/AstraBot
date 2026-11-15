@@ -1218,5 +1218,10 @@
     "header": "src/adapter/metamod/runtime/observation/bot_observation_runtime.hpp",
     "scope": "owner",
     "member": "publicMessageRadioRevisions_"
+  },
+  {
+    "header": "src/adapter/metamod/runtime/navigation/bot_navigation_runtime.hpp",
+    "scope": "owner",
+    "member": "ladderCache_"
   }
 ]

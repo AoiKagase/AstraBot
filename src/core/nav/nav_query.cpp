@@ -598,7 +598,7 @@ struct AStarStatsTimer
 
 NavQueryResult buildAStarCorridor(const NavSnapshot &snapshot, const NavQueryLimits &limits, AreaId start, AreaId goal,
 	NavRouteType routeType, NavCorridor *corridor, NavSearchStats *stats, const NavPathCostContext *context,
-	const NavDirectedLink *excludedLink = nullptr)
+	const NavDirectedLink *excludedLink = nullptr, const NavLadderTopology *ladders = nullptr)
 {
 	if (stats != nullptr)
 	{
@@ -679,12 +679,12 @@ NavQueryResult buildAStarCorridor(const NavSnapshot &snapshot, const NavQueryLim
 	const float dangerFactor = context == nullptr
 		? 0.0f
 		: kDangerCostScale * (1.0f - ASTRABOT_NAV_QUERY_AGGRESSION_DANGER_REDUCTION * context->aggression);
-	const auto traversalCost = [routeType, &distanceBetween, context, &areaState, dangerFactor](
-								   const NavArea &from, const NavArea &to)
+	const auto traversalCost = [routeType, &distanceBetween, context, &areaState, dangerFactor, ladders](
+								   const NavArea &from, const NavArea &to, float ladderLength)
 	{
 		if ((from.attributes & NavArea::kJump) != 0U && (to.attributes & NavArea::kJump) != 0U)
 			return kImpassableTraversalCost;
-		const float distance = distanceBetween(from, to);
+		const float distance = ladderLength >= 0 ? ladderLength : distanceBetween(from, to);
 		float crouchPenalty = routeType == NavRouteType::Fastest ? kFastestCrouchPenalty : kSafestCrouchPenalty;
 		const float jumpPenalty = 1.0f;
 		float cost = distance;
@@ -696,6 +696,11 @@ NavQueryResult buildAStarCorridor(const NavSnapshot &snapshot, const NavQueryLim
 			for (const auto &connections : to.connections)
 				reverseConnected =
 					reverseConnected || std::find(connections.begin(), connections.end(), from.id) != connections.end();
+			if (ladders && !reverseConnected)
+				for (const auto &ladder : ladders->ladders)
+					for (const auto top : ladder.topAreas)
+						reverseConnected = reverseConnected || (ladder.bottomArea == to.id && top == from.id) ||
+							(ladder.bottomArea == from.id && top == to.id);
 			if (!reverseConnected)
 			{
 				const float drop = centerOf(from).z - centerOf(to).z;
@@ -806,64 +811,96 @@ NavQueryResult buildAStarCorridor(const NavSnapshot &snapshot, const NavQueryLim
 			{
 				return NavQueryResult::AreaNotFound;
 			}
-			for (std::size_t direction = 0U; direction < NavArea::kDirectionCount; ++direction)
+			const auto visit = [&](AreaId target, float ladderLength) -> NavQueryResult
 			{
-				for (const AreaId target : currentArea->connections[direction])
+				if (!target || target == current)
+					return NavQueryResult::Found;
+				if (excludedLink != nullptr && current == excludedLink->fromArea && target == excludedLink->toArea)
+					return NavQueryResult::Found;
+				const NavArea *targetArea = currentDocument->findArea(target);
+				if (targetArea == nullptr)
 				{
-					if (excludedLink != nullptr && current == excludedLink->fromArea && target == excludedLink->toArea)
-						continue;
-					const NavArea *targetArea = currentDocument->findArea(target);
-					if (targetArea == nullptr)
+					return NavQueryResult::AreaNotFound;
+				}
+				const float edgeCost = traversalCost(*currentArea, *targetArea, ladderLength);
+				if (edgeCost < 0.0f || !std::isfinite(edgeCost))
+					return NavQueryResult::Found;
+				const float tentativeCost = records[currentRecordIndex].costSoFar + edgeCost;
+				std::size_t targetRecordIndex = findRecord(records, target);
+				if (targetRecordIndex == records.size())
+				{
+					if (records.size() >= limits.maximumSearchQueue)
 					{
-						return NavQueryResult::AreaNotFound;
+						return NavQueryResult::ResourceLimit;
 					}
-					const float edgeCost = traversalCost(*currentArea, *targetArea);
-					if (edgeCost < 0.0f || !std::isfinite(edgeCost))
-						continue;
-					const float tentativeCost = records[currentRecordIndex].costSoFar + edgeCost;
-					std::size_t targetRecordIndex = findRecord(records, target);
-					if (targetRecordIndex == records.size())
+					const float heuristic = distanceBetween(*targetArea, *goalArea);
+					records.push_back({target, current, tentativeCost, tentativeCost + heuristic, false, false});
+					recordLookup.emplace(target, records.size() - 1U);
+					open.push_back(target);
+					if (stats != nullptr)
 					{
-						if (records.size() >= limits.maximumSearchQueue)
-						{
-							return NavQueryResult::ResourceLimit;
-						}
-						const float heuristic = distanceBetween(*targetArea, *goalArea);
-						records.push_back({target, current, tentativeCost, tentativeCost + heuristic, false, false});
-						recordLookup.emplace(target, records.size() - 1U);
-						open.push_back(target);
-						if (stats != nullptr)
-						{
-							++stats->enqueueCount;
-						}
-						continue;
+						++stats->enqueueCount;
 					}
+					return NavQueryResult::Found;
+				}
 
-					AStarRecord &targetRecord = records[targetRecordIndex];
-					if (tentativeCost >= targetRecord.costSoFar)
+				AStarRecord &targetRecord = records[targetRecordIndex];
+				if (tentativeCost >= targetRecord.costSoFar)
+				{
+					return NavQueryResult::Found;
+				}
+				targetRecord.parent = current;
+				targetRecord.costSoFar = tentativeCost;
+				targetRecord.totalCost = tentativeCost + distanceBetween(*targetArea, *goalArea);
+				if (targetRecord.closed)
+				{
+					targetRecord.closed = false;
+					if (stats != nullptr)
 					{
-						continue;
-					}
-					targetRecord.parent = current;
-					targetRecord.costSoFar = tentativeCost;
-					targetRecord.totalCost = tentativeCost + distanceBetween(*targetArea, *goalArea);
-					if (targetRecord.closed)
-					{
-						targetRecord.closed = false;
-						if (stats != nullptr)
-						{
-							++stats->reopenCount;
-						}
-					}
-					if (!contains(open, target))
-					{
-						open.push_back(target);
-						if (stats != nullptr)
-						{
-							++stats->enqueueCount;
-						}
+						++stats->reopenCount;
 					}
 				}
+				if (!contains(open, target))
+				{
+					open.push_back(target);
+					if (stats != nullptr)
+					{
+						++stats->enqueueCount;
+					}
+				}
+				return NavQueryResult::Found;
+			};
+			for (std::size_t direction = 0U; direction < NavArea::kDirectionCount; ++direction)
+				for (const AreaId target : currentArea->connections[direction])
+				{
+					const auto result = visit(target, -1.0f);
+					if (result != NavQueryResult::Found)
+						return result;
+				}
+			if (ladders)
+			{
+				// Native adjacency order is floor, up (forward/left/right), then down.
+				bool upDirectionsConsumed = false;
+				for (const auto &ladder : ladders->ladders)
+					if (ladder.bottomArea == current && !ladder.dangling && !upDirectionsConsumed)
+					{
+						upDirectionsConsumed = true;
+						for (unsigned side = 0; side < 3; ++side)
+						{
+							const auto result = visit(ladder.topAreas[side], ladder.length);
+							if (result != NavQueryResult::Found)
+								return result;
+						}
+					}
+				for (const auto &ladder : ladders->ladders)
+					// A top area may be present in more than one native ladder-down list entry.
+					for (const auto top : ladder.topAreas)
+						if (top == current)
+						{
+							const auto result = visit(ladder.bottomArea, ladder.length);
+							if (result != NavQueryResult::Found)
+								return result;
+						}
 			}
 		}
 
@@ -897,7 +934,7 @@ NavQueryResult buildAStarCorridor(const NavSnapshot &snapshot, const NavQueryLim
 		corridor->areas = reversed;
 		corridor->links.clear();
 		corridor->links.reserve(reversed.size() > 0U ? reversed.size() - 1U : 0U);
-		for (std::size_t index = 1U; index < reversed.size(); ++index)
+		for (std::size_t index = 1U; ladders == nullptr && index < reversed.size(); ++index)
 		{
 			corridor->links.push_back(directedLinkFor(currentDocument, reversed[index - 1U], reversed[index]));
 		}
@@ -909,6 +946,56 @@ NavQueryResult buildAStarCorridor(const NavSnapshot &snapshot, const NavQueryLim
 	}
 	return NavQueryResult::Found;
 }
+}
+
+NavQueryResult NavQuery::travelDistance(
+	AreaId start, AreaId goal, NavRouteType routeType, const NavLadderTopology &ladders, float *distance) const
+{
+	if (!distance)
+		return NavQueryResult::InvalidArgument;
+	*distance = -1.0f;
+	if (!snapshot_.isValid())
+		return NavQueryResult::EmptySnapshot;
+	if (ladders.navRevision != snapshot_.revision() || ladders.mapGeneration != snapshot_.mapGeneration() ||
+		ladders.ladders.size() > NavLimits::kMaximumAreas)
+		return NavQueryResult::InvalidArgument;
+	const auto *doc = document();
+	for (const auto &ladder : ladders.ladders)
+	{
+		if (!isFinitePosition(ladder.top) || !isFinitePosition(ladder.bottom) || !std::isfinite(ladder.length) ||
+			ladder.length < 0 || ladder.direction >= 4 || (ladder.bottomArea && !doc->findArea(ladder.bottomArea)))
+			return NavQueryResult::InvalidArgument;
+		for (const auto id : ladder.topAreas)
+			if (id && !doc->findArea(id))
+				return NavQueryResult::InvalidArgument;
+	}
+	if (!start || !goal || !doc->findArea(start) || !doc->findArea(goal))
+		return NavQueryResult::AreaNotFound;
+	if (start == goal)
+	{
+		*distance = 0;
+		return NavQueryResult::Found;
+	}
+	auto context = costContext_;
+	context.useExtentCenters = true;
+	NavCorridor corridor;
+	const auto result =
+		buildAStarCorridor(snapshot_, limits_, start, goal, routeType, &corridor, nullptr, &context, nullptr, &ladders);
+	if (result != NavQueryResult::Found)
+		return result;
+	float total = 0;
+	// Match native end-to-start accumulation order, which matters to 32-bit floats.
+	for (std::size_t index = corridor.areas.size() - 1; index > 0; --index)
+	{
+		const auto a = extentCenterOf(*doc->findArea(corridor.areas[index]));
+		const auto b = extentCenterOf(*doc->findArea(corridor.areas[index - 1]));
+		const float dx = a.x - b.x, dy = a.y - b.y, dz = a.z - b.z;
+		total += std::sqrt(dx * dx + dy * dy + dz * dz);
+	}
+	if (!std::isfinite(total))
+		return NavQueryResult::InvalidArgument;
+	*distance = total;
+	return NavQueryResult::Found;
 }
 
 NavQueryResult NavQuery::buildCorridor(AreaId start, AreaId goal, NavCorridor *corridor) const

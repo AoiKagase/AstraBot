@@ -393,6 +393,11 @@ private:
 		return navigation_.managedPathCostContext(index);
 	}
 
+	bool navigation_ladderTopology(nav::NavLadderTopology *topology) override
+	{
+		return navigation_.ladderTopology(topology);
+	}
+
 	const bool &observation_bombNoticeKnown(std::size_t index) const override
 	{
 		return observation_.bombNoticeKnown(index);
