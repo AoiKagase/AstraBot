@@ -342,7 +342,21 @@ public:
 	}
 	void maintain(const OutgoingRadioInput &in, const ChatterScheduleEntry &teammate = {})
 	{
+		maintain(in, teammate, nullptr, {}, 0,
+			[]()
+			{
+				return true;
+			});
+	}
+	template <class Current>
+	void maintain(const OutgoingRadioInput &in, const ChatterScheduleEntry &teammate,
+		ICompatibilityRandomSource *random, RandomTimingContext timing, std::uint32_t agreementPhraseId,
+		Current current)
+	{
 		ChatterPendingMaintenance maintenance{};
+		maintenance.random = random;
+		maintenance.randomTiming = timing;
+		maintenance.agreementPhraseId = agreementPhraseId;
 		maintenance.admission = admission(in);
 		maintenance.inCombat = in.inCombat;
 		maintenance.speaking = in.speaking;
@@ -354,7 +368,7 @@ public:
 		maintenance.noiseCreated = in.noiseReport.created;
 		maintenance.noiseTick = in.noiseReport.frame.tick;
 		maintenance.navRevision = in.navRevision;
-		pending_.maintain(maintenance);
+		pending_.maintain(maintenance, current);
 	}
 	OutgoingRadioDecision update(
 		const OutgoingRadioInput &in, const ChatterRadioCatalog &catalog, std::uint32_t voicePhrases = 0)

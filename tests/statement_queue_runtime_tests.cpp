@@ -7,9 +7,11 @@ void setupStatementQueue(enginefuncs_t &, globalvars_t &);
 #define ASTRABOT_EXTRA_ACTOR_TEST testStatementQueue
 #define ASTRABOT_ACTOR_ENGINE_SETUP setupStatementQueue
 #define ASTRABOT_ACTOR_PROFILE_TEXT                                                                                    \
-	"Any { Name = \"Queue Speaker\" Team = any Difficulty = 1 Skill = 70 VoiceBank = queue_speech.db }\n"
+	"Any { Name = \"Queue Speaker\" Team = any Difficulty = 1 Skill = 70 VoiceBank = queue_speech.db }\n"              \
+	"Any { Name = \"Queue Peer\" Team = any Difficulty = 1 Skill = 70 VoiceBank = queue_speech.db }\n"
 #include "compat_actor_command_tests.cpp"
 #include "runtime/observation/bot_observation_runtime.hpp"
+#include "runtime/behavior/bot_behavior_runtime.hpp"
 #include <memory>
 #include "fixtures/noise_runtime_nav.hpp"
 namespace
@@ -19,6 +21,9 @@ const char *queueMode = "normal";
 astrabot::metamod::BotObservationRuntime *queueInputObserver = nullptr;
 unsigned queueInputMutation = 0;
 bool queueInputBeginReset = false;
+astrabot::metamod::BotBehaviorRuntime *queuePlanBehavior = nullptr;
+unsigned queuePlanMutation = 0;
+float queuePlanRandom(float low, float high);
 int queueMessage = 0;
 edict_t *queueRecipient = nullptr;
 std::vector<std::string> queueSamples;
@@ -40,7 +45,8 @@ unsigned char *queueLoad(char *name, int *length)
 	if (std::strcmp(name, "BotChatter.db") == 0)
 	{
 		text = "BaseDir radio/test/ Chatter Affirmative Radio EVENT_RADIO_AFFIRMATIVE ack.wav End "
-			   "Chatter Help Radio EVENT_RADIO_NEED_BACKUP help.wav End";
+			   "Chatter Help Radio EVENT_RADIO_NEED_BACKUP help.wav End "
+			   "Chatter EscortingHostages escort.wav End Chatter AgreeWithPlan agree.wav End";
 	}
 	if (std::strcmp(name, "queue_speech.db") == 0)
 	{
@@ -113,7 +119,7 @@ void queueVisibility(const float *, const float *end, int, edict_t *, TraceResul
 }
 void setupStatementQueue(enginefuncs_t &engine, globalvars_t &)
 {
-	engine.pfnRandomFloat = &hearingFixtureRandomFloat;
+	engine.pfnRandomFloat = &queuePlanRandom;
 	engine.pfnCVarGetString = &queueCvar;
 	engine.pfnLoadFileForMe = &queueLoad;
 	engine.pfnFreeFile = &queueFree;
@@ -241,6 +247,112 @@ bool testQueueRadioReset(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 		ok;
 	return ok;
 }
+float queuePlanRandom(float low, float high)
+{
+	if (low == .5f && high == 1 && queuePlanMutation && queuePlanBehavior)
+	{
+		const auto mutation = queuePlanMutation;
+		queuePlanMutation = 0;
+		if (mutation == 1)
+			queuePlanBehavior->resetSharedExecutionState();
+		else
+		{
+			gEntities[0].v.team = 2;
+			auto &runtime = astrabot::metamod::PluginRuntime::instance();
+			runtime.onMessageBegin(MSG_ALL, 86, nullptr, nullptr);
+			runtime.onWriteByte(1);
+			runtime.onWriteString("CT");
+			runtime.onMessageEnd();
+		}
+	}
+	return hearingFixtureRandomFloat(low, high);
+}
+bool testPlanAgreementRuntime(astrabot::metamod::PluginRuntime &runtime, globalvars_t &globals)
+{
+	using namespace astrabot;
+	queueEnemiesVisible = false;
+	queueMode = "normal";
+	runtime.setCompatibilityFloat("bot_quota", 2);
+	if (!check(runtime.executeCompatibilityCommand(request("bot_add_t", 1U, "Queue Peer")) ==
+				metamod::CompatibilityCommandResult::Handled,
+			"second real managed owner is created through the public command"))
+		return false;
+	runtime.beginRoundGeneration();
+	auto &ports = static_cast<metamod::BotBehaviorServices &>(runtime);
+	bool ok = true;
+	struct RestorePlanMutation
+	{
+		~RestorePlanMutation()
+		{
+			queuePlanBehavior = nullptr;
+			queuePlanMutation = 0;
+		}
+	} restore;
+	for (unsigned mutation = 0; mutation < 3; ++mutation)
+	{
+		auto behavior = std::make_unique<metamod::BotBehaviorRuntime>();
+		behavior->bindServices(ports);
+		queuePlanBehavior = behavior.get();
+		for (std::size_t i = 0; i < 2; ++i)
+		{
+			auto &entity = gEntities[i];
+			entity.v.flags = FL_CLIENT | FL_FAKECLIENT | FL_ONGROUND;
+			entity.v.health = 100;
+			entity.v.deadflag = DEAD_NO;
+			entity.v.team = 1;
+			runtime.onMessageBegin(MSG_ALL, 86, nullptr, nullptr);
+			runtime.onWriteByte(static_cast<int>(i + 1));
+			runtime.onWriteString("TERRORIST");
+			runtime.onMessageEnd();
+			behavior->onActorRemembered(i, ports.service_managedBotHandles()[i]);
+			// Existing typed state input supplies the represented escort trigger.
+			// This component test does not claim to exercise the hostage producer.
+			const_cast<compat::ScenarioBehaviorDecision &>(behavior->scenarioDecisions(i)).escortInferred = true;
+		}
+		globals.time += 11;
+		queueSamples.clear();
+		queuePlanMutation = 0;
+		behavior->updateOutgoingPublicRadio(0);
+		if (queueSamples != std::vector<std::string>{"radio/test/escort.wav"})
+		{
+			bool selectedCurrent = false;
+			const auto selected = behavior->activeTeamChatter(0, 1, &selectedCurrent);
+			std::fprintf(stderr,
+				"plan fixture mutation=%u current=%u selected=%llu topic=%u start=%g now=%g samples=%zu\n", mutation,
+				selectedCurrent ? 1U : 0U, static_cast<unsigned long long>(selected.order),
+				static_cast<unsigned>(selected.topic), selected.start, globals.time, queueSamples.size());
+			for (const auto &sample : queueSamples)
+				std::fprintf(stderr, "plan sample: %s\n", sample.c_str());
+		}
+		ok = check(queueSamples == std::vector<std::string>{"radio/test/escort.wav"},
+				 "first real plan audio is the control before conversion") &&
+			ok;
+		queuePlanMutation = mutation;
+		behavior->updateOutgoingPublicRadio(1);
+		if (mutation)
+		{
+			bool current = false;
+			const auto remaining = behavior->activeTeamChatter(1, 1, &current);
+			ok = check(queuePlanMutation == 0 && current &&
+						 (mutation == 1 ? remaining.order == 0 : remaining.order != 0 && remaining.firstPhrase == 3),
+					 "actual RNG reset or peer team change rejects the obsolete conversion receipt") &&
+				ok;
+			continue;
+		}
+		globals.time += .375f;
+		behavior->updateOutgoingPublicRadio(0);
+		behavior->updateOutgoingPublicRadio(1);
+		ok = check(queueSamples == std::vector<std::string>{"radio/test/escort.wav"},
+				 "converted production plan waits until the half-second start boundary") &&
+			ok;
+		globals.time += .125f;
+		behavior->updateOutgoingPublicRadio(1);
+		ok = check(queueSamples == std::vector<std::string>{"radio/test/escort.wav", "radio/test/agree.wav"},
+				 "actual second-team-selection maintenance plays AgreeWithPlan instead of repeating the plan") &&
+			ok;
+	}
+	return ok;
+}
 bool testStatementQueue(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &engine, globalvars_t &globals)
 {
 	using namespace astrabot;
@@ -345,6 +457,6 @@ bool testStatementQueue(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t
 			check(queueSamples == std::vector<std::string>{"radio/test/ack.wav", "radio/test/help.wav"},
 				"both statements survive simultaneous admission, fixed count criteria and later OFF mode")))
 		return false;
-	return testQueueRadioReset(runtime, engine);
+	return testQueueRadioReset(runtime, engine) && testPlanAgreementRuntime(runtime, globals);
 }
 }

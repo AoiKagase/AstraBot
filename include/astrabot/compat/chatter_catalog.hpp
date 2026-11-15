@@ -37,6 +37,7 @@ enum class ChatterPhrase : unsigned
 	CommanderDown,
 	KilledFriend,
 	Pain,
+	AgreeWithPlan,
 	Count
 };
 inline ChatterPhrase remainingEnemyPhrase(int count)
@@ -220,6 +221,14 @@ public:
 					return true;
 		return false;
 	}
+	std::uint32_t phraseId(ChatterPhrase phrase) const
+	{
+		if (defined(phrase))
+			for (const auto &entry : phraseNames_)
+				if (equal(entry.name, name(phrase)))
+					return entry.id;
+		return 0;
+	}
 	std::uint32_t nameToId(const char *name, std::uint32_t beforeId = (std::numeric_limits<std::uint32_t>::max)()) const
 	{
 		if (!name)
@@ -272,7 +281,7 @@ public:
 		const char *names[] = {"None", "EnemySpotted", "Help", "RequestReport", "Affirmative", "OnMyWay",
 			"PlantingBomb", "WhereIsTheBomb", "EscortingHostages", "HeardNoise", "NoEnemiesLeft", "OneEnemyLeft",
 			"TwoEnemiesLeft", "ThreeEnemiesLeft", "NiceShot", "NiceShotSir", "NiceShotCommander", "CommanderDown",
-			"KilledFriend", "pain"};
+			"KilledFriend", "pain", "AgreeWithPlan"};
 		const auto i = static_cast<unsigned>(p);
 		return i < static_cast<unsigned>(ChatterPhrase::Count) ? names[i] : "Unknown";
 	}

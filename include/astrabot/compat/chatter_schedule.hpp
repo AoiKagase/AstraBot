@@ -53,6 +53,7 @@ struct ChatterScheduleEntry
 	std::uint16_t place = 0;
 	int subject = -1;
 	bool speaking = false;
+	std::uint32_t firstPhrase = 0;
 };
 class ChatterAdmissionClock
 {

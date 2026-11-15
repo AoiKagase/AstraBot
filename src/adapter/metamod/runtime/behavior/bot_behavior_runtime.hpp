@@ -374,6 +374,27 @@ private:
 		int material = -1;
 	};
 
+	struct ChatterPeerReceipt
+	{
+		bool managed = false;
+		edict_t *entity = nullptr;
+		world::ActorKey actor{};
+		compat::ReactionContext context{};
+		int serial = 0;
+		bool free = false;
+		int flags = 0;
+		std::uint32_t connection = 0;
+		std::uint64_t revision = 0;
+		bool teamKnown = false;
+		std::uint8_t publicTeam = 0;
+		int entityTeam = 0;
+		string_t name = 0;
+		std::uint64_t queueRevision = 0;
+		bool hasPending = false;
+		compat::ChatterScheduleEntry speaking{};
+	};
+	ChatterPeerReceipt snapshotChatterPeer(std::size_t index) const;
+	static bool sameChatterPeer(const ChatterPeerReceipt &a, const ChatterPeerReceipt &b);
 	struct ChatterBank
 	{
 		std::string name;

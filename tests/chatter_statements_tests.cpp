@@ -2,6 +2,7 @@
 #include "astrabot/compat/outgoing_radio.hpp"
 #include <cstdio>
 #include <cstring>
+#include <functional>
 #include <vector>
 
 namespace
@@ -38,10 +39,196 @@ std::vector<ChatterScheduleEntry> schedules(const ChatterPendingQueue &queue)
 		});
 	return result;
 }
+struct PlanRandom : ICompatibilityRandomSource
+{
+	std::vector<RandomRequest> requests;
+	std::function<void()> callback;
+	RandomStatus status = RandomStatus::Ok;
+	RandomFloatResult nextFloat(const RandomRequest &request) override
+	{
+		requests.push_back(request);
+		if (callback)
+			callback();
+		return {status, (request.floatLower + request.floatUpper) * .5f};
+	}
+	RandomLongResult nextLong(const RandomRequest &) override
+	{
+		return {RandomStatus::Unavailable, 0};
+	}
+};
+bool testPlanConversion()
+{
+	ChatterRadioCatalog catalog;
+	const char *text = "Place EscortingHostages place.wav End Chatter EscortingHostages escort.wav End "
+					   "Chatter AgreeWithPlan agree.wav End Chatter Affirmative ack.wav End Chatter Help help.wav End";
+	bool ok = check(catalog.loadText(text, std::strlen(text)), "conversion default catalog loads");
+	ok = check(catalog.phraseId(ChatterPhrase::EscortingHostages) == 2 &&
+				 catalog.phraseId(ChatterPhrase::AgreeWithPlan) == 3,
+			 "plan phrase identity uses chatter namespace despite a same-name Place") &&
+		ok;
+	ChatterAdmissionClock clock;
+	ChatterScheduleAdmission own{{{1, 2}, {3, 4, 5}, 6, 10, true}, 7, 8, &clock};
+	auto peer = own;
+	peer.owner.actor = {2, 3};
+	const auto request = [&](std::uint16_t place)
+	{
+		auto out = fixed(ChatterPhrase::EscortingHostages, 10, 10, 30);
+		out.place = place;
+		out.subject = 9;
+		out.program.append({ChatterPartKind::Fixed, ChatterPhrase::EscortingHostages, 0, 0});
+		out.program.append({ChatterPartKind::Fixed, ChatterPhrase::Affirmative, 0, 0});
+		return out;
+	};
+	for (const auto place : {0U, 7U})
+	{
+		ChatterPendingQueue queue, other;
+		const auto id = queue.admit(request(static_cast<std::uint16_t>(place)), own, catalog, ChatterVerbosity::Normal);
+		const auto peerId =
+			other.admit(request(static_cast<std::uint16_t>(place)), peer, catalog, ChatterVerbosity::Normal);
+		ChatterPendingStatement before{}, node{}, friendNode{};
+		queue.read(id, &before);
+		other.read(peerId, &friendNode);
+		PlanRandom random;
+		ChatterPendingMaintenance in{};
+		in.admission = own;
+		in.teammate = friendNode.schedule;
+		in.random = &random;
+		in.agreementPhraseId = catalog.phraseId(ChatterPhrase::AgreeWithPlan);
+		queue.maintain(in);
+		queue.read(id, &node);
+		ok =
+			check(node.request.program.parts[0].phrase == ChatterPhrase::AgreeWithPlan &&
+					node.request.program.parts[1].phrase == ChatterPhrase::Affirmative &&
+					node.schedule.start == 10.75f && node.request.start == 10.75f && node.schedule.firstPhrase == 3 &&
+					node.schedule.created == 10 && node.request.expires == 30 && node.request.subject == 9 &&
+					node.schedule.order == before.schedule.order,
+				"same plan/place including undefined becomes delayed agreement without replacing its identity or tail") &&
+			ok;
+		ok = check(random.requests.size() == 1 && random.requests[0].floatLower == .5f &&
+					 random.requests[0].floatUpper == 1,
+				 "agreement consumes exactly the native short-range draw") &&
+			ok;
+		queue.maintain(in);
+		ok = check(random.requests.size() == 1 && queue.read(id, &node) && node.schedule.start == 10.75f,
+				 "already converted agreement neither redraws nor shifts start again") &&
+			ok;
+		ChatterPlaybackInput playback{};
+		playback.now = 10.5f;
+		playback.friendsRemaining = 1;
+		ok = check(queue.advance(id, playback).playback.kind == ChatterPlaybackKind::Waiting,
+				 "converted agreement cannot start before its new time") &&
+			ok;
+		playback.now = 10.75f;
+		ok = check(queue.advance(id, playback).playback.phrase == ChatterPhrase::AgreeWithPlan,
+				 "actual stored playback speaks agreement at the native start boundary") &&
+			ok;
+	}
+	ChatterPendingQueue queue, other;
+	const auto id = queue.admit(request(7), own, catalog, ChatterVerbosity::Normal);
+	const auto later =
+		queue.admit(fixed(ChatterPhrase::Affirmative, 10, 11, 30), own, catalog, ChatterVerbosity::Normal);
+	const auto peerId = other.admit(request(8), peer, catalog, ChatterVerbosity::Normal);
+	ChatterPendingStatement node{}, friendNode{};
+	other.read(peerId, &friendNode);
+	PlanRandom random;
+	ChatterPendingMaintenance in{};
+	in.admission = own;
+	in.teammate = friendNode.schedule;
+	in.random = &random;
+	in.agreementPhraseId = 3;
+	queue.maintain(in);
+	queue.read(id, &node);
+	const auto order = schedules(queue);
+	ok = check(node.schedule.start == 13.5f &&
+				 node.request.program.parts[0].phrase == ChatterPhrase::EscortingHostages && order.size() == 2 &&
+				 order[0].order == id.id && order[1].order == later.id,
+			 "different place delays original plan in place without resorting the linked list") &&
+		ok;
+	in.admission.owner.now = 11;
+	queue.maintain(in);
+	queue.read(id, &node);
+	ok =
+		check(random.requests.size() == 2 && random.requests[0].floatLower == 3 && random.requests[0].floatUpper == 4 &&
+				node.schedule.start == 14.5f && node.schedule.created == 10 && node.request.expires == 30,
+			"different-place plan redraws and postpones each maintenance without extending expiry") &&
+		ok;
+	for (unsigned mode = 0; mode < 5; ++mode)
+	{
+		ChatterPendingQueue untouched;
+		auto input = request(8);
+		if (mode == 1)
+			input.topic = ChatterStatementTopic::Information;
+		if (mode == 2)
+			input.requiresCombat = true;
+		if (mode == 3)
+			input.expires = 10;
+		if (mode == 4)
+			input.program.parts[0].phrase = ChatterPhrase::Help;
+		const auto kept = untouched.admit(input, own, catalog, ChatterVerbosity::Normal);
+		PlanRandom noDraw;
+		auto excluded = in;
+		excluded.random = &noDraw;
+		if (mode == 0)
+		{
+			ChatterPendingStatement current{};
+			untouched.read(kept, &current);
+			excluded.speaking = current.schedule;
+			excluded.speaking.speaking = true;
+		}
+		untouched.maintain(excluded);
+		ok = check(noDraw.requests.empty(),
+				 "speaking/different topic/invalid/obsolete/different first phrase consumes no conversion draw") &&
+			ok;
+	}
+	for (unsigned mode = 0; mode < 3; ++mode)
+	{
+		ChatterPendingQueue guarded;
+		const auto old = guarded.admit(request(8), own, catalog, ChatterVerbosity::Normal);
+		ChatterStatementHandle fresh{};
+		PlanRandom draw;
+		auto guardedInput = in;
+		guardedInput.random = &draw;
+		guardedInput.admission = own;
+		if (mode == 0)
+			draw.status = RandomStatus::Unavailable;
+		if (mode == 1)
+			draw.callback = [&]()
+			{
+				guarded.clear();
+				fresh = guarded.admit(request(8), own, catalog, ChatterVerbosity::Normal);
+			};
+		guarded.maintain(guardedInput,
+			[&]()
+			{
+				return mode != 2;
+			});
+		const auto survivor = mode == 1 ? fresh : old;
+		ok = check(guarded.read(survivor, &node) && node.schedule.start == 10 &&
+					 node.request.program.parts[0].phrase == ChatterPhrase::EscortingHostages,
+				 "unavailable RNG, queue reset or invalid peer receipt cannot publish stale conversion") &&
+			ok;
+	}
+	ChatterPendingQueue missing;
+	const auto nullId = missing.admit(request(8), own, catalog, ChatterVerbosity::Normal);
+	PlanRandom nullRandom;
+	auto noAgreement = in;
+	noAgreement.admission = own;
+	noAgreement.random = &nullRandom;
+	noAgreement.agreementPhraseId = 0;
+	missing.maintain(noAgreement);
+	missing.read(nullId, &node);
+	ok = check(node.schedule.start == 10.75f && node.request.program.parts[0].phrase == ChatterPhrase::None &&
+				 node.request.program.count == 2 && node.request.program.parts[1].phrase == ChatterPhrase::Affirmative,
+			 "missing agreement definition replaces only the first part with native null and still delays") &&
+		ok;
+	return ok;
+}
 }
 int main()
 {
 	using namespace astrabot::compat;
+	if (!testPlanConversion())
+		return 1;
 	ChatterRadioCatalog catalog;
 	const char *text = "Chatter Affirmative ack.wav End Chatter Help help.wav End "
 					   "Chatter EscortingHostages escort.wav End Chatter PlantingBomb Important plant.wav End "

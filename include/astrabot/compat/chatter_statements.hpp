@@ -2,6 +2,7 @@
 #define ASTRABOT_COMPAT_CHATTER_STATEMENTS_HPP
 #include "astrabot/compat/chatter_catalog.hpp"
 #include "astrabot/compat/chatter_playback.hpp"
+#include "astrabot/compat/random_source.hpp"
 #include <list>
 namespace astrabot
 {
@@ -81,6 +82,9 @@ struct ChatterPendingStatement
 };
 struct ChatterPendingMaintenance
 {
+	ICompatibilityRandomSource *random = nullptr;
+	RandomTimingContext randomTiming{};
+	std::uint32_t agreementPhraseId = 0;
 	ChatterScheduleAdmission admission{};
 	bool inCombat = false;
 	ChatterScheduleEntry speaking{};
@@ -194,6 +198,10 @@ public:
 			request.source, request.topic, request.created, request.start, effectivePlace, request.subject);
 		if (!validChatterScheduleEntry(schedule))
 			return {};
+		const auto &first = prepared.program.parts[0];
+		schedule.firstPhrase = first.kind == ChatterPartKind::Fixed ? catalog.phraseId(first.phrase)
+			: first.kind == ChatterPartKind::Place					? first.placePhrase
+																	: 0;
 		auto at = nodes_.begin();
 		while (at != nodes_.end() && at->schedule.start <= schedule.start)
 			++at;
@@ -324,6 +332,14 @@ public:
 	}
 	void maintain(const ChatterPendingMaintenance &in)
 	{
+		maintain(in,
+			[]()
+			{
+				return true;
+			});
+	}
+	template <class Current> void maintain(const ChatterPendingMaintenance &in, Current current)
+	{
 		if (!synchronize(in.admission))
 			return;
 		for (auto at = nodes_.begin(); at != nodes_.end();)
@@ -337,14 +353,60 @@ public:
 					request.noiseTick != in.noiseTick);
 			const bool obsolete = in.admission.owner.now > request.expires ||
 				(in.roundOver && request.topic != ChatterStatementTopic::Emote);
-			if (invalid ||
-				(!speaking && (noiseInvalid || obsolete || chatterStatementsRedundant(at->schedule, in.teammate))))
+			if (invalid || (!speaking && (noiseInvalid || obsolete)))
 			{
 				at = nodes_.erase(at);
 				bump();
+				continue;
 			}
-			else
-				++at;
+			if (!speaking)
+			{
+				if (in.random && request.topic == ChatterStatementTopic::MyPlan &&
+					in.teammate.topic == ChatterStatementTopic::MyPlan &&
+					at->schedule.firstPhrase != in.agreementPhraseId &&
+					at->schedule.firstPhrase == in.teammate.firstPhrase)
+				{
+					const bool samePlace = at->schedule.place == in.teammate.place;
+					constexpr float kAgreementMinimumSeconds = .5f;
+					constexpr float kAgreementMaximumSeconds = 1;
+					constexpr float kDifferentPlaceMinimumSeconds = 3;
+					constexpr float kDifferentPlaceMaximumSeconds = 4;
+					const auto lower = samePlace ? kAgreementMinimumSeconds : kDifferentPlaceMinimumSeconds;
+					const auto upper = samePlace ? kAgreementMaximumSeconds : kDifferentPlaceMaximumSeconds;
+					const auto revision = revision_;
+					if (!current() || revision_ != revision)
+						return;
+					const auto draw = in.random->nextFloat(RandomRequest::floatRequest(
+						samePlace ? "RNG-CSBOT-AGREE-WITH-PLAN" : "RNG-CSBOT-DIFFERENT-PLAN-PLACE",
+						{in.admission.owner.actor.slot, in.admission.owner.actor.generation}, in.randomTiming, lower,
+						upper));
+					// A callback may destroy this node, replace the queue or change its teammate.
+					if (!current() || revision_ != revision)
+						return;
+					const float start = in.admission.owner.now + draw.value;
+					if (draw.status == RandomStatus::Ok && std::isfinite(draw.value) && draw.value >= lower &&
+						draw.value <= upper && std::isfinite(start))
+					{
+						at->request.start = at->schedule.start = start;
+						if (samePlace)
+						{
+							const auto phrase =
+								in.agreementPhraseId ? ChatterPhrase::AgreeWithPlan : ChatterPhrase::None;
+							at->request.program.parts[0] = {ChatterPartKind::Fixed, phrase, 0, 0};
+							at->request.phrase = phrase;
+							at->schedule.firstPhrase = in.agreementPhraseId;
+						}
+						bump();
+					}
+				}
+				if (chatterStatementsRedundant(at->schedule, in.teammate))
+				{
+					at = nodes_.erase(at);
+					bump();
+					continue;
+				}
+			}
+			++at;
 		}
 	}
 

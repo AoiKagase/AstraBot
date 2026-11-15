@@ -29,96 +29,80 @@ compat::ChatterScheduleAdmission BotBehaviorRuntime::chatterAdmission(std::size_
 		actor.confirmedSpeech.lifetimeRevision(), &actor.chatterAdmissions};
 }
 
-compat::ChatterScheduleEntry BotBehaviorRuntime::activeTeamChatter(std::size_t index, int team, bool *current)
+BotBehaviorRuntime::ChatterPeerReceipt BotBehaviorRuntime::snapshotChatterPeer(std::size_t index) const
 {
-	*current = false;
-	const auto engine = services_->service_engineFunctions();
 	const auto &handles = services_->service_managedBotHandles();
 	constexpr int kEligibilityFlags = FL_CLIENT | FL_DORMANT | FL_SPECTATOR;
-	struct PeerReceipt
+	ChatterPeerReceipt receipt{};
+	receipt.managed = services_->service_managedBotSlots()[index];
+	if (!receipt.managed)
 	{
-		bool managed = false;
-		edict_t *entity = nullptr;
-		world::ActorKey actor{};
-		compat::ReactionContext context{};
-		int serial = 0;
-		bool free = false;
-		int flags = 0;
-		std::uint32_t connection = 0;
-		std::uint64_t revision = 0;
-		bool teamKnown = false;
-		std::uint8_t publicTeam = 0;
-		int entityTeam = 0;
-		string_t name = 0;
-		std::uint64_t queueRevision = 0;
-		bool hasPending = false;
-		compat::ChatterScheduleEntry speaking{};
-	};
-	const auto snapshotPeer = [&](std::size_t peerIndex)
-	{
-		PeerReceipt receipt{};
-		receipt.managed = services_->service_managedBotSlots()[peerIndex];
-		if (!receipt.managed)
-		{
-			return receipt;
-		}
-		const auto &handle = handles[peerIndex];
-		receipt.entity = handle.entity;
-		receipt.actor = {handle.actor.slot, handle.actor.actorGeneration};
-		receipt.context = reactionContext(peerIndex);
-		receipt.connection = services_->service_lifecycle().slotGeneration(handle.actor.slot);
-		receipt.revision = actors_[peerIndex].confirmedSpeech.revision();
-		receipt.teamKnown = services_->observation_publicTeamKnown(peerIndex);
-		receipt.publicTeam = services_->observation_teamInfoTeams(peerIndex);
-		if (receipt.entity)
-		{
-			receipt.serial = receipt.entity->serialnumber;
-			receipt.free = receipt.entity->free != 0;
-			receipt.flags = receipt.entity->v.flags & kEligibilityFlags;
-			receipt.entityTeam = receipt.entity->v.team;
-			receipt.name = receipt.entity->v.netname;
-		}
-		receipt.queueRevision = actors_[peerIndex].outgoingRadioSchedulers.statements().revision();
-		receipt.hasPending = !actors_[peerIndex].outgoingRadioSchedulers.statements().empty();
-		receipt.speaking = actors_[peerIndex].confirmedSpeech.scheduledStatement();
 		return receipt;
-	};
+	}
+	const auto &handle = handles[index];
+	receipt.entity = handle.entity;
+	receipt.actor = {handle.actor.slot, handle.actor.actorGeneration};
+	receipt.context = reactionContext(index);
+	receipt.connection = services_->service_lifecycle().slotGeneration(handle.actor.slot);
+	receipt.revision = actors_[index].confirmedSpeech.revision();
+	receipt.teamKnown = services_->observation_publicTeamKnown(index);
+	receipt.publicTeam = services_->observation_teamInfoTeams(index);
+	if (receipt.entity)
+	{
+		receipt.serial = receipt.entity->serialnumber;
+		receipt.free = receipt.entity->free != 0;
+		receipt.flags = receipt.entity->v.flags & kEligibilityFlags;
+		receipt.entityTeam = receipt.entity->v.team;
+		receipt.name = receipt.entity->v.netname;
+	}
+	receipt.queueRevision = actors_[index].outgoingRadioSchedulers.statements().revision();
+	receipt.hasPending = !actors_[index].outgoingRadioSchedulers.statements().empty();
+	receipt.speaking = actors_[index].confirmedSpeech.scheduledStatement();
+	return receipt;
+}
+
+bool BotBehaviorRuntime::sameChatterPeer(const ChatterPeerReceipt &a, const ChatterPeerReceipt &b)
+{
 	const auto sameStatement = [](const compat::ChatterScheduleEntry &a, const compat::ChatterScheduleEntry &b)
 	{
 		return a.owner.actor == b.owner.actor && a.owner.frame == b.owner.frame &&
 			a.owner.entityGeneration == b.owner.entityGeneration && a.owner.now == b.owner.now &&
 			a.owner.alive == b.owner.alive && a.connection == b.connection && a.ownerRevision == b.ownerRevision &&
 			a.source == b.source && a.topic == b.topic && a.created == b.created && a.start == b.start &&
-			a.order == b.order && a.place == b.place && a.subject == b.subject && a.speaking == b.speaking;
+			a.order == b.order && a.place == b.place && a.subject == b.subject && a.speaking == b.speaking &&
+			a.firstPhrase == b.firstPhrase;
 	};
-	const auto samePeer = [&](const PeerReceipt &a, const PeerReceipt &b)
+
+	if (a.managed != b.managed)
 	{
-		if (a.managed != b.managed)
-		{
-			return false;
-		}
-		if (!a.managed)
-		{
-			return true;
-		}
-		if (!(a.entity == b.entity && a.actor == b.actor && a.context.actor == b.context.actor &&
-				a.context.frame == b.context.frame && a.context.entityGeneration == b.context.entityGeneration &&
-				a.context.now == b.context.now && a.context.alive == b.context.alive && a.serial == b.serial &&
-				a.free == b.free && a.flags == b.flags && a.connection == b.connection && a.revision == b.revision &&
-				a.teamKnown == b.teamKnown && a.publicTeam == b.publicTeam && a.entityTeam == b.entityTeam &&
-				a.name == b.name))
-			return false;
-		return a.queueRevision == b.queueRevision && a.hasPending == b.hasPending &&
-			sameStatement(a.speaking, b.speaking);
-	};
-	std::array<PeerReceipt, kMaximumClientSlots> peers{};
+		return false;
+	}
+	if (!a.managed)
+	{
+		return true;
+	}
+	if (!(a.entity == b.entity && a.actor == b.actor && a.context.actor == b.context.actor &&
+			a.context.frame == b.context.frame && a.context.entityGeneration == b.context.entityGeneration &&
+			a.context.now == b.context.now && a.context.alive == b.context.alive && a.serial == b.serial &&
+			a.free == b.free && a.flags == b.flags && a.connection == b.connection && a.revision == b.revision &&
+			a.teamKnown == b.teamKnown && a.publicTeam == b.publicTeam && a.entityTeam == b.entityTeam &&
+			a.name == b.name))
+		return false;
+	return a.queueRevision == b.queueRevision && a.hasPending == b.hasPending && sameStatement(a.speaking, b.speaking);
+}
+
+compat::ChatterScheduleEntry BotBehaviorRuntime::activeTeamChatter(std::size_t index, int team, bool *current)
+{
+	*current = false;
+	const auto engine = services_->service_engineFunctions();
+	std::array<ChatterPeerReceipt, kMaximumClientSlots> peers{};
 	for (std::size_t i = 0; i < peers.size(); ++i)
 	{
-		peers[i] = snapshotPeer(i);
+		peers[i] = snapshotChatterPeer(i);
 	}
 	const auto ownCurrent = [&]()
 	{
-		return samePeer(peers[index], snapshotPeer(index));
+		return sameChatterPeer(peers[index], snapshotChatterPeer(index));
 	};
 	compat::ChatterTeamSelection selection;
 	for (std::size_t peerIndex = 0; peerIndex < peers.size(); ++peerIndex)
@@ -133,7 +117,7 @@ compat::ChatterScheduleEntry BotBehaviorRuntime::activeTeamChatter(std::size_t i
 		if (!peer.hasPending && !compat::validChatterScheduleEntry(peer.speaking))
 			continue;
 		const int peerTeam = services_->observation_resolvePlayerTeam(peer.entity);
-		if (!ownCurrent() || !samePeer(peer, snapshotPeer(peerIndex)))
+		if (!ownCurrent() || !sameChatterPeer(peer, snapshotChatterPeer(peerIndex)))
 		{
 			return {};
 		}
@@ -141,7 +125,7 @@ compat::ChatterScheduleEntry BotBehaviorRuntime::activeTeamChatter(std::size_t i
 		if (engine->pfnSzFromIndex)
 		{
 			const char *name = engine->pfnSzFromIndex(peer.name);
-			if (!ownCurrent() || !samePeer(peer, snapshotPeer(peerIndex)))
+			if (!ownCurrent() || !sameChatterPeer(peer, snapshotChatterPeer(peerIndex)))
 			{
 				return {};
 			}
@@ -198,7 +182,7 @@ compat::ChatterScheduleEntry BotBehaviorRuntime::activeTeamChatter(std::size_t i
 	}
 	for (std::size_t i = 0; i < peers.size(); ++i)
 	{
-		if (!samePeer(peers[i], snapshotPeer(i)))
+		if (!sameChatterPeer(peers[i], snapshotChatterPeer(i)))
 		{
 			return {};
 		}
@@ -622,7 +606,42 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index)
 			teammate = {};
 	}
 	input.speaking = actors_[index].confirmedSpeech.scheduledStatement();
-	actors_[index].outgoingRadioSchedulers.maintain(input, teammate);
+	const auto catalogRevision = outgoingCatalogRevision_;
+	const bool mayConvert = teammate.topic == compat::ChatterStatementTopic::MyPlan;
+	std::array<ChatterPeerReceipt, kMaximumClientSlots> maintenancePeers{};
+	if (mayConvert)
+		for (std::size_t peer = 0; peer < maintenancePeers.size(); ++peer)
+			maintenancePeers[peer] = snapshotChatterPeer(peer);
+	const auto maintenanceCurrent = [&]()
+	{
+		if (!compat::sameChatterReceipt(receiptContext, reactionContext(index)) ||
+			services_->service_lifecycle().slotGeneration(receiptContext.actor.slot) != receiptConnection ||
+			actors_[index].confirmedSpeech.lifetimeRevision() != input.admission.ownerRevision ||
+			outgoingCatalogRevision_ != catalogRevision ||
+			services_->observation_publicTeamKnown(index) != receiptTeamKnown ||
+			services_->observation_teamInfoTeams(index) != receiptTeam || handle.entity->v.team != receiptEntityTeam)
+			return false;
+		if (mayConvert)
+			for (std::size_t peer = 0; peer < maintenancePeers.size(); ++peer)
+			{
+				auto before = maintenancePeers[peer];
+				const auto now = snapshotChatterPeer(peer);
+				if (peer == index)
+				{
+					// Our queue can change during preceding maintenance nodes. Its
+					// per-draw revision check is owned by ChatterPendingQueue.
+					before.queueRevision = now.queueRevision;
+					before.hasPending = now.hasPending;
+				}
+				if (!sameChatterPeer(before, now))
+					return false;
+			}
+		return true;
+	};
+	const compat::RandomTimingContext timing{services_->command_managedBotCommandSequences(index), 0U,
+		services_->service_managedBotFullUpdateSequences()[index]};
+	actors_[index].outgoingRadioSchedulers.maintain(input, teammate, &services_->service_compatibilityRandomSource(),
+		timing, outgoingChatterCatalog_.phraseId(compat::ChatterPhrase::AgreeWithPlan), maintenanceCurrent);
 	const auto retained = actors_[index].confirmedSpeech.scheduledStatement();
 	if (compat::validChatterScheduleEntry(retained) &&
 		!actors_[index].outgoingRadioSchedulers.statements().handle(retained).id)
