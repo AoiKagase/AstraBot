@@ -160,6 +160,11 @@ target_link_libraries(astrabot_chatter_schedule PRIVATE astrabot_core)
 astrabot_apply_warnings(astrabot_chatter_schedule)
 add_test(NAME astrabot_chatter_schedule COMMAND astrabot_chatter_schedule)
 
+add_executable(astrabot_chatter_playback tests/chatter_playback_tests.cpp)
+target_link_libraries(astrabot_chatter_playback PRIVATE astrabot_core)
+astrabot_apply_warnings(astrabot_chatter_playback)
+add_test(NAME astrabot_chatter_playback COMMAND astrabot_chatter_playback)
+
 add_executable(astrabot_chatter_statements tests/chatter_statements_tests.cpp)
 target_link_libraries(astrabot_chatter_statements PRIVATE astrabot_core)
 astrabot_apply_warnings(astrabot_chatter_statements)

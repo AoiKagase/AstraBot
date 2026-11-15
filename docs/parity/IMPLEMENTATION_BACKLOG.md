@@ -15,3 +15,47 @@ This is an evidence-driven queue, not a complete parity/completion claim. Histor
 PM_Move actual footstep intake was implemented and locally merged at7c7de92. Native animation GameEvents and full scheduling equivalence were not established by that bridge.
 
 Each completed item must cite its source/test/artifact identity in STATUS.md. Preserve unrelated edits and user profiles; no push or deployment is implied by local merge authorization.
+
+## User-approved repair-unit sequence — 2026-11-15
+
+The user requests01 onward in order, each repaired unit committed and locally FF merged.22 repair/investigation candidates plus3 audit/live gates; this is not a final exhaustive total before23. NAV authoring/learning remains outside the current milestone (.planning/PROJECT.md).
+
+| ID | 修正単位 | 現在の作業／残件 |
+|---|---|---|
+|01|複数パーツ再生Core|本節のCore実装。最終ゲート／統合記録はunit01 session RESULT.json|
+|02|場所音声・共有20秒抑制|未実装。親compound sessionに履歴下書きを保存|
+|03|本番複数パーツ・文脈判定|未接続。場所→待機→敵数、最多敵場所、戦闘条件、無音中の死亡割込み。01review Minorのskip/nullと0+.1を含む|
+|04|標準無線の送信回数|最大3回再試行からネイティブ1回へ|
+|05|同一Botリセット時の遅延応答|古いAck破棄|
+
+| ID | 修正単位 | 現在の作業／残件 |
+|---|---|---|
+|06|同計画への同意|AgreeWithPlan変換／開始時刻変更|
+|07|援護要請の行動連動|発話完了後Help伝達／反応|
+|08|追従要請の行動連動|Follow伝達／距離・任務・性格|
+|09|防衛要請の行動連動|DefendHere伝達／防衛・隠れ場所|
+|10|状況報告応答|RequestReport／ReportingIn|
+
+| ID | 修正単位 | 現在の作業／残件 |
+|---|---|---|
+|11|C4状況報告と共有|搬送者・落下・設置場所・サイト確認等|
+|12|人質状況報告と共有|警備・連れ去り・回収・呼び掛け等|
+|13|追加戦闘報告|撃破・釘付け・狙撃警告等|
+|14|終了・勝利発話|死亡Bot／REPORT_ROUND_END／終了発話の保持|
+|15|その他Say／Encourage|任意既定フレーズ・Negative・意図表明・励まし|
+
+| ID | 修正単位 | 現在の作業／残件 |
+|---|---|---|
+|16|味方撃ち抗議|正確な公開受信経路の調査が必要|
+|17|被弾警戒・パニック|正確な加害元・時刻・呼出順の公開受信経路が未確立|
+|18|武器アニメーションイベント|reload／knife／grenadeのネイティブ対応|
+|19|人質救助要請へのCT対応|受信経路／回収判断|
+|20|人質使用へのT対応|受信経路／救出地点警備|
+
+| ID | 修正単位 | 現在の作業／残件 |
+|---|---|---|
+|21|音声候補の乱数整合|Engine RNG shuffle近似とnative CRT順の差分|
+|22|Linux combat_policy|既知のweapon/skill/recoil chest閾値失敗|
+|23|全13状態と周辺の現行監査|NAV／戦闘／武器／目的／管理／profile／command。追加差分が見つかれば明示的に追加|
+|24|実参照との差分リプレイ|判断／event／RNG消費順の比較|
+|25|両OS実機受入れ|C4／視認後Aim／旋回／多人数FPS・lag|

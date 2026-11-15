@@ -1,3 +1,19 @@
+## 2026-11-15 repair unit01: compound playback Core
+
+Source based7f403ff5c6fef0b42c43140a5b213a38eefd386; native read-only ReGameDLL-CS b0889847fe6d03898be88acc9e366660efb40ab5, cs_bot_chatter.cpp964–1185/header358–455. User explicitly requests inventory01 onward in order, committing and locally merging each repair unit. This unit supplies the SDK-free model;02Place metadata/history and03actual runtime multipart transport remain open.
+
+- Max4 inline fixed/place/current-count/remaining-count/short/long/accumulation parts advance one part per selected invocation, retain logical speaking through silent contexts, and finish on a separate strict update. Current context is evaluated at part start; accumulation uses >3 enemies or strict >2sec from statement speaking start.
+- State-scoped step receipts reject stale completion/delay/cancellation; in-flight delay prevents reentrant advancement and can retry unavailable results. Short/long ranges and ordinary duration+.1/native2sec radio input are exposed as values without Core Engine/RNG callbacks. Queue/actor ownership is explicitly the03adapter's responsibility.
+- Initial Core interface stub RED precedes implementation. Existing delay failure was a fixture precision mismatch: stored float32 .1 versus excess-precision x87 decimal expression. A diagnostic proves exact values; strict float32-bit equality follows the existing compatibility RNG boundary, with no epsilon or production numeric change. Expanded Core progression/minimum/range/null/Place identity/Emote/invalid-time/empty-program cases pass.
+
+Single fresh source review0Critical/0Important/1Minor. Minor deferred to03: make skip=true null-phrase semantics explicit in adapter-facing docs/tests; a valid but inaudible phrase reserves0+.1. Current model supports both, no Important fix pass/re-review. Immutable-program/state-scoped Core contract is explicit; no runtime/metadata/transport/live certification from this unit. Pending02/03 fixture/history bytes and original actual missing-Place RED remain preserved in the parent compound session.
+
+Final offline gates: Windows x86 complete build/CTest123/123 PASS11.72s, VS18/MSVC14.51.36231 Hostx86/x86 matches cached NMake compiler; Linux x86 complete build/CTest121/122 PASS14.29s. Sole failure remains unchanged astrabot_combat_policy (weapon/skill/recoil chest policy matches reference thresholds), repair unit22. All new Core and existing frozen/ownership/ports/architecture/performance/runtime gates pass; no golden regeneration. OS suites serialized.
+
+PE/ELF x86 independently exact7exports PASS; manifest297entries/289C-C++ PASS. Final300source/build/ownership inputs,2artifacts and4user files match saved identities. SHA256 DLL381b33c4476f4171a88edc6b60e44d472d996257e2344b0d481b15c4a302cdcd; SO2e09551b57a0a0b2a06356fd23a0cdf23d77c991a513cc17560110694d5aebd5. Native HEAD and used chatter.cpp/.h remain clean at the oracle pin. Evidence: .agent-state/sessions/csbot-playback-core-dc287233-e121-431f-95fe-98f64f66a1d8/ (STATE, original parent RED/diagnostic references, focused/full gates, final review, artifact/manifest, fingerprints). Local commit/FF receipt is session RESULT.json.
+
+Decisions: existing shared checkout/caches/user evidence retained with exact paths/fingerprints (mixed-evidence/disk risk); user's explicit per-unit split is honored (runtime behavior remains pending03 rather than claimed solved); source review is separate from platform/artifact/live gates. Full native parity goal stays active, including known Linux combat_policy baseline and deferred Minor; no push/deployment/live acceptance claim.
+
 ## 2026-11-15 common pending statement collection
 
 Source base7105bd88b168df8ebd1371ed006b97f3602d2ede; read-only ReGameDLL-CS b0889847fe6d03898be88acc9e366660efb40ab5, cs_bot_chatter.cpp777–910/1256–1374/1451–1582/1884–1905/2254–2262 and represented fixed constructors.
