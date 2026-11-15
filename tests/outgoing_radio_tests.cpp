@@ -91,6 +91,43 @@ int main()
 	check(
 		out.status == OutgoingRadioStatus::Ready && out.menu == 1 && out.slot == 5 && out.phrase == ChatterPhrase::None,
 		"direct VIP FollowMe cannot be substituted by queued Help voice");
+	vipWithHelp.confirmSent(in, out);
+	auto afterVip = in;
+	afterVip.vipEscaping = false;
+	afterVip.now += .1f;
+	out = vipWithHelp.update(afterVip, catalog);
+	check(out.status == OutgoingRadioStatus::Ready && out.phrase == ChatterPhrase::Help,
+		"confirmed direct VIP radio preserves independent queued statement");
+	OutgoingRadioScheduler vipExpiry;
+	auto expiryInput = in;
+	expiryInput.vipEscaping = false;
+	expiryInput.now = 10;
+	expiryInput.teamBusyUntil = 30;
+	(void)vipExpiry.update(expiryInput, catalog);
+	expiryInput.now = 15;
+	expiryInput.vipEscaping = true;
+	(void)vipExpiry.update(expiryInput, catalog);
+	expiryInput.now = 20.1f;
+	expiryInput.vipEscaping = false;
+	out = vipExpiry.update(expiryInput, catalog);
+	vipExpiry.confirmSent(expiryInput, out);
+	expiryInput.teamBusyUntil = 0;
+	check(vipExpiry.update(expiryInput, catalog).status == OutgoingRadioStatus::None,
+		"direct VIP retry lifetime cannot extend an older statement lifetime");
+	OutgoingRadioScheduler blockedGeneric;
+	auto blockedInput = afterVip;
+	blockedInput.frame.roundGeneration = 39;
+	blockedInput.visibleEnemyCount = 0;
+	blockedInput.bombLocationUnknown = true;
+	blockedInput.canStart = false;
+	check(blockedGeneric.update(blockedInput, empty).status != OutgoingRadioStatus::MissingPhrase &&
+			blockedGeneric.hasPending(),
+		"blocked generic maintenance cannot consume missing-phrase readiness");
+	blockedInput.canStart = true;
+	check(
+		blockedGeneric.update(blockedInput, empty, 1U << static_cast<unsigned>(ChatterPhrase::WhereIsTheBomb)).phrase ==
+			ChatterPhrase::WhereIsTheBomb,
+		"selected generic statement remains deliverable after blocked maintenance");
 	OutgoingRadioScheduler voiceOnly;
 	auto voiceInput = in;
 	voiceInput.frame.roundGeneration = 31;

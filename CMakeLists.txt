@@ -155,7 +155,12 @@ add_executable(astrabot_friend_death tests/friend_death_tests.cpp)
   astrabot_apply_warnings(astrabot_kill_praise)
   add_test(NAME astrabot_kill_praise COMMAND astrabot_kill_praise)
 
-  add_executable(astrabot_enemy_count_chatter tests/enemy_count_chatter_tests.cpp)
+  add_executable(astrabot_chatter_schedule tests/chatter_schedule_tests.cpp)
+target_link_libraries(astrabot_chatter_schedule PRIVATE astrabot_core)
+astrabot_apply_warnings(astrabot_chatter_schedule)
+add_test(NAME astrabot_chatter_schedule COMMAND astrabot_chatter_schedule)
+
+add_executable(astrabot_enemy_count_chatter tests/enemy_count_chatter_tests.cpp)
   target_link_libraries(astrabot_enemy_count_chatter PRIVATE astrabot_core)
   astrabot_apply_warnings(astrabot_enemy_count_chatter)
   add_test(NAME astrabot_enemy_count_chatter COMMAND astrabot_enemy_count_chatter)

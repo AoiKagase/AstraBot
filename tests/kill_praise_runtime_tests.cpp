@@ -291,6 +291,9 @@ bool testKillPraise(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &en
 			"fixed human praise uses undefined place and rejects Count2/Speaker-only clips"))
 		return false;
 	step(2.0f);
+	if (!check(praiseSamples.size() == 1, "native praise completion consumes one update before remaining count"))
+		return false;
+	step(.12f);
 	if (!check(praiseSamples.size() == 2 && praiseSamples[1] == "radio/test/one.wav",
 			"praise and remaining-count statements retain each other"))
 		return false;

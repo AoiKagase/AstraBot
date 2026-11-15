@@ -2,6 +2,7 @@
 #define ASTRABOT_COMPAT_ENEMY_COUNT_CHATTER_HPP
 
 #include "astrabot/compat/random_source.hpp"
+#include "astrabot/compat/chatter_schedule.hpp"
 #include "astrabot/world/world_snapshot.hpp"
 #include <cmath>
 
@@ -21,6 +22,7 @@ struct EnemyCountDeathInput
 	bool victimEnemy = false;
 	bool killerFriendly = false;
 	bool enabled = false;
+	ChatterScheduleAdmission admission{};
 };
 
 struct EnemyCountSpeechInput
@@ -71,6 +73,8 @@ public:
 		pending_ = true;
 		created_ = in.now;
 		start_ = in.now + delay.value;
+		schedule_ = in.admission.make(
+			ChatterScheduleSource::EnemyCount, ChatterStatementTopic::EnemiesRemaining, created_, start_);
 		return true;
 	}
 
@@ -101,6 +105,11 @@ public:
 	void reset()
 	{
 		*this = EnemyCountChatterPolicy{};
+	}
+
+	ChatterScheduleEntry scheduledStatement() const
+	{
+		return pending_ ? schedule_ : ChatterScheduleEntry{};
 	}
 
 	float scheduledStart() const
@@ -145,6 +154,7 @@ private:
 	float created_ = 0;
 	float start_ = 0;
 	bool pending_ = false;
+	ChatterScheduleEntry schedule_{};
 };
 }
 }

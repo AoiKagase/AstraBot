@@ -45,9 +45,13 @@ public:
 		phrase_ = ChatterPhrase::None;
 		until_ = 0;
 		advanceRevision();
+		++lifetimeRevision_;
+		if (lifetimeRevision_ == 0)
+			++lifetimeRevision_;
+		schedule_ = {};
 	}
 
-	void maintain(const ReactionContext &context)
+	void synchronizeOwner(const ReactionContext &context)
 	{
 		if (!context.valid())
 		{
@@ -59,11 +63,41 @@ public:
 			reset();
 		}
 		context_ = context;
-		if (phrase_ != ChatterPhrase::None && context.now >= until_)
+	}
+
+	bool completeIfElapsed(const ReactionContext &context, bool noFriends = false)
+	{
+		if (wasTalking(context) && (noFriends || context.now > until_))
 		{
 			phrase_ = ChatterPhrase::None;
+			schedule_ = {};
 			advanceRevision();
+			return true;
 		}
+		return false;
+	}
+
+	void maintain(const ReactionContext &context)
+	{
+		synchronizeOwner(context);
+		(void)completeIfElapsed(context);
+	}
+
+	std::uint64_t lifetimeRevision() const
+	{
+		return lifetimeRevision_;
+	}
+
+	void prepareSchedule(const ChatterScheduleEntry &schedule)
+	{
+		schedule_ = schedule;
+		schedule_.source = ChatterScheduleSource::Speaking;
+		schedule_.speaking = true;
+	}
+
+	ChatterScheduleEntry scheduledStatement() const
+	{
+		return phrase_ != ChatterPhrase::None ? schedule_ : ChatterScheduleEntry{};
 	}
 
 	std::uint64_t revision() const
@@ -145,6 +179,8 @@ private:
 	ChatterPhrase phrase_ = ChatterPhrase::None;
 	float until_ = 0;
 	std::uint64_t revision_ = 0;
+	std::uint64_t lifetimeRevision_ = 0;
+	ChatterScheduleEntry schedule_{};
 };
 
 struct FriendDeathChatterEvent
@@ -221,15 +257,17 @@ public:
 		slots_ = {};
 	}
 
-	bool admitCommander(const ReactionContext &context, std::uint32_t allowed, bool intentionPending)
+	bool admitCommander(const ReactionContext &context, std::uint32_t allowed, bool intentionPending,
+		const ChatterScheduleAdmission &admission = {})
 	{
 		constexpr float kCommanderLifetimeSeconds = 20.0f;
 		return synchronize(context) && !intentionPending &&
-			admit(kCommanderSlot, ChatterPhrase::CommanderDown, context, 0, kCommanderLifetimeSeconds, allowed);
+			admit(kCommanderSlot, ChatterPhrase::CommanderDown, context, 0, kCommanderLifetimeSeconds, allowed,
+				admission);
 	}
 
-	bool admitKilled(
-		const ReactionContext &context, KilledFriendDelay delay, std::uint32_t allowed, bool ownSpeaking = false)
+	bool admitKilled(const ReactionContext &context, KilledFriendDelay delay, std::uint32_t allowed,
+		bool ownSpeaking = false, const ChatterScheduleAdmission &admission = {})
 	{
 		constexpr float kKilledLifetimeSeconds = 2.0f;
 		constexpr float kMinimumDelaySeconds = .5f;
@@ -237,7 +275,7 @@ public:
 		return synchronize(context) && !ownSpeaking && delay.valid && std::isfinite(delay.seconds) &&
 			delay.seconds >= kMinimumDelaySeconds && delay.seconds <= kMaximumDelaySeconds &&
 			admit(kKilledFriendSlot, ChatterPhrase::KilledFriend, context, delay.seconds, kKilledLifetimeSeconds,
-				allowed);
+				allowed, admission);
 	}
 
 	bool hasCommander(const ReactionContext &context) const
@@ -248,6 +286,21 @@ public:
 	bool active() const
 	{
 		return slots_[0].sequence != 0 || slots_[kKilledFriendSlot].sequence != 0;
+	}
+
+	std::array<ChatterScheduleEntry, kTopicCount> scheduledStatements() const
+	{
+		return {{slots_[0].sequence ? slots_[0].schedule : ChatterScheduleEntry{},
+			slots_[1].sequence ? slots_[1].schedule : ChatterScheduleEntry{}}};
+	}
+
+	void discardSource(ChatterScheduleSource source)
+	{
+		for (auto &slot : slots_)
+		{
+			if (slot.sequence && slot.schedule.source == source)
+				slot = {};
+		}
 	}
 
 	float scheduledStart() const
@@ -311,6 +364,7 @@ private:
 		float start = 0;
 		float expires = 0;
 		std::uint64_t sequence = 0;
+		ChatterScheduleEntry schedule{};
 	};
 
 	bool matches(const ReactionContext &context) const
@@ -338,7 +392,7 @@ private:
 	}
 
 	bool admit(std::size_t index, ChatterPhrase phrase, const ReactionContext &context, float delay, float lifetime,
-		std::uint32_t allowed)
+		std::uint32_t allowed, const ChatterScheduleAdmission &admission)
 	{
 		if (slots_[index].sequence != 0 || !(allowed & (1U << static_cast<unsigned>(phrase))))
 		{
@@ -349,7 +403,12 @@ private:
 		{
 			++sequence_;
 		}
-		slots_[index] = {phrase, context.now + delay, context.now + lifetime, sequence_};
+		const bool commander = index == kCommanderSlot;
+		const auto schedule =
+			admission.make(commander ? ChatterScheduleSource::CommanderDown : ChatterScheduleSource::KilledFriend,
+				commander ? ChatterStatementTopic::MyIntention : ChatterStatementTopic::KilledFriend, context.now,
+				context.now + delay);
+		slots_[index] = {phrase, context.now + delay, context.now + lifetime, sequence_, schedule};
 		return true;
 	}
 

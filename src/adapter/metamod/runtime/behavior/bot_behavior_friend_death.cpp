@@ -292,7 +292,8 @@ void BotBehaviorRuntime::observeFriendDeath(std::size_t index, const edict_t *vi
 			return;
 		}
 		(void)actor.friendDeathChatter.admitCommander(context, allowed,
-			actor.killPraise.active() || actor.confirmedSpeech.blocks(compat::ChatterPhrase::CommanderDown, context));
+			actor.killPraise.active() || actor.confirmedSpeech.blocks(compat::ChatterPhrase::CommanderDown, context),
+			chatterAdmission(index));
 	}
 	speech.killerSelf = killer == self;
 	speech.killerHumanFriendly = killer && (killer->v.flags & FL_FAKECLIENT) == 0 &&
@@ -315,8 +316,8 @@ void BotBehaviorRuntime::observeFriendDeath(std::size_t index, const edict_t *vi
 		{
 			return;
 		}
-		(void)actor.friendDeathChatter.admitKilled(
-			context, delay, allowed, actor.confirmedSpeech.blocks(compat::ChatterPhrase::KilledFriend, context));
+		(void)actor.friendDeathChatter.admitKilled(context, delay, allowed,
+			actor.confirmedSpeech.blocks(compat::ChatterPhrase::KilledFriend, context), chatterAdmission(index));
 	}
 	// Speech callbacks may change our state. Native evaluates these tail branches
 	// after chatter admission, without repeating retaliation or its RNG.

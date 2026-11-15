@@ -128,6 +128,7 @@ void BotBehaviorRuntime::observePlayerDeath(
 				.enemies;
 		in.timing = {services_->command_managedBotCommandSequences(index), 0U,
 			services_->service_managedBotFullUpdateSequences()[index]};
+		in.admission = chatterAdmission(index);
 		actors_[index].enemyCountChatter.observe(in, services_->service_compatibilityRandomSource());
 		if (in.nearbyEnemies > 1 || killer == self)
 			continue;
@@ -163,6 +164,7 @@ void BotBehaviorRuntime::observePlayerDeath(
 			killer->serialnumber != killerSerial || services_->service_managedBotHandles()[index].entity != self ||
 			services_->service_managedBotHandles()[index].actor.actorGeneration != in.actor.generation)
 			continue;
+		praise.admission = chatterAdmission(index);
 		actors_[index].killPraise.observe(praise, services_->service_compatibilityRandomSource());
 	}
 }

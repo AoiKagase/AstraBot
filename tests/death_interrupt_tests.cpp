@@ -25,6 +25,12 @@ int main()
 			speech.wasTalking(context) && speech.revision() == transportRevision,
 		"native speaking begins before transport callback completion");
 	check(speech.record(context, ChatterPhrase::CommanderDown, 10.3f, transportRevision), "real speech confirms");
+	auto exactEnd = context;
+	exactEnd.now = 10.3f;
+	auto boundarySpeech = speech;
+	boundarySpeech.maintain(exactEnd);
+	check(boundarySpeech.wasTalking(exactEnd),
+		"native speaking survives exact nextTime boundary until strictly later owner update");
 	auto death = context;
 	death.alive = false;
 	death.frame.tick = 6;

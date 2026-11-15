@@ -104,6 +104,7 @@ public:
 	virtual const perception::PerceptionAssembler &observation_managedBotPerception(std::size_t index) const = 0;
 	virtual bool observation_consumeNoise(std::size_t index, const world::NoiseMemory &expected) = 0;
 	virtual const std::uint8_t &observation_teamInfoTeams(std::size_t index) const = 0;
+	virtual const bool &observation_publicTeamKnown(std::size_t index) const = 0;
 	virtual const std::array<ObjectiveKnowledge, kObjectiveKnowledgeStateCount> &observation_objectiveKnowledge(
 		std::size_t index) const = 0;
 	virtual const ObservationAdapter &observation_observationAdapter() const = 0;

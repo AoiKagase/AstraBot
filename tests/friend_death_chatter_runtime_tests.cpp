@@ -62,6 +62,61 @@ unsigned deathVoiceStarts = 0;
 unsigned deathMessageNumbers = 0;
 edict_t *deathSpeechRecipient = nullptr;
 std::vector<std::string> deathSpeechSamples;
+bool schedulePeerDisconnect = false;
+bool schedulePeerTeamChange = false;
+bool scheduleVip = false;
+bool scheduleVipPeerChanges = false;
+unsigned scheduleDirectSends = 0;
+bool scheduleExcludedPeer = false;
+bool scheduleSawExcludedPeer = false;
+std::uint32_t scheduleExcludedSequence = 0;
+const char *scheduleStringFromIndex(int index)
+{
+	if (scheduleVip && index == 10001)
+		return "as_schedule";
+	if (scheduleVip && index == 10002)
+		return "func_vip_safetyzone";
+	auto &scheduleRuntime = astrabot::metamod::PluginRuntime::instance();
+	auto &scheduleServices = static_cast<astrabot::metamod::BotBehaviorServices &>(scheduleRuntime);
+	if (scheduleExcludedPeer && scheduleServices.service_managedBotFullUpdateSequences()[4] != scheduleExcludedSequence)
+	{
+		if (index == 100 && scheduleServices.observation_teamInfoTeams(0) == 2)
+			scheduleSawExcludedPeer = true;
+		if (index == 104 && scheduleSawExcludedPeer)
+		{
+			scheduleExcludedPeer = false;
+			scheduleRuntime.onMessageBegin(MSG_ALL, 86, nullptr, nullptr);
+			scheduleRuntime.onWriteByte(1);
+			scheduleRuntime.onWriteString("TERRORIST");
+			scheduleRuntime.onMessageEnd();
+		}
+	}
+	if (scheduleVipPeerChanges && index == 104)
+	{
+		const bool wasCt = scheduleServices.observation_teamInfoTeams(4) == 2;
+		scheduleRuntime.onMessageBegin(MSG_ALL, 86, nullptr, nullptr);
+		scheduleRuntime.onWriteByte(5);
+		scheduleRuntime.onWriteString(wasCt ? "TERRORIST" : "CT");
+		scheduleRuntime.onMessageEnd();
+	}
+	if (schedulePeerTeamChange && index == 104)
+	{
+		schedulePeerTeamChange = false;
+		auto &runtime = astrabot::metamod::PluginRuntime::instance();
+		runtime.onMessageBegin(MSG_ALL, 86, nullptr, nullptr);
+		runtime.onWriteByte(5);
+		runtime.onWriteString("CT");
+		runtime.onMessageEnd();
+	}
+	if (schedulePeerDisconnect && index == 104)
+	{
+		schedulePeerDisconnect = false;
+		astrabot::metamod::PluginRuntime::instance().onClientDisconnect(&gEntities[4]);
+	}
+	return szFromIndex(index);
+}
+int deathSpeechSender = 0;
+std::vector<int> deathSpeechSenders;
 std::vector<std::string> deathSpeechDraws;
 struct DeathSpeechTrace : astrabot::compat::IRandomTraceSink
 {
@@ -135,6 +190,8 @@ unsigned deathSpeechLength(const char *)
 }
 int deathSpeechMessageId(plid_t plugin, const char *name, int *size)
 {
+	if (std::strcmp(name, "ScoreAttrib") == 0)
+		return 104;
 	if (std::strcmp(name, "DeathMsg") == 0)
 		return 103;
 	if (std::strcmp(name, "SendAudio") == 0)
@@ -151,6 +208,10 @@ void deathSpeechBegin(int, int type, const float *, edict_t *recipient)
 }
 void deathSpeechNumber(int value)
 {
+	if (deathSpeechMessage == 101 && deathSpeechRecipient == &gEntities[0] && deathMessageNumbers++ == 0)
+	{
+		deathSpeechSender = value;
+	}
 	if (deathSpeechMessage == 102 && deathSpeechRecipient == &gEntities[0] && deathMessageNumbers++ == 0 && value == 1)
 		++deathVoiceStarts;
 }
@@ -159,6 +220,7 @@ void deathSpeechString(const char *sample)
 	if (deathSpeechMessage != 101 || deathSpeechRecipient != &gEntities[0])
 		return;
 	deathSpeechSamples.push_back(sample);
+	deathSpeechSenders.push_back(deathSpeechSender);
 	if (resetDuringVoice && std::strcmp(sample, "radio/test/down.wav") == 0)
 	{
 		resetDuringVoice = false;
@@ -197,6 +259,20 @@ unsigned deathRadioRequests = 0;
 void deathRadioClientCommand(edict_t *self)
 {
 	const char *command = astrabot::metamod::HookCommandArgv(0);
+	if (scheduleVip && std::strcmp(command, "radio1") == 0)
+		return;
+	if (scheduleVip && std::strcmp(command, "menuselect") == 0 &&
+		std::strcmp(astrabot::metamod::HookCommandArgv(1), "5") == 0)
+	{
+		++scheduleDirectSends;
+		auto &runtime = astrabot::metamod::PluginRuntime::instance();
+		runtime.onMessageBegin(MSG_ONE, 101, nullptr, self);
+		runtime.onWriteByte(indexOfEdict(self));
+		runtime.onWriteString("%!MRAD_FOLLOWME");
+		runtime.onWriteShort(100);
+		runtime.onMessageEnd();
+		return;
+	}
 	if (std::strcmp(command, "radio3") == 0)
 	{
 		++deathRadioRequests;
@@ -225,6 +301,7 @@ void deathRadioClientCommand(edict_t *self)
 void setupDeathChatter(enginefuncs_t &engine, globalvars_t &)
 {
 	deathSpeechDefaultMissing = missingDefaultDeathSpeechFixture();
+	engine.pfnSzFromIndex = &scheduleStringFromIndex;
 	engine.pfnCVarGetFloat = &deathSpeechCvarFloat;
 	engine.pfnCVarGetString = &deathSpeechCvar;
 	engine.pfnIsCareerMatch = &deathSpeechIsCareer;
@@ -666,6 +743,10 @@ bool testDeathChatter(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &
 	death();
 	step(.12f);
 	step(.8f);
+	reviewRegressions = check(deathSpeechSamples == std::vector<std::string>{"radio/test/down.wav"},
+							"native statement completion consumes one owner update before the next speech") &&
+		reviewRegressions;
+	step(.12f);
 	reviewRegressions =
 		check(deathSpeechSamples == std::vector<std::string>{"radio/test/down.wav", "radio/test/killed.wav"},
 			"review: fixed death phrases select UNDEFINED rather than speaker NAV place") &&
@@ -733,11 +814,159 @@ bool testDeathChatter(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &
 	death(0);
 	step(.12f);
 	step(.4f);
-	if (!check(services.service_managedBotSlots()[4] && services.service_managedBotFullUpdateSequences()[4] != 0 &&
+	const bool oneTeamAnnouncement =
+		check(services.service_managedBotSlots()[4] && services.service_managedBotFullUpdateSequences()[4] != 0 &&
 				deathSpeechSamples == std::vector<std::string>{"radio/test/down.wav"},
-			"two active managed observers produce one actual CommanderDown announcement"))
-		return false;
+			"two active managed observers produce one actual CommanderDown announcement");
+	// Native scans all teammate queues, independent of which bot updates first.
+	begin();
+	deathSpeechCareer = 0;
+	deathSpeechSenders.clear();
+	death(3, 2, MSG_ONE, &gEntities[4]);
+	globals.time += .875f;
+	death(3, 2, MSG_ONE, &self);
+	step(.8f);
+	const bool olderPeerFirst = check(deathSpeechSenders == std::vector<int>{5},
+		"older slot5 statement wins even when newer slot1 owner updates first");
+	begin();
+	deathSpeechCareer = 0;
+	deathSpeechSenders.clear();
+	death(3, 2, MSG_ONE, &self);
+	globals.time += .125f;
+	deathSpeechCareer = 1;
+	death(0, 2, MSG_ONE, &gEntities[4]);
+	step(.12f);
+	const bool futureSelectionBlocks = check(
+		deathSpeechSamples.empty(), "native creation-time comparison keeps older future slot1 ahead of ready slot5");
+	begin();
+	deathSpeechSenders.clear();
+	death(0, 2, MSG_ONE, &gEntities[4]);
+	step(.12f);
+	const bool peerSpeaking =
+		check(deathSpeechSenders == std::vector<int>{5}, "retained-speaker fixture starts real slot5 speech");
+	deathSpeechSamples.clear();
+	deathSpeechSenders.clear();
+	deathSpeechCareer = 0;
+	death(3, 2, MSG_ONE, &self);
+	step(.8f);
+	const bool peerRetained = check(deathSpeechSamples.empty(),
+		"slot1 waits for expired-duration slot5 speech until slot5 owner completion update");
+	step(.12f);
+	const bool afterPeerCompletion =
+		check(deathSpeechSenders == std::vector<int>{1}, "queued slot1 speech starts after retained peer completion");
+	bool qualifiedPeers = true;
+	for (int variant = 0; variant < 4; ++variant)
+	{
+		begin();
+		deathSpeechCareer = 0;
+		deathSpeechSenders.clear();
+		death(3, 2, MSG_ONE, &gEntities[4]);
+		globals.time += .875f;
+		death(3, 2, MSG_ONE, &self);
+		const auto peerFlags = gEntities[4].v.flags;
+		const auto peerName = gEntityNames[4];
+		if (variant == 0)
+			team(5, "CT");
+		if (variant == 1)
+			gEntities[4].v.flags |= FL_DORMANT;
+		if (variant == 2)
+			gEntityNames[4].clear();
+		if (variant == 3)
+			++gEntities[4].serialnumber;
+		step(.8f);
+		qualifiedPeers = check(deathSpeechSenders == std::vector<int>{1},
+							 "enemy/dormant/unnamed/reused peer cannot block a qualified current speaker") &&
+			qualifiedPeers;
+		gEntities[4].v.flags = peerFlags;
+		gEntityNames[4] = peerName;
+		team(5, "TERRORIST");
+	}
+	begin();
+	deathSpeechCareer = 0;
+	deathSpeechSenders.clear();
+	death(3, 2, MSG_ONE, &self);
+	globals.time += .875f;
+	death(3, 2, MSG_ONE, &gEntities[4]);
+	schedulePeerTeamChange = true;
+	step(.8f);
+	const bool teamScanCancelled = check(!schedulePeerTeamChange && deathSpeechSenders.empty(),
+		"public team change during peer name lookup cancels the old team scan");
+	step(.12f);
+	const bool afterTeamChange = check(
+		deathSpeechSenders == std::vector<int>{1}, "fresh team scan delivers current speech after peer changes team");
+	team(5, "TERRORIST");
+	begin();
+	deathSpeechCareer = 0;
+	deathSpeechSenders.clear();
+	death(3, 2, MSG_ONE, &self);
+	globals.time += .875f;
+	death(3, 2, MSG_ONE, &gEntities[4]);
+	team(1, "CT");
+	scheduleExcludedSequence = services.service_managedBotFullUpdateSequences()[4];
+	scheduleSawExcludedPeer = false;
+	scheduleExcludedPeer = true;
+	step(.8f);
+	const bool excludedPeerFixture = check(!scheduleExcludedPeer && scheduleSawExcludedPeer &&
+			std::find(deathSpeechSenders.begin(), deathSpeechSenders.end(), 1) != deathSpeechSenders.end(),
+		"review fixture requalifies earlier excluded speaking slot1 during later slot5 scan callback");
+	const bool excludedPeerProtected =
+		check(std::find(deathSpeechSenders.begin(), deathSpeechSenders.end(), 5) == deathSpeechSenders.end(),
+			"review: later owner cannot speak after an earlier excluded peer becomes eligible mid-scan");
+	begin();
+	scheduleVip = true;
+	scheduleVipPeerChanges = true;
+	scheduleDirectSends = 0;
+	const auto oldMap = globals.mapname;
+	globals.mapname = 10001;
+	gObjectiveEntitiesAvailable = true;
+	gBombSite.free = false;
+	gBombSite.v.classname = 10002;
+	gBombSite.v.origin = Vector(300, 0, 36);
+	gBombSite.v.absmin = Vector(260, -40, 0);
+	gBombSite.v.absmax = Vector(340, 40, 72);
+	for (int slot = 1; slot <= 5; ++slot)
+		team(slot, slot == 4 ? "TERRORIST" : "CT");
+	hooks.pfnMessageBegin(MSG_ALL, 104, nullptr, nullptr);
+	hooks.pfnWriteByte(1);
+	hooks.pfnWriteByte(4);
+	hooks.pfnMessageEnd();
+	gHookedGameDllTable.pfnClientCommand = &deathRadioClientCommand;
+	step(.12f);
+	const bool vipFixture =
+		check(static_cast<metamod::BotNavigationServices &>(runtime).behavior_scenarioDecisions(0).action ==
+				compat::ScenarioAction::Escape,
+			"review fixture public VIP role/safety zone creates actual Escape decision");
+	const bool directIndependent = check(
+		scheduleDirectSends == 1, "review: independent direct VIP FollowMe sends despite unrelated peer scan changes");
+	step(.3f);
+	const bool directConsumed =
+		check(scheduleDirectSends == 1, "review: independent direct VIP confirmation consumes only its direct request");
+	gHookedGameDllTable.pfnClientCommand = originalClientCommand;
+	scheduleVipPeerChanges = false;
+	scheduleVip = false;
+	globals.mapname = oldMap;
+	gObjectiveEntitiesAvailable = false;
+	hooks.pfnMessageBegin(MSG_ALL, 104, nullptr, nullptr);
+	hooks.pfnWriteByte(1);
+	hooks.pfnWriteByte(0);
+	hooks.pfnMessageEnd();
+	begin();
+	deathSpeechCareer = 0;
+	deathSpeechSenders.clear();
+	death(3, 2, MSG_ONE, &self);
+	globals.time += .875f;
+	death(3, 2, MSG_ONE, &gEntities[4]);
+	schedulePeerDisconnect = true;
+	step(.8f);
+	const bool replacedScanCancelled = check(!schedulePeerDisconnect && deathSpeechSenders.empty(),
+		"peer connection replaced during name lookup cancels old whole-team scan without sending");
+	step(.12f);
+	const bool freshScanSpeaks = check(deathSpeechSenders == std::vector<int>{1},
+		"next qualified scan delivers current owner statement after peer replacement");
 	services.service_compatibilityRandomSource().setTraceSink(nullptr);
-	return true;
+	return oneTeamAnnouncement && olderPeerFirst && futureSelectionBlocks && peerSpeaking && peerRetained &&
+		afterPeerCompletion && qualifiedPeers && replacedScanCancelled && freshScanSpeaks && teamScanCancelled &&
+		afterTeamChange && excludedPeerFixture && excludedPeerProtected && vipFixture && directIndependent &&
+		directConsumed;
 }
 }

@@ -3,6 +3,7 @@
 
 #include "astrabot/world/world_snapshot.hpp"
 #include "astrabot/compat/noise_report.hpp"
+#include "astrabot/compat/chatter_schedule.hpp"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -63,6 +64,38 @@ inline bool isIntentionPhrase(ChatterPhrase phrase)
 inline bool usesUndefinedChatterPlace(ChatterPhrase phrase)
 {
 	return isRemainingEnemyPhrase(phrase) || isIntentionPhrase(phrase) || phrase == ChatterPhrase::KilledFriend;
+}
+
+inline ChatterStatementTopic chatterStatementTopic(ChatterPhrase phrase)
+{
+	if (isRemainingEnemyPhrase(phrase))
+		return ChatterStatementTopic::EnemiesRemaining;
+	if (isIntentionPhrase(phrase))
+		return ChatterStatementTopic::MyIntention;
+	switch (phrase)
+	{
+	case ChatterPhrase::EnemySpotted:
+		return ChatterStatementTopic::VisibleEnemies;
+	case ChatterPhrase::Help:
+		return ChatterStatementTopic::RequestHelp;
+	case ChatterPhrase::RequestReport:
+	case ChatterPhrase::WhereIsTheBomb:
+		return ChatterStatementTopic::RequestInformation;
+	case ChatterPhrase::Affirmative:
+		return ChatterStatementTopic::Acknowledge;
+	case ChatterPhrase::OnMyWay:
+		return ChatterStatementTopic::MyIntention;
+	case ChatterPhrase::PlantingBomb:
+		return ChatterStatementTopic::CriticalEvent;
+	case ChatterPhrase::EscortingHostages:
+		return ChatterStatementTopic::MyPlan;
+	case ChatterPhrase::HeardNoise:
+		return ChatterStatementTopic::Information;
+	case ChatterPhrase::KilledFriend:
+		return ChatterStatementTopic::KilledFriend;
+	default:
+		return ChatterStatementTopic::None;
+	}
 }
 
 struct RadioMenuChoice
@@ -367,6 +400,8 @@ struct OutgoingRadioInput
 	float humanOrderReceived = 0, reactionSeconds = .3f;
 	bool humanOrderAccepted = false, humanOrderHelp = false;
 	bool vipEscaping = false, plantingBomb = false, bombLocationUnknown = false, escortingHostages = false;
+	bool canStart = true;
+	ChatterScheduleAdmission admission{};
 };
 struct OutgoingRadioDecision
 {
@@ -448,7 +483,7 @@ public:
 		}
 		if (ack_ != ChatterPhrase::None && in.now >= ackAt_)
 		{
-			queue(ack_, in.now, kAcknowledgementLifetimeSeconds);
+			queue(ack_, in.now, kAcknowledgementLifetimeSeconds, in.admission);
 			ack_ = ChatterPhrase::None;
 		}
 		if (in.vipEscaping && in.friendCount > 0 && (lastVip_ < 0 || in.now - lastVip_ > kVipReportCooldownSeconds))
@@ -456,7 +491,7 @@ public:
 			directFollow_ = true;
 			directFollowStart_ = in.now;
 			lastVip_ = in.now;
-			expires_ = in.now + kVipFollowLifetimeSeconds;
+			directFollowExpires_ = in.now + kVipFollowLifetimeSeconds;
 		}
 		if (in.friendCount > 0)
 		{
@@ -466,31 +501,31 @@ public:
 				if (in.visibleEnemyCount > in.nearbyFriends + 1 &&
 					(lastHelp_ < 0 || in.now - lastHelp_ >= kHelpCooldownSeconds))
 				{
-					queue(ChatterPhrase::Help, in.now, kReportLifetimeSeconds);
+					queue(ChatterPhrase::Help, in.now, kReportLifetimeSeconds, in.admission);
 					lastHelp_ = in.now;
 				}
 				else
 				{
-					queue(ChatterPhrase::EnemySpotted, in.now, kReportLifetimeSeconds);
+					queue(ChatterPhrase::EnemySpotted, in.now, kReportLifetimeSeconds, in.admission);
 					enemyReportAt_ = in.now + kEnemyReportDelaySeconds;
 				}
 			}
 			if (in.plantingBomb && !wasPlanting_)
-				queue(ChatterPhrase::PlantingBomb, in.now, kReportLifetimeSeconds);
+				queue(ChatterPhrase::PlantingBomb, in.now, kReportLifetimeSeconds, in.admission);
 			if (in.bombLocationUnknown && !askedBomb_)
 			{
-				queue(ChatterPhrase::WhereIsTheBomb, in.now, kReportLifetimeSeconds);
+				queue(ChatterPhrase::WhereIsTheBomb, in.now, kReportLifetimeSeconds, in.admission);
 				askedBomb_ = true;
 			}
 			if (in.escortingHostages && (lastEscort_ < 0 || in.now - lastEscort_ >= kEscortCooldownSeconds))
 			{
-				queue(ChatterPhrase::EscortingHostages, in.now, kEscortReportLifetimeSeconds);
+				queue(ChatterPhrase::EscortingHostages, in.now, kEscortReportLifetimeSeconds, in.admission);
 				lastEscort_ = in.now;
 			}
 			const float silence = in.teamLastSpeech >= 0 ? in.teamLastSpeech : (lastSent_ >= 0 ? lastSent_ : start_);
 			if (in.enemiesRemaining > 0 && in.nearbyFriends != in.friendCount &&
 				in.now - silence > kTeamSilenceSeconds && pending_ == ChatterPhrase::None)
-				queue(ChatterPhrase::RequestReport, in.now, kReportLifetimeSeconds);
+				queue(ChatterPhrase::RequestReport, in.now, kReportLifetimeSeconds, in.admission);
 		}
 		wasPlanting_ = in.plantingBomb;
 		const auto &report = in.noiseReport;
@@ -508,17 +543,21 @@ public:
 			else if (report.navRevision != 0 && report.navRevision == in.navRevision &&
 				pending_ == ChatterPhrase::None && !directFollow_)
 			{
-				queue(ChatterPhrase::HeardNoise, report.created, kNoiseReportLifetimeSeconds);
+				queue(ChatterPhrase::HeardNoise, report.created, kNoiseReportLifetimeSeconds, in.admission);
 				pendingPlace_ = report.place;
+				schedule_.place = report.place;
 				pendingNoiseRevision_ = report.navRevision;
 				lastNoiseReport_ = report.created;
 				lastNoiseReportTick_ = report.frame.tick;
 			}
 		}
 		const bool expired = pending_ == ChatterPhrase::HeardNoise ? in.now > expires_ : in.now >= expires_;
-		if ((pending_ != ChatterPhrase::None || directFollow_) && expired)
+		if (pending_ != ChatterPhrase::None && expired)
 		{
 			pending_ = ChatterPhrase::None;
+		}
+		if (directFollow_ && in.now >= directFollowExpires_)
+		{
 			directFollow_ = false;
 		}
 		if (pending_ == ChatterPhrase::None && !directFollow_)
@@ -531,12 +570,12 @@ public:
 		if (pending_ == ChatterPhrase::EnemySpotted && in.visibleEnemyCount <= kImmediateEnemyReportCount &&
 			in.now <= enemyReportAt_)
 			return {};
-		if (in.now < in.teamBusyUntil)
+		if ((!in.canStart || in.now < in.teamBusyUntil) && !directFollow_)
 		{
 			// Same topic without place/subject is redundant while a teammate says it.
 			const bool samePlace = (pendingPlace_ == 0 && in.teamCurrentPlace == 0) ||
 				(pendingPlace_ != 0 && pendingPlace_ == in.teamCurrentPlace);
-			if (pending_ == in.teamCurrentPhrase && !directFollow_ &&
+			if (in.now < in.teamBusyUntil && pending_ == in.teamCurrentPhrase && !directFollow_ &&
 				(pending_ != ChatterPhrase::HeardNoise || samePlace))
 			{
 				pending_ = ChatterPhrase::None;
@@ -558,6 +597,26 @@ public:
 			directFollow_ ? std::uint16_t{0} : pendingPlace_};
 	}
 
+	ChatterScheduleEntry scheduledStatement() const
+	{
+		return pending_ != ChatterPhrase::None ? schedule_ : ChatterScheduleEntry{};
+	}
+
+	bool hasDirect() const
+	{
+		return directFollow_;
+	}
+
+	void discardDirect()
+	{
+		directFollow_ = false;
+	}
+
+	void discardStatement()
+	{
+		pending_ = ChatterPhrase::None;
+	}
+
 	bool hasPending() const
 	{
 		return pending_ != ChatterPhrase::None || directFollow_;
@@ -573,8 +632,12 @@ public:
 		if (out.status != OutgoingRadioStatus::Ready)
 			return;
 		lastSent_ = in.now;
+		if (directFollow_ && out.phrase == ChatterPhrase::None)
+		{
+			directFollow_ = false;
+			return;
+		}
 		pending_ = ChatterPhrase::None;
-		directFollow_ = false;
 	}
 
 	// AddStatement drops a new OFF/non-important MINIMAL statement independently of older topics.
@@ -608,12 +671,13 @@ public:
 	}
 
 private:
-	void queue(ChatterPhrase p, float now, float lifetime)
+	void queue(ChatterPhrase p, float now, float lifetime, const ChatterScheduleAdmission &admission)
 	{
 		if (pending_ != ChatterPhrase::None)
 			return;
 		pending_ = p;
 		pendingStart_ = now;
+		schedule_ = admission.make(ChatterScheduleSource::Generic, chatterStatementTopic(p), now, now);
 		pendingPlace_ = 0;
 		expires_ = now + lifetime;
 	}
@@ -626,7 +690,9 @@ private:
 	std::uint32_t orderSequence_ = 0;
 	ChatterPhrase pending_ = ChatterPhrase::None, ack_ = ChatterPhrase::None;
 	float pendingStart_ = 0;
+	ChatterScheduleEntry schedule_{};
 	float directFollowStart_ = 0;
+	float directFollowExpires_ = 0;
 	float lastNoiseReport_ = -1;
 	std::uint32_t lastNoiseReportTick_ = 0;
 	std::uint16_t pendingPlace_ = 0;

@@ -92,6 +92,8 @@ public:
 		std::size_t index, const compat::ScenarioBehaviorInput &input, compat::ScenarioBehaviorDecision *decision);
 	void updateManagedBotCompatibilityState(std::size_t index, const runtime::MovementPhysicsState &before);
 	void updateOutgoingPublicRadio(std::size_t index);
+	compat::ChatterScheduleAdmission chatterAdmission(std::size_t index);
+	compat::ChatterScheduleEntry activeTeamChatter(std::size_t index, int team, bool *current);
 	void updatePublicBuying(std::size_t index);
 	CombatUpkeepUpdate upkeepCombat(
 		std::size_t index, const runtime::MovementPhysicsState &before, std::uint16_t cachedButtons);
@@ -470,6 +472,7 @@ private:
 		compat::KillPraisePolicy killPraise{};
 		compat::FriendDeathChatterPolicy friendDeathChatter{};
 		compat::ConfirmedChatterSpeech confirmedSpeech{};
+		compat::ChatterAdmissionClock chatterAdmissions{};
 		compat::KnifeRunTimer knifeRun{};
 		compat::EnemyReactionMemory enemyReaction{};
 		world::EntityKey enemyWeaponSource{};

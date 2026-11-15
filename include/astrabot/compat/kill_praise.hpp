@@ -41,6 +41,7 @@ struct KillPraiseDeathInput
 	bool careerKnown = false;
 	bool career = false;
 	bool intentionPending = false;
+	ChatterScheduleAdmission admission{};
 };
 
 struct KillPraiseSpeechInput
@@ -103,6 +104,8 @@ public:
 		phrase_ = phrase;
 		created_ = in.now;
 		start_ = in.now + delay.value;
+		schedule_ =
+			in.admission.make(ChatterScheduleSource::KillPraise, ChatterStatementTopic::MyIntention, created_, start_);
 		return true;
 	}
 
@@ -136,6 +139,11 @@ public:
 	bool active() const
 	{
 		return phrase_ != ChatterPhrase::None;
+	}
+
+	ChatterScheduleEntry scheduledStatement() const
+	{
+		return active() ? schedule_ : ChatterScheduleEntry{};
 	}
 
 	float scheduledStart() const
@@ -175,6 +183,7 @@ private:
 	float created_ = 0;
 	float start_ = 0;
 	ChatterPhrase phrase_ = ChatterPhrase::None;
+	ChatterScheduleEntry schedule_{};
 };
 }
 }

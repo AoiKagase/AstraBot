@@ -20,6 +20,186 @@ constexpr unsigned kMaximumRadioAttempts = 3U;
 }
 using namespace runtime_detail;
 
+compat::ChatterScheduleAdmission BotBehaviorRuntime::chatterAdmission(std::size_t index)
+{
+	const auto context = reactionContext(index);
+	if (!context.valid())
+		return {};
+	auto &actor = actors_[index];
+	actor.confirmedSpeech.synchronizeOwner(context);
+	return {context, services_->service_lifecycle().slotGeneration(context.actor.slot),
+		actor.confirmedSpeech.lifetimeRevision(), &actor.chatterAdmissions};
+}
+
+compat::ChatterScheduleEntry BotBehaviorRuntime::activeTeamChatter(std::size_t index, int team, bool *current)
+{
+	*current = false;
+	const auto engine = services_->service_engineFunctions();
+	const auto &handles = services_->service_managedBotHandles();
+	constexpr int kEligibilityFlags = FL_CLIENT | FL_DORMANT | FL_SPECTATOR;
+	constexpr std::size_t kStatementsPerActor = 6;
+	struct PeerReceipt
+	{
+		bool managed = false;
+		edict_t *entity = nullptr;
+		world::ActorKey actor{};
+		compat::ReactionContext context{};
+		int serial = 0;
+		bool free = false;
+		int flags = 0;
+		std::uint32_t connection = 0;
+		std::uint64_t revision = 0;
+		bool teamKnown = false;
+		std::uint8_t publicTeam = 0;
+		int entityTeam = 0;
+		string_t name = 0;
+		std::array<compat::ChatterScheduleEntry, kStatementsPerActor> statements{};
+	};
+	const auto snapshotPeer = [&](std::size_t peerIndex)
+	{
+		PeerReceipt receipt{};
+		receipt.managed = services_->service_managedBotSlots()[peerIndex];
+		if (!receipt.managed)
+		{
+			return receipt;
+		}
+		const auto &handle = handles[peerIndex];
+		receipt.entity = handle.entity;
+		receipt.actor = {handle.actor.slot, handle.actor.actorGeneration};
+		receipt.context = reactionContext(peerIndex);
+		receipt.connection = services_->service_lifecycle().slotGeneration(handle.actor.slot);
+		receipt.revision = actors_[peerIndex].confirmedSpeech.revision();
+		receipt.teamKnown = services_->observation_publicTeamKnown(peerIndex);
+		receipt.publicTeam = services_->observation_teamInfoTeams(peerIndex);
+		if (receipt.entity)
+		{
+			receipt.serial = receipt.entity->serialnumber;
+			receipt.free = receipt.entity->free != 0;
+			receipt.flags = receipt.entity->v.flags & kEligibilityFlags;
+			receipt.entityTeam = receipt.entity->v.team;
+			receipt.name = receipt.entity->v.netname;
+		}
+		const auto friendStatements = actors_[peerIndex].friendDeathChatter.scheduledStatements();
+		receipt.statements = {{actors_[peerIndex].outgoingRadioSchedulers.scheduledStatement(),
+			actors_[peerIndex].enemyCountChatter.scheduledStatement(),
+			actors_[peerIndex].killPraise.scheduledStatement(), friendStatements[0], friendStatements[1],
+			actors_[peerIndex].confirmedSpeech.scheduledStatement()}};
+		return receipt;
+	};
+	const auto sameStatement = [](const compat::ChatterScheduleEntry &a, const compat::ChatterScheduleEntry &b)
+	{
+		return a.owner.actor == b.owner.actor && a.owner.frame == b.owner.frame &&
+			a.owner.entityGeneration == b.owner.entityGeneration && a.owner.now == b.owner.now &&
+			a.owner.alive == b.owner.alive && a.connection == b.connection && a.ownerRevision == b.ownerRevision &&
+			a.source == b.source && a.topic == b.topic && a.created == b.created && a.start == b.start &&
+			a.order == b.order && a.place == b.place && a.subject == b.subject && a.speaking == b.speaking;
+	};
+	const auto samePeer = [&](const PeerReceipt &a, const PeerReceipt &b)
+	{
+		if (a.managed != b.managed)
+		{
+			return false;
+		}
+		if (!a.managed)
+		{
+			return true;
+		}
+		if (!(a.entity == b.entity && a.actor == b.actor && a.context.actor == b.context.actor &&
+				a.context.frame == b.context.frame && a.context.entityGeneration == b.context.entityGeneration &&
+				a.context.now == b.context.now && a.context.alive == b.context.alive && a.serial == b.serial &&
+				a.free == b.free && a.flags == b.flags && a.connection == b.connection && a.revision == b.revision &&
+				a.teamKnown == b.teamKnown && a.publicTeam == b.publicTeam && a.entityTeam == b.entityTeam &&
+				a.name == b.name))
+			return false;
+		for (std::size_t i = 0; i < a.statements.size(); ++i)
+		{
+			if (!sameStatement(a.statements[i], b.statements[i]))
+				return false;
+		}
+		return true;
+	};
+	std::array<PeerReceipt, kMaximumClientSlots> peers{};
+	for (std::size_t i = 0; i < peers.size(); ++i)
+	{
+		peers[i] = snapshotPeer(i);
+	}
+	const auto ownCurrent = [&]()
+	{
+		return samePeer(peers[index], snapshotPeer(index));
+	};
+	std::array<compat::ChatterScheduleEntry, kMaximumClientSlots * kStatementsPerActor> entries{};
+	std::size_t count = 0;
+	for (std::size_t peerIndex = 0; peerIndex < peers.size(); ++peerIndex)
+	{
+		const auto &peer = peers[peerIndex];
+		const auto &context = peer.context;
+		if (!peer.managed || !context.valid() || !peer.entity || !(peer.flags & FL_CLIENT) ||
+			(peer.flags & FL_DORMANT) || peer.name == 0)
+		{
+			continue;
+		}
+		bool hasStatement = false;
+		for (const auto &entry : peer.statements)
+		{
+			hasStatement = hasStatement || compat::validChatterScheduleEntry(entry);
+		}
+		if (!hasStatement)
+			continue;
+		const int peerTeam = services_->observation_resolvePlayerTeam(peer.entity);
+		if (!ownCurrent() || !samePeer(peer, snapshotPeer(peerIndex)))
+		{
+			return {};
+		}
+		bool named = true;
+		if (engine->pfnSzFromIndex)
+		{
+			const char *name = engine->pfnSzFromIndex(peer.name);
+			if (!ownCurrent() || !samePeer(peer, snapshotPeer(peerIndex)))
+			{
+				return {};
+			}
+			named = name && name[0] != '\0';
+		}
+		if (peerTeam != team || !named)
+		{
+			continue;
+		}
+		const auto append = [&](const compat::ChatterScheduleEntry &entry)
+		{
+			if (!compat::validChatterScheduleEntry(entry))
+			{
+				return;
+			}
+			if (!(entry.owner.actor == context.actor) || entry.owner.entityGeneration != context.entityGeneration ||
+				entry.owner.frame.mapGeneration != context.frame.mapGeneration ||
+				entry.owner.frame.roundGeneration != context.frame.roundGeneration ||
+				entry.owner.frame.tick > context.frame.tick || entry.owner.now > context.now ||
+				entry.connection != peer.connection ||
+				entry.ownerRevision != actors_[peerIndex].confirmedSpeech.lifetimeRevision())
+			{
+				return;
+			}
+			entries[count++] = entry;
+		};
+		for (const auto &entry : peer.statements)
+			append(entry);
+	}
+	// Exclusion is part of the receipt: later callbacks may requalify an earlier peer.
+	if (!ownCurrent())
+	{
+		return {};
+	}
+	for (std::size_t i = 0; i < peers.size(); ++i)
+	{
+		if (!samePeer(peers[i], snapshotPeer(i)))
+		{
+			return {};
+		}
+	}
+	*current = true;
+	return compat::selectActiveChatter(entries.data(), count, peers[index].context.now);
+}
+
 void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index)
 {
 	if (index >= services_->service_managedBotHandles().size() || services_->service_globals() == nullptr ||
@@ -30,6 +210,12 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index)
 	if (handle.entity == nullptr || handle.entity->free)
 		return;
 	const auto receiptContext = reactionContext(index);
+	actors_[index].confirmedSpeech.synchronizeOwner(receiptContext);
+	const auto receiptRevision = actors_[index].confirmedSpeech.revision();
+	const auto receiptConnection = services_->service_lifecycle().slotGeneration(receiptContext.actor.slot);
+	const auto receiptTeamKnown = services_->observation_publicTeamKnown(index);
+	const auto receiptTeam = services_->observation_teamInfoTeams(index);
+	const int receiptEntityTeam = handle.entity->v.team;
 	const auto receiptCurrent = [&]()
 	{
 		// Dead/spectating observers still maintain the existing public radio update.
@@ -39,7 +225,10 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index)
 			receiptContext.entityGeneration != 0 && std::isfinite(receiptContext.now) && receiptContext.now >= 0 &&
 			receiptContext.actor == current.actor && receiptContext.entityGeneration == current.entityGeneration &&
 			receiptContext.frame == current.frame && receiptContext.now == current.now &&
-			receiptContext.alive == current.alive;
+			receiptContext.alive == current.alive && actors_[index].confirmedSpeech.revision() == receiptRevision &&
+			services_->service_lifecycle().slotGeneration(receiptContext.actor.slot) == receiptConnection &&
+			services_->observation_publicTeamKnown(index) == receiptTeamKnown &&
+			services_->observation_teamInfoTeams(index) == receiptTeam && handle.entity->v.team == receiptEntityTeam;
 	};
 	if (!receiptCurrent())
 		return;
@@ -72,8 +261,9 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index)
 	if (input.team != kTerroristTeam && input.team != kCounterTerroristTeam)
 		return;
 	input.teamLastSpeech = outgoingTeamLastSpeech_[input.team];
-	input.teamBusyUntil = outgoingTeamBusyUntil_[input.team];
-	input.teamCurrentPhrase = outgoingTeamCurrentPhrase_[input.team];
+	// Native active statements, including retained speakers, own arbitration.
+	input.teamBusyUntil = 0;
+	input.teamCurrentPhrase = compat::ChatterPhrase::None;
 	input.teamCurrentPlace = outgoingTeamCurrentPlace_[input.team];
 	const auto reportNav = services_->service_navPublisher().snapshot();
 	input.navRevision = reportNav.isValid() ? reportNav.revision() : 0;
@@ -163,6 +353,8 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index)
 	countInput.teamReportingRemaining = compat::isRemainingEnemyPhrase(input.teamCurrentPhrase);
 	// REMAINING_ENEMY_COUNT is a context statement, not an Important phrase.
 	countInput.enabled = !verbosity || (std::strcmp(verbosity, "off") != 0 && std::strcmp(verbosity, "minimal") != 0);
+	input.admission = chatterAdmission(index);
+	input.canStart = false;
 	auto output = actors_[index].outgoingRadioSchedulers.update(input, outgoingChatterCatalog_, voicePhrases);
 	// All topics maintain lifetime before arbitration; only the selected topic
 	// evaluates speech context, including when an older topic is still delayed.
@@ -188,7 +380,7 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index)
 	actors_[index].killPraise.update(praiseInput);
 	compat::FriendDeathChatterSpeechInput deathInput{};
 	deathInput.context = {input.actor, input.frame, countInput.entityGeneration, input.now, input.alive};
-	actors_[index].confirmedSpeech.maintain(deathInput.context);
+
 	deathInput.allowedPhrases = actors_[index].friendDeathChatter.active()
 		? allowedFixedChatterPhrases(
 			  verbosity, compat::ChatterPhrase::CommanderDown, compat::ChatterPhrase::KilledFriend)
@@ -201,41 +393,64 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index)
 	deathInput.roundOver = input.roundOver;
 	deathInput.canStart = false;
 	(void)actors_[index].friendDeathChatter.update(deathInput);
-	enum class SpeechOwner
+	const bool direct = actors_[index].outgoingRadioSchedulers.hasDirect();
+	bool scanCurrent = true;
+	compat::ChatterScheduleEntry selectedStatement{};
+	if (!direct)
 	{
-		Generic,
-		EnemyCount,
-		KillPraise,
-		FriendDeath
+		selectedStatement = activeTeamChatter(index, input.team, &scanCurrent);
+	}
+	if (!scanCurrent || !receiptCurrent())
+		return;
+	if (direct)
+	{
+		// Escape direct radio has no dependency on another bot's statement scan.
+		(void)actors_[index].confirmedSpeech.completeIfElapsed(deathInput.context, input.friendCount == 0);
+	}
+	const auto discardRedundant = [&](const compat::ChatterScheduleEntry &friendSay)
+	{
+		if (friendSay.source == compat::ChatterScheduleSource::None || friendSay.owner.actor == input.actor)
+			return;
+		auto &actor = actors_[index];
+		if (compat::chatterStatementsRedundant(actor.outgoingRadioSchedulers.scheduledStatement(), friendSay))
+			actor.outgoingRadioSchedulers.discardStatement();
+		if (compat::chatterStatementsRedundant(actor.enemyCountChatter.scheduledStatement(), friendSay))
+			actor.enemyCountChatter.discard();
+		if (compat::chatterStatementsRedundant(actor.killPraise.scheduledStatement(), friendSay))
+			actor.killPraise.discard();
+		for (const auto &entry : actor.friendDeathChatter.scheduledStatements())
+		{
+			if (compat::chatterStatementsRedundant(entry, friendSay))
+				actor.friendDeathChatter.discardSource(entry.source);
+		}
 	};
-	SpeechOwner owner = SpeechOwner::Generic;
-	bool havePending = actors_[index].outgoingRadioSchedulers.hasPending();
-	float earliest = actors_[index].outgoingRadioSchedulers.scheduledStart();
-	if (output.status != compat::OutgoingRadioStatus::MissingPhrase)
+	discardRedundant(selectedStatement);
+	const bool ownSelected =
+		selectedStatement.source != compat::ChatterScheduleSource::None && selectedStatement.owner.actor == input.actor;
+	if (ownSelected && selectedStatement.speaking)
 	{
-		if (actors_[index].enemyCountChatter.active() &&
-			(!havePending || actors_[index].enemyCountChatter.scheduledStart() < earliest))
+		if (actors_[index].confirmedSpeech.completeIfElapsed(deathInput.context, input.friendCount == 0))
 		{
-			owner = SpeechOwner::EnemyCount;
-			havePending = true;
-			earliest = actors_[index].enemyCountChatter.scheduledStart();
+			const auto friendSay = activeTeamChatter(index, input.team, &scanCurrent);
+			if (!scanCurrent)
+				return;
+			discardRedundant(friendSay);
 		}
-		if (actors_[index].killPraise.active() &&
-			(!havePending || actors_[index].killPraise.scheduledStart() < earliest))
-		{
-			owner = SpeechOwner::KillPraise;
-			havePending = true;
-			earliest = actors_[index].killPraise.scheduledStart();
-		}
-		if (actors_[index].friendDeathChatter.active() &&
-			(!havePending || actors_[index].friendDeathChatter.scheduledStart() < earliest))
-		{
-			owner = SpeechOwner::FriendDeath;
-		}
+		if (!direct)
+			return;
+	}
+	if (!direct && !ownSelected)
+		return;
+	using SpeechOwner = compat::ChatterScheduleSource;
+	const auto owner = direct ? SpeechOwner::Generic : selectedStatement.source;
+	if (owner == SpeechOwner::Generic)
+	{
+		input.canStart = true;
+		output = actors_[index].outgoingRadioSchedulers.update(input, outgoingChatterCatalog_, voicePhrases);
 	}
 	const bool countChosen = owner == SpeechOwner::EnemyCount;
 	const bool praiseChosen = owner == SpeechOwner::KillPraise;
-	const bool deathChosen = owner == SpeechOwner::FriendDeath;
+	const bool deathChosen = owner == SpeechOwner::CommanderDown || owner == SpeechOwner::KilledFriend;
 	countInput.canStart = countChosen;
 	praiseInput.canStart = praiseChosen;
 	const auto countOutput = actors_[index].enemyCountChatter.update(countInput);
@@ -266,8 +481,10 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index)
 			actors_[index].killPraise.discard();
 		else if (countChosen)
 			actors_[index].enemyCountChatter.discard();
+		else if (direct)
+			actors_[index].outgoingRadioSchedulers.discardDirect();
 		else
-			actors_[index].outgoingRadioSchedulers.discardPending();
+			actors_[index].outgoingRadioSchedulers.discardStatement();
 	};
 	const auto confirmOutput = [&]()
 	{
@@ -299,6 +516,8 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index)
 		discardOutput();
 		return;
 	}
+	if (!direct)
+		actors_[index].confirmedSpeech.prepareSchedule(selectedStatement);
 	if (output.status == compat::OutgoingRadioStatus::Ready && voice && output.phrase != compat::ChatterPhrase::None)
 	{
 		float duration = 0.0f;
