@@ -160,11 +160,11 @@ unsigned char *deathSpeechLoad(char *name, int *length)
 	const char *text = nullptr;
 	if (std::strcmp(name, "BotChatter.db") == 0)
 		text = deathSpeechDefaultMissing
-			? "BaseDir radio/test/ Chatter NiceShotSir sir.wav End"
-			: "BaseDir radio/test/ Chatter CommanderDown Important down.wav End Chatter KilledFriend Radio EVENT_RADIO_NEED_BACKUP killed.wav End Chatter NiceShotSir sir.wav End";
+			? "BaseDir radio/test/ Place Speaker End Chatter NiceShotSir sir.wav End"
+			: "BaseDir radio/test/ Place Speaker End Chatter CommanderDown Important down.wav End Chatter KilledFriend Radio EVENT_RADIO_NEED_BACKUP killed.wav End Chatter NiceShotSir sir.wav End";
 	if (std::strcmp(name, "death_speech.db") == 0)
 		text =
-			"BaseDir radio/test/ Chatter CommanderDown Count Many Place UNDEFINED down.wav Count 2 Place ANY wrong_count.wav Count Many Place Speaker wrong_place.wav End Chatter KilledFriend Important Count Many Place UNDEFINED killed.wav Count 2 Place ANY wrong_count.wav End Chatter NiceShotSir sir.wav End";
+			"BaseDir radio/test/ Place Speaker End Chatter CommanderDown Count Many Place UNDEFINED down.wav Count 2 Place ANY wrong_count.wav Count Many Place Speaker wrong_place.wav End Chatter KilledFriend Important Count Many Place UNDEFINED killed.wav Count 2 Place ANY wrong_count.wav End Chatter NiceShotSir sir.wav End";
 	if (!text)
 	{
 		*length = 0;

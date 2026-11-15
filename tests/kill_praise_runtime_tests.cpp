@@ -62,11 +62,11 @@ unsigned char *praiseLoad(char *name, int *length)
 	const char *text = nullptr;
 	if (std::strcmp(name, "BotChatter.db") == 0)
 		text = praiseDefaultMissing
-			? "BaseDir radio/test/ Chatter OneEnemyLeft Count Many Place UNDEFINED one.wav Count 2 Place ANY wrong_counter.wav End Chatter NiceShotSir sir.wav End Chatter NiceShotCommander Important commander.wav End"
-			: "BaseDir radio/test/ Chatter OneEnemyLeft Count Many Place UNDEFINED one.wav Count 2 Place ANY wrong_counter.wav End Chatter NiceShot bot.wav End Chatter NiceShotSir sir.wav End Chatter NiceShotCommander Important commander.wav End";
+			? "BaseDir radio/test/ Place Speaker End Chatter OneEnemyLeft Count Many Place UNDEFINED one.wav Count 2 Place ANY wrong_counter.wav End Chatter NiceShotSir sir.wav End Chatter NiceShotCommander Important commander.wav End"
+			: "BaseDir radio/test/ Place Speaker End Chatter OneEnemyLeft Count Many Place UNDEFINED one.wav Count 2 Place ANY wrong_counter.wav End Chatter NiceShot bot.wav End Chatter NiceShotSir sir.wav End Chatter NiceShotCommander Important commander.wav End";
 	if (std::strcmp(name, "praise.db") == 0)
 		text =
-			"BaseDir radio/test/ Chatter OneEnemyLeft Count Many Place UNDEFINED one.wav Count 2 Place ANY wrong_counter.wav End Chatter NiceShot bot.wav End Chatter NiceShotSir Important Place UNDEFINED sir.wav sir2.wav Count 2 Place ANY wrong_count.wav Count Many Place Speaker wrong_place.wav End Chatter NiceShotCommander commander.wav End";
+			"BaseDir radio/test/ Place Speaker End Chatter OneEnemyLeft Count Many Place UNDEFINED one.wav Count 2 Place ANY wrong_counter.wav End Chatter NiceShot bot.wav End Chatter NiceShotSir Important Place UNDEFINED sir.wav sir2.wav Count 2 Place ANY wrong_count.wav Count Many Place Speaker wrong_place.wav End Chatter NiceShotCommander commander.wav End";
 	if (!text)
 	{
 		*length = 0;

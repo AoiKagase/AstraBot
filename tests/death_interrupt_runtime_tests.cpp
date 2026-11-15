@@ -188,8 +188,9 @@ unsigned char *interruptLoad(char *name, int *length)
 	}
 	if (std::strcmp(name, "interrupt.db") == 0)
 	{
-		text =
-			"BaseDir radio/test/ Chatter CommanderDown Count Many Place UNDEFINED down.wav End Chatter Affirmative ack.wav End Chatter OnMyWay ack.wav End Chatter pain Place UNDEFINED Count Many wrong_place.wav Place ANY Count 0 wrong_count.wav Count Many pain.wav End";
+		text = interruptDefaultMissing
+			? "BaseDir radio/test/ Chatter CommanderDown Count Many Place UNDEFINED down.wav End Chatter Affirmative ack.wav End Chatter OnMyWay ack.wav End"
+			: "BaseDir radio/test/ Chatter CommanderDown Count Many Place UNDEFINED down.wav End Chatter Affirmative ack.wav End Chatter OnMyWay ack.wav End Chatter pain Place UNDEFINED Count Many wrong_place.wav Place ANY Count 0 wrong_count.wav Count Many pain.wav End";
 	}
 	if (!text)
 	{

@@ -44,7 +44,8 @@ unsigned char *heardLoad(char *name, int *length)
 		*length = 0;
 		return nullptr;
 	}
-	const char text[] = "BaseDir radio/test/ Chatter HeardNoise Place Speaker wrong.wav Place Noise heard.wav End";
+	const char text[] =
+		"BaseDir radio/test/ Place Speaker End Place Noise End Chatter HeardNoise Place Speaker wrong.wav Place Noise heard.wav End";
 	*length = static_cast<int>(sizeof(text) - 1);
 	auto *bytes = new unsigned char[sizeof(text)];
 	std::memcpy(bytes, text, sizeof(text));

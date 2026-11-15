@@ -78,8 +78,8 @@ compat::ChatterVoiceCatalog *BotBehaviorRuntime::chatterBank(std::size_t index)
 			if (data)
 			{
 				if (length > 0 && length <= static_cast<int>(compat::ChatterVoiceCatalog::kMaximumFileBytes))
-					(void)found->catalog.loadText(
-						reinterpret_cast<const char *>(data), static_cast<std::size_t>(length));
+					(void)found->catalog.loadText(reinterpret_cast<const char *>(data),
+						static_cast<std::size_t>(length), &outgoingChatterCatalog_);
 				engine->pfnFreeFile(data);
 			}
 		}

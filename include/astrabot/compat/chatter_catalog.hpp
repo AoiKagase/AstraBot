@@ -6,6 +6,10 @@
 #include <cstddef>
 #include <cstring>
 #include <string>
+#include <cstdint>
+#include <limits>
+#include <utility>
+#include <vector>
 
 namespace astrabot
 {
@@ -100,7 +104,15 @@ struct RadioMenuChoice
 {
 	int menu = 0, slot = 0;
 };
-// Reads only public phrase-to-standard-radio metadata from the host's own DB.
+struct ChatterPlaceDefinition
+{
+	std::uint32_t id = 0;
+	std::string name;
+	RadioMenuChoice choice;
+	bool important = false;
+	std::uint32_t occurrence = 0;
+};
+// Reads definition metadata from the host's own DB.
 // No voice samples, proprietary phrase text, or presumed fallback equivalents.
 class ChatterRadioCatalog
 {
@@ -108,54 +120,128 @@ class ChatterRadioCatalog
 public:
 	bool loadText(const char *data, std::size_t length)
 	{
-		if (!data && length)
+		constexpr std::size_t kMaximumFileBytes = 1024U * 1024U;
+		if ((!data && length) || length > kMaximumFileBytes)
 			return false;
-		auto candidate = *this;
-		candidate.choices_ = {};
-		candidate.important_ = {};
-		candidate.defined_ = {};
-		candidate.loaded_ = false;
+		ChatterRadioCatalog candidate;
 		std::size_t pos = 0;
+		std::uint32_t id = 0;
 		std::string token;
 		while (next(data, length, pos, token))
 		{
+			if (equal(token, "BaseDir"))
+			{
+				if (!value(data, length, pos, token))
+					return false;
+				continue;
+			}
 			if (!equal(token, "Chatter") && !equal(token, "Place"))
 				continue;
 			const bool chatter = equal(token, "Chatter");
 			if (!next(data, length, pos, token))
 				return false;
+			const std::string definitionName = token;
 			const ChatterPhrase phrase = chatter ? phraseFor(token) : ChatterPhrase::None;
+			++id;
+			ChatterPlaceDefinition place;
+			place.id = id;
+			place.name = definitionName;
+			for (const auto &previous : candidate.places_)
+				if (equal(previous.name, definitionName.c_str()))
+					++place.occurrence;
 			if (phrase != ChatterPhrase::None)
 				candidate.defined_[static_cast<unsigned>(phrase)] = true;
 			bool ended = false;
 			while (next(data, length, pos, token))
 			{
+				if (equal(token, "Place") || equal(token, "Count"))
+				{
+					if (!value(data, length, pos, token))
+						return false;
+					continue;
+				}
 				if (equal(token, "End"))
 				{
 					ended = true;
 					break;
 				}
-				if (equal(token, "Important") && phrase != ChatterPhrase::None)
-					candidate.important_[static_cast<unsigned>(phrase)] = true;
+				if (equal(token, "Important"))
+				{
+					place.important = true;
+					if (phrase != ChatterPhrase::None)
+						candidate.important_[static_cast<unsigned>(phrase)] = true;
+				}
 				if (equal(token, "Radio"))
 				{
-					if (!next(data, length, pos, token))
-						return false;
-					if (equal(token, "=") && !next(data, length, pos, token))
+					if (!value(data, length, pos, token))
 						return false;
 					const auto choice = eventFor(token);
 					if (!choice.menu)
 						return false;
+					place.choice = choice;
 					if (phrase != ChatterPhrase::None)
 						candidate.choices_[static_cast<unsigned>(phrase)] = choice;
 				}
 			}
 			if (!ended)
 				return false;
+			if (chatter)
+				candidate.phraseNames_.push_back({id, definitionName});
+			else
+				candidate.places_.push_back(std::move(place));
 		}
+		if (pos > length)
+			return false;
 		candidate.loaded_ = true;
-		*this = candidate;
+		*this = std::move(candidate);
 		return true;
+	}
+
+	const ChatterPlaceDefinition *findPlace(const char *name) const
+	{
+		if (name)
+			for (const auto &place : places_)
+				if (equal(place.name, name))
+					return &place;
+		return nullptr;
+	}
+	const ChatterPlaceDefinition *place(std::uint32_t id) const
+	{
+		for (const auto &entry : places_)
+			if (entry.id == id)
+				return &entry;
+		return nullptr;
+	}
+	bool definedPhraseName(const char *name) const
+	{
+		if (name)
+			for (const auto &entry : phraseNames_)
+				if (equal(entry.name, name))
+					return true;
+		return false;
+	}
+	std::uint32_t nameToId(const char *name, std::uint32_t beforeId = (std::numeric_limits<std::uint32_t>::max)()) const
+	{
+		if (!name)
+			return 0;
+		for (const auto &entry : places_)
+			if (entry.id < beforeId && equal(entry.name, name))
+				return entry.id;
+		for (const auto &entry : phraseNames_)
+			if (entry.id < beforeId && equal(entry.name, name))
+				return entry.id;
+		return 0;
+	}
+	bool hasPlaceBefore(std::uint32_t beforeId = (std::numeric_limits<std::uint32_t>::max)()) const
+	{
+		for (const auto &entry : places_)
+			if (entry.id < beforeId)
+				return true;
+		return false;
+	}
+	static bool validRadioEvent(const std::string &name)
+	{
+		return eventFor(name).menu != 0;
 	}
 
 	RadioMenuChoice lookup(ChatterPhrase phrase) const
@@ -227,6 +313,7 @@ private:
 		}
 		if (p >= n)
 			return false;
+		bool closed = false;
 		const bool quote = d[p] == '"';
 		if (quote)
 			++p;
@@ -234,12 +321,30 @@ private:
 		{
 			const char c = d[p++];
 			if ((quote && c == '"') || (!quote && (c == ' ' || c == '\t' || c == '\r' || c == '\n')))
+			{
+				closed = true;
 				break;
+			}
 			out.push_back(c);
 			if (out.size() > kMaximumTokenLength)
+			{
+				p = n + 1;
 				return false;
+			}
 		}
-		return !out.empty();
+		if (quote && !closed)
+		{
+			p = n + 1;
+			return false;
+		}
+		return quote || !out.empty();
+	}
+
+	static bool value(const char *data, std::size_t length, std::size_t &position, std::string &out)
+	{
+		if (!next(data, length, position, out))
+			return false;
+		return out != "=" || next(data, length, position, out);
 	}
 
 	static ChatterPhrase phraseFor(const std::string &s)
@@ -287,6 +392,13 @@ private:
 
 	std::array<bool, static_cast<unsigned>(ChatterPhrase::Count)> defined_{};
 
+	struct PhraseName
+	{
+		std::uint32_t id;
+		std::string name;
+	};
+	std::vector<PhraseName> phraseNames_;
+	std::vector<ChatterPlaceDefinition> places_;
 	bool loaded_ = false;
 };
 }

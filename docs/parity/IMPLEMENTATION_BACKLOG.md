@@ -23,7 +23,7 @@ The user requests01 onward in order, each repaired unit committed and locally FF
 | ID | 修正単位 | 現在の作業／残件 |
 |---|---|---|
 |01|複数パーツ再生Core|本節のCore実装。最終ゲート／統合記録はunit01 session RESULT.json|
-|02|場所音声・共有20秒抑制|未実装。親compound sessionに履歴下書きを保存|
+|02|場所音声・共有20秒抑制|既定Place ID／属性・プロフィール候補・数値条件・共有64件20秒履歴を実装。全体ゲート／統合記録はunit02 session RESULT.json。03が本番接続を担当|
 |03|本番複数パーツ・文脈判定|未接続。場所→待機→敵数、最多敵場所、戦闘条件、無音中の死亡割込み。01review Minorのskip/nullと0+.1を含む|
 |04|標準無線の送信回数|最大3回再試行からネイティブ1回へ|
 |05|同一Botリセット時の遅延応答|古いAck破棄|
