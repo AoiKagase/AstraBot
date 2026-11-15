@@ -1,0 +1,9 @@
+# Native death Radio attachment icon
+
+Base062824e0f29d060c56a76d455c2c9648c539c5a0. Read-only oracle ReGameDLL-CS b0889847fe6d03898be88acc9e366660efb40ab5: cs_bot_chatter.cpp1168 normal Radio(...,false),1428–1448 OnDeath Radio(...default true), player.h476, player.cpp Radio attachment block, weapons.cpp398, game.cpp130.
+
+Goal: complete the native public Radio UI effect accompanying pain. Only DeathInterrupt custom voice emits per-recipient MSG_ONE/SVC_TEMPENTITY/TE_PLAYERATTACHMENT with original sender slot,35-unit vertical offset, host-preloaded sprites/radio.spr model index and15 lifetime units (1.5seconds). Native optional mp_show_radioicon cvar disables the attachment when value0; absent vanilla cvar means enabled. Respect the same eligible/nonignored recipients as SendAudio; normal custom statements retain no attachment and existing BotVoice behavior. Pain still starts no new BotVoice. Query only public engine model/cvar APIs, never precache/distribute assets or use private data. Missing public model/coordinate transport omits only the icon, retaining audio. Capture current death receipt/revision across callback-capable metadata lookup and each complete packet; stale cancellation cannot emit follow-up effects. No new delay/RNG or audio-duration probe.
+
+Approaches: extend current death-purpose transport (chosen: shared routing/guards, minimal responsibility); a separate UI sender would duplicate recipient/identity filters; synthesizing via standard radio would alter sound and command behavior.
+
+Constraints: SDK-free Core, C++14, public HLSDK/Metamod only, exact7exports, preserved unrelated edits/profiles/frozen baselines. Actual packet regressions before implementation; related then full Windows/Linux x86 builds/suites, separate PE/ELF and source identities. Live visual acceptance remains separate. Exact FriendlyFire/injury intake and broader remaining scope stay active; this feature does not waive them.

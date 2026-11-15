@@ -17,6 +17,47 @@ const char *interruptMode = "off";
 bool interruptDefaultMissing = false;
 bool interruptSampleMissing = false;
 unsigned interruptWaveProbes = 0;
+bool interruptIconCvarPresent = false;
+char interruptIconName[] = "mp_show_radioicon";
+char interruptIconText[] = "1";
+cvar_t interruptIconCvar{interruptIconName, interruptIconText, 0, 1.0f, nullptr};
+int interruptIconModel = 77;
+unsigned interruptIconModelQueries = 0;
+bool interruptResetDuringIconModel = false;
+bool interruptResetDuringIconCvar = false;
+bool interruptResetDuringIconPacket = false;
+bool interruptReplaceIconRecipient = false;
+bool interruptReconnectIconRecipient = false;
+unsigned interruptIconCvarQueries = 0;
+
+cvar_t *interruptCvarPointer(const char *name)
+{
+	if (std::strcmp(name, "mp_show_radioicon") == 0)
+	{
+		++interruptIconCvarQueries;
+		if (interruptResetDuringIconCvar)
+		{
+			interruptResetDuringIconCvar = false;
+			astrabot::metamod::PluginRuntime::instance().beginRoundGeneration();
+		}
+		return interruptIconCvarPresent ? &interruptIconCvar : nullptr;
+	}
+	return getCvar(name);
+}
+int interruptModelIndex(const char *name)
+{
+	if (std::strcmp(name, "sprites/radio.spr") != 0)
+	{
+		return 0;
+	}
+	++interruptIconModelQueries;
+	if (interruptResetDuringIconModel)
+	{
+		interruptResetDuringIconModel = false;
+		astrabot::metamod::PluginRuntime::instance().beginRoundGeneration();
+	}
+	return interruptIconModel;
+}
 bool interruptDeathDuringStatement = false;
 bool interruptResetDuringPain = false;
 bool interruptRoundDuringPain = false;
@@ -95,12 +136,30 @@ void interruptRadioCommand(edict_t *self)
 	}
 	hookedGameClientCommand(self);
 }
+enum class InterruptWireKind
+{
+	Byte,
+	Short,
+	Coordinate,
+	String
+};
+struct InterruptWireField
+{
+	InterruptWireKind kind;
+	float value;
+	bool operator==(const InterruptWireField &other) const
+	{
+		return kind == other.kind && value == other.value;
+	}
+};
 struct InterruptPacket
 {
 	int type = 0;
 	int destination = 0;
 	edict_t *recipient = nullptr;
 	std::vector<int> numbers;
+	std::vector<float> coordinates;
+	std::vector<InterruptWireField> wire;
 	std::string sample;
 };
 std::vector<InterruptPacket> interruptPackets;
@@ -188,14 +247,60 @@ void interruptBegin(int destination, int type, const float *, edict_t *recipient
 }
 void interruptNumber(int value)
 {
+	if (interruptResetDuringIconPacket && !interruptStack.empty() && interruptStack.back().type == 23)
+	{
+		interruptResetDuringIconPacket = false;
+		astrabot::metamod::PluginRuntime::instance().beginRoundGeneration();
+	}
 	if (!interruptStack.empty())
 		interruptStack.back().numbers.push_back(value);
+}
+void interruptByte(int value)
+{
+	if (!interruptStack.empty())
+	{
+		interruptStack.back().wire.push_back({InterruptWireKind::Byte, static_cast<float>(value)});
+	}
+	interruptNumber(value);
+}
+void interruptShort(int value)
+{
+	if (!interruptStack.empty())
+	{
+		interruptStack.back().wire.push_back({InterruptWireKind::Short, static_cast<float>(value)});
+	}
+	interruptNumber(value);
+}
+void interruptCoordinate(float value)
+{
+	if (!interruptStack.empty())
+	{
+		interruptStack.back().coordinates.push_back(value);
+		interruptStack.back().wire.push_back({InterruptWireKind::Coordinate, value});
+	}
 }
 void interruptString(const char *sample)
 {
 	if (!interruptStack.empty())
 	{
 		interruptStack.back().sample = sample ? sample : "";
+		interruptStack.back().wire.push_back({InterruptWireKind::String, 0});
+	}
+	if (interruptReplaceIconRecipient && sample && std::strcmp(sample, "radio/test/pain.wav") == 0 &&
+		!interruptStack.empty() && interruptStack.back().recipient == &gEntities[1])
+	{
+		interruptReplaceIconRecipient = false;
+		if (interruptReconnectIconRecipient)
+		{
+			interruptReconnectIconRecipient = false;
+			auto &runtime = astrabot::metamod::PluginRuntime::instance();
+			runtime.onClientDisconnect(&gEntities[1]);
+			runtime.onClientPutInServer(&gEntities[1]);
+		}
+		else
+		{
+			++gEntities[1].serialnumber;
+		}
 	}
 	if (interruptDeathAfterFeedback && sample && std::strcmp(sample, "radio/test/down.wav") == 0 &&
 		!interruptStack.empty() && interruptStack.back().recipient == &gEntities[1])
@@ -276,14 +381,17 @@ void setupInterrupt(enginefuncs_t &engine, globalvars_t &globals)
 	interruptSampleMissing = value && std::strcmp(value, "2") == 0;
 #endif
 	engine.pfnCVarGetString = &interruptCvar;
+	engine.pfnCVarGetPointer = &interruptCvarPointer;
+	engine.pfnModelIndex = &interruptModelIndex;
+	engine.pfnWriteCoord = &interruptCoordinate;
 	engine.pfnIsCareerMatch = &interruptCareer;
 	engine.pfnLoadFileForMe = &interruptLoad;
 	engine.pfnFreeFile = &interruptFree;
 	engine.pfnGetFileSize = &interruptSize;
 	engine.pfnGetApproxWavePlayLen = &interruptWave;
 	engine.pfnMessageBegin = &interruptBegin;
-	engine.pfnWriteByte = &interruptNumber;
-	engine.pfnWriteShort = &interruptNumber;
+	engine.pfnWriteByte = &interruptByte;
+	engine.pfnWriteShort = &interruptShort;
 	engine.pfnWriteString = &interruptString;
 	engine.pfnMessageEnd = &interruptEnd;
 	gpMetaUtilFuncs->pfnGetUserMsgID = &interruptMessageId;
@@ -384,6 +492,18 @@ bool testInterrupt(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &eng
 	if (!check(samples(1) == std::vector<std::string>{"radio/test/down.wav"},
 			"real CommanderDown is speaking before death"))
 		return false;
+	for (const auto &packet : interruptPackets)
+	{
+		if (!check(packet.type != 23, "normal native BotStatement disables the head attachment icon"))
+		{
+			return false;
+		}
+	}
+	if (!check(interruptIconModelQueries == 0 && interruptIconCvarQueries == 0,
+			"normal native statements do no radio attachment metadata lookup"))
+	{
+		return false;
+	}
 	const auto probes = interruptWaveProbes;
 	const auto commandsBeforeDeath = gClientCommandCount;
 	interruptPackets.clear();
@@ -409,6 +529,44 @@ bool testInterrupt(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &eng
 		if (packet.type == 101 &&
 			!check(packet.numbers == std::vector<int>{1, 107}, "pain uses original speaker and profile pitch"))
 			return false;
+	}
+	unsigned iconPackets = 0;
+	unsigned audioPackets = 0;
+	const std::vector<InterruptWireField> expectedIconWire{{InterruptWireKind::Byte, 124}, {InterruptWireKind::Byte, 1},
+		{InterruptWireKind::Coordinate, 35}, {InterruptWireKind::Short, 77}, {InterruptWireKind::Short, 15}};
+	const InterruptPacket *previousPacket = nullptr;
+	for (const auto &packet : interruptPackets)
+	{
+		if (packet.type == 101)
+		{
+			++audioPackets;
+		}
+		if (packet.type == 23)
+		{
+			++iconPackets;
+			if (!check(packet.wire == expectedIconWire,
+					"native pain attachment uses exact ordered BYTE/BYTE/COORD/SHORT/SHORT fields"))
+			{
+				return false;
+			}
+			if (!check(previousPacket && previousPacket->type == 101 && previousPacket->recipient == packet.recipient &&
+						previousPacket->sample == "radio/test/pain.wav",
+					"attachment immediately follows its own recipient pain audio"))
+			{
+				return false;
+			}
+			if (!check(packet.destination == MSG_ONE && packet.numbers == std::vector<int>{124, 1, 77, 15} &&
+						packet.coordinates == std::vector<float>{35},
+					"native pain head icon carries exact type/sender/model/height/lifetime"))
+			{
+				return false;
+			}
+		}
+		previousPacket = &packet;
+	}
+	if (!check(iconPackets == audioPackets, "native death Radio sends one attachment for each actual audio recipient"))
+	{
+		return false;
 	}
 	interruptPackets.clear();
 	death(1);
@@ -438,6 +596,90 @@ bool testInterrupt(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &eng
 		self.v.deadflag = DEAD_DEAD;
 		death(1);
 	};
+	for (int variant = 0; variant < 9; ++variant)
+	{
+		if (!speak())
+			return false;
+		interruptIconCvarPresent = variant == 1 || variant == 2 || variant == 6;
+		interruptIconCvar.value = variant == 1 ? 0.0f : variant == 6 ? -1.0f : 1.0f;
+		interruptIconModel = variant == 3 ? 0 : variant == 7 ? -1 : variant == 8 ? 32768 : 77;
+		engine.pfnWriteCoord = variant == 4 ? nullptr : &interruptCoordinate;
+		engine.pfnModelIndex = variant == 5 ? nullptr : &interruptModelIndex;
+		die();
+		if (!check(samples(1) == std::vector<std::string>{"radio/test/pain.wav"},
+				"radio-icon cvar/model/coordinate gates retain pain audio"))
+			return false;
+		unsigned icons = 0;
+		for (const auto &packet : interruptPackets)
+		{
+			if (packet.type == 23 && packet.recipient == &self)
+				++icons;
+		}
+		const unsigned expectedIcons = variant == 0 || variant == 2 || variant == 6 ? 1U : 0U;
+		if (!check(icons == expectedIcons,
+				"native optional mp_show_radioicon and public model/coordinate transport control only attachment"))
+			return false;
+		interruptIconCvarPresent = false;
+		interruptIconCvar.value = 1;
+		interruptIconModel = 77;
+		engine.pfnWriteCoord = &interruptCoordinate;
+		engine.pfnModelIndex = &interruptModelIndex;
+	}
+	if (!speak())
+		return false;
+	interruptResetDuringIconModel = true;
+	die();
+	if (!check(!interruptResetDuringIconModel && samples(1).empty(),
+			"model lookup round replacement cancels all old pain/UI output"))
+		return false;
+	if (!speak())
+		return false;
+	interruptResetDuringIconCvar = true;
+	die();
+	if (!check(!interruptResetDuringIconCvar && samples(1).empty(),
+			"cvar lookup round replacement cancels old pain and attachment"))
+		return false;
+	if (!speak())
+		return false;
+	interruptResetDuringIconPacket = true;
+	die();
+	if (!check(!interruptResetDuringIconPacket && samples(1) == std::vector<std::string>{"radio/test/pain.wav"} &&
+				samples(2).empty() && interruptStack.empty(),
+			"icon packet reset finishes its packet and cancels later recipients"))
+		return false;
+	if (!speak())
+		return false;
+	interruptReplaceIconRecipient = true;
+	die();
+	unsigned replacedIcons = 0;
+	unsigned laterIcons = 0;
+	for (const auto &packet : interruptPackets)
+	{
+		if (packet.type == 23 && packet.recipient == &gEntities[1])
+			++replacedIcons;
+		if (packet.type == 23 && packet.recipient == &gEntities[2])
+			++laterIcons;
+	}
+	const bool serialRecipientSafe = check(!interruptReplaceIconRecipient && replacedIcons == 0 && laterIcons == 1,
+		"recipient reused during audio gets no old follow-up icon; other recipients continue");
+	if (!speak())
+		return false;
+	interruptReplaceIconRecipient = true;
+	interruptReconnectIconRecipient = true;
+	die();
+	replacedIcons = 0;
+	laterIcons = 0;
+	for (const auto &packet : interruptPackets)
+	{
+		if (packet.type == 23 && packet.recipient == &gEntities[1])
+			++replacedIcons;
+		if (packet.type == 23 && packet.recipient == &gEntities[2])
+			++laterIcons;
+	}
+	const bool connectedRecipientSafe = check(!interruptReconnectIconRecipient && replacedIcons == 0 && laterIcons == 1,
+		"same-serial reconnect during audio cannot receive prior connection attachment");
+	if (!serialRecipientSafe || !connectedRecipientSafe)
+		return false;
 	for (const char *mode :
 		{"normal", "minimal", "MINIMAL", "m", "unknown", "", "radio", "RADIO", "r", "off", "OFF", "o"})
 	{

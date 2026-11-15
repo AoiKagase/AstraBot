@@ -1,5 +1,6 @@
 #include "runtime/behavior/bot_behavior_runtime.hpp"
 #include <cstring>
+#include <limits>
 namespace astrabot
 {
 namespace metamod
@@ -347,10 +348,34 @@ bool BotBehaviorRuntime::sendChatterVoice(std::size_t index, compat::ChatterPhra
 		return false;
 	// Native marks the statement speaking before Radio, including reentrant death.
 	constexpr float kStatementGapSeconds = .1f;
-	if (!deathInterrupt && !actors_[index].confirmedSpeech.beginSpeaking(receiptContext, phrase,
-			receiptContext.now + clipDuration + kStatementGapSeconds, speechRevision))
+	if (!deathInterrupt &&
+		!actors_[index].confirmedSpeech.beginSpeaking(
+			receiptContext, phrase, receiptContext.now + clipDuration + kStatementGapSeconds, speechRevision))
 	{
 		return false;
+	}
+	int radioIconModel = 0;
+	if (deathInterrupt && engine->pfnModelIndex && engine->pfnWriteCoord)
+	{
+		// Ordinary statements pass showIcon=false; native OnDeath uses Radio's true default.
+		const auto *showIcon = engine->pfnCVarGetPointer ? engine->pfnCVarGetPointer("mp_show_radioicon") : nullptr;
+		if (!current())
+		{
+			return false;
+		}
+		if (!showIcon || showIcon->value != 0.0f)
+		{
+			const int model = engine->pfnModelIndex("sprites/radio.spr");
+			if (!current())
+			{
+				return false;
+			}
+			constexpr int kMaximumModelIndex = (std::numeric_limits<short>::max)();
+			if (model > 0 && model <= kMaximumModelIndex)
+			{
+				radioIconModel = model;
+			}
+		}
 	}
 	unsigned eligible = 0;
 	for (int slot = 1; slot <= (std::min)(32, globals->maxClients); ++slot)
@@ -360,9 +385,22 @@ bool BotBehaviorRuntime::sendChatterVoice(std::size_t index, compat::ChatterPhra
 			return false;
 		if (!recipient || recipient->free || !(recipient->v.flags & FL_CLIENT) || (recipient->v.flags & FL_DORMANT))
 			continue;
+		const int recipientSerial = recipient->serialnumber;
+		const auto recipientConnection =
+			services_->service_lifecycle().slotGeneration(static_cast<std::uint32_t>(slot));
+		const auto recipientCurrent = [&]()
+		{
+			return !recipient->free && (recipient->v.flags & FL_CLIENT) != 0 &&
+				(recipient->v.flags & FL_DORMANT) == 0 && recipient->serialnumber == recipientSerial &&
+				services_->service_lifecycle().slotGeneration(static_cast<std::uint32_t>(slot)) == recipientConnection;
+		};
 		const int recipientTeam = services_->observation_resolvePlayerTeam(recipient);
 		if (!current())
 			return false;
+		if (!recipientCurrent())
+		{
+			continue;
+		}
 		bool receives = !(recipient->v.flags & FL_SPECTATOR) && recipientTeam == team;
 		if ((recipient->v.flags & FL_SPECTATOR) || recipientTeam == 0)
 		{
@@ -380,7 +418,7 @@ bool BotBehaviorRuntime::sendChatterVoice(std::size_t index, compat::ChatterPhra
 		}
 		if (!current())
 			return false;
-		if (!receives)
+		if (!recipientCurrent() || !receives)
 			continue;
 		++eligible;
 		const auto &preference = outgoingRadioPreferences_[static_cast<std::size_t>(slot - 1)];
@@ -395,6 +433,28 @@ bool BotBehaviorRuntime::sendChatterVoice(std::size_t index, compat::ChatterPhra
 			engine->pfnMessageEnd();
 			if (!current())
 				return false;
+			if (!recipientCurrent())
+			{
+				continue;
+			}
+			if (radioIconModel > 0)
+			{
+				// Public GoldSrc SVC_TEMPENTITY and native Radio attachment payload.
+				constexpr int kTemporaryEntityService = 23;
+				constexpr float kRadioIconHeight = 35.0f;
+				constexpr int kRadioIconLifetimeTenths = 15;
+				engine->pfnMessageBegin(MSG_ONE, kTemporaryEntityService, nullptr, recipient);
+				engine->pfnWriteByte(TE_PLAYERATTACHMENT);
+				engine->pfnWriteByte(static_cast<int>(receiptContext.actor.slot));
+				engine->pfnWriteCoord(kRadioIconHeight);
+				engine->pfnWriteShort(radioIconModel);
+				engine->pfnWriteShort(kRadioIconLifetimeTenths);
+				engine->pfnMessageEnd();
+				if (!current())
+				{
+					return false;
+				}
+			}
 		}
 		if (feedbackMessage > 0)
 		{
