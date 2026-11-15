@@ -719,7 +719,6 @@ void BotObservationRuntime::capturePublicMessage()
 	constexpr auto kTextMessageTokenMask = 2U;
 	constexpr auto kSendAudioFieldCount = 3U;
 	constexpr auto kSendAudioStringMask = 2U;
-	constexpr auto kRadioTokenPrefixLength = 7U;
 	constexpr auto kRadioCommandCount = 8U;
 	constexpr auto kCurrentWeaponFieldCount = 3U;
 	constexpr auto kAmmoFieldCount = 2U;
@@ -928,17 +927,6 @@ void BotObservationRuntime::capturePublicMessage()
 		services_->service_engineFunctions()->pfnPEntityOfEntIndex != nullptr)
 	{
 		edict_t *sender = services_->service_engineFunctions()->pfnPEntityOfEntIndex(v[0]);
-		// Observe our own public radio receipt before excluding bot-originated
-		// commands from the human-order planner below.
-		if (sender != nullptr && !sender->free && (sender->v.flags & FL_FAKECLIENT) != 0 &&
-			(publicMessageStringMask_ & kSendAudioStringMask) != 0U &&
-			std::strncmp(publicMessageStrings_[1U].data(), "%!MRAD_", kRadioTokenPrefixLength) == 0)
-		{
-			const std::size_t senderIndex = static_cast<std::size_t>(v[0] - 1);
-			if (services_->service_managedBotSlots()[senderIndex] &&
-				services_->service_managedBotHandles()[senderIndex].entity == sender)
-				services_->behavior_observeRadioReceipt(senderIndex);
-		}
 		if ((publicMessageTarget_ != nullptr && !publicMessageActor_.isValid()) ||
 			(publicMessageTarget_ == nullptr && publicMessageDestination_ != MSG_ALL &&
 				publicMessageDestination_ != MSG_BROADCAST))

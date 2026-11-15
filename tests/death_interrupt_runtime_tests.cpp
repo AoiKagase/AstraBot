@@ -884,6 +884,10 @@ bool testInterrupt(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &eng
 				   "review: death callback identity replacement preserves fresh queued speech") &&
 		reviewOk;
 	begin();
+	// Native round reset sets the shared event timestamp to0; the first
+	// FollowMe is eligible only after absolute game time30.
+	if (globals.time <= 30.0f)
+		step(31.0f - globals.time);
 	interruptVip = true;
 	globals.mapname = 10001;
 	gObjectiveEntitiesAvailable = true;

@@ -118,6 +118,7 @@ struct OutgoingRadioInput
 	std::uint32_t ownPlacePhrase = 0, enemyPlacePhrase = 0, noisePlacePhrase = 0;
 	bool inCombat = false;
 	float teamLastSpeech = -1, teamBusyUntil = 0;
+	float teamFollowRadioAt = 0;
 	ChatterPhrase teamCurrentPhrase = ChatterPhrase::None;
 	std::uint16_t teamCurrentPlace = 0;
 	std::uint64_t navRevision = 0;
@@ -226,12 +227,11 @@ public:
 			queue(ack_, in.now, kAcknowledgementLifetimeSeconds, in, catalog);
 			ack_ = ChatterPhrase::None;
 		}
-		if (in.vipEscaping && in.friendCount > 0 && (lastVip_ < 0 || in.now - lastVip_ > kVipReportCooldownSeconds))
+		if (!directFollow_ && in.vipEscaping && in.friendCount > 0 && in.now - in.teamFollowRadioAt > kVipReportCooldownSeconds)
 		{
 			directFollow_ = true;
 			++directToken_;
 			directFollowStart_ = in.now;
-			lastVip_ = in.now;
 			directFollowExpires_ = in.now + kVipFollowLifetimeSeconds;
 		}
 		if (in.friendCount > 0)
@@ -425,6 +425,7 @@ public:
 			if (out.directToken != directToken_)
 				return;
 			discardDirect();
+			return;
 		}
 		else if (!pending_.erase(out.statement))
 			return;
@@ -461,7 +462,6 @@ private:
 		lastSent_ = -1;
 		lastHelp_ = -1;
 		lastEscort_ = -1;
-		lastVip_ = -1;
 		ackAt_ = 0;
 		reportedEnemies_ = false;
 		wasPlanting_ = false;
@@ -518,7 +518,7 @@ private:
 	ChatterPendingQueue pending_{};
 	world::ActorKey actor_{};
 	world::FrameIdentity frame_{};
-	float lastUpdate_ = 0, start_ = 0, lastSent_ = -1, lastHelp_ = -1, lastEscort_ = -1, lastVip_ = -1, ackAt_ = 0;
+	float lastUpdate_ = 0, start_ = 0, lastSent_ = -1, lastHelp_ = -1, lastEscort_ = -1, ackAt_ = 0;
 	bool reportedEnemies_ = false, wasPlanting_ = false, askedBomb_ = false, directFollow_ = false;
 	std::uint32_t orderSequence_ = 0;
 	ChatterPhrase ack_ = ChatterPhrase::None;

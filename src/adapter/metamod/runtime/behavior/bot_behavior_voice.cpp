@@ -27,6 +27,7 @@ void BotBehaviorRuntime::ensureOutgoingChatterCatalog()
 	outgoingVoiceBanks_.clear();
 	outgoingVoiceBanks_.reserve(16);
 	outgoingPlaceHistory_.reset();
+	outgoingTeamFollowRadio_.fill(0);
 	outgoingMissingPhraseLogged_.fill(false);
 	auto bank = std::make_shared<ChatterBank>();
 	bank->name = "BotChatter.db";

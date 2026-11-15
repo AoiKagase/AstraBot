@@ -206,31 +206,6 @@
   },
   {
     "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
-    "scope": "ActorState",
-    "member": "outgoingRadioReceipts"
-  },
-  {
-    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
-    "scope": "ActorState",
-    "member": "outgoingRadioAttemptGenerations"
-  },
-  {
-    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
-    "scope": "ActorState",
-    "member": "outgoingRadioAttempts"
-  },
-  {
-    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
-    "scope": "ActorState",
-    "member": "outgoingRadioAttemptTimes"
-  },
-  {
-    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
-    "scope": "ActorState",
-    "member": "outgoingRadioAttemptChoices"
-  },
-  {
-    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
     "scope": "owner",
     "member": "outgoingTeamLastSpeech_"
   },
@@ -1221,11 +1196,6 @@
   },
   {
     "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
-    "scope": "ActorState",
-    "member": "outgoingRadioPart"
-  },
-  {
-    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
     "scope": "owner",
     "member": "outgoingPlaceHistory_"
   },
@@ -1233,5 +1203,10 @@
     "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
     "scope": "owner",
     "member": "outgoingCatalogRevision_"
+  },
+  {
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
+    "scope": "owner",
+    "member": "outgoingTeamFollowRadio_"
   }
 ]

@@ -68,7 +68,7 @@ unsigned char *compoundLoad(char *name, int *length)
 	if (std::strcmp(name, "BotChatter.db") == 0)
 	{
 		text =
-			"BaseDir radio/test/ Place Arena Important arena.wav End "
+			"BaseDir radio/test/ Place Arena Important Radio EVENT_RADIO_SECTOR_CLEAR arena.wav End "
 			"Chatter pain pain.wav End Chatter Help Radio EVENT_RADIO_NEED_BACKUP help.wav End "
 			"Chatter EnemySpotted Radio EVENT_RADIO_ENEMY_SPOTTED Count 2 two.wav Count 3 three.wav Count Many many.wav End Chatter CommanderDown Important down.wav End";
 	}
@@ -199,6 +199,40 @@ void compoundVisibility(const float *from, const float *end, int flags, edict_t 
 		return;
 	}
 	trace->flFraction = compoundEnemiesVisible ? 1.0f : 0.0f;
+}
+std::vector<std::string> compoundRadioCommands;
+std::vector<float> compoundRadioTimes;
+unsigned compoundRoundOnRadioCommand = 0;
+void compoundRadioClientCommand(edict_t *self)
+{
+	const auto *command = astrabot::metamod::HookCommandArgv(0);
+	const bool menu = std::strcmp(command, "radio1") == 0 || std::strcmp(command, "radio2") == 0 ||
+		std::strcmp(command, "radio3") == 0;
+	if (!menu && std::strcmp(command, "menuselect") != 0)
+	{
+		hookedGameClientCommand(self);
+		return;
+	}
+	compoundRadioCommands.push_back(
+		menu ? command : std::string("menuselect:") + astrabot::metamod::HookCommandArgv(1));
+	if (menu)
+		compoundRadioTimes.push_back(compoundGlobals->time);
+	// Deliberately no SendAudio: the host quota can decline a valid attempt.
+	if (compoundRoundOnRadioCommand && compoundRadioCommands.size() == compoundRoundOnRadioCommand)
+	{
+		compoundRoundOnRadioCommand = 0;
+		compoundMode = "normal";
+		auto &runtime = astrabot::metamod::PluginRuntime::instance();
+		runtime.beginRoundGeneration();
+		gEntities[4].v.health = 0;
+		gEntities[4].v.deadflag = DEAD_DEAD;
+		runtime.onMessageBegin(MSG_ALL, 103, nullptr, nullptr);
+		runtime.onWriteByte(0);
+		runtime.onWriteByte(5);
+		runtime.onWriteByte(0);
+		runtime.onWriteString("world");
+		runtime.onMessageEnd();
+	}
 }
 void setupCompoundChatter(enginefuncs_t &engine, globalvars_t &globals)
 {
@@ -528,6 +562,64 @@ bool testCompoundChatter(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 	if (!check(compoundSamples == std::vector<std::string>{"radio/test/down.wav"},
 			"fresh same-owner CommanderDown admitted during ground query survives cancelled old construction"))
 		return false;
+	offmeshEnemies = false;
+	const auto originalRadioCommand = gHookedGameDllTable.pfnClientCommand;
+	gHookedGameDllTable.pfnClientCommand = &compoundRadioClientCommand;
+	for (bool fallback : {false, true})
+	{
+		compoundMode = fallback ? "normal" : "radio";
+		engine.pfnWriteString = fallback ? nullptr : &compoundString;
+		compoundRadioCommands.clear();
+		compoundRadioTimes.clear();
+		if (!beginCount())
+			return false;
+		const std::vector<std::string> firstPart{"radio3", "menuselect:4", "menuselect:10"};
+		if (!check(compoundRadioCommands == firstPart && compoundSamples.empty(),
+				"mapped Place issues one native menu/select/close without a public receipt"))
+			return false;
+		const float first = compoundRadioTimes.front();
+		for (unsigned tick = 0; tick < 3; ++tick)
+			step(.25f);
+		if (!check(compoundRadioCommands == firstPart, "quota-declined radio does not retry the selected part"))
+			return false;
+		globals.time = first + 2.0f + .1f;
+		step(0);
+		if (!check(compoundRadioCommands == firstPart,
+				"radio part retains strict duration2 plus gap.1 even without receipt"))
+			return false;
+		step(.125f);
+		if (!check(compoundRadioCommands == firstPart,
+				"entering accumulation consumes its own update after the radio deadline"))
+			return false;
+		step(.125f);
+		if (!check(compoundRadioCommands ==
+					std::vector<std::string>{
+						"radio3", "menuselect:4", "menuselect:10", "radio3", "menuselect:2", "menuselect:10"},
+				"later current-count radio proceeds once after the declined Place reservation"))
+			return false;
+	}
+	engine.pfnWriteString = &compoundString;
+	for (unsigned boundary = 1; boundary <= 3; ++boundary)
+	{
+		compoundMode = "radio";
+		compoundCareer = true;
+		compoundRadioCommands.clear();
+		compoundRadioTimes.clear();
+		compoundRoundOnRadioCommand = boundary;
+		if (!beginCount())
+			return false;
+		if (!check(
+				compoundRoundOnRadioCommand == 0 && compoundRadioCommands.size() == boundary && compoundSamples.empty(),
+				"round mutation at a radio command boundary stops stale continuation"))
+			return false;
+		step(.125f);
+		compoundCareer = false;
+		if (!check(compoundSamples == std::vector<std::string>{"radio/test/down.wav"},
+				"fresh same-owner CommanderDown survives cancelled radio completion"))
+			return false;
+	}
+	compoundMode = "normal";
+	gHookedGameDllTable.pfnClientCommand = originalRadioCommand;
 	return true;
 }
 }

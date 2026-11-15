@@ -232,10 +232,6 @@ void BotBehaviorRuntime::observePublicDeath(std::size_t index, const world::Fram
 	}
 	actors_[index].outgoingRadioSchedulers.discardNoiseReport(actors_[index].noiseReport);
 	actors_[index].outgoingRadioSchedulers.cancelOnDeath(services_->observation_scenarioRadio(index).sequence);
-	actors_[index].outgoingRadioPart = {};
-	actors_[index].outgoingRadioAttempts = 0;
-	actors_[index].outgoingRadioAttemptTimes = -1;
-	actors_[index].outgoingRadioAttemptChoices = {};
 	actors_[index].noiseInvestigation.reset();
 	actors_[index].noiseReportPolicy = {};
 	actors_[index].outgoingRadioSchedulers.discardPending();

@@ -51,7 +51,6 @@ public:
 	virtual Service_runtimeProfiler &service_runtimeProfiler() = 0;
 	virtual void behavior_invalidateObjectiveAssignments() = 0;
 	virtual const compat::ProfileRecord &behavior_managedProfiles(std::size_t index) const = 0;
-	virtual void behavior_observeRadioReceipt(std::size_t index) = 0;
 	virtual void behavior_observeRadioPreference(edict_t *recipient, bool ignored) = 0;
 	virtual void behavior_resetEquipment(std::size_t index) = 0;
 	virtual std::uint64_t behavior_chatterRevision(std::size_t index) const = 0;

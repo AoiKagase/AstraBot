@@ -352,10 +352,6 @@ private:
 		behavior_.observeRadioPreference(recipient, ignored);
 	}
 
-	void behavior_observeRadioReceipt(std::size_t index) override
-	{
-		return behavior_.observeRadioReceipt(index);
-	}
 
 	const std::uint32_t &command_managedBotCommandSequences(std::size_t index) const override
 	{

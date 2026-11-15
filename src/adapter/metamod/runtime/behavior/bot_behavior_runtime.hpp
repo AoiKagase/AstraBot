@@ -165,7 +165,6 @@ public:
 
 	void assignProfile(std::size_t index, const compat::ProfileRecord &profile);
 
-	void observeRadioReceipt(std::size_t index);
 
 	void observeRecognizedTargetChange(std::size_t index, float now);
 
@@ -354,24 +353,6 @@ private:
 			actor.scenarioEscapeAreas = {};
 	}
 
-	void fill_outgoingRadioAttemptChoices(const compat::RadioMenuChoice &value)
-	{
-		for (auto &actor : actors_)
-			actor.outgoingRadioAttemptChoices = value;
-	}
-
-	void fill_outgoingRadioAttemptTimes(const float &value)
-	{
-		for (auto &actor : actors_)
-			actor.outgoingRadioAttemptTimes = value;
-	}
-
-	void fill_outgoingRadioAttempts(const unsigned &value)
-	{
-		for (auto &actor : actors_)
-			actor.outgoingRadioAttempts = value;
-	}
-
 	struct ObstacleLook
 	{
 		edict_t *entity = nullptr;
@@ -447,12 +428,7 @@ private:
 		world::WorldPosition noiseOrigin{};
 		world::WorldPosition point{};
 	};
-	struct PartRadioAttempt
-	{
-		compat::ChatterPartToken token{};
-		unsigned attempts = 0;
-		float lastTime = -1;
-	};
+
 	struct ActorState
 	{
 		ObstacleLook obstacleLook{};
@@ -480,12 +456,6 @@ private:
 		compat::EnemyReactionMemory enemyReaction{};
 		world::EntityKey enemyWeaponSource{};
 		compat::RadioContactMemory outgoingRadioContactMemory{};
-		std::uint32_t outgoingRadioReceipts{};
-		std::uint32_t outgoingRadioAttemptGenerations{};
-		PartRadioAttempt outgoingRadioPart{};
-		unsigned outgoingRadioAttempts{};
-		float outgoingRadioAttemptTimes{};
-		compat::RadioMenuChoice outgoingRadioAttemptChoices{};
 		nav::AreaId scenarioEscapeAreas{};
 		compat::BombSiteSearchMemory bombSearchMemory{};
 		compat::ScenarioTarget bombSearchTargets{};
@@ -528,6 +498,7 @@ private:
 	static constexpr unsigned kTeamRadioSlotCount = 3U;
 	std::array<float, kTeamRadioSlotCount> outgoingTeamLastSpeech_{{-1.0f, -1.0f, -1.0f}};
 	std::array<float, kTeamRadioSlotCount> outgoingTeamBusyUntil_{};
+	std::array<float, kTeamRadioSlotCount> outgoingTeamFollowRadio_{};
 	std::array<compat::ChatterPhrase, kTeamRadioSlotCount> outgoingTeamCurrentPhrase_{};
 	std::array<std::uint16_t, kTeamRadioSlotCount> outgoingTeamCurrentPlace_{};
 	std::array<bool, static_cast<unsigned>(compat::ChatterPhrase::Count)> outgoingMissingPhraseLogged_{};

@@ -13,10 +13,7 @@ constexpr int kCommandRadioMenu = 1;
 constexpr int kGroupRadioMenu = 2;
 constexpr unsigned kVipMapPrefixLength = 3U;
 constexpr int kMaximumClientSlots = 32;
-constexpr unsigned kMaximumRadioAttempts = 3U;
 // Keep literal evaluation precision on x87; each macro is undefined below.
-#define ASTRABOT_BOT_BEHAVIOR_RADIO_RADIO_RECEIPT_RETRY_SECONDS 0.2f
-#define ASTRABOT_BOT_BEHAVIOR_RADIO_TEAM_SPEECH_BUSY_SECONDS 2.1f
 #define ASTRABOT_BOT_BEHAVIOR_RADIO_NEXT_PHRASE_GAP_SECONDS 0.1f
 }
 using namespace runtime_detail;
@@ -252,14 +249,12 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index)
 	{
 		outgoingRadioRound_ = services_->service_lifecycle().roundGeneration();
 		// Round recognition already cleared old nodes before current-round event admission.
-		fill_outgoingRadioAttempts(0U);
-		fill_outgoingRadioAttemptTimes(-1.0f);
-		fill_outgoingRadioAttemptChoices(compat::RadioMenuChoice{});
 		outgoingTeamLastSpeech_.fill(-1.0f);
 		outgoingTeamBusyUntil_.fill(0.0f);
 		outgoingTeamCurrentPhrase_.fill(compat::ChatterPhrase::None);
 		outgoingTeamCurrentPlace_.fill(0);
 		outgoingPlaceHistory_.reset();
+		outgoingTeamFollowRadio_.fill(0);
 	}
 	compat::OutgoingRadioInput input{};
 	input.actor = receiptContext.actor;
@@ -272,6 +267,7 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index)
 	if (input.team != kTerroristTeam && input.team != kCounterTerroristTeam)
 		return;
 	input.teamLastSpeech = outgoingTeamLastSpeech_[input.team];
+	input.teamFollowRadioAt = outgoingTeamFollowRadio_[input.team];
 	// Native active statements, including retained speakers, own arbitration.
 	input.teamBusyUntil = 0;
 	input.teamCurrentPhrase = compat::ChatterPhrase::None;
@@ -438,7 +434,6 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index)
 	input.verbosity = mode;
 	input.speaking = actors_[index].confirmedSpeech.scheduledStatement();
 	actors_[index].outgoingRadioSchedulers.prepare(input, outgoingChatterCatalog_);
-	compat::OutgoingRadioDecision output{};
 	const bool direct = actors_[index].outgoingRadioSchedulers.hasDirect();
 	bool scanCurrent = true;
 	compat::ChatterScheduleEntry selectedStatement{};
@@ -448,11 +443,22 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index)
 	}
 	if (!scanCurrent || !receiptCurrent())
 		return;
-	if (direct)
+	const auto sendRadio = [&](compat::RadioMenuChoice choice, const auto &current)
 	{
-		// Escape direct radio has no dependency on another bot's statement scan.
-		(void)actors_[index].confirmedSpeech.completeIfElapsed(receiptContext, input.friendCount == 0);
-	}
+		if (!current()) return false;
+		// Native manager event time is recorded before client commands, whether
+		// the GameDLL accepts its quota or emits any public audio receipt.
+		if (choice.menu == kCommandRadioMenu && choice.slot == 5)
+			outgoingTeamFollowRadio_[input.team] = input.now;
+		const char *menu = choice.menu == kCommandRadioMenu ? "radio1" : choice.menu == kGroupRadioMenu ? "radio2" : "radio3";
+		char slot[] = {static_cast<char>('0' + choice.slot), '\0'};
+		(void)services_->command_dispatchClientCommand(handle.entity, menu, nullptr);
+		if (!current()) return false;
+		(void)services_->command_dispatchClientCommand(handle.entity, "menuselect", slot);
+		if (!current()) return false;
+		(void)services_->command_dispatchClientCommand(handle.entity, "menuselect", "10");
+		return current();
+	};
 	const auto action = [&]()
 	{
 		if (!direct)
@@ -482,18 +488,11 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index)
 			playback.friendsRemaining = input.friendCount;
 			playback.emote = selectedStatement.topic == compat::ChatterStatementTopic::Emote;
 			compat::ChatterStatementStep step{};
-			const auto saved = actors_[index].outgoingRadioPart.token;
-			const bool retry = input.friendCount > 0 &&
-				compat::sameChatterStatement(saved.statement.owner, selectedStatement) &&
-				queue.currentPart(saved, &step);
-			if (!retry)
-				step = queue.advance(selectedHandle, playback);
+			step = queue.advance(selectedHandle, playback);
 			if (step.playback.kind == compat::ChatterPlaybackKind::Finished)
 			{
 				(void)actors_[index].confirmedSpeech.finishStatement(
 					receiptContext, selectedStatement, actors_[index].confirmedSpeech.revision());
-				actors_[index].outgoingRadioPart = {};
-				actors_[index].outgoingRadioPart.attempts = 0;
 				return;
 			}
 			if (!step.schedule.speaking ||
@@ -544,8 +543,6 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index)
 					return;
 				(void)actors_[index].confirmedSpeech.record(receiptContext, phrase,
 					input.now + duration + ASTRABOT_BOT_BEHAVIOR_RADIO_NEXT_PHRASE_GAP_SECONDS, speechRevision);
-				actors_[index].outgoingRadioPart = {};
-				actors_[index].outgoingRadioPart.attempts = 0;
 
 				if (silence)
 				{
@@ -583,130 +580,31 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index)
 				finish(0, false);
 				return;
 			}
-			// The existing receipt retry policy is deliberately retained until repair04.
-			// The exact in-flight statement/part stays qualified across those retries.
-			if (!retry)
-			{
-				actors_[index].outgoingRadioPart.token = step.token;
-				actors_[index].outgoingRadioPart.attempts = 0;
-				actors_[index].outgoingRadioPart.lastTime = -1;
-			}
-			if (actors_[index].outgoingRadioPart.attempts >= kMaximumRadioAttempts)
-			{
-				finish(0, false);
-				return;
-			}
-			if (actors_[index].outgoingRadioPart.lastTime >= 0 &&
-				input.now - actors_[index].outgoingRadioPart.lastTime <
-					ASTRABOT_BOT_BEHAVIOR_RADIO_RADIO_RECEIPT_RETRY_SECONDS)
-				return;
-			actors_[index].outgoingRadioPart.lastTime = input.now;
-			++actors_[index].outgoingRadioPart.attempts;
-			const char *menu = choice.menu == kCommandRadioMenu ? "radio1"
-				: choice.menu == kGroupRadioMenu				? "radio2"
-																: "radio3";
-			char slot[] = {static_cast<char>('0' + choice.slot), '\0'};
-			const auto before = actors_[index].outgoingRadioReceipts;
 			(void)actors_[index].confirmedSpeech.beginSpeaking(receiptContext, phrase,
-				input.now + ASTRABOT_BOT_BEHAVIOR_RADIO_TEAM_SPEECH_BUSY_SECONDS, speechRevision);
-			const bool opened = services_->command_dispatchClientCommand(handle.entity, menu, nullptr);
-			if (!partCurrent())
+				input.now + 2.0f + ASTRABOT_BOT_BEHAVIOR_RADIO_NEXT_PHRASE_GAP_SECONDS, speechRevision);
+			// Standard-radio verbosity resets silence before SendRadioMessage;
+			// a missing-sample fallback resets it after the attempted dispatch.
+			if (!voiceMode) outgoingTeamLastSpeech_[input.team] = input.now;
+			if (!sendRadio(choice, partCurrent))
+			{
+				queue.cancelPart(step.token);
 				return;
-			const bool selected = opened && services_->command_dispatchClientCommand(handle.entity, "menuselect", slot);
-			if (!partCurrent())
-				return;
-			if (opened)
-				(void)services_->command_dispatchClientCommand(handle.entity, "menuselect", "10");
-			if (!partCurrent())
-				return;
-			if (selected && actors_[index].outgoingRadioReceipts != before)
-				finish(2, true);
+			}
+			finish(2.0f, true);
 			return;
 		}
 
-		// Direct VIP radio remains separate from ordinary program progression.
-		output = actors_[index].outgoingRadioSchedulers.decide(input, outgoingChatterCatalog_, 0, {});
-		if (output.status != compat::OutgoingRadioStatus::Ready)
-			return;
-		const auto discardOutput = [&]()
+		// Direct VIP SendRadioMessage has no Chatter duration or silence reset.
+		const auto output = actors_[index].outgoingRadioSchedulers.decide(input, outgoingChatterCatalog_, 0, {});
+		if (output.status != compat::OutgoingRadioStatus::Ready) return;
+		auto &scheduler = actors_[index].outgoingRadioSchedulers;
+		scheduler.confirmSent(input, output);
+		const auto consumedToken = scheduler.directToken();
+		const auto directCurrent = [&]()
 		{
-			actors_[index].outgoingRadioSchedulers.discardDirect(output.directToken);
+			return receiptCurrent() && scheduler.directToken() == consumedToken;
 		};
-		const auto confirmOutput = [&]()
-		{
-			actors_[index].outgoingRadioSchedulers.confirmSent(input, output);
-		};
-		const char *menu = output.menu == kCommandRadioMenu ? "radio1"
-			: output.menu == kGroupRadioMenu				? "radio2"
-															: "radio3";
-		if (actors_[index].outgoingRadioAttemptGenerations != handle.actor.actorGeneration ||
-			actors_[index].outgoingRadioAttemptChoices.menu != output.menu ||
-			actors_[index].outgoingRadioAttemptChoices.slot != output.slot)
-		{
-			actors_[index].outgoingRadioAttemptGenerations = handle.actor.actorGeneration;
-			actors_[index].outgoingRadioAttemptChoices = {output.menu, output.slot};
-			actors_[index].outgoingRadioAttempts = 0U;
-			actors_[index].outgoingRadioAttemptTimes = -1.0f;
-		}
-		if (actors_[index].outgoingRadioAttempts >= kMaximumRadioAttempts)
-		{
-			discardOutput();
-			actors_[index].outgoingRadioAttemptChoices = {};
-			if (gpMetaUtilFuncs != nullptr && gpMetaUtilFuncs->pfnLogConsole != nullptr &&
-				services_->service_pluginId() != nullptr)
-				gpMetaUtilFuncs->pfnLogConsole(services_->service_pluginId(),
-					"outgoing radio receipt unavailable bot=%u menu=%d slot=%d attempts=3",
-					static_cast<unsigned>(handle.actor.slot), output.menu, output.slot);
-			return;
-		}
-		if (actors_[index].outgoingRadioAttemptTimes >= 0.0f &&
-			services_->service_globals()->time - actors_[index].outgoingRadioAttemptTimes <
-				ASTRABOT_BOT_BEHAVIOR_RADIO_RADIO_RECEIPT_RETRY_SECONDS)
-			return;
-		actors_[index].outgoingRadioAttemptTimes = services_->service_globals()->time;
-		++actors_[index].outgoingRadioAttempts;
-		const auto speechRevision = actors_[index].confirmedSpeech.revision();
-		const std::uint32_t receiptBefore = actors_[index].outgoingRadioReceipts;
-		char slot[] = {static_cast<char>('0' + output.slot), '\0'};
-		if (!actors_[index].confirmedSpeech.canComplete(receiptContext, reactionContext(index), speechRevision))
-			return;
-		if (output.phrase != compat::ChatterPhrase::None &&
-			!actors_[index].confirmedSpeech.beginSpeaking(receiptContext, output.phrase,
-				input.now + ASTRABOT_BOT_BEHAVIOR_RADIO_TEAM_SPEECH_BUSY_SECONDS, speechRevision))
-		{
-			return;
-		}
-		const bool opened = services_->command_dispatchClientCommand(handle.entity, menu, nullptr);
-		if (!actors_[index].confirmedSpeech.canComplete(receiptContext, reactionContext(index), speechRevision))
-			return;
-		const bool menuSelected = opened && services_->command_dispatchClientCommand(handle.entity, "menuselect", slot);
-		if (!actors_[index].confirmedSpeech.canComplete(receiptContext, reactionContext(index), speechRevision))
-			return;
-		if (opened)
-			(void)services_->command_dispatchClientCommand(handle.entity, "menuselect", "10");
-		// A client command reaching the GameDLL does not prove that its radio
-		// quota/cooldown accepted it. Only public SendAudio confirms a sent phrase.
-		if (!actors_[index].confirmedSpeech.canComplete(receiptContext, reactionContext(index), speechRevision))
-			return;
-		if (menuSelected && actors_[index].outgoingRadioReceipts != receiptBefore)
-		{
-			if (output.phrase != compat::ChatterPhrase::None &&
-				!actors_[index].confirmedSpeech.record(receiptContext, output.phrase,
-					services_->service_globals()->time + ASTRABOT_BOT_BEHAVIOR_RADIO_TEAM_SPEECH_BUSY_SECONDS,
-					speechRevision))
-				return;
-			confirmOutput();
-			actors_[index].outgoingRadioAttempts = 0U;
-			actors_[index].outgoingRadioAttemptChoices = {};
-			outgoingTeamLastSpeech_[input.team] = services_->service_globals()->time;
-			if (output.phrase != compat::ChatterPhrase::None)
-			{
-				outgoingTeamBusyUntil_[input.team] =
-					services_->service_globals()->time + ASTRABOT_BOT_BEHAVIOR_RADIO_TEAM_SPEECH_BUSY_SECONDS;
-				outgoingTeamCurrentPhrase_[input.team] = output.phrase;
-				outgoingTeamCurrentPlace_[input.team] = output.place;
-			}
-		}
+		(void)sendRadio({output.menu, output.slot}, directCurrent);
 	};
 	action();
 	const auto currentContext = reactionContext(index);
@@ -732,13 +630,6 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index)
 			reactionContext(index), retained, actors_[index].confirmedSpeech.revision());
 }
 
-void BotBehaviorRuntime::observeRadioReceipt(std::size_t index)
-{
-	++actors_[index].outgoingRadioReceipts;
-}
-
 } // namespace metamod
 } // namespace astrabot
-#undef ASTRABOT_BOT_BEHAVIOR_RADIO_RADIO_RECEIPT_RETRY_SECONDS
-#undef ASTRABOT_BOT_BEHAVIOR_RADIO_TEAM_SPEECH_BUSY_SECONDS
 #undef ASTRABOT_BOT_BEHAVIOR_RADIO_NEXT_PHRASE_GAP_SECONDS

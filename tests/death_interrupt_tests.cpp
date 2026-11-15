@@ -127,11 +127,14 @@ int main()
 	OutgoingRadioScheduler direct;
 	input.plantingBomb = false;
 	input.vipEscaping = true;
+	input.now = 31;
 	(void)direct.update(input, catalog);
 	check(direct.hasPending(), "VIP direct request is pending before death");
+	// A team attempt remains visible after this actor is cancelled at death.
+	input.teamFollowRadioAt = 31;
 	direct.cancelOnDeath();
-	input.now = 16;
+	input.now = 32;
 	(void)direct.update(input, catalog);
-	check(!direct.hasPending(), "death clears direct requests while preserving cooldown history");
+	check(!direct.hasPending(), "death clears direct requests while respecting the shared team cooldown");
 	return failures == 0 ? 0 : 1;
 }

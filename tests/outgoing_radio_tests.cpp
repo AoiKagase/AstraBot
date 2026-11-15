@@ -82,7 +82,7 @@ int main()
 	in.frame.tick = 1;
 	in.visibleEnemyCount = 0;
 	in.vipEscaping = true;
-	in.now = 2;
+	in.now = 31;
 	out = unknown.update(in, empty);
 	check(out.status == OutgoingRadioStatus::Ready && out.menu == 1 && out.slot == 5,
 		"VIP escape uses reference direct FollowMe radio");
@@ -104,19 +104,62 @@ int main()
 	OutgoingRadioScheduler vipExpiry;
 	auto expiryInput = in;
 	expiryInput.vipEscaping = false;
-	expiryInput.now = 10;
-	expiryInput.teamBusyUntil = 30;
+	expiryInput.now = 40;
+	expiryInput.teamBusyUntil = 70;
 	(void)vipExpiry.update(expiryInput, catalog);
-	expiryInput.now = 15;
+	expiryInput.now = 45;
 	expiryInput.vipEscaping = true;
 	(void)vipExpiry.update(expiryInput, catalog);
-	expiryInput.now = 20.1f;
+	expiryInput.now = 50.125f;
 	expiryInput.vipEscaping = false;
 	out = vipExpiry.update(expiryInput, catalog);
 	vipExpiry.confirmSent(expiryInput, out);
 	expiryInput.teamBusyUntil = 0;
 	check(vipExpiry.update(expiryInput, catalog).status == OutgoingRadioStatus::None,
-		"direct VIP retry lifetime cannot extend an older statement lifetime");
+		"an unattempted direct request cannot extend an older ordinary statement lifetime");
+	OutgoingRadioScheduler firstDirect;
+	auto directClock = in;
+	directClock.visibleEnemyCount = 0;
+	directClock.nearbyFriends = directClock.friendCount;
+	directClock.now = 30;
+	check(firstDirect.update(directClock, catalog).status == OutgoingRadioStatus::None,
+		"zero-initialized native FollowMe clock blocks the exact first30seconds");
+	directClock.now = 30.125f;
+	check(firstDirect.update(directClock, catalog).directToken != 0,
+		"direct FollowMe becomes eligible strictly after30seconds");
+	OutgoingRadioScheduler peerDirect;
+	directClock.actor = {2, 8};
+	directClock.teamFollowRadioAt = 40;
+	directClock.now = 70;
+	check(peerDirect.update(directClock, catalog).directToken == 0,
+		"a new managed owner respects another teammate attempt at the exact30second boundary");
+	directClock.now = 70.125f;
+	check(peerDirect.update(directClock, catalog).directToken != 0,
+		"shared team FollowMe interval expires strictly after30seconds");
+	peerDirect.confirmSent(directClock,peerDirect.update(directClock,catalog));
+	directClock.team=2; directClock.teamFollowRadioAt=0; directClock.now=70.25f;
+	check(peerDirect.update(directClock,catalog).directToken!=0,"same actor changing teams uses its new team's clock without a stale per-actor interval");
+	OutgoingRadioScheduler stableDirect;
+	auto stableClock=directClock; stableClock.now=40;
+	const auto firstToken=stableDirect.update(stableClock,catalog).directToken;
+	stableClock.now=40.125f;
+	check(firstToken!=0 && stableDirect.update(stableClock,catalog).directToken==firstToken,"unattempted direct request retains its exact token while awaiting this owner's action");
+	OutgoingRadioScheduler directSilence;
+	auto silenceInput = directClock;
+	silenceInput.actor = {1, 1};
+	silenceInput.teamFollowRadioAt = 0;
+	silenceInput.vipEscaping = false;
+	silenceInput.now = 1;
+	(void)directSilence.update(silenceInput, catalog);
+	silenceInput.vipEscaping = true;
+	silenceInput.now = 31.25f;
+	auto directOutput = directSilence.update(silenceInput, catalog);
+	directSilence.confirmSent(silenceInput, directOutput);
+	silenceInput.vipEscaping = false;
+	silenceInput.nearbyFriends = 0;
+	silenceInput.now = 31.5f;
+	check(directSilence.update(silenceInput, catalog).phrase == ChatterPhrase::RequestReport,
+		"direct radio does not reset the independent Chatter silence interval");
 	OutgoingRadioScheduler blockedGeneric;
 	auto blockedInput = afterVip;
 	blockedInput.frame.roundGeneration = 39;

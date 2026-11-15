@@ -256,6 +256,7 @@ bool missingDefaultDeathSpeechFixture()
 }
 
 unsigned deathRadioRequests = 0;
+bool declineDirectRadioReceipt=false;
 void deathRadioClientCommand(edict_t *self)
 {
 	const char *command = astrabot::metamod::HookCommandArgv(0);
@@ -265,6 +266,7 @@ void deathRadioClientCommand(edict_t *self)
 		std::strcmp(astrabot::metamod::HookCommandArgv(1), "5") == 0)
 	{
 		++scheduleDirectSends;
+		if(declineDirectRadioReceipt) return;
 		auto &runtime = astrabot::metamod::PluginRuntime::instance();
 		runtime.onMessageBegin(MSG_ONE, 101, nullptr, self);
 		runtime.onWriteByte(indexOfEdict(self));
@@ -939,6 +941,7 @@ bool testDeathChatter(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &
 	scheduleVip = true;
 	scheduleVipPeerChanges = true;
 	scheduleDirectSends = 0;
+	declineDirectRadioReceipt=true;
 	const auto oldMap = globals.mapname;
 	globals.mapname = 10001;
 	gObjectiveEntitiesAvailable = true;
@@ -963,7 +966,10 @@ bool testDeathChatter(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &
 		scheduleDirectSends == 1, "review: independent direct VIP FollowMe sends despite unrelated peer scan changes");
 	step(.3f);
 	const bool directConsumed =
-		check(scheduleDirectSends == 1, "review: independent direct VIP confirmation consumes only its direct request");
+		check(scheduleDirectSends == 1, "quota-declined direct VIP is consumed after one attempt without a public receipt");
+	step(.3f);
+	const bool declinedDirectOnce=check(scheduleDirectSends==1,"direct VIP does not retry on later current-round updates");
+	declineDirectRadioReceipt=false;
 	gHookedGameDllTable.pfnClientCommand = originalClientCommand;
 	scheduleVipPeerChanges = false;
 	scheduleVip = false;
@@ -989,7 +995,7 @@ bool testDeathChatter(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &
 	services.service_compatibilityRandomSource().setTraceSink(nullptr);
 	return oneTeamAnnouncement && olderPeerFirst && futureSelectionBlocks && peerSpeaking && peerRetained &&
 		afterPeerCompletion && qualifiedPeers && replacedScanCancelled && freshScanSpeaks && teamScanCancelled &&
-		afterTeamChange && excludedPeerFixture && excludedPeerProtected && vipFixture && directIndependent &&
+		afterTeamChange && excludedPeerFixture && excludedPeerProtected && vipFixture && directIndependent && declinedDirectOnce &&
 		directConsumed;
 }
 }
