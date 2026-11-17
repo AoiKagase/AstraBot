@@ -120,6 +120,7 @@ void BotBehaviorRuntime::changeReactionState(std::size_t index, compat::Compatib
 	if (pursue)
 	{
 		state.moveToTask = compat::CompatibilityTaskId::MoveToLastKnownEnemyPosition;
+		actor.managedTaskEntity = actor.enemyReaction.pursuitSource(reactionContext(index));
 	}
 	if (from == compat::CompatibilityStateId::Follow && machine.attackOverlayActive())
 	{

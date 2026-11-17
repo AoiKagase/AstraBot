@@ -4,6 +4,7 @@
 #include "astrabot/nav/jump_drop.hpp"
 #include "astrabot/nav/locomotion.hpp"
 #include "astrabot/nav/special_traversal.hpp"
+#include "astrabot/nav/native_ladder.hpp"
 #include "astrabot/compat/runtime_mode_policy.hpp"
 #include "astrabot/compat/random_source.hpp"
 #include "astrabot/world/world_snapshot.hpp"
@@ -43,6 +44,9 @@ struct NavRoamObservation
 	bool friendRayOriginAvailable = false;
 	nav::NavVector friendRayOrigin = {};
 	std::vector<nav::NavVector> nearbyFriends;
+	const nav::NavLadderTopology *nativeLadders = nullptr;
+	nav::INativeLadderProbe *nativeLadderProbe = nullptr;
+	float viewPitch = 0.0f;
 };
 
 struct GroundLookaheadRoute
@@ -253,12 +257,22 @@ public:
 		nav::LocomotionIntent *intent, NavRoamDecision *decision);
 	void reset();
 	void destroyPath();
+	bool usingNativeLadder() const
+	{
+		return nativeLadder_.active();
+	}
+	bool nativeLadderLook(const nav::NavSnapshot &, const nav::NativeLadderObservation &, nav::NativeLadderLook *,
+		nav::NavLadder * = nullptr) const;
 	void resetProgressMonitor();
 	void observeMotion(ActorId actor, world::FrameIdentity frame, const nav::LocomotionObservation &observation);
 	bool isActive() const;
 	bool hasPath() const;
 
 private:
+	nav::NativeLadderRecovery nativeLadderRecovery_{};
+	nav::NativeLadderController nativeLadder_{};
+	std::size_t nativeLadderStep_ = 0;
+	std::uint64_t routeRevision_ = 1;
 	ActorId motionActor_{};
 	world::FrameIdentity motionFrame_{};
 	NavRoamResult updateInternal(const nav::NavSnapshot &snapshot, const NavRoamObservation &observation,
@@ -290,6 +304,9 @@ private:
 	NavigationPhaseResult selectUpdateRoute(NavigationUpdateContext &ctx);
 	NavigationPhaseResult startUpdateTraversal(NavigationUpdateContext &ctx);
 	NavigationPhaseResult updateJumpDropTraversal(NavigationUpdateContext &ctx);
+	NavigationPhaseResult updateNativeTraversal(NavigationUpdateContext &ctx);
+	nav::NativeLadderObservation nativeObservation(const NavRoamObservation &) const;
+	static bool sameNativeLadder(const nav::NavLadder &, const nav::NavLadder &);
 	NavigationPhaseResult updateSpecialTraversal(NavigationUpdateContext &ctx);
 	NavigationPhaseResult updateGroundLocomotion(NavigationUpdateContext &ctx);
 	bool expireGroundRoute(
@@ -344,7 +361,8 @@ private:
 	bool buildStuckRecoveryIntent(
 		const nav::NavSnapshot &snapshot, const nav::NavAreaMatch &currentArea, nav::LocomotionIntent *intent);
 	bool selectRoute(const nav::NavSnapshot &snapshot, const nav::NavAreaMatch &currentArea, nav::AreaId objectiveArea,
-		NavRoamDecision *decision, nav::NavRouteType routeType = nav::NavRouteType::Fastest);
+		NavRoamDecision *decision, nav::NavRouteType routeType = nav::NavRouteType::Fastest,
+		const nav::NavLadderTopology *nativeLadders = nullptr);
 	bool selectRoamRoute(
 		const nav::NavSnapshot &snapshot, const nav::NavAreaMatch &currentArea, NavRoamDecision *decision);
 	bool selectCompatibilityGoal(const nav::NavSnapshot &snapshot, const nav::NavAreaMatch &currentArea,

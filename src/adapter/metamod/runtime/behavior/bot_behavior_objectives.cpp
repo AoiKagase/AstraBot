@@ -87,7 +87,9 @@ void BotBehaviorRuntime::finishManagedBotNavigation(std::size_t index, const run
 	const auto &bomb = services_->observation_objectiveKnowledge(index)[1U];
 	input.defuseGoalKnown = services_->observation_resolvePlayerTeam(
 								services_->service_managedBotHandles()[index].entity) == kCounterTerroristTeam &&
-		actors_[index].scenarioDecisions.hasTarget && bomb.entity.id != 0U && target.entity.id == bomb.entity.id;
+		actors_[index].managedBotStateMachines.task() == compat::CompatibilityTaskId::DefuseBomb &&
+		bomb.entity.id != 0U &&
+		(helpGoalCurrent(index) || (actors_[index].scenarioDecisions.hasTarget && target.entity.id == bomb.entity.id));
 	if (input.defuseGoalKnown)
 	{
 		const auto *entity = services_->service_managedBotHandles()[index].entity;
@@ -118,6 +120,11 @@ void BotBehaviorRuntime::finishManagedBotNavigation(std::size_t index, const run
 	auto &machine = actors_[index].managedBotStateMachines;
 	const auto previous = machine.state();
 	(void)machine.finishNavigation(context);
+	if (actors_[index].helpGoal.active && !helpGoalCurrent(index))
+	{
+		actors_[index].helpGoal = {};
+		actors_[index].managedBotObjectiveTargets = {};
+	}
 	if (!machine.attackOverlayActive())
 		services_->applyNavigationRequest({index, NavigationRequestKind::PublishStep, step});
 	if (machine.state() != previous)
@@ -596,7 +603,13 @@ bool BotBehaviorRuntime::buildManagedObjectiveTarget(std::size_t index, nav::Nav
 	}
 	if (services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility)
 	{
-		if (reactionPursuing(index) && actors_[index].managedBotStateMachines.state() == compat::CompatibilityStateId::MoveTo)
+		if (helpGoalCurrent(index))
+		{
+			*target = actors_[index].helpGoal.position;
+			return true;
+		}
+		if (reactionPursuing(index) &&
+			actors_[index].managedBotStateMachines.state() == compat::CompatibilityStateId::MoveTo)
 		{
 			const auto context = reactionContext(index);
 			const auto point = actors_[index].enemyReaction.pursuitPosition(context);
@@ -1326,7 +1339,7 @@ BotBehaviorRuntime::BehaviorPhaseResult BotBehaviorRuntime::decideObjectiveActio
 	const objectives::TeamRole teamRole = team == kTerroristTeam ? objectives::TeamRole::Terrorist
 		: team == kCounterTerroristTeam							 ? objectives::TeamRole::CounterTerrorist
 																 : objectives::TeamRole::Unknown;
-	if (reactionPursuing(index))
+	if (reactionPursuing(index) || helpGoalCurrent(index))
 	{
 		actors_[index].managedBotObjectiveActions.active = false;
 		return cancelHeldGrenade(index, movementAngles, proposal) ? BehaviorPhaseResult::Complete

@@ -312,6 +312,31 @@ bool NavCorridor::isValid() const
 		return false;
 	}
 
+	for (std::size_t index = 0; index < nativeLadders.size(); ++index)
+	{
+		const auto &step = nativeLadders[index];
+		if (step.linkIndex >= links.size() || (index && nativeLadders[index - 1].linkIndex >= step.linkIndex) ||
+			!isFinitePosition(step.ladder.top) || !isFinitePosition(step.ladder.bottom) || step.ladder.direction >= 4 ||
+			!std::isfinite(step.ladder.length) || step.ladder.length < 0)
+			return false;
+		const auto &link = links[step.linkIndex];
+		if (link.fromArea != areas[step.linkIndex] || link.toArea != areas[step.linkIndex + 1] ||
+			(link.how != 4 && link.how != 5))
+			return false;
+		if (link.direction != step.ladder.direction)
+			return false;
+		if (link.how == 4)
+		{
+			if (step.ladder.dangling || link.fromArea != step.ladder.bottomArea ||
+				std::find(step.ladder.topAreas.begin(), step.ladder.topAreas.begin() + 3, link.toArea) ==
+					step.ladder.topAreas.begin() + 3)
+				return false;
+		}
+		else if (link.toArea != step.ladder.bottomArea ||
+			std::find(step.ladder.topAreas.begin(), step.ladder.topAreas.end(), link.fromArea) ==
+				step.ladder.topAreas.end())
+			return false;
+	}
 	for (std::size_t index = 0U; index < areas.size(); ++index)
 	{
 		if (areas[index] == 0U)
@@ -553,6 +578,8 @@ struct AStarRecord
 	float totalCost;
 	bool closed;
 	bool expandedEver;
+	NavDirectedLink parentLink{};
+	std::int32_t parentLadder = -1;
 };
 
 struct AStarStatsTimer
@@ -596,9 +623,30 @@ struct AStarStatsTimer
 	}
 };
 
+NavQueryResult validateNativeTopology(const NavSnapshot &snapshot, const NavLadderTopology &ladders)
+{
+	if (!snapshot.isValid())
+		return NavQueryResult::EmptySnapshot;
+	if (ladders.navRevision != snapshot.revision() || ladders.mapGeneration != snapshot.mapGeneration() ||
+		ladders.ladders.size() > NavLimits::kMaximumAreas)
+		return NavQueryResult::InvalidArgument;
+	const auto *doc = snapshot.document();
+	for (const auto &ladder : ladders.ladders)
+	{
+		if (!isFinitePosition(ladder.top) || !isFinitePosition(ladder.bottom) || !std::isfinite(ladder.length) ||
+			ladder.length < 0 || ladder.direction >= 4 || (ladder.bottomArea && !doc->findArea(ladder.bottomArea)))
+			return NavQueryResult::InvalidArgument;
+		for (const auto id : ladder.topAreas)
+			if (id && !doc->findArea(id))
+				return NavQueryResult::InvalidArgument;
+	}
+	return NavQueryResult::Found;
+}
+
 NavQueryResult buildAStarCorridor(const NavSnapshot &snapshot, const NavQueryLimits &limits, AreaId start, AreaId goal,
 	NavRouteType routeType, NavCorridor *corridor, NavSearchStats *stats, const NavPathCostContext *context,
-	const NavDirectedLink *excludedLink = nullptr, const NavLadderTopology *ladders = nullptr)
+	const NavDirectedLink *excludedLink = nullptr, const NavLadderTopology *ladders = nullptr,
+	bool allowDeadRange = false)
 {
 	if (stats != nullptr)
 	{
@@ -651,9 +699,10 @@ NavQueryResult buildAStarCorridor(const NavSnapshot &snapshot, const NavQueryLim
 			return distance;
 		return std::isfinite(distance) && distance > kMinimumTraversalDistance ? distance : kMinimumTraversalDistance;
 	};
+	// Native Help range includes dead recipients; movement must opt out of that exception.
 	if (context != nullptr &&
 		(!std::isfinite(context->aggression) || context->aggression < 0.0f || context->aggression > 1.0f ||
-			!std::isfinite(context->health) || context->health <= 0.0f))
+			!std::isfinite(context->health) || (context->health <= 0.0f && !allowDeadRange)))
 	{
 		return NavQueryResult::InvalidArgument;
 	}
@@ -811,7 +860,8 @@ NavQueryResult buildAStarCorridor(const NavSnapshot &snapshot, const NavQueryLim
 			{
 				return NavQueryResult::AreaNotFound;
 			}
-			const auto visit = [&](AreaId target, float ladderLength) -> NavQueryResult
+			const auto visit = [&](AreaId target, float ladderLength, std::uint8_t direction, std::uint8_t how,
+								   std::int32_t ladderIndex) -> NavQueryResult
 			{
 				if (!target || target == current)
 					return NavQueryResult::Found;
@@ -835,6 +885,8 @@ NavQueryResult buildAStarCorridor(const NavSnapshot &snapshot, const NavQueryLim
 					}
 					const float heuristic = distanceBetween(*targetArea, *goalArea);
 					records.push_back({target, current, tentativeCost, tentativeCost + heuristic, false, false});
+					records.back().parentLink = {current, target, direction, how};
+					records.back().parentLadder = ladderIndex;
 					recordLookup.emplace(target, records.size() - 1U);
 					open.push_back(target);
 					if (stats != nullptr)
@@ -850,6 +902,8 @@ NavQueryResult buildAStarCorridor(const NavSnapshot &snapshot, const NavQueryLim
 					return NavQueryResult::Found;
 				}
 				targetRecord.parent = current;
+				targetRecord.parentLink = {current, target, direction, how};
+				targetRecord.parentLadder = ladderIndex;
 				targetRecord.costSoFar = tentativeCost;
 				targetRecord.totalCost = tentativeCost + distanceBetween(*targetArea, *goalArea);
 				if (targetRecord.closed)
@@ -873,7 +927,8 @@ NavQueryResult buildAStarCorridor(const NavSnapshot &snapshot, const NavQueryLim
 			for (std::size_t direction = 0U; direction < NavArea::kDirectionCount; ++direction)
 				for (const AreaId target : currentArea->connections[direction])
 				{
-					const auto result = visit(target, -1.0f);
+					const auto result = visit(
+						target, -1.0f, static_cast<std::uint8_t>(direction), static_cast<std::uint8_t>(direction), -1);
 					if (result != NavQueryResult::Found)
 						return result;
 				}
@@ -887,7 +942,8 @@ NavQueryResult buildAStarCorridor(const NavSnapshot &snapshot, const NavQueryLim
 						upDirectionsConsumed = true;
 						for (unsigned side = 0; side < 3; ++side)
 						{
-							const auto result = visit(ladder.topAreas[side], ladder.length);
+							const auto result = visit(ladder.topAreas[side], ladder.length, ladder.direction, 4,
+								static_cast<std::int32_t>(&ladder - ladders->ladders.data()));
 							if (result != NavQueryResult::Found)
 								return result;
 						}
@@ -897,7 +953,8 @@ NavQueryResult buildAStarCorridor(const NavSnapshot &snapshot, const NavQueryLim
 					for (const auto top : ladder.topAreas)
 						if (top == current)
 						{
-							const auto result = visit(ladder.bottomArea, ladder.length);
+							const auto result = visit(ladder.bottomArea, ladder.length, ladder.direction, 5,
+								static_cast<std::int32_t>(&ladder - ladders->ladders.data()));
 							if (result != NavQueryResult::Found)
 								return result;
 						}
@@ -934,9 +991,18 @@ NavQueryResult buildAStarCorridor(const NavSnapshot &snapshot, const NavQueryLim
 		corridor->areas = reversed;
 		corridor->links.clear();
 		corridor->links.reserve(reversed.size() > 0U ? reversed.size() - 1U : 0U);
-		for (std::size_t index = 1U; ladders == nullptr && index < reversed.size(); ++index)
+		for (std::size_t index = 1U; index < reversed.size(); ++index)
 		{
-			corridor->links.push_back(directedLinkFor(currentDocument, reversed[index - 1U], reversed[index]));
+			if (!ladders)
+				corridor->links.push_back(directedLinkFor(currentDocument, reversed[index - 1], reversed[index]));
+			else
+			{
+				const auto &record = records[findRecord(records, reversed[index])];
+				corridor->links.push_back(record.parentLink);
+				if (record.parentLadder >= 0)
+					corridor->nativeLadders.push_back(
+						{index - 1, ladders->ladders[static_cast<std::size_t>(record.parentLadder)]});
+			}
 		}
 	}
 	catch (const std::bad_alloc &)
@@ -948,27 +1014,33 @@ NavQueryResult buildAStarCorridor(const NavSnapshot &snapshot, const NavQueryLim
 }
 }
 
+NavQueryResult NavQuery::buildNativeCorridor(AreaId start, AreaId goal, NavRouteType routeType,
+	const NavLadderTopology &ladders, NavCorridor *corridor, NavSearchStats *stats) const
+{
+	if (!corridor)
+		return NavQueryResult::InvalidArgument;
+	*corridor = {};
+	if (stats)
+		*stats = {};
+	const auto validation = validateNativeTopology(snapshot_, ladders);
+	if (validation != NavQueryResult::Found)
+		return validation;
+	auto context = costContext_;
+	context.useExtentCenters = true;
+	return buildAStarCorridor(
+		snapshot_, limits_, start, goal, routeType, corridor, stats, &context, nullptr, &ladders, false);
+}
+
 NavQueryResult NavQuery::travelDistance(
 	AreaId start, AreaId goal, NavRouteType routeType, const NavLadderTopology &ladders, float *distance) const
 {
 	if (!distance)
 		return NavQueryResult::InvalidArgument;
 	*distance = -1.0f;
-	if (!snapshot_.isValid())
-		return NavQueryResult::EmptySnapshot;
-	if (ladders.navRevision != snapshot_.revision() || ladders.mapGeneration != snapshot_.mapGeneration() ||
-		ladders.ladders.size() > NavLimits::kMaximumAreas)
-		return NavQueryResult::InvalidArgument;
+	const auto validation = validateNativeTopology(snapshot_, ladders);
+	if (validation != NavQueryResult::Found)
+		return validation;
 	const auto *doc = document();
-	for (const auto &ladder : ladders.ladders)
-	{
-		if (!isFinitePosition(ladder.top) || !isFinitePosition(ladder.bottom) || !std::isfinite(ladder.length) ||
-			ladder.length < 0 || ladder.direction >= 4 || (ladder.bottomArea && !doc->findArea(ladder.bottomArea)))
-			return NavQueryResult::InvalidArgument;
-		for (const auto id : ladder.topAreas)
-			if (id && !doc->findArea(id))
-				return NavQueryResult::InvalidArgument;
-	}
 	if (!start || !goal || !doc->findArea(start) || !doc->findArea(goal))
 		return NavQueryResult::AreaNotFound;
 	if (start == goal)
@@ -979,8 +1051,8 @@ NavQueryResult NavQuery::travelDistance(
 	auto context = costContext_;
 	context.useExtentCenters = true;
 	NavCorridor corridor;
-	const auto result =
-		buildAStarCorridor(snapshot_, limits_, start, goal, routeType, &corridor, nullptr, &context, nullptr, &ladders);
+	const auto result = buildAStarCorridor(
+		snapshot_, limits_, start, goal, routeType, &corridor, nullptr, &context, nullptr, &ladders, true);
 	if (result != NavQueryResult::Found)
 		return result;
 	float total = 0;
@@ -1076,7 +1148,7 @@ NavPathFollower::NavPathFollower()
 
 NavFollowerResult NavPathFollower::start(const NavCorridor &corridor)
 {
-	if (!corridor.isValid() || corridor.areas.size() > NavLimits::kMaximumAreas)
+	if (!corridor.isValid() || !corridor.nativeLadders.empty() || corridor.areas.size() > NavLimits::kMaximumAreas)
 	{
 		return NavFollowerResult::InvalidCorridor;
 	}

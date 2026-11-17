@@ -30,6 +30,7 @@ public:
 		const runtime::NavRoamDecision &decision, const runtime::LandingDamageObservation &landingFeedback);
 	nav::NavPathCostContext managedPathCostContext(std::size_t index);
 	bool ladderTopology(nav::NavLadderTopology *topology);
+	bool nativeLadderLook(std::size_t index, nav::NativeLadderLook *look);
 	void recordMovementPhysicsSample(
 		std::size_t index, const runtime::MovementPhysicsState &before, const runtime::CommandReceipt &receipt);
 	const ManagedNavigationFailure &managedNavigationFailures(std::size_t index) const
@@ -225,6 +226,9 @@ private:
 	struct ActorState
 	{
 		runtime::NavRoamController managedBotMovement{};
+		std::uint64_t nativeLadderEpoch = 0;
+		std::uint64_t nativeLadderExecution = 0;
+		std::uint32_t nativeLadderGoalGeneration = 0;
 		compat::ChatterKnownArea knownNavArea{};
 		ManagedNavigationFailure managedNavigationFailures{};
 		compat::NavigationStep managedNavigationSteps{};

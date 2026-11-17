@@ -4,6 +4,7 @@
 #include "astrabot/compat/random_source.hpp"
 #include "astrabot/world/world_snapshot.hpp"
 #include <cmath>
+#include <functional>
 #include <vector>
 
 namespace astrabot
@@ -35,14 +36,33 @@ class TeamworkPolicy
 public:
 	void reset()
 	{
+		const auto next = revision_ + 1;
 		*this = TeamworkPolicy();
+		revision_ = next ? next : 1;
+	}
+
+	void resetValues()
+	{
+		const auto actor = actor_;
+		const auto frame = frame_;
+		const float time = lastTime_;
+		const float deadline = nextRogueAt_;
+		reset();
+		actor_ = actor;
+		frame_ = frame;
+		lastTime_ = time;
+		nextRogueAt_ = deadline;
+		rogueKnown_ = deadline > 0;
 	}
 
 	void followingStopped(float now)
 	{
 		constexpr float kFollowingStoppedCooldownSeconds = 10.0f;
 		if (std::isfinite(now) && now >= 0.0f)
+		{
 			allowAutoFollowAt_ = now + kFollowingStoppedCooldownSeconds;
+			bumpRevision();
+		}
 	}
 
 	// Public accepted radio is a proxy for the human's private allowance timer.
@@ -56,20 +76,75 @@ public:
 			if (entry.actor == human)
 			{
 				entry.allowAt = allow ? 0.0f : now + kHumanPolicyCooldownSeconds;
+				bumpRevision();
 				return;
 			}
 		humanPolicy_.push_back({human, allow ? 0.0f : now + kHumanPolicyCooldownSeconds});
+		bumpRevision();
 	}
 
-	TeamworkDecision update(const TeamworkInput &input, ICompatibilityRandomSource &random, RandomActor randomActor,
-		RandomTimingContext timing)
+	TeamworkDecision queryRogue(TeamworkInput input, ICompatibilityRandomSource &random, RandomActor randomActor,
+		RandomTimingContext timing, std::function<bool()> current = {})
 	{
-		constexpr float kMinimumRogueIntervalSeconds = 10.0f;
-		constexpr float kMaximumRogueIntervalSeconds = 30.0f;
-		constexpr int kMinimumRogueIntervalBound = 10;
-		constexpr int kMaximumRogueIntervalBound = 30;
-		constexpr float kChancePercentScale = 100.0f;
-		constexpr int kMaximumChancePercent = 100;
+		TeamworkDecision result;
+		if ((current && !current()) || !synchronize(input))
+			return result;
+		bumpRevision();
+		const auto operation = revision_;
+		const auto valid = [&]
+		{
+			return (!current || current()) && revision_ == operation;
+		};
+		result.available = true;
+		if (!input.allowRoguesKnown)
+			return result;
+		result.rogueKnown = true;
+		if (!input.allowRogues)
+			return result; // Native leaves its timer and cached status intact.
+		result.rogueKnown = rogueKnown_;
+		result.rogue = rogue_;
+		if (pendingRogueChance_ || !rogueKnown_ || input.now > nextRogueAt_)
+		{
+			if (!pendingRogueChance_)
+			{
+				if (!valid())
+					return {};
+				const auto interval = random.nextFloat(
+					RandomRequest::floatRequest("Teamwork.RogueInterval", randomActor, timing, 10.0f, 30.0f));
+				if (!valid())
+					return {};
+				if (interval.status != RandomStatus::Ok || !std::isfinite(interval.value) || interval.value < 10 ||
+					interval.value > 30 || !std::isfinite(input.now + interval.value))
+				{
+					result.available = false;
+					return result;
+				}
+				nextRogueAt_ = input.now + interval.value;
+				pendingRogueChance_ = true;
+			}
+			if (!valid())
+				return {};
+			const auto chance = random.nextFloat(
+				RandomRequest::floatRequest("Teamwork.RogueChance", randomActor, timing, 0.0f, 100.0f));
+			if (!valid())
+				return {};
+			if (chance.status != RandomStatus::Ok || !std::isfinite(chance.value) || chance.value < 0 ||
+				chance.value > 100)
+			{
+				result.available = false;
+				return result;
+			}
+			rogue_ = chance.value < 100.0f * (1.0f - input.teamwork);
+			rogueKnown_ = true;
+			pendingRogueChance_ = false;
+		}
+		result.rogueKnown = rogueKnown_;
+		result.rogue = rogue_;
+		return result;
+	}
+	TeamworkDecision update(TeamworkInput input, ICompatibilityRandomSource &random, RandomActor randomActor,
+		RandomTimingContext timing, std::function<bool()> current = {})
+	{
 // Keep literal evaluation precision on x87; each macro is undefined below.
 #define ASTRABOT_TEAMWORK_POLICY_PERSISTENT_FOLLOW_TEAMWORK 0.85f
 		constexpr float kFollowBaseDurationSeconds = 15.0f;
@@ -86,56 +161,15 @@ public:
 			!std::isfinite(input.teamwork) || input.teamwork < 0.0f || input.teamwork > 1.0f ||
 			!std::isfinite(input.followDuration) || input.followDuration < 0.0f)
 			return result;
-		if (!(actor_ == input.actor) || frame_.mapGeneration != input.frame.mapGeneration ||
-			frame_.roundGeneration != input.frame.roundGeneration)
-		{
-			reset();
-			actor_ = input.actor;
-		}
-		else if (input.now < lastTime_ || (frame_.isValid() && input.frame.tick <= frame_.tick))
+		if ((current && !current()) || (sameOwner(input) && hasFullUpdate_ && input.frame.tick <= lastFullUpdateTick_))
 			return result;
-		frame_ = input.frame;
-		lastTime_ = input.now;
-		result.available = true;
-		if (input.allowRoguesKnown)
-		{
-			if (input.allowRogues)
-			{
-				result.rogueKnown = rogueKnown_;
-				result.rogue = rogue_;
-				if (pendingRogueChance_ || !rogueKnown_ || input.now > nextRogueAt_)
-				{
-					if (!pendingRogueChance_)
-					{
-						const auto interval = random.nextFloat(RandomRequest::floatRequest("Teamwork.RogueInterval",
-							randomActor, timing, kMinimumRogueIntervalSeconds, kMaximumRogueIntervalSeconds));
-						if (interval.status != RandomStatus::Ok || !std::isfinite(interval.value) ||
-							interval.value < kMinimumRogueIntervalBound || interval.value > kMaximumRogueIntervalBound)
-						{
-							result.available = false;
-							return result;
-						}
-						nextRogueAt_ = input.now + interval.value;
-						pendingRogueChance_ = true;
-					}
-					const auto chance = random.nextFloat(RandomRequest::floatRequest(
-						"Teamwork.RogueChance", randomActor, timing, 0.0f, kChancePercentScale));
-					if (chance.status != RandomStatus::Ok || !std::isfinite(chance.value) || chance.value < 0 ||
-						chance.value > kMaximumChancePercent)
-					{
-						result.available = false;
-						return result;
-					}
-					rogue_ = chance.value < kChancePercentScale * (1.0f - input.teamwork);
-					rogueKnown_ = true;
-					pendingRogueChance_ = false;
-				}
-				result.rogue = rogue_;
-				result.rogueKnown = rogueKnown_;
-			}
-			else
-				result.rogueKnown = true;
-		}
+		if (!synchronize(input))
+			return result;
+		lastFullUpdateTick_ = input.frame.tick;
+		hasFullUpdate_ = true;
+		result = queryRogue(input, random, randomActor, timing, current);
+		if (!result.available)
+			return result;
 		if (input.following)
 		{
 			if (input.teamwork < ASTRABOT_TEAMWORK_POLICY_PERSISTENT_FOLLOW_TEAMWORK &&
@@ -151,8 +185,13 @@ public:
 			input.teamwork <= ASTRABOT_TEAMWORK_POLICY_MINIMUM_AUTO_FOLLOW_TEAMWORK ||
 			input.now <= allowAutoFollowAt_ || input.busy || input.atPlantedBombsite)
 			return result;
+		const auto operation = revision_;
+		if ((current && !current()) || revision_ != operation)
+			return {};
 		const auto chance =
 			random.nextFloat(RandomRequest::floatRequest("Teamwork.AutoFollow", randomActor, timing, 0.0f, 1.0f));
+		if ((current && !current()) || revision_ != operation)
+			return {};
 		if (chance.status != RandomStatus::Ok || !std::isfinite(chance.value) || chance.value < 0 || chance.value > 1)
 		{
 			result.available = false;
@@ -181,6 +220,38 @@ public:
 #undef ASTRABOT_TEAMWORK_POLICY_MINIMUM_AUTO_FOLLOW_TEAMWORK
 
 private:
+	void bumpRevision()
+	{
+		if (++revision_ == 0)
+			++revision_;
+	}
+	bool sameOwner(const TeamworkInput &input) const
+	{
+		return actor_ == input.actor && frame_.mapGeneration == input.frame.mapGeneration &&
+			frame_.roundGeneration == input.frame.roundGeneration;
+	}
+	bool synchronize(const TeamworkInput &input)
+	{
+		if (!input.actor.isValid() || !input.frame.isValid() || !std::isfinite(input.now) || input.now < 0 ||
+			!std::isfinite(input.teamwork) || input.teamwork < 0 || input.teamwork > 1)
+			return false;
+		if (!sameOwner(input))
+		{
+			if (actor_ == input.actor && frame_.mapGeneration == input.frame.mapGeneration)
+				resetValues();
+			else
+				reset();
+			actor_ = input.actor;
+		}
+		else if (input.now < lastTime_ || input.frame.tick < frame_.tick)
+			return false;
+		frame_ = input.frame;
+		lastTime_ = input.now;
+		return true;
+	}
+	std::uint64_t revision_ = 1;
+	std::uint32_t lastFullUpdateTick_ = 0;
+	bool hasFullUpdate_ = false;
 	struct HumanPolicy
 	{
 		world::ActorKey actor;

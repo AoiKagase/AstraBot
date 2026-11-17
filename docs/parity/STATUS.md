@@ -1,3 +1,23 @@
+## 2026-11-17 repair unit07: Help transmission and assistance movement
+
+Base b3e4ec67a883a403464ecbc32f623853208b8c0a; read-only native reference b0889847fe6d03898be88acc9e366660efb40ab5. Original07 is implemented and offline verified;07A/07B remain its completed prerequisites. This does not establish overall CSBot or live physics parity.
+
+- Natural last-part completion transfers an immutable typed Help payload before queue erasure/owner finish. Static NeedBackup and dynamic enemy-count Help preserve captured Place; cancellation/expiry/death does not transmit a successful completion.
+- Actual Plugin recipient delivery follows native slot order, lazy shared Rogue, task-based Busy, SAFEST travel<=3000, strict3D750/current-position and native Place-selection rules. Accepted movement stores a copied goal and preserves the actual task; immediate OnMyWay uses normal alive/catalog admission. Dead teammates retain native state/task/attack/last-area memory for Help decisions and produce no living movement/acknowledgement. Normal reentry/round/respawn/owner/engine changes invalidate stale execution.
+- Mixed floor/ladder routes keep typed ladder segments and resume the saved suffix. SDK-free native ladder phases, public entity/trace identity checks, native local movement/walking/recovery and the shared view spring are connected to actual RunPlayerMove commands. Runtime fixtures prove assistance ascent/dismount/copied-goal movement; Core covers native descending/phase/boundary/reentry behavior. Real server ladder physics remains live25.
+- Native ResetValues clears Rogue status while retaining its absolute countdown; Spawn enters Buy, and ordinary navigation completion does not run a second normal-state update. Underlying retained Help task rules wait during Attack. Fresh final review found3Important issues (current sender NAV after Rogue, task suspension under Attack, pre-entry stuck forwarding); all were reproduced RED and repaired in one pass, with no re-review.
+- The user explicitly prioritized CSBot parity on2026-11-17. Independent pre-feature controls reproduce149155 historical records on bothOS, then nine native prerequisite edits reproduce149075 current records byte-for-byte. Existing gzip baselines/two corrections are retained; a control-hash-bound600-edit correction keeps exact contexts, offsets, counts and whole-trace hashes. Native RNG/decision changes include37 fewer objective-visibility samples; none are globally ignored. See tests/fixtures/runtime_characterization/NATIVE_HELP_CONTROL.md.
+
+| Final gate | Result |
+|---|---|
+| Windows x86 complete Debug build / CTest | PASS,137/137,12.68s; MSVC14.51.36231 Hostx86/x86, no compiler warnings |
+| Linux x86 complete Debug build / CTest |135/136,13.99s; sole existing combat_policy chest-threshold failure remains22. Independently reproduced from pre-feature combat source, not waived |
+| Strict characterization / checker | PASS on bothOS;149075 records;12checker cases |
+| Separate actual Python PE / ELF verifier | PASS,x86 and exact7exports on bothOS |
+| Manifest / input identity | PASS,317entries/309C++files;354build/test inputs frozen; owned/user/artifact fingerprints retained |
+
+Evidence: .agent-state/sessions/csbot-help-meme-00ac5b3f-d412-446e-becb-904ba60872fd/ (final-*-5.log, native-control-proof-17.json, source/owned/user/artifact fingerprints). Exact commit/localFF/postmerge identity is recorded in its RESULT.json after integration. Unrelated user files, worktrees, configuration and evidence are preserved; no push/deployment/live acceptance. Remaining08–25, authoritative hostage/sniper producer audit19/23, RNG21/replay24 and C4/Aim/turn/multiplayer acceptance25 stay open.
+
 ## 2026-11-15 repair unit07B: public ladder travel prerequisite
 
 Base0b15098d1ffa88ce3bfc5f803fe8758cd9423fc5. Reference ReGameDLL-CS b0889847fe6d03898be88acc9e366660efb40ab5 nav_area.cpp564–613/973–1009/1520–1724, nav_area.h700–825/860–882 and cs_bot.h1574–1714. Original07 Help transmission/reaction/actual movement remains unfinished.

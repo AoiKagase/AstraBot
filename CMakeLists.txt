@@ -237,6 +237,16 @@ add_executable(astrabot_noise_investigation tests/noise_investigation_tests.cpp)
   astrabot_apply_warnings(astrabot_teamwork_policy)
   add_test(NAME astrabot_teamwork_policy COMMAND astrabot_teamwork_policy)
 
+  add_executable(astrabot_help_request tests/help_request_tests.cpp)
+  target_link_libraries(astrabot_help_request PRIVATE astrabot_core)
+  astrabot_apply_warnings(astrabot_help_request)
+  add_test(NAME astrabot_help_request COMMAND astrabot_help_request)
+
+  add_executable(astrabot_native_ladder tests/native_ladder_tests.cpp)
+  target_link_libraries(astrabot_native_ladder PRIVATE astrabot_core)
+  astrabot_apply_warnings(astrabot_native_ladder)
+  add_test(NAME astrabot_native_ladder COMMAND astrabot_native_ladder)
+
   add_executable(astrabot_nav_danger_memory tests/nav_danger_memory_tests.cpp)
   target_link_libraries(astrabot_nav_danger_memory PRIVATE astrabot_core)
   astrabot_apply_warnings(astrabot_nav_danger_memory)
@@ -1117,6 +1127,7 @@ if(ASTRABOT_BUILD_TESTS AND ASTRABOT_BUILD_METAMOD)
       --baseline "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/runtime_characterization/${characterization_platform}.txt.gz"
       --correction "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/runtime_characterization/actor-generation-correction.json"
       --correction "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/runtime_characterization/observed-team-correction.json"
+      --correction "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/runtime_characterization/native-help-preconditions-correction.json"
       --platform "${characterization_platform}"
       --output "${CMAKE_CURRENT_BINARY_DIR}/runtime-characterization.txt")
   add_test(NAME astrabot_runtime_characterization_checker

@@ -274,8 +274,17 @@ bool CombatController::buildAim(const CombatDecisionContext &context, const Targ
 	intent->point = aimPoint;
 	intent->yaw = std::atan2(deltaY, deltaX) * kHalfTurnDegrees / kPi;
 	intent->pitch = -std::atan2(deltaZ, horizontalDistance) * kHalfTurnDegrees / kPi;
+	const float useYaw = context.lookOverride ? context.lookYaw : intent->yaw;
+	const float usePitch = context.lookOverride && context.lookPitchOverride ? context.lookPitch : intent->pitch;
+	if (!std::isfinite(useYaw) || !std::isfinite(usePitch))
+		return false;
 	if (context.aimTrackingEnabled)
 	{
+		if (!(springActor_ == context.actor) || springFrame_.mapGeneration != context.frame.mapGeneration ||
+			springFrame_.roundGeneration != context.frame.roundGeneration)
+			aimSpring_ = {};
+		springActor_ = context.actor;
+		springFrame_ = context.frame;
 		// The reference spring is tuned for 30 Hz upkeep. Full decisions arrive less
 		// often: integrate bounded steps without repeating observations or RNG draws.
 		const unsigned steps =
@@ -283,8 +292,7 @@ bool CombatController::buildAim(const CombatDecisionContext &context, const Targ
 		const float elapsed = context.elapsedSeconds / static_cast<float>(steps);
 		compat::AimStep step = {context.currentYaw, context.currentPitch, false};
 		for (unsigned i = 0U; i < steps; ++i)
-			step =
-				compat::trackAim(step.yaw, step.pitch, intent->yaw, intent->pitch, elapsed, context.skill, &aimSpring_);
+			step = compat::trackAim(step.yaw, step.pitch, useYaw, usePitch, elapsed, context.skill, &aimSpring_);
 		intent->yaw = step.yaw;
 		intent->pitch = step.pitch;
 		aimAligned_ = step.aligned;
@@ -297,6 +305,30 @@ bool CombatController::buildAim(const CombatDecisionContext &context, const Targ
 #undef ASTRABOT_COMBAT_INTENT_AIM_ERROR_SCALE
 #undef ASTRABOT_COMBAT_INTENT_AIM_OFFSET_SMOOTHING
 #undef ASTRABOT_COMBAT_INTENT_MINIMUM_HORIZONTAL_AIM_DISTANCE
+
+bool CombatController::upkeepLook(
+	const CombatDecisionContext &context, float yaw, float pitch, bool attacking, compat::AimStep *look)
+{
+	if (!look || !context.isValid() || !std::isfinite(yaw) || !std::isfinite(pitch) ||
+		!std::isfinite(context.elapsedSeconds) || context.elapsedSeconds < 0 || context.elapsedSeconds > .1f ||
+		!std::isfinite(context.currentYaw) || !std::isfinite(context.currentPitch) || !std::isfinite(context.skill) ||
+		context.skill < 0 || context.skill > 1 || (initialized_ && !(actor_ == context.actor)))
+		return false;
+	if (!(springActor_ == context.actor) || springFrame_.mapGeneration != context.frame.mapGeneration ||
+		springFrame_.roundGeneration != context.frame.roundGeneration)
+		aimSpring_ = {};
+	else if (context.frame.tick < springFrame_.tick)
+		return false;
+	springActor_ = context.actor;
+	springFrame_ = context.frame;
+	const unsigned steps = (std::max)(1U, static_cast<unsigned>(std::ceil(context.elapsedSeconds * 30.0f)));
+	const float elapsed = context.elapsedSeconds / static_cast<float>(steps);
+	compat::AimStep step = {context.currentYaw, context.currentPitch, false};
+	for (unsigned i = 0; i < steps; ++i)
+		step = compat::trackAim(step.yaw, step.pitch, yaw, pitch, elapsed, context.skill, &aimSpring_, attacking);
+	*look = step;
+	return true;
+}
 
 bool CombatController::upkeepAim(const TargetBelief &target, const CombatDecisionContext &context, AimIntent *aim)
 {
@@ -380,7 +412,6 @@ CombatResult CombatController::decide(const world::WorldSnapshot &snapshot, cons
 	if (firstFrame || context.frame.mapGeneration != lastFrame_.mapGeneration ||
 		context.frame.roundGeneration != lastFrame_.roundGeneration)
 	{
-		aimSpring_ = {};
 		aimOffset_ = {};
 		aimOffsetGoal_ = {};
 		aimRefreshTime_ = 0.0f;

@@ -533,6 +533,7 @@ private:
 																	  : 0;
 		if (phrase == ChatterPhrase::Help)
 		{
+			request.meme = {ChatterMemeKind::Help, in.ownPlace};
 			request.program.append({ChatterPartKind::Place, ChatterPhrase::None, in.ownPlace, in.ownPlacePhrase});
 			request.program.append({ChatterPartKind::Fixed, ChatterPhrase::Help, 0, 0});
 		}

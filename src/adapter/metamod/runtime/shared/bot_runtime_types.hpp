@@ -98,6 +98,8 @@ struct ManagedObjectiveTargetCache
 	bool diagnosticsEmitted;
 	bool lastCacheHit;
 	float approachRouteSeconds;
+	bool routeOverride = false;
+	nav::NavRouteType routeType = nav::NavRouteType::Safest;
 };
 
 struct ManagedObjectiveActionState

@@ -89,6 +89,8 @@ struct NavLadder
 	// Forward, left, right, behind in native enumeration order.
 	std::array<AreaId, 4> topAreas{};
 	bool dangling = false;
+	std::uint32_t entityIndex = 0U;
+	std::uint32_t entityGeneration = 0U;
 };
 
 struct NavLadderTopology
@@ -120,6 +122,12 @@ struct NavDirectedLink
 float surfaceZAt(const NavArea &area, float x, float y);
 NavVector extentCenterOf(const NavArea &area);
 
+struct NavLadderStep
+{
+	std::size_t linkIndex = 0;
+	NavLadder ladder{};
+};
+
 struct NavCorridor
 {
 	std::uint64_t navRevision;
@@ -132,6 +140,8 @@ struct NavCorridor
 	// and Enhanced retain area/portal arrival unless they opt in.
 	bool hasEndpoint = false;
 	NavVector endpoint = {};
+	// Explicit non-ground links; callers must split these before using the ground follower.
+	std::vector<NavLadderStep> nativeLadders;
 
 	bool isValid() const;
 };
@@ -152,6 +162,8 @@ public:
 	// A read-only native range query. Ladder edges are never handed to the ground follower.
 	NavQueryResult travelDistance(
 		AreaId start, AreaId goal, NavRouteType routeType, const NavLadderTopology &ladders, float *distance) const;
+	NavQueryResult buildNativeCorridor(AreaId start, AreaId goal, NavRouteType routeType,
+		const NavLadderTopology &ladders, NavCorridor *corridor, NavSearchStats *stats = nullptr) const;
 	NavQueryResult outgoingLinks(AreaId fromArea, std::vector<NavDirectedLink> *links) const;
 	NavQueryResult buildCorridor(AreaId start, AreaId goal, NavCorridor *corridor) const;
 	NavQueryResult buildCorridor(AreaId start, AreaId goal, NavCorridor *corridor, NavSearchStats *stats) const;

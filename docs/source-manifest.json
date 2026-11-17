@@ -50,7 +50,10 @@
     "docs/superpowers/specs/2026-11-15-csbot-enemy-count-chatter-design.md",
     "docs/superpowers/plans/2026-11-15-csbot-enemy-count-chatter.md",
     "docs/superpowers/specs/2026-11-15-csbot-kill-praise-design.md",
-    "docs/superpowers/plans/2026-11-15-csbot-kill-praise.md"
+    "docs/superpowers/plans/2026-11-15-csbot-kill-praise.md",
+    "tests/fixtures/runtime_characterization/native-help-preconditions-control.json",
+    "tests/fixtures/runtime_characterization/native-help-preconditions-correction.json",
+    "tests/fixtures/runtime_characterization/NATIVE_HELP_CONTROL.md"
   ],
   "source_files": [
     {
@@ -1921,6 +1924,36 @@
     },
     {
       "path": "src/adapter/metamod/runtime/shared/public_nav_ladders.hpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "include/astrabot/compat/help_request.hpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "tests/help_request_tests.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "include/astrabot/nav/native_ladder.hpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "tests/native_ladder_tests.cpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "src/adapter/metamod/runtime/shared/public_native_ladder_probe.hpp",
       "origin": "AstraBot",
       "license_status": "pending_release_review",
       "reference_only": false

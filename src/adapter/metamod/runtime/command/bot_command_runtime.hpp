@@ -109,6 +109,8 @@ private:
 		runtime::BotCommand managedBotCommandTemplates{};
 		bool managedBotCommandTemplateValid{};
 		bool managedBotActionStopsMovement{};
+		bool nativeLadderControl{};
+		bool nativeLadderJump{};
 		float movementGateDiagnosticTimes = std::numeric_limits<float>::quiet_NaN();
 	};
 	std::array<ActorState, NativeBotObservation::kClientSlotCount> actors_{};

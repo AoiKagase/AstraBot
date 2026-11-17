@@ -1,10 +1,211 @@
 #include "astrabot/compat/teamwork_policy.hpp"
 #include <cstdio>
 
+namespace
+{
+using namespace astrabot::compat;
+struct CallbackRogueRandom : ICompatibilityRandomSource
+{
+	ScriptedRandomSource tape{{RandomTapeEntry::floatEntry("Teamwork.RogueInterval", {}, {}, 10, 30, 10),
+		RandomTapeEntry::floatEntry("Teamwork.RogueChance", {}, {}, 0, 100, 20)}};
+	unsigned calls = 0;
+	std::function<void(unsigned)> callback;
+	RandomFloatResult nextFloat(const RandomRequest &request) override
+	{
+		const auto result = tape.nextFloat(request);
+		++calls;
+		if (callback)
+			callback(calls);
+		return result;
+	}
+	RandomLongResult nextLong(const RandomRequest &request) override
+	{
+		return tape.nextLong(request);
+	}
+};
+int testLazyRogue()
+{
+	int failures = 0;
+	const auto check = [&](bool value, const char *message)
+	{
+		if (!value)
+		{
+			++failures;
+			std::fprintf(stderr, "FAIL: %s\n", message);
+		}
+	};
+	TeamworkInput input;
+	input.actor = {1, 1};
+	input.frame = {1, 1, 1};
+	input.now = 1;
+	input.teamwork = .75f;
+	input.allowRoguesKnown = input.allowRogues = true;
+	input.roundTimeKnown = true;
+	input.elapsedRound = 6;
+	input.candidate = {2, 1};
+	input.candidateVisibleHumanFriend = input.candidateReachable = true;
+	input.candidateRange = input.candidateTravel = 100;
+	TeamworkPolicy policy;
+	ScriptedRandomSource tape({RandomTapeEntry::floatEntry("Teamwork.RogueInterval", {}, {}, 10, 30, 10),
+		RandomTapeEntry::floatEntry("Teamwork.RogueChance", {}, {}, 0, 100, 20),
+		RandomTapeEntry::floatEntry("Teamwork.AutoFollow", {}, {}, 0, 1, .1f),
+		RandomTapeEntry::floatEntry("Teamwork.RogueInterval", {}, {}, 10, 30, 30),
+		RandomTapeEntry::floatEntry("Teamwork.RogueChance", {}, {}, 0, 100, 25)});
+	auto result = policy.queryRogue(input, tape, {}, {});
+	check(result.available && result.rogueKnown && result.rogue && !result.startFollowing && tape.position() == 2,
+		"lazy Rogue never consumes AutoFollow or starts following");
+	result = policy.queryRogue(input, tape, {}, {});
+	check(result.available && result.rogueKnown && result.rogue && tape.position() == 2,
+		"same-frame lazy Rogue query reuses the shared cache");
+	result = policy.update(input, tape, {}, {});
+	check(result.available && result.rogue && result.startFollowing && tape.position() == 3,
+		"first normal update after lazy query still runs AutoFollow without losing Rogue cache");
+	result = policy.queryRogue(input, tape, {}, {});
+	check(result.available && result.rogue && !result.startFollowing && tape.position() == 3,
+		"lazy Rogue remains queryable after a same-frame normal update");
+	input.now = 11;
+	check(policy.queryRogue(input, tape, {}, {}).rogue && tape.position() == 3,
+		"lazy cache deadline is strict without a full-update tick advance");
+	input.now = 11.1f;
+	result = policy.queryRogue(input, tape, {}, {});
+	check(result.available && result.rogueKnown && !result.rogue && tape.verifyComplete(),
+		"expired lazy query refreshes interval then chance with the native strict teamwork threshold");
+	TeamworkPolicy toggled;
+	input.now = 1;
+	input.allowRogues = false;
+	input.roundTimeKnown = false;
+	ScriptedRandomSource toggleTape({RandomTapeEntry::floatEntry("Teamwork.RogueInterval", {}, {}, 10, 30, 10),
+		RandomTapeEntry::floatEntry("Teamwork.RogueChance", {}, {}, 0, 100, 20)});
+	result = toggled.queryRogue(input, toggleTape, {}, {});
+	check(result.available && result.rogueKnown && !result.rogue && toggleTape.position() == 0,
+		"disabled rogue query returns false with no RNG");
+	input.allowRogues = true;
+	check(toggled.queryRogue(input, toggleTape, {}, {}).rogue,
+		"same-tick enabling rogues can lazily draw the first status");
+	input.allowRogues = false;
+	toggled.queryRogue(input, toggleTape, {}, {});
+	input.allowRogues = true;
+	check(toggled.queryRogue(input, toggleTape, {}, {}).rogue && toggleTape.verifyComplete(),
+		"temporary disabling does not destroy the native cached rogue timer/status");
+	for (unsigned interrupt : {1U, 2U})
+	{
+		TeamworkPolicy reset;
+		CallbackRogueRandom callback;
+		callback.callback = [&](unsigned call)
+		{
+			if (call == interrupt)
+				reset.reset();
+		};
+		check(!reset.queryRogue(input, callback, {}, {}).available && callback.calls == interrupt,
+			"reset inside either Rogue draw aborts before stale publication or another draw");
+		ScriptedRandomSource fresh({RandomTapeEntry::floatEntry("Teamwork.RogueInterval", {}, {}, 10, 30, 20),
+			RandomTapeEntry::floatEntry("Teamwork.RogueChance", {}, {}, 0, 100, 99)});
+		result = reset.queryRogue(input, fresh, {}, {});
+		check(result.available && result.rogueKnown && !result.rogue && fresh.verifyComplete(),
+			"fresh owner after RNG reset cannot inherit the stale interval/chance");
+		TeamworkPolicy lost;
+		CallbackRogueRandom stale;
+		bool current = true;
+		stale.callback = [&](unsigned call)
+		{
+			if (call == interrupt)
+				current = false;
+		};
+		check(!lost.queryRogue(input, stale, {}, {},
+					   [&]
+					   {
+						   return current;
+					   })
+					.available &&
+				stale.calls == interrupt,
+			"external receipt loss in either draw aborts the lazy decision");
+	}
+	TeamworkPolicy nested;
+	CallbackRogueRandom old;
+	auto replacement = input;
+	++replacement.actor.generation;
+	bool freshAccepted = false;
+	old.callback = [&](unsigned call)
+	{
+		if (call != 1)
+			return;
+		nested.reset();
+		ScriptedRandomSource fresh({RandomTapeEntry::floatEntry("Teamwork.RogueInterval", {}, {}, 10, 30, 20),
+			RandomTapeEntry::floatEntry("Teamwork.RogueChance", {}, {}, 0, 100, 99)});
+		const auto value = nested.queryRogue(replacement, fresh, {}, {});
+		freshAccepted = value.available && value.rogueKnown && !value.rogue && fresh.verifyComplete();
+	};
+	check(!nested.queryRogue(input, old, {}, {}).available && freshAccepted,
+		"nested fresh-owner query cancels the outer old-owner decision");
+	ScriptedRandomSource none({});
+	result = nested.queryRogue(replacement, none, {}, {});
+	check(result.available && result.rogueKnown && !result.rogue && !none.failed() && none.position() == 0,
+		"outer callback continuation cannot overwrite the freshly cached owner");
+	TeamworkPolicy sameObject;
+	input.now = 1;
+	input.frame = {1, 1, 1};
+	input.allowRogues = true;
+	input.roundTimeKnown = false;
+	ScriptedRandomSource resetTape({RandomTapeEntry::floatEntry("Teamwork.RogueInterval", {}, {}, 10, 30, 10),
+		RandomTapeEntry::floatEntry("Teamwork.RogueChance", {}, {}, 0, 100, 20),
+		RandomTapeEntry::floatEntry("Teamwork.RogueInterval", {}, {}, 10, 30, 30),
+		RandomTapeEntry::floatEntry("Teamwork.RogueChance", {}, {}, 0, 100, 99)});
+	sameObject.queryRogue(input, resetTape, {}, {});
+	sameObject.resetValues();
+	input.now = 2;
+	++input.frame.tick;
+	result = sameObject.queryRogue(input, resetTape, {}, {});
+	check(result.available && result.rogueKnown && !result.rogue && resetTape.position() == 2,
+		"native same-object ResetValues clears rogue status but preserves its running countdown");
+	input.now = 11;
+	result = sameObject.queryRogue(input, resetTape, {}, {});
+	check(result.available && !result.rogue && resetTape.position() == 2,
+		"ResetValues keeps the exact native countdown deadline");
+	input.now = 11.1f;
+	result = sameObject.queryRogue(input, resetTape, {}, {});
+	check(result.available && !result.rogue && resetTape.verifyComplete(),
+		"same-object timer draws again only after its retained deadline");
+	TeamworkPolicy round;
+	input.now = 1;
+	input.frame = {1, 1, 1};
+	ScriptedRandomSource roundTape({RandomTapeEntry::floatEntry("Teamwork.RogueInterval", {}, {}, 10, 30, 10),
+		RandomTapeEntry::floatEntry("Teamwork.RogueChance", {}, {}, 0, 100, 20),
+		RandomTapeEntry::floatEntry("Teamwork.RogueInterval", {}, {}, 10, 30, 20),
+		RandomTapeEntry::floatEntry("Teamwork.RogueChance", {}, {}, 0, 100, 99)});
+	round.queryRogue(input, roundTape, {}, {});
+	input.now = 2;
+	++input.frame.roundGeneration;
+	result = round.queryRogue(input, roundTape, {}, {});
+	check(result.available && !result.rogue && roundTape.position() == 2,
+		"a new round on the same actor preserves native rogue countdown and resets its value");
+	++input.frame.mapGeneration;
+	result = round.queryRogue(input, roundTape, {}, {});
+	check(result.available && !result.rogue && roundTape.verifyComplete(),
+		"new map owner does not reuse an old-map rogue countdown");
+	TeamworkPolicy resetDuringChance;
+	input.now = 1;
+	input.frame = {1, 1, 1};
+	CallbackRogueRandom chance;
+	chance.callback = [&](unsigned call)
+	{
+		if (call == 2)
+			resetDuringChance.resetValues();
+	};
+	check(!resetDuringChance.queryRogue(input, chance, {}, {}).available,
+		"ResetValues in chance draw cancels stale old status");
+	ScriptedRandomSource noFurtherDraw({});
+	result = resetDuringChance.queryRogue(input, noFurtherDraw, {}, {});
+	check(result.available && result.rogueKnown && !result.rogue && !noFurtherDraw.failed(),
+		"ResetValues during chance retains committed interval but cannot publish old chance result");
+
+	return failures;
+}
+}
+
 int main()
 {
 	using namespace astrabot::compat;
-	int failures = 0;
+	int failures = testLazyRogue();
 	const auto check = [&](bool value, const char *message)
 	{
 		if (!value)

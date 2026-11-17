@@ -1,5 +1,6 @@
 #include "runtime/navigation/bot_navigation_runtime.hpp"
 #include "runtime/shared/bot_runtime_support.hpp"
+#include "runtime/shared/public_native_ladder_probe.hpp"
 namespace astrabot
 {
 namespace metamod
@@ -131,6 +132,76 @@ bool BotNavigationRuntime::ladderTopology(nav::NavLadderTopology *topology)
 			active.revision() == navigation.revision() && active.document() == navigation.document();
 	};
 	return ladderCache_.read(engine, navigation, current, topology);
+}
+
+bool BotNavigationRuntime::nativeLadderLook(std::size_t index, nav::NativeLadderLook *look)
+{
+	if (!look || !services_ || index >= actors_.size() || !services_->service_globals() ||
+		services_->service_compatibilitySurface().configuration().mode != compat::RuntimeMode::Compatibility)
+		return false;
+	*look = {};
+	const auto handle = services_->service_managedBotHandles()[index];
+	if (!handle.entity || handle.entity->free || handle.entity->v.health <= 0 || handle.entity->v.deadflag != DEAD_NO)
+		return false;
+	const auto navigation = services_->service_navPublisher().snapshot();
+	const auto &state = actors_[index];
+	const auto epoch = state.nativeLadderEpoch, execution = state.nativeLadderExecution;
+	const auto goalGeneration = state.nativeLadderGoalGeneration;
+	const auto frame = world::FrameIdentity{services_->service_lifecycle().mapGeneration(),
+		services_->service_lifecycle().roundGeneration(), services_->service_adapterFrameCount()};
+	const int serial = handle.entity->serialnumber;
+	const float now = services_->service_globals()->time;
+	const auto current = [&]()
+	{
+		const auto &live = services_->service_managedBotHandles()[index];
+		const auto active = services_->service_navPublisher().snapshot();
+		return services_->service_managedBotSlots()[index] && live.actor.slot == handle.actor.slot &&
+			live.actor.actorGeneration == handle.actor.actorGeneration && live.entity == handle.entity &&
+			!handle.entity->free && handle.entity->serialnumber == serial && handle.entity->v.deadflag == DEAD_NO &&
+			handle.entity->v.health > 0 && services_->service_globals()->time == now &&
+			services_->service_lifecycle().mapGeneration() == frame.mapGeneration &&
+			services_->service_lifecycle().roundGeneration() == frame.roundGeneration &&
+			services_->service_adapterFrameCount() == frame.tick && state.nativeLadderEpoch == epoch &&
+			state.nativeLadderExecution == execution && state.nativeLadderGoalGeneration == goalGeneration &&
+			services_->behavior_managedBotStateMachines(index).normalStateEpoch() == epoch &&
+			services_->behavior_executionRevision(index) == execution &&
+			services_->behavior_managedBotObjectiveTargets(index).generation == goalGeneration &&
+			active.revision() == navigation.revision() && active.document() == navigation.document();
+	};
+	if (!current())
+		return false;
+	nav::NativeLadderObservation in{};
+	in.actor = {handle.actor.slot, handle.actor.actorGeneration};
+	in.frame = frame;
+	in.origin = {handle.entity->v.origin.x, handle.entity->v.origin.y, handle.entity->v.origin.z};
+	in.feetZ = in.origin.z + handle.entity->v.mins.z;
+	in.now = now;
+	in.yaw = handle.entity->v.v_angle.y;
+	in.pitch = handle.entity->v.v_angle.x;
+	in.onLadder = handle.entity->v.movetype == MOVETYPE_FLY;
+	in.crouching = (handle.entity->v.flags & FL_DUCKING) != 0;
+	nav::NativeLadderLook candidate{};
+	nav::NavLadder source{};
+	if (!state.managedBotMovement.nativeLadderLook(navigation, in, &candidate, &source))
+		return false;
+	const auto engine = services_->service_engineFunctions();
+	if (!engine || !engine->pfnPEntityOfEntIndex || !engine->pfnSzFromIndex || !source.entityIndex ||
+		source.entityIndex > static_cast<std::uint32_t>((std::numeric_limits<int>::max)()))
+		return false;
+	const auto find = engine->pfnPEntityOfEntIndex;
+	const auto string = engine->pfnSzFromIndex;
+	const auto *ladder = find(static_cast<int>(source.entityIndex));
+	if (!current() || engine != services_->service_engineFunctions() || engine->pfnPEntityOfEntIndex != find ||
+		engine->pfnSzFromIndex != string || !ladder || ladder->free || ladder->serialnumber < 0 ||
+		static_cast<std::uint32_t>(ladder->serialnumber) + 1U != source.entityGeneration)
+		return false;
+	const int sourceSerial = ladder->serialnumber;
+	const char *name = string(ladder->v.classname);
+	if (!current() || engine != services_->service_engineFunctions() || engine->pfnSzFromIndex != string ||
+		ladder->free || ladder->serialnumber != sourceSerial || !name || std::strcmp(name, "func_ladder") != 0)
+		return false;
+	*look = candidate;
+	return true;
 }
 
 nav::NavPathCostContext BotNavigationRuntime::managedPathCostContext(std::size_t index)
@@ -965,6 +1036,19 @@ NavigationUpdate BotNavigationRuntime::updateNavigation(std::size_t index, const
 	observation.team = static_cast<std::uint8_t>(services_->observation_resolvePlayerTeam(handle.entity));
 	if (services_->behavior_managedBotStateMachines(index).state() == compat::CompatibilityStateId::InvestigateNoise)
 		observation.objectiveRouteType = nav::NavRouteType::Safest;
+	if (services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility &&
+		services_->behavior_managedBotStateMachines(index).state() == compat::CompatibilityStateId::MoveTo)
+	{
+		const auto task = services_->behavior_managedBotStateMachines(index).task();
+		observation.objectiveRouteType = task == compat::CompatibilityTaskId::FindTickingBomb ||
+				task == compat::CompatibilityTaskId::DefuseBomb ||
+				task == compat::CompatibilityTaskId::MoveToLastKnownEnemyPosition
+			? nav::NavRouteType::Fastest
+			: nav::NavRouteType::Safest;
+	}
+	const auto &goalCache = services_->behavior_managedBotObjectiveTargets(index);
+	if (observation.hasObjectiveTarget && goalCache.routeOverride)
+		observation.objectiveRouteType = goalCache.routeType;
 	observation.movementSuppressed = services_->roundFreezeActive();
 	const auto &objectiveAction = services_->behavior_managedBotObjectiveActions(index);
 	observation.movementSuppressed = observation.movementSuppressed ||
@@ -1113,8 +1197,82 @@ NavigationUpdate BotNavigationRuntime::updateNavigation(std::size_t index, const
 		{
 			RuntimeProfilerScope navMovementScope(
 				services_->service_runtimeProfiler(), RuntimeProfilerStage::NavMovement);
+			const auto receiptHandle = handle;
+			const int serial = handle.entity->serialnumber;
+			const auto epoch = services_->behavior_managedBotStateMachines(index).normalStateEpoch();
+			const auto revision = services_->behavior_executionRevision(index);
+			const auto goalGeneration = services_->behavior_managedBotObjectiveTargets(index).generation;
+			const auto fullSequence = services_->service_managedBotFullUpdateSequences()[index];
+			const float now = services_->service_globals()->time;
+			const auto current = [&, receiptHandle, serial, epoch, revision, goalGeneration, fullSequence, now]()
+			{
+				const auto &live = services_->service_managedBotHandles()[index];
+				const auto active = services_->service_navPublisher().snapshot();
+				return services_->service_managedBotSlots()[index] && live.actor.slot == receiptHandle.actor.slot &&
+					live.actor.actorGeneration == receiptHandle.actor.actorGeneration &&
+					live.entity == receiptHandle.entity && !live.entity->free && live.entity->serialnumber == serial &&
+					live.entity->v.deadflag == DEAD_NO && live.entity->v.health > 0 &&
+					services_->service_lifecycle().isCurrent(
+						services_->service_lifecycle().tokenForSlot(live.actor.slot)) &&
+					services_->service_lifecycle().mapGeneration() == observation.frame.mapGeneration &&
+					services_->service_lifecycle().roundGeneration() == observation.frame.roundGeneration &&
+					services_->service_adapterFrameCount() == observation.frame.tick &&
+					services_->service_globals()->time == now &&
+					services_->service_managedBotFullUpdateSequences()[index] == fullSequence &&
+					services_->behavior_managedBotStateMachines(index).normalStateEpoch() == epoch &&
+					services_->behavior_executionRevision(index) == revision &&
+					services_->behavior_managedBotObjectiveTargets(index).generation == goalGeneration &&
+					active.revision() == navigation.revision() && active.document() == navigation.document();
+			};
+			nav::NavLadderTopology topology{};
+			PublicNativeLadderProbe probe(services_->service_engineFunctions(), current);
+			if (services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility &&
+				observation.hasObjectiveTarget)
+			{
+				bool needsTopology = actors_[index].managedBotMovement.usingNativeLadder();
+				if (!needsTopology)
+				{
+					nav::NavQuery query(navigation);
+					nav::NavAreaMatch start{}, goal{};
+					const bool sameArea = query.findContaining(observation.locomotion.position, kAreaVerticalTolerance,
+											  &start) == nav::NavQueryResult::Found &&
+						query.findContaining(observation.objectiveTarget, kAreaVerticalTolerance, &goal) ==
+							nav::NavQueryResult::Found &&
+						start.area == goal.area;
+					needsTopology = !sameArea;
+				}
+				if (needsTopology)
+				{
+					const bool hasTopology = ladderTopology(&topology);
+					if (!current())
+						return output;
+					// Ground navigation does not require an unavailable ladder probe.
+					// Active native ladders reject missing topology in Core.
+					if (hasTopology)
+					{
+						observation.nativeLadders = &topology;
+						observation.nativeLadderProbe = &probe;
+					}
+				}
+				observation.viewPitch = handle.entity->v.v_angle.x;
+			}
 			roamResult =
 				actors_[index].managedBotMovement.update(navigation, observation, &locomotionIntent, &roamDecision);
+			// Borrowed topology and probe never escape this synchronous update.
+			observation.nativeLadders = nullptr;
+			observation.nativeLadderProbe = nullptr;
+			if (current())
+			{
+				actors_[index].nativeLadderEpoch = epoch;
+				actors_[index].nativeLadderExecution = revision;
+				actors_[index].nativeLadderGoalGeneration = goalGeneration;
+			}
+			else
+			{
+				locomotionIntent = {};
+				roamDecision = {};
+				roamResult = runtime::NavRoamResult::ReplanRequired;
+			}
 		}
 		if (services_->behavior_noiseInvestigationWalking(index) &&
 			services_->behavior_managedBotStateMachines(index).state() ==
@@ -1225,7 +1383,8 @@ void BotNavigationRuntime::resetCreatedActorReadiness(std::size_t slotIndex)
 
 void BotNavigationRuntime::observePublicDeath(std::size_t victim)
 {
-	actors_[victim].knownNavArea.reset();
+	if (services_->service_compatibilitySurface().configuration().mode != compat::RuntimeMode::Compatibility)
+		actors_[victim].knownNavArea.reset();
 	if (services_->service_managedBotSlots()[victim] && !actors_[victim].deathDangerRecorded &&
 		services_->service_globals() != nullptr && services_->service_managedBotHandles()[victim].entity != nullptr)
 	{

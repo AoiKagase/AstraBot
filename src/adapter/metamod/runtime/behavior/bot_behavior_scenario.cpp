@@ -8,10 +8,6 @@ namespace
 {
 constexpr int kTerroristTeam = 1;
 constexpr int kCounterTerroristTeam = 2;
-constexpr unsigned kScoutWeaponId = 3U;
-constexpr unsigned kSg550WeaponId = 13U;
-constexpr unsigned kAwpWeaponId = 18U;
-constexpr unsigned kG3sg1WeaponId = 24U;
 constexpr float kGoalArrivalRange = 64.0f;
 constexpr float kProfilePercentScale = 100.0f;
 constexpr int kVipScoreFlag = 4;
@@ -107,6 +103,8 @@ BotBehaviorRuntime::BehaviorPhaseResult BotBehaviorRuntime::updateBehaviorLifecy
 	std::size_t index, const runtime::MovementPhysicsState &before, compat::StateUpdateContext &context)
 {
 	auto &machine = actors_[index].managedBotStateMachines;
+	const bool native =
+		services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility;
 	actors_[index].scenarioDecisions = {};
 	if (actors_[index].managedBotStateRounds != 0U &&
 		actors_[index].managedBotStateRounds != services_->service_lifecycle().roundGeneration() &&
@@ -120,9 +118,13 @@ BotBehaviorRuntime::BehaviorPhaseResult BotBehaviorRuntime::updateBehaviorLifecy
 	{
 		actors_[index].scenarioPlanners.reset();
 		(void)machine.initialize(context);
+		if (native && !actors_[index].buyingComplete)
+			(void)machine.transition(compat::CompatibilityStateId::Buy, compat::StateTransitionReason::RespawnObserved,
+				compat::StateTransitionId::LifecycleRespawn, context);
 		if (before.dead)
 		{
-			(void)machine.onDeath(context);
+			if (!native)
+				(void)machine.onDeath(context);
 			actors_[index].managedBotWasDead = true;
 		}
 		return BehaviorPhaseResult::Complete;
@@ -137,7 +139,7 @@ BotBehaviorRuntime::BehaviorPhaseResult BotBehaviorRuntime::updateBehaviorLifecy
 		actors_[index].equipment.reset();
 		actors_[index].scenarioPlanners.reset();
 		services_->applyNavigationRequest({index, NavigationRequestKind::ClearFailure});
-		if (!actors_[index].managedBotWasDead)
+		if (!actors_[index].managedBotWasDead && !native)
 		{
 			(void)machine.onDeath(context);
 		}
@@ -148,7 +150,19 @@ BotBehaviorRuntime::BehaviorPhaseResult BotBehaviorRuntime::updateBehaviorLifecy
 	{
 		actors_[index].equipment.reset();
 		actors_[index].scenarioPlanners.reset();
+		if (native)
+		{
+			invalidateHelpExecution(index);
+			actors_[index].teamworkPolicies.resetValues();
+			actors_[index].buyControllers.reset();
+			actors_[index].buyingComplete = false;
+			actors_[index].managedBotObjectiveTargets = {};
+			actors_[index].managedBotObjectiveActions = {};
+		}
 		(void)machine.onRespawn(context);
+		if (native)
+			(void)machine.transition(compat::CompatibilityStateId::Buy, compat::StateTransitionReason::RespawnObserved,
+				compat::StateTransitionId::LifecycleRespawn, context);
 		actors_[index].managedBotWasDead = false;
 		return BehaviorPhaseResult::Complete;
 	}
@@ -159,6 +173,14 @@ BotBehaviorRuntime::BehaviorPhaseResult BotBehaviorRuntime::updateBehaviorLifecy
 void BotBehaviorRuntime::updateScenarioState(std::size_t index, const runtime::MovementPhysicsState &before,
 	compat::StateUpdateContext &context, compat::StateBehaviorInput &stateBehavior)
 {
+	const auto receipt = reactionContext(index);
+	const auto revision = actors_[index].executionRevision;
+	const auto epoch = actors_[index].managedBotStateMachines.normalStateEpoch();
+	const auto current = [&]
+	{
+		return executionCurrent(index, receipt, revision) &&
+			actors_[index].managedBotStateMachines.normalStateEpoch() == epoch;
+	};
 	const compat::RuntimeMode mode = services_->service_compatibilitySurface().configuration().mode;
 	if (mode == compat::RuntimeMode::Compatibility)
 	{
@@ -167,14 +189,22 @@ void BotBehaviorRuntime::updateScenarioState(std::size_t index, const runtime::M
 		compat::CompatibilityObservation observation = {};
 		const ObservationAdapterResult observationResult = services_->observation_observationAdapter().collectActor(
 			services_->service_managedBotHandles()[index].entity, context.actor, context.frame, timing, &observation);
-		if (observationResult == ObservationAdapterResult::Accepted)
+		if (observationResult == ObservationAdapterResult::Accepted && current())
 		{
 			compat::ScenarioBehaviorInput scenario = {};
 			ScenarioUpdateData data{timing};
 			populateScenarioPublicState(index, before, context, stateBehavior, observation, scenario, data);
+			if (!current())
+				return;
 			observeScenarioEntities(index, before, context, stateBehavior, observation, scenario, data);
+			if (!current())
+				return;
 			updateScenarioNavigation(index, before, context, stateBehavior, observation, scenario, data);
+			if (!current())
+				return;
 			updateScenarioTeamwork(index, before, context, stateBehavior, observation, scenario, data);
+			if (!current())
+				return;
 			applyScenarioDecision(index, before, context, stateBehavior, observation, scenario, data);
 		}
 	}
@@ -186,6 +216,7 @@ void BotBehaviorRuntime::populateScenarioPublicState(std::size_t index, const ru
 	ScenarioUpdateData &data)
 {
 	(void)stateBehavior;
+	(void)observation;
 	auto &machine = actors_[index].managedBotStateMachines;
 	scenario.actor = context.actor;
 	scenario.frame = context.frame;
@@ -675,7 +706,16 @@ void BotBehaviorRuntime::updateScenarioTeamwork(std::size_t index, const runtime
 	const compat::CompatibilityObservation &observation, compat::ScenarioBehaviorInput &scenario,
 	ScenarioUpdateData &data)
 {
+	const auto receipt = reactionContext(index);
+	const auto revision = actors_[index].executionRevision;
+	const auto epoch = actors_[index].managedBotStateMachines.normalStateEpoch();
+	const auto current = [&]
+	{
+		return executionCurrent(index, receipt, revision) &&
+			actors_[index].managedBotStateMachines.normalStateEpoch() == epoch;
+	};
 	(void)stateBehavior;
+	(void)observation;
 	auto &machine = actors_[index].managedBotStateMachines;
 	const int observedTeam = data.observedTeam;
 	auto &automaticLeaderRange = data.automaticLeaderRange;
@@ -697,20 +737,15 @@ void BotBehaviorRuntime::updateScenarioTeamwork(std::size_t index, const runtime
 		services_->service_engineFunctions()->pfnCVarGetFloat != nullptr &&
 		services_->service_engineFunctions()->pfnCVarGetPointer != nullptr &&
 		services_->service_engineFunctions()->pfnCVarGetPointer("bot_allow_rogues") != nullptr;
+	if (!current())
+		return;
 	const float allowRogues = readOptionalCvarFloat(services_->service_engineFunctions(), "bot_allow_rogues");
+	if (!current())
+		return;
 	teamwork.allowRoguesKnown = teamwork.allowRoguesKnown && std::isfinite(allowRogues);
 	teamwork.allowRogues = allowRogues != 0.0f;
 	const auto currentState = machine.state();
-	const bool sniper = observation.weapon.activeWeaponId.isAvailable() &&
-		(observation.weapon.activeWeaponId.value == kScoutWeaponId ||
-			observation.weapon.activeWeaponId.value == kAwpWeaponId ||
-			observation.weapon.activeWeaponId.value == kSg550WeaponId ||
-			observation.weapon.activeWeaponId.value == kG3sg1WeaponId);
-	scenario.busy = scenario.attacking || currentState == compat::CompatibilityStateId::Buy ||
-		currentState == compat::CompatibilityStateId::DefuseBomb ||
-		currentState == compat::CompatibilityStateId::PlantBomb ||
-		actors_[index].scenarioPlanners.awaitingHostageEscort() ||
-		(currentState == compat::CompatibilityStateId::Hide && sniper);
+	scenario.busy = compat::nativeBotBusy(currentState, machine.task(), scenario.attacking);
 	teamwork.busy = scenario.busy;
 	teamwork.following = wasFollowing;
 	teamwork.followDuration = wasFollowing ? context.timestamp - actors_[index].scenarioPlanners.followSince() : 0.0f;
@@ -783,7 +818,10 @@ void BotBehaviorRuntime::updateScenarioTeamwork(std::size_t index, const runtime
 		cooperative = actors_[index].teamworkPolicies.update(teamwork, services_->service_compatibilityRandomSource(),
 			{context.actor.slot, context.actor.generation},
 			{services_->command_managedBotCommandSequences(index), 0U,
-				services_->service_managedBotFullUpdateSequences()[index]});
+				services_->service_managedBotFullUpdateSequences()[index]},
+			current);
+	if (!current())
+		return;
 	scenario.rogue = cooperative.rogue;
 	scenario.automaticFollowRequested = cooperative.available && cooperative.startFollowing;
 	scenario.stopFollowingRequested = cooperative.available && cooperative.stopFollowing;
@@ -838,7 +876,81 @@ void BotBehaviorRuntime::applyScenarioDecision(std::size_t index, const runtime:
 {
 	(void)before;
 	(void)data;
-	if (reactionPursuing(index))
+	if (helpGoalCurrent(index) && !actors_[index].managedBotStateMachines.attackOverlayActive())
+	{
+		auto &actor = actors_[index];
+		const auto receipt = reactionContext(index);
+		const auto execution = actor.executionRevision;
+		const auto current = [&]
+		{
+			return actor.executionRevision == execution && helpGoalCurrent(index) &&
+				compat::sameChatterUpdateReceipt(receipt, reactionContext(index));
+		};
+		compat::RetainedHelpTaskInput task{};
+		task.task = actor.managedBotStateMachines.task();
+		task.goal = actor.helpGoal.position;
+		task.bombScenario = scenario.scenario == compat::PublicScenarioKind::Bomb;
+		task.counterTerrorist = scenario.team == objectives::TeamRole::CounterTerrorist;
+		task.bombPlantedKnown = scenario.bombPlantedKnown;
+		task.bombPlanted = scenario.bombPlanted;
+		task.bombLocated = scenario.bomb.knowledge != compat::ScenarioKnowledge::Unknown;
+		task.bombVisible = scenario.bomb.knowledge == compat::ScenarioKnowledge::Visible;
+		task.otherDefuser = scenario.humanDefusingKnown && scenario.humanDefusing;
+		if (task.task == compat::CompatibilityTaskId::CollectHostages ||
+			task.task == compat::CompatibilityTaskId::MoveToLastKnownEnemyPosition)
+		{
+			const auto key = actor.managedTaskEntity;
+			const auto engine = services_->service_engineFunctions();
+			if (!key.isValid())
+			{
+				task.taskLifeKnown = true;
+				task.taskAlive = false;
+			}
+			else if (engine && engine->pfnPEntityOfEntIndex)
+			{
+				const auto entity = engine->pfnPEntityOfEntIndex(static_cast<int>(key.id));
+				if (!current())
+					return;
+				task.taskLifeKnown = true;
+				task.taskAlive = entity && !entity->free && entity->serialnumber >= 0 &&
+					static_cast<std::uint32_t>(entity->serialnumber) + 1U == key.generation && entity->v.health > 0 &&
+					entity->v.deadflag == DEAD_NO;
+				if (task.taskAlive && task.task == compat::CompatibilityTaskId::CollectHostages)
+				{
+					task.hostagePositionKnown = true;
+					task.hostagePosition = {entity->v.origin.x, entity->v.origin.y, entity->v.origin.z};
+					// Vanilla public fields do not provide the hostage's authoritative follow leader.
+				}
+			}
+		}
+		const auto action = compat::updateRetainedHelpTask(task);
+		if (action == compat::RetainedHelpTaskAction::Idle)
+		{
+			actor.helpGoal = {};
+			actor.managedBotObjectiveTargets = {};
+			actor.scenarioDecisions = {};
+			stateBehavior.goalAvailable = false;
+			context.requestTransition = true;
+			context.requestedState = compat::CompatibilityStateId::Idle;
+			context.transitionId = compat::StateTransitionId::ExplicitStateChange;
+			context.transitionReason = compat::StateTransitionReason::ObjectiveChanged;
+			return;
+		}
+		if (action == compat::RetainedHelpTaskAction::Repath)
+		{
+			actor.helpGoal.position = task.hostagePosition;
+			actor.managedBotObjectiveTargets.target = task.hostagePosition;
+			if (++actor.managedBotObjectiveTargets.generation == 0)
+				++actor.managedBotObjectiveTargets.generation;
+			services_->applyNavigationRequest({index, NavigationRequestKind::DestroyPath});
+			if (!current())
+				return;
+			services_->applyNavigationRequest({index, NavigationRequestKind::ClearStep});
+			if (!current())
+				return;
+		}
+	}
+	if (reactionPursuing(index) || helpGoalCurrent(index))
 	{
 		const auto &order = services_->observation_scenarioRadio(index);
 		const auto &decision = actors_[index].scenarioDecisions;
@@ -852,9 +964,12 @@ void BotBehaviorRuntime::applyScenarioDecision(std::size_t index, const runtime:
 			actors_[index].scenarioDecisions = {};
 			return;
 		}
+		actors_[index].helpGoal = {};
 	}
 	auto &machine = actors_[index].managedBotStateMachines;
 	const compat::ScenarioBehaviorDecision &scenarioDecision = actors_[index].scenarioDecisions;
+	const bool carryingC4 = observation.objective.carryingC4.isAvailable() && observation.objective.carryingC4.value;
+	context.moveToTask = compat::nativeScenarioMoveTask(scenario, scenarioDecision, carryingC4);
 	stateBehavior.goalAvailable = scenarioDecision.hasTarget || stateBehavior.goalAvailable;
 	stateBehavior.leaderAvailable = actors_[index].scenarioPlanners.hasFollowingLeader(scenario);
 	stateBehavior.objectiveActive = scenarioDecision.hasTarget || stateBehavior.objectiveActive;
@@ -877,12 +992,16 @@ void BotBehaviorRuntime::applyScenarioDecision(std::size_t index, const runtime:
 		!(machine.state() == compat::CompatibilityStateId::DefuseBomb &&
 			scenarioDecision.state != compat::CompatibilityStateId::DefuseBomb))
 	{
+		if (scenarioDecision.state == compat::CompatibilityStateId::MoveTo &&
+			context.moveToTask != compat::CompatibilityTaskId::None)
+			actors_[index].managedTaskEntity = scenarioDecision.target.entity;
 		context.requestedState = scenarioDecision.state;
-		context.requestTransition = machine.state() != context.requestedState;
+		context.requestTransition = machine.state() != context.requestedState ||
+			(context.requestedState == compat::CompatibilityStateId::MoveTo &&
+				context.moveToTask != compat::CompatibilityTaskId::None && machine.task() != context.moveToTask);
 		context.transitionId = compat::StateTransitionId::ExplicitStateChange;
 		context.transitionReason = compat::StateTransitionReason::ObjectiveChanged;
 	}
-	const bool carryingC4 = observation.objective.carryingC4.isAvailable() && observation.objective.carryingC4.value;
 	const int team = services_->observation_resolvePlayerTeam(services_->service_managedBotHandles()[index].entity);
 	if (carryingC4 && team == kTerroristTeam)
 	{
@@ -893,6 +1012,7 @@ void BotBehaviorRuntime::applyScenarioDecision(std::size_t index, const runtime:
 			actors_[index].managedBombApproaches.finished;
 		stateBehavior.objectiveActive = true;
 		stateBehavior.inInteractionRange = plantPhase && atBombsite;
+		context.moveToTask = compat::CompatibilityTaskId::PlantBomb;
 		context.requestedState = plantPhase && atBombsite ? compat::CompatibilityStateId::PlantBomb
 			: plantPhase && stateBehavior.goalAvailable	  ? compat::CompatibilityStateId::MoveTo
 														  : compat::CompatibilityStateId::Hunt;
@@ -913,6 +1033,11 @@ void BotBehaviorRuntime::commitBehaviorState(
 	stateBehavior.navigation.fullUpdateSequence = context.fullUpdateSequence;
 	actors_[index].managedStateInputs = stateBehavior;
 	(void)machine.update(context);
+	if (actors_[index].helpGoal.active && !helpGoalCurrent(index))
+	{
+		actors_[index].helpGoal = {};
+		actors_[index].managedBotObjectiveTargets = {};
+	}
 	if (previousState != machine.state())
 	{
 		actors_[index].enemyReaction.onStateChange(reactionContext(index), previousState, machine.state());

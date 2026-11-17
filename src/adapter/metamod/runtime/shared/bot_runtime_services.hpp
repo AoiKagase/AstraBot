@@ -93,6 +93,7 @@ public:
 	virtual const ManagedNavigationFailure &navigation_managedNavigationFailures(std::size_t index) const = 0;
 	virtual nav::NavPathCostContext navigation_managedPathCostContext(std::size_t index) = 0;
 	virtual bool navigation_ladderTopology(nav::NavLadderTopology *topology) = 0;
+	virtual bool navigation_nativeLadderLook(std::size_t index, nav::NativeLadderLook *look) = 0;
 	virtual const bool &observation_bombNoticeKnown(std::size_t index) const = 0;
 	virtual const bool &observation_bombNoticePlanted(std::size_t index) const = 0;
 	virtual bool observation_collectManagedPerception(
@@ -139,6 +140,7 @@ public:
 	virtual const Service_navPublisher &service_navPublisher() = 0;
 	virtual const Service_pluginId &service_pluginId() = 0;
 	virtual Service_runtimeProfiler &service_runtimeProfiler() = 0;
+	virtual std::uint64_t behavior_executionRevision(std::size_t index) const = 0;
 	virtual bool behavior_noiseInvestigationWalking(std::size_t index) const = 0;
 	virtual bool behavior_buildManagedObjectiveTarget(std::size_t index, nav::NavVector *target,
 		nav::NavSearchStats *searchStats, RuntimeObjectiveSelectionStats *objectiveStats = nullptr) = 0;
@@ -189,6 +191,8 @@ public:
 	virtual void behavior_applyObstacleCommand(std::size_t index, runtime::BotCommand &command) = 0;
 	virtual bool behavior_forcedRunning(std::size_t index) = 0;
 	virtual bool behavior_noiseInvestigationWalking(std::size_t index) const = 0;
+	virtual void behavior_applyNativeLadderLookCommand(
+		std::size_t index, runtime::BotCommand &command, bool localMovement) = 0;
 	virtual void behavior_applyNoiseLookCommand(std::size_t index, runtime::BotCommand &command) = 0;
 	virtual const ManagedObjectiveTargetCache &behavior_managedBotObjectiveTargets(std::size_t index) const = 0;
 	virtual const compat::CompatibilityStateMachine &behavior_managedBotStateMachines(std::size_t index) const = 0;

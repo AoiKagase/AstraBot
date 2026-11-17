@@ -127,6 +127,22 @@ int main()
 	{
 		return 1;
 	}
+	state.movetype = 5;
+	state.onLadder = true;
+	if (!check(astrabot::runtime::movementReadiness(state) == SpawnReadiness::Ready &&
+				astrabot::runtime::spawnReadiness(state) == SpawnReadiness::NotReady,
+			"continuing public ladder contact permits movement without becoming initial spawn readiness"))
+		return 1;
+	state.grounded = true;
+	if (!check(astrabot::runtime::spawnReadiness(state) == SpawnReadiness::NotReady,
+			"ladder contact cannot qualify a new spawn even when the ground flag is also set"))
+		return 1;
+	state.grounded = false;
+	state.onLadder = false;
+	if (!check(astrabot::runtime::movementReadiness(state) == SpawnReadiness::NotReady,
+			"fly movetype without the public ladder observation remains unavailable"))
+		return 1;
+	state.movetype = 3;
 	state.team = 0;
 	if (!check(astrabot::runtime::movementReadiness(state) == SpawnReadiness::NotReady,
 			"airborne entity still requires a confirmed team"))

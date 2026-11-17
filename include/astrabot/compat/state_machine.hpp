@@ -43,7 +43,12 @@ enum class CompatibilityTaskId : std::uint8_t
 	MoveTo,
 	PlantBomb,
 	GuardTickingBomb,
-	MoveToLastKnownEnemyPosition
+	MoveToLastKnownEnemyPosition,
+	FindTickingBomb,
+	CollectHostages,
+	RescueHostages,
+	MoveToSniperSpot,
+	Sniping
 };
 
 enum class ObservationAvailability : std::uint8_t
@@ -185,6 +190,7 @@ struct StateUpdateContext
 	ObservationAvailability rngAvailability;
 	const StateBehaviorInput *behavior = nullptr;
 	CompatibilityTaskId moveToTask = CompatibilityTaskId::None;
+	bool preserveMoveToTask = false;
 
 	bool isValid() const;
 };
@@ -250,6 +256,10 @@ public:
 	CompatibilityTaskId task() const;
 	const world::ActorKey &actor() const;
 	float stateTimestamp() const;
+	std::uint64_t normalStateEpoch() const
+	{
+		return normalStateEpoch_;
+	}
 	bool attackOverlayActive() const;
 	bool isInitialized() const;
 	const StateBehaviorDecision &behaviorDecision() const
@@ -304,6 +314,7 @@ private:
 	std::uint32_t lastFullUpdateSequence_;
 	std::uint64_t traceSequence_;
 	std::uint64_t stateSequence_;
+	std::uint64_t normalStateEpoch_ = 0;
 	bool hasLastFullUpdate_;
 	bool attackOverlayActive_;
 	bool initialized_;

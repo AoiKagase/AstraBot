@@ -39,6 +39,14 @@ ActionProposal BotBehaviorRuntime::decideManagedBotAction(std::size_t index,
 	return decideCombatAction(ctx);
 }
 
+bool BotBehaviorRuntime::executionCurrent(
+	std::size_t index, const compat::ReactionContext &receipt, std::uint64_t revision) const
+{
+	const auto now = reactionContext(index);
+	return actors_[index].executionRevision == revision && receipt.actor == now.actor && receipt.frame == now.frame &&
+		receipt.entityGeneration == now.entityGeneration && receipt.now == now.now && receipt.alive == now.alive;
+}
+
 void BotBehaviorRuntime::updateManagedBotCompatibilityState(
 	std::size_t index, const runtime::MovementPhysicsState &before)
 {
@@ -68,13 +76,32 @@ void BotBehaviorRuntime::updateManagedBotCompatibilityState(
 		updateEnemyReaction(index, before);
 		context = makeManagedBotStateContext(index, before, &stateBehavior);
 	}
+	const auto receipt = reactionContext(index);
+	const auto revision = actors_[index].executionRevision;
+	const auto epoch = actors_[index].managedBotStateMachines.normalStateEpoch();
 	updateScenarioState(index, before, context, stateBehavior);
+	if (!executionCurrent(index, receipt, revision) ||
+		actors_[index].managedBotStateMachines.normalStateEpoch() != epoch)
+		return;
 	updateBehaviorPriorities(index, before, context, stateBehavior);
+	if (!executionCurrent(index, receipt, revision) ||
+		actors_[index].managedBotStateMachines.normalStateEpoch() != epoch)
+		return;
 	commitBehaviorState(index, context, stateBehavior);
+}
+
+void BotBehaviorRuntime::invalidateHelpExecution(std::size_t index)
+{
+	auto &actor = actors_[index];
+	if (++actor.executionRevision == 0)
+		++actor.executionRevision;
+	actor.helpGoal = {};
+	actor.managedTaskEntity = {};
 }
 
 void BotBehaviorRuntime::onActorRemoved(std::size_t index)
 {
+	invalidateHelpExecution(index);
 	actors_[index].noiseLook.reset();
 	actors_[index].closeFootstep = {};
 	actors_[index].knifeRun.reset();
@@ -116,6 +143,8 @@ void BotBehaviorRuntime::onActorRemoved(std::size_t index)
 
 void BotBehaviorRuntime::onActorRemembered(std::size_t index, const FakeClientHandle &handle)
 {
+	invalidateHelpExecution(index);
+	actors_[index].teamworkPolicies.reset();
 	actors_[index].noiseLook.reset();
 	actors_[index].closeFootstep = {};
 	actors_[index].knifeRun.reset();
@@ -150,6 +179,11 @@ void BotBehaviorRuntime::resetSharedExecutionState()
 {
 	for (auto &actor : actors_)
 	{
+		if (++actor.executionRevision == 0)
+			++actor.executionRevision;
+		actor.helpGoal = {};
+		actor.managedTaskEntity = {};
+		actor.teamworkPolicies.resetValues();
 		actor.outgoingRadioSchedulers.discardPending();
 		actor.confirmedSpeech.reset();
 		actor.knifeRun.reset();
@@ -177,6 +211,8 @@ void BotBehaviorRuntime::resetSharedExecutionState()
 
 void BotBehaviorRuntime::resetActorExecutionState(std::size_t index)
 {
+	invalidateHelpExecution(index);
+	actors_[index].teamworkPolicies.resetValues();
 	actors_[index].noiseInvestigation.reset();
 	actors_[index].noiseReportPolicy = {};
 	actors_[index].outgoingRadioSchedulers.discardPending();
@@ -205,6 +241,9 @@ void BotBehaviorRuntime::resetRoundTactics()
 {
 	for (auto &actor : actors_)
 	{
+		if (++actor.executionRevision == 0)
+			++actor.executionRevision;
+		actor.helpGoal = {};
 		actor.obstacleLook = {};
 		actor.obstaclePathActive = false;
 	}

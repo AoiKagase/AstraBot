@@ -630,7 +630,10 @@ NavRoamResult NavRoamController::update(const nav::NavSnapshot &snapshot, const 
 	}
 	if (result == NavRoamResult::IntentReady && intent != nullptr && intent->traversal == nav::TraversalAction::Jump &&
 		observation.locomotion.timingAvailable)
+	{
 		recoveryState().lastWiggleJumpAt = observation.locomotion.observedAt;
+		nativeLadderRecovery_.recordJump(observation.locomotion.observedAt);
+	}
 	return result;
 }
 
@@ -644,6 +647,17 @@ NavRoamResult NavRoamController::updateInternal(const nav::NavSnapshot &snapshot
 			return phase.result;
 		}
 	}
+	nav::NavQuery query(snapshot);
+	NavigationUpdateContext ctx{snapshot, observation, intent, decision, query};
+	if (nativeLadder_.active())
+	{
+		ctx.currentArea.area = routeState().activeLink.fromArea;
+		ctx.currentAreaResult = nav::NavQueryResult::Found;
+		ctx.objectiveArea = routeState().activeCorridor.areas.back();
+		const auto phase = updateNativeTraversal(ctx);
+		if (phase.complete)
+			return phase.result;
+	}
 	{
 		const auto phase = updateFriendWaiting(snapshot, observation, decision);
 		if (phase.complete)
@@ -651,8 +665,7 @@ NavRoamResult NavRoamController::updateInternal(const nav::NavSnapshot &snapshot
 			return phase.result;
 		}
 	}
-	nav::NavQuery query(snapshot);
-	NavigationUpdateContext ctx{snapshot, observation, intent, decision, query};
+
 	{
 		const auto phase = locateUpdateAreas(ctx);
 		if (phase.complete)
@@ -687,6 +700,11 @@ NavRoamResult NavRoamController::updateInternal(const nav::NavSnapshot &snapshot
 		{
 			return phase.result;
 		}
+	}
+	{
+		const auto phase = updateNativeTraversal(ctx);
+		if (phase.complete)
+			return phase.result;
 	}
 	{
 		const auto phase = updateJumpDropTraversal(ctx);
@@ -1516,7 +1534,8 @@ NavRoamController::NavigationPhaseResult NavRoamController::selectUpdateRoute(Na
 		// Full updates during the retry cooldown must retain it.
 		if (objectiveArea != 0U && recoveryState().unsafeDropFailure.valid)
 			recoveryState().unsafeDropFailure.bypassPending = false;
-		if (!selectRoute(snapshot, currentArea, objectiveArea, decision, routeType))
+		if (!selectRoute(snapshot, currentArea, objectiveArea, decision, routeType,
+				modePolicy_.mode() == compat::RuntimeMode::Compatibility ? observation.nativeLadders : nullptr))
 		{
 			if (objectiveArea != 0U && recoveryState().unsafeDropFailure.valid)
 			{
@@ -1561,6 +1580,36 @@ NavRoamController::NavigationPhaseResult NavRoamController::startUpdateTraversal
 	auto *decision = ctx.decision;
 	auto &currentArea = ctx.currentArea;
 	auto &objectiveArea = ctx.objectiveArea;
+	if (nativeLadder_.active())
+		return {false, NavRoamResult::IntentReady};
+	for (std::size_t stepIndex = 0; stepIndex < routeState().activeCorridor.nativeLadders.size(); ++stepIndex)
+	{
+		const auto &step = routeState().activeCorridor.nativeLadders[stepIndex];
+		const auto link = routeState().activeCorridor.links[step.linkIndex];
+		if (link.fromArea != currentArea.area)
+			continue;
+		if (!observation.nativeLadderProbe || !observation.nativeLadders)
+		{
+			resetRoute();
+			return {true, NavRoamResult::NoRoute};
+		}
+		const auto probe = observation.nativeLadderProbe;
+		const auto operation = routeRevision_;
+		const bool accepted = nativeLadder_.start(snapshot, link, step.ladder, nativeObservation(observation), *probe);
+		if (routeRevision_ != operation || !probe->current())
+			return {true, NavRoamResult::ReplanRequired};
+		if (!accepted)
+		{
+			resetRoute();
+			return {true, NavRoamResult::NoRoute};
+		}
+		nativeLadderStep_ = stepIndex;
+		routeState().activeLink = link;
+		routeState().activeCorridorIndex = step.linkIndex + 1;
+		traversalState().activeTraversal = nav::TraversalAction::Ladder;
+		populateRouteDecision(decision);
+		return {false, NavRoamResult::IntentReady};
+	}
 	if (routeState().hasActiveRoute && !routeState().activeCorridor.links.empty() &&
 		!traversalState().jumpDrop.isActive() && !traversalState().specialTraversal.isActive())
 	{
@@ -1803,6 +1852,155 @@ NavRoamController::NavigationPhaseResult NavRoamController::updateJumpDropTraver
 		return {true, NavRoamResult::ReplanRequired};
 	}
 	return {false, NavRoamResult::IntentReady};
+}
+
+nav::NativeLadderObservation NavRoamController::nativeObservation(const NavRoamObservation &in) const
+{
+	nav::NativeLadderObservation out{};
+	out.actor = {in.actor.slot, in.actor.actorGeneration};
+	out.frame = in.frame;
+	out.origin = in.friendRayOriginAvailable
+		? in.friendRayOrigin
+		: nav::NavVector{in.locomotion.position.x, in.locomotion.position.y, in.locomotion.position.z + 36};
+	out.feetZ = in.locomotion.position.z;
+	out.now = in.locomotion.observedAt;
+	out.yaw = in.locomotion.viewYaw;
+	out.pitch = in.viewPitch;
+	out.onLadder = in.ladderContact || in.locomotion.onLadder;
+	out.crouching = in.locomotion.ducked;
+	out.stuck = traversalState().locomotion.isStuck();
+	return out;
+}
+
+bool NavRoamController::sameNativeLadder(const nav::NavLadder &a, const nav::NavLadder &b)
+{
+	return a.entityIndex == b.entityIndex && a.entityGeneration == b.entityGeneration && a.direction == b.direction &&
+		a.bottomArea == b.bottomArea && a.topAreas == b.topAreas && a.dangling == b.dangling && a.length == b.length &&
+		a.top.x == b.top.x && a.top.y == b.top.y && a.top.z == b.top.z && a.bottom.x == b.bottom.x &&
+		a.bottom.y == b.bottom.y && a.bottom.z == b.bottom.z;
+}
+
+bool NavRoamController::nativeLadderLook(const nav::NavSnapshot &snapshot, const nav::NativeLadderObservation &in,
+	nav::NativeLadderLook *look, nav::NavLadder *source) const
+{
+	if (!look || !nativeLadder_.active())
+		return false;
+	*look = nativeLadder_.look(snapshot, in);
+	if (!look->active)
+		return false;
+	if (source)
+		*source = nativeLadder_.source();
+	return true;
+}
+
+NavRoamController::NavigationPhaseResult NavRoamController::updateNativeTraversal(NavigationUpdateContext &ctx)
+{
+	if (!nativeLadder_.active())
+		return {false, NavRoamResult::IntentReady};
+	const auto &observation = ctx.observation;
+	const auto topology = observation.nativeLadders;
+	bool found = false;
+	if (topology && topology->navRevision == ctx.snapshot.revision() &&
+		topology->mapGeneration == ctx.snapshot.mapGeneration())
+		for (const auto &ladder : topology->ladders)
+			found = found || sameNativeLadder(ladder, nativeLadder_.source());
+	if (!found || !observation.nativeLadderProbe || !observation.locomotion.timingAvailable ||
+		!observation.locomotion.viewYawAvailable)
+	{
+		resetRoute();
+		return {true, NavRoamResult::ReplanRequired};
+	}
+	auto in = nativeObservation(observation);
+	in.lastKnownArea = ctx.currentArea.area;
+	const auto probe = observation.nativeLadderProbe;
+	const auto operation = routeRevision_;
+	nav::NativeLadderIntent out{};
+	const auto result = nativeLadder_.update(ctx.snapshot, in, *probe, &out);
+	if (routeRevision_ != operation || !probe->current())
+		return {true, NavRoamResult::ReplanRequired};
+	if (result == nav::NativeLadderResult::Unavailable)
+		return {true, NavRoamResult::MovementSuppressed};
+	if (result == nav::NativeLadderResult::Complete)
+	{
+		const auto offset = routeState().activeCorridor.nativeLadders[nativeLadderStep_].linkIndex + 1;
+		auto suffix = routeState().activeCorridor;
+		suffix.areas.erase(suffix.areas.begin(), suffix.areas.begin() + static_cast<std::ptrdiff_t>(offset));
+		suffix.links.erase(suffix.links.begin(), suffix.links.begin() + static_cast<std::ptrdiff_t>(offset));
+		std::vector<nav::NavLadderStep> remaining;
+		for (const auto &step : suffix.nativeLadders)
+			if (step.linkIndex >= offset)
+				remaining.push_back({step.linkIndex - offset, step.ladder});
+		suffix.nativeLadders = std::move(remaining);
+		const auto link = suffix.links.empty() ? nav::NavDirectedLink{suffix.areas.front(), suffix.areas.front(), 0, 0}
+											   : suffix.links.front();
+		if (!startRoute(ctx.snapshot, suffix, link))
+		{
+			resetRoute();
+			return {true, NavRoamResult::ReplanRequired};
+		}
+		routeState().activeCorridor = std::move(suffix);
+		routeState().activeLink = link;
+		routeState().activeCorridorIndex = 0;
+		corridorProgressAt_ = observedAt_;
+		nativeLadderStep_ = 0;
+		populateRouteDecision(ctx.decision);
+		return {false, NavRoamResult::IntentReady};
+	}
+	if (result != nav::NativeLadderResult::Active && result != nav::NativeLadderResult::Failed)
+	{
+		resetRoute();
+		return {true, NavRoamResult::ReplanRequired};
+	}
+	if (result == nav::NativeLadderResult::Failed)
+	{
+		const auto *area = ctx.snapshot.document()->findArea(routeState().activeLink.fromArea);
+		if (!nativeLadderRecovery_.apply(
+				in, observation.locomotion.grounded, area ? area->attributes : 0, randomSource_, {0, 0, in.frame.tick},
+				[&]()
+				{
+					return routeRevision_ == operation && probe->current();
+				},
+				&out))
+			return {true, NavRoamResult::ReplanRequired};
+	}
+	auto &intent = *ctx.intent;
+	intent = {};
+	intent.nativeLadderControl = true;
+	intent.nativeForward = out.forward;
+	intent.nativeSide = out.side;
+	intent.nativeWalking = out.walking;
+	intent.nativeMustJump = out.mustJump;
+	intent.nativeWiggle = out.wiggle;
+	intent.speed = out.walking ? 100.0f : 250.0f;
+	intent.posture = out.crouching ? nav::LocomotionPosture::Crouching : nav::LocomotionPosture::Standing;
+	intent.traversal = nav::TraversalAction::Ladder;
+	intent.targetPosition = out.goal;
+	intent.currentArea = routeState().activeLink.fromArea;
+	intent.targetArea = routeState().activeLink.toArea;
+	const float yaw = in.yaw * .017453292519943295f, c = std::cos(yaw), s = std::sin(yaw);
+	const float x = out.forward * c + out.side * s, y = out.forward * s - out.side * c, length = std::hypot(x, y);
+	intent.direction = length > 0 ? nav::NavVector{x / length, y / length, 0} : nav::NavVector{};
+	corridorProgressAt_ = observedAt_;
+	if (result == nav::NativeLadderResult::Active)
+		traversalState().locomotion.resetProgressMonitor();
+	populateRouteDecision(ctx.decision);
+	if (ctx.decision)
+	{
+		ctx.decision->goalPresent = true;
+		ctx.decision->goalKind = NavGoalKind::Objective;
+		ctx.decision->goalArea = routeState().activeCorridor.areas.back();
+		ctx.decision->goalPosition = observation.objectiveTarget;
+		ctx.decision->targetPosition = out.goal;
+		ctx.decision->locomotionResult = nav::LocomotionResult::IntentReady;
+		ctx.decision->stage = NavRoamStage::LocomotionReady;
+	}
+	if (result == nav::NativeLadderResult::Failed)
+	{
+		resetRoute(true);
+		if (ctx.decision)
+			ctx.decision->recomputeReason = NavRecomputeReason::PathInvalidated;
+	}
+	return {true, NavRoamResult::IntentReady};
 }
 
 NavRoamController::NavigationPhaseResult NavRoamController::updateSpecialTraversal(NavigationUpdateContext &ctx)
@@ -2094,6 +2292,7 @@ NavRoamController::NavigationPhaseResult NavRoamController::updateGroundLocomoti
 
 void NavRoamController::reset()
 {
+	nativeLadderRecovery_ = {};
 	motionActor_ = {};
 	motionFrame_ = {};
 	friendWaitState().friendRepathPending = false;
@@ -2320,6 +2519,41 @@ bool NavRoamController::startTraversal(const nav::NavSnapshot &snapshot, const n
 bool NavRoamController::startRoute(const nav::NavSnapshot &snapshot, const nav::NavCorridor &corridor,
 	const nav::NavDirectedLink &link, nav::LocomotionResult *startResult)
 {
+	if (corridor.areas.size() == 1)
+	{
+		traversalState().activeTraversal = nav::TraversalAction::Walk;
+		const auto result = traversalState().locomotion.start(corridor);
+		if (startResult)
+			*startResult = result;
+		return result == nav::LocomotionResult::Started;
+	}
+	if (!corridor.nativeLadders.empty())
+	{
+		if (!corridor.isValid())
+			return false;
+		const auto &step = corridor.nativeLadders.front();
+		auto prefix = corridor;
+		prefix.nativeLadders.clear();
+		prefix.areas.resize(step.linkIndex + 1);
+		prefix.links.resize(step.linkIndex);
+		prefix.hasEndpoint = true;
+		const bool up = corridor.links[step.linkIndex].how == 4;
+		prefix.endpoint = up ? step.ladder.bottom : step.ladder.top;
+		const unsigned facing = up ? step.ladder.direction : (step.ladder.direction + 2) % 4;
+		if (facing == 0)
+			prefix.endpoint.y -= 32;
+		else if (facing == 1)
+			prefix.endpoint.x += 32;
+		else if (facing == 2)
+			prefix.endpoint.y += 32;
+		else
+			prefix.endpoint.x -= 32;
+		traversalState().activeTraversal = nav::TraversalAction::Walk;
+		const auto result = traversalState().locomotion.start(prefix);
+		if (startResult)
+			*startResult = result;
+		return result == nav::LocomotionResult::Started;
+	}
 	if (traversalActionFor(snapshot, link) == nav::TraversalAction::Walk)
 	{
 		return startTraversal(snapshot, corridor, link, startResult);
@@ -2452,7 +2686,8 @@ bool NavRoamController::buildStuckRecoveryIntent(
 #undef ASTRABOT_NAV_ROAM_CONTROLLER_DEGREES_TO_RADIANS
 
 bool NavRoamController::selectRoute(const nav::NavSnapshot &snapshot, const nav::NavAreaMatch &currentArea,
-	nav::AreaId objectiveArea, NavRoamDecision *decision, nav::NavRouteType routeType)
+	nav::AreaId objectiveArea, NavRoamDecision *decision, nav::NavRouteType routeType,
+	const nav::NavLadderTopology *nativeLadders)
 {
 	if (objectiveArea == 0U)
 	{
@@ -2485,8 +2720,11 @@ bool NavRoamController::selectRoute(const nav::NavSnapshot &snapshot, const nav:
 			decision->pathRequested = true;
 		}
 		nav::NavCorridor corridor = {};
-		const nav::NavQueryResult corridorResult = buildCorridor(query, currentArea.area, objectiveArea, routeType,
-			&corridor, decision == nullptr || !collectPathStats_ ? nullptr : &decision->pathSearchStats);
+		const auto corridorResult = nativeLadders
+			? query.buildNativeCorridor(currentArea.area, objectiveArea, routeType, *nativeLadders, &corridor,
+				  decision == nullptr || !collectPathStats_ ? nullptr : &decision->pathSearchStats)
+			: buildCorridor(query, currentArea.area, objectiveArea, routeType, &corridor,
+				  decision == nullptr || !collectPathStats_ ? nullptr : &decision->pathSearchStats);
 		if (decision != nullptr)
 		{
 			decision->corridorResult = corridorResult;
@@ -2504,6 +2742,8 @@ bool NavRoamController::selectRoute(const nav::NavSnapshot &snapshot, const nav:
 					break;
 				}
 			}
+			if (nativeLadders && !corridor.links.empty())
+				link = corridor.links.front();
 			if (routeState().hasAvoidedLink && link.fromArea == routeState().avoidedLink.fromArea &&
 				link.toArea == routeState().avoidedLink.toArea)
 			{
@@ -3263,6 +3503,10 @@ void NavRoamController::populateRouteDecision(NavRoamDecision *decision) const
 
 void NavRoamController::resetRoute(bool preserveRoamGoal)
 {
+	if (++routeRevision_ == 0)
+		++routeRevision_;
+	nativeLadder_.reset();
+	nativeLadderStep_ = 0;
 	friendWaitState().waitingBehindFriend = false;
 	friendWaitState().friendInTheWay = false;
 	friendWaitState().friendCheckAt = kFriendCheckUnscheduledTime;

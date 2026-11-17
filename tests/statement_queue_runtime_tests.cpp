@@ -14,11 +14,34 @@ void setupStatementQueue(enginefuncs_t &, globalvars_t &);
 #include "runtime/behavior/bot_behavior_runtime.hpp"
 #include "astrabot/nav/nav_query.hpp"
 #include "runtime/shared/public_nav_ladders.hpp"
+#include "runtime/shared/public_native_ladder_probe.hpp"
 #include <memory>
 #include "fixtures/noise_runtime_nav.hpp"
 namespace
 {
 bool queueEnemiesVisible = false;
+bool queueHelpRecording = false;
+bool queueLadderPhysics = false;
+unsigned queueLadderClimbMoves = 0;
+float queueLadderLowestPitch = 0;
+void queueApplyLadderPhysics(edict_t *, const float *, float, float, unsigned char);
+bool queueHelpResetAtRogue = false;
+bool queueHelpMoveSenderAtRogue = false;
+bool queueHelpForceCooperative = false;
+globalvars_t *queueClock = nullptr;
+decltype(enginefuncs_t::pfnRunPlayerMove) queueOriginalMove = nullptr;
+std::vector<float> queueHelpMoves;
+std::vector<std::pair<std::string, float>> queueHelpSamples;
+void queueMove(edict_t *entity, const float *angles, float forward, float side, float up, unsigned short buttons,
+	unsigned char impulse, unsigned char milliseconds)
+{
+	if (queueHelpRecording && entity == &gEntities[1])
+		queueHelpMoves.push_back(std::sqrt(forward * forward + side * side));
+	if (queueLadderPhysics)
+		queueApplyLadderPhysics(entity, angles, forward, side, milliseconds);
+	if (queueOriginalMove)
+		queueOriginalMove(entity, angles, forward, side, up, buttons, impulse, milliseconds);
+}
 const char *queueMode = "normal";
 astrabot::metamod::BotObservationRuntime *queueInputObserver = nullptr;
 unsigned queueInputMutation = 0;
@@ -46,14 +69,15 @@ unsigned char *queueLoad(char *name, int *length)
 	const char *text = nullptr;
 	if (std::strcmp(name, "BotChatter.db") == 0)
 	{
-		text = "BaseDir radio/test/ Chatter Affirmative Radio EVENT_RADIO_AFFIRMATIVE ack.wav End "
-			   "Chatter Help Radio EVENT_RADIO_NEED_BACKUP help.wav End "
-			   "Chatter EscortingHostages escort.wav End Chatter AgreeWithPlan agree.wav End";
+		text =
+			"BaseDir radio/test/ Chatter Affirmative Radio EVENT_RADIO_AFFIRMATIVE ack.wav End "
+			"Chatter Help Radio EVENT_RADIO_NEED_BACKUP help.wav End "
+			"Chatter EscortingHostages escort.wav End Chatter AgreeWithPlan agree.wav End Chatter OnMyWay way.wav End";
 	}
 	if (std::strcmp(name, "queue_speech.db") == 0)
 	{
 		text = "BaseDir radio/test/ Chatter Affirmative Place UNDEFINED Count 3 ack_wrong.wav Count Many ack.wav End "
-			   "Chatter Help Place UNDEFINED help.wav End";
+			   "Chatter Help Place UNDEFINED help.wav End Chatter OnMyWay Place UNDEFINED way.wav End";
 	}
 	if (!text)
 	{
@@ -89,6 +113,8 @@ int queueMessageId(plid_t id, const char *name, int *size)
 		}
 		return 101;
 	}
+	if (std::strcmp(name, "DeathMsg") == 0)
+		return 103;
 	if (std::strcmp(name, "BotVoice") == 0)
 	{
 		return 102;
@@ -108,19 +134,31 @@ void queueString(const char *sample)
 	if (queueMessage == 101 && queueRecipient == &gEntities[0])
 	{
 		queueSamples.emplace_back(sample);
+		if (queueHelpRecording && queueClock)
+			queueHelpSamples.emplace_back(sample, queueClock->time);
 	}
 }
 void queueEnd()
 {
 }
-void queueVisibility(const float *, const float *end, int, edict_t *, TraceResult *trace)
+void queueVisibility(const float *from, const float *end, int, edict_t *, TraceResult *trace)
 {
 	*trace = {};
 	trace->vecEndPos = Vector(end[0], end[1], end[2]);
 	trace->flFraction = queueEnemiesVisible ? 1.0f : 0.0f;
+	if (queueHelpRecording && from[2] > 0 && end[2] < 0)
+	{
+		trace->flFraction = from[2] / (from[2] - end[2]);
+		trace->vecEndPos.z = 0;
+		trace->vecPlaneNormal = Vector(0, 0, 1);
+	}
 }
-void setupStatementQueue(enginefuncs_t &engine, globalvars_t &)
+void setupStatementQueue(enginefuncs_t &engine, globalvars_t &globals)
 {
+	queueClock = &globals;
+	if (engine.pfnRunPlayerMove != &queueMove)
+		queueOriginalMove = engine.pfnRunPlayerMove;
+	engine.pfnRunPlayerMove = &queueMove;
 	engine.pfnRandomFloat = &queuePlanRandom;
 	engine.pfnCVarGetString = &queueCvar;
 	engine.pfnLoadFileForMe = &queueLoad;
@@ -251,6 +289,33 @@ bool testQueueRadioReset(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 }
 float queuePlanRandom(float low, float high)
 {
+	if (queueHelpForceCooperative && low == 0 && high == 100)
+	{
+		queueHelpForceCooperative = false;
+		return 100;
+	}
+	if (queueHelpMoveSenderAtRogue && low == 10 && high == 30)
+	{
+		for (const auto &sample : queueHelpSamples)
+			if (sample.first == "radio/test/help.wav")
+			{
+				queueHelpMoveSenderAtRogue = false;
+				queueHelpForceCooperative = true;
+				gEntities[0].v.origin = Vector(4200, 140, 36);
+				break;
+			}
+	}
+	if (queueHelpResetAtRogue && low == 10 && high == 30)
+	{
+		bool heard = false;
+		for (const auto &sample : queueHelpSamples)
+			heard = heard || sample.first == "radio/test/help.wav";
+		if (heard)
+		{
+			queueHelpResetAtRogue = false;
+			astrabot::metamod::PluginRuntime::instance().beginRoundGeneration();
+		}
+	}
 	if (low == .5f && high == 1 && queuePlanMutation && queuePlanBehavior)
 	{
 		const auto mutation = queuePlanMutation;
@@ -441,7 +506,8 @@ bool testPublicNavLadders(astrabot::metamod::PluginRuntime &runtime, enginefuncs
 	auto &ports = static_cast<metamod::BotBehaviorServices &>(runtime);
 	nav::NavLadderTopology topology;
 	bool ok = check(ports.navigation_ladderTopology(&topology) && topology.ladders.size() == 1 &&
-			topology.navRevision == runtime.navigationSnapshot().revision() && topology.ladders[0].bottomArea == 1,
+			topology.navRevision == runtime.navigationSnapshot().revision() && topology.ladders[0].bottomArea == 1 &&
+			topology.ladders[0].entityIndex == 6 && topology.ladders[0].entityGeneration == 100,
 		"real runtime service reconstructs public func_ladder topology against current NAV");
 	nav::NavDocument document;
 	document.setSourceIdentity({5, 100, 200});
@@ -557,6 +623,802 @@ bool testPublicNavLadders(astrabot::metamod::PluginRuntime &runtime, enginefuncs
 
 	queueLadderRuntime = nullptr;
 	queueLadderEngine = nullptr;
+	return ok;
+}
+
+bool queueNativeReceipt = true;
+unsigned queueNativeMutation = 0, queueNativeTraces = 0;
+bool queueNativeIgnored = false;
+float queueNativeFraction = .25f;
+decltype(enginefuncs_t::pfnSzFromIndex) queueNativeOriginalString = nullptr;
+const char *queueNativeString(int index)
+{
+	return index == 600 ? "func_ladder" : queueNativeOriginalString ? queueNativeOriginalString(index) : "";
+}
+edict_t *queueNativeEntity(int index)
+{
+	return index == 6 ? &queueLadder : entityOfIndex(index);
+}
+void queueNativeTrace(const float *, const float *to, int flags, edict_t *ignored, TraceResult *result)
+{
+	++queueNativeTraces;
+	queueNativeIgnored = ignored == &queueLadder && flags == 1;
+	*result = {};
+	result->flFraction = queueNativeFraction;
+	result->vecEndPos = Vector(to[0], to[1], to[2]);
+	if (queueNativeMutation == 1)
+		++queueLadder.serialnumber;
+	if (queueNativeMutation == 2)
+		queueNativeReceipt = false;
+	if (queueNativeMutation == 3)
+		queueLadderEngine->pfnTraceLine = &queueVisibility;
+}
+bool testPublicNativeLadderTrace(enginefuncs_t &engine)
+{
+	using namespace astrabot;
+	struct Restore
+	{
+		enginefuncs_t &engine;
+		enginefuncs_t saved;
+		~Restore()
+		{
+			engine = saved;
+			queueNativeOriginalString = nullptr;
+			queueNativeMutation = 0;
+			queueNativeReceipt = true;
+		}
+	} restore{engine, engine};
+	queueNativeOriginalString = engine.pfnSzFromIndex;
+	engine.pfnSzFromIndex = &queueNativeString;
+	engine.pfnPEntityOfEntIndex = &queueNativeEntity;
+	engine.pfnIndexOfEdict = &queueLadderIndex;
+	engine.pfnTraceLine = &queueNativeTrace;
+	queueLadderEngine = &engine;
+	queueLadderMutation = 0;
+	queueLadder = {};
+	queueLadder.serialnumber = 99;
+	queueLadder.v.classname = 600;
+	queueLadder.v.absmin = Vector(-20, -2, 0);
+	queueLadder.v.absmax = Vector(20, 2, 900);
+	nav::NavLadder ladder;
+	ladder.entityIndex = 6;
+	ladder.entityGeneration = 100;
+	const auto current = []
+	{
+		return queueNativeReceipt;
+	};
+	bool ok = true;
+	queueNativeMutation = 0;
+	queueNativeReceipt = true;
+	queueNativeTraces = 0;
+	queueNativeFraction = .25f;
+	metamod::PublicNativeLadderProbe valid(&engine, current);
+	float fraction = -1;
+	ok =
+		check(valid.trace(ladder, {0, 0, 36}, {0, 0, 900}, &fraction) && fraction == .25f && queueNativeTraces == 1 &&
+				queueNativeIgnored,
+			"public native ladder endpoint trace ignores the exact serial-qualified func_ladder and retains fraction") &&
+		ok;
+	for (unsigned mutation : {1U, 2U, 3U})
+	{
+		engine.pfnTraceLine = &queueNativeTrace;
+		queueLadder.serialnumber = 99;
+		queueNativeReceipt = true;
+		queueNativeMutation = mutation;
+		metamod::PublicNativeLadderProbe probe(&engine, current);
+		fraction = -1;
+		ok = check(!probe.trace(ladder, {0, 0, 36}, {0, 0, 900}, &fraction) && fraction == 0 && !probe.current(),
+				 "serial, owner or engine hook change during native ladder trace cannot publish stale fraction") &&
+			ok;
+	}
+	queueNativeMutation = 0;
+	queueNativeReceipt = true;
+	engine.pfnTraceLine = &queueNativeTrace;
+	queueLadder.serialnumber = 100;
+	metamod::PublicNativeLadderProbe stale(&engine, current);
+	fraction = -1;
+	const auto before = queueNativeTraces;
+	ok = check(!stale.trace(ladder, {0, 0, 36}, {0, 0, 900}, &fraction) && fraction == 0 && queueNativeTraces == before,
+			 "reused ladder edict is rejected before any trace for its old source generation") &&
+		ok;
+	queueLadder.serialnumber = 99;
+	queueNativeFraction = 1.01f;
+	metamod::PublicNativeLadderProbe invalid(&engine, current);
+	fraction = -1;
+	ok = check(!invalid.trace(ladder, {0, 0, 36}, {0, 0, 900}, &fraction) && fraction == 0,
+			 "invalid public trace fraction is unavailable instead of a ladder endpoint") &&
+		ok;
+	queueNativeFraction = .25f;
+	return ok;
+}
+
+bool testNativeHelpDeathMemory(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &engine, globalvars_t &globals)
+{
+	using namespace astrabot;
+	queueEnemiesVisible = false;
+	queueMode = "off";
+	runtime.setCompatibilityString("astrabot_mode", "compatibility");
+	setCvarFloat("bot_stop", 0);
+	setCvarFloat("bot_allow_rogues", 0);
+	runtime.setCompatibilityFloat("bot_quota", 2);
+	for (unsigned i = 0; i < 2; ++i)
+	{
+		auto &entity = gEntities[i];
+		entity.free = false;
+		entity.v.flags = FL_CLIENT | FL_FAKECLIENT | FL_ONGROUND;
+		entity.v.health = 100;
+		entity.v.deadflag = DEAD_NO;
+		entity.v.solid = SOLID_SLIDEBOX;
+		entity.v.movetype = MOVETYPE_WALK;
+		entity.v.view_ofs = Vector(0, 0, 17);
+		entity.v.origin = Vector(static_cast<float>(i * 128), 0, 36);
+		entity.v.velocity = Vector(0, 0, 0);
+		entity.v.team = 1;
+		runtime.onMessageBegin(MSG_ALL, 86, nullptr, nullptr);
+		runtime.onWriteByte(static_cast<int>(i + 1));
+		runtime.onWriteString("TERRORIST");
+		runtime.onMessageEnd();
+	}
+	if (!check(loadHearingNav(runtime), "native death-memory fixture loads actual NAV"))
+		return false;
+	runtime.beginRoundGeneration();
+	globals.time += 10;
+	auto &ports = static_cast<metamod::BotBehaviorServices &>(runtime);
+	auto &navigation = static_cast<metamod::BotNavigationServices &>(runtime);
+	const bool peerInitializedBefore = navigation.behavior_managedBotStateMachines(1).isInitialized();
+	const auto peerStateBefore = navigation.behavior_managedBotStateMachines(1).state();
+	const auto peerFullBefore = ports.service_managedBotFullUpdateSequences()[1];
+	bool observedNewPeer = false;
+	bool peerEnteredBuy = false;
+	compat::CompatibilityStateId firstPeerState = compat::CompatibilityStateId::None;
+	for (unsigned i = 0; i < 16; ++i)
+	{
+		globals.time += .125f;
+		runtime.onStartFrame();
+		runtime.onStartFramePost();
+		const auto &peer = navigation.behavior_managedBotStateMachines(1);
+		if (!observedNewPeer && peer.isInitialized())
+		{
+			observedNewPeer = true;
+			firstPeerState = peer.state();
+			peerEnteredBuy = peer.state() == compat::CompatibilityStateId::Buy;
+		}
+	}
+	const auto handle = ports.service_managedBotHandles()[0];
+	const world::ActorKey actor{handle.actor.slot, handle.actor.actorGeneration};
+	const auto frame = [&]
+	{
+		return world::FrameIdentity{ports.service_lifecycle().mapGeneration(),
+			ports.service_lifecycle().roundGeneration(), ports.service_adapterFrameCount()};
+	};
+	const auto revision = runtime.navigationSnapshot().revision();
+	const auto beforeArea = ports.navigation_knownArea(0, actor, frame(), revision);
+	const auto &machine = navigation.behavior_managedBotStateMachines(0);
+	if (!check(machine.isInitialized() && beforeArea == 1,
+			"real full updates establish owned state and last known area before death"))
+	{
+		std::fprintf(stderr, "death fixture state=%u area=%u full=%u stop=%f\n", static_cast<unsigned>(machine.state()),
+			beforeArea, ports.service_managedBotFullUpdateSequences()[0], getCvarFloat("bot_stop"));
+		return false;
+	}
+	const auto state = machine.state();
+	const auto task = machine.task();
+	const auto epoch = machine.normalStateEpoch();
+	const auto attacking = machine.attackOverlayActive();
+	enginefuncs_t hooks{};
+	int version = ENGINE_INTERFACE_VERSION;
+	if (!check(runtime.provideEngineFunctions(&hooks, &version), "actual registered death hooks available"))
+		return false;
+	gEntities[0].v.health = 0;
+	gEntities[0].v.deadflag = DEAD_DEAD;
+	hooks.pfnMessageBegin(MSG_ALL, 103, nullptr, nullptr);
+	hooks.pfnWriteByte(3);
+	hooks.pfnWriteByte(1);
+	hooks.pfnWriteByte(0);
+	hooks.pfnWriteString("ak47");
+	hooks.pfnMessageEnd();
+	bool ok = check(observedNewPeer && peerEnteredBuy, "native spawned recipient enters Buy before it can answer Help");
+	if (!ok)
+		std::fprintf(stderr, "peer initBefore=%d stateBefore=%s firstAfter=%s fullBefore=%u fullAfter=%u mode=%u\n",
+			peerInitializedBefore ? 1 : 0, compat::toString(peerStateBefore), compat::toString(firstPeerState),
+			peerFullBefore, ports.service_managedBotFullUpdateSequences()[1],
+			static_cast<unsigned>(ports.service_compatibilitySurface().configuration().mode));
+	if (!ok)
+		for (unsigned slot = 0; slot < 5; ++slot)
+			std::fprintf(stderr, "slot=%u managed=%d handleSlot=%u full=%u flags=%d free=%d quotaEngine=%f\n", slot + 1,
+				ports.service_managedBotSlots()[slot] ? 1 : 0, ports.service_managedBotHandles()[slot].actor.slot,
+				ports.service_managedBotFullUpdateSequences()[slot], gEntities[slot].v.flags, gEntities[slot].free,
+				getCvarFloat("bot_quota"));
+	ok = check(ports.navigation_knownArea(0, actor, frame(), revision) == beforeArea,
+			 "CSBot death receipt retains last known NAV area for dead Help recipients") &&
+		ok;
+	globals.time += .125f;
+	runtime.onStartFrame();
+	runtime.onStartFramePost();
+	ok = check(machine.state() == state && machine.task() == task && machine.normalStateEpoch() == epoch &&
+				 machine.attackOverlayActive() == attacking,
+			 "native dead update retains task, normal state and attack overlay for exact Help busy checks") &&
+		ok;
+	ok = check(ports.navigation_knownArea(0, actor, frame(), revision) == beforeArea,
+			 "native dead upkeep does not erase or replace remembered NAV area") &&
+		ok;
+	gEntities[0].v.health = 100;
+	gEntities[0].v.deadflag = DEAD_NO;
+	runtime.beginRoundGeneration();
+	(void)engine;
+	return ok;
+}
+
+bool loadHelpRangeNav(astrabot::metamod::PluginRuntime &runtime)
+{
+	const char *path = "astrabot_help_range_runtime.nav";
+	ExistingProfileGuard preserve;
+	if (!preserve.capture(path))
+		return false;
+	std::vector<std::uint8_t> bytes;
+	const auto u32 = [&](std::uint32_t value)
+	{
+		for (unsigned shift = 0; shift < 32; shift += 8)
+			bytes.push_back(static_cast<std::uint8_t>(value >> shift));
+	};
+	const auto f32 = [&](float value)
+	{
+		std::uint32_t raw = 0;
+		std::memcpy(&raw, &value, sizeof(raw));
+		u32(raw);
+	};
+	u32(0xFEEDFACEU);
+	u32(1);
+	u32(2);
+	for (unsigned id = 1; id <= 2; ++id)
+	{
+		u32(id);
+		bytes.push_back(0);
+		for (float value :
+			{id == 1 ? -2000.0f : 4000.0f, -128.0f, 0.0f, id == 1 ? 1000.0f : 4500.0f, 512.0f, 0.0f, 0.0f, 0.0f})
+			f32(value);
+		for (unsigned direction = 0; direction < 4; ++direction)
+			u32(0);
+		bytes.push_back(0);
+		bytes.push_back(0);
+		u32(0);
+	}
+	auto *file = openFixture(path, "wb");
+	if (!file)
+		return false;
+	const bool written = std::fwrite(bytes.data(), 1, bytes.size(), file) == bytes.size();
+	const bool closed = std::fclose(file) == 0;
+	const astrabot::metamod::NavLoadRequest request{
+		path, "astrabot_help_range_runtime", runtime.snapshot().mapGeneration, false, 0, false, 0};
+	const bool loaded =
+		written && closed && runtime.loadNavigationFile(&request) == astrabot::metamod::NavLoadResult::Loaded;
+	std::remove(path);
+	return loaded;
+}
+
+bool testActualHelpMovement(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &, globalvars_t &globals,
+	bool deadReceiver = false, bool resetDuringRogue = false, bool ctBomb = false, bool senderRangeMove = false,
+	bool attackRetained = false)
+{
+	using namespace astrabot;
+	struct Restore
+	{
+		globalvars_t &globals;
+		string_t map;
+		~Restore()
+		{
+			globals.mapname = map;
+			queueHelpRecording = false;
+			queueEnemiesVisible = false;
+			queueMode = "off";
+			queueHelpResetAtRogue = false;
+			queueHelpMoveSenderAtRogue = false;
+		}
+	} restore{globals, globals.mapname};
+	if (ctBomb)
+		globals.mapname = 6;
+	queueMode = "normal";
+	queueEnemiesVisible = false;
+	queueHelpRecording = true;
+	setCvarFloat("mp_buytime", 0);
+	setCvarFloat("bot_stop", 0);
+	setCvarFloat("bot_allow_rogues", 0);
+	gObjectiveEntitiesAvailable = false;
+	for (unsigned i = 0; i < 5; ++i)
+	{
+		auto &entity = gEntities[i];
+		entity.free = false;
+		entity.v.flags = FL_CLIENT | FL_ONGROUND | (i < 2 ? FL_FAKECLIENT : 0);
+		entity.v.health = 100;
+		entity.v.deadflag = DEAD_NO;
+		entity.v.solid = SOLID_SLIDEBOX;
+		entity.v.movetype = MOVETYPE_WALK;
+		entity.v.view_ofs = Vector(0, 0, 17);
+		entity.v.v_angle = Vector(0, i == 1 ? 180.0f : 0.0f, 0);
+		entity.v.angles = entity.v.v_angle;
+		entity.v.fov = 90;
+		entity.v.maxspeed = 250;
+		entity.v.velocity = Vector(0, 0, 0);
+		entity.v.team = i == 2 || i == 3 ? (ctBomb ? 1 : 2) : (ctBomb ? 2 : 1);
+		entity.v.origin = Vector(i == 0 ? 320.0f
+				: i == 1				? -1560.0f
+				: i == 4				? -15000.0f
+										: 500.0f + 40.0f * i,
+			140, 36);
+		runtime.onMessageBegin(MSG_ALL, 86, nullptr, nullptr);
+		runtime.onWriteByte(static_cast<int>(i + 1));
+		runtime.onWriteString(entity.v.team == 1 ? "TERRORIST" : "CT");
+		runtime.onMessageEnd();
+	}
+	if (!check(senderRangeMove ? loadHelpRangeNav(runtime) : loadHearingNav(runtime),
+			"actual Help movement has a real NAV snapshot"))
+		return false;
+	runtime.beginRoundGeneration();
+	globals.time += senderRangeMove ? 40 : 10;
+	const auto step = [&]
+	{
+		globals.time += .125f;
+		runtime.onStartFrame();
+		runtime.onStartFramePost();
+	};
+	for (unsigned i = 0; i < 32; ++i)
+		step();
+	auto &ports = static_cast<metamod::BotBehaviorServices &>(runtime);
+	auto &navigation = static_cast<metamod::BotNavigationServices &>(runtime);
+	const auto &receiver = navigation.behavior_managedBotStateMachines(1);
+	if (!check(receiver.isInitialized() && receiver.state() != compat::CompatibilityStateId::Buy &&
+				ports.service_managedBotFullUpdateSequences()[1] > 0,
+			"real receiver joined and completed buying before Help"))
+		return false;
+	const auto oldTask = receiver.task();
+	if (deadReceiver)
+	{
+		gEntities[1].v.health = 0;
+		gEntities[1].v.deadflag = DEAD_DEAD;
+		enginefuncs_t hooks{};
+		int version = ENGINE_INTERFACE_VERSION;
+		if (!runtime.provideEngineFunctions(&hooks, &version))
+			return false;
+		hooks.pfnMessageBegin(MSG_ALL, 103, nullptr, nullptr);
+		hooks.pfnWriteByte(3);
+		hooks.pfnWriteByte(2);
+		hooks.pfnWriteByte(0);
+		hooks.pfnWriteString("ak47");
+		hooks.pfnMessageEnd();
+		step();
+	}
+	if (senderRangeMove)
+	{
+		setCvarFloat("bot_allow_rogues", 1);
+		queueHelpMoveSenderAtRogue = true;
+	}
+	if (resetDuringRogue)
+	{
+		setCvarFloat("bot_allow_rogues", 1);
+		queueHelpResetAtRogue = true;
+	}
+	queueSamples.clear();
+	queueHelpSamples.clear();
+	queueHelpMoves.clear();
+	queueEnemiesVisible = true;
+	bool moved = false;
+	for (unsigned i = 0; i < 32; ++i)
+	{
+		step();
+		const auto &goal = navigation.behavior_managedBotObjectiveTargets(1);
+		if (receiver.state() == compat::CompatibilityStateId::MoveTo && goal.valid &&
+			std::fabs(goal.target.x - 320) < .01f && std::fabs(goal.target.y - 140) < .01f)
+		{
+			moved = true;
+			queueHelpMoves.clear();
+			break;
+		}
+	}
+	const bool rejectedMove = resetDuringRogue || senderRangeMove;
+	bool ok = check(senderRangeMove ? (!moved && !queueHelpMoveSenderAtRogue && !queueHelpForceCooperative &&
+										  !navigation.behavior_managedBotObjectiveTargets(1).valid)
+			: resetDuringRogue		? (!moved && !queueHelpResetAtRogue)
+									: (moved && receiver.task() == oldTask),
+		"natural Help completion reaches the actual receiver MoveTo and copied sender goal while preserving task");
+	float helpAt = -1, wayAt = -1;
+	for (const auto &sample : queueHelpSamples)
+	{
+		if (sample.first == "radio/test/help.wav" && helpAt < 0)
+			helpAt = sample.second;
+		if (sample.first == "radio/test/way.wav" && wayAt < 0)
+			wayAt = sample.second;
+	}
+	ok = check(helpAt >= 0, "actual sender emitted Help through the normal production playback path") && ok;
+	if (moved)
+	{
+		gEntities[0].v.origin = Vector(640, 340, 36);
+		for (unsigned i = 0; i < 3; ++i)
+			step();
+		const auto &goal = navigation.behavior_managedBotObjectiveTargets(1);
+		ok = check(goal.valid && std::fabs(goal.target.x - 320) < .01f && std::fabs(goal.target.y - 140) < .01f,
+				 "actual assistance target remains copied after sender movement") &&
+			ok;
+		for (const auto &sample : queueHelpSamples)
+			if (sample.first == "radio/test/way.wav" && wayAt < 0)
+				wayAt = sample.second;
+	}
+	ok = check((deadReceiver || resetDuringRogue) ? wayAt < 0 : (wayAt >= helpAt && helpAt >= 0 && wayAt - helpAt < 1),
+			 "actual OnMyWay starts immediately after Help instead of waiting for human-order reaction delay") &&
+		ok;
+	bool movingCommand = false;
+	for (float value : queueHelpMoves)
+		movingCommand = movingCommand || value > 1;
+	ok = check(rejectedMove ? (!moved && !movingCommand) : (moved && (deadReceiver ? !movingCommand : movingCommand)),
+			 "actual assistance dispatch moves living recipients and leaves dead recipients motionless") &&
+		ok;
+	if (ctBomb && moved)
+	{
+		if (attackRetained)
+		{
+			gEntities[1].v.weapons = 1 << 22;
+			runtime.onMessageBegin(MSG_ONE, 94, nullptr, &gEntities[1]);
+			runtime.onWriteByte(1);
+			runtime.onWriteByte(22);
+			runtime.onWriteByte(30);
+			runtime.onMessageEnd();
+			gEntities[1].v.v_angle = Vector(0, 0, 0);
+			gEntities[1].v.angles = gEntities[1].v.v_angle;
+			for (unsigned i = 0; i < 24 && !receiver.attackOverlayActive(); ++i)
+				step();
+			if (!check(receiver.attackOverlayActive() && receiver.state() == compat::CompatibilityStateId::MoveTo &&
+						navigation.behavior_managedBotObjectiveTargets(1).valid,
+					"actual Help recipient begins attack while retaining its suspended MoveTo goal"))
+			{
+				std::fprintf(stderr, "attack setup state=%s task=%s overlay=%d goal=%d weapon=%d health=%f yaw=%f\n",
+					compat::toString(receiver.state()), compat::toString(receiver.task()),
+					receiver.attackOverlayActive() ? 1 : 0,
+					navigation.behavior_managedBotObjectiveTargets(1).valid ? 1 : 0,
+					static_cast<int>(ports.observation_managedBotCurrentWeapons(1).weaponId), gEntities[1].v.health,
+					gEntities[1].v.v_angle.y);
+				return false;
+			}
+		}
+		runtime.onMessageBegin(MSG_ALL, 98, nullptr, nullptr);
+		runtime.onWriteByte(4);
+		runtime.onWriteString("#Bomb_Planted");
+		runtime.onMessageEnd();
+		step();
+		if (attackRetained)
+		{
+			ok = check(receiver.attackOverlayActive() && receiver.state() == compat::CompatibilityStateId::MoveTo &&
+						 navigation.behavior_managedBotObjectiveTargets(1).valid,
+					 "planted-bomb notice does not cancel combat or update the suspended Help MoveTo task") &&
+				ok;
+			for (unsigned enemy = 2; enemy <= 3; ++enemy)
+			{
+				gEntities[enemy].v.health = 0;
+				gEntities[enemy].v.deadflag = DEAD_DEAD;
+				runtime.onMessageBegin(MSG_ALL, 103, nullptr, nullptr);
+				runtime.onWriteByte(2);
+				runtime.onWriteByte(static_cast<int>(enemy + 1));
+				runtime.onWriteByte(0);
+				runtime.onWriteString("ak47");
+				runtime.onMessageEnd();
+			}
+			for (unsigned i = 0; i < 8 && receiver.attackOverlayActive(); ++i)
+				step();
+			ok = check(!receiver.attackOverlayActive() && !navigation.behavior_managedBotObjectiveTargets(1).valid,
+					 "retained CT MoveTo task observes planted bomb after actual enemy death ends attack") &&
+				ok;
+		}
+		else
+			ok = check(receiver.state() == compat::CompatibilityStateId::Idle &&
+						 !navigation.behavior_managedBotObjectiveTargets(1).valid,
+					 "actual CT planted-bomb notice abandons a preserved ordinary assistance task before navigation") &&
+				ok;
+	}
+	if (deadReceiver && moved)
+	{
+		gEntities[1].v.health = 100;
+		gEntities[1].v.deadflag = DEAD_NO;
+		step();
+		ok = check(receiver.state() == compat::CompatibilityStateId::Buy &&
+					 !navigation.behavior_managedBotObjectiveTargets(1).valid,
+				 "native respawn enters Buy and invalidates assistance accepted during death") &&
+			ok;
+	}
+	if (!ok)
+	{
+		const auto &goal = navigation.behavior_managedBotObjectiveTargets(1);
+		std::fprintf(stderr, "help runtime receiver=%s task=%s goal=%d (%f,%f,%f) samples=%zu moves=%zu\n",
+			compat::toString(receiver.state()), compat::toString(receiver.task()), goal.valid ? 1 : 0, goal.target.x,
+			goal.target.y, goal.target.z, queueHelpSamples.size(), queueHelpMoves.size());
+		world::WorldSnapshot belief;
+		metamod::ThreatObservation threats{};
+		const bool observed = ports.observation_collectManagedPerception(0, &belief, &threats);
+		std::fprintf(stderr,
+			"sender observed=%d available=%d threats=%zu updates=%u origin=(%f,%f) view=(%f,%f) team=%d\n",
+			observed ? 1 : 0, threats.observerAvailable ? 1 : 0, threats.count,
+			ports.service_managedBotFullUpdateSequences()[0], gEntities[0].v.origin.x, gEntities[0].v.origin.y,
+			gEntities[0].v.v_angle.x, gEntities[0].v.v_angle.y, gEntities[0].v.team);
+		for (const auto &sample : queueHelpSamples)
+			std::fprintf(stderr, "help sample %s at %f\n", sample.first.c_str(), sample.second);
+	}
+	return ok;
+}
+
+void queueApplyLadderPhysics(
+	edict_t *entity, const float *angles, float forward, float side, unsigned char milliseconds)
+{
+	if (entity != &gEntities[1] || entity->v.deadflag != DEAD_NO || entity->v.health <= 0)
+		return;
+	queueLadderLowestPitch = (std::min)(queueLadderLowestPitch, angles[0]);
+	const float yaw = angles[1] * .017453292519943295f, dt = milliseconds * .001f;
+	float x = forward * std::cos(yaw) + side * std::sin(yaw), y = forward * std::sin(yaw) - side * std::cos(yaw);
+	const float magnitude = std::hypot(x, y), limit = entity->v.maxspeed;
+	if (magnitude > limit && limit > 0)
+	{
+		x *= limit / magnitude;
+		y *= limit / magnitude;
+	}
+	if (entity->v.movetype == MOVETYPE_FLY)
+	{
+		const float climb = (std::max)(0.0f, -std::sin(angles[0] * .017453292519943295f) * forward);
+		if (climb > 1)
+		{
+			++queueLadderClimbMoves;
+			entity->v.origin.z = (std::min)(936.0f, entity->v.origin.z + climb * dt);
+		}
+		entity->v.velocity = Vector(0, 0, climb);
+		if (entity->v.origin.z >= 936)
+		{
+			entity->v.origin.x += x * dt;
+			entity->v.origin.y += y * dt;
+			if (entity->v.origin.y <= 0)
+			{
+				entity->v.movetype = MOVETYPE_WALK;
+				entity->v.flags |= FL_ONGROUND;
+			}
+		}
+	}
+	else
+	{
+		entity->v.origin.x += x * dt;
+		entity->v.origin.y += y * dt;
+		entity->v.velocity = Vector(x, y, 0);
+		if (entity->v.origin.z < 936 && std::fabs(entity->v.origin.x) <= 20 && entity->v.origin.y <= 18 &&
+			entity->v.origin.y >= -18 && y < 0)
+		{
+			entity->v.movetype = MOVETYPE_FLY;
+			entity->v.flags &= ~FL_ONGROUND;
+		}
+	}
+}
+void queueHelpLadderTrace(const float *from, const float *to, int, edict_t *ignored, TraceResult *trace)
+{
+	*trace = {};
+	trace->flFraction = 1;
+	trace->vecEndPos = Vector(to[0], to[1], to[2]);
+	if (ignored == &queueLadder)
+		return;
+	if (from[2] > to[2] && std::fabs(from[0] - to[0]) < .001f && std::fabs(from[1] - to[1]) < .001f)
+	{
+		const float floor =
+			from[2] >= 900 && from[0] >= -100 && from[0] <= 1024 && from[1] >= -128 && from[1] <= 0 ? 900.0f : 0.0f;
+		if (to[2] <= floor && from[2] >= floor)
+		{
+			trace->flFraction = (from[2] - floor) / (from[2] - to[2]);
+			trace->vecEndPos.z = floor;
+			trace->vecPlaneNormal = Vector(0, 0, 1);
+		}
+		return;
+	}
+	if (!queueEnemiesVisible || (ignored == &gEntities[1] && to[0] >= 500 && to[2] > 850))
+		trace->flFraction = 0;
+}
+bool loadActualHelpLadderNav(astrabot::metamod::PluginRuntime &runtime)
+{
+	const char *path = "astrabot_help_ladder_runtime.nav";
+	ExistingProfileGuard preserve;
+	if (!preserve.capture(path))
+		return false;
+	std::vector<std::uint8_t> bytes;
+	const auto u32 = [&](std::uint32_t value)
+	{
+		for (unsigned shift = 0; shift < 32; shift += 8)
+			bytes.push_back(static_cast<std::uint8_t>(value >> shift));
+	};
+	const auto f32 = [&](float value)
+	{
+		std::uint32_t raw = 0;
+		std::memcpy(&raw, &value, sizeof(raw));
+		u32(raw);
+	};
+	u32(0xFEEDFACEU);
+	u32(1);
+	u32(2);
+	for (unsigned id = 1; id <= 2; ++id)
+	{
+		u32(id);
+		bytes.push_back(0);
+		const float z = id == 1 ? 0.0f : 900.0f;
+		for (float value : {-100.0f, -128.0f, z, id == 1 ? 100.0f : 1024.0f, id == 1 ? 256.0f : 0.0f, z, z, z})
+			f32(value);
+		for (unsigned direction = 0; direction < 4; ++direction)
+			u32(0);
+		bytes.push_back(0);
+		bytes.push_back(0);
+		u32(0);
+	}
+	auto *file = openFixture(path, "wb");
+	if (!file)
+		return false;
+	const bool written = std::fwrite(bytes.data(), 1, bytes.size(), file) == bytes.size();
+	const bool closed = std::fclose(file) == 0;
+	const astrabot::metamod::NavLoadRequest request{
+		path, "astrabot_help_ladder_runtime", runtime.snapshot().mapGeneration, false, 0, false, 0};
+	const bool loaded =
+		written && closed && runtime.loadNavigationFile(&request) == astrabot::metamod::NavLoadResult::Loaded;
+	std::remove(path);
+	return loaded;
+}
+bool testActualLadderHelpMovement(
+	astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &engine, globalvars_t &globals)
+{
+	using namespace astrabot;
+	struct Restore
+	{
+		enginefuncs_t &engine;
+		enginefuncs_t saved;
+		~Restore()
+		{
+			engine = saved;
+			queueNativeOriginalString = nullptr;
+			queueLadderPhysics = false;
+			queueHelpRecording = false;
+			queueEnemiesVisible = false;
+			queueMode = "off";
+		}
+	} restore{engine, engine};
+	queueNativeOriginalString = engine.pfnSzFromIndex;
+	engine.pfnSzFromIndex = &queueNativeString;
+	engine.pfnFindEntityByString = &queueFindLadder;
+	engine.pfnPEntityOfEntIndex = &queueNativeEntity;
+	engine.pfnIndexOfEdict = &queueLadderIndex;
+	engine.pfnTraceLine = &queueHelpLadderTrace;
+	queueLadderMutation = 0;
+	queueLadderEngine = &engine;
+	queueLadder = {};
+	queueLadder.serialnumber = 99;
+	queueLadder.v.classname = 600;
+	queueLadder.v.solid = SOLID_BSP;
+	queueLadder.v.absmin = Vector(-20, -2, 0);
+	queueLadder.v.absmax = Vector(20, 2, 900);
+	queueMode = "normal";
+	queueEnemiesVisible = false;
+	queueHelpRecording = true;
+	queueLadderPhysics = false;
+	setCvarFloat("mp_buytime", 0);
+	setCvarFloat("bot_stop", 0);
+	setCvarFloat("bot_allow_rogues", 0);
+	gObjectiveEntitiesAvailable = false;
+	for (unsigned i = 0; i < 5; ++i)
+	{
+		auto &entity = gEntities[i];
+		entity.free = false;
+		entity.v.flags = FL_CLIENT | FL_ONGROUND | (i < 2 ? FL_FAKECLIENT : 0);
+		entity.v.health = 100;
+		entity.v.deadflag = DEAD_NO;
+		entity.v.solid = SOLID_SLIDEBOX;
+		entity.v.movetype = MOVETYPE_WALK;
+		entity.v.mins = Vector(-16, -16, -36);
+		entity.v.maxs = Vector(16, 16, 36);
+		entity.v.view_ofs = Vector(0, 0, 17);
+		entity.v.origin = i == 0 ? Vector(320, -80, 936)
+			: i == 1			 ? Vector(0, 100, 36)
+			: i == 4			 ? Vector(-15000, 100, 36)
+								 : Vector(500.0f + 40.0f * i, -80, 936);
+		entity.v.v_angle = Vector(0, i == 1 ? -90.0f : 0.0f, 0);
+		entity.v.angles = entity.v.v_angle;
+		entity.v.velocity = Vector(0, 0, 0);
+		entity.v.fov = 90;
+		entity.v.maxspeed = 250;
+		entity.v.team = i == 2 || i == 3 ? 2 : 1;
+		runtime.onMessageBegin(MSG_ALL, 86, nullptr, nullptr);
+		runtime.onWriteByte(static_cast<int>(i + 1));
+		runtime.onWriteString(entity.v.team == 1 ? "TERRORIST" : "CT");
+		runtime.onMessageEnd();
+	}
+	if (!check(loadActualHelpLadderNav(runtime),
+			"actual Help ladder fixture loads disconnected lower and upper NAV floors"))
+		return false;
+	auto &behavior = static_cast<metamod::BotBehaviorServices &>(runtime);
+	auto &navigation = static_cast<metamod::BotNavigationServices &>(runtime);
+	nav::NavLadderTopology topology;
+	if (!check(behavior.navigation_ladderTopology(&topology) && topology.ladders.size() == 1 &&
+				topology.ladders[0].bottomArea == 1 && topology.ladders[0].topAreas[0] == 2 &&
+				topology.ladders[0].top.z == 900,
+			"actual public brush yields the required upward ladder to the isolated top floor"))
+	{
+		if (!topology.ladders.empty())
+			std::fprintf(stderr, "ladder fixture direction=%u bottom=%u forward=%u top=%f\n",
+				topology.ladders[0].direction, topology.ladders[0].bottomArea, topology.ladders[0].topAreas[0],
+				topology.ladders[0].top.z);
+		return false;
+	}
+	nav::NavQuery query(runtime.navigationSnapshot());
+	nav::NavCorridor ground;
+	if (!check(query.buildCorridor(1, 2, &ground) == nav::NavQueryResult::NoRoute,
+			"runtime acceptance cannot pass through an invented ground link between the floors"))
+		return false;
+	runtime.beginRoundGeneration();
+	globals.time += 10;
+	const auto step = [&](float seconds)
+	{
+		globals.time += seconds;
+		runtime.onStartFrame();
+		runtime.onStartFramePost();
+	};
+	for (unsigned frame = 0; frame < 32; ++frame)
+		step(.125f);
+	const auto &receiver = navigation.behavior_managedBotStateMachines(1);
+	if (!check(receiver.isInitialized() && receiver.state() != compat::CompatibilityStateId::Buy &&
+				behavior.service_managedBotFullUpdateSequences()[1] > 0,
+			"real ladder recipient is joined and has completed native Buy before receiving Help"))
+		return false;
+	gEntities[0].v.origin = Vector(320, -80, 936);
+	gEntities[1].v.origin = Vector(0, 100, 36);
+	gEntities[1].v.v_angle = Vector(0, -90, 0);
+	queueSamples.clear();
+	queueHelpSamples.clear();
+	queueHelpMoves.clear();
+	queueLadderClimbMoves = 0;
+	queueLadderLowestPitch = 0;
+	queueEnemiesVisible = true;
+	queueLadderPhysics = true;
+	bool copiedGoal = false, upperMovement = false, completedSpeechPause = false;
+	for (unsigned frame = 0; frame < 600; ++frame)
+	{
+		// Complete natural speech after the native 0.4..0.6 s path throttle has
+		// elapsed. An earlier Hunt search may legitimately reject MoveTo entry.
+		bool helpStarted = false;
+		for (const auto &sample : queueHelpSamples)
+			helpStarted = helpStarted || sample.first == "radio/test/help.wav";
+		const bool finishSpeech = helpStarted && !completedSpeechPause;
+		step(finishSpeech ? .7f : .02f);
+		completedSpeechPause = completedSpeechPause || finishSpeech;
+		const auto &goal = navigation.behavior_managedBotObjectiveTargets(1);
+		copiedGoal =
+			copiedGoal || (goal.valid && std::fabs(goal.target.x - 320) < .01f && std::fabs(goal.target.y + 80) < .01f);
+		if (gEntities[1].v.origin.z >= 935 && gEntities[1].v.origin.x > 100)
+		{
+			upperMovement = true;
+			break;
+		}
+	}
+	bool help = false, way = false;
+	for (const auto &sample : queueHelpSamples)
+	{
+		help = help || sample.first == "radio/test/help.wav";
+		way = way || sample.first == "radio/test/way.wav";
+	}
+	bool ok = check(help && way, "actual ladder case naturally transmits Help and queues immediate OnMyWay") &&
+		check(copiedGoal, "actual ladder Help retains sender target across disconnected floors") &&
+		check(queueLadderClimbMoves > 0 && queueLadderLowestPitch < -40,
+			"real RunPlayerMove uses native upward pitch and forward ladder commands") &&
+		check(upperMovement,
+			"actual assistance climbs, dismounts and resumes movement on the upper floor toward copied sender goal");
+	if (upperMovement)
+	{
+		gEntities[0].v.origin.x = 640;
+		for (unsigned frame = 0; frame < 3; ++frame)
+			step(.02f);
+		const auto &goal = navigation.behavior_managedBotObjectiveTargets(1);
+		ok = check(goal.valid && std::fabs(goal.target.x - 320) < .01f,
+				 "sender movement after ladder dismount does not retarget the accepted Help copy") &&
+			ok;
+	}
+	if (!ok)
+		std::fprintf(stderr,
+			"actual ladder help=%d way=%d copy=%d climbs=%u pitch=%f pose=(%f,%f,%f) state=%s task=%s\n", help ? 1 : 0,
+			way ? 1 : 0, copiedGoal ? 1 : 0, queueLadderClimbMoves, queueLadderLowestPitch, gEntities[1].v.origin.x,
+			gEntities[1].v.origin.y, gEntities[1].v.origin.z, compat::toString(receiver.state()),
+			compat::toString(receiver.task()));
 	return ok;
 }
 
@@ -723,6 +1585,13 @@ bool testStatementQueue(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t
 				"both statements survive simultaneous admission, fixed count criteria and later OFF mode")))
 		return false;
 	return testQueueRadioReset(runtime, engine) && testPlanAgreementRuntime(runtime, globals) &&
-		testProductionNavCenters(runtime) && testPublicNavLadders(runtime, engine);
+		testProductionNavCenters(runtime) && testPublicNavLadders(runtime, engine) &&
+		testPublicNativeLadderTrace(engine) && testNativeHelpDeathMemory(runtime, engine, globals) &&
+		testActualHelpMovement(runtime, engine, globals) && testActualHelpMovement(runtime, engine, globals, true) &&
+		testActualHelpMovement(runtime, engine, globals, true, true) &&
+		testActualHelpMovement(runtime, engine, globals, false, false, true) &&
+		testActualHelpMovement(runtime, engine, globals, true, false, false, true) &&
+		testActualLadderHelpMovement(runtime, engine, globals) &&
+		testActualHelpMovement(runtime, engine, globals, false, false, true, false, true);
 }
 }

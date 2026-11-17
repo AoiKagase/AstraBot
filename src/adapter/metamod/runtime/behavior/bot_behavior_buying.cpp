@@ -27,6 +27,10 @@ void BotBehaviorRuntime::updatePublicBuying(std::size_t index)
 				services_->service_adapterFrameCount()},
 			&observation))
 		return;
+	// The controller cannot buy outside the observed zone. Avoid querying
+	// weapon policies for a newly spawned native Buy state that cannot use them.
+	if (!observation.buyZoneKnown || !observation.inBuyZone)
+		return;
 	compat::BuyContext context{};
 	context.nowSeconds = services_->service_globals()->time;
 	context.stateEnteredSeconds = services_->service_roundFreezeStartTime();

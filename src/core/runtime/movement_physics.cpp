@@ -58,10 +58,11 @@ SpawnReadiness movementReadiness(const MovementPhysicsState &state) noexcept
 	constexpr int kCounterTerroristTeam = 2;
 	constexpr int kSolidSlideBox = 3;
 	constexpr int kMoveTypeWalk = 3;
+	constexpr int kMoveTypeFly = 5;
 	if (!state.entityValid || !state.fakeClient || state.spectator || state.dead ||
 		((state.team != kTerroristTeam && state.team != kCounterTerroristTeam) && !state.teamConfirmed) ||
 		!std::isfinite(state.health) || state.health <= 0.0f || state.solid != kSolidSlideBox ||
-		state.movetype != kMoveTypeWalk)
+		(state.movetype != kMoveTypeWalk && !(state.movetype == kMoveTypeFly && state.onLadder)))
 	{
 		return SpawnReadiness::NotReady;
 	}
@@ -70,7 +71,7 @@ SpawnReadiness movementReadiness(const MovementPhysicsState &state) noexcept
 
 SpawnReadiness spawnReadiness(const MovementPhysicsState &state) noexcept
 {
-	return state.grounded ? movementReadiness(state) : SpawnReadiness::NotReady;
+	return state.grounded && state.movetype == 3 ? movementReadiness(state) : SpawnReadiness::NotReady;
 }
 
 bool isMovementDirectionReversal(const PhysicsVector &previous, const PhysicsVector &current) noexcept

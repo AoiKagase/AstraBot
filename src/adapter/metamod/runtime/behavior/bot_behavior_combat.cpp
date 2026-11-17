@@ -39,6 +39,60 @@ bool crouchTargetVisible(void *opaque)
 }
 }
 
+void BotBehaviorRuntime::applyNativeLadderLookCommand(
+	std::size_t index, runtime::BotCommand &command, bool localMovement)
+{
+	if (!services_ || index >= actors_.size() || !services_->service_globals())
+		return;
+	const auto config = services_->service_compatibilitySurface().configuration();
+	const auto handle = services_->service_managedBotHandles()[index];
+	const float now = services_->service_globals()->time;
+	if (config.mode != compat::RuntimeMode::Compatibility || config.botEnable <= 0 || config.botStop > 0 ||
+		!handle.entity || handle.entity->free || handle.entity->v.health <= 0 || handle.entity->v.deadflag != DEAD_NO ||
+		(handle.entity->v.flags & (FL_FROZEN | FL_SPECTATOR)) || !std::isfinite(now) ||
+		(services_->service_roundFreezeGeneration() == services_->service_lifecycle().roundGeneration() &&
+			now < services_->service_roundFreezeUntil()))
+		return;
+	const auto receipt = reactionContext(index);
+	const auto revision = actors_[index].executionRevision;
+	const auto epoch = actors_[index].managedBotStateMachines.normalStateEpoch();
+	nav::NativeLadderLook ladder{};
+	if (!services_->navigation_nativeLadderLook(index, &ladder) || !executionCurrent(index, receipt, revision) ||
+		actors_[index].managedBotStateMachines.normalStateEpoch() != epoch)
+		return;
+	auto &state = actors_[index];
+	if (state.lastCombatTimes != now)
+	{
+		combat::CombatDecisionContext context{};
+		context.actor = {handle.actor.slot, handle.actor.actorGeneration};
+		context.frame = receipt.frame;
+		context.origin = {handle.entity->v.origin.x, handle.entity->v.origin.y, handle.entity->v.origin.z};
+		context.currentYaw = handle.entity->v.v_angle.y;
+		context.currentPitch = handle.entity->v.v_angle.x;
+		context.elapsedSeconds = state.lastCombatTimes > 0
+			? (std::max)(0.0f, (std::min)(.1f, now - state.lastCombatTimes))
+			: runtime::BotTimingScheduler::kCommandInterval;
+		context.skill = static_cast<float>(state.managedProfiles.skill) / kSkillPercentageScale;
+		compat::AimStep look{};
+		if (!state.managedBotCombat.upkeepLook(context, ladder.yaw, ladder.pitchOverride ? ladder.pitch : 0.0f,
+				state.managedBotStateMachines.attackOverlayActive(), &look))
+			return;
+		state.lastCombatTimes = now;
+		const auto move = ActionAdapter::reprojectMovement(
+			command.movement.forward, command.movement.side, command.viewAngles.yaw, look.yaw);
+		if (!localMovement)
+		{
+			command.movement.forward = move.forward;
+			command.movement.side = move.side;
+			command.movement.buttons = static_cast<std::uint16_t>(
+				(command.movement.buttons & ~(IN_FORWARD | IN_BACK | IN_MOVELEFT | IN_MOVERIGHT)) |
+				ActionAdapter::movementButtons(move.forward, move.side));
+		}
+		command.viewAngles = {look.pitch, look.yaw, 0};
+	}
+	command.synchronizeCombatView = true;
+}
+
 CombatUpkeepUpdate BotBehaviorRuntime::upkeepCombat(
 	std::size_t index, const runtime::MovementPhysicsState &before, std::uint16_t cachedButtons)
 {
@@ -161,6 +215,21 @@ CombatUpkeepUpdate BotBehaviorRuntime::upkeepCombat(
 	context.aimErrorRange = std::sqrt((enemyOrigin.x - context.origin.x) * (enemyOrigin.x - context.origin.x) +
 		(enemyOrigin.y - context.origin.y) * (enemyOrigin.y - context.origin.y) +
 		(enemyOrigin.z - context.origin.z) * (enemyOrigin.z - context.origin.z));
+	const auto lookReceipt = reactionContext(index);
+	const auto lookExecution = state.executionRevision;
+	const auto lookEpoch = state.managedBotStateMachines.normalStateEpoch();
+	nav::NativeLadderLook ladder{};
+	const bool ladderLook = services_->navigation_nativeLadderLook(index, &ladder);
+	if (!executionCurrent(index, lookReceipt, lookExecution) ||
+		state.managedBotStateMachines.normalStateEpoch() != lookEpoch)
+		return update;
+	if (ladderLook)
+	{
+		context.lookOverride = true;
+		context.lookPitchOverride = ladder.pitchOverride;
+		context.lookYaw = ladder.yaw;
+		context.lookPitch = ladder.pitch;
+	}
 	combat::AimIntent aim{};
 	if (state.managedBotCombat.upkeepAim(target, context, &aim))
 	{
@@ -176,7 +245,12 @@ CombatUpkeepUpdate BotBehaviorRuntime::upkeepCombat(
 		else if (state.weaponActions.rapidFiring())
 		{
 			update.setPrimary = true;
-			update.primary = (cachedButtons & IN_ATTACK) == 0U;
+			update.primary = (cachedButtons & IN_ATTACK) == 0U &&
+				(!context.lookOverride ||
+					compat::combatAimOnTarget(aim.point, context.origin, aim.yaw,
+						state.weaponActions.currentWeaponId() == 3 || state.weaponActions.currentWeaponId() == 18 ||
+							state.weaponActions.currentWeaponId() == 13 ||
+							state.weaponActions.currentWeaponId() == 24));
 		}
 		if (services_->service_runtimeProfiler().enabled() && gpMetaUtilFuncs && gpMetaUtilFuncs->pfnLogConsole &&
 			services_->service_pluginId())
@@ -429,6 +503,21 @@ ActionProposal BotBehaviorRuntime::decideCombatAction(ManagedActionContext &ctx)
 		const auto &p = visibleEnemy->position;
 		context.aimErrorRange = std::sqrt((p.x - context.origin.x) * (p.x - context.origin.x) +
 			(p.y - context.origin.y) * (p.y - context.origin.y) + (p.z - context.origin.z) * (p.z - context.origin.z));
+	}
+	const auto lookReceipt = reactionContext(index);
+	const auto lookExecution = actors_[index].executionRevision;
+	const auto lookEpoch = actors_[index].managedBotStateMachines.normalStateEpoch();
+	nav::NativeLadderLook ladder{};
+	const bool ladderLook = services_->navigation_nativeLadderLook(index, &ladder);
+	if (!executionCurrent(index, lookReceipt, lookExecution) ||
+		actors_[index].managedBotStateMachines.normalStateEpoch() != lookEpoch)
+		return ctx.proposal;
+	if (ladderLook)
+	{
+		context.lookOverride = true;
+		context.lookPitchOverride = ladder.pitchOverride;
+		context.lookYaw = ladder.yaw;
+		context.lookPitch = ladder.pitch;
 	}
 	actors_[index].lastCombatTimes = services_->service_globals()->time;
 	combat::CombatDecision decision = {};

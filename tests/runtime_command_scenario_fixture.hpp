@@ -50,6 +50,7 @@ public:
 	float attackOriginBefore = 0.0f;
 	unsigned moves = 0U;
 	unsigned short lastButtons = 0U;
+	float lastForward = 0, lastSide = 0;
 	edict_t actorEntity{};
 
 	ScenarioServices()
@@ -195,6 +196,9 @@ public:
 	{
 		return false;
 	}
+	void behavior_applyNativeLadderLookCommand(std::size_t, runtime::BotCommand &, bool) override
+	{
+	}
 	void behavior_applyNoiseLookCommand(std::size_t, runtime::BotCommand &) override
 	{
 	}
@@ -291,10 +295,12 @@ public:
 		return {};
 	}
 };
-void scenarioMove(edict_t *entity, const float *, float, float, float, unsigned short buttons, byte, byte)
+void scenarioMove(edict_t *entity, const float *, float forward, float side, float, unsigned short buttons, byte, byte)
 {
 	++gScenario->moves;
 	gScenario->lastButtons = buttons;
+	gScenario->lastForward = forward;
+	gScenario->lastSide = side;
 	entity->v.origin.x += 10.0f;
 	if (gScenario->changeFreezeDuringMove)
 		gScenario->freeze = true;

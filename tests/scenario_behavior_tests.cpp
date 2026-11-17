@@ -42,6 +42,39 @@ int main()
 {
 	using namespace astrabot::compat;
 	bool ok = true;
+	{
+		auto scenario = input();
+		auto decision = ScenarioBehaviorDecision{};
+		decision.state = CompatibilityStateId::MoveTo;
+		decision.hasTarget = true;
+		scenario.hostage = target();
+		decision.target = scenario.hostage;
+		ok &= check(nativeScenarioMoveTask(scenario, decision) == CompatibilityTaskId::CollectHostages,
+			"hostage approach stamps COLLECT_HOSTAGES before preserved Help entry");
+		scenario.escortKnown = true;
+		scenario.escortCount = 1;
+		ok &= check(nativeScenarioMoveTask(scenario, decision) == CompatibilityTaskId::RescueHostages,
+			"observed escort stamps native busy RESCUE_HOSTAGES");
+		scenario = input();
+		scenario.scenario = PublicScenarioKind::Bomb;
+		scenario.bombPlantedKnown = true;
+		scenario.bombPlanted = true;
+		scenario.bomb = target();
+		decision.target = scenario.bomb;
+		ok &= check(nativeScenarioMoveTask(scenario, decision) == CompatibilityTaskId::DefuseBomb,
+			"known planted bomb approach stamps DEFUSE_BOMB");
+		scenario.bomb = {};
+		scenario.bombSearch = target();
+		decision.target = scenario.bombSearch;
+		ok &= check(nativeScenarioMoveTask(scenario, decision) == CompatibilityTaskId::FindTickingBomb,
+			"unlocated planted bomb search stamps FIND_TICKING_BOMB");
+		scenario.team = astrabot::objectives::TeamRole::Terrorist;
+		ok &= check(nativeScenarioMoveTask(scenario, decision, true) == CompatibilityTaskId::PlantBomb,
+			"C4 approach stamps PLANT_BOMB before Help busy evaluation");
+		decision.state = CompatibilityStateId::Hunt;
+		ok &= check(nativeScenarioMoveTask(scenario, decision, true) == CompatibilityTaskId::None,
+			"other normal state retains its own task entry");
+	}
 	ScenarioBehaviorPlanner hostage;
 	auto value = input();
 	ok &= check(hostage.update(value).unavailable, "unknown hostage never yields hidden target");

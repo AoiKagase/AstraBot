@@ -85,7 +85,8 @@ public:
 				if (entityIndex < 0 || bounds.size() >= nav::NavLimits::kMaximumAreas)
 					return false;
 
-				bounds.push_back({reinterpret_cast<std::uintptr_t>(entity), extent});
+				bounds.push_back({reinterpret_cast<std::uintptr_t>(entity), extent,
+					static_cast<std::uint32_t>(entityIndex), static_cast<std::uint32_t>(entities.back().serial) + 1U});
 				after = entity;
 			}
 			class Probe final : public compat::ILadderNavProbe

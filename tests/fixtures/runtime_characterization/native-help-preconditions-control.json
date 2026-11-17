@@ -1,0 +1,79 @@
+{
+  "base_commit": "b3e4ec67a883a403464ecbc32f623853208b8c0a",
+  "reference_commit": "b0889847fe6d03898be88acc9e366660efb40ab5",
+  "purpose": "Reproduce the native Help preconditions from the pre-feature source, independently of Help delivery, native ladder controller, and the feature trace. No candidate trace is an oracle input.",
+  "native_sources": [
+    {
+      "file": "dlls/bot/cs_bot_update.cpp",
+      "lines": "772-780",
+      "rule": "One normal-state update or Attack update per full update."
+    },
+    {
+      "file": "dlls/bot/cs_bot_init.cpp",
+      "lines": "178-334,338-345",
+      "rule": "ResetValues clears rogue value but preserves timer; SpawnBot enters Buy."
+    },
+    {
+      "file": "dlls/bot/cs_bot.cpp",
+      "lines": "770-786",
+      "rule": "Rogue interval and chance are redrawn only after retained timer elapsed."
+    },
+    {
+      "file": "dlls/bot/states/cs_bot_buy.cpp",
+      "lines": "275-280",
+      "rule": "Leave Buy outside the public buy-zone signal before buying policies."
+    },
+    {
+      "file": "dlls/bot/states/cs_bot_move_to.cpp",
+      "lines": "43-59",
+      "rule": "Compute native path including ladders; adapter must discover public ladder topology for cross-area objectives."
+    }
+  ],
+  "changes": [
+    {
+      "path": "include/astrabot/compat/teamwork_policy.hpp",
+      "before": "\n\tvoid followingStopped(float now)",
+      "after": "\n\t// Native ResetValues clears the rogue value but retains its absolute timer.\n\tvoid resetValues()\n\t{\n\t\tconst auto actor = actor_;\n\t\tconst auto frame = frame_;\n\t\tconst auto time = lastTime_;\n\t\tconst auto deadline = nextRogueAt_;\n\t\treset();\n\t\tactor_ = actor;\n\t\tframe_ = frame;\n\t\tlastTime_ = time;\n\t\tnextRogueAt_ = deadline;\n\t\trogueKnown_ = deadline > 0.0f;\n\t}\n\n\tvoid followingStopped(float now)"
+    },
+    {
+      "path": "include/astrabot/compat/teamwork_policy.hpp",
+      "before": "\t\t\treset();\n\t\t\tactor_ = input.actor;",
+      "after": "\t\t\tif (actor_ == input.actor && frame_.mapGeneration == input.frame.mapGeneration)\n\t\t\t\tresetValues();\n\t\t\telse\n\t\t\t\treset();\n\t\t\tactor_ = input.actor;"
+    },
+    {
+      "path": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
+      "before": "actor.teamworkPolicies = {};",
+      "after": "actor.teamworkPolicies.resetValues();"
+    },
+    {
+      "path": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.cpp",
+      "before": "\t\tactor.outgoingRadioSchedulers.discardPending();",
+      "after": "\t\tactor.teamworkPolicies.resetValues();\n\t\tactor.outgoingRadioSchedulers.discardPending();"
+    },
+    {
+      "path": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.cpp",
+      "before": "void BotBehaviorRuntime::resetActorExecutionState(std::size_t index)\n{",
+      "after": "void BotBehaviorRuntime::resetActorExecutionState(std::size_t index)\n{\n\tactors_[index].teamworkPolicies.resetValues();"
+    },
+    {
+      "path": "src/core/compat/state_machine.cpp",
+      "before": "\tnavigationCompletedFrame_ = context.frame;",
+      "after": "\t// Only states which consume navigation completion may update here.\n\tif (state_ != CompatibilityStateId::MoveTo && state_ != CompatibilityStateId::InvestigateNoise)\n\t\treturn StateResult::NoOp;\n\tnavigationCompletedFrame_ = context.frame;"
+    },
+    {
+      "path": "src/adapter/metamod/runtime/behavior/bot_behavior_scenario.cpp",
+      "before": "\t\t(void)machine.initialize(context);",
+      "after": "\t\t(void)machine.initialize(context);\n\t\tif (services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility &&\n\t\t\t!actors_[index].buyingComplete)\n\t\t\t(void)machine.transition(compat::CompatibilityStateId::Buy, compat::StateTransitionReason::RespawnObserved,\n\t\t\t\tcompat::StateTransitionId::LifecycleRespawn, context);"
+    },
+    {
+      "path": "src/adapter/metamod/runtime/behavior/bot_behavior_buying.cpp",
+      "before": "\tcompat::BuyContext context{};",
+      "after": "\tif (!observation.buyZoneKnown || !observation.inBuyZone)\n\t\treturn;\n\tcompat::BuyContext context{};"
+    },
+    {
+      "path": "src/adapter/metamod/runtime/navigation/bot_navigation_runtime.cpp",
+      "before": "\t\t\troamResult =\n\t\t\t\tactors_[index].managedBotMovement.update",
+      "after": "\t\t\t// Native path planning includes ladders. The public adapter discovers\n\t\t\t// their topology only for an objective route crossing NAV areas.\n\t\t\tif (services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility &&\n\t\t\t\tobservation.hasObjectiveTarget)\n\t\t\t{\n\t\t\t\tnav::NavQuery query(navigation);\n\t\t\t\tnav::NavAreaMatch from{}, to{};\n\t\t\t\tconst bool same = query.findContaining(observation.locomotion.position, kAreaVerticalTolerance, &from) == nav::NavQueryResult::Found &&\n\t\t\t\t\tquery.findContaining(observation.objectiveTarget, kAreaVerticalTolerance, &to) == nav::NavQueryResult::Found && from.area == to.area;\n\t\t\t\tif (!same)\n\t\t\t\t{\n\t\t\t\t\tnav::NavLadderTopology topology{};\n\t\t\t\t\t(void)ladderTopology(&topology);\n\t\t\t\t}\n\t\t\t}\n\t\t\troamResult =\n\t\t\t\tactors_[index].managedBotMovement.update"
+    }
+  ]
+}

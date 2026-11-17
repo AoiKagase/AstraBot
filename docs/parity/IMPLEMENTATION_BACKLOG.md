@@ -1,6 +1,6 @@
 # Remaining CSBot implementation work
 
-Completed repair units01–06 and the07A NAV-center and07B public-ladder travel prerequisites are recorded below and in STATUS.md, including production compound playback and native one-shot standard/direct radio plus delayed acknowledgement reset and same-plan agreement conversion. Original07 Help transmission/reaction remains unfinished;07A/07B repair required route geometry/topology and read-only range queries. Each unit retains its exact source/test/artifact/commit identity in its session RESULT.json.
+Completed repair units01–06 and the07A NAV-center and07B public-ladder travel prerequisites are recorded below and in STATUS.md, including production compound playback and native one-shot standard/direct radio plus delayed acknowledgement reset and same-plan agreement conversion. Original07 Help transmission/reaction and actual native ladder assistance are implemented and offline verified;07A/07B supplied the required route geometry/topology and read-only range queries. Each unit retains its exact source/test/artifact/commit identity in its session RESULT.json.
 The user goal remains active: proceed through remaining features, commit and locally merge each.
 This is an evidence-driven queue, not a complete parity/completion claim. Historical P00 matrices are not current feature inventories.
 
@@ -31,9 +31,9 @@ The user requests01 onward in order, each repaired unit committed and locally FF
 | ID | 修正単位 | 現在の作業／残件 |
 |---|---|---|
 |06|同計画への同意|実装・オフライン検証済み。同じ場所はAgreeWithPlanへ変換して0.5〜1秒待機、別の場所は元の計画を3〜4秒延期。Windows135/135、Linux133/134（既知22のみ）。統合記録はunit06 session RESULT.json|
-|07A（前提）|NAV経路の参照中心|実装・オフライン検証済み。CompatibilityのA*をCSBotの領域中心へ合わせ、距離0を保持。Windows135/135、Linux133/134（既知22のみ）。元の07は未完了。統合記録はunit07A session RESULT.json|
-|07B（前提）|公開ラダーの復元・到達距離|実装・オフライン検証済み。公開bounds／traceから復元し、CSBotの経路コストで選んだ経路の中心間距離を返す。Windows135/135、Linux133/134（既知22のみ）。元の07は未完了。統合記録はunit07B session RESULT.json|
-|07|援護要請の行動連動|前提07A／07B完了。本体の発話完了後Help伝達／反応と実移動（ラダー含む）を継続実装|
+|07A（前提）|NAV経路の参照中心|実装・オフライン検証済み。CompatibilityのA*をCSBotの領域中心へ合わせ、距離0を保持。Windows135/135、Linux133/134（既知22のみ）。本体07は下記で実装・オフライン検証済み。統合記録はunit07A session RESULT.json|
+|07B（前提）|公開ラダーの復元・到達距離|実装・オフライン検証済み。公開bounds／traceから復元し、CSBotの経路コストで選んだ経路の中心間距離を返す。Windows135/135、Linux133/134（既知22のみ）。本体07は下記で実装・オフライン検証済み。統合記録はunit07B session RESULT.json|
+|07|援護要請の行動連動|実装・オフライン検証済み。自然完了Help伝達、共有Rogue／任務／距離／Place判断、固定援護目標と任務保持、公開ラダー経路／実コマンドを接続。Windows137/137、Linux135/136（既知22のみ）。旧トレースは保持し、独立参照ビルド由来の厳密補正で両OS149075行一致。統合記録はunit07 session RESULT.json。実機25は未実施|
 |08|追従要請の行動連動|Follow伝達／距離・任務・性格|
 |09|防衛要請の行動連動|DefendHere伝達／防衛・隠れ場所|
 |10|状況報告応答|RequestReport／ReportingIn|

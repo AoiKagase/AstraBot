@@ -98,6 +98,16 @@ const char *toString(CompatibilityTaskId task)
 		return "TASK-GUARD-TICKING-BOMB";
 	case CompatibilityTaskId::MoveToLastKnownEnemyPosition:
 		return "TASK-MOVE-TO-LAST-KNOWN-ENEMY-POSITION";
+	case CompatibilityTaskId::FindTickingBomb:
+		return "TASK-FIND-TICKING-BOMB";
+	case CompatibilityTaskId::CollectHostages:
+		return "TASK-COLLECT-HOSTAGES";
+	case CompatibilityTaskId::RescueHostages:
+		return "TASK-RESCUE-HOSTAGES";
+	case CompatibilityTaskId::MoveToSniperSpot:
+		return "TASK-MOVE-TO-SNIPER-SPOT";
+	case CompatibilityTaskId::Sniping:
+		return "TASK-SNIPING";
 	default:
 		return "TASK-NONE";
 	}
@@ -366,6 +376,10 @@ StateResult CompatibilityStateMachine::finishNavigation(const StateUpdateContext
 		navigationCompletedFrame_.roundGeneration == context.frame.roundGeneration &&
 		navigationCompletedFrame_.tick >= context.frame.tick)
 		return StateResult::NoOp;
+	// Only these states consume a path result here. Other normal states were
+	// already updated before navigation; do not run their OnUpdate twice.
+	if (state_ != CompatibilityStateId::MoveTo && state_ != CompatibilityStateId::InvestigateNoise)
+		return StateResult::NoOp;
 	navigationCompletedFrame_ = context.frame;
 	auto value = context;
 	value.requestTransition = false;
@@ -480,6 +494,8 @@ StateResult CompatibilityStateMachine::transitionInternal(CompatibilityStateId n
 	invokeEnter(nextState, previousState, reason, transitionId, context);
 	state_ = nextState;
 	++stateSequence_;
+	if (++normalStateEpoch_ == 0)
+		++normalStateEpoch_;
 	emit(StateTraceEvent::StatePublished, CompatibilityStateId::None, previousState, nextState, reason, transitionId,
 		context);
 	stateTimestamp_ = context.timestamp;
@@ -555,7 +571,7 @@ void CompatibilityStateMachine::updateBehavior(const StateUpdateContext &context
 		{
 			if (input.navigation.outcome == NavigationStepOutcome::EndOfPath ||
 				input.navigation.outcome == NavigationStepOutcome::PathFailure)
-				next = input.defuseGoalKnown && input.withinDefuseRange &&
+				next = task_ == CompatibilityTaskId::DefuseBomb && input.defuseGoalKnown && input.withinDefuseRange &&
 						(input.reloadKnown || input.reloadInferred) && !input.reloading
 					? CompatibilityStateId::DefuseBomb
 					: CompatibilityStateId::Idle;
@@ -726,8 +742,9 @@ void CompatibilityStateMachine::applyEnterEffects(CompatibilityStateId state, Co
 		task_ = CompatibilityTaskId::InvestigateNoise;
 		break;
 	case CompatibilityStateId::MoveTo:
-		task_ = context.moveToTask == CompatibilityTaskId::MoveToLastKnownEnemyPosition
-			? context.moveToTask : CompatibilityTaskId::MoveTo;
+		if (context.preserveMoveToTask)
+			return;
+		task_ = context.moveToTask != CompatibilityTaskId::None ? context.moveToTask : CompatibilityTaskId::MoveTo;
 		break;
 	case CompatibilityStateId::PlantBomb:
 		task_ = CompatibilityTaskId::PlantBomb;

@@ -85,7 +85,7 @@ bool testPublicLadderReconstruction()
 		document.addArea(item);
 	const auto snapshot = snapshotFor(&document, 7);
 	LadderProbe probe;
-	const std::vector<compat::PublicLadderBounds> bounds{{42, {{-20, -2, 0}, {20, 2, 200}}}};
+	const std::vector<compat::PublicLadderBounds> bounds{{42, {{-20, -2, 0}, {20, 2, 200}}, 6, 100}};
 	nav::NavLadderTopology topology;
 	bool ok = check(compat::buildBotNavLadders(snapshot, bounds, probe, &topology) &&
 			topology.navRevision == snapshot.revision() && topology.mapGeneration == 7 && topology.ladders.size() == 1,
@@ -93,6 +93,9 @@ bool testPublicLadderReconstruction()
 	if (!topology.ladders.empty())
 	{
 		const auto &ladder = topology.ladders.front();
+		ok = check(ladder.entityIndex == 6 && ladder.entityGeneration == 100,
+				 "ladder reconstruction retains serial-qualified public entity identity for movement traces") &&
+			ok;
 		ok = check(ladder.direction == 2 && ladder.bottomArea == 1 &&
 					 ladder.topAreas == std::array<nav::AreaId, 4>{{2, 3, 4, 5}} && ladder.bottom.z == 0 &&
 					 ladder.top.z == 220 && ladder.length == 200 && !ladder.dangling && !probe.ignoreMismatch,
@@ -145,6 +148,73 @@ bool testPublicLadderReconstruction()
 		ok;
 	return ok;
 }
+bool testNativeLadderMovementCorridor()
+{
+	using namespace astrabot::nav;
+	NavDocument document;
+	document.setSourceIdentity({5, 100, 200});
+	auto bottom = area(1, 0, 64, 0), top = area(2, 0, 64, 200), exit = area(3, 64, 128, 200);
+	top.connections[1].push_back(3);
+	exit.connections[3].push_back(2);
+	for (const auto &item : {bottom, top, exit})
+		document.addArea(item);
+	const auto snapshot = snapshotFor(&document, 3);
+	NavLadder ladder;
+	ladder.bottom = {32, 32, 0};
+	ladder.top = {32, 32, 200};
+	ladder.length = 200;
+	ladder.bottomArea = 1;
+	ladder.topAreas = {{2, 0, 0, 0}};
+	NavLadderTopology topology{snapshot.revision(), 3, {ladder}};
+	NavQuery query(snapshot);
+	NavCorridor route{};
+	NavSearchStats stats{};
+	bool ok = check(
+		query.buildNativeCorridor(1, 3, NavRouteType::Safest, topology, &route, &stats) == NavQueryResult::Found &&
+			route.areas == std::vector<AreaId>({1, 2, 3}) && route.links.size() == 2 &&
+			route.nativeLadders.size() == 1 && stats.searchCalls == 1,
+		"native movement builds an explicit mixed ladder/floor route with actual path-search identity");
+	if (route.links.size() == 2 && route.nativeLadders.size() == 1)
+		ok = check(route.links[0].how == 4 && route.links[1].how == 1 && route.nativeLadders[0].linkIndex == 0 &&
+					 route.nativeLadders[0].ladder.top.z == 200 && route.isValid(),
+				 "upward route retains native parent traversal and copied ladder geometry") &&
+			ok;
+	NavCorridor explicitLadder{};
+	explicitLadder.navRevision = snapshot.revision();
+	explicitLadder.mapGeneration = 3;
+	explicitLadder.cost = 200;
+	explicitLadder.areas = {1, 2};
+	explicitLadder.links = {{1, 2, 0, 4}};
+	explicitLadder.nativeLadders = {{0, ladder}};
+	auto wrong = explicitLadder;
+	wrong.nativeLadders[0].ladder.bottomArea = 99;
+	ok = check(!wrong.isValid(), "native ladder metadata must match the chosen parent areas") && ok;
+	wrong = explicitLadder;
+	wrong.links[0].direction = 1;
+	ok = check(!wrong.isValid(), "native ladder link direction must match its copied ladder geometry") && ok;
+	wrong = explicitLadder;
+	wrong.nativeLadders[0].ladder.dangling = true;
+	ok = check(!wrong.isValid(), "dangling ladder cannot be represented as a valid upward movement step") && ok;
+	NavPathFollower ground;
+	ok = check(ground.start(explicitLadder) == NavFollowerResult::InvalidCorridor,
+			 "ground follower must reject explicit native ladder links rather than create a fake portal") &&
+		ok;
+	ok = check(query.buildNativeCorridor(3, 1, NavRouteType::Fastest, topology, &route) == NavQueryResult::Found &&
+				 route.links.size() == 2 && route.links.back().how == 5 && route.nativeLadders.size() == 1 &&
+				 route.nativeLadders[0].linkIndex == 1,
+			 "descending mixed path retains the floor prefix and explicit ladder-down step") &&
+		ok;
+	NavPathCostContext dead{};
+	dead.health = 0;
+	query.setPathCostContext(dead);
+	ok = check(query.buildNativeCorridor(1, 3, NavRouteType::Fastest, topology, &route) ==
+					 NavQueryResult::InvalidArgument &&
+				 !route.isValid(),
+			 "movement corridor cannot inherit the separate read-only dead Help range exception") &&
+		ok;
+	return ok;
+}
+
 bool testNativeLadderTravel()
 {
 	using namespace astrabot::nav;
@@ -316,6 +386,56 @@ bool testNativeTravelCostAndOrdering()
 	ok = check(tieQuery.travelDistance(1, 4, NavRouteType::Safest, topology, &distance) == NavQueryResult::Found &&
 				 distance == 128,
 			 "equal-cost floor path retains its parent before the longer center-distance ladder route") &&
+		ok;
+	return ok;
+}
+
+bool testNativeDeadReceiverTravel()
+{
+	using namespace astrabot::nav;
+	NavDocument document;
+	document.setSourceIdentity({5, 100, 200});
+	auto a = area(1, 0, 64, 0), b = area(2, 64, 128, 0);
+	a.connections[1] = {2};
+	b.connections[3] = {1};
+	document.addArea(a);
+	document.addArea(b);
+	const auto snapshot = snapshotFor(&document, 1);
+	NavLadderTopology topology{snapshot.revision(), 1, {}};
+	bool ok = true;
+	for (float health : {0.0f, -20.0f})
+	{
+		NavQuery query(snapshot);
+		NavPathCostContext cost;
+		cost.health = health;
+		query.setPathCostContext(cost);
+		float distance = -1;
+		NavCorridor corridor;
+		ok = check(query.travelDistance(1, 2, NavRouteType::Safest, topology, &distance) == NavQueryResult::Found &&
+					 distance == 64,
+				 "native read-only Help range still traverses ordinary links for a dead recipient") &&
+			ok;
+		ok = check(query.buildCorridor(1, 2, &corridor) == NavQueryResult::InvalidArgument,
+				 "dead-recipient range does not enable nonpositive-health live ground movement") &&
+			ok;
+	}
+	NavDocument drop;
+	drop.setSourceIdentity({5, 100, 200});
+	a = area(1, 0, 64, 1000);
+	b = area(2, 64, 128, 0);
+	a.connections[1] = {2};
+	drop.addArea(a);
+	drop.addArea(b);
+	const auto dropSnapshot = snapshotFor(&drop, 1);
+	topology.navRevision = dropSnapshot.revision();
+	NavQuery query(dropSnapshot);
+	NavPathCostContext cost;
+	cost.health = 0;
+	query.setPathCostContext(cost);
+	float distance = -1;
+	ok = check(query.travelDistance(1, 2, NavRouteType::Safest, topology, &distance) == NavQueryResult::NoRoute &&
+				 distance == -1,
+			 "dead-recipient native range retains the positive-fall-damage death margin") &&
 		ok;
 	return ok;
 }
@@ -1191,6 +1311,8 @@ bool testAStarSearchStats()
 
 int main()
 {
+	if (!testNativeDeadReceiverTravel())
+		return 1;
 	{
 		using namespace astrabot::nav;
 		NavDocument d;
@@ -1226,8 +1348,8 @@ int main()
 				"invalid explicit endpoint cannot reuse old state"))
 			return 1;
 	}
-	if (!testPublicLadderReconstruction() | !testNativeLadderTravel() | !testNativeTravelCostAndOrdering() |
-		!testLadderReverseConnectionPreventsFalseFall())
+	if (!testNativeLadderMovementCorridor() | !testPublicLadderReconstruction() | !testNativeLadderTravel() |
+		!testNativeTravelCostAndOrdering() | !testLadderReverseConnectionPreventsFalseFall())
 		return 1;
 	if (!testSpatialTieBreaking() || !testDirectedLinksAndCorridor() || !testApproachTraversalMetadata() ||
 		!testPathFollowerUsesAreaPortalInsteadOfCenter() || !testPathFollowerUsesDirectedPortal() ||

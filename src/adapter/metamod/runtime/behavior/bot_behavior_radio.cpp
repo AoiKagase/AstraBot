@@ -1,6 +1,7 @@
 #include "runtime/behavior/bot_behavior_runtime.hpp"
 #include "runtime/shared/bot_runtime_support.hpp"
 #include "runtime/shared/public_nav_probe.hpp"
+#include "runtime/shared/public_nav_probe.hpp"
 namespace astrabot
 {
 namespace metamod
@@ -17,6 +18,298 @@ constexpr int kMaximumClientSlots = 32;
 #define ASTRABOT_BOT_BEHAVIOR_RADIO_NEXT_PHRASE_GAP_SECONDS 0.1f
 }
 using namespace runtime_detail;
+
+bool BotBehaviorRuntime::helpGoalCurrent(std::size_t index) const
+{
+	const auto &actor = actors_[index];
+	const auto &goal = actor.helpGoal;
+	return goal.active &&
+		services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility &&
+		goal.frame.mapGeneration == services_->service_lifecycle().mapGeneration() &&
+		goal.frame.roundGeneration == services_->service_lifecycle().roundGeneration() &&
+		actor.managedBotStateMachines.state() == compat::CompatibilityStateId::MoveTo &&
+		goal.epoch == actor.managedBotStateMachines.normalStateEpoch();
+}
+
+struct BotBehaviorRuntime::HelpEnvironment : compat::IHelpRequestEnvironment
+{
+	BotBehaviorRuntime &owner;
+	std::size_t sender, receiver;
+	std::function<bool()> sourceCurrent;
+	ChatterPeerReceipt receipt;
+	std::uint64_t execution, epoch;
+	nav::NavSnapshot navigation;
+	HelpEnvironment(BotBehaviorRuntime &runtime, std::size_t from, std::size_t to, std::function<bool()> source)
+		: owner(runtime), sender(from), receiver(to), sourceCurrent(std::move(source)),
+		  receipt(runtime.snapshotChatterPeer(to)), execution(runtime.actors_[to].executionRevision),
+		  epoch(runtime.actors_[to].managedBotStateMachines.normalStateEpoch()),
+		  navigation(runtime.services_->service_navPublisher().snapshot())
+	{
+	}
+	bool current() const override
+	{
+		if (!sourceCurrent())
+			return false;
+		const auto now = owner.snapshotChatterPeer(receiver);
+		const auto nav = owner.services_->service_navPublisher().snapshot();
+		// Speech admission is independent of execution ownership. Dead native bots
+		// retain normal state and are valid recipients, although they cannot speak.
+		return now.managed && receipt.entity == now.entity && receipt.actor == now.actor &&
+			receipt.context.frame == now.context.frame && receipt.context.now == now.context.now &&
+			receipt.context.alive == now.context.alive && receipt.serial == now.serial && !now.free &&
+			receipt.flags == now.flags && receipt.name == now.name && receipt.connection == now.connection &&
+			receipt.teamKnown == now.teamKnown && receipt.publicTeam == now.publicTeam &&
+			receipt.entityTeam == now.entityTeam &&
+			owner.receiptConnectionCurrent({receipt.actor.slot, receipt.connection}) &&
+			owner.actors_[receiver].executionRevision == execution &&
+			owner.actors_[receiver].managedBotStateMachines.normalStateEpoch() == epoch &&
+			navigation.isValid() == nav.isValid() &&
+			(!navigation.isValid() ||
+				(navigation.revision() == nav.revision() && navigation.mapGeneration() == nav.mapGeneration()));
+	}
+	compat::RandomTimingContext timing() const
+	{
+		return {owner.services_->command_managedBotCommandSequences(receiver), 0U,
+			owner.services_->service_managedBotFullUpdateSequences()[receiver]};
+	}
+	bool rogue(bool *value) override
+	{
+		compat::TeamworkInput input{};
+		input.actor = receipt.actor;
+		input.frame = receipt.context.frame;
+		input.now = receipt.context.now;
+		input.teamwork = static_cast<float>(owner.actors_[receiver].managedProfiles.teamwork) / 100.0f;
+		const auto engine = owner.services_->service_engineFunctions();
+		input.allowRoguesKnown =
+			engine->pfnCVarGetPointer && engine->pfnCVarGetFloat && engine->pfnCVarGetPointer("bot_allow_rogues");
+		if (!current())
+			return false;
+		const float enabled = readOptionalCvarFloat(engine, "bot_allow_rogues");
+		if (!current())
+			return false;
+		input.allowRoguesKnown = input.allowRoguesKnown && std::isfinite(enabled);
+		input.allowRogues = enabled != 0;
+		const auto result = owner.actors_[receiver].teamworkPolicies.queryRogue(input,
+			owner.services_->service_compatibilityRandomSource(), {input.actor.slot, input.actor.generation}, timing(),
+			[this]
+			{
+				return current();
+			});
+		*value = result.rogue;
+		return result.available && result.rogueKnown;
+	}
+	bool busy() override
+	{
+		const auto &machine = owner.actors_[receiver].managedBotStateMachines;
+		return !machine.isInitialized() ||
+			compat::nativeBotBusy(machine.state(), machine.task(), machine.attackOverlayActive());
+	}
+	bool travelDistanceToSender(float *distance) override
+	{
+		*distance = -1;
+		if (!navigation.isValid())
+			return true;
+		const auto start = owner.services_->navigation_knownArea(
+			receiver, receipt.actor, receipt.context.frame, navigation.revision());
+		if (!start)
+			return true;
+		nav::NavVector point{};
+		if (!senderPosition(&point))
+			return false;
+		const auto engine = owner.services_->service_engineFunctions();
+		const auto pointCurrent = [&]()
+		{
+			if (!current() || owner.services_->service_engineFunctions() != engine)
+				return false;
+			const auto &origin = owner.services_->service_managedBotHandles()[sender].entity->v.origin;
+			return origin.x == point.x && origin.y == point.y && origin.z == point.z;
+		};
+		PublicNavProbe probe(engine, pointCurrent);
+		const auto goal = compat::findBotNavArea(navigation, point, &probe);
+		if (!pointCurrent())
+			return false;
+		if (!goal)
+			return true;
+		nav::NavLadderTopology ladders;
+		if (!owner.services_->navigation_ladderTopology(&ladders) || !pointCurrent())
+			return false;
+		nav::NavQuery query(navigation);
+		query.setPathCostContext(owner.services_->navigation_managedPathCostContext(receiver));
+		if (!pointCurrent())
+			return false;
+		const auto result = query.travelDistance(start, goal, nav::NavRouteType::Safest, ladders, distance);
+		return result == nav::NavQueryResult::Found || result == nav::NavQueryResult::NoRoute;
+	}
+	bool senderPosition(nav::NavVector *point) override
+	{
+		if (!current())
+			return false;
+		const auto &origin = owner.services_->service_managedBotHandles()[sender].entity->v.origin;
+		*point = {origin.x, origin.y, origin.z};
+		return true;
+	}
+	bool squaredDistanceToSender(float *distance) override
+	{
+		nav::NavVector point{};
+		if (!senderPosition(&point))
+			return false;
+		const auto &origin = receipt.entity->v.origin;
+		const float dx = point.x - origin.x, dy = point.y - origin.y, dz = point.z - origin.z;
+		*distance = dx * dx + dy * dy + dz * dz;
+		return true;
+	}
+	std::uint16_t ownPlace() override
+	{
+		if (!navigation.isValid())
+			return 0;
+		const auto id = owner.services_->navigation_knownArea(
+			receiver, receipt.actor, receipt.context.frame, navigation.revision());
+		const auto area = navigation.document()->findArea(id);
+		return area ? area->placeId : 0;
+	}
+	bool randomSpotAtPlace(std::uint16_t place, nav::NavVector *point, bool *found) override
+	{
+		const auto result =
+			compat::chooseHelpPlaceSpot(navigation, place, owner.services_->service_compatibilityRandomSource(),
+				{receipt.actor.slot, receipt.actor.generation}, timing(),
+				[this]
+				{
+					return current();
+				});
+		*point = result.position;
+		*found = result.found;
+		return result.available;
+	}
+	bool moveTo(const nav::NavVector &point) override
+	{
+		if (!current())
+			return false;
+		auto &actor = owner.actors_[receiver];
+		auto &machine = actor.managedBotStateMachines;
+		runtime::MovementPhysicsState before{};
+		before.dead = !receipt.context.alive;
+		auto context = owner.makeManagedBotStateContext(receiver, before);
+		context.preserveMoveToTask = true;
+		actor.enemyReaction.onStateChange(
+			owner.reactionContext(receiver), machine.state(), compat::CompatibilityStateId::MoveTo);
+		const auto transitioned = machine.transition(compat::CompatibilityStateId::MoveTo,
+			compat::StateTransitionReason::ObjectiveChanged, compat::StateTransitionId::ExplicitStateChange, context);
+		epoch = machine.normalStateEpoch();
+		if (transitioned != compat::StateResult::Transitioned ||
+			machine.state() != compat::CompatibilityStateId::MoveTo || !current())
+			return false;
+		actor.managedBotCombat.stopMovement();
+		actor.managedBotCombat.clearAim();
+		actor.weaponActions.stopRapidFire();
+		const auto generation = actor.managedBotObjectiveTargets.generation + 1U;
+		actor.managedBotObjectiveTargets = {};
+		actor.managedBotObjectiveActions = {};
+		actor.scenarioDecisions = {};
+		actor.noiseInvestigation.cancel();
+		actor.investigationWalking = false;
+		actor.helpGoal = {true, point, receipt.context.frame, epoch};
+		auto &cache = actor.managedBotObjectiveTargets;
+		cache.valid = true;
+		cache.mapGeneration = receipt.context.frame.mapGeneration;
+		cache.roundGeneration = receipt.context.frame.roundGeneration;
+		cache.target = point;
+		cache.generation = generation ? generation : 1U;
+		cache.routeOverride = true;
+		const auto task = machine.task();
+		cache.routeType = task == compat::CompatibilityTaskId::FindTickingBomb ||
+				task == compat::CompatibilityTaskId::DefuseBomb ||
+				task == compat::CompatibilityTaskId::MoveToLastKnownEnemyPosition
+			? nav::NavRouteType::Fastest
+			: nav::NavRouteType::Safest;
+		for (auto request : {NavigationRequestKind::ClearStep, NavigationRequestKind::DestroyPath,
+				 NavigationRequestKind::ClearFailure, NavigationRequestKind::ResetProgress})
+		{
+			owner.services_->applyNavigationRequest({receiver, request});
+			if (!current())
+				return false;
+		}
+		return true;
+	}
+	void onMyWay() override
+	{
+		if (!current() || !receipt.context.alive)
+			return;
+		const auto engine = owner.services_->service_engineFunctions();
+		const char *verbosity = engine->pfnCVarGetString ? engine->pfnCVarGetString("bot_chatter") : nullptr;
+		const auto mode = compat::parseChatterVerbosity(verbosity);
+		if (!current())
+			return;
+		const auto admission = owner.chatterAdmission(receiver);
+		if (!current())
+			return;
+		compat::ChatterStatementRequest request{};
+		request.source = compat::ChatterScheduleSource::Generic;
+		request.topic = compat::ChatterStatementTopic::MyIntention;
+		request.phrase = compat::ChatterPhrase::OnMyWay;
+		request.created = receipt.context.now;
+		request.start = request.created;
+		request.readyAt = request.created;
+		request.expires = request.created + 3.0f;
+		auto &actor = owner.actors_[receiver];
+		actor.outgoingRadioSchedulers.statements().admit(
+			request, admission, owner.outgoingChatterCatalog_, mode, actor.confirmedSpeech.scheduledStatement());
+	}
+};
+
+void BotBehaviorRuntime::transmitHelp(
+	std::size_t sender, compat::ChatterMeme meme, const std::function<bool()> &current)
+{
+	if (meme.kind != compat::ChatterMemeKind::Help ||
+		services_->service_compatibilitySurface().configuration().mode != compat::RuntimeMode::Compatibility)
+		return;
+	const auto engine = services_->service_engineFunctions();
+	const int team = services_->observation_resolvePlayerTeam(services_->service_managedBotHandles()[sender].entity);
+	if (!current())
+		return;
+	const int maximum = (std::min)(kMaximumClientSlots, services_->service_globals()->maxClients);
+	for (int slot = 1; slot <= maximum; ++slot)
+	{
+		if (!current())
+			return;
+		const auto receiver = static_cast<std::size_t>(slot - 1);
+		if (receiver == sender || !services_->service_managedBotSlots()[receiver])
+			continue;
+		HelpEnvironment environment(*this, sender, receiver, current);
+		const auto &receipt = environment.receipt;
+		auto *entity = engine->pfnPEntityOfEntIndex(slot);
+		if (!environment.current())
+		{
+			if (!current())
+				return;
+			continue;
+		}
+		if (!entity || entity != receipt.entity || entity->free || receipt.serial < 0 ||
+			!(entity->v.flags & FL_CLIENT) || (entity->v.flags & FL_DORMANT) || !entity->v.netname)
+			continue;
+		if (engine->pfnSzFromIndex)
+		{
+			const auto name = engine->pfnSzFromIndex(entity->v.netname);
+			if (!environment.current())
+			{
+				if (!current())
+					return;
+				continue;
+			}
+			if (!name || !*name)
+				continue;
+		}
+		const int recipientTeam = services_->observation_resolvePlayerTeam(entity);
+		if (!environment.current())
+		{
+			if (!current())
+				return;
+			continue;
+		}
+		if (recipientTeam != team)
+			continue;
+		(void)compat::respondToHelpRequest({meme.place, 3000.0f}, environment);
+	}
+}
 
 compat::ChatterScheduleAdmission BotBehaviorRuntime::chatterAdmission(std::size_t index)
 {
@@ -475,6 +768,17 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index)
 			step = queue.advance(selectedHandle, playback);
 			if (step.playback.kind == compat::ChatterPlaybackKind::Finished)
 			{
+				const auto revision = actors_[index].confirmedSpeech.revision();
+				const auto completionCurrent = [&]
+				{
+					return actors_[index].confirmedSpeech.canComplete(
+							   receiptContext, reactionContext(index), revision) &&
+						receiptConnectionCurrent({input.actor.slot, receiptConnection});
+				};
+				if (step.completion.natural && completionCurrent())
+					transmitHelp(index, step.completion.meme, completionCurrent);
+				if (!completionCurrent())
+					return;
 				(void)actors_[index].confirmedSpeech.finishStatement(
 					receiptContext, selectedStatement, actors_[index].confirmedSpeech.revision());
 				return;

@@ -1223,5 +1223,45 @@
     "header": "src/adapter/metamod/runtime/navigation/bot_navigation_runtime.hpp",
     "scope": "owner",
     "member": "ladderCache_"
+  },
+  {
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
+    "scope": "ActorState",
+    "member": "executionRevision"
+  },
+  {
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
+    "scope": "ActorState",
+    "member": "helpGoal"
+  },
+  {
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
+    "scope": "ActorState",
+    "member": "managedTaskEntity"
+  },
+  {
+    "header": "src/adapter/metamod/runtime/command/bot_command_runtime.hpp",
+    "scope": "ActorState",
+    "member": "nativeLadderControl"
+  },
+  {
+    "header": "src/adapter/metamod/runtime/command/bot_command_runtime.hpp",
+    "scope": "ActorState",
+    "member": "nativeLadderJump"
+  },
+  {
+    "header": "src/adapter/metamod/runtime/navigation/bot_navigation_runtime.hpp",
+    "scope": "ActorState",
+    "member": "nativeLadderEpoch"
+  },
+  {
+    "header": "src/adapter/metamod/runtime/navigation/bot_navigation_runtime.hpp",
+    "scope": "ActorState",
+    "member": "nativeLadderExecution"
+  },
+  {
+    "header": "src/adapter/metamod/runtime/navigation/bot_navigation_runtime.hpp",
+    "scope": "ActorState",
+    "member": "nativeLadderGoalGeneration"
   }
 ]

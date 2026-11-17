@@ -10,6 +10,8 @@ struct PublicLadderBounds
 {
 	std::uintptr_t entity = 0U;
 	nav::NavExtent bounds{};
+	std::uint32_t entityIndex = 0U;
+	std::uint32_t entityGeneration = 0U;
 };
 struct LadderTrace
 {
@@ -90,6 +92,8 @@ inline bool buildBotNavLadders(const nav::NavSnapshot &snapshot, const std::vect
 			input.bounds.hi.z < input.bounds.lo.z)
 			return false;
 		nav::NavLadder ladder;
+		ladder.entityIndex = input.entityIndex;
+		ladder.entityGeneration = input.entityGeneration;
 		ladder.top = {(input.bounds.lo.x + input.bounds.hi.x) / 2.0f, (input.bounds.lo.y + input.bounds.hi.y) / 2.0f,
 			input.bounds.hi.z};
 		ladder.bottom = {ladder.top.x, ladder.top.y, input.bounds.lo.z};

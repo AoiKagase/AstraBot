@@ -94,6 +94,33 @@ int main()
 	{
 		return 1;
 	}
+	services.freeze = false;
+	handle.entity->v.flags &= ~(FL_FROZEN | FL_ONGROUND);
+	handle.entity->v.movetype = MOVETYPE_FLY;
+	before = services.observation_captureMovementPhysicsState(handle.entity, true, true);
+	NavigationUpdate ladder{};
+	ladder.locomotionIntent.nativeLadderControl = true;
+	ladder.locomotionIntent.nativeMustJump = true;
+	ladder.locomotionIntent.nativeForward = 1;
+	ladder.locomotionIntent.nativeSide = -1;
+	ladder.locomotionIntent.nativeWalking = true;
+	ladder.locomotionIntent.speed = 100;
+	const auto ladderDraft =
+		command.beginMovementCommand(0, handle, services.lifecycle.tokenForSlot(1), before, ladder);
+	ActionProposal ladderAction{ActionKind::None, ladderDraft.command.viewAngles, ladderDraft.command.movement.buttons};
+	command.finishMovementCommand(
+		0, handle, services.lifecycle.tokenForSlot(1), before, ladder, ladderDraft, ladderAction);
+	if (!check((services.lastButtons & IN_JUMP) && services.lastForward == 96 && services.lastSide == -96,
+			"native ladder escape jump reaches RunPlayerMove while airborne, with native per-axis walking input"))
+		return 1;
+	CombatUpkeepUpdate ladderLook{};
+	ladderLook.hasAim = true;
+	ladderLook.angles = {60, 90, 0};
+	command.applyCombatUpkeep(0, ladderLook);
+	command.executeManagedBotCommand(0, handle);
+	if (!check(services.lastForward == 96 && services.lastSide == -96,
+			"combat upkeep changes ladder view without rotating native local movement fractions"))
+		return 1;
 	std::puts("runtime command orchestration scenarios: PASS");
 	return 0;
 }

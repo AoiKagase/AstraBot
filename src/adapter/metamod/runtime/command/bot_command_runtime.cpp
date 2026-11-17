@@ -23,7 +23,7 @@ void BotCommandRuntime::applyCombatUpkeep(std::size_t index, const CombatUpkeepU
 	auto &command = actors_[index].managedBotCommandTemplates;
 	if (update.hasAim)
 	{
-		if (!update.movementRelativeToAim)
+		if (!update.movementRelativeToAim && !actors_[index].nativeLadderControl)
 		{
 			const auto movement = ActionAdapter::reprojectMovement(
 				command.movement.forward, command.movement.side, command.viewAngles.yaw, update.angles.yaw);
@@ -258,6 +258,8 @@ void BotCommandRuntime::resetManagedBotCommandTemplate(std::size_t index)
 	}
 	actors_[index].managedBotCommandTemplates = {};
 	actors_[index].managedBotCommandTemplateValid = false;
+	actors_[index].nativeLadderControl = false;
+	actors_[index].nativeLadderJump = false;
 	actors_[index].managedBotActionStopsMovement = false;
 }
 
@@ -288,6 +290,8 @@ void BotCommandRuntime::finishNeutralCommand(std::size_t index, FakeClientHandle
 	const runtime::MovementPhysicsState &, MovementCommandDraft draft, const ActionProposal &requestedAction)
 {
 	runtime::BotCommand command = draft.command;
+	actors_[index].nativeLadderControl = false;
+	actors_[index].nativeLadderJump = false;
 	const ActionProposal actionProposal = ActionAdapter::forLiveDispatch(
 		requestedAction, services_->observation_hasObservedActiveWeapon(index), command.viewAngles);
 	const ActionDispatch actionDispatch = ActionAdapter::translate(actionProposal);
@@ -350,12 +354,14 @@ runtime::CommandReceipt BotCommandRuntime::executeManagedBotCommand(std::size_t 
 		return receipt;
 	}
 	command.movement.msec = services_->consumeCommandMsec(index, services_->service_globals()->time);
-	services_->behavior_applyNoiseLookCommand(index, command);
+	if (!actors_[index].nativeLadderControl)
+		services_->behavior_applyNoiseLookCommand(index, command);
+	services_->behavior_applyNativeLadderLookCommand(index, command, actors_[index].nativeLadderControl);
 	services_->behavior_applyObstacleCommand(index, command);
 	const float maxSpeed = handle.entity->v.maxspeed;
 	const bool explicitFrozen = (handle.entity->v.flags & FL_FROZEN) != 0;
 	const bool roundFreeze = services_->roundFreezeActive();
-	const bool walking = !services_->behavior_forcedRunning(index) &&
+	const bool walking = !actors_[index].nativeLadderControl && !services_->behavior_forcedRunning(index) &&
 		services_->behavior_noiseInvestigationWalking(index) && (handle.entity->v.flags & FL_ONGROUND) &&
 		handle.entity->v.movetype != MOVETYPE_FLY && !(command.movement.buttons & IN_DUCK);
 	const float movementSpeed = actors_[index].managedMoveSpeeds > 0.0f
@@ -371,7 +377,8 @@ runtime::CommandReceipt BotCommandRuntime::executeManagedBotCommand(std::size_t 
 			command.movement.side *= walkingLimit / speed;
 		}
 	}
-	if (!explicitFrozen && !roundFreeze && !actors_[index].managedBotActionStopsMovement)
+	if (!explicitFrozen && !roundFreeze && !actors_[index].managedBotActionStopsMovement &&
+		!actors_[index].nativeLadderControl)
 	{
 		applyPlayerAvoidance(index, &command, walking ? (std::min)(movementSpeed, walkingLimit) : movementSpeed);
 	}
@@ -399,7 +406,7 @@ runtime::CommandReceipt BotCommandRuntime::executeManagedBotCommand(std::size_t 
 	const runtime::JumpCrouchCommandDecision jumpCrouchDecision = actors_[index].managedBotJumpCrouch.updateCommand(
 		jumpCrouchObservation, command.movement.buttons, static_cast<std::uint16_t>(IN_DUCK));
 	command.movement.buttons = jumpCrouchDecision.buttons;
-	if (!jumpCrouchObservation.grounded)
+	if (!jumpCrouchObservation.grounded && !actors_[index].nativeLadderJump)
 	{
 		command.movement.buttons =
 			static_cast<std::uint16_t>(command.movement.buttons & ~static_cast<std::uint16_t>(IN_JUMP));
@@ -752,12 +759,14 @@ MovementCommandDraft BotCommandRuntime::beginMovementCommand(std::size_t, FakeCl
 	command.lifecycle = token;
 	command.sequence = 0U;
 	command.issueFrame = 0U;
-	const runtime::ViewAngles movementViewAngles = {0.0f, movementYaw(locomotionIntent.direction), 0.0f};
+	const runtime::ViewAngles movementViewAngles = locomotionIntent.nativeLadderControl
+		? runtime::ViewAngles{handle.entity->v.v_angle.x, handle.entity->v.v_angle.y, 0.0f}
+		: runtime::ViewAngles{0.0f, movementYaw(locomotionIntent.direction), 0.0f};
 	command.viewAngles = movementViewAngles;
 	std::uint16_t movementButtons = locomotionIntent.posture == nav::LocomotionPosture::Crouching
 		? static_cast<std::uint16_t>(IN_DUCK)
 		: static_cast<std::uint16_t>(0U);
-	if (locomotionIntent.traversal == nav::TraversalAction::Jump)
+	if (locomotionIntent.traversal == nav::TraversalAction::Jump || locomotionIntent.nativeMustJump)
 	{
 		movementButtons = static_cast<std::uint16_t>(movementButtons | IN_JUMP);
 	}
@@ -780,13 +789,18 @@ void BotCommandRuntime::finishMovementCommand(std::size_t index, FakeClientHandl
 	const auto &locomotionIntent = movement.locomotionIntent;
 	const auto &observation = movement.observation;
 	const auto &landingFeedback = movement.landingFeedback;
-	const runtime::ViewAngles movementViewAngles = {0.0f, movementYaw(locomotionIntent.direction), 0.0f};
+	const runtime::ViewAngles movementViewAngles = locomotionIntent.nativeLadderControl
+		? runtime::ViewAngles{handle.entity->v.v_angle.x, handle.entity->v.v_angle.y, 0.0f}
+		: runtime::ViewAngles{0.0f, movementYaw(locomotionIntent.direction), 0.0f};
 	const ActionProposal actionProposal = ActionAdapter::forLiveDispatch(
 		requestedAction, services_->observation_hasObservedActiveWeapon(index), movementViewAngles);
 	const ActionDispatch actionDispatch = ActionAdapter::translate(actionProposal);
 	command.viewAngles = actionDispatch.viewAngles;
-	command.synchronizeCombatView = actionProposal.hasCombatAim || actionProposal.hasGuardLook;
+	command.synchronizeCombatView =
+		actionProposal.hasCombatAim || actionProposal.hasGuardLook || locomotionIntent.nativeLadderControl;
 	command.movement.buttons = actionDispatch.buttons;
+	actors_[index].nativeLadderControl = locomotionIntent.nativeLadderControl;
+	actors_[index].nativeLadderJump = locomotionIntent.nativeMustJump;
 	const bool compatibilityMovement =
 		services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility;
 	float commandSpeed = locomotionIntent.speed;
@@ -799,18 +813,25 @@ void BotCommandRuntime::finishMovementCommand(std::size_t index, FakeClientHandl
 		const bool finalArea = roamDecision.currentArea != 0U && roamDecision.currentArea == roamDecision.goalArea;
 		constexpr float kGoalSlowdownDistance = 200.0f;
 #define ASTRABOT_BOT_COMMAND_RUNTIME_GOAL_SLOWDOWN_FACTOR 0.4f
-		if (goal.valid && finalArea && x * x + y * y < kGoalSlowdownDistance * kGoalSlowdownDistance &&
+		if (!locomotionIntent.nativeLadderControl && goal.valid && finalArea &&
+			x * x + y * y < kGoalSlowdownDistance * kGoalSlowdownDistance &&
 			locomotionIntent.posture != nav::LocomotionPosture::Crouching)
 			commandSpeed *= ASTRABOT_BOT_COMMAND_RUNTIME_GOAL_SLOWDOWN_FACTOR;
 	}
 	// Retain movement before walking reduction: events between full updates
 	// must be able to restore running on the next cached command.
 	// executeManagedBotCommand applies the current walk/run decision.
+	if (locomotionIntent.nativeLadderControl && locomotionIntent.nativeWalking)
+		commandSpeed *= .4f;
 	actors_[index].managedMoveSpeeds = commandSpeed;
 	const MovementProjection movementProjection = ActionAdapter::projectMovement(locomotionIntent.direction.x,
 		locomotionIntent.direction.y, commandSpeed, command.viewAngles.yaw, compatibilityMovement);
-	command.movement.forward = actionDispatch.stopMovement ? 0.0f : movementProjection.forward;
-	command.movement.side = actionDispatch.stopMovement ? 0.0f : movementProjection.side;
+	command.movement.forward = actionDispatch.stopMovement ? 0.0f
+		: locomotionIntent.nativeLadderControl			   ? locomotionIntent.nativeForward * commandSpeed
+														   : movementProjection.forward;
+	command.movement.side = actionDispatch.stopMovement ? 0.0f
+		: locomotionIntent.nativeLadderControl			? locomotionIntent.nativeSide * commandSpeed
+														: movementProjection.side;
 	ActionAdapter::applyCombatMovement(command, actionProposal, handle.entity->v.maxspeed);
 	if (!actionDispatch.stopMovement)
 	{

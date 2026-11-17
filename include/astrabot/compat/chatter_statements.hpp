@@ -40,6 +40,16 @@ enum class ChatterStatementContent
 	RemainingEnemies,
 	EnemyReport
 };
+enum class ChatterMemeKind : std::uint8_t
+{
+	None,
+	Help
+};
+struct ChatterMeme
+{
+	ChatterMemeKind kind = ChatterMemeKind::None;
+	std::uint16_t place = 0;
+};
 struct ChatterStatementRequest
 {
 	ChatterScheduleSource source = ChatterScheduleSource::None;
@@ -54,6 +64,7 @@ struct ChatterStatementRequest
 	bool requiresCombat = false;
 	std::uint64_t navRevision = 0;
 	std::uint32_t noiseTick = 0;
+	ChatterMeme meme{};
 };
 struct ChatterStatementHandle
 {
@@ -65,6 +76,12 @@ struct ChatterPartToken
 	ChatterStatementHandle statement{};
 	std::uint64_t step = 0;
 };
+struct ChatterStatementCompletion
+{
+	bool natural = false;
+	ChatterMeme meme{};
+	ChatterStatementHandle source{};
+};
 struct ChatterStatementStep
 {
 	ChatterPlaybackDecision playback{};
@@ -72,6 +89,7 @@ struct ChatterStatementStep
 	ChatterScheduleEntry schedule{};
 	std::uint16_t explicitPlace = 0;
 	std::uint32_t criteriaPlace = 0;
+	ChatterStatementCompletion completion{};
 };
 struct ChatterPendingStatement
 {
@@ -232,10 +250,18 @@ public:
 		result.token = {handle, result.playback.step};
 		if (result.playback.kind == ChatterPlaybackKind::Finished)
 		{
+			// The friends-zero abort returned above; admitted programs are nonempty.
+			// Transfer by value before erasing the exact source node.
+			result.completion = {true, at->request.meme, handle};
 			nodes_.erase(at);
 			bump();
 			return result;
 		}
+		if (result.playback.phrase == ChatterPhrase::Help && at->playback.index >= 0 &&
+			static_cast<std::size_t>(at->playback.index) < at->request.program.count &&
+			at->request.program.parts[static_cast<std::size_t>(at->playback.index)].kind ==
+				ChatterPartKind::CurrentEnemyCount)
+			at->request.meme = {ChatterMemeKind::Help, 0};
 		if (at->playback.inFlight && result.playback.step)
 			at->pending = result;
 		if (at->playback.revision != revision)

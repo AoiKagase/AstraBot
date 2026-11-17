@@ -52,6 +52,8 @@ struct CombatDecisionContext
 	world::WorldVelocity targetVelocity = {};
 	bool predictMovement = false;
 	float aimErrorRange = kAutomaticAimErrorRange;
+	bool lookOverride = false, lookPitchOverride = false;
+	float lookYaw = 0, lookPitch = 0;
 
 	bool isValid() const;
 };
@@ -165,6 +167,8 @@ public:
 		const TargetBelief &target, const CombatDecisionContext &context, CombatDecision *decision);
 	CombatResult observeDamage(const DamageObservation &observation) const;
 	bool upkeepAim(const TargetBelief &target, const CombatDecisionContext &context, AimIntent *aim);
+	bool upkeepLook(
+		const CombatDecisionContext &context, float yaw, float pitch, bool attacking, compat::AimStep *look);
 	const AimIntent &trackedAim() const
 	{
 		return trackedAim_;
@@ -211,6 +215,8 @@ private:
 	static bool isFrameAfter(const world::FrameIdentity &candidate, const world::FrameIdentity &current);
 	bool buildAim(const CombatDecisionContext &context, const TargetBelief &target, AimIntent *intent);
 	compat::AimSpringState aimSpring_ = {};
+	world::ActorKey springActor_{};
+	world::FrameIdentity springFrame_{};
 	world::WorldVector aimOffset_ = {};
 	world::WorldVector aimOffsetGoal_ = {};
 	float aimRefreshTime_ = 0.0f;

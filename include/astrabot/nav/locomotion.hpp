@@ -115,6 +115,9 @@ struct LocomotionIntent
 	bool stepUp;
 	AreaId currentArea;
 	AreaId targetArea;
+	bool nativeLadderControl = false;
+	float nativeForward = 0.0f, nativeSide = 0.0f;
+	bool nativeWalking = false, nativeMustJump = false, nativeWiggle = false;
 };
 
 class LocomotionController
@@ -131,6 +134,10 @@ public:
 	void observeMotion(const LocomotionObservation &observation);
 	bool previewTarget(const NavSnapshot &snapshot, const LocomotionObservation &observation, NavVector *target) const;
 	void resetProgressMonitor();
+	bool isStuck() const
+	{
+		return config_.averageVelocityStuckMonitor ? referenceStuck_ : stuckFrames_ >= config_.stuckFrameLimit;
+	}
 	std::size_t currentCorridorIndex() const;
 
 private:

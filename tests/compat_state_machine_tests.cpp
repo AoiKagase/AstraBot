@@ -335,6 +335,7 @@ bool testStateOwnsNavigationOutcome()
 	CompatibilityStateMachine machine({1U, 7U});
 	auto tick = context(1U, 0.0f, 1U);
 	machine.initialize(tick);
+	tick.moveToTask = CompatibilityTaskId::DefuseBomb;
 	machine.transition(CompatibilityStateId::MoveTo, StateTransitionReason::ExplicitRequest,
 		StateTransitionId::ExplicitStateChange, tick);
 	StateBehaviorInput input{};
@@ -425,13 +426,118 @@ bool testNoiseInvestigationNavigationCompletion()
 	return true;
 }
 
+bool testNormalEntryEpochAndRetainedMoveTask()
+{
+	CompatibilityStateMachine machine({1, 7});
+	machine.initialize(context(1, 1, 1));
+	const auto initialized = machine.normalStateEpoch();
+	auto tick = context(2, 2, 2);
+	tick.preserveMoveToTask = true;
+	machine.transition(CompatibilityStateId::MoveTo, StateTransitionReason::ExplicitRequest,
+		StateTransitionId::ExplicitStateChange, tick);
+	bool ok = check(initialized > 0 && machine.normalStateEpoch() == initialized + 1 &&
+			machine.task() == CompatibilityTaskId::SeekAndDestroy,
+		"Help MoveTo creates a normal entry while retaining the native current task");
+	const auto goalEpoch = machine.normalStateEpoch();
+	machine.beginAttack(tick);
+	ok = check(machine.attackOverlayActive() && machine.normalStateEpoch() == goalEpoch,
+			 "starting attack overlay must not expire a copied assistance goal") &&
+		ok;
+	machine.stopAttack(tick);
+	ok = check(!machine.attackOverlayActive() && machine.normalStateEpoch() == goalEpoch,
+			 "stopping MoveTo attack overlay retains the same underlying goal entry") &&
+		ok;
+	const auto beforeReentry = machine.normalStateEpoch();
+	machine.transition(CompatibilityStateId::MoveTo, StateTransitionReason::ExplicitRequest,
+		StateTransitionId::ExplicitStateChange, tick);
+	ok = check(machine.normalStateEpoch() == beforeReentry + 1 && machine.stateTimestamp() == 2 &&
+				 machine.task() == CompatibilityTaskId::SeekAndDestroy,
+			 "same-state same-time normal reentry creates a new goal lifetime and preserves task") &&
+		ok;
+	const auto beforeReset = machine.normalStateEpoch();
+	machine.onRoundReset(tick);
+	ok = check(machine.normalStateEpoch() == beforeReset + 1, "lifecycle reset advances the normal entry lifetime") &&
+		ok;
+	tick.preserveMoveToTask = false;
+	machine.transition(CompatibilityStateId::MoveTo, StateTransitionReason::ExplicitRequest,
+		StateTransitionId::ExplicitStateChange, tick);
+	ok = check(machine.task() == CompatibilityTaskId::MoveTo,
+			 "ordinary callers retain the existing generic MoveTo default") &&
+		ok;
+	for (const auto task :
+		{CompatibilityTaskId::DefuseBomb, CompatibilityTaskId::PlantBomb, CompatibilityTaskId::GuardTickingBomb,
+			CompatibilityTaskId::FetchBomb, CompatibilityTaskId::MoveToLastKnownEnemyPosition})
+	{
+		tick.moveToTask = task;
+		machine.transition(CompatibilityStateId::MoveTo, StateTransitionReason::ExplicitRequest,
+			StateTransitionId::ExplicitStateChange, tick);
+		ok = check(machine.task() == task,
+				 "represented scenario task is retained on MoveTo entry rather than replaced by generic MoveTo") &&
+			ok;
+	}
+	return ok;
+}
+
+bool testRetainedTaskCompletion()
+{
+	bool ok = true;
+	for (const auto task :
+		{CompatibilityTaskId::SeekAndDestroy, CompatibilityTaskId::MoveTo, CompatibilityTaskId::DefuseBomb})
+	{
+		CompatibilityStateMachine machine({1, 7});
+		auto tick = context(1, 1, 1);
+		machine.initialize(tick);
+		tick.moveToTask = task;
+		machine.transition(CompatibilityStateId::MoveTo, StateTransitionReason::ExplicitRequest,
+			StateTransitionId::ExplicitStateChange, tick);
+		tick = context(2, 2, 2);
+		tick.preserveMoveToTask = true;
+		machine.transition(CompatibilityStateId::MoveTo, StateTransitionReason::ExplicitRequest,
+			StateTransitionId::ExplicitStateChange, tick);
+		StateBehaviorInput input{};
+		input.navigationOwned = true;
+		input.defuseGoalKnown = true;
+		input.withinDefuseRange = true;
+		input.reloadKnown = true;
+		tick = context(3, 3, 3);
+		tick.behavior = &input;
+		input.navigation = {
+			tick.actor, tick.frame, 1, 1, tick.fullUpdateSequence, NavigationStepOutcome::EndOfPath, false};
+		machine.finishNavigation(tick);
+		ok = check(machine.state() ==
+					 (task == CompatibilityTaskId::DefuseBomb ? CompatibilityStateId::DefuseBomb
+															  : CompatibilityStateId::Idle),
+				 "Help completion only attempts defuse when its preserved native task is DEFUSE_BOMB") &&
+			ok;
+	}
+	return ok;
+}
+
+bool testNavigationCannotUpdateIdleTwice()
+{
+	CompatibilityStateMachine machine({1, 7});
+	auto tick = context(1, 1, 1);
+	machine.initialize(tick);
+	StateBehaviorInput input{};
+	input.navigationOwned = true;
+	input.navigationReady = true;
+	tick = context(2, 2, 2);
+	tick.behavior = &input;
+	input.navigation = {
+		tick.actor, tick.frame, 1, 1, tick.fullUpdateSequence, NavigationStepOutcome::Progressing, false};
+	machine.finishNavigation(tick);
+	return check(machine.state() == CompatibilityStateId::Idle,
+		"navigation completion cannot run a newly entered Idle OnUpdate in the same frame");
+}
+
 int main()
 {
-	return testNoiseInvestigationNavigationCompletion() && testReferenceIdleAndHuntOwnTheirLifecycle() &&
-			testStateOwnsNavigationOutcome() && testStateOwnedBehavior() && testInitialStateAndOwnership() &&
-			testReferenceSetStateOrderingAndSameState() && testFullUpdateAndTransitionTrace() &&
-			testAttackOverlayLifecycleAndInteraction() && testMultiStepAndTransitionDuringAttack() &&
-			testBlockedRngObservationAndLifecycleIsolation()
+	return testNavigationCannotUpdateIdleTwice() && testRetainedTaskCompletion() &&
+			testNormalEntryEpochAndRetainedMoveTask() && testNoiseInvestigationNavigationCompletion() &&
+			testReferenceIdleAndHuntOwnTheirLifecycle() && testStateOwnsNavigationOutcome() &&
+			testStateOwnedBehavior() && testInitialStateAndOwnership() && testReferenceSetStateOrderingAndSameState() &&
+			testFullUpdateAndTransitionTrace() && testAttackOverlayLifecycleAndInteraction() &&
+			testMultiStepAndTransitionDuringAttack() && testBlockedRngObservationAndLifecycleIsolation()
 		? 0
 		: 1;
 }

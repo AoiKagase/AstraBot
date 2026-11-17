@@ -393,6 +393,16 @@ private:
 		return navigation_.managedPathCostContext(index);
 	}
 
+	std::uint64_t behavior_executionRevision(std::size_t index) const override
+	{
+		return behavior_.executionRevision(index);
+	}
+
+	bool navigation_nativeLadderLook(std::size_t index, nav::NativeLadderLook *look) override
+	{
+		return navigation_.nativeLadderLook(index, look);
+	}
+
 	bool navigation_ladderTopology(nav::NavLadderTopology *topology) override
 	{
 		return navigation_.ladderTopology(topology);
@@ -592,6 +602,12 @@ private:
 	std::vector<nav::NavVector> observation_liveFriendlyPositions(std::size_t index, bool feet) const override
 	{
 		return observation_.liveFriendlyPositions(index, feet);
+	}
+
+	void behavior_applyNativeLadderLookCommand(
+		std::size_t index, runtime::BotCommand &command, bool localMovement) override
+	{
+		behavior_.applyNativeLadderLookCommand(index, command, localMovement);
 	}
 
 	void behavior_applyNoiseLookCommand(std::size_t index, runtime::BotCommand &command) override

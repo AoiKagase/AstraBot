@@ -92,5 +92,39 @@ class CorrectionChecks(unittest.TestCase):
             self.assertEqual(len(current.splitlines()) - len(previous.splitlines()), 18127)
 
 
+    def test_native_help_projection_keeps_unaffected_engine_callbacks_in_order(self):
+        root = Path(__file__).parent / 'fixtures/runtime_characterization'
+        prior = [json.loads((root / name).read_text()) for name in
+                 ('actor-generation-correction.json', 'observed-team-correction.json')]
+        native = json.loads((root / 'native-help-preconditions-correction.json').read_text())
+        ladder = b'call findEntityByString start=0 field=classname value=func_ladder'
+        for platform in ('windows-x86', 'linux-x86'):
+            historical = gzip.decompress((root / (platform + '.txt.gz')).read_bytes())
+            previous = contract.apply_corrections(historical, prior, platform)
+            projected = contract.apply_corrections(historical, prior + [native], platform)
+            before = [line for line in previous.splitlines() if line.startswith(b'call ')]
+            after = [line for line in projected.splitlines() if line.startswith(b'call ')]
+            unaffected = lambda line: line != ladder and not line.startswith(b'call traceObjectiveVisibility ')
+            self.assertEqual([line for line in before if unaffected(line)],
+                             [line for line in after if unaffected(line)])
+            visibility = lambda lines: sum(line.startswith(b'call traceObjectiveVisibility ') for line in lines)
+            self.assertEqual(visibility(after), visibility(before) - 37)
+            self.assertEqual(after.count(ladder), before.count(ladder) + 2)
+            self.assertEqual(len(projected.splitlines()), 149075)
+
+    def test_native_help_projection_is_bound_to_independent_control(self):
+        root = Path(__file__).parent / 'fixtures/runtime_characterization'
+        native = json.loads((root / 'native-help-preconditions-correction.json').read_text())
+        control_bytes = (root / native['control_file']).read_bytes()
+        control = json.loads(control_bytes)
+        self.assertEqual(hashlib.sha256(control_bytes).hexdigest(), native['control_sha256'])
+        self.assertEqual(control['base_commit'], native['base_commit'])
+        self.assertEqual(control['reference_commit'], native['native_reference_commit'])
+        self.assertEqual(len(control['changes']), 9)
+        for change in control['changes']:
+            self.assertTrue(change['path'].startswith(('include/', 'src/')))
+            self.assertNotEqual(change['before'], change['after'])
+
+
 if __name__ == '__main__':
     unittest.main()

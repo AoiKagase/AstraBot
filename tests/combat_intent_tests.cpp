@@ -282,8 +282,67 @@ bool testLoadedFirearmConvergesAtFullUpdateCadence()
 	return true;
 }
 
+bool testLadderSpringSurvivesEnemyAcquisition()
+{
+	using namespace astrabot;
+	const auto world = snapshot(510);
+	auto ctx = context(world);
+	ctx.aimTrackingEnabled = true;
+	ctx.elapsedSeconds = 1.0f / 30.0f;
+	ctx.skill = 1;
+	ctx.fieldOfView = 90;
+	combat::CombatController controller;
+	compat::AimStep idle{};
+	if (!check(controller.upkeepLook(ctx, 0, -60, false, &idle) && idle.pitch < 0,
+			"idle ladder look starts turning upward through the shared spring"))
+		return false;
+	ctx.frame.tick++;
+	ctx.currentPitch = idle.pitch;
+	std::vector<compat::RandomTapeEntry> tape;
+	for (const char *id : {"AimOffsetX", "AimOffsetY", "AimOffsetZ"})
+		tape.push_back(compat::RandomTapeEntry::floatEntry(id, {1, 5}, {}, 0, 0, 0));
+	tape.push_back(compat::RandomTapeEntry::floatEntry("AimOffsetRefresh", {1, 5}, {}, .25f, 1, .5f));
+	compat::ScriptedRandomSource random(tape);
+	ctx.randomSource = &random;
+	combat::CombatDecision decision{};
+	controller.decide(snapshot(511), inventory(), target(), ctx, &decision);
+	return check(decision.hasAim && decision.aim.pitch <= idle.pitch && random.verifyComplete(),
+		"acquiring an enemy retains ladder pitch velocity before the shared spring turns toward the new goal");
+}
+
+bool testLadderLookOverridesEnemySpring()
+{
+	using namespace astrabot;
+	const auto world = snapshot(500);
+	auto ctx = context(world);
+	ctx.aimTrackingEnabled = true;
+	ctx.elapsedSeconds = 1.0f / 30.0f;
+	ctx.skill = 1;
+	ctx.fieldOfView = 90;
+	ctx.currentYaw = 90;
+	ctx.currentPitch = 0;
+	ctx.lookOverride = true;
+	ctx.lookPitchOverride = true;
+	ctx.lookYaw = 90;
+	ctx.lookPitch = -60;
+	std::vector<compat::RandomTapeEntry> tape;
+	for (const char *id : {"AimOffsetX", "AimOffsetY", "AimOffsetZ"})
+		tape.push_back(compat::RandomTapeEntry::floatEntry(id, {1, 5}, {}, 0, 0, 0));
+	tape.push_back(compat::RandomTapeEntry::floatEntry("AimOffsetRefresh", {1, 5}, {}, .25f, 1, .5f));
+	compat::ScriptedRandomSource random(tape);
+	ctx.randomSource = &random;
+	combat::CombatController controller;
+	combat::CombatDecision decision{};
+	controller.decide(world, inventory(), target(), ctx, &decision);
+	return check(decision.hasAim && decision.aim.yaw == 90 && decision.aim.pitch < 0 && !decision.hasFire &&
+			random.verifyComplete(),
+		"ladder view goal drives shared combat spring without claiming enemy alignment");
+}
+
 int main()
 {
+	if (!testLadderLookOverridesEnemySpring() || !testLadderSpringSurvivesEnemyAcquisition())
+		return 1;
 	for (float skill : {0.5f, 0.501f, 1.0f})
 	{
 		const auto world = snapshot(200U);

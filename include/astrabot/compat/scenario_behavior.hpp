@@ -148,6 +148,35 @@ struct ScenarioBehaviorDecision
 	bool followPermissionInferred = false;
 };
 
+inline CompatibilityTaskId nativeScenarioMoveTask(
+	const ScenarioBehaviorInput &input, const ScenarioBehaviorDecision &decision, bool carryingC4 = false)
+{
+	if (decision.state != CompatibilityStateId::MoveTo || !decision.hasTarget)
+		return CompatibilityTaskId::None;
+	if (input.scenario == PublicScenarioKind::Hostage && input.team == objectives::TeamRole::CounterTerrorist)
+	{
+		if ((input.escortKnown && input.escortCount) || decision.escortInferred)
+			return CompatibilityTaskId::RescueHostages;
+		if (input.hostage.entity.isValid() && decision.target.entity == input.hostage.entity)
+			return CompatibilityTaskId::CollectHostages;
+	}
+	if (input.scenario == PublicScenarioKind::Bomb)
+	{
+		if (input.team == objectives::TeamRole::Terrorist && carryingC4)
+			return CompatibilityTaskId::PlantBomb;
+		if (input.team == objectives::TeamRole::CounterTerrorist && input.bombPlantedKnown && input.bombPlanted)
+		{
+			if (input.bomb.knowledge != ScenarioKnowledge::Unknown && input.bomb.entity.isValid() &&
+				decision.target.entity == input.bomb.entity)
+				return CompatibilityTaskId::DefuseBomb;
+			if (input.bombSearch.knowledge != ScenarioKnowledge::Unknown && input.bombSearch.entity.isValid() &&
+				decision.target.entity == input.bombSearch.entity)
+				return CompatibilityTaskId::FindTickingBomb;
+		}
+	}
+	return CompatibilityTaskId::None;
+}
+
 class ScenarioBehaviorPlanner
 {
 

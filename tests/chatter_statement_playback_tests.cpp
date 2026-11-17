@@ -21,10 +21,167 @@ ChatterStatementRequest fixed(ChatterPhrase phrase)
 	out.expires = 20;
 	return out;
 }
+
+bool testHelpCompletionPayload()
+{
+	ChatterRadioCatalog catalog;
+	const char definitions[] = "Chatter Help help.wav End Chatter Affirmative ack.wav End";
+	catalog.loadText(definitions, sizeof(definitions) - 1);
+	ChatterAdmissionClock clock;
+	ChatterScheduleAdmission admission{{{1, 2}, {3, 4, 5}, 6, 10, true}, 7, 8, &clock};
+	ChatterPendingQueue queue;
+	auto request = fixed(ChatterPhrase::Help);
+	request.meme = {ChatterMemeKind::Help, 77};
+	const auto id = queue.admit(request, admission, catalog, ChatterVerbosity::Normal);
+	ChatterPlaybackInput input{};
+	input.now = 10;
+	input.friendsRemaining = 2;
+	auto step = queue.advance(id, input);
+	bool ok = check(id.id && !step.completion.natural && queue.finishPart(step.token, 0),
+		"starting a Help part does not transmit its retained meme");
+	input.now = 10.1f;
+	ok = check(!queue.advance(id, input).completion.natural, "final strict duration boundary does not transmit") && ok;
+	input.now = 10.125f;
+	step = queue.advance(id, input);
+	ChatterPendingStatement node;
+	ok = check(step.playback.kind == ChatterPlaybackKind::Finished && step.completion.natural &&
+				 step.completion.meme.kind == ChatterMemeKind::Help && step.completion.meme.place == 77 &&
+				 step.completion.source.id == id.id && sameChatterStatement(step.completion.source.owner, id.owner) &&
+				 !queue.read(id, &node),
+			 "natural completion transfers immutable Help and sender receipt after node erasure") &&
+		ok;
+	ok = check(!queue.advance(id, input).completion.natural, "erased completion cannot transmit twice") && ok;
+	request.meme.place = 999;
+	ok = check(step.completion.meme.place == 77, "completion does not alias a later request mutation") && ok;
+	for (unsigned cancel : {0U, 1U, 2U, 3U, 4U, 5U})
+	{
+		ChatterPendingQueue interrupted;
+		auto copy = request;
+		copy.requiresCombat = cancel == 5;
+		const auto handle = interrupted.admit(copy, admission, catalog, ChatterVerbosity::Normal);
+		input.now = 10;
+		input.friendsRemaining = cancel == 0 ? 0 : 2;
+		if (cancel == 0)
+		{
+			const auto abort = interrupted.advance(handle, input);
+			ok = check(abort.playback.kind == ChatterPlaybackKind::Finished && !abort.completion.natural &&
+						 abort.completion.meme.kind == ChatterMemeKind::None,
+					 "friends-zero abort has no natural completion or meme") &&
+				ok;
+			continue;
+		}
+		if (cancel == 1)
+			interrupted.erase(handle);
+		if (cancel == 2)
+			interrupted.clear();
+		if (cancel == 3)
+		{
+			auto dead = admission;
+			dead.owner.alive = false;
+			interrupted.synchronize(dead);
+		}
+		if (cancel == 4)
+		{
+			ChatterPendingMaintenance expired;
+			expired.admission = admission;
+			expired.admission.owner.now = 21;
+			expired.admission.owner.frame.tick = 6;
+			interrupted.maintain(expired);
+		}
+		if (cancel == 5)
+		{
+			auto active = interrupted.advance(handle, input);
+			interrupted.finishPart(active.token, 0);
+			ChatterPendingMaintenance invalid;
+			invalid.admission = admission;
+			interrupted.maintain(invalid);
+		}
+		input.now = 11;
+		ok = check(!interrupted.advance(handle, input).completion.natural && interrupted.empty(),
+				 "erase/reset/death/expiry/combat invalidation cannot produce a completion meme") &&
+			ok;
+	}
+	return ok;
+}
+bool testDynamicHelpAttachment()
+{
+	bool ok = true;
+	for (bool defined : {false, true})
+		for (bool needHelp : {false, true})
+		{
+			ChatterRadioCatalog catalog;
+			const char *definitions = defined ? "Chatter Help help.wav End Chatter EnemySpotted spotted.wav End"
+											  : "Chatter EnemySpotted spotted.wav End";
+			catalog.loadText(definitions, std::strlen(definitions));
+			ChatterAdmissionClock clock;
+			ChatterScheduleAdmission admission{{{1, 2}, {3, 4, 5}, 6, 10, true}, 7, 8, &clock};
+			ChatterPendingQueue queue;
+			auto report = fixed(ChatterPhrase::None);
+			report.topic = ChatterStatementTopic::VisibleEnemies;
+			report.place = 99;
+			report.program.append({ChatterPartKind::CurrentEnemyCount, ChatterPhrase::None, 0, 0});
+			const auto handle = queue.admit(report, admission, catalog, ChatterVerbosity::Minimal);
+			ChatterPlaybackInput input{};
+			input.now = 10;
+			input.enemies = needHelp ? 4 : 2;
+			input.nearbyFriends = 2;
+			input.friendsRemaining = 3;
+			auto step = queue.advance(handle, input);
+			ok = check(handle.id && !step.completion.natural, "dynamic Help starts without early transmission") && ok;
+			queue.finishPart(step.token, 0, !defined && needHelp);
+			input.now = 10.125f;
+			input.enemies = 1;
+			input.nearbyFriends = 9;
+			step = queue.advance(handle, input);
+			ok =
+				check(step.completion.natural &&
+						step.completion.meme.kind == (needHelp ? ChatterMemeKind::Help : ChatterMemeKind::None) &&
+						step.completion.meme.place == 0,
+					"dynamic CurrentEnemyCount captures Help undefined-place even without a phrase and retains it after count changes") &&
+				ok;
+		}
+	return ok;
+}
+bool testNeedBackupCapturesOwnPlace()
+{
+	ChatterRadioCatalog catalog;
+	const char definitions[] = "Place Arena arena.wav End Chatter Help help.wav End";
+	catalog.loadText(definitions, sizeof(definitions) - 1);
+	OutgoingRadioScheduler scheduler;
+	OutgoingRadioInput input;
+	input.actor = {1, 2};
+	input.frame = {3, 4, 5};
+	input.now = 10;
+	input.alive = true;
+	input.team = 1;
+	input.friendCount = 2;
+	input.visibleEnemyCount = 3;
+	input.nearbyFriends = 0;
+	input.ownPlace = 77;
+	input.ownPlacePhrase = 1;
+	scheduler.prepare(input, catalog);
+	ChatterScheduleEntry selected;
+	scheduler.statements().visitSchedules(
+		[&](const ChatterScheduleEntry &entry)
+		{
+			selected = entry;
+			return false;
+		});
+	ChatterPendingStatement node;
+	return check(scheduler.statements().read(scheduler.statements().handle(selected), &node) &&
+			node.request.meme.kind == ChatterMemeKind::Help && node.request.meme.place == 77 &&
+			node.request.place == 0 && node.schedule.place == 77,
+		"NeedBackup captures own Place in meme independently of undefined statement criteria and implicit spoken Place");
+}
 }
 int main()
 {
 	using namespace astrabot::compat;
+	const bool completion = testHelpCompletionPayload();
+	const bool dynamic = testDynamicHelpAttachment();
+	const bool backup = testNeedBackupCapturesOwnPlace();
+	if (!completion || !dynamic || !backup)
+		return 1;
 	const char text[] = "Place Arena Important arena.wav End Chatter Help help.wav End Chatter Affirmative ack.wav End";
 	ChatterRadioCatalog catalog;
 	if (!check(catalog.loadText(text, sizeof(text) - 1), "real default metadata loads"))

@@ -5,6 +5,7 @@
 #include "astrabot/compat/kill_praise.hpp"
 #include "astrabot/compat/friend_death_chatter.hpp"
 #include "astrabot/compat/knife_run.hpp"
+#include "astrabot/compat/help_request.hpp"
 #include "astrabot/compat/friend_death.hpp"
 #include "astrabot/compat/noise_investigation.hpp"
 #include "astrabot/compat/guard_look.hpp"
@@ -60,6 +61,7 @@ public:
 	void observeObstacleKeyValue(edict_t *entity, const KeyValueData *data);
 	void observeObstacleTouch(edict_t *entity, edict_t *other);
 	void observeWeaponTouch(edict_t *box, edict_t *self);
+	void applyNativeLadderLookCommand(std::size_t index, runtime::BotCommand &command, bool localMovement);
 	void applyNoiseLookCommand(std::size_t index, runtime::BotCommand &command);
 	void applyObstacleCommand(std::size_t index, runtime::BotCommand &command);
 	void resetObstacleMaterials();
@@ -98,6 +100,10 @@ public:
 	compat::ChatterScheduleAdmission chatterAdmission(std::size_t index);
 	compat::ChatterScheduleEntry activeTeamChatter(std::size_t index, int team, bool *current);
 	void updatePublicBuying(std::size_t index);
+	std::uint64_t executionRevision(std::size_t index) const
+	{
+		return actors_[index].executionRevision;
+	}
 	CombatUpkeepUpdate upkeepCombat(
 		std::size_t index, const runtime::MovementPhysicsState &before, std::uint16_t cachedButtons);
 	void clearCombatUpkeep(std::size_t index)
@@ -188,6 +194,11 @@ public:
 	void observeNeutralC4AttackDispatched(std::size_t index, const FakeClientHandle &handle);
 
 private:
+	struct HelpEnvironment;
+	void transmitHelp(std::size_t sender, compat::ChatterMeme meme, const std::function<bool()> &current);
+	bool helpGoalCurrent(std::size_t index) const;
+	bool executionCurrent(std::size_t index, const compat::ReactionContext &receipt, std::uint64_t revision) const;
+	void invalidateHelpExecution(std::size_t index);
 	bool reactionEnemyCurrent(world::ActorKey enemy) const;
 	bool receiptConnectionCurrent(world::ActorKey connection) const;
 	enum class BehaviorPhaseResult
@@ -332,7 +343,7 @@ private:
 	void reset_teamworkPolicies()
 	{
 		for (auto &actor : actors_)
-			actor.teamworkPolicies = {};
+			actor.teamworkPolicies.resetValues();
 	}
 
 	void reset_bombSearchTargets()
@@ -450,8 +461,19 @@ private:
 		world::WorldPosition point{};
 	};
 
+	struct HelpGoal
+	{
+		bool active = false;
+		nav::NavVector position{};
+		world::FrameIdentity frame{};
+		std::uint64_t epoch = 0;
+	};
+
 	struct ActorState
 	{
+		std::uint64_t executionRevision = 1;
+		HelpGoal helpGoal{};
+		world::EntityKey managedTaskEntity{};
 		ObstacleLook obstacleLook{};
 		float obstacleNextEquipAt = 0.0f;
 		bool obstaclePathActive = false;
