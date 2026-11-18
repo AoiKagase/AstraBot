@@ -63,13 +63,13 @@ public:
 			else
 				pending_ = 0;
 		}
-		if (in.defusing || in.reloading || !in.primary)
+		if (in.defusing || !in.primary)
 			return {};
 		const bool usablePistol = in.allowPistols && in.pistolWeapon != 0 && in.pistolAmmo == EquipmentAmmo::Usable;
 		constexpr float kCloseFootstepRange = 300.0f;
 		const bool closeFootstep = isFootstepSniper(in.currentWeapon) && std::isfinite(in.closeFootstepDistance) &&
 			in.closeFootstepDistance >= 0 && in.closeFootstepDistance < kCloseFootstepRange && usablePistol;
-		if (!closeFootstep && (!in.clipKnown || in.clip != 0))
+		if (!closeFootstep && (in.reloading || !in.clipKnown || in.clip != 0))
 		{
 			return {};
 		}

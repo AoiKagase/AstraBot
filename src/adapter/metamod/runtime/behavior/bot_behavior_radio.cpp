@@ -482,6 +482,36 @@ struct BotBehaviorRuntime::ActorTaskEnvironment : compat::IHelpRequestEnvironmen
 		}
 		return true;
 	}
+	bool retreatToCover(int team, float range, float duration, float ignoreDuration)
+	{
+		if (!navigation.isValid() || !current())
+			return false;
+		const auto start = owner.services_->navigation_knownArea(
+			receiver, receipt.actor, receipt.context.frame, navigation.revision());
+		if (!start || !current())
+			return false;
+		const auto &body = receipt.entity->v.origin;
+		nav::NavVector spot{};
+		bool found = false;
+		if (!selectSpot(0, start, {body.x, body.y, body.z}, &spot, &found, range, team) || !found)
+			return false;
+		if (duration < 0.0f && !drawFloat("Attack.RetreatHold", 3.0f, 15.0f, duration))
+			return false;
+		const auto goal = areaAt(spot, false);
+		if (!current() || !enterHideState(spot, goal, compat::CompatibilityTaskId::None, duration))
+			return false;
+		auto &actor = owner.actors_[receiver];
+		const auto &machine = actor.managedBotStateMachines;
+		actor.combatRetreat.hideEpoch = machine.state() == compat::CompatibilityStateId::Hide
+			? machine.normalStateEpoch() : 0;
+		if (actor.combatRetreat.hideEpoch)
+			actor.enemyReaction.ignoreEnemies(owner.reactionContext(receiver), ignoreDuration);
+		actor.managedBotCombat.stopMovement();
+		actor.managedBotCombat.clearAim();
+		actor.weaponActions.stopRapidFire();
+		return true;
+	}
+
 	bool hideAtSpot(const nav::NavVector &point) override
 	{
 		return enterHideState(point, areaAt(point, false), compat::CompatibilityTaskId::HoldPosition);
@@ -867,30 +897,24 @@ bool BotBehaviorRuntime::updateCombatRetreat(std::size_t index, int team)
 	if (!env.drawFloat("Attack.RetreatRetry", 3.0f, 15.0f, retry))
 		return false;
 	retreat.retryAfter = now + retry;
-	if (!env.navigation.isValid())
+	return env.retreatToCover(team, 1000.0f, -1.0f, 10.0f);
+}
+
+bool BotBehaviorRuntime::tryReloadCover(std::size_t index, int team, int remainingEnemies, float timeSinceEnemy)
+{
+	auto &actor = actors_[index];
+	if (actor.managedBotStateMachines.state() == compat::CompatibilityStateId::Hide)
 		return false;
-	const auto start = services_->navigation_knownArea(index, env.receipt.actor, env.receipt.context.frame,
-		env.navigation.revision());
-	if (!start || !env.current())
+	const auto receipt = reactionContext(index);
+	if (!actor.outgoingRadioContactMemory.counts(receipt.actor, receipt.frame, receipt.now, 0, remainingEnemies).enemies)
 		return false;
-	const auto &body = env.receipt.entity->v.origin;
-	nav::NavVector spot{};
-	bool found = false;
-	if (!env.selectSpot(0, start, {body.x, body.y, body.z}, &spot, &found, 1000.0f, team) || !found)
+	ActorTaskEnvironment env(*this, index, index, [] { return true; });
+	const float chance = 25.0f + static_cast<float>(actor.managedProfiles.skill);
+	float roll = 0;
+	if (!env.current() || !env.drawFloat("Reload.HideChance", 0.0f, 100.0f, roll) ||
+		roll >= chance || timeSinceEnemy >= 5.0f)
 		return false;
-	float hold = 0;
-	if (!env.drawFloat("Attack.RetreatHold", 3.0f, 15.0f, hold))
-		return false;
-	const auto goal = env.areaAt(spot, false);
-	if (!env.current() || !env.enterHideState(spot, goal, compat::CompatibilityTaskId::None, hold))
-		return false;
-	retreat.hideEpoch = machine.state() == compat::CompatibilityStateId::Hide ? machine.normalStateEpoch() : 0;
-	if (retreat.hideEpoch)
-		actor.enemyReaction.ignoreEnemies(reactionContext(index), 10.0f);
-	actor.managedBotCombat.stopMovement();
-	actor.managedBotCombat.clearAim();
-	actor.weaponActions.stopRapidFire();
-	return true;
+	return env.retreatToCover(team, 1000.0f, 0.0f, 10.0f);
 }
 
 bool BotBehaviorRuntime::selectHostageDefense(std::size_t index, bool rogue, const compat::ScenarioBehaviorInput &scenario)

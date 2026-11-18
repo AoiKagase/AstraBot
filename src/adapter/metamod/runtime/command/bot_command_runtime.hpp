@@ -17,6 +17,8 @@ public:
 	void applyPlayerAvoidance(std::size_t index, runtime::BotCommand *command, float desiredSpeed);
 	runtime::CommandReceipt dispatchJoinHeartbeat(
 		std::size_t index, FakeClientHandle &handle, std::uint8_t milliseconds);
+	void observeReloadInput(const FakeClientHandle &handle, const runtime::BotCommand &command,
+		const runtime::CommandReceipt &receipt);
 	bool dispatchManagedActionCommand(
 		std::size_t index, FakeClientHandle &handle, const ActionProposal &proposal, const ActionDispatch &dispatch);
 	MovementCommandDraft beginDirectNeutralCommand(

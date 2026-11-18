@@ -4,6 +4,75 @@ namespace astrabot
 {
 namespace metamod
 {
+bool BotBehaviorRuntime::decideReloadAction(ManagedActionContext &ctx)
+{
+	if (services_->service_compatibilitySurface().configuration().mode != compat::RuntimeMode::Compatibility)
+		return false;
+	const auto &actor = actors_[ctx.index];
+	const auto &machine = actor.managedBotStateMachines;
+	if (machine.state() == compat::CompatibilityStateId::DefuseBomb ||
+		(ctx.observation.objective.defusing.isAvailable() && ctx.observation.objective.defusing.value))
+		return false;
+	const auto &store = services_->observation_publicObservations();
+	compat::PublicActorState weapon{};
+	if (!store.read(ctx.actor, ctx.frame, &weapon) || !weapon.weaponKnown)
+		return false;
+
+	// Counter-Strike's ItemInfo capacities by weapon ID. Non-magazine items use zero.
+	static constexpr unsigned capacities[] = {
+		0, 13, 0, 10, 0, 7, 0, 30, 30, 0, 30, 20, 25, 30, 35, 25,
+		12, 20, 10, 30, 100, 8, 30, 30, 20, 0, 7, 30, 30, 0, 50,
+	};
+	if (weapon.weaponId <= 0 || static_cast<unsigned>(weapon.weaponId) >= sizeof(capacities) / sizeof(*capacities))
+		return false;
+	const auto receipt = reactionContext(ctx.index);
+	const auto execution = actor.executionRevision;
+	const auto epoch = machine.normalStateEpoch();
+	const auto current = [&] {
+		return executionCurrent(ctx.index, receipt, execution) && machine.normalStateEpoch() == epoch;
+	};
+	const float timeSinceEnemy = receipt.now - actor.lastVisibleEnemyTimes;
+	const bool attacking = machine.attackOverlayActive();
+	// Native footstep equipment requests precede the ordinary ReloadCheck.
+	if (ctx.closeFootstepDistance >= 0 && decideEquipmentAction(ctx, weapon, attacking))
+		return true;
+	if (!current())
+		return false;
+	const bool skilledAttack = attacking && actor.managedProfiles.skill > 50;
+	if (!compat::nativeMagazineNeedsReload(weapon.clip, capacities[weapon.weaponId], timeSinceEnemy,
+			skilledAttack, weapon.weaponId == 18))
+		return false;
+	const auto &reload = ctx.observation.weapon.reloadState;
+	if ((reload.isAvailable() && reload.value == combat::ReloadState::Reloading) ||
+		store.pendingReloadRequest(ctx.actor, ctx.frame, receipt.now))
+		return false;
+	const auto *engine = services_->service_engineFunctions();
+	if (!engine || !engine->pfnPEntityOfEntIndex)
+		return false;
+	constexpr int kTerroristTeam = 1, kCounterTerroristTeam = 2;
+	const int team = services_->observation_resolvePlayerTeam(ctx.handle->entity);
+	if (!current() || (team != kTerroristTeam && team != kCounterTerroristTeam))
+		return false;
+	const auto living = livingRadioPeers(ctx.handle->entity, team);
+	if (!current() || !living.enemies)
+		return false;
+	if (weapon.clip == 0 && decideEquipmentAction(ctx, weapon, attacking))
+		return true;
+	if (!current())
+		return false;
+	const bool movingToCover = tryReloadCover(ctx.index, team, living.enemies, timeSinceEnemy);
+	if (!movingToCover && !current())
+		return false;
+	ctx.proposal.kind = ActionKind::Reload;
+	ctx.proposal.secondaryAttack = false;
+	ctx.proposal.movementButtons = static_cast<std::uint16_t>(
+		ctx.proposal.movementButtons & ~(IN_ATTACK | IN_ATTACK2));
+	if (movingToCover)
+		ctx.proposal.movementButtons = static_cast<std::uint16_t>(ctx.proposal.movementButtons & ~IN_DUCK);
+	actors_[ctx.index].weaponActions.stopRapidFire();
+	return true;
+}
+
 bool BotBehaviorRuntime::decideEquipmentAction(
 	ManagedActionContext &ctx, const compat::PublicActorState &weapon, bool attacking)
 {

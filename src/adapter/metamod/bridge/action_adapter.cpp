@@ -52,7 +52,7 @@ ActionDispatch ActionAdapter::translate(const ActionProposal &proposal)
 		result.stopMovement = true;
 		break;
 	case ActionKind::Reload:
-		result.clientCommand = kReloadCommand;
+		result.buttons = static_cast<std::uint16_t>(result.buttons | IN_RELOAD);
 		break;
 	case ActionKind::SelectPistol:
 		result.clientCommand = "slot2";

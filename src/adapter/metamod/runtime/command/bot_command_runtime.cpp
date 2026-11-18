@@ -167,6 +167,17 @@ void BotCommandRuntime::applyPlayerAvoidance(std::size_t index, runtime::BotComm
 			safe ? 1 : 0, move.forward);
 }
 
+void BotCommandRuntime::observeReloadInput(const FakeClientHandle &handle, const runtime::BotCommand &command,
+	const runtime::CommandReceipt &receipt)
+{
+	if (receipt.result != runtime::DispatchResult::Dispatched || (command.movement.buttons & IN_RELOAD) == 0U ||
+		services_->service_globals() == nullptr || !services_->service_lifecycle().isCurrent(command.lifecycle))
+		return;
+	services_->observation_observeReloadDispatched({handle.actor.slot, handle.actor.actorGeneration},
+		{command.lifecycle.mapGeneration, command.lifecycle.roundGeneration, services_->service_adapterFrameCount()},
+		services_->service_globals()->time);
+}
+
 bool BotCommandRuntime::dispatchManagedActionCommand(
 	std::size_t index, FakeClientHandle &handle, const ActionProposal &proposal, const ActionDispatch &dispatch)
 {
@@ -217,13 +228,6 @@ bool BotCommandRuntime::dispatchManagedActionCommand(
 	const bool commandDispatched = services_->dispatchClientCommand(handle.entity, clientCommand, "");
 	if (selectedEquipment != 0)
 		services_->behavior_observeEquipmentDispatched(index, selectedEquipment, commandDispatched);
-	if (commandDispatched && proposal.kind == ActionKind::Reload && services_->service_globals() != nullptr)
-	{
-		services_->observation_observeReloadDispatched({handle.actor.slot, handle.actor.actorGeneration},
-			{services_->service_lifecycle().mapGeneration(), services_->service_lifecycle().roundGeneration(),
-				services_->service_adapterFrameCount()},
-			services_->service_globals()->time);
-	}
 	const bool c4SelectionRequest = proposal.kind == ActionKind::SelectC4 || proposal.kind == ActionKind::Plant ||
 		proposal.kind == ActionKind::PlantContinue;
 	if (commandDispatched && c4SelectionRequest && index < NativeBotObservation::kClientSlotCount)
@@ -531,14 +535,7 @@ runtime::CommandReceipt BotCommandRuntime::executeManagedBotCommand(std::size_t 
 			dispatchReceipt.result == runtime::DispatchResult::Dispatched ? 1 : 0, commandStart.x, commandStart.y,
 			commandStart.z, handle.entity->v.origin.x, handle.entity->v.origin.y, handle.entity->v.origin.z);
 	}
-	if (dispatchReceipt.result == runtime::DispatchResult::Dispatched && (command.movement.buttons & IN_RELOAD) != 0U &&
-		services_->service_globals() != nullptr)
-	{
-		services_->observation_observeReloadDispatched({handle.actor.slot, handle.actor.actorGeneration},
-			{services_->service_lifecycle().mapGeneration(), services_->service_lifecycle().roundGeneration(),
-				services_->service_adapterFrameCount()},
-			services_->service_globals()->time);
-	}
+	observeReloadInput(handle, command, dispatchReceipt);
 	if (dispatchReceipt.result == runtime::DispatchResult::Dispatched &&
 		(command.movement.buttons & ActionAdapter::kAttackButton) != 0U)
 	{
@@ -674,6 +671,7 @@ runtime::CommandReceipt BotCommandRuntime::finishDirectNeutralCommand(std::size_
 	}
 	const runtime::CommandReceipt dispatchReceipt =
 		services_->service_inputDispatcher().dispatchNext(handle.actor, services_->service_adapterFrameCount());
+	observeReloadInput(handle, command, dispatchReceipt);
 	if (dispatchReceipt.result == runtime::DispatchResult::Dispatched &&
 		(actionDispatch.buttons & ActionAdapter::kAttackButton) != 0U)
 	{

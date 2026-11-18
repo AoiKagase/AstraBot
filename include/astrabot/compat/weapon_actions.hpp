@@ -10,6 +10,17 @@ namespace astrabot
 {
 namespace compat
 {
+inline bool nativeMagazineNeedsReload(int clip, unsigned capacity, float timeSinceEnemy,
+	bool skilledAttack, bool awp)
+{
+	if (capacity == 0 || clip < 0)
+		return false;
+	if (clip == 0)
+		return true;
+	return !awp && !skilledAttack && timeSinceEnemy > 3.0f &&
+		static_cast<float>(clip) / static_cast<float>(capacity) <= 0.6f;
+}
+
 struct KnownWeaponFlag
 {
 	bool known;

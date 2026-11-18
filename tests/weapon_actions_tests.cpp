@@ -203,7 +203,17 @@ bool testWeaponSwitchKeepsFireDeadline()
 int main()
 {
 	using namespace astrabot::compat;
-	bool ok = true;
+	bool ok = check(nativeMagazineNeedsReload(0, 10, 0.0f, true, true),
+		"an empty AWP clip calls for reload even during skilled attack");
+	ok &= check(!nativeMagazineNeedsReload(18, 30, 3.0f, false, false) &&
+			nativeMagazineNeedsReload(18, 30, 3.25f, false, false) &&
+			!nativeMagazineNeedsReload(19, 30, 3.25f, false, false),
+		"partial reload needs strictly more than three seconds and at most sixty percent");
+	ok &= check(!nativeMagazineNeedsReload(6, 10, 8.0f, false, true) &&
+			!nativeMagazineNeedsReload(18, 30, 8.0f, true, false) &&
+			!nativeMagazineNeedsReload(-1, 10, 8.0f, false, false) &&
+			!nativeMagazineNeedsReload(0, 0, 8.0f, false, false),
+		"partial AWP or skilled-attack magazines and items without a known clip do not reload");
 	for (float fov : {40.0f, 10.0f})
 	{
 		WeaponActionPlanner scoped;

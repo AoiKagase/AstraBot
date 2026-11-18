@@ -242,7 +242,9 @@ bool testCloseFootsteps()
 		if (variant == 5)
 			in.reloading = true;
 		compat::WeaponEquipmentPlanner planner;
-		if (!check(!planner.update(in).ownsAction, "footsteps preserve ammo/pistol permission and interaction exclusions"))
+		const auto decision = planner.update(in);
+		if (!check(variant == 5 ? decision.selectWeapon == 17 : !decision.ownsAction,
+				"qualified footsteps may interrupt reloading but preserve ammo, pistol permission and defuse gates"))
 			return false;
 	}
 	return true;

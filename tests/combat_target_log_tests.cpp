@@ -18,6 +18,8 @@ unsigned combatMovingFireCommands = 0U;
 bool combatPistolSelected = false;
 bool humanFriendlyBlocks = false;
 bool coverBlocksEnemySight = false;
+bool alwaysTryReloadCover = false;
+unsigned combatReloadCommands = 0;
 unsigned attackDeadlineDraws = 0;
 unsigned retreatTimerDraws = 0;
 float combatRandomFloat(float low, float high)
@@ -26,6 +28,8 @@ float combatRandomFloat(float low, float high)
 		++attackDeadlineDraws;
 	if (low == 3.0f && high == 15.0f)
 		++retreatTimerDraws;
+	if (alwaysTryReloadCover && low == 0.0f && high == 100.0f)
+		return low;
 	return siteFixtureRandomFloat(low, high);
 }
 void traceCombatVisibility(const float *start, const float *end, int ignoreMonsters, edict_t *self, TraceResult *result)
@@ -50,6 +54,8 @@ void runCombatPlayerMove(edict_t *entity, const float *angles, float forward, fl
 	unsigned short buttons, byte impulse, byte msec)
 {
 	runPlayerMove(entity, angles, forward, side, up, buttons, impulse, msec);
+	if (entity == &gEntities[0] && (buttons & IN_RELOAD) != 0U)
+		++combatReloadCommands;
 	// HLDS RunPlayerMove does not publish FakeClient v_angle; the input owner must.
 	if (entity == &gEntities[0] && (buttons & IN_ATTACK) != 0U)
 		++combatAttackCommands;
@@ -377,8 +383,46 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 			break;
 		}
 	}
-	coverBlocksEnemySight = false;
-	return check(movedToCover, "eligible cover sends the attacking bot to Hide with the selected NAV target") &&
+	passed = check(movedToCover, "eligible cover sends the attacking bot to Hide with the selected NAV target") &&
 		passed && restartPassed;
+	const auto stepRifle = [&](int clip)
+	{
+		runtime.onMessageBegin(1, 94, nullptr, &gEntities[0]);
+		runtime.onWriteByte(1);
+		runtime.onWriteByte(22);
+		runtime.onWriteByte(clip);
+		runtime.onMessageEnd();
+		gEntities[0].v.v_angle = Vector(0, 0, 0);
+		globals.time += .125f;
+		runtime.onStartFrame();
+		runtime.onStartFramePost();
+	};
+	gEntities[0].v.weapons = (1 << 22);
+	gEntities[1].v.health = 0;
+	gEntities[1].v.deadflag = DEAD_DEAD;
+	for (unsigned frame = 0; frame < 136U; ++frame)
+		stepRifle(30);
+	gEntities[0].v.origin = Vector(80, 32, 36);
+	gEntities[1].v.health = 100;
+	gEntities[1].v.deadflag = DEAD_NO;
+	for (unsigned frame = 0; frame < 8U; ++frame)
+		stepRifle(30);
+	alwaysTryReloadCover = true;
+	const auto reloadBefore = combatReloadCommands;
+	for (unsigned frame = 0; frame < 4U; ++frame)
+		stepRifle(0);
+	alwaysTryReloadCover = false;
+	coverBlocksEnemySight = false;
+	const auto &reloadGoal = services.behavior_scenarioDecisions(0U);
+	passed = check(combatReloadCommands > reloadBefore &&
+			state.state() == astrabot::compat::CompatibilityStateId::Hide && !state.attackOverlayActive() &&
+			reloadGoal.hasTarget && reloadGoal.target.position.x == 32 && reloadGoal.target.position.y == 50,
+		"an empty magazine dispatches IN_RELOAD and sends the recently engaged bot to safe cover") && passed;
+	gEntities[1].v.health = 0;
+	gEntities[1].v.deadflag = DEAD_DEAD;
+	for (unsigned frame = 0; frame < 4U; ++frame)
+		stepRifle(30);
+	return check(state.state() != astrabot::compat::CompatibilityStateId::Hide,
+		"after the refill is observed, zero-duration reload cover can end") && passed;
 }
 }

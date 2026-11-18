@@ -617,7 +617,8 @@ ActionProposal BotBehaviorRuntime::decideCombatAction(ManagedActionContext &ctx)
 		proposal.kind = ActionKind::Fire;
 		proposal.viewAngles = {decision.aim.pitch, decision.aim.yaw, movementAngles.roll};
 	}
-	else if (result == combat::CombatResult::ReloadIntentReady && decision.hasReload)
+	else if (result == combat::CombatResult::ReloadIntentReady && decision.hasReload &&
+		services_->service_compatibilitySurface().configuration().mode != compat::RuntimeMode::Compatibility)
 	{
 		proposal.kind = ActionKind::Reload;
 	}

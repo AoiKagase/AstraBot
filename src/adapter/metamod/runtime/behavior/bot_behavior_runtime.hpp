@@ -288,6 +288,8 @@ private:
 	BehaviorPhaseResult decideObjectiveAction(ManagedActionContext &ctx);
 	ActionProposal decideCombatAction(ManagedActionContext &ctx);
 	bool updateCombatRetreat(std::size_t index, int team);
+	bool decideReloadAction(ManagedActionContext &ctx);
+	bool tryReloadCover(std::size_t index, int team, int remainingEnemies, float timeSinceEnemy);
 	void updateGuardLook(ManagedActionContext &ctx);
 	bool decideEquipmentAction(ManagedActionContext &ctx, const compat::PublicActorState &weapon, bool attacking);
 	bool cancelHeldGrenade(std::size_t index, const runtime::ViewAngles &movementAngles, ActionProposal &proposal);

@@ -66,10 +66,9 @@ bool testReloadAndNoOp()
 
 	const ActionProposal reload = {ActionKind::Reload, {}, 0U};
 	const auto reloadDispatch = ActionAdapter::translate(reload);
-	if (!check(reloadDispatch.clientCommand != nullptr &&
-				std::strcmp(reloadDispatch.clientCommand, ActionAdapter::kReloadCommand) == 0 &&
-				reloadDispatch.buttons == 0U,
-			"reload uses the public reload command without synthetic button success"))
+	if (!check(reloadDispatch.clientCommand == nullptr &&
+				reloadDispatch.buttons == IN_RELOAD && !reloadDispatch.stopMovement,
+			"reload uses the native player-move button and allows movement"))
 	{
 		return false;
 	}

@@ -31,6 +31,8 @@ ActionProposal BotBehaviorRuntime::decideManagedBotAction(std::size_t index,
 	}
 	ctx.closeFootstepDistance = footstep.current(ctx.actor, ctx.frame, services_->service_globals()->time)
 		? footstep.distance : -1;
+	if (decideReloadAction(ctx))
+		return ctx.proposal;
 	if (decideObjectiveAction(ctx) == BehaviorPhaseResult::Complete)
 	{
 		actors_[index].managedBotCombat.stopMovement();

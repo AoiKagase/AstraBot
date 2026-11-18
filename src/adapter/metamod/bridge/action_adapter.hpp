@@ -92,7 +92,6 @@ public:
 	static constexpr std::uint16_t kBackButton = static_cast<std::uint16_t>(IN_BACK);
 	static constexpr std::uint16_t kMoveLeftButton = static_cast<std::uint16_t>(IN_MOVELEFT);
 	static constexpr std::uint16_t kMoveRightButton = static_cast<std::uint16_t>(IN_MOVERIGHT);
-	static constexpr const char *kReloadCommand = "reload";
 	static constexpr const char *kSelectC4Command = "weapon_c4";
 	// Public WEAPON_C4 value in the pinned ReGameDLL-CS CurWeapon protocol.
 	static constexpr std::uint8_t kC4WeaponId = 6U;
