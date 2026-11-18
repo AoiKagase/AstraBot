@@ -162,6 +162,7 @@ void BotBehaviorRuntime::onActorRemoved(std::size_t index)
 
 void BotBehaviorRuntime::onActorRemembered(std::size_t index, const FakeClientHandle &handle)
 {
+	resetEncouragement();
 	actors_[index].morale = {};
 	invalidateHelpExecution(index);
 	actors_[index].bombStatus = {};
@@ -203,6 +204,7 @@ void BotBehaviorRuntime::onActorRemembered(std::size_t index, const FakeClientHa
 
 void BotBehaviorRuntime::resetSharedExecutionState()
 {
+	resetEncouragement();
 	for (auto &actor : actors_)
 	{
 		if (++actor.executionRevision == 0)

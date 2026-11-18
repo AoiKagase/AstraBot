@@ -10,6 +10,8 @@ bool carrierFixture = false;
 bool looseBombFixture = false;
 bool looseGuardFixture = false;
 bool deferredSiteFixture = false;
+bool encourageDefuseFixture = false;
+cvar_t queueDefuseFuse{};
 bool preplantGuardFixture = false;
 bool hostageUseFixture = false;
 bool sniperWarningFixture = false;
@@ -47,7 +49,9 @@ void selectStatementFixture(int argc, char **argv)
 	carrierFixture = argc == 2 && std::strcmp(argv[1], "--bomb-carrier") == 0;
 	looseBombFixture = argc == 2 && std::strcmp(argv[1], "--loose-bomb") == 0;
 	looseGuardFixture = argc == 2 && std::strcmp(argv[1], "--guard-loose-bomb") == 0;
-	deferredSiteFixture = argc == 2 && std::strcmp(argv[1], "--guard-planted-bombsite") == 0;
+	encourageDefuseFixture = argc == 2 && std::strcmp(argv[1], "--encourage-defuse") == 0;
+	deferredSiteFixture = encourageDefuseFixture ||
+		(argc == 2 && std::strcmp(argv[1], "--guard-planted-bombsite") == 0);
 	preplantGuardFixture = argc == 2 && std::strcmp(argv[1], "--guard-unplanted-bombsite") == 0;
 	hostageUseFixture = argc == 2 && std::strcmp(argv[1], "--hostage-use-report") == 0;
 	sniperWarningFixture = argc == 2 && std::strcmp(argv[1], "--sniper-warning") == 0;
@@ -164,6 +168,9 @@ unsigned char *queueLoad(char *name, int *length)
 		contents += " Chatter BombsiteClear zoneclear.wav End";
 	if (plantedSiteFixture || requestedSiteFixture || deferredSiteFixture)
 		contents += " Chatter PlantedBombPlace planted.wav End";
+	if (encourageDefuseFixture)
+		contents += " Chatter BombsiteSecure secure.wav End Chatter WaitingForHumanToDefuseBomb waitdefuse.wav End "
+			"Chatter WaitingForHumanToDefuseBombPanic urgentdefuse.wav End";
 	if (requestedSiteFixture)
 		contents += " Chatter WhereIsTheBomb where.wav End";
 	if (carrierFixture)
@@ -281,6 +288,16 @@ void setupStatementQueue(enginefuncs_t &engine, globalvars_t &globals)
 		queueOriginalMove = engine.pfnRunPlayerMove;
 	engine.pfnRunPlayerMove = &queueMove;
 	engine.pfnRandomFloat = &queuePlanRandom;
+	if (encourageDefuseFixture)
+	{
+		queueDefuseFuse.value = 70.0f;
+		engine.pfnCVarGetPointer = [](const char *name) {
+			return std::strcmp(name, "mp_c4timer") == 0 ? &queueDefuseFuse : getCvar(name);
+		};
+		engine.pfnCVarGetFloat = [](const char *name) {
+			return std::strcmp(name, "mp_c4timer") == 0 ? queueDefuseFuse.value : getCvarFloat(name);
+		};
+	}
 	engine.pfnCVarGetString = &queueCvar;
 	engine.pfnLoadFileForMe = &queueLoad;
 	engine.pfnFreeFile = &queueFree;
@@ -413,6 +430,9 @@ bool testQueueRadioReset(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 }
 float queuePlanRandom(float low, float high)
 {
+	if (encourageDefuseFixture && ((low == 10.0f && high == 15.0f) ||
+			(low == 5.0f && high == 8.0f) || (low == 3.0f && high == 4.0f)))
+		return low;
 	if (chooseTeamRush && low == 0.0f && high == 100.0f)
 	{
 		chooseTeamRush = false;
@@ -2755,6 +2775,7 @@ bool testStatementQueue(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t
 			gEntities[0].v.v_angle.y = 0;
 			reportAudio.clear();
 		}
+		const float plantedAt = globals.time;
 		runtime.onMessageBegin(MSG_ALL, 98, nullptr, nullptr);
 		runtime.onWriteByte(4);
 		runtime.onWriteString("#Bomb_Planted");
@@ -2812,6 +2833,42 @@ bool testStatementQueue(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t
 				if (!check(foundCover[0] && foundCover[1] && guardsSite(0) && guardsSite(1),
 					"CTs knowing the C4 or just its reported site guard NAV cover for an unseen living human teammate"))
 					return false;
+				if (encourageDefuseFixture)
+				{
+					const auto heard = [&](const char *sample) {
+						return std::count(queueSamples.begin(), queueSamples.end(), sample);
+					};
+					if (!check(heard("radio/test/secure.wav") == 0, "moving to cover does not encourage the human"))
+						return false;
+					for (int i = 0; i < 2; ++i)
+					{
+						const auto target = nav.behavior_scenarioDecisions(i).target.position;
+						gEntities[i].v.origin = Vector(target.x, target.y, target.z + 36.0f);
+					}
+					queueSamples.clear();
+					const auto advance = [&](int frames) {
+						for (int frame = 0; frame < frames; ++frame)
+							step(.125f);
+					};
+					advance(24);
+					if (!check(heard("radio/test/secure.wav") == 1,
+							"only one CT announces a secure site above 30 seconds"))
+						return false;
+					queueDefuseFuse.value = globals.time - plantedAt + 30.0f;
+					advance(24);
+					if (!check(heard("radio/test/waitdefuse.wav") == 0,
+							"crossing 30 seconds does not bypass the shared cooldown"))
+						return false;
+					advance(56);
+					if (!check(heard("radio/test/waitdefuse.wav") == 1,
+							"a CT asks the human to defuse once between 11 and 30 seconds"))
+						return false;
+					queueDefuseFuse.value = globals.time - plantedAt + 11.0f;
+					for (int frame = 0; frame < 56 && heard("radio/test/urgentdefuse.wav") == 0; ++frame)
+						step(.125f);
+					return check(heard("radio/test/urgentdefuse.wav") == 1,
+						"a CT gives the urgent warning once at 11 seconds or less");
+				}
 				gEntities[0].v.origin.x = 24;
 				const auto &first = nav.behavior_managedBotStateMachines(0);
 				const float started = first.stateTimestamp();

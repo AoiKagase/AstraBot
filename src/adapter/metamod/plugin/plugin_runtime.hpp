@@ -672,8 +672,12 @@ private:
 	void behavior_resetEquipment(std::size_t index, bool spawnHud = false) override
 	{
 		behavior_.resetEquipment(index);
-		if (spawnHud && service_roundOver())
-			behavior_.discardVictorySpeech(index);
+		if (spawnHud && service_managedBotSlots()[index])
+		{
+			behavior_.resetEncouragement();
+			if (service_roundOver())
+				behavior_.discardVictorySpeech(index);
+		}
 	}
 
 	world::EntityKey behavior_currentEnemySource(std::size_t index) const override

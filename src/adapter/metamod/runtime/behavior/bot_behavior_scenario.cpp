@@ -1129,6 +1129,13 @@ void BotBehaviorRuntime::updateScenarioTeamwork(std::size_t index, const runtime
 			actors_[index].scenarioPlanners.cancelHoldPosition();
 			finishedDefense = true;
 		}
+		if (!finishedDefense && guardingSite && observedTeam == kCounterTerroristTeam && scenario.deferToHuman &&
+			scenario.bombPlanted && scenario.timerEstimated && actors_[index].scenarioPlanners.atDefenseSpot())
+		{
+			encourageHumanDefuse(index, scenario.bombSecondsRemaining, current);
+			if (!current())
+				return;
+		}
 		if (!finishedDefense && sniping && actors_[index].scenarioPlanners.atDefenseSpot())
 			machine.reachedSniperSpot();
 		const bool knownLoose = !scenario.bombPlanted && (data.looseBomb.knowledge == compat::ScenarioKnowledge::Visible ||

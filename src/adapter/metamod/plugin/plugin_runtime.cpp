@@ -1250,6 +1250,7 @@ void PluginRuntime::onRoundLifecycleMessage(const char *message)
 			return;
 		}
 		behavior_.finishRoundVictorySpeech();
+		behavior_.resetEncouragement();
 		const RoundFreezeSchedule noFreeze = RoundFreezeSchedule::create(globals_->time, 0.0f);
 		roundFreezeStartTime_ = noFreeze.startTime;
 		roundFreezeUntil_ = noFreeze.untilTime;

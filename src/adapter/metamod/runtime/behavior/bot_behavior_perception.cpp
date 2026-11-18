@@ -232,6 +232,8 @@ bool BotBehaviorRuntime::forcedRunning(std::size_t index)
 
 void BotBehaviorRuntime::resetRoundRecognition(bool endingRound)
 {
+	if (!endingRound)
+		resetEncouragement();
 	looseBombDrop_ = {};
 	updateVoiceFeedback(true);
 	for (std::size_t index = 0; index < actors_.size(); ++index)
@@ -266,7 +268,10 @@ void BotBehaviorRuntime::observePublicDeath(std::size_t index, const world::Fram
 {
 	const auto *self = services_->service_managedBotHandles()[index].entity;
 	if (deathFrame.isValid() && self && !self->free && (self->v.deadflag != DEAD_NO || self->v.health <= 0.0f))
+	{
 		actors_[index].morale.observeLife(false);
+		resetEncouragement();
+	}
 	const auto previousSpeech = actors_[index].confirmedSpeech;
 	for (std::size_t observer = 0; observer < actors_.size(); ++observer)
 	{

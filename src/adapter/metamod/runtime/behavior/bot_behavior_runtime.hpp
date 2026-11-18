@@ -72,6 +72,7 @@ public:
 	void resetObstacleMaterials();
 	void resetRoundRecognition(bool endingRound);
 	void finishRoundVictorySpeech();
+	void resetEncouragement() { encouragementUntil_ = -1.0f; }
 	void discardVictorySpeech(std::size_t index);
 	void observePublicDeath(std::size_t index, const world::FrameIdentity &deathFrame = {});
 	std::uint64_t chatterRevision(std::size_t index) const
@@ -298,6 +299,7 @@ private:
 	bool decideReloadAction(ManagedActionContext &ctx);
 	bool tryReloadCover(std::size_t index, int team, int remainingEnemies, float timeSinceEnemy);
 	bool respondToFallBack(std::size_t index, int team, const compat::ScenarioFallBackResponse &response);
+	void encourageHumanDefuse(std::size_t index, float remaining, const std::function<bool()> &current);
 	void updateGuardLook(ManagedActionContext &ctx);
 	bool decideEquipmentAction(ManagedActionContext &ctx, const compat::PublicActorState &weapon, bool attacking);
 	bool cancelHeldGrenade(std::size_t index, const runtime::ViewAngles &movementAngles, ActionProposal &proposal);
@@ -670,6 +672,7 @@ private:
 	std::array<RadioPreference, NativeBotObservation::kClientSlotCount> outgoingRadioPreferences_{};
 	std::uint32_t outgoingVoiceMask_ = 0U;
 	static constexpr unsigned kTeamRadioSlotCount = 3U;
+	float encouragementUntil_ = -1.0f;
 	std::array<float, kTeamRadioSlotCount> outgoingTeamLastSpeech_{{-1.0f, -1.0f, -1.0f}};
 	std::array<float, kTeamRadioSlotCount> outgoingTeamBusyUntil_{};
 	std::array<float, kTeamRadioSlotCount> outgoingTeamFollowRadio_{};

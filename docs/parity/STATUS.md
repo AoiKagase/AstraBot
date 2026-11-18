@@ -1,3 +1,11 @@
+## 15B-1　C4警備中のEncourage
+
+ReGameDLL-CS `b088984` の `HideState::OnUpdate` と `BotChatterInterface::Encourage` を参照した。解除を生存中の味方プレイヤーに任せているCT Botが警備の隠れ場所に到着し、近くの敵を認識していない場合に発話する。C4の残り時間が30秒超、11秒超〜30秒、11秒以下の順に `BombsiteSecure`、`WaitingForHumanToDefuseBomb`、`WaitingForHumanToDefuseBombPanic` を選ぶ。発話間隔はそれぞれ10〜15秒、5〜8秒、3〜4秒で、Bot間で共有する。
+
+残り時間には公開の設置通知と `mp_c4timer` を使う。推定できる設置通知を受けたケースで発話を有効にする。人質の所有・追従状態、未接続の `Say` 呼び出しと、人質警備の励ましは15B-2に残る。攻撃者が見えない場合の被弾後のHide解除は23、実機確認は25。
+
+統合テストでは、到着前の無音、2体が到着した場合の単独発話、残り時間3区分、区分切り替え後も継続する共有間隔を確認した。Windows x86 Debugは155/155件、Linux x86 Debugは153/154件合格。Linuxの失敗は既知の `astrabot_combat_policy`。両OSの動作トレース149,153件が既存の記録と一致し、PE・ELFのx86形式と公開関数7件を確認した。
+
 ## 15A　Sayの既定フレーズと意図表明
 
 ReGameDLL-CS `b088984` の `BotChatterInterface::Say` と `Negative` を参照した。ホストの既定DBで名前を解決し、`REPORT_MY_INTENTION` として既存キューに登録する。既定の有効期間は登録から3秒。正の遅延を指定した場合は開始だけを遅らせる。既存の意図表明は同じ経路に接続し、Team Fall Backの `Negative` は `REPORT_ACKNOWLEDGE` を使う。

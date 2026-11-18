@@ -1599,6 +1599,45 @@ void BotBehaviorRuntime::reactToHostageLoss(std::size_t index, bool allGone)
 	(void)environment.idleForObjectiveChange(true);
 }
 
+void BotBehaviorRuntime::encourageHumanDefuse(
+	std::size_t index, float remaining, const std::function<bool()> &current)
+{
+	if (services_->service_roundOver())
+		return;
+	ActorTaskEnvironment env(*this, index, index, current);
+	if (!env.current() || !env.receipt.context.alive)
+		return;
+	const auto living = livingRadioPeers(env.receipt.entity, kCounterTerroristTeam);
+	if (!env.current())
+		return;
+	const auto &receipt = env.receipt.context;
+	const auto nearby = actors_[index].outgoingRadioContactMemory.counts(
+		env.receipt.actor, receipt.frame, receipt.now, living.friends, living.enemies);
+	if (nearby.enemies != 0)
+		return;
+
+	const char *phrase = "WaitingForHumanToDefuseBombPanic";
+	float low = 3.0f, high = 4.0f;
+	if (remaining > 30.0f)
+	{
+		phrase = "BombsiteSecure";
+		low = 10.0f;
+		high = 15.0f;
+	}
+	else if (remaining > 11.0f)
+	{
+		phrase = "WaitingForHumanToDefuseBomb";
+		low = 5.0f;
+		high = 8.0f;
+	}
+	float interval = 0.0f;
+	// CSBot evaluates RANDOM_FLOAT at the call site even while the shared timer is active.
+	if (!env.drawFloat("Chatter.Encourage.Defuse", low, high, interval) || receipt.now <= encouragementUntil_)
+		return;
+	encouragementUntil_ = receipt.now + interval;
+	env.say(phrase);
+}
+
 void BotBehaviorRuntime::reportRoundVictory(std::size_t index, int team, const std::function<bool()> &current)
 {
 	ActorTaskEnvironment env(*this, index, index, current);
