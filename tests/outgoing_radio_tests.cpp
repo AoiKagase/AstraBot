@@ -183,6 +183,34 @@ int main()
 					  "EVENT_RADIO_AFFIRMATIVE\nEnd\nChatter Help\n Radio EVENT_RADIO_NEED_BACKUP\nEnd\nChatter "
 					  "RequestReport\n Radio EVENT_RADIO_REPORT_IN_TEAM\nEnd\n";
 	check(catalog.loadText(db, sizeof(db) - 1), "public chatter radio metadata accepted");
+	{
+		ChatterRadioCatalog sites;
+		const char names[] = "Place BombsiteA site.wav End Chatter BombsiteClear clear.wav End";
+		check(sites.loadText(names, sizeof(names) - 1), "site report catalog");
+		OutgoingRadioScheduler sender;
+		OutgoingRadioInput update{};
+		update.actor = {1, 1};
+		update.frame = {1, 1, 1};
+		update.now = 20;
+		update.team = update.friendCount = 1;
+		update.alive = true;
+		update.clearedBombsite = {9, 4};
+		update.clearedBombsitePlace = 2;
+		update.clearedBombsitePhrase = sites.nameToId("BombsiteA");
+		sender.prepare(update, sites);
+		bool emitted = false;
+		sender.statements().visitSchedules([&](const ChatterScheduleEntry &entry)
+		{
+			ChatterPendingStatement node{};
+			emitted = sender.statements().read({entry.order, entry}, &node) &&
+				entry.topic == ChatterStatementTopic::Information && node.request.expires == 30 &&
+				node.request.program.count == 2 && node.request.program.parts[0].place == 2 &&
+				node.request.program.parts[1].phrase == ChatterPhrase::BombsiteClear &&
+				node.request.meme.kind == ChatterMemeKind::BombsiteClear && node.request.meme.site == update.clearedBombsite;
+			return false;
+		});
+		check(emitted, "site-clear report carries the zone identity and speaks its place first");
+	}
 	OutgoingRadioScheduler scheduler;
 	OutgoingRadioInput in{};
 	in.actor = {1, 1};

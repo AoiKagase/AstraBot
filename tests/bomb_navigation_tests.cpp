@@ -69,11 +69,11 @@ int main()
 	std::size_t selected = 99;
 	check(search.choose({1, 1, 1}, sites, order, {}, {}, &selected) && selected == 1 && order.verifyComplete(),
 		"distant sites use round shuffled order");
-	search.clear(sites[1].entity);
+	search.clear({1, 1, 1}, sites[1].entity);
 	sites[0].travel = 1000;
 	check(search.choose({1, 1, 2}, sites, order, {}, {}, &selected) && selected == 0,
 		"nearest uncleared site within 2000 takes precedence");
-	search.clear(sites[0].entity);
+	search.clear({1, 1, 2}, sites[0].entity);
 	check(search.choose({1, 1, 3}, sites, order, {}, {}, &selected) && selected == 1,
 		"all-cleared sites restart shuffled search");
 	ScriptedRandomSource nextRound({RandomTapeEntry::longEntry("Bomb.SearchOrder", {}, {}, 0, 1, 0),
@@ -81,6 +81,20 @@ int main()
 	check(search.choose({1, 2, 1}, sites, nextRound, {}, {}, &selected) && selected == 0 && nextRound.verifyComplete(),
 		"new round resets clear state and shuffles once");
 	BombSearchSite zone{};
+	BombSiteSearchMemory receiver;
+	sites[0].extent = {{0, 0, -30}, {40, 40, 30}};
+	sites[1].extent = {{100, 80, -60}, {200, 120, 60}};
+	receiver.clear({1, 1, 1}, sites[0].entity);
+	ScriptedRandomSource receiverOrder({RandomTapeEntry::longEntry("Bomb.SearchOrder", {}, {}, 0, 1, 0),
+		RandomTapeEntry::longEntry("Bomb.SearchOrder", {}, {}, 1, 1, 1)});
+	check(receiver.choose({1, 1, 2}, sites, receiverOrder, {}, {}, &selected) && selected == 1,
+		"a site cleared by a teammate before the receiver starts searching is skipped");
+	const auto *entered = receiver.enteredUnclearedSite({1, 1, 3}, {200, 120, 60});
+	check(entered && entered->entity == sites[1].entity &&
+		!receiver.enteredUnclearedSite({1, 1, 3}, {200, 120, 60.01f}) &&
+		!receiver.enteredUnclearedSite({1, 1, 3}, {0, 0, 0}) &&
+		!receiver.enteredUnclearedSite({1, 2, 1}, {200, 120, 60}),
+		"zone entry includes its faces and ignores cleared sites and prior rounds");
 	zone.entity = {12, 1};
 	zone.extent = {{50, 60, -50}, {150, 160, 50}};
 	ScriptedRandomSource zoneRandom({RandomTapeEntry::longEntry("Bomb.SearchZoneArea", {}, {}, 0, 0, 0)});

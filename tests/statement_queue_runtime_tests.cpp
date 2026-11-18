@@ -3,9 +3,11 @@
 namespace
 {
 bool reportingInFixture = false;
+bool bombsiteClearFixture = false;
 void selectStatementFixture(int argc, char **argv)
 {
 	reportingInFixture = argc == 2 && std::strcmp(argv[1], "--reporting-in") == 0;
+	bombsiteClearFixture = argc == 2 && std::strcmp(argv[1], "--bombsite-clear") == 0;
 }
 bool testStatementQueue(astrabot::metamod::PluginRuntime &, enginefuncs_t &, globalvars_t &);
 void setupStatementQueue(enginefuncs_t &, globalvars_t &);
@@ -101,6 +103,8 @@ unsigned char *queueLoad(char *name, int *length)
 	std::string contents(text);
 	if (reportingInFixture)
 		contents += " Chatter RequestReport Radio EVENT_RADIO_REPORT_IN_TEAM request.wav End";
+	if (bombsiteClearFixture)
+		contents += " Chatter BombsiteClear zoneclear.wav End";
 	*length = static_cast<int>(contents.size());
 	auto *bytes = new unsigned char[static_cast<std::size_t>(*length) + 1];
 	std::memcpy(bytes, contents.c_str(), static_cast<std::size_t>(*length) + 1);
@@ -152,7 +156,7 @@ void queueString(const char *sample)
 	if (queueMessage == 101 && queueRecipient == &gEntities[0])
 	{
 		queueSamples.emplace_back(sample);
-		if (reportingInFixture)
+		if (reportingInFixture || bombsiteClearFixture)
 			reportAudio.emplace_back(queueSpeakerSlot, sample);
 		if (queueHelpRecording && queueClock)
 			queueHelpSamples.emplace_back(sample, queueClock->time);
@@ -1817,6 +1821,85 @@ bool testStatementQueue(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t
 			check(queueSamples == std::vector<std::string>{"radio/test/ack.wav", "radio/test/help.wav"},
 				"both statements survive simultaneous admission, fixed count criteria and later OFF mode")))
 		return false;
+	if (bombsiteClearFixture)
+	{
+		queueMode = "normal";
+		queueEnemiesVisible = false;
+		setCvarFloat("bot_stop", 0);
+		setCvarFloat("mp_buytime", 0);
+		runtime.setCompatibilityFloat("bot_quota", 2);
+		if (runtime.executeCompatibilityCommand(request("bot_add_ct", 1U, "Queue Peer")) !=
+			metamod::CompatibilityCommandResult::Handled)
+			return false;
+		globals.mapname = 6;
+		globals.maxEntities = 9;
+		gObjectiveEntitiesAvailable = true;
+		gBombSite = gSecondBombSite = gPlantedBomb = {};
+		gBombSite.v.classname = gSecondBombSite.v.classname = 1;
+		gBombSite.v.absmin = Vector(16, 24, -4);
+		gBombSite.v.absmax = Vector(32, 40, 4);
+		gSecondBombSite.v.absmin = Vector(216, 24, -4);
+		gSecondBombSite.v.absmax = Vector(232, 40, 4);
+		for (int i = 0; i < 2; ++i)
+		{
+			auto &bot = gEntities[i];
+			bot.free = false;
+			bot.v.flags = FL_CLIENT | FL_FAKECLIENT | FL_ONGROUND;
+			bot.v.health = 100;
+			bot.v.deadflag = DEAD_NO;
+			bot.v.team = 2;
+			bot.v.movetype = MOVETYPE_WALK;
+			bot.v.solid = SOLID_SLIDEBOX;
+			bot.v.maxspeed = 250;
+			bot.v.origin = Vector(110, 32, 36);
+			team(i + 1, "CT");
+		}
+		const char *path = "astrabot_bombsite_clear.nav";
+		if (!writeTwoSiteNavigation(path, true, false, "BombsiteA"))
+			return false;
+		const metamod::NavLoadRequest load{path, "astrabot_bombsite_clear", runtime.snapshot().mapGeneration,
+			true, 123U, false, 0U};
+		const auto loaded = runtime.loadNavigationFile(&load);
+		std::remove(path);
+		if (loaded != metamod::NavLoadResult::Loaded)
+			return false;
+		runtime.beginRoundGeneration();
+		for (int i = 0; i < 40; ++i)
+			step(.125f);
+		runtime.onMessageBegin(MSG_ALL, 98, nullptr, nullptr);
+		runtime.onWriteByte(4);
+		runtime.onWriteString("#Bomb_Planted");
+		runtime.onMessageEnd();
+		auto &nav = static_cast<metamod::BotNavigationServices &>(runtime);
+		const auto searching = [&](int i) { return nav.behavior_managedBotStateMachines(i).task() ==
+			compat::CompatibilityTaskId::FindTickingBomb; };
+		for (int i = 0; i < 40 && !(searching(0) && searching(1)); ++i)
+			step(.125f);
+		if (!check(searching(0) && searching(1), "two CTs begin searching for the unseen C4"))
+			return false;
+		const auto &initial = nav.behavior_scenarioDecisions(1);
+		if (!check(initial.hasTarget && initial.target.entity.id == 6, "the receiving CT initially targets the first site"))
+			return false;
+		reportAudio.clear();
+		gEntities[0].v.origin.x = 24;
+		bool sent = false;
+		bool acknowledged = false;
+		bool retargeted = false;
+		for (int i = 0; i < 80; ++i)
+		{
+			step(.125f);
+			for (const auto &audio : reportAudio)
+			{
+				sent |= audio.first == 1 && audio.second == "radio/test/zoneclear.wav";
+				acknowledged |= sent && audio.first == 2 && audio.second == "radio/test/ack.wav";
+			}
+			reportAudio.clear();
+			const auto &next = nav.behavior_scenarioDecisions(1);
+			retargeted |= sent && next.hasTarget && next.target.entity.id == 8;
+		}
+		return check(sent && acknowledged && retargeted,
+			"CT enters the first site, announces it, and its teammate acknowledges and searches the other site");
+	}
 	if (reportingInFixture)
 	{
 		queueEnemiesVisible = false;

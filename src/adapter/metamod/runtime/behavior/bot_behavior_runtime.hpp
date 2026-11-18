@@ -519,6 +519,7 @@ private:
 		nav::AreaId scenarioEscapeAreas{};
 		compat::BombSiteSearchMemory bombSearchMemory{};
 		compat::ScenarioTarget bombSearchTargets{};
+		compat::ScenarioTarget clearedBombsite{};
 		compat::TeamworkPolicy teamworkPolicies{};
 		std::uint32_t teamworkRadioApplied{};
 		compat::ProfileRecord managedProfiles{};

@@ -578,14 +578,21 @@ void BotBehaviorRuntime::updateScenarioNavigation(std::size_t index, const runti
 		services_->service_engineFunctions()->pfnSzFromIndex != nullptr)
 	{
 		compat::ScenarioTarget &search = actors_[index].bombSearchTargets;
-		if (search.knowledge != compat::ScenarioKnowledge::Unknown)
+		auto &actor = actors_[index];
+		if (actor.managedBotStateMachines.state() == compat::CompatibilityStateId::MoveTo &&
+			actor.managedBotStateMachines.task() == compat::CompatibilityTaskId::FindTickingBomb &&
+			!actor.managedBotStateMachines.attackOverlayActive())
 		{
-			const float dx = search.position.x - before.origin.x, dy = search.position.y - before.origin.y,
-						dz = search.position.z - before.origin.z;
-			if (dx * dx + dy * dy + dz * dz <= kGoalArrivalRange * kGoalArrivalRange)
+			const auto *site = actor.bombSearchMemory.enteredUnclearedSite(context.frame,
+				{before.origin.x, before.origin.y, before.origin.z});
+			if (site)
 			{
-				actors_[index].bombSearchMemory.clear(search.entity);
+				actor.clearedBombsite.frame = context.frame;
+				actor.clearedBombsite.entity = site->entity;
+				actor.clearedBombsite.position = {site->center.x, site->center.y, site->center.z};
+				actor.bombSearchMemory.clear(context.frame, site->entity);
 				search = {};
+				return;
 			}
 		}
 		if (search.knowledge == compat::ScenarioKnowledge::Unknown)
@@ -661,7 +668,7 @@ void BotBehaviorRuntime::updateScenarioNavigation(std::size_t index, const runti
 					search.pathCost = chosenRoute.cost;
 				}
 				else
-					actors_[index].bombSearchMemory.clear(sites[selected].entity);
+					actors_[index].bombSearchMemory.clear(context.frame, sites[selected].entity);
 			}
 		}
 		if (search.knowledge != compat::ScenarioKnowledge::Unknown)
@@ -874,7 +881,7 @@ void BotBehaviorRuntime::updateScenarioTeamwork(std::size_t index, const runtime
 		finishedDefense = actors_[index].scenarioPlanners.finishDefense(
 			context.timestamp - machine.stateTimestamp(), reloading);
 	}
-	if (finishedDefense)
+	if (finishedDefense || actors_[index].clearedBombsite.frame == context.frame)
 	{
 		actors_[index].scenarioDecisions = {};
 		actors_[index].scenarioDecisions.action = compat::ScenarioAction::Stop;

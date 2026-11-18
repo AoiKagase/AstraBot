@@ -47,13 +47,15 @@ enum class ChatterMemeKind : std::uint8_t
 	Help,
 	Follow,
 	DefendHere,
-	RequestReport
+	RequestReport,
+	BombsiteClear
 };
 struct ChatterMeme
 {
 	ChatterMemeKind kind = ChatterMemeKind::None;
 	std::uint16_t place = 0;
 	nav::NavVector position{};
+	world::EntityKey site{};
 };
 struct ChatterStatementRequest
 {

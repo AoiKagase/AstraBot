@@ -167,6 +167,9 @@ struct OutgoingRadioInput
 	ChatterScheduleAdmission admission{};
 	ChatterVerbosity verbosity = ChatterVerbosity::Normal;
 	ChatterScheduleEntry speaking{};
+	world::EntityKey clearedBombsite{};
+	std::uint16_t clearedBombsitePlace = 0;
+	std::uint32_t clearedBombsitePhrase = 0;
 };
 struct OutgoingRadioDecision
 {
@@ -275,6 +278,8 @@ public:
 		}
 		if (in.friendCount > 0)
 		{
+			if (in.clearedBombsite.isValid())
+				queue(ChatterPhrase::BombsiteClear, in.now, kReportLifetimeSeconds, in, catalog);
 			if (!reportedEnemies_ && in.visibleEnemyCount > 0)
 			{
 				reportedEnemies_ = true;
@@ -638,7 +643,15 @@ private:
 		request.criteriaPlace = phrase == ChatterPhrase::PlantingBomb ? in.ownPlacePhrase
 			: phrase == ChatterPhrase::HeardNoise					  ? in.noisePlacePhrase
 																	  : 0;
-		if (phrase == ChatterPhrase::Help)
+		if (phrase == ChatterPhrase::BombsiteClear)
+		{
+			request.topic = ChatterStatementTopic::Information;
+			request.meme = {ChatterMemeKind::BombsiteClear, 0, {}, in.clearedBombsite};
+			request.program.append({ChatterPartKind::Place, ChatterPhrase::None, in.clearedBombsitePlace,
+				in.clearedBombsitePhrase});
+			request.program.append({ChatterPartKind::Fixed, phrase, 0, 0});
+		}
+		else if (phrase == ChatterPhrase::Help)
 		{
 			request.meme = {ChatterMemeKind::Help, in.ownPlace};
 			request.program.append({ChatterPartKind::Place, ChatterPhrase::None, in.ownPlace, in.ownPlacePhrase});

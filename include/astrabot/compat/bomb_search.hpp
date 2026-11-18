@@ -27,11 +27,32 @@ public:
 		*this = BombSiteSearchMemory();
 	}
 
-	void clear(world::EntityKey site)
+	bool isClear(world::EntityKey site) const
 	{
-		for (Entry &entry : order_)
-			if (entry.entity == site)
-				entry.cleared = true;
+		return std::find(cleared_.begin(), cleared_.end(), site) != cleared_.end();
+	}
+
+	const BombSearchSite *enteredUnclearedSite(world::FrameIdentity frame, nav::NavVector origin) const
+	{
+		if (frame.mapGeneration != frame_.mapGeneration || frame.roundGeneration != frame_.roundGeneration)
+			return nullptr;
+		for (const auto &site : zones_)
+		{
+			const auto &bounds = site.extent;
+			if (!isClear(site.entity) && origin.x >= bounds.lo.x && origin.x <= bounds.hi.x &&
+				origin.y >= bounds.lo.y && origin.y <= bounds.hi.y && origin.z >= bounds.lo.z && origin.z <= bounds.hi.z)
+				return &site;
+		}
+		return nullptr;
+	}
+
+	void clear(world::FrameIdentity frame, world::EntityKey site)
+	{
+		if (!frame.isValid() || !site.isValid())
+			return;
+		beginRound(frame);
+		if (!isClear(site))
+			cleared_.push_back(site);
 	}
 
 	bool choose(world::FrameIdentity frame, const std::vector<BombSearchSite> &sites,
@@ -41,19 +62,20 @@ public:
 		constexpr unsigned kSearchPasses = 2U;
 		if (!frame.isValid() || sites.empty() || selected == nullptr)
 			return false;
-		if (frame_.mapGeneration != frame.mapGeneration || frame_.roundGeneration != frame.roundGeneration ||
-			order_.size() != sites.size())
+		beginRound(frame);
+		if (order_.size() != sites.size())
 		{
-			reset();
-			frame_ = frame;
+			zones_ = sites;
+			order_.clear();
+			shuffleStep_ = next_ = 0;
 			for (const auto &site : sites)
-				order_.push_back({site.entity, false});
+				order_.push_back(site.entity);
 		}
 		for (const auto &site : sites)
 		{
 			bool found = false;
-			for (const Entry &entry : order_)
-				found = found || entry.entity == site.entity;
+			for (const auto &entry : order_)
+				found = found || entry == site.entity;
 			if (!found)
 			{
 				reset();
@@ -67,18 +89,11 @@ public:
 			if (draw.status != RandomStatus::Ok || draw.value < static_cast<int>(shuffleStep_) ||
 				static_cast<std::size_t>(draw.value) >= order_.size())
 				return false;
-			const Entry swapped = order_[shuffleStep_];
+			const auto swapped = order_[shuffleStep_];
 			order_[shuffleStep_] = order_[static_cast<std::size_t>(draw.value)];
 			order_[static_cast<std::size_t>(draw.value)] = swapped;
 			++shuffleStep_;
 		}
-		const auto isClear = [&](world::EntityKey site)
-		{
-			for (const Entry &entry : order_)
-				if (entry.entity == site)
-					return entry.cleared;
-			return false;
-		};
 		std::size_t closest = sites.size();
 		float distance = (std::numeric_limits<float>::max)();
 		for (std::size_t i = 0U; i < sites.size(); ++i)
@@ -96,29 +111,30 @@ public:
 		for (std::size_t pass = 0U; pass < kSearchPasses; ++pass)
 		{
 			for (std::size_t i = next_; i < order_.size(); ++i)
-				if (!order_[i].cleared)
+				if (!isClear(order_[i]))
 					for (std::size_t s = 0U; s < sites.size(); ++s)
-						if (sites[s].entity == order_[i].entity)
+						if (sites[s].entity == order_[i])
 						{
 							next_ = i;
 							*selected = s;
 							return true;
 						}
-			for (Entry &entry : order_)
-				entry.cleared = false;
+			cleared_.clear();
 			next_ = 0U;
 		}
 		return false;
 	}
 
 private:
-	struct Entry
+	void beginRound(world::FrameIdentity frame)
 	{
-		world::EntityKey entity;
-		bool cleared;
-	};
+		if (frame_.mapGeneration != frame.mapGeneration || frame_.roundGeneration != frame.roundGeneration)
+			reset();
+		frame_ = frame;
+	}
 	world::FrameIdentity frame_{};
-	std::vector<Entry> order_;
+	std::vector<world::EntityKey> order_, cleared_;
+	std::vector<BombSearchSite> zones_;
 	std::size_t shuffleStep_ = 0U, next_ = 0U;
 };
 

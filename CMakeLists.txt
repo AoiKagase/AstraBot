@@ -1213,6 +1213,7 @@ if(ASTRABOT_BUILD_TESTS AND ASTRABOT_BUILD_METAMOD)
   astrabot_apply_warnings(astrabot_statement_queue_runtime)
   add_test(NAME astrabot_statement_queue_runtime COMMAND astrabot_statement_queue_runtime --statement-queue)
   add_test(NAME astrabot_reporting_in_runtime COMMAND astrabot_statement_queue_runtime --reporting-in)
+  add_test(NAME astrabot_bombsite_clear_runtime COMMAND astrabot_statement_queue_runtime --bombsite-clear)
   set_tests_properties(astrabot_statement_queue_runtime PROPERTIES
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" RESOURCE_LOCK astrabot_actor_command_profile)
   add_executable(astrabot_chatter_nav_probe tests/chatter_nav_probe_tests.cpp)

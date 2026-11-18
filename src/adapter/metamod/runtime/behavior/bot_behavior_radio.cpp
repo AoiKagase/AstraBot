@@ -480,6 +480,42 @@ struct BotBehaviorRuntime::TeammateRequestEnvironment : compat::IHelpRequestEnvi
 	{
 		acknowledge(compat::ChatterPhrase::Affirmative);
 	}
+	void receivedSiteClear(world::EntityKey site)
+	{
+		if (!site.isValid() || site.id >= static_cast<unsigned>(owner.services_->service_globals()->maxEntities))
+			return;
+		const auto engine = owner.services_->service_engineFunctions();
+		const auto *zone = engine->pfnPEntityOfEntIndex(static_cast<int>(site.id));
+		if (!current() || !zone || zone->free || zone->serialnumber < 0 ||
+			static_cast<unsigned>(zone->serialnumber) + 1U != site.generation)
+			return;
+		auto &actor = owner.actors_[receiver];
+		actor.bombSearchMemory.clear(receipt.context.frame, site);
+		if (actor.bombSearchTargets.entity == site)
+			actor.bombSearchTargets = {};
+		auto &machine = actor.managedBotStateMachines;
+		if (machine.task() != compat::CompatibilityTaskId::FindTickingBomb)
+			return;
+		runtime::MovementPhysicsState before{};
+		before.dead = !receipt.context.alive;
+		const auto context = owner.makeManagedBotStateContext(receiver, before);
+		if (!current())
+			return;
+		const auto previous = machine.state();
+		const auto result = machine.transition(compat::CompatibilityStateId::Idle,
+			compat::StateTransitionReason::ObjectiveChanged, compat::StateTransitionId::ExplicitStateChange, context);
+		epoch = machine.normalStateEpoch();
+		if (result != compat::StateResult::Transitioned || !current())
+			return;
+		actor.enemyReaction.onStateChange(owner.reactionContext(receiver), previous, machine.state());
+		actor.helpGoal = {};
+		actor.managedBotObjectiveTargets = {};
+		actor.managedBotObjectiveActions = {};
+		actor.scenarioDecisions = {};
+		owner.services_->applyNavigationRequest({receiver, NavigationRequestKind::DestroyPath});
+		if (current())
+			acknowledge(compat::ChatterPhrase::Affirmative, compat::ChatterStatementTopic::Acknowledge);
+	}
 	void onMyWay() override
 	{
 		acknowledge(compat::ChatterPhrase::OnMyWay);
@@ -488,11 +524,12 @@ struct BotBehaviorRuntime::TeammateRequestEnvironment : compat::IHelpRequestEnvi
 	{
 		acknowledge(compat::ChatterPhrase::CoveringFriend);
 	}
-	void acknowledge(compat::ChatterPhrase phrase)
+	void acknowledge(compat::ChatterPhrase phrase,
+		compat::ChatterStatementTopic topic = compat::ChatterStatementTopic::MyIntention)
 	{
 		compat::ChatterStatementRequest request{};
 		request.source = compat::ChatterScheduleSource::Generic;
-		request.topic = compat::ChatterStatementTopic::MyIntention;
+		request.topic = topic;
 		request.phrase = phrase;
 		request.created = receipt.context.now;
 		request.start = request.created;
@@ -550,7 +587,8 @@ void BotBehaviorRuntime::transmitTeammateRequest(
 	std::size_t sender, compat::ChatterMeme meme, const std::function<bool()> &current)
 {
 	if ((meme.kind != compat::ChatterMemeKind::Help && meme.kind != compat::ChatterMemeKind::Follow &&
-		 meme.kind != compat::ChatterMemeKind::DefendHere && meme.kind != compat::ChatterMemeKind::RequestReport) ||
+		 meme.kind != compat::ChatterMemeKind::DefendHere && meme.kind != compat::ChatterMemeKind::RequestReport &&
+		 meme.kind != compat::ChatterMemeKind::BombsiteClear) ||
 		services_->service_compatibilitySurface().configuration().mode != compat::RuntimeMode::Compatibility)
 		return;
 	const auto engine = services_->service_engineFunctions();
@@ -617,6 +655,8 @@ void BotBehaviorRuntime::transmitTeammateRequest(
 			(void)compat::respondToFollowRequest(environment);
 		else if (meme.kind == compat::ChatterMemeKind::DefendHere)
 			(void)compat::respondToDefendRequest(meme.position, environment);
+		else if (meme.kind == compat::ChatterMemeKind::BombsiteClear)
+			environment.receivedSiteClear(meme.site);
 		else
 			environment.reportingIn(team);
 	}
@@ -929,6 +969,17 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index, const Plan
 			return true;
 		};
 		PublicNavProbe probe(services_->service_engineFunctions(), queryCurrent);
+		const auto cleared = actors_[index].clearedBombsite;
+		if (cleared.frame == input.frame && cleared.entity.isValid())
+		{
+			input.clearedBombsite = cleared.entity;
+			const auto area = compat::findBotNavArea(reportNav,
+				{cleared.position.x, cleared.position.y, cleared.position.z}, &probe, true);
+			if (!queryCurrent())
+				return;
+			input.clearedBombsitePlace = areaPlace(area);
+			input.clearedBombsitePhrase = metadataPlace(input.clearedBombsitePlace);
+		}
 		if (haveBelief && outgoingChatterCatalog_.hasPlaceBefore() &&
 			actors_[index].outgoingRadioSchedulers.needsEnemyPlace(input))
 			for (std::size_t i = 0; i < belief.actorCount(); ++i)
@@ -1039,6 +1090,8 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index, const Plan
 	input.verbosity = mode;
 	input.speaking = actors_[index].confirmedSpeech.scheduledStatement();
 	actors_[index].outgoingRadioSchedulers.prepare(input, outgoingChatterCatalog_);
+	if (input.clearedBombsite.isValid())
+		actors_[index].clearedBombsite = {};
 	if (input.alive && actors_[index].scenarioPlanners.takeReportRequest(input.frame))
 	{
 		const auto report = compat::reportingInStatement(input.now, input.inCombat, contacts,
