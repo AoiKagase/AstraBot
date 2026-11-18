@@ -418,7 +418,7 @@ struct BotBehaviorRuntime::ActorTaskEnvironment : compat::IHelpRequestEnvironmen
 			value >= low && value <= high;
 	}
 	bool enterHideState(const nav::NavVector &point, nav::AreaId goal, compat::CompatibilityTaskId task,
-		float duration = -1.0f)
+		float duration = -1.0f, bool holdForAmbush = false)
 	{
 		if (!current())
 			return false;
@@ -449,7 +449,7 @@ struct BotBehaviorRuntime::ActorTaskEnvironment : compat::IHelpRequestEnvironmen
 			float roll = 0.0f;
 			if ((duration < 0.0f && !drawFloat("Hide.Duration", 30.0f, 60.0f, duration)) ||
 				!drawFloat("Hide.Ambush", 0.0f, 100.0f, roll) ||
-				(roll < 50.0f && !drawFloat("Hide.HoldPositionTime", 3.0f, 10.0f, ambushDelay)))
+				((holdForAmbush || roll < 50.0f) && !drawFloat("Hide.HoldPositionTime", 3.0f, 10.0f, ambushDelay)))
 				return false;
 		}
 		context.hideTask = reachable ? task : compat::CompatibilityTaskId::None;
@@ -482,7 +482,7 @@ struct BotBehaviorRuntime::ActorTaskEnvironment : compat::IHelpRequestEnvironmen
 		}
 		return true;
 	}
-	bool retreatToCover(int team, float range, float duration, float ignoreDuration)
+	bool retreatToCover(int team, float range, float duration, float ignoreDuration, bool holdForAmbush = false)
 	{
 		if (!navigation.isValid() || !current())
 			return false;
@@ -498,7 +498,7 @@ struct BotBehaviorRuntime::ActorTaskEnvironment : compat::IHelpRequestEnvironmen
 		if (duration < 0.0f && !drawFloat("Attack.RetreatHold", 3.0f, 15.0f, duration))
 			return false;
 		const auto goal = areaAt(spot, false);
-		if (!current() || !enterHideState(spot, goal, compat::CompatibilityTaskId::None, duration))
+		if (!current() || !enterHideState(spot, goal, compat::CompatibilityTaskId::None, duration, holdForAmbush))
 			return false;
 		auto &actor = owner.actors_[receiver];
 		const auto &machine = actor.managedBotStateMachines;
@@ -898,6 +898,22 @@ bool BotBehaviorRuntime::updateCombatRetreat(std::size_t index, int team)
 		return false;
 	retreat.retryAfter = now + retry;
 	return env.retreatToCover(team, 1000.0f, -1.0f, 10.0f);
+}
+
+bool BotBehaviorRuntime::tryCombatAmbush(std::size_t index, int team)
+{
+	if (team != kTerroristTeam && team != kCounterTerroristTeam)
+		return false;
+	const auto &machine = actors_[index].managedBotStateMachines;
+	const auto epoch = machine.attackEntryEpoch();
+	ActorTaskEnvironment env(*this, index, index, [&] { return machine.attackEntryEpoch() == epoch; });
+	float roll = 0.0f;
+	float duration = 0.0f;
+	if (!env.current() || !env.receipt.context.alive ||
+		!env.drawFloat("Attack.AmbushChance", 0.0f, 100.0f, roll) || roll >= 33.3f ||
+		!env.drawFloat("Attack.AmbushDuration", 3.0f, 15.0f, duration))
+		return false;
+	return env.retreatToCover(team, 200.0f, duration, 1.0f, true);
 }
 
 bool BotBehaviorRuntime::tryReloadCover(std::size_t index, int team, int remainingEnemies, float timeSinceEnemy)

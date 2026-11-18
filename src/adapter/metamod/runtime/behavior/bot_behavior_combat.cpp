@@ -237,7 +237,8 @@ CombatUpkeepUpdate BotBehaviorRuntime::upkeepCombat(
 		update.hasAim = true;
 		update.angles = {aim.pitch, aim.yaw, 0};
 		update.movementRelativeToAim = state.managedBotCombat.movementActive();
-		if (!currentlyVisible)
+		if (!currentlyVisible || !state.combatRetreat.visibility.canFire(
+				state.managedBotStateMachines.attackEntryEpoch(), now))
 		{
 			update.setPrimary = true;
 			state.weaponActions.stopRapidFire();
@@ -307,6 +308,91 @@ bool BotBehaviorRuntime::cancelHeldGrenade(
 		proposal.hasCombatAim = true;
 	}
 	return true;
+}
+
+bool BotBehaviorRuntime::turnToThreateningGunfire(const ManagedActionContext &ctx,
+	const compat::StateUpdateContext &stateContext)
+{
+	const auto &noise = ctx.snapshot.noise();
+	const auto receipt = reactionContext(ctx.index);
+	const float age = receipt.now - noise.timestampSeconds;
+	if (!noise.active || noise.kind == world::SoundKind::Objective || noise.priority != world::NoisePriority::High ||
+		age < 0.0f || age > 0.5f)
+		return false;
+	auto &actor = actors_[ctx.index];
+	auto &machine = actor.managedBotStateMachines;
+	const auto epoch = machine.normalStateEpoch();
+	const auto entry = machine.attackEntryEpoch();
+	const auto execution = actor.executionRevision;
+	const auto current = [&] {
+		return executionCurrent(ctx.index, receipt, execution) && machine.normalStateEpoch() == epoch &&
+			machine.attackEntryEpoch() == entry && machine.attackOverlayActive();
+	};
+	const auto target = actor.enemyReaction.enemy(receipt);
+	const auto source = actor.enemyReaction.source(receipt);
+	const auto engine = services_->service_engineFunctions();
+	if (!target.isValid() || !source.isValid() || !reactionEnemyCurrent(target) ||
+		!engine || !engine->pfnPEntityOfEntIndex || !engine->pfnTraceLine)
+		return false;
+	const auto *enemy = engine->pfnPEntityOfEntIndex(static_cast<int>(target.slot));
+	if (!current() || !enemy || enemy->free || enemy->serialnumber < 0 ||
+		source.generation != static_cast<std::uint32_t>(enemy->serialnumber) + 1U)
+		return false;
+	auto *self = ctx.handle->entity;
+	const auto &origin = self->v.origin;
+	const auto &offset = self->v.view_ofs;
+	const float eye[3] = {origin.x + offset.x, origin.y + offset.y, origin.z + offset.z};
+	const float point[3] = {noise.position.x, noise.position.y, noise.position.z + kStandingFeetOffset};
+	const float dx = point[0] - origin.x, dy = point[1] - origin.y, dz = noise.position.z - origin.z;
+	const auto enemyDelta = enemy->v.origin - origin;
+	if (dx * dx + dy * dy + dz * dz > DotProduct(enemyDelta, enemyDelta) - 100.0f * 100.0f)
+		return false;
+	TraceResult trace{};
+	engine->pfnTraceLine(eye, point, 0x101, self, &trace);
+	if (!current() || trace.flFraction != 1.0f)
+		return false;
+	(void)machine.stopAttack(stateContext);
+	actor.managedBotCombat.clearAim();
+	actor.weaponActions.stopRapidFire();
+	actor.noiseLook.lookAtThreat(ctx.actor, ctx.frame, receipt.now, noise.position);
+	actor.noiseLookUpdate = services_->service_managedBotFullUpdateSequences()[ctx.index];
+	return true;
+}
+
+bool BotBehaviorRuntime::updateCombatAmbush(const ManagedActionContext &ctx,
+	const compat::StateUpdateContext &stateContext, bool enemyVisible)
+{
+	auto &actor = actors_[ctx.index];
+	const auto &machine = actor.managedBotStateMachines;
+	if (!machine.attackOverlayActive() ||
+		services_->service_compatibilitySurface().configuration().mode != compat::RuntimeMode::Compatibility)
+		return false;
+	auto &visibility = actor.combatRetreat.visibility;
+	if (visibility.attackEpoch != machine.attackEntryEpoch())
+	{
+		visibility = {};
+		visibility.attackEpoch = machine.attackEntryEpoch();
+	}
+	const auto receipt = reactionContext(ctx.index);
+	if (enemyVisible)
+	{
+		visibility.seenEnemy = true;
+		visibility.ambushChecked = false;
+		if (visibility.enemyHidden)
+			visibility.reacquireAfter = receipt.now + actor.managedProfiles.reactionTimeSeconds;
+		visibility.enemyHidden = false;
+		return false;
+	}
+	const float lost = receipt.now - actor.enemyReaction.lastSaw(receipt);
+	if (lost > 0.5f && turnToThreateningGunfire(ctx, stateContext))
+		return true;
+	if (lost > 0.25f)
+		visibility.enemyHidden = true;
+	if (lost <= 0.1f || !visibility.seenEnemy || visibility.ambushChecked ||
+		reactionDisposition(ctx.index) != compat::ReactionDisposition::Engage)
+		return false;
+	visibility.ambushChecked = true;
+	return tryCombatAmbush(ctx.index, ctx.team);
 }
 
 ActionProposal BotBehaviorRuntime::decideCombatAction(ManagedActionContext &ctx)
@@ -567,8 +653,6 @@ ActionProposal BotBehaviorRuntime::decideCombatAction(ManagedActionContext &ctx)
 	}
 	else
 		actors_[index].managedBotCombat.stopMovement();
-	const bool fireIntentReady = combatVisible && result == combat::CombatResult::FireIntentReady && decision.hasFire &&
-		decision.hasAim && services_->service_globals()->time >= actors_[index].attackReadyTimes;
 	const compat::StateUpdateContext stateContext = makeManagedBotStateContext(index, before);
 	if (combatVisible && !reactionIgnoring(index))
 	{
@@ -610,8 +694,22 @@ ActionProposal BotBehaviorRuntime::decideCombatAction(ManagedActionContext &ctx)
 	}
 	if (!executionCurrent(index, retreatReceipt, retreatExecution) || state.normalStateEpoch() != retreatEpoch)
 		return proposal;
-	if (decideEquipmentAction(ctx, observedWeapon, actors_[index].managedBotStateMachines.attackOverlayActive()))
+	if (weapon.kind != combat::WeaponKind::Knife && weapon.kind != combat::WeaponKind::Grenade &&
+		updateCombatAmbush(ctx, stateContext, combatVisible))
+	{
+		proposal.movementButtons = static_cast<std::uint16_t>(
+			proposal.movementButtons & ~(IN_DUCK | IN_ATTACK | IN_ATTACK2 | IN_RELOAD));
 		return proposal;
+	}
+	if (!executionCurrent(index, retreatReceipt, retreatExecution) || state.normalStateEpoch() != retreatEpoch)
+		return proposal;
+	if (decideEquipmentAction(ctx, observedWeapon, state.attackOverlayActive()))
+		return proposal;
+	const bool aimReady = context.timestamp >= actors_[index].attackReadyTimes &&
+		(weapon.kind == combat::WeaponKind::Knife || weapon.kind == combat::WeaponKind::Grenade ||
+			actors_[index].combatRetreat.visibility.canFire(state.attackEntryEpoch(), context.timestamp));
+	const bool fireIntentReady = combatVisible && result == combat::CombatResult::FireIntentReady && decision.hasFire &&
+		decision.hasAim && aimReady;
 	if (fireIntentReady)
 	{
 		proposal.kind = ActionKind::Fire;
@@ -648,8 +746,7 @@ ActionProposal BotBehaviorRuntime::decideCombatAction(ManagedActionContext &ctx)
 				decision.aim.point, context.origin, decision.aim.yaw, weapon.kind == combat::WeaponKind::Sniper));
 	weaponInput.stationary =
 		std::hypot(handle.entity->v.velocity.x, handle.entity->v.velocity.y) < kStationarySpeedThreshold;
-	weaponInput.requestFire = weaponInput.targetVisible && weaponInput.aimAligned && !target.friendlyFireRisk &&
-		services_->service_globals()->time >= actors_[index].attackReadyTimes;
+	weaponInput.requestFire = weaponInput.targetVisible && weaponInput.aimAligned && !target.friendlyFireRisk && aimReady;
 	weaponInput.attacking = actors_[index].managedBotStateMachines.attackOverlayActive();
 	compat::CompatibilityObservation publicWeapon = {};
 	const compat::ObservationTimingContext weaponTiming = {services_->command_managedBotCommandSequences(index), 0U,
@@ -880,7 +977,7 @@ ActionProposal BotBehaviorRuntime::decideCombatAction(ManagedActionContext &ctx)
 			weaponReason = "friendly_fire";
 		else if (!weaponInput.aimAligned)
 			weaponReason = "aim_alignment";
-		else if (context.timestamp < actors_[index].attackReadyTimes)
+		else if (!aimReady)
 			weaponReason = "attack_delay";
 		else if (!weaponInput.requestFire)
 			weaponReason = "attack_cooldown";

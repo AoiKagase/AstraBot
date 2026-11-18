@@ -1,5 +1,6 @@
 #include "plugin/plugin_runtime.hpp"
 #include "runtime/shared/bot_runtime_support.hpp"
+#include <cstdlib>
 #include <sstream>
 
 namespace
@@ -18,7 +19,10 @@ unsigned combatMovingFireCommands = 0U;
 bool combatPistolSelected = false;
 bool humanFriendlyBlocks = false;
 bool coverBlocksEnemySight = false;
-bool alwaysTryReloadCover = false;
+bool forceLowPercentageRoll = false;
+bool enemyBehindCover = false;
+bool rejectAmbushRoll = false;
+unsigned rejectedPercentageRolls = 0;
 unsigned combatReloadCommands = 0;
 unsigned attackDeadlineDraws = 0;
 unsigned retreatTimerDraws = 0;
@@ -28,13 +32,22 @@ float combatRandomFloat(float low, float high)
 		++attackDeadlineDraws;
 	if (low == 3.0f && high == 15.0f)
 		++retreatTimerDraws;
-	if (alwaysTryReloadCover && low == 0.0f && high == 100.0f)
+	if (rejectAmbushRoll && low == 0.0f && high == 100.0f)
+	{
+		++rejectedPercentageRolls;
+		return high;
+	}
+	if (forceLowPercentageRoll && low == 0.0f && high == 100.0f)
 		return low;
 	return siteFixtureRandomFloat(low, high);
 }
 void traceCombatVisibility(const float *start, const float *end, int ignoreMonsters, edict_t *self, TraceResult *result)
 {
 	traceObjectiveVisibility(start, end, ignoreMonsters, self, result);
+	if (enemyBehindCover && self == &gEntities[0] && ignoreMonsters == 1 &&
+		(std::fabs(end[0] - gEntities[1].v.origin.x) <= 24.0f ||
+			(gEntities[2].v.health > 0 && std::fabs(end[0] - gEntities[2].v.origin.x) <= 24.0f)))
+		result->flFraction = 0.0f;
 	if (coverBlocksEnemySight && ignoreMonsters == 0x101 && self == &gEntities[1])
 		result->flFraction = 0.5f;
 	if (humanFriendlyBlocks && ignoreMonsters == 0)
@@ -122,6 +135,82 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 	runtime.onWriteByte(22);
 	runtime.onWriteByte(30);
 	runtime.onMessageEnd();
+	const auto stepRifle = [&](int clip)
+	{
+		runtime.onMessageBegin(1, 94, nullptr, &gEntities[0]);
+		runtime.onWriteByte(1);
+		runtime.onWriteByte(22);
+		runtime.onWriteByte(clip);
+		runtime.onMessageEnd();
+		gEntities[0].v.v_angle = Vector(0, 0, 0);
+		globals.time += .125f;
+		runtime.onStartFrame();
+		runtime.onStartFramePost();
+	};
+#ifdef _MSC_VER
+	char *gunfireMode = nullptr;
+	std::size_t gunfireModeSize = 0;
+	const bool gunfireFixture = _dupenv_s(&gunfireMode, &gunfireModeSize, "ASTRABOT_TEST_COMBAT_GUNFIRE") == 0 &&
+		gunfireMode != nullptr;
+	std::free(gunfireMode);
+#else
+	const bool gunfireFixture = std::getenv("ASTRABOT_TEST_COMBAT_GUNFIRE") != nullptr;
+#endif
+	if (gunfireFixture)
+	{
+		const char *gunfireNav = "astrabot_combat_gunfire.nav";
+		if (!writeTwoSiteNavigation(gunfireNav, true))
+			return false;
+		const astrabot::metamod::NavLoadRequest load{
+			gunfireNav, "astrabot_combat_gunfire", runtime.snapshot().mapGeneration, false, 0U, false, 0U};
+		const auto loaded = runtime.loadNavigationFile(&load);
+		std::remove(gunfireNav);
+		if (!check(loaded == astrabot::metamod::NavLoadResult::Loaded, "gunfire fixture supplies a NAV for noise intake"))
+			return false;
+		const auto &state = static_cast<astrabot::metamod::BotNavigationServices &>(runtime)
+			.behavior_managedBotStateMachines(0U);
+		const auto prepareEnemy = [&](unsigned index, float x)
+		{
+			auto &enemy = gEntities[index];
+			enemy.free = false;
+			enemy.serialnumber = static_cast<int>(30 + index);
+			enemy.v.origin = Vector(x, 32, 36);
+			enemy.v.flags = FL_CLIENT;
+			enemy.v.health = 100;
+			enemy.v.deadflag = DEAD_NO;
+			enemy.v.team = 2;
+			runtime.onMessageBegin(2, 86, nullptr, nullptr);
+			runtime.onWriteByte(static_cast<int>(index + 1));
+			runtime.onWriteString("CT");
+			runtime.onMessageEnd();
+		};
+		prepareEnemy(1, 320);
+		for (unsigned frame = 0; frame < 16U && !state.attackOverlayActive(); ++frame)
+			stepRifle(30);
+		if (!check(state.attackOverlayActive(), "gunfire fixture first acquires a visible enemy"))
+			return false;
+		enemyBehindCover = true;
+		rejectAmbushRoll = true;
+		for (unsigned frame = 0; frame < 5U; ++frame)
+			stepRifle(30);
+		rejectAmbushRoll = false;
+		if (!check(rejectedPercentageRolls == 1 && state.attackOverlayActive(),
+				"the attack remains active after over half a second without sight of its target"))
+			return false;
+
+		prepareEnemy(2, 0);
+		runtime.onEmitSound(&gEntities[2], "weapons/ak47-1.wav", 1, 1);
+		for (unsigned frame = 0; frame < 2U && state.attackOverlayActive(); ++frame)
+			stepRifle(30);
+		const auto &noise = static_cast<astrabot::metamod::BotBehaviorServices &>(runtime)
+			.observation_managedBotPerception(0U).snapshot().noise();
+		if (!noise.active || noise.priority != astrabot::world::NoisePriority::High)
+			std::fprintf(stderr, "threatening gunfire was not published as high-priority noise (active=%d, priority=%d)\n",
+				noise.active, static_cast<int>(noise.priority));
+		return check(noise.active && noise.priority == astrabot::world::NoisePriority::High &&
+				!state.attackOverlayActive() && (gLastRunPlayerMoveButtons & IN_ATTACK) == 0,
+			"fresh threatening gunfire closer than the hidden target ends the attack");
+	}
 	gCaptureMovementLogs = true;
 	gProfileEnabled = true;
 	float enemyDistance = 100.0f;
@@ -385,18 +474,6 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 	}
 	passed = check(movedToCover, "eligible cover sends the attacking bot to Hide with the selected NAV target") &&
 		passed && restartPassed;
-	const auto stepRifle = [&](int clip)
-	{
-		runtime.onMessageBegin(1, 94, nullptr, &gEntities[0]);
-		runtime.onWriteByte(1);
-		runtime.onWriteByte(22);
-		runtime.onWriteByte(clip);
-		runtime.onMessageEnd();
-		gEntities[0].v.v_angle = Vector(0, 0, 0);
-		globals.time += .125f;
-		runtime.onStartFrame();
-		runtime.onStartFramePost();
-	};
 	gEntities[0].v.weapons = (1 << 22);
 	gEntities[1].v.health = 0;
 	gEntities[1].v.deadflag = DEAD_DEAD;
@@ -407,11 +484,11 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 	gEntities[1].v.deadflag = DEAD_NO;
 	for (unsigned frame = 0; frame < 8U; ++frame)
 		stepRifle(30);
-	alwaysTryReloadCover = true;
+	forceLowPercentageRoll = true;
 	const auto reloadBefore = combatReloadCommands;
 	for (unsigned frame = 0; frame < 4U; ++frame)
 		stepRifle(0);
-	alwaysTryReloadCover = false;
+	forceLowPercentageRoll = false;
 	coverBlocksEnemySight = false;
 	const auto &reloadGoal = services.behavior_scenarioDecisions(0U);
 	passed = check(combatReloadCommands > reloadBefore &&
@@ -422,7 +499,43 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 	gEntities[1].v.deadflag = DEAD_DEAD;
 	for (unsigned frame = 0; frame < 4U; ++frame)
 		stepRifle(30);
-	return check(state.state() != astrabot::compat::CompatibilityStateId::Hide,
+	passed = check(state.state() != astrabot::compat::CompatibilityStateId::Hide,
 		"after the refill is observed, zero-duration reload cover can end") && passed;
+
+	gEntities[0].v.origin = Vector(80, 32, 36);
+	gEntities[1].v.health = 100;
+	gEntities[1].v.deadflag = DEAD_NO;
+	for (unsigned frame = 0; frame < 12U; ++frame)
+		stepRifle(30);
+	if (!check(state.attackOverlayActive(), "lost-contact fixture begins with a visible enemy in an active attack"))
+		return false;
+	coverBlocksEnemySight = true;
+	enemyBehindCover = true;
+	rejectAmbushRoll = true;
+	for (unsigned frame = 0; frame < 5U; ++frame)
+		stepRifle(30);
+	rejectAmbushRoll = false;
+	passed = check(rejectedPercentageRolls == 1 && state.attackOverlayActive(),
+		"a rejected chance is tried once per loss of sight and retains the attack") && passed;
+
+	enemyBehindCover = false;
+	for (unsigned frame = 0; frame < 5U; ++frame)
+		stepRifle(30);
+	enemyBehindCover = true;
+	forceLowPercentageRoll = true;
+	const auto durationDraws = retreatTimerDraws;
+	for (unsigned frame = 0; frame < 5U; ++frame)
+		stepRifle(30);
+	coverBlocksEnemySight = false;
+	enemyBehindCover = false;
+	forceLowPercentageRoll = false;
+	const auto &ambushGoal = services.behavior_scenarioDecisions(0U);
+	passed = check(retreatTimerDraws == durationDraws + 1 && !state.attackOverlayActive() &&
+			state.state() == astrabot::compat::CompatibilityStateId::Hide && ambushGoal.hasTarget &&
+			ambushGoal.target.position.x == 32 && ambushGoal.target.position.y == 50 &&
+			(gLastRunPlayerMoveButtons & IN_ATTACK) == 0,
+		"after seeing the enemy again, the next loss may start a new ambush in nearby cover") && passed;
+
+	return passed;
 }
 }

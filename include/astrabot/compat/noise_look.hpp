@@ -77,6 +77,17 @@ public:
 		frame_ = frame;
 		lastTime_ = now;
 	}
+	void lookAtThreat(world::ActorKey actor, const world::FrameIdentity &frame, float now,
+		const world::WorldPosition &point)
+	{
+		synchronize(actor, frame, now);
+		clearLook();
+		point_ = point;
+		active_ = true;
+		highPriority_ = true;
+		duration_ = 0.0f;
+		clearIfClose_ = false;
+	}
 	bool active() const
 	{
 		return active_;

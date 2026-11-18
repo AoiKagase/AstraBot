@@ -288,6 +288,10 @@ private:
 	BehaviorPhaseResult decideObjectiveAction(ManagedActionContext &ctx);
 	ActionProposal decideCombatAction(ManagedActionContext &ctx);
 	bool updateCombatRetreat(std::size_t index, int team);
+	bool turnToThreateningGunfire(const ManagedActionContext &ctx, const compat::StateUpdateContext &stateContext);
+	bool updateCombatAmbush(const ManagedActionContext &ctx, const compat::StateUpdateContext &stateContext,
+		bool enemyVisible);
+	bool tryCombatAmbush(std::size_t index, int team);
 	bool decideReloadAction(ManagedActionContext &ctx);
 	bool tryReloadCover(std::size_t index, int team, int remainingEnemies, float timeSinceEnemy);
 	void updateGuardLook(ManagedActionContext &ctx);
@@ -555,6 +559,19 @@ private:
 		}
 	};
 
+	struct AttackVisibility
+	{
+		std::uint64_t attackEpoch = 0;
+		bool seenEnemy = false;
+		bool ambushChecked = false;
+		bool enemyHidden = false;
+		float reacquireAfter = -1.0f;
+
+		bool canFire(std::uint64_t epoch, float now) const
+		{
+			return attackEpoch != epoch || now > reacquireAfter;
+		}
+	};
 	struct CombatRetreatState
 	{
 		std::uint64_t attackEpoch = 0;
@@ -563,6 +580,7 @@ private:
 		float pinnedAfter = 0;
 		float retryAfter = -1;
 		bool coward = false;
+		AttackVisibility visibility{};
 	};
 	struct ActorState
 	{
