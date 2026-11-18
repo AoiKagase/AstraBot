@@ -52,7 +52,8 @@ enum class ChatterMemeKind : std::uint8_t
 	WhereBomb,
 	BombsitePlanted,
 	BombMoving,
-	BombLoose
+	BombLoose,
+	HostageBeingTaken
 };
 struct ChatterMeme
 {

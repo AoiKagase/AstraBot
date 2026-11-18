@@ -129,6 +129,7 @@ void BotBehaviorRuntime::onActorRemoved(std::size_t index)
 	actors_[index].scenarioEscapeAreas = 0U;
 	actors_[index].bombSearchMemory.reset();
 	actors_[index].bombStatus = {};
+	actors_[index].someHostagesTaken = false;
 	actors_[index].looseBombObservation = {};
 	actors_[index].managedStateInputs = {};
 	actors_[index].bombSearchTargets = {};
@@ -159,6 +160,7 @@ void BotBehaviorRuntime::onActorRemembered(std::size_t index, const FakeClientHa
 	actors_[index].morale = {};
 	invalidateHelpExecution(index);
 	actors_[index].bombStatus = {};
+	actors_[index].someHostagesTaken = false;
 	actors_[index].looseBombObservation = {};
 	actors_[index].teamworkPolicies.reset();
 	actors_[index].noiseLook.reset();

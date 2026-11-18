@@ -111,6 +111,7 @@ public:
 		std::size_t index, const runtime::MovementPhysicsState &before, PlantMoveChatter *plantMove = nullptr);
 	void updateOutgoingPublicRadio(std::size_t index, const PlantMoveChatter *plantMove = nullptr);
 	void observeBombPickup(Vector origin, world::FrameIdentity frame);
+	void observeHostageUsed(Vector origin, world::FrameIdentity frame);
 	compat::ChatterScheduleAdmission chatterAdmission(std::size_t index);
 	compat::ChatterScheduleEntry activeTeamChatter(std::size_t index, int team, bool *current);
 	void updatePublicBuying(std::size_t index);
@@ -555,6 +556,7 @@ private:
 		nav::AreaId scenarioEscapeAreas{};
 		compat::BombSiteSearchMemory bombSearchMemory{};
 		compat::BombStatusMemory bombStatus{};
+		bool someHostagesTaken = false;
 		compat::ScenarioTarget looseBombObservation{};
 		compat::ScenarioTarget bombSearchTargets{};
 		compat::ScenarioTarget clearedBombsite{};

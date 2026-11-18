@@ -69,6 +69,9 @@ public:
 	void onMessageEnd();
 	void onRoundLifecycleMessage(const char *message);
 	void onPlayerLogMessage(const char *message);
+	void beginPlayerPostThink(edict_t *player);
+	void endPlayerPostThink(const edict_t *player);
+	void onHostageVoice(const edict_t *hostage, const char *sample, float volume, float attenuation, int pitch);
 	bool beginRoundGeneration();
 	void onWriteByte(int value);
 	void onWriteChar(int value);
@@ -241,6 +244,16 @@ private:
 		return state_ == State::ActiveMap;
 	}
 
+	struct HostageUseScope
+	{
+		edict_t *player;
+		int serial;
+		world::FrameIdentity frame;
+		bool usingEntity;
+		bool reported = false;
+	};
+	std::vector<HostageUseScope> hostageUseScopes_{};
+	void reportHostageUse(edict_t *player, world::FrameIdentity frame);
 	MovementSoundBridge movementSounds_{};
 	BotObservationRuntime observation_{};
 	BotBehaviorRuntime behavior_{};
@@ -759,6 +772,8 @@ private:
 FORCE_STACK_ALIGN void HookClientDisconnect(edict_t *entity);
 FORCE_STACK_ALIGN void HookKeyValue(edict_t *entity, KeyValueData *data);
 FORCE_STACK_ALIGN void HookTouch(edict_t *entity, edict_t *other);
+FORCE_STACK_ALIGN void HookPlayerPostThink(edict_t *player);
+FORCE_STACK_ALIGN void HookPlayerPostThinkPost(edict_t *player);
 FORCE_STACK_ALIGN void HookCmdStart(const edict_t *entity, const usercmd_t *command, unsigned int randomSeed);
 FORCE_STACK_ALIGN void HookClientPutInServer(edict_t *entity);
 FORCE_STACK_ALIGN void HookServerActivate(edict_t *edictList, int edictCount, int clientMax);

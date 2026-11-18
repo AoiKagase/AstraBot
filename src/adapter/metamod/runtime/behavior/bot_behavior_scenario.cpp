@@ -183,6 +183,7 @@ BotBehaviorRuntime::BehaviorPhaseResult BotBehaviorRuntime::updateBehaviorLifecy
 	if (actors_[index].managedBotWasDead)
 	{
 		actors_[index].bombStatus = {};
+		actors_[index].someHostagesTaken = false;
 		actors_[index].looseBombObservation = {};
 		actors_[index].equipment.reset();
 		actors_[index].scenarioPlanners.reset();

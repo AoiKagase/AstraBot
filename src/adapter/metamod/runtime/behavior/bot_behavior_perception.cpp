@@ -232,6 +232,7 @@ void BotBehaviorRuntime::resetRoundRecognition()
 	for (auto &actor : actors_)
 	{
 		actor.bombStatus = {};
+		actor.someHostagesTaken = false;
 		actor.looseBombObservation = {};
 		actor.noiseInvestigation.reset();
 		actor.noiseReportPolicy = {};

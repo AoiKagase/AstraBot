@@ -1,3 +1,13 @@
+## 12A　人質の連れ出し報告
+
+ReGameDLL-CS `b088984` の `CHostage::Use`、`CCSBot::OnEvent`、`BotChatterInterface::HostagesBeingTaken` と `BotHostageBeingTakenMeme::Interpret` を参照した。
+
+- CTの使用処理に伴う追従開始音と、CTの名前・ユーザーIDを照合した初回接触ログを受け取る。同じ使用中の二重通知は抑止する。3次元距離1,200単位以内にいる生存中のTが報告する。
+- 発話の自然完了時に味方Botが連れ出しを記憶する。対応可能なら待機状態に戻って `Affirmative` と応答し、交戦・重要任務中は現在の行動を続ける。
+- 統合テストでは2体のTを1,200と1,201単位に置いて音声と応答を照合した。旧式・改良型の音声、音声と初回ログの重複、および無関係な音声の除外を検証した。
+- Windows x86 Debugは149/149件、Linux x86 Debugは147/148件合格。Linuxの失敗は既知の項目22 `astrabot_combat_policy`。既存の動作トレースは両OSで149,153行一致し、PE・ELFのx86形式と必須エクスポート7件も確認した。
+- 改良型人質が無音で再追従したときの公開通知経路、目視による連れ去りの認識、警備先選択への記憶の反映は12B。実機での受入れは25。
+
 ## 2026-11-18　11C-2b（設置前）　CTの爆破地点警備と落下C4への応答
 
 基点は `b78c3dc`。ReGameDLL_CS `b088984` の `CCSBotManager::RestartRound`、`IdleState::OnUpdate`、`HideState::OnUpdate`、`BotBombStatusMeme::Interpret` とラウンド結果・再出現時の士気更新を参照した。

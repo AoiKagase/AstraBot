@@ -11,6 +11,7 @@ bool looseBombFixture = false;
 bool looseGuardFixture = false;
 bool deferredSiteFixture = false;
 bool preplantGuardFixture = false;
+bool hostageUseFixture = false;
 bool chooseTeamRush = false;
 float teamRushRoll = 100.0f;
 float preplantIdleRoll = -1.0f;
@@ -39,6 +40,7 @@ void selectStatementFixture(int argc, char **argv)
 	looseGuardFixture = argc == 2 && std::strcmp(argv[1], "--guard-loose-bomb") == 0;
 	deferredSiteFixture = argc == 2 && std::strcmp(argv[1], "--guard-planted-bombsite") == 0;
 	preplantGuardFixture = argc == 2 && std::strcmp(argv[1], "--guard-unplanted-bombsite") == 0;
+	hostageUseFixture = argc == 2 && std::strcmp(argv[1], "--hostage-use-report") == 0;
 }
 bool testStatementQueue(astrabot::metamod::PluginRuntime &, enginefuncs_t &, globalvars_t &);
 void setupStatementQueue(enginefuncs_t &, globalvars_t &);
@@ -132,6 +134,8 @@ unsigned char *queueLoad(char *name, int *length)
 		return nullptr;
 	}
 	std::string contents(text);
+	if (hostageUseFixture)
+		contents += " Chatter HostagesBeingTaken taken.wav End";
 	if (reportingInFixture)
 		contents += " Chatter RequestReport Radio EVENT_RADIO_REPORT_IN_TEAM request.wav End";
 	if (bombsiteClearFixture)
@@ -199,7 +203,7 @@ void queueString(const char *sample)
 	if (queueMessage == 101 && queueRecipient == &gEntities[0])
 	{
 		queueSamples.emplace_back(sample);
-		if (reportingInFixture || bombFixtureMap())
+		if (reportingInFixture || hostageUseFixture || bombFixtureMap())
 			reportAudio.emplace_back(queueSpeakerSlot, sample);
 		if (queueHelpRecording && queueClock)
 			queueHelpSamples.emplace_back(sample, queueClock->time);
@@ -258,6 +262,8 @@ void setupStatementQueue(enginefuncs_t &engine, globalvars_t &globals)
 	engine.pfnWriteString = &queueString;
 	engine.pfnMessageEnd = &queueEnd;
 	engine.pfnTraceLine = &queueVisibility;
+	if (hostageUseFixture)
+		engine.pfnSzFromIndex = [](int id) -> const char * { return id == 33 ? "hostage_entity" : szFromIndex(id); };
 	gpMetaUtilFuncs->pfnGetUserMsgID = &queueMessageId;
 }
 void queueInputRadio(astrabot::metamod::BotObservationRuntime &observer, const char *token)
@@ -1787,6 +1793,110 @@ bool testActualFollowMovement(astrabot::metamod::PluginRuntime &runtime, globalv
 	return ok;
 }
 
+bool testHostageUseReport(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &hooks, globalvars_t &globals)
+{
+	using namespace astrabot;
+	queueMode = "normal";
+	queueEnemiesVisible = false;
+	setCvarFloat("mp_buytime", 0);
+	setCvarFloat("bot_stop", 0);
+	runtime.setCompatibilityFloat("bot_quota", 2);
+	if (!check(runtime.executeCompatibilityCommand(request("bot_add_t", 1U, "Queue Peer")) ==
+			metamod::CompatibilityCommandResult::Handled, "second T joins the hostage report fixture"))
+		return false;
+	for (int i = 0; i < 2; ++i)
+	{
+		auto &ent = gEntities[i];
+		ent.v.team = 1;
+		ent.v.flags = FL_CLIENT | FL_FAKECLIENT | FL_ONGROUND;
+		ent.v.health = 100;
+		ent.v.deadflag = DEAD_NO;
+		ent.v.solid = SOLID_SLIDEBOX;
+		ent.v.movetype = MOVETYPE_WALK;
+		ent.v.maxspeed = 250;
+		ent.v.view_ofs = Vector(0, 0, 17);
+		hooks.pfnMessageBegin(MSG_ALL, 86, nullptr, nullptr);
+		hooks.pfnWriteByte(i + 1);
+		hooks.pfnWriteString("TERRORIST");
+		hooks.pfnMessageEnd();
+	}
+	auto &ct = gEntities[2];
+	gEntityNames[2] = "Rescuer";
+	ct.v.netname = 102;
+	ct.v.button = IN_USE;
+	ct.v.origin = Vector(0, 0, 36);
+	gEntities[0].v.origin = Vector(0, 0, 1236);
+	gEntities[1].v.origin = Vector(1201, 0, 36);
+	runtime.beginRoundGeneration();
+	auto advance = [&](int frames) {
+		for (int i = 0; i < frames; ++i)
+		{
+			globals.time += .125f;
+			runtime.onStartFrame();
+			runtime.onStartFramePost();
+		}
+	};
+	advance(40);
+	reportAudio.clear();
+	auto count = [&](int speaker, const char *sample) {
+		return std::count(reportAudio.begin(), reportAudio.end(), std::make_pair(speaker, std::string(sample)));
+	};
+	char firstTouch[] = "\"Rescuer<%d><STEAM_0:1:12><CT>\" triggered \"Touched_A_Hostage\"\n";
+	hooks.pfnAlertMessage(at_logged, firstTouch, 999);
+	advance(16);
+	if (!check(!count(1, "radio/test/taken.wav"), "wrong player ID cannot announce a hostage"))
+		return false;
+	hooks.pfnAlertMessage(at_logged, firstTouch, 103);
+	advance(48);
+	if (!check(count(1, "radio/test/taken.wav") == 1 && count(2, "radio/test/taken.wav") == 0 &&
+			count(2, "radio/test/ack.wav") == 1 && !count(1, "radio/test/ack.wav"),
+			"the T at 1200 hears the CT and the T at 1201 acknowledges its teammate's report"))
+		return false;
+	DLL_FUNCTIONS pre{}, post{};
+	int version = INTERFACE_VERSION;
+	if (!check(runtime.provideEntityApi(&pre, &version) && runtime.provideEntityApiPost(&post, &version) &&
+			pre.pfnPlayerPostThink && post.pfnPlayerPostThink, "hostage speech is tied to the actual player's use"))
+		return false;
+	auto &hostage = gPlantedBomb;
+	hostage.free = false;
+	hostage.serialnumber = 72;
+	hostage.v.classname = 33;
+	hostage.v.takedamage = DAMAGE_YES;
+	hostage.v.origin = gEntities[1].v.origin;
+	auto voice = [&](const char *sample, int channel = CHAN_VOICE, int flags = 0, float attenuation = ATTN_NORM) {
+		hooks.pfnEmitSound(&hostage, channel, sample, VOL_NORM, attenuation, flags, PITCH_NORM);
+	};
+	reportAudio.clear();
+	voice("hostage/hos1.wav");
+	pre.pfnPlayerPostThink(&ct);
+	pre.pfnPlayerPostThink(&gEntities[1]);
+	voice("hostage/hos1.wav");
+	post.pfnPlayerPostThink(&gEntities[1]);
+	voice("hostage/hos1.wav", CHAN_WEAPON);
+	voice("hostage/hos1.wav", CHAN_VOICE, 1 << 5);
+	voice("hostage/hunuse/comeback.wav");
+	post.pfnPlayerPostThink(&ct);
+	advance(32);
+	if (!check(!count(1, "radio/test/taken.wav") && !count(2, "radio/test/taken.wav"),
+			"unattributed, nested non-use, stopped, other-channel and stop-follow samples do not produce reports"))
+		return false;
+	pre.pfnPlayerPostThink(&ct);
+	voice("hostage/hos5.wav");
+	hooks.pfnAlertMessage(at_logged, firstTouch, 103);
+	post.pfnPlayerPostThink(&ct);
+	advance(48);
+	if (!check(count(1, "radio/test/taken.wav") == 1 && count(2, "radio/test/ack.wav") == 1 &&
+			!count(2, "radio/test/taken.wav"), "native voice and the first-touch log describe one use at the CT's origin"))
+		return false;
+	reportAudio.clear();
+	pre.pfnPlayerPostThink(&ct);
+	voice("hostage/huse/illfollow.wav", CHAN_VOICE, 0, 1.0f);
+	post.pfnPlayerPostThink(&ct);
+	advance(48);
+	return check(count(1, "radio/test/taken.wav") == 1 && count(2, "radio/test/ack.wav") == 1,
+		"a later voiced improved-hostage follow is reported without another first-touch log");
+}
+
 bool testStatementQueue(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &engine, globalvars_t &globals)
 {
 	using namespace astrabot;
@@ -1891,6 +2001,8 @@ bool testStatementQueue(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t
 			check(queueSamples == std::vector<std::string>{"radio/test/ack.wav", "radio/test/help.wav"},
 				"both statements survive simultaneous admission, fixed count criteria and later OFF mode")))
 		return false;
+	if (hostageUseFixture)
+		return testHostageUseReport(runtime, hooks, globals);
 	if (const char *map = bombFixtureMap())
 	{
 		queueMode = "normal";

@@ -14,6 +14,7 @@
 #include <cstdlib>
 #include <limits>
 #include <vector>
+#include <in_buttons.h>
 
 meta_globals_t *gpMetaGlobals = nullptr;
 gamedll_funcs_t *gpGamedllFuncs = nullptr;
@@ -214,6 +215,7 @@ bool PluginRuntime::detach(PLUG_LOADTIME loadTime, PL_UNLOAD_REASON reason)
 	if (movementSounds_.active())
 		return false;
 	movementSounds_.reset();
+	hostageUseScopes_.clear();
 	observation_.resetGunshotEvents();
 	(void)loadTime;
 	(void)reason;
@@ -265,6 +267,7 @@ bool PluginRuntime::provideEntityApi(DLL_FUNCTIONS *functionTable, int *interfac
 
 	DLL_FUNCTIONS requestedFunctions{};
 	requestedFunctions.pfnCmdStart = &HookCmdStart;
+	requestedFunctions.pfnPlayerPostThink = &HookPlayerPostThink;
 	requestedFunctions.pfnPM_Move = &HookPmMove;
 	requestedFunctions.pfnTouch = &HookTouch;
 	requestedFunctions.pfnKeyValue = &HookKeyValue;
@@ -295,6 +298,7 @@ bool PluginRuntime::provideEntityApiPost(DLL_FUNCTIONS *functionTable, int *inte
 
 	DLL_FUNCTIONS requestedFunctions{};
 	requestedFunctions.pfnStartFrame = &HookStartFramePost;
+	requestedFunctions.pfnPlayerPostThink = &HookPlayerPostThinkPost;
 	requestedFunctions.pfnPM_Move = &HookPmMovePost;
 	*functionTable = requestedFunctions;
 	return true;
@@ -512,6 +516,7 @@ bool PluginRuntime::beginRoundGeneration()
 		return false;
 	}
 	movementSounds_.reset();
+	hostageUseScopes_.clear();
 	observation_.resetRoundWeapons();
 	behavior_.resetRoundBuyingState();
 
@@ -615,6 +620,7 @@ void PluginRuntime::onCmdStart(const edict_t *entity, std::uint16_t buttons)
 void PluginRuntime::onServerActivate(edict_t *edictList, int edictCount, int clientMax)
 {
 	movementSounds_.reset();
+	hostageUseScopes_.clear();
 	(void)edictList;
 	(void)edictCount;
 	(void)clientMax;
@@ -671,6 +677,7 @@ void PluginRuntime::onServerActivate(edict_t *edictList, int edictCount, int cli
 void PluginRuntime::onServerDeactivate()
 {
 	movementSounds_.reset();
+	hostageUseScopes_.clear();
 	observation_.resetGunshotEvents();
 	behavior_.resetObstacleMaterials();
 	pendingJoinActions_.clear();
@@ -1041,20 +1048,95 @@ void PluginRuntime::onMessageEnd()
 	observation_.onMessageEnd();
 }
 
+void PluginRuntime::beginPlayerPostThink(edict_t *player)
+{
+	const bool usingEntity = player && !player->free && (player->v.flags & FL_CLIENT) &&
+		player->serialnumber >= 0 && player->v.deadflag == DEAD_NO && (player->v.button & IN_USE);
+	if (state_ == State::ActiveMap && (usingEntity || !hostageUseScopes_.empty()))
+		hostageUseScopes_.push_back({player, player ? player->serialnumber : -1,
+			{lifecycle_.mapGeneration(), lifecycle_.roundGeneration(), adapterFrameCount_}, usingEntity});
+}
+
+void PluginRuntime::endPlayerPostThink(const edict_t *player)
+{
+	if (hostageUseScopes_.empty())
+		return;
+	if (hostageUseScopes_.back().player == player)
+		hostageUseScopes_.pop_back();
+	else
+		hostageUseScopes_.clear();
+}
+
+void PluginRuntime::reportHostageUse(edict_t *player, world::FrameIdentity frame)
+{
+	if (!hostageUseScopes_.empty())
+	{
+		auto &scope = hostageUseScopes_.back();
+		if (scope.player == player && scope.serial == player->serialnumber && scope.frame == frame)
+		{
+			if (scope.reported)
+				return;
+			scope.reported = true;
+		}
+	}
+	behavior_.observeHostageUsed(player->v.origin, frame);
+}
+
+void PluginRuntime::onHostageVoice(const edict_t *hostage, const char *sample, float volume, float attenuation, int pitch)
+{
+	if (hostageUseScopes_.empty() || !hostageUseScopes_.back().usingEntity || hostageUseScopes_.back().reported ||
+		!hostage || hostage->free || hostage->v.takedamage != DAMAGE_YES || !sample || volume != VOL_NORM)
+		return;
+	const bool classic = attenuation == ATTN_NORM && pitch == PITCH_NORM &&
+		std::strncmp(sample, "hostage/hos", 11) == 0 && sample[11] >= '1' && sample[11] <= '5' &&
+		std::strcmp(sample + 12, ".wav") == 0;
+	static constexpr const char *improvedVoices[] = {
+		"hostage/huse/getouttahere.wav", "hostage/huse/illfollow.wav", "hostage/huse/letsdoit.wav",
+		"hostage/huse/letsgo.wav", "hostage/huse/letshurry.wav", "hostage/huse/letsmove.wav",
+		"hostage/huse/okletsgo.wav", "hostage/huse/youlead.wav"};
+	const bool improved = attenuation == 1.0f && (pitch == 92 || pitch == 86 || pitch == 100 || pitch == 88) &&
+		std::any_of(std::begin(improvedVoices), std::end(improvedVoices),
+			[sample](const char *known) { return std::strcmp(sample, known) == 0; });
+	const auto engine = engineFunctions_;
+	if ((!classic && !improved) || !engine || !engine->pfnSzFromIndex || !hostage->v.classname)
+		return;
+
+	// The accepted follow sound is synchronous with the CT's PlayerUse. Its emitter is the hostage.
+	const auto scope = hostageUseScopes_.back();
+	const auto depth = hostageUseScopes_.size();
+	const auto current = [&]() {
+		return state_ == State::ActiveMap && engineFunctions_ == engine && scope.frame ==
+			world::FrameIdentity{lifecycle_.mapGeneration(), lifecycle_.roundGeneration(), adapterFrameCount_} &&
+			hostageUseScopes_.size() == depth && hostageUseScopes_.back().player == scope.player &&
+			hostageUseScopes_.back().serial == scope.serial && !hostageUseScopes_.back().reported &&
+			!scope.player->free && scope.player->serialnumber == scope.serial && scope.player->v.deadflag == DEAD_NO;
+	};
+	const char *className = engine->pfnSzFromIndex(hostage->v.classname);
+	if (current() && className && std::strcmp(className, "hostage_entity") == 0 &&
+		observation_.resolvePlayerTeam(scope.player) == kCounterTerroristTeam && current())
+		reportHostageUse(scope.player, scope.frame);
+}
+
 void PluginRuntime::onPlayerLogMessage(const char *message)
 {
 	// CWeaponBox::Touch emits this engine log only for the player who retrieved the C4.
 	// BombPickup user messages also go to other T players and carry no picker identity.
-	static constexpr char suffix[] = "><TERRORIST>\" triggered \"Got_The_Bomb\"";
+	static constexpr char bombSuffix[] = "><TERRORIST>\" triggered \"Got_The_Bomb\"";
+	static constexpr char hostageSuffix[] = "><CT>\" triggered \"Touched_A_Hostage\"";
 	const auto engine = engineFunctions_;
 	if (state_ != State::ActiveMap || !globals_ || !message || *message != '"' || !engineFunctions_ ||
 		!engine->pfnPEntityOfEntIndex || !engine->pfnGetPlayerUserId || !engine->pfnSzFromIndex)
 		return;
 	const auto length = std::strcspn(message, "\r\n");
-	if (length <= sizeof(suffix) - 1 || message[length + std::strspn(message + length, "\r\n")] != '\0' ||
-		std::memcmp(message + length - (sizeof(suffix) - 1), suffix, sizeof(suffix) - 1) != 0)
+	if (message[length + std::strspn(message + length, "\r\n")] != '\0')
 		return;
-	const std::string identity(message, length - (sizeof(suffix) - 1));
+	const auto endsWith = [&](const char *suffix, std::size_t suffixLength) {
+		return length > suffixLength && std::memcmp(message + length - suffixLength, suffix, suffixLength) == 0;
+	};
+	const bool hostageTouch = endsWith(hostageSuffix, sizeof(hostageSuffix) - 1);
+	if (!hostageTouch && !endsWith(bombSuffix, sizeof(bombSuffix) - 1))
+		return;
+	const std::string identity(message, length - (hostageTouch ? sizeof(hostageSuffix) : sizeof(bombSuffix)) + 1);
 	const auto frame = world::FrameIdentity{lifecycle_.mapGeneration(), lifecycle_.roundGeneration(), adapterFrameCount_};
 	const auto current = [&]() {
 		return state_ == State::ActiveMap && engineFunctions_ == engine && frame.mapGeneration == lifecycle_.mapGeneration() &&
@@ -1080,9 +1162,15 @@ void PluginRuntime::onPlayerLogMessage(const char *message)
 		if (!current() || userId <= 0 || identity.compare(0, prefix.size(), prefix) != 0 ||
 			identity.find_first_of("<>\"", prefix.size()) != std::string::npos)
 			continue;
-		if (observation_.resolvePlayerTeam(player) == kTerroristTeam && current() && !player->free &&
+		const int expectedTeam = hostageTouch ? kCounterTerroristTeam : kTerroristTeam;
+		if (observation_.resolvePlayerTeam(player) == expectedTeam && current() && !player->free &&
 			player->serialnumber == serial && player->v.netname == nameIndex && player->v.deadflag == DEAD_NO)
-			behavior_.observeBombPickup(player->v.origin, frame);
+		{
+			if (hostageTouch)
+				reportHostageUse(player, frame);
+			else
+				behavior_.observeBombPickup(player->v.origin, frame);
+		}
 		return;
 	}
 }
@@ -2431,6 +2519,18 @@ void HookTouch(edict_t *entity, edict_t *other)
 	setMetaResult(MRES_IGNORED);
 }
 
+void HookPlayerPostThink(edict_t *player)
+{
+	PluginRuntime::instance().beginPlayerPostThink(player);
+	setMetaResult(MRES_IGNORED);
+}
+
+void HookPlayerPostThinkPost(edict_t *player)
+{
+	PluginRuntime::instance().endPlayerPostThink(player);
+	setMetaResult(MRES_IGNORED);
+}
+
 void HookCmdStart(const edict_t *entity, const usercmd_t *command, unsigned int randomSeed)
 {
 	(void)randomSeed;
@@ -2513,8 +2613,8 @@ void HookWriteCoord(float value)
 void HookEmitSound(
 	edict_t *entity, int channel, const char *sample, float volume, float attenuation, int flags, int pitch)
 {
-	(void)channel;
-	(void)pitch;
+	if (channel == CHAN_VOICE && flags == 0)
+		PluginRuntime::instance().onHostageVoice(entity, sample, volume, attenuation, pitch);
 	constexpr int kStopSoundFlag = 1 << 5;
 	if ((flags & kStopSoundFlag) == 0)
 		PluginRuntime::instance().onEmitSound(entity, sample, volume, attenuation);

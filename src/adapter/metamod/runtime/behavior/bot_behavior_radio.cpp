@@ -530,12 +530,22 @@ struct BotBehaviorRuntime::ActorTaskEnvironment : compat::IHelpRequestEnvironmen
 			actor.bombSearchTargets = {};
 		leaveTaskAndAcknowledge(compat::CompatibilityTaskId::FindTickingBomb);
 	}
+	void receivedHostageBeingTaken()
+	{
+		owner.actors_[receiver].someHostagesTaken = true;
+		if (!busy())
+			idleAndAcknowledge(compat::ChatterStatementTopic::MyIntention, true);
+	}
 	void leaveTaskAndAcknowledge(compat::CompatibilityTaskId task)
+	{
+		if (owner.actors_[receiver].managedBotStateMachines.task() == task)
+			idleAndAcknowledge(compat::ChatterStatementTopic::Acknowledge,
+				task == compat::CompatibilityTaskId::GuardBombZone);
+	}
+	void idleAndAcknowledge(compat::ChatterStatementTopic topic, bool cancelHold)
 	{
 		auto &actor = owner.actors_[receiver];
 		auto &machine = actor.managedBotStateMachines;
-		if (machine.task() != task)
-			return;
 		runtime::MovementPhysicsState before{};
 		before.dead = !receipt.context.alive;
 		const auto context = owner.makeManagedBotStateContext(receiver, before);
@@ -548,7 +558,7 @@ struct BotBehaviorRuntime::ActorTaskEnvironment : compat::IHelpRequestEnvironmen
 		if (result != compat::StateResult::Transitioned || !current())
 			return;
 		actor.enemyReaction.onStateChange(owner.reactionContext(receiver), previous, machine.state());
-		if (task == compat::CompatibilityTaskId::GuardBombZone)
+		if (cancelHold)
 			actor.scenarioPlanners.cancelHoldPosition();
 		actor.helpGoal = {};
 		actor.managedBotObjectiveTargets = {};
@@ -556,7 +566,7 @@ struct BotBehaviorRuntime::ActorTaskEnvironment : compat::IHelpRequestEnvironmen
 		actor.scenarioDecisions = {};
 		owner.services_->applyNavigationRequest({receiver, NavigationRequestKind::DestroyPath});
 		if (current())
-			acknowledge(compat::ChatterPhrase::Affirmative, compat::ChatterStatementTopic::Acknowledge);
+			acknowledge(compat::ChatterPhrase::Affirmative, topic);
 	}
 	void onMyWay() override
 	{
@@ -832,7 +842,7 @@ void BotBehaviorRuntime::transmitTeammateRequest(
 		 meme.kind != compat::ChatterMemeKind::DefendHere && meme.kind != compat::ChatterMemeKind::RequestReport &&
 		 meme.kind != compat::ChatterMemeKind::BombsiteClear && meme.kind != compat::ChatterMemeKind::BombsitePlanted &&
 		 meme.kind != compat::ChatterMemeKind::WhereBomb && meme.kind != compat::ChatterMemeKind::BombMoving &&
-		 meme.kind != compat::ChatterMemeKind::BombLoose) ||
+		 meme.kind != compat::ChatterMemeKind::BombLoose && meme.kind != compat::ChatterMemeKind::HostageBeingTaken) ||
 		services_->service_compatibilitySurface().configuration().mode != compat::RuntimeMode::Compatibility)
 		return;
 	const auto engine = services_->service_engineFunctions();
@@ -905,6 +915,8 @@ void BotBehaviorRuntime::transmitTeammateRequest(
 			environment.reportPlantedSite();
 		else if (meme.kind == compat::ChatterMemeKind::BombMoving)
 			environment.receivedMovingBomb(meme.position, team);
+		else if (meme.kind == compat::ChatterMemeKind::HostageBeingTaken)
+			environment.receivedHostageBeingTaken();
 		else if (meme.kind == compat::ChatterMemeKind::BombLoose)
 		{
 			actors_[receiver].bombStatus.rememberLoose(meme.position);
@@ -1133,6 +1145,41 @@ void BotBehaviorRuntime::observeBombPickup(Vector origin, world::FrameIdentity f
 		const auto offset = self->v.origin - origin;
 		if (offset.x * offset.x + offset.y * offset.y + offset.z * offset.z < kHearingRange * kHearingRange)
 			reportBombPickedUp(index);
+	}
+}
+
+void BotBehaviorRuntime::observeHostageUsed(Vector origin, world::FrameIdentity frame)
+{
+	if (services_->service_compatibilitySurface().configuration().mode != compat::RuntimeMode::Compatibility ||
+		services_->service_roundOver())
+		return;
+	constexpr float kHearingRange = 1200.0f;
+	for (std::size_t index = 0; index < actors_.size() && !services_->service_roundOver(); ++index)
+	{
+		const auto receipt = reactionContext(index);
+		auto *self = services_->service_managedBotHandles()[index].entity;
+		if (!receipt.valid() || !(receipt.frame == frame) || !self)
+			continue;
+		const auto offset = self->v.origin - origin;
+		if (!(offset.x * offset.x + offset.y * offset.y + offset.z * offset.z <= kHearingRange * kHearingRange))
+			continue;
+		const auto revision = actors_[index].executionRevision;
+		if (services_->observation_resolvePlayerTeam(self) != kTerroristTeam ||
+			!executionCurrent(index, receipt, revision))
+			continue;
+		ensureOutgoingChatterCatalog();
+		if (!executionCurrent(index, receipt, revision) || services_->service_roundOver())
+			continue;
+		ActorTaskEnvironment environment(*this, index, index, [] { return true; });
+		compat::ChatterStatementRequest report{};
+		report.source = compat::ChatterScheduleSource::Generic;
+		report.topic = compat::ChatterStatementTopic::Information;
+		report.phrase = compat::ChatterPhrase::HostagesBeingTaken;
+		report.created = report.start = report.readyAt = receipt.now;
+		report.expires = receipt.now + 3.0f;
+		report.meme.kind = compat::ChatterMemeKind::HostageBeingTaken;
+		if (environment.current())
+			environment.admit(report);
 	}
 }
 
