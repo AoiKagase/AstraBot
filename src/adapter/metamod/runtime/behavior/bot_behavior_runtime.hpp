@@ -301,6 +301,8 @@ private:
 	bool respondToFallBack(std::size_t index, int team, const compat::ScenarioFallBackResponse &response);
 	void encourageHumanDefuse(std::size_t index, float remaining, const std::function<bool()> &current);
 	void reportAutomaticFollow(std::size_t index, const std::function<bool()> &current);
+	bool waitAtEndOfSafeTime(std::size_t index, const compat::ScenarioBehaviorInput &scenario,
+		const std::function<bool()> &current);
 	void reportLostEnemy(std::size_t index, world::EntityKey target, const std::function<bool()> &current);
 	void updateGuardLook(ManagedActionContext &ctx);
 	bool decideEquipmentAction(ManagedActionContext &ctx, const compat::PublicActorState &weapon, bool attacking);

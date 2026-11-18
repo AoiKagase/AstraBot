@@ -937,10 +937,10 @@ void BotBehaviorRuntime::updateScenarioTeamwork(std::size_t index, const runtime
 	const auto receipt = reactionContext(index);
 	const auto revision = actors_[index].executionRevision;
 	const auto epoch = actors_[index].managedBotStateMachines.normalStateEpoch();
+	const auto actorCurrent = [&] { return executionCurrent(index, receipt, revision); };
 	const auto current = [&]
 	{
-		return executionCurrent(index, receipt, revision) &&
-			actors_[index].managedBotStateMachines.normalStateEpoch() == epoch;
+		return actorCurrent() && actors_[index].managedBotStateMachines.normalStateEpoch() == epoch;
 	};
 	(void)stateBehavior;
 	(void)observation;
@@ -1098,7 +1098,8 @@ void BotBehaviorRuntime::updateScenarioTeamwork(std::size_t index, const runtime
 		actors_[index].combatRetreat.hideEpoch != 0;
 	if (machine.state() == compat::CompatibilityStateId::Hide &&
 		(retreating || guardingLoose || guardingSite || guardingHostages || guardingRescue || sniping ||
-			machine.task() == compat::CompatibilityTaskId::HoldPosition) &&
+			machine.task() == compat::CompatibilityTaskId::HoldPosition ||
+			machine.task() == compat::CompatibilityTaskId::SeekAndDestroy) &&
 		!machine.attackOverlayActive())
 	{
 		const float feetZ = before.origin.z - (before.ducked ? 18.0f : 36.0f);
@@ -1172,6 +1173,13 @@ void BotBehaviorRuntime::updateScenarioTeamwork(std::size_t index, const runtime
 			if (!current())
 				return;
 		}
+	}
+	if (!wasFollowing && !actors_[index].scenarioPlanners.isFollowing() &&
+		machine.state() == compat::CompatibilityStateId::Hunt)
+	{
+		// The hiding operation validates and advances its own state epoch.
+		if (!current() || waitAtEndOfSafeTime(index, scenario, actorCurrent) || !current())
+			return;
 	}
 	const auto action = actors_[index].scenarioDecisions.action;
 	if (machine.state() == compat::CompatibilityStateId::Idle && !machine.attackOverlayActive() &&

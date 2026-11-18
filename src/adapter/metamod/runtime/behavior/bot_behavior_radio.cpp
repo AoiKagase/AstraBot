@@ -521,7 +521,8 @@ struct BotBehaviorRuntime::ActorTaskEnvironment : compat::IHelpRequestEnvironmen
 	{
 		return hideNearArea(areaAt(point, false), compat::CompatibilityTaskId::HoldPosition);
 	}
-	bool hideNearArea(nav::AreaId start, compat::CompatibilityTaskId task, float range = 750.0f)
+	bool hideNearArea(nav::AreaId start, compat::CompatibilityTaskId task, float range = 750.0f,
+		float duration = -1.0f)
 	{
 		if (!current())
 			return false;
@@ -533,7 +534,7 @@ struct BotBehaviorRuntime::ActorTaskEnvironment : compat::IHelpRequestEnvironmen
 		else
 			start = owner.services_->navigation_knownArea(receiver, receipt.actor, receipt.context.frame, navigation.revision());
 		if (!start)
-			return enterHideState(self, 0, task);
+			return enterHideState(self, 0, task, duration);
 		nav::NavVector spot{};
 		bool found = false;
 		if (!selectSpot(0, start, center, &spot, &found, range))
@@ -541,7 +542,7 @@ struct BotBehaviorRuntime::ActorTaskEnvironment : compat::IHelpRequestEnvironmen
 		if (!found)
 			spot = self;
 		// Hide(area) computes its route to the area directly beneath the chosen spot.
-		return enterHideState(spot, compat::findBotNavArea(navigation, spot, nullptr), task);
+		return enterHideState(spot, compat::findBotNavArea(navigation, spot, nullptr), task, duration);
 	}
 	void affirmative() override
 	{
@@ -1618,6 +1619,49 @@ void BotBehaviorRuntime::reportLostEnemy(
 	ActorTaskEnvironment env(*this, index, index, targetCurrent);
 	if (env.current() && env.receipt.context.alive)
 		env.say("LostEnemy");
+}
+
+bool BotBehaviorRuntime::waitAtEndOfSafeTime(std::size_t index, const compat::ScenarioBehaviorInput &scenario,
+	const std::function<bool()> &current)
+{
+	const auto &actor = actors_[index];
+	const int morale = services_->service_excellentMorale() ? 3 : actor.morale.value;
+	if (morale >= 0 || services_->service_roundOver() ||
+		services_->service_roundFreezeGeneration() != scenario.frame.roundGeneration)
+		return false;
+	const float elapsed = scenario.timestamp - services_->service_roundFreezeUntil();
+	const float remaining = actor.enemyReaction.safeTime(scenario.aggression) - elapsed;
+	if (!(remaining > 0.0f && remaining < 2.0f))
+		return false;
+
+	ActorTaskEnvironment env(*this, index, index, current);
+	if (!env.current() || !env.receipt.context.alive)
+		return false;
+	float roll = 0.0f;
+	if (!env.drawFloat("Hunt.WaitingHereChance", 0.0f, 100.0f, roll) ||
+		roll >= -40.0f * static_cast<float>(morale))
+		return false;
+	const auto kind = scenario.scenario;
+	const bool onDefense = (kind == compat::PublicScenarioKind::Bomb &&
+		scenario.team == objectives::TeamRole::CounterTerrorist) ||
+		((kind == compat::PublicScenarioKind::Hostage || kind == compat::PublicScenarioKind::Vip) &&
+			scenario.team == objectives::TeamRole::Terrorist);
+	if (onDefense && (roundPlantDecision_.map != scenario.frame.mapGeneration ||
+			roundPlantDecision_.round != scenario.frame.roundGeneration ||
+			roundPlantDecision_.defense != objectives::DefenseStrategy::Hold))
+		return false;
+
+	float duration = 0.0f;
+	if (!env.drawFloat("Hunt.WaitingHereDuration", 3.0f, 15.0f, duration))
+		return false;
+	const auto area = services_->navigation_knownArea(index, env.receipt.actor, scenario.frame, env.navigation.revision());
+	if (!env.current())
+		return false;
+	const bool changed = env.hideNearArea(area, compat::CompatibilityTaskId::SeekAndDestroy, 750.0f, duration) ||
+		env.idleForObjectiveChange(false);
+	if (changed && env.current())
+		env.say("WaitingHere");
+	return changed;
 }
 
 void BotBehaviorRuntime::reportAutomaticFollow(std::size_t index, const std::function<bool()> &current)

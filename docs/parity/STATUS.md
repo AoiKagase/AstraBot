@@ -1,3 +1,11 @@
+## 15B-2c　安全時間終了間際のWaitingHere
+
+ReGameDLL-CS `b088984` の `cs_bot_update.cpp`、`cs_bot.cpp`、`cs_bot_manager.cpp` の `IsOnDefense` と `cs_bot_statemachine.cpp` の `Hide` を参照した。味方を追従していないHunt中のBotは、士気が負で、調整済みの安全時間が残り0秒超2秒未満の間に抽選する。`RandomFloat(0, 100) < -40 × 士気` を満たした場合、防衛側はラウンドの防衛方針がHoldなら続行する。防衛側は爆破マップのCT、人質・VIPマップのT。防衛方針を観測できない場合は隠れ場所への移行を保留する。
+
+最後に確認したNAVエリアの周囲750単位で隠れ場所を探し、SeekAndDestroyを維持したまま、好機に射撃する態勢で3〜15秒とどまる。経路が見つからなければIdleに戻る。遷移後に `WaitingHere` を有効期間3秒の意図表明として登録する。
+
+統合テストでは、安全時間が残り2秒以上の場合の無音、防衛方針Rushによる抑止、士気−1での抽選値40と39の境界、選んだ隠れ場所の保持と発話を確認した。Windows x86 Debugは157/157件、Linux x86 Debugは155/156件合格。Linuxの失敗は既知の `astrabot_combat_policy`。両OSの動作トレース149,153件が既存の記録と一致し、PE・ELFのx86形式と公開関数7件を確認した。実機確認は25。
+
 ## 15B-2b　追跡経路終了時のLostEnemy
 
 ReGameDLL-CS `b088984` の `MoveToState::OnUpdate` を参照した。最終目撃位置へ向かうタスクの経路が終点到達または失敗で終了してIdleへ戻ったとき、追跡対象が同じエンティティで生存していれば `LostEnemy` を意図表明として登録する。有効期間は既定の3秒。対象の死亡やスロット再利用、途中の行動切り替えは、経路終了による発話と区別する。
@@ -10,13 +18,13 @@ ReGameDLL-CS `b088984` の `cs_bot_update.cpp` と `CHalfLifeMultiplay::IsCareer
 
 統合テストでは、開始前の無音、同じ追従で1回だけ発話すること、通常戦とキャリア戦の音声の切り替えを確認した。Windows x86 Debugは156/156件、Linux x86 Debugは154/155件合格。Linuxの失敗は既知の `astrabot_combat_policy`。両OSの動作トレース149,153件が既存の記録と一致し、PE・ELFのx86形式と公開関数7件を確認した。実機確認は25。
 
-人質警備の `Encourage` は `GetNearestVisibleFreeHostage` が必要とする追従状態の取得が残る。既存の `HostagePos` は位置と識別子を通知し、追従開始の音声はその後の追従解除をカバーしない。人質と未接続の `Say` は15B-2cで追跡する。
+人質警備の `Encourage` は `GetNearestVisibleFreeHostage` が必要とする追従状態の取得が残る。既存の `HostagePos` は位置と識別子を通知し、追従開始の音声はその後の追従解除をカバーしない。人質と未接続の `Say` は15B-2dで追跡する。
 
 ## 15B-1　C4警備中のEncourage
 
 ReGameDLL-CS `b088984` の `HideState::OnUpdate` と `BotChatterInterface::Encourage` を参照した。解除を生存中の味方プレイヤーに任せているCT Botが警備の隠れ場所に到着し、近くの敵を認識していない場合に発話する。C4の残り時間が30秒超、11秒超〜30秒、11秒以下の順に `BombsiteSecure`、`WaitingForHumanToDefuseBomb`、`WaitingForHumanToDefuseBombPanic` を選ぶ。発話間隔はそれぞれ10〜15秒、5〜8秒、3〜4秒で、Bot間で共有する。
 
-残り時間には公開の設置通知と `mp_c4timer` を使う。推定できる設置通知を受けたケースで発話を有効にする。人質の所有・追従状態、未接続の `Say` 呼び出しと、人質警備の励ましは15B-2cに残る。攻撃者が見えない場合の被弾後のHide解除は23、実機確認は25。
+残り時間には公開の設置通知と `mp_c4timer` を使う。推定できる設置通知を受けたケースで発話を有効にする。人質の所有・追従状態、未接続の `Say` 呼び出しと、人質警備の励ましは15B-2dに残る。攻撃者が見えない場合の被弾後のHide解除は23、実機確認は25。
 
 統合テストでは、到着前の無音、2体が到着した場合の単独発話、残り時間3区分、区分切り替え後も継続する共有間隔を確認した。Windows x86 Debugは155/155件、Linux x86 Debugは153/154件合格。Linuxの失敗は既知の `astrabot_combat_policy`。両OSの動作トレース149,153件が既存の記録と一致し、PE・ELFのx86形式と公開関数7件を確認した。
 

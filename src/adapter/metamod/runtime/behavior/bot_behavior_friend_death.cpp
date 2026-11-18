@@ -101,9 +101,11 @@ compat::ReactionDisposition BotBehaviorRuntime::reactionDisposition(std::size_t 
 	{
 		return compat::ReactionDisposition::SelfDefense;
 	}
-	if ((state == compat::CompatibilityStateId::Hide && actor.combatRetreat.hideEpoch != 0 &&
-			actor.combatRetreat.hideEpoch == actor.managedBotStateMachines.normalStateEpoch() &&
-			actor.scenarioPlanners.atDefenseSpot()) ||
+	const bool retreatCover = actor.combatRetreat.hideEpoch != 0 &&
+		actor.combatRetreat.hideEpoch == actor.managedBotStateMachines.normalStateEpoch();
+	if ((state == compat::CompatibilityStateId::Hide &&
+			((retreatCover && actor.scenarioPlanners.atDefenseSpot()) ||
+				(!retreatCover && actor.managedBotStateMachines.task() == compat::CompatibilityTaskId::SeekAndDestroy))) ||
 		(actor.scenarioDecisions.action == compat::ScenarioAction::Guard &&
 			actor.managedBotStateMachines.task() != compat::CompatibilityTaskId::HoldPosition &&
 			actor.managedBotStateMachines.task() != compat::CompatibilityTaskId::GuardLooseBomb) ||

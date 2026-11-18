@@ -13,6 +13,7 @@ bool deferredSiteFixture = false;
 bool encourageDefuseFixture = false;
 cvar_t queueDefuseFuse{};
 bool preplantGuardFixture = false;
+bool waitingHereFixture = false;
 bool hostageUseFixture = false;
 bool sniperWarningFixture = false;
 bool scaredFixture = false;
@@ -54,7 +55,9 @@ void selectStatementFixture(int argc, char **argv)
 	encourageDefuseFixture = argc == 2 && std::strcmp(argv[1], "--encourage-defuse") == 0;
 	deferredSiteFixture = encourageDefuseFixture ||
 		(argc == 2 && std::strcmp(argv[1], "--guard-planted-bombsite") == 0);
-	preplantGuardFixture = argc == 2 && std::strcmp(argv[1], "--guard-unplanted-bombsite") == 0;
+	waitingHereFixture = argc == 2 && std::strcmp(argv[1], "--waiting-here") == 0;
+	preplantGuardFixture = waitingHereFixture ||
+		(argc == 2 && std::strcmp(argv[1], "--guard-unplanted-bombsite") == 0);
 	hostageUseFixture = argc == 2 && std::strcmp(argv[1], "--hostage-use-report") == 0;
 	sniperWarningFixture = argc == 2 && std::strcmp(argv[1], "--sniper-warning") == 0;
 	scaredFixture = argc == 2 && std::strcmp(argv[1], "--scared-outnumbered") == 0;
@@ -184,6 +187,8 @@ unsigned char *queueLoad(char *name, int *length)
 		contents += " Chatter SpottedLooseBomb loose.wav End Chatter TheyPickedUpTheBomb pickup.wav End";
 	if (preplantGuardFixture)
 		contents += " Chatter GoingToDefendBombsite Place UNDEFINED siteplan.wav Place BombsiteA siteplan_a.wav End";
+	if (waitingHereFixture)
+		contents += " Chatter WaitingHere waiting_here.wav End";
 	if (looseGuardFixture)
 		contents += " Chatter GoingToGuardLooseBomb Place BombsiteA guardplan.wav End Chatter GuardingLooseBomb guard.wav End";
 	*length = static_cast<int>(contents.size());
@@ -2551,6 +2556,77 @@ bool testStatementQueue(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t
 				resultMessage(MSG_ALL, nullptr, "#Terrorists_Win");
 				restart(rushRoll);
 			};
+			if (waitingHereFixture)
+			{
+				struct WaitingHereTrace : compat::IRandomTraceSink
+				{
+					explicit WaitingHereTrace(const globalvars_t &source) : clock(source) {}
+					void record(const compat::RandomTraceRecord &record) override
+					{
+						if (time < 0.0f && record.request.actor.slot == 1 &&
+							std::strcmp(record.request.semanticId, "Hunt.WaitingHereChance") == 0)
+							time = clock.time;
+					}
+					const globalvars_t &clock;
+					float time = -1.0f;
+				} trace(globals);
+				auto &services = static_cast<metamod::BotBehaviorServices &>(runtime);
+				const auto &machine = nav.behavior_managedBotStateMachines(0);
+				const auto &profile = nav.behavior_managedProfiles(0);
+				const float safeTime = 15.0f + 5.0f * (static_cast<float>(profile.aggression) / 100.0f);
+				const auto reach = [&](float elapsed) {
+					const auto start = services.service_roundFreezeUntil();
+					while (globals.time - start < elapsed)
+						advance(1);
+				};
+				preplantIdleRoll = 100.0f;
+				restart(100.0f);
+				loseAndRestart(100.0f);
+				loseAndRestart(33.3f);
+				preplantIdleRoll = 0.0f;
+				// The shared harness may already have taught this bot a shorter safe
+				// time. Observe the first qualifying roll in the rushing round.
+				services.service_compatibilityRandomSource().setTraceSink(&trace);
+				reach(safeTime - .75f);
+				services.service_compatibilityRandomSource().setTraceSink(nullptr);
+				const float firstRoll = trace.time - services.service_roundFreezeUntil();
+				if (!check(trace.time >= 0.0f && machine.state() == compat::CompatibilityStateId::Hunt,
+						"a rushing defense keeps hunting despite low morale and a winning roll"))
+					return false;
+
+				preplantIdleRoll = 100.0f;
+				restart(100.0f);
+				preplantIdleRoll = 0.0f;
+				reach(firstRoll - .25f);
+				if (!check(machine.state() == compat::CompatibilityStateId::Hunt,
+						"the wait cannot begin before the final two seconds of safety"))
+				{
+					const auto start = services.service_roundFreezeUntil();
+					std::fprintf(stderr, "waiting-here fixture state=%d task=%d elapsed=%g entered=%g safe=%g\n",
+						static_cast<int>(machine.state()), static_cast<int>(machine.task()),
+						globals.time - start, machine.stateTimestamp() - start, safeTime);
+					return false;
+				}
+				preplantIdleRoll = 40.0f;
+				reach(firstRoll + .375f);
+				if (!check(machine.state() == compat::CompatibilityStateId::Hunt,
+						"a roll of 40 does not pass negative-one morale's strict threshold"))
+					return false;
+
+				preplantIdleRoll = 39.0f;
+				queueSamples.clear();
+				advance(4);
+				if (!check(machine.state() == compat::CompatibilityStateId::Hide &&
+						machine.task() == compat::CompatibilityTaskId::SeekAndDestroy,
+						"low-morale hunters take cover in the final safe window"))
+					return false;
+				advance(9);
+				const auto &defense = nav.behavior_scenarioDecisions(0);
+				return check(defense.action == compat::ScenarioAction::Guard && defense.hasTarget,
+						"the transitioned hunter keeps its selected hiding spot") &&
+					check(std::find(queueSamples.begin(), queueSamples.end(), "radio/test/waiting_here.wav") !=
+						queueSamples.end(), "the transition to cover plays WaitingHere");
+			}
 			teamRushRoll = 100.0f;
 			chooseTeamRush = true;
 			roundStart();
