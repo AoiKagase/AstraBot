@@ -214,6 +214,7 @@ private:
 	bool nativeGuardEnabled_;
 	std::array<bool, kCompatibilityCvarCount> compatibilityCvarOwned_;
 	const cvar_t *deferToHumanCvar_ = nullptr;
+	const cvar_t *excellentMoraleCvar_ = nullptr;
 	bool compatibilityRegistrationInProgress_;
 	bool nativeControlsCaptured_;
 	bool performanceDisablePathSearch_;
@@ -339,6 +340,7 @@ private:
 	{
 		return deferToHumanCvar_ && deferToHumanCvar_->value > 0.0f;
 	}
+	bool service_excellentMorale() override { return excellentMoraleCvar_ && excellentMoraleCvar_->value != 0.0f; }
 
 	Service_runtimeProfiler &service_runtimeProfiler() override
 	{
@@ -358,6 +360,11 @@ private:
 	void behavior_observeRadioPreference(edict_t *recipient, bool ignored) override
 	{
 		behavior_.observeRadioPreference(recipient, ignored);
+	}
+	void observeBroadcastTeamScore(int team, int score, world::FrameIdentity frame) override;
+	void behavior_observeRoundWin(int team, world::FrameIdentity frame) override
+	{
+		behavior_.observeRoundWin(team, frame);
 	}
 
 

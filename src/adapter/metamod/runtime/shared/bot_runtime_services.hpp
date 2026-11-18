@@ -52,6 +52,8 @@ public:
 	virtual void behavior_invalidateObjectiveAssignments() = 0;
 	virtual const compat::ProfileRecord &behavior_managedProfiles(std::size_t index) const = 0;
 	virtual void behavior_observeRadioPreference(edict_t *recipient, bool ignored) = 0;
+	virtual void observeBroadcastTeamScore(int team, int score, world::FrameIdentity frame) = 0;
+	virtual void behavior_observeRoundWin(int team, world::FrameIdentity frame) = 0;
 	virtual void behavior_resetEquipment(std::size_t index) = 0;
 	virtual std::uint64_t behavior_chatterRevision(std::size_t index) const = 0;
 	virtual void behavior_observePublicDeath(std::size_t index, const world::FrameIdentity &deathFrame = {}) = 0;
@@ -86,6 +88,7 @@ public:
 	virtual Service_runtimeProfiler &service_runtimeProfiler() = 0;
 	virtual bool service_roundOver() = 0;
 	virtual bool service_deferToHuman() = 0;
+	virtual bool service_excellentMorale() = 0;
 	virtual bool command_dispatchClientCommand(edict_t *entity, const char *name, const char *argument) = 0;
 	virtual const std::uint32_t &command_managedBotCommandSequences(std::size_t index) const = 0;
 	virtual nav::AreaId navigation_knownArea(

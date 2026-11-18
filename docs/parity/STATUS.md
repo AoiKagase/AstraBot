@@ -1,3 +1,12 @@
+## 2026-11-18　11C-2b（設置前）　CTの爆破地点警備と落下C4への応答
+
+基点は `b78c3dc`。ReGameDLL_CS `b088984` の `CCSBotManager::RestartRound`、`IdleState::OnUpdate`、`HideState::OnUpdate`、`BotBombStatusMeme::Interpret` とラウンド結果・再出現時の士気更新を参照した。
+
+- 設置前のCTは、チームがラッシュを選ばず、落下C4を知らず、安全時間内または直近の敵の目撃から30秒を超えたときに警備を抽選する。士気が−1、−2、−3のとき、それぞれ34%、68%、常時となり、選んだサイトのNAVエリアから700、600、500単位の範囲で隠れ場所を探す。狙撃銃を持つCTは先に75%の抽選を行い、既知の落下位置かサイトの近くを選ぶ。
+- 2体のCTを使う `astrabot_guard_unplanted_bombsite_runtime` で、実際の勝敗メッセージ、ラッシュ境界、警備と狙撃の抽選境界、サイトへの移動、狙撃位置への到着を検証した。落下C4を直接見たCTが先に警備を離れ、遮蔽されたCTは味方の報告が完了してから一度だけ応答した。
+- 回帰照合では親コミットにCVar登録とCSBot由来の乱数呼び出しだけを加えた独立ビルドを使った。元の履歴は両OSで149,182行、今回の実装は各OSで独立ビルドの149,153行と完全一致した。ラウンド準備の通知時点とReGameDLL内部の `RestartRound` の厳密な時刻照合は項目23、実機での挙動確認は項目25に残る。
+- Windows x86 Debugは148/148件、Linux x86 Debugは146/147件合格。Linuxの1件は項目22の胸部照準判定 `astrabot_combat_policy`。どちらも32ビット形式と必須7エクスポートを確認した。SHA-256はWindows DLLが `d50eeae4307ef4c8233b63395353bfb39ec3db2899942e5d6d5d3c26b2b239c2`、Linux SOが `46fc12f7eba43eae632f25ebc269816aa382abf202431b4e0e6af853a6002e97`。
+
 ## 2026-11-18　11C-2b（設置後）　人間に解除を任せるときの爆破地点警備
 
 基点は `cfc9d75`。ReGameDLL_CS `b088984` の `CCSBot::IsDoingScenario`、`UTIL_HumansOnTeam`、`IdleState::OnUpdate`、`HideState::OnUpdate` と `CCSBotManager::GetClosestZone` を参照した。

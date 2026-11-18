@@ -1139,6 +1139,7 @@ if(ASTRABOT_BUILD_TESTS AND ASTRABOT_BUILD_METAMOD)
       --correction "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/runtime_characterization/native-help-preconditions-correction.json"
       --correction "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/runtime_characterization/loose-c4-visibility-correction.json"
       --correction "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/runtime_characterization/scenario-deference-cvar-correction.json"
+      --correction "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/runtime_characterization/preplant-defense-correction.json"
       --platform "${characterization_platform}"
       --output "${CMAKE_CURRENT_BINARY_DIR}/runtime-characterization.txt")
   add_test(NAME astrabot_runtime_characterization_checker
@@ -1222,8 +1223,9 @@ if(ASTRABOT_BUILD_TESTS AND ASTRABOT_BUILD_METAMOD)
   add_test(NAME astrabot_loose_bomb_runtime COMMAND astrabot_statement_queue_runtime --loose-bomb)
   add_test(NAME astrabot_guard_loose_bomb_runtime COMMAND astrabot_statement_queue_runtime --guard-loose-bomb)
   add_test(NAME astrabot_guard_planted_bombsite_runtime COMMAND astrabot_statement_queue_runtime --guard-planted-bombsite)
+  add_test(NAME astrabot_guard_unplanted_bombsite_runtime COMMAND astrabot_statement_queue_runtime --guard-unplanted-bombsite)
   set_tests_properties(astrabot_statement_queue_runtime astrabot_guard_loose_bomb_runtime
-    astrabot_guard_planted_bombsite_runtime PROPERTIES
+    astrabot_guard_planted_bombsite_runtime astrabot_guard_unplanted_bombsite_runtime PROPERTIES
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" RESOURCE_LOCK astrabot_actor_command_profile)
   add_executable(astrabot_chatter_nav_probe tests/chatter_nav_probe_tests.cpp)
   target_include_directories(astrabot_chatter_nav_probe PRIVATE ${combat_target_log_includes})

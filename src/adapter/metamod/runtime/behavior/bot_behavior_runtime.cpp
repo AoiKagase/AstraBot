@@ -108,6 +108,7 @@ void BotBehaviorRuntime::invalidateHelpExecution(std::size_t index)
 
 void BotBehaviorRuntime::onActorRemoved(std::size_t index)
 {
+	actors_[index].morale = {};
 	invalidateHelpExecution(index);
 	actors_[index].noiseLook.reset();
 	actors_[index].closeFootstep = {};
@@ -155,6 +156,7 @@ void BotBehaviorRuntime::onActorRemoved(std::size_t index)
 
 void BotBehaviorRuntime::onActorRemembered(std::size_t index, const FakeClientHandle &handle)
 {
+	actors_[index].morale = {};
 	invalidateHelpExecution(index);
 	actors_[index].bombStatus = {};
 	actors_[index].looseBombObservation = {};
@@ -202,7 +204,7 @@ void BotBehaviorRuntime::resetSharedExecutionState()
 		actor.outgoingRadioSchedulers.discardPending();
 		actor.confirmedSpeech.reset();
 		actor.knifeRun.reset();
-		actor.enemyReaction.reset();
+		actor.enemyReaction.resetForLife();
 		actor.enemyWeaponSource = {};
 	}
 	updateVoiceFeedback(true);
@@ -237,7 +239,7 @@ void BotBehaviorRuntime::resetActorExecutionState(std::size_t index)
 	actors_[index].noiseLook.reset();
 	actors_[index].closeFootstep = {};
 	actors_[index].knifeRun.reset();
-	actors_[index].enemyReaction.reset();
+	actors_[index].enemyReaction.resetForLife();
 	actors_[index].enemyWeaponSource = {};
 	actors_[index].noiseBend = {};
 	actors_[index].noiseLookUpdate = 0U;

@@ -10,6 +10,10 @@ bool carrierFixture = false;
 bool looseBombFixture = false;
 bool looseGuardFixture = false;
 bool deferredSiteFixture = false;
+bool preplantGuardFixture = false;
+bool chooseTeamRush = false;
+float teamRushRoll = 100.0f;
+float preplantIdleRoll = -1.0f;
 int carrierViewer = -1;
 bool looseBombLineHitsBox = false;
 const char *bombFixtureMap()
@@ -21,6 +25,7 @@ const char *bombFixtureMap()
 	if (looseBombFixture) return "astrabot_loose_bomb";
 	if (looseGuardFixture) return "astrabot_guard_loose_bomb";
 	if (deferredSiteFixture) return "astrabot_guard_planted_bombsite";
+	if (preplantGuardFixture) return "astrabot_guard_unplanted_bombsite";
 	return nullptr;
 }
 void selectStatementFixture(int argc, char **argv)
@@ -33,6 +38,7 @@ void selectStatementFixture(int argc, char **argv)
 	looseBombFixture = argc == 2 && std::strcmp(argv[1], "--loose-bomb") == 0;
 	looseGuardFixture = argc == 2 && std::strcmp(argv[1], "--guard-loose-bomb") == 0;
 	deferredSiteFixture = argc == 2 && std::strcmp(argv[1], "--guard-planted-bombsite") == 0;
+	preplantGuardFixture = argc == 2 && std::strcmp(argv[1], "--guard-unplanted-bombsite") == 0;
 }
 bool testStatementQueue(astrabot::metamod::PluginRuntime &, enginefuncs_t &, globalvars_t &);
 void setupStatementQueue(enginefuncs_t &, globalvars_t &);
@@ -136,8 +142,10 @@ unsigned char *queueLoad(char *name, int *length)
 		contents += " Chatter WhereIsTheBomb where.wav End";
 	if (carrierFixture)
 		contents += " Chatter SpottedBomber carrier.wav End";
-	if (looseBombFixture || looseGuardFixture)
+	if (looseBombFixture || looseGuardFixture || preplantGuardFixture)
 		contents += " Chatter SpottedLooseBomb loose.wav End Chatter TheyPickedUpTheBomb pickup.wav End";
+	if (preplantGuardFixture)
+		contents += " Chatter GoingToDefendBombsite Place UNDEFINED siteplan.wav Place BombsiteA siteplan_a.wav End";
 	if (looseGuardFixture)
 		contents += " Chatter GoingToGuardLooseBomb Place BombsiteA guardplan.wav End Chatter GuardingLooseBomb guard.wav End";
 	*length = static_cast<int>(contents.size());
@@ -205,7 +213,7 @@ void queueVisibility(const float *from, const float *end, int flags, edict_t *ob
 	*trace = {};
 	trace->vecEndPos = Vector(end[0], end[1], end[2]);
 	trace->flFraction = queueEnemiesVisible ? 1.0f : 0.0f;
-	if (looseGuardFixture && observer == &gEntities[0] && carrierViewer == 0 && flags == 0x101 &&
+	if ((looseGuardFixture || preplantGuardFixture) && observer == &gEntities[0] && carrierViewer == 0 && flags == 0x101 &&
 		end[0] == gPlantedBomb.v.origin.x && end[1] == gPlantedBomb.v.origin.y && end[2] == gPlantedBomb.v.origin.z)
 		trace->flFraction = 1.0f;
 	if ((carrierFixture || looseBombFixture) && carrierViewer >= 0 && observer == &gEntities[carrierViewer])
@@ -368,6 +376,13 @@ bool testQueueRadioReset(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 }
 float queuePlanRandom(float low, float high)
 {
+	if (chooseTeamRush && low == 0.0f && high == 100.0f)
+	{
+		chooseTeamRush = false;
+		return teamRushRoll;
+	}
+	if (preplantGuardFixture && preplantIdleRoll >= 0 && low == 0 && high == 100)
+		return preplantIdleRoll;
 	if (queueHelpForceCooperative && low == 0 && high == 100)
 	{
 		queueHelpForceCooperative = false;
@@ -1910,7 +1925,7 @@ bool testStatementQueue(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t
 			team(i + 1, "CT");
 		}
 		const std::string path = std::string(map) + ".nav";
-		if (!writeTwoSiteNavigation(path.c_str(), true, looseGuardFixture || deferredSiteFixture, "BombsiteA"))
+		if (!writeTwoSiteNavigation(path.c_str(), true, looseGuardFixture || deferredSiteFixture || preplantGuardFixture, "BombsiteA"))
 			return false;
 		const metamod::NavLoadRequest load{path.c_str(), map, runtime.snapshot().mapGeneration,
 			true, 123U, false, 0U};
@@ -1918,7 +1933,7 @@ bool testStatementQueue(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t
 		std::remove(path.c_str());
 		if (!check(loaded == metamod::NavLoadResult::Loaded, "bombsite test navigation loads"))
 			return false;
-		if (looseGuardFixture)
+		if (looseGuardFixture || preplantGuardFixture)
 			setCvarFloat("bot_allow_rogues", 0);
 		if (deferredSiteFixture)
 		{
@@ -1931,6 +1946,130 @@ bool testStatementQueue(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t
 		runtime.beginRoundGeneration();
 		for (int i = 0; i < 40; ++i)
 			step(.125f);
+		if (preplantGuardFixture)
+		{
+			auto &nav = static_cast<metamod::BotNavigationServices &>(runtime);
+			auto guarding = [&](int i) {
+				const auto &machine = nav.behavior_managedBotStateMachines(i);
+				return machine.state() == compat::CompatibilityStateId::Hide &&
+					machine.task() == compat::CompatibilityTaskId::GuardBombZone;
+			};
+			auto advance = [&](int ticks) {
+				for (int i = 0; i < ticks; ++i)
+				{
+					gEntities[0].v.angles.y = gEntities[0].v.v_angle.y = 0;
+					step(.125f);
+				}
+			};
+			auto roundStart = [&] { runtime.onRoundLifecycleMessage("World triggered \"Round_Start\"\n"); };
+			auto resultMessage = [&](int destination, edict_t *recipient, const char *token) {
+				hooks.pfnMessageBegin(destination, 98, nullptr, recipient);
+				hooks.pfnWriteByte(HUD_PRINTCENTER);
+				hooks.pfnWriteString(token);
+				hooks.pfnMessageEnd();
+			};
+			auto restart = [&](float rushRoll) {
+				teamRushRoll = rushRoll;
+				chooseTeamRush = true;
+				runtime.onRoundLifecycleMessage("World triggered \"Round_End\"\n");
+				roundStart();
+				advance(44);
+			};
+			auto loseAndRestart = [&](float rushRoll) {
+				resultMessage(MSG_ALL, nullptr, "#Terrorists_Win");
+				resultMessage(MSG_ALL, nullptr, "#Terrorists_Win");
+				restart(rushRoll);
+			};
+			teamRushRoll = 100.0f;
+			chooseTeamRush = true;
+			roundStart();
+			advance(44);
+			if (!check(!guarding(0) && !guarding(1), "fresh positive morale does not choose bombsite guard duty"))
+				return false;
+			resultMessage(MSG_ONE, &gEntities[0], "#Terrorists_Win");
+			resultMessage(MSG_ALL, nullptr, "#Round_Draw");
+			loseAndRestart(100.0f);
+			if (!check(!guarding(0) && !guarding(1), "private, draw and duplicate result messages do not compound one defeat"))
+				return false;
+			loseAndRestart(33.3f);
+			if (!check(!guarding(0) && !guarding(1), "both low-morale defenders respect the same team rush"))
+				return false;
+			preplantIdleRoll = 34.0f;
+			restart(100);
+			if (!check(!guarding(0) && !guarding(1), "the guard roll must be strictly below 34 at negative-one morale"))
+				return false;
+			preplantIdleRoll = 33.99f;
+			restart(100);
+			if (!check(guarding(0) && guarding(1), "a roll just below 34 starts both guards at negative-one morale"))
+				return false;
+			preplantIdleRoll = 0;
+			reportAudio.clear();
+			loseAndRestart(100.0f);
+			if (!check(guarding(0) && guarding(1), "both CTs choose a preplant bombsite hide after losses on a non-rush round"))
+				return false;
+			const auto &guard = nav.behavior_scenarioDecisions(0);
+			if (!check(guard.action == compat::ScenarioAction::Guard && guard.hasTarget && guard.target.position.y == 50,
+					"site guard moves to a NAV hiding spot"))
+				return false;
+			const auto heard = [&](int speaker, const char *wave) {
+				return std::count(reportAudio.begin(), reportAudio.end(), std::make_pair(speaker, std::string(wave)));
+			};
+			if (!check(heard(1, "radio/test/siteplan.wav") + heard(2, "radio/test/siteplan.wav") +
+					heard(1, "radio/test/siteplan_a.wav") + heard(2, "radio/test/siteplan_a.wav") > 0,
+					"the defenders announce their bombsite plan"))
+				return false;
+			gPlantedBomb.v.classname = 4;
+			gPlantedBomb.v.model = 5;
+			gPlantedBomb.v.origin = Vector(224, 32, 36);
+			gPlantedBomb.serialnumber = 12;
+			reportAudio.clear();
+			gEntities[1].v.weapons |= (1 << 18);
+			carrierViewer = 0;
+			for (int i = 0; i < 24 && guarding(0); ++i)
+				advance(1);
+			if (!check(!guarding(0) && guarding(1), "direct sight releases only the CT that saw the dropped C4"))
+				return false;
+			advance(64);
+			if (!check(!guarding(1) && heard(1, "radio/test/loose.wav") == 1 &&
+				heard(2, "radio/test/ack.wav") == 1 && !heard(1, "radio/test/ack.wav"),
+				"the other site guard leaves and acknowledges the completed loose-bomb report exactly once"))
+				return false;
+			const auto &peer = nav.behavior_managedBotStateMachines(1);
+			const auto target = nav.behavior_scenarioDecisions(1).target.position;
+			if (!check(peer.task() == compat::CompatibilityTaskId::MoveToSniperSpot && target.x == 224 && target.y == 50,
+					"the receiver carries a sniper rifle and chooses cover by the reported drop"))
+				return false;
+			gEntities[1].v.origin = Vector(target.x, target.y, target.z + 36);
+			advance(3);
+			if (!check(peer.task() == compat::CompatibilityTaskId::Sniping, "arrival at the hiding spot changes the sniper's task"))
+				return false;
+			carrierViewer = -1;
+			gPlantedBomb.free = true;
+			setCvarFloat("bot_excellent_morale", 1);
+			preplantIdleRoll = 75.0f;
+			restart(0);
+			if (!check((peer.task() == compat::CompatibilityTaskId::MoveToSniperSpot || peer.task() == compat::CompatibilityTaskId::Sniping) &&
+					!guarding(0), "a sniper's inclusive 75 percent decision precedes the team's rush"))
+				return false;
+			preplantIdleRoll = 75.01f;
+			restart(100);
+			if (!check(!guarding(0) && !guarding(1) && peer.task() != compat::CompatibilityTaskId::MoveToSniperSpot &&
+					peer.task() != compat::CompatibilityTaskId::Sniping, "excellent morale and a failed sniper roll both choose Hunt"))
+				return false;
+			gEntities[1].v.weapons &= ~(1 << 18);
+			preplantIdleRoll = 0;
+			setCvarFloat("bot_excellent_morale", 0);
+			restart(100);
+			if (!check(guarding(0) && guarding(1), "disabling excellent morale restores the defenders' actual loss history"))
+				return false;
+			teamRushRoll = 100;
+			chooseTeamRush = true;
+			runtime.onRoundLifecycleMessage("World triggered \"Game_Commencing\"\n");
+			globals.time += 3;
+			roundStart();
+			advance(44);
+			return check(!guarding(0) && !guarding(1), "a new match returns both defenders to positive morale");
+		}
 		if (looseGuardFixture)
 		{
 			auto &nav = static_cast<metamod::BotNavigationServices &>(runtime);

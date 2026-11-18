@@ -51,6 +51,7 @@ enum class ChatterPhrase : unsigned
 	TheyPickedUpTheBomb,
 	GoingToGuardLooseBomb,
 	GuardingLooseBomb,
+	GoingToDefendBombsite,
 	Count
 };
 inline ChatterPhrase remainingEnemyPhrase(int count)
@@ -80,7 +81,8 @@ inline bool usesUndefinedChatterPlace(ChatterPhrase phrase)
 {
 	return phrase != ChatterPhrase::EnemySpotted && phrase != ChatterPhrase::Help &&
 		phrase != ChatterPhrase::PlantingBomb && phrase != ChatterPhrase::GoingToPlantBomb &&
-		phrase != ChatterPhrase::HeardNoise && phrase != ChatterPhrase::GoingToGuardLooseBomb;
+		phrase != ChatterPhrase::HeardNoise && phrase != ChatterPhrase::GoingToGuardLooseBomb &&
+		phrase != ChatterPhrase::GoingToDefendBombsite;
 }
 
 inline ChatterStatementTopic chatterStatementTopic(ChatterPhrase phrase)
@@ -109,6 +111,7 @@ inline ChatterStatementTopic chatterStatementTopic(ChatterPhrase phrase)
 		return ChatterStatementTopic::CriticalEvent;
 	case ChatterPhrase::EscortingHostages:
 	case ChatterPhrase::GoingToGuardLooseBomb:
+	case ChatterPhrase::GoingToDefendBombsite:
 		return ChatterStatementTopic::MyPlan;
 	case ChatterPhrase::HeardNoise:
 	case ChatterPhrase::SpottedBomber:
@@ -305,7 +308,7 @@ public:
 			"TwoEnemiesLeft", "ThreeEnemiesLeft", "NiceShot", "NiceShotSir", "NiceShotCommander", "CommanderDown",
 			"KilledFriend", "pain", "AgreeWithPlan", "GoingToPlantBomb", "CoveringFriend", "InCombat", "EnemyDown",
 			"Clear", "DefusingBomb", "BombsiteClear", "PlantedBombPlace", "SpottedBomber", "SpottedLooseBomb",
-			"TheyPickedUpTheBomb", "GoingToGuardLooseBomb", "GuardingLooseBomb"};
+			"TheyPickedUpTheBomb", "GoingToGuardLooseBomb", "GuardingLooseBomb", "GoingToDefendBombsite"};
 		const auto i = static_cast<unsigned>(p);
 		return i < static_cast<unsigned>(ChatterPhrase::Count) ? names[i] : "Unknown";
 	}

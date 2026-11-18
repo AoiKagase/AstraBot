@@ -160,6 +160,15 @@ int main()
 	check(early.wellPastSafe(.6f, .5f), "native early sighting preserves negative safe time");
 	early.adjustSafeTime(1, .5f);
 	check(early.wellPastSafe(.6f, .5f), "later sighting cannot reset negative safe time to default");
+	check(memory.isSafe(7.999f, .5f) && !memory.isSafe(8.0f, .5f), "the adjusted safe deadline is strict");
+	auto nextRound = context;
+	++nextRound.frame.roundGeneration;
+	memory.resetForLife();
+	memory.update(nextRound);
+	check(!memory.isSafe(8.0f, .5f), "the same bot retains the map's safe deadline on respawn");
+	++nextRound.actor.generation;
+	memory.update(nextRound);
+	check(memory.isSafe(8.0f, .5f), "a replacement bot starts with its profile safe time");
 	CompatibilityStateMachine machine(context.actor);
 	StateUpdateContext state{};
 	state.actor = context.actor;

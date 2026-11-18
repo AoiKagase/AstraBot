@@ -62,6 +62,28 @@ public:
 		generationPreparedForStart_ = false;
 		roundStartObserved_ = false;
 		roundOver_ = false;
+		newMatchPending_ = false;
+		ctScoreCleared_ = false;
+	}
+
+	bool takeNewMatch() noexcept
+	{
+		const bool pending = newMatchPending_;
+		newMatchPending_ = false;
+		ctScoreCleared_ = false;
+		return pending;
+	}
+
+	// RestartRound resets the CT and then T scoreboard in the same frame, before respawning players.
+	bool observeBroadcastScore(bool counterTerrorist, int score, std::uint32_t tick) noexcept
+	{
+		if (!newMatchPending_)
+			return false;
+		if (!counterTerrorist && score == 0 && ctScoreCleared_ && ctScoreTick_ == tick)
+			return takeNewMatch();
+		ctScoreCleared_ = counterTerrorist && score == 0;
+		ctScoreTick_ = tick;
+		return false;
 	}
 
 	bool isRoundOver() const noexcept
@@ -80,6 +102,7 @@ public:
 		{
 		case RoundLifecycleEvent::GameCommencing:
 		case RoundLifecycleEvent::RestartScheduled:
+			newMatchPending_ = true;
 			roundOver_ = true;
 			if (generationPreparedForStart_)
 			{
@@ -121,6 +144,9 @@ private:
 	bool generationPreparedForStart_;
 	bool roundStartObserved_;
 	bool roundOver_;
+	bool newMatchPending_ = false;
+	bool ctScoreCleared_ = false;
+	std::uint32_t ctScoreTick_ = 0;
 };
 } // namespace metamod
 } // namespace astrabot

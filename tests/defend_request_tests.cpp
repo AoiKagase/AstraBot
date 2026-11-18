@@ -177,6 +177,15 @@ void testHidingSpots(const std::function<void(bool, const char *)> &check)
 			check(result.available && result.found && result.position.x == expected[draw] && random.verifyComplete(),
 				"Nearby search orders start, floor, then upward ladder and keeps exact 750-unit spots");
 		}
+		for (const auto range : {500.0f, 600.0f, 700.0f, 2000.0f})
+		{
+			const int last = range < 750.0f ? 1 : 4;
+			ScriptedRandomSource random({RandomTapeEntry::longEntry("Hide.Spot", {}, {}, 0, last, 1)});
+			const HidingSpotSearch search{snapshot, empty, random, {}, {}, {}, false, range};
+			const auto result = search.nearArea(1, {}, ladders);
+			check(result.found && result.position.x == (range < 750.0f ? 150.0f : 750.0f) && random.verifyComplete(),
+				"bombsite morale and sniper ranges govern both area traversal and spot selection");
+		}
 	}
 }
 }

@@ -117,7 +117,7 @@ cvar_t gMpRoundRestartDelayCvar{};
 cvar_t gAstrabotPerfCvars[3]{};
 const char *const gManagerCvarNames[] = {
 	"bot_quota_mode", "bot_join_after_player", "bot_auto_vacate", "bot_join_delay", "bot_allow_rogues",
-	"bot_defer_to_human"};
+	"bot_defer_to_human", "bot_excellent_morale"};
 constexpr std::size_t kManagerCvarCount = sizeof(gManagerCvarNames) / sizeof(gManagerCvarNames[0]);
 cvar_t *gManagerCvars[kManagerCvarCount]{};
 

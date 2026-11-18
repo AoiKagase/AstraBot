@@ -1,5 +1,6 @@
 #include "astrabot/compat/public_observation.hpp"
 #include "astrabot/compat/smoke_observation.hpp"
+#include "astrabot/compat/bot_morale.hpp"
 #include "astrabot/objectives/bomb_site_route_selection.hpp"
 
 #include <cstdio>
@@ -8,15 +9,38 @@ using namespace astrabot;
 
 int main()
 {
-	compat::ScriptedRandomSource tape(
-		{compat::RandomTapeEntry::floatEntry("Bomb.RoundPlantDelay", {}, {0U, 0U, 3U}, 10.0f, 30.0f, 20.0f)});
+	compat::ScriptedRandomSource tape({
+		compat::RandomTapeEntry::floatEntry("Bomb.RoundPlantDelay", {}, {0U, 0U, 3U}, 10.0f, 30.0f, 20.0f),
+		compat::RandomTapeEntry::floatEntry("Round.DefenseRush", {}, {0U, 0U, 3U}, 0.0f, 100.0f, 33.3f),
+		compat::RandomTapeEntry::floatEntry("Bomb.RoundPlantDelay", {}, {0U, 0U, 4U}, 10.0f, 30.0f, 17.0f),
+		compat::RandomTapeEntry::floatEntry("Round.DefenseRush", {}, {0U, 0U, 4U}, 0.0f, 100.0f, 33.31f)});
 	objectives::RoundPlantDecision roundPlant;
 	roundPlant.begin(2U, 3U, 100.0f, tape);
 	roundPlant.begin(2U, 3U, 110.0f, tape);
-	if (!roundPlant.known || roundPlant.plantAt != 120.0f || !tape.verifyComplete())
+	if (!roundPlant.known || roundPlant.plantAt != 120.0f || roundPlant.defense != objectives::DefenseStrategy::Rush)
 	{
 		return 15;
 	}
+	roundPlant.begin(2U, 4U, 200.0f, tape);
+	if (roundPlant.plantAt != 217.0f || roundPlant.defense != objectives::DefenseStrategy::Hold || !tape.verifyComplete())
+		return 24;
+	compat::BotMorale morale;
+	for (int i = 0; i < 8; ++i)
+		morale.roundResult(false);
+	if (morale.value != -3)
+		return 25;
+	morale.observeLife(false);
+	morale.roundResult(true);
+	morale.observeLife(false);
+	morale.newMatch();
+	morale.observeLife(true);
+	morale.observeLife(true);
+	if (morale.value != 0)
+		return 26;
+	for (int i = 0; i < 8; ++i)
+		morale.roundResult(true);
+	if (morale.value != 3)
+		return 27;
 	compat::SmokeObservations smoke;
 	smoke.observe({50U, 1U}, {0.0f, 0.0f, 0.0f}, 8.0f);
 	if (!smoke.blocks({-200.0f, 0.0f, 0.0f}, {200.0f, 0.0f, 0.0f}, 1.0f) ||

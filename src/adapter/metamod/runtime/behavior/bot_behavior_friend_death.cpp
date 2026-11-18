@@ -105,7 +105,9 @@ compat::ReactionDisposition BotBehaviorRuntime::reactionDisposition(std::size_t 
 			actor.managedBotStateMachines.task() != compat::CompatibilityTaskId::HoldPosition &&
 			actor.managedBotStateMachines.task() != compat::CompatibilityTaskId::GuardLooseBomb) ||
 		actor.managedBotStateMachines.task() == compat::CompatibilityTaskId::GuardTickingBomb ||
-		actor.managedBotStateMachines.task() == compat::CompatibilityTaskId::GuardBombZone)
+		actor.managedBotStateMachines.task() == compat::CompatibilityTaskId::GuardBombZone ||
+		actor.managedBotStateMachines.task() == compat::CompatibilityTaskId::MoveToSniperSpot ||
+		actor.managedBotStateMachines.task() == compat::CompatibilityTaskId::Sniping)
 	{
 		return compat::ReactionDisposition::Opportunity;
 	}

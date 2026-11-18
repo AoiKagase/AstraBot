@@ -73,6 +73,7 @@ struct HidingSpotSearch
 	RandomTimingContext timing;
 	std::function<bool()> current;
 	bool sniper;
+	float range = 750.0f;
 
 	HidingSpotSelection atPlace(std::uint16_t place) const
 	{
@@ -127,11 +128,11 @@ struct HidingSpotSearch
 			const nav::NavVector closest{
 				(std::min)((std::max)(origin.x, next->extent.lo.x), next->extent.hi.x),
 				(std::min)((std::max)(origin.y, next->extent.lo.y), next->extent.hi.y), origin.z};
-				if (hiding_spot_detail::squaredDistance(origin, closest) >= kNearbyRange * kNearbyRange)
+				if (hiding_spot_detail::squaredDistance(origin, closest) >= range * range)
 					return;
 				const float traveled = visit.traveled +
 					std::sqrt(hiding_spot_detail::squaredDistance(center, nav::extentCenterOf(*next)));
-				if (traveled <= 1.5f * kNearbyRange)
+				if (traveled <= 1.5f * range)
 					pending.push_back({next, traveled});
 			};
 			for (const auto &direction : area.connections)
@@ -151,7 +152,6 @@ struct HidingSpotSearch
 private:
 	static constexpr std::size_t kTierCount = 3;
 	static constexpr std::size_t kMaximumSpots = 256;
-	static constexpr float kNearbyRange = 750.0f;
 	using Candidates = std::array<std::vector<nav::NavVector>, kTierCount>;
 
 	std::size_t firstTier() const
@@ -163,7 +163,7 @@ private:
 		constexpr std::uint8_t flags[kTierCount] = {0x04, 0x02, nav::NavHidingSpot::kInCover};
 		for (const auto &spot : area.hidingSpots)
 		{
-			if (origin && hiding_spot_detail::squaredDistance(*origin, spot.position) > kNearbyRange * kNearbyRange)
+			if (origin && hiding_spot_detail::squaredDistance(*origin, spot.position) > range * range)
 				continue;
 			if (occupancy.taken(spot.position))
 				continue;

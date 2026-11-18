@@ -35,8 +35,9 @@ struct BombApproachState
 	std::uint32_t preferredSiteIdentity = 0U;
 };
 
-// CSBotManager owns this draw once per round; a carrier change must not draw
-// another delay or move the deadline.
+enum class DefenseStrategy { Unknown, Hold, Rush };
+
+// CCSBotManager::RestartRound draws the plant deadline and then the shared rush decision.
 struct RoundPlantDecision
 {
 	std::uint32_t map = 0U;
@@ -44,6 +45,7 @@ struct RoundPlantDecision
 	bool sampled = false;
 	bool known = false;
 	float plantAt = 0.0f;
+	DefenseStrategy defense = DefenseStrategy::Unknown;
 
 	void begin(std::uint32_t mapGeneration, std::uint32_t roundGeneration, float restartTime,
 		compat::ICompatibilityRandomSource &random)
@@ -63,6 +65,8 @@ struct RoundPlantDecision
 		const auto delay =
 			random.nextFloat(compat::RandomRequest::floatRequest("Bomb.RoundPlantDelay", {}, {0U, 0U, round},
 				bomb_approach_detail::kMinimumPlantDelaySeconds, bomb_approach_detail::kMaximumPlantDelaySeconds));
+		if (map != mapGeneration || round != roundGeneration)
+			return;
 		known = delay.status == compat::RandomStatus::Ok && std::isfinite(delay.value) &&
 			delay.value >= bomb_approach_detail::kMinimumPlantDelaySeconds &&
 			delay.value <= bomb_approach_detail::kMaximumPlantDelaySeconds;
@@ -70,6 +74,11 @@ struct RoundPlantDecision
 		{
 			plantAt = restartTime + delay.value;
 		}
+		const auto rush = random.nextFloat(compat::RandomRequest::floatRequest(
+			"Round.DefenseRush", {}, {0U, 0U, roundGeneration}, 0.0f, 100.0f));
+		if (map == mapGeneration && round == roundGeneration && rush.status == compat::RandomStatus::Ok &&
+			std::isfinite(rush.value) && rush.value >= 0.0f && rush.value <= 100.0f)
+			defense = rush.value <= 33.3f ? DefenseStrategy::Rush : DefenseStrategy::Hold;
 	}
 };
 

@@ -111,6 +111,9 @@ char kAllowRoguesDefault[] = "1";
 char kDeferToHumanName[] = "bot_defer_to_human";
 char kDeferToHumanDefault[] = "0";
 cvar_t kDeferToHumanCvar = {kDeferToHumanName, kDeferToHumanDefault, FCVAR_SERVER, 0.0f, nullptr};
+char kExcellentMoraleName[] = "bot_excellent_morale";
+char kExcellentMoraleDefault[] = "0";
+cvar_t kExcellentMoraleCvar = {kExcellentMoraleName, kExcellentMoraleDefault, 0, 0.0f, nullptr};
 cvar_t kManagerCvars[] = {{kQuotaModeName, kQuotaModeDefault, FCVAR_SERVER, 0.0f, nullptr},
 	{kJoinAfterPlayerName, kJoinAfterPlayerDefault, FCVAR_SERVER, 1.0f, nullptr},
 	{kAutoVacateName, kAutoVacateDefault, FCVAR_SERVER, 1.0f, nullptr},
@@ -390,11 +393,13 @@ void PluginRuntime::giveEnginePointers(enginefuncs_t *engineFunctions, globalvar
 void PluginRuntime::registerCompatibilityCvars()
 {
 	deferToHumanCvar_ = nullptr;
+	excellentMoraleCvar_ = nullptr;
 	if (engineFunctions_ == nullptr || engineFunctions_->pfnCVarGetPointer == nullptr)
 		return;
 	if (engineFunctions_->pfnCvar_RegisterVariable == nullptr)
 	{
 		deferToHumanCvar_ = engineFunctions_->pfnCVarGetPointer(kDeferToHumanName);
+		excellentMoraleCvar_ = engineFunctions_->pfnCVarGetPointer(kExcellentMoraleName);
 		return;
 	}
 
@@ -420,12 +425,15 @@ void PluginRuntime::registerCompatibilityCvars()
 			engineFunctions_->pfnCvar_RegisterVariable(&variable);
 		}
 	}
-	deferToHumanCvar_ = engineFunctions_->pfnCVarGetPointer(kDeferToHumanName);
-	if (!deferToHumanCvar_)
-	{
-		engineFunctions_->pfnCvar_RegisterVariable(&kDeferToHumanCvar);
-		deferToHumanCvar_ = engineFunctions_->pfnCVarGetPointer(kDeferToHumanName);
-	}
+	const auto getOrRegister = [&](cvar_t &variable) {
+		auto *existing = engineFunctions_->pfnCVarGetPointer(variable.name);
+		if (existing)
+			return existing;
+		engineFunctions_->pfnCvar_RegisterVariable(&variable);
+		return engineFunctions_->pfnCVarGetPointer(variable.name);
+	};
+	deferToHumanCvar_ = getOrRegister(kDeferToHumanCvar);
+	excellentMoraleCvar_ = getOrRegister(kExcellentMoraleCvar);
 }
 
 void PluginRuntime::synchronizeCompatibilityCvars()
@@ -1079,6 +1087,14 @@ void PluginRuntime::onPlayerLogMessage(const char *message)
 	}
 }
 
+void PluginRuntime::observeBroadcastTeamScore(int team, int score, world::FrameIdentity frame)
+{
+	if (state_ == State::ActiveMap && frame.mapGeneration == lifecycle_.mapGeneration() &&
+		frame.roundGeneration == lifecycle_.roundGeneration() && frame.tick == adapterFrameCount_ &&
+		roundLifecycleTracker_.observeBroadcastScore(team == 2, score, frame.tick))
+		behavior_.resetMatchMorale();
+}
+
 void PluginRuntime::onRoundLifecycleMessage(const char *message)
 {
 	if (state_ != State::ActiveMap || globals_ == nullptr || message == nullptr || !std::isfinite(globals_->time))
@@ -1097,6 +1113,8 @@ void PluginRuntime::onRoundLifecycleMessage(const char *message)
 		{
 			return;
 		}
+		if (roundLifecycleTracker_.takeNewMatch())
+			behavior_.resetMatchMorale();
 		if (roundLifecycleTracker_.shouldBeginNewGeneration(RoundLifecycleEvent::RoundStart) && !beginRoundGeneration())
 		{
 			return;

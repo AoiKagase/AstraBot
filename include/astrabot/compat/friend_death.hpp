@@ -127,18 +127,32 @@ public:
 	{
 		*this = EnemyReactionMemory{};
 	}
+	void resetForLife()
+	{
+		// The bot learns its safe time for this map. Respawn clears enemy memory.
+		const auto owner = context_;
+		const float learned = safeTime_;
+		const bool adjusted = safeTimeAdjusted_;
+		reset();
+		context_.actor = owner.actor;
+		context_.entityGeneration = owner.entityGeneration;
+		context_.frame.mapGeneration = owner.frame.mapGeneration;
+		safeTime_ = learned;
+		safeTimeAdjusted_ = adjusted;
+	}
 
 	bool update(const ReactionContext &context)
 	{
-		if (!context.valid())
-		{
-			reset();
-			return false;
-		}
 		if (!matches(context))
 		{
-			reset();
+			if (context.actor.isValid() && context.actor == context_.actor &&
+				context.entityGeneration == context_.entityGeneration && context.frame.mapGeneration == context_.frame.mapGeneration)
+				resetForLife();
+			else
+				reset();
 		}
+		if (!context.valid())
+			return false;
 		context_ = context;
 		return true;
 	}
@@ -262,6 +276,10 @@ public:
 	{
 		return std::isfinite(elapsedRound) &&
 			elapsedRound > 1.25f * (safeTimeAdjusted_ ? safeTime_ : 15.0f + 5.0f * aggression);
+	}
+	bool isSafe(float elapsedRound, float aggression) const
+	{
+		return std::isfinite(elapsedRound) && elapsedRound < (safeTimeAdjusted_ ? safeTime_ : 15.0f + 5.0f * aggression);
 	}
 
 	void clearEnemy(bool cancelPursuit = true)

@@ -69,6 +69,29 @@ bool testRoundFreezeWindowUsesRoundStartAndFiniteExpiry()
 	return check(!noFreeze.scheduled && !noFreeze.isActive(20.0f), "negative freezetime produces no freeze") &&
 		check(capped.scheduled && capped.untilTime == 80.0f, "freezetime is bounded to sixty seconds");
 }
+
+bool testNewMatchUsesThePublicScoreboardReset()
+{
+	using astrabot::metamod::RoundLifecycleEvent;
+	astrabot::metamod::RoundLifecycleTracker tracker;
+	(void)tracker.shouldBeginNewGeneration(RoundLifecycleEvent::RoundStart);
+	(void)tracker.shouldBeginNewGeneration(RoundLifecycleEvent::RoundEnd);
+	if (!check(!tracker.observeBroadcastScore(true, 0, 8) && !tracker.observeBroadcastScore(false, 0, 8),
+			"ordinary round scores do not reset match morale"))
+		return false;
+	(void)tracker.shouldBeginNewGeneration(RoundLifecycleEvent::RestartScheduled);
+	if (!check(!tracker.observeBroadcastScore(false, 0, 9) && !tracker.observeBroadcastScore(true, 0, 9) &&
+			!tracker.observeBroadcastScore(false, 0, 10) && !tracker.observeBroadcastScore(true, 1, 11) &&
+			!tracker.observeBroadcastScore(false, 0, 11), "wrong order, frame or score does not reset the match"))
+		return false;
+	if (!check(!tracker.observeBroadcastScore(true, 0, 12) && tracker.observeBroadcastScore(false, 0, 12) &&
+			!tracker.takeNewMatch(), "the two reset broadcasts consume the restart once before respawn"))
+		return false;
+	(void)tracker.shouldBeginNewGeneration(RoundLifecycleEvent::GameCommencing);
+	(void)tracker.shouldBeginNewGeneration(RoundLifecycleEvent::RoundStart);
+	return check(tracker.takeNewMatch() && !tracker.takeNewMatch(),
+		"the first round start consumes a pending match reset if the score broadcasts were unavailable");
+}
 }
 
 int main()
@@ -77,7 +100,7 @@ int main()
 	{
 		return 1;
 	}
-	if (!testRoundFreezeWindowUsesRoundStartAndFiniteExpiry())
+	if (!testRoundFreezeWindowUsesRoundStartAndFiniteExpiry() || !testNewMatchUsesThePublicScoreboardReset())
 	{
 		return 1;
 	}

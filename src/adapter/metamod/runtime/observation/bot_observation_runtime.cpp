@@ -879,6 +879,8 @@ void BotObservationRuntime::capturePublicMessage()
 		{
 			teamScores_[team] = v[1];
 			teamScoresKnown_[team] = true;
+			if (!publicMessageTarget_ && publicMessageDestination_ == MSG_ALL)
+				services_->observeBroadcastTeamScore(team, v[1], publicMessageFrame_);
 		}
 		return;
 	}
@@ -907,6 +909,9 @@ void BotObservationRuntime::capturePublicMessage()
 		(publicMessageStringMask_ & kTextMessageTokenMask) != 0U)
 	{
 		const char *token = publicMessageStrings_[1U].data();
+		// EndRoundMessage broadcasts exactly one centered token before announcing Round_End.
+		const bool publicResult = !publicMessageTarget_ && publicMessageDestination_ == MSG_ALL &&
+			count == 2U && integers(kTextMessageTokenMask) && v[0] == HUD_PRINTCENTER;
 		if (publicMessageTarget_ != nullptr &&
 			(publicMessageDestination_ == MSG_ONE || publicMessageDestination_ == MSG_ONE_UNRELIABLE) &&
 			(std::strcmp(token, "#Ignore_Radio") == 0 || std::strcmp(token, "#Accept_Radio") == 0))
@@ -928,6 +933,18 @@ void BotObservationRuntime::capturePublicMessage()
 							publicMessageFrame_, services_->service_globals()->time, planted);
 				}
 			}
+		}
+		if (publicResult)
+		{
+			static const char *const tWins[] = {"#Target_Bombed", "#VIP_Assassinated", "#Terrorists_Escaped",
+				"#Terrorists_Win", "#Hostages_Not_Rescued", "#VIP_Not_Escaped"};
+			static const char *const ctWins[] = {"#VIP_Escaped", "#CTs_PreventEscape", "#Escaping_Terrorists_Neutralized",
+				"#Bomb_Defused", "#CTs_Win", "#All_Hostages_Rescued", "#Target_Saved", "#Terrorists_Not_Escaped"};
+			const auto matches = [token](const char *name) { return std::strcmp(name, token) == 0; };
+			if (std::any_of(std::begin(tWins), std::end(tWins), matches))
+				services_->behavior_observeRoundWin(kTerroristTeam, publicMessageFrame_);
+			else if (std::any_of(std::begin(ctWins), std::end(ctWins), matches))
+				services_->behavior_observeRoundWin(kCounterTerroristTeam, publicMessageFrame_);
 		}
 		return;
 	}

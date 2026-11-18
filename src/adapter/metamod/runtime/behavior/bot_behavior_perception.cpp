@@ -238,7 +238,7 @@ void BotBehaviorRuntime::resetRoundRecognition()
 		actor.outgoingRadioSchedulers.discardPending();
 		actor.confirmedSpeech.reset();
 		actor.knifeRun.reset();
-		actor.enemyReaction.reset();
+		actor.enemyReaction.resetForLife();
 		actor.enemyWeaponSource = {};
 		actor.noiseReport = {};
 		actor.investigationWalking = false;
@@ -255,6 +255,9 @@ void BotBehaviorRuntime::resetRoundRecognition()
 
 void BotBehaviorRuntime::observePublicDeath(std::size_t index, const world::FrameIdentity &deathFrame)
 {
+	const auto *self = services_->service_managedBotHandles()[index].entity;
+	if (deathFrame.isValid() && self && !self->free && (self->v.deadflag != DEAD_NO || self->v.health <= 0.0f))
+		actors_[index].morale.observeLife(false);
 	const auto previousSpeech = actors_[index].confirmedSpeech;
 	for (std::size_t observer = 0; observer < actors_.size(); ++observer)
 	{
@@ -276,7 +279,7 @@ void BotBehaviorRuntime::observePublicDeath(std::size_t index, const world::Fram
 	actors_[index].outgoingRadioSchedulers.discardPending();
 	actors_[index].confirmedSpeech.reset();
 	actors_[index].knifeRun.reset();
-	actors_[index].enemyReaction.reset();
+	actors_[index].enemyReaction.resetForLife();
 	actors_[index].enemyWeaponSource = {};
 	actors_[index].noiseReport = {};
 	actors_[index].investigationWalking = false;

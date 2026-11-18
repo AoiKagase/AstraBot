@@ -28,6 +28,41 @@ constexpr float kRogueRadioDelaySeconds = 2.0f;
 }
 using namespace runtime_detail;
 
+void BotBehaviorRuntime::resetMatchMorale()
+{
+	for (auto &actor : actors_)
+		actor.morale.newMatch();
+}
+
+void BotBehaviorRuntime::observeRoundWin(int team, world::FrameIdentity frame)
+{
+	const auto current = [&] {
+		const auto &life = services_->service_lifecycle();
+		return life.mapGeneration() == frame.mapGeneration && life.roundGeneration() == frame.roundGeneration &&
+			frame.tick == services_->service_adapterFrameCount() && !services_->service_roundOver();
+	};
+	if (!current() || moraleResultRound_ == frame.roundGeneration ||
+		services_->service_compatibilitySurface().configuration().mode != compat::RuntimeMode::Compatibility)
+		return;
+	moraleResultRound_ = frame.roundGeneration;
+	const auto handles = services_->service_managedBotHandles();
+	for (std::size_t i = 0; i < handles.size(); ++i)
+	{
+		const auto &handle = handles[i];
+		if (!services_->service_managedBotSlots()[i] || !handle.entity || handle.entity->free)
+			continue;
+		const int serial = handle.entity->serialnumber;
+		const int ownerTeam = services_->observation_resolvePlayerTeam(handle.entity);
+		if (!current())
+			return;
+		const auto &now = services_->service_managedBotHandles()[i];
+		if (services_->service_managedBotSlots()[i] && now.entity == handle.entity &&
+			now.actor.actorGeneration == handle.actor.actorGeneration && !handle.entity->free &&
+			handle.entity->serialnumber == serial && (ownerTeam == kCounterTerroristTeam || ownerTeam == kTerroristTeam))
+			actors_[i].morale.roundResult(ownerTeam == team);
+	}
+}
+
 compat::StateUpdateContext BotBehaviorRuntime::makeManagedBotStateContext(
 	std::size_t index, const runtime::MovementPhysicsState &before, compat::StateBehaviorInput *behavior) const
 {
@@ -102,6 +137,8 @@ BotBehaviorRuntime::BehaviorPhaseResult BotBehaviorRuntime::updateBehaviorLifecy
 	auto &machine = actors_[index].managedBotStateMachines;
 	const bool native =
 		services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility;
+	if (native)
+		actors_[index].morale.observeLife(!before.dead);
 	actors_[index].scenarioDecisions = {};
 	if (actors_[index].managedBotStateRounds != 0U &&
 		actors_[index].managedBotStateRounds != services_->service_lifecycle().roundGeneration() &&
@@ -131,7 +168,7 @@ BotBehaviorRuntime::BehaviorPhaseResult BotBehaviorRuntime::updateBehaviorLifecy
 		actors_[index].noiseInvestigation.reset();
 		actors_[index].investigationWalking = false;
 		actors_[index].knifeRun.reset();
-		actors_[index].enemyReaction.reset();
+		actors_[index].enemyReaction.resetForLife();
 		actors_[index].enemyWeaponSource = {};
 		actors_[index].equipment.reset();
 		actors_[index].scenarioPlanners.reset();
@@ -937,8 +974,10 @@ void BotBehaviorRuntime::updateScenarioTeamwork(std::size_t index, const runtime
 	bool finishedDefense = false;
 	const bool guardingLoose = machine.task() == compat::CompatibilityTaskId::GuardLooseBomb;
 	const bool guardingSite = machine.task() == compat::CompatibilityTaskId::GuardBombZone;
+	const bool sniping = machine.task() == compat::CompatibilityTaskId::MoveToSniperSpot ||
+		machine.task() == compat::CompatibilityTaskId::Sniping;
 	if (machine.state() == compat::CompatibilityStateId::Hide &&
-		(guardingLoose || guardingSite || machine.task() == compat::CompatibilityTaskId::HoldPosition) &&
+		(guardingLoose || guardingSite || sniping || machine.task() == compat::CompatibilityTaskId::HoldPosition) &&
 		!machine.attackOverlayActive())
 	{
 		const float feetZ = before.origin.z - (before.ducked ? 18.0f : 36.0f);
@@ -957,7 +996,11 @@ void BotBehaviorRuntime::updateScenarioTeamwork(std::size_t index, const runtime
 			(renewBombsiteGuard(index) || !current()))
 			return;
 		finishedDefense = actors_[index].scenarioPlanners.finishDefense(elapsed, reloading);
-		if (guardingSite && !reloading && scenario.bombPlanted && !scenario.deferToHuman)
+		if (!finishedDefense && sniping && actors_[index].scenarioPlanners.atDefenseSpot())
+			machine.reachedSniperSpot();
+		const bool knownLoose = !scenario.bombPlanted && (data.looseBomb.knowledge == compat::ScenarioKnowledge::Visible ||
+			actors_[index].bombStatus.status == compat::BombStatusMemory::Status::Loose);
+		if (guardingSite && !reloading && (knownLoose || (scenario.bombPlanted && !scenario.deferToHuman)))
 		{
 			actors_[index].scenarioPlanners.cancelHoldPosition();
 			finishedDefense = true;
@@ -980,6 +1023,11 @@ void BotBehaviorRuntime::updateScenarioTeamwork(std::size_t index, const runtime
 	else
 		actors_[index].scenarioDecisions = actors_[index].scenarioPlanners.update(scenario);
 	const auto action = actors_[index].scenarioDecisions.action;
+	if (machine.state() == compat::CompatibilityStateId::Idle && !machine.attackOverlayActive() &&
+		action == compat::ScenarioAction::None && scenario.scenario == compat::PublicScenarioKind::Bomb &&
+		scenario.team == objectives::TeamRole::CounterTerrorist && !scenario.bombPlanted && !services_->service_roundOver() &&
+		(selectPreplantDefense(index, cooperative.rogueKnown && !cooperative.rogue, scenario) || !current()))
+		return;
 	if (actors_[index].scenarioDecisions.hideTask == compat::CompatibilityTaskId::GuardBombZone)
 	{
 		const auto target = actors_[index].scenarioDecisions.target;

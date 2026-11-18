@@ -2,6 +2,7 @@
 #define ASTRABOT_ADAPTER_BOT_BEHAVIOR_RUNTIME_HPP
 #include "runtime/shared/bot_runtime_services.hpp"
 #include "astrabot/compat/bomb_status.hpp"
+#include "astrabot/compat/bot_morale.hpp"
 #include "astrabot/compat/enemy_count_chatter.hpp"
 #include "astrabot/compat/kill_praise.hpp"
 #include "astrabot/compat/friend_death_chatter.hpp"
@@ -59,6 +60,8 @@ public:
 	}
 	void updateVoiceFeedback(bool force = false);
 	void observeRadioPreference(edict_t *recipient, bool ignored);
+	void observeRoundWin(int team, world::FrameIdentity frame);
+	void resetMatchMorale();
 	void observeObstacleKeyValue(edict_t *entity, const KeyValueData *data);
 	void observeObstacleTouch(edict_t *entity, edict_t *other);
 	void observeWeaponTouch(edict_t *box, edict_t *self);
@@ -209,6 +212,7 @@ private:
 	struct ActorTaskEnvironment;
 	void reportBombPickedUp(std::size_t index);
 	void hideNearLooseBomb(std::size_t index, bool announce);
+	bool selectPreplantDefense(std::size_t index, bool cooperative, const compat::ScenarioBehaviorInput &scenario);
 	void hideAtPlantedBombsite(std::size_t index, compat::ScenarioTarget target);
 	bool renewBombsiteGuard(std::size_t index);
 	void rememberLooseBombDrop(world::EntityKey box, world::FrameIdentity frame, nav::NavVector origin);
@@ -518,6 +522,7 @@ private:
 
 	struct ActorState
 	{
+		compat::BotMorale morale{};
 		std::uint64_t executionRevision = 1;
 		HelpGoal helpGoal{};
 		TeammateFollow teammateFollow{};
@@ -603,6 +608,7 @@ private:
 	runtime::LifecycleGeneration outgoingRadioMap_ = runtime::LifecycleSession::kInvalidGeneration;
 	runtime::LifecycleGeneration outgoingRadioRound_ = runtime::LifecycleSession::kInvalidGeneration;
 	objectives::RoundPlantDecision roundPlantDecision_{};
+	std::uint32_t moraleResultRound_ = 0;
 	team::RoundObjectiveCoordinator managedTeamObjectiveCoordinator_{};
 	std::size_t managedTeamObjectiveAssignmentContext_ = NativeBotObservation::kClientSlotCount;
 	team::TeamObjectiveAssignmentSet managedTeamObjectiveAssignments_{};

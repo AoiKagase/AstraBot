@@ -258,6 +258,11 @@ public:
 
 	CompatibilityStateId state() const;
 	CompatibilityTaskId task() const;
+	void reachedSniperSpot()
+	{
+		if (state_ == CompatibilityStateId::Hide && task_ == CompatibilityTaskId::MoveToSniperSpot && !attackOverlayActive())
+			task_ = CompatibilityTaskId::Sniping;
+	}
 	const world::ActorKey &actor() const;
 	float stateTimestamp() const;
 	std::uint64_t normalStateEpoch() const

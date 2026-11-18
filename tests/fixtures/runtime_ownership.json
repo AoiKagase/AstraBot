@@ -286,6 +286,11 @@
   },
   {
     "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
+    "scope": "ActorState",
+    "member": "morale"
+  },
+  {
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
     "scope": "owner",
     "member": "looseBombDrop_"
   },
@@ -665,6 +670,11 @@
     "member": "roundPlantDecision_"
   },
   {
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
+    "scope": "owner",
+    "member": "moraleResultRound_"
+  },
+  {
     "header": "src/adapter/metamod/runtime/navigation/bot_navigation_runtime.hpp",
     "scope": "owner",
     "member": "dangerMemory_"
@@ -1008,6 +1018,11 @@
     "header": "src/adapter/metamod/plugin/plugin_runtime.hpp",
     "scope": "owner",
     "member": "deferToHumanCvar_"
+  },
+  {
+    "header": "src/adapter/metamod/plugin/plugin_runtime.hpp",
+    "scope": "owner",
+    "member": "excellentMoraleCvar_"
   },
   {
     "header": "src/adapter/metamod/plugin/plugin_runtime.hpp",

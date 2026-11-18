@@ -4,12 +4,18 @@
 #include "astrabot/compat/defend_hiding_spots.hpp"
 #include "runtime/shared/bot_runtime_support.hpp"
 #include "runtime/shared/public_nav_probe.hpp"
+#include <algorithm>
 namespace astrabot
 {
 namespace metamod
 {
 namespace
 {
+bool carriesSniperRifle(const edict_t &entity)
+{
+	constexpr unsigned rifles = (1U << 3) | (1U << 13) | (1U << 18) | (1U << 24);
+	return (static_cast<unsigned>(entity.v.weapons) & rifles) != 0;
+}
 constexpr int kTerroristTeam = 1;
 constexpr int kCounterTerroristTeam = 2;
 constexpr int kCommandRadioMenu = 1;
@@ -322,7 +328,7 @@ struct BotBehaviorRuntime::ActorTaskEnvironment : compat::IHelpRequestEnvironmen
 		return current();
 	}
 	bool selectSpot(std::uint16_t place, nav::AreaId start, const nav::NavVector &origin,
-		nav::NavVector *point, bool *found)
+		nav::NavVector *point, bool *found, float range = 750.0f)
 	{
 		compat::HidingSpotOccupancy occupancy;
 		const auto engine = owner.services_->service_engineFunctions();
@@ -355,10 +361,9 @@ struct BotBehaviorRuntime::ActorTaskEnvironment : compat::IHelpRequestEnvironmen
 				previous = hostage;
 			}
 		}
-		constexpr unsigned sniperWeapons = (1U << 3) | (1U << 13) | (1U << 18) | (1U << 24);
 		const compat::HidingSpotSearch search{navigation, occupancy, owner.services_->service_compatibilityRandomSource(),
 			{receipt.actor.slot, receipt.actor.generation}, timing(), [this] { return current(); },
-			(static_cast<unsigned>(receipt.entity->v.weapons) & sniperWeapons) != 0};
+			carriesSniperRifle(*receipt.entity), range};
 		compat::HidingSpotSelection selection;
 		if (place)
 			selection = search.atPlace(place);
@@ -457,7 +462,7 @@ struct BotBehaviorRuntime::ActorTaskEnvironment : compat::IHelpRequestEnvironmen
 	{
 		return hideNearArea(areaAt(point, false), compat::CompatibilityTaskId::HoldPosition);
 	}
-	bool hideNearArea(nav::AreaId start, compat::CompatibilityTaskId task)
+	bool hideNearArea(nav::AreaId start, compat::CompatibilityTaskId task, float range = 750.0f)
 	{
 		if (!current())
 			return false;
@@ -472,7 +477,7 @@ struct BotBehaviorRuntime::ActorTaskEnvironment : compat::IHelpRequestEnvironmen
 			return enterHideState(self, 0, task);
 		nav::NavVector spot{};
 		bool found = false;
-		if (!selectSpot(0, start, center, &spot, &found))
+		if (!selectSpot(0, start, center, &spot, &found, range))
 			return false;
 		if (!found)
 			spot = self;
@@ -523,8 +528,13 @@ struct BotBehaviorRuntime::ActorTaskEnvironment : compat::IHelpRequestEnvironmen
 			actor.bombSearchMemory.clear(receipt.context.frame, site);
 		if (meme.kind == compat::ChatterMemeKind::BombsitePlanted || actor.bombSearchTargets.entity == site)
 			actor.bombSearchTargets = {};
+		leaveTaskAndAcknowledge(compat::CompatibilityTaskId::FindTickingBomb);
+	}
+	void leaveTaskAndAcknowledge(compat::CompatibilityTaskId task)
+	{
+		auto &actor = owner.actors_[receiver];
 		auto &machine = actor.managedBotStateMachines;
-		if (machine.task() != compat::CompatibilityTaskId::FindTickingBomb)
+		if (machine.task() != task)
 			return;
 		runtime::MovementPhysicsState before{};
 		before.dead = !receipt.context.alive;
@@ -538,6 +548,8 @@ struct BotBehaviorRuntime::ActorTaskEnvironment : compat::IHelpRequestEnvironmen
 		if (result != compat::StateResult::Transitioned || !current())
 			return;
 		actor.enemyReaction.onStateChange(owner.reactionContext(receiver), previous, machine.state());
+		if (task == compat::CompatibilityTaskId::GuardBombZone)
+			actor.scenarioPlanners.cancelHoldPosition();
 		actor.helpGoal = {};
 		actor.managedBotObjectiveTargets = {};
 		actor.managedBotObjectiveActions = {};
@@ -549,6 +561,49 @@ struct BotBehaviorRuntime::ActorTaskEnvironment : compat::IHelpRequestEnvironmen
 	void onMyWay() override
 	{
 		acknowledge(compat::ChatterPhrase::OnMyWay);
+	}
+	void announcePlan(compat::ChatterPhrase phrase, std::uint16_t place)
+	{
+		if (owner.services_->service_roundOver())
+			return;
+		const auto delay = owner.services_->service_compatibilityRandomSource().nextFloat(compat::RandomRequest::floatRequest(
+			"Chatter.AnnouncePlan", {receipt.actor.slot, receipt.actor.generation}, timing(), 2.0f, 3.0f));
+		if (!current() || delay.status != compat::RandomStatus::Ok || !std::isfinite(delay.value) ||
+			delay.value < 2.0f || delay.value > 3.0f)
+			return;
+		owner.ensureOutgoingChatterCatalog();
+		if (!current())
+			return;
+		compat::ChatterStatementRequest plan{};
+		plan.source = compat::ChatterScheduleSource::Generic;
+		plan.topic = compat::ChatterStatementTopic::MyPlan;
+		plan.phrase = phrase;
+		plan.place = place;
+		plan.criteriaPlace = chatterPlacePhrase(navigation, owner.outgoingChatterCatalog_, place);
+		plan.created = receipt.context.now;
+		const auto roundStart = owner.services_->service_roundFreezeGeneration() == receipt.context.frame.roundGeneration
+			? owner.services_->service_roundFreezeUntil() : 0.0f;
+		plan.start = roundStart + delay.value;
+		plan.readyAt = plan.start;
+		plan.expires = plan.created + 10.0f;
+		admit(plan);
+	}
+	const nav::NavArea *randomSiteArea()
+	{
+		owner.refreshManagedObjectiveSiteRegistry();
+		const auto &zones = owner.managedObjectiveSiteRegistry_;
+		if (!current() || !zones.registeredCount)
+			return nullptr;
+		auto &random = owner.services_->service_compatibilityRandomSource();
+		const compat::RandomActor actor{receipt.actor.slot, receipt.actor.generation};
+		const auto zone = random.nextLong(compat::RandomRequest::longRequest("Bomb.RandomZone", actor, timing(),
+			0, static_cast<std::int32_t>(zones.registeredCount) - 1));
+		if (!current() || zone.status != compat::RandomStatus::Ok || zone.value < 0 ||
+			static_cast<unsigned>(zone.value) >= zones.registeredCount)
+			return nullptr;
+		const auto *area = compat::randomBombSiteArea(*navigation.document(), zones.entries[zone.value].zone.extent,
+			compat::BombSearchSite::kMaximumNavAreas, random, actor, timing());
+		return current() ? area : nullptr;
 	}
 	void coveringFriend() override
 	{
@@ -632,6 +687,67 @@ struct BotBehaviorRuntime::ActorTaskEnvironment : compat::IHelpRequestEnvironmen
 	}
 };
 
+bool BotBehaviorRuntime::selectPreplantDefense(std::size_t index, bool cooperative, const compat::ScenarioBehaviorInput &scenario)
+{
+	const auto &actor = actors_[index];
+	const auto *self = services_->service_managedBotHandles()[index].entity;
+	const bool sniper = self && carriesSniperRifle(*self);
+	const bool sawDrop = actor.looseBombObservation.knowledge == compat::ScenarioKnowledge::Visible;
+	const bool knowsDrop = sawDrop || actor.bombStatus.status == compat::BombStatusMemory::Status::Loose;
+	const float start = services_->service_roundFreezeGeneration() == scenario.frame.roundGeneration
+		? services_->service_roundFreezeUntil() : 0.0f;
+	const float lastSawEnemy = (std::max)(0.0f, actor.enemyReaction.lastSaw(reactionContext(index)));
+	const bool mayGuard = cooperative && !knowsDrop && roundPlantDecision_.defense == objectives::DefenseStrategy::Hold &&
+		(actor.enemyReaction.isSafe(scenario.timestamp - start, scenario.aggression) ||
+			scenario.timestamp - lastSawEnemy > 30.0f);
+	if (!sniper && !mayGuard)
+		return false;
+	ActorTaskEnvironment env(*this, index, index, [] { return true; });
+	if (!env.current() || !env.navigation.isValid() ||
+		!services_->navigation_knownArea(index, env.receipt.actor, scenario.frame, env.navigation.revision()))
+		return false;
+	const auto draw = [&](const char *name) {
+		return services_->service_compatibilityRandomSource().nextFloat(compat::RandomRequest::floatRequest(
+			name, {env.receipt.actor.slot, env.receipt.actor.generation}, env.timing(), 0.0f, 100.0f));
+	};
+	const auto valid = [](const compat::RandomFloatResult &r) {
+		return r.status == compat::RandomStatus::Ok && std::isfinite(r.value) && r.value >= 0 && r.value <= 100;
+	};
+	if (sniper)
+	{
+		const auto roll = draw("Idle.DefenseSniperCamp");
+		if (!env.current() || !valid(roll))
+			return false;
+		if (roll.value <= 75.0f)
+		{
+			nav::AreaId area = 0;
+			if (knowsDrop)
+			{
+				const auto &pos = actor.looseBombObservation.position;
+				area = env.areaAt(sawDrop ? nav::NavVector{pos.x, pos.y, pos.z} : actor.bombStatus.position, false);
+			}
+			else if (const auto *site = env.randomSiteArea())
+				area = site->id;
+			if (!env.current())
+				return false;
+			if (area)
+				return env.hideNearArea(area, compat::CompatibilityTaskId::MoveToSniperSpot, 2000.0f);
+		}
+	}
+	if (!mayGuard)
+		return false;
+	const int morale = services_->service_excellentMorale() ? 3 : actor.morale.value;
+	const auto roll = draw("Idle.GuardBombsite");
+	if (!env.current() || !valid(roll) || roll.value >= -34.0f * morale)
+		return false;
+	const auto *area = env.randomSiteArea();
+	if (!area)
+		return false;
+	env.announcePlan(compat::ChatterPhrase::GoingToDefendBombsite, area->placeId);
+	return env.current() && env.hideNearArea(area->id, compat::CompatibilityTaskId::GuardBombZone,
+		500.0f + 100.0f * (morale + 3));
+}
+
 bool BotBehaviorRuntime::renewBombsiteGuard(std::size_t index)
 {
 	ActorTaskEnvironment env(*this, index, index, [] { return true; });
@@ -705,30 +821,8 @@ void BotBehaviorRuntime::hideNearLooseBomb(std::size_t index, bool announce)
 	const auto area = looseBombArea(env.navigation, [&env] { return env.current(); });
 	if (!env.hideNearArea(area, compat::CompatibilityTaskId::GuardLooseBomb))
 		return;
-	if (!announce || !area || services_->service_roundOver())
-		return;
-	const auto place = env.navigation.document()->findArea(area)->placeId;
-	const auto delay = services_->service_compatibilityRandomSource().nextFloat(compat::RandomRequest::floatRequest(
-		"Chatter.AnnouncePlan", {env.receipt.actor.slot, env.receipt.actor.generation}, env.timing(), 2.0f, 3.0f));
-	if (!env.current() || delay.status != compat::RandomStatus::Ok ||
-		!std::isfinite(delay.value) || delay.value < 2.0f || delay.value > 3.0f)
-		return;
-	ensureOutgoingChatterCatalog();
-	if (!env.current())
-		return;
-	compat::ChatterStatementRequest plan{};
-	plan.source = compat::ChatterScheduleSource::Generic;
-	plan.topic = compat::ChatterStatementTopic::MyPlan;
-	plan.phrase = compat::ChatterPhrase::GoingToGuardLooseBomb;
-	plan.place = place;
-	plan.criteriaPlace = chatterPlacePhrase(env.navigation, outgoingChatterCatalog_, place);
-	plan.created = env.receipt.context.now;
-	const auto roundStart = services_->service_roundFreezeGeneration() == env.receipt.context.frame.roundGeneration
-		? services_->service_roundFreezeUntil() : 0.0f;
-	plan.start = roundStart + delay.value;
-	plan.readyAt = plan.start;
-	plan.expires = plan.created + 10.0f;
-	env.admit(plan);
+	if (announce && area)
+		env.announcePlan(compat::ChatterPhrase::GoingToGuardLooseBomb, env.navigation.document()->findArea(area)->placeId);
 }
 
 void BotBehaviorRuntime::transmitTeammateRequest(
@@ -812,7 +906,10 @@ void BotBehaviorRuntime::transmitTeammateRequest(
 		else if (meme.kind == compat::ChatterMemeKind::BombMoving)
 			environment.receivedMovingBomb(meme.position, team);
 		else if (meme.kind == compat::ChatterMemeKind::BombLoose)
+		{
 			actors_[receiver].bombStatus.rememberLoose(meme.position);
+			environment.leaveTaskAndAcknowledge(compat::CompatibilityTaskId::GuardBombZone);
+		}
 		else
 			environment.reportingIn(team);
 	}
