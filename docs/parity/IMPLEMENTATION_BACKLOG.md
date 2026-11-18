@@ -64,7 +64,8 @@ The user requests01 onward in order, each repaired unit committed and locally FF
 |15B-2b|追跡経路終了時のLostEnemy|経路の終点到達または失敗で追跡を終え、対象が生存していれば発話する。実機確認は25。|
 |15B-2c|安全時間終了間際のWaitingHere|士気・残り安全時間・防衛方針に応じて隠れ場所への移行と発話を行う。実機確認は25。|
 |15B-2d|解除直後のBarelyDefused|残り2秒未満で解除した場合にCTが発話を登録し、ラウンド終了後の再生判定へ渡す。実機確認は25。|
-|15B-2e|人質警備のEncourageとBlinded|自由な人質の視認には追従状態、Blindedには閃光による失明の受信経路が必要。|
+|15B-2e|ReGameDLLでのBlinded発話|公開の失明フックで対象Botを照合し、CSBotの抽選条件で発話する。実機確認は25。|
+|15B-2f|人質警備のEncourageと標準GameDLLのBlinded|自由な人質の視認には追従状態、標準GameDLLのBlindedには閃光による失明の受信経路が必要。|
 
 | ID | 修正単位 | 現在の作業／残件 |
 |---|---|---|

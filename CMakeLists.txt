@@ -1037,8 +1037,23 @@ if(ASTRABOT_BUILD_METAMOD)
     endif()
     string(APPEND regame_api_types "${regame_enum}\n")
   endforeach()
+  foreach(regame_enum_source player.h items.h gamerules.h extdef.h)
+    file(READ "${CMAKE_CURRENT_SOURCE_DIR}/third_party/cssdk/dlls/${regame_enum_source}" regame_enums)
+    foreach(regame_type PLAYER_ANIM RewardType ItemID ItemRestType ScenarioEventEndRound hash_types_e)
+      string(REGEX MATCH "enum ${regame_type}[^{}]*\\{[^{}]*\\};" regame_enum "${regame_enums}")
+      if(regame_enum)
+        string(APPEND regame_api_types "${regame_enum}\n")
+      endif()
+    endforeach()
+  endforeach()
+  string(FIND "${regame_api_source}" "// CBasePlayer::Spawn hook" regame_hooks_begin)
+  math(EXPR regame_hooks_length "${regame_api_begin} - ${regame_hooks_begin}")
+  if(regame_hooks_begin LESS 0 OR regame_hooks_length LESS 1)
+    message(FATAL_ERROR "Official ReGameDLL hook declarations were not found")
+  endif()
+  string(SUBSTRING "${regame_api_source}" ${regame_hooks_begin} ${regame_hooks_length} regame_hooks_and_funcs)
   file(CONFIGURE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/generated/astrabot_regamedll_api_view.hpp"
-    CONTENT "${regame_license}#pragma once\n${regame_api_types}\nstruct ReGameFuncs_t;\nclass IReGameHookchains;\n${regame_api_declaration}\n${regame_api_defines}" @ONLY)
+    CONTENT "${regame_license}#pragma once\n#include \"hookchains.h\"\nclass Vector;\nclass CBaseEntity;\ntypedef int BOOL;\ntypedef unsigned int string_t;\ntypedef struct edict_s edict_t;\ntypedef struct entvars_s entvars_t;\n${regame_api_types}\n${regame_hooks_and_funcs}\n${regame_api_declaration}\n${regame_api_defines}" @ONLY)
   add_library(astrabot_regamedll_provider STATIC
     src/adapter/metamod/bridge/regamedll_observation_provider.cpp)
   set_target_properties(astrabot_regamedll_provider PROPERTIES POSITION_INDEPENDENT_CODE ON)
@@ -1061,6 +1076,18 @@ if(ASTRABOT_BUILD_METAMOD)
   endforeach()
   if(ASTRABOT_BUILD_TESTS)
     add_executable(astrabot_regamedll_observation_provider tests/regamedll_observation_provider_tests.cpp)
+    string(REGEX MATCHALL "virtual IReGameHookRegistry_[A-Za-z0-9_]+\\* [A-Za-z0-9_]+\\(\\) = 0;"
+      regame_registry_methods "${regame_hooks_and_funcs}")
+    set(regame_empty_hookchains "")
+    foreach(regame_registry_method IN LISTS regame_registry_methods)
+      if(NOT regame_registry_method STREQUAL "")
+        string(REGEX REPLACE "^virtual (.*) = 0$" "\\1 override { return nullptr; }"
+          regame_empty_hookchain "${regame_registry_method}")
+        string(APPEND regame_empty_hookchains "\t${regame_empty_hookchain}\n")
+      endif()
+    endforeach()
+    file(CONFIGURE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/generated/astrabot_regamedll_test_hooks.hpp"
+      CONTENT "#pragma once\n#include \"astrabot_regamedll_api_view.hpp\"\nclass EmptyReGameHookchains : public IReGameHookchains {\npublic:\n${regame_empty_hookchains}};\n" @ONLY)
     target_include_directories(astrabot_regamedll_observation_provider PRIVATE
       "${CMAKE_CURRENT_SOURCE_DIR}/include"
       "${CMAKE_CURRENT_BINARY_DIR}/generated"
@@ -1234,12 +1261,13 @@ if(ASTRABOT_BUILD_TESTS AND ASTRABOT_BUILD_METAMOD)
   add_test(NAME astrabot_team_fall_back_runtime COMMAND astrabot_statement_queue_runtime --team-fall-back)
   add_test(NAME astrabot_round_victory_runtime COMMAND astrabot_statement_queue_runtime --round-victory)
   add_test(NAME astrabot_barely_defused_runtime COMMAND astrabot_statement_queue_runtime --barely-defused)
+  add_test(NAME astrabot_blinded_chatter_runtime COMMAND astrabot_statement_queue_runtime --blinded-chatter)
   add_test(NAME astrabot_auto_follow_chatter_runtime COMMAND astrabot_statement_queue_runtime --auto-follow-chatter)
   set_tests_properties(astrabot_statement_queue_runtime astrabot_guard_loose_bomb_runtime
     astrabot_guard_planted_bombsite_runtime astrabot_encourage_defuse_runtime astrabot_guard_unplanted_bombsite_runtime
     astrabot_hostage_use_report_runtime astrabot_sniper_warning_runtime astrabot_scared_outnumbered_runtime
     astrabot_team_fall_back_runtime astrabot_round_victory_runtime astrabot_auto_follow_chatter_runtime
-    astrabot_waiting_here_runtime astrabot_barely_defused_runtime PROPERTIES
+    astrabot_waiting_here_runtime astrabot_barely_defused_runtime astrabot_blinded_chatter_runtime PROPERTIES
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" RESOURCE_LOCK astrabot_actor_command_profile)
   add_executable(astrabot_chatter_nav_probe tests/chatter_nav_probe_tests.cpp)
   target_include_directories(astrabot_chatter_nav_probe PRIVATE ${combat_target_log_includes})

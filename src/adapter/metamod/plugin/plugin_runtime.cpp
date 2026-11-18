@@ -230,6 +230,7 @@ bool PluginRuntime::detach(PLUG_LOADTIME loadTime, PL_UNLOAD_REASON reason)
 	navPublisher_.invalidate(lifecycle_.mapGeneration());
 	navLoadDiagnostic_ = {};
 	lifecycle_.deactivateMap();
+	observation_.deactivateMapProvider();
 	state_ = State::Detached;
 	metaGlobals_ = nullptr;
 	gameDllFunctions_ = nullptr;

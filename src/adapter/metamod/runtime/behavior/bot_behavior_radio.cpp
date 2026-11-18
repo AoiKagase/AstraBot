@@ -1677,6 +1677,21 @@ void BotBehaviorRuntime::reportAutomaticFollow(std::size_t index, const std::fun
 		env.say(career ? "FollowingCommander" : "FollowingSir", 10.0f);
 }
 
+void BotBehaviorRuntime::observePlayerBlind(std::size_t index, world::ActorKey actor, world::FrameIdentity frame)
+{
+	if (index >= actors_.size() || !actor.isValid() || !frame.isValid() ||
+		services_->service_compatibilitySurface().configuration().mode != compat::RuntimeMode::Compatibility)
+		return;
+	const auto current = [&] {
+		const auto context = reactionContext(index);
+		return context.actor == actor && context.frame == frame && context.alive;
+	};
+	ActorTaskEnvironment env(*this, index, index, current);
+	float roll = 0.0f;
+	if (env.current() && env.drawFloat("Chatter.BlindedChance", 0.0f, 100.0f, roll) && roll < 33.3f)
+		env.say("Blinded", 1.0f);
+}
+
 void BotBehaviorRuntime::encourageHumanDefuse(
 	std::size_t index, float remaining, const std::function<bool()> &current)
 {

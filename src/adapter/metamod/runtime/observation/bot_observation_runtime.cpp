@@ -1653,6 +1653,69 @@ void BotObservationRuntime::rebindRoundObservations()
 void BotObservationRuntime::probeMapProvider()
 {
 	optionalObservations_.probeLoadedGameDll();
+	optionalObservations_.connectBlindEvents([](void *context, const void *player, float duration) {
+		auto &observer = *static_cast<BotObservationRuntime *>(context);
+		observer.observeGameDllBlind(player, duration, [&observer](const char *name) {
+			return observer.optionalObservations_.findClientObject(name);
+		});
+	}, this);
+}
+
+void BotObservationRuntime::observeGameDllBlind(const void *player, float duration,
+	const std::function<const void *(const char *)> &findClientObject)
+{
+	const auto *globals = services_->service_globals();
+	const auto *engine = services_->service_engineFunctions();
+	if (!player || !findClientObject || !globals || !engine || !engine->pfnSzFromIndex || !engine->pfnFindEntityByString ||
+		!engine->pfnIndexOfEdict || !std::isfinite(duration) || duration < 0.0f || !services_->runtimeIsActive())
+		return;
+	const auto &life = services_->service_lifecycle();
+	const world::FrameIdentity frame{life.mapGeneration(), life.roundGeneration(), services_->service_adapterFrameCount()};
+	const float now = globals->time;
+	const auto current = [&] {
+		return services_->runtimeIsActive() && services_->service_globals() == globals &&
+			services_->service_engineFunctions() == engine && globals->time == now &&
+			life.mapGeneration() == frame.mapGeneration && life.roundGeneration() == frame.roundGeneration &&
+			services_->service_adapterFrameCount() == frame.tick;
+	};
+	const auto handles = services_->service_managedBotHandles();
+	for (std::size_t index = 0; index < handles.size(); ++index)
+	{
+		const auto &handle = handles[index];
+		const world::ActorKey actor{handle.actor.slot, handle.actor.actorGeneration};
+		auto *entity = handle.entity;
+		if (!actor.isValid() || !services_->service_managedBotSlots()[index] || !entity || entity->free ||
+			entity->v.deadflag != DEAD_NO || !(entity->v.health > 0) || !entity->v.netname)
+			continue;
+		const int serial = entity->serialnumber;
+		const auto connection = life.slotGeneration(actor.slot);
+		const auto nameIndex = entity->v.netname;
+		const char *name = engine->pfnSzFromIndex(nameIndex);
+		if (!current())
+			return;
+		const std::string netname = name ? name : "";
+		if (netname.empty() || findClientObject(netname.c_str()) != player)
+		{
+			if (!current())
+				return;
+			continue;
+		}
+		// The GameDLL public lookup returns the opaque object for the same engine key.
+		// Report only when that key names exactly one engine entity.
+		if (!current() || engine->pfnFindEntityByString(nullptr, "netname", netname.c_str()) != entity || !current())
+			return;
+		const auto *other = engine->pfnFindEntityByString(entity, "netname", netname.c_str());
+		if (!current() || (other && engine->pfnIndexOfEdict(other) > 0) || !current())
+			return;
+		const auto &live = services_->service_managedBotHandles()[index];
+		if (!services_->service_managedBotSlots()[index] || live.entity != entity || live.actor.slot != actor.slot ||
+			live.actor.actorGeneration != actor.generation || life.slotGeneration(actor.slot) != connection ||
+			entity->free || entity->serialnumber != serial || entity->v.netname != nameIndex ||
+			entity->v.deadflag != DEAD_NO || !(entity->v.health > 0))
+			return;
+		services_->behavior_observePlayerBlind(index, actor, frame);
+		return;
+	}
 }
 
 void BotObservationRuntime::resetMapPublicObservations()

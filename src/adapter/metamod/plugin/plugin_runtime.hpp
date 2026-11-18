@@ -391,6 +391,10 @@ private:
 	{
 		return navigation_.observePublicDeath(victim);
 	}
+	void behavior_observePlayerBlind(std::size_t index, world::ActorKey actor, world::FrameIdentity frame) override
+	{
+		behavior_.observePlayerBlind(index, actor, frame);
+	}
 
 	void navigation_observeResetHud(std::size_t index) override
 	{

@@ -15,10 +15,28 @@ namespace astrabot
 {
 namespace metamod
 {
+ReGameDllObservationProvider *ReGameDllObservationProvider::blindOwner_ = nullptr;
+
+ReGameDllObservationProvider::~ReGameDllObservationProvider()
+{
+	reset();
+}
+
 void ReGameDllObservationProvider::reset()
 {
+	auto *registry = blindRegistry_;
+	if (blindOwner_ == this)
+		blindOwner_ = nullptr;
+	blindRegistry_ = nullptr;
+	blindListener_ = nullptr;
+	blindContext_ = nullptr;
+	functions_ = nullptr;
+	api_ = nullptr;
+	++blindRevision_;
 	status_ = ReGameDllProbeStatus::NotPresent;
 	major_ = minor_ = 0;
+	if (registry)
+		registry->unregisterHook(&onBlind);
 }
 
 void ReGameDllObservationProvider::probe(Factory factory)
@@ -44,6 +62,44 @@ void ReGameDllObservationProvider::probe(Factory factory)
 		return;
 	}
 	status_ = ReGameDllProbeStatus::MetadataOnly;
+	api_ = api;
+}
+
+bool ReGameDllObservationProvider::connectBlindEvents(BlindListener listener, void *context)
+{
+	if (blindRegistry_)
+		return listener == blindListener_ && context == blindContext_;
+	if (!api_ || !listener || blindOwner_)
+		return false;
+	const auto *functions = api_->GetFuncs();
+	auto *hooks = api_->GetHookchains();
+	if (!functions || !functions->UTIL_FindEntityByString || !hooks)
+		return false;
+	auto *registry = hooks->CBasePlayer_Blind();
+	if (!registry)
+		return false;
+	functions_ = functions;
+	blindRegistry_ = registry;
+	blindListener_ = listener;
+	blindContext_ = context;
+	blindOwner_ = this;
+	registry->registerHook(&onBlind, HC_PRIORITY_LOW);
+	return blindOwner_ == this;
+}
+
+void ReGameDllObservationProvider::onBlind(
+	BlindChain *chain, CBasePlayer *player, float duration, float hold, float fade, int alpha)
+{
+	auto *owner = blindOwner_;
+	const auto revision = owner ? owner->blindRevision_ : 0U;
+	chain->callNext(player, duration, hold, fade, alpha);
+	if (player && owner && owner == blindOwner_ && owner->blindRevision_ == revision)
+		owner->blindListener_(owner->blindContext_, player, duration);
+}
+
+const void *ReGameDllObservationProvider::findClientObject(const char *name) const
+{
+	return functions_ && name && *name ? functions_->UTIL_FindEntityByString(nullptr, "netname", name) : nullptr;
 }
 
 void ReGameDllObservationProvider::probeLoadedGameDll()
@@ -98,6 +154,8 @@ const char *ReGameDllObservationProvider::diagnostic() const
 	case ReGameDllProbeStatus::IncompatibleVersion:
 		return "ReGameDLL API version unsupported: no supplemental reads";
 	case ReGameDllProbeStatus::MetadataOnly:
+		if (blindRegistry_)
+			return "ReGameDLL API negotiated; public player blindness hook active";
 		return "ReGameDLL API negotiated; no public per-actor weapon timer/accuracy getters; no supplemental reads";
 	}
 	return "ReGameDLL probe status unknown";

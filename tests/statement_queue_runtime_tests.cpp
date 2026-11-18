@@ -12,6 +12,9 @@ bool looseGuardFixture = false;
 bool deferredSiteFixture = false;
 bool encourageDefuseFixture = false;
 bool barelyDefusedFixture = false;
+bool blindedChatterFixture = false;
+float blindedChatterRoll = 100.0f;
+bool duplicateBlindNetname = false;
 cvar_t queueDefuseFuse{};
 bool preplantGuardFixture = false;
 bool waitingHereFixture = false;
@@ -55,6 +58,7 @@ void selectStatementFixture(int argc, char **argv)
 	looseGuardFixture = argc == 2 && std::strcmp(argv[1], "--guard-loose-bomb") == 0;
 	encourageDefuseFixture = argc == 2 && std::strcmp(argv[1], "--encourage-defuse") == 0;
 	barelyDefusedFixture = argc == 2 && std::strcmp(argv[1], "--barely-defused") == 0;
+	blindedChatterFixture = argc == 2 && std::strcmp(argv[1], "--blinded-chatter") == 0;
 	deferredSiteFixture = encourageDefuseFixture ||
 		(argc == 2 && std::strcmp(argv[1], "--guard-planted-bombsite") == 0);
 	waitingHereFixture = argc == 2 && std::strcmp(argv[1], "--waiting-here") == 0;
@@ -165,6 +169,8 @@ unsigned char *queueLoad(char *name, int *length)
 			"Chatter LastManStanding win_alone.wav End";
 	if (barelyDefusedFixture)
 		contents += " Chatter BarelyDefused barely_defused.wav End";
+	if (blindedChatterFixture)
+		contents += " Chatter Blinded blinded.wav End";
 	if (autoFollowChatterFixture)
 		contents += " Chatter FollowingSir follow_sir.wav End Chatter FollowingCommander follow_commander.wav End";
 	if (scaredFixture)
@@ -228,6 +234,8 @@ int queueMessageId(plid_t id, const char *name, int *size)
 		return 103;
 	if ((victoryFixture || barelyDefusedFixture) && std::strcmp(name, "ResetHUD") == 0)
 		return 104;
+	if (blindedChatterFixture && std::strcmp(name, "ScreenFade") == 0)
+		return 105;
 	if (std::strcmp(name, "BotVoice") == 0)
 	{
 		return 102;
@@ -446,6 +454,8 @@ bool testQueueRadioReset(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 }
 float queuePlanRandom(float low, float high)
 {
+	if (blindedChatterFixture && low == 0.0f && high == 100.0f)
+		return blindedChatterRoll;
 	if (autoFollowChatterFixture && low == 0.0f && high == 1.0f)
 		return low;
 	if (encourageDefuseFixture && ((low == 10.0f && high == 15.0f) ||
@@ -2238,6 +2248,84 @@ bool testStatementQueue(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t
 	hooks.pfnMessageEnd();
 	step(.125f);
 	step(.125f);
+	if (blindedChatterFixture)
+	{
+		queueMode = "normal";
+		queueEnemiesVisible = false;
+		setCvarFloat("bot_stop", 0);
+		metamod::BotObservationRuntime observer;
+		observer.bindServices(runtime);
+		self.v.netname = 100;
+		gEntityNames[0] = "Blind Test Bot";
+		engine.pfnFindEntityByString = [](edict_t *start, const char *key, const char *value) -> edict_t * {
+			if (std::strcmp(key, "netname") != 0)
+				return findEntityByString(start, key, value);
+			if (std::strcmp(value, "Blind Test Bot") != 0)
+				return nullptr;
+			return !start ? &gEntities[0] : duplicateBlindNetname ? &gEntities[1] : nullptr;
+		};
+		const char *sample = "radio/test/blinded.wav";
+		const auto playUpdates = [&] {
+			for (int frame = 0; frame < 5; ++frame)
+				step(.125f);
+			return std::count(queueSamples.begin(), queueSamples.end(), sample);
+		};
+		int botObject = 0;
+		int otherObject = 0;
+		const auto notify = [&](const void *victim, bool reuseSlot = false)
+		{
+			const int serial = self.serialnumber;
+			observer.observeGameDllBlind(victim, 1.25f, [&](const char *name) -> const void * {
+				if (std::strcmp(name, "Blind Test Bot") != 0)
+					return nullptr;
+				if (reuseSlot)
+					++self.serialnumber;
+				return &botObject;
+			});
+			self.serialnumber = serial;
+		};
+		for (int frame = 0; frame < 8; ++frame)
+			step(.125f);
+		queueSamples.clear();
+		blindedChatterRoll = 0.0f;
+		hooks.pfnMessageBegin(MSG_ONE, 105, nullptr, &self);
+		hooks.pfnWriteShort(4096);
+		hooks.pfnWriteShort(1024);
+		hooks.pfnWriteShort(0);
+		for (int field = 0; field < 4; ++field)
+			hooks.pfnWriteByte(255);
+		hooks.pfnMessageEnd();
+		if (!check(playUpdates() == 0, "an ordinary white screen fade does not report Blinded"))
+			return false;
+		notify(&otherObject);
+		if (!check(playUpdates() == 0, "an opaque object for another player does not report Blinded"))
+			return false;
+		duplicateBlindNetname = true;
+		notify(&botObject);
+		duplicateBlindNetname = false;
+		if (!check(playUpdates() == 0, "a duplicate public name does not select a blinded actor"))
+			return false;
+		notify(&botObject, true);
+		if (!check(playUpdates() == 0, "edict reuse during lookup invalidates the blindness receipt"))
+			return false;
+		// Like the native expression, this comparison may keep the literal in x87 precision.
+		volatile float nativeBoundaryRoll = 33.3f;
+		blindedChatterRoll = nativeBoundaryRoll;
+		const int nativeBoundaryCount = nativeBoundaryRoll < 33.3f ? 1 : 0;
+		notify(&botObject);
+		if (!check(playUpdates() == nativeBoundaryCount, "the float32 boundary matches the native literal comparison"))
+			return false;
+		for (int frame = 0; frame < 16; ++frame)
+			step(.125f);
+		queueSamples.clear();
+		blindedChatterRoll = 33.4f;
+		notify(&botObject);
+		if (!check(playUpdates() == 0, "a blindness roll above the native threshold does not report Blinded"))
+			return false;
+		blindedChatterRoll = 33.2f;
+		notify(&botObject);
+		return check(playUpdates() == 1, "an accepted blindness receipt plays Blinded once");
+	}
 	if (barelyDefusedFixture)
 	{
 		queueMode = "normal";

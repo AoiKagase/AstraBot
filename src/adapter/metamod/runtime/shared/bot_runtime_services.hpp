@@ -62,6 +62,7 @@ public:
 	virtual std::uint64_t behavior_chatterRevision(std::size_t index) const = 0;
 	virtual void behavior_observePublicDeath(std::size_t index, const world::FrameIdentity &deathFrame = {}) = 0;
 	virtual void behavior_observePlayerDeath(int victimSlot, int killerSlot, edict_t *recipient, const world::FrameIdentity &frame) = 0;
+	virtual void behavior_observePlayerBlind(std::size_t index, world::ActorKey actor, world::FrameIdentity frame) = 0;
 	virtual world::EntityKey behavior_currentEnemySource(std::size_t index) const = 0;
 	virtual void behavior_observeEnemyWeaponFire(const edict_t *source, const world::FrameIdentity &frame, float now) = 0;
 	virtual void behavior_observeCloseFootstep(std::size_t index, const compat::FootstepEquipmentReceipt &receipt) = 0;

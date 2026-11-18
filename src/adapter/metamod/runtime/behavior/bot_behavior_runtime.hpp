@@ -81,6 +81,7 @@ public:
 		return actors_[index].confirmedSpeech.revision();
 	}
 	void observeEnemyWeaponFire(const edict_t *source, const world::FrameIdentity &frame, float now);
+	void observePlayerBlind(std::size_t index, world::ActorKey actor, world::FrameIdentity frame);
 	bool forcedRunning(std::size_t index);
 	world::EntityKey currentEnemySource(std::size_t index) const;
 	void observePlayerDeath(int victimSlot, int killerSlot, edict_t *recipient, const world::FrameIdentity &frame);

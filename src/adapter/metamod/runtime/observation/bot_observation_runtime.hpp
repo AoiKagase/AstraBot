@@ -2,6 +2,7 @@
 #define ASTRABOT_ADAPTER_BOT_OBSERVATION_RUNTIME_HPP
 #include "runtime/shared/bot_runtime_services.hpp"
 #include "astrabot/compat/gunshot_events.hpp"
+#include <functional>
 #include <limits>
 namespace astrabot
 {
@@ -23,6 +24,8 @@ public:
 		return index < actors_.size() && actors_[index].managedBotPerception.consumeNoise(expected);
 	}
 	void captureManagedCurrentWeapon();
+	void observeGameDllBlind(const void *player, float duration,
+		const std::function<const void *(const char *)> &findClientObject);
 	runtime::MovementPhysicsState captureMovementPhysicsState(
 		const edict_t *entity, bool teamConfirmed, bool managedFakeClient) const;
 	void capturePublicMessage();

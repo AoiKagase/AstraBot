@@ -1,3 +1,11 @@
+## 15B-2e　ReGameDLLでのBlinded発話
+
+ReGameDLL-CS `b088984` の `CCSBot::Blind` と `CBasePlayer_Blind` を参照した。公開フックから失明の通知を受け、公開の `UTIL_FindEntityByString` とエンジン検索で同じプレイヤーを照合する。`netname` が一意で、通知が現在の生存中の管理Botに対応する場合に `RandomFloat(0, 100) < 33.3f` で抽選し、`Blinded` を有効期間1秒で発話キューへ登録する。
+
+画面演出用の `ScreenFade` は発話条件と独立して処理する。標準GameDLLでは失明の公開イベント経路が残る。ReGameDLLでのCSBotとの実機比較は25で追跡する。
+
+テストでは、公開フックが元の処理を1回呼ぶこと、処理中の登録解除、対象不一致、重複名、検索中のスロット再利用、通常の白いフェード、抽選境界、発話の再生を確認した。Windows x86 Debugは159/159件、Linux x86 Debugは157/158件合格。Linuxの失敗は既知の `astrabot_combat_policy`。両OSの動作トレース149,153件が既存の記録と一致し、PEとELFのx86形式と公開関数7件を確認した。
+
 ## 15B-2d　解除直後のBarelyDefused
 
 ReGameDLL-CS `b088984` の `EVENT_BOMB_DEFUSED`、`GetBombTimeLeft`、`BotChatterInterface::Update` を参照した。`#Bomb_Defused` のラウンド結果を受けたとき、設置時計を消去する直前に残り時間を算出する。2秒未満なら、生存しているCT Botが `BarelyDefused` を有効期間3秒の意図表明として、勝利発話の前に登録する。時計は公開の `#Bomb_Planted` と `mp_c4timer` に基づく推定値で、GameDLLが内部で独自の制限時間を使う場合はずれることがある。
@@ -26,13 +34,13 @@ ReGameDLL-CS `b088984` の `cs_bot_update.cpp` と `CHalfLifeMultiplay::IsCareer
 
 統合テストでは、開始前の無音、同じ追従で1回だけ発話すること、通常戦とキャリア戦の音声の切り替えを確認した。Windows x86 Debugは156/156件、Linux x86 Debugは154/155件合格。Linuxの失敗は既知の `astrabot_combat_policy`。両OSの動作トレース149,153件が既存の記録と一致し、PE・ELFのx86形式と公開関数7件を確認した。実機確認は25。
 
-人質警備の `Encourage` は `GetNearestVisibleFreeHostage` が必要とする追従状態の取得が残る。既存の `HostagePos` は位置と識別子を通知し、追従開始の音声はその後の追従解除をカバーしない。人質と未接続の `Say` は15B-2eで追跡する。
+人質警備の `Encourage` は `GetNearestVisibleFreeHostage` が必要とする追従状態の取得が残る。既存の `HostagePos` は位置と識別子を通知し、追従開始の音声はその後の追従解除をカバーしない。人質と標準GameDLLの `Blinded` は15B-2fで追跡する。
 
 ## 15B-1　C4警備中のEncourage
 
 ReGameDLL-CS `b088984` の `HideState::OnUpdate` と `BotChatterInterface::Encourage` を参照した。解除を生存中の味方プレイヤーに任せているCT Botが警備の隠れ場所に到着し、近くの敵を認識していない場合に発話する。C4の残り時間が30秒超、11秒超〜30秒、11秒以下の順に `BombsiteSecure`、`WaitingForHumanToDefuseBomb`、`WaitingForHumanToDefuseBombPanic` を選ぶ。発話間隔はそれぞれ10〜15秒、5〜8秒、3〜4秒で、Bot間で共有する。
 
-残り時間には公開の設置通知と `mp_c4timer` を使う。推定できる設置通知を受けたケースで発話を有効にする。人質の所有・追従状態、未接続の `Say` 呼び出しと、人質警備の励ましは15B-2eに残る。攻撃者が見えない場合の被弾後のHide解除は23、実機確認は25。
+残り時間には公開の設置通知と `mp_c4timer` を使う。推定できる設置通知を受けたケースで発話を有効にする。人質の所有・追従状態と、人質警備の励ましは15B-2fに残る。攻撃者が見えない場合の被弾後のHide解除は23、実機確認は25。
 
 統合テストでは、到着前の無音、2体が到着した場合の単独発話、残り時間3区分、区分切り替え後も継続する共有間隔を確認した。Windows x86 Debugは155/155件、Linux x86 Debugは153/154件合格。Linuxの失敗は既知の `astrabot_combat_policy`。両OSの動作トレース149,153件が既存の記録と一致し、PE・ELFのx86形式と公開関数7件を確認した。
 
