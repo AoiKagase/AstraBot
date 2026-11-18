@@ -1599,6 +1599,19 @@ void BotBehaviorRuntime::reactToHostageLoss(std::size_t index, bool allGone)
 	(void)environment.idleForObjectiveChange(true);
 }
 
+void BotBehaviorRuntime::reportAutomaticFollow(std::size_t index, const std::function<bool()> &current)
+{
+	const auto engine = services_->service_engineFunctions();
+	if (!engine || !engine->pfnIsCareerMatch || services_->service_roundOver())
+		return;
+	ActorTaskEnvironment env(*this, index, index, current);
+	if (!env.current() || !env.receipt.context.alive)
+		return;
+	const bool career = engine->pfnIsCareerMatch() != FALSE;
+	if (env.current())
+		env.say(career ? "FollowingCommander" : "FollowingSir", 10.0f);
+}
+
 void BotBehaviorRuntime::encourageHumanDefuse(
 	std::size_t index, float remaining, const std::function<bool()> &current)
 {

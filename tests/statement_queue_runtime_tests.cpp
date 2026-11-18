@@ -39,6 +39,8 @@ const char *bombFixtureMap()
 }
 bool fallBackFixture = false;
 bool victoryFixture = false;
+bool autoFollowChatterFixture = false;
+bool queueCareer = false;
 
 void selectStatementFixture(int argc, char **argv)
 {
@@ -58,6 +60,7 @@ void selectStatementFixture(int argc, char **argv)
 	scaredFixture = argc == 2 && std::strcmp(argv[1], "--scared-outnumbered") == 0;
 	fallBackFixture = argc == 2 && std::strcmp(argv[1], "--team-fall-back") == 0;
 	victoryFixture = argc == 2 && std::strcmp(argv[1], "--round-victory") == 0;
+	autoFollowChatterFixture = argc == 2 && std::strcmp(argv[1], "--auto-follow-chatter") == 0;
 }
 bool testStatementQueue(astrabot::metamod::PluginRuntime &, enginefuncs_t &, globalvars_t &);
 void setupStatementQueue(enginefuncs_t &, globalvars_t &);
@@ -155,6 +158,8 @@ unsigned char *queueLoad(char *name, int *length)
 	if (victoryFixture)
 		contents += " Chatter WonRoundQuickly win_fast.wav End Chatter WonRound win_team.wav End "
 			"Chatter LastManStanding win_alone.wav End";
+	if (autoFollowChatterFixture)
+		contents += " Chatter FollowingSir follow_sir.wav End Chatter FollowingCommander follow_commander.wav End";
 	if (scaredFixture)
 		contents += " Chatter ScaredEmote scared.wav End";
 	if (sniperWarningFixture)
@@ -288,6 +293,8 @@ void setupStatementQueue(enginefuncs_t &engine, globalvars_t &globals)
 		queueOriginalMove = engine.pfnRunPlayerMove;
 	engine.pfnRunPlayerMove = &queueMove;
 	engine.pfnRandomFloat = &queuePlanRandom;
+	if (autoFollowChatterFixture)
+		engine.pfnIsCareerMatch = []() { return queueCareer ? TRUE : FALSE; };
 	if (encourageDefuseFixture)
 	{
 		queueDefuseFuse.value = 70.0f;
@@ -430,6 +437,8 @@ bool testQueueRadioReset(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 }
 float queuePlanRandom(float low, float high)
 {
+	if (autoFollowChatterFixture && low == 0.0f && high == 1.0f)
+		return low;
 	if (encourageDefuseFixture && ((low == 10.0f && high == 15.0f) ||
 			(low == 5.0f && high == 8.0f) || (low == 3.0f && high == 4.0f)))
 		return low;
@@ -2220,6 +2229,43 @@ bool testStatementQueue(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t
 	hooks.pfnMessageEnd();
 	step(.125f);
 	step(.125f);
+	if (autoFollowChatterFixture)
+	{
+		queueMode = "normal";
+		queueEnemiesVisible = true;
+		setCvarFloat("bot_stop", 0);
+		setCvarFloat("mp_buytime", 0);
+		setCvarFloat("mp_freezetime", 0);
+		for (int i = 1; i < 4; ++i)
+			gEntities[i].free = true;
+		auto &leader = gEntities[4];
+		leader.v.origin = Vector(120, 0, 36);
+		leader.v.netname = 104;
+		gEntityNames[4] = "Human leader";
+		const auto run = [&](bool career, const char *expected, const char *other) {
+			queueCareer = career;
+			runtime.onRoundLifecycleMessage("World triggered \"Round_End\"\n");
+			runtime.onRoundLifecycleMessage("World triggered \"Round_Start\"\n");
+			queueSamples.clear();
+			auto &machine = static_cast<metamod::BotNavigationServices &>(runtime).behavior_managedBotStateMachines(0);
+			for (int frame = 0; frame < 32; ++frame)
+				step(.125f);
+			if (!check(machine.state() != compat::CompatibilityStateId::Follow &&
+					std::count(queueSamples.begin(), queueSamples.end(), expected) == 0,
+					"auto-follow and its speech wait until after the first five seconds"))
+				return false;
+			for (int frame = 0; frame < 72; ++frame)
+				step(.125f);
+			if (!check(machine.state() == compat::CompatibilityStateId::Follow,
+					"a reachable visible human is followed automatically"))
+				return false;
+			return check(std::count(queueSamples.begin(), queueSamples.end(), expected) == 1 &&
+					std::count(queueSamples.begin(), queueSamples.end(), other) == 0,
+					"automatic follow speaks the match-appropriate intention exactly once");
+		};
+		return run(false, "radio/test/follow_sir.wav", "radio/test/follow_commander.wav") &&
+			run(true, "radio/test/follow_commander.wav", "radio/test/follow_sir.wav");
+	}
 	if (victoryFixture)
 	{
 		queueMode = "normal";

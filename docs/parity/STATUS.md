@@ -1,8 +1,16 @@
+## 15B-2a　自動追従開始時のSay
+
+ReGameDLL-CS `b088984` の `cs_bot_update.cpp` と `CHalfLifeMultiplay::IsCareer` を参照した。到達可能な人間の味方への自動追従が実際に成立した時点で、通常戦の `FollowingSir` またはキャリア戦の `FollowingCommander` を意図表明として登録する。有効期間は登録から10秒。エンジンの `pfnIsCareerMatch` で試合モードを読み、取得できない場合は発話を登録しない。追従を継続している間や、無線命令・Botの追従依頼による開始はこの発話を登録しない。
+
+統合テストでは、開始前の無音、同じ追従で1回だけ発話すること、通常戦とキャリア戦の音声の切り替えを確認した。Windows x86 Debugは156/156件、Linux x86 Debugは154/155件合格。Linuxの失敗は既知の `astrabot_combat_policy`。両OSの動作トレース149,153件が既存の記録と一致し、PE・ELFのx86形式と公開関数7件を確認した。実機確認は25。
+
+人質警備の `Encourage` は `GetNearestVisibleFreeHostage` が必要とする追従状態の取得が残る。既存の `HostagePos` は位置と識別子を通知し、追従開始の音声はその後の追従解除をカバーしない。人質と未接続の `Say` は15B-2bで追跡する。
+
 ## 15B-1　C4警備中のEncourage
 
 ReGameDLL-CS `b088984` の `HideState::OnUpdate` と `BotChatterInterface::Encourage` を参照した。解除を生存中の味方プレイヤーに任せているCT Botが警備の隠れ場所に到着し、近くの敵を認識していない場合に発話する。C4の残り時間が30秒超、11秒超〜30秒、11秒以下の順に `BombsiteSecure`、`WaitingForHumanToDefuseBomb`、`WaitingForHumanToDefuseBombPanic` を選ぶ。発話間隔はそれぞれ10〜15秒、5〜8秒、3〜4秒で、Bot間で共有する。
 
-残り時間には公開の設置通知と `mp_c4timer` を使う。推定できる設置通知を受けたケースで発話を有効にする。人質の所有・追従状態、未接続の `Say` 呼び出しと、人質警備の励ましは15B-2に残る。攻撃者が見えない場合の被弾後のHide解除は23、実機確認は25。
+残り時間には公開の設置通知と `mp_c4timer` を使う。推定できる設置通知を受けたケースで発話を有効にする。人質の所有・追従状態、未接続の `Say` 呼び出しと、人質警備の励ましは15B-2bに残る。攻撃者が見えない場合の被弾後のHide解除は23、実機確認は25。
 
 統合テストでは、到着前の無音、2体が到着した場合の単独発話、残り時間3区分、区分切り替え後も継続する共有間隔を確認した。Windows x86 Debugは155/155件、Linux x86 Debugは153/154件合格。Linuxの失敗は既知の `astrabot_combat_policy`。両OSの動作トレース149,153件が既存の記録と一致し、PE・ELFのx86形式と公開関数7件を確認した。
 

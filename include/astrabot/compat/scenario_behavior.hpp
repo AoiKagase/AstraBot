@@ -157,6 +157,7 @@ struct ScenarioBehaviorDecision
 	bool escortInferred = false;
 	bool followPermissionInferred = false;
 	CompatibilityTaskId hideTask = CompatibilityTaskId::None;
+	bool startedAutomaticFollow = false;
 };
 
 inline CompatibilityTaskId nativeScenarioMoveTask(
@@ -384,11 +385,12 @@ public:
 		}
 		if (input.stopFollowingRequested)
 			following_ = false;
-		if (input.automaticFollowRequested && !following_ && input.automaticLeader.human &&
+		const bool startedAutomaticFollow = input.automaticFollowRequested && !following_ && input.automaticLeader.human &&
 			input.automaticLeader.actor.isValid() && input.automaticLeader.team == input.team &&
 			input.automaticLeader.lifeKnown && input.automaticLeader.alive &&
 			input.automaticLeader.location.knowledge == ScenarioKnowledge::Visible &&
-			targetKnown(input, input.automaticLeader.location))
+			targetKnown(input, input.automaticLeader.location);
+		if (startedAutomaticFollow)
 		{
 			following_ = true;
 			holding_ = false;
@@ -409,6 +411,7 @@ public:
 			}
 			result = targetDecision(input, leader.location, ScenarioAction::Follow, CompatibilityStateId::Follow);
 			result.followPermissionInferred = followPermissionInferred_;
+			result.startedAutomaticFollow = startedAutomaticFollow;
 			return result;
 		}
 		if (holding_)

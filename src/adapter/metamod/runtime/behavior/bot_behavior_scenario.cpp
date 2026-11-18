@@ -1166,6 +1166,12 @@ void BotBehaviorRuntime::updateScenarioTeamwork(std::size_t index, const runtime
 		actors_[index].scenarioDecisions = actors_[index].scenarioPlanners.update(scenario, &fallBack);
 		if (fallBack.sender.isValid() && (respondToFallBack(index, observedTeam, fallBack) || !current()))
 			return;
+		if (actors_[index].scenarioDecisions.startedAutomaticFollow)
+		{
+			reportAutomaticFollow(index, current);
+			if (!current())
+				return;
+		}
 	}
 	const auto action = actors_[index].scenarioDecisions.action;
 	if (machine.state() == compat::CompatibilityStateId::Idle && !machine.attackOverlayActive() &&
