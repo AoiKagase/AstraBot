@@ -48,7 +48,8 @@ enum class ScenarioRadioCommand
 	HoldPosition,
 	GoGoGo,
 	GetOut,
-	ReportIn
+	ReportIn,
+	TeamFallBack
 };
 struct ScenarioTarget
 {
@@ -78,6 +79,11 @@ struct ScenarioRadioObservation
 	bool senderHuman;
 	float receivedTime;
 	ScenarioTarget position;
+};
+struct ScenarioFallBackResponse
+{
+	world::ActorKey sender{};
+	bool decline = false;
 };
 struct ScenarioSenderValidation
 {
@@ -209,10 +215,12 @@ public:
 		followingTeammate_ = true;
 	}
 
-	void holdPosition(const ScenarioTarget &position, float duration = -1.0f, float ambushDelay = 0.0f)
+	void holdPosition(const ScenarioTarget &position, float duration = -1.0f, float ambushDelay = 0.0f,
+		bool keepFollowing = false)
 	{
 		holding_ = true;
-		following_ = false;
+		if (!keepFollowing)
+			following_ = false;
 		holdPosition_ = position;
 		holdDuration_ = duration;
 		ambushDelay_ = ambushDelay;
@@ -322,8 +330,10 @@ public:
 		*this = ScenarioBehaviorPlanner();
 	}
 
-	ScenarioBehaviorDecision update(const ScenarioBehaviorInput &input)
+	ScenarioBehaviorDecision update(const ScenarioBehaviorInput &input, ScenarioFallBackResponse *fallBack = nullptr)
 	{
+		if (fallBack)
+			*fallBack = {};
 		ScenarioBehaviorDecision result = {};
 		if (!input.actor.isValid() || !input.frame.isValid() || !std::isfinite(input.timestamp) ||
 			input.timestamp < 0.0f || !std::isfinite(input.reactionSeconds) || input.reactionSeconds < 0.0f)
@@ -362,13 +372,13 @@ public:
 			receiveRadio(input);
 		if (pendingRadio_.command == ScenarioRadioCommand::ReportIn &&
 			(!input.radio || input.radio->sequence <= radioSequence_))
-			applyRadio(input, &result);
+			applyRadio(input, &result, fallBack);
 		if (input.scenario == PublicScenarioKind::Bomb && input.bombPlantedKnown && input.bombPlanted &&
 			targetKnown(input, input.bomb) && (input.alreadyEscapingFromBomb || autoEscapeRequested(input)))
 			return targetDecision(
 				input, input.escapeZone, ScenarioAction::Escape, CompatibilityStateId::EscapeFromBomb);
 		receiveRadio(input);
-		if (applyRadio(input, &result))
+		if (applyRadio(input, &result, fallBack))
 		{
 			return result;
 		}
@@ -387,7 +397,7 @@ public:
 			followPermissionInferred_ = input.autoFollowPermissionInferred;
 			followingTeammate_ = false;
 		}
-		if (following_)
+		if (following_ && !holding_)
 		{
 			const auto &leader = followingLeader(input);
 			if (!(leader.actor == leader_) || !leader.lifeKnown || !leader.alive || leader.team != input.team)
@@ -480,7 +490,7 @@ private:
 		pendingRadio_ = *input.radio;
 	}
 
-	bool applyRadio(const ScenarioBehaviorInput &input, ScenarioBehaviorDecision *result)
+	bool applyRadio(const ScenarioBehaviorInput &input, ScenarioBehaviorDecision *result, ScenarioFallBackResponse *fallBack)
 	{
 		constexpr float kRadioResponseBaseSeconds = 1.0f;
 		constexpr float kRadioReactionScale = 2.0f;
@@ -497,7 +507,8 @@ private:
 			return false;
 		}
 		const bool report = pendingRadio_.command == ScenarioRadioCommand::ReportIn;
-		if (!report && (input.busy || (input.rogue && !following_)))
+		const bool decline = input.rogue && !following_;
+		if (!report && (input.busy || (decline && pendingRadio_.command != ScenarioRadioCommand::TeamFallBack)))
 		{
 			pendingRadio_ = {};
 			return false;
@@ -512,6 +523,10 @@ private:
 		pendingRadio_ = {};
 		switch (order.command)
 		{
+		case ScenarioRadioCommand::TeamFallBack:
+			if (fallBack)
+				*fallBack = {order.sender, decline};
+			return false;
 		case ScenarioRadioCommand::ReportIn:
 			reportRequested_ = !input.rogue || following_;
 			return false;

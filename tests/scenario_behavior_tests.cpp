@@ -42,6 +42,38 @@ int main()
 {
 	using namespace astrabot::compat;
 	bool ok = true;
+	for (unsigned trial = 0; trial < 4; ++trial)
+	{
+		ScenarioBehaviorPlanner planner;
+		auto scenario = input();
+		scenario.reactionSeconds = 0.25f;
+		scenario.rogue = trial == 1;
+		ScenarioRadioObservation order{};
+		order.sequence = 1;
+		order.sender = {2, 1};
+		order.command = ScenarioRadioCommand::TeamFallBack;
+		order.senderHuman = true;
+		order.team = scenario.team;
+		order.receivedTime = 10.0f;
+		scenario.radio = &order;
+		scenario.timestamp = scenario.rogue ? 13.375f : 11.375f;
+		ScenarioFallBackResponse response{};
+		planner.update(scenario, &response);
+		ok &= check(!response.sender.isValid(), "Team Fall Back waits for the full reaction delay");
+		scenario.timestamp += 0.125f;
+		++scenario.frame.tick;
+		scenario.busy = trial == 2;
+		if (trial == 3)
+			scenario.pendingRadioSenderValidation = {order.sender, true, false};
+		planner.update(scenario, &response);
+		ok &= check(trial < 2 ? response.sender == order.sender && response.decline == scenario.rogue
+						      : !response.sender.isValid(),
+			"Team Fall Back distinguishes timely acceptance, rogue refusal, busy cancellation and invalid sender");
+		++scenario.frame.tick;
+		scenario.timestamp += 0.125f;
+		planner.update(scenario, &response);
+		ok &= check(!response.sender.isValid(), "Team Fall Back is consumed once");
+	}
 	{
 		ScenarioBehaviorPlanner planner;
 		auto scenario = input();

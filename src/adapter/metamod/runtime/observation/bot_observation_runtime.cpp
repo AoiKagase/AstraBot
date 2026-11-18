@@ -998,12 +998,13 @@ void BotObservationRuntime::capturePublicMessage()
 		if (!senderCurrent())
 			return;
 		const char *const names[] = {"%!MRAD_FOLLOWME", "%!MRAD_COVERME", "%!MRAD_STICKTOG", "%!MRAD_REGROUP",
-			"%!MRAD_BACKUP", "%!MRAD_POSITION", "%!MRAD_GO", "%!MRAD_GETOUT", "%!MRAD_REPORTIN"};
+			"%!MRAD_BACKUP", "%!MRAD_POSITION", "%!MRAD_GO", "%!MRAD_GETOUT", "%!MRAD_REPORTIN", "%!MRAD_FALLBACK"};
 		const compat::ScenarioRadioCommand commands[] = {compat::ScenarioRadioCommand::FollowMe,
 			compat::ScenarioRadioCommand::CoverMe, compat::ScenarioRadioCommand::StickTogether,
 			compat::ScenarioRadioCommand::Regroup, compat::ScenarioRadioCommand::NeedBackup,
 			compat::ScenarioRadioCommand::HoldPosition, compat::ScenarioRadioCommand::GoGoGo,
-			compat::ScenarioRadioCommand::GetOut, compat::ScenarioRadioCommand::ReportIn};
+			compat::ScenarioRadioCommand::GetOut, compat::ScenarioRadioCommand::ReportIn,
+			compat::ScenarioRadioCommand::TeamFallBack};
 		compat::ScenarioRadioObservation radio{};
 		static_assert(sizeof(names) / sizeof(names[0]) == sizeof(commands) / sizeof(commands[0]), "radio token mapping");
 		for (std::size_t i = 0; i < sizeof(commands) / sizeof(commands[0]); ++i)

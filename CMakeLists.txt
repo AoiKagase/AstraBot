@@ -1229,8 +1229,9 @@ if(ASTRABOT_BUILD_TESTS AND ASTRABOT_BUILD_METAMOD)
   add_test(NAME astrabot_hostage_use_report_runtime COMMAND astrabot_statement_queue_runtime --hostage-use-report)
   add_test(NAME astrabot_sniper_warning_runtime COMMAND astrabot_statement_queue_runtime --sniper-warning)
   add_test(NAME astrabot_scared_outnumbered_runtime COMMAND astrabot_statement_queue_runtime --scared-outnumbered)
+  add_test(NAME astrabot_team_fall_back_runtime COMMAND astrabot_statement_queue_runtime --team-fall-back)
   set_tests_properties(astrabot_statement_queue_runtime astrabot_guard_loose_bomb_runtime
-    astrabot_guard_planted_bombsite_runtime astrabot_guard_unplanted_bombsite_runtime astrabot_hostage_use_report_runtime astrabot_sniper_warning_runtime astrabot_scared_outnumbered_runtime PROPERTIES
+    astrabot_guard_planted_bombsite_runtime astrabot_guard_unplanted_bombsite_runtime astrabot_hostage_use_report_runtime astrabot_sniper_warning_runtime astrabot_scared_outnumbered_runtime astrabot_team_fall_back_runtime PROPERTIES
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" RESOURCE_LOCK astrabot_actor_command_profile)
   add_executable(astrabot_chatter_nav_probe tests/chatter_nav_probe_tests.cpp)
   target_include_directories(astrabot_chatter_nav_probe PRIVATE ${combat_target_log_includes})

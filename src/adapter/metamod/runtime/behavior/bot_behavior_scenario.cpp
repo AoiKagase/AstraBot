@@ -1150,7 +1150,12 @@ void BotBehaviorRuntime::updateScenarioTeamwork(std::size_t index, const runtime
 		actors_[index].scenarioDecisions.state = compat::CompatibilityStateId::Idle;
 	}
 	else
-		actors_[index].scenarioDecisions = actors_[index].scenarioPlanners.update(scenario);
+	{
+		compat::ScenarioFallBackResponse fallBack{};
+		actors_[index].scenarioDecisions = actors_[index].scenarioPlanners.update(scenario, &fallBack);
+		if (fallBack.sender.isValid() && (respondToFallBack(index, observedTeam, fallBack) || !current()))
+			return;
+	}
 	const auto action = actors_[index].scenarioDecisions.action;
 	if (machine.state() == compat::CompatibilityStateId::Idle && !machine.attackOverlayActive() &&
 		action == compat::ScenarioAction::None && scenario.scenario == compat::PublicScenarioKind::Bomb &&

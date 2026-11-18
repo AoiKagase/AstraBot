@@ -30,6 +30,18 @@ constexpr unsigned kEntityScanLogIntervalFrames = 64U;
 constexpr float kPlantPitchDegrees = 90.0f;
 constexpr unsigned kKnifeWeaponId = 29U;
 constexpr float kObjectiveInteractionRange = 96.0f;
+
+ActionKind bestOwnedWeapon(const edict_t &entity)
+{
+	const auto inventory = static_cast<std::uint32_t>(entity.v.weapons);
+	for (const unsigned id : {3U, 5U, 7U, 8U, 12U, 13U, 14U, 15U, 18U, 19U, 20U, 21U, 22U, 23U, 24U, 27U, 28U, 30U})
+		if ((inventory & (1U << id)) != 0U)
+			return ActionKind::SelectPrimary;
+	for (const unsigned id : {1U, 10U, 11U, 16U, 17U, 26U})
+		if ((inventory & (1U << id)) != 0U)
+			return ActionKind::SelectPistol;
+	return ActionKind::None;
+}
 }
 using namespace runtime_detail;
 
@@ -1278,22 +1290,34 @@ BotBehaviorRuntime::BehaviorPhaseResult BotBehaviorRuntime::prepareManagedAction
 			proposal.kind = ActionKind::SelectKnife;
 		return BehaviorPhaseResult::Complete;
 	}
-	if (actors_[index].escapingWithKnife)
+	auto &actorState = actors_[index];
+	auto &equipEpoch = actorState.combatRetreat.fallBackEquipEpoch;
+	if (equipEpoch != 0)
 	{
-		actors_[index].escapingWithKnife = false;
-		const auto inventory = static_cast<std::uint32_t>(handle.entity->v.weapons);
-		for (const unsigned id : {3U, 5U, 7U, 8U, 12U, 13U, 14U, 15U, 18U, 19U, 20U, 21U, 22U, 23U, 24U, 27U, 28U, 30U})
-			if ((inventory & (1U << id)) != 0U)
-			{
-				proposal.kind = ActionKind::SelectPrimary;
+		const bool current = equipEpoch == actorState.managedBotStateMachines.normalStateEpoch();
+		equipEpoch = 0;
+		const auto &active = compatObservation.weapon.activeWeaponId;
+		if (current && active.isAvailable() && (active.value == 4 || active.value == 9 || active.value == 25))
+		{
+			if (cancelHeldGrenade(index, movementAngles, proposal))
 				return BehaviorPhaseResult::Complete;
-			}
-		for (const unsigned id : {1U, 10U, 11U, 16U, 17U, 26U})
-			if ((inventory & (1U << id)) != 0U)
-			{
-				proposal.kind = ActionKind::SelectPistol;
+			proposal.kind = bestOwnedWeapon(*handle.entity);
+			if (proposal.kind == ActionKind::None &&
+				(static_cast<std::uint32_t>(handle.entity->v.weapons) & (1U << kKnifeWeaponId)) != 0)
+				proposal.kind = ActionKind::SelectKnife;
+			if (proposal.kind != ActionKind::None)
 				return BehaviorPhaseResult::Complete;
-			}
+		}
+	}
+	if (actorState.escapingWithKnife)
+	{
+		actorState.escapingWithKnife = false;
+		const auto choice = bestOwnedWeapon(*handle.entity);
+		if (choice != ActionKind::None)
+		{
+			proposal.kind = choice;
+			return BehaviorPhaseResult::Complete;
+		}
 	}
 
 	return BehaviorPhaseResult::Continue;

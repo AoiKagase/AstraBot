@@ -294,6 +294,7 @@ private:
 	bool tryCombatAmbush(std::size_t index, int team);
 	bool decideReloadAction(ManagedActionContext &ctx);
 	bool tryReloadCover(std::size_t index, int team, int remainingEnemies, float timeSinceEnemy);
+	bool respondToFallBack(std::size_t index, int team, const compat::ScenarioFallBackResponse &response);
 	void updateGuardLook(ManagedActionContext &ctx);
 	bool decideEquipmentAction(ManagedActionContext &ctx, const compat::PublicActorState &weapon, bool attacking);
 	bool cancelHeldGrenade(std::size_t index, const runtime::ViewAngles &movementAngles, ActionProposal &proposal);
@@ -576,6 +577,7 @@ private:
 	{
 		std::uint64_t attackEpoch = 0;
 		std::uint64_t hideEpoch = 0;
+		std::uint64_t fallBackEquipEpoch = 0;
 		std::uint32_t updateSequence = 0;
 		float pinnedAfter = 0;
 		float retryAfter = -1;

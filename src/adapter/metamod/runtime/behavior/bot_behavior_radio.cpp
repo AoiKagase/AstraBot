@@ -418,7 +418,7 @@ struct BotBehaviorRuntime::ActorTaskEnvironment : compat::IHelpRequestEnvironmen
 			value >= low && value <= high;
 	}
 	bool enterHideState(const nav::NavVector &point, nav::AreaId goal, compat::CompatibilityTaskId task,
-		float duration = -1.0f, bool holdForAmbush = false)
+		float duration = -1.0f, bool holdForAmbush = false, bool keepFollowing = false)
 	{
 		if (!current())
 			return false;
@@ -474,7 +474,7 @@ struct BotBehaviorRuntime::ActorTaskEnvironment : compat::IHelpRequestEnvironmen
 			target.knowledge = compat::ScenarioKnowledge::Remembered;
 			target.frame = receipt.context.frame;
 			target.position = {point.x, point.y, point.z};
-			actor.scenarioPlanners.holdPosition(target, duration, ambushDelay);
+			actor.scenarioPlanners.holdPosition(target, duration, ambushDelay, keepFollowing);
 		}
 		else
 		{
@@ -482,7 +482,8 @@ struct BotBehaviorRuntime::ActorTaskEnvironment : compat::IHelpRequestEnvironmen
 		}
 		return true;
 	}
-	bool retreatToCover(int team, float range, float duration, float ignoreDuration, bool holdForAmbush = false)
+	bool retreatToCover(int team, float range, float duration, float ignoreDuration,
+		bool holdForAmbush = false, bool keepFollowing = false)
 	{
 		if (!navigation.isValid() || !current())
 			return false;
@@ -498,7 +499,7 @@ struct BotBehaviorRuntime::ActorTaskEnvironment : compat::IHelpRequestEnvironmen
 		if (duration < 0.0f && !drawFloat("Attack.RetreatHold", 3.0f, 15.0f, duration))
 			return false;
 		const auto goal = areaAt(spot, false);
-		if (!current() || !enterHideState(spot, goal, compat::CompatibilityTaskId::None, duration, holdForAmbush))
+		if (!current() || !enterHideState(spot, goal, compat::CompatibilityTaskId::None, duration, holdForAmbush, keepFollowing))
 			return false;
 		auto &actor = owner.actors_[receiver];
 		const auto &machine = actor.managedBotStateMachines;
@@ -898,6 +899,40 @@ bool BotBehaviorRuntime::updateCombatRetreat(std::size_t index, int team)
 		return false;
 	retreat.retryAfter = now + retry;
 	return env.retreatToCover(team, 1000.0f, -1.0f, 10.0f);
+}
+
+bool BotBehaviorRuntime::respondToFallBack(std::size_t index, int team, const compat::ScenarioFallBackResponse &response)
+{
+	const auto engine = services_->service_engineFunctions();
+	if ((team != kTerroristTeam && team != kCounterTerroristTeam) || !engine || !engine->pfnPEntityOfEntIndex)
+		return false;
+	const auto sender = response.sender;
+	const auto senderConnection = services_->service_lifecycle().slotGeneration(sender.slot);
+	const auto senderCurrent = [&] {
+		const auto *human = engine->pfnPEntityOfEntIndex(static_cast<int>(sender.slot));
+		return human && !human->free && (human->v.flags & FL_CLIENT) != 0 &&
+			(human->v.flags & FL_FAKECLIENT) == 0 && human->serialnumber >= 0 &&
+			static_cast<std::uint32_t>(human->serialnumber) == sender.generation &&
+			services_->observation_resolvePlayerTeam(human) == team &&
+			receiptConnectionCurrent({sender.slot, senderConnection});
+	};
+	ActorTaskEnvironment env(*this, index, index, senderCurrent);
+	if (!env.current() || !env.receipt.context.alive || env.busy())
+		return false;
+	if (response.decline)
+	{
+		env.acknowledge(compat::ChatterPhrase::Negative, compat::ChatterStatementTopic::Acknowledge);
+		return false;
+	}
+	if (!env.retreatToCover(team, 1000.0f, -1.0f, 10.0f, false, true))
+		return false;
+	env.acknowledge(compat::ChatterPhrase::Affirmative, compat::ChatterStatementTopic::Acknowledge);
+	if (env.current())
+	{
+		auto &actor = actors_[index];
+		actor.combatRetreat.fallBackEquipEpoch = actor.managedBotStateMachines.normalStateEpoch();
+	}
+	return true;
 }
 
 bool BotBehaviorRuntime::tryCombatAmbush(std::size_t index, int team)
@@ -1811,7 +1846,7 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index, const Plan
 			decision.action == compat::ScenarioAction::Guard || decision.action == compat::ScenarioAction::Hunt ||
 			decision.action == compat::ScenarioAction::Escape;
 		input.humanOrderHelp = order.command == compat::ScenarioRadioCommand::NeedBackup;
-		if (order.command == compat::ScenarioRadioCommand::ReportIn)
+		if (order.command == compat::ScenarioRadioCommand::ReportIn || order.command == compat::ScenarioRadioCommand::TeamFallBack)
 			input.humanOrderAccepted = false;
 		outgoingTeamLastSpeech_[input.team] = (std::max)(outgoingTeamLastSpeech_[input.team], order.receivedTime);
 	}

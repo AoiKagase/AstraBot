@@ -35,6 +35,8 @@ const char *bombFixtureMap()
 	if (preplantGuardFixture) return "astrabot_guard_unplanted_bombsite";
 	return nullptr;
 }
+bool fallBackFixture = false;
+
 void selectStatementFixture(int argc, char **argv)
 {
 	reportingInFixture = argc == 2 && std::strcmp(argv[1], "--reporting-in") == 0;
@@ -49,6 +51,7 @@ void selectStatementFixture(int argc, char **argv)
 	hostageUseFixture = argc == 2 && std::strcmp(argv[1], "--hostage-use-report") == 0;
 	sniperWarningFixture = argc == 2 && std::strcmp(argv[1], "--sniper-warning") == 0;
 	scaredFixture = argc == 2 && std::strcmp(argv[1], "--scared-outnumbered") == 0;
+	fallBackFixture = argc == 2 && std::strcmp(argv[1], "--team-fall-back") == 0;
 }
 bool testStatementQueue(astrabot::metamod::PluginRuntime &, enginefuncs_t &, globalvars_t &);
 void setupStatementQueue(enginefuncs_t &, globalvars_t &);
@@ -2190,6 +2193,64 @@ bool testStatementQueue(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t
 	hooks.pfnMessageEnd();
 	step(.125f);
 	step(.125f);
+	if (fallBackFixture)
+	{
+		queueMode = "normal";
+		queueEnemiesVisible = false;
+		setCvarFloat("bot_stop", 0);
+		setCvarFloat("mp_buytime", 0);
+		self.v.origin = Vector(80, 32, 36);
+		const auto loadRetreat = [&](bool cover)
+		{
+			const char *path = "astrabot_radio_fallback.nav";
+			if (!writeTwoSiteNavigation(path, true, cover))
+				return false;
+			const metamod::NavLoadRequest load{path, "astrabot_radio_fallback", runtime.snapshot().mapGeneration,
+				false, 0U, false, 0U};
+			const auto loaded = runtime.loadNavigationFile(&load);
+			std::remove(path);
+			return loaded == metamod::NavLoadResult::Loaded;
+		};
+		const auto order = [&] {
+			hooks.pfnMessageBegin(MSG_ONE, 101, nullptr, &self);
+			hooks.pfnWriteByte(5);
+			hooks.pfnWriteString("%!MRAD_FALLBACK");
+			hooks.pfnWriteShort(100);
+			hooks.pfnMessageEnd();
+		};
+		const auto advance = [&](unsigned count) {
+			for (unsigned tick = 0; tick < count; ++tick)
+				step(.125f);
+		};
+		auto &ports = static_cast<metamod::BotNavigationServices &>(runtime);
+		const auto &machine = ports.behavior_managedBotStateMachines(0);
+		const auto ack = [&] { return std::count(queueSamples.begin(), queueSamples.end(), "radio/test/ack.wav"); };
+		if (!check(loadRetreat(false), "Team Fall Back starts on a NAV with no hiding spots"))
+			return false;
+		advance(40);
+		queueSamples.clear();
+		order();
+		advance(32);
+		if (!check(machine.state() != compat::CompatibilityStateId::Hide && ack() == 0,
+				"an order with no safe spot is consumed without an acknowledgement"))
+			return false;
+		if (!check(loadRetreat(true), "Team Fall Back loads a connected NAV with hiding spots"))
+			return false;
+		advance(24);
+		if (!check(machine.state() != compat::CompatibilityStateId::Hide && ack() == 0,
+				"loading cover does not replay the consumed order"))
+			return false;
+		order();
+		advance(7);
+		if (!check(machine.state() != compat::CompatibilityStateId::Hide && ack() == 0,
+				"the public radio waits through the reaction delay"))
+			return false;
+		advance(25);
+		const auto &retreat = ports.behavior_scenarioDecisions(0);
+		return check(machine.state() == compat::CompatibilityStateId::Hide && retreat.hasTarget &&
+				retreat.target.position.x == 32.0f && retreat.target.position.y == 50.0f && ack() == 1,
+			"human Team Fall Back selects a safe point and acknowledges once after entering Hide");
+	}
 	queueSamples.clear();
 	hooks.pfnMessageBegin(MSG_ONE, 101, nullptr, &self);
 	hooks.pfnWriteByte(5);
