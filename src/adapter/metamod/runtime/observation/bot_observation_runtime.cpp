@@ -3,6 +3,7 @@
 #include "runtime/shared/bot_runtime_support.hpp"
 #include "astrabot/compat/noise_look.hpp"
 #include "astrabot/compat/noise_navigation.hpp"
+#include "astrabot/compat/weapon_equipment.hpp"
 namespace astrabot
 {
 namespace metamod
@@ -1354,6 +1355,8 @@ bool BotObservationRuntime::collectManagedPerception(
 		observation.visible = visible;
 		observation.carryingC4 = visible && compatObservation.objective.carryingC4.isAvailable() &&
 			compatObservation.objective.carryingC4.value;
+		observation.hasSniperRifle = visible &&
+			(static_cast<unsigned>(entity->v.weapons) & compat::kSniperRifleInventoryMask) != 0;
 		observation.fovPassed = isObserver || visibility.fovPassed;
 		observation.losPassed = isObserver || visibility.losPassed;
 		observation.visibleParts = isObserver

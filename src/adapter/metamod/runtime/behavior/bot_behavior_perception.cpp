@@ -238,6 +238,7 @@ void BotBehaviorRuntime::resetRoundRecognition()
 	{
 		actor.bombStatus = {};
 		actor.someHostagesTaken = false;
+		actor.sniperWarning = {};
 		actor.hostagePositions = {};
 		actor.looseBombObservation = {};
 		actor.noiseInvestigation.reset();

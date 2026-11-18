@@ -198,6 +198,7 @@ BotBehaviorRuntime::BehaviorPhaseResult BotBehaviorRuntime::updateBehaviorLifecy
 	{
 		actors_[index].bombStatus = {};
 		actors_[index].someHostagesTaken = false;
+		actors_[index].sniperWarning = {};
 		actors_[index].hostagePositions = {};
 		actors_[index].looseBombObservation = {};
 		actors_[index].equipment.reset();

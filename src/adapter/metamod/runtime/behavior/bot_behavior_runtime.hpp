@@ -249,6 +249,11 @@ private:
 		int team = 0;
 		float closeFootstepDistance = -1;
 	};
+	struct SniperWarningTiming
+	{
+		float sightUntil = -1.0f;
+		float warnedUntil = -1.0f;
+	};
 	struct RememberedHostage
 	{
 		world::EntityKey entity{};
@@ -582,6 +587,7 @@ private:
 		nav::AreaId scenarioEscapeAreas{};
 		compat::BombSiteSearchMemory bombSearchMemory{};
 		compat::BombStatusMemory bombStatus{};
+		SniperWarningTiming sniperWarning{};
 		bool someHostagesTaken = false;
 		HostagePositionMemory hostagePositions{};
 		compat::ScenarioTarget looseBombObservation{};

@@ -12,6 +12,10 @@ bool looseGuardFixture = false;
 bool deferredSiteFixture = false;
 bool preplantGuardFixture = false;
 bool hostageUseFixture = false;
+bool sniperWarningFixture = false;
+int sniperViewer = -1;
+int activeSniperFixtureWeapon = 0;
+int sniperWeaponQueries = 0;
 bool hostageGuardRolls = false;
 bool chooseTeamRush = false;
 float teamRushRoll = 100.0f;
@@ -42,10 +46,12 @@ void selectStatementFixture(int argc, char **argv)
 	deferredSiteFixture = argc == 2 && std::strcmp(argv[1], "--guard-planted-bombsite") == 0;
 	preplantGuardFixture = argc == 2 && std::strcmp(argv[1], "--guard-unplanted-bombsite") == 0;
 	hostageUseFixture = argc == 2 && std::strcmp(argv[1], "--hostage-use-report") == 0;
+	sniperWarningFixture = argc == 2 && std::strcmp(argv[1], "--sniper-warning") == 0;
 }
 bool testStatementQueue(astrabot::metamod::PluginRuntime &, enginefuncs_t &, globalvars_t &);
 void setupStatementQueue(enginefuncs_t &, globalvars_t &);
 }
+#include <entity_state.h>
 #define ASTRABOT_EXTRA_ACTOR_TEST testStatementQueue
 #define ASTRABOT_ACTOR_TEST_ARGS selectStatementFixture
 #define ASTRABOT_ACTOR_ENGINE_SETUP setupStatementQueue
@@ -135,6 +141,8 @@ unsigned char *queueLoad(char *name, int *length)
 		return nullptr;
 	}
 	std::string contents(text);
+	if (sniperWarningFixture)
+		contents += " Chatter SniperWarning sniper.wav End";
 	if (hostageUseFixture)
 		contents += " Chatter HostagesBeingTaken taken.wav End Chatter HostagesTaken lost.wav End "
 			"Chatter GoingToGuardHostageEscapeZone rescueplan.wav End";
@@ -205,7 +213,7 @@ void queueString(const char *sample)
 	if (queueMessage == 101 && queueRecipient == &gEntities[0])
 	{
 		queueSamples.emplace_back(sample);
-		if (reportingInFixture || hostageUseFixture || bombFixtureMap())
+		if (reportingInFixture || hostageUseFixture || sniperWarningFixture || bombFixtureMap())
 			reportAudio.emplace_back(queueSpeakerSlot, sample);
 		if (queueHelpRecording && queueClock)
 			queueHelpSamples.emplace_back(sample, queueClock->time);
@@ -219,6 +227,9 @@ void queueVisibility(const float *from, const float *end, int flags, edict_t *ob
 	*trace = {};
 	trace->vecEndPos = Vector(end[0], end[1], end[2]);
 	trace->flFraction = queueEnemiesVisible ? 1.0f : 0.0f;
+	if (sniperWarningFixture && sniperViewer >= 0 && observer == &gEntities[sniperViewer] &&
+		std::fabs(end[0] - 400.0f) < 24.0f && std::fabs(end[1]) < 24.0f)
+		trace->flFraction = 1.0f;
 	if (hostageUseFixture && queueClock && queueClock->mapname == 34 && observer == &gEntities[0] &&
 		flags == 0x101 && end[0] == 100 && end[1] == 0 && end[2] == 36)
 		trace->flFraction = 1.0f;
@@ -2019,6 +2030,95 @@ bool testHostageUseReport(astrabot::metamod::PluginRuntime &runtime, enginefuncs
 		"the first new-round replans may guard the new hostages");
 }
 
+bool testSniperWarning(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &hooks, globalvars_t &globals)
+{
+	queueMode = "normal";
+	queueEnemiesVisible = false;
+	setCvarFloat("mp_buytime", 0);
+	setCvarFloat("bot_stop", 0);
+	runtime.setCompatibilityFloat("bot_quota", 2);
+	if (!check(runtime.executeCompatibilityCommand(request("bot_add_t", 1U, "Queue Peer")) ==
+			astrabot::metamod::CompatibilityCommandResult::Handled, "second T joins the sniper fixture"))
+		return false;
+	for (int i = 0; i < 5; ++i)
+	{
+		auto &ent = gEntities[i];
+		ent.free = i > 2;
+		ent.v.team = i < 2 ? 1 : 2;
+		ent.v.flags = FL_CLIENT | FL_ONGROUND | (i < 2 ? FL_FAKECLIENT : 0);
+		ent.v.health = 100;
+		ent.v.deadflag = DEAD_NO;
+		ent.v.solid = SOLID_SLIDEBOX;
+		ent.v.movetype = MOVETYPE_WALK;
+		ent.v.view_ofs = Vector(0, 0, 17);
+		ent.v.origin = Vector(i < 2 ? 0.0f : 400.0f, 0, 36);
+		ent.v.weapons = i == 2 ? (1 << 18) | (1 << 28) : 0;
+		hooks.pfnMessageBegin(MSG_ALL, 86, nullptr, nullptr);
+		hooks.pfnWriteByte(i + 1);
+		hooks.pfnWriteString(i < 2 ? "TERRORIST" : "CT");
+		hooks.pfnMessageEnd();
+	}
+	auto *table = gpGamedllFuncs->dllapi_table;
+	const auto original = table->pfnUpdateClientData;
+	table->pfnUpdateClientData = [](const edict_t *entity, int sendweapons, clientdata_t *data) {
+		if (entity == &gEntities[2] && sendweapons == 1)
+		{
+			++sniperWeaponQueries;
+			data->m_iId = activeSniperFixtureWeapon;
+		}
+	};
+	struct RestoreClientData
+	{
+		DLL_FUNCTIONS *table;
+		decltype(DLL_FUNCTIONS::pfnUpdateClientData) callback;
+		~RestoreClientData() { table->pfnUpdateClientData = callback; }
+	} restore{table, original};
+	runtime.beginRoundGeneration();
+	const auto advance = [&](int ticks) {
+		for (int i = 0; i < ticks; ++i)
+		{
+			for (int slot : {0, 1})
+				gEntities[slot].v.v_angle = gEntities[slot].v.angles = Vector(0, 0, 0);
+			globals.time += .125f;
+			runtime.onStartFrame();
+			runtime.onStartFramePost();
+		}
+	};
+	const auto warnings = [&](int speaker) {
+		return std::count(reportAudio.begin(), reportAudio.end(),
+			std::make_pair(speaker, std::string("radio/test/sniper.wav")));
+	};
+	reportAudio.clear();
+	sniperViewer = 0;
+	activeSniperFixtureWeapon = 28;
+	advance(40);
+	if (!check(sniperWeaponQueries > 0 && !warnings(1) && !warnings(2),
+			"a visible enemy carrying an AWP but using another weapon is not reported"))
+		return false;
+	activeSniperFixtureWeapon = 18;
+	sniperViewer = -1;
+	const int lastQuery = sniperWeaponQueries;
+	advance(24);
+	if (!check(sniperWeaponQueries == lastQuery && !warnings(1), "an occluded sniper does not trigger the probe or a callout"))
+		return false;
+	sniperViewer = 0;
+	advance(40);
+	if (!check(warnings(1) == 1 && !warnings(2), "a visible active AWP starts one sniper warning"))
+		return false;
+	advance(104);
+	if (!check(warnings(1) == 1, "the observer does not repeat the warning inside 20 seconds"))
+		return false;
+	advance(64);
+	if (!check(warnings(1) == 2, "a sustained sighting can be reported after 20 seconds"))
+		return false;
+	sniperViewer = 1;
+	advance(320);
+	if (!check(!warnings(2), "a teammate who heard the warning suppresses their own reports"))
+		return false;
+	advance(320);
+	return check(warnings(2) >= 1, "the teammate can warn again after the 60-second suppression");
+}
+
 bool testStatementQueue(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &engine, globalvars_t &globals)
 {
 	using namespace astrabot;
@@ -2125,6 +2225,8 @@ bool testStatementQueue(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t
 		return false;
 	if (hostageUseFixture)
 		return testHostageUseReport(runtime, hooks, globals);
+	if (sniperWarningFixture)
+		return testSniperWarning(runtime, hooks, globals);
 	if (const char *map = bombFixtureMap())
 	{
 		queueMode = "normal";

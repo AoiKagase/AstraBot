@@ -13,8 +13,7 @@ namespace
 {
 bool carriesSniperRifle(const edict_t &entity)
 {
-	constexpr unsigned rifles = (1U << 3) | (1U << 13) | (1U << 18) | (1U << 24);
-	return (static_cast<unsigned>(entity.v.weapons) & rifles) != 0;
+	return (static_cast<unsigned>(entity.v.weapons) & compat::kSniperRifleInventoryMask) != 0;
 }
 constexpr int kTerroristTeam = 1;
 constexpr int kCounterTerroristTeam = 2;
@@ -1021,7 +1020,8 @@ void BotBehaviorRuntime::transmitTeammateRequest(
 		 meme.kind != compat::ChatterMemeKind::DefendHere && meme.kind != compat::ChatterMemeKind::RequestReport &&
 		 meme.kind != compat::ChatterMemeKind::BombsiteClear && meme.kind != compat::ChatterMemeKind::BombsitePlanted &&
 		 meme.kind != compat::ChatterMemeKind::WhereBomb && meme.kind != compat::ChatterMemeKind::BombMoving &&
-		 meme.kind != compat::ChatterMemeKind::BombLoose && meme.kind != compat::ChatterMemeKind::HostageBeingTaken) ||
+		 meme.kind != compat::ChatterMemeKind::BombLoose && meme.kind != compat::ChatterMemeKind::HostageBeingTaken &&
+		 meme.kind != compat::ChatterMemeKind::WarnSniper) ||
 		services_->service_compatibilitySurface().configuration().mode != compat::RuntimeMode::Compatibility)
 		return;
 	const auto engine = services_->service_engineFunctions();
@@ -1094,6 +1094,8 @@ void BotBehaviorRuntime::transmitTeammateRequest(
 			environment.reportPlantedSite();
 		else if (meme.kind == compat::ChatterMemeKind::BombMoving)
 			environment.receivedMovingBomb(meme.position, team);
+		else if (meme.kind == compat::ChatterMemeKind::WarnSniper)
+			actors_[receiver].sniperWarning.warnedUntil = receipt.context.now + 60.0f;
 		else if (meme.kind == compat::ChatterMemeKind::HostageBeingTaken)
 			environment.receivedHostageBeingTaken();
 		else if (meme.kind == compat::ChatterMemeKind::BombLoose)
@@ -1493,6 +1495,28 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index, const Plan
 			}
 		}
 	}
+	bool reportSniper = false;
+	auto &sniper = actors_[index].sniperWarning;
+	if (input.alive && haveBelief && input.now > sniper.sightUntil &&
+		services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility)
+	{
+		for (std::size_t i = 0; i < belief.actorCount(); ++i)
+		{
+			const auto *contact = belief.actorAt(i);
+			if (!contact || contact->relation != world::TeamRelation::Hostile || !contact->visible ||
+				!contact->hasCurrentPosition() || !contact->hasSniperRifle)
+				continue;
+			const bool activeSniper = services_->observation_activeSniper(contact->actor, input.frame, input.team);
+			if (!receiptCurrent())
+				return;
+			if (activeSniper)
+			{
+				sniper.sightUntil = input.now + 20.0f;
+				reportSniper = input.friendCount > 0 && input.now > sniper.warnedUntil;
+				break;
+			}
+		}
+	}
 	const bool reportBomber = bomber.isValid() && actors_[index].bombStatus.isNewCarrierPosition(bomberPosition);
 	std::uint16_t bomberPlace = 0;
 	const auto loose = actors_[index].looseBombObservation;
@@ -1695,6 +1719,18 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index, const Plan
 			bomberPosition, bomberPlace, metadataPlace(bomberPlace), static_cast<int>(bomber.slot));
 		actors_[index].outgoingRadioSchedulers.statements().admit(
 			report, input.admission, outgoingChatterCatalog_, mode, input.speaking);
+	}
+	if (reportSniper)
+	{
+		compat::ChatterStatementRequest warning{};
+		warning.source = compat::ChatterScheduleSource::Generic;
+		warning.topic = compat::ChatterStatementTopic::Information;
+		warning.phrase = compat::ChatterPhrase::SniperWarning;
+		warning.created = warning.start = warning.readyAt = input.now;
+		warning.expires = input.now + 10.0f;
+		warning.meme.kind = compat::ChatterMemeKind::WarnSniper;
+		actors_[index].outgoingRadioSchedulers.statements().admit(
+			warning, input.admission, outgoingChatterCatalog_, mode, input.speaking);
 	}
 	if (sawLoose && actors_[index].bombStatus.spotLooseBomb(loosePosition, input.now))
 	{

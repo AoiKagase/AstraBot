@@ -15,6 +15,7 @@
 #include <limits>
 #include <vector>
 #include <in_buttons.h>
+#include <entity_state.h>
 
 meta_globals_t *gpMetaGlobals = nullptr;
 gamedll_funcs_t *gpGamedllFuncs = nullptr;
@@ -1065,6 +1066,47 @@ void PluginRuntime::endPlayerPostThink(const edict_t *player)
 		hostageUseScopes_.pop_back();
 	else
 		hostageUseScopes_.clear();
+}
+
+bool PluginRuntime::observation_activeSniper(
+	world::ActorKey actor, world::FrameIdentity frame, int observerTeam) const
+{
+	const auto *dll = gameDllFunctions_ ? gameDllFunctions_->dllapi_table : nullptr;
+	const auto engine = engineFunctions_;
+	if (!dll || !dll->pfnUpdateClientData || !engine || !engine->pfnPEntityOfEntIndex || !globals_ ||
+		!actor.isValid() || actor.slot > static_cast<unsigned>((std::max)(0, globals_->maxClients)) ||
+		actor.slot > kMaximumClientSlot)
+		return false;
+	const auto current = [&] {
+		return state_ == State::ActiveMap && gameDllFunctions_ && gameDllFunctions_->dllapi_table == dll &&
+			engineFunctions_ == engine && frame ==
+				world::FrameIdentity{lifecycle_.mapGeneration(), lifecycle_.roundGeneration(), adapterFrameCount_} &&
+			actor.generation == (std::max)(1U, lifecycle_.slotGeneration(actor.slot));
+	};
+	if (!current())
+		return false;
+	const auto *player = engine->pfnPEntityOfEntIndex(static_cast<int>(actor.slot));
+	if (!current() || !player || player->serialnumber < 0)
+		return false;
+	const auto serial = player->serialnumber;
+	const auto weapon = [&] {
+		return !player->free && player->serialnumber == serial &&
+			(player->v.flags & (FL_CLIENT | FL_DORMANT | FL_SPECTATOR)) == FL_CLIENT &&
+			player->v.deadflag == DEAD_NO && player->v.health > 0.0f && player->v.iuser1 == 0 &&
+			(static_cast<unsigned>(player->v.weapons) & compat::kSniperRifleInventoryMask) != 0;
+	};
+	if (!weapon())
+		return false;
+	const int enemyTeam = observation_.resolvePlayerTeam(player);
+	if (!current() || !weapon() || enemyTeam == observerTeam ||
+		(enemyTeam != kTerroristTeam && enemyTeam != kCounterTerroristTeam))
+		return false;
+	clientdata_t data{};
+	dll->pfnUpdateClientData(player, 1, &data);
+	if (!current() || !weapon() || observation_.resolvePlayerTeam(player) != enemyTeam || !current() || !weapon())
+		return false;
+	return data.m_iId > 0 && data.m_iId < 32 &&
+		(compat::kSniperRifleInventoryMask & (1U << static_cast<unsigned>(data.m_iId))) != 0;
 }
 
 void PluginRuntime::reportHostageUse(edict_t *player, world::FrameIdentity frame)

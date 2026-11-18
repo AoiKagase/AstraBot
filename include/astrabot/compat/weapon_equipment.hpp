@@ -8,6 +8,8 @@ namespace astrabot
 {
 namespace compat
 {
+constexpr unsigned kSniperRifleInventoryMask = (1U << 3) | (1U << 13) | (1U << 18) | (1U << 24);
+
 enum class EquipmentAmmo
 {
 	Unknown,
