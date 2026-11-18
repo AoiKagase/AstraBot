@@ -752,9 +752,22 @@ struct BotBehaviorRuntime::ActorTaskEnvironment : compat::IHelpRequestEnvironmen
 	{
 		acknowledge(compat::ChatterPhrase::CoveringFriend);
 	}
+	void say(const char *name, float lifetime = 3.0f, float delay = 0.0f)
+	{
+		owner.ensureOutgoingChatterCatalog();
+		if (!current())
+			return;
+		if (const auto *phrase = owner.outgoingChatterCatalog_.findPhrase(name))
+			admit(compat::makeSayStatement(*phrase, receipt.context.now, lifetime, delay));
+	}
 	void acknowledge(compat::ChatterPhrase phrase,
 		compat::ChatterStatementTopic topic = compat::ChatterStatementTopic::MyIntention)
 	{
+		if (topic == compat::ChatterStatementTopic::MyIntention)
+		{
+			say(compat::ChatterRadioCatalog::name(phrase));
+			return;
+		}
 		compat::ChatterStatementRequest request{};
 		request.source = compat::ChatterScheduleSource::Generic;
 		request.topic = topic;
@@ -2130,13 +2143,14 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index, const Plan
 			}
 			const auto phrase = step.playback.phrase;
 			const auto *place = outgoingChatterCatalog_.place(step.playback.placePhrase);
-			const bool defined = step.playback.placePhrase ? place != nullptr : outgoingChatterCatalog_.defined(phrase);
+			const auto *named = outgoingChatterCatalog_.phrase(step.playback.namedPhrase);
+			const bool defined = place || named || outgoingChatterCatalog_.defined(phrase);
 			if (!defined)
 			{
 				queue.finishPart(step.token, 0, true);
 				return;
 			}
-			const auto choice = place ? place->choice : outgoingChatterCatalog_.lookup(phrase);
+			const auto choice = named ? named->choice : place ? place->choice : outgoingChatterCatalog_.lookup(phrase);
 			const auto finish = [&](float duration, bool silence)
 			{
 				if (!partCurrent() || !queue.finishPart(step.token, duration))
@@ -2162,7 +2176,7 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index, const Plan
 						step.criteriaPlace, step.schedule.topic == compat::ChatterStatementTopic::RoundEnd
 							? ChatterVoicePurpose::RetainedRoundEnd : ChatterVoicePurpose::Statement,
 						step.playback.placePhrase, &hasSample,
-						&suppressed);
+						&suppressed, step.playback.namedPhrase);
 				else if (step.playback.placePhrase)
 					suppressed = !outgoingPlaceHistory_.allow(step.playback.placePhrase, input.now);
 				if (!partCurrent())

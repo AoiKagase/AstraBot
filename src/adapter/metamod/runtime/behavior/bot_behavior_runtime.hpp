@@ -524,7 +524,7 @@ private:
 	bool sendChatterVoice(std::size_t index, compat::ChatterPhrase phrase, int count,
 		std::shared_ptr<compat::ChatterVoiceCatalog> bank, float *duration, std::uint32_t criteriaPlace,
 		ChatterVoicePurpose purpose = ChatterVoicePurpose::Statement, std::uint32_t placePhrase = 0,
-		bool *selected = nullptr, bool *suppressed = nullptr);
+		bool *selected = nullptr, bool *suppressed = nullptr, std::uint32_t namedPhrase = 0);
 	struct NoiseBendCache
 	{
 		bool valid = false;

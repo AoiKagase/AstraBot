@@ -1,3 +1,11 @@
+## 15A　Sayの既定フレーズと意図表明
+
+ReGameDLL-CS `b088984` の `BotChatterInterface::Say` と `Negative` を参照した。ホストの既定DBで名前を解決し、`REPORT_MY_INTENTION` として既存キューに登録する。既定の有効期間は登録から3秒。正の遅延を指定した場合は開始だけを遅らせる。既存の意図表明は同じ経路に接続し、Team Fall Backの `Negative` は `REPORT_ACKNOWLEDGE` を使う。
+
+列挙値を持たない既定名も、同じプロファイル音声選択、重要度、無音時のラジオフォールバック、キューの重複判定を通す。マップの場所名は別に解決する。未登録の名前はキューに入らない。`Encourage` の試合全体で共有する間隔と、C4・人質の発話条件、および残る `Say` 呼び出しは15Bで追跡する。
+
+合成の既定名で、名前解決、重要度、遅延、有効期間、プロファイル音声選択を確認した。Windows x86 Debugは154/154件、Linux x86 Debugは152/153件合格。Linuxの失敗は既知の `astrabot_combat_policy`。両OSの動作トレース149,153件が既存の記録と一致し、PE・ELFのx86形式と公開関数7件を確認した。実機確認は25に残る。
+
 ## 14　ラウンド終了・勝利時の発話
 
 ReGameDLL-CS `b088984` の `EndRoundMessage`、`CelebrateWin`、`BotChatterInterface::Reset` を参照した。自チームの勝利時、生存しているBotは2〜5秒の開始遅延を抽選する。45秒未満の勝利は、最後の1人なら `WonRoundQuickly`、生存する味方がいれば33.3%で同じ発話を登録する。45秒以上は、最後の1人が33.3%で `LastManStanding`、味方がいる場合は10%で `WonRound` を登録する。勝利発話の種別は `REPORT_EMOTE`、有効期間は結果を受けてから15秒。

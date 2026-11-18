@@ -310,7 +310,8 @@ void BotBehaviorRuntime::finishDeathChatter(
 
 bool BotBehaviorRuntime::sendChatterVoice(std::size_t index, compat::ChatterPhrase phrase, int count,
 	std::shared_ptr<compat::ChatterVoiceCatalog> bank, float *duration, std::uint32_t criteriaPlace,
-	ChatterVoicePurpose purpose, std::uint32_t placePhrase, bool *selected, bool *suppressed)
+	ChatterVoicePurpose purpose, std::uint32_t placePhrase, bool *selected, bool *suppressed,
+	std::uint32_t namedPhrase)
 {
 	if (duration)
 		*duration = 0;
@@ -346,8 +347,9 @@ bool BotBehaviorRuntime::sendChatterVoice(std::size_t index, compat::ChatterPhra
 		(purpose == ChatterVoicePurpose::Statement && (self->v.deadflag != DEAD_NO || self->v.health <= 0)))
 		return false;
 	const std::uint32_t criteria = deathInterrupt ? 0xFFFF : criteriaPlace;
-	const auto *borrowed = placePhrase ? bank->selectPlaceAt(placePhrase, outgoingChatterCatalog_, count, criteria)
-									   : bank->selectAtPlace(phrase, count, criteria);
+	const auto *borrowed = namedPhrase ? bank->selectNamedAt(namedPhrase, outgoingChatterCatalog_, count, criteria)
+		: placePhrase ? bank->selectPlaceAt(placePhrase, outgoingChatterCatalog_, count, criteria)
+		: bank->selectAtPlace(phrase, count, criteria);
 	const bool hasSample = borrowed != nullptr;
 	// Never retain a vector element across an Engine callback or catalog mutation.
 	const compat::ChatterSpeakable clip = borrowed ? *borrowed : compat::ChatterSpeakable{};

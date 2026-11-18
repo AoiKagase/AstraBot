@@ -79,6 +79,20 @@ struct ChatterStatementRequest
 	std::uint32_t noiseTick = 0;
 	ChatterMeme meme{};
 };
+inline ChatterStatementRequest makeSayStatement(
+	const ChatterPhraseDefinition &phrase, float now, float lifetime = 3.0f, float delay = 0.0f)
+{
+	ChatterStatementRequest statement{};
+	statement.source = ChatterScheduleSource::Generic;
+	statement.topic = ChatterStatementTopic::MyIntention;
+	statement.phrase = phrase.known;
+	statement.created = now;
+	statement.start = statement.readyAt = now + (delay > 0.0f ? delay : 0.0f);
+	statement.expires = now + lifetime;
+	if (phrase.known == ChatterPhrase::None)
+		statement.program.append({ChatterPartKind::Named, ChatterPhrase::None, 0, 0, phrase.id});
+	return statement;
+}
 struct ChatterStatementHandle
 {
 	std::uint64_t id = 0;
@@ -247,13 +261,20 @@ public:
 		for (std::size_t i = 0; i < source.count; ++i)
 		{
 			const auto &part = source.parts[i];
-			if (static_cast<unsigned>(part.kind) > static_cast<unsigned>(ChatterPartKind::AccumulateEnemies))
+			if (static_cast<unsigned>(part.kind) > static_cast<unsigned>(ChatterPartKind::Named))
 				return {};
 			if (part.kind == ChatterPartKind::Fixed)
 			{
 				if (!catalog.defined(part.phrase))
 					continue;
 				important = important || catalog.important(part.phrase);
+			}
+			else if (part.kind == ChatterPartKind::Named)
+			{
+				const auto *definition = catalog.phrase(part.namedPhrase);
+				if (!definition)
+					continue;
+				important = important || definition->important;
 			}
 			else if (part.kind == ChatterPartKind::Place)
 			{
@@ -288,6 +309,8 @@ public:
 		schedule.firstPhrase = first.kind == ChatterPartKind::Fixed ? catalog.phraseId(first.phrase)
 			: first.kind == ChatterPartKind::Place					? first.placePhrase
 																	: 0;
+		if (first.kind == ChatterPartKind::Named)
+			schedule.firstPhrase = first.namedPhrase;
 		auto at = nodes_.begin();
 		while (at != nodes_.end() && at->schedule.start <= schedule.start)
 			++at;

@@ -157,6 +157,14 @@ struct RadioMenuChoice
 {
 	int menu = 0, slot = 0;
 };
+struct ChatterPhraseDefinition
+{
+	std::uint32_t id = 0;
+	std::string name;
+	ChatterPhrase known = ChatterPhrase::None;
+	RadioMenuChoice choice{};
+	bool important = false;
+};
 struct ChatterPlaceDefinition
 {
 	std::uint32_t id = 0;
@@ -239,7 +247,7 @@ public:
 			if (!ended)
 				return false;
 			if (chatter)
-				candidate.phraseNames_.push_back({id, definitionName});
+				candidate.phraseNames_.push_back({id, definitionName, phrase, place.choice, place.important});
 			else
 				candidate.places_.push_back(std::move(place));
 		}
@@ -265,13 +273,22 @@ public:
 				return &entry;
 		return nullptr;
 	}
-	bool definedPhraseName(const char *name) const
+	const ChatterPhraseDefinition *findPhrase(const char *name) const
 	{
 		if (name)
 			for (const auto &entry : phraseNames_)
 				if (equal(entry.name, name))
-					return true;
-		return false;
+					return &entry;
+		return nullptr;
+	}
+	const ChatterPhraseDefinition *phrase(std::uint32_t id) const
+	{
+		if (!id)
+			return nullptr;
+		for (const auto &entry : phraseNames_)
+			if (entry.id == id)
+				return &entry;
+		return nullptr;
 	}
 	std::uint32_t phraseId(ChatterPhrase phrase) const
 	{
@@ -457,12 +474,7 @@ private:
 
 	std::array<bool, static_cast<unsigned>(ChatterPhrase::Count)> defined_{};
 
-	struct PhraseName
-	{
-		std::uint32_t id;
-		std::string name;
-	};
-	std::vector<PhraseName> phraseNames_;
+	std::vector<ChatterPhraseDefinition> phraseNames_;
 	std::vector<ChatterPlaceDefinition> places_;
 	bool loaded_ = false;
 };

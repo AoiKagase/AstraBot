@@ -55,7 +55,7 @@ public:
 			const ChatterPlaceDefinition *definition = nullptr;
 			if (chatter)
 			{
-				if (definitions && !definitions->definedPhraseName(token.c_str()))
+				if (!candidate.definitions_.findPhrase(token.c_str()))
 					return false;
 			}
 			else
@@ -65,16 +65,16 @@ public:
 				if (!definition)
 					return false;
 			}
-			PlaceVariants *placeVariants = nullptr;
-			if (definition)
+			PhraseVariants *group = nullptr;
+			if (definition || phrase == ChatterPhrase::None)
 			{
-				for (auto &group : candidate.places_)
-					if (group.occurrence == definition->occurrence && equal(group.name, definition->name.c_str()))
-						placeVariants = &group;
-				if (!placeVariants)
+				const auto &name = definition ? definition->name : token;
+				const auto occurrence = definition ? definition->occurrence : 0U;
+				group = candidate.findGroup(name.c_str(), occurrence, chatter);
+				if (!group)
 				{
-					candidate.places_.push_back({definition->name, definition->occurrence, {}, 0});
-					placeVariants = &candidate.places_.back();
+					candidate.namedVariants_.push_back({name, occurrence, chatter, {}, 0});
+					group = &candidate.namedVariants_.back();
 				}
 			}
 			const auto beforeId = definitions ? (std::numeric_limits<std::uint32_t>::max)() : blockId;
@@ -127,10 +127,7 @@ public:
 						c = '/';
 				if (!validPath(path))
 					return false;
-				if (!placeVariants && phrase == ChatterPhrase::None)
-					continue;
-				auto &variants =
-					placeVariants ? placeVariants->variants : candidate.variants_[static_cast<unsigned>(phrase)];
+				auto &variants = group ? group->variants : candidate.variants_[static_cast<unsigned>(phrase)];
 				if (variants.size() >= 128U)
 					return false;
 				ChatterSpeakable speakable;
@@ -166,7 +163,7 @@ public:
 	template <typename Available> void retainAvailable(Available available)
 	{
 		const auto generation = revision_;
-		auto places = places_;
+		auto places = namedVariants_;
 		auto phrases = variants_;
 		const auto filter = [&](std::vector<ChatterSpeakable> &variants)
 		{
@@ -191,7 +188,7 @@ public:
 		for (auto &variants : phrases)
 			if (!filter(variants))
 				return;
-		places_ = std::move(places);
+		namedVariants_ = std::move(places);
 		variants_ = std::move(phrases);
 		cursors_ = {};
 		++revision_;
@@ -213,7 +210,18 @@ public:
 	ChatterSpeakable *selectPlaceAt(
 		std::uint32_t id, const ChatterRadioCatalog &definitions, int count, std::uint32_t criteria)
 	{
-		auto *group = const_cast<PlaceVariants *>(findPlace(id, definitions));
+		auto *group = const_cast<PhraseVariants *>(findPlace(id, definitions));
+		return group ? selectVariant(group->variants, group->cursor, count, criteria) : nullptr;
+	}
+	ChatterSpeakable *selectNamedAt(
+		std::uint32_t id, const ChatterRadioCatalog &definitions, int count, std::uint32_t criteria)
+	{
+		const auto *definition = definitions.phrase(id);
+		if (!definition)
+			return nullptr;
+		if (definition->known != ChatterPhrase::None)
+			return selectAtPlace(definition->known, count, criteria);
+		auto *group = findGroup(definition->name.c_str(), 0, true);
 		return group ? selectVariant(group->variants, group->cursor, count, criteria) : nullptr;
 	}
 	bool cacheDuration(const std::string &sample, std::uint64_t revision, float duration)
@@ -230,7 +238,7 @@ public:
 					found = true;
 				}
 		};
-		for (auto &place : places_)
+		for (auto &place : namedVariants_)
 			cache(place.variants);
 		for (auto &phrase : variants_)
 			cache(phrase);
@@ -240,7 +248,7 @@ public:
 	{
 		// Engine RNG remains an explicit portable approximation of native CRT order.
 		const auto generation = revision_;
-		auto places = places_;
+		auto places = namedVariants_;
 		auto phrases = variants_;
 		const auto shuffleVariants = [&](std::vector<ChatterSpeakable> &variants)
 		{
@@ -263,8 +271,8 @@ public:
 				return false;
 		// A same-generation selection callback may advance a live cursor.
 		for (std::size_t i = 0; i < places.size(); ++i)
-			places[i].cursor = places_[i].cursor;
-		places_ = std::move(places);
+			places[i].cursor = namedVariants_[i].cursor;
+		namedVariants_ = std::move(places);
 		variants_ = std::move(phrases);
 		++revision_;
 		return true;
@@ -283,21 +291,30 @@ public:
 
 private:
 	static constexpr std::uint32_t kAnyPlace = 0xFFFF;
-	struct PlaceVariants
+	struct PhraseVariants
 	{
 		std::string name;
 		std::uint32_t occurrence;
+		bool chatter;
 		std::vector<ChatterSpeakable> variants;
 		std::size_t cursor;
 	};
-	const PlaceVariants *findPlace(std::uint32_t id, const ChatterRadioCatalog &definitions) const
+	const PhraseVariants *findGroup(const char *name, std::uint32_t occurrence, bool chatter) const
+	{
+		for (const auto &group : namedVariants_)
+			if (group.chatter == chatter && group.occurrence == occurrence && equal(group.name, name))
+				return &group;
+		return nullptr;
+	}
+	PhraseVariants *findGroup(const char *name, std::uint32_t occurrence, bool chatter)
+	{
+		return const_cast<PhraseVariants *>(static_cast<const ChatterVoiceCatalog &>(*this).findGroup(
+			name, occurrence, chatter));
+	}
+	const PhraseVariants *findPlace(std::uint32_t id, const ChatterRadioCatalog &definitions) const
 	{
 		const auto *definition = definitions.place(id);
-		if (definition)
-			for (const auto &group : places_)
-				if (group.occurrence == definition->occurrence && equal(group.name, definition->name.c_str()))
-					return &group;
-		return nullptr;
+		return definition ? findGroup(definition->name.c_str(), definition->occurrence, false) : nullptr;
 	}
 	std::uint32_t resolvePlace(
 		const char *name, std::uint32_t beforeId = (std::numeric_limits<std::uint32_t>::max)()) const
@@ -403,7 +420,7 @@ private:
 		return ChatterPhrase::None;
 	}
 	ChatterRadioCatalog definitions_;
-	std::vector<PlaceVariants> places_;
+	std::vector<PhraseVariants> namedVariants_;
 	std::uint64_t revision_ = 0;
 	std::array<std::vector<ChatterSpeakable>, static_cast<unsigned>(ChatterPhrase::Count)> variants_{};
 	std::array<std::size_t, static_cast<unsigned>(ChatterPhrase::Count)> cursors_{};

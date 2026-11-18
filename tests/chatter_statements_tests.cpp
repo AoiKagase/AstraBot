@@ -1,4 +1,5 @@
 #include "astrabot/compat/chatter_statements.hpp"
+#include "astrabot/compat/chatter_voice.hpp"
 #include "astrabot/compat/outgoing_radio.hpp"
 #include <cstdio>
 #include <cstring>
@@ -56,6 +57,43 @@ struct PlanRandom : ICompatibilityRandomSource
 		return {RandomStatus::Unavailable, 0};
 	}
 };
+bool testNamedSay()
+{
+	constexpr char definitions[] = "Place SyntheticRoom End "
+		"Chatter FixtureIntent Important Radio = EVENT_RADIO_COVER_ME End";
+	constexpr char samples[] = "Chatter FixtureIntent cue.wav End";
+	ChatterRadioCatalog catalog;
+	ChatterVoiceCatalog voice;
+	if (!catalog.loadText(definitions, sizeof(definitions) - 1) ||
+		!voice.loadText(samples, sizeof(samples) - 1, &catalog))
+		return false;
+	const auto *definition = catalog.findPhrase("fixtureintent");
+	if (!check(definition && definition->choice.menu == 1 && definition->choice.slot == 1 &&
+			!catalog.findPhrase("SyntheticRoom") && !catalog.findPhrase("Missing"),
+			"Say resolves a case-insensitive chatter definition and its radio fallback"))
+		return false;
+	ChatterPendingQueue queue;
+	ChatterAdmissionClock clock;
+	ChatterScheduleAdmission owner{{{1, 1}, {1, 1, 5}, 1, 20.0f, true}, 1, 1, &clock};
+	const auto say = makeSayStatement(*definition, 20.0f, 3.0f, 1.0f);
+	const auto handle = queue.admit(say, owner, catalog, ChatterVerbosity::Minimal);
+	if (!check(handle.id && handle.owner.topic == ChatterStatementTopic::MyIntention &&
+			handle.owner.firstPhrase == definition->id && say.expires == 23.0f,
+			"important named Say retains native intention and creation-based lifetime"))
+		return false;
+	ChatterPlaybackInput frame{};
+	frame.now = 20.5f;
+	frame.friendsRemaining = 1;
+	if (!check(queue.advance(handle, frame).playback.kind == ChatterPlaybackKind::Waiting,
+			"named Say observes its requested delay"))
+		return false;
+	frame.now = 21.0f;
+	const auto part = queue.advance(handle, frame);
+	const auto *clip = voice.selectNamedAt(part.playback.namedPhrase, catalog, -1, 0);
+	return check(part.playback.kind == ChatterPlaybackKind::Phrase && clip && clip->sample == "cue.wav",
+		"profile audio can play a named Say beyond the built-in phrases");
+}
+
 bool testRetainedRoundEnd()
 {
 	ChatterRadioCatalog catalog;
@@ -275,7 +313,7 @@ bool testPlanConversion()
 }
 int main()
 {
-	if (!testRetainedRoundEnd())
+	if (!testNamedSay() || !testRetainedRoundEnd())
 		return 1;
 	using namespace astrabot::compat;
 	if (!testPlanConversion())

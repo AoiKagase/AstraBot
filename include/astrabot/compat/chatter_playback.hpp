@@ -15,7 +15,8 @@ enum class ChatterPartKind
 	RemainingEnemyCount,
 	ShortDelay,
 	LongDelay,
-	AccumulateEnemies
+	AccumulateEnemies,
+	Named
 };
 struct ChatterPart
 {
@@ -23,6 +24,7 @@ struct ChatterPart
 	ChatterPhrase phrase = ChatterPhrase::None;
 	std::uint16_t place = 0;
 	std::uint32_t placePhrase = 0;
+	std::uint32_t namedPhrase = 0;
 };
 struct ChatterProgram
 {
@@ -32,7 +34,8 @@ struct ChatterProgram
 	bool append(ChatterPart part)
 	{
 		if (count >= parts.size() || (part.kind == ChatterPartKind::Fixed && part.phrase == ChatterPhrase::None) ||
-			(part.kind == ChatterPartKind::Place && (!part.place || !part.placePhrase)))
+			(part.kind == ChatterPartKind::Place && (!part.place || !part.placePhrase)) ||
+			(part.kind == ChatterPartKind::Named && !part.namedPhrase))
 			return false;
 		parts[count++] = part;
 		return true;
@@ -73,6 +76,7 @@ struct ChatterPlaybackDecision
 	ChatterPhrase phrase = ChatterPhrase::None;
 	int enemyCount = -1;
 	std::uint32_t placePhrase = 0;
+	std::uint32_t namedPhrase = 0;
 	std::uint64_t step = 0;
 	float low = 0;
 	float high = 0;
@@ -141,6 +145,9 @@ inline ChatterPlaybackDecision advanceChatterPlayback(
 	case ChatterPartKind::Place:
 		out.placePhrase = part.placePhrase;
 		break;
+	case ChatterPartKind::Named:
+		out.namedPhrase = part.namedPhrase;
+		break;
 	case ChatterPartKind::CurrentEnemyCount:
 		if (in.enemies > 1 && in.enemies - 1 > in.nearbyFriends)
 			out.phrase = ChatterPhrase::Help;
@@ -169,7 +176,7 @@ inline ChatterPlaybackDecision advanceChatterPlayback(
 		state.nextTime = 99999999.9f;
 		return out;
 	}
-	if (out.phrase == ChatterPhrase::None && !out.placePhrase)
+	if (out.phrase == ChatterPhrase::None && !out.placePhrase && !out.namedPhrase)
 	{
 		state.nextTime = 0;
 		out.kind = ChatterPlaybackKind::Null;
