@@ -17,4 +17,10 @@ A concrete HUD/entvars loss example: two same-frame human teammate calls with am
 
 Animation events also require distinct evidence. player.cpp2713–2752 emits EVENT_WEAPON_FIRED/RELOADED from SetAnimation after frozen/flinch/activity gates. weapons.cpp1401–1413 independently updates weaponanim and may suppress SVC_WEAPONANIM through client prediction. Polling a current sequence or treating every weapon animation message as the native event cannot prove an exact per-call stream. Existing mapped gun PlaybackEvent and exact standard fire/dryfire sample intake stays implemented; native reload/knife/grenade animation parity remains open.
 
+## Hostage use and current follow state
+
+The pinned `CHostage::Use` emits `EVENT_HOSTAGE_USED` on an accepted start, including when `CHostageImprov::Chatter` suppresses speech because another hostage is speaking or its timer is still running. `Touched_A_Hostage` covers the initial accepted touch. The existing `PlayerPostThink` scope and qualified follow samples cover audible starts (12A).
+
+`HostagePos` sends a refresh marker (initial or periodic), a hostage index and position. `HostageK` removes a radar marker, and `ScenarioIcon` gives an optional living count. These messages carry no current follow state or leader. `CHostage::IsFollowing` reads private classic state or the improved state and its leader. Movement and absence of a voice can occur on both sides of a follow transition. The follow state's `RANDOM_FLOAT(125, 175)` call carries no player, hostage or event type. A typed native hookchain lies outside the standalone runtime boundary. Exact authoritative intake for silent repeats and current free-hostage status remains open.
+
 Next exact work: evaluate any additional public provider against the required pre-base inflictor/time/order stream and the project boundary before implementation. Native Radio attachment presentation is independently implementable through public SVC_TEMPENTITY/TE_PLAYERATTACHMENT and the host-preloaded radio sprite; its design/tests live in the death-radio-icon feature. The overall remaining CSBot goal stays active.

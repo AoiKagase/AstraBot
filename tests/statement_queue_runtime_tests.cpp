@@ -1982,11 +1982,41 @@ bool testHostageUseReport(astrabot::metamod::PluginRuntime &runtime, enginefuncs
 		return false;
 	advance(104);
 	announceUse(false);
-	queueHelpRecording = false;
-	return check(count(1, "radio/test/taken.wav") == 1 && count(2, "radio/test/ack.wav") == 1 &&
+	if (!check(count(1, "radio/test/taken.wav") == 1 && count(2, "radio/test/ack.wav") == 1 &&
 			count(2, "radio/test/rescueplan.wav") == 1 && task(1) == Task::GuardHostageRescueZone &&
 			task(0) == Task::GuardHostages,
-		"outside the safe period a teammate's completed report sends the recipient to guard the rescue zone");
+			"outside the safe period a teammate's completed report sends the recipient to guard the rescue zone"))
+		return false;
+
+	const auto resultMessage = [&](int destination, edict_t *recipient, int print, const char *token) {
+		hooks.pfnMessageBegin(destination, 98, nullptr, recipient);
+		hooks.pfnWriteByte(print);
+		hooks.pfnWriteString(token);
+		hooks.pfnMessageEnd();
+	};
+	resultMessage(MSG_ONE, &gEntities[0], HUD_PRINTCENTER, "#All_Hostages_Rescued");
+	resultMessage(MSG_ALL, nullptr, HUD_PRINTCONSOLE, "#All_Hostages_Rescued");
+	resultMessage(MSG_ALL, nullptr, HUD_PRINTCENTER, "#CTs_Win");
+	advance(16);
+	if (!check(task(0) == Task::GuardHostages, "only a centered broadcast of the rescue result can end a hostage guard"))
+		return false;
+	resultMessage(MSG_ALL, nullptr, HUD_PRINTCENTER, "#All_Hostages_Rescued");
+	resultMessage(MSG_ALL, nullptr, HUD_PRINTCENTER, "#All_Hostages_Rescued");
+	advance(16);
+	if (!check(task(0) != Task::GuardHostages && task(1) == Task::GuardHostageRescueZone,
+			"the global rescue result releases the hostage guard even after a duplicate CT result"))
+		return false;
+	runtime.onRoundLifecycleMessage("World triggered \"Round_End\"\n");
+	advance(8);
+	if (!check(task(0) != Task::GuardHostages, "the ending round does not resume guarding rescued hostages"))
+		return false;
+	runtime.onRoundLifecycleMessage("World triggered \"Round_Start\"\n");
+	// Round_End prepares the generation, so the bots can already be in Hunt when it opens.
+	for (int tick = 0; tick < 320 && (task(0) != Task::GuardHostages || task(1) != Task::GuardHostages); ++tick)
+		advance(1);
+	queueHelpRecording = false;
+	return check(task(0) == Task::GuardHostages && task(1) == Task::GuardHostages,
+		"the first new-round replans may guard the new hostages");
 }
 
 bool testStatementQueue(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &engine, globalvars_t &globals)

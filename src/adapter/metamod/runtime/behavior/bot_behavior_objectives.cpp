@@ -1116,6 +1116,7 @@ void BotBehaviorRuntime::beginRoundPlantDecision()
 
 void BotBehaviorRuntime::beginMapPlantDecision()
 {
+	hostageRescueResult_ = {};
 	moraleResultRound_ = 0;
 	roundPlantDecision_ = {};
 	if (services_->service_globals() != nullptr &&

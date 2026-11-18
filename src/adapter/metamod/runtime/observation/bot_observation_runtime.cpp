@@ -944,7 +944,7 @@ void BotObservationRuntime::capturePublicMessage()
 			if (std::any_of(std::begin(tWins), std::end(tWins), matches))
 				services_->behavior_observeRoundWin(kTerroristTeam, publicMessageFrame_);
 			else if (std::any_of(std::begin(ctWins), std::end(ctWins), matches))
-				services_->behavior_observeRoundWin(kCounterTerroristTeam, publicMessageFrame_);
+				services_->behavior_observeRoundWin(kCounterTerroristTeam, publicMessageFrame_, matches("#All_Hostages_Rescued"));
 		}
 		return;
 	}

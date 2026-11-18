@@ -685,6 +685,11 @@
     "member": "moraleResultRound_"
   },
   {
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
+    "scope": "owner",
+    "member": "hostageRescueResult_"
+  },
+  {
     "header": "src/adapter/metamod/runtime/navigation/bot_navigation_runtime.hpp",
     "scope": "owner",
     "member": "dangerMemory_"

@@ -60,7 +60,7 @@ public:
 	}
 	void updateVoiceFeedback(bool force = false);
 	void observeRadioPreference(edict_t *recipient, bool ignored);
-	void observeRoundWin(int team, world::FrameIdentity frame);
+	void observeRoundWin(int team, world::FrameIdentity frame, bool rescuedHostages = false);
 	void resetMatchMorale();
 	void observeObstacleKeyValue(edict_t *entity, const KeyValueData *data);
 	void observeObstacleTouch(edict_t *entity, edict_t *other);
@@ -307,6 +307,7 @@ private:
 	void updateHostagePositions(std::size_t index, const compat::StateUpdateContext &context,
 		const HostagePositionMemory &initial);
 	void reactToHostageLoss(std::size_t index, bool allGone);
+	bool allHostagesRescued(world::FrameIdentity frame) const;
 	void updateScenarioNavigation(std::size_t index, const runtime::MovementPhysicsState &before,
 		compat::StateUpdateContext &context, compat::StateBehaviorInput &stateBehavior,
 		const compat::CompatibilityObservation &observation, compat::ScenarioBehaviorInput &scenario,
@@ -636,6 +637,7 @@ private:
 	runtime::LifecycleGeneration outgoingRadioMap_ = runtime::LifecycleSession::kInvalidGeneration;
 	runtime::LifecycleGeneration outgoingRadioRound_ = runtime::LifecycleSession::kInvalidGeneration;
 	objectives::RoundPlantDecision roundPlantDecision_{};
+	world::FrameIdentity hostageRescueResult_{};
 	std::uint32_t moraleResultRound_ = 0;
 	team::RoundObjectiveCoordinator managedTeamObjectiveCoordinator_{};
 	std::size_t managedTeamObjectiveAssignmentContext_ = NativeBotObservation::kClientSlotCount;

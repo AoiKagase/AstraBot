@@ -375,9 +375,9 @@ private:
 		behavior_.observeRadioPreference(recipient, ignored);
 	}
 	void observeBroadcastTeamScore(int team, int score, world::FrameIdentity frame) override;
-	void behavior_observeRoundWin(int team, world::FrameIdentity frame) override
+	void behavior_observeRoundWin(int team, world::FrameIdentity frame, bool rescuedHostages) override
 	{
-		behavior_.observeRoundWin(team, frame);
+		behavior_.observeRoundWin(team, frame, rescuedHostages);
 	}
 
 

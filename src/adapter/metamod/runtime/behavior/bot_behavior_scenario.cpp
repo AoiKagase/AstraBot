@@ -34,15 +34,29 @@ void BotBehaviorRuntime::resetMatchMorale()
 		actor.morale.newMatch();
 }
 
-void BotBehaviorRuntime::observeRoundWin(int team, world::FrameIdentity frame)
+bool BotBehaviorRuntime::allHostagesRescued(world::FrameIdentity frame) const
+{
+	if (!hostageRescueResult_.isValid() || hostageRescueResult_.mapGeneration != frame.mapGeneration)
+		return false;
+	// Round_End allocates the next generation before Round_Start opens it.
+	return hostageRescueResult_.roundGeneration == frame.roundGeneration ||
+		(services_->service_roundOver() && frame.roundGeneration > hostageRescueResult_.roundGeneration &&
+			frame.roundGeneration - hostageRescueResult_.roundGeneration == 1U);
+}
+
+void BotBehaviorRuntime::observeRoundWin(int team, world::FrameIdentity frame, bool rescuedHostages)
 {
 	const auto current = [&] {
 		const auto &life = services_->service_lifecycle();
 		return life.mapGeneration() == frame.mapGeneration && life.roundGeneration() == frame.roundGeneration &&
 			frame.tick == services_->service_adapterFrameCount() && !services_->service_roundOver();
 	};
-	if (!current() || moraleResultRound_ == frame.roundGeneration ||
+	if (!current() ||
 		services_->service_compatibilitySurface().configuration().mode != compat::RuntimeMode::Compatibility)
+		return;
+	if (rescuedHostages && team == kCounterTerroristTeam)
+		hostageRescueResult_ = frame;
+	if (moraleResultRound_ == frame.roundGeneration)
 		return;
 	moraleResultRound_ = frame.roundGeneration;
 	const auto handles = services_->service_managedBotHandles();
@@ -650,7 +664,8 @@ void BotBehaviorRuntime::updateHostagePositions(std::size_t index, const compat:
 {
 	auto &actor = actors_[index];
 	const auto engine = services_->service_engineFunctions();
-	if (!context.alive || !engine || !engine->pfnPEntityOfEntIndex || !engine->pfnTraceLine ||
+	if (!context.alive || allHostagesRescued(context.frame) || !engine || !engine->pfnPEntityOfEntIndex ||
+		!engine->pfnTraceLine ||
 		!(context.timestamp > actor.hostagePositions.nextCheck))
 		return;
 
@@ -1097,7 +1112,8 @@ void BotBehaviorRuntime::updateScenarioTeamwork(std::size_t index, const runtime
 			(renewHostageRescueGuard(index) || !current()))
 			return;
 		finishedDefense = actors_[index].scenarioPlanners.finishDefense(elapsed, reloading);
-		if (guardingHostages && !reloading && !actors_[index].hostagePositions.hasKnownPosition())
+		if (guardingHostages && !reloading &&
+			(allHostagesRescued(context.frame) || !actors_[index].hostagePositions.hasKnownPosition()))
 		{
 			actors_[index].scenarioPlanners.cancelHoldPosition();
 			finishedDefense = true;
@@ -1137,7 +1153,7 @@ void BotBehaviorRuntime::updateScenarioTeamwork(std::size_t index, const runtime
 	if (machine.state() == compat::CompatibilityStateId::Idle && !machine.attackOverlayActive() &&
 		action == compat::ScenarioAction::None && scenario.scenario == compat::PublicScenarioKind::Hostage &&
 		scenario.team == objectives::TeamRole::Terrorist && !services_->service_roundOver() &&
-		(selectHostageDefense(index, cooperative.rogue, scenario) || !current()))
+		!allHostagesRescued(context.frame) && (selectHostageDefense(index, cooperative.rogue, scenario) || !current()))
 		return;
 	if (actors_[index].scenarioDecisions.hideTask == compat::CompatibilityTaskId::GuardBombZone)
 	{
