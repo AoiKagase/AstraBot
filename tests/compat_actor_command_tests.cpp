@@ -1789,9 +1789,14 @@ bool testRuntimeBombSiteApproach(
 
 } // namespace
 
-int main(int argc, char **)
+int main(int argc, char **argv)
 {
 	(void)argc;
+#ifdef ASTRABOT_ACTOR_TEST_ARGS
+	ASTRABOT_ACTOR_TEST_ARGS(argc, argv);
+#else
+	(void)argv;
+#endif
 	using astrabot::metamod::CompatibilityCommandResult;
 	using astrabot::metamod::FakeClientHandle;
 	using astrabot::metamod::FakeClientResult;

@@ -43,6 +43,27 @@ int main()
 	using namespace astrabot::compat;
 	bool ok = true;
 	{
+		ScenarioBehaviorPlanner planner;
+		auto scenario = input();
+		ScenarioRadioObservation order{};
+		order.sequence = 1;
+		order.sender = {2, 1};
+		order.command = ScenarioRadioCommand::ReportIn;
+		order.senderHuman = true;
+		order.team = scenario.team;
+		scenario.radio = &order;
+		scenario.busy = true;
+		scenario.reactionSeconds = 0.25f;
+		scenario.timestamp = 1.49f;
+		planner.update(scenario);
+		ok &= check(!planner.takeReportRequest(scenario.frame), "a busy bot waits for the radio reaction delay");
+		scenario.timestamp = 1.5f;
+		++scenario.frame.tick;
+		planner.update(scenario);
+		ok &= check(planner.takeReportRequest(scenario.frame) && !planner.takeReportRequest(scenario.frame),
+			"a busy bot answers ReportIn once at the reaction boundary");
+	}
+	{
 		ScenarioBehaviorPlanner defender;
 		auto spot = target();
 		spot.inUseRange = false;

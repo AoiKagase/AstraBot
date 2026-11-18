@@ -169,6 +169,14 @@ int main()
 	};
 	check(testPlantPlan(), "plant plan timing, same-update cover ordering, cooldown and silent Follow completion");
 	check(testPlantingDefendRequest(), "planting reports die at round end or complete with captured DefendHere position");
+	check(reportingInContactPhrase(true, {2, 1}, 0, 0) == ChatterPhrase::InCombat &&
+		reportingInContactPhrase(true, {3, 1}, 0, 0) == ChatterPhrase::Help,
+		"ReportingIn counts the reporting bot when deciding if it needs help");
+	check(reportingInContactPhrase(false, {}, 9.5f, 9.0f) == ChatterPhrase::EnemyDown &&
+		reportingInContactPhrase(false, {}, 9.49f, 9.0f) == ChatterPhrase::EnemySpotted &&
+		reportingInContactPhrase(false, {}, 10.0f, 9.0f) == ChatterPhrase::EnemySpotted &&
+		reportingInContactPhrase(false, {}, 0.0f, 10.0f) == ChatterPhrase::Clear,
+		"ReportingIn preserves native death timestamp and last sight boundaries");
 	ChatterRadioCatalog catalog;
 	const char db[] = "// source-owned resource supplied by host\nChatter EnemySpotted\n Radio "
 					  "EVENT_RADIO_ENEMY_SPOTTED\n enemy.wav\nEnd\nChatter Affirmative\n Radio "
@@ -313,8 +321,57 @@ int main()
 	silenceInput.vipEscaping = false;
 	silenceInput.nearbyFriends = 0;
 	silenceInput.now = 31.5f;
-	check(directSilence.update(silenceInput, catalog).phrase == ChatterPhrase::RequestReport,
+	const auto reportRequest = directSilence.update(silenceInput, catalog);
+	check(reportRequest.phrase == ChatterPhrase::RequestReport,
 		"direct radio does not reset the independent Chatter silence interval");
+	ChatterPlaybackInput reportPlayback{};
+	reportPlayback.now = silenceInput.now;
+	reportPlayback.friendsRemaining = 1;
+	const auto reportStep = directSilence.statements().advance(reportRequest.statement, reportPlayback);
+	check(!reportStep.completion.natural && directSilence.statements().finishPart(reportStep.token, 0),
+		"the request is spoken before it reaches teammates");
+	reportPlayback.now += 0.125f;
+	const auto delivered = directSilence.statements().advance(reportRequest.statement, reportPlayback).completion;
+	check(delivered.natural && delivered.meme.kind == ChatterMemeKind::RequestReport,
+		"natural completion of RequestReport delivers a report request");
+	const auto calm = reportingInStatement(30, false, {}, 0, 10, 3, 5);
+	const auto fighting = reportingInStatement(30, true, {2, 0}, 0, 10, 3, 5);
+	ChatterRadioCatalog taskCatalog;
+	const char taskPhrases[] = "Chatter Clear End Chatter GoingToPlantBomb End Chatter DefusingBomb End Chatter EscortingHostages End";
+	check(taskCatalog.loadText(taskPhrases, sizeof(taskPhrases) - 1), "load task report phrases");
+	for (const auto &task : {std::make_pair(CompatibilityTaskId::PlantBomb, ChatterPhrase::GoingToPlantBomb),
+			 std::make_pair(CompatibilityTaskId::DefuseBomb, ChatterPhrase::DefusingBomb),
+			 std::make_pair(CompatibilityTaskId::RescueHostages, ChatterPhrase::EscortingHostages)})
+	{
+		OutgoingRadioScheduler reporter;
+		auto reporterInput = silenceInput;
+		reporterInput.now = calm.created;
+		reporterInput.plantGoalPlace = 17;
+		reporterInput.plantGoalPlacePhrase = 9;
+		reporter.reportIn(calm, task.first, reporterInput, taskCatalog);
+		std::vector<ChatterPhrase> parts;
+		reporter.statements().visitSchedules([&](const ChatterScheduleEntry &entry)
+		{
+			ChatterPendingStatement pending{};
+			if (reporter.statements().read({entry.order, entry}, &pending))
+			{
+				parts.push_back(pending.request.phrase);
+				if (pending.request.phrase == ChatterPhrase::GoingToPlantBomb)
+					check(entry.place == 0 && pending.request.criteriaPlace == 0 &&
+						pending.request.meme.kind == ChatterMemeKind::Follow, "reported plant plan uses undefined place");
+			}
+			return true;
+		});
+		check(parts == std::vector<ChatterPhrase>{task.second, ChatterPhrase::Clear},
+			"task-specific announcement precedes the delayed contact report");
+	}
+	check(calm.start == 32 && calm.expires == 40 && calm.topic == ChatterStatementTopic::Information &&
+		calm.program.parts[0].kind == ChatterPartKind::Place && calm.program.parts[0].placePhrase == 5 &&
+		calm.program.parts[1].phrase == ChatterPhrase::Clear && calm.meme.kind == ChatterMemeKind::None,
+		"a quiet report announces the receiver location then contact status after two seconds");
+	check(fighting.start == 30 && fighting.expires == 40 && fighting.program.parts[1].phrase == ChatterPhrase::Help &&
+		fighting.meme.kind == ChatterMemeKind::Help && fighting.meme.place == 3,
+		"an outnumbered receiver immediately reports and attaches a Help request for its own location");
 	OutgoingRadioScheduler blockedGeneric;
 	auto blockedInput = afterVip;
 	blockedInput.frame.roundGeneration = 39;

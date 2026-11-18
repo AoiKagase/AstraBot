@@ -141,8 +141,8 @@ int main()
 	context.alive = true;
 	context.now = 50;
 	memory.seedRetaliation(context, enemy, entity, {100, 200, 36});
-	memory.markDead();
-	check(memory.enemyDead(context) && !memory.shouldAim(context),
+	memory.markDead(context);
+	check(memory.enemyDead(context) && !memory.shouldAim(context) && memory.enemyDeathTimestamp(context) == 50,
 		"public death cancels aim even if source revives before update");
 	memory.rememberVisible(context, enemy, entity, {300, 400, 36});
 	check(memory.enemyDead(context), "same dead receipt cannot be resurrected by stale visibility");

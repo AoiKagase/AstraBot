@@ -221,9 +221,10 @@ void BotBehaviorRuntime::observePublicDeath(std::size_t index, const world::Fram
 	for (std::size_t observer = 0; observer < actors_.size(); ++observer)
 	{
 		auto &actor = actors_[observer];
-		if (actor.enemyReaction.source(reactionContext(observer)).id == index + 1U)
+		const auto context = reactionContext(observer);
+		if (actor.enemyReaction.source(context).id == index + 1U)
 		{
-			actor.enemyReaction.markDead();
+			actor.enemyReaction.markDead(context);
 		}
 		if (actor.enemyWeaponSource.id == index + 1U)
 		{

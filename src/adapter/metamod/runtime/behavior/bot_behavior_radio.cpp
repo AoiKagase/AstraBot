@@ -16,10 +16,40 @@ constexpr int kCommandRadioMenu = 1;
 constexpr int kGroupRadioMenu = 2;
 constexpr unsigned kVipMapPrefixLength = 3U;
 constexpr int kMaximumClientSlots = 32;
+std::uint32_t chatterPlacePhrase(const nav::NavSnapshot &navigation, const compat::ChatterRadioCatalog &catalog,
+	std::uint16_t place)
+{
+	if (place && navigation.isValid())
+		for (const auto &name : navigation.document()->places())
+			if (name.id == place)
+			{
+				const auto id = catalog.nameToId(name.name);
+				return id || catalog.hasPlaceBefore() ? id : compat::defaultChatterPlaceId(name.name);
+			}
+	return 0;
+}
 // Keep literal evaluation precision on x87; each macro is undefined below.
 #define ASTRABOT_BOT_BEHAVIOR_RADIO_NEXT_PHRASE_GAP_SECONDS 0.1f
 }
 using namespace runtime_detail;
+
+compat::RadioContactCounts BotBehaviorRuntime::livingRadioPeers(const edict_t *self, int ownTeam) const
+{
+	compat::RadioContactCounts counts{};
+	for (int slot = 1; slot <= (std::min)(kMaximumClientSlots, services_->service_globals()->maxClients); ++slot)
+	{
+		auto *player = services_->service_engineFunctions()->pfnPEntityOfEntIndex(slot);
+		if (!player || player == self || player->free || !(player->v.flags & FL_CLIENT) || player->serialnumber < 0 ||
+			(player->v.flags & (FL_SPECTATOR | FL_DORMANT)) || player->v.deadflag != DEAD_NO || !(player->v.health > 0))
+			continue;
+		if (services_->observation_resolvePlayerTeam(player) == ownTeam)
+			++counts.friends;
+		else if (services_->observation_resolvePlayerTeam(player) == kTerroristTeam ||
+			services_->observation_resolvePlayerTeam(player) == kCounterTerroristTeam)
+			++counts.enemies;
+	}
+	return counts;
+}
 
 bool BotBehaviorRuntime::helpGoalCurrent(std::size_t index) const
 {
@@ -460,6 +490,34 @@ struct BotBehaviorRuntime::TeammateRequestEnvironment : compat::IHelpRequestEnvi
 	}
 	void acknowledge(compat::ChatterPhrase phrase)
 	{
+		compat::ChatterStatementRequest request{};
+		request.source = compat::ChatterScheduleSource::Generic;
+		request.topic = compat::ChatterStatementTopic::MyIntention;
+		request.phrase = phrase;
+		request.created = receipt.context.now;
+		request.start = request.created;
+		request.readyAt = request.created;
+		request.expires = request.created + 3.0f;
+		admit(request);
+	}
+	void reportingIn(int team)
+	{
+		const auto place = ownPlace();
+		if (!current())
+			return;
+		const auto living = owner.livingRadioPeers(receipt.entity, team);
+		if (!current())
+			return;
+		const auto &actor = owner.actors_[receiver];
+		const auto &context = receipt.context;
+		const auto nearby = actor.outgoingRadioContactMemory.counts(receipt.actor, context.frame, context.now,
+			living.friends, living.enemies);
+		admit(compat::reportingInStatement(context.now, actor.managedBotStateMachines.attackOverlayActive(),
+			nearby, actor.enemyReaction.enemyDeathTimestamp(context), context.now - actor.lastVisibleEnemyTimes,
+			place, chatterPlacePhrase(navigation, owner.outgoingChatterCatalog_, place)));
+	}
+	void admit(const compat::ChatterStatementRequest &request)
+	{
 		if (!current() || !receipt.context.alive)
 			return;
 		const auto engine = owner.services_->service_engineFunctions();
@@ -470,15 +528,19 @@ struct BotBehaviorRuntime::TeammateRequestEnvironment : compat::IHelpRequestEnvi
 		const auto admission = owner.chatterAdmission(receiver);
 		if (!current())
 			return;
-		compat::ChatterStatementRequest request{};
-		request.source = compat::ChatterScheduleSource::Generic;
-		request.topic = compat::ChatterStatementTopic::MyIntention;
-		request.phrase = phrase;
-		request.created = receipt.context.now;
-		request.start = request.created;
-		request.readyAt = request.created;
-		request.expires = request.created + 3.0f;
 		auto &actor = owner.actors_[receiver];
+		if (request.topic == compat::ChatterStatementTopic::Information)
+		{
+			compat::OutgoingRadioInput input{};
+			input.admission = admission;
+			input.verbosity = mode;
+			input.speaking = actor.confirmedSpeech.scheduledStatement();
+			input.now = receipt.context.now;
+			input.roundOver = owner.services_->service_roundOver();
+			actor.outgoingRadioSchedulers.reportIn(request, actor.managedBotStateMachines.task(), input,
+				owner.outgoingChatterCatalog_);
+			return;
+		}
 		actor.outgoingRadioSchedulers.statements().admit(
 			request, admission, owner.outgoingChatterCatalog_, mode, actor.confirmedSpeech.scheduledStatement());
 	}
@@ -488,7 +550,7 @@ void BotBehaviorRuntime::transmitTeammateRequest(
 	std::size_t sender, compat::ChatterMeme meme, const std::function<bool()> &current)
 {
 	if ((meme.kind != compat::ChatterMemeKind::Help && meme.kind != compat::ChatterMemeKind::Follow &&
-		 meme.kind != compat::ChatterMemeKind::DefendHere) ||
+		 meme.kind != compat::ChatterMemeKind::DefendHere && meme.kind != compat::ChatterMemeKind::RequestReport) ||
 		services_->service_compatibilitySurface().configuration().mode != compat::RuntimeMode::Compatibility)
 		return;
 	const auto engine = services_->service_engineFunctions();
@@ -553,8 +615,10 @@ void BotBehaviorRuntime::transmitTeammateRequest(
 			(void)compat::respondToHelpRequest({meme.place, 3000.0f}, environment);
 		else if (meme.kind == compat::ChatterMemeKind::Follow)
 			(void)compat::respondToFollowRequest(environment);
-		else
+		else if (meme.kind == compat::ChatterMemeKind::DefendHere)
 			(void)compat::respondToDefendRequest(meme.position, environment);
+		else
+			environment.reportingIn(team);
 	}
 }
 
@@ -802,21 +866,9 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index, const Plan
 	input.noiseReport = actors_[index].noiseReport;
 	input.reactionSeconds = actors_[index].managedProfiles.reactionTimeSeconds;
 	input.inCombat = actors_[index].managedBotStateMachines.attackOverlayActive();
-	for (int slot = 1; slot <= (std::min)(kMaximumClientSlots, services_->service_globals()->maxClients); ++slot)
-	{
-		edict_t *player = services_->service_engineFunctions()->pfnPEntityOfEntIndex(slot);
-		if (player == nullptr || player == handle.entity || player->free || (player->v.flags & FL_CLIENT) == 0 ||
-			player->serialnumber < 0 || (player->v.flags & (FL_SPECTATOR | FL_DORMANT)) != 0 ||
-			player->v.deadflag != DEAD_NO || !(player->v.health > 0))
-			continue;
-		if (services_->observation_resolvePlayerTeam(player) == input.team)
-		{
-			++input.friendCount;
-		}
-		else if (services_->observation_resolvePlayerTeam(player) == kTerroristTeam ||
-			services_->observation_resolvePlayerTeam(player) == kCounterTerroristTeam)
-			++input.enemiesRemaining;
-	}
+	const auto living = livingRadioPeers(handle.entity, input.team);
+	input.friendCount = living.friends;
+	input.enemiesRemaining = living.enemies;
 	if (!receiptCurrent())
 		return;
 	// Count the observer's current public FOV/LOS/smoke-filtered contacts. A
@@ -836,13 +888,7 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index, const Plan
 	input.nearbyFriends = contacts.friends;
 	const auto metadataPlace = [&](std::uint16_t place)
 	{
-		for (const auto &name : reportNav.document()->places())
-			if (name.id == place)
-			{
-				const auto id = outgoingChatterCatalog_.nameToId(name.name);
-				return id || outgoingChatterCatalog_.hasPlaceBefore() ? id : compat::defaultChatterPlaceId(name.name);
-			}
-		return 0U;
+		return chatterPlacePhrase(reportNav, outgoingChatterCatalog_, place);
 	};
 	if (reportNav.isValid() && reportNav.mapGeneration() == input.frame.mapGeneration)
 	{
@@ -930,6 +976,8 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index, const Plan
 			decision.action == compat::ScenarioAction::Guard || decision.action == compat::ScenarioAction::Hunt ||
 			decision.action == compat::ScenarioAction::Escape;
 		input.humanOrderHelp = order.command == compat::ScenarioRadioCommand::NeedBackup;
+		if (order.command == compat::ScenarioRadioCommand::ReportIn)
+			input.humanOrderAccepted = false;
 		outgoingTeamLastSpeech_[input.team] = (std::max)(outgoingTeamLastSpeech_[input.team], order.receivedTime);
 	}
 	const char *mapName = services_->service_engineFunctions()->pfnSzFromIndex != nullptr
@@ -991,6 +1039,13 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index, const Plan
 	input.verbosity = mode;
 	input.speaking = actors_[index].confirmedSpeech.scheduledStatement();
 	actors_[index].outgoingRadioSchedulers.prepare(input, outgoingChatterCatalog_);
+	if (input.alive && actors_[index].scenarioPlanners.takeReportRequest(input.frame))
+	{
+		const auto report = compat::reportingInStatement(input.now, input.inCombat, contacts,
+			actors_[index].enemyReaction.enemyDeathTimestamp(receiptContext),
+			input.now - actors_[index].lastVisibleEnemyTimes, input.ownPlace, input.ownPlacePhrase);
+		actors_[index].outgoingRadioSchedulers.reportIn(report, machine.task(), input, outgoingChatterCatalog_);
+	}
 	const bool direct = actors_[index].outgoingRadioSchedulers.hasDirect();
 	bool scanCurrent = true;
 	compat::ChatterScheduleEntry selectedStatement{};

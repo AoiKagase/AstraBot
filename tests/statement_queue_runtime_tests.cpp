@@ -1,10 +1,17 @@
 #include "plugin/plugin_runtime.hpp"
+#include <cstring>
 namespace
 {
+bool reportingInFixture = false;
+void selectStatementFixture(int argc, char **argv)
+{
+	reportingInFixture = argc == 2 && std::strcmp(argv[1], "--reporting-in") == 0;
+}
 bool testStatementQueue(astrabot::metamod::PluginRuntime &, enginefuncs_t &, globalvars_t &);
 void setupStatementQueue(enginefuncs_t &, globalvars_t &);
 }
 #define ASTRABOT_EXTRA_ACTOR_TEST testStatementQueue
+#define ASTRABOT_ACTOR_TEST_ARGS selectStatementFixture
 #define ASTRABOT_ACTOR_ENGINE_SETUP setupStatementQueue
 #define ASTRABOT_ACTOR_PROFILE_TEXT                                                                                    \
 	"Any { Name = \"Queue Speaker\" Team = any Difficulty = 1 Skill = 70 VoiceBank = queue_speech.db }\n"              \
@@ -52,6 +59,8 @@ float queuePlanRandom(float low, float high);
 int queueMessage = 0;
 edict_t *queueRecipient = nullptr;
 std::vector<std::string> queueSamples;
+int queueSpeakerSlot = 0;
+std::vector<std::pair<int, std::string>> reportAudio;
 unsigned queueWaveProbes = 0;
 std::vector<std::string> queueLoads;
 const char *queueCvar(const char *name)
@@ -74,7 +83,7 @@ unsigned char *queueLoad(char *name, int *length)
 			"Chatter Help Radio EVENT_RADIO_NEED_BACKUP help.wav End "
 			"Chatter EscortingHostages escort.wav End Chatter AgreeWithPlan agree.wav End Chatter OnMyWay way.wav End "
 			"Place BombsiteA site.wav End Chatter GoingToPlantBomb Place UNDEFINED plantplan_default.wav Place BombsiteA plantplan.wav End Chatter CoveringFriend coverfriend.wav End "
-			"Chatter PlantingBomb planting.wav End";
+			"Chatter PlantingBomb planting.wav End Chatter Clear clear.wav End";
 	}
 	if (std::strcmp(name, "queue_speech.db") == 0)
 	{
@@ -82,16 +91,19 @@ unsigned char *queueLoad(char *name, int *length)
 			"BaseDir radio/test/ Chatter Affirmative Place UNDEFINED Count 3 ack_wrong.wav Count Many ack.wav End "
 			"Chatter Help Place UNDEFINED help.wav End Chatter OnMyWay Place UNDEFINED way.wav End "
 			"Place BombsiteA site.wav End Chatter GoingToPlantBomb Place UNDEFINED plantplan_default.wav Place BombsiteA plantplan.wav End Chatter CoveringFriend coverfriend.wav End "
-			"Chatter PlantingBomb planting.wav End";
+			"Chatter PlantingBomb planting.wav End Chatter Clear clear.wav End";
 	}
 	if (!text)
 	{
 		*length = 0;
 		return nullptr;
 	}
-	*length = static_cast<int>(std::strlen(text));
+	std::string contents(text);
+	if (reportingInFixture)
+		contents += " Chatter RequestReport Radio EVENT_RADIO_REPORT_IN_TEAM request.wav End";
+	*length = static_cast<int>(contents.size());
 	auto *bytes = new unsigned char[static_cast<std::size_t>(*length) + 1];
-	std::memcpy(bytes, text, static_cast<std::size_t>(*length) + 1);
+	std::memcpy(bytes, contents.c_str(), static_cast<std::size_t>(*length) + 1);
 	return bytes;
 }
 void queueFree(void *memory)
@@ -131,14 +143,17 @@ void queueBegin(int, int type, const float *, edict_t *recipient)
 	queueMessage = type;
 	queueRecipient = recipient;
 }
-void queueNumber(int)
+void queueNumber(int number)
 {
+	queueSpeakerSlot = number;
 }
 void queueString(const char *sample)
 {
 	if (queueMessage == 101 && queueRecipient == &gEntities[0])
 	{
 		queueSamples.emplace_back(sample);
+		if (reportingInFixture)
+			reportAudio.emplace_back(queueSpeakerSlot, sample);
 		if (queueHelpRecording && queueClock)
 			queueHelpSamples.emplace_back(sample, queueClock->time);
 	}
@@ -1802,6 +1817,63 @@ bool testStatementQueue(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t
 			check(queueSamples == std::vector<std::string>{"radio/test/ack.wav", "radio/test/help.wav"},
 				"both statements survive simultaneous admission, fixed count criteria and later OFF mode")))
 		return false;
+	if (reportingInFixture)
+	{
+		queueEnemiesVisible = false;
+		queueMode = "normal";
+		runtime.beginRoundGeneration();
+		step(12.0f);
+		queueSamples.clear();
+		hooks.pfnMessageBegin(MSG_ONE, 101, nullptr, &self);
+		hooks.pfnWriteByte(5);
+		hooks.pfnWriteString("%!MRAD_REPORTIN");
+		hooks.pfnWriteShort(100);
+		hooks.pfnMessageEnd();
+		for (int i = 0; i < 48; ++i)
+			step(.125f);
+		if (!check(std::count(queueSamples.begin(), queueSamples.end(), "radio/test/clear.wav") == 1 &&
+			std::count(queueSamples.begin(), queueSamples.end(), "radio/test/ack.wav") == 0,
+			"a human report-in requests one audible clear report from a quiet teammate"))
+			return false;
+		runtime.setCompatibilityFloat("bot_quota", 2);
+		if (runtime.executeCompatibilityCommand(request("bot_add_t", 1U, "Queue Peer")) !=
+			metamod::CompatibilityCommandResult::Handled)
+			return false;
+		gEntities[1].v.team = 1;
+		gEntities[1].v.flags = FL_CLIENT | FL_FAKECLIENT | FL_ONGROUND;
+		gEntities[1].v.health = 100;
+		gEntities[1].v.deadflag = DEAD_NO;
+		gEntities[1].v.solid = SOLID_SLIDEBOX;
+		gEntities[1].v.movetype = MOVETYPE_WALK;
+		gEntities[1].v.maxspeed = 250;
+		gEntities[1].v.view_ofs = Vector(0, 0, 17);
+		setCvarFloat("mp_buytime", 0);
+		setCvarFloat("bot_stop", 0);
+		team(2, "TERRORIST");
+		runtime.beginRoundGeneration();
+		reportAudio.clear();
+		int requester = 0;
+		std::size_t read = 0;
+		for (int i = 0; i < 400; ++i)
+		{
+			step(.125f);
+			for (; read < reportAudio.size(); ++read)
+			{
+				const auto &spoken = reportAudio[read];
+				if (!requester && spoken.second == "radio/test/request.wav")
+					requester = spoken.first;
+				if (requester && spoken.first != requester && spoken.second == "radio/test/clear.wav")
+					return true;
+			}
+		}
+		for (const auto &spoken : reportAudio)
+			std::fprintf(stderr, "slot %d: %s\n", spoken.first, spoken.second.c_str());
+		auto &ports = static_cast<metamod::BotBehaviorServices &>(runtime);
+		std::fprintf(stderr, "receiver managed=%d name=%d created=%d team=%d updates=%u\n",
+			int(ports.service_managedBotSlots()[1]), gEntities[1].v.netname, gCreateCount,
+			ports.observation_resolvePlayerTeam(&gEntities[1]), ports.service_managedBotFullUpdateSequences()[1]);
+		return check(false, "after team silence one bot asks for a report and its teammate audibly answers");
+	}
 	return testQueueRadioReset(runtime, engine) && testPlanAgreementRuntime(runtime, globals) &&
 		testProductionNavCenters(runtime) && testPublicNavLadders(runtime, engine) &&
 		testPublicNativeLadderTrace(engine) && testNativeHelpDeathMemory(runtime, engine, globals) &&

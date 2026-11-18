@@ -47,7 +47,8 @@ enum class ScenarioRadioCommand
 	NeedBackup,
 	HoldPosition,
 	GoGoGo,
-	GetOut
+	GetOut,
+	ReportIn
 };
 struct ScenarioTarget
 {
@@ -270,6 +271,14 @@ public:
 		return pendingRadio_.sender;
 	}
 
+	bool takeReportRequest(const world::FrameIdentity &frame)
+	{
+		const bool due = reportRequested_ && frame_.mapGeneration == frame.mapGeneration &&
+			frame_.roundGeneration == frame.roundGeneration && frame_.tick == frame.tick;
+		reportRequested_ = false;
+		return due;
+	}
+
 	bool hasFollowingLeader(const ScenarioBehaviorInput &input) const
 	{
 		const auto &leader = followingLeader(input);
@@ -323,6 +332,7 @@ public:
 		}
 		actor_ = input.actor;
 		frame_ = input.frame;
+		reportRequested_ = false;
 		timestamp_ = input.timestamp;
 		if (!input.lifeKnown || !input.alive)
 		{
@@ -338,6 +348,11 @@ public:
 			input.pendingRadioSenderValidation.actor == pendingRadio_.sender &&
 			!input.pendingRadioSenderValidation.valid)
 			pendingRadio_ = {};
+		if (input.radio && input.radio->command == ScenarioRadioCommand::ReportIn)
+			receiveRadio(input);
+		if (pendingRadio_.command == ScenarioRadioCommand::ReportIn &&
+			(!input.radio || input.radio->sequence <= radioSequence_))
+			applyRadio(input, &result);
 		if (input.scenario == PublicScenarioKind::Bomb && input.bombPlantedKnown && input.bombPlanted &&
 			targetKnown(input, input.bomb) && (input.alreadyEscapingFromBomb || autoEscapeRequested(input)))
 			return targetDecision(
@@ -446,7 +461,8 @@ private:
 			return;
 		}
 		if (!input.radio->sender.isValid() || input.radio->sender == input.actor || input.radio->team != input.team ||
-			!input.radio->senderHuman || input.busy || !std::isfinite(input.radio->receivedTime) ||
+			!input.radio->senderHuman || (input.busy && input.radio->command != ScenarioRadioCommand::ReportIn) ||
+			!std::isfinite(input.radio->receivedTime) ||
 			input.radio->receivedTime < 0.0f || input.radio->receivedTime > input.timestamp)
 		{
 			return;
@@ -470,7 +486,8 @@ private:
 			pendingRadio_ = {};
 			return false;
 		}
-		if (input.busy || (input.rogue && !following_))
+		const bool report = pendingRadio_.command == ScenarioRadioCommand::ReportIn;
+		if (!report && (input.busy || (input.rogue && !following_)))
 		{
 			pendingRadio_ = {};
 			return false;
@@ -485,6 +502,9 @@ private:
 		pendingRadio_ = {};
 		switch (order.command)
 		{
+		case ScenarioRadioCommand::ReportIn:
+			reportRequested_ = !input.rogue || following_;
+			return false;
 		case ScenarioRadioCommand::FollowMe:
 		case ScenarioRadioCommand::CoverMe:
 		case ScenarioRadioCommand::StickTogether:
@@ -691,6 +711,7 @@ private:
 	bool followPermissionInferred_ = false;
 	bool followingTeammate_ = false;
 	bool holding_ = false;
+	bool reportRequested_ = false;
 	float holdDuration_ = -1.0f;
 	float ambushDelay_ = 0.0f;
 	float firstHeardEnemyTime_ = -1.0f;

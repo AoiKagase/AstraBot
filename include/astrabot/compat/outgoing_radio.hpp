@@ -5,6 +5,7 @@
 #include "astrabot/compat/noise_report.hpp"
 #include "astrabot/compat/chatter_schedule.hpp"
 #include "astrabot/compat/chatter_statements.hpp"
+#include "astrabot/compat/state_machine.hpp"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -28,6 +29,34 @@ struct RadioContactCounts
 	int enemies = 0;
 	int friends = 0;
 };
+
+inline ChatterPhrase reportingInContactPhrase(bool attacking, RadioContactCounts nearby,
+	float enemyDeathTimestamp, float timeSinceLastSawEnemy)
+{
+	if (attacking)
+		return nearby.enemies > nearby.friends + 1 ? ChatterPhrase::Help : ChatterPhrase::InCombat;
+	// ReportingIn compares the recorded death timestamp directly with these bounds.
+	if (enemyDeathTimestamp < 10.0f && enemyDeathTimestamp >= timeSinceLastSawEnemy + 0.5f)
+		return ChatterPhrase::EnemyDown;
+	return timeSinceLastSawEnemy < 10.0f ? ChatterPhrase::EnemySpotted : ChatterPhrase::Clear;
+}
+
+inline ChatterStatementRequest reportingInStatement(float now, bool attacking, RadioContactCounts contacts,
+	float enemyDeathTimestamp, float timeSinceLastSawEnemy, std::uint16_t place, std::uint32_t placePhrase)
+{
+	ChatterStatementRequest report{};
+	report.source = ChatterScheduleSource::Generic;
+	report.topic = ChatterStatementTopic::Information;
+	report.created = now;
+	report.start = attacking ? now : now + 2.0f;
+	report.expires = now + 10.0f;
+	report.phrase = reportingInContactPhrase(attacking, contacts, enemyDeathTimestamp, timeSinceLastSawEnemy);
+	report.program.append({ChatterPartKind::Place, ChatterPhrase::None, place, placePhrase});
+	report.program.append({ChatterPartKind::Fixed, report.phrase, 0, 0});
+	if (report.phrase == ChatterPhrase::Help)
+		report.meme = {ChatterMemeKind::Help, place};
+	return report;
+}
 
 // CSBot's nearby counts are a three-second visual watch window, not a
 // distance radius. Retain only contacts actually seen by this observer.
@@ -182,7 +211,7 @@ public:
 		constexpr int kAcknowledgementBaseSeconds = 1, kAcknowledgementReactionScale = 2,
 					  kAcknowledgementLifetimeSeconds = 3;
 		constexpr int kVipReportCooldownSeconds = 30, kVipFollowLifetimeSeconds = 10, kHelpCooldownSeconds = 10;
-		constexpr int kReportLifetimeSeconds = 10, kEscortCooldownSeconds = 10, kEscortReportLifetimeSeconds = 5,
+		constexpr int kReportLifetimeSeconds = 10,
 					  kTeamSilenceSeconds = 30;
 		constexpr float kEnemyReportDelaySeconds = 2;
 		if (!in.actor.isValid() || !in.frame.isValid() || !std::isfinite(in.now) || in.now < 0)
@@ -285,11 +314,8 @@ public:
 				queue(ChatterPhrase::WhereIsTheBomb, in.now, kReportLifetimeSeconds, in, catalog);
 				askedBomb_ = true;
 			}
-			if (in.escortingHostages && (lastEscort_ < 0 || in.now - lastEscort_ >= kEscortCooldownSeconds))
-			{
-				queue(ChatterPhrase::EscortingHostages, in.now, kEscortReportLifetimeSeconds, in, catalog);
-				lastEscort_ = in.now;
-			}
+			if (in.escortingHostages)
+				reportEscortingHostages(in, catalog);
 			const float silence = in.teamLastSpeech >= 0 ? in.teamLastSpeech : (lastSent_ >= 0 ? lastSent_ : start_);
 			if (in.enemiesRemaining > 0 && in.nearbyFriends != in.friendCount && in.now - silence > kTeamSilenceSeconds)
 				queue(ChatterPhrase::RequestReport, in.now, kReportLifetimeSeconds, in, catalog);
@@ -504,6 +530,30 @@ public:
 		lastPlan_ = in.now;
 		queue(ChatterPhrase::GoingToPlantBomb, in.now, 10.0f, in, catalog, in.plantGoalPlace, in.now);
 	}
+	void reportIn(const ChatterStatementRequest &report, CompatibilityTaskId task, const OutgoingRadioInput &in,
+		const ChatterRadioCatalog &catalog)
+	{
+		switch (task)
+		{
+		case CompatibilityTaskId::PlantBomb:
+		{
+			auto plan = in;
+			plan.plantGoalPlace = 0;
+			plan.plantGoalPlacePhrase = 0;
+			goingToPlantBomb(plan, catalog);
+			break;
+		}
+		case CompatibilityTaskId::DefuseBomb:
+			queue(ChatterPhrase::DefusingBomb, in.now, 3.0f, in, catalog);
+			break;
+		case CompatibilityTaskId::RescueHostages:
+			reportEscortingHostages(in, catalog);
+			break;
+		default:
+			break;
+		}
+		pending_.admit(report, admission(in), catalog, in.verbosity, in.speaking);
+	}
 	void discardPending()
 	{
 		pending_.clear();
@@ -513,6 +563,15 @@ public:
 	}
 
 private:
+	void reportEscortingHostages(const OutgoingRadioInput &in, const ChatterRadioCatalog &catalog)
+	{
+		constexpr int kEscortCooldownSeconds = 10, kEscortReportLifetimeSeconds = 5;
+		if (!in.roundOver && (lastEscort_ < 0 || in.now - lastEscort_ >= kEscortCooldownSeconds))
+		{
+			queue(ChatterPhrase::EscortingHostages, in.now, kEscortReportLifetimeSeconds, in, catalog);
+			lastEscort_ = in.now;
+		}
+	}
 	void resetPlans()
 	{
 		lastPlan_ = -1;
@@ -584,6 +643,10 @@ private:
 			request.meme = {ChatterMemeKind::Help, in.ownPlace};
 			request.program.append({ChatterPartKind::Place, ChatterPhrase::None, in.ownPlace, in.ownPlacePhrase});
 			request.program.append({ChatterPartKind::Fixed, ChatterPhrase::Help, 0, 0});
+		}
+		else if (phrase == ChatterPhrase::RequestReport)
+		{
+			request.meme = {ChatterMemeKind::RequestReport, 0};
 		}
 		else if (phrase == ChatterPhrase::GoingToPlantBomb)
 		{

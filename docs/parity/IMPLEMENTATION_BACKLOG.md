@@ -36,7 +36,7 @@ The user requests01 onward in order, each repaired unit committed and locally FF
 |07|援護要請の行動連動|実装・オフライン検証済み。自然完了Help伝達、共有Rogue／任務／距離／Place判断、固定援護目標と任務保持、公開ラダー経路／実コマンドを接続。Windows137/137、Linux135/136（既知22のみ）。旧トレースは保持し、独立参照ビルド由来の厳密補正で両OS149075行一致。統合記録はunit07 session RESULT.json。実機25は未実施|
 |08|追従要請の行動連動|実装・オフライン検証済み。設置計画の自然完了からFollowを伝達し、Rogue・Busy・SAFEST距離を判定。追従相手の移動と接続IDを追跡し、CoveringFriendで応答。Windows138/138、Linux136/137（既知22のみ）。Follow状態全体の監査は23、実機受入れは25|
 |09|防衛要請の行動連動|設置報告完了時にDefendHereを伝達。発話時の位置から防衛地点を選び、地点指定と近傍探索の応答、移動、到着、待機期限を検証。Windows139/139、Linux137/138（既知22のみ）。Hide中の追従再開や経路再計算を含む状態全体の監査は23、実機受入れは25|
-|10|状況報告応答|RequestReport／ReportingIn|
+|10|状況報告応答|人間のReportInとBotのRequestReportから戦況を発話。位置、交戦状態、味方の人数、直近の敵の記録、設置・解除・護送任務を反映。Windows140/140、Linux138/139（既知22のみ）。落下C4と人質の警備任務に固有の報告は11・12で接続。実機受入れは25|
 
 | ID | 修正単位 | 現在の作業／残件 |
 |---|---|---|

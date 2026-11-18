@@ -221,10 +221,19 @@ public:
 		ignoreUntil_ = -1;
 	}
 
-	void markDead()
+	void markDead(const ReactionContext &context)
 	{
+		if (!matches(context) || !enemy_.isValid())
+			return;
+		if (!enemyDead_)
+			enemyDeathTimestamp_ = context.now;
 		enemyDead_ = true;
 		eventActive_ = true;
+	}
+
+	float enemyDeathTimestamp(const ReactionContext &context) const
+	{
+		return matches(context) ? enemyDeathTimestamp_ : 0.0f;
 	}
 
 	bool enemyDead(const ReactionContext &context) const
@@ -354,6 +363,7 @@ private:
 		enemy_ = enemy;
 		source_ = source;
 		enemyDead_ = false;
+		enemyDeathTimestamp_ = 0.0f;
 		position_ = point;
 		lastSaw_ = context.now;
 		return true;
@@ -367,6 +377,7 @@ private:
 	world::ActorKey pursuitEnemy_{};
 	float safeTime_ = -1;
 	float lastSaw_ = -1;
+	float enemyDeathTimestamp_ = 0.0f;
 	float hurryUntil_ = -1;
 	float ignoreUntil_ = -1;
 	std::uint32_t pursuitGeneration_ = 0;

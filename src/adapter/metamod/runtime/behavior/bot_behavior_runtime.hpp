@@ -394,6 +394,7 @@ private:
 		int material = -1;
 	};
 
+	compat::RadioContactCounts livingRadioPeers(const edict_t *self, int ownTeam) const;
 	struct ChatterPeerReceipt
 	{
 		bool managed = false;
