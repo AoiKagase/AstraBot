@@ -27,6 +27,7 @@ struct HidingSpotPlayer
 {
 	nav::NavVector position;
 	bool receiver;
+	bool sameTeam = true;
 };
 
 struct HidingSpotOccupancy
@@ -34,10 +35,8 @@ struct HidingSpotOccupancy
 	std::vector<HidingSpotPlayer> players;
 	std::vector<nav::NavVector> hostages;
 
-	bool taken(const nav::NavVector &spot) const
+	const HidingSpotPlayer *closestPlayer(const nav::NavVector &spot, float closestDistanceSquared) const
 	{
-		constexpr float occupiedRange = 75.0f;
-		float closestDistanceSquared = occupiedRange * occupiedRange;
 		const HidingSpotPlayer *closest = nullptr;
 		for (const auto &player : players)
 		{
@@ -48,6 +47,13 @@ struct HidingSpotOccupancy
 				closest = &player;
 			}
 		}
+		return closest;
+	}
+
+	bool taken(const nav::NavVector &spot) const
+	{
+		constexpr float occupiedRange = 75.0f;
+		const auto *closest = closestPlayer(spot, occupiedRange * occupiedRange);
 		if (closest && !closest->receiver)
 			return true;
 		return std::any_of(hostages.begin(), hostages.end(), [&](const nav::NavVector &hostage)
@@ -96,28 +102,72 @@ struct HidingSpotSearch
 	HidingSpotSelection nearArea(
 		nav::AreaId start, const nav::NavVector &origin, const nav::NavLadderTopology &ladders) const
 	{
-		if (current && !current())
+		Candidates candidates;
+		if (!walkNearby(start, origin, ladders, [&](const nav::NavArea &area)
+		{
+			collect(area, candidates, &origin);
+			return candidates[firstTier()].size() < kMaximumSpots;
+		}))
 			return {};
+		return select(candidates);
+	}
+
+	template <typename EnemyVisibility>
+	HidingSpotSelection retreatNearArea(nav::AreaId start, const nav::NavVector &origin,
+		const nav::NavLadderTopology &ladders, EnemyVisibility &&visibleToEnemies) const
+	{
+		std::vector<nav::NavVector> spots;
+		if (!walkNearby(start, origin, ladders, [&](const nav::NavArea &area)
+		{
+			for (const auto &spot : area.hidingSpots)
+			{
+				if ((range > 0.0f &&
+						hiding_spot_detail::squaredDistance(origin, spot.position) > range * range) ||
+					occupancy.taken(spot.position))
+					continue;
+				const bool visible = visibleToEnemies(spot.position);
+				if (current && !current())
+					return false;
+				if (visible)
+					continue;
+				const auto *owner = occupancy.closestPlayer(spot.position, 1.0e12f);
+				if (owner && !owner->sameTeam)
+					continue;
+				spots.push_back(spot.position);
+				if (spots.size() == kMaximumSpots)
+					return false;
+			}
+			return true;
+		}))
+			return {};
+		return choose(spots, "Retreat.Spot");
+	}
+
+private:
+	template <typename AreaVisitor>
+	bool walkNearby(nav::AreaId start, const nav::NavVector &origin, const nav::NavLadderTopology &ladders,
+		AreaVisitor &&visitArea) const
+	{
+		if (current && !current())
+			return false;
 		const auto *document = navigation.document();
 		const auto *initialArea = document ? document->findArea(start) : nullptr;
 		if (!initialArea)
-			return {true, false, {}};
+			return true;
 		if (ladders.navRevision != navigation.revision() || ladders.mapGeneration != navigation.mapGeneration())
-			return {};
+			return false;
 		struct Visit
 		{
 			const nav::NavArea *area;
 			float traveled;
 		};
-		Candidates candidates;
 		std::vector<Visit> pending{{initialArea, 0.0f}};
 		std::unordered_set<nav::AreaId> visited{start};
 		for (std::size_t index = 0; index < pending.size(); ++index)
 		{
 			const auto visit = pending[index];
 			const auto &area = *visit.area;
-			collect(area, candidates, &origin);
-			if (candidates[firstTier()].size() == kMaximumSpots)
+			if (!visitArea(area))
 				break;
 			const auto center = nav::extentCenterOf(area);
 			const auto enqueue = [&](nav::AreaId id)
@@ -125,14 +175,14 @@ struct HidingSpotSearch
 				const auto *next = document->findArea(id);
 				if (!next || !visited.insert(id).second)
 					return;
-			const nav::NavVector closest{
-				(std::min)((std::max)(origin.x, next->extent.lo.x), next->extent.hi.x),
-				(std::min)((std::max)(origin.y, next->extent.lo.y), next->extent.hi.y), origin.z};
-				if (hiding_spot_detail::squaredDistance(origin, closest) >= range * range)
+				const nav::NavVector closest{
+					(std::min)((std::max)(origin.x, next->extent.lo.x), next->extent.hi.x),
+					(std::min)((std::max)(origin.y, next->extent.lo.y), next->extent.hi.y), origin.z};
+				if (range > 0.0f && hiding_spot_detail::squaredDistance(origin, closest) >= range * range)
 					return;
 				const float traveled = visit.traveled +
 					std::sqrt(hiding_spot_detail::squaredDistance(center, nav::extentCenterOf(*next)));
-				if (traveled <= 1.5f * range)
+				if (range <= 0.0f || traveled <= 1.5f * range)
 					pending.push_back({next, traveled});
 			};
 			for (const auto &direction : area.connections)
@@ -146,10 +196,9 @@ struct HidingSpotSearch
 				if (std::find(ladder.topAreas.begin(), ladder.topAreas.end(), area.id) != ladder.topAreas.end())
 					enqueue(ladder.bottomArea);
 		}
-		return select(candidates);
+		return !current || current();
 	}
 
-private:
 	static constexpr std::size_t kTierCount = 3;
 	static constexpr std::size_t kMaximumSpots = 256;
 	using Candidates = std::array<std::vector<nav::NavVector>, kTierCount>;
@@ -178,17 +227,21 @@ private:
 	{
 		for (std::size_t tier = firstTier(); tier < kTierCount; ++tier)
 		{
-			const auto &spots = candidates[tier];
-			if (spots.empty())
-				continue;
-			const auto selected = random.nextLong(
-				RandomRequest::longRequest("Hide.Spot", actor, timing, 0, static_cast<std::int32_t>(spots.size() - 1)));
-			if ((current && !current()) || selected.status != RandomStatus::Ok || selected.value < 0 ||
-				static_cast<std::size_t>(selected.value) >= spots.size())
-				return {};
-			return {true, true, spots[static_cast<std::size_t>(selected.value)]};
+			if (!candidates[tier].empty())
+				return choose(candidates[tier], "Hide.Spot");
 		}
 		return {true, false, {}};
+	}
+	HidingSpotSelection choose(const std::vector<nav::NavVector> &spots, const char *reason) const
+	{
+		if (spots.empty())
+			return {true, false, {}};
+		const auto selected = random.nextLong(
+			RandomRequest::longRequest(reason, actor, timing, 0, static_cast<std::int32_t>(spots.size() - 1)));
+		if ((current && !current()) || selected.status != RandomStatus::Ok || selected.value < 0 ||
+			static_cast<std::size_t>(selected.value) >= spots.size())
+			return {};
+		return {true, true, spots[static_cast<std::size_t>(selected.value)]};
 	}
 };
 }

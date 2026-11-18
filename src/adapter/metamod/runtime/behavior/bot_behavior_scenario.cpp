@@ -1090,12 +1090,18 @@ void BotBehaviorRuntime::updateScenarioTeamwork(std::size_t index, const runtime
 	const bool guardingRescue = machine.task() == compat::CompatibilityTaskId::GuardHostageRescueZone;
 	const bool sniping = machine.task() == compat::CompatibilityTaskId::MoveToSniperSpot ||
 		machine.task() == compat::CompatibilityTaskId::Sniping;
+	const bool retreating = actors_[index].combatRetreat.hideEpoch == machine.normalStateEpoch() &&
+		actors_[index].combatRetreat.hideEpoch != 0;
 	if (machine.state() == compat::CompatibilityStateId::Hide &&
-		(guardingLoose || guardingSite || guardingHostages || guardingRescue || sniping || machine.task() == compat::CompatibilityTaskId::HoldPosition) &&
+		(retreating || guardingLoose || guardingSite || guardingHostages || guardingRescue || sniping ||
+			machine.task() == compat::CompatibilityTaskId::HoldPosition) &&
 		!machine.attackOverlayActive())
 	{
 		const float feetZ = before.origin.z - (before.ducked ? 18.0f : 36.0f);
+		const bool wasAtDefenseSpot = actors_[index].scenarioPlanners.atDefenseSpot();
 		actors_[index].scenarioPlanners.observeDefenderFeet(before.origin.x, before.origin.y, feetZ);
+		if (retreating && !wasAtDefenseSpot && actors_[index].scenarioPlanners.atDefenseSpot())
+			actors_[index].enemyReaction.cancelIgnore();
 		const auto &reload = observation.weapon.reloadState;
 		const bool reloading = reload.isAvailable() && reload.value != combat::ReloadState::Unknown
 			? reload.value == combat::ReloadState::Reloading

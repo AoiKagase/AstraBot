@@ -59,6 +59,50 @@ bool testLoneOutnumberedReport()
 	return read().phrase == ChatterPhrase::ScaredEmote;
 }
 
+bool testPinnedDownReport()
+{
+	using namespace astrabot::compat;
+	const char definitions[] = "Place Arena arena.wav End Chatter Help End Chatter PinnedDown End Chatter ScaredEmote End";
+	ChatterRadioCatalog catalog;
+	if (!catalog.loadText(definitions, sizeof(definitions) - 1))
+		return false;
+	OutgoingRadioScheduler scheduler;
+	OutgoingRadioInput input{};
+	input.actor = {1, 1};
+	input.frame = {1, 1, 1};
+	input.team = 1;
+	input.alive = input.inCombat = true;
+	input.now = 10.0f;
+	input.friendCount = 1;
+	input.visibleEnemyCount = 2;
+	input.ownPlace = 17;
+	input.ownPlacePhrase = catalog.nameToId("Arena");
+	scheduler.prepare(input, catalog);
+	if (scheduler.statements().empty())
+		return false;
+	scheduler.statements().clear();
+	input.now = 19.875f;
+	++input.frame.tick;
+	scheduler.reportRetreat(true, input, catalog);
+	if (!scheduler.statements().empty())
+		return false;
+	input.now = 20.0f;
+	++input.frame.tick;
+	scheduler.reportRetreat(true, input, catalog);
+	ChatterPendingStatement pinned{};
+	scheduler.statements().visitSchedules([&](const ChatterScheduleEntry &entry)
+	{
+		scheduler.statements().read({entry.order, entry}, &pinned);
+		return false;
+	});
+	const auto &request = pinned.request;
+	return request.phrase == ChatterPhrase::PinnedDown && request.topic == ChatterStatementTopic::RequestHelp &&
+		request.created == 20.0f && request.expires == 30.0f && request.requiresCombat &&
+		request.meme.kind == ChatterMemeKind::Help && request.meme.place == 17 &&
+		request.program.count == 2 && request.program.parts[0].kind == ChatterPartKind::Place &&
+		request.program.parts[1].phrase == ChatterPhrase::PinnedDown;
+}
+
 bool testPlantPlan()
 {
 	using namespace astrabot::compat;
@@ -223,6 +267,7 @@ int main()
 		}
 	};
 	check(testLoneOutnumberedReport(), "lone outnumbered combat uses the native backup and fear intervals");
+	check(testPinnedDownReport(), "PinnedDown shares Help cooldown and attaches the place, phrase and Help meme");
 	check(testPlantPlan(), "plant plan timing, same-update cover ordering, cooldown and silent Follow completion");
 	check(testPlantingDefendRequest(), "planting reports die at round end or complete with captured DefendHere position");
 	check(reportingInContactPhrase(true, {2, 1}, 0, 0) == ChatterPhrase::InCombat &&

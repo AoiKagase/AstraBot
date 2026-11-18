@@ -214,6 +214,16 @@ public:
 		resetMetadata();
 	}
 
+	void reportRetreat(bool pinned, const OutgoingRadioInput &in, const ChatterRadioCatalog &catalog)
+	{
+		float &last = pinned ? lastHelp_ : lastScared_;
+		if (in.now - last < 10.0f)
+			return;
+		last = in.now;
+		queue(pinned ? ChatterPhrase::PinnedDown : ChatterPhrase::ScaredEmote,
+			in.now, pinned ? 10.0f : 1.0f, in, catalog);
+	}
+
 	ChatterPendingQueue &statements()
 	{
 		return pending_;
@@ -312,11 +322,8 @@ public:
 				lastHelp_ = in.now;
 				if (in.friendCount > 0)
 					queue(ChatterPhrase::Help, in.now, kReportLifetimeSeconds, in, catalog);
-				else if (in.now - lastScared_ >= 10.0f)
-				{
-					lastScared_ = in.now;
-					queue(ChatterPhrase::ScaredEmote, in.now, 1.0f, in, catalog);
-				}
+				else
+					reportRetreat(false, in, catalog);
 			}
 			else if (in.friendCount > 0)
 				queue(ChatterPhrase::EnemySpotted, in.now, kReportLifetimeSeconds, in, catalog, 0,
@@ -690,11 +697,11 @@ private:
 				in.clearedBombsitePhrase});
 			request.program.append({ChatterPartKind::Fixed, phrase, 0, 0});
 		}
-		else if (phrase == ChatterPhrase::Help)
+		else if (phrase == ChatterPhrase::Help || phrase == ChatterPhrase::PinnedDown)
 		{
 			request.meme = {ChatterMemeKind::Help, in.ownPlace};
 			request.program.append({ChatterPartKind::Place, ChatterPhrase::None, in.ownPlace, in.ownPlacePhrase});
-			request.program.append({ChatterPartKind::Fixed, ChatterPhrase::Help, 0, 0});
+			request.program.append({ChatterPartKind::Fixed, phrase, 0, 0});
 		}
 		else if (phrase == ChatterPhrase::RequestReport)
 		{
@@ -717,7 +724,8 @@ private:
 			request.program.append({ChatterPartKind::AccumulateEnemies, ChatterPhrase::None, 0, 0});
 			request.program.append({ChatterPartKind::CurrentEnemyCount, ChatterPhrase::None, 0, 0});
 		}
-		request.requiresCombat = phrase == ChatterPhrase::EnemySpotted || phrase == ChatterPhrase::ScaredEmote;
+		request.requiresCombat = phrase == ChatterPhrase::EnemySpotted || phrase == ChatterPhrase::ScaredEmote ||
+			phrase == ChatterPhrase::PinnedDown;
 		request.content = phrase == ChatterPhrase::EnemySpotted
 			? ChatterStatementContent::EnemyReport : ChatterStatementContent::Fixed;
 		request.navRevision = in.noiseReport.navRevision;

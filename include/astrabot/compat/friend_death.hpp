@@ -230,6 +230,12 @@ public:
 		}
 	}
 
+	void ignoreEnemies(const ReactionContext &context, float duration)
+	{
+		if (update(context))
+			ignoreUntil_ = context.now + duration;
+	}
+
 	void cancelIgnore()
 	{
 		ignoreUntil_ = -1;

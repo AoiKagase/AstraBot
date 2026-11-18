@@ -271,6 +271,7 @@ public:
 	{
 		return normalStateEpoch_;
 	}
+	std::uint64_t attackEntryEpoch() const { return attackEntryEpoch_; }
 	bool attackOverlayActive() const;
 	bool isInitialized() const;
 	const StateBehaviorDecision &behaviorDecision() const
@@ -326,6 +327,7 @@ private:
 	std::uint64_t traceSequence_;
 	std::uint64_t stateSequence_;
 	std::uint64_t normalStateEpoch_ = 0;
+	std::uint64_t attackEntryEpoch_ = 0;
 	bool hasLastFullUpdate_;
 	bool attackOverlayActive_;
 	bool initialized_;

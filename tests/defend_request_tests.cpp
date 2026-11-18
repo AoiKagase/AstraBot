@@ -188,6 +188,51 @@ void testHidingSpots(const std::function<void(bool, const char *)> &check)
 		}
 	}
 }
+
+void testRetreatSpots(const std::function<void(bool, const char *)> &check)
+{
+	nav::NavDocument document;
+	document.setSourceIdentity({5, 100, 202});
+	auto start = area(1, 0, 1200);
+	start.hidingSpots = {{1, {20, 0, 0}, 0}, {2, {150, 0, 0}, 1}, {3, {400, 0, 0}, 2},
+		{4, {700, 0, 0}, 4}, {5, {1000, 0, 0}, 0}, {6, {1001, 0, 0}, 1}};
+	check(document.addArea(start) == nav::NavModelResult::Accepted, "Retreat fixture is valid");
+	nav::NavSnapshotPublisher publisher;
+	publisher.publish(&document, 2);
+	const auto snapshot = publisher.snapshot();
+	nav::NavLadderTopology ladders{snapshot.revision(), 2, {}};
+	const HidingSpotOccupancy occupancy{{{{0, 0, 0}, true, true}, {{790, 0, 0}, false, false},
+		{{1040, 0, 0}, false, true}}, {{150, 0, 0}}};
+	// The exact-range spot is occupied by a teammate. Only the unflagged spot at 20 survives.
+	ScriptedRandomSource random({RandomTapeEntry::longEntry("Retreat.Spot", {}, {}, 0, 0, 0)});
+	const HidingSpotSearch search{snapshot, occupancy, random, {}, {}, {}, true, 1000.0f};
+	std::vector<float> traced;
+	const auto result = search.retreatNearArea(1, {}, ladders, [&](const nav::NavVector &point)
+	{
+		traced.push_back(point.x);
+		return point.x == 400;
+	});
+	check(result.available && result.found && result.position.x == 20 && random.verifyComplete() &&
+			traced == std::vector<float>{20, 400, 700},
+		"Retreat checks every flag, skips occupied and out-of-range spots, then filters enemy vision and ownership");
+
+	ScriptedRandomSource noDraw({});
+	bool current = true;
+	const HidingSpotSearch interrupted{snapshot, occupancy, noDraw, {}, {}, [&] { return current; }, false, 1000.0f};
+	const auto stopped = interrupted.retreatNearArea(1, {}, ladders, [&](const nav::NavVector &)
+	{
+		current = false;
+		return false;
+	});
+	check(!stopped.available && noDraw.verifyComplete(), "An invalidated enemy trace stops retreat selection without a draw");
+
+	const HidingSpotOccupancy clear;
+	ScriptedRandomSource boundary({RandomTapeEntry::longEntry("Retreat.Spot", {}, {}, 0, 4, 4)});
+	const HidingSpotSearch unrestricted{snapshot, clear, boundary, {}, {}, {}, false, 1000.0f};
+	const auto edge = unrestricted.retreatNearArea(1, {}, ladders, [](const nav::NavVector &) { return false; });
+	check(edge.found && edge.position.x == 1000 && boundary.verifyComplete(),
+		"Retreat accepts a spot at exactly the search radius and draws across every eligible flag");
+}
 }
 
 int main()
@@ -272,5 +317,6 @@ int main()
 			"Already stale ownership performs no query");
 	}
 	testHidingSpots(check);
+	testRetreatSpots(check);
 	return failures ? 1 : 0;
 }

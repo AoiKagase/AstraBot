@@ -101,7 +101,10 @@ compat::ReactionDisposition BotBehaviorRuntime::reactionDisposition(std::size_t 
 	{
 		return compat::ReactionDisposition::SelfDefense;
 	}
-	if ((actor.scenarioDecisions.action == compat::ScenarioAction::Guard &&
+	if ((state == compat::CompatibilityStateId::Hide && actor.combatRetreat.hideEpoch != 0 &&
+			actor.combatRetreat.hideEpoch == actor.managedBotStateMachines.normalStateEpoch() &&
+			actor.scenarioPlanners.atDefenseSpot()) ||
+		(actor.scenarioDecisions.action == compat::ScenarioAction::Guard &&
 			actor.managedBotStateMachines.task() != compat::CompatibilityTaskId::HoldPosition &&
 			actor.managedBotStateMachines.task() != compat::CompatibilityTaskId::GuardLooseBomb) ||
 		actor.managedBotStateMachines.task() == compat::CompatibilityTaskId::GuardTickingBomb ||

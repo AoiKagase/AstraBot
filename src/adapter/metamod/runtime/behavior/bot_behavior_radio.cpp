@@ -327,23 +327,29 @@ struct BotBehaviorRuntime::ActorTaskEnvironment : compat::IHelpRequestEnvironmen
 		return current();
 	}
 	bool selectSpot(std::uint16_t place, nav::AreaId start, const nav::NavVector &origin,
-		nav::NavVector *point, bool *found, float range = 750.0f)
+		nav::NavVector *point, bool *found, float range = 750.0f, int retreatTeam = 0)
 	{
 		compat::HidingSpotOccupancy occupancy;
 		const auto engine = owner.services_->service_engineFunctions();
 		const auto globals = owner.services_->service_globals();
-		if (!engine->pfnPEntityOfEntIndex || !globals)
+		std::vector<edict_t *> enemies;
+		if (!engine->pfnPEntityOfEntIndex || !globals || (retreatTeam && !engine->pfnTraceLine))
 			return false;
 		for (int slot = 1; slot <= (std::min)(globals->maxClients, kMaximumClientSlots); ++slot)
 		{
-			const auto *player = engine->pfnPEntityOfEntIndex(slot);
+			auto *player = engine->pfnPEntityOfEntIndex(slot);
 			if (!current())
 				return false;
 			if (!player || player->free || !(player->v.flags & FL_CLIENT) || (player->v.flags & FL_DORMANT) ||
 				player->v.deadflag != DEAD_NO || player->v.health <= 0)
 				continue;
+			const int team = retreatTeam ? owner.services_->observation_resolvePlayerTeam(player) : 0;
+			if (!current())
+				return false;
 			const auto &pos = player->v.origin;
-			occupancy.players.push_back({{pos.x, pos.y, pos.z}, player == receipt.entity});
+			occupancy.players.push_back({{pos.x, pos.y, pos.z}, player == receipt.entity, team == retreatTeam});
+			if (retreatTeam && team == (retreatTeam == kTerroristTeam ? kCounterTerroristTeam : kTerroristTeam))
+				enemies.push_back(player);
 		}
 		if (engine->pfnFindEntityByString)
 		{
@@ -371,7 +377,28 @@ struct BotBehaviorRuntime::ActorTaskEnvironment : compat::IHelpRequestEnvironmen
 			nav::NavLadderTopology ladders;
 			if (!owner.services_->navigation_ladderTopology(&ladders) || !current())
 				return false;
-			selection = search.nearArea(start, origin, ladders);
+			if (retreatTeam)
+			{
+				selection = search.retreatNearArea(start, origin, ladders, [&](const nav::NavVector &spot)
+				{
+					constexpr float kHalfHumanHeight = 36.0f;
+					constexpr int kIgnorePlayersAndGlass = 0x101;
+					const float target[3] = {spot.x, spot.y, spot.z + kHalfHumanHeight};
+					for (auto *enemy : enemies)
+					{
+						const auto &position = enemy->v.origin;
+						const auto &offset = enemy->v.view_ofs;
+						const float eye[3] = {position.x + offset.x, position.y + offset.y, position.z + offset.z};
+						TraceResult trace{};
+						engine->pfnTraceLine(eye, target, kIgnorePlayersAndGlass, enemy, &trace);
+						if (!current() || trace.flFraction == 1.0f)
+							return true;
+					}
+					return false;
+				});
+			}
+			else
+				selection = search.nearArea(start, origin, ladders);
 		}
 		*found = selection.found;
 		*point = selection.position;
@@ -381,7 +408,17 @@ struct BotBehaviorRuntime::ActorTaskEnvironment : compat::IHelpRequestEnvironmen
 	{
 		return selectSpot(place, 0, {}, point, found);
 	}
-	bool enterHideState(const nav::NavVector &point, nav::AreaId goal, compat::CompatibilityTaskId task)
+	bool drawFloat(const char *name, float low, float high, float &value) const
+	{
+		const auto result = owner.services_->service_compatibilityRandomSource().nextFloat(
+			compat::RandomRequest::floatRequest(name, {receipt.actor.slot, receipt.actor.generation},
+				timing(), low, high));
+		value = result.value;
+		return current() && result.status == compat::RandomStatus::Ok && std::isfinite(value) &&
+			value >= low && value <= high;
+	}
+	bool enterHideState(const nav::NavVector &point, nav::AreaId goal, compat::CompatibilityTaskId task,
+		float duration = -1.0f)
 	{
 		if (!current())
 			return false;
@@ -406,21 +443,13 @@ struct BotBehaviorRuntime::ActorTaskEnvironment : compat::IHelpRequestEnvironmen
 		auto context = owner.makeManagedBotStateContext(receiver, before);
 		if (!current())
 			return false;
-		float duration = -1.0f;
 		float ambushDelay = 0.0f;
 		if (reachable)
 		{
-			const auto draw = [&](const char *name, float low, float high, float &value) {
-				const auto result = owner.services_->service_compatibilityRandomSource().nextFloat(
-					compat::RandomRequest::floatRequest(name, {receipt.actor.slot, receipt.actor.generation},
-						timing(), low, high));
-				value = result.value;
-				return current() && result.status == compat::RandomStatus::Ok && std::isfinite(value) &&
-					value >= low && value <= high;
-			};
 			float roll = 0.0f;
-			if (!draw("Hide.Duration", 30.0f, 60.0f, duration) || !draw("Hide.Ambush", 0.0f, 100.0f, roll) ||
-				(roll < 50.0f && !draw("Hide.HoldPositionTime", 3.0f, 10.0f, ambushDelay)))
+			if ((duration < 0.0f && !drawFloat("Hide.Duration", 30.0f, 60.0f, duration)) ||
+				!drawFloat("Hide.Ambush", 0.0f, 100.0f, roll) ||
+				(roll < 50.0f && !drawFloat("Hide.HoldPositionTime", 3.0f, 10.0f, ambushDelay)))
 				return false;
 		}
 		context.hideTask = reachable ? task : compat::CompatibilityTaskId::None;
@@ -770,6 +799,99 @@ struct BotBehaviorRuntime::ActorTaskEnvironment : compat::IHelpRequestEnvironmen
 			request, admission, owner.outgoingChatterCatalog_, mode, actor.confirmedSpeech.scheduledStatement());
 	}
 };
+
+bool BotBehaviorRuntime::updateCombatRetreat(std::size_t index, int team)
+{
+	auto &actor = actors_[index];
+	auto &retreat = actor.combatRetreat;
+	auto &machine = actor.managedBotStateMachines;
+	if (!machine.attackOverlayActive() || (team != kTerroristTeam && team != kCounterTerroristTeam) ||
+		services_->service_compatibilitySurface().configuration().mode != compat::RuntimeMode::Compatibility)
+		return false;
+	const auto update = services_->service_managedBotFullUpdateSequences()[index];
+	const auto attackEpoch = machine.attackEntryEpoch();
+	if (retreat.attackEpoch == attackEpoch && retreat.updateSequence == update)
+		return false;
+
+	ActorTaskEnvironment env(*this, index, index, [&] {
+		return machine.attackEntryEpoch() == attackEpoch;
+	});
+	if (!env.current() || !env.receipt.context.alive)
+		return false;
+	const float now = env.receipt.context.now;
+	if (retreat.attackEpoch != attackEpoch)
+	{
+		float pinned = 0;
+		float fear = 0;
+		if (!env.drawFloat("Attack.PinnedDown", 7.0f, 10.0f, pinned) ||
+			!env.drawFloat("Attack.Coward", 0.0f, 100.0f, fear))
+			return false;
+		retreat.attackEpoch = attackEpoch;
+		retreat.pinnedAfter = now + pinned;
+		retreat.coward = fear > static_cast<float>(actor.managedProfiles.aggression);
+	}
+	retreat.updateSequence = update;
+	if (now <= retreat.retryAfter)
+		return false;
+	const bool pinned = now > retreat.pinnedAfter;
+	if (!pinned)
+	{
+		if (!retreat.coward && actor.managedProfiles.aggression >= 100)
+			return false;
+		const auto living = livingRadioPeers(env.receipt.entity, team);
+		if (!env.current())
+			return false;
+		const auto nearby = actor.outgoingRadioContactMemory.counts(env.receipt.actor, env.receipt.context.frame,
+			now, living.friends, living.enemies);
+		const int excessEnemies = nearby.enemies - nearby.friends - 1;
+		if (excessEnemies < (retreat.coward ? 1 : 2))
+			return false;
+	}
+
+	compat::OutgoingRadioInput speech{};
+	speech.now = now;
+	speech.ownPlace = env.ownPlace();
+	speech.ownPlacePhrase = chatterPlacePhrase(env.navigation, outgoingChatterCatalog_, speech.ownPlace);
+	const auto engine = services_->service_engineFunctions();
+	speech.verbosity = compat::parseChatterVerbosity(
+		engine->pfnCVarGetString ? engine->pfnCVarGetString("bot_chatter") : nullptr);
+	if (!env.current())
+		return false;
+	speech.admission = chatterAdmission(index);
+	if (!env.current())
+		return false;
+	speech.speaking = actor.confirmedSpeech.scheduledStatement();
+	actor.outgoingRadioSchedulers.reportRetreat(pinned, speech, outgoingChatterCatalog_);
+
+	float retry = 0;
+	if (!env.drawFloat("Attack.RetreatRetry", 3.0f, 15.0f, retry))
+		return false;
+	retreat.retryAfter = now + retry;
+	if (!env.navigation.isValid())
+		return false;
+	const auto start = services_->navigation_knownArea(index, env.receipt.actor, env.receipt.context.frame,
+		env.navigation.revision());
+	if (!start || !env.current())
+		return false;
+	const auto &body = env.receipt.entity->v.origin;
+	nav::NavVector spot{};
+	bool found = false;
+	if (!env.selectSpot(0, start, {body.x, body.y, body.z}, &spot, &found, 1000.0f, team) || !found)
+		return false;
+	float hold = 0;
+	if (!env.drawFloat("Attack.RetreatHold", 3.0f, 15.0f, hold))
+		return false;
+	const auto goal = env.areaAt(spot, false);
+	if (!env.current() || !env.enterHideState(spot, goal, compat::CompatibilityTaskId::None, hold))
+		return false;
+	retreat.hideEpoch = machine.state() == compat::CompatibilityStateId::Hide ? machine.normalStateEpoch() : 0;
+	if (retreat.hideEpoch)
+		actor.enemyReaction.ignoreEnemies(reactionContext(index), 10.0f);
+	actor.managedBotCombat.stopMovement();
+	actor.managedBotCombat.clearAim();
+	actor.weaponActions.stopRapidFire();
+	return true;
+}
 
 bool BotBehaviorRuntime::selectHostageDefense(std::size_t index, bool rogue, const compat::ScenarioBehaviorInput &scenario)
 {

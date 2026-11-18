@@ -417,6 +417,7 @@ StateResult CompatibilityStateMachine::beginAttack(const StateUpdateContext &con
 		return StateResult::NoOp;
 	}
 	attackOverlayActive_ = true;
+	++attackEntryEpoch_;
 	++stateSequence_;
 	emit(StateTraceEvent::AttackOnEnter, CompatibilityStateId::AttackOverlay, state_, state_,
 		StateTransitionReason::AttackStarted, StateTransitionId::AttackOverlayStart, context);

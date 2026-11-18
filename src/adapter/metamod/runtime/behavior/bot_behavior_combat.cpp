@@ -368,6 +368,10 @@ ActionProposal BotBehaviorRuntime::decideCombatAction(ManagedActionContext &ctx)
 	compat::PublicActorState observedWeapon{};
 	if (!services_->observation_publicObservations().read(actor, frame, &observedWeapon) || !observedWeapon.weaponKnown)
 		return proposal;
+	const auto &state = actors_[index].managedBotStateMachines;
+	if (state.state() == compat::CompatibilityStateId::Hide &&
+		actors_[index].combatRetreat.hideEpoch == state.normalStateEpoch() && reactionIgnoring(index))
+		return proposal;
 	const int weaponValue = observedWeapon.weaponId;
 	weapon.weapon = {static_cast<std::uint16_t>(weaponValue)};
 	const compat::PublicWeaponDefinition definition =
@@ -581,6 +585,31 @@ ActionProposal BotBehaviorRuntime::decideCombatAction(ManagedActionContext &ctx)
 	{
 		(void)actors_[index].managedBotStateMachines.stopAttack(stateContext);
 	}
+	const auto retreatReceipt = reactionContext(index);
+	const auto retreatExecution = actors_[index].executionRevision;
+	const auto retreatEpoch = state.normalStateEpoch();
+	if ((targetActor.isValid() || actors_[index].enemyReaction.enemy(retreatReceipt).isValid()) &&
+		updateCombatRetreat(index, team))
+	{
+		proposal.movementButtons = static_cast<std::uint16_t>(
+			proposal.movementButtons & ~(IN_DUCK | IN_ATTACK | IN_ATTACK2 | IN_RELOAD));
+		if (weapon.kind == combat::WeaponKind::Sniper)
+		{
+			const auto inventoryMask = static_cast<std::uint32_t>(handle.entity->v.weapons);
+			for (const auto id : kPistolWeaponIds)
+			{
+				if ((inventoryMask & (1U << id)) != 0)
+				{
+					proposal.kind = ActionKind::SelectPistol;
+					proposal.equipmentWeaponId = static_cast<std::uint16_t>(id);
+					break;
+				}
+			}
+		}
+		return proposal;
+	}
+	if (!executionCurrent(index, retreatReceipt, retreatExecution) || state.normalStateEpoch() != retreatEpoch)
+		return proposal;
 	if (decideEquipmentAction(ctx, observedWeapon, actors_[index].managedBotStateMachines.attackOverlayActive()))
 		return proposal;
 	if (fireIntentReady)

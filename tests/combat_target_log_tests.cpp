@@ -17,9 +17,22 @@ float combatCommandPitch = 0.0f;
 unsigned combatMovingFireCommands = 0U;
 bool combatPistolSelected = false;
 bool humanFriendlyBlocks = false;
+bool coverBlocksEnemySight = false;
+unsigned attackDeadlineDraws = 0;
+unsigned retreatTimerDraws = 0;
+float combatRandomFloat(float low, float high)
+{
+	if (low == 7.0f && high == 10.0f)
+		++attackDeadlineDraws;
+	if (low == 3.0f && high == 15.0f)
+		++retreatTimerDraws;
+	return siteFixtureRandomFloat(low, high);
+}
 void traceCombatVisibility(const float *start, const float *end, int ignoreMonsters, edict_t *self, TraceResult *result)
 {
 	traceObjectiveVisibility(start, end, ignoreMonsters, self, result);
+	if (coverBlocksEnemySight && ignoreMonsters == 0x101 && self == &gEntities[1])
+		result->flFraction = 0.5f;
 	if (humanFriendlyBlocks && ignoreMonsters == 0)
 		result->pHit = &gEntities[2];
 }
@@ -81,7 +94,7 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 	gObjectiveEntitiesAvailable = false;
 	gServerSetsEntityTeam = true;
 	engine.pfnRandomLong = &siteFixtureRandomLong;
-	engine.pfnRandomFloat = &siteFixtureRandomFloat;
+	engine.pfnRandomFloat = &combatRandomFloat;
 	engine.pfnTraceLine = &traceCombatVisibility;
 	engine.pfnRunPlayerMove = &runCombatPlayerMove;
 	gHookedGameDllTable.pfnClientCommand = &combatGameClientCommand;
@@ -215,8 +228,13 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 			enemyPresent ? "combat sensor reports an acquired visible enemy"
 						 : "no-enemy case exercises the combat-result log");
 	};
-	bool passed =
-		observe(false) && observe(true) && observe(false) && observe(true, "TERRORIST") && observe(true, "SPECTATOR");
+	bool passed = observe(false);
+	const auto deadlinesBefore = attackDeadlineDraws;
+	const auto retriesBefore = retreatTimerDraws;
+	passed = observe(true) && passed;
+	passed = check(attackDeadlineDraws == deadlinesBefore + 1 && retreatTimerDraws > retriesBefore,
+		"A sustained attack sets its pinned deadline once and schedules a retreat attempt even without a safe spot") && passed;
+	passed = observe(false) && observe(true, "TERRORIST") && observe(true, "SPECTATOR") && passed;
 	gEntities[2].v.flags = FL_CLIENT;
 	gEntities[2].v.team = 0;
 	gEntities[2].v.health = 100;
@@ -325,6 +343,42 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 		"off/on refreshes physical sampling and replays the availability diagnostic");
 	gCaptureMovementLogs = false;
 	gProfileEnabled = false;
-	return passed && restartPassed;
+	const char *retreatNav = "astrabot_combat_retreat.nav";
+	if (!writeTwoSiteNavigation(retreatNav, true, true))
+		return false;
+	const astrabot::metamod::NavLoadRequest load{
+		retreatNav, "astrabot_combat_retreat", runtime.snapshot().mapGeneration, false, 0U, false, 0U};
+	const auto loaded = runtime.loadNavigationFile(&load);
+	std::remove(retreatNav);
+	if (!check(loaded == astrabot::metamod::NavLoadResult::Loaded, "retreat fixture loads connected NAV cover"))
+		return false;
+	auto &services = static_cast<astrabot::metamod::BotNavigationServices &>(runtime);
+	const auto &state = services.behavior_managedBotStateMachines(0U);
+	gEntities[0].v.origin = Vector(80, 32, 36);
+	gEntities[1].v.origin = Vector(180, 32, 36);
+	coverBlocksEnemySight = true;
+	bool movedToCover = false;
+	for (unsigned step = 0; step < 160U; ++step)
+	{
+		runtime.onMessageBegin(1, 94, nullptr, &gEntities[0]);
+		runtime.onWriteByte(1);
+		runtime.onWriteByte(18);
+		runtime.onWriteByte(10);
+		runtime.onMessageEnd();
+		gEntities[0].v.v_angle = Vector(0, 0, 0);
+		globals.time += .125f;
+		runtime.onStartFrame();
+		runtime.onStartFramePost();
+		const auto &decision = services.behavior_scenarioDecisions(0U);
+		if (state.state() == astrabot::compat::CompatibilityStateId::Hide && !state.attackOverlayActive() &&
+			decision.hasTarget && decision.target.position.x == 32 && decision.target.position.y == 50)
+		{
+			movedToCover = true;
+			break;
+		}
+	}
+	coverBlocksEnemySight = false;
+	return check(movedToCover, "eligible cover sends the attacking bot to Hide with the selected NAV target") &&
+		passed && restartPassed;
 }
 }

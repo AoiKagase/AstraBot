@@ -287,6 +287,7 @@ private:
 	BehaviorPhaseResult prepareManagedAction(ManagedActionContext &ctx);
 	BehaviorPhaseResult decideObjectiveAction(ManagedActionContext &ctx);
 	ActionProposal decideCombatAction(ManagedActionContext &ctx);
+	bool updateCombatRetreat(std::size_t index, int team);
 	void updateGuardLook(ManagedActionContext &ctx);
 	bool decideEquipmentAction(ManagedActionContext &ctx, const compat::PublicActorState &weapon, bool attacking);
 	bool cancelHeldGrenade(std::size_t index, const runtime::ViewAngles &movementAngles, ActionProposal &proposal);
@@ -552,6 +553,15 @@ private:
 		}
 	};
 
+	struct CombatRetreatState
+	{
+		std::uint64_t attackEpoch = 0;
+		std::uint64_t hideEpoch = 0;
+		std::uint32_t updateSequence = 0;
+		float pinnedAfter = 0;
+		float retryAfter = -1;
+		bool coward = false;
+	};
 	struct ActorState
 	{
 		compat::BotMorale morale{};
@@ -582,6 +592,7 @@ private:
 		compat::ChatterAdmissionClock chatterAdmissions{};
 		compat::KnifeRunTimer knifeRun{};
 		compat::EnemyReactionMemory enemyReaction{};
+		CombatRetreatState combatRetreat{};
 		world::EntityKey enemyWeaponSource{};
 		compat::RadioContactMemory outgoingRadioContactMemory{};
 		nav::AreaId scenarioEscapeAreas{};
