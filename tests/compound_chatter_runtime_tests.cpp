@@ -349,6 +349,8 @@ bool testCompoundChatter(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 		runtime.onStartFrame();
 		runtime.onStartFramePost();
 	};
+	// Start where the native NeedBackup interval from -1 has elapsed.
+	globals.time = (std::max)(globals.time, 9.0f);
 	runtime.beginRoundGeneration();
 	hooks.pfnMessageBegin(MSG_ONE, 94, nullptr, &self);
 	hooks.pfnWriteByte(1);
@@ -463,9 +465,16 @@ bool testCompoundChatter(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 		weapon();
 		step(.125f);
 		step(.125f);
+		// Establish Attack against one opponent. Extra opponents enter only once
+		// the teammates are alive, so this prelude cannot trigger ScaredEmote.
+		const float secondEnemyX = gEntities[2].v.origin.x;
+		const float thirdEnemyX = gEntities[3].v.origin.x;
+		gEntities[2].v.origin.x = gEntities[3].v.origin.x = -200;
 		compoundEnemiesVisible = true;
 		step(.5f);
 		step(.5f);
+		gEntities[2].v.origin.x = secondEnemyX;
+		gEntities[3].v.origin.x = thirdEnemyX;
 		if (!check(static_cast<metamod::BotCommandServices &>(runtime)
 					   .behavior_managedBotStateMachines(0)
 					   .attackOverlayActive(),

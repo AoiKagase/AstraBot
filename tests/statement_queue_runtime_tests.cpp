@@ -13,6 +13,7 @@ bool deferredSiteFixture = false;
 bool preplantGuardFixture = false;
 bool hostageUseFixture = false;
 bool sniperWarningFixture = false;
+bool scaredFixture = false;
 int sniperViewer = -1;
 int activeSniperFixtureWeapon = 0;
 int sniperWeaponQueries = 0;
@@ -47,6 +48,7 @@ void selectStatementFixture(int argc, char **argv)
 	preplantGuardFixture = argc == 2 && std::strcmp(argv[1], "--guard-unplanted-bombsite") == 0;
 	hostageUseFixture = argc == 2 && std::strcmp(argv[1], "--hostage-use-report") == 0;
 	sniperWarningFixture = argc == 2 && std::strcmp(argv[1], "--sniper-warning") == 0;
+	scaredFixture = argc == 2 && std::strcmp(argv[1], "--scared-outnumbered") == 0;
 }
 bool testStatementQueue(astrabot::metamod::PluginRuntime &, enginefuncs_t &, globalvars_t &);
 void setupStatementQueue(enginefuncs_t &, globalvars_t &);
@@ -141,6 +143,8 @@ unsigned char *queueLoad(char *name, int *length)
 		return nullptr;
 	}
 	std::string contents(text);
+	if (scaredFixture)
+		contents += " Chatter ScaredEmote scared.wav End";
 	if (sniperWarningFixture)
 		contents += " Chatter SniperWarning sniper.wav End";
 	if (hostageUseFixture)
@@ -2176,6 +2180,8 @@ bool testStatementQueue(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t
 		runtime.onStartFrame();
 		runtime.onStartFramePost();
 	};
+	// NeedBackup first becomes eligible ten seconds after its -1 timestamp.
+	globals.time = (std::max)(globals.time, 9.0f);
 	runtime.beginRoundGeneration();
 	hooks.pfnMessageBegin(MSG_ONE, 94, nullptr, &self);
 	hooks.pfnWriteByte(1);
@@ -2227,6 +2233,39 @@ bool testStatementQueue(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t
 		return testHostageUseReport(runtime, hooks, globals);
 	if (sniperWarningFixture)
 		return testSniperWarning(runtime, hooks, globals);
+	if (scaredFixture)
+	{
+		queueMode = "normal";
+		queueEnemiesVisible = false;
+		setCvarFloat("mp_buytime", 0);
+		setCvarFloat("bot_stop", 0);
+		// The existing lone managed T fights two visible CTs.
+		for (int slot = 1; slot < 5; ++slot)
+		{
+			gEntities[slot].free = slot > 2;
+			gEntities[slot].v.team = 2;
+			gEntities[slot].v.origin = Vector(400, (slot - 1) * 48.0f, 36);
+			team(slot + 1, "CT");
+		}
+		runtime.beginRoundGeneration();
+		for (int i = 0; i < 24; ++i)
+			step(.125f);
+		hooks.pfnMessageBegin(MSG_ONE, 94, nullptr, &self);
+		hooks.pfnWriteByte(1);
+		hooks.pfnWriteByte(22);
+		hooks.pfnWriteByte(30);
+		hooks.pfnMessageEnd();
+		queueSamples.clear();
+		queueEnemiesVisible = true;
+		for (int i = 0; i < 48; ++i)
+		{
+			self.v.angles = self.v.v_angle = Vector(0, 0, 0);
+			step(.125f);
+		}
+		return check(std::count(queueSamples.begin(), queueSamples.end(), "radio/test/scared.wav") == 1 &&
+				std::count(queueSamples.begin(), queueSamples.end(), "radio/test/help.wav") == 0,
+			"the last living T voices fear once instead of asking for backup");
+	}
 	if (const char *map = bombFixtureMap())
 	{
 		queueMode = "normal";

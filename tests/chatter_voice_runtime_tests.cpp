@@ -187,6 +187,8 @@ bool testChatterVoice(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &
 		runtime.onStartFrame();
 		runtime.onStartFramePost();
 	};
+	// Start where the native NeedBackup interval from -1 has elapsed.
+	globals.time = (std::max)(globals.time, 9.0f);
 	const auto round = [&]()
 	{
 		runtime.beginRoundGeneration();

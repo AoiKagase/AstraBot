@@ -5,6 +5,60 @@
 #include <cstring>
 namespace
 {
+bool testLoneOutnumberedReport()
+{
+	using namespace astrabot::compat;
+	const char definitions[] = "Chatter Help End Chatter EnemySpotted End Chatter ScaredEmote End";
+	ChatterRadioCatalog catalog;
+	if (!catalog.loadText(definitions, sizeof(definitions) - 1))
+		return false;
+	OutgoingRadioScheduler scheduler;
+	OutgoingRadioInput input{};
+	input.actor = {1, 1};
+	input.frame = {1, 1, 1};
+	input.team = 1;
+	input.alive = input.inCombat = true;
+	const auto prepare = [&](float time, int enemies, int friends) {
+		input.now = time;
+		input.visibleEnemyCount = enemies;
+		input.friendCount = friends;
+		++input.frame.tick;
+		scheduler.prepare(input, catalog);
+	};
+	const auto read = [&] {
+		ChatterPendingStatement node{};
+		scheduler.statements().visitSchedules([&](const ChatterScheduleEntry &entry) {
+			scheduler.statements().read({entry.order, entry}, &node);
+			return false;
+		});
+		return node.request;
+	};
+	prepare(8.875f, 2, 0);
+	if (!scheduler.statements().empty())
+		return false;
+	prepare(8.875f, 0, 0);
+	prepare(9.0f, 2, 0);
+	const auto scared = read();
+	if (scared.phrase != ChatterPhrase::ScaredEmote || scared.topic != ChatterStatementTopic::Emote ||
+		scared.created != 9.0f || scared.expires != 10.0f || !scared.requiresCombat ||
+		scared.content != ChatterStatementContent::Fixed || scared.meme.kind != ChatterMemeKind::None)
+		return false;
+	ChatterPendingMaintenance maintenance{};
+	maintenance.admission.owner = {input.actor, input.frame, 1, input.now, true};
+	scheduler.statements().maintain(maintenance);
+	if (!scheduler.statements().empty())
+		return false;
+
+	prepare(18.875f, 0, 1);
+	prepare(18.875f, 2, 1);
+	if (read().phrase != ChatterPhrase::EnemySpotted)
+		return false;
+	scheduler.statements().clear();
+	prepare(19.0f, 0, 0);
+	prepare(19.0f, 2, 0);
+	return read().phrase == ChatterPhrase::ScaredEmote;
+}
+
 bool testPlantPlan()
 {
 	using namespace astrabot::compat;
@@ -168,6 +222,7 @@ int main()
 			std::fprintf(stderr, "FAIL %s\n", s);
 		}
 	};
+	check(testLoneOutnumberedReport(), "lone outnumbered combat uses the native backup and fear intervals");
 	check(testPlantPlan(), "plant plan timing, same-update cover ordering, cooldown and silent Follow completion");
 	check(testPlantingDefendRequest(), "planting reports die at round end or complete with captured DefendHere position");
 	check(reportingInContactPhrase(true, {2, 1}, 0, 0) == ChatterPhrase::InCombat &&
@@ -463,7 +518,7 @@ int main()
 		"a host voice without a standard-radio equivalent is still speakable");
 	OutgoingRadioScheduler backup;
 	in.vipEscaping = false;
-	in.now = 2;
+	in.now = 9;
 	in.frame = {1, 4, 1};
 	in.visibleEnemyCount = 4;
 	in.nearbyFriends = 0;

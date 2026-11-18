@@ -232,7 +232,7 @@ public:
 			return false;
 		constexpr float kHelpCooldownSeconds = 10.0f;
 		const float lastHelp = fresh ? -1.0f : lastHelp_;
-		return !(in.visibleEnemyCount > in.nearbyFriends + 1 && (lastHelp < 0 || in.now - lastHelp >= kHelpCooldownSeconds));
+		return !(in.visibleEnemyCount > in.nearbyFriends + 1 && in.now - lastHelp >= kHelpCooldownSeconds);
 	}
 	void prepare(const OutgoingRadioInput &in, const ChatterRadioCatalog &catalog)
 	{
@@ -301,25 +301,29 @@ public:
 			directFollowStart_ = in.now;
 			directFollowExpires_ = in.now + kVipFollowLifetimeSeconds;
 		}
-		if (in.friendCount > 0)
+		if (in.friendCount > 0 && in.clearedBombsite.isValid())
+			queue(ChatterPhrase::BombsiteClear, in.now, kReportLifetimeSeconds, in, catalog);
+		const bool outnumbered = in.visibleEnemyCount > in.nearbyFriends + 1;
+		if (!reportedEnemies_ && in.visibleEnemyCount > 0 && (outnumbered || in.friendCount > 0))
 		{
-			if (in.clearedBombsite.isValid())
-				queue(ChatterPhrase::BombsiteClear, in.now, kReportLifetimeSeconds, in, catalog);
-			if (!reportedEnemies_ && in.visibleEnemyCount > 0)
+			reportedEnemies_ = true;
+			if (outnumbered && in.now - lastHelp_ >= kHelpCooldownSeconds)
 			{
-				reportedEnemies_ = true;
-				if (in.visibleEnemyCount > in.nearbyFriends + 1 &&
-					(lastHelp_ < 0 || in.now - lastHelp_ >= kHelpCooldownSeconds))
-				{
+				lastHelp_ = in.now;
+				if (in.friendCount > 0)
 					queue(ChatterPhrase::Help, in.now, kReportLifetimeSeconds, in, catalog);
-					lastHelp_ = in.now;
-				}
-				else
+				else if (in.now - lastScared_ >= 10.0f)
 				{
-					queue(ChatterPhrase::EnemySpotted, in.now, kReportLifetimeSeconds, in, catalog, 0,
-						in.now + kEnemyReportDelaySeconds);
+					lastScared_ = in.now;
+					queue(ChatterPhrase::ScaredEmote, in.now, 1.0f, in, catalog);
 				}
 			}
+			else if (in.friendCount > 0)
+				queue(ChatterPhrase::EnemySpotted, in.now, kReportLifetimeSeconds, in, catalog, 0,
+					in.now + kEnemyReportDelaySeconds);
+		}
+		if (in.friendCount > 0)
+		{
 			if (in.plantMoveEpoch && plantMoveEpoch_ != in.plantMoveEpoch)
 			{
 				plantMoveEpoch_ = in.plantMoveEpoch;
@@ -545,6 +549,8 @@ public:
 		cancelAcknowledgement();
 		discardDirect();
 		orderSequence_ = (std::max)(orderSequence_, consumedOrder);
+		lastHelp_ = lastScared_ = -1.0f;
+		reportedEnemies_ = false;
 	}
 	bool needsPlantMoveCheck(std::uint64_t epoch) const
 	{
@@ -639,7 +645,7 @@ private:
 		lastUpdate_ = 0;
 		start_ = 0;
 		lastSent_ = -1;
-		lastHelp_ = -1;
+		lastHelp_ = lastScared_ = -1;
 		lastEscort_ = -1;
 		resetPlans();
 		cancelAcknowledgement();
@@ -711,9 +717,9 @@ private:
 			request.program.append({ChatterPartKind::AccumulateEnemies, ChatterPhrase::None, 0, 0});
 			request.program.append({ChatterPartKind::CurrentEnemyCount, ChatterPhrase::None, 0, 0});
 		}
-		request.requiresCombat = phrase == ChatterPhrase::EnemySpotted;
-		request.content =
-			request.requiresCombat ? ChatterStatementContent::EnemyReport : ChatterStatementContent::Fixed;
+		request.requiresCombat = phrase == ChatterPhrase::EnemySpotted || phrase == ChatterPhrase::ScaredEmote;
+		request.content = phrase == ChatterPhrase::EnemySpotted
+			? ChatterStatementContent::EnemyReport : ChatterStatementContent::Fixed;
 		request.navRevision = in.noiseReport.navRevision;
 		request.noiseTick = in.noiseReport.frame.tick;
 		pending_.admit(request, admission(in), catalog, in.verbosity, in.speaking);
@@ -724,7 +730,7 @@ private:
 	bool radioedPlantPlan_ = false, askedPlantCover_ = false;
 	world::ActorKey actor_{};
 	world::FrameIdentity frame_{};
-	float lastUpdate_ = 0, start_ = 0, lastSent_ = -1, lastHelp_ = -1, lastEscort_ = -1, ackAt_ = 0;
+	float lastUpdate_ = 0, start_ = 0, lastSent_ = -1, lastHelp_ = -1, lastScared_ = -1, lastEscort_ = -1, ackAt_ = 0;
 	bool reportedEnemies_ = false, wasPlanting_ = false, askedBomb_ = false, directFollow_ = false;
 	std::uint32_t orderSequence_ = 0;
 	ChatterPhrase ack_ = ChatterPhrase::None;
