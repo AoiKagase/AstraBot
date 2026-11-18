@@ -1233,12 +1233,13 @@ if(ASTRABOT_BUILD_TESTS AND ASTRABOT_BUILD_METAMOD)
   add_test(NAME astrabot_scared_outnumbered_runtime COMMAND astrabot_statement_queue_runtime --scared-outnumbered)
   add_test(NAME astrabot_team_fall_back_runtime COMMAND astrabot_statement_queue_runtime --team-fall-back)
   add_test(NAME astrabot_round_victory_runtime COMMAND astrabot_statement_queue_runtime --round-victory)
+  add_test(NAME astrabot_barely_defused_runtime COMMAND astrabot_statement_queue_runtime --barely-defused)
   add_test(NAME astrabot_auto_follow_chatter_runtime COMMAND astrabot_statement_queue_runtime --auto-follow-chatter)
   set_tests_properties(astrabot_statement_queue_runtime astrabot_guard_loose_bomb_runtime
     astrabot_guard_planted_bombsite_runtime astrabot_encourage_defuse_runtime astrabot_guard_unplanted_bombsite_runtime
     astrabot_hostage_use_report_runtime astrabot_sniper_warning_runtime astrabot_scared_outnumbered_runtime
     astrabot_team_fall_back_runtime astrabot_round_victory_runtime astrabot_auto_follow_chatter_runtime
-    astrabot_waiting_here_runtime PROPERTIES
+    astrabot_waiting_here_runtime astrabot_barely_defused_runtime PROPERTIES
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" RESOURCE_LOCK astrabot_actor_command_profile)
   add_executable(astrabot_chatter_nav_probe tests/chatter_nav_probe_tests.cpp)
   target_include_directories(astrabot_chatter_nav_probe PRIVATE ${combat_target_log_includes})

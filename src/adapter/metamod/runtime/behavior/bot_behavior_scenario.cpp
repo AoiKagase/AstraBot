@@ -44,7 +44,8 @@ bool BotBehaviorRuntime::allHostagesRescued(world::FrameIdentity frame) const
 			frame.roundGeneration - hostageRescueResult_.roundGeneration == 1U);
 }
 
-void BotBehaviorRuntime::observeRoundWin(int team, world::FrameIdentity frame, bool rescuedHostages)
+void BotBehaviorRuntime::observeRoundWin(int team, world::FrameIdentity frame, bool rescuedHostages,
+	const LateDefuseRecipients &lateDefuse)
 {
 	const auto current = [&] {
 		const auto &life = services_->service_lifecycle();
@@ -76,7 +77,7 @@ void BotBehaviorRuntime::observeRoundWin(int team, world::FrameIdentity frame, b
 		{
 			actors_[i].morale.roundResult(ownerTeam == team);
 			if (ownerTeam == team)
-				reportRoundVictory(i, ownerTeam, current);
+				reportRoundVictory(i, ownerTeam, lateDefuse.test(i), current);
 		}
 	}
 }

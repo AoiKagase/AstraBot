@@ -114,8 +114,8 @@ bool testRetainedRoundEnd()
 	queue.retainAfterReset(owner, true);
 	ChatterPendingStatement node{};
 	const auto afterEnd = schedules(queue);
-	if (!check(resultHandle.id && !queue.read(resultHandle, &node) && afterEnd.size() == 2,
-			"administrative Round_End keeps emotes and RoundEnd with fresh handles"))
+	if (!check(resultHandle.id && !queue.read(resultHandle, &node) && afterEnd.size() == 3,
+			"administrative Round_End rebinds the queue before the first post-result playback and maintenance"))
 		return false;
 	owner.owner.alive = false;
 	++owner.owner.frame.tick;

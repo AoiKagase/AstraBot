@@ -11,6 +11,7 @@ bool looseBombFixture = false;
 bool looseGuardFixture = false;
 bool deferredSiteFixture = false;
 bool encourageDefuseFixture = false;
+bool barelyDefusedFixture = false;
 cvar_t queueDefuseFuse{};
 bool preplantGuardFixture = false;
 bool waitingHereFixture = false;
@@ -53,6 +54,7 @@ void selectStatementFixture(int argc, char **argv)
 	looseBombFixture = argc == 2 && std::strcmp(argv[1], "--loose-bomb") == 0;
 	looseGuardFixture = argc == 2 && std::strcmp(argv[1], "--guard-loose-bomb") == 0;
 	encourageDefuseFixture = argc == 2 && std::strcmp(argv[1], "--encourage-defuse") == 0;
+	barelyDefusedFixture = argc == 2 && std::strcmp(argv[1], "--barely-defused") == 0;
 	deferredSiteFixture = encourageDefuseFixture ||
 		(argc == 2 && std::strcmp(argv[1], "--guard-planted-bombsite") == 0);
 	waitingHereFixture = argc == 2 && std::strcmp(argv[1], "--waiting-here") == 0;
@@ -161,6 +163,8 @@ unsigned char *queueLoad(char *name, int *length)
 	if (victoryFixture)
 		contents += " Chatter WonRoundQuickly win_fast.wav End Chatter WonRound win_team.wav End "
 			"Chatter LastManStanding win_alone.wav End";
+	if (barelyDefusedFixture)
+		contents += " Chatter BarelyDefused barely_defused.wav End";
 	if (autoFollowChatterFixture)
 		contents += " Chatter FollowingSir follow_sir.wav End Chatter FollowingCommander follow_commander.wav End";
 	if (scaredFixture)
@@ -222,7 +226,7 @@ int queueMessageId(plid_t id, const char *name, int *size)
 	}
 	if (std::strcmp(name, "DeathMsg") == 0)
 		return 103;
-	if (victoryFixture && std::strcmp(name, "ResetHUD") == 0)
+	if ((victoryFixture || barelyDefusedFixture) && std::strcmp(name, "ResetHUD") == 0)
 		return 104;
 	if (std::strcmp(name, "BotVoice") == 0)
 	{
@@ -300,7 +304,7 @@ void setupStatementQueue(enginefuncs_t &engine, globalvars_t &globals)
 	engine.pfnRandomFloat = &queuePlanRandom;
 	if (autoFollowChatterFixture)
 		engine.pfnIsCareerMatch = []() { return queueCareer ? TRUE : FALSE; };
-	if (encourageDefuseFixture)
+	if (encourageDefuseFixture || barelyDefusedFixture)
 	{
 		queueDefuseFuse.value = 70.0f;
 		engine.pfnCVarGetPointer = [](const char *name) {
@@ -2234,6 +2238,55 @@ bool testStatementQueue(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t
 	hooks.pfnMessageEnd();
 	step(.125f);
 	step(.125f);
+	if (barelyDefusedFixture)
+	{
+		queueMode = "normal";
+		queueEnemiesVisible = false;
+		setCvarFloat("bot_stop", 0);
+		const char *sample = "radio/test/barely_defused.wav";
+		const auto notice = [&](const char *token)
+		{
+			hooks.pfnMessageBegin(MSG_ALL, 98, nullptr, nullptr);
+			hooks.pfnWriteByte(HUD_PRINTCENTER);
+			hooks.pfnWriteString(token);
+			hooks.pfnMessageEnd();
+		};
+		enum class Restart { Later, ResetHud, RoundStart };
+		const auto run = [&](bool sawPlant, float elapsed, const char *token, Restart restart, int expected,
+			const char *message)
+		{
+			runtime.onRoundLifecycleMessage("World triggered \"Round_Start\"\n");
+			self.v.team = 2;
+			team(1, "CT");
+			team(2, "CT");
+			for (int frame = 0; frame < 8; ++frame)
+				step(.125f);
+			queueSamples.clear();
+			if (sawPlant)
+				notice("#Bomb_Planted");
+			globals.time += elapsed;
+			notice(token);
+			runtime.onRoundLifecycleMessage("World triggered \"Round_End\"\n");
+			if (restart == Restart::ResetHud)
+			{
+				hooks.pfnMessageBegin(MSG_ONE, 104, nullptr, &self);
+				hooks.pfnMessageEnd();
+			}
+			else if (restart == Restart::RoundStart)
+				runtime.onRoundLifecycleMessage("World triggered \"Round_Start\"\n");
+			for (int frame = 0; frame < 20; ++frame)
+				step(.125f);
+			return check(std::count(queueSamples.begin(), queueSamples.end(), sample) == expected, message);
+		};
+		return run(false, 68.25f, "#Bomb_Defused", Restart::Later, 0,
+				"defuse without a known plant time does not report BarelyDefused") &&
+			run(true, 68.0f, "#Bomb_Defused", Restart::Later, 0, "exactly two seconds left does not report BarelyDefused") &&
+			run(true, 68.25f, "#Target_Bombed", Restart::Later, 0, "an explosion does not report BarelyDefused") &&
+			run(true, 68.25f, "#Bomb_Defused", Restart::Later, 1,
+				"late defuse is eligible for playback on the first update after Round_End") &&
+			run(true, 68.25f, "#Bomb_Defused", Restart::ResetHud, 0, "respawn clears pending BarelyDefused") &&
+			run(true, 68.25f, "#Bomb_Defused", Restart::RoundStart, 0, "old BarelyDefused does not cross Round_Start");
+	}
 	if (autoFollowChatterFixture)
 	{
 		queueMode = "normal";

@@ -918,29 +918,49 @@ void BotObservationRuntime::capturePublicMessage()
 			(std::strcmp(token, "#Ignore_Radio") == 0 || std::strcmp(token, "#Accept_Radio") == 0))
 			services_->behavior_observeRadioPreference(publicMessageTarget_, std::strcmp(token, "#Ignore_Radio") == 0);
 		const bool planted = std::strcmp(token, "#Bomb_Planted") == 0;
-		const bool cleared = std::strcmp(token, "#Bomb_Defused") == 0 || std::strcmp(token, "#Target_Bombed") == 0;
+		const bool defused = std::strcmp(token, "#Bomb_Defused") == 0;
+		const bool cleared = defused || std::strcmp(token, "#Target_Bombed") == 0;
+		const auto frame = publicMessageFrame_;
+		const bool broadcast = !publicMessageTarget_ &&
+			(publicMessageDestination_ == MSG_ALL || publicMessageDestination_ == MSG_BROADCAST);
+		const auto recipient = publicMessageActor_;
+		const auto *globals = services_->service_globals();
+		const float now = globals ? globals->time : 0.0f;
+		float fuse = 0.0f;
+		if (publicResult && defused && globals)
+		{
+			fuse = readOptionalCvarFloat(services_->service_engineFunctions(), "mp_c4timer");
+			const auto &life = services_->service_lifecycle();
+			const world::FrameIdentity currentFrame{life.mapGeneration(), life.roundGeneration(), services_->service_adapterFrameCount()};
+			if (!(currentFrame == frame) || !life.isMapActive() || services_->service_globals() != globals || globals->time != now)
+				return;
+		}
+		LateDefuseRecipients lateDefuse;
 		if (planted || cleared)
 		{
 			for (std::size_t i = 0U; i < NativeBotObservation::kClientSlotCount; ++i)
 			{
-				if ((publicMessageTarget_ == nullptr &&
-						(publicMessageDestination_ == MSG_ALL || publicMessageDestination_ == MSG_BROADCAST)) ||
-					(publicMessageActor_.isValid() && publicMessageActor_.slot == i + 1U))
+				if (broadcast || (recipient.isValid() && recipient.slot == i + 1U))
 				{
+					auto &clock = actors_[i].publicBombClocks;
+					float remaining = 0.0f;
+					if (fuse > 0.0f && clock.estimate(frame, now, fuse, &remaining) && remaining < 2.0f)
+						lateDefuse.set(i);
 					actors_[i].bombNoticeKnown = true;
 					actors_[i].bombNoticePlanted = planted;
-					if (services_->service_globals() != nullptr)
-						actors_[i].publicBombClocks.observe(
-							publicMessageFrame_, services_->service_globals()->time, planted);
+					if (globals)
+						clock.observe(frame, now, planted);
 				}
 			}
 		}
-		if (publicResult)
+		if (publicResult && defused)
+			services_->behavior_observeRoundWin(kCounterTerroristTeam, frame, false, lateDefuse);
+		else if (publicResult)
 		{
 			static const char *const tWins[] = {"#Target_Bombed", "#VIP_Assassinated", "#Terrorists_Escaped",
 				"#Terrorists_Win", "#Hostages_Not_Rescued", "#VIP_Not_Escaped"};
 			static const char *const ctWins[] = {"#VIP_Escaped", "#CTs_PreventEscape", "#Escaping_Terrorists_Neutralized",
-				"#Bomb_Defused", "#CTs_Win", "#All_Hostages_Rescued", "#Target_Saved", "#Terrorists_Not_Escaped"};
+				"#CTs_Win", "#All_Hostages_Rescued", "#Target_Saved", "#Terrorists_Not_Escaped"};
 			const auto matches = [token](const char *name) { return std::strcmp(name, token) == 0; };
 			if (std::any_of(std::begin(tWins), std::end(tWins), matches))
 				services_->behavior_observeRoundWin(kTerroristTeam, publicMessageFrame_);

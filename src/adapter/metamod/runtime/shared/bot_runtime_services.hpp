@@ -2,10 +2,13 @@
 #define ASTRABOT_ADAPTER_BOT_RUNTIME_SERVICES_HPP
 #include "runtime/shared/bot_runtime_types.hpp"
 #include "astrabot/compat/footstep_equipment.hpp"
+#include <bitset>
 namespace astrabot
 {
 namespace metamod
 {
+using LateDefuseRecipients = std::bitset<NativeBotObservation::kClientSlotCount>;
+
 struct BotRuntimeServiceTypes
 {
 	using Service_adapterFrameCount = std::uint32_t;
@@ -53,7 +56,8 @@ public:
 	virtual const compat::ProfileRecord &behavior_managedProfiles(std::size_t index) const = 0;
 	virtual void behavior_observeRadioPreference(edict_t *recipient, bool ignored) = 0;
 	virtual void observeBroadcastTeamScore(int team, int score, world::FrameIdentity frame) = 0;
-	virtual void behavior_observeRoundWin(int team, world::FrameIdentity frame, bool rescuedHostages = false) = 0;
+	virtual void behavior_observeRoundWin(int team, world::FrameIdentity frame, bool rescuedHostages = false,
+		const LateDefuseRecipients &lateDefuse = {}) = 0;
 	virtual void behavior_resetEquipment(std::size_t index, bool spawnHud = false) = 0;
 	virtual std::uint64_t behavior_chatterRevision(std::size_t index) const = 0;
 	virtual void behavior_observePublicDeath(std::size_t index, const world::FrameIdentity &deathFrame = {}) = 0;

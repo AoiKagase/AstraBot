@@ -1716,11 +1716,18 @@ void BotBehaviorRuntime::encourageHumanDefuse(
 	env.say(phrase);
 }
 
-void BotBehaviorRuntime::reportRoundVictory(std::size_t index, int team, const std::function<bool()> &current)
+void BotBehaviorRuntime::reportRoundVictory(
+	std::size_t index, int team, bool barelyDefused, const std::function<bool()> &current)
 {
 	ActorTaskEnvironment env(*this, index, index, current);
 	if (!env.current() || !env.receipt.context.alive)
 		return;
+	if (barelyDefused)
+	{
+		env.say("BarelyDefused");
+		if (!env.current())
+			return;
+	}
 	float delay = 0.0f;
 	if (!env.drawFloat("Chatter.VictoryDelay", 2.0f, 5.0f, delay))
 		return;
@@ -1753,13 +1760,13 @@ void BotBehaviorRuntime::reportRoundVictory(std::size_t index, int team, const s
 	env.admit(statement);
 }
 
-void BotBehaviorRuntime::discardVictorySpeech(std::size_t index)
+void BotBehaviorRuntime::discardEndedRoundSpeech(std::size_t index)
 {
 	const auto &speech = actors_[index].confirmedSpeech;
 	const auto confirmation = speech.scheduledStatement();
 	auto &queue = actors_[index].outgoingRadioSchedulers.statements();
 	const auto retained = queue.handle(confirmation);
-	queue.discardVictory();
+	queue.discardEndedRound();
 	compat::ChatterPendingStatement node{};
 	if (retained.id != 0 && !queue.read(retained, &node))
 	{
@@ -1769,10 +1776,10 @@ void BotBehaviorRuntime::discardVictorySpeech(std::size_t index)
 	}
 }
 
-void BotBehaviorRuntime::finishRoundVictorySpeech()
+void BotBehaviorRuntime::finishRoundSpeech()
 {
 	for (std::size_t index = 0; index < actors_.size(); ++index)
-		discardVictorySpeech(index);
+		discardEndedRoundSpeech(index);
 }
 
 void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index, const PlantMoveChatter *plantMove)

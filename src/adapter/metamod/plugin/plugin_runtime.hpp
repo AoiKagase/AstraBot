@@ -375,9 +375,10 @@ private:
 		behavior_.observeRadioPreference(recipient, ignored);
 	}
 	void observeBroadcastTeamScore(int team, int score, world::FrameIdentity frame) override;
-	void behavior_observeRoundWin(int team, world::FrameIdentity frame, bool rescuedHostages) override
+	void behavior_observeRoundWin(int team, world::FrameIdentity frame, bool rescuedHostages,
+		const LateDefuseRecipients &lateDefuse) override
 	{
-		behavior_.observeRoundWin(team, frame, rescuedHostages);
+		behavior_.observeRoundWin(team, frame, rescuedHostages, lateDefuse);
 	}
 
 
@@ -676,7 +677,7 @@ private:
 		{
 			behavior_.resetEncouragement();
 			if (service_roundOver())
-				behavior_.discardVictorySpeech(index);
+				behavior_.discardEndedRoundSpeech(index);
 		}
 	}
 

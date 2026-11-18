@@ -124,6 +124,7 @@ struct ChatterPendingStatement
 	ChatterScheduleEntry schedule{};
 	ChatterPlaybackState playback{};
 	ChatterStatementStep pending{};
+	bool fromEndedRound = false;
 };
 struct ChatterPendingMaintenance
 {
@@ -198,11 +199,14 @@ public:
 		}
 		if (sameChatterOwner(owner_, admission) && previous.alive == next.alive && !endingRound)
 		{
-			removeUnretained(false);
+			retainRoundEndOnly();
 			owner_ = admission;
 			return;
 		}
-		removeUnretained(endingRound && next.alive);
+		// The GameDLL's result marks the round over without resetting chatter.
+		// Native updates the elected statement before removing obsolete ones.
+		if (!endingRound || !next.alive)
+			retainRoundEndOnly();
 		for (auto &node : nodes_)
 		{
 			if (node.playback.inFlight)
@@ -211,16 +215,18 @@ public:
 			node.schedule.owner = next;
 			node.schedule.connection = admission.connection;
 			node.schedule.ownerRevision = admission.ownerRevision;
+			node.fromEndedRound = endingRound;
 		}
 		owner_ = admission;
 		bump();
 	}
-	void discardVictory()
+	void discardEndedRound()
 	{
 		for (auto at = nodes_.begin(); at != nodes_.end();)
 		{
 			const auto phrase = at->request.phrase;
-			if (phrase == ChatterPhrase::WonRoundQuickly || phrase == ChatterPhrase::WonRound ||
+			if ((at->fromEndedRound && at->request.topic != ChatterStatementTopic::RoundEnd) ||
+				phrase == ChatterPhrase::WonRoundQuickly || phrase == ChatterPhrase::WonRound ||
 				phrase == ChatterPhrase::LastManStanding)
 			{
 				at = nodes_.erase(at);
@@ -425,12 +431,12 @@ public:
 		ChatterStatementHandle candidate{entry.order, entry};
 		return read(candidate, &node) ? candidate : ChatterStatementHandle{};
 	}
-	void removeUnretained(bool keepEmotes)
+	void retainRoundEndOnly()
 	{
 		for (auto at = nodes_.begin(); at != nodes_.end();)
 		{
 			const auto topic = at->request.topic;
-			if (topic == ChatterStatementTopic::RoundEnd || (keepEmotes && topic == ChatterStatementTopic::Emote))
+			if (topic == ChatterStatementTopic::RoundEnd)
 				++at;
 			else
 			{
