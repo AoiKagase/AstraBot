@@ -515,7 +515,7 @@ void BotBehaviorRuntime::observeScenarioEntities(std::size_t index, const runtim
 					const auto &position = entity->v.origin;
 					data.initialHostages.entries[hostageCount++] = {
 						{static_cast<unsigned>(entityIndex), static_cast<unsigned>(entity->serialnumber) + 1U},
-						{position.x, position.y, position.z}, true};
+						{position.x, position.y, position.z}, true, true};
 				}
 				if (entity->v.health > 0.0f)
 				{
@@ -695,6 +695,8 @@ void BotBehaviorRuntime::updateHostagePositions(std::size_t index, const compat:
 		if (!sameHostage())
 			continue;
 		const bool alive = entity->v.takedamage == DAMAGE_YES;
+		if (!alive && (visible || oldPositionVisible))
+			entry.alive = false;
 		if (visible)
 		{
 			entry.valid = alive;
@@ -1068,10 +1070,12 @@ void BotBehaviorRuntime::updateScenarioTeamwork(std::size_t index, const runtime
 	bool finishedDefense = false;
 	const bool guardingLoose = machine.task() == compat::CompatibilityTaskId::GuardLooseBomb;
 	const bool guardingSite = machine.task() == compat::CompatibilityTaskId::GuardBombZone;
+	const bool guardingHostages = machine.task() == compat::CompatibilityTaskId::GuardHostages;
+	const bool guardingRescue = machine.task() == compat::CompatibilityTaskId::GuardHostageRescueZone;
 	const bool sniping = machine.task() == compat::CompatibilityTaskId::MoveToSniperSpot ||
 		machine.task() == compat::CompatibilityTaskId::Sniping;
 	if (machine.state() == compat::CompatibilityStateId::Hide &&
-		(guardingLoose || guardingSite || sniping || machine.task() == compat::CompatibilityTaskId::HoldPosition) &&
+		(guardingLoose || guardingSite || guardingHostages || guardingRescue || sniping || machine.task() == compat::CompatibilityTaskId::HoldPosition) &&
 		!machine.attackOverlayActive())
 	{
 		const float feetZ = before.origin.z - (before.ducked ? 18.0f : 36.0f);
@@ -1089,7 +1093,15 @@ void BotBehaviorRuntime::updateScenarioTeamwork(std::size_t index, const runtime
 		if (guardingSite && actors_[index].scenarioPlanners.defenseExpired(elapsed, reloading) &&
 			(renewBombsiteGuard(index) || !current()))
 			return;
+		if (guardingRescue && actors_[index].scenarioPlanners.defenseExpired(elapsed, reloading) &&
+			(renewHostageRescueGuard(index) || !current()))
+			return;
 		finishedDefense = actors_[index].scenarioPlanners.finishDefense(elapsed, reloading);
+		if (guardingHostages && !reloading && !actors_[index].hostagePositions.hasKnownPosition())
+		{
+			actors_[index].scenarioPlanners.cancelHoldPosition();
+			finishedDefense = true;
+		}
 		if (!finishedDefense && sniping && actors_[index].scenarioPlanners.atDefenseSpot())
 			machine.reachedSniperSpot();
 		const bool knownLoose = !scenario.bombPlanted && (data.looseBomb.knowledge == compat::ScenarioKnowledge::Visible ||
@@ -1121,6 +1133,11 @@ void BotBehaviorRuntime::updateScenarioTeamwork(std::size_t index, const runtime
 		action == compat::ScenarioAction::None && scenario.scenario == compat::PublicScenarioKind::Bomb &&
 		scenario.team == objectives::TeamRole::CounterTerrorist && !scenario.bombPlanted && !services_->service_roundOver() &&
 		(selectPreplantDefense(index, cooperative.rogueKnown && !cooperative.rogue, scenario) || !current()))
+		return;
+	if (machine.state() == compat::CompatibilityStateId::Idle && !machine.attackOverlayActive() &&
+		action == compat::ScenarioAction::None && scenario.scenario == compat::PublicScenarioKind::Hostage &&
+		scenario.team == objectives::TeamRole::Terrorist && !services_->service_roundOver() &&
+		(selectHostageDefense(index, cooperative.rogue, scenario) || !current()))
 		return;
 	if (actors_[index].scenarioDecisions.hideTask == compat::CompatibilityTaskId::GuardBombZone)
 	{

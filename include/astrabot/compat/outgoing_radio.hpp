@@ -561,6 +561,13 @@ public:
 		lastPlan_ = in.now;
 		queue(ChatterPhrase::GoingToPlantBomb, in.now, 10.0f, in, catalog, in.plantGoalPlace, in.now);
 	}
+	bool beginHostageGuardReport(float now)
+	{
+		if (lastPlan_ >= 0.0f && now - lastPlan_ < 20.0f)
+			return false;
+		lastPlan_ = now;
+		return true;
+	}
 	void reportIn(const ChatterStatementRequest &report, CompatibilityTaskId task, const OutgoingRadioInput &in,
 		const ChatterRadioCatalog &catalog)
 	{

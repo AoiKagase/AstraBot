@@ -12,6 +12,7 @@ bool looseGuardFixture = false;
 bool deferredSiteFixture = false;
 bool preplantGuardFixture = false;
 bool hostageUseFixture = false;
+bool hostageGuardRolls = false;
 bool chooseTeamRush = false;
 float teamRushRoll = 100.0f;
 float preplantIdleRoll = -1.0f;
@@ -135,7 +136,8 @@ unsigned char *queueLoad(char *name, int *length)
 	}
 	std::string contents(text);
 	if (hostageUseFixture)
-		contents += " Chatter HostagesBeingTaken taken.wav End Chatter HostagesTaken lost.wav End";
+		contents += " Chatter HostagesBeingTaken taken.wav End Chatter HostagesTaken lost.wav End "
+			"Chatter GoingToGuardHostageEscapeZone rescueplan.wav End";
 	if (reportingInFixture)
 		contents += " Chatter RequestReport Radio EVENT_RADIO_REPORT_IN_TEAM request.wav End";
 	if (bombsiteClearFixture)
@@ -266,7 +268,8 @@ void setupStatementQueue(enginefuncs_t &engine, globalvars_t &globals)
 	engine.pfnMessageEnd = &queueEnd;
 	engine.pfnTraceLine = &queueVisibility;
 	if (hostageUseFixture)
-		engine.pfnSzFromIndex = [](int id) -> const char * { return id == 33 ? "hostage_entity" : id == 34 ? "cs_test" : szFromIndex(id); };
+		engine.pfnSzFromIndex = [](int id) -> const char * { return id == 33 ? "hostage_entity" : id == 34 ? "cs_test" :
+			id == 35 ? "func_hostage_rescue" : szFromIndex(id); };
 	gpMetaUtilFuncs->pfnGetUserMsgID = &queueMessageId;
 }
 void queueInputRadio(astrabot::metamod::BotObservationRuntime &observer, const char *token)
@@ -390,6 +393,8 @@ float queuePlanRandom(float low, float high)
 		chooseTeamRush = false;
 		return teamRushRoll;
 	}
+	if (hostageGuardRolls && low == 0 && high == 100)
+		return 100;
 	if (preplantGuardFixture && preplantIdleRoll >= 0 && low == 0 && high == 100)
 		return preplantIdleRoll;
 	if (queueHelpForceCooperative && low == 0 && high == 100)
@@ -1916,9 +1921,72 @@ bool testHostageUseReport(astrabot::metamod::PluginRuntime &runtime, enginefuncs
 		return false;
 	hostage.v.origin.x += 0.25f;
 	advance(40);
-	return check(count(1, "radio/test/lost.wav") == 1 && !count(2, "radio/test/lost.wav") &&
+	if (!check(count(1, "radio/test/lost.wav") == 1 && !count(2, "radio/test/lost.wav") &&
 			!count(2, "radio/test/ack.wav"),
-		"the T who sees the old position reports the last missing hostage once without requesting a response");
+			"the T who sees the old position reports the last missing hostage once without requesting a response"))
+		return false;
+
+	const char *path = "astrabot_hostage_guard.nav";
+	if (!check(writeTwoSiteNavigation(path, true, true, "BombsiteA"), "hostage defense NAV fixture is written"))
+		return false;
+	const metamod::NavLoadRequest load{path, "astrabot_hostage_guard", runtime.snapshot().mapGeneration,
+		true, 123U, false, 0U};
+	const auto loaded = runtime.loadNavigationFile(&load);
+	std::remove(path);
+	if (!check(loaded == metamod::NavLoadResult::Loaded, "hostage defense uses the loaded NAV"))
+		return false;
+	gBombSite = {};
+	gBombSite.v.classname = 35;
+	gBombSite.v.solid = SOLID_TRIGGER;
+	gBombSite.v.absmin = Vector(220, 27, -4);
+	gBombSite.v.absmax = Vector(229, 38, 4);
+	hostage.v.origin = Vector(112, 32, 36);
+	for (auto i : {0, 1})
+	{
+		gEntities[i].v.origin = Vector(i == 0 ? 24.0f : 112.0f, 32, 36);
+		gEntities[i].v.mins = Vector(-16, -16, -36);
+		gEntities[i].v.maxs = Vector(16, 16, 36);
+		gEntities[i].v.weapons = 0;
+	}
+	setCvarFloat("bot_allow_rogues", 0);
+	setCvarFloat("mp_freezetime", 0);
+	hostageGuardRolls = true;
+	queueHelpRecording = true;
+	runtime.onRoundLifecycleMessage("World triggered \"Round_End\"\n");
+	runtime.onRoundLifecycleMessage("World triggered \"Round_Start\"\n");
+	advance(40);
+	auto &ports = static_cast<metamod::BotNavigationServices &>(runtime);
+	using Task = compat::CompatibilityTaskId;
+	const auto task = [&](int i) { return ports.behavior_managedBotStateMachines(i).task(); };
+	if (!check(task(0) == Task::GuardHostages && task(1) == Task::GuardHostages,
+			"before contact both Ts plan to guard the remembered hostage"))
+		return false;
+	ct.v.origin = Vector(24, 32, 36);
+	const auto announceUse = [&](bool first) {
+		reportAudio.clear();
+		gEntities[1].v.origin.z += 1300;
+		if (first)
+			hooks.pfnAlertMessage(at_logged, firstTouch, 103);
+		else
+		{
+			pre.pfnPlayerPostThink(&ct);
+			voice("hostage/huse/illfollow.wav", CHAN_VOICE, 0, 1.0f);
+			post.pfnPlayerPostThink(&ct);
+		}
+		gEntities[1].v.origin.z -= 1300;
+		advance(48);
+	};
+	announceUse(true);
+	if (!check(count(2, "radio/test/ack.wav") == 1 && task(1) == Task::GuardHostages &&
+			!count(2, "radio/test/rescueplan.wav"), "the safe period takes precedence over a completed report"))
+		return false;
+	advance(104);
+	announceUse(false);
+	queueHelpRecording = false;
+	return check(count(1, "radio/test/taken.wav") == 1 && count(2, "radio/test/ack.wav") == 1 &&
+			count(2, "radio/test/rescueplan.wav") == 1 && task(1) == Task::GuardHostageRescueZone &&
+			task(0) == Task::GuardHostages,
+		"outside the safe period a teammate's completed report sends the recipient to guard the rescue zone");
 }
 
 bool testStatementQueue(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &engine, globalvars_t &globals)

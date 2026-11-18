@@ -567,9 +567,7 @@ private:
 		constexpr float kUseReceiptWaitSeconds = 2.0f;
 		constexpr unsigned kMaximumHostageUseAttempts = 3U;
 		if (input.team != objectives::TeamRole::CounterTerrorist)
-		{
-			return targetDecision(input, input.hostage, ScenarioAction::Guard, CompatibilityStateId::Hide);
-		}
+			return {};
 		if (input.escortKnown && input.escortCount)
 		{
 			pendingUse_ = {};

@@ -602,6 +602,76 @@ struct BotBehaviorRuntime::ActorTaskEnvironment : compat::IHelpRequestEnvironmen
 		plan.expires = plan.created + 10.0f;
 		admit(plan);
 	}
+	void reportHostageGuard(compat::CompatibilityTaskId task, bool atSpot, std::uint16_t place = 0)
+	{
+		if ((task != compat::CompatibilityTaskId::GuardHostages &&
+			task != compat::CompatibilityTaskId::GuardHostageRescueZone) || !current() ||
+			!receipt.context.alive || owner.services_->service_roundOver())
+			return;
+		auto &scheduler = owner.actors_[receiver].outgoingRadioSchedulers;
+		if (!scheduler.beginHostageGuardReport(receipt.context.now))
+			return;
+		const bool hostage = task == compat::CompatibilityTaskId::GuardHostages;
+		if (atSpot)
+		{
+			owner.ensureOutgoingChatterCatalog();
+			acknowledge(hostage ? compat::ChatterPhrase::GuardingHostages :
+				compat::ChatterPhrase::GuardingHostageEscapeZone);
+		}
+		else
+			announcePlan(hostage ? compat::ChatterPhrase::GoingToGuardHostages :
+				compat::ChatterPhrase::GoingToGuardHostageEscapeZone, place);
+	}
+	const nav::NavArea *randomRescueArea()
+	{
+		const auto engine = owner.services_->service_engineFunctions();
+		const auto globals = owner.services_->service_globals();
+		if (!navigation.isValid() || !engine || !globals || !engine->pfnPEntityOfEntIndex || !engine->pfnSzFromIndex)
+			return nullptr;
+		constexpr std::size_t kMaximumZones = 4, kMaximumZoneAreas = 16;
+		std::array<nav::NavExtent, kMaximumZones> explicitZones{}, spawnZones{};
+		std::size_t explicitCount = 0, spawnCount = 0;
+		const int limit = (std::min)(globals->maxEntities, 2048);
+		for (int id = globals->maxClients + 1; id < limit && explicitCount < explicitZones.size(); ++id)
+		{
+			const auto *entity = engine->pfnPEntityOfEntIndex(id);
+			if (!current())
+				return nullptr;
+			if (!entity || entity->free)
+				continue;
+			const auto serial = entity->serialnumber;
+			const auto classname = entity->v.classname;
+			const char *name = engine->pfnSzFromIndex(classname);
+			if (!current())
+				return nullptr;
+			if (!name || entity->free || entity->serialnumber != serial || entity->v.classname != classname)
+				continue;
+			const auto origin = entity->v.origin;
+			const nav::NavExtent legacy{{origin.x - 256.0f, origin.y - 256.0f, origin.z - 306.0f},
+				{origin.x + 256.0f, origin.y + 256.0f, origin.z + 306.0f}};
+			if (std::strcmp(name, "func_hostage_rescue") == 0)
+				explicitZones[explicitCount++] = {{entity->v.absmin.x, entity->v.absmin.y, entity->v.absmin.z - 50.0f},
+					{entity->v.absmax.x, entity->v.absmax.y, entity->v.absmax.z + 50.0f}};
+			else if (std::strcmp(name, "info_hostage_rescue") == 0)
+				explicitZones[explicitCount++] = legacy;
+			else if (spawnCount < spawnZones.size() && std::strcmp(name, "info_player_start") == 0)
+				spawnZones[spawnCount++] = legacy;
+		}
+		const auto count = explicitCount ? explicitCount : spawnCount;
+		if (!count)
+			return nullptr;
+		auto &random = owner.services_->service_compatibilityRandomSource();
+		const compat::RandomActor actor{receipt.actor.slot, receipt.actor.generation};
+		const auto zone = random.nextLong(compat::RandomRequest::longRequest("Hostage.RandomRescueZone", actor, timing(),
+			0, static_cast<std::int32_t>(count) - 1));
+		if (!current() || zone.status != compat::RandomStatus::Ok || zone.value < 0 ||
+			static_cast<unsigned>(zone.value) >= count)
+			return nullptr;
+		const auto &zones = explicitCount ? explicitZones : spawnZones;
+		const auto *area = compat::randomBombSiteArea(*navigation.document(), zones[zone.value], kMaximumZoneAreas,
+			random, actor, timing(), "Hostage.RandomRescueArea");
+		return current() ? area : nullptr;
+	}
 	const nav::NavArea *randomSiteArea()
 	{
 		owner.refreshManagedObjectiveSiteRegistry();
@@ -667,6 +737,7 @@ struct BotBehaviorRuntime::ActorTaskEnvironment : compat::IHelpRequestEnvironmen
 		const auto *guarded = owner.guardedBombPosition(receiver, &bomb) ? &bomb : nullptr;
 		if (!current())
 			return;
+		reportHostageGuard(actor.managedBotStateMachines.task(), actor.scenarioPlanners.atDefenseSpot());
 		admit(compat::reportingInStatement(context.now, actor.managedBotStateMachines.attackOverlayActive(),
 			nearby, actor.enemyReaction.enemyDeathTimestamp(context), context.now - actor.lastVisibleEnemyTimes,
 			place, chatterPlacePhrase(navigation, owner.outgoingChatterCatalog_, place), guarded), true);
@@ -700,6 +771,110 @@ struct BotBehaviorRuntime::ActorTaskEnvironment : compat::IHelpRequestEnvironmen
 			request, admission, owner.outgoingChatterCatalog_, mode, actor.confirmedSpeech.scheduledStatement());
 	}
 };
+
+bool BotBehaviorRuntime::selectHostageDefense(std::size_t index, bool rogue, const compat::ScenarioBehaviorInput &scenario)
+{
+	ActorTaskEnvironment env(*this, index, index, [] { return true; });
+	if (!env.current() || !env.navigation.isValid() ||
+		!services_->navigation_knownArea(index, env.receipt.actor, scenario.frame, env.navigation.revision()))
+		return false;
+	const auto &actor = actors_[index];
+	const auto start = services_->service_roundFreezeGeneration() == scenario.frame.roundGeneration
+		? services_->service_roundFreezeUntil() : 0.0f;
+	const float elapsed = scenario.timestamp - start;
+	const float safeTime = actor.enemyReaction.safeTime(scenario.aggression);
+	const auto draw = [&](const char *name, float &value) {
+		const auto result = services_->service_compatibilityRandomSource().nextFloat(compat::RandomRequest::floatRequest(
+			name, {env.receipt.actor.slot, env.receipt.actor.generation}, env.timing(), 0.0f, 100.0f));
+		value = result.value;
+		return env.current() && result.status == compat::RandomStatus::Ok && value >= 0.0f && value <= 100.0f;
+	};
+	float roll = 0;
+	bool campHostages = elapsed < safeTime;
+	const auto &hostages = actor.hostagePositions;
+	const bool allBeingRescued = !hostages.hasKnownPosition() &&
+		std::any_of(hostages.entries.begin(), hostages.entries.end(), [](const RememberedHostage &entry) {
+			return entry.alive;
+		});
+	if (!campHostages && !actor.someHostagesTaken && !allBeingRescued)
+	{
+		if (!draw("Idle.HostageCampZone", roll))
+			return false;
+		campHostages = roll > 100.0f * (elapsed - safeTime) / 120.0f;
+	}
+	const auto randomHostage = [&](nav::NavVector &position) {
+		std::array<nav::NavVector, HostagePositionMemory::kMaximumHostages> known{};
+		std::size_t count = 0;
+		for (const auto &entry : actor.hostagePositions.entries)
+			if (entry.valid)
+				known[count++] = {entry.position.x, entry.position.y, entry.position.z};
+		if (!count)
+			return false;
+		const auto random = services_->service_compatibilityRandomSource().nextLong(compat::RandomRequest::longRequest(
+			"Hostage.RandomFreePosition", {env.receipt.actor.slot, env.receipt.actor.generation},
+			env.timing(), 0, static_cast<std::int32_t>(count) - 1));
+		if (!env.current() || random.status != compat::RandomStatus::Ok || random.value < 0 ||
+			static_cast<unsigned>(random.value) >= count)
+			return false;
+		position = known[random.value];
+		return true;
+	};
+	if (carriesSniperRifle(*env.receipt.entity))
+	{
+		if (!draw("Idle.DefenseSniperCamp", roll))
+			return false;
+		if (roll <= 75.0f)
+		{
+			nav::NavVector position{};
+			if (randomHostage(position) && campHostages)
+			{
+				const auto area = env.areaAt(position, false);
+				return env.current() && env.hideNearArea(area, compat::CompatibilityTaskId::MoveToSniperSpot, 2000.0f);
+			}
+			if (const auto *area = env.randomRescueArea())
+				return env.hideNearArea(area->id, compat::CompatibilityTaskId::MoveToSniperSpot, 2000.0f);
+		}
+	}
+	if (!env.current())
+		return false;
+	const auto peers = livingRadioPeers(env.receipt.entity, kTerroristTeam);
+	if (!env.current())
+		return false;
+	const int morale = services_->service_excellentMorale() ? 3 : actor.morale.value;
+	if (peers.friends && (rogue || roundPlantDecision_.defense == objectives::DefenseStrategy::Rush ||
+		!draw("Idle.HostageHunt", roll) || roll < 70.0f + 25.0f * morale))
+		return false;
+
+	nav::NavVector position{};
+	if (randomHostage(position) && campHostages)
+	{
+		const auto areaId = env.areaAt(position, false);
+		const auto *area = env.navigation.document()->findArea(areaId);
+		if (!env.current())
+			return false;
+		if (area)
+		{
+			if (!env.hideNearArea(areaId, compat::CompatibilityTaskId::GuardHostages, 750.0f + 250.0f * (morale + 3)))
+				return false;
+			if (draw("Idle.HostageGuardPlan", roll) && roll < 50.0f)
+				env.reportHostageGuard(compat::CompatibilityTaskId::GuardHostages, false, area->placeId);
+			return true;
+		}
+	}
+	return env.current() && renewHostageRescueGuard(index);
+}
+
+bool BotBehaviorRuntime::renewHostageRescueGuard(std::size_t index)
+{
+	ActorTaskEnvironment env(*this, index, index, [] { return true; });
+	if (!env.current())
+		return false;
+	const auto *area = env.randomRescueArea();
+	if (!area || !env.hideNearArea(area->id, compat::CompatibilityTaskId::GuardHostageRescueZone))
+		return false;
+	env.reportHostageGuard(compat::CompatibilityTaskId::GuardHostageRescueZone, false);
+	return true;
+}
 
 bool BotBehaviorRuntime::selectPreplantDefense(std::size_t index, bool cooperative, const compat::ScenarioBehaviorInput &scenario)
 {
@@ -1546,7 +1721,14 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index, const Plan
 		const auto report = compat::reportingInStatement(input.now, input.inCombat, contacts,
 			actors_[index].enemyReaction.enemyDeathTimestamp(receiptContext),
 			input.now - actors_[index].lastVisibleEnemyTimes, input.ownPlace, input.ownPlacePhrase, guarded);
-		actors_[index].outgoingRadioSchedulers.reportIn(report, machine.task(), input, outgoingChatterCatalog_);
+		if (machine.task() == compat::CompatibilityTaskId::GuardHostages ||
+			machine.task() == compat::CompatibilityTaskId::GuardHostageRescueZone)
+		{
+			ActorTaskEnvironment environment(*this, index, index, receiptCurrent);
+			environment.reportHostageGuard(machine.task(), actors_[index].scenarioPlanners.atDefenseSpot());
+		}
+		if (receiptCurrent())
+			actors_[index].outgoingRadioSchedulers.reportIn(report, machine.task(), input, outgoingChatterCatalog_);
 	}
 	const bool direct = actors_[index].outgoingRadioSchedulers.hasDirect();
 	bool scanCurrent = true;

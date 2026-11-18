@@ -54,6 +54,10 @@ enum class ChatterPhrase : unsigned
 	GoingToDefendBombsite,
 	HostagesBeingTaken,
 	HostagesTaken,
+	GoingToGuardHostages,
+	GuardingHostages,
+	GoingToGuardHostageEscapeZone,
+	GuardingHostageEscapeZone,
 	Count
 };
 inline ChatterPhrase remainingEnemyPhrase(int count)
@@ -84,7 +88,7 @@ inline bool usesUndefinedChatterPlace(ChatterPhrase phrase)
 	return phrase != ChatterPhrase::EnemySpotted && phrase != ChatterPhrase::Help &&
 		phrase != ChatterPhrase::PlantingBomb && phrase != ChatterPhrase::GoingToPlantBomb &&
 		phrase != ChatterPhrase::HeardNoise && phrase != ChatterPhrase::GoingToGuardLooseBomb &&
-		phrase != ChatterPhrase::GoingToDefendBombsite;
+		phrase != ChatterPhrase::GoingToDefendBombsite && phrase != ChatterPhrase::GoingToGuardHostages;
 }
 
 inline ChatterStatementTopic chatterStatementTopic(ChatterPhrase phrase)
@@ -107,6 +111,8 @@ inline ChatterStatementTopic chatterStatementTopic(ChatterPhrase phrase)
 	case ChatterPhrase::OnMyWay:
 	case ChatterPhrase::DefusingBomb:
 	case ChatterPhrase::CoveringFriend:
+	case ChatterPhrase::GuardingHostages:
+	case ChatterPhrase::GuardingHostageEscapeZone:
 		return ChatterStatementTopic::MyIntention;
 	case ChatterPhrase::PlantingBomb:
 	case ChatterPhrase::GoingToPlantBomb:
@@ -114,6 +120,8 @@ inline ChatterStatementTopic chatterStatementTopic(ChatterPhrase phrase)
 	case ChatterPhrase::EscortingHostages:
 	case ChatterPhrase::GoingToGuardLooseBomb:
 	case ChatterPhrase::GoingToDefendBombsite:
+	case ChatterPhrase::GoingToGuardHostages:
+	case ChatterPhrase::GoingToGuardHostageEscapeZone:
 		return ChatterStatementTopic::MyPlan;
 	case ChatterPhrase::HeardNoise:
 	case ChatterPhrase::SpottedBomber:
@@ -312,7 +320,8 @@ public:
 			"TwoEnemiesLeft", "ThreeEnemiesLeft", "NiceShot", "NiceShotSir", "NiceShotCommander", "CommanderDown",
 			"KilledFriend", "pain", "AgreeWithPlan", "GoingToPlantBomb", "CoveringFriend", "InCombat", "EnemyDown",
 			"Clear", "DefusingBomb", "BombsiteClear", "PlantedBombPlace", "SpottedBomber", "SpottedLooseBomb",
-			"TheyPickedUpTheBomb", "GoingToGuardLooseBomb", "GuardingLooseBomb", "GoingToDefendBombsite", "HostagesBeingTaken", "HostagesTaken"};
+			"TheyPickedUpTheBomb", "GoingToGuardLooseBomb", "GuardingLooseBomb", "GoingToDefendBombsite", "HostagesBeingTaken", "HostagesTaken",
+			"GoingToGuardHostages", "GuardingHostages", "GoingToGuardHostageEscapeZone", "GuardingHostageEscapeZone"};
 		const auto i = static_cast<unsigned>(p);
 		return i < static_cast<unsigned>(ChatterPhrase::Count) ? names[i] : "Unknown";
 	}

@@ -277,9 +277,13 @@ public:
 		return std::isfinite(elapsedRound) &&
 			elapsedRound > 1.25f * (safeTimeAdjusted_ ? safeTime_ : 15.0f + 5.0f * aggression);
 	}
+	float safeTime(float aggression) const
+	{
+		return safeTimeAdjusted_ ? safeTime_ : 15.0f + 5.0f * aggression;
+	}
 	bool isSafe(float elapsedRound, float aggression) const
 	{
-		return std::isfinite(elapsedRound) && elapsedRound < (safeTimeAdjusted_ ? safeTime_ : 15.0f + 5.0f * aggression);
+		return std::isfinite(elapsedRound) && elapsedRound < safeTime(aggression);
 	}
 
 	void clearEnemy(bool cancelPursuit = true)

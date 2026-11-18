@@ -140,7 +140,8 @@ private:
 };
 
 inline const nav::NavArea *randomBombSiteArea(const nav::NavDocument &document, const nav::NavExtent &bounds,
-	std::size_t maximumAreas, ICompatibilityRandomSource &random, RandomActor actor, RandomTimingContext timing)
+	std::size_t maximumAreas, ICompatibilityRandomSource &random, RandomActor actor, RandomTimingContext timing,
+	const char *randomName = "Bomb.SearchZoneArea")
 {
 	if (maximumAreas == 0U)
 		return nullptr;
@@ -159,7 +160,7 @@ inline const nav::NavArea *randomBombSiteArea(const nav::NavDocument &document, 
 	if (candidates.empty())
 		return nullptr;
 	const auto draw = random.nextLong(
-		RandomRequest::longRequest("Bomb.SearchZoneArea", actor, timing, 0, static_cast<int>(candidates.size() - 1U)));
+		RandomRequest::longRequest(randomName, actor, timing, 0, static_cast<int>(candidates.size() - 1U)));
 	if (draw.status != RandomStatus::Ok || draw.value < 0 || static_cast<std::size_t>(draw.value) >= candidates.size())
 		return nullptr;
 	return candidates[static_cast<std::size_t>(draw.value)];

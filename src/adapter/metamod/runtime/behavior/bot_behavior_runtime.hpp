@@ -213,6 +213,8 @@ private:
 	struct ActorTaskEnvironment;
 	void reportBombPickedUp(std::size_t index);
 	void hideNearLooseBomb(std::size_t index, bool announce);
+	bool selectHostageDefense(std::size_t index, bool rogue, const compat::ScenarioBehaviorInput &scenario);
+	bool renewHostageRescueGuard(std::size_t index);
 	bool selectPreplantDefense(std::size_t index, bool cooperative, const compat::ScenarioBehaviorInput &scenario);
 	void hideAtPlantedBombsite(std::size_t index, compat::ScenarioTarget target);
 	bool renewBombsiteGuard(std::size_t index);
@@ -252,12 +254,17 @@ private:
 		world::EntityKey entity{};
 		world::WorldPosition position{};
 		bool valid = false;
+		bool alive = false;
 	};
 	struct HostagePositionMemory
 	{
 		static constexpr std::size_t kMaximumHostages = 12;
 		std::array<RememberedHostage, kMaximumHostages> entries{};
 		float nextCheck = -1.0f;
+		bool hasKnownPosition() const
+		{
+			return std::any_of(entries.begin(), entries.end(), [](const RememberedHostage &hostage) { return hostage.valid; });
+		}
 	};
 	struct ScenarioUpdateData
 	{
