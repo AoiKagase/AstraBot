@@ -26,6 +26,9 @@ public:
 	void captureManagedCurrentWeapon();
 	void observeGameDllBlind(const void *player, float duration,
 		const std::function<const void *(const char *)> &findClientObject);
+	void observeGameDllDamage(const void *player, const entvars_t *inflictor,
+		const std::function<const void *(const char *)> &findClientObject);
+	bool dispatchingGameDllDamage() const { return optionalObservations_.dispatchingDamage(); }
 	runtime::MovementPhysicsState captureMovementPhysicsState(
 		const edict_t *entity, bool teamConfirmed, bool managedFakeClient) const;
 	void capturePublicMessage();
@@ -198,6 +201,14 @@ public:
 	void observeReloadDispatched(world::ActorKey actor, world::FrameIdentity frame, float now);
 
 private:
+	struct GameDllClientReceipt
+	{
+		std::size_t index = 0;
+		world::ActorKey actor{};
+		world::FrameIdentity frame{};
+	};
+	GameDllClientReceipt resolveGameDllClient(const void *player,
+		const std::function<const void *(const char *)> &findClientObject) const;
 	void fill_managedBotPerceptionFullUpdates(const std::uint32_t &value)
 	{
 		for (auto &actor : actors_)

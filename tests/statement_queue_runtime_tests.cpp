@@ -15,6 +15,9 @@ bool barelyDefusedFixture = false;
 bool blindedChatterFixture = false;
 float blindedChatterRoll = 100.0f;
 bool duplicateBlindNetname = false;
+bool friendlyFireChatterFixture = false;
+unsigned friendlyFireDelayDraws = 0;
+cvar_t queueFreeForAll{};
 cvar_t queueDefuseFuse{};
 bool preplantGuardFixture = false;
 bool waitingHereFixture = false;
@@ -59,6 +62,7 @@ void selectStatementFixture(int argc, char **argv)
 	encourageDefuseFixture = argc == 2 && std::strcmp(argv[1], "--encourage-defuse") == 0;
 	barelyDefusedFixture = argc == 2 && std::strcmp(argv[1], "--barely-defused") == 0;
 	blindedChatterFixture = argc == 2 && std::strcmp(argv[1], "--blinded-chatter") == 0;
+	friendlyFireChatterFixture = argc == 2 && std::strcmp(argv[1], "--friendly-fire-chatter") == 0;
 	deferredSiteFixture = encourageDefuseFixture ||
 		(argc == 2 && std::strcmp(argv[1], "--guard-planted-bombsite") == 0);
 	waitingHereFixture = argc == 2 && std::strcmp(argv[1], "--waiting-here") == 0;
@@ -171,6 +175,8 @@ unsigned char *queueLoad(char *name, int *length)
 		contents += " Chatter BarelyDefused barely_defused.wav End";
 	if (blindedChatterFixture)
 		contents += " Chatter Blinded blinded.wav End";
+	if (friendlyFireChatterFixture)
+		contents += " Chatter FriendlyFire friendly_fire.wav End";
 	if (autoFollowChatterFixture)
 		contents += " Chatter FollowingSir follow_sir.wav End Chatter FollowingCommander follow_commander.wav End";
 	if (scaredFixture)
@@ -322,6 +328,15 @@ void setupStatementQueue(enginefuncs_t &engine, globalvars_t &globals)
 			return std::strcmp(name, "mp_c4timer") == 0 ? queueDefuseFuse.value : getCvarFloat(name);
 		};
 	}
+	if (friendlyFireChatterFixture)
+	{
+		engine.pfnCVarGetPointer = [](const char *name) {
+			return std::strcmp(name, "mp_freeforall") == 0 ? &queueFreeForAll : getCvar(name);
+		};
+		engine.pfnCVarGetFloat = [](const char *name) {
+			return std::strcmp(name, "mp_freeforall") == 0 ? queueFreeForAll.value : getCvarFloat(name);
+		};
+	}
 	engine.pfnCVarGetString = &queueCvar;
 	engine.pfnLoadFileForMe = &queueLoad;
 	engine.pfnFreeFile = &queueFree;
@@ -454,6 +469,11 @@ bool testQueueRadioReset(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 }
 float queuePlanRandom(float low, float high)
 {
+	if (friendlyFireChatterFixture && low > .299f && low < .301f && high == .5f)
+	{
+		++friendlyFireDelayDraws;
+		return .375f;
+	}
 	if (blindedChatterFixture && low == 0.0f && high == 100.0f)
 		return blindedChatterRoll;
 	if (autoFollowChatterFixture && low == 0.0f && high == 1.0f)
@@ -2248,6 +2268,68 @@ bool testStatementQueue(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t
 	hooks.pfnMessageEnd();
 	step(.125f);
 	step(.125f);
+	if (friendlyFireChatterFixture)
+	{
+		queueMode = "normal";
+		queueEnemiesVisible = false;
+		setCvarFloat("bot_stop", 0);
+		auto observer = std::make_unique<metamod::BotObservationRuntime>();
+		observer->bindServices(runtime);
+		self.v.netname = 100;
+		gEntityNames[0] = "Friendly Fire Test Bot";
+		engine.pfnFindEntityByString = [](edict_t *start, const char *key, const char *value) -> edict_t * {
+			if (std::strcmp(key, "netname") == 0)
+				return !start && std::strcmp(value, "Friendly Fire Test Bot") == 0 ? &gEntities[0] : nullptr;
+			return findEntityByString(start, key, value);
+		};
+		int botObject = 0;
+		const auto notify = [&](edict_t &inflictor) {
+			inflictor.v.pContainingEntity = &inflictor;
+			observer->observeGameDllDamage(&botObject, &inflictor.v, [&](const char *name) -> const void * {
+				return std::strcmp(name, "Friendly Fire Test Bot") == 0 ? &botObject : nullptr;
+			});
+		};
+		for (int frame = 0; frame < 8; ++frame)
+			step(.125f);
+		const char *sample = "radio/test/friendly_fire.wav";
+		queueSamples.clear();
+		friendlyFireDelayDraws = 0;
+		notify(gEntities[1]);
+		notify(gPlantedBomb);
+		auto &teammate = gEntities[4];
+		teammate.v.flags |= FL_FAKECLIENT;
+		notify(teammate);
+		teammate.v.flags &= ~FL_FAKECLIENT;
+		if (!check(friendlyFireDelayDraws == 0, "enemy, non-player, and fake-client inflictors do not start a rebuke"))
+			return false;
+		queueFreeForAll.value = 1.0f;
+		notify(teammate);
+		queueFreeForAll.value = 0.0f;
+		if (!check(friendlyFireDelayDraws == 0, "free for all treats equal-team players as enemies"))
+			return false;
+		self.v.deadflag = DEAD_DEAD;
+		notify(teammate);
+		self.v.deadflag = DEAD_NO;
+		if (!check(friendlyFireDelayDraws == 1, "a dead bot still draws before native chatter rejects its admission"))
+			return false;
+		for (int frame = 0; frame < 5; ++frame)
+			step(.125f);
+		if (!check(std::count(queueSamples.begin(), queueSamples.end(), sample) == 0, "a dead bot's rebuke is not queued"))
+			return false;
+		friendlyFireDelayDraws = 0;
+		notify(teammate);
+		notify(teammate);
+		if (!check(friendlyFireDelayDraws == 2, "each direct human teammate damage attempt draws a rebuke delay"))
+			return false;
+		step(.125f);
+		step(.125f);
+		if (!check(std::count(queueSamples.begin(), queueSamples.end(), sample) == 0, "rebuke waits for the drawn delay"))
+			return false;
+		for (int frame = 0; frame < 8; ++frame)
+			step(.125f);
+		return check(std::count(queueSamples.begin(), queueSamples.end(), sample) == 1,
+			"same-frame duplicate rebukes play once through the chatter queue");
+	}
 	if (blindedChatterFixture)
 	{
 		queueMode = "normal";

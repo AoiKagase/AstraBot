@@ -213,7 +213,7 @@ bool PluginRuntime::attach(PLUG_LOADTIME loadTime, META_FUNCTIONS *functionTable
 
 bool PluginRuntime::detach(PLUG_LOADTIME loadTime, PL_UNLOAD_REASON reason)
 {
-	if (movementSounds_.active())
+	if (movementSounds_.active() || observation_.dispatchingGameDllDamage())
 		return false;
 	movementSounds_.reset();
 	hostageUseScopes_.clear();

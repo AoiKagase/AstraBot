@@ -1692,6 +1692,45 @@ void BotBehaviorRuntime::observePlayerBlind(std::size_t index, world::ActorKey a
 		env.say("Blinded", 1.0f);
 }
 
+void BotBehaviorRuntime::observePlayerDamage(std::size_t index, world::ActorKey actor, world::FrameIdentity frame,
+	const edict_t *source, int serial, world::ActorKey sourceConnection)
+{
+	if (index >= actors_.size() || !actor.isValid() || !frame.isValid() || !source ||
+		sourceConnection.slot == 0 || sourceConnection.slot > actors_.size() ||
+		services_->service_compatibilitySurface().configuration().mode != compat::RuntimeMode::Compatibility)
+		return;
+	const auto sourceIndex = static_cast<std::size_t>(sourceConnection.slot - 1U);
+	const auto sourceTeamKnown = services_->observation_publicTeamKnown(sourceIndex);
+	const auto sourceTeamInfo = services_->observation_teamInfoTeams(sourceIndex);
+	const int sourceEntityTeam = source->v.team;
+	const auto current = [&] {
+		const auto context = reactionContext(index);
+		return context.actor == actor && context.frame == frame &&
+			!source->free && source->serialnumber == serial && receiptConnectionCurrent(sourceConnection) &&
+			services_->observation_publicTeamKnown(sourceIndex) == sourceTeamKnown &&
+			services_->observation_teamInfoTeams(sourceIndex) == sourceTeamInfo && source->v.team == sourceEntityTeam &&
+			(source->v.flags & (FL_CLIENT | FL_FAKECLIENT | FL_SPECTATOR | FL_DORMANT)) == FL_CLIENT;
+	};
+	ActorTaskEnvironment env(*this, index, index, current);
+	if (!env.current() || readOptionalCvarFloat(services_->service_engineFunctions(), "mp_freeforall") != 0.0f || !env.current())
+		return;
+	const int victimTeam = services_->observation_resolvePlayerTeam(env.receipt.entity);
+	if (victimTeam == 0 || !env.current() || services_->observation_resolvePlayerTeam(source) != victimTeam || !env.current())
+		return;
+	float delay = 0.0f;
+	if (!env.drawFloat("Chatter.FriendlyFireDelay", 0.3f, 0.5f, delay))
+		return;
+	ensureOutgoingChatterCatalog();
+	if (!env.current())
+		return;
+	if (const auto *phrase = outgoingChatterCatalog_.findPhrase("FriendlyFire"))
+	{
+		auto statement = compat::makeSayStatement(*phrase, env.receipt.context.now, 1.0f, delay);
+		statement.topic = compat::ChatterStatementTopic::FriendlyFire;
+		env.admit(statement);
+	}
+}
+
 void BotBehaviorRuntime::encourageHumanDefuse(
 	std::size_t index, float remaining, const std::function<bool()> &current)
 {

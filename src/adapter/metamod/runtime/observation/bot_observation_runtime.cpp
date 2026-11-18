@@ -1659,16 +1659,64 @@ void BotObservationRuntime::probeMapProvider()
 			return observer.optionalObservations_.findClientObject(name);
 		});
 	}, this);
+	optionalObservations_.connectDamageEvents([](void *context, const void *player, const entvars_t *inflictor) {
+		auto &observer = *static_cast<BotObservationRuntime *>(context);
+		observer.observeGameDllDamage(player, inflictor, [&observer](const char *name) {
+			return observer.optionalObservations_.findClientObject(name);
+		});
+	}, this);
 }
 
 void BotObservationRuntime::observeGameDllBlind(const void *player, float duration,
 	const std::function<const void *(const char *)> &findClientObject)
 {
+	if (!std::isfinite(duration) || duration < 0.0f)
+		return;
+	const auto receipt = resolveGameDllClient(player, findClientObject);
+	if (receipt.actor.isValid())
+		services_->behavior_observePlayerBlind(receipt.index, receipt.actor, receipt.frame);
+}
+
+void BotObservationRuntime::observeGameDllDamage(const void *player, const entvars_t *inflictor,
+	const std::function<const void *(const char *)> &findClientObject)
+{
+	const auto *source = inflictor ? inflictor->pContainingEntity : nullptr;
+	const auto *globals = services_->service_globals();
+	const auto *engine = services_->service_engineFunctions();
+	if (!source || &source->v != inflictor || source->free || source->serialnumber < 0 ||
+		(source->v.flags & (FL_CLIENT | FL_FAKECLIENT | FL_SPECTATOR | FL_DORMANT)) != FL_CLIENT ||
+		!globals || !engine || !engine->pfnIndexOfEdict || !engine->pfnPEntityOfEntIndex || !services_->runtimeIsActive())
+		return;
+	const auto &life = services_->service_lifecycle();
+	const world::FrameIdentity frame{life.mapGeneration(), life.roundGeneration(), services_->service_adapterFrameCount()};
+	const int serial = source->serialnumber;
+	const float now = globals->time;
+	const auto current = [&] {
+		return services_->runtimeIsActive() && services_->service_engineFunctions() == engine &&
+			services_->service_globals() == globals && globals->time == now && life.mapGeneration() == frame.mapGeneration &&
+			life.roundGeneration() == frame.roundGeneration && services_->service_adapterFrameCount() == frame.tick &&
+			!source->free && source->serialnumber == serial;
+	};
+	const int slot = engine->pfnIndexOfEdict(source);
+	if (!current() || slot < 1 || slot > globals->maxClients || slot > kMaximumClientSlot ||
+		engine->pfnPEntityOfEntIndex(slot) != source || !current())
+		return;
+	const auto sourceSlot = static_cast<std::uint32_t>(slot);
+	const world::ActorKey sourceConnection{sourceSlot, life.slotGeneration(sourceSlot)};
+	const auto receipt = resolveGameDllClient(player, findClientObject);
+	if (!receipt.actor.isValid() || !current() || life.slotGeneration(sourceSlot) != sourceConnection.generation)
+		return;
+	services_->behavior_observePlayerDamage(receipt.index, receipt.actor, receipt.frame, source, serial, sourceConnection);
+}
+
+BotObservationRuntime::GameDllClientReceipt BotObservationRuntime::resolveGameDllClient(
+	const void *player, const std::function<const void *(const char *)> &findClientObject) const
+{
 	const auto *globals = services_->service_globals();
 	const auto *engine = services_->service_engineFunctions();
 	if (!player || !findClientObject || !globals || !engine || !engine->pfnSzFromIndex || !engine->pfnFindEntityByString ||
-		!engine->pfnIndexOfEdict || !std::isfinite(duration) || duration < 0.0f || !services_->runtimeIsActive())
-		return;
+		!engine->pfnIndexOfEdict || !services_->runtimeIsActive())
+		return {};
 	const auto &life = services_->service_lifecycle();
 	const world::FrameIdentity frame{life.mapGeneration(), life.roundGeneration(), services_->service_adapterFrameCount()};
 	const float now = globals->time;
@@ -1684,38 +1732,36 @@ void BotObservationRuntime::observeGameDllBlind(const void *player, float durati
 		const auto &handle = handles[index];
 		const world::ActorKey actor{handle.actor.slot, handle.actor.actorGeneration};
 		auto *entity = handle.entity;
-		if (!actor.isValid() || !services_->service_managedBotSlots()[index] || !entity || entity->free ||
-			entity->v.deadflag != DEAD_NO || !(entity->v.health > 0) || !entity->v.netname)
+		if (!actor.isValid() || !services_->service_managedBotSlots()[index] || !entity || entity->free || !entity->v.netname)
 			continue;
 		const int serial = entity->serialnumber;
 		const auto connection = life.slotGeneration(actor.slot);
 		const auto nameIndex = entity->v.netname;
 		const char *name = engine->pfnSzFromIndex(nameIndex);
 		if (!current())
-			return;
+			return {};
 		const std::string netname = name ? name : "";
 		if (netname.empty() || findClientObject(netname.c_str()) != player)
 		{
 			if (!current())
-				return;
+				return {};
 			continue;
 		}
 		// The GameDLL public lookup returns the opaque object for the same engine key.
 		// Report only when that key names exactly one engine entity.
 		if (!current() || engine->pfnFindEntityByString(nullptr, "netname", netname.c_str()) != entity || !current())
-			return;
+			return {};
 		const auto *other = engine->pfnFindEntityByString(entity, "netname", netname.c_str());
 		if (!current() || (other && engine->pfnIndexOfEdict(other) > 0) || !current())
-			return;
+			return {};
 		const auto &live = services_->service_managedBotHandles()[index];
 		if (!services_->service_managedBotSlots()[index] || live.entity != entity || live.actor.slot != actor.slot ||
 			live.actor.actorGeneration != actor.generation || life.slotGeneration(actor.slot) != connection ||
-			entity->free || entity->serialnumber != serial || entity->v.netname != nameIndex ||
-			entity->v.deadflag != DEAD_NO || !(entity->v.health > 0))
-			return;
-		services_->behavior_observePlayerBlind(index, actor, frame);
-		return;
+			entity->free || entity->serialnumber != serial || entity->v.netname != nameIndex)
+			return {};
+		return {index, actor, frame};
 	}
+	return {};
 }
 
 void BotObservationRuntime::resetMapPublicObservations()

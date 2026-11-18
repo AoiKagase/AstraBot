@@ -15,7 +15,9 @@ namespace astrabot
 {
 namespace metamod
 {
-ReGameDllObservationProvider *ReGameDllObservationProvider::blindOwner_ = nullptr;
+ReGameDllObservationProvider *ReGameDllObservationProvider::eventOwner_ = nullptr;
+ReGameDllObservationProvider::DamageRegistry *ReGameDllObservationProvider::deferredDamageRegistry_ = nullptr;
+unsigned ReGameDllObservationProvider::damageDispatchDepth_ = 0;
 
 ReGameDllObservationProvider::~ReGameDllObservationProvider()
 {
@@ -24,19 +26,32 @@ ReGameDllObservationProvider::~ReGameDllObservationProvider()
 
 void ReGameDllObservationProvider::reset()
 {
-	auto *registry = blindRegistry_;
-	if (blindOwner_ == this)
-		blindOwner_ = nullptr;
+	auto *blindRegistry = blindRegistry_;
+	auto *damageRegistry = damageRegistry_;
+	if (eventOwner_ == this)
+		eventOwner_ = nullptr;
 	blindRegistry_ = nullptr;
 	blindListener_ = nullptr;
 	blindContext_ = nullptr;
+	damageRegistry_ = nullptr;
+	damageListener_ = nullptr;
+	damageContext_ = nullptr;
 	functions_ = nullptr;
 	api_ = nullptr;
-	++blindRevision_;
+	++eventRevision_;
 	status_ = ReGameDllProbeStatus::NotPresent;
 	major_ = minor_ = 0;
-	if (registry)
-		registry->unregisterHook(&onBlind);
+	if (blindRegistry)
+		blindRegistry->unregisterHook(&onBlind);
+	if (damageRegistry)
+	{
+		// The native chain borrows the registry's array. Removing its active
+		// entry here would shift the next hook before callNext can read it.
+		if (damageDispatchDepth_ != 0)
+			deferredDamageRegistry_ = damageRegistry;
+		else
+			damageRegistry->unregisterHook(&onDamage);
+	}
 }
 
 void ReGameDllObservationProvider::probe(Factory factory)
@@ -69,7 +84,7 @@ bool ReGameDllObservationProvider::connectBlindEvents(BlindListener listener, vo
 {
 	if (blindRegistry_)
 		return listener == blindListener_ && context == blindContext_;
-	if (!api_ || !listener || blindOwner_)
+	if (!api_ || !listener || (eventOwner_ && eventOwner_ != this))
 		return false;
 	const auto *functions = api_->GetFuncs();
 	auto *hooks = api_->GetHookchains();
@@ -82,19 +97,61 @@ bool ReGameDllObservationProvider::connectBlindEvents(BlindListener listener, vo
 	blindRegistry_ = registry;
 	blindListener_ = listener;
 	blindContext_ = context;
-	blindOwner_ = this;
+	eventOwner_ = this;
 	registry->registerHook(&onBlind, HC_PRIORITY_LOW);
-	return blindOwner_ == this;
+	return eventOwner_ == this && blindRegistry_ == registry;
+}
+
+bool ReGameDllObservationProvider::connectDamageEvents(DamageListener listener, void *context)
+{
+	if (damageRegistry_)
+		return listener == damageListener_ && context == damageContext_;
+	if (!api_ || !listener || (eventOwner_ && eventOwner_ != this))
+		return false;
+	const auto *functions = api_->GetFuncs();
+	auto *hooks = api_->GetHookchains();
+	if (!functions || !functions->UTIL_FindEntityByString || !hooks)
+		return false;
+	auto *registry = hooks->CBasePlayer_TakeDamage();
+	if (!registry || (deferredDamageRegistry_ && deferredDamageRegistry_ != registry))
+		return false;
+	functions_ = functions;
+	damageRegistry_ = registry;
+	damageListener_ = listener;
+	damageContext_ = context;
+	eventOwner_ = this;
+	if (deferredDamageRegistry_)
+		deferredDamageRegistry_ = nullptr;
+	else
+		registry->registerHook(&onDamage, HC_PRIORITY_UNINTERRUPTABLE);
+	return eventOwner_ == this && damageRegistry_ == registry;
 }
 
 void ReGameDllObservationProvider::onBlind(
 	BlindChain *chain, CBasePlayer *player, float duration, float hold, float fade, int alpha)
 {
-	auto *owner = blindOwner_;
-	const auto revision = owner ? owner->blindRevision_ : 0U;
+	auto *owner = eventOwner_;
+	const auto revision = owner ? owner->eventRevision_ : 0U;
 	chain->callNext(player, duration, hold, fade, alpha);
-	if (player && owner && owner == blindOwner_ && owner->blindRevision_ == revision)
+	if (player && owner && owner == eventOwner_ && owner->eventRevision_ == revision && owner->blindListener_)
 		owner->blindListener_(owner->blindContext_, player, duration);
+}
+
+int ReGameDllObservationProvider::onDamage(DamageChain *chain, CBasePlayer *player, entvars_s *inflictor,
+	entvars_s *attacker, float &damage, int damageType)
+{
+	++damageDispatchDepth_;
+	const auto *owner = eventOwner_;
+	if (player && inflictor && owner && owner->damageListener_)
+		owner->damageListener_(owner->damageContext_, player, inflictor);
+	const int result = chain->callNext(player, inflictor, attacker, damage, damageType);
+	if (--damageDispatchDepth_ == 0 && deferredDamageRegistry_)
+	{
+		auto *registry = deferredDamageRegistry_;
+		deferredDamageRegistry_ = nullptr;
+		registry->unregisterHook(&onDamage);
+	}
+	return result;
 }
 
 const void *ReGameDllObservationProvider::findClientObject(const char *name) const
@@ -154,8 +211,8 @@ const char *ReGameDllObservationProvider::diagnostic() const
 	case ReGameDllProbeStatus::IncompatibleVersion:
 		return "ReGameDLL API version unsupported: no supplemental reads";
 	case ReGameDllProbeStatus::MetadataOnly:
-		if (blindRegistry_)
-			return "ReGameDLL API negotiated; public player blindness hook active";
+		if (blindRegistry_ || damageRegistry_)
+			return "ReGameDLL API negotiated; public player event hooks active";
 		return "ReGameDLL API negotiated; no public per-actor weapon timer/accuracy getters; no supplemental reads";
 	}
 	return "ReGameDLL probe status unknown";

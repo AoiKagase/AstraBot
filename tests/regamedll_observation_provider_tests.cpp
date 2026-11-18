@@ -19,11 +19,26 @@ public:
 	}
 };
 
+class TestDamageRegistry final : public IReGameHookRegistry_CBasePlayer_TakeDamage
+{
+public:
+	hookfunc_t hook = nullptr;
+	int priority = -1;
+	void registerHook(hookfunc_t callback, int order) override { hook = callback; priority = order; }
+	void unregisterHook(hookfunc_t callback) override
+	{
+		if (hook == callback)
+			hook = nullptr;
+	}
+};
+
 class TestHookchains final : public EmptyReGameHookchains
 {
 public:
 	TestBlindRegistry blind;
+	TestDamageRegistry damage;
 	IReGameHookRegistry_CBasePlayer_Blind *CBasePlayer_Blind() override { return &blind; }
+	IReGameHookRegistry_CBasePlayer_TakeDamage *CBasePlayer_TakeDamage() override { return &damage; }
 };
 
 class TestBlindChain final : public IReGameHook_CBasePlayer_Blind
@@ -156,6 +171,63 @@ bool testBlindEvents(astrabot::metamod::ReGameDllObservationProvider &provider)
 	api.enableHooks = false;
 	return chain.calls == 2 && notice.count == 1 && !api.hooks.blind.hook;
 }
+
+bool testDamageEvents(astrabot::metamod::ReGameDllObservationProvider &provider)
+{
+	api.enableHooks = true;
+	provider.probe(factory);
+	if (!provider.connectBlindEvents([](void *, const void *, float) {}, nullptr) || !api.hooks.blind.hook)
+		return false;
+	struct Notice
+	{
+		const void *victim = nullptr;
+		const entvars_s *source = nullptr;
+		int count = 0;
+		astrabot::metamod::ReGameDllObservationProvider *resetProvider = nullptr;
+	} notice;
+	if (!provider.connectDamageEvents([](void *context, const void *victim, const entvars_s *source) {
+			auto &event = *static_cast<Notice *>(context);
+			event.victim = victim;
+			event.source = source;
+			++event.count;
+			if (event.resetProvider)
+				event.resetProvider->reset();
+		}, &notice) || !api.hooks.damage.hook || api.hooks.damage.priority != HC_PRIORITY_UNINTERRUPTABLE)
+		return false;
+	int inflictorObject = 0, attackerObject = 0;
+	class Chain final : public IReGameHook_CBasePlayer_TakeDamage
+	{
+	public:
+		explicit Chain(const Notice &event) : event(event) {}
+		const Notice &event;
+		const entvars_s *expectedAttacker = nullptr;
+		int calls = 0;
+		bool observedBeforeRules = false;
+		int callNext(CBasePlayer *victim, entvars_s *source, entvars_s *attacker, float &amount, int type) override
+		{
+			++calls;
+			observedBeforeRules = api.hooks.damage.hook && event.count == calls && event.victim == victim && event.source == source &&
+				attacker == expectedAttacker && amount == 7.0f && type == 2;
+			amount = 3.0f;
+			return 0;
+		}
+		int callOriginal(CBasePlayer *, entvars_s *, entvars_s *, float &, int) override { calls += 100; return 1; }
+	} chain(notice);
+	auto *victim = reinterpret_cast<CBasePlayer *>(&botObject);
+	auto *inflictor = reinterpret_cast<entvars_s *>(&inflictorObject);
+	auto *attacker = reinterpret_cast<entvars_s *>(&attackerObject);
+	chain.expectedAttacker = attacker;
+	float amount = 7.0f;
+	const int result = api.hooks.damage.hook(&chain, victim, inflictor, attacker, amount, 2);
+	if (result != 0 || chain.calls != 1 || !chain.observedBeforeRules || amount != 3.0f)
+		return false;
+	notice.resetProvider = &provider;
+	amount = 7.0f;
+	const int resetResult = api.hooks.damage.hook(&chain, victim, inflictor, attacker, amount, 2);
+	api.enableHooks = false;
+	return resetResult == 0 && chain.calls == 2 && chain.observedBeforeRules && amount == 3.0f &&
+		!api.hooks.damage.hook && !api.hooks.blind.hook;
+}
 }
 
 int main()
@@ -165,6 +237,8 @@ int main()
 	ReGameDllObservationProvider provider;
 	if (!testBlindEvents(provider))
 		return 11;
+	if (!testDamageEvents(provider))
+		return 12;
 	compat::CompatibilityObservation observation{};
 	observation.actor = {1U, 9U};
 	observation.frame = {2U, 3U, 10U};

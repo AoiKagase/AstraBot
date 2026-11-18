@@ -7,6 +7,9 @@
 class CBasePlayer;
 class IReGameApi;
 struct ReGameFuncs_t;
+struct entvars_s;
+template<typename Result, typename Entity, typename... Args> class IHookChainClass;
+template<typename Result, typename Entity, typename... Args> class IHookChainRegistryClass;
 template<typename Player, typename... Args> class IVoidHookChainClass;
 template<typename Player, typename... Args> class IVoidHookChainRegistryClass;
 
@@ -31,6 +34,7 @@ class ReGameDllObservationProvider final : public compat::IObservationProvider
 public:
 	using Factory = void *(*)(const char *, int *);
 	using BlindListener = void (*)(void *, const void *, float);
+	using DamageListener = void (*)(void *, const void *, const entvars_s *);
 	ReGameDllObservationProvider() = default;
 	~ReGameDllObservationProvider() override;
 	ReGameDllObservationProvider(const ReGameDllObservationProvider &) = delete;
@@ -40,6 +44,8 @@ public:
 	void probe(Factory factory);
 	void probeLoadedGameDll();
 	bool connectBlindEvents(BlindListener listener, void *context);
+	bool connectDamageEvents(DamageListener listener, void *context);
+	bool dispatchingDamage() const { return damageDispatchDepth_ != 0; }
 	const void *findClientObject(const char *name) const;
 	ReGameDllProbeStatus status() const
 	{
@@ -63,14 +69,23 @@ public:
 private:
 	using BlindChain = IVoidHookChainClass<CBasePlayer, float, float, float, int>;
 	using BlindRegistry = IVoidHookChainRegistryClass<CBasePlayer, float, float, float, int>;
+	using DamageChain = IHookChainClass<int, CBasePlayer, entvars_s *, entvars_s *, float &, int>;
+	using DamageRegistry = IHookChainRegistryClass<int, CBasePlayer, entvars_s *, entvars_s *, float &, int>;
 	static void onBlind(BlindChain *chain, CBasePlayer *player, float duration, float hold, float fade, int alpha);
-	static ReGameDllObservationProvider *blindOwner_;
+	static int onDamage(DamageChain *chain, CBasePlayer *player, entvars_s *inflictor, entvars_s *attacker,
+		float &damage, int damageType);
+	static ReGameDllObservationProvider *eventOwner_;
+	static DamageRegistry *deferredDamageRegistry_;
+	static unsigned damageDispatchDepth_;
 	IReGameApi *api_ = nullptr;
 	const ReGameFuncs_t *functions_ = nullptr;
 	BlindRegistry *blindRegistry_ = nullptr;
 	BlindListener blindListener_ = nullptr;
 	void *blindContext_ = nullptr;
-	std::uint64_t blindRevision_ = 0;
+	DamageRegistry *damageRegistry_ = nullptr;
+	DamageListener damageListener_ = nullptr;
+	void *damageContext_ = nullptr;
+	std::uint64_t eventRevision_ = 0;
 	ReGameDllProbeStatus status_ = ReGameDllProbeStatus::NotPresent;
 	int major_ = 0;
 	int minor_ = 0;

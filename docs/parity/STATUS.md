@@ -1,3 +1,11 @@
+## 16A　ReGameDLLでの味方撃ち抗議
+
+ReGameDLL-CS `b088984` の `CCSBot::TakeDamage`、`CBot::BotRelationship`、`BotChatterInterface::FriendlyFire` を参照した。公開の `CBasePlayer_TakeDamage` フックから、ダメージ判定前に直接の加害元を受け取る。現在の管理Botへの通知で、同じチームの人間が直接の加害元であり、FFAが無効な場合に発話処理へ進む。公開検索で被害Botの一致を確認し、加害元のスロット・接続とエンティティを照合する。
+
+通知1回につき0.3〜0.5秒の遅延を抽選し、`FriendlyFire` を専用の発話種別と有効期間1秒で登録する。同じ発話がキューにある場合は重複排除が働く。死亡したBotでも抽選まで進み、登録時の生存条件で発話を除く。通知処理中にリセットされた場合、下流のダメージ処理が終わるまでフックの登録解除を遅らせる。標準GameDLLの直接加害元の受信経路は16Bで追跡する。実機確認は25。
+
+テストでは、直接の加害元と攻撃者が異なる通知、下流が0を返す呼び出し、通知中の登録解除、FFA、死亡時の抽選、同フレームの抽選2回と発話1回を確認した。Windows x86 Debugは160/160件、Linux x86 Debugは158/159件合格。Linuxの失敗は既知の `astrabot_combat_policy`。両OSの動作トレース149,153件が既存の記録と一致し、PEとELFのx86形式と公開関数7件を確認した。
+
 ## 15B-2e　ReGameDLLでのBlinded発話
 
 ReGameDLL-CS `b088984` の `CCSBot::Blind` と `CBasePlayer_Blind` を参照した。公開フックから失明の通知を受け、公開の `UTIL_FindEntityByString` とエンジン検索で同じプレイヤーを照合する。`netname` が一意で、通知が現在の生存中の管理Botに対応する場合に `RandomFloat(0, 100) < 33.3f` で抽選し、`Blinded` を有効期間1秒で発話キューへ登録する。

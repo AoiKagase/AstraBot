@@ -82,6 +82,8 @@ public:
 	}
 	void observeEnemyWeaponFire(const edict_t *source, const world::FrameIdentity &frame, float now);
 	void observePlayerBlind(std::size_t index, world::ActorKey actor, world::FrameIdentity frame);
+	void observePlayerDamage(std::size_t index, world::ActorKey actor, world::FrameIdentity frame,
+		const edict_t *source, int serial, world::ActorKey sourceConnection);
 	bool forcedRunning(std::size_t index);
 	world::EntityKey currentEnemySource(std::size_t index) const;
 	void observePlayerDeath(int victimSlot, int killerSlot, edict_t *recipient, const world::FrameIdentity &frame);

@@ -2,6 +2,8 @@
 
 Audit base062824e0f29d060c56a76d455c2c9648c539c5a0. Behavior oracle: ReGameDLL-CS b0889847fe6d03898be88acc9e366660efb40ab5; public Metamod-P7ec9b014f8c0a947a724644aebe34eb33706e44b. This is a current-source capability audit, not live acceptance or a parity waiver. Runtime boundary remains Metamod-P plus public HLSDK/Engine/GameDLL interfaces (.planning/PROJECT.md); no private symbols/layouts, ReAPI, patching or relinking.
 
+The optional ReGameDLL provider now uses its public `CBasePlayer_TakeDamage` hook for FriendlyFire (16A). It observes the direct inflictor before downstream damage processing and identifies the managed victim through public queries. The audit below records the standalone Vanilla boundary. Exact Vanilla FriendlyFire (16B), injury reactions (17), and live acceptance (25) remain open.
+
 | Candidate | Authoritative source | What is actually observable | Exact native stream established? |
 |---|---|---|---|
 | DLL/NEW_DLL hooks | regamedll/engine/eiface.h DLL_FUNCTIONS and NEW_DLL_FUNCTIONS; Metamod api_info.cpp/dllapi.cpp | Think, touch, use, command, lifecycle, collision and cvar callbacks; no TakeDamage or TraceAttack callback | No direct damage hook in these public tables |

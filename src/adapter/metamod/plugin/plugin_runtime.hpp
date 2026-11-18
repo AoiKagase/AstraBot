@@ -395,6 +395,11 @@ private:
 	{
 		behavior_.observePlayerBlind(index, actor, frame);
 	}
+	void behavior_observePlayerDamage(std::size_t index, world::ActorKey actor, world::FrameIdentity frame,
+		const edict_t *source, int serial, world::ActorKey sourceConnection) override
+	{
+		behavior_.observePlayerDamage(index, actor, frame, source, serial, sourceConnection);
+	}
 
 	void navigation_observeResetHud(std::size_t index) override
 	{
