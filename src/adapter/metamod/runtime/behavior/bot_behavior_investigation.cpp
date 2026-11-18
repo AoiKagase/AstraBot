@@ -62,7 +62,8 @@ void BotBehaviorRuntime::updateNoiseInvestigation(std::size_t index, const runti
 	}
 	const auto current = machine.state();
 	const bool defending = current == compat::CompatibilityStateId::Hide &&
-		machine.task() == compat::CompatibilityTaskId::HoldPosition;
+		(machine.task() == compat::CompatibilityTaskId::HoldPosition ||
+			machine.task() == compat::CompatibilityTaskId::GuardLooseBomb);
 	constexpr unsigned sniperWeapons = (1U << 3) | (1U << 13) | (1U << 18) | (1U << 24);
 	const bool mayInvestigateFromDefense = defending &&
 		reactionDisposition(index) == compat::ReactionDisposition::Engage &&

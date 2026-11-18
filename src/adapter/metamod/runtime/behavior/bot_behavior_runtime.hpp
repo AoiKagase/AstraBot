@@ -203,10 +203,15 @@ public:
 	void observeC4AttackDispatched(std::size_t index, const FakeClientHandle &handle, std::uint16_t buttons);
 
 	void observeNeutralC4AttackDispatched(std::size_t index, const FakeClientHandle &handle);
+	void observeLooseBombModel(edict_t *box, const char *model);
 
 private:
-	struct TeammateRequestEnvironment;
+	struct ActorTaskEnvironment;
 	void reportBombPickedUp(std::size_t index);
+	void hideNearLooseBomb(std::size_t index, bool announce);
+	void rememberLooseBombDrop(world::EntityKey box, world::FrameIdentity frame, nav::NavVector origin);
+	nav::AreaId looseBombArea(const nav::NavSnapshot &navigation, const std::function<bool()> &current);
+	bool guardedBombPosition(std::size_t index, nav::NavVector *position) const;
 	void transmitTeammateRequest(std::size_t sender, compat::ChatterMeme meme, const std::function<bool()> &current);
 	bool helpGoalCurrent(std::size_t index) const;
 	bool executionCurrent(std::size_t index, const compat::ReactionContext &receipt, std::uint64_t revision) const;
@@ -241,6 +246,7 @@ private:
 		int observedTeam = 0;
 		float automaticLeaderRange = (std::numeric_limits<float>::max)();
 		compat::ScenarioTarget looseBomb{};
+		nav::NavVector looseBombOrigin{};
 		nav::NavSnapshot navigation{};
 		bool wasFollowing = false;
 	};
@@ -494,6 +500,20 @@ private:
 		std::uint32_t connection = 0;
 	};
 
+	struct LooseBombDrop
+	{
+		world::EntityKey box{};
+		world::FrameIdentity frame{};
+		nav::NavVector origin{};
+		nav::AreaId area = 0;
+		std::uint64_t navRevision = 0;
+		bool matches(world::EntityKey key, world::FrameIdentity current) const
+		{
+			return box == key && box.isValid() && frame.mapGeneration == current.mapGeneration &&
+				frame.roundGeneration == current.roundGeneration;
+		}
+	};
+
 	struct ActorState
 	{
 		std::uint64_t executionRevision = 1;
@@ -561,6 +581,7 @@ private:
 		bool managedBotWasDead{};
 	};
 	std::array<ActorState, NativeBotObservation::kClientSlotCount> actors_{};
+	LooseBombDrop looseBombDrop_{};
 	std::array<BreakableMaterial, 2048U> breakableMaterials_{};
 	BotBehaviorServices *services_ = nullptr;
 	compat::ChatterRadioCatalog outgoingChatterCatalog_{};

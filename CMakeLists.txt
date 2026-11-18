@@ -1219,7 +1219,8 @@ if(ASTRABOT_BUILD_TESTS AND ASTRABOT_BUILD_METAMOD)
   add_test(NAME astrabot_bombsite_request_runtime COMMAND astrabot_statement_queue_runtime --bombsite-request)
   add_test(NAME astrabot_bomb_carrier_runtime COMMAND astrabot_statement_queue_runtime --bomb-carrier)
   add_test(NAME astrabot_loose_bomb_runtime COMMAND astrabot_statement_queue_runtime --loose-bomb)
-  set_tests_properties(astrabot_statement_queue_runtime PROPERTIES
+  add_test(NAME astrabot_guard_loose_bomb_runtime COMMAND astrabot_statement_queue_runtime --guard-loose-bomb)
+  set_tests_properties(astrabot_statement_queue_runtime astrabot_guard_loose_bomb_runtime PROPERTIES
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" RESOURCE_LOCK astrabot_actor_command_profile)
   add_executable(astrabot_chatter_nav_probe tests/chatter_nav_probe_tests.cpp)
   target_include_directories(astrabot_chatter_nav_probe PRIVATE ${combat_target_log_includes})

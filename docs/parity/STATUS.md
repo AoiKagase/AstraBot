@@ -1,3 +1,12 @@
+## 2026-11-18　11C-2a　落下C4の警備
+
+基点は `29b7810`。ReGameDLL_CS `b088984` の `SetLooseBomb`、`HuntState::OnUpdate`、`CCSBot::Hide`、`HideState::OnUpdate` と `BotChatterInterface::ReportingIn` を参照した。
+
+- C4の武器箱にモデルが設定された時点で、元の位置とNAVエリアを記録する。途中でプラグインを読み込んだ場合は、最初に観測できた箱の位置を使う。Hunt中の協調的なCTが箱を視認すると、そのエリア付近の隠れ場所へ向かい、警備計画を一度伝える。
+- 状況照会には警備中と答え、箱の現在位置を味方に伝える。劣勢で交戦中なら援護要請を送る。警備の30～60秒の待機時間を超えると場所を選び直し、箱の消失を確認すると回収を報告して警備を終える。公開APIからリロード状態を取得できない環境では、実際に送ったリロード入力の記録を使う。
+- 2体のCTを使った統合テストで、移動した箱の元のエリアを警備すること、遮蔽されたCTは警備に入らないこと、視界から外れた後の状況報告、警備時間の満了、リロード完了後の回収報告を確認した。
+- Windows x86 Debugは146/146件合格。Linux x86 Debugは144/145件合格で、残りは項目22で追跡中の胸部照準判定 `astrabot_combat_policy`。両方のプラグインでx86形式と必須エクスポート7件を確認した。SHA-256はWindows DLLが `9449842d414fcf384a15cdaaa6c001053237c30c28000ad31f32cca9ad573084`、Linux SOが `1c1a79837d7af91257755a5414dc6d0b6b57531c06f9ef05a6ee8481f6a67a94`。実機での警備動作の受入れは項目25に残る。
+
 ## 2026-11-18　11C-1　C4の目撃・回収報告
 
 基点は `bc05dfc`。ReGameDLL_CS `b088984` の `CCSBot::CanSeeLooseBomb`、`BotChatterInterface::SpottedBomber`、`SpottedLooseBomb`、`TheyPickedUpTheBomb`、`BotBombStatusMeme::Interpret` と `EVENT_BOMB_PICKED_UP` を参照した。

@@ -80,6 +80,7 @@ public:
 	void onPmMovePost(playermove_t *move, int server);
 	void onMovementSound(int channel, const char *sample, float volume, float attenuation, int flags, int pitch);
 	void onPrecacheEvent(int type, const char *script, unsigned short index);
+	void onSetModel(edict_t *entity, const char *model);
 	void onPlaybackEvent(
 		int flags, const edict_t *invoker, unsigned short index, float delay, int bparam1, int bparam2);
 	void onWriteString(const char *value);
@@ -764,6 +765,7 @@ FORCE_STACK_ALIGN void HookWriteCoord(float value);
 FORCE_STACK_ALIGN void HookEmitSound(
 	edict_t *entity, int channel, const char *sample, float volume, float attenuation, int flags, int pitch);
 FORCE_STACK_ALIGN unsigned short HookPrecacheEventPost(int type, const char *script);
+FORCE_STACK_ALIGN void HookSetModelPost(edict_t *entity, const char *model);
 FORCE_STACK_ALIGN void HookPlaybackEvent(int flags, const edict_t *invoker, unsigned short index, float delay,
 	float *origin, float *angles, float fparam1, float fparam2, int iparam1, int iparam2, int bparam1, int bparam2);
 FORCE_STACK_ALIGN void HookWriteString(const char *value);

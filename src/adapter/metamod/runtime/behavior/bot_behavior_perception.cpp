@@ -227,6 +227,7 @@ bool BotBehaviorRuntime::forcedRunning(std::size_t index)
 
 void BotBehaviorRuntime::resetRoundRecognition()
 {
+	looseBombDrop_ = {};
 	updateVoiceFeedback(true);
 	for (auto &actor : actors_)
 	{

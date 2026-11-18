@@ -1,8 +1,11 @@
 #include "runtime/behavior/bot_behavior_runtime.hpp"
+#include "astrabot/compat/nav_area_lookup.hpp"
+#include "runtime/shared/public_nav_probe.hpp"
 #include "runtime/shared/bot_runtime_support.hpp"
 #include "runtime/behavior/bot_look_geometry.hpp"
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 namespace astrabot
 {
 namespace metamod
@@ -25,6 +28,100 @@ constexpr int kC4WeaponId = 6;
 constexpr unsigned kUnarmedInventoryMask = (1U << 6) | (1U << 4) | (1U << 9) | (1U << 25);
 
 }
+void BotBehaviorRuntime::rememberLooseBombDrop(world::EntityKey box, world::FrameIdentity frame, nav::NavVector origin)
+{
+	if (!looseBombDrop_.matches(box, frame))
+		looseBombDrop_ = {box, frame, origin};
+}
+
+void BotBehaviorRuntime::observeLooseBombModel(edict_t *box, const char *model)
+{
+	const auto engine = services_->service_engineFunctions();
+	const auto globals = services_->service_globals();
+	if (!box || box->free || box->serialnumber < 0 || !engine || !engine->pfnIndexOfEdict ||
+		!engine->pfnSzFromIndex || !globals ||
+		services_->service_compatibilitySurface().configuration().mode != compat::RuntimeMode::Compatibility)
+		return;
+	const auto &life = services_->service_lifecycle();
+	const world::FrameIdentity frame{life.mapGeneration(), life.roundGeneration(), services_->service_adapterFrameCount()};
+	const auto serial = box->serialnumber;
+	const auto classname = box->v.classname, modelIndex = box->v.model;
+	const auto current = [&] {
+		return services_->service_engineFunctions() == engine && services_->service_globals() == globals &&
+			frame.mapGeneration == life.mapGeneration() &&
+			frame.roundGeneration == life.roundGeneration() && !box->free && box->serialnumber == serial &&
+			box->v.classname == classname && box->v.model == modelIndex;
+	};
+	const auto name = engine->pfnSzFromIndex(classname);
+	if (!current() || !ObservationAdapter::isLooseBombBox(box, name, model))
+		return;
+	const auto actual = engine->pfnSzFromIndex(modelIndex);
+	if (!current() || !actual || std::strcmp(actual, model) != 0)
+		return;
+	const int id = engine->pfnIndexOfEdict(box);
+	if (!current() || id <= globals->maxClients || id >= globals->maxEntities)
+		return;
+	const world::EntityKey key{static_cast<unsigned>(id), static_cast<unsigned>(serial) + 1U};
+	rememberLooseBombDrop(key, frame, {box->v.origin.x, box->v.origin.y, box->v.origin.z});
+	(void)looseBombArea(services_->service_navPublisher().snapshot(), current);
+}
+
+nav::AreaId BotBehaviorRuntime::looseBombArea(const nav::NavSnapshot &navigation, const std::function<bool()> &current)
+{
+	const auto drop = looseBombDrop_;
+	if (!navigation.isValid() || !drop.box.isValid() || navigation.mapGeneration() != drop.frame.mapGeneration)
+		return 0;
+	if (navigation.revision() == drop.navRevision)
+		return drop.area;
+	const auto sameDrop = [&] {
+		return current() && looseBombDrop_.matches(drop.box, drop.frame) &&
+			services_->service_navPublisher().snapshot().revision() == navigation.revision();
+	};
+	PublicNavProbe probe(services_->service_engineFunctions(), sameDrop);
+	const auto area = compat::findBotNavArea(navigation, drop.origin, &probe, false);
+	if (!sameDrop())
+		return 0;
+	looseBombDrop_.area = area;
+	looseBombDrop_.navRevision = navigation.revision();
+	return area;
+}
+
+bool BotBehaviorRuntime::guardedBombPosition(std::size_t index, nav::NavVector *position) const
+{
+	const auto &actor = actors_[index];
+	if (actor.managedBotStateMachines.task() != compat::CompatibilityTaskId::GuardLooseBomb)
+		return false;
+	const auto drop = looseBombDrop_;
+	const auto engine = services_->service_engineFunctions();
+	const auto globals = services_->service_globals();
+	if (!drop.box.isValid() || drop.frame.mapGeneration != services_->service_lifecycle().mapGeneration() ||
+		drop.frame.roundGeneration != services_->service_lifecycle().roundGeneration() ||
+		!engine || !engine->pfnPEntityOfEntIndex || !engine->pfnSzFromIndex || !globals ||
+		globals->maxEntities <= 0 || drop.box.id >= static_cast<unsigned>(globals->maxEntities))
+		return false;
+	const auto *box = engine->pfnPEntityOfEntIndex(static_cast<int>(drop.box.id));
+	const auto sameBox = [&] {
+		const auto &life = services_->service_lifecycle();
+		return services_->service_engineFunctions() == engine && services_->service_globals() == globals &&
+			life.mapGeneration() == drop.frame.mapGeneration && life.roundGeneration() == drop.frame.roundGeneration &&
+			looseBombDrop_.matches(drop.box, drop.frame) && box && !box->free && box->serialnumber >= 0 &&
+			static_cast<unsigned>(box->serialnumber) + 1U == drop.box.generation;
+	};
+	if (!sameBox())
+		return false;
+	const auto classname = box->v.classname, model = box->v.model;
+	const char *name = engine->pfnSzFromIndex(classname);
+	if (!sameBox() || !name || std::strcmp(name, "weaponbox") != 0)
+		return false;
+	const char *modelName = engine->pfnSzFromIndex(model);
+	if (!sameBox() || box->v.classname != classname || box->v.model != model ||
+		!ObservationAdapter::isLooseBombBox(box, name, modelName))
+		return false;
+	const auto origin = box->v.origin;
+	*position = {origin.x, origin.y, origin.z};
+	return true;
+}
+
 void BotBehaviorRuntime::updateGuardLook(ManagedActionContext &ctx)
 {
 	auto &state = actors_[ctx.index];

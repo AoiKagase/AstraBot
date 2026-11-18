@@ -8,6 +8,7 @@
 #include "astrabot/compat/state_machine.hpp"
 #include <algorithm>
 #include <array>
+#include <bitset>
 #include <cmath>
 #include <cstring>
 #include <string>
@@ -42,7 +43,8 @@ inline ChatterPhrase reportingInContactPhrase(bool attacking, RadioContactCounts
 }
 
 inline ChatterStatementRequest reportingInStatement(float now, bool attacking, RadioContactCounts contacts,
-	float enemyDeathTimestamp, float timeSinceLastSawEnemy, std::uint16_t place, std::uint32_t placePhrase)
+	float enemyDeathTimestamp, float timeSinceLastSawEnemy, std::uint16_t place, std::uint32_t placePhrase,
+	const nav::NavVector *guardedBomb = nullptr)
 {
 	ChatterStatementRequest report{};
 	report.source = ChatterScheduleSource::Generic;
@@ -52,6 +54,11 @@ inline ChatterStatementRequest reportingInStatement(float now, bool attacking, R
 	report.expires = now + 10.0f;
 	report.phrase = reportingInContactPhrase(attacking, contacts, enemyDeathTimestamp, timeSinceLastSawEnemy);
 	report.program.append({ChatterPartKind::Place, ChatterPhrase::None, place, placePhrase});
+	if (guardedBomb)
+	{
+		report.program.append({ChatterPartKind::Fixed, ChatterPhrase::GuardingLooseBomb, 0, 0});
+		report.meme = {ChatterMemeKind::BombLoose, 0, *guardedBomb};
+	}
 	report.program.append({ChatterPartKind::Fixed, report.phrase, 0, 0});
 	if (report.phrase == ChatterPhrase::Help)
 		report.meme = {ChatterMemeKind::Help, place};
@@ -200,6 +207,7 @@ struct OutgoingRadioDecision
 class OutgoingRadioScheduler
 {
 public:
+	using VoicePhrases = std::bitset<static_cast<unsigned>(ChatterPhrase::Count)>;
 	void reset()
 	{
 		pending_.clear();
@@ -370,7 +378,7 @@ public:
 			directFollow_ = false;
 	}
 	OutgoingRadioDecision decide(const OutgoingRadioInput &in, const ChatterRadioCatalog &catalog,
-		std::uint32_t voicePhrases, const ChatterStatementHandle &selected)
+		VoicePhrases voicePhrases, const ChatterStatementHandle &selected)
 	{
 		if (directFollow_)
 			return {OutgoingRadioStatus::Ready, ChatterPhrase::None, 1, 5, 0, {}, directToken_};
@@ -409,7 +417,8 @@ public:
 		if (in.now < node.request.start)
 			return {};
 		const auto choice = catalog.lookup(phrase);
-		const bool available = choice.menu || ((voicePhrases & (1U << static_cast<unsigned>(phrase))) != 0);
+		const auto phraseIndex = static_cast<unsigned>(phrase);
+		const bool available = choice.menu || (phraseIndex < voicePhrases.size() && voicePhrases[phraseIndex]);
 		return {available ? OutgoingRadioStatus::Ready : OutgoingRadioStatus::MissingPhrase, phrase, choice.menu,
 			choice.slot, node.request.place, selected, 0};
 	}
@@ -444,7 +453,7 @@ public:
 		pending_.maintain(maintenance, current);
 	}
 	OutgoingRadioDecision update(
-		const OutgoingRadioInput &in, const ChatterRadioCatalog &catalog, std::uint32_t voicePhrases = 0)
+		const OutgoingRadioInput &in, const ChatterRadioCatalog &catalog, VoicePhrases voicePhrases = {})
 	{
 		prepare(in, catalog);
 		ChatterTeamSelection selection;

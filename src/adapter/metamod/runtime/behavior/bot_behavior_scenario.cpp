@@ -202,6 +202,10 @@ void BotBehaviorRuntime::updateScenarioState(std::size_t index, const runtime::M
 			if (!current())
 				return;
 			actors_[index].looseBombObservation = data.looseBomb;
+			if (data.looseBomb.entity.isValid())
+				rememberLooseBombDrop(data.looseBomb.entity, context.frame, data.looseBombOrigin);
+			else if (data.looseBomb.frame == context.frame)
+				looseBombDrop_ = {};
 			updateScenarioNavigation(index, before, context, stateBehavior, observation, scenario, data);
 			if (!current())
 				return;
@@ -415,6 +419,7 @@ void BotBehaviorRuntime::observeScenarioEntities(std::size_t index, const runtim
 				if (!entity->free && entity->serialnumber == serial)
 				{
 					auto &bomb = data.looseBomb;
+					data.looseBombOrigin = {position.x, position.y, position.z};
 					bomb.entity = {static_cast<unsigned>(entityIndex), static_cast<unsigned>(serial) + 1U};
 					bomb.knowledge = visible ? compat::ScenarioKnowledge::Visible : compat::ScenarioKnowledge::Unknown;
 					if (visible)
@@ -946,15 +951,31 @@ void BotBehaviorRuntime::updateScenarioTeamwork(std::size_t index, const runtime
 	if (!cooperative.rogueKnown && !wasFollowing)
 		scenario.radio = nullptr;
 	bool finishedDefense = false;
+	const bool guardingLoose = machine.task() == compat::CompatibilityTaskId::GuardLooseBomb;
 	if (machine.state() == compat::CompatibilityStateId::Hide &&
-		machine.task() == compat::CompatibilityTaskId::HoldPosition && !machine.attackOverlayActive())
+		(guardingLoose || machine.task() == compat::CompatibilityTaskId::HoldPosition) && !machine.attackOverlayActive())
 	{
 		const float feetZ = before.origin.z - (before.ducked ? 18.0f : 36.0f);
 		actors_[index].scenarioPlanners.observeDefenderFeet(before.origin.x, before.origin.y, feetZ);
-		const bool reloading = observation.weapon.reloadState.isAvailable() &&
-			observation.weapon.reloadState.value == combat::ReloadState::Reloading;
-		finishedDefense = actors_[index].scenarioPlanners.finishDefense(
-			context.timestamp - machine.stateTimestamp(), reloading);
+		const auto &reload = observation.weapon.reloadState;
+		const bool reloading = reload.isAvailable() && reload.value != combat::ReloadState::Unknown
+			? reload.value == combat::ReloadState::Reloading
+			: services_->observation_publicObservations().pendingReloadRequest(context.actor, context.frame, context.timestamp);
+		const float elapsed = context.timestamp - machine.stateTimestamp();
+		if (guardingLoose && actors_[index].scenarioPlanners.defenseExpired(elapsed, reloading))
+		{
+			hideNearLooseBomb(index, false);
+			return;
+		}
+		finishedDefense = actors_[index].scenarioPlanners.finishDefense(elapsed, reloading);
+		if (guardingLoose && !reloading && data.looseBomb.frame == context.frame && !data.looseBomb.entity.isValid())
+		{
+			reportBombPickedUp(index);
+			if (!current())
+				return;
+			actors_[index].scenarioPlanners.cancelHoldPosition();
+			finishedDefense = true;
+		}
 	}
 	if (finishedDefense || actors_[index].clearedBombsite.frame == context.frame)
 	{
@@ -964,6 +985,16 @@ void BotBehaviorRuntime::updateScenarioTeamwork(std::size_t index, const runtime
 	}
 	else
 		actors_[index].scenarioDecisions = actors_[index].scenarioPlanners.update(scenario);
+	const auto action = actors_[index].scenarioDecisions.action;
+	if (machine.state() == compat::CompatibilityStateId::Hunt && !machine.attackOverlayActive() &&
+		(action == compat::ScenarioAction::None || action == compat::ScenarioAction::Hunt) &&
+		scenario.team == objectives::TeamRole::CounterTerrorist && scenario.scenario == compat::PublicScenarioKind::Bomb &&
+		cooperative.rogueKnown && !cooperative.rogue && context.timestamp - machine.stateTimestamp() <= 30.0f &&
+		data.looseBomb.knowledge == compat::ScenarioKnowledge::Visible)
+	{
+		hideNearLooseBomb(index, true);
+		return;
+	}
 	if (!reactionPursuing(index))
 	{
 		updateBombGuardTarget(index, scenario, &actors_[index].scenarioDecisions);

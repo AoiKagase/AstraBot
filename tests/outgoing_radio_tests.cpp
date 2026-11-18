@@ -365,6 +365,17 @@ int main()
 		"natural completion of RequestReport delivers a report request");
 	const auto calm = reportingInStatement(30, false, {}, 0, 10, 3, 5);
 	const auto fighting = reportingInStatement(30, true, {2, 0}, 0, 10, 3, 5);
+	const astrabot::nav::NavVector guardedBomb{240, 96, 42};
+	const auto guard = reportingInStatement(30, false, {}, 0, 10, 3, 5, &guardedBomb);
+	check(guard.program.count == 3 && guard.program.parts[0].kind == ChatterPartKind::Place &&
+		guard.program.parts[1].phrase == ChatterPhrase::GuardingLooseBomb &&
+		guard.program.parts[2].phrase == ChatterPhrase::Clear && guard.meme.kind == ChatterMemeKind::BombLoose &&
+		guard.meme.position.x == 240 && guard.meme.position.y == 96 && guard.meme.position.z == 42,
+		"a guard shares the actual box position and speaks its duty between its own place and contact report");
+	const auto guardInTrouble = reportingInStatement(30, true, {2, 0}, 0, 10, 3, 5, &guardedBomb);
+	check(guardInTrouble.program.count == 3 && guardInTrouble.program.parts[1].phrase == ChatterPhrase::GuardingLooseBomb &&
+		guardInTrouble.program.parts[2].phrase == ChatterPhrase::Help && guardInTrouble.meme.kind == ChatterMemeKind::Help &&
+		guardInTrouble.meme.place == 3, "an outnumbered guard sends the Help meme for its own place");
 	ChatterRadioCatalog taskCatalog;
 	const auto plantedSite = plantedBombsiteReport(30.0f, {9, 4}, 2, 5);
 	BombStatusMemory spotted{};

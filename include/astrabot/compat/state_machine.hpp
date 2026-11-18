@@ -49,7 +49,8 @@ enum class CompatibilityTaskId : std::uint8_t
 	RescueHostages,
 	MoveToSniperSpot,
 	Sniping,
-	HoldPosition
+	HoldPosition,
+	GuardLooseBomb
 };
 
 enum class ObservationAvailability : std::uint8_t
@@ -192,7 +193,7 @@ struct StateUpdateContext
 	const StateBehaviorInput *behavior = nullptr;
 	CompatibilityTaskId moveToTask = CompatibilityTaskId::None;
 	bool preserveMoveToTask = false;
-	bool defendPosition = false;
+	CompatibilityTaskId hideTask = CompatibilityTaskId::None;
 
 	bool isValid() const;
 };

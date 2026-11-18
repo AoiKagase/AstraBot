@@ -233,9 +233,14 @@ public:
 
 	bool atDefenseSpot() const { return holding_ && holdPosition_.inUseRange; }
 
+	bool defenseExpired(float elapsed, bool reloading) const
+	{
+		return holding_ && holdDuration_ >= 0.0f && !reloading && elapsed > holdDuration_;
+	}
+
 	bool finishDefense(float elapsed, bool reloading)
 	{
-		if (!holding_ || holdDuration_ < 0 || reloading || elapsed <= holdDuration_)
+		if (!defenseExpired(elapsed, reloading))
 			return false;
 		holding_ = false;
 		return true;

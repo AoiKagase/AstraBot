@@ -63,7 +63,7 @@ bool BotBehaviorRuntime::helpGoalCurrent(std::size_t index) const
 		goal.epoch == actor.managedBotStateMachines.normalStateEpoch();
 }
 
-struct BotBehaviorRuntime::TeammateRequestEnvironment : compat::IHelpRequestEnvironment,
+struct BotBehaviorRuntime::ActorTaskEnvironment : compat::IHelpRequestEnvironment,
 														compat::IFollowRequestEnvironment, compat::IDefendRequestEnvironment
 {
 	BotBehaviorRuntime &owner;
@@ -72,7 +72,7 @@ struct BotBehaviorRuntime::TeammateRequestEnvironment : compat::IHelpRequestEnvi
 	ChatterPeerReceipt receipt;
 	std::uint64_t execution, epoch;
 	nav::NavSnapshot navigation;
-	TeammateRequestEnvironment(
+	ActorTaskEnvironment(
 		BotBehaviorRuntime &runtime, std::size_t from, std::size_t to, std::function<bool()> source)
 		: owner(runtime), sender(from), receiver(to), sourceCurrent(std::move(source)),
 		  receipt(runtime.snapshotChatterPeer(to)), execution(runtime.actors_[to].executionRevision),
@@ -377,7 +377,7 @@ struct BotBehaviorRuntime::TeammateRequestEnvironment : compat::IHelpRequestEnvi
 	{
 		return selectSpot(place, 0, {}, point, found);
 	}
-	bool enterDefendState(const nav::NavVector &point, nav::AreaId goal)
+	bool enterHideState(const nav::NavVector &point, nav::AreaId goal, compat::CompatibilityTaskId task)
 	{
 		if (!current())
 			return false;
@@ -419,7 +419,7 @@ struct BotBehaviorRuntime::TeammateRequestEnvironment : compat::IHelpRequestEnvi
 				(roll < 50.0f && !draw("Hide.HoldPositionTime", 3.0f, 10.0f, ambushDelay)))
 				return false;
 		}
-		context.defendPosition = reachable;
+		context.hideTask = reachable ? task : compat::CompatibilityTaskId::None;
 		const auto next = reachable ? compat::CompatibilityStateId::Hide : compat::CompatibilityStateId::Idle;
 		const auto previous = machine.state();
 		const auto result = machine.transition(next, compat::StateTransitionReason::ObjectiveChanged,
@@ -451,11 +451,14 @@ struct BotBehaviorRuntime::TeammateRequestEnvironment : compat::IHelpRequestEnvi
 	}
 	bool hideAtSpot(const nav::NavVector &point) override
 	{
-		return enterDefendState(point, areaAt(point, false));
+		return enterHideState(point, areaAt(point, false), compat::CompatibilityTaskId::HoldPosition);
 	}
 	bool hideNearPosition(const nav::NavVector &point) override
 	{
-		auto start = areaAt(point, false);
+		return hideNearArea(areaAt(point, false), compat::CompatibilityTaskId::HoldPosition);
+	}
+	bool hideNearArea(nav::AreaId start, compat::CompatibilityTaskId task)
+	{
 		if (!current())
 			return false;
 		const auto &origin = receipt.entity->v.origin;
@@ -466,7 +469,7 @@ struct BotBehaviorRuntime::TeammateRequestEnvironment : compat::IHelpRequestEnvi
 		else
 			start = owner.services_->navigation_knownArea(receiver, receipt.actor, receipt.context.frame, navigation.revision());
 		if (!start)
-			return enterDefendState(self, 0);
+			return enterHideState(self, 0, task);
 		nav::NavVector spot{};
 		bool found = false;
 		if (!selectSpot(0, start, center, &spot, &found))
@@ -474,7 +477,7 @@ struct BotBehaviorRuntime::TeammateRequestEnvironment : compat::IHelpRequestEnvi
 		if (!found)
 			spot = self;
 		// Hide(area) computes its route to the area directly beneath the chosen spot.
-		return enterDefendState(spot, compat::findBotNavArea(navigation, spot, nullptr));
+		return enterHideState(spot, compat::findBotNavArea(navigation, spot, nullptr), task);
 	}
 	void affirmative() override
 	{
@@ -591,9 +594,13 @@ struct BotBehaviorRuntime::TeammateRequestEnvironment : compat::IHelpRequestEnvi
 		const auto &context = receipt.context;
 		const auto nearby = actor.outgoingRadioContactMemory.counts(receipt.actor, context.frame, context.now,
 			living.friends, living.enemies);
+		nav::NavVector bomb{};
+		const auto *guarded = owner.guardedBombPosition(receiver, &bomb) ? &bomb : nullptr;
+		if (!current())
+			return;
 		admit(compat::reportingInStatement(context.now, actor.managedBotStateMachines.attackOverlayActive(),
 			nearby, actor.enemyReaction.enemyDeathTimestamp(context), context.now - actor.lastVisibleEnemyTimes,
-			place, chatterPlacePhrase(navigation, owner.outgoingChatterCatalog_, place)), true);
+			place, chatterPlacePhrase(navigation, owner.outgoingChatterCatalog_, place), guarded), true);
 	}
 	void admit(const compat::ChatterStatementRequest &request, bool reportingIn = false)
 	{
@@ -624,6 +631,44 @@ struct BotBehaviorRuntime::TeammateRequestEnvironment : compat::IHelpRequestEnvi
 			request, admission, owner.outgoingChatterCatalog_, mode, actor.confirmedSpeech.scheduledStatement());
 	}
 };
+
+void BotBehaviorRuntime::hideNearLooseBomb(std::size_t index, bool announce)
+{
+	const auto bomb = actors_[index].looseBombObservation;
+	const auto sameDrop = [&] {
+		return bomb.entity.isValid() ? looseBombDrop_.matches(bomb.entity, bomb.frame) : !looseBombDrop_.box.isValid();
+	};
+	ActorTaskEnvironment env(*this, index, index, sameDrop);
+	if (!env.current() || !(bomb.frame == env.receipt.context.frame))
+		return;
+	const auto area = looseBombArea(env.navigation, [&env] { return env.current(); });
+	if (!env.hideNearArea(area, compat::CompatibilityTaskId::GuardLooseBomb))
+		return;
+	if (!announce || !area || services_->service_roundOver())
+		return;
+	const auto place = env.navigation.document()->findArea(area)->placeId;
+	const auto delay = services_->service_compatibilityRandomSource().nextFloat(compat::RandomRequest::floatRequest(
+		"Chatter.AnnouncePlan", {env.receipt.actor.slot, env.receipt.actor.generation}, env.timing(), 2.0f, 3.0f));
+	if (!env.current() || delay.status != compat::RandomStatus::Ok ||
+		!std::isfinite(delay.value) || delay.value < 2.0f || delay.value > 3.0f)
+		return;
+	ensureOutgoingChatterCatalog();
+	if (!env.current())
+		return;
+	compat::ChatterStatementRequest plan{};
+	plan.source = compat::ChatterScheduleSource::Generic;
+	plan.topic = compat::ChatterStatementTopic::MyPlan;
+	plan.phrase = compat::ChatterPhrase::GoingToGuardLooseBomb;
+	plan.place = place;
+	plan.criteriaPlace = chatterPlacePhrase(env.navigation, outgoingChatterCatalog_, place);
+	plan.created = env.receipt.context.now;
+	const auto roundStart = services_->service_roundFreezeGeneration() == env.receipt.context.frame.roundGeneration
+		? services_->service_roundFreezeUntil() : 0.0f;
+	plan.start = roundStart + delay.value;
+	plan.readyAt = plan.start;
+	plan.expires = plan.created + 10.0f;
+	env.admit(plan);
+}
 
 void BotBehaviorRuntime::transmitTeammateRequest(
 	std::size_t sender, compat::ChatterMeme meme, const std::function<bool()> &current)
@@ -660,7 +705,7 @@ void BotBehaviorRuntime::transmitTeammateRequest(
 		const auto receiver = static_cast<std::size_t>(slot - 1);
 		if (receiver == sender || !services_->service_managedBotSlots()[receiver])
 			continue;
-		TeammateRequestEnvironment environment(*this, sender, receiver, sourceCurrent);
+		ActorTaskEnvironment environment(*this, sender, receiver, sourceCurrent);
 		const auto &receipt = environment.receipt;
 		auto *entity = engine->pfnPEntityOfEntIndex(slot);
 		if (!environment.current())
@@ -1261,9 +1306,13 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index, const Plan
 		actors_[index].clearedBombsite = {};
 	if (input.alive && actors_[index].scenarioPlanners.takeReportRequest(input.frame))
 	{
+		nav::NavVector bomb{};
+		const auto *guarded = guardedBombPosition(index, &bomb) ? &bomb : nullptr;
+		if (!receiptCurrent())
+			return;
 		const auto report = compat::reportingInStatement(input.now, input.inCombat, contacts,
 			actors_[index].enemyReaction.enemyDeathTimestamp(receiptContext),
-			input.now - actors_[index].lastVisibleEnemyTimes, input.ownPlace, input.ownPlacePhrase);
+			input.now - actors_[index].lastVisibleEnemyTimes, input.ownPlace, input.ownPlacePhrase, guarded);
 		actors_[index].outgoingRadioSchedulers.reportIn(report, machine.task(), input, outgoingChatterCatalog_);
 	}
 	const bool direct = actors_[index].outgoingRadioSchedulers.hasDirect();

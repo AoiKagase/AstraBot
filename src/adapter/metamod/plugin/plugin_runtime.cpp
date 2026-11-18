@@ -345,6 +345,7 @@ bool PluginRuntime::provideEngineFunctionsPost(enginefuncs_t *engineFunctions, i
 		return false;
 	enginefuncs_t table{};
 	table.pfnPrecacheEvent = &HookPrecacheEventPost;
+	table.pfnSetModel = &HookSetModelPost;
 	*engineFunctions = table;
 	return true;
 }
@@ -1346,6 +1347,11 @@ void PluginRuntime::maintainPublicBotPopulation()
 void PluginRuntime::onPrecacheEvent(int type, const char *script, unsigned short index)
 {
 	observation_.onPrecacheEvent(type, script, index);
+}
+void PluginRuntime::onSetModel(edict_t *entity, const char *model)
+{
+	if (state_ == State::ActiveMap && model && std::strcmp(model, "models/w_backpack.mdl") == 0)
+		behavior_.observeLooseBombModel(entity, model);
 }
 void PluginRuntime::onPlaybackEvent(
 	int flags, const edict_t *invoker, unsigned short index, float delay, int bparam1, int bparam2)
@@ -2496,6 +2502,11 @@ unsigned short HookPrecacheEventPost(int type, const char *script)
 	}
 	setMetaResult(MRES_IGNORED);
 	return 0;
+}
+void HookSetModelPost(edict_t *entity, const char *model)
+{
+	PluginRuntime::instance().onSetModel(entity, model);
+	setMetaResult(MRES_IGNORED);
 }
 void HookPlaybackEvent(int flags, const edict_t *invoker, unsigned short index, float delay, float *origin,
 	float *angles, float fparam1, float fparam2, int iparam1, int iparam2, int bparam1, int bparam2)
