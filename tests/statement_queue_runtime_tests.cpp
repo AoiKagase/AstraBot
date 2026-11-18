@@ -135,7 +135,7 @@ unsigned char *queueLoad(char *name, int *length)
 	}
 	std::string contents(text);
 	if (hostageUseFixture)
-		contents += " Chatter HostagesBeingTaken taken.wav End";
+		contents += " Chatter HostagesBeingTaken taken.wav End Chatter HostagesTaken lost.wav End";
 	if (reportingInFixture)
 		contents += " Chatter RequestReport Radio EVENT_RADIO_REPORT_IN_TEAM request.wav End";
 	if (bombsiteClearFixture)
@@ -217,6 +217,9 @@ void queueVisibility(const float *from, const float *end, int flags, edict_t *ob
 	*trace = {};
 	trace->vecEndPos = Vector(end[0], end[1], end[2]);
 	trace->flFraction = queueEnemiesVisible ? 1.0f : 0.0f;
+	if (hostageUseFixture && queueClock && queueClock->mapname == 34 && observer == &gEntities[0] &&
+		flags == 0x101 && end[0] == 100 && end[1] == 0 && end[2] == 36)
+		trace->flFraction = 1.0f;
 	if ((looseGuardFixture || preplantGuardFixture) && observer == &gEntities[0] && carrierViewer == 0 && flags == 0x101 &&
 		end[0] == gPlantedBomb.v.origin.x && end[1] == gPlantedBomb.v.origin.y && end[2] == gPlantedBomb.v.origin.z)
 		trace->flFraction = 1.0f;
@@ -263,7 +266,7 @@ void setupStatementQueue(enginefuncs_t &engine, globalvars_t &globals)
 	engine.pfnMessageEnd = &queueEnd;
 	engine.pfnTraceLine = &queueVisibility;
 	if (hostageUseFixture)
-		engine.pfnSzFromIndex = [](int id) -> const char * { return id == 33 ? "hostage_entity" : szFromIndex(id); };
+		engine.pfnSzFromIndex = [](int id) -> const char * { return id == 33 ? "hostage_entity" : id == 34 ? "cs_test" : szFromIndex(id); };
 	gpMetaUtilFuncs->pfnGetUserMsgID = &queueMessageId;
 }
 void queueInputRadio(astrabot::metamod::BotObservationRuntime &observer, const char *token)
@@ -1893,8 +1896,29 @@ bool testHostageUseReport(astrabot::metamod::PluginRuntime &runtime, enginefuncs
 	voice("hostage/huse/illfollow.wav", CHAN_VOICE, 0, 1.0f);
 	post.pfnPlayerPostThink(&ct);
 	advance(48);
-	return check(count(1, "radio/test/taken.wav") == 1 && count(2, "radio/test/ack.wav") == 1,
-		"a later voiced improved-hostage follow is reported without another first-touch log");
+	if (!check(count(1, "radio/test/taken.wav") == 1 && count(2, "radio/test/ack.wav") == 1,
+			"a later voiced improved-hostage follow is reported without another first-touch log"))
+		return false;
+
+	globals.mapname = 34;
+	globals.maxEntities = 8;
+	hostage.v.origin = Vector(100, 0, 36);
+	hostage.v.health = 100;
+	gEntities[0].v.origin = Vector(0, 0, 36);
+	gEntities[0].v.angles = Vector(0, 0, 0);
+	gEntities[1].v.origin = Vector(0, 0, 36);
+	runtime.beginRoundGeneration();
+	advance(40);
+	reportAudio.clear();
+	hostage.v.origin.x += 50.0f;
+	advance(32);
+	if (!check(!count(1, "radio/test/lost.wav"), "a displacement of exactly 50 is within the native tolerance"))
+		return false;
+	hostage.v.origin.x += 0.25f;
+	advance(40);
+	return check(count(1, "radio/test/lost.wav") == 1 && !count(2, "radio/test/lost.wav") &&
+			!count(2, "radio/test/ack.wav"),
+		"the T who sees the old position reports the last missing hostage once without requesting a response");
 }
 
 bool testStatementQueue(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &engine, globalvars_t &globals)

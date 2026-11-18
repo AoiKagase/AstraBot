@@ -544,19 +544,24 @@ struct BotBehaviorRuntime::ActorTaskEnvironment : compat::IHelpRequestEnvironmen
 	}
 	void idleAndAcknowledge(compat::ChatterStatementTopic topic, bool cancelHold)
 	{
+		if (idleForObjectiveChange(cancelHold))
+			acknowledge(compat::ChatterPhrase::Affirmative, topic);
+	}
+	bool idleForObjectiveChange(bool cancelHold)
+	{
 		auto &actor = owner.actors_[receiver];
 		auto &machine = actor.managedBotStateMachines;
 		runtime::MovementPhysicsState before{};
 		before.dead = !receipt.context.alive;
 		const auto context = owner.makeManagedBotStateContext(receiver, before);
 		if (!current())
-			return;
+			return false;
 		const auto previous = machine.state();
 		const auto result = machine.transition(compat::CompatibilityStateId::Idle,
 			compat::StateTransitionReason::ObjectiveChanged, compat::StateTransitionId::ExplicitStateChange, context);
 		epoch = machine.normalStateEpoch();
 		if (result != compat::StateResult::Transitioned || !current())
-			return;
+			return false;
 		actor.enemyReaction.onStateChange(owner.reactionContext(receiver), previous, machine.state());
 		if (cancelHold)
 			actor.scenarioPlanners.cancelHoldPosition();
@@ -565,8 +570,7 @@ struct BotBehaviorRuntime::ActorTaskEnvironment : compat::IHelpRequestEnvironmen
 		actor.managedBotObjectiveActions = {};
 		actor.scenarioDecisions = {};
 		owner.services_->applyNavigationRequest({receiver, NavigationRequestKind::DestroyPath});
-		if (current())
-			acknowledge(compat::ChatterPhrase::Affirmative, topic);
+		return current();
 	}
 	void onMyWay() override
 	{
@@ -1181,6 +1185,30 @@ void BotBehaviorRuntime::observeHostageUsed(Vector origin, world::FrameIdentity 
 		if (environment.current())
 			environment.admit(report);
 	}
+}
+
+void BotBehaviorRuntime::reactToHostageLoss(std::size_t index, bool allGone)
+{
+	ActorTaskEnvironment environment(*this, index, index, [] { return true; });
+	if (!environment.current())
+		return;
+	if (allGone && !services_->service_roundOver())
+	{
+		ensureOutgoingChatterCatalog();
+		const float now = environment.receipt.context.now;
+		compat::ChatterStatementRequest report{};
+		report.source = compat::ChatterScheduleSource::Generic;
+		report.topic = compat::ChatterStatementTopic::Information;
+		report.phrase = compat::ChatterPhrase::HostagesTaken;
+		report.created = report.start = report.readyAt = now;
+		report.expires = now + 3.0f;
+		environment.admit(report);
+	}
+	if (!environment.current())
+		return;
+	if (!allGone)
+		actors_[index].someHostagesTaken = true;
+	(void)environment.idleForObjectiveChange(true);
 }
 
 void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index, const PlantMoveChatter *plantMove)

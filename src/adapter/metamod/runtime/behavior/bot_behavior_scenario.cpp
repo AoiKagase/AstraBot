@@ -184,6 +184,7 @@ BotBehaviorRuntime::BehaviorPhaseResult BotBehaviorRuntime::updateBehaviorLifecy
 	{
 		actors_[index].bombStatus = {};
 		actors_[index].someHostagesTaken = false;
+		actors_[index].hostagePositions = {};
 		actors_[index].looseBombObservation = {};
 		actors_[index].equipment.reset();
 		actors_[index].scenarioPlanners.reset();
@@ -234,6 +235,10 @@ void BotBehaviorRuntime::updateScenarioState(std::size_t index, const runtime::M
 			if (!current())
 				return;
 			observeScenarioEntities(index, before, context, stateBehavior, observation, scenario, data);
+			if (!current())
+				return;
+			if (scenario.scenario == compat::PublicScenarioKind::Hostage && data.observedTeam == kTerroristTeam)
+				updateHostagePositions(index, context, data.initialHostages);
 			if (!current())
 				return;
 			actors_[index].looseBombObservation = data.looseBomb;
@@ -396,6 +401,9 @@ void BotBehaviorRuntime::observeScenarioEntities(std::size_t index, const runtim
 		};
 		const int maxEntities =
 			(std::max)(0, (std::min)(services_->service_globals()->maxEntities, kMaximumEntityIndex));
+		const bool seedHostages = scenario.scenario == compat::PublicScenarioKind::Hostage &&
+			observedTeam == kTerroristTeam && actors_[index].hostagePositions.nextCheck < 0.0f;
+		std::size_t hostageCount = 0;
 		const bool checkHuman = observedTeam == kCounterTerroristTeam && services_->service_deferToHuman();
 		if (scenario.scenario == compat::PublicScenarioKind::Bomb)
 			data.looseBomb.frame = context.frame;
@@ -499,10 +507,21 @@ void BotBehaviorRuntime::observeScenarioEntities(std::size_t index, const runtim
 			}
 			compat::ScenarioTarget *destination = nullptr;
 			bool mapKnown = true;
-			if (std::strcmp(name, "hostage_entity") == 0 && entity->v.health > 0.0f)
+			if (std::strcmp(name, "hostage_entity") == 0)
 			{
-				destination = &scenario.hostage;
-				mapKnown = false;
+				if (seedHostages && hostageCount < data.initialHostages.entries.size() &&
+					entity->serialnumber >= 0 && entity->v.takedamage == DAMAGE_YES)
+				{
+					const auto &position = entity->v.origin;
+					data.initialHostages.entries[hostageCount++] = {
+						{static_cast<unsigned>(entityIndex), static_cast<unsigned>(entity->serialnumber) + 1U},
+						{position.x, position.y, position.z}, true};
+				}
+				if (entity->v.health > 0.0f)
+				{
+					destination = &scenario.hostage;
+					mapKnown = false;
+				}
 			}
 			else if (std::strcmp(name, "func_hostage_rescue") == 0 || std::strcmp(name, "info_hostage_rescue") == 0)
 			{
@@ -624,6 +643,80 @@ void BotBehaviorRuntime::observeScenarioEntities(std::size_t index, const runtim
 			}
 		}
 	}
+}
+
+void BotBehaviorRuntime::updateHostagePositions(std::size_t index, const compat::StateUpdateContext &context,
+	const HostagePositionMemory &initial)
+{
+	auto &actor = actors_[index];
+	const auto engine = services_->service_engineFunctions();
+	if (!context.alive || !engine || !engine->pfnPEntityOfEntIndex || !engine->pfnTraceLine ||
+		!(context.timestamp > actor.hostagePositions.nextCheck))
+		return;
+
+	const auto receipt = reactionContext(index);
+	const auto revision = actor.executionRevision;
+	const auto epoch = actor.managedBotStateMachines.normalStateEpoch();
+	const auto current = [&] {
+		return executionCurrent(index, receipt, revision) && services_->service_engineFunctions() == engine &&
+			actor.managedBotStateMachines.normalStateEpoch() == epoch;
+	};
+	auto memory = actor.hostagePositions.nextCheck < 0.0f ? initial : actor.hostagePositions;
+	const auto countValid = [&] {
+		return std::count_if(memory.entries.begin(), memory.entries.end(),
+			[](const RememberedHostage &entry) { return entry.valid; });
+	};
+	const auto previousCount = countValid();
+	bool missing = false;
+	for (auto &entry : memory.entries)
+	{
+		if (!entry.entity.isValid())
+			break;
+		const auto *entity = engine->pfnPEntityOfEntIndex(static_cast<int>(entry.entity.id));
+		if (!current())
+			return;
+		const auto sameHostage = [&] {
+			return entity && !entity->free && entity->serialnumber >= 0 &&
+				static_cast<unsigned>(entity->serialnumber) + 1U == entry.entity.generation;
+		};
+		if (!sameHostage())
+			continue;
+		const world::WorldPosition position{entity->v.origin.x, entity->v.origin.y, entity->v.origin.z};
+		if (!std::isfinite(position.x) || !std::isfinite(position.y) || !std::isfinite(position.z))
+			continue;
+		const bool visible = canSeePoint(index, position, context.frame, true);
+		if (!current())
+			return;
+		if (!sameHostage())
+			continue;
+		const bool oldPositionVisible = !visible && entry.valid && canSeePoint(index, entry.position, context.frame, true);
+		if (!current())
+			return;
+		if (!sameHostage())
+			continue;
+		const bool alive = entity->v.takedamage == DAMAGE_YES;
+		if (visible)
+		{
+			entry.valid = alive;
+			if (alive)
+				entry.position = position;
+		}
+		else if (oldPositionVisible)
+		{
+			const auto dx = position.x - entry.position.x;
+			const auto dy = position.y - entry.position.y;
+			const auto dz = position.z - entry.position.z;
+			constexpr float kMovedTolerance = 50.0f;
+			const bool displaced = dx * dx + dy * dy + dz * dz > kMovedTolerance * kMovedTolerance;
+			entry.valid = alive && !displaced;
+			missing = missing || (alive && displaced);
+		}
+	}
+	memory.nextCheck = context.timestamp + 0.5f;
+	actor.hostagePositions = memory;
+	const bool allGone = previousCount > 0 && countValid() == 0;
+	if (allGone || missing)
+		reactToHostageLoss(index, allGone);
 }
 
 void BotBehaviorRuntime::updateScenarioNavigation(std::size_t index, const runtime::MovementPhysicsState &before,

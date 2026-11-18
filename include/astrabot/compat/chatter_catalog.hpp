@@ -53,6 +53,7 @@ enum class ChatterPhrase : unsigned
 	GuardingLooseBomb,
 	GoingToDefendBombsite,
 	HostagesBeingTaken,
+	HostagesTaken,
 	Count
 };
 inline ChatterPhrase remainingEnemyPhrase(int count)
@@ -119,6 +120,7 @@ inline ChatterStatementTopic chatterStatementTopic(ChatterPhrase phrase)
 	case ChatterPhrase::SpottedLooseBomb:
 	case ChatterPhrase::TheyPickedUpTheBomb:
 	case ChatterPhrase::HostagesBeingTaken:
+	case ChatterPhrase::HostagesTaken:
 	case ChatterPhrase::GuardingLooseBomb:
 		return ChatterStatementTopic::Information;
 	case ChatterPhrase::KilledFriend:
@@ -310,7 +312,7 @@ public:
 			"TwoEnemiesLeft", "ThreeEnemiesLeft", "NiceShot", "NiceShotSir", "NiceShotCommander", "CommanderDown",
 			"KilledFriend", "pain", "AgreeWithPlan", "GoingToPlantBomb", "CoveringFriend", "InCombat", "EnemyDown",
 			"Clear", "DefusingBomb", "BombsiteClear", "PlantedBombPlace", "SpottedBomber", "SpottedLooseBomb",
-			"TheyPickedUpTheBomb", "GoingToGuardLooseBomb", "GuardingLooseBomb", "GoingToDefendBombsite", "HostagesBeingTaken"};
+			"TheyPickedUpTheBomb", "GoingToGuardLooseBomb", "GuardingLooseBomb", "GoingToDefendBombsite", "HostagesBeingTaken", "HostagesTaken"};
 		const auto i = static_cast<unsigned>(p);
 		return i < static_cast<unsigned>(ChatterPhrase::Count) ? names[i] : "Unknown";
 	}

@@ -9,7 +9,13 @@ namespace metamod
 bool BotBehaviorRuntime::canSeeEntityOrigin(
 	std::size_t index, const edict_t *entity, const world::FrameIdentity &frame, bool checkFov) const
 {
-	if (!services_ || index >= actors_.size() || !entity)
+	return entity && canSeePoint(index, {entity->v.origin.x, entity->v.origin.y, entity->v.origin.z}, frame, checkFov);
+}
+
+bool BotBehaviorRuntime::canSeePoint(std::size_t index, world::WorldPosition point,
+	const world::FrameIdentity &frame, bool checkFov) const
+{
+	if (!services_ || index >= actors_.size())
 		return false;
 	const auto engine = services_->service_engineFunctions();
 	const auto globals = services_->service_globals();
@@ -24,7 +30,6 @@ bool BotBehaviorRuntime::canSeeEntityOrigin(
 		return false;
 	const world::WorldPosition eye{self->v.origin.x + self->v.view_ofs.x, self->v.origin.y + self->v.view_ofs.y,
 		self->v.origin.z + self->v.view_ofs.z};
-	const world::WorldPosition point{entity->v.origin.x, entity->v.origin.y, entity->v.origin.z};
 	constexpr float kMaximumCoordinate = world::WorldLimits::kMaximumCoordinate;
 	for (float value : {eye.x, eye.y, eye.z, point.x, point.y, point.z, self->v.origin.x, self->v.origin.y})
 		if (!std::isfinite(value) || std::fabs(value) > kMaximumCoordinate)
@@ -233,6 +238,7 @@ void BotBehaviorRuntime::resetRoundRecognition()
 	{
 		actor.bombStatus = {};
 		actor.someHostagesTaken = false;
+		actor.hostagePositions = {};
 		actor.looseBombObservation = {};
 		actor.noiseInvestigation.reset();
 		actor.noiseReportPolicy = {};

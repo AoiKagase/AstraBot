@@ -1,3 +1,11 @@
+## 12B-1　人質を目視で見失ったときの報告
+
+ReGameDLL-CS `b088984` の `InitializeHostageInfo`、`ValidateHostagePositions` と `HostagesTaken` を参照した。T側Botはラウンドの最初の更新で生存中の人質を最大12人記録し、0.5秒の確認間隔で本人と記憶上の位置を視野・遮蔽込みで確認する。本人が見えず、元の位置が見え、50単位より遠くへ移動していた場合は記憶を無効にして待機状態へ戻る。有効な位置が最後の1件から0件になった場合は、応答要求を付けずに `HostagesTaken` を報告する。
+
+2体のTを使ったテストで、50単位ちょうどでは報告が発生しないこと、50単位を超えると元の位置が見えたBotだけが一度発話し、味方の応答が発生しないことを確認した。追従中かどうかの公開通知は12B-2の調査対象で、今回の位置判定は追従状態を推定しない。
+
+Windows x86 Debugは149/149件、Linux x86 Debugは147/148件合格。Linuxの失敗は既知の項目22 `astrabot_combat_policy`。両OSで既存の動作トレース149,153行の照合、x86のPE・ELF形式と必須エクスポート7件の検査が合格した。実機確認は項目25。
+
 ## 12A　人質の連れ出し報告
 
 ReGameDLL-CS `b088984` の `CHostage::Use`、`CCSBot::OnEvent`、`BotChatterInterface::HostagesBeingTaken` と `BotHostageBeingTakenMeme::Interpret` を参照した。

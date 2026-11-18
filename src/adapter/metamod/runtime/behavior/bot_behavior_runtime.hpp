@@ -247,6 +247,18 @@ private:
 		int team = 0;
 		float closeFootstepDistance = -1;
 	};
+	struct RememberedHostage
+	{
+		world::EntityKey entity{};
+		world::WorldPosition position{};
+		bool valid = false;
+	};
+	struct HostagePositionMemory
+	{
+		static constexpr std::size_t kMaximumHostages = 12;
+		std::array<RememberedHostage, kMaximumHostages> entries{};
+		float nextCheck = -1.0f;
+	};
 	struct ScenarioUpdateData
 	{
 		const compat::ObservationTimingContext &timing;
@@ -255,6 +267,7 @@ private:
 		compat::ScenarioTarget looseBomb{};
 		nav::NavVector looseBombOrigin{};
 		nav::NavSnapshot navigation{};
+		HostagePositionMemory initialHostages{};
 		bool wasFollowing = false;
 	};
 	bool prepareManagedPerception(std::size_t index, world::WorldSnapshot *snapshot, world::ActorKey *targetActor,
@@ -284,6 +297,9 @@ private:
 		compat::StateUpdateContext &context, compat::StateBehaviorInput &stateBehavior,
 		const compat::CompatibilityObservation &observation, compat::ScenarioBehaviorInput &scenario,
 		ScenarioUpdateData &data);
+	void updateHostagePositions(std::size_t index, const compat::StateUpdateContext &context,
+		const HostagePositionMemory &initial);
+	void reactToHostageLoss(std::size_t index, bool allGone);
 	void updateScenarioNavigation(std::size_t index, const runtime::MovementPhysicsState &before,
 		compat::StateUpdateContext &context, compat::StateBehaviorInput &stateBehavior,
 		const compat::CompatibilityObservation &observation, compat::ScenarioBehaviorInput &scenario,
@@ -459,6 +475,8 @@ private:
 	std::shared_ptr<compat::ChatterVoiceCatalog> chatterBank(std::size_t index);
 	void ensureOutgoingChatterCatalog();
 	std::uint32_t allowedFixedChatterPhrases(const char *verbosity, compat::ChatterPhrase first, compat::ChatterPhrase last);
+	bool canSeePoint(std::size_t index, world::WorldPosition point, const world::FrameIdentity &frame,
+		bool checkFov) const;
 	bool canSeeEntityOrigin(std::size_t index, const edict_t *entity, const world::FrameIdentity &frame,
 		bool checkFov = true) const;
 	compat::ReactionContext reactionContext(std::size_t index) const;
@@ -557,6 +575,7 @@ private:
 		compat::BombSiteSearchMemory bombSearchMemory{};
 		compat::BombStatusMemory bombStatus{};
 		bool someHostagesTaken = false;
+		HostagePositionMemory hostagePositions{};
 		compat::ScenarioTarget looseBombObservation{};
 		compat::ScenarioTarget bombSearchTargets{};
 		compat::ScenarioTarget clearedBombsite{};
