@@ -61,12 +61,20 @@ void BotBehaviorRuntime::updateNoiseInvestigation(std::size_t index, const runti
 		}
 	}
 	const auto current = machine.state();
+	const bool defending = current == compat::CompatibilityStateId::Hide &&
+		machine.task() == compat::CompatibilityTaskId::HoldPosition;
+	constexpr unsigned sniperWeapons = (1U << 3) | (1U << 13) | (1U << 18) | (1U << 24);
+	const bool mayInvestigateFromDefense = defending &&
+		reactionDisposition(index) == compat::ReactionDisposition::Engage &&
+		!(actor.scenarioPlanners.atDefenseSpot() && (static_cast<unsigned>(self->v.weapons) & sniperWeapons)) &&
+		!services_->observation_publicObservations().pendingReloadRequest(in.actor, in.frame, in.now);
+	in.defenseAmbushExpired = mayInvestigateFromDefense && actor.scenarioPlanners.defenseAmbushExpired(in.now);
 	const bool freeTask = current == compat::CompatibilityStateId::Idle ||
 		current == compat::CompatibilityStateId::Hunt || current == compat::CompatibilityStateId::InvestigateNoise;
 	compat::PublicActorState publicState{};
 	const bool blind = services_->observation_publicObservations().read(in.actor, in.frame, &publicState) &&
 		in.now < publicState.blindUntil;
-	in.allowed = freeTask && !machine.attackOverlayActive() && config.botEnable > 0 && config.botStop <= 0 &&
+	in.allowed = (freeTask || mayInvestigateFromDefense) && !machine.attackOverlayActive() && config.botEnable > 0 && config.botStop <= 0 &&
 		!(self->v.flags & (FL_FROZEN | FL_SPECTATOR)) && in.now >= roundStart && !blind;
 	in.hiding = current == compat::CompatibilityStateId::Hide;
 	if (current != compat::CompatibilityStateId::InvestigateNoise && planner.active())
@@ -104,12 +112,15 @@ void BotBehaviorRuntime::updateNoiseInvestigation(std::size_t index, const runti
 	}
 	if (result == compat::NoiseInvestigationResult::Attend)
 	{
-		if (!services_->observation_consumeNoise(index, in.noise))
+		if ((defending && actor.scenarioPlanners.delayDefenseInvestigation(in.now)) ||
+			!services_->observation_consumeNoise(index, in.noise))
 		{
 			planner.cancel();
 		}
 		else
 		{
+			if (defending)
+				actor.scenarioPlanners.cancelHoldPosition();
 			compat::NoiseReportInput report{};
 			report.actor = in.actor;
 			report.frame = in.frame;

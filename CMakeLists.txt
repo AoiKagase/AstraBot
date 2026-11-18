@@ -246,6 +246,11 @@ add_executable(astrabot_noise_investigation tests/noise_investigation_tests.cpp)
   astrabot_apply_warnings(astrabot_follow_request)
   add_test(NAME astrabot_follow_request COMMAND astrabot_follow_request)
 
+  add_executable(astrabot_defend_request tests/defend_request_tests.cpp)
+  target_link_libraries(astrabot_defend_request PRIVATE astrabot_core)
+  astrabot_apply_warnings(astrabot_defend_request)
+  add_test(NAME astrabot_defend_request COMMAND astrabot_defend_request)
+
   add_executable(astrabot_native_ladder tests/native_ladder_tests.cpp)
   target_link_libraries(astrabot_native_ladder PRIVATE astrabot_core)
   astrabot_apply_warnings(astrabot_native_ladder)

@@ -43,6 +43,27 @@ int main()
 	using namespace astrabot::compat;
 	bool ok = true;
 	{
+		ScenarioBehaviorPlanner defender;
+		auto spot = target();
+		spot.inUseRange = false;
+		defender.holdPosition(spot, 30.0f, 3.0f);
+		ok &= check(!defender.delayDefenseInvestigation(4.0f), "an approaching defender can investigate immediately");
+		defender.observeDefenderFeet(spot.position.x, spot.position.y, spot.position.z);
+		ok &= check(defender.delayDefenseInvestigation(5.0f) && defender.delayDefenseInvestigation(8.0f) &&
+			!defender.delayDefenseInvestigation(8.125f), "ambush delay starts at the first qualifying sound at the spot");
+		defender.holdPosition(target(), 30.0f);
+		ok &= check(!defender.finishDefense(30.0f, false), "Hide lasts through the exact duration");
+		ok &= check(!defender.finishDefense(31.0f, true), "an active reload delays Hide expiry");
+		defender.holdPosition(target(), 60.0f);
+		ok &= check(!defender.finishDefense(31.0f, false), "a fresh defense receives its own duration");
+		ok &= check(defender.finishDefense(60.125f, false) && !defender.finishDefense(61.0f, false),
+			"an expired defense returns to Idle once");
+		defender.holdPosition(target(), 30.0f);
+		defender.cancelHoldPosition();
+		ok &= check(!defender.finishDefense(31.0f, false),
+			"an unreachable replacement releases the previous hold");
+	}
+	{
 		auto scenario = input();
 		auto decision = ScenarioBehaviorDecision{};
 		decision.state = CompatibilityStateId::MoveTo;

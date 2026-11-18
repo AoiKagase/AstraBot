@@ -35,7 +35,7 @@ The user requests01 onward in order, each repaired unit committed and locally FF
 |07B（前提）|公開ラダーの復元・到達距離|実装・オフライン検証済み。公開bounds／traceから復元し、CSBotの経路コストで選んだ経路の中心間距離を返す。Windows135/135、Linux133/134（既知22のみ）。本体07は下記で実装・オフライン検証済み。統合記録はunit07B session RESULT.json|
 |07|援護要請の行動連動|実装・オフライン検証済み。自然完了Help伝達、共有Rogue／任務／距離／Place判断、固定援護目標と任務保持、公開ラダー経路／実コマンドを接続。Windows137/137、Linux135/136（既知22のみ）。旧トレースは保持し、独立参照ビルド由来の厳密補正で両OS149075行一致。統合記録はunit07 session RESULT.json。実機25は未実施|
 |08|追従要請の行動連動|実装・オフライン検証済み。設置計画の自然完了からFollowを伝達し、Rogue・Busy・SAFEST距離を判定。追従相手の移動と接続IDを追跡し、CoveringFriendで応答。Windows138/138、Linux136/137（既知22のみ）。Follow状態全体の監査は23、実機受入れは25|
-|09|防衛要請の行動連動|DefendHere伝達／防衛・隠れ場所|
+|09|防衛要請の行動連動|設置報告完了時にDefendHereを伝達。発話時の位置から防衛地点を選び、地点指定と近傍探索の応答、移動、到着、待機期限を検証。Windows139/139、Linux137/138（既知22のみ）。Hide中の追従再開や経路再計算を含む状態全体の監査は23、実機受入れは25|
 |10|状況報告応答|RequestReport／ReportingIn|
 
 | ID | 修正単位 | 現在の作業／残件 |

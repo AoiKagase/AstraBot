@@ -3,6 +3,7 @@
 #include "astrabot/compat/chatter_catalog.hpp"
 #include "astrabot/compat/chatter_playback.hpp"
 #include "astrabot/compat/random_source.hpp"
+#include "astrabot/nav/nav_model.hpp"
 #include <list>
 namespace astrabot
 {
@@ -44,12 +45,14 @@ enum class ChatterMemeKind : std::uint8_t
 {
 	None,
 	Help,
-	Follow
+	Follow,
+	DefendHere
 };
 struct ChatterMeme
 {
 	ChatterMemeKind kind = ChatterMemeKind::None;
 	std::uint16_t place = 0;
+	nav::NavVector position{};
 };
 struct ChatterStatementRequest
 {

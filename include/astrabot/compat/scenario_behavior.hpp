@@ -203,6 +203,58 @@ public:
 		followingTeammate_ = true;
 	}
 
+	void holdPosition(const ScenarioTarget &position, float duration = -1.0f, float ambushDelay = 0.0f)
+	{
+		holding_ = true;
+		following_ = false;
+		holdPosition_ = position;
+		holdDuration_ = duration;
+		ambushDelay_ = ambushDelay;
+		firstHeardEnemyTime_ = -1.0f;
+	}
+
+	bool delayDefenseInvestigation(float now)
+	{
+		if (!holding_ || !holdPosition_.inUseRange || ambushDelay_ <= 0.0f)
+			return false;
+		if (firstHeardEnemyTime_ < 0.0f)
+			firstHeardEnemyTime_ = now;
+		return now - firstHeardEnemyTime_ <= ambushDelay_;
+	}
+
+	bool defenseAmbushExpired(float now) const
+	{
+		return holding_ && firstHeardEnemyTime_ >= 0 && now - firstHeardEnemyTime_ > ambushDelay_;
+	}
+
+	bool atDefenseSpot() const { return holding_ && holdPosition_.inUseRange; }
+
+	bool finishDefense(float elapsed, bool reloading)
+	{
+		if (!holding_ || holdDuration_ < 0 || reloading || elapsed <= holdDuration_)
+			return false;
+		holding_ = false;
+		return true;
+	}
+
+	void cancelHoldPosition()
+	{
+		holding_ = false;
+		holdPosition_ = {};
+		holdDuration_ = -1.0f;
+	}
+
+	void observeDefenderFeet(float x, float y, float z)
+	{
+		if (!holding_ || holdPosition_.inUseRange)
+			return;
+		const float dx = holdPosition_.position.x - x;
+		const float dy = holdPosition_.position.y - y;
+		const float dz = holdPosition_.position.z - z;
+		constexpr float arrivalRadius = 20.0f;
+		holdPosition_.inUseRange = dx * dx + dy * dy + dz * dz < arrivalRadius * arrivalRadius;
+	}
+
 	float followSince() const
 	{
 		return followSince_;
@@ -452,9 +504,7 @@ private:
 		case ScenarioRadioCommand::HoldPosition:
 			if (targetKnown(input, order.position))
 			{
-				following_ = false;
-				holding_ = true;
-				holdPosition_ = order.position;
+				holdPosition(order.position);
 			}
 			return false;
 		case ScenarioRadioCommand::GoGoGo:
@@ -641,6 +691,9 @@ private:
 	bool followPermissionInferred_ = false;
 	bool followingTeammate_ = false;
 	bool holding_ = false;
+	float holdDuration_ = -1.0f;
+	float ambushDelay_ = 0.0f;
+	float firstHeardEnemyTime_ = -1.0f;
 	ScenarioTarget holdPosition_ = {};
 	world::EntityKey pendingUse_ = {};
 	world::EntityKey attemptedHostage_ = {};

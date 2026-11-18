@@ -96,6 +96,64 @@ bool testPlantPlan()
 		});
 	return admitted == std::vector<ChatterPhrase>{ChatterPhrase::PlantingBomb, ChatterPhrase::GoingToPlantBomb};
 }
+
+bool testPlantingDefendRequest()
+{
+	using namespace astrabot::compat;
+	const char definitions[] = "Chatter PlantingBomb End";
+	ChatterRadioCatalog catalog;
+	if (!catalog.loadText(definitions, sizeof(definitions) - 1))
+		return false;
+	for (bool approaching : {false, true})
+	{
+		OutgoingRadioInput input{};
+		input.actor = {1, 1};
+		input.frame = {1, 1, 1};
+		input.now = 12;
+		input.alive = true;
+		input.team = 1;
+		input.friendCount = approaching ? 1 : 0;
+		input.plantingBomb = !approaching;
+		input.plantMoveEpoch = approaching ? 1U : 0U;
+		input.plantCoverDue = approaching;
+		input.ownPlace = 17;
+		input.ownPlacePhrase = 3;
+		input.plantPosition = {100.0f, 200.0f, 300.0f};
+		OutgoingRadioScheduler scheduler;
+		scheduler.prepare(input, catalog);
+		ChatterStatementHandle handle{};
+		scheduler.statements().visitSchedules([&](const ChatterScheduleEntry &entry)
+		{
+			handle = {entry.order, entry};
+			return false;
+		});
+		ChatterPendingStatement node{};
+		if (!scheduler.statements().read(handle, &node) || node.request.phrase != ChatterPhrase::PlantingBomb ||
+				node.schedule.topic != ChatterStatementTopic::CriticalEvent || node.schedule.place != 17 ||
+				node.request.criteriaPlace != 3 || node.request.expires != 22 ||
+				node.request.meme.kind != ChatterMemeKind::DefendHere)
+			return false;
+		input.plantPosition = {400.0f, 500.0f, 600.0f};
+		ChatterPlaybackInput playback{};
+		playback.now = input.now;
+		playback.friendsRemaining = 1;
+		auto step = scheduler.statements().advance(handle, playback);
+		if (step.completion.natural || !scheduler.statements().finishPart(step.token, 0))
+			return false;
+		playback.now += 0.125f;
+		step = scheduler.statements().advance(handle, playback);
+		const auto &completion = step.completion;
+		if (!completion.natural || completion.meme.kind != ChatterMemeKind::DefendHere ||
+				completion.meme.position.x != 100 || completion.meme.position.y != 200 || completion.meme.position.z != 300)
+			return false;
+		scheduler.reset();
+		input.roundOver = true;
+		scheduler.prepare(input, catalog);
+		if (!scheduler.statements().empty())
+			return false;
+	}
+	return true;
+}
 }
 int main()
 {
@@ -110,6 +168,7 @@ int main()
 		}
 	};
 	check(testPlantPlan(), "plant plan timing, same-update cover ordering, cooldown and silent Follow completion");
+	check(testPlantingDefendRequest(), "planting reports die at round end or complete with captured DefendHere position");
 	ChatterRadioCatalog catalog;
 	const char db[] = "// source-owned resource supplied by host\nChatter EnemySpotted\n Radio "
 					  "EVENT_RADIO_ENEMY_SPOTTED\n enemy.wav\nEnd\nChatter Affirmative\n Radio "

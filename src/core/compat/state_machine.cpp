@@ -108,6 +108,8 @@ const char *toString(CompatibilityTaskId task)
 		return "TASK-MOVE-TO-SNIPER-SPOT";
 	case CompatibilityTaskId::Sniping:
 		return "TASK-SNIPING";
+	case CompatibilityTaskId::HoldPosition:
+		return "TASK-HOLD-POSITION";
 	default:
 		return "TASK-NONE";
 	}
@@ -753,6 +755,10 @@ void CompatibilityStateMachine::applyEnterEffects(CompatibilityStateId state, Co
 		task_ = CompatibilityTaskId::MoveTo;
 		break;
 	case CompatibilityStateId::Hide:
+		if (!context.defendPosition)
+			return;
+		task_ = CompatibilityTaskId::HoldPosition;
+		break;
 	case CompatibilityStateId::None:
 	case CompatibilityStateId::AttackOverlay:
 		return;

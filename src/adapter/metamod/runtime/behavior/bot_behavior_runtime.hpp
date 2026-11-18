@@ -101,6 +101,7 @@ public:
 		float age = 0;
 		bool coverDue = false, hasGoal = false;
 		nav::NavVector goal{};
+		nav::NavVector reportPosition{};
 	};
 	void updateManagedBotCompatibilityState(
 		std::size_t index, const runtime::MovementPhysicsState &before, PlantMoveChatter *plantMove = nullptr);

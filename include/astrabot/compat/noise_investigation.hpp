@@ -22,6 +22,7 @@ struct NoiseInvestigationInput
 	bool allowed = false, visibleEnemy = false, alive = false, hiding = false, travelKnown = false;
 	float travelDistance = -1;
 	unsigned friends = 0;
+	bool defenseAmbushExpired = false;
 };
 enum class NoiseInvestigationResult
 {
@@ -95,6 +96,13 @@ public:
 			in.now - noise.timestampSeconds < in.reactionSeconds || in.now - noise.timestampSeconds > 20 ||
 			!in.allowed || in.visibleEnemy || in.elapsedRound <= 1.25f * safeTime_)
 			return Result::Ignore;
+		if (in.hiding && in.defenseAmbushExpired)
+		{
+			active_ = true;
+			target_ = noise.position;
+			area_ = noise.navArea;
+			return Result::Attend;
+		}
 		if (noise.timestampSeconds != candidate_.timestampSeconds || noise.timestampTick != candidate_.timestampTick ||
 			noise.position.x != candidate_.position.x || noise.position.y != candidate_.position.y ||
 			noise.position.z != candidate_.position.z || noise.navArea != candidate_.navArea)

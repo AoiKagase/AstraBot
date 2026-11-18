@@ -73,14 +73,16 @@ unsigned char *queueLoad(char *name, int *length)
 			"BaseDir radio/test/ Chatter Affirmative Radio EVENT_RADIO_AFFIRMATIVE ack.wav End "
 			"Chatter Help Radio EVENT_RADIO_NEED_BACKUP help.wav End "
 			"Chatter EscortingHostages escort.wav End Chatter AgreeWithPlan agree.wav End Chatter OnMyWay way.wav End "
-			"Place BombsiteA site.wav End Chatter GoingToPlantBomb Place UNDEFINED plantplan_default.wav Place BombsiteA plantplan.wav End Chatter CoveringFriend coverfriend.wav End";
+			"Place BombsiteA site.wav End Chatter GoingToPlantBomb Place UNDEFINED plantplan_default.wav Place BombsiteA plantplan.wav End Chatter CoveringFriend coverfriend.wav End "
+			"Chatter PlantingBomb planting.wav End";
 	}
 	if (std::strcmp(name, "queue_speech.db") == 0)
 	{
 		text =
 			"BaseDir radio/test/ Chatter Affirmative Place UNDEFINED Count 3 ack_wrong.wav Count Many ack.wav End "
 			"Chatter Help Place UNDEFINED help.wav End Chatter OnMyWay Place UNDEFINED way.wav End "
-			"Place BombsiteA site.wav End Chatter GoingToPlantBomb Place UNDEFINED plantplan_default.wav Place BombsiteA plantplan.wav End Chatter CoveringFriend coverfriend.wav End";
+			"Place BombsiteA site.wav End Chatter GoingToPlantBomb Place UNDEFINED plantplan_default.wav Place BombsiteA plantplan.wav End Chatter CoveringFriend coverfriend.wav End "
+			"Chatter PlantingBomb planting.wav End";
 	}
 	if (!text)
 	{
@@ -1483,7 +1485,8 @@ bool testProductionNavCenters(astrabot::metamod::PluginRuntime &runtime)
 	}
 	return ok;
 }
-bool testActualFollowMovement(astrabot::metamod::PluginRuntime &runtime, globalvars_t &globals, float arrivalAge = 0.0f)
+bool testActualFollowMovement(astrabot::metamod::PluginRuntime &runtime, globalvars_t &globals, float arrivalAge = 0.0f,
+	bool defendAtSpot = false)
 {
 	using namespace astrabot;
 	globals.mapname = 6;
@@ -1524,7 +1527,7 @@ bool testActualFollowMovement(astrabot::metamod::PluginRuntime &runtime, globalv
 		entity.v.weapons = index == 0 ? (1 << 6) : 0;
 	}
 	const char *path = "astrabot_follow_move.nav";
-	if (!check(writeTwoSiteNavigation(path, true, false, "BombsiteA"), "follow test NAV fixture written"))
+	if (!check(writeTwoSiteNavigation(path, true, defendAtSpot, "BombsiteA"), "follow test NAV fixture written"))
 		return false;
 	const metamod::NavLoadRequest load = {
 		path, "astrabot_follow_move", runtime.snapshot().mapGeneration, true, 123U, false, 0U};
@@ -1560,9 +1563,12 @@ bool testActualFollowMovement(astrabot::metamod::PluginRuntime &runtime, globalv
 	const auto &receiver = navigation.behavior_managedBotStateMachines(1);
 	bool sawPlantMove = false;
 	bool sawPlantState = false;
+	bool sawDefendHide = false;
+	bool movedToCapturedSpot = false;
 	bool arrived = false;
 	bool followed = false;
-	for (int i = 0; i < 120; ++i)
+	float observeUntil = globals.time + 15.0f;
+	while (globals.time < observeUntil)
 	{
 		if (sawPlantMove && arrivalAge > 0 && !arrived && sender.state() == compat::CompatibilityStateId::MoveTo)
 		{
@@ -1571,11 +1577,24 @@ bool testActualFollowMovement(astrabot::metamod::PluginRuntime &runtime, globalv
 			{
 				gEntities[0].v.origin.x = 224;
 				arrived = true;
+				observeUntil = (std::max)(observeUntil, globals.time + 12.0f);
 			}
 			else if (nextAge >= arrivalAge - .25f)
 				gEntities[0].v.origin.x = 194;
 		}
 		tick();
+		sawDefendHide |= arrived && receiver.state() == compat::CompatibilityStateId::Hide;
+		if (defendAtSpot && arrived && !queueHelpSamples.empty())
+		{
+			gEntities[0].v.weapons &= ~(1 << 6);
+			gEntities[0].v.origin.x = 64;
+			const auto &guard = navigation.behavior_scenarioDecisions(1);
+			if (receiver.task() == compat::CompatibilityTaskId::HoldPosition &&
+				guard.action == compat::ScenarioAction::Guard && guard.hasTarget &&
+				guard.target.position.x == 224 && guard.target.position.y == 50 &&
+				!queueHelpMoves.empty() && queueHelpMoves.back() > 10)
+				movedToCapturedSpot = true;
+		}
 		sawPlantState |= sender.state() == compat::CompatibilityStateId::PlantBomb;
 		sawPlantMove = sawPlantMove ||
 			(sender.state() == compat::CompatibilityStateId::MoveTo &&
@@ -1590,18 +1609,56 @@ bool testActualFollowMovement(astrabot::metamod::PluginRuntime &runtime, globalv
 	if (arrivalAge > 0 && arrivalAge <= 2.0f)
 	{
 		queueHelpRecording = false;
-		return check(sawPlantMove && sawPlantState && arrived && !followed,
+		const bool heardPlant = std::any_of(queueHelpSamples.begin(), queueHelpSamples.end(),
+			[](const std::pair<std::string, float> &sample) { return sample.first == "radio/test/planting.wav"; });
+		const bool heardAck = std::any_of(queueHelpSamples.begin(), queueHelpSamples.end(),
+			[](const std::pair<std::string, float> &sample) { return sample.first == "radio/test/ack.wav"; });
+		if (defendAtSpot)
+		{
+			queueHelpRecording = true;
+			gEntities[1].v.origin = Vector(204, 50, 36);
+			tick();
+			const bool atBoundary = navigation.behavior_scenarioDecisions(1).target.inUseRange;
+			gEntities[1].v.origin.x = 205;
+			queueHelpMoves.clear();
+			tick();
+			const auto &guard = navigation.behavior_scenarioDecisions(1);
+			queueHelpRecording = false;
+			if (!check(!atBoundary && guard.action == compat::ScenarioAction::Guard && guard.target.inUseRange &&
+					!queueHelpMoves.empty() && queueHelpMoves.back() == 0,
+				"defender stops inside the 20-unit feet radius and keeps moving at the boundary"))
+				return false;
+			const float entered = receiver.stateTimestamp();
+			while (globals.time <= entered + 60.0f && receiver.state() == compat::CompatibilityStateId::Hide)
+				tick();
+			if (!check(receiver.state() != compat::CompatibilityStateId::Hide && globals.time > entered + 30.0f,
+					"the defense assignment expires after its 30-to-60-second Hide duration"))
+				return false;
+		}
+		return check(heardPlant, "carrier broadcasts the planting report on arrival") &&
+			check(heardAck == !defendAtSpot, "only nearby Hide acknowledges the planting report") &&
+			check(!defendAtSpot || movedToCapturedSpot, "direct Hide moves to the captured Place after the sender leaves") &&
+			check(sawDefendHide, "natural planting report sends a teammate into Hide") &&
+			check(sawPlantMove && sawPlantState && arrived && !followed,
 			"arriving at exactly two seconds does not broadcast the GoingToPlantBomb plan");
 	}
 	if (arrivalAge > 2.0f && !check(sawPlantState && arrived, "the carrier enters PlantBomb on the plan frame"))
 		return false;
+	if (!followed)
+	{
+		std::fprintf(stderr, "arrival age %.3f, receiver %s/%s, heard:", arrivalAge,
+			compat::toString(receiver.state()), compat::toString(receiver.task()));
+		for (const auto &played : queueHelpSamples)
+			std::fprintf(stderr, " %s@%.3f", played.first.c_str(), played.second);
+		std::fprintf(stderr, "\n");
+	}
 	if (!check(sawPlantMove, "real C4 carrier enters MoveTo with the PlantBomb task") ||
 		!check(followed, "natural completion of the production plant plan starts teammate Follow"))
 		return false;
 	gEntities[0].v.origin = Vector(168, 32, 36);
 	queueHelpMoves.clear();
 	bool retargeted = false;
-	for (int i = 0; i < 20; ++i)
+	for (int i = 0; i < 80; ++i)
 	{
 		tick();
 		const auto &decision = navigation.behavior_scenarioDecisions(1);
@@ -1618,8 +1675,17 @@ bool testActualFollowMovement(astrabot::metamod::PluginRuntime &runtime, globalv
 	bool moved = false;
 	for (const float speed : queueHelpMoves)
 		moved |= speed > 10;
-	bool ok = check(contains("radio/test/plantplan.wav") && contains("radio/test/coverfriend.wav"),
-				  "real voice transport plays the plant plan and CoveringFriend") &&
+	const bool heardPlan = check(contains("radio/test/plantplan.wav"), "place-specific planting plan is audible");
+	// Both responses are native Say/MyIntention. The pending defense acknowledgement
+	// suppresses the later follow acknowledgement when cover and plan arrive together.
+	const bool simultaneous = arrivalAge > 2.0f;
+	const bool heardReply = check(contains("radio/test/coverfriend.wav") == !simultaneous &&
+			contains("radio/test/ack.wav") == simultaneous,
+		"the receiver speaks the first pending intention while still carrying out Follow");
+	if (!heardPlan || !heardReply)
+		for (const auto &sample : queueHelpSamples)
+			std::fprintf(stderr, "arrival %.3f %s @ %.3f\n", arrivalAge, sample.first.c_str(), sample.second);
+	bool ok = heardPlan && heardReply &&
 		check(retargeted && moved, "follower routes to the moving source and dispatches actual movement");
 	if (arrivalAge == 0)
 		++gEntities[0].serialnumber;
@@ -1745,7 +1811,8 @@ bool testStatementQueue(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t
 		testActualHelpMovement(runtime, engine, globals, true, false, false, true) &&
 		testActualLadderHelpMovement(runtime, engine, globals) &&
 		testActualHelpMovement(runtime, engine, globals, false, false, true, false, true) &&
-		testActualFollowMovement(runtime, globals, 2.0f) && testActualFollowMovement(runtime, globals, 2.125f) &&
+		testActualFollowMovement(runtime, globals, 2.0f) && testActualFollowMovement(runtime, globals, 2.0f, true) &&
+		testActualFollowMovement(runtime, globals, 2.125f) &&
 		testActualFollowMovement(runtime, globals);
 }
 }

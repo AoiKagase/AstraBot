@@ -129,6 +129,12 @@ int main()
 	i.aggression = .5f;
 	if (!check(p.evaluate(i, random) == Result::Ignore, "hiding radius depends on aggression"))
 		return 1;
+	draws = random.draws;
+	i.defenseAmbushExpired = true;
+	if (!check(p.evaluate(i, random) == Result::Attend && p.target().x == 301 && random.draws == draws,
+			"expired ambush attends the remembered sound without another distance or probability check"))
+		return 1;
+	i.defenseAmbushExpired = false;
 	p.reset();
 	i.noise.position = {300, 0, 0};
 	if (!check(p.evaluate(i, random) == Result::Attend, "hiding radius inclusive boundary"))

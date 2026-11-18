@@ -132,6 +132,7 @@ struct OutgoingRadioInput
 	float plantMoveAge = 0;
 	std::uint16_t plantGoalPlace = 0;
 	std::uint32_t plantGoalPlacePhrase = 0;
+	nav::NavVector plantPosition{};
 	bool plantCoverDue = false;
 	bool canStart = true;
 	ChatterScheduleAdmission admission{};
@@ -279,8 +280,6 @@ public:
 					goingToPlantBomb(in, catalog);
 				}
 			}
-			if (in.plantingBomb && !wasPlanting_ && !in.plantMoveEpoch)
-				queue(ChatterPhrase::PlantingBomb, in.now, kReportLifetimeSeconds, in, catalog);
 			if (in.bombLocationUnknown && !askedBomb_)
 			{
 				queue(ChatterPhrase::WhereIsTheBomb, in.now, kReportLifetimeSeconds, in, catalog);
@@ -295,6 +294,8 @@ public:
 			if (in.enemiesRemaining > 0 && in.nearbyFriends != in.friendCount && in.now - silence > kTeamSilenceSeconds)
 				queue(ChatterPhrase::RequestReport, in.now, kReportLifetimeSeconds, in, catalog);
 		}
+		if (in.plantingBomb && !wasPlanting_ && !in.plantMoveEpoch && !in.roundOver)
+			queue(ChatterPhrase::PlantingBomb, in.now, kReportLifetimeSeconds, in, catalog);
 		wasPlanting_ = in.plantingBomb;
 		const auto &report = in.noiseReport;
 		constexpr float kNoiseReportLifetimeSeconds = 5.0f;
@@ -588,6 +589,10 @@ private:
 		{
 			request.criteriaPlace = in.plantGoalPlacePhrase;
 			request.meme = {ChatterMemeKind::Follow, 0};
+		}
+		else if (phrase == ChatterPhrase::PlantingBomb)
+		{
+			request.meme = {ChatterMemeKind::DefendHere, 0, in.plantPosition};
 		}
 		else if (phrase == ChatterPhrase::EnemySpotted)
 		{

@@ -863,7 +863,25 @@ void BotBehaviorRuntime::updateScenarioTeamwork(std::size_t index, const runtime
 	scenario.autoFollowPermissionInferred = cooperative.humanPermissionInferred;
 	if (!cooperative.rogueKnown && !wasFollowing)
 		scenario.radio = nullptr;
-	actors_[index].scenarioDecisions = actors_[index].scenarioPlanners.update(scenario);
+	bool finishedDefense = false;
+	if (machine.state() == compat::CompatibilityStateId::Hide &&
+		machine.task() == compat::CompatibilityTaskId::HoldPosition && !machine.attackOverlayActive())
+	{
+		const float feetZ = before.origin.z - (before.ducked ? 18.0f : 36.0f);
+		actors_[index].scenarioPlanners.observeDefenderFeet(before.origin.x, before.origin.y, feetZ);
+		const bool reloading = observation.weapon.reloadState.isAvailable() &&
+			observation.weapon.reloadState.value == combat::ReloadState::Reloading;
+		finishedDefense = actors_[index].scenarioPlanners.finishDefense(
+			context.timestamp - machine.stateTimestamp(), reloading);
+	}
+	if (finishedDefense)
+	{
+		actors_[index].scenarioDecisions = {};
+		actors_[index].scenarioDecisions.action = compat::ScenarioAction::Stop;
+		actors_[index].scenarioDecisions.state = compat::CompatibilityStateId::Idle;
+	}
+	else
+		actors_[index].scenarioDecisions = actors_[index].scenarioPlanners.update(scenario);
 	if (!reactionPursuing(index))
 	{
 		updateBombGuardTarget(index, scenario, &actors_[index].scenarioDecisions);
@@ -1052,6 +1070,11 @@ void BotBehaviorRuntime::applyScenarioDecision(std::size_t index, const runtime:
 			plantMove->hasGoal = target.valid && target.mapGeneration == context.frame.mapGeneration &&
 				target.roundGeneration == context.frame.roundGeneration;
 			plantMove->goal = target.target;
+			const auto *carrier = services_->service_managedBotHandles()[index].entity;
+			if (!carrier)
+				return;
+			const auto &origin = carrier->v.origin;
+			plantMove->reportPosition = {origin.x, origin.y, origin.z};
 		}
 		const auto &teammate = actors_[index].teammateFollow;
 		const bool followingTeammate = teammate.entity.isValid() && stateBehavior.leaderAvailable &&

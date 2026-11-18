@@ -1,7 +1,8 @@
 #include "runtime/behavior/bot_behavior_runtime.hpp"
 #include "astrabot/compat/follow_request.hpp"
+#include "astrabot/compat/defend_request.hpp"
+#include "astrabot/compat/defend_hiding_spots.hpp"
 #include "runtime/shared/bot_runtime_support.hpp"
-#include "runtime/shared/public_nav_probe.hpp"
 #include "runtime/shared/public_nav_probe.hpp"
 namespace astrabot
 {
@@ -33,7 +34,7 @@ bool BotBehaviorRuntime::helpGoalCurrent(std::size_t index) const
 }
 
 struct BotBehaviorRuntime::TeammateRequestEnvironment : compat::IHelpRequestEnvironment,
-														compat::IFollowRequestEnvironment
+														compat::IFollowRequestEnvironment, compat::IDefendRequestEnvironment
 {
 	BotBehaviorRuntime &owner;
 	std::size_t sender, receiver;
@@ -278,6 +279,177 @@ struct BotBehaviorRuntime::TeammateRequestEnvironment : compat::IHelpRequestEnvi
 		}
 		return true;
 	}
+	nav::AreaId areaAt(const nav::NavVector &point, bool anyHeight)
+	{
+		PublicNavProbe probe(owner.services_->service_engineFunctions(), [this] { return current(); });
+		return compat::findBotNavArea(navigation, point, &probe, anyHeight);
+	}
+	bool placeAt(const nav::NavVector &point, std::uint16_t *place) override
+	{
+		const auto id = areaAt(point, true);
+		const auto *area = navigation.isValid() ? navigation.document()->findArea(id) : nullptr;
+		*place = area ? area->placeId : 0;
+		return current();
+	}
+	bool selectSpot(std::uint16_t place, nav::AreaId start, const nav::NavVector &origin,
+		nav::NavVector *point, bool *found)
+	{
+		compat::HidingSpotOccupancy occupancy;
+		const auto engine = owner.services_->service_engineFunctions();
+		const auto globals = owner.services_->service_globals();
+		if (!engine->pfnPEntityOfEntIndex || !globals)
+			return false;
+		for (int slot = 1; slot <= (std::min)(globals->maxClients, kMaximumClientSlots); ++slot)
+		{
+			const auto *player = engine->pfnPEntityOfEntIndex(slot);
+			if (!current())
+				return false;
+			if (!player || player->free || !(player->v.flags & FL_CLIENT) || (player->v.flags & FL_DORMANT) ||
+				player->v.deadflag != DEAD_NO || player->v.health <= 0)
+				continue;
+			const auto &pos = player->v.origin;
+			occupancy.players.push_back({{pos.x, pos.y, pos.z}, player == receipt.entity});
+		}
+		if (engine->pfnFindEntityByString)
+		{
+			edict_t *previous = nullptr;
+			for (int i = 0; i < globals->maxEntities; ++i)
+			{
+				auto *hostage = engine->pfnFindEntityByString(previous, "classname", "hostage_entity");
+				if (!current())
+					return false;
+				if (!hostage || hostage == previous || hostage->free)
+					break;
+				const auto &pos = hostage->v.origin;
+				occupancy.hostages.push_back({pos.x, pos.y, pos.z});
+				previous = hostage;
+			}
+		}
+		constexpr unsigned sniperWeapons = (1U << 3) | (1U << 13) | (1U << 18) | (1U << 24);
+		const compat::HidingSpotSearch search{navigation, occupancy, owner.services_->service_compatibilityRandomSource(),
+			{receipt.actor.slot, receipt.actor.generation}, timing(), [this] { return current(); },
+			(static_cast<unsigned>(receipt.entity->v.weapons) & sniperWeapons) != 0};
+		compat::HidingSpotSelection selection;
+		if (place)
+			selection = search.atPlace(place);
+		else
+		{
+			nav::NavLadderTopology ladders;
+			if (!owner.services_->navigation_ladderTopology(&ladders) || !current())
+				return false;
+			selection = search.nearArea(start, origin, ladders);
+		}
+		*found = selection.found;
+		*point = selection.position;
+		return selection.available && current();
+	}
+	bool randomHidingSpot(std::uint16_t place, nav::NavVector *point, bool *found) override
+	{
+		return selectSpot(place, 0, {}, point, found);
+	}
+	bool enterDefendState(const nav::NavVector &point, nav::AreaId goal)
+	{
+		if (!current())
+			return false;
+		auto &actor = owner.actors_[receiver];
+		auto &machine = actor.managedBotStateMachines;
+		const auto start = owner.services_->navigation_knownArea(receiver, receipt.actor, receipt.context.frame, navigation.revision());
+		bool reachable = false;
+		if (start && goal)
+		{
+			nav::NavLadderTopology ladders;
+			if (!owner.services_->navigation_ladderTopology(&ladders) || !current())
+				return false;
+			nav::NavQuery query(navigation);
+			query.setPathCostContext(owner.services_->navigation_managedPathCostContext(receiver));
+			if (!current())
+				return false;
+			nav::NavCorridor corridor;
+			reachable = query.buildNativeCorridor(start, goal, nav::NavRouteType::Fastest, ladders, &corridor) == nav::NavQueryResult::Found;
+		}
+		runtime::MovementPhysicsState before{};
+		before.dead = !receipt.context.alive;
+		auto context = owner.makeManagedBotStateContext(receiver, before);
+		if (!current())
+			return false;
+		float duration = -1.0f;
+		float ambushDelay = 0.0f;
+		if (reachable)
+		{
+			const auto draw = [&](const char *name, float low, float high, float &value) {
+				const auto result = owner.services_->service_compatibilityRandomSource().nextFloat(
+					compat::RandomRequest::floatRequest(name, {receipt.actor.slot, receipt.actor.generation},
+						timing(), low, high));
+				value = result.value;
+				return current() && result.status == compat::RandomStatus::Ok && std::isfinite(value) &&
+					value >= low && value <= high;
+			};
+			float roll = 0.0f;
+			if (!draw("Hide.Duration", 30.0f, 60.0f, duration) || !draw("Hide.Ambush", 0.0f, 100.0f, roll) ||
+				(roll < 50.0f && !draw("Hide.HoldPositionTime", 3.0f, 10.0f, ambushDelay)))
+				return false;
+		}
+		context.defendPosition = reachable;
+		const auto next = reachable ? compat::CompatibilityStateId::Hide : compat::CompatibilityStateId::Idle;
+		const auto previous = machine.state();
+		const auto result = machine.transition(next, compat::StateTransitionReason::ObjectiveChanged,
+			compat::StateTransitionId::ExplicitStateChange, context);
+		epoch = machine.normalStateEpoch();
+		if (result != compat::StateResult::Transitioned || !current())
+			return false;
+		actor.enemyReaction.onStateChange(owner.reactionContext(receiver), previous, next);
+		actor.helpGoal = {};
+		actor.managedBotObjectiveTargets = {};
+		actor.managedBotObjectiveActions = {};
+		actor.scenarioDecisions = {};
+		owner.services_->applyNavigationRequest({receiver, NavigationRequestKind::DestroyPath});
+		if (!current())
+			return false;
+		if (reachable)
+		{
+			compat::ScenarioTarget target{};
+			target.knowledge = compat::ScenarioKnowledge::Remembered;
+			target.frame = receipt.context.frame;
+			target.position = {point.x, point.y, point.z};
+			actor.scenarioPlanners.holdPosition(target, duration, ambushDelay);
+		}
+		else
+		{
+			actor.scenarioPlanners.cancelHoldPosition();
+		}
+		return true;
+	}
+	bool hideAtSpot(const nav::NavVector &point) override
+	{
+		return enterDefendState(point, areaAt(point, false));
+	}
+	bool hideNearPosition(const nav::NavVector &point) override
+	{
+		auto start = areaAt(point, false);
+		if (!current())
+			return false;
+		const auto &origin = receipt.entity->v.origin;
+		const nav::NavVector self{origin.x, origin.y, origin.z};
+		nav::NavVector center = self;
+		if (start)
+			center = nav::extentCenterOf(*navigation.document()->findArea(start));
+		else
+			start = owner.services_->navigation_knownArea(receiver, receipt.actor, receipt.context.frame, navigation.revision());
+		if (!start)
+			return enterDefendState(self, 0);
+		nav::NavVector spot{};
+		bool found = false;
+		if (!selectSpot(0, start, center, &spot, &found))
+			return false;
+		if (!found)
+			spot = self;
+		// Hide(area) computes its route to the area directly beneath the chosen spot.
+		return enterDefendState(spot, compat::findBotNavArea(navigation, spot, nullptr));
+	}
+	void affirmative() override
+	{
+		acknowledge(compat::ChatterPhrase::Affirmative);
+	}
 	void onMyWay() override
 	{
 		acknowledge(compat::ChatterPhrase::OnMyWay);
@@ -315,7 +487,8 @@ struct BotBehaviorRuntime::TeammateRequestEnvironment : compat::IHelpRequestEnvi
 void BotBehaviorRuntime::transmitTeammateRequest(
 	std::size_t sender, compat::ChatterMeme meme, const std::function<bool()> &current)
 {
-	if ((meme.kind != compat::ChatterMemeKind::Help && meme.kind != compat::ChatterMemeKind::Follow) ||
+	if ((meme.kind != compat::ChatterMemeKind::Help && meme.kind != compat::ChatterMemeKind::Follow &&
+		 meme.kind != compat::ChatterMemeKind::DefendHere) ||
 		services_->service_compatibilitySurface().configuration().mode != compat::RuntimeMode::Compatibility)
 		return;
 	const auto engine = services_->service_engineFunctions();
@@ -378,8 +551,10 @@ void BotBehaviorRuntime::transmitTeammateRequest(
 			continue;
 		if (meme.kind == compat::ChatterMemeKind::Help)
 			(void)compat::respondToHelpRequest({meme.place, 3000.0f}, environment);
-		else
+		else if (meme.kind == compat::ChatterMemeKind::Follow)
 			(void)compat::respondToFollowRequest(environment);
+		else
+			(void)compat::respondToDefendRequest(meme.position, environment);
 	}
 }
 
@@ -766,12 +941,18 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index, const Plan
 		input.team == kCounterTerroristTeam && decision.action == compat::ScenarioAction::Escape;
 	const auto &machine = actors_[index].managedBotStateMachines;
 	input.plantingBomb = machine.state() == compat::CompatibilityStateId::PlantBomb;
+	if (input.plantingBomb)
+	{
+		const auto &origin = handle.entity->v.origin;
+		input.plantPosition = {origin.x, origin.y, origin.z};
+	}
 	if (plantMove && plantMove->epoch && input.alive && input.team == kTerroristTeam && input.friendCount > 0)
 	{
 		const auto epoch = machine.normalStateEpoch();
 		input.plantMoveEpoch = plantMove->epoch;
 		input.plantMoveAge = plantMove->age;
 		input.plantCoverDue = plantMove->coverDue;
+		input.plantPosition = plantMove->reportPosition;
 		const auto &scheduler = actors_[index].outgoingRadioSchedulers;
 		if (plantMove->age > 2.0f && scheduler.needsPlantPlanPlace(plantMove->epoch) && plantMove->hasGoal &&
 			reportNav.isValid())
