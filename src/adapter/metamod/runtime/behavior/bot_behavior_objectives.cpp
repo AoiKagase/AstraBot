@@ -129,9 +129,17 @@ void BotBehaviorRuntime::finishManagedBotNavigation(std::size_t index, const run
 		input.reloading = services_->observation_publicObservations().pendingReloadRequest(
 			context.actor, context.frame, context.timestamp);
 	}
-	auto &machine = actors_[index].managedBotStateMachines;
+	auto &actor = actors_[index];
+	auto &machine = actor.managedBotStateMachines;
 	const auto previous = machine.state();
-	(void)machine.finishNavigation(context);
+	const bool pursuitPathEnded = previous == compat::CompatibilityStateId::MoveTo &&
+		machine.task() == compat::CompatibilityTaskId::MoveToLastKnownEnemyPosition &&
+		(step.outcome == Outcome::EndOfPath || step.outcome == Outcome::PathFailure);
+	const auto pursuitTarget = pursuitPathEnded ? actor.managedTaskEntity : world::EntityKey{};
+	const auto receipt = pursuitTarget.isValid() ? reactionContext(index) : compat::ReactionContext{};
+	const auto revision = actor.executionRevision;
+	const auto transition = machine.finishNavigation(context);
+	const auto resultingEpoch = machine.normalStateEpoch();
 	if (actors_[index].helpGoal.active && !helpGoalCurrent(index))
 	{
 		actors_[index].helpGoal = {};
@@ -173,6 +181,15 @@ void BotBehaviorRuntime::finishManagedBotNavigation(std::size_t index, const run
 			decision.goalPosition.x, decision.goalPosition.y, decision.goalPosition.z,
 			static_cast<int>(decision.failureReason), decision.currentArea, decision.goalArea, decision.linkFromArea,
 			decision.linkToArea);
+	if (pursuitTarget.isValid() && transition == compat::StateResult::Transitioned &&
+		machine.state() == compat::CompatibilityStateId::Idle)
+	{
+		const auto current = [&] {
+			return executionCurrent(index, receipt, revision) && machine.normalStateEpoch() == resultingEpoch;
+		};
+		if (current())
+			reportLostEnemy(index, pursuitTarget, current);
+	}
 }
 
 void BotBehaviorRuntime::refreshManagedObjectiveSiteRegistry()

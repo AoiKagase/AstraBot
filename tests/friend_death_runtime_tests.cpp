@@ -15,6 +15,9 @@ namespace
 bool friendVisible = true;
 bool killerVisible = false;
 bool objectiveVisible = false;
+bool captureLostEnemy = false;
+bool lostEnemyAudioMessage = false;
+unsigned lostEnemySamples = 0;
 std::vector<std::string> reactionDraws;
 struct ReactionTrace : astrabot::compat::IRandomTraceSink
 {
@@ -83,13 +86,15 @@ const char *reactionCvar(const char *name)
 	if (std::strcmp(name, "bot_chatter") == 0)
 	{
 		mutateReceipt(ReceiptMutation::Chatter);
-		return "off";
+		return captureLostEnemy ? "normal" : "off";
 	}
 	const auto *v = getCvar(name);
 	return v && v->string ? v->string : "";
 }
 int reactionMessageId(plid_t p, const char *name, int *size)
 {
+	if (std::strcmp(name, "SendAudio") == 0)
+		return 101;
 	return std::strcmp(name, "DeathMsg") == 0  ? 103
 		: std::strcmp(name, "ScreenFade") == 0 ? 104
 											   : siteFixtureUserMessageId(p, name, size);
@@ -106,6 +111,25 @@ void setupFriendDeath(enginefuncs_t &engine, globalvars_t &)
 {
 	engine.pfnCVarGetString = &reactionCvar;
 	engine.pfnRandomFloat = &reactionRandom;
+	engine.pfnLoadFileForMe = [](char *name, int *length) -> unsigned char * {
+		static unsigned char bank[] = "Chatter LostEnemy test/lost_enemy.wav End";
+		const bool matches = std::strcmp(name, "BotChatter.db") == 0;
+		*length = matches ? static_cast<int>(sizeof(bank) - 1U) : 0;
+		return matches ? bank : nullptr;
+	};
+	engine.pfnFreeFile = [](void *) {};
+	engine.pfnGetFileSize = [](char *) { return 100; };
+	engine.pfnGetApproxWavePlayLen = [](const char *) -> unsigned int { return 200; };
+	engine.pfnMessageBegin = [](int, int type, const float *, edict_t *recipient) {
+		lostEnemyAudioMessage = type == 101 && recipient == &gEntities[4];
+	};
+	engine.pfnWriteByte = [](int) {};
+	engine.pfnWriteShort = [](int) {};
+	engine.pfnWriteString = [](const char *value) {
+		if (lostEnemyAudioMessage && std::strcmp(value, "test/lost_enemy.wav") == 0)
+			++lostEnemySamples;
+	};
+	engine.pfnMessageEnd = [] { lostEnemyAudioMessage = false; };
 	gpMetaUtilFuncs->pfnGetUserMsgID = &reactionMessageId;
 }
 bool testFriendDeath(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &engine, globalvars_t &globals)
@@ -537,9 +561,35 @@ bool testFriendDeath(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &e
 	{
 		return false;
 	}
+	auto &listener = gEntities[4];
+	const auto originalListener = listener.v;
+	const auto originalListenerName = gEntityNames[4];
+	const auto startLostEnemyCapture = [&] {
+		captureLostEnemy = true;
+		lostEnemySamples = 0;
+		gEntityNames[4] = "Pursuit listener";
+		listener.v.netname = 104;
+		listener.v.team = 1;
+		listener.v.health = 100.0f;
+		listener.v.deadflag = DEAD_NO;
+		listener.v.origin = Vector(-700, 0, 36);
+		team(5, "TERRORIST");
+	};
+	const auto stopLostEnemyCapture = [&] {
+		captureLostEnemy = false;
+		listener.v = originalListener;
+		gEntityNames[4] = originalListenerName;
+	};
+	const auto letChatterPlay = [&] {
+		for (int i = 0; i < 16; ++i)
+			step(.125f);
+	};
 	begin();
+	startLostEnemyCapture();
 	death();
 	step(.12f);
+	if (!check(lostEnemySamples == 0, "a progressing chase does not report LostEnemy"))
+		return false;
 	self.v.origin = Vector(1000, 0, 36);
 	step(.12f);
 	step(.12f);
@@ -549,6 +599,20 @@ bool testFriendDeath(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &e
 	{
 		return false;
 	}
+	letChatterPlay();
+	if (!check(lostEnemySamples == 1, "a chase that reaches its destination says LostEnemy once"))
+		return false;
+	stopLostEnemyCapture();
+	begin();
+	startLostEnemyCapture();
+	death();
+	step(.12f);
+	killer.v.health = 0.0f;
+	killer.v.deadflag = DEAD_DEAD;
+	letChatterPlay();
+	if (!check(lostEnemySamples == 0, "the enemy dying ends the chase without LostEnemy"))
+		return false;
+	stopLostEnemyCapture();
 	const auto staleAttack = [&](compat::CompatibilityStateId from)
 	{
 		begin();
@@ -608,16 +672,19 @@ bool testFriendDeath(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &e
 	}
 	self.v.origin = Vector(16, 32, 36);
 	killer.v.origin = Vector(224, 32, 36);
+	startLostEnemyCapture();
 	death();
 	step(.12f);
 	step(.12f);
 	if (!check(navigation.behavior_managedBotStateMachines(0).task() !=
 				compat::CompatibilityTaskId::MoveToLastKnownEnemyPosition,
-			"actual disconnected route failure finishes pursuit") ||
-		!check(loadHearingNav(runtime), "restores hearing NAV after route failure"))
-	{
+			"actual disconnected route failure finishes pursuit"))
 		return false;
-	}
+	letChatterPlay();
+	if (!check(lostEnemySamples == 1, "a failed pursuit path with a living enemy says LostEnemy once") ||
+		!check(loadHearingNav(runtime), "restores hearing NAV after route failure"))
+		return false;
+	stopLostEnemyCapture();
 	begin();
 	gObjectiveEntitiesAvailable = true;
 	globals.maxEntities = 8;

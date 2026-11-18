@@ -1599,6 +1599,27 @@ void BotBehaviorRuntime::reactToHostageLoss(std::size_t index, bool allGone)
 	(void)environment.idleForObjectiveChange(true);
 }
 
+void BotBehaviorRuntime::reportLostEnemy(
+	std::size_t index, world::EntityKey target, const std::function<bool()> &current)
+{
+	const auto engine = services_->service_engineFunctions();
+	const auto globals = services_->service_globals();
+	if (!engine || !engine->pfnPEntityOfEntIndex || !globals || globals->maxClients <= 0 ||
+		target.id > static_cast<unsigned>(globals->maxClients) || services_->service_roundOver())
+		return;
+	const auto connection = services_->service_lifecycle().slotGeneration(target.id);
+	const auto *victim = engine->pfnPEntityOfEntIndex(static_cast<int>(target.id));
+	const auto targetCurrent = [&] {
+		return current() && victim && !victim->free && (victim->v.flags & FL_CLIENT) &&
+			victim->serialnumber >= 0 && static_cast<unsigned>(victim->serialnumber) + 1U == target.generation &&
+			victim->v.deadflag == DEAD_NO && victim->v.health > 0.0f &&
+			services_->service_lifecycle().slotGeneration(target.id) == connection;
+	};
+	ActorTaskEnvironment env(*this, index, index, targetCurrent);
+	if (env.current() && env.receipt.context.alive)
+		env.say("LostEnemy");
+}
+
 void BotBehaviorRuntime::reportAutomaticFollow(std::size_t index, const std::function<bool()> &current)
 {
 	const auto engine = services_->service_engineFunctions();
