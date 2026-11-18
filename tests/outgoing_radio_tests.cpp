@@ -1,4 +1,5 @@
 #include "astrabot/compat/outgoing_radio.hpp"
+#include "astrabot/compat/bomb_status.hpp"
 #include "astrabot/perception/perception.hpp"
 #include <cstdio>
 #include <cstring>
@@ -366,6 +367,25 @@ int main()
 	const auto fighting = reportingInStatement(30, true, {2, 0}, 0, 10, 3, 5);
 	ChatterRadioCatalog taskCatalog;
 	const auto plantedSite = plantedBombsiteReport(30.0f, {9, 4}, 2, 5);
+	BombStatusMemory spotted{};
+	check(spotted.isNewCarrierPosition({0, 0, 32}), "the first sighting of a bomb carrier is new");
+	spotted.rememberCarrier({0, 0, 32});
+	check(!spotted.isNewCarrierPosition({999, 0, 32}) && spotted.isNewCarrierPosition({0, 0, 1032}),
+		"moving bomb news compares 3D distance to the last reported position using a strict 1000-unit radius");
+	check(spotted.spotLooseBomb({80, 0, 0}, 20), "the first drop changes memory and starts the reporting timer");
+	spotted.rememberCarrier({80, 0, 0});
+	check(!spotted.spotLooseBomb({90, 0, 0}, 30) && spotted.status == BombStatusMemory::Status::Loose &&
+		spotted.position.x == 90, "at exactly ten seconds a new drop changes memory without another report");
+	spotted.rememberCarrier({90, 0, 0});
+	check(spotted.spotLooseBomb({110, 0, 0}, 30.125f), "a new drop after the interval can be reported again");
+	check(!spotted.spotLooseBomb({110, 0, 0}, 50), "a known loose bomb is old news even after its timer expires");
+	const auto carrierReport = bombStatusReport(ChatterPhrase::SpottedBomber, 10.0f, {100, 50, 32}, 2, 5, 7);
+	check(carrierReport.start == 10.0f && carrierReport.expires == 20.0f && carrierReport.subject == 7 &&
+		carrierReport.topic == ChatterStatementTopic::Information && carrierReport.program.count == 2 &&
+		carrierReport.program.parts[0].kind == ChatterPartKind::Place &&
+		carrierReport.program.parts[1].phrase == ChatterPhrase::SpottedBomber &&
+		carrierReport.meme.kind == ChatterMemeKind::BombMoving && carrierReport.meme.position.y == 50,
+		"carrier report names the place before the sighting and shares the observed position");
 	check(plantedSite.topic == ChatterStatementTopic::Information &&
 		plantedSite.phrase == ChatterPhrase::PlantedBombPlace && plantedSite.start == 30.0f &&
 		plantedSite.expires == 33.0f && plantedSite.place == 2 && plantedSite.criteriaPlace == 5 &&

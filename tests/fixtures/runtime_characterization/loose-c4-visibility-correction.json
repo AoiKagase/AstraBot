@@ -1,0 +1,83 @@
+{
+  "reason": "CSBot CanSeeLooseBomb checks the loose C4 origin with CHECK_FOV on full updates. In the public weaponbox fixture this adds a backpack model lookup and, for points in the body view cone, a visibility ray to (224,32,36).",
+  "base_commit": "bc05dfc75f38faeceb10cd62f6eebe90519cddb0",
+  "native_reference_commit": "b0889847fe6d03898be88acc9e366660efb40ab5",
+  "control": "Export the base commit. In observeScenarioEntities before the grenade branch, on a bomb map with a weaponbox, nonnegative serial and nonzero model, resolve its model with pfnSzFromIndex. For models/w_backpack.mdl call the existing killVictimVisible(index, entity, context.frame) and discard the result. Run the unchanged astrabot_compat_actor_command on both x86 builds. The control has no C4 speech, memory or pickup implementation.",
+  "platforms": {
+    "windows-x86": {
+      "baseline_sha256": "7d42624076ca24ad5c090d382ebc423baf41678c2165003f86cbfc8baf12b36c",
+      "corrected_sha256": "b3794a282073a0127f2a9460ea8d5875eeaf52afa095d5575f3b1c0acd6a1131",
+      "records": 149168
+    },
+    "linux-x86": {
+      "baseline_sha256": "82539676e0d28543df6036815474b20a055f59933cbdda7ae4d1ec38f62028a2",
+      "corrected_sha256": "d158946b59e3bbcf4f364fad38c5aa13daa3235bef96453b58d3f86eea226a8a",
+      "records": 149168
+    }
+  },
+  "patterns": [
+    {
+      "windows-x86": {
+        "before": [
+          "call entityOfIndex index=7",
+          "call szFromIndex index=4"
+        ],
+        "after": [
+          "call entityOfIndex index=7",
+          "call szFromIndex index=4",
+          "call szFromIndex index=5"
+        ]
+      },
+      "linux-x86": {
+        "before": [
+          "call entityOfIndex index=7",
+          "call szFromIndex index=4"
+        ],
+        "after": [
+          "call entityOfIndex index=7",
+          "call szFromIndex index=4",
+          "call szFromIndex index=5"
+        ]
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "call entityOfIndex index=7",
+          "call szFromIndex index=4"
+        ],
+        "after": [
+          "call entityOfIndex index=7",
+          "call szFromIndex index=4",
+          "call szFromIndex index=5",
+          "call traceObjectiveVisibility end=(0x1.c000000000000p+7,0x1.0000000000000p+5,0x1.2000000000000p+5)"
+        ]
+      },
+      "linux-x86": {
+        "before": [
+          "call entityOfIndex index=7",
+          "call szFromIndex index=4"
+        ],
+        "after": [
+          "call entityOfIndex index=7",
+          "call szFromIndex index=4",
+          "call szFromIndex index=5",
+          "call traceObjectiveVisibility end=(0x1.cp+7,0x1p+5,0x1.2p+5)"
+        ]
+      }
+    }
+  ],
+  "edits": [
+    [104554, 1], [104731, 0], [104918, 0], [105089, 0], [105260, 0], [105446, 0],
+    [105617, 0], [105791, 1], [105983, 1], [106160, 1], [106337, 1], [106530, 1],
+    [106751, 1], [106928, 1], [107120, 1], [107297, 1], [107474, 1], [107666, 1],
+    [107908, 1], [108086, 1], [108279, 1], [108458, 0], [108630, 0], [108816, 0],
+    [109008, 0], [109183, 0], [109370, 0], [109541, 0], [109712, 0], [109898, 0],
+    [110069, 0], [110240, 0], [110427, 0], [110598, 0], [110769, 0], [110955, 0],
+    [111128, 0], [111299, 0], [111485, 0], [111656, 0], [111827, 0], [112013, 0],
+    [112185, 0], [112356, 0], [112543, 0], [112714, 0], [112885, 0], [113071, 0],
+    [114326, 1], [114516, 0], [114715, 0], [114899, 0], [115083, 0], [115282, 0],
+    [115466, 0], [115654, 1], [115861, 1], [116052, 1], [116243, 1], [116450, 1],
+    [116641, 1], [116819, 1], [117012, 1], [117190, 1], [117368, 1], [117561, 1]
+  ]
+}

@@ -148,6 +148,8 @@ BotBehaviorRuntime::BehaviorPhaseResult BotBehaviorRuntime::updateBehaviorLifecy
 	}
 	if (actors_[index].managedBotWasDead)
 	{
+		actors_[index].bombStatus = {};
+		actors_[index].looseBombObservation = {};
 		actors_[index].equipment.reset();
 		actors_[index].scenarioPlanners.reset();
 		if (native)
@@ -199,6 +201,7 @@ void BotBehaviorRuntime::updateScenarioState(std::size_t index, const runtime::M
 			observeScenarioEntities(index, before, context, stateBehavior, observation, scenario, data);
 			if (!current())
 				return;
+			actors_[index].looseBombObservation = data.looseBomb;
 			updateScenarioNavigation(index, before, context, stateBehavior, observation, scenario, data);
 			if (!current())
 				return;
@@ -354,6 +357,8 @@ void BotBehaviorRuntime::observeScenarioEntities(std::size_t index, const runtim
 		};
 		const int maxEntities =
 			(std::max)(0, (std::min)(services_->service_globals()->maxEntities, kMaximumEntityIndex));
+		if (scenario.scenario == compat::PublicScenarioKind::Bomb)
+			data.looseBomb.frame = context.frame;
 		for (int entityIndex = 1; entityIndex < maxEntities; ++entityIndex)
 		{
 			edict_t *entity = services_->service_engineFunctions()->pfnPEntityOfEntIndex(entityIndex);
@@ -398,6 +403,22 @@ void BotBehaviorRuntime::observeScenarioEntities(std::size_t index, const runtim
 							scenario.team, true, true, true, location};
 						scenario.automaticLeader.location.actor = scenario.automaticLeader.actor;
 					}
+				}
+			}
+			if (scenario.scenario == compat::PublicScenarioKind::Bomb && entity->serialnumber >= 0 &&
+				entity->v.model && std::strcmp(name, "weaponbox") == 0 && ObservationAdapter::isLooseBombBox(
+					entity, name, services_->service_engineFunctions()->pfnSzFromIndex(entity->v.model)))
+			{
+				const auto serial = entity->serialnumber;
+				const auto position = entity->v.origin;
+				const bool visible = canSeeEntityOrigin(index, entity, context.frame);
+				if (!entity->free && entity->serialnumber == serial)
+				{
+					auto &bomb = data.looseBomb;
+					bomb.entity = {static_cast<unsigned>(entityIndex), static_cast<unsigned>(serial) + 1U};
+					bomb.knowledge = visible ? compat::ScenarioKnowledge::Visible : compat::ScenarioKnowledge::Unknown;
+					if (visible)
+						bomb.position = {position.x, position.y, position.z};
 				}
 			}
 			if (std::strcmp(name, "grenade") == 0)

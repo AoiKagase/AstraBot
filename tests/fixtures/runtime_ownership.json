@@ -277,6 +277,16 @@
   {
     "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
     "scope": "ActorState",
+    "member": "bombStatus"
+  },
+  {
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
+    "scope": "ActorState",
+    "member": "looseBombObservation"
+  },
+  {
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
+    "scope": "ActorState",
     "member": "bombSearchTargets"
   },
   {

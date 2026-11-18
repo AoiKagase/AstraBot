@@ -1,6 +1,7 @@
 #ifndef ASTRABOT_ADAPTER_BOT_BEHAVIOR_RUNTIME_HPP
 #define ASTRABOT_ADAPTER_BOT_BEHAVIOR_RUNTIME_HPP
 #include "runtime/shared/bot_runtime_services.hpp"
+#include "astrabot/compat/bomb_status.hpp"
 #include "astrabot/compat/enemy_count_chatter.hpp"
 #include "astrabot/compat/kill_praise.hpp"
 #include "astrabot/compat/friend_death_chatter.hpp"
@@ -106,6 +107,7 @@ public:
 	void updateManagedBotCompatibilityState(
 		std::size_t index, const runtime::MovementPhysicsState &before, PlantMoveChatter *plantMove = nullptr);
 	void updateOutgoingPublicRadio(std::size_t index, const PlantMoveChatter *plantMove = nullptr);
+	void observeBombPickup(Vector origin, world::FrameIdentity frame);
 	compat::ChatterScheduleAdmission chatterAdmission(std::size_t index);
 	compat::ChatterScheduleEntry activeTeamChatter(std::size_t index, int team, bool *current);
 	void updatePublicBuying(std::size_t index);
@@ -204,6 +206,7 @@ public:
 
 private:
 	struct TeammateRequestEnvironment;
+	void reportBombPickedUp(std::size_t index);
 	void transmitTeammateRequest(std::size_t sender, compat::ChatterMeme meme, const std::function<bool()> &current);
 	bool helpGoalCurrent(std::size_t index) const;
 	bool executionCurrent(std::size_t index, const compat::ReactionContext &receipt, std::uint64_t revision) const;
@@ -237,6 +240,7 @@ private:
 		const compat::ObservationTimingContext &timing;
 		int observedTeam = 0;
 		float automaticLeaderRange = (std::numeric_limits<float>::max)();
+		compat::ScenarioTarget looseBomb{};
 		nav::NavSnapshot navigation{};
 		bool wasFollowing = false;
 	};
@@ -442,7 +446,8 @@ private:
 	std::shared_ptr<compat::ChatterVoiceCatalog> chatterBank(std::size_t index);
 	void ensureOutgoingChatterCatalog();
 	std::uint32_t allowedFixedChatterPhrases(const char *verbosity, compat::ChatterPhrase first, compat::ChatterPhrase last);
-	bool killVictimVisible(std::size_t index, const edict_t *victim, const world::FrameIdentity &frame, bool checkFov = true) const;
+	bool canSeeEntityOrigin(std::size_t index, const edict_t *entity, const world::FrameIdentity &frame,
+		bool checkFov = true) const;
 	compat::ReactionContext reactionContext(std::size_t index) const;
 	void observeFriendDeath(std::size_t index, const edict_t *victim, const edict_t *killer,
 		const world::FrameIdentity &frame, world::ActorKey victimConnection, world::ActorKey killerConnection);
@@ -522,6 +527,8 @@ private:
 		compat::RadioContactMemory outgoingRadioContactMemory{};
 		nav::AreaId scenarioEscapeAreas{};
 		compat::BombSiteSearchMemory bombSearchMemory{};
+		compat::BombStatusMemory bombStatus{};
+		compat::ScenarioTarget looseBombObservation{};
 		compat::ScenarioTarget bombSearchTargets{};
 		compat::ScenarioTarget clearedBombsite{};
 		compat::ScenarioTarget plantedBombsite{};

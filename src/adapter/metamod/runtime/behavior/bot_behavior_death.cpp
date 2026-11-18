@@ -153,7 +153,7 @@ void BotBehaviorRuntime::observePlayerDeath(
 			frame.mapGeneration != services_->service_lifecycle().mapGeneration() ||
 			frame.roundGeneration != services_->service_lifecycle().roundGeneration() || globals->time != in.now)
 			continue;
-		if (!killVictimVisible(index, victim, frame))
+		if (!canSeeEntityOrigin(index, victim, frame))
 			continue;
 		compat::KillPraiseDeathInput praise{};
 		praise.actor = in.actor;
@@ -192,40 +192,5 @@ void BotBehaviorRuntime::observePlayerDeath(
 		}
 	}
 }
-bool BotBehaviorRuntime::killVictimVisible(
-	std::size_t index, const edict_t *victim, const world::FrameIdentity &frame, bool checkFov) const
-{
-	if (!services_ || index >= actors_.size() || !victim)
-		return false;
-	const auto engine = services_->service_engineFunctions();
-	const auto globals = services_->service_globals();
-	const auto &handle = services_->service_managedBotHandles()[index];
-	auto *self = handle.entity;
-	if (!engine || !engine->pfnTraceLine || !globals || !self)
-		return false;
-	compat::PublicActorState observed{};
-	if (services_->observation_publicObservations().read(
-			{handle.actor.slot, handle.actor.actorGeneration}, frame, &observed) &&
-		globals->time < observed.blindUntil)
-		return false;
-	const world::WorldPosition eye{self->v.origin.x + self->v.view_ofs.x, self->v.origin.y + self->v.view_ofs.y,
-		self->v.origin.z + self->v.view_ofs.z};
-	const world::WorldPosition point{victim->v.origin.x, victim->v.origin.y, victim->v.origin.z};
-	constexpr float kMaximumCoordinate = world::WorldLimits::kMaximumCoordinate;
-	for (float value : {eye.x, eye.y, eye.z, point.x, point.y, point.z, self->v.origin.x, self->v.origin.y})
-		if (!std::isfinite(value) || std::fabs(value) > kMaximumCoordinate)
-			return false;
-	if ((checkFov && !compat::killPraiseViewCone(
-			point.x - self->v.origin.x, point.y - self->v.origin.y, self->v.angles.x, self->v.angles.y)) ||
-		services_->observation_smokeObservations().blocks(eye, point, globals->time))
-		return false;
-	const float from[]{eye.x, eye.y, eye.z};
-	const float to[]{point.x, point.y, point.z};
-	TraceResult result{};
-	constexpr int kIgnoreActorsAndGlass = 0x101;
-	engine->pfnTraceLine(from, to, kIgnoreActorsAndGlass, self, &result);
-	return result.flFraction == 1.0f;
-}
-
 }
 }

@@ -211,7 +211,7 @@ void BotBehaviorRuntime::observeFriendDeath(std::size_t index, const edict_t *vi
 		(in.disposition == compat::ReactionDisposition::Engage ||
 			in.disposition == compat::ReactionDisposition::Opportunity))
 	{
-		in.victimVisible = killVictimVisible(index, victim, frame, false);
+		in.victimVisible = canSeeEntityOrigin(index, victim, frame, false);
 	}
 	if (!current())
 	{

@@ -6,12 +6,27 @@ bool reportingInFixture = false;
 bool bombsiteClearFixture = false;
 bool plantedSiteFixture = false;
 bool requestedSiteFixture = false;
+bool carrierFixture = false;
+bool looseBombFixture = false;
+int carrierViewer = -1;
+bool looseBombLineHitsBox = false;
+const char *bombFixtureMap()
+{
+	if (bombsiteClearFixture) return "astrabot_bombsite_clear";
+	if (plantedSiteFixture) return "astrabot_bombsite_planted";
+	if (requestedSiteFixture) return "astrabot_bombsite_request";
+	if (carrierFixture) return "astrabot_bomb_carrier";
+	if (looseBombFixture) return "astrabot_loose_bomb";
+	return nullptr;
+}
 void selectStatementFixture(int argc, char **argv)
 {
 	reportingInFixture = argc == 2 && std::strcmp(argv[1], "--reporting-in") == 0;
 	bombsiteClearFixture = argc == 2 && std::strcmp(argv[1], "--bombsite-clear") == 0;
 	plantedSiteFixture = argc == 2 && std::strcmp(argv[1], "--bombsite-planted") == 0;
 	requestedSiteFixture = argc == 2 && std::strcmp(argv[1], "--bombsite-request") == 0;
+	carrierFixture = argc == 2 && std::strcmp(argv[1], "--bomb-carrier") == 0;
+	looseBombFixture = argc == 2 && std::strcmp(argv[1], "--loose-bomb") == 0;
 }
 bool testStatementQueue(astrabot::metamod::PluginRuntime &, enginefuncs_t &, globalvars_t &);
 void setupStatementQueue(enginefuncs_t &, globalvars_t &);
@@ -113,6 +128,10 @@ unsigned char *queueLoad(char *name, int *length)
 		contents += " Chatter PlantedBombPlace planted.wav End";
 	if (requestedSiteFixture)
 		contents += " Chatter WhereIsTheBomb where.wav End";
+	if (carrierFixture)
+		contents += " Chatter SpottedBomber carrier.wav End";
+	if (looseBombFixture)
+		contents += " Chatter SpottedLooseBomb loose.wav End Chatter TheyPickedUpTheBomb pickup.wav End";
 	*length = static_cast<int>(contents.size());
 	auto *bytes = new unsigned char[static_cast<std::size_t>(*length) + 1];
 	std::memcpy(bytes, contents.c_str(), static_cast<std::size_t>(*length) + 1);
@@ -164,7 +183,7 @@ void queueString(const char *sample)
 	if (queueMessage == 101 && queueRecipient == &gEntities[0])
 	{
 		queueSamples.emplace_back(sample);
-		if (reportingInFixture || bombsiteClearFixture || plantedSiteFixture || requestedSiteFixture)
+		if (reportingInFixture || bombFixtureMap())
 			reportAudio.emplace_back(queueSpeakerSlot, sample);
 		if (queueHelpRecording && queueClock)
 			queueHelpSamples.emplace_back(sample, queueClock->time);
@@ -173,11 +192,26 @@ void queueString(const char *sample)
 void queueEnd()
 {
 }
-void queueVisibility(const float *from, const float *end, int, edict_t *observer, TraceResult *trace)
+void queueVisibility(const float *from, const float *end, int flags, edict_t *observer, TraceResult *trace)
 {
 	*trace = {};
 	trace->vecEndPos = Vector(end[0], end[1], end[2]);
 	trace->flFraction = queueEnemiesVisible ? 1.0f : 0.0f;
+	if ((carrierFixture || looseBombFixture) && carrierViewer >= 0 && observer == &gEntities[carrierViewer])
+	{
+		trace->flFraction = 1.0f;
+		if (looseBombFixture && end[0] == gPlantedBomb.v.origin.x && end[1] == gPlantedBomb.v.origin.y &&
+			end[2] == gPlantedBomb.v.origin.z)
+		{
+			if (looseBombLineHitsBox)
+			{
+				trace->flFraction = .5f;
+				trace->pHit = &gPlantedBomb;
+			}
+			else if (flags != 0x101)
+				trace->flFraction = .5f; // A window between the observer and the C4.
+		}
+	}
 	if (requestedSiteFixture && observer == &gEntities[0] && end[0] == 229 && end[1] == 32)
 		trace->flFraction = 1.0f;
 	if (queueHelpRecording && from[2] > 0 && end[2] < 0)
@@ -1831,7 +1865,7 @@ bool testStatementQueue(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t
 			check(queueSamples == std::vector<std::string>{"radio/test/ack.wav", "radio/test/help.wav"},
 				"both statements survive simultaneous admission, fixed count criteria and later OFF mode")))
 		return false;
-	if (bombsiteClearFixture || plantedSiteFixture || requestedSiteFixture)
+	if (const char *map = bombFixtureMap())
 	{
 		queueMode = "normal";
 		queueEnemiesVisible = false;
@@ -1864,8 +1898,6 @@ bool testStatementQueue(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t
 			bot.v.origin = Vector(110, 32, 36);
 			team(i + 1, "CT");
 		}
-		const char *map = requestedSiteFixture ? "astrabot_bombsite_request" :
-			plantedSiteFixture ? "astrabot_bombsite_planted" : "astrabot_bombsite_clear";
 		const std::string path = std::string(map) + ".nav";
 		if (!writeTwoSiteNavigation(path.c_str(), true, false, "BombsiteA"))
 			return false;
@@ -1878,6 +1910,88 @@ bool testStatementQueue(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t
 		runtime.beginRoundGeneration();
 		for (int i = 0; i < 40; ++i)
 			step(.125f);
+		if (looseBombFixture)
+		{
+			auto listen = [&](int viewer, float bodyYaw = 0.0f)
+			{
+				carrierViewer = viewer;
+				reportAudio.clear();
+				for (int i = 0; i < 48; ++i)
+				{
+					gEntities[0].v.v_angle.y = gEntities[1].v.v_angle.y = 0;
+					gEntities[0].v.angles.y = gEntities[1].v.angles.y = bodyYaw;
+					step(.125f);
+				}
+			};
+			auto count = [&](int speaker, const char *sample) {
+				return std::count(reportAudio.begin(), reportAudio.end(), std::make_pair(speaker, std::string(sample)));
+			};
+			gPlantedBomb.v.classname = 4;
+			gPlantedBomb.v.model = 5;
+			gPlantedBomb.v.origin = Vector(224, 32, 36);
+			gPlantedBomb.serialnumber = 12;
+			listen(-1);
+			if (!check(!count(1, "radio/test/loose.wav") && !count(2, "radio/test/loose.wav"),
+				"a dropped C4 hidden from both CTs does not cause a report"))
+				return false;
+			listen(0, 180.0f);
+			if (!check(!count(1, "radio/test/loose.wav"), "a CT facing away from the box cannot spot its C4"))
+				return false;
+			looseBombLineHitsBox = true;
+			listen(0);
+			if (!check(!count(1, "radio/test/loose.wav"), "a ray stopping short of the C4 origin cannot reveal it"))
+				return false;
+			looseBombLineHitsBox = false;
+			listen(0);
+			if (!check(count(1, "radio/test/loose.wav") == 1, "a CT spots the C4 through glass and reports it once"))
+				return false;
+			listen(1);
+			if (!check(!count(2, "radio/test/loose.wav"), "a teammate already told about the drop does not repeat it"))
+				return false;
+			auto &picker = gEntities[4];
+			gEntityNames[4] = "Picker";
+			picker.v.netname = 104;
+			picker.v.origin = Vector(1110, 32, 36);
+			gEntities[0].v.origin = Vector(110, 32, 36);
+			gEntities[1].v.origin = Vector(111, 32, 36);
+			char playerLog[] = "\"Picker<%d><BOT><TERRORIST>\" triggered \"Got_The_Bomb\"\n";
+			hooks.pfnAlertMessage(at_logged, playerLog, 104);
+			listen(-1);
+			if (!check(!count(1, "radio/test/pickup.wav") && !count(2, "radio/test/pickup.wav"),
+				"a pickup log with a mismatched player ID does not notify the CTs"))
+				return false;
+			hooks.pfnAlertMessage(at_logged, playerLog, 105);
+			gPlantedBomb.free = true;
+			listen(-1);
+			return check(!count(1, "radio/test/pickup.wav") && count(2, "radio/test/pickup.wav") == 1,
+				"only the CT inside the strict 1000-unit pickup radius reports the recovery");
+		}
+		if (carrierFixture)
+		{
+			auto &enemy = gEntities[4];
+			enemy.v.origin = Vector(224, 32, 36);
+			enemy.v.weapons = (1 << metamod::ActionAdapter::kC4WeaponId);
+			reportAudio.clear();
+			auto reports = [&](int viewer, float enemyX, int speaker)
+			{
+				carrierViewer = viewer;
+				enemy.v.origin.x = enemyX;
+				reportAudio.clear();
+				for (int i = 0; i < 56; ++i)
+				{
+					gEntities[0].v.v_angle.y = gEntities[1].v.v_angle.y = 0;
+					step(.125f);
+				}
+				return std::count(reportAudio.begin(), reportAudio.end(),
+					std::make_pair(speaker, std::string("radio/test/carrier.wav")));
+			};
+			if (!check(reports(-1, 224, 1) == 0, "an unseen carrier is not reported") ||
+				!check(reports(0, 224, 1) == 1, "the first CT spots and reports the carrier once") ||
+				!check(reports(1, 1223, 2) == 0, "the second CT remembers the first CT's report across sightings"))
+				return false;
+			return check(reports(1, 1224, 2) == 1,
+				"the second CT reports at exactly 1000 units from its teammate's original sighting");
+		}
 		auto plantAtSecondSite = [&]()
 		{
 			gPlantedBomb.v.classname = 2;

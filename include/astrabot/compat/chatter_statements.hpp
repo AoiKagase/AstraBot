@@ -50,7 +50,9 @@ enum class ChatterMemeKind : std::uint8_t
 	RequestReport,
 	BombsiteClear,
 	WhereBomb,
-	BombsitePlanted
+	BombsitePlanted,
+	BombMoving,
+	BombLoose
 };
 struct ChatterMeme
 {

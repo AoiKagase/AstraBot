@@ -430,6 +430,13 @@ ObservationAdapterResult ObservationAdapter::collectPlantedBomb(edict_t *entity,
 	return ObservationAdapterResult::Accepted;
 }
 
+bool ObservationAdapter::isLooseBombBox(const edict_t *entity, const char *classname, const char *model)
+{
+	return entity && !entity->free && classname && model && std::strcmp(classname, "weaponbox") == 0 &&
+		std::strcmp(model, "models/w_backpack.mdl") == 0 && std::isfinite(entity->v.origin.x) &&
+		std::isfinite(entity->v.origin.y) && std::isfinite(entity->v.origin.z);
+}
+
 ObservationAdapterResult ObservationAdapter::collectDroppedC4(edict_t *entity, const char *classname, const char *model,
 	const world::ActorKey &actor, const world::FrameIdentity &frame, const compat::ObservationTimingContext &timing,
 	compat::DroppedC4Observation *observation) const
@@ -443,10 +450,7 @@ ObservationAdapterResult ObservationAdapter::collectDroppedC4(edict_t *entity, c
 	{
 		return ObservationAdapterResult::EngineUnavailable;
 	}
-	if (entity == nullptr || entity->free != 0 || classname == nullptr || model == nullptr ||
-		std::strcmp(classname, "weaponbox") != 0 || std::strcmp(model, "models/w_backpack.mdl") != 0 ||
-		!std::isfinite(entity->v.origin[0]) || !std::isfinite(entity->v.origin[1]) ||
-		!std::isfinite(entity->v.origin[2]))
+	if (!isLooseBombBox(entity, classname, model))
 	{
 		return ObservationAdapterResult::InvalidEntity;
 	}

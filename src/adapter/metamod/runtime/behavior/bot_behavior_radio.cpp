@@ -480,6 +480,23 @@ struct BotBehaviorRuntime::TeammateRequestEnvironment : compat::IHelpRequestEnvi
 	{
 		acknowledge(compat::ChatterPhrase::Affirmative);
 	}
+	void receivedMovingBomb(nav::NavVector position, int team)
+	{
+		auto &actor = owner.actors_[receiver];
+		actor.bombStatus.rememberCarrier(position);
+		bool isRogue = false;
+		if (!rogue(&isRogue) || !current() || isRogue ||
+			actor.managedBotStateMachines.state() != compat::CompatibilityStateId::Hunt)
+			return;
+		const auto living = owner.livingRadioPeers(receipt.entity, team);
+		if (!current())
+			return;
+		const auto nearby = actor.outgoingRadioContactMemory.counts(receipt.actor, receipt.context.frame,
+			receipt.context.now, living.friends, living.enemies);
+		std::uint16_t place = 0;
+		if (!nearby.enemies && placeAt(position, &place))
+			(void)compat::respondToHelpRequest({place, -1.0f}, *this);
+	}
 	void receivedSiteStatus(const compat::ChatterMeme &meme)
 	{
 		const auto site = meme.site;
@@ -614,7 +631,8 @@ void BotBehaviorRuntime::transmitTeammateRequest(
 	if ((meme.kind != compat::ChatterMemeKind::Help && meme.kind != compat::ChatterMemeKind::Follow &&
 		 meme.kind != compat::ChatterMemeKind::DefendHere && meme.kind != compat::ChatterMemeKind::RequestReport &&
 		 meme.kind != compat::ChatterMemeKind::BombsiteClear && meme.kind != compat::ChatterMemeKind::BombsitePlanted &&
-		 meme.kind != compat::ChatterMemeKind::WhereBomb) ||
+		 meme.kind != compat::ChatterMemeKind::WhereBomb && meme.kind != compat::ChatterMemeKind::BombMoving &&
+		 meme.kind != compat::ChatterMemeKind::BombLoose) ||
 		services_->service_compatibilitySurface().configuration().mode != compat::RuntimeMode::Compatibility)
 		return;
 	const auto engine = services_->service_engineFunctions();
@@ -685,6 +703,10 @@ void BotBehaviorRuntime::transmitTeammateRequest(
 			environment.receivedSiteStatus(meme);
 		else if (meme.kind == compat::ChatterMemeKind::WhereBomb)
 			environment.reportPlantedSite();
+		else if (meme.kind == compat::ChatterMemeKind::BombMoving)
+			environment.receivedMovingBomb(meme.position, team);
+		else if (meme.kind == compat::ChatterMemeKind::BombLoose)
+			actors_[receiver].bombStatus.rememberLoose(meme.position);
 		else
 			environment.reportingIn(team);
 	}
@@ -863,6 +885,54 @@ compat::ChatterScheduleEntry BotBehaviorRuntime::activeTeamChatter(std::size_t i
 	return selection.finish(peers[index].context.now);
 }
 
+void BotBehaviorRuntime::reportBombPickedUp(std::size_t index)
+{
+	auto &actor = actors_[index];
+	if (actor.bombStatus.status != compat::BombStatusMemory::Status::Loose || services_->service_roundOver())
+		return;
+	const auto receipt = reactionContext(index);
+	if (!receipt.valid())
+		return;
+	const auto revision = actor.executionRevision;
+	const auto &origin = services_->service_managedBotHandles()[index].entity->v.origin;
+	const nav::NavVector position{origin.x, origin.y, origin.z};
+	actor.bombStatus.rememberCarrier(position);
+	ensureOutgoingChatterCatalog();
+	if (!executionCurrent(index, receipt, revision))
+		return;
+	const auto engine = services_->service_engineFunctions();
+	const auto mode = compat::parseChatterVerbosity(
+		engine && engine->pfnCVarGetString ? engine->pfnCVarGetString("bot_chatter") : nullptr);
+	if (!executionCurrent(index, receipt, revision))
+		return;
+	const auto report = compat::bombStatusReport(compat::ChatterPhrase::TheyPickedUpTheBomb, receipt.now, position);
+	actor.outgoingRadioSchedulers.statements().admit(report, chatterAdmission(index), outgoingChatterCatalog_,
+		mode, actor.confirmedSpeech.scheduledStatement());
+}
+
+void BotBehaviorRuntime::observeBombPickup(Vector origin, world::FrameIdentity frame)
+{
+	if (services_->service_compatibilitySurface().configuration().mode != compat::RuntimeMode::Compatibility ||
+		services_->service_roundOver())
+		return;
+	constexpr float kHearingRange = 1000.0f;
+	for (std::size_t index = 0; index < actors_.size(); ++index)
+	{
+		if (!services_->service_managedBotSlots()[index] ||
+			actors_[index].bombStatus.status != compat::BombStatusMemory::Status::Loose)
+			continue;
+		const auto receipt = reactionContext(index);
+		auto *self = services_->service_managedBotHandles()[index].entity;
+		const auto revision = actors_[index].executionRevision;
+		if (!receipt.valid() || !(receipt.frame == frame) || !self ||
+			services_->observation_resolvePlayerTeam(self) != kCounterTerroristTeam || !executionCurrent(index, receipt, revision))
+			continue;
+		const auto offset = self->v.origin - origin;
+		if (offset.x * offset.x + offset.y * offset.y + offset.z * offset.z < kHearingRange * kHearingRange)
+			reportBombPickedUp(index);
+	}
+}
+
 void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index, const PlantMoveChatter *plantMove)
 {
 	if (index >= services_->service_managedBotHandles().size() || services_->service_globals() == nullptr ||
@@ -954,6 +1024,29 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index, const Plan
 		haveBelief ? &belief : nullptr, blind, input.friendCount, input.enemiesRemaining);
 	input.visibleEnemyCount = contacts.enemies;
 	input.nearbyFriends = contacts.friends;
+	world::ActorKey bomber{};
+	nav::NavVector bomberPosition{};
+	if (input.alive && haveBelief && input.team == kCounterTerroristTeam &&
+		services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility)
+	{
+		for (std::size_t i = 0; i < belief.actorCount(); ++i)
+		{
+			const auto *contact = belief.actorAt(i);
+			if (contact && contact->carryingC4 && contact->visible && contact->hasCurrentPosition() &&
+				contact->relation == world::TeamRelation::Hostile && contact->actor.slot > bomber.slot)
+			{
+				bomber = contact->actor;
+				bomberPosition = {contact->position.x, contact->position.y, contact->position.z};
+			}
+		}
+	}
+	const bool reportBomber = bomber.isValid() && actors_[index].bombStatus.isNewCarrierPosition(bomberPosition);
+	std::uint16_t bomberPlace = 0;
+	const auto loose = actors_[index].looseBombObservation;
+	const bool sawLoose = input.alive && !input.roundOver && loose.frame == input.frame &&
+		loose.knowledge == compat::ScenarioKnowledge::Visible;
+	const nav::NavVector loosePosition{loose.position.x, loose.position.y, loose.position.z};
+	std::uint16_t loosePlace = 0;
 	auto discovery = actors_[index].discoveredBombsiteReport;
 	const auto metadataPlace = [&](std::uint16_t place)
 	{
@@ -998,6 +1091,21 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index, const Plan
 			return true;
 		};
 		PublicNavProbe probe(services_->service_engineFunctions(), queryCurrent);
+		if (reportBomber)
+		{
+			const auto area = compat::findBotNavArea(reportNav, bomberPosition, &probe, true);
+			if (!queryCurrent())
+				return;
+			bomberPlace = areaPlace(area);
+		}
+		if (sawLoose && (reportBomber || actors_[index].bombStatus.status != compat::BombStatusMemory::Status::Loose) &&
+			input.now > actors_[index].bombStatus.nextLooseReport)
+		{
+			const auto area = compat::findBotNavArea(reportNav, loosePosition, &probe, true);
+			if (!queryCurrent())
+				return;
+			loosePlace = areaPlace(area);
+		}
 		if (discovery.meme.site.isValid())
 		{
 			const auto area = compat::findBotNavArea(reportNav, discovery.meme.position, &probe, true);
@@ -1127,6 +1235,21 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index, const Plan
 	input.verbosity = mode;
 	input.speaking = actors_[index].confirmedSpeech.scheduledStatement();
 	actors_[index].outgoingRadioSchedulers.prepare(input, outgoingChatterCatalog_);
+	if (reportBomber && bomber.generation == (std::max)(1U, services_->service_lifecycle().slotGeneration(bomber.slot)))
+	{
+		actors_[index].bombStatus.rememberCarrier(bomberPosition);
+		const auto report = compat::bombStatusReport(compat::ChatterPhrase::SpottedBomber, input.now,
+			bomberPosition, bomberPlace, metadataPlace(bomberPlace), static_cast<int>(bomber.slot));
+		actors_[index].outgoingRadioSchedulers.statements().admit(
+			report, input.admission, outgoingChatterCatalog_, mode, input.speaking);
+	}
+	if (sawLoose && actors_[index].bombStatus.spotLooseBomb(loosePosition, input.now))
+	{
+		const auto report = compat::bombStatusReport(compat::ChatterPhrase::SpottedLooseBomb, input.now,
+			loosePosition, loosePlace, metadataPlace(loosePlace));
+		actors_[index].outgoingRadioSchedulers.statements().admit(
+			report, input.admission, outgoingChatterCatalog_, mode, input.speaking);
+	}
 	if (discovery.meme.site.isValid())
 	{
 		actors_[index].discoveredBombsiteReport = {};

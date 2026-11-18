@@ -23,6 +23,7 @@ enum class ObservationAdapterResult
 class ObservationAdapter
 {
 public:
+	static bool isLooseBombBox(const edict_t *entity, const char *classname, const char *model);
 	ObservationAdapter();
 
 	void configure(enginefuncs_t *engineFunctions, globalvars_t *globals);

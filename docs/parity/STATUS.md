@@ -1,3 +1,11 @@
+## 2026-11-18　11C-1　C4の目撃・回収報告
+
+基点は `bc05dfc`。ReGameDLL_CS `b088984` の `CCSBot::CanSeeLooseBomb`、`BotChatterInterface::SpottedBomber`、`SpottedLooseBomb`、`TheyPickedUpTheBomb`、`BotBombStatusMeme::Interpret` と `EVENT_BOMB_PICKED_UP` を参照した。
+
+- 2体のCTで、搬送者の目撃位置の共有、999単位での重複抑制と1000単位での再報告を確認した。落下C4は体の向き、煙、失明、ガラスを無視した原点までの見通しで判定する。回収では実際のプレイヤーの名前・ユーザーIDを照合し、既に落下を知っているCTの聞こえる範囲を3次元で判定する。
+- Windows x86 Debug は145/145件合格。Linux x86 Debug は143/144件合格で、失敗は既知の項目22 `astrabot_combat_policy`。両OSのC4統合テストが合格した。過去の圧縮履歴と既存補正を保持し、目視確認だけを加えた独立ビルドから、66回のモデル照会と27回の視線確認を固定した。実装の履歴は両OSとも149,168行すべて一致した。
+- 両プラグインのx86形式と7エクスポートを独立に確認した。SHA-256 はWindows DLLが `d254f919a7075c3b0a74a621e7d6fdfb10e865401da0d68ddc14b894fa1d9482`、Linux SOが `5f9023c1270c685a72f49dc8f7fbf0595b73b34d520002da632a8de0e4d389e6`。この修正後のビルドの実機受入れは項目25に残る。
+
 ## 2026-11-18 repair unit08: Follow requests from planting plans
 
 Base d67cb7e375034630c5866978b73d44e400891a3d. Native reference b0889847fe6d03898be88acc9e366660efb40ab5. `GoingToPlantBomb` attaches a Follow request when a carrier reports the plan. Natural completion delivers it in client-slot order. Receivers check Rogue, Busy, and SAFEST travel in that order, accept a distance of 0 through 1000 units, then follow and say `CoveringFriend`.

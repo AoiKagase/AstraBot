@@ -1020,6 +1020,52 @@ void PluginRuntime::onMessageEnd()
 	observation_.onMessageEnd();
 }
 
+void PluginRuntime::onPlayerLogMessage(const char *message)
+{
+	// CWeaponBox::Touch emits this engine log only for the player who retrieved the C4.
+	// BombPickup user messages also go to other T players and carry no picker identity.
+	static constexpr char suffix[] = "><TERRORIST>\" triggered \"Got_The_Bomb\"";
+	const auto engine = engineFunctions_;
+	if (state_ != State::ActiveMap || !globals_ || !message || *message != '"' || !engineFunctions_ ||
+		!engine->pfnPEntityOfEntIndex || !engine->pfnGetPlayerUserId || !engine->pfnSzFromIndex)
+		return;
+	const auto length = std::strcspn(message, "\r\n");
+	if (length <= sizeof(suffix) - 1 || message[length + std::strspn(message + length, "\r\n")] != '\0' ||
+		std::memcmp(message + length - (sizeof(suffix) - 1), suffix, sizeof(suffix) - 1) != 0)
+		return;
+	const std::string identity(message, length - (sizeof(suffix) - 1));
+	const auto frame = world::FrameIdentity{lifecycle_.mapGeneration(), lifecycle_.roundGeneration(), adapterFrameCount_};
+	const auto current = [&]() {
+		return state_ == State::ActiveMap && engineFunctions_ == engine && frame.mapGeneration == lifecycle_.mapGeneration() &&
+			frame.roundGeneration == lifecycle_.roundGeneration() && frame.tick == adapterFrameCount_;
+	};
+	const int maxClients = (std::min)(kMaximumClientSlot, globals_->maxClients);
+	for (int slot = 1; slot <= maxClients && current(); ++slot)
+	{
+		auto *player = engine->pfnPEntityOfEntIndex(slot);
+		if (!current() || !player || player->free || !(player->v.flags & FL_CLIENT) || !player->v.netname ||
+			player->v.deadflag != DEAD_NO || player->serialnumber < 0)
+			continue;
+		const auto serial = player->serialnumber;
+		const auto nameIndex = player->v.netname;
+		const char *name = engine->pfnSzFromIndex(nameIndex);
+		if (!current() || !name || !*name)
+			continue;
+		const auto namePrefix = std::string("\"") + name + "<";
+		if (identity.compare(0, namePrefix.size(), namePrefix) != 0)
+			continue;
+		const int userId = engine->pfnGetPlayerUserId(player);
+		const auto prefix = namePrefix + std::to_string(userId) + "><";
+		if (!current() || userId <= 0 || identity.compare(0, prefix.size(), prefix) != 0 ||
+			identity.find_first_of("<>\"", prefix.size()) != std::string::npos)
+			continue;
+		if (observation_.resolvePlayerTeam(player) == kTerroristTeam && current() && !player->free &&
+			player->serialnumber == serial && player->v.netname == nameIndex && player->v.deadflag == DEAD_NO)
+			behavior_.observeBombPickup(player->v.origin, frame);
+		return;
+	}
+}
+
 void PluginRuntime::onRoundLifecycleMessage(const char *message)
 {
 	if (state_ != State::ActiveMap || globals_ == nullptr || message == nullptr || !std::isfinite(globals_->time))
@@ -2486,7 +2532,10 @@ void HookAlertMessage(ALERT_TYPE type, char *format, ...)
 		va_end(arguments);
 		if (written >= 0)
 		{
-			PluginRuntime::instance().onRoundLifecycleMessage(message);
+			if (*message != '"')
+				PluginRuntime::instance().onRoundLifecycleMessage(message);
+			else if (written < kLogMessageCapacity)
+				PluginRuntime::instance().onPlayerLogMessage(message);
 		}
 	}
 	setMetaResult(MRES_IGNORED);

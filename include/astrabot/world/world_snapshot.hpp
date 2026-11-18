@@ -207,6 +207,7 @@ struct ActorObservation
 	bool fovPassed;
 	bool losPassed;
 	std::uint8_t visibleParts;
+	bool carryingC4 = false;
 
 	bool isConfirmed() const;
 	bool hasCurrentPosition() const;

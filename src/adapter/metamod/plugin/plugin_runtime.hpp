@@ -68,6 +68,7 @@ public:
 	void onMessageBegin(int messageDestination, int messageType, const float *origin, edict_t *entity);
 	void onMessageEnd();
 	void onRoundLifecycleMessage(const char *message);
+	void onPlayerLogMessage(const char *message);
 	bool beginRoundGeneration();
 	void onWriteByte(int value);
 	void onWriteChar(int value);

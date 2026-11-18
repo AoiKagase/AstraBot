@@ -1335,6 +1335,8 @@ bool BotObservationRuntime::collectManagedPerception(
 		observation.velocity = visible ? compatObservation.player.velocity.value : world::WorldVelocity{};
 		observation.confidence = visible ? world::ContactConfidence{1.0f, 0U} : world::ContactConfidence{0.0f, 0U};
 		observation.visible = visible;
+		observation.carryingC4 = visible && compatObservation.objective.carryingC4.isAvailable() &&
+			compatObservation.objective.carryingC4.value;
 		observation.fovPassed = isObserver || visibility.fovPassed;
 		observation.losPassed = isObserver || visibility.losPassed;
 		observation.visibleParts = isObserver
