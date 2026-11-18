@@ -48,7 +48,9 @@ enum class ChatterMemeKind : std::uint8_t
 	Follow,
 	DefendHere,
 	RequestReport,
-	BombsiteClear
+	BombsiteClear,
+	WhereBomb,
+	BombsitePlanted
 };
 struct ChatterMeme
 {

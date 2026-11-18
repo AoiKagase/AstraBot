@@ -569,7 +569,30 @@ void BotBehaviorRuntime::updateScenarioNavigation(std::size_t index, const runti
 	data.navigation = services_->service_navPublisher().snapshot();
 	const auto &scenarioNavigation = data.navigation;
 	const nav::NavDocument *scenarioDocument = scenarioNavigation.document();
+	auto &knownSite = actors_[index].plantedBombsite;
+	if (scenario.bombPlantedKnown && scenario.bombPlanted && knownSite.entity.isValid() &&
+		knownSite.frame.mapGeneration == context.frame.mapGeneration &&
+		knownSite.frame.roundGeneration == context.frame.roundGeneration &&
+		scenario.bomb.knowledge == compat::ScenarioKnowledge::Unknown)
+	{
+		const auto engine = services_->service_engineFunctions();
+		const auto globals = services_->service_globals();
+		const auto *zone = engine && engine->pfnPEntityOfEntIndex && globals &&
+			knownSite.entity.id < static_cast<unsigned>(globals->maxEntities)
+			? engine->pfnPEntityOfEntIndex(static_cast<int>(knownSite.entity.id)) : nullptr;
+		if (zone && !zone->free && zone->serialnumber >= 0 &&
+			static_cast<unsigned>(zone->serialnumber) + 1U == knownSite.entity.generation)
+		{
+			scenario.plantedBombsite = knownSite;
+			const float dx = knownSite.position.x - before.origin.x, dy = knownSite.position.y - before.origin.y,
+				dz = knownSite.position.z - before.origin.z;
+			scenario.plantedBombsite.pathCost = std::sqrt(dx * dx + dy * dy + dz * dz);
+		}
+		else
+			knownSite = {};
+	}
 	if (scenario.scenario == compat::PublicScenarioKind::Bomb &&
+		scenario.plantedBombsite.knowledge == compat::ScenarioKnowledge::Unknown &&
 		scenario.team == objectives::TeamRole::CounterTerrorist && scenario.bombPlantedKnown && scenario.bombPlanted &&
 		scenario.bomb.knowledge == compat::ScenarioKnowledge::Unknown && scenarioNavigation.isValid() &&
 		scenarioNavigation.mapGeneration() == context.frame.mapGeneration && scenarioDocument != nullptr &&
@@ -824,9 +847,22 @@ void BotBehaviorRuntime::updateScenarioTeamwork(std::size_t index, const runtime
 		services_->service_engineFunctions()->pfnPEntityOfEntIndex != nullptr &&
 		services_->service_engineFunctions()->pfnSzFromIndex != nullptr && services_->service_globals() != nullptr)
 	{
+		float closestSiteDistanceSquared = 1.0e9f;
+		const auto &previous = actors_[index].plantedBombsite;
+		const auto &observationMemory = services_->observation_objectiveKnowledge(index)[1U];
+		bool reportDiscovery = scenario.team == objectives::TeamRole::CounterTerrorist &&
+			(!previous.entity.isValid() || previous.frame.mapGeneration != context.frame.mapGeneration ||
+				previous.frame.roundGeneration != context.frame.roundGeneration) &&
+			scenario.bomb.entity.isValid() && observationMemory.entity.id == scenario.bomb.entity.id &&
+			observationMemory.entity.generation + 1U == scenario.bomb.entity.generation &&
+			observationMemory.firstHeardAt >= 0.0f;
 		for (int entityIndex = 1;
 			 entityIndex < (std::min)(services_->service_globals()->maxEntities, kMaximumEntityIndex); ++entityIndex)
 		{
+			// The identified C4 cannot also be a zone. Once the containment check is
+			// finished, only additional zone centers could improve the closest match.
+			if (teamwork.atPlantedBombsite && static_cast<unsigned>(entityIndex) == scenario.bomb.entity.id)
+				continue;
 			edict_t *zone = services_->service_engineFunctions()->pfnPEntityOfEntIndex(entityIndex);
 			if (zone == nullptr || zone->free)
 				continue;
@@ -843,16 +879,34 @@ void BotBehaviorRuntime::updateScenarioTeamwork(std::size_t index, const runtime
 			const float hiY = legacy ? zone->v.origin.y + kLegacyZoneHalfExtent : zone->v.absmax.y;
 			const float hiZ =
 				(legacy ? zone->v.origin.z + kLegacyZoneHalfExtent : zone->v.absmax.z) + kZoneVerticalPadding;
+			const world::WorldPosition center{(loX + hiX) * 0.5f, (loY + hiY) * 0.5f, (loZ + hiZ) * 0.5f};
+			const auto &bomb = scenario.bomb.position;
+			const float dx = center.x - bomb.x, dy = center.y - bomb.y, dz = center.z - bomb.z;
+			const float distanceSquared = dx * dx + dy * dy + dz * dz;
+			if (zone->serialnumber >= 0 && distanceSquared < closestSiteDistanceSquared)
+			{
+				closestSiteDistanceSquared = distanceSquared;
+				auto &known = actors_[index].plantedBombsite;
+				known.knowledge = compat::ScenarioKnowledge::Remembered;
+				known.frame = context.frame;
+				known.entity = {static_cast<unsigned>(entityIndex), static_cast<unsigned>(zone->serialnumber) + 1U};
+				known.position = center;
+			}
 			const auto contains = [&](float x, float y, float z)
 			{
 				return x >= loX && x <= hiX && y >= loY && y <= hiY && z >= loZ && z <= hiZ;
 			};
+			if (reportDiscovery && zone->serialnumber >= 0 && contains(bomb.x, bomb.y, bomb.z))
+			{
+				auto &report = actors_[index].discoveredBombsiteReport;
+				report = compat::plantedBombsiteReport(observationMemory.firstHeardAt,
+					{static_cast<unsigned>(entityIndex), static_cast<unsigned>(zone->serialnumber) + 1U}, 0, 0);
+				report.meme.position = {center.x, center.y, center.z};
+				reportDiscovery = false;
+			}
 			if (contains(before.origin.x, before.origin.y, before.origin.z) &&
 				contains(scenario.bomb.position.x, scenario.bomb.position.y, scenario.bomb.position.z))
-			{
 				teamwork.atPlantedBombsite = true;
-				break;
-			}
 		}
 	}
 	compat::TeamworkDecision cooperative{};

@@ -287,6 +287,16 @@
   {
     "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
     "scope": "ActorState",
+    "member": "plantedBombsite"
+  },
+  {
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
+    "scope": "ActorState",
+    "member": "discoveredBombsiteReport"
+  },
+  {
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
+    "scope": "ActorState",
     "member": "teamworkPolicies"
   },
   {

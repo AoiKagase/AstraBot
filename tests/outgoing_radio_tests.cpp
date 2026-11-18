@@ -365,6 +365,13 @@ int main()
 	const auto calm = reportingInStatement(30, false, {}, 0, 10, 3, 5);
 	const auto fighting = reportingInStatement(30, true, {2, 0}, 0, 10, 3, 5);
 	ChatterRadioCatalog taskCatalog;
+	const auto plantedSite = plantedBombsiteReport(30.0f, {9, 4}, 2, 5);
+	check(plantedSite.topic == ChatterStatementTopic::Information &&
+		plantedSite.phrase == ChatterPhrase::PlantedBombPlace && plantedSite.start == 30.0f &&
+		plantedSite.expires == 33.0f && plantedSite.place == 2 && plantedSite.criteriaPlace == 5 &&
+		plantedSite.meme.kind == ChatterMemeKind::BombsitePlanted && plantedSite.meme.site.id == 9 &&
+		plantedBombsiteReport(30.0f, {}, 2, 5).source == ChatterScheduleSource::None,
+		"a planted-site answer names a known zone and retains its identity for three seconds");
 	const char taskPhrases[] = "Chatter Clear End Chatter GoingToPlantBomb End Chatter DefusingBomb End Chatter EscortingHostages End";
 	check(taskCatalog.loadText(taskPhrases, sizeof(taskPhrases) - 1), "load task report phrases");
 	for (const auto &task : {std::make_pair(CompatibilityTaskId::PlantBomb, ChatterPhrase::GoingToPlantBomb),

@@ -263,6 +263,14 @@ int main()
 	result = searchBomb.update(value);
 	ok &= check(result.action == ScenarioAction::Move && result.target.entity == value.bombSearch.entity,
 		"CT with public plant notice but unknown bomb searches a known site without receiving hidden bomb position");
+	value.plantedBombsite = target();
+	value.plantedBombsite.entity = {100U, 1U};
+	value.plantedBombsite.inUseRange = true;
+	++value.frame.tick;
+	result = searchBomb.update(value);
+	ok &= check(result.action == ScenarioAction::Move && result.target.entity == value.plantedBombsite.entity &&
+		nativeScenarioMoveTask(value, result) == CompatibilityTaskId::DefuseBomb,
+		"A reported site directs the CT to its center without using the site as a bomb");
 	ScenarioBehaviorPlanner lateBomb;
 	value = input();
 	value.scenario = PublicScenarioKind::Bomb;

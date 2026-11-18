@@ -126,6 +126,7 @@ struct ScenarioBehaviorInput
 	bool timerEstimated = false;
 	bool travelTimeEstimated = false;
 	ScenarioTarget bombSearch = {};
+	ScenarioTarget plantedBombsite = {};
 	float aggression = 0.5f;
 	bool attacking = false;
 	bool currentDefusing = false;
@@ -174,6 +175,8 @@ inline CompatibilityTaskId nativeScenarioMoveTask(
 			if (input.bombSearch.knowledge != ScenarioKnowledge::Unknown && input.bombSearch.entity.isValid() &&
 				decision.target.entity == input.bombSearch.entity)
 				return CompatibilityTaskId::FindTickingBomb;
+			if (input.plantedBombsite.entity.isValid() && decision.target.entity == input.plantedBombsite.entity)
+				return CompatibilityTaskId::DefuseBomb;
 		}
 	}
 	return CompatibilityTaskId::None;
@@ -677,10 +680,12 @@ private:
 			}
 			if (input.humanDefusingKnown && input.humanDefusing)
 			{
-				return targetDecision(input, input.bomb, ScenarioAction::Guard, CompatibilityStateId::Hide);
+				return targetDecision(input, targetKnown(input, input.bomb) ? input.bomb : input.plantedBombsite,
+					ScenarioAction::Guard, CompatibilityStateId::Hide);
 			}
 			if (!targetKnown(input, input.bomb))
-				return targetDecision(input, input.bombSearch, ScenarioAction::Move, CompatibilityStateId::MoveTo);
+				return targetDecision(input, targetKnown(input, input.plantedBombsite) ? input.plantedBombsite : input.bombSearch,
+					ScenarioAction::Move, CompatibilityStateId::MoveTo);
 			ScenarioBehaviorDecision result =
 				targetDecision(input, input.bomb, ScenarioAction::Move, CompatibilityStateId::MoveTo);
 			if (result.hasTarget && input.currentDefusing)

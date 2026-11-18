@@ -130,6 +130,8 @@ void BotBehaviorRuntime::onActorRemoved(std::size_t index)
 	actors_[index].managedStateInputs = {};
 	actors_[index].bombSearchTargets = {};
 	actors_[index].clearedBombsite = {};
+	actors_[index].plantedBombsite = {};
+	actors_[index].discoveredBombsiteReport = {};
 	actors_[index].teamworkPolicies.reset();
 	actors_[index].teamworkRadioApplied = 0U;
 	actors_[index].noiseInvestigation.reset();

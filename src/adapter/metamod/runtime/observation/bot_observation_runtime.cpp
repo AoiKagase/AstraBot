@@ -667,9 +667,13 @@ void BotObservationRuntime::onEmitSoundAt(edict_t *entity, const char *sample, f
 			const float dz = handle.entity->v.origin.z - origin.z;
 			if (dx * dx + dy * dy + dz * dz < kBombBeepKnowledgeDistance * kBombBeepKnowledgeDistance)
 			{
-				actors_[index].objectiveKnowledge[1U] = {
-					{static_cast<std::uint32_t>(entityIndex), static_cast<std::uint32_t>(entity->serialnumber)},
-					origin};
+				auto &knowledge = actors_[index].objectiveKnowledge[1U];
+				const world::EntityKey bomb{static_cast<std::uint32_t>(entityIndex),
+					static_cast<std::uint32_t>(entity->serialnumber)};
+				if (!(knowledge.entity == bomb))
+					knowledge.firstHeardAt = event.timestampSeconds;
+				knowledge.entity = bomb;
+				knowledge.position = origin;
 			}
 		}
 		services_->behavior_invalidateObjectiveAssignments();
@@ -1452,6 +1456,8 @@ bool BotObservationRuntime::observeObjective(
 	}
 	if (visible)
 	{
+		if (!(knowledge.entity == key))
+			knowledge.firstHeardAt = -1.0f;
 		knowledge.entity = key;
 		knowledge.position = {target[0], target[1], target[2]};
 	}

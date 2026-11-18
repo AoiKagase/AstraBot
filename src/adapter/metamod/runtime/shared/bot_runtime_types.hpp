@@ -228,6 +228,7 @@ struct ObjectiveKnowledge
 {
 	world::EntityKey entity{};
 	world::WorldVector position{};
+	float firstHeardAt = -1.0f;
 };
 struct NavigationUpdate
 {

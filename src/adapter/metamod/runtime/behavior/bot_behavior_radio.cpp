@@ -480,8 +480,9 @@ struct BotBehaviorRuntime::TeammateRequestEnvironment : compat::IHelpRequestEnvi
 	{
 		acknowledge(compat::ChatterPhrase::Affirmative);
 	}
-	void receivedSiteClear(world::EntityKey site)
+	void receivedSiteStatus(const compat::ChatterMeme &meme)
 	{
+		const auto site = meme.site;
 		if (!site.isValid() || site.id >= static_cast<unsigned>(owner.services_->service_globals()->maxEntities))
 			return;
 		const auto engine = owner.services_->service_engineFunctions();
@@ -490,8 +491,17 @@ struct BotBehaviorRuntime::TeammateRequestEnvironment : compat::IHelpRequestEnvi
 			static_cast<unsigned>(zone->serialnumber) + 1U != site.generation)
 			return;
 		auto &actor = owner.actors_[receiver];
-		actor.bombSearchMemory.clear(receipt.context.frame, site);
-		if (actor.bombSearchTargets.entity == site)
+		if (meme.kind == compat::ChatterMemeKind::BombsitePlanted)
+		{
+			auto &known = actor.plantedBombsite;
+			known.knowledge = compat::ScenarioKnowledge::Remembered;
+			known.entity = site;
+			known.frame = receipt.context.frame;
+			known.position = {meme.position.x, meme.position.y, meme.position.z};
+		}
+		else
+			actor.bombSearchMemory.clear(receipt.context.frame, site);
+		if (meme.kind == compat::ChatterMemeKind::BombsitePlanted || actor.bombSearchTargets.entity == site)
 			actor.bombSearchTargets = {};
 		auto &machine = actor.managedBotStateMachines;
 		if (machine.task() != compat::CompatibilityTaskId::FindTickingBomb)
@@ -537,6 +547,21 @@ struct BotBehaviorRuntime::TeammateRequestEnvironment : compat::IHelpRequestEnvi
 		request.expires = request.created + 3.0f;
 		admit(request);
 	}
+	void reportPlantedSite()
+	{
+		const auto known = owner.actors_[receiver].plantedBombsite;
+		if (!known.entity.isValid() || known.frame.mapGeneration != receipt.context.frame.mapGeneration ||
+			known.frame.roundGeneration != receipt.context.frame.roundGeneration)
+			return;
+		const nav::NavVector center{known.position.x, known.position.y, known.position.z};
+		std::uint16_t place = 0;
+		if (!placeAt(center, &place))
+			return;
+		auto report = compat::plantedBombsiteReport(receipt.context.now, known.entity, place,
+			chatterPlacePhrase(navigation, owner.outgoingChatterCatalog_, place));
+		report.meme.position = center;
+		admit(report);
+	}
 	void reportingIn(int team)
 	{
 		const auto place = ownPlace();
@@ -551,9 +576,9 @@ struct BotBehaviorRuntime::TeammateRequestEnvironment : compat::IHelpRequestEnvi
 			living.friends, living.enemies);
 		admit(compat::reportingInStatement(context.now, actor.managedBotStateMachines.attackOverlayActive(),
 			nearby, actor.enemyReaction.enemyDeathTimestamp(context), context.now - actor.lastVisibleEnemyTimes,
-			place, chatterPlacePhrase(navigation, owner.outgoingChatterCatalog_, place)));
+			place, chatterPlacePhrase(navigation, owner.outgoingChatterCatalog_, place)), true);
 	}
-	void admit(const compat::ChatterStatementRequest &request)
+	void admit(const compat::ChatterStatementRequest &request, bool reportingIn = false)
 	{
 		if (!current() || !receipt.context.alive)
 			return;
@@ -566,7 +591,7 @@ struct BotBehaviorRuntime::TeammateRequestEnvironment : compat::IHelpRequestEnvi
 		if (!current())
 			return;
 		auto &actor = owner.actors_[receiver];
-		if (request.topic == compat::ChatterStatementTopic::Information)
+		if (reportingIn)
 		{
 			compat::OutgoingRadioInput input{};
 			input.admission = admission;
@@ -588,7 +613,8 @@ void BotBehaviorRuntime::transmitTeammateRequest(
 {
 	if ((meme.kind != compat::ChatterMemeKind::Help && meme.kind != compat::ChatterMemeKind::Follow &&
 		 meme.kind != compat::ChatterMemeKind::DefendHere && meme.kind != compat::ChatterMemeKind::RequestReport &&
-		 meme.kind != compat::ChatterMemeKind::BombsiteClear) ||
+		 meme.kind != compat::ChatterMemeKind::BombsiteClear && meme.kind != compat::ChatterMemeKind::BombsitePlanted &&
+		 meme.kind != compat::ChatterMemeKind::WhereBomb) ||
 		services_->service_compatibilitySurface().configuration().mode != compat::RuntimeMode::Compatibility)
 		return;
 	const auto engine = services_->service_engineFunctions();
@@ -655,8 +681,10 @@ void BotBehaviorRuntime::transmitTeammateRequest(
 			(void)compat::respondToFollowRequest(environment);
 		else if (meme.kind == compat::ChatterMemeKind::DefendHere)
 			(void)compat::respondToDefendRequest(meme.position, environment);
-		else if (meme.kind == compat::ChatterMemeKind::BombsiteClear)
-			environment.receivedSiteClear(meme.site);
+		else if (meme.kind == compat::ChatterMemeKind::BombsiteClear || meme.kind == compat::ChatterMemeKind::BombsitePlanted)
+			environment.receivedSiteStatus(meme);
+		else if (meme.kind == compat::ChatterMemeKind::WhereBomb)
+			environment.reportPlantedSite();
 		else
 			environment.reportingIn(team);
 	}
@@ -926,6 +954,7 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index, const Plan
 		haveBelief ? &belief : nullptr, blind, input.friendCount, input.enemiesRemaining);
 	input.visibleEnemyCount = contacts.enemies;
 	input.nearbyFriends = contacts.friends;
+	auto discovery = actors_[index].discoveredBombsiteReport;
 	const auto metadataPlace = [&](std::uint16_t place)
 	{
 		return chatterPlacePhrase(reportNav, outgoingChatterCatalog_, place);
@@ -969,6 +998,14 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index, const Plan
 			return true;
 		};
 		PublicNavProbe probe(services_->service_engineFunctions(), queryCurrent);
+		if (discovery.meme.site.isValid())
+		{
+			const auto area = compat::findBotNavArea(reportNav, discovery.meme.position, &probe, true);
+			if (!queryCurrent())
+				return;
+			discovery.place = areaPlace(area);
+			discovery.criteriaPlace = metadataPlace(discovery.place);
+		}
 		const auto cleared = actors_[index].clearedBombsite;
 		if (cleared.frame == input.frame && cleared.entity.isValid())
 		{
@@ -1090,6 +1127,13 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index, const Plan
 	input.verbosity = mode;
 	input.speaking = actors_[index].confirmedSpeech.scheduledStatement();
 	actors_[index].outgoingRadioSchedulers.prepare(input, outgoingChatterCatalog_);
+	if (discovery.meme.site.isValid())
+	{
+		actors_[index].discoveredBombsiteReport = {};
+		if (input.alive && !input.roundOver && input.now >= discovery.created && input.now < discovery.expires)
+			actors_[index].outgoingRadioSchedulers.statements().admit(
+				discovery, input.admission, outgoingChatterCatalog_, mode, input.speaking);
+	}
 	if (input.clearedBombsite.isValid())
 		actors_[index].clearedBombsite = {};
 	if (input.alive && actors_[index].scenarioPlanners.takeReportRequest(input.frame))

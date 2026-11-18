@@ -4,10 +4,14 @@ namespace
 {
 bool reportingInFixture = false;
 bool bombsiteClearFixture = false;
+bool plantedSiteFixture = false;
+bool requestedSiteFixture = false;
 void selectStatementFixture(int argc, char **argv)
 {
 	reportingInFixture = argc == 2 && std::strcmp(argv[1], "--reporting-in") == 0;
 	bombsiteClearFixture = argc == 2 && std::strcmp(argv[1], "--bombsite-clear") == 0;
+	plantedSiteFixture = argc == 2 && std::strcmp(argv[1], "--bombsite-planted") == 0;
+	requestedSiteFixture = argc == 2 && std::strcmp(argv[1], "--bombsite-request") == 0;
 }
 bool testStatementQueue(astrabot::metamod::PluginRuntime &, enginefuncs_t &, globalvars_t &);
 void setupStatementQueue(enginefuncs_t &, globalvars_t &);
@@ -105,6 +109,10 @@ unsigned char *queueLoad(char *name, int *length)
 		contents += " Chatter RequestReport Radio EVENT_RADIO_REPORT_IN_TEAM request.wav End";
 	if (bombsiteClearFixture)
 		contents += " Chatter BombsiteClear zoneclear.wav End";
+	if (plantedSiteFixture || requestedSiteFixture)
+		contents += " Chatter PlantedBombPlace planted.wav End";
+	if (requestedSiteFixture)
+		contents += " Chatter WhereIsTheBomb where.wav End";
 	*length = static_cast<int>(contents.size());
 	auto *bytes = new unsigned char[static_cast<std::size_t>(*length) + 1];
 	std::memcpy(bytes, contents.c_str(), static_cast<std::size_t>(*length) + 1);
@@ -156,7 +164,7 @@ void queueString(const char *sample)
 	if (queueMessage == 101 && queueRecipient == &gEntities[0])
 	{
 		queueSamples.emplace_back(sample);
-		if (reportingInFixture || bombsiteClearFixture)
+		if (reportingInFixture || bombsiteClearFixture || plantedSiteFixture || requestedSiteFixture)
 			reportAudio.emplace_back(queueSpeakerSlot, sample);
 		if (queueHelpRecording && queueClock)
 			queueHelpSamples.emplace_back(sample, queueClock->time);
@@ -165,11 +173,13 @@ void queueString(const char *sample)
 void queueEnd()
 {
 }
-void queueVisibility(const float *from, const float *end, int, edict_t *, TraceResult *trace)
+void queueVisibility(const float *from, const float *end, int, edict_t *observer, TraceResult *trace)
 {
 	*trace = {};
 	trace->vecEndPos = Vector(end[0], end[1], end[2]);
 	trace->flFraction = queueEnemiesVisible ? 1.0f : 0.0f;
+	if (requestedSiteFixture && observer == &gEntities[0] && end[0] == 229 && end[1] == 32)
+		trace->flFraction = 1.0f;
 	if (queueHelpRecording && from[2] > 0 && end[2] < 0)
 	{
 		trace->flFraction = from[2] / (from[2] - end[2]);
@@ -1821,7 +1831,7 @@ bool testStatementQueue(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t
 			check(queueSamples == std::vector<std::string>{"radio/test/ack.wav", "radio/test/help.wav"},
 				"both statements survive simultaneous admission, fixed count criteria and later OFF mode")))
 		return false;
-	if (bombsiteClearFixture)
+	if (bombsiteClearFixture || plantedSiteFixture || requestedSiteFixture)
 	{
 		queueMode = "normal";
 		queueEnemiesVisible = false;
@@ -1854,18 +1864,34 @@ bool testStatementQueue(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t
 			bot.v.origin = Vector(110, 32, 36);
 			team(i + 1, "CT");
 		}
-		const char *path = "astrabot_bombsite_clear.nav";
-		if (!writeTwoSiteNavigation(path, true, false, "BombsiteA"))
+		const char *map = requestedSiteFixture ? "astrabot_bombsite_request" :
+			plantedSiteFixture ? "astrabot_bombsite_planted" : "astrabot_bombsite_clear";
+		const std::string path = std::string(map) + ".nav";
+		if (!writeTwoSiteNavigation(path.c_str(), true, false, "BombsiteA"))
 			return false;
-		const metamod::NavLoadRequest load{path, "astrabot_bombsite_clear", runtime.snapshot().mapGeneration,
+		const metamod::NavLoadRequest load{path.c_str(), map, runtime.snapshot().mapGeneration,
 			true, 123U, false, 0U};
 		const auto loaded = runtime.loadNavigationFile(&load);
-		std::remove(path);
-		if (loaded != metamod::NavLoadResult::Loaded)
+		std::remove(path.c_str());
+		if (!check(loaded == metamod::NavLoadResult::Loaded, "bombsite test navigation loads"))
 			return false;
 		runtime.beginRoundGeneration();
 		for (int i = 0; i < 40; ++i)
 			step(.125f);
+		auto plantAtSecondSite = [&]()
+		{
+			gPlantedBomb.v.classname = 2;
+			gPlantedBomb.v.model = 3;
+			gPlantedBomb.serialnumber = 5;
+			gPlantedBomb.v.origin = Vector(229, 32, 0);
+			gPlantedBomb.v.dmgtime = globals.time + 100;
+		};
+		if (requestedSiteFixture)
+		{
+			plantAtSecondSite();
+			gEntities[0].v.v_angle.y = 0;
+			reportAudio.clear();
+		}
 		runtime.onMessageBegin(MSG_ALL, 98, nullptr, nullptr);
 		runtime.onWriteByte(4);
 		runtime.onWriteString("#Bomb_Planted");
@@ -1873,6 +1899,19 @@ bool testStatementQueue(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t
 		auto &nav = static_cast<metamod::BotNavigationServices &>(runtime);
 		const auto searching = [&](int i) { return nav.behavior_managedBotStateMachines(i).task() ==
 			compat::CompatibilityTaskId::FindTickingBomb; };
+		if (requestedSiteFixture)
+		{
+			for (int i = 0; i < 96; ++i)
+			{
+				gEntities[0].v.v_angle.y = 0;
+				step(.125f);
+			}
+			auto where = std::find(reportAudio.begin(), reportAudio.end(),
+				std::make_pair(2, std::string("radio/test/where.wav")));
+			return check(where != reportAudio.end() && std::find(where, reportAudio.end(),
+				std::make_pair(1, std::string("radio/test/planted.wav"))) != reportAudio.end(),
+				"a searching CT asks where the bomb is and the CT that saw it replies");
+		}
 		for (int i = 0; i < 40 && !(searching(0) && searching(1)); ++i)
 			step(.125f);
 		if (!check(searching(0) && searching(1), "two CTs begin searching for the unseen C4"))
@@ -1881,6 +1920,27 @@ bool testStatementQueue(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t
 		if (!check(initial.hasTarget && initial.target.entity.id == 6, "the receiving CT initially targets the first site"))
 			return false;
 		reportAudio.clear();
+		if (plantedSiteFixture)
+		{
+			plantAtSecondSite();
+			gEntities[1].v.origin.x = -1000;
+			runtime.onEmitSound(&gPlantedBomb, "weapons/c4_beep1.wav", 1, 1);
+			runtime.onEmitSound(&gPlantedBomb, "weapons/c4_beep2.wav", 1, 1);
+			gEntities[1].v.origin.x = 110;
+			bool movedToSite = false;
+			for (int i = 0; i < 80; ++i)
+			{
+				step(.125f);
+				const auto &decision = nav.behavior_scenarioDecisions(1);
+				movedToSite |= decision.hasTarget && decision.target.entity.id == 8 &&
+					decision.target.position.x == 224 && decision.action == compat::ScenarioAction::Move &&
+					nav.behavior_managedBotStateMachines(1).task() == compat::CompatibilityTaskId::DefuseBomb;
+			}
+			const auto reports = std::count(reportAudio.begin(), reportAudio.end(),
+				std::make_pair(1, std::string("radio/test/planted.wav")));
+			return check(reports == 1, "CT reports the first audible C4 beep once") &&
+				check(movedToSite, "out-of-earshot CT travels to the reported site center");
+		}
 		gEntities[0].v.origin.x = 24;
 		bool sent = false;
 		bool acknowledged = false;

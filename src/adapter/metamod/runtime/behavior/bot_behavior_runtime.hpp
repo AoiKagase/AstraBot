@@ -358,7 +358,11 @@ private:
 	void reset_bombSearchTargets()
 	{
 		for (auto &actor : actors_)
+		{
 			actor.bombSearchTargets = {};
+			actor.plantedBombsite = {};
+			actor.discoveredBombsiteReport = {};
+		}
 	}
 
 	void reset_bombSearchMemory()
@@ -520,6 +524,8 @@ private:
 		compat::BombSiteSearchMemory bombSearchMemory{};
 		compat::ScenarioTarget bombSearchTargets{};
 		compat::ScenarioTarget clearedBombsite{};
+		compat::ScenarioTarget plantedBombsite{};
+		compat::ChatterStatementRequest discoveredBombsiteReport{};
 		compat::TeamworkPolicy teamworkPolicies{};
 		std::uint32_t teamworkRadioApplied{};
 		compat::ProfileRecord managedProfiles{};

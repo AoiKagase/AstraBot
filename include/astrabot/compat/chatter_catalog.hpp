@@ -45,6 +45,7 @@ enum class ChatterPhrase : unsigned
 	Clear,
 	DefusingBomb,
 	BombsiteClear,
+	PlantedBombPlace,
 	Count
 };
 inline ChatterPhrase remainingEnemyPhrase(int count)
@@ -293,7 +294,7 @@ public:
 			"PlantingBomb", "WhereIsTheBomb", "EscortingHostages", "HeardNoise", "NoEnemiesLeft", "OneEnemyLeft",
 			"TwoEnemiesLeft", "ThreeEnemiesLeft", "NiceShot", "NiceShotSir", "NiceShotCommander", "CommanderDown",
 			"KilledFriend", "pain", "AgreeWithPlan", "GoingToPlantBomb", "CoveringFriend", "InCombat", "EnemyDown",
-			"Clear", "DefusingBomb", "BombsiteClear"};
+			"Clear", "DefusingBomb", "BombsiteClear", "PlantedBombPlace"};
 		const auto i = static_cast<unsigned>(p);
 		return i < static_cast<unsigned>(ChatterPhrase::Count) ? names[i] : "Unknown";
 	}

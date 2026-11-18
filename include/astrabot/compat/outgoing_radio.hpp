@@ -58,6 +58,23 @@ inline ChatterStatementRequest reportingInStatement(float now, bool attacking, R
 	return report;
 }
 
+inline ChatterStatementRequest plantedBombsiteReport(float now, world::EntityKey site, std::uint16_t place,
+	std::uint32_t placePhrase)
+{
+	ChatterStatementRequest report{};
+	if (!site.isValid())
+		return report;
+	report.source = ChatterScheduleSource::Generic;
+	report.topic = ChatterStatementTopic::Information;
+	report.phrase = ChatterPhrase::PlantedBombPlace;
+	report.created = report.start = now;
+	report.expires = now + 3.0f;
+	report.place = place;
+	report.criteriaPlace = placePhrase;
+	report.meme = {ChatterMemeKind::BombsitePlanted, 0, {}, site};
+	return report;
+}
+
 // CSBot's nearby counts are a three-second visual watch window, not a
 // distance radius. Retain only contacts actually seen by this observer.
 class RadioContactMemory
@@ -661,6 +678,8 @@ private:
 		{
 			request.meme = {ChatterMemeKind::RequestReport, 0};
 		}
+		else if (phrase == ChatterPhrase::WhereIsTheBomb)
+			request.meme = {ChatterMemeKind::WhereBomb, 0};
 		else if (phrase == ChatterPhrase::GoingToPlantBomb)
 		{
 			request.criteriaPlace = in.plantGoalPlacePhrase;
