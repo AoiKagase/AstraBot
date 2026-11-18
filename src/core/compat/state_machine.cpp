@@ -112,6 +112,8 @@ const char *toString(CompatibilityTaskId task)
 		return "TASK-HOLD-POSITION";
 	case CompatibilityTaskId::GuardLooseBomb:
 		return "TASK-GUARD-LOOSE-BOMB";
+	case CompatibilityTaskId::GuardBombZone:
+		return "TASK-GUARD-BOMB-ZONE";
 	default:
 		return "TASK-NONE";
 	}

@@ -138,6 +138,7 @@ struct ScenarioBehaviorInput
 	ScenarioLeaderObservation teammateLeader = {};
 	ScenarioSenderValidation radioSenderValidation = {};
 	ScenarioSenderValidation pendingRadioSenderValidation = {};
+	bool deferToHuman = false;
 };
 struct ScenarioBehaviorDecision
 {
@@ -149,6 +150,7 @@ struct ScenarioBehaviorDecision
 	bool unavailable;
 	bool escortInferred = false;
 	bool followPermissionInferred = false;
+	CompatibilityTaskId hideTask = CompatibilityTaskId::None;
 };
 
 inline CompatibilityTaskId nativeScenarioMoveTask(
@@ -687,6 +689,16 @@ private:
 			{
 				return targetDecision(input, targetKnown(input, input.bomb) ? input.bomb : input.plantedBombsite,
 					ScenarioAction::Guard, CompatibilityStateId::Hide);
+			}
+			if (input.deferToHuman && !input.currentDefusing)
+			{
+				auto guard = targetDecision(input, targetKnown(input, input.bomb) ? input.bomb : input.plantedBombsite,
+					ScenarioAction::Guard, CompatibilityStateId::Hide);
+				if (guard.hasTarget)
+				{
+					guard.hideTask = CompatibilityTaskId::GuardBombZone;
+					return guard;
+				}
 			}
 			if (!targetKnown(input, input.bomb))
 				return targetDecision(input, targetKnown(input, input.plantedBombsite) ? input.plantedBombsite : input.bombSearch,

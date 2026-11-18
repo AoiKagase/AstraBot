@@ -50,7 +50,8 @@ enum class CompatibilityTaskId : std::uint8_t
 	MoveToSniperSpot,
 	Sniping,
 	HoldPosition,
-	GuardLooseBomb
+	GuardLooseBomb,
+	GuardBombZone
 };
 
 enum class ObservationAvailability : std::uint8_t

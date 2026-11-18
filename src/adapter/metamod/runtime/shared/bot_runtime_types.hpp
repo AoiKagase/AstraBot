@@ -137,9 +137,7 @@ struct ManagedObjectiveSiteRegistry
 		std::uint32_t targetId;
 		int entityIndex;
 		std::uint32_t siteIdentity;
-		nav::NavVector center;
-		nav::NavExtent extent;
-		bool hasExtent;
+		compat::BombSearchSite zone;
 	};
 
 	runtime::LifecycleGeneration mapGeneration;

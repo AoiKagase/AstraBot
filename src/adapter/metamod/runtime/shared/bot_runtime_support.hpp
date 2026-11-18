@@ -461,6 +461,33 @@ inline bool isBombTargetClassname(const char *classname)
 	return ActionAdapter::isBombTargetClassname(classname);
 }
 
+constexpr float kZoneVerticalPadding = 50.0f;
+constexpr float kLegacyZoneHalfExtent = ActionAdapter::kLegacyBombTargetRadius;
+inline compat::BombSearchSite publicBombSite(const edict_t &entity, int index, bool legacy)
+{
+	compat::BombSearchSite site{};
+	site.entity = {static_cast<unsigned>(index), static_cast<unsigned>(entity.serialnumber) + 1U};
+	site.legacy = legacy;
+	if (legacy)
+	{
+		site.center = {entity.v.origin.x, entity.v.origin.y, entity.v.origin.z};
+		site.extent = {{site.center.x - kLegacyZoneHalfExtent, site.center.y - kLegacyZoneHalfExtent,
+						   site.center.z - kLegacyZoneHalfExtent},
+			{site.center.x + kLegacyZoneHalfExtent, site.center.y + kLegacyZoneHalfExtent,
+				site.center.z + kLegacyZoneHalfExtent}};
+	}
+	else
+	{
+		site.extent = {{entity.v.absmin.x, entity.v.absmin.y, entity.v.absmin.z},
+			{entity.v.absmax.x, entity.v.absmax.y, entity.v.absmax.z}};
+		site.center = {(site.extent.lo.x + site.extent.hi.x) * 0.5f, (site.extent.lo.y + site.extent.hi.y) * 0.5f,
+			(site.extent.lo.z + site.extent.hi.z) * 0.5f};
+	}
+	site.extent.lo.z -= kZoneVerticalPadding;
+	site.extent.hi.z += kZoneVerticalPadding;
+	return site;
+}
+
 inline bool objectiveSiteExtent(const edict_t *entity, const char *classname, nav::NavExtent *extent)
 {
 	if (entity == nullptr || extent == nullptr)

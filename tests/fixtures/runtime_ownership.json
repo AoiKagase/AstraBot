@@ -1007,6 +1007,11 @@
   {
     "header": "src/adapter/metamod/plugin/plugin_runtime.hpp",
     "scope": "owner",
+    "member": "deferToHumanCvar_"
+  },
+  {
+    "header": "src/adapter/metamod/plugin/plugin_runtime.hpp",
+    "scope": "owner",
     "member": "compatibilityRegistrationInProgress_"
   },
   {

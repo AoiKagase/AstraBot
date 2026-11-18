@@ -1,3 +1,12 @@
+## 2026-11-18　11C-2b（設置後）　人間に解除を任せるときの爆破地点警備
+
+基点は `cfc9d75`。ReGameDLL_CS `b088984` の `CCSBot::IsDoingScenario`、`UTIL_HumansOnTeam`、`IdleState::OnUpdate`、`HideState::OnUpdate` と `CCSBotManager::GetClosestZone` を参照した。
+
+- `bot_defer_to_human` の既定値は0。正の値で、生存中の人間の味方がいるとき、CTは発見したC4付近または報告された設置サイトの中央付近で隠れ場所を選ぶ。設置場所が分かるまでは捜索を続け、既に解除中の味方がいればその味方の警護を優先する。
+- 2体のCTを使い、C4を見たCTと、ビープ音の範囲外で味方の設置報告を聞いたCTが、それぞれNAVの隠れ場所に警備目標を持つことを確認した。別のサイトへ移動した警備役は30～60秒の待機期限に最寄りサイトで隠れ直した。生存中の人間の味方が倒れると両方のCTが解除へ戻った。
+- Windows x86 Debugは147/147件合格。Linux x86 Debugは145/146件合格で、残りは項目22の胸部照準判定 `astrabot_combat_policy`。新しいCVarの照会・登録に伴う14行を従来の記録から導出し、両OSで149,182行が一致した。
+- PE・ELFともにx86形式と必須エクスポート7件を確認した。SHA-256はWindows DLLが `c08fd65fbc22acbd5861c1abc60bbd7092fcf4b8169fd4f5ba35883725763a31`、Linux SOが `542391a967e217ae30cbae7f0738ec6d412d12f0ffd66c6a186cbaceca7d7155`。この版の実機受入れは項目25に残る。
+
 ## 2026-11-18　11C-2a　落下C4の警備
 
 基点は `29b7810`。ReGameDLL_CS `b088984` の `SetLooseBomb`、`HuntState::OnUpdate`、`CCSBot::Hide`、`HideState::OnUpdate` と `BotChatterInterface::ReportingIn` を参照した。

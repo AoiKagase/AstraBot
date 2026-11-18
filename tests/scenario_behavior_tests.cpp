@@ -251,7 +251,9 @@ int main()
 	value.frame.tick++;
 	value.humanDefusingKnown = true;
 	value.humanDefusing = true;
-	ok &= check(bomb.update(value).action == ScenarioAction::Guard,
+	value.deferToHuman = true;
+	result = bomb.update(value);
+	ok &= check(result.action == ScenarioAction::Guard && result.hideTask != CompatibilityTaskId::GuardBombZone,
 		"human defuse observation yields guarding instead of duplicate use");
 	ScenarioBehaviorPlanner searchBomb;
 	value = input();
@@ -260,12 +262,18 @@ int main()
 	value.bombPlanted = true;
 	value.bombSearch = target();
 	value.bombSearch.entity = {99U, 1U};
+	value.deferToHuman = true;
 	result = searchBomb.update(value);
 	ok &= check(result.action == ScenarioAction::Move && result.target.entity == value.bombSearch.entity,
 		"CT with public plant notice but unknown bomb searches a known site without receiving hidden bomb position");
 	value.plantedBombsite = target();
 	value.plantedBombsite.entity = {100U, 1U};
 	value.plantedBombsite.inUseRange = true;
+	++value.frame.tick;
+	result = searchBomb.update(value);
+	ok &= check(result.hideTask == CompatibilityTaskId::GuardBombZone && result.target.entity == value.plantedBombsite.entity,
+		"a deferred CT guards a reported plant site only after learning which one was planted");
+	value.deferToHuman = false;
 	++value.frame.tick;
 	result = searchBomb.update(value);
 	ok &= check(result.action == ScenarioAction::Move && result.target.entity == value.plantedBombsite.entity &&

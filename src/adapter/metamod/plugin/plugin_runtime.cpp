@@ -108,6 +108,9 @@ char kJoinDelayName[] = "bot_join_delay";
 char kJoinDelayDefault[] = "0";
 char kAllowRoguesName[] = "bot_allow_rogues";
 char kAllowRoguesDefault[] = "1";
+char kDeferToHumanName[] = "bot_defer_to_human";
+char kDeferToHumanDefault[] = "0";
+cvar_t kDeferToHumanCvar = {kDeferToHumanName, kDeferToHumanDefault, FCVAR_SERVER, 0.0f, nullptr};
 cvar_t kManagerCvars[] = {{kQuotaModeName, kQuotaModeDefault, FCVAR_SERVER, 0.0f, nullptr},
 	{kJoinAfterPlayerName, kJoinAfterPlayerDefault, FCVAR_SERVER, 1.0f, nullptr},
 	{kAutoVacateName, kAutoVacateDefault, FCVAR_SERVER, 1.0f, nullptr},
@@ -386,9 +389,12 @@ void PluginRuntime::giveEnginePointers(enginefuncs_t *engineFunctions, globalvar
 
 void PluginRuntime::registerCompatibilityCvars()
 {
-	if (engineFunctions_ == nullptr || engineFunctions_->pfnCVarGetPointer == nullptr ||
-		engineFunctions_->pfnCvar_RegisterVariable == nullptr)
+	deferToHumanCvar_ = nullptr;
+	if (engineFunctions_ == nullptr || engineFunctions_->pfnCVarGetPointer == nullptr)
+		return;
+	if (engineFunctions_->pfnCvar_RegisterVariable == nullptr)
 	{
+		deferToHumanCvar_ = engineFunctions_->pfnCVarGetPointer(kDeferToHumanName);
 		return;
 	}
 
@@ -413,6 +419,12 @@ void PluginRuntime::registerCompatibilityCvars()
 		{
 			engineFunctions_->pfnCvar_RegisterVariable(&variable);
 		}
+	}
+	deferToHumanCvar_ = engineFunctions_->pfnCVarGetPointer(kDeferToHumanName);
+	if (!deferToHumanCvar_)
+	{
+		engineFunctions_->pfnCvar_RegisterVariable(&kDeferToHumanCvar);
+		deferToHumanCvar_ = engineFunctions_->pfnCVarGetPointer(kDeferToHumanName);
 	}
 }
 

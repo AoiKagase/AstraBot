@@ -213,8 +213,7 @@ void BotBehaviorRuntime::refreshManagedObjectiveSiteRegistry()
 		entry.targetId = managedObjectiveSiteRegistry_.registeredCount + 1U;
 		entry.entityIndex = entityIndex;
 		entry.siteIdentity = entry.targetId;
-		entry.center = entityObjectiveCenter(entity);
-		entry.hasExtent = objectiveSiteExtent(entity, classname, &entry.extent);
+		entry.zone = publicBombSite(*entity, entityIndex, ActionAdapter::isLegacyInfoBombTargetClassname(classname));
 		++managedObjectiveSiteRegistry_.registeredCount;
 	}
 }

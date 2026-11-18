@@ -19,9 +19,6 @@ constexpr float kEntityUseRange = 64.0f;
 constexpr int kMaximumEntityIndex = 2048;
 constexpr int kMaximumClientSlots = 32;
 constexpr float kHostageCompetitorRange = 256.0f;
-constexpr float kLegacyZoneHalfExtent = 256.0f;
-constexpr float kZoneVerticalPadding = 50.0f;
-constexpr unsigned kMaximumBombSiteAreas = 16U;
 constexpr float kDefuseWithKitSeconds = 5.0f;
 constexpr float kDefuseWithoutKitSeconds = 10.0f;
 constexpr float kHumanNavTolerance = 64.0f;
@@ -361,6 +358,7 @@ void BotBehaviorRuntime::observeScenarioEntities(std::size_t index, const runtim
 		};
 		const int maxEntities =
 			(std::max)(0, (std::min)(services_->service_globals()->maxEntities, kMaximumEntityIndex));
+		const bool checkHuman = observedTeam == kCounterTerroristTeam && services_->service_deferToHuman();
 		if (scenario.scenario == compat::PublicScenarioKind::Bomb)
 			data.looseBomb.frame = context.frame;
 		for (int entityIndex = 1; entityIndex < maxEntities; ++entityIndex)
@@ -393,6 +391,12 @@ void BotBehaviorRuntime::observeScenarioEntities(std::size_t index, const runtim
 				services_->observation_resolvePlayerTeam(entity) == observedTeam && entity->v.deadflag == DEAD_NO &&
 				entity->v.health > 0.0f)
 			{
+				if (checkHuman && !scenario.deferToHuman && entity->v.netname &&
+					(entity->v.flags & (FL_CLIENT | FL_DORMANT)) == FL_CLIENT)
+				{
+					const char *playerName = services_->service_engineFunctions()->pfnSzFromIndex(entity->v.netname);
+					scenario.deferToHuman = playerName && *playerName;
+				}
 				const auto location = project(entity, entityIndex, false);
 				if (location.knowledge == compat::ScenarioKnowledge::Visible)
 				{
@@ -662,27 +666,7 @@ void BotBehaviorRuntime::updateScenarioNavigation(std::size_t index, const runti
 				if (name == nullptr ||
 					(std::strcmp(name, "func_bomb_target") != 0 && std::strcmp(name, "info_bomb_target") != 0))
 					continue;
-				compat::BombSearchSite site{};
-				site.entity = {
-					static_cast<std::uint32_t>(entityIndex), static_cast<std::uint32_t>(entity->serialnumber) + 1U};
-				site.legacy = std::strcmp(name, "info_bomb_target") == 0;
-				if (site.legacy)
-				{
-					site.center = {entity->v.origin.x, entity->v.origin.y, entity->v.origin.z};
-					site.extent = {{site.center.x - kLegacyZoneHalfExtent, site.center.y - kLegacyZoneHalfExtent,
-									   site.center.z - kLegacyZoneHalfExtent},
-						{site.center.x + kLegacyZoneHalfExtent, site.center.y + kLegacyZoneHalfExtent,
-							site.center.z + kLegacyZoneHalfExtent}};
-				}
-				else
-				{
-					site.extent = {{entity->v.absmin.x, entity->v.absmin.y, entity->v.absmin.z},
-						{entity->v.absmax.x, entity->v.absmax.y, entity->v.absmax.z}};
-					site.center = {(site.extent.lo.x + site.extent.hi.x) * 0.5f,
-						(site.extent.lo.y + site.extent.hi.y) * 0.5f, (site.extent.lo.z + site.extent.hi.z) * 0.5f};
-				}
-				site.extent.lo.z -= kZoneVerticalPadding;
-				site.extent.hi.z += kZoneVerticalPadding;
+				auto site = publicBombSite(*entity, entityIndex, std::strcmp(name, "info_bomb_target") == 0);
 				nav::NavAreaMatch finish{};
 				nav::NavCorridor route{};
 				if (haveStart &&
@@ -703,7 +687,7 @@ void BotBehaviorRuntime::updateScenarioNavigation(std::size_t index, const runti
 				nav::NavVector point{};
 				nav::NavAreaMatch chosenArea{};
 				nav::NavCorridor chosenRoute{};
-				if (compat::bombSitePoint(*scenarioDocument, sites[selected], kMaximumBombSiteAreas,
+				if (compat::bombSitePoint(*scenarioDocument, sites[selected], compat::BombSearchSite::kMaximumNavAreas,
 						services_->service_compatibilityRandomSource(), randomActor, randomTiming, &point) &&
 					haveStart &&
 					query.findNearest3D(point, kMaximumObjectiveDistance, &chosenArea) == nav::NavQueryResult::Found &&
@@ -952,8 +936,10 @@ void BotBehaviorRuntime::updateScenarioTeamwork(std::size_t index, const runtime
 		scenario.radio = nullptr;
 	bool finishedDefense = false;
 	const bool guardingLoose = machine.task() == compat::CompatibilityTaskId::GuardLooseBomb;
+	const bool guardingSite = machine.task() == compat::CompatibilityTaskId::GuardBombZone;
 	if (machine.state() == compat::CompatibilityStateId::Hide &&
-		(guardingLoose || machine.task() == compat::CompatibilityTaskId::HoldPosition) && !machine.attackOverlayActive())
+		(guardingLoose || guardingSite || machine.task() == compat::CompatibilityTaskId::HoldPosition) &&
+		!machine.attackOverlayActive())
 	{
 		const float feetZ = before.origin.z - (before.ducked ? 18.0f : 36.0f);
 		actors_[index].scenarioPlanners.observeDefenderFeet(before.origin.x, before.origin.y, feetZ);
@@ -967,7 +953,15 @@ void BotBehaviorRuntime::updateScenarioTeamwork(std::size_t index, const runtime
 			hideNearLooseBomb(index, false);
 			return;
 		}
+		if (guardingSite && actors_[index].scenarioPlanners.defenseExpired(elapsed, reloading) &&
+			(renewBombsiteGuard(index) || !current()))
+			return;
 		finishedDefense = actors_[index].scenarioPlanners.finishDefense(elapsed, reloading);
+		if (guardingSite && !reloading && scenario.bombPlanted && !scenario.deferToHuman)
+		{
+			actors_[index].scenarioPlanners.cancelHoldPosition();
+			finishedDefense = true;
+		}
 		if (guardingLoose && !reloading && data.looseBomb.frame == context.frame && !data.looseBomb.entity.isValid())
 		{
 			reportBombPickedUp(index);
@@ -986,6 +980,16 @@ void BotBehaviorRuntime::updateScenarioTeamwork(std::size_t index, const runtime
 	else
 		actors_[index].scenarioDecisions = actors_[index].scenarioPlanners.update(scenario);
 	const auto action = actors_[index].scenarioDecisions.action;
+	if (actors_[index].scenarioDecisions.hideTask == compat::CompatibilityTaskId::GuardBombZone)
+	{
+		const auto target = actors_[index].scenarioDecisions.target;
+		actors_[index].scenarioDecisions = {};
+		const auto state = machine.state();
+		if (!machine.attackOverlayActive() && (state == compat::CompatibilityStateId::Idle ||
+			state == compat::CompatibilityStateId::Hunt || state == compat::CompatibilityStateId::MoveTo))
+			hideAtPlantedBombsite(index, target);
+		return;
+	}
 	if (machine.state() == compat::CompatibilityStateId::Hunt && !machine.attackOverlayActive() &&
 		(action == compat::ScenarioAction::None || action == compat::ScenarioAction::Hunt) &&
 		scenario.team == objectives::TeamRole::CounterTerrorist && scenario.scenario == compat::PublicScenarioKind::Bomb &&
@@ -995,7 +999,7 @@ void BotBehaviorRuntime::updateScenarioTeamwork(std::size_t index, const runtime
 		hideNearLooseBomb(index, true);
 		return;
 	}
-	if (!reactionPursuing(index))
+	if (!guardingSite && !reactionPursuing(index))
 	{
 		updateBombGuardTarget(index, scenario, &actors_[index].scenarioDecisions);
 	}

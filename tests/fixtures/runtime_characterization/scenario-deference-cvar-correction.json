@@ -1,0 +1,86 @@
+{
+  "reason": "Register the native bot_defer_to_human setting with default 0 on hosts that do not provide it. Keep the engine-owned cvar pointer for later changes.",
+  "base_commit": "cfc9d7530b253c9409f4d3136a8984f9558614e6",
+  "native_reference_commit": "b0889847fe6d03898be88acc9e366660efb40ab5",
+  "control": "Derived only from the frozen traces with their four earlier corrections. At each complete manager cvar registration sequence, append the new lookup after bot_allow_rogues. The first sequence also registers the absent cvar and reads its engine pointer. The remaining eleven sequences find the registered cvar. The scenario uses its default value.",
+  "platforms": {
+    "windows-x86": {
+      "baseline_sha256": "b3794a282073a0127f2a9460ea8d5875eeaf52afa095d5575f3b1c0acd6a1131",
+      "corrected_sha256": "dcfcae2319f24135dd946d72e1b8829385fc21593745127237fc2577f5172062",
+      "records": 149182
+    },
+    "linux-x86": {
+      "baseline_sha256": "d158946b59e3bbcf4f364fad38c5aa13daa3235bef96453b58d3f86eea226a8a",
+      "corrected_sha256": "3a973391e35dd7e2748375aa9f8b7a9fc2e9e78b90aa37af14197ce927bf233f",
+      "records": 149182
+    }
+  },
+  "patterns": [
+    {
+      "windows-x86": {
+        "before": [
+          "call getCvar name=bot_allow_rogues",
+          "call registerCvar"
+        ],
+        "after": [
+          "call getCvar name=bot_allow_rogues",
+          "call registerCvar",
+          "call getCvar name=bot_defer_to_human",
+          "call registerCvar",
+          "call getCvar name=bot_defer_to_human"
+        ]
+      },
+      "linux-x86": {
+        "before": [
+          "call getCvar name=bot_allow_rogues",
+          "call registerCvar"
+        ],
+        "after": [
+          "call getCvar name=bot_allow_rogues",
+          "call registerCvar",
+          "call getCvar name=bot_defer_to_human",
+          "call registerCvar",
+          "call getCvar name=bot_defer_to_human"
+        ]
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "call getCvar name=bot_join_delay",
+          "call getCvar name=bot_allow_rogues"
+        ],
+        "after": [
+          "call getCvar name=bot_join_delay",
+          "call getCvar name=bot_allow_rogues",
+          "call getCvar name=bot_defer_to_human"
+        ]
+      },
+      "linux-x86": {
+        "before": [
+          "call getCvar name=bot_join_delay",
+          "call getCvar name=bot_allow_rogues"
+        ],
+        "after": [
+          "call getCvar name=bot_join_delay",
+          "call getCvar name=bot_allow_rogues",
+          "call getCvar name=bot_defer_to_human"
+        ]
+      }
+    }
+  ],
+  "edits": [
+    [28, 0],
+    [45, 1],
+    [4689, 1],
+    [52311, 1],
+    [69462, 1],
+    [82115, 1],
+    [102158, 1],
+    [104505, 1],
+    [139093, 1],
+    [141969, 1],
+    [141984, 1],
+    [148958, 1]
+  ]
+}

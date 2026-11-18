@@ -213,6 +213,7 @@ private:
 	std::array<char, kClientCommandArgsCapacity> clientCommandArgs_;
 	bool nativeGuardEnabled_;
 	std::array<bool, kCompatibilityCvarCount> compatibilityCvarOwned_;
+	const cvar_t *deferToHumanCvar_ = nullptr;
 	bool compatibilityRegistrationInProgress_;
 	bool nativeControlsCaptured_;
 	bool performanceDisablePathSearch_;
@@ -332,6 +333,11 @@ private:
 	bool service_roundOver() override
 	{
 		return roundLifecycleTracker_.isRoundOver();
+	}
+
+	bool service_deferToHuman() override
+	{
+		return deferToHumanCvar_ && deferToHumanCvar_->value > 0.0f;
 	}
 
 	Service_runtimeProfiler &service_runtimeProfiler() override

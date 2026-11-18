@@ -85,6 +85,7 @@ public:
 	virtual const Service_roundFreezeUntil &service_roundFreezeUntil() = 0;
 	virtual Service_runtimeProfiler &service_runtimeProfiler() = 0;
 	virtual bool service_roundOver() = 0;
+	virtual bool service_deferToHuman() = 0;
 	virtual bool command_dispatchClientCommand(edict_t *entity, const char *name, const char *argument) = 0;
 	virtual const std::uint32_t &command_managedBotCommandSequences(std::size_t index) const = 0;
 	virtual nav::AreaId navigation_knownArea(

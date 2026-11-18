@@ -209,6 +209,8 @@ private:
 	struct ActorTaskEnvironment;
 	void reportBombPickedUp(std::size_t index);
 	void hideNearLooseBomb(std::size_t index, bool announce);
+	void hideAtPlantedBombsite(std::size_t index, compat::ScenarioTarget target);
+	bool renewBombsiteGuard(std::size_t index);
 	void rememberLooseBombDrop(world::EntityKey box, world::FrameIdentity frame, nav::NavVector origin);
 	nav::AreaId looseBombArea(const nav::NavSnapshot &navigation, const std::function<bool()> &current);
 	bool guardedBombPosition(std::size_t index, nav::NavVector *position) const;

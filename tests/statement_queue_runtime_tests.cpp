@@ -9,6 +9,7 @@ bool requestedSiteFixture = false;
 bool carrierFixture = false;
 bool looseBombFixture = false;
 bool looseGuardFixture = false;
+bool deferredSiteFixture = false;
 int carrierViewer = -1;
 bool looseBombLineHitsBox = false;
 const char *bombFixtureMap()
@@ -19,6 +20,7 @@ const char *bombFixtureMap()
 	if (carrierFixture) return "astrabot_bomb_carrier";
 	if (looseBombFixture) return "astrabot_loose_bomb";
 	if (looseGuardFixture) return "astrabot_guard_loose_bomb";
+	if (deferredSiteFixture) return "astrabot_guard_planted_bombsite";
 	return nullptr;
 }
 void selectStatementFixture(int argc, char **argv)
@@ -30,6 +32,7 @@ void selectStatementFixture(int argc, char **argv)
 	carrierFixture = argc == 2 && std::strcmp(argv[1], "--bomb-carrier") == 0;
 	looseBombFixture = argc == 2 && std::strcmp(argv[1], "--loose-bomb") == 0;
 	looseGuardFixture = argc == 2 && std::strcmp(argv[1], "--guard-loose-bomb") == 0;
+	deferredSiteFixture = argc == 2 && std::strcmp(argv[1], "--guard-planted-bombsite") == 0;
 }
 bool testStatementQueue(astrabot::metamod::PluginRuntime &, enginefuncs_t &, globalvars_t &);
 void setupStatementQueue(enginefuncs_t &, globalvars_t &);
@@ -127,7 +130,7 @@ unsigned char *queueLoad(char *name, int *length)
 		contents += " Chatter RequestReport Radio EVENT_RADIO_REPORT_IN_TEAM request.wav End";
 	if (bombsiteClearFixture)
 		contents += " Chatter BombsiteClear zoneclear.wav End";
-	if (plantedSiteFixture || requestedSiteFixture)
+	if (plantedSiteFixture || requestedSiteFixture || deferredSiteFixture)
 		contents += " Chatter PlantedBombPlace planted.wav End";
 	if (requestedSiteFixture)
 		contents += " Chatter WhereIsTheBomb where.wav End";
@@ -220,7 +223,7 @@ void queueVisibility(const float *from, const float *end, int flags, edict_t *ob
 				trace->flFraction = .5f; // A window between the observer and the C4.
 		}
 	}
-	if (requestedSiteFixture && observer == &gEntities[0] && end[0] == 229 && end[1] == 32)
+	if ((requestedSiteFixture || deferredSiteFixture) && observer == &gEntities[0] && end[0] == 229 && end[1] == 32)
 		trace->flFraction = 1.0f;
 	if (queueHelpRecording && from[2] > 0 && end[2] < 0)
 	{
@@ -1907,7 +1910,7 @@ bool testStatementQueue(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t
 			team(i + 1, "CT");
 		}
 		const std::string path = std::string(map) + ".nav";
-		if (!writeTwoSiteNavigation(path.c_str(), true, looseGuardFixture, "BombsiteA"))
+		if (!writeTwoSiteNavigation(path.c_str(), true, looseGuardFixture || deferredSiteFixture, "BombsiteA"))
 			return false;
 		const metamod::NavLoadRequest load{path.c_str(), map, runtime.snapshot().mapGeneration,
 			true, 123U, false, 0U};
@@ -1917,6 +1920,14 @@ bool testStatementQueue(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t
 			return false;
 		if (looseGuardFixture)
 			setCvarFloat("bot_allow_rogues", 0);
+		if (deferredSiteFixture)
+		{
+			setCvarFloat("bot_defer_to_human", 1);
+			gEntityNames[2] = "Human CT";
+			gEntities[2].v.netname = 102;
+			gEntityNames[4] = "Human T";
+			gEntities[4].v.netname = 104;
+		}
 		runtime.beginRoundGeneration();
 		for (int i = 0; i < 40; ++i)
 			step(.125f);
@@ -2128,13 +2139,55 @@ bool testStatementQueue(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t
 		if (!check(initial.hasTarget && initial.target.entity.id == 6, "the receiving CT initially targets the first site"))
 			return false;
 		reportAudio.clear();
-		if (plantedSiteFixture)
+		if (plantedSiteFixture || deferredSiteFixture)
 		{
 			plantAtSecondSite();
 			gEntities[1].v.origin.x = -1000;
 			runtime.onEmitSound(&gPlantedBomb, "weapons/c4_beep1.wav", 1, 1);
 			runtime.onEmitSound(&gPlantedBomb, "weapons/c4_beep2.wav", 1, 1);
 			gEntities[1].v.origin.x = 110;
+			if (deferredSiteFixture)
+			{
+				auto guardsSite = [&](int i) {
+					const auto &machine = nav.behavior_managedBotStateMachines(i);
+					return machine.state() == compat::CompatibilityStateId::Hide &&
+						machine.task() == compat::CompatibilityTaskId::GuardBombZone;
+				};
+				bool foundCover[2]{};
+				for (int frame = 0; frame < 80; ++frame)
+				{
+					gEntities[0].v.v_angle.y = 0;
+					step(.125f);
+					for (int i = 0; i < 2; ++i)
+					{
+						const auto &choice = nav.behavior_scenarioDecisions(i);
+						foundCover[i] |= guardsSite(i) && choice.action == compat::ScenarioAction::Guard &&
+							choice.hasTarget && choice.target.position.y == 50;
+					}
+				}
+				if (!check(foundCover[0] && foundCover[1] && guardsSite(0) && guardsSite(1),
+					"CTs knowing the C4 or just its reported site guard NAV cover for an unseen living human teammate"))
+					return false;
+				gEntities[0].v.origin.x = 24;
+				const auto &first = nav.behavior_managedBotStateMachines(0);
+				const float started = first.stateTimestamp();
+				while (guardsSite(0) && first.stateTimestamp() == started && globals.time - started <= 61.0f)
+					step(.125f);
+				const float elapsed = first.stateTimestamp() - started;
+				step(.125f);
+				const auto &renewed = nav.behavior_scenarioDecisions(0);
+				if (!check(guardsSite(0) && elapsed > 30.0f && elapsed <= 60.25f && renewed.hasTarget &&
+						renewed.target.position.x == 32 && renewed.target.position.y == 50,
+					"guard timeout selects cover in the closest site without leaving Hide while the C4 is elsewhere"))
+					return false;
+				gEntities[2].v.health = 0;
+				gEntities[2].v.deadflag = DEAD_DEAD;
+				for (int i = 0; i < 24; ++i)
+					step(.125f);
+				return check(nav.behavior_managedBotStateMachines(0).task() == compat::CompatibilityTaskId::DefuseBomb &&
+						nav.behavior_managedBotStateMachines(1).task() == compat::CompatibilityTaskId::DefuseBomb,
+					"the CTs leave site defense to defuse after the only living human teammate dies");
+			}
 			bool movedToSite = false;
 			for (int i = 0; i < 80; ++i)
 			{

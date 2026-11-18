@@ -12,6 +12,7 @@ namespace compat
 {
 struct BombSearchSite
 {
+	static constexpr std::size_t kMaximumNavAreas = 16U;
 	world::EntityKey entity{};
 	nav::NavVector center{};
 	nav::NavExtent extent{};
@@ -138,17 +139,17 @@ private:
 	std::size_t shuffleStep_ = 0U, next_ = 0U;
 };
 
-inline bool bombSitePoint(const nav::NavDocument &document, const BombSearchSite &site, std::size_t maximumAreas,
-	ICompatibilityRandomSource &random, RandomActor actor, RandomTimingContext timing, nav::NavVector *point)
+inline const nav::NavArea *randomBombSiteArea(const nav::NavDocument &document, const nav::NavExtent &bounds,
+	std::size_t maximumAreas, ICompatibilityRandomSource &random, RandomActor actor, RandomTimingContext timing)
 {
-	if (point == nullptr || maximumAreas == 0U)
-		return false;
+	if (maximumAreas == 0U)
+		return nullptr;
 	std::vector<const nav::NavArea *> candidates;
 	for (const nav::NavArea &area : document.areas())
 	{
-		if (area.extent.hi.x >= site.extent.lo.x && area.extent.lo.x <= site.extent.hi.x &&
-			area.extent.hi.y >= site.extent.lo.y && area.extent.lo.y <= site.extent.hi.y &&
-			area.extent.hi.z >= site.extent.lo.z && area.extent.lo.z <= site.extent.hi.z)
+		if (area.extent.hi.x >= bounds.lo.x && area.extent.lo.x <= bounds.hi.x &&
+			area.extent.hi.y >= bounds.lo.y && area.extent.lo.y <= bounds.hi.y &&
+			area.extent.hi.z >= bounds.lo.z && area.extent.lo.z <= bounds.hi.z)
 		{
 			candidates.push_back(&area);
 			if (candidates.size() == maximumAreas)
@@ -156,12 +157,23 @@ inline bool bombSitePoint(const nav::NavDocument &document, const BombSearchSite
 		}
 	}
 	if (candidates.empty())
-		return false;
+		return nullptr;
 	const auto draw = random.nextLong(
 		RandomRequest::longRequest("Bomb.SearchZoneArea", actor, timing, 0, static_cast<int>(candidates.size() - 1U)));
 	if (draw.status != RandomStatus::Ok || draw.value < 0 || static_cast<std::size_t>(draw.value) >= candidates.size())
+		return nullptr;
+	return candidates[static_cast<std::size_t>(draw.value)];
+}
+
+inline bool bombSitePoint(const nav::NavDocument &document, const BombSearchSite &site, std::size_t maximumAreas,
+	ICompatibilityRandomSource &random, RandomActor actor, RandomTimingContext timing, nav::NavVector *point)
+{
+	if (!point)
 		return false;
-	const nav::NavArea &area = *candidates[static_cast<std::size_t>(draw.value)];
+	const auto *selected = randomBombSiteArea(document, site.extent, maximumAreas, random, actor, timing);
+	if (!selected)
+		return false;
+	const auto &area = *selected;
 	if (site.legacy)
 	{
 		point->x = (std::max)(area.extent.lo.x, (std::min)(area.extent.hi.x, site.center.x));

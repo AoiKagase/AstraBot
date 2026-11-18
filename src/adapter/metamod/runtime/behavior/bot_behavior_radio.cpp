@@ -632,6 +632,67 @@ struct BotBehaviorRuntime::ActorTaskEnvironment : compat::IHelpRequestEnvironmen
 	}
 };
 
+bool BotBehaviorRuntime::renewBombsiteGuard(std::size_t index)
+{
+	ActorTaskEnvironment env(*this, index, index, [] { return true; });
+	if (!env.current() || !env.navigation.isValid())
+		return false;
+	refreshManagedObjectiveSiteRegistry();
+	if (!env.current())
+		return false;
+	const auto pos = env.receipt.entity->v.origin;
+	const compat::BombSearchSite *nearest = nullptr;
+	float closestSquared = 1e9f;
+	for (std::size_t i = 0; i < managedObjectiveSiteRegistry_.registeredCount; ++i)
+	{
+		const auto &zone = managedObjectiveSiteRegistry_.entries[i].zone;
+		const float dx = zone.center.x - pos.x, dy = zone.center.y - pos.y, dz = zone.center.z - pos.z;
+		const float squared = dx * dx + dy * dy + dz * dz;
+		if (squared < closestSquared)
+		{
+			closestSquared = squared;
+			nearest = &zone;
+		}
+	}
+	if (!nearest)
+		return false;
+	const auto *area = compat::randomBombSiteArea(*env.navigation.document(), nearest->extent,
+		compat::BombSearchSite::kMaximumNavAreas, services_->service_compatibilityRandomSource(),
+		{env.receipt.actor.slot, env.receipt.actor.generation}, env.timing());
+	return env.current() && area && env.hideNearArea(area->id, compat::CompatibilityTaskId::GuardBombZone);
+}
+
+void BotBehaviorRuntime::hideAtPlantedBombsite(std::size_t index, compat::ScenarioTarget target)
+{
+	const auto engine = services_->service_engineFunctions();
+	const auto globals = services_->service_globals();
+	const auto site = target.entity;
+	const edict_t *entity = nullptr;
+	const auto sameWorld = [&] {
+		const auto &life = services_->service_lifecycle();
+		return engine == services_->service_engineFunctions() && globals == services_->service_globals() &&
+			target.frame.mapGeneration == life.mapGeneration() && target.frame.roundGeneration == life.roundGeneration();
+	};
+	const auto current = [&] {
+		return sameWorld() && (!site.isValid() || (entity && !entity->free && entity->serialnumber >= 0 &&
+			static_cast<unsigned>(entity->serialnumber) + 1U == site.generation));
+	};
+	ActorTaskEnvironment env(*this, index, index, current);
+	if (!sameWorld())
+		return;
+	if (site.isValid())
+	{
+		if (!engine || !engine->pfnPEntityOfEntIndex || !globals || globals->maxEntities <= 0 ||
+			site.id >= static_cast<unsigned>(globals->maxEntities))
+			return;
+		entity = engine->pfnPEntityOfEntIndex(static_cast<int>(site.id));
+	}
+	if (!env.current())
+		return;
+	const nav::NavVector point{target.position.x, target.position.y, target.position.z};
+	env.hideNearArea(compat::findBotNavArea(env.navigation, point, nullptr), compat::CompatibilityTaskId::GuardBombZone);
+}
+
 void BotBehaviorRuntime::hideNearLooseBomb(std::size_t index, bool announce)
 {
 	const auto bomb = actors_[index].looseBombObservation;
