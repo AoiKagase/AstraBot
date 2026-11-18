@@ -80,7 +80,7 @@ struct ChatterScheduleAdmission
 	ChatterScheduleEntry make(ChatterScheduleSource source, ChatterStatementTopic topic, float created, float start,
 		std::uint16_t place = 0, int subject = -1) const
 	{
-		if (!clock || !owner.valid())
+		if (!clock || !owner.identityValid() || (!owner.alive && topic != ChatterStatementTopic::RoundEnd))
 			return {};
 		return {owner, connection, ownerRevision, source, topic, created, start, clock->next(), place, subject, false};
 	}
@@ -89,7 +89,8 @@ struct ChatterScheduleAdmission
 inline bool validChatterScheduleEntry(const ChatterScheduleEntry &entry)
 {
 	return entry.source != ChatterScheduleSource::None && entry.topic != ChatterStatementTopic::None &&
-		entry.owner.valid() && entry.order != 0 && std::isfinite(entry.created) && entry.created >= 0 &&
+		entry.owner.identityValid() && (entry.owner.alive || entry.topic == ChatterStatementTopic::RoundEnd) &&
+		entry.order != 0 && std::isfinite(entry.created) && entry.created >= 0 &&
 		std::isfinite(entry.start) && entry.start >= 0;
 }
 

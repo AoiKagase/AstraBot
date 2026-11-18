@@ -56,6 +56,55 @@ struct PlanRandom : ICompatibilityRandomSource
 		return {RandomStatus::Unavailable, 0};
 	}
 };
+bool testRetainedRoundEnd()
+{
+	ChatterRadioCatalog catalog;
+	const char text[] = "Chatter Affirmative End Chatter WonRoundQuickly End";
+	if (!catalog.loadText(text, sizeof(text) - 1))
+		return false;
+	ChatterPendingQueue queue;
+	ChatterAdmissionClock clock;
+	ChatterScheduleAdmission owner{{{1, 1}, {1, 1, 5}, 1, 20.0f, true}, 1, 1, &clock};
+	auto result = fixed(ChatterPhrase::Affirmative, 20.0f, 24.0f, 35.0f);
+	result.topic = ChatterStatementTopic::RoundEnd;
+	const auto resultHandle = queue.admit(result, owner, catalog, ChatterVerbosity::Normal);
+	queue.admit(fixed(ChatterPhrase::Affirmative, 20, 21, 35), owner, catalog, ChatterVerbosity::Normal);
+	queue.admit(fixed(ChatterPhrase::WonRoundQuickly, 20, 22, 35), owner, catalog, ChatterVerbosity::Normal);
+	++owner.owner.frame.roundGeneration;
+	++owner.owner.frame.tick;
+	++owner.ownerRevision;
+	queue.retainAfterReset(owner, true);
+	ChatterPendingStatement node{};
+	const auto afterEnd = schedules(queue);
+	if (!check(resultHandle.id && !queue.read(resultHandle, &node) && afterEnd.size() == 2,
+			"administrative Round_End keeps emotes and RoundEnd with fresh handles"))
+		return false;
+	owner.owner.alive = false;
+	++owner.owner.frame.tick;
+	++owner.ownerRevision;
+	queue.retainAfterReset(owner, false);
+	const auto dead = schedules(queue);
+	if (!check(dead.size() == 1 && dead[0].topic == ChatterStatementTopic::RoundEnd &&
+			validChatterScheduleEntry(dead[0]) && !dead[0].owner.alive &&
+			!queue.admit(result, owner, catalog, ChatterVerbosity::Normal).id,
+			"native reset retains only RoundEnd, permits its dead owner to speak and blocks new dead admissions"))
+		return false;
+	owner.owner.now = 24.0f;
+	++owner.owner.frame.tick;
+	queue.retainAfterReset(owner, false);
+	ChatterPlaybackInput frame{};
+	frame.now = 24.0f;
+	frame.friendsRemaining = 1;
+	const auto playback = queue.advance(queue.handle(dead[0]), frame);
+	if (!check(playback.playback.kind == ChatterPlaybackKind::Phrase &&
+			playback.playback.phrase == ChatterPhrase::Affirmative,
+			"the dead owner's retained statement reaches playback at its original start"))
+		return false;
+	++owner.connection;
+	queue.retainAfterReset(owner, false);
+	return check(queue.empty(), "slot reuse drops retained speech");
+}
+
 bool testPlanConversion()
 {
 	ChatterRadioCatalog catalog;
@@ -226,6 +275,8 @@ bool testPlanConversion()
 }
 int main()
 {
+	if (!testRetainedRoundEnd())
+		return 1;
 	using namespace astrabot::compat;
 	if (!testPlanConversion())
 		return 1;

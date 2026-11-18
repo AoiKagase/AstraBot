@@ -36,6 +36,7 @@ const char *bombFixtureMap()
 	return nullptr;
 }
 bool fallBackFixture = false;
+bool victoryFixture = false;
 
 void selectStatementFixture(int argc, char **argv)
 {
@@ -52,6 +53,7 @@ void selectStatementFixture(int argc, char **argv)
 	sniperWarningFixture = argc == 2 && std::strcmp(argv[1], "--sniper-warning") == 0;
 	scaredFixture = argc == 2 && std::strcmp(argv[1], "--scared-outnumbered") == 0;
 	fallBackFixture = argc == 2 && std::strcmp(argv[1], "--team-fall-back") == 0;
+	victoryFixture = argc == 2 && std::strcmp(argv[1], "--round-victory") == 0;
 }
 bool testStatementQueue(astrabot::metamod::PluginRuntime &, enginefuncs_t &, globalvars_t &);
 void setupStatementQueue(enginefuncs_t &, globalvars_t &);
@@ -146,6 +148,9 @@ unsigned char *queueLoad(char *name, int *length)
 		return nullptr;
 	}
 	std::string contents(text);
+	if (victoryFixture)
+		contents += " Chatter WonRoundQuickly win_fast.wav End Chatter WonRound win_team.wav End "
+			"Chatter LastManStanding win_alone.wav End";
 	if (scaredFixture)
 		contents += " Chatter ScaredEmote scared.wav End";
 	if (sniperWarningFixture)
@@ -200,6 +205,8 @@ int queueMessageId(plid_t id, const char *name, int *size)
 	}
 	if (std::strcmp(name, "DeathMsg") == 0)
 		return 103;
+	if (victoryFixture && std::strcmp(name, "ResetHUD") == 0)
+		return 104;
 	if (std::strcmp(name, "BotVoice") == 0)
 	{
 		return 102;
@@ -2193,6 +2200,68 @@ bool testStatementQueue(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t
 	hooks.pfnMessageEnd();
 	step(.125f);
 	step(.125f);
+	if (victoryFixture)
+	{
+		queueMode = "normal";
+		queueEnemiesVisible = false;
+		setCvarFloat("bot_stop", 0);
+		engine.pfnRandomFloat = [](float low, float) { return low; };
+		const auto advance = [&](unsigned frames) {
+			for (unsigned frame = 0; frame < frames; ++frame)
+				step(.125f);
+		};
+		const auto win = [&](const char *token) {
+			hooks.pfnMessageBegin(MSG_ALL, 98, nullptr, nullptr);
+			hooks.pfnWriteByte(HUD_PRINTCENTER);
+			hooks.pfnWriteString(token);
+			hooks.pfnMessageEnd();
+		};
+		auto &friendPlayer = gEntities[4];
+		const auto run = [&](bool longRound, bool friendAlive, const char *sample)
+		{
+			runtime.onRoundLifecycleMessage("World triggered \"Round_Start\"\n");
+			friendPlayer.v.health = friendAlive ? 100.0f : 0.0f;
+			friendPlayer.v.deadflag = friendAlive ? DEAD_NO : DEAD_DEAD;
+			if (longRound)
+				step(45.0f);
+			else
+				advance(4);
+			queueSamples.clear();
+			win("#Terrorists_Win");
+			win("#Terrorists_Win");
+			runtime.onRoundLifecycleMessage("World triggered \"Round_End\"\n");
+			advance(15);
+			if (!check(std::find(queueSamples.begin(), queueSamples.end(), sample) == queueSamples.end(),
+					"victory waits until the drawn two-second start"))
+				return false;
+			advance(10);
+			return check(std::count(queueSamples.begin(), queueSamples.end(), sample) == 1,
+				"the elected victory emote crosses Round_End and plays once");
+		};
+		if (!run(false, false, "radio/test/win_fast.wav") ||
+			!run(true, false, "radio/test/win_alone.wav") ||
+			!run(true, true, "radio/test/win_team.wav"))
+			return false;
+		runtime.onRoundLifecycleMessage("World triggered \"Round_Start\"\n");
+		queueSamples.clear();
+		win("#Terrorists_Win");
+		runtime.onRoundLifecycleMessage("World triggered \"Round_End\"\n");
+		hooks.pfnMessageBegin(MSG_ONE, 104, nullptr, &self);
+		hooks.pfnMessageEnd();
+		advance(25);
+		if (!check(std::find(queueSamples.begin(), queueSamples.end(), "radio/test/win_fast.wav") ==
+				queueSamples.end(), "player ResetHUD ends the pending victory emote"))
+			return false;
+		runtime.onRoundLifecycleMessage("World triggered \"Round_Start\"\n");
+		self.v.health = 0;
+		self.v.deadflag = DEAD_DEAD;
+		queueSamples.clear();
+		win("#Terrorists_Win");
+		runtime.onRoundLifecycleMessage("World triggered \"Round_End\"\n");
+		advance(25);
+		return check(std::find(queueSamples.begin(), queueSamples.end(), "radio/test/win_fast.wav") ==
+				queueSamples.end(), "a dead winner does not register a victory emote");
+	}
 	if (fallBackFixture)
 	{
 		queueMode = "normal";

@@ -54,7 +54,7 @@ public:
 
 	void synchronizeOwner(const ReactionContext &context)
 	{
-		if (!context.valid())
+		if (!context.identityValid())
 		{
 			reset();
 			return;
@@ -69,6 +69,7 @@ public:
 	bool beginStatement(const ReactionContext &context, const ChatterScheduleEntry &schedule, std::uint64_t revision)
 	{
 		if (revision != revision_ || !matches(context) || !validChatterScheduleEntry(schedule) ||
+			(!context.alive && schedule.topic != ChatterStatementTopic::RoundEnd) ||
 			!(schedule.owner.actor == context.actor) || schedule.owner.entityGeneration != context.entityGeneration ||
 			schedule.owner.frame.mapGeneration != context.frame.mapGeneration ||
 			schedule.owner.frame.roundGeneration != context.frame.roundGeneration ||
@@ -138,7 +139,10 @@ public:
 
 	bool canComplete(const ReactionContext &expected, const ReactionContext &current, std::uint64_t revision) const
 	{
-		return revision == revision_ && matches(expected) && sameChatterReceipt(expected, current);
+		return revision == revision_ && matches(expected) &&
+			(expected.alive ? sameChatterReceipt(expected, current) :
+				managedStatement_ && schedule_.topic == ChatterStatementTopic::RoundEnd &&
+					sameChatterUpdateReceipt(expected, current));
 	}
 
 	bool beginSpeaking(const ReactionContext &context, ChatterPhrase phrase, float until, std::uint64_t revision)
@@ -184,13 +188,13 @@ public:
 private:
 	bool matches(const ReactionContext &context) const
 	{
-		return context.valid() && matchesOwner(context);
+		return context.alive == context_.alive && matchesOwner(context);
 	}
 
 	bool matchesOwner(const ReactionContext &context) const
 	{
-		return context.actor.isValid() && context.frame.isValid() && context.entityGeneration != 0 &&
-			std::isfinite(context.now) && context_.valid() && context.actor == context_.actor &&
+		return context.identityValid() && context_.identityValid() && (!context.alive || context_.alive) &&
+			context.actor == context_.actor &&
 			context.entityGeneration == context_.entityGeneration &&
 			context.frame.mapGeneration == context_.frame.mapGeneration &&
 			context.frame.roundGeneration == context_.frame.roundGeneration &&

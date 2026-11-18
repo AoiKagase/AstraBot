@@ -230,12 +230,13 @@ bool BotBehaviorRuntime::forcedRunning(std::size_t index)
 		self->v.deadflag == DEAD_NO && self->v.health > 0);
 }
 
-void BotBehaviorRuntime::resetRoundRecognition()
+void BotBehaviorRuntime::resetRoundRecognition(bool endingRound)
 {
 	looseBombDrop_ = {};
 	updateVoiceFeedback(true);
-	for (auto &actor : actors_)
+	for (std::size_t index = 0; index < actors_.size(); ++index)
 	{
+		auto &actor = actors_[index];
 		actor.bombStatus = {};
 		actor.someHostagesTaken = false;
 		actor.sniperWarning = {};
@@ -243,8 +244,8 @@ void BotBehaviorRuntime::resetRoundRecognition()
 		actor.looseBombObservation = {};
 		actor.noiseInvestigation.reset();
 		actor.noiseReportPolicy = {};
-		actor.outgoingRadioSchedulers.discardPending();
 		actor.confirmedSpeech.reset();
+		actor.outgoingRadioSchedulers.discardPending(chatterAdmission(index), endingRound);
 		actor.knifeRun.reset();
 		actor.enemyReaction.resetForLife();
 		actor.enemyWeaponSource = {};
@@ -281,11 +282,11 @@ void BotBehaviorRuntime::observePublicDeath(std::size_t index, const world::Fram
 		}
 	}
 	actors_[index].outgoingRadioSchedulers.discardNoiseReport(actors_[index].noiseReport);
-	actors_[index].outgoingRadioSchedulers.cancelOnDeath(services_->observation_scenarioRadio(index).sequence);
+	actors_[index].confirmedSpeech.reset();
+	actors_[index].outgoingRadioSchedulers.cancelOnDeath(
+		services_->observation_scenarioRadio(index).sequence, chatterAdmission(index));
 	actors_[index].noiseInvestigation.reset();
 	actors_[index].noiseReportPolicy = {};
-	actors_[index].outgoingRadioSchedulers.discardPending();
-	actors_[index].confirmedSpeech.reset();
 	actors_[index].knifeRun.reset();
 	actors_[index].enemyReaction.resetForLife();
 	actors_[index].enemyWeaponSource = {};

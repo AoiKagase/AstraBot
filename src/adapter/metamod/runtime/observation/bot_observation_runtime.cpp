@@ -1087,7 +1087,7 @@ void BotObservationRuntime::capturePublicMessage()
 	}
 	else if (std::strcmp(name, "ResetHUD") == 0)
 	{
-		services_->behavior_resetEquipment(publicMessageActor_.slot - 1U);
+		services_->behavior_resetEquipment(publicMessageActor_.slot - 1U, true);
 		services_->navigation_observeResetHud(publicMessageActor_.slot - 1U);
 		publicObservations_.resetSlot(publicMessageActor_.slot);
 		publicObservations_.bind(publicMessageActor_, publicMessageFrame_);

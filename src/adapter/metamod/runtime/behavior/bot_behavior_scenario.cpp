@@ -73,7 +73,11 @@ void BotBehaviorRuntime::observeRoundWin(int team, world::FrameIdentity frame, b
 		if (services_->service_managedBotSlots()[i] && now.entity == handle.entity &&
 			now.actor.actorGeneration == handle.actor.actorGeneration && !handle.entity->free &&
 			handle.entity->serialnumber == serial && (ownerTeam == kCounterTerroristTeam || ownerTeam == kTerroristTeam))
+		{
 			actors_[i].morale.roundResult(ownerTeam == team);
+			if (ownerTeam == team)
+				reportRoundVictory(i, ownerTeam, current);
+		}
 	}
 }
 

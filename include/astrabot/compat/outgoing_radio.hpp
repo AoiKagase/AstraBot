@@ -279,7 +279,7 @@ public:
 		lastUpdate_ = in.now;
 		if (!in.alive || in.team < 1 || in.team > 2)
 		{
-			cancelOnDeath(in.humanOrderSequence);
+			cancelOnDeath(in.humanOrderSequence, admission(in));
 			lastNoiseReport_ = in.noiseReport.created;
 			lastNoiseReportTick_ = in.noiseReport.frame.tick;
 			return;
@@ -550,9 +550,9 @@ public:
 		lastNoiseReport_ = report.created;
 		lastNoiseReportTick_ = report.frame.tick;
 	}
-	void cancelOnDeath(std::uint32_t consumedOrder = 0)
+	void cancelOnDeath(std::uint32_t consumedOrder = 0, const ChatterScheduleAdmission &owner = {})
 	{
-		pending_.clear();
+		pending_.retainAfterReset(owner, false);
 		cancelAcknowledgement();
 		discardDirect();
 		orderSequence_ = (std::max)(orderSequence_, consumedOrder);
@@ -605,9 +605,9 @@ public:
 		}
 		pending_.admit(report, admission(in), catalog, in.verbosity, in.speaking);
 	}
-	void discardPending()
+	void discardPending(const ChatterScheduleAdmission &owner = {}, bool endingRound = false)
 	{
-		pending_.clear();
+		pending_.retainAfterReset(owner, endingRound);
 		cancelAcknowledgement();
 		discardDirect();
 		resetPlans();

@@ -1,3 +1,13 @@
+## 14　ラウンド終了・勝利時の発話
+
+ReGameDLL-CS `b088984` の `EndRoundMessage`、`CelebrateWin`、`BotChatterInterface::Reset` を参照した。自チームの勝利時、生存しているBotは2〜5秒の開始遅延を抽選する。45秒未満の勝利は、最後の1人なら `WonRoundQuickly`、生存する味方がいれば33.3%で同じ発話を登録する。45秒以上は、最後の1人が33.3%で `LastManStanding`、味方がいる場合は10%で `WonRound` を登録する。勝利発話の種別は `REPORT_EMOTE`、有効期間は結果を受けてから15秒。
+
+AstraBotの内部ラウンド番号が `Round_End` で進む際、同じBotの終了発話を引き継ぐ。物理的な再出現を受けた際の `ResetHUD` と次の `Round_Start` で、前ラウンドの勝利Emoteを取り消す。実際のリセットや死亡時にも `REPORT_ROUND_END` の保持規則を適用する。保持したノードは元の開始時刻を維持し、死亡後も再生できる。接続・エンティティ・マップが変わった場合は破棄する。
+
+参照したソースで `REPORT_ROUND_END` は型宣言と保持規則に現れる。保持と死亡後の再生開始は、テストで同種別の発話を登録して確認した。実機確認は25に残る。
+
+Windows x86 Debugは154/154件、Linux x86 Debugは152/153件合格。Linuxの失敗は既知の項目22 `astrabot_combat_policy`。両OSの動作トレース149,153行が既存の記録と一致し、PE・ELFのx86形式と公開関数7件を確認した。
+
 ## 13B-3c　Team Fall Backへの応答
 
 ReGameDLL-CS `b088984` の `Radio2`、`RespondToRadioCommands`、`TryToRetreat` を参照した。味方の人間が送る `%!MRAD_FALLBACK` を受け、忙しいBotは消費して進行中の行動を続ける。通常は1秒＋反応時間の2倍を待ってから、受信元を再検証する。非協調Botは2秒長く待ち、追従中でなければ `Negative` を登録する。

@@ -1308,7 +1308,7 @@ void BotBehaviorRuntime::transmitTeammateRequest(
 compat::ChatterScheduleAdmission BotBehaviorRuntime::chatterAdmission(std::size_t index)
 {
 	const auto context = reactionContext(index);
-	if (!context.valid())
+	if (!context.identityValid())
 		return {};
 	auto &actor = actors_[index];
 	actor.confirmedSpeech.synchronizeOwner(context);
@@ -1396,8 +1396,8 @@ compat::ChatterScheduleEntry BotBehaviorRuntime::activeTeamChatter(std::size_t i
 	{
 		const auto &peer = peers[peerIndex];
 		const auto &context = peer.context;
-		if (!peer.managed || !context.valid() || !peer.entity || !(peer.flags & FL_CLIENT) ||
-			(peer.flags & FL_DORMANT) || peer.name == 0)
+		if (!peer.managed || !context.identityValid() || !peer.entity || !(peer.flags & FL_CLIENT) ||
+			(peer.flags & (FL_DORMANT | FL_SPECTATOR)) || peer.name == 0)
 		{
 			continue;
 		}
@@ -1433,6 +1433,7 @@ compat::ChatterScheduleEntry BotBehaviorRuntime::activeTeamChatter(std::size_t i
 				entry.owner.frame.roundGeneration != context.frame.roundGeneration ||
 				entry.owner.frame.tick > context.frame.tick || entry.owner.now > context.now ||
 				entry.connection != peer.connection ||
+				(!context.alive && entry.topic != compat::ChatterStatementTopic::RoundEnd) ||
 				entry.ownerRevision != actors_[peerIndex].confirmedSpeech.lifetimeRevision())
 			{
 				return true;
@@ -1583,6 +1584,65 @@ void BotBehaviorRuntime::reactToHostageLoss(std::size_t index, bool allGone)
 	if (!allGone)
 		actors_[index].someHostagesTaken = true;
 	(void)environment.idleForObjectiveChange(true);
+}
+
+void BotBehaviorRuntime::reportRoundVictory(std::size_t index, int team, const std::function<bool()> &current)
+{
+	ActorTaskEnvironment env(*this, index, index, current);
+	if (!env.current() || !env.receipt.context.alive)
+		return;
+	float delay = 0.0f;
+	if (!env.drawFloat("Chatter.VictoryDelay", 2.0f, 5.0f, delay))
+		return;
+	const auto living = livingRadioPeers(env.receipt.entity, team);
+	if (!env.current())
+		return;
+	const float now = env.receipt.context.now;
+	const float began = services_->service_roundFreezeGeneration() == env.receipt.context.frame.roundGeneration
+		? services_->service_roundFreezeUntil() : 0.0f;
+	const bool quick = now - began < 45.0f;
+	compat::ChatterPhrase phrase = quick ? compat::ChatterPhrase::WonRoundQuickly
+		: living.friends == 0 ? compat::ChatterPhrase::LastManStanding : compat::ChatterPhrase::WonRound;
+	if (!quick || living.friends != 0)
+	{
+		float roll = 0.0f;
+		if (!env.drawFloat("Chatter.VictoryChance", 0.0f, 100.0f, roll) ||
+			roll >= (quick || living.friends == 0 ? 33.3f : 10.0f))
+			return;
+	}
+	ensureOutgoingChatterCatalog();
+	if (!env.current())
+		return;
+	compat::ChatterStatementRequest statement{};
+	statement.source = compat::ChatterScheduleSource::Generic;
+	statement.topic = compat::ChatterStatementTopic::Emote;
+	statement.phrase = phrase;
+	statement.created = now;
+	statement.start = statement.readyAt = now + delay;
+	statement.expires = now + 15.0f;
+	env.admit(statement);
+}
+
+void BotBehaviorRuntime::discardVictorySpeech(std::size_t index)
+{
+	const auto &speech = actors_[index].confirmedSpeech;
+	const auto confirmation = speech.scheduledStatement();
+	auto &queue = actors_[index].outgoingRadioSchedulers.statements();
+	const auto retained = queue.handle(confirmation);
+	queue.discardVictory();
+	compat::ChatterPendingStatement node{};
+	if (retained.id != 0 && !queue.read(retained, &node))
+	{
+		(void)actors_[index].confirmedSpeech.finishStatement(
+			reactionContext(index), confirmation, speech.revision());
+		stopVoiceFeedback(index);
+	}
+}
+
+void BotBehaviorRuntime::finishRoundVictorySpeech()
+{
+	for (std::size_t index = 0; index < actors_.size(); ++index)
+		discardVictorySpeech(index);
 }
 
 void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index, const PlantMoveChatter *plantMove)
@@ -2099,7 +2159,9 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index, const Plan
 				bool hasSample = false, suppressed = false;
 				if (voice)
 					(void)sendChatterVoice(index, phrase, step.playback.enemyCount, voice, &duration,
-						step.criteriaPlace, ChatterVoicePurpose::Statement, step.playback.placePhrase, &hasSample,
+						step.criteriaPlace, step.schedule.topic == compat::ChatterStatementTopic::RoundEnd
+							? ChatterVoicePurpose::RetainedRoundEnd : ChatterVoicePurpose::Statement,
+						step.playback.placePhrase, &hasSample,
 						&suppressed);
 				else if (step.playback.placePhrase)
 					suppressed = !outgoingPlaceHistory_.allow(step.playback.placePhrase, input.now);
@@ -2148,7 +2210,7 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index, const Plan
 	};
 	action();
 	const auto currentContext = reactionContext(index);
-	if (!compat::sameChatterReceipt(receiptContext, currentContext) ||
+	if (!compat::sameChatterUpdateReceipt(receiptContext, currentContext) ||
 		services_->service_lifecycle().slotGeneration(receiptContext.actor.slot) != receiptConnection ||
 		actors_[index].confirmedSpeech.lifetimeRevision() != input.admission.ownerRevision)
 		return;
@@ -2170,7 +2232,7 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index, const Plan
 			maintenancePeers[peer] = snapshotChatterPeer(peer);
 	const auto maintenanceCurrent = [&]()
 	{
-		if (!compat::sameChatterReceipt(receiptContext, reactionContext(index)) ||
+		if (!compat::sameChatterUpdateReceipt(receiptContext, reactionContext(index)) ||
 			services_->service_lifecycle().slotGeneration(receiptContext.actor.slot) != receiptConnection ||
 			actors_[index].confirmedSpeech.lifetimeRevision() != input.admission.ownerRevision ||
 			outgoingCatalogRevision_ != catalogRevision ||

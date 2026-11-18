@@ -16,10 +16,11 @@ struct ReactionContext
 	std::uint32_t entityGeneration = 0;
 	float now = 0;
 	bool alive = false;
-	bool valid() const
+	bool identityValid() const
 	{
-		return actor.isValid() && frame.isValid() && entityGeneration != 0 && std::isfinite(now) && now >= 0 && alive;
+		return actor.isValid() && frame.isValid() && entityGeneration != 0 && std::isfinite(now) && now >= 0;
 	}
+	bool valid() const { return alive && identityValid(); }
 };
 
 enum class ReactionDisposition

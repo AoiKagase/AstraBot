@@ -342,8 +342,8 @@ bool BotBehaviorRuntime::sendChatterVoice(std::size_t index, compat::ChatterPhra
 	const auto globals = services_->service_globals();
 	const auto handle = services_->service_managedBotHandles()[index];
 	auto *self = handle.entity;
-	if (!engine || !globals || !self || self->free ||
-		(!deathInterrupt && (self->v.deadflag != DEAD_NO || self->v.health <= 0)))
+	if (!engine || !globals || !self || self->free || (self->v.flags & (FL_DORMANT | FL_SPECTATOR)) ||
+		(purpose == ChatterVoicePurpose::Statement && (self->v.deadflag != DEAD_NO || self->v.health <= 0)))
 		return false;
 	const std::uint32_t criteria = deathInterrupt ? 0xFFFF : criteriaPlace;
 	const auto *borrowed = placePhrase ? bank->selectPlaceAt(placePhrase, outgoingChatterCatalog_, count, criteria)

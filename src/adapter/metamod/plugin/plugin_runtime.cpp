@@ -510,7 +510,7 @@ bool PluginRuntime::roundFreezeActive() const
 		schedule.isActive(globals_->time);
 }
 
-bool PluginRuntime::beginRoundGeneration()
+bool PluginRuntime::beginRoundGeneration(bool endingRound)
 {
 	if (!lifecycle_.beginRound())
 	{
@@ -531,7 +531,7 @@ bool PluginRuntime::beginRoundGeneration()
 	observation_.resetRoundRadioAndSound();
 
 	behavior_.resetRoundNoiseInvestigation();
-	behavior_.resetRoundRecognition();
+	behavior_.resetRoundRecognition(endingRound);
 	observation_.rebindRoundObservations();
 
 	behavior_.resetRoundObjectiveCoordination();
@@ -1249,6 +1249,7 @@ void PluginRuntime::onRoundLifecycleMessage(const char *message)
 		{
 			return;
 		}
+		behavior_.finishRoundVictorySpeech();
 		const RoundFreezeSchedule noFreeze = RoundFreezeSchedule::create(globals_->time, 0.0f);
 		roundFreezeStartTime_ = noFreeze.startTime;
 		roundFreezeUntil_ = noFreeze.untilTime;
@@ -1262,7 +1263,7 @@ void PluginRuntime::onRoundLifecycleMessage(const char *message)
 		{
 			return;
 		}
-		if (!beginRoundGeneration())
+		if (!beginRoundGeneration(true))
 		{
 			return;
 		}

@@ -54,7 +54,7 @@ public:
 	virtual void behavior_observeRadioPreference(edict_t *recipient, bool ignored) = 0;
 	virtual void observeBroadcastTeamScore(int team, int score, world::FrameIdentity frame) = 0;
 	virtual void behavior_observeRoundWin(int team, world::FrameIdentity frame, bool rescuedHostages = false) = 0;
-	virtual void behavior_resetEquipment(std::size_t index) = 0;
+	virtual void behavior_resetEquipment(std::size_t index, bool spawnHud = false) = 0;
 	virtual std::uint64_t behavior_chatterRevision(std::size_t index) const = 0;
 	virtual void behavior_observePublicDeath(std::size_t index, const world::FrameIdentity &deathFrame = {}) = 0;
 	virtual void behavior_observePlayerDeath(int victimSlot, int killerSlot, edict_t *recipient, const world::FrameIdentity &frame) = 0;

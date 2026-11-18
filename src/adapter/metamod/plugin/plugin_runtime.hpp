@@ -72,7 +72,7 @@ public:
 	void beginPlayerPostThink(edict_t *player);
 	void endPlayerPostThink(const edict_t *player);
 	void onHostageVoice(const edict_t *hostage, const char *sample, float volume, float attenuation, int pitch);
-	bool beginRoundGeneration();
+	bool beginRoundGeneration(bool endingRound = false);
 	void onWriteByte(int value);
 	void onWriteChar(int value);
 	void onWriteShort(int value);
@@ -669,9 +669,11 @@ private:
 		behavior_.observeEquipmentDispatched(index, weapon, success);
 	}
 
-	void behavior_resetEquipment(std::size_t index) override
+	void behavior_resetEquipment(std::size_t index, bool spawnHud = false) override
 	{
 		behavior_.resetEquipment(index);
+		if (spawnHud && service_roundOver())
+			behavior_.discardVictorySpeech(index);
 	}
 
 	world::EntityKey behavior_currentEnemySource(std::size_t index) const override

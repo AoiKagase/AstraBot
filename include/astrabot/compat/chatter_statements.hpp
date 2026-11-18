@@ -147,7 +147,7 @@ public:
 	ChatterPendingQueue &operator=(const ChatterPendingQueue &) = delete;
 	bool synchronize(const ChatterScheduleAdmission &admission)
 	{
-		if (!admission.owner.valid())
+		if (!admission.owner.identityValid())
 		{
 			clear();
 			owner_ = {};
@@ -159,13 +159,68 @@ public:
 			clear();
 			bump();
 		}
+		else if (owner_.owner.alive && !admission.owner.alive)
+		{
+			retainAfterReset(admission, false);
+			return true;
+		}
 		owner_ = admission;
 		return true;
+	}
+	void retainAfterReset(const ChatterScheduleAdmission &admission, bool endingRound)
+	{
+		const auto &previous = owner_.owner;
+		const auto &next = admission.owner;
+		if (!next.identityValid() || !(previous.actor == next.actor) ||
+			previous.entityGeneration != next.entityGeneration || owner_.connection != admission.connection ||
+			previous.frame.mapGeneration != next.frame.mapGeneration ||
+			next.frame.roundGeneration < previous.frame.roundGeneration ||
+			next.frame.roundGeneration - previous.frame.roundGeneration > 1U ||
+			next.frame.tick < previous.frame.tick || next.now < previous.now)
+		{
+			clear();
+			owner_ = admission;
+			return;
+		}
+		if (sameChatterOwner(owner_, admission) && previous.alive == next.alive && !endingRound)
+		{
+			removeUnretained(false);
+			owner_ = admission;
+			return;
+		}
+		removeUnretained(endingRound && next.alive);
+		for (auto &node : nodes_)
+		{
+			if (node.playback.inFlight)
+				(void)cancelChatterPlaybackStep(node.playback, node.playback.revision);
+			node.pending = {};
+			node.schedule.owner = next;
+			node.schedule.connection = admission.connection;
+			node.schedule.ownerRevision = admission.ownerRevision;
+		}
+		owner_ = admission;
+		bump();
+	}
+	void discardVictory()
+	{
+		for (auto at = nodes_.begin(); at != nodes_.end();)
+		{
+			const auto phrase = at->request.phrase;
+			if (phrase == ChatterPhrase::WonRoundQuickly || phrase == ChatterPhrase::WonRound ||
+				phrase == ChatterPhrase::LastManStanding)
+			{
+				at = nodes_.erase(at);
+				bump();
+			}
+			else
+				++at;
+		}
 	}
 	ChatterStatementHandle admit(const ChatterStatementRequest &request, const ChatterScheduleAdmission &admission,
 		const ChatterRadioCatalog &catalog, ChatterVerbosity mode, const ChatterScheduleEntry &speaking = {})
 	{
-		if (!synchronize(admission) || mode == ChatterVerbosity::Off || request.source == ChatterScheduleSource::None ||
+		if (!synchronize(admission) || !admission.owner.alive || mode == ChatterVerbosity::Off ||
+			request.source == ChatterScheduleSource::None ||
 			request.topic == ChatterStatementTopic::None || !std::isfinite(request.created) || request.created < 0 ||
 			!std::isfinite(request.start) || request.start < 0 || !std::isfinite(request.expires) ||
 			request.expires < request.created || !std::isfinite(request.readyAt) || request.readyAt < 0)
@@ -346,6 +401,20 @@ public:
 		ChatterPendingStatement node{};
 		ChatterStatementHandle candidate{entry.order, entry};
 		return read(candidate, &node) ? candidate : ChatterStatementHandle{};
+	}
+	void removeUnretained(bool keepEmotes)
+	{
+		for (auto at = nodes_.begin(); at != nodes_.end();)
+		{
+			const auto topic = at->request.topic;
+			if (topic == ChatterStatementTopic::RoundEnd || (keepEmotes && topic == ChatterStatementTopic::Emote))
+				++at;
+			else
+			{
+				at = nodes_.erase(at);
+				bump();
+			}
+		}
 	}
 	void clear()
 	{

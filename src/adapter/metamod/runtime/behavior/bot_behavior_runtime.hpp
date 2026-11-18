@@ -61,6 +61,7 @@ public:
 	void updateVoiceFeedback(bool force = false);
 	void observeRadioPreference(edict_t *recipient, bool ignored);
 	void observeRoundWin(int team, world::FrameIdentity frame, bool rescuedHostages = false);
+	void reportRoundVictory(std::size_t index, int team, const std::function<bool()> &current);
 	void resetMatchMorale();
 	void observeObstacleKeyValue(edict_t *entity, const KeyValueData *data);
 	void observeObstacleTouch(edict_t *entity, edict_t *other);
@@ -69,7 +70,9 @@ public:
 	void applyNoiseLookCommand(std::size_t index, runtime::BotCommand &command);
 	void applyObstacleCommand(std::size_t index, runtime::BotCommand &command);
 	void resetObstacleMaterials();
-	void resetRoundRecognition();
+	void resetRoundRecognition(bool endingRound);
+	void finishRoundVictorySpeech();
+	void discardVictorySpeech(std::size_t index);
 	void observePublicDeath(std::size_t index, const world::FrameIdentity &deathFrame = {});
 	std::uint64_t chatterRevision(std::size_t index) const
 	{
@@ -513,6 +516,7 @@ private:
 	enum class ChatterVoicePurpose
 	{
 		Statement,
+		RetainedRoundEnd,
 		DeathInterrupt
 	};
 	void finishDeathChatter(std::size_t index, const compat::ConfirmedChatterSpeech &previous,
