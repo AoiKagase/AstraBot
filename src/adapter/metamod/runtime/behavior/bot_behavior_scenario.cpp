@@ -171,7 +171,7 @@ BotBehaviorRuntime::BehaviorPhaseResult BotBehaviorRuntime::updateBehaviorLifecy
 }
 
 void BotBehaviorRuntime::updateScenarioState(std::size_t index, const runtime::MovementPhysicsState &before,
-	compat::StateUpdateContext &context, compat::StateBehaviorInput &stateBehavior)
+	compat::StateUpdateContext &context, compat::StateBehaviorInput &stateBehavior, PlantMoveChatter *plantMove)
 {
 	const auto receipt = reactionContext(index);
 	const auto revision = actors_[index].executionRevision;
@@ -205,7 +205,7 @@ void BotBehaviorRuntime::updateScenarioState(std::size_t index, const runtime::M
 			updateScenarioTeamwork(index, before, context, stateBehavior, observation, scenario, data);
 			if (!current())
 				return;
-			applyScenarioDecision(index, before, context, stateBehavior, observation, scenario, data);
+			applyScenarioDecision(index, before, context, stateBehavior, observation, scenario, data, plantMove);
 		}
 	}
 }
@@ -479,7 +479,42 @@ void BotBehaviorRuntime::observeScenarioEntities(std::size_t index, const runtim
 			}
 		}
 		const auto tracked = actors_[index].scenarioPlanners.followLeader();
-		if (actors_[index].scenarioPlanners.isFollowing() && tracked.isValid() &&
+		const auto teammate = actors_[index].teammateFollow;
+		if (actors_[index].scenarioPlanners.isFollowing() && teammate.entity.isValid() && teammate.entity == tracked)
+		{
+			const auto slot = tracked.slot;
+			if (slot <= services_->service_managedBotHandles().size() &&
+				slot <= static_cast<std::uint32_t>(services_->service_globals()->maxClients))
+			{
+				const auto peerIndex = static_cast<std::size_t>(slot - 1);
+				const auto leaderCurrent = [&]()
+				{
+					const auto &handle = services_->service_managedBotHandles()[peerIndex];
+					return services_->service_managedBotSlots()[peerIndex] &&
+						teammate.actor == world::ActorKey{handle.actor.slot, handle.actor.actorGeneration} &&
+						receiptConnectionCurrent({slot, teammate.connection}) && handle.entity &&
+						!handle.entity->free && handle.entity->serialnumber >= 0 &&
+						static_cast<std::uint32_t>(handle.entity->serialnumber) + 1U == tracked.generation &&
+						(handle.entity->v.flags & (FL_CLIENT | FL_DORMANT)) == FL_CLIENT;
+				};
+				if (leaderCurrent())
+				{
+					auto *leader = services_->service_managedBotHandles()[peerIndex].entity;
+					const auto team = services_->observation_resolvePlayerTeam(leader);
+					if (leaderCurrent() && services_->service_managedBotHandles()[peerIndex].entity == leader)
+					{
+						scenario.teammateLeader = {tracked,
+							team == kTerroristTeam				? objectives::TeamRole::Terrorist
+								: team == kCounterTerroristTeam ? objectives::TeamRole::CounterTerrorist
+																: objectives::TeamRole::Unknown,
+							false, true, leader->v.deadflag == DEAD_NO && leader->v.health > 0.0f,
+							project(leader, static_cast<int>(slot), true)};
+						scenario.teammateLeader.location.actor = tracked;
+					}
+				}
+			}
+		}
+		else if (actors_[index].scenarioPlanners.isFollowing() && tracked.isValid() &&
 			tracked.slot <= static_cast<std::uint32_t>(services_->service_globals()->maxClients))
 		{
 			edict_t *human = services_->service_engineFunctions()->pfnPEntityOfEntIndex(static_cast<int>(tracked.slot));
@@ -872,10 +907,9 @@ void BotBehaviorRuntime::updateScenarioTeamwork(std::size_t index, const runtime
 void BotBehaviorRuntime::applyScenarioDecision(std::size_t index, const runtime::MovementPhysicsState &before,
 	compat::StateUpdateContext &context, compat::StateBehaviorInput &stateBehavior,
 	const compat::CompatibilityObservation &observation, compat::ScenarioBehaviorInput &scenario,
-	ScenarioUpdateData &data)
+	ScenarioUpdateData &data, PlantMoveChatter *plantMove)
 {
 	(void)before;
-	(void)data;
 	if (helpGoalCurrent(index) && !actors_[index].managedBotStateMachines.attackOverlayActive())
 	{
 		auto &actor = actors_[index];
@@ -1006,10 +1040,30 @@ void BotBehaviorRuntime::applyScenarioDecision(std::size_t index, const runtime:
 	if (carryingC4 && team == kTerroristTeam)
 	{
 		const bool atBombsite = managedActorAtBombSite(index);
-		const bool plantPhase = actors_[index].managedBombApproaches.initialized &&
-			actors_[index].managedBombApproaches.mapGeneration == context.frame.mapGeneration &&
-			actors_[index].managedBombApproaches.roundGeneration == context.frame.roundGeneration &&
-			actors_[index].managedBombApproaches.finished;
+		if (plantMove && machine.state() == compat::CompatibilityStateId::MoveTo &&
+			machine.task() == compat::CompatibilityTaskId::PlantBomb && !machine.attackOverlayActive())
+		{
+			// Chatter belongs to this MoveTo update even when it exits to PlantBomb.
+			plantMove->epoch = machine.normalStateEpoch();
+			plantMove->age = context.timestamp - machine.stateTimestamp();
+			plantMove->coverDue =
+				atBombsite && services_->navigation_pathDistanceRemaining(index, data.navigation) < 50.0f;
+			const auto &target = actors_[index].managedBotObjectiveTargets;
+			plantMove->hasGoal = target.valid && target.mapGeneration == context.frame.mapGeneration &&
+				target.roundGeneration == context.frame.roundGeneration;
+			plantMove->goal = target.target;
+		}
+		const auto &teammate = actors_[index].teammateFollow;
+		const bool followingTeammate = teammate.entity.isValid() && stateBehavior.leaderAvailable &&
+			teammate.entity == actors_[index].scenarioPlanners.followLeader() &&
+			scenarioDecision.action == compat::ScenarioAction::Follow;
+		if (followingTeammate && !atBombsite)
+			return;
+		const bool plantPhase = followingTeammate ||
+			(actors_[index].managedBombApproaches.initialized &&
+				actors_[index].managedBombApproaches.mapGeneration == context.frame.mapGeneration &&
+				actors_[index].managedBombApproaches.roundGeneration == context.frame.roundGeneration &&
+				actors_[index].managedBombApproaches.finished);
 		stateBehavior.objectiveActive = true;
 		stateBehavior.inInteractionRange = plantPhase && atBombsite;
 		context.moveToTask = compat::CompatibilityTaskId::PlantBomb;

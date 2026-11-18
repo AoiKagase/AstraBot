@@ -48,8 +48,10 @@ bool BotBehaviorRuntime::executionCurrent(
 }
 
 void BotBehaviorRuntime::updateManagedBotCompatibilityState(
-	std::size_t index, const runtime::MovementPhysicsState &before)
+	std::size_t index, const runtime::MovementPhysicsState &before, PlantMoveChatter *plantMove)
 {
+	if (plantMove)
+		*plantMove = {};
 	RuntimeProfilerScope scenarioScope(services_->service_runtimeProfiler(), RuntimeProfilerStage::ScenarioUpdate);
 	if (index >= NativeBotObservation::kClientSlotCount || !services_->service_managedBotSlots()[index] ||
 		services_->service_managedBotHandles()[index].entity == nullptr)
@@ -79,7 +81,8 @@ void BotBehaviorRuntime::updateManagedBotCompatibilityState(
 	const auto receipt = reactionContext(index);
 	const auto revision = actors_[index].executionRevision;
 	const auto epoch = actors_[index].managedBotStateMachines.normalStateEpoch();
-	updateScenarioState(index, before, context, stateBehavior);
+	PlantMoveChatter currentPlantMove{};
+	updateScenarioState(index, before, context, stateBehavior, plantMove ? &currentPlantMove : nullptr);
 	if (!executionCurrent(index, receipt, revision) ||
 		actors_[index].managedBotStateMachines.normalStateEpoch() != epoch)
 		return;
@@ -88,6 +91,9 @@ void BotBehaviorRuntime::updateManagedBotCompatibilityState(
 		actors_[index].managedBotStateMachines.normalStateEpoch() != epoch)
 		return;
 	commitBehaviorState(index, context, stateBehavior);
+	if (plantMove && executionCurrent(index, receipt, revision) &&
+		!actors_[index].managedBotStateMachines.attackOverlayActive())
+		*plantMove = currentPlantMove;
 }
 
 void BotBehaviorRuntime::invalidateHelpExecution(std::size_t index)
@@ -96,6 +102,7 @@ void BotBehaviorRuntime::invalidateHelpExecution(std::size_t index)
 	if (++actor.executionRevision == 0)
 		++actor.executionRevision;
 	actor.helpGoal = {};
+	actor.teammateFollow = {};
 	actor.managedTaskEntity = {};
 }
 
@@ -182,6 +189,7 @@ void BotBehaviorRuntime::resetSharedExecutionState()
 		if (++actor.executionRevision == 0)
 			++actor.executionRevision;
 		actor.helpGoal = {};
+		actor.teammateFollow = {};
 		actor.managedTaskEntity = {};
 		actor.teamworkPolicies.resetValues();
 		actor.outgoingRadioSchedulers.discardPending();
@@ -244,6 +252,7 @@ void BotBehaviorRuntime::resetRoundTactics()
 		if (++actor.executionRevision == 0)
 			++actor.executionRevision;
 		actor.helpGoal = {};
+		actor.teammateFollow = {};
 		actor.obstacleLook = {};
 		actor.obstaclePathActive = false;
 	}

@@ -1,3 +1,21 @@
+## 2026-11-18 repair unit08: Follow requests from planting plans
+
+Base d67cb7e375034630c5866978b73d44e400891a3d. Native reference b0889847fe6d03898be88acc9e366660efb40ab5. `GoingToPlantBomb` attaches a Follow request when a carrier reports the plan. Natural completion delivers it in client-slot order. Receivers check Rogue, Busy, and SAFEST travel in that order, accept a distance of 0 through 1000 units, then follow and say `CoveringFriend`.
+
+- On the arrival frame, the MoveTo state evaluates cover before the planting plan. The remaining-path check sums native NAV center distances after the current segment. Plan timing uses the strict two-second threshold and native shared 10-second interval. Voice selection uses the captured goal Place.
+- The receiver follows its qualified managed leader as the leader moves. The runtime fixture exercises natural voiced completion, place-specific samples, movement commands, and slot-serial replacement. Core fixtures also cover callback invalidation, exact time and distance boundaries, defined silence, and same-key human/managed ownership.
+- The final review found four important issues. The fixes preserve arrival-frame reports, managed leader identity, Place-aware voice selection, and the invalidated timer value of −1. The reviewed candidate passed six focused Linux tests before the complete builds.
+
+| Gate | Result |
+|---|---|
+| Windows x86 Debug build / CTest | 138/138 passed, 11.30 seconds, MSVC 14.51.36231 Hostx86/x86 |
+| Linux x86 Debug build / CTest | 136/137 passed, 14.14 seconds. The existing `astrabot_combat_policy` chest-threshold failure remains unit22 |
+| Strict runtime characterization | Passed on both platforms with the existing baselines |
+| Independent PE and ELF checks | x86 and exactly seven exports on both platforms |
+| Source manifest and identity | 319 entries, 311 C/C++ files. All 358 build inputs, four user file hashes, and both module hashes matched across the gates |
+
+Evidence is in `.agent-state/sessions/csbot-follow-meme-111c6372-9209-4aa2-ad25-066a116473fb/`. That session records local integration and artifact identity. The exact Windows candidate DLL and PDB were redeployed at the user's request, with matching target hashes and verified backups. ReHLDS was stopped at deployment. Live acceptance remains unit25, and the broader Follow state audit remains unit23.
+
 ## 2026-11-17 repair unit07: Help transmission and assistance movement
 
 Base b3e4ec67a883a403464ecbc32f623853208b8c0a; read-only native reference b0889847fe6d03898be88acc9e366660efb40ab5. Original07 is implemented and offline verified;07A/07B remain its completed prerequisites. This does not establish overall CSBot or live physics parity.

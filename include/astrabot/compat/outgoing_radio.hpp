@@ -128,6 +128,11 @@ struct OutgoingRadioInput
 	float humanOrderReceived = 0, reactionSeconds = .3f;
 	bool humanOrderAccepted = false, humanOrderHelp = false;
 	bool vipEscaping = false, plantingBomb = false, bombLocationUnknown = false, escortingHostages = false;
+	std::uint64_t plantMoveEpoch = 0;
+	float plantMoveAge = 0;
+	std::uint16_t plantGoalPlace = 0;
+	std::uint32_t plantGoalPlacePhrase = 0;
+	bool plantCoverDue = false;
 	bool canStart = true;
 	ChatterScheduleAdmission admission{};
 	ChatterVerbosity verbosity = ChatterVerbosity::Normal;
@@ -255,7 +260,26 @@ public:
 						in.now + kEnemyReportDelaySeconds);
 				}
 			}
-			if (in.plantingBomb && !wasPlanting_)
+			if (in.plantMoveEpoch && plantMoveEpoch_ != in.plantMoveEpoch)
+			{
+				plantMoveEpoch_ = in.plantMoveEpoch;
+				radioedPlantPlan_ = askedPlantCover_ = false;
+			}
+			if (in.plantMoveEpoch && !askedPlantCover_)
+			{
+				if (in.plantCoverDue)
+				{
+					if (!in.roundOver)
+						queue(ChatterPhrase::PlantingBomb, in.now, kReportLifetimeSeconds, in, catalog);
+					askedPlantCover_ = true;
+				}
+				if (!radioedPlantPlan_ && in.plantMoveAge > 2.0f)
+				{
+					radioedPlantPlan_ = true;
+					goingToPlantBomb(in, catalog);
+				}
+			}
+			if (in.plantingBomb && !wasPlanting_ && !in.plantMoveEpoch)
 				queue(ChatterPhrase::PlantingBomb, in.now, kReportLifetimeSeconds, in, catalog);
 			if (in.bombLocationUnknown && !askedBomb_)
 			{
@@ -464,14 +488,36 @@ public:
 		discardDirect();
 		orderSequence_ = (std::max)(orderSequence_, consumedOrder);
 	}
+	bool needsPlantMoveCheck(std::uint64_t epoch) const
+	{
+		return plantMoveEpoch_ != epoch || !askedPlantCover_;
+	}
+	bool needsPlantPlanPlace(std::uint64_t epoch) const
+	{
+		return needsPlantMoveCheck(epoch) && (plantMoveEpoch_ != epoch || !radioedPlantPlan_);
+	}
+	void goingToPlantBomb(const OutgoingRadioInput &in, const ChatterRadioCatalog &catalog)
+	{
+		if (in.roundOver || in.now - lastPlan_ < 10.0f)
+			return;
+		lastPlan_ = in.now;
+		queue(ChatterPhrase::GoingToPlantBomb, in.now, 10.0f, in, catalog, in.plantGoalPlace, in.now);
+	}
 	void discardPending()
 	{
 		pending_.clear();
 		cancelAcknowledgement();
 		discardDirect();
+		resetPlans();
 	}
 
 private:
+	void resetPlans()
+	{
+		lastPlan_ = -1;
+		plantMoveEpoch_ = 0;
+		radioedPlantPlan_ = askedPlantCover_ = false;
+	}
 	void cancelAcknowledgement()
 	{
 		ack_ = ChatterPhrase::None;
@@ -497,6 +543,7 @@ private:
 		lastSent_ = -1;
 		lastHelp_ = -1;
 		lastEscort_ = -1;
+		resetPlans();
 		cancelAcknowledgement();
 		reportedEnemies_ = false;
 		wasPlanting_ = false;
@@ -537,6 +584,11 @@ private:
 			request.program.append({ChatterPartKind::Place, ChatterPhrase::None, in.ownPlace, in.ownPlacePhrase});
 			request.program.append({ChatterPartKind::Fixed, ChatterPhrase::Help, 0, 0});
 		}
+		else if (phrase == ChatterPhrase::GoingToPlantBomb)
+		{
+			request.criteriaPlace = in.plantGoalPlacePhrase;
+			request.meme = {ChatterMemeKind::Follow, 0};
+		}
 		else if (phrase == ChatterPhrase::EnemySpotted)
 		{
 			request.program.append({ChatterPartKind::Place, ChatterPhrase::None, in.enemyPlace, in.enemyPlacePhrase});
@@ -551,6 +603,9 @@ private:
 		pending_.admit(request, admission(in), catalog, in.verbosity, in.speaking);
 	}
 	ChatterPendingQueue pending_{};
+	float lastPlan_ = -1;
+	std::uint64_t plantMoveEpoch_ = 0;
+	bool radioedPlantPlan_ = false, askedPlantCover_ = false;
 	world::ActorKey actor_{};
 	world::FrameIdentity frame_{};
 	float lastUpdate_ = 0, start_ = 0, lastSent_ = -1, lastHelp_ = -1, lastEscort_ = -1, ackAt_ = 0;

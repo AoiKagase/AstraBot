@@ -370,6 +370,29 @@ int main()
 		ok &= check(followBehavior.leaderAvailable && followingMachine.state() == CompatibilityStateId::Follow,
 			"automatic leader remains available through complete state-machine full updates instead of reverting to Idle");
 	}
+	ScenarioBehaviorPlanner teammateProjection;
+	value = input();
+	value.scenario = PublicScenarioKind::Unknown;
+	teammateProjection.update(value);
+	const astrabot::world::ActorKey sameSerial{2U, 7U};
+	teammateProjection.followTeammate(sameSerial, 1.0f);
+	teammateProjection.followTeammate(sameSerial, 1.1f);
+	ok &= check(teammateProjection.followSince() == 1.0f, "repeating a teammate leader preserves the follow timestamp");
+	value.frame.tick++;
+	value.timestamp = 1.2f;
+	value.teammateLeader = {sameSerial, value.team, false, true, true, target()};
+	value.teammateLeader.location.frame = value.frame;
+	ok &= check(
+		teammateProjection.update(value).action == ScenarioAction::Follow, "qualified managed leader is followed");
+	value.frame.tick++;
+	value.timestamp = 1.3f;
+	value.teammateLeader = {};
+	value.automaticLeader = {sameSerial, value.team, true, true, true, target()};
+	value.leader = value.automaticLeader;
+	value.automaticLeader.location.frame = value.frame;
+	value.leader.location.frame = value.frame;
+	ok &= check(teammateProjection.update(value).action == ScenarioAction::Stop && !teammateProjection.isFollowing(),
+		"lost managed leader cannot match a human automatic or radio observation with the same identity key");
 	ScenarioBehaviorPlanner staleRadio;
 	value = input();
 	value.scenario = PublicScenarioKind::Unknown;

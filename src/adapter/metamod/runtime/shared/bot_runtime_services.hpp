@@ -90,6 +90,7 @@ public:
 	virtual nav::AreaId navigation_knownArea(
 		std::size_t index, world::ActorKey actor, world::FrameIdentity frame, std::uint64_t revision) const = 0;
 	virtual bool navigation_hasActivePath(std::size_t index) const = 0;
+	virtual float navigation_pathDistanceRemaining(std::size_t index, const nav::NavSnapshot &snapshot) const = 0;
 	virtual const ManagedNavigationFailure &navigation_managedNavigationFailures(std::size_t index) const = 0;
 	virtual nav::NavPathCostContext navigation_managedPathCostContext(std::size_t index) = 0;
 	virtual bool navigation_ladderTopology(nav::NavLadderTopology *topology) = 0;

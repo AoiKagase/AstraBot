@@ -1313,7 +1313,7 @@ int siteFixtureUserMessageId(plid_t, const char *name, int *)
 											   : 0;
 }
 
-bool writeTwoSiteNavigation(const char *path, bool rightReachable, bool withCover = false)
+bool writeTwoSiteNavigation(const char *path, bool rightReachable, bool withCover = false, const char *place = nullptr)
 {
 	std::vector<std::uint8_t> bytes;
 	const auto u32 = [&](std::uint32_t value)
@@ -1328,7 +1328,17 @@ bool writeTwoSiteNavigation(const char *path, bool rightReachable, bool withCove
 		u32(bits);
 	};
 	u32(0xFEEDFACEU);
-	u32(1U);
+	u32(place ? 5U : 1U);
+	if (place)
+	{
+		const auto length = std::strlen(place) + 1U;
+		u32(123U); // Synthetic BSP size matched by the fixture load request.
+		bytes.push_back(1U);
+		bytes.push_back(0U);
+		bytes.push_back(static_cast<std::uint8_t>(length));
+		bytes.push_back(static_cast<std::uint8_t>(length >> 8U));
+		bytes.insert(bytes.end(), place, place + length);
+	}
 	u32(4U);
 	for (std::uint32_t id = 1U; id <= 4U; ++id)
 	{
@@ -1349,12 +1359,21 @@ bool writeTwoSiteNavigation(const char *path, bool rightReachable, bool withCove
 		bytes.push_back(cover ? 1U : 0U);
 		if (cover)
 		{
+			if (place)
+				u32(id);
 			f32(low + 32.0f);
 			f32(50.0f);
 			f32(0.0f);
+			if (place)
+				bytes.push_back(1U);
 		}
 		bytes.push_back(0U);
 		u32(0U);
+		if (place)
+		{
+			bytes.push_back(id == 4 ? 1U : 0U);
+			bytes.push_back(0U);
+		}
 	}
 	std::FILE *file = openFixture(path, "wb");
 	if (file == nullptr)

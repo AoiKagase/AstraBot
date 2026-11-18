@@ -2340,6 +2340,35 @@ bool NavRoamController::hasPath() const
 	return routeState().hasActiveRoute;
 }
 
+float NavRoamController::pathDistanceRemaining(const nav::NavSnapshot &snapshot) const
+{
+	if (!hasPath())
+		return -1.0f;
+	const auto &route = routeState();
+	const auto &corridor = route.activeCorridor;
+	const auto *document = snapshot.document();
+	const float unavailable = (std::numeric_limits<float>::infinity)();
+	if (!document || snapshot.revision() != corridor.navRevision ||
+		snapshot.mapGeneration() != corridor.mapGeneration || corridor.areas.empty())
+		return unavailable;
+	// CSBot starts at the next path node and measures only the remaining area centers.
+	const auto first = (std::min)((std::max)(route.activeCorridorIndex, std::size_t{1}), corridor.areas.size() - 1);
+	const auto *previous = document->findArea(corridor.areas[first]);
+	float distance = 0.0f;
+	for (auto index = first + 1; index < corridor.areas.size(); ++index)
+	{
+		const auto *area = document->findArea(corridor.areas[index]);
+		if (!area || !previous)
+			return unavailable;
+		const auto from = nav::extentCenterOf(*previous);
+		const auto to = nav::extentCenterOf(*area);
+		const float x = to.x - from.x, y = to.y - from.y, z = to.z - from.z;
+		distance += std::sqrt(x * x + y * y + z * z);
+		previous = area;
+	}
+	return distance;
+}
+
 bool NavRoamController::isActive() const
 {
 	return traversalState().locomotion.isActive() || traversalState().jumpDrop.isActive() ||

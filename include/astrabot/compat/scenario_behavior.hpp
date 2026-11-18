@@ -133,6 +133,7 @@ struct ScenarioBehaviorInput
 	bool stopFollowingRequested = false;
 	bool autoFollowPermissionInferred = false;
 	ScenarioLeaderObservation automaticLeader = {};
+	ScenarioLeaderObservation teammateLeader = {};
 	ScenarioSenderValidation radioSenderValidation = {};
 	ScenarioSenderValidation pendingRadioSenderValidation = {};
 };
@@ -191,6 +192,17 @@ public:
 		return leader_;
 	}
 
+	void followTeammate(world::ActorKey leader, float now)
+	{
+		if (!following_ || !followingTeammate_ || !(leader_ == leader))
+			followSince_ = now;
+		following_ = true;
+		holding_ = false;
+		leader_ = leader;
+		followPermissionInferred_ = false;
+		followingTeammate_ = true;
+	}
+
 	float followSince() const
 	{
 		return followSince_;
@@ -208,7 +220,7 @@ public:
 
 	bool hasFollowingLeader(const ScenarioBehaviorInput &input) const
 	{
-		const auto &leader = input.automaticLeader.actor == leader_ ? input.automaticLeader : input.leader;
+		const auto &leader = followingLeader(input);
 		return following_ && leader.actor == leader_ && leader.lifeKnown && leader.alive && leader.team == input.team &&
 			targetKnown(input, leader.location);
 	}
@@ -296,11 +308,11 @@ public:
 			leader_ = input.automaticLeader.actor;
 			followSince_ = input.timestamp;
 			followPermissionInferred_ = input.autoFollowPermissionInferred;
+			followingTeammate_ = false;
 		}
 		if (following_)
 		{
-			const ScenarioLeaderObservation &leader =
-				input.automaticLeader.actor == leader_ ? input.automaticLeader : input.leader;
+			const auto &leader = followingLeader(input);
 			if (!(leader.actor == leader_) || !leader.lifeKnown || !leader.alive || leader.team != input.team)
 			{
 				following_ = false;
@@ -434,6 +446,7 @@ private:
 				leader_ = order.sender;
 				followSince_ = input.timestamp;
 				followPermissionInferred_ = false;
+				followingTeammate_ = false;
 			}
 			return false;
 		case ScenarioRadioCommand::HoldPosition:
@@ -619,7 +632,14 @@ private:
 	world::ActorKey leader_ = {};
 	bool following_ = false;
 	float followSince_ = 0.0f;
+	const ScenarioLeaderObservation &followingLeader(const ScenarioBehaviorInput &input) const
+	{
+		if (followingTeammate_)
+			return input.teammateLeader;
+		return input.automaticLeader.actor == leader_ ? input.automaticLeader : input.leader;
+	}
 	bool followPermissionInferred_ = false;
+	bool followingTeammate_ = false;
 	bool holding_ = false;
 	ScenarioTarget holdPosition_ = {};
 	world::EntityKey pendingUse_ = {};

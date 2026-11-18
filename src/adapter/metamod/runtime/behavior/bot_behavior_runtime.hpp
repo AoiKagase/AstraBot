@@ -95,8 +95,16 @@ public:
 	void refreshManagedTeamObjectiveAssignments(std::size_t contextIndex);
 	void updateBombGuardTarget(
 		std::size_t index, const compat::ScenarioBehaviorInput &input, compat::ScenarioBehaviorDecision *decision);
-	void updateManagedBotCompatibilityState(std::size_t index, const runtime::MovementPhysicsState &before);
-	void updateOutgoingPublicRadio(std::size_t index);
+	struct PlantMoveChatter
+	{
+		std::uint64_t epoch = 0;
+		float age = 0;
+		bool coverDue = false, hasGoal = false;
+		nav::NavVector goal{};
+	};
+	void updateManagedBotCompatibilityState(
+		std::size_t index, const runtime::MovementPhysicsState &before, PlantMoveChatter *plantMove = nullptr);
+	void updateOutgoingPublicRadio(std::size_t index, const PlantMoveChatter *plantMove = nullptr);
 	compat::ChatterScheduleAdmission chatterAdmission(std::size_t index);
 	compat::ChatterScheduleEntry activeTeamChatter(std::size_t index, int team, bool *current);
 	void updatePublicBuying(std::size_t index);
@@ -194,8 +202,8 @@ public:
 	void observeNeutralC4AttackDispatched(std::size_t index, const FakeClientHandle &handle);
 
 private:
-	struct HelpEnvironment;
-	void transmitHelp(std::size_t sender, compat::ChatterMeme meme, const std::function<bool()> &current);
+	struct TeammateRequestEnvironment;
+	void transmitTeammateRequest(std::size_t sender, compat::ChatterMeme meme, const std::function<bool()> &current);
 	bool helpGoalCurrent(std::size_t index) const;
 	bool executionCurrent(std::size_t index, const compat::ReactionContext &receipt, std::uint64_t revision) const;
 	void invalidateHelpExecution(std::size_t index);
@@ -249,7 +257,7 @@ private:
 	void commitBehaviorState(
 		std::size_t index, compat::StateUpdateContext &context, compat::StateBehaviorInput &stateBehavior);
 	void updateScenarioState(std::size_t index, const runtime::MovementPhysicsState &before,
-		compat::StateUpdateContext &context, compat::StateBehaviorInput &stateBehavior);
+		compat::StateUpdateContext &context, compat::StateBehaviorInput &stateBehavior, PlantMoveChatter *plantMove);
 	void populateScenarioPublicState(std::size_t index, const runtime::MovementPhysicsState &before,
 		compat::StateUpdateContext &context, compat::StateBehaviorInput &stateBehavior,
 		const compat::CompatibilityObservation &observation, compat::ScenarioBehaviorInput &scenario,
@@ -269,7 +277,7 @@ private:
 	void applyScenarioDecision(std::size_t index, const runtime::MovementPhysicsState &before,
 		compat::StateUpdateContext &context, compat::StateBehaviorInput &stateBehavior,
 		const compat::CompatibilityObservation &observation, compat::ScenarioBehaviorInput &scenario,
-		ScenarioUpdateData &data);
+		ScenarioUpdateData &data, PlantMoveChatter *plantMove);
 	void fill_managedBotWasDead(const bool &value)
 	{
 		for (auto &actor : actors_)
@@ -469,10 +477,17 @@ private:
 		std::uint64_t epoch = 0;
 	};
 
+	struct TeammateFollow
+	{
+		world::ActorKey actor{}, entity{};
+		std::uint32_t connection = 0;
+	};
+
 	struct ActorState
 	{
 		std::uint64_t executionRevision = 1;
 		HelpGoal helpGoal{};
+		TeammateFollow teammateFollow{};
 		world::EntityKey managedTaskEntity{};
 		ObstacleLook obstacleLook{};
 		float obstacleNextEquipAt = 0.0f;

@@ -3076,8 +3076,50 @@ bool testInvestigationSafestRoute()
 		"investigation objective requests SAFEST route through movement controller");
 }
 
+bool testRemainingPathDistance()
+{
+	using namespace astrabot;
+	nav::NavDocument document;
+	document.setSourceIdentity({5U, 100U, 200U});
+	for (nav::AreaId id = 1; id <= 4; ++id)
+	{
+		auto piece = area(id, (id - 1) * 64.0f, id * 64.0f);
+		if (id < 4)
+			piece.connections[1] = {id + 1};
+		if (id > 1)
+			piece.connections[3] = {id - 1};
+		document.addArea(piece);
+	}
+	nav::NavSnapshotPublisher publisher;
+	if (!check(
+			publisher.publish(&document, 1U) == nav::NavSnapshotResult::Published, "remaining path NAV is published"))
+		return false;
+	const auto snapshot = publisher.snapshot();
+	runtime::NavRoamController controller;
+	runtime::NavRoamObservation observation{};
+	observation.actor = {1, 1};
+	observation.frame = {1, 1, 1};
+	observation.locomotion.position = {32, 32, 0};
+	observation.locomotion.grounded = true;
+	observation.locomotion.standingClearance = 72;
+	observation.locomotion.crouchingClearance = 36;
+	observation.hasObjectiveTarget = true;
+	observation.objectiveTarget = {224, 32, 0};
+	nav::LocomotionIntent intent{};
+	const bool noPath = controller.pathDistanceRemaining(snapshot) == -1;
+	const auto result = controller.update(snapshot, observation, &intent);
+	const bool distance =
+		result == runtime::NavRoamResult::IntentReady && controller.pathDistanceRemaining(snapshot) == 128;
+	const bool invalid = std::isinf(controller.pathDistanceRemaining({}));
+	controller.destroyPath();
+	return check(noPath && distance && invalid && controller.pathDistanceRemaining(snapshot) == -1,
+		"remaining path sums the area centers after the active node and respects path/snapshot invalidation");
+}
+
 int main()
 {
+	if (!testRemainingPathDistance())
+		return 1;
 	if (!testInvestigationSafestRoute())
 		return 1;
 	for (unsigned completion = 0U; completion < 6U; ++completion)

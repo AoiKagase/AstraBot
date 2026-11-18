@@ -43,7 +43,8 @@ enum class ChatterStatementContent
 enum class ChatterMemeKind : std::uint8_t
 {
 	None,
-	Help
+	Help,
+	Follow
 };
 struct ChatterMeme
 {

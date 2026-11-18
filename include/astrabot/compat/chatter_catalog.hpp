@@ -38,6 +38,8 @@ enum class ChatterPhrase : unsigned
 	KilledFriend,
 	Pain,
 	AgreeWithPlan,
+	GoingToPlantBomb,
+	CoveringFriend,
 	Count
 };
 inline ChatterPhrase remainingEnemyPhrase(int count)
@@ -66,7 +68,8 @@ inline bool isIntentionPhrase(ChatterPhrase phrase)
 inline bool usesUndefinedChatterPlace(ChatterPhrase phrase)
 {
 	return phrase != ChatterPhrase::EnemySpotted && phrase != ChatterPhrase::Help &&
-		phrase != ChatterPhrase::PlantingBomb && phrase != ChatterPhrase::HeardNoise;
+		phrase != ChatterPhrase::PlantingBomb && phrase != ChatterPhrase::GoingToPlantBomb &&
+		phrase != ChatterPhrase::HeardNoise;
 }
 
 inline ChatterStatementTopic chatterStatementTopic(ChatterPhrase phrase)
@@ -87,8 +90,10 @@ inline ChatterStatementTopic chatterStatementTopic(ChatterPhrase phrase)
 	case ChatterPhrase::Affirmative:
 		return ChatterStatementTopic::Acknowledge;
 	case ChatterPhrase::OnMyWay:
+	case ChatterPhrase::CoveringFriend:
 		return ChatterStatementTopic::MyIntention;
 	case ChatterPhrase::PlantingBomb:
+	case ChatterPhrase::GoingToPlantBomb:
 		return ChatterStatementTopic::CriticalEvent;
 	case ChatterPhrase::EscortingHostages:
 		return ChatterStatementTopic::MyPlan;
@@ -281,7 +286,7 @@ public:
 		const char *names[] = {"None", "EnemySpotted", "Help", "RequestReport", "Affirmative", "OnMyWay",
 			"PlantingBomb", "WhereIsTheBomb", "EscortingHostages", "HeardNoise", "NoEnemiesLeft", "OneEnemyLeft",
 			"TwoEnemiesLeft", "ThreeEnemiesLeft", "NiceShot", "NiceShotSir", "NiceShotCommander", "CommanderDown",
-			"KilledFriend", "pain", "AgreeWithPlan"};
+			"KilledFriend", "pain", "AgreeWithPlan", "GoingToPlantBomb", "CoveringFriend"};
 		const auto i = static_cast<unsigned>(p);
 		return i < static_cast<unsigned>(ChatterPhrase::Count) ? names[i] : "Unknown";
 	}

@@ -2,6 +2,101 @@
 #include "astrabot/perception/perception.hpp"
 #include <cstdio>
 #include <cstring>
+namespace
+{
+bool testPlantPlan()
+{
+	using namespace astrabot::compat;
+	const char definitions[] = "Chatter GoingToPlantBomb End Chatter CoveringFriend End Chatter PlantingBomb End";
+	ChatterRadioCatalog catalog;
+	if (!catalog.loadText(definitions, sizeof(definitions) - 1))
+		return false;
+
+	OutgoingRadioScheduler scheduler;
+	OutgoingRadioInput input{};
+	input.actor = {1, 1};
+	input.frame = {1, 1, 1};
+	input.now = 12;
+	input.alive = true;
+	input.team = 1;
+	input.friendCount = 1;
+	input.plantMoveEpoch = 1;
+	input.plantMoveAge = 2;
+	input.plantGoalPlace = 17;
+	input.plantGoalPlacePhrase = 3;
+	const auto prepare = [&](float now)
+	{
+		input.now = now;
+		++input.frame.tick;
+		scheduler.prepare(input, catalog);
+	};
+	prepare(12);
+	if (!scheduler.statements().empty())
+		return false;
+	input.plantMoveAge = 2.125f;
+	prepare(12.125f);
+	ChatterStatementHandle handle{};
+	scheduler.statements().visitSchedules(
+		[&](const ChatterScheduleEntry &entry)
+		{
+			handle = {entry.order, entry};
+			return false;
+		});
+	ChatterPendingStatement node{};
+	if (!scheduler.statements().read(handle, &node) || node.request.phrase != ChatterPhrase::GoingToPlantBomb ||
+		node.request.meme.kind != ChatterMemeKind::Follow ||
+		node.schedule.topic != ChatterStatementTopic::CriticalEvent || node.schedule.place != 17 ||
+		node.request.criteriaPlace != 3 || node.request.expires != 22.125f)
+		return false;
+	ChatterPlaybackInput playback{};
+	playback.now = input.now;
+	playback.friendsRemaining = 1;
+	auto step = scheduler.statements().advance(handle, playback);
+	if (step.completion.natural || !scheduler.statements().finishPart(step.token, 0))
+		return false;
+	playback.now += 0.125f;
+	step = scheduler.statements().advance(handle, playback);
+	if (!step.completion.natural || step.completion.meme.kind != ChatterMemeKind::Follow)
+		return false;
+	prepare(23);
+	if (!scheduler.statements().empty())
+		return false;
+
+	// The native invalidated interval is measured from -1.
+	scheduler.reset();
+	prepare(8.875f);
+	if (!scheduler.statements().empty())
+		return false;
+	++input.plantMoveEpoch;
+	prepare(9);
+	if (scheduler.statements().empty())
+		return false;
+
+	// Cooldown refusal still consumes this MoveTo entry's attempt.
+	scheduler.reset();
+	input.verbosity = ChatterVerbosity::Off;
+	prepare(30);
+	input.verbosity = ChatterVerbosity::Normal;
+	input.plantMoveEpoch = 2;
+	prepare(39.875f);
+	prepare(40);
+	if (!scheduler.statements().empty())
+		return false;
+	input.plantMoveEpoch = 3;
+	input.plantCoverDue = true;
+	prepare(40);
+	std::vector<ChatterPhrase> admitted;
+	scheduler.statements().visitSchedules(
+		[&](const ChatterScheduleEntry &entry)
+		{
+			ChatterPendingStatement pending{};
+			if (scheduler.statements().read({entry.order, entry}, &pending))
+				admitted.push_back(pending.request.phrase);
+			return true;
+		});
+	return admitted == std::vector<ChatterPhrase>{ChatterPhrase::PlantingBomb, ChatterPhrase::GoingToPlantBomb};
+}
+}
 int main()
 {
 	using namespace astrabot::compat;
@@ -14,6 +109,7 @@ int main()
 			std::fprintf(stderr, "FAIL %s\n", s);
 		}
 	};
+	check(testPlantPlan(), "plant plan timing, same-update cover ordering, cooldown and silent Follow completion");
 	ChatterRadioCatalog catalog;
 	const char db[] = "// source-owned resource supplied by host\nChatter EnemySpotted\n Radio "
 					  "EVENT_RADIO_ENEMY_SPOTTED\n enemy.wav\nEnd\nChatter Affirmative\n Radio "

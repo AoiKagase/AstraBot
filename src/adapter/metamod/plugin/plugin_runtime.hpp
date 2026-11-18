@@ -378,6 +378,10 @@ private:
 	{
 		return navigation_.knownArea(index, actor, frame, revision);
 	}
+	float navigation_pathDistanceRemaining(std::size_t index, const nav::NavSnapshot &snapshot) const override
+	{
+		return navigation_.pathDistanceRemaining(index, snapshot);
+	}
 	bool navigation_hasActivePath(std::size_t index) const override
 	{
 		return navigation_.hasActivePath(index);

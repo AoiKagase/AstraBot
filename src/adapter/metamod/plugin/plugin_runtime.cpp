@@ -1471,8 +1471,9 @@ void PluginRuntime::updateManagedBots()
 			++managedBotFullUpdateSequences_[index];
 		}
 		navigation_.observeFullUpdateMotion(index, handle, before, configuration);
-		behavior_.updateManagedBotCompatibilityState(index, before);
-		behavior_.updateOutgoingPublicRadio(index);
+		BotBehaviorRuntime::PlantMoveChatter plantMove{};
+		behavior_.updateManagedBotCompatibilityState(index, before, &plantMove);
+		behavior_.updateOutgoingPublicRadio(index, &plantMove);
 		if (behavior_.managedBotStateMachines(index).behaviorDecision().action == compat::StateAction::Buy)
 		{
 			behavior_.updatePublicBuying(index);
