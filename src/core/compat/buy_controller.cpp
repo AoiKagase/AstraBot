@@ -1,4 +1,5 @@
 #include "astrabot/compat/buy_controller.hpp"
+#include <algorithm>
 #include <cmath>
 #include <array>
 
@@ -117,10 +118,8 @@ bool primary(Group g)
 	return g != Group::Pistol && g != Group::Grenade;
 }
 
-bool allowed(const Item &w, const BuyContext &c)
+bool allowedCategory(const Item &w, const BuyContext &c)
 {
-	if (w.team != ProfileTeam::Any && w.team != c.team)
-		return false;
 	switch (w.group)
 	{
 	case Group::Pistol:
@@ -139,6 +138,11 @@ bool allowed(const Item &w, const BuyContext &c)
 		return c.allowGrenades;
 	}
 	return false;
+}
+
+bool allowed(const Item &w, const BuyContext &c)
+{
+	return (w.team == ProfileTeam::Any || w.team == c.team) && allowedCategory(w, c);
 }
 
 bool draw(const BuyContext &c, const char *name, float chance, bool &value)
@@ -163,13 +167,49 @@ const Item *choose(const BuyContext &c, const Item *const *candidates, std::size
 		? candidates[r.value]
 		: nullptr;
 }
+
+const Item *stockItem(int id)
+{
+	for (const auto &item : stock)
+		if (item.id == id)
+			return &item;
+	return nullptr;
+}
+
+const char *csBotPreferenceAlias(int id, const BuyContext &c)
+{
+	constexpr int c4Id = 6;
+	constexpr int knifeId = 29;
+	if (id == kShieldPreferenceId)
+		return c.allowShield ? "shield" : nullptr;
+	if (id == c4Id)
+		return "c4";
+	if (id == knifeId)
+		return "knife";
+	const Item *item = stockItem(id);
+	if (!item)
+		return nullptr;
+	// The reference applies category policy only to aliases in its random stock tables.
+	const bool outsideStock = id == kUspWeaponId || id == kGlockWeaponId || item->group == Group::Grenade;
+	return outsideStock || allowedCategory(*item, c) ? item->alias : nullptr;
+}
+
+bool hasPrimaryWeapon(const BuyContext &c)
+{
+	if (c.hasShield)
+		return true;
+	for (const auto &item : stock)
+		if (primary(item.group) && owns(c, item.id))
+			return true;
+	return false;
+}
 }
 void BuyController::reset()
 {
 	*this = BuyController();
 }
 
-BuyDecision BuyController::update(const BuyContext &c, const ProfileRecord &profile)
+void BuyController::bind(const BuyContext &c)
 {
 	if (generation_ != c.generation || round_ != c.round)
 	{
@@ -177,26 +217,17 @@ BuyDecision BuyController::update(const BuyContext &c, const ProfileRecord &prof
 		generation_ = c.generation;
 		round_ = c.round;
 	}
-	if (!c.alive || !c.inBuyZone || !c.buyTimeOpen || !std::isfinite(c.nowSeconds) ||
-		!std::isfinite(c.stateEnteredSeconds))
-		return {BuyStatus::Unavailable, nullptr, 0};
-	if (!c.moneyKnown || !c.weaponMaskKnown || c.money < 0)
-		return {BuyStatus::UnknownObservation, nullptr, 0};
-	bool hasPrimary = false, hasPistol = false, hasGrenade = false;
-	for (const auto &w : stock)
-		if (owns(c, w.id))
-		{
-			hasPrimary = hasPrimary || primary(w.group);
-			hasPistol = hasPistol || w.group == Group::Pistol;
-			hasGrenade = hasGrenade || w.group == Group::Grenade;
-		}
+}
+
+bool BuyController::initialize(const BuyContext &c, bool hasPrimary, bool hasPistol)
+{
 	if (!initialized_)
 	{
 		if (initializationStep_ == kKitDecisionStep)
 		{
 			if (c.team == ProfileTeam::CounterTerrorist && c.bombScenario && !c.career && c.allowDefuseKit &&
 				!draw(c, "buy.defuse_kit", kKitBuyChance, buyKit_))
-				return {BuyStatus::Unavailable, nullptr, 0};
+				return false;
 			++initializationStep_;
 		}
 		if (initializationStep_ == kShieldDecisionStep)
@@ -207,13 +238,13 @@ BuyDecision BuyController::update(const BuyContext &c, const ProfileRecord &prof
 					c.money < kHighMoneyThreshold ? ASTRABOT_BUY_CONTROLLER_LOW_MONEY_SHIELD_CHANCE
 												  : kHighMoneyShieldChance,
 					buyShield_))
-				return {BuyStatus::Unavailable, nullptr, 0};
+				return false;
 			++initializationStep_;
 		}
 		if (initializationStep_ == kGrenadeDecisionStep)
 		{
 			if (c.allowGrenades && !draw(c, "buy.grenade", ASTRABOT_BUY_CONTROLLER_GRENADE_BUY_CHANCE, buyGrenade_))
-				return {BuyStatus::Unavailable, nullptr, 0};
+				return false;
 			++initializationStep_;
 		}
 		if (initializationStep_ == kPistolDecisionStep && c.allowPistols)
@@ -229,11 +260,32 @@ BuyDecision BuyController::update(const BuyContext &c, const ProfileRecord &prof
 							? kHighPistolBuyChance
 							: ASTRABOT_BUY_CONTROLLER_NORMAL_PISTOL_BUY_CHANCE,
 						buyPistol_))
-					return {BuyStatus::Unavailable, nullptr, 0};
+					return false;
 			}
 		}
 		initialized_ = true;
 	}
+	return true;
+}
+
+BuyDecision BuyController::update(const BuyContext &c, const ProfileRecord &profile)
+{
+	bind(c);
+	if (!c.alive || !c.inBuyZone || !c.buyTimeOpen || !std::isfinite(c.nowSeconds) ||
+		!std::isfinite(c.stateEnteredSeconds))
+		return {BuyStatus::Unavailable, nullptr, 0};
+	if (!c.moneyKnown || !c.weaponMaskKnown || c.money < 0)
+		return {BuyStatus::UnknownObservation, nullptr, 0};
+	bool hasPrimary = false, hasPistol = false, hasGrenade = false;
+	for (const auto &w : stock)
+		if (owns(c, w.id))
+		{
+			hasPrimary = hasPrimary || primary(w.group);
+			hasPistol = hasPistol || w.group == Group::Pistol;
+			hasGrenade = hasGrenade || w.group == Group::Grenade;
+		}
+	if (!initialize(c, hasPrimary, hasPistol))
+		return {BuyStatus::Unavailable, nullptr, 0};
 	if (c.nowSeconds - c.stateEnteredSeconds < kInitialBuyDelaySeconds)
 		return {BuyStatus::WaitingReceipt, nullptr, 0};
 	if (complete_)
@@ -465,6 +517,167 @@ BuyDecision BuyController::update(const BuyContext &c, const ProfileRecord &prof
 		return {BuyStatus::Complete, nullptr, 0};
 	}
 	return {BuyStatus::Unavailable, nullptr, 0};
+}
+
+BuyStatus BuyController::updateCsBot(const BuyContext &c, const ProfileRecord &profile, int difficulty,
+	const std::function<BuyInventory(const char *)> &buy)
+{
+	constexpr float buyInterval = 0.2f;
+	// These tables preserve the reference's candidate indices and team order.
+	constexpr std::array<int, 13> ctPrimary = {21, 5, 23, 19, 12, 30, 15, 3, 22, 8, 13, 18, 20};
+	constexpr std::array<int, 13> tPrimary = {21, 5, 7, 19, 12, 30, 14, 28, 3, 27, 18, 24, 20};
+	bind(c);
+	if (complete_)
+		return BuyStatus::Complete;
+	if (!c.alive || !c.weaponMaskKnown || c.team == ProfileTeam::Any || !std::isfinite(c.nowSeconds) ||
+		!std::isfinite(c.stateEnteredSeconds) || c.nowSeconds < c.stateEnteredSeconds)
+		return BuyStatus::Unavailable;
+	const float now = static_cast<float>(c.nowSeconds);
+	bool hasPrimary = hasPrimaryWeapon(c);
+	bool hasPistol = false;
+	bool hasGrenade = false;
+	for (const auto &item : stock)
+	{
+		if (owns(c, item.id))
+		{
+			hasPistol = hasPistol || item.group == Group::Pistol;
+			hasGrenade = hasGrenade || item.group == Group::Grenade;
+		}
+	}
+	if (!initialized_)
+	{
+		if (!c.moneyKnown)
+		{
+			if (now - static_cast<float>(c.stateEnteredSeconds) < kInitialBuyDelaySeconds)
+				return BuyStatus::UnknownObservation;
+			if (!c.inBuyZone)
+			{
+				complete_ = true;
+				return BuyStatus::Complete;
+			}
+		}
+		if (!initialize(c, hasPrimary, hasPistol))
+			return BuyStatus::Unavailable;
+		csBotBuyTimestamp_ = static_cast<float>(c.stateEnteredSeconds);
+	}
+	if (csBotInitialDelay_)
+	{
+		if (now - csBotBuyTimestamp_ < kInitialBuyDelaySeconds)
+			return BuyStatus::WaitingReceipt;
+		csBotInitialDelay_ = false;
+	}
+	if (!c.inBuyZone)
+	{
+		complete_ = true;
+		return BuyStatus::Complete;
+	}
+	if (now - csBotBuyTimestamp_ <= buyInterval)
+		return BuyStatus::WaitingReceipt;
+	csBotBuyTimestamp_ = now;
+
+	const auto preferenceCount = (std::min)(profile.weaponPreferenceCount,
+		static_cast<std::size_t>(kMaximumWeaponPreferences));
+	if (preferenceIndex_ < preferenceCount)
+	{
+		if (preferenceAttempts_ >= kMaximumPreferenceAttempts)
+		{
+			++preferenceIndex_;
+			preferenceAttempts_ = 0;
+			return BuyStatus::WaitingReceipt;
+		}
+		const int id = profile.weaponPreferences[preferenceIndex_];
+		if (c.activeWeapon == id || (id == kShieldPreferenceId && c.hasShield))
+		{
+			preferenceIndex_ = preferenceCount;
+			return BuyStatus::WaitingReceipt;
+		}
+		++preferenceAttempts_;
+		if (const char *alias = csBotPreferenceAlias(id, c))
+		{
+			buy(alias);
+			return BuyStatus::Command;
+		}
+	}
+
+	if (!hasPrimary)
+	{
+		const char *alias = nullptr;
+		if (buyShield_)
+			alias = "shield";
+		else
+		{
+			bool wantSniper = false;
+			if (!draw(c, "buy.want_sniper", kSniperBuyChance, wantSniper))
+				return BuyStatus::Unavailable;
+			std::array<const Item *, ctPrimary.size()> candidates{}, preferred{};
+			std::size_t count = 0, preferredCount = 0;
+			for (int id : c.team == ProfileTeam::Terrorist ? tPrimary : ctPrimary)
+			{
+				const Item *item = stockItem(id);
+				if (allowed(*item, c) && (item->group != Group::Sniper || wantSniper))
+				{
+					candidates[count++] = item;
+					if (item->preferred)
+						preferred[preferredCount++] = item;
+				}
+			}
+			if (count > 0)
+			{
+				const bool pickPreferred = primaryAttempts_ == 0 &&
+					difficulty >= kPreferredPrimaryDifficulty && preferredCount > 0;
+				const Item *item = choose(c, pickPreferred ? preferred.data() : candidates.data(),
+					pickPreferred ? preferredCount : count, "buy.primary");
+				if (!item)
+					return BuyStatus::Unavailable;
+				alias = item->alias;
+			}
+		}
+		if (alias)
+		{
+			const auto inventory = buy(alias);
+			BuyContext observed = c;
+			observed.weaponMask = inventory.weapons;
+			observed.hasShield = inventory.hasShield;
+			hasPrimary = hasPrimaryWeapon(observed);
+		}
+	}
+	if (!hasPrimary && primaryAttempts_++ < kMaximumPrimaryAttempts)
+		return BuyStatus::WaitingReceipt;
+
+	if (hasPrimary)
+		buy("primammo");
+	buy("vesthelm");
+	buy("vest");
+	if (c.allowPistols)
+	{
+		bool hasPistolPreference = false;
+		for (std::size_t i = 0; i < preferenceCount; ++i)
+		{
+			const Item *item = stockItem(profile.weaponPreferences[i]);
+			hasPistolPreference = hasPistolPreference || (item && item->group == Group::Pistol);
+		}
+		if (buyPistol_ && !hasPistolPreference)
+		{
+			const std::array<const Item *, kPreferredSecondaryCapacity> pistols = {
+				stockItem(1), stockItem(26), stockItem(c.team == ProfileTeam::Terrorist ? 10 : 11)};
+			const Item *item = choose(c, pistols.data(), pistols.size(), "buy.secondary");
+			if (item)
+				buy(item->alias);
+		}
+		buy("secammo");
+	}
+	if (buyGrenade_ && !hasGrenade && c.random)
+	{
+		const auto grenade = c.random->nextFloat(RandomRequest::floatRequest(
+			"buy.grenade_type", c.randomActor, c.randomTiming, 0, kChancePercentMaximum));
+		if (grenade.status == RandomStatus::Ok && std::isfinite(grenade.value) && grenade.value >= 0 &&
+			grenade.value <= kChancePercentMaximum)
+			buy(grenade.value < 10.0f ? "sgren" : c.teamAllBots && grenade.value < 35.0f ? "flash" : "hegren");
+	}
+	if (buyKit_)
+		buy("defuser");
+	complete_ = true;
+	return BuyStatus::Complete;
 }
 }
 }

@@ -92,9 +92,30 @@ before its first zone notification during the scheduled restart. The fix holds
 Buy while the notification is missing and the restart is pending. It uses any
 known zone result and still requires an observed buy zone for purchase commands.
 In the follow-up live run the first Hunt decision moved from before
-`Round_Start` to after it. Buy completion after `Round_Start`, same-area and
-closest-area fallback, and full-match RNG and movement-command equality remain
-open.
+`Round_Start` to after it. Same-area and closest-area fallback and full-match
+RNG and movement-command equality remain open.
+
+## Windows x86 round opening Buy
+
+The isolated `de_dust2` replay compared two $800 bots against Win32
+ReGameDLL-CS `b0889847fe6d03898be88acc9e366660efb40ab5`. AstraBot had previously
+entered Hunt before the BuyZone HUD update arrived. The reference stays in
+Buy for its initial two-second delay, then attempts purchases at intervals
+strictly greater than 0.2 seconds. Each stock primary attempt draws sniper
+eligibility before the team stock index, even when all the weapons are too
+expensive. With no primary, the seventh attempt leads to equipment purchases
+in the same update. A finished bot stays in Buy until freeze ends.
+
+The replay recorded the kit, grenade, and pistol preference draws for CT,
+and the grenade and pistol preference draws for T. Each bot then consumed
+seven ordered sniper and stock-index draw pairs. The controller regression
+also fixes the RNG values and checks the resulting command order. The live
+servers drew from independent engine streams.
+
+| Freeze | Reference CT / T first Hunt after Round_Start | AstraBot CT / T |
+| --- | --- | --- |
+| 0 s | 3.80 / 3.81 s | 3.83 / 3.85 s |
+| 5 s | 0.12 / 0.13 s | 0.15 / 0.15 s |
 
 ## Full runtime replay remains open
 

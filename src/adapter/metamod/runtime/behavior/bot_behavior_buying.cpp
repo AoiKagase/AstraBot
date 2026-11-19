@@ -11,6 +11,14 @@ constexpr unsigned kCounterTerroristTeam = 2U;
 constexpr float kSecondsPerMinute = 60.0f;
 constexpr int kPrimaryWeaponSlot = 0;
 constexpr int kSecondaryWeaponSlot = 1;
+constexpr int kShieldEnabledGameState = 0;
+
+float readBuyMinutes(const enginefuncs_t *engine, bool *rulesAvailable)
+{
+	*rulesAvailable = engine && engine->pfnCVarGetPointer && engine->pfnCVarGetFloat &&
+		engine->pfnCVarGetPointer("mp_buytime") != nullptr;
+	return *rulesAvailable ? engine->pfnCVarGetFloat("mp_buytime") : 0.0f;
+}
 }
 using namespace runtime_detail;
 
@@ -22,28 +30,38 @@ void BotBehaviorRuntime::updatePublicBuying(std::size_t index)
 	if (handle.entity == nullptr || handle.entity->free || handle.entity->v.deadflag != DEAD_NO)
 		return;
 	compat::PublicActorState observation{};
-	if (!services_->observation_publicObservations().read({handle.actor.slot, handle.actor.actorGeneration},
+	const auto *engine = services_->service_engineFunctions();
+	const bool native = actors_[index].buyUsesCsBot;
+	const bool observed = services_->observation_publicObservations().read({handle.actor.slot, handle.actor.actorGeneration},
 			{services_->service_lifecycle().mapGeneration(), services_->service_lifecycle().roundGeneration(),
 				services_->service_adapterFrameCount()},
-			&observation))
-		return;
-	// The controller cannot buy outside the observed zone. Avoid querying
-	// weapon policies for a newly spawned native Buy state that cannot use them.
-	if (!observation.buyZoneKnown || !observation.inBuyZone)
+			&observation);
+	if (!native && (!observed || !observation.buyZoneKnown || !observation.inBuyZone))
 		return;
 	compat::BuyContext context{};
 	context.nowSeconds = services_->service_globals()->time;
 	context.stateEnteredSeconds = services_->service_roundFreezeStartTime();
+	if (native)
+	{
+		context.stateEnteredSeconds = (std::max)(context.stateEnteredSeconds,
+			static_cast<double>(actors_[index].managedBotStateMachines.stateTimestamp()));
+		if (context.nowSeconds < context.stateEnteredSeconds || actors_[index].buyingComplete)
+			return;
+	}
 	context.generation = handle.actor.actorGeneration;
 	context.round = services_->service_lifecycle().roundGeneration();
 	context.alive = true;
 	context.inBuyZone = observation.buyZoneKnown && observation.inBuyZone;
-	const float buyTime = readOptionalCvarFloat(services_->service_engineFunctions(), "mp_buytime");
-	context.buyTimeOpen = std::isfinite(buyTime) &&
-		services_->service_globals()->time <= services_->service_roundFreezeStartTime() + buyTime * kSecondsPerMinute;
-	context.team = services_->observation_resolvePlayerTeam(handle.entity) == kTerroristTeam
+	if (!native)
+	{
+		const float buyTime = readOptionalCvarFloat(services_->service_engineFunctions(), "mp_buytime");
+		context.buyTimeOpen = std::isfinite(buyTime) &&
+			context.nowSeconds <= services_->service_roundFreezeStartTime() + buyTime * kSecondsPerMinute;
+	}
+	const unsigned team = services_->observation_resolvePlayerTeam(handle.entity);
+	context.team = team == kTerroristTeam
 		? compat::ProfileTeam::Terrorist
-		: services_->observation_resolvePlayerTeam(handle.entity) == kCounterTerroristTeam
+		: (native ? team : services_->observation_resolvePlayerTeam(handle.entity)) == kCounterTerroristTeam
 		? compat::ProfileTeam::CounterTerrorist
 		: compat::ProfileTeam::Any;
 	context.moneyKnown = observation.moneyKnown;
@@ -79,6 +97,63 @@ void BotBehaviorRuntime::updatePublicBuying(std::size_t index)
 	context.randomTiming = {services_->command_managedBotCommandSequences(index), 0U,
 		services_->service_managedBotFullUpdateSequences()[index]};
 	context.bombScenario = managedObjectiveSiteRegistry_.registeredCount != 0U;
+	if (native)
+	{
+		if (!context.bombScenario && team == kCounterTerroristTeam && engine != nullptr &&
+			engine->pfnFindEntityByString != nullptr && engine->pfnSzFromIndex != nullptr)
+		{
+			const auto hasSite = [engine](const char *classname)
+			{
+				const auto *site = engine->pfnFindEntityByString(nullptr, "classname", classname);
+				return site && !site->free && ActionAdapter::isBombTargetClassname(
+					engine->pfnSzFromIndex(site->v.classname));
+			};
+			context.bombScenario = hasSite("func_bomb_target") || hasSite("info_bomb_target");
+		}
+		const bool shieldSupported = engine->pfnCVarGetPointer("bot_allow_shield") != nullptr;
+		context.allowShield = shieldSupported && engine->pfnCVarGetFloat("bot_allow_shield") != 0.0f;
+		context.hasShield = shieldSupported && handle.entity->v.gamestate == kShieldEnabledGameState;
+		context.activeWeapon = observation.weaponKnown ? observation.weaponId : 0;
+		context.teamAllBots = true;
+		if (engine != nullptr && engine->pfnPEntityOfEntIndex != nullptr)
+		{
+			for (int slot = 1; slot <= services_->service_globals()->maxClients; ++slot)
+			{
+				const auto *player = engine->pfnPEntityOfEntIndex(slot);
+				if (player && player != handle.entity && !player->free && (player->v.flags & FL_CLIENT) &&
+					!(player->v.flags & (FL_FAKECLIENT | FL_DORMANT)) &&
+					services_->observation_resolvePlayerTeam(player) == static_cast<int>(team))
+				{
+					context.teamAllBots = false;
+					break;
+				}
+			}
+		}
+		const auto &configuration = services_->service_compatibilitySurface().configuration();
+		const auto current = [&, actor = handle.actor, entity = handle.entity, serial = handle.entity->serialnumber,
+								 map = services_->service_lifecycle().mapGeneration()]
+		{
+			return handle.actor.actorGeneration == actor.actorGeneration && handle.entity == entity && !entity->free &&
+				entity->serialnumber == serial && entity->v.deadflag == DEAD_NO &&
+				services_->service_lifecycle().mapGeneration() == map &&
+				services_->service_lifecycle().roundGeneration() == context.round;
+		};
+		const auto buy = [this, entity = handle.entity, shieldSupported, &current](const char *alias)
+		{
+			if (!current() || !services_->command_dispatchClientCommand(entity, alias, nullptr) || !current())
+				return compat::BuyInventory{};
+			return compat::BuyInventory{static_cast<std::uint32_t>(entity->v.weapons),
+				shieldSupported && entity->v.gamestate == kShieldEnabledGameState};
+		};
+		auto controller = actors_[index].buyControllers;
+		const auto status = controller.updateCsBot(
+			context, actors_[index].managedProfiles, configuration.botDifficulty, buy);
+		if (!current())
+			return;
+		actors_[index].buyControllers = controller;
+		actors_[index].buyingComplete = status == compat::BuyStatus::Complete;
+		return;
+	}
 	const compat::PublicWeaponDefinition weapon =
 		services_->observation_publicObservations().definition(observation.weaponId);
 	context.ammoKnown = observation.weaponKnown && weapon.known && weapon.ammoIndex >= 0 &&
@@ -107,22 +182,44 @@ void BotBehaviorRuntime::updatePublicBuying(std::size_t index)
 		(void)services_->command_dispatchClientCommand(handle.entity, decision.command, "");
 }
 
+bool BotBehaviorRuntime::usesCsBotBuying() const
+{
+	return services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility &&
+		services_->service_roundFreezeGeneration() == services_->service_lifecycle().roundGeneration() &&
+		services_->service_navPublisher().snapshot().isValid();
+}
+
 void BotBehaviorRuntime::resetRoundBuyingState()
 {
 	reset_buyingComplete();
+	for (auto &actor : actors_)
+		actor.buyUsesCsBot = false;
 	reset_escapingWithKnife();
 	reset_buyReceiptTimeoutLogged();
 }
 
-bool BotBehaviorRuntime::shouldBuy(std::size_t index, const compat::StateUpdateContext &context) const
+bool BotBehaviorRuntime::shouldBuy(std::size_t index, const compat::StateUpdateContext &context)
 {
-	const auto &actor = actors_[index];
+	auto &actor = actors_[index];
 	const auto *globals = services_->service_globals();
-	const float buyMinutes = readOptionalCvarFloat(services_->service_engineFunctions(), "mp_buytime");
-	if (actor.buyingComplete || !context.alive || globals == nullptr)
+	bool rulesAvailable = false;
+	const float buyMinutes = readBuyMinutes(services_->service_engineFunctions(), &rulesAvailable);
+	actor.buyUsesCsBot = rulesAvailable && usesCsBotBuying();
+	if (!context.alive || globals == nullptr)
 		return false;
 
 	const float roundStart = services_->service_roundFreezeStartTime();
+	if (actor.buyUsesCsBot)
+	{
+		if (actor.buyingComplete)
+			return globals->time < services_->service_roundFreezeUntil();
+		return !services_->service_roundOver() ||
+			globals->time >= roundStart ||
+			actor.managedBotStateMachines.state() == compat::CompatibilityStateId::Buy;
+	}
+	if (actor.buyingComplete)
+		return false;
+
 	// Native Buy waits through the scheduled restart, before buy-zone signals are available.
 	const bool awaitingRestart = actor.managedBotStateMachines.state() == compat::CompatibilityStateId::Buy &&
 		services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility &&

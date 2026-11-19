@@ -314,7 +314,8 @@ private:
 	bool cancelHeldGrenade(std::size_t index, const runtime::ViewAngles &movementAngles, ActionProposal &proposal);
 	BehaviorPhaseResult updateBehaviorLifecycle(
 		std::size_t index, const runtime::MovementPhysicsState &before, compat::StateUpdateContext &context);
-	bool shouldBuy(std::size_t index, const compat::StateUpdateContext &context) const;
+	bool shouldBuy(std::size_t index, const compat::StateUpdateContext &context);
+	bool usesCsBotBuying() const;
 	void updateNoiseInvestigation(std::size_t index, const runtime::MovementPhysicsState &before,
 		compat::StateUpdateContext &context, compat::StateBehaviorInput &stateBehavior);
 	void updateBehaviorPriorities(std::size_t index, const runtime::MovementPhysicsState &before,
@@ -651,6 +652,7 @@ private:
 		float attackReadyTimes{};
 		compat::BuyController buyControllers{};
 		bool buyingComplete{};
+		bool buyUsesCsBot{};
 		bool escapingWithKnife{};
 		bool buyReceiptTimeoutLogged{};
 		compat::WeaponActionPlanner weaponActions{};

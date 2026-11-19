@@ -3,6 +3,90 @@
 #include "astrabot/compat/buy_controller.hpp"
 #include <cstdio>
 #include <cstring>
+#include <string>
+#include <vector>
+
+static bool csBotLowMoneyBuy()
+{
+	using namespace astrabot::compat;
+	std::vector<RandomTapeEntry> tape{
+		RandomTapeEntry::floatEntry("buy.defuse_kit", {}, {}, 0, 100, 10),
+		RandomTapeEntry::floatEntry("buy.grenade", {}, {}, 0, 100, 10),
+		RandomTapeEntry::floatEntry("buy.pistol", {}, {}, 0, 100, 10)};
+	for (int i = 0; i < 7; ++i)
+	{
+		tape.push_back(RandomTapeEntry::floatEntry("buy.want_sniper", {}, {}, 0, 100, 90));
+		tape.push_back(RandomTapeEntry::longEntry("buy.primary", {}, {}, 0, 9, 2));
+	}
+	tape.push_back(RandomTapeEntry::longEntry("buy.secondary", {}, {}, 0, 2, 2));
+	tape.push_back(RandomTapeEntry::floatEntry("buy.grenade_type", {}, {}, 0, 100, 20));
+	ScriptedRandomSource random(tape);
+	BuyController controller;
+	BuyContext context{};
+	context.nowSeconds = context.stateEnteredSeconds = 10;
+	context.alive = context.moneyKnown = context.weaponMaskKnown = true;
+	context.money = 800;
+	context.team = ProfileTeam::CounterTerrorist;
+	context.weaponMask = 1U << 16;
+	context.allowPistols = context.allowGrenades = context.allowDefuseKit = true;
+	context.allowShotguns = context.allowSubMachineGuns = context.allowRifles = true;
+	context.allowMachineGuns = context.allowSnipers = context.bombScenario = context.teamAllBots = true;
+	context.random = &random;
+	std::vector<std::string> aliases;
+	const auto rejected = [&](const char *alias)
+	{
+		aliases.emplace_back(alias);
+		return BuyInventory{context.weaponMask, false};
+	};
+	const auto update = [&] { return controller.updateCsBot(context, {}, 1, rejected); };
+	if (update() != BuyStatus::WaitingReceipt || !aliases.empty())
+		return false;
+	context.inBuyZone = true;
+	context.nowSeconds = 11.875;
+	if (update() != BuyStatus::WaitingReceipt || !aliases.empty())
+		return false;
+	for (int i = 0; i < 7; ++i)
+	{
+		context.nowSeconds = 12.0 + i * 0.25;
+		const auto status = update();
+		if (status != (i == 6 ? BuyStatus::Complete : BuyStatus::WaitingReceipt))
+			return false;
+		context.nowSeconds += 0.125;
+		if (update() != status)
+			return false;
+	}
+	return random.verifyComplete() && aliases == std::vector<std::string>{
+		"tmp", "tmp", "tmp", "tmp", "tmp", "tmp", "tmp", "vesthelm", "vest", "fn57", "secammo", "flash", "defuser"};
+}
+
+static bool csBotCrossTeamPreference()
+{
+	using namespace astrabot::compat;
+	ProfileRecord profile{};
+	profile.weaponPreferences[0] = 28;
+	profile.weaponPreferenceCount = 1;
+	BuyContext context{};
+	context.alive = context.inBuyZone = context.moneyKnown = context.weaponMaskKnown = true;
+	context.team = ProfileTeam::CounterTerrorist;
+	context.allowRifles = true;
+	context.money = 800;
+	BuyController controller;
+	std::vector<std::string> aliases;
+	const auto rejected = [&](const char *alias)
+	{
+		aliases.emplace_back(alias);
+		return BuyInventory{0, false};
+	};
+	context.nowSeconds = 2.0;
+	if (controller.updateCsBot(context, profile, 1, rejected) != BuyStatus::Command)
+		return false;
+	context.nowSeconds = 2.25;
+	if (controller.updateCsBot(context, profile, 1, rejected) != BuyStatus::Command)
+		return false;
+	context.nowSeconds = 2.5;
+	return controller.updateCsBot(context, profile, 1, rejected) == BuyStatus::WaitingReceipt &&
+		aliases == std::vector<std::string>{"ak47", "ak47"};
+}
 
 class RecoveringRandom : public astrabot::compat::ICompatibilityRandomSource
 {
@@ -38,6 +122,8 @@ int main()
 			std::fprintf(stderr, "FAIL: %s\n", name);
 		}
 	};
+	check(csBotLowMoneyBuy(), "CSBot waits for spawn, samples seven unaffordable primaries, then buys equipment in order");
+	check(csBotCrossTeamPreference(), "CSBot lets GameDLL reject a cross-team preference before random fallback");
 	ProfileCatalog profiles;
 	ProfileRecord first = {};
 	std::memcpy(first.name, "first", 6);
