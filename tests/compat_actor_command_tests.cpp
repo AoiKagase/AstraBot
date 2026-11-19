@@ -1856,6 +1856,9 @@ int main(int argc, char **argv)
 	gameDllTable.pfnClientDisconnect = &disconnect;
 	gameDllTable.pfnClientKill = &clientKill;
 	gameDllTable.pfnClientCommand = &gameClientCommand;
+#ifdef ASTRABOT_ACTOR_GAMEDLL_SETUP
+	ASTRABOT_ACTOR_GAMEDLL_SETUP(gameDllTable);
+#endif
 	gHookedGameDllTable = gameDllTable;
 	gHookedGameDllTable.pfnClientCommand = &hookedGameClientCommand;
 	gamedll_funcs_t gameDllFunctions{};

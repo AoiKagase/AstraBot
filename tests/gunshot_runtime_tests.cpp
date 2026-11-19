@@ -1,17 +1,37 @@
 #include "plugin/plugin_runtime.hpp"
+#include <entity_state.h>
+#include <weaponinfo.h>
 namespace
 {
 void setupGunshot(enginefuncs_t &, globalvars_t &);
+void setupGunshotGameDll(DLL_FUNCTIONS &);
 bool testGunshot(astrabot::metamod::PluginRuntime &, enginefuncs_t &, globalvars_t &);
 }
 #define ASTRABOT_EXTRA_ACTOR_TEST testGunshot
 #define ASTRABOT_ACTOR_ENGINE_SETUP setupGunshot
+#define ASTRABOT_ACTOR_GAMEDLL_SETUP setupGunshotGameDll
 #define ASTRABOT_ACTOR_PROFILE_TEXT                                                                                    \
 	"Any { Name = \"Hearing Bot\" Team = any Difficulty = 1 Skill = 70 ReactionTime = 0.125 }\n"
 #include "compat_actor_command_tests.cpp"
 #include "fixtures/noise_runtime_nav.hpp"
 namespace
 {
+int nativeActiveWeapon = 0;
+bool nativeSilenced = false;
+
+void setupGunshotGameDll(DLL_FUNCTIONS &dll)
+{
+	dll.pfnUpdateClientData = [](const edict_t *, int sendWeapons, clientdata_t *client) {
+		if (sendWeapons)
+			client->m_iId = nativeActiveWeapon;
+	};
+	dll.pfnGetWeaponData = [](edict_t *, weapon_data_t *weapons) {
+		weapons[nativeActiveWeapon].m_iId = nativeActiveWeapon;
+		weapons[nativeActiveWeapon].m_iWeaponState = nativeSilenced ? 1 << 2 : 0;
+		return 1;
+	};
+}
+
 bool precacheGun(unsigned short index, const char *script, bool overridden = false, int type = 1)
 {
 	enginefuncs_t post{};
@@ -269,6 +289,59 @@ bool testKnifeRun(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &engi
 	return true;
 }
 
+bool testNativeWeaponEvents(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &engine, globalvars_t &globals)
+{
+	using namespace astrabot;
+	using metamod::NativeWeaponEvent;
+	auto &enemy = gEntities[4];
+	enemy.v.origin = Vector(0, 500, 36);
+	auto &self = gEntities[0];
+	self.v.origin = Vector(0, 0, 36);
+	self.v.v_angle = self.v.angles = Vector(0, 0, 0);
+	engine.pfnPvEntPrivateData = [](edict_t *entity) -> void * { return entity; };
+	runtime.giveEnginePointers(&engine, &globals);
+
+	const auto test = [&](NativeWeaponEvent kind, int weapon, float expectedRange, world::NoisePriority priority) {
+		auto observer = std::make_unique<metamod::BotObservationRuntime>();
+		observer->bindServices(runtime);
+		observer->configureEngine();
+		observer->notifyTeamInfo(1, "TERRORIST");
+		observer->notifyTeamInfo(5, "CT");
+		nativeActiveWeapon = weapon;
+		if (kind == NativeWeaponEvent::FiredOnEmpty)
+			observer->onEmitSound(&enemy, "weapons/dryfire_pistol.wav", .8f, 1.0f);
+		observer->observeGameDllWeapon(kind, &enemy);
+		// The public sound for the same animation must neither promote nor duplicate the native receipt.
+		observer->onEmitSound(&enemy, "weapons/ak47_clipin.wav", 1.0f, 1.0f);
+		world::WorldSnapshot snapshot;
+		metamod::ThreatObservation threats;
+		if (!observer->collectManagedPerception(0, &snapshot, &threats))
+			return false;
+		if (expectedRange == 0)
+			return snapshot.soundCount() == 0;
+		const auto *sound = snapshot.soundAt(0);
+		const bool matched = snapshot.soundCount() == 1 && sound && sound->priority == priority &&
+			sound->hearingRange == expectedRange && sound->timestampSeconds == globals.time;
+		if (!matched)
+			std::fprintf(stderr, "native receipt weapon=%d count=%zu priority=%d range=%g timestamp=%g now=%g\n",
+				weapon, snapshot.soundCount(), sound ? static_cast<int>(sound->priority) : -1,
+				sound ? sound->hearingRange : 0, sound ? sound->timestampSeconds : 0, globals.time);
+		return matched;
+	};
+	const auto low = world::NoisePriority::Low;
+	const auto high = world::NoisePriority::High;
+	if (!check(test(NativeWeaponEvent::Reloaded, 28, 1100, low), "native reload has the low-priority CSBot radius") ||
+		!check(test(NativeWeaponEvent::FiredOnEmpty, 28, 1100, low), "native dry fire has the low-priority radius") ||
+		!check(test(NativeWeaponEvent::Fired, 29, 1000, high), "native knife attack has the short high-priority radius") ||
+		!check(test(NativeWeaponEvent::Fired, 4, 0, low), "native grenade throw is acoustically silent"))
+		return false;
+	nativeSilenced = true;
+	if (!check(test(NativeWeaponEvent::Fired, 22, 1000, high), "a native shot reads the current M4A1 silencer state"))
+		return false;
+	nativeSilenced = false;
+	return check(test(NativeWeaponEvent::Fired, 22, 2000, high), "an unsilenced native M4A1 uses the normal radius");
+}
+
 bool testGunshot(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &engine, globalvars_t &globals)
 {
 	if (!check(loadHearingNav(runtime), "hearing fixture supplies real NAV"))
@@ -439,6 +512,8 @@ bool testGunshot(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &engin
 	{
 		return false;
 	}
+	if (!testNativeWeaponEvents(runtime, engine, globals))
+		return false;
 	runtime.onServerDeactivate();
 	resetEntities(); // GameDLL destroys the previous map edicts before precaching the next map.
 	gCreateCount = 0;

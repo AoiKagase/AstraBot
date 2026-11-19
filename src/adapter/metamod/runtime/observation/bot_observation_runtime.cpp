@@ -57,6 +57,39 @@ constexpr float kBombBeepHearingDistance = 1000.0f;
 constexpr float kBombBeepKnowledgeDistance = 1000.0f;
 constexpr float kFeetTargetProbeDepth = 14.0f;
 constexpr int kMaximumClientSlot = 32;
+constexpr auto kWeaponSoundPrefixLength = 8U;
+float nativeWeaponEventRange(NativeWeaponEvent kind, int weapon, bool silenced)
+{
+	if (kind != NativeWeaponEvent::Fired)
+		return 1100.0f;
+	switch (weapon)
+	{
+	case 4:  // HE grenade
+	case 6:  // C4
+	case 9:  // Smoke grenade
+	case 25: // Flashbang
+	case 99: // Shield
+		return 0.0f;
+	case 23: // TMP
+	case 29: // Knife
+		return 1000.0f;
+	case 18: // AWP
+		return 99999.0f;
+	default:
+		return silenced ? 1000.0f : 2000.0f;
+	}
+}
+
+bool isNativeWeaponEventSample(const char *sample)
+{
+	if (compat::isStandardShotSample(sample) || compat::isStandardDryFireSample(sample))
+		return true;
+	const char *name = sample + kWeaponSoundPrefixLength;
+	return std::strncmp(name, "knife_hit", 9) == 0 || std::strncmp(name, "knife_slash", 11) == 0 ||
+		std::strcmp(name, "knife_stab.wav") == 0 || std::strcmp(name, "pinpull.wav") == 0 ||
+		std::strstr(name, "clipin") || std::strstr(name, "clipout") || std::strstr(name, "reload") ||
+		std::strstr(name, "bolt") || std::strstr(name, "slide") || std::strstr(name, "insertshell");
+}
 constexpr int kMaximumMessageByte = 255;
 constexpr int kTerroristTeam = 1;
 constexpr int kCounterTerroristTeam = 2;
@@ -69,7 +102,6 @@ constexpr int kInactiveWeaponState = 0;
 constexpr int kActiveWeaponState = 1;
 constexpr int kObservationTraceIgnoringActors = 1;
 constexpr int kObservationTraceIncludingActors = 0;
-constexpr auto kWeaponSoundPrefixLength = 8U;
 }
 
 void BotObservationRuntime::onMessageBegin(
@@ -483,7 +515,7 @@ void BotObservationRuntime::onPlaybackEvent(
 		return;
 	const int slot = services_->service_engineFunctions()->pfnIndexOfEdict(invoker);
 	if (slot < 1 || slot > services_->service_globals()->maxClients || slot > kMaximumClientSlot ||
-		services_->service_engineFunctions()->pfnPEntityOfEntIndex(slot) != invoker)
+		services_->service_engineFunctions()->pfnPEntityOfEntIndex(slot) != invoker || hasNativeWeaponEvents(invoker, slot))
 		return;
 	const float range = gunshotEvents_.range(index, bparam1, bparam2);
 	if (range <= 0)
@@ -502,10 +534,10 @@ void BotObservationRuntime::onPlaybackEvent(
 	services_->behavior_observeEnemyWeaponFire(invoker,
 		{services_->service_lifecycle().mapGeneration(), services_->service_lifecycle().roundGeneration(),
 			services_->service_adapterFrameCount()}, event.timestampSeconds);
-	recordSound(event, invoker);
+	recordSound(event, invoker, true);
 }
 
-void BotObservationRuntime::recordSound(world::AudibleEvent event, const edict_t *source)
+void BotObservationRuntime::recordSound(world::AudibleEvent event, const edict_t *source, bool fallbackWeapon)
 {
 	if (!std::isfinite(event.timestampSeconds) || event.timestampSeconds < 0 || !std::isfinite(event.origin.x) ||
 		!std::isfinite(event.origin.y) || !std::isfinite(event.origin.z))
@@ -535,6 +567,7 @@ void BotObservationRuntime::recordSound(world::AudibleEvent event, const edict_t
 			{
 				event.id = previous.id;
 				previous = event;
+				fallbackWeaponSounds_[event.id % soundEvents_.size()] = fallbackWeapon;
 			}
 			return;
 		}
@@ -548,6 +581,7 @@ void BotObservationRuntime::recordSound(world::AudibleEvent event, const edict_t
 		soundTeams_ = {};
 	}
 	soundEvents_[event.id % soundEvents_.size()] = event;
+	fallbackWeaponSounds_[event.id % soundEvents_.size()] = fallbackWeapon;
 	soundTeams_[event.id % soundEvents_.size()] = event.source.isValid() ? resolvePlayerTeam(source) : 0;
 	notifyCloseFootstep(event, source);
 }
@@ -613,6 +647,11 @@ void BotObservationRuntime::onEmitSoundAt(edict_t *entity, const char *sample, f
 	const int entityIndex = services_->service_engineFunctions()->pfnIndexOfEdict(entity);
 	const bool bombBeep = std::strstr(sample, "c4_beep") != nullptr;
 	const bool footstep = compat::isStandardFootstepSample(sample);
+	const bool weaponSample = std::strncmp(sample, "weapons/", kWeaponSoundPrefixLength) == 0;
+	const bool fallbackWeapon =
+		weaponSample && (entity->v.flags & FL_CLIENT) != 0 && isNativeWeaponEventSample(sample);
+	if (fallbackWeapon && hasNativeWeaponEvents(entity, entityIndex))
+		return;
 	if (std::strstr(sample, "sg_explode") != nullptr && entityIndex > 0 && entity->serialnumber != 0)
 	{
 		const world::EntityKey key{
@@ -621,10 +660,9 @@ void BotObservationRuntime::onEmitSoundAt(edict_t *entity, const char *sample, f
 		smokeObservations_.observe(key, origin, services_->service_globals()->time + kSmokeObservationLifetimeSeconds);
 	}
 	world::AudibleEvent event{};
-	event.kind = bombBeep												  ? world::SoundKind::Objective
-		: footstep						  ? world::SoundKind::Footstep
-		: std::strncmp(sample, "weapons/", kWeaponSoundPrefixLength) == 0 ? world::SoundKind::WeaponFire
-																		  : world::SoundKind::Other;
+	event.kind = bombBeep ? world::SoundKind::Objective
+		: footstep ? world::SoundKind::Footstep
+		: weaponSample ? world::SoundKind::WeaponFire : world::SoundKind::Other;
 	event.origin = origin;
 	event.loudness = volume;
 	event.confidence = {1.0f, 0U};
@@ -652,7 +690,7 @@ void BotObservationRuntime::onEmitSoundAt(edict_t *entity, const char *sample, f
 			{services_->service_lifecycle().mapGeneration(), services_->service_lifecycle().roundGeneration(),
 				services_->service_adapterFrameCount()}, event.timestampSeconds);
 	}
-	recordSound(event, entity);
+	recordSound(event, entity, fallbackWeapon);
 	if (bombBeep && entityIndex > 0)
 	{
 		for (std::size_t index = 0U; index < services_->service_managedBotHandles().size(); ++index)
@@ -1652,6 +1690,7 @@ void BotObservationRuntime::rebindRoundObservations()
 
 void BotObservationRuntime::probeMapProvider()
 {
+	nativeWeaponSources_ = {};
 	optionalObservations_.probeLoadedGameDll();
 	optionalObservations_.connectBlindEvents([](void *context, const void *player, float duration) {
 		auto &observer = *static_cast<BotObservationRuntime *>(context);
@@ -1665,6 +1704,102 @@ void BotObservationRuntime::probeMapProvider()
 			return observer.optionalObservations_.findClientObject(name);
 		});
 	}, this);
+	optionalObservations_.connectWeaponEvents([](void *context, NativeWeaponEvent kind, const void *player) {
+		static_cast<BotObservationRuntime *>(context)->observeGameDllWeapon(kind, player);
+	}, this);
+}
+
+bool BotObservationRuntime::hasNativeWeaponEvents(const edict_t *source, int slot) const
+{
+	if (source->serialnumber < 0 || slot <= 0 || slot > kMaximumClientSlot)
+		return false;
+	const auto &confirmed = nativeWeaponSources_[static_cast<std::size_t>(slot - 1)];
+	return confirmed.serial == source->serialnumber &&
+		confirmed.connection == services_->service_lifecycle().slotGeneration(static_cast<unsigned>(slot)) &&
+		services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility;
+}
+
+void BotObservationRuntime::observeGameDllWeapon(NativeWeaponEvent kind, const void *player)
+{
+	const auto *engine = services_->service_engineFunctions();
+	const auto *globals = services_->service_globals();
+	if (!services_->runtimeIsActive() || !player || !engine || !globals || !engine->pfnPEntityOfEntIndex ||
+		!engine->pfnPvEntPrivateData ||
+		services_->service_compatibilitySurface().configuration().mode != compat::RuntimeMode::Compatibility)
+		return;
+
+	const auto &life = services_->service_lifecycle();
+	const world::FrameIdentity frame{life.mapGeneration(), life.roundGeneration(), services_->service_adapterFrameCount()};
+	const float now = globals->time;
+	if (!frame.isValid() || !std::isfinite(now) || now < 0)
+		return;
+	const auto sameFrame = [&] {
+		return services_->runtimeIsActive() && services_->service_engineFunctions() == engine &&
+			services_->service_globals() == globals && globals->time == now && frame ==
+				world::FrameIdentity{life.mapGeneration(), life.roundGeneration(), services_->service_adapterFrameCount()};
+	};
+	const int maxClients = (std::min)(globals->maxClients, kMaximumClientSlot);
+	for (int slot = 1; slot <= maxClients; ++slot)
+	{
+		auto *source = engine->pfnPEntityOfEntIndex(slot);
+		if (!sameFrame())
+			return;
+		if (!source || source->free || source->serialnumber < 0 || source->v.deadflag != DEAD_NO ||
+			source->v.health <= 0 || (source->v.flags & (FL_CLIENT | FL_DORMANT | FL_SPECTATOR)) != FL_CLIENT)
+			continue;
+		const int serial = source->serialnumber;
+		const auto connection = life.slotGeneration(static_cast<unsigned>(slot));
+		// Compare opaque object identities through the engine. Never read the GameDLL object.
+		const bool matches = engine->pfnPvEntPrivateData(source) == player;
+		if (!sameFrame())
+			return;
+		if (!matches)
+			continue;
+
+		const bool fired = kind == NativeWeaponEvent::Fired;
+		int weapon = 0;
+		bool silenced = false;
+		const bool hasWeapon = services_->readGameDllActiveWeapon(source, weapon, silenced);
+		if (!sameFrame() || source->free || source->serialnumber != serial ||
+			life.slotGeneration(static_cast<unsigned>(slot)) != connection)
+			return;
+
+		// CSBot can start its knife run even when this event makes no audible noise.
+		services_->behavior_observeEnemyWeaponFire(source, frame, now);
+		if (!sameFrame() || source->free || source->serialnumber != serial ||
+			life.slotGeneration(static_cast<unsigned>(slot)) != connection)
+			return;
+		auto &nativeSource = nativeWeaponSources_[static_cast<std::size_t>(slot - 1)];
+		const bool previousNative = hasNativeWeaponEvents(source, slot);
+		const world::ActorKey sourceKey{static_cast<std::uint32_t>(slot), static_cast<std::uint32_t>(serial) + 1U};
+		nativeSource = hasWeapon ? NativeWeaponSource{serial, connection} : NativeWeaponSource{};
+		if (fired && !hasWeapon)
+			return;
+		if (!previousNative)
+		{
+			// Some stock sounds precede OnEvent, including the first dry fire.
+			for (auto &fallback : soundEvents_)
+				if (fallback.id && fallbackWeaponSounds_[fallback.id % soundEvents_.size()] &&
+					fallback.source == sourceKey &&
+					fallback.timestampTick == frame.tick && fallback.timestampSeconds == now)
+					fallback = {};
+		}
+		const float range = nativeWeaponEventRange(kind, weapon, silenced);
+		if (range == 0)
+			return;
+		world::AudibleEvent event{};
+		event.kind = fired ? world::SoundKind::WeaponFire : world::SoundKind::Other;
+		event.priority = fired ? world::NoisePriority::High : world::NoisePriority::Low;
+		event.origin = {source->v.origin.x, source->v.origin.y, source->v.origin.z};
+		event.loudness = 1;
+		event.confidence = {1, 0};
+		event.source = sourceKey;
+		event.distance = event.hearingRange = range;
+		event.timestampTick = frame.tick;
+		event.timestampSeconds = now;
+		recordSound(event, source);
+		return;
+	}
 }
 
 void BotObservationRuntime::observeGameDllBlind(const void *player, float duration,
@@ -1797,6 +1932,7 @@ void BotObservationRuntime::resetMapObjectiveKnowledge()
 
 void BotObservationRuntime::deactivateMapProvider()
 {
+	nativeWeaponSources_ = {};
 	optionalObservations_.reset();
 }
 

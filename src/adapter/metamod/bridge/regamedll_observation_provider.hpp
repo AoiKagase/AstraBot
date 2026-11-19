@@ -2,16 +2,18 @@
 #define ASTRABOT_METAMOD_REGAMEDLL_OBSERVATION_PROVIDER_HPP
 
 #include "astrabot/compat/public_observation.hpp"
+#include <regamedll-5.30/GameEvent.h>
 #include <cstdint>
 
 class CBasePlayer;
+class CBaseEntity;
 class IReGameApi;
 struct ReGameFuncs_t;
 struct entvars_s;
 template<typename Result, typename Entity, typename... Args> class IHookChainClass;
 template<typename Result, typename Entity, typename... Args> class IHookChainRegistryClass;
-template<typename Player, typename... Args> class IVoidHookChainClass;
-template<typename Player, typename... Args> class IVoidHookChainRegistryClass;
+template<typename Result, typename... Args> class IHookChain;
+template<typename Result, typename... Args> class IHookChainRegistry;
 
 namespace astrabot
 {
@@ -26,6 +28,8 @@ enum class ReGameDllProbeStatus
 	MetadataOnly
 };
 
+enum class NativeWeaponEvent { Fired, FiredOnEmpty, Reloaded };
+
 // This provider never dereferences GameDLL player, weapon or gamerules layouts.
 // The negotiated API exposes metadata, but no safe getters for the per-actor
 // private weapon fields in CompatibilityObservation.
@@ -35,6 +39,7 @@ public:
 	using Factory = void *(*)(const char *, int *);
 	using BlindListener = void (*)(void *, const void *, float);
 	using DamageListener = void (*)(void *, const void *, const entvars_s *);
+	using WeaponListener = void (*)(void *, NativeWeaponEvent, const void *);
 	ReGameDllObservationProvider() = default;
 	~ReGameDllObservationProvider() override;
 	ReGameDllObservationProvider(const ReGameDllObservationProvider &) = delete;
@@ -45,7 +50,8 @@ public:
 	void probeLoadedGameDll();
 	bool connectBlindEvents(BlindListener listener, void *context);
 	bool connectDamageEvents(DamageListener listener, void *context);
-	bool dispatchingDamage() const { return damageDispatchDepth_ != 0; }
+	bool connectWeaponEvents(WeaponListener listener, void *context);
+	bool dispatchingEvents() const { return damageDispatchDepth_ != 0 || weaponDispatchDepth_ != 0; }
 	const void *findClientObject(const char *name) const;
 	ReGameDllProbeStatus status() const
 	{
@@ -67,16 +73,21 @@ public:
 	void supplement(compat::CompatibilityObservation *observation) const override;
 
 private:
-	using BlindChain = IVoidHookChainClass<CBasePlayer, float, float, float, int>;
-	using BlindRegistry = IVoidHookChainRegistryClass<CBasePlayer, float, float, float, int>;
+	using BlindChain = IHookChainClass<void, CBasePlayer, float, float, float, int>;
+	using BlindRegistry = IHookChainRegistryClass<void, CBasePlayer, float, float, float, int>;
 	using DamageChain = IHookChainClass<int, CBasePlayer, entvars_s *, entvars_s *, float &, int>;
 	using DamageRegistry = IHookChainRegistryClass<int, CBasePlayer, entvars_s *, entvars_s *, float &, int>;
+	using WeaponChain = IHookChain<void, GameEventType, CBaseEntity *, CBaseEntity *>;
+	using WeaponRegistry = IHookChainRegistry<void, GameEventType, CBaseEntity *, CBaseEntity *>;
 	static void onBlind(BlindChain *chain, CBasePlayer *player, float duration, float hold, float fade, int alpha);
 	static int onDamage(DamageChain *chain, CBasePlayer *player, entvars_s *inflictor, entvars_s *attacker,
 		float &damage, int damageType);
+	static void onWeapon(WeaponChain *chain, GameEventType event, CBaseEntity *source, CBaseEntity *other);
 	static ReGameDllObservationProvider *eventOwner_;
 	static DamageRegistry *deferredDamageRegistry_;
 	static unsigned damageDispatchDepth_;
+	static WeaponRegistry *deferredWeaponRegistry_;
+	static unsigned weaponDispatchDepth_;
 	IReGameApi *api_ = nullptr;
 	const ReGameFuncs_t *functions_ = nullptr;
 	BlindRegistry *blindRegistry_ = nullptr;
@@ -85,6 +96,9 @@ private:
 	DamageRegistry *damageRegistry_ = nullptr;
 	DamageListener damageListener_ = nullptr;
 	void *damageContext_ = nullptr;
+	WeaponRegistry *weaponRegistry_ = nullptr;
+	WeaponListener weaponListener_ = nullptr;
+	void *weaponContext_ = nullptr;
 	std::uint64_t eventRevision_ = 0;
 	ReGameDllProbeStatus status_ = ReGameDllProbeStatus::NotPresent;
 	int major_ = 0;

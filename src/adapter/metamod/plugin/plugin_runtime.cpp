@@ -16,6 +16,7 @@
 #include <vector>
 #include <in_buttons.h>
 #include <entity_state.h>
+#include <weaponinfo.h>
 
 meta_globals_t *gpMetaGlobals = nullptr;
 gamedll_funcs_t *gpGamedllFuncs = nullptr;
@@ -213,7 +214,7 @@ bool PluginRuntime::attach(PLUG_LOADTIME loadTime, META_FUNCTIONS *functionTable
 
 bool PluginRuntime::detach(PLUG_LOADTIME loadTime, PL_UNLOAD_REASON reason)
 {
-	if (movementSounds_.active() || observation_.dispatchingGameDllDamage())
+	if (movementSounds_.active() || observation_.dispatchingGameDllEvents())
 		return false;
 	movementSounds_.reset();
 	hostageUseScopes_.clear();
@@ -1108,6 +1109,43 @@ bool PluginRuntime::observation_activeSniper(
 		return false;
 	return data.m_iId > 0 && data.m_iId < 32 &&
 		(compat::kSniperRifleInventoryMask & (1U << static_cast<unsigned>(data.m_iId))) != 0;
+}
+
+bool PluginRuntime::readGameDllActiveWeapon(edict_t *source, int &weapon, bool &silenced) const
+{
+	const auto *dll = gameDllFunctions_ ? gameDllFunctions_->dllapi_table : nullptr;
+	if (!dll || !dll->pfnUpdateClientData || !source || source->v.iuser1 != 0)
+		return false;
+
+	const auto *globals = globals_;
+	const auto frame = world::FrameIdentity{lifecycle_.mapGeneration(), lifecycle_.roundGeneration(), adapterFrameCount_};
+	const int serial = source->serialnumber;
+	const auto current = [&] {
+		return state_ == State::ActiveMap && globals_ == globals && gameDllFunctions_ &&
+			gameDllFunctions_->dllapi_table == dll && frame ==
+				world::FrameIdentity{lifecycle_.mapGeneration(), lifecycle_.roundGeneration(), adapterFrameCount_} &&
+			!source->free && source->serialnumber == serial && source->v.iuser1 == 0;
+	};
+	clientdata_t data{};
+	dll->pfnUpdateClientData(source, 1, &data);
+	if (!current())
+		return false;
+	weapon = data.m_iId;
+	silenced = false;
+	constexpr int kUsp = 16;
+	constexpr int kM4a1 = 22;
+	if (weapon != kUsp && weapon != kM4a1)
+		return (weapon > 0 && weapon < 32) || weapon == 99; // Shield.
+	if (!dll->pfnGetWeaponData)
+		return false;
+
+	// GetWeaponData writes the full fixed-size client prediction table.
+	weapon_data_t weapons[32]{};
+	if (!dll->pfnGetWeaponData(source, weapons) || !current() || weapons[weapon].m_iId != weapon)
+		return false;
+	const int silencerMask = weapon == kUsp ? (1 << 0) : (1 << 2);
+	silenced = (weapons[weapon].m_iWeaponState & silencerMask) != 0;
+	return true;
 }
 
 void PluginRuntime::reportHostageUse(edict_t *player, world::FrameIdentity frame)

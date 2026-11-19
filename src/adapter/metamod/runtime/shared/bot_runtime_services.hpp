@@ -45,6 +45,7 @@ public:
 	virtual const Service_compatibilitySurface &service_compatibilitySurface() = 0;
 	virtual const Service_engineFunctions &service_engineFunctions() = 0;
 	virtual const Service_globals &service_globals() = 0;
+	virtual bool readGameDllActiveWeapon(edict_t *source, int &weapon, bool &silenced) const = 0;
 	virtual const Service_joinControllers &service_joinControllers() = 0;
 	virtual const Service_lifecycle &service_lifecycle() = 0;
 	virtual const Service_managedBotFullUpdateSequences &service_managedBotFullUpdateSequences() = 0;

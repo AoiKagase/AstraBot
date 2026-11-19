@@ -480,6 +480,7 @@ private:
 		return behavior_.noiseInvestigationWalking(index);
 	}
 	bool observation_activeSniper(world::ActorKey actor, world::FrameIdentity frame, int observerTeam) const override;
+	bool readGameDllActiveWeapon(edict_t *source, int &weapon, bool &silenced) const override;
 	bool observation_readManagedWorldSnapshot(std::size_t index, world::WorldSnapshot *snapshot) const override
 	{
 		return observation_.readManagedWorldSnapshot(index, snapshot);

@@ -28,7 +28,8 @@ public:
 		const std::function<const void *(const char *)> &findClientObject);
 	void observeGameDllDamage(const void *player, const entvars_t *inflictor,
 		const std::function<const void *(const char *)> &findClientObject);
-	bool dispatchingGameDllDamage() const { return optionalObservations_.dispatchingDamage(); }
+	void observeGameDllWeapon(NativeWeaponEvent kind, const void *player);
+	bool dispatchingGameDllEvents() const { return optionalObservations_.dispatchingEvents(); }
 	runtime::MovementPhysicsState captureMovementPhysicsState(
 		const edict_t *entity, bool teamConfirmed, bool managedFakeClient) const;
 	void capturePublicMessage();
@@ -319,9 +320,17 @@ private:
 	ReGameDllObservationProvider optionalObservations_{};
 	std::array<world::AudibleEvent, kMaximumSoundEvents> soundEvents_{};
 	std::array<int, kMaximumSoundEvents> soundTeams_{};
+	std::array<bool, kMaximumSoundEvents> fallbackWeaponSounds_{};
 	std::uint32_t soundSequence_ = 0U;
 	compat::GunshotEventCatalog gunshotEvents_{};
-	void recordSound(world::AudibleEvent event, const edict_t *source);
+	void recordSound(world::AudibleEvent event, const edict_t *source, bool fallbackWeapon = false);
+	bool hasNativeWeaponEvents(const edict_t *source, int slot) const;
+	struct NativeWeaponSource
+	{
+		int serial = -1;
+		std::uint32_t connection = 0;
+	};
+	std::array<NativeWeaponSource, 32> nativeWeaponSources_{};
 	void notifyCloseFootstep(const world::AudibleEvent &event, const edict_t *source);
 	std::array<PublicSmoke, kMaximumPublicSmokeEntities> publicSmokeEntities_{};
 	std::size_t nextSmokeEntity_ = 0U;

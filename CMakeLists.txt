@@ -1004,7 +1004,7 @@ if(ASTRABOT_BUILD_METAMOD)
   # The bundled public API header also includes incomplete GameDLL private
   # headers. Project its exact official interface declaration, not a handwritten
   # vtable. Configuration fails if that declaration changes shape.
-  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/third_party/cssdk/dlls/regamedll_api.h" regame_api_source)
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/third_party/regamedll-5.30/regamedll_api.h" regame_api_source)
   string(REPLACE "\r\n" "\n" regame_api_source "${regame_api_source}")
   string(FIND "${regame_api_source}" "class IReGameApi {" regame_api_begin)
   string(FIND "${regame_api_source}" "#pragma once" regame_license_end)
@@ -1039,7 +1039,7 @@ if(ASTRABOT_BUILD_METAMOD)
   endforeach()
   foreach(regame_enum_source player.h items.h gamerules.h extdef.h)
     file(READ "${CMAKE_CURRENT_SOURCE_DIR}/third_party/cssdk/dlls/${regame_enum_source}" regame_enums)
-    foreach(regame_type PLAYER_ANIM RewardType ItemID ItemRestType ScenarioEventEndRound hash_types_e)
+    foreach(regame_type PLAYER_ANIM TeamName RewardType ItemID ItemRestType ScenarioEventEndRound hash_types_e)
       string(REGEX MATCH "enum ${regame_type}[^{}]*\\{[^{}]*\\};" regame_enum "${regame_enums}")
       if(regame_enum)
         string(APPEND regame_api_types "${regame_enum}\n")
@@ -1053,7 +1053,7 @@ if(ASTRABOT_BUILD_METAMOD)
   endif()
   string(SUBSTRING "${regame_api_source}" ${regame_hooks_begin} ${regame_hooks_length} regame_hooks_and_funcs)
   file(CONFIGURE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/generated/astrabot_regamedll_api_view.hpp"
-    CONTENT "${regame_license}#pragma once\n#include \"hookchains.h\"\nclass Vector;\nclass CBaseEntity;\ntypedef int BOOL;\ntypedef unsigned int string_t;\ntypedef struct edict_s edict_t;\ntypedef struct entvars_s entvars_t;\n${regame_api_types}\n${regame_hooks_and_funcs}\n${regame_api_declaration}\n${regame_api_defines}" @ONLY)
+    CONTENT "${regame_license}#pragma once\n#include \"hookchains.h\"\n#include \"GameEvent.h\"\nclass Vector;\nclass CBaseEntity;\ntypedef int BOOL;\ntypedef unsigned long ULONG;\ntypedef float vec_t;\ntypedef unsigned int string_t;\ntypedef struct edict_s edict_t;\ntypedef struct entvars_s entvars_t;\n${regame_api_types}\n${regame_hooks_and_funcs}\n${regame_api_declaration}\n${regame_api_defines}" @ONLY)
   add_library(astrabot_regamedll_provider STATIC
     src/adapter/metamod/bridge/regamedll_observation_provider.cpp)
   set_target_properties(astrabot_regamedll_provider PROPERTIES POSITION_INDEPENDENT_CODE ON)
@@ -1061,7 +1061,9 @@ if(ASTRABOT_BUILD_METAMOD)
     "${CMAKE_CURRENT_SOURCE_DIR}/include"
     "${CMAKE_CURRENT_BINARY_DIR}/generated"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/adapter/metamod")
-  target_include_directories(astrabot_regamedll_provider SYSTEM PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/third_party/cssdk/dlls")
+  target_include_directories(astrabot_regamedll_provider SYSTEM PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/third_party/cssdk/dlls"
+    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/regamedll-5.30")
+  target_include_directories(astrabot_regamedll_provider SYSTEM PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/third_party")
   target_link_libraries(astrabot_regamedll_provider PUBLIC ${CMAKE_DL_LIBS})
   astrabot_apply_warnings(astrabot_regamedll_provider)
   foreach(runtime_target astrabot_mm astrabot_metamod_hooks astrabot_fake_client_isolation astrabot_compat_actor_command)
@@ -1076,7 +1078,7 @@ if(ASTRABOT_BUILD_METAMOD)
   endforeach()
   if(ASTRABOT_BUILD_TESTS)
     add_executable(astrabot_regamedll_observation_provider tests/regamedll_observation_provider_tests.cpp)
-    string(REGEX MATCHALL "virtual IReGameHookRegistry_[A-Za-z0-9_]+\\* [A-Za-z0-9_]+\\(\\) = 0;"
+    string(REGEX MATCHALL "virtual IReGameHookRegistry_[A-Za-z0-9_]+ ?\\* ?[A-Za-z0-9_]+\\(\\) = 0;"
       regame_registry_methods "${regame_hooks_and_funcs}")
     set(regame_empty_hookchains "")
     foreach(regame_registry_method IN LISTS regame_registry_methods)
@@ -1092,7 +1094,8 @@ if(ASTRABOT_BUILD_METAMOD)
       "${CMAKE_CURRENT_SOURCE_DIR}/include"
       "${CMAKE_CURRENT_BINARY_DIR}/generated"
       "${CMAKE_CURRENT_SOURCE_DIR}/src/adapter/metamod")
-    target_include_directories(astrabot_regamedll_observation_provider SYSTEM PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/third_party/cssdk/dlls")
+    target_include_directories(astrabot_regamedll_observation_provider SYSTEM PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/third_party/cssdk/dlls"
+      "${CMAKE_CURRENT_SOURCE_DIR}/third_party/regamedll-5.30")
     target_link_libraries(astrabot_regamedll_observation_provider PRIVATE astrabot_regamedll_provider astrabot_core)
     astrabot_apply_warnings(astrabot_regamedll_observation_provider)
     add_test(NAME astrabot_regamedll_observation_provider COMMAND astrabot_regamedll_observation_provider)
@@ -1386,6 +1389,7 @@ if(ASTRABOT_BUILD_TESTS AND ASTRABOT_BUILD_METAMOD)
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/src/adapter/metamod
     ${ASTRABOT_METAMOD_INCLUDE_DIRS})
+  target_include_directories(astrabot_runtime_command_scenarios SYSTEM PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/third_party")
   target_link_libraries(astrabot_runtime_command_scenarios PRIVATE astrabot_core)
   astrabot_apply_warnings(astrabot_runtime_command_scenarios)
   add_test(NAME astrabot_runtime_command_scenarios COMMAND astrabot_runtime_command_scenarios)

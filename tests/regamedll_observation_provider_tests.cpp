@@ -35,8 +35,20 @@ public:
 class TestHookchains final : public EmptyReGameHookchains
 {
 public:
+	class WeaponRegistry final : public IReGameHookRegistry_CBotManager_OnEvent
+	{
+	public:
+		hookfunc_t hook = nullptr;
+		void registerHook(hookfunc_t callback, int) override { hook = callback; }
+		void unregisterHook(hookfunc_t callback) override
+		{
+			if (hook == callback)
+				hook = nullptr;
+		}
+	} weapon;
 	TestBlindRegistry blind;
 	TestDamageRegistry damage;
+	IReGameHookRegistry_CBotManager_OnEvent *CBotManager_OnEvent() override { return &weapon; }
 	IReGameHookRegistry_CBasePlayer_Blind *CBasePlayer_Blind() override { return &blind; }
 	IReGameHookRegistry_CBasePlayer_TakeDamage *CBasePlayer_TakeDamage() override { return &damage; }
 };
@@ -123,6 +135,10 @@ public:
 	{
 		return nullptr;
 	}
+	AmmoInfoStruct *GetAmmoInfoEx(AmmoType) override { return nullptr; }
+	AmmoInfoStruct *GetAmmoInfoEx(const char *) override { return nullptr; }
+	bool BGetICSEntity(const char *) const override { return false; }
+	bool BGetIGameRules(const char *) const override { return false; }
 };
 TestApi api;
 int botObject = 0;
@@ -230,6 +246,65 @@ bool testDamageEvents(astrabot::metamod::ReGameDllObservationProvider &provider)
 }
 }
 
+bool testWeaponEvents(astrabot::metamod::ReGameDllObservationProvider &provider)
+{
+	using astrabot::metamod::NativeWeaponEvent;
+	class Chain final : public IReGameHook_CBotManager_OnEvent
+	{
+	public:
+		int count = 0;
+		void callNext(GameEventType, CBaseEntity *, CBaseEntity *) override { ++count; }
+		void callOriginal(GameEventType, CBaseEntity *, CBaseEntity *) override {}
+	} chain;
+	struct Notice { int count = 0; NativeWeaponEvent event{}; const void *source = nullptr; } notice;
+	const auto receive = [](void *context, NativeWeaponEvent kind, const void *source) {
+		auto &event = *static_cast<Notice *>(context);
+		++event.count;
+		event.event = kind;
+		event.source = source;
+	};
+	api.enableHooks = true;
+	api.minor = 3;
+	provider.probe(factory);
+	if (provider.connectWeaponEvents(receive, &notice) || api.hooks.weapon.hook)
+		return false;
+	api.minor = REGAMEDLL_API_VERSION_MINOR;
+	provider.probe(factory);
+	if (!provider.connectWeaponEvents(receive, &notice) || !api.hooks.weapon.hook)
+		return false;
+	auto *source = reinterpret_cast<CBaseEntity *>(&botObject);
+	api.hooks.weapon.hook(&chain, EVENT_WEAPON_RELOADED, source, nullptr);
+	if (notice.count != 1 || notice.event != NativeWeaponEvent::Reloaded || notice.source != source)
+		return false;
+	api.hooks.weapon.hook(&chain, EVENT_WEAPON_FIRED, source, nullptr);
+	if (notice.count != 2 || notice.event != NativeWeaponEvent::Fired)
+		return false;
+	api.hooks.weapon.hook(&chain, EVENT_WEAPON_FIRED_ON_EMPTY, source, nullptr);
+	if (notice.count != 3 || notice.event != NativeWeaponEvent::FiredOnEmpty)
+		return false;
+	api.hooks.weapon.hook(&chain, EVENT_GRENADE_BOUNCED, source, nullptr);
+	api.hooks.weapon.hook(&chain, EVENT_WEAPON_RELOADED, nullptr, nullptr);
+	provider.reset();
+	if (chain.count != 5 || notice.count != 3 || api.hooks.weapon.hook)
+		return false;
+
+	provider.probe(factory);
+	bool remainedRegistered = false;
+	struct ResetNotice
+	{
+		astrabot::metamod::ReGameDllObservationProvider *provider;
+		bool *remainedRegistered;
+	} resetNotice{&provider, &remainedRegistered};
+	if (!provider.connectWeaponEvents([](void *context, NativeWeaponEvent, const void *) {
+			const auto &reset = *static_cast<ResetNotice *>(context);
+			reset.provider->reset();
+			*reset.remainedRegistered = api.hooks.weapon.hook && reset.provider->dispatchingEvents();
+		}, &resetNotice))
+		return false;
+	api.hooks.weapon.hook(&chain, EVENT_WEAPON_RELOADED, source, nullptr);
+	return chain.count == 6 && remainedRegistered && !api.hooks.weapon.hook && !provider.dispatchingEvents();
+}
+
 int main()
 {
 	using namespace astrabot;
@@ -239,6 +314,11 @@ int main()
 		return 11;
 	if (!testDamageEvents(provider))
 		return 12;
+	if (!testWeaponEvents(provider))
+	{
+		std::fputs("native weapon events must subscribe, filter, forward and disconnect\n", stderr);
+		return 13;
+	}
 	compat::CompatibilityObservation observation{};
 	observation.actor = {1U, 9U};
 	observation.frame = {2U, 3U, 10U};
@@ -271,11 +351,11 @@ int main()
 	if (!correctName || provider.status() != ReGameDllProbeStatus::IncompatibleVersion || !unchanged())
 		return 4;
 	api.major = REGAMEDLL_API_VERSION_MAJOR;
-	api.minor = REGAMEDLL_API_VERSION_MINOR - 1;
+	api.minor = 2;
 	provider.probe(factory);
 	if (provider.status() != ReGameDllProbeStatus::IncompatibleVersion || !unchanged())
 		return 5;
-	api.minor = REGAMEDLL_API_VERSION_MINOR;
+	api.minor = 3;
 	provider.probe(factory);
 	if (provider.status() != ReGameDllProbeStatus::MetadataOnly || !unchanged())
 		return 6;
