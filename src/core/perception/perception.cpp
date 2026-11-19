@@ -446,7 +446,11 @@ void PerceptionAssembler::advanceNoise(world::NoiseMemory *noise, const Percepti
 	if (input.hearingTimeSeconds() >= 0)
 	{
 		const float seconds = input.hearingTimeSeconds() - noise->timestampSeconds;
-		if (noise->timestampSeconds < 0 || seconds < 0 || seconds > 20.0f)
+		const bool nativeMemory = input.noisePositionResolver() && noise->navArea != 0;
+		// Native hearing uses zero as its empty timestamp and retains a
+		// localized noise until it is replaced, forgotten, or reset.
+		if (noise->timestampSeconds < 0 || seconds < 0 ||
+			(nativeMemory ? noise->timestampSeconds == 0.0f : seconds > 20.0f))
 		{
 			clearNoise(noise);
 			return;

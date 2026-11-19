@@ -21,7 +21,7 @@ int main()
 	in.noiseTime = 10;
 	in.hasNoise = true;
 	in.reactionSeconds = .25f;
-	in.distance = 300;
+	in.distanceSquared = 300 * 300;
 	in.clearLine = true;
 	in.enemiesRemaining = 3;
 	check(noiseLookKind(in, 0) == NoiseLookKind::Ordinary, "ordinary noise waits exactly for reaction time");
@@ -30,8 +30,10 @@ int main()
 	in.highPriority = true;
 	check(noiseLookKind(in, 0) == NoiseLookKind::Startle,
 		"near clear high-priority noise startles before reaction delay");
-	in.distance = 1000;
-	check(noiseLookKind(in, 0) == NoiseLookKind::None, "1000-unit boundary is not a close dangerous noise");
+	in.distanceSquared = 1000 * 1000;
+	check(noiseLookKind(in, 0) == NoiseLookKind::Startle, "1000-unit boundary is a close dangerous noise");
+	in.distanceSquared = std::nextafter(in.distanceSquared, 2000000.0f);
+	check(noiseLookKind(in, 0) == NoiseLookKind::None, "the first squared distance above the boundary is out of range");
 	in.now = 10.5f;
 	in.highPriority = false;
 	check(noiseLookKind(in, 0) == NoiseLookKind::Ordinary, "freshness includes exactly half a second");
@@ -63,7 +65,7 @@ int main()
 	in.now = 20;
 	in.noiseTime = 20;
 	in.highPriority = true;
-	in.distance = 300;
+	in.distanceSquared = 300 * 300;
 	planner.synchronize(in.actor, in.frame, in.now);
 	ScriptedRandomSource startle({RandomTapeEntry::floatEntry("NoiseLook.StartleInhibit", {1, 7}, timing, 2, 4, 3)});
 	check(planner.request(in, NoiseLookKind::Startle, {300, 0, 36}, startle, timing) && startle.verifyComplete(),

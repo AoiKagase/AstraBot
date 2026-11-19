@@ -196,5 +196,10 @@ int main()
 	i.now += .125f;
 	if (!check(p.evaluate(i, random) == Result::Attend, "profile reaction boundary uses decision time"))
 		return 1;
+	p.reset();
+	i = input();
+	i.noise.timestampSeconds = 79.75f;
+	if (!check(p.evaluate(i, random) == Result::Attend, "a remembered noise older than twenty seconds can be investigated"))
+		return 1;
 	return 0;
 }

@@ -82,5 +82,5 @@ The user requests01 onward in order, each repaired unit committed and locally FF
 |21|音声候補の乱数整合|Engine RNG shuffle近似とnative CRT順の差分|
 |22|Linux combat_policy|既知のweapon/skill/recoil chest閾値失敗|
 |23|全13状態と周辺の現行監査|NAV、戦闘、武器、目的、管理、プロファイル、コマンドの照合箇所と追加差分は [CSBot参照実装との差分監査](CSBOT_SOURCE_AUDIT.md)。状態ごとの残件と実装済みの修正を追跡する。|
-|24|実参照との差分リプレイ|判断／event／RNG消費順の比較|
+|24|実参照との差分リプレイ|[固定版の聴覚リプレイ](TRACE_REPLAY.md) で判断・イベント・乱数順を比較済み。GameDLL全体の取得とコマンド・経路の比較は残件。|
 |25|両OS実機受入れ|C4／視認後Aim／旋回／多人数FPS・lag|

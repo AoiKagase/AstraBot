@@ -132,6 +132,26 @@ int main()
 	if (!check(assembler.consumeNoise(accepted) && !assembler.snapshot().noise().active,
 			"attending consumes accepted noise without inventing identity"))
 		return 1;
+	sound.id = 3;
+	sound.timestampTick = 3;
+	sound.timestampSeconds = 0;
+	before = rng.draws;
+	if (!check(publish(3, &sound) && !belief.noise().active && rng.draws == before + 2,
+			"CSBot time-zero sound still draws its location but does not become active memory"))
+		return 1;
+	sound.id = 4;
+	sound.timestampTick = 4;
+	sound.timestampSeconds = 10.4f;
+	if (!check(publish(4, &sound) && publish(205, nullptr) && belief.noise().active && belief.noise().ready,
+			"CSBot memory retains localized enemy noise past twenty seconds"))
+		return 1;
+	sound.id = 5;
+	sound.timestampTick = 5;
+	sound.timestampSeconds = 10.5f;
+	before = rng.draws;
+	if (!check(publish(206, &sound) && belief.noise().timestampTick == 4 && rng.draws == before,
+			"an old queued receipt cannot create a new localization"))
+		return 1;
 	nav::NavDocument routeDoc;
 	routeDoc.setSourceIdentity({1, 0, 0});
 	auto start = area(1, 0);

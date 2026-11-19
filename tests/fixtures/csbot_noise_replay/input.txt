@@ -1,0 +1,19 @@
+# game time, sound present, source x, priority, investigation draw
+0      1 300 3 0
+1      1 600 2 0
+2      1 700 3 0
+3      1 400 1 0
+4      1 700 1 0
+24.25  0 0   1 0.75
+24.375 0 0   1 0
+24.5   0 0   1 0.5
+24.75  0 0   1 0
+25     1 200 3 0
+25.125 0 0   1 0
+25.25  0 0   1 0
+# L: game time, localized high-priority source x, visibility, look draw
+L 26    1001 1 3
+L 26.25 1000 0 3
+L 26.5  1000 1 3
+L 26.75  800 1 3
+L 29.5   800 1 2.5

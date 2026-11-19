@@ -10,8 +10,8 @@
 | PERCEPT-ENEMY-ACQUIRE | visible hostile scan plus reaction queue | visible hostile contacts only; Full Update-scoped | PARTIAL |
 | PERCEPT-ENEMY-LAST-SEEN | m_lastEnemyPosition / timestamp | actor-generation-scoped MemorySample | IMPLEMENTED_OFFLINE_VERIFIED |
 | PERCEPT-NOISE-HEAR | audible hostile GameEvent path | AudibleEvent with bounded distance/priority | IMPLEMENTED_OFFLINE_VERIFIED |
-| PERCEPT-NOISE-PRIORITY | recent higher-priority or nearer replacement | 3-second replacement window, priority then distance | IMPLEMENTED_OFFLINE_VERIFIED |
-| PERCEPT-NOISE-EXPIRE | ForgetNoise after 20 seconds | configurable bounded retention and reaction delay | IMPLEMENTED_OFFLINE_VERIFIED |
+| PERCEPT-NOISE-PRIORITY | recent replacement requires at least equal priority and a nearer source | strict 3-second replacement window, priority then distance | IMPLEMENTED_OFFLINE_VERIFIED |
+| PERCEPT-NOISE-EXPIRE | timestamp zero is empty. ForgetNoise or lifecycle reset clears memory | localized Compatibility noise persists until replaced, consumed or reset. Other perception modes retain bounded aging. | IMPLEMENTED_OFFLINE_VERIFIED |
 | PERCEPT-EVENT-DEATH | OnEvent(EVENT_PLAYER_DIED) | event mutation downgrades remembered contact | IMPLEMENTED_UNVERIFIED |
 | PERCEPT-EVENT-ROUND | round lifecycle / CSGameState reset | round/map generation and explicit round events clear bounded belief | IMPLEMENTED_UNVERIFIED |
 | PERCEPT-GROUND-TRUTH-LEAK | CSBot only uses recognized information | hidden entity position is scrubbed before Core publication | PASS boundary |

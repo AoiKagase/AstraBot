@@ -28,12 +28,15 @@ position, velocity, and view data are scrubbed before Core publication.
   non-target/drawn-out contacts, requires visible body parts, and orders
   visible threats by distance. UpdateReactionQueue then applies the private
   reaction queue.
-- OnEvent accepts hostile audible events only. A recent noise is replaced only
-  by a higher priority event or an equally prioritized nearer event. Noise
-  position is randomized inside its NAV area by reference RNG and is forgotten
-  after 20 seconds.
+- OnEvent accepts hostile audible events only. Within three seconds a new
+  noise must be at least equal in priority and nearer than the old localized
+  position. The reference draws two location offsets before setting the noise
+  timestamp. Timestamp zero denotes empty memory. A localized Compatibility
+  noise persists until replacement, consumption, or lifecycle reset.
 - IsNoiseHeard has a profile reaction delay. The Core model keeps an explicit
   ready flag so presence of a noise is not confused with usability.
+  Clear high-priority noise can startle the bot before that delay when its
+  squared distance is at or below the square of 1,000 units.
 - Player death, spawn/respawn, round, bomb, radio, and other GameEventType
   paths are distinct from direct entity observation. P06 models the mutation
   boundary without claiming a live public GameEvent feed.

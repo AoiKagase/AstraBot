@@ -19,17 +19,23 @@ struct NoiseLookInput
 {
 	world::ActorKey actor{};
 	world::FrameIdentity frame{};
-	float now = 0, noiseTime = -1, reactionSeconds = 0, distance = 0;
+	float now = 0, noiseTime = -1, reactionSeconds = 0, distanceSquared = 0;
 	bool hasNoise = false, highPriority = false, visibleEnemy = false, hiding = false, clearLine = false;
 	int enemiesRemaining = 0;
 };
+inline bool isNearbyEnemyGunfire(const NoiseLookInput &input)
+{
+	constexpr float kStartleRange = 1000.0f;
+	return input.highPriority && input.distanceSquared >= 0.0f &&
+		input.distanceSquared <= kStartleRange * kStartleRange;
+}
 inline NoiseLookKind noiseLookKind(const NoiseLookInput &input, float inhibitedUntil)
 {
 	if (!input.hasNoise || input.visibleEnemy || !std::isfinite(input.now) || !std::isfinite(input.noiseTime) ||
 		input.noiseTime < 0 || input.now < input.noiseTime || input.now - input.noiseTime > 0.5f ||
 		input.now < inhibitedUntil)
 		return NoiseLookKind::None;
-	if (input.highPriority && input.clearLine && std::isfinite(input.distance) && input.distance < 1000.0f)
+	if (input.clearLine && isNearbyEnemyGunfire(input))
 		return NoiseLookKind::Startle;
 	if (!std::isfinite(input.reactionSeconds) || input.reactionSeconds < 0 ||
 		input.now - input.noiseTime < input.reactionSeconds)

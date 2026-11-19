@@ -78,12 +78,12 @@ void BotBehaviorRuntime::applyNoiseLookCommand(std::size_t index, runtime::BotCo
 			std::hypot(self->v.velocity.x, self->v.velocity.y) < 10.0f;
 		const float dx = noise.position.x - self->v.origin.x, dy = noise.position.y - self->v.origin.y,
 					dz = noise.position.z - self->v.origin.z;
-		input.distance = std::sqrt(dx * dx + dy * dy + dz * dz);
+		input.distanceSquared = dx * dx + dy * dy + dz * dz;
 		const auto engine = services_->service_engineFunctions();
 		const float age = input.now - input.noiseTime;
 		const bool fresh =
 			input.hasNoise && std::isfinite(age) && age >= 0 && age <= 0.5f && !look.inhibited(input.now);
-		if (fresh && ((input.highPriority && input.distance < 1000.0f) || age >= input.reactionSeconds) && engine &&
+		if (fresh && (compat::isNearbyEnemyGunfire(input) || age >= input.reactionSeconds) && engine &&
 			engine->pfnTraceLine)
 		{
 			const world::WorldPosition target{noise.position.x, noise.position.y, noise.position.z + 36.0f};

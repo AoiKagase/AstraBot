@@ -92,8 +92,8 @@ public:
 		const auto &noise = in.noise;
 		if (!noise.active || noise.kind == world::SoundKind::Objective || noise.navArea == 0 || in.navRevision == 0 ||
 			noise.navRevision != in.navRevision || !std::isfinite(noise.timestampSeconds) ||
-			noise.timestampSeconds < 0 || noise.timestampSeconds > in.now ||
-			in.now - noise.timestampSeconds < in.reactionSeconds || in.now - noise.timestampSeconds > 20 ||
+			noise.timestampSeconds <= 0 || noise.timestampSeconds > in.now ||
+			in.now - noise.timestampSeconds < in.reactionSeconds ||
 			!in.allowed || in.visibleEnemy || in.elapsedRound <= 1.25f * safeTime_)
 			return Result::Ignore;
 		if (in.hiding && in.defenseAmbushExpired)

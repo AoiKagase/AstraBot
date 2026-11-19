@@ -4,15 +4,50 @@
 captures and prints a JSON report. Exit codes: **0** equal, **1** differences,
 **2** malformed input or invalid options. Python standard library only.
 
-## Current integration status: open
+## Pinned offline hearing replay
+
+On Linux x86, use a current `astrabot_core` build and a local ReGameDLL-CS
+checkout containing the pinned commit. The runner builds both drivers and
+writes raw and normalized traces, a build and input manifest, and a comparison
+report in a new output directory.
+
+```sh
+rtk proxy cmake --build build/linux-x86-debug --target astrabot_core
+rtk proxy python3 tools/replay_csbot_noise.py \
+  --reference ../ReGameDLL_CS \
+  --core-library build/linux-x86-debug/libastrabot_core.a \
+  --output /tmp/astrabot-csbot-hearing
+```
+
+The runner reads native function bodies and two event-handler fragments directly
+from Git at the pin. It compiles them with `REGAMEDLL_FIXES` and a small host shim
+that supplies a stationary observer, a single flat NAV area, preclassified
+sounds, explicit visibility, and scripted RNG values. The Astra driver calls
+its production perception assembler, NAV projection, investigation planner and
+look planner. Each driver emits the delivered sound inputs, memory snapshots,
+ordered float requests, investigation decisions, noise consumption, and startle
+look decisions with inhibition deadlines. The clock is controlled by the
+fixture. State-machine, command and path fields outside the measured callbacks
+are unknown.
+
+This fixture covers hearing at time zero, the three-second overwrite boundary,
+retention past twenty seconds, quarter-second investigation cadence, and
+startle at 1,000 units with obscured and out-of-range controls. It does not run
+the GameDLL, engine event classification, native NAV search, or an HLDS match.
+The startle excerpt measures the resulting look and inhibition after the
+branch returns, and captures RNG calls at the shared callback boundary.
+Its look inputs are supplied separately from the intake cases. A composed
+time-zero shot and the native startle predicate during the first half-second
+of server time remain outside this comparison.
+
+## Full runtime replay remains open
 
 The semantic record classes come from `docs/TRACE_SCHEMA.md` and
 `docs/parity/TRACE_SCHEMA.md`. Existing RNG, state, observation and timing sinks
 use independent sequences and do not emit one common capture envelope. The
-canonical envelope below is the comparator's input contract; **production
-collector/normalizer wiring for both pinned CSBot and AstraBot is unimplemented**.
-No native reference capture, production RNG replay tape, or live scenario
-acceptance is supplied by this change. Synthetic unit tests exercise comparison
+canonical envelope below is the comparator's input contract. A production
+collector, full native binary capture, production RNG replay tape, and live
+scenario acceptance remain open. Synthetic unit tests exercise comparison
 only and are never golden measured traces. `live_parity_accepted` is always
 false: even an equal file pair requires independent capture provenance and
 scenario acceptance before closing parity.
@@ -106,5 +141,5 @@ python -m unittest discover -s tests -p test_compare_parity_traces.py -v
 
 The tests generate temporary synthetic fixtures covering equal comparison,
 missing/extra/reorder, configuration and identity mismatches, explicit precision,
-malformed inputs and CLI exit codes. Native capture, producer integration,
-reference RNG replay and live behavioral acceptance remain open work.
+malformed inputs and CLI exit codes. Run the pinned fixture separately to
+compare actual native function results with the current Astra build.

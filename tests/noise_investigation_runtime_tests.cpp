@@ -204,17 +204,13 @@ bool testInvestigation(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t 
 	if (!check(
 			belief.noise().active && !investigating(), "safe time hears sound but does not leave task to investigate"))
 		return false;
+	// Safe time can outlast the old twenty-second memory cutoff. The
+	// original receipt must still trigger investigation without a new sound.
 	step(30);
-	// Native ComputePath retains its0.4–0.6s throttle after a previous Hunt attempt.
-	// Make the reaction-delayed receipt eligible after that existing retry window.
-	step(.25f);
-	emit();
-	step(.15f); // Publish a reaction-ready receipt while the old path timer is still pending.
-	step(.3f); // Decide with that receipt after the native path throttle has elapsed.
 	for (int i = 0; i < 6 && !investigating(); ++i)
 		step(.1f);
 	if (!check(
-			investigating() && !belief.noise().active, "eligible heard sound enters investigation and consumes memory"))
+			investigating() && !belief.noise().active, "remembered sound enters investigation after safe time"))
 		return false;
 	if (!check(navigation.behavior_buildManagedObjectiveTarget(0, &target, nullptr) && target.y == 500 && target.z == 0,
 			"consumed sound retains corrected NAV target"))
