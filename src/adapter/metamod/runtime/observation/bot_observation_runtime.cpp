@@ -102,6 +102,18 @@ constexpr int kInactiveWeaponState = 0;
 constexpr int kActiveWeaponState = 1;
 constexpr int kObservationTraceIgnoringActors = 1;
 constexpr int kObservationTraceIncludingActors = 0;
+
+bool isHostageRescueCallSample(const char *sample)
+{
+	constexpr char directory[] = "hostage/hwavect/";
+	constexpr auto directoryLength = sizeof(directory) - 1;
+	if (std::strncmp(sample, directory, directoryLength) != 0)
+		return false;
+	const auto *name = sample + directoryLength;
+	return std::strcmp(name, "helpme1.wav") == 0 || std::strcmp(name, "helpme2.wav") == 0 ||
+		std::strcmp(name, "hey1.wav") == 0 || std::strcmp(name, "hey2.wav") == 0 ||
+		std::strcmp(name, "overhere1.wav") == 0;
+}
 }
 
 void BotObservationRuntime::onMessageBegin(
@@ -644,7 +656,17 @@ void BotObservationRuntime::onEmitSoundAt(edict_t *entity, const char *sample, f
 	{
 		return;
 	}
-	const int entityIndex = services_->service_engineFunctions()->pfnIndexOfEdict(entity);
+	const auto *engine = services_->service_engineFunctions();
+	// REGAMEDLL_FIXES drops the hostage's native call at CCSBot::OnEvent's nonplayer check.
+	// Keep the matching public voice out of bot hearing while the engine emits it normally.
+	if (isHostageRescueCallSample(sample) && entity->v.classname && engine->pfnSzFromIndex &&
+		services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility)
+	{
+		const char *classname = engine->pfnSzFromIndex(entity->v.classname);
+		if (classname && std::strcmp(classname, "hostage_entity") == 0)
+			return;
+	}
+	const int entityIndex = engine->pfnIndexOfEdict(entity);
 	const bool bombBeep = std::strstr(sample, "c4_beep") != nullptr;
 	const bool footstep = compat::isStandardFootstepSample(sample);
 	const bool weaponSample = std::strncmp(sample, "weapons/", kWeaponSoundPrefixLength) == 0;

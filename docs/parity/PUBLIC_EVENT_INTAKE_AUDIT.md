@@ -21,6 +21,12 @@ The optional ReGameDLL provider subscribes to the public API 5.30 `CBotManager_O
 
 Standard GameDLL and servers without the dispatcher keep mapped `PlaybackEvent` and sound intake. `SendWeaponAnim` updates `weaponanim` separately and client prediction can suppress its `SVC_WEAPONANIM` message. These public observations do not establish the standard GameDLL's exact animation stream. The ReGameDLL intake uses confirmed prediction data per player. If that data stops being available, a fallback sample that already arrived can have been suppressed before the native firing callback detects the loss.
 
+## Hostage rescue calls
+
+The pinned reference's default target defines `REGAMEDLL_FIXES`. `HostageChatter` dispatches `EVENT_HOSTAGE_CALLED_FOR_HELP` with the hostage as the source. The dispatcher forwards that entity unchanged. The default arm in `CCSBot::OnEvent` rejects nonplayers before the later CT collection branch, and `CHostage` inherits the false `IsPlayer()` result. The collection branch is reachable only outside these default build semantics. [Build definition](https://github.com/rehlds/ReGameDLL_CS/blob/b0889847fe6d03898be88acc9e366660efb40ab5/regamedll/CMakeLists.txt#L368) [Event receiver](https://github.com/rehlds/ReGameDLL_CS/blob/b0889847fe6d03898be88acc9e366660efb40ab5/regamedll/dlls/bot/cs_bot_event.cpp#L275)
+
+The Compatibility sound adapter excludes the five stock `HOSTAGE_CHATTER_CALL_TO_RESCUER` samples from bot hearing when the emitter is a `hostage_entity`. `CHostage::Spawn` normalizes the map alias `monster_scientist` to that classname. The engine still emits the audio. This keeps a public sound receipt from starting a noise investigation that the reference would skip. [Stock samples and spawn](https://github.com/rehlds/ReGameDLL_CS/blob/b0889847fe6d03898be88acc9e366660efb40ab5/regamedll/dlls/hostage/hostage.cpp#L169)
+
 ## Hostage use and current follow state
 
 The pinned `CHostage::Use` emits `EVENT_HOSTAGE_USED` on an accepted start, including when `CHostageImprov::Chatter` suppresses speech because another hostage is speaking or its timer is still running. `Touched_A_Hostage` covers the initial accepted touch. The existing `PlayerPostThink` scope and qualified follow samples cover audible starts (12A).

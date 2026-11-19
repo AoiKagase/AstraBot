@@ -342,6 +342,38 @@ bool testNativeWeaponEvents(astrabot::metamod::PluginRuntime &runtime, enginefun
 	return check(test(NativeWeaponEvent::Fired, 22, 2000, high), "an unsilenced native M4A1 uses the normal radius");
 }
 
+bool testHostageRescueCall(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &engine)
+{
+	using namespace astrabot;
+	const auto originalStringLookup = engine.pfnSzFromIndex;
+	engine.pfnSzFromIndex = [](int index) { return index == 78 ? "hostage_entity" : szFromIndex(index); };
+	edict_t hostage{};
+	hostage.v.classname = 78;
+	hostage.v.origin = gEntities[0].v.origin + Vector(0, 400, 0);
+	const auto audible = [&](const char *sample) {
+		auto observer = std::make_unique<metamod::BotObservationRuntime>();
+		observer->bindServices(runtime);
+		observer->configureEngine();
+		observer->notifyTeamInfo(1, "CT");
+		observer->onEmitSound(&hostage, sample, 1.0f, 1.0f);
+		world::WorldSnapshot snapshot;
+		metamod::ThreatObservation threats;
+		return observer->collectManagedPerception(0, &snapshot, &threats)
+			? static_cast<int>(snapshot.soundCount())
+			: -1;
+	};
+	bool passed = true;
+	for (const char *sample : {"hostage/hwavect/helpme1.wav", "hostage/hwavect/helpme2.wav", "hostage/hwavect/hey1.wav",
+			 "hostage/hwavect/hey2.wav", "hostage/hwavect/overhere1.wav"})
+		passed = check(audible(sample) == 0, "CSBot rescue call must not become CT investigation noise") && passed;
+	passed = check(audible("hostage/hwavect/custom.wav") == 1, "unrelated samples remain audible") && passed;
+	hostage.v.classname = 1;
+	passed = check(audible("hostage/hwavect/helpme1.wav") == 1, "the same sample from a non-hostage remains audible") &&
+		passed;
+	engine.pfnSzFromIndex = originalStringLookup;
+	return passed;
+}
+
 bool testGunshot(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &engine, globalvars_t &globals)
 {
 	if (!check(loadHearingNav(runtime), "hearing fixture supplies real NAV"))
@@ -513,6 +545,8 @@ bool testGunshot(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &engin
 		return false;
 	}
 	if (!testNativeWeaponEvents(runtime, engine, globals))
+		return false;
+	if (!testHostageRescueCall(runtime, engine))
 		return false;
 	runtime.onServerDeactivate();
 	resetEntities(); // GameDLL destroys the previous map edicts before precaching the next map.
