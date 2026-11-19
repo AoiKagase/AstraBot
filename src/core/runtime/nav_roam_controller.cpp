@@ -299,12 +299,13 @@ nav::NavQueryResult buildCorridor(const nav::NavQuery &query, nav::AreaId start,
 }
 
 nav::NavQueryResult buildCorridor(const nav::NavQuery &query, nav::AreaId start, nav::AreaId goal,
-	nav::NavRouteType routeType, nav::NavCorridor *corridor, nav::NavSearchStats *stats)
+	nav::NavRouteType routeType, nav::NavCorridor *corridor, nav::NavSearchStats *stats, bool closestHunt = false)
 {
 	nav::NavSearchStats sample = {};
-	const nav::NavQueryResult result =
-		query.buildCorridor(start, goal, routeType, corridor, stats == nullptr ? nullptr : &sample);
-	if (stats != nullptr)
+	auto *record = stats == nullptr ? nullptr : &sample;
+	const auto result = closestHunt ? query.buildHuntCorridor(start, goal, corridor, record)
+								   : query.buildCorridor(start, goal, routeType, corridor, record);
+	if (stats != nullptr && sample.searchCalls > 0U)
 	{
 		if (result == nav::NavQueryResult::Found)
 		{
@@ -1444,6 +1445,21 @@ NavRoamController::NavigationPhaseResult NavRoamController::selectUpdateRoute(Na
 	auto *decision = ctx.decision;
 	auto &currentArea = ctx.currentArea;
 	auto &objectiveArea = ctx.objectiveArea;
+	if (timedCompatibility_ && objectiveArea == 0U && routeState().hasActiveRoute && roamGoalState().hasRoamGoal &&
+		roamGoalState().roamGoalArea == currentArea.area && traversalState().locomotion.isActive())
+	{
+		// Hunt checks the requested area's identity before following its path.
+		// A throttled ComputePath leaves the current path available next update.
+		const bool rebuilt = selectRoamRoute(snapshot, currentArea, decision);
+		if (decision != nullptr && (rebuilt || routeState().hasActiveRoute))
+		{
+			populateRouteDecision(decision);
+			decision->stage = NavRoamStage::CorridorReady;
+			decision->failureReason = NavFailureReason::None;
+		}
+		return {true, (rebuilt || routeState().hasActiveRoute) ? NavRoamResult::MovementSuppressed
+															 : NavRoamResult::NoRoute};
+	}
 	if (!traversalState().locomotion.isActive() && !traversalState().jumpDrop.isActive() &&
 		!traversalState().specialTraversal.isActive())
 	{
@@ -2159,6 +2175,9 @@ NavRoamController::NavigationPhaseResult NavRoamController::updateGroundLocomoti
 		return {true, NavRoamResult::IntentReady};
 	case nav::LocomotionResult::TargetReached:
 	{
+		const auto &corridor = routeState().activeCorridor;
+		const bool huntEndpointReached = timedCompatibility_ && !observation.hasObjectiveTarget &&
+			corridor.hasEndpoint && roamGoalState().hasRoamGoal;
 		const bool goalReached = routeState().activeCorridor.hasEndpoint ||
 			(decision != nullptr && decision->goalPresent && decision->goalArea == currentArea.area) ||
 			(roamGoalState().hasRoamGoal && roamGoalState().roamGoalArea == currentArea.area);
@@ -2167,6 +2186,12 @@ NavRoamController::NavigationPhaseResult NavRoamController::updateGroundLocomoti
 			roamGoalState().goalSelectionReason = GoalSelectionReached;
 		}
 		resetRoute(!goalReached);
+		if (huntEndpointReached && selectRoamRoute(snapshot, currentArea, decision))
+		{
+			if (decision != nullptr)
+				decision->stage = NavRoamStage::CorridorReady;
+			return {true, NavRoamResult::MovementSuppressed};
+		}
 		if (decision != nullptr)
 		{
 			decision->stage = goalReached ? NavRoamStage::TargetReached : NavRoamStage::LinkSelection;
@@ -3219,12 +3244,15 @@ bool NavRoamController::selectCompatibilityGoal(const nav::NavSnapshot &snapshot
 	if (timedCompatibility_ &&
 		!beginNativePathAttempt(randomSource_, actor_, lastFrame_.tick, observedAt_, recoveryState().nextPathAttemptAt))
 	{
-		roamGoalState().hasRoamGoal = false;
+		if (!routeState().hasActiveRoute)
+			roamGoalState().hasRoamGoal = false;
 		if (decision != nullptr)
 			decision->failureReason = NavFailureReason::PathSearchFailed;
 		return false;
 	}
-	if (roamGoalState().roamGoalArea == currentArea.area)
+	if (timedCompatibility_ && routeState().hasActiveRoute)
+		resetRoute(false);
+	if (!timedCompatibility_ && roamGoalState().roamGoalArea == currentArea.area)
 	{
 		roamGoalState().hasRoamGoal = false;
 		return false;
@@ -3243,13 +3271,14 @@ bool NavRoamController::selectCompatibilityGoal(const nav::NavSnapshot &snapshot
 	const nav::NavQueryResult corridorResult = hasSelectedCorridor
 		? nav::NavQueryResult::Found
 		: buildCorridor(query, currentArea.area, roamGoalState().roamGoalArea, nav::NavRouteType::Safest, &corridor,
-			  decision == nullptr || !collectPathStats_ ? nullptr : &decision->pathSearchStats);
+			  decision == nullptr || !collectPathStats_ ? nullptr : &decision->pathSearchStats, timedCompatibility_);
 	if (decision != nullptr)
 	{
 		decision->corridorResult = corridorResult;
 		decision->pathResult = corridorResult;
 	}
-	if (corridorResult != nav::NavQueryResult::Found || corridor.areas.size() < kMinimumCorridorAreaCount)
+	if (corridorResult != nav::NavQueryResult::Found ||
+		(corridor.areas.size() < kMinimumCorridorAreaCount && !corridor.hasEndpoint))
 	{
 		roamGoalState().failedRoamGoalArea = roamGoalState().roamGoalArea;
 		roamGoalState().hasRoamGoal = false;
@@ -3263,7 +3292,7 @@ bool NavRoamController::selectCompatibilityGoal(const nav::NavSnapshot &snapshot
 		}
 		return false;
 	}
-	nav::AreaId nextArea = corridor.areas[1U];
+	nav::AreaId nextArea = corridor.areas.size() == 1U ? currentArea.area : corridor.areas[1U];
 	nav::NavDirectedLink link = {currentArea.area, nextArea, 0U, 0U};
 	for (const nav::NavDirectedLink &candidate : links)
 	{
@@ -3273,12 +3302,13 @@ bool NavRoamController::selectCompatibilityGoal(const nav::NavSnapshot &snapshot
 			break;
 		}
 	}
-	if (routeState().hasAvoidedLink && routeState().avoidedLink.fromArea == currentArea.area &&
+	if (!corridor.links.empty() && routeState().hasAvoidedLink && routeState().avoidedLink.fromArea == currentArea.area &&
 		link.fromArea == routeState().avoidedLink.fromArea && link.toArea == routeState().avoidedLink.toArea)
 	{
 		nav::NavCorridor alternativeCorridor = {};
 		const nav::NavQueryResult alternativeResult = query.buildAlternativeCorridor(corridor, routeState().avoidedLink,
-			&alternativeCorridor, decision == nullptr || !collectPathStats_ ? nullptr : &decision->pathSearchStats);
+			&alternativeCorridor, decision == nullptr || !collectPathStats_ ? nullptr : &decision->pathSearchStats,
+			timedCompatibility_ ? roamGoalState().roamGoalArea : 0U);
 		if (alternativeResult != nav::NavQueryResult::Found || alternativeCorridor.links.empty() ||
 			(alternativeCorridor.links.front().fromArea == routeState().avoidedLink.fromArea &&
 				alternativeCorridor.links.front().toArea == routeState().avoidedLink.toArea))
@@ -3314,7 +3344,7 @@ bool NavRoamController::selectCompatibilityGoal(const nav::NavSnapshot &snapshot
 		decision->linkHow = link.how;
 		decision->linkResult = nav::NavQueryResult::Found;
 	}
-	if (modePolicy_.mode() == compat::RuntimeMode::Compatibility)
+	if (modePolicy_.mode() == compat::RuntimeMode::Compatibility && !corridor.hasEndpoint)
 	{
 		corridor.hasEndpoint = true;
 		corridor.endpoint = roamGoalState().roamGoalPosition;

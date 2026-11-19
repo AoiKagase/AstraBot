@@ -170,9 +170,12 @@ public:
 	NavQueryResult buildCorridor(AreaId start, AreaId goal, NavRouteType routeType, NavCorridor *corridor) const;
 	NavQueryResult buildCorridor(
 		AreaId start, AreaId goal, NavRouteType routeType, NavCorridor *corridor, NavSearchStats *stats) const;
+	// Keep the nearest reachable area when a Hunt target cannot be reached.
+	NavQueryResult buildHuntCorridor(
+		AreaId start, AreaId goal, NavCorridor *corridor, NavSearchStats *stats) const;
 
 	NavQueryResult buildAlternativeCorridor(const NavCorridor &currentCorridor, const NavDirectedLink &failedFirstLink,
-		NavCorridor *alternativeCorridor, NavSearchStats *stats = nullptr) const;
+		NavCorridor *alternativeCorridor, NavSearchStats *stats = nullptr, AreaId huntGoal = 0U) const;
 
 private:
 	const NavDocument *document() const;

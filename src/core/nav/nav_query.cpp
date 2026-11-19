@@ -646,7 +646,7 @@ NavQueryResult validateNativeTopology(const NavSnapshot &snapshot, const NavLadd
 NavQueryResult buildAStarCorridor(const NavSnapshot &snapshot, const NavQueryLimits &limits, AreaId start, AreaId goal,
 	NavRouteType routeType, NavCorridor *corridor, NavSearchStats *stats, const NavPathCostContext *context,
 	const NavDirectedLink *excludedLink = nullptr, const NavLadderTopology *ladders = nullptr,
-	bool allowDeadRange = false)
+	bool allowDeadRange = false, bool useClosestArea = false)
 {
 	if (stats != nullptr)
 	{
@@ -797,6 +797,15 @@ NavQueryResult buildAStarCorridor(const NavSnapshot &snapshot, const NavQueryLim
 		recordLookup.reserve((std::min)(limits.maximumSearchQueue, currentDocument->areaCount()));
 		const NavArea *startArea = currentDocument->findArea(start);
 		const NavArea *goalArea = currentDocument->findArea(goal);
+		const auto goalCenter = extentCenterOf(*goalArea);
+		const auto distanceToGoal = [&goalCenter](const NavArea &area)
+		{
+			const auto center = extentCenterOf(area);
+			const float dx = center.x - goalCenter.x, dy = center.y - goalCenter.y, dz = center.z - goalCenter.z;
+			return std::sqrt(dx * dx + dy * dy + dz * dz);
+		};
+		AreaId closestArea = start;
+		float closestDistance = useClosestArea ? distanceToGoal(*startArea) : 0.0f;
 		const float initialHeuristic = distanceBetween(*startArea, *goalArea);
 		const auto startState = areaState(start);
 		const float initialCost =
@@ -877,6 +886,17 @@ NavQueryResult buildAStarCorridor(const NavSnapshot &snapshot, const NavQueryLim
 					return NavQueryResult::Found;
 				const float tentativeCost = records[currentRecordIndex].costSoFar + edgeCost;
 				std::size_t targetRecordIndex = findRecord(records, target);
+				if (targetRecordIndex != records.size() && tentativeCost >= records[targetRecordIndex].costSoFar)
+					return NavQueryResult::Found;
+				if (useClosestArea)
+				{
+					const float distance = distanceToGoal(*targetArea);
+					if (distance < closestDistance)
+					{
+						closestArea = target;
+						closestDistance = distance;
+					}
+				}
 				if (targetRecordIndex == records.size())
 				{
 					if (records.size() >= limits.maximumSearchQueue)
@@ -897,10 +917,6 @@ NavQueryResult buildAStarCorridor(const NavSnapshot &snapshot, const NavQueryLim
 				}
 
 				AStarRecord &targetRecord = records[targetRecordIndex];
-				if (tentativeCost >= targetRecord.costSoFar)
-				{
-					return NavQueryResult::Found;
-				}
 				targetRecord.parent = current;
 				targetRecord.parentLink = {current, target, direction, how};
 				targetRecord.parentLadder = ladderIndex;
@@ -961,14 +977,15 @@ NavQueryResult buildAStarCorridor(const NavSnapshot &snapshot, const NavQueryLim
 			}
 		}
 
-		const std::size_t goalRecordIndex = findRecord(records, goal);
+		const AreaId endpointArea = useClosestArea && findRecord(records, goal) == records.size() ? closestArea : goal;
+		const std::size_t goalRecordIndex = findRecord(records, endpointArea);
 		if (goalRecordIndex == records.size())
 		{
 			return NavQueryResult::NoRoute;
 		}
 		std::vector<AreaId> reversed;
 		reversed.reserve(records.size());
-		AreaId current = goal;
+		AreaId current = endpointArea;
 		while (current != 0U)
 		{
 			reversed.push_back(current);
@@ -1092,8 +1109,98 @@ NavQueryResult NavQuery::buildCorridor(
 		snapshot_, limits_, start, goal, routeType, corridor, stats, hasCostContext_ ? &costContext_ : nullptr);
 }
 
+namespace
+{
+void setHuntFallbackEndpoint(const NavDocument &document, AreaId goal, NavCorridor &corridor)
+{
+	const auto *doc = &document;
+	const auto *destination = doc->findArea(corridor.areas.back());
+	auto endpoint = centerOf(*doc->findArea(goal));
+	if (!corridor.links.empty())
+	{
+		const auto onEdge = [doc](const NavArea &area, unsigned direction)
+		{
+			for (const auto id : area.connections[direction])
+			{
+				const auto &reverse = doc->findArea(id)->connections[(direction + 2) % 4];
+				if (std::find(reverse.begin(), reverse.end(), area.id) != reverse.end())
+					return false;
+			}
+			return true;
+		};
+		const auto portalCoordinate = [](float value, float fromLo, float fromHi, float toLo, float toHi,
+										 bool lowEdge, bool highEdge)
+		{
+			constexpr float margin = 12.5f;
+			const float low = (std::min)(fromHi, (std::max)(fromLo, toLo)) + (lowEdge ? margin : 0.0f);
+			const float high = (std::max)(fromLo, (std::min)(fromHi, toHi)) - (highEdge ? margin : 0.0f);
+			return value < low ? low : (std::min)(value, high);
+		};
+		auto portal = extentCenterOf(*doc->findArea(corridor.areas.front()));
+		for (const auto &link : corridor.links)
+		{
+			const auto &from = *doc->findArea(link.fromArea);
+			const auto &to = *doc->findArea(link.toArea);
+			const bool northSouth = link.direction == kNorthDirection || link.direction == kSouthDirection;
+			const bool reverse = std::any_of(to.connections.begin(), to.connections.end(),
+				[&](const std::vector<AreaId> &neighbors)
+				{ return std::find(neighbors.begin(), neighbors.end(), from.id) != neighbors.end(); });
+			// Native ground waypoints step five units inside the portal. A one-way
+			// descent adds two 25-unit offsets before the following portal is built.
+			const float step = reverse ? 5.0f : 55.0f;
+			if (northSouth)
+			{
+				portal.x = portalCoordinate(portal.x, from.extent.lo.x, from.extent.hi.x, to.extent.lo.x, to.extent.hi.x,
+					onEdge(to, kWestDirection), onEdge(to, kEastDirection));
+				portal.y = link.direction == kNorthDirection ? from.extent.lo.y - step : from.extent.hi.y + step;
+			}
+			else
+			{
+				portal.y = portalCoordinate(portal.y, from.extent.lo.y, from.extent.hi.y, to.extent.lo.y, to.extent.hi.y,
+					onEdge(to, kNorthDirection), onEdge(to, kSouthDirection));
+				portal.x = link.direction == kWestDirection ? from.extent.lo.x - step : from.extent.hi.x + step;
+			}
+		}
+		endpoint = extentCenterOf(*destination);
+		const auto direction = corridor.links.back().direction;
+		if (direction == kNorthDirection || direction == kSouthDirection)
+			endpoint.x = portal.x;
+		else
+			endpoint.y = portal.y;
+	}
+	corridor.hasEndpoint = true;
+	corridor.endpoint = {endpoint.x, endpoint.y, surfaceZAtInternal(*destination, endpoint.x, endpoint.y)};
+}
+}
+
+NavQueryResult NavQuery::buildHuntCorridor(AreaId start, AreaId goal, NavCorridor *corridor, NavSearchStats *stats) const
+{
+	const auto *doc = document();
+	const auto *source = doc == nullptr ? nullptr : doc->findArea(start);
+	if (corridor != nullptr && start == goal && source != nullptr)
+	{
+		if (stats != nullptr)
+			*stats = {};
+		*corridor = {};
+		corridor->navRevision = snapshot_.revision();
+		corridor->mapGeneration = snapshot_.mapGeneration();
+		corridor->routeType = NavRouteType::Safest;
+		corridor->areas = {start};
+		corridor->hasEndpoint = true;
+		corridor->endpoint = centerOf(*source);
+		return NavQueryResult::Found;
+	}
+	const auto result = buildAStarCorridor(snapshot_, limits_, start, goal, NavRouteType::Safest, corridor, stats,
+		hasCostContext_ ? &costContext_ : nullptr, nullptr, nullptr, false, true);
+	if (result != NavQueryResult::Found || corridor->areas.back() == goal)
+		return result;
+
+	setHuntFallbackEndpoint(*doc, goal, *corridor);
+	return result;
+}
+
 NavQueryResult NavQuery::buildAlternativeCorridor(const NavCorridor &currentCorridor,
-	const NavDirectedLink &failedFirstLink, NavCorridor *alternativeCorridor, NavSearchStats *stats) const
+	const NavDirectedLink &failedFirstLink, NavCorridor *alternativeCorridor, NavSearchStats *stats, AreaId huntGoal) const
 {
 	if (alternativeCorridor == nullptr || alternativeCorridor == &currentCorridor || !snapshot_.isValid() ||
 		!currentCorridor.isValid() || currentCorridor.areas.size() < kMinimumCorridorAreaCount ||
@@ -1120,6 +1227,8 @@ NavQueryResult NavQuery::buildAlternativeCorridor(const NavCorridor &currentCorr
 	{
 		alternativeCorridor->hasEndpoint = currentCorridor.hasEndpoint;
 		alternativeCorridor->endpoint = currentCorridor.endpoint;
+		if (huntGoal != 0U && huntGoal != alternativeCorridor->areas.back() && document()->findArea(huntGoal))
+			setHuntFallbackEndpoint(*document(), huntGoal, *alternativeCorridor);
 	}
 	return result;
 }

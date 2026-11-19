@@ -1166,6 +1166,7 @@ NavigationUpdate BotNavigationRuntime::updateNavigation(std::size_t index, const
 		(navigationState == compat::CompatibilityStateId::DefuseBomb ||
 			navigationState == compat::CompatibilityStateId::PlantBomb ||
 			navigationState == compat::CompatibilityStateId::Buy ||
+			(navigationState == compat::CompatibilityStateId::Idle && !observation.hasObjectiveTarget) ||
 			(navigationState == compat::CompatibilityStateId::Hide &&
 				services_->behavior_scenarioDecisions(index).action == compat::ScenarioAction::Guard &&
 				services_->behavior_scenarioDecisions(index).hasTarget &&

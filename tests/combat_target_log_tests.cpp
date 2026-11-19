@@ -487,6 +487,7 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 	{
 		// Keep the intended encounter pose while the bot reacquires its target.
 		gEntities[0].v.origin = Vector(80, 32, 36);
+		gEntities[0].v.v_angle = gEntities[0].v.angles = Vector(0, 0, 0);
 		stepRifle(30);
 	}
 	if (!check(state.attackOverlayActive(), "empty-magazine fixture first reacquires the live enemy"))
@@ -512,8 +513,12 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 	gEntities[0].v.origin = Vector(80, 32, 36);
 	gEntities[1].v.health = 100;
 	gEntities[1].v.deadflag = DEAD_NO;
-	for (unsigned frame = 0; frame < 12U; ++frame)
+	for (unsigned frame = 0; frame < 12U && !state.attackOverlayActive(); ++frame)
+	{
+		gEntities[0].v.origin = Vector(80, 32, 36);
+		gEntities[0].v.v_angle = gEntities[0].v.angles = Vector(0, 0, 0);
 		stepRifle(30);
+	}
 	if (!check(state.attackOverlayActive(), "lost-contact fixture begins with a visible enemy in an active attack"))
 		return false;
 	coverBlocksEnemySight = true;

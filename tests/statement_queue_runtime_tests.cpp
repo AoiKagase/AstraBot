@@ -1210,6 +1210,10 @@ bool testActualHelpMovement(astrabot::metamod::PluginRuntime &runtime, enginefun
 	queueSamples.clear();
 	queueHelpSamples.clear();
 	queueHelpMoves.clear();
+	// The encounter starts with the sender facing the enemies to the east.
+	// Warm-up Hunt updates can have turned either bot before sight is enabled.
+	gEntities[0].v.v_angle = gEntities[0].v.angles = Vector(0, 0, 0);
+	gEntities[1].v.v_angle = gEntities[1].v.angles = Vector(0, 180, 0);
 	queueEnemiesVisible = true;
 	bool moved = false;
 	for (unsigned i = 0; i < 32; ++i)
@@ -1572,8 +1576,9 @@ bool testActualLadderHelpMovement(
 			"real ladder recipient is joined and has completed native Buy before receiving Help"))
 		return false;
 	gEntities[0].v.origin = Vector(320, -80, 936);
+	gEntities[0].v.v_angle = gEntities[0].v.angles = Vector(0, 0, 0);
 	gEntities[1].v.origin = Vector(0, 100, 36);
-	gEntities[1].v.v_angle = Vector(0, -90, 0);
+	gEntities[1].v.v_angle = gEntities[1].v.angles = Vector(0, -90, 0);
 	queueSamples.clear();
 	queueHelpSamples.clear();
 	queueHelpMoves.clear();

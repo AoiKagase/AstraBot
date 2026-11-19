@@ -92,8 +92,28 @@ before its first zone notification during the scheduled restart. The fix holds
 Buy while the notification is missing and the restart is pending. It uses any
 known zone result and still requires an observed buy zone for purchase commands.
 In the follow-up live run the first Hunt decision moved from before
-`Round_Start` to after it. Same-area and closest-area fallback and full-match
-RNG and movement-command equality remain open.
+`Round_Start` to after it. Full-match RNG and movement-command equality
+remain open.
+
+## Linux x86 Hunt ground routes
+
+The controlled ReHLDS replay used `de_dust2`, identical CT spawn coordinates,
+and a small separate NAV fixture in each isolated instance. Diagnostic builds
+used the pinned CSBot GameDLL and kept each Hunt random call while injecting
+the selected index. The fixture fixes the requested area for each case.
+
+| Case | Requested area | Ground route and endpoint on both builds |
+| --- | --- | --- |
+| Same area | 5 | Area 5, `(437.5, 2412.5, -128)` |
+| Disconnected goal | 7 | Areas 5 → 6, `(437.5, 2200, -128)` |
+
+After selecting area 5, Hunt selected area 7 on the next update while
+`ComputePath` was throttled. Both bots retained and followed the existing
+same-area route after the second selection. In the disconnected case, ground
+A* retained the closest reachable area and aligned the endpoint with the
+last portal. Both fixed scenarios produced movement on the retained path.
+The replay covers ground routes. Hunt ladder reachability and world-height
+sampling for a projected endpoint remain outside this replay.
 
 ## Windows x86 round opening Buy
 
