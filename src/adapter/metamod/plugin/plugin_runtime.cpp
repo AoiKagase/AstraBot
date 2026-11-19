@@ -1712,7 +1712,7 @@ void PluginRuntime::updateManagedBots()
 		}
 		if (commandResetDue)
 		{
-			command_.resetManagedBotCommandTemplate(index);
+			command_.resetManagedBotCommandInputs(index);
 		}
 		if (!fullUpdateDue)
 		{

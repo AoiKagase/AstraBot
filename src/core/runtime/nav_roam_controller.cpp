@@ -3570,6 +3570,8 @@ void NavRoamController::populateRouteDecision(NavRoamDecision *decision) const
 	decision->targetPosition = routeState().activeTargetPosition;
 	decision->corridorAreaCount = routeState().activeCorridor.areas.size();
 	decision->corridorIndex = routeState().activeCorridorIndex;
+	decision->huntEndpointSteering = routeState().activeCorridor.huntEndpointSteering;
+	decision->huntEndpoint = routeState().activeCorridor.endpoint;
 	decision->linkFromArea = routeState().activeLink.fromArea;
 	decision->linkToArea = routeState().activeLink.toArea;
 	decision->linkDirection = routeState().activeLink.direction;

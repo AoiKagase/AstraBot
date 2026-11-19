@@ -1357,6 +1357,16 @@
   {
     "header": "src/adapter/metamod/runtime/command/bot_command_runtime.hpp",
     "scope": "ActorState",
+    "member": "huntLookSpring"
+  },
+  {
+    "header": "src/adapter/metamod/runtime/command/bot_command_runtime.hpp",
+    "scope": "ActorState",
+    "member": "huntLookYaw"
+  },
+  {
+    "header": "src/adapter/metamod/runtime/command/bot_command_runtime.hpp",
+    "scope": "ActorState",
     "member": "nativeLadderJump"
   },
   {

@@ -123,6 +123,10 @@ bool testWorldMovementProjectionIgnoresAimTarget()
 	if (!check(fixed.forward == 180.0f && fixed.side == -180.0f,
 			"Compatibility movement uses reference directional inputs, not continuous projection"))
 		return false;
+	const auto atLookupBoundary = ActionAdapter::projectMovement(0.0f, 1.0f, 100.0f, 15.0f, true);
+	if (!check(atLookupBoundary.forward == 0.0f && atLookupBoundary.side == -100.0f,
+			"CSBot's quantized sine keeps this direction below the forward threshold"))
+		return false;
 	const auto forward = ActionAdapter::projectMovement(1.0f, 0.0f, 100.0f, 90.0f);
 	const auto left = ActionAdapter::projectMovement(0.0f, 1.0f, 100.0f, 0.0f);
 	return check(std::fabs(forward.forward) < 0.01f && std::fabs(forward.side - 100.0f) < 0.01f,

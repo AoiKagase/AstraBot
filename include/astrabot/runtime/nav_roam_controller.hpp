@@ -192,6 +192,8 @@ struct NavRoamDecision
 	nav::AreaId linkToArea;
 	std::uint8_t linkDirection;
 	std::uint8_t linkHow;
+	bool huntEndpointSteering = false;
+	nav::NavVector huntEndpoint{};
 };
 
 class NavAreaVisitHistory

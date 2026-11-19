@@ -121,6 +121,52 @@ int main()
 	if (!check(services.lastForward == 96 && services.lastSide == -96,
 			"combat upkeep changes ladder view without rotating native local movement fractions"))
 		return 1;
+
+	const auto token = services.lifecycle.tokenForSlot(1);
+	compat::StateUpdateContext context{};
+	context.actor = {handle.actor.slot, handle.actor.actorGeneration};
+	context.frame = {1U, 1U, 1U};
+	context.timestamp = services.globals.time;
+	context.fullUpdateSequence = 1U;
+	context.fullUpdate = true;
+	services.stateMachine = compat::CompatibilityStateMachine(context.actor);
+	if (!check(services.stateMachine.initialize(context) == compat::StateResult::Transitioned &&
+			services.stateMachine.transition(compat::CompatibilityStateId::Hunt, compat::StateTransitionReason::ExplicitRequest,
+				compat::StateTransitionId::ExplicitStateChange, context) == compat::StateResult::Transitioned,
+			"set up the Hunt command scenario"))
+		return 1;
+	handle.entity->v.flags |= FL_ONGROUND;
+	handle.entity->v.movetype = MOVETYPE_WALK;
+	handle.entity->v.v_angle = Vector(0, 0, 0);
+	NavigationUpdate endpoint{};
+	endpoint.roamDecision.huntEndpointSteering = true;
+	endpoint.roamDecision.corridorAreaCount = 1;
+	endpoint.roamDecision.huntEndpoint = {handle.entity->v.origin.x, -100.0f, 0.0f};
+	endpoint.locomotionIntent.direction = {0.0f, -1.0f, 0.0f};
+	endpoint.locomotionIntent.speed = 240.0f;
+	const auto updateHunt = [&]()
+	{
+		command.resetManagedBotCommandInputs(0U);
+		before = services.observation_captureMovementPhysicsState(handle.entity, true, true);
+		const auto draft = command.beginMovementCommand(0U, handle, token, before, endpoint);
+		const ActionProposal action{ActionKind::None, draft.command.viewAngles, 0U};
+		command.finishMovementCommand(0U, handle, token, before, endpoint, draft, action);
+	};
+	updateHunt();
+	if (!check(services.lastYaw == 0.0f && services.lastForward == 0.0f && services.lastSide == 96.0f,
+			"the first Hunt command steps right at walk speed using the observed view"))
+		return 1;
+	services.globals.time += runtime::BotTimingScheduler::kCommandInterval;
+	command.executeManagedBotCommand(0U, handle);
+	const float upkeepYaw = services.lastYaw;
+	if (!check(upkeepYaw < 0.0f && services.lastForward == 0.0f && services.lastSide == 96.0f,
+			"Hunt upkeep turns while holding both movement axes"))
+		return 1;
+	services.globals.time += runtime::BotTimingScheduler::kCommandInterval;
+	updateHunt();
+	if (!check(services.lastYaw < upkeepYaw * 2.0f,
+			"the next full Hunt decision preserves angular velocity and uses its updated view"))
+		return 1;
 	std::puts("runtime command orchestration scenarios: PASS");
 	return 0;
 }

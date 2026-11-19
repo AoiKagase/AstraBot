@@ -2,6 +2,7 @@
 
 #include <cctype>
 #include <cmath>
+#include <array>
 
 namespace astrabot
 {
@@ -154,6 +155,25 @@ ActionKind ActionAdapter::plantActionForWeaponObservation(
 	return attackAlreadyDispatched ? ActionKind::PlantContinue : ActionKind::Plant;
 }
 
+float ActionAdapter::csBotCosine(float angle)
+{
+	static constexpr std::size_t tableSize = 256;
+	constexpr float fullTurn = 360.0f;
+	static const auto table = []
+	{
+		std::array<float, tableSize> samples{};
+		for (std::size_t i = 0; i < samples.size(); ++i)
+			samples[i] = std::cos(static_cast<float>(6.283185307179586 * i / (tableSize - 1)));
+		return samples;
+	}();
+	if (!std::isfinite(angle))
+		return 0.0f;
+	float wrapped = std::fmod(angle, fullTurn);
+	if (wrapped < 0.0f)
+		wrapped += fullTurn;
+	return table[static_cast<std::size_t>(wrapped * ((tableSize - 1) / fullTurn))];
+}
+
 MovementProjection ActionAdapter::projectMovement(
 	float worldDirectionX, float worldDirectionY, float speed, float viewYaw, bool compatibility)
 {
@@ -164,8 +184,8 @@ MovementProjection ActionAdapter::projectMovement(
 	}
 	constexpr float kDegreesToRadians = 0.01745329251994329577f;
 	const float yaw = viewYaw * kDegreesToRadians;
-	const float forwardX = std::cos(yaw);
-	const float forwardY = std::sin(yaw);
+	const float forwardX = compatibility ? csBotCosine(viewYaw) : std::cos(yaw);
+	const float forwardY = compatibility ? csBotCosine(viewYaw - 90.0f) : std::sin(yaw);
 	const float rightX = -forwardY;
 	const float rightY = forwardX;
 	if (compatibility)

@@ -1,6 +1,7 @@
 #ifndef ASTRABOT_ADAPTER_BOT_COMMAND_RUNTIME_HPP
 #define ASTRABOT_ADAPTER_BOT_COMMAND_RUNTIME_HPP
 #include "runtime/shared/bot_runtime_services.hpp"
+#include "astrabot/compat/combat_behavior.hpp"
 #include <limits>
 namespace astrabot
 {
@@ -25,13 +26,15 @@ public:
 		std::size_t index, FakeClientHandle &handle, std::uint8_t milliseconds);
 	runtime::CommandReceipt finishDirectNeutralCommand(std::size_t index, FakeClientHandle &handle,
 		std::uint8_t milliseconds, MovementCommandDraft draft, const ActionProposal &requestedAction);
-	runtime::CommandReceipt executeManagedBotCommand(std::size_t index, FakeClientHandle &handle);
+	runtime::CommandReceipt executeManagedBotCommand(
+		std::size_t index, FakeClientHandle &handle, bool huntLookAdvanced = false);
 	void onTouch(edict_t *entity, edict_t *other);
 	MovementCommandDraft beginNeutralCommand(
 		std::size_t index, FakeClientHandle &handle, const runtime::MovementPhysicsState &before);
 	void finishNeutralCommand(std::size_t index, FakeClientHandle &handle, const runtime::MovementPhysicsState &before,
 		MovementCommandDraft draft, const ActionProposal &requestedAction);
 	void resetManagedBotCommandTemplate(std::size_t index);
+	void resetManagedBotCommandInputs(std::size_t index);
 	const std::uint32_t &managedBotCommandSequences(std::size_t index) const
 	{
 		return actors_[index].managedBotCommandSequences;
@@ -113,7 +116,15 @@ private:
 		bool managedBotActionStopsMovement{};
 		bool nativeLadderControl{};
 		bool nativeLadderJump{};
+		compat::AimSpringState huntLookSpring{};
+		float huntLookYaw = std::numeric_limits<float>::quiet_NaN();
 		float movementGateDiagnosticTimes = std::numeric_limits<float>::quiet_NaN();
+
+		void resetHuntLook()
+		{
+			huntLookYaw = std::numeric_limits<float>::quiet_NaN();
+			huntLookSpring = {};
+		}
 	};
 	std::array<ActorState, NativeBotObservation::kClientSlotCount> actors_{};
 	BotCommandServices *services_ = nullptr;

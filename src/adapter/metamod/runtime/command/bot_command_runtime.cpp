@@ -14,6 +14,15 @@ constexpr float kMovementGateLogIntervalSeconds = 1.0f;
 constexpr float kMinimumUsableMaxSpeed = 1.0f;
 constexpr auto kFreezeDiagnosticFrameInterval = 6U;
 constexpr auto kMaximumMovementDiagnosticSamples = 4U;
+
+runtime::ViewAngles stepHuntLook(const edict_t &entity, float desiredYaw, float now, compat::AimSpringState &spring)
+{
+	const auto &angles = entity.v.v_angle;
+	const auto look = compat::trackAim(angles.y, angles.x, desiredYaw + 2.0f * ActionAdapter::csBotCosine(33.0f * now),
+		2.0f * ActionAdapter::csBotCosine(13.0f * now - 90.0f), runtime::BotTimingScheduler::kCommandInterval, 1.0f,
+		&spring, false);
+	return {look.pitch, look.yaw, 0.0f};
+}
 }
 
 void BotCommandRuntime::applyCombatUpkeep(std::size_t index, const CombatUpkeepUpdate &update)
@@ -23,6 +32,7 @@ void BotCommandRuntime::applyCombatUpkeep(std::size_t index, const CombatUpkeepU
 	auto &command = actors_[index].managedBotCommandTemplates;
 	if (update.hasAim)
 	{
+		actors_[index].resetHuntLook();
 		if (!update.movementRelativeToAim && !actors_[index].nativeLadderControl)
 		{
 			const auto movement = ActionAdapter::reprojectMovement(
@@ -256,6 +266,13 @@ bool BotCommandRuntime::dispatchManagedActionCommand(
 
 void BotCommandRuntime::resetManagedBotCommandTemplate(std::size_t index)
 {
+	resetManagedBotCommandInputs(index);
+	if (index < NativeBotObservation::kClientSlotCount)
+		actors_[index].resetHuntLook();
+}
+
+void BotCommandRuntime::resetManagedBotCommandInputs(std::size_t index)
+{
 	if (index >= NativeBotObservation::kClientSlotCount)
 	{
 		return;
@@ -296,6 +313,7 @@ void BotCommandRuntime::finishNeutralCommand(std::size_t index, FakeClientHandle
 	runtime::BotCommand command = draft.command;
 	actors_[index].nativeLadderControl = false;
 	actors_[index].nativeLadderJump = false;
+	actors_[index].resetHuntLook();
 	const ActionProposal actionProposal = ActionAdapter::forLiveDispatch(
 		requestedAction, services_->observation_hasObservedActiveWeapon(index), command.viewAngles);
 	const ActionDispatch actionDispatch = ActionAdapter::translate(actionProposal);
@@ -312,7 +330,8 @@ void BotCommandRuntime::finishNeutralCommand(std::size_t index, FakeClientHandle
 	actors_[index].managedBotActionStopsMovement = actionDispatch.stopMovement;
 }
 
-runtime::CommandReceipt BotCommandRuntime::executeManagedBotCommand(std::size_t index, FakeClientHandle &handle)
+runtime::CommandReceipt BotCommandRuntime::executeManagedBotCommand(
+	std::size_t index, FakeClientHandle &handle, bool huntLookAdvanced)
 {
 	RuntimeProfilerScope profilerScope(services_->service_runtimeProfiler(), RuntimeProfilerStage::MovementDispatch);
 	runtime::CommandReceipt receipt = {
@@ -358,13 +377,23 @@ runtime::CommandReceipt BotCommandRuntime::executeManagedBotCommand(std::size_t 
 		return receipt;
 	}
 	command.movement.msec = services_->consumeCommandMsec(index, services_->service_globals()->time);
+	auto &actor = actors_[index];
+	const bool explicitFrozen = (handle.entity->v.flags & FL_FROZEN) != 0;
+	const bool roundFreeze = services_->roundFreezeActive();
+	const auto &machine = services_->behavior_managedBotStateMachines(index);
+	if (!huntLookAdvanced && !explicitFrozen && !roundFreeze && std::isfinite(actor.huntLookYaw) &&
+		machine.state() == compat::CompatibilityStateId::Hunt && !machine.attackOverlayActive())
+	{
+		// CSBot's upkeep turns the view while keeping the axes from the last full decision.
+		command.viewAngles = stepHuntLook(
+			*handle.entity, actor.huntLookYaw, services_->service_globals()->time, actor.huntLookSpring);
+		command.synchronizeCombatView = true;
+	}
 	if (!actors_[index].nativeLadderControl)
 		services_->behavior_applyNoiseLookCommand(index, command);
 	services_->behavior_applyNativeLadderLookCommand(index, command, actors_[index].nativeLadderControl);
 	services_->behavior_applyObstacleCommand(index, command);
 	const float maxSpeed = handle.entity->v.maxspeed;
-	const bool explicitFrozen = (handle.entity->v.flags & FL_FROZEN) != 0;
-	const bool roundFreeze = services_->roundFreezeActive();
 	const bool walking = !actors_[index].nativeLadderControl && !services_->behavior_forcedRunning(index) &&
 		services_->behavior_noiseInvestigationWalking(index) && (handle.entity->v.flags & FL_ONGROUND) &&
 		handle.entity->v.movetype != MOVETYPE_FLY && !(command.movement.buttons & IN_DUCK);
@@ -747,7 +776,7 @@ void BotCommandRuntime::resetActorExecutionState(std::size_t index)
 	resetManagedBotCommandTemplate(index);
 }
 
-MovementCommandDraft BotCommandRuntime::beginMovementCommand(std::size_t, FakeClientHandle &handle,
+MovementCommandDraft BotCommandRuntime::beginMovementCommand(std::size_t index, FakeClientHandle &handle,
 	const runtime::LifecycleToken &token, const runtime::MovementPhysicsState &, NavigationUpdate &movement)
 {
 	MovementCommandDraft draft{};
@@ -757,10 +786,21 @@ MovementCommandDraft BotCommandRuntime::beginMovementCommand(std::size_t, FakeCl
 	command.lifecycle = token;
 	command.sequence = 0U;
 	command.issueFrame = 0U;
-	const runtime::ViewAngles movementViewAngles = locomotionIntent.nativeLadderControl
+	const auto &machine = services_->behavior_managedBotStateMachines(index);
+	const bool huntEndpoint = movement.roamDecision.huntEndpointSteering &&
+		services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility &&
+		machine.state() == compat::CompatibilityStateId::Hunt && !machine.attackOverlayActive() &&
+		!locomotionIntent.nativeLadderControl;
+	command.viewAngles = (locomotionIntent.nativeLadderControl || huntEndpoint)
 		? runtime::ViewAngles{handle.entity->v.v_angle.x, handle.entity->v.v_angle.y, 0.0f}
 		: runtime::ViewAngles{0.0f, movementYaw(locomotionIntent.direction), 0.0f};
-	command.viewAngles = movementViewAngles;
+	auto &actor = actors_[index];
+	if (huntEndpoint && std::isfinite(actor.huntLookYaw) &&
+		!(handle.entity->v.flags & FL_FROZEN) && !services_->roundFreezeActive())
+	{
+		command.viewAngles =
+			stepHuntLook(*handle.entity, actor.huntLookYaw, services_->service_globals()->time, actor.huntLookSpring);
+	}
 	std::uint16_t movementButtons = locomotionIntent.posture == nav::LocomotionPosture::Crouching
 		? static_cast<std::uint16_t>(IN_DUCK)
 		: static_cast<std::uint16_t>(0U);
@@ -787,20 +827,32 @@ void BotCommandRuntime::finishMovementCommand(std::size_t index, FakeClientHandl
 	const auto &locomotionIntent = movement.locomotionIntent;
 	const auto &observation = movement.observation;
 	const auto &landingFeedback = movement.landingFeedback;
-	const runtime::ViewAngles movementViewAngles = locomotionIntent.nativeLadderControl
-		? runtime::ViewAngles{handle.entity->v.v_angle.x, handle.entity->v.v_angle.y, 0.0f}
-		: runtime::ViewAngles{0.0f, movementYaw(locomotionIntent.direction), 0.0f};
+	const bool compatibilityMovement =
+		services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility;
+	const auto &machine = services_->behavior_managedBotStateMachines(index);
+	const bool huntEndpoint = compatibilityMovement && roamDecision.huntEndpointSteering &&
+		machine.state() == compat::CompatibilityStateId::Hunt && !machine.attackOverlayActive() &&
+		!locomotionIntent.nativeLadderControl && !requestedAction.hasCombatAim && !requestedAction.hasGuardLook;
+	auto &actor = actors_[index];
+	if (!huntEndpoint)
+	{
+		actor.resetHuntLook();
+	}
+	else if (locomotionIntent.speed > 0.0f)
+	{
+		// Set the next upkeep's look target after taking this decision's view.
+		actor.huntLookYaw = movementYaw({
+			roamDecision.huntEndpoint.x - before.origin.x, roamDecision.huntEndpoint.y - before.origin.y, 0.0f});
+	}
 	const ActionProposal actionProposal = ActionAdapter::forLiveDispatch(
-		requestedAction, services_->observation_hasObservedActiveWeapon(index), movementViewAngles);
+		requestedAction, services_->observation_hasObservedActiveWeapon(index), draft.command.viewAngles);
 	const ActionDispatch actionDispatch = ActionAdapter::translate(actionProposal);
-	command.viewAngles = actionDispatch.viewAngles;
+	command.viewAngles = huntEndpoint ? draft.command.viewAngles : actionDispatch.viewAngles;
 	command.synchronizeCombatView =
-		actionProposal.hasCombatAim || actionProposal.hasGuardLook || locomotionIntent.nativeLadderControl;
+		actionProposal.hasCombatAim || actionProposal.hasGuardLook || locomotionIntent.nativeLadderControl || huntEndpoint;
 	command.movement.buttons = actionDispatch.buttons;
 	actors_[index].nativeLadderControl = locomotionIntent.nativeLadderControl;
 	actors_[index].nativeLadderJump = locomotionIntent.nativeMustJump;
-	const bool compatibilityMovement =
-		services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility;
 	float commandSpeed = locomotionIntent.speed;
 	if (compatibilityMovement && commandSpeed > 0.0f && std::isfinite(handle.entity->v.maxspeed) &&
 		handle.entity->v.maxspeed > 0.0f)
@@ -811,8 +863,13 @@ void BotCommandRuntime::finishMovementCommand(std::size_t index, FakeClientHandl
 		const bool finalArea = roamDecision.currentArea != 0U && roamDecision.currentArea == roamDecision.goalArea;
 		constexpr float kGoalSlowdownDistance = 200.0f;
 #define ASTRABOT_BOT_COMMAND_RUNTIME_GOAL_SLOWDOWN_FACTOR 0.4f
-		if (!locomotionIntent.nativeLadderControl && goal.valid && finalArea &&
-			x * x + y * y < kGoalSlowdownDistance * kGoalSlowdownDistance &&
+		const auto &feet = observation.locomotion.position;
+		const float huntX = roamDecision.huntEndpoint.x - feet.x, huntY = roamDecision.huntEndpoint.y - feet.y,
+					huntZ = roamDecision.huntEndpoint.z - feet.z;
+		const bool nearHuntEnd = huntEndpoint && roamDecision.corridorIndex + 1U == roamDecision.corridorAreaCount &&
+			huntX * huntX + huntY * huntY + huntZ * huntZ < kGoalSlowdownDistance * kGoalSlowdownDistance;
+		if (!locomotionIntent.nativeLadderControl &&
+			(nearHuntEnd || (goal.valid && finalArea && x * x + y * y < kGoalSlowdownDistance * kGoalSlowdownDistance)) &&
 			locomotionIntent.posture != nav::LocomotionPosture::Crouching)
 			commandSpeed *= ASTRABOT_BOT_COMMAND_RUNTIME_GOAL_SLOWDOWN_FACTOR;
 	}
@@ -880,7 +937,7 @@ void BotCommandRuntime::finishMovementCommand(std::size_t index, FakeClientHandl
 	actors_[index].managedBotCommandTemplates = command;
 	actors_[index].managedBotCommandTemplateValid = true;
 	actors_[index].managedBotActionStopsMovement = actionDispatch.stopMovement;
-	const runtime::CommandReceipt receipt = executeManagedBotCommand(index, handle);
+	const runtime::CommandReceipt receipt = executeManagedBotCommand(index, handle, true);
 	if (receipt.result != runtime::DispatchResult::Dispatched)
 	{
 		roamDecision.failureReason = runtime::NavFailureReason::NavApplyRejected;

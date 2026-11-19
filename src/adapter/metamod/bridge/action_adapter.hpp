@@ -110,6 +110,7 @@ public:
 		const ActionProposal &proposal, bool activeWeaponAvailable, const runtime::ViewAngles &movementViewAngles);
 	static MovementProjection projectMovement(
 		float worldDirectionX, float worldDirectionY, float speed, float viewYaw, bool compatibility = false);
+	static float csBotCosine(float angle);
 	static std::uint16_t movementButtons(float forward, float side);
 };
 } // namespace metamod

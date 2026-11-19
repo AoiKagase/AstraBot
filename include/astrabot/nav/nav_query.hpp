@@ -142,6 +142,7 @@ struct NavCorridor
 	NavVector endpoint = {};
 	// Explicit non-ground links; callers must split these before using the ground follower.
 	std::vector<NavLadderStep> nativeLadders;
+	bool huntEndpointSteering = false;
 
 	bool isValid() const;
 };

@@ -50,7 +50,8 @@ public:
 	float attackOriginBefore = 0.0f;
 	unsigned moves = 0U;
 	unsigned short lastButtons = 0U;
-	float lastForward = 0, lastSide = 0;
+	float lastForward = 0, lastSide = 0, lastYaw = 0;
+	compat::CompatibilityStateMachine stateMachine{};
 	edict_t actorEntity{};
 
 	ScenarioServices()
@@ -183,8 +184,7 @@ public:
 
 	const compat::CompatibilityStateMachine &behavior_managedBotStateMachines(std::size_t) const override
 	{
-		static compat::CompatibilityStateMachine value{};
-		return value;
+		return stateMachine;
 	}
 
 	bool behavior_forcedRunning(std::size_t) override
@@ -295,12 +295,14 @@ public:
 		return {};
 	}
 };
-void scenarioMove(edict_t *entity, const float *, float forward, float side, float, unsigned short buttons, byte, byte)
+void scenarioMove(
+	edict_t *entity, const float *angles, float forward, float side, float, unsigned short buttons, byte, byte)
 {
 	++gScenario->moves;
 	gScenario->lastButtons = buttons;
 	gScenario->lastForward = forward;
 	gScenario->lastSide = side;
+	gScenario->lastYaw = angles[1];
 	entity->v.origin.x += 10.0f;
 	if (gScenario->changeFreezeDuringMove)
 		gScenario->freeze = true;

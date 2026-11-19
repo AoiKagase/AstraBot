@@ -1169,6 +1169,7 @@ void setHuntFallbackEndpoint(const NavDocument &document, AreaId goal, NavCorrid
 			endpoint.y = portal.y;
 	}
 	corridor.hasEndpoint = true;
+	corridor.huntEndpointSteering = true;
 	corridor.endpoint = {endpoint.x, endpoint.y, surfaceZAtInternal(*destination, endpoint.x, endpoint.y)};
 }
 }
@@ -1187,6 +1188,7 @@ NavQueryResult NavQuery::buildHuntCorridor(AreaId start, AreaId goal, NavCorrido
 		corridor->routeType = NavRouteType::Safest;
 		corridor->areas = {start};
 		corridor->hasEndpoint = true;
+		corridor->huntEndpointSteering = true;
 		corridor->endpoint = centerOf(*source);
 		return NavQueryResult::Found;
 	}
