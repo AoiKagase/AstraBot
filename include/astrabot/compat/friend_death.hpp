@@ -145,13 +145,7 @@ public:
 	bool update(const ReactionContext &context)
 	{
 		if (!matches(context))
-		{
-			if (context.actor.isValid() && context.actor == context_.actor &&
-				context.entityGeneration == context_.entityGeneration && context.frame.mapGeneration == context_.frame.mapGeneration)
-				resetForLife();
-			else
-				reset();
-		}
+			resetFor(context);
 		if (!context.valid())
 			return false;
 		context_ = context;
@@ -292,6 +286,23 @@ public:
 	{
 		return std::isfinite(elapsedRound) && elapsedRound < safeTime(aggression);
 	}
+	bool recordEnemyDamage(const ReactionContext &context, world::EntityKey attacker, float elapsedRound, float aggression)
+	{
+		if (!attacker.isValid() || !context.identityValid())
+			return false;
+		if (!matchesIdentity(context) || (context.alive && !context_.alive))
+			resetFor(context);
+		context_ = context;
+		const bool distinct = !(attacker == lastAttacker_) || attackedAt_ != context.now;
+		lastAttacker_ = attacker;
+		attackedAt_ = context.now;
+		adjustSafeTime(elapsedRound, aggression);
+		return distinct;
+	}
+	bool recentlyDamaged(const ReactionContext &context, float seconds) const
+	{
+		return matches(context) && lastAttacker_.isValid() && context.now - attackedAt_ < seconds;
+	}
 
 	void clearEnemy(bool cancelPursuit = true)
 	{
@@ -366,9 +377,23 @@ public:
 	}
 
 private:
+	void resetFor(const ReactionContext &context)
+	{
+		if (context.actor.isValid() && context.actor == context_.actor &&
+			context.entityGeneration == context_.entityGeneration && context.frame.mapGeneration == context_.frame.mapGeneration)
+			resetForLife();
+		else
+			reset();
+	}
+
 	bool matches(const ReactionContext &context) const
 	{
-		return context.valid() && context_.valid() && context.actor == context_.actor &&
+		return context.alive && context_.alive && matchesIdentity(context);
+	}
+
+	bool matchesIdentity(const ReactionContext &context) const
+	{
+		return context.identityValid() && context_.identityValid() && context.actor == context_.actor &&
 			context.entityGeneration == context_.entityGeneration &&
 			context.frame.mapGeneration == context_.frame.mapGeneration &&
 			context.frame.roundGeneration == context_.frame.roundGeneration &&
@@ -400,12 +425,14 @@ private:
 	ReactionContext context_{};
 	world::ActorKey enemy_{};
 	world::EntityKey source_{};
+	world::EntityKey lastAttacker_{};
 	world::WorldPosition position_{};
 	world::WorldPosition pursuitPosition_{};
 	world::EntityKey pursuitSource_{};
 	world::ActorKey pursuitEnemy_{};
 	float safeTime_ = -1;
 	float lastSaw_ = -1;
+	float attackedAt_ = -1;
 	float enemyDeathTimestamp_ = 0.0f;
 	float hurryUntil_ = -1;
 	float ignoreUntil_ = -1;

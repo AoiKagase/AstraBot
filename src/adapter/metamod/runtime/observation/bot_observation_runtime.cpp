@@ -1684,7 +1684,7 @@ void BotObservationRuntime::observeGameDllDamage(const void *player, const entva
 	const auto *globals = services_->service_globals();
 	const auto *engine = services_->service_engineFunctions();
 	if (!source || &source->v != inflictor || source->free || source->serialnumber < 0 ||
-		(source->v.flags & (FL_CLIENT | FL_FAKECLIENT | FL_SPECTATOR | FL_DORMANT)) != FL_CLIENT ||
+		(source->v.flags & (FL_CLIENT | FL_SPECTATOR | FL_DORMANT)) != FL_CLIENT ||
 		!globals || !engine || !engine->pfnIndexOfEdict || !engine->pfnPEntityOfEntIndex || !services_->runtimeIsActive())
 		return;
 	const auto &life = services_->service_lifecycle();

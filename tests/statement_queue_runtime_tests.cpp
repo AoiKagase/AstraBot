@@ -16,6 +16,7 @@ bool blindedChatterFixture = false;
 float blindedChatterRoll = 100.0f;
 bool duplicateBlindNetname = false;
 bool friendlyFireChatterFixture = false;
+bool enemyDamageHideFixture = false;
 unsigned friendlyFireDelayDraws = 0;
 cvar_t queueFreeForAll{};
 cvar_t queueDefuseFuse{};
@@ -60,10 +61,11 @@ void selectStatementFixture(int argc, char **argv)
 	looseBombFixture = argc == 2 && std::strcmp(argv[1], "--loose-bomb") == 0;
 	looseGuardFixture = argc == 2 && std::strcmp(argv[1], "--guard-loose-bomb") == 0;
 	encourageDefuseFixture = argc == 2 && std::strcmp(argv[1], "--encourage-defuse") == 0;
+	enemyDamageHideFixture = argc == 2 && std::strcmp(argv[1], "--enemy-damage-hide") == 0;
 	barelyDefusedFixture = argc == 2 && std::strcmp(argv[1], "--barely-defused") == 0;
 	blindedChatterFixture = argc == 2 && std::strcmp(argv[1], "--blinded-chatter") == 0;
 	friendlyFireChatterFixture = argc == 2 && std::strcmp(argv[1], "--friendly-fire-chatter") == 0;
-	deferredSiteFixture = encourageDefuseFixture ||
+	deferredSiteFixture = encourageDefuseFixture || enemyDamageHideFixture ||
 		(argc == 2 && std::strcmp(argv[1], "--guard-planted-bombsite") == 0);
 	waitingHereFixture = argc == 2 && std::strcmp(argv[1], "--waiting-here") == 0;
 	preplantGuardFixture = waitingHereFixture ||
@@ -3178,6 +3180,43 @@ bool testStatementQueue(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t
 				if (!check(foundCover[0] && foundCover[1] && guardsSite(0) && guardsSite(1),
 					"CTs knowing the C4 or just its reported site guard NAV cover for an unseen living human teammate"))
 					return false;
+				if (enemyDamageHideFixture)
+				{
+					auto observer = std::make_unique<metamod::BotObservationRuntime>();
+					observer->bindServices(runtime);
+					gEntities[0].v.netname = 100;
+					gEntityNames[0] = "Hidden Damage Test Bot";
+					engine.pfnFindEntityByString = [](edict_t *start, const char *key, const char *value) -> edict_t * {
+						if (std::strcmp(key, "netname") == 0)
+							return !start && std::strcmp(value, "Hidden Damage Test Bot") == 0 ? &gEntities[0] : nullptr;
+						return findEntityByString(start, key, value);
+					};
+					int botObject = 0;
+					auto &enemy = gEntities[4];
+					enemy.v.flags |= FL_FAKECLIENT;
+					enemy.v.pContainingEntity = &enemy;
+					enemy.v.origin = Vector(-900, 0, 36);
+					const auto damage = [&] {
+						observer->observeGameDllDamage(&botObject, &enemy.v, [&](const char *name) -> const void * {
+							return std::strcmp(name, "Hidden Damage Test Bot") == 0 ? &botObject : nullptr;
+						});
+					};
+					damage();
+					step(.125f);
+					if (!check(guardsSite(0), "damage while traveling to the hiding spot does not abandon Hide"))
+						return false;
+					for (int frame = 0; frame < 9; ++frame)
+						step(.125f);
+					const auto target = nav.behavior_scenarioDecisions(0).target.position;
+					gEntities[0].v.origin = Vector(target.x, target.y, target.z + 36.0f);
+					damage();
+					step(.125f);
+					if (!check(guardsSite(0), "the arrival update still follows the traveling Hide branch"))
+						return false;
+					step(.125f);
+					return check(nav.behavior_managedBotStateMachines(0).state() == compat::CompatibilityStateId::Idle,
+						"a hiding bot becomes Idle after fresh damage from an unseen enemy bot");
+				}
 				if (encourageDefuseFixture)
 				{
 					const auto heard = [&](const char *sample) {

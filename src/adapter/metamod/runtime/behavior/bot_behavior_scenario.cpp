@@ -1104,8 +1104,9 @@ void BotBehaviorRuntime::updateScenarioTeamwork(std::size_t index, const runtime
 		!machine.attackOverlayActive())
 	{
 		const float feetZ = before.origin.z - (before.ducked ? 18.0f : 36.0f);
-		const bool wasAtDefenseSpot = actors_[index].scenarioPlanners.atDefenseSpot();
-		actors_[index].scenarioPlanners.observeDefenderFeet(before.origin.x, before.origin.y, feetZ);
+		auto &actor = actors_[index];
+		const bool wasAtDefenseSpot = actor.scenarioPlanners.atDefenseSpot();
+		actor.scenarioPlanners.observeDefenderFeet(before.origin.x, before.origin.y, feetZ);
 		if (retreating && !wasAtDefenseSpot && actors_[index].scenarioPlanners.atDefenseSpot())
 			actors_[index].enemyReaction.cancelIgnore();
 		const auto &reload = observation.weapon.reloadState;
@@ -1130,6 +1131,20 @@ void BotBehaviorRuntime::updateScenarioTeamwork(std::size_t index, const runtime
 		{
 			actors_[index].scenarioPlanners.cancelHoldPosition();
 			finishedDefense = true;
+		}
+		if (!finishedDefense && wasAtDefenseSpot && actor.enemyReaction.recentlyDamaged(receipt, 1.0f))
+		{
+			const auto &belief = services_->observation_managedBotPerception(index).snapshot();
+			const world::ActorObservation *enemy = nullptr;
+			if (belief.findActor(actor.enemyReaction.enemy(receipt), &enemy) != world::ContactLookupResult::Found ||
+				!enemy || !enemy->visible)
+			{
+				actor.scenarioPlanners.cancelHoldPosition();
+				actor.scenarioDecisions = {};
+				actor.scenarioDecisions.action = compat::ScenarioAction::Stop;
+				actor.scenarioDecisions.state = compat::CompatibilityStateId::Idle;
+				return;
+			}
 		}
 		if (!finishedDefense && guardingSite && observedTeam == kCounterTerroristTeam && scenario.deferToHuman &&
 			scenario.bombPlanted && scenario.timerEstimated && actors_[index].scenarioPlanners.atDefenseSpot())

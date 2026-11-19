@@ -1703,19 +1703,44 @@ void BotBehaviorRuntime::observePlayerDamage(std::size_t index, world::ActorKey 
 	const auto sourceTeamKnown = services_->observation_publicTeamKnown(sourceIndex);
 	const auto sourceTeamInfo = services_->observation_teamInfoTeams(sourceIndex);
 	const int sourceEntityTeam = source->v.team;
+	constexpr int playerFlags = FL_CLIENT | FL_FAKECLIENT | FL_SPECTATOR | FL_DORMANT;
+	const int sourceFlags = source->v.flags & playerFlags;
+	if ((sourceFlags & ~FL_FAKECLIENT) != FL_CLIENT)
+		return;
 	const auto current = [&] {
 		const auto context = reactionContext(index);
 		return context.actor == actor && context.frame == frame &&
 			!source->free && source->serialnumber == serial && receiptConnectionCurrent(sourceConnection) &&
 			services_->observation_publicTeamKnown(sourceIndex) == sourceTeamKnown &&
 			services_->observation_teamInfoTeams(sourceIndex) == sourceTeamInfo && source->v.team == sourceEntityTeam &&
-			(source->v.flags & (FL_CLIENT | FL_FAKECLIENT | FL_SPECTATOR | FL_DORMANT)) == FL_CLIENT;
+			(source->v.flags & playerFlags) == sourceFlags;
 	};
 	ActorTaskEnvironment env(*this, index, index, current);
-	if (!env.current() || readOptionalCvarFloat(services_->service_engineFunctions(), "mp_freeforall") != 0.0f || !env.current())
+	if (!env.current())
+		return;
+	const bool freeForAll = readOptionalCvarFloat(services_->service_engineFunctions(), "mp_freeforall") != 0.0f;
+	if (!env.current())
 		return;
 	const int victimTeam = services_->observation_resolvePlayerTeam(env.receipt.entity);
-	if (victimTeam == 0 || !env.current() || services_->observation_resolvePlayerTeam(source) != victimTeam || !env.current())
+	if (!env.current())
+		return;
+	const int sourceTeam = services_->observation_resolvePlayerTeam(source);
+	if (!env.current() || (!freeForAll && (victimTeam == 0 || sourceTeam == 0)))
+		return;
+	if (freeForAll || sourceTeam != victimTeam)
+	{
+		if (source->v.deadflag == DEAD_NO && source->v.health > 0)
+		{
+			auto &target = actors_[index];
+			const float roundStart = services_->service_roundFreezeGeneration() == frame.roundGeneration
+				? services_->service_roundFreezeUntil() : 0.0f;
+			const float aggression = static_cast<float>(target.managedProfiles.aggression) / 100.0f;
+			(void)target.enemyReaction.recordEnemyDamage(env.receipt.context,
+				{sourceConnection.slot, static_cast<std::uint32_t>(serial) + 1U}, env.receipt.context.now - roundStart, aggression);
+		}
+		return;
+	}
+	if (sourceFlags & FL_FAKECLIENT)
 		return;
 	float delay = 0.0f;
 	if (!env.drawFloat("Chatter.FriendlyFireDelay", 0.3f, 0.5f, delay))

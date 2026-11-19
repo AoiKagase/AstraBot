@@ -197,5 +197,29 @@ int main()
 	separate.clearEnemy(false);
 	check(separate.pursuing(context) && separate.pursuitEnemy(context) == enemy,
 		"clearing another enemy does not erase the live pursuit task");
+	EnemyReactionMemory injury;
+	check(injury.recordEnemyDamage(context, entity, 5, .5f) && injury.recentlyDamaged(context, 1) &&
+		!injury.isSafe(3, .5f) && !injury.enemy(context).isValid(),
+		"enemy damage cuts safe time without acquiring a visual target");
+	check(!injury.recordEnemyDamage(context, entity, 5, .5f) &&
+		injury.recordEnemyDamage(context, {entity.id, entity.generation + 1U}, 5, .5f),
+		"the same attacker and timestamp are one injury reaction, a reused slot is distinct");
+	auto oneSecondLater = context;
+	oneSecondLater.now += 1.0f;
+	++oneSecondLater.frame.tick;
+	check(!injury.recentlyDamaged(oneSecondLater, 1), "the recent-injury window excludes one second exactly");
+	++oneSecondLater.frame.roundGeneration;
+	injury.update(oneSecondLater);
+	check(!injury.recentlyDamaged(oneSecondLater, 1) && !injury.isSafe(3, .5f),
+		"round reset clears injury while retaining learned safe time for the same bot");
+	EnemyReactionMemory damageBeforeBaseRejection;
+	auto deadVictim = context;
+	deadVictim.alive = false;
+	check(damageBeforeBaseRejection.recordEnemyDamage(deadVictim, entity, 5, .5f) &&
+		!damageBeforeBaseRejection.recordEnemyDamage(deadVictim, entity, 5, .5f),
+		"direct enemy damage records its timing before the base rejection of a dead victim");
+	damageBeforeBaseRejection.update(context);
+	check(!damageBeforeBaseRejection.isSafe(3, .5f) && !damageBeforeBaseRejection.recentlyDamaged(context, 1),
+		"the dead victim's learned deadline persists without carrying damage into a live context");
 	return failures == 0 ? 0 : 1;
 }

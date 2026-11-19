@@ -1,3 +1,11 @@
+## 17A　ReGameDLLでの敵被弾記録とHide解除
+
+ReGameDLL-CS `b088984` の `CCSBot::TakeDamage`、`IsEnemy`、`AdjustSafeTime` と `HideState::OnUpdate` を参照した。公開ダメージフックで生存中の敵プレイヤーを直接の加害元として確認し、エンティティの世代と通知時刻を記録する。人間とBotの両方を対象にする。発見済みの敵や照準先とは別に記録し、早期に被弾した場合はそのラウンドの安全時間を短縮する。
+
+隠れ場所へ到着した次の更新から、被弾が直近1秒未満で、現在の敵を視認できていない場合に `Hide` を離れて `Idle` へ移る。警備の期限切れと警備先の再選択が被弾判定に先行する。死亡済みのBotにダメージ判定前の通知が来た場合も安全時間を更新する。被弾記録はラウンド・生存期間の更新で失効し、同じBotが学習した安全時間はマップ中に保持する。視線と硬直を含むパニック、攻撃先の再選択、標準GameDLLでの受信は17の残件。実機確認は25。
+
+テストでは、照準先と独立した記録、同一加害元と同時刻の通知、エンティティ世代の区別、1秒ちょうどの境界、死亡後に更新した安全時間の保持、移動中・到着時・到着後のHideを確認した。Windows x86 Debugは161/161件、Linux x86 Debugは159/160件合格。Linuxの失敗は既知の `astrabot_combat_policy`。両OSの動作トレース149,153件が既存の記録と一致し、PEとELFのx86形式と公開関数7件を確認した。
+
 ## 16A　ReGameDLLでの味方撃ち抗議
 
 ReGameDLL-CS `b088984` の `CCSBot::TakeDamage`、`CBot::BotRelationship`、`BotChatterInterface::FriendlyFire` を参照した。公開の `CBasePlayer_TakeDamage` フックから、ダメージ判定前に直接の加害元を受け取る。現在の管理Botへの通知で、同じチームの人間が直接の加害元であり、FFAが無効な場合に発話処理へ進む。公開検索で被害Botの一致を確認し、加害元のスロット・接続とエンティティを照合する。
@@ -48,7 +56,7 @@ ReGameDLL-CS `b088984` の `cs_bot_update.cpp` と `CHalfLifeMultiplay::IsCareer
 
 ReGameDLL-CS `b088984` の `HideState::OnUpdate` と `BotChatterInterface::Encourage` を参照した。解除を生存中の味方プレイヤーに任せているCT Botが警備の隠れ場所に到着し、近くの敵を認識していない場合に発話する。C4の残り時間が30秒超、11秒超〜30秒、11秒以下の順に `BombsiteSecure`、`WaitingForHumanToDefuseBomb`、`WaitingForHumanToDefuseBombPanic` を選ぶ。発話間隔はそれぞれ10〜15秒、5〜8秒、3〜4秒で、Bot間で共有する。
 
-残り時間には公開の設置通知と `mp_c4timer` を使う。推定できる設置通知を受けたケースで発話を有効にする。人質の所有・追従状態と、人質警備の励ましは15B-2fに残る。攻撃者が見えない場合の被弾後のHide解除は23、実機確認は25。
+残り時間には公開の設置通知と `mp_c4timer` を使う。推定できる設置通知を受けたケースで発話を有効にする。人質の所有・追従状態と、人質警備の励ましは15B-2fに残る。ReGameDLLでの被弾後のHide解除は17A、実機確認は25。
 
 統合テストでは、到着前の無音、2体が到着した場合の単独発話、残り時間3区分、区分切り替え後も継続する共有間隔を確認した。Windows x86 Debugは155/155件、Linux x86 Debugは153/154件合格。Linuxの失敗は既知の `astrabot_combat_policy`。両OSの動作トレース149,153件が既存の記録と一致し、PE・ELFのx86形式と公開関数7件を確認した。
 
