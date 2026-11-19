@@ -253,7 +253,7 @@ private:
 		bool reported = false;
 	};
 	std::vector<HostageUseScope> hostageUseScopes_{};
-	void reportHostageUse(edict_t *player, world::FrameIdentity frame);
+	void reportHostageUse(edict_t *player, world::FrameIdentity frame, world::EntityKey following = {});
 	MovementSoundBridge movementSounds_{};
 	BotObservationRuntime observation_{};
 	BotBehaviorRuntime behavior_{};

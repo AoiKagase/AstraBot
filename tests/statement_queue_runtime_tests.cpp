@@ -100,6 +100,7 @@ void setupStatementQueue(enginefuncs_t &, globalvars_t &);
 namespace
 {
 bool queueEnemiesVisible = false;
+bool hostageUseTargetVisible = false;
 bool queueHelpRecording = false;
 bool queueLadderPhysics = false;
 unsigned queueLadderClimbMoves = 0;
@@ -285,6 +286,10 @@ void queueVisibility(const float *from, const float *end, int flags, edict_t *ob
 		trace->flFraction = 1.0f;
 	if (hostageUseFixture && queueClock && queueClock->mapname == 34 && observer == &gEntities[0] &&
 		flags == 0x101 && end[0] == 100 && end[1] == 0 && end[2] == 36)
+		trace->flFraction = 1.0f;
+	if (hostageUseFixture && hostageUseTargetVisible && flags == 0x101 &&
+		end[0] == gPlantedBomb.v.origin.x && end[1] == gPlantedBomb.v.origin.y &&
+		end[2] == gPlantedBomb.v.origin.z + 54.0f)
 		trace->flFraction = 1.0f;
 	if ((looseGuardFixture || preplantGuardFixture) && observer == &gEntities[0] && carrierViewer == 0 && flags == 0x101 &&
 		end[0] == gPlantedBomb.v.origin.x && end[1] == gPlantedBomb.v.origin.y && end[2] == gPlantedBomb.v.origin.z)
@@ -2059,26 +2064,20 @@ bool testHostageUseReport(astrabot::metamod::PluginRuntime &runtime, enginefuncs
 			"before contact both Ts plan to guard the remembered hostage"))
 		return false;
 	ct.v.origin = Vector(24, 32, 36);
-	const auto announceUse = [&](bool first) {
+	hostageUseTargetVisible = true;
+	const auto announceUse = [&] {
 		reportAudio.clear();
 		gEntities[1].v.origin.z += 1300;
-		if (first)
-			hooks.pfnAlertMessage(at_logged, firstTouch, 103);
-		else
-		{
-			pre.pfnPlayerPostThink(&ct);
-			voice("hostage/huse/illfollow.wav", CHAN_VOICE, 0, 1.0f);
-			post.pfnPlayerPostThink(&ct);
-		}
+		hooks.pfnAlertMessage(at_logged, firstTouch, 103);
 		gEntities[1].v.origin.z -= 1300;
 		advance(48);
 	};
-	announceUse(true);
+	announceUse();
 	if (!check(count(2, "radio/test/ack.wav") == 1 && task(1) == Task::GuardHostages &&
 			!count(2, "radio/test/rescueplan.wav"), "the safe period takes precedence over a completed report"))
 		return false;
 	advance(104);
-	announceUse(false);
+	announceUse();
 	if (!check(count(1, "radio/test/taken.wav") == 1 && count(2, "radio/test/ack.wav") == 1 &&
 			count(2, "radio/test/rescueplan.wav") == 1 && task(1) == Task::GuardHostageRescueZone &&
 			task(0) == Task::GuardHostages,
@@ -2111,9 +2110,44 @@ bool testHostageUseReport(astrabot::metamod::PluginRuntime &runtime, enginefuncs
 	// Round_End prepares the generation, so the bots can already be in Hunt when it opens.
 	for (int tick = 0; tick < 320 && (task(0) != Task::GuardHostages || task(1) != Task::GuardHostages); ++tick)
 		advance(1);
+	if (!check(task(0) == Task::GuardHostages && task(1) == Task::GuardHostages,
+			"the first new-round replans may guard the new hostages"))
+		return false;
+
+	gEntities[1].v.origin.z += 1300;
+	auto &behavior = static_cast<metamod::BotBehaviorServices &>(runtime);
+	auto &machine = const_cast<compat::CompatibilityStateMachine &>(ports.behavior_managedBotStateMachines(0));
+	const auto &handle = behavior.service_managedBotHandles()[0];
+	const auto &life = behavior.service_lifecycle();
+	compat::StateUpdateContext combat{};
+	combat.actor = {handle.actor.slot, handle.actor.actorGeneration};
+	combat.frame = {life.mapGeneration(), life.roundGeneration(), behavior.service_adapterFrameCount()};
+	combat.timestamp = globals.time;
+	combat.alive = combat.roundActive = true;
+	combat.attackObservation = compat::ObservationAvailability::Available;
+	if (!check(machine.beginAttack(combat) == compat::StateResult::Transitioned,
+			"the T is attacking when the CT collects the hostage"))
+		return false;
+	const auto attackEpoch = machine.normalStateEpoch();
+	hooks.pfnAlertMessage(at_logged, firstTouch, 103);
+	if (!check(machine.attackOverlayActive() && machine.normalStateEpoch() == attackEpoch,
+			"a visible hostage with unknown follow state retains the current attack"))
+		return false;
+	const auto voicedUse = [&] {
+		pre.pfnPlayerPostThink(&ct);
+		voice("hostage/huse/illfollow.wav", CHAN_VOICE, 0, 1.0f);
+		post.pfnPlayerPostThink(&ct);
+	};
+	voicedUse();
+	if (!check(!machine.attackOverlayActive() && task(0) == Task::GuardHostageRescueZone && task(1) == Task::GuardHostages,
+			"the T who hears the last hostage accept the CT immediately switches to the rescue zone"))
+		return false;
+	const auto guardEpoch = ports.behavior_managedBotStateMachines(0).normalStateEpoch();
+	voicedUse();
+	gEntities[1].v.origin.z -= 1300;
 	queueHelpRecording = false;
-	return check(task(0) == Task::GuardHostages && task(1) == Task::GuardHostages,
-		"the first new-round replans may guard the new hostages");
+	return check(ports.behavior_managedBotStateMachines(0).normalStateEpoch() == guardEpoch,
+		"already guarding the rescue zone does not restart the guard");
 }
 
 bool testSniperWarning(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &hooks, globalvars_t &globals)

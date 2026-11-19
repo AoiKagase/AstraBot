@@ -682,6 +682,50 @@ struct BotBehaviorRuntime::ActorTaskEnvironment : compat::IHelpRequestEnvironmen
 			announcePlan(hostage ? compat::ChatterPhrase::GoingToGuardHostages :
 				compat::ChatterPhrase::GoingToGuardHostageEscapeZone, place);
 	}
+	bool rulesOutVisibleFreeHostage(world::EntityKey following) const
+	{
+		const auto engine = owner.services_->service_engineFunctions();
+		const auto &roster = owner.actors_[receiver].hostagePositions;
+		if (!engine || !engine->pfnPEntityOfEntIndex || !engine->pfnTraceLine || roster.nextCheck < 0.0f)
+			return false;
+		const auto hostages = roster.entries;
+		constexpr float kHostageViewHeight = 54.0f; // Three quarters of the native human hull height.
+		const auto validPoint = [](const Vector &point) {
+			constexpr float limit = world::WorldLimits::kMaximumCoordinate;
+			return std::fabs(point.x) <= limit && std::fabs(point.y) <= limit && std::fabs(point.z) <= limit;
+		};
+		const auto observerOrigin = receipt.entity->v.origin;
+		const auto viewOffset = receipt.entity->v.view_ofs;
+		if (!validPoint(observerOrigin) || !validPoint(observerOrigin + viewOffset))
+			return false;
+		for (const auto &entry : hostages)
+		{
+			if (!entry.entity.isValid())
+				break;
+			if (entry.entity == following)
+				continue;
+			const auto *hostage = engine->pfnPEntityOfEntIndex(static_cast<int>(entry.entity.id));
+			if (!current() || owner.services_->service_engineFunctions() != engine)
+				return false;
+			if (!hostage || hostage->free || hostage->serialnumber < 0 ||
+				static_cast<unsigned>(hostage->serialnumber) + 1U != entry.entity.generation ||
+				hostage->v.deadflag != DEAD_NO || !(hostage->v.health > 0.0f))
+				continue;
+			const auto origin = hostage->v.origin;
+			const auto point = origin + Vector(0.0f, 0.0f, kHostageViewHeight);
+			if (!validPoint(point))
+				return false;
+			// The public engine fields cannot rule out a visible hostage whose leader is unknown.
+			if (owner.canSeePoint(receiver, {point.x, point.y, point.z}, receipt.context.frame, false) ||
+				!current() || owner.services_->service_engineFunctions() != engine || hostage->free ||
+				hostage->serialnumber < 0 || static_cast<unsigned>(hostage->serialnumber) + 1U != entry.entity.generation ||
+				hostage->v.origin != origin || receipt.entity->v.origin != observerOrigin ||
+				receipt.entity->v.view_ofs != viewOffset)
+				return false;
+		}
+		return true;
+	}
+
 	const nav::NavArea *randomRescueArea()
 	{
 		const auto engine = owner.services_->service_engineFunctions();
@@ -1541,7 +1585,7 @@ void BotBehaviorRuntime::observeBombPickup(Vector origin, world::FrameIdentity f
 	}
 }
 
-void BotBehaviorRuntime::observeHostageUsed(Vector origin, world::FrameIdentity frame)
+void BotBehaviorRuntime::observeHostageUsed(Vector origin, world::FrameIdentity frame, world::EntityKey following)
 {
 	if (services_->service_compatibilitySurface().configuration().mode != compat::RuntimeMode::Compatibility ||
 		services_->service_roundOver())
@@ -1551,7 +1595,7 @@ void BotBehaviorRuntime::observeHostageUsed(Vector origin, world::FrameIdentity 
 	{
 		const auto receipt = reactionContext(index);
 		auto *self = services_->service_managedBotHandles()[index].entity;
-		if (!receipt.valid() || !(receipt.frame == frame) || !self)
+		if (!receipt.valid() || !receipt.alive || !(receipt.frame == frame) || !self)
 			continue;
 		const auto offset = self->v.origin - origin;
 		if (!(offset.x * offset.x + offset.y * offset.y + offset.z * offset.z <= kHearingRange * kHearingRange))
@@ -1563,7 +1607,7 @@ void BotBehaviorRuntime::observeHostageUsed(Vector origin, world::FrameIdentity 
 		ensureOutgoingChatterCatalog();
 		if (!executionCurrent(index, receipt, revision) || services_->service_roundOver())
 			continue;
-		ActorTaskEnvironment environment(*this, index, index, [] { return true; });
+		ActorTaskEnvironment environment(*this, index, index, [&] { return !services_->service_roundOver(); });
 		compat::ChatterStatementRequest report{};
 		report.source = compat::ChatterScheduleSource::Generic;
 		report.topic = compat::ChatterStatementTopic::Information;
@@ -1571,8 +1615,16 @@ void BotBehaviorRuntime::observeHostageUsed(Vector origin, world::FrameIdentity 
 		report.created = report.start = report.readyAt = receipt.now;
 		report.expires = receipt.now + 3.0f;
 		report.meme.kind = compat::ChatterMemeKind::HostageBeingTaken;
-		if (environment.current())
-			environment.admit(report);
+		if (!environment.current())
+			continue;
+		environment.admit(report);
+		const auto guardTask = compat::CompatibilityTaskId::GuardHostageRescueZone;
+		if (!environment.current() || !environment.navigation.isValid() ||
+			actors_[index].managedBotStateMachines.task() == guardTask ||
+			!environment.rulesOutVisibleFreeHostage(following))
+			continue;
+		if (const auto *area = environment.randomRescueArea())
+			environment.hideNearArea(area->id, guardTask, 500.0f);
 	}
 }
 

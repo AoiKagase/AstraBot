@@ -1148,7 +1148,7 @@ bool PluginRuntime::readGameDllActiveWeapon(edict_t *source, int &weapon, bool &
 	return true;
 }
 
-void PluginRuntime::reportHostageUse(edict_t *player, world::FrameIdentity frame)
+void PluginRuntime::reportHostageUse(edict_t *player, world::FrameIdentity frame, world::EntityKey following)
 {
 	if (!hostageUseScopes_.empty())
 	{
@@ -1160,7 +1160,7 @@ void PluginRuntime::reportHostageUse(edict_t *player, world::FrameIdentity frame
 			scope.reported = true;
 		}
 	}
-	behavior_.observeHostageUsed(player->v.origin, frame);
+	behavior_.observeHostageUsed(player->v.origin, frame, following);
 }
 
 void PluginRuntime::onHostageVoice(const edict_t *hostage, const char *sample, float volume, float attenuation, int pitch)
@@ -1185,17 +1185,31 @@ void PluginRuntime::onHostageVoice(const edict_t *hostage, const char *sample, f
 	// The accepted follow sound is synchronous with the CT's PlayerUse. Its emitter is the hostage.
 	const auto scope = hostageUseScopes_.back();
 	const auto depth = hostageUseScopes_.size();
+	const auto hostageClass = hostage->v.classname;
+	const int hostageSerial = hostage->serialnumber;
 	const auto current = [&]() {
 		return state_ == State::ActiveMap && engineFunctions_ == engine && scope.frame ==
 			world::FrameIdentity{lifecycle_.mapGeneration(), lifecycle_.roundGeneration(), adapterFrameCount_} &&
 			hostageUseScopes_.size() == depth && hostageUseScopes_.back().player == scope.player &&
 			hostageUseScopes_.back().serial == scope.serial && !hostageUseScopes_.back().reported &&
-			!scope.player->free && scope.player->serialnumber == scope.serial && scope.player->v.deadflag == DEAD_NO;
+			!scope.player->free && scope.player->serialnumber == scope.serial && scope.player->v.deadflag == DEAD_NO &&
+			!hostage->free && hostage->serialnumber == hostageSerial && hostage->v.classname == hostageClass &&
+			hostage->v.takedamage == DAMAGE_YES;
 	};
-	const char *className = engine->pfnSzFromIndex(hostage->v.classname);
-	if (current() && className && std::strcmp(className, "hostage_entity") == 0 &&
-		observation_.resolvePlayerTeam(scope.player) == kCounterTerroristTeam && current())
-		reportHostageUse(scope.player, scope.frame);
+	const char *className = engine->pfnSzFromIndex(hostageClass);
+	if (!current() || !className || std::strcmp(className, "hostage_entity") != 0 ||
+		observation_.resolvePlayerTeam(scope.player) != kCounterTerroristTeam || !current())
+		return;
+	world::EntityKey following{};
+	if (engine->pfnIndexOfEdict && hostageSerial >= 0)
+	{
+		const int slot = engine->pfnIndexOfEdict(hostage);
+		if (!current())
+			return;
+		if (slot > globals_->maxClients && slot < globals_->maxEntities)
+			following = {static_cast<unsigned>(slot), static_cast<unsigned>(hostageSerial) + 1U};
+	}
+	reportHostageUse(scope.player, scope.frame, following);
 }
 
 void PluginRuntime::onPlayerLogMessage(const char *message)
