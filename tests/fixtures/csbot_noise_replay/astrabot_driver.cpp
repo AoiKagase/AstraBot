@@ -74,7 +74,8 @@ int main()
 			std::printf("look %d %.9g\n", accepted, look.inhibitedUntil());
 			continue;
 		}
-		if (!(std::istringstream(row) >> time >> event >> x >> priority >> random.decisionDraw))
+		const bool composedStartle = row[0] == 'Z';
+		if (!(std::istringstream(composedStartle ? row.substr(1) : row) >> time >> event >> x >> priority >> random.decisionDraw))
 			return 2;
 		const world::FrameIdentity frame{1, 1, ++tick};
 		std::printf("tick %u %.9g\n", tick, time);
@@ -108,6 +109,25 @@ int main()
 		std::printf("memory %d %d %.9g %.9g %d\n", noise.active, noise.ready,
 			noise.active ? noise.timestampSeconds : 0, noise.active ? noise.position.x : 0,
 			noise.active ? static_cast<int>(noise.priority) + 1 : 0);
+		if (composedStartle)
+		{
+			compat::NoiseLookPlanner startle;
+			compat::NoiseLookInput lookInput{};
+			lookInput.actor = actor;
+			lookInput.frame = frame;
+			lookInput.now = time;
+			lookInput.noiseTime = noise.timestampSeconds;
+			lookInput.hasNoise = compat::hasNoiseLookPosition(noise);
+			lookInput.highPriority = noise.priority == world::NoisePriority::High;
+			lookInput.reactionSeconds = .125f;
+			lookInput.distanceSquared = noise.position.x * noise.position.x;
+			lookInput.clearLine = true;
+			startle.synchronize(actor, frame, time);
+			const auto kind = compat::noiseLookKind(lookInput, startle.inhibitedUntil());
+			const bool accepted = startle.request(lookInput, kind, {noise.position.x, 0, 36}, random, timing);
+			std::printf("look %d %.9g\n", accepted, startle.inhibitedUntil());
+			continue;
+		}
 		compat::NoiseInvestigationInput decision{};
 		decision.actor = actor;
 		decision.frame = frame;

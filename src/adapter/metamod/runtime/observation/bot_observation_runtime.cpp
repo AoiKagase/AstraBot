@@ -1802,6 +1802,13 @@ void BotObservationRuntime::observeGameDllWeapon(NativeWeaponEvent kind, const v
 		event.timestampTick = frame.tick;
 		event.timestampSeconds = now;
 		recordSound(event, source);
+		if (services_->service_runtimeProfiler().enabled() && gpMetaUtilFuncs != nullptr &&
+			gpMetaUtilFuncs->pfnLogConsole != nullptr && services_->service_pluginId() != nullptr)
+		{
+			profiledLogConsole(services_->service_runtimeProfiler(), services_->service_pluginId(),
+				"profile nativeWeaponSound source=%u fired=%d weapon=%d silenced=%d priority=%s range=%.1f time=%.6f",
+				static_cast<unsigned>(slot), fired ? 1 : 0, weapon, silenced ? 1 : 0, fired ? "HIGH" : "LOW", range, now);
+		}
 		return;
 	}
 }

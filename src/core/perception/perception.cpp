@@ -438,19 +438,30 @@ void PerceptionAssembler::updateMemory(std::array<MemoryRecord, world::WorldLimi
 
 void PerceptionAssembler::advanceNoise(world::NoiseMemory *noise, const PerceptionInput &input) const
 {
-	if (noise == nullptr || !noise->active)
+	if (noise == nullptr)
+		return;
+	const float hearingTime = input.hearingTimeSeconds();
+	if (noise->hasLocalizedZeroTime())
+	{
+		// Native startle reads this position and priority even while ordinary hearing is inactive.
+		if (!input.noisePositionResolver() || hearingTime < 0.0f || hearingTime > 0.5f ||
+			noise->priority != world::NoisePriority::High)
+			clearNoise(noise);
+		else
+			noise->active = noise->ready = false;
+		return;
+	}
+	if (!noise->active)
 		return;
 	const auto &frame = input.identity().frame;
 	const std::uint32_t age = frame.tick >= noise->timestampTick ? frame.tick - noise->timestampTick
 																 : (std::numeric_limits<std::uint32_t>::max)();
-	if (input.hearingTimeSeconds() >= 0)
+	if (hearingTime >= 0)
 	{
-		const float seconds = input.hearingTimeSeconds() - noise->timestampSeconds;
+		const float seconds = hearingTime - noise->timestampSeconds;
 		const bool nativeMemory = input.noisePositionResolver() && noise->navArea != 0;
-		// Native hearing uses zero as its empty timestamp and retains a
-		// localized noise until it is replaced, forgotten, or reset.
-		if (noise->timestampSeconds < 0 || seconds < 0 ||
-			(nativeMemory ? noise->timestampSeconds == 0.0f : seconds > 20.0f))
+		// Native hearing retains active localized noise until it is replaced, forgotten, or reset.
+		if (noise->timestampSeconds < 0 || seconds < 0 || (!nativeMemory && seconds > 20.0f))
 		{
 			clearNoise(noise);
 			return;
@@ -537,7 +548,7 @@ void PerceptionAssembler::updateNoise(
 	noise->confidence = sound.confidence;
 	noise->source = {};
 	noise->positionApproximated = true;
-	if (timed)
+	if (timed || noise->hasLocalizedZeroTime())
 		advanceNoise(noise, input);
 }
 

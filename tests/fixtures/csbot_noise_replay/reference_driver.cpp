@@ -139,7 +139,8 @@ int main()
 			std::printf("look %d %.9g\n", lookBot.lookRequested, lookBot.m_inhibitLookAroundTimestamp);
 			continue;
 		}
-		if (!(std::istringstream(row) >> time >> event >> x >> priority >> decisionDraw))
+		const bool composedStartle = row[0] == 'Z';
+		if (!(std::istringstream(composedStartle ? row.substr(1) : row) >> time >> event >> x >> priority >> decisionDraw))
 			return 2;
 		gpGlobals->time = time;
 		std::printf("tick %u %.9g\n", ++tick, time);
@@ -156,6 +157,16 @@ int main()
 		std::printf("memory %d %d %.9g %.9g %d\n", active, bot.IsNoiseHeard(),
 			active ? bot.m_noiseTimestamp : 0, active ? bot.m_noisePosition.x : 0,
 			active ? static_cast<int>(bot.GetNoisePriority()) : 0);
+		if (composedStartle)
+		{
+			step = Step::Look;
+			bot.clearLine = true;
+			bot.lookRequested = false;
+			bot.m_inhibitLookAroundTimestamp = 0;
+			bot.replayStartle();
+			std::printf("look %d %.9g\n", bot.lookRequested, bot.m_inhibitLookAroundTimestamp);
+			continue;
+		}
 		step = Step::Decision;
 		const bool attend = bot.ShouldInvestigateNoise(nullptr);
 		std::printf("decision %d\n", attend);

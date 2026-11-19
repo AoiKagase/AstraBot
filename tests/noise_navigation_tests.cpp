@@ -139,6 +139,29 @@ int main()
 	if (!check(publish(3, &sound) && !belief.noise().active && rng.draws == before + 2,
 			"CSBot time-zero sound still draws its location but does not become active memory"))
 		return 1;
+	perception::PerceptionAssembler startleAssembler;
+	world::WorldSnapshot startleBelief;
+	perception::PerceptionInput atZero({{1, 1, 3}, {1, 11}, 0});
+	atZero.setHearingTime(0, .125f);
+	atZero.setNoisePositionResolver(&resolver);
+	if (!check(atZero.addSound(sound) == perception::PerceptionInputResult::Accepted &&
+				startleAssembler.publish(atZero, &startleBelief) == perception::PerceptionResult::Published &&
+				startleBelief.noise().hasLocalizedZeroTime() && !startleBelief.noise().active && !startleBelief.noise().ready,
+			"time-zero localization is available only for startle"))
+		return 1;
+	perception::PerceptionInput noResolver({{1, 1, 4}, {1, 11}, 0});
+	noResolver.setHearingTime(.25f, .125f);
+	if (!check(startleAssembler.publish(noResolver, &startleBelief) == perception::PerceptionResult::Published &&
+				!startleBelief.noise().hasLocalizedZeroTime() && !startleBelief.noise().ready,
+			"time-zero startle data is discarded when native localization is unavailable"))
+		return 1;
+	perception::PerceptionInput noClock({{1, 1, 5}, {1, 11}, 0});
+	noClock.setNoisePositionResolver(&resolver);
+	if (!check(noClock.addSound(sound) == perception::PerceptionInputResult::Accepted &&
+				startleAssembler.publish(noClock, &startleBelief) == perception::PerceptionResult::Published &&
+				!startleBelief.noise().active && !startleBelief.noise().hasLocalizedZeroTime(),
+			"a localized time-zero event requires a hearing clock for startle"))
+		return 1;
 	sound.id = 4;
 	sound.timestampTick = 4;
 	sound.timestampSeconds = 10.4f;

@@ -256,6 +256,8 @@ struct NoiseMemory
 	float timestampSeconds = -1.0f;
 	std::uint32_t navArea = 0U;
 	std::uint64_t navRevision = 0U;
+
+	bool hasLocalizedZeroTime() const { return timestampSeconds == 0.0f && navArea != 0U; }
 };
 
 class WorldSnapshot

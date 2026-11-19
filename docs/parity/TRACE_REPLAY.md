@@ -30,15 +30,45 @@ look decisions with inhibition deadlines. The clock is controlled by the
 fixture. State-machine, command and path fields outside the measured callbacks
 are unknown.
 
-This fixture covers hearing at time zero, the three-second overwrite boundary,
+This fixture covers hearing and composed startle at time zero, the three-second overwrite boundary,
 retention past twenty seconds, quarter-second investigation cadence, and
 startle at 1,000 units with obscured and out-of-range controls. It does not run
 the GameDLL, engine event classification, native NAV search, or an HLDS match.
 The startle excerpt measures the resulting look and inhibition after the
 branch returns, and captures RNG calls at the shared callback boundary.
-Its look inputs are supplied separately from the intake cases. A composed
-time-zero shot and the native startle predicate during the first half-second
-of server time remain outside this comparison.
+The `Z` rows feed a shot through the normal intake before checking startle at
+time zero, at 0.5 seconds, and just after the cutoff. The startle checks use
+independent inhibition state to expose the freshness boundary. The standalone
+`L` rows provide range, visibility, and inhibition controls. Starting a map in
+ReHLDS sets server time to 1.0 seconds, so the time-zero case uses the controlled
+clock in this fixture.
+
+## Windows x86 HLDS capture
+
+Run the pinned `b088984` Win32 GameDLL in two local HLDS sessions with the same
+`de_dust2` BSP, NAV, and bot profiles. Run the native bots on one side and
+AstraBot in Compatibility mode on the other. The reference capture adds console
+records to the audible-event classifier and successful multi-area path builder.
+Both sides sample `CmdStart` before the capture fixture's input overrides.
+On AstraBot, `astrabot_profile 1` enables `profile nativeWeaponSound` and the
+`goalAssignmentCorrelation` and `motionCommand` diagnostics.
+
+A controlled AK-47 shot in both sessions produced the same weapon playback
+event and classified as `HIGH` with range 2,000. Additional captures matched
+AK-47 reload (`LOW`, 1,100), AWP fire (`HIGH`, 99,999), and TMP fire (`HIGH`,
+1,000). These records measure classification before AstraBot's per-observer
+delivery. At the start of free movement,
+the CT bot used area 5 on both sides. The native bot selected area 21 via
+1522, and AstraBot selected area 874 via 60. The two runs chose different
+destinations and entered Hunt at different times. This capture records those
+differences and their command effects.
+
+The fixed plant probe starts the CT at `(-1361.3, 2447.0, 37.9)` after the
+normal `Planted_The_Bomb` event. Both captures show a path toward NAV area
+293 beginning with `157 -> 54`. Their timing and command axes differ, and
+subsequent goals diverge. The probe compares a shared route segment and
+observed dispatch. Complete route, movement-command and live RNG equality
+remain open.
 
 ## Full runtime replay remains open
 

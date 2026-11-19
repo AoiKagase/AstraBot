@@ -14,7 +14,7 @@ void BotBehaviorRuntime::applyNoiseLookCommand(std::size_t index, runtime::BotCo
 	auto &look = actor.noiseLook;
 	const auto &belief = services_->observation_managedBotPerception(index).snapshot();
 	const auto &noise = belief.noise();
-	const bool enemySound = noise.active && noise.kind != world::SoundKind::Objective && noise.timestampSeconds >= 0;
+	const bool enemySound = compat::hasNoiseLookPosition(noise);
 	if (!look.active() && !enemySound)
 		return;
 	const auto globals = services_->service_globals();

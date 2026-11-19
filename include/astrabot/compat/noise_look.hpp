@@ -23,6 +23,11 @@ struct NoiseLookInput
 	bool hasNoise = false, highPriority = false, visibleEnemy = false, hiding = false, clearLine = false;
 	int enemiesRemaining = 0;
 };
+inline bool hasNoiseLookPosition(const world::NoiseMemory &noise)
+{
+	return (noise.active || noise.hasLocalizedZeroTime()) && noise.kind != world::SoundKind::Objective &&
+		noise.timestampSeconds >= 0.0f;
+}
 inline bool isNearbyEnemyGunfire(const NoiseLookInput &input)
 {
 	constexpr float kStartleRange = 1000.0f;
@@ -37,7 +42,7 @@ inline NoiseLookKind noiseLookKind(const NoiseLookInput &input, float inhibitedU
 		return NoiseLookKind::None;
 	if (input.clearLine && isNearbyEnemyGunfire(input))
 		return NoiseLookKind::Startle;
-	if (!std::isfinite(input.reactionSeconds) || input.reactionSeconds < 0 ||
+	if (input.noiseTime == 0.0f || !std::isfinite(input.reactionSeconds) || input.reactionSeconds < 0 ||
 		input.now - input.noiseTime < input.reactionSeconds)
 		return NoiseLookKind::None;
 	return NoiseLookKind::Ordinary;
