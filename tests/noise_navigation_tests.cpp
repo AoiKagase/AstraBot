@@ -135,6 +135,7 @@ int main()
 	nav::NavDocument routeDoc;
 	routeDoc.setSourceIdentity({1, 0, 0});
 	auto start = area(1, 0);
+	start.extent.hi.z = 200;
 	auto goal = area(2, 200);
 	goal.extent.lo.x = 1000;
 	goal.extent.hi.x = 1100;
@@ -145,11 +146,13 @@ int main()
 	routePub.publish(&routeDoc, 1);
 	nav::NavPathCostContext cost{};
 	cost.areas.push_back({2, 10000, 0});
-	const float travel = compat::noiseTravelDistance(routePub.snapshot(), 1, 2, cost);
-	if (!check(std::fabs(travel - std::sqrt(1000.0f * 1000.0f + 200.0f * 200.0f)) < .01f &&
-				compat::noiseTravelDistance(routePub.snapshot(), 2, 1, cost) < 0 &&
-				compat::noiseTravelDistance(routePub.snapshot(), 1, 1, cost) == 0,
-			"noise range uses physical area-center distance and directed reachability"))
+	const auto route = routePub.snapshot();
+	const nav::NavLadderTopology ladders{route.revision(), route.mapGeneration(), {}};
+	const float travel = compat::noiseTravelDistance(route, 1, 2, cost, ladders);
+	if (!check(std::fabs(travel - std::sqrt(1000.0f * 1000.0f + 100.0f * 100.0f)) < .01f &&
+				compat::noiseTravelDistance(route, 2, 1, cost, ladders) < 0 &&
+				compat::noiseTravelDistance(route, 1, 1, cost, ladders) == 0,
+			"noise range uses native extent centers on slopes and directed reachability"))
 		return 1;
 	return 0;
 }

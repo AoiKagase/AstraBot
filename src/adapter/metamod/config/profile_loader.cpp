@@ -527,12 +527,8 @@ struct CsbotValues
 	int aggression;
 	compat::ProfileTeam team;
 	bool hasDifficulty;
-	bool hasSkill;
-	bool hasAggression;
-	bool hasTeam;
 	unsigned difficultyMask;
 	compat::ProfileRecord extended;
-	unsigned extendedMask;
 };
 
 struct CsbotTemplate
@@ -623,8 +619,7 @@ private:
 
 CsbotValues makeCsbotValues()
 {
-	return {kDefaultDifficulty, kDefaultSkill, kDefaultAggression, compat::ProfileTeam::Any, false, false, false, false,
-		0, {}, 0};
+	return {kDefaultDifficulty, kDefaultSkill, kDefaultAggression, compat::ProfileTeam::Any, false, 0, {}};
 }
 
 bool parseCsbotField(const char *line, Token *key, Token *value)
@@ -749,7 +744,6 @@ bool applyCsbotField(const Token &key, const Token &value, CsbotValues *values)
 		{
 			return false;
 		}
-		values->hasSkill = true;
 	}
 	else if (equalsIgnoreCase(key.text, "Aggression"))
 	{
@@ -758,7 +752,6 @@ bool applyCsbotField(const Token &key, const Token &value, CsbotValues *values)
 		{
 			return false;
 		}
-		values->hasAggression = true;
 	}
 	else if (equalsIgnoreCase(key.text, "Team"))
 	{
@@ -766,7 +759,6 @@ bool applyCsbotField(const Token &key, const Token &value, CsbotValues *values)
 		{
 			return false;
 		}
-		values->hasTeam = true;
 	}
 	return true;
 }
@@ -798,7 +790,6 @@ bool parseCsbotBlock(LineReader *reader, CsbotValues *values)
 		}
 		if (!parseExtendedField(key, value, &values->extended, &blockMask))
 			return false;
-		values->extendedMask |= blockMask;
 	}
 	return false;
 }
@@ -820,49 +811,40 @@ const CsbotTemplate *findCsbotTemplate(
 	return nullptr;
 }
 
-void applyCsbotTemplate(const CsbotTemplate &source, CsbotValues *values)
+void applyCsbotTemplate(const CsbotValues &parent, const CsbotValues &defaults, CsbotValues *values)
 {
-	const unsigned mask = source.values.extendedMask;
-	if (mask & kReactionTimeFieldMask)
-		values->extended.reactionTimeSeconds = source.values.extended.reactionTimeSeconds;
-	if (mask & kAttackDelayFieldMask)
-		values->extended.attackDelaySeconds = source.values.extended.attackDelaySeconds;
-	if (mask & kTeamworkFieldMask)
-		values->extended.teamwork = source.values.extended.teamwork;
-	if (mask & kCostFieldMask)
-		values->extended.cost = source.values.extended.cost;
-	if (mask & kVoicePitchFieldMask)
-		values->extended.voicePitch = source.values.extended.voicePitch;
-	if (mask & kVoiceBankFieldMask)
-		std::memcpy(values->extended.voiceBank, source.values.extended.voiceBank, sizeof(values->extended.voiceBank));
-	if (mask & kWeaponPreferenceFieldMask)
+	if (parent.extended.reactionTimeSeconds != defaults.extended.reactionTimeSeconds)
+		values->extended.reactionTimeSeconds = parent.extended.reactionTimeSeconds;
+	if (parent.extended.attackDelaySeconds != defaults.extended.attackDelaySeconds)
+		values->extended.attackDelaySeconds = parent.extended.attackDelaySeconds;
+	if (parent.extended.teamwork != defaults.extended.teamwork)
+		values->extended.teamwork = parent.extended.teamwork;
+	if (parent.extended.cost != defaults.extended.cost)
+		values->extended.cost = parent.extended.cost;
+	if (parent.extended.voicePitch != defaults.extended.voicePitch)
+		values->extended.voicePitch = parent.extended.voicePitch;
+	const auto *parentBank = *parent.extended.voiceBank ? parent.extended.voiceBank : "BotChatter.db";
+	const auto *defaultBank = *defaults.extended.voiceBank ? defaults.extended.voiceBank : "BotChatter.db";
+	if (!equalsIgnoreCase(parentBank, defaultBank))
+		std::memcpy(values->extended.voiceBank, parent.extended.voiceBank, sizeof(values->extended.voiceBank));
+	if (parent.extended.weaponPreferenceCount != defaults.extended.weaponPreferenceCount)
 	{
-		values->extended.weaponPreferenceCount = source.values.extended.weaponPreferenceCount;
-		std::memcpy(values->extended.weaponPreferences, source.values.extended.weaponPreferences,
+		values->extended.weaponPreferenceCount = parent.extended.weaponPreferenceCount;
+		std::memcpy(values->extended.weaponPreferences, parent.extended.weaponPreferences,
 			sizeof(values->extended.weaponPreferences));
 	}
-	values->extendedMask |= mask;
-	if (source.values.hasDifficulty)
+	if (parent.difficultyMask != defaults.difficultyMask)
 	{
-		values->difficulty = source.values.difficulty;
-		values->difficultyMask = source.values.difficultyMask;
-		values->hasDifficulty = true;
+		values->difficulty = parent.difficulty;
+		values->difficultyMask = parent.difficultyMask;
+		values->hasDifficulty = parent.hasDifficulty;
 	}
-	if (source.values.hasSkill)
-	{
-		values->skill = source.values.skill;
-		values->hasSkill = true;
-	}
-	if (source.values.hasAggression)
-	{
-		values->aggression = source.values.aggression;
-		values->hasAggression = true;
-	}
-	if (source.values.hasTeam)
-	{
-		values->team = source.values.team;
-		values->hasTeam = true;
-	}
+	if (parent.skill != defaults.skill)
+		values->skill = parent.skill;
+	if (parent.aggression != defaults.aggression)
+		values->aggression = parent.aggression;
+	if (parent.team != defaults.team)
+		values->team = parent.team;
 }
 
 bool splitCsbotTemplateNames(const Token &token,
@@ -955,7 +937,7 @@ ProfileLoadResult loadCsbotText(
 				return templateCount >= templates.size() ? ProfileLoadResult::CatalogFull
 														 : ProfileLoadResult::Malformed;
 			}
-			templates[templateCount].values = makeCsbotValues();
+			templates[templateCount].values = defaults;
 			if (!parseCsbotBlock(&reader, &templates[templateCount].values))
 			{
 				return ProfileLoadResult::Malformed;
@@ -991,7 +973,7 @@ ProfileLoadResult loadCsbotText(
 				{
 					return ProfileLoadResult::Malformed;
 				}
-				applyCsbotTemplate(*source, &values);
+				applyCsbotTemplate(source->values, defaults, &values);
 			}
 		}
 		if (!parseCsbotBlock(&reader, &values))

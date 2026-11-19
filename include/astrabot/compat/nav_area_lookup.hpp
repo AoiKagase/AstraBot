@@ -15,8 +15,7 @@ inline bool botNavAreasOverlap(const nav::NavArea &a, const nav::NavArea &b)
 	return b.extent.lo.x < a.extent.hi.x && b.extent.hi.x > a.extent.lo.x && b.extent.lo.y < a.extent.hi.y &&
 		b.extent.hi.y > a.extent.lo.y;
 }
-inline bool botNavAreaContains(const nav::NavSnapshot &snapshot, nav::AreaId id, const nav::NavVector &position,
-	const std::vector<nav::AreaId> *overlaps = nullptr)
+inline bool botNavAreaContains(const nav::NavSnapshot &snapshot, nav::AreaId id, const nav::NavVector &position)
 {
 	if (!snapshot.isValid() || !std::isfinite(position.x) || !std::isfinite(position.y) || !std::isfinite(position.z))
 		return false;
@@ -35,17 +34,15 @@ inline bool botNavAreaContains(const nav::NavSnapshot &snapshot, nav::AreaId id,
 		const float z = nav::surfaceZAt(other, position.x, position.y);
 		return z <= position.z && z > floor;
 	};
-	if (overlaps)
+	const auto &areas = snapshot.document()->areas();
+	if (const auto *cell = snapshot.areaIndicesInCell(position))
 	{
-		for (auto otherId : *overlaps)
-		{
-			const auto *other = snapshot.document()->findArea(otherId);
-			if (other && higherFloor(*other))
+		for (const auto index : *cell)
+			if (higherFloor(areas[index]))
 				return false;
-		}
 	}
 	else
-		for (const auto &other : snapshot.document()->areas())
+		for (const auto &other : areas)
 			if (higherFloor(other))
 				return false;
 	return true;
@@ -59,17 +56,24 @@ inline nav::AreaId findBotNavArea(
 		return 0;
 	const nav::NavArea *selected = nullptr;
 	float floor = -99999999.9f;
-	for (const auto &area : snapshot.document()->areas())
+	const auto &areas = snapshot.document()->areas();
+	const auto consider = [&](const nav::NavArea &area)
 	{
 		if (position.x < area.extent.lo.x || position.x > area.extent.hi.x || position.y < area.extent.lo.y ||
 			position.y > area.extent.hi.y)
-			continue;
+			return;
 		const float z = nav::surfaceZAt(area, position.x, position.y);
 		if (z > position.z + 5 || z < position.z - 120 || z <= floor)
-			continue;
+			return;
 		selected = &area;
 		floor = z;
-	}
+	};
+	if (const auto *cell = snapshot.areaIndicesInCell(position))
+		for (const auto index : *cell)
+			consider(areas[index]);
+	else
+		for (const auto &area : areas)
+			consider(area);
 	if (selected)
 		return selected->id;
 	float ground = 0;
@@ -77,18 +81,25 @@ inline nav::AreaId findBotNavArea(
 		return 0;
 	const nav::NavVector source{position.x, position.y, ground + 36};
 	float nearest = 100000000.0f;
-	for (const auto &area : snapshot.document()->areas())
+	for (const auto &area : areas)
 	{
 		const float x = (std::max)(area.extent.lo.x, (std::min)(source.x, area.extent.hi.x));
 		const float y = (std::max)(area.extent.lo.y, (std::min)(source.y, area.extent.hi.y));
 		const float z = nav::surfaceZAt(area, x, y);
 		const float dx = x - source.x, dy = y - source.y, dz = z - source.z;
 		const float distance = dx * dx + dy * dy + dz * dz;
-		if (distance < nearest && (anyZ || probe->clearLine(source, {x, y, z + 36})))
+		if (!(distance < nearest))
+			continue;
+		if (!anyZ)
 		{
-			nearest = distance;
-			selected = &area;
+			const bool clear = probe->clearLine(source, {x, y, z + 36});
+			if (!probe->available())
+				return 0;
+			if (!clear)
+				continue;
 		}
+		nearest = distance;
+		selected = &area;
 	}
 	return selected ? selected->id : 0;
 }

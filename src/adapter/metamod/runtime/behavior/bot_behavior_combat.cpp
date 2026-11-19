@@ -15,6 +15,12 @@ constexpr float kStandingFeetOffset = 36.0f;
 #define ASTRABOT_BOT_BEHAVIOR_COMBAT_MAXIMUM_COMBAT_ELAPSED_SECONDS .1f
 constexpr float kDefaultFieldOfView = 90.0f;
 constexpr int kTraceIncludingActors = 0;
+bool compatibilityFreeForAll(BotBehaviorServices &services)
+{
+	return services.service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility &&
+		readOptionalCvarFloat(services.service_engineFunctions(), "mp_freeforall") != 0.0f;
+}
+
 struct CrouchTraceContext
 {
 	enginefuncs_t *engine;
@@ -131,12 +137,25 @@ CombatUpkeepUpdate BotBehaviorRuntime::upkeepCombat(
 		update.setPrimary = true;
 		return update;
 	}
+	const auto lookReceipt = reactionContext(index);
+	const auto lookExecution = state.executionRevision;
+	const auto lookEpoch = state.managedBotStateMachines.normalStateEpoch();
+	const auto attackEpoch = state.managedBotStateMachines.attackEntryEpoch();
+	const bool freeForAll = compatibilityFreeForAll(*services_);
+	if (!executionCurrent(index, lookReceipt, lookExecution) ||
+		state.managedBotStateMachines.normalStateEpoch() != lookEpoch ||
+		state.managedBotStateMachines.attackEntryEpoch() != attackEpoch)
+	{
+		update.setPrimary = true;
+		return update;
+	}
 	const auto token = services_->service_lifecycle().tokenForSlot(tracked.target.slot);
 	const auto generation = token.slotGeneration == 0U ? 1U : token.slotGeneration;
 	edict_t *enemy = engine->pfnPEntityOfEntIndex(static_cast<int>(tracked.target.slot));
 	perception::VisionObservation visible{};
 	const int ownTeam = services_->observation_resolvePlayerTeam(handle.entity);
-	const bool friendly = enemy && ownTeam != 0 && services_->observation_resolvePlayerTeam(enemy) == ownTeam;
+	const bool friendly = !freeForAll && enemy && ownTeam != 0 &&
+		services_->observation_resolvePlayerTeam(enemy) == ownTeam;
 	const bool validEnemy = generation == tracked.target.generation && reactionEnemyCurrent(tracked.target) && enemy && !enemy->free &&
 		enemy->serialnumber >= 0 && enemy->v.deadflag == DEAD_NO && enemy->v.health > 0 && !friendly;
 	const bool currentlyVisible = validEnemy &&
@@ -177,7 +196,7 @@ CombatUpkeepUpdate BotBehaviorRuntime::upkeepCombat(
 			before.ducked ? kDuckedFeetOffset : kStandingFeetOffset, weaponObservation.weapon.accuracy.isAvailable(),
 			weaponObservation.weapon.accuracy.value);
 	}
-	if (currentlyVisible && engine->pfnTraceLine && ownTeam != 0)
+	if (!freeForAll && currentlyVisible && engine->pfnTraceLine && ownTeam != 0)
 	{
 		const float eye[] = {handle.entity->v.origin.x + handle.entity->v.view_ofs.x,
 			handle.entity->v.origin.y + handle.entity->v.view_ofs.y,
@@ -215,9 +234,6 @@ CombatUpkeepUpdate BotBehaviorRuntime::upkeepCombat(
 	context.aimErrorRange = std::sqrt((enemyOrigin.x - context.origin.x) * (enemyOrigin.x - context.origin.x) +
 		(enemyOrigin.y - context.origin.y) * (enemyOrigin.y - context.origin.y) +
 		(enemyOrigin.z - context.origin.z) * (enemyOrigin.z - context.origin.z));
-	const auto lookReceipt = reactionContext(index);
-	const auto lookExecution = state.executionRevision;
-	const auto lookEpoch = state.managedBotStateMachines.normalStateEpoch();
 	nav::NativeLadderLook ladder{};
 	const bool ladderLook = services_->navigation_nativeLadderLook(index, &ladder);
 	if (!executionCurrent(index, lookReceipt, lookExecution) ||
@@ -422,6 +438,14 @@ bool BotBehaviorRuntime::retaliateAgainstRecentAttacker(const ManagedActionConte
 		return false;
 	const auto revision = actor.executionRevision;
 	const auto epoch = machine.attackEntryEpoch();
+	const world::ActorObservation *contact = nullptr;
+	const bool visible = ctx.snapshot.findActor(candidate, &contact) == world::ContactLookupResult::Found &&
+		contact && contact->visible && contact->fovPassed && contact->losPassed;
+	const bool freeForAll = visible && contact->relation == world::TeamRelation::Friendly &&
+		compatibilityFreeForAll(*services_);
+	if (!executionCurrent(ctx.index, receipt, revision) || !machine.attackOverlayActive() ||
+		machine.attackEntryEpoch() != epoch)
+		return true;
 	const auto *source = engine->pfnPEntityOfEntIndex(static_cast<int>(attacker.id));
 	if (!executionCurrent(ctx.index, receipt, revision) || !machine.attackOverlayActive() ||
 		machine.attackEntryEpoch() != epoch || !receiptConnectionCurrent(connection) ||
@@ -430,9 +454,7 @@ bool BotBehaviorRuntime::retaliateAgainstRecentAttacker(const ManagedActionConte
 		source->v.deadflag != DEAD_NO || !(source->v.health > 0.0f) ||
 		(source->v.flags & (FL_CLIENT | FL_SPECTATOR | FL_DORMANT)) != FL_CLIENT)
 		return false;
-	const world::ActorObservation *contact = nullptr;
-	if (ctx.snapshot.findActor(candidate, &contact) == world::ContactLookupResult::Found && contact && contact->visible &&
-		contact->relation == world::TeamRelation::Hostile && contact->fovPassed && contact->losPassed)
+	if (visible && (contact->relation == world::TeamRelation::Hostile || freeForAll))
 	{
 		memory.rememberVisible(receipt, candidate, attacker, contact->position);
 		observeRecognizedTargetChange(ctx.index, receipt.now);
@@ -593,7 +615,15 @@ ActionProposal BotBehaviorRuntime::decideCombatAction(ManagedActionContext &ctx)
 	target.confidence = 1.0f;
 	target.ageTicks = 0U;
 	target.friendlyFireRisk = false;
-	if (services_->service_engineFunctions()->pfnTraceLine != nullptr)
+	const auto lookReceipt = reactionContext(index);
+	const auto lookExecution = actors_[index].executionRevision;
+	const auto lookEpoch = actors_[index].managedBotStateMachines.normalStateEpoch();
+	const auto attackEpoch = actors_[index].managedBotStateMachines.attackEntryEpoch();
+	const bool freeForAll = compatibilityFreeForAll(*services_);
+	if (!executionCurrent(index, lookReceipt, lookExecution) ||
+		state.normalStateEpoch() != lookEpoch || state.attackEntryEpoch() != attackEpoch)
+		return proposal;
+	if (!freeForAll && services_->service_engineFunctions()->pfnTraceLine != nullptr)
 	{
 		const float eye[] = {handle.entity->v.origin.x + handle.entity->v.view_ofs.x,
 			handle.entity->v.origin.y + handle.entity->v.view_ofs.y,
@@ -641,9 +671,6 @@ ActionProposal BotBehaviorRuntime::decideCombatAction(ManagedActionContext &ctx)
 		context.aimErrorRange = std::sqrt((p.x - context.origin.x) * (p.x - context.origin.x) +
 			(p.y - context.origin.y) * (p.y - context.origin.y) + (p.z - context.origin.z) * (p.z - context.origin.z));
 	}
-	const auto lookReceipt = reactionContext(index);
-	const auto lookExecution = actors_[index].executionRevision;
-	const auto lookEpoch = actors_[index].managedBotStateMachines.normalStateEpoch();
 	nav::NativeLadderLook ladder{};
 	const bool ladderLook = services_->navigation_nativeLadderLook(index, &ladder);
 	if (!executionCurrent(index, lookReceipt, lookExecution) ||

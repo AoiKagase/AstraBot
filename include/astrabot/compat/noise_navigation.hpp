@@ -11,6 +11,7 @@ class INoiseNavProbe
 {
 public:
 	virtual ~INoiseNavProbe() = default;
+	virtual bool available() const { return true; }
 	virtual bool groundHeight(const nav::NavVector &source, float *z) = 0;
 	virtual bool clearLine(const nav::NavVector &from, const nav::NavVector &to) = 0;
 };
@@ -33,7 +34,7 @@ private:
 	INoiseNavProbe *probe_;
 };
 float noiseTravelDistance(const nav::NavSnapshot &snapshot, nav::AreaId from, nav::AreaId to,
-	const nav::NavPathCostContext &cost, nav::NavSearchStats *stats = nullptr);
+	const nav::NavPathCostContext &cost, const nav::NavLadderTopology &ladders);
 }
 }
 #endif

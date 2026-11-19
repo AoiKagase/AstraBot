@@ -396,6 +396,38 @@ bool testReferenceIdleAndHuntOwnTheirLifecycle()
 		"reference Hunt returns to Idle after thirty seconds for task selection");
 }
 
+bool testPlantTimeoutDoesNotAssignBombGuard()
+{
+	TraceCollector trace;
+	CompatibilityStateMachine machine({1U, 7U});
+	auto tick = context(1U, 0.0f, 1U);
+	initialize(&machine, &trace, tick);
+	machine.transition(CompatibilityStateId::PlantBomb, StateTransitionReason::ExplicitRequest,
+		StateTransitionId::ExplicitStateChange, tick);
+	trace.records.clear();
+	StateBehaviorInput input{};
+	input.objectiveActive = true;
+	input.inInteractionRange = true;
+	input.navigationOwned = true;
+	tick = context(2U, 5.0f, 2U);
+	tick.behavior = &input;
+	machine.update(tick);
+	if (!check(machine.state() == CompatibilityStateId::PlantBomb, "plant continues at the five-second boundary"))
+		return false;
+	tick = context(3U, 5.125f, 3U);
+	tick.behavior = &input;
+	machine.update(tick);
+	if (!check(machine.state() == CompatibilityStateId::Idle && machine.task() == CompatibilityTaskId::SeekAndDestroy,
+			"plant timeout returns to Idle with its regular task"))
+		return false;
+	for (const auto &record : trace.records)
+	{
+		if (!check(record.task != CompatibilityTaskId::GuardTickingBomb, "plant timeout never assigns bomb guard"))
+			return false;
+	}
+	return true;
+}
+
 bool testNoiseInvestigationNavigationCompletion()
 {
 	for (const auto outcome : {NavigationStepOutcome::EndOfPath, NavigationStepOutcome::PathFailure})
@@ -534,7 +566,8 @@ int main()
 {
 	return testNavigationCannotUpdateIdleTwice() && testRetainedTaskCompletion() &&
 			testNormalEntryEpochAndRetainedMoveTask() && testNoiseInvestigationNavigationCompletion() &&
-			testReferenceIdleAndHuntOwnTheirLifecycle() && testStateOwnsNavigationOutcome() &&
+			testPlantTimeoutDoesNotAssignBombGuard() && testReferenceIdleAndHuntOwnTheirLifecycle() &&
+			testStateOwnsNavigationOutcome() &&
 			testStateOwnedBehavior() && testInitialStateAndOwnership() && testReferenceSetStateOrderingAndSameState() &&
 			testFullUpdateAndTransitionTrace() && testAttackOverlayLifecycleAndInteraction() &&
 			testMultiStepAndTransitionDuringAttack() && testBlockedRngObservationAndLifecycleIsolation()

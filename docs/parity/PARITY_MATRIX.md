@@ -68,7 +68,7 @@ because the adapter exists or an offline fixture passes.
 | Hunt | `cs_bot_hunt.cpp` | `STATE-HUNT` | path reset/SeekAndDestroy task mapped | hunt/vision behavior deferred | IMPLEMENTED_UNVERIFIED |
 | InvestigateNoise | `cs_bot_investigate_noise.cpp` | `STATE-INVESTIGATE-NOISE` | lifecycle wrapper | live sound input unavailable | BLOCKED_BY_OBSERVATION |
 | MoveTo | `cs_bot_move_to.cpp` | `STATE-MOVE-TO` | lifecycle wrapper | route/path semantics deferred | IMPLEMENTED_UNVERIFIED |
-| PlantBomb | `cs_bot_plant_bomb.cpp` | `STATE-PLANT-BOMB` | exit guard-task/look cleanup mapped | exact plant sequence deferred | IMPLEMENTED_UNVERIFIED |
+| PlantBomb | `cs_bot_plant_bomb.cpp` | `STATE-PLANT-BOMB` | confirmed plant enters guard and exit clears look | exact exit weapon selection remains open | IMPLEMENTED_UNVERIFIED |
 | UseEntity | `cs_bot_use_entity.cpp` | `STATE-USE-ENTITY` | look cleanup mapped | entity-use behavior unavailable | IMPLEMENTED_UNVERIFIED |
 | Full Update gate | `cs_bot_update.cpp` state dispatch | existing `BotTimingScheduler` + adapter sequence | no independent think loop; only Full Update updates state | live cadence differential not run | PASS REGRESSION |
 | Enhanced isolation | Compatibility baseline must not be overridden | `RuntimeModePolicy` + Compatibility-only requests | no enhanced request path | enhanced behavior remains separate | IMPLEMENTED_UNVERIFIED |

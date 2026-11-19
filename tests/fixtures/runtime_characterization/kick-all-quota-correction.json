@@ -1,0 +1,80 @@
+{
+  "reason": "CSBot bot_kick all clears bot_quota. Only five previous nonzero quota writes after managed removal change to zero. Independent join fixtures set their initial quota explicitly.",
+  "base_commit": "866228629490a028768c9a3dac149f489d9ecded",
+  "validated_runtime_platforms": [
+    "windows-x86",
+    "linux-x86"
+  ],
+  "platforms": {
+    "windows-x86": {
+      "baseline_sha256": "4baa1c18f6b44a8485edc3f8f16f1ea29fd1dcd714f063412cb7bb6dd48a515d",
+      "corrected_sha256": "36316a7c34f3a946e5431e364bad14ddefe05914610fa0bd9731e34b4c5935a8",
+      "records": 149153
+    },
+    "linux-x86": {
+      "baseline_sha256": "926e218cbbca27e0c4c972e36256cce7a93365c0fc449cf94810d5e298b37121",
+      "corrected_sha256": "ec1ce990bdd06f26fb1d04ec7928cf1ccaff9a8f480cb0c48acffbc77a8a8792",
+      "records": 149153
+    }
+  },
+  "patterns": [
+    {
+      "windows-x86": {
+        "before": [
+          "call setCvarFloat name=bot_quota value=0x1.0000000000000p+0"
+        ],
+        "after": [
+          "call setCvarFloat name=bot_quota value=0x0.0000000000000p+0"
+        ]
+      },
+      "linux-x86": {
+        "before": [
+          "call setCvarFloat name=bot_quota value=0x1p+0"
+        ],
+        "after": [
+          "call setCvarFloat name=bot_quota value=0x0p+0"
+        ]
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "call setCvarFloat name=bot_quota value=0x1.0000000000000p+1"
+        ],
+        "after": [
+          "call setCvarFloat name=bot_quota value=0x0.0000000000000p+0"
+        ]
+      },
+      "linux-x86": {
+        "before": [
+          "call setCvarFloat name=bot_quota value=0x1p+1"
+        ],
+        "after": [
+          "call setCvarFloat name=bot_quota value=0x0p+0"
+        ]
+      }
+    }
+  ],
+  "edits": [
+    [
+      3640,
+      0
+    ],
+    [
+      3891,
+      1
+    ],
+    [
+      3931,
+      1
+    ],
+    [
+      4222,
+      1
+    ],
+    [
+      4513,
+      0
+    ]
+  ]
+}

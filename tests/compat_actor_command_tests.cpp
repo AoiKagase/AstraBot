@@ -120,6 +120,10 @@ const char *const gManagerCvarNames[] = {
 	"bot_defer_to_human", "bot_excellent_morale"};
 constexpr std::size_t kManagerCvarCount = sizeof(gManagerCvarNames) / sizeof(gManagerCvarNames[0]);
 cvar_t *gManagerCvars[kManagerCvarCount]{};
+const char *const gWeaponPresetCvarNames[] = {"bot_allow_pistols", "bot_allow_shotguns", "bot_allow_sub_machine_guns",
+	"bot_allow_rifles", "bot_allow_machine_guns", "bot_allow_grenades", "bot_allow_snipers", "bot_allow_shield"};
+constexpr std::size_t kWeaponPresetCvarCount = sizeof(gWeaponPresetCvarNames) / sizeof(gWeaponPresetCvarNames[0]);
+cvar_t *gWeaponPresetCvars[kWeaponPresetCvarCount]{};
 
 bool check(bool condition, const char *description)
 {
@@ -294,6 +298,13 @@ void getGameDir(char *buffer)
 cvar_t *getCvar(const char *name)
 {
 	astrabot_test::runtimeCharacterization().record("call getCvar name=%s", name);
+	for (std::size_t index = 0U; index < kWeaponPresetCvarCount; ++index)
+	{
+		if (std::strcmp(name, gWeaponPresetCvarNames[index]) == 0)
+		{
+			return gWeaponPresetCvars[index];
+		}
+	}
 	static cvar_t c4Timer{};
 	if (std::strcmp(name, "mp_c4timer") == 0 && gTestC4Timer > 0.0f)
 		return &c4Timer;
@@ -391,6 +402,17 @@ float getCvarFloat(const char *name)
 void setCvarFloat(const char *name, float value)
 {
 	astrabot_test::runtimeCharacterization().record("call setCvarFloat name=%s value=%a", name, value);
+	for (std::size_t index = 0U; index < kWeaponPresetCvarCount; ++index)
+	{
+		if (std::strcmp(name, gWeaponPresetCvarNames[index]) == 0)
+		{
+			if (gWeaponPresetCvars[index] != nullptr)
+			{
+				gWeaponPresetCvars[index]->value = value;
+			}
+			return;
+		}
+	}
 	for (std::size_t index = 0U; index < kManagerCvarCount; ++index)
 		if (std::strcmp(name, gManagerCvarNames[index]) == 0 && gManagerCvars[index] != nullptr)
 			gManagerCvars[index]->value = value;
@@ -411,6 +433,15 @@ void registerCvar(cvar_t *variable)
 	if (variable == nullptr || variable->name == nullptr)
 	{
 		return;
+	}
+	for (std::size_t index = 0U; index < kWeaponPresetCvarCount; ++index)
+	{
+		if (std::strcmp(variable->name, gWeaponPresetCvarNames[index]) == 0)
+		{
+			gWeaponPresetCvars[index] = variable;
+			variable->value = std::strtof(variable->string, nullptr);
+			return;
+		}
 	}
 	for (std::size_t index = 0U; index < kManagerCvarCount; ++index)
 	{
@@ -1551,6 +1582,38 @@ bool testRuntimeBombSiteApproach(
 	passed = check(plantedAwayFromRouteTarget,
 				 "PlantBomb owns attack anywhere inside a public bombsite, independent of the old route target") &&
 		passed;
+	if (!astrabot_test::runtimeCharacterization().enabled())
+	{
+		const auto previousMapname = globals.mapname;
+		globals.mapname = 6;
+		runtime.onMessageBegin(0, 86, nullptr, nullptr);
+		runtime.onWriteByte(1);
+		runtime.onWriteString("TERRORIST");
+		runtime.onMessageEnd();
+		gPlantedBomb.v.classname = 2;
+		gPlantedBomb.v.model = 3;
+		gPlantedBomb.serialnumber = 1;
+		gPlantedBomb.v.origin = gEntities[0].v.origin;
+		gPlantedBomb.v.dmgtime = globals.time + 35.0f;
+		gEntities[0].v.weapons = 0;
+		runtime.onMessageBegin(MSG_ALL, 98, nullptr, nullptr);
+		runtime.onWriteByte(4);
+		runtime.onWriteString("#Bomb_Planted");
+		runtime.onMessageEnd();
+		gMovementLogs.clear();
+		for (int frame = 0; frame < 12; ++frame)
+			tick(0.1f);
+		bool guardingAfterPlant = false;
+		for (const auto &message : gMovementLogs)
+		{
+			if (message.find("state=STATE-HIDE task=TASK-GUARD-TICKING-BOMB") != std::string::npos)
+				guardingAfterPlant = true;
+		}
+		passed = check(guardingAfterPlant, "known lost C4 and public planted evidence assign the guard task on Hide entry") &&
+			passed;
+		gPlantedBomb = {};
+		globals.mapname = previousMapname;
+	}
 	gBombSite.v.absmin = Vector(24.0f, 24.0f, -4.0f);
 	gBombSite.v.absmax = Vector(40.0f, 40.0f, 4.0f);
 	const auto urgent = freshRound(7U, 80.0f, 0.1f);
@@ -2302,6 +2365,7 @@ int main(int argc, char **argv)
 	gCreateCount = 0;
 	gClientCommandCount = 0;
 	resetEntities();
+	gBotQuota = 1.0f;
 	gameDllTable.pfnClientCommand = nullptr;
 	gHookedGameDllTable.pfnClientCommand = nullptr;
 	globals.time += 0.1f;
@@ -2366,6 +2430,7 @@ int main(int argc, char **argv)
 	gMenuTeamContextValid = false;
 	gMenuClassContextValid = false;
 	resetEntities();
+	gBotQuota = 2.0f;
 	gameDllTable.pfnClientCommand = &unhookedGameClientCommand;
 	gHookedGameDllTable.pfnClientCommand = &hookedGameClientCommand;
 	globals.time += 0.1f;
@@ -2520,26 +2585,80 @@ int main(int argc, char **argv)
 		std::remove(profilePath);
 		return 1;
 	}
-	if (!check(runtime.executeCompatibilityCommand(request("bot_kick", 1U, "CT Bot")) ==
-				CompatibilityCommandResult::Handled,
-			"bot_kick removes a named managed actor"))
+	// Keep new scenarios separate from the historical callback fixture.
+	if (astrabot_test::runtimeCharacterization().enabled())
 	{
-		std::remove(profilePath);
-		return 1;
+		if (!check(runtime.executeCompatibilityCommand(request("bot_kick", 1U, "CT Bot")) ==
+					CompatibilityCommandResult::Handled, "bot_kick removes a named managed actor") ||
+			!check(runtime.executeCompatibilityCommand(request("bot_kick", 1U, "all")) ==
+					CompatibilityCommandResult::Handled, "bot_kick all removes remaining managed actors") ||
+			!check(runtime.executeCompatibilityCommand(request("bot_kick", 1U, "all")) ==
+					CompatibilityCommandResult::NoTarget, "repeated bot_kick reports no target"))
+		{
+			std::remove(profilePath);
+			return 1;
+		}
 	}
-	if (!check(
-			runtime.executeCompatibilityCommand(request("bot_kick", 1U, "all")) == CompatibilityCommandResult::Handled,
-			"bot_kick all removes remaining managed actors"))
+	else
 	{
-		std::remove(profilePath);
-		return 1;
-	}
-	if (!check(
-			runtime.executeCompatibilityCommand(request("bot_kick", 1U, "all")) == CompatibilityCommandResult::NoTarget,
-			"repeated bot_kick reports no target"))
-	{
-		std::remove(profilePath);
-		return 1;
+		struct WeaponPresetCase
+		{
+			const char *command;
+			float expected[kWeaponPresetCvarCount];
+		};
+		const WeaponPresetCase weaponPresets[] = {{"bot_all_weapons", {1, 1, 1, 1, 1, 1, 1, 1}},
+			{"bot_knives_only", {0, 0, 0, 0, 0, 0, 0, 0}}, {"bot_snipers_only", {1, 0, 0, 0, 0, 0, 1, 0}},
+			{"bot_pistols_only", {1, 0, 0, 0, 0, 0, 0, 0}}};
+		bool managementPassed = true;
+		cvar_t enginePistolAllowance{};
+		gWeaponPresetCvars[0] = &enginePistolAllowance;
+		for (const auto &preset : weaponPresets)
+		{
+			const auto result = runtime.executeCompatibilityCommand(request(preset.command));
+			bool valuesMatch = true;
+			for (std::size_t index = 0U; index < kWeaponPresetCvarCount; ++index)
+			{
+				valuesMatch &= gWeaponPresetCvars[index] != nullptr &&
+					gWeaponPresetCvars[index]->value == preset.expected[index];
+			}
+			managementPassed &= check(result == CompatibilityCommandResult::Handled && valuesMatch, preset.command);
+		}
+		managementPassed &= check(gWeaponPresetCvars[0] == &enginePistolAllowance,
+			"weapon presets reuse a GameDLL-owned allowance and register missing allowances");
+
+		const auto oldCvarGetString = engineFunctions.pfnCVarGetString;
+		engineFunctions.pfnCVarGetString = [](const char *name) -> const char *
+		{
+			return std::strcmp(name, "bot_quota_mode") == 0 ? "fill" : "";
+		};
+		gBotQuota = 5.0f;
+		const auto namedKick = runtime.executeCompatibilityCommand(request("bot_kick", 1U, "CT Bot"));
+		engineFunctions.pfnCVarGetString = oldCvarGetString;
+		managementPassed &= check(namedKick == CompatibilityCommandResult::Handled && gBotQuota == 5.0f,
+			"named bot_kick in fill mode removes the managed bot and preserves quota");
+		runtime.setCompatibilityString("bot_quota_mode", "normal");
+		setDesiredFloat("bot_quota", 5.0f);
+		const auto normalKick = runtime.executeCompatibilityCommand(request("bot_kick", 1U, "Named Bot"));
+		managementPassed &= check(normalKick == CompatibilityCommandResult::Handled && gBotQuota == 4.0f,
+			"named bot_kick in normal mode decrements quota");
+		setDesiredFloat("bot_quota", 5.0f);
+		gBotQuota = 5.0f;
+		const auto allKick = runtime.executeCompatibilityCommand(request("bot_kick", 1U, "all"));
+		managementPassed &= check(allKick == CompatibilityCommandResult::Handled && gBotQuota == 0.0f,
+			"bot_kick all removes the remaining managed bots and clears quota");
+		setDesiredFloat("bot_quota", 2.0f);
+		gBotQuota = 2.0f;
+		const auto emptyKick = runtime.executeCompatibilityCommand(request("bot_kick"));
+		managementPassed &= check(emptyKick == CompatibilityCommandResult::NoTarget && gBotQuota == 0.0f,
+			"bot_kick without arguments clears quota even on an empty roster");
+		for (auto &allowance : gWeaponPresetCvars)
+			allowance = nullptr;
+		if (!managementPassed)
+		{
+			std::remove(profilePath);
+			return 1;
+		}
+
 	}
 
 	const int createCountBeforeInvalid = gCreateCount;

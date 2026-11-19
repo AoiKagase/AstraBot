@@ -181,6 +181,53 @@ int main()
 	if (!check(catalog.selectNamed("BotTwo", ProfileTeam::Any, &csbotProfile) == ProfileSelectionResult::Selected &&
 			std::strcmp(csbotProfile.voiceBank, "default-voice.db") == 0, "profile retains inherited default voice bank"))
 		return 1;
+
+	const char multiTemplateText[] =
+		"Default\nSkill = 50\nAggression = 50\nTeam = T\nDifficulty = NORMAL\n"
+		"ReactionTime = 0.4\nAttackDelay = 0.2\nTeamwork = 60\nCost = 1500\nVoicePitch = 95\n"
+		"VoiceBank = default.db\nWeaponPreference = ak47\nEnd\n"
+		"Template A\nSkill = 75\nAggression = 80\nTeam = CT\nDifficulty = EXPERT\n"
+		"ReactionTime = 0.3\nAttackDelay = 0.1\nTeamwork = 90\nCost = 2000\nVoicePitch = 115\n"
+		"VoiceBank = other.db\nWeaponPreference = m4a1\nWeaponPreference = deagle\nEnd\n"
+		"Template B\nSkill = 50\nAggression = 50\nTeam = T\nDifficulty = NORMAL\n"
+		"ReactionTime = 0.4\nAttackDelay = 0.2\nTeamwork = 60\nCost = 1500\nVoicePitch = 95\n"
+		"VoiceBank = default.db\nWeaponPreference = awp\nEnd\n"
+		"Template C\nWeaponPreference = awp\nWeaponPreference = ak47\nEnd\n"
+		"A+B Inherited\nEnd\n"
+		"A+C EqualToCurrentCount\nEnd\n"
+		"A+B Explicit\nSkill = 50\nTeamwork = 60\nWeaponPreference = awp\nEnd\n";
+	astrabot::compat::ProfileCatalog multiTemplateCatalog;
+	if (!check(loader.loadText(multiTemplateText, std::strlen(multiTemplateText), &multiTemplateCatalog) ==
+			ProfileLoadResult::Loaded, "CSBot profiles with multiple templates load"))
+	{
+		return 1;
+	}
+	if (!check(multiTemplateCatalog.selectNamed("Inherited", ProfileTeam::Any, &csbotProfile) ==
+			ProfileSelectionResult::Selected, "multiple CSBot templates resolve a profile"))
+	{
+		return 1;
+	}
+	bool multiTemplatePassed = check(csbotProfile.skill == 75 && csbotProfile.aggression == 80 &&
+		csbotProfile.team == ProfileTeam::CounterTerrorist && csbotProfile.difficultyMask == 8U &&
+		sameFloat32(csbotProfile.reactionTimeSeconds, 0.3f) && sameFloat32(csbotProfile.attackDelaySeconds, 0.1f) &&
+		csbotProfile.teamwork == 90 && csbotProfile.cost == 2000 && csbotProfile.voicePitch == 115 &&
+		std::strcmp(csbotProfile.voiceBank, "other.db") == 0,
+		"default-equivalent template values preserve preceding scalar overrides");
+	multiTemplatePassed &= check(csbotProfile.weaponPreferenceCount == 2 && csbotProfile.weaponPreferences[0] == 22 &&
+		csbotProfile.weaponPreferences[1] == 26, "a template with the default preference count does not inherit");
+	multiTemplatePassed &= check(multiTemplateCatalog.selectNamed("EqualToCurrentCount", ProfileTeam::Any,
+									&csbotProfile) == ProfileSelectionResult::Selected &&
+			csbotProfile.weaponPreferenceCount == 2 && csbotProfile.weaponPreferences[0] == 18 &&
+			csbotProfile.weaponPreferences[1] == 28, "preference count compares with Default, not the preceding template");
+	multiTemplatePassed &= check(multiTemplateCatalog.selectNamed("Explicit", ProfileTeam::Any, &csbotProfile) ==
+				ProfileSelectionResult::Selected && csbotProfile.skill == 50 && csbotProfile.teamwork == 60 &&
+			csbotProfile.weaponPreferenceCount == 1 && csbotProfile.weaponPreferences[0] == 18,
+		"profile fields override template values even when they equal Default");
+	if (!multiTemplatePassed)
+	{
+		return 1;
+	}
+
 	const char invalidExtended[] = "Bad { ReactionTime = nan }\n";
 	if (!check(
 			loader.loadText(invalidExtended, std::strlen(invalidExtended), &catalog) == ProfileLoadResult::Malformed &&

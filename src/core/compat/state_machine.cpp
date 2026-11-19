@@ -782,11 +782,6 @@ void CompatibilityStateMachine::applyExitEffects(CompatibilityStateId state, Com
 	{
 		emitSideEffect(state, state, nextState, reason, transitionId, context, StateSideEffect::ClearLookTarget);
 	}
-	if (state == CompatibilityStateId::PlantBomb)
-	{
-		task_ = CompatibilityTaskId::GuardTickingBomb;
-		emitSideEffect(state, state, nextState, reason, transitionId, context, StateSideEffect::SetTask);
-	}
 }
 
 CompatibilityStateId CompatibilityStateMachine::state() const

@@ -23,13 +23,6 @@ public:
 		{
 			area_ = 0;
 			current_ = 0;
-			cacheArea_ = 0;
-			overlaps_.clear();
-		}
-		if (area != current_)
-		{
-			cacheArea_ = 0;
-			overlaps_.clear();
 		}
 		current_ = area;
 		actor_ = actor;
@@ -56,22 +49,7 @@ public:
 			!frame.isValid())
 			return;
 		auto area = current(actor, frame, snapshot.revision());
-		if (area)
-		{
-			if (cacheArea_ != area)
-			{
-				overlaps_.clear();
-				const auto *selected = snapshot.document()->findArea(area);
-				if (selected)
-					for (const auto &candidate : snapshot.document()->areas())
-						if (candidate.id != area && botNavAreasOverlap(*selected, candidate))
-							overlaps_.push_back(candidate.id);
-				cacheArea_ = area;
-			}
-			if (!botNavAreaContains(snapshot, area, position, &overlaps_))
-				area = 0;
-		}
-		if (!area)
+		if (!area || !botNavAreaContains(snapshot, area, position))
 			area = findBotNavArea(snapshot, position, nullptr);
 		observe(actor, frame, snapshot.revision(), area);
 	}
@@ -82,8 +60,6 @@ public:
 		revision_ = 0;
 		area_ = 0;
 		current_ = 0;
-		cacheArea_ = 0;
-		overlaps_.clear();
 	}
 
 private:
@@ -92,8 +68,6 @@ private:
 	std::uint64_t revision_ = 0;
 	std::uint32_t area_ = 0;
 	std::uint32_t current_ = 0;
-	std::uint32_t cacheArea_ = 0;
-	std::vector<nav::AreaId> overlaps_;
 };
 struct ChatterVisiblePlace
 {

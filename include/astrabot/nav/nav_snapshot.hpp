@@ -20,6 +20,8 @@ enum class NavSnapshotResult
 	RevisionExhausted
 };
 
+class NavAreaGrid;
+
 class NavSnapshot
 {
 public:
@@ -29,14 +31,18 @@ public:
 	std::uint64_t revision() const;
 	std::uint32_t mapGeneration() const;
 	const NavDocument *document() const;
+	// Indices are in file order. A null result requests the linear fallback.
+	const std::vector<std::size_t> *areaIndicesInCell(const NavVector &position) const;
 
 private:
 	friend class NavSnapshotPublisher;
 
 	NavSnapshot(
-		const std::shared_ptr<const NavDocument> &document, std::uint64_t revision, std::uint32_t mapGeneration);
+		const std::shared_ptr<const NavDocument> &document, const std::shared_ptr<const NavAreaGrid> &grid,
+		std::uint64_t revision, std::uint32_t mapGeneration);
 
 	std::shared_ptr<const NavDocument> document_;
+	std::shared_ptr<const NavAreaGrid> grid_;
 	std::uint64_t revision_;
 	std::uint32_t mapGeneration_;
 };
@@ -57,6 +63,7 @@ private:
 	static bool canAdvanceRevision(std::uint64_t revision);
 
 	std::shared_ptr<const NavDocument> document_;
+	std::shared_ptr<const NavAreaGrid> grid_;
 	std::uint64_t revision_;
 	std::uint32_t mapGeneration_;
 };

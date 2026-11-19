@@ -2140,7 +2140,9 @@ CompatibilityCommandResult PluginRuntime::executeCompatibilityCommand(const comp
 
 	const compat::BotActionResult authorization =
 		compatibilitySurface_.authorize(action, managedBotCount(), nativeGuardDecision_.managedBotCreationAllowed);
-	if (authorization != compat::BotActionResult::Allowed)
+	const bool emptyKickAll = authorization == compat::BotActionResult::NoTarget &&
+		action.id == compat::CommandId::Kick && action.target == nullptr;
+	if (authorization != compat::BotActionResult::Allowed && !emptyKickAll)
 	{
 		return mapConfigurationResult(authorization);
 	}
@@ -2215,11 +2217,49 @@ CompatibilityCommandResult PluginRuntime::executeCompatibilityCommand(const comp
 	case compat::CommandId::Kill:
 		return executeKillCommand(action);
 	case compat::CommandId::About:
+		return CompatibilityCommandResult::Handled;
 	case compat::CommandId::KnivesOnly:
 	case compat::CommandId::PistolsOnly:
 	case compat::CommandId::SnipersOnly:
 	case compat::CommandId::AllWeapons:
+	{
+		if (!nativeGuardDecision_.managedBotCreationAllowed)
+		{
+			return CompatibilityCommandResult::NativeGuardDenied;
+		}
+		if (engineFunctions_ == nullptr || engineFunctions_->pfnCVarSetFloat == nullptr)
+		{
+			return CompatibilityCommandResult::ActorOperationFailed;
+		}
+
+		struct WeaponAllowance
+		{
+			char name[sizeof("bot_allow_sub_machine_guns")];
+			bool pistolsOnly;
+			bool snipersOnly;
+			cvar_t fallback;
+		};
+		static WeaponAllowance allowances[] = {{"bot_allow_pistols", true, true, {}},
+			{"bot_allow_shotguns", false, false, {}}, {"bot_allow_sub_machine_guns", false, false, {}},
+			{"bot_allow_rifles", false, false, {}}, {"bot_allow_machine_guns", false, false, {}},
+			{"bot_allow_grenades", false, false, {}}, {"bot_allow_snipers", false, true, {}},
+			{"bot_allow_shield", false, false, {}}};
+		static char defaultAllowance[] = "1";
+		for (auto &allowance : allowances)
+		{
+			if (engineFunctions_->pfnCVarGetPointer != nullptr && engineFunctions_->pfnCvar_RegisterVariable != nullptr &&
+				engineFunctions_->pfnCVarGetPointer(allowance.name) == nullptr)
+			{
+				allowance.fallback = {allowance.name, defaultAllowance, FCVAR_SERVER, 1.0f, nullptr};
+				engineFunctions_->pfnCvar_RegisterVariable(&allowance.fallback);
+			}
+			const bool allowed = action.id == compat::CommandId::AllWeapons ||
+				(action.id == compat::CommandId::PistolsOnly && allowance.pistolsOnly) ||
+				(action.id == compat::CommandId::SnipersOnly && allowance.snipersOnly);
+			engineFunctions_->pfnCVarSetFloat(allowance.name, allowed ? 1.0f : 0.0f);
+		}
 		return CompatibilityCommandResult::Handled;
+	}
 	default:
 		return CompatibilityCommandResult::InvalidOutput;
 	}
@@ -2456,11 +2496,12 @@ void PluginRuntime::clearManagedBots()
 CompatibilityCommandResult PluginRuntime::executeRemoveCommand(const compat::CommandAction &action)
 {
 	const bool removeAll = action.allTargets || action.target == nullptr;
-	const auto reduceQuota = [this](std::size_t count)
+	const auto setQuota = [this](int quota)
 	{
-		const int quota = (std::max)(0, compatibilitySurface_.configuration().botQuota - static_cast<int>(count));
 		(void)compatibilitySurface_.setFloat("bot_quota", static_cast<float>(quota));
-		if (engineFunctions_ != nullptr && engineFunctions_->pfnCVarSetFloat != nullptr)
+		const bool ownsQuota = compatibilityCvarOwned_[static_cast<std::size_t>(CompatibilityCvarIndex::Quota)];
+		if ((ownsQuota || nativeGuardDecision_.managedBotCreationAllowed) && engineFunctions_ != nullptr &&
+			engineFunctions_->pfnCVarSetFloat != nullptr)
 		{
 			engineFunctions_->pfnCVarSetFloat("bot_quota", static_cast<float>(quota));
 		}
@@ -2472,15 +2513,23 @@ CompatibilityCommandResult PluginRuntime::executeRemoveCommand(const compat::Com
 		{
 			return CompatibilityCommandResult::NoTarget;
 		}
-		const auto result = removeFakeClient(handle);
-		if (result == FakeClientResult::Removed)
+		const char *quotaMode = nullptr;
+		if (engineFunctions_ != nullptr && engineFunctions_->pfnCVarGetString != nullptr &&
+			engineFunctions_->pfnCVarGetPointer != nullptr && engineFunctions_->pfnCVarGetPointer(kQuotaModeName) != nullptr)
 		{
-			reduceQuota(1U);
+			quotaMode = engineFunctions_->pfnCVarGetString(kQuotaModeName);
+		}
+		const bool fillMode = quotaMode != nullptr ? std::strcmp(quotaMode, "fill") == 0
+			: compatibilitySurface_.configuration().botQuotaMode == compat::QuotaMode::Fill;
+		const auto result = removeFakeClient(handle);
+		if (result == FakeClientResult::Removed && !fillMode)
+		{
+			setQuota((std::max)(0, compatibilitySurface_.configuration().botQuota - 1));
 		}
 		return mapFakeClientResult(result);
 	}
 
-	std::size_t removedCount = 0U;
+	bool removedAny = false;
 	bool operationFailed = false;
 	for (std::size_t index = 0U; index < managedBotSlots_.size(); ++index)
 	{
@@ -2491,20 +2540,22 @@ CompatibilityCommandResult PluginRuntime::executeRemoveCommand(const compat::Com
 		const FakeClientResult result = removeFakeClient(&managedBotHandles_[index]);
 		if (result == FakeClientResult::Removed)
 		{
-			++removedCount;
+			removedAny = true;
 		}
 		else
 		{
 			operationFailed = true;
 		}
 	}
-	if (removedCount == 0U)
+	if (removedAny || compatibilitySurface_.configuration().botQuota != 0)
 	{
-		return operationFailed ? CompatibilityCommandResult::ActorOperationFailed
-							   : CompatibilityCommandResult::NoTarget;
+		setQuota(0);
 	}
-	reduceQuota(removedCount);
-	return operationFailed ? CompatibilityCommandResult::ActorOperationFailed : CompatibilityCommandResult::Handled;
+	if (operationFailed)
+	{
+		return CompatibilityCommandResult::ActorOperationFailed;
+	}
+	return removedAny ? CompatibilityCommandResult::Handled : CompatibilityCommandResult::NoTarget;
 }
 
 CompatibilityCommandResult PluginRuntime::executeKillCommand(const compat::CommandAction &action)

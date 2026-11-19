@@ -17,9 +17,9 @@ public:
 		: engine_(engine), receipt_(std::move(receipt))
 	{
 	}
-	bool available() const
+	bool available() const override
 	{
-		return available_;
+		return available_ && current();
 	}
 	bool groundHeight(const nav::NavVector &position, float *height) override
 	{

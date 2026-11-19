@@ -100,16 +100,31 @@ void BotBehaviorRuntime::updateNoiseInvestigation(std::size_t index, const runti
 	auto result = planner.evaluate(in, services_->service_compatibilityRandomSource());
 	if (result == compat::NoiseInvestigationResult::NeedTravel)
 	{
-		nav::NavQuery query(nav);
-		nav::NavAreaMatch start{};
-		nav::NavVector feet{before.origin.x, before.origin.y, before.origin.z + self->v.mins.z};
-		if (query.findContaining(feet, 64, &start) != nav::NavQueryResult::Found)
-			(void)query.findNearest3D(feet, 10000, &start);
-		in.travelKnown = true;
-		in.travelDistance = start.area != 0 ? compat::noiseTravelDistance(nav, start.area, in.noise.navArea,
-												  services_->navigation_managedPathCostContext(index))
-											: -1;
-		result = planner.evaluate(in, services_->service_compatibilityRandomSource());
+		const auto start = services_->navigation_knownArea(index, in.actor, in.frame, in.navRevision);
+		nav::NavLadderTopology ladders;
+		const auto receipt = reactionContext(index);
+		const auto execution = actor.executionRevision;
+		const auto epoch = machine.normalStateEpoch();
+		const auto travelContextCurrent = [&]()
+		{
+			return executionCurrent(index, receipt, execution) && machine.normalStateEpoch() == epoch &&
+				!machine.attackOverlayActive() && services_->service_navPublisher().isCurrent(nav);
+		};
+		in.travelKnown = !start || services_->navigation_ladderTopology(&ladders);
+		if (!travelContextCurrent())
+			return;
+		if (in.travelKnown)
+		{
+			in.travelDistance = -1.0f;
+			if (start)
+			{
+				const auto cost = services_->navigation_managedPathCostContext(index);
+				if (!travelContextCurrent())
+					return;
+				in.travelDistance = compat::noiseTravelDistance(nav, start, in.noise.navArea, cost, ladders);
+			}
+			result = planner.evaluate(in, services_->service_compatibilityRandomSource());
+		}
 	}
 	if (result == compat::NoiseInvestigationResult::Attend)
 	{

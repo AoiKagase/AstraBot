@@ -1392,6 +1392,13 @@ void BotBehaviorRuntime::applyScenarioDecision(std::size_t index, const runtime:
 		if (scenarioDecision.state == compat::CompatibilityStateId::MoveTo &&
 			context.moveToTask != compat::CompatibilityTaskId::None)
 			actors_[index].managedTaskEntity = scenarioDecision.target.entity;
+		if (machine.state() == compat::CompatibilityStateId::PlantBomb &&
+			scenarioDecision.state == compat::CompatibilityStateId::Hide &&
+			scenarioDecision.action == compat::ScenarioAction::Guard && scenario.bombPlantedKnown && scenario.bombPlanted &&
+			observation.objective.carryingC4.isAvailable() && !carryingC4)
+		{
+			context.hideTask = compat::CompatibilityTaskId::GuardTickingBomb;
+		}
 		context.requestedState = scenarioDecision.state;
 		context.requestTransition = machine.state() != context.requestedState ||
 			(context.requestedState == compat::CompatibilityStateId::MoveTo &&

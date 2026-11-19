@@ -59,7 +59,7 @@ state publication.
 | `STATE-HUNT` | OnEnter sets `SEEK_AND_DESTROY` and destroys path | `CompatibilityStateMachine::Hunt` | Hunt selection/vision deferred |
 | `STATE-INVESTIGATE-NOISE` | Update consumes delayed noise and can leave the state | `CompatibilityStateMachine::InvestigateNoise` | Blocked by live sound/perception feed |
 | `STATE-MOVE-TO` | Update follows a supplied goal/path and handles failure | `CompatibilityStateMachine::MoveTo` | Route and locomotion behavior deferred |
-| `STATE-PLANT-BOMB` | Update performs plant sequence; OnExit sets `GUARD_TICKING_BOMB` and clears look target | `CompatibilityStateMachine::PlantBomb` | Public C4 carrying proxy only; full plant behavior deferred |
+| `STATE-PLANT-BOMB` | Update assigns `GUARD_TICKING_BOMB` after C4 inventory loss. OnExit restores the weapon and stance and clears the look target. | `CompatibilityStateMachine::PlantBomb` | Guard transition uses public planted evidence and C4 inventory. Exit weapon selection remains open. |
 | `STATE-USE-ENTITY` | Update uses the selected entity; OnExit clears look target | `CompatibilityStateMachine::UseEntity` | Entity-use observation/action deferred |
 | `STATE-ATTACK-OVERLAY` | Separate attack instance; OnEnter destroys path; update owns updates while active; OnExit ends overlay | `attackOverlayActive_` plus `AttackOverlay` trace identity | Combat algorithm intentionally unchanged |
 

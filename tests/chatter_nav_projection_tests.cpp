@@ -106,11 +106,28 @@ int main()
 	ties.setSourceIdentity({5, 100, 200});
 	ties.addArea(area(9, 0, -20, 0));
 	ties.addArea(area(2, 0, 20, 40));
+	ties.addArea(area(11, 0, 900, 990));
+	ties.addArea(area(3, 0, -15, -10));
 	nav::NavSnapshotPublisher tiePub;
 	tiePub.publish(&ties, 1);
+	const auto indexed = tiePub.snapshot();
+	const auto *cell = indexed.areaIndicesInCell({-10, 50, 0});
+	if (!check(cell && *cell == std::vector<std::size_t>{0, 3} &&
+				compat::findBotNavArea(indexed, {-10, 50, 0}, nullptr) == 9,
+			"indexed containing cell excludes distant areas and preserves loaded order on a tie"))
+		return 1;
 	probe.blockLow = false;
 	if (!check(compat::findBotNavArea(tiePub.snapshot(), {10, 50, 36}, &probe) == 9,
 			"equal3D distances retain first loaded area rather than lowest ID"))
+		return 1;
+	nav::NavDocument wide;
+	wide.setSourceIdentity({5, 100, 200});
+	wide.addArea(area(7, 0, -9.0e11f, 9.0e11f));
+	nav::NavSnapshotPublisher widePub;
+	if (!check(widePub.publish(&wide, 1) == nav::NavSnapshotResult::Published &&
+				!widePub.snapshot().areaIndicesInCell({0, 50, 36}) &&
+				compat::findBotNavArea(widePub.snapshot(), {0, 50, 36}, nullptr) == 7,
+			"unindexable coordinates retain the linear fallback"))
 		return 1;
 	nav::NavDocument limited;
 	limited.setSourceIdentity({5, 100, 200});

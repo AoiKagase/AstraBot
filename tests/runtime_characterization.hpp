@@ -81,6 +81,11 @@ public:
 		lines_.emplace_back(line);
 	}
 
+	bool enabled() const
+	{
+		return !path_.empty();
+	}
+
 private:
 	std::string path_;
 	std::vector<std::string> lines_;

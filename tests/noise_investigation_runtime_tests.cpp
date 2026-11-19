@@ -13,6 +13,7 @@ void setupHeardNoise(enginefuncs_t &, globalvars_t &);
 namespace
 {
 bool closeNoiseVisible = false;
+unsigned offMeshGroundLayers = 0;
 unsigned heardReportDraws = 0;
 int heardMessageType = 0;
 const char *heardMode = "normal";
@@ -95,9 +96,23 @@ void heardEnd()
 {
 }
 
-void investigationTrace(const float *, const float *end, int flags, edict_t *, TraceResult *trace)
+void investigationTrace(const float *start, const float *end, int flags, edict_t *, TraceResult *trace)
 {
 	*trace = {};
+	if (start[0] == 160 && start[1] == 500 && flags == 1 && start[2] - end[2] > 9000)
+	{
+		++offMeshGroundLayers;
+		trace->fStartSolid = start[2] < 40;
+		trace->flFraction = .5f;
+		trace->vecEndPos = Vector(end[0], end[1], 0);
+		return;
+	}
+	if (start[0] == 160 && start[1] == 500 && end[0] == 128 && flags == 0x101)
+	{
+		trace->flFraction = 1;
+		trace->vecEndPos = Vector(end[0], end[1], end[2]);
+		return;
+	}
 	trace->flFraction = flags == 0x101 && closeNoiseVisible ? 1.0f : 0.0f;
 	trace->vecEndPos = Vector(end[0], end[1], end[2]);
 }
@@ -388,7 +403,14 @@ bool testInvestigation(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t 
 	runtime.onEmitSound(&source, "player/pl_step1.wav", 1, 1);
 	step(.15f);
 	step(.5f);
-	return check(heardReportDraws == 3 && heardSamples.size() > sent,
-		"public round start permits fresh heard-noise reports again");
+	if (!check(heardReportDraws == 3 && heardSamples.size() > sent,
+			"public round start permits fresh heard-noise reports again"))
+		return false;
+	runtime.beginRoundGeneration();
+	source.v.origin.x = 160;
+	emit();
+	step(.2f);
+	return check(belief.noise().active && belief.noise().navArea == 2 && offMeshGroundLayers == 10,
+		"off-mesh noise uses all native ground layers even when its initial trace starts solid");
 }
 }

@@ -1,6 +1,7 @@
 #include "runtime/observation/bot_observation_runtime.hpp"
 #include "astrabot/compat/knife_run.hpp"
 #include "runtime/shared/bot_runtime_support.hpp"
+#include "runtime/shared/public_nav_probe.hpp"
 #include "astrabot/compat/noise_look.hpp"
 #include "astrabot/compat/noise_navigation.hpp"
 #include "astrabot/compat/weapon_equipment.hpp"
@@ -11,38 +12,6 @@ namespace metamod
 using namespace runtime_detail;
 namespace
 {
-class PublicNoiseNavProbe : public compat::INoiseNavProbe
-{
-	enginefuncs_t *engine_;
-
-public:
-	explicit PublicNoiseNavProbe(enginefuncs_t *engine) : engine_(engine)
-	{
-	}
-	bool groundHeight(const nav::NavVector &position, float *z) override
-	{
-		if (!engine_ || !engine_->pfnTraceLine || !z)
-			return false;
-		const float from[] = {position.x, position.y, position.z};
-		const float to[] = {position.x, position.y, position.z - 4096};
-		TraceResult trace{};
-		engine_->pfnTraceLine(from, to, 0x101, nullptr, &trace);
-		if (trace.fStartSolid || trace.fAllSolid || trace.flFraction >= 1 || trace.flFraction < 0 ||
-			!std::isfinite(trace.vecEndPos.z))
-			return false;
-		*z = trace.vecEndPos.z;
-		return true;
-	}
-	bool clearLine(const nav::NavVector &a, const nav::NavVector &b) override
-	{
-		if (!engine_ || !engine_->pfnTraceLine)
-			return false;
-		const float from[] = {a.x, a.y, a.z}, to[] = {b.x, b.y, b.z};
-		TraceResult trace{};
-		engine_->pfnTraceLine(from, to, 0x101, nullptr, &trace);
-		return trace.flFraction == 1 && !trace.fStartSolid && !trace.fAllSolid;
-	}
-};
 constexpr float kSmokeObservationLifetimeSeconds = 4.0f;
 constexpr float kMaximumSoundDistance = 4096.0f;
 constexpr float kSoundAttenuationDistanceScale = 1000.0f;
@@ -1368,8 +1337,21 @@ bool BotObservationRuntime::collectManagedPerception(
 		services_->service_lifecycle().roundGeneration(), services_->service_adapterFrameCount()};
 	const world::SnapshotIdentity identity = {frame, observer, 0U};
 	perception::PerceptionInput input(identity);
-	PublicNoiseNavProbe noiseProbe(services_->service_engineFunctions());
-	compat::NavNoisePositionResolver noiseResolver(services_->service_navPublisher().snapshot(),
+	const auto navigation = services_->service_navPublisher().snapshot();
+	const auto engine = services_->service_engineFunctions();
+	const auto listenerEntity = handle.entity;
+	const int listenerSerial = listenerEntity->serialnumber;
+	PublicNavProbe noiseProbe(engine, [&]()
+	{
+		return services_->service_engineFunctions() == engine &&
+			services_->service_navPublisher().isCurrent(navigation) &&
+			services_->service_lifecycle().mapGeneration() == frame.mapGeneration &&
+			services_->service_lifecycle().roundGeneration() == frame.roundGeneration &&
+			services_->service_adapterFrameCount() == frame.tick &&
+			handle.entity == listenerEntity && !listenerEntity->free && listenerEntity->serialnumber == listenerSerial &&
+			handle.actor.slot == observer.slot && handle.actor.actorGeneration == observer.generation;
+	});
+	compat::NavNoisePositionResolver noiseResolver(navigation,
 		services_->service_compatibilityRandomSource(), {observer.slot, observer.generation},
 		{services_->command_managedBotCommandSequences(index), 0U,
 			services_->service_managedBotFullUpdateSequences()[index]},

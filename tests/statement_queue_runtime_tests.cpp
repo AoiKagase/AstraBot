@@ -337,7 +337,7 @@ void setupStatementQueue(enginefuncs_t &engine, globalvars_t &globals)
 			return std::strcmp(name, "mp_c4timer") == 0 ? queueDefuseFuse.value : getCvarFloat(name);
 		};
 	}
-	if (friendlyFireChatterFixture)
+	if (friendlyFireChatterFixture || damageRetargetFixture)
 	{
 		engine.pfnCVarGetPointer = [](const char *name) {
 			return std::strcmp(name, "mp_freeforall") == 0 ? &queueFreeForAll : getCvar(name);
@@ -2703,10 +2703,13 @@ bool testStatementQueue(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t
 		gEntities[2].v.origin = Vector(230, 30, 36);
 		gEntities[3].free = gEntities[4].free = true;
 		static int visibleSlot = 1;
-		engine.pfnTraceLine = [](const float *, const float *end, int, edict_t *, TraceResult *trace) {
+		static bool hitVisiblePlayer = false;
+		engine.pfnTraceLine = [](const float *, const float *end, int mode, edict_t *, TraceResult *trace) {
 			*trace = {};
 			trace->vecEndPos = Vector(end[0], end[1], end[2]);
 			trace->flFraction = std::fabs(end[0] - gEntities[visibleSlot].v.origin.x) < 24.0f ? 1.0f : 0.0f;
+			if (hitVisiblePlayer && mode == 0 && trace->flFraction == 1.0f)
+				trace->pHit = &gEntities[visibleSlot];
 		};
 		auto &behavior = static_cast<metamod::BotNavigationServices &>(runtime);
 		auto &observation = static_cast<metamod::BotObservationServices &>(runtime);
@@ -2730,23 +2733,52 @@ bool testStatementQueue(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t
 		auto observer = std::make_unique<metamod::BotObservationRuntime>();
 		observer->bindServices(runtime);
 		int botObject = 0;
-		auto &attacker = gEntities[2];
-		attacker.v.pContainingEntity = &attacker;
-		const auto damage = [&] {
+		const auto damage = [&](edict_t &attacker) {
+			attacker.v.pContainingEntity = &attacker;
 			observer->observeGameDllDamage(&botObject, &attacker.v, [&](const char *name) -> const void * {
 				return std::strcmp(name, "Retarget Test Bot") == 0 ? &botObject : nullptr;
 			});
 		};
 		faceForward();
-		damage();
+		damage(gEntities[2]);
 		step(.125f);
 		if (!check(acquired() == 2, "a visible current enemy retains priority over a hidden attacker"))
 			return false;
 		faceForward();
 		visibleSlot = 2;
 		step(.125f);
-		return check(acquired() == 3,
-			"the visible recent attacker is selected before the ordinary reaction queue recognizes it");
+		if (!check(acquired() == 3,
+				"the visible recent attacker is selected before the ordinary reaction queue recognizes it"))
+			return false;
+		gEntities[1].v.team = 1;
+		team(2, "TERRORIST");
+		for (int frame = 0; frame < 12; ++frame)
+		{
+			faceForward();
+			step(.125f);
+		}
+		visibleSlot = 1;
+		faceForward();
+		damage(gEntities[1]);
+		step(.125f);
+		if (!check(acquired() == 3, "team mode keeps a visible teammate out of damage retargeting"))
+			return false;
+		queueFreeForAll.value = 1.0f;
+		faceForward();
+		damage(gEntities[1]);
+		step(.125f);
+		if (!check(acquired() == 2, "FFA damage retargets a visible same-team inflictor"))
+			return false;
+		hitVisiblePlayer = true;
+		bool fired = false;
+		for (int frame = 0; frame < 12 && !fired; ++frame)
+		{
+			faceForward();
+			gLastRunPlayerMoveButtons = 0U;
+			step(.125f);
+			fired = gLastRunPlayerMoveActor == 1 && (gLastRunPlayerMoveButtons & IN_ATTACK) != 0;
+		}
+		return check(fired, "FFA allows firing at the selected inflictor when the trace hits its same-team edict");
 	}
 	if (scaredFixture)
 	{
