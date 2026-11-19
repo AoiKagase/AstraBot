@@ -1264,6 +1264,7 @@ if(ASTRABOT_BUILD_TESTS AND ASTRABOT_BUILD_METAMOD)
   add_test(NAME astrabot_blinded_chatter_runtime COMMAND astrabot_statement_queue_runtime --blinded-chatter)
   add_test(NAME astrabot_friendly_fire_chatter_runtime COMMAND astrabot_statement_queue_runtime --friendly-fire-chatter)
   add_test(NAME astrabot_enemy_damage_hide_runtime COMMAND astrabot_statement_queue_runtime --enemy-damage-hide)
+  add_test(NAME astrabot_damage_retarget_runtime COMMAND astrabot_statement_queue_runtime --damage-retarget)
   add_test(NAME astrabot_auto_follow_chatter_runtime COMMAND astrabot_statement_queue_runtime --auto-follow-chatter)
   set_tests_properties(astrabot_statement_queue_runtime astrabot_guard_loose_bomb_runtime
     astrabot_guard_planted_bombsite_runtime astrabot_encourage_defuse_runtime astrabot_guard_unplanted_bombsite_runtime

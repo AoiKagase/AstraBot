@@ -90,7 +90,10 @@ bool BotBehaviorRuntime::prepareManagedPerception(std::size_t index, world::Worl
 				actors_[index].managedProfiles.reactionTimeSeconds, candidates.data(), candidateCount, blinded,
 				&threat))
 		{
-			if (!(actors_[index].recognizedTargets == threat.actor))
+			const auto recentAttacker = memory.recentAttacker(reaction, 3.0f);
+			const bool alreadyRetaliating = recentAttacker.isValid() && memory.source(reaction) == recentAttacker &&
+				memory.enemy(reaction) == threat.actor;
+			if (!(actors_[index].recognizedTargets == threat.actor) && !alreadyRetaliating)
 			{
 				observeRecognizedTargetChange(index, services_->service_globals()->time);
 			}

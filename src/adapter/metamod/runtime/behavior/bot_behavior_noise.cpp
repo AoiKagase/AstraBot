@@ -49,12 +49,15 @@ void BotBehaviorRuntime::applyNoiseLookCommand(std::size_t index, runtime::BotCo
 	compat::PublicActorState weapon{};
 	const bool known = services_->observation_publicObservations().read(
 		{handle.actor.slot, handle.actor.actorGeneration}, frame, &weapon);
-	if (visibleEnemy || actor.managedBotStateMachines.attackOverlayActive() ||
+	const bool panicLook = look.damagePanic();
+	if ((panicLook ? actor.enemyReaction.shouldAim(reactionContext(index))
+				   : visibleEnemy || actor.managedBotStateMachines.attackOverlayActive()) ||
 		actor.weaponActions.grenadeInProgress() || (command.movement.buttons & (IN_USE | IN_ATTACK | IN_ATTACK2)) ||
 		(known && ((weapon.weaponKnown && weapon.weaponId == 6) || weapon.blindUntil > globals->time)) ||
 		actor.obstacleLook.entity)
 	{
-		look.clearLook();
+		if (!panicLook)
+			look.clearLook();
 		return;
 	}
 	const auto fullUpdate = services_->service_managedBotFullUpdateSequences()[index];

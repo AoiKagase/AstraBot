@@ -286,7 +286,8 @@ public:
 	{
 		return std::isfinite(elapsedRound) && elapsedRound < safeTime(aggression);
 	}
-	bool recordEnemyDamage(const ReactionContext &context, world::EntityKey attacker, float elapsedRound, float aggression)
+	bool recordEnemyDamage(const ReactionContext &context, world::EntityKey attacker, float elapsedRound, float aggression,
+		std::uint32_t connectionGeneration = 0U)
 	{
 		if (!attacker.isValid() || !context.identityValid())
 			return false;
@@ -295,6 +296,7 @@ public:
 		context_ = context;
 		const bool distinct = !(attacker == lastAttacker_) || attackedAt_ != context.now;
 		lastAttacker_ = attacker;
+		attackerConnectionGeneration_ = connectionGeneration;
 		attackedAt_ = context.now;
 		adjustSafeTime(elapsedRound, aggression);
 		return distinct;
@@ -302,6 +304,33 @@ public:
 	bool recentlyDamaged(const ReactionContext &context, float seconds) const
 	{
 		return matches(context) && lastAttacker_.isValid() && context.now - attackedAt_ < seconds;
+	}
+	world::EntityKey recentAttacker(const ReactionContext &context, float seconds) const
+	{
+		return recentlyDamaged(context, seconds) ? lastAttacker_ : world::EntityKey{};
+	}
+	std::uint32_t attackerConnectionGeneration() const { return attackerConnectionGeneration_; }
+
+	void startSurprise(const ReactionContext &context, float delay)
+	{
+		if (matches(context))
+		{
+			surprisedAt_ = context.now;
+			surpriseDelay_ = delay;
+		}
+	}
+	bool surprised(const ReactionContext &context) const
+	{
+		return matches(context) && surprisedAt_ >= 0.0f && context.now - surprisedAt_ < 5.0f;
+	}
+	bool surpriseFireReady(const ReactionContext &context, world::ActorKey target) const
+	{
+		return !surprised(context) || (enemy_ == target && context.now - enemyAcquiredAt_ >= surpriseDelay_);
+	}
+	void clearSurprise()
+	{
+		surprisedAt_ = -1.0f;
+		surpriseDelay_ = 0.0f;
 	}
 
 	void clearEnemy(bool cancelPursuit = true)
@@ -414,6 +443,8 @@ private:
 				return false;
 			}
 		}
+		if (!(enemy_ == enemy) || !(source_ == source))
+			enemyAcquiredAt_ = context.now;
 		enemy_ = enemy;
 		source_ = source;
 		enemyDead_ = false;
@@ -433,10 +464,14 @@ private:
 	float safeTime_ = -1;
 	float lastSaw_ = -1;
 	float attackedAt_ = -1;
+	float enemyAcquiredAt_ = -1;
+	float surprisedAt_ = -1;
+	float surpriseDelay_ = 0;
 	float enemyDeathTimestamp_ = 0.0f;
 	float hurryUntil_ = -1;
 	float ignoreUntil_ = -1;
 	std::uint32_t pursuitGeneration_ = 0;
+	std::uint32_t attackerConnectionGeneration_ = 0;
 	bool safeTimeAdjusted_ = false;
 	bool enemyDead_ = false;
 	bool initialAttack_ = false;

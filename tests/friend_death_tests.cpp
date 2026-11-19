@@ -201,6 +201,20 @@ int main()
 	check(injury.recordEnemyDamage(context, entity, 5, .5f) && injury.recentlyDamaged(context, 1) &&
 		!injury.isSafe(3, .5f) && !injury.enemy(context).isValid(),
 		"enemy damage cuts safe time without acquiring a visual target");
+	check(injury.recentAttacker(context, 3.0f) == entity, "retaliation remembers the direct inflictor");
+	auto threeSecondsLater = context;
+	threeSecondsLater.now += 3.0f;
+	check(!injury.recentAttacker(threeSecondsLater, 3.0f).isValid(), "retaliation excludes exactly three seconds");
+	injury.startSurprise(context, .125f);
+	injury.rememberVisible(context, enemy, entity, {100, 200, 36});
+	auto fire = context;
+	fire.now += .124f;
+	check(injury.surprised(fire) && !injury.surpriseFireReady(fire, enemy), "surprise delays a newly acquired target");
+	fire.now = context.now + .125f;
+	check(injury.surpriseFireReady(fire, enemy) && injury.surprised(fire), "fire delay and panic cooldown are independent");
+	fire.now = context.now + 5.0f;
+	check(!injury.surprised(fire), "panic cooldown excludes exactly five seconds");
+	injury.clearEnemy();
 	check(!injury.recordEnemyDamage(context, entity, 5, .5f) &&
 		injury.recordEnemyDamage(context, {entity.id, entity.generation + 1U}, 5, .5f),
 		"the same attacker and timestamp are one injury reaction, a reused slot is distinct");

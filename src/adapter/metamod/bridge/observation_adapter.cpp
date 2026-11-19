@@ -203,7 +203,7 @@ ObservationAdapterResult ObservationAdapter::collectActor(edict_t *entity, const
 	return ObservationAdapterResult::Accepted;
 }
 
-ObservationAdapterResult ObservationAdapter::collectVisibility(edict_t *observer, edict_t *target,
+ObservationAdapterResult ObservationAdapter::collectVisibility(edict_t *observer, const edict_t *target,
 	const world::ActorKey &targetActor, const world::FrameIdentity &frame,
 	perception::VisionObservation *observation, bool checkFov) const
 {

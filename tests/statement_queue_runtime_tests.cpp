@@ -17,6 +17,7 @@ float blindedChatterRoll = 100.0f;
 bool duplicateBlindNetname = false;
 bool friendlyFireChatterFixture = false;
 bool enemyDamageHideFixture = false;
+bool damageRetargetFixture = false;
 unsigned friendlyFireDelayDraws = 0;
 cvar_t queueFreeForAll{};
 cvar_t queueDefuseFuse{};
@@ -62,6 +63,7 @@ void selectStatementFixture(int argc, char **argv)
 	looseGuardFixture = argc == 2 && std::strcmp(argv[1], "--guard-loose-bomb") == 0;
 	encourageDefuseFixture = argc == 2 && std::strcmp(argv[1], "--encourage-defuse") == 0;
 	enemyDamageHideFixture = argc == 2 && std::strcmp(argv[1], "--enemy-damage-hide") == 0;
+	damageRetargetFixture = argc == 2 && std::strcmp(argv[1], "--damage-retarget") == 0;
 	barelyDefusedFixture = argc == 2 && std::strcmp(argv[1], "--barely-defused") == 0;
 	blindedChatterFixture = argc == 2 && std::strcmp(argv[1], "--blinded-chatter") == 0;
 	friendlyFireChatterFixture = argc == 2 && std::strcmp(argv[1], "--friendly-fire-chatter") == 0;
@@ -2659,6 +2661,59 @@ bool testStatementQueue(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t
 		return testHostageUseReport(runtime, hooks, globals);
 	if (sniperWarningFixture)
 		return testSniperWarning(runtime, hooks, globals);
+	if (damageRetargetFixture)
+	{
+		setCvarFloat("bot_stop", 0);
+		setCvarFloat("mp_buytime", 0);
+		gEntities[1].v.origin = Vector(140, 0, 36);
+		gEntities[2].v.origin = Vector(230, 30, 36);
+		gEntities[3].free = gEntities[4].free = true;
+		static int visibleSlot = 1;
+		engine.pfnTraceLine = [](const float *, const float *end, int, edict_t *, TraceResult *trace) {
+			*trace = {};
+			trace->vecEndPos = Vector(end[0], end[1], end[2]);
+			trace->flFraction = std::fabs(end[0] - gEntities[visibleSlot].v.origin.x) < 24.0f ? 1.0f : 0.0f;
+		};
+		auto &behavior = static_cast<metamod::BotNavigationServices &>(runtime);
+		auto &observation = static_cast<metamod::BotObservationServices &>(runtime);
+		const auto acquired = [&] { return observation.behavior_currentEnemySource(0).id; };
+		const auto faceForward = [&] { self.v.angles = self.v.v_angle = Vector(0, 0, 0); };
+		for (int frame = 0; frame < 24; ++frame)
+		{
+			faceForward();
+			step(.125f);
+		}
+		if (!check(acquired() == 2 && behavior.behavior_managedBotStateMachines(0).attackOverlayActive(),
+				"the bot is already attacking the first visible CT"))
+			return false;
+		self.v.netname = 100;
+		gEntityNames[0] = "Retarget Test Bot";
+		engine.pfnFindEntityByString = [](edict_t *start, const char *key, const char *value) -> edict_t * {
+			if (std::strcmp(key, "netname") == 0)
+				return !start && std::strcmp(value, "Retarget Test Bot") == 0 ? &gEntities[0] : nullptr;
+			return findEntityByString(start, key, value);
+		};
+		auto observer = std::make_unique<metamod::BotObservationRuntime>();
+		observer->bindServices(runtime);
+		int botObject = 0;
+		auto &attacker = gEntities[2];
+		attacker.v.pContainingEntity = &attacker;
+		const auto damage = [&] {
+			observer->observeGameDllDamage(&botObject, &attacker.v, [&](const char *name) -> const void * {
+				return std::strcmp(name, "Retarget Test Bot") == 0 ? &botObject : nullptr;
+			});
+		};
+		faceForward();
+		damage();
+		step(.125f);
+		if (!check(acquired() == 2, "a visible current enemy retains priority over a hidden attacker"))
+			return false;
+		faceForward();
+		visibleSlot = 2;
+		step(.125f);
+		return check(acquired() == 3,
+			"the visible recent attacker is selected before the ordinary reaction queue recognizes it");
+	}
 	if (scaredFixture)
 	{
 		queueMode = "normal";
@@ -3196,12 +3251,35 @@ bool testStatementQueue(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t
 					enemy.v.flags |= FL_FAKECLIENT;
 					enemy.v.pContainingEntity = &enemy;
 					enemy.v.origin = Vector(-900, 0, 36);
+					struct PanicTrace : compat::IRandomTraceSink
+					{
+						std::vector<std::string> calls;
+						void record(const compat::RandomTraceRecord &entry) override
+						{
+							const char *name = entry.request.semanticId;
+							if (entry.request.actor.slot == 1 && std::strncmp(name, "Damage.Panic", 12) == 0)
+								calls.emplace_back(name);
+						}
+					} trace;
+					auto &random = static_cast<metamod::BotBehaviorServices &>(runtime).service_compatibilityRandomSource();
 					const auto damage = [&] {
 						observer->observeGameDllDamage(&botObject, &enemy.v, [&](const char *name) -> const void * {
 							return std::strcmp(name, "Hidden Damage Test Bot") == 0 ? &botObject : nullptr;
 						});
 					};
+					random.setTraceSink(&trace);
+					gEntities[0].v.angles = gEntities[0].v.v_angle = Vector(0, 0, 0);
 					damage();
+					damage();
+					random.setTraceSink(nullptr);
+					if (!check(trace.calls == std::vector<std::string>{"Damage.PanicSide", "Damage.PanicHeight", "Damage.PanicDelay"},
+						"unseen direct damage without an attack consumes three panic draws once per shotgun receipt"))
+						return false;
+					runtime::BotCommand panicCommand{};
+					static_cast<metamod::BotCommandServices &>(runtime).behavior_applyNoiseLookCommand(0, panicCommand);
+					if (!check(panicCommand.synchronizeCombatView && std::fabs(panicCommand.viewAngles.yaw) > 0.0f,
+						"the panic look steers the command toward the rear quadrant"))
+						return false;
 					step(.125f);
 					if (!check(guardsSite(0), "damage while traveling to the hiding spot does not abandon Hide"))
 						return false;
@@ -3209,7 +3287,12 @@ bool testStatementQueue(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t
 						step(.125f);
 					const auto target = nav.behavior_scenarioDecisions(0).target.position;
 					gEntities[0].v.origin = Vector(target.x, target.y, target.z + 36.0f);
+					trace.calls.clear();
+					random.setTraceSink(&trace);
 					damage();
+					random.setTraceSink(nullptr);
+					if (!check(trace.calls.empty(), "a later hit inside the five-second surprise window consumes no panic draws"))
+						return false;
 					step(.125f);
 					if (!check(guardsSite(0), "the arrival update still follows the traveling Hide branch"))
 						return false;

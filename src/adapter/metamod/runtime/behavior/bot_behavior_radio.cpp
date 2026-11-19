@@ -1735,8 +1735,75 @@ void BotBehaviorRuntime::observePlayerDamage(std::size_t index, world::ActorKey 
 			const float roundStart = services_->service_roundFreezeGeneration() == frame.roundGeneration
 				? services_->service_roundFreezeUntil() : 0.0f;
 			const float aggression = static_cast<float>(target.managedProfiles.aggression) / 100.0f;
-			(void)target.enemyReaction.recordEnemyDamage(env.receipt.context,
-				{sourceConnection.slot, static_cast<std::uint32_t>(serial) + 1U}, env.receipt.context.now - roundStart, aggression);
+			auto &memory = target.enemyReaction;
+			const auto &receipt = env.receipt.context;
+			const world::EntityKey inflictor{sourceConnection.slot, static_cast<std::uint32_t>(serial) + 1U};
+			if (!memory.recordEnemyDamage(receipt, inflictor, receipt.now - roundStart, aggression,
+					sourceConnection.generation) || !receipt.alive || memory.surprised(receipt))
+				return;
+
+			compat::PublicActorState sight{};
+			const bool blinded = services_->observation_publicObservations().read(actor, frame, &sight) &&
+				receipt.now < sight.blindUntil;
+			const world::ActorKey sourceActor{sourceConnection.slot, (std::max)(1U, sourceConnection.generation)};
+			perception::VisionObservation visibility{};
+			if (!blinded && (services_->observation_observationAdapter().collectVisibility(
+					env.receipt.entity, source, sourceActor, frame, &visibility, true) != ObservationAdapterResult::Accepted ||
+				visibility.visible))
+				return;
+			const auto panicCurrent = [&] {
+				return env.current() && source->v.deadflag == DEAD_NO && source->v.health > 0.0f &&
+					memory.recentAttacker(receipt, 3.0f) == inflictor && !memory.surprised(receipt);
+			};
+			if (!panicCurrent())
+				return;
+			const float skill = static_cast<float>(target.managedProfiles.skill) / 100.0f;
+			const auto &belief = services_->observation_managedBotPerception(index).snapshot();
+			const world::ActorObservation *contact = nullptr;
+			if (target.managedBotStateMachines.attackOverlayActive() &&
+				belief.findActor(memory.enemy(receipt), &contact) == world::ContactLookupResult::Found &&
+				contact && contact->visible)
+			{
+				float roll = 0.0f;
+				const float inexperience = 1.0f - skill;
+				if (!env.drawFloat("Damage.PanicChance", 0.0f, 100.0f, roll) || !panicCurrent() ||
+					!(inexperience * inexperience * 50.0f > roll))
+					return;
+			}
+
+			const auto origin = env.receipt.entity->v.origin;
+			const auto towards = source->v.origin - origin;
+			constexpr float kRadiansPerDegree = 0.01745329251994329577f;
+			const float yaw = env.receipt.entity->v.v_angle.y * kRadiansPerDegree;
+			const float forwardX = std::cos(yaw), forwardY = std::sin(yaw);
+			const bool skilled = skill >= 0.5f;
+			const float sideRange = skilled ? 75.0f : 200.0f;
+			float shift = 0.0f, height = 0.0f, delay = 0.0f;
+			if (!env.drawFloat("Damage.PanicSide", -sideRange, sideRange, shift) || !panicCurrent() ||
+				!env.drawFloat("Damage.PanicHeight", -50.0f, 50.0f, height) || !panicCurrent() ||
+				!env.drawFloat("Damage.PanicDelay", 0.1f, 0.2f, delay) || !panicCurrent())
+				return;
+			float forward = -200.0f;
+			float lateral = 2.0f * shift;
+			if (skilled)
+			{
+				const float distance = std::hypot(towards.x, towards.y);
+				const float along = distance > 0.0f ? (towards.x * forwardX + towards.y * forwardY) / distance : 0.0f;
+				if (along > 0.7071f || along < -0.7071f)
+				{
+					forward = along > 0.0f ? 100.0f : -100.0f;
+					lateral = shift;
+				}
+				else
+				{
+					forward = shift;
+					lateral = towards.y * forwardX - towards.x * forwardY > 0.0f ? 100.0f : -100.0f;
+				}
+			}
+			memory.startSurprise(receipt, delay);
+			target.noiseLook.lookAtDamagePanic(actor, frame, receipt.now,
+				{origin.x + forwardX * forward - forwardY * lateral,
+					origin.y + forwardY * forward + forwardX * lateral, origin.z + height});
 		}
 		return;
 	}

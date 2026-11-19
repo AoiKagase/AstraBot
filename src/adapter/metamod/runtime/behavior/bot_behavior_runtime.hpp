@@ -297,6 +297,7 @@ private:
 	ActionProposal decideCombatAction(ManagedActionContext &ctx);
 	bool updateCombatRetreat(std::size_t index, int team);
 	bool turnToThreateningGunfire(const ManagedActionContext &ctx, const compat::StateUpdateContext &stateContext);
+	bool retaliateAgainstRecentAttacker(const ManagedActionContext &ctx, bool sniper);
 	bool updateCombatAmbush(const ManagedActionContext &ctx, const compat::StateUpdateContext &stateContext,
 		bool enemyVisible);
 	bool tryCombatAmbush(std::size_t index, int team);

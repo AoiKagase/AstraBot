@@ -237,7 +237,8 @@ CombatUpkeepUpdate BotBehaviorRuntime::upkeepCombat(
 		update.hasAim = true;
 		update.angles = {aim.pitch, aim.yaw, 0};
 		update.movementRelativeToAim = state.managedBotCombat.movementActive();
-		if (!currentlyVisible || !state.combatRetreat.visibility.canFire(
+		if (!currentlyVisible || !state.enemyReaction.surpriseFireReady(reaction, tracked.target) ||
+			!state.combatRetreat.visibility.canFire(
 				state.managedBotStateMachines.attackEntryEpoch(), now))
 		{
 			update.setPrimary = true;
@@ -352,6 +353,7 @@ bool BotBehaviorRuntime::turnToThreateningGunfire(const ManagedActionContext &ct
 	if (!current() || trace.flFraction != 1.0f)
 		return false;
 	(void)machine.stopAttack(stateContext);
+	actor.enemyReaction.clearSurprise();
 	actor.managedBotCombat.clearAim();
 	actor.weaponActions.stopRapidFire();
 	actor.noiseLook.lookAtThreat(ctx.actor, ctx.frame, receipt.now, noise.position);
@@ -393,6 +395,51 @@ bool BotBehaviorRuntime::updateCombatAmbush(const ManagedActionContext &ctx,
 		return false;
 	visibility.ambushChecked = true;
 	return tryCombatAmbush(ctx.index, ctx.team);
+}
+
+bool BotBehaviorRuntime::retaliateAgainstRecentAttacker(const ManagedActionContext &ctx, bool sniper)
+{
+	auto &actor = actors_[ctx.index];
+	const auto &machine = actor.managedBotStateMachines;
+	const auto &visibility = actor.combatRetreat.visibility;
+	if (services_->service_compatibilitySurface().configuration().mode != compat::RuntimeMode::Compatibility ||
+		!machine.attackOverlayActive() || visibility.attackEpoch != machine.attackEntryEpoch() ||
+		!visibility.seenEnemy || reactionIgnoring(ctx.index))
+		return false;
+	const auto receipt = reactionContext(ctx.index);
+	auto &memory = actor.enemyReaction;
+	const auto currentEnemy = memory.enemy(receipt);
+	const float aggression = static_cast<float>(actor.managedProfiles.aggression) / kProfilePercentageScale;
+	const float chaseDelay = 2.0f + 2.0f * (1.0f - aggression) + (sniper ? 3.0f : ctx.before.ducked ? 1.0f : 0.0f);
+	const auto attacker = memory.recentAttacker(receipt, 3.0f);
+	if (!currentEnemy.isValid() || !attacker.isValid() || attacker == memory.source(receipt) ||
+		receipt.now - memory.lastSaw(receipt) > chaseDelay)
+		return false;
+	const world::ActorKey connection{attacker.id, memory.attackerConnectionGeneration()};
+	const world::ActorKey candidate{connection.slot, (std::max)(1U, connection.generation)};
+	const auto engine = services_->service_engineFunctions();
+	if (!engine || !engine->pfnPEntityOfEntIndex || !receiptConnectionCurrent(connection))
+		return false;
+	const auto revision = actor.executionRevision;
+	const auto epoch = machine.attackEntryEpoch();
+	const auto *source = engine->pfnPEntityOfEntIndex(static_cast<int>(attacker.id));
+	if (!executionCurrent(ctx.index, receipt, revision) || !machine.attackOverlayActive() ||
+		machine.attackEntryEpoch() != epoch || !receiptConnectionCurrent(connection) ||
+		!(memory.recentAttacker(receipt, 3.0f) == attacker) || !source || source->free ||
+		source->serialnumber < 0 || static_cast<std::uint32_t>(source->serialnumber) + 1U != attacker.generation ||
+		source->v.deadflag != DEAD_NO || !(source->v.health > 0.0f) ||
+		(source->v.flags & (FL_CLIENT | FL_SPECTATOR | FL_DORMANT)) != FL_CLIENT)
+		return false;
+	const world::ActorObservation *contact = nullptr;
+	if (ctx.snapshot.findActor(candidate, &contact) == world::ContactLookupResult::Found && contact && contact->visible &&
+		contact->relation == world::TeamRelation::Hostile && contact->fovPassed && contact->losPassed)
+	{
+		memory.rememberVisible(receipt, candidate, attacker, contact->position);
+		observeRecognizedTargetChange(ctx.index, receipt.now);
+		actor.managedBotCombat.clearAim();
+		actor.weaponActions.stopRapidFire();
+	}
+	return true;
 }
 
 ActionProposal BotBehaviorRuntime::decideCombatAction(ManagedActionContext &ctx)
@@ -668,6 +715,7 @@ ActionProposal BotBehaviorRuntime::decideCombatAction(ManagedActionContext &ctx)
 					: .1f)))
 	{
 		(void)actors_[index].managedBotStateMachines.stopAttack(stateContext);
+		actors_[index].enemyReaction.clearSurprise();
 	}
 	const auto retreatReceipt = reactionContext(index);
 	const auto retreatExecution = actors_[index].executionRevision;
@@ -703,11 +751,20 @@ ActionProposal BotBehaviorRuntime::decideCombatAction(ManagedActionContext &ctx)
 	}
 	if (!executionCurrent(index, retreatReceipt, retreatExecution) || state.normalStateEpoch() != retreatEpoch)
 		return proposal;
+	if (!combatVisible && retaliateAgainstRecentAttacker(ctx, weapon.kind == combat::WeaponKind::Sniper))
+		return proposal;
 	if (decideEquipmentAction(ctx, observedWeapon, state.attackOverlayActive()))
 		return proposal;
 	const bool aimReady = context.timestamp >= actors_[index].attackReadyTimes &&
+		actors_[index].enemyReaction.surpriseFireReady(reactionContext(index), targetActor) &&
 		(weapon.kind == combat::WeaponKind::Knife || weapon.kind == combat::WeaponKind::Grenade ||
 			actors_[index].combatRetreat.visibility.canFire(state.attackEntryEpoch(), context.timestamp));
+	if (aimReady && targetActor.isValid() && state.attackOverlayActive() && weapon.kind != combat::WeaponKind::Grenade &&
+		actors_[index].enemyReaction.surprised(reactionContext(index)) &&
+		context.timestamp > actors_[index].weaponActions.fireReadyTimestamp() &&
+		(weapon.kind != combat::WeaponKind::Sniper ||
+			std::hypot(handle.entity->v.velocity.x, handle.entity->v.velocity.y) < kStationarySpeedThreshold))
+		actors_[index].enemyReaction.clearSurprise();
 	const bool fireIntentReady = combatVisible && result == combat::CombatResult::FireIntentReady && decision.hasFire &&
 		decision.hasAim && aimReady;
 	if (fireIntentReady)

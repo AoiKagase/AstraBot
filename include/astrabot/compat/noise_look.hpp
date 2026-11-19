@@ -65,6 +65,7 @@ public:
 	void clearLook()
 	{
 		active_ = false;
+		damagePanic_ = false;
 		alignedAt_ = -1;
 		spring_ = {};
 	}
@@ -88,6 +89,19 @@ public:
 		duration_ = 0.0f;
 		clearIfClose_ = false;
 	}
+	void lookAtDamagePanic(world::ActorKey actor, const world::FrameIdentity &frame, float now,
+		const world::WorldPosition &point)
+	{
+		synchronize(actor, frame, now);
+		if (!active_ || std::fabs(point.x - point_.x) > 10.0f || std::fabs(point.y - point_.y) > 10.0f ||
+			std::fabs(point.z - point_.z) > 10.0f)
+			lookAtThreat(actor, frame, now, point);
+		damagePanic_ = true;
+		highPriority_ = true;
+		duration_ = 0.0f;
+		clearIfClose_ = false;
+	}
+	bool damagePanic() const { return damagePanic_; }
 	bool active() const
 	{
 		return active_;
@@ -127,6 +141,7 @@ public:
 			spring_ = {};
 		}
 		active_ = true;
+		damagePanic_ = false;
 		point_ = point;
 		highPriority_ = high;
 		duration_ = kind == NoiseLookKind::Startle ? 0.25f : draw.value;
@@ -168,7 +183,7 @@ private:
 	world::WorldPosition point_{};
 	AimSpringState spring_{};
 	float lastTime_ = 0, alignedAt_ = -1, duration_ = 0, inhibitedUntil_ = 0;
-	bool active_ = false, highPriority_ = false, clearIfClose_ = true;
+	bool active_ = false, highPriority_ = false, clearIfClose_ = true, damagePanic_ = false;
 };
 } // namespace compat
 } // namespace astrabot
