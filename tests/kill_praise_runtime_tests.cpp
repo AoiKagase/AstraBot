@@ -290,6 +290,9 @@ bool testKillPraise(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &en
 				(praiseSamples[0] == "radio/test/sir.wav" || praiseSamples[0] == "radio/test/sir2.wav"),
 			"fixed human praise uses undefined place and rejects Count2/Speaker-only clips"))
 		return false;
+	if (!check(std::find(praiseIds.begin(), praiseIds.end(), "chatter.speakable_shuffle") == praiseIds.end(),
+			"first playback through a multi-variant profile bank consumes no engine shuffle draws"))
+		return false;
 	step(2.0f);
 	if (!check(praiseSamples.size() == 1, "native praise completion consumes one update before remaining count"))
 		return false;

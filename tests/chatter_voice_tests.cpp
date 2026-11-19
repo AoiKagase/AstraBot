@@ -3,6 +3,89 @@
 #include <cstring>
 #include <fstream>
 #include <iterator>
+namespace
+{
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable : 4996)
+#else
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif
+void nativeShuffle(std::vector<std::string> &clips)
+{
+	std::random_shuffle(clips.begin(), clips.end());
+}
+#ifdef _MSC_VER
+#pragma warning(pop)
+#else
+#pragma GCC diagnostic pop
+#endif
+
+bool matchesNativeRoundShuffle()
+{
+	using namespace astrabot::compat;
+	const char base[] = "Chatter Help h0.wav h1.wav h2.wav h3.wav End "
+						"Place Arena a0.wav a1.wav a2.wav a3.wav a4.wav End "
+						"Chatter Custom c0.wav c1.wav c2.wav End "
+						"Chatter Help d0.wav d1.wav d2.wav End "
+						"Chatter Affirmative y0.wav y1.wav y2.wav End";
+	const char custom[] = "Chatter Affirmative p0.wav p1.wav p2.wav End "
+						  "Place Arena q0.wav q1.wav q2.wav End "
+						  "Chatter Help r0.wav r1.wav r2.wav End";
+	ChatterRadioCatalog definitions;
+	ChatterVoiceCatalog primary, profile;
+	if (!definitions.loadText(base, sizeof(base) - 1) || !primary.loadText(base, sizeof(base) - 1) ||
+		!profile.loadText(custom, sizeof(custom) - 1, &definitions))
+		return false;
+
+	struct Collection
+	{
+		ChatterVoiceCatalog &bank;
+		std::uint32_t id;
+		std::vector<std::string> clips;
+		std::size_t cursor = 0;
+	};
+	Collection help{primary, 1, {"h0.wav", "h1.wav", "h2.wav", "h3.wav"}};
+	Collection arena{primary, 2, {"a0.wav", "a1.wav", "a2.wav", "a3.wav", "a4.wav"}};
+	Collection named{primary, 3, {"c0.wav", "c1.wav", "c2.wav"}};
+	Collection duplicate{primary, 4, {"d0.wav", "d1.wav", "d2.wav"}};
+	Collection affirmative{primary, 5, {"y0.wav", "y1.wav", "y2.wav"}};
+	Collection profileArena{profile, 2, {"q0.wav", "q1.wav", "q2.wav"}};
+	Collection profileHelp{profile, 1, {"r0.wav", "r1.wav", "r2.wav"}};
+	Collection profileAffirmative{profile, 5, {"p0.wav", "p1.wav", "p2.wav"}};
+	const std::vector<Collection *> nativePass{
+		&arena, &profileArena, &arena, &profileArena,
+		&help, &profileHelp, &named, &duplicate, &affirmative, &profileAffirmative,
+		&affirmative, &profileAffirmative, &help, &profileHelp};
+	const std::vector<Collection *> selected{
+		&help, &arena, &named, &duplicate, &affirmative, &profileArena, &profileHelp, &profileAffirmative};
+	const auto verify = [&](Collection &entry)
+	{
+		const auto *clip = entry.id == 2 ? entry.bank.selectPlaceAt(entry.id, definitions, -1, 0)
+										: entry.bank.selectNamedAt(entry.id, definitions, -1, 0);
+		const bool matches = clip && clip->sample == entry.clips[entry.cursor];
+		entry.cursor = (entry.cursor + 1U) % entry.clips.size();
+		return matches;
+	};
+	std::srand(1);
+	ChatterVoiceRandom random;
+	for (unsigned round = 0; round < 32; ++round)
+	{
+		for (auto *entry : nativePass)
+			nativeShuffle(entry->clips);
+		ChatterVoiceCatalog::shuffleBanks({&primary, &profile}, random);
+		for (auto *entry : selected)
+			if (!verify(*entry) || !verify(*entry))
+				return false;
+	}
+	std::srand(739);
+	const int next = std::rand();
+	std::srand(739);
+	ChatterVoiceCatalog::shuffleBanks({&primary, &profile}, random);
+	return std::rand() == next;
+}
+}
 int main(int argc, char **argv)
 {
 	using namespace astrabot::compat;
@@ -45,14 +128,8 @@ int main(int argc, char **argv)
 	check(!voice.loadText(noEnd, sizeof(noEnd) - 1), "missing End does not publish a partial bank");
 	ChatterVoiceCatalog shuffled;
 	check(shuffled.loadText(db, sizeof(db) - 1), "shuffle fixture loads");
-	const RandomActor actor{1, 2};
-	const RandomTimingContext timing{1, 0, 1};
-	std::vector<RandomTapeEntry> tape;
-	for (unsigned i = 0; i < 3; ++i)
-		tape.push_back(RandomTapeEntry::longEntry("chatter.speakable_shuffle", actor, timing, 0, 1, 0));
-	ScriptedRandomSource random(tape);
-	check(shuffled.shuffle(random, actor, timing) && random.verifyComplete(),
-		"round shuffle consumes bounded shared random requests");
+	check(matchesNativeRoundShuffle(),
+		"successive multi-bank rounds match native random_shuffle and leave host rand untouched");
 	shuffled.retainAvailable(
 		[](const std::string &sample)
 		{

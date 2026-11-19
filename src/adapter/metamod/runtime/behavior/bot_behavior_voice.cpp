@@ -59,6 +59,29 @@ void BotBehaviorRuntime::ensureOutgoingChatterCatalog()
 	bank->catalog = std::move(samples);
 }
 
+void BotBehaviorRuntime::shuffleReadyChatterBanks()
+{
+	const auto &lifecycle = services_->service_lifecycle();
+	if (outgoingRadioMap_ != lifecycle.mapGeneration())
+		return;
+	auto round = lifecycle.roundGeneration();
+	const auto *globals = services_->service_globals();
+	// Round_End prepares the next generation while previous-round speech can
+	// still play. Use the scheduled freeze start until Round_Start is observed.
+	if (services_->service_roundOver() && round != runtime::LifecycleSession::kInvalidGeneration &&
+		(services_->service_roundFreezeGeneration() != round || !globals ||
+			globals->time < services_->service_roundFreezeStartTime()))
+		--round;
+	std::vector<compat::ChatterVoiceCatalog *> ready;
+	for (const auto &bank : outgoingVoiceBanks_)
+		if (bank->filesChecked && bank->shuffledRound < round)
+		{
+			ready.push_back(&bank->catalog);
+			bank->shuffledRound = round;
+		}
+	compat::ChatterVoiceCatalog::shuffleBanks(ready, outgoingVoiceRandom_);
+}
+
 std::shared_ptr<compat::ChatterVoiceCatalog> BotBehaviorRuntime::chatterBank(std::size_t index)
 {
 	if (!services_ || index >= actors_.size())
@@ -120,12 +143,14 @@ std::shared_ptr<compat::ChatterVoiceCatalog> BotBehaviorRuntime::chatterBank(std
 		}
 		bank->catalog = std::move(candidate);
 	}
-	if (bank->loading || bank->checking || bank->shuffling || !current())
-		return {};
-	if (!bank->filesChecked)
+	const auto prepare = [&](const std::shared_ptr<ChatterBank> &voiceBank)
 	{
-		bank->checking = true;
-		auto candidate = bank->catalog;
+		if (voiceBank->loading || voiceBank->checking || !current())
+			return false;
+		if (voiceBank->filesChecked)
+			return true;
+		voiceBank->checking = true;
+		auto candidate = voiceBank->catalog;
 		if (engine && engine->pfnGetFileSize)
 			candidate.retainAvailable(
 				[engine](const std::string &sample)
@@ -133,27 +158,19 @@ std::shared_ptr<compat::ChatterVoiceCatalog> BotBehaviorRuntime::chatterBank(std
 					std::string path = "sound/" + sample;
 					return engine->pfnGetFileSize(&path[0]) > 0;
 				});
-		bank->checking = false;
+		voiceBank->checking = false;
 		if (!current())
-			return {};
-		bank->catalog = std::move(candidate);
-		bank->filesChecked = true;
-	}
-	if (bank->shuffledRound != round)
-	{
-		bank->shuffling = true;
-		auto candidate = bank->catalog;
-		const auto handle = services_->service_managedBotHandles()[index];
-		const compat::RandomTimingContext timing{services_->command_managedBotCommandSequences(index), 0U,
-			services_->service_managedBotFullUpdateSequences()[index]};
-		const bool shuffled = candidate.shuffle(
-			services_->service_compatibilityRandomSource(), {handle.actor.slot, handle.actor.actorGeneration}, timing);
-		bank->shuffling = false;
-		if (!current() || !shuffled)
-			return {};
-		bank->catalog = std::move(candidate);
-		bank->shuffledRound = round;
-	}
+			return false;
+		voiceBank->catalog = std::move(candidate);
+		voiceBank->filesChecked = true;
+		return true;
+	};
+	if (!current() || outgoingVoiceBanks_.empty())
+		return {};
+	const auto defaultBank = outgoingVoiceBanks_.front();
+	if (!prepare(defaultBank) || (defaultBank != bank && !prepare(bank)))
+		return {};
+	shuffleReadyChatterBanks();
 	return std::shared_ptr<compat::ChatterVoiceCatalog>(bank, &bank->catalog);
 }
 std::uint32_t BotBehaviorRuntime::allowedFixedChatterPhrases(

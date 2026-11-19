@@ -43,25 +43,6 @@ int criteriaTests()
 	return 0;
 }
 
-namespace
-{
-struct CallbackRandom final : astrabot::compat::ICompatibilityRandomSource
-{
-	std::function<void()> hook;
-	astrabot::compat::RandomFloatResult nextFloat(const astrabot::compat::RandomRequest &) override
-	{
-		return {astrabot::compat::RandomStatus::Unavailable, 0};
-	}
-	astrabot::compat::RandomLongResult nextLong(const astrabot::compat::RandomRequest &) override
-	{
-		auto callback = hook;
-		hook = {};
-		if (callback)
-			callback();
-		return {astrabot::compat::RandomStatus::Ok, 1};
-	}
-};
-}
 int metadataTests()
 {
 	using namespace astrabot::compat;
@@ -166,36 +147,15 @@ int metadataTests()
 	orderDefs.loadText(ordered, sizeof(ordered) - 1);
 	ChatterVoiceCatalog order;
 	order.loadText(ordered, sizeof(ordered) - 1);
-	const RandomActor actor{2, 3};
-	const RandomTimingContext timing{11, 0, 12};
-	std::vector<RandomTapeEntry> tape = {
-		RandomTapeEntry::longEntry("chatter.speakable_shuffle", actor, timing, 0, 1, 0),
-		RandomTapeEntry::longEntry("chatter.speakable_shuffle", actor, timing, 0, 1, 1)};
-	ScriptedRandomSource random(tape);
-	if (!check(order.shuffle(random, actor, timing) && random.verifyComplete(),
-			"round shuffle consumes Place then Chatter requests with exact type/range/owner"))
-		return 1;
-	const auto *a = order.selectPlace(2, orderDefs, -1, "");
-	const std::string aName = a ? a->sample : "";
-	const auto *h = order.select(ChatterPhrase::Help, -1, "");
-	if (!check(aName == "a1.wav" && h && h->sample == "h0.wav",
-			"Place-before-Chatter shuffle order produces the native collection order"))
-		return 1;
+	ChatterVoiceRandom random;
+	ChatterVoiceCatalog::shuffleBanks({&order}, random);
 	order.retainAvailable(
 		[](const std::string &sample)
 		{
 			return sample != "a0.wav";
 		});
-	a = order.selectPlace(2, orderDefs, -1, "");
+	const auto *a = order.selectPlace(2, orderDefs, -1, "");
 	if (!check(a && a->sample == "a1.wav", "asset filtering removes Place variants and resets its cursor safely"))
-		return 1;
-	ChatterVoiceCatalog failed;
-	failed.loadText(ordered, sizeof(ordered) - 1);
-	ScriptedRandomSource shortTape({tape.front()});
-	if (!check(!failed.shuffle(shortTape, actor, timing), "exhausted shuffle does not publish a partial bank"))
-		return 1;
-	a = failed.selectPlace(2, orderDefs, -1, "");
-	if (!check(a && a->sample == "a0.wav", "failed shuffle preserves original Place variants"))
 		return 1;
 	const char fresh[] = "Place Fresh fresh.wav End";
 	ChatterRadioCatalog freshDefs;
@@ -213,32 +173,6 @@ int metadataTests()
 	const auto *freshClip = filterReload.selectPlace(1, freshDefs, -1, "");
 	if (!check(replaced && freshClip && freshClip->sample == "fresh.wav",
 			"reentrant availability reload survives old filtering completion"))
-		return 1;
-	ChatterVoiceCatalog shuffleReload;
-	shuffleReload.loadText(ordered, sizeof(ordered) - 1);
-	CallbackRandom mutating;
-	mutating.hook = [&]()
-	{
-		shuffleReload.loadText(fresh, sizeof(fresh) - 1);
-	};
-	if (!check(
-			!shuffleReload.shuffle(mutating, actor, timing), "reentrant bank replacement cancels stale shuffle commit"))
-		return 1;
-	freshClip = shuffleReload.selectPlace(1, freshDefs, -1, "");
-	if (!check(freshClip && freshClip->sample == "fresh.wav", "fresh Place survives old RNG callback completion"))
-		return 1;
-	ChatterVoiceCatalog cursor;
-	cursor.loadText(ordered, sizeof(ordered) - 1);
-	CallbackRandom advancing;
-	advancing.hook = [&]()
-	{
-		(void)cursor.selectPlace(2, orderDefs, -1, "");
-	};
-	if (!check(
-			cursor.shuffle(advancing, actor, timing), "same-bank cursor advance does not replace metadata generation"))
-		return 1;
-	a = cursor.selectPlace(2, orderDefs, -1, "");
-	if (!check(a && a->sample == "a1.wav", "shuffle preserves cursor advances performed by a selected callback"))
 		return 1;
 	const char badPath[] = "Place Arena ../bad.wav End";
 	if (!check(!base.loadText(badPath, sizeof(badPath) - 1) && base.hasPlace(2, defaults),

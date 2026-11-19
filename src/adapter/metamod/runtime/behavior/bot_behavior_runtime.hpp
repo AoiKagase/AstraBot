@@ -494,7 +494,7 @@ private:
 		compat::ChatterVoiceCatalog catalog;
 		runtime::LifecycleGeneration shuffledRound = 0U;
 		bool filesChecked = false;
-		bool loading = false, checking = false, shuffling = false;
+		bool loading = false, checking = false;
 	};
 	struct RadioPreference
 	{
@@ -509,6 +509,7 @@ private:
 	};
 	std::shared_ptr<compat::ChatterVoiceCatalog> chatterBank(std::size_t index);
 	void ensureOutgoingChatterCatalog();
+	void shuffleReadyChatterBanks();
 	std::uint32_t allowedFixedChatterPhrases(const char *verbosity, compat::ChatterPhrase first, compat::ChatterPhrase last);
 	bool canSeePoint(std::size_t index, world::WorldPosition point, const world::FrameIdentity &frame,
 		bool checkFov) const;
@@ -676,6 +677,7 @@ private:
 	BotBehaviorServices *services_ = nullptr;
 	compat::ChatterRadioCatalog outgoingChatterCatalog_{};
 	std::vector<std::shared_ptr<ChatterBank>> outgoingVoiceBanks_{};
+	compat::ChatterVoiceRandom outgoingVoiceRandom_{};
 	compat::ChatterPlaceHistory outgoingPlaceHistory_{};
 	std::uint64_t outgoingCatalogRevision_ = 0;
 	std::array<RadioPreference, NativeBotObservation::kClientSlotCount> outgoingRadioPreferences_{};

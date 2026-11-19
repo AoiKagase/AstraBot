@@ -236,7 +236,11 @@ bool BotBehaviorRuntime::forcedRunning(std::size_t index)
 void BotBehaviorRuntime::resetRoundRecognition(bool endingRound)
 {
 	if (!endingRound)
+	{
 		resetEncouragement();
+		if (!services_->service_roundOver())
+			shuffleReadyChatterBanks();
+	}
 	looseBombDrop_ = {};
 	updateVoiceFeedback(true);
 	for (std::size_t index = 0; index < actors_.size(); ++index)

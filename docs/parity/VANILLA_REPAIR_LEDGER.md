@@ -87,8 +87,11 @@ SendAudio/BotVoice transport. Radio mode or unavailable voice falls back only
 to explicit standard-radio metadata from the default BotChatter.db. Other
 CSBot statement concepts/composition remain unimplemented. Unknown private
 ignore-radio state on late attachment is not recovered; observed public
-ignore/accept receipts are honored. Engine shuffling approximates the reference
-CRT variant order rather than proving its RNG tape equivalence. Missing voices
+ignore/accept receipts are honored. Candidate shuffling reproduces the Windows
+and Linux CRT default-seed streams for ready banks in native Place/Chatter
+order. Lazy loading can omit draws or change bank registration order, which
+can affect subsequent rounds. The adapter uses the scheduled freeze start and
+Round_Start receipts to identify the restart. Missing voices
 and mappings are diagnosed rather than invented. Complete grenade bounce/landing outcomes
 still need live acceptance. The human's private auto-follow permission timer is
 not read: accepted public radio supplies an explicitly inferred permission proxy.

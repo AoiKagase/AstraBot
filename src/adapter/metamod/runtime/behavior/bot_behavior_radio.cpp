@@ -1976,6 +1976,7 @@ void BotBehaviorRuntime::discardEndedRoundSpeech(std::size_t index)
 
 void BotBehaviorRuntime::finishRoundSpeech()
 {
+	shuffleReadyChatterBanks();
 	for (std::size_t index = 0; index < actors_.size(); ++index)
 		discardEndedRoundSpeech(index);
 }
