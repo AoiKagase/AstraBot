@@ -136,8 +136,8 @@ inline world::WorldPosition combatAimPoint(world::WorldPosition enemy, world::Wo
 	constexpr int kXm1014 = 5;
 	constexpr int kM3 = 21;
 	constexpr int kM249 = 20;
-#define ASTRABOT_COMBAT_BEHAVIOR_HEAD_AIM_MINIMUM_SKILL .8f
-#define ASTRABOT_COMBAT_BEHAVIOR_CHEST_AIM_ACCURACY_THRESHOLD .4f
+	constexpr float kHeadAimMinimumSkill = .8f;
+	constexpr float kChestAimAccuracyThreshold = .4f;
 	constexpr float kChestAimFeetScale = .25f;
 	constexpr float kHeadOccludedFeetScale = .5f;
 #define ASTRABOT_COMBAT_BEHAVIOR_MINIMUM_SIDE_AIM_RANGE .001f
@@ -149,8 +149,8 @@ inline world::WorldPosition combatAimPoint(world::WorldPosition enemy, world::Wo
 	const bool chest = (visibleParts & world::VisibleChest) != 0U;
 	if (chest &&
 		(weapon == kAwp || weapon == kXm1014 || weapon == kM3 || weapon == kM249 ||
-			skill < ASTRABOT_COMBAT_BEHAVIOR_HEAD_AIM_MINIMUM_SKILL ||
-			(recoilKnown && accuracy > ASTRABOT_COMBAT_BEHAVIOR_CHEST_AIM_ACCURACY_THRESHOLD && !pistol && !sniper)))
+			skill < kHeadAimMinimumSkill ||
+			(recoilKnown && accuracy > kChestAimAccuracyThreshold && !pistol && !sniper)))
 		enemy.z -= feetOffset * kChestAimFeetScale;
 	else if ((visibleParts & world::VisibleHead) == 0U)
 	{
@@ -173,8 +173,6 @@ inline world::WorldPosition combatAimPoint(world::WorldPosition enemy, world::Wo
 	}
 	return enemy;
 }
-#undef ASTRABOT_COMBAT_BEHAVIOR_HEAD_AIM_MINIMUM_SKILL
-#undef ASTRABOT_COMBAT_BEHAVIOR_CHEST_AIM_ACCURACY_THRESHOLD
 #undef ASTRABOT_COMBAT_BEHAVIOR_MINIMUM_SIDE_AIM_RANGE
 
 inline bool combatAimOnTarget(world::WorldPosition point, world::WorldPosition origin, float yaw, bool sniper)
