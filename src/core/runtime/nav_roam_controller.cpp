@@ -61,6 +61,24 @@ constexpr float kTraversalEnvelopePadding = 16.0f;
 constexpr float kMinimumOffMeshProgressDistance = 1.0f;
 constexpr auto kActorGenerationSeedMultiplier = 17U;
 
+bool beginNativePathAttempt(compat::ICompatibilityRandomSource *random, const ActorId &actor, std::uint32_t tick,
+	float now, float &nextAttemptAt)
+{
+	// A zero deadline is the unstarted timer. Native CountdownTimer expires strictly after its deadline.
+	if (random == nullptr || (nextAttemptAt > 0.0f && now <= nextAttemptAt))
+		return false;
+	const auto request = compat::RandomRequest::floatRequest("CSBOT-PATH-RETRY", {actor.slot, actor.actorGeneration},
+		{0U, 0U, tick}, ASTRABOT_NAV_ROAM_CONTROLLER_MINIMUM_PATH_RETRY_INTERVAL_SECONDS,
+		ASTRABOT_NAV_ROAM_CONTROLLER_MAXIMUM_PATH_RETRY_INTERVAL_SECONDS);
+	const auto interval = random->nextFloat(request);
+	if (interval.status != compat::RandomStatus::Ok || !std::isfinite(interval.value) ||
+		interval.value < ASTRABOT_NAV_ROAM_CONTROLLER_MINIMUM_PATH_RETRY_INTERVAL_SECONDS ||
+		interval.value > ASTRABOT_NAV_ROAM_CONTROLLER_MAXIMUM_PATH_RETRY_INTERVAL_SECONDS)
+		return false;
+	nextAttemptAt = now + interval.value;
+	return true;
+}
+
 nav::LocomotionConfig roamLocomotionConfig(compat::RuntimeMode mode)
 {
 	return {32.0f, 20.0f, 64.0f, 16.0f, 240.0f, 8U, mode == compat::RuntimeMode::Compatibility};
@@ -1508,27 +1526,15 @@ NavRoamController::NavigationPhaseResult NavRoamController::selectUpdateRoute(Na
 		{
 			decision->recomputeReason = NavRecomputeReason::InitialGoal;
 		}
-		if (timedCompatibility_)
+		if (timedCompatibility_ && objectiveArea != 0U &&
+			!beginNativePathAttempt(randomSource_, actor_, observation.frame.tick, observedAt_, recoveryState().nextPathAttemptAt))
 		{
-			if (observedAt_ < recoveryState().nextPathAttemptAt || randomSource_ == nullptr)
+			if (decision != nullptr)
 			{
-				if (decision != nullptr)
-				{
-					decision->stage = NavRoamStage::Failed;
-					decision->failureReason = NavFailureReason::PathSearchFailed;
-				}
-				return {true, NavRoamResult::NoRoute};
+				decision->stage = NavRoamStage::Failed;
+				decision->failureReason = NavFailureReason::PathSearchFailed;
 			}
-			const auto request =
-				compat::RandomRequest::floatRequest("CSBOT-PATH-RETRY", {actor_.slot, actor_.actorGeneration},
-					{0U, 0U, observation.frame.tick}, ASTRABOT_NAV_ROAM_CONTROLLER_MINIMUM_PATH_RETRY_INTERVAL_SECONDS,
-					ASTRABOT_NAV_ROAM_CONTROLLER_MAXIMUM_PATH_RETRY_INTERVAL_SECONDS);
-			const auto interval = randomSource_->nextFloat(request);
-			if (interval.status != compat::RandomStatus::Ok || !std::isfinite(interval.value) ||
-				interval.value < ASTRABOT_NAV_ROAM_CONTROLLER_MINIMUM_PATH_RETRY_INTERVAL_SECONDS ||
-				interval.value > ASTRABOT_NAV_ROAM_CONTROLLER_MAXIMUM_PATH_RETRY_INTERVAL_SECONDS)
-				return {true, NavRoamResult::NoRoute};
-			recoveryState().nextPathAttemptAt = observedAt_ + interval.value;
+			return {true, NavRoamResult::NoRoute};
 		}
 		// Consume the bypass only when a route search is actually attempted.
 		// Full updates during the retry cooldown must retain it.
@@ -1565,6 +1571,9 @@ NavRoamController::NavigationPhaseResult NavRoamController::selectUpdateRoute(Na
 		{
 			decision->stage = NavRoamStage::CorridorReady;
 		}
+		// Hunt computes a replacement after UpdatePathMovement. It follows that path on its next update.
+		if (timedCompatibility_ && objectiveArea == 0U)
+			return {true, NavRoamResult::MovementSuppressed};
 		if (objectiveArea != 0U)
 		{
 			clearPathFailure();
@@ -2953,7 +2962,7 @@ bool NavRoamController::selectCompatibilityGoal(const nav::NavSnapshot &snapshot
 	bool reservationFallback = false;
 	bool reservationBudgetExhausted = false;
 	NavRoamReservationFallbackReason reservationFallbackReason = NavRoamReservationFallbackReason::None;
-	if (!roamGoalState().hasRoamGoal || goalReached)
+	if (timedCompatibility_ || !roamGoalState().hasRoamGoal || goalReached)
 	{
 		if (goalReached && reservationBoard_ != nullptr)
 		{
@@ -3192,9 +3201,8 @@ bool NavRoamController::selectCompatibilityGoal(const nav::NavSnapshot &snapshot
 		roamGoalState().goalSelectionStrategy = strategy;
 	}
 
-	if (!roamGoalState().hasRoamGoal || roamGoalState().roamGoalArea == currentArea.area)
+	if (!roamGoalState().hasRoamGoal)
 	{
-		roamGoalState().hasRoamGoal = false;
 		return false;
 	}
 	if (decision != nullptr)
@@ -3202,6 +3210,24 @@ bool NavRoamController::selectCompatibilityGoal(const nav::NavSnapshot &snapshot
 		decision->goalSelectionReason = roamGoalState().goalSelectionReason;
 		decision->goalSelectionStrategy = roamGoalState().goalSelectionStrategy;
 		decision->goalGeneration = roamGoalState().roamGoalGeneration;
+		decision->goalPresent = true;
+		decision->goalKind = NavGoalKind::Roam;
+		decision->goalArea = roamGoalState().roamGoalArea;
+		decision->goalPosition = roamGoalState().roamGoalPosition;
+	}
+	// Hunt chooses a goal on every update without a progressing route, even when ComputePath is throttled.
+	if (timedCompatibility_ &&
+		!beginNativePathAttempt(randomSource_, actor_, lastFrame_.tick, observedAt_, recoveryState().nextPathAttemptAt))
+	{
+		roamGoalState().hasRoamGoal = false;
+		if (decision != nullptr)
+			decision->failureReason = NavFailureReason::PathSearchFailed;
+		return false;
+	}
+	if (roamGoalState().roamGoalArea == currentArea.area)
+	{
+		roamGoalState().hasRoamGoal = false;
+		return false;
 	}
 
 	nav::NavQuery query(snapshot);
@@ -3211,10 +3237,6 @@ bool NavRoamController::selectCompatibilityGoal(const nav::NavSnapshot &snapshot
 	}
 	if (decision != nullptr)
 	{
-		decision->goalPresent = true;
-		decision->goalKind = NavGoalKind::Roam;
-		decision->goalArea = roamGoalState().roamGoalArea;
-		decision->goalPosition = roamGoalState().roamGoalPosition;
 		decision->pathRequested = true;
 	}
 	nav::NavCorridor corridor = std::move(selectedCorridor);

@@ -116,14 +116,29 @@ void BotBehaviorRuntime::resetRoundBuyingState()
 
 bool BotBehaviorRuntime::shouldBuy(std::size_t index, const compat::StateUpdateContext &context) const
 {
-	compat::PublicActorState buyingObservation{};
+	const auto &actor = actors_[index];
+	const auto *globals = services_->service_globals();
 	const float buyMinutes = readOptionalCvarFloat(services_->service_engineFunctions(), "mp_buytime");
-	return !actors_[index].buyingComplete && context.alive && services_->service_globals() != nullptr &&
-		std::isfinite(buyMinutes) && buyMinutes > 0.0f &&
-		services_->service_globals()->time <=
-		services_->service_roundFreezeStartTime() + buyMinutes * kSecondsPerMinute &&
-		services_->observation_publicObservations().read(context.actor, context.frame, &buyingObservation) &&
-		buyingObservation.buyZoneKnown && buyingObservation.inBuyZone;
+	if (actor.buyingComplete || !context.alive || globals == nullptr)
+		return false;
+
+	const float roundStart = services_->service_roundFreezeStartTime();
+	// Native Buy waits through the scheduled restart, before buy-zone signals are available.
+	const bool awaitingRestart = actor.managedBotStateMachines.state() == compat::CompatibilityStateId::Buy &&
+		services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility &&
+		services_->service_roundOver() && services_->service_roundFreezeGeneration() == context.frame.roundGeneration &&
+		globals->time < roundStart;
+
+	const bool buyTimeOpen = std::isfinite(buyMinutes) && buyMinutes > 0.0f &&
+		globals->time <= roundStart + buyMinutes * kSecondsPerMinute;
+	if (!awaitingRestart && !buyTimeOpen)
+		return false;
+
+	compat::PublicActorState buyingObservation{};
+	if (!services_->observation_publicObservations().read(context.actor, context.frame, &buyingObservation) ||
+		!buyingObservation.buyZoneKnown)
+		return awaitingRestart;
+	return buyTimeOpen && buyingObservation.inBuyZone;
 }
 
 } // namespace metamod

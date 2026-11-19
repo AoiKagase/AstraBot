@@ -479,11 +479,18 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 	gEntities[1].v.deadflag = DEAD_DEAD;
 	for (unsigned frame = 0; frame < 136U; ++frame)
 		stepRifle(30);
-	gEntities[0].v.origin = Vector(80, 32, 36);
+	// Start the reload encounter with a fresh round and a live opponent.
+	runtime.onRoundLifecycleMessage("World triggered \"Round_Start\"");
 	gEntities[1].v.health = 100;
 	gEntities[1].v.deadflag = DEAD_NO;
-	for (unsigned frame = 0; frame < 8U; ++frame)
+	for (unsigned frame = 0; frame < 16U && !state.attackOverlayActive(); ++frame)
+	{
+		// Keep the intended encounter pose while the bot reacquires its target.
+		gEntities[0].v.origin = Vector(80, 32, 36);
 		stepRifle(30);
+	}
+	if (!check(state.attackOverlayActive(), "empty-magazine fixture first reacquires the live enemy"))
+		return false;
 	forceLowPercentageRoll = true;
 	const auto reloadBefore = combatReloadCommands;
 	for (unsigned frame = 0; frame < 4U; ++frame)

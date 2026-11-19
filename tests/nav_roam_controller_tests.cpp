@@ -1497,6 +1497,78 @@ bool testCompatibilityLargeAreaGoalUsesDrawAndSafestRoute()
 		check(huntRandom.verifyComplete(), "large-area goal consumes exactly its taped draw");
 }
 
+bool testTimedHuntDrawsBeforePathThrottle()
+{
+	using namespace astrabot;
+	nav::NavDocument document;
+	document.setSourceIdentity({5U, 100U, 200U});
+	auto start = area(1U, 0.0f, 64.0f);
+	start.connections[1U].push_back(3U);
+	document.addArea(start);
+	document.addArea(area(2U, 128.0f, 192.0f));
+	document.addArea(area(3U, 64.0f, 128.0f));
+	nav::NavSnapshotPublisher publisher;
+	if (!check(publisher.publish(&document, 1U) == nav::NavSnapshotResult::Published, "timed Hunt fixture publishes"))
+		return false;
+	compat::ScriptedRandomSource random({
+		compat::RandomTapeEntry::longEntry("CSBOT-HUNT-GOAL", {1U, 1U}, {0U, 0U, 1U}, 0, 2, 1),
+		compat::RandomTapeEntry::floatEntry("CSBOT-PATH-RETRY", {1U, 1U}, {0U, 0U, 1U}, .4f, .6f, .5f),
+		compat::RandomTapeEntry::longEntry("CSBOT-HUNT-GOAL", {1U, 1U}, {0U, 0U, 2U}, 0, 2, 0),
+		compat::RandomTapeEntry::longEntry("CSBOT-HUNT-GOAL", {1U, 1U}, {0U, 0U, 3U}, 0, 2, 1),
+		compat::RandomTapeEntry::longEntry("CSBOT-HUNT-GOAL", {1U, 1U}, {0U, 0U, 4U}, 0, 2, 2),
+		compat::RandomTapeEntry::floatEntry("CSBOT-PATH-RETRY", {1U, 1U}, {0U, 0U, 4U}, .4f, .6f, .5f),
+		compat::RandomTapeEntry::longEntry("CSBOT-HUNT-GOAL", {1U, 1U}, {0U, 0U, 6U}, 0, 2, 1)});
+	runtime::NavRoamController controller;
+	controller.setRandomSource(&random);
+	runtime::NavRoamObservation observation = {};
+	observation.actor = {1U, 1U};
+	observation.frame = {1U, 1U, 1U};
+	observation.team = 1U;
+	observation.locomotion.position = {32.0f, 32.0f, 0.0f};
+	observation.locomotion.standingClearance = 72.0f;
+	observation.locomotion.crouchingClearance = 36.0f;
+	observation.locomotion.grounded = true;
+	observation.locomotion.timingAvailable = true;
+	observation.locomotion.observedAt = 1.0f;
+	observation.collectPathStats = true;
+	nav::LocomotionIntent intent = {};
+	runtime::NavRoamDecision decision = {};
+	if (!check(controller.update(publisher.snapshot(), observation, &intent, &decision) == runtime::NavRoamResult::NoRoute &&
+				decision.goalArea == 2U && decision.pathSearchStats.searchCalls == 1U,
+			"Hunt draws an unreachable goal before drawing ComputePath's retry delay"))
+		return false;
+	observation.frame.tick = 2U;
+	observation.locomotion.observedAt = 1.1f;
+	if (!check(controller.update(publisher.snapshot(), observation, &intent, &decision) == runtime::NavRoamResult::NoRoute &&
+				decision.goalPresent && decision.goalArea == 1U && decision.pathSearchStats.searchCalls == 0U,
+			"throttled Hunt still draws a fresh goal while ComputePath makes no search"))
+		return false;
+	observation.frame.tick = 3U;
+	observation.locomotion.observedAt = 1.5f;
+	if (!check(controller.update(publisher.snapshot(), observation, &intent, &decision) == runtime::NavRoamResult::NoRoute &&
+				decision.goalArea == 2U && decision.pathSearchStats.searchCalls == 0U,
+			"ComputePath remains throttled exactly at the retry deadline"))
+		return false;
+	observation.frame.tick = 4U;
+	observation.locomotion.observedAt = 1.51f;
+	if (!check(controller.update(publisher.snapshot(), observation, &intent, &decision) ==
+				runtime::NavRoamResult::MovementSuppressed && decision.goalArea == 3U && intent.speed == 0.0f,
+			"Hunt builds the newly selected route without following it on the same update"))
+		return false;
+	observation.frame.tick = 5U;
+	observation.locomotion.observedAt = 1.61f;
+	if (!check(controller.update(publisher.snapshot(), observation, &intent, &decision) ==
+				runtime::NavRoamResult::IntentReady && intent.targetArea == 3U,
+			"the next Hunt update follows the new route without another draw"))
+		return false;
+	controller.destroyPath();
+	observation.frame.tick = 6U;
+	observation.locomotion.observedAt = 1.71f;
+	return check(controller.update(publisher.snapshot(), observation, &intent, &decision) == runtime::NavRoamResult::NoRoute &&
+				decision.goalArea == 2U && decision.pathSearchStats.searchCalls == 0U && random.verifyComplete(),
+		"a destroyed Hunt path causes a fresh goal draw even while ComputePath is throttled");
+}
+
 bool testCompatibilityPathRetryUsesEngineTime()
 {
 	using namespace astrabot;
@@ -3354,7 +3426,7 @@ int main()
 	{
 		return 1;
 	}
-	if (!testCompatibilityPathRetryUsesEngineTime())
+	if (!testTimedHuntDrawsBeforePathThrottle() || !testCompatibilityPathRetryUsesEngineTime())
 	{
 		return 1;
 	}

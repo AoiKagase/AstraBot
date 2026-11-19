@@ -42,6 +42,11 @@ def apply_corrections(baseline, corrections, platform):
     return baseline
 
 
+def read_correction(path):
+    data = path.read_bytes()
+    return json.loads(gzip.decompress(data) if path.suffix == '.gz' else data)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--executable', type=Path, required=True)
@@ -56,8 +61,7 @@ def main():
     if result.returncode:
         raise SystemExit(result.returncode)
     expected = gzip.decompress(args.baseline.read_bytes())
-    expected = apply_corrections(expected,
-                                 [json.loads(path.read_text()) for path in args.correction], args.platform)
+    expected = apply_corrections(expected, [read_correction(path) for path in args.correction], args.platform)
     actual = args.output.read_bytes()
     if actual != expected:
         delta = difflib.unified_diff(expected.decode().splitlines(), actual.decode().splitlines(),

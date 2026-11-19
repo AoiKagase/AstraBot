@@ -70,6 +70,32 @@ subsequent goals diverge. The probe compares a shared route segment and
 observed dispatch. Complete route, movement-command and live RNG equality
 remain open.
 
+## Windows x86 Hunt goal selection
+
+Two isolated `de_dust2` HLDS runs used the same map, profiles, and pinned
+Win32 GameDLL. The reference probe records the Hunt goal draw and the path
+retry draw. An AstraBot test build records the same call sites before and
+after the change. Each engine uses its own RNG stream.
+
+For the first CT Hunt update, the old AstraBot build drew the retry delay
+before the goal and dispatched forward input in the same update. The fixed
+build drew the goal before the delay, like CSBot, and dispatched zero movement
+while the new corridor was prepared. During the cooldown it selected a goal
+without drawing another delay or searching. The deterministic controller test
+also covers the exact cooldown boundary and a path invalidated before retry.
+
+A separate control sent the reference's measured NAV start 5 and goal 842 to
+AstraBot's Safest search using the captured `de_dust2.nav` file. All 13 corridor
+areas matched the reference run after removing its duplicated endpoint area.
+A separate live probe captured `StatusIcon buyzone`: AstraBot briefly left Buy
+before its first zone notification during the scheduled restart. The fix holds
+Buy while the notification is missing and the restart is pending. It uses any
+known zone result and still requires an observed buy zone for purchase commands.
+In the follow-up live run the first Hunt decision moved from before
+`Round_Start` to after it. Buy completion after `Round_Start`, same-area and
+closest-area fallback, and full-match RNG and movement-command equality remain
+open.
+
 ## Full runtime replay remains open
 
 The semantic record classes come from `docs/TRACE_SCHEMA.md` and
