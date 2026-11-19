@@ -167,6 +167,20 @@ int main()
 	if (!check(services.lastYaw < upkeepYaw * 2.0f,
 			"the next full Hunt decision preserves angular velocity and uses its updated view"))
 		return 1;
+
+	command.resetManagedBotCommandTemplate(0U);
+	handle.entity->v.v_angle = Vector(0, 0, 0);
+	endpoint.roamDecision.corridorAreaCount = 2;
+	endpoint.roamDecision.corridorIndex = 0;
+	updateHunt();
+	if (!check(services.lastForward == 0.0f && services.lastSide == 240.0f,
+			"fallback runs while the full update starts on the portal leg inside the endpoint walk radius"))
+		return 1;
+	endpoint.roamDecision.corridorIndex = 1;
+	updateHunt();
+	if (!check(services.lastForward == 0.0f && services.lastSide == 96.0f,
+			"fallback first slows on the update that starts on the endpoint leg"))
+		return 1;
 	std::puts("runtime command orchestration scenarios: PASS");
 	return 0;
 }

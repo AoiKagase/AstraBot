@@ -103,6 +103,7 @@ struct LocomotionObservation
 	float observedAt = 0.0f;
 	bool viewYawAvailable = false;
 	float viewYaw = 0.0f;
+	const NavHuntPathProbe *huntPathProbe = nullptr;
 };
 
 struct LocomotionIntent

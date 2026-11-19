@@ -172,7 +172,8 @@ LocomotionResult LocomotionController::update(
 	NavVector target = {};
 	AreaId targetArea = 0U;
 	const NavFollowerResult followerResult = pathFollower_.update(snapshot, observation.position,
-		config_.targetHorizontalTolerance, config_.targetVerticalTolerance, &target, &targetArea);
+		config_.targetHorizontalTolerance, config_.targetVerticalTolerance, &target, &targetArea,
+		{observation.ducked, currentMatch.area, observation.huntPathProbe});
 	const LocomotionResult mappedResult = mapFollowerResult(followerResult);
 	if (mappedResult == LocomotionResult::StaleSnapshot || mappedResult == LocomotionResult::InvalidSnapshot ||
 		mappedResult == LocomotionResult::InvalidCorridor || mappedResult == LocomotionResult::ResourceLimit)
@@ -467,7 +468,7 @@ bool LocomotionController::previewTarget(
 	auto follower = pathFollower_;
 	AreaId area = 0U;
 	const auto result = follower.update(snapshot, observation.position, config_.targetHorizontalTolerance,
-		config_.targetVerticalTolerance, target, &area);
+		config_.targetVerticalTolerance, target, &area, {observation.ducked, 0U, observation.huntPathProbe});
 	return result == NavFollowerResult::TargetReady || result == NavFollowerResult::Advanced;
 }
 

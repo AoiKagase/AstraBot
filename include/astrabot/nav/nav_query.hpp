@@ -128,6 +128,12 @@ struct NavLadderStep
 	NavLadder ladder{};
 };
 
+struct NavHuntWaypoint
+{
+	NavVector position;
+	std::size_t areaIndex;
+};
+
 struct NavCorridor
 {
 	std::uint64_t navRevision;
@@ -143,6 +149,7 @@ struct NavCorridor
 	// Explicit non-ground links; callers must split these before using the ground follower.
 	std::vector<NavLadderStep> nativeLadders;
 	bool huntEndpointSteering = false;
+	std::vector<NavHuntWaypoint> huntWaypoints;
 
 	bool isValid() const;
 };
@@ -204,6 +211,20 @@ enum class NavFollowerResult
 	ResourceLimit
 };
 
+class NavHuntPathProbe
+{
+public:
+	virtual ~NavHuntPathProbe() = default;
+	virtual bool clear(const NavVector &feet, const NavVector &point, bool allowDoors) const = 0;
+};
+
+struct NavHuntSteeringContext
+{
+	bool crouched = false;
+	AreaId currentArea = 0U;
+	const NavHuntPathProbe *probe = nullptr;
+};
+
 class NavPathFollower
 {
 public:
@@ -211,13 +232,19 @@ public:
 
 	NavFollowerResult start(const NavCorridor &corridor);
 	NavFollowerResult update(const NavSnapshot &snapshot, const NavVector &position, float horizontalTolerance,
-		float verticalTolerance, NavVector *target, AreaId *targetArea);
+		float verticalTolerance, NavVector *target, AreaId *targetArea, NavHuntSteeringContext hunt = {});
 	bool isActive() const;
 	std::size_t currentIndex() const;
 
 private:
+	NavFollowerResult updateHuntPath(const NavDocument &document, const NavVector &feet, float arrivalRadius,
+		NavHuntSteeringContext hunt, NavVector &target, AreaId &targetArea);
+
 	std::vector<AreaId> corridor_;
 	std::vector<NavDirectedLink> links_;
+	std::vector<NavHuntWaypoint> huntWaypoints_;
+	std::size_t huntWaypointIndex_ = 0U;
+	NavVector huntTarget_{};
 	std::uint64_t navRevision_;
 	std::uint32_t mapGeneration_;
 	std::size_t currentIndex_;

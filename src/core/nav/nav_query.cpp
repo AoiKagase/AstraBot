@@ -1137,17 +1137,22 @@ void setHuntFallbackEndpoint(const NavDocument &document, AreaId goal, NavCorrid
 			return value < low ? low : (std::min)(value, high);
 		};
 		auto portal = extentCenterOf(*doc->findArea(corridor.areas.front()));
-		for (const auto &link : corridor.links)
+		const bool groundOnly = corridor.nativeLadders.empty();
+		if (groundOnly)
 		{
+			corridor.huntWaypoints.reserve(2U * corridor.links.size() + 2U);
+			corridor.huntWaypoints.push_back({portal, 0U});
+		}
+		for (std::size_t i = 0U; i < corridor.links.size(); ++i)
+		{
+			const auto &link = corridor.links[i];
 			const auto &from = *doc->findArea(link.fromArea);
 			const auto &to = *doc->findArea(link.toArea);
 			const bool northSouth = link.direction == kNorthDirection || link.direction == kSouthDirection;
 			const bool reverse = std::any_of(to.connections.begin(), to.connections.end(),
 				[&](const std::vector<AreaId> &neighbors)
 				{ return std::find(neighbors.begin(), neighbors.end(), from.id) != neighbors.end(); });
-			// Native ground waypoints step five units inside the portal. A one-way
-			// descent adds two 25-unit offsets before the following portal is built.
-			const float step = reverse ? 5.0f : 55.0f;
+			const float step = reverse ? 5.0f : 30.0f;
 			if (northSouth)
 			{
 				portal.x = portalCoordinate(portal.x, from.extent.lo.x, from.extent.hi.x, to.extent.lo.x, to.extent.hi.x,
@@ -1160,6 +1165,18 @@ void setHuntFallbackEndpoint(const NavDocument &document, AreaId goal, NavCorrid
 					onEdge(to, kNorthDirection), onEdge(to, kSouthDirection));
 				portal.x = link.direction == kWestDirection ? from.extent.lo.x - step : from.extent.hi.x + step;
 			}
+			const auto areaIndex = i + 1U;
+			portal.z = surfaceZAtInternal(from, portal.x, portal.y);
+			if (groundOnly)
+				corridor.huntWaypoints.push_back({portal, areaIndex});
+			if (!reverse)
+			{
+				portal.x += link.direction == kEastDirection ? 25.0f : link.direction == kWestDirection ? -25.0f : 0.0f;
+				portal.y += link.direction == kSouthDirection ? 25.0f : link.direction == kNorthDirection ? -25.0f : 0.0f;
+				portal.z = surfaceZAtInternal(to, portal.x, portal.y);
+				if (groundOnly)
+					corridor.huntWaypoints.push_back({portal, areaIndex});
+			}
 		}
 		endpoint = extentCenterOf(*destination);
 		const auto direction = corridor.links.back().direction;
@@ -1171,6 +1188,8 @@ void setHuntFallbackEndpoint(const NavDocument &document, AreaId goal, NavCorrid
 	corridor.hasEndpoint = true;
 	corridor.huntEndpointSteering = true;
 	corridor.endpoint = {endpoint.x, endpoint.y, surfaceZAtInternal(*destination, endpoint.x, endpoint.y)};
+	if (!corridor.huntWaypoints.empty())
+		corridor.huntWaypoints.push_back({corridor.endpoint, corridor.areas.size() - 1U});
 }
 }
 
@@ -1197,7 +1216,15 @@ NavQueryResult NavQuery::buildHuntCorridor(AreaId start, AreaId goal, NavCorrido
 	if (result != NavQueryResult::Found || corridor->areas.back() == goal)
 		return result;
 
-	setHuntFallbackEndpoint(*doc, goal, *corridor);
+	try
+	{
+		setHuntFallbackEndpoint(*doc, goal, *corridor);
+	}
+	catch (const std::bad_alloc &)
+	{
+		*corridor = {};
+		return NavQueryResult::ResourceLimit;
+	}
 	return result;
 }
 
@@ -1230,7 +1257,17 @@ NavQueryResult NavQuery::buildAlternativeCorridor(const NavCorridor &currentCorr
 		alternativeCorridor->hasEndpoint = currentCorridor.hasEndpoint;
 		alternativeCorridor->endpoint = currentCorridor.endpoint;
 		if (huntGoal != 0U && huntGoal != alternativeCorridor->areas.back() && document()->findArea(huntGoal))
-			setHuntFallbackEndpoint(*document(), huntGoal, *alternativeCorridor);
+		{
+			try
+			{
+				setHuntFallbackEndpoint(*document(), huntGoal, *alternativeCorridor);
+			}
+			catch (const std::bad_alloc &)
+			{
+				*alternativeCorridor = {};
+				return NavQueryResult::ResourceLimit;
+			}
+		}
 	}
 	return result;
 }
@@ -1263,10 +1300,19 @@ NavFollowerResult NavPathFollower::start(const NavCorridor &corridor)
 	{
 		return NavFollowerResult::InvalidCorridor;
 	}
+	if (!corridor.huntWaypoints.empty() && (!corridor.hasEndpoint || corridor.huntWaypoints.size() < 3U ||
+			!isFinitePosition(corridor.huntWaypoints.front().position) ||
+			std::any_of(corridor.huntWaypoints.begin() + 1, corridor.huntWaypoints.end(), [&corridor](const auto &waypoint)
+			{
+				return waypoint.areaIndex == 0U || waypoint.areaIndex >= corridor.areas.size() ||
+					!isFinitePosition(waypoint.position);
+			})))
+		return NavFollowerResult::InvalidCorridor;
 	try
 	{
 		corridor_ = corridor.areas;
 		links_ = corridor.links;
+		huntWaypoints_ = corridor.huntWaypoints;
 	}
 	catch (const std::bad_alloc &)
 	{
@@ -1277,12 +1323,177 @@ NavFollowerResult NavPathFollower::start(const NavCorridor &corridor)
 	hasEndpoint_ = corridor.hasEndpoint;
 	endpoint_ = corridor.endpoint;
 	currentIndex_ = 0U;
+	huntWaypointIndex_ = huntWaypoints_.empty() ? 0U : 1U;
+	if (huntWaypointIndex_ != 0U)
+		huntTarget_ = huntWaypoints_[huntWaypointIndex_].position;
 	active_ = true;
 	return NavFollowerResult::Started;
 }
 
+namespace
+{
+NavVector displacement(const NavVector &from, const NavVector &to)
+{
+	return {to.x - from.x, to.y - from.y, to.z - from.z};
+}
+
+float dotProduct(const NavVector &a, const NavVector &b)
+{
+	return a.x * b.x + a.y * b.y + a.z * b.z;
+}
+
+NavVector pointAlong(const NavVector &from, const NavVector &delta, float fraction)
+{
+	fraction = (std::max)(0.0f, (std::min)(1.0f, fraction));
+	return {from.x + fraction * delta.x, from.y + fraction * delta.y, from.z + fraction * delta.z};
+}
+
+NavVector unitVector(const NavVector &v)
+{
+	const float length = std::sqrt(dotProduct(v, v));
+	return length > 0.0f ? NavVector{v.x / length, v.y / length, v.z / length} : NavVector{};
+}
+
+float distance2D(const NavVector &from, const NavVector &to)
+{
+	return std::hypot(to.x - from.x, to.y - from.y);
+}
+}
+
+NavFollowerResult NavPathFollower::updateHuntPath(const NavDocument &document, const NavVector &feet, float arrivalRadius,
+	NavHuntSteeringContext hunt, NavVector &target, AreaId &targetArea)
+{
+	const std::size_t last = huntWaypoints_.size() - 1U;
+	const std::size_t previousWaypoint = huntWaypointIndex_;
+	target = huntTarget_;
+	const auto traversalArea = [&](std::size_t waypoint)
+	{
+		const auto areaIndex = huntWaypoints_[waypoint].areaIndex;
+		const auto traversal = std::find(corridor_.begin(), corridor_.begin() + areaIndex, hunt.currentArea);
+		// Geometric lookahead can skip several tiny areas, but physical
+		// clearance and traversal checks still belong to the immediate link.
+		return traversal == corridor_.begin() + areaIndex ? corridor_[areaIndex] : *(traversal + 1);
+	};
+	targetArea = traversalArea(previousWaypoint);
+	const auto toEnd = displacement(feet, endpoint_);
+	const float distanceToEnd = dotProduct(toEnd, toEnd);
+	if (previousWaypoint == last &&
+		(distanceToEnd < arrivalRadius * arrivalRadius || (arrivalRadius == 0.0f && distanceToEnd == 0.0f)))
+	{
+		active_ = false;
+		return NavFollowerResult::Reached;
+	}
+
+	// CSBot projects onto the nearby path segments before changing its point index.
+	const std::size_t firstSegment = previousWaypoint > 3U ? previousWaypoint - 3U : 1U;
+	const std::size_t stop = (std::min)(huntWaypoints_.size(), previousWaypoint + 3U);
+	float bestDistance = (std::numeric_limits<float>::max)();
+	std::size_t closest = 0U;
+	NavVector point{};
+	for (std::size_t i = firstSegment; i < stop; ++i)
+	{
+		const auto &from = huntWaypoints_[i - 1U].position;
+		const auto delta = displacement(from, huntWaypoints_[i].position);
+		const float lengthSquared = dotProduct(delta, delta);
+		const auto projected = pointAlong(from, delta,
+			lengthSquared > 0.0f ? dotProduct(displacement(from, feet), delta) / lengthSquared : 0.0f);
+		const auto offset = displacement(feet, projected);
+		const float distance = dotProduct(offset, offset);
+		if (distance < bestDistance && (hunt.probe == nullptr || hunt.probe->clear(feet, projected, true)))
+		{
+			bestDistance = distance;
+			closest = i - 1U;
+			point = projected;
+		}
+	}
+	if (closest == 0U)
+		return NavFollowerResult::TargetReady;
+
+	const auto isJump = [&](std::size_t index)
+	{
+		const auto *area = document.findArea(corridor_[huntWaypoints_[index].areaIndex]);
+		return area != nullptr && (area->attributes & NavArea::kJump) != 0U;
+	};
+	constexpr float closePointRange = 20.0f;
+	while (closest < last && distance2D(point, huntWaypoints_[closest + 1U].position) < closePointRange)
+		++closest;
+	auto next = !hunt.crouched && closest > previousWaypoint && isJump(closest)
+		? closest : (std::min)(last, closest + 1U);
+	huntTarget_ = huntWaypoints_[next].position;
+	if (!hunt.crouched && !isJump(next))
+	{
+		constexpr float aheadRange = 300.0f;
+		const auto initial = unitVector(displacement(huntWaypoints_[next - 1U].position, huntTarget_));
+		auto previousDirection = initial;
+		float range = 0.0f;
+		bool corner = false;
+		for (std::size_t i = next; i <= last; ++i)
+		{
+			const auto &from = huntWaypoints_[i - 1U].position;
+			const auto &to = huntWaypoints_[i].position;
+			const auto delta = displacement(from, to);
+			const auto direction = unitVector(delta);
+			if (dotProduct(direction, initial) < 0.0f)
+				break;
+			if (dotProduct(direction, previousDirection) < 0.5f)
+			{
+				corner = true;
+				break;
+			}
+			if (hunt.probe != nullptr && !hunt.probe->clear(feet, to, false))
+			{
+				const float length = distance2D(from, to);
+				constexpr float sightStep = 25.0f;
+				float fraction = length > 0.0f ? (std::min)(1.0f, 1.0f - (range - aheadRange) / length) : 0.0f;
+				huntTarget_ = from;
+				while (fraction > 0.0f)
+				{
+					const auto candidate = pointAlong(from, delta, fraction);
+					if (hunt.probe->clear(feet, candidate, false))
+					{
+						huntTarget_ = candidate;
+						break;
+					}
+					fraction -= sightStep / length;
+				}
+				break;
+			}
+			if (isJump(i))
+			{
+				huntTarget_ = to;
+				break;
+			}
+			previousDirection = direction;
+			range += distance2D(i == next ? feet : from, to);
+			const float segmentLength = distance2D(from, to);
+			huntTarget_ = pointAlong(from, delta,
+				segmentLength > 0.0f ? 1.0f - (range - aheadRange) / segmentLength : 1.0f);
+			if (range >= aheadRange)
+				break;
+		}
+		const auto toTarget = displacement(feet, huntTarget_);
+		constexpr float steerMinimum = 50.0f;
+		if (!corner && (toTarget.x * initial.x + toTarget.y * initial.y < 0.0f ||
+				distance2D(feet, huntTarget_) < steerMinimum))
+		{
+			for (; next < last && !isJump(next) &&
+				distance2D(feet, huntWaypoints_[next].position) <= steerMinimum; ++next) {}
+			huntTarget_ = huntWaypoints_[next].position;
+		}
+	}
+
+	huntWaypointIndex_ = (std::max)(previousWaypoint, next);
+	const auto waypointArea = huntWaypoints_[huntWaypointIndex_].areaIndex;
+	// The final portal and endpoint may both belong to the same area. Expose
+	// the terminal corridor index only once the separate endpoint leg is active.
+	currentIndex_ = huntWaypointIndex_ == last ? waypointArea : waypointArea - 1U;
+	target = huntTarget_;
+	targetArea = traversalArea(huntWaypointIndex_);
+	return huntWaypointIndex_ > previousWaypoint ? NavFollowerResult::Advanced : NavFollowerResult::TargetReady;
+}
+
 NavFollowerResult NavPathFollower::update(const NavSnapshot &snapshot, const NavVector &position,
-	float horizontalTolerance, float verticalTolerance, NavVector *target, AreaId *targetArea)
+	float horizontalTolerance, float verticalTolerance, NavVector *target, AreaId *targetArea, NavHuntSteeringContext hunt)
 {
 	if (target == nullptr || targetArea == nullptr)
 	{
@@ -1314,6 +1525,8 @@ NavFollowerResult NavPathFollower::update(const NavSnapshot &snapshot, const Nav
 	{
 		return NavFollowerResult::InvalidCorridor;
 	}
+	if (!huntWaypoints_.empty())
+		return updateHuntPath(*currentDocument, position, horizontalTolerance, hunt, *target, *targetArea);
 	const NavArea *area = currentDocument->findArea(corridor_[currentIndex_]);
 	if (area == nullptr)
 	{

@@ -928,6 +928,64 @@ MovementPreparation BotNavigationRuntime::prepareMovement(
 	return {MovementPreparationKind::Ready, MovementPreparationCompletion::None};
 }
 
+namespace
+{
+template <typename Current>
+class PublicHuntPathProbe final : public nav::NavHuntPathProbe
+{
+public:
+	PublicHuntPathProbe(enginefuncs_t *engine, RuntimeProfiler &profiler, const Current &current)
+		: engine_(engine), profiler_(profiler), current_(current)
+	{
+	}
+
+	bool clear(const nav::NavVector &feet, const nav::NavVector &point, bool allowDoors) const override
+	{
+		float from[] = {feet.x, feet.y, feet.z + kStandingHalfHumanHeight};
+		const float to[] = {point.x, point.y, point.z + kStandingHalfHumanHeight};
+		const float dx = to[0] - from[0], dy = to[1] - from[1], dz = to[2] - from[2];
+		const float length = std::sqrt(dx * dx + dy * dy + dz * dz);
+		constexpr float advancePastHit = 5.0f;
+		constexpr int ignoreActors = 1;
+		edict_t *ignored = nullptr;
+		edict_t *previous = nullptr;
+		for (int attempt = 0; attempt < 50 && current_(); ++attempt)
+		{
+			TraceResult trace{};
+			{
+				RuntimeProfilerScope scope(profiler_, RuntimeProfilerStage::TraceLine);
+				if (profiler_.enabled())
+					profiler_.recordTraceLine(1U, 0U, 0U);
+				engine_->pfnTraceLine(from, to, ignoreActors, ignored, &trace);
+			}
+			if (!current_())
+				return false;
+			if (trace.flFraction == 1.0f)
+				return true;
+			if (trace.pHit == nullptr || trace.pHit == previous || length <= 0.0f || !engine_->pfnSzFromIndex)
+				return false;
+			const auto *name = engine_->pfnSzFromIndex(trace.pHit->v.classname);
+			const bool passable = name &&
+				((allowDoors && (std::strcmp(name, "func_door") == 0 || std::strcmp(name, "func_door_rotating") == 0)) ||
+					(std::strcmp(name, "func_breakable") == 0 && trace.pHit->v.takedamage == DAMAGE_YES));
+			if (!passable)
+				return false;
+			previous = ignored;
+			ignored = trace.pHit;
+			from[0] = trace.vecEndPos.x + advancePastHit * dx / length;
+			from[1] = trace.vecEndPos.y + advancePastHit * dy / length;
+			from[2] = trace.vecEndPos.z + advancePastHit * dz / length;
+		}
+		return false;
+	}
+
+private:
+	enginefuncs_t *engine_;
+	RuntimeProfiler &profiler_;
+	const Current &current_;
+};
+}
+
 void BotNavigationRuntime::completePreparation(std::size_t index, MovementPreparationCompletion completion)
 {
 	if (completion == MovementPreparationCompletion::ResetRoute ||
@@ -1227,6 +1285,11 @@ NavigationUpdate BotNavigationRuntime::updateNavigation(std::size_t index, const
 			};
 			nav::NavLadderTopology topology{};
 			PublicNativeLadderProbe probe(services_->service_engineFunctions(), current);
+			PublicHuntPathProbe<decltype(current)> huntProbe(
+				services_->service_engineFunctions(), services_->service_runtimeProfiler(), current);
+			if (navigationState == compat::CompatibilityStateId::Hunt &&
+				services_->service_engineFunctions() && services_->service_engineFunctions()->pfnTraceLine)
+				observation.locomotion.huntPathProbe = &huntProbe;
 			if (services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility &&
 				observation.hasObjectiveTarget)
 			{
@@ -1262,6 +1325,7 @@ NavigationUpdate BotNavigationRuntime::updateNavigation(std::size_t index, const
 			// Borrowed topology and probe never escape this synchronous update.
 			observation.nativeLadders = nullptr;
 			observation.nativeLadderProbe = nullptr;
+			observation.locomotion.huntPathProbe = nullptr;
 			if (current())
 			{
 				actors_[index].nativeLadderEpoch = epoch;
