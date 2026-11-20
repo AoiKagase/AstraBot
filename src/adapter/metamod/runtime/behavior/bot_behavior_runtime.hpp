@@ -58,6 +58,14 @@ public:
 			actors_[index].managedBotStateMachines.state() == compat::CompatibilityStateId::InvestigateNoise &&
 			!actors_[index].managedBotStateMachines.attackOverlayActive() && noiseInvestigationCurrent(index);
 	}
+	bool takeNoisePathRequest(std::size_t index, bool &targetCleared)
+	{
+		auto &actor = actors_[index];
+		const bool requested = actor.noisePathPending && noiseInvestigationCurrent(index);
+		targetCleared = requested && actor.managedStateInputs.noiseTargetCleared;
+		actor.noisePathPending = false;
+		return requested;
+	}
 	void updateVoiceFeedback(bool force = false);
 	void observeRadioPreference(edict_t *recipient, bool ignored);
 	void observeRoundWin(int team, world::FrameIdentity frame, bool rescuedHostages,
@@ -662,6 +670,7 @@ private:
 		compat::HeardNoiseReport noiseReport{};
 		bool investigationWalking = false;
 		compat::StateBehaviorInput managedStateInputs{};
+		bool noisePathPending = false;
 		combat::CombatController managedBotCombat{};
 		objectives::RoundObjectivePlanner managedBotObjectives{};
 		ManagedObjectiveTargetCache managedBotObjectiveTargets{};

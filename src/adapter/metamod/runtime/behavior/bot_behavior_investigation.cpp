@@ -153,7 +153,7 @@ void BotBehaviorRuntime::updateNoiseInvestigation(std::size_t index, const runti
 				actor.noiseReport = {true, in.actor, in.frame, in.now, area ? area->placeId : std::uint16_t{0},
 					in.navRevision};
 			}
-			services_->applyNavigationRequest({index, NavigationRequestKind::DestroyPath});
+			state.noisePathRequested = true;
 			context.requestedState = compat::CompatibilityStateId::InvestigateNoise;
 			context.requestTransition = current != context.requestedState;
 			context.transitionId = compat::StateTransitionId::ExplicitStateChange;
@@ -173,7 +173,8 @@ void BotBehaviorRuntime::updateNoiseInvestigation(std::size_t index, const runti
 			reactionHurrying(index) ||
 			(services_->observation_bombNoticeKnown(index) && services_->observation_bombNoticePlanted(index));
 		actor.investigationWalking = compat::investigationShouldWalk(distance, in.friends, knife, hurry);
-		if (distance < 200 && !blind && services_->service_engineFunctions() &&
+		if (current == compat::CompatibilityStateId::InvestigateNoise && distance < 200 && !blind &&
+			services_->service_engineFunctions() &&
 			services_->service_engineFunctions()->pfnTraceLine)
 		{
 			const world::WorldPosition eye{before.origin.x + self->v.view_ofs.x, before.origin.y + self->v.view_ofs.y,
@@ -190,10 +191,15 @@ void BotBehaviorRuntime::updateNoiseInvestigation(std::size_t index, const runti
 				services_->service_engineFunctions()->pfnTraceLine(from, to, 0x101, self, &trace);
 				if (trace.flFraction == 1 && !trace.fStartSolid && !trace.fAllSolid)
 				{
-					planner.cancel();
-					actor.investigationWalking = false;
-					state.goalReached = true;
-					state.noiseAvailable = false;
+					if (state.noisePathRequested || actor.noisePathPending)
+						state.noiseTargetCleared = true;
+					else
+					{
+						planner.cancel();
+						actor.investigationWalking = false;
+						state.goalReached = true;
+						state.noiseAvailable = false;
+					}
 				}
 			}
 		}

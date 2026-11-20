@@ -168,6 +168,8 @@ struct StateBehaviorInput
 	bool reloading = false;
 	DefuseReceipt defuseReceipt = DefuseReceipt::Unknown;
 	bool guardObjectiveEnded = false;
+	bool noisePathRequested = false;
+	bool noiseTargetCleared = false;
 };
 struct StateBehaviorDecision
 {

@@ -234,6 +234,7 @@ bool testKnifeRun(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &engi
 	{
 		return false;
 	}
+	const float runStartedAt = globals.time;
 	hooks.pfnEmitSound(&source, 1, "weapons/ak47-1.wav", 1, 1, 0, 100);
 	step(.12f); // Publish before reaction; defer the next decision beyond the existing path throttle.
 	step(.6f);
@@ -257,11 +258,13 @@ bool testKnifeRun(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &engi
 	{
 		return false;
 	}
-	// The fake engine does not move the edict. Reset its unrelated stuck-progress window.
-	globals.time += 5.1f;
-	static_cast<metamod::BotBehaviorServices &>(runtime).applyNavigationRequest(
-		{0, metamod::NavigationRequestKind::ResetProgress});
-	step(.12f);
+	// The fake engine records commands but does not move the edict. Advance
+	// along the approach in normal updates until the independent run timer expires.
+	while (globals.time <= runStartedAt + 5.0f)
+	{
+		self.v.origin.y += 6.0f;
+		step(.12f);
+	}
 	if (!check(!commands.behavior_forcedRunning(0) && nav.behavior_noiseInvestigationWalking(0) &&
 				std::hypot(gLastRunPlayerMoveForward, gLastRunPlayerMoveSide) > 0 &&
 				std::hypot(gLastRunPlayerMoveForward, gLastRunPlayerMoveSide) <= 96.01f,
