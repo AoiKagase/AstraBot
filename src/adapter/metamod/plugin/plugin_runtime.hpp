@@ -481,6 +481,7 @@ private:
 	{
 		return behavior_.noiseInvestigationWalking(index);
 	}
+	bool behavior_followWalking(std::size_t index) const override { return behavior_.followWalking(index); }
 	bool behavior_takeNoisePathRequest(std::size_t index, bool &targetCleared) override
 	{
 		return behavior_.takeNoisePathRequest(index, targetCleared);

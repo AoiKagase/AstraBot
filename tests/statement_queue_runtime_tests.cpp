@@ -112,6 +112,7 @@ bool queueHelpForceCooperative = false;
 globalvars_t *queueClock = nullptr;
 decltype(enginefuncs_t::pfnRunPlayerMove) queueOriginalMove = nullptr;
 std::vector<float> queueHelpMoves;
+bool queueFollowLeaderVisible = false;
 std::vector<std::pair<std::string, float>> queueHelpSamples;
 void queueMove(edict_t *entity, const float *angles, float forward, float side, float up, unsigned short buttons,
 	unsigned char impulse, unsigned char milliseconds)
@@ -281,6 +282,9 @@ void queueVisibility(const float *from, const float *end, int flags, edict_t *ob
 	*trace = {};
 	trace->vecEndPos = Vector(end[0], end[1], end[2]);
 	trace->flFraction = queueEnemiesVisible ? 1.0f : 0.0f;
+	if (queueFollowLeaderVisible && observer == &gEntities[1] && flags == 0x101 &&
+		end[0] == gEntities[0].v.origin.x && end[1] == gEntities[0].v.origin.y && end[2] == gEntities[0].v.origin.z)
+		trace->flFraction = 1.0f;
 	if (sniperWarningFixture && sniperViewer >= 0 && observer == &gEntities[sniperViewer] &&
 		std::fabs(end[0] - 400.0f) < 24.0f && std::fabs(end[1]) < 24.0f)
 		trace->flFraction = 1.0f;
@@ -1898,7 +1902,33 @@ bool testActualFollowMovement(astrabot::metamod::PluginRuntime &runtime, globalv
 	bool ok = heardPlan && heardReply &&
 		check(retargeted && moved, "follower routes to the moving source and dispatches actual movement");
 	if (arrivalAge == 0)
+	{
+		const auto movementSpeed = [&]()
+		{
+			queueHelpMoves.clear();
+			tick();
+			return queueHelpMoves.empty() ? 0.0f : queueHelpMoves.back();
+		};
+		const auto walks = [](float speed) { return speed > 10.0f && speed < 150.0f; };
+		queueFollowLeaderVisible = true;
+		gEntities[0].v.velocity.x = 140.0f;
+		const float first = movementSpeed();
+		movementSpeed();
+		const float atQuarterSecond = movementSpeed();
+		ok = check(first > 150.0f && atQuarterSecond > 150.0f && walks(movementSpeed()),
+			"a visible leader at 140 starts a walk only after more than a quarter second") && ok;
+		gEntities[0].v.velocity.x = 10.0f;
+		const float stoppedSpeed = movementSpeed();
+		ok = check(navigation.behavior_followWalking(1) && stoppedSpeed < 150.0f,
+			"a stopped leader leaves an active Follow walk unchanged") && ok;
+		queueFollowLeaderVisible = false;
+		gEntities[0].v.velocity.x = 141.0f;
+		ok = check(walks(movementSpeed()), "an unseen running leader does not immediately cancel walking") && ok;
+		queueFollowLeaderVisible = true;
+		ok = check(movementSpeed() > 150.0f, "seeing the leader run restores full-speed Follow movement") && ok;
+		queueFollowLeaderVisible = false;
 		++gEntities[0].serialnumber;
+	}
 	for (int i = 0; i < 4; ++i)
 		tick();
 	ok = check(arrivalAge > 0 || receiver.state() != compat::CompatibilityStateId::Follow,

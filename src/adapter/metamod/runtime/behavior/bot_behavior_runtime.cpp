@@ -106,6 +106,7 @@ void BotBehaviorRuntime::invalidateHelpExecution(std::size_t index)
 		++actor.executionRevision;
 	actor.helpGoal = {};
 	actor.teammateFollow = {};
+	actor.followMotion = {};
 	actor.managedTaskEntity = {};
 }
 
@@ -212,6 +213,7 @@ void BotBehaviorRuntime::resetSharedExecutionState()
 			++actor.executionRevision;
 		actor.helpGoal = {};
 		actor.teammateFollow = {};
+		actor.followMotion = {};
 		actor.managedTaskEntity = {};
 		actor.teamworkPolicies.resetValues();
 		actor.outgoingRadioSchedulers.discardPending();
@@ -275,6 +277,7 @@ void BotBehaviorRuntime::resetRoundTactics()
 			++actor.executionRevision;
 		actor.helpGoal = {};
 		actor.teammateFollow = {};
+		actor.followMotion = {};
 		actor.obstacleLook = {};
 		actor.obstaclePathActive = false;
 	}

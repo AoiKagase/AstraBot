@@ -203,6 +203,7 @@ public:
 	{
 		return false;
 	}
+	bool behavior_followWalking(std::size_t) const override { return false; }
 	void behavior_applyNativeLadderLookCommand(std::size_t, runtime::BotCommand &, bool) override
 	{
 	}

@@ -1161,6 +1161,9 @@ NavigationUpdate BotNavigationRuntime::updateNavigation(std::size_t index, const
 		lookahead.targetArea = previousRoute.targetArea;
 		lookahead.direction = previousRoute.direction;
 		lookahead.running = previousRoute.running;
+		if (services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility &&
+			currentMachine.state() == compat::CompatibilityStateId::Follow && !currentMachine.attackOverlayActive())
+			lookahead.running = !services_->behavior_followWalking(index) || services_->behavior_forcedRunning(index);
 
 		const auto traceGroundAt = [&](float distance) -> nav::GroundProbeObservation
 		{
@@ -1197,7 +1200,7 @@ NavigationUpdate BotNavigationRuntime::updateNavigation(std::size_t index, const
 			return probe;
 		};
 
-		if (previousRoute.running)
+		if (lookahead.running)
 		{
 			lookahead.far80 = traceGroundAt(kFarGroundProbeDistance);
 		}

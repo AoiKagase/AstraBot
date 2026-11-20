@@ -270,6 +270,9 @@ void BotBehaviorRuntime::updateScenarioState(std::size_t index, const runtime::M
 			observeScenarioEntities(index, before, context, stateBehavior, observation, scenario, data);
 			if (!current())
 				return;
+			updateFollowMotion(index, context, scenario);
+			if (!current())
+				return;
 			if (scenario.scenario == compat::PublicScenarioKind::Hostage && data.observedTeam == kTerroristTeam)
 				updateHostagePositions(index, context, data.initialHostages);
 			if (!current())
@@ -288,6 +291,103 @@ void BotBehaviorRuntime::updateScenarioState(std::size_t index, const runtime::M
 			applyScenarioDecision(index, before, context, stateBehavior, observation, scenario, data, plantMove);
 		}
 	}
+}
+
+bool BotBehaviorRuntime::followWalking(std::size_t index) const
+{
+	const auto &actor = actors_[index];
+	const auto &machine = actor.managedBotStateMachines;
+	const auto &motion = actor.followMotion;
+	return machine.state() == compat::CompatibilityStateId::Follow && !machine.attackOverlayActive() &&
+		motion.epoch == machine.normalStateEpoch() && motion.leader == actor.scenarioPlanners.followLeader() &&
+		motion.walking && services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility;
+}
+
+void BotBehaviorRuntime::updateFollowMotion(std::size_t index, const compat::StateUpdateContext &context,
+	compat::ScenarioBehaviorInput &scenario)
+{
+	auto &actor = actors_[index];
+	const auto &machine = actor.managedBotStateMachines;
+	if (machine.state() != compat::CompatibilityStateId::Follow || machine.attackOverlayActive())
+		return;
+	const auto leader = actor.scenarioPlanners.followLeader();
+	const bool managedLeader = scenario.teammateLeader.actor == leader;
+	const bool radioLeader = !managedLeader && !(scenario.automaticLeader.actor == leader);
+	auto &observation = managedLeader ? scenario.teammateLeader : radioLeader ? scenario.leader : scenario.automaticLeader;
+	if (!leader.isValid() || !(observation.actor == leader) || !observation.lifeKnown || !observation.alive ||
+		observation.team != scenario.team)
+	{
+		actor.followMotion = {};
+		return;
+	}
+	const auto receipt = reactionContext(index);
+	const auto revision = actor.executionRevision;
+	const auto epoch = machine.normalStateEpoch();
+	const auto *engine = services_->service_engineFunctions();
+	const auto current = [&]
+	{
+		return executionCurrent(index, receipt, revision) && machine.normalStateEpoch() == epoch &&
+			!machine.attackOverlayActive() && actor.scenarioPlanners.followLeader() == leader &&
+			services_->service_engineFunctions() == engine;
+	};
+	if (!engine || !engine->pfnPEntityOfEntIndex)
+		return;
+	const world::ActorKey connection{leader.slot, managedLeader ? actor.teammateFollow.connection
+		: services_->service_lifecycle().slotGeneration(leader.slot)};
+	const auto *entity = engine->pfnPEntityOfEntIndex(static_cast<int>(leader.slot));
+	if (!current())
+		return;
+	const auto leaderCurrent = [&]
+	{
+		return receiptConnectionCurrent(connection) && entity && !entity->free && entity->serialnumber >= 0 &&
+			static_cast<std::uint32_t>(entity->serialnumber) + (radioLeader ? 0U : 1U) == leader.generation &&
+			(entity->v.flags & (FL_CLIENT | FL_DORMANT | FL_SPECTATOR)) == FL_CLIENT &&
+			entity->v.deadflag == DEAD_NO && entity->v.health > 0.0f;
+	};
+	if (!leaderCurrent())
+	{
+		observation = {};
+		actor.followMotion = {};
+		return;
+	}
+	const auto offset = entity->v.origin - services_->service_managedBotHandles()[index].entity->v.origin;
+	const float speed = std::hypot(entity->v.velocity.x, entity->v.velocity.y);
+	const float distanceSquared = offset.x * offset.x + offset.y * offset.y + offset.z * offset.z;
+	const bool visible = canSeeEntityOrigin(index, entity, context.frame, false);
+	if (!current())
+		return;
+	if (!leaderCurrent())
+	{
+		observation = {};
+		actor.followMotion = {};
+		return;
+	}
+	if (!std::isfinite(speed) || !std::isfinite(distanceSquared))
+	{
+		actor.followMotion = {};
+		return;
+	}
+	if (actor.followMotion.epoch != epoch || !(actor.followMotion.leader == leader))
+		actor.followMotion = {leader, epoch};
+	auto &motion = actor.followMotion;
+	if (speed > 140.0f || speed <= 10.0f)
+	{
+		motion.motion = speed > 140.0f ? LeaderMotion::Running : LeaderMotion::Stopped;
+		motion.walkStartedAt = -1.0f;
+	}
+	else
+	{
+		if (motion.walkStartedAt < 0.0f)
+			motion.walkStartedAt = context.timestamp;
+		if (context.timestamp - motion.walkStartedAt > 0.25f)
+			motion.motion = LeaderMotion::Walking;
+	}
+	if (visible)
+		motion.lastVisibleAt = context.timestamp;
+	if (distanceSquared > 750.0f * 750.0f || context.timestamp - motion.lastVisibleAt > 20.0f)
+		motion.walking = false;
+	else if (visible && motion.motion != LeaderMotion::Stopped)
+		motion.walking = motion.motion == LeaderMotion::Walking;
 }
 
 void BotBehaviorRuntime::populateScenarioPublicState(std::size_t index, const runtime::MovementPhysicsState &before,

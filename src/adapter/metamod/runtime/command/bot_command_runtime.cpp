@@ -454,13 +454,21 @@ runtime::CommandReceipt BotCommandRuntime::executeManagedBotCommand(
 	if (!actor.useEntityLookActive)
 		services_->behavior_applyObstacleCommand(index, command);
 	const float maxSpeed = handle.entity->v.maxspeed;
-	const bool walking = !actors_[index].nativeLadderControl && !services_->behavior_forcedRunning(index) &&
-		services_->behavior_noiseInvestigationWalking(index) && (handle.entity->v.flags & FL_ONGROUND) &&
-		handle.entity->v.movetype != MOVETYPE_FLY && !(command.movement.buttons & IN_DUCK);
+	const bool canWalk = !actors_[index].nativeLadderControl && !services_->behavior_forcedRunning(index) &&
+		!(command.movement.buttons & IN_DUCK);
+	const bool walking = canWalk && services_->behavior_noiseInvestigationWalking(index) &&
+		(handle.entity->v.flags & FL_ONGROUND) && handle.entity->v.movetype != MOVETYPE_FLY;
+	const bool followWalking = canWalk && services_->behavior_followWalking(index);
 	const float movementSpeed = actors_[index].managedMoveSpeeds > 0.0f
 		? actors_[index].managedMoveSpeeds : maxSpeed;
 	constexpr float kWalkingSpeedFraction = .4f;
 	const float walkingLimit = kWalkingSpeedFraction * maxSpeed;
+	if (followWalking)
+	{
+		// Follow keeps the native per-axis input and can be forced to run between decisions.
+		command.movement.forward *= kWalkingSpeedFraction;
+		command.movement.side *= kWalkingSpeedFraction;
+	}
 	if (walking)
 	{
 		const float speed = std::hypot(command.movement.forward, command.movement.side);
@@ -473,7 +481,8 @@ runtime::CommandReceipt BotCommandRuntime::executeManagedBotCommand(
 	if (!explicitFrozen && !roundFreeze && !actors_[index].managedBotActionStopsMovement &&
 		!actors_[index].nativeLadderControl)
 	{
-		applyPlayerAvoidance(index, &command, walking ? (std::min)(movementSpeed, walkingLimit) : movementSpeed);
+		applyPlayerAvoidance(index, &command,
+			walking || followWalking ? (std::min)(movementSpeed, walkingLimit) : movementSpeed);
 	}
 	if (walking)
 	{
@@ -930,9 +939,10 @@ void BotCommandRuntime::finishMovementCommand(std::size_t index, FakeClientHandl
 		const bool finalArea = roamDecision.currentArea != 0U && roamDecision.currentArea == roamDecision.goalArea;
 		constexpr float kGoalSlowdownDistance = 200.0f;
 #define ASTRABOT_BOT_COMMAND_RUNTIME_GOAL_SLOWDOWN_FACTOR 0.4f
-		const bool slowForEndpoint = huntEndpoint ? locomotionIntent.walkingToHuntEndpoint
-			: goal.valid && finalArea && x * x + y * y < kGoalSlowdownDistance * kGoalSlowdownDistance;
-		if (!locomotionIntent.nativeLadderControl && slowForEndpoint &&
+		const bool following = machine.state() == compat::CompatibilityStateId::Follow && !machine.attackOverlayActive();
+		const bool shouldWalk = !following && (huntEndpoint ? locomotionIntent.walkingToHuntEndpoint
+			: goal.valid && finalArea && x * x + y * y < kGoalSlowdownDistance * kGoalSlowdownDistance);
+		if (!locomotionIntent.nativeLadderControl && shouldWalk &&
 			locomotionIntent.posture != nav::LocomotionPosture::Crouching)
 			commandSpeed *= ASTRABOT_BOT_COMMAND_RUNTIME_GOAL_SLOWDOWN_FACTOR;
 	}

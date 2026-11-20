@@ -58,6 +58,7 @@ public:
 			actors_[index].managedBotStateMachines.state() == compat::CompatibilityStateId::InvestigateNoise &&
 			!actors_[index].managedBotStateMachines.attackOverlayActive() && noiseInvestigationCurrent(index);
 	}
+	bool followWalking(std::size_t index) const;
 	bool takeNoisePathRequest(std::size_t index, bool &targetCleared)
 	{
 		auto &actor = actors_[index];
@@ -520,6 +521,8 @@ private:
 	void ensureOutgoingChatterCatalog();
 	void shuffleReadyChatterBanks();
 	std::uint32_t allowedFixedChatterPhrases(const char *verbosity, compat::ChatterPhrase first, compat::ChatterPhrase last);
+	void updateFollowMotion(std::size_t index, const compat::StateUpdateContext &context,
+		compat::ScenarioBehaviorInput &scenario);
 	bool canSeePoint(std::size_t index, world::WorldPosition point, const world::FrameIdentity &frame,
 		bool checkFov) const;
 	bool canSeeEntityOrigin(std::size_t index, const edict_t *entity, const world::FrameIdentity &frame,
@@ -609,12 +612,23 @@ private:
 		bool coward = false;
 		AttackVisibility visibility{};
 	};
+	enum class LeaderMotion { Stopped, Walking, Running };
+	struct FollowMotion
+	{
+		world::ActorKey leader{};
+		std::uint64_t epoch = 0;
+		LeaderMotion motion = LeaderMotion::Stopped;
+		float walkStartedAt = -1.0f;
+		float lastVisibleAt = 0.0f;
+		bool walking = false;
+	};
 	struct ActorState
 	{
 		compat::BotMorale morale{};
 		std::uint64_t executionRevision = 1;
 		HelpGoal helpGoal{};
 		TeammateFollow teammateFollow{};
+		FollowMotion followMotion{};
 		world::EntityKey managedTaskEntity{};
 		ObstacleLook obstacleLook{};
 		float obstacleNextEquipAt = 0.0f;
