@@ -47,6 +47,10 @@ public:
 	{
 		return index < actors_.size() && actors_[index].managedBotMovement.hasPath();
 	}
+	std::uint64_t routeRevision(std::size_t index) const
+	{
+		return actors_[index].managedBotMovement.routeRevision();
+	}
 
 	float pathDistanceRemaining(std::size_t index, const nav::NavSnapshot &snapshot) const
 	{

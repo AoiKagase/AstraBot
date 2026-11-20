@@ -14,6 +14,7 @@
 #include "astrabot/compat/weapon_equipment.hpp"
 #include "astrabot/compat/chatter_voice.hpp"
 #include "astrabot/compat/noise_look.hpp"
+#include <functional>
 #include <limits>
 #include <memory>
 #include "astrabot/compat/chatter_place_history.hpp"
@@ -79,6 +80,8 @@ public:
 	void observeWeaponTouch(edict_t *box, edict_t *self);
 	void applyNativeLadderLookCommand(std::size_t index, runtime::BotCommand &command, bool localMovement);
 	void applyNoiseLookCommand(std::size_t index, runtime::BotCommand &command);
+	bool updateHuntWaitLook(std::size_t index, const runtime::MovementPhysicsState &before,
+		const nav::NavSnapshot &navigation, const std::function<bool()> &routeCurrent, NavigationUpdate &movement);
 	void applyObstacleCommand(std::size_t index, runtime::BotCommand &command);
 	void resetObstacleMaterials();
 	void resetRoundRecognition(bool endingRound);
@@ -666,6 +669,7 @@ private:
 		std::uint32_t noiseLookUpdate = 0U;
 		compat::BombGuardPlanner bombGuardPlanners{};
 		compat::GuardLookPlanner guardLook{};
+		float nextHuntWaitLookAt = 0.0f;
 		compat::WeaponEquipmentPlanner equipment{};
 		compat::FootstepEquipmentReceipt closeFootstep{};
 		VoiceFeedback outgoingVoiceFeedback{};

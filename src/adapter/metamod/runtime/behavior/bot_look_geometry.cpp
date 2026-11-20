@@ -28,11 +28,16 @@ bool clearRay(
 
 }
 bool bendLookApproach(
-	enginefuncs_t &engine, edict_t *self, const nav::NavVector &eye, const nav::NavVector &point, nav::NavVector *bend)
+	enginefuncs_t &engine, edict_t *self, const nav::NavVector &eye, const nav::NavVector &point, nav::NavVector *bend,
+	const std::function<bool()> *current)
 {
+	const auto live = [&] { return current == nullptr || (*current)(); };
 	const nav::NavVector chest = {point.x, point.y, point.z + kApproachChestHeight};
 	TraceResult trace{};
-	if (clearRay(engine, self, eye, chest, &trace))
+	const bool direct = clearRay(engine, self, eye, chest, &trace);
+	if (!live())
+		return false;
+	if (direct)
 	{
 		*bend = point;
 		return true;
@@ -48,6 +53,8 @@ bool bendLookApproach(
 			const nav::NavVector rotated = {eye.x + length * std::cos(yaw), eye.y + length * std::sin(yaw), point.z};
 			const nav::NavVector rotatedChest = {rotated.x, rotated.y, rotated.z + kApproachChestHeight};
 			clearRay(engine, self, eye, rotatedChest, &trace);
+			if (!live())
+				return false;
 			if (trace.fStartSolid || trace.fAllSolid)
 				continue;
 			const float dz = rotated.z - eye.z, rayLength = std::sqrt(length * length + dz * dz);
@@ -56,11 +63,17 @@ bool bendLookApproach(
 			{
 				const float t = distance / rayLength;
 				nav::NavVector ray = {eye.x + t * (rotated.x - eye.x), eye.y + t * (rotated.y - eye.y), eye.z + t * dz};
-				if (!clearRay(engine, self, ray, chest, &trace))
+				const bool canSee = clearRay(engine, self, ray, chest, &trace);
+				if (!live())
+					return false;
+				if (!canSee)
 					continue;
 				TraceResult ground{};
-				if (!clearRay(engine, self, {ray.x, ray.y, ray.z + kApproachChestHeight},
-						{ray.x, ray.y, ray.z - kGroundProbeDepth}, &ground) &&
+				const bool noGround = clearRay(engine, self, {ray.x, ray.y, ray.z + kApproachChestHeight},
+					{ray.x, ray.y, ray.z - kGroundProbeDepth}, &ground);
+				if (!live())
+					return false;
+				if (!noGround &&
 					!ground.fStartSolid && !ground.fAllSolid)
 					ray.z = ground.vecEndPos.z;
 				else

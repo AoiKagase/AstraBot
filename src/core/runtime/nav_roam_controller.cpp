@@ -1259,7 +1259,10 @@ NavRoamController::NavigationPhaseResult NavRoamController::updateFriendWaiting(
 			else
 			{
 				if (decision != nullptr)
+				{
 					decision->stage = NavRoamStage::MovementSuppressed;
+					decision->huntWaitingForFriend = decision->huntEndpointSteering;
+				}
 				return {true, NavRoamResult::MovementSuppressed};
 			}
 		}

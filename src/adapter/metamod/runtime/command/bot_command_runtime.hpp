@@ -119,6 +119,9 @@ private:
 		bool nativeLadderJump{};
 		compat::AimSpringState navigationLookSpring{};
 		float navigationLookYaw = std::numeric_limits<float>::quiet_NaN();
+		nav::NavVector huntWaitLookSpot{};
+		bool huntWaitLookActive = false;
+		bool huntWaitNavigationLook = false;
 		float descentLookAt = std::numeric_limits<float>::quiet_NaN();
 		nav::NativeLadderPhase descentLookPhase = nav::NativeLadderPhase::None;
 		bool descentFloorLook = false;
@@ -133,12 +136,15 @@ private:
 		{
 			navigationLookYaw = std::numeric_limits<float>::quiet_NaN();
 			navigationLookSpring = {};
+			huntWaitLookActive = false;
+			huntWaitNavigationLook = false;
 			descentLookAt = std::numeric_limits<float>::quiet_NaN();
 			descentLookPhase = nav::NativeLadderPhase::None;
 			descentFloorLook = false;
 			defusePathLook = false;
 		}
 	};
+	runtime::ViewAngles stepNavigationLook(const edict_t &entity, ActorState &actor, bool useHuntWaitLook);
 	void advanceLadderDescentLook(std::size_t index, FakeClientHandle &handle);
 	void applyUseEntityLook(std::size_t index, const edict_t &entity, const ActionProposal &action,
 		runtime::BotCommand &command);

@@ -169,6 +169,76 @@ int main()
 			"the next full Hunt decision preserves angular velocity and uses its updated view"))
 		return 1;
 
+	services.surface.setFloat("bot_enable", 1.0f);
+	command.resetManagedBotCommandTemplate(0U);
+	handle.entity->v.v_angle = Vector(0, 35, 0);
+	endpoint.locomotionIntent = {};
+	endpoint.roamDecision.huntWaitingForFriend = true;
+	services.globals.time += runtime::BotTimingScheduler::kCommandInterval;
+	updateHunt();
+	if (!check(services.lastYaw == 35.0f && services.lastForward == 0.0f && services.lastSide == 0.0f,
+			"the first waiting command retains the observed view and has no movement"))
+		return 1;
+	services.globals.time += runtime::BotTimingScheduler::kCommandInterval;
+	command.executeManagedBotCommand(0U, handle);
+	if (!check(services.lastYaw < 35.0f && services.lastForward == 0.0f && services.lastSide == 0.0f,
+			"the next upkeep turns toward the waiting Hunt route without moving"))
+		return 1;
+	command.resetManagedBotCommandTemplate(0U);
+	handle.entity->v.v_angle = Vector(0, 35, 0);
+	const auto waitOrigin = handle.entity->v.origin;
+	endpoint.huntWaitLookUpdate = HuntWaitLookUpdate::Track;
+	endpoint.huntWaitLookSpot = nav::NavVector{waitOrigin.x, waitOrigin.y + 100.0f, waitOrigin.z};
+	services.globals.time += runtime::BotTimingScheduler::kCommandInterval;
+	updateHunt();
+	if (!check(services.lastYaw == 35.0f && services.lastForward == 0.0f && services.lastSide == 0.0f,
+			"the new approach spot takes effect at the subsequent upkeep"))
+		return 1;
+	for (int tick = 0; tick < 12; ++tick)
+	{
+		handle.entity->v.origin = waitOrigin;
+		services.globals.time += runtime::BotTimingScheduler::kCommandInterval;
+		command.executeManagedBotCommand(0U, handle);
+	}
+	if (!check(services.lastYaw > 70.0f && services.lastForward == 0.0f && services.lastSide == 0.0f,
+			"the stationary approach spot takes priority over the waiting path heading"))
+		return 1;
+	endpoint.huntWaitLookUpdate = HuntWaitLookUpdate::Unchanged;
+	endpoint.roamDecision.huntWaitingForFriend = false;
+	endpoint.locomotionIntent.direction = {1.0f, 0.0f, 0.0f};
+	endpoint.locomotionIntent.speed = 240.0f;
+	handle.entity->v.origin = waitOrigin;
+	services.globals.time += runtime::BotTimingScheduler::kCommandInterval;
+	updateHunt();
+	if (!check(services.lastYaw > 70.0f && services.lastForward == 0.0f && services.lastSide == 240.0f,
+			"the first resumed move projects into the already advanced approach-spot view"))
+		return 1;
+
+	endpoint.roamDecision.huntWaitingForFriend = true;
+	endpoint.locomotionIntent = {};
+	services.globals.time += runtime::BotTimingScheduler::kCommandInterval;
+	updateHunt();
+	const float templateWaitYaw = services.lastYaw;
+	services.globals.time += runtime::BotTimingScheduler::kCommandInterval;
+	command.executeManagedBotCommand(0U, handle);
+	const float cancelledWaitYaw = services.lastYaw;
+	if (!check(cancelledWaitYaw != templateWaitYaw, "the waiting view has advanced since the full update"))
+		return 1;
+	services.surface.setFloat("bot_stop", 1.0f);
+	for (int tick = 0; tick < 2; ++tick)
+	{
+		services.globals.time += runtime::BotTimingScheduler::kCommandInterval;
+		command.executeManagedBotCommand(0U, handle);
+		if (!check(services.lastYaw == cancelledWaitYaw && services.lastForward == 0.0f && services.lastSide == 0.0f,
+				"bot_stop cancels a cached wait look before the next full update"))
+			return 1;
+	}
+	services.surface.setFloat("bot_stop", 0.0f);
+	endpoint.roamDecision.huntWaitingForFriend = false;
+	endpoint.locomotionIntent.direction = {0.0f, -1.0f, 0.0f};
+	endpoint.locomotionIntent.speed = 240.0f;
+	endpoint.locomotionIntent.walkingToHuntEndpoint = true;
+
 	command.resetManagedBotCommandTemplate(0U);
 	handle.entity->v.v_angle = Vector(0, 0, 0);
 	endpoint.roamDecision.corridorAreaCount = 2;
@@ -184,7 +254,6 @@ int main()
 	if (!check(services.lastForward == 0.0f && services.lastSide == 96.0f,
 			"fallback first slows on the update that starts on the endpoint leg"))
 		return 1;
-	services.surface.setFloat("bot_enable", 1.0f);
 	handle.entity->v.movetype = MOVETYPE_FLY;
 	handle.entity->v.flags &= ~FL_ONGROUND;
 	handle.entity->v.v_angle = Vector(60.0f, 90.0f, 0.0f);

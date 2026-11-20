@@ -1647,6 +1647,53 @@ bool testTimedHuntFollowsSameAreaEndpoint()
 		"Hunt follows the retained same-area endpoint after choosing a different area");
 }
 
+bool testTimedHuntWaitKeepsPathLook()
+{
+	using namespace astrabot;
+	nav::NavDocument document;
+	document.setSourceIdentity({5U, 100U, 200U});
+	auto start = area(41U, 0.0f, 256.0f);
+	auto goal = area(42U, 256.0f, 512.0f);
+	start.connections[1U] = {42U};
+	goal.connections[3U] = {41U};
+	document.addArea(start);
+	document.addArea(goal);
+	nav::NavSnapshotPublisher publisher;
+	if (!check(publisher.publish(&document, 1U) == nav::NavSnapshotResult::Published, "Hunt wait fixture publishes"))
+		return false;
+	compat::ScriptedRandomSource random({
+		compat::RandomTapeEntry::longEntry("CSBOT-HUNT-GOAL", {1U, 1U}, {0U, 0U, 1U}, 0, 1, 1),
+		compat::RandomTapeEntry::floatEntry("CSBOT-PATH-RETRY", {1U, 1U}, {0U, 0U, 1U}, .4f, .6f, .5f)});
+	runtime::NavRoamController controller;
+	controller.setRandomSource(&random);
+	runtime::NavRoamObservation observation{};
+	observation.actor = {1U, 1U};
+	observation.frame = {1U, 1U, 1U};
+	observation.team = 2U;
+	observation.locomotion.position = {32.0f, 32.0f, 0.0f};
+	observation.locomotion.standingClearance = 72.0f;
+	observation.locomotion.crouchingClearance = 36.0f;
+	observation.locomotion.grounded = true;
+	observation.locomotion.timingAvailable = true;
+	observation.locomotion.observedAt = 1.0f;
+	nav::LocomotionIntent intent{};
+	runtime::NavRoamDecision decision{};
+	if (!check(controller.update(publisher.snapshot(), observation, &intent, &decision) ==
+				runtime::NavRoamResult::MovementSuppressed && decision.goalArea == 42U && random.verifyComplete(),
+			"Hunt selects the other area before moving"))
+		return false;
+	const auto endpoint = decision.huntEndpoint;
+	const auto sequence = decision.pathSequence;
+	observation.frame.tick = 2U;
+	observation.locomotion.observedAt = 1.125f;
+	observation.nearbyFriends = {{82.0f, 32.0f, 0.0f}};
+	return check(controller.update(publisher.snapshot(), observation, &intent, &decision) ==
+				runtime::NavRoamResult::MovementSuppressed && intent.speed == 0.0f &&
+				decision.huntWaitingForFriend && decision.huntEndpoint.x == endpoint.x &&
+				decision.huntEndpoint.y == endpoint.y && decision.pathSequence == sequence && random.verifyComplete(),
+		"Hunt leaves the current path look available during an ally wait with zero movement");
+}
+
 bool testTimedHuntRoutesAcrossNativeLadder()
 {
 	using namespace astrabot;
@@ -4286,6 +4333,7 @@ int main()
 		return 1;
 	}
 	if (!testTimedHuntDrawsBeforePathThrottle() || !testTimedHuntFollowsSameAreaEndpoint() ||
+		!testTimedHuntWaitKeepsPathLook() ||
 		!testTimedHuntRoutesAcrossNativeLadder() || !testTimedHuntMovesAndJumpsOffCompletedLadder() ||
 		!testTimedHuntReselectsAtKnownLadderGoal() ||
 		!testTimedHuntReselectsAtKnownLadderGoal(HuntRngCancellation::Goal) ||

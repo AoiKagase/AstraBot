@@ -487,6 +487,21 @@ void BotCommandRuntime::finishNeutralCommand(std::size_t index, FakeClientHandle
 	actors_[index].managedBotActionStopsMovement = actionDispatch.stopMovement;
 }
 
+runtime::ViewAngles BotCommandRuntime::stepNavigationLook(
+	const edict_t &entity, ActorState &actor, bool useHuntWaitLook)
+{
+	float yaw = actor.navigationLookYaw, pitch = 0.0f;
+	if (useHuntWaitLook && actor.huntWaitLookActive)
+	{
+		const auto eye = entity.v.origin + entity.v.view_ofs;
+		const auto &spot = actor.huntWaitLookSpot;
+		const auto angles = ActionAdapter::useEntityView(spot.x - eye.x, spot.y - eye.y, spot.z - eye.z);
+		yaw = angles.yaw;
+		pitch = angles.pitch;
+	}
+	return stepIdleLook(entity, yaw, pitch, services_->service_globals()->time, actor.navigationLookSpring);
+}
+
 runtime::CommandReceipt BotCommandRuntime::executeManagedBotCommand(
 	std::size_t index, FakeClientHandle &handle, bool navigationLookAdvanced)
 {
@@ -535,6 +550,17 @@ runtime::CommandReceipt BotCommandRuntime::executeManagedBotCommand(
 	}
 	command.movement.msec = services_->consumeCommandMsec(index, services_->service_globals()->time);
 	auto &actor = actors_[index];
+	if (actor.huntWaitNavigationLook)
+	{
+		const auto config = services_->service_compatibilitySurface().configuration();
+		if (config.mode != compat::RuntimeMode::Compatibility || config.botEnable <= 0.0f || config.botStop != 0.0f)
+		{
+			const auto &view = handle.entity->v.v_angle;
+			command.viewAngles = {view.x, view.y, view.z};
+			actor.managedBotCommandTemplates.viewAngles = command.viewAngles;
+			actor.resetNavigationLook();
+		}
+	}
 	const bool explicitFrozen = (handle.entity->v.flags & FL_FROZEN) != 0;
 	const bool roundFreeze = services_->roundFreezeActive();
 	const auto &machine = services_->behavior_managedBotStateMachines(index);
@@ -552,8 +578,8 @@ runtime::CommandReceipt BotCommandRuntime::executeManagedBotCommand(
 		canAdvanceNavigationLook(machine.state(), (handle.entity->v.flags & FL_ONGROUND) != 0))
 	{
 		// CSBot's upkeep turns the view while keeping the axes from the last full decision.
-		command.viewAngles = stepIdleLook(
-			*handle.entity, actor.navigationLookYaw, 0.0f, services_->service_globals()->time, actor.navigationLookSpring);
+		command.viewAngles = stepNavigationLook(*handle.entity, actor,
+			machine.state() == compat::CompatibilityStateId::Hunt);
 		command.synchronizeCombatView = true;
 	}
 	if (actor.useEntityLookActive || (actor.defusePathLook && !machine.attackOverlayActive() &&
@@ -992,9 +1018,7 @@ MovementCommandDraft BotCommandRuntime::beginMovementCommand(std::size_t index, 
 		!(handle.entity->v.flags & FL_FROZEN) && !services_->roundFreezeActive() &&
 		canAdvanceNavigationLook(machine.state(), before.grounded))
 	{
-		command.viewAngles =
-			stepIdleLook(*handle.entity, actor.navigationLookYaw, 0.0f, services_->service_globals()->time,
-				actor.navigationLookSpring);
+		command.viewAngles = stepNavigationLook(*handle.entity, actor, machine.state() == compat::CompatibilityStateId::Hunt);
 	}
 	std::uint16_t movementButtons = locomotionIntent.posture == nav::LocomotionPosture::Crouching
 		? static_cast<std::uint16_t>(IN_DUCK)
@@ -1047,9 +1071,20 @@ void BotCommandRuntime::finishMovementCommand(std::size_t index, FakeClientHandl
 		else
 			actor.resetNavigationLook();
 	}
-	else if (locomotionIntent.speed > 0.0f)
+	else if (locomotionIntent.speed > 0.0f || (huntEndpoint && roamDecision.huntWaitingForFriend))
 	{
 		// Set the next upkeep's look target after taking this decision's view.
+		actor.huntWaitNavigationLook = huntEndpoint && roamDecision.huntWaitingForFriend;
+		if (actor.huntWaitNavigationLook)
+		{
+			if (movement.huntWaitLookUpdate != HuntWaitLookUpdate::Unchanged)
+			{
+				actor.huntWaitLookActive = movement.huntWaitLookUpdate == HuntWaitLookUpdate::Track;
+				actor.huntWaitLookSpot = movement.huntWaitLookSpot;
+			}
+		}
+		else
+			actor.huntWaitLookActive = false;
 		actor.descentFloorLook = descentLookAdvanced &&
 			(actor.descentLookPhase == nav::NativeLadderPhase::MoveToDestination ||
 				(actor.descentLookPhase == nav::NativeLadderPhase::StoppedHuntLook && before.onLadder) ||
@@ -1116,7 +1151,8 @@ void BotCommandRuntime::finishMovementCommand(std::size_t index, FakeClientHandl
 	// executeManagedBotCommand applies the current walk/run decision.
 	if (locomotionIntent.nativeLadderControl && locomotionIntent.nativeWalking)
 		commandSpeed *= .4f;
-	actors_[index].managedMoveSpeeds = commandSpeed;
+	if (!roamDecision.huntWaitingForFriend)
+		actor.managedMoveSpeeds = commandSpeed;
 	const MovementProjection movementProjection = ActionAdapter::projectMovement(locomotionIntent.direction.x,
 		locomotionIntent.direction.y, commandSpeed, command.viewAngles.yaw, compatibilityMovement);
 	command.movement.forward = actionDispatch.stopMovement ? 0.0f

@@ -1841,8 +1841,15 @@ void PluginRuntime::updateManagedBots()
 		auto &locomotionIntent = movement.locomotionIntent;
 		auto &roamDecision = movement.roamDecision;
 		const auto roamResult = movement.roamResult;
+		const auto routeRevision = navigation_.routeRevision(index);
 		if (!behavior_.finishManagedBotNavigation(index, before, roamResult, roamDecision, &locomotionIntent))
 			continue;
+		if (roamDecision.huntWaitingForFriend)
+		{
+			const auto routeCurrent = [&] { return navigation_.routeRevision(index) == routeRevision; };
+			if (!routeCurrent() || !behavior_.updateHuntWaitLook(index, before, navigation, routeCurrent, movement))
+				continue;
+		}
 		navigation_.recordNavigationUpdate(index, before, movement);
 		if (roamResult != runtime::NavRoamResult::IntentReady)
 		{
@@ -1855,10 +1862,13 @@ void PluginRuntime::updateManagedBots()
 				roamDecision.failureReason = runtime::NavFailureReason::MovementNotProduced;
 			}
 			navigation_.logMovementDiagnostic(index, "roam_no_intent", &roamDecision);
-			prepareNeutralManagedBotCommand(index, handle, before);
-			const runtime::CommandReceipt receipt = command_.executeManagedBotCommand(index, handle);
-			navigation_.recordMovementPhysicsSample(index, before, receipt);
-			continue;
+			if (!roamDecision.huntWaitingForFriend)
+			{
+				prepareNeutralManagedBotCommand(index, handle, before);
+				const runtime::CommandReceipt receipt = command_.executeManagedBotCommand(index, handle);
+				navigation_.recordMovementPhysicsSample(index, before, receipt);
+				continue;
+			}
 		}
 
 		if (!lifecycle_.isCurrent(token) ||

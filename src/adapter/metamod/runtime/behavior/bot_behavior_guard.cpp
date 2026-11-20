@@ -122,6 +122,109 @@ bool BotBehaviorRuntime::guardedBombPosition(std::size_t index, nav::NavVector *
 	return true;
 }
 
+bool BotBehaviorRuntime::updateHuntWaitLook(std::size_t index, const runtime::MovementPhysicsState &before,
+	const nav::NavSnapshot &navigation, const std::function<bool()> &routeCurrent, NavigationUpdate &movement)
+{
+	auto &actor = actors_[index];
+	const auto config = services_->service_compatibilitySurface().configuration();
+	auto *engine = services_->service_engineFunctions();
+	auto *self = services_->service_managedBotHandles()[index].entity;
+	const auto &machine = actor.managedBotStateMachines;
+	const auto receipt = reactionContext(index);
+	const float now = receipt.now;
+	if (config.mode != compat::RuntimeMode::Compatibility || machine.state() != compat::CompatibilityStateId::Hunt ||
+		machine.attackOverlayActive() || before.dead || (before.flags & FL_FROZEN) || !self || !engine ||
+		!engine->pfnTraceLine || !navigation.isValid() || !std::isfinite(now))
+		return true;
+	if (actor.noiseLook.active() || actor.noiseLook.inhibited(now) || actor.obstacleLook.entity ||
+		actor.weaponActions.grenadeInProgress())
+	{
+		movement.huntWaitLookUpdate = HuntWaitLookUpdate::Clear;
+		return true;
+	}
+	constexpr float kStationarySpeed = 10.0f;
+	const auto &velocity = before.velocity;
+	if (velocity.x * velocity.x + velocity.y * velocity.y + velocity.z * velocity.z >=
+			kStationarySpeed * kStationarySpeed || now < actor.nextHuntWaitLookAt)
+		return true;
+	const auto areaId = services_->navigation_knownArea(index, receipt.actor, receipt.frame, navigation.revision());
+	const auto &document = *navigation.document();
+	const auto *area = document.findArea(areaId);
+	if (!area)
+		return true;
+	const auto revision = actor.executionRevision;
+	const auto epoch = machine.normalStateEpoch();
+	const std::function<bool()> current = [&] {
+		const auto controls = services_->service_compatibilitySurface().configuration();
+		return executionCurrent(index, receipt, revision) && machine.normalStateEpoch() == epoch &&
+			!machine.attackOverlayActive() && routeCurrent() && controls.mode == compat::RuntimeMode::Compatibility &&
+			controls.botEnable > 0.0f && controls.botStop == 0.0f &&
+			services_->service_navPublisher().snapshot().revision() == navigation.revision();
+	};
+	const auto &weapon = services_->observation_managedBotCurrentWeapons(index);
+	const bool sniper = weapon.available && weapon.active &&
+		(weapon.weaponId == kScoutWeaponId || weapon.weaponId == kSg550WeaponId || weapon.weaponId == kAwpWeaponId ||
+			weapon.weaponId == kG3sg1WeaponId);
+	const compat::RandomTimingContext timing{services_->command_managedBotCommandSequences(index), 0,
+		services_->service_managedBotFullUpdateSequences()[index]};
+	const compat::RandomActor randomActor{receipt.actor.slot, receipt.actor.generation};
+	const float minimumInterval = sniper ? 5.0f : 1.0f;
+	const float maximumInterval = sniper ? 10.0f : 2.0f;
+	auto &random = services_->service_compatibilityRandomSource();
+	const auto wait = random.nextFloat(compat::RandomRequest::floatRequest(
+		"LookAround.StateInterval", randomActor, timing, minimumInterval, maximumInterval));
+	if (!current())
+		return false;
+	if (wait.status != compat::RandomStatus::Ok || !std::isfinite(wait.value) ||
+		wait.value < minimumInterval || wait.value > maximumInterval)
+		return true;
+	const nav::NavVector origin{before.origin.x, before.origin.y, before.origin.z};
+	std::array<nav::NavVector, kMaximumApproachPoints> points{};
+	std::int32_t count = 0;
+	for (const auto &approach : area->approaches)
+	{
+		if (count == kMaximumApproachPoints)
+			break;
+		const auto *here = document.findArea(approach.here);
+		const auto *previous = document.findArea(approach.previous);
+		if (!here || !previous)
+			continue;
+		const auto point = compat::guardApproachPoint(*previous, *here, approach.previousToHereHow);
+		const bool visible = bendLookApproach(*engine, self, origin, point, &points[count], &current);
+		if (!current())
+			return false;
+		if (visible)
+			++count;
+	}
+	if (count == 0)
+	{
+		actor.nextHuntWaitLookAt = now + wait.value;
+		movement.huntWaitLookUpdate = HuntWaitLookUpdate::Clear;
+		return true;
+	}
+	const auto which = random.nextLong(
+		compat::RandomRequest::longRequest("LookAround.ApproachPoint", randomActor, timing, 0, count - 1));
+	if (!current())
+		return false;
+	if (which.status != compat::RandomStatus::Ok || which.value < 0 || which.value >= count)
+	{
+		actor.nextHuntWaitLookAt = now + wait.value;
+		return true;
+	}
+	movement.huntWaitLookSpot = points[which.value];
+	movement.huntWaitLookSpot.z += 36.0f;
+	movement.huntWaitLookUpdate = HuntWaitLookUpdate::Track;
+	if (services_->service_runtimeProfiler().enabled())
+		runtime_detail::profiledLogConsole(services_->service_runtimeProfiler(), services_->service_pluginId(),
+			"hunt wait approach slot=%u update=%u now=%.6f area=%u spot=(%.3f %.3f %.3f)", receipt.actor.slot,
+			timing.fullUpdateSequence, now, areaId, movement.huntWaitLookSpot.x, movement.huntWaitLookSpot.y,
+			movement.huntWaitLookSpot.z);
+	if (!current())
+		return false;
+	actor.nextHuntWaitLookAt = now + wait.value;
+	return true;
+}
+
 void BotBehaviorRuntime::updateGuardLook(ManagedActionContext &ctx)
 {
 	auto &state = actors_[ctx.index];
