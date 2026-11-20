@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <initializer_list>
 #include <limits>
 
 namespace
@@ -3340,6 +3341,105 @@ bool testInvestigationRetainsPathWhenThrottled()
 		"a visible redirected sound consumes its route attempt before completing the investigation");
 }
 
+bool testInvestigationKeepsClosestReachablePath()
+{
+	using namespace astrabot;
+	nav::NavDocument document;
+	document.setSourceIdentity({5U, 100U, 200U});
+	auto start = area(1U, -64.0f, 64.0f);
+	start.connections[1U] = {3U, 2U};
+	auto far = area(3U, 550.0f, 650.0f);
+	far.extent.lo.y = 64.0f;
+	far.extent.hi.y = 128.0f;
+	auto goal = area(4U, 300.0f, 950.0f);
+	goal.extent.lo.z = goal.extent.hi.z = goal.northEastZ = goal.southWestZ = 12.0f;
+	document.addArea(start);
+	document.addArea(area(2U, 170.0f, 270.0f));
+	document.addArea(far);
+	document.addArea(goal);
+	nav::NavSnapshotPublisher publisher;
+	publisher.publish(&document, 1U);
+	compat::ScriptedRandomSource random({
+		compat::RandomTapeEntry::floatEntry("CSBOT-PATH-RETRY", {1U, 1U}, {0U, 0U, 1U}, 0.4f, 0.6f, 0.5f)});
+	runtime::NavRoamController controller;
+	controller.setRandomSource(&random);
+	runtime::NavRoamObservation observation{};
+	observation.actor = {1U, 1U};
+	observation.frame = {1U, 1U, 1U};
+	observation.team = 1U;
+	observation.locomotion.position = {32.0f, 32.0f, 0.0f};
+	observation.locomotion.standingClearance = 72.0f;
+	observation.locomotion.crouchingClearance = 36.0f;
+	observation.locomotion.grounded = true;
+	observation.locomotion.timingAvailable = true;
+	observation.locomotion.observedAt = 1.0f;
+	observation.hasObjectiveTarget = true;
+	observation.objectiveTarget = {320.0f, 32.0f, 12.0f};
+	observation.objectiveRouteType = nav::NavRouteType::Safest;
+	observation.noiseRoute = runtime::NoiseRouteUpdate::Enter;
+	nav::LocomotionIntent intent{};
+	runtime::NavRoamDecision decision{};
+	if (!check(controller.update(publisher.snapshot(), observation, &intent, &decision) ==
+				runtime::NavRoamResult::MovementSuppressed && decision.selectedPath == std::vector<nav::AreaId>{1U, 2U} &&
+			decision.huntEndpoint.x == 320.0f && decision.huntEndpoint.z == 12.0f,
+			"disconnected noise keeps the corridor nearest its position and the original endpoint"))
+		return false;
+	++observation.frame.tick;
+	observation.locomotion.observedAt = 1.12f;
+	observation.noiseRoute = runtime::NoiseRouteUpdate::Follow;
+	if (!check(controller.update(publisher.snapshot(), observation, &intent, &decision) ==
+				runtime::NavRoamResult::IntentReady && intent.targetArea == 2U && random.verifyComplete(),
+			"investigation follows the partial corridor without another route attempt"))
+		return false;
+	nav::NavCorridor bypass{};
+	const nav::NavDirectedLink rejected = {1U, 2U, 1U, 1U};
+	if (!check(nav::NavQuery(publisher.snapshot()).buildInvestigationCorridor(1U, 4U, observation.objectiveTarget,
+			nullptr, &bypass, nullptr, &rejected) == nav::NavQueryResult::Found &&
+			bypass.areas == std::vector<nav::AreaId>{1U, 3U} && bypass.endpoint.x == 320.0f && bypass.endpoint.z == 12.0f,
+			"excluding an unsafe first link lets the investigation fall back to the next closest reachable area"))
+		return false;
+
+	controller.reset();
+	compat::ScriptedRandomSource isolatedRandom({
+		compat::RandomTapeEntry::floatEntry("CSBOT-PATH-RETRY", {1U, 1U}, {0U, 0U, 1U}, 0.4f, 0.6f, 0.5f)});
+	controller.setRandomSource(&isolatedRandom);
+	observation.frame.tick = 1U;
+	observation.locomotion.position = {600.0f, 96.0f, 0.0f};
+	observation.noiseRoute = runtime::NoiseRouteUpdate::Enter;
+	return check(controller.update(publisher.snapshot(), observation, &intent, &decision) ==
+			runtime::NavRoamResult::MovementSuppressed && decision.selectedPath == std::vector<nav::AreaId>{3U} &&
+		decision.huntEndpoint.x == 320.0f && decision.huntEndpoint.z == 0.0f && isolatedRandom.verifyComplete(),
+		"an isolated start retains the noise XY and projects the trivial path onto its own floor");
+}
+
+bool testInvestigationSearchKeepsPositionWhenImprovingPath()
+{
+	using namespace astrabot;
+	nav::NavDocument document;
+	document.setSourceIdentity({5U, 100U, 200U});
+	const auto add = [&](nav::AreaId id, float x, float y, std::initializer_list<nav::AreaId> neighbors)
+	{
+		const float radius = id == 5U ? 180.0f : 2.0f;
+		auto piece = area(id, x - radius, x + radius);
+		piece.extent.lo.y = y - radius;
+		piece.extent.hi.y = y + radius;
+		piece.connections[1U] = neighbors;
+		document.addArea(piece);
+	};
+	add(1U, 32.0f, 256.0f, {2U, 3U, 4U});
+	add(2U, 320.0f, 176.0f, {5U});
+	add(3U, 224.0f, 416.0f, {5U});
+	add(4U, 80.0f, 432.0f, {5U});
+	add(5U, 224.0f, 208.0f, {});
+	nav::NavSnapshotPublisher publisher;
+	publisher.publish(&document, 1U);
+	nav::NavCorridor corridor{};
+	return check(nav::NavQuery(publisher.snapshot()).buildInvestigationCorridor(
+			1U, 5U, {240.0f, 384.0f, 0.0f}, nullptr, &corridor) == nav::NavQueryResult::Found &&
+			corridor.areas == std::vector<nav::AreaId>{1U, 2U, 5U},
+		"improving a queued path still estimates the distance to the explicit noise position");
+}
+
 bool testRemainingPathDistance()
 {
 	using namespace astrabot;
@@ -3384,7 +3484,8 @@ int main()
 {
 	if (!testRemainingPathDistance())
 		return 1;
-	if (!testInvestigationSafestRoute() || !testInvestigationRetainsPathWhenThrottled())
+	if (!testInvestigationSafestRoute() || !testInvestigationRetainsPathWhenThrottled() ||
+		!testInvestigationKeepsClosestReachablePath() || !testInvestigationSearchKeepsPositionWhenImprovingPath())
 		return 1;
 	for (unsigned completion = 0U; completion < 6U; ++completion)
 		if (!test1734DropLaunchAcceptsRecordedGroundedFeet(completion))

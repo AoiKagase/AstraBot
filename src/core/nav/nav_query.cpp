@@ -646,7 +646,7 @@ NavQueryResult validateNativeTopology(const NavSnapshot &snapshot, const NavLadd
 NavQueryResult buildAStarCorridor(const NavSnapshot &snapshot, const NavQueryLimits &limits, AreaId start, AreaId goal,
 	NavRouteType routeType, NavCorridor *corridor, NavSearchStats *stats, const NavPathCostContext *context,
 	const NavDirectedLink *excludedLink = nullptr, const NavLadderTopology *ladders = nullptr,
-	bool allowDeadRange = false, bool useClosestArea = false)
+	bool allowDeadRange = false, bool useClosestArea = false, const NavVector *explicitGoal = nullptr)
 {
 	if (stats != nullptr)
 	{
@@ -797,16 +797,16 @@ NavQueryResult buildAStarCorridor(const NavSnapshot &snapshot, const NavQueryLim
 		recordLookup.reserve((std::min)(limits.maximumSearchQueue, currentDocument->areaCount()));
 		const NavArea *startArea = currentDocument->findArea(start);
 		const NavArea *goalArea = currentDocument->findArea(goal);
-		const auto goalCenter = extentCenterOf(*goalArea);
-		const auto distanceToGoal = [&goalCenter](const NavArea &area)
+		const auto goalPosition = explicitGoal ? *explicitGoal : extentCenterOf(*goalArea);
+		const auto distanceToGoal = [&goalPosition](const NavArea &area)
 		{
 			const auto center = extentCenterOf(area);
-			const float dx = center.x - goalCenter.x, dy = center.y - goalCenter.y, dz = center.z - goalCenter.z;
+			const float dx = center.x - goalPosition.x, dy = center.y - goalPosition.y, dz = center.z - goalPosition.z;
 			return std::sqrt(dx * dx + dy * dy + dz * dz);
 		};
 		AreaId closestArea = start;
 		float closestDistance = useClosestArea ? distanceToGoal(*startArea) : 0.0f;
-		const float initialHeuristic = distanceBetween(*startArea, *goalArea);
+		const float initialHeuristic = explicitGoal ? distanceToGoal(*startArea) : distanceBetween(*startArea, *goalArea);
 		const auto startState = areaState(start);
 		const float initialCost =
 			routeType == NavRouteType::Safest && startState != nullptr ? dangerFactor * startState->danger : 0.0f;
@@ -888,22 +888,19 @@ NavQueryResult buildAStarCorridor(const NavSnapshot &snapshot, const NavQueryLim
 				std::size_t targetRecordIndex = findRecord(records, target);
 				if (targetRecordIndex != records.size() && tentativeCost >= records[targetRecordIndex].costSoFar)
 					return NavQueryResult::Found;
-				if (useClosestArea)
+				const float goalDistance = (useClosestArea || explicitGoal) ? distanceToGoal(*targetArea) : 0.0f;
+				if (useClosestArea && goalDistance < closestDistance)
 				{
-					const float distance = distanceToGoal(*targetArea);
-					if (distance < closestDistance)
-					{
-						closestArea = target;
-						closestDistance = distance;
-					}
+					closestArea = target;
+					closestDistance = goalDistance;
 				}
+				const float heuristic = explicitGoal ? goalDistance : distanceBetween(*targetArea, *goalArea);
 				if (targetRecordIndex == records.size())
 				{
 					if (records.size() >= limits.maximumSearchQueue)
 					{
 						return NavQueryResult::ResourceLimit;
 					}
-					const float heuristic = distanceBetween(*targetArea, *goalArea);
 					records.push_back({target, current, tentativeCost, tentativeCost + heuristic, false, false});
 					records.back().parentLink = {current, target, direction, how};
 					records.back().parentLadder = ladderIndex;
@@ -921,7 +918,7 @@ NavQueryResult buildAStarCorridor(const NavSnapshot &snapshot, const NavQueryLim
 				targetRecord.parentLink = {current, target, direction, how};
 				targetRecord.parentLadder = ladderIndex;
 				targetRecord.costSoFar = tentativeCost;
-				targetRecord.totalCost = tentativeCost + distanceBetween(*targetArea, *goalArea);
+				targetRecord.totalCost = tentativeCost + heuristic;
 				if (targetRecord.closed)
 				{
 					targetRecord.closed = false;
@@ -1046,6 +1043,69 @@ NavQueryResult NavQuery::buildNativeCorridor(AreaId start, AreaId goal, NavRoute
 	context.useExtentCenters = true;
 	return buildAStarCorridor(
 		snapshot_, limits_, start, goal, routeType, corridor, stats, &context, nullptr, &ladders, false);
+}
+
+NavQueryResult NavQuery::buildInvestigationCorridor(AreaId start, AreaId goal, const NavVector &noisePosition,
+	const NavLadderTopology *ladders, NavCorridor *corridor, NavSearchStats *stats,
+	const NavDirectedLink *excludedFirstLink) const
+{
+	if (stats != nullptr)
+		*stats = {};
+	if (corridor == nullptr)
+		return NavQueryResult::InvalidArgument;
+	*corridor = {};
+	if (!isFinitePosition(noisePosition))
+		return NavQueryResult::InvalidPosition;
+	const auto *doc = document();
+	if (doc == nullptr)
+		return NavQueryResult::EmptySnapshot;
+	const auto *startArea = doc->findArea(start);
+	const auto *goalArea = doc->findArea(goal);
+	if (startArea == nullptr || goalArea == nullptr)
+		return NavQueryResult::AreaNotFound;
+	if (ladders != nullptr)
+	{
+		const auto validation = validateNativeTopology(snapshot_, *ladders);
+		if (validation != NavQueryResult::Found)
+			return validation;
+	}
+	constexpr auto routeType = NavRouteType::Safest;
+	if (start == goal)
+	{
+		corridor->navRevision = snapshot_.revision();
+		corridor->mapGeneration = snapshot_.mapGeneration();
+		corridor->routeType = routeType;
+		corridor->areas = {start};
+	}
+	else
+	{
+		auto context = costContext_;
+		if (ladders != nullptr)
+			context.useExtentCenters = true;
+		const auto *costs = hasCostContext_ || ladders != nullptr ? &context : nullptr;
+		auto result = buildAStarCorridor(snapshot_, limits_, start, goal, routeType, corridor, stats,
+			costs, excludedFirstLink, ladders, false, true, &noisePosition);
+		// A straight-line fallback must not steer back into a rejected exit.
+		if (result == NavQueryResult::Found && excludedFirstLink != nullptr && corridor->areas.size() == 1U)
+		{
+			*corridor = {};
+			result = NavQueryResult::NoRoute;
+		}
+		if (stats != nullptr && stats->searchCalls != 0U)
+		{
+			stats->successCount = result == NavQueryResult::Found ? 1U : 0U;
+			stats->failureCount = 1U - stats->successCount;
+		}
+		if (result != NavQueryResult::Found)
+			return result;
+	}
+	// ComputePath keeps the original sound position on partial paths. Its
+	// one-area case reprojects the same XY through BuildTrivialPath.
+	const auto &floorArea = corridor->areas.size() == 1U ? *startArea : *goalArea;
+	corridor->hasEndpoint = true;
+	corridor->endpoint = noisePosition;
+	corridor->endpoint.z = surfaceZAtInternal(floorArea, noisePosition.x, noisePosition.y);
+	return NavQueryResult::Found;
 }
 
 NavQueryResult NavQuery::travelDistance(

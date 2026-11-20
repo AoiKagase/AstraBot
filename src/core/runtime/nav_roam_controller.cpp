@@ -1658,30 +1658,62 @@ NavRoamController::NavigationPhaseResult NavRoamController::prepareNoiseRoute(Na
 
 bool NavRoamController::buildNoiseRoute(NavigationUpdateContext &ctx)
 {
-	auto start = ctx.currentArea;
+	auto start = ctx.currentArea.area;
 	const auto *document = ctx.snapshot.document();
 	if (document->findArea(ctx.observation.noisePathStartArea) != nullptr)
-		start.area = ctx.observation.noisePathStartArea;
-	if (start.area == 0U || ctx.objectiveArea == 0U)
-		return false;
-	const auto routeType = ctx.observation.objectiveRouteType;
-	if (start.area != ctx.objectiveArea)
-		return selectRoute(ctx.snapshot, start, ctx.objectiveArea, ctx.decision,
-			routeType, ctx.observation.nativeLadders);
-
+		start = ctx.observation.noisePathStartArea;
 	nav::NavCorridor corridor{};
-	corridor.navRevision = ctx.snapshot.revision();
-	corridor.mapGeneration = ctx.snapshot.mapGeneration();
-	corridor.routeType = routeType;
-	corridor.areas = {ctx.objectiveArea};
-	corridor.hasEndpoint = true;
-	corridor.endpoint = ctx.observation.objectiveTarget;
-	const auto *area = document->findArea(ctx.objectiveArea);
-	corridor.endpoint.z = nav::surfaceZAt(*area, corridor.endpoint.x, corridor.endpoint.y);
-	const nav::NavDirectedLink link = {ctx.objectiveArea, ctx.objectiveArea, 0U, 0U};
-	if (!startRoute(ctx.snapshot, corridor, link))
+	auto *stats = ctx.decision != nullptr && collectPathStats_ ? &ctx.decision->pathSearchStats : nullptr;
+	auto result = ctx.query.buildInvestigationCorridor(start, ctx.objectiveArea, ctx.observation.objectiveTarget,
+		ctx.observation.nativeLadders, &corridor, stats);
+	const auto &avoided = routeState().avoidedLink;
+	if (result == nav::NavQueryResult::Found && routeState().hasAvoidedLink && !corridor.links.empty() &&
+		corridor.links.front().fromArea == avoided.fromArea && corridor.links.front().toArea == avoided.toArea)
+	{
+		if (corridor.areas.back() == ctx.objectiveArea)
+		{
+			nav::NavCorridor alternative{};
+			result = ctx.query.buildAlternativeCorridor(corridor, avoided, &alternative, stats);
+			corridor = std::move(alternative);
+		}
+		else
+			result = ctx.query.buildInvestigationCorridor(start, ctx.objectiveArea, ctx.observation.objectiveTarget,
+				ctx.observation.nativeLadders, &corridor, stats, &avoided);
+	}
+	if (ctx.decision != nullptr)
+	{
+		ctx.decision->pathRequested = start != ctx.objectiveArea;
+		ctx.decision->corridorResult = result;
+		ctx.decision->pathResult = result;
+	}
+	if (result != nav::NavQueryResult::Found)
 		return false;
+	const auto link = corridor.links.empty() ? nav::NavDirectedLink{start, start, 0U, 0U} : corridor.links.front();
+	nav::LocomotionResult startResult = nav::LocomotionResult::InvalidArgument;
+	if (!startRoute(ctx.snapshot, corridor, link, &startResult))
+	{
+		if (!corridor.links.empty())
+		{
+			routeState().hasAvoidedLink = true;
+			routeState().avoidedLink = link;
+			++routeState().nextLinkIndex;
+		}
+		if (ctx.decision != nullptr)
+		{
+			ctx.decision->locomotionResult = startResult;
+			ctx.decision->failureReason = startResult == nav::LocomotionResult::UnsafeDrop
+				? NavFailureReason::UnsafeDrop : NavFailureReason::NavApplyRejected;
+		}
+		return false;
+	}
+	if (!corridor.links.empty())
+	{
+		routeState().hasAvoidedLink = false;
+		routeState().nextLinkIndex = 0U;
+	}
 	rememberRoute(ctx.snapshot, corridor, link);
+	if (ctx.decision != nullptr)
+		ctx.decision->linkResult = nav::NavQueryResult::Found;
 	populateRouteDecision(ctx.decision);
 	return true;
 }

@@ -181,6 +181,9 @@ public:
 	// Keep the nearest reachable area when a Hunt target cannot be reached.
 	NavQueryResult buildHuntCorridor(
 		AreaId start, AreaId goal, NavCorridor *corridor, NavSearchStats *stats) const;
+	NavQueryResult buildInvestigationCorridor(AreaId start, AreaId goal, const NavVector &noisePosition,
+		const NavLadderTopology *ladders, NavCorridor *corridor, NavSearchStats *stats = nullptr,
+		const NavDirectedLink *excludedFirstLink = nullptr) const;
 
 	NavQueryResult buildAlternativeCorridor(const NavCorridor &currentCorridor, const NavDirectedLink &failedFirstLink,
 		NavCorridor *alternativeCorridor, NavSearchStats *stats = nullptr, AreaId huntGoal = 0U) const;
