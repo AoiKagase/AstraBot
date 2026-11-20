@@ -1350,6 +1350,7 @@ bool BotObservationRuntime::collectManagedPerception(
 					visiblePoint.z -= kFeetTargetProbeDepth;
 				}
 				bool attackingObserver = false;
+				world::EntityKey sourceEntity{};
 				if (services_->service_engineFunctions() != nullptr &&
 					services_->service_engineFunctions()->pfnPEntityOfEntIndex != nullptr &&
 					services_->service_engineFunctions()->pfnTraceLine != nullptr)
@@ -1358,7 +1359,7 @@ bool BotObservationRuntime::collectManagedPerception(
 						static_cast<int>(candidate->actor.slot));
 					if (enemy != nullptr && !enemy->free && enemy->serialnumber >= 0)
 					{
-						threats->sourceEntities[candidateCount] = {candidate->actor.slot,
+						sourceEntity = {candidate->actor.slot,
 							static_cast<std::uint32_t>(enemy->serialnumber) + 1U};
 					}
 					if (enemy != nullptr && !enemy->free && (enemy->v.button & IN_ATTACK) != 0)
@@ -1377,7 +1378,7 @@ bool BotObservationRuntime::collectManagedPerception(
 					}
 				}
 				candidates[candidateCount++] = {
-					candidate->actor, visiblePoint, std::sqrt(distanceSquared), attackingObserver};
+					candidate->actor, visiblePoint, std::sqrt(distanceSquared), attackingObserver, sourceEntity};
 			}
 		}
 		return true;

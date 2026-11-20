@@ -67,6 +67,19 @@ void BotBehaviorRuntime::observePlayerDeath(
 	const int killerTeam = player(killer) ? services_->observation_resolvePlayerTeam(killer) : 0;
 	if (victimTeam != kTerroristTeam && victimTeam != kCounterTerroristTeam)
 		return;
+	if (services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility &&
+		receiptConnectionCurrent(victimConnection) && !victim->free && victim->serialnumber == victimSerial &&
+		frame.mapGeneration == life.mapGeneration() && frame.roundGeneration == life.roundGeneration() &&
+		frame.tick == services_->service_adapterFrameCount() && globals->time == receiptTime)
+	{
+		const world::EntityKey source{static_cast<std::uint32_t>(victimSlot), static_cast<std::uint32_t>(victimSerial) + 1U};
+		for (auto &actor : actors_)
+		{
+			actor.reactionQueues.forget(source);
+			if (actor.enemyWeaponSource == source)
+				actor.recognizedTargets = {};
+		}
+	}
 	std::array<int, kCounterTerroristTeam + 1> alive{};
 	for (int slot = 1; slot <= maximum; ++slot)
 	{

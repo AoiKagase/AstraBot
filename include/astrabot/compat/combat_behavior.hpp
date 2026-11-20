@@ -18,6 +18,7 @@ struct ThreatCandidate
 	world::WorldPosition visiblePoint;
 	float distance;
 	bool attackingObserver;
+	world::EntityKey sourceEntity{};
 };
 
 class ReactionQueue
@@ -32,8 +33,18 @@ public:
 		*this = ReactionQueue();
 	}
 
+	void forget(world::EntityKey source)
+	{
+		if (!source.isValid())
+			return;
+		for (auto &sample : samples_)
+			if (sample.hasThreat && sample.threat.sourceEntity == source)
+				sample.hasThreat = false;
+	}
+
 	bool update(world::ActorKey observer, world::FrameIdentity frame, float now, float reactionSeconds,
-		const ThreatCandidate *candidates, std::size_t count, bool blind, ThreatCandidate *selected)
+		const ThreatCandidate *candidates, std::size_t count, bool blind, ThreatCandidate *selected,
+		bool retainHistoricalThreat = false)
 	{
 // Keep literal evaluation precision on x87; each macro is undefined below.
 #define ASTRABOT_COMBAT_BEHAVIOR_REACTION_TIME_TOLERANCE_SECONDS 0.00001f
@@ -84,11 +95,17 @@ public:
 			{
 				if (!historical.hasThreat)
 					return false;
-				// Never resurrect a disconnected/reused actor slot from a delayed sample.
+				if (retainHistoricalThreat)
+				{
+					// The runtime validates the sampled actor and entity identity before using it.
+					*selected = historical.threat;
+					return true;
+				}
 				for (std::size_t i = 0; i < count; ++i)
 					if (candidates[i].actor == historical.threat.actor)
 					{
 						*selected = historical.threat;
+						selected->sourceEntity = candidates[i].sourceEntity;
 						return true;
 					}
 				return false;

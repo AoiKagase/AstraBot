@@ -85,10 +85,34 @@ bool BotBehaviorRuntime::prepareManagedPerception(std::size_t index, world::Worl
 			actors_[index].lastVisibleEnemyTimes = services_->service_globals()->time;
 			actors_[index].lastVisibleEnemyPositions = candidates[0].visiblePoint;
 		}
-		if (services_->service_globals() != nullptr &&
+		const bool compatibility =
+			services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility;
+		const bool sampled = services_->service_globals() != nullptr &&
 			actors_[index].reactionQueues.update(observer, belief.identity().frame, services_->service_globals()->time,
 				actors_[index].managedProfiles.reactionTimeSeconds, candidates.data(), candidateCount, blinded,
-				&threat))
+				&threat, compatibility);
+		const world::ActorObservation *seen = nullptr;
+		bool recognized = sampled;
+		if (sampled)
+		{
+			(void)belief.findActor(threat.actor, &seen);
+			if (compatibility)
+			{
+				const auto execution = actors_[index].executionRevision;
+				const auto *engine = services_->service_engineFunctions();
+				const auto *enemy = engine && engine->pfnPEntityOfEntIndex
+					? engine->pfnPEntityOfEntIndex(static_cast<int>(threat.actor.slot))
+					: nullptr;
+				if (!executionCurrent(index, reaction, execution))
+					return false;
+				recognized = seen && seen->relation == world::TeamRelation::Hostile && enemy && !enemy->free &&
+					enemy->serialnumber >= 0 && enemy->v.deadflag == DEAD_NO && enemy->v.health > 0 &&
+					threat.sourceEntity == world::EntityKey{threat.actor.slot,
+						static_cast<std::uint32_t>(enemy->serialnumber) + 1U} &&
+					reactionEnemyCurrent(threat.actor);
+			}
+		}
+		if (recognized)
 		{
 			const auto recentAttacker = memory.recentAttacker(reaction, 3.0f);
 			const bool alreadyRetaliating = recentAttacker.isValid() && memory.source(reaction) == recentAttacker &&
@@ -99,19 +123,13 @@ bool BotBehaviorRuntime::prepareManagedPerception(std::size_t index, world::Worl
 			}
 			actors_[index].recognizedTargets = threat.actor;
 			actors_[index].recognizedPoints = threat.visiblePoint;
-			actors_[index].enemyWeaponSource = {};
-			for (std::size_t candidate = 0; candidate < candidateCount; ++candidate)
+			actors_[index].enemyWeaponSource = threat.sourceEntity;
+			const bool currentlyVisible = seen && seen->visible;
+			if (currentlyVisible || (compatibility && !(memory.enemy(reaction) == threat.actor)))
 			{
-				if (candidates[candidate].actor == threat.actor)
-				{
-					actors_[index].enemyWeaponSource = threats.sourceEntities[candidate];
-					break;
-				}
-			}
-			const world::ActorObservation *seen = nullptr;
-			if (belief.findActor(threat.actor, &seen) == world::ContactLookupResult::Found && seen && seen->visible)
-			{
-				memory.rememberVisible(reaction, threat.actor, actors_[index].enemyWeaponSource, seen->position);
+				// Seed an occluded contact once. Only new sight refreshes its timestamp.
+				memory.rememberVisible(reaction, threat.actor, threat.sourceEntity,
+					currentlyVisible ? seen->position : threat.visiblePoint);
 				const float roundStart = services_->service_roundFreezeGeneration() == reaction.frame.roundGeneration
 					? services_->service_roundFreezeUntil()
 					: 0.0f;

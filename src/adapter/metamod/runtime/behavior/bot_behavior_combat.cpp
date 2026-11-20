@@ -728,7 +728,9 @@ ActionProposal BotBehaviorRuntime::decideCombatAction(ManagedActionContext &ctx)
 	else
 		actors_[index].managedBotCombat.stopMovement();
 	const compat::StateUpdateContext stateContext = makeManagedBotStateContext(index, before);
-	if (combatVisible && !reactionIgnoring(index))
+	const bool delayedRecognition = targetActor.isValid() && actors_[index].recognizedTargets == targetActor &&
+		services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility;
+	if ((combatVisible || delayedRecognition) && !reactionIgnoring(index))
 	{
 		(void)actors_[index].managedBotStateMachines.beginAttack(stateContext);
 	}

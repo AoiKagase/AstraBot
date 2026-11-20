@@ -39,6 +39,22 @@ int main()
 		"attacker threat precedes nearer passive enemy");
 	ok &= check(!queue.update(observer, {1U, 2U, 3U}, 0.7f, 0.0f, nullptr, 0U, false, &selected),
 		"empty visible set clears threat");
+	compat::ReactionQueue briefExposure;
+	candidate.sourceEntity = {2U, 4U};
+	ok &= check(!briefExposure.update(observer, {1U, 3U, 1U}, 1.0f, 0.3f, &candidate, 1U, false, &selected, true),
+		"one visible sample has not reached the reaction queue head");
+	ok &= check(!briefExposure.update(observer, {1U, 3U, 2U}, 1.12f, 0.3f, nullptr, 0U, false, &selected, true),
+		"occlusion before the reaction deadline does not recognize the threat early");
+	ok &= check(briefExposure.update(observer, {1U, 3U, 3U}, 1.36f, 0.3f, nullptr, 0U, false, &selected, true) &&
+			selected.actor == candidate.actor && selected.visiblePoint.x == candidate.visiblePoint.x &&
+			selected.sourceEntity == candidate.sourceEntity,
+		"delayed recognition keeps the sampled target and point after brief exposure ends");
+	compat::ReactionQueue priorLife;
+	ok &= check(!priorLife.update(observer, {1U, 3U, 1U}, 1.0f, 0.3f, &candidate, 1U, false, &selected, true),
+		"one visible sample waits even if the observed player later dies");
+	priorLife.forget(candidate.sourceEntity);
+	ok &= check(!priorLife.update(observer, {1U, 3U, 2U}, 1.36f, 0.3f, &candidate, 1U, false, &selected, true),
+		"death clears the older sighting even when a respawn reuses the entity identity");
 	compat::AimStep aim = compat::trackAim(179.0f, 0.0f, -179.0f, 0.0f, 0.01f, 0.5f);
 	ok &= check(aim.yaw > 179.0f && aim.yaw < 180.0f, "aim takes shortest angular turn with finite acceleration");
 	aim = compat::trackAim(0.0f, 0.0f, 90.0f, 0.0f, 0.1f, 1.0f);

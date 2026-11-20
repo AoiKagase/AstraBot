@@ -399,7 +399,9 @@ bool testCompoundChatter(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 	// A second NeedBackup is admitted after its10sec cooldown, but before the
 	// manager's20sec Place interval. The silent Place still reserves its .2+.1.
 	compoundEnemiesVisible = false;
-	step(12);
+	// Keep sampling during the quiet interval so the delayed contact can clear.
+	for (unsigned frame = 0; frame < 96; ++frame)
+		step(.125f);
 	compoundSamples.clear();
 	compoundEnemiesVisible = true;
 	step(.5f);
