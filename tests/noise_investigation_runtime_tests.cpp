@@ -1,11 +1,15 @@
 #include "plugin/plugin_runtime.hpp"
+#include <entity_state.h>
+#include <weaponinfo.h>
 namespace
 {
 bool testInvestigation(astrabot::metamod::PluginRuntime &, enginefuncs_t &, globalvars_t &);
 void setupHeardNoise(enginefuncs_t &, globalvars_t &);
+void setupHeardNoiseGameDll(DLL_FUNCTIONS &);
 }
 #define ASTRABOT_EXTRA_ACTOR_TEST testInvestigation
 #define ASTRABOT_ACTOR_ENGINE_SETUP setupHeardNoise
+#define ASTRABOT_ACTOR_GAMEDLL_SETUP setupHeardNoiseGameDll
 #define ASTRABOT_ACTOR_PROFILE_TEXT                                                                                    \
 	"Any { Name = \"Investigation Bot\" Team = any Difficulty = 1 Skill = 70 Aggression = 50 ReactionTime = 0.125 }\n"
 #include "compat_actor_command_tests.cpp"
@@ -14,11 +18,31 @@ namespace
 {
 bool closeNoiseVisible = false;
 bool clampNoiseToEdge = false;
+int nativeHideWeapon = 0;
+int nativeReload = 0, nativeSpecialReload = 0;
 unsigned offMeshGroundLayers = 0;
 unsigned heardReportDraws = 0;
 int heardMessageType = 0;
 const char *heardMode = "normal";
 std::vector<std::string> heardSamples;
+
+void setupHeardNoiseGameDll(DLL_FUNCTIONS &dll)
+{
+	dll.pfnUpdateClientData = [](const edict_t *, int sendWeapons, clientdata_t *client) {
+		if (sendWeapons)
+			client->m_iId = nativeHideWeapon;
+	};
+	dll.pfnGetWeaponData = [](edict_t *, weapon_data_t *weapons) {
+		if (nativeHideWeapon != 0)
+		{
+			auto &weapon = weapons[nativeHideWeapon];
+			weapon.m_iId = nativeHideWeapon;
+			weapon.m_fInReload = nativeReload;
+			weapon.m_fInSpecialReload = nativeSpecialReload;
+		}
+		return 1;
+	};
+}
 
 struct HeardTrace : astrabot::compat::IRandomTraceSink
 {
@@ -501,8 +525,38 @@ bool testInvestigation(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t 
 		return false;
 	self.v.origin.y = cover.position.y;
 	step(.65f);
-	return check(investigating() && !belief.noise().active &&
+	if (!check(investigating() && !belief.noise().active &&
 			navigation.behavior_buildManagedObjectiveTarget(0, &target, nullptr) && target.y == 500.0f,
-		"the first arrival update considers the sound before applying the settled radius");
+			"the first arrival update considers the sound before applying the settled radius"))
+		return false;
+
+	runtime.beginRoundGeneration();
+	self.v.origin.y = 0.0f;
+	step(31);
+	step(.25f);
+	emit();
+	step(.12f);
+	if (!check(belief.noise().active && enterHold() &&
+			!behavior.observation_publicObservations().pendingReloadRequest(
+				belief.identity().observer, belief.identity().frame, globals.time),
+			"reload fixture starts Hide with remembered noise and no delivered reload input"))
+		return false;
+	nativeHideWeapon = 21; // M3
+	nativeReload = 1;
+	step(.65f);
+	if (!check(machine.state() == compat::CompatibilityStateId::Hide && belief.noise().active,
+			"the active weapon's reload blocks investigation without consuming the noise"))
+		return false;
+	nativeReload = 0;
+	nativeSpecialReload = 2;
+	step(.25f);
+	if (!check(machine.state() == compat::CompatibilityStateId::Hide && belief.noise().active,
+			"shell-by-shell reload also blocks investigation"))
+		return false;
+	nativeSpecialReload = 0;
+	step(.25f);
+	nativeHideWeapon = 0;
+	return check(investigating() && !belief.noise().active,
+		"ending the active weapon reload lets Hide attend the remembered sound");
 }
 }

@@ -67,11 +67,13 @@ void BotBehaviorRuntime::updateNoiseInvestigation(std::size_t index, const runti
 	// Native Hide listens before recognizing arrival on this update.
 	const bool atHidingSpot = current == compat::CompatibilityStateId::Hide && wasAtDefenseSpot &&
 		actor.scenarioPlanners.atDefenseSpot();
+	const bool reloading = defending && ((state.reloadKnown || state.reloadInferred) ? state.reloading
+		: services_->observation_publicObservations().pendingReloadRequest(in.actor, in.frame, in.now));
 	constexpr unsigned sniperWeapons = (1U << 3) | (1U << 13) | (1U << 18) | (1U << 24);
 	const bool mayInvestigateFromDefense = defending &&
 		reactionDisposition(index) == compat::ReactionDisposition::Engage &&
 		!(atHidingSpot && (static_cast<unsigned>(self->v.weapons) & sniperWeapons)) &&
-		!services_->observation_publicObservations().pendingReloadRequest(in.actor, in.frame, in.now);
+		!reloading;
 	in.defenseAmbushExpired = mayInvestigateFromDefense && actor.scenarioPlanners.defenseAmbushExpired(in.now);
 	const bool freeTask = current == compat::CompatibilityStateId::Idle ||
 		current == compat::CompatibilityStateId::Hunt || current == compat::CompatibilityStateId::InvestigateNoise;

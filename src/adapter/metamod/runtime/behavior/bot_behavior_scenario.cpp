@@ -249,6 +249,19 @@ void BotBehaviorRuntime::updateScenarioState(std::size_t index, const runtime::M
 			services_->service_managedBotHandles()[index].entity, context.actor, context.frame, timing, &observation);
 		if (observationResult == ObservationAdapterResult::Accepted && current())
 		{
+			if (actors_[index].managedBotStateMachines.state() == compat::CompatibilityStateId::Hide)
+			{
+				const auto &observed = observation.weapon.reloadState;
+				const auto reload = observed.isAvailable() && observed.value != combat::ReloadState::Unknown
+					? observed.value : services_->observation_activeWeaponReloadState(
+						services_->service_managedBotHandles()[index].entity);
+				if (!current())
+					return;
+				stateBehavior.reloadKnown = reload != combat::ReloadState::Unknown;
+				stateBehavior.reloadInferred = !stateBehavior.reloadKnown;
+				stateBehavior.reloading = stateBehavior.reloadKnown ? reload == combat::ReloadState::Reloading
+					: services_->observation_publicObservations().pendingReloadRequest(context.actor, context.frame, context.timestamp);
+			}
 			compat::ScenarioBehaviorInput scenario = {};
 			ScenarioUpdateData data{timing};
 			populateScenarioPublicState(index, before, context, stateBehavior, observation, scenario, data);
@@ -269,7 +282,7 @@ void BotBehaviorRuntime::updateScenarioState(std::size_t index, const runtime::M
 			updateScenarioNavigation(index, before, context, stateBehavior, observation, scenario, data);
 			if (!current())
 				return;
-			updateScenarioTeamwork(index, before, context, stateBehavior, observation, scenario, data);
+			updateScenarioTeamwork(index, before, context, stateBehavior, scenario, data);
 			if (!current())
 				return;
 			applyScenarioDecision(index, before, context, stateBehavior, observation, scenario, data, plantMove);
@@ -943,8 +956,7 @@ void BotBehaviorRuntime::updateScenarioNavigation(std::size_t index, const runti
 
 void BotBehaviorRuntime::updateScenarioTeamwork(std::size_t index, const runtime::MovementPhysicsState &before,
 	compat::StateUpdateContext &context, compat::StateBehaviorInput &stateBehavior,
-	const compat::CompatibilityObservation &observation, compat::ScenarioBehaviorInput &scenario,
-	ScenarioUpdateData &data)
+	compat::ScenarioBehaviorInput &scenario, ScenarioUpdateData &data)
 {
 	const auto receipt = reactionContext(index);
 	const auto revision = actors_[index].executionRevision;
@@ -954,8 +966,6 @@ void BotBehaviorRuntime::updateScenarioTeamwork(std::size_t index, const runtime
 	{
 		return actorCurrent() && actors_[index].managedBotStateMachines.normalStateEpoch() == epoch;
 	};
-	(void)stateBehavior;
-	(void)observation;
 	auto &machine = actors_[index].managedBotStateMachines;
 	const int observedTeam = data.observedTeam;
 	auto &automaticLeaderRange = data.automaticLeaderRange;
@@ -1120,10 +1130,7 @@ void BotBehaviorRuntime::updateScenarioTeamwork(std::size_t index, const runtime
 		actor.scenarioPlanners.observeDefenderFeet(before.origin.x, before.origin.y, feetZ);
 		if (retreating && !wasAtDefenseSpot && actors_[index].scenarioPlanners.atDefenseSpot())
 			actors_[index].enemyReaction.cancelIgnore();
-		const auto &reload = observation.weapon.reloadState;
-		const bool reloading = reload.isAvailable() && reload.value != combat::ReloadState::Unknown
-			? reload.value == combat::ReloadState::Reloading
-			: services_->observation_publicObservations().pendingReloadRequest(context.actor, context.frame, context.timestamp);
+		const bool reloading = stateBehavior.reloading;
 		const float elapsed = context.timestamp - machine.stateTimestamp();
 		if (guardingLoose && actors_[index].scenarioPlanners.defenseExpired(elapsed, reloading))
 		{

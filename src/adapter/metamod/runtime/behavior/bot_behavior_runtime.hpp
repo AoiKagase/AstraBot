@@ -351,8 +351,7 @@ private:
 		ScenarioUpdateData &data);
 	void updateScenarioTeamwork(std::size_t index, const runtime::MovementPhysicsState &before,
 		compat::StateUpdateContext &context, compat::StateBehaviorInput &stateBehavior,
-		const compat::CompatibilityObservation &observation, compat::ScenarioBehaviorInput &scenario,
-		ScenarioUpdateData &data);
+		compat::ScenarioBehaviorInput &scenario, ScenarioUpdateData &data);
 	void applyScenarioDecision(std::size_t index, const runtime::MovementPhysicsState &before,
 		compat::StateUpdateContext &context, compat::StateBehaviorInput &stateBehavior,
 		const compat::CompatibilityObservation &observation, compat::ScenarioBehaviorInput &scenario,

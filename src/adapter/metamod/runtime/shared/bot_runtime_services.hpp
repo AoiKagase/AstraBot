@@ -114,6 +114,7 @@ public:
 		std::size_t index, world::WorldSnapshot *snapshot, ThreatObservation *threats) = 0;
 	virtual bool observation_activeSniper(
 		world::ActorKey actor, world::FrameIdentity frame, int observerTeam) const = 0;
+	virtual combat::ReloadState observation_activeWeaponReloadState(edict_t *source) const = 0;
 	virtual bool observation_readManagedWorldSnapshot(std::size_t index, world::WorldSnapshot *snapshot) const = 0;
 	virtual const std::uint32_t &observation_externalDefuserEntityIndex() const = 0;
 	virtual const float &observation_externalDefuserLeaseUntil() const = 0;

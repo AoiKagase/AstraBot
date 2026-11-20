@@ -1113,6 +1113,21 @@ bool PluginRuntime::observation_activeSniper(
 
 bool PluginRuntime::readGameDllActiveWeapon(edict_t *source, int &weapon, bool &silenced) const
 {
+	return readGameDllWeaponPrediction(source, weapon, silenced, nullptr);
+}
+
+combat::ReloadState PluginRuntime::observation_activeWeaponReloadState(edict_t *source) const
+{
+	int weapon = 0;
+	bool silenced = false;
+	auto reload = combat::ReloadState::Unknown;
+	(void)readGameDllWeaponPrediction(source, weapon, silenced, &reload);
+	return reload;
+}
+
+bool PluginRuntime::readGameDllWeaponPrediction(
+	edict_t *source, int &weapon, bool &silenced, combat::ReloadState *reload) const
+{
 	const auto *dll = gameDllFunctions_ ? gameDllFunctions_->dllapi_table : nullptr;
 	if (!dll || !dll->pfnUpdateClientData || !source || source->v.iuser1 != 0)
 		return false;
@@ -1134,8 +1149,10 @@ bool PluginRuntime::readGameDllActiveWeapon(edict_t *source, int &weapon, bool &
 	silenced = false;
 	constexpr int kUsp = 16;
 	constexpr int kM4a1 = 22;
-	if (weapon != kUsp && weapon != kM4a1)
-		return (weapon > 0 && weapon < 32) || weapon == 99; // Shield.
+	const bool canSilence = weapon == kUsp || weapon == kM4a1;
+	const bool hasPredictionSlot = weapon > 0 && weapon < 32;
+	if (!hasPredictionSlot || (!canSilence && reload == nullptr))
+		return hasPredictionSlot || weapon == 99; // Shield.
 	if (!dll->pfnGetWeaponData)
 		return false;
 
@@ -1143,8 +1160,15 @@ bool PluginRuntime::readGameDllActiveWeapon(edict_t *source, int &weapon, bool &
 	weapon_data_t weapons[32]{};
 	if (!dll->pfnGetWeaponData(source, weapons) || !current() || weapons[weapon].m_iId != weapon)
 		return false;
-	const int silencerMask = weapon == kUsp ? (1 << 0) : (1 << 2);
-	silenced = (weapons[weapon].m_iWeaponState & silencerMask) != 0;
+	const auto &active = weapons[weapon];
+	if (canSilence)
+	{
+		const int silencerMask = weapon == kUsp ? (1 << 0) : (1 << 2);
+		silenced = (active.m_iWeaponState & silencerMask) != 0;
+	}
+	if (reload != nullptr)
+		*reload = active.m_fInReload || active.m_fInSpecialReload
+			? combat::ReloadState::Reloading : combat::ReloadState::NotReloading;
 	return true;
 }
 
