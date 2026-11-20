@@ -157,6 +157,7 @@ public:
 	virtual const Service_pluginId &service_pluginId() = 0;
 	virtual Service_runtimeProfiler &service_runtimeProfiler() = 0;
 	virtual std::uint64_t behavior_executionRevision(std::size_t index) const = 0;
+	virtual bool behavior_forcedRunning(std::size_t index) = 0;
 	virtual bool behavior_noiseInvestigationWalking(std::size_t index) const = 0;
 	virtual bool behavior_buildManagedObjectiveTarget(std::size_t index, nav::NavVector *target,
 		nav::NavSearchStats *searchStats, RuntimeObjectiveSelectionStats *objectiveStats = nullptr) = 0;

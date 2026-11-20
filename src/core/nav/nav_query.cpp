@@ -1321,6 +1321,8 @@ NavFollowerResult NavPathFollower::start(const NavCorridor &corridor)
 	navRevision_ = corridor.navRevision;
 	mapGeneration_ = corridor.mapGeneration;
 	hasEndpoint_ = corridor.hasEndpoint;
+	huntEndpointSteering_ = corridor.huntEndpointSteering;
+	huntWalking_ = false;
 	endpoint_ = corridor.endpoint;
 	currentIndex_ = 0U;
 	huntWaypointIndex_ = huntWaypoints_.empty() ? 0U : 1U;
@@ -1360,7 +1362,7 @@ float distance2D(const NavVector &from, const NavVector &to)
 }
 }
 
-NavFollowerResult NavPathFollower::updateHuntPath(const NavDocument &document, const NavVector &feet, float arrivalRadius,
+NavFollowerResult NavPathFollower::updateHuntPath(const NavDocument &document, const NavVector &feet,
 	NavHuntSteeringContext hunt, NavVector &target, AreaId &targetArea)
 {
 	const std::size_t last = huntWaypoints_.size() - 1U;
@@ -1375,15 +1377,6 @@ NavFollowerResult NavPathFollower::updateHuntPath(const NavDocument &document, c
 		return traversal == corridor_.begin() + areaIndex ? corridor_[areaIndex] : *(traversal + 1);
 	};
 	targetArea = traversalArea(previousWaypoint);
-	const auto toEnd = displacement(feet, endpoint_);
-	const float distanceToEnd = dotProduct(toEnd, toEnd);
-	if (previousWaypoint == last &&
-		(distanceToEnd < arrivalRadius * arrivalRadius || (arrivalRadius == 0.0f && distanceToEnd == 0.0f)))
-	{
-		active_ = false;
-		return NavFollowerResult::Reached;
-	}
-
 	// CSBot projects onto the nearby path segments before changing its point index.
 	const std::size_t firstSegment = previousWaypoint > 3U ? previousWaypoint - 3U : 1U;
 	const std::size_t stop = (std::min)(huntWaypoints_.size(), previousWaypoint + 3U);
@@ -1442,20 +1435,9 @@ NavFollowerResult NavPathFollower::updateHuntPath(const NavDocument &document, c
 			}
 			if (hunt.probe != nullptr && !hunt.probe->clear(feet, to, false))
 			{
-				const float length = distance2D(from, to);
-				constexpr float sightStep = 25.0f;
-				float fraction = length > 0.0f ? (std::min)(1.0f, 1.0f - (range - aheadRange) / length) : 0.0f;
+				// The pinned CSBot keeps probing the occluded point as it retreats.
+				// Its steering therefore falls back to the preceding point.
 				huntTarget_ = from;
-				while (fraction > 0.0f)
-				{
-					const auto candidate = pointAlong(from, delta, fraction);
-					if (hunt.probe->clear(feet, candidate, false))
-					{
-						huntTarget_ = candidate;
-						break;
-					}
-					fraction -= sightStep / length;
-				}
 				break;
 			}
 			if (isJump(i))
@@ -1525,27 +1507,44 @@ NavFollowerResult NavPathFollower::update(const NavSnapshot &snapshot, const Nav
 	{
 		return NavFollowerResult::InvalidCorridor;
 	}
-	if (!huntWaypoints_.empty())
-		return updateHuntPath(*currentDocument, position, horizontalTolerance, hunt, *target, *targetArea);
 	const NavArea *area = currentDocument->findArea(corridor_[currentIndex_]);
 	if (area == nullptr)
 	{
 		return NavFollowerResult::InvalidCorridor;
 	}
-	if (hasEndpoint_ && currentIndex_ + 1U == corridor_.size())
+	const bool atEndpoint = huntWaypoints_.empty()
+		? currentIndex_ + 1U == corridor_.size()
+		: huntWaypointIndex_ + 1U == huntWaypoints_.size();
+	if (hunt.forcedRunning)
+		huntWalking_ = false;
+	if (hasEndpoint_ && atEndpoint)
 	{
-		*target = endpoint_;
-		*targetArea = area->id;
-		const float dx = endpoint_.x - position.x, dy = endpoint_.y - position.y, dz = endpoint_.z - position.z;
-		const float distanceSquared = dx * dx + dy * dy + dz * dz;
+		const auto toEnd = displacement(position, endpoint_);
+		const float distanceSquared = dotProduct(toEnd, toEnd);
+		constexpr float walkRange = 200.0f;
+		// CSBot decides walking from the incoming point index. Walk persists
+		// until the route ends even if the bot is pushed out of walk range.
+		if (huntEndpointSteering_ && !hunt.forcedRunning && !hunt.crouched &&
+			distanceSquared < walkRange * walkRange)
+			huntWalking_ = true;
 		if (distanceSquared < horizontalTolerance * horizontalTolerance ||
 			(horizontalTolerance == 0.0f && distanceSquared == 0.0f))
 		{
+			*target = endpoint_;
+			*targetArea = area->id;
+			huntWalking_ = false;
 			active_ = false;
 			return NavFollowerResult::Reached;
 		}
-		return NavFollowerResult::TargetReady;
+		if (huntWaypoints_.empty())
+		{
+			*target = endpoint_;
+			*targetArea = area->id;
+			return NavFollowerResult::TargetReady;
+		}
 	}
+	if (!huntWaypoints_.empty())
+		return updateHuntPath(*currentDocument, position, hunt, *target, *targetArea);
 
 	NavVector currentTarget = portalSteeringPoint(*area, position);
 	if (currentIndex_ > 0U)

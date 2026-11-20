@@ -173,7 +173,7 @@ LocomotionResult LocomotionController::update(
 	AreaId targetArea = 0U;
 	const NavFollowerResult followerResult = pathFollower_.update(snapshot, observation.position,
 		config_.targetHorizontalTolerance, config_.targetVerticalTolerance, &target, &targetArea,
-		{observation.ducked, currentMatch.area, observation.huntPathProbe});
+		{observation.ducked, currentMatch.area, observation.huntPathProbe, observation.huntForcedRunning});
 	const LocomotionResult mappedResult = mapFollowerResult(followerResult);
 	if (mappedResult == LocomotionResult::StaleSnapshot || mappedResult == LocomotionResult::InvalidSnapshot ||
 		mappedResult == LocomotionResult::InvalidCorridor || mappedResult == LocomotionResult::ResourceLimit)
@@ -330,6 +330,7 @@ LocomotionResult LocomotionController::buildIntent(const NavSnapshot &snapshot,
 		return overlapsCurrentArea ? (std::max)(probe.floorZ, surfaceZAt(*currentArea, probeX, probeY)) : probe.floorZ;
 	};
 	const bool farDropAhead = lookaheadMatches && observation.groundLookahead.running &&
+		!pathFollower_.walkingToHuntEndpoint() &&
 		observation.groundLookahead.far80.sampled && observation.groundLookahead.far80.hasGround &&
 		observation.groundLookahead.far80.normalZ > ASTRABOT_LOCOMOTION_MINIMUM_JUMP_GROUND_NORMAL_Z &&
 		currentFloor - probeFloorZ(observation.groundLookahead.far80, kMaximumGapJumpLookAhead) >
@@ -434,6 +435,7 @@ LocomotionResult LocomotionController::buildIntent(const NavSnapshot &snapshot,
 	intent->stepUp = stepHeight > 0.0f && !requiresJump && !safeDescendingDrop;
 	intent->currentArea = currentArea->id;
 	intent->targetArea = targetArea;
+	intent->walkingToHuntEndpoint = pathFollower_.walkingToHuntEndpoint();
 	return LocomotionResult::IntentReady;
 }
 
@@ -468,7 +470,8 @@ bool LocomotionController::previewTarget(
 	auto follower = pathFollower_;
 	AreaId area = 0U;
 	const auto result = follower.update(snapshot, observation.position, config_.targetHorizontalTolerance,
-		config_.targetVerticalTolerance, target, &area, {observation.ducked, 0U, observation.huntPathProbe});
+		config_.targetVerticalTolerance, target, &area,
+		{observation.ducked, 0U, observation.huntPathProbe, observation.huntForcedRunning});
 	return result == NavFollowerResult::TargetReady || result == NavFollowerResult::Advanced;
 }
 

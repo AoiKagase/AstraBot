@@ -1287,6 +1287,8 @@ NavigationUpdate BotNavigationRuntime::updateNavigation(std::size_t index, const
 			PublicNativeLadderProbe probe(services_->service_engineFunctions(), current);
 			PublicHuntPathProbe<decltype(current)> huntProbe(
 				services_->service_engineFunctions(), services_->service_runtimeProfiler(), current);
+			observation.locomotion.huntForcedRunning = navigationState == compat::CompatibilityStateId::Hunt &&
+				services_->behavior_forcedRunning(index);
 			if (navigationState == compat::CompatibilityStateId::Hunt &&
 				services_->service_engineFunctions() && services_->service_engineFunctions()->pfnTraceLine)
 				observation.locomotion.huntPathProbe = &huntProbe;
@@ -1360,6 +1362,7 @@ NavigationUpdate BotNavigationRuntime::updateNavigation(std::size_t index, const
 			groundLookaheadRoute.targetArea = locomotionIntent.targetArea;
 			groundLookaheadRoute.direction = locomotionIntent.direction;
 			groundLookaheadRoute.running = locomotionIntent.posture == nav::LocomotionPosture::Standing &&
+			!locomotionIntent.walkingToHuntEndpoint &&
 				locomotionIntent.speed >= kMinimumRunningSpeed;
 			groundLookaheadRoute.active = true;
 		}

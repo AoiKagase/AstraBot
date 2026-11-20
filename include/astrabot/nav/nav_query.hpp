@@ -223,6 +223,7 @@ struct NavHuntSteeringContext
 	bool crouched = false;
 	AreaId currentArea = 0U;
 	const NavHuntPathProbe *probe = nullptr;
+	bool forcedRunning = false;
 };
 
 class NavPathFollower
@@ -235,9 +236,10 @@ public:
 		float verticalTolerance, NavVector *target, AreaId *targetArea, NavHuntSteeringContext hunt = {});
 	bool isActive() const;
 	std::size_t currentIndex() const;
+	bool walkingToHuntEndpoint() const { return huntWalking_; }
 
 private:
-	NavFollowerResult updateHuntPath(const NavDocument &document, const NavVector &feet, float arrivalRadius,
+	NavFollowerResult updateHuntPath(const NavDocument &document, const NavVector &feet,
 		NavHuntSteeringContext hunt, NavVector &target, AreaId &targetArea);
 
 	std::vector<AreaId> corridor_;
@@ -250,6 +252,8 @@ private:
 	std::size_t currentIndex_;
 	bool active_;
 	bool hasEndpoint_ = false;
+	bool huntEndpointSteering_ = false;
+	bool huntWalking_ = false;
 	NavVector endpoint_ = {};
 };
 }

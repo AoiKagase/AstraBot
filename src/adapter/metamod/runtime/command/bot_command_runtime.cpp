@@ -930,13 +930,7 @@ void BotCommandRuntime::finishMovementCommand(std::size_t index, FakeClientHandl
 		const bool finalArea = roamDecision.currentArea != 0U && roamDecision.currentArea == roamDecision.goalArea;
 		constexpr float kGoalSlowdownDistance = 200.0f;
 #define ASTRABOT_BOT_COMMAND_RUNTIME_GOAL_SLOWDOWN_FACTOR 0.4f
-		const auto &feet = observation.locomotion.position;
-		const float huntX = roamDecision.huntEndpoint.x - feet.x, huntY = roamDecision.huntEndpoint.y - feet.y,
-					huntZ = roamDecision.huntEndpoint.z - feet.z;
-		const bool nearHuntEnd = huntEndpoint && !observation.locomotion.ducked &&
-			roamDecision.corridorIndex + 1U == roamDecision.corridorAreaCount &&
-			huntX * huntX + huntY * huntY + huntZ * huntZ < kGoalSlowdownDistance * kGoalSlowdownDistance;
-		const bool slowForEndpoint = huntEndpoint ? nearHuntEnd
+		const bool slowForEndpoint = huntEndpoint ? locomotionIntent.walkingToHuntEndpoint
 			: goal.valid && finalArea && x * x + y * y < kGoalSlowdownDistance * kGoalSlowdownDistance;
 		if (!locomotionIntent.nativeLadderControl && slowForEndpoint &&
 			locomotionIntent.posture != nav::LocomotionPosture::Crouching)

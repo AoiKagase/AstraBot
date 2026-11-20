@@ -2600,6 +2600,7 @@ bool NavRoamController::startRoute(const nav::NavSnapshot &snapshot, const nav::
 		prefix.areas.resize(step.linkIndex + 1);
 		prefix.links.resize(step.linkIndex);
 		prefix.hasEndpoint = true;
+		prefix.huntEndpointSteering = false;
 		const bool up = corridor.links[step.linkIndex].how == 4;
 		prefix.endpoint = up ? step.ladder.bottom : step.ladder.top;
 		const unsigned facing = up ? step.ladder.direction : (step.ladder.direction + 2) % 4;

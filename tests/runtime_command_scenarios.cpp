@@ -144,6 +144,7 @@ int main()
 	endpoint.roamDecision.huntEndpoint = {handle.entity->v.origin.x, -100.0f, 0.0f};
 	endpoint.locomotionIntent.direction = {0.0f, -1.0f, 0.0f};
 	endpoint.locomotionIntent.speed = 240.0f;
+	endpoint.locomotionIntent.walkingToHuntEndpoint = true;
 	const auto updateHunt = [&]()
 	{
 		command.resetManagedBotCommandInputs(0U);
@@ -172,11 +173,13 @@ int main()
 	handle.entity->v.v_angle = Vector(0, 0, 0);
 	endpoint.roamDecision.corridorAreaCount = 2;
 	endpoint.roamDecision.corridorIndex = 0;
+	endpoint.locomotionIntent.walkingToHuntEndpoint = false;
 	updateHunt();
 	if (!check(services.lastForward == 0.0f && services.lastSide == 240.0f,
 			"fallback runs while the full update starts on the portal leg inside the endpoint walk radius"))
 		return 1;
 	endpoint.roamDecision.corridorIndex = 1;
+	endpoint.locomotionIntent.walkingToHuntEndpoint = true;
 	updateHunt();
 	if (!check(services.lastForward == 0.0f && services.lastSide == 96.0f,
 			"fallback first slows on the update that starts on the endpoint leg"))

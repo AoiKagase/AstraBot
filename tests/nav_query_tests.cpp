@@ -1330,8 +1330,11 @@ bool testHuntFallbackKeepsPortalUntilItPasses()
 		return false;
 	NavVector target{};
 	AreaId id = 0U;
-	const auto update = [&](float x, float z = 0.0f)
-	{ return follower.update(snapshot, {x, 32.0f, z}, 20.0f, 64.0f, &target, &id); };
+	const auto update = [&](float x, float z = 0.0f, bool forcedRunning = false)
+	{
+		return follower.update(snapshot, {x, 32.0f, z}, 20.0f, 64.0f, &target, &id,
+			{false, 0U, nullptr, forcedRunning});
+	};
 	if (!check(update(80.0f) == NavFollowerResult::TargetReady && id == 2U && target.x == 175.0f &&
 			follower.currentIndex() == 0U,
 			"inside walk range, Hunt keeps the fixed portal as the current point until the bot passes it"))
@@ -1340,18 +1343,28 @@ bool testHuntFallbackKeepsPortalUntilItPasses()
 			"the equal closest-point tie stays on the earlier segment"))
 		return false;
 	if (!check(update(180.0f) == NavFollowerResult::Advanced && target.x == 265.0f &&
-			follower.currentIndex() == 1U,
-			"the next segment takes over after the portal"))
+			follower.currentIndex() == 1U && !follower.walkingToHuntEndpoint(),
+			"the next segment takes over at running speed after the portal"))
+		return false;
+	if (!check(update(180.0f) == NavFollowerResult::TargetReady && follower.walkingToHuntEndpoint() &&
+			update(465.0f) == NavFollowerResult::TargetReady && follower.walkingToHuntEndpoint(),
+			"Hunt starts walking on the next update and keeps walking after leaving the 200-unit range"))
+		return false;
+	if (!check(update(180.0f, 0.0f, true) == NavFollowerResult::TargetReady && !follower.walkingToHuntEndpoint() &&
+			update(465.0f) == NavFollowerResult::TargetReady && !follower.walkingToHuntEndpoint(),
+			"forcing a run clears the Hunt walk and prevents it from restarting until in range"))
 		return false;
 	if (!check(update(265.0f, 20.0f) == NavFollowerResult::TargetReady &&
-			update(265.0f, 19.0f) == NavFollowerResult::Reached,
+			update(265.0f, 19.0f) == NavFollowerResult::Reached && !follower.walkingToHuntEndpoint(),
 			"Hunt fallback ends only inside the strict 3D arrival radius"))
 		return false;
 	return check(NavQuery(snapshot).buildHuntCorridor(1U, 1U, &corridor, nullptr) == NavQueryResult::Found &&
 			follower.start(corridor) == NavFollowerResult::Started &&
-			update(85.0f, 21.0f) == NavFollowerResult::TargetReady && follower.currentIndex() == 0U &&
+			update(85.0f, 200.0f) == NavFollowerResult::TargetReady && !follower.walkingToHuntEndpoint() &&
+			update(85.0f, 199.0f) == NavFollowerResult::TargetReady && follower.walkingToHuntEndpoint() &&
+			follower.currentIndex() == 0U &&
 			update(85.0f, 17.0f) == NavFollowerResult::Reached,
-		"same-area Hunt is on its endpoint from the first update and uses the same 3D arrival radius");
+		"same-area Hunt uses the strict 3D walk and arrival ranges from its first update");
 }
 
 bool testHuntFallbackPrefersVisibleSegments()
@@ -1390,9 +1403,27 @@ bool testHuntFallbackPrefersVisibleSegments()
 			target.x == 105 && target.y == 100 && targetArea == 2U,
 			"fallback does not switch to the geometrically closer leg through a wall"))
 		return false;
-	return check(follower.update(snapshot, feet, 20, 64, &target, &targetArea, {false, 1U, nullptr}) ==
+	if (!check(follower.update(snapshot, feet, 20, 64, &target, &targetArea, {false, 1U, nullptr}) ==
 			NavFollowerResult::Advanced && target.y == 150 && targetArea == 2U && follower.currentIndex() == 2U,
-		"visibility can advance the steering point while locomotion still validates the immediate link");
+			"visibility can advance the steering point while locomotion still validates the immediate link"))
+		return false;
+
+	class BlockedEndpoint final : public NavHuntPathProbe
+	{
+	public:
+		bool clear(const NavVector &, const NavVector &point, bool) const override
+		{
+			return point.x < 450.0f;
+		}
+	};
+	corridor.endpoint = {450.0f, 100.0f, 0.0f};
+	corridor.huntWaypoints = {{{50, 100, 0}, 0U}, {{100, 100, 0}, 1U},
+		{{200, 100, 0}, 2U}, {corridor.endpoint, 2U}};
+	const BlockedEndpoint blocked;
+	return check(follower.start(corridor) == NavFollowerResult::Started &&
+			follower.update(snapshot, {120, 100, 0}, 20, 64, &target, &targetArea, {false, 2U, &blocked}) ==
+				NavFollowerResult::Advanced && target.x == 200.0f && follower.currentIndex() == 1U,
+		"an occluded lookahead point leaves steering on the preceding visible path point");
 }
 
 int main()

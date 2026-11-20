@@ -104,6 +104,7 @@ struct LocomotionObservation
 	bool viewYawAvailable = false;
 	float viewYaw = 0.0f;
 	const NavHuntPathProbe *huntPathProbe = nullptr;
+	bool huntForcedRunning = false;
 };
 
 struct LocomotionIntent
@@ -119,6 +120,7 @@ struct LocomotionIntent
 	bool nativeLadderControl = false;
 	float nativeForward = 0.0f, nativeSide = 0.0f;
 	bool nativeWalking = false, nativeMustJump = false, nativeWiggle = false;
+	bool walkingToHuntEndpoint = false;
 };
 
 class LocomotionController
