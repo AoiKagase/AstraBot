@@ -295,10 +295,71 @@ void BotCommandRuntime::resetManagedBotCommandTemplate(std::size_t index)
 	}
 }
 
-void BotCommandRuntime::advanceObjectiveLook(std::size_t index, FakeClientHandle &handle)
+void BotCommandRuntime::advanceLadderDescentLook(std::size_t index, FakeClientHandle &handle)
 {
 	auto &actor = actors_[index];
 	const auto &machine = services_->behavior_managedBotStateMachines(index);
+	const bool ladderLookPending = actor.nativeLadderControl || actor.descentLookPhase != nav::NativeLadderPhase::None;
+	if ((!ladderLookPending && !actor.descentFloorLook) ||
+		machine.state() != compat::CompatibilityStateId::Hunt || machine.attackOverlayActive())
+		return;
+	const auto config = services_->service_compatibilitySurface().configuration();
+	auto *entity = handle.entity;
+	const float now = services_->service_globals()->time;
+	if (config.mode != compat::RuntimeMode::Compatibility || config.botEnable <= 0.0f || config.botStop > 0.0f ||
+		!entity || entity->free || entity->v.health <= 0 || entity->v.deadflag != DEAD_NO ||
+		(entity->v.flags & (FL_FROZEN | FL_SPECTATOR)) || services_->roundFreezeActive() ||
+		!std::isfinite(now) || actor.descentLookAt == now)
+		return;
+	float yaw = actor.navigationLookYaw;
+	float pitch = 0.0f;
+	nav::NativeLadderLook ladder{};
+	if (ladderLookPending && !actor.descentFloorLook)
+	{
+		const int serial = entity->serialnumber;
+		const auto token = services_->service_lifecycle().tokenForSlot(handle.actor.slot);
+		const auto epoch = machine.normalStateEpoch();
+		if (!services_->navigation_nativeLadderLook(index, &ladder) ||
+			handle.entity != entity || entity->free || entity->serialnumber != serial ||
+			machine.normalStateEpoch() != epoch || machine.attackOverlayActive() ||
+			!services_->service_lifecycle().isCurrent(token))
+			return;
+		if (ladder.phase < nav::NativeLadderPhase::ApproachDown)
+			return;
+		yaw = ladder.yaw;
+		pitch = ladder.pitchOverride ? ladder.pitch : 0.0f;
+	}
+	if (!std::isfinite(yaw))
+		return;
+	const float drift = entity->v.fov > 0.0f && entity->v.fov < 90.0f ? 0.5f : 2.0f;
+	if (!ladder.active)
+		yaw += drift * ActionAdapter::csBotCosine(33.0f * now);
+	if (!ladder.pitchOverride)
+		pitch += drift * ActionAdapter::csBotCosine(13.0f * now - 90.0f);
+	const auto before = entity->v.v_angle;
+	const auto look = compat::trackAim(before.y, before.x, yaw, pitch, runtime::BotTimingScheduler::kCommandInterval,
+		1.0f, &actor.navigationLookSpring, false);
+	actor.descentLookAt = now;
+	actor.descentLookPhase = ladder.phase;
+	entity->v.v_angle = Vector(look.pitch, look.yaw, before.z);
+	if (services_->service_runtimeProfiler().enabled())
+		profiledLogConsole(services_->service_runtimeProfiler(), services_->service_pluginId(),
+			"profile ladderUpkeep slot=%u time=%.6f phase=%u move=%d flags=%d target=(%.3f %.3f) "
+			"view_before=(%.3f %.3f) view_after=(%.3f %.3f) spring=(%.3f %.3f)",
+			handle.actor.slot, now, static_cast<unsigned>(ladder.phase), entity->v.movetype, entity->v.flags, pitch, yaw,
+			before.x, before.y, look.pitch, look.yaw,
+			actor.navigationLookSpring.pitchVelocity, actor.navigationLookSpring.yawVelocity);
+}
+
+void BotCommandRuntime::advanceUpkeepLook(std::size_t index, FakeClientHandle &handle)
+{
+	auto &actor = actors_[index];
+	const auto &machine = services_->behavior_managedBotStateMachines(index);
+	if (machine.state() == compat::CompatibilityStateId::Hunt && !actor.useEntityLookActive && !actor.defusePathLook)
+	{
+		advanceLadderDescentLook(index, handle);
+		return;
+	}
 	if (!actor.useEntityLookActive)
 	{
 		if (actor.defusePathLook && !actor.nativeLadderControl && !machine.attackOverlayActive() &&
@@ -395,15 +456,18 @@ MovementCommandDraft BotCommandRuntime::beginNeutralCommand(
 }
 
 void BotCommandRuntime::finishNeutralCommand(std::size_t index, FakeClientHandle &handle,
-	const runtime::MovementPhysicsState &, MovementCommandDraft draft, const ActionProposal &requestedAction)
+	const runtime::MovementPhysicsState &before, MovementCommandDraft draft, const ActionProposal &requestedAction)
 {
 	runtime::BotCommand command = draft.command;
 	auto &actor = actors_[index];
 	actor.nativeLadderControl = false;
 	actor.nativeLadderJump = false;
-	// Defuse OnEnter leaves the path view active until OnUpdate looks at the C4.
 	const auto &machine = services_->behavior_managedBotStateMachines(index);
-	if (!actor.defusePathLook || machine.state() != compat::CompatibilityStateId::DefuseBomb ||
+	const bool defuseView = actor.defusePathLook && machine.state() == compat::CompatibilityStateId::DefuseBomb;
+	// A throttled Hunt replan can temporarily stop movement while the ladder is retained.
+	const bool descentView = machine.state() == compat::CompatibilityStateId::Hunt && before.onLadder &&
+		actor.descentLookPhase != nav::NativeLadderPhase::None && actor.descentLookAt == services_->service_globals()->time;
+	if ((!defuseView && !descentView) ||
 		machine.attackOverlayActive() || requestedAction.hasCombatAim || requestedAction.hasGuardLook)
 		actor.resetNavigationLook();
 	const ActionProposal actionProposal = ActionAdapter::forLiveDispatch(
@@ -474,7 +538,16 @@ runtime::CommandReceipt BotCommandRuntime::executeManagedBotCommand(
 	const bool explicitFrozen = (handle.entity->v.flags & FL_FROZEN) != 0;
 	const bool roundFreeze = services_->roundFreezeActive();
 	const auto &machine = services_->behavior_managedBotStateMachines(index);
-	if (!navigationLookAdvanced && !explicitFrozen && !roundFreeze && std::isfinite(actor.navigationLookYaw) &&
+	const bool descentLookAdvanced = actor.descentLookAt == services_->service_globals()->time &&
+		machine.state() == compat::CompatibilityStateId::Hunt && !machine.attackOverlayActive();
+	if (descentLookAdvanced)
+	{
+		const auto &view = handle.entity->v.v_angle;
+		command.viewAngles = {view.x, view.y, view.z};
+		command.synchronizeCombatView = true;
+	}
+	if (!navigationLookAdvanced && !descentLookAdvanced && !explicitFrozen && !roundFreeze &&
+		std::isfinite(actor.navigationLookYaw) &&
 		usesNavigationLook(machine.state()) && !machine.attackOverlayActive() &&
 		canAdvanceNavigationLook(machine.state(), (handle.entity->v.flags & FL_ONGROUND) != 0))
 	{
@@ -488,7 +561,8 @@ runtime::CommandReceipt BotCommandRuntime::executeManagedBotCommand(
 		command.viewAngles = {handle.entity->v.v_angle.x, handle.entity->v.v_angle.y, handle.entity->v.v_angle.z};
 	if (!actor.useEntityLookActive && !actor.nativeLadderControl)
 		services_->behavior_applyNoiseLookCommand(index, command);
-	services_->behavior_applyNativeLadderLookCommand(index, command, actors_[index].nativeLadderControl);
+	if (!descentLookAdvanced)
+		services_->behavior_applyNativeLadderLookCommand(index, command, actors_[index].nativeLadderControl);
 	if (!actor.useEntityLookActive)
 		services_->behavior_applyObstacleCommand(index, command);
 	const float maxSpeed = handle.entity->v.maxspeed;
@@ -914,6 +988,7 @@ MovementCommandDraft BotCommandRuntime::beginMovementCommand(std::size_t index, 
 		: runtime::ViewAngles{0.0f, movementYaw(locomotionIntent.direction), 0.0f};
 	auto &actor = actors_[index];
 	if (navigationLook && std::isfinite(actor.navigationLookYaw) &&
+		actor.descentLookAt != services_->service_globals()->time &&
 		!(handle.entity->v.flags & FL_FROZEN) && !services_->roundFreezeActive() &&
 		canAdvanceNavigationLook(machine.state(), before.grounded))
 	{
@@ -959,13 +1034,25 @@ void BotCommandRuntime::finishMovementCommand(std::size_t index, FakeClientHandl
 	const bool navigationLook = huntEndpoint || defuseLook ||
 		(canUseNavigationLook && usesNavigationLook(machine.state()) && locomotionIntent.speed > 0.0f);
 	auto &actor = actors_[index];
+	const bool descentLookAdvanced = actor.descentLookAt == services_->service_globals()->time &&
+		machine.state() == compat::CompatibilityStateId::Hunt && !machine.attackOverlayActive();
 	if (!navigationLook)
 	{
-		actor.resetNavigationLook();
+		if (locomotionIntent.nativeLadderControl && descentLookAdvanced)
+		{
+			actor.navigationLookYaw = std::numeric_limits<float>::quiet_NaN();
+			actor.defusePathLook = false;
+			actor.descentFloorLook = false;
+		}
+		else
+			actor.resetNavigationLook();
 	}
 	else if (locomotionIntent.speed > 0.0f)
 	{
 		// Set the next upkeep's look target after taking this decision's view.
+		actor.descentFloorLook = descentLookAdvanced &&
+			(actor.descentLookPhase == nav::NativeLadderPhase::MoveToDestination ||
+				(actor.descentFloorLook && !before.grounded));
 		actor.defusePathLook = defuseLook;
 		if (huntEndpoint || defuseLook)
 		{

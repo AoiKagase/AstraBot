@@ -2269,10 +2269,13 @@ nav::NativeLadderObservation NavRoamController::nativeObservation(const NavRoamO
 	nav::NativeLadderObservation out{};
 	out.actor = {in.actor.slot, in.actor.actorGeneration};
 	out.frame = in.frame;
+	// GetFeetZ in CSBot uses fixed offsets from the player origin, not the collision hull minimum.
+	const bool crouching = nativeLadder_.active() ? nativeLadder_.crouching() : in.locomotion.ducked;
+	const float feetOffset = crouching ? 18.0f : 36.0f;
 	out.origin = in.friendRayOriginAvailable
 		? in.friendRayOrigin
-		: nav::NavVector{in.locomotion.position.x, in.locomotion.position.y, in.locomotion.position.z + 36};
-	out.feetZ = in.locomotion.position.z;
+		: nav::NavVector{in.locomotion.position.x, in.locomotion.position.y, in.locomotion.position.z + feetOffset};
+	out.feetZ = in.friendRayOriginAvailable ? out.origin.z - feetOffset : in.locomotion.position.z;
 	out.now = in.locomotion.observedAt;
 	out.yaw = in.locomotion.viewYaw;
 	out.pitch = in.viewPitch;
@@ -2296,7 +2299,7 @@ bool NavRoamController::nativeLadderLook(const nav::NavSnapshot &snapshot, const
 	if (!look || !nativeLadder_.active())
 		return false;
 	*look = nativeLadder_.look(snapshot, in);
-	if (!look->active)
+	if (look->phase == nav::NativeLadderPhase::None)
 		return false;
 	if (source)
 		*source = nativeLadder_.source();

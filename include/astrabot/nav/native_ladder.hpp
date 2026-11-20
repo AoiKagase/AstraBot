@@ -46,6 +46,7 @@ struct NativeLadderLook
 {
 	bool active = false, pitchOverride = false;
 	float yaw = 0, pitch = 0;
+	NativeLadderPhase phase = NativeLadderPhase::None;
 };
 struct NativeLadderIntent
 {
@@ -226,10 +227,19 @@ public:
 	}
 	NativeLadderLook look(const NavSnapshot &snapshot, const NativeLadderObservation &in) const
 	{
-		if (!active_ || !sameOwner(snapshot, in) || !valid(in) || in.now < lastTime_ ||
-			phase_ == NativeLadderPhase::MoveToDestination)
+		if (!active_ || !sameOwner(snapshot, in) || !valid(in) || in.now < lastTime_)
 			return {};
 		NativeLadderLook result;
+		if (phase_ == NativeLadderPhase::MoveToDestination)
+		{
+			if (destination_ == ladder_.bottomArea)
+			{
+				result.phase = phase_;
+				result.yaw = directionYaw(faceIn_ ? (ladder_.direction + 2U) % 4U : ladder_.direction);
+			}
+			return result;
+		}
+		result.phase = phase_;
 		result.active = true;
 		result.yaw = yawTo(in.origin, ladder_.top);
 		result.pitch = in.pitch;
@@ -277,6 +287,10 @@ public:
 	NativeLadderPhase phase() const
 	{
 		return phase_;
+	}
+	bool crouching() const
+	{
+		return crouching_;
 	}
 
 private:

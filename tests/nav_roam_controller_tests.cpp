@@ -1764,6 +1764,8 @@ bool testTimedHuntMovesAndJumpsOffCompletedLadder()
 	observation.nativeLadders = &topology;
 	observation.nativeLadderProbe = &probe;
 	observation.huntKnownArea = 2U;
+	observation.friendRayOriginAvailable = true;
+	observation.friendRayOrigin = {32.0f, 32.0f, 237.0f};
 	nav::LocomotionIntent intent{};
 	runtime::NavRoamDecision decision{};
 	controller.update(snapshot, observation, &intent, &decision);
@@ -1774,6 +1776,7 @@ bool testTimedHuntMovesAndJumpsOffCompletedLadder()
 		++observation.frame.tick;
 		observation.locomotion.observedAt += 0.1f;
 		observation.locomotion.position.z = feet;
+		observation.friendRayOrigin.z = feet + 37.0f;
 		return controller.update(snapshot, observation, &intent, &decision);
 	};
 	update(200.0f);
@@ -1781,12 +1784,25 @@ bool testTimedHuntMovesAndJumpsOffCompletedLadder()
 	observation.locomotion.onLadder = true;
 	update(100.0f);
 	observation.huntKnownArea = 1U;
+	update(35.5f);
+	nav::NativeLadderObservation lookInput{};
+	lookInput.actor = {1U, 1U};
+	lookInput.frame = observation.frame;
+	lookInput.now = observation.locomotion.observedAt;
+	lookInput.origin = observation.friendRayOrigin;
+	lookInput.feetZ = 36.5f;
+	nav::NativeLadderLook look{};
+	if (!check(controller.nativeLadderLook(snapshot, lookInput, &look) && look.phase == nav::NativeLadderPhase::Descend,
+			"the hull minimum below the threshold does not end descent while CSBot feet remain above it"))
+		return false;
+	observation.locomotion.ducked = true;
 	if (!check(update(24.0f) == runtime::NavRoamResult::IntentReady && intent.nativeLadderControl &&
 				!intent.nativeMustJump, "active descent retains ladder steering without a jump"))
 		return false;
+	observation.locomotion.ducked = false;
 	if (!check(update(0.0f) == runtime::NavRoamResult::IntentReady && !intent.nativeLadderControl &&
 				intent.traversal == nav::TraversalAction::Walk && intent.direction.x > 0.0f && intent.speed > 0.0f,
-			"ladder completion continues floor steering in the same update"))
+			"the ladder's standing posture wins over a transient duck flag and floor steering starts on completion"))
 		return false;
 	if (!check(intent.nativeMustJump, "floor steering requests a forced jump while still attached to the ladder"))
 		return false;

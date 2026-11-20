@@ -63,7 +63,7 @@ void BotBehaviorRuntime::applyNativeLadderLookCommand(
 	const auto revision = actors_[index].executionRevision;
 	const auto epoch = actors_[index].managedBotStateMachines.normalStateEpoch();
 	nav::NativeLadderLook ladder{};
-	if (!services_->navigation_nativeLadderLook(index, &ladder) || !executionCurrent(index, receipt, revision) ||
+	if (!services_->navigation_nativeLadderLook(index, &ladder) || !ladder.active || !executionCurrent(index, receipt, revision) ||
 		actors_[index].managedBotStateMachines.normalStateEpoch() != epoch)
 		return;
 	auto &state = actors_[index];
@@ -243,7 +243,7 @@ CombatUpkeepUpdate BotBehaviorRuntime::upkeepCombat(
 		(enemyOrigin.y - context.origin.y) * (enemyOrigin.y - context.origin.y) +
 		(enemyOrigin.z - context.origin.z) * (enemyOrigin.z - context.origin.z));
 	nav::NativeLadderLook ladder{};
-	const bool ladderLook = services_->navigation_nativeLadderLook(index, &ladder);
+	const bool ladderLook = services_->navigation_nativeLadderLook(index, &ladder) && ladder.active;
 	if (!executionCurrent(index, lookReceipt, lookExecution) ||
 		state.managedBotStateMachines.normalStateEpoch() != lookEpoch)
 		return update;
@@ -681,7 +681,7 @@ ActionProposal BotBehaviorRuntime::decideCombatAction(ManagedActionContext &ctx)
 			(p.y - context.origin.y) * (p.y - context.origin.y) + (p.z - context.origin.z) * (p.z - context.origin.z));
 	}
 	nav::NativeLadderLook ladder{};
-	const bool ladderLook = services_->navigation_nativeLadderLook(index, &ladder);
+	const bool ladderLook = services_->navigation_nativeLadderLook(index, &ladder) && ladder.active;
 	if (!executionCurrent(index, lookReceipt, lookExecution) ||
 		actors_[index].managedBotStateMachines.normalStateEpoch() != lookEpoch)
 		return ctx.proposal;

@@ -213,6 +213,41 @@ destination. Its unmodified relink matched the verified ELF byte for byte.
 The command traces and fingerprints are in
 `artifacts/local/debug/cs-assault-ladder-exit-jump-20261121`.
 
+### Roof ladder descent look
+
+The fixed reference applies view upkeep before the full path update. During
+`MOVE_TO_DESTINATION` it has already released the ladder pitch override and
+uses its path lookahead. Movement still uses the ladder-local axes until the
+destination area contains the player origin. AstraBot now preserves those
+axes while updating the view before the decision. One fixed-step spring
+continues through the first floor commands and the landing. A throttled Hunt
+replan can send zero movement without advancing the same spring twice.
+
+The height used by the native ladder controller comes from the raw player
+origin and the ladder's intended posture, using the CSBot offsets 36 for
+standing and 18 for crouching. Destination containment uses the raw origin.
+The replay records both the raw origin and the engine hull minimum, so the
+native feet height can be calculated independently. The engine owns contact,
+movement type and velocity after the matched start.
+
+The final isolated Linux x86 replay used the same start, Area 1 route and
+Area 2 control. An unmodified relink matched the production ELF byte for
+byte. The controlled module replaced only the random source object to
+select the Hunt goal.
+
+| Command | Fixed CSBot airborne repeat | AstraBot airborne repeat |
+| --- | --- | --- |
+| First floor decision, still `MOVETYPE_FLY` | Hull minimum +2.936, pitch/yaw 40.000/1.542, vertical speed -281.757 | Hull minimum +4.194, pitch/yaw 40.000/1.660, vertical speed -281.756 |
+| First detached command, `MOVETYPE_WALK` | Hull minimum +2.296, pitch/yaw 26.666/0.603, vertical speed -32.000 | Hull minimum +3.522, pitch/yaw 26.666/1.681, vertical speed -32.799 |
+
+Both commands in both runs were ungrounded and used forward/side 250/0
+with buttons 10. Pitch angular velocity went from -300 to -400 degrees per
+second. The AstraBot repeat touched down one command later. Its other run
+reported ground contact on the first detached command. Both Area 2 runs
+stayed attached with zero inputs and no jump. The fixed reference relaxed
+pitch during that stop, and AstraBot held its ladder view. Logs and module
+fingerprints are in `artifacts/local/debug/cs-assault-ladder-descent-look-20261121`.
+
 The separate 13.005-second Hunt stop remains unverified.
 
 ## C4 approach view and movement

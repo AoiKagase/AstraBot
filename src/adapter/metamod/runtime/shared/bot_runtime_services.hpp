@@ -219,6 +219,7 @@ public:
 	virtual bool behavior_forcedRunning(std::size_t index) = 0;
 	virtual bool behavior_noiseInvestigationWalking(std::size_t index) const = 0;
 	virtual bool behavior_followWalking(std::size_t index) const = 0;
+	virtual bool navigation_nativeLadderLook(std::size_t index, nav::NativeLadderLook *look) = 0;
 	virtual void behavior_applyNativeLadderLookCommand(
 		std::size_t index, runtime::BotCommand &command, bool localMovement) = 0;
 	virtual void behavior_applyNoiseLookCommand(std::size_t index, runtime::BotCommand &command) = 0;

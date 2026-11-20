@@ -35,7 +35,7 @@ public:
 		MovementCommandDraft draft, const ActionProposal &requestedAction);
 	void resetManagedBotCommandTemplate(std::size_t index);
 	void resetManagedBotCommandInputs(std::size_t index);
-	void advanceObjectiveLook(std::size_t index, FakeClientHandle &handle);
+	void advanceUpkeepLook(std::size_t index, FakeClientHandle &handle);
 	const std::uint32_t &managedBotCommandSequences(std::size_t index) const
 	{
 		return actors_[index].managedBotCommandSequences;
@@ -119,6 +119,9 @@ private:
 		bool nativeLadderJump{};
 		compat::AimSpringState navigationLookSpring{};
 		float navigationLookYaw = std::numeric_limits<float>::quiet_NaN();
+		float descentLookAt = std::numeric_limits<float>::quiet_NaN();
+		nav::NativeLadderPhase descentLookPhase = nav::NativeLadderPhase::None;
+		bool descentFloorLook = false;
 		bool defusePathLook = false;
 		world::WorldPosition useEntityLookTarget{};
 		compat::AimSpringState useEntityLookSpring{};
@@ -130,9 +133,13 @@ private:
 		{
 			navigationLookYaw = std::numeric_limits<float>::quiet_NaN();
 			navigationLookSpring = {};
+			descentLookAt = std::numeric_limits<float>::quiet_NaN();
+			descentLookPhase = nav::NativeLadderPhase::None;
+			descentFloorLook = false;
 			defusePathLook = false;
 		}
 	};
+	void advanceLadderDescentLook(std::size_t index, FakeClientHandle &handle);
 	void applyUseEntityLook(std::size_t index, const edict_t &entity, const ActionProposal &action,
 		runtime::BotCommand &command);
 	void observeHostageUse(std::size_t index, const runtime::BotCommand &command,

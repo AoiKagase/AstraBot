@@ -184,6 +184,61 @@ int main()
 	if (!check(services.lastForward == 0.0f && services.lastSide == 96.0f,
 			"fallback first slows on the update that starts on the endpoint leg"))
 		return 1;
+	services.surface.setFloat("bot_enable", 1.0f);
+	handle.entity->v.movetype = MOVETYPE_FLY;
+	handle.entity->v.flags &= ~FL_ONGROUND;
+	handle.entity->v.v_angle = Vector(60.0f, 90.0f, 0.0f);
+	before = services.observation_captureMovementPhysicsState(handle.entity, true, true);
+	const auto descentDraft = command.beginMovementCommand(0U, handle, token, before, ladder);
+	const ActionProposal descentAction{ActionKind::None, descentDraft.command.viewAngles, 0U};
+	command.finishMovementCommand(0U, handle, token, before, ladder, descentDraft, descentAction);
+	services.descentDestinationLook = true;
+	command.advanceUpkeepLook(0U, handle);
+	command.executeManagedBotCommand(0U, handle);
+	if (!check(std::fabs(handle.entity->v.v_angle.x - 56.6667f) < .001f &&
+			services.lastForward == 96.0f && services.lastSide == -96.0f,
+			"descending upkeep turns the view while retaining ladder-local movement"))
+		return 1;
+	services.globals.time += runtime::BotTimingScheduler::kCommandInterval;
+	command.advanceUpkeepLook(0U, handle);
+	const auto haltedDescent = command.beginNeutralCommand(0U, handle, before);
+	const ActionProposal haltAction{ActionKind::None, haltedDescent.command.viewAngles, 0U};
+	command.finishNeutralCommand(0U, handle, before, haltedDescent, haltAction);
+	command.executeManagedBotCommand(0U, handle);
+	if (!check(std::fabs(handle.entity->v.v_angle.x - 50.0f) < .001f && services.lastForward == 0.0f &&
+			services.lastSide == 0.0f && services.descentFallbackLooks == 0,
+			"a suppressed Hunt move keeps exactly one descent look step and emits zero movement"))
+		return 1;
+	services.globals.time += runtime::BotTimingScheduler::kCommandInterval;
+	command.advanceUpkeepLook(0U, handle);
+	const auto floorYaw = handle.entity->v.v_angle.y;
+	services.descentDestinationLook = false;
+	updateHunt();
+	if (!check(services.lastYaw == floorYaw && std::fabs(handle.entity->v.v_angle.x - 40.0f) < .001f &&
+			services.lastForward == -96.0f && services.lastSide == 0.0f,
+			"the first floor decision projects movement into the view already updated by upkeep"))
+		return 1;
+	handle.entity->v.movetype = MOVETYPE_WALK;
+	services.globals.time += runtime::BotTimingScheduler::kCommandInterval;
+	command.advanceUpkeepLook(0U, handle);
+	command.executeManagedBotCommand(0U, handle);
+	if (!check(std::fabs(handle.entity->v.v_angle.x - 26.6667f) < .001f && services.lastForward == -96.0f &&
+			services.lastSide == 0.0f, "the first detached upkeep keeps the spring and last full update's axes"))
+		return 1;
+	handle.entity->v.flags |= FL_ONGROUND;
+	services.globals.time += runtime::BotTimingScheduler::kCommandInterval;
+	command.advanceUpkeepLook(0U, handle);
+	updateHunt();
+	const auto takeoffView = handle.entity->v.v_angle;
+	handle.entity->v.flags &= ~FL_ONGROUND;
+	services.globals.time += runtime::BotTimingScheduler::kCommandInterval;
+	command.advanceUpkeepLook(0U, handle);
+	command.executeManagedBotCommand(0U, handle);
+	if (!check(handle.entity->v.v_angle.x == takeoffView.x && services.lastYaw == takeoffView.y,
+			"ordinary airborne Hunt holds takeoff view after the ladder handoff ends"))
+		return 1;
+	handle.entity->v.flags |= FL_ONGROUND;
+	before = services.observation_captureMovementPhysicsState(handle.entity, true, true);
 	context.frame.tick++;
 	context.fullUpdateSequence++;
 	context.timestamp = services.globals.time;
@@ -275,7 +330,7 @@ int main()
 			"interaction registers the aim goal without snapping or using"))
 		return 1;
 	services.globals.time += runtime::BotTimingScheduler::kCommandInterval;
-	command.advanceObjectiveLook(0U, handle);
+	command.advanceUpkeepLook(0U, handle);
 	command.executeManagedBotCommand(0U, handle);
 	if (!check(services.lastYaw < 0.0f && services.lastYaw > -20.0f &&
 			handle.entity->v.v_angle.x < 0.0f && (services.lastButtons & IN_USE) == 0U,

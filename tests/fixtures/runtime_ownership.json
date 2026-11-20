@@ -1392,6 +1392,21 @@
   {
     "header": "src/adapter/metamod/runtime/command/bot_command_runtime.hpp",
     "scope": "ActorState",
+    "member": "descentLookAt"
+  },
+  {
+    "header": "src/adapter/metamod/runtime/command/bot_command_runtime.hpp",
+    "scope": "ActorState",
+    "member": "descentLookPhase"
+  },
+  {
+    "header": "src/adapter/metamod/runtime/command/bot_command_runtime.hpp",
+    "scope": "ActorState",
+    "member": "descentFloorLook"
+  },
+  {
+    "header": "src/adapter/metamod/runtime/command/bot_command_runtime.hpp",
+    "scope": "ActorState",
     "member": "defusePathLook"
   },
   {

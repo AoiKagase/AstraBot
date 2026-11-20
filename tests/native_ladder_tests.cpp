@@ -179,6 +179,9 @@ void testDescendingAndFailures()
 	controller.update(snapshot, in, probe, &intent);
 	check(controller.phase() == nav::NativeLadderPhase::MoveToDestination && intent.forward == 1,
 		"descending completes at endpoint plus half human height");
+	const auto destinationLook = controller.look(snapshot, in);
+	check(!destinationLook.active && destinationLook.yaw == 90.0f && destinationLook.pitch == 0.0f,
+		"descending destination exposes the ordinary path look while movement still uses ladder axes");
 	probe = {};
 	probe.fraction = .5f;
 	controller.reset();

@@ -1769,7 +1769,11 @@ void PluginRuntime::updateManagedBots()
 			continue;
 		}
 		if (upkeepDue)
-			command_.advanceObjectiveLook(index, handle);
+		{
+			command_.advanceUpkeepLook(index, handle);
+			if (!lifecycle_.isCurrent(token) || !handle.entity)
+				continue;
+		}
 		if (commandResetDue)
 		{
 			command_.resetManagedBotCommandInputs(index);

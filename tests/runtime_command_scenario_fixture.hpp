@@ -204,8 +204,21 @@ public:
 		return false;
 	}
 	bool behavior_followWalking(std::size_t) const override { return false; }
+	bool descentDestinationLook = false;
+	unsigned descentFallbackLooks = 0;
+	bool navigation_nativeLadderLook(std::size_t, nav::NativeLadderLook *look) override
+	{
+		if (!descentDestinationLook)
+			return false;
+		*look = {};
+		look->phase = nav::NativeLadderPhase::MoveToDestination;
+		look->yaw = 90.0f;
+		return true;
+	}
 	void behavior_applyNativeLadderLookCommand(std::size_t, runtime::BotCommand &, bool) override
 	{
+		if (descentDestinationLook)
+			++descentFallbackLooks;
 	}
 	void behavior_applyNoiseLookCommand(std::size_t, runtime::BotCommand &) override
 	{
@@ -279,6 +292,7 @@ public:
 		runtime::MovementPhysicsState state{};
 		state.dead = entity->v.deadflag != DEAD_NO;
 		state.grounded = (entity->v.flags & FL_ONGROUND) != 0;
+		state.onLadder = entity->v.movetype == MOVETYPE_FLY;
 		state.origin = {entity->v.origin.x, entity->v.origin.y, entity->v.origin.z};
 		return state;
 	}
