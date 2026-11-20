@@ -59,7 +59,7 @@ struct NavRoamObservation
 	nav::AreaId noisePathStartArea = 0U;
 	nav::AreaId noiseGoalArea = 0U;
 	bool noiseTargetCleared = false;
-	bool nativeDefusePath = false;
+	bool nativeSameAreaEndpoint = false;
 };
 
 struct GroundLookaheadRoute
@@ -389,7 +389,7 @@ private:
 	bool selectRoute(const nav::NavSnapshot &snapshot, const nav::NavAreaMatch &currentArea, nav::AreaId objectiveArea,
 		NavRoamDecision *decision, nav::NavRouteType routeType = nav::NavRouteType::Fastest,
 		const nav::NavLadderTopology *nativeLadders = nullptr, HuntRouteSampling *sampling = nullptr,
-		bool nativeDefusePath = false);
+		bool nativeSameAreaEndpoint = false);
 	bool selectRoamRoute(const nav::NavSnapshot &snapshot, const nav::NavAreaMatch &currentArea,
 		NavRoamDecision *decision, HuntRouteSampling *sampling);
 	bool selectCompatibilityGoal(const nav::NavSnapshot &snapshot, const nav::NavAreaMatch &currentArea,

@@ -270,7 +270,13 @@ void BotBehaviorRuntime::updateScenarioState(std::size_t index, const runtime::M
 			observeScenarioEntities(index, before, context, stateBehavior, observation, scenario, data);
 			if (!current())
 				return;
-			updateFollowMotion(index, context, scenario);
+			const bool followPlants = actors_[index].managedBotStateMachines.state() == compat::CompatibilityStateId::Follow &&
+				observation.objective.carryingC4.isAvailable() && observation.objective.carryingC4.value &&
+				managedActorAtBombSite(index);
+			if (!current())
+				return;
+			if (!followPlants)
+				updateFollowMotion(index, context, scenario, stateBehavior.reloading);
 			if (!current())
 				return;
 			if (scenario.scenario == compat::PublicScenarioKind::Hostage && data.observedTeam == kTerroristTeam)
@@ -304,11 +310,14 @@ bool BotBehaviorRuntime::followWalking(std::size_t index) const
 }
 
 void BotBehaviorRuntime::updateFollowMotion(std::size_t index, const compat::StateUpdateContext &context,
-	compat::ScenarioBehaviorInput &scenario)
+	compat::ScenarioBehaviorInput &scenario, bool reloading)
 {
 	auto &actor = actors_[index];
 	const auto &machine = actor.managedBotStateMachines;
-	if (machine.state() != compat::CompatibilityStateId::Follow || machine.attackOverlayActive())
+	const auto epoch = machine.normalStateEpoch();
+	const bool followingCover = machine.state() == compat::CompatibilityStateId::Hide &&
+		actor.followMotion.coverEpoch == epoch;
+	if ((!followingCover && machine.state() != compat::CompatibilityStateId::Follow) || machine.attackOverlayActive())
 		return;
 	const auto leader = actor.scenarioPlanners.followLeader();
 	const bool managedLeader = scenario.teammateLeader.actor == leader;
@@ -317,12 +326,13 @@ void BotBehaviorRuntime::updateFollowMotion(std::size_t index, const compat::Sta
 	if (!leader.isValid() || !(observation.actor == leader) || !observation.lifeKnown || !observation.alive ||
 		observation.team != scenario.team)
 	{
+		if (followingCover)
+			actor.scenarioPlanners.cancelHoldPosition();
 		actor.followMotion = {};
 		return;
 	}
 	const auto receipt = reactionContext(index);
 	const auto revision = actor.executionRevision;
-	const auto epoch = machine.normalStateEpoch();
 	const auto *engine = services_->service_engineFunctions();
 	const auto current = [&]
 	{
@@ -347,29 +357,34 @@ void BotBehaviorRuntime::updateFollowMotion(std::size_t index, const compat::Sta
 	if (!leaderCurrent())
 	{
 		observation = {};
+		if (followingCover)
+			actor.scenarioPlanners.cancelHoldPosition();
 		actor.followMotion = {};
 		return;
 	}
 	const auto offset = entity->v.origin - services_->service_managedBotHandles()[index].entity->v.origin;
-	const float speed = std::hypot(entity->v.velocity.x, entity->v.velocity.y);
-	const float distanceSquared = offset.x * offset.x + offset.y * offset.y + offset.z * offset.z;
-	const bool visible = canSeeEntityOrigin(index, entity, context.frame, false);
-	if (!current())
-		return;
-	if (!leaderCurrent())
+	const auto &velocity = entity->v.velocity;
+	if (followingCover)
 	{
-		observation = {};
-		actor.followMotion = {};
+		const auto &anchor = actor.followMotion.coverLeaderAnchor;
+		const auto &pos = entity->v.origin;
+		const float dx = pos.x - anchor.x, dy = pos.y - anchor.y, dz = pos.z - anchor.z;
+		const float speedSquared = velocity.x * velocity.x + velocity.y * velocity.y + velocity.z * velocity.z;
+		if (!reloading && !actor.scenarioPlanners.defenseExpired(context.timestamp - machine.stateTimestamp(), false) &&
+			(dx * dx + dy * dy + dz * dz > 250.0f * 250.0f || speedSquared > 200.0f * 200.0f))
+			actor.scenarioPlanners.cancelHoldPosition();
 		return;
 	}
+	const float speed = std::hypot(entity->v.velocity.x, entity->v.velocity.y);
+	const float distanceSquared = offset.x * offset.x + offset.y * offset.y + offset.z * offset.z;
 	if (!std::isfinite(speed) || !std::isfinite(distanceSquared))
 	{
 		actor.followMotion = {};
 		return;
 	}
-	if (actor.followMotion.epoch != epoch || !(actor.followMotion.leader == leader))
-		actor.followMotion = {leader, epoch};
-	auto &motion = actor.followMotion;
+	auto motion = actor.followMotion.epoch == epoch && actor.followMotion.leader == leader
+		? actor.followMotion : FollowMotion{leader, epoch};
+	const auto previousMotion = motion.motion;
 	if (speed > 140.0f || speed <= 10.0f)
 	{
 		motion.motion = speed > 140.0f ? LeaderMotion::Running : LeaderMotion::Stopped;
@@ -382,12 +397,68 @@ void BotBehaviorRuntime::updateFollowMotion(std::size_t index, const compat::Sta
 		if (context.timestamp - motion.walkStartedAt > 0.25f)
 			motion.motion = LeaderMotion::Walking;
 	}
+	const auto drawWait = [&](const char *label, float &wait)
+	{
+		const auto result = services_->service_compatibilityRandomSource().nextFloat(compat::RandomRequest::floatRequest(
+			label, {context.actor.slot, context.actor.generation},
+			{services_->command_managedBotCommandSequences(index), 0U, context.fullUpdateSequence}, 1.0f, 3.0f));
+		if (!current() || result.status != compat::RandomStatus::Ok || !(result.value >= 1.0f && result.value <= 3.0f))
+			return false;
+		wait = result.value;
+		return true;
+	};
+	if (previousMotion != motion.motion)
+	{
+		if (!drawWait("Follow.MotionWait", motion.coverWait))
+			return;
+		motion.motionStartedAt = context.timestamp;
+	}
+	const bool visible = leaderCurrent() && canSeeEntityOrigin(index, entity, context.frame, false);
+	if (!current())
+		return;
+	if (!leaderCurrent())
+	{
+		observation = {};
+		actor.followMotion = {};
+		return;
+	}
 	if (visible)
 		motion.lastVisibleAt = context.timestamp;
 	if (distanceSquared > 750.0f * 750.0f || context.timestamp - motion.lastVisibleAt > 20.0f)
 		motion.walking = false;
 	else if (visible && motion.motion != LeaderMotion::Stopped)
 		motion.walking = motion.motion == LeaderMotion::Walking;
+	actor.followMotion = motion;
+	if (motion.motion != LeaderMotion::Stopped || services_->navigation_hasActivePath(index) ||
+		context.timestamp - motion.motionStartedAt <= motion.coverWait)
+		return;
+	float extraWait = 0.0f;
+	if (!drawWait("Follow.StoppedWait", extraWait))
+		return;
+	if (!leaderCurrent())
+	{
+		observation = {};
+		actor.followMotion = {};
+		return;
+	}
+	actor.followMotion.coverWait += extraWait;
+	if (!(distanceSquared < 250.0f * 250.0f))
+		return;
+	const auto sourceCurrent = [&]
+	{
+		return services_->service_engineFunctions() == engine &&
+			actor.scenarioPlanners.followLeader() == leader && leaderCurrent();
+	};
+	if (tryFollowCover(index, sourceCurrent))
+	{
+		actor.followMotion.coverEpoch = machine.normalStateEpoch();
+		actor.followMotion.coverLeaderAnchor = {entity->v.origin.x, entity->v.origin.y, entity->v.origin.z};
+	}
+	else if (current() && !leaderCurrent())
+	{
+		observation = {};
+		actor.followMotion = {};
+	}
 }
 
 void BotBehaviorRuntime::populateScenarioPublicState(std::size_t index, const runtime::MovementPhysicsState &before,
@@ -1218,8 +1289,10 @@ void BotBehaviorRuntime::updateScenarioTeamwork(std::size_t index, const runtime
 		machine.task() == compat::CompatibilityTaskId::Sniping;
 	const bool retreating = actors_[index].combatRetreat.hideEpoch == machine.normalStateEpoch() &&
 		actors_[index].combatRetreat.hideEpoch != 0;
+	const bool followingCover = actors_[index].followMotion.coverEpoch == machine.normalStateEpoch() &&
+		actors_[index].followMotion.coverEpoch != 0;
 	if (machine.state() == compat::CompatibilityStateId::Hide &&
-		(retreating || guardingLoose || guardingSite || guardingHostages || guardingRescue || sniping ||
+		(retreating || followingCover || guardingLoose || guardingSite || guardingHostages || guardingRescue || sniping ||
 			machine.task() == compat::CompatibilityTaskId::HoldPosition ||
 			machine.task() == compat::CompatibilityTaskId::SeekAndDestroy) &&
 		!machine.attackOverlayActive())

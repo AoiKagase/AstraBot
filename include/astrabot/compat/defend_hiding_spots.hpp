@@ -100,7 +100,7 @@ struct HidingSpotSearch
 		return select(candidates);
 	}
 	HidingSpotSelection nearArea(
-		nav::AreaId start, const nav::NavVector &origin, const nav::NavLadderTopology &ladders) const
+		nav::AreaId start, const nav::NavVector &origin, const nav::NavLadderTopology &ladders, bool useNearest = false) const
 	{
 		Candidates candidates;
 		if (!walkNearby(start, origin, ladders, [&](const nav::NavArea &area)
@@ -109,7 +109,7 @@ struct HidingSpotSearch
 			return candidates[firstTier()].size() < kMaximumSpots;
 		}))
 			return {};
-		return select(candidates);
+		return select(candidates, useNearest ? &origin : nullptr);
 	}
 
 	template <typename EnemyVisibility>
@@ -223,12 +223,21 @@ private:
 				return;
 		}
 	}
-	HidingSpotSelection select(const Candidates &candidates) const
+	HidingSpotSelection select(const Candidates &candidates, const nav::NavVector *nearestTo = nullptr) const
 	{
 		for (std::size_t tier = firstTier(); tier < kTierCount; ++tier)
 		{
-			if (!candidates[tier].empty())
-				return choose(candidates[tier], "Hide.Spot");
+			const auto &spots = candidates[tier];
+			if (spots.empty())
+				continue;
+			if (nearestTo && tier == kTierCount - 1)
+			{
+				const auto closest = std::min_element(spots.begin(), spots.end(), [&](const auto &a, const auto &b) {
+					return hiding_spot_detail::squaredDistance(*nearestTo, a) < hiding_spot_detail::squaredDistance(*nearestTo, b);
+				});
+				return {true, true, *closest};
+			}
+			return choose(spots, "Hide.Spot");
 		}
 		return {true, false, {}};
 	}

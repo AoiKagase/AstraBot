@@ -327,7 +327,7 @@ struct BotBehaviorRuntime::ActorTaskEnvironment : compat::IHelpRequestEnvironmen
 		return current();
 	}
 	bool selectSpot(std::uint16_t place, nav::AreaId start, const nav::NavVector &origin,
-		nav::NavVector *point, bool *found, float range = 750.0f, int retreatTeam = 0)
+		nav::NavVector *point, bool *found, float range = 750.0f, int retreatTeam = 0, bool useNearest = false)
 	{
 		compat::HidingSpotOccupancy occupancy;
 		const auto engine = owner.services_->service_engineFunctions();
@@ -398,7 +398,7 @@ struct BotBehaviorRuntime::ActorTaskEnvironment : compat::IHelpRequestEnvironmen
 				});
 			}
 			else
-				selection = search.nearArea(start, origin, ladders);
+				selection = search.nearArea(start, origin, ladders, useNearest);
 		}
 		*found = selection.found;
 		*point = selection.position;
@@ -418,7 +418,7 @@ struct BotBehaviorRuntime::ActorTaskEnvironment : compat::IHelpRequestEnvironmen
 			value >= low && value <= high;
 	}
 	bool enterHideState(const nav::NavVector &point, nav::AreaId goal, compat::CompatibilityTaskId task,
-		float duration = -1.0f, bool holdForAmbush = false, bool keepFollowing = false)
+		float duration = -1.0f, bool holdForAmbush = false, bool keepFollowing = false, bool requirePath = false)
 	{
 		if (!current())
 			return false;
@@ -442,6 +442,8 @@ struct BotBehaviorRuntime::ActorTaskEnvironment : compat::IHelpRequestEnvironmen
 		before.dead = !receipt.context.alive;
 		auto context = owner.makeManagedBotStateContext(receiver, before);
 		if (!current())
+			return false;
+		if (requirePath && !reachable)
 			return false;
 		float ambushDelay = 0.0f;
 		if (reachable)
@@ -1219,6 +1221,26 @@ bool BotBehaviorRuntime::renewBombsiteGuard(std::size_t index)
 		compat::BombSearchSite::kMaximumNavAreas, services_->service_compatibilityRandomSource(),
 		{env.receipt.actor.slot, env.receipt.actor.generation}, env.timing());
 	return env.current() && area && env.hideNearArea(area->id, compat::CompatibilityTaskId::GuardBombZone);
+}
+
+bool BotBehaviorRuntime::tryFollowCover(std::size_t index, const std::function<bool()> &leaderCurrent)
+{
+	ActorTaskEnvironment env(*this, index, index, leaderCurrent);
+	if (!env.navigation.isValid() || !env.current())
+		return false;
+	const auto start = services_->navigation_knownArea(index, env.receipt.actor, env.receipt.context.frame,
+		env.navigation.revision());
+	if (!start)
+		return false;
+	const auto &body = env.receipt.entity->v.origin;
+	nav::NavVector spot{};
+	bool found = false;
+	if (!env.selectSpot(0, start, {body.x, body.y, body.z}, &spot, &found, 250.0f, 0, true) || !found)
+		return false;
+	if (!env.enterHideState(spot, env.areaAt(spot, false), compat::CompatibilityTaskId::None, -1.0f, false, true, true))
+		return false;
+	services_->applyNavigationRequest({index, NavigationRequestKind::ResetProgress});
+	return env.current();
 }
 
 void BotBehaviorRuntime::hideAtPlantedBombsite(std::size_t index, compat::ScenarioTarget target)

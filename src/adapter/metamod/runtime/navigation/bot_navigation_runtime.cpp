@@ -1116,17 +1116,21 @@ NavigationUpdate BotNavigationRuntime::updateNavigation(std::size_t index, const
 		observation.noiseRoute = runtime::NoiseRouteUpdate::Follow;
 		observation.noisePathStartArea = knownArea(index, objectiveActor, observation.frame, navigation.revision());
 	}
-	if (services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility &&
-		services_->behavior_managedBotStateMachines(index).state() == compat::CompatibilityStateId::MoveTo)
+	const bool compatibility =
+		services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility;
+	if (compatibility && currentMachine.state() == compat::CompatibilityStateId::MoveTo)
 	{
-		const auto task = services_->behavior_managedBotStateMachines(index).task();
-		observation.nativeDefusePath = task == compat::CompatibilityTaskId::DefuseBomb;
+		const auto task = currentMachine.task();
+		observation.nativeSameAreaEndpoint = task == compat::CompatibilityTaskId::DefuseBomb;
 		observation.objectiveRouteType = task == compat::CompatibilityTaskId::FindTickingBomb ||
 				task == compat::CompatibilityTaskId::DefuseBomb ||
 				task == compat::CompatibilityTaskId::MoveToLastKnownEnemyPosition
 			? nav::NavRouteType::Fastest
 			: nav::NavRouteType::Safest;
 	}
+	if (compatibility && currentMachine.state() == compat::CompatibilityStateId::Hide &&
+		currentMachine.task() == compat::CompatibilityTaskId::Follow)
+		observation.nativeSameAreaEndpoint = true;
 	const auto &goalCache = services_->behavior_managedBotObjectiveTargets(index);
 	if (observation.hasObjectiveTarget && goalCache.routeOverride)
 		observation.objectiveRouteType = goalCache.routeType;

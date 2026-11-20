@@ -1491,7 +1491,7 @@ NavRoamController::NavigationPhaseResult NavRoamController::selectUpdateRoute(Na
 		{
 			decision->stage = NavRoamStage::LinkSelection;
 		}
-		if (objectiveArea == currentArea.area && observation.hasObjectiveTarget && !observation.nativeDefusePath)
+		if (objectiveArea == currentArea.area && observation.hasObjectiveTarget && !observation.nativeSameAreaEndpoint)
 		{
 			const float deltaX = observation.objectiveTarget.x - observation.locomotion.position.x;
 			const float deltaY = observation.objectiveTarget.y - observation.locomotion.position.y;
@@ -1583,7 +1583,7 @@ NavRoamController::NavigationPhaseResult NavRoamController::selectUpdateRoute(Na
 		HuntRouteSampling sampling{observation.locomotion.huntPathProbe};
 		if (!selectRoute(snapshot, currentArea, objectiveArea, decision, routeType,
 				modePolicy_.mode() == compat::RuntimeMode::Compatibility ? observation.nativeLadders : nullptr,
-				&sampling, observation.nativeDefusePath))
+				&sampling, observation.nativeSameAreaEndpoint))
 		{
 			if (sampling.invalidated)
 				return {true, NavRoamResult::ReplanRequired};
@@ -2904,13 +2904,13 @@ bool NavRoamController::buildStuckRecoveryIntent(
 
 bool NavRoamController::selectRoute(const nav::NavSnapshot &snapshot, const nav::NavAreaMatch &currentArea,
 	nav::AreaId objectiveArea, NavRoamDecision *decision, nav::NavRouteType routeType,
-	const nav::NavLadderTopology *nativeLadders, HuntRouteSampling *sampling, bool nativeDefusePath)
+	const nav::NavLadderTopology *nativeLadders, HuntRouteSampling *sampling, bool nativeSameAreaEndpoint)
 {
 	if (objectiveArea == 0U)
 	{
 		return selectRoamRoute(snapshot, currentArea, decision, sampling);
 	}
-	if (nativeDefusePath && objectiveArea == currentArea.area)
+	if (nativeSameAreaEndpoint && objectiveArea == currentArea.area)
 	{
 		// CSBot BuildTrivialPath keeps the objective's XY and uses the current NAV floor.
 		nav::NavCorridor corridor{};

@@ -522,7 +522,8 @@ private:
 	void shuffleReadyChatterBanks();
 	std::uint32_t allowedFixedChatterPhrases(const char *verbosity, compat::ChatterPhrase first, compat::ChatterPhrase last);
 	void updateFollowMotion(std::size_t index, const compat::StateUpdateContext &context,
-		compat::ScenarioBehaviorInput &scenario);
+		compat::ScenarioBehaviorInput &scenario, bool reloading);
+	bool tryFollowCover(std::size_t index, const std::function<bool()> &leaderCurrent);
 	bool canSeePoint(std::size_t index, world::WorldPosition point, const world::FrameIdentity &frame,
 		bool checkFov) const;
 	bool canSeeEntityOrigin(std::size_t index, const edict_t *entity, const world::FrameIdentity &frame,
@@ -612,15 +613,19 @@ private:
 		bool coward = false;
 		AttackVisibility visibility{};
 	};
-	enum class LeaderMotion { Stopped, Walking, Running };
+	enum class LeaderMotion { Unknown, Stopped, Walking, Running };
 	struct FollowMotion
 	{
 		world::ActorKey leader{};
 		std::uint64_t epoch = 0;
-		LeaderMotion motion = LeaderMotion::Stopped;
+		LeaderMotion motion = LeaderMotion::Unknown;
 		float walkStartedAt = -1.0f;
 		float lastVisibleAt = 0.0f;
 		bool walking = false;
+		float motionStartedAt = 0.0f;
+		float coverWait = 0.0f;
+		std::uint64_t coverEpoch = 0U;
+		world::WorldPosition coverLeaderAnchor{};
 	};
 	struct ActorState
 	{

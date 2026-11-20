@@ -1700,7 +1700,7 @@ bool testProductionNavCenters(astrabot::metamod::PluginRuntime &runtime)
 	return ok;
 }
 bool testActualFollowMovement(astrabot::metamod::PluginRuntime &runtime, globalvars_t &globals, float arrivalAge = 0.0f,
-	bool defendAtSpot = false)
+	bool defendAtSpot = false, bool stoppedCover = false)
 {
 	using namespace astrabot;
 	globals.mapname = 6;
@@ -1741,7 +1741,7 @@ bool testActualFollowMovement(astrabot::metamod::PluginRuntime &runtime, globalv
 		entity.v.weapons = index == 0 ? (1 << 6) : 0;
 	}
 	const char *path = "astrabot_follow_move.nav";
-	if (!check(writeTwoSiteNavigation(path, true, defendAtSpot, "BombsiteA"), "follow test NAV fixture written"))
+	if (!check(writeTwoSiteNavigation(path, true, defendAtSpot || stoppedCover, "BombsiteA"), "follow test NAV fixture written"))
 		return false;
 	const metamod::NavLoadRequest load = {
 		path, "astrabot_follow_move", runtime.snapshot().mapGeneration, true, 123U, false, 0U};
@@ -1870,6 +1870,34 @@ bool testActualFollowMovement(astrabot::metamod::PluginRuntime &runtime, globalv
 		!check(followed, "natural completion of the production plant plan starts teammate Follow"))
 		return false;
 	gEntities[0].v.origin = Vector(168, 32, 36);
+	if (stoppedCover)
+	{
+		auto &behavior = static_cast<metamod::BotBehaviorServices &>(runtime);
+		const float entered = globals.time;
+		for (int i = 0; i < 28 && receiver.state() == compat::CompatibilityStateId::Follow; ++i)
+		{
+			behavior.applyNavigationRequest({1, metamod::NavigationRequestKind::DestroyPath});
+			tick();
+		}
+		const bool hid = receiver.state() == compat::CompatibilityStateId::Hide &&
+			receiver.task() == compat::CompatibilityTaskId::Follow && globals.time - entered > 1.0f;
+		tick();
+		const auto &cover = navigation.behavior_scenarioDecisions(1);
+		bool ok = check(hid && cover.hasTarget && cover.target.position.x == 32 && cover.target.position.y == 50,
+			"a stopped leader without a path waits and sends Follow to the nearest unoccupied cover");
+		gEntities[1].v.origin = Vector(32, 50, 36);
+		gEntities[0].v.velocity.x = 200.0f;
+		queueHelpMoves.clear();
+		tick();
+		ok = check(receiver.state() == compat::CompatibilityStateId::Hide && cover.target.inUseRange &&
+				!queueHelpMoves.empty() && queueHelpMoves.back() == 0.0f,
+			"arrival holds cover while the leader is exactly at the 200-unit run threshold") && ok;
+		gEntities[0].v.velocity.x = 201.0f;
+		tick();
+		queueHelpRecording = false;
+		return check(receiver.state() == compat::CompatibilityStateId::Follow,
+			"a leader running over the threshold resumes Follow from cover") && ok;
+	}
 	queueHelpMoves.clear();
 	bool retargeted = false;
 	for (int i = 0; i < 80; ++i)
@@ -3579,6 +3607,6 @@ bool testStatementQueue(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t
 		testActualHelpMovement(runtime, engine, globals, false, false, true, false, true) &&
 		testActualFollowMovement(runtime, globals, 2.0f) && testActualFollowMovement(runtime, globals, 2.0f, true) &&
 		testActualFollowMovement(runtime, globals, 2.125f) &&
-		testActualFollowMovement(runtime, globals);
+		testActualFollowMovement(runtime, globals) && testActualFollowMovement(runtime, globals, 0.0f, false, true);
 }
 }

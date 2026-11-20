@@ -168,6 +168,13 @@ void testHidingSpots(const std::function<void(bool, const char *)> &check)
 		ladder.topAreas = {4, 0, 0, 5};
 		const nav::NavLadderTopology ladders{snapshot.revision(), 2, {ladder}};
 		const HidingSpotOccupancy empty;
+		{
+			ScriptedRandomSource noDraw({});
+			const HidingSpotSearch search{snapshot, empty, noDraw, {}, {}, {}, false};
+			const auto result = search.nearArea(1, {143, 0, 0}, ladders, true);
+			check(result.available && result.found && result.position.x == 150 && noDraw.verifyComplete(),
+				"nearest cover compares distances across the reachable areas without a spot RNG draw");
+		}
 		for (int draw = 0; draw < 3; ++draw)
 		{
 			ScriptedRandomSource random({RandomTapeEntry::longEntry("Hide.Spot", {}, {}, 0, 2, draw)});
