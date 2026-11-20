@@ -1216,7 +1216,7 @@ void setAreaPathEndpoint(const NavDocument &document, AreaId goal, NavCorridor &
 		for (std::size_t i = 0U; i < corridor.links.size(); ++i)
 		{
 			const auto &link = corridor.links[i];
-			if (!hunt && ladderStep != corridor.nativeLadders.end() && ladderStep->linkIndex == i)
+			if (ladderStep != corridor.nativeLadders.end() && ladderStep->linkIndex == i)
 			{
 				const auto &ladder = ladderStep->ladder;
 				const bool ascending = link.fromArea == ladder.bottomArea;
@@ -1259,7 +1259,7 @@ void setAreaPathEndpoint(const NavDocument &document, AreaId goal, NavCorridor &
 					corridor.huntWaypoints.push_back({portal, areaIndex});
 			}
 		}
-		if (hunt || corridor.nativeLadders.empty() || corridor.nativeLadders.back().linkIndex + 1U != corridor.links.size())
+		if (corridor.nativeLadders.empty() || corridor.nativeLadders.back().linkIndex + 1U != corridor.links.size())
 		{
 			endpoint = extentCenterOf(*destination);
 			const auto direction = corridor.links.back().direction;
@@ -1272,7 +1272,7 @@ void setAreaPathEndpoint(const NavDocument &document, AreaId goal, NavCorridor &
 	corridor.hasEndpoint = true;
 	corridor.huntEndpointSteering = hunt;
 	corridor.endpoint = {endpoint.x, endpoint.y, surfaceZAtInternal(*destination, endpoint.x, endpoint.y)};
-	if (probe && (!corridor.huntWaypoints.empty() || (!hunt && !corridor.links.empty())))
+	if (probe && !corridor.links.empty())
 	{
 		float ground = requestedHeight;
 		const bool sampled = probe->groundHeight({endpoint.x, endpoint.y, requestedHeight}, &ground);
@@ -1286,8 +1286,14 @@ void setAreaPathEndpoint(const NavDocument &document, AreaId goal, NavCorridor &
 }
 
 NavQueryResult NavQuery::buildHuntCorridor(AreaId start, AreaId goal, NavCorridor *corridor, NavSearchStats *stats,
-	const NavHuntPathProbe *probe) const
+	const NavHuntPathProbe *probe, const NavLadderTopology *ladders) const
 {
+	if (ladders)
+	{
+		const auto validation = validateNativeTopology(snapshot_, *ladders);
+		if (validation != NavQueryResult::Found)
+			return validation;
+	}
 	const auto *doc = document();
 	const auto *source = doc == nullptr ? nullptr : doc->findArea(start);
 	if (corridor != nullptr && start == goal && source != nullptr)
@@ -1305,8 +1311,8 @@ NavQueryResult NavQuery::buildHuntCorridor(AreaId start, AreaId goal, NavCorrido
 		return NavQueryResult::Found;
 	}
 	const auto result = buildAStarCorridor(snapshot_, limits_, start, goal, NavRouteType::Safest, corridor, stats,
-		hasCostContext_ ? &costContext_ : nullptr, nullptr, nullptr, false, true);
-	if (result != NavQueryResult::Found || corridor->areas.back() == goal)
+		hasCostContext_ ? &costContext_ : nullptr, nullptr, ladders, false, true);
+	if (result != NavQueryResult::Found || (corridor->areas.back() == goal && corridor->nativeLadders.empty()))
 		return result;
 
 	try
@@ -1346,7 +1352,7 @@ NavQueryResult NavQuery::buildFollowCorridor(AreaId start, AreaId goal, const Na
 
 NavQueryResult NavQuery::buildAlternativeCorridor(const NavCorridor &currentCorridor,
 	const NavDirectedLink &failedFirstLink, NavCorridor *alternativeCorridor, NavSearchStats *stats, AreaId huntGoal,
-	const NavHuntPathProbe *huntProbe) const
+	const NavHuntPathProbe *huntProbe, const NavLadderTopology *huntLadders) const
 {
 	if (alternativeCorridor == nullptr || alternativeCorridor == &currentCorridor || !snapshot_.isValid() ||
 		!currentCorridor.isValid() || currentCorridor.areas.size() < kMinimumCorridorAreaCount ||
@@ -1362,18 +1368,25 @@ NavQueryResult NavQuery::buildAlternativeCorridor(const NavCorridor &currentCorr
 	{
 		return NavQueryResult::InvalidArgument;
 	}
+	if (huntLadders)
+	{
+		const auto validation = validateNativeTopology(snapshot_, *huntLadders);
+		if (validation != NavQueryResult::Found)
+			return validation;
+	}
 
 	// Search the complete graph with the failed directed edge excluded. Searching
 	// independent suffixes can prefer a return through the failed edge and then
 	// incorrectly reject every candidate despite a longer valid bypass.
 	const auto result = buildAStarCorridor(snapshot_, limits_, currentCorridor.areas.front(),
 		currentCorridor.areas.back(), currentCorridor.routeType, alternativeCorridor, stats,
-		hasCostContext_ ? &costContext_ : nullptr, &failedFirstLink);
+		hasCostContext_ ? &costContext_ : nullptr, &failedFirstLink, huntLadders);
 	if (result == NavQueryResult::Found)
 	{
 		alternativeCorridor->hasEndpoint = currentCorridor.hasEndpoint;
 		alternativeCorridor->endpoint = currentCorridor.endpoint;
-		if (huntGoal != 0U && huntGoal != alternativeCorridor->areas.back() && document()->findArea(huntGoal))
+		if (huntGoal != 0U && document()->findArea(huntGoal) &&
+			(huntGoal != alternativeCorridor->areas.back() || !alternativeCorridor->nativeLadders.empty()))
 		{
 			try
 			{

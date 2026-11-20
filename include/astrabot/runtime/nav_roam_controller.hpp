@@ -396,6 +396,7 @@ private:
 	struct HuntRouteSampling
 	{
 		const nav::NavHuntPathProbe *probe;
+		const nav::NavLadderTopology *ladders;
 		bool invalidated = false;
 	};
 	bool selectRoute(const nav::NavSnapshot &snapshot, const nav::NavAreaMatch &currentArea, nav::AreaId objectiveArea,

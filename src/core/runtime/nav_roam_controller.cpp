@@ -299,11 +299,11 @@ nav::NavQueryResult buildCorridor(const nav::NavQuery &query, nav::AreaId start,
 
 nav::NavQueryResult buildCorridor(const nav::NavQuery &query, nav::AreaId start, nav::AreaId goal,
 	nav::NavRouteType routeType, nav::NavCorridor *corridor, nav::NavSearchStats *stats, bool closestHunt = false,
-	const nav::NavHuntPathProbe *huntProbe = nullptr)
+	const nav::NavHuntPathProbe *huntProbe = nullptr, const nav::NavLadderTopology *huntLadders = nullptr)
 {
 	nav::NavSearchStats sample = {};
 	auto *record = stats == nullptr ? nullptr : &sample;
-	const auto result = closestHunt ? query.buildHuntCorridor(start, goal, corridor, record, huntProbe)
+	const auto result = closestHunt ? query.buildHuntCorridor(start, goal, corridor, record, huntProbe, huntLadders)
 								   : query.buildCorridor(start, goal, routeType, corridor, record);
 	if (stats != nullptr && sample.searchCalls > 0U)
 	{
@@ -1577,7 +1577,7 @@ NavRoamController::NavigationPhaseResult NavRoamController::selectUpdateRoute(Na
 	{
 		// Hunt checks the requested area's identity before following its path.
 		// A throttled ComputePath leaves the current path available next update.
-		HuntRouteSampling sampling{observation.locomotion.huntPathProbe};
+		HuntRouteSampling sampling{observation.locomotion.huntPathProbe, observation.nativeLadders};
 		const bool rebuilt = selectRoamRoute(snapshot, currentArea, decision, &sampling);
 		if (sampling.invalidated)
 			return {true, NavRoamResult::ReplanRequired};
@@ -1686,7 +1686,7 @@ NavRoamController::NavigationPhaseResult NavRoamController::selectUpdateRoute(Na
 		// Full updates during the retry cooldown must retain it.
 		if (objectiveArea != 0U && recoveryState().unsafeDropFailure.valid)
 			recoveryState().unsafeDropFailure.bypassPending = false;
-		HuntRouteSampling sampling{observation.locomotion.huntPathProbe};
+		HuntRouteSampling sampling{observation.locomotion.huntPathProbe, observation.nativeLadders};
 		if (!selectRoute(snapshot, currentArea, objectiveArea, decision, routeType,
 				modePolicy_.mode() == compat::RuntimeMode::Compatibility ? observation.nativeLadders : nullptr,
 				&sampling, observation.nativeSameAreaEndpoint))
@@ -2429,7 +2429,7 @@ NavRoamController::NavigationPhaseResult NavRoamController::updateGroundLocomoti
 			roamGoalState().goalSelectionReason = GoalSelectionReached;
 		}
 		resetRoute(!goalReached);
-		HuntRouteSampling sampling{observation.locomotion.huntPathProbe};
+		HuntRouteSampling sampling{observation.locomotion.huntPathProbe, observation.nativeLadders};
 		if (huntEndpointReached && selectRoamRoute(snapshot, currentArea, decision, &sampling))
 		{
 			if (decision != nullptr)
@@ -3549,6 +3549,8 @@ bool NavRoamController::selectCompatibilityGoal(const nav::NavSnapshot &snapshot
 	nav::NavCorridor corridor = std::move(selectedCorridor);
 	const auto operation = routeRevision_;
 	const auto *huntProbe = sampling ? sampling->probe : nullptr;
+	const auto *huntLadders = sampling && sampling->ladders && !sampling->ladders->ladders.empty()
+		? sampling->ladders : nullptr;
 	const auto invalidated = [&]
 	{
 		if (!huntProbe || (routeRevision_ == operation && huntProbe->current()))
@@ -3559,7 +3561,8 @@ bool NavRoamController::selectCompatibilityGoal(const nav::NavSnapshot &snapshot
 	const nav::NavQueryResult corridorResult = hasSelectedCorridor
 		? nav::NavQueryResult::Found
 		: buildCorridor(query, currentArea.area, roamGoalState().roamGoalArea, nav::NavRouteType::Safest, &corridor,
-			  decision == nullptr || !collectPathStats_ ? nullptr : &decision->pathSearchStats, timedCompatibility_, huntProbe);
+			  decision == nullptr || !collectPathStats_ ? nullptr : &decision->pathSearchStats, timedCompatibility_, huntProbe,
+			  huntLadders);
 	if (invalidated())
 		return false;
 	if (decision != nullptr)
@@ -3592,13 +3595,15 @@ bool NavRoamController::selectCompatibilityGoal(const nav::NavSnapshot &snapshot
 			break;
 		}
 	}
+	if (!corridor.nativeLadders.empty())
+		link = corridor.links.front();
 	if (!corridor.links.empty() && routeState().hasAvoidedLink && routeState().avoidedLink.fromArea == currentArea.area &&
 		link.fromArea == routeState().avoidedLink.fromArea && link.toArea == routeState().avoidedLink.toArea)
 	{
 		nav::NavCorridor alternativeCorridor = {};
 		const nav::NavQueryResult alternativeResult = query.buildAlternativeCorridor(corridor, routeState().avoidedLink,
 			&alternativeCorridor, decision == nullptr || !collectPathStats_ ? nullptr : &decision->pathSearchStats,
-			timedCompatibility_ ? roamGoalState().roamGoalArea : 0U, huntProbe);
+			timedCompatibility_ ? roamGoalState().roamGoalArea : 0U, huntProbe, timedCompatibility_ ? huntLadders : nullptr);
 		if (invalidated())
 			return false;
 		if (alternativeResult != nav::NavQueryResult::Found || alternativeCorridor.links.empty() ||

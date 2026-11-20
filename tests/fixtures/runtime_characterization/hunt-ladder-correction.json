@@ -1,0 +1,46 @@
+{
+  "description": "Hunt initializes the map ladder cache before its first route search.",
+  "platforms": {
+    "linux-x86": {
+      "baseline_sha256": "05d3b4435597f4a029b0dd2b67db9104b09a5a060add6bc6c310a688adcd934b",
+      "corrected_sha256": "c9d12d266df9defaa9f50bcc95410baa29088333b612db14554c0fb47de5a153",
+      "records": 155662
+    },
+    "windows-x86": {
+      "baseline_sha256": "55624799a650d8bc4bb57d80a300056edc84b9a5b0d5af5254fdc544372d42d8",
+      "corrected_sha256": "98d55eea7f01946c6ab7f9716cf9dde12a0ec2caebbdc7d0f3ede82cec18807a",
+      "records": 155662
+    }
+  },
+  "edits": [[1864, 0], [5512, 0], [124518, 0], [126641, 1]],
+  "patterns": [
+    {
+      "linux-x86": {
+        "before": ["call entityOfIndex index=4", "call entityOfIndex index=5"],
+        "after": ["call entityOfIndex index=4", "call entityOfIndex index=5",
+                  "call findEntityByString start=0 field=classname value=func_ladder"]
+      },
+      "windows-x86": {
+        "before": ["call entityOfIndex index=4", "call entityOfIndex index=5"],
+        "after": ["call entityOfIndex index=4", "call entityOfIndex index=5",
+                  "call findEntityByString start=0 field=classname value=func_ladder"]
+      }
+    },
+    {
+      "linux-x86": {
+        "before": ["call traceObjectiveVisibility end=(0x1.4p+6,0x1.fp+5,-0x1.4p+6)",
+                   "call traceObjectiveVisibility end=(0x1.4p+6,0x1.5p+5,-0x1.4p+6)",
+                   "call findEntityByString start=0 field=classname value=func_ladder"],
+        "after": ["call traceObjectiveVisibility end=(0x1.4p+6,0x1.fp+5,-0x1.4p+6)",
+                  "call traceObjectiveVisibility end=(0x1.4p+6,0x1.5p+5,-0x1.4p+6)"]
+      },
+      "windows-x86": {
+        "before": ["call traceObjectiveVisibility end=(0x1.4000000000000p+6,0x1.f000000000000p+5,-0x1.4000000000000p+6)",
+                   "call traceObjectiveVisibility end=(0x1.4000000000000p+6,0x1.5000000000000p+5,-0x1.4000000000000p+6)",
+                   "call findEntityByString start=0 field=classname value=func_ladder"],
+        "after": ["call traceObjectiveVisibility end=(0x1.4000000000000p+6,0x1.f000000000000p+5,-0x1.4000000000000p+6)",
+                  "call traceObjectiveVisibility end=(0x1.4000000000000p+6,0x1.5000000000000p+5,-0x1.4000000000000p+6)"]
+      }
+    }
+  ]
+}

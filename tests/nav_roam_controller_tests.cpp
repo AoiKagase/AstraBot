@@ -1647,6 +1647,70 @@ bool testTimedHuntFollowsSameAreaEndpoint()
 		"Hunt follows the retained same-area endpoint after choosing a different area");
 }
 
+bool testTimedHuntRoutesAcrossNativeLadder()
+{
+	using namespace astrabot;
+	nav::NavDocument document;
+	document.setSourceIdentity({5U, 100U, 200U});
+	document.addArea(area(1U, 0.0f, 64.0f));
+	auto top = area(2U, 0.0f, 64.0f);
+	top.extent.lo.z = 200.0f;
+	top.extent.hi.z = 200.0f;
+	top.northEastZ = 200.0f;
+	top.southWestZ = 200.0f;
+	document.addArea(top);
+	nav::NavSnapshotPublisher publisher;
+	publisher.publish(&document, 1U);
+	const auto snapshot = publisher.snapshot();
+	nav::NavLadder ladder{};
+	ladder.bottom = {32.0f, 32.0f, 0.0f};
+	ladder.top = {32.0f, 32.0f, 200.0f};
+	ladder.length = 200.0f;
+	ladder.bottomArea = 1U;
+	ladder.topAreas[0] = 2U;
+	const nav::NavLadderTopology topology{snapshot.revision(), snapshot.mapGeneration(), {ladder}};
+	compat::ScriptedRandomSource random({
+		compat::RandomTapeEntry::longEntry("CSBOT-HUNT-GOAL", {1U, 1U}, {0U, 0U, 1U}, 0, 1, 1),
+		compat::RandomTapeEntry::floatEntry("CSBOT-PATH-RETRY", {1U, 1U}, {0U, 0U, 1U}, .4f, .6f, .5f)});
+	runtime::NavRoamController controller;
+	controller.setRandomSource(&random);
+	runtime::NavRoamObservation observation{};
+	observation.actor = {1U, 1U};
+	observation.frame = {1U, 1U, 1U};
+	observation.team = 1U;
+	observation.locomotion.position = {32.0f, 32.0f, 0.0f};
+	observation.locomotion.standingClearance = 72.0f;
+	observation.locomotion.crouchingClearance = 36.0f;
+	observation.locomotion.grounded = true;
+	observation.locomotion.timingAvailable = true;
+	observation.locomotion.observedAt = 1.0f;
+	observation.nativeLadders = &topology;
+	nav::LocomotionIntent intent{};
+	runtime::NavRoamDecision decision{};
+	controller.update(snapshot, observation, &intent, &decision);
+	if (!check(controller.hasNativeLadderPath() && decision.targetArea == 2U &&
+				decision.linkHow == 4U && intent.speed == 0.0f && random.verifyComplete(),
+			"Hunt prepares the native ladder corridor to its goal before moving"))
+		return false;
+	class LadderProbe final : public nav::INativeLadderProbe
+	{
+	public:
+		bool current() const override { return true; }
+		bool trace(const nav::NavLadder &, const nav::NavVector &, const nav::NavVector &, float *fraction) override
+		{
+			*fraction = 1.0f;
+			return true;
+		}
+	} probe;
+	observation.frame.tick = 2U;
+	observation.locomotion.observedAt = 1.1f;
+	observation.locomotion.viewYawAvailable = true;
+	observation.nativeLadderProbe = &probe;
+	return check(controller.update(snapshot, observation, &intent, &decision) == runtime::NavRoamResult::IntentReady &&
+			controller.usingNativeLadder() && intent.traversal == nav::TraversalAction::Ladder && random.verifyComplete(),
+		"Hunt starts following the ladder on the next update without selecting another goal");
+}
+
 bool testFollowMovesBeforeReplacingItsRoute()
 {
 	using namespace astrabot;
@@ -3851,7 +3915,8 @@ int main()
 		return 1;
 	}
 	if (!testTimedHuntDrawsBeforePathThrottle() || !testTimedHuntFollowsSameAreaEndpoint() ||
-		!testFollowMovesBeforeReplacingItsRoute() || !testCompatibilityPathRetryUsesEngineTime())
+		!testTimedHuntRoutesAcrossNativeLadder() || !testFollowMovesBeforeReplacingItsRoute() ||
+		!testCompatibilityPathRetryUsesEngineTime())
 	{
 		return 1;
 	}

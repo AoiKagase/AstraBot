@@ -1345,11 +1345,12 @@ NavigationUpdate BotNavigationRuntime::updateNavigation(std::size_t index, const
 			if (navigationState == compat::CompatibilityStateId::Hunt &&
 				services_->service_engineFunctions() && services_->service_engineFunctions()->pfnTraceLine)
 				observation.locomotion.huntPathProbe = &huntProbe;
+			const bool hunting = navigationState == compat::CompatibilityStateId::Hunt && !machine.attackOverlayActive();
 			if (services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility &&
-				(observation.hasObjectiveTarget || observation.followPath))
+				(observation.hasObjectiveTarget || observation.followPath || hunting))
 			{
 				const auto &movement = actors_[index].managedBotMovement;
-				bool needsTopology = observation.followPath || movement.usingNativeLadder() ||
+				bool needsTopology = observation.followPath || hunting || movement.usingNativeLadder() ||
 					(observation.noiseRoute == runtime::NoiseRouteUpdate::Follow && movement.hasNativeLadderPath());
 				if (!needsTopology)
 				{

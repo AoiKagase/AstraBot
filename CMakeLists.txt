@@ -1175,6 +1175,7 @@ if(ASTRABOT_BUILD_TESTS AND ASTRABOT_BUILD_METAMOD)
       --correction "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/runtime_characterization/hunt-reachable-${characterization_platform}.json.gz"
       --correction "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/runtime_characterization/stuck-scheduling-${characterization_platform}.json.gz"
       --correction "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/runtime_characterization/hunt-entry-${characterization_platform}.json.gz"
+      --correction "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/runtime_characterization/hunt-ladder-correction.json"
       --platform "${characterization_platform}"
       --output "${CMAKE_CURRENT_BINARY_DIR}/runtime-characterization.txt")
   add_test(NAME astrabot_runtime_characterization_checker

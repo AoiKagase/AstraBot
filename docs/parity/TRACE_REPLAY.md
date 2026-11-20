@@ -134,6 +134,23 @@ to 10.6 ms.
 The replay covers ground routes. Hunt ladder reachability and world-height
 sampling for a projected endpoint remain outside this replay.
 
+The subsequent Hunt ladder regression exercises a goal reachable only by a
+native ladder. It verifies that Hunt retains the ladder route after planning
+and starts traversing it on the following update. This is an offline check.
+
+### `cs_assault` ladder replay
+
+An isolated Linux x86 ReHLDS replay used the shipped `cs_assault` geometry and
+NAV, with hostage objectives disabled in the scratch BSP. The diagnostic builds
+fixed the Hunt target without skipping the random call. Both bots started at
+`(0, 2810, 372.031)`, took the ladder from area 1201 to 1206, and dismounted
+onto the upper floor at an observed hull minimum of `435.031`.
+
+For descent on the same ladder, both bots planned toward area 1201 and stayed
+on the upper floor at the tested approaches. A second ladder fixture reached
+the lower level without ladder contact in the sampled movement. Physical
+descent parity and the separate 13.005-second Hunt stop remain unverified.
+
 ## Windows x86 round opening Buy
 
 The isolated `de_dust2` replay compared two $800 bots against Win32
