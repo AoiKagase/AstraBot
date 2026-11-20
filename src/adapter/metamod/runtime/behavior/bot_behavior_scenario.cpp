@@ -230,6 +230,52 @@ BotBehaviorRuntime::BehaviorPhaseResult BotBehaviorRuntime::updateBehaviorLifecy
 	return BehaviorPhaseResult::Continue;
 }
 
+bool BotBehaviorRuntime::applyBombPlantNotice(std::size_t index, const compat::StateUpdateContext &context)
+{
+	auto &actor = actors_[index];
+	const auto previous = actor.handledBombPlant;
+	if (!context.alive || !context.roundActive ||
+		(previous.mapGeneration == context.frame.mapGeneration && previous.roundGeneration == context.frame.roundGeneration) ||
+		services_->service_compatibilitySurface().configuration().mode != compat::RuntimeMode::Compatibility ||
+		!services_->observation_bombNoticeKnown(index) || !services_->observation_bombNoticePlanted(index))
+		return false;
+	const auto receipt = reactionContext(index);
+	const auto revision = actor.executionRevision;
+	const auto epoch = actor.managedBotStateMachines.normalStateEpoch();
+	const auto team = services_->observation_resolvePlayerTeam(services_->service_managedBotHandles()[index].entity);
+	if (!executionCurrent(index, receipt, revision) || actor.managedBotStateMachines.normalStateEpoch() != epoch ||
+		(team != kCounterTerroristTeam && team != kTerroristTeam))
+		return false;
+	const bool following = actor.scenarioPlanners.isFollowing();
+	if (team != kCounterTerroristTeam && !following)
+	{
+		actor.handledBombPlant = context.frame;
+		return false;
+	}
+
+	// EVENT_BOMB_PLANTED sends CTs (and followers on either team) to Idle.
+	auto &machine = actor.managedBotStateMachines;
+	const auto previousState = machine.state();
+	if (machine.transition(compat::CompatibilityStateId::Idle, compat::StateTransitionReason::ObjectiveChanged,
+			compat::StateTransitionId::ExplicitStateChange, context) != compat::StateResult::Transitioned)
+		return false;
+	actor.handledBombPlant = context.frame;
+	// A CT diverted by the plant does not return to the unfinished Buy state.
+	actor.buyingComplete = true;
+	if (following)
+		actor.teamworkPolicies.followingStopped(context.timestamp);
+	actor.scenarioPlanners.stopFollowing();
+	actor.scenarioPlanners.cancelHoldPosition();
+	invalidateHelpExecution(index);
+	actor.managedBotObjectiveTargets = {};
+	actor.managedBotObjectiveActions = {};
+	actor.enemyReaction.onStateChange(reactionContext(index), previousState, machine.state());
+	services_->applyNavigationRequest({index, NavigationRequestKind::ClearStep});
+	services_->applyNavigationRequest({index, NavigationRequestKind::DestroyPath});
+	services_->applyNavigationRequest({index, NavigationRequestKind::ClearFailure});
+	return true;
+}
+
 void BotBehaviorRuntime::updateScenarioState(std::size_t index, const runtime::MovementPhysicsState &before,
 	compat::StateUpdateContext &context, compat::StateBehaviorInput &stateBehavior, PlantMoveChatter *plantMove)
 {
@@ -786,7 +832,10 @@ void BotBehaviorRuntime::observeScenarioEntities(std::size_t index, const runtim
 						static_cast<std::uint32_t>(entityIndex), static_cast<std::uint32_t>(entity->serialnumber) + 1U};
 				}
 			}
-			if (entityIndex <= services_->service_globals()->maxClients && (entity->v.flags & FL_FAKECLIENT) == 0 &&
+			if (entityIndex <= services_->service_globals()->maxClients && entityIndex <= kMaximumClientSlots &&
+				static_cast<std::uint32_t>(entityIndex) != context.actor.slot &&
+				!services_->service_managedBotSlots()[static_cast<std::size_t>(entityIndex - 1)] &&
+				(entity->v.flags & (FL_CLIENT | FL_FAKECLIENT | FL_DORMANT)) == FL_CLIENT &&
 				services_->observation_resolvePlayerTeam(entity) == observedTeam && entity->v.deadflag == DEAD_NO &&
 				entity->v.health > 0.0f)
 			{

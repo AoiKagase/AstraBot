@@ -1403,6 +1403,31 @@ BotBehaviorRuntime::BehaviorPhaseResult BotBehaviorRuntime::decideObjectiveActio
 	refreshManagedTeamObjectiveAssignments(index);
 	const team::TeamObjectiveAssignment *objectiveAssignment = findManagedTeamObjectiveAssignment(actor);
 
+	const bool compatibility =
+		services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility;
+	const auto &machine = actors_[index].managedBotStateMachines;
+	if (compatibility && machine.state() == compat::CompatibilityStateId::DefuseBomb &&
+		!machine.attackOverlayActive())
+	{
+		// DefuseBomb owns its look and use commands even if the route and
+		// team assignment have been cleared on arrival.
+		proposal.stopForWeapon = true;
+		proposal.movementButtons = static_cast<std::uint16_t>(
+			(proposal.movementButtons & ~(IN_JUMP | IN_FORWARD | IN_BACK | IN_MOVELEFT | IN_MOVERIGHT)) | IN_DUCK);
+		actors_[index].managedBotObjectiveActions.active = false;
+		const auto &bomb = services_->observation_objectiveKnowledge(index)[1U];
+		const auto &scenario = actors_[index].scenarioDecisions;
+		if (bomb.entity.id != 0U && scenario.action != compat::ScenarioAction::Guard &&
+			(!objectiveAssignment || objectiveAssignment->kind != team::TeamObjectiveKind::GuardBombDefuser))
+		{
+			proposal.hasUseEntityLook = true;
+			proposal.useEntityLookTarget = {bomb.position.x, bomb.position.y, bomb.position.z};
+			if (machine.stateTimestamp() != services_->service_globals()->time)
+				proposal.kind = ActionKind::Defuse;
+		}
+		return BehaviorPhaseResult::Complete;
+	}
+
 	if (!prepareManagedPerception(index, &snapshot, &targetActor, &targetPosition))
 	{
 		actors_[index].managedBotObjectiveActions.active = false;
@@ -1436,8 +1461,7 @@ BotBehaviorRuntime::BehaviorPhaseResult BotBehaviorRuntime::decideObjectiveActio
 	const world::ActorObservation *actionTarget = nullptr;
 	const bool targetCurrentlyVisible = targetActor.isValid() &&
 		snapshot.findActor(targetActor, &actionTarget) == world::ContactLookupResult::Found && actionTarget && actionTarget->visible;
-	if ((!targetActor.isValid() || !targetCurrentlyVisible) &&
-		services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility)
+	if ((!targetActor.isValid() || !targetCurrentlyVisible) && compatibility)
 	{
 		if (cancelHeldGrenade(index, movementAngles, proposal))
 			return BehaviorPhaseResult::Complete;
@@ -1452,7 +1476,8 @@ BotBehaviorRuntime::BehaviorPhaseResult BotBehaviorRuntime::decideObjectiveActio
 					updateGuardLook(ctx);
 				return BehaviorPhaseResult::Complete;
 			}
-			if (scenario.action == compat::ScenarioAction::Use && scenario.hasTarget &&
+			if (scenario.action == compat::ScenarioAction::Use &&
+				scenario.state != compat::CompatibilityStateId::DefuseBomb && scenario.hasTarget &&
 				scenario.target.entity.isValid() && services_->service_engineFunctions() != nullptr &&
 				services_->service_engineFunctions()->pfnPEntityOfEntIndex != nullptr &&
 				services_->service_globals() != nullptr)
@@ -1471,7 +1496,6 @@ BotBehaviorRuntime::BehaviorPhaseResult BotBehaviorRuntime::decideObjectiveActio
 						proposal.viewAngles.yaw = std::atan2(dy, dx) * 180.0f / 3.14159265358979323846f;
 						return BehaviorPhaseResult::Complete;
 					}
-					auto &machine = actors_[index].managedBotStateMachines;
 					const float now = services_->service_globals()->time;
 					proposal.stopForWeapon = true;
 					if (machine.state() != compat::CompatibilityStateId::UseEntity || machine.attackOverlayActive() ||
@@ -1717,7 +1741,8 @@ BotBehaviorRuntime::BehaviorPhaseResult BotBehaviorRuntime::decideObjectiveActio
 			{
 				objectiveKind = objectives::ObjectiveKind::Plant;
 			}
-			else if (objectiveAssignment != nullptr && objectiveAssignment->kind == team::TeamObjectiveKind::DefuseC4 &&
+			else if (!compatibility &&
+				objectiveAssignment != nullptr && objectiveAssignment->kind == team::TeamObjectiveKind::DefuseC4 &&
 				plantedBomb != nullptr && teamRole == objectives::TeamRole::CounterTerrorist)
 			{
 				objectiveKind = objectives::ObjectiveKind::Defuse;
@@ -1728,12 +1753,6 @@ BotBehaviorRuntime::BehaviorPhaseResult BotBehaviorRuntime::decideObjectiveActio
 			{
 				objectiveKind = objectives::ObjectiveKind::None;
 			}
-			// MoveTo owns the approach. A legacy wider action radius must not stop
-			// an actor before its observed scenario has entered the defuse state.
-			if (objectiveKind == objectives::ObjectiveKind::Defuse &&
-				services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility &&
-				actors_[index].managedBotStateMachines.state() != compat::CompatibilityStateId::DefuseBomb)
-				objectiveKind = objectives::ObjectiveKind::None;
 			if (objectiveKind == objectives::ObjectiveKind::Plant || objectiveKind == objectives::ObjectiveKind::Defuse)
 			{
 				nav::NavVector objectivePosition = {0.0f, 0.0f, 0.0f};
@@ -1756,12 +1775,7 @@ BotBehaviorRuntime::BehaviorPhaseResult BotBehaviorRuntime::decideObjectiveActio
 					const float dx = objectivePosition.x - handle.entity->v.origin.x;
 					const float dy = objectivePosition.y - handle.entity->v.origin.y;
 					const float dz = objectivePosition.z - handle.entity->v.origin.z;
-					if ((objectiveKind == objectives::ObjectiveKind::Defuse &&
-							services_->service_compatibilitySurface().configuration().mode ==
-								compat::RuntimeMode::Compatibility &&
-							actors_[index].managedBotStateMachines.state() ==
-								compat::CompatibilityStateId::DefuseBomb) ||
-						dx * dx + dy * dy + dz * dz <= kObjectiveInteractionRange * kObjectiveInteractionRange)
+					if (dx * dx + dy * dy + dz * dz <= kObjectiveInteractionRange * kObjectiveInteractionRange)
 					{
 						ManagedObjectiveActionState &actionState = actors_[index].managedBotObjectiveActions;
 						const bool planting = objectiveAssignment->kind == team::TeamObjectiveKind::PlantC4;
@@ -1902,12 +1916,6 @@ BotBehaviorRuntime::BehaviorPhaseResult BotBehaviorRuntime::decideObjectiveActio
 						else
 						{
 							proposal.kind = ActionKind::Defuse;
-							if (services_->service_compatibilitySurface().configuration().mode ==
-								compat::RuntimeMode::Compatibility)
-								proposal.movementButtons = static_cast<std::uint16_t>(
-									(proposal.movementButtons &
-										~(IN_JUMP | IN_FORWARD | IN_BACK | IN_MOVELEFT | IN_MOVERIGHT)) |
-									IN_DUCK);
 						}
 						proposal.viewAngles = {-kRadiansToDegrees * std::atan2(dz, std::sqrt(dx * dx + dy * dy)),
 							kRadiansToDegrees * std::atan2(dy, dx), movementAngles.roll};

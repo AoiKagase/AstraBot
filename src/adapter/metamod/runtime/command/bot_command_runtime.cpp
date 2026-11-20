@@ -295,7 +295,8 @@ void BotCommandRuntime::advanceUseEntityLook(std::size_t index, FakeClientHandle
 	if (!actor.useEntityLookActive)
 		return;
 	const auto &machine = services_->behavior_managedBotStateMachines(index);
-	if (machine.state() != compat::CompatibilityStateId::UseEntity || machine.attackOverlayActive() ||
+	if ((machine.state() != compat::CompatibilityStateId::UseEntity &&
+			machine.state() != compat::CompatibilityStateId::DefuseBomb) || machine.attackOverlayActive() ||
 		handle.entity->v.deadflag != DEAD_NO || handle.entity->v.health <= 0.0f)
 	{
 		actor.useEntityLookActive = false;
@@ -964,13 +965,22 @@ void BotCommandRuntime::finishMovementCommand(std::size_t index, FakeClientHandl
 	{
 		commandSpeed = handle.entity->v.maxspeed;
 		const auto &goal = services_->behavior_managedBotObjectiveTargets(index);
-		const float x = goal.target.x - before.origin.x, y = goal.target.y - before.origin.y;
 		const bool finalArea = roamDecision.currentArea != 0U && roamDecision.currentArea == roamDecision.goalArea;
+		const bool approachingDefuseEndpoint = machine.state() == compat::CompatibilityStateId::MoveTo &&
+			machine.task() == compat::CompatibilityTaskId::DefuseBomb && roamDecision.goalPresent &&
+			roamDecision.corridorAreaCount != 0U && roamDecision.corridorIndex + 1U >= roamDecision.corridorAreaCount;
+		const auto &target = approachingDefuseEndpoint ? locomotionIntent.targetPosition : goal.target;
+		const float x = target.x - before.origin.x;
+		const float y = target.y - before.origin.y;
+		const float footOffset = handle.entity->v.mins.z < 0.0f ? handle.entity->v.mins.z
+			: before.ducked ? -18.0f : -36.0f;
+		const float z = approachingDefuseEndpoint ? target.z - (before.origin.z + footOffset) : 0.0f;
 		constexpr float kGoalSlowdownDistance = 200.0f;
 #define ASTRABOT_BOT_COMMAND_RUNTIME_GOAL_SLOWDOWN_FACTOR 0.4f
 		const bool following = machine.state() == compat::CompatibilityStateId::Follow && !machine.attackOverlayActive();
 		const bool shouldWalk = !following && (huntEndpoint ? locomotionIntent.walkingToHuntEndpoint
-			: goal.valid && finalArea && x * x + y * y < kGoalSlowdownDistance * kGoalSlowdownDistance);
+			: (approachingDefuseEndpoint || (goal.valid && finalArea)) &&
+				x * x + y * y + z * z < kGoalSlowdownDistance * kGoalSlowdownDistance);
 		if (!locomotionIntent.nativeLadderControl && shouldWalk &&
 			locomotionIntent.posture != nav::LocomotionPosture::Crouching)
 			commandSpeed *= ASTRABOT_BOT_COMMAND_RUNTIME_GOAL_SLOWDOWN_FACTOR;

@@ -1296,17 +1296,21 @@ bool testActualHelpMovement(astrabot::metamod::PluginRuntime &runtime, enginefun
 				return false;
 			}
 		}
+		const auto attackBeforePlant = receiver.attackEntryEpoch();
 		runtime.onMessageBegin(MSG_ALL, 98, nullptr, nullptr);
 		runtime.onWriteByte(4);
 		runtime.onWriteString("#Bomb_Planted");
 		runtime.onMessageEnd();
 		step();
+		ok = check((receiver.state() == compat::CompatibilityStateId::Idle ||
+						receiver.state() == compat::CompatibilityStateId::Hunt) &&
+					 receiver.task() == compat::CompatibilityTaskId::SeekAndDestroy &&
+					 !navigation.behavior_managedBotObjectiveTargets(1).valid,
+				 "the planted-bomb notice clears the CT's previous Help task and route") && ok;
 		if (attackRetained)
 		{
-			ok = check(receiver.attackOverlayActive() && receiver.state() == compat::CompatibilityStateId::MoveTo &&
-						 navigation.behavior_managedBotObjectiveTargets(1).valid,
-					 "planted-bomb notice does not cancel combat or update the suspended Help MoveTo task") &&
-				ok;
+			ok = check(!receiver.attackOverlayActive() || receiver.attackEntryEpoch() != attackBeforePlant,
+					 "the planted-bomb transition ends the attack that had suspended the CT's old task") && ok;
 			for (unsigned enemy = 2; enemy <= 3; ++enemy)
 			{
 				gEntities[enemy].v.health = 0;
@@ -1321,14 +1325,8 @@ bool testActualHelpMovement(astrabot::metamod::PluginRuntime &runtime, enginefun
 			for (unsigned i = 0; i < 8 && receiver.attackOverlayActive(); ++i)
 				step();
 			ok = check(!receiver.attackOverlayActive() && !navigation.behavior_managedBotObjectiveTargets(1).valid,
-					 "retained CT MoveTo task observes planted bomb after actual enemy death ends attack") &&
-				ok;
+					 "enemy death ends any new attack without restoring the CT's old Help task") && ok;
 		}
-		else
-			ok = check(receiver.state() == compat::CompatibilityStateId::Idle &&
-						 !navigation.behavior_managedBotObjectiveTargets(1).valid,
-					 "actual CT planted-bomb notice abandons a preserved ordinary assistance task before navigation") &&
-				ok;
 	}
 	if (deadReceiver && moved)
 	{
@@ -3388,6 +3386,12 @@ bool testStatementQueue(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t
 			compat::CompatibilityTaskId::FindTickingBomb; };
 		if (requestedSiteFixture)
 		{
+			const auto requesterOrigin = gEntities[1].v.origin;
+			gEntities[1].v.origin.x = -1000.0f;
+			runtime.onEmitSound(&gPlantedBomb, "weapons/c4_beep1.wav", 1, 1);
+			gEntities[1].v.origin = requesterOrigin;
+			// Preserve the listener's knowledge while the unsolicited report expires.
+			globals.time += 3.125f;
 			for (int i = 0; i < 96; ++i)
 			{
 				gEntities[0].v.v_angle.y = 0;
@@ -3397,7 +3401,7 @@ bool testStatementQueue(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t
 				std::make_pair(2, std::string("radio/test/where.wav")));
 			return check(where != reportAudio.end() && std::find(where, reportAudio.end(),
 				std::make_pair(1, std::string("radio/test/planted.wav"))) != reportAudio.end(),
-				"a searching CT asks where the bomb is and the CT that saw it replies");
+				"a searching CT asks where the bomb is and the CT that heard it replies");
 		}
 		for (int i = 0; i < 40 && !(searching(0) && searching(1)); ++i)
 			step(.125f);

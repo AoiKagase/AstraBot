@@ -85,6 +85,7 @@ float gLastRunPlayerMoveForward = 0.0f;
 float gLastRunPlayerMoveSide = 0.0f;
 float gLastRunPlayerMoveUp = 0.0f;
 float gLastRunPlayerMoveYaw = 0.0f;
+float gLastRunPlayerMovePitch = 0.0f;
 int gLastRunPlayerMoveActor = 0;
 float gAvoidanceSide[5] = {};
 float gAvoidanceForward[5] = {};
@@ -544,6 +545,7 @@ void runPlayerMove(
 	gLastRunPlayerMoveSide = side;
 	gLastRunPlayerMoveUp = up;
 	gLastRunPlayerMoveYaw = angles[1];
+	gLastRunPlayerMovePitch = angles[0];
 	gLastRunPlayerMoveActor = indexOfEdict(entity);
 	if (gLastRunPlayerMoveActor >= 1 && gLastRunPlayerMoveActor <= 5)
 	{
@@ -1669,6 +1671,27 @@ bool testRuntimeBombSiteApproach(
 					 "CT cannot defuse unobserved planted entity even at its hidden position") &&
 			passed;
 	}
+	if (!astrabot_test::runtimeCharacterization().enabled())
+	{
+		engine.pfnTraceLine = &traceObjectiveVisibility;
+		gObjectiveTraceVisible = true;
+		runtime.giveEnginePointers(&engine, &globals);
+		runtime.onMessageBegin(MSG_ALL, 98, nullptr, nullptr);
+		runtime.onWriteByte(4);
+		runtime.onWriteString("#Bomb_Planted");
+		runtime.onMessageEnd();
+		gEntities[0].v.v_angle = Vector(0.0f, 0.0f, 0.0f);
+		gEntities[0].v.origin.x -= 16.0f;
+		gMovementLogs.clear();
+		for (int frame = 0; frame < 12; ++frame)
+			tick(0.1f);
+		const auto assignment = std::find_if(gMovementLogs.begin(), gMovementLogs.end(), [](const auto &message) {
+			return message.find("team_objective ") == 0U && message.find(" kind=3 ") != std::string::npos;
+		});
+		passed = check(assignment == gMovementLogs.end(),
+			"CT cannot learn the planted location from visual contact alone") && passed;
+		gObjectiveTraceVisible = false;
+	}
 	gEntities[0].v.origin = ctBeforeDiscovery;
 	runtime.onEmitSound(&gPlantedBomb, "weapons/c4_beep1.wav", 1.0f, 1.0f);
 	gMovementLogs.clear();
@@ -1738,11 +1761,22 @@ bool testRuntimeBombSiteApproach(
 		gMovementLogs.clear();
 	}
 	bool defused = false;
+	bool trackedBombDuringUse = false;
+	const auto previousViewOffset = gEntities[0].v.view_ofs;
+	if (checkNativeReload)
+		gEntities[0].v.view_ofs.z = 17.0f;
 	for (int frame = 0; frame < (checkNativeReload ? 12 : 6); ++frame)
 	{
 		tick(0.1f);
-		defused = defused || (gLastRunPlayerMoveButtons & static_cast<unsigned short>(IN_USE)) != 0U;
+		const bool used = (gLastRunPlayerMoveButtons & IN_USE) != 0U;
+		if (used && defused && gLastRunPlayerMovePitch > 5.0f)
+			trackedBombDuringUse = true;
+		defused = defused || used;
 	}
+	gEntities[0].v.view_ofs = previousViewOffset;
+	if (checkNativeReload)
+		passed = check(trackedBombDuringUse, "DefuseBomb keeps looking below the eyes on subsequent USE commands") &&
+			passed;
 	gameDll.pfnUpdateClientData = updateClientData;
 	gameDll.pfnGetWeaponData = getWeaponData;
 	passed = check(defused, "public CT converges to existing IN_USE defuse at human-planted C4") && passed;
@@ -2255,6 +2289,12 @@ int main(int argc, char **argv)
 			return 1;
 	}
 	gObjectiveTraceVisible = true;
+	runtime.onMessageBegin(MSG_ALL, 95, nullptr, nullptr);
+	runtime.onWriteCoord(gPlantedBomb.v.origin.x);
+	runtime.onWriteCoord(gPlantedBomb.v.origin.y);
+	runtime.onWriteCoord(gPlantedBomb.v.origin.z);
+	runtime.onWriteByte(1);
+	runtime.onMessageEnd();
 	runtime.onCmdStart(&gEntities[1], static_cast<std::uint16_t>(IN_USE));
 	gFindEntityByStringCount = 0;
 	gRunPlayerMoveCount = 0;

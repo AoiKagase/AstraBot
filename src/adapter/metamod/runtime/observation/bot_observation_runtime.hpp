@@ -325,6 +325,8 @@ private:
 	std::uint32_t soundSequence_ = 0U;
 	compat::GunshotEventCatalog gunshotEvents_{};
 	void recordSound(world::AudibleEvent event, const edict_t *source, bool fallbackWeapon = false);
+	void observePlantedBombAnnouncement(world::WorldVector origin, world::FrameIdentity frame);
+	void rememberPlantedBomb(world::EntityKey bomb, world::WorldVector origin, float now, bool announcement);
 	bool hasNativeWeaponEvents(const edict_t *source, int slot) const;
 	struct NativeWeaponSource
 	{

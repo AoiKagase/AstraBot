@@ -1799,9 +1799,14 @@ void PluginRuntime::updateManagedBots()
 		}
 		navigation_.observeFullUpdateMotion(index, handle, before, configuration);
 		BotBehaviorRuntime::PlantMoveChatter plantMove{};
-		behavior_.updateManagedBotCompatibilityState(index, before, &plantMove);
+		// CSBot's full Update returns on bot_stop before it can choose a task.
+		const bool stateUpdatePaused =
+			configuration.mode == compat::RuntimeMode::Compatibility && configuration.botStop != 0.0f;
+		if (!stateUpdatePaused)
+			behavior_.updateManagedBotCompatibilityState(index, before, &plantMove);
 		behavior_.updateOutgoingPublicRadio(index, &plantMove);
-		if (behavior_.managedBotStateMachines(index).behaviorDecision().action == compat::StateAction::Buy)
+		if (!stateUpdatePaused &&
+			behavior_.managedBotStateMachines(index).behaviorDecision().action == compat::StateAction::Buy)
 		{
 			behavior_.updatePublicBuying(index);
 		}

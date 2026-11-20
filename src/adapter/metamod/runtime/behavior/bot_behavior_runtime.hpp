@@ -325,6 +325,7 @@ private:
 	bool cancelHeldGrenade(std::size_t index, const runtime::ViewAngles &movementAngles, ActionProposal &proposal);
 	BehaviorPhaseResult updateBehaviorLifecycle(
 		std::size_t index, const runtime::MovementPhysicsState &before, compat::StateUpdateContext &context);
+	bool applyBombPlantNotice(std::size_t index, const compat::StateUpdateContext &context);
 	bool shouldBuy(std::size_t index, const compat::StateUpdateContext &context);
 	bool usesCsBotBuying() const;
 	void updateNoiseInvestigation(std::size_t index, const runtime::MovementPhysicsState &before,
@@ -709,6 +710,7 @@ private:
 		ManagedObjectiveActionState managedBotObjectiveActions{};
 		compat::CompatibilityStateMachine managedBotStateMachines{};
 		compat::ScenarioBehaviorPlanner scenarioPlanners{};
+		world::FrameIdentity handledBombPlant{};
 		compat::ScenarioBehaviorDecision scenarioDecisions{};
 		runtime::LifecycleGeneration managedBotStateRounds{};
 		bool managedBotWasDead{};

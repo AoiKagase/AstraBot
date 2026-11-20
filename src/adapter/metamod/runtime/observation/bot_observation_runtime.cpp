@@ -684,29 +684,77 @@ void BotObservationRuntime::onEmitSoundAt(edict_t *entity, const char *sample, f
 	recordSound(event, entity, fallbackWeapon);
 	if (bombBeep && entityIndex > 0)
 	{
-		for (std::size_t index = 0U; index < services_->service_managedBotHandles().size(); ++index)
-		{
-			const auto &handle = services_->service_managedBotHandles()[index];
-			if (!services_->service_managedBotSlots()[index] || handle.entity == nullptr ||
-				handle.entity->v.deadflag != DEAD_NO)
-			{
-				continue;
-			}
-			const float dx = handle.entity->v.origin.x - origin.x;
-			const float dy = handle.entity->v.origin.y - origin.y;
-			const float dz = handle.entity->v.origin.z - origin.z;
-			if (dx * dx + dy * dy + dz * dz < kBombBeepKnowledgeDistance * kBombBeepKnowledgeDistance)
-			{
-				auto &knowledge = actors_[index].objectiveKnowledge[1U];
-				const world::EntityKey bomb{static_cast<std::uint32_t>(entityIndex),
-					static_cast<std::uint32_t>(entity->serialnumber)};
-				if (!(knowledge.entity == bomb))
-					knowledge.firstHeardAt = event.timestampSeconds;
-				knowledge.entity = bomb;
-				knowledge.position = origin;
-			}
-		}
+		rememberPlantedBomb({static_cast<std::uint32_t>(entityIndex),
+			static_cast<std::uint32_t>(entity->serialnumber)}, origin, event.timestampSeconds, false);
 		services_->behavior_invalidateObjectiveAssignments();
+	}
+}
+
+void BotObservationRuntime::rememberPlantedBomb(world::EntityKey bomb, world::WorldVector origin, float now,
+	bool announcement)
+{
+	const bool compatibility =
+		services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility;
+	for (std::size_t index = 0U; index < services_->service_managedBotHandles().size(); ++index)
+	{
+		const auto *actor = services_->service_managedBotHandles()[index].entity;
+		if (!services_->service_managedBotSlots()[index] || !actor || actor->v.deadflag != DEAD_NO)
+			continue;
+		const auto &state = actors_[index];
+		const bool compatibilityCt = compatibility &&
+			(state.publicTeamKnown ? state.teamInfoTeams : actor->v.team) == kCounterTerroristTeam;
+		auto &knowledge = actors_[index].objectiveKnowledge[1U];
+		if ((announcement && !compatibilityCt) || (compatibilityCt && knowledge.entity == bomb))
+			continue;
+		const float dx = actor->v.origin.x - origin.x;
+		const float dy = actor->v.origin.y - origin.y;
+		const float dz = actor->v.origin.z - origin.z;
+		if (dx * dx + dy * dy + dz * dz < kBombBeepKnowledgeDistance * kBombBeepKnowledgeDistance)
+		{
+			if (!(knowledge.entity == bomb))
+				knowledge.firstHeardAt = now;
+			knowledge.entity = bomb;
+			knowledge.position = origin;
+		}
+	}
+}
+
+void BotObservationRuntime::observePlantedBombAnnouncement(world::WorldVector origin, world::FrameIdentity frame)
+{
+	const auto *engine = services_->service_engineFunctions();
+	const auto *globals = services_->service_globals();
+	if (!globals || !engine || !engine->pfnPEntityOfEntIndex || !engine->pfnSzFromIndex ||
+		services_->service_compatibilitySurface().configuration().mode != compat::RuntimeMode::Compatibility)
+		return;
+	const auto current = [&] {
+		const auto &life = services_->service_lifecycle();
+		return services_->service_globals() == globals && services_->service_engineFunctions() == engine &&
+			life.isMapActive() &&
+			frame == world::FrameIdentity{life.mapGeneration(), life.roundGeneration(), services_->service_adapterFrameCount()};
+	};
+	const int maxEntities = globals->maxEntities;
+	for (int id = globals->maxClients + 1; id <= maxEntities && current(); ++id)
+	{
+		const auto *entity = engine->pfnPEntityOfEntIndex(id);
+		if (!current())
+			return;
+		if (!entity || entity->free || entity->v.origin.x != origin.x ||
+			entity->v.origin.y != origin.y || entity->v.origin.z != origin.z)
+			continue;
+		const auto serial = entity->serialnumber;
+		const char *classname = engine->pfnSzFromIndex(entity->v.classname);
+		if (!current() || entity->free || entity->serialnumber != serial)
+			return;
+		const char *model = engine->pfnSzFromIndex(entity->v.model);
+		if (!current() || entity->free || entity->serialnumber != serial)
+			return;
+		if (classname && model && std::strcmp(classname, "grenade") == 0 && std::strstr(model, "w_c4.mdl"))
+		{
+			rememberPlantedBomb({static_cast<std::uint32_t>(id), static_cast<std::uint32_t>(serial)},
+				origin, globals->time, true);
+			services_->behavior_invalidateObjectiveAssignments();
+			return;
+		}
 	}
 }
 
@@ -779,6 +827,17 @@ void BotObservationRuntime::capturePublicMessage()
 	const auto &v = publicMessageValues_;
 	if (std::strcmp(name, "BombDrop") == 0 || std::strcmp(name, "BombPickup") == 0)
 	{
+		const bool drop = std::strcmp(name, "BombDrop") == 0 && count == kBombDropFieldCount &&
+			publicMessageCoordMask_ == kBombDropCoordinateMask && publicMessageStringMask_ == 0U &&
+			(v[3] == kDroppedBombState || v[3] == kPlantedBombState);
+		// The normal plant broadcasts the C4's initial position. CSBot handles it
+		// as an immediate beep for nearby CTs before the first periodic sound.
+		if (drop && v[3] == kPlantedBombState && !publicMessageTarget_ && publicMessageDestination_ == MSG_ALL)
+		{
+			observePlantedBombAnnouncement(
+				{publicMessageCoords_[0], publicMessageCoords_[1], publicMessageCoords_[2]}, publicMessageFrame_);
+			return;
+		}
 		// Vanilla sends radar updates individually to T. Never redistribute a
 		// message sent to a human, CT, or an unrelated/reused client slot.
 		if (!publicMessageActor_.isValid() || publicMessageTarget_ == nullptr ||
@@ -792,9 +851,7 @@ void BotObservationRuntime::capturePublicMessage()
 			return;
 		if (std::strcmp(name, "BombPickup") == 0 && count == 0U)
 			actors_[index].publicBombRadars.reset();
-		else if (std::strcmp(name, "BombDrop") == 0 && count == kBombDropFieldCount &&
-			publicMessageCoordMask_ == kBombDropCoordinateMask && publicMessageStringMask_ == 0U &&
-			(v[3] == kDroppedBombState || v[3] == kPlantedBombState))
+		else if (drop)
 		{
 			if (v[3] == kDroppedBombState)
 				actors_[index].publicBombRadars.drop(
@@ -1493,10 +1550,17 @@ bool BotObservationRuntime::observeObjective(
 	const world::EntityKey key{
 		static_cast<std::uint32_t>(services_->service_engineFunctions()->pfnIndexOfEdict(entity)),
 		static_cast<std::uint32_t>(entity->serialnumber)};
+	const auto &state = actors_[index];
+	const bool plantedCt = planted && compatibility &&
+		(state.publicTeamKnown ? state.teamInfoTeams : handle.entity->v.team) == kCounterTerroristTeam;
+	if (plantedCt && (key.id == 0U || !(knowledge.entity == key)))
+		return false;
 	const float eye[] = {handle.entity->v.origin.x + handle.entity->v.view_ofs.x,
 		handle.entity->v.origin.y + handle.entity->v.view_ofs.y,
 		handle.entity->v.origin.z + handle.entity->v.view_ofs.z};
-	const float target[] = {entity->v.origin.x, entity->v.origin.y, entity->v.origin.z};
+	const float target[] = {plantedCt ? knowledge.position.x : entity->v.origin.x,
+		plantedCt ? knowledge.position.y : entity->v.origin.y,
+		plantedCt ? knowledge.position.z : entity->v.origin.z};
 	const float dx = target[0] - eye[0];
 	const float dy = target[1] - eye[1];
 	const float length = std::hypot(dx, dy);
@@ -1539,14 +1603,14 @@ bool BotObservationRuntime::observeObjective(
 			eye, target, kObservationTraceIgnoringActors, handle.entity, &trace);
 		visible = trace.flFraction == 1.0f || trace.pHit == entity;
 	}
-	if (visible)
+	if (visible && !plantedCt)
 	{
 		if (!(knowledge.entity == key))
 			knowledge.firstHeardAt = -1.0f;
 		knowledge.entity = key;
 		knowledge.position = {target[0], target[1], target[2]};
 	}
-	if (!visible && (!key.isValid() || knowledge.entity.id != key.id || knowledge.entity.generation != key.generation))
+	if (!visible && !plantedCt && (!key.isValid() || !(knowledge.entity == key)))
 		return false;
 	*position = knowledge.position;
 	if (currentlyVisible != nullptr)

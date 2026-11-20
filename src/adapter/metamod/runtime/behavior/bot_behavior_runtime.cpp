@@ -70,7 +70,10 @@ void BotBehaviorRuntime::updateManagedBotCompatibilityState(
 	compat::StateBehaviorInput stateBehavior = {};
 	compat::StateUpdateContext context = makeManagedBotStateContext(index, before, &stateBehavior);
 
-	if (updateBehaviorLifecycle(index, before, context) == BehaviorPhaseResult::Complete)
+	const auto lifecycleResult = updateBehaviorLifecycle(index, before, context);
+	if (applyBombPlantNotice(index, context))
+		context = makeManagedBotStateContext(index, before, &stateBehavior);
+	if (lifecycleResult == BehaviorPhaseResult::Complete)
 	{
 		return;
 	}
@@ -158,6 +161,7 @@ void BotBehaviorRuntime::onActorRemoved(std::size_t index)
 	actors_[index].managedBotObjectiveTargets = {};
 	actors_[index].managedBombApproaches = {};
 	actors_[index].managedBotStateMachines = compat::CompatibilityStateMachine();
+	actors_[index].handledBombPlant = {};
 	actors_[index].managedBotStateRounds = 0U;
 	actors_[index].managedBotWasDead = false;
 }

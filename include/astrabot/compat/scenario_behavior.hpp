@@ -218,6 +218,12 @@ public:
 		followingTeammate_ = true;
 	}
 
+	void stopFollowing()
+	{
+		following_ = false;
+		leader_ = {};
+	}
+
 	void holdPosition(const ScenarioTarget &position, float duration = -1.0f, float ambushDelay = 0.0f,
 		bool keepFollowing = false)
 	{
