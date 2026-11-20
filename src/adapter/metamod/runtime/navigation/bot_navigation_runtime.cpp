@@ -1263,11 +1263,13 @@ NavigationUpdate BotNavigationRuntime::updateNavigation(std::size_t index, const
 	const bool enteredHuntThisUpdate = navigationState == compat::CompatibilityStateId::Hunt &&
 		machine.stateTimestamp() == observation.locomotion.observedAt &&
 		!services_->behavior_scenarioDecisions(index).startedHuntFromRadio;
+	const bool enteredFollowCover = navigationState == compat::CompatibilityStateId::Hide &&
+		machine.task() == compat::CompatibilityTaskId::Follow && machine.stateTimestamp() == observation.locomotion.observedAt;
 	const bool stateHold =
 		services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility &&
 		(navigationState == compat::CompatibilityStateId::DefuseBomb ||
 			navigationState == compat::CompatibilityStateId::PlantBomb ||
-			navigationState == compat::CompatibilityStateId::Buy || enteredHuntThisUpdate ||
+			navigationState == compat::CompatibilityStateId::Buy || enteredHuntThisUpdate || enteredFollowCover ||
 			(navigationState == compat::CompatibilityStateId::Idle && !observation.hasObjectiveTarget) ||
 			(navigationState == compat::CompatibilityStateId::Hide &&
 				services_->behavior_scenarioDecisions(index).action == compat::ScenarioAction::Guard &&
@@ -1567,6 +1569,24 @@ void BotNavigationRuntime::observeResetHud(std::size_t index)
 {
 	actors_[index].knownNavArea.reset();
 	actors_[index].deathDangerRecorded = false;
+}
+
+bool BotNavigationRuntime::tryFollowCoverPath(std::size_t index, const nav::NavSnapshot &snapshot,
+	world::FrameIdentity frame, nav::AreaId start, nav::AreaId goal, const nav::NavVector &point,
+	const std::function<bool()> &current)
+{
+	nav::NavLadderTopology topology;
+	if (!ladderTopology(&topology) || !current())
+		return false;
+	const auto costs = managedPathCostContext(index);
+	if (!current())
+		return false;
+	const auto actor = services_->service_managedBotHandles()[index].actor;
+	auto &movement = actors_[index].managedBotMovement;
+	movement.setRandomSource(&services_->service_compatibilityRandomSource());
+	movement.setPathCostContext(costs);
+	return movement.tryFollowCoverPath(snapshot, actor, frame, services_->service_globals()->time,
+		start, goal, point, topology, current);
 }
 
 void BotNavigationRuntime::applyBehaviorRequest(const NavigationRequest &request)

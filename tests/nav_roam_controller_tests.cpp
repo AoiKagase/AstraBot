@@ -1694,6 +1694,12 @@ bool testFollowMovesBeforeReplacingItsRoute()
 	observation.objectiveTarget = {-32.0f, 32.0f, 0.0f};
 	observation.frame.tick = 2U;
 	observation.locomotion.observedAt = 1.55f;
+	const nav::NavLadderTopology topology{publisher.snapshot().revision(), publisher.snapshot().mapGeneration(), {}};
+	if (!check(!controller.tryFollowCoverPath(publisher.snapshot(), observation.actor, observation.frame,
+				observation.locomotion.observedAt, 1U, 3U, observation.objectiveTarget, topology, [] { return true; }) &&
+			controller.hasPath() && random.position() == 1U,
+		"a throttled Follow cover attempt preserves the route and consumes no retry draw"))
+		return false;
 	if (!check(controller.update(publisher.snapshot(), observation, &intent) == runtime::NavRoamResult::IntentReady &&
 				intent.direction.x > 0.0f,
 			"the shared retry timer retains the current Follow path"))

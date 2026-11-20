@@ -1873,18 +1873,41 @@ bool testActualFollowMovement(astrabot::metamod::PluginRuntime &runtime, globalv
 	if (stoppedCover)
 	{
 		auto &behavior = static_cast<metamod::BotBehaviorServices &>(runtime);
+		struct CoverEntryTrace final : compat::IRandomTraceSink
+		{
+			explicit CoverEntryTrace(const compat::CompatibilityStateMachine &state) : machine(state) {}
+			void record(const compat::RandomTraceRecord &entry) override
+			{
+				if (entry.request.actor.slot == 2U && entry.request.semanticId)
+				{
+					draws.emplace_back(entry.request.semanticId);
+					if (draws.back() == "Hide.Duration")
+						enteredAtDuration = machine.state() == compat::CompatibilityStateId::Hide;
+				}
+			}
+			const compat::CompatibilityStateMachine &machine;
+			std::vector<std::string> draws;
+			bool enteredAtDuration = false;
+		} trace(receiver);
+		behavior.service_compatibilityRandomSource().setTraceSink(&trace);
 		const float entered = globals.time;
 		for (int i = 0; i < 28 && receiver.state() == compat::CompatibilityStateId::Follow; ++i)
 		{
 			behavior.applyNavigationRequest({1, metamod::NavigationRequestKind::DestroyPath});
 			tick();
 		}
+		behavior.service_compatibilityRandomSource().setTraceSink(nullptr);
 		const bool hid = receiver.state() == compat::CompatibilityStateId::Hide &&
 			receiver.task() == compat::CompatibilityTaskId::Follow && globals.time - entered > 1.0f;
+		const auto duration = std::find(trace.draws.begin(), trace.draws.end(), "Hide.Duration");
+		const auto retry = std::find(trace.draws.begin(), duration, "CSBOT-PATH-RETRY");
+		const bool coverPathReady = check(duration != trace.draws.end() && retry != duration && trace.enteredAtDuration &&
+				behavior.navigation_hasActivePath(1),
+			"Follow computes and retains the cover path before Hide draws its duration");
 		tick();
 		const auto &cover = navigation.behavior_scenarioDecisions(1);
 		bool ok = check(hid && cover.hasTarget && cover.target.position.x == 32 && cover.target.position.y == 50,
-			"a stopped leader without a path waits and sends Follow to the nearest unoccupied cover");
+			"a stopped leader without a path waits and sends Follow to the nearest unoccupied cover") && coverPathReady;
 		gEntities[1].v.origin = Vector(32, 50, 36);
 		gEntities[0].v.velocity.x = 200.0f;
 		queueHelpMoves.clear();

@@ -276,6 +276,9 @@ public:
 		const nav::NavSnapshot &snapshot, const NavRoamObservation &observation, nav::LocomotionIntent *intent);
 	NavRoamResult update(const nav::NavSnapshot &snapshot, const NavRoamObservation &observation,
 		nav::LocomotionIntent *intent, NavRoamDecision *decision);
+	bool tryFollowCoverPath(const nav::NavSnapshot &snapshot, ActorId actor, world::FrameIdentity frame, float now,
+		nav::AreaId start, nav::AreaId goal, const nav::NavVector &point, const nav::NavLadderTopology &ladders,
+		const std::function<bool()> &current);
 	void reset();
 	void destroyPath();
 	bool usingNativeLadder() const
@@ -302,6 +305,7 @@ private:
 		nav::LocomotionIntent *intent, NavRoamDecision *decision);
 	void replaceFollowRoute(const nav::NavSnapshot &snapshot, const NavRoamObservation &observation,
 		NavRoamDecision *decision);
+	bool beginFollowPathAttempt(std::uint32_t tick, float now, const std::function<bool()> &current);
 
 	struct NavigationPhaseResult
 	{

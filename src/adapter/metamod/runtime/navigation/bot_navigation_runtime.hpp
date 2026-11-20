@@ -109,6 +109,8 @@ public:
 	void observeResetHud(std::size_t index);
 
 	void applyBehaviorRequest(const NavigationRequest &request);
+	bool tryFollowCoverPath(std::size_t index, const nav::NavSnapshot &snapshot, world::FrameIdentity frame,
+		nav::AreaId start, nav::AreaId goal, const nav::NavVector &point, const std::function<bool()> &current);
 
 	void noteMovementDiagnosticSample(std::size_t index);
 

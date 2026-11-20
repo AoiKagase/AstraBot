@@ -426,6 +426,12 @@ private:
 	{
 		return navigation_.hasActivePath(index);
 	}
+	bool navigation_tryFollowCoverPath(std::size_t index, const nav::NavSnapshot &snapshot,
+		world::FrameIdentity frame, nav::AreaId start, nav::AreaId goal, const nav::NavVector &point,
+		const std::function<bool()> &current) override
+	{
+		return !performanceDisablePathSearch_ && navigation_.tryFollowCoverPath(index, snapshot, frame, start, goal, point, current);
+	}
 
 	const ManagedNavigationFailure &navigation_managedNavigationFailures(std::size_t index) const override
 	{

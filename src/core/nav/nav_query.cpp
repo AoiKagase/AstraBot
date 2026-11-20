@@ -1049,12 +1049,20 @@ NavQueryResult NavQuery::buildInvestigationCorridor(AreaId start, AreaId goal, c
 	const NavLadderTopology *ladders, NavCorridor *corridor, NavSearchStats *stats,
 	const NavDirectedLink *excludedFirstLink) const
 {
+	return buildPositionCorridor(start, goal, noisePosition, NavRouteType::Safest,
+		ladders, corridor, stats, excludedFirstLink);
+}
+
+NavQueryResult NavQuery::buildPositionCorridor(AreaId start, AreaId goal, const NavVector &position,
+	NavRouteType routeType, const NavLadderTopology *ladders, NavCorridor *corridor, NavSearchStats *stats,
+	const NavDirectedLink *excludedFirstLink) const
+{
 	if (stats != nullptr)
 		*stats = {};
 	if (corridor == nullptr)
 		return NavQueryResult::InvalidArgument;
 	*corridor = {};
-	if (!isFinitePosition(noisePosition))
+	if (!isFinitePosition(position))
 		return NavQueryResult::InvalidPosition;
 	const auto *doc = document();
 	if (doc == nullptr)
@@ -1069,7 +1077,6 @@ NavQueryResult NavQuery::buildInvestigationCorridor(AreaId start, AreaId goal, c
 		if (validation != NavQueryResult::Found)
 			return validation;
 	}
-	constexpr auto routeType = NavRouteType::Safest;
 	if (start == goal)
 	{
 		corridor->navRevision = snapshot_.revision();
@@ -1084,7 +1091,7 @@ NavQueryResult NavQuery::buildInvestigationCorridor(AreaId start, AreaId goal, c
 			context.useExtentCenters = true;
 		const auto *costs = hasCostContext_ || ladders != nullptr ? &context : nullptr;
 		auto result = buildAStarCorridor(snapshot_, limits_, start, goal, routeType, corridor, stats,
-			costs, excludedFirstLink, ladders, false, true, &noisePosition);
+			costs, excludedFirstLink, ladders, false, true, &position);
 		// A straight-line fallback must not steer back into a rejected exit.
 		if (result == NavQueryResult::Found && excludedFirstLink != nullptr && corridor->areas.size() == 1U)
 		{
@@ -1103,8 +1110,8 @@ NavQueryResult NavQuery::buildInvestigationCorridor(AreaId start, AreaId goal, c
 	// one-area case reprojects the same XY through BuildTrivialPath.
 	const auto &floorArea = corridor->areas.size() == 1U ? *startArea : *goalArea;
 	corridor->hasEndpoint = true;
-	corridor->endpoint = noisePosition;
-	corridor->endpoint.z = surfaceZAtInternal(floorArea, noisePosition.x, noisePosition.y);
+	corridor->endpoint = position;
+	corridor->endpoint.z = surfaceZAtInternal(floorArea, position.x, position.y);
 	return NavQueryResult::Found;
 }
 

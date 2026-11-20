@@ -418,7 +418,7 @@ struct BotBehaviorRuntime::ActorTaskEnvironment : compat::IHelpRequestEnvironmen
 			value >= low && value <= high;
 	}
 	bool enterHideState(const nav::NavVector &point, nav::AreaId goal, compat::CompatibilityTaskId task,
-		float duration = -1.0f, bool holdForAmbush = false, bool keepFollowing = false, bool requirePath = false)
+		float duration = -1.0f, bool holdForAmbush = false, bool keepFollowing = false, bool followCover = false)
 	{
 		if (!current())
 			return false;
@@ -426,7 +426,14 @@ struct BotBehaviorRuntime::ActorTaskEnvironment : compat::IHelpRequestEnvironmen
 		auto &machine = actor.managedBotStateMachines;
 		const auto start = owner.services_->navigation_knownArea(receiver, receipt.actor, receipt.context.frame, navigation.revision());
 		bool reachable = false;
-		if (start && goal)
+		if (followCover)
+		{
+			reachable = owner.services_->navigation_tryFollowCoverPath(receiver, navigation, receipt.context.frame,
+				start, goal, point, [this] { return current(); });
+			if (!reachable)
+				return false;
+		}
+		else if (start && goal)
 		{
 			nav::NavLadderTopology ladders;
 			if (!owner.services_->navigation_ladderTopology(&ladders) || !current())
@@ -443,17 +450,16 @@ struct BotBehaviorRuntime::ActorTaskEnvironment : compat::IHelpRequestEnvironmen
 		auto context = owner.makeManagedBotStateContext(receiver, before);
 		if (!current())
 			return false;
-		if (requirePath && !reachable)
-			return false;
 		float ambushDelay = 0.0f;
-		if (reachable)
+		const auto drawHideTiming = [&]
 		{
 			float roll = 0.0f;
-			if ((duration < 0.0f && !drawFloat("Hide.Duration", 30.0f, 60.0f, duration)) ||
-				!drawFloat("Hide.Ambush", 0.0f, 100.0f, roll) ||
-				((holdForAmbush || roll < 50.0f) && !drawFloat("Hide.HoldPositionTime", 3.0f, 10.0f, ambushDelay)))
-				return false;
-		}
+			return (duration >= 0.0f || drawFloat("Hide.Duration", 30.0f, 60.0f, duration)) &&
+				drawFloat("Hide.Ambush", 0.0f, 100.0f, roll) &&
+				((!holdForAmbush && roll >= 50.0f) || drawFloat("Hide.HoldPositionTime", 3.0f, 10.0f, ambushDelay));
+		};
+		if (reachable && !followCover && !drawHideTiming())
+			return false;
 		context.hideTask = reachable ? task : compat::CompatibilityTaskId::None;
 		const auto next = reachable ? compat::CompatibilityStateId::Hide : compat::CompatibilityStateId::Idle;
 		const auto previous = machine.state();
@@ -467,7 +473,13 @@ struct BotBehaviorRuntime::ActorTaskEnvironment : compat::IHelpRequestEnvironmen
 		actor.managedBotObjectiveTargets = {};
 		actor.managedBotObjectiveActions = {};
 		actor.scenarioDecisions = {};
-		owner.services_->applyNavigationRequest({receiver, NavigationRequestKind::DestroyPath});
+		if (followCover)
+		{
+			if (!drawHideTiming())
+				return false;
+		}
+		else
+			owner.services_->applyNavigationRequest({receiver, NavigationRequestKind::DestroyPath});
 		if (!current())
 			return false;
 		if (reachable)

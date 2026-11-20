@@ -674,6 +674,42 @@ NavRoamResult NavRoamController::update(const nav::NavSnapshot &snapshot, const 
 	return result;
 }
 
+bool NavRoamController::beginFollowPathAttempt(std::uint32_t tick, float now, const std::function<bool()> &current)
+{
+	const auto routeRevision = routeRevision_;
+	float deadline = recoveryState().nextPathAttemptAt;
+	if (!beginNativePathAttempt(randomSource_, actor_, tick, now, deadline) ||
+		routeRevision_ != routeRevision || !current())
+		return false;
+	recoveryState().nextPathAttemptAt = deadline;
+	resetRoute();
+	return true;
+}
+
+bool NavRoamController::tryFollowCoverPath(const nav::NavSnapshot &snapshot, ActorId actor, world::FrameIdentity frame,
+	float now, nav::AreaId start, nav::AreaId goal, const nav::NavVector &point, const nav::NavLadderTopology &ladders,
+	const std::function<bool()> &current)
+{
+	if (!timedCompatibility_ || !sameActor(actor_, actor) || !snapshot.isValid() ||
+		frame.mapGeneration != lastFrame_.mapGeneration || frame.roundGeneration != lastFrame_.roundGeneration ||
+		!current() || !beginFollowPathAttempt(frame.tick, now, current))
+		return false;
+	nav::NavQuery query(snapshot);
+	if (routeState().hasPathCostContext)
+		query.setPathCostContext(routeState().pathCostContext);
+	nav::NavCorridor corridor{};
+	if (query.buildPositionCorridor(start, goal, point, nav::NavRouteType::Fastest, &ladders, &corridor) !=
+		nav::NavQueryResult::Found)
+		return false;
+	const auto firstLink = corridor.links.empty() ? nav::NavDirectedLink{start, start, 0U, 0U} : corridor.links.front();
+	if (!startRoute(snapshot, corridor, firstLink))
+		return false;
+	rememberRoute(snapshot, corridor, firstLink);
+	roamGoalState().hasObjectiveTarget = true;
+	roamGoalState().objectiveTarget = point;
+	return true;
+}
+
 void NavRoamController::replaceFollowRoute(const nav::NavSnapshot &snapshot, const NavRoamObservation &observation,
 	NavRoamDecision *decision)
 {
@@ -682,15 +718,8 @@ void NavRoamController::replaceFollowRoute(const nav::NavSnapshot &snapshot, con
 	if (goal == 0U || (probe && !probe->current()))
 		return;
 	const auto *area = snapshot.document()->findArea(goal);
-	if (!area)
+	if (!area || !beginFollowPathAttempt(observation.frame.tick, observedAt_, [probe] { return !probe || probe->current(); }))
 		return;
-	const auto routeRevision = routeRevision_;
-	float deadline = recoveryState().nextPathAttemptAt;
-	if (!beginNativePathAttempt(randomSource_, actor_, observation.frame.tick, observedAt_, deadline) ||
-		routeRevision_ != routeRevision || (probe && !probe->current()))
-		return;
-	recoveryState().nextPathAttemptAt = deadline;
-	resetRoute();
 	traversalState().locomotion.resetProgressMonitor();
 	nav::NavQuery query(snapshot);
 	if (routeState().hasPathCostContext)

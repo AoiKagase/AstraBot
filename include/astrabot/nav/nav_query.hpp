@@ -187,6 +187,9 @@ public:
 	NavQueryResult buildInvestigationCorridor(AreaId start, AreaId goal, const NavVector &noisePosition,
 		const NavLadderTopology *ladders, NavCorridor *corridor, NavSearchStats *stats = nullptr,
 		const NavDirectedLink *excludedFirstLink = nullptr) const;
+	NavQueryResult buildPositionCorridor(AreaId start, AreaId goal, const NavVector &position, NavRouteType routeType,
+		const NavLadderTopology *ladders, NavCorridor *corridor, NavSearchStats *stats = nullptr,
+		const NavDirectedLink *excludedFirstLink = nullptr) const;
 	NavQueryResult buildFollowCorridor(AreaId start, AreaId goal, const NavLadderTopology *ladders,
 		NavCorridor *corridor, NavSearchStats *stats, const NavHuntPathProbe *probe) const;
 
