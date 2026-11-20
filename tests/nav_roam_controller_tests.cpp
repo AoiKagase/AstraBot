@@ -3256,6 +3256,90 @@ bool testInvestigationSafestRoute()
 		"investigation objective requests SAFEST route through movement controller");
 }
 
+bool testInvestigationRetainsPathWhenThrottled()
+{
+	using namespace astrabot;
+	nav::NavDocument document;
+	document.setSourceIdentity({5U, 100U, 200U});
+	for (nav::AreaId id = 1; id <= 3; ++id)
+	{
+		auto piece = area(id, (id - 1U) * 128.0f, id * 128.0f);
+		if (id < 3)
+			piece.connections[1U] = {id + 1U};
+		document.addArea(piece);
+	}
+	nav::NavSnapshotPublisher publisher;
+	publisher.publish(&document, 1U);
+	runtime::NavRoamController controller;
+	compat::ScriptedRandomSource random({
+		compat::RandomTapeEntry::floatEntry("CSBOT-PATH-RETRY", {1U, 1U}, {0U, 0U, 1U}, 0.4f, 0.6f, 0.5f),
+		compat::RandomTapeEntry::floatEntry("CSBOT-PATH-RETRY", {1U, 1U}, {0U, 0U, 4U}, 0.4f, 0.6f, 0.5f),
+		compat::RandomTapeEntry::floatEntry("CSBOT-PATH-RETRY", {1U, 1U}, {0U, 0U, 7U}, 0.4f, 0.6f, 0.5f),
+		compat::RandomTapeEntry::floatEntry("CSBOT-PATH-RETRY", {1U, 1U}, {0U, 0U, 8U}, 0.4f, 0.6f, 0.5f)});
+	controller.setRandomSource(&random);
+	runtime::NavRoamObservation observation{};
+	observation.actor = {1U, 1U};
+	observation.frame = {1U, 1U, 0U};
+	observation.team = 1U;
+	observation.locomotion.position = {32.0f, 32.0f, 0.0f};
+	observation.locomotion.standingClearance = 72.0f;
+	observation.locomotion.crouchingClearance = 36.0f;
+	observation.locomotion.grounded = true;
+	observation.locomotion.timingAvailable = true;
+	observation.hasObjectiveTarget = true;
+	observation.objectiveTarget = {192.0f, 32.0f, 0.0f};
+	nav::LocomotionIntent intent{};
+	runtime::NavRoamDecision decision{};
+	const auto update = [&](float now, runtime::NoiseRouteUpdate noise)
+	{
+		++observation.frame.tick;
+		observation.locomotion.observedAt = now;
+		observation.noiseRoute = noise;
+		return controller.update(publisher.snapshot(), observation, &intent, &decision);
+	};
+	if (!check(update(1.0f, runtime::NoiseRouteUpdate::None) == runtime::NavRoamResult::IntentReady &&
+			decision.selectedPath == std::vector<nav::AreaId>{1U, 2U},
+			"the bot starts with an existing route and a pending path retry deadline"))
+		return false;
+	const auto originalPath = decision.pathSequence;
+	observation.objectiveTarget.x = 320.0f;
+	observation.objectiveRouteType = nav::NavRouteType::Safest;
+	if (!check(update(1.5f, runtime::NoiseRouteUpdate::Enter) == runtime::NavRoamResult::MovementSuppressed &&
+			decision.pathSequence == originalPath && intent.speed == 0.0f && random.position() == 1U,
+			"noise entry at the retry deadline keeps the old route and does not roll another delay"))
+		return false;
+	if (!check(update(1.6f, runtime::NoiseRouteUpdate::Follow) == runtime::NavRoamResult::IntentReady &&
+			decision.pathSequence == originalPath && decision.selectedPath == std::vector<nav::AreaId>{1U, 2U} &&
+			random.position() == 1U,
+			"the investigation follows the old route without retrying the consumed sound"))
+		return false;
+	observation.objectiveTarget.x = 96.0f;
+	if (!check(update(1.7f, runtime::NoiseRouteUpdate::Redirect) == runtime::NavRoamResult::IntentReady &&
+			decision.pathSequence != originalPath && decision.selectedPath == std::vector<nav::AreaId>{1U} &&
+			intent.targetPosition.x == 96.0f && decision.routeType == nav::NavRouteType::Safest &&
+			random.position() == 2U,
+			"a newly attended sound replaces the path with a same-area SAFEST route"))
+		return false;
+	observation.locomotion.position.x = 90.0f;
+	if (!check(update(1.8f, runtime::NoiseRouteUpdate::Follow) == runtime::NavRoamResult::TargetReached &&
+			update(2.4f, runtime::NoiseRouteUpdate::Follow) == runtime::NavRoamResult::NoRoute &&
+			random.position() == 2U,
+			"the state cannot rebuild the completed path for a sound it already consumed"))
+		return false;
+	observation.locomotion.position.x = -50.0f;
+	observation.noisePathStartArea = 1U;
+	if (!check(update(2.6f, runtime::NoiseRouteUpdate::Enter) == runtime::NavRoamResult::MovementSuppressed &&
+			decision.selectedPath == std::vector<nav::AreaId>{1U} && random.position() == 3U,
+			"noise entry starts from the last known area when the bot is temporarily outside the mesh"))
+		return false;
+	observation.locomotion.position.x = 32.0f;
+	observation.objectiveTarget.x = 100.0f;
+	observation.noiseTargetCleared = true;
+	return check(update(3.2f, runtime::NoiseRouteUpdate::Redirect) == runtime::NavRoamResult::TargetReached &&
+			intent.speed == 0.0f && !controller.hasPath() && random.verifyComplete(),
+		"a visible redirected sound consumes its route attempt before completing the investigation");
+}
+
 bool testRemainingPathDistance()
 {
 	using namespace astrabot;
@@ -3300,7 +3384,7 @@ int main()
 {
 	if (!testRemainingPathDistance())
 		return 1;
-	if (!testInvestigationSafestRoute())
+	if (!testInvestigationSafestRoute() || !testInvestigationRetainsPathWhenThrottled())
 		return 1;
 	for (unsigned completion = 0U; completion < 6U; ++completion)
 		if (!test1734DropLaunchAcceptsRecordedGroundedFeet(completion))

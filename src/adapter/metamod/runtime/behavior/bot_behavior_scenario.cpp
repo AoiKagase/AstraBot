@@ -1498,6 +1498,11 @@ void BotBehaviorRuntime::commitBehaviorState(
 	stateBehavior.navigation.fullUpdateSequence = context.fullUpdateSequence;
 	actors_[index].managedStateInputs = stateBehavior;
 	(void)machine.update(context);
+	auto &noisePathPending = actors_[index].noisePathPending;
+	if (machine.state() == compat::CompatibilityStateId::InvestigateNoise)
+		noisePathPending = noisePathPending || stateBehavior.noisePathRequested;
+	else
+		noisePathPending = false;
 	if (actors_[index].helpGoal.active && !helpGoalCurrent(index))
 	{
 		actors_[index].helpGoal = {};
@@ -1514,7 +1519,8 @@ void BotBehaviorRuntime::commitBehaviorState(
 		services_->applyNavigationRequest({index, NavigationRequestKind::ClearStep});
 		// Reference state entry computes or abandons its own path. Never carry
 		// Idle's roam corridor into a newly assigned MoveTo task.
-		services_->applyNavigationRequest({index, NavigationRequestKind::DestroyPath});
+		if (machine.state() != compat::CompatibilityStateId::InvestigateNoise || !stateBehavior.noisePathRequested)
+			services_->applyNavigationRequest({index, NavigationRequestKind::DestroyPath});
 		if (previousState == compat::CompatibilityStateId::Buy ||
 			previousState == compat::CompatibilityStateId::DefuseBomb ||
 			previousState == compat::CompatibilityStateId::PlantBomb ||

@@ -159,6 +159,7 @@ public:
 	virtual std::uint64_t behavior_executionRevision(std::size_t index) const = 0;
 	virtual bool behavior_forcedRunning(std::size_t index) = 0;
 	virtual bool behavior_noiseInvestigationWalking(std::size_t index) const = 0;
+	virtual bool behavior_takeNoisePathRequest(std::size_t index, bool &targetCleared) = 0;
 	virtual bool behavior_buildManagedObjectiveTarget(std::size_t index, nav::NavVector *target,
 		nav::NavSearchStats *searchStats, RuntimeObjectiveSelectionStats *objectiveStats = nullptr) = 0;
 	virtual const team::TeamObjectiveAssignment *behavior_findManagedTeamObjectiveAssignment(

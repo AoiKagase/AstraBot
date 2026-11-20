@@ -1099,8 +1099,12 @@ NavigationUpdate BotNavigationRuntime::updateNavigation(std::size_t index, const
 		observation.objectiveTargetEntity = objectiveAssignment->targetEntity;
 	}
 	observation.team = static_cast<std::uint8_t>(services_->observation_resolvePlayerTeam(handle.entity));
-	if (services_->behavior_managedBotStateMachines(index).state() == compat::CompatibilityStateId::InvestigateNoise)
+	const auto &currentMachine = services_->behavior_managedBotStateMachines(index);
+	if (currentMachine.state() == compat::CompatibilityStateId::InvestigateNoise)
+	{
 		observation.objectiveRouteType = nav::NavRouteType::Safest;
+		observation.noiseRoute = runtime::NoiseRouteUpdate::Follow;
+	}
 	if (services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility &&
 		services_->behavior_managedBotStateMachines(index).state() == compat::CompatibilityStateId::MoveTo)
 	{
@@ -1333,6 +1337,14 @@ NavigationUpdate BotNavigationRuntime::updateNavigation(std::size_t index, const
 					}
 				}
 				observation.viewPitch = handle.entity->v.v_angle.x;
+			}
+			if (observation.noiseRoute == runtime::NoiseRouteUpdate::Follow &&
+				!observation.movementSuppressed &&
+				services_->behavior_takeNoisePathRequest(index, observation.noiseTargetCleared))
+			{
+				observation.noiseRoute = currentMachine.stateTimestamp() == observation.locomotion.observedAt
+					? runtime::NoiseRouteUpdate::Enter : runtime::NoiseRouteUpdate::Redirect;
+				observation.noisePathStartArea = knownArea(index, objectiveActor, observation.frame, navigation.revision());
 			}
 			roamResult =
 				actors_[index].managedBotMovement.update(navigation, observation, &locomotionIntent, &roamDecision);

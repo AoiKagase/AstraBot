@@ -481,6 +481,10 @@ private:
 	{
 		return behavior_.noiseInvestigationWalking(index);
 	}
+	bool behavior_takeNoisePathRequest(std::size_t index, bool &targetCleared) override
+	{
+		return behavior_.takeNoisePathRequest(index, targetCleared);
+	}
 	bool observation_activeSniper(world::ActorKey actor, world::FrameIdentity frame, int observerTeam) const override;
 	bool readGameDllActiveWeapon(edict_t *source, int &weapon, bool &silenced) const override;
 	bool observation_readManagedWorldSnapshot(std::size_t index, world::WorldSnapshot *snapshot) const override

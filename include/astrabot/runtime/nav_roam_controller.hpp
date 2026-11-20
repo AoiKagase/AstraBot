@@ -19,6 +19,14 @@ namespace astrabot
 {
 namespace runtime
 {
+enum class NoiseRouteUpdate
+{
+	None,
+	Enter,
+	Redirect,
+	Follow
+};
+
 struct NavRoamObservation
 {
 	ActorId actor;
@@ -47,6 +55,9 @@ struct NavRoamObservation
 	const nav::NavLadderTopology *nativeLadders = nullptr;
 	nav::INativeLadderProbe *nativeLadderProbe = nullptr;
 	float viewPitch = 0.0f;
+	NoiseRouteUpdate noiseRoute = NoiseRouteUpdate::None;
+	nav::AreaId noisePathStartArea = 0U;
+	bool noiseTargetCleared = false;
 };
 
 struct GroundLookaheadRoute
@@ -296,12 +307,15 @@ private:
 		nav::NavAreaMatch currentArea{};
 		nav::NavQueryResult currentAreaResult = nav::NavQueryResult::NoAreaContaining;
 		nav::AreaId objectiveArea = 0U;
+		bool areasLocated = false;
 	};
 	NavigationPhaseResult validateNavigationUpdate(const nav::NavSnapshot &snapshot,
 		const NavRoamObservation &observation, nav::LocomotionIntent *intent, NavRoamDecision *decision);
 	NavigationPhaseResult updateFriendWaiting(
 		const nav::NavSnapshot &snapshot, const NavRoamObservation &observation, NavRoamDecision *decision);
 	NavigationPhaseResult locateUpdateAreas(NavigationUpdateContext &ctx);
+	NavigationPhaseResult prepareNoiseRoute(NavigationUpdateContext &ctx);
+	bool buildNoiseRoute(NavigationUpdateContext &ctx);
 	NavigationPhaseResult recoverOffMeshUpdate(NavigationUpdateContext &ctx);
 	NavigationPhaseResult recoverStuckUpdate(NavigationUpdateContext &ctx);
 	NavigationPhaseResult selectUpdateRoute(NavigationUpdateContext &ctx);

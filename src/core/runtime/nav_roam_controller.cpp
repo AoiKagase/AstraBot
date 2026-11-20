@@ -668,6 +668,11 @@ NavRoamResult NavRoamController::updateInternal(const nav::NavSnapshot &snapshot
 	}
 	nav::NavQuery query(snapshot);
 	NavigationUpdateContext ctx{snapshot, observation, intent, decision, query};
+	{
+		const auto phase = prepareNoiseRoute(ctx);
+		if (phase.complete)
+			return phase.result;
+	}
 	if (nativeLadder_.active())
 	{
 		ctx.currentArea.area = routeState().activeLink.fromArea;
@@ -685,6 +690,7 @@ NavRoamResult NavRoamController::updateInternal(const nav::NavSnapshot &snapshot
 		}
 	}
 
+	if (!ctx.areasLocated)
 	{
 		const auto phase = locateUpdateAreas(ctx);
 		if (phase.complete)
@@ -895,6 +901,7 @@ NavRoamController::NavigationPhaseResult NavRoamController::validateNavigationUp
 					kObjectiveTargetChangeTolerance ||
 				std::fabs(roamGoalState().objectiveTarget.z - observation.objectiveTarget.z) >
 					kObjectiveTargetChangeTolerance));
+	const bool nativeNoise = timedCompatibility_ && observation.noiseRoute != NoiseRouteUpdate::None;
 	if (objectiveTargetChanged)
 	{
 		// Goal reassignment cannot make a failed recovery point traversable.
@@ -911,7 +918,8 @@ NavRoamController::NavigationPhaseResult NavRoamController::validateNavigationUp
 			decision->recomputeReason =
 				lastFrame_.isValid() ? NavRecomputeReason::GoalChanged : NavRecomputeReason::InitialGoal;
 		}
-		resetRoute();
+		if (!nativeNoise)
+			resetRoute();
 	}
 	roamGoalState().hasObjectiveTarget = observation.hasObjectiveTarget;
 	roamGoalState().objectiveTarget = observation.objectiveTarget;
@@ -921,7 +929,8 @@ NavRoamController::NavigationPhaseResult NavRoamController::validateNavigationUp
 		decision->observationPosition = observation.locomotion.position;
 		decision->observationVelocity = observation.locomotion.velocity;
 		decision->intentDirection = routeState().lastIntentDirection;
-		populateRouteDecision(decision);
+		if (!nativeNoise || observation.noiseRoute == NoiseRouteUpdate::Follow)
+			populateRouteDecision(decision);
 	}
 
 	if (observation.movementSuppressed)
@@ -1446,6 +1455,8 @@ NavRoamController::NavigationPhaseResult NavRoamController::selectUpdateRoute(Na
 	auto *decision = ctx.decision;
 	auto &currentArea = ctx.currentArea;
 	auto &objectiveArea = ctx.objectiveArea;
+	if (timedCompatibility_ && observation.noiseRoute != NoiseRouteUpdate::None)
+		return {false, NavRoamResult::IntentReady};
 	if (timedCompatibility_ && objectiveArea == 0U && routeState().hasActiveRoute && roamGoalState().hasRoamGoal &&
 		roamGoalState().roamGoalArea == currentArea.area && traversalState().locomotion.isActive())
 	{
@@ -1597,6 +1608,82 @@ NavRoamController::NavigationPhaseResult NavRoamController::selectUpdateRoute(Na
 		}
 	}
 	return {false, NavRoamResult::IntentReady};
+}
+
+NavRoamController::NavigationPhaseResult NavRoamController::prepareNoiseRoute(NavigationUpdateContext &ctx)
+{
+	const auto &observation = ctx.observation;
+	if (!timedCompatibility_ || observation.noiseRoute == NoiseRouteUpdate::None)
+		return {false, NavRoamResult::IntentReady};
+
+	// AttendCurrentNoise attempts one path for each accepted sound. A blocked
+	// attempt retains the old path and is never replayed after the deadline.
+	const bool requesting = observation.noiseRoute != NoiseRouteUpdate::Follow;
+	const bool replacing = requesting && beginNativePathAttempt(randomSource_, actor_, observation.frame.tick,
+		observedAt_, recoveryState().nextPathAttemptAt);
+	bool hasPath = routeState().hasActiveRoute;
+	if (replacing)
+	{
+		resetRoute();
+		const auto located = locateUpdateAreas(ctx);
+		if (located.complete)
+			return located;
+		ctx.areasLocated = true;
+		hasPath = buildNoiseRoute(ctx);
+	}
+	else if (requesting)
+		populateRouteDecision(ctx.decision);
+
+	if (observation.noiseRoute == NoiseRouteUpdate::Enter)
+	{
+		if (ctx.decision != nullptr)
+			ctx.decision->stage = hasPath ? NavRoamStage::CorridorReady : NavRoamStage::MovementSuppressed;
+		return {true, NavRoamResult::MovementSuppressed};
+	}
+	if (!hasPath)
+	{
+		if (ctx.decision != nullptr)
+			ctx.decision->stage = NavRoamStage::Failed;
+		return {true, NavRoamResult::NoRoute};
+	}
+	if (observation.noiseTargetCleared)
+	{
+		resetRoute();
+		if (ctx.decision != nullptr)
+			ctx.decision->stage = NavRoamStage::TargetReached;
+		return {true, NavRoamResult::TargetReached};
+	}
+	return {false, NavRoamResult::IntentReady};
+}
+
+bool NavRoamController::buildNoiseRoute(NavigationUpdateContext &ctx)
+{
+	auto start = ctx.currentArea;
+	const auto *document = ctx.snapshot.document();
+	if (document->findArea(ctx.observation.noisePathStartArea) != nullptr)
+		start.area = ctx.observation.noisePathStartArea;
+	if (start.area == 0U || ctx.objectiveArea == 0U)
+		return false;
+	const auto routeType = ctx.observation.objectiveRouteType;
+	if (start.area != ctx.objectiveArea)
+		return selectRoute(ctx.snapshot, start, ctx.objectiveArea, ctx.decision,
+			routeType, ctx.observation.nativeLadders);
+
+	nav::NavCorridor corridor{};
+	corridor.navRevision = ctx.snapshot.revision();
+	corridor.mapGeneration = ctx.snapshot.mapGeneration();
+	corridor.routeType = routeType;
+	corridor.areas = {ctx.objectiveArea};
+	corridor.hasEndpoint = true;
+	corridor.endpoint = ctx.observation.objectiveTarget;
+	const auto *area = document->findArea(ctx.objectiveArea);
+	corridor.endpoint.z = nav::surfaceZAt(*area, corridor.endpoint.x, corridor.endpoint.y);
+	const nav::NavDirectedLink link = {ctx.objectiveArea, ctx.objectiveArea, 0U, 0U};
+	if (!startRoute(ctx.snapshot, corridor, link))
+		return false;
+	rememberRoute(ctx.snapshot, corridor, link);
+	populateRouteDecision(ctx.decision);
+	return true;
 }
 
 NavRoamController::NavigationPhaseResult NavRoamController::startUpdateTraversal(NavigationUpdateContext &ctx)

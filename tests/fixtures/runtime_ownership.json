@@ -1232,6 +1232,11 @@
   {
     "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
     "scope": "ActorState",
+    "member": "noisePathPending"
+  },
+  {
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
+    "scope": "ActorState",
     "member": "noiseReportPolicy"
   },
   {

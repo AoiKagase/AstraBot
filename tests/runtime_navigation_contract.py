@@ -11,7 +11,7 @@ def main():
     end = source.index("\nvoid NavRoamController::reset()", start)
     orchestrator = source[start:source.index("\n}", start) + 2]
     assert len(orchestrator.splitlines()) < 100, "navigation update still mixes responsibilities"
-    phases = ("validateNavigationUpdate", "updateFriendWaiting", "locateUpdateAreas",
+    phases = ("validateNavigationUpdate", "prepareNoiseRoute", "updateFriendWaiting", "locateUpdateAreas",
               "recoverOffMeshUpdate", "recoverStuckUpdate", "selectUpdateRoute",
               "startUpdateTraversal", "updateJumpDropTraversal", "updateSpecialTraversal",
               "updateGroundLocomotion")
