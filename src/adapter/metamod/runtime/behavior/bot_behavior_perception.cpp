@@ -49,6 +49,18 @@ bool BotBehaviorRuntime::canSeePoint(std::size_t index, world::WorldPosition poi
 bool BotBehaviorRuntime::prepareManagedPerception(std::size_t index, world::WorldSnapshot *snapshot,
 	world::ActorKey *targetActor, world::WorldPosition *targetPosition)
 {
+	auto &actor = actors_[index];
+	const bool compatibility =
+		services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility;
+	const auto idleEntries = actor.managedBotStateMachines.idleEntryCount();
+	if (compatibility && actor.enemyIdleEntries != idleEntries)
+	{
+		// CSBot clears the acquired enemy when entering Idle, including after Follow's Attack ends.
+		actor.enemyIdleEntries = idleEntries;
+		actor.enemyReaction.clearEnemy();
+		actor.enemyWeaponSource = {};
+		actor.recognizedTargets = {};
+	}
 	ThreatObservation threats{};
 	if (!services_->observation_collectManagedPerception(index, snapshot, &threats))
 	{
@@ -85,8 +97,6 @@ bool BotBehaviorRuntime::prepareManagedPerception(std::size_t index, world::Worl
 			actors_[index].lastVisibleEnemyTimes = services_->service_globals()->time;
 			actors_[index].lastVisibleEnemyPositions = candidates[0].visiblePoint;
 		}
-		const bool compatibility =
-			services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility;
 		const float delay = actors_[index].managedProfiles.effectiveReactionSeconds(compatibility);
 		const bool sampled = services_->service_globals() != nullptr &&
 			actors_[index].reactionQueues.update(observer, belief.identity().frame, services_->service_globals()->time,
@@ -118,15 +128,23 @@ bool BotBehaviorRuntime::prepareManagedPerception(std::size_t index, world::Worl
 			const auto recentAttacker = memory.recentAttacker(reaction, 3.0f);
 			const bool alreadyRetaliating = recentAttacker.isValid() && memory.source(reaction) == recentAttacker &&
 				memory.enemy(reaction) == threat.actor;
-			if (!(actors_[index].recognizedTargets == threat.actor) && !alreadyRetaliating)
+			// A temporary gap in delayed recognition does not replace the retained enemy.
+			const bool sameEnemy = !memory.enemyDead(reaction) && memory.enemy(reaction) == threat.actor &&
+				memory.source(reaction) == threat.sourceEntity &&
+				actors_[index].enemyWeaponSource == threat.sourceEntity;
+			const bool newAcquisition = compatibility ? !sameEnemy
+				: !(actors_[index].recognizedTargets == threat.actor) && !alreadyRetaliating;
+			if (newAcquisition)
 			{
 				observeRecognizedTargetChange(index, services_->service_globals()->time);
+				if (compatibility && memory.enemyDead(reaction))
+					memory.clearEnemy();
 			}
 			actors_[index].recognizedTargets = threat.actor;
 			actors_[index].recognizedPoints = threat.visiblePoint;
 			actors_[index].enemyWeaponSource = threat.sourceEntity;
 			const bool currentlyVisible = seen && seen->visible;
-			if (currentlyVisible || (compatibility && !(memory.enemy(reaction) == threat.actor)))
+			if (currentlyVisible || (compatibility && newAcquisition))
 			{
 				// Seed an occluded contact once. Only new sight refreshes its timestamp.
 				memory.rememberVisible(reaction, threat.actor, threat.sourceEntity,
@@ -158,9 +176,7 @@ bool BotBehaviorRuntime::prepareManagedPerception(std::size_t index, world::Worl
 		*targetActor = actors_[index].recognizedTargets;
 		*targetPosition = actors_[index].recognizedPoints;
 	}
-	else if (!blinded &&
-		services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility &&
-		memory.shouldAim(reaction))
+	else if (!blinded && compatibility && memory.shouldAim(reaction))
 	{
 		*targetActor = memory.enemy(reaction);
 		*targetPosition = memory.position(reaction);
@@ -299,6 +315,8 @@ void BotBehaviorRuntime::observePublicDeath(std::size_t index, const world::Fram
 		resetEncouragement();
 	}
 	const auto previousSpeech = actors_[index].confirmedSpeech;
+	const bool compatibility =
+		services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility;
 	for (std::size_t observer = 0; observer < actors_.size(); ++observer)
 	{
 		auto &actor = actors_[observer];
@@ -306,6 +324,10 @@ void BotBehaviorRuntime::observePublicDeath(std::size_t index, const world::Fram
 		if (actor.enemyReaction.source(context).id == index + 1U)
 		{
 			actor.enemyReaction.markDead(context);
+		}
+		if (compatibility && actor.recognizedTargets.slot == index + 1U)
+		{
+			actor.recognizedTargets = {};
 		}
 		if (actor.enemyWeaponSource.id == index + 1U)
 		{

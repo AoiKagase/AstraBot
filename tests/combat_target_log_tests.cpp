@@ -12,6 +12,11 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &, enginefuncs_t &, gl
 
 namespace
 {
+int combatUserMessageId(plid_t id, const char *name, int *size)
+{
+	return std::strcmp(name, "DeathMsg") == 0 ? 103 : siteFixtureUserMessageId(id, name, size);
+}
+
 unsigned combatAttackCommands = 0U;
 float combatCommandYaw = 0.0f;
 float combatCommandPitch = 0.0f;
@@ -148,14 +153,168 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 		runtime.onStartFramePost();
 	};
 #ifdef _MSC_VER
-	char *gunfireMode = nullptr;
-	std::size_t gunfireModeSize = 0;
-	const bool gunfireFixture = _dupenv_s(&gunfireMode, &gunfireModeSize, "ASTRABOT_TEST_COMBAT_GUNFIRE") == 0 &&
-		gunfireMode != nullptr;
-	std::free(gunfireMode);
+	char *scenario = nullptr;
+	std::size_t scenarioSize = 0;
+	(void)_dupenv_s(&scenario, &scenarioSize, "ASTRABOT_TEST_COMBAT_SCENARIO");
 #else
-	const bool gunfireFixture = std::getenv("ASTRABOT_TEST_COMBAT_GUNFIRE") != nullptr;
+	const char *scenario = std::getenv("ASTRABOT_TEST_COMBAT_SCENARIO");
 #endif
+	const bool reacquireFixture = scenario && std::strcmp(scenario, "reacquire") == 0;
+	const bool gunfireFixture = scenario && std::strcmp(scenario, "gunfire") == 0;
+#ifdef _MSC_VER
+	std::free(scenario);
+#endif
+	if (reacquireFixture)
+	{
+		auto &navigation = static_cast<astrabot::metamod::BotNavigationServices &>(runtime);
+		auto &observation = static_cast<astrabot::metamod::BotObservationServices &>(runtime);
+		auto &state = const_cast<astrabot::compat::CompatibilityStateMachine &>(navigation.behavior_managedBotStateMachines(0U));
+		auto &profile = const_cast<astrabot::compat::ProfileRecord &>(navigation.behavior_managedProfiles(0U));
+		profile.attackDelaySeconds = 1.5f;
+		gpMetaUtilFuncs->pfnGetUserMsgID = &combatUserMessageId;
+		const auto prepareEnemy = [&](std::size_t index, float x)
+		{
+			auto &enemy = gEntities[index];
+			enemy.free = false;
+			enemy.v.origin = Vector(x, 32, 36);
+			enemy.v.velocity = Vector(250, 0, 0);
+			enemy.v.flags = FL_CLIENT;
+			enemy.v.health = 100;
+			enemy.v.deadflag = DEAD_NO;
+			enemy.v.team = 2;
+			runtime.onMessageBegin(2, 86, nullptr, nullptr);
+			runtime.onWriteByte(static_cast<int>(index + 1));
+			runtime.onWriteString("CT");
+			runtime.onMessageEnd();
+		};
+		runtime.onClientPutInServer(&gEntities[1]);
+		prepareEnemy(1, 260);
+		for (unsigned frame = 0; frame < 32U && combatAttackCommands == 0; ++frame)
+			stepRifle(30);
+		if (!check(combatAttackCommands > 0 && state.attackOverlayActive(),
+				"the first acquisition clears the profile attack delay and fires"))
+			return false;
+		const auto attackEpoch = state.attackEntryEpoch();
+		enemyBehindCover = true;
+		rejectAmbushRoll = true;
+		combatAttackCommands = 0;
+		// Allow a cached command to finish before counting the fully occluded period.
+		stepRifle(30);
+		combatAttackCommands = 0;
+		for (unsigned frame = 0; frame < 5U; ++frame)
+			stepRifle(30);
+		if (!check(combatAttackCommands == 0 && state.attackOverlayActive() && state.attackEntryEpoch() == attackEpoch,
+				"concealment drains recognition without ending the attack or firing"))
+			return false;
+		enemyBehindCover = false;
+		for (unsigned frame = 0; frame < 3U; ++frame)
+			stepRifle(30);
+		if (!check(combatAttackCommands == 0, "reacquisition still honors the sight delay"))
+			return false;
+		for (unsigned frame = 0; frame < 3U; ++frame)
+			stepRifle(30);
+		if (!check(combatAttackCommands > 0 && state.attackEntryEpoch() == attackEpoch,
+				"same-target reacquisition resumes fire without restarting the profile attack delay"))
+			return false;
+
+		const auto waitForFire = [&](const char *message)
+		{
+			for (unsigned frame = 0; frame < 11U; ++frame)
+				stepRifle(30);
+			if (!check(combatAttackCommands == 0, message))
+				return false;
+			for (unsigned frame = 0; frame < 24U && combatAttackCommands == 0; ++frame)
+				stepRifle(30);
+			return check(combatAttackCommands > 0, "the new target can fire after its acquisition delay");
+		};
+		const auto waitForAcquisition = [&]()
+		{
+			combatAttackCommands = 0;
+			for (unsigned frame = 0; frame < 12U && !observation.behavior_currentEnemySource(0).isValid(); ++frame)
+				stepRifle(30);
+			return check(observation.behavior_currentEnemySource(0).id == 3U && combatAttackCommands == 0,
+				"the current life of the enemy is acquired before any shot");
+		};
+		const auto checkCachedFire = [&](const char *message)
+		{
+			const auto fullUpdate = observation.service_managedBotFullUpdateSequences()[0];
+			const auto commands = combatSentInputs.size();
+			combatAttackCommands = 0;
+			globals.time += .04f;
+			runtime.onStartFrame();
+			runtime.onStartFramePost();
+			return check(observation.service_managedBotFullUpdateSequences()[0] == fullUpdate &&
+					combatSentInputs.size() > commands && combatAttackCommands == 0,
+				message);
+		};
+		// A closer opponent replaces the current target without leaving Attack.
+		runtime.onClientPutInServer(&gEntities[2]);
+		prepareEnemy(2, 160);
+		for (unsigned frame = 0; frame < 12U && observation.behavior_currentEnemySource(0).id != 3U; ++frame)
+			stepRifle(30);
+		if (!check(observation.behavior_currentEnemySource(0).id == 3U && state.attackEntryEpoch() == attackEpoch,
+				"another enemy is acquired during the same attack"))
+			return false;
+		combatAttackCommands = 0;
+		if (!waitForFire("switching targets while attacking restarts the profile delay"))
+			return false;
+
+		gEntities[1].v.flags = gEntities[2].v.flags = 0;
+		gEntities[1].v.health = gEntities[2].v.health = 0;
+		for (unsigned frame = 0; frame < 10U; ++frame)
+			stepRifle(30);
+		if (!check(!observation.behavior_currentEnemySource(0).isValid(), "losing both contacts clears the retained enemy"))
+			return false;
+		prepareEnemy(2, 160);
+		if (!waitForAcquisition() || !waitForFire("a new acquisition after complete loss restarts the profile delay"))
+			return false;
+
+		const auto &life = observation.service_lifecycle();
+		gEntities[2].v.deadflag = DEAD_DEAD;
+		gEntities[2].v.health = 0;
+		runtime.onMessageBegin(MSG_ALL, 103, nullptr, nullptr);
+		runtime.onWriteByte(0);
+		runtime.onWriteByte(3);
+		runtime.onWriteByte(0);
+		runtime.onWriteString("world");
+		runtime.onMessageEnd();
+		if (!check(!observation.behavior_currentEnemySource(0).isValid(), "DeathMsg invalidates the retained enemy"))
+			return false;
+		prepareEnemy(2, 160);
+		// No full update observes the dead entity. The death notification invalidates this life.
+		if (!checkCachedFire("respawn between full updates cannot reuse the previous life's fire command") ||
+			!waitForAcquisition() || !waitForFire("a new life on the same edict restarts the profile delay"))
+			return false;
+
+		const auto oldConnection = life.slotGeneration(3U);
+		runtime.onClientDisconnect(&gEntities[2]);
+		runtime.onClientPutInServer(&gEntities[2]);
+		prepareEnemy(2, 160);
+		if (!check(life.slotGeneration(3U) != oldConnection, "the fixture advances the connection generation"))
+			return false;
+		if (!waitForAcquisition() || !waitForFire("a changed connection generation restarts the profile delay"))
+			return false;
+
+		using namespace astrabot::compat;
+		StateUpdateContext stateContext{};
+		stateContext.actor = state.actor();
+		stateContext.frame = {life.mapGeneration(), life.roundGeneration(), observation.service_adapterFrameCount()};
+		stateContext.timestamp = globals.time;
+		stateContext.fullUpdateSequence = observation.service_managedBotFullUpdateSequences()[0];
+		stateContext.fullUpdate = true;
+		stateContext.lifeAvailability = stateContext.roundAvailability = ObservationAvailability::Available;
+		stateContext.attackObservation = ObservationAvailability::Available;
+		stateContext.transitionRequest = stateContext.rngAvailability = ObservationAvailability::Unavailable;
+		stateContext.alive = stateContext.roundActive = true;
+		if (!check(state.transition(CompatibilityStateId::Follow, StateTransitionReason::ObjectiveChanged,
+				StateTransitionId::ExplicitStateChange, stateContext) == StateResult::Transitioned &&
+				state.beginAttack(stateContext) == StateResult::Transitioned &&
+				state.stopAttack(stateContext) == StateResult::Transitioned && state.state() == CompatibilityStateId::Idle,
+				"stopping Attack from Follow enters Idle"))
+			return false;
+		return checkCachedFire("Idle cancels cached fire between full updates") && waitForAcquisition() &&
+			waitForFire("Idle discards the acquisition even when the same enemy is still visible");
+	}
 	if (gunfireFixture)
 	{
 		const char *gunfireNav = "astrabot_combat_gunfire.nav";

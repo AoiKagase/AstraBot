@@ -690,6 +690,7 @@ private:
 		compat::ProfileRecord managedProfiles{};
 		float lastCombatTimes{};
 		float attackReadyTimes{};
+		std::uint32_t enemyIdleEntries{};
 		compat::BuyController buyControllers{};
 		bool buyingComplete{};
 		bool buyUsesCsBot{};

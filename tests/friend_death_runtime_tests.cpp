@@ -251,7 +251,8 @@ bool testFriendDeath(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &e
 	{
 		return false;
 	}
-	const auto selectState = [&](compat::CompatibilityStateId state, bool attack = false)
+	const auto selectState = [&](compat::CompatibilityStateId state, bool attack = false,
+		compat::CompatibilityTaskId hideTask = compat::CompatibilityTaskId::None)
 	{
 		auto &machine = const_cast<compat::CompatibilityStateMachine &>(navigation.behavior_managedBotStateMachines(0));
 		compat::StateUpdateContext context{};
@@ -264,6 +265,7 @@ bool testFriendDeath(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &e
 		context.fullUpdateSequence = services.service_managedBotFullUpdateSequences()[0];
 		context.alive = true;
 		context.roundActive = true;
+		context.hideTask = hideTask;
 		(void)machine.transition(state, compat::StateTransitionReason::ExplicitRequest,
 			compat::StateTransitionId::ExplicitStateChange, context);
 		if (attack)
@@ -419,6 +421,8 @@ bool testFriendDeath(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &e
 		return false;
 	}
 	begin();
+	// Acquire the enemy while holding position so the death event can use the retained contact.
+	selectState(compat::CompatibilityStateId::Hide, false, compat::CompatibilityTaskId::HoldPosition);
 	killerVisible = true;
 	for (int i = 0; i < 6; ++i)
 	{
@@ -426,12 +430,13 @@ bool testFriendDeath(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &e
 		self.v.v_angle = self.v.angles;
 		step(.12f);
 	}
-	if (!check(navigation.behavior_managedBotStateMachines(0).attackOverlayActive(),
-			"real perception establishes combat before lost-sight death reaction"))
+	if (!check(navigation.behavior_managedBotStateMachines(0).attackOverlayActive() &&
+				navigation.behavior_managedBotStateMachines(0).state() == compat::CompatibilityStateId::Hide &&
+				static_cast<metamod::BotObservationServices &>(runtime).behavior_currentEnemySource(0).id == 3U,
+			"real perception acquires the enemy from Hide before the lost-sight death reaction"))
 	{
 		return false;
 	}
-	selectState(compat::CompatibilityStateId::Idle, true);
 	killerVisible = false;
 	step(.5f);
 	if (!check(navigation.behavior_managedBotStateMachines(0).attackOverlayActive(),
@@ -553,6 +558,7 @@ bool testFriendDeath(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &e
 	}
 	begin();
 	death();
+	const float timeBeforeRollback = globals.time;
 	globals.time -= 1;
 	step(.12f);
 	step(.12f);
@@ -561,6 +567,7 @@ bool testFriendDeath(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &e
 	{
 		return false;
 	}
+	globals.time = timeBeforeRollback;
 	auto &listener = gEntities[4];
 	const auto originalListener = listener.v;
 	const auto originalListenerName = gEntityNames[4];
@@ -587,8 +594,11 @@ bool testFriendDeath(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &e
 	begin();
 	startLostEnemyCapture();
 	death();
-	step(.12f);
-	if (!check(lostEnemySamples == 0, "a progressing chase does not report LostEnemy"))
+	const auto &pursuit = navigation.behavior_managedBotStateMachines(0);
+	for (int i = 0; i < 8 && pursuit.task() != compat::CompatibilityTaskId::MoveToLastKnownEnemyPosition; ++i)
+		step(.12f);
+	if (!check(pursuit.task() == compat::CompatibilityTaskId::MoveToLastKnownEnemyPosition && lostEnemySamples == 0,
+			"the chase starts and has not yet reported LostEnemy"))
 		return false;
 	self.v.origin = Vector(1000, 0, 36);
 	step(.12f);

@@ -316,7 +316,9 @@ void BotBehaviorRuntime::assignProfile(std::size_t index, const compat::ProfileR
 
 void BotBehaviorRuntime::observeRecognizedTargetChange(std::size_t index, float now)
 {
-	actors_[index].attackReadyTimes = now + actors_[index].managedProfiles.attackDelaySeconds;
+	auto &actor = actors_[index];
+	actor.attackReadyTimes = now + actor.managedProfiles.attackDelaySeconds;
+	actor.enemyIdleEntries = actor.managedBotStateMachines.idleEntryCount();
 }
 
 } // namespace metamod

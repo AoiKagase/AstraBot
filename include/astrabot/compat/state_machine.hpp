@@ -273,6 +273,10 @@ public:
 	{
 		return normalStateEpoch_;
 	}
+	std::uint32_t idleEntryCount() const
+	{
+		return stateInstances_[stateIndex(CompatibilityStateId::Idle)].enterCount;
+	}
 	std::uint64_t attackEntryEpoch() const { return attackEntryEpoch_; }
 	bool attackOverlayActive() const;
 	bool isInitialized() const;

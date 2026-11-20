@@ -77,7 +77,10 @@ void BotBehaviorRuntime::observePlayerDeath(
 		{
 			actor.reactionQueues.forget(source);
 			if (actor.enemyWeaponSource == source)
+			{
+				actor.enemyWeaponSource = {};
 				actor.recognizedTargets = {};
+			}
 		}
 	}
 	std::array<int, kCounterTerroristTeam + 1> alive{};

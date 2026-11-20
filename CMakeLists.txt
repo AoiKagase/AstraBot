@@ -1209,6 +1209,7 @@ if(ASTRABOT_BUILD_TESTS AND ASTRABOT_BUILD_METAMOD)
   astrabot_apply_warnings(astrabot_combat_target_log)
   add_test(NAME astrabot_combat_target_log COMMAND astrabot_combat_target_log --target-log)
   add_test(NAME astrabot_combat_threatening_gunfire COMMAND astrabot_combat_target_log --target-log)
+  add_test(NAME astrabot_combat_reacquire_delay COMMAND astrabot_combat_target_log --target-log)
   add_executable(astrabot_bomb_guard_look tests/bomb_guard_look_tests.cpp ${combat_target_log_sources})
   target_include_directories(astrabot_bomb_guard_look PRIVATE ${combat_target_log_includes})
   target_link_libraries(astrabot_bomb_guard_look PRIVATE astrabot_core astrabot_regamedll_provider)
@@ -1237,8 +1238,9 @@ if(ASTRABOT_BUILD_TESTS AND ASTRABOT_BUILD_METAMOD)
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" RESOURCE_LOCK astrabot_actor_command_profile)
   set_tests_properties(astrabot_bomb_guard_look PROPERTIES
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" RESOURCE_LOCK astrabot_actor_command_profile)
-  set_tests_properties(astrabot_combat_threatening_gunfire PROPERTIES ENVIRONMENT "ASTRABOT_TEST_COMBAT_GUNFIRE=1")
-  set_tests_properties(astrabot_combat_target_log astrabot_combat_threatening_gunfire PROPERTIES
+  set_tests_properties(astrabot_combat_threatening_gunfire PROPERTIES ENVIRONMENT "ASTRABOT_TEST_COMBAT_SCENARIO=gunfire")
+  set_tests_properties(astrabot_combat_reacquire_delay PROPERTIES ENVIRONMENT "ASTRABOT_TEST_COMBAT_SCENARIO=reacquire")
+  set_tests_properties(astrabot_combat_target_log astrabot_combat_threatening_gunfire astrabot_combat_reacquire_delay PROPERTIES
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
     RESOURCE_LOCK astrabot_actor_command_profile)
   add_executable(astrabot_obstacle_interaction_runtime tests/obstacle_interaction_runtime_tests.cpp ${combat_target_log_sources})

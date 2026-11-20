@@ -58,11 +58,12 @@ world::EntityKey BotBehaviorRuntime::currentEnemySource(std::size_t index) const
 	{
 		return {};
 	}
+	const auto &actor = actors_[index];
 	const auto context = reactionContext(index);
-	return actors_[index].enemyReaction.enemyDead(context) ||
-			!reactionEnemyCurrent(actors_[index].enemyReaction.enemy(context))
+	return actor.enemyIdleEntries != actor.managedBotStateMachines.idleEntryCount() ||
+			actor.enemyReaction.enemyDead(context) || !reactionEnemyCurrent(actor.enemyReaction.enemy(context))
 		? world::EntityKey{}
-		: actors_[index].enemyReaction.source(context);
+		: actor.enemyReaction.source(context);
 }
 
 bool BotBehaviorRuntime::reactionPursuing(std::size_t index) const

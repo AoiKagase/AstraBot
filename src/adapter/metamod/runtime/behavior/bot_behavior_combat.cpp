@@ -156,15 +156,21 @@ CombatUpkeepUpdate BotBehaviorRuntime::upkeepCombat(
 	const int ownTeam = services_->observation_resolvePlayerTeam(handle.entity);
 	const bool friendly = !freeForAll && enemy && ownTeam != 0 &&
 		services_->observation_resolvePlayerTeam(enemy) == ownTeam;
-	const bool validEnemy = generation == tracked.target.generation && reactionEnemyCurrent(tracked.target) && enemy && !enemy->free &&
+	const auto reaction = reactionContext(index);
+	const bool compatibility =
+		services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility;
+	const bool acquisitionInvalidated = compatibility &&
+		(state.enemyIdleEntries != state.managedBotStateMachines.idleEntryCount() ||
+			(state.enemyReaction.enemy(reaction) == tracked.target && state.enemyReaction.enemyDead(reaction)));
+	const bool validEnemy = !acquisitionInvalidated && generation == tracked.target.generation &&
+		reactionEnemyCurrent(tracked.target) && enemy && !enemy->free &&
 		enemy->serialnumber >= 0 && enemy->v.deadflag == DEAD_NO && enemy->v.health > 0 && !friendly;
 	const bool currentlyVisible = validEnemy &&
 		services_->observation_observationAdapter().collectVisibility(
 			handle.entity, enemy, tracked.target, frame, &visible,
 			!(currentEnemySource(index) == world::EntityKey{tracked.target.slot,
 				static_cast<std::uint32_t>(enemy->serialnumber) + 1U})) == ObservationAdapterResult::Accepted && visible.visible;
-	const auto reaction = reactionContext(index);
-	const bool remembered = services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility &&
+	const bool remembered = compatibility &&
 		validEnemy && state.enemyReaction.enemy(reaction) == tracked.target &&
 		state.enemyReaction.source(reaction) == world::EntityKey{tracked.target.slot,
 			static_cast<std::uint32_t>(enemy->serialnumber) + 1U} && state.enemyReaction.shouldAim(reaction);
@@ -457,6 +463,7 @@ bool BotBehaviorRuntime::retaliateAgainstRecentAttacker(const ManagedActionConte
 	if (visible && (contact->relation == world::TeamRelation::Hostile || freeForAll))
 	{
 		memory.rememberVisible(receipt, candidate, attacker, contact->position);
+		actor.enemyWeaponSource = attacker;
 		observeRecognizedTargetChange(ctx.index, receipt.now);
 		actor.managedBotCombat.clearAim();
 		actor.weaponActions.stopRapidFire();
