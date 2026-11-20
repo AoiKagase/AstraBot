@@ -822,7 +822,14 @@ void BotNavigationRuntime::observeFullUpdateMotion(std::size_t index, const Fake
 			{before.origin.x,before.origin.y,before.origin.z});
 	}
 	actors_[index].managedBotMovement.setRuntimeMode(configuration.mode);
-	if (!before.dead && !services_->roundFreezeActive() && (handle.entity->v.flags & FL_FROZEN) == 0)
+	if (configuration.botStop != 0.0f)
+		return;
+	const bool compatibility = configuration.mode == compat::RuntimeMode::Compatibility;
+	if (compatibility)
+		actors_[index].managedBotMovement.setRandomSource(&services_->service_compatibilityRandomSource());
+	// The reference samples during a freeze, even though movement commands are blocked.
+	if (!before.dead &&
+		(compatibility || (!services_->roundFreezeActive() && (handle.entity->v.flags & FL_FROZEN) == 0)))
 	{
 		nav::LocomotionObservation motion{};
 		motion.position = {before.origin.x, before.origin.y, before.origin.z};

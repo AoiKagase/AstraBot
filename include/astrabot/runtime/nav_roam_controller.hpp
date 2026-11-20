@@ -363,6 +363,7 @@ private:
 		const nav::NavDirectedLink &link, nav::LocomotionResult *startResult = nullptr);
 	bool buildStuckRecoveryIntent(
 		const nav::NavSnapshot &snapshot, const nav::NavAreaMatch &currentArea, nav::LocomotionIntent *intent);
+	bool scheduleStuckJump(ActorId actor, std::uint32_t tick, float observedAt);
 	bool selectRoute(const nav::NavSnapshot &snapshot, const nav::NavAreaMatch &currentArea, nav::AreaId objectiveArea,
 		NavRoamDecision *decision, nav::NavRouteType routeType = nav::NavRouteType::Fastest,
 		const nav::NavLadderTopology *nativeLadders = nullptr);

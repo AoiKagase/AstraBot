@@ -1812,6 +1812,8 @@ bool testRuntimeBombSiteApproach(
 		passed;
 	// A stopped escape path must select again, including patience expiry.
 	gTestC4Timer = 35.0f;
+	// Start this independent case on a draw toward the adjacent escape area.
+	gSiteFixtureSeed = 3U;
 	gEntities[0].v.origin = Vector(80.0f, 32.0f, 36.0f);
 	for (int other = 1; other <= 2; ++other)
 	{

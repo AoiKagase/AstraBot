@@ -1963,8 +1963,64 @@ bool testBsiteProgressFailureDoesNotBlacklistTheOnlyApproach()
 		"CSBot B-site retry resumes the sole legal approach instead of latching PathSearchFailed");
 }
 
+bool testCompatibilityStuckJumpIsScheduledWithoutAPath()
+{
+	using namespace astrabot;
+	compat::ScriptedRandomSource random({
+		compat::RandomTapeEntry::floatEntry("CSBOT-STUCK-JUMP-DELAY", {1U, 1U}, {0U, 0U, 6U},
+			0.0f, 0.5f, 0.2f),
+		compat::RandomTapeEntry::floatEntry("CSBOT-STUCK-JUMP-DELAY", {1U, 1U}, {0U, 0U, 13U},
+			0.0f, 0.5f, 0.2f),
+		compat::RandomTapeEntry::floatEntry("CSBOT-PATH-RETRY", {1U, 1U}, {0U, 0U, 14U}, 0.4f, 0.6f, 0.5f),
+		compat::RandomTapeEntry::longEntry("CSBOT-WIGGLE-DIRECTION", {1U, 1U}, {0U, 0U, 14U}, 0, 3, 1),
+		compat::RandomTapeEntry::floatEntry("CSBOT-WIGGLE-DURATION", {1U, 1U}, {0U, 0U, 14U}, 0.5f, 1.5f, 1.0f)});
+	runtime::NavRoamController controller;
+	controller.setRandomSource(&random);
+	nav::LocomotionObservation sample{};
+	sample.position = {32.0f, 32.0f, 0.0f};
+	sample.grounded = true;
+	sample.timingAvailable = true;
+	for (std::uint32_t tick = 1U; tick <= 13U; ++tick)
+	{
+		if (tick == 8U)
+			sample.position.x += 76.0f;
+		sample.observedAt = static_cast<float>(tick) * 0.1f;
+		controller.observeMotion({1U, 1U}, {1U, 1U, tick}, sample);
+		controller.observeMotion({1U, 1U}, {1U, 1U, tick}, sample);
+		const std::size_t expectedDraws = tick < 6U ? 0U : tick < 13U ? 1U : 2U;
+		if (!check(!random.failed() && random.position() == expectedDraws,
+				"stuck schedules the jump delay at detection, even without a route, once per latch"))
+			return false;
+	}
+	nav::NavDocument document;
+	document.setSourceIdentity({5U, 100U, 200U});
+	auto start = area(1U, 0.0f, 256.0f);
+	start.connections[1U] = {2U};
+	document.addArea(start);
+	document.addArea(area(2U, 256.0f, 512.0f));
+	nav::NavSnapshotPublisher publisher;
+	publisher.publish(&document, 1U);
+	runtime::NavRoamObservation observation{};
+	observation.actor = {1U, 1U};
+	observation.frame = {1U, 1U, 14U};
+	observation.team = 1U;
+	observation.locomotion = sample;
+	observation.locomotion.observedAt = 1.4f;
+	observation.locomotion.standingClearance = 72.0f;
+	observation.locomotion.crouchingClearance = 36.0f;
+	observation.hasObjectiveTarget = true;
+	observation.objectiveTarget = {300.0f, 32.0f, 0.0f};
+	nav::LocomotionIntent intent{};
+	runtime::NavRoamDecision decision{};
+	return check(controller.update(publisher.snapshot(), observation, &intent, &decision) ==
+			runtime::NavRoamResult::IntentReady &&
+			decision.locomotionResult == nav::LocomotionResult::Stuck && random.verifyComplete(),
+		"a later path reuses the current stuck episode's delay without another draw");
+}
+
 bool testCompatibilityWiggleUsesRandomDirectionAndDuration(bool withView = false, bool rewindClock = false,
-	bool clearanceKnown = true, bool narrowArea = false, bool friendAfterWiggle = false)
+	bool clearanceKnown = true, bool narrowArea = false, bool friendAfterWiggle = false,
+	bool preObserve = false)
 {
 	using namespace astrabot;
 	nav::NavDocument document;
@@ -2037,6 +2093,8 @@ bool testCompatibilityWiggleUsesRandomDirectionAndDuration(bool withView = false
 					intent.speed == 0.0f && random.verifyComplete(),
 				"clearing a friend invalidates stale Wiggle instead of resuming its delayed jump");
 		}
+		if (preObserve)
+			controller.observeMotion(observation.actor, observation.frame, observation.locomotion);
 		if (controller.update(publisher.snapshot(), observation, &intent, &decision) !=
 			runtime::NavRoamResult::IntentReady)
 			return false;
@@ -3488,11 +3546,13 @@ int main()
 		!testFriendWaitRepathsAroundCrowding(false, false, 3) || !testCompatibilityCorridorWithoutProgressExpires() ||
 		!testCompatibilityCorridorWithoutProgressExpires(true) ||
 		!testCompatibilityCorridorWithoutProgressExpires(false, true) ||
+		!testCompatibilityStuckJumpIsScheduledWithoutAPath() ||
 		!testCompatibilityWiggleUsesRandomDirectionAndDuration() ||
 		!testCompatibilityWiggleUsesRandomDirectionAndDuration(true) ||
 		!testCompatibilityWiggleUsesRandomDirectionAndDuration(false, true) ||
 		!testCompatibilityWiggleUsesRandomDirectionAndDuration(false, false, false) ||
 		!testCompatibilityWiggleUsesRandomDirectionAndDuration(false, false, true, true) ||
+		!testCompatibilityWiggleUsesRandomDirectionAndDuration(false, false, true, false, false, true) ||
 		!testCompatibilityWiggleUsesRandomDirectionAndDuration(false, false, true, false, true))
 	{
 		return 1;

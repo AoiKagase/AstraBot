@@ -1515,7 +1515,8 @@ void BotBehaviorRuntime::commitBehaviorState(
 		// Reference state entry computes or abandons its own path. Never carry
 		// Idle's roam corridor into a newly assigned MoveTo task.
 		services_->applyNavigationRequest({index, NavigationRequestKind::DestroyPath});
-		if (previousState == compat::CompatibilityStateId::DefuseBomb ||
+		if (previousState == compat::CompatibilityStateId::Buy ||
+			previousState == compat::CompatibilityStateId::DefuseBomb ||
 			previousState == compat::CompatibilityStateId::PlantBomb ||
 			previousState == compat::CompatibilityStateId::Hide || previousState == compat::CompatibilityStateId::UseEntity)
 			services_->applyNavigationRequest({index, NavigationRequestKind::ResetProgress});

@@ -929,7 +929,8 @@ NavRoamController::NavigationPhaseResult NavRoamController::validateNavigationUp
 		friendWaitState().waitingBehindFriend = false;
 		friendWaitState().friendInTheWay = false;
 		friendWaitState().friendCheckAt = kFriendCheckUnscheduledTime;
-		traversalState().locomotion.resetProgressMonitor();
+		if (!timedCompatibility_ || !sameFrame(motionFrame_, observation.frame))
+			traversalState().locomotion.resetProgressMonitor();
 		corridorProgressAt_ = observedAt_;
 		if (decision != nullptr)
 		{
@@ -2110,6 +2111,7 @@ NavRoamController::NavigationPhaseResult NavRoamController::updateGroundLocomoti
 	auto *decision = ctx.decision;
 	auto &currentArea = ctx.currentArea;
 	auto &objectiveArea = ctx.objectiveArea;
+	const bool wasStuck = traversalState().locomotion.isStuck();
 	nav::LocomotionResult locomotionResult =
 		traversalState().locomotion.update(snapshot, observation.locomotion, intent);
 	if (routeState().hasActiveRoute)
@@ -2238,7 +2240,8 @@ NavRoamController::NavigationPhaseResult NavRoamController::updateGroundLocomoti
 				recoveryState().stuckRecoveryActive = false;
 				recoveryState().stuckRecoveryFramesRemaining = kStuckRecoveryFrameLimit;
 				recoveryState().stuckOrigin = observation.locomotion.position;
-				recoveryState().stuckJumpScheduled = false;
+				if (!wasStuck)
+					recoveryState().stuckJumpScheduled = false;
 				++recoveryState().stuckRecoveryCount;
 				if (buildStuckRecoveryIntent(snapshot, currentArea, intent))
 				{
@@ -2631,10 +2634,25 @@ bool NavRoamController::startRoute(const nav::NavSnapshot &snapshot, const nav::
 	return result == nav::LocomotionResult::Started;
 }
 
+bool NavRoamController::scheduleStuckJump(ActorId actor, std::uint32_t tick, float observedAt)
+{
+	if (randomSource_ == nullptr)
+		return false;
+	constexpr float kMaximumStuckJumpDelaySeconds = 0.5f;
+	const auto delay = randomSource_->nextFloat(compat::RandomRequest::floatRequest(
+		"CSBOT-STUCK-JUMP-DELAY", {actor.slot, actor.actorGeneration}, {0U, 0U, tick},
+		0.0f, kMaximumStuckJumpDelaySeconds));
+	if (delay.status != compat::RandomStatus::Ok || !std::isfinite(delay.value) || delay.value < 0.0f ||
+		delay.value > kMaximumStuckJumpDelaySeconds)
+		return false;
+	recoveryState().nextStuckJumpAt = observedAt + delay.value;
+	recoveryState().stuckJumpScheduled = true;
+	return true;
+}
+
 bool NavRoamController::buildStuckRecoveryIntent(
 	const nav::NavSnapshot &snapshot, const nav::NavAreaMatch &currentArea, nav::LocomotionIntent *intent)
 {
-	constexpr float kMaximumStuckJumpDelaySeconds = 0.5f;
 	constexpr int kForwardWiggleDirection = 0;
 	constexpr int kRightWiggleDirection = 1;
 	constexpr int kBackwardWiggleDirection = 2;
@@ -2671,16 +2689,8 @@ bool NavRoamController::buildStuckRecoveryIntent(
 				return false;
 			const compat::RandomActor actor = {actor_.slot, actor_.actorGeneration};
 			const compat::RandomTimingContext timing = {0U, 0U, lastFrame_.tick};
-			if (!recoveryState().stuckJumpScheduled)
-			{
-				const auto delay = randomSource_->nextFloat(compat::RandomRequest::floatRequest(
-					"CSBOT-STUCK-JUMP-DELAY", actor, timing, 0.0f, kMaximumStuckJumpDelaySeconds));
-				if (delay.status != compat::RandomStatus::Ok || !std::isfinite(delay.value) || delay.value < 0.0f ||
-					delay.value > kMaximumStuckJumpDelaySeconds)
-					return false;
-				recoveryState().nextStuckJumpAt = observedAt_ + delay.value;
-				recoveryState().stuckJumpScheduled = true;
-			}
+			if (!recoveryState().stuckJumpScheduled && !scheduleStuckJump(actor_, lastFrame_.tick, observedAt_))
+				return false;
 			const auto direction = randomSource_->nextLong(compat::RandomRequest::longRequest(
 				"CSBOT-WIGGLE-DIRECTION", actor, timing, kForwardWiggleDirection, kLeftWiggleDirection));
 			if (direction.status != compat::RandomStatus::Ok || direction.value < kForwardWiggleDirection ||
@@ -3650,7 +3660,15 @@ void NavRoamController::observeMotion(
 		return;
 	motionActor_ = actor;
 	motionFrame_ = frame;
-	traversalState().locomotion.observeMotion(observation);
+	auto &locomotion = traversalState().locomotion;
+	const bool wasStuck = locomotion.isStuck();
+	locomotion.observeMotion(observation);
+	if (modePolicy_.mode() != compat::RuntimeMode::Compatibility || !observation.timingAvailable)
+		return;
+	if (!locomotion.isStuck())
+		recoveryState().stuckJumpScheduled = false;
+	else if (!wasStuck)
+		(void)scheduleStuckJump(actor, frame.tick, observation.observedAt);
 }
 }
 }
