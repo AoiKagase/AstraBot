@@ -15,6 +15,18 @@ constexpr float kMinimumUsableMaxSpeed = 1.0f;
 constexpr auto kFreezeDiagnosticFrameInterval = 6U;
 constexpr auto kMaximumMovementDiagnosticSamples = 4U;
 
+bool usesNavigationLook(compat::CompatibilityStateId state)
+{
+	return state == compat::CompatibilityStateId::Hunt || state == compat::CompatibilityStateId::Hide ||
+		state == compat::CompatibilityStateId::InvestigateNoise;
+}
+
+bool canAdvanceNavigationLook(compat::CompatibilityStateId state, bool grounded)
+{
+	// An airborne Hunt command retains its takeoff view while the route continues.
+	return state != compat::CompatibilityStateId::Hunt || grounded;
+}
+
 runtime::ViewAngles stepIdleLook(
 	const edict_t &entity, float desiredYaw, float desiredPitch, float now, compat::AimSpringState &spring)
 {
@@ -439,8 +451,8 @@ runtime::CommandReceipt BotCommandRuntime::executeManagedBotCommand(
 	const bool roundFreeze = services_->roundFreezeActive();
 	const auto &machine = services_->behavior_managedBotStateMachines(index);
 	if (!navigationLookAdvanced && !explicitFrozen && !roundFreeze && std::isfinite(actor.navigationLookYaw) &&
-		(machine.state() == compat::CompatibilityStateId::Hunt ||
-			machine.state() == compat::CompatibilityStateId::Hide) && !machine.attackOverlayActive())
+		usesNavigationLook(machine.state()) && !machine.attackOverlayActive() &&
+		canAdvanceNavigationLook(machine.state(), (handle.entity->v.flags & FL_ONGROUND) != 0))
 	{
 		// CSBot's upkeep turns the view while keeping the axes from the last full decision.
 		command.viewAngles = stepIdleLook(
@@ -853,7 +865,7 @@ void BotCommandRuntime::resetActorExecutionState(std::size_t index)
 }
 
 MovementCommandDraft BotCommandRuntime::beginMovementCommand(std::size_t index, FakeClientHandle &handle,
-	const runtime::LifecycleToken &token, const runtime::MovementPhysicsState &, NavigationUpdate &movement)
+	const runtime::LifecycleToken &token, const runtime::MovementPhysicsState &before, NavigationUpdate &movement)
 {
 	MovementCommandDraft draft{};
 	const auto &locomotionIntent = movement.locomotionIntent;
@@ -866,15 +878,17 @@ MovementCommandDraft BotCommandRuntime::beginMovementCommand(std::size_t index, 
 	const bool navigationLook =
 		services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility &&
 		!machine.attackOverlayActive() && !locomotionIntent.nativeLadderControl &&
-		((machine.state() == compat::CompatibilityStateId::Hunt && movement.roamDecision.huntEndpointSteering) ||
-			(machine.state() == compat::CompatibilityStateId::Hide && locomotionIntent.speed > 0.0f));
+		usesNavigationLook(machine.state()) &&
+		(locomotionIntent.speed > 0.0f ||
+			(machine.state() == compat::CompatibilityStateId::Hunt && movement.roamDecision.huntEndpointSteering));
 	command.synchronizeCombatView = navigationLook;
 	command.viewAngles = (locomotionIntent.nativeLadderControl || navigationLook)
 		? runtime::ViewAngles{handle.entity->v.v_angle.x, handle.entity->v.v_angle.y, 0.0f}
 		: runtime::ViewAngles{0.0f, movementYaw(locomotionIntent.direction), 0.0f};
 	auto &actor = actors_[index];
 	if (navigationLook && std::isfinite(actor.navigationLookYaw) &&
-		!(handle.entity->v.flags & FL_FROZEN) && !services_->roundFreezeActive())
+		!(handle.entity->v.flags & FL_FROZEN) && !services_->roundFreezeActive() &&
+		canAdvanceNavigationLook(machine.state(), before.grounded))
 	{
 		command.viewAngles =
 			stepIdleLook(*handle.entity, actor.navigationLookYaw, 0.0f, services_->service_globals()->time,
@@ -913,9 +927,8 @@ void BotCommandRuntime::finishMovementCommand(std::size_t index, FakeClientHandl
 		!locomotionIntent.nativeLadderControl && !requestedAction.hasCombatAim && !requestedAction.hasGuardLook;
 	const bool huntEndpoint = canUseNavigationLook && roamDecision.huntEndpointSteering &&
 		machine.state() == compat::CompatibilityStateId::Hunt;
-	const bool coverLook = canUseNavigationLook && machine.state() == compat::CompatibilityStateId::Hide &&
-		locomotionIntent.speed > 0.0f;
-	const bool navigationLook = huntEndpoint || coverLook;
+	const bool navigationLook = huntEndpoint ||
+		(canUseNavigationLook && usesNavigationLook(machine.state()) && locomotionIntent.speed > 0.0f);
 	auto &actor = actors_[index];
 	if (!navigationLook)
 	{

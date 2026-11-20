@@ -210,6 +210,55 @@ int main()
 	context.frame.tick++;
 	context.fullUpdateSequence++;
 	context.timestamp = services.globals.time;
+	if (!check(services.stateMachine.transition(compat::CompatibilityStateId::InvestigateNoise,
+			compat::StateTransitionReason::ExplicitRequest, compat::StateTransitionId::ExplicitStateChange, context) ==
+			compat::StateResult::Transitioned, "enter InvestigateNoise with an active movement intent"))
+		return 1;
+	command.resetManagedBotCommandTemplate(0U);
+	handle.entity->v.v_angle = Vector(4.0f, 0.0f, 0.0f);
+	NavigationUpdate investigation{};
+	investigation.locomotionIntent.direction = {-1.0f, 0.0f, 0.0f};
+	investigation.locomotionIntent.speed = 240.0f;
+	const auto updateInvestigation = [&]()
+	{
+		const auto draft = command.beginMovementCommand(0U, handle, token, before, investigation);
+		const ActionProposal action{ActionKind::None, draft.command.viewAngles, 0U};
+		command.finishMovementCommand(0U, handle, token, before, investigation, draft, action);
+	};
+	updateInvestigation();
+	if (!check(services.lastYaw == 0.0f && handle.entity->v.v_angle.x == 4.0f && services.lastForward < 0,
+			"investigation movement starts from the current view"))
+		return 1;
+	services.globals.time += runtime::BotTimingScheduler::kCommandInterval;
+	command.executeManagedBotCommand(0U, handle);
+	const float investigationYaw = services.lastYaw;
+	if (!check(std::fabs(investigationYaw) > 2.0f && std::fabs(investigationYaw) < 5.0f &&
+			services.lastForward < 0, "investigation upkeep turns without changing the last movement axes"))
+		return 1;
+	investigation.locomotionIntent.direction.x = 1.0f;
+	services.globals.time += runtime::BotTimingScheduler::kCommandInterval;
+	updateInvestigation();
+	if (!check(std::fabs(services.lastYaw - investigationYaw) < 10.0f && services.lastForward > 0,
+			"an investigation route reversal changes the movement command without snapping the view"))
+		return 1;
+	context.frame.tick++;
+	context.fullUpdateSequence++;
+	context.timestamp = services.globals.time;
+	if (!check(services.stateMachine.transition(compat::CompatibilityStateId::Hunt,
+			compat::StateTransitionReason::ExplicitRequest, compat::StateTransitionId::ExplicitStateChange, context) ==
+			compat::StateResult::Transitioned, "return to Hunt with an ordinary corridor"))
+		return 1;
+	command.resetManagedBotCommandTemplate(0U);
+	handle.entity->v.v_angle = Vector(4.0f, 166.0f, 0.0f);
+	endpoint.roamDecision.huntEndpointSteering = false;
+	endpoint.locomotionIntent.walkingToHuntEndpoint = false;
+	updateHunt();
+	if (!check(services.lastYaw == 166.0f && handle.entity->v.v_angle.x == 4.0f &&
+			services.lastSide < 0, "an ordinary Hunt corridor preserves the current view for its first movement command"))
+		return 1;
+	context.frame.tick++;
+	context.fullUpdateSequence++;
+	context.timestamp = services.globals.time;
 	if (!check(services.stateMachine.transition(compat::CompatibilityStateId::UseEntity,
 			compat::StateTransitionReason::ExplicitRequest, compat::StateTransitionId::ExplicitStateChange, context) ==
 			compat::StateResult::Transitioned, "enter the interaction state"))
