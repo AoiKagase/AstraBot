@@ -676,6 +676,8 @@ void BotBehaviorRuntime::populateScenarioPublicState(std::size_t index, const ru
 	scenario.alreadyEscapingFromBomb = machine.state() == compat::CompatibilityStateId::EscapeFromBomb;
 	data.observedTeam = services_->observation_resolvePlayerTeam(services_->service_managedBotHandles()[index].entity);
 	const int observedTeam = data.observedTeam;
+	if (observedTeam == kCounterTerroristTeam)
+		data.defuserSlot = services_->observation_nativeDefuserSlot();
 	scenario.team = observedTeam == kTerroristTeam ? objectives::TeamRole::Terrorist
 		: observedTeam == kCounterTerroristTeam	   ? objectives::TeamRole::CounterTerrorist
 												   : objectives::TeamRole::Unknown;
@@ -901,11 +903,6 @@ void BotBehaviorRuntime::observeScenarioEntities(std::size_t index, const runtim
 								dz = knownPosition.z - before.origin.z;
 					scenario.bomb.pathCost = std::sqrt(dx * dx + dy * dy + dz * dz);
 					scenario.bomb.inUseRange = scenario.bomb.pathCost <= kEntityUseRange;
-					scenario.humanDefusingKnown = true;
-					scenario.humanDefusing = services_->observation_externalDefuserEntityIndex() != 0U &&
-						services_->observation_externalDefuserLeaseUntil() >= context.timestamp &&
-						services_->observation_externalDefuserMapGeneration() == context.frame.mapGeneration &&
-						services_->observation_externalDefuserRoundGeneration() == context.frame.roundGeneration;
 				}
 			}
 			compat::ScenarioTarget *destination = nullptr;
@@ -1477,6 +1474,7 @@ void BotBehaviorRuntime::updateScenarioTeamwork(std::size_t index, const runtime
 		scenario.radio = nullptr;
 	bool finishedDefense = false;
 	const bool guardingLoose = machine.task() == compat::CompatibilityTaskId::GuardLooseBomb;
+	const bool guardingDefuser = machine.task() == compat::CompatibilityTaskId::GuardBombDefuser;
 	const bool guardingSite = machine.task() == compat::CompatibilityTaskId::GuardBombZone;
 	const bool guardingHostages = machine.task() == compat::CompatibilityTaskId::GuardHostages;
 	const bool guardingRescue = machine.task() == compat::CompatibilityTaskId::GuardHostageRescueZone;
@@ -1487,7 +1485,8 @@ void BotBehaviorRuntime::updateScenarioTeamwork(std::size_t index, const runtime
 	const bool followingCover = actors_[index].followMotion.coverEpoch == machine.normalStateEpoch() &&
 		actors_[index].followMotion.coverEpoch != 0;
 	if (machine.state() == compat::CompatibilityStateId::Hide &&
-		(retreating || followingCover || guardingLoose || guardingSite || guardingHostages || guardingRescue || sniping ||
+		(retreating || followingCover || guardingLoose || guardingDefuser || guardingSite || guardingHostages ||
+			guardingRescue || sniping ||
 			machine.task() == compat::CompatibilityTaskId::HoldPosition ||
 			machine.task() == compat::CompatibilityTaskId::SeekAndDestroy) &&
 		!machine.attackOverlayActive())
@@ -1585,6 +1584,17 @@ void BotBehaviorRuntime::updateScenarioTeamwork(std::size_t index, const runtime
 	}
 	const auto action = actors_[index].scenarioDecisions.action;
 	if (machine.state() == compat::CompatibilityStateId::Idle && !machine.attackOverlayActive() &&
+		action != compat::ScenarioAction::Escape && scenario.scenario == compat::PublicScenarioKind::Bomb &&
+		scenario.bombPlanted && scenario.bomb.knowledge != compat::ScenarioKnowledge::Unknown &&
+		data.defuserSlot != 0U && data.defuserSlot != context.actor.slot)
+	{
+		actors_[index].scenarioDecisions = {};
+		actors_[index].scenarioDecisions.action = compat::ScenarioAction::Stop;
+		if (cooperative.rogueKnown && !cooperative.rogue)
+			guardAcceptedDefuser(index, scenario.bomb, data.defuserSlot);
+		return;
+	}
+	if (machine.state() == compat::CompatibilityStateId::Idle && !machine.attackOverlayActive() &&
 		action == compat::ScenarioAction::None && scenario.scenario == compat::PublicScenarioKind::Bomb &&
 		scenario.team == objectives::TeamRole::CounterTerrorist && !scenario.bombPlanted && !services_->service_roundOver() &&
 		(selectPreplantDefense(index, cooperative.rogueKnown && !cooperative.rogue, scenario) || !current()))
@@ -1662,6 +1672,34 @@ void BotBehaviorRuntime::applyScenarioDecision(std::size_t index, const runtime:
 	auto &actor = actors_[index];
 	auto &machine = actor.managedBotStateMachines;
 	const auto &siteFromPosition = actor.plantedBombsite;
+	const bool otherDefuser = data.defuserSlot != 0U && data.defuserSlot != context.actor.slot;
+	if (machine.state() == compat::CompatibilityStateId::Hide && machine.task() == compat::CompatibilityTaskId::GuardBombDefuser &&
+		!otherDefuser && !stateBehavior.reloading && !machine.attackOverlayActive() &&
+		actor.scenarioDecisions.action != compat::ScenarioAction::Escape)
+	{
+		actor.scenarioPlanners.cancelHoldPosition();
+		actor.scenarioDecisions = {};
+		actor.scenarioDecisions.action = compat::ScenarioAction::Stop;
+		actor.scenarioDecisions.state = compat::CompatibilityStateId::Idle;
+		actor.managedBotObjectiveTargets = {};
+		actor.managedBotObjectiveActions = {};
+		stateBehavior.guardObjectiveEnded = true;
+		return;
+	}
+	if (machine.state() == compat::CompatibilityStateId::MoveTo && machine.task() == compat::CompatibilityTaskId::DefuseBomb &&
+		!machine.attackOverlayActive() && otherDefuser &&
+		scenario.bomb.knowledge == compat::ScenarioKnowledge::Visible &&
+		actor.scenarioDecisions.action != compat::ScenarioAction::Escape)
+	{
+		if (!reportCoveringDefuser(index, data.defuserSlot))
+			return;
+		actor.helpGoal = {};
+		actor.managedTaskEntity = {};
+		actor.managedBotObjectiveTargets = {};
+		actor.scenarioDecisions = {};
+		actor.scenarioDecisions.action = compat::ScenarioAction::Stop;
+		actor.scenarioDecisions.state = compat::CompatibilityStateId::Idle;
+	}
 	if (scenario.scenario == compat::PublicScenarioKind::Bomb &&
 		machine.state() == compat::CompatibilityStateId::MoveTo &&
 		machine.task() == compat::CompatibilityTaskId::FindTickingBomb && !machine.attackOverlayActive() &&
@@ -1697,7 +1735,7 @@ void BotBehaviorRuntime::applyScenarioDecision(std::size_t index, const runtime:
 		task.bombPlanted = scenario.bombPlanted;
 		task.bombLocated = scenario.bomb.knowledge != compat::ScenarioKnowledge::Unknown;
 		task.bombVisible = scenario.bomb.knowledge == compat::ScenarioKnowledge::Visible;
-		task.otherDefuser = scenario.humanDefusingKnown && scenario.humanDefusing;
+		task.otherDefuser = otherDefuser;
 		if (task.task == compat::CompatibilityTaskId::CollectHostages ||
 			task.task == compat::CompatibilityTaskId::MoveToLastKnownEnemyPosition)
 		{
@@ -1780,12 +1818,13 @@ void BotBehaviorRuntime::applyScenarioDecision(std::size_t index, const runtime:
 		machine.state() == compat::CompatibilityStateId::EscapeFromBomb)
 		stateBehavior.objectiveActive = scenario.bombPlantedKnown && scenario.bombPlanted;
 	stateBehavior.inInteractionRange = scenarioDecision.hasTarget && scenarioDecision.target.inUseRange;
-	stateBehavior.guardObjectiveEnded = machine.state() == compat::CompatibilityStateId::Hide &&
-		scenario.team == objectives::TeamRole::CounterTerrorist && scenario.humanDefusingKnown &&
-		!scenario.humanDefusing && scenarioDecision.state == compat::CompatibilityStateId::MoveTo;
-	if (machine.state() == compat::CompatibilityStateId::DefuseBomb && scenario.humanDefusing &&
-		scenario.bomb.knowledge == compat::ScenarioKnowledge::Visible)
-		stateBehavior.defuseReceipt = compat::DefuseReceipt::Other;
+	if (machine.state() == compat::CompatibilityStateId::DefuseBomb)
+	{
+		if (data.defuserSlot != 0U)
+			stateBehavior.defuseReceipt = otherDefuser ? compat::DefuseReceipt::Other : compat::DefuseReceipt::Self;
+		else if (services_->observation_hasNativeDefuseEvents())
+			stateBehavior.defuseReceipt = compat::DefuseReceipt::Unknown;
+	}
 	const bool ownsCurrentTask = machine.state() != compat::CompatibilityStateId::Idle &&
 		machine.state() != compat::CompatibilityStateId::Hunt &&
 		machine.state() != compat::CompatibilityStateId::MoveTo;
@@ -1929,6 +1968,9 @@ void BotBehaviorRuntime::commitBehaviorState(
 		{
 			actors_[index].managedBotObjectiveActions = {};
 			actors_[index].scenarioDecisions = {};
+			if (previousState == compat::CompatibilityStateId::DefuseBomb &&
+				stateBehavior.defuseReceipt == compat::DefuseReceipt::Other)
+				actors_[index].scenarioDecisions.action = compat::ScenarioAction::Stop;
 			if (services_->service_runtimeProfiler().enabled())
 				profiledLogConsole(services_->service_runtimeProfiler(), services_->service_pluginId(),
 					"profile objectiveExit bot_id=%u frame=%u state_from=%s receipt=%u "

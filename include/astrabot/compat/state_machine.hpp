@@ -53,7 +53,8 @@ enum class CompatibilityTaskId : std::uint8_t
 	GuardLooseBomb,
 	GuardBombZone,
 	GuardHostages,
-	GuardHostageRescueZone
+	GuardHostageRescueZone,
+	GuardBombDefuser
 };
 
 enum class ObservationAvailability : std::uint8_t

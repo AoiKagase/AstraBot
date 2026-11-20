@@ -1286,6 +1286,29 @@ void BotBehaviorRuntime::hideAtPlantedBombsite(std::size_t index, compat::Scenar
 	env.hideNearArea(compat::findBotNavArea(env.navigation, point, nullptr), compat::CompatibilityTaskId::GuardBombZone);
 }
 
+void BotBehaviorRuntime::guardAcceptedDefuser(std::size_t index, const compat::ScenarioTarget &bomb, unsigned defuserSlot)
+{
+	ActorTaskEnvironment env(*this, index, index, [&] {
+		return services_->observation_nativeDefuserSlot() == defuserSlot;
+	});
+	if (env.current())
+	{
+		const nav::NavVector point{bomb.position.x, bomb.position.y, bomb.position.z};
+		env.hideNearArea(compat::findBotNavArea(env.navigation, point, nullptr), compat::CompatibilityTaskId::GuardBombDefuser);
+	}
+}
+
+bool BotBehaviorRuntime::reportCoveringDefuser(std::size_t index, unsigned defuserSlot)
+{
+	ActorTaskEnvironment env(*this, index, index, [&] {
+		return services_->observation_nativeDefuserSlot() == defuserSlot;
+	});
+	if (!env.current())
+		return false;
+	env.coveringFriend();
+	return env.current();
+}
+
 void BotBehaviorRuntime::hideNearLooseBomb(std::size_t index, bool announce)
 {
 	const auto bomb = actors_[index].looseBombObservation;

@@ -507,6 +507,16 @@ private:
 		return observation_.externalDefuserEntityIndex();
 	}
 
+	unsigned observation_nativeDefuserSlot() const override
+	{
+		return observation_.nativeDefuserSlot();
+	}
+
+	bool observation_hasNativeDefuseEvents() const override
+	{
+		return observation_.nativeBotEventsConnected();
+	}
+
 	const float &observation_externalDefuserLeaseUntil() const override
 	{
 		return observation_.externalDefuserLeaseUntil();

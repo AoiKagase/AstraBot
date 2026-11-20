@@ -2463,11 +2463,11 @@ int main(int argc, char **argv)
 	globals.time += 0.1f;
 	runtime.onStartFrame();
 	runtime.onStartFramePost();
-	if (!check(gRunPlayerMoveCount == 1 && (gLastRunPlayerMoveButtons & static_cast<unsigned short>(IN_USE)) == 0U &&
+	if (!check(gRunPlayerMoveCount == 1 &&
 				gEntities[0].v.fov == observedFovBeforeObjective &&
 				gEntities[0].v.origin.x == observedOriginXBeforeObjective &&
 				static_cast<int>(gEntities[0].v.team) == observedTeamBeforeObjective,
-			"nearby CT using planted C4 suppresses Bot IN_USE"))
+			"an external USE command leaves movement physics owned by GameDLL"))
 	{
 		std::remove(profilePath);
 		std::remove(defaultProfilePath);
@@ -2475,7 +2475,9 @@ int main(int argc, char **argv)
 	}
 	const float maxspeedBeforeBotTakeover = gEntities[0].v.maxspeed;
 	const int maxspeedCallsBeforeBotTakeover = gSetClientMaxspeedCount;
-	runtime.onCmdStart(&gEntities[1], 0U);
+	const bool holdUnacceptedUse = !astrabot_test::runtimeCharacterization().enabled();
+	if (!holdUnacceptedUse)
+		runtime.onCmdStart(&gEntities[1], 0U);
 	globals.time += 0.30f;
 	gRunPlayerMoveCount = 0;
 	runtime.onStartFrame();
@@ -2484,11 +2486,15 @@ int main(int argc, char **argv)
 	for (int frame = 0; frame < 6 && !resumedDefuse; ++frame)
 	{
 		globals.time += 0.1f;
+		if (holdUnacceptedUse)
+			runtime.onCmdStart(&gEntities[1], static_cast<std::uint16_t>(IN_USE));
 		runtime.onStartFrame();
 		runtime.onStartFramePost();
 		resumedDefuse = (gLastRunPlayerMoveButtons & static_cast<unsigned short>(IN_USE)) != 0U;
 	}
-	if (!check(gRunPlayerMoveCount >= 1 && resumedDefuse, "Bot defuse resumes after external CT releases C4 use"))
+	if (holdUnacceptedUse)
+		runtime.onCmdStart(&gEntities[1], 0U);
+	if (!check(gRunPlayerMoveCount >= 1 && resumedDefuse, "raw USE from another CT does not claim the planted C4"))
 	{
 		std::fprintf(stderr, "defuse fixture solid=%d movetype=%d health=%.1f origin=(%.1f %.1f %.1f)\n",
 			static_cast<int>(gEntities[0].v.solid), static_cast<int>(gEntities[0].v.movetype), gEntities[0].v.health,

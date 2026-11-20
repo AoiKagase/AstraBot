@@ -1733,6 +1733,7 @@ void BotObservationRuntime::resetRoundWeapons()
 
 void BotObservationRuntime::resetRoundObjectiveKnowledge()
 {
+	nativeDefuser_ = {};
 	reset_objectiveKnowledge();
 	reset_publicScoreStatuses();
 	reset_bombNoticeKnown();
@@ -1793,6 +1794,28 @@ bool BotObservationRuntime::nativeBotEventsConnected() const
 		engine->pfnPvEntPrivateData;
 }
 
+unsigned BotObservationRuntime::nativeDefuserSlot() const
+{
+	const auto receipt = nativeDefuser_;
+	const auto slot = receipt.connection.slot;
+	if (slot == 0U)
+		return 0U;
+	const auto *engine = services_->service_engineFunctions();
+	const auto &life = services_->service_lifecycle();
+	const auto current = [&] {
+		return engine == services_->service_engineFunctions() && life.mapGeneration() == receipt.frame.mapGeneration &&
+			life.roundGeneration() == receipt.frame.roundGeneration && life.slotGeneration(slot) == receipt.connection.actorGeneration &&
+			nativeDefuser_.frame == receipt.frame && nativeDefuser_.connection.slot == slot && nativeDefuser_.serial == receipt.serial;
+	};
+	if (!engine || !engine->pfnPEntityOfEntIndex || !current())
+		return 0U;
+	const auto *player = engine->pfnPEntityOfEntIndex(static_cast<int>(slot));
+	if (!current() || !player || resolvePlayerTeam(player) != kCounterTerroristTeam)
+		return 0U;
+	return current() && !player->free && player->serialnumber == receipt.serial && player->v.deadflag == DEAD_NO &&
+		player->v.health > 0 && (player->v.flags & (FL_CLIENT | FL_DORMANT | FL_SPECTATOR)) == FL_CLIENT ? slot : 0U;
+}
+
 bool BotObservationRuntime::hasNativeWeaponEvents(const edict_t *source, int slot) const
 {
 	if (source->serialnumber < 0 || slot <= 0 || slot > kMaximumClientSlot)
@@ -1805,6 +1828,11 @@ bool BotObservationRuntime::hasNativeWeaponEvents(const edict_t *source, int slo
 
 void BotObservationRuntime::observeGameDllBotEvent(NativeBotEvent kind, const void *player)
 {
+	if (kind == NativeBotEvent::DefuseEnded)
+	{
+		nativeDefuser_ = {};
+		return;
+	}
 	const auto *engine = services_->service_engineFunctions();
 	const auto *globals = services_->service_globals();
 	if (!services_->runtimeIsActive() || !player || !engine || !globals || !engine->pfnPEntityOfEntIndex ||
@@ -1839,6 +1867,14 @@ void BotObservationRuntime::observeGameDllBotEvent(NativeBotEvent kind, const vo
 			return;
 		if (!matches)
 			continue;
+		if (kind == NativeBotEvent::DefuseStarted)
+		{
+			const bool counterTerrorist = resolvePlayerTeam(source) == kCounterTerroristTeam;
+			if (counterTerrorist && sameFrame() && !source->free && source->serialnumber == serial &&
+				life.slotGeneration(static_cast<unsigned>(slot)) == connection)
+				nativeDefuser_ = {frame, {static_cast<unsigned>(slot), connection}, serial};
+			return;
+		}
 
 		if (kind == NativeBotEvent::HostageUsed)
 		{
@@ -2025,11 +2061,13 @@ void BotObservationRuntime::resetMapSoundAndSmoke()
 
 void BotObservationRuntime::resetMapObjectiveKnowledge()
 {
+	nativeDefuser_ = {};
 	reset_objectiveKnowledge();
 }
 
 void BotObservationRuntime::deactivateMapProvider()
 {
+	nativeDefuser_ = {};
 	nativeWeaponSources_ = {};
 	optionalObservations_.reset();
 }
@@ -2042,7 +2080,9 @@ void BotObservationRuntime::configurePerformance(bool disableVision, bool disabl
 void BotObservationRuntime::observeExternalCommand(const edict_t *entity, std::uint16_t buttons)
 {
 
-	if (!services_->runtimeIsActive() || entity == nullptr || entity->free != 0 ||
+	if (!services_->runtimeIsActive() ||
+		services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility ||
+		entity == nullptr || entity->free != 0 ||
 		services_->service_engineFunctions() == nullptr ||
 		services_->service_engineFunctions()->pfnIndexOfEdict == nullptr || services_->service_globals() == nullptr ||
 		!std::isfinite(services_->service_globals()->time))

@@ -28,7 +28,7 @@ enum class ReGameDllProbeStatus
 	MetadataOnly
 };
 
-enum class NativeBotEvent { Fired, FiredOnEmpty, Reloaded, HostageUsed };
+enum class NativeBotEvent { Fired, FiredOnEmpty, Reloaded, HostageUsed, DefuseStarted, DefuseEnded };
 
 // This provider never dereferences GameDLL player, weapon or gamerules layouts.
 // The negotiated API exposes metadata, but no safe getters for the per-actor

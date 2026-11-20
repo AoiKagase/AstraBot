@@ -120,6 +120,8 @@ public:
 	virtual combat::ReloadState observation_activeWeaponReloadState(edict_t *source) const = 0;
 	virtual bool observation_readManagedWorldSnapshot(std::size_t index, world::WorldSnapshot *snapshot) const = 0;
 	virtual const std::uint32_t &observation_externalDefuserEntityIndex() const = 0;
+	virtual unsigned observation_nativeDefuserSlot() const = 0;
+	virtual bool observation_hasNativeDefuseEvents() const = 0;
 	virtual const float &observation_externalDefuserLeaseUntil() const = 0;
 	virtual const std::uint32_t &observation_externalDefuserMapGeneration() const = 0;
 	virtual const std::uint32_t &observation_externalDefuserRoundGeneration() const = 0;

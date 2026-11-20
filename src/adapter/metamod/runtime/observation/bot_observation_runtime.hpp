@@ -30,6 +30,7 @@ public:
 		const std::function<const void *(const char *)> &findClientObject);
 	void observeGameDllBotEvent(NativeBotEvent kind, const void *player);
 	bool nativeBotEventsConnected() const;
+	unsigned nativeDefuserSlot() const;
 	bool dispatchingGameDllEvents() const { return optionalObservations_.dispatchingEvents(); }
 	runtime::MovementPhysicsState captureMovementPhysicsState(
 		const edict_t *entity, bool teamConfirmed, bool managedFakeClient) const;
@@ -353,6 +354,13 @@ private:
 	std::uint32_t externalDefuserEntityIndex_ = 0U;
 	std::uint32_t externalDefuserEntitySerial_ = 0U;
 	float externalDefuserLeaseUntil_ = 0.0f;
+	struct NativeDefuser
+	{
+		world::FrameIdentity frame{};
+		runtime::ActorId connection{};
+		int serial = -1;
+	};
+	NativeDefuser nativeDefuser_{};
 	std::uint32_t externalDefuserMapGeneration_ = 0U;
 	std::uint32_t externalDefuserRoundGeneration_ = 0U;
 };

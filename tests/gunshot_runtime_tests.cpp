@@ -304,6 +304,21 @@ bool testNativeBotEvents(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 	engine.pfnPvEntPrivateData = [](edict_t *entity) -> void * { return entity; };
 	runtime.giveEnginePointers(&engine, &globals);
 
+	auto defuse = std::make_unique<metamod::BotObservationRuntime>();
+	defuse->bindServices(runtime);
+	defuse->configureEngine();
+	defuse->notifyTeamInfo(5, "CT");
+	defuse->observeGameDllBotEvent(NativeBotEvent::DefuseStarted, &enemy);
+	if (!check(defuse->nativeDefuserSlot() == 5U, "accepted GameDLL defuse binds a live CT"))
+		return false;
+	++enemy.serialnumber;
+	const bool newEntityRejected = defuse->nativeDefuserSlot() == 0U;
+	--enemy.serialnumber;
+	defuse->observeGameDllBotEvent(NativeBotEvent::DefuseEnded, nullptr);
+	if (!check(newEntityRejected && defuse->nativeDefuserSlot() == 0U,
+			"a reused edict and a senderless abort both invalidate accepted defuse"))
+		return false;
+
 	const auto test = [&](NativeBotEvent kind, int weapon, float expectedRange, world::NoisePriority priority) {
 		auto observer = std::make_unique<metamod::BotObservationRuntime>();
 		observer->bindServices(runtime);

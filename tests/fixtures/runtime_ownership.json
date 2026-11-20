@@ -787,6 +787,11 @@
   {
     "header": "src/adapter/metamod/runtime/observation/bot_observation_runtime.hpp",
     "scope": "owner",
+    "member": "nativeDefuser_"
+  },
+  {
+    "header": "src/adapter/metamod/runtime/observation/bot_observation_runtime.hpp",
+    "scope": "owner",
     "member": "externalDefuserMapGeneration_"
   },
   {

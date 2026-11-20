@@ -118,6 +118,8 @@ const char *toString(CompatibilityTaskId task)
 		return "TASK-GUARD-HOSTAGES";
 	case CompatibilityTaskId::GuardHostageRescueZone:
 		return "TASK-GUARD-HOSTAGE-RESCUE-ZONE";
+	case CompatibilityTaskId::GuardBombDefuser:
+		return "TASK-GUARD-BOMB-DEFUSER";
 	default:
 		return "TASK-NONE";
 	}

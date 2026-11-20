@@ -528,7 +528,9 @@ void BotBehaviorRuntime::refreshManagedTeamObjectiveAssignments(std::size_t cont
 		managedTeamObjectivePathFailureStartArea_ = 0U;
 		managedTeamObjectivePathFailureFrame_ = 0U;
 	}
-	const bool externalDefuserActive = services_->observation_externalDefuserEntityIndex() != 0U &&
+	const bool externalDefuserActive =
+		services_->service_compatibilitySurface().configuration().mode != compat::RuntimeMode::Compatibility &&
+		services_->observation_externalDefuserEntityIndex() != 0U &&
 		services_->observation_externalDefuserMapGeneration() == mapGeneration &&
 		services_->observation_externalDefuserRoundGeneration() == roundGeneration &&
 		std::isfinite(services_->service_globals()->time) &&
@@ -1412,7 +1414,12 @@ BotBehaviorRuntime::BehaviorPhaseResult BotBehaviorRuntime::decideObjectiveActio
 	const bool compatibility =
 		services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility;
 	const auto &machine = actors_[index].managedBotStateMachines;
-	if (compatibility && machine.state() == compat::CompatibilityStateId::DefuseBomb &&
+	const bool enteredThisUpdate = machine.stateTimestamp() == services_->service_globals()->time;
+	const auto &stateInput = actors_[index].managedStateInputs;
+	// CSBot queues this update's USE before the competition check exits to Idle.
+	const bool finishingDefuse = machine.state() == compat::CompatibilityStateId::Idle && enteredThisUpdate &&
+		stateInput.objectiveActive && stateInput.defuseReceipt == compat::DefuseReceipt::Other;
+	if (compatibility && (machine.state() == compat::CompatibilityStateId::DefuseBomb || finishingDefuse) &&
 		!machine.attackOverlayActive())
 	{
 		// DefuseBomb owns its look and use commands even if the route and
@@ -1422,10 +1429,7 @@ BotBehaviorRuntime::BehaviorPhaseResult BotBehaviorRuntime::decideObjectiveActio
 			(proposal.movementButtons & ~(IN_JUMP | IN_FORWARD | IN_BACK | IN_MOVELEFT | IN_MOVERIGHT)) | IN_DUCK);
 		actors_[index].managedBotObjectiveActions.active = false;
 		const auto &bomb = services_->observation_objectiveKnowledge(index)[1U];
-		const auto &scenario = actors_[index].scenarioDecisions;
-		if (machine.stateTimestamp() != services_->service_globals()->time &&
-			bomb.entity.id != 0U && scenario.action != compat::ScenarioAction::Guard &&
-			(!objectiveAssignment || objectiveAssignment->kind != team::TeamObjectiveKind::GuardBombDefuser))
+		if ((!enteredThisUpdate || finishingDefuse) && bomb.entity.id != 0U)
 		{
 			proposal.hasUseEntityLook = true;
 			proposal.useEntityLookTarget = {bomb.position.x, bomb.position.y, bomb.position.z};

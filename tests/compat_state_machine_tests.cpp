@@ -359,7 +359,7 @@ bool testStateOwnsNavigationOutcome()
 	if (!check(machine.state() == CompatibilityStateId::MoveTo, "close known bomb does not bypass a progressing path"))
 		return false;
 	input.navigation.outcome = NavigationStepOutcome::PathFailure;
-	tick = context(3U, 0.2f, 3U);
+	tick = context(3U, 0.25f, 3U);
 	tick.behavior = &input;
 	input.navigation.frame = tick.frame;
 	input.navigation.fullUpdateSequence = tick.fullUpdateSequence;
@@ -368,11 +368,18 @@ bool testStateOwnsNavigationOutcome()
 			"non-progressing path can enter defuse using its known bomb task"))
 		return false;
 	input.navigation.outcome = NavigationStepOutcome::NotEvaluated;
-	tick = context(4U, 1.3f, 4U);
+	input.defuseReceipt = DefuseReceipt::Other;
+	tick = context(4U, 1.25f, 4U);
+	tick.behavior = &input;
+	machine.update(tick);
+	if (!check(machine.state() == CompatibilityStateId::DefuseBomb,
+			"another accepted defuser leaves the full one-second grace intact"))
+		return false;
+	tick = context(5U, 1.375f, 5U);
 	tick.behavior = &input;
 	machine.update(tick);
 	return check(machine.state() == CompatibilityStateId::Idle,
-		"unconfirmed defuse exits after one second without treating missing receipt as confirmed success");
+		"another accepted defuser returns the CT to Idle after the one-second grace");
 }
 
 bool testReferenceIdleAndHuntOwnTheirLifecycle()

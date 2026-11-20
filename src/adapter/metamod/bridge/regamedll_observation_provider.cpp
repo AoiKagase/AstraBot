@@ -172,7 +172,12 @@ void ReGameDllObservationProvider::onBotEvent(
 {
 	++botEventDispatchDepth_;
 	const auto *owner = eventOwner_;
-	if (source && owner && owner->botEventListener_)
+	if (owner && owner->botEventListener_ &&
+		(event == EVENT_BOMB_DEFUSE_ABORTED || event == EVENT_BOMB_DEFUSED || event == EVENT_BOMB_EXPLODED))
+	{
+		owner->botEventListener_(owner->botEventContext_, NativeBotEvent::DefuseEnded, source);
+	}
+	else if (source && owner && owner->botEventListener_)
 	{
 		const auto listener = owner->botEventListener_;
 		void *context = owner->botEventContext_;
@@ -189,6 +194,9 @@ void ReGameDllObservationProvider::onBotEvent(
 			break;
 		case EVENT_HOSTAGE_USED:
 			listener(context, NativeBotEvent::HostageUsed, source);
+			break;
+		case EVENT_BOMB_DEFUSING:
+			listener(context, NativeBotEvent::DefuseStarted, source);
 			break;
 		default:
 			break;

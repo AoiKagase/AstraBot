@@ -236,6 +236,8 @@ private:
 	bool renewHostageRescueGuard(std::size_t index);
 	bool selectPreplantDefense(std::size_t index, bool cooperative, const compat::ScenarioBehaviorInput &scenario);
 	void hideAtPlantedBombsite(std::size_t index, compat::ScenarioTarget target);
+	void guardAcceptedDefuser(std::size_t index, const compat::ScenarioTarget &bomb, unsigned defuserSlot);
+	bool reportCoveringDefuser(std::size_t index, unsigned defuserSlot);
 	bool renewBombsiteGuard(std::size_t index);
 	void rememberLooseBombDrop(world::EntityKey box, world::FrameIdentity frame, nav::NavVector origin);
 	nav::AreaId looseBombArea(const nav::NavSnapshot &navigation, const std::function<bool()> &current);
@@ -294,6 +296,7 @@ private:
 	{
 		const compat::ObservationTimingContext &timing;
 		int observedTeam = 0;
+		unsigned defuserSlot = 0;
 		float automaticLeaderRange = (std::numeric_limits<float>::max)();
 		compat::ScenarioTarget looseBomb{};
 		nav::NavVector looseBombOrigin{};

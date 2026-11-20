@@ -287,8 +287,17 @@ bool testBotEvents(astrabot::metamod::ReGameDllObservationProvider &provider)
 		return false;
 	api.hooks.weapon.hook(&chain, EVENT_GRENADE_BOUNCED, source, nullptr);
 	api.hooks.weapon.hook(&chain, EVENT_WEAPON_RELOADED, nullptr, nullptr);
+	api.hooks.weapon.hook(&chain, EVENT_BOMB_DEFUSING, source, nullptr);
+	if (notice.count != 5 || notice.event != NativeBotEvent::DefuseStarted || notice.source != source)
+		return false;
+	api.hooks.weapon.hook(&chain, EVENT_BOMB_DEFUSE_ABORTED, nullptr, nullptr);
+	if (notice.count != 6 || notice.event != NativeBotEvent::DefuseEnded || notice.source != nullptr)
+		return false;
+	api.hooks.weapon.hook(&chain, EVENT_BOMB_DEFUSED, source, nullptr);
+	if (notice.count != 7 || notice.event != NativeBotEvent::DefuseEnded)
+		return false;
 	provider.reset();
-	if (chain.count != 6 || notice.count != 4 || api.hooks.weapon.hook)
+	if (chain.count != 9 || notice.count != 7 || api.hooks.weapon.hook)
 		return false;
 
 	provider.probe(factory);
@@ -305,7 +314,7 @@ bool testBotEvents(astrabot::metamod::ReGameDllObservationProvider &provider)
 		}, &resetNotice))
 		return false;
 	api.hooks.weapon.hook(&chain, EVENT_WEAPON_RELOADED, source, nullptr);
-	return chain.count == 7 && remainedRegistered && !api.hooks.weapon.hook && !provider.dispatchingEvents();
+	return chain.count == 10 && remainedRegistered && !api.hooks.weapon.hook && !provider.dispatchingEvents();
 }
 
 int main()
