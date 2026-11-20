@@ -5,7 +5,7 @@ namespace astrabot
 namespace metamod
 {
 void BotBehaviorRuntime::updateBehaviorPriorities(std::size_t index, const runtime::MovementPhysicsState &before,
-	compat::StateUpdateContext &context, compat::StateBehaviorInput &stateBehavior)
+	compat::StateUpdateContext &context, compat::StateBehaviorInput &stateBehavior, bool wasAtDefenseSpot)
 {
 	auto &machine = actors_[index].managedBotStateMachines;
 	const bool buyingRequested = shouldBuy(index, context);
@@ -19,7 +19,7 @@ void BotBehaviorRuntime::updateBehaviorPriorities(std::size_t index, const runti
 	}
 	else if (!context.requestTransition && !machine.attackOverlayActive())
 	{
-		updateNoiseInvestigation(index, before, context, stateBehavior);
+		updateNoiseInvestigation(index, before, context, stateBehavior, wasAtDefenseSpot);
 	}
 }
 } // namespace metamod

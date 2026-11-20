@@ -83,12 +83,13 @@ void BotBehaviorRuntime::updateManagedBotCompatibilityState(
 	const auto receipt = reactionContext(index);
 	const auto revision = actors_[index].executionRevision;
 	const auto epoch = actors_[index].managedBotStateMachines.normalStateEpoch();
+	const bool wasAtDefenseSpot = actors_[index].scenarioPlanners.atDefenseSpot();
 	PlantMoveChatter currentPlantMove{};
 	updateScenarioState(index, before, context, stateBehavior, plantMove ? &currentPlantMove : nullptr);
 	if (!executionCurrent(index, receipt, revision) ||
 		actors_[index].managedBotStateMachines.normalStateEpoch() != epoch)
 		return;
-	updateBehaviorPriorities(index, before, context, stateBehavior);
+	updateBehaviorPriorities(index, before, context, stateBehavior, wasAtDefenseSpot);
 	if (!executionCurrent(index, receipt, revision) ||
 		actors_[index].managedBotStateMachines.normalStateEpoch() != epoch)
 		return;

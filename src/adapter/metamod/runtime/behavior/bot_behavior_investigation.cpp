@@ -14,7 +14,7 @@ float distanceTo(const world::WorldPosition &a, const world::WorldPosition &b)
 }
 }
 void BotBehaviorRuntime::updateNoiseInvestigation(std::size_t index, const runtime::MovementPhysicsState &before,
-	compat::StateUpdateContext &context, compat::StateBehaviorInput &state)
+	compat::StateUpdateContext &context, compat::StateBehaviorInput &state, bool wasAtDefenseSpot)
 {
 	auto &actor = actors_[index];
 	auto &planner = actor.noiseInvestigation;
@@ -64,7 +64,9 @@ void BotBehaviorRuntime::updateNoiseInvestigation(std::size_t index, const runti
 	const bool defending = current == compat::CompatibilityStateId::Hide &&
 		(machine.task() == compat::CompatibilityTaskId::HoldPosition ||
 			machine.task() == compat::CompatibilityTaskId::GuardLooseBomb);
-	const bool atHidingSpot = current == compat::CompatibilityStateId::Hide && actor.scenarioPlanners.atDefenseSpot();
+	// Native Hide listens before recognizing arrival on this update.
+	const bool atHidingSpot = current == compat::CompatibilityStateId::Hide && wasAtDefenseSpot &&
+		actor.scenarioPlanners.atDefenseSpot();
 	constexpr unsigned sniperWeapons = (1U << 3) | (1U << 13) | (1U << 18) | (1U << 24);
 	const bool mayInvestigateFromDefense = defending &&
 		reactionDisposition(index) == compat::ReactionDisposition::Engage &&
@@ -129,7 +131,7 @@ void BotBehaviorRuntime::updateNoiseInvestigation(std::size_t index, const runti
 	}
 	if (result == compat::NoiseInvestigationResult::Attend)
 	{
-		if ((defending && actor.scenarioPlanners.delayDefenseInvestigation(in.now)) ||
+		if ((defending && atHidingSpot && actor.scenarioPlanners.delayDefenseInvestigation(in.now)) ||
 			!services_->observation_consumeNoise(index, in.noise))
 		{
 			planner.cancel();

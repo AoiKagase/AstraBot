@@ -449,21 +449,60 @@ bool testInvestigation(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t 
 	if (!check(belief.noise().active && belief.noise().position.y == 500.0f,
 			"approach fixture retains a sound outside the settled hiding radius"))
 		return false;
-	// Enter through the Core state boundary with no arrival at a defense spot.
-	auto hold = attack;
-	hold.actor = belief.identity().observer;
-	hold.frame = belief.identity().frame;
-	hold.timestamp = globals.time;
-	hold.fullUpdateSequence = navigation.service_managedBotFullUpdateSequences()[0];
-	hold.hideTask = compat::CompatibilityTaskId::HoldPosition;
-	if (!check(machine.transition(compat::CompatibilityStateId::Hide, compat::StateTransitionReason::ObjectiveChanged,
+	const auto enterHold = [&]()
+	{
+		auto hold = attack;
+		hold.actor = belief.identity().observer;
+		hold.frame = belief.identity().frame;
+		hold.timestamp = globals.time;
+		hold.fullUpdateSequence = navigation.service_managedBotFullUpdateSequences()[0];
+		hold.hideTask = compat::CompatibilityTaskId::HoldPosition;
+		return machine.transition(compat::CompatibilityStateId::Hide, compat::StateTransitionReason::ObjectiveChanged,
 			compat::StateTransitionId::ExplicitStateChange, hold) == compat::StateResult::Transitioned &&
-			machine.task() == compat::CompatibilityTaskId::HoldPosition,
+			machine.task() == compat::CompatibilityTaskId::HoldPosition;
+	};
+	if (!check(enterHold(),
 			"the bot begins HoldPosition before reaching cover"))
 		return false;
 	step(.65f);
+	if (!check(investigating() && !belief.noise().active &&
+			navigation.behavior_buildManagedObjectiveTarget(0, &target, nullptr) && target.y == 500.0f,
+			"moving toward a hiding spot can investigate a sound outside the settled radius"))
+		return false;
+
+	runtime.onRoundLifecycleMessage("World triggered \"Round_Start\"\n");
+	setCvarFloat("bot_allow_rogues", 0.0f);
+	step(31);
+	step(.25f);
+	if (!check(enterHold(), "arrival fixture enters a defending task"))
+		return false;
+	teammate.serialnumber = 51;
+	teammate.v.team = 1;
+	teammate.v.origin = Vector(0.0f, 100.0f, 36.0f);
+	runtime.onMessageBegin(MSG_ONE, 101, nullptr, &self);
+	runtime.onWriteByte(2);
+	runtime.onWriteString("%!MRAD_POSITION");
+	runtime.onWriteShort(100);
+	runtime.onMessageEnd();
+	compat::ScenarioTarget cover{};
+	cover.knowledge = compat::ScenarioKnowledge::Visible;
+	cover.frame = belief.identity().frame;
+	cover.position = {0.0f, 100.0f, 0.0f};
+	behavior.observation_observeRadioLeaderPosition(0, cover);
+	step(.125f);
+	step(1.25f);
+	const auto &order = navigation.behavior_scenarioDecisions(0);
+	if (!check(order.hasTarget && order.target.position.y == cover.position.y && !order.target.inUseRange,
+			"the radio order establishes a hiding spot the bot has not reached"))
+		return false;
+	emit();
+	step(.12f);
+	if (!check(belief.noise().active && !investigating(), "the noise is held until the reaction time elapses"))
+		return false;
+	self.v.origin.y = cover.position.y;
+	step(.65f);
 	return check(investigating() && !belief.noise().active &&
 			navigation.behavior_buildManagedObjectiveTarget(0, &target, nullptr) && target.y == 500.0f,
-		"moving toward a hiding spot can investigate a sound outside the settled radius");
+		"the first arrival update considers the sound before applying the settled radius");
 }
 }

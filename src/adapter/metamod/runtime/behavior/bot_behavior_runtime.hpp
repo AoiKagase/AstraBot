@@ -326,9 +326,9 @@ private:
 	bool shouldBuy(std::size_t index, const compat::StateUpdateContext &context);
 	bool usesCsBotBuying() const;
 	void updateNoiseInvestigation(std::size_t index, const runtime::MovementPhysicsState &before,
-		compat::StateUpdateContext &context, compat::StateBehaviorInput &stateBehavior);
+		compat::StateUpdateContext &context, compat::StateBehaviorInput &stateBehavior, bool wasAtDefenseSpot);
 	void updateBehaviorPriorities(std::size_t index, const runtime::MovementPhysicsState &before,
-		compat::StateUpdateContext &context, compat::StateBehaviorInput &stateBehavior);
+		compat::StateUpdateContext &context, compat::StateBehaviorInput &stateBehavior, bool wasAtDefenseSpot);
 	void commitBehaviorState(
 		std::size_t index, compat::StateUpdateContext &context, compat::StateBehaviorInput &stateBehavior);
 	void updateScenarioState(std::size_t index, const runtime::MovementPhysicsState &before,
