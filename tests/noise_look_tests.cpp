@@ -27,6 +27,10 @@ int main()
 	check(noiseLookKind(in, 0) == NoiseLookKind::Ordinary, "ordinary noise waits exactly for reaction time");
 	in.now = 10.125f;
 	check(noiseLookKind(in, 0) == NoiseLookKind::None, "ordinary noise cannot bypass reaction delay");
+	auto immediate = in;
+	immediate.now = immediate.noiseTime;
+	immediate.reactionSeconds = ProfileRecord::kMinimumReactionSeconds;
+	check(noiseLookKind(immediate, 0) == NoiseLookKind::Ordinary, "adjusted zero reacts to the first audible sample");
 	in.highPriority = true;
 	check(noiseLookKind(in, 0) == NoiseLookKind::Startle,
 		"near clear high-priority noise startles before reaction delay");

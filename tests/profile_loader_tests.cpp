@@ -1,6 +1,7 @@
 #include "astrabot/metamod/profile_loader.hpp"
 
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 namespace
@@ -9,6 +10,14 @@ namespace
 bool sameFloat32(float actual, float expected)
 {
 	return std::memcmp(&actual, &expected, sizeof(float)) == 0;
+}
+
+float adjustedReaction(float explicitValue)
+{
+	// The native loader stores the parsed value before subtracting the think interval.
+	volatile float stored = explicitValue;
+	volatile float interval = 0.1f;
+	return stored - interval;
 }
 
 const char *const kFixturePath = "astrabot_profile_loader_fixture.db";
@@ -168,7 +177,8 @@ int main()
 	astrabot::compat::ProfileRecord csbotProfile = {};
 	if (!check(catalog.selectNamed("BotOne", ProfileTeam::Any, &csbotProfile) == ProfileSelectionResult::Selected &&
 				csbotProfile.skill == 100 && csbotProfile.difficulty == 4 &&
-				sameFloat32(csbotProfile.reactionTimeSeconds, 0.2f) &&
+				sameFloat32(csbotProfile.effectiveReactionSeconds(true), adjustedReaction(0.2f)) &&
+				sameFloat32(csbotProfile.effectiveReactionSeconds(false), 0.2f) &&
 				sameFloat32(csbotProfile.attackDelaySeconds, 0.1f) && csbotProfile.teamwork == 90 &&
 				csbotProfile.cost == 1500 && csbotProfile.voicePitch == 95 &&
 				std::strcmp(csbotProfile.voiceBank, "elite-voice.db") == 0 && csbotProfile.weaponPreferenceCount == 2 &&
@@ -179,7 +189,9 @@ int main()
 		return 1;
 	}
 	if (!check(catalog.selectNamed("BotTwo", ProfileTeam::Any, &csbotProfile) == ProfileSelectionResult::Selected &&
-			std::strcmp(csbotProfile.voiceBank, "default-voice.db") == 0, "profile retains inherited default voice bank"))
+			sameFloat32(csbotProfile.effectiveReactionSeconds(true), adjustedReaction(0.45f)) &&
+			std::strcmp(csbotProfile.voiceBank, "default-voice.db") == 0,
+			"profile inherits the adjusted Default reaction and voice bank"))
 		return 1;
 
 	const char multiTemplateText[] =
@@ -195,7 +207,7 @@ int main()
 		"Template C\nWeaponPreference = awp\nWeaponPreference = ak47\nEnd\n"
 		"A+B Inherited\nEnd\n"
 		"A+C EqualToCurrentCount\nEnd\n"
-		"A+B Explicit\nSkill = 50\nTeamwork = 60\nWeaponPreference = awp\nEnd\n";
+		"A+B Explicit\nSkill = 50\nTeamwork = 60\nReactionTime = 0.05\nWeaponPreference = awp\nEnd\n";
 	astrabot::compat::ProfileCatalog multiTemplateCatalog;
 	if (!check(loader.loadText(multiTemplateText, std::strlen(multiTemplateText), &multiTemplateCatalog) ==
 			ProfileLoadResult::Loaded, "CSBot profiles with multiple templates load"))
@@ -209,7 +221,9 @@ int main()
 	}
 	bool multiTemplatePassed = check(csbotProfile.skill == 75 && csbotProfile.aggression == 80 &&
 		csbotProfile.team == ProfileTeam::CounterTerrorist && csbotProfile.difficultyMask == 8U &&
-		sameFloat32(csbotProfile.reactionTimeSeconds, 0.3f) && sameFloat32(csbotProfile.attackDelaySeconds, 0.1f) &&
+		sameFloat32(csbotProfile.effectiveReactionSeconds(true), adjustedReaction(0.3f)) &&
+		sameFloat32(csbotProfile.effectiveReactionSeconds(false), 0.3f) &&
+		sameFloat32(csbotProfile.attackDelaySeconds, 0.1f) &&
 		csbotProfile.teamwork == 90 && csbotProfile.cost == 2000 && csbotProfile.voicePitch == 115 &&
 		std::strcmp(csbotProfile.voiceBank, "other.db") == 0,
 		"default-equivalent template values preserve preceding scalar overrides");
@@ -221,12 +235,55 @@ int main()
 			csbotProfile.weaponPreferences[1] == 28, "preference count compares with Default, not the preceding template");
 	multiTemplatePassed &= check(multiTemplateCatalog.selectNamed("Explicit", ProfileTeam::Any, &csbotProfile) ==
 				ProfileSelectionResult::Selected && csbotProfile.skill == 50 && csbotProfile.teamwork == 60 &&
+			sameFloat32(csbotProfile.effectiveReactionSeconds(true), adjustedReaction(0.05f)) &&
 			csbotProfile.weaponPreferenceCount == 1 && csbotProfile.weaponPreferences[0] == 18,
 		"profile fields override template values even when they equal Default");
 	if (!multiTemplatePassed)
 	{
 		return 1;
 	}
+
+	const char omittedReaction[] =
+		"Default\nSkill = 50\nEnd\n"
+		"Template Plain\nEnd\n"
+		"Template Override\nReactionTime = 0.2\nEnd\n"
+		"Template EqualDefault\nReactionTime = 0.4\nEnd\n"
+		"Plain Unspecified\nEnd\n"
+		"EqualDefault Unchanged\nEnd\n"
+		"Override+EqualDefault Kept\nEnd\n"
+		"EqualDefault Immediate\nReactionTime = 0\nEnd\n"
+		"EqualDefault Rounded\nReactionTime = 0.1499999985098838800\nEnd\n";
+	astrabot::compat::ProfileCatalog reactionCatalog;
+	if (!check(loader.loadText(omittedReaction, std::strlen(omittedReaction), &reactionCatalog) == ProfileLoadResult::Loaded &&
+			reactionCatalog.selectNamed("Unspecified", ProfileTeam::Any, &csbotProfile) == ProfileSelectionResult::Selected &&
+			sameFloat32(csbotProfile.effectiveReactionSeconds(true), 0.3f) &&
+			sameFloat32(csbotProfile.effectiveReactionSeconds(false), 0.3f) &&
+			reactionCatalog.selectNamed("Unchanged", ProfileTeam::Any, &csbotProfile) == ProfileSelectionResult::Selected &&
+			sameFloat32(csbotProfile.effectiveReactionSeconds(true), 0.3f) &&
+			sameFloat32(csbotProfile.effectiveReactionSeconds(false), 0.4f) &&
+			reactionCatalog.selectNamed("Kept", ProfileTeam::Any, &csbotProfile) == ProfileSelectionResult::Selected &&
+			sameFloat32(csbotProfile.effectiveReactionSeconds(true), adjustedReaction(0.2f)) &&
+			sameFloat32(csbotProfile.effectiveReactionSeconds(false), 0.4f) &&
+			reactionCatalog.selectNamed("Immediate", ProfileTeam::Any, &csbotProfile) == ProfileSelectionResult::Selected &&
+			sameFloat32(csbotProfile.effectiveReactionSeconds(true), -0.1f) &&
+			sameFloat32(csbotProfile.effectiveReactionSeconds(false), 0.0f),
+			"native omission, adjusted Default-equivalent inheritance and explicit zero"))
+		return 1;
+	if (!check(reactionCatalog.selectNamed("Rounded", ProfileTeam::Any, &csbotProfile) ==
+			ProfileSelectionResult::Selected &&
+			sameFloat32(csbotProfile.effectiveReactionSeconds(true), adjustedReaction(0.15f)) &&
+			sameFloat32(csbotProfile.effectiveReactionSeconds(false),
+				std::strtof("0.1499999985098838800", nullptr)),
+			"native conversion rounds through double while Enhanced keeps the configured float parser"))
+		return 1;
+
+	const char bracedReaction[] = "Explicit { Team = any ReactionTime = 0.05 }\n";
+	if (!check(loader.loadText(bracedReaction, std::strlen(bracedReaction), &reactionCatalog) == ProfileLoadResult::Loaded &&
+			reactionCatalog.selectNamed("Explicit", ProfileTeam::Any, &csbotProfile) == ProfileSelectionResult::Selected &&
+			sameFloat32(csbotProfile.effectiveReactionSeconds(true), 0.05f) &&
+			sameFloat32(csbotProfile.effectiveReactionSeconds(false), 0.05f),
+			"the braced grammar keeps its specified reaction time"))
+		return 1;
 
 	const char invalidExtended[] = "Bad { ReactionTime = nan }\n";
 	if (!check(

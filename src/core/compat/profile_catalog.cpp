@@ -162,7 +162,11 @@ bool ProfileCatalog::isValid(const ProfileRecord &profile)
 	constexpr unsigned kMaximumWeaponPreferences = 16U;
 	return std::memchr(profile.voiceBank, '\0', sizeof(profile.voiceBank)) != nullptr &&
 		isInputName(profile.name) && isValidTeam(profile.team) && std::isfinite(profile.reactionTimeSeconds) &&
-		profile.reactionTimeSeconds >= 0.0f && std::isfinite(profile.attackDelaySeconds) &&
+		profile.reactionTimeSeconds >= 0.0f &&
+		(profile.csbotReactionSeconds == ProfileRecord::kNoCsbotReactionSeconds ||
+			(std::isfinite(profile.csbotReactionSeconds) &&
+				profile.csbotReactionSeconds >= ProfileRecord::kMinimumReactionSeconds)) &&
+		std::isfinite(profile.attackDelaySeconds) &&
 		profile.attackDelaySeconds >= 0.0f && profile.teamwork >= 0 && profile.teamwork <= kMaximumAttribute &&
 		profile.weaponPreferenceCount <= kMaximumWeaponPreferences && profile.difficulty >= kMinimumDifficulty &&
 		profile.difficulty <= kMaximumDifficulty && profile.skill >= kMinimumAttribute &&

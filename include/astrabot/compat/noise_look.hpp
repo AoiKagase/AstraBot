@@ -42,7 +42,8 @@ inline NoiseLookKind noiseLookKind(const NoiseLookInput &input, float inhibitedU
 		return NoiseLookKind::None;
 	if (input.clearLine && isNearbyEnemyGunfire(input))
 		return NoiseLookKind::Startle;
-	if (input.noiseTime == 0.0f || !std::isfinite(input.reactionSeconds) || input.reactionSeconds < 0 ||
+	if (input.noiseTime == 0.0f || !std::isfinite(input.reactionSeconds) ||
+		input.reactionSeconds < ProfileRecord::kMinimumReactionSeconds ||
 		input.now - input.noiseTime < input.reactionSeconds)
 		return NoiseLookKind::None;
 	return NoiseLookKind::Ordinary;

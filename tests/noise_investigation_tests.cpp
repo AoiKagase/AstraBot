@@ -198,6 +198,12 @@ int main()
 		return 1;
 	p.reset();
 	i = input();
+	i.noise.timestampSeconds = i.now;
+	i.reactionSeconds = astrabot::compat::ProfileRecord::kMinimumReactionSeconds;
+	if (!check(p.evaluate(i, random) == Result::Attend, "an adjusted zero profile may investigate immediately"))
+		return 1;
+	p.reset();
+	i = input();
 	i.noise.timestampSeconds = 79.75f;
 	if (!check(p.evaluate(i, random) == Result::Attend, "a remembered noise older than twenty seconds can be investigated"))
 		return 1;

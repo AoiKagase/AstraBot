@@ -336,7 +336,8 @@ bool parseTeam(const Token &token, compat::ProfileTeam *team)
 	return false;
 }
 
-bool parseExtendedField(const Token &key, const Token &value, compat::ProfileRecord *profile, unsigned *mask)
+bool parseExtendedField(const Token &key, const Token &value, compat::ProfileRecord *profile, unsigned *mask,
+	bool csbotFormat = false)
 {
 	constexpr int kMaximumTeamwork = 100;
 	constexpr int kMaximumVoicePitch = 255;
@@ -372,7 +373,15 @@ bool parseExtendedField(const Token &key, const Token &value, compat::ProfileRec
 		if (errno || end == value.text || *end != '\0' || !std::isfinite(parsed) || parsed < 0)
 			return false;
 		if (field == kReactionTimeFieldMask)
+		{
 			profile->reactionTimeSeconds = parsed;
+			if (csbotFormat)
+			{
+				// Native atof converts through double and stores float32 before subtracting a think.
+				volatile float nativeValue = static_cast<float>(std::strtod(value.text, nullptr));
+				profile->csbotReactionSeconds = nativeValue - runtime::BotTimingScheduler::kFullUpdateInterval;
+			}
+		}
 		else
 			profile->attackDelaySeconds = parsed;
 	}
@@ -619,7 +628,9 @@ private:
 
 CsbotValues makeCsbotValues()
 {
-	return {kDefaultDifficulty, kDefaultSkill, kDefaultAggression, compat::ProfileTeam::Any, false, 0, {}};
+	CsbotValues values{kDefaultDifficulty, kDefaultSkill, kDefaultAggression, compat::ProfileTeam::Any, false, 0, {}};
+	values.extended.csbotReactionSeconds = compat::ProfileRecord::kDefaultReactionSeconds;
+	return values;
 }
 
 bool parseCsbotField(const char *line, Token *key, Token *value)
@@ -788,7 +799,7 @@ bool parseCsbotBlock(LineReader *reader, CsbotValues *values)
 		{
 			return false;
 		}
-		if (!parseExtendedField(key, value, &values->extended, &blockMask))
+		if (!parseExtendedField(key, value, &values->extended, &blockMask, true))
 			return false;
 	}
 	return false;
@@ -815,6 +826,8 @@ void applyCsbotTemplate(const CsbotValues &parent, const CsbotValues &defaults, 
 {
 	if (parent.extended.reactionTimeSeconds != defaults.extended.reactionTimeSeconds)
 		values->extended.reactionTimeSeconds = parent.extended.reactionTimeSeconds;
+	if (parent.extended.csbotReactionSeconds != defaults.extended.csbotReactionSeconds)
+		values->extended.csbotReactionSeconds = parent.extended.csbotReactionSeconds;
 	if (parent.extended.attackDelaySeconds != defaults.extended.attackDelaySeconds)
 		values->extended.attackDelaySeconds = parent.extended.attackDelaySeconds;
 	if (parent.extended.teamwork != defaults.extended.teamwork)
@@ -983,6 +996,7 @@ ProfileLoadResult loadCsbotText(
 		profile.team = values.team;
 		profile.difficultyMask = values.difficultyMask;
 		profile.reactionTimeSeconds = values.extended.reactionTimeSeconds;
+		profile.csbotReactionSeconds = values.extended.csbotReactionSeconds;
 		profile.attackDelaySeconds = values.extended.attackDelaySeconds;
 		profile.teamwork = values.extended.teamwork;
 		profile.cost = values.extended.cost;

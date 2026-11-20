@@ -2084,7 +2084,8 @@ void BotBehaviorRuntime::updateOutgoingPublicRadio(std::size_t index, const Plan
 	input.navRevision = reportNav.isValid() ? reportNav.revision() : 0;
 	input.roundOver = services_->service_roundOver();
 	input.noiseReport = actors_[index].noiseReport;
-	input.reactionSeconds = actors_[index].managedProfiles.reactionTimeSeconds;
+	input.reactionSeconds = actors_[index].managedProfiles.effectiveReactionSeconds(
+		services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility);
 	input.inCombat = actors_[index].managedBotStateMachines.attackOverlayActive();
 	const auto living = livingRadioPeers(handle.entity, input.team);
 	input.friendCount = living.friends;

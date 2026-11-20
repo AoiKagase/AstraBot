@@ -4,6 +4,7 @@
 #include <array>
 #include <cstddef>
 #include "astrabot/compat/random_source.hpp"
+#include "astrabot/runtime/bot_timing_scheduler.hpp"
 
 namespace astrabot
 {
@@ -37,6 +38,8 @@ enum class ProfileSelectionResult
 struct ProfileRecord
 {
 	static constexpr float kDefaultReactionSeconds = 0.3f;
+	static constexpr float kMinimumReactionSeconds = -runtime::BotTimingScheduler::kFullUpdateInterval;
+	static constexpr float kNoCsbotReactionSeconds = -1.0f;
 	static constexpr int kDefaultTeamwork = 75;
 	static constexpr int kWeaponPreferenceCapacity = 16;
 	static constexpr int kDefaultVoicePitch = 100;
@@ -56,6 +59,13 @@ struct ProfileRecord
 	int voicePitch = kDefaultVoicePitch;
 	char voiceBank[128] = {}; // Empty selects the default BotChatter.db bank.
 	unsigned difficultyMask = 0;
+	float csbotReactionSeconds = kNoCsbotReactionSeconds;
+
+	float effectiveReactionSeconds(bool compatibility) const
+	{
+		return compatibility && csbotReactionSeconds != kNoCsbotReactionSeconds
+			? csbotReactionSeconds : reactionTimeSeconds;
+	}
 };
 
 class ProfileCatalog

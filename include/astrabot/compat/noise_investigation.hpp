@@ -2,6 +2,7 @@
 #define ASTRABOT_COMPAT_NOISE_INVESTIGATION_HPP
 #include "astrabot/world/world_snapshot.hpp"
 #include "astrabot/compat/random_source.hpp"
+#include "astrabot/compat/profile_catalog.hpp"
 #include <algorithm>
 #include <cmath>
 namespace astrabot
@@ -66,7 +67,8 @@ public:
 	{
 		using Result = NoiseInvestigationResult;
 		if (!in.actor.isValid() || !in.frame.isValid() || !std::isfinite(in.now) || !std::isfinite(in.elapsedRound) ||
-			!std::isfinite(in.reactionSeconds) || in.reactionSeconds < 0 || !std::isfinite(in.aggression) ||
+			!std::isfinite(in.reactionSeconds) || in.reactionSeconds < ProfileRecord::kMinimumReactionSeconds ||
+			!std::isfinite(in.aggression) ||
 			in.aggression < 0 || in.aggression > 1 || !in.alive || !std::isfinite(in.origin.x) ||
 			!std::isfinite(in.origin.y) || !std::isfinite(in.origin.z))
 		{

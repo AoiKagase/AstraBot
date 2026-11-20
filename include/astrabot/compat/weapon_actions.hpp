@@ -3,6 +3,7 @@
 
 #include "astrabot/world/world_snapshot.hpp"
 #include "astrabot/compat/random_source.hpp"
+#include "astrabot/compat/profile_catalog.hpp"
 #include <cmath>
 #include <cstdint>
 
@@ -188,7 +189,7 @@ private:
 		WeaponActionDecision result = {};
 		if (!input.actor.isValid() || !input.frame.isValid() || !std::isfinite(input.timestamp) ||
 			input.timestamp < 0.0f || !std::isfinite(input.targetDistance) || input.targetDistance < 0.0f ||
-			!std::isfinite(input.reactionSeconds) || input.reactionSeconds < 0.0f)
+			!std::isfinite(input.reactionSeconds) || input.reactionSeconds < ProfileRecord::kMinimumReactionSeconds)
 		{
 			return result;
 		}

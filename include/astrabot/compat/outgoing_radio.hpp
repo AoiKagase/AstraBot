@@ -6,6 +6,7 @@
 #include "astrabot/compat/chatter_schedule.hpp"
 #include "astrabot/compat/chatter_statements.hpp"
 #include "astrabot/compat/state_machine.hpp"
+#include "astrabot/compat/profile_catalog.hpp"
 #include <algorithm>
 #include <array>
 #include <bitset>
@@ -291,7 +292,7 @@ public:
 		if (!in.visibleEnemyCount)
 			reportedEnemies_ = false;
 		if (in.humanOrderSequence > orderSequence_ && in.humanOrderAccepted && std::isfinite(in.reactionSeconds) &&
-			in.reactionSeconds >= 0)
+			in.reactionSeconds >= ProfileRecord::kMinimumReactionSeconds)
 		{
 			orderSequence_ = in.humanOrderSequence;
 			ackAt_ = in.humanOrderReceived + kAcknowledgementBaseSeconds +

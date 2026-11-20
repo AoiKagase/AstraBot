@@ -473,8 +473,9 @@ bool testCompoundChatter(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 		const float thirdEnemyX = gEntities[3].v.origin.x;
 		gEntities[2].v.origin.x = gEntities[3].v.origin.x = -200;
 		compoundEnemiesVisible = true;
-		step(.5f);
-		step(.5f);
+		// The 0.3 second profile needs three full updates after the first sighting.
+		for (unsigned frame = 0; frame < 8; ++frame)
+			step(.125f);
 		gEntities[2].v.origin.x = secondEnemyX;
 		gEntities[3].v.origin.x = thirdEnemyX;
 		if (!check(static_cast<metamod::BotCommandServices &>(runtime)

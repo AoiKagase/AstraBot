@@ -2,6 +2,7 @@
 #define ASTRABOT_COMPAT_SCENARIO_BEHAVIOR_HPP
 
 #include "astrabot/compat/state_machine.hpp"
+#include "astrabot/compat/profile_catalog.hpp"
 #include "astrabot/objectives/objective_state.hpp"
 #include <cmath>
 #include <cstdint>
@@ -366,7 +367,8 @@ public:
 			*fallBack = {};
 		ScenarioBehaviorDecision result = {};
 		if (!input.actor.isValid() || !input.frame.isValid() || !std::isfinite(input.timestamp) ||
-			input.timestamp < 0.0f || !std::isfinite(input.reactionSeconds) || input.reactionSeconds < 0.0f)
+			input.timestamp < 0.0f || !std::isfinite(input.reactionSeconds) ||
+			input.reactionSeconds < ProfileRecord::kMinimumReactionSeconds)
 		{
 			result.unavailable = true;
 			return result;

@@ -397,7 +397,7 @@ bool BotBehaviorRuntime::updateCombatAmbush(const ManagedActionContext &ctx,
 		visibility.seenEnemy = true;
 		visibility.ambushChecked = false;
 		if (visibility.enemyHidden)
-			visibility.reacquireAfter = receipt.now + actor.managedProfiles.reactionTimeSeconds;
+			visibility.reacquireAfter = receipt.now + actor.managedProfiles.effectiveReactionSeconds(true);
 		visibility.enemyHidden = false;
 		return false;
 	}
@@ -728,8 +728,10 @@ ActionProposal BotBehaviorRuntime::decideCombatAction(ManagedActionContext &ctx)
 	else
 		actors_[index].managedBotCombat.stopMovement();
 	const compat::StateUpdateContext stateContext = makeManagedBotStateContext(index, before);
-	const bool delayedRecognition = targetActor.isValid() && actors_[index].recognizedTargets == targetActor &&
+	const bool compatibility =
 		services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility;
+	const bool delayedRecognition = targetActor.isValid() && actors_[index].recognizedTargets == targetActor &&
+		compatibility;
 	if ((combatVisible || delayedRecognition) && !reactionIgnoring(index))
 	{
 		(void)actors_[index].managedBotStateMachines.beginAttack(stateContext);
@@ -824,7 +826,7 @@ ActionProposal BotBehaviorRuntime::decideCombatAction(ManagedActionContext &ctx)
 		std::sqrt((targetPosition.x - context.origin.x) * (targetPosition.x - context.origin.x) +
 			(targetPosition.y - context.origin.y) * (targetPosition.y - context.origin.y) +
 			(targetPosition.z - context.origin.z) * (targetPosition.z - context.origin.z));
-	weaponInput.reactionSeconds = actors_[index].managedProfiles.reactionTimeSeconds;
+	weaponInput.reactionSeconds = actors_[index].managedProfiles.effectiveReactionSeconds(compatibility);
 	weaponInput.targetVisible = combatVisible;
 	weaponInput.aimAligned = fireIntentReady ||
 		(decision.hasAim &&

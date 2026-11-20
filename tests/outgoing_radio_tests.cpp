@@ -350,6 +350,17 @@ int main()
 	check(out.status == OutgoingRadioStatus::Ready && out.slot == 1 && out.menu == 3,
 		"delayed acknowledgement uses mapped radio");
 	scheduler.confirmSent(in, out);
+	OutgoingRadioScheduler fastAcknowledgement;
+	auto fastOrder = in;
+	fastOrder.visibleEnemyCount = 0;
+	fastOrder.now = 4.79f;
+	fastOrder.reactionSeconds = ProfileRecord::kMinimumReactionSeconds;
+	check(fastAcknowledgement.update(fastOrder, catalog).status == OutgoingRadioStatus::None,
+		"acknowledgement waits before the shortened native delay");
+	fastOrder.frame.tick++;
+	fastOrder.now = 4.81f;
+	check(fastAcknowledgement.update(fastOrder, catalog).status == OutgoingRadioStatus::Ready,
+		"acknowledgement uses the signed native delay");
 	in.now = 37;
 	in.frame.tick++;
 	in.visibleEnemyCount = 0;

@@ -273,6 +273,15 @@ int main()
 	value.timestamp = 1.6f;
 	ok &= check(
 		radio.update(value).action == ScenarioAction::Follow, "eligible same-team human follow order is accepted");
+	ScenarioBehaviorPlanner fastRadio;
+	auto fastInput = value;
+	fastInput.reactionSeconds = ProfileRecord::kMinimumReactionSeconds;
+	fastInput.timestamp = 0.89f;
+	ok &= check(fastRadio.update(fastInput).action != ScenarioAction::Follow, "radio still waits at the native minimum");
+	fastInput.frame.tick++;
+	fastInput.timestamp = 0.91f;
+	ok &= check(fastRadio.update(fastInput).action == ScenarioAction::Follow,
+		"radio uses the signed adjustment in its base-plus-reaction delay");
 	value.frame.tick++;
 	value.leader.alive = false;
 	ok &= check(radio.update(value).action == ScenarioAction::Stop, "observed dead leader terminates following");

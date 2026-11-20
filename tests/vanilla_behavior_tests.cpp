@@ -45,16 +45,49 @@ int main()
 		"one visible sample has not reached the reaction queue head");
 	ok &= check(!briefExposure.update(observer, {1U, 3U, 2U}, 1.12f, 0.3f, nullptr, 0U, false, &selected, true),
 		"occlusion before the reaction deadline does not recognize the threat early");
-	ok &= check(briefExposure.update(observer, {1U, 3U, 3U}, 1.36f, 0.3f, nullptr, 0U, false, &selected, true) &&
+	ok &= check(!briefExposure.update(observer, {1U, 3U, 12U}, 1.36f, 0.3f, nullptr, 0U, false, &selected, true),
+		"elapsed time and frame-number gaps do not advance the full-update queue");
+	ok &= check(briefExposure.update(observer, {1U, 3U, 15U}, 1.42f, 0.3f, nullptr, 0U, false, &selected, true) &&
 			selected.actor == candidate.actor && selected.visiblePoint.x == candidate.visiblePoint.x &&
 			selected.sourceEntity == candidate.sourceEntity,
 		"delayed recognition keeps the sampled target and point after brief exposure ends");
 	compat::ReactionQueue priorLife;
-	ok &= check(!priorLife.update(observer, {1U, 3U, 1U}, 1.0f, 0.3f, &candidate, 1U, false, &selected, true),
+	ok &= check(!priorLife.update(observer, {1U, 3U, 1U}, 1.0f, 0.1f, &candidate, 1U, false, &selected, true),
 		"one visible sample waits even if the observed player later dies");
 	priorLife.forget(candidate.sourceEntity);
-	ok &= check(!priorLife.update(observer, {1U, 3U, 2U}, 1.36f, 0.3f, &candidate, 1U, false, &selected, true),
+	ok &= check(!priorLife.update(observer, {1U, 3U, 2U}, 1.36f, 0.1f, &candidate, 1U, false, &selected, true),
 		"death clears the older sighting even when a respawn reuses the entity identity");
+	for (float delay : {-0.1f, 0.049f, 1.95f, 10.0f})
+	{
+		compat::ReactionQueue immediate;
+		ok &= check(immediate.update(observer, {1U, 3U, 1U}, 1.0f, delay, &candidate, 1U, false, &selected, true),
+			"native delay rounds to the current slot or wraps a full turn");
+	}
+	compat::ReactionQueue halfTick;
+	ok &= check(!halfTick.update(observer, {1U, 3U, 1U}, 1.0f, 0.05f, &candidate, 1U, false, &selected, true) &&
+			halfTick.update(observer, {1U, 3U, 2U}, 1.01f, 0.05f, nullptr, 0U, false, &selected, true),
+		"half a tick rounds up even when the second update is early");
+	compat::ReactionQueue wrap;
+	for (unsigned tick = 1; tick <= 42; ++tick)
+	{
+		candidate.visiblePoint.x = static_cast<float>(tick);
+		const bool ready = wrap.update(observer, {1U, 3U, tick}, tick * 0.13f, 1.94f, &candidate, 1U,
+			false, &selected, true);
+		ok &= check(ready == (tick > 19U) && (!ready || selected.visiblePoint.x == static_cast<float>(tick - 19U)),
+			"19 updates reaches the oldest native sample across ring wraps");
+	}
+	ok &= check(!wrap.update(observer, {1U, 4U, 43U}, 6.0f, 1.94f, &candidate, 1U, false, &selected, true),
+		"round change clears the native ring");
+	compat::ReactionQueue afterBlindness;
+	ok &= check(!afterBlindness.update(observer, {1U, 3U, 1U}, 1.0f, 0.3f, &candidate, 1U, false, &selected, true),
+		"visible contact starts a three-update native reaction");
+	for (unsigned tick = 2; tick <= 3; ++tick)
+		ok &= check(!afterBlindness.update(observer, {1U, 3U, tick}, tick * 1.0f, 0.3f, nullptr, 0U, true, &selected, true),
+			"blinded full updates do not advance the native reaction queue");
+	for (unsigned tick = 4; tick <= 6; ++tick)
+		ok &= check(afterBlindness.update(observer, {1U, 3U, tick}, tick * 1.0f, 0.3f, nullptr, 0U, false,
+						&selected, true) == (tick == 6U),
+			"the native reaction finishes only after three unblinded updates");
 	compat::AimStep aim = compat::trackAim(179.0f, 0.0f, -179.0f, 0.0f, 0.01f, 0.5f);
 	ok &= check(aim.yaw > 179.0f && aim.yaw < 180.0f, "aim takes shortest angular turn with finite acceleration");
 	aim = compat::trackAim(0.0f, 0.0f, 90.0f, 0.0f, 0.1f, 1.0f);

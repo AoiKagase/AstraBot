@@ -72,7 +72,7 @@ void BotBehaviorRuntime::applyNoiseLookCommand(std::size_t index, runtime::BotCo
 			belief.identity().frame.mapGeneration == frame.mapGeneration &&
 			belief.identity().frame.roundGeneration == frame.roundGeneration;
 		input.noiseTime = noise.timestampSeconds;
-		input.reactionSeconds = actor.managedProfiles.reactionTimeSeconds;
+		input.reactionSeconds = actor.managedProfiles.effectiveReactionSeconds(true);
 		input.highPriority = noise.priority == world::NoisePriority::High;
 		input.hiding = actor.managedBotStateMachines.state() == compat::CompatibilityStateId::Hide &&
 			std::hypot(self->v.velocity.x, self->v.velocity.y) < 10.0f;

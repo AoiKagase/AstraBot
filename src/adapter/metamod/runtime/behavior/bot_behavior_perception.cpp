@@ -87,9 +87,10 @@ bool BotBehaviorRuntime::prepareManagedPerception(std::size_t index, world::Worl
 		}
 		const bool compatibility =
 			services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility;
+		const float delay = actors_[index].managedProfiles.effectiveReactionSeconds(compatibility);
 		const bool sampled = services_->service_globals() != nullptr &&
 			actors_[index].reactionQueues.update(observer, belief.identity().frame, services_->service_globals()->time,
-				actors_[index].managedProfiles.reactionTimeSeconds, candidates.data(), candidateCount, blinded,
+				delay, candidates.data(), candidateCount, blinded,
 				&threat, compatibility);
 		const world::ActorObservation *seen = nullptr;
 		bool recognized = sampled;

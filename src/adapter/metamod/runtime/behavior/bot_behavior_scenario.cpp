@@ -668,7 +668,8 @@ void BotBehaviorRuntime::populateScenarioPublicState(std::size_t index, const ru
 	scenario.selfPosition = {before.origin.x, before.origin.y, before.origin.z};
 	scenario.lifeKnown = context.lifeAvailability == compat::ObservationAvailability::Available;
 	scenario.alive = context.alive;
-	scenario.reactionSeconds = actors_[index].managedProfiles.reactionTimeSeconds;
+	scenario.reactionSeconds = actors_[index].managedProfiles.effectiveReactionSeconds(
+		services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility);
 	scenario.aggression = static_cast<float>(actors_[index].managedProfiles.aggression) / kProfilePercentScale;
 	scenario.attacking = machine.attackOverlayActive();
 	scenario.currentDefusing = machine.state() == compat::CompatibilityStateId::DefuseBomb;

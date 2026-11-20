@@ -1414,10 +1414,14 @@ bool BotObservationRuntime::collectManagedPerception(
 		{services_->command_managedBotCommandSequences(index), 0U,
 			services_->service_managedBotFullUpdateSequences()[index]},
 		&noiseProbe);
-	if (services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility)
+	const bool compatibility =
+		services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility;
+	if (compatibility)
 		input.setNoisePositionResolver(&noiseResolver);
-	if (input.setHearingTime(
-			services_->service_globals()->time, services_->behavior_managedProfiles(index).reactionTimeSeconds) !=
+	// A negative profile delay means the first audible sample is ready immediately.
+	const float hearingDelay =
+		(std::max)(0.0f, services_->behavior_managedProfiles(index).effectiveReactionSeconds(compatibility));
+	if (input.setHearingTime(services_->service_globals()->time, hearingDelay) !=
 		perception::PerceptionInputResult::Accepted)
 		return false;
 	const compat::ObservationTimingContext observationTiming = {

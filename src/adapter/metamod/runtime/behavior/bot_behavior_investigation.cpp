@@ -35,7 +35,7 @@ void BotBehaviorRuntime::updateNoiseInvestigation(std::size_t index, const runti
 	in.now = context.timestamp;
 	in.navRevision = nav.isValid() ? nav.revision() : 0;
 	in.origin = {before.origin.x, before.origin.y, before.origin.z};
-	in.reactionSeconds = actor.managedProfiles.reactionTimeSeconds;
+	in.reactionSeconds = actor.managedProfiles.effectiveReactionSeconds(true);
 	in.aggression = static_cast<float>(actor.managedProfiles.aggression) / 100.0f;
 	const float roundStart = services_->service_roundFreezeGeneration() == context.frame.roundGeneration
 		? services_->service_roundFreezeUntil()

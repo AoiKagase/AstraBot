@@ -2,6 +2,7 @@
 #define ASTRABOT_COMPAT_COMBAT_BEHAVIOR_HPP
 
 #include "astrabot/combat/weapon_state.hpp"
+#include "astrabot/compat/profile_catalog.hpp"
 #include <array>
 #include <cmath>
 #include <cstddef>
@@ -24,7 +25,7 @@ struct ThreatCandidate
 class ReactionQueue
 {
 public:
-	ReactionQueue() : samples_(), observer_(), frame_(), head_(0U), count_(0U), lastTime_(0.0f)
+	ReactionQueue() : samples_(), observer_(), frame_(), head_(0U), count_(0U), lastTime_(0.0f), nativeTiming_(false)
 	{
 	}
 
@@ -44,24 +45,29 @@ public:
 
 	bool update(world::ActorKey observer, world::FrameIdentity frame, float now, float reactionSeconds,
 		const ThreatCandidate *candidates, std::size_t count, bool blind, ThreatCandidate *selected,
-		bool retainHistoricalThreat = false)
+		bool nativeTiming = false)
 	{
 // Keep literal evaluation precision on x87; each macro is undefined below.
 #define ASTRABOT_COMBAT_BEHAVIOR_REACTION_TIME_TOLERANCE_SECONDS 0.00001f
 		if (selected == nullptr)
 			return false;
 		*selected = {};
+		const float minimumReaction = nativeTiming ? ProfileRecord::kMinimumReactionSeconds : 0.0f;
 		if (!observer.isValid() || !frame.isValid() || !std::isfinite(now) || now < 0.0f ||
-			!std::isfinite(reactionSeconds) || reactionSeconds < 0.0f || (count && !candidates))
+			!std::isfinite(reactionSeconds) || reactionSeconds < minimumReaction || (count && !candidates))
 			return false;
 		if (!(observer == observer_) || frame.mapGeneration != frame_.mapGeneration ||
-			frame.roundGeneration != frame_.roundGeneration || now < lastTime_)
+			frame.roundGeneration != frame_.roundGeneration || now < lastTime_ || nativeTiming != nativeTiming_)
 			reset();
 		else if (count_ && frame.tick <= frame_.tick)
 			return false;
 		observer_ = observer;
 		frame_ = frame;
 		lastTime_ = now;
+		nativeTiming_ = nativeTiming;
+		// The native full update returns before touching the ring while blinded.
+		if (nativeTiming && blind)
+			return false;
 		Sample sample = {};
 		sample.time = now;
 		if (!blind)
@@ -81,12 +87,29 @@ public:
 				}
 			}
 		}
+		const std::size_t capacity = nativeTiming ? kNativeReactionHistoryCapacity : samples_.size();
 		samples_[head_] = sample;
-		head_ = (head_ + 1U) % samples_.size();
-		if (count_ < samples_.size())
+		head_ = (head_ + 1U) % capacity;
+		if (count_ < capacity)
 			++count_;
 		if (blind)
 			return false;
+		if (nativeTiming)
+		{
+			constexpr float interval = runtime::BotTimingScheduler::kFullUpdateInterval;
+			constexpr float maxDelay = interval * kNativeReactionHistoryCapacity - 0.01f;
+			const int steps = static_cast<int>(std::fmin(reactionSeconds, maxDelay) / interval + 0.5f);
+			// The native clamp can round to a full turn and select this update's slot.
+			const auto age = static_cast<std::size_t>(steps) % capacity;
+			if (age >= count_)
+				return false;
+			const auto &historical = samples_[(head_ + capacity - 1U - age) % capacity];
+			if (!historical.hasThreat)
+				return false;
+			// The runtime verifies entity identity before using a delayed contact.
+			*selected = historical.threat;
+			return true;
+		}
 		// Select the most recent complete recognition snapshot old enough for the profile.
 		for (std::size_t age = 0; age < count_; ++age)
 		{
@@ -95,12 +118,6 @@ public:
 			{
 				if (!historical.hasThreat)
 					return false;
-				if (retainHistoricalThreat)
-				{
-					// The runtime validates the sampled actor and entity identity before using it.
-					*selected = historical.threat;
-					return true;
-				}
 				for (std::size_t i = 0; i < count; ++i)
 					if (candidates[i].actor == historical.threat.actor)
 					{
@@ -117,6 +134,7 @@ public:
 
 private:
 	static constexpr unsigned kReactionHistoryCapacity = 64U;
+	static constexpr unsigned kNativeReactionHistoryCapacity = 20U;
 	struct Sample
 	{
 		float time;
@@ -128,6 +146,7 @@ private:
 	world::FrameIdentity frame_;
 	std::size_t head_, count_;
 	float lastTime_;
+	bool nativeTiming_;
 };
 
 struct AimStep

@@ -276,6 +276,17 @@ int main()
 	value.timestamp = 0.7f;
 	value.stationary = false;
 	ok &= check(!sniper.update(value).primary, "sniper suppresses moving shot");
+	WeaponActionPlanner immediateScope;
+	auto fastScope = input(18U);
+	fastScope.reactionSeconds = ProfileRecord::kMinimumReactionSeconds;
+	ok &= check(immediateScope.update(fastScope).secondary, "an adjusted zero profile can request zoom");
+	fastScope.fieldOfView = 40.0f;
+	fastScope.frame.tick++;
+	fastScope.timestamp = 0.09f;
+	ok &= check(!immediateScope.update(fastScope).primary, "signed reaction keeps a shortened scope wait");
+	fastScope.frame.tick++;
+	fastScope.timestamp = 0.11f;
+	ok &= check(immediateScope.update(fastScope).primary, "scope settle uses the signed profile reaction");
 	WeaponActionPlanner pistol;
 	value = input(1U);
 	ok &= check(pistol.update(value).primary, "pistol starts trigger press");
