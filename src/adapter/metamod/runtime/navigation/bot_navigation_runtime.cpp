@@ -1,6 +1,7 @@
 #include "runtime/navigation/bot_navigation_runtime.hpp"
 #include "runtime/shared/bot_runtime_support.hpp"
 #include "runtime/shared/public_native_ladder_probe.hpp"
+#include "runtime/shared/public_nav_probe.hpp"
 namespace astrabot
 {
 namespace metamod
@@ -944,6 +945,14 @@ public:
 	PublicHuntPathProbe(enginefuncs_t *engine, RuntimeProfiler &profiler, const Current &current)
 		: engine_(engine), profiler_(profiler), current_(current)
 	{
+	}
+
+	bool current() const override { return current_(); }
+
+	bool groundHeight(const nav::NavVector &point, float *height) const override
+	{
+		PublicNavProbe ground(engine_, [this] { return current_(); });
+		return ground.groundHeight(point, height);
 	}
 
 	bool clear(const nav::NavVector &feet, const nav::NavVector &point, bool allowDoors) const override

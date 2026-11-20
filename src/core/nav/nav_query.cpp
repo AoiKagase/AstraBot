@@ -1171,11 +1171,13 @@ NavQueryResult NavQuery::buildCorridor(
 
 namespace
 {
-void setHuntFallbackEndpoint(const NavDocument &document, AreaId goal, NavCorridor &corridor)
+void setHuntFallbackEndpoint(const NavDocument &document, AreaId goal, NavCorridor &corridor,
+	const NavHuntPathProbe *probe)
 {
 	const auto *doc = &document;
 	const auto *destination = doc->findArea(corridor.areas.back());
 	auto endpoint = centerOf(*doc->findArea(goal));
+	const float requestedHeight = endpoint.z;
 	if (!corridor.links.empty())
 	{
 		const auto onEdge = [doc](const NavArea &area, unsigned direction)
@@ -1249,11 +1251,21 @@ void setHuntFallbackEndpoint(const NavDocument &document, AreaId goal, NavCorrid
 	corridor.huntEndpointSteering = true;
 	corridor.endpoint = {endpoint.x, endpoint.y, surfaceZAtInternal(*destination, endpoint.x, endpoint.y)};
 	if (!corridor.huntWaypoints.empty())
+	{
+		// CSBot projects X/Y onto the reachable area and traces from the requested goal's Z.
+		if (probe)
+		{
+			float ground = requestedHeight;
+			const bool sampled = probe->groundHeight({endpoint.x, endpoint.y, requestedHeight}, &ground);
+			corridor.endpoint.z = sampled && std::isfinite(ground) ? ground : requestedHeight;
+		}
 		corridor.huntWaypoints.push_back({corridor.endpoint, corridor.areas.size() - 1U});
+	}
 }
 }
 
-NavQueryResult NavQuery::buildHuntCorridor(AreaId start, AreaId goal, NavCorridor *corridor, NavSearchStats *stats) const
+NavQueryResult NavQuery::buildHuntCorridor(AreaId start, AreaId goal, NavCorridor *corridor, NavSearchStats *stats,
+	const NavHuntPathProbe *probe) const
 {
 	const auto *doc = document();
 	const auto *source = doc == nullptr ? nullptr : doc->findArea(start);
@@ -1278,7 +1290,7 @@ NavQueryResult NavQuery::buildHuntCorridor(AreaId start, AreaId goal, NavCorrido
 
 	try
 	{
-		setHuntFallbackEndpoint(*doc, goal, *corridor);
+		setHuntFallbackEndpoint(*doc, goal, *corridor, probe);
 	}
 	catch (const std::bad_alloc &)
 	{
@@ -1289,7 +1301,8 @@ NavQueryResult NavQuery::buildHuntCorridor(AreaId start, AreaId goal, NavCorrido
 }
 
 NavQueryResult NavQuery::buildAlternativeCorridor(const NavCorridor &currentCorridor,
-	const NavDirectedLink &failedFirstLink, NavCorridor *alternativeCorridor, NavSearchStats *stats, AreaId huntGoal) const
+	const NavDirectedLink &failedFirstLink, NavCorridor *alternativeCorridor, NavSearchStats *stats, AreaId huntGoal,
+	const NavHuntPathProbe *huntProbe) const
 {
 	if (alternativeCorridor == nullptr || alternativeCorridor == &currentCorridor || !snapshot_.isValid() ||
 		!currentCorridor.isValid() || currentCorridor.areas.size() < kMinimumCorridorAreaCount ||
@@ -1320,7 +1333,7 @@ NavQueryResult NavQuery::buildAlternativeCorridor(const NavCorridor &currentCorr
 		{
 			try
 			{
-				setHuntFallbackEndpoint(*document(), huntGoal, *alternativeCorridor);
+				setHuntFallbackEndpoint(*document(), huntGoal, *alternativeCorridor, huntProbe);
 			}
 			catch (const std::bad_alloc &)
 			{

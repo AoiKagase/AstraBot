@@ -305,8 +305,11 @@ LocomotionResult LocomotionController::buildIntent(const NavSnapshot &snapshot,
 		return LocomotionResult::InvalidCorridor;
 	}
 
-	const float currentSurfaceHeight = surfaceZAt(*currentArea, target.x, target.y);
-	const float stepHeight = target.z - currentSurfaceHeight;
+	// A projected Hunt endpoint supplies the arrival height, but a jump on
+	// its final leg depends on ground ahead relative to the bot's feet.
+	const bool projectedHuntEndpoint = pathFollower_.followingProjectedHuntEndpoint();
+	const float targetSurfaceHeight = projectedHuntEndpoint ? surfaceZAt(*destinationArea, target.x, target.y) : target.z;
+	const float stepHeight = targetSurfaceHeight - surfaceZAt(*currentArea, target.x, target.y);
 	const bool noJump = (currentArea->attributes & NavArea::kNoJump) != 0U;
 	const bool navJump = !noJump && (destinationArea->attributes & NavArea::kJump) != 0U &&
 		stepHeight <= LocomotionConfig::kMaximumJumpHeight;
@@ -320,7 +323,8 @@ LocomotionResult LocomotionController::buildIntent(const NavSnapshot &snapshot,
 		lookaheadDirectionLength >= ASTRABOT_LOCOMOTION_MINIMUM_UNIT_DIRECTION_LENGTH &&
 		lookaheadDirectionLength <= ASTRABOT_LOCOMOTION_MAXIMUM_UNIT_DIRECTION_LENGTH &&
 		lookaheadDirectionDot / lookaheadDirectionLength >= ASTRABOT_LOCOMOTION_MINIMUM_LOOKAHEAD_ALIGNMENT;
-	const float currentFloor = surfaceZAt(*currentArea, observation.position.x, observation.position.y);
+	const float currentFloor = projectedHuntEndpoint ? observation.position.z
+		: surfaceZAt(*currentArea, observation.position.x, observation.position.y);
 	const auto probeFloorZ = [&](const GroundProbeObservation &probe, float distance)
 	{
 		const float probeX = observation.position.x + observation.groundLookahead.direction.x * distance;
@@ -349,7 +353,7 @@ LocomotionResult LocomotionController::buildIntent(const NavSnapshot &snapshot,
 	const bool terrainJump = !noJump && !navJump && observation.grounded && !observation.onLadder &&
 		stepHeight > config_.maximumStepHeight && stepHeight <= LocomotionConfig::kMaximumJumpHeight;
 	const float transitionGap = areaGap(*currentArea, *destinationArea);
-	const float dropHeight = currentSurfaceHeight - target.z;
+	const float dropHeight = -stepHeight;
 	const NavVector launchApproachPoint = {
 		(std::max)(currentArea->extent.lo.x, (std::min)(target.x, currentArea->extent.hi.x)),
 		(std::max)(currentArea->extent.lo.y, (std::min)(target.y, currentArea->extent.hi.y)), observation.position.z};

@@ -380,13 +380,18 @@ private:
 	bool buildStuckRecoveryIntent(
 		const nav::NavSnapshot &snapshot, const nav::NavAreaMatch &currentArea, nav::LocomotionIntent *intent);
 	bool scheduleStuckJump(ActorId actor, std::uint32_t tick, float observedAt);
+	struct HuntRouteSampling
+	{
+		const nav::NavHuntPathProbe *probe;
+		bool invalidated = false;
+	};
 	bool selectRoute(const nav::NavSnapshot &snapshot, const nav::NavAreaMatch &currentArea, nav::AreaId objectiveArea,
 		NavRoamDecision *decision, nav::NavRouteType routeType = nav::NavRouteType::Fastest,
-		const nav::NavLadderTopology *nativeLadders = nullptr);
-	bool selectRoamRoute(
-		const nav::NavSnapshot &snapshot, const nav::NavAreaMatch &currentArea, NavRoamDecision *decision);
+		const nav::NavLadderTopology *nativeLadders = nullptr, HuntRouteSampling *sampling = nullptr);
+	bool selectRoamRoute(const nav::NavSnapshot &snapshot, const nav::NavAreaMatch &currentArea,
+		NavRoamDecision *decision, HuntRouteSampling *sampling);
 	bool selectCompatibilityGoal(const nav::NavSnapshot &snapshot, const nav::NavAreaMatch &currentArea,
-		const std::vector<nav::NavDirectedLink> &links, NavRoamDecision *decision);
+		const std::vector<nav::NavDirectedLink> &links, NavRoamDecision *decision, HuntRouteSampling *sampling);
 	void rememberRoute(
 		const nav::NavSnapshot &snapshot, const nav::NavCorridor &corridor, const nav::NavDirectedLink &link);
 	void populateRouteDecision(NavRoamDecision *decision) const;

@@ -1567,9 +1567,36 @@ bool testTimedHuntDrawsBeforePathThrottle()
 	controller.destroyPath();
 	observation.frame.tick = 6U;
 	observation.locomotion.observedAt = 1.71f;
-	return check(controller.update(publisher.snapshot(), observation, &intent, &decision) == runtime::NavRoamResult::NoRoute &&
+	if (!check(controller.update(publisher.snapshot(), observation, &intent, &decision) == runtime::NavRoamResult::NoRoute &&
 				decision.goalArea == 2U && decision.pathSearchStats.searchCalls == 0U && random.verifyComplete(),
-		"a destroyed Hunt path causes a fresh goal draw even while ComputePath is throttled");
+			"a destroyed Hunt path causes a fresh goal draw even while ComputePath is throttled"))
+		return false;
+
+	class ResetDuringFloorTrace final : public nav::NavHuntPathProbe
+	{
+	public:
+		explicit ResetDuringFloorTrace(runtime::NavRoamController &controller) : controller_(controller) {}
+		bool clear(const nav::NavVector &, const nav::NavVector &, bool) const override { return true; }
+		bool groundHeight(const nav::NavVector &, float *height) const override
+		{
+			controller_.destroyPath();
+			*height = 0.0f;
+			return true;
+		}
+
+	private:
+		runtime::NavRoamController &controller_;
+	} probe(controller);
+	compat::ScriptedRandomSource retry({
+		compat::RandomTapeEntry::longEntry("CSBOT-HUNT-GOAL", {1U, 1U}, {0U, 0U, 7U}, 0, 2, 1),
+		compat::RandomTapeEntry::floatEntry("CSBOT-PATH-RETRY", {1U, 1U}, {0U, 0U, 7U}, .4f, .6f, .5f)});
+	controller.setRandomSource(&retry);
+	observation.frame.tick = 7U;
+	observation.locomotion.observedAt = 2.02f;
+	observation.locomotion.huntPathProbe = &probe;
+	return check(controller.update(publisher.snapshot(), observation, &intent, &decision) ==
+			runtime::NavRoamResult::ReplanRequired && intent.speed == 0.0f && retry.verifyComplete(),
+		"a reset during the Hunt ground sample invalidates the outer route selection");
 }
 
 bool testTimedHuntFollowsSameAreaEndpoint()

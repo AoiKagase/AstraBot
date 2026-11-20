@@ -1,4 +1,5 @@
 #include "astrabot/nav/nav_query.hpp"
+#include "astrabot/nav/locomotion.hpp"
 #include "astrabot/compat/nav_ladders.hpp"
 
 #include <cmath>
@@ -1367,6 +1368,111 @@ bool testHuntFallbackKeepsPortalUntilItPasses()
 		"same-area Hunt uses the strict 3D walk and arrival ranges from its first update");
 }
 
+bool testHuntFallbackSamplesEndpointFloor()
+{
+	using namespace astrabot::nav;
+	class Floor final : public NavHuntPathProbe
+	{
+	public:
+		bool clear(const NavVector &, const NavVector &, bool) const override { return true; }
+		bool groundHeight(const NavVector &point, float *height) const override
+		{
+			++samples;
+			*height = 0.0f;
+			return found && point.x == 390.0f && point.y == 32.0f && point.z == 16.0f;
+		}
+		mutable int samples = 0;
+		bool found = true;
+	} floor;
+	NavDocument document;
+	document.setSourceIdentity({5U, 100U, 200U});
+	auto start = area(1U, 0.0f, 170.0f, 0.0f);
+	auto nearest = area(2U, 170.0f, 610.0f, -40.0f);
+	start.connections[1U] = {2U};
+	nearest.connections[3U] = {1U};
+	document.addArea(start);
+	document.addArea(nearest);
+	document.addArea(area(3U, 620.0f, 720.0f, 16.0f));
+	const auto snapshot = snapshotFor(&document, 1U);
+	const NavQuery query(snapshot);
+	NavCorridor corridor{};
+	NavPathFollower follower;
+	if (!check(query.buildHuntCorridor(1U, 3U, &corridor, nullptr, &floor) == NavQueryResult::Found &&
+			floor.samples == 1 && corridor.endpoint.z == 0.0f && follower.start(corridor) == NavFollowerResult::Started,
+			"Hunt samples the projected endpoint from the requested goal's height"))
+		return false;
+	NavVector target{};
+	AreaId id = 0U;
+	if (!check(follower.update(snapshot, {181.0f, 32.0f, 0.0f}, 20.0f, 64.0f, &target, &id) ==
+			NavFollowerResult::Advanced && target.x == 390.0f && target.z == 0.0f && !follower.walkingToHuntEndpoint() &&
+			follower.update(snapshot, {192.0f, 32.0f, 0.0f}, 20.0f, 64.0f, &target, &id) ==
+				NavFollowerResult::TargetReady && follower.walkingToHuntEndpoint(),
+			"the endpoint waypoint starts at running speed and uses the sampled floor for the next walk check"))
+		return false;
+	LocomotionController locomotion({32.0f, 20.0f, 64.0f, 18.0f, 240.0f, 8U});
+	LocomotionObservation observation{};
+	observation.position = {181.0f, 32.0f, 0.0f};
+	observation.standingClearance = 72.0f;
+	observation.grounded = true;
+	observation.groundLookahead = {true, 2U, {1.0f, 0.0f, 0.0f}, true,
+		{true, true, 0.0f, 1.0f}, {true, true, 0.0f, 1.0f}, {true, true, 0.0f, 1.0f}};
+	LocomotionIntent intent{};
+	if (!check(locomotion.start(corridor) == LocomotionResult::Started &&
+			locomotion.update(snapshot, observation, &intent) == LocomotionResult::IntentReady &&
+			intent.traversal == TraversalAction::Walk && !intent.walkingToHuntEndpoint,
+			"following a sampled endpoint on level ground does not infer a jump from the lower NAV surface"))
+		return false;
+	observation.position.x = 192.0f;
+	observation.groundLookahead.near30.floorZ = 30.0f;
+	if (!check(locomotion.update(snapshot, observation, &intent) == LocomotionResult::IntentReady &&
+			intent.traversal == TraversalAction::Jump && intent.walkingToHuntEndpoint,
+			"the final leg still reacts to a real step measured ahead of the bot"))
+		return false;
+	if (!check(query.buildHuntCorridor(1U, 1U, &corridor, nullptr, &floor) == NavQueryResult::Found &&
+			floor.samples == 1 && corridor.endpoint.x == 85.0f && corridor.endpoint.z == 0.0f,
+			"a same-area Hunt keeps its NAV endpoint without a world-floor query"))
+		return false;
+	floor.found = false;
+	return check(query.buildHuntCorridor(1U, 3U, &corridor, nullptr, &floor) == NavQueryResult::Found &&
+			floor.samples == 2 && corridor.endpoint.z == 16.0f && corridor.huntWaypoints.back().position.z == 16.0f,
+		"a floor miss retains the requested goal height in both the endpoint and its waypoint");
+}
+
+bool testHuntEndpointDoesNotInventPortalStep()
+{
+	using namespace astrabot::nav;
+	NavDocument document;
+	document.setSourceIdentity({5U, 100U, 200U});
+	auto entry = area(2U, 100.0f, 200.0f, -40.0f);
+	entry.connections[1U] = {3U};
+	document.addArea(area(1U, 0.0f, 100.0f, -40.0f));
+	document.addArea(entry);
+	document.addArea(area(3U, 200.0f, 400.0f, -40.0f));
+	const auto snapshot = snapshotFor(&document, 1U);
+	NavCorridor corridor{};
+	corridor.navRevision = snapshot.revision();
+	corridor.mapGeneration = snapshot.mapGeneration();
+	corridor.areas = {1U, 2U, 3U};
+	corridor.hasEndpoint = true;
+	corridor.huntEndpointSteering = true;
+	corridor.endpoint = {300.0f, 32.0f, 0.0f};
+	corridor.huntWaypoints = {{{50.0f, 32.0f, -40.0f}, 0U}, {{105.0f, 32.0f, -40.0f}, 1U},
+		{{205.0f, 32.0f, -40.0f}, 2U}, {corridor.endpoint, 2U}};
+	LocomotionController locomotion({32.0f, 20.0f, 64.0f, 18.0f, 240.0f, 8U});
+	LocomotionObservation observation{};
+	observation.position = {195.0f, 32.0f, 0.0f};
+	observation.standingClearance = 72.0f;
+	observation.grounded = true;
+	observation.groundLookahead = {true, 3U, {1.0f, 0.0f, 0.0f}, true,
+		{true, true, 0.0f, 1.0f}, {true, true, 0.0f, 1.0f}, {true, true, 0.0f, 1.0f}};
+	LocomotionIntent intent{};
+	return check(locomotion.start(corridor) == LocomotionResult::Started &&
+			locomotion.update(snapshot, observation, &intent) == LocomotionResult::IntentReady &&
+			intent.currentArea == 2U && intent.targetArea == 3U && intent.targetPosition.x == corridor.endpoint.x &&
+			intent.traversal == TraversalAction::Walk,
+		"selecting the sampled endpoint before crossing the final portal does not invent an entry step");
+}
+
 bool testHuntFallbackPrefersVisibleSegments()
 {
 	using namespace astrabot::nav;
@@ -1428,7 +1534,8 @@ bool testHuntFallbackPrefersVisibleSegments()
 
 int main()
 {
-	if (!testHuntFallbackKeepsPortalUntilItPasses() || !testHuntFallbackPrefersVisibleSegments())
+	if (!testHuntFallbackKeepsPortalUntilItPasses() || !testHuntFallbackSamplesEndpointFloor() ||
+		!testHuntEndpointDoesNotInventPortalStep() || !testHuntFallbackPrefersVisibleSegments())
 		return 1;
 	if (!testNativeDeadReceiverTravel())
 		return 1;

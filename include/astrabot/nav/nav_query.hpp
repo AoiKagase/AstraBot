@@ -157,6 +157,8 @@ struct NavCorridor
 NavVector portalSteeringPointForLink(
 	const NavArea &fromArea, const NavArea &toArea, const NavVector &position, std::uint8_t direction);
 
+class NavHuntPathProbe;
+
 class NavQuery
 {
 public:
@@ -180,13 +182,15 @@ public:
 		AreaId start, AreaId goal, NavRouteType routeType, NavCorridor *corridor, NavSearchStats *stats) const;
 	// Keep the nearest reachable area when a Hunt target cannot be reached.
 	NavQueryResult buildHuntCorridor(
-		AreaId start, AreaId goal, NavCorridor *corridor, NavSearchStats *stats) const;
+		AreaId start, AreaId goal, NavCorridor *corridor, NavSearchStats *stats,
+		const NavHuntPathProbe *probe = nullptr) const;
 	NavQueryResult buildInvestigationCorridor(AreaId start, AreaId goal, const NavVector &noisePosition,
 		const NavLadderTopology *ladders, NavCorridor *corridor, NavSearchStats *stats = nullptr,
 		const NavDirectedLink *excludedFirstLink = nullptr) const;
 
 	NavQueryResult buildAlternativeCorridor(const NavCorridor &currentCorridor, const NavDirectedLink &failedFirstLink,
-		NavCorridor *alternativeCorridor, NavSearchStats *stats = nullptr, AreaId huntGoal = 0U) const;
+		NavCorridor *alternativeCorridor, NavSearchStats *stats = nullptr, AreaId huntGoal = 0U,
+		const NavHuntPathProbe *huntProbe = nullptr) const;
 
 private:
 	const NavDocument *document() const;
@@ -218,6 +222,8 @@ class NavHuntPathProbe
 {
 public:
 	virtual ~NavHuntPathProbe() = default;
+	virtual bool current() const { return true; }
+	virtual bool groundHeight(const NavVector &, float *) const { return false; }
 	virtual bool clear(const NavVector &feet, const NavVector &point, bool allowDoors) const = 0;
 };
 
@@ -240,6 +246,10 @@ public:
 	bool isActive() const;
 	std::size_t currentIndex() const;
 	bool walkingToHuntEndpoint() const { return huntWalking_; }
+	bool followingProjectedHuntEndpoint() const
+	{
+		return !huntWaypoints_.empty() && huntWaypointIndex_ + 1U == huntWaypoints_.size();
+	}
 
 private:
 	NavFollowerResult updateHuntPath(const NavDocument &document, const NavVector &feet,
