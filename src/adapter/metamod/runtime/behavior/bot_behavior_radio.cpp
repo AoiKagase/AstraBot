@@ -1834,7 +1834,8 @@ void BotBehaviorRuntime::observePlayerDamage(std::size_t index, world::ActorKey 
 			const world::ActorKey sourceActor{sourceConnection.slot, (std::max)(1U, sourceConnection.generation)};
 			perception::VisionObservation visibility{};
 			if (!blinded && (services_->observation_observationAdapter().collectVisibility(
-					env.receipt.entity, source, sourceActor, frame, &visibility, true) != ObservationAdapterResult::Accepted ||
+					env.receipt.entity, source, sourceActor, frame, &visibility, true, false,
+					PlayerVisionGlass::IgnoreTransparent) != ObservationAdapterResult::Accepted ||
 				visibility.visible))
 				return;
 			const auto panicCurrent = [&] {

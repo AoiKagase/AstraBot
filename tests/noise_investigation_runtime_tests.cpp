@@ -140,7 +140,8 @@ void investigationTrace(const float *start, const float *end, int flags, edict_t
 		trace->vecEndPos = Vector(end[0], end[1], end[2]);
 		return;
 	}
-	trace->flFraction = flags == 0x101 && closeNoiseVisible ? 1.0f : 0.0f;
+	const bool reachesNoisePoint = end[0] == 0.0f && end[1] == 250.0f && end[2] == 0.0f;
+	trace->flFraction = flags == 0x101 && closeNoiseVisible && reachesNoisePoint ? 1.0f : 0.0f;
 	trace->vecEndPos = Vector(end[0], end[1], end[2]);
 }
 const char *heardCvar(const char *name)

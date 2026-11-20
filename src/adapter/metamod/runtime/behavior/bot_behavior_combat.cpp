@@ -169,7 +169,9 @@ CombatUpkeepUpdate BotBehaviorRuntime::upkeepCombat(
 		services_->observation_observationAdapter().collectVisibility(
 			handle.entity, enemy, tracked.target, frame, &visible,
 			!(currentEnemySource(index) == world::EntityKey{tracked.target.slot,
-				static_cast<std::uint32_t>(enemy->serialnumber) + 1U})) == ObservationAdapterResult::Accepted && visible.visible;
+				static_cast<std::uint32_t>(enemy->serialnumber) + 1U}), false,
+			compatibility ? PlayerVisionGlass::IgnoreTransparent : PlayerVisionGlass::Occludes) ==
+			ObservationAdapterResult::Accepted && visible.visible;
 	const bool remembered = compatibility &&
 		validEnemy && state.enemyReaction.enemy(reaction) == tracked.target &&
 		state.enemyReaction.source(reaction) == world::EntityKey{tracked.target.slot,

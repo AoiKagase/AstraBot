@@ -632,6 +632,8 @@ bool testDeathChatter(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &
 	deathSpeechCareer = 0;
 	enemyDeathVisible = true;
 	death(3, 4);
+	gEntities[3].v.health = 0;
+	gEntities[3].v.deadflag = DEAD_DEAD;
 	step(.12f);
 	step(2.1f);
 	if (!check(deathSpeechSamples == std::vector<std::string>{"radio/test/down.wav"},

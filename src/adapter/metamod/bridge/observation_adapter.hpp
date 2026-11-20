@@ -20,6 +20,12 @@ enum class ObservationAdapterResult
 	InvalidEntity
 };
 
+enum class PlayerVisionGlass
+{
+	Occludes,
+	IgnoreTransparent
+};
+
 class ObservationAdapter
 {
 public:
@@ -32,7 +38,7 @@ public:
 		compat::CompatibilityObservation *observation) const;
 	ObservationAdapterResult collectVisibility(edict_t *observer, const edict_t *target, const world::ActorKey &targetActor,
 		const world::FrameIdentity &frame, perception::VisionObservation *observation, bool checkFov = true,
-		bool reportFovParts = false) const;
+		bool reportFovParts = false, PlayerVisionGlass glass = PlayerVisionGlass::Occludes) const;
 	ObservationAdapterResult collectPlantedBomb(edict_t *entity, const char *classname, const char *model,
 		float currentTime, const world::ActorKey &actor, const world::FrameIdentity &frame,
 		const compat::ObservationTimingContext &timing, compat::ObjectiveObservation *observation) const;

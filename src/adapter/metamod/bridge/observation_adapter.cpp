@@ -205,7 +205,7 @@ ObservationAdapterResult ObservationAdapter::collectActor(edict_t *entity, const
 
 ObservationAdapterResult ObservationAdapter::collectVisibility(edict_t *observer, const edict_t *target,
 	const world::ActorKey &targetActor, const world::FrameIdentity &frame,
-	perception::VisionObservation *observation, bool checkFov, bool reportFovParts) const
+	perception::VisionObservation *observation, bool checkFov, bool reportFovParts, PlayerVisionGlass glass) const
 {
 	if (observation == nullptr || !targetActor.isValid() || !frame.isValid())
 		return ObservationAdapterResult::InvalidArgument;
@@ -253,6 +253,9 @@ ObservationAdapterResult ObservationAdapter::collectVisibility(edict_t *observer
 	const float yawRadians = observer->v.angles[1] * ASTRABOT_OBSERVATION_ADAPTER_PI / kHalfTurnDegrees;
 	const float forwardX = std::cos(yawRadians);
 	const float forwardY = std::sin(yawRadians);
+	constexpr int kIgnoreActors = 0x01;
+	constexpr int kIgnoreGlass = 0x100;
+	const int traceFlags = glass == PlayerVisionGlass::IgnoreTransparent ? kIgnoreActors | kIgnoreGlass : kIgnoreActors;
 
 	auto inViewCone = [&](const float point[3]) -> bool
 	{
@@ -284,8 +287,7 @@ ObservationAdapterResult ObservationAdapter::collectVisibility(edict_t *observer
 		}
 		const auto traceStart =
 			profileVision ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point();
-		constexpr int kTraceIgnoringActors = 1;
-		engineFunctions_->pfnTraceLine(eye, point, kTraceIgnoringActors, observer, &result);
+		engineFunctions_->pfnTraceLine(eye, point, traceFlags, observer, &result);
 		if (profileVision)
 		{
 			const auto elapsed =

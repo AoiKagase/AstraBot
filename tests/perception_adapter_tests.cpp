@@ -14,13 +14,14 @@ int gTraceCount = 0;
 void traceLine(const float *start, const float *end, int noMonsters, edict_t *skip, TraceResult *result)
 {
 	(void)start;
-	(void)noMonsters;
 	(void)skip;
 	++gTraceCount;
 	*result = {};
 	if (gTraceMode == 1)
 		result->flFraction = 0.5f;
 	else if (gTraceMode == 2 && end[2] <= 20.0f)
+		result->flFraction = 0.5f;
+	else if (gTraceMode == 3 && noMonsters != 0x101)
 		result->flFraction = 0.5f;
 	else
 		result->flFraction = 1.0f;
@@ -86,6 +87,24 @@ bool testAdapterPerceptionProductionFixture()
 			"adapter feeds five ordered CSBot body probes into perception"))
 		return false;
 
+	const auto clearParts = visible.visibleParts;
+	constexpr auto ignoreGlass = metamod::PlayerVisionGlass::IgnoreTransparent;
+	gTraceMode = 3;
+	if (!check(adapter.collectVisibility(&observer, &target, {2U, 1U}, frame(10U), &visible) ==
+					metamod::ObservationAdapterResult::Accepted && !visible.visible,
+			"default player vision is blocked by transparent glass") ||
+		!check(adapter.collectVisibility(&observer, &target, {2U, 1U}, frame(10U), &visible, true, true, ignoreGlass) ==
+					metamod::ObservationAdapterResult::Accepted && visible.visible &&
+				visible.visibleParts == clearParts && visible.visibleInFovParts == clearParts,
+			"CSBot player vision sees the same body parts through transparent glass as in clear sight"))
+		return false;
+	gTraceMode = 1;
+	if (!check(adapter.collectVisibility(&observer, &target, {2U, 1U}, frame(10U), &visible, true, true, ignoreGlass) ==
+					metamod::ObservationAdapterResult::Accepted && !visible.visible,
+			"CSBot player vision still respects opaque cover"))
+		return false;
+
+	gTraceMode = 0;
 	target.v.origin[0] = 0.0f;
 	target.v.origin[1] = 128.0f;
 	gTraceCount = 0;

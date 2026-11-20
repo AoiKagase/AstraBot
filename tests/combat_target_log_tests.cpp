@@ -56,9 +56,8 @@ float combatRandomFloat(float low, float high)
 void traceCombatVisibility(const float *start, const float *end, int ignoreMonsters, edict_t *self, TraceResult *result)
 {
 	traceObjectiveVisibility(start, end, ignoreMonsters, self, result);
-	if (enemyBehindCover && self == &gEntities[0] && ignoreMonsters == 1 &&
-		(std::fabs(end[0] - gEntities[1].v.origin.x) <= 24.0f ||
-			(gEntities[2].v.health > 0 && std::fabs(end[0] - gEntities[2].v.origin.x) <= 24.0f)))
+	if (enemyBehindCover && self == &gEntities[0] && (ignoreMonsters & 0xff) == 1 &&
+		std::fabs(end[0] - gEntities[1].v.origin.x) <= 24.0f)
 		result->flFraction = 0.0f;
 	if (coverBlocksEnemySight && ignoreMonsters == 0x101 && self == &gEntities[1])
 		result->flFraction = 0.5f;
