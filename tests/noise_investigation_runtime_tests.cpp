@@ -256,6 +256,9 @@ bool testInvestigation(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t 
 	self.v.origin.y = 0;
 	source.v.origin.y = 500;
 	step(.15f);
+	step(.15f);
+	// Let Hunt build its first path and the 0.4–0.6 second path retry delay expire.
+	step(.65f);
 	emit();
 	step(.15f);
 	step(.3f);

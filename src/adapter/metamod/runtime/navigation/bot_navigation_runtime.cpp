@@ -1216,21 +1216,26 @@ NavigationUpdate BotNavigationRuntime::updateNavigation(std::size_t index, const
 	auto &roamResult = output.roamResult;
 	groundLookaheadRoute.reset();
 	const auto &previousStep = actors_[index].managedNavigationSteps;
+	const auto &machine = services_->behavior_managedBotStateMachines(index);
+	const auto navigationState = machine.state();
 	const bool destroyedPath = previousStep.pathDestroyedAfterMovement && previousStep.actor == objectiveActor &&
 		previousStep.frame.mapGeneration == observation.frame.mapGeneration &&
 		previousStep.frame.roundGeneration == observation.frame.roundGeneration &&
 		previousStep.frame.tick < observation.frame.tick &&
 		previousStep.goalGeneration == services_->behavior_managedBotObjectiveTargets(index).generation &&
-		(services_->behavior_managedBotStateMachines(index).state() == compat::CompatibilityStateId::MoveTo ||
-			services_->behavior_managedBotStateMachines(index).state() ==
-				compat::CompatibilityStateId::EscapeFromBomb) &&
-		!services_->behavior_managedBotStateMachines(index).attackOverlayActive();
-	const auto navigationState = services_->behavior_managedBotStateMachines(index).state();
+		(navigationState == compat::CompatibilityStateId::MoveTo ||
+			navigationState == compat::CompatibilityStateId::EscapeFromBomb) &&
+		!machine.attackOverlayActive();
+	// Hunt::OnEnter destroys the path. The first goal draw belongs to OnUpdate.
+	// The reference processes a radio order before dispatching the current state's OnUpdate.
+	const bool enteredHuntThisUpdate = navigationState == compat::CompatibilityStateId::Hunt &&
+		machine.stateTimestamp() == observation.locomotion.observedAt &&
+		!services_->behavior_scenarioDecisions(index).startedHuntFromRadio;
 	const bool stateHold =
 		services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility &&
 		(navigationState == compat::CompatibilityStateId::DefuseBomb ||
 			navigationState == compat::CompatibilityStateId::PlantBomb ||
-			navigationState == compat::CompatibilityStateId::Buy ||
+			navigationState == compat::CompatibilityStateId::Buy || enteredHuntThisUpdate ||
 			(navigationState == compat::CompatibilityStateId::Idle && !observation.hasObjectiveTarget) ||
 			(navigationState == compat::CompatibilityStateId::Hide &&
 				services_->behavior_scenarioDecisions(index).action == compat::ScenarioAction::Guard &&

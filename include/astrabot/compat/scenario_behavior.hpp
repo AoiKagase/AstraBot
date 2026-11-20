@@ -159,6 +159,7 @@ struct ScenarioBehaviorDecision
 	bool followPermissionInferred = false;
 	CompatibilityTaskId hideTask = CompatibilityTaskId::None;
 	bool startedAutomaticFollow = false;
+	bool startedHuntFromRadio = false;
 };
 
 inline CompatibilityTaskId nativeScenarioMoveTask(
@@ -582,6 +583,7 @@ private:
 			holding_ = false;
 			result->action = ScenarioAction::Hunt;
 			result->state = CompatibilityStateId::Hunt;
+			result->startedHuntFromRadio = true;
 			return true;
 		case ScenarioRadioCommand::GetOut:
 			if (input.bombPlantedKnown && input.bombPlanted)

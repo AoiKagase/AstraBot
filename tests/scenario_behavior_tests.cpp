@@ -276,6 +276,14 @@ int main()
 	value.frame.tick++;
 	value.leader.alive = false;
 	ok &= check(radio.update(value).action == ScenarioAction::Stop, "observed dead leader terminates following");
+	order.sequence++;
+	order.command = ScenarioRadioCommand::GoGoGo;
+	value.frame.tick++;
+	const auto radioHunt = radio.update(value);
+	ok &= check(radioHunt.state == CompatibilityStateId::Hunt && radioHunt.startedHuntFromRadio,
+		"accepted GoGoGo identifies Hunt entry before the state update");
+	value.frame.tick++;
+	ok &= check(!radio.update(value).startedHuntFromRadio, "the same order cannot mark a second Hunt update");
 	ScenarioBehaviorPlanner vip;
 	value = input();
 	value.scenario = PublicScenarioKind::Vip;

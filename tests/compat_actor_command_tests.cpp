@@ -1278,6 +1278,16 @@ bool testRuntimeProfilerBoundaries(
 	}
 	bool passed = check(
 		windows >= 2U && windowFields, "public profiler serializes actual game/wall window duration and frame count");
+	const auto huntStep = [](const std::string &message)
+	{
+		return message.find("profile navigationStep bot_id=1 ") == 0U &&
+			message.find(" state_from=STATE-HUNT ") != std::string::npos;
+	};
+	const auto firstHunt = std::find_if(gMovementLogs.begin(), gMovementLogs.end(), huntStep);
+	passed = check(firstHunt != gMovementLogs.end() && firstHunt->find(" path=0 ") != std::string::npos &&
+			std::any_of(firstHunt + 1, gMovementLogs.end(), [&](const std::string &message)
+			{ return huntStep(message) && message.find(" path=0 ") == std::string::npos; }),
+		"Hunt entry leaves the path empty and plans on a subsequent full update") && passed;
 	bool scenarioStage = false, guardStage = false, costStage = false;
 	for (const auto &message : gMovementLogs)
 	{
