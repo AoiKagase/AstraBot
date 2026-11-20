@@ -1696,19 +1696,49 @@ bool testRuntimeBombSiteApproach(
 	runtime.onEmitSound(&gPlantedBomb, "weapons/c4_beep1.wav", 1.0f, 1.0f);
 	gMovementLogs.clear();
 	bool movedTowardObservedC4 = false;
+	const bool checkApproachLook = !astrabot_test::runtimeCharacterization().enabled();
+	bool observedFirstApproach = false;
+	auto &navigation = static_cast<astrabot::metamod::BotNavigationServices &>(runtime);
 	for (int frame = 0; frame < 24; ++frame)
 	{
+		if (checkApproachLook && !observedFirstApproach)
+			gEntities[0].v.v_angle.y = 135.0f;
 		tick(0.1f);
+		const auto &state = navigation.behavior_managedBotStateMachines(0);
+		if (checkApproachLook && !observedFirstApproach &&
+			state.state() == astrabot::compat::CompatibilityStateId::MoveTo &&
+			state.task() == astrabot::compat::CompatibilityTaskId::DefuseBomb &&
+			(gLastRunPlayerMoveForward != 0.0f || gLastRunPlayerMoveSide != 0.0f))
+		{
+			observedFirstApproach = true;
+			const float yaw = gLastRunPlayerMoveYaw;
+			const float forward = gLastRunPlayerMoveForward;
+			const float side = gLastRunPlayerMoveSide;
+			passed = check(std::fabs(yaw - 135.0f) < .01f && forward == -240.0f && side == 240.0f,
+				"the first C4 approach command uses the current view for both movement axes") && passed;
+			const auto update = navigation.service_managedBotFullUpdateSequences()[0];
+			const auto commands = gRunPlayerMoveCount;
+			tick(.04f);
+			passed = check(navigation.service_managedBotFullUpdateSequences()[0] == update &&
+					gRunPlayerMoveCount > commands && gLastRunPlayerMoveYaw < yaw - .01f &&
+					gLastRunPlayerMoveForward == forward && gLastRunPlayerMoveSide == side,
+				"the C4 approach upkeep turns toward the path and reuses both cached movement axes") && passed;
+		}
 		// This stub reports no displacement. Its later stuck/Wiggle command
 		// is tested separately; allow the sampled recovery/path-retry intervals
 		// (up to 1.5 + 0.6 seconds) and verify the routed C4 command here.
-		if (gLastRunPlayerMoveForward > 0.0f && std::fabs(gLastRunPlayerMoveYaw) < 0.01f)
+		const float yawRadians = gLastRunPlayerMoveYaw * 0.017453292519943295f;
+		const float worldForward = gLastRunPlayerMoveForward * std::cos(yawRadians) +
+			gLastRunPlayerMoveSide * std::sin(yawRadians);
+		if (worldForward > 0.0f && state.state() == astrabot::compat::CompatibilityStateId::MoveTo &&
+			state.task() == astrabot::compat::CompatibilityTaskId::DefuseBomb)
 			for (const auto &message : gMovementLogs)
 				if ((message.find("goal_source=objective") != std::string::npos ||
 						message.find("profile navigationStep ") == 0U) &&
 					message.find("goal_position=(224.0 32.0 36.0)") != std::string::npos)
 					movedTowardObservedC4 = true;
 	}
+	passed = check(!checkApproachLook || observedFirstApproach, "the C4 approach sent a movement command") && passed;
 	passed = check(movedTowardObservedC4, "public CT moves toward human-planted C4 after hearing its beep") && passed;
 	if (!movedTowardObservedC4)
 		for (const auto &message : gMovementLogs)
@@ -1761,6 +1791,7 @@ bool testRuntimeBombSiteApproach(
 		gMovementLogs.clear();
 	}
 	bool defused = false;
+	bool observedDefuseEntry = false;
 	bool trackedBombDuringUse = false;
 	const auto previousViewOffset = gEntities[0].v.view_ofs;
 	if (checkNativeReload)
@@ -1768,6 +1799,21 @@ bool testRuntimeBombSiteApproach(
 	for (int frame = 0; frame < (checkNativeReload ? 12 : 6); ++frame)
 	{
 		tick(0.1f);
+		const auto &state = navigation.behavior_managedBotStateMachines(0);
+		if (checkNativeReload && !observedDefuseEntry &&
+			state.state() == astrabot::compat::CompatibilityStateId::DefuseBomb &&
+			state.stateTimestamp() == globals.time)
+		{
+			observedDefuseEntry = true;
+			const float pitch = gLastRunPlayerMovePitch;
+			const auto update = navigation.service_managedBotFullUpdateSequences()[0];
+			const auto commands = gRunPlayerMoveCount;
+			tick(.04f);
+			passed = check(navigation.service_managedBotFullUpdateSequences()[0] == update &&
+					gRunPlayerMoveCount > commands && !(gLastRunPlayerMoveButtons & IN_USE) &&
+					std::fabs(gLastRunPlayerMovePitch - pitch) < 1.0f,
+				"DefuseBomb entry retains the approach view until the first USE update") && passed;
+		}
 		const bool used = (gLastRunPlayerMoveButtons & IN_USE) != 0U;
 		if (used && defused && gLastRunPlayerMovePitch > 5.0f)
 			trackedBombDuringUse = true;
@@ -1775,8 +1821,8 @@ bool testRuntimeBombSiteApproach(
 	}
 	gEntities[0].v.view_ofs = previousViewOffset;
 	if (checkNativeReload)
-		passed = check(trackedBombDuringUse, "DefuseBomb keeps looking below the eyes on subsequent USE commands") &&
-			passed;
+		passed = check(observedDefuseEntry && trackedBombDuringUse,
+			"DefuseBomb enters before it tracks the C4 on subsequent USE commands") && passed;
 	gameDll.pfnUpdateClientData = updateClientData;
 	gameDll.pfnGetWeaponData = getWeaponData;
 	passed = check(defused, "public CT converges to existing IN_USE defuse at human-planted C4") && passed;

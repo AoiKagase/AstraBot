@@ -3855,6 +3855,7 @@ bool testDefuseMoveToRetainsFirstPointAfterDrift(bool clear)
 	observation.hasObjectiveTarget = true;
 	observation.objectiveTarget = {-1536.0f, 2688.0f, floor};
 	observation.nativeSameAreaEndpoint = true;
+	observation.defuseApproach = true;
 	observation.prepareObjectivePathOnly = true;
 	auto &physics = observation.locomotion;
 	physics.position = {-1492.5020f, 2577.0173f, floor};
@@ -3889,6 +3890,7 @@ bool testDefuseMoveToRetainsFirstPointAfterDrift(bool clear)
 			decision.currentArea == 54 && decision.linkFromArea == 293 && decision.linkToArea == 53 &&
 			intent.currentArea == 54 && intent.targetArea == 293 && intent.speed > 0.0f &&
 			intent.targetPosition.x == -1537.5f && intent.targetPosition.y == 2630.0f &&
+			decision.defuseLookPoint.x == -1536.0f && decision.defuseLookPoint.y == 2688.0f &&
 			intent.direction.x < 0.0f && intent.direction.y > 0.0f && random.verifyComplete(),
 		"C4 MoveTo steers toward the retained portal after drifting into area 54 without another draw");
 }

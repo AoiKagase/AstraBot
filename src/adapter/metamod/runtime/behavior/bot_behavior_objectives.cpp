@@ -1423,13 +1423,13 @@ BotBehaviorRuntime::BehaviorPhaseResult BotBehaviorRuntime::decideObjectiveActio
 		actors_[index].managedBotObjectiveActions.active = false;
 		const auto &bomb = services_->observation_objectiveKnowledge(index)[1U];
 		const auto &scenario = actors_[index].scenarioDecisions;
-		if (bomb.entity.id != 0U && scenario.action != compat::ScenarioAction::Guard &&
+		if (machine.stateTimestamp() != services_->service_globals()->time &&
+			bomb.entity.id != 0U && scenario.action != compat::ScenarioAction::Guard &&
 			(!objectiveAssignment || objectiveAssignment->kind != team::TeamObjectiveKind::GuardBombDefuser))
 		{
 			proposal.hasUseEntityLook = true;
 			proposal.useEntityLookTarget = {bomb.position.x, bomb.position.y, bomb.position.z};
-			if (machine.stateTimestamp() != services_->service_globals()->time)
-				proposal.kind = ActionKind::Defuse;
+			proposal.kind = ActionKind::Defuse;
 		}
 		return BehaviorPhaseResult::Complete;
 	}

@@ -35,7 +35,7 @@ public:
 		MovementCommandDraft draft, const ActionProposal &requestedAction);
 	void resetManagedBotCommandTemplate(std::size_t index);
 	void resetManagedBotCommandInputs(std::size_t index);
-	void advanceUseEntityLook(std::size_t index, FakeClientHandle &handle);
+	void advanceObjectiveLook(std::size_t index, FakeClientHandle &handle);
 	const std::uint32_t &managedBotCommandSequences(std::size_t index) const
 	{
 		return actors_[index].managedBotCommandSequences;
@@ -119,6 +119,7 @@ private:
 		bool nativeLadderJump{};
 		compat::AimSpringState navigationLookSpring{};
 		float navigationLookYaw = std::numeric_limits<float>::quiet_NaN();
+		bool defusePathLook = false;
 		world::WorldPosition useEntityLookTarget{};
 		compat::AimSpringState useEntityLookSpring{};
 		bool useEntityLookActive = false;
@@ -129,6 +130,7 @@ private:
 		{
 			navigationLookYaw = std::numeric_limits<float>::quiet_NaN();
 			navigationLookSpring = {};
+			defusePathLook = false;
 		}
 	};
 	void applyUseEntityLook(std::size_t index, const edict_t &entity, const ActionProposal &action,

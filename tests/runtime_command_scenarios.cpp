@@ -275,7 +275,7 @@ int main()
 			"interaction registers the aim goal without snapping or using"))
 		return 1;
 	services.globals.time += runtime::BotTimingScheduler::kCommandInterval;
-	command.advanceUseEntityLook(0U, handle);
+	command.advanceObjectiveLook(0U, handle);
 	command.executeManagedBotCommand(0U, handle);
 	if (!check(services.lastYaw < 0.0f && services.lastYaw > -20.0f &&
 			handle.entity->v.v_angle.x < 0.0f && (services.lastButtons & IN_USE) == 0U,

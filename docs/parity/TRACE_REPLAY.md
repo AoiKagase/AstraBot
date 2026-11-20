@@ -189,6 +189,18 @@ For area 1, both first reported walking movement at a hull minimum of
 
 The separate 13.005-second Hunt stop remains unverified.
 
+## C4 approach view and movement
+
+The isolated Windows x86 replay uses the existing normal plant fixture and
+two matched physics samples at MoveTo entry and its next full update. It
+records both command axes, pitch and yaw, the path point, the subsequent
+look destination, path retry draws, the first USE command, and BarTime.
+The second reference run initializes the view spring velocity to zero
+at the matched sample. The final AstraBot probe records its existing
+spring velocity at that point. Raw logs, inputs and the uninstrumented
+control are in `artifacts/local/debug/c4-approach-look-20261121`. See
+[C4 approach results](STATUS.md#c4へのmovetoでの視線移動軸と解除への切替).
+
 ## Windows x86 round opening Buy
 
 The isolated `de_dust2` replay compared two $800 bots against Win32

@@ -1382,6 +1382,11 @@
   {
     "header": "src/adapter/metamod/runtime/command/bot_command_runtime.hpp",
     "scope": "ActorState",
+    "member": "defusePathLook"
+  },
+  {
+    "header": "src/adapter/metamod/runtime/command/bot_command_runtime.hpp",
+    "scope": "ActorState",
     "member": "useEntityLookTarget"
   },
   {

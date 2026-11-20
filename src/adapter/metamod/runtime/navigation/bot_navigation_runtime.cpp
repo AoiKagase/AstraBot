@@ -1131,6 +1131,7 @@ NavigationUpdate BotNavigationRuntime::updateNavigation(std::size_t index, const
 	{
 		const auto task = currentMachine.task();
 		observation.nativeSameAreaEndpoint = task == compat::CompatibilityTaskId::DefuseBomb;
+		observation.defuseApproach = compatibility && observation.nativeSameAreaEndpoint;
 		observation.prepareObjectivePathOnly = observation.nativeSameAreaEndpoint && !currentMachine.attackOverlayActive() &&
 			currentMachine.stateTimestamp() == observation.locomotion.observedAt;
 		if (observation.prepareObjectivePathOnly)

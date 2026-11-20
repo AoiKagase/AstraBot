@@ -311,6 +311,51 @@ bool defuseDriftSteeringPoint(const nav::NavSnapshot &snapshot, nav::AreaId curr
 	}
 	return false;
 }
+
+nav::NavVector defusePathLookPoint(const nav::NavSnapshot &snapshot, const nav::NavCorridor &corridor,
+	std::size_t areaIndex, const nav::LocomotionObservation &observation, const nav::LocomotionIntent &intent)
+{
+	constexpr float range = 500.0f;
+	auto point = intent.targetPosition;
+	float along = std::hypot(point.x - observation.position.x, point.y - observation.position.y);
+	const auto &document = *snapshot.document();
+	const auto *current = document.findArea(intent.targetArea);
+	if (!corridor.hasEndpoint || intent.traversal != nav::TraversalAction::Walk ||
+		(current != nullptr && (current->attributes & nav::NavArea::kJump)) || along >= range ||
+		(point.x == corridor.endpoint.x && point.y == corridor.endpoint.y))
+		return point;
+
+	for (auto i = (std::max)(std::size_t{1}, areaIndex); i <= corridor.links.size(); ++i)
+	{
+		const bool endpoint = i == corridor.links.size();
+		const auto *destination = endpoint ? nullptr : document.findArea(corridor.links[i].toArea);
+		if (!endpoint)
+		{
+			const auto &link = corridor.links[i];
+			// A one-way drop or a special traversal has additional path points.
+			// Retain the preceding ground point rather than looking across it.
+			if (destination == nullptr || traversalActionFor(snapshot, link) != nav::TraversalAction::Walk ||
+				!std::any_of(destination->connections.begin(), destination->connections.end(),
+					[&](const auto &neighbors) {
+						return std::find(neighbors.begin(), neighbors.end(), link.fromArea) != neighbors.end();
+					}))
+				break;
+		}
+		const auto next = endpoint ? corridor.endpoint : nav::nativeGroundPortal(document, corridor.links[i], point, true);
+		const float dx = next.x - point.x, dy = next.y - point.y;
+		const float segment = std::hypot(dx, dy);
+		if (along + segment >= range)
+		{
+			const float fraction = (range - along) / (segment + along);
+			return {point.x + fraction * dx, point.y + fraction * dy, point.z + fraction * (next.z - point.z)};
+		}
+		point = next;
+		if (destination != nullptr && (destination->attributes & nav::NavArea::kJump))
+			break;
+		along += segment;
+	}
+	return point;
+}
 }
 
 void addSearchStats(nav::NavSearchStats *total, const nav::NavSearchStats &sample)
@@ -722,6 +767,13 @@ NavRoamResult NavRoamController::update(const nav::NavSnapshot &snapshot, const 
 	}
 	else
 		result = updateInternal(snapshot, observation, intent, decision);
+	if (observation.defuseApproach && result == NavRoamResult::IntentReady && decision != nullptr && intent != nullptr)
+	{
+		decision->defuseLookPoint = intent->targetPosition;
+		if (routeState().hasActiveRoute && !intent->nativeLadderControl)
+			decision->defuseLookPoint = defusePathLookPoint(snapshot, routeState().activeCorridor,
+				routeState().activeCorridorIndex, observation.locomotion, *intent);
+	}
 	if (friendWaitState().friendRepathPending)
 	{
 		friendWaitState().friendRepathPending = false;

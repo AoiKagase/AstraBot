@@ -66,6 +66,7 @@ struct NavRoamObservation
 	const nav::NavHuntPathProbe *followPathProbe = nullptr;
 	bool noiseTargetCleared = false;
 	bool nativeSameAreaEndpoint = false;
+	bool defuseApproach = false;
 	bool prepareObjectivePathOnly = false;
 	nav::AreaId objectivePathStartArea = 0U;
 	// Hunt compares the requested area with the bot's last known NAV area while on a ladder.
@@ -218,6 +219,7 @@ struct NavRoamDecision
 	std::uint8_t linkHow;
 	bool huntEndpointSteering = false;
 	nav::NavVector huntEndpoint{};
+	nav::NavVector defuseLookPoint{};
 };
 
 class NavAreaVisitHistory
