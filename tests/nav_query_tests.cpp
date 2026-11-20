@@ -1351,6 +1351,36 @@ bool testAStarSearchStats()
 		"A* stats expose unique expansion and queue behavior");
 }
 
+bool testDirectHuntStartsTowardTheNativePortal()
+{
+	using namespace astrabot::nav;
+	NavDocument document;
+	document.setSourceIdentity({5U, 100U, 200U});
+	auto start = area(41U, -875.0f, -500.0f, 128.0f);
+	start.extent.lo.y = -900.0f;
+	start.extent.hi.y = -650.0f;
+	start.connections[1].push_back(42U);
+	document.addArea(start);
+	auto goal = area(42U, -500.0f, 0.0f, 128.0f);
+	goal.extent.lo.y = -875.0f;
+	goal.extent.hi.y = -650.0f;
+	goal.connections[3].push_back(41U);
+	document.addArea(goal);
+	const auto snapshot = snapshotFor(&document, 1U);
+	NavCorridor corridor{};
+	NavPathFollower follower;
+	if (!check(NavQuery(snapshot).buildHuntCorridor(41U, 42U, &corridor, nullptr) == NavQueryResult::Found &&
+			follower.start(corridor) == NavFollowerResult::Started, "Hunt builds the direct route"))
+		return false;
+
+	NavVector target{};
+	AreaId targetArea = 0U;
+	return check(follower.update(snapshot, {-638.5f, -881.2f, 128.0f}, 20.0f, 64.0f, &target, &targetArea) ==
+			NavFollowerResult::TargetReady && targetArea == 42U && target.x == -495.0f && target.y == -775.0f &&
+			corridor.endpoint.x == -250.0f && corridor.endpoint.y == -775.0f,
+		"direct Hunt approaches the portal used by the friend-wait test before steering to the endpoint");
+}
+
 bool testHuntFallbackKeepsPortalUntilItPasses()
 {
 	using namespace astrabot::nav;
@@ -1575,7 +1605,8 @@ bool testHuntFallbackPrefersVisibleSegments()
 
 int main()
 {
-	if (!testHuntFallbackKeepsPortalUntilItPasses() || !testHuntFallbackSamplesEndpointFloor() ||
+	if (!testDirectHuntStartsTowardTheNativePortal() || !testHuntFallbackKeepsPortalUntilItPasses() ||
+		!testHuntFallbackSamplesEndpointFloor() ||
 		!testHuntEndpointDoesNotInventPortalStep() || !testHuntFallbackPrefersVisibleSegments())
 		return 1;
 	if (!testNativeDeadReceiverTravel() || !testFollowAreaSelection())

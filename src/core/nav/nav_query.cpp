@@ -1312,7 +1312,10 @@ NavQueryResult NavQuery::buildHuntCorridor(AreaId start, AreaId goal, NavCorrido
 	}
 	const auto result = buildAStarCorridor(snapshot_, limits_, start, goal, NavRouteType::Safest, corridor, stats,
 		hasCostContext_ ? &costContext_ : nullptr, nullptr, ladders, false, true);
-	if (result != NavQueryResult::Found || (corridor->areas.back() == goal && corridor->nativeLadders.empty()))
+	// A direct Hunt uses the native portal before its endpoint. Friend waiting
+	// and the movement issued on expiry must use the same approach point.
+	if (result != NavQueryResult::Found ||
+		(corridor->areas.back() == goal && corridor->nativeLadders.empty() && corridor->links.size() > 1U))
 		return result;
 
 	try

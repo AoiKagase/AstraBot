@@ -244,6 +244,11 @@ open MC01/MC02 traffic/reselection case; its cause is not proven to be the ledge
 launch mismatch. A dedicated replay/regression is pending. State-local success,
 goal changes and earlier smaller maxima do not close this aggregate stop.
 
+The [controlled area 41 replay](STATUS.md)
+used the recorded start and adjacent goals with known teammate positions.
+It identified a direct-route steering difference. The goal sequence and
+teammate geometry of the historical stop remain unknown.
+
 Review found and prompted corrections for raw-Replan escape invalidation,
 interaction-hold navigation/RNG, lifecycle velocity reset, airborne stuck latch,
 unbounded reload-request inference and monitoring before path intent exists.

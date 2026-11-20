@@ -671,7 +671,7 @@ int gGroundProbeMode = 0;
 int gFarGroundProbeCount = 0;
 int gNearGroundProbeCount = 0;
 
-void traceJumpGround(const float *start, const float *, int, edict_t *actor, TraceResult *trace)
+void traceJumpGround(const float *start, const float *end, int, edict_t *actor, TraceResult *trace)
 {
 	astrabot_test::runtimeCharacterization().record(
 		"call traceJumpGround start=(%a,%a,%a)", start[0], start[1], start[2]);
@@ -681,6 +681,13 @@ void traceJumpGround(const float *start, const float *, int, edict_t *actor, Tra
 	trace->vecEndPos[1] = start[1];
 	trace->vecEndPos[2] = 0.0f;
 	trace->vecPlaneNormal[2] = 1.0f;
+	if (actor == nullptr)
+	{
+		// Hunt also probes the world floor at the endpoint and checks its path rays.
+		if (start[0] != end[0] || start[1] != end[1] || start[2] - end[2] < 100.0f)
+			trace->flFraction = 1.0f;
+		return;
+	}
 	const float distance = std::fabs(start[0] - actor->v.origin.x);
 	if (distance > 70.0f)
 	{
@@ -922,7 +929,7 @@ bool testRuntimeNearJumpFallback(
 	astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &engine, globalvars_t &globals)
 {
 	const char *path = "astrabot_actor_jump.nav";
-	if (!check(writeJumpNavigation(path), "near-jump NAV fixture written"))
+	if (!check(writeJumpNavigation(path, true), "near-jump NAV fixture written with an eastbound link"))
 	{
 		return false;
 	}
