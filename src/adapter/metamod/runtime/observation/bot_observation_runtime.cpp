@@ -1311,7 +1311,9 @@ bool BotObservationRuntime::collectManagedPerception(
 	{
 		return false;
 	}
-	const auto collectVisibleThreats = [this, index, threats](
+	const bool compatibility =
+		services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility;
+	const auto collectVisibleThreats = [this, index, threats, compatibility](
 										   const world::WorldSnapshot &belief, const world::ActorKey &observer) -> bool
 	{
 		*threats = {};
@@ -1333,6 +1335,9 @@ bool BotObservationRuntime::collectManagedPerception(
 			{
 				continue;
 			}
+			const auto visibleParts = compatibility ? candidate->visibleInFovParts : candidate->visibleParts;
+			if (visibleParts == world::VisibleNone)
+				continue;
 			const float dx = candidate->position.x - observerObservation->position.x;
 			const float dy = candidate->position.y - observerObservation->position.y;
 			const float dz = candidate->position.z - observerObservation->position.z;
@@ -1340,16 +1345,16 @@ bool BotObservationRuntime::collectManagedPerception(
 			if (candidateCount < candidates.size())
 			{
 				world::WorldPosition visiblePoint = candidate->position;
-				if ((candidate->visibleParts & world::VisibleHead) != 0U)
+				if ((visibleParts & world::VisibleHead) != 0U)
 				{
 					visiblePoint.z += kHeadProbeHeight;
 				}
-				else if ((candidate->visibleParts & world::VisibleChest) == 0U &&
-					(candidate->visibleParts & world::VisibleFeet) != 0U)
+				else if ((visibleParts & world::VisibleChest) == 0U && (visibleParts & world::VisibleFeet) != 0U)
 				{
 					visiblePoint.z -= kFeetTargetProbeDepth;
 				}
 				bool attackingObserver = false;
+				bool crouching = false;
 				world::EntityKey sourceEntity{};
 				if (services_->service_engineFunctions() != nullptr &&
 					services_->service_engineFunctions()->pfnPEntityOfEntIndex != nullptr &&
@@ -1361,6 +1366,7 @@ bool BotObservationRuntime::collectManagedPerception(
 					{
 						sourceEntity = {candidate->actor.slot,
 							static_cast<std::uint32_t>(enemy->serialnumber) + 1U};
+						crouching = (enemy->v.flags & FL_DUCKING) != 0;
 					}
 					if (enemy != nullptr && !enemy->free && (enemy->v.button & IN_ATTACK) != 0)
 					{
@@ -1377,8 +1383,9 @@ bool BotObservationRuntime::collectManagedPerception(
 						attackingObserver = trace.pHit == services_->service_managedBotHandles()[index].entity;
 					}
 				}
-				candidates[candidateCount++] = {
-					candidate->actor, visiblePoint, std::sqrt(distanceSquared), attackingObserver, sourceEntity};
+				const auto &v = candidate->velocity;
+				candidates[candidateCount++] = {candidate->actor, visiblePoint, std::sqrt(distanceSquared),
+					attackingObserver, sourceEntity, v.x * v.x + v.y * v.y + v.z * v.z, visibleParts, crouching};
 			}
 		}
 		return true;
@@ -1414,8 +1421,6 @@ bool BotObservationRuntime::collectManagedPerception(
 		{services_->command_managedBotCommandSequences(index), 0U,
 			services_->service_managedBotFullUpdateSequences()[index]},
 		&noiseProbe);
-	const bool compatibility =
-		services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility;
 	if (compatibility)
 		input.setNoisePositionResolver(&noiseResolver);
 	// A negative profile delay means the first audible sample is ready immediately.
@@ -1465,7 +1470,7 @@ bool BotObservationRuntime::collectManagedPerception(
 		const bool visible = isObserver ||
 			(!blinded && observationAdapter_.collectVisibility(handle.entity, entity, actor, frame, &visibility,
 				!(acquiredEnemy == world::EntityKey{static_cast<std::uint32_t>(slot),
-					static_cast<std::uint32_t>(entity->serialnumber) + 1U})) ==
+					static_cast<std::uint32_t>(entity->serialnumber) + 1U}), compatibility) ==
 					ObservationAdapterResult::Accepted &&
 				visibility.visible);
 		world::ActorObservation observation = {};
@@ -1488,6 +1493,7 @@ bool BotObservationRuntime::collectManagedPerception(
 			? static_cast<std::uint8_t>(world::VisibleChest | world::VisibleHead | world::VisibleFeet |
 				  world::VisibleLeftSide | world::VisibleRightSide)
 			: visibility.visibleParts;
+		observation.visibleInFovParts = visibility.visibleInFovParts;
 		if (input.addActor(observation) != perception::PerceptionInputResult::Accepted)
 		{
 			return false;

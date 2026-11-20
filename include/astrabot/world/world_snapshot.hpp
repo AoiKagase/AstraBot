@@ -209,6 +209,7 @@ struct ActorObservation
 	std::uint8_t visibleParts;
 	bool carryingC4 = false;
 	bool hasSniperRifle = false;
+	std::uint8_t visibleInFovParts = VisibleNone;
 
 	bool isConfirmed() const;
 	bool hasCurrentPosition() const;

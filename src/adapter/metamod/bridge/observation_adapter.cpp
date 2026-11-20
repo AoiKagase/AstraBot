@@ -205,7 +205,7 @@ ObservationAdapterResult ObservationAdapter::collectActor(edict_t *entity, const
 
 ObservationAdapterResult ObservationAdapter::collectVisibility(edict_t *observer, const edict_t *target,
 	const world::ActorKey &targetActor, const world::FrameIdentity &frame,
-	perception::VisionObservation *observation, bool checkFov) const
+	perception::VisionObservation *observation, bool checkFov, bool reportFovParts) const
 {
 	if (observation == nullptr || !targetActor.isValid() || !frame.isValid())
 		return ObservationAdapterResult::InvalidArgument;
@@ -306,13 +306,16 @@ ObservationAdapterResult ObservationAdapter::collectVisibility(edict_t *observer
 			}
 			profiler_->recordBodyProbe();
 		}
-		if (checkFov && !inViewCone(point))
+		const bool insideFov = (checkFov || reportFovParts) && inViewCone(point);
+		if (checkFov && !insideFov)
 			return;
 		observation->fovPassed = true;
 		if (traceVisible(point))
 		{
 			observation->losPassed = true;
 			observation->visibleParts = static_cast<std::uint8_t>(observation->visibleParts | bit);
+			if (insideFov)
+				observation->visibleInFovParts |= bit;
 		}
 	};
 

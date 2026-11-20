@@ -82,8 +82,8 @@ bool BotBehaviorRuntime::prepareManagedPerception(std::size_t index, world::Worl
 	{
 		memory.clearEnemy(!memory.pursuing(reaction) || memory.pursuitEnemy(reaction) == retainedEnemy);
 	}
-	const auto &candidates = threats.candidates;
-	const auto candidateCount = threats.count;
+	auto &candidates = threats.candidates;
+	auto candidateCount = threats.count;
 	if (actors_[index].recognitionSequences != services_->service_managedBotFullUpdateSequences()[index])
 	{
 		actors_[index].recognitionSequences = services_->service_managedBotFullUpdateSequences()[index];
@@ -92,6 +92,56 @@ bool BotBehaviorRuntime::prepareManagedPerception(std::size_t index, world::Worl
 		const bool blinded =
 			services_->observation_publicObservations().read(observer, belief.identity().frame, &publicState) &&
 			services_->service_globals() != nullptr && services_->service_globals()->time < publicState.blindUntil;
+		const auto findThreatEntity = [&](world::ActorKey key) -> const edict_t *
+		{
+			const auto *engine = services_->service_engineFunctions();
+			return engine && engine->pfnPEntityOfEntIndex ? engine->pfnPEntityOfEntIndex(static_cast<int>(key.slot))
+													 : nullptr;
+		};
+		const auto isLiveThreat = [&](const compat::ThreatCandidate &candidate, const edict_t *enemy)
+		{
+			return enemy && !enemy->free && enemy->serialnumber >= 0 && enemy->v.deadflag == DEAD_NO &&
+				enemy->v.health > 0 && candidate.sourceEntity == world::EntityKey{candidate.actor.slot,
+					static_cast<std::uint32_t>(enemy->serialnumber) + 1U} && reactionEnemyCurrent(candidate.actor);
+		};
+		if (compatibility && !blinded && candidateCount != 0U && services_->service_globals())
+		{
+			const auto attention = actor.reactionQueues.nativeAttention(observer, belief.identity().frame, reaction.now);
+			const auto execution = actor.executionRevision;
+			const auto update = services_->service_managedBotFullUpdateSequences()[index];
+			const auto request = compat::RandomRequest::floatRequest("Vision.Notice", {observer.slot, observer.generation},
+				{services_->command_managedBotCommandSequences(index), 0U, update}, 0.0f, 100.0f);
+			const float skill = static_cast<float>(actor.managedProfiles.skill) / 100.0f;
+			std::sort(candidates.begin(), candidates.begin() + candidateCount,
+				[](const compat::ThreatCandidate &a, const compat::ThreatCandidate &b) { return a.actor.slot < b.actor.slot; });
+			std::size_t noticed = 0U;
+			for (std::size_t entry = 0U; entry < candidateCount; ++entry)
+			{
+				const auto &candidate = candidates[entry];
+				if (!attention.skipsDraw(candidate))
+				{
+					const float chance = compat::nativeThreatNoticeChance(candidate, attention.elapsed, skill);
+					const auto roll = services_->service_compatibilityRandomSource().nextFloat(request);
+					if (!executionCurrent(index, reaction, execution) ||
+						services_->service_managedBotFullUpdateSequences()[index] != update)
+						return false;
+					if (roll.status != compat::RandomStatus::Ok || !(roll.value < chance))
+						continue;
+				}
+				candidates[noticed++] = candidate;
+			}
+			// Finish engine callbacks before checking the live identities that will enter the ring.
+			std::array<const edict_t *, ThreatObservation::kMaximumThreatCandidates> entities{};
+			for (std::size_t entry = 0U; entry < noticed; ++entry)
+				entities[entry] = findThreatEntity(candidates[entry].actor);
+			if (!executionCurrent(index, reaction, execution) ||
+				services_->service_managedBotFullUpdateSequences()[index] != update)
+				return false;
+			candidateCount = 0U;
+			for (std::size_t entry = 0U; entry < noticed; ++entry)
+				if (isLiveThreat(candidates[entry], entities[entry]))
+					candidates[candidateCount++] = candidates[entry];
+		}
 		if (!blinded && candidateCount != 0U && services_->service_globals() != nullptr)
 		{
 			actors_[index].lastVisibleEnemyTimes = services_->service_globals()->time;
@@ -110,17 +160,10 @@ bool BotBehaviorRuntime::prepareManagedPerception(std::size_t index, world::Worl
 			if (compatibility)
 			{
 				const auto execution = actors_[index].executionRevision;
-				const auto *engine = services_->service_engineFunctions();
-				const auto *enemy = engine && engine->pfnPEntityOfEntIndex
-					? engine->pfnPEntityOfEntIndex(static_cast<int>(threat.actor.slot))
-					: nullptr;
+				const auto *enemy = findThreatEntity(threat.actor);
 				if (!executionCurrent(index, reaction, execution))
 					return false;
-				recognized = seen && seen->relation == world::TeamRelation::Hostile && enemy && !enemy->free &&
-					enemy->serialnumber >= 0 && enemy->v.deadflag == DEAD_NO && enemy->v.health > 0 &&
-					threat.sourceEntity == world::EntityKey{threat.actor.slot,
-						static_cast<std::uint32_t>(enemy->serialnumber) + 1U} &&
-					reactionEnemyCurrent(threat.actor);
+				recognized = seen && seen->relation == world::TeamRelation::Hostile && isLiveThreat(threat, enemy);
 			}
 		}
 		if (recognized)
@@ -302,7 +345,7 @@ void BotBehaviorRuntime::resetRoundRecognition(bool endingRound)
 		actor.lastVisibleEnemyTimes = 0.0f;
 		actor.recognizedTargets = {};
 		actor.recognitionSequences = 0U;
-		actor.reactionQueues.reset();
+		actor.reactionQueues.resetForLife();
 	}
 }
 
@@ -349,7 +392,7 @@ void BotBehaviorRuntime::observePublicDeath(std::size_t index, const world::Fram
 	actors_[index].closeFootstep = {};
 	actors_[index].noiseBend = {};
 	actors_[index].noiseLookUpdate = 0U;
-	actors_[index].reactionQueues.reset();
+	actors_[index].reactionQueues.resetForLife();
 	finishDeathChatter(index, previousSpeech, deathFrame);
 }
 } // namespace metamod

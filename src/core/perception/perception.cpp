@@ -669,6 +669,7 @@ PerceptionResult PerceptionAssembler::publish(const PerceptionInput &input, worl
 			candidate.actors_[index].fovPassed = false;
 			candidate.actors_[index].losPassed = false;
 			candidate.actors_[index].visibleParts = world::VisibleNone;
+			candidate.actors_[index].visibleInFovParts = world::VisibleNone;
 		}
 		updateMemory(&candidateMemory, candidate.actors_[index], input.identity().frame);
 		const MemoryRecord &record = candidateMemory[actorIndex(candidate.actors_[index].actor)];

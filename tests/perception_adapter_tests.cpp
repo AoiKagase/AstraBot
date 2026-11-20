@@ -94,6 +94,24 @@ bool testAdapterPerceptionProductionFixture()
 				!visible.visible && !visible.fovPassed && gTraceCount == 0,
 			"outside-FOV enemy is rejected before trace"))
 		return false;
+	if (!check(adapter.collectVisibility(&observer, &target, {2U, 1U}, frame(11U), &visible, false, true) ==
+					metamod::ObservationAdapterResult::Accepted &&
+				visible.visible && visible.visibleParts != world::VisibleNone &&
+				visible.visibleInFovParts == world::VisibleNone && gTraceCount == 5,
+			"tracking keeps outside-FOV line of sight without adding any FOV-qualified traces"))
+		return false;
+
+	target.v.origin[0] = 180.0f;
+	target.v.origin[1] = 0.0f;
+	observer.v.angles[1] = 61.5f;
+	gTraceCount = 0;
+	if (!check(adapter.collectVisibility(&observer, &target, {2U, 1U}, frame(11U), &visible, false, true) ==
+					metamod::ObservationAdapterResult::Accepted &&
+				visible.visibleInFovParts == world::VisibleLeftSide &&
+				(visible.visibleParts & world::VisibleChest) != 0U && gTraceCount == 5,
+			"the tracked target's side is the only visible part inside the FOV at the edge"))
+		return false;
+	observer.v.angles[1] = 0.0f;
 
 	const float angle = 50.0f * 3.14159265358979323846f / 180.0f;
 	observer.v.fov = 15.0f;

@@ -88,6 +88,68 @@ int main()
 		ok &= check(afterBlindness.update(observer, {1U, 3U, tick}, tick * 1.0f, 0.3f, nullptr, 0U, false,
 						&selected, true) == (tick == 6U),
 			"the native reaction finishes only after three unblinded updates");
+	compat::ReactionQueue attentionQueue;
+	candidate.visibleParts = world::VisibleLeftSide;
+	candidate.distance = 180.0f;
+	// Compare against the exact stored float32 value, including on x87.
+	constexpr float unstartedElapsed = 99999.8984375f;
+	auto attention = attentionQueue.nativeAttention(observer, {1U, 4U, 1U}, 0.0f);
+	ok &= check(!attention.skipsDraw(candidate) && attention.elapsed == unstartedElapsed &&
+			compat::nativeThreatNoticeChance(candidate, attention.elapsed, .25f) > 100.0f,
+		"an unstarted timer still requests a draw even when its threshold exceeds 100");
+	attentionQueue.update(observer, {1U, 4U, 1U}, 0.0f, 0.0f, &candidate, 1U, false, &selected, true);
+	attention = attentionQueue.nativeAttention(observer, {1U, 4U, 2U}, 0.12f);
+	ok &= check(attention.elapsed == unstartedElapsed && attention.skipsDraw(candidate),
+		"timestamp zero is unstarted while the previous write may still contain an enemy");
+	attentionQueue.update(observer, {1U, 4U, 2U}, 1.0f, 0.0f, &candidate, 1U, false, &selected, true);
+	attentionQueue.update(observer, {1U, 4U, 3U}, 1.1f, 0.0f, nullptr, 0U, true, &selected, true);
+	attention = attentionQueue.nativeAttention(observer, {1U, 4U, 4U}, 1.25f);
+	ok &= check(attention.elapsed == .25f && attention.skipsDraw(candidate),
+		"blindness advances neither the attention clock nor the last sample");
+	auto newGeneration = candidate;
+	newGeneration.sourceEntity.generation++;
+	ok &= check(!attention.skipsDraw(newGeneration), "a new entity in the same slot draws again");
+	attentionQueue.update(observer, {1U, 4U, 4U}, 1.25f, 0.0f, nullptr, 0U, false, &selected, true);
+	attention = attentionQueue.nativeAttention(observer, {1U, 4U, 5U}, 1.37f);
+	const float edgeChance = compat::nativeThreatNoticeChance(candidate, attention.elapsed, .25f);
+	ok &= check(!attention.skipsDraw(candidate) && std::fabs(edgeChance - 6.0f) < .001f,
+		"an empty sample resumes draws using elapsed time and the left-side weight");
+	candidate.speedSquared = 40000.0f;
+	ok &= check(!attention.skipsDraw(candidate), "200 units per second still draws");
+	candidate.speedSquared = 40001.0f;
+	ok &= check(attention.skipsDraw(candidate), "running faster than 200 bypasses the draw");
+	candidate.speedSquared = 0.0f;
+	candidate.distance = 1000.0f;
+	candidate.crouching = true;
+	ok &= check(std::fabs(compat::nativeThreatNoticeChance(candidate, .25f, 0.0f) - .5f) < .001f &&
+			std::fabs(compat::nativeThreatNoticeChance(candidate, 0.0f, 0.0f) - .1f) < .00001f,
+		"the far stationary crouch and minimum floor use native thresholds");
+	attentionQueue.resetForLife();
+	attention = attentionQueue.nativeAttention(observer, {1U, 5U, 1U}, 1.5f);
+	ok &= check(attention.elapsed == .25f && !attention.skipsDraw(candidate),
+		"the queue can reset for a new life while the attention clock persists");
+	attentionQueue.reset();
+	ok &= check(attentionQueue.nativeAttention({1U, 2U}, {2U, 1U, 1U}, 1.5f).elapsed == unstartedElapsed,
+		"replacing an observer drops its attention clock");
+	compat::ReactionQueue threatRetention;
+	candidate.distance = 100.0f;
+	candidate.attackingObserver = true;
+	auto closer = candidate;
+	closer.actor.slot = closer.sourceEntity.id = 3U;
+	closer.attackingObserver = false;
+	threatRetention.update(observer, {1U, 5U, 1U}, 1.0f, 0.0f, &candidate, 1U, false, &selected, true);
+	const float ranges[] = {72.0f, 70.0f, 69.0f};
+	for (unsigned entry = 0; entry < 3U; ++entry)
+	{
+		closer.distance = ranges[entry];
+		const compat::ThreatCandidate competing[] = {candidate, closer};
+		const world::FrameIdentity frame{1U, 5U, entry + 2U};
+		const float now = 1.125f + entry * .125f;
+		const auto &winner = entry == 2U ? closer : candidate;
+		ok &= check(threatRetention.update(observer, frame, now, 0.0f, competing, 2U, false, &selected, true) &&
+				selected.actor == winner.actor && threatRetention.nativeAttention(observer, frame, now).isPrevious(winner),
+			"only a candidate strictly within 70 percent replaces the previous threat's draw exemption");
+	}
 	compat::AimStep aim = compat::trackAim(179.0f, 0.0f, -179.0f, 0.0f, 0.01f, 0.5f);
 	ok &= check(aim.yaw > 179.0f && aim.yaw < 180.0f, "aim takes shortest angular turn with finite acceleration");
 	aim = compat::trackAim(0.0f, 0.0f, 90.0f, 0.0f, 0.1f, 1.0f);

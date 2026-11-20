@@ -31,6 +31,7 @@ struct VisionObservation
 	bool losPassed;
 	std::uint8_t visibleParts;
 	bool visible;
+	std::uint8_t visibleInFovParts = world::VisibleNone;
 };
 
 struct PerceptionEvent

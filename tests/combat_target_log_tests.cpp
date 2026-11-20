@@ -14,7 +14,11 @@ namespace
 {
 int combatUserMessageId(plid_t id, const char *name, int *size)
 {
-	return std::strcmp(name, "DeathMsg") == 0 ? 103 : siteFixtureUserMessageId(id, name, size);
+	if (std::strcmp(name, "DeathMsg") == 0)
+		return 103;
+	if (std::strcmp(name, "ScreenFade") == 0)
+		return 104;
+	return siteFixtureUserMessageId(id, name, size);
 }
 
 unsigned combatAttackCommands = 0U;
@@ -31,12 +35,15 @@ unsigned rejectedPercentageRolls = 0;
 unsigned combatReloadCommands = 0;
 unsigned attackDeadlineDraws = 0;
 unsigned retreatTimerDraws = 0;
+float forcedNoticeFixtureRoll = -1.0f;
 float combatRandomFloat(float low, float high)
 {
 	if (low == 7.0f && high == 10.0f)
 		++attackDeadlineDraws;
 	if (low == 3.0f && high == 15.0f)
 		++retreatTimerDraws;
+	if (forcedNoticeFixtureRoll >= 0.0f && low == 0.0f && high == 100.0f)
+		return forcedNoticeFixtureRoll;
 	if (rejectAmbushRoll && low == 0.0f && high == 100.0f)
 	{
 		++rejectedPercentageRolls;
@@ -140,14 +147,14 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 	runtime.onWriteByte(22);
 	runtime.onWriteByte(30);
 	runtime.onMessageEnd();
-	const auto stepRifle = [&](int clip)
+	const auto stepRifle = [&](int clip, float yaw = 0.0f)
 	{
 		runtime.onMessageBegin(1, 94, nullptr, &gEntities[0]);
 		runtime.onWriteByte(1);
 		runtime.onWriteByte(22);
 		runtime.onWriteByte(clip);
 		runtime.onMessageEnd();
-		gEntities[0].v.v_angle = Vector(0, 0, 0);
+		gEntities[0].v.v_angle = Vector(0, yaw, 0);
 		globals.time += .125f;
 		runtime.onStartFrame();
 		runtime.onStartFramePost();
@@ -161,9 +168,97 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 #endif
 	const bool reacquireFixture = scenario && std::strcmp(scenario, "reacquire") == 0;
 	const bool gunfireFixture = scenario && std::strcmp(scenario, "gunfire") == 0;
+	const bool noticeFixture = scenario && std::strcmp(scenario, "notice") == 0;
 #ifdef _MSC_VER
 	std::free(scenario);
 #endif
+	if (noticeFixture)
+	{
+		using namespace astrabot;
+		auto &behavior = static_cast<metamod::BotBehaviorServices &>(runtime);
+		auto &navigation = static_cast<metamod::BotNavigationServices &>(runtime);
+		auto &profile = const_cast<compat::ProfileRecord &>(navigation.behavior_managedProfiles(0U));
+		profile.skill = 25;
+		const auto &state = navigation.behavior_managedBotStateMachines(0U);
+		struct NoticeTrace : compat::IRandomTraceSink
+		{
+			void record(const compat::RandomTraceRecord &draw) override
+			{
+				if (std::strcmp(draw.request.semanticId, "Vision.Notice") == 0)
+					draws.push_back(draw);
+			}
+			std::vector<compat::RandomTraceRecord> draws;
+		} trace;
+		const auto tick = [&](float yaw = 61.5f)
+		{
+			gEntities[0].v.angles = Vector(0.0f, yaw, 0.0f);
+			stepRifle(30, yaw);
+		};
+		auto &enemy = gEntities[1];
+		enemy.free = false;
+		enemy.v.origin = Vector(260.0f, 32.0f, 36.0f);
+		enemy.v.flags = FL_CLIENT | FL_NOTARGET;
+		enemy.v.health = 100.0f;
+		enemy.v.deadflag = DEAD_NO;
+		enemy.v.team = 2;
+		enemy.v.velocity = Vector(0.0f, 0.0f, 0.0f);
+		runtime.onMessageBegin(MSG_ALL, 86, nullptr, nullptr);
+		runtime.onWriteByte(2);
+		runtime.onWriteString("CT");
+		runtime.onMessageEnd();
+		gpMetaUtilFuncs->pfnGetUserMsgID = &combatUserMessageId;
+		tick();
+		behavior.service_compatibilityRandomSource().setTraceSink(&trace);
+		enemy.v.flags &= ~FL_NOTARGET;
+
+		forcedNoticeFixtureRoll = 10.0f;
+		for (int frame = 0; frame < 4; ++frame)
+			tick();
+		bool passed = check(trace.draws.size() == 4U && !state.attackOverlayActive(),
+			"a stationary side-only enemy at the FOV edge fails four high draws");
+		for (const auto &draw : trace.draws)
+			passed = check(draw.request.floatLower == 0.0f && draw.request.floatUpper == 100.0f,
+				"notice uses the native random float range") && passed;
+
+		forcedNoticeFixtureRoll = 6.25f;
+		tick();
+		passed = check(trace.draws.size() == 5U && !state.attackOverlayActive(),
+			"the notice threshold consumes a draw") && passed;
+		forcedNoticeFixtureRoll = 4.0f;
+		for (int frame = 0; frame < 5; ++frame)
+			tick();
+		passed = check(trace.draws.size() == 6U && state.attackOverlayActive(),
+			"one low draw passes and the previous queue candidate skips subsequent draws") && passed;
+
+		tick(90.0f);
+		const auto &snapshot = behavior.observation_managedBotPerception(0U).snapshot();
+		const world::ActorObservation *contact = nullptr;
+		passed = check(snapshot.findActor({2U, 1U}, &contact) == world::ContactLookupResult::Found &&
+				contact && contact->visible && contact->visibleInFovParts == world::VisibleNone,
+			"a tracked enemy keeps line of sight while it is wholly outside the candidate FOV") && passed;
+		forcedNoticeFixtureRoll = 10.0f;
+		tick();
+		passed = check(trace.draws.size() == 7U, "an empty FOV sample forces a new draw on return") && passed;
+		enemy.v.velocity = Vector(0.0f, 201.0f, 0.0f);
+		tick();
+		passed = check(trace.draws.size() == 7U, "a running enemy skips the draw even after an empty sample") && passed;
+
+		tick(90.0f);
+		enemy.v.velocity = Vector(0.0f, 0.0f, 0.0f);
+		runtime.onMessageBegin(MSG_ONE, 104, nullptr, &gEntities[0]);
+		for (int value : {2048, 0, 0})
+			runtime.onWriteShort(value);
+		for (int field = 0; field < 4; ++field)
+			runtime.onWriteByte(255);
+		runtime.onMessageEnd();
+		for (int frame = 0; frame < 3; ++frame)
+			tick();
+		passed = check(trace.draws.size() == 7U, "blinded full updates do not draw for an exposed enemy") && passed;
+		tick();
+		passed = check(trace.draws.size() == 8U, "the first post-flash update draws again") && passed;
+		behavior.service_compatibilityRandomSource().setTraceSink(nullptr);
+		return passed;
+	}
 	if (reacquireFixture)
 	{
 		auto &navigation = static_cast<astrabot::metamod::BotNavigationServices &>(runtime);
