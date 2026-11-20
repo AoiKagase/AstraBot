@@ -112,6 +112,25 @@ After selecting area 5, Hunt selected area 7 on the next update while
 same-area route after the second selection. In the disconnected case, ground
 A* retained the closest reachable area and aligned the endpoint with the
 last portal. Both fixed scenarios produced movement on the retained path.
+
+The waypoint and slowdown replay used diagnostic builds of AstraBot
+`9026f53` and CSBot `b0889847fe6d03898be88acc9e366660efb40ab5` on
+ReHLDS 3.15.0.896. Each
+case ran twice with `mp_freezetime 0`. Updates are counted from the first
+movement update on the route through areas 5 and 6. The same-area case
+first ran a one-area route, which walked from its first movement update in
+both builds and produced four walking updates in each run.
+
+| Case | Portal-to-endpoint switch | First walking update | Switch time from first route movement, CSBot / AstraBot |
+| --- | ---: | ---: | --- |
+| Same-area route followed by fallback | 6 | 7 | 641.4 / 646.3 ms, 645.5 / 647.1 ms |
+| Direct fallback to the closest reachable area | 8 | 9 | 904.4 / 893.8 ms, 902.0 / 899.3 ms |
+
+Both builds ran at 250 units/s on the switching update and walked at
+100 units/s on the next update in all four replays. The sessions sampled
+server frames independently, and the elapsed switch times differed by up
+to 10.6 ms.
+
 The replay covers ground routes. Hunt ladder reachability and world-height
 sampling for a projected endpoint remain outside this replay.
 
