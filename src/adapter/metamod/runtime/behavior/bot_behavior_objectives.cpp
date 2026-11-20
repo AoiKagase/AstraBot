@@ -611,8 +611,10 @@ bool BotBehaviorRuntime::managedActorAtBombSite(std::size_t index) const
 }
 
 bool BotBehaviorRuntime::buildManagedObjectiveTarget(std::size_t index, nav::NavVector *target,
-	nav::NavSearchStats *searchStats, RuntimeObjectiveSelectionStats *objectiveStats)
+	nav::NavSearchStats *searchStats, RuntimeObjectiveSelectionStats *objectiveStats, nav::AreaId *noiseArea)
 {
+	if (noiseArea != nullptr)
+		*noiseArea = 0U;
 	if (objectiveStats != nullptr)
 	{
 		*objectiveStats = {};
@@ -654,8 +656,11 @@ bool BotBehaviorRuntime::buildManagedObjectiveTarget(std::size_t index, nav::Nav
 		if (actors_[index].managedBotStateMachines.state() == compat::CompatibilityStateId::InvestigateNoise &&
 			noiseInvestigationCurrent(index))
 		{
-			const auto position = actors_[index].noiseInvestigation.target();
+			const auto &investigation = actors_[index].noiseInvestigation;
+			const auto position = investigation.target();
 			*target = {position.x, position.y, position.z};
+			if (noiseArea != nullptr)
+				*noiseArea = investigation.area();
 			return true;
 		}
 		const auto &scenario = actors_[index].scenarioDecisions;

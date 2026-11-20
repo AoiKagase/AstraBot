@@ -1108,27 +1108,35 @@ NavRoamController::NavigationPhaseResult NavRoamController::locateUpdateAreas(Na
 	objectiveArea = 0U;
 	if (observation.hasObjectiveTarget)
 	{
-		nav::NavAreaMatch objectiveMatch = {};
-		nav::NavQueryResult objectiveResult =
-			query.findContaining(observation.objectiveTarget, kAreaVerticalTolerance, &objectiveMatch);
-		if (objectiveResult == nav::NavQueryResult::NoAreaContaining)
+		const auto noiseArea = timedCompatibility_ && observation.noiseRoute != NoiseRouteUpdate::None
+			? observation.noiseGoalArea : 0U;
+		if (noiseArea != 0U)
 		{
-			objectiveResult = query.findNearest(observation.objectiveTarget, kMaximumRecoveryDistance, &objectiveMatch);
+			// Localizing a sound can move its point onto a shared edge. CSBot
+			// still passes the area selected when the sound was heard to ComputePath.
+			if (ctx.snapshot.document()->findArea(noiseArea) != nullptr)
+				objectiveArea = noiseArea;
 		}
-		if (objectiveResult == nav::NavQueryResult::Found)
+		else
 		{
-			objectiveArea = objectiveMatch.area;
-			if (decision != nullptr)
+			nav::NavAreaMatch objectiveMatch = {};
+			auto result = query.findContaining(observation.objectiveTarget, kAreaVerticalTolerance, &objectiveMatch);
+			if (result == nav::NavQueryResult::NoAreaContaining)
+				result = query.findNearest(observation.objectiveTarget, kMaximumRecoveryDistance, &objectiveMatch);
+			if (result == nav::NavQueryResult::Found)
+				objectiveArea = objectiveMatch.area;
+		}
+		if (decision != nullptr)
+		{
+			if (objectiveArea != 0U)
 			{
 				decision->goalPresent = true;
 				decision->goalKind = NavGoalKind::Objective;
 				decision->goalArea = objectiveArea;
 				decision->goalPosition = observation.objectiveTarget;
 			}
-		}
-		else if (decision != nullptr)
-		{
-			decision->failureReason = NavFailureReason::GoalAreaMissing;
+			else
+				decision->failureReason = NavFailureReason::GoalAreaMissing;
 		}
 	}
 	return {false, NavRoamResult::IntentReady};
@@ -2523,6 +2531,11 @@ float NavRoamController::pathDistanceRemaining(const nav::NavSnapshot &snapshot)
 		previous = area;
 	}
 	return distance;
+}
+
+bool NavRoamController::hasNativeLadderPath() const
+{
+	return hasPath() && !routeState().activeCorridor.nativeLadders.empty();
 }
 
 bool NavRoamController::isActive() const

@@ -1089,7 +1089,8 @@ NavigationUpdate BotNavigationRuntime::updateNavigation(std::size_t index, const
 		observation.hasObjectiveTarget =
 			services_->behavior_buildManagedObjectiveTarget(index, &observation.objectiveTarget,
 				services_->service_runtimeProfiler().enabled() ? &objectiveSearchStats : nullptr,
-				services_->service_runtimeProfiler().enabled() ? &objectiveSelectionStats : nullptr);
+				services_->service_runtimeProfiler().enabled() ? &objectiveSelectionStats : nullptr,
+				&observation.noiseGoalArea);
 	}
 	const world::ActorKey objectiveActor = {handle.actor.slot, handle.actor.actorGeneration};
 	const team::TeamObjectiveAssignment *objectiveAssignment =
@@ -1104,6 +1105,7 @@ NavigationUpdate BotNavigationRuntime::updateNavigation(std::size_t index, const
 	{
 		observation.objectiveRouteType = nav::NavRouteType::Safest;
 		observation.noiseRoute = runtime::NoiseRouteUpdate::Follow;
+		observation.noisePathStartArea = knownArea(index, objectiveActor, observation.frame, navigation.revision());
 	}
 	if (services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility &&
 		services_->behavior_managedBotStateMachines(index).state() == compat::CompatibilityStateId::MoveTo)
@@ -1311,15 +1313,20 @@ NavigationUpdate BotNavigationRuntime::updateNavigation(std::size_t index, const
 			if (services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility &&
 				observation.hasObjectiveTarget)
 			{
-				bool needsTopology = actors_[index].managedBotMovement.usingNativeLadder();
+				const auto &movement = actors_[index].managedBotMovement;
+				bool needsTopology = movement.usingNativeLadder() ||
+					(observation.noiseRoute == runtime::NoiseRouteUpdate::Follow && movement.hasNativeLadderPath());
 				if (!needsTopology)
 				{
 					nav::NavQuery query(navigation);
 					nav::NavAreaMatch start{}, goal{};
-					const bool sameArea = query.findContaining(observation.locomotion.position, kAreaVerticalTolerance,
-											  &start) == nav::NavQueryResult::Found &&
-						query.findContaining(observation.objectiveTarget, kAreaVerticalTolerance, &goal) ==
-							nav::NavQueryResult::Found &&
+					start.area = observation.noisePathStartArea;
+					goal.area = observation.noiseGoalArea;
+					const bool sameArea =
+						(start.area != 0U || query.findContaining(observation.locomotion.position,
+							kAreaVerticalTolerance, &start) == nav::NavQueryResult::Found) &&
+						(goal.area != 0U || query.findContaining(observation.objectiveTarget,
+							kAreaVerticalTolerance, &goal) == nav::NavQueryResult::Found) &&
 						start.area == goal.area;
 					needsTopology = !sameArea;
 				}
@@ -1344,7 +1351,6 @@ NavigationUpdate BotNavigationRuntime::updateNavigation(std::size_t index, const
 			{
 				observation.noiseRoute = currentMachine.stateTimestamp() == observation.locomotion.observedAt
 					? runtime::NoiseRouteUpdate::Enter : runtime::NoiseRouteUpdate::Redirect;
-				observation.noisePathStartArea = knownArea(index, objectiveActor, observation.frame, navigation.revision());
 			}
 			roamResult =
 				actors_[index].managedBotMovement.update(navigation, observation, &locomotionIntent, &roamDecision);

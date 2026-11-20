@@ -365,7 +365,7 @@ void testNativeRecovery()
 		"native crouch NAV without jump attribute prevents ladder escape jump");
 }
 
-void testNativeRouteIntegration(bool preEntryStuck = false)
+void testNativeRouteIntegration(bool preEntryStuck = false, bool redirectNoise = false)
 {
 	const auto snapshot = makeSnapshot();
 	Probe probe;
@@ -414,6 +414,25 @@ void testNativeRouteIntegration(bool preEntryStuck = false)
 	}
 	nav::LocomotionIntent intent{};
 	runtime::NavRoamDecision decision{};
+	if (redirectNoise)
+	{
+		in.noiseRoute = runtime::NoiseRouteUpdate::Enter;
+		in.noiseGoalArea = 2U;
+		if (!check(controller.update(snapshot, in, &intent, &decision) == runtime::NavRoamResult::MovementSuppressed &&
+				controller.hasNativeLadderPath() && !controller.usingNativeLadder(),
+				"investigation entry exposes the pending ladder route before movement starts"))
+			return;
+		const auto path = decision.pathSequence;
+		in.noiseRoute = runtime::NoiseRouteUpdate::Redirect;
+		in.noiseGoalArea = 1U;
+		in.objectiveTarget = {0.0f, 75.0f, 0.0f};
+		++in.frame.tick;
+		in.locomotion.observedAt += .1f;
+		check(controller.update(snapshot, in, &intent, &decision) == runtime::NavRoamResult::IntentReady &&
+				controller.usingNativeLadder() && decision.pathSequence == path,
+			"a throttled same-area redirect begins the retained ladder route");
+		return;
+	}
 	auto result = controller.update(snapshot, in, &intent, &decision);
 	if (preEntryStuck)
 	{
@@ -668,6 +687,7 @@ int main()
 	testFloorPrefixAndSourceReplacement();
 	testNativeRouteIntegration();
 	testNativeRouteIntegration(true);
+	testNativeRouteIntegration(false, true);
 	testContactBoundsAndDismount();
 	testAscending();
 	testDescendingAndFailures();

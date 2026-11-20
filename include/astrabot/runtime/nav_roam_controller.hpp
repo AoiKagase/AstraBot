@@ -57,6 +57,7 @@ struct NavRoamObservation
 	float viewPitch = 0.0f;
 	NoiseRouteUpdate noiseRoute = NoiseRouteUpdate::None;
 	nav::AreaId noisePathStartArea = 0U;
+	nav::AreaId noiseGoalArea = 0U;
 	bool noiseTargetCleared = false;
 };
 
@@ -280,6 +281,7 @@ public:
 	void observeMotion(ActorId actor, world::FrameIdentity frame, const nav::LocomotionObservation &observation);
 	bool isActive() const;
 	bool hasPath() const;
+	bool hasNativeLadderPath() const;
 	float pathDistanceRemaining(const nav::NavSnapshot &snapshot) const;
 
 private:

@@ -586,9 +586,9 @@ private:
 	}
 
 	bool behavior_buildManagedObjectiveTarget(std::size_t index, nav::NavVector *target,
-		nav::NavSearchStats *searchStats, RuntimeObjectiveSelectionStats *objectiveStats) override
+		nav::NavSearchStats *searchStats, RuntimeObjectiveSelectionStats *objectiveStats, nav::AreaId *noiseArea) override
 	{
-		return behavior_.buildManagedObjectiveTarget(index, target, searchStats, objectiveStats);
+		return behavior_.buildManagedObjectiveTarget(index, target, searchStats, objectiveStats, noiseArea);
 	}
 
 	const team::TeamObjectiveAssignment *behavior_findManagedTeamObjectiveAssignment(

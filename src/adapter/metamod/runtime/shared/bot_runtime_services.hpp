@@ -161,7 +161,8 @@ public:
 	virtual bool behavior_noiseInvestigationWalking(std::size_t index) const = 0;
 	virtual bool behavior_takeNoisePathRequest(std::size_t index, bool &targetCleared) = 0;
 	virtual bool behavior_buildManagedObjectiveTarget(std::size_t index, nav::NavVector *target,
-		nav::NavSearchStats *searchStats, RuntimeObjectiveSelectionStats *objectiveStats = nullptr) = 0;
+		nav::NavSearchStats *searchStats, RuntimeObjectiveSelectionStats *objectiveStats = nullptr,
+		nav::AreaId *noiseArea = nullptr) = 0;
 	virtual const team::TeamObjectiveAssignment *behavior_findManagedTeamObjectiveAssignment(
 		const world::ActorKey &actor) const = 0;
 	virtual const ManagedObjectiveActionState &behavior_managedBotObjectiveActions(std::size_t index) const = 0;

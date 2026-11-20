@@ -101,7 +101,7 @@ public:
 	}
 
 	bool buildManagedObjectiveTarget(std::size_t index, nav::NavVector *target, nav::NavSearchStats *searchStats,
-		RuntimeObjectiveSelectionStats *objectiveStats = nullptr);
+		RuntimeObjectiveSelectionStats *objectiveStats = nullptr, nav::AreaId *noiseArea = nullptr);
 	ActionProposal decideManagedBotAction(std::size_t index, const runtime::MovementPhysicsState &before,
 		const runtime::ViewAngles &movementAngles, std::uint16_t movementButtons);
 	const team::TeamObjectiveAssignment *findManagedTeamObjectiveAssignment(const world::ActorKey &actor) const;

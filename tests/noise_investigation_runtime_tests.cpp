@@ -13,6 +13,7 @@ void setupHeardNoise(enginefuncs_t &, globalvars_t &);
 namespace
 {
 bool closeNoiseVisible = false;
+bool clampNoiseToEdge = false;
 unsigned offMeshGroundLayers = 0;
 unsigned heardReportDraws = 0;
 int heardMessageType = 0;
@@ -31,6 +32,8 @@ HeardTrace heardTrace;
 
 float heardRandom(float low, float high)
 {
+	if (clampNoiseToEdge && low < 0.0f && high > 0.0f)
+		return low;
 	if (low == 0 && high == 100)
 	{
 		return 0;
@@ -406,7 +409,34 @@ bool testInvestigation(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t 
 	source.v.origin.x = 160;
 	emit();
 	step(.2f);
-	return check(belief.noise().active && belief.noise().navArea == 2 && offMeshGroundLayers == 10,
-		"off-mesh noise uses all native ground layers even when its initial trace starts solid");
+	if (!check(belief.noise().active && belief.noise().navArea == 2 && offMeshGroundLayers == 10,
+			"off-mesh noise uses all native ground layers even when its initial trace starts solid"))
+		return false;
+	runtime.beginRoundGeneration();
+	step(31);
+	step(.25f);
+	source.v.origin = Vector(0, 280, 36);
+	clampNoiseToEdge = true;
+	emit();
+	step(.12f);
+	clampNoiseToEdge = false;
+	if (!check(belief.noise().active && belief.noise().navArea == 2U && belief.noise().position.y == 256.0f,
+			"localized noise is clamped onto the edge shared by both NAV areas"))
+		return false;
+	gMovementLogs.clear();
+	gCaptureMovementLogs = true;
+	gProfileEnabled = true;
+	step(.65f); // Let the previous Hunt path throttle expire before attending the sound.
+	step(.12f);
+	step(.12f);
+	gCaptureMovementLogs = false;
+	gProfileEnabled = false;
+	return check(investigating() && !belief.noise().active &&
+			std::any_of(gMovementLogs.begin(), gMovementLogs.end(), [](const std::string &message) {
+				return message.find("profile navigationStep bot_id=1 ") == 0U &&
+					message.find("state_to=STATE-INVESTIGATE-NOISE ") != std::string::npos &&
+					message.find("goal_area=2 path_link=(1->2)") != std::string::npos;
+			}),
+		"investigation routes to the remembered NAV area when an edge point belongs to both areas");
 }
 }
