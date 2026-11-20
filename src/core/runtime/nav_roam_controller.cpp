@@ -775,49 +775,48 @@ NavRoamResult NavRoamController::updateInternal(const nav::NavSnapshot &snapshot
 	}
 	nav::NavQuery query(snapshot);
 	NavigationUpdateContext ctx{snapshot, observation, intent, decision, query};
+	const bool preparingObjectivePath = timedCompatibility_ &&
+		observation.prepareObjectivePathOnly && observation.hasObjectiveTarget;
+	if (!preparingObjectivePath)
 	{
-		const auto phase = prepareNoiseRoute(ctx);
-		if (phase.complete)
-			return phase.result;
-	}
-	if (nativeLadder_.active() || observation.huntKnownArea != 0U)
-	{
-		const auto phase = updateNativeTraversal(ctx);
-		if (phase.complete)
-			return phase.result;
-	}
-	{
-		const auto phase = updateFriendWaiting(snapshot, observation, decision);
-		if (phase.complete)
 		{
-			return phase.result;
+			const auto phase = prepareNoiseRoute(ctx);
+			if (phase.complete)
+				return phase.result;
 		}
-	}
-
-	if (!ctx.areasLocated)
-	{
-		const auto phase = locateUpdateAreas(ctx);
-		if (phase.complete)
+		if (nativeLadder_.active() || observation.huntKnownArea != 0U)
 		{
-			return phase.result;
+			const auto phase = updateNativeTraversal(ctx);
+			if (phase.complete)
+				return phase.result;
 		}
-	}
-	{
-		const auto phase = recoverOffMeshUpdate(ctx);
-		if (phase.complete)
 		{
-			return phase.result;
+			const auto phase = updateFriendWaiting(snapshot, observation, decision);
+			if (phase.complete)
+				return phase.result;
 		}
-	}
-	{
-		const auto phase = recoverStuckUpdate(ctx);
-		if (phase.complete)
+		if (!ctx.areasLocated)
 		{
-			return phase.result;
+			const auto phase = locateUpdateAreas(ctx);
+			if (phase.complete)
+				return phase.result;
+		}
+		{
+			const auto phase = recoverOffMeshUpdate(ctx);
+			if (phase.complete)
+				return phase.result;
+		}
+		{
+			const auto phase = recoverStuckUpdate(ctx);
+			if (phase.complete)
+				return phase.result;
 		}
 	}
 	{
 		const auto phase = selectUpdateRoute(ctx);
+		// MoveTo::OnEnter computes the path before OnUpdate can use it.
+		if (preparingObjectivePath && phase.result != NavRoamResult::ReplanRequired)
+			return NavRoamResult::ObjectivePathPrepared;
 		if (phase.complete)
 		{
 			return phase.result;
@@ -1586,6 +1585,27 @@ NavRoamController::NavigationPhaseResult NavRoamController::selectUpdateRoute(Na
 	auto &objectiveArea = ctx.objectiveArea;
 	if (timedCompatibility_ && (observation.noiseRoute != NoiseRouteUpdate::None || observation.followPath))
 		return {false, NavRoamResult::IntentReady};
+	const bool preparingObjectivePath = timedCompatibility_ &&
+		observation.prepareObjectivePathOnly && observation.hasObjectiveTarget;
+	if (preparingObjectivePath)
+	{
+		if (!beginNativePathAttempt(randomSource_, actor_, observation.frame.tick, observedAt_,
+				recoveryState().nextPathAttemptAt))
+			return {true, NavRoamResult::NoRoute};
+		const auto located = locateUpdateAreas(ctx);
+		if (located.complete)
+			return located;
+		if (ctx.currentAreaResult != nav::NavQueryResult::Found && observation.objectivePathStartArea != 0U &&
+			snapshot.document()->findArea(observation.objectivePathStartArea) != nullptr)
+		{
+			currentArea.area = observation.objectivePathStartArea;
+			ctx.currentAreaResult = nav::NavQueryResult::Found;
+		}
+		if (ctx.currentAreaResult != nav::NavQueryResult::Found || objectiveArea == 0U)
+			return {true, NavRoamResult::NoRoute};
+		if (decision != nullptr)
+			decision->currentArea = currentArea.area;
+	}
 	if (timedCompatibility_ && objectiveArea == 0U && routeState().hasActiveRoute && roamGoalState().hasRoamGoal &&
 		roamGoalState().roamGoalArea == currentArea.area && traversalState().locomotion.isActive())
 		return replaceReachedHuntRoute(ctx);
@@ -1596,7 +1616,8 @@ NavRoamController::NavigationPhaseResult NavRoamController::selectUpdateRoute(Na
 		{
 			decision->stage = NavRoamStage::LinkSelection;
 		}
-		if (objectiveArea == currentArea.area && observation.hasObjectiveTarget && !observation.nativeSameAreaEndpoint)
+		if (objectiveArea == currentArea.area && observation.hasObjectiveTarget &&
+			!observation.nativeSameAreaEndpoint && !preparingObjectivePath)
 		{
 			const float deltaX = observation.objectiveTarget.x - observation.locomotion.position.x;
 			const float deltaY = observation.objectiveTarget.y - observation.locomotion.position.y;
@@ -1671,7 +1692,7 @@ NavRoamController::NavigationPhaseResult NavRoamController::selectUpdateRoute(Na
 		{
 			decision->recomputeReason = NavRecomputeReason::InitialGoal;
 		}
-		if (timedCompatibility_ && objectiveArea != 0U &&
+		if (timedCompatibility_ && objectiveArea != 0U && !preparingObjectivePath &&
 			!beginNativePathAttempt(randomSource_, actor_, observation.frame.tick, observedAt_, recoveryState().nextPathAttemptAt))
 		{
 			if (decision != nullptr)

@@ -13,7 +13,8 @@ enum class NavigationStepOutcome : std::uint8_t
 	Progressing,
 	EndOfPath,
 	PathFailure,
-	ObservationUnavailable
+	ObservationUnavailable,
+	ObjectivePathPrepared
 };
 struct NavigationStep
 {

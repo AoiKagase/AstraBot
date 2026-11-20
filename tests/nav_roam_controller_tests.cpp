@@ -3760,9 +3760,61 @@ bool testRemainingPathDistance()
 		"remaining path sums the area centers after the active node and respects path/snapshot invalidation");
 }
 
+bool testDefuseMoveToPreparesPathBeforeMoving()
+{
+	using namespace astrabot;
+	nav::NavDocument document;
+	document.addArea(area(1U, 0.0f, 128.0f));
+	nav::NavSnapshotPublisher publisher;
+	if (!check(publisher.publish(&document, 1U) == nav::NavSnapshotResult::Published, "C4 endpoint NAV publishes"))
+		return false;
+	compat::ScriptedRandomSource random({
+		compat::RandomTapeEntry::floatEntry("CSBOT-PATH-RETRY", {1U, 1U}, {0U, 0U, 1U}, .4f, .6f, .5f)});
+	runtime::NavRoamController controller;
+	controller.setRandomSource(&random);
+	runtime::NavRoamObservation observation{};
+	observation.actor = {1U, 1U};
+	observation.frame = {1U, 1U, 1U};
+	observation.team = 2U;
+	observation.locomotion.position = {16.0f, 32.0f, 0.0f};
+	observation.locomotion.standingClearance = 72.0f;
+	observation.locomotion.crouchingClearance = 36.0f;
+	observation.locomotion.grounded = true;
+	observation.locomotion.timingAvailable = true;
+	observation.locomotion.observedAt = 1.0f;
+	observation.hasObjectiveTarget = true;
+	observation.objectiveTarget = {96.0f, 32.0f, 0.0f};
+	observation.nativeSameAreaEndpoint = true;
+	observation.prepareObjectivePathOnly = true;
+	nav::LocomotionIntent intent{};
+	runtime::NavRoamDecision decision{};
+	const auto snapshot = publisher.snapshot();
+	if (!check(controller.update(snapshot, observation, &intent, &decision) ==
+				runtime::NavRoamResult::ObjectivePathPrepared &&
+				controller.hasPath() && decision.pathSequence != 0U && intent.speed == 0.0f && random.verifyComplete(),
+			"Defuse MoveTo entry draws the retry and prepares a path without movement"))
+		return false;
+	const auto path = decision.pathSequence;
+	observation.frame.tick = 2U;
+	observation.locomotion.observedAt = 1.125f;
+	observation.prepareObjectivePathOnly = false;
+	if (!check(controller.update(snapshot, observation, &intent, &decision) == runtime::NavRoamResult::IntentReady &&
+			decision.pathSequence == path && intent.speed > 0.0f && random.verifyComplete(),
+			"Defuse MoveTo follows the path on the next update without another draw"))
+		return false;
+	controller.destroyPath();
+	observation.frame.tick = 3U;
+	observation.locomotion.observedAt = 1.25f;
+	observation.prepareObjectivePathOnly = true;
+	return check(controller.update(snapshot, observation, &intent, &decision) ==
+			runtime::NavRoamResult::ObjectivePathPrepared &&
+			!controller.hasPath() && decision.pathSequence == 0U && intent.speed == 0.0f && random.verifyComplete(),
+		"a throttled entry reports the missing path without drawing or moving");
+}
+
 int main()
 {
-	if (!testRemainingPathDistance())
+	if (!testRemainingPathDistance() || !testDefuseMoveToPreparesPathBeforeMoving())
 		return 1;
 	if (!testInvestigationSafestRoute() || !testInvestigationRetainsPathWhenThrottled() ||
 		!testInvestigationKeepsClosestReachablePath() || !testInvestigationSearchKeepsPositionWhenImprovingPath())

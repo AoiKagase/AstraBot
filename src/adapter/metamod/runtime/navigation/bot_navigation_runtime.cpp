@@ -1131,6 +1131,10 @@ NavigationUpdate BotNavigationRuntime::updateNavigation(std::size_t index, const
 	{
 		const auto task = currentMachine.task();
 		observation.nativeSameAreaEndpoint = task == compat::CompatibilityTaskId::DefuseBomb;
+		observation.prepareObjectivePathOnly = observation.nativeSameAreaEndpoint && !currentMachine.attackOverlayActive() &&
+			currentMachine.stateTimestamp() == observation.locomotion.observedAt;
+		if (observation.prepareObjectivePathOnly)
+			observation.objectivePathStartArea = knownArea(index, objectiveActor, observation.frame, navigation.revision());
 		observation.objectiveRouteType = task == compat::CompatibilityTaskId::FindTickingBomb ||
 				task == compat::CompatibilityTaskId::DefuseBomb ||
 				task == compat::CompatibilityTaskId::MoveToLastKnownEnemyPosition
@@ -1250,7 +1254,11 @@ NavigationUpdate BotNavigationRuntime::updateNavigation(std::size_t index, const
 	const auto &previousStep = actors_[index].managedNavigationSteps;
 	const auto &machine = services_->behavior_managedBotStateMachines(index);
 	const auto navigationState = machine.state();
-	const bool destroyedPath = previousStep.pathDestroyedAfterMovement && previousStep.actor == objectiveActor &&
+	const bool missingEntryPath = navigationState == compat::CompatibilityStateId::MoveTo &&
+		machine.task() == compat::CompatibilityTaskId::DefuseBomb &&
+		previousStep.outcome == compat::NavigationStepOutcome::ObjectivePathPrepared && previousStep.pathSequence == 0U;
+	const bool missingPath = (previousStep.pathDestroyedAfterMovement || missingEntryPath) &&
+		previousStep.actor == objectiveActor &&
 		previousStep.frame.mapGeneration == observation.frame.mapGeneration &&
 		previousStep.frame.roundGeneration == observation.frame.roundGeneration &&
 		previousStep.frame.tick < observation.frame.tick &&
@@ -1285,10 +1293,9 @@ NavigationUpdate BotNavigationRuntime::updateNavigation(std::size_t index, const
 		roamDecision.failureReason = runtime::NavFailureReason::PathSearchFailed;
 		roamDecision.stage = runtime::NavRoamStage::Failed;
 	}
-	else if (destroyedPath)
+	else if (missingPath)
 	{
-		// The preceding update moved before DestroyPath. This update must
-		// report the missing path to MoveTo instead of silently rebuilding it.
+		// UpdatePathMovement consumes a missing path before the state can plan again.
 		roamDecision.failureReason = runtime::NavFailureReason::MovementNotProduced;
 		roamDecision.stage = runtime::NavRoamStage::Failed;
 	}

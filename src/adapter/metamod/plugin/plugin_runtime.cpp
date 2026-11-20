@@ -1844,6 +1844,7 @@ void PluginRuntime::updateManagedBots()
 		{
 			if (roamDecision.failureReason == runtime::NavFailureReason::None &&
 				roamResult != runtime::NavRoamResult::MovementSuppressed &&
+				roamResult != runtime::NavRoamResult::ObjectivePathPrepared &&
 				roamResult != runtime::NavRoamResult::TargetReached &&
 				roamResult != runtime::NavRoamResult::ReplanRequired)
 			{

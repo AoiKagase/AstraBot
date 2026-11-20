@@ -68,7 +68,9 @@ bool BotBehaviorRuntime::finishManagedBotNavigation(std::size_t index, const run
 	step.pathSequence = decision.pathSequence;
 	step.fullUpdateSequence = context.fullUpdateSequence;
 	using Outcome = compat::NavigationStepOutcome;
-	if (result == runtime::NavRoamResult::IntentReady || result == runtime::NavRoamResult::MovementSuppressed ||
+	if (result == runtime::NavRoamResult::ObjectivePathPrepared)
+		step.outcome = Outcome::ObjectivePathPrepared;
+	else if (result == runtime::NavRoamResult::IntentReady || result == runtime::NavRoamResult::MovementSuppressed ||
 		(result == runtime::NavRoamResult::ReplanRequired && decision.failureReason == runtime::NavFailureReason::None))
 		step.outcome = Outcome::Progressing;
 	else if (result == runtime::NavRoamResult::TargetReached)
@@ -158,7 +160,8 @@ bool BotBehaviorRuntime::finishManagedBotNavigation(std::size_t index, const run
 	const auto pursuitTarget = pursuitPathEnded ? actor.managedTaskEntity : world::EntityKey{};
 	const auto receipt = pursuitTarget.isValid() ? reactionContext(index) : compat::ReactionContext{};
 	const auto revision = actor.executionRevision;
-	const auto transition = machine.finishNavigation(context);
+	const auto transition = step.outcome == Outcome::ObjectivePathPrepared
+		? compat::StateResult::NoOp : machine.finishNavigation(context);
 	const auto resultingEpoch = machine.normalStateEpoch();
 	if (actors_[index].helpGoal.active && !helpGoalCurrent(index))
 	{

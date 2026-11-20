@@ -66,6 +66,8 @@ struct NavRoamObservation
 	const nav::NavHuntPathProbe *followPathProbe = nullptr;
 	bool noiseTargetCleared = false;
 	bool nativeSameAreaEndpoint = false;
+	bool prepareObjectivePathOnly = false;
+	nav::AreaId objectivePathStartArea = 0U;
 	// Hunt compares the requested area with the bot's last known NAV area while on a ladder.
 	nav::AreaId huntKnownArea = 0U;
 };
@@ -98,7 +100,8 @@ enum class NavRoamResult
 	StaleActor,
 	DuplicateFrame,
 	StaleFrame,
-	MovementSuppressed
+	MovementSuppressed,
+	ObjectivePathPrepared
 };
 
 enum class NavRoamStage
