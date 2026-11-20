@@ -3418,6 +3418,34 @@ bool testStatementQueue(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t
 			runtime.onEmitSound(&gPlantedBomb, "weapons/c4_beep1.wav", 1, 1);
 			runtime.onEmitSound(&gPlantedBomb, "weapons/c4_beep2.wav", 1, 1);
 			gEntities[1].v.origin.x = 110;
+			if (plantedSiteFixture)
+			{
+				struct SearchExitTrace final : compat::IRandomTraceSink
+				{
+					void record(const compat::RandomTraceRecord &entry) override
+					{
+						if (entry.request.actor.slot == 1U && entry.request.semanticId &&
+							std::strcmp(entry.request.semanticId, "CSBOT-PATH-RETRY") == 0)
+							++pathAttempts;
+					}
+					unsigned pathAttempts = 0;
+				} trace;
+				auto &behavior = static_cast<metamod::BotBehaviorServices &>(runtime);
+				auto &random = behavior.service_compatibilityRandomSource();
+				random.setTraceSink(&trace);
+				step(.125f);
+				random.setTraceSink(nullptr);
+				const auto &listener = nav.behavior_managedBotStateMachines(0);
+				if (!check(listener.state() == compat::CompatibilityStateId::Idle &&
+						!behavior.navigation_hasActivePath(0) && trace.pathAttempts == 0 && searching(1),
+						"only the CT hearing the beep exits through Idle before another path attempt"))
+					return false;
+				step(.125f);
+				const auto &choice = nav.behavior_scenarioDecisions(0);
+				if (!check(choice.hasTarget && choice.target.position.x == 229,
+						"the next update selects the exact remembered C4 position"))
+					return false;
+			}
 			if (deferredSiteFixture)
 			{
 				auto guardsSite = [&](int i) {

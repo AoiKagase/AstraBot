@@ -1658,9 +1658,28 @@ void BotBehaviorRuntime::applyScenarioDecision(std::size_t index, const runtime:
 	ScenarioUpdateData &data, PlantMoveChatter *plantMove)
 {
 	(void)before;
+	auto &actor = actors_[index];
+	auto &machine = actor.managedBotStateMachines;
+	const auto &siteFromPosition = actor.plantedBombsite;
+	if (scenario.scenario == compat::PublicScenarioKind::Bomb &&
+		machine.state() == compat::CompatibilityStateId::MoveTo &&
+		machine.task() == compat::CompatibilityTaskId::FindTickingBomb && !machine.attackOverlayActive() &&
+		(scenario.plantedBombsite.knowledge != compat::ScenarioKnowledge::Unknown ||
+			(siteFromPosition.entity.isValid() && siteFromPosition.frame == context.frame)))
+	{
+		// FindTickingBomb exits before UpdatePathMovement. Idle abandons the old
+		// route and chooses the next task on its following update.
+		actor.bombSearchTargets = {};
+		actor.helpGoal = {};
+		actor.managedTaskEntity = {};
+		actor.managedBotObjectiveTargets = {};
+		actor.scenarioDecisions = {};
+		actor.scenarioDecisions.action = compat::ScenarioAction::Stop;
+		actor.scenarioDecisions.state = compat::CompatibilityStateId::Idle;
+		stateBehavior.goalAvailable = false;
+	}
 	if (helpGoalCurrent(index) && !actors_[index].managedBotStateMachines.attackOverlayActive())
 	{
-		auto &actor = actors_[index];
 		const auto receipt = reactionContext(index);
 		const auto execution = actor.executionRevision;
 		const auto current = [&]
@@ -1748,7 +1767,6 @@ void BotBehaviorRuntime::applyScenarioDecision(std::size_t index, const runtime:
 		}
 		actors_[index].helpGoal = {};
 	}
-	auto &machine = actors_[index].managedBotStateMachines;
 	const compat::ScenarioBehaviorDecision &scenarioDecision = actors_[index].scenarioDecisions;
 	const bool carryingC4 = observation.objective.carryingC4.isAvailable() && observation.objective.carryingC4.value;
 	context.moveToTask = compat::nativeScenarioMoveTask(scenario, scenarioDecision, carryingC4);

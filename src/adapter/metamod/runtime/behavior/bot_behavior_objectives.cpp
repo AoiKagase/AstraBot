@@ -686,6 +686,9 @@ bool BotBehaviorRuntime::buildManagedObjectiveTarget(std::size_t index, nav::Nav
 		}
 		const auto &actor = actors_[index];
 		const auto &machine = actor.managedBotStateMachines;
+		if (machine.state() == compat::CompatibilityStateId::Idle &&
+			actor.scenarioDecisions.action == compat::ScenarioAction::Stop)
+			return false;
 		if (machine.state() == compat::CompatibilityStateId::Follow && !machine.attackOverlayActive())
 		{
 			const auto &motion = actor.followMotion;
