@@ -18,13 +18,13 @@ namespace metamod
 ReGameDllObservationProvider *ReGameDllObservationProvider::eventOwner_ = nullptr;
 ReGameDllObservationProvider::DamageRegistry *ReGameDllObservationProvider::deferredDamageRegistry_ = nullptr;
 unsigned ReGameDllObservationProvider::damageDispatchDepth_ = 0;
-ReGameDllObservationProvider::WeaponRegistry *ReGameDllObservationProvider::deferredWeaponRegistry_ = nullptr;
-unsigned ReGameDllObservationProvider::weaponDispatchDepth_ = 0;
+ReGameDllObservationProvider::BotEventRegistry *ReGameDllObservationProvider::deferredBotEventRegistry_ = nullptr;
+unsigned ReGameDllObservationProvider::botEventDispatchDepth_ = 0;
 
 namespace
 {
 constexpr int kMinimumPublicApiMinor = 3;
-constexpr int kWeaponEventApiMinor = 30;
+constexpr int kBotEventApiMinor = 30;
 }
 
 ReGameDllObservationProvider::~ReGameDllObservationProvider()
@@ -36,7 +36,7 @@ void ReGameDllObservationProvider::reset()
 {
 	auto *blindRegistry = blindRegistry_;
 	auto *damageRegistry = damageRegistry_;
-	auto *weaponRegistry = weaponRegistry_;
+	auto *botEventRegistry = botEventRegistry_;
 	if (eventOwner_ == this)
 		eventOwner_ = nullptr;
 	blindRegistry_ = nullptr;
@@ -45,9 +45,9 @@ void ReGameDllObservationProvider::reset()
 	damageRegistry_ = nullptr;
 	damageListener_ = nullptr;
 	damageContext_ = nullptr;
-	weaponRegistry_ = nullptr;
-	weaponListener_ = nullptr;
-	weaponContext_ = nullptr;
+	botEventRegistry_ = nullptr;
+	botEventListener_ = nullptr;
+	botEventContext_ = nullptr;
 	functions_ = nullptr;
 	api_ = nullptr;
 	++eventRevision_;
@@ -64,12 +64,12 @@ void ReGameDllObservationProvider::reset()
 		else
 			damageRegistry->unregisterHook(&onDamage);
 	}
-	if (weaponRegistry)
+	if (botEventRegistry)
 	{
-		if (weaponDispatchDepth_ != 0)
-			deferredWeaponRegistry_ = weaponRegistry;
+		if (botEventDispatchDepth_ != 0)
+			deferredBotEventRegistry_ = botEventRegistry;
 		else
-			weaponRegistry->unregisterHook(&onWeapon);
+			botEventRegistry->unregisterHook(&onBotEvent);
 	}
 }
 
@@ -146,57 +146,60 @@ bool ReGameDllObservationProvider::connectDamageEvents(DamageListener listener, 
 	return eventOwner_ == this && damageRegistry_ == registry;
 }
 
-bool ReGameDllObservationProvider::connectWeaponEvents(WeaponListener listener, void *context)
+bool ReGameDllObservationProvider::connectBotEvents(BotEventListener listener, void *context)
 {
-	if (weaponRegistry_)
-		return listener == weaponListener_ && context == weaponContext_;
-	if (!api_ || minor_ < kWeaponEventApiMinor || !listener || (eventOwner_ && eventOwner_ != this))
+	if (botEventRegistry_)
+		return listener == botEventListener_ && context == botEventContext_;
+	if (!api_ || minor_ < kBotEventApiMinor || !listener || (eventOwner_ && eventOwner_ != this))
 		return false;
 	auto *hooks = api_->GetHookchains();
 	auto *registry = hooks ? hooks->CBotManager_OnEvent() : nullptr;
-	if (!registry || (deferredWeaponRegistry_ && deferredWeaponRegistry_ != registry))
+	if (!registry || (deferredBotEventRegistry_ && deferredBotEventRegistry_ != registry))
 		return false;
-	weaponRegistry_ = registry;
-	weaponListener_ = listener;
-	weaponContext_ = context;
+	botEventRegistry_ = registry;
+	botEventListener_ = listener;
+	botEventContext_ = context;
 	eventOwner_ = this;
-	if (deferredWeaponRegistry_)
-		deferredWeaponRegistry_ = nullptr;
+	if (deferredBotEventRegistry_)
+		deferredBotEventRegistry_ = nullptr;
 	else
-		registry->registerHook(&onWeapon, HC_PRIORITY_LOW);
-	return eventOwner_ == this && weaponRegistry_ == registry;
+		registry->registerHook(&onBotEvent, HC_PRIORITY_LOW);
+	return eventOwner_ == this && botEventRegistry_ == registry;
 }
 
-void ReGameDllObservationProvider::onWeapon(
-	WeaponChain *chain, GameEventType event, CBaseEntity *source, CBaseEntity *other)
+void ReGameDllObservationProvider::onBotEvent(
+	BotEventChain *chain, GameEventType event, CBaseEntity *source, CBaseEntity *other)
 {
-	++weaponDispatchDepth_;
+	++botEventDispatchDepth_;
 	const auto *owner = eventOwner_;
-	if (source && owner && owner->weaponListener_)
+	if (source && owner && owner->botEventListener_)
 	{
-		const auto listener = owner->weaponListener_;
-		void *context = owner->weaponContext_;
+		const auto listener = owner->botEventListener_;
+		void *context = owner->botEventContext_;
 		switch (event)
 		{
 		case EVENT_WEAPON_FIRED:
-			listener(context, NativeWeaponEvent::Fired, source);
+			listener(context, NativeBotEvent::Fired, source);
 			break;
 		case EVENT_WEAPON_FIRED_ON_EMPTY:
-			listener(context, NativeWeaponEvent::FiredOnEmpty, source);
+			listener(context, NativeBotEvent::FiredOnEmpty, source);
 			break;
 		case EVENT_WEAPON_RELOADED:
-			listener(context, NativeWeaponEvent::Reloaded, source);
+			listener(context, NativeBotEvent::Reloaded, source);
+			break;
+		case EVENT_HOSTAGE_USED:
+			listener(context, NativeBotEvent::HostageUsed, source);
 			break;
 		default:
 			break;
 		}
 	}
 	chain->callNext(event, source, other);
-	if (--weaponDispatchDepth_ == 0 && deferredWeaponRegistry_)
+	if (--botEventDispatchDepth_ == 0 && deferredBotEventRegistry_)
 	{
-		auto *registry = deferredWeaponRegistry_;
-		deferredWeaponRegistry_ = nullptr;
-		registry->unregisterHook(&onWeapon);
+		auto *registry = deferredBotEventRegistry_;
+		deferredBotEventRegistry_ = nullptr;
+		registry->unregisterHook(&onBotEvent);
 	}
 }
 
@@ -284,8 +287,8 @@ const char *ReGameDllObservationProvider::diagnostic() const
 	case ReGameDllProbeStatus::IncompatibleVersion:
 		return "ReGameDLL API version unsupported: no supplemental reads";
 	case ReGameDllProbeStatus::MetadataOnly:
-		if (weaponRegistry_)
-			return "ReGameDLL API negotiated; public bot weapon event hook active";
+		if (botEventRegistry_)
+			return "ReGameDLL API negotiated; public bot event hook active";
 		if (blindRegistry_ || damageRegistry_)
 			return "ReGameDLL API negotiated; public player event hooks active";
 		return "ReGameDLL API negotiated; no public per-actor weapon timer/accuracy getters; no supplemental reads";

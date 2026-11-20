@@ -27,9 +27,9 @@ constexpr float kBombBeepKnowledgeDistance = 1000.0f;
 constexpr float kFeetTargetProbeDepth = 14.0f;
 constexpr int kMaximumClientSlot = 32;
 constexpr auto kWeaponSoundPrefixLength = 8U;
-float nativeWeaponEventRange(NativeWeaponEvent kind, int weapon, bool silenced)
+float nativeWeaponEventRange(NativeBotEvent kind, int weapon, bool silenced)
 {
-	if (kind != NativeWeaponEvent::Fired)
+	if (kind != NativeBotEvent::Fired)
 		return 1100.0f;
 	switch (weapon)
 	{
@@ -1708,9 +1708,16 @@ void BotObservationRuntime::probeMapProvider()
 			return observer.optionalObservations_.findClientObject(name);
 		});
 	}, this);
-	optionalObservations_.connectWeaponEvents([](void *context, NativeWeaponEvent kind, const void *player) {
-		static_cast<BotObservationRuntime *>(context)->observeGameDllWeapon(kind, player);
+	optionalObservations_.connectBotEvents([](void *context, NativeBotEvent kind, const void *player) {
+		static_cast<BotObservationRuntime *>(context)->observeGameDllBotEvent(kind, player);
 	}, this);
+}
+
+bool BotObservationRuntime::nativeBotEventsConnected() const
+{
+	const auto *engine = services_ ? services_->service_engineFunctions() : nullptr;
+	return optionalObservations_.botEventsConnected() && engine && engine->pfnPEntityOfEntIndex &&
+		engine->pfnPvEntPrivateData;
 }
 
 bool BotObservationRuntime::hasNativeWeaponEvents(const edict_t *source, int slot) const
@@ -1723,7 +1730,7 @@ bool BotObservationRuntime::hasNativeWeaponEvents(const edict_t *source, int slo
 		services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility;
 }
 
-void BotObservationRuntime::observeGameDllWeapon(NativeWeaponEvent kind, const void *player)
+void BotObservationRuntime::observeGameDllBotEvent(NativeBotEvent kind, const void *player)
 {
 	const auto *engine = services_->service_engineFunctions();
 	const auto *globals = services_->service_globals();
@@ -1760,7 +1767,14 @@ void BotObservationRuntime::observeGameDllWeapon(NativeWeaponEvent kind, const v
 		if (!matches)
 			continue;
 
-		const bool fired = kind == NativeWeaponEvent::Fired;
+		if (kind == NativeBotEvent::HostageUsed)
+		{
+			if (!source->free && source->serialnumber == serial &&
+				life.slotGeneration(static_cast<unsigned>(slot)) == connection)
+				services_->reportNativeHostageUse(source, {static_cast<std::uint32_t>(slot), connection}, frame);
+			return;
+		}
+		const bool fired = kind == NativeBotEvent::Fired;
 		int weapon = 0;
 		bool silenced = false;
 		const bool hasWeapon = services_->readGameDllActiveWeapon(source, weapon, silenced);

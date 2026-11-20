@@ -1,3 +1,11 @@
+## 12B-3b追補　無音の人質追従開始
+
+固定版 `b088984` の公開ReGameDLL 5.30フックから、操作したCTの `EVENT_HOSTAGE_USED` を受ける。既存のT側の発話と警備判断に接続した。直前の音声を同じ操作に対応付けられる場合は人質IDを引き継ぐ。追従解除や現在の追従者はこの通知の対象外。
+
+隔離したLinux x86 ReHLDSの `cs_office` で、音声ありと、追従開始音・初回接触ログを抑えた条件を比較した。修正版でGameDLLが出した追従開始は各条件1件で、AstraBotの受信も各1件。音声ありでは人質ID 58を関連付け、無音ではIDを不明として扱った。
+
+`astrabot_regamedll_observation_provider` と `astrabot_hostage_use_report_runtime` で、フックの登録と解除、通知元の照合、音声なしの発話、標準GameDLLの経路を確認した。Windows x86 Debugは162/162件、Linux x86 Debugは161/161件が合格し、PE・ELFの公開関数7件も一致した。
+
 ## 23追補　人質使用時の視線
 
 固定版 `b088984` の `UseEntityState::OnUpdate` と `CBasePlayer::IsLookingAtPosition` に合わせ、目の位置から人質の基準点に向けて視線を更新する。現在のyawとpitchがそれぞれ20度未満になるまでUSEを待つ。状態中は対象のエンティティ世代を保持し、エンジンへの入力送信が成功したら試行を記録してIdleへ戻る。

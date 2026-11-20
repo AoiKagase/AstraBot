@@ -251,9 +251,11 @@ private:
 		world::FrameIdentity frame;
 		bool usingEntity;
 		bool reported = false;
+		world::EntityKey voicedHostage{};
 	};
 	std::vector<HostageUseScope> hostageUseScopes_{};
 	void reportHostageUse(edict_t *player, world::FrameIdentity frame, world::EntityKey following = {});
+	void reportNativeHostageUse(edict_t *source, world::ActorKey connection, world::FrameIdentity frame) override;
 	MovementSoundBridge movementSounds_{};
 	BotObservationRuntime observation_{};
 	BotBehaviorRuntime behavior_{};

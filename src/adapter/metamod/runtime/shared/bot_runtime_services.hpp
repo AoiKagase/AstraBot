@@ -68,6 +68,7 @@ public:
 		const edict_t *source, int serial, world::ActorKey sourceConnection) = 0;
 	virtual world::EntityKey behavior_currentEnemySource(std::size_t index) const = 0;
 	virtual void behavior_observeEnemyWeaponFire(const edict_t *source, const world::FrameIdentity &frame, float now) = 0;
+	virtual void reportNativeHostageUse(edict_t *source, world::ActorKey connection, world::FrameIdentity frame) = 0;
 	virtual void behavior_observeCloseFootstep(std::size_t index, const compat::FootstepEquipmentReceipt &receipt) = 0;
 	virtual const std::uint32_t &command_managedBotCommandSequences(std::size_t index) const = 0;
 	virtual void navigation_observePublicDeath(std::size_t victim) = 0;

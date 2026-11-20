@@ -2012,6 +2012,27 @@ bool testHostageUseReport(astrabot::metamod::PluginRuntime &runtime, enginefuncs
 			"a later voiced improved-hostage follow is reported without another first-touch log"))
 		return false;
 
+	reportAudio.clear();
+	auto &observations = static_cast<metamod::BotObservationServices &>(runtime);
+	const auto &lifecycle = observations.service_lifecycle();
+	const world::FrameIdentity useFrame{lifecycle.mapGeneration(), lifecycle.roundGeneration(),
+		observations.service_adapterFrameCount()};
+	auto staleUse = useFrame;
+	++staleUse.tick;
+	const world::ActorKey ctConnection{3U, lifecycle.slotGeneration(3U)};
+	observations.reportNativeHostageUse(&ct, ctConnection, staleUse);
+	observations.reportNativeHostageUse(&ct, {3U, ctConnection.generation + 1U}, useFrame);
+	observations.reportNativeHostageUse(&gEntities[0], {1U, lifecycle.slotGeneration(1U)}, useFrame);
+	advance(16);
+	if (!check(!count(1, "radio/test/taken.wav"), "the native receipt must come from a current CT"))
+		return false;
+	observations.reportNativeHostageUse(&ct, ctConnection, {useFrame.mapGeneration, useFrame.roundGeneration,
+		observations.service_adapterFrameCount()});
+	advance(48);
+	if (!check(count(1, "radio/test/taken.wav") == 1 && count(2, "radio/test/ack.wav") == 1,
+			"a native follow receipt produces the report without a hostage voice or a log"))
+		return false;
+
 	globals.mapname = 34;
 	globals.maxEntities = 8;
 	hostage.v.origin = Vector(100, 0, 36);

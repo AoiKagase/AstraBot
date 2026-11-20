@@ -1163,6 +1163,35 @@ void PluginRuntime::reportHostageUse(edict_t *player, world::FrameIdentity frame
 	behavior_.observeHostageUsed(player->v.origin, frame, following);
 }
 
+void PluginRuntime::reportNativeHostageUse(edict_t *source, world::ActorKey connection, world::FrameIdentity frame)
+{
+	if (!source || source->free || source->serialnumber < 0 || source->v.deadflag != DEAD_NO)
+		return;
+	const int serial = source->serialnumber;
+	const auto current = [&] {
+		return state_ == State::ActiveMap && frame == world::FrameIdentity{
+			lifecycle_.mapGeneration(), lifecycle_.roundGeneration(), adapterFrameCount_} &&
+			lifecycle_.slotGeneration(connection.slot) == connection.generation &&
+			!source->free && source->serialnumber == serial && source->v.deadflag == DEAD_NO && source->v.health > 0.0f;
+	};
+	if (!current() || observation_.resolvePlayerTeam(source) != kCounterTerroristTeam || !current())
+		return;
+	world::EntityKey following{};
+	if (!hostageUseScopes_.empty())
+	{
+		auto &scope = hostageUseScopes_.back();
+		if (scope.usingEntity && scope.player == source && scope.serial == serial && scope.frame == frame)
+		{
+			following = scope.voicedHostage;
+			scope.voicedHostage = {};
+		}
+	}
+	behavior_.observeHostageUsed(source->v.origin, frame, following);
+	if (runtimeProfiler_.enabled() && gpMetaUtilFuncs && gpMetaUtilFuncs->pfnLogConsole && pluginId_)
+		profiledLogConsole(runtimeProfiler_, pluginId_, "profile nativeHostageUse source=%u frame=%u hostage=%u",
+			connection.slot, frame.tick, following.id);
+}
+
 void PluginRuntime::onHostageVoice(const edict_t *hostage, const char *sample, float volume, float attenuation, int pitch)
 {
 	if (hostageUseScopes_.empty() || !hostageUseScopes_.back().usingEntity || hostageUseScopes_.back().reported ||
@@ -1209,7 +1238,10 @@ void PluginRuntime::onHostageVoice(const edict_t *hostage, const char *sample, f
 		if (slot > globals_->maxClients && slot < globals_->maxEntities)
 			following = {static_cast<unsigned>(slot), static_cast<unsigned>(hostageSerial) + 1U};
 	}
-	reportHostageUse(scope.player, scope.frame, following);
+	if (observation_.nativeBotEventsConnected())
+		hostageUseScopes_.back().voicedHostage = following;
+	else
+		reportHostageUse(scope.player, scope.frame, following);
 }
 
 void PluginRuntime::onPlayerLogMessage(const char *message)
@@ -1229,6 +1261,8 @@ void PluginRuntime::onPlayerLogMessage(const char *message)
 		return length > suffixLength && std::memcmp(message + length - suffixLength, suffix, suffixLength) == 0;
 	};
 	const bool hostageTouch = endsWith(hostageSuffix, sizeof(hostageSuffix) - 1);
+	if (hostageTouch && observation_.nativeBotEventsConnected())
+		return;
 	if (!hostageTouch && !endsWith(bombSuffix, sizeof(bombSuffix) - 1))
 		return;
 	const std::string identity(message, length - (hostageTouch ? sizeof(hostageSuffix) : sizeof(bombSuffix)) + 1);

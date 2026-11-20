@@ -35,7 +35,7 @@ public:
 class TestHookchains final : public EmptyReGameHookchains
 {
 public:
-	class WeaponRegistry final : public IReGameHookRegistry_CBotManager_OnEvent
+	class BotEventRegistry final : public IReGameHookRegistry_CBotManager_OnEvent
 	{
 	public:
 		hookfunc_t hook = nullptr;
@@ -246,9 +246,9 @@ bool testDamageEvents(astrabot::metamod::ReGameDllObservationProvider &provider)
 }
 }
 
-bool testWeaponEvents(astrabot::metamod::ReGameDllObservationProvider &provider)
+bool testBotEvents(astrabot::metamod::ReGameDllObservationProvider &provider)
 {
-	using astrabot::metamod::NativeWeaponEvent;
+	using astrabot::metamod::NativeBotEvent;
 	class Chain final : public IReGameHook_CBotManager_OnEvent
 	{
 	public:
@@ -256,8 +256,8 @@ bool testWeaponEvents(astrabot::metamod::ReGameDllObservationProvider &provider)
 		void callNext(GameEventType, CBaseEntity *, CBaseEntity *) override { ++count; }
 		void callOriginal(GameEventType, CBaseEntity *, CBaseEntity *) override {}
 	} chain;
-	struct Notice { int count = 0; NativeWeaponEvent event{}; const void *source = nullptr; } notice;
-	const auto receive = [](void *context, NativeWeaponEvent kind, const void *source) {
+	struct Notice { int count = 0; NativeBotEvent event{}; const void *source = nullptr; } notice;
+	const auto receive = [](void *context, NativeBotEvent kind, const void *source) {
 		auto &event = *static_cast<Notice *>(context);
 		++event.count;
 		event.event = kind;
@@ -266,26 +266,29 @@ bool testWeaponEvents(astrabot::metamod::ReGameDllObservationProvider &provider)
 	api.enableHooks = true;
 	api.minor = 3;
 	provider.probe(factory);
-	if (provider.connectWeaponEvents(receive, &notice) || api.hooks.weapon.hook)
+	if (provider.connectBotEvents(receive, &notice) || api.hooks.weapon.hook)
 		return false;
 	api.minor = REGAMEDLL_API_VERSION_MINOR;
 	provider.probe(factory);
-	if (!provider.connectWeaponEvents(receive, &notice) || !api.hooks.weapon.hook)
+	if (!provider.connectBotEvents(receive, &notice) || !api.hooks.weapon.hook)
 		return false;
 	auto *source = reinterpret_cast<CBaseEntity *>(&botObject);
 	api.hooks.weapon.hook(&chain, EVENT_WEAPON_RELOADED, source, nullptr);
-	if (notice.count != 1 || notice.event != NativeWeaponEvent::Reloaded || notice.source != source)
+	if (notice.count != 1 || notice.event != NativeBotEvent::Reloaded || notice.source != source)
 		return false;
 	api.hooks.weapon.hook(&chain, EVENT_WEAPON_FIRED, source, nullptr);
-	if (notice.count != 2 || notice.event != NativeWeaponEvent::Fired)
+	if (notice.count != 2 || notice.event != NativeBotEvent::Fired)
 		return false;
 	api.hooks.weapon.hook(&chain, EVENT_WEAPON_FIRED_ON_EMPTY, source, nullptr);
-	if (notice.count != 3 || notice.event != NativeWeaponEvent::FiredOnEmpty)
+	if (notice.count != 3 || notice.event != NativeBotEvent::FiredOnEmpty)
+		return false;
+	api.hooks.weapon.hook(&chain, EVENT_HOSTAGE_USED, source, nullptr);
+	if (notice.count != 4 || notice.event != NativeBotEvent::HostageUsed || notice.source != source)
 		return false;
 	api.hooks.weapon.hook(&chain, EVENT_GRENADE_BOUNCED, source, nullptr);
 	api.hooks.weapon.hook(&chain, EVENT_WEAPON_RELOADED, nullptr, nullptr);
 	provider.reset();
-	if (chain.count != 5 || notice.count != 3 || api.hooks.weapon.hook)
+	if (chain.count != 6 || notice.count != 4 || api.hooks.weapon.hook)
 		return false;
 
 	provider.probe(factory);
@@ -295,14 +298,14 @@ bool testWeaponEvents(astrabot::metamod::ReGameDllObservationProvider &provider)
 		astrabot::metamod::ReGameDllObservationProvider *provider;
 		bool *remainedRegistered;
 	} resetNotice{&provider, &remainedRegistered};
-	if (!provider.connectWeaponEvents([](void *context, NativeWeaponEvent, const void *) {
+	if (!provider.connectBotEvents([](void *context, NativeBotEvent, const void *) {
 			const auto &reset = *static_cast<ResetNotice *>(context);
 			reset.provider->reset();
 			*reset.remainedRegistered = api.hooks.weapon.hook && reset.provider->dispatchingEvents();
 		}, &resetNotice))
 		return false;
 	api.hooks.weapon.hook(&chain, EVENT_WEAPON_RELOADED, source, nullptr);
-	return chain.count == 6 && remainedRegistered && !api.hooks.weapon.hook && !provider.dispatchingEvents();
+	return chain.count == 7 && remainedRegistered && !api.hooks.weapon.hook && !provider.dispatchingEvents();
 }
 
 int main()
@@ -314,9 +317,9 @@ int main()
 		return 11;
 	if (!testDamageEvents(provider))
 		return 12;
-	if (!testWeaponEvents(provider))
+	if (!testBotEvents(provider))
 	{
-		std::fputs("native weapon events must subscribe, filter, forward and disconnect\n", stderr);
+		std::fputs("native bot events must subscribe, filter, forward and disconnect\n", stderr);
 		return 13;
 	}
 	compat::CompatibilityObservation observation{};

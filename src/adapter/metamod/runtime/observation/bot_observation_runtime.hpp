@@ -28,7 +28,8 @@ public:
 		const std::function<const void *(const char *)> &findClientObject);
 	void observeGameDllDamage(const void *player, const entvars_t *inflictor,
 		const std::function<const void *(const char *)> &findClientObject);
-	void observeGameDllWeapon(NativeWeaponEvent kind, const void *player);
+	void observeGameDllBotEvent(NativeBotEvent kind, const void *player);
+	bool nativeBotEventsConnected() const;
 	bool dispatchingGameDllEvents() const { return optionalObservations_.dispatchingEvents(); }
 	runtime::MovementPhysicsState captureMovementPhysicsState(
 		const edict_t *entity, bool teamConfirmed, bool managedFakeClient) const;

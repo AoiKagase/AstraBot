@@ -289,10 +289,10 @@ bool testKnifeRun(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &engi
 	return true;
 }
 
-bool testNativeWeaponEvents(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &engine, globalvars_t &globals)
+bool testNativeBotEvents(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &engine, globalvars_t &globals)
 {
 	using namespace astrabot;
-	using metamod::NativeWeaponEvent;
+	using metamod::NativeBotEvent;
 	auto &enemy = gEntities[4];
 	enemy.v.origin = Vector(0, 500, 36);
 	auto &self = gEntities[0];
@@ -301,16 +301,16 @@ bool testNativeWeaponEvents(astrabot::metamod::PluginRuntime &runtime, enginefun
 	engine.pfnPvEntPrivateData = [](edict_t *entity) -> void * { return entity; };
 	runtime.giveEnginePointers(&engine, &globals);
 
-	const auto test = [&](NativeWeaponEvent kind, int weapon, float expectedRange, world::NoisePriority priority) {
+	const auto test = [&](NativeBotEvent kind, int weapon, float expectedRange, world::NoisePriority priority) {
 		auto observer = std::make_unique<metamod::BotObservationRuntime>();
 		observer->bindServices(runtime);
 		observer->configureEngine();
 		observer->notifyTeamInfo(1, "TERRORIST");
 		observer->notifyTeamInfo(5, "CT");
 		nativeActiveWeapon = weapon;
-		if (kind == NativeWeaponEvent::FiredOnEmpty)
+		if (kind == NativeBotEvent::FiredOnEmpty)
 			observer->onEmitSound(&enemy, "weapons/dryfire_pistol.wav", .8f, 1.0f);
-		observer->observeGameDllWeapon(kind, &enemy);
+		observer->observeGameDllBotEvent(kind, &enemy);
 		// The public sound for the same animation must neither promote nor duplicate the native receipt.
 		observer->onEmitSound(&enemy, "weapons/ak47_clipin.wav", 1.0f, 1.0f);
 		world::WorldSnapshot snapshot;
@@ -330,16 +330,16 @@ bool testNativeWeaponEvents(astrabot::metamod::PluginRuntime &runtime, enginefun
 	};
 	const auto low = world::NoisePriority::Low;
 	const auto high = world::NoisePriority::High;
-	if (!check(test(NativeWeaponEvent::Reloaded, 28, 1100, low), "native reload has the low-priority CSBot radius") ||
-		!check(test(NativeWeaponEvent::FiredOnEmpty, 28, 1100, low), "native dry fire has the low-priority radius") ||
-		!check(test(NativeWeaponEvent::Fired, 29, 1000, high), "native knife attack has the short high-priority radius") ||
-		!check(test(NativeWeaponEvent::Fired, 4, 0, low), "native grenade throw is acoustically silent"))
+	if (!check(test(NativeBotEvent::Reloaded, 28, 1100, low), "native reload has the low-priority CSBot radius") ||
+		!check(test(NativeBotEvent::FiredOnEmpty, 28, 1100, low), "native dry fire has the low-priority radius") ||
+		!check(test(NativeBotEvent::Fired, 29, 1000, high), "native knife attack has the short high-priority radius") ||
+		!check(test(NativeBotEvent::Fired, 4, 0, low), "native grenade throw is acoustically silent"))
 		return false;
 	nativeSilenced = true;
-	if (!check(test(NativeWeaponEvent::Fired, 22, 1000, high), "a native shot reads the current M4A1 silencer state"))
+	if (!check(test(NativeBotEvent::Fired, 22, 1000, high), "a native shot reads the current M4A1 silencer state"))
 		return false;
 	nativeSilenced = false;
-	return check(test(NativeWeaponEvent::Fired, 22, 2000, high), "an unsilenced native M4A1 uses the normal radius");
+	return check(test(NativeBotEvent::Fired, 22, 2000, high), "an unsilenced native M4A1 uses the normal radius");
 }
 
 bool testHostageRescueCall(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &engine)
@@ -544,7 +544,7 @@ bool testGunshot(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &engin
 	{
 		return false;
 	}
-	if (!testNativeWeaponEvents(runtime, engine, globals))
+	if (!testNativeBotEvents(runtime, engine, globals))
 		return false;
 	if (!testHostageRescueCall(runtime, engine))
 		return false;
