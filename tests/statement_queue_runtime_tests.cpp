@@ -1938,6 +1938,9 @@ bool testActualFollowMovement(astrabot::metamod::PluginRuntime &runtime, globalv
 		check(retargeted && moved, "follower routes to the moving source and dispatches actual movement");
 	if (arrivalAge == 0)
 	{
+		auto &behavior = static_cast<metamod::BotBehaviorServices &>(runtime);
+		behavior.applyNavigationRequest({1, metamod::NavigationRequestKind::DestroyPath});
+		gEntities[1].v.velocity.x = 48.0f;
 		const auto movementSpeed = [&]()
 		{
 			queueHelpMoves.clear();
@@ -1971,7 +1974,6 @@ bool testActualFollowMovement(astrabot::metamod::PluginRuntime &runtime, globalv
 		queueFollowLeaderVisible = true;
 		ok = check(movementSpeed() > 150.0f, "seeing the leader run restores full-speed Follow movement") && ok;
 		gEntities[0].v.origin.x = 240.0f;
-		auto &behavior = static_cast<metamod::BotBehaviorServices &>(runtime);
 		behavior.applyNavigationRequest({1, metamod::NavigationRequestKind::DestroyPath});
 		for (int i = 0; i < 6; ++i)
 			tick();

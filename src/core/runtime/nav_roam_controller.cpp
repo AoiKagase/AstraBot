@@ -72,8 +72,7 @@ bool beginNativePathAttempt(compat::ICompatibilityRandomSource *random, const Ac
 		ASTRABOT_NAV_ROAM_CONTROLLER_MAXIMUM_PATH_RETRY_INTERVAL_SECONDS);
 	const auto interval = random->nextFloat(request);
 	if (interval.status != compat::RandomStatus::Ok || !std::isfinite(interval.value) ||
-		interval.value < ASTRABOT_NAV_ROAM_CONTROLLER_MINIMUM_PATH_RETRY_INTERVAL_SECONDS ||
-		interval.value > ASTRABOT_NAV_ROAM_CONTROLLER_MAXIMUM_PATH_RETRY_INTERVAL_SECONDS)
+		interval.value < request.floatLower || interval.value > request.floatUpper)
 		return false;
 	nextAttemptAt = now + interval.value;
 	return true;
@@ -638,7 +637,20 @@ NavRoamResult NavRoamController::update(
 NavRoamResult NavRoamController::update(const nav::NavSnapshot &snapshot, const NavRoamObservation &observation,
 	nav::LocomotionIntent *intent, NavRoamDecision *decision)
 {
-	const NavRoamResult result = updateInternal(snapshot, observation, intent, decision);
+	const bool following = modePolicy_.mode() == compat::RuntimeMode::Compatibility &&
+		observation.locomotion.timingAvailable && observation.followPath;
+	NavRoamResult result;
+	if (following)
+	{
+		auto movement = observation;
+		movement.hasObjectiveTarget = routeState().hasActiveRoute && roamGoalState().hasObjectiveTarget;
+		movement.objectiveTarget = roamGoalState().objectiveTarget;
+		movement.followGoalArea = movement.hasObjectiveTarget ? routeState().activeCorridor.areas.back() : 0U;
+		movement.movementSuppressed = observation.movementSuppressed || !routeState().hasActiveRoute;
+		result = updateInternal(snapshot, movement, intent, decision);
+	}
+	else
+		result = updateInternal(snapshot, observation, intent, decision);
 	if (friendWaitState().friendRepathPending)
 	{
 		friendWaitState().friendRepathPending = false;
@@ -654,7 +666,72 @@ NavRoamResult NavRoamController::update(const nav::NavSnapshot &snapshot, const 
 		recoveryState().lastWiggleJumpAt = observation.locomotion.observedAt;
 		nativeLadderRecovery_.recordJump(observation.locomotion.observedAt);
 	}
+	if (following && !observation.movementSuppressed &&
+		(result == NavRoamResult::IntentReady || result == NavRoamResult::TargetReached ||
+			result == NavRoamResult::NoRoute || result == NavRoamResult::MovementSuppressed ||
+			result == NavRoamResult::ReplanRequired))
+		replaceFollowRoute(snapshot, observation, result == NavRoamResult::IntentReady ? nullptr : decision);
 	return result;
+}
+
+void NavRoamController::replaceFollowRoute(const nav::NavSnapshot &snapshot, const NavRoamObservation &observation,
+	NavRoamDecision *decision)
+{
+	const auto goal = observation.followGoalRequest ? (*observation.followGoalRequest)() : observation.followGoalArea;
+	const auto *probe = observation.followPathProbe;
+	if (goal == 0U || (probe && !probe->current()))
+		return;
+	const auto *area = snapshot.document()->findArea(goal);
+	if (!area)
+		return;
+	const auto routeRevision = routeRevision_;
+	float deadline = recoveryState().nextPathAttemptAt;
+	if (!beginNativePathAttempt(randomSource_, actor_, observation.frame.tick, observedAt_, deadline) ||
+		routeRevision_ != routeRevision || (probe && !probe->current()))
+		return;
+	recoveryState().nextPathAttemptAt = deadline;
+	resetRoute();
+	traversalState().locomotion.resetProgressMonitor();
+	nav::NavQuery query(snapshot);
+	if (routeState().hasPathCostContext)
+		query.setPathCostContext(routeState().pathCostContext);
+	nav::NavAreaMatch start{};
+	if (observation.followGoalRequest)
+		start.area = observation.followStartArea;
+	else if (query.findContaining(observation.locomotion.position, kAreaVerticalTolerance, &start) != nav::NavQueryResult::Found)
+		return;
+	if (start.area == 0U)
+		return;
+	nav::NavCorridor corridor{};
+	const auto revision = routeRevision_;
+	const auto pathResult = query.buildFollowCorridor(start.area, goal, observation.nativeLadders, &corridor,
+		decision && collectPathStats_ ? &decision->pathSearchStats : nullptr, probe);
+	if (routeRevision_ != revision || (probe && !probe->current()))
+		return;
+	if (decision)
+	{
+		decision->pathRequested = start.area != goal;
+		decision->pathResult = pathResult;
+		decision->corridorResult = pathResult;
+	}
+	if (pathResult != nav::NavQueryResult::Found)
+		return;
+	const auto firstLink = corridor.links.empty() ? nav::NavDirectedLink{start.area, start.area, 0U, 0U} : corridor.links.front();
+	if (!startRoute(snapshot, corridor, firstLink))
+		return;
+	rememberRoute(snapshot, corridor, firstLink);
+	roamGoalState().hasObjectiveTarget = true;
+	roamGoalState().objectiveTarget = nav::extentCenterOf(*area);
+	if (decision)
+	{
+		populateRouteDecision(decision);
+		decision->goalPresent = true;
+		decision->goalKind = NavGoalKind::Objective;
+		decision->goalArea = goal;
+		decision->goalPosition = roamGoalState().objectiveTarget;
+		decision->stage = NavRoamStage::CorridorReady;
+		decision->failureReason = NavFailureReason::None;
+	}
 }
 
 NavRoamResult NavRoamController::updateInternal(const nav::NavSnapshot &snapshot, const NavRoamObservation &observation,
@@ -925,6 +1002,11 @@ NavRoamController::NavigationPhaseResult NavRoamController::validateNavigationUp
 	roamGoalState().hasObjectiveTarget = observation.hasObjectiveTarget;
 	roamGoalState().objectiveTarget = observation.objectiveTarget;
 	lastFrame_ = observation.frame;
+	traversalState().safeDropHeightAvailable = observation.locomotion.safeDropHeightAvailable &&
+		std::isfinite(observation.locomotion.maximumSafeDropHeight) &&
+		observation.locomotion.maximumSafeDropHeight > 0.0f;
+	traversalState().maximumSafeDropHeight =
+		traversalState().safeDropHeightAvailable ? observation.locomotion.maximumSafeDropHeight : 0.0f;
 	if (decision != nullptr)
 	{
 		decision->observationPosition = observation.locomotion.position;
@@ -1090,11 +1172,6 @@ NavRoamController::NavigationPhaseResult NavRoamController::locateUpdateAreas(Na
 			return {true, NavRoamResult::ReplanRequired};
 		}
 	}
-	traversalState().safeDropHeightAvailable = observation.locomotion.safeDropHeightAvailable &&
-		std::isfinite(observation.locomotion.maximumSafeDropHeight) &&
-		observation.locomotion.maximumSafeDropHeight > 0.0f;
-	traversalState().maximumSafeDropHeight =
-		traversalState().safeDropHeightAvailable ? observation.locomotion.maximumSafeDropHeight : 0.0f;
 	if (currentAreaResult == nav::NavQueryResult::Found && currentArea.area != 0U && areaVisitHistory_ != nullptr &&
 		(roamGoalState().lastVisitedArea != currentArea.area ||
 			roamGoalState().lastVisitedMapGeneration != observation.frame.mapGeneration ||
@@ -1464,7 +1541,7 @@ NavRoamController::NavigationPhaseResult NavRoamController::selectUpdateRoute(Na
 	auto *decision = ctx.decision;
 	auto &currentArea = ctx.currentArea;
 	auto &objectiveArea = ctx.objectiveArea;
-	if (timedCompatibility_ && observation.noiseRoute != NoiseRouteUpdate::None)
+	if (timedCompatibility_ && (observation.noiseRoute != NoiseRouteUpdate::None || observation.followPath))
 		return {false, NavRoamResult::IntentReady};
 	if (timedCompatibility_ && objectiveArea == 0U && routeState().hasActiveRoute && roamGoalState().hasRoamGoal &&
 		roamGoalState().roamGoalArea == currentArea.area && traversalState().locomotion.isActive())

@@ -1647,6 +1647,104 @@ bool testTimedHuntFollowsSameAreaEndpoint()
 		"Hunt follows the retained same-area endpoint after choosing a different area");
 }
 
+bool testFollowMovesBeforeReplacingItsRoute()
+{
+	using namespace astrabot;
+	nav::NavDocument document;
+	document.setSourceIdentity({5U, 100U, 200U});
+	auto start = area(1U, 0.0f, 64.0f);
+	start.connections[1U].push_back(2U);
+	start.connections[3U].push_back(3U);
+	document.addArea(start);
+	document.addArea(area(2U, 64.0f, 128.0f));
+	document.addArea(area(3U, -64.0f, 0.0f));
+	auto unreachable = area(4U, 128.0f, 192.0f);
+	unreachable.extent.lo.y = 64.0f;
+	unreachable.extent.hi.y = 128.0f;
+	document.addArea(unreachable);
+	nav::NavSnapshotPublisher publisher;
+	publisher.publish(&document, 1U);
+	compat::ScriptedRandomSource random({
+		compat::RandomTapeEntry::floatEntry("CSBOT-PATH-RETRY", {1U, 1U}, {0U, 0U, 1U}, .4f, .6f, .6f),
+		compat::RandomTapeEntry::floatEntry("CSBOT-PATH-RETRY", {1U, 1U}, {0U, 0U, 3U}, .4f, .6f, .4f),
+		compat::RandomTapeEntry::floatEntry("CSBOT-PATH-RETRY", {1U, 1U}, {0U, 0U, 5U}, .4f, .6f, .4f)});
+	runtime::NavRoamController controller;
+	controller.setRandomSource(&random);
+	runtime::NavRoamObservation observation = {};
+	observation.actor = {1U, 1U};
+	observation.frame = {1U, 1U, 1U};
+	observation.team = 1U;
+	observation.locomotion.position = {32.0f, 32.0f, 0.0f};
+	observation.locomotion.standingClearance = 72.0f;
+	observation.locomotion.crouchingClearance = 36.0f;
+	observation.locomotion.grounded = true;
+	observation.locomotion.timingAvailable = true;
+	observation.locomotion.observedAt = 1.0f;
+	observation.hasObjectiveTarget = true;
+	observation.nativeSameAreaEndpoint = true;
+	observation.followPath = true;
+	observation.followGoalArea = 2U;
+	observation.objectiveTarget = {96.0f, 32.0f, 0.0f};
+	nav::LocomotionIntent intent{};
+	controller.update(publisher.snapshot(), observation, &intent);
+	if (!check(controller.hasPath() && intent.speed == 0.0f,
+			"Follow prepares a path without moving along it on the same update"))
+		return false;
+	observation.followGoalArea = 3U;
+	observation.objectiveTarget = {-32.0f, 32.0f, 0.0f};
+	observation.frame.tick = 2U;
+	observation.locomotion.observedAt = 1.55f;
+	if (!check(controller.update(publisher.snapshot(), observation, &intent) == runtime::NavRoamResult::IntentReady &&
+				intent.direction.x > 0.0f,
+			"the shared retry timer retains the current Follow path"))
+		return false;
+	observation.frame.tick = 3U;
+	observation.locomotion.observedAt = 1.61f;
+	bool movedBeforeSelection = false;
+	const std::function<nav::AreaId()> selectReplacement = [&]
+	{
+		movedBeforeSelection = intent.speed > 0.0f && intent.direction.x > 0.0f;
+		return 3U;
+	};
+	observation.followStartArea = 1U;
+	observation.followGoalRequest = &selectReplacement;
+	if (!check(controller.update(publisher.snapshot(), observation, &intent) == runtime::NavRoamResult::IntentReady &&
+				intent.direction.x > 0.0f && movedBeforeSelection,
+			"Follow moves along the current path before computing its replacement"))
+		return false;
+	observation.frame.tick = 4U;
+	observation.locomotion.observedAt = 1.71f;
+	observation.followGoalArea = 0U;
+	observation.followGoalRequest = nullptr;
+	if (!check(controller.update(publisher.snapshot(), observation, &intent) == runtime::NavRoamResult::IntentReady &&
+				intent.direction.x < 0.0f,
+			"the next Follow update moves along the replacement"))
+		return false;
+	class EndpointProbe final : public nav::NavHuntPathProbe
+	{
+	public:
+		mutable nav::NavVector sampled{};
+		bool clear(const nav::NavVector &, const nav::NavVector &, bool) const override { return true; }
+		bool groundHeight(const nav::NavVector &point, float *height) const override
+		{
+			sampled = point;
+			*height = 6.0f;
+			return true;
+		}
+	} probe;
+	observation.followPathProbe = &probe;
+	observation.followGoalArea = 4U;
+	observation.frame.tick = 5U;
+	observation.locomotion.observedAt = 2.1f;
+	controller.update(publisher.snapshot(), observation, &intent);
+	observation.followGoalArea = 0U;
+	observation.frame.tick = 6U;
+	observation.locomotion.observedAt = 2.2f;
+	return check(controller.update(publisher.snapshot(), observation, &intent) == runtime::NavRoamResult::IntentReady &&
+			intent.direction.x > 0.0f && probe.sampled.x == 96.0f && probe.sampled.y == 32.0f && random.verifyComplete(),
+		"Follow reaches the closest accessible area with a ground sample aligned to the final portal");
+}
+
 bool testCompatibilityPathRetryUsesEngineTime()
 {
 	using namespace astrabot;
@@ -3747,7 +3845,7 @@ int main()
 		return 1;
 	}
 	if (!testTimedHuntDrawsBeforePathThrottle() || !testTimedHuntFollowsSameAreaEndpoint() ||
-		!testCompatibilityPathRetryUsesEngineTime())
+		!testFollowMovesBeforeReplacingItsRoute() || !testCompatibilityPathRetryUsesEngineTime())
 	{
 		return 1;
 	}

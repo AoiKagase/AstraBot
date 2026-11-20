@@ -59,6 +59,7 @@ public:
 			!actors_[index].managedBotStateMachines.attackOverlayActive() && noiseInvestigationCurrent(index);
 	}
 	bool followWalking(std::size_t index) const;
+	nav::AreaId selectFollowGoal(std::size_t index);
 	bool takeNoisePathRequest(std::size_t index, bool &targetCleared)
 	{
 		auto &actor = actors_[index];
@@ -523,6 +524,7 @@ private:
 	std::uint32_t allowedFixedChatterPhrases(const char *verbosity, compat::ChatterPhrase first, compat::ChatterPhrase last);
 	void updateFollowMotion(std::size_t index, const compat::StateUpdateContext &context,
 		compat::ScenarioBehaviorInput &scenario, bool reloading);
+	bool enterFollowMotion(std::size_t index, const compat::StateUpdateContext &context);
 	bool tryFollowCover(std::size_t index, const std::function<bool()> &leaderCurrent);
 	bool canSeePoint(std::size_t index, world::WorldPosition point, const world::FrameIdentity &frame,
 		bool checkFov) const;
@@ -628,6 +630,9 @@ private:
 		float idleDuration = 0.0f;
 		float idleDeadline = 0.0f;
 		float repathDeadline = -1.0f;
+		std::uint32_t requestUpdate = 0U;
+		world::ActorKey leaderConnection{};
+		int leaderSerial = -1;
 		nav::AreaId goalArea = 0U;
 		std::uint64_t goalNavRevision = 0U;
 		std::uint32_t goalUpdate = 0U;

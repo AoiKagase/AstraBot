@@ -13,6 +13,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <vector>
 
 namespace astrabot
@@ -58,7 +59,11 @@ struct NavRoamObservation
 	NoiseRouteUpdate noiseRoute = NoiseRouteUpdate::None;
 	nav::AreaId noisePathStartArea = 0U;
 	nav::AreaId noiseGoalArea = 0U;
+	bool followPath = false;
 	nav::AreaId followGoalArea = 0U;
+	nav::AreaId followStartArea = 0U;
+	const std::function<nav::AreaId()> *followGoalRequest = nullptr;
+	const nav::NavHuntPathProbe *followPathProbe = nullptr;
 	bool noiseTargetCleared = false;
 	bool nativeSameAreaEndpoint = false;
 };
@@ -295,6 +300,8 @@ private:
 	world::FrameIdentity motionFrame_{};
 	NavRoamResult updateInternal(const nav::NavSnapshot &snapshot, const NavRoamObservation &observation,
 		nav::LocomotionIntent *intent, NavRoamDecision *decision);
+	void replaceFollowRoute(const nav::NavSnapshot &snapshot, const NavRoamObservation &observation,
+		NavRoamDecision *decision);
 
 	struct NavigationPhaseResult
 	{

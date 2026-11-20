@@ -161,6 +161,7 @@ public:
 	virtual bool behavior_forcedRunning(std::size_t index) = 0;
 	virtual bool behavior_noiseInvestigationWalking(std::size_t index) const = 0;
 	virtual bool behavior_followWalking(std::size_t index) const = 0;
+	virtual nav::AreaId behavior_selectFollowGoal(std::size_t index) = 0;
 	virtual bool behavior_takeNoisePathRequest(std::size_t index, bool &targetCleared) = 0;
 	virtual bool behavior_buildManagedObjectiveTarget(std::size_t index, nav::NavVector *target,
 		nav::NavSearchStats *searchStats, RuntimeObjectiveSelectionStats *objectiveStats = nullptr,

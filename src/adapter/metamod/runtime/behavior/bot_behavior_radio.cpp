@@ -312,7 +312,7 @@ struct BotBehaviorRuntime::ActorTaskEnvironment : compat::IHelpRequestEnvironmen
 			if (!current())
 				return false;
 		}
-		return true;
+		return owner.enterFollowMotion(receiver, context) && current();
 	}
 	nav::AreaId areaAt(const nav::NavVector &point, bool anyHeight)
 	{

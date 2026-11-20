@@ -1124,8 +1124,8 @@ NavigationUpdate BotNavigationRuntime::updateNavigation(std::size_t index, const
 		!currentMachine.attackOverlayActive();
 	if (following)
 	{
-		observation.followGoalArea = explicitGoalArea;
-		observation.nativeSameAreaEndpoint = true;
+		observation.followPath = true;
+		observation.followStartArea = knownArea(index, objectiveActor, observation.frame, navigation.revision());
 	}
 	if (compatibility && currentMachine.state() == compat::CompatibilityStateId::MoveTo)
 	{
@@ -1143,7 +1143,7 @@ NavigationUpdate BotNavigationRuntime::updateNavigation(std::size_t index, const
 	const auto &goalCache = services_->behavior_managedBotObjectiveTargets(index);
 	if (observation.hasObjectiveTarget && goalCache.routeOverride)
 		observation.objectiveRouteType = goalCache.routeType;
-	observation.movementSuppressed = services_->roundFreezeActive() || (following && !observation.hasObjectiveTarget);
+	observation.movementSuppressed = services_->roundFreezeActive();
 	const auto &objectiveAction = services_->behavior_managedBotObjectiveActions(index);
 	observation.movementSuppressed = observation.movementSuppressed ||
 		(objectiveAction.active && objectiveAction.kind == team::TeamObjectiveKind::PlantC4 &&
@@ -1331,16 +1331,23 @@ NavigationUpdate BotNavigationRuntime::updateNavigation(std::size_t index, const
 			PublicNativeLadderProbe probe(services_->service_engineFunctions(), current);
 			PublicHuntPathProbe<decltype(current)> huntProbe(
 				services_->service_engineFunctions(), services_->service_runtimeProfiler(), current);
+			std::function<nav::AreaId()> followGoal;
+			if (observation.followPath)
+			{
+				followGoal = [&] { return current() ? services_->behavior_selectFollowGoal(index) : 0U; };
+				observation.followGoalRequest = &followGoal;
+				observation.followPathProbe = &huntProbe;
+			}
 			observation.locomotion.huntForcedRunning = navigationState == compat::CompatibilityStateId::Hunt &&
 				services_->behavior_forcedRunning(index);
 			if (navigationState == compat::CompatibilityStateId::Hunt &&
 				services_->service_engineFunctions() && services_->service_engineFunctions()->pfnTraceLine)
 				observation.locomotion.huntPathProbe = &huntProbe;
 			if (services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility &&
-				observation.hasObjectiveTarget)
+				(observation.hasObjectiveTarget || observation.followPath))
 			{
 				const auto &movement = actors_[index].managedBotMovement;
-				bool needsTopology = movement.usingNativeLadder() ||
+				bool needsTopology = observation.followPath || movement.usingNativeLadder() ||
 					(observation.noiseRoute == runtime::NoiseRouteUpdate::Follow && movement.hasNativeLadderPath());
 				if (!needsTopology)
 				{
@@ -1384,6 +1391,8 @@ NavigationUpdate BotNavigationRuntime::updateNavigation(std::size_t index, const
 			observation.nativeLadders = nullptr;
 			observation.nativeLadderProbe = nullptr;
 			observation.locomotion.huntPathProbe = nullptr;
+			observation.followGoalRequest = nullptr;
+			observation.followPathProbe = nullptr;
 			if (current())
 			{
 				actors_[index].nativeLadderEpoch = epoch;

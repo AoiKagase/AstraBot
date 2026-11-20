@@ -1171,8 +1171,8 @@ NavQueryResult NavQuery::buildCorridor(
 
 namespace
 {
-void setHuntFallbackEndpoint(const NavDocument &document, AreaId goal, NavCorridor &corridor,
-	const NavHuntPathProbe *probe)
+void setAreaPathEndpoint(const NavDocument &document, AreaId goal, NavCorridor &corridor,
+	const NavHuntPathProbe *probe, bool hunt)
 {
 	const auto *doc = &document;
 	const auto *destination = doc->findArea(corridor.areas.back());
@@ -1199,15 +1199,27 @@ void setHuntFallbackEndpoint(const NavDocument &document, AreaId goal, NavCorrid
 			return value < low ? low : (std::min)(value, high);
 		};
 		auto portal = extentCenterOf(*doc->findArea(corridor.areas.front()));
-		const bool groundOnly = corridor.nativeLadders.empty();
-		if (groundOnly)
+		const bool recordWaypoints = hunt && corridor.nativeLadders.empty();
+		if (recordWaypoints)
 		{
 			corridor.huntWaypoints.reserve(2U * corridor.links.size() + 2U);
 			corridor.huntWaypoints.push_back({portal, 0U});
 		}
+		auto ladderStep = corridor.nativeLadders.begin();
 		for (std::size_t i = 0U; i < corridor.links.size(); ++i)
 		{
 			const auto &link = corridor.links[i];
+			if (!hunt && ladderStep != corridor.nativeLadders.end() && ladderStep->linkIndex == i)
+			{
+				const auto &ladder = ladderStep->ladder;
+				const bool ascending = link.fromArea == ladder.bottomArea;
+				portal = ascending ? ladder.bottom : ladder.top;
+				const auto direction = ascending ? ladder.direction : (ladder.direction + 2U) % 4U;
+				portal.x += direction == kEastDirection ? 32.0f : direction == kWestDirection ? -32.0f : 0.0f;
+				portal.y += direction == kSouthDirection ? 32.0f : direction == kNorthDirection ? -32.0f : 0.0f;
+				++ladderStep;
+				continue;
+			}
 			const auto &from = *doc->findArea(link.fromArea);
 			const auto &to = *doc->findArea(link.toArea);
 			const bool northSouth = link.direction == kNorthDirection || link.direction == kSouthDirection;
@@ -1229,36 +1241,38 @@ void setHuntFallbackEndpoint(const NavDocument &document, AreaId goal, NavCorrid
 			}
 			const auto areaIndex = i + 1U;
 			portal.z = surfaceZAtInternal(from, portal.x, portal.y);
-			if (groundOnly)
+			if (recordWaypoints)
 				corridor.huntWaypoints.push_back({portal, areaIndex});
 			if (!reverse)
 			{
 				portal.x += link.direction == kEastDirection ? 25.0f : link.direction == kWestDirection ? -25.0f : 0.0f;
 				portal.y += link.direction == kSouthDirection ? 25.0f : link.direction == kNorthDirection ? -25.0f : 0.0f;
 				portal.z = surfaceZAtInternal(to, portal.x, portal.y);
-				if (groundOnly)
+				if (recordWaypoints)
 					corridor.huntWaypoints.push_back({portal, areaIndex});
 			}
 		}
-		endpoint = extentCenterOf(*destination);
-		const auto direction = corridor.links.back().direction;
-		if (direction == kNorthDirection || direction == kSouthDirection)
-			endpoint.x = portal.x;
-		else
-			endpoint.y = portal.y;
+		if (hunt || corridor.nativeLadders.empty() || corridor.nativeLadders.back().linkIndex + 1U != corridor.links.size())
+		{
+			endpoint = extentCenterOf(*destination);
+			const auto direction = corridor.links.back().direction;
+			if (direction == kNorthDirection || direction == kSouthDirection)
+				endpoint.x = portal.x;
+			else
+				endpoint.y = portal.y;
+		}
 	}
 	corridor.hasEndpoint = true;
-	corridor.huntEndpointSteering = true;
+	corridor.huntEndpointSteering = hunt;
 	corridor.endpoint = {endpoint.x, endpoint.y, surfaceZAtInternal(*destination, endpoint.x, endpoint.y)};
+	if (probe && (!corridor.huntWaypoints.empty() || (!hunt && !corridor.links.empty())))
+	{
+		float ground = requestedHeight;
+		const bool sampled = probe->groundHeight({endpoint.x, endpoint.y, requestedHeight}, &ground);
+		corridor.endpoint.z = sampled && std::isfinite(ground) ? ground : requestedHeight;
+	}
 	if (!corridor.huntWaypoints.empty())
 	{
-		// CSBot projects X/Y onto the reachable area and traces from the requested goal's Z.
-		if (probe)
-		{
-			float ground = requestedHeight;
-			const bool sampled = probe->groundHeight({endpoint.x, endpoint.y, requestedHeight}, &ground);
-			corridor.endpoint.z = sampled && std::isfinite(ground) ? ground : requestedHeight;
-		}
 		corridor.huntWaypoints.push_back({corridor.endpoint, corridor.areas.size() - 1U});
 	}
 }
@@ -1290,12 +1304,35 @@ NavQueryResult NavQuery::buildHuntCorridor(AreaId start, AreaId goal, NavCorrido
 
 	try
 	{
-		setHuntFallbackEndpoint(*doc, goal, *corridor, probe);
+		setAreaPathEndpoint(*doc, goal, *corridor, probe, true);
 	}
 	catch (const std::bad_alloc &)
 	{
 		*corridor = {};
 		return NavQueryResult::ResourceLimit;
+	}
+	return result;
+}
+
+NavQueryResult NavQuery::buildFollowCorridor(AreaId start, AreaId goal, const NavLadderTopology *ladders,
+	NavCorridor *corridor, NavSearchStats *stats, const NavHuntPathProbe *probe) const
+{
+	if (ladders)
+	{
+		const auto validation = validateNativeTopology(snapshot_, *ladders);
+		if (validation != NavQueryResult::Found)
+			return validation;
+	}
+	auto context = costContext_;
+	context.useExtentCenters = true;
+	auto result = buildAStarCorridor(snapshot_, limits_, start, goal, NavRouteType::Fastest, corridor,
+		stats, &context, nullptr, ladders, false, true);
+	if (result == NavQueryResult::Found)
+		setAreaPathEndpoint(*document(), goal, *corridor, probe, false);
+	if (stats && stats->searchCalls != 0U)
+	{
+		stats->successCount = result == NavQueryResult::Found ? 1U : 0U;
+		stats->failureCount = 1U - stats->successCount;
 	}
 	return result;
 }
@@ -1333,7 +1370,7 @@ NavQueryResult NavQuery::buildAlternativeCorridor(const NavCorridor &currentCorr
 		{
 			try
 			{
-				setHuntFallbackEndpoint(*document(), huntGoal, *alternativeCorridor, huntProbe);
+				setAreaPathEndpoint(*document(), huntGoal, *alternativeCorridor, huntProbe, true);
 			}
 			catch (const std::bad_alloc &)
 			{
