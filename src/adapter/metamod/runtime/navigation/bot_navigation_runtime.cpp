@@ -1350,6 +1350,8 @@ NavigationUpdate BotNavigationRuntime::updateNavigation(std::size_t index, const
 				(observation.hasObjectiveTarget || observation.followPath || hunting))
 			{
 				const auto &movement = actors_[index].managedBotMovement;
+				if (hunting && (movement.usingNativeLadder() || before.onLadder))
+					observation.huntKnownArea = knownArea(index, objectiveActor, observation.frame, navigation.revision());
 				bool needsTopology = observation.followPath || hunting || movement.usingNativeLadder() ||
 					(observation.noiseRoute == runtime::NoiseRouteUpdate::Follow && movement.hasNativeLadderPath());
 				if (!needsTopology)

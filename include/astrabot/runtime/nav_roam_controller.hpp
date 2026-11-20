@@ -66,6 +66,8 @@ struct NavRoamObservation
 	const nav::NavHuntPathProbe *followPathProbe = nullptr;
 	bool noiseTargetCleared = false;
 	bool nativeSameAreaEndpoint = false;
+	// Hunt compares the requested area with the bot's last known NAV area while on a ladder.
+	nav::AreaId huntKnownArea = 0U;
 };
 
 struct GroundLookaheadRoute
@@ -333,6 +335,7 @@ private:
 	bool buildNoiseRoute(NavigationUpdateContext &ctx);
 	NavigationPhaseResult recoverOffMeshUpdate(NavigationUpdateContext &ctx);
 	NavigationPhaseResult recoverStuckUpdate(NavigationUpdateContext &ctx);
+	NavigationPhaseResult replaceReachedHuntRoute(NavigationUpdateContext &ctx);
 	NavigationPhaseResult selectUpdateRoute(NavigationUpdateContext &ctx);
 	NavigationPhaseResult startUpdateTraversal(NavigationUpdateContext &ctx);
 	NavigationPhaseResult updateJumpDropTraversal(NavigationUpdateContext &ctx);

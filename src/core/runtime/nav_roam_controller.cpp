@@ -780,11 +780,8 @@ NavRoamResult NavRoamController::updateInternal(const nav::NavSnapshot &snapshot
 		if (phase.complete)
 			return phase.result;
 	}
-	if (nativeLadder_.active())
+	if (nativeLadder_.active() || observation.huntKnownArea != 0U)
 	{
-		ctx.currentArea.area = routeState().activeLink.fromArea;
-		ctx.currentAreaResult = nav::NavQueryResult::Found;
-		ctx.objectiveArea = routeState().activeCorridor.areas.back();
 		const auto phase = updateNativeTraversal(ctx);
 		if (phase.complete)
 			return phase.result;
@@ -1562,6 +1559,23 @@ NavRoamController::NavigationPhaseResult NavRoamController::recoverStuckUpdate(N
 	return {false, NavRoamResult::IntentReady};
 }
 
+NavRoamController::NavigationPhaseResult NavRoamController::replaceReachedHuntRoute(NavigationUpdateContext &ctx)
+{
+	// A throttled ComputePath leaves the current path available next update.
+	HuntRouteSampling sampling{ctx.observation.locomotion.huntPathProbe, ctx.observation.nativeLadders};
+	const bool rebuilt = selectRoamRoute(ctx.snapshot, ctx.currentArea, ctx.decision, &sampling);
+	if (sampling.invalidated)
+		return {true, NavRoamResult::ReplanRequired};
+	const bool hasPath = rebuilt || routeState().hasActiveRoute;
+	if (ctx.decision && hasPath)
+	{
+		populateRouteDecision(ctx.decision);
+		ctx.decision->stage = NavRoamStage::CorridorReady;
+		ctx.decision->failureReason = NavFailureReason::None;
+	}
+	return {true, hasPath ? NavRoamResult::MovementSuppressed : NavRoamResult::NoRoute};
+}
+
 NavRoamController::NavigationPhaseResult NavRoamController::selectUpdateRoute(NavigationUpdateContext &ctx)
 {
 	const auto &snapshot = ctx.snapshot;
@@ -1574,22 +1588,7 @@ NavRoamController::NavigationPhaseResult NavRoamController::selectUpdateRoute(Na
 		return {false, NavRoamResult::IntentReady};
 	if (timedCompatibility_ && objectiveArea == 0U && routeState().hasActiveRoute && roamGoalState().hasRoamGoal &&
 		roamGoalState().roamGoalArea == currentArea.area && traversalState().locomotion.isActive())
-	{
-		// Hunt checks the requested area's identity before following its path.
-		// A throttled ComputePath leaves the current path available next update.
-		HuntRouteSampling sampling{observation.locomotion.huntPathProbe, observation.nativeLadders};
-		const bool rebuilt = selectRoamRoute(snapshot, currentArea, decision, &sampling);
-		if (sampling.invalidated)
-			return {true, NavRoamResult::ReplanRequired};
-		if (decision != nullptr && (rebuilt || routeState().hasActiveRoute))
-		{
-			populateRouteDecision(decision);
-			decision->stage = NavRoamStage::CorridorReady;
-			decision->failureReason = NavFailureReason::None;
-		}
-		return {true, (rebuilt || routeState().hasActiveRoute) ? NavRoamResult::MovementSuppressed
-															 : NavRoamResult::NoRoute};
-	}
+		return replaceReachedHuntRoute(ctx);
 	if (!traversalState().locomotion.isActive() && !traversalState().jumpDrop.isActive() &&
 		!traversalState().specialTraversal.isActive())
 	{
@@ -2162,9 +2161,29 @@ bool NavRoamController::nativeLadderLook(const nav::NavSnapshot &snapshot, const
 
 NavRoamController::NavigationPhaseResult NavRoamController::updateNativeTraversal(NavigationUpdateContext &ctx)
 {
+	const auto &observation = ctx.observation;
+	if (timedCompatibility_ && observation.huntKnownArea != 0U && !observation.hasObjectiveTarget &&
+		roamGoalState().hasRoamGoal && roamGoalState().roamGoalArea == observation.huntKnownArea &&
+		(nativeLadder_.active() || observation.locomotion.onLadder || observation.ladderContact))
+	{
+		// Hunt checks m_lastKnownArea before UpdatePathMovement. The NAV area
+		// can become known while the player is still descending above its floor.
+		ctx.currentArea.area = observation.huntKnownArea;
+		if (ctx.decision)
+		{
+			ctx.decision->currentArea = ctx.currentArea.area;
+			ctx.decision->currentAreaResult = nav::NavQueryResult::Found;
+		}
+		return replaceReachedHuntRoute(ctx);
+	}
 	if (!nativeLadder_.active())
 		return {false, NavRoamResult::IntentReady};
-	const auto &observation = ctx.observation;
+	if (!ctx.areasLocated)
+	{
+		ctx.currentArea.area = routeState().activeLink.fromArea;
+		ctx.currentAreaResult = nav::NavQueryResult::Found;
+		ctx.objectiveArea = routeState().activeCorridor.areas.back();
+	}
 	const auto topology = observation.nativeLadders;
 	bool found = false;
 	if (topology && topology->navRevision == ctx.snapshot.revision() &&
@@ -3530,7 +3549,7 @@ bool NavRoamController::selectCompatibilityGoal(const nav::NavSnapshot &snapshot
 		return false;
 	}
 	if (timedCompatibility_ && routeState().hasActiveRoute)
-		resetRoute(false);
+		resetRoute(true);
 	if (!timedCompatibility_ && roamGoalState().roamGoalArea == currentArea.area)
 	{
 		roamGoalState().hasRoamGoal = false;

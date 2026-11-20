@@ -146,10 +146,48 @@ fixed the Hunt target without skipping the random call. Both bots started at
 `(0, 2810, 372.031)`, took the ladder from area 1201 to 1206, and dismounted
 onto the upper floor at an observed hull minimum of `435.031`.
 
-For descent on the same ladder, both bots planned toward area 1201 and stayed
-on the upper floor at the tested approaches. A second ladder fixture reached
-the lower level without ladder contact in the sampled movement. Physical
-descent parity and the separate 13.005-second Hunt stop remain unverified.
+For descent on ladder `*26`, both bots selected the 1206 → 1201 ladder link
+from `(0, 2744, 472.031)`. The reference reached MountDown, and both sent
+forward input at the upper lip without changing position or making ladder
+contact. A standing hull trace was already solid at the spawn point. The
+crouching hull trace cleared the same horizontal approach. The result
+isolates a fixture placement issue for this ladder. On ladder `*28`, both
+rode the ladder down to a hull minimum of `435.031` and stepped off. The
+planned route there was a floor-to-floor NAV connection.
+
+The roof ladder `*69` provided a planned descent from area 140 to area 2.
+At the common start `(-743, 1536, 412.031)` with yaw 0°, both hulls cleared the
+upper approach, both bots mounted, and both descended with `MOVETYPE_FLY`.
+With area 2 repeatedly selected as the Hunt target, the reference replanned
+once area 2 became its last known NAV area. Its descent input stopped with
+the hull minimum still at `63.259`, and it remained attached. AstraBot at
+`68c601b` continued to the floor and stepped off. The fixed controller checks
+the known Hunt area before advancing its current ladder and retains the
+newly selected goal when replacing the old path. The retry cooldown still
+keeps the old path available while suppressing traversal for that update.
+
+With the fix, the repeated area 2 goal left both bots attached and stationary
+above the floor through the last sample. The two paired trials stopped at
+hull minima of `52.686` and `47.703` for the reference, and `59.838` and
+`70.958` for AstraBot. Each height difference was smaller than one full
+update's descent at the observed speed. With area 1 beyond the
+ladder as the goal, both took the same downward link and dismounted onto the
+lower floor. In a repeat of the area 1 trial, both reached origin Z
+`36.031` while still attached. After the reference logged `Ladder traversed`
+and continued on its ground path, its next command included `IN_JUMP`;
+AstraBot continued forward on the ground. This explains the higher first
+walking sample in the repeat. The runs used the same start and a fixed
+goal draw for the measured bot in isolated Linux x86 ReHLDS.
+
+The final-build replay kept the same fixture, start, and two goal draws.
+The module for this replay reused the final build objects and replaced only
+the random-source object to force the Hunt goal after drawing. For area 2,
+the reference held at a hull minimum of `66.363` and AstraBot at `73.450`.
+For area 1, both first reported walking movement at a hull minimum of
+`-0.968`. Logs and module fingerprints are in
+`C:/Temp/astrabot-descent-resume`.
+
+The separate 13.005-second Hunt stop remains unverified.
 
 ## Windows x86 round opening Buy
 
