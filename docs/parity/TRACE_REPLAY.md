@@ -187,6 +187,32 @@ For area 1, both first reported walking movement at a hull minimum of
 `-0.968`. Logs and module fingerprints are in
 `C:/Temp/astrabot-descent-resume`.
 
+The earlier Area 1 trace located a command difference at the end of roof
+ladder `*69`. The reference resumed floor steering and sent `IN_FORWARD |
+IN_JUMP` with forward input 250 while the engine still reported
+`MOVETYPE_FLY`. AstraBot resumed floor steering with `IN_FORWARD`. The
+compatibility controller now requests the forced jump when floor steering
+resumes while the player is still attached. It uses the existing jump state,
+cooldown and crouch checks. Hunt's early arrival check for Area 2 still runs
+before ladder or floor steering.
+
+The repeat in isolated Linux x86 ReHLDS started at `(-743, 1536, 412.031)`
+with yaw 0. For Area 1, both the reference and the updated build sent
+buttons 10 with forward input 250 on the first floor steering command
+while still on the ladder. Both then reported `MOVETYPE_WALK` and cleared
+the jump bit at the next full update. The hull minimum at the first command
+was 10.664 in the reference and -0.968 in AstraBot. Reference pitch was 40°
+with the ground flag clear, and the next command showed descent. AstraBot
+had pitch 60° and the ground flag set, and the next command showed upward
+velocity 236.328. An earlier reference run sent the jump at -0.968 as well.
+The timing of ground contact, view angle and resulting trajectory remain
+separate from the verified command order. For Area 2,
+both stopped while still attached and sent no jump during the stop.
+The live probe replaced only the random source object to fix the Hunt
+destination. Its unmodified relink matched the verified ELF byte for byte.
+The command traces and fingerprints are in
+`artifacts/local/debug/cs-assault-ladder-exit-jump-20261121`.
+
 The separate 13.005-second Hunt stop remains unverified.
 
 ## C4 approach view and movement

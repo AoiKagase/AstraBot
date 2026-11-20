@@ -2597,6 +2597,18 @@ NavRoamController::NavigationPhaseResult NavRoamController::updateGroundLocomoti
 	{
 		routeState().lastIntentDirection = intent->direction;
 		friendWaitState().friendPathTarget = intent->targetPosition;
+		if (timedCompatibility_ && !nativeLadder_.active() && routeState().activeLink.how != 4U &&
+			routeState().activeLink.how != 5U && (observation.locomotion.onLadder || observation.ladderContact))
+		{
+			// CSBot can resume floor movement before the engine leaves MOVETYPE_FLY.
+			const auto knownArea = observation.huntKnownArea != 0U ? observation.huntKnownArea : intent->currentArea;
+			const auto *area = snapshot.document()->findArea(knownArea);
+			nav::NativeLadderIntent dismount{};
+			dismount.mustJump = true;
+			if (nativeLadderRecovery_.apply(nativeObservation(observation), observation.locomotion.grounded,
+					area ? area->attributes : 0, nullptr, {}, [] { return true; }, &dismount))
+				intent->nativeMustJump = dismount.mustJump;
+		}
 	}
 	if (locomotionResult == nav::LocomotionResult::IntentReady &&
 		traversalState().activeTraversal != nav::TraversalAction::Walk)

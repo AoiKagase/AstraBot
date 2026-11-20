@@ -1711,6 +1711,90 @@ bool testTimedHuntRoutesAcrossNativeLadder()
 		"Hunt starts following the ladder on the next update without selecting another goal");
 }
 
+bool testTimedHuntMovesAndJumpsOffCompletedLadder()
+{
+	using namespace astrabot;
+	nav::NavDocument document;
+	document.setSourceIdentity({5U, 100U, 200U});
+	auto bottom = area(1U, 0.0f, 64.0f);
+	bottom.connections[1].push_back(3U);
+	document.addArea(bottom);
+	auto top = area(2U, 0.0f, 64.0f);
+	top.extent.lo.z = top.extent.hi.z = top.northEastZ = top.southWestZ = 200.0f;
+	document.addArea(top);
+	auto goal = area(3U, 64.0f, 192.0f);
+	goal.connections[3].push_back(1U);
+	document.addArea(goal);
+	nav::NavSnapshotPublisher publisher;
+	publisher.publish(&document, 1U);
+	const auto snapshot = publisher.snapshot();
+	nav::NavLadder ladder{};
+	ladder.bottom = {32.0f, 32.0f, 0.0f};
+	ladder.top = {32.0f, 32.0f, 200.0f};
+	ladder.length = 200.0f;
+	ladder.bottomArea = 1U;
+	ladder.topAreas[0] = 2U;
+	const nav::NavLadderTopology topology{snapshot.revision(), snapshot.mapGeneration(), {ladder}};
+	class LadderProbe final : public nav::INativeLadderProbe
+	{
+	public:
+		bool current() const override { return true; }
+		bool trace(const nav::NavLadder &, const nav::NavVector &, const nav::NavVector &, float *fraction) override
+		{
+			*fraction = 1.0f;
+			return true;
+		}
+	} probe;
+	compat::ScriptedRandomSource random({
+		compat::RandomTapeEntry::longEntry("CSBOT-HUNT-GOAL", {1U, 1U}, {0U, 0U, 1U}, 0, 2, 2),
+		compat::RandomTapeEntry::floatEntry("CSBOT-PATH-RETRY", {1U, 1U}, {0U, 0U, 1U}, .4f, .6f, .5f)});
+	runtime::NavRoamController controller;
+	controller.setRandomSource(&random);
+	runtime::NavRoamObservation observation{};
+	observation.actor = {1U, 1U};
+	observation.frame = {1U, 1U, 1U};
+	observation.team = 1U;
+	observation.locomotion.position = {32.0f, 32.0f, 200.0f};
+	observation.locomotion.standingClearance = 72.0f;
+	observation.locomotion.crouchingClearance = 36.0f;
+	observation.locomotion.grounded = true;
+	observation.locomotion.timingAvailable = true;
+	observation.locomotion.viewYawAvailable = true;
+	observation.locomotion.observedAt = 4.0f;
+	observation.nativeLadders = &topology;
+	observation.nativeLadderProbe = &probe;
+	observation.huntKnownArea = 2U;
+	nav::LocomotionIntent intent{};
+	runtime::NavRoamDecision decision{};
+	controller.update(snapshot, observation, &intent, &decision);
+	if (!check(controller.hasNativeLadderPath() && decision.goalArea == 3U, "Hunt plans past the bottom area"))
+		return false;
+	const auto update = [&](float feet)
+	{
+		++observation.frame.tick;
+		observation.locomotion.observedAt += 0.1f;
+		observation.locomotion.position.z = feet;
+		return controller.update(snapshot, observation, &intent, &decision);
+	};
+	update(200.0f);
+	observation.locomotion.grounded = false;
+	observation.locomotion.onLadder = true;
+	update(100.0f);
+	observation.huntKnownArea = 1U;
+	if (!check(update(24.0f) == runtime::NavRoamResult::IntentReady && intent.nativeLadderControl &&
+				!intent.nativeMustJump, "active descent retains ladder steering without a jump"))
+		return false;
+	if (!check(update(0.0f) == runtime::NavRoamResult::IntentReady && !intent.nativeLadderControl &&
+				intent.traversal == nav::TraversalAction::Walk && intent.direction.x > 0.0f && intent.speed > 0.0f,
+			"ladder completion continues floor steering in the same update"))
+		return false;
+	if (!check(intent.nativeMustJump, "floor steering requests a forced jump while still attached to the ladder"))
+		return false;
+	return check(update(0.0f) == runtime::NavRoamResult::IntentReady && !intent.nativeMustJump &&
+			intent.direction.x > 0.0f && random.verifyComplete(),
+		"a subsequent attached update keeps floor movement and respects the in-progress jump");
+}
+
 bool testTimedHuntReselectsAtKnownLadderGoal()
 {
 	using namespace astrabot;
@@ -1784,7 +1868,7 @@ bool testTimedHuntReselectsAtKnownLadderGoal()
 		return false;
 	observation.huntKnownArea = 1U;
 	if (!check(update(4U, 1.3f, 63.0f) == runtime::NavRoamResult::MovementSuppressed &&
-				controller.usingNativeLadder() && !intent.nativeLadderControl && random.position() == 3U,
+				controller.usingNativeLadder() && !intent.nativeLadderControl && !intent.nativeMustJump && random.position() == 3U,
 			"Hunt reselects before executing the ladder step but retains the throttled route"))
 		return false;
 	if (!check(update(5U, 1.6f, 63.0f) == runtime::NavRoamResult::MovementSuppressed &&
@@ -1792,7 +1876,7 @@ bool testTimedHuntReselectsAtKnownLadderGoal()
 			"Hunt replaces its ladder route from the known goal area once retry is allowed"))
 		return false;
 	return check(update(6U, 1.7f, 63.0f) == runtime::NavRoamResult::MovementSuppressed &&
-			!intent.nativeLadderControl && random.verifyComplete(),
+			!intent.nativeLadderControl && !intent.nativeMustJump && random.verifyComplete(),
 		"the known-area check still wins while physically attached after replanning");
 }
 
@@ -4136,7 +4220,8 @@ int main()
 		return 1;
 	}
 	if (!testTimedHuntDrawsBeforePathThrottle() || !testTimedHuntFollowsSameAreaEndpoint() ||
-		!testTimedHuntRoutesAcrossNativeLadder() || !testTimedHuntReselectsAtKnownLadderGoal() ||
+		!testTimedHuntRoutesAcrossNativeLadder() || !testTimedHuntMovesAndJumpsOffCompletedLadder() ||
+		!testTimedHuntReselectsAtKnownLadderGoal() ||
 		!testFollowMovesBeforeReplacingItsRoute() ||
 		!testCompatibilityPathRetryUsesEngineTime())
 	{
