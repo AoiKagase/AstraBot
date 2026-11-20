@@ -58,6 +58,7 @@ struct NavRoamObservation
 	NoiseRouteUpdate noiseRoute = NoiseRouteUpdate::None;
 	nav::AreaId noisePathStartArea = 0U;
 	nav::AreaId noiseGoalArea = 0U;
+	nav::AreaId followGoalArea = 0U;
 	bool noiseTargetCleared = false;
 	bool nativeSameAreaEndpoint = false;
 };

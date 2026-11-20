@@ -1090,6 +1090,7 @@ NavigationUpdate BotNavigationRuntime::updateNavigation(std::size_t index, const
 	observation.collectPathStats = services_->service_runtimeProfiler().enabled();
 	nav::NavSearchStats objectiveSearchStats = {};
 	RuntimeObjectiveSelectionStats objectiveSelectionStats = {};
+	nav::AreaId explicitGoalArea = 0U;
 	{
 		RuntimeProfilerScope objectiveScope(
 			services_->service_runtimeProfiler(), RuntimeProfilerStage::FullUpdateObjective);
@@ -1099,7 +1100,7 @@ NavigationUpdate BotNavigationRuntime::updateNavigation(std::size_t index, const
 			services_->behavior_buildManagedObjectiveTarget(index, &observation.objectiveTarget,
 				services_->service_runtimeProfiler().enabled() ? &objectiveSearchStats : nullptr,
 				services_->service_runtimeProfiler().enabled() ? &objectiveSelectionStats : nullptr,
-				&observation.noiseGoalArea);
+				&explicitGoalArea);
 	}
 	const world::ActorKey objectiveActor = {handle.actor.slot, handle.actor.actorGeneration};
 	const team::TeamObjectiveAssignment *objectiveAssignment =
@@ -1112,12 +1113,20 @@ NavigationUpdate BotNavigationRuntime::updateNavigation(std::size_t index, const
 	const auto &currentMachine = services_->behavior_managedBotStateMachines(index);
 	if (currentMachine.state() == compat::CompatibilityStateId::InvestigateNoise)
 	{
+		observation.noiseGoalArea = explicitGoalArea;
 		observation.objectiveRouteType = nav::NavRouteType::Safest;
 		observation.noiseRoute = runtime::NoiseRouteUpdate::Follow;
 		observation.noisePathStartArea = knownArea(index, objectiveActor, observation.frame, navigation.revision());
 	}
 	const bool compatibility =
 		services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility;
+	const bool following = compatibility && currentMachine.state() == compat::CompatibilityStateId::Follow &&
+		!currentMachine.attackOverlayActive();
+	if (following)
+	{
+		observation.followGoalArea = explicitGoalArea;
+		observation.nativeSameAreaEndpoint = true;
+	}
 	if (compatibility && currentMachine.state() == compat::CompatibilityStateId::MoveTo)
 	{
 		const auto task = currentMachine.task();
@@ -1134,7 +1143,7 @@ NavigationUpdate BotNavigationRuntime::updateNavigation(std::size_t index, const
 	const auto &goalCache = services_->behavior_managedBotObjectiveTargets(index);
 	if (observation.hasObjectiveTarget && goalCache.routeOverride)
 		observation.objectiveRouteType = goalCache.routeType;
-	observation.movementSuppressed = services_->roundFreezeActive();
+	observation.movementSuppressed = services_->roundFreezeActive() || (following && !observation.hasObjectiveTarget);
 	const auto &objectiveAction = services_->behavior_managedBotObjectiveActions(index);
 	observation.movementSuppressed = observation.movementSuppressed ||
 		(objectiveAction.active && objectiveAction.kind == team::TeamObjectiveKind::PlantC4 &&

@@ -2,12 +2,11 @@
 #define ASTRABOT_COMPAT_DEFEND_HIDING_SPOTS_HPP
 
 #include "astrabot/compat/random_source.hpp"
-#include "astrabot/nav/nav_query.hpp"
+#include "astrabot/compat/surrounding_nav_areas.hpp"
 #include <algorithm>
 #include <array>
 #include <cmath>
 #include <functional>
-#include <unordered_set>
 #include <vector>
 
 namespace astrabot
@@ -150,52 +149,9 @@ private:
 	{
 		if (current && !current())
 			return false;
-		const auto *document = navigation.document();
-		const auto *initialArea = document ? document->findArea(start) : nullptr;
-		if (!initialArea)
-			return true;
-		if (ladders.navRevision != navigation.revision() || ladders.mapGeneration != navigation.mapGeneration())
+		if (!visitSurroundingNavAreas(navigation, start, origin, ladders, range,
+			[&](const nav::NavArea &area, const nav::NavArea *) { return visitArea(area); }))
 			return false;
-		struct Visit
-		{
-			const nav::NavArea *area;
-			float traveled;
-		};
-		std::vector<Visit> pending{{initialArea, 0.0f}};
-		std::unordered_set<nav::AreaId> visited{start};
-		for (std::size_t index = 0; index < pending.size(); ++index)
-		{
-			const auto visit = pending[index];
-			const auto &area = *visit.area;
-			if (!visitArea(area))
-				break;
-			const auto center = nav::extentCenterOf(area);
-			const auto enqueue = [&](nav::AreaId id)
-			{
-				const auto *next = document->findArea(id);
-				if (!next || !visited.insert(id).second)
-					return;
-				const nav::NavVector closest{
-					(std::min)((std::max)(origin.x, next->extent.lo.x), next->extent.hi.x),
-					(std::min)((std::max)(origin.y, next->extent.lo.y), next->extent.hi.y), origin.z};
-				if (range > 0.0f && hiding_spot_detail::squaredDistance(origin, closest) >= range * range)
-					return;
-				const float traveled = visit.traveled +
-					std::sqrt(hiding_spot_detail::squaredDistance(center, nav::extentCenterOf(*next)));
-				if (range <= 0.0f || traveled <= 1.5f * range)
-					pending.push_back({next, traveled});
-			};
-			for (const auto &direction : area.connections)
-				for (const auto neighbor : direction)
-					enqueue(neighbor);
-			for (const auto &ladder : ladders.ladders)
-				if (ladder.bottomArea == area.id && !ladder.dangling)
-					for (std::size_t top = 0; top < 3; ++top)
-						enqueue(ladder.topAreas[top]);
-			for (const auto &ladder : ladders.ladders)
-				if (std::find(ladder.topAreas.begin(), ladder.topAreas.end(), area.id) != ladder.topAreas.end())
-					enqueue(ladder.bottomArea);
-		}
 		return !current || current();
 	}
 

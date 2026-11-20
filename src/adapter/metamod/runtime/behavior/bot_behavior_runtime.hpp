@@ -622,8 +622,15 @@ private:
 		float walkStartedAt = -1.0f;
 		float lastVisibleAt = 0.0f;
 		bool walking = false;
+		bool idleSneak = false;
 		float motionStartedAt = 0.0f;
 		float coverWait = 0.0f;
+		float idleDuration = 0.0f;
+		float idleDeadline = 0.0f;
+		float repathDeadline = -1.0f;
+		nav::AreaId goalArea = 0U;
+		std::uint64_t goalNavRevision = 0U;
+		std::uint32_t goalUpdate = 0U;
 		std::uint64_t coverEpoch = 0U;
 		world::WorldPosition coverLeaderAnchor{};
 	};

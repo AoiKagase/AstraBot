@@ -632,10 +632,10 @@ bool BotBehaviorRuntime::managedActorAtBombSite(std::size_t index) const
 }
 
 bool BotBehaviorRuntime::buildManagedObjectiveTarget(std::size_t index, nav::NavVector *target,
-	nav::NavSearchStats *searchStats, RuntimeObjectiveSelectionStats *objectiveStats, nav::AreaId *noiseArea)
+	nav::NavSearchStats *searchStats, RuntimeObjectiveSelectionStats *objectiveStats, nav::AreaId *goalArea)
 {
-	if (noiseArea != nullptr)
-		*noiseArea = 0U;
+	if (goalArea != nullptr)
+		*goalArea = 0U;
 	if (objectiveStats != nullptr)
 	{
 		*objectiveStats = {};
@@ -680,8 +680,28 @@ bool BotBehaviorRuntime::buildManagedObjectiveTarget(std::size_t index, nav::Nav
 			const auto &investigation = actors_[index].noiseInvestigation;
 			const auto position = investigation.target();
 			*target = {position.x, position.y, position.z};
-			if (noiseArea != nullptr)
-				*noiseArea = investigation.area();
+			if (goalArea != nullptr)
+				*goalArea = investigation.area();
+			return true;
+		}
+		const auto &actor = actors_[index];
+		const auto &machine = actor.managedBotStateMachines;
+		if (machine.state() == compat::CompatibilityStateId::Follow && !machine.attackOverlayActive())
+		{
+			const auto &motion = actor.followMotion;
+			const auto snapshot = services_->service_navPublisher().snapshot();
+			const auto *document = snapshot.document();
+			if (!document || motion.epoch != machine.normalStateEpoch() ||
+				!(motion.leader == actor.scenarioPlanners.followLeader()) || motion.goalNavRevision != snapshot.revision() ||
+				(motion.goalUpdate != services_->service_managedBotFullUpdateSequences()[index] &&
+					!services_->navigation_hasActivePath(index)))
+				return false;
+			const auto *area = document->findArea(motion.goalArea);
+			if (!area)
+				return false;
+			*target = nav::extentCenterOf(*area);
+			if (goalArea)
+				*goalArea = area->id;
 			return true;
 		}
 		const auto &scenario = actors_[index].scenarioDecisions;

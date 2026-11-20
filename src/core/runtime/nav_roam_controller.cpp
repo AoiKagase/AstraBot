@@ -1109,14 +1109,14 @@ NavRoamController::NavigationPhaseResult NavRoamController::locateUpdateAreas(Na
 	objectiveArea = 0U;
 	if (observation.hasObjectiveTarget)
 	{
-		const auto noiseArea = timedCompatibility_ && observation.noiseRoute != NoiseRouteUpdate::None
-			? observation.noiseGoalArea : 0U;
-		if (noiseArea != 0U)
+		const auto goalArea = timedCompatibility_ && observation.noiseRoute != NoiseRouteUpdate::None
+			? observation.noiseGoalArea : observation.followGoalArea;
+		if (goalArea != 0U)
 		{
-			// Localizing a sound can move its point onto a shared edge. CSBot
-			// still passes the area selected when the sound was heard to ComputePath.
-			if (ctx.snapshot.document()->findArea(noiseArea) != nullptr)
-				objectiveArea = noiseArea;
+			// Follow and InvestigateNoise pass the selected area to ComputePath.
+			// Resolving its target point again can select a different area.
+			if (ctx.snapshot.document()->findArea(goalArea) != nullptr)
+				objectiveArea = goalArea;
 		}
 		else
 		{

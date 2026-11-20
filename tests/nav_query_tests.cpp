@@ -1,6 +1,7 @@
 #include "astrabot/nav/nav_query.hpp"
 #include "astrabot/nav/locomotion.hpp"
 #include "astrabot/compat/nav_ladders.hpp"
+#include "astrabot/compat/follow_nav_target.hpp"
 
 #include <cmath>
 #include <cstdio>
@@ -36,6 +37,46 @@ astrabot::nav::NavSnapshot snapshotFor(astrabot::nav::NavDocument *document, std
 	astrabot::nav::NavSnapshotPublisher publisher;
 	publisher.publish(document, mapGeneration);
 	return publisher.snapshot();
+}
+
+bool testFollowAreaSelection()
+{
+	using namespace astrabot;
+	nav::NavDocument document;
+	document.setSourceIdentity({5U, 100U, 200U});
+	auto leader = area(10U, -10, 10, 0);
+	auto reciprocal = area(7U, 190, 210, 0);
+	auto oneWay = area(5U, 290, 310, 0);
+	auto ahead = area(9U, 350, 370, 0);
+	auto boundary = area(6U, 400, 410, 0);
+	auto distant = area(3U, 520, 540, 0);
+	leader.connections[0] = {5U};
+	leader.connections[1] = {7U};
+	reciprocal.connections[3] = {10U};
+	oneWay.connections[1] = {9U};
+	ahead.connections[1] = {6U};
+	ahead.connections[3] = {5U};
+	boundary.connections[1] = {3U};
+	boundary.connections[3] = {9U};
+	distant.connections[3] = {6U};
+	for (const auto *entry : {&leader, &reciprocal, &oneWay, &ahead, &boundary, &distant})
+		if (!check(document.addArea(*entry) == nav::NavModelResult::Accepted, "Follow NAV fixture is valid"))
+			return false;
+	const auto snapshot = snapshotFor(&document, 1U);
+	const nav::NavLadderTopology ladders{snapshot.revision(), snapshot.mapGeneration(), {}};
+	const auto collect = [&](float speed)
+	{
+		return compat::collectFollowAreas(snapshot, 10U, {0, 32, 36}, {speed, 0, 0}, ladders);
+	};
+	const auto moving = collect(100);
+	return check(collect(99) == std::vector<nav::AreaId>{10, 7, 9},
+			   "Follow visits through one-way areas without collecting them, in loaded traversal order") &&
+		check(moving == std::vector<nav::AreaId>{7, 9}, "Follow starts the forward filter at speed 100") &&
+		check(collect(200) == std::vector<nav::AreaId>{9} && collect(201) == std::vector<nav::AreaId>{9, 6, 3},
+			"Follow excludes the exact 400-unit boundary until leader speed exceeds 200") &&
+		check(compat::closestFollowArea(document, moving, {280, 32, 36}) == 7U &&
+				compat::closestFollowArea(document, moving, {355, 32, 36}) == 9U,
+			"Follow scores closest points in 3D and keeps the first equal-distance area");
 }
 
 struct LadderProbe : astrabot::compat::ILadderNavProbe
@@ -1537,7 +1578,7 @@ int main()
 	if (!testHuntFallbackKeepsPortalUntilItPasses() || !testHuntFallbackSamplesEndpointFloor() ||
 		!testHuntEndpointDoesNotInventPortalStep() || !testHuntFallbackPrefersVisibleSegments())
 		return 1;
-	if (!testNativeDeadReceiverTravel())
+	if (!testNativeDeadReceiverTravel() || !testFollowAreaSelection())
 		return 1;
 	{
 		using namespace astrabot::nav;

@@ -1,5 +1,7 @@
 #include "runtime/behavior/bot_behavior_runtime.hpp"
+#include "runtime/shared/public_nav_probe.hpp"
 #include "runtime/shared/bot_runtime_support.hpp"
+#include "astrabot/compat/follow_nav_target.hpp"
 namespace astrabot
 {
 namespace metamod
@@ -362,6 +364,16 @@ void BotBehaviorRuntime::updateFollowMotion(std::size_t index, const compat::Sta
 		actor.followMotion = {};
 		return;
 	}
+	const auto followCurrent = [&]
+	{
+		if (!current())
+			return false;
+		if (leaderCurrent())
+			return true;
+		observation = {};
+		actor.followMotion = {};
+		return false;
+	};
 	const auto offset = entity->v.origin - services_->service_managedBotHandles()[index].entity->v.origin;
 	const auto &velocity = entity->v.velocity;
 	if (followingCover)
@@ -375,7 +387,7 @@ void BotBehaviorRuntime::updateFollowMotion(std::size_t index, const compat::Sta
 			actor.scenarioPlanners.cancelHoldPosition();
 		return;
 	}
-	const float speed = std::hypot(entity->v.velocity.x, entity->v.velocity.y);
+	const float speed = std::sqrt(velocity.x * velocity.x + velocity.y * velocity.y);
 	const float distanceSquared = offset.x * offset.x + offset.y * offset.y + offset.z * offset.z;
 	if (!std::isfinite(speed) || !std::isfinite(distanceSquared))
 	{
@@ -384,6 +396,22 @@ void BotBehaviorRuntime::updateFollowMotion(std::size_t index, const compat::Sta
 	}
 	auto motion = actor.followMotion.epoch == epoch && actor.followMotion.leader == leader
 		? actor.followMotion : FollowMotion{leader, epoch};
+	const compat::RandomActor consumer{context.actor.slot, context.actor.generation};
+	const compat::RandomTimingContext randomStamp{services_->command_managedBotCommandSequences(index), 0U,
+		context.fullUpdateSequence};
+	const auto &selfVelocity = services_->service_managedBotHandles()[index].entity->v.velocity;
+	const float selfSpeedSquared =
+		selfVelocity.x * selfVelocity.x + selfVelocity.y * selfVelocity.y + selfVelocity.z * selfVelocity.z;
+	if (motion.idleDuration == 0.0f || selfSpeedSquared >= 100.0f)
+	{
+		const auto duration = services_->service_compatibilityRandomSource().nextFloat(
+			compat::RandomRequest::floatRequest("Follow.IdleWait", consumer, randomStamp, 2.0f, 5.0f));
+		if (!followCurrent() || duration.status != compat::RandomStatus::Ok ||
+			!(duration.value >= 2.0f && duration.value <= 5.0f))
+			return;
+		motion.idleDuration = duration.value;
+		motion.idleDeadline = context.timestamp + motion.idleDuration;
+	}
 	const auto previousMotion = motion.motion;
 	if (speed > 140.0f || speed <= 10.0f)
 	{
@@ -399,10 +427,9 @@ void BotBehaviorRuntime::updateFollowMotion(std::size_t index, const compat::Sta
 	}
 	const auto drawWait = [&](const char *label, float &wait)
 	{
-		const auto result = services_->service_compatibilityRandomSource().nextFloat(compat::RandomRequest::floatRequest(
-			label, {context.actor.slot, context.actor.generation},
-			{services_->command_managedBotCommandSequences(index), 0U, context.fullUpdateSequence}, 1.0f, 3.0f));
-		if (!current() || result.status != compat::RandomStatus::Ok || !(result.value >= 1.0f && result.value <= 3.0f))
+		const auto result = services_->service_compatibilityRandomSource().nextFloat(
+			compat::RandomRequest::floatRequest(label, consumer, randomStamp, 1.0f, 3.0f));
+		if (!followCurrent() || result.status != compat::RandomStatus::Ok || !(result.value >= 1.0f && result.value <= 3.0f))
 			return false;
 		wait = result.value;
 		return true;
@@ -414,51 +441,92 @@ void BotBehaviorRuntime::updateFollowMotion(std::size_t index, const compat::Sta
 		motion.motionStartedAt = context.timestamp;
 	}
 	const bool visible = leaderCurrent() && canSeeEntityOrigin(index, entity, context.frame, false);
-	if (!current())
+	if (!followCurrent())
 		return;
-	if (!leaderCurrent())
-	{
-		observation = {};
-		actor.followMotion = {};
-		return;
-	}
 	if (visible)
 		motion.lastVisibleAt = context.timestamp;
+	motion.walking = motion.walking || motion.idleSneak;
+	motion.idleSneak = false;
 	if (distanceSquared > 750.0f * 750.0f || context.timestamp - motion.lastVisibleAt > 20.0f)
 		motion.walking = false;
 	else if (visible && motion.motion != LeaderMotion::Stopped)
 		motion.walking = motion.motion == LeaderMotion::Walking;
 	actor.followMotion = motion;
-	if (motion.motion != LeaderMotion::Stopped || services_->navigation_hasActivePath(index) ||
-		context.timestamp - motion.motionStartedAt <= motion.coverWait)
-		return;
-	float extraWait = 0.0f;
-	if (!drawWait("Follow.StoppedWait", extraWait))
-		return;
-	if (!leaderCurrent())
+	if (motion.motion == LeaderMotion::Stopped && !services_->navigation_hasActivePath(index) &&
+		context.timestamp - motion.motionStartedAt > motion.coverWait)
 	{
-		observation = {};
-		actor.followMotion = {};
-		return;
+		float extraWait = 0.0f;
+		if (!drawWait("Follow.StoppedWait", extraWait))
+			return;
+		motion.coverWait += extraWait;
+		actor.followMotion.coverWait = motion.coverWait;
+		const auto sourceCurrent = [&]
+		{
+			return services_->service_engineFunctions() == engine &&
+				actor.scenarioPlanners.followLeader() == leader && leaderCurrent();
+		};
+		if (distanceSquared < 250.0f * 250.0f && sourceCurrent() && tryFollowCover(index, sourceCurrent))
+		{
+			actor.followMotion.coverEpoch = machine.normalStateEpoch();
+			actor.followMotion.coverLeaderAnchor = {entity->v.origin.x, entity->v.origin.y, entity->v.origin.z};
+			return;
+		}
 	}
-	actor.followMotion.coverWait += extraWait;
-	if (!(distanceSquared < 250.0f * 250.0f))
+	if (!followCurrent())
 		return;
-	const auto sourceCurrent = [&]
+	const bool idle = context.timestamp > motion.idleDeadline;
+	motion.idleSneak = idle;
+	actor.followMotion.idleSneak = idle;
+	if (!(idle || (speed > 100.0f && motion.motion != LeaderMotion::Stopped)) ||
+		context.timestamp <= motion.repathDeadline)
+		return;
+
+	const auto navigation = services_->service_navPublisher().snapshot();
+	const auto *document = navigation.document();
+	if (!document)
+		return;
+	const nav::NavVector origin{entity->v.origin.x, entity->v.origin.y, entity->v.origin.z};
+	const nav::NavVector movement{velocity.x, velocity.y, velocity.z};
+	const auto &selfOrigin = services_->service_managedBotHandles()[index].entity->v.origin;
+	const nav::NavVector follower{selfOrigin.x, selfOrigin.y, selfOrigin.z};
+	const auto navigationCurrent = [&]
 	{
-		return services_->service_engineFunctions() == engine &&
-			actor.scenarioPlanners.followLeader() == leader && leaderCurrent();
+		const auto active = services_->service_navPublisher().snapshot();
+		return current() && leaderCurrent() && active.revision() == navigation.revision() &&
+			active.document() == document;
 	};
-	if (tryFollowCover(index, sourceCurrent))
+	PublicNavProbe probe(services_->service_engineFunctions(), navigationCurrent);
+	const auto start = compat::findBotNavArea(navigation, origin, &probe);
+	if (!followCurrent() || !start || !navigationCurrent())
+		return;
+	nav::NavLadderTopology ladders{};
+	const bool topologyAvailable = services_->navigation_ladderTopology(&ladders);
+	if (!followCurrent() || !topologyAvailable || !navigationCurrent())
+		return;
+	const auto candidates = compat::collectFollowAreas(navigation, start, origin, movement, ladders);
+	if (candidates.empty())
+		return;
+	nav::AreaId goalArea = 0U;
+	if (idle)
 	{
-		actor.followMotion.coverEpoch = machine.normalStateEpoch();
-		actor.followMotion.coverLeaderAnchor = {entity->v.origin.x, entity->v.origin.y, entity->v.origin.z};
+		const int last = static_cast<int>(candidates.size() - 1);
+		const auto result = services_->service_compatibilityRandomSource().nextLong(
+			compat::RandomRequest::longRequest("Follow.IdleArea", consumer, randomStamp, 0, last));
+		if (!followCurrent() || !navigationCurrent() || result.status != compat::RandomStatus::Ok ||
+			result.value < 0 || result.value > last)
+			return;
+		goalArea = candidates[static_cast<std::size_t>(result.value)];
 	}
-	else if (current() && !leaderCurrent())
-	{
-		observation = {};
-		actor.followMotion = {};
-	}
+	else
+		goalArea = compat::closestFollowArea(*document, candidates, follower);
+	if (goalArea == 0U)
+		return;
+	motion.goalArea = goalArea;
+	motion.goalNavRevision = navigation.revision();
+	motion.goalUpdate = context.fullUpdateSequence;
+	motion.repathDeadline = context.timestamp + 0.5f;
+	motion.idleDeadline = context.timestamp + motion.idleDuration;
+	actor.followMotion = motion;
 }
 
 void BotBehaviorRuntime::populateScenarioPublicState(std::size_t index, const runtime::MovementPhysicsState &before,

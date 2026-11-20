@@ -2001,6 +2001,30 @@
       "reference_only": false
     },
     {
+      "path": "include/astrabot/compat/surrounding_nav_areas.hpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "include/astrabot/compat/follow_nav_target.hpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "include/astrabot/compat/bomb_status.hpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
+      "path": "include/astrabot/compat/bot_morale.hpp",
+      "origin": "AstraBot",
+      "license_status": "pending_release_review",
+      "reference_only": false
+    },
+    {
       "path": "tests/defend_request_tests.cpp",
       "origin": "AstraBot",
       "license_status": "pending_release_review",

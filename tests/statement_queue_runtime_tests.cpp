@@ -1898,14 +1898,20 @@ bool testActualFollowMovement(astrabot::metamod::PluginRuntime &runtime, globalv
 		return check(receiver.state() == compat::CompatibilityStateId::Follow,
 			"a leader running over the threshold resumes Follow from cover") && ok;
 	}
+	gEntities[0].v.origin.x = 8.0f;
+	gEntities[0].v.velocity.x = 141.0f;
 	queueHelpMoves.clear();
 	bool retargeted = false;
+	bool routedAhead = false;
 	for (int i = 0; i < 80; ++i)
 	{
 		tick();
 		const auto &decision = navigation.behavior_scenarioDecisions(1);
 		retargeted |= decision.action == compat::ScenarioAction::Follow && decision.hasTarget &&
-			decision.target.position.x == 168;
+			decision.target.position.x == 8;
+		nav::NavVector routeGoal{};
+		routedAhead |= navigation.behavior_buildManagedObjectiveTarget(1, &routeGoal, nullptr, nullptr, nullptr) &&
+			routeGoal.x == 224.0f && routeGoal.y == 32.0f;
 	}
 	const auto contains = [&](const char *sample)
 	{
@@ -1928,22 +1934,32 @@ bool testActualFollowMovement(astrabot::metamod::PluginRuntime &runtime, globalv
 		for (const auto &sample : queueHelpSamples)
 			std::fprintf(stderr, "arrival %.3f %s @ %.3f\n", arrivalAge, sample.first.c_str(), sample.second);
 	bool ok = heardPlan && heardReply &&
+		check(routedAhead, "Follow paths toward the nearest eligible NAV center ahead of the moving leader") &&
 		check(retargeted && moved, "follower routes to the moving source and dispatches actual movement");
 	if (arrivalAge == 0)
 	{
 		const auto movementSpeed = [&]()
 		{
 			queueHelpMoves.clear();
+			gEntities[1].v.origin.x += 6.0f;
 			tick();
 			return queueHelpMoves.empty() ? 0.0f : queueHelpMoves.back();
 		};
 		const auto walks = [](float speed) { return speed > 10.0f && speed < 150.0f; };
+		// The harness holds origins fixed during the speech check. Wait for
+		// a fresh active corridor before sampling the walk/run transitions.
+		for (int i = 0; i < 8; ++i)
+			if (movementSpeed() > 150.0f)
+				break;
 		queueFollowLeaderVisible = true;
 		gEntities[0].v.velocity.x = 140.0f;
 		const float first = movementSpeed();
 		movementSpeed();
 		const float atQuarterSecond = movementSpeed();
-		ok = check(first > 150.0f && atQuarterSecond > 150.0f && walks(movementSpeed()),
+		const float afterQuarterSecond = movementSpeed();
+		if (first <= 150.0f || atQuarterSecond <= 150.0f || !walks(afterQuarterSecond))
+			std::fprintf(stderr, "Follow gait commands: %.1f %.1f %.1f\n", first, atQuarterSecond, afterQuarterSecond);
+		ok = check(first > 150.0f && atQuarterSecond > 150.0f && walks(afterQuarterSecond),
 			"a visible leader at 140 starts a walk only after more than a quarter second") && ok;
 		gEntities[0].v.velocity.x = 10.0f;
 		const float stoppedSpeed = movementSpeed();
@@ -1954,6 +1970,16 @@ bool testActualFollowMovement(astrabot::metamod::PluginRuntime &runtime, globalv
 		ok = check(walks(movementSpeed()), "an unseen running leader does not immediately cancel walking") && ok;
 		queueFollowLeaderVisible = true;
 		ok = check(movementSpeed() > 150.0f, "seeing the leader run restores full-speed Follow movement") && ok;
+		gEntities[0].v.origin.x = 240.0f;
+		auto &behavior = static_cast<metamod::BotBehaviorServices &>(runtime);
+		behavior.applyNavigationRequest({1, metamod::NavigationRequestKind::DestroyPath});
+		for (int i = 0; i < 6; ++i)
+			tick();
+		nav::NavVector routeGoal{};
+		ok = check(receiver.state() == compat::CompatibilityStateId::Follow &&
+				!behavior.navigation_hasActivePath(1) &&
+				!navigation.behavior_buildManagedObjectiveTarget(1, &routeGoal, nullptr, nullptr, nullptr),
+			"Follow does not recreate an expired route when no areas are ahead of the leader") && ok;
 		queueFollowLeaderVisible = false;
 		++gEntities[0].serialnumber;
 	}
