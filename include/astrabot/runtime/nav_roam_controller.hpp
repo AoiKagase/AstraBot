@@ -292,6 +292,7 @@ public:
 	{
 		return nativeLadder_.active();
 	}
+	std::uint64_t routeRevision() const { return routeRevision_; }
 	bool nativeLadderLook(const nav::NavSnapshot &, const nav::NativeLadderObservation &, nav::NativeLadderLook *,
 		nav::NavLadder * = nullptr) const;
 	void resetProgressMonitor();

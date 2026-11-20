@@ -767,6 +767,8 @@ NavRoamResult NavRoamController::update(const nav::NavSnapshot &snapshot, const 
 	}
 	else
 		result = updateInternal(snapshot, observation, intent, decision);
+	if (result == NavRoamResult::IntentReady && nativeLadder_.phase() == nav::NativeLadderPhase::StoppedHuntLook)
+		nativeLadder_.reset();
 	if (observation.defuseApproach && result == NavRoamResult::IntentReady && decision != nullptr && intent != nullptr)
 	{
 		decision->defuseLookPoint = intent->targetPosition;
@@ -1684,10 +1686,14 @@ NavRoamController::NavigationPhaseResult NavRoamController::recoverStuckUpdate(N
 NavRoamController::NavigationPhaseResult NavRoamController::replaceReachedHuntRoute(NavigationUpdateContext &ctx)
 {
 	// A throttled ComputePath leaves the current path available next update.
+	auto previousLadder = nativeLadder_;
 	HuntRouteSampling sampling{ctx.observation.locomotion.huntPathProbe, ctx.observation.nativeLadders};
 	const bool rebuilt = selectRoamRoute(ctx.snapshot, ctx.currentArea, ctx.decision, &sampling);
 	if (sampling.invalidated)
 		return {true, NavRoamResult::ReplanRequired};
+	if (rebuilt && !nativeLadder_.active() &&
+		(ctx.observation.locomotion.onLadder || ctx.observation.ladderContact) && previousLadder.retainStoppedHuntLook())
+		nativeLadder_ = previousLadder;
 	const bool hasPath = rebuilt || routeState().hasActiveRoute;
 	if (ctx.decision && hasPath)
 	{
@@ -2296,7 +2302,7 @@ bool NavRoamController::sameNativeLadder(const nav::NavLadder &a, const nav::Nav
 bool NavRoamController::nativeLadderLook(const nav::NavSnapshot &snapshot, const nav::NativeLadderObservation &in,
 	nav::NativeLadderLook *look, nav::NavLadder *source) const
 {
-	if (!look || !nativeLadder_.active())
+	if (!look)
 		return false;
 	*look = nativeLadder_.look(snapshot, in);
 	if (look->phase == nav::NativeLadderPhase::None)
@@ -3478,6 +3484,15 @@ bool NavRoamController::selectCompatibilityGoal(const nav::NavSnapshot &snapshot
 		return false;
 	}
 	const bool goalReached = roamGoalState().hasRoamGoal && roamGoalState().roamGoalArea == currentArea.area;
+	const auto selectionRevision = routeRevision_;
+	const auto selectionInvalidated = [&]()
+	{
+		if (routeRevision_ == selectionRevision)
+			return false;
+		if (sampling)
+			sampling->invalidated = true;
+		return true;
+	};
 	nav::NavCorridor selectedCorridor = {};
 	bool hasSelectedCorridor = false;
 	bool reservationFallback = false;
@@ -3681,6 +3696,8 @@ bool NavRoamController::selectCompatibilityGoal(const nav::NavSnapshot &snapshot
 					{0U, 0U, decision == nullptr ? 0U : decision->fullUpdateSequence}, 0,
 					static_cast<std::int32_t>(document->areas().size() - 1U));
 			const compat::RandomLongResult result = randomSource_->nextLong(request);
+			if (selectionInvalidated())
+				return false;
 			if (result.status != compat::RandomStatus::Ok || result.value < 0 ||
 				static_cast<std::size_t>(result.value) >= document->areas().size())
 			{
@@ -3737,17 +3754,24 @@ bool NavRoamController::selectCompatibilityGoal(const nav::NavSnapshot &snapshot
 		decision->goalPosition = roamGoalState().roamGoalPosition;
 	}
 	// Hunt chooses a goal on every update without a progressing route, even when ComputePath is throttled.
-	if (timedCompatibility_ &&
-		!beginNativePathAttempt(randomSource_, actor_, lastFrame_.tick, observedAt_, recoveryState().nextPathAttemptAt))
+	if (timedCompatibility_)
 	{
-		if (!routeState().hasActiveRoute)
-			roamGoalState().hasRoamGoal = false;
-		if (decision != nullptr)
-			decision->failureReason = NavFailureReason::PathSearchFailed;
-		return false;
+		auto retryAt = recoveryState().nextPathAttemptAt;
+		const bool allowed = beginNativePathAttempt(randomSource_, actor_, lastFrame_.tick, observedAt_, retryAt);
+		if (selectionInvalidated())
+			return false;
+		if (!allowed)
+		{
+			if (!routeState().hasActiveRoute)
+				roamGoalState().hasRoamGoal = false;
+			if (decision != nullptr)
+				decision->failureReason = NavFailureReason::PathSearchFailed;
+			return false;
+		}
+		recoveryState().nextPathAttemptAt = retryAt;
+		if (routeState().hasActiveRoute)
+			resetRoute(true);
 	}
-	if (timedCompatibility_ && routeState().hasActiveRoute)
-		resetRoute(true);
 	if (!timedCompatibility_ && roamGoalState().roamGoalArea == currentArea.area)
 	{
 		roamGoalState().hasRoamGoal = false;

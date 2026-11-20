@@ -237,6 +237,36 @@ int main()
 	if (!check(handle.entity->v.v_angle.x == takeoffView.x && services.lastYaw == takeoffView.y,
 			"ordinary airborne Hunt holds takeoff view after the ladder handoff ends"))
 		return 1;
+	command.resetManagedBotCommandTemplate(0U);
+	handle.entity->v.movetype = MOVETYPE_FLY;
+	handle.entity->v.v_angle = Vector(60.0f, 90.0f, 0.0f);
+	before = services.observation_captureMovementPhysicsState(handle.entity, true, true);
+	const auto stoppedLadderDraft = command.beginMovementCommand(0U, handle, token, before, ladder);
+	const ActionProposal descentMove{ActionKind::None, stoppedLadderDraft.command.viewAngles, 0U};
+	command.finishMovementCommand(0U, handle, token, before, ladder, stoppedLadderDraft, descentMove);
+	services.stoppedHuntLookPhase = nav::NativeLadderPhase::Descend;
+	services.globals.time += runtime::BotTimingScheduler::kCommandInterval;
+	command.advanceUpkeepLook(0U, handle);
+	services.stoppedHuntLookPhase = nav::NativeLadderPhase::StoppedHuntLook;
+	const auto stopped = command.beginNeutralCommand(0U, handle, before);
+	const ActionProposal stoppedAction{ActionKind::None, stopped.command.viewAngles, 0U};
+	command.finishNeutralCommand(0U, handle, before, stopped, stoppedAction);
+	command.executeManagedBotCommand(0U, handle);
+	if (!check(handle.entity->v.v_angle.x == 60.0f && services.lastButtons == 0U &&
+			services.lastForward == 0.0f && services.lastSide == 0.0f,
+			"the successful replan keeps the view from upkeep and sends a neutral command"))
+		return 1;
+	for (const float pitch : {56.6667f, 50.0f})
+	{
+		services.globals.time += runtime::BotTimingScheduler::kCommandInterval;
+		command.advanceUpkeepLook(0U, handle);
+		command.executeManagedBotCommand(0U, handle);
+		if (!check(std::fabs(handle.entity->v.v_angle.x - pitch) < .001f && services.lastButtons == 0U &&
+				services.lastForward == 0.0f && services.lastSide == 0.0f,
+				"neutral light commands resume ordinary pitch with the same spring on the ladder"))
+			return 1;
+	}
+	handle.entity->v.movetype = MOVETYPE_WALK;
 	handle.entity->v.flags |= FL_ONGROUND;
 	before = services.observation_captureMovementPhysicsState(handle.entity, true, true);
 	context.frame.tick++;
@@ -246,6 +276,11 @@ int main()
 			compat::StateTransitionReason::ExplicitRequest, compat::StateTransitionId::ExplicitStateChange, context) ==
 			compat::StateResult::Transitioned, "enter Hide with the view still facing the threat"))
 		return 1;
+	services.globals.time += runtime::BotTimingScheduler::kCommandInterval;
+	command.advanceUpkeepLook(0U, handle);
+	if (!check(handle.entity->v.v_angle.x == 50.0f, "Hide does not consume the stopped Hunt look"))
+		return 1;
+	services.stoppedHuntLookPhase = nav::NativeLadderPhase::None;
 	command.resetManagedBotCommandTemplate(0U);
 	handle.entity->v.v_angle = Vector(-4.0f, -170.0f, 0.0f);
 	NavigationUpdate cover{};

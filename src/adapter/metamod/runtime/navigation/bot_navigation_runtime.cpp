@@ -147,6 +147,7 @@ bool BotNavigationRuntime::nativeLadderLook(std::size_t index, nav::NativeLadder
 	const auto navigation = services_->service_navPublisher().snapshot();
 	const auto &state = actors_[index];
 	const auto epoch = state.nativeLadderEpoch, execution = state.nativeLadderExecution;
+	const auto route = state.managedBotMovement.routeRevision();
 	const auto goalGeneration = state.nativeLadderGoalGeneration;
 	const auto frame = world::FrameIdentity{services_->service_lifecycle().mapGeneration(),
 		services_->service_lifecycle().roundGeneration(), services_->service_adapterFrameCount()};
@@ -163,6 +164,7 @@ bool BotNavigationRuntime::nativeLadderLook(std::size_t index, nav::NativeLadder
 			services_->service_lifecycle().mapGeneration() == frame.mapGeneration &&
 			services_->service_lifecycle().roundGeneration() == frame.roundGeneration &&
 			services_->service_adapterFrameCount() == frame.tick && state.nativeLadderEpoch == epoch &&
+			state.managedBotMovement.routeRevision() == route &&
 			state.nativeLadderExecution == execution && state.nativeLadderGoalGeneration == goalGeneration &&
 			services_->behavior_managedBotStateMachines(index).normalStateEpoch() == epoch &&
 			services_->behavior_executionRevision(index) == execution &&

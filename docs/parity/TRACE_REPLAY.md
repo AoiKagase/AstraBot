@@ -248,6 +248,34 @@ stayed attached with zero inputs and no jump. The fixed reference relaxed
 pitch during that stop, and AstraBot held its ladder view. Logs and module
 fingerprints are in `artifacts/local/debug/cs-assault-ladder-descent-look-20261121`.
 
+### Area 2 stopped Hunt look
+
+The Area 2 replay sets the Hunt goal to the ladder destination itself. The
+reference reaches its known goal area and replaces the ladder route with a
+same-area path. The replacement update emits zero movement with the view
+already computed by upkeep. The next command uses the old ordinary
+lookahead and begins relaxing the ladder pitch with the same spring.
+
+AstraBot now keeps that lookahead after a successful replacement. A
+throttled attempt continues to use the existing ladder controller. A
+cancelled route clears its view, and movement on the replacement route
+supplies its own lookahead. Neither the view handoff nor the neutral
+command changes the player's engine movement type or contact state.
+
+In the isolated Linux x86 replay, Area 2 produced a same-area path on full
+update 64. Command 128 held pitch 60° with the old ladder view. Commands
+129 and 130 sent 56.666° and 50° with angular velocity -100 and -200
+degrees per second. The pinned CSBot run followed the same pitch sequence.
+Both stayed in `MOVETYPE_FLY` with zero input and no jump. The measured
+hold heights were +64.434 for AstraBot and +77.116 for the pinned run.
+
+The Area 1 control retained forward/side 250/0, buttons 10, and pitch
+40° then 26.666° across the first floor and detached commands. Both
+controlled runs reused the production build objects, with only the
+random source replaced to fix the goal draw. An unmodified relink matched
+the production ELF byte for byte. The live logs and artifact fingerprints
+are in `artifacts/local/debug/cs-assault-ladder-area2-look-20261121`.
+
 The separate 13.005-second Hunt stop remains unverified.
 
 ## C4 approach view and movement

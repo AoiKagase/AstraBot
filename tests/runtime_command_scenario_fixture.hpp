@@ -205,14 +205,21 @@ public:
 	}
 	bool behavior_followWalking(std::size_t) const override { return false; }
 	bool descentDestinationLook = false;
+	nav::NativeLadderPhase stoppedHuntLookPhase = nav::NativeLadderPhase::None;
 	unsigned descentFallbackLooks = 0;
 	bool navigation_nativeLadderLook(std::size_t, nav::NativeLadderLook *look) override
 	{
-		if (!descentDestinationLook)
+		if (!descentDestinationLook && stoppedHuntLookPhase == nav::NativeLadderPhase::None)
 			return false;
 		*look = {};
-		look->phase = nav::NativeLadderPhase::MoveToDestination;
+		look->phase = descentDestinationLook ? nav::NativeLadderPhase::MoveToDestination : stoppedHuntLookPhase;
 		look->yaw = 90.0f;
+		if (look->phase == nav::NativeLadderPhase::Descend)
+		{
+			look->active = true;
+			look->pitchOverride = true;
+			look->pitch = 60.0f;
+		}
 		return true;
 	}
 	void behavior_applyNativeLadderLookCommand(std::size_t, runtime::BotCommand &, bool) override

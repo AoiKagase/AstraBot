@@ -1811,7 +1811,9 @@ bool testTimedHuntMovesAndJumpsOffCompletedLadder()
 		"a subsequent attached update keeps floor movement and respects the in-progress jump");
 }
 
-bool testTimedHuntReselectsAtKnownLadderGoal()
+enum class HuntRngCancellation { None, Goal, Retry };
+
+bool testTimedHuntReselectsAtKnownLadderGoal(HuntRngCancellation cancellation = HuntRngCancellation::None)
 {
 	using namespace astrabot;
 	nav::NavDocument document;
@@ -1840,7 +1842,27 @@ bool testTimedHuntReselectsAtKnownLadderGoal()
 			return true;
 		}
 	} probe;
-	compat::ScriptedRandomSource random({
+	class ReentrantRandom final : public compat::ScriptedRandomSource
+	{
+	public:
+		using ScriptedRandomSource::ScriptedRandomSource;
+		runtime::NavRoamController *controller = nullptr;
+		HuntRngCancellation cancellation = HuntRngCancellation::None;
+		compat::RandomLongResult nextLong(const compat::RandomRequest &request) override
+		{
+			const auto result = ScriptedRandomSource::nextLong(request);
+			if (cancellation == HuntRngCancellation::Goal && position() == 4U)
+				controller->destroyPath();
+			return result;
+		}
+		compat::RandomFloatResult nextFloat(const compat::RandomRequest &request) override
+		{
+			const auto result = ScriptedRandomSource::nextFloat(request);
+			if (cancellation == HuntRngCancellation::Retry && position() == 5U)
+				controller->destroyPath();
+			return result;
+		}
+	} random({
 		compat::RandomTapeEntry::longEntry("CSBOT-HUNT-GOAL", {1U, 1U}, {0U, 0U, 1U}, 0, 1, 0),
 		compat::RandomTapeEntry::floatEntry("CSBOT-PATH-RETRY", {1U, 1U}, {0U, 0U, 1U}, .4f, .6f, .5f),
 		compat::RandomTapeEntry::longEntry("CSBOT-HUNT-GOAL", {1U, 1U}, {0U, 0U, 4U}, 0, 1, 0),
@@ -1848,6 +1870,8 @@ bool testTimedHuntReselectsAtKnownLadderGoal()
 		compat::RandomTapeEntry::floatEntry("CSBOT-PATH-RETRY", {1U, 1U}, {0U, 0U, 5U}, .4f, .6f, .5f),
 		compat::RandomTapeEntry::longEntry("CSBOT-HUNT-GOAL", {1U, 1U}, {0U, 0U, 6U}, 0, 1, 0)});
 	runtime::NavRoamController controller;
+	random.controller = &controller;
+	random.cancellation = cancellation;
 	controller.setRandomSource(&random);
 	runtime::NavRoamObservation observation{};
 	observation.actor = {1U, 1U};
@@ -1883,17 +1907,43 @@ bool testTimedHuntReselectsAtKnownLadderGoal()
 			"Hunt keeps descending before the requested area is known"))
 		return false;
 	observation.huntKnownArea = 1U;
+	const auto readLook = [&]()
+	{
+		nav::NativeLadderObservation in{};
+		in.actor = {observation.actor.slot, observation.actor.actorGeneration};
+		in.frame = observation.frame;
+		in.origin = {32.0f, 32.0f, observation.locomotion.position.z + 36.0f};
+		in.feetZ = observation.locomotion.position.z;
+		in.now = observation.locomotion.observedAt;
+		in.onLadder = true;
+		nav::NativeLadderLook look{};
+		controller.nativeLadderLook(snapshot, in, &look);
+		return look;
+	};
 	if (!check(update(4U, 1.3f, 63.0f) == runtime::NavRoamResult::MovementSuppressed &&
-				controller.usingNativeLadder() && !intent.nativeLadderControl && !intent.nativeMustJump && random.position() == 3U,
+				controller.usingNativeLadder() && !intent.nativeLadderControl && !intent.nativeMustJump &&
+				readLook().active && readLook().pitch == 60.0f && random.position() == 3U,
 			"Hunt reselects before executing the ladder step but retains the throttled route"))
 		return false;
-	if (!check(update(5U, 1.6f, 63.0f) == runtime::NavRoamResult::MovementSuppressed &&
+	const auto replacement = update(5U, 1.6f, 63.0f);
+	if (cancellation != HuntRngCancellation::None)
+		return check(replacement == runtime::NavRoamResult::ReplanRequired && !controller.hasPath() &&
+				readLook().phase == nav::NativeLadderPhase::None,
+			"cancellation inside either replan draw cannot restore the route or its look");
+	if (!check(replacement == runtime::NavRoamResult::MovementSuppressed &&
 				!controller.usingNativeLadder() && controller.hasPath() && !intent.nativeLadderControl,
 			"Hunt replaces its ladder route from the known goal area once retry is allowed"))
 		return false;
-	return check(update(6U, 1.7f, 63.0f) == runtime::NavRoamResult::MovementSuppressed &&
-			!intent.nativeLadderControl && !intent.nativeMustJump && random.verifyComplete(),
-		"the known-area check still wins while physically attached after replanning");
+	const auto released = readLook();
+	if (!check(!released.active && !released.pitchOverride && released.yaw == -90.0f,
+			"successful replacement keeps the old ladder's lookahead without its pitch override"))
+		return false;
+	if (!check(update(6U, 1.7f, 63.0f) == runtime::NavRoamResult::MovementSuppressed &&
+			!intent.nativeLadderControl && !intent.nativeMustJump && readLook().yaw == -90.0f && random.verifyComplete(),
+			"the known-area check still wins while physically attached after replanning"))
+		return false;
+	controller.destroyPath();
+	return check(readLook().phase == nav::NativeLadderPhase::None, "cancelling the route clears its retained look");
 }
 
 bool testFollowMovesBeforeReplacingItsRoute()
@@ -4238,6 +4288,8 @@ int main()
 	if (!testTimedHuntDrawsBeforePathThrottle() || !testTimedHuntFollowsSameAreaEndpoint() ||
 		!testTimedHuntRoutesAcrossNativeLadder() || !testTimedHuntMovesAndJumpsOffCompletedLadder() ||
 		!testTimedHuntReselectsAtKnownLadderGoal() ||
+		!testTimedHuntReselectsAtKnownLadderGoal(HuntRngCancellation::Goal) ||
+		!testTimedHuntReselectsAtKnownLadderGoal(HuntRngCancellation::Retry) ||
 		!testFollowMovesBeforeReplacingItsRoute() ||
 		!testCompatibilityPathRetryUsesEngineTime())
 	{

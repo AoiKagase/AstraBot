@@ -1052,6 +1052,7 @@ void BotCommandRuntime::finishMovementCommand(std::size_t index, FakeClientHandl
 		// Set the next upkeep's look target after taking this decision's view.
 		actor.descentFloorLook = descentLookAdvanced &&
 			(actor.descentLookPhase == nav::NativeLadderPhase::MoveToDestination ||
+				(actor.descentLookPhase == nav::NativeLadderPhase::StoppedHuntLook && before.onLadder) ||
 				(actor.descentFloorLook && !before.grounded));
 		actor.defusePathLook = defuseLook;
 		if (huntEndpoint || defuseLook)

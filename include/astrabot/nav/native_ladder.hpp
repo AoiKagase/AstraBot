@@ -22,7 +22,8 @@ enum class NativeLadderPhase
 	FaceDown,
 	MountDown,
 	Descend,
-	MoveToDestination
+	MoveToDestination,
+	StoppedHuntLook
 };
 enum class NativeLadderResult
 {
@@ -227,10 +228,11 @@ public:
 	}
 	NativeLadderLook look(const NavSnapshot &snapshot, const NativeLadderObservation &in) const
 	{
-		if (!active_ || !sameOwner(snapshot, in) || !valid(in) || in.now < lastTime_)
+		if ((!active_ && phase_ != NativeLadderPhase::StoppedHuntLook) ||
+			!sameOwner(snapshot, in) || !valid(in) || in.now < lastTime_)
 			return {};
 		NativeLadderLook result;
-		if (phase_ == NativeLadderPhase::MoveToDestination)
+		if (phase_ == NativeLadderPhase::MoveToDestination || phase_ == NativeLadderPhase::StoppedHuntLook)
 		{
 			if (destination_ == ladder_.bottomArea)
 			{
@@ -269,6 +271,15 @@ public:
 		}
 		result.yaw = normalize(result.yaw);
 		return result;
+	}
+	bool retainStoppedHuntLook()
+	{
+		if (phase_ < NativeLadderPhase::ApproachDown || destination_ != ladder_.bottomArea)
+			return false;
+		// Path replacement clears ladder movement. CSBot keeps its last ordinary lookahead.
+		active_ = false;
+		phase_ = NativeLadderPhase::StoppedHuntLook;
+		return true;
 	}
 	const NavLadder &source() const
 	{
