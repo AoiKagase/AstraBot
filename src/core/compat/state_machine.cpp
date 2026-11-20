@@ -761,7 +761,8 @@ void CompatibilityStateMachine::applyEnterEffects(CompatibilityStateId state, Co
 		task_ = CompatibilityTaskId::PlantBomb;
 		break;
 	case CompatibilityStateId::UseEntity:
-		task_ = CompatibilityTaskId::MoveTo;
+		if (task_ != CompatibilityTaskId::CollectHostages)
+			task_ = CompatibilityTaskId::MoveTo;
 		break;
 	case CompatibilityStateId::Hide:
 		if (context.hideTask != CompatibilityTaskId::None)

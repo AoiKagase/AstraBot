@@ -1,3 +1,11 @@
+## 23追補　人質使用時の視線
+
+固定版 `b088984` の `UseEntityState::OnUpdate` と `CBasePlayer::IsLookingAtPosition` に合わせ、目の位置から人質の基準点に向けて視線を更新する。現在のyawとpitchがそれぞれ20度未満になるまでUSEを待つ。状態中は対象のエンティティ世代を保持し、エンジンへの入力送信が成功したら試行を記録してIdleへ戻る。
+
+`astrabot_action_adapter`、`astrabot_scenario_behavior`、`astrabot_runtime_command_scenarios` で角度の境界、対象の保持、送信失敗時の再試行、押下中の二重記録防止を確認した。Windows x86 Debug 162/162件、Linux x86 Debug 161/161件と、PE・ELFの公開関数7件が合格。追従者とネイティブの護送カウンターの照合は残件。
+
+隔離したLinux x86 ReHLDSの `cs_office` で、CTを最初の人質の近くに配置し、相手Botの位置と入力を固定した。初回USE時のpitch誤差は修正前32.19度、修正版11.26度、CSBot参照版18.04度だった。修正版のyaw誤差は1.04度で、GameDLLは操作を `Touched_A_Hostage` として受理した。
+
 ## 24　実参照との差分リプレイ
 
 固定版 `b088984` の聴覚処理、調査判定、視線の反応分岐をLinux x86のテストホストでコンパイルし、AstraBotの本番コードと同じ入力列で比較した。17ステップ、55レコード、乱数呼び出し13件が差分ゼロで一致した。

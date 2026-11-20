@@ -174,6 +174,22 @@ float ActionAdapter::csBotCosine(float angle)
 	return table[static_cast<std::size_t>(wrapped * ((tableSize - 1) / fullTurn))];
 }
 
+runtime::ViewAngles ActionAdapter::useEntityView(float x, float y, float z)
+{
+	constexpr float degreesPerRadian = 57.29577951308232f;
+	const float horizontal = std::hypot(x, y);
+	if (horizontal == 0.0f)
+		return {z > 0.0f ? -90.0f : 90.0f, 0.0f, 0.0f};
+	return {-std::atan2(z, horizontal) * degreesPerRadian, std::atan2(y, x) * degreesPerRadian, 0.0f};
+}
+
+bool ActionAdapter::isFacingUseEntity(const runtime::ViewAngles &current, const runtime::ViewAngles &desired)
+{
+	constexpr float tolerance = 20.0f;
+	return std::fabs(std::remainder(desired.yaw - current.yaw, 360.0f)) < tolerance &&
+		std::fabs(std::remainder(desired.pitch - current.pitch, 360.0f)) < tolerance;
+}
+
 MovementProjection ActionAdapter::projectMovement(
 	float worldDirectionX, float worldDirectionY, float speed, float viewYaw, bool compatibility)
 {

@@ -2,6 +2,7 @@
 #define ASTRABOT_ADAPTER_METAMOD_ACTION_ADAPTER_HPP
 
 #include "astrabot/runtime/bot_command.hpp"
+#include "astrabot/world/world_snapshot.hpp"
 
 #include <in_buttons.h>
 
@@ -38,6 +39,9 @@ struct ActionProposal
 	bool hasCombatAim = false;
 	bool hasGuardLook = false;
 	std::uint16_t equipmentWeaponId = 0;
+	bool hasUseEntityLook = false;
+	world::WorldPosition useEntityLookTarget{};
+	world::EntityKey hostageUseTarget{};
 };
 
 struct CombatUpkeepUpdate
@@ -100,6 +104,8 @@ public:
 	static bool isBombTargetClassname(const char *classname) noexcept;
 	static bool isLegacyInfoBombTargetClassname(const char *classname) noexcept;
 	static bool withinLegacyBombTargetRadius(const PlantTargetPoint &center, const PlantTargetPoint &actor) noexcept;
+	static runtime::ViewAngles useEntityView(float x, float y, float z);
+	static bool isFacingUseEntity(const runtime::ViewAngles &current, const runtime::ViewAngles &desired);
 	static bool validPlantTargetBounds(const PlantTargetBounds &bounds) noexcept;
 	static bool overlapsPlantTarget(const PlantTargetBounds &site, const PlantTargetBounds &actor) noexcept;
 	static ActionKind plantActionForWeaponObservation(

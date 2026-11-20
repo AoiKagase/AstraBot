@@ -214,6 +214,8 @@ public:
 	virtual void behavior_observeC4AttackDispatched(
 		std::size_t index, const FakeClientHandle &handle, std::uint16_t buttons) = 0;
 	virtual void behavior_observeC4SelectionDispatched(std::size_t index, const FakeClientHandle &handle) = 0;
+	virtual void behavior_observeHostageUseDispatched(
+		std::size_t index, world::EntityKey target, const world::WorldPosition &origin) = 0;
 	virtual void behavior_observeEquipmentDispatched(std::size_t index, std::uint16_t weapon, bool success) = 0;
 	virtual void behavior_observeNeutralC4AttackDispatched(std::size_t index, const FakeClientHandle &handle) = 0;
 	virtual void navigation_logMovementDiagnostic(

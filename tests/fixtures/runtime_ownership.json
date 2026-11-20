@@ -1367,6 +1367,26 @@
   {
     "header": "src/adapter/metamod/runtime/command/bot_command_runtime.hpp",
     "scope": "ActorState",
+    "member": "useEntityLookTarget"
+  },
+  {
+    "header": "src/adapter/metamod/runtime/command/bot_command_runtime.hpp",
+    "scope": "ActorState",
+    "member": "useEntityLookSpring"
+  },
+  {
+    "header": "src/adapter/metamod/runtime/command/bot_command_runtime.hpp",
+    "scope": "ActorState",
+    "member": "useEntityLookActive"
+  },
+  {
+    "header": "src/adapter/metamod/runtime/command/bot_command_runtime.hpp",
+    "scope": "ActorState",
+    "member": "hostageUseTarget"
+  },
+  {
+    "header": "src/adapter/metamod/runtime/command/bot_command_runtime.hpp",
+    "scope": "ActorState",
     "member": "nativeLadderJump"
   },
   {

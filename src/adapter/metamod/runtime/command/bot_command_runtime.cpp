@@ -15,11 +15,13 @@ constexpr float kMinimumUsableMaxSpeed = 1.0f;
 constexpr auto kFreezeDiagnosticFrameInterval = 6U;
 constexpr auto kMaximumMovementDiagnosticSamples = 4U;
 
-runtime::ViewAngles stepHuntLook(const edict_t &entity, float desiredYaw, float now, compat::AimSpringState &spring)
+runtime::ViewAngles stepIdleLook(
+	const edict_t &entity, float desiredYaw, float desiredPitch, float now, compat::AimSpringState &spring)
 {
 	const auto &angles = entity.v.v_angle;
 	const auto look = compat::trackAim(angles.y, angles.x, desiredYaw + 2.0f * ActionAdapter::csBotCosine(33.0f * now),
-		2.0f * ActionAdapter::csBotCosine(13.0f * now - 90.0f), runtime::BotTimingScheduler::kCommandInterval, 1.0f,
+		desiredPitch + 2.0f * ActionAdapter::csBotCosine(13.0f * now - 90.0f),
+		runtime::BotTimingScheduler::kCommandInterval, 1.0f,
 		&spring, false);
 	return {look.pitch, look.yaw, 0.0f};
 }
@@ -33,6 +35,7 @@ void BotCommandRuntime::applyCombatUpkeep(std::size_t index, const CombatUpkeepU
 	if (update.hasAim)
 	{
 		actors_[index].resetHuntLook();
+		actors_[index].useEntityLookActive = false;
 		if (!update.movementRelativeToAim && !actors_[index].nativeLadderControl)
 		{
 			const auto movement = ActionAdapter::reprojectMovement(
@@ -268,7 +271,59 @@ void BotCommandRuntime::resetManagedBotCommandTemplate(std::size_t index)
 {
 	resetManagedBotCommandInputs(index);
 	if (index < NativeBotObservation::kClientSlotCount)
+	{
 		actors_[index].resetHuntLook();
+		actors_[index].useEntityLookActive = false;
+	}
+}
+
+void BotCommandRuntime::advanceUseEntityLook(std::size_t index, FakeClientHandle &handle)
+{
+	auto &actor = actors_[index];
+	if (!actor.useEntityLookActive)
+		return;
+	const auto &machine = services_->behavior_managedBotStateMachines(index);
+	if (machine.state() != compat::CompatibilityStateId::UseEntity || machine.attackOverlayActive() ||
+		handle.entity->v.deadflag != DEAD_NO || handle.entity->v.health <= 0.0f)
+	{
+		actor.useEntityLookActive = false;
+		return;
+	}
+	if ((handle.entity->v.flags & FL_FROZEN) != 0 || services_->roundFreezeActive())
+		return;
+	const auto eye = handle.entity->v.origin + handle.entity->v.view_ofs;
+	const auto &point = actor.useEntityLookTarget;
+	const auto desired = ActionAdapter::useEntityView(point.x - eye.x, point.y - eye.y, point.z - eye.z);
+	const auto look = stepIdleLook(*handle.entity, desired.yaw, desired.pitch,
+		services_->service_globals()->time, actor.useEntityLookSpring);
+	handle.entity->v.v_angle = Vector(look.pitch, look.yaw, look.roll);
+}
+
+void BotCommandRuntime::applyUseEntityLook(std::size_t index, const edict_t &entity, const ActionProposal &action,
+	runtime::BotCommand &command)
+{
+	auto &actor = actors_[index];
+	if (action.hasUseEntityLook)
+	{
+		if (!actor.useEntityLookActive)
+			actor.useEntityLookSpring = {};
+		actor.useEntityLookTarget = action.useEntityLookTarget;
+		command.viewAngles = {entity.v.v_angle.x, entity.v.v_angle.y, entity.v.v_angle.z};
+		command.synchronizeCombatView = true;
+	}
+	actor.useEntityLookActive = action.hasUseEntityLook;
+	actor.hostageUseTarget = action.hostageUseTarget;
+}
+
+void BotCommandRuntime::observeHostageUse(std::size_t index, const runtime::BotCommand &command,
+	const runtime::CommandReceipt &receipt, world::EntityKey target, const Vector &origin)
+{
+	if (!target.isValid() || receipt.result != runtime::DispatchResult::Dispatched ||
+		receipt.sequence != command.sequence || (command.movement.buttons & IN_USE) == 0 ||
+		!services_->service_lifecycle().isCurrent(command.lifecycle) || !(actors_[index].hostageUseTarget == target))
+		return;
+	actors_[index].hostageUseTarget = {};
+	services_->behavior_observeHostageUseDispatched(index, target, {origin.x, origin.y, origin.z});
 }
 
 void BotCommandRuntime::resetManagedBotCommandInputs(std::size_t index)
@@ -282,6 +337,7 @@ void BotCommandRuntime::resetManagedBotCommandInputs(std::size_t index)
 	actors_[index].nativeLadderControl = false;
 	actors_[index].nativeLadderJump = false;
 	actors_[index].managedBotActionStopsMovement = false;
+	actors_[index].hostageUseTarget = {};
 }
 
 MovementCommandDraft BotCommandRuntime::beginNeutralCommand(
@@ -319,6 +375,7 @@ void BotCommandRuntime::finishNeutralCommand(std::size_t index, FakeClientHandle
 	const ActionDispatch actionDispatch = ActionAdapter::translate(actionProposal);
 	command.viewAngles = actionDispatch.viewAngles;
 	command.synchronizeCombatView = actionProposal.hasCombatAim || actionProposal.hasGuardLook;
+	applyUseEntityLook(index, *handle.entity, actionProposal, command);
 	command.movement.buttons = actionDispatch.buttons;
 	ActionAdapter::applyCombatMovement(command, actionProposal, handle.entity->v.maxspeed);
 	if (actionDispatch.clientCommand != nullptr)
@@ -385,14 +442,17 @@ runtime::CommandReceipt BotCommandRuntime::executeManagedBotCommand(
 		machine.state() == compat::CompatibilityStateId::Hunt && !machine.attackOverlayActive())
 	{
 		// CSBot's upkeep turns the view while keeping the axes from the last full decision.
-		command.viewAngles = stepHuntLook(
-			*handle.entity, actor.huntLookYaw, services_->service_globals()->time, actor.huntLookSpring);
+		command.viewAngles = stepIdleLook(
+			*handle.entity, actor.huntLookYaw, 0.0f, services_->service_globals()->time, actor.huntLookSpring);
 		command.synchronizeCombatView = true;
 	}
-	if (!actors_[index].nativeLadderControl)
+	if (actor.useEntityLookActive)
+		command.viewAngles = {handle.entity->v.v_angle.x, handle.entity->v.v_angle.y, handle.entity->v.v_angle.z};
+	else if (!actors_[index].nativeLadderControl)
 		services_->behavior_applyNoiseLookCommand(index, command);
 	services_->behavior_applyNativeLadderLookCommand(index, command, actors_[index].nativeLadderControl);
-	services_->behavior_applyObstacleCommand(index, command);
+	if (!actor.useEntityLookActive)
+		services_->behavior_applyObstacleCommand(index, command);
 	const float maxSpeed = handle.entity->v.maxspeed;
 	const bool walking = !actors_[index].nativeLadderControl && !services_->behavior_forcedRunning(index) &&
 		services_->behavior_noiseInvestigationWalking(index) && (handle.entity->v.flags & FL_ONGROUND) &&
@@ -542,6 +602,7 @@ runtime::CommandReceipt BotCommandRuntime::executeManagedBotCommand(
 		return receipt;
 	}
 	const Vector commandStart = handle.entity->v.origin;
+	const auto hostageUseTarget = actor.hostageUseTarget;
 	const runtime::CommandReceipt dispatchReceipt =
 		services_->service_inputDispatcher().dispatchNext(handle.actor, services_->service_adapterFrameCount());
 	if (services_->service_runtimeProfiler().enabled() &&
@@ -565,6 +626,7 @@ runtime::CommandReceipt BotCommandRuntime::executeManagedBotCommand(
 			commandStart.z, handle.entity->v.origin.x, handle.entity->v.origin.y, handle.entity->v.origin.z);
 	}
 	observeReloadInput(handle, command, dispatchReceipt);
+	observeHostageUse(index, command, dispatchReceipt, hostageUseTarget, commandStart);
 	if (dispatchReceipt.result == runtime::DispatchResult::Dispatched &&
 		(command.movement.buttons & ActionAdapter::kAttackButton) != 0U)
 	{
@@ -677,6 +739,7 @@ runtime::CommandReceipt BotCommandRuntime::finishDirectNeutralCommand(std::size_
 	const ActionDispatch actionDispatch = ActionAdapter::translate(actionProposal);
 	command.viewAngles = actionDispatch.viewAngles;
 	command.synchronizeCombatView = actionProposal.hasCombatAim || actionProposal.hasGuardLook;
+	applyUseEntityLook(index, *handle.entity, actionProposal, command);
 	command.movement.buttons = actionDispatch.buttons;
 	ActionAdapter::applyCombatMovement(command, actionProposal, handle.entity->v.maxspeed);
 	if (actionProposal.kind != ActionKind::None && gpMetaUtilFuncs != nullptr &&
@@ -698,9 +761,12 @@ runtime::CommandReceipt BotCommandRuntime::finishDirectNeutralCommand(std::size_
 		receipt.result = runtime::DispatchResult::InvalidCommand;
 		return receipt;
 	}
+	const Vector commandStart = handle.entity->v.origin;
+	const auto hostageUseTarget = actors_[index].hostageUseTarget;
 	const runtime::CommandReceipt dispatchReceipt =
 		services_->service_inputDispatcher().dispatchNext(handle.actor, services_->service_adapterFrameCount());
 	observeReloadInput(handle, command, dispatchReceipt);
+	observeHostageUse(index, command, dispatchReceipt, hostageUseTarget, commandStart);
 	if (dispatchReceipt.result == runtime::DispatchResult::Dispatched &&
 		(actionDispatch.buttons & ActionAdapter::kAttackButton) != 0U)
 	{
@@ -799,7 +865,7 @@ MovementCommandDraft BotCommandRuntime::beginMovementCommand(std::size_t index, 
 		!(handle.entity->v.flags & FL_FROZEN) && !services_->roundFreezeActive())
 	{
 		command.viewAngles =
-			stepHuntLook(*handle.entity, actor.huntLookYaw, services_->service_globals()->time, actor.huntLookSpring);
+			stepIdleLook(*handle.entity, actor.huntLookYaw, 0.0f, services_->service_globals()->time, actor.huntLookSpring);
 	}
 	std::uint16_t movementButtons = locomotionIntent.posture == nav::LocomotionPosture::Crouching
 		? static_cast<std::uint16_t>(IN_DUCK)
@@ -850,6 +916,7 @@ void BotCommandRuntime::finishMovementCommand(std::size_t index, FakeClientHandl
 	command.viewAngles = huntEndpoint ? draft.command.viewAngles : actionDispatch.viewAngles;
 	command.synchronizeCombatView =
 		actionProposal.hasCombatAim || actionProposal.hasGuardLook || locomotionIntent.nativeLadderControl || huntEndpoint;
+	applyUseEntityLook(index, *handle.entity, actionProposal, command);
 	command.movement.buttons = actionDispatch.buttons;
 	actors_[index].nativeLadderControl = locomotionIntent.nativeLadderControl;
 	actors_[index].nativeLadderJump = locomotionIntent.nativeMustJump;

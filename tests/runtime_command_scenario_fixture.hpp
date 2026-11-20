@@ -49,6 +49,7 @@ public:
 	unsigned attackMovesBefore = 0U;
 	float attackOriginBefore = 0.0f;
 	unsigned moves = 0U;
+	unsigned hostageUseReceipts = 0U;
 	unsigned short lastButtons = 0U;
 	float lastForward = 0, lastSide = 0, lastYaw = 0;
 	compat::CompatibilityStateMachine stateMachine{};
@@ -185,6 +186,12 @@ public:
 	const compat::CompatibilityStateMachine &behavior_managedBotStateMachines(std::size_t) const override
 	{
 		return stateMachine;
+	}
+
+	void behavior_observeHostageUseDispatched(std::size_t, world::EntityKey,
+		const world::WorldPosition &) override
+	{
+		++hostageUseReceipts;
 	}
 
 	bool behavior_forcedRunning(std::size_t) override

@@ -235,6 +235,15 @@ bool testPlantZoneBounds()
 
 int main()
 {
+	using astrabot::metamod::ActionAdapter;
+	const auto hostageLook = ActionAdapter::useEntityView(32.0f, 0.0f, 32.0f);
+	if (!check(std::fabs(hostageLook.pitch + 45.0f) < 0.001f && hostageLook.yaw == 0.0f &&
+			!ActionAdapter::isFacingUseEntity({0.0f, 0.0f, 0.0f}, hostageLook) &&
+			!ActionAdapter::isFacingUseEntity({-25.0f, 0.0f, 0.0f}, hostageLook) &&
+			!ActionAdapter::isFacingUseEntity({-45.0f, 20.0f, 0.0f}, hostageLook) &&
+			ActionAdapter::isFacingUseEntity({-26.0f, 341.0f, 0.0f}, hostageLook),
+			"hostage use requires both eye angles strictly inside 20 degrees and wraps across north"))
+		return 1;
 	const auto rotated = astrabot::metamod::ActionAdapter::reprojectMovement(100, 0, 0, 90);
 	if (!check(std::fabs(rotated.forward) < .001f && std::fabs(rotated.side - 100) < .001f,
 			"upkeep aim change preserves world movement direction"))

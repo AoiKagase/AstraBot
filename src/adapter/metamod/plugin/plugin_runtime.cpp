@@ -1710,6 +1710,8 @@ void PluginRuntime::updateManagedBots()
 		{
 			continue;
 		}
+		if (upkeepDue)
+			command_.advanceUseEntityLook(index, handle);
 		if (commandResetDue)
 		{
 			command_.resetManagedBotCommandInputs(index);

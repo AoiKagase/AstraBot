@@ -675,6 +675,12 @@ private:
 		return behavior_.observeC4SelectionDispatched(index, handle);
 	}
 
+	void behavior_observeHostageUseDispatched(
+		std::size_t index, world::EntityKey target, const world::WorldPosition &origin) override
+	{
+		behavior_.observeHostageUseDispatched(index, target, origin);
+	}
+
 	void behavior_observeEquipmentDispatched(std::size_t index, std::uint16_t weapon, bool success) override
 	{
 		behavior_.observeEquipmentDispatched(index, weapon, success);

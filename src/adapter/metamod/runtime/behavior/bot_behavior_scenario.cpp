@@ -424,6 +424,10 @@ void BotBehaviorRuntime::observeScenarioEntities(std::size_t index, const runtim
 		const bool seedHostages = scenario.scenario == compat::PublicScenarioKind::Hostage &&
 			observedTeam == kTerroristTeam && actors_[index].hostagePositions.nextCheck < 0.0f;
 		std::size_t hostageCount = 0;
+		const auto &previousScenario = actors_[index].scenarioDecisions;
+		if (actors_[index].managedBotStateMachines.state() == compat::CompatibilityStateId::UseEntity &&
+			previousScenario.action == compat::ScenarioAction::Use && previousScenario.hasTarget)
+			scenario.boundUseEntity = previousScenario.target.entity;
 		const bool checkHuman = observedTeam == kCounterTerroristTeam && services_->service_deferToHuman();
 		if (scenario.scenario == compat::PublicScenarioKind::Bomb)
 			data.looseBomb.frame = context.frame;
@@ -539,6 +543,13 @@ void BotBehaviorRuntime::observeScenarioEntities(std::size_t index, const runtim
 				}
 				if (entity->v.health > 0.0f)
 				{
+					if (scenario.boundUseEntity.isValid())
+					{
+						if (scenario.boundUseEntity.id == static_cast<std::uint32_t>(entityIndex) &&
+							scenario.boundUseEntity.generation == static_cast<std::uint32_t>(entity->serialnumber) + 1U)
+							scenario.hostage = project(entity, entityIndex, true);
+						continue;
+					}
 					destination = &scenario.hostage;
 					mapKnown = false;
 				}
@@ -1370,6 +1381,8 @@ void BotBehaviorRuntime::applyScenarioDecision(std::size_t index, const runtime:
 	stateBehavior.goalAvailable = scenarioDecision.hasTarget || stateBehavior.goalAvailable;
 	stateBehavior.leaderAvailable = actors_[index].scenarioPlanners.hasFollowingLeader(scenario);
 	stateBehavior.objectiveActive = scenarioDecision.hasTarget || stateBehavior.objectiveActive;
+	if (machine.state() == compat::CompatibilityStateId::UseEntity && scenario.boundUseEntity.isValid())
+		stateBehavior.objectiveActive = scenarioDecision.action == compat::ScenarioAction::Use;
 	if (machine.state() == compat::CompatibilityStateId::DefuseBomb ||
 		machine.state() == compat::CompatibilityStateId::EscapeFromBomb)
 		stateBehavior.objectiveActive = scenario.bombPlantedKnown && scenario.bombPlanted;
@@ -1451,6 +1464,29 @@ void BotBehaviorRuntime::applyScenarioDecision(std::size_t index, const runtime:
 	}
 }
 
+void BotBehaviorRuntime::observeHostageUseDispatched(
+	std::size_t index, world::EntityKey target, const world::WorldPosition &origin)
+{
+	auto &actor = actors_[index];
+	auto &machine = actor.managedBotStateMachines;
+	const auto &decision = actor.scenarioDecisions;
+	if (machine.state() != compat::CompatibilityStateId::UseEntity || machine.attackOverlayActive() ||
+		decision.action != compat::ScenarioAction::Use || !decision.hasTarget || !(decision.target.entity == target))
+		return;
+	const auto context = makeManagedBotStateContext(index, {}, nullptr);
+	if (!actor.scenarioPlanners.issueHostageUse(decision.target, context.timestamp, origin))
+		return;
+	if (machine.transition(compat::CompatibilityStateId::Idle, compat::StateTransitionReason::ObjectiveChanged,
+			compat::StateTransitionId::ExplicitStateChange, context) == compat::StateResult::Transitioned)
+	{
+		actor.enemyReaction.onStateChange(
+			reactionContext(index), compat::CompatibilityStateId::UseEntity, compat::CompatibilityStateId::Idle);
+		services_->applyNavigationRequest({index, NavigationRequestKind::ClearStep});
+		services_->applyNavigationRequest({index, NavigationRequestKind::DestroyPath});
+		services_->applyNavigationRequest({index, NavigationRequestKind::ResetProgress});
+	}
+}
+
 void BotBehaviorRuntime::commitBehaviorState(
 	std::size_t index, compat::StateUpdateContext &context, compat::StateBehaviorInput &stateBehavior)
 {
@@ -1481,7 +1517,7 @@ void BotBehaviorRuntime::commitBehaviorState(
 		services_->applyNavigationRequest({index, NavigationRequestKind::DestroyPath});
 		if (previousState == compat::CompatibilityStateId::DefuseBomb ||
 			previousState == compat::CompatibilityStateId::PlantBomb ||
-			previousState == compat::CompatibilityStateId::Hide)
+			previousState == compat::CompatibilityStateId::Hide || previousState == compat::CompatibilityStateId::UseEntity)
 			services_->applyNavigationRequest({index, NavigationRequestKind::ResetProgress});
 		if (machine.state() == compat::CompatibilityStateId::Idle &&
 			(previousState == compat::CompatibilityStateId::DefuseBomb ||

@@ -213,6 +213,7 @@ public:
 	}
 
 	void observeC4AttackDispatched(std::size_t index, const FakeClientHandle &handle, std::uint16_t buttons);
+	void observeHostageUseDispatched(std::size_t index, world::EntityKey target, const world::WorldPosition &origin);
 
 	void observeNeutralC4AttackDispatched(std::size_t index, const FakeClientHandle &handle);
 	void observeLooseBombModel(edict_t *box, const char *model);

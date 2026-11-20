@@ -1408,17 +1408,52 @@ BotBehaviorRuntime::BehaviorPhaseResult BotBehaviorRuntime::decideObjectiveActio
 			}
 			if (scenario.action == compat::ScenarioAction::Use && scenario.hasTarget &&
 				scenario.target.entity.isValid() && services_->service_engineFunctions() != nullptr &&
-				services_->service_engineFunctions()->pfnPEntityOfEntIndex != nullptr)
+				services_->service_engineFunctions()->pfnPEntityOfEntIndex != nullptr &&
+				services_->service_globals() != nullptr)
 			{
 				edict_t *useEntity = services_->service_engineFunctions()->pfnPEntityOfEntIndex(
 					static_cast<int>(scenario.target.entity.id));
 				if (useEntity != nullptr && !useEntity->free &&
 					static_cast<std::uint32_t>(useEntity->serialnumber) + 1U == scenario.target.entity.generation)
 				{
-					const float dx = scenario.target.position.x - handle.entity->v.origin.x;
-					const float dy = scenario.target.position.y - handle.entity->v.origin.y;
-					proposal.kind = ActionKind::UseEntity;
-					proposal.viewAngles.yaw = std::atan2(dy, dx) * 180.0f / 3.14159265358979323846f;
+					const auto &self = handle.entity->v;
+					if (scenario.state != compat::CompatibilityStateId::UseEntity)
+					{
+						const float dx = scenario.target.position.x - self.origin.x;
+						const float dy = scenario.target.position.y - self.origin.y;
+						proposal.kind = ActionKind::UseEntity;
+						proposal.viewAngles.yaw = std::atan2(dy, dx) * 180.0f / 3.14159265358979323846f;
+						return BehaviorPhaseResult::Complete;
+					}
+					auto &machine = actors_[index].managedBotStateMachines;
+					const float now = services_->service_globals()->time;
+					proposal.stopForWeapon = true;
+					if (machine.state() != compat::CompatibilityStateId::UseEntity || machine.attackOverlayActive() ||
+						machine.stateTimestamp() == now || ctx.before.dead || useEntity->v.health <= 0.0f)
+						return BehaviorPhaseResult::Complete;
+					const auto eye = self.origin + self.view_ofs;
+					constexpr float halfHumanHeight = 36.0f;
+					const auto point = useEntity->v.origin + Vector(0.0f, 0.0f, halfHumanHeight);
+					const auto desired = ActionAdapter::useEntityView(point.x - eye.x, point.y - eye.y, point.z - eye.z);
+					const runtime::ViewAngles current{self.v_angle.x, self.v_angle.y, self.v_angle.z};
+					if (ActionAdapter::isFacingUseEntity(current, desired))
+					{
+						proposal.viewAngles = current;
+						const bool frozen = (self.flags & FL_FROZEN) != 0 ||
+							(services_->service_roundFreezeGeneration() == frame.roundGeneration &&
+								now < services_->service_roundFreezeUntil());
+						if (!frozen)
+						{
+							proposal.kind = ActionKind::UseEntity;
+							proposal.hostageUseTarget = scenario.target.entity;
+						}
+					}
+					else
+					{
+						proposal.viewAngles = current;
+						proposal.hasUseEntityLook = true;
+						proposal.useEntityLookTarget = {point.x, point.y, point.z};
+					}
 					return BehaviorPhaseResult::Complete;
 				}
 			}

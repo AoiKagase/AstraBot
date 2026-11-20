@@ -181,6 +181,46 @@ int main()
 	if (!check(services.lastForward == 0.0f && services.lastSide == 96.0f,
 			"fallback first slows on the update that starts on the endpoint leg"))
 		return 1;
+	context.frame.tick++;
+	context.fullUpdateSequence++;
+	context.timestamp = services.globals.time;
+	if (!check(services.stateMachine.transition(compat::CompatibilityStateId::UseEntity,
+			compat::StateTransitionReason::ExplicitRequest, compat::StateTransitionId::ExplicitStateChange, context) ==
+			compat::StateResult::Transitioned, "enter the interaction state"))
+		return 1;
+	handle.entity->v.v_angle = Vector(0, 0, 0);
+	const auto facingDraft = command.beginNeutralCommand(0U, handle, before);
+	ActionProposal facing{ActionKind::None, {}, 0U};
+	facing.stopForWeapon = true;
+	facing.hasUseEntityLook = true;
+	facing.useEntityLookTarget = {handle.entity->v.origin.x, -32.0f, 32.0f};
+	command.finishNeutralCommand(0U, handle, before, facingDraft, facing);
+	command.executeManagedBotCommand(0U, handle);
+	if (!check(services.lastYaw == 0.0f && (services.lastButtons & IN_USE) == 0U,
+			"interaction registers the aim goal without snapping or using"))
+		return 1;
+	services.globals.time += runtime::BotTimingScheduler::kCommandInterval;
+	command.advanceUseEntityLook(0U, handle);
+	command.executeManagedBotCommand(0U, handle);
+	if (!check(services.lastYaw < 0.0f && services.lastYaw > -20.0f &&
+			handle.entity->v.v_angle.x < 0.0f && (services.lastButtons & IN_USE) == 0U,
+			"cached interaction upkeep moves both axes without sending USE"))
+		return 1;
+	const auto useDraft = command.beginNeutralCommand(0U, handle, before);
+	ActionProposal useHostage{ActionKind::UseEntity, useDraft.command.viewAngles, 0U};
+	useHostage.hostageUseTarget = {42U, 1U};
+	command.finishNeutralCommand(0U, handle, before, useDraft, useHostage);
+	services.engine.pfnRunPlayerMove = nullptr;
+	command.executeManagedBotCommand(0U, handle);
+	if (!check(services.hostageUseReceipts == 0U, "a failed interaction dispatch consumes no attempt"))
+		return 1;
+	services.engine.pfnRunPlayerMove = &scenarioMove;
+	command.finishNeutralCommand(0U, handle, before, useDraft, useHostage);
+	command.executeManagedBotCommand(0U, handle);
+	command.executeManagedBotCommand(0U, handle);
+	if (!check(services.hostageUseReceipts == 1U && (services.lastButtons & IN_USE) != 0U,
+			"the accepted USE is counted once while the engine retains the held button"))
+		return 1;
 	std::puts("runtime command orchestration scenarios: PASS");
 	return 0;
 }

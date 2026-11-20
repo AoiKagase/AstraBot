@@ -127,6 +127,7 @@ struct ScenarioBehaviorInput
 	bool humanDefusingKnown;
 	bool humanDefusing;
 	bool selfPositionKnown = false;
+	world::EntityKey boundUseEntity{};
 	world::WorldPosition selfPosition = {};
 	bool hostageCompetitorNearby = false;
 	bool timerEstimated = false;
@@ -329,6 +330,27 @@ public:
 	void reset()
 	{
 		*this = ScenarioBehaviorPlanner();
+	}
+
+	bool issueHostageUse(const ScenarioTarget &target, float now, const world::WorldPosition &selfPosition)
+	{
+		if (pendingUse_.isValid() || !target.entity.isValid() || target.knowledge == ScenarioKnowledge::Unknown ||
+			!target.inUseRange || !std::isfinite(now) || now < 0.0f)
+			return false;
+		if (!(attemptedHostage_ == target.entity))
+		{
+			attemptedHostage_ = target.entity;
+			useAttempts_ = 0U;
+		}
+		if (useAttempts_ >= kMaximumHostageUseAttempts)
+			return false;
+		++useAttempts_;
+		pendingUse_ = target.entity;
+		useHostage_ = target;
+		useSelfKnown_ = finitePosition(selfPosition);
+		useSelfPosition_ = selfPosition;
+		useSentAt_ = now;
+		return true;
 	}
 
 	ScenarioBehaviorDecision update(const ScenarioBehaviorInput &input, ScenarioFallBackResponse *fallBack = nullptr)
@@ -576,6 +598,8 @@ private:
 		}
 	}
 
+	static constexpr unsigned kMaximumHostageUseAttempts = 3U;
+
 	ScenarioBehaviorDecision hostageDecision(const ScenarioBehaviorInput &input)
 	{
 		constexpr float kEscortSelfMotionThreshold = 64.0f;
@@ -583,7 +607,6 @@ private:
 		constexpr float kMaximumEscortDistance = 256.0f;
 		constexpr float kInferredEscortWaitSeconds = 3.0f;
 		constexpr float kUseReceiptWaitSeconds = 2.0f;
-		constexpr unsigned kMaximumHostageUseAttempts = 3U;
 		if (input.team != objectives::TeamRole::CounterTerrorist)
 			return {};
 		if (input.escortKnown && input.escortCount)
@@ -652,29 +675,10 @@ private:
 		{
 			return result;
 		}
-		if (input.hostage.entity.isValid() && input.hostage.knowledge == ScenarioKnowledge::Visible &&
+		if (input.hostage.entity.isValid() &&
+			(input.hostage.knowledge == ScenarioKnowledge::Visible || input.hostage.entity == input.boundUseEntity) &&
 			input.hostage.inUseRange)
 		{
-			result.awaitingReceipt = true;
-			if (!(attemptedHostage_ == input.hostage.entity))
-			{
-				attemptedHostage_ = input.hostage.entity;
-				useAttempts_ = 0U;
-			}
-			if (useAttempts_ >= kMaximumHostageUseAttempts)
-			{
-				result = {};
-				result.action = ScenarioAction::Hunt;
-				result.state = CompatibilityStateId::Hunt;
-				result.unavailable = true;
-				return result;
-			}
-			++useAttempts_;
-			pendingUse_ = input.hostage.entity;
-			useHostage_ = input.hostage;
-			useSelfKnown_ = input.selfPositionKnown && finitePosition(input.selfPosition);
-			useSelfPosition_ = input.selfPosition;
-			useSentAt_ = input.timestamp;
 			result.action = ScenarioAction::Use;
 			result.state = CompatibilityStateId::UseEntity;
 		}

@@ -156,8 +156,15 @@ int main()
 	value.hostage = target();
 	value.hostage.inUseRange = true;
 	auto result = hostage.update(value);
-	ok &= check(result.action == ScenarioAction::Use && result.awaitingReceipt,
-		"visible reachable hostage requests use without claiming escort");
+	ok &= check(result.action == ScenarioAction::Use && !result.awaitingReceipt,
+		"visible reachable hostage can request facing without recording a use attempt");
+	value.frame.tick++;
+	value.boundUseEntity = value.hostage.entity;
+	value.hostage.knowledge = ScenarioKnowledge::Remembered;
+	result = hostage.update(value);
+	ok &= check(result.action == ScenarioAction::Use && !result.awaitingReceipt &&
+			hostage.issueHostageUse(result.target, value.timestamp, value.selfPosition),
+		"facing keeps the bound hostage when it drops out of view and waits for the use attempt");
 	value.frame.tick++;
 	result = hostage.update(value);
 	ok &= check(result.action == ScenarioAction::Move && result.awaitingReceipt && !result.escortInferred,
@@ -183,7 +190,10 @@ int main()
 	value.rescueZone.position = {1000.0f, 0.0f, 0.0f};
 	value.selfPositionKnown = true;
 	value.selfPosition = {0.0f, 0.0f, 0.0f};
-	ok &= check(inferred.update(value).action == ScenarioAction::Use, "initial hostage interaction requested");
+	result = inferred.update(value);
+	ok &= check(result.action == ScenarioAction::Use &&
+			inferred.issueHostageUse(result.target, value.timestamp, value.selfPosition),
+		"initial hostage interaction issued");
 	value.frame.tick++;
 	value.timestamp = 0.3f;
 	value.selfPosition = {200.0f, 0.0f, 0.0f};
@@ -216,7 +226,9 @@ int main()
 		value.frame.tick++;
 		value.timestamp = static_cast<float>(attempt) * 2.3f;
 		result = retries.update(value);
-		ok &= check(result.action == ScenarioAction::Use, "unconfirmed hostage permits bounded interaction retry");
+		ok &= check(result.action == ScenarioAction::Use &&
+				retries.issueHostageUse(result.target, value.timestamp, value.selfPosition),
+			"unconfirmed hostage permits bounded interaction retry");
 		value.frame.tick++;
 		value.timestamp += 2.1f;
 		result = retries.update(value);
