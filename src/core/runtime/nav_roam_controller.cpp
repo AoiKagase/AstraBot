@@ -1,4 +1,5 @@
 #include "astrabot/runtime/nav_roam_controller.hpp"
+#include "../nav/native_path_geometry.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -239,6 +240,76 @@ nav::TraversalAction traversalActionFor(const nav::NavSnapshot &snapshot, const 
 		}
 	}
 	return nav::TraversalAction::Walk;
+}
+
+bool crossesWalkPortal(const nav::NavArea &from, const nav::NavArea &to, unsigned direction,
+	const nav::NavVector &feet, const nav::NavVector &target, float &fraction)
+{
+	const bool alongX = direction == 1U || direction == 3U;
+	const bool increasing = direction == 1U || direction == 2U;
+	const auto axis = [alongX](const nav::NavVector &p) { return alongX ? p.x : p.y; };
+	const float exit = axis(increasing ? from.extent.hi : from.extent.lo);
+	const float enter = axis(increasing ? to.extent.lo : to.extent.hi);
+	const float delta = axis(target) - axis(feet);
+	if (exit != enter || (increasing ? delta <= 0.0f : delta >= 0.0f))
+		return false;
+	fraction = (exit - axis(feet)) / delta;
+	if (fraction < 0.0f || fraction > 1.0f)
+		return false;
+	const float x = feet.x + fraction * (target.x - feet.x);
+	const float y = feet.y + fraction * (target.y - feet.y);
+	const auto spans = [alongX, x, y](const nav::NavArea &area) {
+		return alongX ? y >= area.extent.lo.y && y <= area.extent.hi.y
+					  : x >= area.extent.lo.x && x <= area.extent.hi.x;
+	};
+	const auto stepHeight = roamLocomotionConfig(compat::RuntimeMode::Compatibility).maximumStepHeight;
+	return spans(from) && spans(to) &&
+		std::fabs(nav::surfaceZAt(from, x, y) - nav::surfaceZAt(to, x, y)) <= stepHeight;
+}
+
+bool defuseDriftSteeringPoint(const nav::NavSnapshot &snapshot, nav::AreaId current,
+	const nav::NavDirectedLink &first, const nav::NavVector &feet, nav::NavVector &target)
+{
+	const auto &document = *snapshot.document();
+	const auto *area = document.findArea(current);
+	const auto *start = document.findArea(first.fromArea);
+	const auto *next = document.findArea(first.toArea);
+	const float stepHeight = roamLocomotionConfig(compat::RuntimeMode::Compatibility).maximumStepHeight;
+	if (!area || !start || !next || current == start->id || current == next->id ||
+		first.direction >= nav::NavArea::kDirectionCount || first.how >= nav::NavArea::kDirectionCount ||
+		traversalActionFor(snapshot, first) != nav::TraversalAction::Walk ||
+		((area->attributes | start->attributes | next->attributes) & (nav::NavArea::kCrouch | nav::NavArea::kJump)) != 0U ||
+		feet.x < area->extent.lo.x || feet.x > area->extent.hi.x || feet.y < area->extent.lo.y ||
+		feet.y > area->extent.hi.y || std::fabs(feet.z - nav::surfaceZAt(*area, feet.x, feet.y)) > stepHeight)
+		return false;
+
+	const auto contains = [](const std::vector<nav::AreaId> &neighbors, nav::AreaId id) {
+		return std::find(neighbors.begin(), neighbors.end(), id) != neighbors.end();
+	};
+	if (std::any_of(area->connections.begin(), area->connections.end(),
+			[&](const std::vector<nav::AreaId> &neighbors) { return contains(neighbors, next->id); }) ||
+		!contains(next->connections[(first.direction + 2U) % nav::NavArea::kDirectionCount], start->id))
+		return false;
+
+	target = nav::nativeGroundPortal(document, first, nav::extentCenterOf(*start), true);
+	if (target.x < next->extent.lo.x || target.x > next->extent.hi.x || target.y < next->extent.lo.y ||
+		target.y > next->extent.hi.y || std::fabs(target.z - nav::surfaceZAt(*next, target.x, target.y)) > stepHeight)
+		return false;
+	float exitStart;
+	if (!crossesWalkPortal(*start, *next, first.direction, feet, target, exitStart))
+		return false;
+	const float distance = std::hypot(target.x - feet.x, target.y - feet.y);
+	constexpr float maxDriftDistance = 32.0f;
+	for (unsigned direction = 0; direction < nav::NavArea::kDirectionCount; ++direction)
+	{
+		float enterStart;
+		if (contains(area->connections[direction], start->id) &&
+			contains(start->connections[(direction + 2U) % nav::NavArea::kDirectionCount], area->id) &&
+			crossesWalkPortal(*area, *start, direction, feet, target, enterStart) &&
+			enterStart < exitStart && enterStart * distance <= maxDriftDistance)
+			return true;
+	}
+	return false;
 }
 }
 
@@ -2393,6 +2464,45 @@ NavRoamController::NavigationPhaseResult NavRoamController::updateGroundLocomoti
 	auto &currentArea = ctx.currentArea;
 	auto &objectiveArea = ctx.objectiveArea;
 	const bool wasStuck = traversalState().locomotion.isStuck();
+	const auto *probe = observation.locomotion.huntPathProbe;
+	const auto &routeCorridor = routeState().activeCorridor;
+	nav::NavVector retainedPoint{};
+	if (timedCompatibility_ && observation.nativeSameAreaEndpoint && observation.hasObjectiveTarget &&
+		probe && observation.locomotion.grounded && !observation.locomotion.ducked && !observation.locomotion.onLadder &&
+		routeState().hasActiveRoute && routeState().activeCorridorIndex == 0U && !routeCorridor.links.empty() &&
+		defuseDriftSteeringPoint(snapshot, currentArea.area, routeCorridor.links.front(), observation.locomotion.position,
+			retainedPoint))
+	{
+		// The first CSBot point remains live while the bot drifts across the start area's seam.
+		const auto revision = routeRevision_;
+		const bool clear = probe->current() && probe->clear(observation.locomotion.position, retainedPoint, false);
+		if (revision != routeRevision_ || !probe->current())
+			return {true, NavRoamResult::ReplanRequired};
+		if (clear)
+		{
+			if (expireGroundRoute(observation, intent, decision))
+				return {true, NavRoamResult::ReplanRequired};
+			const auto &feet = observation.locomotion.position;
+			const float x = retainedPoint.x - feet.x, y = retainedPoint.y - feet.y;
+			const float length = std::hypot(x, y);
+			intent->direction = {x / length, y / length, 0.0f};
+			intent->targetPosition = retainedPoint;
+			intent->speed = kRoamSpeed;
+			intent->currentArea = currentArea.area;
+			intent->targetArea = routeCorridor.links.front().fromArea;
+			routeState().lastIntentDirection = intent->direction;
+			friendWaitState().friendPathTarget = retainedPoint;
+			if (decision)
+			{
+				decision->targetArea = intent->targetArea;
+				decision->targetPosition = retainedPoint;
+				decision->intentDirection = intent->direction;
+				decision->locomotionResult = nav::LocomotionResult::IntentReady;
+				decision->stage = NavRoamStage::LocomotionReady;
+			}
+			return {true, NavRoamResult::IntentReady};
+		}
+	}
 	nav::LocomotionResult locomotionResult =
 		traversalState().locomotion.update(snapshot, observation.locomotion, intent);
 	if (routeState().hasActiveRoute)

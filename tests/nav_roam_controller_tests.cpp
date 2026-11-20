@@ -3812,9 +3812,91 @@ bool testDefuseMoveToPreparesPathBeforeMoving()
 		"a throttled entry reports the missing path without drawing or moving");
 }
 
+bool testDefuseMoveToRetainsFirstPointAfterDrift(bool clear)
+{
+	using namespace astrabot;
+	constexpr float floor = 0.03125f;
+	const auto makeArea = [&](nav::AreaId id, float xLow, float yLow, float xHigh, float yHigh) {
+		auto value = area(id, xLow, xHigh);
+		value.extent.lo = {xLow, yLow, floor};
+		value.extent.hi = {xHigh, yHigh, floor};
+		value.northEastZ = value.southWestZ = floor;
+		return value;
+	};
+	auto outside = makeArea(54U, -1600.0f, 2325.0f, -1425.0f, 2575.0f);
+	auto start = makeArea(293U, -1600.0f, 2575.0f, -1475.0f, 2625.0f);
+	auto goal = makeArea(53U, -1650.0f, 2625.0f, -1475.0f, 2825.0f);
+	outside.connections[2] = {start.id};
+	start.connections[0] = {outside.id};
+	start.connections[2] = {goal.id};
+	goal.connections[0] = {start.id};
+	nav::NavDocument document;
+	document.addArea(outside);
+	document.addArea(start);
+	document.addArea(goal);
+	nav::NavSnapshotPublisher publisher;
+	if (!check(publisher.publish(&document, 1U) == nav::NavSnapshotResult::Published, "C4 drift NAV publishes"))
+		return false;
+
+	struct Probe final : nav::NavHuntPathProbe
+	{
+		explicit Probe(bool clear) : clear_(clear) {}
+		bool clear(const nav::NavVector &, const nav::NavVector &, bool) const override { return clear_; }
+		bool clear_;
+	} probe(clear);
+	compat::ScriptedRandomSource random({
+		compat::RandomTapeEntry::floatEntry("CSBOT-PATH-RETRY", {1U, 1U}, {0U, 0U, 1U}, .4f, .6f, .5f)});
+	runtime::NavRoamController controller;
+	controller.setRandomSource(&random);
+	runtime::NavRoamObservation observation{};
+	observation.actor = {1U, 1U};
+	observation.frame = {1U, 1U, 1U};
+	observation.team = 2U;
+	observation.hasObjectiveTarget = true;
+	observation.objectiveTarget = {-1536.0f, 2688.0f, floor};
+	observation.nativeSameAreaEndpoint = true;
+	observation.prepareObjectivePathOnly = true;
+	auto &physics = observation.locomotion;
+	physics.position = {-1492.5020f, 2577.0173f, floor};
+	physics.velocity = {-6.8838f, -147.9226f, 0.0f};
+	physics.grounded = true;
+	physics.standingClearance = 72.0f;
+	physics.crouchingClearance = 36.0f;
+	physics.timingAvailable = true;
+	physics.observedAt = 1.0f;
+	physics.viewYawAvailable = true;
+	physics.viewYaw = -92.63f;
+	nav::LocomotionIntent intent{};
+	runtime::NavRoamDecision decision{};
+	const auto snapshot = publisher.snapshot();
+	if (!check(controller.update(snapshot, observation, &intent, &decision) ==
+				runtime::NavRoamResult::ObjectivePathPrepared && decision.linkFromArea == 293 &&
+				decision.linkToArea == 53 && decision.pathSequence != 0 && intent.speed == 0.0f,
+			"C4 MoveTo prepares 293 to 53 with zero input"))
+		return false;
+	const auto path = decision.pathSequence;
+	observation.prepareObjectivePathOnly = false;
+	physics.huntPathProbe = &probe;
+	physics.position = {-1493.1123f, 2563.9057f, floor};
+	physics.velocity = {-3.9455f, -84.7835f, 0.0f};
+	observation.frame.tick++;
+	physics.observedAt += .131f;
+	const auto result = controller.update(snapshot, observation, &intent, &decision);
+	if (!clear)
+		return check(result == runtime::NavRoamResult::ReplanRequired && intent.speed == 0.0f && random.verifyComplete(),
+			"a blocked ground approach does not bypass path rejection");
+	return check(result == runtime::NavRoamResult::IntentReady && controller.hasPath() && decision.pathSequence == path &&
+			decision.currentArea == 54 && decision.linkFromArea == 293 && decision.linkToArea == 53 &&
+			intent.currentArea == 54 && intent.targetArea == 293 && intent.speed > 0.0f &&
+			intent.targetPosition.x == -1537.5f && intent.targetPosition.y == 2630.0f &&
+			intent.direction.x < 0.0f && intent.direction.y > 0.0f && random.verifyComplete(),
+		"C4 MoveTo steers toward the retained portal after drifting into area 54 without another draw");
+}
+
 int main()
 {
-	if (!testRemainingPathDistance() || !testDefuseMoveToPreparesPathBeforeMoving())
+	if (!testRemainingPathDistance() || !testDefuseMoveToPreparesPathBeforeMoving() ||
+		!testDefuseMoveToRetainsFirstPointAfterDrift(true) || !testDefuseMoveToRetainsFirstPointAfterDrift(false))
 		return 1;
 	if (!testInvestigationSafestRoute() || !testInvestigationRetainsPathWhenThrottled() ||
 		!testInvestigationKeepsClosestReachablePath() || !testInvestigationSearchKeepsPositionWhenImprovingPath())

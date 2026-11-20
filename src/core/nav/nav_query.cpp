@@ -1,4 +1,5 @@
 #include "astrabot/nav/nav_query.hpp"
+#include "native_path_geometry.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -1187,24 +1188,6 @@ void setAreaPathEndpoint(const NavDocument &document, AreaId goal, NavCorridor &
 	const float requestedHeight = endpoint.z;
 	if (!corridor.links.empty())
 	{
-		const auto onEdge = [doc](const NavArea &area, unsigned direction)
-		{
-			for (const auto id : area.connections[direction])
-			{
-				const auto &reverse = doc->findArea(id)->connections[(direction + 2) % 4];
-				if (std::find(reverse.begin(), reverse.end(), area.id) != reverse.end())
-					return false;
-			}
-			return true;
-		};
-		const auto portalCoordinate = [](float value, float fromLo, float fromHi, float toLo, float toHi,
-										 bool lowEdge, bool highEdge)
-		{
-			constexpr float margin = 12.5f;
-			const float low = (std::min)(fromHi, (std::max)(fromLo, toLo)) + (lowEdge ? margin : 0.0f);
-			const float high = (std::max)(fromLo, (std::min)(fromHi, toHi)) - (highEdge ? margin : 0.0f);
-			return value < low ? low : (std::min)(value, high);
-		};
 		auto portal = extentCenterOf(*doc->findArea(corridor.areas.front()));
 		const bool recordWaypoints = hunt && corridor.nativeLadders.empty();
 		if (recordWaypoints)
@@ -1229,25 +1212,11 @@ void setAreaPathEndpoint(const NavDocument &document, AreaId goal, NavCorridor &
 			}
 			const auto &from = *doc->findArea(link.fromArea);
 			const auto &to = *doc->findArea(link.toArea);
-			const bool northSouth = link.direction == kNorthDirection || link.direction == kSouthDirection;
 			const bool reverse = std::any_of(to.connections.begin(), to.connections.end(),
 				[&](const std::vector<AreaId> &neighbors)
 				{ return std::find(neighbors.begin(), neighbors.end(), from.id) != neighbors.end(); });
-			const float step = reverse ? 5.0f : 30.0f;
-			if (northSouth)
-			{
-				portal.x = portalCoordinate(portal.x, from.extent.lo.x, from.extent.hi.x, to.extent.lo.x, to.extent.hi.x,
-					onEdge(to, kWestDirection), onEdge(to, kEastDirection));
-				portal.y = link.direction == kNorthDirection ? from.extent.lo.y - step : from.extent.hi.y + step;
-			}
-			else
-			{
-				portal.y = portalCoordinate(portal.y, from.extent.lo.y, from.extent.hi.y, to.extent.lo.y, to.extent.hi.y,
-					onEdge(to, kNorthDirection), onEdge(to, kSouthDirection));
-				portal.x = link.direction == kWestDirection ? from.extent.lo.x - step : from.extent.hi.x + step;
-			}
+			portal = nativeGroundPortal(document, link, portal, reverse);
 			const auto areaIndex = i + 1U;
-			portal.z = surfaceZAtInternal(from, portal.x, portal.y);
 			if (recordWaypoints)
 				corridor.huntWaypoints.push_back({portal, areaIndex});
 			if (!reverse)
@@ -1283,6 +1252,45 @@ void setAreaPathEndpoint(const NavDocument &document, AreaId goal, NavCorridor &
 		corridor.huntWaypoints.push_back({corridor.endpoint, corridor.areas.size() - 1U});
 	}
 }
+}
+
+NavVector nativeGroundPortal(const NavDocument &document, const NavDirectedLink &link,
+	const NavVector &previous, bool bidirectional)
+{
+	const auto &from = *document.findArea(link.fromArea);
+	const auto &to = *document.findArea(link.toArea);
+	const auto onEdge = [&](unsigned direction) {
+		for (const auto id : to.connections[direction])
+		{
+			const auto &reverse = document.findArea(id)->connections[(direction + 2) % 4];
+			if (std::find(reverse.begin(), reverse.end(), to.id) != reverse.end())
+				return false;
+		}
+		return true;
+	};
+	const auto portalCoordinate = [](float value, float fromLo, float fromHi, float toLo, float toHi,
+									  bool lowEdge, bool highEdge) {
+		constexpr float margin = 12.5f;
+		const float low = (std::min)(fromHi, (std::max)(fromLo, toLo)) + (lowEdge ? margin : 0.0f);
+		const float high = (std::max)(fromLo, (std::min)(fromHi, toHi)) - (highEdge ? margin : 0.0f);
+		return value < low ? low : (std::min)(value, high);
+	};
+	auto point = previous;
+	const float step = bidirectional ? 5.0f : 30.0f;
+	if (link.direction == kNorthDirection || link.direction == kSouthDirection)
+	{
+		point.x = portalCoordinate(point.x, from.extent.lo.x, from.extent.hi.x, to.extent.lo.x, to.extent.hi.x,
+			onEdge(kWestDirection), onEdge(kEastDirection));
+		point.y = link.direction == kNorthDirection ? from.extent.lo.y - step : from.extent.hi.y + step;
+	}
+	else
+	{
+		point.y = portalCoordinate(point.y, from.extent.lo.y, from.extent.hi.y, to.extent.lo.y, to.extent.hi.y,
+			onEdge(kNorthDirection), onEdge(kSouthDirection));
+		point.x = link.direction == kWestDirection ? from.extent.lo.x - step : from.extent.hi.x + step;
+	}
+	point.z = surfaceZAtInternal(from, point.x, point.y);
+	return point;
 }
 
 NavQueryResult NavQuery::buildHuntCorridor(AreaId start, AreaId goal, NavCorridor *corridor, NavSearchStats *stats,

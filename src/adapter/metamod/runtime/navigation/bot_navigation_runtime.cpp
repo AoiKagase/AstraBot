@@ -1349,7 +1349,9 @@ NavigationUpdate BotNavigationRuntime::updateNavigation(std::size_t index, const
 			}
 			observation.locomotion.huntForcedRunning = navigationState == compat::CompatibilityStateId::Hunt &&
 				services_->behavior_forcedRunning(index);
-			if (navigationState == compat::CompatibilityStateId::Hunt &&
+			const bool defuseApproach = compatibility && navigationState == compat::CompatibilityStateId::MoveTo &&
+				machine.task() == compat::CompatibilityTaskId::DefuseBomb && !machine.attackOverlayActive();
+			if ((navigationState == compat::CompatibilityStateId::Hunt || defuseApproach) &&
 				services_->service_engineFunctions() && services_->service_engineFunctions()->pfnTraceLine)
 				observation.locomotion.huntPathProbe = &huntProbe;
 			const bool hunting = navigationState == compat::CompatibilityStateId::Hunt && !machine.attackOverlayActive();
