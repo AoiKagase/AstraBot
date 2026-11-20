@@ -64,10 +64,11 @@ void BotBehaviorRuntime::updateNoiseInvestigation(std::size_t index, const runti
 	const bool defending = current == compat::CompatibilityStateId::Hide &&
 		(machine.task() == compat::CompatibilityTaskId::HoldPosition ||
 			machine.task() == compat::CompatibilityTaskId::GuardLooseBomb);
+	const bool atHidingSpot = current == compat::CompatibilityStateId::Hide && actor.scenarioPlanners.atDefenseSpot();
 	constexpr unsigned sniperWeapons = (1U << 3) | (1U << 13) | (1U << 18) | (1U << 24);
 	const bool mayInvestigateFromDefense = defending &&
 		reactionDisposition(index) == compat::ReactionDisposition::Engage &&
-		!(actor.scenarioPlanners.atDefenseSpot() && (static_cast<unsigned>(self->v.weapons) & sniperWeapons)) &&
+		!(atHidingSpot && (static_cast<unsigned>(self->v.weapons) & sniperWeapons)) &&
 		!services_->observation_publicObservations().pendingReloadRequest(in.actor, in.frame, in.now);
 	in.defenseAmbushExpired = mayInvestigateFromDefense && actor.scenarioPlanners.defenseAmbushExpired(in.now);
 	const bool freeTask = current == compat::CompatibilityStateId::Idle ||
@@ -77,7 +78,7 @@ void BotBehaviorRuntime::updateNoiseInvestigation(std::size_t index, const runti
 		in.now < publicState.blindUntil;
 	in.allowed = (freeTask || mayInvestigateFromDefense) && !machine.attackOverlayActive() && config.botEnable > 0 && config.botStop <= 0 &&
 		!(self->v.flags & (FL_FROZEN | FL_SPECTATOR)) && in.now >= roundStart && !blind;
-	in.hiding = current == compat::CompatibilityStateId::Hide;
+	in.hiding = atHidingSpot;
 	if (current != compat::CompatibilityStateId::InvestigateNoise && planner.active())
 		planner.cancel();
 	if ((in.noise.active && in.noise.ready && in.noise.kind != world::SoundKind::Objective && in.noise.navArea != 0 &&

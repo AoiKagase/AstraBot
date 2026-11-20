@@ -431,12 +431,39 @@ bool testInvestigation(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t 
 	step(.12f);
 	gCaptureMovementLogs = false;
 	gProfileEnabled = false;
-	return check(investigating() && !belief.noise().active &&
+	if (!check(investigating() && !belief.noise().active &&
 			std::any_of(gMovementLogs.begin(), gMovementLogs.end(), [](const std::string &message) {
 				return message.find("profile navigationStep bot_id=1 ") == 0U &&
 					message.find("state_to=STATE-INVESTIGATE-NOISE ") != std::string::npos &&
 					message.find("goal_area=2 path_link=(1->2)") != std::string::npos;
 			}),
-		"investigation routes to the remembered NAV area when an edge point belongs to both areas");
+		"investigation routes to the remembered NAV area when an edge point belongs to both areas"))
+		return false;
+
+	runtime.beginRoundGeneration();
+	step(31);
+	step(.25f);
+	source.v.origin.y = 500.0f;
+	emit();
+	step(.12f);
+	if (!check(belief.noise().active && belief.noise().position.y == 500.0f,
+			"approach fixture retains a sound outside the settled hiding radius"))
+		return false;
+	// Enter through the Core state boundary with no arrival at a defense spot.
+	auto hold = attack;
+	hold.actor = belief.identity().observer;
+	hold.frame = belief.identity().frame;
+	hold.timestamp = globals.time;
+	hold.fullUpdateSequence = navigation.service_managedBotFullUpdateSequences()[0];
+	hold.hideTask = compat::CompatibilityTaskId::HoldPosition;
+	if (!check(machine.transition(compat::CompatibilityStateId::Hide, compat::StateTransitionReason::ObjectiveChanged,
+			compat::StateTransitionId::ExplicitStateChange, hold) == compat::StateResult::Transitioned &&
+			machine.task() == compat::CompatibilityTaskId::HoldPosition,
+			"the bot begins HoldPosition before reaching cover"))
+		return false;
+	step(.65f);
+	return check(investigating() && !belief.noise().active &&
+			navigation.behavior_buildManagedObjectiveTarget(0, &target, nullptr) && target.y == 500.0f,
+		"moving toward a hiding spot can investigate a sound outside the settled radius");
 }
 }
