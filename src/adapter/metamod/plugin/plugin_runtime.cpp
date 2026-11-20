@@ -1832,7 +1832,8 @@ void PluginRuntime::updateManagedBots()
 		auto &locomotionIntent = movement.locomotionIntent;
 		auto &roamDecision = movement.roamDecision;
 		const auto roamResult = movement.roamResult;
-		behavior_.finishManagedBotNavigation(index, before, roamResult, roamDecision, &locomotionIntent);
+		if (!behavior_.finishManagedBotNavigation(index, before, roamResult, roamDecision, &locomotionIntent))
+			continue;
 		navigation_.recordNavigationUpdate(index, before, movement);
 		if (roamResult != runtime::NavRoamResult::IntentReady)
 		{

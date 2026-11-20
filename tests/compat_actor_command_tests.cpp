@@ -2,6 +2,8 @@
 #include "plugin/plugin_runtime.hpp"
 #include "runtime_characterization.hpp"
 
+#include <entity_state.h>
+#include <weaponinfo.h>
 #include <cstdio>
 #include <cerrno>
 #include <cstring>
@@ -1439,7 +1441,7 @@ std::uint32_t latestSelectedBombSite()
 }
 
 bool testRuntimeBombSiteApproach(
-	astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &engine, globalvars_t &globals)
+	astrabot::metamod::PluginRuntime &runtime, enginefuncs_t &engine, globalvars_t &globals, DLL_FUNCTIONS &gameDll)
 {
 	const char *path = "astrabot_two_site_approach.nav";
 	const auto loadNavigation = [&](bool rightReachable, bool withCover = false)
@@ -1699,12 +1701,43 @@ bool testRuntimeBombSiteApproach(
 	gEntities[0].v.origin = gPlantedBomb.v.origin;
 	gObjectiveTraceVisible = true;
 	gMovementLogs.clear();
+	const auto updateClientData = gameDll.pfnUpdateClientData;
+	const auto getWeaponData = gameDll.pfnGetWeaponData;
+	const bool checkNativeReload = !astrabot_test::runtimeCharacterization().enabled();
+	if (checkNativeReload)
+	{
+		gameDll.pfnUpdateClientData = [](const edict_t *, int, clientdata_t *client) { client->m_iId = 17; };
+		gameDll.pfnGetWeaponData = [](edict_t *, weapon_data_t *weapons) {
+			weapons[17].m_iId = 17;
+			weapons[17].m_fInReload = 1;
+			return 1;
+		};
+		bool returnedToIdle = false, usedWhileReloading = false;
+		for (int frame = 0; frame < 6 && !returnedToIdle; ++frame)
+		{
+			tick(0.1f);
+			usedWhileReloading = usedWhileReloading || (gLastRunPlayerMoveButtons & IN_USE) != 0U;
+			for (const auto &message : gMovementLogs)
+				if (message.find("profile navigationStep ") == 0U &&
+					message.find("state_from=STATE-MOVE-TO state_to=STATE-IDLE reload_known=1") != std::string::npos)
+					returnedToIdle = true;
+		}
+		passed = check(returnedToIdle && !usedWhileReloading,
+			"an active GameDLL reload sends MoveTo back to Idle at visible C4 without issuing Use") && passed;
+		gameDll.pfnGetWeaponData = [](edict_t *, weapon_data_t *weapons) {
+			weapons[17].m_iId = 17;
+			return 1;
+		};
+		gMovementLogs.clear();
+	}
 	bool defused = false;
-	for (int frame = 0; frame < 6; ++frame)
+	for (int frame = 0; frame < (checkNativeReload ? 12 : 6); ++frame)
 	{
 		tick(0.1f);
 		defused = defused || (gLastRunPlayerMoveButtons & static_cast<unsigned short>(IN_USE)) != 0U;
 	}
+	gameDll.pfnUpdateClientData = updateClientData;
+	gameDll.pfnGetWeaponData = getWeaponData;
 	passed = check(defused, "public CT converges to existing IN_USE defuse at human-planted C4") && passed;
 	bool defuseState = false;
 	for (const auto &message : gMovementLogs)
@@ -1714,6 +1747,10 @@ bool testRuntimeBombSiteApproach(
 			(message.find("profile navigationStep ") == 0U &&
 				message.find("state_to=STATE-DEFUSE-BOMB") != std::string::npos);
 	passed = check(defuseState, "visible C4 use belongs to DefuseBomb state, not outer MoveTo action") && passed;
+	if (!defused && checkNativeReload)
+		for (const auto &message : gMovementLogs)
+			if (message.find("profile navigationStep ") == 0U)
+				std::fprintf(stderr, "%s\n", message.c_str());
 	// A dropped bomb is visible on T radar even behind an opaque wall.
 	gPlantedBomb.v.classname = 4;
 	gPlantedBomb.v.model = 5;
@@ -2933,7 +2970,7 @@ int main(int argc, char **argv)
 	if (!testRuntimeNearJumpFallback(runtime, engineFunctions, globals) ||
 		!testRuntimeRecoveryReselection(runtime, engineFunctions, globals) ||
 		!testRuntimeProfilerBoundaries(runtime, engineFunctions, globals) ||
-		!testRuntimeBombSiteApproach(runtime, engineFunctions, globals))
+		!testRuntimeBombSiteApproach(runtime, engineFunctions, globals, gameDllTable))
 	{
 		std::remove(profilePath);
 		return 1;

@@ -1491,7 +1491,7 @@ NavRoamController::NavigationPhaseResult NavRoamController::selectUpdateRoute(Na
 		{
 			decision->stage = NavRoamStage::LinkSelection;
 		}
-		if (objectiveArea == currentArea.area && observation.hasObjectiveTarget)
+		if (objectiveArea == currentArea.area && observation.hasObjectiveTarget && !observation.nativeDefusePath)
 		{
 			const float deltaX = observation.objectiveTarget.x - observation.locomotion.position.x;
 			const float deltaY = observation.objectiveTarget.y - observation.locomotion.position.y;
@@ -1583,7 +1583,7 @@ NavRoamController::NavigationPhaseResult NavRoamController::selectUpdateRoute(Na
 		HuntRouteSampling sampling{observation.locomotion.huntPathProbe};
 		if (!selectRoute(snapshot, currentArea, objectiveArea, decision, routeType,
 				modePolicy_.mode() == compat::RuntimeMode::Compatibility ? observation.nativeLadders : nullptr,
-				&sampling))
+				&sampling, observation.nativeDefusePath))
 		{
 			if (sampling.invalidated)
 				return {true, NavRoamResult::ReplanRequired};
@@ -2904,11 +2904,30 @@ bool NavRoamController::buildStuckRecoveryIntent(
 
 bool NavRoamController::selectRoute(const nav::NavSnapshot &snapshot, const nav::NavAreaMatch &currentArea,
 	nav::AreaId objectiveArea, NavRoamDecision *decision, nav::NavRouteType routeType,
-	const nav::NavLadderTopology *nativeLadders, HuntRouteSampling *sampling)
+	const nav::NavLadderTopology *nativeLadders, HuntRouteSampling *sampling, bool nativeDefusePath)
 {
 	if (objectiveArea == 0U)
 	{
 		return selectRoamRoute(snapshot, currentArea, decision, sampling);
+	}
+	if (nativeDefusePath && objectiveArea == currentArea.area)
+	{
+		// CSBot BuildTrivialPath keeps the objective's XY and uses the current NAV floor.
+		nav::NavCorridor corridor{};
+		corridor.navRevision = snapshot.revision();
+		corridor.mapGeneration = snapshot.mapGeneration();
+		corridor.routeType = routeType;
+		corridor.areas = {objectiveArea};
+		corridor.hasEndpoint = true;
+		corridor.endpoint = roamGoalState().objectiveTarget;
+		corridor.endpoint.z = nav::surfaceZAt(*snapshot.document()->findArea(objectiveArea),
+			corridor.endpoint.x, corridor.endpoint.y);
+		const nav::NavDirectedLink link{objectiveArea, objectiveArea, 0U, 0U};
+		if (!startRoute(snapshot, corridor, link))
+			return false;
+		rememberRoute(snapshot, corridor, link);
+		populateRouteDecision(decision);
+		return true;
 	}
 	nav::NavQuery query(snapshot);
 	if (routeState().hasPathCostContext && !modePolicy_.allowsAdaptiveRouteWeighting())

@@ -105,7 +105,7 @@ public:
 	ActionProposal decideManagedBotAction(std::size_t index, const runtime::MovementPhysicsState &before,
 		const runtime::ViewAngles &movementAngles, std::uint16_t movementButtons);
 	const team::TeamObjectiveAssignment *findManagedTeamObjectiveAssignment(const world::ActorKey &actor) const;
-	void finishManagedBotNavigation(std::size_t index, const runtime::MovementPhysicsState &before,
+	bool finishManagedBotNavigation(std::size_t index, const runtime::MovementPhysicsState &before,
 		runtime::NavRoamResult result, const runtime::NavRoamDecision &decision, nav::LocomotionIntent *intent);
 	compat::StateUpdateContext makeManagedBotStateContext(std::size_t index,
 		const runtime::MovementPhysicsState &before, compat::StateBehaviorInput *behavior = nullptr) const;

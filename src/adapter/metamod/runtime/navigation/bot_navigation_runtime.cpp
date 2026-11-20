@@ -1120,6 +1120,7 @@ NavigationUpdate BotNavigationRuntime::updateNavigation(std::size_t index, const
 		services_->behavior_managedBotStateMachines(index).state() == compat::CompatibilityStateId::MoveTo)
 	{
 		const auto task = services_->behavior_managedBotStateMachines(index).task();
+		observation.nativeDefusePath = task == compat::CompatibilityTaskId::DefuseBomb;
 		observation.objectiveRouteType = task == compat::CompatibilityTaskId::FindTickingBomb ||
 				task == compat::CompatibilityTaskId::DefuseBomb ||
 				task == compat::CompatibilityTaskId::MoveToLastKnownEnemyPosition

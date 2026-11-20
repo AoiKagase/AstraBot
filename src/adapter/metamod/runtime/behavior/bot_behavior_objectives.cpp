@@ -45,12 +45,12 @@ ActionKind bestOwnedWeapon(const edict_t &entity)
 }
 using namespace runtime_detail;
 
-void BotBehaviorRuntime::finishManagedBotNavigation(std::size_t index, const runtime::MovementPhysicsState &before,
+bool BotBehaviorRuntime::finishManagedBotNavigation(std::size_t index, const runtime::MovementPhysicsState &before,
 	runtime::NavRoamResult result, const runtime::NavRoamDecision &decision, nav::LocomotionIntent *intent)
 {
 	if (services_->service_compatibilitySurface().configuration().mode != compat::RuntimeMode::Compatibility ||
 		index >= services_->service_managedBotHandles().size() || services_->service_globals() == nullptr)
-		return;
+		return true;
 	actors_[index].obstaclePathActive = decision.pathSequence != 0U && decision.goalPresent;
 	actors_[index].obstaclePathGoal = decision.targetPosition;
 	compat::StateBehaviorInput input{};
@@ -59,7 +59,7 @@ void BotBehaviorRuntime::finishManagedBotNavigation(std::size_t index, const run
 	if (!(prepared.navigation.actor == context.actor) || prepared.navigation.frame.tick != context.frame.tick ||
 		prepared.navigation.frame.mapGeneration != context.frame.mapGeneration ||
 		prepared.navigation.frame.roundGeneration != context.frame.roundGeneration)
-		return;
+		return true;
 	input = prepared;
 	compat::NavigationStep step{};
 	step.actor = context.actor;
@@ -113,18 +113,38 @@ void BotBehaviorRuntime::finishManagedBotNavigation(std::size_t index, const run
 	compat::CompatibilityObservation observation{};
 	const compat::ObservationTimingContext timing = {
 		services_->command_managedBotCommandSequences(index), 0U, context.fullUpdateSequence};
+	auto reload = combat::ReloadState::Unknown;
 	if (services_->observation_observationAdapter().collectActor(services_->service_managedBotHandles()[index].entity,
 			context.actor, context.frame, timing, &observation) == ObservationAdapterResult::Accepted &&
-		observation.weapon.reloadState.isAvailable() &&
-		observation.weapon.reloadState.value != combat::ReloadState::Unknown)
+		observation.weapon.reloadState.isAvailable())
+		reload = observation.weapon.reloadState.value;
+	if (reload == combat::ReloadState::Unknown && currentState == compat::CompatibilityStateId::MoveTo &&
+		input.defuseGoalKnown && input.withinDefuseRange && input.navigationOwned &&
+		!actors_[index].managedBotStateMachines.attackOverlayActive() &&
+		(step.outcome == Outcome::EndOfPath || step.outcome == Outcome::PathFailure))
+	{
+		// CSBot checks its active weapon before entering DefuseBomb from MoveTo.
+		const auto receipt = reactionContext(index);
+		const auto revision = actors_[index].executionRevision;
+		const auto epoch = actors_[index].managedBotStateMachines.normalStateEpoch();
+		if (!(receipt.actor == context.actor && receipt.frame == context.frame))
+			return false;
+		reload = services_->observation_activeWeaponReloadState(services_->service_managedBotHandles()[index].entity);
+		if (!executionCurrent(index, receipt, revision) ||
+			actors_[index].managedBotStateMachines.normalStateEpoch() != epoch ||
+			actors_[index].managedBotObjectiveTargets.generation != step.goalGeneration ||
+			services_->service_managedBotFullUpdateSequences()[index] != step.fullUpdateSequence)
+			return false;
+	}
+	if (reload != combat::ReloadState::Unknown)
 	{
 		input.reloadKnown = true;
-		input.reloading = observation.weapon.reloadState.value == combat::ReloadState::Reloading;
+		input.reloadInferred = false;
+		input.reloading = reload == combat::ReloadState::Reloading;
 	}
 	else
 	{
-		// Vanilla cannot expose the internal reload flag. Own delivered reload
-		// requests conservatively block use; no pending request is an inference.
+		// Fall back to the bot's delivered reload requests when prediction is unavailable.
 		input.reloadInferred = true;
 		input.reloading = services_->observation_publicObservations().pendingReloadRequest(
 			context.actor, context.frame, context.timestamp);
@@ -190,6 +210,7 @@ void BotBehaviorRuntime::finishManagedBotNavigation(std::size_t index, const run
 		if (current())
 			reportLostEnemy(index, pursuitTarget, current);
 	}
+	return true;
 }
 
 void BotBehaviorRuntime::refreshManagedObjectiveSiteRegistry()
