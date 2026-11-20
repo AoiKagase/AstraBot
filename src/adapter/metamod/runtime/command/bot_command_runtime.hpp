@@ -27,7 +27,7 @@ public:
 	runtime::CommandReceipt finishDirectNeutralCommand(std::size_t index, FakeClientHandle &handle,
 		std::uint8_t milliseconds, MovementCommandDraft draft, const ActionProposal &requestedAction);
 	runtime::CommandReceipt executeManagedBotCommand(
-		std::size_t index, FakeClientHandle &handle, bool huntLookAdvanced = false);
+		std::size_t index, FakeClientHandle &handle, bool navigationLookAdvanced = false);
 	void onTouch(edict_t *entity, edict_t *other);
 	MovementCommandDraft beginNeutralCommand(
 		std::size_t index, FakeClientHandle &handle, const runtime::MovementPhysicsState &before);
@@ -117,18 +117,18 @@ private:
 		bool managedBotActionStopsMovement{};
 		bool nativeLadderControl{};
 		bool nativeLadderJump{};
-		compat::AimSpringState huntLookSpring{};
-		float huntLookYaw = std::numeric_limits<float>::quiet_NaN();
+		compat::AimSpringState navigationLookSpring{};
+		float navigationLookYaw = std::numeric_limits<float>::quiet_NaN();
 		world::WorldPosition useEntityLookTarget{};
 		compat::AimSpringState useEntityLookSpring{};
 		bool useEntityLookActive = false;
 		world::EntityKey hostageUseTarget{};
 		float movementGateDiagnosticTimes = std::numeric_limits<float>::quiet_NaN();
 
-		void resetHuntLook()
+		void resetNavigationLook()
 		{
-			huntLookYaw = std::numeric_limits<float>::quiet_NaN();
-			huntLookSpring = {};
+			navigationLookYaw = std::numeric_limits<float>::quiet_NaN();
+			navigationLookSpring = {};
 		}
 	};
 	void applyUseEntityLook(std::size_t index, const edict_t &entity, const ActionProposal &action,

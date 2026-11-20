@@ -1367,12 +1367,12 @@
   {
     "header": "src/adapter/metamod/runtime/command/bot_command_runtime.hpp",
     "scope": "ActorState",
-    "member": "huntLookSpring"
+    "member": "navigationLookSpring"
   },
   {
     "header": "src/adapter/metamod/runtime/command/bot_command_runtime.hpp",
     "scope": "ActorState",
-    "member": "huntLookYaw"
+    "member": "navigationLookYaw"
   },
   {
     "header": "src/adapter/metamod/runtime/command/bot_command_runtime.hpp",

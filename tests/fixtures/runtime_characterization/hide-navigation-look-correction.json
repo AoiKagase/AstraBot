@@ -1,0 +1,1377 @@
+{
+  "description": "Hide projects its movement using the current view and turns toward the cover path with the native angle spring.",
+  "platforms": {
+    "windows-x86": {
+      "baseline_sha256": "98d55eea7f01946c6ab7f9716cf9dde12a0ec2caebbdc7d0f3ede82cec18807a",
+      "corrected_sha256": "b3e2b82f4c9791bb1e7f7ba6fd2295bd422a2c38c5f4d5e8d1ddb05eb834dc52",
+      "records": 155626
+    },
+    "linux-x86": {
+      "baseline_sha256": "c9d12d266df9defaa9f50bcc95410baa29088333b612db14554c0fb47de5a153",
+      "corrected_sha256": "1a76b696b6d41834f089f2cad8ddf032fee7cf724c1cb2fb8afca393c11ac1ac",
+      "records": 155626
+    }
+  },
+  "edits": [
+    [
+      126726,
+      0
+    ],
+    [
+      126917,
+      1
+    ],
+    [
+      127122,
+      2
+    ],
+    [
+      127312,
+      3
+    ],
+    [
+      127502,
+      4
+    ],
+    [
+      127707,
+      5
+    ],
+    [
+      127897,
+      6
+    ],
+    [
+      128087,
+      7
+    ],
+    [
+      128292,
+      8
+    ],
+    [
+      128482,
+      9
+    ],
+    [
+      128672,
+      10
+    ],
+    [
+      128881,
+      11
+    ],
+    [
+      128991,
+      12
+    ],
+    [
+      129071,
+      13
+    ],
+    [
+      129181,
+      14
+    ],
+    [
+      129261,
+      15
+    ],
+    [
+      129386,
+      16
+    ],
+    [
+      129466,
+      17
+    ],
+    [
+      129576,
+      18
+    ],
+    [
+      129656,
+      19
+    ],
+    [
+      129766,
+      20
+    ],
+    [
+      129846,
+      21
+    ],
+    [
+      129971,
+      22
+    ],
+    [
+      130051,
+      23
+    ],
+    [
+      130161,
+      24
+    ],
+    [
+      130241,
+      25
+    ],
+    [
+      130351,
+      26
+    ],
+    [
+      130431,
+      27
+    ],
+    [
+      130556,
+      28
+    ],
+    [
+      130636,
+      29
+    ],
+    [
+      130746,
+      30
+    ],
+    [
+      130827,
+      31
+    ],
+    [
+      130937,
+      32
+    ],
+    [
+      131017,
+      33
+    ],
+    [
+      131142,
+      34
+    ],
+    [
+      131224,
+      35
+    ],
+    [
+      131259,
+      36
+    ],
+    [
+      131310,
+      37
+    ],
+    [
+      131340,
+      38
+    ],
+    [
+      131386,
+      39
+    ],
+    [
+      131421,
+      40
+    ],
+    [
+      131472,
+      41
+    ],
+    [
+      131545,
+      42
+    ],
+    [
+      131595,
+      43
+    ],
+    [
+      131646,
+      44
+    ],
+    [
+      131719,
+      45
+    ],
+    [
+      131754,
+      46
+    ],
+    [
+      131805,
+      47
+    ],
+    [
+      131878,
+      48
+    ],
+    [
+      131913,
+      49
+    ],
+    [
+      131964,
+      50
+    ],
+    [
+      132037,
+      51
+    ],
+    [
+      132088,
+      52
+    ],
+    [
+      132139,
+      53
+    ],
+    [
+      132212,
+      54
+    ],
+    [
+      132314,
+      55
+    ],
+    [
+      132317,
+      56
+    ]
+  ],
+  "patterns": [
+    {
+      "windows-x86": {
+        "before": [
+          "move actor=1 view=(0x0.0000000000000p+0,-0x1.6800000000000p+7,0x0.0000000000000p+0) input=(0x1.e000000000000p+7,0x0.0000000000000p+0,0x0.0000000000000p+0) buttons=8 msec=100"
+        ],
+        "after": [
+          "move actor=1 view=(0x0.0000000000000p+0,0x1.6800000000000p+6,0x0.0000000000000p+0) input=(0x0.0000000000000p+0,-0x1.e000000000000p+7,0x0.0000000000000p+0) buttons=512 msec=100"
+        ]
+      },
+      "linux-x86": {
+        "before": [
+          "move actor=1 view=(0x0p+0,-0x1.68p+7,0x0p+0) input=(0x1.ep+7,0x0p+0,0x0p+0) buttons=8 msec=100"
+        ],
+        "after": [
+          "move actor=1 view=(0x0p+0,0x1.68p+6,0x0p+0) input=(0x0p+0,-0x1.ep+7,0x0p+0) buttons=512 msec=100"
+        ]
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "move actor=1 view=(0x0.0000000000000p+0,-0x1.6800000000000p+7,0x0.0000000000000p+0) input=(0x1.e000000000000p+7,0x0.0000000000000p+0,0x0.0000000000000p+0) buttons=8 msec=100"
+        ],
+        "after": [
+          "move actor=1 view=(0x1.c4e7200000000p-1,0x1.7555580000000p+6,0x0.0000000000000p+0) input=(0x0.0000000000000p+0,-0x1.e000000000000p+7,0x0.0000000000000p+0) buttons=512 msec=100"
+        ]
+      },
+      "linux-x86": {
+        "before": [
+          "move actor=1 view=(0x0p+0,-0x1.68p+7,0x0p+0) input=(0x1.ep+7,0x0p+0,0x0p+0) buttons=8 msec=100"
+        ],
+        "after": [
+          "move actor=1 view=(0x1.c4e72p-1,0x1.755558p+6,0x0p+0) input=(0x0p+0,-0x1.ep+7,0x0p+0) buttons=512 msec=100"
+        ]
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "move actor=1 view=(0x0.0000000000000p+0,-0x1.6800000000000p+7,0x0.0000000000000p+0) input=(0x1.e000000000000p+7,0x0.0000000000000p+0,0x0.0000000000000p+0) buttons=8 msec=100"
+        ],
+        "after": [
+          "move actor=1 view=(0x1.867bb80000000p+0,0x1.9000000000000p+6,0x0.0000000000000p+0) input=(0x0.0000000000000p+0,-0x1.e000000000000p+7,0x0.0000000000000p+0) buttons=512 msec=100"
+        ]
+      },
+      "linux-x86": {
+        "before": [
+          "move actor=1 view=(0x0p+0,-0x1.68p+7,0x0p+0) input=(0x1.ep+7,0x0p+0,0x0p+0) buttons=8 msec=100"
+        ],
+        "after": [
+          "move actor=1 view=(0x1.867bb6p+0,0x1.9p+6,0x0p+0) input=(0x0p+0,-0x1.ep+7,0x0p+0) buttons=512 msec=100"
+        ]
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "move actor=1 view=(0x0.0000000000000p+0,-0x1.6800000000000p+7,0x0.0000000000000p+0) input=(0x1.e000000000000p+7,0x0.0000000000000p+0,0x0.0000000000000p+0) buttons=8 msec=100"
+        ],
+        "after": [
+          "move actor=1 view=(0x1.d735140000000p+0,0x1.b800000000000p+6,0x0.0000000000000p+0) input=(0x1.e000000000000p+7,-0x1.e000000000000p+7,0x0.0000000000000p+0) buttons=520 msec=100"
+        ]
+      },
+      "linux-x86": {
+        "before": [
+          "move actor=1 view=(0x0p+0,-0x1.68p+7,0x0p+0) input=(0x1.ep+7,0x0p+0,0x0p+0) buttons=8 msec=100"
+        ],
+        "after": [
+          "move actor=1 view=(0x1.d73512p+0,0x1.b8p+6,0x0p+0) input=(0x1.ep+7,-0x1.ep+7,0x0p+0) buttons=520 msec=100"
+        ]
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "move actor=1 view=(0x0.0000000000000p+0,-0x1.6800000000000p+7,0x0.0000000000000p+0) input=(0x1.e000000000000p+7,0x0.0000000000000p+0,0x0.0000000000000p+0) buttons=8 msec=100"
+        ],
+        "after": [
+          "move actor=1 view=(0x1.f683f80000000p+0,0x1.ed55580000000p+6,0x0.0000000000000p+0) input=(0x1.e000000000000p+7,-0x1.e000000000000p+7,0x0.0000000000000p+0) buttons=520 msec=100"
+        ]
+      },
+      "linux-x86": {
+        "before": [
+          "move actor=1 view=(0x0p+0,-0x1.68p+7,0x0p+0) input=(0x1.ep+7,0x0p+0,0x0p+0) buttons=8 msec=100"
+        ],
+        "after": [
+          "move actor=1 view=(0x1.f683f6p+0,0x1.ed5558p+6,0x0p+0) input=(0x1.ep+7,-0x1.ep+7,0x0p+0) buttons=520 msec=100"
+        ]
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "move actor=1 view=(0x0.0000000000000p+0,-0x1.6800000000000p+7,0x0.0000000000000p+0) input=(0x1.e000000000000p+7,0x0.0000000000000p+0,0x0.0000000000000p+0) buttons=8 msec=100"
+        ],
+        "after": [
+          "move actor=1 view=(0x1.ffe11e0000000p+0,0x1.151df40000000p+7,0x0.0000000000000p+0) input=(0x1.e000000000000p+7,-0x1.e000000000000p+7,0x0.0000000000000p+0) buttons=520 msec=100"
+        ]
+      },
+      "linux-x86": {
+        "before": [
+          "move actor=1 view=(0x0p+0,-0x1.68p+7,0x0p+0) input=(0x1.ep+7,0x0p+0,0x0p+0) buttons=8 msec=100"
+        ],
+        "after": [
+          "move actor=1 view=(0x1.ffe11cp+0,0x1.151df8p+7,0x0p+0) input=(0x1.ep+7,-0x1.ep+7,0x0p+0) buttons=520 msec=100"
+        ]
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "move actor=1 view=(0x0.0000000000000p+0,-0x1.6800000000000p+7,0x0.0000000000000p+0) input=(0x1.e000000000000p+7,0x0.0000000000000p+0,0x0.0000000000000p+0) buttons=8 msec=100"
+        ],
+        "after": [
+          "move actor=1 view=(0x1.00bf360000000p+1,0x1.2d74480000000p+7,0x0.0000000000000p+0) input=(0x1.e000000000000p+7,-0x1.e000000000000p+7,0x0.0000000000000p+0) buttons=520 msec=100"
+        ]
+      },
+      "linux-x86": {
+        "before": [
+          "move actor=1 view=(0x0p+0,-0x1.68p+7,0x0p+0) input=(0x1.ep+7,0x0p+0,0x0p+0) buttons=8 msec=100"
+        ],
+        "after": [
+          "move actor=1 view=(0x1.00bf34p+1,0x1.2d7448p+7,0x0p+0) input=(0x1.ep+7,-0x1.ep+7,0x0p+0) buttons=520 msec=100"
+        ]
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "move actor=1 view=(0x0.0000000000000p+0,-0x1.6800000000000p+7,0x0.0000000000000p+0) input=(0x1.e000000000000p+7,0x0.0000000000000p+0,0x0.0000000000000p+0) buttons=8 msec=100"
+        ],
+        "after": [
+          "move actor=1 view=(0x1.0083e00000000p+1,0x1.3f60880000000p+7,0x0.0000000000000p+0) input=(0x1.e000000000000p+7,-0x1.e000000000000p+7,0x0.0000000000000p+0) buttons=520 msec=100"
+        ]
+      },
+      "linux-x86": {
+        "before": [
+          "move actor=1 view=(0x0p+0,-0x1.68p+7,0x0p+0) input=(0x1.ep+7,0x0p+0,0x0p+0) buttons=8 msec=100"
+        ],
+        "after": [
+          "move actor=1 view=(0x1.0083dep+1,0x1.3f6088p+7,0x0p+0) input=(0x1.ep+7,-0x1.ep+7,0x0p+0) buttons=520 msec=100"
+        ]
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "move actor=1 view=(0x0.0000000000000p+0,-0x1.6800000000000p+7,0x0.0000000000000p+0) input=(0x1.e000000000000p+7,0x0.0000000000000p+0,0x0.0000000000000p+0) buttons=8 msec=100"
+        ],
+        "after": [
+          "move actor=1 view=(0x1.001bfc0000000p+1,0x1.4c42380000000p+7,0x0.0000000000000p+0) input=(0x1.e000000000000p+7,-0x1.e000000000000p+7,0x0.0000000000000p+0) buttons=520 msec=100"
+        ]
+      },
+      "linux-x86": {
+        "before": [
+          "move actor=1 view=(0x0p+0,-0x1.68p+7,0x0p+0) input=(0x1.ep+7,0x0p+0,0x0p+0) buttons=8 msec=100"
+        ],
+        "after": [
+          "move actor=1 view=(0x1.001bfap+1,0x1.4c4238p+7,0x0p+0) input=(0x1.ep+7,-0x1.ep+7,0x0p+0) buttons=520 msec=100"
+        ]
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "move actor=1 view=(0x0.0000000000000p+0,-0x1.6800000000000p+7,0x0.0000000000000p+0) input=(0x1.e000000000000p+7,0x0.0000000000000p+0,0x0.0000000000000p+0) buttons=8 msec=100"
+        ],
+        "after": [
+          "move actor=1 view=(0x1.ff5d560000000p+0,0x1.5573140000000p+7,0x0.0000000000000p+0) input=(0x1.e000000000000p+7,0x0.0000000000000p+0,0x0.0000000000000p+0) buttons=8 msec=100"
+        ]
+      },
+      "linux-x86": {
+        "before": [
+          "move actor=1 view=(0x0p+0,-0x1.68p+7,0x0p+0) input=(0x1.ep+7,0x0p+0,0x0p+0) buttons=8 msec=100"
+        ],
+        "after": [
+          "move actor=1 view=(0x1.ff5d52p+0,0x1.557314p+7,0x0p+0) input=(0x1.ep+7,0x0p+0,0x0p+0) buttons=8 msec=100"
+        ]
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "move actor=1 view=(0x0.0000000000000p+0,-0x1.6800000000000p+7,0x0.0000000000000p+0) input=(0x1.e000000000000p+7,0x0.0000000000000p+0,0x0.0000000000000p+0) buttons=8 msec=100"
+        ],
+        "after": [
+          "move actor=1 view=(0x1.fe66ac0000000p+0,0x1.5bfd000000000p+7,0x0.0000000000000p+0) input=(0x1.e000000000000p+7,0x0.0000000000000p+0,0x0.0000000000000p+0) buttons=8 msec=100"
+        ]
+      },
+      "linux-x86": {
+        "before": [
+          "move actor=1 view=(0x0p+0,-0x1.68p+7,0x0p+0) input=(0x1.ep+7,0x0p+0,0x0p+0) buttons=8 msec=100"
+        ],
+        "after": [
+          "move actor=1 view=(0x1.fe66a8p+0,0x1.5bfdp+7,0x0p+0) input=(0x1.ep+7,0x0p+0,0x0p+0) buttons=8 msec=100"
+        ]
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "move actor=1 view=(0x0.0000000000000p+0,0x1.6800000000000p+6,0x0.0000000000000p+0) input=(0x1.e000000000000p+7,0x0.0000000000000p+0,0x0.0000000000000p+0) buttons=8 msec=100"
+        ],
+        "after": [
+          "move actor=1 view=(0x1.fd3a020000000p+0,0x1.60a2980000000p+7,0x0.0000000000000p+0) input=(0x0.0000000000000p+0,0x1.e000000000000p+7,0x0.0000000000000p+0) buttons=1024 msec=100"
+        ]
+      },
+      "linux-x86": {
+        "before": [
+          "move actor=1 view=(0x0p+0,0x1.68p+6,0x0p+0) input=(0x1.ep+7,0x0p+0,0x0p+0) buttons=8 msec=100"
+        ],
+        "after": [
+          "move actor=1 view=(0x1.fd39fep+0,0x1.60a298p+7,0x0p+0) input=(0x0p+0,0x1.ep+7,0x0p+0) buttons=1024 msec=100"
+        ]
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "call traceObjectiveVisibility end=(0x1.4000020000000p+6,0x1.c000000000000p+6,-0x1.4000000000000p+6)",
+          "call traceObjectiveVisibility end=(0x1.4000000000000p+6,0x1.f000000000000p+5,-0x1.4000000000000p+6)",
+          "call traceObjectiveVisibility end=(0x1.4000000000000p+6,0x1.5000000000000p+5,-0x1.4000000000000p+6)"
+        ],
+        "after": [
+          "call traceObjectiveVisibility end=(0x1.617b4e0000000p+6,0x1.be3e5c0000000p+6,-0x1.4000000000000p+6)",
+          "call traceObjectiveVisibility end=(0x1.4c8e3e0000000p+6,0x1.eeaec40000000p+5,-0x1.4000000000000p+6)",
+          "call traceObjectiveVisibility end=(0x1.442f6a0000000p+6,0x1.4f8f980000000p+5,-0x1.4000000000000p+6)"
+        ]
+      },
+      "linux-x86": {
+        "before": [
+          "call traceObjectiveVisibility end=(0x1.400002p+6,0x1.cp+6,-0x1.4p+6)",
+          "call traceObjectiveVisibility end=(0x1.4p+6,0x1.fp+5,-0x1.4p+6)",
+          "call traceObjectiveVisibility end=(0x1.4p+6,0x1.5p+5,-0x1.4p+6)"
+        ],
+        "after": [
+          "call traceObjectiveVisibility end=(0x1.617b4ep+6,0x1.be3e5cp+6,-0x1.4p+6)",
+          "call traceObjectiveVisibility end=(0x1.4c8e3ep+6,0x1.eeaec4p+5,-0x1.4p+6)",
+          "call traceObjectiveVisibility end=(0x1.442f6ap+6,0x1.4f8f96p+5,-0x1.4p+6)"
+        ]
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "move actor=1 view=(0x0.0000000000000p+0,0x1.6800000000000p+6,0x0.0000000000000p+0) input=(0x1.e000000000000p+7,0x0.0000000000000p+0,0x0.0000000000000p+0) buttons=8 msec=100"
+        ],
+        "after": [
+          "move actor=1 view=(0x1.fbc7e60000000p+0,0x1.5e9d880000000p+7,0x0.0000000000000p+0) input=(0x0.0000000000000p+0,0x1.e000000000000p+7,0x0.0000000000000p+0) buttons=1024 msec=100"
+        ]
+      },
+      "linux-x86": {
+        "before": [
+          "move actor=1 view=(0x0p+0,0x1.68p+6,0x0p+0) input=(0x1.ep+7,0x0p+0,0x0p+0) buttons=8 msec=100"
+        ],
+        "after": [
+          "move actor=1 view=(0x1.fbc7e2p+0,0x1.5e9d88p+7,0x0p+0) input=(0x0p+0,0x1.ep+7,0x0p+0) buttons=1024 msec=100"
+        ]
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "call traceObjectiveVisibility end=(0x1.4000020000000p+6,0x1.c000000000000p+6,-0x1.4000000000000p+6)",
+          "call traceObjectiveVisibility end=(0x1.4000000000000p+6,0x1.f000000000000p+5,-0x1.4000000000000p+6)",
+          "call traceObjectiveVisibility end=(0x1.4000000000000p+6,0x1.5000000000000p+5,-0x1.4000000000000p+6)"
+        ],
+        "after": [
+          "call traceObjectiveVisibility end=(0x1.617b4e0000000p+6,0x1.be3e5c0000000p+6,-0x1.4000000000000p+6)",
+          "call traceObjectiveVisibility end=(0x1.4c8e3e0000000p+6,0x1.eeaec40000000p+5,-0x1.4000000000000p+6)",
+          "call traceObjectiveVisibility end=(0x1.442f6a0000000p+6,0x1.4f8f980000000p+5,-0x1.4000000000000p+6)"
+        ]
+      },
+      "linux-x86": {
+        "before": [
+          "call traceObjectiveVisibility end=(0x1.400002p+6,0x1.cp+6,-0x1.4p+6)",
+          "call traceObjectiveVisibility end=(0x1.4p+6,0x1.fp+5,-0x1.4p+6)",
+          "call traceObjectiveVisibility end=(0x1.4p+6,0x1.5p+5,-0x1.4p+6)"
+        ],
+        "after": [
+          "call traceObjectiveVisibility end=(0x1.617b4ep+6,0x1.be3e5cp+6,-0x1.4p+6)",
+          "call traceObjectiveVisibility end=(0x1.4c8e3ep+6,0x1.eeaec4p+5,-0x1.4p+6)",
+          "call traceObjectiveVisibility end=(0x1.442f6ap+6,0x1.4f8f96p+5,-0x1.4p+6)"
+        ]
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "move actor=1 view=(0x0.0000000000000p+0,0x1.6800000000000p+6,0x0.0000000000000p+0) input=(0x1.e000000000000p+7,0x0.0000000000000p+0,0x0.0000000000000p+0) buttons=8 msec=100"
+        ],
+        "after": [
+          "move actor=1 view=(0x1.fa09c40000000p+0,0x1.55edcc0000000p+7,0x0.0000000000000p+0) input=(0x0.0000000000000p+0,0x1.e000000000000p+7,0x0.0000000000000p+0) buttons=1024 msec=100"
+        ]
+      },
+      "linux-x86": {
+        "before": [
+          "move actor=1 view=(0x0p+0,0x1.68p+6,0x0p+0) input=(0x1.ep+7,0x0p+0,0x0p+0) buttons=8 msec=100"
+        ],
+        "after": [
+          "move actor=1 view=(0x1.fa09cp+0,0x1.55edccp+7,0x0p+0) input=(0x0p+0,0x1.ep+7,0x0p+0) buttons=1024 msec=100"
+        ]
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "call traceObjectiveVisibility end=(0x1.4000020000000p+6,0x1.c000000000000p+6,-0x1.4000000000000p+6)",
+          "call traceObjectiveVisibility end=(0x1.4000000000000p+6,0x1.f000000000000p+5,-0x1.4000000000000p+6)",
+          "call traceObjectiveVisibility end=(0x1.4000000000000p+6,0x1.5000000000000p+5,-0x1.4000000000000p+6)"
+        ],
+        "after": [
+          "call traceObjectiveVisibility end=(0x1.617b4e0000000p+6,0x1.be3e5c0000000p+6,-0x1.4000000000000p+6)",
+          "call traceObjectiveVisibility end=(0x1.4c8e3e0000000p+6,0x1.eeaec40000000p+5,-0x1.4000000000000p+6)",
+          "call traceObjectiveVisibility end=(0x1.442f6a0000000p+6,0x1.4f8f980000000p+5,-0x1.4000000000000p+6)"
+        ]
+      },
+      "linux-x86": {
+        "before": [
+          "call traceObjectiveVisibility end=(0x1.400002p+6,0x1.cp+6,-0x1.4p+6)",
+          "call traceObjectiveVisibility end=(0x1.4p+6,0x1.fp+5,-0x1.4p+6)",
+          "call traceObjectiveVisibility end=(0x1.4p+6,0x1.5p+5,-0x1.4p+6)"
+        ],
+        "after": [
+          "call traceObjectiveVisibility end=(0x1.617b4ep+6,0x1.be3e5cp+6,-0x1.4p+6)",
+          "call traceObjectiveVisibility end=(0x1.4c8e3ep+6,0x1.eeaec4p+5,-0x1.4p+6)",
+          "call traceObjectiveVisibility end=(0x1.442f6ap+6,0x1.4f8f96p+5,-0x1.4p+6)"
+        ]
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "move actor=1 view=(0x0.0000000000000p+0,0x1.6800000000000p+6,0x0.0000000000000p+0) input=(0x1.e000000000000p+7,0x0.0000000000000p+0,0x0.0000000000000p+0) buttons=8 msec=100"
+        ],
+        "after": [
+          "move actor=1 view=(0x1.f7fda20000000p+0,0x1.4693640000000p+7,0x0.0000000000000p+0) input=(0x0.0000000000000p+0,0x1.e000000000000p+7,0x0.0000000000000p+0) buttons=1024 msec=100"
+        ]
+      },
+      "linux-x86": {
+        "before": [
+          "move actor=1 view=(0x0p+0,0x1.68p+6,0x0p+0) input=(0x1.ep+7,0x0p+0,0x0p+0) buttons=8 msec=100"
+        ],
+        "after": [
+          "move actor=1 view=(0x1.f7fd9ep+0,0x1.469364p+7,0x0p+0) input=(0x0p+0,0x1.ep+7,0x0p+0) buttons=1024 msec=100"
+        ]
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "call traceObjectiveVisibility end=(0x1.4000020000000p+6,0x1.c000000000000p+6,-0x1.4000000000000p+6)",
+          "call traceObjectiveVisibility end=(0x1.4000000000000p+6,0x1.f000000000000p+5,-0x1.4000000000000p+6)",
+          "call traceObjectiveVisibility end=(0x1.4000000000000p+6,0x1.5000000000000p+5,-0x1.4000000000000p+6)"
+        ],
+        "after": [
+          "call traceObjectiveVisibility end=(0x1.617b4e0000000p+6,0x1.be3e5c0000000p+6,-0x1.4000000000000p+6)",
+          "call traceObjectiveVisibility end=(0x1.4c8e3e0000000p+6,0x1.eeaec40000000p+5,-0x1.4000000000000p+6)",
+          "call traceObjectiveVisibility end=(0x1.442f6a0000000p+6,0x1.4f8f980000000p+5,-0x1.4000000000000p+6)"
+        ]
+      },
+      "linux-x86": {
+        "before": [
+          "call traceObjectiveVisibility end=(0x1.400002p+6,0x1.cp+6,-0x1.4p+6)",
+          "call traceObjectiveVisibility end=(0x1.4p+6,0x1.fp+5,-0x1.4p+6)",
+          "call traceObjectiveVisibility end=(0x1.4p+6,0x1.5p+5,-0x1.4p+6)"
+        ],
+        "after": [
+          "call traceObjectiveVisibility end=(0x1.617b4ep+6,0x1.be3e5cp+6,-0x1.4p+6)",
+          "call traceObjectiveVisibility end=(0x1.4c8e3ep+6,0x1.eeaec4p+5,-0x1.4p+6)",
+          "call traceObjectiveVisibility end=(0x1.442f6ap+6,0x1.4f8f96p+5,-0x1.4p+6)"
+        ]
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "move actor=1 view=(0x0.0000000000000p+0,0x1.6800000000000p+6,0x0.0000000000000p+0) input=(0x1.e000000000000p+7,0x0.0000000000000p+0,0x0.0000000000000p+0) buttons=8 msec=100"
+        ],
+        "after": [
+          "move actor=1 view=(0x1.f6cd640000000p+0,0x1.308e500000000p+7,0x0.0000000000000p+0) input=(0x1.e000000000000p+7,0x1.e000000000000p+7,0x0.0000000000000p+0) buttons=1032 msec=100"
+        ]
+      },
+      "linux-x86": {
+        "before": [
+          "move actor=1 view=(0x0p+0,0x1.68p+6,0x0p+0) input=(0x1.ep+7,0x0p+0,0x0p+0) buttons=8 msec=100"
+        ],
+        "after": [
+          "move actor=1 view=(0x1.f6cd6p+0,0x1.308e5p+7,0x0p+0) input=(0x1.ep+7,0x1.ep+7,0x0p+0) buttons=1032 msec=100"
+        ]
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "call traceObjectiveVisibility end=(0x1.4000020000000p+6,0x1.c000000000000p+6,-0x1.4000000000000p+6)",
+          "call traceObjectiveVisibility end=(0x1.4000000000000p+6,0x1.f000000000000p+5,-0x1.4000000000000p+6)",
+          "call traceObjectiveVisibility end=(0x1.4000000000000p+6,0x1.5000000000000p+5,-0x1.4000000000000p+6)"
+        ],
+        "after": [
+          "call traceObjectiveVisibility end=(0x1.617b4e0000000p+6,0x1.be3e5c0000000p+6,-0x1.4000000000000p+6)",
+          "call traceObjectiveVisibility end=(0x1.4c8e3e0000000p+6,0x1.eeaec40000000p+5,-0x1.4000000000000p+6)",
+          "call traceObjectiveVisibility end=(0x1.442f6a0000000p+6,0x1.4f8f980000000p+5,-0x1.4000000000000p+6)"
+        ]
+      },
+      "linux-x86": {
+        "before": [
+          "call traceObjectiveVisibility end=(0x1.400002p+6,0x1.cp+6,-0x1.4p+6)",
+          "call traceObjectiveVisibility end=(0x1.4p+6,0x1.fp+5,-0x1.4p+6)",
+          "call traceObjectiveVisibility end=(0x1.4p+6,0x1.5p+5,-0x1.4p+6)"
+        ],
+        "after": [
+          "call traceObjectiveVisibility end=(0x1.617b4ep+6,0x1.be3e5cp+6,-0x1.4p+6)",
+          "call traceObjectiveVisibility end=(0x1.4c8e3ep+6,0x1.eeaec4p+5,-0x1.4p+6)",
+          "call traceObjectiveVisibility end=(0x1.442f6ap+6,0x1.4f8f96p+5,-0x1.4p+6)"
+        ]
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "move actor=1 view=(0x0.0000000000000p+0,0x1.6800000000000p+6,0x0.0000000000000p+0) input=(0x1.e000000000000p+7,0x0.0000000000000p+0,0x0.0000000000000p+0) buttons=8 msec=100"
+        ],
+        "after": [
+          "move actor=1 view=(0x1.f51eae0000000p+0,0x1.13de940000000p+7,0x0.0000000000000p+0) input=(0x1.e000000000000p+7,0x1.e000000000000p+7,0x0.0000000000000p+0) buttons=1032 msec=100"
+        ]
+      },
+      "linux-x86": {
+        "before": [
+          "move actor=1 view=(0x0p+0,0x1.68p+6,0x0p+0) input=(0x1.ep+7,0x0p+0,0x0p+0) buttons=8 msec=100"
+        ],
+        "after": [
+          "move actor=1 view=(0x1.f51eaap+0,0x1.13de94p+7,0x0p+0) input=(0x1.ep+7,0x1.ep+7,0x0p+0) buttons=1032 msec=100"
+        ]
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "call traceObjectiveVisibility end=(0x1.4000020000000p+6,0x1.c000000000000p+6,-0x1.4000000000000p+6)",
+          "call traceObjectiveVisibility end=(0x1.4000000000000p+6,0x1.f000000000000p+5,-0x1.4000000000000p+6)",
+          "call traceObjectiveVisibility end=(0x1.4000000000000p+6,0x1.5000000000000p+5,-0x1.4000000000000p+6)"
+        ],
+        "after": [
+          "call traceObjectiveVisibility end=(0x1.617b4e0000000p+6,0x1.be3e5c0000000p+6,-0x1.4000000000000p+6)",
+          "call traceObjectiveVisibility end=(0x1.4c8e3e0000000p+6,0x1.eeaec40000000p+5,-0x1.4000000000000p+6)",
+          "call traceObjectiveVisibility end=(0x1.442f6a0000000p+6,0x1.4f8f980000000p+5,-0x1.4000000000000p+6)"
+        ]
+      },
+      "linux-x86": {
+        "before": [
+          "call traceObjectiveVisibility end=(0x1.400002p+6,0x1.cp+6,-0x1.4p+6)",
+          "call traceObjectiveVisibility end=(0x1.4p+6,0x1.fp+5,-0x1.4p+6)",
+          "call traceObjectiveVisibility end=(0x1.4p+6,0x1.5p+5,-0x1.4p+6)"
+        ],
+        "after": [
+          "call traceObjectiveVisibility end=(0x1.617b4ep+6,0x1.be3e5cp+6,-0x1.4p+6)",
+          "call traceObjectiveVisibility end=(0x1.4c8e3ep+6,0x1.eeaec4p+5,-0x1.4p+6)",
+          "call traceObjectiveVisibility end=(0x1.442f6ap+6,0x1.4f8f96p+5,-0x1.4p+6)"
+        ]
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "move actor=1 view=(0x0.0000000000000p+0,0x1.6800000000000p+6,0x0.0000000000000p+0) input=(0x1.e000000000000p+7,0x0.0000000000000p+0,0x0.0000000000000p+0) buttons=8 msec=100"
+        ],
+        "after": [
+          "move actor=1 view=(0x1.f2cd900000000p+0,0x1.efee200000000p+6,0x0.0000000000000p+0) input=(0x1.e000000000000p+7,0x1.e000000000000p+7,0x0.0000000000000p+0) buttons=1032 msec=100"
+        ]
+      },
+      "linux-x86": {
+        "before": [
+          "move actor=1 view=(0x0p+0,0x1.68p+6,0x0p+0) input=(0x1.ep+7,0x0p+0,0x0p+0) buttons=8 msec=100"
+        ],
+        "after": [
+          "move actor=1 view=(0x1.f2cd8cp+0,0x1.efee2p+6,0x0p+0) input=(0x1.ep+7,0x1.ep+7,0x0p+0) buttons=1032 msec=100"
+        ]
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "call traceObjectiveVisibility end=(0x1.4000020000000p+6,0x1.c000000000000p+6,-0x1.4000000000000p+6)",
+          "call traceObjectiveVisibility end=(0x1.4000000000000p+6,0x1.f000000000000p+5,-0x1.4000000000000p+6)",
+          "call traceObjectiveVisibility end=(0x1.4000000000000p+6,0x1.5000000000000p+5,-0x1.4000000000000p+6)"
+        ],
+        "after": [
+          "call traceObjectiveVisibility end=(0x1.617b4e0000000p+6,0x1.be3e5c0000000p+6,-0x1.4000000000000p+6)",
+          "call traceObjectiveVisibility end=(0x1.4c8e3e0000000p+6,0x1.eeaec40000000p+5,-0x1.4000000000000p+6)",
+          "call traceObjectiveVisibility end=(0x1.442f6a0000000p+6,0x1.4f8f980000000p+5,-0x1.4000000000000p+6)"
+        ]
+      },
+      "linux-x86": {
+        "before": [
+          "call traceObjectiveVisibility end=(0x1.400002p+6,0x1.cp+6,-0x1.4p+6)",
+          "call traceObjectiveVisibility end=(0x1.4p+6,0x1.fp+5,-0x1.4p+6)",
+          "call traceObjectiveVisibility end=(0x1.4p+6,0x1.5p+5,-0x1.4p+6)"
+        ],
+        "after": [
+          "call traceObjectiveVisibility end=(0x1.617b4ep+6,0x1.be3e5cp+6,-0x1.4p+6)",
+          "call traceObjectiveVisibility end=(0x1.4c8e3ep+6,0x1.eeaec4p+5,-0x1.4p+6)",
+          "call traceObjectiveVisibility end=(0x1.442f6ap+6,0x1.4f8f96p+5,-0x1.4p+6)"
+        ]
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "move actor=1 view=(0x0.0000000000000p+0,0x1.6800000000000p+6,0x0.0000000000000p+0) input=(0x1.e000000000000p+7,0x0.0000000000000p+0,0x0.0000000000000p+0) buttons=8 msec=100"
+        ],
+        "after": [
+          "move actor=1 view=(0x1.eff9600000000p+0,0x1.c4bdc00000000p+6,0x0.0000000000000p+0) input=(0x1.e000000000000p+7,0x1.e000000000000p+7,0x0.0000000000000p+0) buttons=1032 msec=100"
+        ]
+      },
+      "linux-x86": {
+        "before": [
+          "move actor=1 view=(0x0p+0,0x1.68p+6,0x0p+0) input=(0x1.ep+7,0x0p+0,0x0p+0) buttons=8 msec=100"
+        ],
+        "after": [
+          "move actor=1 view=(0x1.eff95cp+0,0x1.c4bdcp+6,0x0p+0) input=(0x1.ep+7,0x1.ep+7,0x0p+0) buttons=1032 msec=100"
+        ]
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "call traceObjectiveVisibility end=(0x1.4000020000000p+6,0x1.c000000000000p+6,-0x1.4000000000000p+6)",
+          "call traceObjectiveVisibility end=(0x1.4000000000000p+6,0x1.f000000000000p+5,-0x1.4000000000000p+6)",
+          "call traceObjectiveVisibility end=(0x1.4000000000000p+6,0x1.5000000000000p+5,-0x1.4000000000000p+6)"
+        ],
+        "after": [
+          "call traceObjectiveVisibility end=(0x1.617b4e0000000p+6,0x1.be3e5c0000000p+6,-0x1.4000000000000p+6)",
+          "call traceObjectiveVisibility end=(0x1.4c8e3e0000000p+6,0x1.eeaec40000000p+5,-0x1.4000000000000p+6)",
+          "call traceObjectiveVisibility end=(0x1.442f6a0000000p+6,0x1.4f8f980000000p+5,-0x1.4000000000000p+6)"
+        ]
+      },
+      "linux-x86": {
+        "before": [
+          "call traceObjectiveVisibility end=(0x1.400002p+6,0x1.cp+6,-0x1.4p+6)",
+          "call traceObjectiveVisibility end=(0x1.4p+6,0x1.fp+5,-0x1.4p+6)",
+          "call traceObjectiveVisibility end=(0x1.4p+6,0x1.5p+5,-0x1.4p+6)"
+        ],
+        "after": [
+          "call traceObjectiveVisibility end=(0x1.617b4ep+6,0x1.be3e5cp+6,-0x1.4p+6)",
+          "call traceObjectiveVisibility end=(0x1.4c8e3ep+6,0x1.eeaec4p+5,-0x1.4p+6)",
+          "call traceObjectiveVisibility end=(0x1.442f6ap+6,0x1.4f8f96p+5,-0x1.4p+6)"
+        ]
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "move actor=1 view=(0x0.0000000000000p+0,0x1.6800000000000p+6,0x0.0000000000000p+0) input=(0x1.e000000000000p+7,0x0.0000000000000p+0,0x0.0000000000000p+0) buttons=8 msec=100"
+        ],
+        "after": [
+          "move actor=1 view=(0x1.ecc03c0000000p+0,0x1.a538300000000p+6,0x0.0000000000000p+0) input=(0x1.e000000000000p+7,0x1.e000000000000p+7,0x0.0000000000000p+0) buttons=1032 msec=100"
+        ]
+      },
+      "linux-x86": {
+        "before": [
+          "move actor=1 view=(0x0p+0,0x1.68p+6,0x0p+0) input=(0x1.ep+7,0x0p+0,0x0p+0) buttons=8 msec=100"
+        ],
+        "after": [
+          "move actor=1 view=(0x1.ecc038p+0,0x1.a5383p+6,0x0p+0) input=(0x1.ep+7,0x1.ep+7,0x0p+0) buttons=1032 msec=100"
+        ]
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "call traceObjectiveVisibility end=(0x1.4000020000000p+6,0x1.c000000000000p+6,-0x1.4000000000000p+6)",
+          "call traceObjectiveVisibility end=(0x1.4000000000000p+6,0x1.f000000000000p+5,-0x1.4000000000000p+6)",
+          "call traceObjectiveVisibility end=(0x1.4000000000000p+6,0x1.5000000000000p+5,-0x1.4000000000000p+6)"
+        ],
+        "after": [
+          "call traceObjectiveVisibility end=(0x1.617b4e0000000p+6,0x1.be3e5c0000000p+6,-0x1.4000000000000p+6)",
+          "call traceObjectiveVisibility end=(0x1.4c8e3e0000000p+6,0x1.eeaec40000000p+5,-0x1.4000000000000p+6)",
+          "call traceObjectiveVisibility end=(0x1.442f6a0000000p+6,0x1.4f8f980000000p+5,-0x1.4000000000000p+6)"
+        ]
+      },
+      "linux-x86": {
+        "before": [
+          "call traceObjectiveVisibility end=(0x1.400002p+6,0x1.cp+6,-0x1.4p+6)",
+          "call traceObjectiveVisibility end=(0x1.4p+6,0x1.fp+5,-0x1.4p+6)",
+          "call traceObjectiveVisibility end=(0x1.4p+6,0x1.5p+5,-0x1.4p+6)"
+        ],
+        "after": [
+          "call traceObjectiveVisibility end=(0x1.617b4ep+6,0x1.be3e5cp+6,-0x1.4p+6)",
+          "call traceObjectiveVisibility end=(0x1.4c8e3ep+6,0x1.eeaec4p+5,-0x1.4p+6)",
+          "call traceObjectiveVisibility end=(0x1.442f6ap+6,0x1.4f8f96p+5,-0x1.4p+6)"
+        ]
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "move actor=1 view=(0x0.0000000000000p+0,0x1.6800000000000p+6,0x0.0000000000000p+0) input=(0x1.e000000000000p+7,0x0.0000000000000p+0,0x0.0000000000000p+0) buttons=8 msec=100"
+        ],
+        "after": [
+          "move actor=1 view=(0x1.e931d20000000p+0,0x1.8e9c080000000p+6,0x0.0000000000000p+0) input=(0x1.e000000000000p+7,0x1.e000000000000p+7,0x0.0000000000000p+0) buttons=1032 msec=100"
+        ]
+      },
+      "linux-x86": {
+        "before": [
+          "move actor=1 view=(0x0p+0,0x1.68p+6,0x0p+0) input=(0x1.ep+7,0x0p+0,0x0p+0) buttons=8 msec=100"
+        ],
+        "after": [
+          "move actor=1 view=(0x1.e931cep+0,0x1.8e9c08p+6,0x0p+0) input=(0x1.ep+7,0x1.ep+7,0x0p+0) buttons=1032 msec=100"
+        ]
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "call traceObjectiveVisibility end=(0x1.4000020000000p+6,0x1.c000000000000p+6,-0x1.4000000000000p+6)",
+          "call traceObjectiveVisibility end=(0x1.4000000000000p+6,0x1.f000000000000p+5,-0x1.4000000000000p+6)",
+          "call traceObjectiveVisibility end=(0x1.4000000000000p+6,0x1.5000000000000p+5,-0x1.4000000000000p+6)"
+        ],
+        "after": [
+          "call traceObjectiveVisibility end=(0x1.617b4e0000000p+6,0x1.be3e5c0000000p+6,-0x1.4000000000000p+6)",
+          "call traceObjectiveVisibility end=(0x1.4c8e3e0000000p+6,0x1.eeaec40000000p+5,-0x1.4000000000000p+6)",
+          "call traceObjectiveVisibility end=(0x1.442f6a0000000p+6,0x1.4f8f980000000p+5,-0x1.4000000000000p+6)"
+        ]
+      },
+      "linux-x86": {
+        "before": [
+          "call traceObjectiveVisibility end=(0x1.400002p+6,0x1.cp+6,-0x1.4p+6)",
+          "call traceObjectiveVisibility end=(0x1.4p+6,0x1.fp+5,-0x1.4p+6)",
+          "call traceObjectiveVisibility end=(0x1.4p+6,0x1.5p+5,-0x1.4p+6)"
+        ],
+        "after": [
+          "call traceObjectiveVisibility end=(0x1.617b4ep+6,0x1.be3e5cp+6,-0x1.4p+6)",
+          "call traceObjectiveVisibility end=(0x1.4c8e3ep+6,0x1.eeaec4p+5,-0x1.4p+6)",
+          "call traceObjectiveVisibility end=(0x1.442f6ap+6,0x1.4f8f96p+5,-0x1.4p+6)"
+        ]
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "move actor=1 view=(0x0.0000000000000p+0,0x1.6800000000000p+6,0x0.0000000000000p+0) input=(0x1.e000000000000p+7,0x0.0000000000000p+0,0x0.0000000000000p+0) buttons=8 msec=100"
+        ],
+        "after": [
+          "move actor=1 view=(0x1.e555320000000p+0,0x1.7e72180000000p+6,0x0.0000000000000p+0) input=(0x1.e000000000000p+7,0x0.0000000000000p+0,0x0.0000000000000p+0) buttons=8 msec=100"
+        ]
+      },
+      "linux-x86": {
+        "before": [
+          "move actor=1 view=(0x0p+0,0x1.68p+6,0x0p+0) input=(0x1.ep+7,0x0p+0,0x0p+0) buttons=8 msec=100"
+        ],
+        "after": [
+          "move actor=1 view=(0x1.e5552ep+0,0x1.7e7218p+6,0x0p+0) input=(0x1.ep+7,0x0p+0,0x0p+0) buttons=8 msec=100"
+        ]
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "call traceObjectiveVisibility end=(0x1.4000020000000p+6,0x1.c000000000000p+6,-0x1.4000000000000p+6)",
+          "call traceObjectiveVisibility end=(0x1.4000000000000p+6,0x1.f000000000000p+5,-0x1.4000000000000p+6)",
+          "call traceObjectiveVisibility end=(0x1.4000000000000p+6,0x1.5000000000000p+5,-0x1.4000000000000p+6)"
+        ],
+        "after": [
+          "call traceObjectiveVisibility end=(0x1.617b4e0000000p+6,0x1.be3e5c0000000p+6,-0x1.4000000000000p+6)",
+          "call traceObjectiveVisibility end=(0x1.4c8e3e0000000p+6,0x1.eeaec40000000p+5,-0x1.4000000000000p+6)",
+          "call traceObjectiveVisibility end=(0x1.442f6a0000000p+6,0x1.4f8f980000000p+5,-0x1.4000000000000p+6)"
+        ]
+      },
+      "linux-x86": {
+        "before": [
+          "call traceObjectiveVisibility end=(0x1.400002p+6,0x1.cp+6,-0x1.4p+6)",
+          "call traceObjectiveVisibility end=(0x1.4p+6,0x1.fp+5,-0x1.4p+6)",
+          "call traceObjectiveVisibility end=(0x1.4p+6,0x1.5p+5,-0x1.4p+6)"
+        ],
+        "after": [
+          "call traceObjectiveVisibility end=(0x1.617b4ep+6,0x1.be3e5cp+6,-0x1.4p+6)",
+          "call traceObjectiveVisibility end=(0x1.4c8e3ep+6,0x1.eeaec4p+5,-0x1.4p+6)",
+          "call traceObjectiveVisibility end=(0x1.442f6ap+6,0x1.4f8f96p+5,-0x1.4p+6)"
+        ]
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "move actor=1 view=(0x0.0000000000000p+0,0x1.6800000000000p+6,0x0.0000000000000p+0) input=(0x1.e000000000000p+7,0x0.0000000000000p+0,0x0.0000000000000p+0) buttons=8 msec=100"
+        ],
+        "after": [
+          "move actor=1 view=(0x1.e12cde0000000p+0,0x1.72e6b00000000p+6,0x0.0000000000000p+0) input=(0x1.e000000000000p+7,0x0.0000000000000p+0,0x0.0000000000000p+0) buttons=8 msec=100"
+        ]
+      },
+      "linux-x86": {
+        "before": [
+          "move actor=1 view=(0x0p+0,0x1.68p+6,0x0p+0) input=(0x1.ep+7,0x0p+0,0x0p+0) buttons=8 msec=100"
+        ],
+        "after": [
+          "move actor=1 view=(0x1.e12cdap+0,0x1.72e6bp+6,0x0p+0) input=(0x1.ep+7,0x0p+0,0x0p+0) buttons=8 msec=100"
+        ]
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "call traceObjectiveVisibility end=(0x1.4000020000000p+6,0x1.c000000000000p+6,-0x1.4000000000000p+6)",
+          "call traceObjectiveVisibility end=(0x1.4000000000000p+6,0x1.f000000000000p+5,-0x1.4000000000000p+6)",
+          "call traceObjectiveVisibility end=(0x1.4000000000000p+6,0x1.5000000000000p+5,-0x1.4000000000000p+6)"
+        ],
+        "after": [
+          "call traceObjectiveVisibility end=(0x1.617b4e0000000p+6,0x1.be3e5c0000000p+6,-0x1.4000000000000p+6)",
+          "call traceObjectiveVisibility end=(0x1.4c8e3e0000000p+6,0x1.eeaec40000000p+5,-0x1.4000000000000p+6)",
+          "call traceObjectiveVisibility end=(0x1.442f6a0000000p+6,0x1.4f8f980000000p+5,-0x1.4000000000000p+6)"
+        ]
+      },
+      "linux-x86": {
+        "before": [
+          "call traceObjectiveVisibility end=(0x1.400002p+6,0x1.cp+6,-0x1.4p+6)",
+          "call traceObjectiveVisibility end=(0x1.4p+6,0x1.fp+5,-0x1.4p+6)",
+          "call traceObjectiveVisibility end=(0x1.4p+6,0x1.5p+5,-0x1.4p+6)"
+        ],
+        "after": [
+          "call traceObjectiveVisibility end=(0x1.617b4ep+6,0x1.be3e5cp+6,-0x1.4p+6)",
+          "call traceObjectiveVisibility end=(0x1.4c8e3ep+6,0x1.eeaec4p+5,-0x1.4p+6)",
+          "call traceObjectiveVisibility end=(0x1.442f6ap+6,0x1.4f8f96p+5,-0x1.4p+6)"
+        ]
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "move actor=1 view=(0x0.0000000000000p+0,-0x1.6800000000000p+6,0x0.0000000000000p+0) input=(0x1.e000000000000p+7,0x0.0000000000000p+0,0x0.0000000000000p+0) buttons=8 msec=100"
+        ],
+        "after": [
+          "move actor=1 view=(0x1.dcb9b40000000p+0,0x1.6aa4300000000p+6,0x0.0000000000000p+0) input=(-0x1.e000000000000p+7,0x0.0000000000000p+0,0x0.0000000000000p+0) buttons=16 msec=100"
+        ]
+      },
+      "linux-x86": {
+        "before": [
+          "move actor=1 view=(0x0p+0,-0x1.68p+6,0x0p+0) input=(0x1.ep+7,0x0p+0,0x0p+0) buttons=8 msec=100"
+        ],
+        "after": [
+          "move actor=1 view=(0x1.dcb9bp+0,0x1.6aa43p+6,0x0p+0) input=(-0x1.ep+7,0x0p+0,0x0p+0) buttons=16 msec=100"
+        ]
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "call traceObjectiveVisibility end=(0x1.c000000000000p+7,0x1.0000000000000p+5,0x1.2000000000000p+5)"
+        ],
+        "after": []
+      },
+      "linux-x86": {
+        "before": [
+          "call traceObjectiveVisibility end=(0x1.cp+7,0x1p+5,0x1.2p+5)"
+        ],
+        "after": []
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "call traceObjectiveVisibility end=(0x1.c000000000000p+7,0x1.0000000000000p+5,0x1.2000000000000p+5)",
+          "call traceObjectiveVisibility end=(0x1.c000000000000p+7,0x1.0000000000000p+5,0x1.e800000000000p+5)",
+          "call traceObjectiveVisibility end=(0x1.c000000000000p+7,0x1.0000000000000p+5,0x1.0000000000000p+1)",
+          "call traceObjectiveVisibility end=(0x1.da00000000000p+7,0x1.0000000000000p+5,0x1.2000000000000p+5)",
+          "call traceObjectiveVisibility end=(0x1.a600000000000p+7,0x1.0000000000000p+5,0x1.2000000000000p+5)"
+        ],
+        "after": []
+      },
+      "linux-x86": {
+        "before": [
+          "call traceObjectiveVisibility end=(0x1.cp+7,0x1p+5,0x1.2p+5)",
+          "call traceObjectiveVisibility end=(0x1.cp+7,0x1p+5,0x1.e8p+5)",
+          "call traceObjectiveVisibility end=(0x1.cp+7,0x1p+5,0x1p+1)",
+          "call traceObjectiveVisibility end=(0x1.dap+7,0x1p+5,0x1.2p+5)",
+          "call traceObjectiveVisibility end=(0x1.a6p+7,0x1p+5,0x1.2p+5)"
+        ],
+        "after": []
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "call traceObjectiveVisibility end=(0x1.c000000000000p+7,-0x1.e000000000000p+4,-0x1.4000000000000p+6)",
+          "call traceObjectiveVisibility end=(0x1.c000000000000p+7,0x1.4000000000000p+4,-0x1.4000000000000p+6)",
+          "call traceObjectiveVisibility end=(0x1.c000000000000p+7,0x1.4000000000000p+5,-0x1.4000000000000p+6)"
+        ],
+        "after": [
+          "call traceObjectiveVisibility end=(0x1.c79b880000000p+7,-0x1.de8d680000000p+4,-0x1.4000000000000p+6)",
+          "call traceObjectiveVisibility end=(0x1.c2da540000000p+7,0x1.408afa0000000p+4,-0x1.4000000000000p+6)",
+          "call traceObjectiveVisibility end=(0x1.c0f3720000000p+7,0x1.40172a0000000p+5,-0x1.4000000000000p+6)"
+        ]
+      },
+      "linux-x86": {
+        "before": [
+          "call traceObjectiveVisibility end=(0x1.cp+7,-0x1.ep+4,-0x1.4p+6)",
+          "call traceObjectiveVisibility end=(0x1.cp+7,0x1.4p+4,-0x1.4p+6)",
+          "call traceObjectiveVisibility end=(0x1.cp+7,0x1.4p+5,-0x1.4p+6)"
+        ],
+        "after": [
+          "call traceObjectiveVisibility end=(0x1.c79b88p+7,-0x1.de8d64p+4,-0x1.4p+6)",
+          "call traceObjectiveVisibility end=(0x1.c2da54p+7,0x1.408afap+4,-0x1.4p+6)",
+          "call traceObjectiveVisibility end=(0x1.c0f372p+7,0x1.40172ap+5,-0x1.4p+6)"
+        ]
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "move actor=1 view=(0x0.0000000000000p+0,-0x1.6800000000000p+6,0x0.0000000000000p+0) input=(0x0.0000000000000p+0,0x0.0000000000000p+0,0x0.0000000000000p+0) buttons=0 msec=100"
+        ],
+        "after": [
+          "move actor=1 view=(0x1.dcb9b40000000p+0,0x1.6aa4300000000p+6,0x0.0000000000000p+0) input=(0x0.0000000000000p+0,0x0.0000000000000p+0,0x0.0000000000000p+0) buttons=0 msec=100"
+        ]
+      },
+      "linux-x86": {
+        "before": [
+          "move actor=1 view=(0x0p+0,-0x1.68p+6,0x0p+0) input=(0x0p+0,0x0p+0,0x0p+0) buttons=0 msec=100"
+        ],
+        "after": [
+          "move actor=1 view=(0x1.dcb9bp+0,0x1.6aa43p+6,0x0p+0) input=(0x0p+0,0x0p+0,0x0p+0) buttons=0 msec=100"
+        ]
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "call traceObjectiveVisibility end=(0x1.c000000000000p+7,0x1.0000000000000p+5,0x1.2000000000000p+5)"
+        ],
+        "after": []
+      },
+      "linux-x86": {
+        "before": [
+          "call traceObjectiveVisibility end=(0x1.cp+7,0x1p+5,0x1.2p+5)"
+        ],
+        "after": []
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "call traceObjectiveVisibility end=(0x1.c000000000000p+7,0x1.0000000000000p+5,0x1.2000000000000p+5)",
+          "call traceObjectiveVisibility end=(0x1.c000000000000p+7,0x1.0000000000000p+5,0x1.e800000000000p+5)",
+          "call traceObjectiveVisibility end=(0x1.c000000000000p+7,0x1.0000000000000p+5,0x1.0000000000000p+1)",
+          "call traceObjectiveVisibility end=(0x1.da00000000000p+7,0x1.0000000000000p+5,0x1.2000000000000p+5)",
+          "call traceObjectiveVisibility end=(0x1.a600000000000p+7,0x1.0000000000000p+5,0x1.2000000000000p+5)"
+        ],
+        "after": []
+      },
+      "linux-x86": {
+        "before": [
+          "call traceObjectiveVisibility end=(0x1.cp+7,0x1p+5,0x1.2p+5)",
+          "call traceObjectiveVisibility end=(0x1.cp+7,0x1p+5,0x1.e8p+5)",
+          "call traceObjectiveVisibility end=(0x1.cp+7,0x1p+5,0x1p+1)",
+          "call traceObjectiveVisibility end=(0x1.dap+7,0x1p+5,0x1.2p+5)",
+          "call traceObjectiveVisibility end=(0x1.a6p+7,0x1p+5,0x1.2p+5)"
+        ],
+        "after": []
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "move actor=1 view=(0x0.0000000000000p+0,-0x1.6800000000000p+6,0x0.0000000000000p+0) input=(0x0.0000000000000p+0,0x0.0000000000000p+0,0x0.0000000000000p+0) buttons=0 msec=100"
+        ],
+        "after": [
+          "move actor=1 view=(0x1.dcb9b40000000p+0,0x1.6aa4300000000p+6,0x0.0000000000000p+0) input=(0x0.0000000000000p+0,0x0.0000000000000p+0,0x0.0000000000000p+0) buttons=0 msec=100"
+        ]
+      },
+      "linux-x86": {
+        "before": [
+          "move actor=1 view=(0x0p+0,-0x1.68p+6,0x0p+0) input=(0x0p+0,0x0p+0,0x0p+0) buttons=0 msec=100"
+        ],
+        "after": [
+          "move actor=1 view=(0x1.dcb9bp+0,0x1.6aa43p+6,0x0p+0) input=(0x0p+0,0x0p+0,0x0p+0) buttons=0 msec=100"
+        ]
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "call traceObjectiveVisibility end=(0x1.c000000000000p+7,0x1.0000000000000p+5,0x1.2000000000000p+5)"
+        ],
+        "after": []
+      },
+      "linux-x86": {
+        "before": [
+          "call traceObjectiveVisibility end=(0x1.cp+7,0x1p+5,0x1.2p+5)"
+        ],
+        "after": []
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "call traceObjectiveVisibility end=(0x1.c000000000000p+7,0x1.0000000000000p+5,0x1.2000000000000p+5)",
+          "call traceObjectiveVisibility end=(0x1.c000000000000p+7,0x1.0000000000000p+5,0x1.e800000000000p+5)",
+          "call traceObjectiveVisibility end=(0x1.c000000000000p+7,0x1.0000000000000p+5,0x1.0000000000000p+1)",
+          "call traceObjectiveVisibility end=(0x1.da00000000000p+7,0x1.0000000000000p+5,0x1.2000000000000p+5)",
+          "call traceObjectiveVisibility end=(0x1.a600000000000p+7,0x1.0000000000000p+5,0x1.2000000000000p+5)"
+        ],
+        "after": []
+      },
+      "linux-x86": {
+        "before": [
+          "call traceObjectiveVisibility end=(0x1.cp+7,0x1p+5,0x1.2p+5)",
+          "call traceObjectiveVisibility end=(0x1.cp+7,0x1p+5,0x1.e8p+5)",
+          "call traceObjectiveVisibility end=(0x1.cp+7,0x1p+5,0x1p+1)",
+          "call traceObjectiveVisibility end=(0x1.dap+7,0x1p+5,0x1.2p+5)",
+          "call traceObjectiveVisibility end=(0x1.a6p+7,0x1p+5,0x1.2p+5)"
+        ],
+        "after": []
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "move actor=1 view=(0x0.0000000000000p+0,-0x1.6800000000000p+6,0x0.0000000000000p+0) input=(0x0.0000000000000p+0,0x0.0000000000000p+0,0x0.0000000000000p+0) buttons=0 msec=100"
+        ],
+        "after": [
+          "move actor=1 view=(0x1.dcb9b40000000p+0,0x1.6aa4300000000p+6,0x0.0000000000000p+0) input=(0x0.0000000000000p+0,0x0.0000000000000p+0,0x0.0000000000000p+0) buttons=0 msec=100"
+        ]
+      },
+      "linux-x86": {
+        "before": [
+          "move actor=1 view=(0x0p+0,-0x1.68p+6,0x0p+0) input=(0x0p+0,0x0p+0,0x0p+0) buttons=0 msec=100"
+        ],
+        "after": [
+          "move actor=1 view=(0x1.dcb9bp+0,0x1.6aa43p+6,0x0p+0) input=(0x0p+0,0x0p+0,0x0p+0) buttons=0 msec=100"
+        ]
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "call traceObjectiveVisibility end=(0x1.c000000000000p+7,0x1.0000000000000p+5,0x1.2000000000000p+5)"
+        ],
+        "after": []
+      },
+      "linux-x86": {
+        "before": [
+          "call traceObjectiveVisibility end=(0x1.cp+7,0x1p+5,0x1.2p+5)"
+        ],
+        "after": []
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "call traceObjectiveVisibility end=(0x1.c000000000000p+7,0x1.0000000000000p+5,0x1.2000000000000p+5)",
+          "call traceObjectiveVisibility end=(0x1.c000000000000p+7,0x1.0000000000000p+5,0x1.e800000000000p+5)",
+          "call traceObjectiveVisibility end=(0x1.c000000000000p+7,0x1.0000000000000p+5,0x1.0000000000000p+1)",
+          "call traceObjectiveVisibility end=(0x1.da00000000000p+7,0x1.0000000000000p+5,0x1.2000000000000p+5)",
+          "call traceObjectiveVisibility end=(0x1.a600000000000p+7,0x1.0000000000000p+5,0x1.2000000000000p+5)"
+        ],
+        "after": []
+      },
+      "linux-x86": {
+        "before": [
+          "call traceObjectiveVisibility end=(0x1.cp+7,0x1p+5,0x1.2p+5)",
+          "call traceObjectiveVisibility end=(0x1.cp+7,0x1p+5,0x1.e8p+5)",
+          "call traceObjectiveVisibility end=(0x1.cp+7,0x1p+5,0x1p+1)",
+          "call traceObjectiveVisibility end=(0x1.dap+7,0x1p+5,0x1.2p+5)",
+          "call traceObjectiveVisibility end=(0x1.a6p+7,0x1p+5,0x1.2p+5)"
+        ],
+        "after": []
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "move actor=1 view=(0x0.0000000000000p+0,-0x1.6800000000000p+6,0x0.0000000000000p+0) input=(0x0.0000000000000p+0,0x0.0000000000000p+0,0x0.0000000000000p+0) buttons=0 msec=100"
+        ],
+        "after": [
+          "move actor=1 view=(0x1.dcb9b40000000p+0,0x1.6aa4300000000p+6,0x0.0000000000000p+0) input=(0x0.0000000000000p+0,0x0.0000000000000p+0,0x0.0000000000000p+0) buttons=0 msec=100"
+        ]
+      },
+      "linux-x86": {
+        "before": [
+          "move actor=1 view=(0x0p+0,-0x1.68p+6,0x0p+0) input=(0x0p+0,0x0p+0,0x0p+0) buttons=0 msec=100"
+        ],
+        "after": [
+          "move actor=1 view=(0x1.dcb9bp+0,0x1.6aa43p+6,0x0p+0) input=(0x0p+0,0x0p+0,0x0p+0) buttons=0 msec=100"
+        ]
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "call traceObjectiveVisibility end=(0x1.c000000000000p+7,0x1.0000000000000p+5,0x1.2000000000000p+5)"
+        ],
+        "after": []
+      },
+      "linux-x86": {
+        "before": [
+          "call traceObjectiveVisibility end=(0x1.cp+7,0x1p+5,0x1.2p+5)"
+        ],
+        "after": []
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "call traceObjectiveVisibility end=(0x1.c000000000000p+7,0x1.0000000000000p+5,0x1.2000000000000p+5)",
+          "call traceObjectiveVisibility end=(0x1.c000000000000p+7,0x1.0000000000000p+5,0x1.e800000000000p+5)",
+          "call traceObjectiveVisibility end=(0x1.c000000000000p+7,0x1.0000000000000p+5,0x1.0000000000000p+1)",
+          "call traceObjectiveVisibility end=(0x1.da00000000000p+7,0x1.0000000000000p+5,0x1.2000000000000p+5)",
+          "call traceObjectiveVisibility end=(0x1.a600000000000p+7,0x1.0000000000000p+5,0x1.2000000000000p+5)"
+        ],
+        "after": []
+      },
+      "linux-x86": {
+        "before": [
+          "call traceObjectiveVisibility end=(0x1.cp+7,0x1p+5,0x1.2p+5)",
+          "call traceObjectiveVisibility end=(0x1.cp+7,0x1p+5,0x1.e8p+5)",
+          "call traceObjectiveVisibility end=(0x1.cp+7,0x1p+5,0x1p+1)",
+          "call traceObjectiveVisibility end=(0x1.dap+7,0x1p+5,0x1.2p+5)",
+          "call traceObjectiveVisibility end=(0x1.a6p+7,0x1p+5,0x1.2p+5)"
+        ],
+        "after": []
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "move actor=1 view=(0x0.0000000000000p+0,-0x1.6800000000000p+6,0x0.0000000000000p+0) input=(0x0.0000000000000p+0,0x0.0000000000000p+0,0x0.0000000000000p+0) buttons=0 msec=100"
+        ],
+        "after": [
+          "move actor=1 view=(0x1.dcb9b40000000p+0,0x1.6aa4300000000p+6,0x0.0000000000000p+0) input=(0x0.0000000000000p+0,0x0.0000000000000p+0,0x0.0000000000000p+0) buttons=0 msec=100"
+        ]
+      },
+      "linux-x86": {
+        "before": [
+          "move actor=1 view=(0x0p+0,-0x1.68p+6,0x0p+0) input=(0x0p+0,0x0p+0,0x0p+0) buttons=0 msec=100"
+        ],
+        "after": [
+          "move actor=1 view=(0x1.dcb9bp+0,0x1.6aa43p+6,0x0p+0) input=(0x0p+0,0x0p+0,0x0p+0) buttons=0 msec=100"
+        ]
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "call traceObjectiveVisibility end=(0x1.c000000000000p+7,0x1.0000000000000p+5,0x1.2000000000000p+5)"
+        ],
+        "after": []
+      },
+      "linux-x86": {
+        "before": [
+          "call traceObjectiveVisibility end=(0x1.cp+7,0x1p+5,0x1.2p+5)"
+        ],
+        "after": []
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "call traceObjectiveVisibility end=(0x1.c000000000000p+7,0x1.0000000000000p+5,0x1.2000000000000p+5)",
+          "call traceObjectiveVisibility end=(0x1.c000000000000p+7,0x1.0000000000000p+5,0x1.e800000000000p+5)",
+          "call traceObjectiveVisibility end=(0x1.c000000000000p+7,0x1.0000000000000p+5,0x1.0000000000000p+1)",
+          "call traceObjectiveVisibility end=(0x1.da00000000000p+7,0x1.0000000000000p+5,0x1.2000000000000p+5)",
+          "call traceObjectiveVisibility end=(0x1.a600000000000p+7,0x1.0000000000000p+5,0x1.2000000000000p+5)"
+        ],
+        "after": []
+      },
+      "linux-x86": {
+        "before": [
+          "call traceObjectiveVisibility end=(0x1.cp+7,0x1p+5,0x1.2p+5)",
+          "call traceObjectiveVisibility end=(0x1.cp+7,0x1p+5,0x1.e8p+5)",
+          "call traceObjectiveVisibility end=(0x1.cp+7,0x1p+5,0x1p+1)",
+          "call traceObjectiveVisibility end=(0x1.dap+7,0x1p+5,0x1.2p+5)",
+          "call traceObjectiveVisibility end=(0x1.a6p+7,0x1p+5,0x1.2p+5)"
+        ],
+        "after": []
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "move actor=1 view=(0x0.0000000000000p+0,-0x1.6800000000000p+6,0x0.0000000000000p+0) input=(0x0.0000000000000p+0,0x0.0000000000000p+0,0x0.0000000000000p+0) buttons=0 msec=100"
+        ],
+        "after": [
+          "move actor=1 view=(0x1.dcb9b40000000p+0,0x1.6aa4300000000p+6,0x0.0000000000000p+0) input=(0x0.0000000000000p+0,0x0.0000000000000p+0,0x0.0000000000000p+0) buttons=0 msec=100"
+        ]
+      },
+      "linux-x86": {
+        "before": [
+          "move actor=1 view=(0x0p+0,-0x1.68p+6,0x0p+0) input=(0x0p+0,0x0p+0,0x0p+0) buttons=0 msec=100"
+        ],
+        "after": [
+          "move actor=1 view=(0x1.dcb9bp+0,0x1.6aa43p+6,0x0p+0) input=(0x0p+0,0x0p+0,0x0p+0) buttons=0 msec=100"
+        ]
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "call traceObjectiveVisibility end=(0x1.e000000000000p+5,0x1.3000000000000p+4,0x1.2000000000000p+5)"
+        ],
+        "after": [
+          "call traceObjectiveVisibility end=(0x1.e000000000000p+5,0x1.6800000000000p+5,0x1.2000000000000p+5)"
+        ]
+      },
+      "linux-x86": {
+        "before": [
+          "call traceObjectiveVisibility end=(0x1.ep+5,0x1.3p+4,0x1.2p+5)"
+        ],
+        "after": [
+          "call traceObjectiveVisibility end=(0x1.ep+5,0x1.68p+5,0x1.2p+5)"
+        ]
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "call traceObjectiveVisibility end=(0x1.9000000000000p+6,0x1.3000000000000p+4,0x1.2000000000000p+5)"
+        ],
+        "after": [
+          "call traceObjectiveVisibility end=(0x1.9000000000000p+6,0x1.6800000000000p+5,0x1.2000000000000p+5)"
+        ]
+      },
+      "linux-x86": {
+        "before": [
+          "call traceObjectiveVisibility end=(0x1.9p+6,0x1.3p+4,0x1.2p+5)"
+        ],
+        "after": [
+          "call traceObjectiveVisibility end=(0x1.9p+6,0x1.68p+5,0x1.2p+5)"
+        ]
+      }
+    }
+  ]
+}

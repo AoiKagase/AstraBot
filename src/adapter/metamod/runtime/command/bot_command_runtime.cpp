@@ -34,7 +34,7 @@ void BotCommandRuntime::applyCombatUpkeep(std::size_t index, const CombatUpkeepU
 	auto &command = actors_[index].managedBotCommandTemplates;
 	if (update.hasAim)
 	{
-		actors_[index].resetHuntLook();
+		actors_[index].resetNavigationLook();
 		actors_[index].useEntityLookActive = false;
 		if (!update.movementRelativeToAim && !actors_[index].nativeLadderControl)
 		{
@@ -272,7 +272,7 @@ void BotCommandRuntime::resetManagedBotCommandTemplate(std::size_t index)
 	resetManagedBotCommandInputs(index);
 	if (index < NativeBotObservation::kClientSlotCount)
 	{
-		actors_[index].resetHuntLook();
+		actors_[index].resetNavigationLook();
 		actors_[index].useEntityLookActive = false;
 	}
 }
@@ -369,7 +369,7 @@ void BotCommandRuntime::finishNeutralCommand(std::size_t index, FakeClientHandle
 	runtime::BotCommand command = draft.command;
 	actors_[index].nativeLadderControl = false;
 	actors_[index].nativeLadderJump = false;
-	actors_[index].resetHuntLook();
+	actors_[index].resetNavigationLook();
 	const ActionProposal actionProposal = ActionAdapter::forLiveDispatch(
 		requestedAction, services_->observation_hasObservedActiveWeapon(index), command.viewAngles);
 	const ActionDispatch actionDispatch = ActionAdapter::translate(actionProposal);
@@ -388,7 +388,7 @@ void BotCommandRuntime::finishNeutralCommand(std::size_t index, FakeClientHandle
 }
 
 runtime::CommandReceipt BotCommandRuntime::executeManagedBotCommand(
-	std::size_t index, FakeClientHandle &handle, bool huntLookAdvanced)
+	std::size_t index, FakeClientHandle &handle, bool navigationLookAdvanced)
 {
 	RuntimeProfilerScope profilerScope(services_->service_runtimeProfiler(), RuntimeProfilerStage::MovementDispatch);
 	runtime::CommandReceipt receipt = {
@@ -438,12 +438,13 @@ runtime::CommandReceipt BotCommandRuntime::executeManagedBotCommand(
 	const bool explicitFrozen = (handle.entity->v.flags & FL_FROZEN) != 0;
 	const bool roundFreeze = services_->roundFreezeActive();
 	const auto &machine = services_->behavior_managedBotStateMachines(index);
-	if (!huntLookAdvanced && !explicitFrozen && !roundFreeze && std::isfinite(actor.huntLookYaw) &&
-		machine.state() == compat::CompatibilityStateId::Hunt && !machine.attackOverlayActive())
+	if (!navigationLookAdvanced && !explicitFrozen && !roundFreeze && std::isfinite(actor.navigationLookYaw) &&
+		(machine.state() == compat::CompatibilityStateId::Hunt ||
+			machine.state() == compat::CompatibilityStateId::Hide) && !machine.attackOverlayActive())
 	{
 		// CSBot's upkeep turns the view while keeping the axes from the last full decision.
 		command.viewAngles = stepIdleLook(
-			*handle.entity, actor.huntLookYaw, 0.0f, services_->service_globals()->time, actor.huntLookSpring);
+			*handle.entity, actor.navigationLookYaw, 0.0f, services_->service_globals()->time, actor.navigationLookSpring);
 		command.synchronizeCombatView = true;
 	}
 	if (actor.useEntityLookActive)
@@ -862,19 +863,22 @@ MovementCommandDraft BotCommandRuntime::beginMovementCommand(std::size_t index, 
 	command.sequence = 0U;
 	command.issueFrame = 0U;
 	const auto &machine = services_->behavior_managedBotStateMachines(index);
-	const bool huntEndpoint = movement.roamDecision.huntEndpointSteering &&
+	const bool navigationLook =
 		services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility &&
-		machine.state() == compat::CompatibilityStateId::Hunt && !machine.attackOverlayActive() &&
-		!locomotionIntent.nativeLadderControl;
-	command.viewAngles = (locomotionIntent.nativeLadderControl || huntEndpoint)
+		!machine.attackOverlayActive() && !locomotionIntent.nativeLadderControl &&
+		((machine.state() == compat::CompatibilityStateId::Hunt && movement.roamDecision.huntEndpointSteering) ||
+			(machine.state() == compat::CompatibilityStateId::Hide && locomotionIntent.speed > 0.0f));
+	command.synchronizeCombatView = navigationLook;
+	command.viewAngles = (locomotionIntent.nativeLadderControl || navigationLook)
 		? runtime::ViewAngles{handle.entity->v.v_angle.x, handle.entity->v.v_angle.y, 0.0f}
 		: runtime::ViewAngles{0.0f, movementYaw(locomotionIntent.direction), 0.0f};
 	auto &actor = actors_[index];
-	if (huntEndpoint && std::isfinite(actor.huntLookYaw) &&
+	if (navigationLook && std::isfinite(actor.navigationLookYaw) &&
 		!(handle.entity->v.flags & FL_FROZEN) && !services_->roundFreezeActive())
 	{
 		command.viewAngles =
-			stepIdleLook(*handle.entity, actor.huntLookYaw, 0.0f, services_->service_globals()->time, actor.huntLookSpring);
+			stepIdleLook(*handle.entity, actor.navigationLookYaw, 0.0f, services_->service_globals()->time,
+				actor.navigationLookSpring);
 	}
 	std::uint16_t movementButtons = locomotionIntent.posture == nav::LocomotionPosture::Crouching
 		? static_cast<std::uint16_t>(IN_DUCK)
@@ -905,26 +909,38 @@ void BotCommandRuntime::finishMovementCommand(std::size_t index, FakeClientHandl
 	const bool compatibilityMovement =
 		services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility;
 	const auto &machine = services_->behavior_managedBotStateMachines(index);
-	const bool huntEndpoint = compatibilityMovement && roamDecision.huntEndpointSteering &&
-		machine.state() == compat::CompatibilityStateId::Hunt && !machine.attackOverlayActive() &&
+	const bool canUseNavigationLook = compatibilityMovement && !machine.attackOverlayActive() &&
 		!locomotionIntent.nativeLadderControl && !requestedAction.hasCombatAim && !requestedAction.hasGuardLook;
+	const bool huntEndpoint = canUseNavigationLook && roamDecision.huntEndpointSteering &&
+		machine.state() == compat::CompatibilityStateId::Hunt;
+	const bool coverLook = canUseNavigationLook && machine.state() == compat::CompatibilityStateId::Hide &&
+		locomotionIntent.speed > 0.0f;
+	const bool navigationLook = huntEndpoint || coverLook;
 	auto &actor = actors_[index];
-	if (!huntEndpoint)
+	if (!navigationLook)
 	{
-		actor.resetHuntLook();
+		actor.resetNavigationLook();
 	}
 	else if (locomotionIntent.speed > 0.0f)
 	{
 		// Set the next upkeep's look target after taking this decision's view.
-		actor.huntLookYaw = movementYaw({
-			roamDecision.huntEndpoint.x - before.origin.x, roamDecision.huntEndpoint.y - before.origin.y, 0.0f});
+		actor.navigationLookYaw = huntEndpoint
+			? movementYaw({roamDecision.huntEndpoint.x - before.origin.x,
+				  roamDecision.huntEndpoint.y - before.origin.y, 0.0f})
+			: movementYaw(locomotionIntent.direction);
 	}
 	const ActionProposal actionProposal = ActionAdapter::forLiveDispatch(
 		requestedAction, services_->observation_hasObservedActiveWeapon(index), draft.command.viewAngles);
 	const ActionDispatch actionDispatch = ActionAdapter::translate(actionProposal);
-	command.viewAngles = huntEndpoint ? draft.command.viewAngles : actionDispatch.viewAngles;
+	command.viewAngles = actionDispatch.viewAngles;
+	if (navigationLook)
+	{
+		const auto &view = handle.entity->v.v_angle;
+		command.viewAngles = draft.command.synchronizeCombatView ? draft.command.viewAngles
+															  : runtime::ViewAngles{view.x, view.y, view.z};
+	}
 	command.synchronizeCombatView =
-		actionProposal.hasCombatAim || actionProposal.hasGuardLook || locomotionIntent.nativeLadderControl || huntEndpoint;
+		actionProposal.hasCombatAim || actionProposal.hasGuardLook || locomotionIntent.nativeLadderControl || navigationLook;
 	applyUseEntityLook(index, *handle.entity, actionProposal, command);
 	command.movement.buttons = actionDispatch.buttons;
 	actors_[index].nativeLadderControl = locomotionIntent.nativeLadderControl;

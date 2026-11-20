@@ -187,6 +187,29 @@ int main()
 	context.frame.tick++;
 	context.fullUpdateSequence++;
 	context.timestamp = services.globals.time;
+	if (!check(services.stateMachine.transition(compat::CompatibilityStateId::Hide,
+			compat::StateTransitionReason::ExplicitRequest, compat::StateTransitionId::ExplicitStateChange, context) ==
+			compat::StateResult::Transitioned, "enter Hide with the view still facing the threat"))
+		return 1;
+	command.resetManagedBotCommandTemplate(0U);
+	handle.entity->v.v_angle = Vector(-4.0f, -170.0f, 0.0f);
+	NavigationUpdate cover{};
+	cover.locomotionIntent.direction = {0.0f, -1.0f, 0.0f};
+	cover.locomotionIntent.speed = 240.0f;
+	const auto coverDraft = command.beginMovementCommand(0U, handle, token, before, cover);
+	const ActionProposal coverAction{ActionKind::None, coverDraft.command.viewAngles, 0U};
+	command.finishMovementCommand(0U, handle, token, before, cover, coverDraft, coverAction);
+	if (!check(services.lastYaw == -170.0f && handle.entity->v.v_angle.x == -4.0f && services.lastSide < 0,
+			"Hide starts moving toward cover without snapping to the path yaw"))
+		return 1;
+	services.globals.time += runtime::BotTimingScheduler::kCommandInterval;
+	command.executeManagedBotCommand(0U, handle);
+	if (!check(services.lastYaw > -170.0f && services.lastYaw < -160.0f && services.lastSide < 0,
+			"Hide upkeep turns toward the cover route while retaining the movement command"))
+		return 1;
+	context.frame.tick++;
+	context.fullUpdateSequence++;
+	context.timestamp = services.globals.time;
 	if (!check(services.stateMachine.transition(compat::CompatibilityStateId::UseEntity,
 			compat::StateTransitionReason::ExplicitRequest, compat::StateTransitionId::ExplicitStateChange, context) ==
 			compat::StateResult::Transitioned, "enter the interaction state"))
