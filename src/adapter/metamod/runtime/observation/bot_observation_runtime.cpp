@@ -1,4 +1,5 @@
 #include "runtime/observation/bot_observation_runtime.hpp"
+#include "astrabot/compat/kill_praise.hpp"
 #include "astrabot/compat/knife_run.hpp"
 #include "runtime/shared/bot_runtime_support.hpp"
 #include "runtime/shared/public_nav_probe.hpp"
@@ -20,8 +21,6 @@ constexpr float kSoundAttenuationDistanceScale = 1000.0f;
 constexpr float kHalfTurnDegrees = 180.0f;
 constexpr float kHeadProbeHeight = 25.0f;
 constexpr float kAimTraceDistance = 8192.0f;
-#define ASTRABOT_BOT_OBSERVATION_RUNTIME_MINIMUM_VIEW_DIRECTION_LENGTH 0.001f
-constexpr float kMinimumViewConeDot = 0.5f;
 constexpr float kBombBeepHearingDistance = 1000.0f;
 constexpr float kBombBeepKnowledgeDistance = 1000.0f;
 constexpr float kFeetTargetProbeDepth = 14.0f;
@@ -69,7 +68,7 @@ constexpr auto kMinimumCurrentWeaponFieldCount = 2U;
 constexpr auto kMaximumCurrentWeaponId = 30U;
 constexpr int kInactiveWeaponState = 0;
 constexpr int kActiveWeaponState = 1;
-constexpr int kObservationTraceIgnoringActors = 1;
+constexpr int kObservationTraceIgnoringActorsAndGlass = 0x101;
 constexpr int kObservationTraceIncludingActors = 0;
 
 bool isHostageRescueCallSample(const char *sample)
@@ -701,15 +700,18 @@ void BotObservationRuntime::rememberPlantedBomb(world::EntityKey bomb, world::Wo
 		if (!services_->service_managedBotSlots()[index] || !actor || actor->v.deadflag != DEAD_NO)
 			continue;
 		const auto &state = actors_[index];
-		const bool compatibilityCt = compatibility &&
-			(state.publicTeamKnown ? state.teamInfoTeams : actor->v.team) == kCounterTerroristTeam;
+		const int team = state.publicTeamKnown ? state.teamInfoTeams : actor->v.team;
+		const bool compatibilityCt = compatibility && team == kCounterTerroristTeam;
+		const bool compatibilityT = compatibility && team == kTerroristTeam;
+		const bool teamPlant = announcement && compatibilityT;
 		auto &knowledge = actors_[index].objectiveKnowledge[1U];
-		if ((announcement && !compatibilityCt) || (compatibilityCt && knowledge.entity == bomb))
+		if ((announcement && !compatibilityCt && !teamPlant) ||
+			((compatibilityCt || compatibilityT) && knowledge.entity == bomb && !teamPlant))
 			continue;
 		const float dx = actor->v.origin.x - origin.x;
 		const float dy = actor->v.origin.y - origin.y;
 		const float dz = actor->v.origin.z - origin.z;
-		if (dx * dx + dy * dy + dz * dz < kBombBeepKnowledgeDistance * kBombBeepKnowledgeDistance)
+		if (teamPlant || dx * dx + dy * dy + dz * dz < kBombBeepKnowledgeDistance * kBombBeepKnowledgeDistance)
 		{
 			if (!(knowledge.entity == bomb))
 				knowledge.firstHeardAt = now;
@@ -1563,35 +1565,29 @@ bool BotObservationRuntime::observeObjective(
 		static_cast<std::uint32_t>(services_->service_engineFunctions()->pfnIndexOfEdict(entity)),
 		static_cast<std::uint32_t>(entity->serialnumber)};
 	const auto &state = actors_[index];
-	const bool plantedCt = planted && compatibility &&
-		(state.publicTeamKnown ? state.teamInfoTeams : handle.entity->v.team) == kCounterTerroristTeam;
-	if (plantedCt && (key.id == 0U || !(knowledge.entity == key)))
+	const bool rememberedPlant = planted && compatibility && key.id != 0U && knowledge.entity == key;
+	// The plant announcement supplies the T position even when it is outside the view cone.
+	const bool announcedPlant = planted && compatibility && state.teamInfoTeams == kTerroristTeamByte &&
+		state.bombNoticeKnown && state.bombNoticePlanted;
+	if (planted && compatibility && !rememberedPlant && !announcedPlant)
 		return false;
 	const float eye[] = {handle.entity->v.origin.x + handle.entity->v.view_ofs.x,
 		handle.entity->v.origin.y + handle.entity->v.view_ofs.y,
 		handle.entity->v.origin.z + handle.entity->v.view_ofs.z};
-	const float target[] = {plantedCt ? knowledge.position.x : entity->v.origin.x,
-		plantedCt ? knowledge.position.y : entity->v.origin.y,
-		plantedCt ? knowledge.position.z : entity->v.origin.z};
-	const float dx = target[0] - eye[0];
-	const float dy = target[1] - eye[1];
-	const float length = std::hypot(dx, dy);
-	const float angle = handle.entity->v.v_angle.y * ASTRABOT_BOT_OBSERVATION_RUNTIME_PI / kHalfTurnDegrees;
-	// The reference gives T the planted location on the announced plant event,
-	// not merely because the server scan found a grenade (CSGameState::OnEvent).
-	bool visible = !compatibility ||
-		(planted && actors_[index].teamInfoTeams == 1U && actors_[index].bombNoticeKnown &&
-			actors_[index].bombNoticePlanted);
-	if (!planted && compatibility && actors_[index].teamInfoTeams == 1U)
+	const float target[] = {rememberedPlant ? knowledge.position.x : entity->v.origin.x,
+		rememberedPlant ? knowledge.position.y : entity->v.origin.y,
+		rememberedPlant ? knowledge.position.z : entity->v.origin.z};
+	world::WorldVector radar{};
+	const bool hasRadarPosition = !planted && compatibility && state.teamInfoTeams == kTerroristTeamByte &&
+		state.publicBombRadars.read(
+			{services_->service_lifecycle().mapGeneration(), services_->service_lifecycle().roundGeneration(),
+				services_->service_adapterFrameCount()}, &radar);
+	if (hasRadarPosition)
 	{
-		world::WorldVector radar{};
-		if (actors_[index].publicBombRadars.read(
-				{services_->service_lifecycle().mapGeneration(), services_->service_lifecycle().roundGeneration(),
-					services_->service_adapterFrameCount()},
-				&radar))
+		knowledge.entity = key;
+		knowledge.position = radar;
+		if (currentlyVisible == nullptr)
 		{
-			knowledge.entity = key;
-			knowledge.position = radar;
 			*position = radar;
 			return true;
 		}
@@ -1603,26 +1599,27 @@ bool BotObservationRuntime::observeObjective(
 				services_->service_adapterFrameCount()},
 			&publicState) &&
 		services_->service_globals()->time < publicState.blindUntil;
-	const bool smokeBlocked = services_->service_globals() != nullptr &&
-		smokeObservations_.blocks(
-			{eye[0], eye[1], eye[2]}, {target[0], target[1], target[2]}, services_->service_globals()->time);
-	if (!visible && !blind && !smokeBlocked && services_->service_engineFunctions()->pfnTraceLine != nullptr &&
-		(length < ASTRABOT_BOT_OBSERVATION_RUNTIME_MINIMUM_VIEW_DIRECTION_LENGTH ||
-			(dx * std::cos(angle) + dy * std::sin(angle)) / length > kMinimumViewConeDot))
+	bool visible = !compatibility;
+	const auto &observer = handle.entity->v;
+	if (compatibility && !blind && services_->service_engineFunctions()->pfnTraceLine != nullptr &&
+		compat::killPraiseViewCone(target[0] - observer.origin.x, target[1] - observer.origin.y,
+			observer.angles.x, observer.angles.y) &&
+		(services_->service_globals() == nullptr || !smokeObservations_.blocks(
+			{eye[0], eye[1], eye[2]}, {target[0], target[1], target[2]}, services_->service_globals()->time)))
 	{
 		TraceResult trace{};
 		services_->service_engineFunctions()->pfnTraceLine(
-			eye, target, kObservationTraceIgnoringActors, handle.entity, &trace);
-		visible = trace.flFraction == 1.0f || trace.pHit == entity;
+			eye, target, kObservationTraceIgnoringActorsAndGlass, handle.entity, &trace);
+		visible = trace.flFraction == 1.0f;
 	}
-	if (visible && !plantedCt)
+	if ((visible || announcedPlant) && !rememberedPlant && !hasRadarPosition)
 	{
 		if (!(knowledge.entity == key))
 			knowledge.firstHeardAt = -1.0f;
 		knowledge.entity = key;
 		knowledge.position = {target[0], target[1], target[2]};
 	}
-	if (!visible && !plantedCt && (!key.isValid() || !(knowledge.entity == key)))
+	if (!planted && !visible && !hasRadarPosition && (!key.isValid() || !(knowledge.entity == key)))
 		return false;
 	*position = knowledge.position;
 	if (currentlyVisible != nullptr)
@@ -2184,4 +2181,3 @@ void BotObservationRuntime::observeReloadDispatched(world::ActorKey actor, world
 } // namespace metamod
 } // namespace astrabot
 #undef ASTRABOT_BOT_OBSERVATION_RUNTIME_PI
-#undef ASTRABOT_BOT_OBSERVATION_RUNTIME_MINIMUM_VIEW_DIRECTION_LENGTH

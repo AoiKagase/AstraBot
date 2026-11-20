@@ -1682,6 +1682,14 @@ bool testRuntimeBombSiteApproach(
 		runtime.onMessageEnd();
 		gEntities[0].v.v_angle = Vector(0.0f, 0.0f, 0.0f);
 		gEntities[0].v.origin.x -= 16.0f;
+		const auto unknownModelAngles = gEntities[0].v.angles;
+		gEntities[0].v.angles = Vector(0.0f, 0.0f, 0.0f);
+		auto &observation = static_cast<astrabot::metamod::BotBehaviorServices &>(runtime);
+		astrabot::world::WorldVector unknownPosition{};
+		bool visible = true;
+		passed = check(!observation.observation_observeObjective(0, &gPlantedBomb, true, &unknownPosition, &visible) &&
+				!visible, "clear sight alone cannot reveal an unknown planted C4 to a CT") && passed;
+		gEntities[0].v.angles = unknownModelAngles;
 		gMovementLogs.clear();
 		for (int frame = 0; frame < 12; ++frame)
 			tick(0.1f);
@@ -1694,6 +1702,63 @@ bool testRuntimeBombSiteApproach(
 	}
 	gEntities[0].v.origin = ctBeforeDiscovery;
 	runtime.onEmitSound(&gPlantedBomb, "weapons/c4_beep1.wav", 1.0f, 1.0f);
+	if (!astrabot_test::runtimeCharacterization().enabled())
+	{
+		auto &observation = static_cast<astrabot::metamod::BotBehaviorServices &>(runtime);
+		auto &self = gEntities[0].v;
+		const auto previousOrigin = self.origin;
+		const auto previousViewOffset = self.view_ofs;
+		const auto previousAngles = self.angles;
+		const auto previousView = self.v_angle;
+		const auto bombPoint = gPlantedBomb.v.origin;
+		const auto previousTrace = engine.pfnTraceLine;
+		self.origin = bombPoint - Vector(40.0f, 0.0f, 0.0f);
+		self.view_ofs = Vector(48.0f, 0.0f, 17.0f);
+		self.angles = Vector(0.0f, 0.0f, 0.0f);
+		self.v_angle = Vector(0.0f, 0.0f, 0.0f);
+		gPlantedBomb.v.origin.x += 100.0f;
+		engine.pfnTraceLine = [](const float *, const float *end, int flags, edict_t *, TraceResult *trace) {
+			*trace = {};
+			trace->flFraction = flags == 0x101 && end[0] == 224.0f ? 1.0f : 0.5f;
+		};
+		runtime.giveEnginePointers(&engine, &globals);
+		const auto observe = [&](bool expectedVisibility, const char *message) {
+			astrabot::world::WorldVector position{};
+			bool visible = !expectedVisibility;
+			return check(observation.observation_observeObjective(0, &gPlantedBomb, true, &position, &visible) &&
+					visible == expectedVisibility && position.x == bombPoint.x && position.y == bombPoint.y &&
+					position.z == bombPoint.z, message);
+		};
+		passed = observe(true, "a CT sees its remembered C4 through glass using the model and player origin") && passed;
+		engine.pfnTraceLine = [](const float *, const float *, int, edict_t *, TraceResult *trace) {
+			*trace = {};
+			trace->flFraction = 1.0f;
+		};
+		runtime.giveEnginePointers(&engine, &globals);
+		self.view_ofs.x = 0.0f;
+		self.angles.x = 75.0f;
+		passed = observe(false, "model pitch narrows the horizontal C4 view cone without erasing its location") && passed;
+		self.angles = Vector(0.0f, 180.0f, 0.0f);
+		passed = observe(false, "model yaw, independent of view yaw, rejects C4 behind the CT") && passed;
+		self.angles.y = 0.0f;
+		self.origin = bombPoint;
+		passed = observe(false, "a C4 with no horizontal direction is outside the native view cone") && passed;
+		self.origin.x -= 40.0f;
+		engine.pfnTraceLine = [](const float *, const float *, int, edict_t *, TraceResult *trace) {
+			*trace = {};
+			trace->flFraction = 0.5f;
+			trace->pHit = &gPlantedBomb;
+		};
+		runtime.giveEnginePointers(&engine, &globals);
+		passed = observe(false, "hitting the C4 edict short of the target point does not establish visibility") && passed;
+		engine.pfnTraceLine = previousTrace;
+		runtime.giveEnginePointers(&engine, &globals);
+		gPlantedBomb.v.origin = bombPoint;
+		self.origin = previousOrigin;
+		self.view_ofs = previousViewOffset;
+		self.angles = previousAngles;
+		self.v_angle = previousView;
+	}
 	gMovementLogs.clear();
 	bool movedTowardObservedC4 = false;
 	const bool checkApproachLook = !astrabot_test::runtimeCharacterization().enabled();
@@ -1895,6 +1960,28 @@ bool testRuntimeBombSiteApproach(
 	for (int frame = 0; frame < 24; ++frame)
 		tick(0.1f);
 	passed = check(sawDroppedAssignment(), "T fetches hidden dropped C4 after its public radar update") && passed;
+	if (!astrabot_test::runtimeCharacterization().enabled())
+	{
+		auto &observation = static_cast<astrabot::metamod::BotBehaviorServices &>(runtime);
+		auto &self = gEntities[0].v;
+		const auto origin = self.origin;
+		const auto angles = self.angles;
+		const auto boxOrigin = gPlantedBomb.v.origin;
+		self.origin = Vector(240.0f, 32.0f, 36.0f);
+		self.angles = Vector(0.0f, 0.0f, 0.0f);
+		gPlantedBomb.v.origin.x = 256.0f;
+		astrabot::world::WorldVector position{};
+		bool visible = false;
+		gObjectiveTraceVisible = true;
+		passed = check(observation.observation_observeObjective(0, &gPlantedBomb, false, &position, &visible) &&
+				visible && position.x == 224.0f, "T radar position and sight of the actual box are independent") && passed;
+		gObjectiveTraceVisible = false;
+		passed = check(observation.observation_observeObjective(0, &gPlantedBomb, false, &position, &visible) &&
+				!visible && position.x == 224.0f, "occlusion retains the T radar position") && passed;
+		gPlantedBomb.v.origin = boxOrigin;
+		self.origin = origin;
+		self.angles = angles;
+	}
 	runtime.onMessageBegin(MSG_ONE, 97, nullptr, &gEntities[0]);
 	runtime.onMessageEnd();
 	gPlantedBomb.free = 1;
@@ -1903,6 +1990,35 @@ bool testRuntimeBombSiteApproach(
 		tick(0.1f);
 	passed = check(!sawDroppedAssignment(), "pickup removes dropped C4 assignment") && passed;
 	gPlantedBomb.free = 0;
+	if (!astrabot_test::runtimeCharacterization().enabled())
+	{
+		auto &observation = static_cast<astrabot::metamod::BotBehaviorServices &>(runtime);
+		auto &self = gEntities[0].v;
+		const auto origin = self.origin;
+		const auto bomb = gPlantedBomb;
+		self.origin = Vector(-1100.0f, 32.0f, 36.0f);
+		gPlantedBomb.v.classname = 2;
+		gPlantedBomb.v.model = 3;
+		gPlantedBomb.v.origin = Vector(224.0f, 32.0f, 72.0f);
+		++gPlantedBomb.serialnumber;
+		runtime.onMessageBegin(MSG_ALL, 95, nullptr, nullptr);
+		runtime.onWriteCoord(gPlantedBomb.v.origin.x);
+		runtime.onWriteCoord(gPlantedBomb.v.origin.y);
+		runtime.onWriteCoord(gPlantedBomb.v.origin.z);
+		runtime.onWriteByte(1);
+		runtime.onMessageEnd();
+		astrabot::world::WorldVector position{};
+		bool visible = true;
+		passed = check(observation.observation_observeObjective(0, &gPlantedBomb, true, &position, &visible) &&
+				!visible && position.z == 72.0f, "the plant event gives distant Ts knowledge without visibility") && passed;
+		self.origin = Vector(160.0f, 32.0f, 36.0f);
+		gPlantedBomb.v.origin.z = 36.0f;
+		runtime.onEmitSound(&gPlantedBomb, "weapons/c4_beep1.wav", 1.0f, 1.0f);
+		passed = check(observation.observation_observeObjective(0, &gPlantedBomb, true, &position, &visible) &&
+				position.z == 72.0f, "periodic beeps keep the T's plant-event point") && passed;
+		gPlantedBomb = bomb;
+		self.origin = origin;
+	}
 	freshRound(3U, 80.0f, 5.0f);
 	gEntities[0].v.weapons = 0;
 	gMovementLogs.clear();
