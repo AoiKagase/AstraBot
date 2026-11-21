@@ -67,6 +67,8 @@ struct NavRoamObservation
 	bool noiseTargetCleared = false;
 	bool nativeSameAreaEndpoint = false;
 	bool defuseApproach = false;
+	bool fetchBombPath = false;
+	const std::function<bool()> *fetchLookAround = nullptr;
 	bool prepareObjectivePathOnly = false;
 	nav::AreaId objectivePathStartArea = 0U;
 	// Hunt compares the requested area with the bot's last known NAV area while on a ladder.
@@ -190,6 +192,7 @@ struct NavRoamDecision
 	NavRoamReservationFallbackReason reservationFallbackReason;
 	bool goalPresent;
 	bool pathRequested;
+	bool fetchPathBuildFailed;
 	nav::NavQueryResult pathResult;
 	nav::NavSearchStats pathSearchStats;
 	nav::AreaId goalArea;
@@ -344,7 +347,8 @@ private:
 		const nav::NavSnapshot &snapshot, const NavRoamObservation &observation, NavRoamDecision *decision);
 	NavigationPhaseResult locateUpdateAreas(NavigationUpdateContext &ctx);
 	NavigationPhaseResult prepareNoiseRoute(NavigationUpdateContext &ctx);
-	bool buildNoiseRoute(NavigationUpdateContext &ctx);
+	NavigationPhaseResult prepareFetchBombRoute(NavigationUpdateContext &ctx);
+	bool buildPointRoute(NavigationUpdateContext &ctx, nav::AreaId start, const nav::NavVector &position);
 	NavigationPhaseResult recoverOffMeshUpdate(NavigationUpdateContext &ctx);
 	NavigationPhaseResult recoverStuckUpdate(NavigationUpdateContext &ctx);
 	NavigationPhaseResult replaceReachedHuntRoute(NavigationUpdateContext &ctx);

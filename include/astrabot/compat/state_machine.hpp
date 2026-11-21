@@ -7,6 +7,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 
 namespace astrabot
 {
@@ -254,7 +255,8 @@ public:
 	StateResult transition(CompatibilityStateId nextState, StateTransitionReason reason, StateTransitionId transition,
 		const StateUpdateContext &context);
 	StateResult beginAttack(const StateUpdateContext &context);
-	StateResult finishNavigation(const StateUpdateContext &context);
+	StateResult finishNavigation(const StateUpdateContext &context,
+		const std::function<bool()> &lookAfterFetchFailure = {});
 	StateResult stopAttack(const StateUpdateContext &context);
 	StateResult onSpawn(const StateUpdateContext &context);
 	StateResult onDeath(const StateUpdateContext &context);
@@ -270,6 +272,7 @@ public:
 	}
 	const world::ActorKey &actor() const;
 	float stateTimestamp() const;
+	bool huntExpired(float now) const;
 	std::uint64_t normalStateEpoch() const
 	{
 		return normalStateEpoch_;

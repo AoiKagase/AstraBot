@@ -46,7 +46,8 @@ ActionKind bestOwnedWeapon(const edict_t &entity)
 using namespace runtime_detail;
 
 bool BotBehaviorRuntime::finishManagedBotNavigation(std::size_t index, const runtime::MovementPhysicsState &before,
-	runtime::NavRoamResult result, const runtime::NavRoamDecision &decision, nav::LocomotionIntent *intent)
+	runtime::NavRoamResult result, const runtime::NavRoamDecision &decision, nav::LocomotionIntent *intent,
+	const std::function<bool()> &lookAfterFetchFailure)
 {
 	if (services_->service_compatibilitySurface().configuration().mode != compat::RuntimeMode::Compatibility ||
 		index >= services_->service_managedBotHandles().size() || services_->service_globals() == nullptr)
@@ -68,10 +69,17 @@ bool BotBehaviorRuntime::finishManagedBotNavigation(std::size_t index, const run
 	step.pathSequence = decision.pathSequence;
 	step.fullUpdateSequence = context.fullUpdateSequence;
 	using Outcome = compat::NavigationStepOutcome;
-	if (result == runtime::NavRoamResult::ObjectivePathPrepared)
+	const auto currentState = actors_[index].managedBotStateMachines.state();
+	if (decision.fetchPathBuildFailed)
+		step.outcome = Outcome::FetchPathBuildFailed;
+	else if (result == runtime::NavRoamResult::ObjectivePathPrepared)
 		step.outcome = Outcome::ObjectivePathPrepared;
+	else if (currentState == compat::CompatibilityStateId::FetchBomb && intent && intent->nativeLadderControl &&
+		decision.recomputeReason == runtime::NavRecomputeReason::PathInvalidated)
+		step.outcome = Outcome::PathFailure;
 	else if (result == runtime::NavRoamResult::IntentReady || result == runtime::NavRoamResult::MovementSuppressed ||
-		(result == runtime::NavRoamResult::ReplanRequired && decision.failureReason == runtime::NavFailureReason::None))
+		(result == runtime::NavRoamResult::ReplanRequired && decision.failureReason == runtime::NavFailureReason::None &&
+			currentState != compat::CompatibilityStateId::FetchBomb))
 		step.outcome = Outcome::Progressing;
 	else if (result == runtime::NavRoamResult::TargetReached)
 		step.outcome = Outcome::EndOfPath;
@@ -79,7 +87,6 @@ bool BotBehaviorRuntime::finishManagedBotNavigation(std::size_t index, const run
 		step.outcome = Outcome::PathFailure;
 	else
 		step.outcome = Outcome::ObservationUnavailable;
-	const auto currentState = actors_[index].managedBotStateMachines.state();
 	if (currentState == compat::CompatibilityStateId::DefuseBomb ||
 		currentState == compat::CompatibilityStateId::PlantBomb || currentState == compat::CompatibilityStateId::Buy)
 		step.outcome = Outcome::NotEvaluated;
@@ -161,7 +168,9 @@ bool BotBehaviorRuntime::finishManagedBotNavigation(std::size_t index, const run
 	const auto receipt = pursuitTarget.isValid() ? reactionContext(index) : compat::ReactionContext{};
 	const auto revision = actor.executionRevision;
 	const auto transition = step.outcome == Outcome::ObjectivePathPrepared
-		? compat::StateResult::NoOp : machine.finishNavigation(context);
+		? compat::StateResult::NoOp : machine.finishNavigation(context, lookAfterFetchFailure);
+	if (transition == compat::StateResult::InvalidContext && step.outcome == Outcome::FetchPathBuildFailed)
+		return false;
 	const auto resultingEpoch = machine.normalStateEpoch();
 	if (actors_[index].helpGoal.active && !helpGoalCurrent(index))
 	{
@@ -172,6 +181,8 @@ bool BotBehaviorRuntime::finishManagedBotNavigation(std::size_t index, const run
 		services_->applyNavigationRequest({index, NavigationRequestKind::PublishStep, step});
 	if (machine.state() != previous)
 	{
+		if (previous == compat::CompatibilityStateId::FetchBomb)
+			actor.fetchBombGoal = {};
 		actors_[index].enemyReaction.onStateChange(reactionContext(index), previous, machine.state());
 		if (previous == compat::CompatibilityStateId::InvestigateNoise)
 		{
@@ -747,7 +758,8 @@ bool BotBehaviorRuntime::buildManagedObjectiveTarget(std::size_t index, nav::Nav
 	const team::TeamObjectiveKind assignmentKind =
 		assignment == nullptr ? team::TeamObjectiveKind::None : assignment->kind;
 	const std::uint32_t assignmentGeneration = assignment == nullptr ? 0U : assignment->generation;
-	const bool needsDroppedC4 = assignmentKind == team::TeamObjectiveKind::RetrieveDroppedC4;
+	const bool needsDroppedC4 = assignmentKind == team::TeamObjectiveKind::RetrieveDroppedC4 &&
+		services_->service_compatibilitySurface().configuration().mode != compat::RuntimeMode::Compatibility;
 	const bool needsBombSite =
 		team == kTerroristTeam && carryingBomb && assignmentKind == team::TeamObjectiveKind::PlantC4;
 	const bool needsPlantedBomb = team == kCounterTerroristTeam && assignmentKind == team::TeamObjectiveKind::DefuseC4;

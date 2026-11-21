@@ -1031,7 +1031,8 @@ void BotNavigationRuntime::completePreparation(std::size_t index, MovementPrepar
 }
 
 NavigationUpdate BotNavigationRuntime::updateNavigation(std::size_t index, const FakeClientHandle &handle,
-	const runtime::MovementPhysicsState &before, const nav::NavSnapshot &navigation, bool performanceDisablePathSearch_)
+	const runtime::MovementPhysicsState &before, const nav::NavSnapshot &navigation, bool performanceDisablePathSearch_,
+	const std::function<bool(HuntApproachLook &)> &fetchLookAround)
 {
 	NavigationUpdate output{};
 	auto &observation = output.observation;
@@ -1130,6 +1131,15 @@ NavigationUpdate BotNavigationRuntime::updateNavigation(std::size_t index, const
 	}
 	const bool compatibility =
 		services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility;
+	observation.fetchBombPath = compatibility && currentMachine.state() == compat::CompatibilityStateId::FetchBomb &&
+		!currentMachine.attackOverlayActive() && observation.hasObjectiveTarget;
+	if (observation.fetchBombPath)
+	{
+		observation.objectivePathStartArea = knownArea(index, objectiveActor, observation.frame, navigation.revision());
+		observation.objectiveTargetEntity = services_->behavior_scenarioDecisions(index).target.entity;
+		observation.objectiveRouteType = nav::NavRouteType::Safest;
+		observation.nativeSameAreaEndpoint = true;
+	}
 	const bool following = compatibility && currentMachine.state() == compat::CompatibilityStateId::Follow &&
 		!currentMachine.attackOverlayActive();
 	if (following)
@@ -1156,7 +1166,7 @@ NavigationUpdate BotNavigationRuntime::updateNavigation(std::size_t index, const
 		currentMachine.task() == compat::CompatibilityTaskId::Follow)
 		observation.nativeSameAreaEndpoint = true;
 	const auto &goalCache = services_->behavior_managedBotObjectiveTargets(index);
-	if (observation.hasObjectiveTarget && goalCache.routeOverride)
+	if (observation.hasObjectiveTarget && goalCache.routeOverride && !observation.fetchBombPath)
 		observation.objectiveRouteType = goalCache.routeType;
 	observation.movementSuppressed = services_->roundFreezeActive();
 	const auto &objectiveAction = services_->behavior_managedBotObjectiveActions(index);
@@ -1279,13 +1289,15 @@ NavigationUpdate BotNavigationRuntime::updateNavigation(std::size_t index, const
 		!machine.attackOverlayActive();
 	// Hunt::OnEnter destroys the path. The first goal draw belongs to OnUpdate.
 	const bool enteredHuntThisUpdate = entersHuntWithoutUpdate(index, observation.locomotion.observedAt);
+	const bool enteredFetchBomb = navigationState == compat::CompatibilityStateId::FetchBomb &&
+		machine.stateTimestamp() == observation.locomotion.observedAt;
 	const bool enteredFollowCover = navigationState == compat::CompatibilityStateId::Hide &&
 		machine.task() == compat::CompatibilityTaskId::Follow && machine.stateTimestamp() == observation.locomotion.observedAt;
 	const bool stateHold =
 		services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility &&
 		(navigationState == compat::CompatibilityStateId::DefuseBomb ||
 			navigationState == compat::CompatibilityStateId::PlantBomb ||
-			navigationState == compat::CompatibilityStateId::Buy || enteredHuntThisUpdate || enteredFollowCover ||
+			navigationState == compat::CompatibilityStateId::Buy || enteredHuntThisUpdate || enteredFetchBomb || enteredFollowCover ||
 			(navigationState == compat::CompatibilityStateId::Idle && !observation.hasObjectiveTarget) ||
 			(navigationState == compat::CompatibilityStateId::Hide &&
 				services_->behavior_scenarioDecisions(index).action == compat::ScenarioAction::Guard &&
@@ -1324,6 +1336,8 @@ NavigationUpdate BotNavigationRuntime::updateNavigation(std::size_t index, const
 			const auto goalGeneration = services_->behavior_managedBotObjectiveTargets(index).generation;
 			const auto fullSequence = services_->service_managedBotFullUpdateSequences()[index];
 			const float now = services_->service_globals()->time;
+			const bool validateFetchBox = observation.fetchBombPath && !actors_[index].managedBotMovement.hasPath();
+			const edict_t *fetchBox = nullptr;
 			const auto current = [&, receiptHandle, serial, epoch, revision, goalGeneration, fullSequence, now]()
 			{
 				const auto &live = services_->service_managedBotHandles()[index];
@@ -1342,8 +1356,24 @@ NavigationUpdate BotNavigationRuntime::updateNavigation(std::size_t index, const
 					services_->behavior_managedBotStateMachines(index).normalStateEpoch() == epoch &&
 					services_->behavior_executionRevision(index) == revision &&
 					services_->behavior_managedBotObjectiveTargets(index).generation == goalGeneration &&
+					(!observation.fetchBombPath || !machine.attackOverlayActive()) &&
+					(!validateFetchBox ||
+						(fetchBox && !fetchBox->free && fetchBox->serialnumber >= 0 &&
+							static_cast<unsigned>(fetchBox->serialnumber) + 1U ==
+								observation.objectiveTargetEntity.generation)) &&
 					active.revision() == navigation.revision() && active.document() == navigation.document();
 			};
+			if (validateFetchBox)
+			{
+				const auto *engine = services_->service_engineFunctions();
+				if (engine && engine->pfnPEntityOfEntIndex && observation.objectiveTargetEntity.isValid())
+					fetchBox = engine->pfnPEntityOfEntIndex(static_cast<int>(observation.objectiveTargetEntity.id));
+				if (!current())
+				{
+					roamResult = runtime::NavRoamResult::InvalidObservation;
+					return output;
+				}
+			}
 			nav::NavLadderTopology topology{};
 			PublicNativeLadderProbe probe(services_->service_engineFunctions(), current);
 			PublicHuntPathProbe<decltype(current)> huntProbe(
@@ -1359,8 +1389,9 @@ NavigationUpdate BotNavigationRuntime::updateNavigation(std::size_t index, const
 				services_->behavior_forcedRunning(index);
 			const bool defuseApproach = compatibility && navigationState == compat::CompatibilityStateId::MoveTo &&
 				machine.task() == compat::CompatibilityTaskId::DefuseBomb && !machine.attackOverlayActive();
-			if ((navigationState == compat::CompatibilityStateId::Hunt || defuseApproach) &&
-				services_->service_engineFunctions() && services_->service_engineFunctions()->pfnTraceLine)
+			if (observation.fetchBombPath ||
+				((navigationState == compat::CompatibilityStateId::Hunt || defuseApproach) &&
+					services_->service_engineFunctions() && services_->service_engineFunctions()->pfnTraceLine))
 				observation.locomotion.huntPathProbe = &huntProbe;
 			const bool hunting = navigationState == compat::CompatibilityStateId::Hunt && !machine.attackOverlayActive();
 			if (services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility &&
@@ -1407,8 +1438,14 @@ NavigationUpdate BotNavigationRuntime::updateNavigation(std::size_t index, const
 				observation.noiseRoute = currentMachine.stateTimestamp() == observation.locomotion.observedAt
 					? runtime::NoiseRouteUpdate::Enter : runtime::NoiseRouteUpdate::Redirect;
 			}
+			const std::function<bool()> lookAround = [&] {
+				return current() && fetchLookAround(output.huntApproachLook) && current();
+			};
+			if (observation.fetchBombPath && !observation.movementSuppressed)
+				observation.fetchLookAround = &lookAround;
 			roamResult =
 				actors_[index].managedBotMovement.update(navigation, observation, &locomotionIntent, &roamDecision);
+			observation.fetchLookAround = nullptr;
 			// Borrowed topology and probe never escape this synchronous update.
 			observation.nativeLadders = nullptr;
 			observation.nativeLadderProbe = nullptr;
@@ -1425,7 +1462,8 @@ NavigationUpdate BotNavigationRuntime::updateNavigation(std::size_t index, const
 			{
 				locomotionIntent = {};
 				roamDecision = {};
-				roamResult = runtime::NavRoamResult::ReplanRequired;
+				roamResult = observation.fetchBombPath ? runtime::NavRoamResult::InvalidObservation
+													   : runtime::NavRoamResult::ReplanRequired;
 			}
 		}
 		if (services_->behavior_noiseInvestigationWalking(index) &&

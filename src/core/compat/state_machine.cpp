@@ -373,7 +373,8 @@ StateResult CompatibilityStateMachine::transition(CompatibilityStateId nextState
 	return transitionInternal(nextState, reason, transitionId, context, false);
 }
 
-StateResult CompatibilityStateMachine::finishNavigation(const StateUpdateContext &context)
+StateResult CompatibilityStateMachine::finishNavigation(
+	const StateUpdateContext &context, const std::function<bool()> &lookAfterFetchFailure)
 {
 	if (!initialized_)
 		return StateResult::NotInitialized;
@@ -390,12 +391,37 @@ StateResult CompatibilityStateMachine::finishNavigation(const StateUpdateContext
 		return StateResult::NoOp;
 	// Only these states consume a path result here. Other normal states were
 	// already updated before navigation; do not run their OnUpdate twice.
-	if (state_ != CompatibilityStateId::MoveTo && state_ != CompatibilityStateId::InvestigateNoise)
+	if (state_ != CompatibilityStateId::MoveTo && state_ != CompatibilityStateId::InvestigateNoise &&
+		state_ != CompatibilityStateId::FetchBomb)
 		return StateResult::NoOp;
 	navigationCompletedFrame_ = context.frame;
 	auto value = context;
 	value.requestTransition = false;
 	const auto before = state_;
+	if (before == CompatibilityStateId::FetchBomb && !attackOverlayActive_)
+	{
+		// FetchBomb calls Hunt upon a failed ComputePath, then its own
+		// UpdatePathMovement finds no path and returns to Idle.
+		if (step.outcome == NavigationStepOutcome::FetchPathBuildFailed)
+		{
+			transitionInternal(CompatibilityStateId::Hunt, StateTransitionReason::PathFailure,
+				StateTransitionId::ExplicitStateChange, context, false);
+			const auto epoch = normalStateEpoch_;
+			if (lookAfterFetchFailure && (!lookAfterFetchFailure() || normalStateEpoch_ != epoch ||
+					state_ != CompatibilityStateId::Hunt || attackOverlayActive_))
+				return StateResult::InvalidContext;
+		}
+		if (step.outcome == NavigationStepOutcome::FetchPathBuildFailed ||
+			step.outcome == NavigationStepOutcome::PathFailure || step.outcome == NavigationStepOutcome::EndOfPath)
+		{
+			behaviorDecision_ = {StateAction::None, true, true};
+			return transitionInternal(CompatibilityStateId::Idle,
+				step.outcome == NavigationStepOutcome::EndOfPath ? StateTransitionReason::ObjectiveChanged
+															   : StateTransitionReason::PathFailure,
+				StateTransitionId::ExplicitStateChange, context, false);
+		}
+		return StateResult::Updated;
+	}
 	updateBehavior(value);
 	return before == state_ ? StateResult::Updated : StateResult::Transitioned;
 }
@@ -550,7 +576,6 @@ void CompatibilityStateMachine::invokeUpdate(const StateUpdateContext &context)
 
 void CompatibilityStateMachine::updateBehavior(const StateUpdateContext &context)
 {
-	constexpr float kHuntTimeoutSeconds = 30.0f;
 	constexpr float kDefuseReceiptTimeoutSeconds = 1.0f;
 	if (!context.behavior)
 		return;
@@ -575,7 +600,7 @@ void CompatibilityStateMachine::updateBehavior(const StateUpdateContext &context
 		break;
 	case CompatibilityStateId::Hunt:
 		behaviorDecision_.action = StateAction::Hunt;
-		if (input.navigationOwned && context.timestamp - stateTimestamp_ > kHuntTimeoutSeconds)
+		if (input.navigationOwned && huntExpired(context.timestamp))
 			next = CompatibilityStateId::Idle;
 		break;
 	case CompatibilityStateId::MoveTo:
@@ -671,6 +696,11 @@ void CompatibilityStateMachine::updateBehavior(const StateUpdateContext &context
 	}
 }
 
+bool CompatibilityStateMachine::huntExpired(float now) const
+{
+	return state_ == CompatibilityStateId::Hunt && now - stateTimestamp_ > 30.0f;
+}
+
 void CompatibilityStateMachine::invokeExit(CompatibilityStateId state, CompatibilityStateId nextState,
 	StateTransitionReason reason, StateTransitionId transitionId, const StateUpdateContext &context)
 {
@@ -743,7 +773,7 @@ void CompatibilityStateMachine::applyEnterEffects(CompatibilityStateId state, Co
 		task_ = CompatibilityTaskId::EscapeFromBomb;
 		break;
 	case CompatibilityStateId::FetchBomb:
-		task_ = CompatibilityTaskId::FetchBomb;
+		// FetchBomb only changes the state. Idle and Hunt set SeekAndDestroy.
 		break;
 	case CompatibilityStateId::Follow:
 		task_ = CompatibilityTaskId::Follow;

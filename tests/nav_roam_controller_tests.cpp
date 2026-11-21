@@ -3957,6 +3957,102 @@ bool testRemainingPathDistance()
 		"remaining path sums the area centers after the active node and respects path/snapshot invalidation");
 }
 
+bool testFetchBombPositionPath()
+{
+	using namespace astrabot;
+	nav::NavDocument document;
+	auto start = area(1U, 0.0f, 128.0f);
+	start.connections[1].push_back(2U);
+	document.addArea(start);
+	auto next = area(2U, 128.0f, 256.0f);
+	next.connections[3].push_back(1U);
+	document.addArea(next);
+	nav::NavSnapshotPublisher publisher;
+	publisher.publish(&document, 1U);
+	compat::ScriptedRandomSource random({
+		compat::RandomTapeEntry::floatEntry("CSBOT-PATH-RETRY", {1U, 1U}, {0U, 0U, 1U}, .4f, .6f, .5f),
+		compat::RandomTapeEntry::floatEntry("CSBOT-PATH-RETRY", {1U, 1U}, {0U, 0U, 3U}, .4f, .6f, .5f)});
+	runtime::NavRoamController controller;
+	controller.setRandomSource(&random);
+	runtime::NavRoamObservation observation{};
+	observation.actor = {1U, 1U};
+	observation.frame = {1U, 1U, 1U};
+	observation.team = 1U;
+	observation.locomotion.position = {32.0f, 32.0f, 0.0f};
+	observation.locomotion.standingClearance = 72.0f;
+	observation.locomotion.crouchingClearance = 36.0f;
+	observation.locomotion.grounded = true;
+	observation.locomotion.timingAvailable = true;
+	observation.locomotion.observedAt = 1.0f;
+	observation.hasObjectiveTarget = true;
+	observation.objectiveTarget = {280.0f, 32.0f, 0.0f};
+	observation.objectiveRouteType = nav::NavRouteType::Safest;
+	observation.fetchBombPath = true;
+	observation.objectivePathStartArea = 1U;
+	bool pathReadyAtLook = false;
+	const std::function<bool()> look = [&] {
+		pathReadyAtLook = controller.hasPath();
+		return true;
+	};
+	observation.fetchLookAround = &look;
+	nav::LocomotionIntent intent{};
+	runtime::NavRoamDecision decision{};
+	const auto snapshot = publisher.snapshot();
+	if (!check(controller.update(snapshot, observation, &intent, &decision) == runtime::NavRoamResult::IntentReady &&
+			pathReadyAtLook && decision.routeType == nav::NavRouteType::Safest &&
+			decision.selectedPath == std::vector<nav::AreaId>{1U, 2U} && decision.huntEndpoint.x == 280.0f,
+		"FetchBomb creates a safest partial path to an off-mesh point before looking and moving"))
+		return false;
+	controller.destroyPath();
+	observation.frame.tick = 2U;
+	observation.locomotion.observedAt = 1.125f;
+	if (!check(controller.update(snapshot, observation, &intent, &decision) == runtime::NavRoamResult::NoRoute &&
+			decision.fetchPathBuildFailed && !controller.hasPath() && intent.speed == 0.0f,
+		"FetchBomb reports failure on the shared retry throttle"))
+		return false;
+	observation.frame.tick = 3U;
+	observation.locomotion.observedAt = 1.625f;
+	observation.objectivePathStartArea = 0U;
+	if (!check(controller.update(snapshot, observation, &intent, &decision) == runtime::NavRoamResult::NoRoute &&
+			decision.fetchPathBuildFailed && random.verifyComplete(),
+		"a permitted FetchBomb attempt consumes the only retry draw before testing the last known area"))
+		return false;
+
+	struct InvalidatedFloorProbe : nav::NavHuntPathProbe
+	{
+		bool current() const override { return valid; }
+		bool clear(const nav::NavVector &, const nav::NavVector &, bool) const override { return true; }
+		bool groundHeight(const nav::NavVector &, float *) const override
+		{
+			if (invalidate)
+				valid = false;
+			return false;
+		}
+		bool invalidate = true;
+		mutable bool valid = true;
+	} probe;
+	compat::ScriptedRandomSource reentrantRandom({
+		compat::RandomTapeEntry::floatEntry("CSBOT-PATH-RETRY", {1U, 1U}, {0U, 0U, 1U}, .4f, .6f, .5f),
+		compat::RandomTapeEntry::floatEntry("CSBOT-PATH-RETRY", {1U, 1U}, {0U, 0U, 2U}, .4f, .6f, .5f)});
+	controller.reset();
+	controller.setRandomSource(&reentrantRandom);
+	observation.frame.tick = 1U;
+	observation.locomotion.observedAt = 1.0f;
+	observation.objectivePathStartArea = 1U;
+	observation.locomotion.huntPathProbe = &probe;
+	if (!check(controller.update(snapshot, observation, &intent, &decision) == runtime::NavRoamResult::InvalidObservation &&
+			!controller.hasPath(),
+		"the floor callback cannot publish a path after invalidating the FetchBomb receipt"))
+		return false;
+	observation.frame.tick = 2U;
+	observation.locomotion.observedAt = 1.125f;
+	probe.valid = true;
+	probe.invalidate = false;
+	return check(controller.update(snapshot, observation, &intent, &decision) == runtime::NavRoamResult::IntentReady &&
+			reentrantRandom.verifyComplete(),
+		"the invalidated FetchBomb attempt leaves the shared retry deadline eligible");
+}
+
 bool testDefuseMoveToPreparesPathBeforeMoving()
 {
 	using namespace astrabot;
@@ -4094,7 +4190,7 @@ bool testDefuseMoveToRetainsFirstPointAfterDrift(bool clear)
 
 int main()
 {
-	if (!testRemainingPathDistance() || !testDefuseMoveToPreparesPathBeforeMoving() ||
+	if (!testRemainingPathDistance() || !testDefuseMoveToPreparesPathBeforeMoving() || !testFetchBombPositionPath() ||
 		!testDefuseMoveToRetainsFirstPointAfterDrift(true) || !testDefuseMoveToRetainsFirstPointAfterDrift(false))
 		return 1;
 	if (!testInvestigationSafestRoute() || !testInvestigationRetainsPathWhenThrottled() ||

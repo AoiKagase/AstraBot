@@ -95,7 +95,7 @@ public:
 	void completePreparation(std::size_t index, MovementPreparationCompletion completion);
 	NavigationUpdate updateNavigation(std::size_t index, const FakeClientHandle &handle,
 		const runtime::MovementPhysicsState &before, const nav::NavSnapshot &navigation,
-		bool performanceDisablePathSearch_);
+		bool performanceDisablePathSearch_, const std::function<bool(HuntApproachLook &)> &fetchLookAround);
 
 	void recordNavigationUpdate(
 		std::size_t index, const runtime::MovementPhysicsState &before, NavigationUpdate &movement);

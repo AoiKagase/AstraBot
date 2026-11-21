@@ -133,6 +133,7 @@ public:
 	virtual const std::array<ObjectiveKnowledge, kObjectiveKnowledgeStateCount> &observation_objectiveKnowledge(
 		std::size_t index) const = 0;
 	virtual const ObservationAdapter &observation_observationAdapter() const = 0;
+	virtual bool observation_hasLooseBombRadar(std::size_t index, const world::FrameIdentity &frame) const = 0;
 	virtual bool observation_observeObjective(std::size_t index, edict_t *entity, bool planted,
 		world::WorldVector *position, bool *currentlyVisible = nullptr) = 0;
 	virtual void observation_observeRadioLeaderPosition(std::size_t index, const compat::ScenarioTarget &position) = 0;

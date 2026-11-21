@@ -14,7 +14,8 @@ enum class NavigationStepOutcome : std::uint8_t
 	EndOfPath,
 	PathFailure,
 	ObservationUnavailable,
-	ObjectivePathPrepared
+	ObjectivePathPrepared,
+	FetchPathBuildFailed
 };
 struct NavigationStep
 {

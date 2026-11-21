@@ -465,6 +465,40 @@ bool testNoiseInvestigationNavigationCompletion()
 	return true;
 }
 
+bool testFetchBombNavigationCompletion()
+{
+	for (const auto outcome : {NavigationStepOutcome::EndOfPath, NavigationStepOutcome::PathFailure,
+			 NavigationStepOutcome::FetchPathBuildFailed})
+	{
+		CompatibilityStateMachine machine({1U, 7U});
+		auto tick = context(1, 1.0f, 1);
+		machine.initialize(tick);
+		machine.transition(CompatibilityStateId::Hunt, StateTransitionReason::ExplicitRequest,
+			StateTransitionId::ExplicitStateChange, tick);
+		if (!check(!machine.huntExpired(31.0f) && machine.huntExpired(31.01f),
+			"Hunt's strict 30-second boundary precedes loose-bomb notice"))
+			return false;
+		machine.transition(CompatibilityStateId::FetchBomb, StateTransitionReason::ObjectiveChanged,
+			StateTransitionId::ExplicitStateChange, tick);
+		StateBehaviorInput input{};
+		input.navigationOwned = true;
+		tick = context(2, 1.125f, 2);
+		input.navigation = {tick.actor, tick.frame, 1U, 1U, tick.fullUpdateSequence, outcome, false};
+		tick.behavior = &input;
+		bool lookedWhileHunting = false;
+		const auto result = machine.finishNavigation(tick, [&] {
+			lookedWhileHunting = machine.state() == CompatibilityStateId::Hunt;
+			return true;
+		});
+		if (!check(result == StateResult::Transitioned && machine.state() == CompatibilityStateId::Idle &&
+				lookedWhileHunting == (outcome == NavigationStepOutcome::FetchPathBuildFailed) &&
+				machine.behaviorDecision().clearMovement,
+			"FetchBomb fails directly to Idle on movement failure and visits Hunt before looking on build failure"))
+			return false;
+	}
+	return true;
+}
+
 bool testNormalEntryEpochAndRetainedMoveTask()
 {
 	CompatibilityStateMachine machine({1, 7});
@@ -573,6 +607,7 @@ int main()
 {
 	return testNavigationCannotUpdateIdleTwice() && testRetainedTaskCompletion() &&
 			testNormalEntryEpochAndRetainedMoveTask() && testNoiseInvestigationNavigationCompletion() &&
+			testFetchBombNavigationCompletion() &&
 			testPlantTimeoutDoesNotAssignBombGuard() && testReferenceIdleAndHuntOwnTheirLifecycle() &&
 			testStateOwnsNavigationOutcome() &&
 			testStateOwnedBehavior() && testInitialStateAndOwnership() && testReferenceSetStateOrderingAndSameState() &&

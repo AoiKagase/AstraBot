@@ -905,6 +905,13 @@ NavRoamResult NavRoamController::updateInternal(const nav::NavSnapshot &snapshot
 	if (!preparingObjectivePath)
 	{
 		{
+			const auto phase = prepareFetchBombRoute(ctx);
+			if (phase.complete)
+				return phase.result;
+			if (observation.fetchLookAround && !(*observation.fetchLookAround)())
+				return NavRoamResult::InvalidObservation;
+		}
+		{
 			const auto phase = prepareNoiseRoute(ctx);
 			if (phase.complete)
 				return phase.result;
@@ -1365,14 +1372,14 @@ NavRoamController::NavigationPhaseResult NavRoamController::locateUpdateAreas(Na
 		{
 			nav::NavAreaMatch objectiveMatch = {};
 			auto result = query.findContaining(observation.objectiveTarget, kAreaVerticalTolerance, &objectiveMatch);
-			if (result == nav::NavQueryResult::NoAreaContaining)
+			if (result == nav::NavQueryResult::NoAreaContaining && !observation.fetchBombPath)
 				result = query.findNearest(observation.objectiveTarget, kMaximumRecoveryDistance, &objectiveMatch);
 			if (result == nav::NavQueryResult::Found)
 				objectiveArea = objectiveMatch.area;
 		}
 		if (decision != nullptr)
 		{
-			if (objectiveArea != 0U)
+			if (objectiveArea != 0U || observation.fetchBombPath)
 			{
 				decision->goalPresent = true;
 				decision->goalKind = NavGoalKind::Objective;
@@ -1599,7 +1606,7 @@ NavRoamController::NavigationPhaseResult NavRoamController::recoverOffMeshUpdate
 			recoveryState().stuckRecoveryActive = false;
 		recoveryState().offMeshRecovery = {};
 	}
-	if (observation.hasObjectiveTarget && objectiveArea == 0U)
+	if (observation.hasObjectiveTarget && objectiveArea == 0U && !observation.fetchBombPath)
 	{
 		if (!routeState().hasActiveRoute)
 		{
@@ -1728,7 +1735,8 @@ NavRoamController::NavigationPhaseResult NavRoamController::selectUpdateRoute(Na
 	auto *decision = ctx.decision;
 	auto &currentArea = ctx.currentArea;
 	auto &objectiveArea = ctx.objectiveArea;
-	if (timedCompatibility_ && (observation.noiseRoute != NoiseRouteUpdate::None || observation.followPath))
+	if (timedCompatibility_ &&
+		(observation.noiseRoute != NoiseRouteUpdate::None || observation.followPath || observation.fetchBombPath))
 		return {false, NavRoamResult::IntentReady};
 	const bool preparingObjectivePath = timedCompatibility_ &&
 		observation.prepareObjectivePathOnly && observation.hasObjectiveTarget;
@@ -1916,7 +1924,9 @@ NavRoamController::NavigationPhaseResult NavRoamController::prepareNoiseRoute(Na
 		if (located.complete)
 			return located;
 		ctx.areasLocated = true;
-		hasPath = buildNoiseRoute(ctx);
+		const auto known = observation.noisePathStartArea;
+		const auto start = ctx.snapshot.document()->findArea(known) != nullptr ? known : ctx.currentArea.area;
+		hasPath = buildPointRoute(ctx, start, observation.objectiveTarget);
 	}
 	else if (requesting)
 		populateRouteDecision(ctx.decision);
@@ -1943,29 +1953,74 @@ NavRoamController::NavigationPhaseResult NavRoamController::prepareNoiseRoute(Na
 	return {false, NavRoamResult::IntentReady};
 }
 
-bool NavRoamController::buildNoiseRoute(NavigationUpdateContext &ctx)
+NavRoamController::NavigationPhaseResult NavRoamController::prepareFetchBombRoute(NavigationUpdateContext &ctx)
 {
-	auto start = ctx.currentArea.area;
-	const auto *document = ctx.snapshot.document();
-	if (document->findArea(ctx.observation.noisePathStartArea) != nullptr)
-		start = ctx.observation.noisePathStartArea;
+	const auto &observation = ctx.observation;
+	if (!timedCompatibility_ || !observation.fetchBombPath || routeState().hasActiveRoute)
+		return {false, NavRoamResult::IntentReady};
+	const auto *probe = observation.locomotion.huntPathProbe;
+	const auto revision = routeRevision_;
+	float deadline = recoveryState().nextPathAttemptAt;
+	const bool allowed = beginNativePathAttempt(randomSource_, actor_, observation.frame.tick, observedAt_, deadline);
+	if (revision != routeRevision_ || (probe && !probe->current()))
+		return {true, NavRoamResult::InvalidObservation};
+	if (allowed)
+	{
+		const auto located = locateUpdateAreas(ctx);
+		if (located.complete)
+			return located;
+		ctx.areasLocated = true;
+		const auto start = observation.objectivePathStartArea;
+		auto position = observation.objectiveTarget;
+		if (ctx.objectiveArea == 0U && probe)
+		{
+			float height = position.z;
+			if (probe->groundHeight(position, &height))
+				position.z = height;
+			if (revision != routeRevision_ || !probe->current())
+				return {true, NavRoamResult::InvalidObservation};
+		}
+		recoveryState().nextPathAttemptAt = deadline;
+		if (start != 0U && buildPointRoute(ctx, start, position))
+			return {false, NavRoamResult::IntentReady};
+	}
+	if (ctx.decision != nullptr)
+	{
+		ctx.decision->stage = NavRoamStage::Failed;
+		ctx.decision->fetchPathBuildFailed = true;
+	}
+	return {true, NavRoamResult::NoRoute};
+}
+
+bool NavRoamController::buildPointRoute(
+	NavigationUpdateContext &ctx, nav::AreaId start, const nav::NavVector &position)
+{
 	nav::NavCorridor corridor{};
 	auto *stats = ctx.decision != nullptr && collectPathStats_ ? &ctx.decision->pathSearchStats : nullptr;
-	auto result = ctx.query.buildInvestigationCorridor(start, ctx.objectiveArea, ctx.observation.objectiveTarget,
-		ctx.observation.nativeLadders, &corridor, stats);
+	if (ctx.objectiveArea == 0U && !ctx.observation.fetchBombPath)
+	{
+		if (ctx.decision != nullptr)
+		{
+			ctx.decision->corridorResult = nav::NavQueryResult::AreaNotFound;
+			ctx.decision->pathResult = nav::NavQueryResult::AreaNotFound;
+		}
+		return false;
+	}
+	auto result = ctx.query.buildPositionCorridor(start, ctx.objectiveArea, position,
+		nav::NavRouteType::Safest, ctx.observation.nativeLadders, &corridor, stats);
 	const auto &avoided = routeState().avoidedLink;
 	if (result == nav::NavQueryResult::Found && routeState().hasAvoidedLink && !corridor.links.empty() &&
 		corridor.links.front().fromArea == avoided.fromArea && corridor.links.front().toArea == avoided.toArea)
 	{
-		if (corridor.areas.back() == ctx.objectiveArea)
+		if (!ctx.observation.fetchBombPath && corridor.areas.back() == ctx.objectiveArea)
 		{
 			nav::NavCorridor alternative{};
 			result = ctx.query.buildAlternativeCorridor(corridor, avoided, &alternative, stats);
 			corridor = std::move(alternative);
 		}
 		else
-			result = ctx.query.buildInvestigationCorridor(start, ctx.objectiveArea, ctx.observation.objectiveTarget,
-				ctx.observation.nativeLadders, &corridor, stats, &avoided);
+			result = ctx.query.buildPositionCorridor(start, ctx.objectiveArea, position,
+				nav::NavRouteType::Safest, ctx.observation.nativeLadders, &corridor, stats, &avoided);
 	}
 	if (ctx.decision != nullptr)
 	{

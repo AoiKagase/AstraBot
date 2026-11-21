@@ -119,7 +119,8 @@ public:
 		const runtime::ViewAngles &movementAngles, std::uint16_t movementButtons);
 	const team::TeamObjectiveAssignment *findManagedTeamObjectiveAssignment(const world::ActorKey &actor) const;
 	bool finishManagedBotNavigation(std::size_t index, const runtime::MovementPhysicsState &before,
-		runtime::NavRoamResult result, const runtime::NavRoamDecision &decision, nav::LocomotionIntent *intent);
+		runtime::NavRoamResult result, const runtime::NavRoamDecision &decision, nav::LocomotionIntent *intent,
+		const std::function<bool()> &lookAfterFetchFailure);
 	compat::StateUpdateContext makeManagedBotStateContext(std::size_t index,
 		const runtime::MovementPhysicsState &before, compat::StateBehaviorInput *behavior = nullptr) const;
 	bool managedActorAtBombSite(std::size_t index) const;
@@ -350,6 +351,9 @@ private:
 		std::size_t index, compat::StateUpdateContext &context, compat::StateBehaviorInput &stateBehavior);
 	void updateScenarioState(std::size_t index, const runtime::MovementPhysicsState &before,
 		compat::StateUpdateContext &context, compat::StateBehaviorInput &stateBehavior, PlantMoveChatter *plantMove);
+	bool updateFetchBomb(std::size_t index, compat::StateUpdateContext &context,
+		compat::StateBehaviorInput &stateBehavior, const compat::CompatibilityObservation &observation,
+		const compat::ScenarioBehaviorInput &scenario, const ScenarioUpdateData &data);
 	void populateScenarioPublicState(std::size_t index, const runtime::MovementPhysicsState &before,
 		compat::StateUpdateContext &context, compat::StateBehaviorInput &stateBehavior,
 		const compat::CompatibilityObservation &observation, compat::ScenarioBehaviorInput &scenario,
@@ -750,6 +754,7 @@ private:
 		compat::ScenarioBehaviorPlanner scenarioPlanners{};
 		world::FrameIdentity handledBombPlant{};
 		compat::ScenarioBehaviorDecision scenarioDecisions{};
+		compat::ScenarioTarget fetchBombGoal{};
 		runtime::LifecycleGeneration managedBotStateRounds{};
 		bool managedBotWasDead{};
 	};

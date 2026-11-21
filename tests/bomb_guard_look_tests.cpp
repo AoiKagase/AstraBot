@@ -182,6 +182,84 @@ bool testBombGuardLook(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t 
 		tick();
 		attacked = attacked || (gLastRunPlayerMoveButtons & IN_ATTACK) != 0;
 	}
-	return check(attacked, "a visible human enemy interrupts post-plant guard and receives attack input") && passed;
+	if (!check(attacked, "a visible human enemy interrupts post-plant guard and receives attack input") || !passed)
+		return false;
+
+	using namespace astrabot;
+	gEntities[1].v.health = 0.0f;
+	gEntities[1].v.deadflag = DEAD_DEAD;
+	self.v.weapons = 1 << 22;
+	self.v.origin = Vector(80, 32, 36);
+	runtime.onMessageBegin(MSG_ALL, 86, nullptr, nullptr);
+	runtime.onWriteByte(1);
+	runtime.onWriteString("TERRORIST");
+	runtime.onMessageEnd();
+	gPlantedBomb.free = true;
+	runtime.onRoundLifecycleMessage("World triggered \"Round_End\"\n");
+	runtime.onRoundLifecycleMessage("World triggered \"Round_Start\"\n");
+	const auto &navigation = static_cast<metamod::BotNavigationServices &>(runtime);
+	const auto &machine = navigation.behavior_managedBotStateMachines(0);
+	for (int i = 0; i < 32 && machine.state() != compat::CompatibilityStateId::Hunt; ++i)
+		tick();
+	if (!check(machine.state() == compat::CompatibilityStateId::Hunt, "the recovery fixture starts from Hunt"))
+		return false;
+
+	gPlantedBomb.free = false;
+	++gPlantedBomb.serialnumber;
+	gPlantedBomb.v.classname = 4;
+	gPlantedBomb.v.model = 5;
+	gPlantedBomb.v.origin = Vector(224, 32, 2);
+	runtime.onMessageBegin(MSG_ONE, 95, nullptr, &self);
+	runtime.onWriteCoord(180);
+	runtime.onWriteCoord(32);
+	runtime.onWriteCoord(2);
+	runtime.onWriteByte(0);
+	runtime.onMessageEnd();
+	for (int i = 0; i < 8 && machine.state() != compat::CompatibilityStateId::FetchBomb; ++i)
+	{
+		self.v.angles = self.v.v_angle = Vector(0, 180, 0);
+		tick();
+	}
+	if (!check(machine.state() == compat::CompatibilityStateId::FetchBomb &&
+			machine.task() == compat::CompatibilityTaskId::SeekAndDestroy &&
+			gLastRunPlayerMoveForward == 0.0f && gLastRunPlayerMoveSide == 0.0f,
+		"the targeted T radar notice enters FetchBomb behind the observer with neutral entry movement"))
+		return false;
+
+	// Let any previous Hunt attempt expire without another full update.
+	globals.time += 0.65f;
+	gMovementLogs.clear();
+	tick();
+	const auto &movement = static_cast<metamod::BotCommandServices &>(runtime);
+	const auto fetchPath = movement.navigation_managedNavigationSteps(0).pathSequence;
+	bool usedBoxOrigin = false;
+	for (const auto &line : gMovementLogs)
+		if (line.find("STATE-FETCH") != std::string::npos &&
+			line.find("goal_position=(224.0 32.0 2.0)") != std::string::npos)
+			usedBoxOrigin = true;
+	if (!check(machine.state() == compat::CompatibilityStateId::FetchBomb && fetchPath != 0U &&
+			usedBoxOrigin && (gLastRunPlayerMoveForward != 0.0f || gLastRunPlayerMoveSide != 0.0f),
+		"FetchBomb plans and moves toward the current box origin when the radar coordinate differs"))
+		return false;
+
+	gPlantedBomb.v.origin.x = 248;
+	for (int i = 0; i < 3; ++i)
+		tick();
+	if (!check(machine.state() == compat::CompatibilityStateId::FetchBomb &&
+			movement.navigation_managedNavigationSteps(0).pathSequence == fetchPath,
+		"the same FetchBomb path survives a change in the loose box position"))
+	{
+		for (const auto &line : gMovementLogs)
+			if (line.find("navigationStep") != std::string::npos)
+				std::fprintf(stderr, "%s\n", line.c_str());
+		return false;
+	}
+
+	gPlantedBomb.free = true;
+	for (int i = 0; i < 3 && machine.state() == compat::CompatibilityStateId::FetchBomb; ++i)
+		tick();
+	return check(machine.state() == compat::CompatibilityStateId::Idle &&
+			gLastRunPlayerMoveForward == 0.0f && gLastRunPlayerMoveSide == 0.0f,
+		"another player's pickup returns FetchBomb to Idle with neutral movement");
 }
 }

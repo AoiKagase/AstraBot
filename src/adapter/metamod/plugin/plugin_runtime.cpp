@@ -1882,17 +1882,27 @@ void PluginRuntime::updateManagedBots()
 		const auto routeRevision = navigation_.routeRevision(index);
 		const auto routeCurrent = [&] { return navigation_.routeRevision(index) == routeRevision; };
 		HuntApproachLook approach{};
-		if (!navigation_.entersHuntWithoutUpdate(index, globals_->time) &&
+		const bool fetching = behavior_.managedBotStateMachines(index).state() == compat::CompatibilityStateId::FetchBomb;
+		if (!fetching && !navigation_.entersHuntWithoutUpdate(index, globals_->time) &&
 			!behavior_.updateHuntApproachLook(index, before, navigation, navigation_.huntEncounter(index, navigation),
 				command_.hasHuntApproachLook(index), routeCurrent, approach))
 			continue;
-		NavigationUpdate movement =
-			navigation_.updateNavigation(index, handle, before, navigation, performanceDisablePathSearch_);
-		movement.huntApproachLook = approach;
+		const auto lookAroundDuringFetch = [&](HuntApproachLook &look) {
+			const auto fetchRouteRevision = navigation_.routeRevision(index);
+			const auto fetchRouteCurrent = [&] { return navigation_.routeRevision(index) == fetchRouteRevision; };
+			return lifecycle_.isCurrent(token) && behavior_.updateHuntApproachLook(index, before, navigation,
+				navigation_.huntEncounter(index, navigation), command_.hasHuntApproachLook(index), fetchRouteCurrent,
+				look);
+		};
+		NavigationUpdate movement = navigation_.updateNavigation(
+			index, handle, before, navigation, performanceDisablePathSearch_, lookAroundDuringFetch);
+		if (!fetching)
+			movement.huntApproachLook = approach;
 		auto &locomotionIntent = movement.locomotionIntent;
 		auto &roamDecision = movement.roamDecision;
 		const auto roamResult = movement.roamResult;
-		if (!behavior_.finishManagedBotNavigation(index, before, roamResult, roamDecision, &locomotionIntent))
+		if (!behavior_.finishManagedBotNavigation(index, before, roamResult, roamDecision, &locomotionIntent,
+				[&] { return lookAroundDuringFetch(movement.huntApproachLook); }))
 			continue;
 		if (roamDecision.huntNearCorner &&
 			behavior_.managedBotStateMachines(index).state() == compat::CompatibilityStateId::Hunt)

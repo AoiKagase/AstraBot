@@ -664,8 +664,9 @@ NavQueryResult buildAStarCorridor(const NavSnapshot &snapshot, const NavQueryLim
 	{
 		return NavQueryResult::EmptySnapshot;
 	}
-	if (start == 0U || goal == 0U || currentDocument->findArea(start) == nullptr ||
-		currentDocument->findArea(goal) == nullptr)
+	const bool pointOnlyGoal = goal == 0U && explicitGoal && useClosestArea;
+	if (start == 0U || currentDocument->findArea(start) == nullptr ||
+		(!pointOnlyGoal && currentDocument->findArea(goal) == nullptr))
 	{
 		return NavQueryResult::AreaNotFound;
 	}
@@ -1070,7 +1071,7 @@ NavQueryResult NavQuery::buildPositionCorridor(AreaId start, AreaId goal, const 
 		return NavQueryResult::EmptySnapshot;
 	const auto *startArea = doc->findArea(start);
 	const auto *goalArea = doc->findArea(goal);
-	if (startArea == nullptr || goalArea == nullptr)
+	if (startArea == nullptr || (goal != 0U && goalArea == nullptr))
 		return NavQueryResult::AreaNotFound;
 	if (ladders != nullptr)
 	{
@@ -1107,12 +1108,13 @@ NavQueryResult NavQuery::buildPositionCorridor(AreaId start, AreaId goal, const 
 		if (result != NavQueryResult::Found)
 			return result;
 	}
-	// ComputePath keeps the original sound position on partial paths. Its
+	// ComputePath keeps the original XY on partial paths. Its
 	// one-area case reprojects the same XY through BuildTrivialPath.
-	const auto &floorArea = corridor->areas.size() == 1U ? *startArea : *goalArea;
+	const auto *floorArea = corridor->areas.size() == 1U ? startArea : goalArea;
 	corridor->hasEndpoint = true;
 	corridor->endpoint = position;
-	corridor->endpoint.z = surfaceZAtInternal(floorArea, position.x, position.y);
+	if (floorArea != nullptr)
+		corridor->endpoint.z = surfaceZAtInternal(*floorArea, position.x, position.y);
 	return NavQueryResult::Found;
 }
 

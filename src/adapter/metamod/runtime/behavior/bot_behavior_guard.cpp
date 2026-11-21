@@ -233,7 +233,7 @@ bool BotBehaviorRuntime::updateHuntApproachLook(std::size_t index, const runtime
 	const auto receipt = reactionContext(index);
 	const float now = receipt.now;
 	if (config.mode != compat::RuntimeMode::Compatibility || config.botEnable <= 0.0f || config.botStop != 0.0f ||
-		machine.state() != compat::CompatibilityStateId::Hunt ||
+		(machine.state() != compat::CompatibilityStateId::Hunt && machine.state() != compat::CompatibilityStateId::FetchBomb) ||
 		machine.attackOverlayActive() || before.dead || (before.flags & FL_FROZEN) || !self || !engine ||
 		!engine->pfnTraceLine || !navigation.isValid() || !std::isfinite(now))
 		return true;

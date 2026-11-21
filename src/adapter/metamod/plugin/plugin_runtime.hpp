@@ -558,6 +558,11 @@ private:
 		return observation_.observationAdapter();
 	}
 
+	bool observation_hasLooseBombRadar(std::size_t index, const world::FrameIdentity &frame) const override
+	{
+		return observation_.hasLooseBombRadar(index, frame);
+	}
+
 	bool observation_observeObjective(
 		std::size_t index, edict_t *entity, bool planted, world::WorldVector *position, bool *currentlyVisible) override
 	{

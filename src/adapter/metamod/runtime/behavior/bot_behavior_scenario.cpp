@@ -337,6 +337,8 @@ void BotBehaviorRuntime::updateScenarioState(std::size_t index, const runtime::M
 				rememberLooseBombDrop(data.looseBomb.entity, context.frame, data.looseBombOrigin);
 			else if (data.looseBomb.frame == context.frame)
 				looseBombDrop_ = {};
+			if (updateFetchBomb(index, context, stateBehavior, observation, scenario, data))
+				return;
 			updateScenarioNavigation(index, before, context, stateBehavior, observation, scenario, data);
 			if (!current())
 				return;
@@ -1616,7 +1618,7 @@ void BotBehaviorRuntime::updateScenarioTeamwork(std::size_t index, const runtime
 	if (machine.state() == compat::CompatibilityStateId::Hunt && !machine.attackOverlayActive() &&
 		(action == compat::ScenarioAction::None || action == compat::ScenarioAction::Hunt) &&
 		scenario.team == objectives::TeamRole::CounterTerrorist && scenario.scenario == compat::PublicScenarioKind::Bomb &&
-		cooperative.rogueKnown && !cooperative.rogue && context.timestamp - machine.stateTimestamp() <= 30.0f &&
+		cooperative.rogueKnown && !cooperative.rogue && !machine.huntExpired(context.timestamp) &&
 		data.looseBomb.knowledge == compat::ScenarioKnowledge::Visible)
 	{
 		hideNearLooseBomb(index, true);
@@ -1662,6 +1664,58 @@ void BotBehaviorRuntime::updateScenarioTeamwork(std::size_t index, const runtime
 	}
 }
 
+bool BotBehaviorRuntime::updateFetchBomb(std::size_t index, compat::StateUpdateContext &context,
+	compat::StateBehaviorInput &stateBehavior, const compat::CompatibilityObservation &observation,
+	const compat::ScenarioBehaviorInput &scenario, const ScenarioUpdateData &data)
+{
+	auto &actor = actors_[index];
+	const auto &machine = actor.managedBotStateMachines;
+	const auto state = machine.state();
+	const bool fetching = state == compat::CompatibilityStateId::FetchBomb;
+	if (machine.attackOverlayActive() ||
+		(!fetching && (state != compat::CompatibilityStateId::Idle && state != compat::CompatibilityStateId::Hunt)) ||
+		machine.huntExpired(context.timestamp))
+		return false;
+
+	const bool carrying = observation.objective.carryingC4.isAvailable() && observation.objective.carryingC4.value;
+	const bool looseBomb = scenario.scenario == compat::PublicScenarioKind::Bomb &&
+		scenario.team == objectives::TeamRole::Terrorist && !scenario.bombPlanted && !services_->service_roundOver() &&
+		!carrying && data.looseBomb.entity.isValid();
+	if (!fetching && (!looseBomb || (data.looseBomb.knowledge != compat::ScenarioKnowledge::Visible &&
+		!services_->observation_hasLooseBombRadar(index, context.frame))))
+		return false;
+	stateBehavior.goalAvailable = looseBomb;
+	stateBehavior.objectiveActive = looseBomb;
+	auto &decision = actor.scenarioDecisions;
+	if (!looseBomb)
+	{
+		actor.fetchBombGoal = {};
+		decision = {};
+		decision.action = compat::ScenarioAction::Stop;
+		decision.state = compat::CompatibilityStateId::Idle;
+		actor.managedBotObjectiveTargets = {};
+		actor.managedBotObjectiveActions = {};
+		return true;
+	}
+	if (!fetching || !services_->navigation_hasActivePath(index) || !actor.fetchBombGoal.entity.isValid())
+	{
+		actor.fetchBombGoal = data.looseBomb;
+		actor.fetchBombGoal.knowledge = compat::ScenarioKnowledge::Remembered;
+		const auto &position = data.looseBombOrigin;
+		actor.fetchBombGoal.position = {position.x, position.y, position.z};
+	}
+	decision = {};
+	decision.state = compat::CompatibilityStateId::FetchBomb;
+	decision.action = compat::ScenarioAction::Move;
+	decision.hasTarget = true;
+	decision.target = actor.fetchBombGoal;
+	context.requestedState = compat::CompatibilityStateId::FetchBomb;
+	context.requestTransition = !fetching;
+	context.transitionId = compat::StateTransitionId::ExplicitStateChange;
+	context.transitionReason = compat::StateTransitionReason::ObjectiveChanged;
+	return true;
+}
+
 void BotBehaviorRuntime::applyScenarioDecision(std::size_t index, const runtime::MovementPhysicsState &before,
 	compat::StateUpdateContext &context, compat::StateBehaviorInput &stateBehavior,
 	const compat::CompatibilityObservation &observation, compat::ScenarioBehaviorInput &scenario,
@@ -1670,6 +1724,7 @@ void BotBehaviorRuntime::applyScenarioDecision(std::size_t index, const runtime:
 	(void)before;
 	auto &actor = actors_[index];
 	auto &machine = actor.managedBotStateMachines;
+	const bool carryingC4 = observation.objective.carryingC4.isAvailable() && observation.objective.carryingC4.value;
 	const auto &siteFromPosition = actor.plantedBombsite;
 	const bool otherDefuser = data.defuserSlot != 0U && data.defuserSlot != context.actor.slot;
 	if (machine.state() == compat::CompatibilityStateId::Hide && machine.task() == compat::CompatibilityTaskId::GuardBombDefuser &&
@@ -1806,7 +1861,6 @@ void BotBehaviorRuntime::applyScenarioDecision(std::size_t index, const runtime:
 		actors_[index].helpGoal = {};
 	}
 	const compat::ScenarioBehaviorDecision &scenarioDecision = actors_[index].scenarioDecisions;
-	const bool carryingC4 = observation.objective.carryingC4.isAvailable() && observation.objective.carryingC4.value;
 	context.moveToTask = compat::nativeScenarioMoveTask(scenario, scenarioDecision, carryingC4);
 	stateBehavior.goalAvailable = scenarioDecision.hasTarget || stateBehavior.goalAvailable;
 	stateBehavior.leaderAvailable = actors_[index].scenarioPlanners.hasFollowingLeader(scenario);

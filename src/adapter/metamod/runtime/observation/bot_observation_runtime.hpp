@@ -38,6 +38,7 @@ public:
 	bool hasObservedActiveWeapon(std::size_t index) const;
 	std::vector<nav::NavVector> liveFriendlyPositions(std::size_t index, bool feet) const;
 	void notifyTeamInfo(std::uint8_t slot, const char *teamName);
+	bool hasLooseBombRadar(std::size_t index, const world::FrameIdentity &frame) const;
 	bool observeObjective(std::size_t index, edict_t *entity, bool planted, world::WorldVector *position,
 		bool *currentlyVisible = nullptr);
 	void onEmitSound(edict_t *entity, const char *sample, float volume, float attenuation);

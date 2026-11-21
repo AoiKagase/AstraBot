@@ -1544,6 +1544,13 @@ bool BotObservationRuntime::collectManagedPerception(
 	return true;
 }
 
+bool BotObservationRuntime::hasLooseBombRadar(std::size_t index, const world::FrameIdentity &frame) const
+{
+	world::WorldVector position{};
+	const auto &actor = actors_[index];
+	return actor.teamInfoTeams == kTerroristTeamByte && actor.publicBombRadars.read(frame, &position);
+}
+
 bool BotObservationRuntime::observeObjective(
 	std::size_t index, edict_t *entity, bool planted, world::WorldVector *position, bool *currentlyVisible)
 {
