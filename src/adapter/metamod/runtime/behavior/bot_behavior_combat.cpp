@@ -100,7 +100,7 @@ void BotBehaviorRuntime::applyNativeLadderLookCommand(
 }
 
 CombatUpkeepUpdate BotBehaviorRuntime::upkeepCombat(
-	std::size_t index, const runtime::MovementPhysicsState &before, std::uint16_t cachedButtons)
+	std::size_t index, const runtime::MovementPhysicsState &before, std::uint16_t cachedButtons, bool blind)
 {
 	CombatUpkeepUpdate update{};
 	if (before.dead)
@@ -113,6 +113,11 @@ CombatUpkeepUpdate BotBehaviorRuntime::upkeepCombat(
 		(before.flags & FL_FROZEN) != 0 || (cachedButtons & (IN_USE | IN_RELOAD | IN_ATTACK2)) != 0)
 		return update;
 	auto &state = actors_[index];
+	if (blind && state.weaponActions.rapidFiring())
+	{
+		update.setPrimary = true;
+		update.primary = (cachedButtons & IN_ATTACK) == 0U;
+	}
 	const auto tracked = state.managedBotCombat.trackedAim();
 	if (!tracked.isValid() || state.weaponActions.grenadeInProgress())
 		return update;
@@ -130,8 +135,10 @@ CombatUpkeepUpdate BotBehaviorRuntime::upkeepCombat(
 	compat::PublicActorState activeWeapon{};
 	if (!services_->observation_publicObservations().read(tracked.actor, frame, &activeWeapon) ||
 		!activeWeapon.weaponKnown || activeWeapon.weaponId != state.weaponActions.currentWeaponId() ||
-		isBlinded(tracked.actor, frame, now))
+		(!blind && isBlinded(tracked.actor, frame, now)))
 	{
+		if (blind)
+			return update;
 		state.managedBotCombat.clearAim();
 		state.weaponActions.stopRapidFire();
 		update.setPrimary = true;
@@ -147,6 +154,7 @@ CombatUpkeepUpdate BotBehaviorRuntime::upkeepCombat(
 		state.managedBotStateMachines.attackEntryEpoch() != attackEpoch)
 	{
 		update.setPrimary = true;
+		update.primary = false;
 		return update;
 	}
 	const auto token = services_->service_lifecycle().tokenForSlot(tracked.target.slot);
@@ -165,20 +173,30 @@ CombatUpkeepUpdate BotBehaviorRuntime::upkeepCombat(
 	const bool validEnemy = !acquisitionInvalidated && generation == tracked.target.generation &&
 		reactionEnemyCurrent(tracked.target) && enemy && !enemy->free &&
 		enemy->serialnumber >= 0 && enemy->v.deadflag == DEAD_NO && enemy->v.health > 0 && !friendly;
-	const bool currentlyVisible = validEnemy &&
+	// Blind full updates leave the last visible parts intact for the existing aim target.
+	const auto &belief = services_->observation_managedBotPerception(index).snapshot();
+	const world::ActorObservation *cachedEnemy = nullptr;
+	const bool cachedVisible = blind && belief.isValid() && belief.identity().observer == tracked.actor &&
+		belief.identity().frame.mapGeneration == frame.mapGeneration &&
+		belief.identity().frame.roundGeneration == frame.roundGeneration &&
+		belief.findActor(tracked.target, &cachedEnemy) == world::ContactLookupResult::Found && cachedEnemy->visible;
+	const bool currentlyVisible = validEnemy && (blind ? cachedVisible :
 		services_->observation_observationAdapter().collectVisibility(
 			handle.entity, enemy, tracked.target, frame, &visible,
 			!(currentEnemySource(index) == world::EntityKey{tracked.target.slot,
 				static_cast<std::uint32_t>(enemy->serialnumber) + 1U}), false,
 			compatibility ? PlayerVisionGlass::IgnoreTransparent : PlayerVisionGlass::Occludes,
 			compatibility ? PlayerVisionCone::ModelPitchAndYaw : PlayerVisionCone::YawOnly) ==
-			ObservationAdapterResult::Accepted && visible.visible;
+		ObservationAdapterResult::Accepted && visible.visible);
+	const auto visibleParts = cachedVisible ? cachedEnemy->visibleParts : visible.visibleParts;
 	const bool remembered = compatibility &&
 		validEnemy && state.enemyReaction.enemy(reaction) == tracked.target &&
 		state.enemyReaction.source(reaction) == world::EntityKey{tracked.target.slot,
-			static_cast<std::uint32_t>(enemy->serialnumber) + 1U} && state.enemyReaction.shouldAim(reaction);
+			static_cast<std::uint32_t>(enemy->serialnumber) + 1U} && (blind || state.enemyReaction.shouldAim(reaction));
 	if (!currentlyVisible && !remembered)
 	{
+		if (blind)
+			return update;
 		state.managedBotCombat.clearAim();
 		state.weaponActions.stopRapidFire();
 		update.setPrimary = true;
@@ -199,13 +217,14 @@ CombatUpkeepUpdate BotBehaviorRuntime::upkeepCombat(
 	if (currentlyVisible)
 	{
 		target.position = compat::combatAimPoint(enemyOrigin,
-			{handle.entity->v.origin.x, handle.entity->v.origin.y, handle.entity->v.origin.z}, visible.visibleParts,
+			{handle.entity->v.origin.x, handle.entity->v.origin.y, handle.entity->v.origin.z},
+			visibleParts,
 			state.weaponActions.currentWeaponId(),
 			static_cast<float>(state.managedProfiles.skill) / kProfilePercentageScale,
 			before.ducked ? kDuckedFeetOffset : kStandingFeetOffset, weaponObservation.weapon.accuracy.isAvailable(),
 			weaponObservation.weapon.accuracy.value);
 	}
-	if (!freeForAll && currentlyVisible && engine->pfnTraceLine && ownTeam != 0)
+	if (!blind && !freeForAll && currentlyVisible && engine->pfnTraceLine && ownTeam != 0)
 	{
 		const float eye[] = {handle.entity->v.origin.x + handle.entity->v.view_ofs.x,
 			handle.entity->v.origin.y + handle.entity->v.view_ofs.y,
@@ -262,6 +281,8 @@ CombatUpkeepUpdate BotBehaviorRuntime::upkeepCombat(
 		update.hasAim = true;
 		update.angles = {aim.pitch, aim.yaw, 0};
 		update.movementRelativeToAim = state.managedBotCombat.movementActive();
+		if (blind)
+			return update;
 		if (!currentlyVisible || !state.enemyReaction.surpriseFireReady(reaction, tracked.target) ||
 			!state.combatRetreat.visibility.canFire(
 				state.managedBotStateMachines.attackEntryEpoch(), now))

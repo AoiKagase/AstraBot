@@ -14,6 +14,17 @@ bool encourageDefuseFixture = false;
 bool barelyDefusedFixture = false;
 bool blindedChatterFixture = false;
 float blindedChatterRoll = 100.0f;
+float blindedFireRoll = 100.0f;
+int blindedMoveRoll = 1;
+bool blindedDrawing = false;
+bool blindedMoveDrawn = false;
+std::function<void()> blindedMoveMutation;
+struct BlindFixtureInput
+{
+	float forward = 0, side = 0;
+	unsigned short buttons = 0;
+	unsigned count = 0;
+} blindFixtureInput;
 bool duplicateBlindNetname = false;
 bool friendlyFireChatterFixture = false;
 bool enemyDamageHideFixture = false;
@@ -117,6 +128,8 @@ std::vector<std::pair<std::string, float>> queueHelpSamples;
 void queueMove(edict_t *entity, const float *angles, float forward, float side, float up, unsigned short buttons,
 	unsigned char impulse, unsigned char milliseconds)
 {
+	if (blindedChatterFixture && entity == &gEntities[0])
+		blindFixtureInput = {forward, side, buttons, blindFixtureInput.count + 1U};
 	if (queueHelpRecording && entity == &gEntities[1])
 		queueHelpMoves.push_back(std::sqrt(forward * forward + side * side));
 	if (queueLadderPhysics)
@@ -329,6 +342,25 @@ void setupStatementQueue(enginefuncs_t &engine, globalvars_t &globals)
 		queueOriginalMove = engine.pfnRunPlayerMove;
 	engine.pfnRunPlayerMove = &queueMove;
 	engine.pfnRandomFloat = &queuePlanRandom;
+	if (blindedChatterFixture)
+	{
+		engine.pfnCVarGetFloat = [](const char *name) {
+			return std::strcmp(name, "bot_stop") == 0 ? gBotStopCvar.value : getCvarFloat(name);
+		};
+		engine.pfnRandomLong = [](int32 low, int32 high) -> int32 {
+			if (blindedDrawing && low == 1 && high == 5)
+			{
+				blindedMoveDrawn = true;
+				if (blindedMoveMutation)
+				{
+					auto mutate = std::move(blindedMoveMutation);
+					mutate();
+				}
+				return blindedMoveRoll;
+			}
+			return low;
+		};
+	}
 	if (autoFollowChatterFixture)
 		engine.pfnIsCareerMatch = []() { return queueCareer ? TRUE : FALSE; };
 	if (encourageDefuseFixture || barelyDefusedFixture)
@@ -488,7 +520,14 @@ float queuePlanRandom(float low, float high)
 		return .375f;
 	}
 	if (blindedChatterFixture && low == 0.0f && high == 100.0f)
+	{
+		if (blindedMoveDrawn)
+		{
+			blindedMoveDrawn = false;
+			return blindedFireRoll;
+		}
 		return blindedChatterRoll;
+	}
 	if (autoFollowChatterFixture && low == 0.0f && high == 1.0f)
 		return low;
 	if (encourageDefuseFixture && ((low == 10.0f && high == 15.0f) ||
@@ -2508,6 +2547,13 @@ bool testStatementQueue(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t
 		setCvarFloat("bot_stop", 0);
 		metamod::BotObservationRuntime observer;
 		observer.bindServices(runtime);
+		auto &observationService = static_cast<metamod::BotObservationServices &>(runtime);
+		const auto &handle = observationService.service_managedBotHandles()[0];
+		const world::ActorKey managed{handle.actor.slot, handle.actor.actorGeneration};
+		const auto &life = observationService.service_lifecycle();
+		const auto frame = [&] { return world::FrameIdentity{
+			life.mapGeneration(), life.roundGeneration(), observationService.service_adapterFrameCount()}; };
+		observer.onActorRemembered(0, handle);
 		self.v.netname = 100;
 		gEntityNames[0] = "Blind Test Bot";
 		engine.pfnFindEntityByString = [](edict_t *start, const char *key, const char *value) -> edict_t * {
@@ -2519,7 +2565,7 @@ bool testStatementQueue(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t
 		};
 		const char *sample = "radio/test/blinded.wav";
 		const auto playUpdates = [&] {
-			for (int frame = 0; frame < 5; ++frame)
+			for (int update = 0; update < 5; ++update)
 				step(.125f);
 			return std::count(queueSamples.begin(), queueSamples.end(), sample);
 		};
@@ -2536,10 +2582,15 @@ bool testStatementQueue(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t
 				return &botObject;
 			});
 			if (complete)
+			{
+				blindedDrawing = true;
 				complete();
+				blindedDrawing = false;
+				blindedMoveDrawn = false;
+			}
 			self.serialnumber = serial;
 		};
-		for (int frame = 0; frame < 8; ++frame)
+		for (int update = 0; update < 8; ++update)
 			step(.125f);
 		queueSamples.clear();
 		blindedChatterRoll = 0.0f;
@@ -2563,6 +2614,23 @@ bool testStatementQueue(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t
 		notify(&botObject, true);
 		if (!check(playUpdates() == 0, "edict reuse during lookup invalidates the blindness receipt"))
 			return false;
+		struct BlindTrace final : compat::IRandomTraceSink
+		{
+			void record(const compat::RandomTraceRecord &entry) override
+			{
+				if (entry.request.semanticId)
+					draws.emplace_back(entry.request.semanticId);
+			}
+			std::vector<std::string> draws;
+		} trace;
+		auto &random = static_cast<metamod::BotBehaviorServices &>(runtime).service_compatibilityRandomSource();
+		blindedChatterRoll = 100.0f;
+		random.setTraceSink(&trace);
+		notify(&botObject);
+		random.setTraceSink(nullptr);
+		if (!check(trace.draws == std::vector<std::string>{"Chatter.BlindedChance", "Blind.MoveDirection", "Blind.FireChance"},
+				"accepted gameplay Blind draws chatter, relative movement, then blind fire"))
+			return false;
 		// Like the native expression, this comparison may keep the literal in x87 precision.
 		volatile float nativeBoundaryRoll = 33.3f;
 		blindedChatterRoll = nativeBoundaryRoll;
@@ -2570,7 +2638,7 @@ bool testStatementQueue(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t
 		notify(&botObject);
 		if (!check(playUpdates() == nativeBoundaryCount, "the float32 boundary matches the native literal comparison"))
 			return false;
-		for (int frame = 0; frame < 16; ++frame)
+		for (int update = 0; update < 16; ++update)
 			step(.125f);
 		queueSamples.clear();
 		blindedChatterRoll = 33.4f;
@@ -2582,12 +2650,6 @@ bool testStatementQueue(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t
 		if (!check(playUpdates() == 1, "an accepted blindness receipt plays Blinded once"))
 			return false;
 
-		auto &observationService = static_cast<metamod::BotObservationServices &>(runtime);
-		const auto &handle = observationService.service_managedBotHandles()[0];
-		const world::ActorKey managed{handle.actor.slot, handle.actor.actorGeneration};
-		const auto &life = observationService.service_lifecycle();
-		const auto frame = [&] { return world::FrameIdentity{
-			life.mapGeneration(), life.roundGeneration(), observationService.service_adapterFrameCount()}; };
 		observer.onActorRemembered(0, handle);
 		const auto fade = [&] {
 			observer.onMessageBegin(MSG_ONE, 105, nullptr, &self);
@@ -2644,6 +2706,74 @@ bool testStatementQueue(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t
 		self.v.deadflag = DEAD_NO;
 		if (!check(!blinded(globals.time) && !blinded(globals.time, false),
 				"spawn clears gameplay blindness, invalidates a pending receipt, and a dead actor cannot receive one"))
+			return false;
+
+		// The fixture observer uses the same receipt bridge but owns a separate observation store.
+		auto &liveObservations = const_cast<compat::PublicObservationStore &>(
+			static_cast<metamod::BotBehaviorServices &>(runtime).observation_publicObservations());
+		const auto flash = [&](float duration, int direction, float fire) {
+			blindedMoveRoll = direction;
+			blindedFireRoll = fire;
+			notify(&botObject, false, duration);
+			return liveObservations.gameDllBlind(managed, frame(), globals.time + duration);
+		};
+		duplicateBlindNetname = false;
+		self.v.maxspeed = 250.0f;
+		if (!check(flash(.5f, 1, 9.0f), "real blind fixture publishes a current gameplay deadline"))
+			return false;
+		step(.125f);
+		if (!check(blindFixtureInput.forward == 0 && blindFixtureInput.side == 250 &&
+				blindFixtureInput.buttons == (IN_MOVERIGHT | IN_ATTACK), "blind right strafe and fire share a full command"))
+			return false;
+		const auto fullCommands = blindFixtureInput.count;
+		step(.04f);
+		if (!check(blindFixtureInput.count == fullCommands + 1U &&
+				blindFixtureInput.forward == 0 && blindFixtureInput.side == 250 &&
+				blindFixtureInput.buttons == (IN_MOVERIGHT | IN_ATTACK), "the light command retains local blind input"))
+			return false;
+		if (!flash(.5f, 5, 10.0f))
+			return false;
+		step(.125f);
+		if (!check(blindFixtureInput.forward == 0 && blindFixtureInput.side == 0 &&
+				blindFixtureInput.buttons == IN_DUCK, "a second flash replaces retreat and the exact fire threshold misses"))
+			return false;
+		if (!flash(.25f, 2, 100.0f))
+			return false;
+		step(.125f);
+		if (!check(blindFixtureInput.forward == -250 && blindFixtureInput.side == 0 &&
+				blindFixtureInput.buttons == (IN_BACK | IN_DUCK), "a subsequent retreat keeps the blind crouch posture"))
+			return false;
+		step(.125f);
+		if (!check(blindFixtureInput.buttons != (IN_BACK | IN_DUCK), "exact expiry resumes the ordinary full update"))
+			return false;
+		if (!flash(.16f, 3, 9.0f))
+			return false;
+		step(.125f);
+		const auto leftCommand = blindFixtureInput;
+		step(.04f);
+		if (!check(leftCommand.side < 0 && (leftCommand.buttons & (IN_MOVELEFT | IN_ATTACK)) == (IN_MOVELEFT | IN_ATTACK) &&
+				blindFixtureInput.count == leftCommand.count + 1 && blindFixtureInput.side == leftCommand.side &&
+				blindFixtureInput.buttons == leftCommand.buttons, "crossing the deadline on a light update holds the last axes"))
+			return false;
+		liveObservations.gameDllSpawn(managed, frame());
+		step(.04f);
+		if (!check(blindFixtureInput.buttons != leftCommand.buttons, "a new life cannot replay the previous flash command"))
+			return false;
+
+		trace.draws.clear();
+		blindedMoveMutation = [&] { liveObservations.gameDllSpawn(managed, frame()); };
+		random.setTraceSink(&trace);
+		notify(&botObject);
+		random.setTraceSink(nullptr);
+		if (!check(trace.draws == std::vector<std::string>{"Chatter.BlindedChance", "Blind.MoveDirection"},
+				"a spawn during the movement draw invalidates the rest of the Blind receipt"))
+			return false;
+		gBotStopCvar.value = 1.0f;
+		if (!flash(.25f, 1, 0.0f))
+			return false;
+		step(.125f);
+		if (!check(blindFixtureInput.forward == 0 && blindFixtureInput.side == 0 &&
+				!(blindFixtureInput.buttons & IN_ATTACK), "bot_stop takes precedence over blind retreat and fire"))
 			return false;
 
 		compat::PublicObservationStore connected;

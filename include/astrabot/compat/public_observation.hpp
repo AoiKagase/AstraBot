@@ -145,6 +145,12 @@ public:
 
 	void setGameDllBlindEventsAvailable(bool available) { gameDllBlindEventsAvailable_ = available; }
 
+	bool isGameDllBlinded(world::ActorKey actor, world::FrameIdentity frame, float now) const
+	{
+		const auto *state = find(actor, frame);
+		return state && now < state->gameDllBlindUntil;
+	}
+
 	bool isBlinded(world::ActorKey actor, world::FrameIdentity frame, float now, bool compatibility) const
 	{
 		const PublicActorState *state = find(actor, frame);

@@ -680,9 +680,9 @@ private:
 		behavior_.applyNativeLadderLookCommand(index, command, localMovement);
 	}
 
-	void behavior_applyNoiseLookCommand(std::size_t index, runtime::BotCommand &command) override
+	void behavior_applyNoiseLookCommand(std::size_t index, runtime::BotCommand &command, bool upkeepOnly) override
 	{
-		behavior_.applyNoiseLookCommand(index, command);
+		behavior_.applyNoiseLookCommand(index, command, upkeepOnly);
 	}
 
 	void behavior_applyObstacleCommand(std::size_t index, runtime::BotCommand &command) override

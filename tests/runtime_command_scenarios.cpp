@@ -471,6 +471,20 @@ int main()
 	if (!check(services.hostageUseReceipts == 1U && (services.lastButtons & IN_USE) != 0U,
 			"the accepted USE is counted once while the engine retains the held button"))
 		return 1;
+
+	command.resetActorExecutionState(0U);
+	handle.entity->v.maxspeed = 250.0f;
+	services.followWalking = true;
+	command.prepareBlindCommand(0U, handle, before, {BlindMove::Backward, true, true}, false);
+	command.executeManagedBotCommand(0U, handle);
+	if (!check(services.lastForward == -100.0f && services.lastSide == 0.0f &&
+			services.lastButtons == (IN_BACK | IN_ATTACK), "blind standing walk dispatches 40 percent exactly once"))
+		return 1;
+	command.prepareBlindCommand(0U, handle, before, {BlindMove::Left, false, true}, true);
+	command.executeManagedBotCommand(0U, handle);
+	if (!check(services.lastForward == 0.0f && services.lastSide == -250.0f &&
+			services.lastButtons == (IN_MOVELEFT | IN_DUCK), "blind retreat at the existing crouch retains max input"))
+		return 1;
 	std::puts("runtime command orchestration scenarios: PASS");
 	return 0;
 }

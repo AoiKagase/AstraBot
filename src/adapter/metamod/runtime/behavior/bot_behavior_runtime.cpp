@@ -49,6 +49,27 @@ bool BotBehaviorRuntime::executionCurrent(
 		receipt.entityGeneration == now.entityGeneration && receipt.now == now.now && receipt.alive == now.alive;
 }
 
+BlindCommand BotBehaviorRuntime::blindCommand(std::size_t index, bool retainUntilFullUpdate) const
+{
+	const auto &bot = actors_[index];
+	if (!bot.flashResponse.active ||
+		services_->service_compatibilitySurface().configuration().mode != compat::RuntimeMode::Compatibility)
+		return {};
+	const auto now = reactionContext(index);
+	const auto &earlier = bot.blindReceipt;
+	const auto &observations = services_->observation_publicObservations();
+	if (!now.alive || !(now.actor == earlier.actor) || now.entityGeneration != earlier.entityGeneration ||
+		now.frame.mapGeneration != earlier.frame.mapGeneration || now.frame.roundGeneration != earlier.frame.roundGeneration ||
+		!(now.now >= earlier.now) || observations.lifeRevision(now.actor) != bot.blindLifeRevision ||
+		(!retainUntilFullUpdate && !observations.isGameDllBlinded(now.actor, now.frame, now.now)))
+		return {};
+
+	BlindCommand response = bot.flashResponse;
+	if (bot.managedBotStateMachines.state() == compat::CompatibilityStateId::Hide && bot.scenarioPlanners.atDefenseSpot())
+		response.move = BlindMove::None;
+	return response;
+}
+
 void BotBehaviorRuntime::updateManagedBotCompatibilityState(
 	std::size_t index, const runtime::MovementPhysicsState &before, PlantMoveChatter *plantMove)
 {
@@ -117,6 +138,7 @@ void BotBehaviorRuntime::onActorRemoved(std::size_t index)
 {
 	actors_[index].morale = {};
 	invalidateHelpExecution(index);
+	actors_[index].flashResponse = {};
 	actors_[index].noiseLook.reset();
 	actors_[index].closeFootstep = {};
 	actors_[index].knifeRun.reset();
@@ -173,6 +195,7 @@ void BotBehaviorRuntime::onActorRemembered(std::size_t index, const FakeClientHa
 	resetEncouragement();
 	actors_[index].morale = {};
 	invalidateHelpExecution(index);
+	actors_[index].flashResponse = {};
 	actors_[index].bombStatus = {};
 	actors_[index].someHostagesTaken = false;
 	actors_[index].sniperWarning = {};
@@ -253,6 +276,7 @@ void BotBehaviorRuntime::resetSharedExecutionState()
 void BotBehaviorRuntime::resetActorExecutionState(std::size_t index)
 {
 	invalidateHelpExecution(index);
+	actors_[index].flashResponse = {};
 	actors_[index].teamworkPolicies.resetValues();
 	actors_[index].noiseInvestigation.reset();
 	actors_[index].noiseReportPolicy = {};

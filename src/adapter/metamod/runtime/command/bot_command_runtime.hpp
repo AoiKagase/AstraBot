@@ -35,6 +35,9 @@ public:
 		MovementCommandDraft draft, const ActionProposal &requestedAction);
 	void resetManagedBotCommandTemplate(std::size_t index);
 	void resetManagedBotCommandInputs(std::size_t index);
+	void prepareBlindCommand(std::size_t index, FakeClientHandle &handle, const runtime::MovementPhysicsState &before,
+		BlindCommand response, bool crouching);
+	bool hasBlindCommand(std::size_t index) const { return actors_[index].blindCommand; }
 	void advanceUpkeepLook(std::size_t index, FakeClientHandle &handle);
 	bool hasHuntApproachLook(std::size_t index) const { return actors_[index].huntApproachLookActive; }
 	const std::uint32_t &managedBotCommandSequences(std::size_t index) const
@@ -116,6 +119,8 @@ private:
 		runtime::BotCommand managedBotCommandTemplates{};
 		bool managedBotCommandTemplateValid{};
 		bool managedBotActionStopsMovement{};
+		bool blindCommand{};
+		bool navigationWalking{};
 		bool nativeLadderControl{};
 		bool nativeLadderJump{};
 		compat::AimSpringState navigationLookSpring{};

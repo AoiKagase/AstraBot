@@ -222,7 +222,8 @@ public:
 	virtual bool navigation_nativeLadderLook(std::size_t index, nav::NativeLadderLook *look) = 0;
 	virtual void behavior_applyNativeLadderLookCommand(
 		std::size_t index, runtime::BotCommand &command, bool localMovement) = 0;
-	virtual void behavior_applyNoiseLookCommand(std::size_t index, runtime::BotCommand &command) = 0;
+	virtual void behavior_applyNoiseLookCommand(std::size_t index, runtime::BotCommand &command,
+		bool upkeepOnly = false) = 0;
 	virtual const ManagedObjectiveTargetCache &behavior_managedBotObjectiveTargets(std::size_t index) const = 0;
 	virtual const compat::CompatibilityStateMachine &behavior_managedBotStateMachines(std::size_t index) const = 0;
 	virtual void behavior_observeC4AttackDispatched(

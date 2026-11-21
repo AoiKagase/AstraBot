@@ -1774,25 +1774,44 @@ void PluginRuntime::updateManagedBots()
 			if (!lifecycle_.isCurrent(token) || !handle.entity)
 				continue;
 		}
+		const bool previousBlindCommand = command_.hasBlindCommand(index);
+		// CSBot's full Update returns on bot_stop before it can choose a task.
+		const bool stateUpdatePaused =
+			configuration.mode == compat::RuntimeMode::Compatibility && configuration.botStop != 0.0f;
+		const bool retainBlindCommand = previousBlindCommand && (!fullUpdateDue || stateUpdatePaused);
+		const bool crouching = before.ducked || (command_.managedBotCommandTemplateValid(index) &&
+			(command_.managedBotCommandTemplates(index).movement.buttons & IN_DUCK) != 0);
+		CombatUpkeepUpdate blindAim{};
+		if (upkeepDue && fullUpdateDue && behavior_.blindCommand(index, retainBlindCommand).active)
+		{
+			blindAim = behavior_.upkeepCombat(index, before, command_.managedBotCommandTemplates(index).movement.buttons, true);
+			// The impending ResetCommand discards any attack toggle from upkeep.
+			blindAim.setPrimary = false;
+		}
 		if (commandResetDue)
 		{
 			command_.resetManagedBotCommandInputs(index);
 		}
 		if (!fullUpdateDue)
 		{
+			const bool blind = behavior_.blindCommand(index, retainBlindCommand).active;
+			if (previousBlindCommand && !blind)
+				command_.resetManagedBotCommandTemplate(index);
 			if (!command_.managedBotCommandTemplateValid(index))
 			{
-				prepareNeutralManagedBotCommand(index, handle, before);
+				if (blind)
+					command_.prepareBlindCommand(index, handle, before, {}, crouching);
+				else
+					prepareNeutralManagedBotCommand(index, handle, before);
 			}
 			if (upkeepDue && command_.managedBotCommandTemplateValid(index))
 				command_.applyCombatUpkeep(index,
-					behavior_.upkeepCombat(index, before, command_.managedBotCommandTemplates(index).movement.buttons));
+					behavior_.upkeepCombat(index, before, command_.managedBotCommandTemplates(index).movement.buttons, blind));
 			const runtime::CommandReceipt receipt = command_.executeManagedBotCommand(index, handle);
 			navigation_.recordMovementPhysicsSample(index, before, receipt);
 			continue;
 		}
 		RuntimeProfilerScope fullUpdateScope(runtimeProfiler_, RuntimeProfilerStage::RuntimeFullUpdate);
-		behavior_.clearCombatUpkeep(index);
 		if (managedBotFullUpdateSequences_[index] == (std::numeric_limits<std::uint32_t>::max)())
 		{
 			managedBotFullUpdateSequences_[index] = 0U;
@@ -1804,10 +1823,26 @@ void PluginRuntime::updateManagedBots()
 		navigation_.observeFullUpdateMotion(index, handle, before, configuration);
 		if (!behavior_.refreshHuntApproaches(index, before, navigation))
 			continue;
+		auto blind = behavior_.blindCommand(index, retainBlindCommand);
+		if (blind.active)
+		{
+			behavior_.updateOutgoingPublicRadio(index);
+			blind = behavior_.blindCommand(index, retainBlindCommand);
+			if (!lifecycle_.isCurrent(token) || !handle.entity || !blind.active)
+				continue;
+			if (stateUpdatePaused || configuration.botEnable <= 0.0f)
+			{
+				blind.move = BlindMove::None;
+				blind.fire = false;
+			}
+			command_.prepareBlindCommand(index, handle, before, blind, crouching);
+			command_.applyCombatUpkeep(index, blindAim);
+			const auto receipt = command_.executeManagedBotCommand(index, handle);
+			navigation_.recordMovementPhysicsSample(index, before, receipt);
+			continue;
+		}
+		behavior_.clearCombatUpkeep(index);
 		BotBehaviorRuntime::PlantMoveChatter plantMove{};
-		// CSBot's full Update returns on bot_stop before it can choose a task.
-		const bool stateUpdatePaused =
-			configuration.mode == compat::RuntimeMode::Compatibility && configuration.botStop != 0.0f;
 		if (!stateUpdatePaused)
 			behavior_.updateManagedBotCompatibilityState(index, before, &plantMove);
 		behavior_.updateOutgoingPublicRadio(index, &plantMove);

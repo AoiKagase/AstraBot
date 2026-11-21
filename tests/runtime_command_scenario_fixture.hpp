@@ -44,6 +44,7 @@ public:
 	mutable unsigned freezeReads = 0U;
 	mutable bool freezeReadAfterMove = false;
 	bool freeze = false;
+	bool followWalking = false;
 	bool changeFreezeDuringMove = false;
 	bool attackNoticeSawMovedOrigin = false;
 	unsigned attackMovesBefore = 0U;
@@ -203,7 +204,7 @@ public:
 	{
 		return false;
 	}
-	bool behavior_followWalking(std::size_t) const override { return false; }
+	bool behavior_followWalking(std::size_t) const override { return followWalking; }
 	bool descentDestinationLook = false;
 	nav::NativeLadderPhase stoppedHuntLookPhase = nav::NativeLadderPhase::None;
 	unsigned descentFallbackLooks = 0;
@@ -227,7 +228,7 @@ public:
 		if (descentDestinationLook)
 			++descentFallbackLooks;
 	}
-	void behavior_applyNoiseLookCommand(std::size_t, runtime::BotCommand &) override
+	void behavior_applyNoiseLookCommand(std::size_t, runtime::BotCommand &, bool) override
 	{
 	}
 

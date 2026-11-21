@@ -1967,8 +1967,8 @@ std::function<void()> BotObservationRuntime::prepareGameDllBlind(const void *pla
 			entity->free || entity->serialnumber != receipt.serial || entity->v.deadflag != DEAD_NO ||
 			!(entity->v.health > 0.0f))
 			return;
-		(void)publicObservations_.gameDllBlind(receipt.actor, receipt.frame, now + duration);
-		services_->behavior_observePlayerBlind(receipt.index, receipt.actor, receipt.frame);
+		if (publicObservations_.gameDllBlind(receipt.actor, receipt.frame, now + duration))
+			services_->behavior_observePlayerBlind(receipt.index, receipt.actor, receipt.frame);
 	};
 }
 

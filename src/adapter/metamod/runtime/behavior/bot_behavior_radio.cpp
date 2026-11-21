@@ -1791,14 +1791,46 @@ void BotBehaviorRuntime::observePlayerBlind(std::size_t index, world::ActorKey a
 	if (index >= actors_.size() || !actor.isValid() || !frame.isValid() ||
 		services_->service_compatibilitySurface().configuration().mode != compat::RuntimeMode::Compatibility)
 		return;
+	const auto receipt = reactionContext(index);
+	if (!(receipt.actor == actor) || !(receipt.frame == frame) || !receipt.alive)
+		return;
+	auto &bot = actors_[index];
+	const auto &observations = services_->observation_publicObservations();
+	const auto lifeRevision = observations.lifeRevision(actor);
+	const auto execution = bot.executionRevision;
+	const auto event = ++bot.blindEventRevision;
 	const auto current = [&] {
-		const auto context = reactionContext(index);
-		return context.actor == actor && context.frame == frame && context.alive;
+		return bot.blindEventRevision == event && executionCurrent(index, receipt, execution) &&
+			observations.lifeRevision(actor) == lifeRevision &&
+			services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility;
 	};
 	ActorTaskEnvironment env(*this, index, index, current);
 	float roll = 0.0f;
 	if (env.current() && env.drawFloat("Chatter.BlindedChance", 0.0f, 100.0f, roll) && roll < 33.3f)
 		env.say("Blinded", 1.0f);
+	if (!current())
+		return;
+	auto &random = services_->service_compatibilityRandomSource();
+	const auto direction = random.nextLong(compat::RandomRequest::longRequest(
+		"Blind.MoveDirection", {actor.slot, actor.generation}, env.timing(), 1, 5));
+	if (!current())
+		return;
+	BlindMove move = BlindMove::None;
+	if (direction.status == compat::RandomStatus::Ok && direction.value >= 1 && direction.value <= 5)
+		move = static_cast<BlindMove>((std::min)(direction.value, 4));
+	const auto fireRoll = random.nextFloat(compat::RandomRequest::floatRequest(
+		"Blind.FireChance", {actor.slot, actor.generation}, env.timing(), 0.0f, 100.0f));
+	if (!current())
+		return;
+	const bool fire = fireRoll.status == compat::RandomStatus::Ok && fireRoll.value >= 0.0f && fireRoll.value < 10.0f;
+	bot.blindReceipt = receipt;
+	bot.blindLifeRevision = lifeRevision;
+	bot.flashResponse = {move, fire, true};
+	const float roundStart = services_->service_roundFreezeGeneration() == frame.roundGeneration
+		? services_->service_roundFreezeUntil() : 0.0f;
+	if (bot.enemyReaction.update(receipt))
+		bot.enemyReaction.adjustSafeTime(
+			receipt.now - roundStart, static_cast<float>(bot.managedProfiles.aggression) / 100.0f);
 }
 
 void BotBehaviorRuntime::observePlayerDamage(std::size_t index, world::ActorKey actor, world::FrameIdentity frame,

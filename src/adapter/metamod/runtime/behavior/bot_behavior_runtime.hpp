@@ -79,7 +79,7 @@ public:
 	void observeObstacleTouch(edict_t *entity, edict_t *other);
 	void observeWeaponTouch(edict_t *box, edict_t *self);
 	void applyNativeLadderLookCommand(std::size_t index, runtime::BotCommand &command, bool localMovement);
-	void applyNoiseLookCommand(std::size_t index, runtime::BotCommand &command);
+	void applyNoiseLookCommand(std::size_t index, runtime::BotCommand &command, bool upkeepOnly);
 	bool refreshHuntApproaches(std::size_t index, const runtime::MovementPhysicsState &before,
 		const nav::NavSnapshot &navigation);
 	bool updateHuntApproachLook(std::size_t index, const runtime::MovementPhysicsState &before,
@@ -98,6 +98,7 @@ public:
 	}
 	void observeEnemyWeaponFire(const edict_t *source, const world::FrameIdentity &frame, float now);
 	void observePlayerBlind(std::size_t index, world::ActorKey actor, world::FrameIdentity frame);
+	BlindCommand blindCommand(std::size_t index, bool retainUntilFullUpdate = false) const;
 	void observePlayerDamage(std::size_t index, world::ActorKey actor, world::FrameIdentity frame,
 		const edict_t *source, int serial, world::ActorKey sourceConnection);
 	bool forcedRunning(std::size_t index);
@@ -144,7 +145,7 @@ public:
 		return actors_[index].executionRevision;
 	}
 	CombatUpkeepUpdate upkeepCombat(
-		std::size_t index, const runtime::MovementPhysicsState &before, std::uint16_t cachedButtons);
+		std::size_t index, const runtime::MovementPhysicsState &before, std::uint16_t cachedButtons, bool blind = false);
 	void clearCombatUpkeep(std::size_t index)
 	{
 		if (index >= actors_.size())
@@ -675,6 +676,10 @@ private:
 		std::uint32_t recognitionSequences{};
 		float lastVisibleEnemyTimes{};
 		compat::NoiseEnemyContact noiseEnemyContact{};
+		compat::ReactionContext blindReceipt{};
+		std::uint64_t blindLifeRevision = 0;
+		std::uint64_t blindEventRevision = 0;
+		BlindCommand flashResponse{};
 		compat::NoiseLookPlanner noiseLook{};
 		NoiseBendCache noiseBend{};
 		std::uint32_t noiseLookUpdate = 0U;

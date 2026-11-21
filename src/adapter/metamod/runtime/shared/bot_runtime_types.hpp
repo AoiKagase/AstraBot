@@ -249,6 +249,22 @@ struct NavigationUpdate
 	HuntApproachLook huntApproachLook{};
 };
 // Stack-local command preparation; no owner state or observations are cached across updates.
+enum class BlindMove : std::uint8_t
+{
+	None,
+	Right,
+	Backward,
+	Left,
+	Crouch
+};
+
+struct BlindCommand
+{
+	BlindMove move = BlindMove::None;
+	bool fire = false;
+	bool active = false;
+};
+
 struct MovementCommandDraft
 {
 	runtime::BotCommand command{};

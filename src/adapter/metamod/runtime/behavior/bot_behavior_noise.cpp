@@ -6,7 +6,32 @@ namespace astrabot
 {
 namespace metamod
 {
-void BotBehaviorRuntime::applyNoiseLookCommand(std::size_t index, runtime::BotCommand &command)
+namespace
+{
+void advanceNoiseLook(compat::NoiseLookPlanner &look, const edict_t &self, float now, runtime::BotCommand &command,
+	bool localMovement)
+{
+	float pitch = 0, yaw = 0;
+	const auto eye = self.v.origin + self.v.view_ofs;
+	if (!look.update(now, {self.v.origin.x, self.v.origin.y, self.v.origin.z}, {eye.x, eye.y, eye.z},
+			self.v.v_angle.x, self.v.v_angle.y, &pitch, &yaw))
+		return;
+	if (!localMovement)
+	{
+		const auto move =
+			ActionAdapter::reprojectMovement(command.movement.forward, command.movement.side, command.viewAngles.yaw, yaw);
+		command.movement.forward = move.forward;
+		command.movement.side = move.side;
+		command.movement.buttons =
+			static_cast<std::uint16_t>((command.movement.buttons & ~(IN_FORWARD | IN_BACK | IN_MOVELEFT | IN_MOVERIGHT)) |
+				ActionAdapter::movementButtons(move.forward, move.side));
+	}
+	command.viewAngles = {pitch, yaw, 0};
+	command.synchronizeCombatView = true;
+}
+}
+
+void BotBehaviorRuntime::applyNoiseLookCommand(std::size_t index, runtime::BotCommand &command, bool upkeepOnly)
 {
 	if (!services_ || index >= actors_.size())
 		return;
@@ -25,7 +50,7 @@ void BotBehaviorRuntime::applyNoiseLookCommand(std::size_t index, runtime::BotCo
 	if (!globals || !std::isfinite(globals->time) || !self || self->free || self->v.health <= 0 ||
 		self->v.deadflag != DEAD_NO || (self->v.flags & (FL_FROZEN | FL_SPECTATOR)) ||
 		self->v.movetype == MOVETYPE_FLY || !lifecycle.isCurrent(lifecycle.tokenForSlot(handle.actor.slot)) ||
-		config.mode != compat::RuntimeMode::Compatibility || config.botEnable <= 0 || config.botStop > 0 ||
+		config.mode != compat::RuntimeMode::Compatibility || config.botEnable <= 0 || (!upkeepOnly && config.botStop > 0) ||
 		(services_->service_roundFreezeGeneration() == lifecycle.roundGeneration() &&
 			globals->time < services_->service_roundFreezeUntil()))
 	{
@@ -36,6 +61,11 @@ void BotBehaviorRuntime::applyNoiseLookCommand(std::size_t index, runtime::BotCo
 	const world::FrameIdentity frame{
 		lifecycle.mapGeneration(), lifecycle.roundGeneration(), services_->service_adapterFrameCount()};
 	look.synchronize({handle.actor.slot, handle.actor.actorGeneration}, frame, globals->time);
+	if (upkeepOnly)
+	{
+		advanceNoiseLook(look, *self, globals->time, command, true);
+		return;
+	}
 	bool visibleEnemy = false;
 	for (std::size_t i = 0; i < belief.actorCount(); ++i)
 	{
@@ -177,21 +207,7 @@ void BotBehaviorRuntime::applyNoiseLookCommand(std::size_t index, runtime::BotCo
 			}
 		}
 	}
-	float pitch = 0, yaw = 0;
-	if (!look.update(globals->time, {self->v.origin.x, self->v.origin.y, self->v.origin.z},
-			{self->v.origin.x + self->v.view_ofs.x, self->v.origin.y + self->v.view_ofs.y,
-				self->v.origin.z + self->v.view_ofs.z},
-			self->v.v_angle.x, self->v.v_angle.y, &pitch, &yaw))
-		return;
-	const auto move =
-		ActionAdapter::reprojectMovement(command.movement.forward, command.movement.side, command.viewAngles.yaw, yaw);
-	command.movement.forward = move.forward;
-	command.movement.side = move.side;
-	command.movement.buttons =
-		static_cast<std::uint16_t>((command.movement.buttons & ~(IN_FORWARD | IN_BACK | IN_MOVELEFT | IN_MOVERIGHT)) |
-			ActionAdapter::movementButtons(move.forward, move.side));
-	command.viewAngles = {pitch, yaw, 0};
-	command.synchronizeCombatView = true;
+	advanceNoiseLook(look, *self, globals->time, command, false);
 }
 } // namespace metamod
 } // namespace astrabot

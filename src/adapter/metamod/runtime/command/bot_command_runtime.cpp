@@ -60,7 +60,7 @@ void BotCommandRuntime::applyCombatUpkeep(std::size_t index, const CombatUpkeepU
 	{
 		actors_[index].resetNavigationLook();
 		actors_[index].useEntityLookActive = false;
-		if (!update.movementRelativeToAim && !actors_[index].nativeLadderControl)
+		if (!update.movementRelativeToAim && !actors_[index].nativeLadderControl && !actors_[index].blindCommand)
 		{
 			const auto movement = ActionAdapter::reprojectMovement(
 				command.movement.forward, command.movement.side, command.viewAngles.yaw, update.angles.yaw);
@@ -435,7 +435,40 @@ void BotCommandRuntime::resetManagedBotCommandInputs(std::size_t index)
 	actors_[index].nativeLadderControl = false;
 	actors_[index].nativeLadderJump = false;
 	actors_[index].managedBotActionStopsMovement = false;
+	actors_[index].blindCommand = false;
 	actors_[index].hostageUseTarget = {};
+}
+
+void BotCommandRuntime::prepareBlindCommand(std::size_t index, FakeClientHandle &handle,
+	const runtime::MovementPhysicsState &before, BlindCommand response, bool crouching)
+{
+	auto draft = beginNeutralCommand(index, handle, before);
+	if (!draft.ready)
+		return;
+	auto &actor = actors_[index];
+	auto &movement = draft.command.movement;
+	crouching = crouching || response.move == BlindMove::Crouch;
+	if (crouching)
+		movement.buttons |= IN_DUCK;
+	if (response.fire)
+		movement.buttons |= IN_ATTACK;
+
+	const bool walking = !crouching && !services_->behavior_forcedRunning(index) &&
+		(actor.navigationWalking || services_->behavior_noiseInvestigationWalking(index) ||
+			services_->behavior_followWalking(index));
+	const float maxSpeed = handle.entity->v.maxspeed;
+	const float speed = (std::isfinite(maxSpeed) && maxSpeed > 0.0f) ? maxSpeed * (walking ? 0.4f : 1.0f) : 0.0f;
+	switch (response.move)
+	{
+	case BlindMove::Right: movement.side = speed; movement.buttons |= IN_MOVERIGHT; break;
+	case BlindMove::Backward: movement.forward = -speed; movement.buttons |= IN_BACK; break;
+	case BlindMove::Left: movement.side = -speed; movement.buttons |= IN_MOVELEFT; break;
+	default: break;
+	}
+	actor.managedBotJumpCrouch.reset();
+	actor.managedBotCommandTemplates = draft.command;
+	actor.managedBotCommandTemplateValid = true;
+	actor.blindCommand = true;
 }
 
 MovementCommandDraft BotCommandRuntime::beginNeutralCommand(
@@ -595,14 +628,14 @@ runtime::CommandReceipt BotCommandRuntime::executeManagedBotCommand(
 	if (actor.useEntityLookActive || (actor.defusePathLook && !machine.attackOverlayActive() &&
 		(isDefuseApproach(machine) || machine.state() == compat::CompatibilityStateId::DefuseBomb)))
 		command.viewAngles = {handle.entity->v.v_angle.x, handle.entity->v.v_angle.y, handle.entity->v.v_angle.z};
-	if (!actor.useEntityLookActive && !actor.nativeLadderControl)
-		services_->behavior_applyNoiseLookCommand(index, command);
+	if (!actor.useEntityLookActive && !actor.nativeLadderControl && (!actor.blindCommand || !machine.attackOverlayActive()))
+		services_->behavior_applyNoiseLookCommand(index, command, actor.blindCommand);
 	if (!descentLookAdvanced)
-		services_->behavior_applyNativeLadderLookCommand(index, command, actors_[index].nativeLadderControl);
-	if (!actor.useEntityLookActive)
+		services_->behavior_applyNativeLadderLookCommand(index, command, actor.nativeLadderControl || actor.blindCommand);
+	if (!actor.blindCommand && !actor.useEntityLookActive)
 		services_->behavior_applyObstacleCommand(index, command);
 	const float maxSpeed = handle.entity->v.maxspeed;
-	const bool canWalk = !actors_[index].nativeLadderControl && !services_->behavior_forcedRunning(index) &&
+	const bool canWalk = !actor.blindCommand && !actors_[index].nativeLadderControl && !services_->behavior_forcedRunning(index) &&
 		!(command.movement.buttons & IN_DUCK);
 	const bool walking = canWalk && services_->behavior_noiseInvestigationWalking(index) &&
 		(handle.entity->v.flags & FL_ONGROUND) && handle.entity->v.movetype != MOVETYPE_FLY;
@@ -626,7 +659,7 @@ runtime::CommandReceipt BotCommandRuntime::executeManagedBotCommand(
 			command.movement.side *= walkingLimit / speed;
 		}
 	}
-	if (!explicitFrozen && !roundFreeze && !actors_[index].managedBotActionStopsMovement &&
+	if (!actor.blindCommand && !explicitFrozen && !roundFreeze && !actors_[index].managedBotActionStopsMovement &&
 		!actors_[index].nativeLadderControl)
 	{
 		applyPlayerAvoidance(index, &command,
@@ -653,9 +686,11 @@ runtime::CommandReceipt BotCommandRuntime::executeManagedBotCommand(
 		handle.entity->v.deadflag != DEAD_NO || handle.entity->v.health <= 0.0f,
 		handle.entity->v.movetype == MOVETYPE_FLY, explicitFrozen || roundFreeze,
 		(command.movement.buttons & static_cast<std::uint16_t>(IN_JUMP)) != 0U};
-	const runtime::JumpCrouchCommandDecision jumpCrouchDecision = actors_[index].managedBotJumpCrouch.updateCommand(
-		jumpCrouchObservation, command.movement.buttons, static_cast<std::uint16_t>(IN_DUCK));
-	command.movement.buttons = jumpCrouchDecision.buttons;
+	const auto jumpCrouchDecision = actor.blindCommand ? runtime::JumpCrouchCommandDecision{} :
+		actors_[index].managedBotJumpCrouch.updateCommand(
+			jumpCrouchObservation, command.movement.buttons, static_cast<std::uint16_t>(IN_DUCK));
+	if (!actor.blindCommand)
+		command.movement.buttons = jumpCrouchDecision.buttons;
 	if (!jumpCrouchObservation.grounded && !actors_[index].nativeLadderJump)
 	{
 		command.movement.buttons =
@@ -784,7 +819,7 @@ runtime::CommandReceipt BotCommandRuntime::executeManagedBotCommand(
 	}
 	observeReloadInput(handle, command, dispatchReceipt);
 	observeHostageUse(index, command, dispatchReceipt, hostageUseTarget, commandStart);
-	if (dispatchReceipt.result == runtime::DispatchResult::Dispatched &&
+	if (!actor.blindCommand && dispatchReceipt.result == runtime::DispatchResult::Dispatched &&
 		(command.movement.buttons & ActionAdapter::kAttackButton) != 0U)
 	{
 		services_->behavior_observeC4AttackDispatched(index, handle, command.movement.buttons);
@@ -972,6 +1007,7 @@ runtime::CommandReceipt BotCommandRuntime::dispatchJoinHeartbeat(
 void BotCommandRuntime::onActorRemoved(std::size_t index)
 {
 	actors_[index].playerAvoidance.reset();
+	actors_[index].navigationWalking = false;
 	actors_[index].managedMoveSpeeds = 0.0f;
 	actors_[index].managedCommandDiagnosticUpdates = 0U;
 	actors_[index].managedBotJumpCrouch.reset();
@@ -996,6 +1032,7 @@ void BotCommandRuntime::resetSharedExecutionState()
 void BotCommandRuntime::resetActorExecutionState(std::size_t index)
 {
 	actors_[index].managedBotJumpCrouch.reset();
+	actors_[index].navigationWalking = false;
 	resetManagedBotCommandTemplate(index);
 }
 
@@ -1132,6 +1169,7 @@ void BotCommandRuntime::finishMovementCommand(std::size_t index, FakeClientHandl
 	actors_[index].nativeLadderControl = locomotionIntent.nativeLadderControl;
 	actors_[index].nativeLadderJump = locomotionIntent.nativeMustJump;
 	float commandSpeed = locomotionIntent.speed;
+	actor.navigationWalking = false;
 	if (compatibilityMovement && commandSpeed > 0.0f && std::isfinite(handle.entity->v.maxspeed) &&
 		handle.entity->v.maxspeed > 0.0f)
 	{
@@ -1153,15 +1191,19 @@ void BotCommandRuntime::finishMovementCommand(std::size_t index, FakeClientHandl
 		const bool shouldWalk = !following && (huntEndpoint ? locomotionIntent.walkingToHuntEndpoint
 			: (approachingDefuseEndpoint || (goal.valid && finalArea)) &&
 				x * x + y * y + z * z < kGoalSlowdownDistance * kGoalSlowdownDistance);
-		if (!locomotionIntent.nativeLadderControl && shouldWalk &&
-			locomotionIntent.posture != nav::LocomotionPosture::Crouching)
+		actor.navigationWalking = !locomotionIntent.nativeLadderControl && shouldWalk &&
+			locomotionIntent.posture != nav::LocomotionPosture::Crouching;
+		if (actor.navigationWalking)
 			commandSpeed *= ASTRABOT_BOT_COMMAND_RUNTIME_GOAL_SLOWDOWN_FACTOR;
 	}
 	// Retain movement before walking reduction: events between full updates
 	// must be able to restore running on the next cached command.
 	// executeManagedBotCommand applies the current walk/run decision.
 	if (locomotionIntent.nativeLadderControl && locomotionIntent.nativeWalking)
+	{
+		actor.navigationWalking = true;
 		commandSpeed *= .4f;
+	}
 	if (!roamDecision.huntWaitingForFriend)
 		actor.managedMoveSpeeds = commandSpeed;
 	const MovementProjection movementProjection = ActionAdapter::projectMovement(locomotionIntent.direction.x,
