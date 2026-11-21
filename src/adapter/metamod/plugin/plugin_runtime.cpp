@@ -1844,7 +1844,7 @@ void PluginRuntime::updateManagedBots()
 		behavior_.clearCombatUpkeep(index);
 		BotBehaviorRuntime::PlantMoveChatter plantMove{};
 		if (!stateUpdatePaused)
-			behavior_.updateManagedBotCompatibilityState(index, before, &plantMove);
+			behavior_.updateManagedBotCompatibilityState(index, before, previousBlindCommand, &plantMove);
 		behavior_.updateOutgoingPublicRadio(index, &plantMove);
 		if (!stateUpdatePaused &&
 			behavior_.managedBotStateMachines(index).behaviorDecision().action == compat::StateAction::Buy)

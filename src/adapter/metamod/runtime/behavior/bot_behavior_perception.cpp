@@ -50,6 +50,21 @@ bool BotBehaviorRuntime::canSeePoint(std::size_t index, world::WorldPosition poi
 	return result.flFraction == 1.0f;
 }
 
+bool BotBehaviorRuntime::refreshRecoveredPerception(std::size_t index)
+{
+	const auto receipt = reactionContext(index);
+	const auto revision = actors_[index].executionRevision;
+	const auto epoch = actors_[index].managedBotStateMachines.normalStateEpoch();
+	// Blind updates skip perception. Publish pending sounds before the
+	// recovered state's investigation reads the shared snapshot.
+	world::WorldSnapshot belief;
+	world::ActorKey target{};
+	world::WorldPosition point{};
+	(void)prepareManagedPerception(index, &belief, &target, &point);
+	return executionCurrent(index, receipt, revision) &&
+		actors_[index].managedBotStateMachines.normalStateEpoch() == epoch;
+}
+
 bool BotBehaviorRuntime::prepareManagedPerception(std::size_t index, world::WorldSnapshot *snapshot,
 	world::ActorKey *targetActor, world::WorldPosition *targetPosition)
 {

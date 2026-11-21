@@ -138,7 +138,8 @@ public:
 		nav::NavVector reportPosition{};
 	};
 	void updateManagedBotCompatibilityState(
-		std::size_t index, const runtime::MovementPhysicsState &before, PlantMoveChatter *plantMove = nullptr);
+		std::size_t index, const runtime::MovementPhysicsState &before, bool recoveringFromBlind,
+		PlantMoveChatter *plantMove = nullptr);
 	void updateOutgoingPublicRadio(std::size_t index, const PlantMoveChatter *plantMove = nullptr);
 	void observeBombPickup(Vector origin, world::FrameIdentity frame);
 	void observeHostageUsed(Vector origin, world::FrameIdentity frame, world::EntityKey following);
@@ -316,6 +317,7 @@ private:
 		HostagePositionMemory initialHostages{};
 		bool wasFollowing = false;
 	};
+	bool refreshRecoveredPerception(std::size_t index);
 	bool prepareManagedPerception(std::size_t index, world::WorldSnapshot *snapshot, world::ActorKey *targetActor,
 		world::WorldPosition *targetPosition);
 	BehaviorPhaseResult prepareManagedAction(ManagedActionContext &ctx);

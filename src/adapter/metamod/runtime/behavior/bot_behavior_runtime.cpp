@@ -71,7 +71,8 @@ BlindCommand BotBehaviorRuntime::blindCommand(std::size_t index, bool retainUnti
 }
 
 void BotBehaviorRuntime::updateManagedBotCompatibilityState(
-	std::size_t index, const runtime::MovementPhysicsState &before, PlantMoveChatter *plantMove)
+	std::size_t index, const runtime::MovementPhysicsState &before, bool recoveringFromBlind,
+	PlantMoveChatter *plantMove)
 {
 	if (plantMove)
 		*plantMove = {};
@@ -104,6 +105,8 @@ void BotBehaviorRuntime::updateManagedBotCompatibilityState(
 		updateEnemyReaction(index, before);
 		context = makeManagedBotStateContext(index, before, &stateBehavior);
 	}
+	if (recoveringFromBlind && !refreshRecoveredPerception(index))
+		return;
 	const auto receipt = reactionContext(index);
 	const auto revision = actors_[index].executionRevision;
 	const auto epoch = actors_[index].managedBotStateMachines.normalStateEpoch();

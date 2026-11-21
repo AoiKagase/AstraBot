@@ -17,12 +17,14 @@ void setupHeardNoiseGameDll(DLL_FUNCTIONS &);
 namespace
 {
 bool closeNoiseVisible = false;
+bool recoveryEnemyVisible = false;
 bool clampNoiseToEdge = false;
 int nativeHideWeapon = 0;
 int nativeReload = 0, nativeSpecialReload = 0;
 unsigned offMeshGroundLayers = 0;
 unsigned heardReportDraws = 0;
 unsigned investigationDraws = 0;
+std::vector<std::string> perceptionDraws;
 int heardMessageType = 0;
 const char *heardMode = "normal";
 std::vector<std::string> heardSamples;
@@ -53,6 +55,10 @@ struct HeardTrace : astrabot::compat::IRandomTraceSink
 			++heardReportDraws;
 		if (std::strcmp(record.request.semanticId, "noise.investigate") == 0)
 			++investigationDraws;
+		const char *site = record.request.semanticId;
+		if (std::strncmp(site, "noise.position.", 15) == 0 || std::strcmp(site, "noise.investigate") == 0 ||
+			std::strcmp(site, "Vision.Notice") == 0)
+			perceptionDraws.emplace_back(site);
 	}
 };
 HeardTrace heardTrace;
@@ -144,7 +150,8 @@ void investigationTrace(const float *start, const float *end, int flags, edict_t
 		return;
 	}
 	const bool reachesNoisePoint = end[0] == 0.0f && end[1] == 250.0f && end[2] == 0.0f;
-	trace->flFraction = flags == 0x101 && closeNoiseVisible && reachesNoisePoint ? 1.0f : 0.0f;
+	const bool reachesEnemy = recoveryEnemyVisible && end[0] == 100.0f && std::fabs(end[1]) < 20.0f;
+	trace->flFraction = flags == 0x101 && ((closeNoiseVisible && reachesNoisePoint) || reachesEnemy) ? 1.0f : 0.0f;
 	trace->vecEndPos = Vector(end[0], end[1], end[2]);
 }
 const char *heardCvar(const char *name)
@@ -567,7 +574,10 @@ bool testInvestigation(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t 
 	runtime.onRoundLifecycleMessage("World triggered \"Round_End\"\n");
 	runtime.onRoundLifecycleMessage("World triggered \"Round_Start\"\n");
 	step(.65f);
-	if (!check(!investigating(), "fresh round clears the previous investigation before flash"))
+	for (int i = 0; i < 16 && machine.state() != compat::CompatibilityStateId::Hunt; ++i)
+		step(.25f);
+	if (!check(machine.state() == compat::CompatibilityStateId::Hunt && !belief.noise().active,
+			"the recovery fixture starts from Hunt without a stored noise"))
 		return false;
 	const auto managed = belief.identity().observer;
 	const auto frame = belief.identity().frame;
@@ -576,15 +586,47 @@ bool testInvestigation(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t 
 			"gameplay flash fixture accepts the real blindness deadline"))
 		return false;
 	static_cast<metamod::BotObservationServices &>(runtime).behavior_observePlayerBlind(0, managed, frame);
+	perceptionDraws.clear();
 	runtime.onEmitSound(&source, "player/pl_step1.wav", 1, 1);
+	const auto drawsBeforeRecovery = investigationDraws;
 	step(.25f);
-	if (!check(!investigating(), "ordinary noise cannot start an investigation while actually blind"))
+	if (!check(!investigating() && investigationDraws == drawsBeforeRecovery &&
+			std::find(perceptionDraws.begin(), perceptionDraws.end(), "Vision.Notice") == perceptionDraws.end(),
+			"ordinary noise cannot start an investigation while actually blind"))
 		return false;
 	step(.5f);
-	for (int i = 0; i < 4 && !investigating(); ++i)
-		step(.15f);
-	if (!check(investigating() && !belief.noise().active,
-			"ordinary noise uses the blind-adjusted safe time after gameplay vision returns"))
+	if (!check(investigating() && !belief.noise().active && investigationDraws == drawsBeforeRecovery + 1,
+			"the first full update after gameplay blindness attends the stored footstep exactly once"))
+		return false;
+	const std::vector<std::string> recoveryDraws = {"noise.position.x", "noise.position.y", "noise.investigate"};
+	step(.15f);
+	if (!check(perceptionDraws == recoveryDraws,
+			"recovery resolves the occluded footstep before the single investigation draw without replay or a vision draw"))
+		return false;
+
+	runtime.onRoundLifecycleMessage("World triggered \"Round_End\"\n");
+	runtime.onRoundLifecycleMessage("World triggered \"Round_Start\"\n");
+	for (int i = 0; i < 16 && machine.state() != compat::CompatibilityStateId::Hunt; ++i)
+		step(.25f);
+	const auto visibleFrame = belief.identity().frame;
+	if (!check(machine.state() == compat::CompatibilityStateId::Hunt &&
+			observations.gameDllBlind(managed, visibleFrame, globals.time + .5f),
+		"the recovery perception control starts a new blindness window in Hunt"))
+		return false;
+	static_cast<metamod::BotObservationServices &>(runtime).behavior_observePlayerBlind(0, managed, visibleFrame);
+	perceptionDraws.clear();
+	runtime.onEmitSound(&source, "player/pl_step1.wav", 1, 1);
+	step(.25f);
+	// The same actor leaves its old sound position and becomes visible on recovery.
+	source.v.origin = Vector(100, 0, 36);
+	self.v.angles = self.v.v_angle = Vector(0, 0, 0);
+	recoveryEnemyVisible = true;
+	step(.5f);
+	recoveryEnemyVisible = false;
+	source.v.origin = Vector(0, 500, 36);
+	if (!check(!investigating() && belief.noise().active &&
+			perceptionDraws == std::vector<std::string>{"noise.position.x", "noise.position.y", "Vision.Notice"},
+		"recovery publishes the old sound then samples current vision once before deciding whether to investigate"))
 		return false;
 
 	runtime.onRoundLifecycleMessage("World triggered \"Round_End\"\n");
