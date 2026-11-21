@@ -1133,6 +1133,27 @@ bool PluginRuntime::observation_shieldState(edict_t *source, bool &hasShield, bo
 	return readGameDllWeaponPrediction(source, weapon, silenced, &reload, &hasShield, &protectedByShield);
 }
 
+bool PluginRuntime::observation_bombZone(edict_t *source, bool &inZone) const
+{
+	const auto *dll = gameDllFunctions_ ? gameDllFunctions_->dllapi_table : nullptr;
+	if (!dll || !dll->pfnUpdateClientData || !source || source->free || source->serialnumber < 0 ||
+		source->v.iuser1 != 0 || source->v.deadflag != DEAD_NO || source->v.health <= 0.0f)
+		return false;
+	const auto *globals = globals_;
+	const int serial = source->serialnumber;
+	const auto frame = world::FrameIdentity{lifecycle_.mapGeneration(), lifecycle_.roundGeneration(), adapterFrameCount_};
+	clientdata_t data{};
+	dll->pfnUpdateClientData(source, 1, &data);
+	if (state_ != State::ActiveMap || globals_ != globals || !gameDllFunctions_ || gameDllFunctions_->dllapi_table != dll ||
+		!(frame == world::FrameIdentity{lifecycle_.mapGeneration(), lifecycle_.roundGeneration(), adapterFrameCount_}) ||
+		source->free || source->serialnumber != serial || source->v.iuser1 != 0 ||
+		source->v.deadflag != DEAD_NO || source->v.health <= 0.0f)
+		return false;
+	// Standard GameDLL prediction exports m_signals.GetState(), independent of the C4 HUD icon.
+	inZone = (data.iuser3 & (1 << 2)) != 0;
+	return true;
+}
+
 bool PluginRuntime::readGameDllWeaponPrediction(
 	edict_t *source, int &weapon, bool &silenced, combat::ReloadState *reload,
 	bool *hasShield, bool *protectedByShield) const
@@ -1920,6 +1941,15 @@ void PluginRuntime::updateManagedBots()
 			behavior_.managedBotStateMachines(index).behaviorDecision().action == compat::StateAction::Buy)
 		{
 			behavior_.updatePublicBuying(index);
+		}
+		if (!stateUpdatePaused && behavior_.nativePlantEntryStopsMovement(index))
+		{
+			prepareNeutralManagedBotCommand(index, handle, before);
+			if (!lifecycle_.isCurrent(token) || !handle.entity || !behavior_.nativePlantEntryStopsMovement(index))
+				continue;
+			const auto receipt = command_.executeManagedBotCommand(index, handle);
+			navigation_.recordMovementPhysicsSample(index, before, receipt);
+			continue;
 		}
 		const auto peripheralRoute = navigation_.routeRevision(index);
 		if (!stateUpdatePaused && lifecycle_.isCurrent(token) && handle.entity &&

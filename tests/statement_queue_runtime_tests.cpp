@@ -1996,6 +1996,17 @@ bool testActualFollowMovement(astrabot::metamod::PluginRuntime &runtime, globalv
 	bool ok = heardPlan && heardReply &&
 		check(routedAhead, "Follow paths toward the nearest eligible NAV center ahead of the moving leader") &&
 		check(retargeted && moved, "follower routes to the moving source and dispatches actual movement");
+	if (arrivalAge > 2.0f)
+	{
+		ok = check(receiver.state() == compat::CompatibilityStateId::Follow,
+			"carrier control begins in Follow with its live managed leader") && ok;
+		gEntities[1].v.weapons |= 1 << 6;
+		gEntities[1].v.origin = Vector(224, 32, 36);
+		tick();
+		ok = check(receiver.state() == compat::CompatibilityStateId::PlantBomb &&
+			receiver.task() == compat::CompatibilityTaskId::PlantBomb && receiver.stateTimestamp() == globals.time,
+			"Follow with a valid leader and carried C4 enters Plant directly at the site") && ok;
+	}
 	if (arrivalAge == 0)
 	{
 		auto &behavior = static_cast<metamod::BotBehaviorServices &>(runtime);

@@ -43,6 +43,8 @@ unsigned attackAimRefreshDraws = 0;
 unsigned retreatTimerDraws = 0;
 float forcedNoticeFixtureRoll = -1.0f;
 bool shieldOwned = true, shieldClosed = false, shieldSelfReload = false, shieldEnemyReload = false;
+int plantZonePrediction = 0;
+bool plantZoneReplacesEntity = false;
 struct EquipmentFixture
 {
 	int active = 6, primaryClip = 0, pistolClip = 20;
@@ -251,9 +253,286 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 	const bool bestEquipmentFixture = scenario && std::strcmp(scenario, "equip-best") == 0;
 	const bool plantTailFixture = scenario && std::strcmp(scenario, "plant-tail") == 0;
 	const bool clearLookFixture = scenario && std::strcmp(scenario, "clear-look") == 0;
+	const bool plantEntryFixture = scenario && std::strcmp(scenario, "plant-entry") == 0;
 #ifdef _MSC_VER
 	std::free(scenario);
 #endif
+	if (plantEntryFixture)
+	{
+		using namespace astrabot;
+		using namespace astrabot::compat;
+		// This first control exercises the documented geometry fallback, not a
+		// weapon-only prediction stub inherited from an earlier fixture.
+		combatGameDll->pfnUpdateClientData = nullptr;
+		globals.mapname = 6; // The public map identity is de_test, a bomb scenario.
+		const char *navPath = "astrabot_plant_entry.nav";
+		if (!check(writeJumpNavigation(navPath, true), "plant entry NAV written"))
+			return false;
+		const metamod::NavLoadRequest load{navPath, "astrabot_plant_entry", runtime.snapshot().mapGeneration,
+			false, 0U, false, 0U};
+		const auto loaded = runtime.loadNavigationFile(&load);
+		std::remove(navPath);
+		if (!check(loaded == metamod::NavLoadResult::Loaded, "plant entry has native Idle's valid NAV prerequisite"))
+			return false;
+		gObjectiveEntitiesAvailable = true;
+		gPlantedBomb.free = 1;
+		gBombSite.free = 0;
+		gBombSite.v.classname = 1;
+		gBombSite.v.absmin = Vector(0, 0, -4);
+		gBombSite.v.absmax = Vector(128, 96, 80);
+		gBombSite.v.origin = Vector(64, 48, 38);
+		globals.maxEntities = 8;
+		gEntities[0].v.weapons = 1 << 6;
+		gEntities[0].v.mins = Vector(-16, -16, -36);
+		gEntities[0].v.maxs = Vector(16, 16, 36);
+		gEntities[0].v.absmin = gEntities[0].v.origin + gEntities[0].v.mins;
+		gEntities[0].v.absmax = gEntities[0].v.origin + gEntities[0].v.maxs;
+		globals.time += 4.0f; // Hunt's native unset-contact clock is zero; its safe boundary is strictly >3.
+		stepRifle(1, 0, 6);
+		auto &ports = static_cast<metamod::BotBehaviorServices &>(runtime);
+		auto behavior = std::make_unique<metamod::BotBehaviorRuntime>();
+		behavior->bindServices(ports);
+		const auto &handle = ports.service_managedBotHandles()[0];
+		behavior->onActorRemembered(0, handle);
+		auto &machine = const_cast<CompatibilityStateMachine &>(behavior->managedBotStateMachines(0));
+		StateUpdateContext start{};
+		start.actor = {handle.actor.slot, handle.actor.actorGeneration};
+		start.frame = {ports.service_lifecycle().mapGeneration(), ports.service_lifecycle().roundGeneration(),
+			ports.service_adapterFrameCount()};
+		start.timestamp = globals.time - .125f;
+		start.fullUpdateSequence = ports.service_managedBotFullUpdateSequences()[0] - 1U;
+		start.fullUpdate = start.alive = start.roundActive = true;
+		start.lifeAvailability = start.roundAvailability = start.attackObservation = ObservationAvailability::Available;
+		machine.initialize(start);
+		machine.transition(CompatibilityStateId::Idle, StateTransitionReason::ExplicitRequest,
+			StateTransitionId::ExplicitStateChange, start);
+		runtime::MovementPhysicsState before{};
+		before.grounded = true;
+		before.origin = {gEntities[0].v.origin.x, gEntities[0].v.origin.y, gEntities[0].v.origin.z};
+		struct EntryTrace final : IStateTraceSink
+		{
+			unsigned huntEntries = 0, plantEntries = 0, plantUpdates = 0;
+			CompatibilityStateMachine *machine = nullptr;
+			StateUpdateContext callbackContext{};
+			bool exactTargetReentry = false;
+			int lifecycleReset = 0;
+			StateResult lifecycleResult = StateResult::NoOp;
+			struct RejectedGuard final : IStateTransitionExecution { bool current() const override { return false; } } rejected;
+			void record(const StateTraceRecord &record) override
+			{
+				if (record.event == StateTraceEvent::OnEnter && record.callbackState == CompatibilityStateId::Hunt)
+					++huntEntries;
+				if (record.event == StateTraceEvent::OnEnter && record.callbackState == CompatibilityStateId::PlantBomb)
+					++plantEntries;
+				if (record.event == StateTraceEvent::OnUpdate && record.callbackState == CompatibilityStateId::PlantBomb)
+					++plantUpdates;
+				if (exactTargetReentry && record.event == StateTraceEvent::OnUpdate && record.callbackState == CompatibilityStateId::Idle)
+				{
+					exactTargetReentry = false;
+					machine->transition(CompatibilityStateId::PlantBomb, StateTransitionReason::ExplicitRequest,
+						StateTransitionId::ExplicitStateChange, callbackContext);
+				}
+				if (lifecycleReset && record.event == StateTraceEvent::OnUpdate && record.callbackState == CompatibilityStateId::Idle)
+				{
+					const int kind = lifecycleReset;
+					lifecycleReset = 0;
+					callbackContext.transitionExecution = &rejected;
+					lifecycleResult = kind == 1 ? machine->onRoundReset(callbackContext) : machine->onDeath(callbackContext);
+				}
+			}
+		} entryTrace;
+		machine.setTraceSink(&entryTrace);
+		const auto idleEpoch = machine.normalStateEpoch();
+		behavior->updateManagedBotCompatibilityState(0, before, false);
+		if (machine.state() != CompatibilityStateId::PlantBomb)
+			std::fprintf(stderr, "plant-entry result=%u site=%d nav=%d\n", static_cast<unsigned>(machine.state()),
+				behavior->managedActorAtBombSite(0) ? 1 : 0, ports.service_navPublisher().snapshot().isValid() ? 1 : 0);
+		if (!check(machine.state() == CompatibilityStateId::PlantBomb && entryTrace.huntEntries == 0U &&
+				machine.normalStateEpoch() == idleEpoch + 1U && behavior->nativePlantEntryStopsMovement(0),
+				"native Idle plants directly with one epoch and no Hunt entry, even with cold registry"))
+		{
+			std::fprintf(stderr, "plant-entry exact state=%u hunt=%u epoch=%llu/%llu hold=%d map=%d/%s roundOver=%d site=%d\n",
+				static_cast<unsigned>(machine.state()), entryTrace.huntEntries,
+				static_cast<unsigned long long>(machine.normalStateEpoch()), static_cast<unsigned long long>(idleEpoch),
+				behavior->nativePlantEntryStopsMovement(0) ? 1 : 0, static_cast<int>(globals.mapname),
+				engine.pfnSzFromIndex ? engine.pfnSzFromIndex(globals.mapname) : "unavailable",
+				ports.service_roundOver() ? 1 : 0, behavior->managedActorAtBombSite(0) ? 1 : 0);
+			return false;
+		}
+		nav::NavVector target{};
+		const auto rngBeforeLateTarget = gSiteFixtureSeed;
+		if (!check(!behavior->buildManagedObjectiveTarget(0, &target, nullptr, nullptr) &&
+				gSiteFixtureSeed == rngBeforeLateTarget,
+				"native Plant entry does not build a late site target or consume its RNG"))
+			return false;
+		globals.time += .125f;
+		++const_cast<std::uint32_t &>(ports.service_managedBotFullUpdateSequences()[0]);
+		behavior->updateManagedBotCompatibilityState(0, before, false);
+		const auto nextPlantSeed = gSiteFixtureSeed;
+		if (!check(machine.state() == CompatibilityStateId::PlantBomb && !behavior->nativePlantEntryStopsMovement(0) &&
+				!behavior->buildManagedObjectiveTarget(0, &target, nullptr, nullptr) && gSiteFixtureSeed == nextPlantSeed &&
+				!ports.navigation_hasActivePath(0),
+				"the next ordinary Plant full update also creates no site target, path or selection RNG"))
+			return false;
+		const auto runEntry = [&](CompatibilityStateId initial, int api, int icon, bool warm,
+			CompatibilityStateId expected, bool replace = false, bool exactTarget = false, int reset = 0, bool buy = false) {
+			plantZonePrediction = api;
+			plantZoneReplacesEntity = replace;
+			combatGameDll->pfnUpdateClientData = nullptr;
+			if (api >= 0)
+				combatGameDll->pfnUpdateClientData = [](const edict_t *, int, clientdata_t *data) {
+					data->m_iId = 6;
+					data->iuser3 = plantZonePrediction ? 1 << 2 : 0;
+					if (plantZoneReplacesEntity) ++gEntities[0].serialnumber;
+				};
+			auto &publicStore = const_cast<PublicObservationStore &>(ports.observation_publicObservations());
+			publicStore.resetHud(start.actor, start.frame);
+			if (icon >= 0) publicStore.statusIcon(start.actor, start.frame, "c4", icon);
+			auto next = std::make_unique<metamod::BotBehaviorRuntime>();
+			next->bindServices(ports);
+			next->onActorRemembered(0, handle);
+			auto &stateMachine = const_cast<CompatibilityStateMachine &>(next->managedBotStateMachines(0));
+			stateMachine.initialize(start);
+			stateMachine.transition(initial, StateTransitionReason::ExplicitRequest,
+				StateTransitionId::ExplicitStateChange, start);
+			EntryTrace trace;
+			trace.machine = &stateMachine;
+			trace.callbackContext = start;
+			trace.callbackContext.timestamp = globals.time;
+			trace.callbackContext.fullUpdateSequence = ports.service_managedBotFullUpdateSequences()[0];
+			trace.exactTargetReentry = exactTarget;
+			trace.lifecycleReset = reset;
+			stateMachine.setTraceSink(&trace);
+			if (warm && !check(next->managedActorAtBombSite(0), "warm geometry registry sees this real site"))
+				return false;
+			const auto epoch = stateMachine.normalStateEpoch();
+			const auto serial = gEntities[0].serialnumber;
+			const auto getCvarPointer = engine.pfnCVarGetPointer;
+			const auto getCvarValue = engine.pfnCVarGetFloat;
+			if (buy)
+			{
+				publicStore.statusIcon(start.actor, start.frame, "buyzone", 1);
+				engine.pfnCVarGetPointer = [](const char *name) -> cvar_t * {
+					static cvar_t buyTime{};
+					return std::strcmp(name, "mp_buytime") == 0 ? &buyTime : nullptr;
+				};
+				engine.pfnCVarGetFloat = [](const char *name) { return std::strcmp(name, "mp_buytime") == 0 ? 1.0f : 0.0f; };
+			}
+			metamod::BotBehaviorRuntime::PlantMoveChatter outgoing{};
+			next->updateManagedBotCompatibilityState(0, before, false, &outgoing);
+			engine.pfnCVarGetPointer = getCvarPointer;
+			engine.pfnCVarGetFloat = getCvarValue;
+			plantZoneReplacesEntity = false;
+			gEntities[0].serialnumber = serial;
+			if (buy)
+				return check(stateMachine.state() == CompatibilityStateId::Buy && stateMachine.normalStateEpoch() == epoch + 1U &&
+					stateMachine.stateTimestamp() == globals.time && !next->nativePlantEntryStopsMovement(0) &&
+					outgoing.epoch == 0U && !outgoing.coverDue,
+					"higher-priority Buy completes its timestamp and cancels Plant admission, hold and chatter");
+			if (replace)
+				return check(stateMachine.state() == initial && stateMachine.normalStateEpoch() == epoch &&
+					!next->nativePlantEntryStopsMovement(0) && outgoing.epoch == 0U && !outgoing.coverDue,
+					"zone callback replacement cannot authorize the old Plant decision or chatter");
+			if (exactTarget)
+				return check(stateMachine.state() == CompatibilityStateId::PlantBomb && stateMachine.normalStateEpoch() == epoch + 1U &&
+					trace.plantEntries == 1U && trace.plantUpdates == 0U && !next->nativePlantEntryStopsMovement(0) &&
+					outgoing.epoch == 0U && !outgoing.coverDue,
+					"exact-target OnUpdate reentry stops the old update and cannot authorize its Plant receipt");
+			if (reset)
+				return check(trace.lifecycleResult == StateResult::Transitioned && stateMachine.state() == CompatibilityStateId::Idle &&
+					stateMachine.normalStateEpoch() == epoch + 1U && trace.plantEntries == 0U && !next->nativePlantEntryStopsMovement(0) &&
+					outgoing.epoch == 0U && !outgoing.coverDue,
+					"forced lifecycle reset discards the old guard and completes while the old Plant entry is rejected");
+			if (!check(stateMachine.state() == expected, "public zone and state-specific Plant entry match the native branch"))
+			{
+				std::fprintf(stderr, "entry-case initial=%u api=%d icon=%d warm=%d expected=%u actual=%u epoch=%llu/%llu\n",
+					static_cast<unsigned>(initial), api, icon, warm ? 1 : 0, static_cast<unsigned>(expected),
+					static_cast<unsigned>(stateMachine.state()), static_cast<unsigned long long>(stateMachine.normalStateEpoch()),
+					static_cast<unsigned long long>(epoch));
+				return false;
+			}
+			if (expected == CompatibilityStateId::PlantBomb ||
+				((initial == CompatibilityStateId::Hunt || initial == CompatibilityStateId::Follow) && expected == CompatibilityStateId::Idle))
+			{
+				if (!check(stateMachine.normalStateEpoch() == epoch + 1U && trace.huntEntries == 0U &&
+					next->nativePlantEntryStopsMovement(0), "native entry/yield has exactly one transition and stops that full update"))
+					return false;
+				const auto seed = gSiteFixtureSeed;
+				if (!check(!next->buildManagedObjectiveTarget(0, &target, nullptr, nullptr) && gSiteFixtureSeed == seed,
+					"yielded entry cannot perform late target selection"))
+					return false;
+			}
+			return true;
+		};
+		const bool entries = runEntry(CompatibilityStateId::Idle, -1, 1, false, CompatibilityStateId::PlantBomb) &&
+			runEntry(CompatibilityStateId::Idle, -1, -1, true, CompatibilityStateId::PlantBomb) &&
+			runEntry(CompatibilityStateId::Idle, 1, 1, false, CompatibilityStateId::PlantBomb) &&
+			runEntry(CompatibilityStateId::Idle, 0, 2, false, CompatibilityStateId::Hunt) &&
+			runEntry(CompatibilityStateId::Hunt, 1, 1, false, CompatibilityStateId::Idle) &&
+			runEntry(CompatibilityStateId::Follow, 1, 1, false, CompatibilityStateId::Idle) &&
+			runEntry(CompatibilityStateId::Idle, 1, 1, false, CompatibilityStateId::Idle, true) &&
+			runEntry(CompatibilityStateId::Idle, 1, 1, false, CompatibilityStateId::PlantBomb, false, true) &&
+			runEntry(CompatibilityStateId::Idle, 1, 1, false, CompatibilityStateId::Idle, false, false, 1) &&
+			runEntry(CompatibilityStateId::Idle, 1, 1, false, CompatibilityStateId::Idle, false, false, 2) &&
+			runEntry(CompatibilityStateId::Idle, 1, 1, false, CompatibilityStateId::Buy, false, false, 0, true);
+		if (!entries) return false;
+		auto &enemy = gEntities[1];
+		enemy.free = false;
+		enemy.v.flags = FL_CLIENT | FL_ONGROUND;
+		enemy.v.health = 100;
+		enemy.v.deadflag = DEAD_NO;
+		enemy.v.team = 2;
+		enemy.v.origin = gEntities[0].v.origin + Vector(800, 0, 0);
+		enemy.v.velocity = Vector(250, 0, 0);
+		enemy.v.v_angle = Vector(0, 0, 0); // Far and looking away: no objective self-defense Attack.
+		runtime.onClientPutInServer(&enemy);
+		runtime.onMessageBegin(MSG_ALL, 86, nullptr, nullptr);
+		runtime.onWriteByte(2);
+		runtime.onWriteString("CT");
+		runtime.onMessageEnd();
+		combatGameDll->pfnUpdateClientData = nullptr;
+		const auto contactControl = [&](bool recognized) {
+			stepRifle(1, 0, 6);
+			auto next = std::make_unique<metamod::BotBehaviorRuntime>();
+			next->bindServices(ports);
+			next->onActorRemembered(0, handle);
+			auto profile = static_cast<metamod::BotNavigationServices &>(runtime).behavior_managedProfiles(0);
+			// Stay below the native ring's wraparound clamp; .5s needs four samples.
+			profile.csbotReactionSeconds = recognized ? .1f : .5f;
+			next->assignProfile(0, profile);
+			auto &state = const_cast<CompatibilityStateMachine &>(next->managedBotStateMachines(0));
+			auto current = start;
+			current.frame.tick = ports.service_adapterFrameCount();
+			current.timestamp = globals.time - .125f;
+			current.fullUpdateSequence = ports.service_managedBotFullUpdateSequences()[0] - 1U;
+			state.initialize(current);
+			state.transition(CompatibilityStateId::PlantBomb, StateTransitionReason::ExplicitRequest,
+				StateTransitionId::ExplicitStateChange, current);
+			next->updateManagedBotCompatibilityState(0, before, false);
+			stepRifle(1, 0, 6);
+			next->updateManagedBotCompatibilityState(0, before, false);
+			world::WorldPosition point{};
+			const bool aiming = next->bombObjectiveEnemyAim(0, {}, &point);
+			if (aiming != recognized || state.attackOverlayActive())
+				std::fprintf(stderr, "contact-control recognized=%d aiming=%d attack=%d state=%u time=%.3f\n",
+					recognized, aiming, state.attackOverlayActive(), static_cast<unsigned>(state.state()), globals.time);
+			if (!check(aiming == recognized && !state.attackOverlayActive(),
+				"contact control distinguishes a delayed candidate from a real recognized enemy")) return false;
+			stepRifle(1, 0, 6);
+			current.frame.tick = ports.service_adapterFrameCount();
+			current.timestamp = globals.time - .125f;
+			current.fullUpdateSequence = ports.service_managedBotFullUpdateSequences()[0] - 1U;
+			state.transition(CompatibilityStateId::Hunt, StateTransitionReason::ExplicitRequest,
+				StateTransitionId::ExplicitStateChange, current);
+			next->updateManagedBotCompatibilityState(0, before, false);
+			if (state.state() != (recognized ? CompatibilityStateId::Hunt : CompatibilityStateId::Idle))
+				std::fprintf(stderr, "contact-yield recognized=%d state=%u hold=%d now=%.3f\n", recognized,
+					static_cast<unsigned>(state.state()), next->nativePlantEntryStopsMovement(0), globals.time);
+			return check(state.state() == (recognized ? CompatibilityStateId::Hunt : CompatibilityStateId::Idle),
+				"only real enemy contact postpones Hunt's safe-at-site yield; a fresh candidate does not");
+		};
+		return contactControl(false) && contactControl(true);
+	}
 	if (clearLookFixture)
 	{
 		using namespace astrabot;

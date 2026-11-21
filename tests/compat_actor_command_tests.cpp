@@ -1533,6 +1533,9 @@ bool testRuntimeBombSiteApproach(
 	passed = check(latestSelectedBombSite() == 0U, "carrier hunts before shared planting decision time") && passed;
 	gMovementLogs.clear();
 	tick(31.0f);
+	passed = check(latestSelectedBombSite() == 0U,
+		"expired Hunt yields to Idle without selecting a plant route in that update") && passed;
+	tick(.125f);
 	passed = check(latestSelectedBombSite() == 1U,
 				 "planting decision chooses closest reachable site after shared deadline") &&
 		passed;
@@ -1735,11 +1738,17 @@ bool testRuntimeBombSiteApproach(
 	gBombSite.v.absmin = Vector(24.0f, 24.0f, -4.0f);
 	gBombSite.v.absmax = Vector(40.0f, 40.0f, 4.0f);
 	const auto urgent = freshRound(7U, 80.0f, 0.1f);
-	passed = check(urgent == 1U, "urgent carrier falls back to the closest reachable plant site") && passed;
+	passed = check(urgent == 0U, "short round duration does not bypass the shared native planting deadline") && passed;
+	gMovementLogs.clear();
+	tick(31.0f);
+	tick(.125f);
+	passed = check(latestSelectedBombSite() == 1U,
+		"short-round carrier selects the closest reachable site only after Hunt yields at the shared deadline") && passed;
 	passed = check(loadNavigation(false), "unreachable alternative site fixture loaded") && passed;
 	freshRound(3U, 80.0f, 5.0f);
 	gMovementLogs.clear();
 	tick(31.0f);
+	tick(.125f); // Hunt yields to Idle; Idle selects the route on the next full update.
 	passed =
 		check(latestSelectedBombSite() == 1U, "planting decision excludes disconnected alternative site") && passed;
 	passed = check(loadNavigation(true), "both sites restored before planted C4 convergence") && passed;

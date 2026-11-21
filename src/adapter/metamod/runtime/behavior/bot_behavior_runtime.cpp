@@ -85,6 +85,19 @@ BlindCommand BotBehaviorRuntime::blindCommand(std::size_t index, bool retainUnti
 	return response;
 }
 
+bool BotBehaviorRuntime::nativePlantEntryStopsMovement(std::size_t index) const
+{
+	if (index >= actors_.size() || services_->service_compatibilitySurface().configuration().mode != compat::RuntimeMode::Compatibility)
+		return false;
+	const auto &actor = actors_[index];
+	const auto &entry = actor.plantEntry;
+	const auto &machine = actor.managedBotStateMachines;
+	return entry.active && entry.fullUpdate == services_->service_managedBotFullUpdateSequences()[index] &&
+		machine.state() == entry.state && machine.normalStateEpoch() == entry.epoch &&
+		machine.attackEntryEpoch() == entry.attackEpoch && !machine.attackOverlayActive() &&
+		executionCurrent(index, entry.receipt, entry.revision);
+}
+
 void BotBehaviorRuntime::updateManagedBotCompatibilityState(
 	std::size_t index, const runtime::MovementPhysicsState &before, bool recoveringFromBlind,
 	PlantMoveChatter *plantMove)
@@ -105,6 +118,7 @@ void BotBehaviorRuntime::updateManagedBotCompatibilityState(
 		actors_[index].investigationWalking = false;
 	}
 	actors_[index].plantCommand = {};
+	actors_[index].plantEntry = {};
 	compat::StateBehaviorInput stateBehavior = {};
 	compat::StateUpdateContext context = makeManagedBotStateContext(index, before, &stateBehavior);
 
@@ -136,7 +150,7 @@ void BotBehaviorRuntime::updateManagedBotCompatibilityState(
 	if (!executionCurrent(index, receipt, revision) ||
 		actors_[index].managedBotStateMachines.normalStateEpoch() != epoch)
 		return;
-	commitBehaviorState(index, context, stateBehavior);
+	commitBehaviorState(index, context, stateBehavior, &currentPlantMove);
 	if (plantMove && executionCurrent(index, receipt, revision) &&
 		!actors_[index].managedBotStateMachines.attackOverlayActive())
 		*plantMove = currentPlantMove;

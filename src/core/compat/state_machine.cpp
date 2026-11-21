@@ -276,6 +276,7 @@ StateUpdateContext CompatibilityStateMachine::resetContextFor(
 	const StateUpdateContext &context, StateTransitionReason reason, StateTransitionId transition)
 {
 	StateUpdateContext value = context;
+	value.transitionExecution = nullptr;
 	value.requestTransition = false;
 	value.requestedState = CompatibilityStateId::None;
 	value.transitionId = transition;
@@ -517,6 +518,14 @@ StateResult CompatibilityStateMachine::onRoundReset(const StateUpdateContext &co
 StateResult CompatibilityStateMachine::transitionInternal(CompatibilityStateId nextState, StateTransitionReason reason,
 	StateTransitionId transitionId, const StateUpdateContext &context, bool forceLifecycle)
 {
+	const auto entryEpoch = normalStateEpoch_;
+	const auto entryAttack = attackEntryEpoch_;
+	const auto current = [&] {
+		return !context.transitionExecution || (context.transitionExecution->current() &&
+			normalStateEpoch_ == entryEpoch && attackEntryEpoch_ == entryAttack);
+	};
+	if (!current())
+		return StateResult::InvalidContext;
 	if (!isValidTransition(nextState))
 	{
 		return StateResult::InvalidArgument;
@@ -535,29 +544,43 @@ StateResult CompatibilityStateMachine::transitionInternal(CompatibilityStateId n
 		if (!invokeExit(previousState, nextState, reason, transitionId, context))
 			return StateResult::InvalidContext;
 	}
-	invokeEnter(nextState, previousState, reason, transitionId, context);
+	if (!current() || !invokeEnter(nextState, previousState, reason, transitionId, context) || !current())
+		return StateResult::InvalidContext;
 	state_ = nextState;
 	++stateSequence_;
 	if (++normalStateEpoch_ == 0)
 		++normalStateEpoch_;
 	emit(StateTraceEvent::StatePublished, CompatibilityStateId::None, previousState, nextState, reason, transitionId,
 		context);
+	const auto publishedEpoch = entryEpoch + 1U == 0U ? 1U : entryEpoch + 1U;
+	if (context.transitionExecution && (!context.transitionExecution->current() || normalStateEpoch_ != publishedEpoch ||
+		attackEntryEpoch_ != entryAttack || state_ != nextState))
+		return StateResult::InvalidContext;
 	stateTimestamp_ = context.timestamp;
 	emit(StateTraceEvent::TimestampUpdated, CompatibilityStateId::None, previousState, nextState, reason, transitionId,
 		context);
+	if (context.transitionExecution && (!context.transitionExecution->current() || normalStateEpoch_ != publishedEpoch ||
+		attackEntryEpoch_ != entryAttack || state_ != nextState))
+		return StateResult::InvalidContext;
 	return StateResult::Transitioned;
 }
 
-void CompatibilityStateMachine::invokeEnter(CompatibilityStateId state, CompatibilityStateId previousState,
+bool CompatibilityStateMachine::invokeEnter(CompatibilityStateId state, CompatibilityStateId previousState,
 	StateTransitionReason reason, StateTransitionId transitionId, const StateUpdateContext &context)
 {
+	const auto epoch = normalStateEpoch_;
+	const auto attack = attackEntryEpoch_;
 	StateInstance *instance = instanceFor(state);
 	if (instance != nullptr)
 	{
 		++instance->enterCount;
 	}
 	emit(StateTraceEvent::OnEnter, state, previousState, state, reason, transitionId, context);
+	if (context.transitionExecution && (!context.transitionExecution->current() || normalStateEpoch_ != epoch ||
+		attackEntryEpoch_ != attack))
+		return false;
 	applyEnterEffects(state, previousState, reason, transitionId, context);
+	return true;
 }
 
 bool CompatibilityStateMachine::invokeUpdate(const StateUpdateContext &context)
@@ -579,8 +602,11 @@ bool CompatibilityStateMachine::invokeUpdate(const StateUpdateContext &context)
 	}
 	emit(StateTraceEvent::OnUpdate, state_, state_, state_, StateTransitionReason::None, StateTransitionId::None,
 		context);
-	if (context.plantExecution && (normalStateEpoch_ != epoch || attackEntryEpoch_ != attack || attackOverlayActive_))
+	if ((context.plantExecution || context.transitionExecution) &&
+		(normalStateEpoch_ != epoch || attackEntryEpoch_ != attack || attackOverlayActive_))
 		return false;
+	if (context.transitionExecution)
+		return context.transitionExecution->current() && context.requestTransition;
 	return updateBehavior(context);
 }
 
@@ -746,9 +772,17 @@ bool CompatibilityStateMachine::invokeExit(CompatibilityStateId state, Compatibi
 	const auto epoch = normalStateEpoch_;
 	const auto attack = attackEntryEpoch_;
 	emit(StateTraceEvent::OnExit, state, state, nextState, reason, transitionId, context);
+	const auto current = [&] {
+		return !context.transitionExecution || (context.transitionExecution->current() &&
+			normalStateEpoch_ == epoch && attackEntryEpoch_ == attack);
+	};
+	if (!current())
+		return false;
 	if (state == CompatibilityStateId::PlantBomb && context.plantExecution &&
 		(normalStateEpoch_ != epoch || attackEntryEpoch_ != attack ||
 			!context.plantExecution->exit() || normalStateEpoch_ != epoch || attackEntryEpoch_ != attack || attackOverlayActive_))
+		return false;
+	if (!current())
 		return false;
 	applyExitEffects(state, nextState, reason, transitionId, context);
 	return true;
@@ -797,7 +831,12 @@ void CompatibilityStateMachine::applyEnterEffects(CompatibilityStateId state, Co
 		state == CompatibilityStateId::FetchBomb || state == CompatibilityStateId::Follow ||
 		state == CompatibilityStateId::Hunt)
 	{
+		const auto epoch = normalStateEpoch_;
+		const auto attack = attackEntryEpoch_;
 		emitSideEffect(state, previousState, state, reason, transitionId, context, StateSideEffect::ResetPath);
+		if (context.transitionExecution && (!context.transitionExecution->current() ||
+			normalStateEpoch_ != epoch || attackEntryEpoch_ != attack))
+			return;
 	}
 	switch (state)
 	{

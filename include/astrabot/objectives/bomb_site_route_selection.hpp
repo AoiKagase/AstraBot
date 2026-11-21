@@ -21,6 +21,16 @@ inline bool isBetterBombSiteRoute(float candidatePathCost, float selectedPathCos
 	return std::isfinite(candidatePathCost) && candidatePathCost >= 0.0f && candidatePathCost < selectedPathCost;
 }
 
+inline bool nativeHuntPlantDue(float now, float lastSawEnemy, bool atSite,
+	bool deadlineKnown, float deadline) noexcept
+{
+	if (!std::isfinite(now))
+		return false;
+	// ResetValues initializes the native enemy-contact clock to zero, not -1.
+	const float contact = std::isfinite(lastSawEnemy) && lastSawEnemy >= 0.0f ? lastSawEnemy : 0.0f;
+	return (deadlineKnown && std::isfinite(deadline) && now >= deadline) || (atSite && now - contact > 3.0f);
+}
+
 // A bounded preplant move. This deliberately does not reproduce whole-map Hunt.
 // Identity belongs to the actual carrier and round, not assignment generations.
 struct BombApproachState

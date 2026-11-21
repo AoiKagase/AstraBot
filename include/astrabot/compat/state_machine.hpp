@@ -181,6 +181,12 @@ struct StateBehaviorDecision
 	bool clearPath;
 	bool clearMovement;
 };
+class IStateTransitionExecution
+{
+public:
+	virtual ~IStateTransitionExecution() = default;
+	virtual bool current() const = 0;
+};
 class IPlantStateExecution
 {
 public:
@@ -207,6 +213,7 @@ struct StateUpdateContext
 	ObservationAvailability attackObservation;
 	ObservationAvailability rngAvailability;
 	const StateBehaviorInput *behavior = nullptr;
+	IStateTransitionExecution *transitionExecution = nullptr;
 	CompatibilityTaskId moveToTask = CompatibilityTaskId::None;
 	bool preserveMoveToTask = false;
 	CompatibilityTaskId hideTask = CompatibilityTaskId::None;
@@ -321,7 +328,7 @@ private:
 	StateResult transitionInternal(CompatibilityStateId nextState, StateTransitionReason reason,
 		StateTransitionId transition, const StateUpdateContext &context, bool forceLifecycle);
 	StateResult stopAttackInternal(const StateUpdateContext &context);
-	void invokeEnter(CompatibilityStateId state, CompatibilityStateId previousState, StateTransitionReason reason,
+	bool invokeEnter(CompatibilityStateId state, CompatibilityStateId previousState, StateTransitionReason reason,
 		StateTransitionId transition, const StateUpdateContext &context);
 	bool invokeUpdate(const StateUpdateContext &context);
 	bool updateBehavior(const StateUpdateContext &context);

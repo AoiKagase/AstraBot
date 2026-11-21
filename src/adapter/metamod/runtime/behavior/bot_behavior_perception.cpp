@@ -211,7 +211,7 @@ bool BotBehaviorRuntime::prepareManagedPerception(std::size_t index, world::Worl
 		if (recognized)
 		{
 			// CSBot can retain a delayed threat without entering the attack overlay.
-			if (compatibility && reactionIgnoring(index))
+			if (compatibility)
 			{
 				actor.noiseEnemyContact.enemy = threat.actor;
 				actor.noiseEnemyContact.source = threat.sourceEntity;

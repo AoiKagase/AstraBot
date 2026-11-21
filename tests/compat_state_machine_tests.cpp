@@ -710,9 +710,90 @@ bool testNavigationCannotUpdateIdleTwice()
 		"navigation completion cannot run a newly entered Idle OnUpdate in the same frame");
 }
 
+bool testGuardedExitCannotClearNewLook()
+{
+	CompatibilityStateMachine machine({1U, 7U});
+	auto before = context(1U, 1.0f, 1U);
+	machine.initialize(before);
+	machine.transition(CompatibilityStateId::DefuseBomb, StateTransitionReason::ExplicitRequest,
+		StateTransitionId::ExplicitStateChange, before);
+	struct Guard final : IStateTransitionExecution { bool current() const override { return true; } } guard;
+	struct ExitReentry final : IStateTraceSink
+	{
+		CompatibilityStateMachine *machine = nullptr;
+		StateUpdateContext nested{};
+		bool handled = false;
+		unsigned clears = 0;
+		void record(const StateTraceRecord &record) override
+		{
+			if (record.event == StateTraceEvent::SideEffect && record.sideEffect == StateSideEffect::ClearLookTarget)
+				++clears;
+			if (!handled && record.callbackState == CompatibilityStateId::DefuseBomb && record.event == StateTraceEvent::OnExit)
+			{
+				handled = true;
+				machine->transition(CompatibilityStateId::Hunt, StateTransitionReason::ExplicitRequest,
+					StateTransitionId::ExplicitStateChange, nested);
+			}
+		}
+	} trace;
+	trace.machine = &machine;
+	trace.nested = context(2U, 2.0f, 2U);
+	machine.setTraceSink(&trace);
+	auto outer = trace.nested;
+	outer.transitionExecution = &guard;
+	return check(machine.transition(CompatibilityStateId::Idle, StateTransitionReason::ExplicitRequest,
+		StateTransitionId::ExplicitStateChange, outer) == StateResult::InvalidContext && trace.handled &&
+		machine.state() == CompatibilityStateId::Hunt && machine.task() == CompatibilityTaskId::SeekAndDestroy &&
+		trace.clears == 1U,
+		"guarded OnExit reentry emits only the nested transition's ClearLook and preserves its new state");
+}
+
+bool testGuardedResetPathCannotOverwriteNewTask()
+{
+	CompatibilityStateMachine machine({1U, 7U});
+	auto before = context(1U, 1.0f, 1U);
+	machine.initialize(before);
+	machine.transition(CompatibilityStateId::Hunt, StateTransitionReason::ExplicitRequest,
+		StateTransitionId::ExplicitStateChange, before);
+	struct Guard final : IStateTransitionExecution
+	{
+		bool valid = true;
+		bool current() const override { return valid; }
+	} guard;
+	struct ResetPathReentry final : IStateTraceSink
+	{
+		CompatibilityStateMachine *machine = nullptr;
+		Guard *guard = nullptr;
+		StateUpdateContext nested{};
+		bool handled = false;
+		void record(const StateTraceRecord &record) override
+		{
+			if (!handled && record.callbackState == CompatibilityStateId::Idle &&
+				record.event == StateTraceEvent::SideEffect && record.sideEffect == StateSideEffect::ResetPath)
+			{
+				handled = true;
+				guard->valid = false;
+				machine->transition(CompatibilityStateId::DefuseBomb, StateTransitionReason::ExplicitRequest,
+					StateTransitionId::ExplicitStateChange, nested);
+			}
+		}
+	} trace;
+	trace.machine = &machine;
+	trace.guard = &guard;
+	trace.nested = context(2U, 2.0f, 2U);
+	machine.setTraceSink(&trace);
+	auto outer = trace.nested;
+	outer.transitionExecution = &guard;
+	return check(machine.transition(CompatibilityStateId::Idle, StateTransitionReason::ExplicitRequest,
+			StateTransitionId::ExplicitStateChange, outer) == StateResult::InvalidContext && trace.handled &&
+		machine.state() == CompatibilityStateId::DefuseBomb && machine.task() == CompatibilityTaskId::DefuseBomb &&
+		machine.stateTimestamp() == outer.timestamp,
+		"guarded ResetPath reentry preserves the new state's task instead of writing the old Idle task");
+}
+
 int main()
 {
-	return testNavigationCannotUpdateIdleTwice() && testRetainedTaskCompletion() &&
+	return testGuardedExitCannotClearNewLook() && testGuardedResetPathCannotOverwriteNewTask() && testNavigationCannotUpdateIdleTwice() && testRetainedTaskCompletion() &&
 			testNormalEntryEpochAndRetainedMoveTask() && testNoiseInvestigationNavigationCompletion() &&
 			testFetchBombNavigationCompletion() &&
 			testPlantCallbackInvalidation() && testNativePlantTerminalOrder() && testPlantTimeoutDoesNotAssignBombGuard() && testReferenceIdleAndHuntOwnTheirLifecycle() &&

@@ -223,6 +223,17 @@ bool testBombApproachVarietyAndPersistence()
 bool testBombApproachFallbackAndHumanPlant()
 {
 	using namespace astrabot::objectives;
+	if (!check(!nativeHuntPlantDue(0.0f, -1.0f, true, false, 0.0f) &&
+			!nativeHuntPlantDue(3.0f, -1.0f, true, false, 0.0f) &&
+			!nativeHuntPlantDue(3.0f, 0.0f, true, false, 0.0f) &&
+			nativeHuntPlantDue(std::nextafter(3.0f, 4.0f), -1.0f, true, false, 0.0f),
+			"native Hunt maps unset contact to zero and requires strictly more than three seconds") ||
+		!check(!nativeHuntPlantDue(6.0f, 3.0f, true, false, 0.0f) &&
+			nativeHuntPlantDue(std::nextafter(6.0f, 7.0f), 3.0f, true, false, 0.0f) &&
+			nativeHuntPlantDue(20.0f, 20.0f, false, true, 20.0f) &&
+			!nativeHuntPlantDue(std::nextafter(20.0f, 19.0f), 20.0f, false, true, 20.0f),
+			"contact safety is strict while the shared planting deadline accepts equality"))
+		return false;
 	SeedRandom random(7U);
 	const astrabot::compat::RandomActor actor = {2U, 1U};
 	const astrabot::compat::RandomTimingContext timing = {0U, 0U, 1U};

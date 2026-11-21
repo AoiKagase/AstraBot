@@ -122,6 +122,7 @@ public:
 	virtual combat::ReloadState observation_activeWeaponReloadState(edict_t *source) const = 0;
 	virtual bool observation_shieldState(edict_t *source, bool &hasShield, bool &protectedByShield,
 		combat::ReloadState &reload) const = 0;
+	virtual bool observation_bombZone(edict_t *source, bool &inZone) const = 0;
 	virtual bool observation_equipmentAmmo(edict_t *source,
 		std::array<compat::EquipmentAmmo, compat::PublicActorState::kWeaponStateCapacity> &ammo) const = 0;
 	virtual bool observation_readManagedWorldSnapshot(std::size_t index, world::WorldSnapshot *snapshot) const = 0;

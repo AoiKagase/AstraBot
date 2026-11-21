@@ -125,7 +125,8 @@ public:
 		const std::function<bool()> &lookAfterFetchFailure);
 	compat::StateUpdateContext makeManagedBotStateContext(std::size_t index,
 		const runtime::MovementPhysicsState &before, compat::StateBehaviorInput *behavior = nullptr) const;
-	bool managedActorAtBombSite(std::size_t index) const;
+	bool managedActorAtBombSite(std::size_t index);
+	bool nativePlantEntryStopsMovement(std::size_t index) const;
 	float managedRoundRemainingSeconds() const;
 	void refreshManagedObjectiveSiteRegistry();
 	void refreshManagedTeamObjectiveAssignments(std::size_t contextIndex);
@@ -371,7 +372,10 @@ private:
 		compat::StateUpdateContext &context, compat::StateBehaviorInput &stateBehavior, bool wasAtDefenseSpot);
 	void updateBehaviorPriorities(std::size_t index, const runtime::MovementPhysicsState &before,
 		compat::StateUpdateContext &context, compat::StateBehaviorInput &stateBehavior, bool wasAtDefenseSpot);
-	void commitBehaviorState(
+	compat::StateResult commitBehaviorState(
+		std::size_t index, compat::StateUpdateContext &context, compat::StateBehaviorInput &stateBehavior,
+		PlantMoveChatter *plantMove);
+	compat::StateResult executeBehaviorState(
 		std::size_t index, compat::StateUpdateContext &context, compat::StateBehaviorInput &stateBehavior);
 	void updateScenarioState(std::size_t index, const runtime::MovementPhysicsState &before,
 		compat::StateUpdateContext &context, compat::StateBehaviorInput &stateBehavior, PlantMoveChatter *plantMove);
@@ -401,6 +405,9 @@ private:
 		compat::StateUpdateContext &context, compat::StateBehaviorInput &stateBehavior,
 		const compat::CompatibilityObservation &observation, compat::ScenarioBehaviorInput &scenario,
 		ScenarioUpdateData &data, PlantMoveChatter *plantMove);
+	bool tryNativePlantEntry(std::size_t index, compat::StateUpdateContext &context,
+		compat::StateBehaviorInput &input, const compat::CompatibilityObservation &observation,
+		const compat::ScenarioBehaviorInput &scenario, ScenarioUpdateData &data, PlantMoveChatter *chatter);
 	void fill_managedBotWasDead(const bool &value)
 	{
 		for (auto &actor : actors_)
@@ -724,6 +731,15 @@ private:
 			bool active = false, primary = false, exited = false, engage = false;
 		};
 		PlantCommand plantCommand{};
+		struct PlantEntry
+		{
+			compat::ReactionContext receipt{};
+			std::uint64_t revision = 0, epoch = 0, attackEpoch = 0;
+			std::uint32_t fullUpdate = 0;
+			compat::CompatibilityStateId state = compat::CompatibilityStateId::Idle;
+			bool pending = false, active = false;
+		};
+		PlantEntry plantEntry{};
 		float desiredLookYaw{};
 		std::uint32_t recognitionSequences{};
 		float lastVisibleEnemyTimes{};

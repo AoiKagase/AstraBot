@@ -1,3 +1,25 @@
+## Plant開始前の状態判断とAhead供給（2026-11-22）
+
+基点 `3cde77b`、固定参照 `b0889847fe6d03898be88acc9e366660efb40ab5`。Idleおよび有効leaderを持つFollowはC4所持・bomb zone内なら直接Plantへ入る。Huntは共有設置期限、またはzone内かつ最後の実敵接触からstrict >3秒でIdleへ戻り、その更新の経路・target/RNG処理を行わない。次のIdle更新でzone内ならPlant、区域外で期限後なら最寄りの到達可能siteへMoveToとする。設置判断を `managedBombApproaches.finished` の更新待ちにしない。短いround残時間も共有期限の代用にしない。
+
+公開GameDLL `UpdateClientData.iuser3` のbit2をzoneの既知true/falseとして使う。既知falseはgeometryで覆さない。APIがない場合の点滅C4 iconは陽性補助、黄色iconは通常拾得でも送られるため区域外の確定情報にしない。不明時はsite registryを発見してgeometryへfallbackし、cold registry→未完returnの循環を解消する。入場receiptをActor/edict serial・frame/time・full-update番号・revision・normal/Attack epochで検証し、成功した入場更新だけ後段移動・target/RNGを抑止する。通常Plant/Buyも不要なsite targetを生成しない。
+
+Buyが優先された場合はpending入場とPlant chatterを取消し、Buyの状態とtimestampまで完了する。任意のcore transitionExecutionを使う呼出しはOnUpdate/OnEnter/OnExit/ResetPath/状態公開/timestamp callback後の再入を検査し、旧遷移や旧task・ClearLook副作用を続けない。従来のguardなし呼出しは維持する。候補を見ただけの時計ではなく `noiseEnemyContact.seenAt` を使い、未設定は参照の0基準に換算する。認識済み可視敵なら自己防衛でAttackしない場合も時計を更新する。候補のみ／認識済み、有効leader Follow、購入優先、再入と強制lifecycle resetを正規回帰で区別した。
+
+最終オフラインはWindows x86 **171/171・PE7**、その終了後の単独Linux x86 **170/170・ELF7** が合格。最終v2 DLL SHA-256は `fee8c705b979e8e2dfc35c29a15d54a68313d628127d05a23e71517812daef04`、ELFは `1789fb95da504f22021204723b887c3140affd8025603183b845a0e05dd1a1bb`。証拠は `C:/Temp/astrabot-plant-ahead-supply` と `artifacts/local/debug/csbot-plant-ahead-supply-20261122/README.md`。初回候補・停止前build・レビュー前final/は最終合格と分けて保持する。
+
+最終v2の隔離実機0/7/8と読取専用CDB7は全て実PID終了0・forced=falseを確認して直列実行した。0は実設置成功、7はBarTime3後に区域外へ移動してPlant age5.027まで保持、8は実drop entity99・hasC4=0を確認した。module-load後にBPを置いたCDBでは、初回Plantの10.50985813秒にcommand actor[1]の保持Aheadを直接読み取り **0°**。固定参照の初回Plant8.6012106秒も0°、旧版の75°供給を除去した。ただし直前Idleの一般path1準備は残る。経路全体・設置時刻・絶対視線軌跡の一致は主張しない。
+
+固定履歴baselineは再生成せず、両OSとも同じ789ブロックの位置/前後hash限定補正で153,320→152,248行を全行照合した。RNGは504→510、順序差は3ブロックに限定される。入場前のTeamwork.AutoFollow[0,1]が省かれ、そのraw drawを先行したSTUCK-JUMP-DELAY[0,.5]が使う。追加のurgent-case31秒/.125秒更新でRogueInterval・RogueChance・AutoFollow・PATH-RETRY・WIGGLE方向/継続/ジャンプ間隔の7件が増えるため差引+6。他のRNG行は各OSの親履歴に対して順序・値が一致する。Windows C4限定のsemantic CDB採録は通常履歴と全byte一致。OS間には親履歴から存在するRNG丸め差1件があり、両OS同値とは主張しない。
+
+残件は次の5群。次単位はMoveToのUpdatePathMovementがPROGRESSING以外になった後にPlant判断する順序であり、今回のphase早期判定には混ぜていない。
+
+1. Plant前Idleの一般経路準備、MoveTo→Plantの順序。
+2. 通常Idle/Buyの視線供給、Combat/Guardを含む共有角速度、C4初回未装備・実水没条件。
+3. Hunt/NAV移動、同一area/fallback、味方待機、cs_assaultのはしご、経路失敗。
+4. 視認した敵をAimせず通過する問題、旋回カクつき、多人数の継続性能。
+5. 標準GameDLLの公開観測経路、未網羅のCSBot参照差分。
+
 ## ClearLook後の通常軽更新と角速度の再開（2026-11-22）
 
 固定 `b088984` の `ClearLookAt` は注視点の状態と説明だけを消し、`m_lookAheadAngle` とyaw/pitch角速度を保持する。次のUpkeepは既定Ahead/pitch0に非交戦driftを加え、保持した角速度で積分する。ResetValuesは角速度を0へ戻すがAheadを保持し、新個体のAheadは0。実参照のラウンド追試でもAhead137、速度23.856216/-.329074から、次ラウンドのAhead137・両速度0を直接採録した。

@@ -30,6 +30,14 @@ Windows170/170・Linux169/169、PE/ELF公開7関数と直列隔離実機11試行
 
 上のPlant行に残していた「次lightの通常look-goal/spring再開」は、このowner解放後の復帰範囲で確認済み。一方、Plant進入前のpath/Ahead供給が参照0・Astra75となる時刻/経路差は独立残件。全Idle/Buyでの既定goal常時供給や全Combat/Guard owner間の単一速度・絶対視線軌跡の一致まで確認済みとはしない。
 
+## Plant入場判断の優先順位（2026-11-22追補）
+
+固定 `b088984` の `states/cs_bot_idle.cpp:52`以降はNAV/ゾンビ/round/追従の前提を確認し、C4所持・zone内なら直接Plantと発話、区域外で共有期限後なら最寄りzoneへMoveTo。`cs_bot_follow.cpp`はleaderが有効ならzone内で直接Plantする。`cs_bot_hunt.cpp:47`以降は30秒超、または共有期限/zone内かつ実敵接触からstrict>3秒でIdleへ戻りreturnする。`cs_bot_manager.h:172`の共有期限は>=。`cs_bot_update.cpp:441–446`は取得済み敵が可視なら、Attack中でなくても最後の接触時計を更新する。候補を見ただけの時計とは異なる。
+
+今回のadapterはこの早期分岐をTeamwork・objective target・NAV移動より前へ接続した。Idleから直接Plant、有効leader Follow陽性、Hunt→Idle→次更新のPlant/期限後site選択を正規実行で確認。公開 `client.cpp:5108–5109`の `UpdateClientData.iuser3` bomb-zone bitを優先し、API既知falseをgeometryで覆さず、不明時のregistry発見を到達可能にする。Buy上位要求で入場receipt/chatterを取消す。core任意ガードはcallback後の同一Actor/full-update/epochを検証し、ResetPath後の旧taskとOnExit後の旧ClearLookを再入先へ持ち越さない。
+
+最終v2はWindows171/171+PE7、Linux170/170+ELF7、隔離HLDS0/7/8と読取専用CDB7が合格。初回Plant10.50985813秒の保持Aheadを最終DLL/PDBから0°と直接採録し、旧75°差を解消した。旧段落の「Plant進入前path/Ahead」は不要なHunt供給を除去したこの範囲で確認済みとなる。一方、直前Idleの一般path1準備、MoveToの経路更新後にPlantを判断する順序は未完。標準GameDLLでの直接受入れ、全視線ownerの共有速度、全経路/RNG同等性へ拡張しない。詳しい試行・指紋・履歴補正はSTATUS先頭とTRACE_REPLAYの同日追補を参照。
+
 ## 周辺機能
 
 | 分野 | 照合箇所と結果 |

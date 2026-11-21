@@ -22,7 +22,6 @@ constexpr float kGuardFacingCosine = 0.5f;
 constexpr float kGuardArrivalRange = 20.0f;
 constexpr float kNavContainingTolerance = 64.0f;
 constexpr float kSecondsPerMinute = 60.0f;
-constexpr float kRecentEnemySeconds = 3.0f;
 constexpr float kFallbackTravelSpeed = 240.0f;
 constexpr float kPlantCompletionBudgetSeconds = 5.0f;
 constexpr unsigned kObjectiveLogIntervalFrames = 16U;
@@ -607,11 +606,32 @@ float BotBehaviorRuntime::managedRoundRemainingSeconds() const
 			(std::max)(0.0f, services_->service_globals()->time - services_->service_roundFreezeUntil()));
 }
 
-bool BotBehaviorRuntime::managedActorAtBombSite(std::size_t index) const
+bool BotBehaviorRuntime::managedActorAtBombSite(std::size_t index)
 {
 	if (index >= services_->service_managedBotHandles().size() ||
-		services_->service_managedBotHandles()[index].entity == nullptr ||
-		services_->service_engineFunctions() == nullptr ||
+		services_->service_managedBotHandles()[index].entity == nullptr)
+		return false;
+	const bool compatibility =
+		services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility;
+	if (compatibility)
+	{
+		const auto receipt = reactionContext(index);
+		const auto revision = actors_[index].executionRevision;
+		bool inZone = false;
+		const bool known = services_->observation_bombZone(services_->service_managedBotHandles()[index].entity, inZone);
+		if (!executionCurrent(index, receipt, revision))
+			return false;
+		if (known)
+			return inZone;
+		compat::PublicActorState publicState{};
+		if (services_->observation_publicObservations().read(receipt.actor, receipt.frame, &publicState) &&
+			publicState.bombZoneKnown && publicState.inBombZone)
+			return true;
+		refreshManagedObjectiveSiteRegistry();
+		if (!executionCurrent(index, receipt, revision))
+			return false;
+	}
+	if (services_->service_engineFunctions() == nullptr ||
 		services_->service_engineFunctions()->pfnPEntityOfEntIndex == nullptr ||
 		services_->service_engineFunctions()->pfnSzFromIndex == nullptr)
 	{
@@ -669,6 +689,11 @@ bool BotBehaviorRuntime::buildManagedObjectiveTarget(std::size_t index, nav::Nav
 	}
 	if (services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility)
 	{
+		if (nativePlantEntryStopsMovement(index))
+			return false;
+		const auto state = actors_[index].managedBotStateMachines.state();
+		if (state == compat::CompatibilityStateId::PlantBomb || state == compat::CompatibilityStateId::Buy)
+			return false;
 		if (helpGoalCurrent(index))
 		{
 			*target = actors_[index].helpGoal.position;
@@ -766,15 +791,19 @@ bool BotBehaviorRuntime::buildManagedObjectiveTarget(std::size_t index, nav::Nav
 	if (needsBombSite &&
 		services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility)
 	{
+		// Hunt selects its own roam route. Its planting decision yields to Idle
+		// before any plant-zone selection; Plant's following updates need no zone.
+		if (actors_[index].managedBotStateMachines.state() == compat::CompatibilityStateId::Hunt)
+			return false;
 		approach.mapGeneration = frame.mapGeneration;
 		approach.roundGeneration = frame.roundGeneration;
 		approach.actorSlot = actor.slot;
 		approach.actorGeneration = actor.generation;
 		approach.initialized = true;
 		approach.plantAt = roundPlantDecision_.plantAt;
-		approach.finished = (roundPlantDecision_.known && services_->service_globals()->time >= approach.plantAt) ||
-			(managedActorAtBombSite(index) &&
-				services_->service_globals()->time - actors_[index].lastVisibleEnemyTimes > kRecentEnemySeconds);
+		approach.finished = objectives::nativeHuntPlantDue(services_->service_globals()->time,
+			actors_[index].noiseEnemyContact.seenAt, managedActorAtBombSite(index), roundPlantDecision_.known,
+			approach.plantAt);
 		if (!approach.finished)
 		{
 			cache.valid = false;
