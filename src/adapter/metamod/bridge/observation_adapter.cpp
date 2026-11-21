@@ -364,11 +364,13 @@ ObservationAdapterResult ObservationAdapter::collectVisibility(edict_t *observer
 	const float dx = target->v.origin[0] - observer->v.origin[0];
 	const float dy = target->v.origin[1] - observer->v.origin[1];
 	const float horizontalLength = std::sqrt(dx * dx + dy * dy);
-	if (horizontalLength > ASTRABOT_OBSERVATION_ADAPTER_MINIMUM_VIEW_DIRECTION_LENGTH &&
-		std::isfinite(horizontalLength))
+	// CSBot's in-place normalization for the side probes uses (1, 0) at coincident XY.
+	const bool useCoincidentSides = modelCone && dx == 0.0f && dy == 0.0f;
+	if (useCoincidentSides || (horizontalLength > ASTRABOT_OBSERVATION_ADAPTER_MINIMUM_VIEW_DIRECTION_LENGTH &&
+			std::isfinite(horizontalLength)))
 	{
-		const float perpX = -dy / horizontalLength;
-		const float perpY = dx / horizontalLength;
+		const float perpX = useCoincidentSides ? 0.0f : -dy / horizontalLength;
+		const float perpY = useCoincidentSides ? 1.0f : dx / horizontalLength;
 		point[0] = target->v.origin[0] + perpX * kSideProbeOffset;
 		point[1] = target->v.origin[1] + perpY * kSideProbeOffset;
 		point[2] = target->v.origin[2];

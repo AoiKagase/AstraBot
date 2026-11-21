@@ -10,6 +10,7 @@ using namespace astrabot;
 
 int gTraceMode = 0;
 int gTraceCount = 0;
+float gTraceEnd[5][3] = {};
 float gEngineForwardX = 0.5f;
 float gEngineModelPitch = 0.0f;
 
@@ -25,6 +26,9 @@ void traceLine(const float *start, const float *end, int noMonsters, edict_t *sk
 {
 	(void)start;
 	(void)skip;
+	if (gTraceCount < 5)
+		for (int axis = 0; axis < 3; ++axis)
+			gTraceEnd[gTraceCount][axis] = end[axis];
 	++gTraceCount;
 	*result = {};
 	if (gTraceMode == 1)
@@ -142,10 +146,11 @@ bool testAdapterPerceptionProductionFixture()
 		return false;
 
 	constexpr auto modelCone = metamod::PlayerVisionCone::ModelPitchAndYaw;
-	const auto collectWithModelCone = [&](bool checkFov, bool reportFovParts) {
+	const auto collectWithModelCone = [&](bool checkFov, bool reportFovParts,
+									  metamod::PlayerVisionGlass glass = metamod::PlayerVisionGlass::Occludes) {
 		gTraceCount = 0;
 		return adapter.collectVisibility(&observer, &target, {2U, 1U}, frame(11U), &visible,
-			checkFov, reportFovParts, metamod::PlayerVisionGlass::Occludes, modelCone) ==
+			checkFov, reportFovParts, glass, modelCone) ==
 			metamod::ObservationAdapterResult::Accepted;
 	};
 	observer.v.v_angle[0] = 70.0f;
@@ -171,11 +176,41 @@ bool testAdapterPerceptionProductionFixture()
 	target.v.origin[0] = 0.0f;
 	target.v.origin[2] = 64.0f;
 	if (!check(collectWithModelCone(true, true) && !visible.visible && gTraceCount == 0,
-			"a zero horizontal direction fails the strict reference FOV test") ||
-		!check(collectWithModelCone(false, true) && visible.visible && visible.visibleInFovParts == world::VisibleNone &&
-			gTraceCount == 3, "a coincident horizontal position can still be traced for retained enemy LOS"))
+			"at yaw zero neither coincident side passes the strict reference FOV test"))
+		return false;
+	observer.v.angles[1] = 90.0f;
+	if (!check(collectWithModelCone(true, true) && visible.visibleParts == world::VisibleLeftSide &&
+			visible.visibleInFovParts == world::VisibleLeftSide && gTraceCount == 1 &&
+			gTraceEnd[0][0] == 0.0f && gTraceEnd[0][1] == 13.0f && gTraceEnd[0][2] == 64.0f,
+			"coincident origins use the reference left probe at +13 Y"))
+		return false;
+	observer.v.angles[1] = 270.0f;
+	if (!check(collectWithModelCone(true, true) && visible.visibleParts == world::VisibleRightSide &&
+			visible.visibleInFovParts == world::VisibleRightSide && gTraceCount == 1 &&
+			gTraceEnd[0][0] == 0.0f && gTraceEnd[0][1] == -13.0f && gTraceEnd[0][2] == 64.0f,
+			"reversing yaw admits only the coincident right probe at -13 Y"))
+		return false;
+	gTraceMode = 3;
+	if (!check(collectWithModelCone(false, true, ignoreGlass) && visible.visibleParts == clearParts &&
+			visible.visibleInFovParts == world::VisibleRightSide && gTraceCount == 5 &&
+			gTraceEnd[3][1] == 13.0f && gTraceEnd[4][1] == -13.0f,
+			"retained LOS traces all five coincident points through glass and reports the independent FOV mask") ||
+		!check(collectWithModelCone(false, false, ignoreGlass) && visible.visibleParts == clearParts && gTraceCount == 5,
+			"unrestricted reference LOS traces both coincident sides without a cone"))
+		return false;
+	gTraceMode = 0;
+	observer.v.angles[0] = 70.0f;
+	if (!check(collectWithModelCone(true, true) && !visible.visible && gTraceCount == 0,
+			"model pitch can still exclude the coincident side"))
+		return false;
+	gTraceCount = 0;
+	if (!check(adapter.collectVisibility(&observer, &target, {2U, 1U}, frame(11U), &visible, false, true) ==
+			metamod::ObservationAdapterResult::Accepted &&
+			visible.visibleParts == (world::VisibleChest | world::VisibleHead | world::VisibleFeet) && gTraceCount == 3,
+			"yaw-only vision retains its three center probes at coincident XY"))
 		return false;
 	target.v.origin[2] = 0.0f;
+	observer.v.angles[1] = 0.0f;
 
 	engine.pfnAngleVectors = angleVectors;
 	observer.v.angles[0] = 60.0f;
