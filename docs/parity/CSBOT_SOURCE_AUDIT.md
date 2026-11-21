@@ -22,6 +22,14 @@ CSBot側のファイルは `regamedll/dlls/bot/states/cs_bot_<略称>.cpp`。Ast
 | PlantBomb | `plant_bomb` 32、45、75行、`cs_bot_weapon.cpp:411–470` | 公開弾薬・許可クラス・水没条件と共通5秒装備時計を使用。末尾はPrimaryAttack/即時SelectC4→所持喪失→strict5秒超、退出前EquipBest→起立→ResetStuck→Engage→注視取消の順へ接続した。喪失による新Hide timestampを古いPlant ageで上書きしない。通常設置・区域外timeout・実C4ドロップでAKに残る最終Attackと次fullまでの保持、退出fullのUpkeep実角保持を確認。次lightの通常look-goal/spring再開と後段NAV供給、私有複数スロット先頭、Plant初回C4未装備の直接実機は残件。 |
 | UseEntity | `use_entity` 33、38、69行、`player.cpp:9415` | 状態に入ったときの人質を保持する。コマンド更新ごとに視線を動かし、現在のyawとpitchが両方とも許容角20度未満のときにUSEを送る。コマンドが受理されると試行を記録してIdleへ移る。ネイティブの人質護送カウンターと追従者の照合は残件。 |
 
+## ClearLook後の軽更新（2026-11-22追補）
+
+固定 `cs_bot.h` のClearLookAtはspot状態/説明だけを消し、`cs_bot_update.cpp:120–183` と `cs_bot_vision.cpp:57–166` が残存Aheadと角速度から次Upkeepを積分する。command runtimeは優先注視へ入る前の実ばねと既定Aheadを分けて保持し、解除後の通常lightへ引き継ぐ。Aheadの供給は元方向からengine VecToYaw相当の整数角、round resetではAhead保持/速度0、新規個体ではAhead0。通常UseEntity/Defuse解除、新しい優先owner、scope/Enhancedの境界も回帰で確認した。
+
+Windows170/170・Linux169/169、PE/ELF公開7関数と直列隔離実機11試行を確認。検証済みCDBの実goal/spring-beforeから次の実viewを独立計算し、誤差.0001度未満。直前のPlant退出full/末尾入力の修正を保つ。詳細はSTATUS先頭と `artifacts/local/debug/csbot-clear-look-upkeep-20261121/README.md`。
+
+上のPlant行に残していた「次lightの通常look-goal/spring再開」は、このowner解放後の復帰範囲で確認済み。一方、Plant進入前のpath/Ahead供給が参照0・Astra75となる時刻/経路差は独立残件。全Idle/Buyでの既定goal常時供給や全Combat/Guard owner間の単一速度・絶対視線軌跡の一致まで確認済みとはしない。
+
 ## 周辺機能
 
 | 分野 | 照合箇所と結果 |

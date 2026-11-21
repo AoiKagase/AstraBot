@@ -1,3 +1,17 @@
+## ClearLook後の通常軽更新と角速度の再開（2026-11-22）
+
+固定 `b088984` の `ClearLookAt` は注視点の状態と説明だけを消し、`m_lookAheadAngle` とyaw/pitch角速度を保持する。次のUpkeepは既定Ahead/pitch0に非交戦driftを加え、保持した角速度で積分する。ResetValuesは角速度を0へ戻すがAheadを保持し、新個体のAheadは0。実参照のラウンド追試でもAhead137、速度23.856216/-.329074から、次ラウンドのAhead137・両速度0を直接採録した。
+
+互換command runtimeで既定Aheadと実際に積分したばねを経路・優先注視の寿命から分離した。NAV→優先注視の角速度、解除→次軽更新の既定目標と角速度を保持する。Plant退出fullの実視線・末尾入力は維持し、そのfullの後段NAV draftを新Aheadとして受理しない。通常UseEntity/Defuse解除はPlant専用フラグに依存しない。新しいAim/Guard/Attack・実経路・接近点注視へ制御を譲り、Actor/保存lifecycle token/edict serialの失効では旧継続を使わない。Aheadは元ベクトルのdouble atan2→floor→負なら360加算で計算し、既存のspot角とは分けた。互換のscoped sniperはdrift .5、通常2、Enhancedは従来の2を維持する。
+
+実送信回帰は非ゼロ角速度の引継ぎ、退出full、次lightの1回積分、pathなし状態遷移、ラウンドでの非ゼロAhead保持/速度初期化、新個体、通常Use/Defuse解除、新Aim/Guard、負の非cardinal方向、scope/Enhancedを区別する。初回REDはNAV→優先注視の角速度喪失を実RunPlayerMoveで再現した。
+
+証拠は `C:/Temp/astrabot-clear-look-upkeep` と `artifacts/local/debug/csbot-clear-look-upkeep-20261121/README.md`。全11実機試行は各PID終了0・forced=falseを確認して直列実行。最終DLL SHA-256は `35ca6e8e4f696f12f73053d6797565770c1f408f0543dbf94cff33d1b5d69578`。固定版は退出full yaw98.678085→次Upkeep95.344749→88.678085、旧版は解除後の視線を保持したままだった。最終DLLはfull97.823104から、保持Ahead75・速度(0,-.2674121)を読み取り、次の実角(-.443709,94.489776)を採録した。ネイティブばね式の独立計算(-.4437104,94.4897766)と誤差.0001度未満、末尾IN_ATTACKも保持する。CDBのhidden return-buffer引数は逆アセンブルで確認し、raw採録と検証済み速度採録を区別した。エンジンが1回のRunPlayerMoveを複数CmdStartへ分割したものを積分回数に数えない。
+
+絶対視線軌跡の一致は未完。参照Ahead0とAstraのPlant進入前pathが供給したAhead75が残る。検証済みtrialでは10.708138にHunt path1（53→293）、13秒台にPlantへ進み、退出18.404989の後も75を使用する。75を書いた正確な供給命令時刻は未採録であり、NAV draftがnative UpdatePathMovement未実行相当でも早くAheadへ入るかを次の独立修正として追う。全Idle/Buyでの既定目標の常時供給、Combat/Guard全owner間の単一角速度、Hide/経路/RNG列全体は同等と主張しない。
+
+最終オフラインはWindows x86 170/170・PE7、その終了後の単独Linux x86 169/169・ELF7が合格。ELF SHA-256は `bbff5856bb7962c66cc8c4d20ff6718556685f6e6b202f4e65495f075fecc094`。固定baselineを保持し、全153,320行のうち136視線記録と2件の入力投影のみを位置/前後hashで限定補正した。2件は実方向(-1,0)・速度240でyaw変更がsideの-.25閾値を跨ぐことを実fixtureのCDBと再計算で確認。非move・RNG・非移動buttons・msec・件数は不変。デバッガー採録の履歴も通常実行と全byte一致。ユーザーの既存3編集とBotProfileはbyte一致を維持した。
+
 ## PlantBomb末尾入力と退出処理（2026-11-21）
 
 固定 `b088984` の `states/cs_bot_plant_bomb.cpp:45–83` は、C4装備中ならPrimaryAttackのbitを立て、それ以外は即時SelectC4を行い、その後で所持喪失、最後にstrictな5秒超を判定する。所持喪失でHideへ移るとstate timestampが更新されるので、古いPlant ageによる二度目のIdle移行は起こらない。退出はEquipBest→StandUp→ResetStuck→Engage→ClearLookの順。

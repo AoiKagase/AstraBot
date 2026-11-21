@@ -250,9 +250,169 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 	const bool shieldFixture = scenario && std::strcmp(scenario, "shield") == 0;
 	const bool bestEquipmentFixture = scenario && std::strcmp(scenario, "equip-best") == 0;
 	const bool plantTailFixture = scenario && std::strcmp(scenario, "plant-tail") == 0;
+	const bool clearLookFixture = scenario && std::strcmp(scenario, "clear-look") == 0;
 #ifdef _MSC_VER
 	std::free(scenario);
 #endif
+	if (clearLookFixture)
+	{
+		using namespace astrabot;
+		using namespace astrabot::compat;
+		auto &ports = static_cast<metamod::BotCommandServices &>(runtime);
+		auto &behavior = static_cast<metamod::BotBehaviorServices &>(runtime);
+		stepRifle(30);
+		auto handle = ports.service_managedBotHandles()[0];
+		auto command = std::make_unique<metamod::BotCommandRuntime>();
+		command->bindServices(ports);
+		const_cast<std::uint32_t &>(command->managedBotCommandSequences(0)) = behavior.command_managedBotCommandSequences(0);
+		auto &machine = const_cast<CompatibilityStateMachine &>(ports.behavior_managedBotStateMachines(0));
+		const auto state = [&](CompatibilityStateId next) {
+			StateUpdateContext tick{};
+			tick.actor = {handle.actor.slot, handle.actor.actorGeneration};
+			tick.frame = {ports.service_lifecycle().mapGeneration(), ports.service_lifecycle().roundGeneration(), ports.service_adapterFrameCount()};
+			tick.timestamp = globals.time;
+			tick.fullUpdate = tick.alive = tick.roundActive = true;
+			tick.lifeAvailability = tick.roundAvailability = tick.attackObservation = ObservationAvailability::Available;
+			machine.transition(next, StateTransitionReason::ExplicitRequest, StateTransitionId::ExplicitStateChange, tick);
+		};
+		runtime::MovementPhysicsState before{};
+		before.grounded = true;
+		before.origin = {gEntities[0].v.origin.x, gEntities[0].v.origin.y, gEntities[0].v.origin.z};
+		auto token = ports.service_lifecycle().tokenForSlot(handle.actor.slot);
+		runtime::ViewAngles expected{30, 45, 0};
+		AimSpringState spring{};
+		nav::NavVector aheadDirection{1, 0, 0};
+		gEntities[0].v.v_angle = Vector(expected.pitch, expected.yaw, 0);
+		const auto send = [&](bool priority, bool terminal, bool guard = false, bool aim = false) {
+			globals.time += .05f;
+			const auto calls = combatSentInputs.size();
+			metamod::NavigationUpdate movement{};
+			movement.roamResult = runtime::NavRoamResult::IntentReady;
+			movement.locomotionIntent.speed = priority || guard || aim ? 0.0f : 221.0f;
+			movement.locomotionIntent.direction = terminal ? nav::NavVector{-1, 0, 0} : aheadDirection;
+			auto draft = command->beginMovementCommand(0, handle, token, before, movement);
+			metamod::ActionProposal action{metamod::ActionKind::None, expected, 0};
+			action.stopForWeapon = true;
+			action.hasUseEntityLook = priority;
+			action.hasGuardLook = guard;
+			action.hasCombatAim = aim;
+			const auto eye = handle.entity->v.origin + handle.entity->v.view_ofs;
+			action.useEntityLookTarget = {eye.x, eye.y + 200.0f, eye.z + 100.0f};
+			action.preserveUpkeepView = terminal;
+			command->finishMovementCommand(0, handle, token, before, movement, draft, action);
+			return check(combatSentInputs.size() == calls + 1U && std::fabs(combatCommandYaw - expected.yaw) < .0001f &&
+				std::fabs(combatCommandPitch - expected.pitch) < .0001f,
+				"a new priority or terminal full retains the already-applied upkeep angle");
+		};
+		const auto light = [&](float yaw, float pitch, const char *label, float drift = 2.0f) {
+			globals.time += .05f;
+			const auto goalYaw = yaw + drift * metamod::ActionAdapter::csBotCosine(33.0f * globals.time);
+			const auto goalPitch = pitch + drift * metamod::ActionAdapter::csBotCosine(13.0f * globals.time - 90.0f);
+			const auto reference = trackAim(expected.yaw, expected.pitch, goalYaw, goalPitch,
+				runtime::BotTimingScheduler::kCommandInterval, 1.0f, &spring, false);
+			expected = {reference.pitch, reference.yaw, 0};
+			const auto calls = combatSentInputs.size();
+			command->advanceUpkeepLook(0, handle);
+			const auto receipt = command->executeManagedBotCommand(0, handle);
+			return check(receipt.result == runtime::DispatchResult::Dispatched && combatSentInputs.size() == calls + 1U &&
+				std::fabs(combatCommandYaw - expected.yaw) < .0001f &&
+				std::fabs(combatCommandPitch - expected.pitch) < .0001f, label);
+		};
+		state(CompatibilityStateId::Hunt);
+		if (!send(false, false) || !light(0, 0, "normal NAV establishes a nonzero angular velocity"))
+			return false;
+		state(CompatibilityStateId::PlantBomb);
+		if (!send(true, false) || !light(90, -26.565052f,
+				"priority look inherits the real NAV yaw/pitch velocities"))
+			return false;
+		state(CompatibilityStateId::Hide);
+		if (!(send(false, true) && light(0, 0,
+			"ClearLook resumes retained Ahead0 with priority velocities on the next light, ignoring terminal NAV180") &&
+			light(0, 0, "resumed normal upkeep reaches the real cached light command exactly once")))
+			return false;
+		state(CompatibilityStateId::Hunt);
+		if (!light(0, 0, "normal state change without a new path preserves the released default owner"))
+			return false;
+		// A round reset keeps the native nonzero Ahead, but resets angular velocities.
+		command->resetActorExecutionState(0);
+		spring = {};
+		aheadDirection = {0, 1, 0};
+		if (!send(false, false) || !light(90, 0, "a genuine next path supplies Ahead90"))
+			return false;
+		runtime.beginRoundGeneration();
+		token = ports.service_lifecycle().tokenForSlot(handle.actor.slot);
+		command->resetActorExecutionState(0);
+		spring = {};
+		state(CompatibilityStateId::PlantBomb);
+		if (!send(true, false) || !light(90, -26.565052f, "round reset starts priority with zero angular velocities"))
+			return false;
+		state(CompatibilityStateId::Idle);
+		if (!send(false, true) || !light(90, 0, "round reset preserves nonzero native Ahead90"))
+			return false;
+		command->onActorRemoved(0);
+		spring = {};
+		const_cast<std::uint32_t &>(command->managedBotCommandSequences(0)) = 1000U;
+		state(CompatibilityStateId::UseEntity);
+		if (!send(true, false) || !light(90, -26.565052f, "new actor has no inherited angular momentum"))
+			return false;
+		state(CompatibilityStateId::Idle);
+		if (!send(false, false) || !light(0, 0, "UseEntity release resumes a new actor's Ahead0 without a Plant terminal flag"))
+			return false;
+		for (const bool guard : {true, false})
+		{
+			if (!send(false, false, guard, !guard))
+				return false;
+			globals.time += .05f;
+			const auto calls = combatSentInputs.size();
+			command->advanceUpkeepLook(0, handle);
+			const auto receipt = command->executeManagedBotCommand(0, handle);
+			if (!check(receipt.result == runtime::DispatchResult::Dispatched && combatSentInputs.size() == calls + 1U &&
+				std::fabs(combatCommandYaw - expected.yaw) < .0001f &&
+				std::fabs(combatCommandPitch - expected.pitch) < .0001f,
+				"a newly accepted Guard or Aim owner cancels default resume before the next light"))
+				return false;
+			state(CompatibilityStateId::DefuseBomb);
+			if (!send(true, false) || !light(90, -26.565052f, "Defuse priority uses the retained noncombat spring"))
+				return false;
+			state(CompatibilityStateId::Idle);
+			if (!send(false, false) || !light(0, 0, "Defuse ClearLook releases the priority owner without a Plant terminal flag"))
+				return false;
+		}
+		runtime.onMessageBegin(1, 94, nullptr, &gEntities[0]);
+		runtime.onWriteByte(1);
+		runtime.onWriteByte(18);
+		runtime.onWriteByte(10);
+		runtime.onMessageEnd();
+		gEntities[0].v.fov = 40.0f;
+		if (!light(0, 0, "scoped sniper default goal uses half-degree drift", 0.5f))
+			return false;
+		gEntities[0].v.fov = 90.0f;
+		if (!light(0, 0, "unscoped sniper default goal restores two-degree drift"))
+			return false;
+		runtime.setCompatibilityString("astrabot_mode", "enhanced");
+		command->resetActorExecutionState(0);
+		spring = {};
+		state(CompatibilityStateId::UseEntity);
+		gEntities[0].v.fov = 40.0f;
+		const bool enhancedUnchanged = send(true, false) &&
+			light(90, -26.565052f, "Enhanced scoped priority look retains its existing two-degree drift");
+		runtime.setCompatibilityString("astrabot_mode", "compatibility");
+		if (!enhancedUnchanged)
+			return false;
+		gEntities[0].v.fov = 90.0f;
+		command->resetActorExecutionState(0);
+		spring = {};
+		aheadDirection = {3, -2, 0};
+		state(CompatibilityStateId::Hunt);
+		if (!send(false, false))
+			return false;
+		state(CompatibilityStateId::UseEntity);
+		if (!send(true, false) || !light(90, -26.565052f, "noncardinal path then priority preserves its true spring"))
+			return false;
+		state(CompatibilityStateId::Idle);
+		return send(false, false) && light(326, 0,
+			"negative noncardinal path Ahead uses engine floor(double atan2) then adds 360");
+	}
 	if (plantTailFixture)
 	{
 		using namespace astrabot;

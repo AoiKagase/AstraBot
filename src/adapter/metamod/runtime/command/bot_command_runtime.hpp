@@ -138,6 +138,13 @@ private:
 		world::WorldPosition useEntityLookTarget{};
 		compat::AimSpringState useEntityLookSpring{};
 		bool useEntityLookActive = false;
+		// ClearLookAt releases the spot, not the native default goal or angular momentum.
+		float defaultLookAheadYaw = 0.0f;
+		compat::AimSpringState lastLookSpring{};
+		bool resumedDefaultLook = false;
+		runtime::LifecycleToken resumedLookToken{};
+		int resumedLookSerial{};
+		float resumedLookAt = std::numeric_limits<float>::quiet_NaN();
 		world::EntityKey hostageUseTarget{};
 		float movementGateDiagnosticTimes = std::numeric_limits<float>::quiet_NaN();
 

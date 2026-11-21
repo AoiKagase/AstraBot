@@ -43,6 +43,15 @@ bool clearsHuntApproachLook(compat::CompatibilityStateId state)
 	return state == compat::CompatibilityStateId::PlantBomb || state == compat::CompatibilityStateId::DefuseBomb ||
 		state == compat::CompatibilityStateId::UseEntity;
 }
+
+float nativeLookAheadYaw(const nav::NavVector &direction)
+{
+	if (direction.x == 0.0f && direction.y == 0.0f)
+		return 0.0f;
+	const double yaw = std::floor(std::atan2(static_cast<double>(direction.y), static_cast<double>(direction.x)) *
+		180.0 / 3.14159265358979323846);
+	return static_cast<float>(yaw < 0.0 ? yaw + 360.0 : yaw);
+}
 }
 
 runtime::ViewAngles BotCommandRuntime::stepIdleLook(std::size_t index, const edict_t &entity, float desiredYaw,
@@ -50,12 +59,22 @@ runtime::ViewAngles BotCommandRuntime::stepIdleLook(std::size_t index, const edi
 {
 	const auto &angles = entity.v.v_angle;
 	const float now = services_->service_globals()->time;
-	desiredYaw += 2.0f * ActionAdapter::csBotCosine(33.0f * now);
+	const auto &weapon = services_->observation_managedBotCurrentWeapons(index);
+	const auto &handle = services_->service_managedBotHandles()[index];
+	const bool sniper = weapon.available && weapon.active && weapon.weaponId < 32U &&
+		weapon.actorGeneration == handle.actor.actorGeneration &&
+		weapon.mapGeneration == services_->service_lifecycle().mapGeneration() &&
+		weapon.roundGeneration == services_->service_lifecycle().roundGeneration() &&
+		(compat::kSniperRifleInventoryMask & (1U << weapon.weaponId)) != 0U;
+	const float drift = services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility &&
+		sniper && entity.v.fov > 0.0f && entity.v.fov < 90.0f ? 0.5f : 2.0f;
+	desiredYaw += drift * ActionAdapter::csBotCosine(33.0f * now);
 	services_->behavior_recordLookGoal(index, desiredYaw);
 	const auto look = compat::trackAim(angles.y, angles.x, desiredYaw,
-		desiredPitch + 2.0f * ActionAdapter::csBotCosine(13.0f * now - 90.0f),
+		desiredPitch + drift * ActionAdapter::csBotCosine(13.0f * now - 90.0f),
 		runtime::BotTimingScheduler::kCommandInterval, 1.0f,
 		&spring, false);
+	actors_[index].lastLookSpring = spring;
 	return {look.pitch, look.yaw, 0.0f};
 }
 
@@ -68,6 +87,7 @@ void BotCommandRuntime::applyCombatUpkeep(std::size_t index, const CombatUpkeepU
 	{
 		actors_[index].resetNavigationLook();
 		actors_[index].useEntityLookActive = false;
+		actors_[index].resumedDefaultLook = false;
 		if (!update.movementRelativeToAim && !actors_[index].nativeLadderControl && !actors_[index].blindCommand)
 		{
 			const auto movement = ActionAdapter::reprojectMovement(
@@ -306,6 +326,9 @@ void BotCommandRuntime::resetManagedBotCommandTemplate(std::size_t index)
 	{
 		actors_[index].resetNavigationLook();
 		actors_[index].useEntityLookActive = false;
+		actors_[index].lastLookSpring = {};
+		actors_[index].resumedDefaultLook = false;
+		actors_[index].resumedLookAt = std::numeric_limits<float>::quiet_NaN();
 	}
 }
 
@@ -356,6 +379,7 @@ void BotCommandRuntime::advanceLadderDescentLook(std::size_t index, FakeClientHa
 	const auto before = entity->v.v_angle;
 	const auto look = compat::trackAim(before.y, before.x, yaw, pitch, runtime::BotTimingScheduler::kCommandInterval,
 		1.0f, &actor.navigationLookSpring, false);
+	actor.lastLookSpring = actor.navigationLookSpring;
 	actor.descentLookAt = now;
 	actor.descentLookPhase = ladder.phase;
 	entity->v.v_angle = Vector(look.pitch, look.yaw, before.z);
@@ -409,6 +433,30 @@ void BotCommandRuntime::advanceUpkeepLook(std::size_t index, FakeClientHandle &h
 {
 	auto &actor = actors_[index];
 	const auto &machine = services_->behavior_managedBotStateMachines(index);
+	if (actor.resumedDefaultLook)
+	{
+		const auto config = services_->service_compatibilitySurface().configuration();
+		auto *entity = handle.entity;
+		if (!entity || entity->free || entity->serialnumber != actor.resumedLookSerial ||
+			entity->v.deadflag != DEAD_NO || entity->v.health <= 0.0f || machine.attackOverlayActive() ||
+			actor.resumedLookToken.slot != handle.actor.slot ||
+			!services_->service_lifecycle().isCurrent(actor.resumedLookToken) ||
+			config.mode != compat::RuntimeMode::Compatibility)
+			actor.resumedDefaultLook = false;
+		else
+		{
+			const float now = services_->service_globals()->time;
+			if (config.botEnable > 0.0f && config.botStop == 0.0f &&
+				!(entity->v.flags & (FL_FROZEN | FL_SPECTATOR)) && !services_->roundFreezeActive() &&
+				actor.resumedLookAt != now)
+			{
+				const auto look = stepIdleLook(index, *entity, actor.defaultLookAheadYaw, 0.0f, actor.lastLookSpring);
+				entity->v.v_angle = Vector(look.pitch, look.yaw, look.roll);
+				actor.resumedLookAt = now;
+			}
+			return;
+		}
+	}
 	if (usesApproachLook(machine.state()) && !actor.useEntityLookActive && !actor.defusePathLook)
 	{
 		auto *entity = handle.entity;
@@ -463,6 +511,7 @@ void BotCommandRuntime::advanceUpkeepLook(std::size_t index, FakeClientHandle &h
 		services_->behavior_recordLookGoal(index, goal.yaw);
 		const auto look = compat::trackAim(entity->v.v_angle.y, entity->v.v_angle.x, goal.yaw, goal.pitch,
 			runtime::BotTimingScheduler::kCommandInterval, 1.0f, &actor.useEntityLookSpring, false);
+		actor.lastLookSpring = actor.useEntityLookSpring;
 		entity->v.v_angle = Vector(look.pitch, look.yaw, 0.0f);
 		return;
 	}
@@ -476,14 +525,32 @@ void BotCommandRuntime::applyUseEntityLook(std::size_t index, const edict_t &ent
 	runtime::BotCommand &command)
 {
 	auto &actor = actors_[index];
+	if (action.hasCombatAim || action.hasGuardLook ||
+		services_->behavior_managedBotStateMachines(index).attackOverlayActive())
+		actor.resumedDefaultLook = false;
 	if (action.hasUseEntityLook)
 	{
 		if (!actor.useEntityLookActive)
-			actor.useEntityLookSpring = actor.defusePathLook ? actor.navigationLookSpring : compat::AimSpringState{};
+			actor.useEntityLookSpring =
+				services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility
+				? actor.lastLookSpring : actor.defusePathLook ? actor.navigationLookSpring : compat::AimSpringState{};
+		actor.resumedDefaultLook = false;
 		actor.resetNavigationLook();
 		actor.useEntityLookTarget = action.useEntityLookTarget;
 		command.viewAngles = {entity.v.v_angle.x, entity.v.v_angle.y, entity.v.v_angle.z};
 		command.synchronizeCombatView = true;
+	}
+	else if (actor.useEntityLookActive && !action.hasCombatAim && !action.hasGuardLook &&
+		!services_->behavior_managedBotStateMachines(index).attackOverlayActive() &&
+		services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility)
+	{
+		// The terminal full command already consumed Upkeep. Resume on the next command tick.
+		actor.lastLookSpring = actor.useEntityLookSpring;
+		actor.resumedDefaultLook = true;
+		actor.resumedLookSerial = entity.serialnumber;
+		actor.resumedLookToken = services_->service_lifecycle().tokenForSlot(command.actor.slot);
+		actor.resumedLookAt = services_->service_globals()->time;
+		actor.resetNavigationLook();
 	}
 	actor.useEntityLookActive = action.hasUseEntityLook;
 	actor.hostageUseTarget = action.hostageUseTarget;
@@ -689,13 +756,15 @@ runtime::CommandReceipt BotCommandRuntime::executeManagedBotCommand(
 		machine.state() == compat::CompatibilityStateId::Hunt && !machine.attackOverlayActive();
 	const bool encounterLookAdvanced = actor.huntEncounterUpkeepAt == services_->service_globals()->time &&
 		usesApproachLook(machine.state()) && !machine.attackOverlayActive();
-	if (descentLookAdvanced || encounterLookAdvanced)
+	const bool defaultLookAdvanced = actor.resumedDefaultLook &&
+		actor.resumedLookAt == services_->service_globals()->time && !machine.attackOverlayActive();
+	if (descentLookAdvanced || encounterLookAdvanced || defaultLookAdvanced)
 	{
 		const auto &view = handle.entity->v.v_angle;
 		command.viewAngles = {view.x, view.y, view.z};
 		command.synchronizeCombatView = true;
 	}
-	if (!navigationLookAdvanced && !descentLookAdvanced && !encounterLookAdvanced && !explicitFrozen && !roundFreeze &&
+	if (!navigationLookAdvanced && !descentLookAdvanced && !encounterLookAdvanced && !defaultLookAdvanced && !explicitFrozen && !roundFreeze &&
 		(std::isfinite(actor.navigationLookYaw) || huntApproach) &&
 		usesNavigationLook(machine.state()) && !machine.attackOverlayActive() &&
 		(huntApproach || canAdvanceNavigationLook(machine.state(), (handle.entity->v.flags & FL_ONGROUND) != 0)))
@@ -1085,6 +1154,7 @@ runtime::CommandReceipt BotCommandRuntime::dispatchJoinHeartbeat(
 
 void BotCommandRuntime::onActorRemoved(std::size_t index)
 {
+	actors_[index].defaultLookAheadYaw = 0.0f;
 	actors_[index].playerAvoidance.reset();
 	actors_[index].navigationWalking = false;
 	actors_[index].managedMoveSpeeds = 0.0f;
@@ -1205,7 +1275,8 @@ void BotCommandRuntime::finishMovementCommand(std::size_t index, FakeClientHandl
 		else
 			actor.resetPathLook();
 	}
-	else if (locomotionIntent.speed > 0.0f || (huntEndpoint && roamDecision.huntWaitingForFriend))
+	else if (!requestedAction.preserveUpkeepView &&
+		(locomotionIntent.speed > 0.0f || (huntEndpoint && roamDecision.huntWaitingForFriend)))
 	{
 		// Set the next upkeep's look target after taking this decision's view.
 		actor.huntWaitNavigationLook = huntEndpoint && roamDecision.huntWaitingForFriend;
@@ -1218,6 +1289,7 @@ void BotCommandRuntime::finishMovementCommand(std::size_t index, FakeClientHandl
 		{
 			const auto &look = defuseLook ? roamDecision.defuseLookPoint : roamDecision.huntEndpoint;
 			actor.navigationLookYaw = movementYaw({look.x - before.origin.x, look.y - before.origin.y, 0.0f});
+			actor.defaultLookAheadYaw = nativeLookAheadYaw({look.x - before.origin.x, look.y - before.origin.y, 0.0f});
 			if (defuseLook)
 			{
 				// CSBot uses the engine's integer, nonnegative VecToYaw for path look.
@@ -1226,7 +1298,15 @@ void BotCommandRuntime::finishMovementCommand(std::size_t index, FakeClientHandl
 			}
 		}
 		else
+		{
 			actor.navigationLookYaw = movementYaw(locomotionIntent.direction);
+			actor.defaultLookAheadYaw = nativeLookAheadYaw(locomotionIntent.direction);
+		}
+		if (actor.resumedDefaultLook)
+		{
+			actor.navigationLookSpring = actor.lastLookSpring;
+			actor.resumedDefaultLook = false;
+		}
 	}
 	if (compatibilityMovement && !priorityLook && !before.dead && usesApproachLook(machine.state()) &&
 		movement.huntApproachLook.update != HuntApproachLookUpdate::Unchanged)
@@ -1235,6 +1315,11 @@ void BotCommandRuntime::finishMovementCommand(std::size_t index, FakeClientHandl
 		actor.huntEncounterLook = movement.huntApproachLook.update == HuntApproachLookUpdate::TrackEncounter;
 		actor.huntEncounterAlignedAt = -1.0f;
 		actor.huntApproachLookSpot = movement.huntApproachLook.spot;
+		if (actor.huntApproachLookActive && actor.resumedDefaultLook)
+		{
+			actor.navigationLookSpring = actor.lastLookSpring;
+			actor.resumedDefaultLook = false;
+		}
 	}
 	const ActionProposal actionProposal = ActionAdapter::forLiveDispatch(
 		requestedAction, services_->observation_hasObservedActiveWeapon(index), draft.command.viewAngles);
@@ -1377,6 +1462,7 @@ void BotCommandRuntime::finishMovementCommand(std::size_t index, FakeClientHandl
 
 void BotCommandRuntime::resetCreatedActorCommand(std::size_t slotIndex)
 {
+	actors_[slotIndex].defaultLookAheadYaw = 0.0f;
 	resetManagedBotCommandTemplate(slotIndex);
 	actors_[slotIndex].managedBotCommandSequences = 0U;
 }

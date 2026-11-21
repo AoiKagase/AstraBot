@@ -437,3 +437,47 @@ The tests generate temporary synthetic fixtures covering equal comparison,
 missing/extra/reorder, configuration and identity mismatches, explicit precision,
 malformed inputs and CLI exit codes. Run the pinned fixture separately to
 compare actual native function results with the current Astra build.
+# ClearLook default-goal and spring resumption (2026-11-22)
+
+This unit starts at local master `4771df2c9b4e59e1171cd176314ee097c26e6436`.
+Fixed native `b0889847fe6d03898be88acc9e366660efb40ab5` clears the spot owner
+without clearing Ahead or yaw/pitch angular velocity. The next Upkeep integrates
+Ahead/pitch0 plus drift with the retained velocities. A normal round retains
+Ahead but resets velocities; native live restart retained Ahead137 while both
+velocities became 0. New actor creation starts Ahead0.
+
+The command runtime retains these separate values and resumes only after the
+priority owner releases control. The previous Plant terminal full contract is
+kept, including its real view, post-exit attack bit and rejection of its late
+NAV draft as an Ahead source. Ordinary Use/Defuse releases need no terminal
+flag. New explicit look owners supersede the default; lifecycle/serial guards
+discard stale continuation. Native path Ahead uses integer engine VecToYaw
+semantics; spot angles remain separate. Scope drift is mode-scoped.
+
+Evidence index: `artifacts/local/debug/csbot-clear-look-upkeep-20261121/README.md`;
+raw trials and proofs: `C:/Temp/astrabot-clear-look-upkeep`.
+Eleven strictly serial trials verify actual game exits, including four native,
+two before, three final plain and two final read-only CDB trials. One CDB trial
+records raw stack/disassembly; only the subsequent verified ABI trial provides
+the interpreted goal/spring evidence. The final DLL is
+`35ca6e8e4f696f12f73053d6797565770c1f408f0543dbf94cff33d1b5d69578`.
+`live-integrator-proof.json` independently predicts the first released view
+within .0001 degree using actual goal/velocity samples. CmdStart splits or
+duplicates are not treated as extra Upkeep integrations.
+
+The native trial's retained Ahead0 and Astra's prior-path Ahead75 differ.
+Do not treat the fixed first-light acceleration as proof of equal absolute
+trajectories. Pre-Plant path/Ahead supply timing is the next independent issue;
+the exact write that first supplied75 still needs timestamped instrumentation.
+All-state Idle/Buy default supply and all Combat/Guard spring handoffs are
+outside this acceptance.
+
+Final offline gates: Windows170/170 and PE x86 exactly7 exports, followed by
+Linux169/169 and ELF x86 exactly7 exports. ELF SHA-256:
+`bbff5856bb7962c66cc8c4d20ff6718556685f6e6b202f4e65495f075fecc094`.
+The reviewed trace correction pins138 move records (136 view-only, two
+projections) without changing any other callback/RNG or count153320. Actual
+world direction(-1,0)/speed240 reproduces the two side threshold crossings.
+Debug and ordinary Windows traces match byte for byte. Corrected SHA-256:
+Windows `bfd4c0bc21dd9c408eae4bbec327aacc0976c7ba8d7eea467f1bc3e62b6220d5`,
+Linux `0d659ca24829b665ca3a59eef1a223756bca474b275367f284a036185751fb65`.

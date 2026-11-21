@@ -1537,6 +1537,36 @@
   {
     "header": "src/adapter/metamod/runtime/command/bot_command_runtime.hpp",
     "scope": "ActorState",
+    "member": "defaultLookAheadYaw"
+  },
+  {
+    "header": "src/adapter/metamod/runtime/command/bot_command_runtime.hpp",
+    "scope": "ActorState",
+    "member": "lastLookSpring"
+  },
+  {
+    "header": "src/adapter/metamod/runtime/command/bot_command_runtime.hpp",
+    "scope": "ActorState",
+    "member": "resumedDefaultLook"
+  },
+  {
+    "header": "src/adapter/metamod/runtime/command/bot_command_runtime.hpp",
+    "scope": "ActorState",
+    "member": "resumedLookToken"
+  },
+  {
+    "header": "src/adapter/metamod/runtime/command/bot_command_runtime.hpp",
+    "scope": "ActorState",
+    "member": "resumedLookSerial"
+  },
+  {
+    "header": "src/adapter/metamod/runtime/command/bot_command_runtime.hpp",
+    "scope": "ActorState",
+    "member": "resumedLookAt"
+  },
+  {
+    "header": "src/adapter/metamod/runtime/command/bot_command_runtime.hpp",
+    "scope": "ActorState",
     "member": "hostageUseTarget"
   },
   {
