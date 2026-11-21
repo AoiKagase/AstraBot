@@ -36,6 +36,7 @@ unsigned combatReloadCommands = 0;
 unsigned attackDeadlineDraws = 0;
 unsigned retreatTimerDraws = 0;
 float forcedNoticeFixtureRoll = -1.0f;
+std::vector<Vector> *occludedAimTraces = nullptr;
 float combatRandomFloat(float low, float high)
 {
 	if (low == 7.0f && high == 10.0f)
@@ -56,6 +57,8 @@ float combatRandomFloat(float low, float high)
 void traceCombatVisibility(const float *start, const float *end, int ignoreMonsters, edict_t *self, TraceResult *result)
 {
 	traceObjectiveVisibility(start, end, ignoreMonsters, self, result);
+	if (occludedAimTraces && self == &gEntities[0] && ignoreMonsters == 0)
+		occludedAimTraces->emplace_back(end[0], end[1], end[2]);
 	if (enemyBehindCover && self == &gEntities[0] && (ignoreMonsters & 0xff) == 1 &&
 		std::fabs(end[0] - gEntities[1].v.origin.x) <= 24.0f)
 		result->flFraction = 0.0f;
@@ -168,9 +171,98 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 	const bool reacquireFixture = scenario && std::strcmp(scenario, "reacquire") == 0;
 	const bool gunfireFixture = scenario && std::strcmp(scenario, "gunfire") == 0;
 	const bool noticeFixture = scenario && std::strcmp(scenario, "notice") == 0;
+	const bool occludedFixture = scenario && std::strcmp(scenario, "occluded") == 0;
 #ifdef _MSC_VER
 	std::free(scenario);
 #endif
+	if (occludedFixture)
+	{
+		using namespace astrabot;
+		auto &observation = static_cast<metamod::BotObservationServices &>(runtime);
+		auto &behavior = static_cast<metamod::BotBehaviorServices &>(runtime);
+		auto &navigation = static_cast<metamod::BotNavigationServices &>(runtime);
+		auto &profile = const_cast<compat::ProfileRecord &>(navigation.behavior_managedProfiles(0U));
+		auto &state = const_cast<compat::CompatibilityStateMachine &>(navigation.behavior_managedBotStateMachines(0U));
+		profile.csbotReactionSeconds = .3f;
+		profile.attackDelaySeconds = 0.0f;
+		gpMetaUtilFuncs->pfnGetUserMsgID = &combatUserMessageId;
+		auto &enemy = gEntities[1];
+		runtime.onClientPutInServer(&enemy);
+		enemy.free = false;
+		const Vector exposed(260, 32, 36), acquired(260, 212, 36), later(260, -148, 36);
+		enemy.v.origin = exposed;
+		enemy.v.flags = FL_CLIENT | FL_NOTARGET;
+		enemy.v.health = 100;
+		enemy.v.deadflag = DEAD_NO;
+		enemy.v.velocity = Vector(250, 0, 0);
+		enemy.v.team = 2;
+		runtime.onMessageBegin(MSG_ALL, 86, nullptr, nullptr);
+		runtime.onWriteByte(2);
+		runtime.onWriteString("CT");
+		runtime.onMessageEnd();
+		for (int frame = 0; frame < 8; ++frame)
+			stepRifle(30);
+		enemy.v.flags &= ~FL_NOTARGET;
+		for (int frame = 0; frame < 3; ++frame)
+			stepRifle(30);
+		if (!check(!state.attackOverlayActive(), "three exposed samples are still waiting for the fourth full update"))
+			return false;
+		enemyBehindCover = true;
+		rejectAmbushRoll = true;
+		enemy.v.origin = acquired;
+		std::vector<Vector> traces;
+		const auto usesPoint = [&](const Vector &expected) {
+			return std::any_of(traces.begin(), traces.end(), [&](const Vector &point) {
+				return point.x == expected.x && point.y == expected.y && point.z == expected.z;
+			});
+		};
+		occludedAimTraces = &traces;
+		stepRifle(30);
+		const bool aimedAtAcquisition = usesPoint(acquired) && !usesPoint(exposed);
+		const auto target = observation.behavior_currentEnemySource(0U);
+		const auto epoch = state.attackEntryEpoch();
+		const world::ActorObservation *contact = nullptr;
+		const auto &snapshot = behavior.observation_managedBotPerception(0U).snapshot();
+		const bool masked = snapshot.findActor({2U, 1U}, &contact) == world::ContactLookupResult::Found &&
+			contact && !contact->visible && contact->position.x == 0 && contact->position.y == 0 && contact->position.z == 0;
+		enemy.v.origin = later;
+		const auto fullUpdate = observation.service_managedBotFullUpdateSequences()[0];
+		const auto commands = combatSentInputs.size();
+		globals.time += .04f;
+		runtime.onStartFrame();
+		runtime.onStartFramePost();
+		const bool lightAim = observation.service_managedBotFullUpdateSequences()[0] == fullUpdate &&
+			combatSentInputs.size() > commands && combatCommandYaw > 0.0f;
+		traces.clear();
+		stepRifle(30);
+		occludedAimTraces = nullptr;
+		if (!check(state.attackOverlayActive() && state.attackEntryEpoch() == epoch && target.id == 2U && masked &&
+			aimedAtAcquisition && lightAim && usesPoint(acquired) && !usesPoint(later) && !usesPoint(exposed) &&
+			combatAttackCommands == 0U,
+			"the first full and later full/light updates aim at acquisition origin B while hidden observations and fire stay gated"))
+			return false;
+
+		using namespace astrabot::compat;
+		const auto &life = observation.service_lifecycle();
+		StateUpdateContext stateContext{};
+		stateContext.actor = state.actor();
+		stateContext.frame = {life.mapGeneration(), life.roundGeneration(), observation.service_adapterFrameCount()};
+		stateContext.timestamp = globals.time;
+		stateContext.fullUpdateSequence = observation.service_managedBotFullUpdateSequences()[0];
+		stateContext.fullUpdate = true;
+		stateContext.lifeAvailability = stateContext.roundAvailability = ObservationAvailability::Available;
+		stateContext.attackObservation = ObservationAvailability::Available;
+		stateContext.alive = stateContext.roundActive = true;
+		if (!check(state.stopAttack(stateContext) == StateResult::Transitioned, "stop Attack before the last visible ring sample"))
+			return false;
+		traces.clear();
+		occludedAimTraces = &traces;
+		stepRifle(30);
+		occludedAimTraces = nullptr;
+		return check(state.attackOverlayActive() && state.attackEntryEpoch() == epoch + 1U &&
+			usesPoint(later) && !usesPoint(acquired) && combatAttackCommands == 0U,
+			"a separate Attack entry on the same hidden enemy seeds their current origin without firing");
+	}
 	if (noticeFixture)
 	{
 		using namespace astrabot;

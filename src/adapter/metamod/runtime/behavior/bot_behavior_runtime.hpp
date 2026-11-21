@@ -664,6 +664,13 @@ private:
 		compat::ReactionQueue reactionQueues{};
 		world::ActorKey recognizedTargets{};
 		world::WorldPosition recognizedPoints{};
+		struct OccludedRecognition
+		{
+			const edict_t *entity = nullptr;
+			world::EntityKey source{};
+			std::uint32_t frame = 0U;
+		};
+		OccludedRecognition occludedRecognition{};
 		std::uint32_t recognitionSequences{};
 		float lastVisibleEnemyTimes{};
 		world::WorldPosition lastVisibleEnemyPositions{};

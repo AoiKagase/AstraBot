@@ -608,9 +608,73 @@ ActionProposal BotBehaviorRuntime::decideCombatAction(ManagedActionContext &ctx)
 	}
 	combat::TargetBelief target = {};
 	const world::ActorObservation *currentEnemy = nullptr;
-	if (weapon.kind != combat::WeaponKind::Grenade &&
-		snapshot.findActor(targetActor, &currentEnemy) == world::ContactLookupResult::Found && currentEnemy &&
-		currentEnemy->visible)
+	const bool combatVisible = weapon.kind != combat::WeaponKind::Grenade &&
+		snapshot.findActor(targetActor, &currentEnemy) == world::ContactLookupResult::Found &&
+		currentEnemy && currentEnemy->visible;
+	const bool compatibility =
+		services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility;
+	auto &combatActor = actors_[index];
+	const bool delayedRecognition = compatibility && targetActor.isValid() && combatActor.recognizedTargets == targetActor;
+	bool handledOccludedEntry = false;
+	if (delayedRecognition && !combatVisible && !state.attackOverlayActive() &&
+		weapon.kind != combat::WeaponKind::Grenade)
+	{
+		const auto disposition = reactionDisposition(index);
+		const auto receipt = reactionContext(index);
+		const auto acquisition = combatActor.occludedRecognition;
+		auto &memory = combatActor.enemyReaction;
+		const auto matchesEnemy = [&] {
+			const auto *enemy = acquisition.entity;
+			return acquisition.frame == frame.tick && enemy && !enemy->free && enemy->serialnumber >= 0 &&
+				enemy->v.deadflag == DEAD_NO && enemy->v.health > 0 &&
+				acquisition.source == world::EntityKey{targetActor.slot, static_cast<std::uint32_t>(enemy->serialnumber) + 1U} &&
+				combatActor.recognizedTargets == targetActor && combatActor.enemyWeaponSource == acquisition.source &&
+				memory.enemy(receipt) == targetActor && memory.source(receipt) == acquisition.source &&
+				!memory.enemyDead(receipt) && reactionEnemyCurrent(targetActor);
+		};
+		if (!matchesEnemy())
+			return proposal;
+		if (disposition != compat::ReactionDisposition::Ignore)
+		{
+			const auto execution = combatActor.executionRevision;
+			const auto normalEpoch = state.normalStateEpoch();
+			const auto attackEpoch = state.attackEntryEpoch();
+			const auto current = [&] { return executionCurrent(index, receipt, execution) &&
+				state.normalStateEpoch() == normalEpoch && matchesEnemy(); };
+			const auto &point = acquisition.entity->v.origin;
+			const auto &origin = handle.entity->v.origin;
+			const float x = point.x - origin.x, y = point.y - origin.y, z = point.z - origin.z;
+			const float distanceSquared = x * x + y * y + z * z;
+			constexpr float hidingKnifeRange = 250.0f;
+			constexpr float closeSelfDefenseRange = 750.0f;
+			// Long-range self-defense has its own facing and eye-visibility rule in CSBot.
+			handledOccludedEntry = disposition != compat::ReactionDisposition::SelfDefense ||
+				distanceSquared < closeSelfDefenseRange * closeSelfDefenseRange;
+			if (handledOccludedEntry)
+			{
+				const bool reloading = weapon.reloadState == combat::ReloadState::Unknown
+					? services_->observation_publicObservations().pendingReloadRequest(actor, frame, receipt.now)
+					: weapon.reloadState == combat::ReloadState::Reloading;
+				const auto *engine = services_->service_engineFunctions();
+				const auto getCvar = engine ? engine->pfnCVarGetFloat : nullptr;
+				const bool prevented = reloading || (getCvar && (getCvar("bot_zombie") != 0 || getCvar("bot_mimic") != 0));
+				const bool distantKnife = knife && state.state() == compat::CompatibilityStateId::Hide &&
+					distanceSquared >= hidingKnifeRange * hidingKnifeRange;
+				if (prevented || distantKnife || !current() || state.attackEntryEpoch() != attackEpoch)
+					return proposal;
+				const auto entry = makeManagedBotStateContext(index, before);
+				if (!current() || state.attackOverlayActive() || state.attackEntryEpoch() != attackEpoch)
+					return proposal;
+				if (combatActor.managedBotStateMachines.beginAttack(entry) != compat::StateResult::Transitioned ||
+					!current() || !state.attackOverlayActive() || state.attackEntryEpoch() != attackEpoch + 1U)
+					return proposal;
+				// CSBot seeds its last enemy position on Attack entry, before this decision aims.
+				memory.rememberVisible(receipt, targetActor, acquisition.source, {point.x, point.y, point.z});
+				targetPosition = memory.position(receipt);
+			}
+		}
+	}
+	if (combatVisible)
 		targetPosition = compat::combatAimPoint(currentEnemy->position,
 			{handle.entity->v.origin.x, handle.entity->v.origin.y, handle.entity->v.origin.z},
 			currentEnemy->visibleParts, static_cast<std::uint16_t>(weaponValue),
@@ -618,7 +682,7 @@ ActionProposal BotBehaviorRuntime::decideCombatAction(ManagedActionContext &ctx)
 			before.ducked ? kDuckedFeetOffset : kStandingFeetOffset, compatObservation.weapon.accuracy.isAvailable(),
 			compatObservation.weapon.accuracy.value);
 	target.target = targetActor;
-	target.state = currentEnemy && currentEnemy->visible
+	target.state = combatVisible
 		? combat::TargetBeliefState::Visible : combat::TargetBeliefState::Remembered;
 	target.position = targetPosition;
 	target.confidence = 1.0f;
@@ -699,7 +763,6 @@ ActionProposal BotBehaviorRuntime::decideCombatAction(ManagedActionContext &ctx)
 	compat::CombatMovementInput movementInput{};
 	compat::CombatMovementDecision movementEntry{};
 	CrouchTraceContext crouch{services_->service_engineFunctions(), handle.entity, nullptr, before.ducked};
-	const bool combatVisible = targetActor.isValid() && currentEnemy && currentEnemy->visible;
 	if (combatVisible && !reactionIgnoring(index) && weapon.kind != combat::WeaponKind::Knife && weapon.kind != combat::WeaponKind::Grenade)
 	{
 		auto &move = movementInput;
@@ -737,13 +800,10 @@ ActionProposal BotBehaviorRuntime::decideCombatAction(ManagedActionContext &ctx)
 	else
 		actors_[index].managedBotCombat.stopMovement();
 	const compat::StateUpdateContext stateContext = makeManagedBotStateContext(index, before);
-	const bool compatibility =
-		services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility;
-	const bool delayedRecognition = targetActor.isValid() && actors_[index].recognizedTargets == targetActor &&
-		compatibility;
 	if ((combatVisible || delayedRecognition) && !reactionIgnoring(index))
 	{
-		(void)actors_[index].managedBotStateMachines.beginAttack(stateContext);
+		if (!handledOccludedEntry)
+			(void)actors_[index].managedBotStateMachines.beginAttack(stateContext);
 	}
 	else if (actors_[index].managedBotStateMachines.attackOverlayActive() &&
 		(services_->service_compatibilitySurface().configuration().mode != compat::RuntimeMode::Compatibility ||

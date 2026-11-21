@@ -60,6 +60,7 @@ bool BotBehaviorRuntime::prepareManagedPerception(std::size_t index, world::Worl
 		actor.enemyReaction.clearEnemy();
 		actor.enemyWeaponSource = {};
 		actor.recognizedTargets = {};
+		actor.occludedRecognition = {};
 	}
 	ThreatObservation threats{};
 	if (!services_->observation_collectManagedPerception(index, snapshot, &threats))
@@ -86,6 +87,7 @@ bool BotBehaviorRuntime::prepareManagedPerception(std::size_t index, world::Worl
 	auto candidateCount = threats.count;
 	if (actors_[index].recognitionSequences != services_->service_managedBotFullUpdateSequences()[index])
 	{
+		actor.occludedRecognition = {};
 		actors_[index].recognitionSequences = services_->service_managedBotFullUpdateSequences()[index];
 		compat::ThreatCandidate threat{};
 		compat::PublicActorState publicState{};
@@ -164,6 +166,8 @@ bool BotBehaviorRuntime::prepareManagedPerception(std::size_t index, world::Worl
 				if (!executionCurrent(index, reaction, execution))
 					return false;
 				recognized = seen && seen->relation == world::TeamRelation::Hostile && isLiveThreat(threat, enemy);
+				if (recognized && !seen->visible && !actor.managedBotStateMachines.attackOverlayActive())
+					actor.occludedRecognition = {enemy, threat.sourceEntity, reaction.frame.tick};
 			}
 		}
 		if (recognized)
@@ -218,6 +222,9 @@ bool BotBehaviorRuntime::prepareManagedPerception(std::size_t index, world::Worl
 	{
 		*targetActor = actors_[index].recognizedTargets;
 		*targetPosition = actors_[index].recognizedPoints;
+		if (compatibility && memory.enemy(reaction) == *targetActor && memory.source(reaction) == actor.enemyWeaponSource &&
+			!memory.enemyDead(reaction) && currentEnemy && !currentEnemy->visible)
+			*targetPosition = memory.position(reaction);
 	}
 	else if (!blinded && compatibility && memory.shouldAim(reaction))
 	{

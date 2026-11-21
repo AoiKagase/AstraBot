@@ -372,6 +372,11 @@
   {
     "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
     "scope": "ActorState",
+    "member": "occludedRecognition"
+  },
+  {
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
+    "scope": "ActorState",
     "member": "recognitionSequences"
   },
   {
