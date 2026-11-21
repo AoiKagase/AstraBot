@@ -228,6 +228,11 @@ public:
 		if (descentDestinationLook)
 			++descentFallbackLooks;
 	}
+	bool behavior_defuseEnemyAim(std::size_t, const compat::AimSpringState &, world::WorldPosition *) override
+	{
+		return false;
+	}
+
 	void behavior_applyNoiseLookCommand(std::size_t, runtime::BotCommand &, bool) override
 	{
 	}

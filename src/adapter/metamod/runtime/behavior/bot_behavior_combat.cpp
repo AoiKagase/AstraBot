@@ -99,6 +99,83 @@ void BotBehaviorRuntime::applyNativeLadderLookCommand(
 	command.synchronizeCombatView = true;
 }
 
+bool BotBehaviorRuntime::defuseEnemyAim(
+	std::size_t index, const compat::AimSpringState &spring, world::WorldPosition *point)
+{
+	if (services_->service_compatibilitySurface().configuration().mode != compat::RuntimeMode::Compatibility)
+		return false;
+	auto &actor = actors_[index];
+	const auto receipt = reactionContext(index);
+	const auto target = actor.enemyReaction.enemy(receipt);
+	const auto source = currentEnemySource(index);
+	const auto *engine = services_->service_engineFunctions();
+	const auto epoch = actor.managedBotStateMachines.normalStateEpoch();
+	if (!receipt.alive || !source.isValid() || !(actor.defuseAimDecision.target == target) ||
+		!(actor.defuseAimDecision.source == source) ||
+		actor.defuseAimDecision.stateEpoch != epoch ||
+		!engine || !engine->pfnPEntityOfEntIndex)
+		return false;
+
+	const auto execution = actor.executionRevision;
+	auto *self = services_->service_managedBotHandles()[index].entity;
+	const auto *enemy = engine->pfnPEntityOfEntIndex(static_cast<int>(target.slot));
+	const auto current = [&] {
+		return executionCurrent(index, receipt, execution) && actor.managedBotStateMachines.normalStateEpoch() == epoch &&
+			!actor.managedBotStateMachines.attackOverlayActive() && currentEnemySource(index) == source &&
+			actor.defuseAimDecision.target == target && actor.defuseAimDecision.source == source &&
+			actor.defuseAimDecision.stateEpoch == epoch &&
+			enemy && !enemy->free && enemy->serialnumber >= 0 && enemy->v.deadflag == DEAD_NO && enemy->v.health > 0 &&
+			(enemy->v.flags & (FL_CLIENT | FL_DORMANT | FL_SPECTATOR)) == FL_CLIENT &&
+			source == world::EntityKey{target.slot, static_cast<std::uint32_t>(enemy->serialnumber) + 1U};
+	};
+	if (!current())
+		return false;
+
+	// Upkeep uses the preceding full update's visibility, without a fresh reaction or trace.
+	const auto &belief = services_->observation_managedBotPerception(index).snapshot();
+	const world::ActorObservation *observation = nullptr;
+	const bool visible = belief.isValid() && belief.identity().observer == receipt.actor &&
+		belief.identity().frame.mapGeneration == receipt.frame.mapGeneration &&
+		belief.identity().frame.roundGeneration == receipt.frame.roundGeneration &&
+		belief.findActor(target, &observation) == world::ContactLookupResult::Found &&
+		observation->visible && observation->relation == world::TeamRelation::Hostile;
+
+	combat::CombatDecisionContext context{};
+	context.actor = receipt.actor;
+	context.frame = receipt.frame;
+	context.origin = {self->v.origin.x, self->v.origin.y, self->v.origin.z};
+	context.timestamp = receipt.now;
+	context.skill = static_cast<float>(actor.managedProfiles.skill) / kSkillPercentageScale;
+	context.fieldOfView = self->v.fov > 0 ? self->v.fov : kDefaultFieldOfView;
+	context.randomSource = &services_->service_compatibilityRandomSource();
+	context.randomTiming = {services_->command_managedBotCommandSequences(index), receipt.frame.tick,
+		services_->service_managedBotFullUpdateSequences()[index]};
+	const auto remembered = actor.enemyReaction.position(receipt);
+	auto aim = remembered;
+	if (visible)
+	{
+		const auto visibleParts = observation->visibleParts;
+		compat::CompatibilityObservation weapon{};
+		services_->observation_observationAdapter().collectActor(
+			self, receipt.actor, receipt.frame, {context.randomTiming.commandSequence,
+				context.randomTiming.upkeepSequence, context.randomTiming.fullUpdateSequence}, &weapon);
+		if (!current())
+			return false;
+		const auto &id = weapon.weapon.activeWeaponId;
+		const auto &accuracy = weapon.weapon.accuracy;
+		Vector spot = enemy->v.origin;
+		if (context.skill > .5f)
+			spot = spot + (enemy->v.velocity - self->v.velocity) * (3.0f * runtime::BotTimingScheduler::kCommandInterval);
+		aim = compat::combatAimPoint({spot.x, spot.y, spot.z}, context.origin, visibleParts,
+			id.isAvailable() ? static_cast<std::uint16_t>(id.value) : std::uint16_t{0}, context.skill,
+			(self->v.flags & FL_DUCKING) ? kDuckedFeetOffset : kStandingFeetOffset, accuracy.isAvailable(), accuracy.value);
+	}
+	if (!actor.managedBotCombat.offsetAimPoint(context, remembered, spring, &aim) || !current())
+		return false;
+	*point = aim;
+	return true;
+}
+
 CombatUpkeepUpdate BotBehaviorRuntime::upkeepCombat(
 	std::size_t index, const runtime::MovementPhysicsState &before, std::uint16_t cachedButtons, bool blind)
 {

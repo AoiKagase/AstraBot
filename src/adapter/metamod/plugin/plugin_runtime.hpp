@@ -685,6 +685,12 @@ private:
 		behavior_.applyNativeLadderLookCommand(index, command, localMovement);
 	}
 
+	bool behavior_defuseEnemyAim(
+		std::size_t index, const compat::AimSpringState &spring, world::WorldPosition *point) override
+	{
+		return behavior_.defuseEnemyAim(index, spring, point);
+	}
+
 	void behavior_applyNoiseLookCommand(std::size_t index, runtime::BotCommand &command, bool upkeepOnly) override
 	{
 		behavior_.applyNoiseLookCommand(index, command, upkeepOnly);

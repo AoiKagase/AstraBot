@@ -437,7 +437,27 @@ void BotCommandRuntime::advanceUpkeepLook(std::size_t index, FakeClientHandle &h
 	}
 	if ((handle.entity->v.flags & FL_FROZEN) != 0 || services_->roundFreezeActive())
 		return;
-	const auto eye = handle.entity->v.origin + handle.entity->v.view_ofs;
+	auto *entity = handle.entity;
+	const auto serial = entity->serialnumber;
+	const auto epoch = machine.normalStateEpoch();
+	const auto token = services_->service_lifecycle().tokenForSlot(handle.actor.slot);
+	world::WorldPosition enemyPoint{};
+	const bool aimingAtEnemy = machine.state() == compat::CompatibilityStateId::DefuseBomb &&
+		services_->behavior_defuseEnemyAim(index, actor.useEntityLookSpring, &enemyPoint);
+	if (handle.entity != entity || entity->serialnumber != serial || !services_->service_lifecycle().isCurrent(token) ||
+		machine.normalStateEpoch() != epoch || machine.attackOverlayActive())
+		return;
+	const auto eye = entity->v.origin + entity->v.view_ofs;
+	if (aimingAtEnemy)
+	{
+		const auto &origin = entity->v.origin;
+		const auto goal = ActionAdapter::useEntityView(
+			enemyPoint.x - origin.x, enemyPoint.y - origin.y, enemyPoint.z - origin.z);
+		const auto look = compat::trackAim(entity->v.v_angle.y, entity->v.v_angle.x, goal.yaw, goal.pitch,
+			runtime::BotTimingScheduler::kCommandInterval, 1.0f, &actor.useEntityLookSpring, false);
+		entity->v.v_angle = Vector(look.pitch, look.yaw, 0.0f);
+		return;
+	}
 	const auto &point = actor.useEntityLookTarget;
 	const auto desired = ActionAdapter::useEntityView(point.x - eye.x, point.y - eye.y, point.z - eye.z);
 	const auto look = stepIdleLook(*handle.entity, desired.yaw, desired.pitch,

@@ -173,13 +173,9 @@ bool CombatController::isFrameAfter(const world::FrameIdentity &candidate, const
 	return candidate.tick > current.tick;
 }
 
-bool CombatController::buildAim(const CombatDecisionContext &context, const TargetBelief &target, AimIntent *intent)
+bool CombatController::offsetAimPoint(const CombatDecisionContext &context, world::WorldPosition target,
+	const compat::AimSpringState &spring, world::WorldPosition *point)
 {
-	constexpr float kMovementPredictionMinimumSkill = 0.5f;
-	constexpr float kAimUpkeepRateHz = 30.0f;
-	constexpr float kMovementPredictionFrames = 3.0f;
-	constexpr float kMaximumAimElapsedSeconds = 0.25f;
-	constexpr float kMaximumFieldOfView = 180.0f;
 	constexpr float kFocusResetAngularVelocity = 100.0f;
 	constexpr float kFocusSkillSeconds = 5.0f;
 	constexpr float kMinimumFocusSeconds = 2.0f;
@@ -192,6 +188,60 @@ bool CombatController::buildAim(const CombatDecisionContext &context, const Targ
 	constexpr float kMinimumAimRefreshSeconds = 0.25f;
 	constexpr float kMaximumAimRefreshSeconds = 1.0f;
 #define ASTRABOT_COMBAT_INTENT_AIM_OFFSET_SMOOTHING 0.1f
+	constexpr float kMaximumFieldOfView = 180.0f;
+	if (!point || !context.randomSource || !std::isfinite(context.skill) || context.skill < 0.0f ||
+		context.skill > 1.0f || !std::isfinite(context.timestamp) || context.timestamp < 0.0f ||
+		!std::isfinite(context.fieldOfView) || context.fieldOfView <= 0.0f || context.fieldOfView > kMaximumFieldOfView)
+		return false;
+	if (std::fabs(spring.yawVelocity) > kFocusResetAngularVelocity ||
+		std::fabs(spring.pitchVelocity) > kFocusResetAngularVelocity)
+		aimFocusStart_ = context.timestamp;
+	if (context.timestamp >= aimRefreshTime_)
+	{
+		const float dx = target.x - context.origin.x, dy = target.y - context.origin.y,
+					dz = target.z - context.origin.z;
+		const float focusTime = std::fmax(kFocusSkillSeconds * (1.0f - context.skill), kMinimumFocusSeconds);
+		const float focusAccuracy =
+			std::fmin(kMaximumFocusAccuracy, std::fmax(0.0f, (context.timestamp - aimFocusStart_) / focusTime));
+		const float accuracy = std::fmax(context.skill, focusAccuracy);
+		const float errorRange =
+			context.aimErrorRange >= 0.0f ? context.aimErrorRange : std::sqrt(dx * dx + dy * dy + dz * dz);
+		const float error = errorRange * context.fieldOfView / kAimErrorReferenceFieldOfView *
+			ASTRABOT_COMBAT_INTENT_AIM_ERROR_SCALE * (1.0f - accuracy);
+		const compat::RandomActor actor = {context.actor.slot, context.actor.generation};
+		float draws[kAimRandomDrawCount] = {};
+		const char *ids[kAimRandomDrawCount] = {"AimOffsetX", "AimOffsetY", "AimOffsetZ", "AimOffsetRefresh"};
+		for (unsigned i = 0; i != kAimRandomDrawCount; ++i)
+		{
+			const compat::RandomFloatResult draw =
+				context.randomSource->nextFloat(compat::RandomRequest::floatRequest(ids[i], actor,
+					context.randomTiming, i == kAimRefreshDrawIndex ? kMinimumAimRefreshSeconds : -error,
+					i == kAimRefreshDrawIndex ? kMaximumAimRefreshSeconds : error));
+			if (draw.status != compat::RandomStatus::Ok || !std::isfinite(draw.value))
+				return false;
+			draws[i] = draw.value;
+		}
+		aimOffsetGoal_ = {draws[0], draws[1], draws[2]};
+		aimRefreshTime_ = context.timestamp + draws[kAimRefreshDrawIndex];
+	}
+	aimOffset_.x += ASTRABOT_COMBAT_INTENT_AIM_OFFSET_SMOOTHING * (aimOffsetGoal_.x - aimOffset_.x);
+	aimOffset_.y += ASTRABOT_COMBAT_INTENT_AIM_OFFSET_SMOOTHING * (aimOffsetGoal_.y - aimOffset_.y);
+	aimOffset_.z += ASTRABOT_COMBAT_INTENT_AIM_OFFSET_SMOOTHING * (aimOffsetGoal_.z - aimOffset_.z);
+	point->x += aimOffset_.x;
+	point->y += aimOffset_.y;
+	point->z += aimOffset_.z;
+	return true;
+}
+#undef ASTRABOT_COMBAT_INTENT_AIM_ERROR_SCALE
+#undef ASTRABOT_COMBAT_INTENT_AIM_OFFSET_SMOOTHING
+
+bool CombatController::buildAim(const CombatDecisionContext &context, const TargetBelief &target, AimIntent *intent)
+{
+	constexpr float kMovementPredictionMinimumSkill = 0.5f;
+	constexpr float kAimUpkeepRateHz = 30.0f;
+	constexpr float kMovementPredictionFrames = 3.0f;
+	constexpr float kMaximumAimElapsedSeconds = 0.25f;
+	constexpr float kMaximumFieldOfView = 180.0f;
 #define ASTRABOT_COMBAT_INTENT_MINIMUM_HORIZONTAL_AIM_DISTANCE 0.001f
 	constexpr float kHalfTurnDegrees = 180.0f;
 	if (intent == nullptr || !context.isValid() || !target.isUsable())
@@ -219,43 +269,8 @@ bool CombatController::buildAim(const CombatDecisionContext &context, const Targ
 			!std::isfinite(context.fieldOfView) || context.fieldOfView <= 0.0f ||
 			context.fieldOfView > kMaximumFieldOfView)
 			return false;
-		if (std::fabs(aimSpring_.yawVelocity) > kFocusResetAngularVelocity ||
-			std::fabs(aimSpring_.pitchVelocity) > kFocusResetAngularVelocity)
-			aimFocusStart_ = context.timestamp;
-		if (context.timestamp >= aimRefreshTime_)
-		{
-			const float dx = target.position.x - context.origin.x, dy = target.position.y - context.origin.y,
-						dz = target.position.z - context.origin.z;
-			const float focusTime = std::fmax(kFocusSkillSeconds * (1.0f - context.skill), kMinimumFocusSeconds);
-			const float focusAccuracy =
-				std::fmin(kMaximumFocusAccuracy, std::fmax(0.0f, (context.timestamp - aimFocusStart_) / focusTime));
-			const float accuracy = std::fmax(context.skill, focusAccuracy);
-			const float errorRange =
-				context.aimErrorRange >= 0.0f ? context.aimErrorRange : std::sqrt(dx * dx + dy * dy + dz * dz);
-			const float error = errorRange * context.fieldOfView / kAimErrorReferenceFieldOfView *
-				ASTRABOT_COMBAT_INTENT_AIM_ERROR_SCALE * (1.0f - accuracy);
-			const compat::RandomActor actor = {context.actor.slot, context.actor.generation};
-			float draws[kAimRandomDrawCount] = {};
-			const char *ids[kAimRandomDrawCount] = {"AimOffsetX", "AimOffsetY", "AimOffsetZ", "AimOffsetRefresh"};
-			for (unsigned i = 0; i != kAimRandomDrawCount; ++i)
-			{
-				const compat::RandomFloatResult draw =
-					context.randomSource->nextFloat(compat::RandomRequest::floatRequest(ids[i], actor,
-						context.randomTiming, i == kAimRefreshDrawIndex ? kMinimumAimRefreshSeconds : -error,
-						i == kAimRefreshDrawIndex ? kMaximumAimRefreshSeconds : error));
-				if (draw.status != compat::RandomStatus::Ok || !std::isfinite(draw.value))
-					return false;
-				draws[i] = draw.value;
-			}
-			aimOffsetGoal_ = {draws[0], draws[1], draws[2]};
-			aimRefreshTime_ = context.timestamp + draws[kAimRefreshDrawIndex];
-		}
-		aimOffset_.x += ASTRABOT_COMBAT_INTENT_AIM_OFFSET_SMOOTHING * (aimOffsetGoal_.x - aimOffset_.x);
-		aimOffset_.y += ASTRABOT_COMBAT_INTENT_AIM_OFFSET_SMOOTHING * (aimOffsetGoal_.y - aimOffset_.y);
-		aimOffset_.z += ASTRABOT_COMBAT_INTENT_AIM_OFFSET_SMOOTHING * (aimOffsetGoal_.z - aimOffset_.z);
-		aimPoint.x += aimOffset_.x;
-		aimPoint.y += aimOffset_.y;
-		aimPoint.z += aimOffset_.z;
+		if (!offsetAimPoint(context, target.position, aimSpring_, &aimPoint))
+			return false;
 	}
 	const float deltaX = aimPoint.x - context.origin.x;
 	const float deltaY = aimPoint.y - context.origin.y;
@@ -302,8 +317,6 @@ bool CombatController::buildAim(const CombatDecisionContext &context, const Targ
 	trackedAim_ = *intent;
 	return true;
 }
-#undef ASTRABOT_COMBAT_INTENT_AIM_ERROR_SCALE
-#undef ASTRABOT_COMBAT_INTENT_AIM_OFFSET_SMOOTHING
 #undef ASTRABOT_COMBAT_INTENT_MINIMUM_HORIZONTAL_AIM_DISTANCE
 
 bool CombatController::upkeepLook(

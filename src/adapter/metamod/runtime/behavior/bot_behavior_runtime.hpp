@@ -107,6 +107,7 @@ public:
 		const edict_t *source, int serial, world::ActorKey sourceConnection);
 	bool forcedRunning(std::size_t index);
 	world::EntityKey currentEnemySource(std::size_t index) const;
+	bool defuseEnemyAim(std::size_t index, const compat::AimSpringState &spring, world::WorldPosition *point);
 	void observePlayerDeath(int victimSlot, int killerSlot, edict_t *recipient, const world::FrameIdentity &frame);
 	void bindServices(BotBehaviorServices &services)
 	{
@@ -696,6 +697,13 @@ private:
 			std::uint32_t frame = 0U;
 		};
 		OccludedRecognition occludedRecognition{};
+		struct DefuseAimDecision
+		{
+			world::ActorKey target{};
+			world::EntityKey source{};
+			std::uint64_t stateEpoch = 0;
+		};
+		DefuseAimDecision defuseAimDecision{};
 		std::uint32_t recognitionSequences{};
 		float lastVisibleEnemyTimes{};
 		compat::NoiseEnemyContact noiseEnemyContact{};

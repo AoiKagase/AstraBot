@@ -167,6 +167,8 @@ public:
 		const TargetBelief &target, const CombatDecisionContext &context, CombatDecision *decision);
 	CombatResult observeDamage(const DamageObservation &observation) const;
 	bool upkeepAim(const TargetBelief &target, const CombatDecisionContext &context, AimIntent *aim);
+	bool offsetAimPoint(const CombatDecisionContext &context, world::WorldPosition target,
+		const compat::AimSpringState &spring, world::WorldPosition *point);
 	bool upkeepLook(
 		const CombatDecisionContext &context, float yaw, float pitch, bool attacking, compat::AimStep *look);
 	const AimIntent &trackedAim() const

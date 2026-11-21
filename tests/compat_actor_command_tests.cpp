@@ -1926,12 +1926,13 @@ bool testRuntimeBombSiteApproach(
 		runtime.onMessageEnd();
 		auto &enemy = gEntities[1];
 		const auto enemyFlags = enemy.v.flags;
+		gEntities[0].v.origin.x -= 16.0f;
 		enemy.v.flags = 0;
 		tick(.125f);
 		passed = check((gLastRunPlayerMoveButtons & IN_USE) != 0 && !state.attackOverlayActive(),
 			"an uncontested full update holds USE before the enemy is exposed") && passed;
 		enemy.v.flags = FL_CLIENT | FL_ONGROUND;
-		enemy.v.origin = gEntities[0].v.origin + Vector(800.0f, 0, 0);
+		enemy.v.origin = gEntities[0].v.origin + Vector(800.0f, 400.0f, 0);
 		enemy.v.velocity = Vector(250.0f, 0, 0);
 		enemy.v.v_angle = enemy.v.punchangle = Vector(0, 0, 0);
 		enemy.v.deadflag = DEAD_NO;
@@ -1945,6 +1946,44 @@ bool testRuntimeBombSiteApproach(
 		tick(.125f);
 		passed = check(!state.attackOverlayActive() && (gLastRunPlayerMoveButtons & IN_USE) != 0,
 			"a visible distant enemy looking away does not interrupt Defuse") && passed;
+		const auto recognitionUpdate = observation.service_managedBotFullUpdateSequences()[0];
+		const float recognizedAt = globals.time;
+		const float recognitionYaw = gLastRunPlayerMoveYaw;
+		tick(.04f);
+		passed = check(observation.service_managedBotFullUpdateSequences()[0] == recognitionUpdate &&
+				gLastRunPlayerMoveYaw > recognitionYaw + 0.2f && !state.attackOverlayActive() &&
+				(gLastRunPlayerMoveButtons & (IN_USE | IN_ATTACK | IN_ATTACK2)) == IN_USE,
+			"the first upkeep after recognition aims toward the distant enemy and holds USE without firing") && passed;
+		auto &commands = static_cast<metamod::BotCommandServices &>(runtime);
+		world::WorldPosition aimPoint{};
+		const auto sendBarTime = [&](int seconds) {
+			static constexpr int barTimeId = 190;
+			const auto savedLookup = gpMetaUtilFuncs->pfnGetUserMsgID;
+			gpMetaUtilFuncs->pfnGetUserMsgID = [](plid_t plugin, const char *name, int *size) {
+				return std::strcmp(name, "BarTime") == 0 ? barTimeId : siteFixtureUserMessageId(plugin, name, size);
+			};
+			runtime.onMessageBegin(MSG_ONE, barTimeId, nullptr, &gEntities[0]);
+			runtime.onWriteShort(seconds);
+			runtime.onMessageEnd();
+			gpMetaUtilFuncs->pfnGetUserMsgID = savedLookup;
+		};
+		sendBarTime(5);
+		gObjectiveTraceVisible = false;
+		tick(recognizedAt + 2.975f - globals.time);
+		passed = check(commands.behavior_defuseEnemyAim(0, {}, &aimPoint),
+			"the full update before three seconds holds aim on the occluded acquired enemy") && passed;
+		const auto lastAimFullUpdate = observation.service_managedBotFullUpdateSequences()[0];
+		tick(.04f);
+		passed = check(observation.service_managedBotFullUpdateSequences()[0] == lastAimFullUpdate &&
+				commands.behavior_defuseEnemyAim(0, {}, &aimPoint),
+			"the light update across three seconds retains the previous full update's aim") && passed;
+		tick(.095f);
+		passed = check(observation.service_managedBotFullUpdateSequences()[0] != lastAimFullUpdate &&
+				state.state() == CompatibilityStateId::DefuseBomb && (gLastRunPlayerMoveButtons & IN_USE) != 0 &&
+				!commands.behavior_defuseEnemyAim(0, {}, &aimPoint),
+			"the first full perception after three seconds releases aim and continues USE") && passed;
+		sendBarTime(0);
+		gObjectiveTraceVisible = true;
 		enemy.v.origin = gEntities[0].v.origin + Vector(128.0f, 0, 0);
 		gEntities[0].v.angles = gEntities[0].v.v_angle = Vector(0, 0, 0);
 		tick(.125f);

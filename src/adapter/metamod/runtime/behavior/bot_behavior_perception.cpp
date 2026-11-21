@@ -105,7 +105,8 @@ bool BotBehaviorRuntime::prepareManagedPerception(std::size_t index, world::Worl
 	}
 	auto &candidates = threats.candidates;
 	auto candidateCount = threats.count;
-	if (actors_[index].recognitionSequences != services_->service_managedBotFullUpdateSequences()[index])
+	const bool newSample = actor.recognitionSequences != services_->service_managedBotFullUpdateSequences()[index];
+	if (newSample)
 	{
 		actor.occludedRecognition = {};
 		actors_[index].recognitionSequences = services_->service_managedBotFullUpdateSequences()[index];
@@ -243,6 +244,14 @@ bool BotBehaviorRuntime::prepareManagedPerception(std::size_t index, world::Worl
 			contact.position = currentEnemy->position;
 			contact.seenAt = reaction.now;
 		}
+	}
+	if (compatibility && newSample && !blinded &&
+		actor.managedBotStateMachines.state() == compat::CompatibilityStateId::DefuseBomb)
+	{
+		// Upkeep uses this decision until the next full perception update, even across the three-second deadline.
+		actor.defuseAimDecision = {memory.enemy(reaction),
+			memory.shouldAim(reaction) ? currentEnemySource(index) : world::EntityKey{},
+			actor.managedBotStateMachines.normalStateEpoch()};
 	}
 	if (actors_[index].recognizedTargets.isValid() && !blinded)
 	{

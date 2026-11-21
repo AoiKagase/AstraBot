@@ -223,6 +223,8 @@ public:
 	virtual bool navigation_nativeLadderLook(std::size_t index, nav::NativeLadderLook *look) = 0;
 	virtual void behavior_applyNativeLadderLookCommand(
 		std::size_t index, runtime::BotCommand &command, bool localMovement) = 0;
+	virtual bool behavior_defuseEnemyAim(
+		std::size_t index, const compat::AimSpringState &spring, world::WorldPosition *point) = 0;
 	virtual void behavior_applyNoiseLookCommand(std::size_t index, runtime::BotCommand &command,
 		bool upkeepOnly = false) = 0;
 	virtual const ManagedObjectiveTargetCache &behavior_managedBotObjectiveTargets(std::size_t index) const = 0;
