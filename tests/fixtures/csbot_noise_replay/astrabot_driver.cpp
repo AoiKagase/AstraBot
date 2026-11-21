@@ -1,4 +1,5 @@
 #include "astrabot/compat/noise_investigation.hpp"
+#include "astrabot/compat/friend_death.hpp"
 #include "astrabot/compat/noise_look.hpp"
 #include "astrabot/compat/noise_navigation.hpp"
 #include <cstdlib>
@@ -132,7 +133,8 @@ int main()
 		decision.actor = actor;
 		decision.frame = frame;
 		decision.timing = timing;
-		decision.now = decision.elapsedRound = time;
+		decision.now = time;
+		decision.wellPastSafe = compat::EnemyReactionMemory{}.wellPastSafe(time, decision.aggression);
 		decision.reactionSeconds = .125f;
 		decision.navRevision = navigation.revision();
 		decision.noise = noise;

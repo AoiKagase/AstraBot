@@ -14,13 +14,13 @@ struct NoiseInvestigationInput
 	world::ActorKey actor{};
 	world::FrameIdentity frame{};
 	RandomTimingContext timing{};
-	float now = 0, elapsedRound = 0, aggression = .5f;
+	float now = 0, aggression = .5f;
 	float reactionSeconds = 0.0f;
-	float seenEnemyElapsed = -1.0f;
 	std::uint64_t navRevision = 0;
 	world::WorldPosition origin{};
 	world::NoiseMemory noise{};
 	bool allowed = false, visibleEnemy = false, alive = false, hiding = false, travelKnown = false;
+	bool wellPastSafe = false;
 	float travelDistance = -1;
 	unsigned friends = 0;
 	bool defenseAmbushExpired = false;
@@ -66,7 +66,7 @@ public:
 	NoiseInvestigationResult evaluate(const NoiseInvestigationInput &in, ICompatibilityRandomSource &rng)
 	{
 		using Result = NoiseInvestigationResult;
-		if (!in.actor.isValid() || !in.frame.isValid() || !std::isfinite(in.now) || !std::isfinite(in.elapsedRound) ||
+		if (!in.actor.isValid() || !in.frame.isValid() || !std::isfinite(in.now) ||
 			!std::isfinite(in.reactionSeconds) || in.reactionSeconds < ProfileRecord::kMinimumReactionSeconds ||
 			!std::isfinite(in.aggression) ||
 			in.aggression < 0 || in.aggression > 1 || !in.alive || !std::isfinite(in.origin.x) ||
@@ -84,19 +84,14 @@ public:
 			map_ = in.frame.mapGeneration;
 			round_ = in.frame.roundGeneration;
 			navRevision_ = in.navRevision;
-			safeTime_ = 15.0f + 5.0f * in.aggression;
 		}
 		lastNow_ = in.now;
-		if (in.seenEnemyElapsed >= 0 && std::isfinite(in.seenEnemyElapsed) && safeTime_ > in.seenEnemyElapsed)
-			safeTime_ = in.seenEnemyElapsed - 2.0f;
-		if (in.visibleEnemy && safeTime_ > in.elapsedRound)
-			safeTime_ = in.elapsedRound - 2.0f;
 		const auto &noise = in.noise;
 		if (!noise.active || noise.kind == world::SoundKind::Objective || noise.navArea == 0 || in.navRevision == 0 ||
 			noise.navRevision != in.navRevision || !std::isfinite(noise.timestampSeconds) ||
 			noise.timestampSeconds <= 0 || noise.timestampSeconds > in.now ||
 			in.now - noise.timestampSeconds < in.reactionSeconds ||
-			!in.allowed || in.visibleEnemy || in.elapsedRound <= 1.25f * safeTime_)
+			!in.allowed || in.visibleEnemy || !in.wellPastSafe)
 			return Result::Ignore;
 		if (in.hiding && in.defenseAmbushExpired)
 		{
@@ -157,7 +152,7 @@ private:
 	world::ActorKey actor_{};
 	std::uint32_t map_ = 0, round_ = 0, area_ = 0;
 	std::uint64_t navRevision_ = 0;
-	float lastNow_ = 0, lastCheck_ = 0, safeTime_ = 0;
+	float lastNow_ = 0, lastCheck_ = 0;
 	world::NoiseMemory candidate_{};
 	world::WorldPosition target_{};
 };

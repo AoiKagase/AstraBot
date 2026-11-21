@@ -1,4 +1,5 @@
 #include "astrabot/compat/noise_investigation.hpp"
+#include "astrabot/compat/friend_death.hpp"
 #include <cstdio>
 using namespace astrabot;
 bool check(bool ok, const char *m)
@@ -30,7 +31,7 @@ compat::NoiseInvestigationInput input()
 	i.actor = {1, 11};
 	i.frame = {1, 1, 1};
 	i.now = 100;
-	i.elapsedRound = 30;
+	i.wellPastSafe = true;
 	i.aggression = .5f;
 	i.allowed = true;
 	i.alive = true;
@@ -49,12 +50,13 @@ int main()
 	Random random;
 	compat::NoiseInvestigationPlanner p;
 	auto i = input();
-	i.elapsedRound = 21.875f;
+	compat::EnemyReactionMemory enemy;
+	i.wellPastSafe = enemy.wellPastSafe(21.875f, i.aggression);
 	if (!check(p.evaluate(i, random) == Result::Ignore && random.draws == 0,
 			"strict well-past-safe boundary does not roll"))
 		return 1;
 	i.now += .01f;
-	i.elapsedRound += .01f;
+	i.wellPastSafe = enemy.wellPastSafe(21.885f, i.aggression);
 	if (!check(p.evaluate(i, random) == Result::Attend && p.active(), "past safe permits investigation"))
 		return 1;
 	i.noise.active = false;
@@ -65,12 +67,25 @@ int main()
 	p.reset();
 	i = input();
 	i.visibleEnemy = true;
-	i.elapsedRound = 5;
+	i.wellPastSafe = enemy.wellPastSafe(5.0f, i.aggression);
 	p.evaluate(i, random);
 	i.visibleEnemy = false;
 	i.now += .25f;
-	i.elapsedRound = 5.25f;
-	if (!check(p.evaluate(i, random) == Result::Attend, "early visual enemy adjusts safe time"))
+	const int beforeContact = random.draws;
+	if (!check(p.evaluate(i, random) == Result::Ignore && random.draws == beforeContact,
+			"transient visibility without recognition does not shorten the safe period"))
+		return 1;
+	enemy.adjustSafeTime(6.0f, i.aggression);
+	i.wellPastSafe = enemy.wellPastSafe(5.0f, i.aggression);
+	if (!check(p.evaluate(i, random) == Result::Ignore && random.draws == beforeContact,
+			"shared learned time still excludes the exact boundary"))
+		return 1;
+	i.wellPastSafe = enemy.wellPastSafe(5.001f, i.aggression);
+	++i.frame.roundGeneration;
+	++i.navRevision;
+	i.noise.navRevision = i.navRevision;
+	if (!check(p.evaluate(i, random) == Result::Attend && random.draws == beforeContact + 1,
+			"a new round and NAV revision can investigate using the same learned time"))
 		return 1;
 	p.reset();
 	i = input();

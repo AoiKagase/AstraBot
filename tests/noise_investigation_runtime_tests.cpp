@@ -22,6 +22,7 @@ int nativeHideWeapon = 0;
 int nativeReload = 0, nativeSpecialReload = 0;
 unsigned offMeshGroundLayers = 0;
 unsigned heardReportDraws = 0;
+unsigned investigationDraws = 0;
 int heardMessageType = 0;
 const char *heardMode = "normal";
 std::vector<std::string> heardSamples;
@@ -50,6 +51,8 @@ struct HeardTrace : astrabot::compat::IRandomTraceSink
 	{
 		if (std::strcmp(record.request.semanticId, "RNG-CSBOT-HEARD-NOISE-REPORT") == 0)
 			++heardReportDraws;
+		if (std::strcmp(record.request.semanticId, "noise.investigate") == 0)
+			++investigationDraws;
 	}
 };
 HeardTrace heardTrace;
@@ -557,7 +560,60 @@ bool testInvestigation(astrabot::metamod::PluginRuntime &runtime, enginefuncs_t 
 	nativeSpecialReload = 0;
 	step(.25f);
 	nativeHideWeapon = 0;
-	return check(investigating() && !belief.noise().active,
-		"ending the active weapon reload lets Hide attend the remembered sound");
+	if (!check(investigating() && !belief.noise().active,
+			"ending the active weapon reload lets Hide attend the remembered sound"))
+		return false;
+
+	runtime.onRoundLifecycleMessage("World triggered \"Round_End\"\n");
+	runtime.onRoundLifecycleMessage("World triggered \"Round_Start\"\n");
+	step(.65f);
+	if (!check(!investigating(), "fresh round clears the previous investigation before flash"))
+		return false;
+	const auto managed = belief.identity().observer;
+	const auto frame = belief.identity().frame;
+	auto &observations = const_cast<compat::PublicObservationStore &>(behavior.observation_publicObservations());
+	if (!check(observations.gameDllBlind(managed, frame, globals.time + .5f),
+			"gameplay flash fixture accepts the real blindness deadline"))
+		return false;
+	static_cast<metamod::BotObservationServices &>(runtime).behavior_observePlayerBlind(0, managed, frame);
+	runtime.onEmitSound(&source, "player/pl_step1.wav", 1, 1);
+	step(.25f);
+	if (!check(!investigating(), "ordinary noise cannot start an investigation while actually blind"))
+		return false;
+	step(.5f);
+	for (int i = 0; i < 4 && !investigating(); ++i)
+		step(.15f);
+	if (!check(investigating() && !belief.noise().active,
+			"ordinary noise uses the blind-adjusted safe time after gameplay vision returns"))
+		return false;
+
+	runtime.onRoundLifecycleMessage("World triggered \"Round_End\"\n");
+	runtime.onRoundLifecycleMessage("World triggered \"Round_Start\"\n");
+	if (!check(loadInvestigationNav(runtime), "the learned-time fixture can reload NAV for the same bot"))
+		return false;
+	step(.65f);
+	runtime.onEmitSound(&source, "player/pl_step1.wav", 1, 1);
+	for (int i = 0; i < 6 && !investigating(); ++i)
+		step(.15f);
+	if (!check(investigating() && !belief.noise().active,
+			"the same bot investigates early in the next round after NAV replacement without another flash"))
+		return false;
+
+	static char enhanced[] = "enhanced";
+	auto *const previousMode = gAstrabotModeCvar.string;
+	gAstrabotModeCvar.string = enhanced;
+	runtime.setCompatibilityString("astrabot_mode", enhanced);
+	runtime.onRoundLifecycleMessage("World triggered \"Round_End\"\n");
+	runtime.onRoundLifecycleMessage("World triggered \"Round_Start\"\n");
+	step(.65f);
+	const auto previousDraws = investigationDraws;
+	runtime.onEmitSound(&source, "player/pl_step1.wav", 1, 1);
+	step(.25f);
+	step(.65f);
+	const bool enhancedKeepsItsPolicy = behavior.service_compatibilitySurface().configuration().mode ==
+			compat::RuntimeMode::Enhanced && !investigating() && investigationDraws == previousDraws;
+	gAstrabotModeCvar.string = previousMode;
+	runtime.setCompatibilityString("astrabot_mode", "compatibility");
+	return check(enhancedKeepsItsPolicy, "Enhanced does not read the learned time through CSBot's noise investigation");
 }
 }

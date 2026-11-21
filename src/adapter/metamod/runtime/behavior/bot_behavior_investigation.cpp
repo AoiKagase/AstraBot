@@ -40,9 +40,6 @@ void BotBehaviorRuntime::updateNoiseInvestigation(std::size_t index, const runti
 	const float roundStart = services_->service_roundFreezeGeneration() == context.frame.roundGeneration
 		? services_->service_roundFreezeUntil()
 		: 0;
-	in.elapsedRound = (std::max)(0.0f, in.now - roundStart);
-	if (actor.lastVisibleEnemyTimes > 0 && actor.lastVisibleEnemyTimes >= roundStart)
-		in.seenEnemyElapsed = actor.lastVisibleEnemyTimes - roundStart;
 	in.alive = !before.dead;
 	in.timing = {services_->command_managedBotCommandSequences(index), 0, context.fullUpdateSequence};
 	if (belief.isValid() && belief.identity().observer == in.actor &&
@@ -100,7 +97,12 @@ void BotBehaviorRuntime::updateNoiseInvestigation(std::size_t index, const runti
 					++in.friends;
 			}
 	}
-	auto result = planner.evaluate(in, services_->service_compatibilityRandomSource());
+	const auto evaluate = [&] {
+		in.wellPastSafe = actor.enemyReaction.wellPastSafe(in.now - roundStart, in.aggression);
+		in.allowed = in.allowed && !isBlinded(in.actor, in.frame, in.now);
+		return planner.evaluate(in, services_->service_compatibilityRandomSource());
+	};
+	auto result = evaluate();
 	if (result == compat::NoiseInvestigationResult::NeedTravel)
 	{
 		const auto start = services_->navigation_knownArea(index, in.actor, in.frame, in.navRevision);
@@ -126,7 +128,7 @@ void BotBehaviorRuntime::updateNoiseInvestigation(std::size_t index, const runti
 					return;
 				in.travelDistance = compat::noiseTravelDistance(nav, start, in.noise.navArea, cost, ladders);
 			}
-			result = planner.evaluate(in, services_->service_compatibilityRandomSource());
+			result = evaluate();
 		}
 	}
 	if (result == compat::NoiseInvestigationResult::Attend)
@@ -148,7 +150,7 @@ void BotBehaviorRuntime::updateNoiseInvestigation(std::size_t index, const runti
 			report.lastSawEnemy = actor.lastVisibleEnemyTimes;
 			report.alive = in.alive;
 			report.roundOver = services_->service_roundOver();
-			report.wellPastSafe = true; // Attend is reachable only after the planner's strict safe-time gate.
+			report.wellPastSafe = in.wellPastSafe;
 			report.priority = in.noise.priority;
 			if (actor.noiseReportPolicy.attend(report, services_->service_compatibilityRandomSource()))
 			{

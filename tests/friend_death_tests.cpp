@@ -226,6 +226,11 @@ int main()
 	injury.update(oneSecondLater);
 	check(!injury.recentlyDamaged(oneSecondLater, 1) && !injury.isSafe(3, .5f),
 		"round reset clears injury while retaining learned safe time for the same bot");
+	check(!injury.wellPastSafe(3.75f, .5f) && injury.wellPastSafe(3.751f, .5f),
+		"damage learned on a previous round supplies the strict noise investigation threshold");
+	++oneSecondLater.frame.mapGeneration;
+	injury.update(oneSecondLater);
+	check(!injury.wellPastSafe(3.751f, .5f), "a new map starts with the profile's unlearned noise threshold");
 	EnemyReactionMemory damageBeforeBaseRejection;
 	auto deadVictim = context;
 	deadVictim.alive = false;
