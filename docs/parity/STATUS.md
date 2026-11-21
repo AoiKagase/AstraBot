@@ -274,6 +274,16 @@ AstraBotの互換DefuseBombは、直前のフル更新で得た認識・LOSと�
 
 Windows x86は166/166件、Linux x86は165/165件が合格した。PE・ELFとも公開7関数を確認し、Windows実機と検証済みDLLのSHA-256は `cbb1ef753f01514bbfddd2ea2c2f682bcbd1585789be9da0d1b82af2b0581700` で一致した。
 
+#### Attack開始時の姿勢と乱数順
+
+固定 `b088984` はAttack進入前に到着済みの隠れ場所で60%を抽選し、OnEnterで元の姿勢を保存する。続いてPinnedDown `[7,10]`、ShieldToggle `[2,10]`、必要ならCrouch `[0,100]`、Dodge `[0,100]`、Coward `[0,100]` の順で引く。Crouchは狙撃銃または750u超で50%、それ以外で `20 × (1 − aggression)`。成功候補だけ立位原点から20u下げた位置（しゃがみ中は現在原点）から敵の目へ `0x101` のレイを通す。ナイフでは立ち、通常のCrouch抽選を省く。Crouch抽選の不成立だけでは元のしゃがみを解除しない。
+
+AstraBotは互換Attack進入ごとにこの抽選を既存Aimの前に一度行う。移動処理や退避処理は進入時の結果を読み、Crouch/Dodge/PinnedDown/Cowardを重ねて引かない。同じ通常状態に戻るときは保存した元の姿勢を復元する。回帰で750u境界、狙撃銃、遮蔽レイ、隠れ場所、ナイフ、C4解除からの進入と復帰を確認した。通常のCombat.Rangeを生成時に引く順序、AimOffsetの進入専用再抽選、盾を持つ間の継続トグルは独立して残る。
+
+隔離 `de_dust2` の通常設置・実解除で近距離の敵を露出させた。修正前は初回 `USE=0` でbuttons=0。固定版と最終DLLはPinnedDown、ShieldToggle、Crouch、Dodge、Cowardに同じ8.5、6、99、99、99を与え、抽選外れでも初回 `USE=0` にbuttons=4を維持した。固定版ではOnExit復帰点の `m_isCrouching=1` と直後のbuttons=4を確認。最終DLLでも `attacking=false` の復元直後にbuttons=4を出した。敵なしでは3版とも解除完了。実機のPID・時刻・指紋とデバッガ手順は `artifacts/local/debug/csbot-attack-entry-20261121` に保存した。
+
+Windows x86は166/166、Linux x86は165/165が合格。PE・ELFとも公開7関数を検証した。記録した8試行は各ゲームPIDの終了確認後に次を開始し、最終DLLのSHA-256は `3913083a520778e39cb94100ab2f3bec60fc7a8aafdc7e981396c62f4ffc52cc` でビルドと実機が一致した。
+
 #### CSBotのプロファイル反応時間とフル更新数
 
 固定版 `bot_profile.cpp:394–402` はBotProfile.dbで明示された `ReactionTime` をdouble経由でfloatに格納し、フル更新1回分の0.1秒を差し引く。未記載の初期値は0.3秒。AstraBotは補正前の値とCSBot用の値を個別に継承し、補正後にDefaultと同じTemplateは先行Templateの値を維持する。ブレース形式とEnhancedは設定値を使用する。

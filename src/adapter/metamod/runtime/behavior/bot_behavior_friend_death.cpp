@@ -284,7 +284,11 @@ void BotBehaviorRuntime::observeFriendDeath(std::size_t index, const edict_t *vi
 		if (actor.managedBotStateMachines.beginAttack(makeManagedBotStateContext(index, before)) ==
 				compat::StateResult::Transitioned && current() && actor.managedBotStateMachines.attackOverlayActive() &&
 			actor.enemyReaction.source(context) == source)
+		{
 			actor.noiseEnemyContact = {target, source, point, context.now};
+			if (weapon.available && weapon.active)
+				(void)prepareNativeAttack(index, target, static_cast<std::uint16_t>(weapon.weaponId));
+		}
 		services_->applyNavigationRequest({index, NavigationRequestKind::DestroyPath});
 		services_->applyNavigationRequest({index, NavigationRequestKind::ResetProgress});
 		return;

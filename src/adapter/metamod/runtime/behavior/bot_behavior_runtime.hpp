@@ -337,6 +337,8 @@ private:
 	SelfDefenseThreat evaluateSelfDefense(std::size_t index, world::ActorKey target, bool visible);
 	bool selfDefenseThreatCurrent(std::size_t index, const SelfDefenseThreat &threat) const;
 	void tryDefuseAttack(std::size_t index, const compat::StateUpdateContext &context);
+	bool prepareNativeAttack(std::size_t index, world::ActorKey target, std::uint16_t weapon);
+	void applyAttackPosture(std::size_t index, ActionProposal &proposal);
 	bool updateCombatRetreat(std::size_t index, int team);
 	bool turnToThreateningGunfire(const ManagedActionContext &ctx, const compat::StateUpdateContext &stateContext);
 	bool retaliateAgainstRecentAttacker(const ManagedActionContext &ctx, bool sniper);
@@ -646,10 +648,10 @@ private:
 		std::uint64_t hideEpoch = 0;
 		std::uint64_t fallBackEquipEpoch = 0;
 		std::uint32_t updateSequence = 0;
-		float pinnedAfter = 0;
 		float retryAfter = -1;
-		bool coward = false;
 		AttackVisibility visibility{};
+		compat::AttackEntryPlan posture{};
+		std::uint64_t postureNormalEpoch = 0;
 	};
 	enum class LeaderMotion { Unknown, Stopped, Walking, Running };
 	struct FollowMotion

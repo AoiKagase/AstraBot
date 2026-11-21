@@ -96,6 +96,63 @@ bool testCrouchHold()
 	return check(!d.active && !planner.active(), "target loss ends combat movement ownership");
 }
 
+bool testAttackEntry()
+{
+	struct Case
+	{
+		bool hide, sniper, knife, inherit, clear;
+		float range, crouchRoll;
+		bool hold, crouched;
+		unsigned probes;
+	};
+	const Case cases[] = {
+		{false, false, false, true, true, 750, 10, false, true, 0},
+		{false, false, false, false, true, 750.1f, 10, true, true, 1},
+		{false, true, false, false, false, 100, 49, false, false, 1},
+		{true, false, false, false, true, 100, 99, true, true, 0},
+		{true, false, true, true, true, 100, 99, false, false, 0},
+	};
+	for (const auto &c : cases)
+	{
+		std::vector<compat::RandomTapeEntry> tape;
+		if (c.hide)
+			tape.push_back(draw("Attack.HideCrouchChance", 0, 100, 59));
+		tape.push_back(draw("Attack.PinnedDown", 7, 10, 8));
+		tape.push_back(draw("Attack.ShieldToggle", 2, 10, 3));
+		if (!c.hide && !c.knife)
+			tape.push_back(draw("Combat.CrouchChance", 0, 100, c.crouchRoll));
+		tape.push_back(draw("Combat.DodgeChance", 0, 100, 50));
+		tape.push_back(draw("Attack.Coward", 0, 100, 51));
+		compat::ScriptedRandomSource random(tape);
+		unsigned probes = 0;
+		compat::AttackEntryInput entry{};
+		entry.actor = {1, 1};
+		entry.random = &random;
+		entry.now = 10;
+		entry.skill = entry.aggression = .5f;
+		entry.range = c.range;
+		entry.hasEnemy = true;
+		entry.atHidingSpot = c.hide;
+		entry.sniper = c.sniper;
+		entry.knife = c.knife;
+		entry.crouched = c.inherit;
+		entry.walking = true;
+		entry.crouchContext = &probes;
+		entry.crouchVisible = c.clear ? &crouchClear : +[](void *data) {
+			++*static_cast<unsigned *>(data);
+			return false;
+		};
+		const auto plan = compat::planAttackEntry(entry);
+		if (!check(plan.valid && plan.pinnedAfter == 18 && plan.shieldToggleAfter == 13 && plan.coward &&
+				plan.hold == c.hold && plan.crouched == c.crouched && plan.savedCrouched == c.inherit &&
+				plan.savedWalking && plan.walking == c.knife && plan.dodge == c.knife && probes == c.probes &&
+				random.verifyComplete(),
+			"Attack entry preserves posture and orders the native random draws and conditional low eye trace"))
+			return false;
+	}
+	return true;
+}
+
 bool testDodge()
 {
 	std::vector<compat::RandomTapeEntry> tape = {draw("Combat.Range", 325, 425, 375),
@@ -182,7 +239,7 @@ bool testFireBeforeDodgeAndPlanarRange()
 }
 int main()
 {
-	return testAimPolicy() && testCrouchHold() && testDodge() && testRangeMovement() &&
+	return testAimPolicy() && testAttackEntry() && testCrouchHold() && testDodge() && testRangeMovement() &&
 			testFireBeforeDodgeAndPlanarRange()
 		? 0
 		: 1;

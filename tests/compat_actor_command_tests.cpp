@@ -1907,6 +1907,7 @@ bool testRuntimeBombSiteApproach(
 		auto &profile = const_cast<ProfileRecord &>(navigation.behavior_managedProfiles(0));
 		const auto savedProfile = profile;
 		profile.csbotReactionSeconds = 0;
+		profile.aggression = 100;
 		auto &observation = static_cast<metamod::BotObservationServices &>(runtime);
 		const auto &life = observation.service_lifecycle();
 		StateUpdateContext context{};
@@ -1990,10 +1991,22 @@ bool testRuntimeBombSiteApproach(
 		passed = check(state.state() == CompatibilityStateId::DefuseBomb &&
 				state.attackOverlayActive() && !(gLastRunPlayerMoveButtons & IN_USE),
 			"a recognized near enemy starts Attack before Defuse can queue USE") && passed;
+		passed = check((gLastRunPlayerMoveButtons & IN_DUCK) != 0,
+			"the first Attack command retains the Defuse posture even when the crouch hold chance is zero") && passed;
 		tick(1.125f);
 		passed = check(state.state() == CompatibilityStateId::DefuseBomb &&
 				state.attackOverlayActive() && !(gLastRunPlayerMoveButtons & IN_USE),
 			"the defuse receipt timeout does not run while Attack owns the update") && passed;
+		sendBarTime(5);
+		gObjectiveTraceVisible = false;
+		tick(.25f);
+		passed = check(!state.attackOverlayActive() && state.state() == CompatibilityStateId::DefuseBomb &&
+				(gLastRunPlayerMoveButtons & (IN_USE | IN_DUCK)) == IN_DUCK,
+			"Attack exit restores the interrupted Defuse posture in its last combat command") && passed;
+		tick(.125f);
+		passed = check((gLastRunPlayerMoveButtons & (IN_USE | IN_DUCK)) == (IN_USE | IN_DUCK),
+			"the next Defuse update resumes USE with its saved posture") && passed;
+		gObjectiveTraceVisible = true;
 		profile = savedProfile;
 		runtime.onClientDisconnect(&enemy);
 		enemy.v.flags = enemyFlags;

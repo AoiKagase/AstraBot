@@ -913,7 +913,7 @@ bool BotBehaviorRuntime::updateCombatRetreat(std::size_t index, int team)
 		return false;
 	const auto update = services_->service_managedBotFullUpdateSequences()[index];
 	const auto attackEpoch = machine.attackEntryEpoch();
-	if (retreat.attackEpoch == attackEpoch && retreat.updateSequence == update)
+	if (retreat.attackEpoch != attackEpoch || !retreat.posture.valid || retreat.updateSequence == update)
 		return false;
 
 	ActorTaskEnvironment env(*this, index, index, [&] {
@@ -922,24 +922,13 @@ bool BotBehaviorRuntime::updateCombatRetreat(std::size_t index, int team)
 	if (!env.current() || !env.receipt.context.alive)
 		return false;
 	const float now = env.receipt.context.now;
-	if (retreat.attackEpoch != attackEpoch)
-	{
-		float pinned = 0;
-		float fear = 0;
-		if (!env.drawFloat("Attack.PinnedDown", 7.0f, 10.0f, pinned) ||
-			!env.drawFloat("Attack.Coward", 0.0f, 100.0f, fear))
-			return false;
-		retreat.attackEpoch = attackEpoch;
-		retreat.pinnedAfter = now + pinned;
-		retreat.coward = fear > static_cast<float>(actor.managedProfiles.aggression);
-	}
 	retreat.updateSequence = update;
 	if (now <= retreat.retryAfter)
 		return false;
-	const bool pinned = now > retreat.pinnedAfter;
+	const bool pinned = now > retreat.posture.pinnedAfter;
 	if (!pinned)
 	{
-		if (!retreat.coward && actor.managedProfiles.aggression >= 100)
+		if (!retreat.posture.coward && actor.managedProfiles.aggression >= 100)
 			return false;
 		const auto living = livingRadioPeers(env.receipt.entity, team);
 		if (!env.current())
@@ -947,7 +936,7 @@ bool BotBehaviorRuntime::updateCombatRetreat(std::size_t index, int team)
 		const auto nearby = actor.outgoingRadioContactMemory.counts(env.receipt.actor, env.receipt.context.frame,
 			now, living.friends, living.enemies);
 		const int excessEnemies = nearby.enemies - nearby.friends - 1;
-		if (excessEnemies < (retreat.coward ? 1 : 2))
+		if (excessEnemies < (retreat.posture.coward ? 1 : 2))
 			return false;
 	}
 

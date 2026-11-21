@@ -72,7 +72,9 @@ void traceCombatVisibility(const float *start, const float *end, int ignoreMonst
 	if (selfDefenseTrace && self == &gEntities[0] && ignoreMonsters == 0x101)
 	{
 		const auto eye = gEntities[1].v.origin + gEntities[1].v.view_ofs;
-		if (end[0] == eye.x && end[1] == eye.y && end[2] == eye.z)
+		const auto observerEye = self->v.origin + self->v.view_ofs;
+		if (start[0] == observerEye.x && start[1] == observerEye.y && start[2] == observerEye.z &&
+			end[0] == eye.x && end[1] == eye.y && end[2] == eye.z)
 		{
 			++selfDefenseTrace->eyeChecks;
 			result->flFraction = selfDefenseTrace->eyeVisible ? 1.0f : .5f;

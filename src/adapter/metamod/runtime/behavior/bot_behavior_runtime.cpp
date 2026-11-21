@@ -24,21 +24,25 @@ ActionProposal BotBehaviorRuntime::decideManagedBotAction(std::size_t index,
 	}
 	ManagedActionContext ctx{index, before, movementAngles};
 	ctx.proposal = {ActionKind::None, movementAngles, movementButtons};
+	const auto finish = [&](ActionProposal proposal) {
+		applyAttackPosture(index, proposal);
+		return proposal;
+	};
 	if (prepareManagedAction(ctx) == BehaviorPhaseResult::Complete)
 	{
 		actors_[index].managedBotCombat.stopMovement();
-		return ctx.proposal;
+		return finish(ctx.proposal);
 	}
 	ctx.closeFootstepDistance = footstep.current(ctx.actor, ctx.frame, services_->service_globals()->time)
 		? footstep.distance : -1;
 	if (decideReloadAction(ctx))
-		return ctx.proposal;
+		return finish(ctx.proposal);
 	if (decideObjectiveAction(ctx) == BehaviorPhaseResult::Complete)
 	{
 		actors_[index].managedBotCombat.stopMovement();
-		return ctx.proposal;
+		return finish(ctx.proposal);
 	}
-	return decideCombatAction(ctx);
+	return finish(decideCombatAction(ctx));
 }
 
 bool BotBehaviorRuntime::executionCurrent(

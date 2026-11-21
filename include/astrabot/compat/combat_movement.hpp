@@ -8,6 +8,80 @@ namespace astrabot
 {
 namespace compat
 {
+struct AttackEntryInput
+{
+	RandomActor actor{};
+	RandomTimingContext timing{};
+	ICompatibilityRandomSource *random = nullptr;
+	float now = 0, skill = 0, aggression = 0, range = 0;
+	bool atHidingSpot = false, crouched = false, walking = false;
+	bool hasEnemy = false, knife = false, sniper = false, enemyFacing = false, outnumbered = false;
+	bool (*crouchVisible)(void *) = nullptr;
+	void *crouchContext = nullptr;
+};
+
+struct AttackEntryPlan
+{
+	bool valid = false;
+	bool crouched = false, walking = false, hold = false, dodge = false, coward = false;
+	bool savedCrouched = false, savedWalking = false;
+	float pinnedAfter = 0, shieldToggleAfter = 0;
+};
+
+template <typename Current>
+AttackEntryPlan planAttackEntry(const AttackEntryInput &in, Current current)
+{
+	if (!in.random)
+		return {};
+	const auto draw = [&](const char *id, float low, float high, float &value) {
+		if (!current())
+			return false;
+		const auto result = in.random->nextFloat(RandomRequest::floatRequest(id, in.actor, in.timing, low, high));
+		value = result.value;
+		return current() && result.status == RandomStatus::Ok && std::isfinite(value) && value >= low && value <= high;
+	};
+	AttackEntryPlan plan{};
+	plan.savedCrouched = in.crouched;
+	plan.savedWalking = in.walking;
+	plan.walking = in.knife && in.hasEnemy && !in.enemyFacing;
+	float roll = 0;
+	if (in.atHidingSpot)
+	{
+		if (!draw("Attack.HideCrouchChance", 0, 100, roll))
+			return {};
+		plan.hold = roll < 60;
+	}
+	float pinned = 0, shield = 0;
+	if (!draw("Attack.PinnedDown", 7, 10, pinned) || !draw("Attack.ShieldToggle", 2, 10, shield))
+		return {};
+	plan.pinnedAfter = in.now + pinned;
+	plan.shieldToggleAfter = in.now + shield;
+	if (in.knife)
+		plan.hold = false;
+	else if (!plan.hold && in.hasEnemy)
+	{
+		const float crouchChance = in.sniper || in.range > 750 ? 50.0f : 20.0f * (1.0f - in.aggression);
+		if (!draw("Combat.CrouchChance", 0, 100, roll))
+			return {};
+		plan.hold = roll < crouchChance && in.crouchVisible && in.crouchVisible(in.crouchContext);
+	}
+	plan.crouched = !in.knife && (in.crouched || plan.hold);
+	const float dodgeChance = in.skill > .5f && in.outnumbered ? 100.0f : 80.0f * in.skill * (in.knife ? 2.0f : 1.0f);
+	if (!draw("Combat.DodgeChance", 0, 100, roll))
+		return {};
+	plan.dodge = roll < dodgeChance;
+	if (!draw("Attack.Coward", 0, 100, roll))
+		return {};
+	plan.coward = roll > 100.0f * in.aggression;
+	plan.valid = true;
+	return plan;
+}
+
+inline AttackEntryPlan planAttackEntry(const AttackEntryInput &in)
+{
+	return planAttackEntry(in, [] { return true; });
+}
+
 struct CombatMovementInput
 {
 	static constexpr int kUnknownPlanarRange = -1;
@@ -22,6 +96,7 @@ struct CombatMovementInput
 	ICompatibilityRandomSource *random = nullptr;
 	RandomTimingContext timing{};
 	const world::WorldSnapshot *knowledge = nullptr;
+	const AttackEntryPlan *nativeEntry = nullptr;
 };
 struct CombatMovementDecision
 {
@@ -136,17 +211,24 @@ public:
 			if (combatRange_ == 0 && !draw("Combat.Range", kMinimumCombatRange, kMaximumCombatRange, combatRange_))
 				return out;
 			float roll = 0;
-			if (!draw("Combat.CrouchChance", kChanceRollMinimum, kChanceRollMaximum, roll))
-				return out;
-			const float chance = in.sniper || in.range > kDistantCrouchRange
-				? kDistantCrouchChance
-				: kAggressionCrouchChanceScale * (1 - in.aggression);
-			crouch_ = roll < chance && in.crouchVisible && in.crouchVisible(in.crouchContext);
-			if (!draw("Combat.DodgeChance", kChanceRollMinimum, kChanceRollMaximum, roll))
-				return out;
-			dodge_ =
-				roll < (in.skill > kOutnumberedDodgeMinimumSkill && outnumbered ? kOutnumberedDodgeChance
-																				: kDodgeChanceSkillScale * in.skill);
+			if (in.nativeEntry)
+			{
+				crouch_ = in.nativeEntry->hold;
+				dodge_ = in.nativeEntry->dodge;
+			}
+			else
+			{
+				if (!draw("Combat.CrouchChance", kChanceRollMinimum, kChanceRollMaximum, roll))
+					return out;
+				const float chance = in.sniper || in.range > kDistantCrouchRange
+					? kDistantCrouchChance
+					: kAggressionCrouchChanceScale * (1 - in.aggression);
+				crouch_ = roll < chance && in.crouchVisible && in.crouchVisible(in.crouchContext);
+				if (!draw("Combat.DodgeChance", kChanceRollMinimum, kChanceRollMaximum, roll))
+					return out;
+				dodge_ = roll < (in.skill > kOutnumberedDodgeMinimumSkill && outnumbered
+					? kOutnumberedDodgeChance : kDodgeChanceSkillScale * in.skill);
+			}
 			target_ = in.target;
 			active_ = true;
 			out.entered = true;

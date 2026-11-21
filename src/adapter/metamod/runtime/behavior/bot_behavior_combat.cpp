@@ -27,6 +27,7 @@ struct CrouchTraceContext
 	edict_t *self;
 	edict_t *enemy;
 	bool ducked;
+	bool native = false;
 };
 bool crouchTargetVisible(void *opaque)
 {
@@ -40,7 +41,9 @@ bool crouchTargetVisible(void *opaque)
 	const float end[] = {ctx.enemy->v.origin.x + ctx.enemy->v.view_ofs.x,
 		ctx.enemy->v.origin.y + ctx.enemy->v.view_ofs.y, ctx.enemy->v.origin.z + ctx.enemy->v.view_ofs.z};
 	TraceResult trace{};
-	ctx.engine->pfnTraceLine(start, end, kTraceIgnoringActors, ctx.self, &trace);
+	ctx.engine->pfnTraceLine(start, end, ctx.native ? 0x101 : kTraceIgnoringActors, ctx.self, &trace);
+	if (ctx.native)
+		return trace.flFraction == 1.0f;
 	return trace.flFraction >= 1.0f && trace.fStartSolid == 0 && trace.fAllSolid == 0;
 }
 }
@@ -634,6 +637,112 @@ BotBehaviorRuntime::SelfDefenseThreat BotBehaviorRuntime::evaluateSelfDefense(
 	return threat;
 }
 
+bool BotBehaviorRuntime::prepareNativeAttack(std::size_t index, world::ActorKey target, std::uint16_t weapon)
+{
+	auto &actor = actors_[index];
+	auto &retreat = actor.combatRetreat;
+	const auto &machine = actor.managedBotStateMachines;
+	const auto attack = machine.attackEntryEpoch();
+	if (!machine.attackOverlayActive())
+		return false;
+	if (retreat.attackEpoch == attack)
+		return retreat.posture.valid;
+
+	const auto receipt = reactionContext(index);
+	const auto execution = actor.executionRevision;
+	const auto epoch = machine.normalStateEpoch();
+	auto *self = services_->service_managedBotHandles()[index].entity;
+	const auto team = services_->observation_resolvePlayerTeam(self);
+	const auto *sourceEngine = services_->service_engineFunctions();
+	auto *enemy = target.isValid() && sourceEngine && sourceEngine->pfnPEntityOfEntIndex
+		? sourceEngine->pfnPEntityOfEntIndex(static_cast<int>(target.slot)) : nullptr;
+	const auto source = actor.enemyReaction.source(receipt);
+	const auto current = [&] {
+		return executionCurrent(index, receipt, execution) && machine.attackOverlayActive() &&
+			machine.normalStateEpoch() == epoch && machine.attackEntryEpoch() == attack &&
+			(!enemy || (!enemy->free && enemy->v.health > 0 && enemy->v.deadflag == DEAD_NO &&
+				enemy->serialnumber >= 0 && reactionEnemyCurrent(target) &&
+				(!source.isValid() || source == world::EntityKey{target.slot,
+					static_cast<std::uint32_t>(enemy->serialnumber) + 1U})));
+	};
+	if (!current() || !receipt.alive)
+		return false;
+
+	compat::AttackEntryInput input{};
+	input.actor = {receipt.actor.slot, receipt.actor.generation};
+	input.timing = {services_->command_managedBotCommandSequences(index), receipt.frame.tick,
+		services_->service_managedBotFullUpdateSequences()[index]};
+	input.random = &services_->service_compatibilityRandomSource();
+	input.now = receipt.now;
+	input.skill = static_cast<float>(actor.managedProfiles.skill) / kSkillPercentageScale;
+	input.aggression = static_cast<float>(actor.managedProfiles.aggression) / kProfilePercentageScale;
+	input.atHidingSpot = machine.state() == compat::CompatibilityStateId::Hide && actor.scenarioPlanners.atDefenseSpot();
+	input.crouched = machine.state() == compat::CompatibilityStateId::DefuseBomb || (self->v.flags & FL_DUCKING) != 0;
+	input.walking = (machine.state() == compat::CompatibilityStateId::Follow && actor.followMotion.walking) ||
+		(machine.state() == compat::CompatibilityStateId::InvestigateNoise && actor.investigationWalking);
+	constexpr std::uint16_t knifeId = 29;
+	input.knife = weapon == knifeId;
+	input.sniper = weapon < 32U && (compat::kSniperRifleInventoryMask & (1U << weapon)) != 0;
+	input.hasEnemy = enemy != nullptr;
+	if (enemy)
+	{
+		const auto toEnemy = enemy->v.origin - self->v.origin;
+		input.range = std::sqrt(DotProduct(toEnemy, toEnemy));
+		constexpr float radians = .01745329251994329577f;
+		const float yaw = (enemy->v.v_angle.y + enemy->v.punchangle.y) * radians;
+		const float pitch = (enemy->v.v_angle.x + enemy->v.punchangle.x) * radians;
+		input.enemyFacing = std::cos(pitch) * (std::cos(yaw) * toEnemy.x + std::sin(yaw) * toEnemy.y) < 0;
+	}
+	constexpr int terrorist = 1, counterTerrorist = 2;
+	if (input.skill > .5f && (team == terrorist || team == counterTerrorist))
+	{
+		const auto living = livingRadioPeers(self, team);
+		const auto seen = actor.outgoingRadioContactMemory.counts(
+			receipt.actor, receipt.frame, receipt.now, living.friends, living.enemies);
+		input.outnumbered = seen.enemies > seen.friends + 1;
+	}
+	CrouchTraceContext crouch{services_->service_engineFunctions(), self, enemy, input.crouched, true};
+	input.crouchVisible = &crouchTargetVisible;
+	input.crouchContext = &crouch;
+	if (!current())
+		return false;
+	const auto entry = compat::planAttackEntry(input, current);
+	if (!entry.valid || !current())
+		return false;
+	retreat.attackEpoch = attack;
+	retreat.posture = entry;
+	retreat.postureNormalEpoch = epoch;
+	retreat.updateSequence = 0;
+	return true;
+}
+
+void BotBehaviorRuntime::applyAttackPosture(std::size_t index, ActionProposal &proposal)
+{
+	if (index >= actors_.size() ||
+		services_->service_compatibilitySurface().configuration().mode != compat::RuntimeMode::Compatibility)
+		return;
+	auto &actor = actors_[index];
+	auto &retreat = actor.combatRetreat;
+	const auto &machine = actor.managedBotStateMachines;
+	if (!retreat.posture.valid || retreat.attackEpoch != machine.attackEntryEpoch())
+		return;
+	const bool attacking = machine.attackOverlayActive();
+	if (machine.normalStateEpoch() == retreat.postureNormalEpoch)
+	{
+		const auto &posture = retreat.posture;
+		const bool ducked = attacking ? posture.crouched : posture.savedCrouched;
+		proposal.movementButtons = static_cast<std::uint16_t>(
+			(proposal.movementButtons & ~IN_DUCK) | (ducked ? IN_DUCK : 0));
+		if (proposal.combatMovement && (attacking ? posture.walking : posture.savedWalking) && !ducked)
+		{
+			proposal.combatForward *= .4f;
+			proposal.combatSide *= .4f;
+		}
+	}
+	if (!attacking)
+		retreat.posture = {};
+}
+
 void BotBehaviorRuntime::tryDefuseAttack(std::size_t index, const compat::StateUpdateContext &context)
 {
 	auto &actor = actors_[index];
@@ -689,6 +798,9 @@ void BotBehaviorRuntime::tryDefuseAttack(std::size_t index, const compat::StateU
 		return;
 	++threat.attackEpoch;
 	if (!selfDefenseThreatCurrent(index, threat) || !state.attackOverlayActive())
+		return;
+	if (!prepareNativeAttack(index, target, static_cast<std::uint16_t>(currentWeapon.weaponId)) ||
+		!selfDefenseThreatCurrent(index, threat))
 		return;
 	const auto &origin = threat.entity->v.origin;
 	const world::WorldPosition position{origin.x, origin.y, origin.z};
@@ -841,7 +953,7 @@ ActionProposal BotBehaviorRuntime::decideCombatAction(ManagedActionContext &ctx)
 	const bool selfDefenseEntry = compatibility && !state.attackOverlayActive() &&
 		weapon.kind != combat::WeaponKind::Grenade && (combatVisible || delayedRecognition) &&
 		reactionDisposition(index) == compat::ReactionDisposition::SelfDefense;
-	const auto defenseThreat = selfDefenseEntry
+	auto defenseThreat = selfDefenseEntry
 		? evaluateSelfDefense(index, targetActor, combatVisible) : SelfDefenseThreat{};
 	const auto defenseCurrent = [&] {
 		return !selfDefenseEntry || selfDefenseThreatCurrent(index, defenseThreat);
@@ -904,6 +1016,23 @@ ActionProposal BotBehaviorRuntime::decideCombatAction(ManagedActionContext &ctx)
 			targetPosition = memory.position(receipt);
 			combatActor.noiseEnemyContact = {targetActor, acquisition.source, targetPosition, receipt.now};
 		}
+	}
+	if (compatibility && combatVisible && !reactionIgnoring(index) && !state.attackOverlayActive())
+	{
+		const auto entry = makeManagedBotStateContext(index, before);
+		if (!defenseCurrent() ||
+			combatActor.managedBotStateMachines.beginAttack(entry) != compat::StateResult::Transitioned)
+			return proposal;
+		if (selfDefenseEntry)
+			++defenseThreat.attackEpoch;
+	}
+	if (compatibility && state.attackOverlayActive() &&
+		!prepareNativeAttack(index, targetActor, static_cast<std::uint16_t>(weaponValue)))
+		return proposal;
+	if (compatibility && state.attackOverlayActive() && knife)
+	{
+		combatActor.combatRetreat.posture.crouched = false;
+		combatActor.combatRetreat.posture.hold = false;
 	}
 	if (combatVisible)
 		targetPosition = compat::combatAimPoint(currentEnemy->position,
@@ -1021,6 +1150,7 @@ ActionProposal BotBehaviorRuntime::decideCombatAction(ManagedActionContext &ctx)
 			move.enemyFacing = -dx * std::cos(yaw) - dy * std::sin(yaw) > 0;
 		}
 		move.knowledge = &snapshot;
+		move.nativeEntry = compatibility && state.attackOverlayActive() ? &combatActor.combatRetreat.posture : nullptr;
 		crouch.enemy = enemy;
 		move.crouchVisible = &crouchTargetVisible;
 		move.crouchContext = &crouch;
