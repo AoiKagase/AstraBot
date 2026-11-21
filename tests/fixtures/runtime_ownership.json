@@ -1242,7 +1242,12 @@
   {
     "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
     "scope": "ActorState",
-    "member": "defuseAimDecision"
+    "member": "bombObjectiveAimDecision"
+  },
+  {
+    "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
+    "scope": "ActorState",
+    "member": "plantFloorLook"
   },
   {
     "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",

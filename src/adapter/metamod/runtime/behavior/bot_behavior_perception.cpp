@@ -246,10 +246,11 @@ bool BotBehaviorRuntime::prepareManagedPerception(std::size_t index, world::Worl
 		}
 	}
 	if (compatibility && newSample && !blinded &&
-		actor.managedBotStateMachines.state() == compat::CompatibilityStateId::DefuseBomb)
+		(actor.managedBotStateMachines.state() == compat::CompatibilityStateId::DefuseBomb ||
+			actor.managedBotStateMachines.state() == compat::CompatibilityStateId::PlantBomb))
 	{
 		// Upkeep uses this decision until the next full perception update, even across the three-second deadline.
-		actor.defuseAimDecision = {memory.enemy(reaction),
+		actor.bombObjectiveAimDecision = {memory.enemy(reaction),
 			memory.shouldAim(reaction) ? currentEnemySource(index) : world::EntityKey{},
 			actor.managedBotStateMachines.normalStateEpoch()};
 	}

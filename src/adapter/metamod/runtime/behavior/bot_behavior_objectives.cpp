@@ -27,7 +27,6 @@ constexpr float kFallbackTravelSpeed = 240.0f;
 constexpr float kPlantCompletionBudgetSeconds = 5.0f;
 constexpr unsigned kObjectiveLogIntervalFrames = 16U;
 constexpr unsigned kEntityScanLogIntervalFrames = 64U;
-constexpr float kPlantPitchDegrees = 90.0f;
 constexpr unsigned kKnifeWeaponId = 29U;
 constexpr float kObjectiveInteractionRange = 96.0f;
 
@@ -1335,31 +1334,49 @@ BotBehaviorRuntime::BehaviorPhaseResult BotBehaviorRuntime::prepareManagedAction
 		(void)cancelHeldGrenade(index, movementAngles, proposal);
 		return BehaviorPhaseResult::Complete;
 	}
-	if (services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility &&
-		actors_[index].managedBotStateMachines.state() == compat::CompatibilityStateId::PlantBomb &&
-		!actors_[index].managedBotStateMachines.attackOverlayActive() &&
-		compatObservation.objective.carryingC4.isAvailable() && compatObservation.objective.carryingC4.value &&
-		managedActorAtBombSite(index))
+	auto &actorState = actors_[index];
+	const auto &machine = actorState.managedBotStateMachines;
+	const bool nativePlant = services_->service_compatibilitySurface().configuration().mode ==
+			compat::RuntimeMode::Compatibility &&
+		machine.state() == compat::CompatibilityStateId::PlantBomb;
+	if (nativePlant)
 	{
-		// Plant owns the interaction after arrival. A cleared corridor or an old
-		// destination farther than96 must not suppress its C4 selection/attack.
-		if (cancelHeldGrenade(index, movementAngles, proposal))
-			return BehaviorPhaseResult::Complete;
-		auto &action = actors_[index].managedBotObjectiveActions;
-		action.active = true;
-		action.actor = ctx.actor;
-		action.kind = team::TeamObjectiveKind::PlantC4;
-		action.mapGeneration = ctx.frame.mapGeneration;
-		action.roundGeneration = ctx.frame.roundGeneration;
 		const auto &weapon = services_->observation_managedBotCurrentWeapons(index);
 		const bool current = weapon.available && weapon.actorGeneration == ctx.actor.generation &&
 			weapon.mapGeneration == ctx.frame.mapGeneration && weapon.roundGeneration == ctx.frame.roundGeneration;
-		proposal.kind = ActionAdapter::plantActionForWeaponObservation(
-			current, current && weapon.active, weapon.weaponId, action.c4AttackInputDispatched);
-		proposal.stopForWeapon = true;
-		proposal.movementButtons = IN_DUCK;
-		proposal.viewAngles = {kPlantPitchDegrees, movementAngles.yaw, movementAngles.roll};
-		return BehaviorPhaseResult::Complete;
+		if (machine.attackOverlayActive())
+		{
+			actorState.managedBotObjectiveActions = {};
+			if (current && weapon.active && (weapon.weaponId == ActionAdapter::kC4WeaponId ||
+					compat::WeaponActionPlanner::isGrenade(weapon.weaponId)))
+			{
+				proposal.kind = bestOwnedWeapon(*handle.entity);
+				if (proposal.kind == ActionKind::None)
+					proposal.kind = ActionKind::SelectKnife;
+				return BehaviorPhaseResult::Complete;
+			}
+		}
+		else if (compatObservation.objective.carryingC4.isAvailable() &&
+			compatObservation.objective.carryingC4.value && managedActorAtBombSite(index))
+		{
+			// The old route destination does not constrain planting after arrival.
+			if (cancelHeldGrenade(index, movementAngles, proposal))
+				return BehaviorPhaseResult::Complete;
+			auto &action = actorState.managedBotObjectiveActions;
+			action.active = true;
+			action.actor = ctx.actor;
+			action.kind = team::TeamObjectiveKind::PlantC4;
+			action.mapGeneration = ctx.frame.mapGeneration;
+			action.roundGeneration = ctx.frame.roundGeneration;
+			if (machine.stateTimestamp() != services_->service_globals()->time)
+				proposal.kind = ActionAdapter::plantActionForWeaponObservation(
+					current, current && weapon.active, weapon.weaponId, action.c4AttackInputDispatched);
+			proposal.stopForWeapon = true;
+			proposal.movementButtons = IN_DUCK;
+			proposal.hasUseEntityLook = true;
+			proposal.useEntityLookTarget = actorState.plantFloorLook;
+			return BehaviorPhaseResult::Complete;
+		}
 	}
 	if (services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility &&
 		actors_[index].scenarioDecisions.action == compat::ScenarioAction::Escape &&
@@ -1373,7 +1390,6 @@ BotBehaviorRuntime::BehaviorPhaseResult BotBehaviorRuntime::prepareManagedAction
 			proposal.kind = ActionKind::SelectKnife;
 		return BehaviorPhaseResult::Complete;
 	}
-	auto &actorState = actors_[index];
 	auto &equipEpoch = actorState.combatRetreat.fallBackEquipEpoch;
 	if (equipEpoch != 0)
 	{
@@ -1470,7 +1486,9 @@ BotBehaviorRuntime::BehaviorPhaseResult BotBehaviorRuntime::decideObjectiveActio
 	if (targetActor.isValid())
 		actors_[index].guardLook.reset();
 	ctx.team = services_->observation_resolvePlayerTeam(handle.entity);
-	if (compatibility && machine.state() == compat::CompatibilityStateId::DefuseBomb && machine.attackOverlayActive())
+	if (compatibility && machine.attackOverlayActive() &&
+		(machine.state() == compat::CompatibilityStateId::DefuseBomb ||
+			machine.state() == compat::CompatibilityStateId::PlantBomb))
 		return BehaviorPhaseResult::Continue;
 	const int team = ctx.team;
 	const objectives::TeamRole teamRole = team == kTerroristTeam ? objectives::TeamRole::Terrorist

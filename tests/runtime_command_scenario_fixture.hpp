@@ -228,7 +228,7 @@ public:
 		if (descentDestinationLook)
 			++descentFallbackLooks;
 	}
-	bool behavior_defuseEnemyAim(std::size_t, const compat::AimSpringState &, world::WorldPosition *) override
+	bool behavior_bombObjectiveEnemyAim(std::size_t, const compat::AimSpringState &, world::WorldPosition *) override
 	{
 		return false;
 	}

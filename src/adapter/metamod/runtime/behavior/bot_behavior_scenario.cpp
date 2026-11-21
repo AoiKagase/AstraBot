@@ -1977,13 +1977,14 @@ void BotBehaviorRuntime::commitBehaviorState(
 {
 	auto &machine = actors_[index].managedBotStateMachines;
 	const auto previousState = machine.state();
-	if (stateBehavior.navigationOwned && previousState == compat::CompatibilityStateId::DefuseBomb)
+	if (stateBehavior.navigationOwned && (previousState == compat::CompatibilityStateId::DefuseBomb ||
+			previousState == compat::CompatibilityStateId::PlantBomb))
 	{
-		// Attack owns the update before Defuse can check its receipt or queue USE.
+		// Recognized threats get the full update before either bomb interaction.
 		const auto receipt = reactionContext(index);
 		const auto revision = actors_[index].executionRevision;
 		const auto epoch = machine.normalStateEpoch();
-		tryDefuseAttack(index, context);
+		tryBombObjectiveAttack(index, context);
 		if (!executionCurrent(index, receipt, revision) || machine.normalStateEpoch() != epoch)
 			return;
 		if (machine.attackOverlayActive())
@@ -2007,6 +2008,14 @@ void BotBehaviorRuntime::commitBehaviorState(
 	}
 	if (previousState != machine.state())
 	{
+		if (stateBehavior.navigationOwned && machine.state() == compat::CompatibilityStateId::PlantBomb)
+		{
+			const auto &entity = services_->service_managedBotHandles()[index].entity->v;
+			const float yaw = entity.v_angle.y * 0.017453292519943295f;
+			// Plant crouches before constructing the floor look target.
+			actors_[index].plantFloorLook = {entity.origin.x + 10.0f * std::cos(yaw),
+				entity.origin.y + 10.0f * std::sin(yaw), entity.origin.z - 18.0f};
+		}
 		actors_[index].enemyReaction.onStateChange(reactionContext(index), previousState, machine.state());
 		if (previousState == compat::CompatibilityStateId::InvestigateNoise)
 		{

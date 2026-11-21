@@ -107,7 +107,7 @@ public:
 		const edict_t *source, int serial, world::ActorKey sourceConnection);
 	bool forcedRunning(std::size_t index);
 	world::EntityKey currentEnemySource(std::size_t index) const;
-	bool defuseEnemyAim(std::size_t index, const compat::AimSpringState &spring, world::WorldPosition *point);
+	bool bombObjectiveEnemyAim(std::size_t index, const compat::AimSpringState &spring, world::WorldPosition *point);
 	void observePlayerDeath(int victimSlot, int killerSlot, edict_t *recipient, const world::FrameIdentity &frame);
 	void bindServices(BotBehaviorServices &services)
 	{
@@ -336,7 +336,7 @@ private:
 	};
 	SelfDefenseThreat evaluateSelfDefense(std::size_t index, world::ActorKey target, bool visible);
 	bool selfDefenseThreatCurrent(std::size_t index, const SelfDefenseThreat &threat) const;
-	void tryDefuseAttack(std::size_t index, const compat::StateUpdateContext &context);
+	void tryBombObjectiveAttack(std::size_t index, const compat::StateUpdateContext &context);
 	bool prepareNativeAttack(std::size_t index, world::ActorKey target, std::uint16_t weapon);
 	void applyAttackPosture(std::size_t index, ActionProposal &proposal);
 	bool updateCombatRetreat(std::size_t index, int team);
@@ -699,13 +699,14 @@ private:
 			std::uint32_t frame = 0U;
 		};
 		OccludedRecognition occludedRecognition{};
-		struct DefuseAimDecision
+		struct BombObjectiveAimDecision
 		{
 			world::ActorKey target{};
 			world::EntityKey source{};
 			std::uint64_t stateEpoch = 0;
 		};
-		DefuseAimDecision defuseAimDecision{};
+		BombObjectiveAimDecision bombObjectiveAimDecision{};
+		world::WorldPosition plantFloorLook{};
 		std::uint32_t recognitionSequences{};
 		float lastVisibleEnemyTimes{};
 		compat::NoiseEnemyContact noiseEnemyContact{};

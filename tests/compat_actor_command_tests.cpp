@@ -93,6 +93,7 @@ bool gAvoidanceNeutralPath = false;
 bool gDirectJoinCommandSeen = false;
 bool gServerSetsEntityTeam = true;
 char gLastClientCommand[32] = {};
+std::string gLastGameClientCommand;
 int gClientKeyValueCount = 0;
 bool gMenuTeamContextValid = false;
 bool gMenuClassContextValid = false;
@@ -582,6 +583,7 @@ void gameClientCommand(edict_t *entity)
 		astrabot::metamod::HookCommandArgc(), astrabot::metamod::HookCommandArgv(0),
 		astrabot::metamod::HookCommandArgv(1));
 	++gClientCommandCount;
+	gLastGameClientCommand = astrabot::metamod::HookCommandArgv(0);
 	if (astrabot::metamod::HookCommandArgc() == 2)
 	{
 		const char *const command = astrabot::metamod::HookCommandArgv(0);
@@ -1605,6 +1607,90 @@ bool testRuntimeBombSiteApproach(
 		passed;
 	if (!astrabot_test::runtimeCharacterization().enabled())
 	{
+		using namespace astrabot;
+		using namespace astrabot::compat;
+		auto &behavior = static_cast<metamod::BotNavigationServices &>(runtime);
+		auto &state = const_cast<CompatibilityStateMachine &>(behavior.behavior_managedBotStateMachines(0));
+		auto &profile = const_cast<ProfileRecord &>(behavior.behavior_managedProfiles(0));
+		const auto savedProfile = profile;
+		const auto savedTrace = engine.pfnTraceLine;
+		const auto savedEnemy = gEntities[1];
+		const auto savedWeapons = gEntities[0].v.weapons;
+		profile.csbotReactionSeconds = 0;
+		engine.pfnTraceLine = &traceObjectiveVisibility;
+		gObjectiveTraceVisible = true;
+		runtime.giveEnginePointers(&engine, &globals);
+		auto &enemy = gEntities[1];
+		enemy.free = FALSE;
+		enemy.v.flags = FL_CLIENT | FL_ONGROUND;
+		enemy.v.team = 2;
+		enemy.v.health = 100.0f;
+		enemy.v.deadflag = DEAD_NO;
+		enemy.v.origin = gEntities[0].v.origin + Vector(800.0f, 400.0f, 0);
+		enemy.v.velocity = Vector(250.0f, 0, 0);
+		enemy.v.v_angle = enemy.v.punchangle = Vector(0, 0, 0);
+		runtime.onClientPutInServer(&enemy);
+		runtime.onMessageBegin(MSG_ALL, 86, nullptr, nullptr);
+		runtime.onWriteByte(2);
+		runtime.onWriteString("CT");
+		runtime.onMessageEnd();
+		gEntities[0].v.v_angle = gEntities[0].v.angles = Vector(0, 0, 0);
+		gEntities[0].v.weapons |= 1 << 17;
+		tick(.125f);
+		const float plantYaw = gLastRunPlayerMoveYaw;
+		tick(.04f);
+		passed = check(!state.attackOverlayActive() && (gLastRunPlayerMoveButtons & IN_ATTACK) != 0U &&
+				gLastRunPlayerMoveYaw > plantYaw + .2f,
+			"PlantBomb tracks a recognized enemy who is looking away while continuing to arm C4") && passed;
+		enemy.v.origin = gEntities[0].v.origin + Vector(128.0f, 0, 0);
+		gLastGameClientCommand.clear();
+		tick(.125f);
+		passed = check(state.state() == CompatibilityStateId::PlantBomb && state.attackOverlayActive() &&
+				(gLastRunPlayerMoveButtons & (IN_ATTACK | IN_DUCK)) == IN_DUCK &&
+				gLastGameClientCommand == "weapon_glock18",
+			"qualified enemy preempts arming with a crouched Attack and switches away from C4") && passed;
+		enemy.v.flags = 0;
+		freshRound(5U, 32.0f, 5.0f);
+		profile.csbotReactionSeconds = 0;
+		// Exercise the first PlantBomb update before the game selects the C4.
+		auto &observation = static_cast<metamod::BotObservationServices &>(runtime);
+		const auto &life = observation.service_lifecycle();
+		StateUpdateContext context{};
+		context.actor = state.actor();
+		context.frame = {life.mapGeneration(), life.roundGeneration(), observation.service_adapterFrameCount()};
+		context.fullUpdate = context.alive = context.roundActive = true;
+		context.timestamp = globals.time;
+		context.fullUpdateSequence = observation.service_managedBotFullUpdateSequences()[0];
+		context.lifeAvailability = context.roundAvailability = context.attackObservation =
+			ObservationAvailability::Available;
+		state.transition(CompatibilityStateId::PlantBomb, StateTransitionReason::ExplicitRequest,
+			StateTransitionId::ExplicitStateChange, context);
+		runtime.onMessageBegin(MSG_ONE, 94, nullptr, &gEntities[0]);
+		runtime.onWriteByte(1);
+		runtime.onWriteByte(17);
+		runtime.onWriteByte(12);
+		runtime.onMessageEnd();
+		gEntities[0].v.weapons |= 1 << 17;
+		enemy.v.flags = FL_CLIENT | FL_ONGROUND;
+		runtime.onMessageBegin(MSG_ALL, 86, nullptr, nullptr);
+		runtime.onWriteByte(2);
+		runtime.onWriteString("CT");
+		runtime.onMessageEnd();
+		enemy.v.origin = gEntities[0].v.origin + Vector(128.0f, 0, 0);
+		gEntities[0].v.v_angle = gEntities[0].v.angles = Vector(0, 0, 0);
+		gLastGameClientCommand.clear();
+		tick(.125f);
+		passed = check(state.state() == CompatibilityStateId::PlantBomb && state.attackOverlayActive() &&
+				gLastGameClientCommand != "weapon_c4",
+			"qualified enemy preempts C4 selection while the pistol is still equipped") && passed;
+		runtime.onClientDisconnect(&enemy);
+		gEntities[1] = savedEnemy;
+		gEntities[0].v.weapons = savedWeapons;
+		profile = savedProfile;
+		gObjectiveTraceVisible = false;
+		engine.pfnTraceLine = savedTrace;
+		runtime.giveEnginePointers(&engine, &globals);
+		freshRound(5U, 32.0f, 5.0f);
 		const auto previousMapname = globals.mapname;
 		globals.mapname = 6;
 		runtime.onMessageBegin(0, 86, nullptr, nullptr);
@@ -1971,17 +2057,17 @@ bool testRuntimeBombSiteApproach(
 		sendBarTime(5);
 		gObjectiveTraceVisible = false;
 		tick(recognizedAt + 2.975f - globals.time);
-		passed = check(commands.behavior_defuseEnemyAim(0, {}, &aimPoint),
+		passed = check(commands.behavior_bombObjectiveEnemyAim(0, {}, &aimPoint),
 			"the full update before three seconds holds aim on the occluded acquired enemy") && passed;
 		const auto lastAimFullUpdate = observation.service_managedBotFullUpdateSequences()[0];
 		tick(.04f);
 		passed = check(observation.service_managedBotFullUpdateSequences()[0] == lastAimFullUpdate &&
-				commands.behavior_defuseEnemyAim(0, {}, &aimPoint),
+				commands.behavior_bombObjectiveEnemyAim(0, {}, &aimPoint),
 			"the light update across three seconds retains the previous full update's aim") && passed;
 		tick(.095f);
 		passed = check(observation.service_managedBotFullUpdateSequences()[0] != lastAimFullUpdate &&
 				state.state() == CompatibilityStateId::DefuseBomb && (gLastRunPlayerMoveButtons & IN_USE) != 0 &&
-				!commands.behavior_defuseEnemyAim(0, {}, &aimPoint),
+				!commands.behavior_bombObjectiveEnemyAim(0, {}, &aimPoint),
 			"the first full perception after three seconds releases aim and continues USE") && passed;
 		sendBarTime(0);
 		gObjectiveTraceVisible = true;

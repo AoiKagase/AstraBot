@@ -102,7 +102,7 @@ void BotBehaviorRuntime::applyNativeLadderLookCommand(
 	command.synchronizeCombatView = true;
 }
 
-bool BotBehaviorRuntime::defuseEnemyAim(
+bool BotBehaviorRuntime::bombObjectiveEnemyAim(
 	std::size_t index, const compat::AimSpringState &spring, world::WorldPosition *point)
 {
 	if (services_->service_compatibilitySurface().configuration().mode != compat::RuntimeMode::Compatibility)
@@ -113,9 +113,9 @@ bool BotBehaviorRuntime::defuseEnemyAim(
 	const auto source = currentEnemySource(index);
 	const auto *engine = services_->service_engineFunctions();
 	const auto epoch = actor.managedBotStateMachines.normalStateEpoch();
-	if (!receipt.alive || !source.isValid() || !(actor.defuseAimDecision.target == target) ||
-		!(actor.defuseAimDecision.source == source) ||
-		actor.defuseAimDecision.stateEpoch != epoch ||
+	if (!receipt.alive || !source.isValid() || !(actor.bombObjectiveAimDecision.target == target) ||
+		!(actor.bombObjectiveAimDecision.source == source) ||
+		actor.bombObjectiveAimDecision.stateEpoch != epoch ||
 		!engine || !engine->pfnPEntityOfEntIndex)
 		return false;
 
@@ -125,8 +125,8 @@ bool BotBehaviorRuntime::defuseEnemyAim(
 	const auto current = [&] {
 		return executionCurrent(index, receipt, execution) && actor.managedBotStateMachines.normalStateEpoch() == epoch &&
 			!actor.managedBotStateMachines.attackOverlayActive() && currentEnemySource(index) == source &&
-			actor.defuseAimDecision.target == target && actor.defuseAimDecision.source == source &&
-			actor.defuseAimDecision.stateEpoch == epoch &&
+			actor.bombObjectiveAimDecision.target == target && actor.bombObjectiveAimDecision.source == source &&
+			actor.bombObjectiveAimDecision.stateEpoch == epoch &&
 			enemy && !enemy->free && enemy->serialnumber >= 0 && enemy->v.deadflag == DEAD_NO && enemy->v.health > 0 &&
 			(enemy->v.flags & (FL_CLIENT | FL_DORMANT | FL_SPECTATOR)) == FL_CLIENT &&
 			source == world::EntityKey{target.slot, static_cast<std::uint32_t>(enemy->serialnumber) + 1U};
@@ -677,7 +677,8 @@ bool BotBehaviorRuntime::prepareNativeAttack(std::size_t index, world::ActorKey 
 	input.skill = static_cast<float>(actor.managedProfiles.skill) / kSkillPercentageScale;
 	input.aggression = static_cast<float>(actor.managedProfiles.aggression) / kProfilePercentageScale;
 	input.atHidingSpot = machine.state() == compat::CompatibilityStateId::Hide && actor.scenarioPlanners.atDefenseSpot();
-	input.crouched = machine.state() == compat::CompatibilityStateId::DefuseBomb || (self->v.flags & FL_DUCKING) != 0;
+	input.crouched = machine.state() == compat::CompatibilityStateId::DefuseBomb ||
+		machine.state() == compat::CompatibilityStateId::PlantBomb || (self->v.flags & FL_DUCKING) != 0;
 	input.walking = (machine.state() == compat::CompatibilityStateId::Follow && actor.followMotion.walking) ||
 		(machine.state() == compat::CompatibilityStateId::InvestigateNoise && actor.investigationWalking);
 	constexpr std::uint16_t knifeId = 29;
@@ -743,10 +744,11 @@ void BotBehaviorRuntime::applyAttackPosture(std::size_t index, ActionProposal &p
 		retreat.posture = {};
 }
 
-void BotBehaviorRuntime::tryDefuseAttack(std::size_t index, const compat::StateUpdateContext &context)
+void BotBehaviorRuntime::tryBombObjectiveAttack(std::size_t index, const compat::StateUpdateContext &context)
 {
 	auto &actor = actors_[index];
 	auto &state = actor.managedBotStateMachines;
+	const auto objectiveState = state.state();
 	const auto &config = services_->service_compatibilitySurface().configuration();
 	const bool frozen = services_->service_roundFreezeGeneration() == context.frame.roundGeneration &&
 		context.timestamp < services_->service_roundFreezeUntil();
@@ -762,7 +764,7 @@ void BotBehaviorRuntime::tryDefuseAttack(std::size_t index, const compat::StateU
 	world::WorldPosition targetPosition{};
 	if (!prepareManagedPerception(index, &snapshot, &target, &targetPosition) ||
 		!executionCurrent(index, receipt, execution) || state.normalStateEpoch() != normalEpoch || !target.isValid() ||
-		!(actor.recognizedTargets == target) || state.state() != compat::CompatibilityStateId::DefuseBomb ||
+		!(actor.recognizedTargets == target) || state.state() != objectiveState ||
 		state.attackOverlayActive())
 		return;
 	const world::ActorObservation *contact = nullptr;
@@ -775,9 +777,11 @@ void BotBehaviorRuntime::tryDefuseAttack(std::size_t index, const compat::StateU
 	const auto &store = services_->observation_publicObservations();
 	compat::PublicActorState currentWeapon{};
 	if (!store.read(context.actor, context.frame, &currentWeapon) || !currentWeapon.weaponKnown ||
-		currentWeapon.weaponId <= 0 || currentWeapon.weaponId >= MAX_WEAPONS ||
-		compat::WeaponActionPlanner::isGrenade(static_cast<std::uint16_t>(currentWeapon.weaponId)) ||
-		currentWeapon.weaponId == 6)
+		currentWeapon.weaponId <= 0 || currentWeapon.weaponId >= MAX_WEAPONS)
+		return;
+	if (objectiveState == compat::CompatibilityStateId::DefuseBomb &&
+		(compat::WeaponActionPlanner::isGrenade(static_cast<std::uint16_t>(currentWeapon.weaponId)) ||
+			currentWeapon.weaponId == ActionAdapter::kC4WeaponId))
 		return;
 	compat::CompatibilityObservation observation{};
 	if (services_->observation_observationAdapter().collectActor(

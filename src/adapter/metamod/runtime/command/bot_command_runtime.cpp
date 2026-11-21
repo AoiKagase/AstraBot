@@ -428,8 +428,9 @@ void BotCommandRuntime::advanceUpkeepLook(std::size_t index, FakeClientHandle &h
 		}
 		return;
 	}
-	if ((machine.state() != compat::CompatibilityStateId::UseEntity &&
-			machine.state() != compat::CompatibilityStateId::DefuseBomb) || machine.attackOverlayActive() ||
+	const bool bombInteraction = machine.state() == compat::CompatibilityStateId::DefuseBomb ||
+		machine.state() == compat::CompatibilityStateId::PlantBomb;
+	if ((machine.state() != compat::CompatibilityStateId::UseEntity && !bombInteraction) || machine.attackOverlayActive() ||
 		handle.entity->v.deadflag != DEAD_NO || handle.entity->v.health <= 0.0f)
 	{
 		actor.useEntityLookActive = false;
@@ -442,8 +443,8 @@ void BotCommandRuntime::advanceUpkeepLook(std::size_t index, FakeClientHandle &h
 	const auto epoch = machine.normalStateEpoch();
 	const auto token = services_->service_lifecycle().tokenForSlot(handle.actor.slot);
 	world::WorldPosition enemyPoint{};
-	const bool aimingAtEnemy = machine.state() == compat::CompatibilityStateId::DefuseBomb &&
-		services_->behavior_defuseEnemyAim(index, actor.useEntityLookSpring, &enemyPoint);
+	const bool aimingAtEnemy = bombInteraction &&
+		services_->behavior_bombObjectiveEnemyAim(index, actor.useEntityLookSpring, &enemyPoint);
 	if (handle.entity != entity || entity->serialnumber != serial || !services_->service_lifecycle().isCurrent(token) ||
 		machine.normalStateEpoch() != epoch || machine.attackOverlayActive())
 		return;
