@@ -35,6 +35,7 @@ struct PublicWeaponDefinition
 	int ammoIndex = -1;
 	int maxAmmo = 0;
 	int slot = 0;
+	int flags = 0;
 };
 
 struct PublicActorState
@@ -184,13 +185,14 @@ public:
 		return true;
 	}
 
-	bool weaponDefinition(int id, int ammoIndex, int maxAmmo, int slot)
+	bool weaponDefinition(int id, int ammoIndex, int maxAmmo, int slot, int flags = 0)
 	{
 		constexpr int kMaximumWeaponSlot = 5;
 		if (id <= 0 || id > kMaximumWeaponId || ammoIndex < kUnknownAmmoValue || ammoIndex >= kAmmoIndexLimit ||
-			maxAmmo < kUnknownAmmoValue || maxAmmo > kMaximumByteValue || slot < 0 || slot > kMaximumWeaponSlot)
+			maxAmmo < kUnknownAmmoValue || maxAmmo > kMaximumByteValue || slot < 0 || slot > kMaximumWeaponSlot ||
+			flags < 0 || flags > kMaximumByteValue)
 			return false;
-		definitions_[static_cast<std::size_t>(id)] = {true, ammoIndex, maxAmmo, slot};
+		definitions_[static_cast<std::size_t>(id)] = {true, ammoIndex, maxAmmo, slot, flags};
 		return true;
 	}
 

@@ -252,5 +252,88 @@ bool testCloseFootsteps()
 
 int main()
 {
-	return testCloseFootsteps() && testConditions() && testReceiptAndClock() && testPublicClipHistory() ? 0 : 1;
+	const auto testBest = [] {
+		using namespace compat;
+		BestEquipmentInput in{};
+		in.actor = {1, 1};
+		in.frame = {1, 1, 1};
+		in.now = 10;
+		in.currentWeapon = 22;
+		in.primary = {22, EquipmentAmmo::Usable, true, false};
+		in.pistol = {17, EquipmentAmmo::Usable, true, false};
+		in.hasKnife = true;
+		WeaponEquipmentPlanner planner;
+		if (!check(planner.best(in).selectWeapon == 22, "DoEquip also selects the already active primary"))
+			return false;
+		planner.equipped(in.actor, in.frame, 10, 22, true);
+		in.now = 14.999f;
+		in.frame.tick++;
+		if (!check(planner.best(in).selectWeapon == 0, "best weapon is suppressed strictly before five seconds"))
+			return false;
+		in.now = 15;
+		in.frame.tick++;
+		if (!check(planner.best(in).selectWeapon == 22, "best weapon is permitted at exactly five seconds"))
+			return false;
+		planner.equipped(in.actor, in.frame, 15, 22, true);
+		in.now = 15.01f;
+		if (!check(planner.best(in).selectWeapon == 0, "same active weapon restarts the global timer"))
+			return false;
+		in.mustEquip = true;
+		if (!check(planner.best(in).selectWeapon == 22, "mustEquip bypasses the five second throttle"))
+			return false;
+		in.mustEquip = false;
+		planner.reset();
+		in.primary.ammo = EquipmentAmmo::Empty;
+		if (!check(planner.best(in).selectWeapon == 17, "empty primary falls through to a loaded pistol"))
+			return false;
+		in.pistol.ammo = EquipmentAmmo::Empty;
+		if (!check(planner.best(in).selectWeapon == 29, "both empty guns fall through to the knife"))
+			return false;
+		planner.equipped(in.actor, in.frame, in.now, 29, true);
+		auto tactical = input();
+		tactical.frame.tick = ++in.frame.tick;
+		tactical.now = in.now;
+		if (!check(planner.update(tactical).selectWeapon == 17,
+				"native knife dispatch does not suppress the tactical pistol path"))
+			return false;
+		in.primary.ammo = EquipmentAmmo::Usable;
+		if (!check(planner.best(in).selectWeapon == 22, "knife selection does not start the equip timer"))
+			return false;
+		in.primary.allowed = false;
+		in.pistol.ammo = EquipmentAmmo::Usable;
+		if (!check(planner.best(in).selectWeapon == 17, "a disabled primary class falls through to pistol"))
+			return false;
+		in.primary.allowed = true;
+		in.primary.ammo = EquipmentAmmo::Unknown;
+		if (!check(planner.best(in).selectWeapon == 0, "unknown primary ammo cannot establish pistol fallback"))
+			return false;
+		in.primary.ammo = EquipmentAmmo::Usable;
+		in.primary.noFireUnderwater = true;
+		in.skill = .4f;
+		in.fullySubmerged = true;
+		in.skill = std::nextafter(.4f, 0.0f);
+		if (!check(planner.best(in).selectWeapon == 22, "skill just below .4 retains underwater eligibility"))
+			return false;
+		in.skill = .4f;
+		if (!check(planner.best(in).selectWeapon == 22, "skill exactly .4 retains underwater eligibility"))
+			return false;
+		in.skill = std::nextafter(.4f, 1.0f);
+		if (!check(planner.best(in).selectWeapon == 17, "skill just above .4 rejects a forbidden gun underwater"))
+			return false;
+		in.skill = .41f;
+		if (!check(planner.best(in).selectWeapon == 17, "a skilled submerged bot rejects a forbidden gun"))
+			return false;
+		planner.reset();
+		in.now = 0;
+		in.fullySubmerged = false;
+		planner.equipped(in.actor, in.frame, 0, 22, true);
+		in.now = 1;
+		if (!check(planner.best(in).selectWeapon == 22, "native timer started at time zero remains unstarted"))
+			return false;
+		return check(nativeEquipmentAmmo(true, -1, true, 0) == EquipmentAmmo::Usable &&
+				nativeEquipmentAmmo(true, 0, true, 0) == EquipmentAmmo::Empty &&
+				nativeEquipmentAmmo(false, 0, false, 0) == EquipmentAmmo::Unknown,
+			"native clip minus one is ammo while missing public ammo remains unknown");
+	};
+	return testBest() && testCloseFootsteps() && testConditions() && testReceiptAndClock() && testPublicClipHistory() ? 0 : 1;
 }

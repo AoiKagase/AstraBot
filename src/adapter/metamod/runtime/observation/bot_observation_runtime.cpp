@@ -888,7 +888,7 @@ void BotObservationRuntime::capturePublicMessage()
 	if (std::strcmp(name, "WeaponList") == 0 && count == kWeaponListFieldCount && integers(kWeaponListStringMask))
 	{
 		(void)publicObservations_.weaponDefinition(
-			v[7], v[1] == kMaximumMessageByte ? -1 : v[1], v[2] == kMaximumMessageByte ? -1 : v[2], v[5]);
+			v[7], v[1] == kMaximumMessageByte ? -1 : v[1], v[2] == kMaximumMessageByte ? -1 : v[2], v[5], v[8]);
 		return;
 	}
 	if (std::strcmp(name, "DeathMsg") == 0 && count == kDeathMessageFieldCount && integers(kDeathMessageStringMask) &&

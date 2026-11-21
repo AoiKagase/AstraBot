@@ -1188,6 +1188,56 @@ bool PluginRuntime::readGameDllWeaponPrediction(
 	return true;
 }
 
+bool PluginRuntime::observation_equipmentAmmo(edict_t *source,
+	std::array<compat::EquipmentAmmo, compat::PublicActorState::kWeaponStateCapacity> &ammo) const
+{
+	const auto *dll = gameDllFunctions_ ? gameDllFunctions_->dllapi_table : nullptr;
+	if (!dll || !dll->pfnUpdateClientData || !dll->pfnGetWeaponData || !source || source->serialnumber < 0)
+		return false;
+	const auto *globals = globals_;
+	const auto frame = world::FrameIdentity{lifecycle_.mapGeneration(), lifecycle_.roundGeneration(), adapterFrameCount_};
+	const auto serial = source->serialnumber;
+	const auto current = [&] {
+		return state_ == State::ActiveMap && globals_ == globals && gameDllFunctions_ &&
+			gameDllFunctions_->dllapi_table == dll && frame ==
+				world::FrameIdentity{lifecycle_.mapGeneration(), lifecycle_.roundGeneration(), adapterFrameCount_} &&
+			!source->free && source->serialnumber == serial && source->v.iuser1 == 0 &&
+			source->v.deadflag == DEAD_NO && source->v.health > 0;
+	};
+	if (!current())
+		return false;
+	clientdata_t data{};
+	dll->pfnUpdateClientData(source, 1, &data);
+	if (!current())
+		return false;
+	weapon_data_t weapons[32]{};
+	if (!dll->pfnGetWeaponData(source, weapons) || !current())
+		return false;
+	for (unsigned id = 1; id < ammo.size(); ++id)
+	{
+		if (weapons[id].m_iId != static_cast<int>(id))
+			continue;
+		float reserve = -1;
+		switch (id)
+		{
+		case 5: case 21: reserve = static_cast<float>(data.ammo_shells); break;
+		case 10: case 17: case 19: case 23: reserve = static_cast<float>(data.ammo_nails); break;
+		case 8: case 13: case 14: case 15: case 22: case 27: reserve = static_cast<float>(data.ammo_cells); break;
+		case 20: reserve = static_cast<float>(data.ammo_rockets); break;
+		case 3: case 24: case 28: reserve = data.vuser2[0]; break;
+		case 7: case 12: case 16: reserve = data.vuser2[1]; break;
+		case 26: reserve = data.vuser2[2]; break;
+		case 18: reserve = data.vuser3[0]; break;
+		case 11: case 30: reserve = data.vuser3[1]; break;
+		case 1: reserve = data.vuser3[2]; break;
+		default: break;
+		}
+		const bool reserveKnown = std::isfinite(reserve) && reserve >= 0;
+		ammo[id] = compat::nativeEquipmentAmmo(true, weapons[id].m_iClip, reserveKnown, reserveKnown && reserve > 0 ? 1U : 0U);
+	}
+	return current();
+}
+
 void PluginRuntime::reportHostageUse(edict_t *player, world::FrameIdentity frame, world::EntityKey following)
 {
 	if (!hostageUseScopes_.empty())

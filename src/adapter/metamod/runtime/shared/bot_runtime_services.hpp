@@ -2,6 +2,7 @@
 #define ASTRABOT_ADAPTER_BOT_RUNTIME_SERVICES_HPP
 #include "runtime/shared/bot_runtime_types.hpp"
 #include "astrabot/compat/footstep_equipment.hpp"
+#include "astrabot/compat/weapon_equipment.hpp"
 #include <bitset>
 namespace astrabot
 {
@@ -120,6 +121,8 @@ public:
 	virtual combat::ReloadState observation_activeWeaponReloadState(edict_t *source) const = 0;
 	virtual bool observation_shieldState(edict_t *source, bool &hasShield, bool &protectedByShield,
 		combat::ReloadState &reload) const = 0;
+	virtual bool observation_equipmentAmmo(edict_t *source,
+		std::array<compat::EquipmentAmmo, compat::PublicActorState::kWeaponStateCapacity> &ammo) const = 0;
 	virtual bool observation_readManagedWorldSnapshot(std::size_t index, world::WorldSnapshot *snapshot) const = 0;
 	virtual const std::uint32_t &observation_externalDefuserEntityIndex() const = 0;
 	virtual unsigned observation_nativeDefuserSlot() const = 0;

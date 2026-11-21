@@ -1350,10 +1350,19 @@ BotBehaviorRuntime::BehaviorPhaseResult BotBehaviorRuntime::prepareManagedAction
 			if (current && weapon.active && (weapon.weaponId == ActionAdapter::kC4WeaponId ||
 					compat::WeaponActionPlanner::isGrenade(weapon.weaponId)))
 			{
-				proposal.kind = bestOwnedWeapon(*handle.entity);
-				if (proposal.kind == ActionKind::None)
-					proposal.kind = ActionKind::SelectKnife;
-				return BehaviorPhaseResult::Complete;
+				const auto receipt = reactionContext(index);
+				const auto revision = actorState.executionRevision;
+				const auto epoch = machine.normalStateEpoch();
+				const auto attack = machine.attackEntryEpoch();
+				const auto currentAttack = [&] {
+					return executionCurrent(index, receipt, revision) && machine.normalStateEpoch() == epoch &&
+						machine.attackEntryEpoch() == attack && machine.attackOverlayActive();
+				};
+				(void)equipBestWeapon(index);
+				if (!currentAttack() ||
+					services_->observation_observationAdapter().collectActor(handle.entity, ctx.actor, ctx.frame,
+						ctx.observationTiming, &compatObservation) != ObservationAdapterResult::Accepted || !currentAttack())
+					return BehaviorPhaseResult::Complete;
 			}
 		}
 		else if (compatObservation.objective.carryingC4.isAvailable() &&
@@ -1400,6 +1409,11 @@ BotBehaviorRuntime::BehaviorPhaseResult BotBehaviorRuntime::prepareManagedAction
 		{
 			if (cancelHeldGrenade(index, movementAngles, proposal))
 				return BehaviorPhaseResult::Complete;
+			if (services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility)
+			{
+				(void)equipBestWeapon(index);
+				return BehaviorPhaseResult::Complete;
+			}
 			proposal.kind = bestOwnedWeapon(*handle.entity);
 			if (proposal.kind == ActionKind::None &&
 				(static_cast<std::uint32_t>(handle.entity->v.weapons) & (1U << kKnifeWeaponId)) != 0)
@@ -1411,6 +1425,11 @@ BotBehaviorRuntime::BehaviorPhaseResult BotBehaviorRuntime::prepareManagedAction
 	if (actorState.escapingWithKnife)
 	{
 		actorState.escapingWithKnife = false;
+		if (services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility)
+		{
+			(void)equipBestWeapon(index);
+			return BehaviorPhaseResult::Complete;
+		}
 		const auto choice = bestOwnedWeapon(*handle.entity);
 		if (choice != ActionKind::None)
 		{

@@ -1636,6 +1636,17 @@ bool testRuntimeBombSiteApproach(
 		runtime.onMessageEnd();
 		gEntities[0].v.v_angle = gEntities[0].v.angles = Vector(0, 0, 0);
 		gEntities[0].v.weapons |= 1 << 17;
+		// This carried pistol has live ammo; publish its inactive clip before restoring active C4.
+		runtime.onMessageBegin(MSG_ONE, 94, nullptr, &gEntities[0]);
+		runtime.onWriteByte(0);
+		runtime.onWriteByte(17);
+		runtime.onWriteByte(12);
+		runtime.onMessageEnd();
+		runtime.onMessageBegin(MSG_ONE, 94, nullptr, &gEntities[0]);
+		runtime.onWriteByte(1);
+		runtime.onWriteByte(6);
+		runtime.onWriteByte(1);
+		runtime.onMessageEnd();
 		tick(.125f);
 		const float plantYaw = gLastRunPlayerMoveYaw;
 		tick(.04f);

@@ -17,6 +17,8 @@ namespace
 {
 int combatUserMessageId(plid_t id, const char *name, int *size)
 {
+	if (std::strcmp(name, "WeaponList") == 0)
+		return 105;
 	if (std::strcmp(name, "DeathMsg") == 0)
 		return 103;
 	if (std::strcmp(name, "ScreenFade") == 0)
@@ -41,6 +43,17 @@ unsigned attackAimRefreshDraws = 0;
 unsigned retreatTimerDraws = 0;
 float forcedNoticeFixtureRoll = -1.0f;
 bool shieldOwned = true, shieldClosed = false, shieldSelfReload = false, shieldEnemyReload = false;
+struct EquipmentFixture
+{
+	int active = 6, primaryClip = 0, pistolClip = 20;
+	bool refuseSwitch = false, replaceEntity = false;
+	bool primaryUnknown = false;
+	int attackMutation = 0;
+	astrabot::compat::CompatibilityStateMachine *machine = nullptr;
+	astrabot::compat::StateUpdateContext context{};
+	std::vector<unsigned> commands;
+};
+EquipmentFixture *equipmentFixture = nullptr;
 std::vector<Vector> *occludedAimTraces = nullptr;
 struct SelfDefenseTrace
 {
@@ -97,6 +110,34 @@ void traceCombatVisibility(const float *start, const float *end, int ignoreMonst
 
 void combatGameClientCommand(edict_t *entity)
 {
+	if (equipmentFixture && entity == &gEntities[0])
+	{
+		const auto *name = astrabot::metamod::HookCommandArgv(0);
+		unsigned id = std::strcmp(name, "weapon_ak47") == 0 ? 28U
+			: std::strcmp(name, "weapon_glock18") == 0 ? 17U
+			: std::strcmp(name, "weapon_knife") == 0 ? 29U : 0U;
+		if (id)
+		{
+			equipmentFixture->commands.push_back(id);
+			if (equipmentFixture->attackMutation && equipmentFixture->machine)
+			{
+				(void)equipmentFixture->machine->stopAttack(equipmentFixture->context);
+				if (equipmentFixture->attackMutation == 2)
+					(void)equipmentFixture->machine->beginAttack(equipmentFixture->context);
+			}
+			if (!equipmentFixture->refuseSwitch)
+			{
+				equipmentFixture->active = static_cast<int>(id);
+				auto &runtime = astrabot::metamod::PluginRuntime::instance();
+				runtime.onMessageBegin(1, 94, nullptr, entity);
+				runtime.onWriteByte(1);
+				runtime.onWriteByte(static_cast<int>(id));
+				runtime.onWriteByte(id == 28 ? equipmentFixture->primaryClip : id == 17 ? equipmentFixture->pistolClip : -1);
+				runtime.onMessageEnd();
+			}
+			return;
+		}
+	}
 	if (entity == &gEntities[0] && std::strcmp(astrabot::metamod::HookCommandArgv(0), "weapon_glock18") == 0)
 		combatPistolSelected = true;
 	hookedGameClientCommand(entity);
@@ -201,9 +242,107 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 	const bool occludedFixture = scenario && std::strcmp(scenario, "occluded") == 0;
 	const bool selfDefenseFixture = scenario && std::strcmp(scenario, "self-defense") == 0;
 	const bool shieldFixture = scenario && std::strcmp(scenario, "shield") == 0;
+	const bool bestEquipmentFixture = scenario && std::strcmp(scenario, "equip-best") == 0;
 #ifdef _MSC_VER
 	std::free(scenario);
 #endif
+	if (bestEquipmentFixture)
+	{
+		using namespace astrabot;
+		using namespace astrabot::compat;
+		auto &ports = static_cast<metamod::BotBehaviorServices &>(runtime);
+		gpMetaUtilFuncs->pfnGetUserMsgID = &combatUserMessageId;
+		runtime.onMessageBegin(1, 105, nullptr, &gEntities[0]);
+		runtime.onWriteString("weapon_ak47");
+		for (int value : {2, 90, 255, 255, 0, 0, 28, 32}) runtime.onWriteByte(value);
+		runtime.onMessageEnd();
+		if (!check(ports.observation_publicObservations().definition(28).flags == 32,
+				"WeaponList preserves the public underwater flag"))
+			return false;
+		EquipmentFixture fixture{};
+		equipmentFixture = &fixture;
+		combatGameDll->pfnUpdateClientData = [](const edict_t *, int, clientdata_t *data) {
+			data->m_iId = equipmentFixture->active;
+		};
+		combatGameDll->pfnGetWeaponData = [](edict_t *entity, weapon_data_t *data) {
+			data[6].m_iId = 6; data[6].m_iClip = 1;
+			data[28].m_iId = equipmentFixture->primaryUnknown ? 0 : 28; data[28].m_iClip = equipmentFixture->primaryClip;
+			data[17].m_iId = 17; data[17].m_iClip = equipmentFixture->pistolClip;
+			if (equipmentFixture->replaceEntity) ++entity->serialnumber;
+			return 1;
+		};
+		const auto run = [&](int primary, int pistol, bool refuse, bool replace, unsigned expected, int mutation = 0, bool unknown = false) {
+			fixture = {};
+			fixture.primaryClip = primary;
+			fixture.pistolClip = pistol;
+			fixture.refuseSwitch = refuse;
+			fixture.primaryUnknown = unknown;
+			gEntities[0].v.weapons = (1 << 6) | (1 << 28) | (1 << 17) | (1 << 29);
+			runtime.beginRoundGeneration();
+			stepRifle(1, 0, 6);
+			auto behavior = std::make_unique<metamod::BotBehaviorRuntime>();
+			behavior->bindServices(ports);
+			const auto &handle = ports.service_managedBotHandles()[0];
+			behavior->onActorRemembered(0, handle);
+			auto &state = const_cast<CompatibilityStateMachine &>(behavior->managedBotStateMachines(0));
+			StateUpdateContext context{};
+			const auto &life = ports.service_lifecycle();
+			context.actor = {handle.actor.slot, handle.actor.actorGeneration};
+			context.frame = {life.mapGeneration(), life.roundGeneration(), ports.service_adapterFrameCount()};
+			context.timestamp = globals.time;
+			context.fullUpdateSequence = ports.service_managedBotFullUpdateSequences()[0];
+			context.fullUpdate = true;
+			context.lifeAvailability = context.roundAvailability = context.attackObservation = ObservationAvailability::Available;
+			context.alive = context.roundActive = true;
+			state.initialize(context);
+			(void)state.transition(CompatibilityStateId::PlantBomb, StateTransitionReason::ExplicitRequest,
+				StateTransitionId::ExplicitStateChange, context);
+			(void)state.beginAttack(context);
+			fixture.machine = &state;
+			fixture.context = context;
+			fixture.attackMutation = mutation;
+			runtime::MovementPhysicsState before{};
+			before.grounded = true;
+			before.origin = {gEntities[0].v.origin.x, gEntities[0].v.origin.y, gEntities[0].v.origin.z};
+			fixture.commands.clear();
+			fixture.replaceEntity = replace;
+			const auto serial = gEntities[0].serialnumber;
+			const auto action = behavior->decideManagedBotAction(0, before, {}, 0);
+			fixture.replaceEntity = false;
+			gEntities[0].serialnumber = serial;
+			if (!check(expected ? fixture.commands == std::vector<unsigned>{expected} : fixture.commands.empty(),
+					"Plant Attack uses public inactive ammo and discards a replaced actor receipt"))
+				return false;
+			if (mutation)
+				return check(!action.hasCombatAim && action.kind == metamod::ActionKind::None,
+					"Attack stop or re-entry during dispatch discards the old action context");
+			if (refuse)
+			{
+				const float first = globals.time;
+				for (float elapsed : {4.999f, 5.0f})
+				{
+					globals.time = first + elapsed;
+					runtime.onStartFrame(); runtime.onStartFramePost();
+					context.timestamp = globals.time;
+					context.frame.tick = ports.service_adapterFrameCount();
+					context.fullUpdateSequence = ports.service_managedBotFullUpdateSequences()[0];
+					if (!state.attackOverlayActive()) (void)state.beginAttack(context);
+					fixture.commands.clear();
+					(void)behavior->decideManagedBotAction(0, before, {}, 0);
+					if (!check(elapsed < 5 ? fixture.commands.empty() : fixture.commands == std::vector<unsigned>{28},
+							"a refused real command still throttles DoEquip until exactly five seconds"))
+						return false;
+				}
+			}
+			return true;
+		};
+		const bool passed = run(0, 20, false, false, 17) && run(0, 0, false, false, 29) &&
+			run(30, 20, true, false, 28) && run(30, 20, false, true, 0) &&
+			run(30, 20, false, false, 28, 1) && run(30, 20, false, false, 28, 2) &&
+			run(0, 20, false, false, 0, 0, true);
+		equipmentFixture = nullptr;
+		return passed;
+	}
 	if (shieldFixture)
 	{
 		using namespace astrabot;

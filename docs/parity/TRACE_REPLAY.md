@@ -1,5 +1,15 @@
 # P11 differential trace comparison
 
+## C4 equipment / native equip clock, 2026-11-21
+
+Evidence root: `C:/Temp/astrabot-c4-equipment`; frozen modules and acceptance notes: `artifacts/local/debug/csbot-c4-equipment-20261121/README.md`. Base `c78b4c0`, fixed CSBot `b0889847fe6d03898be88acc9e366660efb40ab5`. Final Windows module SHA-256 `b46033d043ff2493712e8df14b60e73c5c20f662ae4443d0281a0b607218e5d6`.
+
+Use `run-fixed.py` with roles `reference-fixed-v4`, `baseline-fixed-v4`, `final-fixed-v4`, modes1/2. The compiled fixture SHA is `93d8c48ac01e2ab44754579ab860ec01e03c3270e74594bf37e71a5efb5f6180`. Normal GameDLL planting must reach real arming and BarTime3 before setting empty-primary/usable-pistol or both-empty ammo. Model/view and CmdStart view are fixed only during the one-second exposure; inspect actual recognition/Attack and weapon transitions, not merely the equal fixture hash. The accepted reference/baseline/final sequences select pistol/empty-AK/pistol in mode1 and knife/empty-AK/knife in mode2. C4 arming clears on the accepted final switch. Do not infer equal reaction or future planting times from unequal state-entry times.
+
+`run.py` modes0/6 preserve natural view and cover ordinary planting exit with the already-active AK, and C4-owned-but-AK-active Attack from Hunt. Mode6 is not a PlantBomb-first-update unequipped acceptance. Original V3 baseline1/2 did not recognize the enemy and are excluded from causal equipment comparison. Permission mode4 uses the separate `run-allow.py` fixture (SHA `a3eefa5d0f007dfcbbeafc3edf9e13f68d6f466ea5c3f17b3b42a8882abbf283`) which logs CVar existence and actual zero value, registering only if absent.
+
+Read-only CDB `reference-clock-v4-debug` reads `EquipBestWeapon+0x18`, `DoEquip+0x5e` and `DoEquip+0x85`, derived from the same DLL's saved disassembly. These expose the same active/target pointer and clock change after SelectItem; Plant exit changes old4.7424269 to now12.820281 even though AK is already active. `final-clock-v5-debug` reads `WeaponEquipmentPlanner::equipped` at `weapon_equipment.hpp:98`, after the write: now19.71290588, weapon28 and equippedAt19.71290588, followed by the same-active28 sent1 log. Exact five-second boundary, time-zero sentinel, failed actual switch, mustEquip and knife/tactical clock separation have offline/runtime regressions. Native failed ambiguous source-line BP and final-clock-v4 invalid reference-local expression logs remain excluded. Game process identity, exit0 and forced=false are required per manifest; each trial checks all game processes have exited before starting another.
+
 `tools/compare_parity_traces.py REFERENCE.jsonl CANDIDATE.jsonl` compares fixed
 captures and prints a JSON report. Exit codes: **0** equal, **1** differences,
 **2** malformed input or invalid options. Python standard library only.

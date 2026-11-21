@@ -1,9 +1,130 @@
 #include "runtime/behavior/bot_behavior_runtime.hpp"
 #include "runtime/shared/bot_runtime_support.hpp"
+#include "astrabot/compat/weapon_pickup.hpp"
 namespace astrabot
 {
 namespace metamod
 {
+bool BotBehaviorRuntime::equipBestWeapon(std::size_t index, bool mustEquip)
+{
+	if (index >= actors_.size() || !services_->service_globals() ||
+		services_->service_compatibilitySurface().configuration().mode != compat::RuntimeMode::Compatibility)
+		return false;
+	auto &actor = actors_[index];
+	const auto receipt = reactionContext(index);
+	if (!actor.equipment.canEquip(receipt.actor, receipt.frame, receipt.now, mustEquip))
+		return false;
+	const auto &handle = services_->service_managedBotHandles()[index];
+	if (!handle.entity || !receipt.alive)
+		return false;
+	const auto execution = actor.executionRevision;
+	const auto epoch = actor.managedBotStateMachines.normalStateEpoch();
+	const auto attack = actor.managedBotStateMachines.attackEntryEpoch();
+	const auto attacking = actor.managedBotStateMachines.attackOverlayActive();
+	const auto *entity = handle.entity;
+	const auto serial = entity->serialnumber;
+	const auto inventory = static_cast<std::uint32_t>(handle.entity->v.weapons);
+	const auto current = [&] {
+		return executionCurrent(index, receipt, execution) &&
+			handle.entity == entity && !entity->free && entity->serialnumber == serial &&
+			actor.managedBotStateMachines.normalStateEpoch() == epoch &&
+			actor.managedBotStateMachines.attackEntryEpoch() == attack &&
+			actor.managedBotStateMachines.attackOverlayActive() == attacking &&
+			static_cast<std::uint32_t>(handle.entity->v.weapons) == inventory;
+	};
+	const auto &store = services_->observation_publicObservations();
+	compat::PublicActorState known{};
+	(void)store.read(receipt.actor, receipt.frame, &known);
+	std::array<compat::EquipmentAmmo, compat::PublicActorState::kWeaponStateCapacity> ammo{};
+	const bool predicted = services_->observation_equipmentAmmo(handle.entity, ammo);
+	if (!current())
+		return false;
+	auto *engine = services_->service_engineFunctions();
+	const auto allowed = [&](const char *name) {
+		if (!engine || !engine->pfnCVarGetPointer || !engine->pfnCVarGetPointer(name))
+			return true;
+		const auto value = runtime_detail::readOptionalCvarFloat(engine, name);
+		return !std::isfinite(value) || value != 0;
+	};
+	const auto makeCandidate = [&](unsigned id, const char *permission) {
+		compat::EquipmentCandidate candidate{};
+		candidate.weapon = static_cast<std::uint16_t>(id);
+		candidate.allowed = allowed(permission);
+		const auto definition = store.definition(static_cast<int>(id));
+		candidate.noFireUnderwater = definition.known ? (definition.flags & (1 << 5)) != 0
+			: id == 5 || id == 14 || id == 15 || id == 21;
+		if (predicted && ammo[id] != compat::EquipmentAmmo::Unknown)
+			candidate.ammo = ammo[id];
+		else
+		{
+			const bool reserveKnown = definition.known && definition.ammoIndex >= 0 &&
+				static_cast<std::size_t>(definition.ammoIndex) < known.ammoKnown.size() &&
+				known.ammoKnown[static_cast<std::size_t>(definition.ammoIndex)];
+			candidate.ammo = compat::nativeEquipmentAmmo(known.weaponClipKnown[id], known.weaponClips[id],
+				reserveKnown, reserveKnown && known.ammo[static_cast<std::size_t>(definition.ammoIndex)] > 0 ? 1U : 0U);
+		}
+		return candidate;
+	};
+	compat::BestEquipmentInput input{};
+	input.actor = receipt.actor;
+	input.frame = receipt.frame;
+	input.now = receipt.now;
+	input.mustEquip = mustEquip;
+	input.skill = static_cast<float>(actor.managedProfiles.skill) / 100.0f;
+	input.fullySubmerged = handle.entity->v.waterlevel == 3;
+	input.currentWeapon = static_cast<std::uint16_t>(known.weaponKnown ? known.weaponId : 0);
+	input.hasKnife = (inventory & (1U << 29)) != 0;
+	const auto *primary = compat::carriedPrimaryWeapon(inventory);
+	if (primary)
+	{
+		const char *permission = "bot_allow_rifles";
+		switch (primary->id)
+		{
+		case 3: case 13: case 18: case 24: permission = "bot_allow_snipers"; break;
+		case 5: case 21: permission = "bot_allow_shotguns"; break;
+		case 7: case 12: case 19: case 23: case 30: permission = "bot_allow_sub_machine_guns"; break;
+		case 20: permission = "bot_allow_machine_guns"; break;
+		default: break;
+		}
+		input.primary = makeCandidate(primary->id, permission);
+	}
+	else
+		for (const auto &weapon : compat::kPickupPrimaryWeapons)
+			if (inventory & (1U << weapon.id))
+				return false; // Public masks cannot establish a multi-primary linked-list head.
+	constexpr unsigned pistolIds[] = {1, 10, 11, 16, 17, 26};
+	constexpr const char *pistolNames[] = {
+		"weapon_p228", "weapon_elite", "weapon_fiveseven", "weapon_usp", "weapon_glock18", "weapon_deagle"};
+	const char *pistolName = nullptr;
+	for (unsigned i = 0; i < 6; ++i)
+		if (inventory & (1U << pistolIds[i]))
+		{
+			if (pistolName)
+				return false;
+			input.pistol = makeCandidate(pistolIds[i], "bot_allow_pistols");
+			pistolName = pistolNames[i];
+		}
+	if (!current())
+		return false;
+	const auto decision = actor.equipment.best(input);
+	if (!decision.selectWeapon)
+		return false;
+	const auto *command = decision.selectWeapon == 29 ? "weapon_knife"
+		: primary && decision.selectWeapon == primary->id ? primary->classname : pistolName;
+	if (!command)
+		return false;
+	const bool sent = services_->command_dispatchClientCommand(handle.entity, command, "");
+	if (!current())
+		return false;
+	actor.equipment.equipped(receipt.actor, receipt.frame, receipt.now, decision.selectWeapon, sent);
+	if (services_->service_runtimeProfiler().enabled())
+		runtime_detail::profiledLogConsole(services_->service_runtimeProfiler(), services_->service_pluginId(),
+			"profile equipBest slot=%u now=%.6f old=%u selected=%u sent=%d primary_ammo=%u pistol_ammo=%u",
+			receipt.actor.slot, receipt.now, input.currentWeapon, decision.selectWeapon, sent,
+			static_cast<unsigned>(input.primary.ammo), static_cast<unsigned>(input.pistol.ammo));
+	return sent;
+}
+
 bool BotBehaviorRuntime::decideReloadAction(ManagedActionContext &ctx)
 {
 	if (services_->service_compatibilitySurface().configuration().mode != compat::RuntimeMode::Compatibility)

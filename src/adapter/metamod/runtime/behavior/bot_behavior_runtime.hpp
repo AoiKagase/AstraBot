@@ -359,6 +359,7 @@ private:
 	void reportLostEnemy(std::size_t index, world::EntityKey target, const std::function<bool()> &current);
 	void updateGuardLook(ManagedActionContext &ctx);
 	bool decideEquipmentAction(ManagedActionContext &ctx, const compat::PublicActorState &weapon, bool attacking);
+	bool equipBestWeapon(std::size_t index, bool mustEquip = false);
 	bool cancelHeldGrenade(std::size_t index, const runtime::ViewAngles &movementAngles, ActionProposal &proposal);
 	BehaviorPhaseResult updateBehaviorLifecycle(
 		std::size_t index, const runtime::MovementPhysicsState &before, compat::StateUpdateContext &context);

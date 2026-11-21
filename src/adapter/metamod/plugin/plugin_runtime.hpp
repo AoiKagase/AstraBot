@@ -498,6 +498,8 @@ private:
 	combat::ReloadState observation_activeWeaponReloadState(edict_t *source) const override;
 	bool observation_shieldState(edict_t *source, bool &hasShield, bool &protectedByShield,
 		combat::ReloadState &reload) const override;
+	bool observation_equipmentAmmo(edict_t *source,
+		std::array<compat::EquipmentAmmo, compat::PublicActorState::kWeaponStateCapacity> &ammo) const override;
 	bool readGameDllWeaponPrediction(edict_t *source, int &weapon, bool &silenced, combat::ReloadState *reload,
 		bool *hasShield = nullptr, bool *protectedByShield = nullptr) const;
 	bool observation_readManagedWorldSnapshot(std::size_t index, world::WorldSnapshot *snapshot) const override

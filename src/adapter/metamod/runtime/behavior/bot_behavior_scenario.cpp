@@ -2008,6 +2008,19 @@ void BotBehaviorRuntime::commitBehaviorState(
 	}
 	if (previousState != machine.state())
 	{
+		if (previousState == compat::CompatibilityStateId::PlantBomb &&
+			services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility)
+		{
+			const auto receipt = reactionContext(index);
+			const auto revision = actors_[index].executionRevision;
+			const auto epoch = machine.normalStateEpoch();
+			const auto attack = machine.attackEntryEpoch();
+			const auto attacking = machine.attackOverlayActive();
+			(void)equipBestWeapon(index);
+			if (!executionCurrent(index, receipt, revision) || machine.normalStateEpoch() != epoch ||
+				machine.attackEntryEpoch() != attack || machine.attackOverlayActive() != attacking)
+				return;
+		}
 		if (stateBehavior.navigationOwned && machine.state() == compat::CompatibilityStateId::PlantBomb)
 		{
 			const auto &entity = services_->service_managedBotHandles()[index].entity->v;

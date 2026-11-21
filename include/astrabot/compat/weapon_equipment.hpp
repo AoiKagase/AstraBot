@@ -16,6 +16,27 @@ enum class EquipmentAmmo
 	Empty,
 	Usable
 };
+inline EquipmentAmmo nativeEquipmentAmmo(bool clipKnown, int clip, bool reserveKnown, unsigned reserve)
+{
+	if ((clipKnown && clip != 0) || (reserveKnown && reserve > 0))
+		return EquipmentAmmo::Usable;
+	return clipKnown && reserveKnown ? EquipmentAmmo::Empty : EquipmentAmmo::Unknown;
+}
+struct EquipmentCandidate
+{
+	std::uint16_t weapon = 0;
+	EquipmentAmmo ammo = EquipmentAmmo::Unknown;
+	bool allowed = true, noFireUnderwater = false;
+};
+struct BestEquipmentInput
+{
+	world::ActorKey actor{};
+	world::FrameIdentity frame{};
+	float now = 0, skill = 0;
+	std::uint16_t currentWeapon = 0;
+	EquipmentCandidate primary{}, pistol{};
+	bool fullySubmerged = false, hasKnife = false, mustEquip = false;
+};
 struct EquipmentInput
 {
 	world::ActorKey actor{};
@@ -40,6 +61,40 @@ public:
 	void reset()
 	{
 		*this = WeaponEquipmentPlanner{};
+	}
+	bool canEquip(world::ActorKey actor, world::FrameIdentity frame, float now, bool mustEquip = false)
+	{
+		if (!actor.isValid() || !frame.isValid() || !std::isfinite(now) || now < 0)
+			return false;
+		bind(actor, frame, now);
+		lastTime_ = now;
+		return mustEquip || equippedAt_ <= 0 || now - equippedAt_ >= 5.0f;
+	}
+	EquipmentDecision best(const BestEquipmentInput &in)
+	{
+		constexpr float kUnderwaterMinimumSkill = .4f;
+		if (!std::isfinite(in.skill) || in.skill < 0 || in.skill > 1 ||
+			!canEquip(in.actor, in.frame, in.now, in.mustEquip))
+			return {};
+		for (const auto &candidate : {in.primary, in.pistol})
+		{
+			if (!candidate.weapon || !candidate.allowed ||
+				(in.skill > kUnderwaterMinimumSkill && in.fullySubmerged && candidate.noFireUnderwater))
+				continue;
+			if (candidate.ammo == EquipmentAmmo::Unknown)
+				return {true, 0};
+			if (candidate.ammo == EquipmentAmmo::Usable)
+				return {true, candidate.weapon};
+		}
+		return {true, static_cast<std::uint16_t>(in.hasKnife && in.currentWeapon != 29 ? 29 : 0)};
+	}
+	void equipped(world::ActorKey actor, world::FrameIdentity frame, float now, std::uint16_t weapon, bool sent)
+	{
+		if (!sent || weapon == 0 || weapon == 29 || !actor.isValid() || !frame.isValid() ||
+			!std::isfinite(now) || now < 0)
+			return;
+		bind(actor, frame, now);
+		lastTime_ = equippedAt_ = now;
 	}
 
 	EquipmentDecision update(const EquipmentInput &in)
@@ -85,7 +140,7 @@ public:
 			target = kKnifeWeaponId;
 		if (target == 0)
 			return {};
-		if (in.now < retryAt_)
+		if (in.now < retryAt_ || (target != kKnifeWeaponId && equippedAt_ > 0 && in.now - equippedAt_ < 5.0f))
 			return {true, 0};
 		return {true, target};
 	}
@@ -100,6 +155,8 @@ public:
 		retryAt_ = now + kEquipmentRetrySeconds;
 		if (success)
 		{
+			if (weapon != 29)
+				equippedAt_ = now;
 			pending_ = weapon;
 			pendingTick_ = frame.tick;
 		}
@@ -120,7 +177,7 @@ private:
 	world::ActorKey actor_{};
 	std::uint32_t map_ = 0, round_ = 0, lastTick_ = 0, pendingTick_ = 0;
 	std::uint16_t pending_ = 0;
-	float lastTime_ = 0, retryAt_ = 0;
+	float lastTime_ = 0, retryAt_ = 0, equippedAt_ = 0;
 };
 }
 }
