@@ -1977,6 +1977,18 @@ void BotBehaviorRuntime::commitBehaviorState(
 {
 	auto &machine = actors_[index].managedBotStateMachines;
 	const auto previousState = machine.state();
+	if (stateBehavior.navigationOwned && previousState == compat::CompatibilityStateId::DefuseBomb)
+	{
+		// Attack owns the update before Defuse can check its receipt or queue USE.
+		const auto receipt = reactionContext(index);
+		const auto revision = actors_[index].executionRevision;
+		const auto epoch = machine.normalStateEpoch();
+		tryDefuseAttack(index, context);
+		if (!executionCurrent(index, receipt, revision) || machine.normalStateEpoch() != epoch)
+			return;
+		if (machine.attackOverlayActive())
+			context.requestTransition = false;
+	}
 	const float previousStateTimestamp = machine.stateTimestamp();
 	stateBehavior.navigation.actor = context.actor;
 	stateBehavior.navigation.frame = context.frame;

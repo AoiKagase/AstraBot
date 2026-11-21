@@ -1899,6 +1899,66 @@ bool testRuntimeBombSiteApproach(
 			(message.find("profile navigationStep ") == 0U &&
 				message.find("state_to=STATE-DEFUSE-BOMB") != std::string::npos);
 	passed = check(defuseState, "visible C4 use belongs to DefuseBomb state, not outer MoveTo action") && passed;
+	if (checkNativeReload)
+	{
+		using namespace astrabot;
+		using namespace astrabot::compat;
+		auto &state = const_cast<CompatibilityStateMachine &>(navigation.behavior_managedBotStateMachines(0));
+		auto &profile = const_cast<ProfileRecord &>(navigation.behavior_managedProfiles(0));
+		const auto savedProfile = profile;
+		profile.csbotReactionSeconds = 0;
+		auto &observation = static_cast<metamod::BotObservationServices &>(runtime);
+		const auto &life = observation.service_lifecycle();
+		StateUpdateContext context{};
+		context.actor = state.actor();
+		context.frame = {life.mapGeneration(), life.roundGeneration(), observation.service_adapterFrameCount()};
+		context.fullUpdate = context.alive = context.roundActive = true;
+		context.timestamp = globals.time;
+		context.fullUpdateSequence = observation.service_managedBotFullUpdateSequences()[0];
+		context.lifeAvailability = context.roundAvailability = context.attackObservation =
+			ObservationAvailability::Available;
+		state.transition(CompatibilityStateId::DefuseBomb, StateTransitionReason::ExplicitRequest,
+			StateTransitionId::ExplicitStateChange, context);
+		runtime.onMessageBegin(MSG_ONE, 94, nullptr, &gEntities[0]);
+		runtime.onWriteByte(1);
+		runtime.onWriteByte(17);
+		runtime.onWriteByte(12);
+		runtime.onMessageEnd();
+		auto &enemy = gEntities[1];
+		const auto enemyFlags = enemy.v.flags;
+		enemy.v.flags = 0;
+		tick(.125f);
+		passed = check((gLastRunPlayerMoveButtons & IN_USE) != 0 && !state.attackOverlayActive(),
+			"an uncontested full update holds USE before the enemy is exposed") && passed;
+		enemy.v.flags = FL_CLIENT | FL_ONGROUND;
+		enemy.v.origin = gEntities[0].v.origin + Vector(800.0f, 0, 0);
+		enemy.v.velocity = Vector(250.0f, 0, 0);
+		enemy.v.v_angle = enemy.v.punchangle = Vector(0, 0, 0);
+		enemy.v.deadflag = DEAD_NO;
+		enemy.free = FALSE;
+		runtime.onClientPutInServer(&enemy);
+		runtime.onMessageBegin(MSG_ALL, 86, nullptr, nullptr);
+		runtime.onWriteByte(2);
+		runtime.onWriteString("TERRORIST");
+		runtime.onMessageEnd();
+		gEntities[0].v.angles = gEntities[0].v.v_angle = Vector(0, 0, 0);
+		tick(.125f);
+		passed = check(!state.attackOverlayActive() && (gLastRunPlayerMoveButtons & IN_USE) != 0,
+			"a visible distant enemy looking away does not interrupt Defuse") && passed;
+		enemy.v.origin = gEntities[0].v.origin + Vector(128.0f, 0, 0);
+		gEntities[0].v.angles = gEntities[0].v.v_angle = Vector(0, 0, 0);
+		tick(.125f);
+		passed = check(state.state() == CompatibilityStateId::DefuseBomb &&
+				state.attackOverlayActive() && !(gLastRunPlayerMoveButtons & IN_USE),
+			"a recognized near enemy starts Attack before Defuse can queue USE") && passed;
+		tick(1.125f);
+		passed = check(state.state() == CompatibilityStateId::DefuseBomb &&
+				state.attackOverlayActive() && !(gLastRunPlayerMoveButtons & IN_USE),
+			"the defuse receipt timeout does not run while Attack owns the update") && passed;
+		profile = savedProfile;
+		runtime.onClientDisconnect(&enemy);
+		enemy.v.flags = enemyFlags;
+	}
 	if (!defused && checkNativeReload)
 		for (const auto &message : gMovementLogs)
 			if (message.find("profile navigationStep ") == 0U)

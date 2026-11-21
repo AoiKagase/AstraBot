@@ -1470,6 +1470,8 @@ BotBehaviorRuntime::BehaviorPhaseResult BotBehaviorRuntime::decideObjectiveActio
 	if (targetActor.isValid())
 		actors_[index].guardLook.reset();
 	ctx.team = services_->observation_resolvePlayerTeam(handle.entity);
+	if (compatibility && machine.state() == compat::CompatibilityStateId::DefuseBomb && machine.attackOverlayActive())
+		return BehaviorPhaseResult::Continue;
 	const int team = ctx.team;
 	const objectives::TeamRole teamRole = team == kTerroristTeam ? objectives::TeamRole::Terrorist
 		: team == kCounterTerroristTeam							 ? objectives::TeamRole::CounterTerrorist

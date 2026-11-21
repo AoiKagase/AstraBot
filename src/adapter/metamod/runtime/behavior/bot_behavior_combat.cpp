@@ -503,6 +503,122 @@ bool BotBehaviorRuntime::retaliateAgainstRecentAttacker(const ManagedActionConte
 	return true;
 }
 
+bool BotBehaviorRuntime::selfDefenseThreatCurrent(std::size_t index, const SelfDefenseThreat &threat) const
+{
+	const auto &actor = actors_[index];
+	const auto &state = actor.managedBotStateMachines;
+	const auto *enemy = threat.entity;
+	return enemy && executionCurrent(index, threat.receipt, threat.execution) &&
+		state.normalStateEpoch() == threat.normalEpoch && state.attackEntryEpoch() == threat.attackEpoch &&
+		!enemy->free && enemy->serialnumber >= 0 && enemy->v.deadflag == DEAD_NO && enemy->v.health > 0 &&
+		(enemy->v.flags & (FL_CLIENT | FL_DORMANT | FL_SPECTATOR)) == FL_CLIENT &&
+		threat.source == world::EntityKey{threat.actor.slot, static_cast<std::uint32_t>(enemy->serialnumber) + 1U} &&
+		reactionEnemyCurrent(threat.actor) && actor.enemyReaction.enemy(threat.receipt) == threat.actor &&
+		actor.enemyReaction.source(threat.receipt) == threat.source &&
+		actor.enemyWeaponSource == threat.source && !actor.enemyReaction.enemyDead(threat.receipt);
+}
+
+BotBehaviorRuntime::SelfDefenseThreat BotBehaviorRuntime::evaluateSelfDefense(
+	std::size_t index, world::ActorKey target, bool visible)
+{
+	const auto &actor = actors_[index];
+	const auto &state = actor.managedBotStateMachines;
+	const auto receipt = reactionContext(index);
+	SelfDefenseThreat threat{nullptr, target, actor.enemyReaction.source(receipt), receipt, actor.executionRevision,
+		state.normalStateEpoch(), state.attackEntryEpoch()};
+	const auto *engine = services_->service_engineFunctions();
+	if (visible && engine && engine->pfnPEntityOfEntIndex)
+		threat.entity = engine->pfnPEntityOfEntIndex(static_cast<int>(target.slot));
+	else if (actor.occludedRecognition.frame == receipt.frame.tick && actor.occludedRecognition.source == threat.source)
+		threat.entity = actor.occludedRecognition.entity;
+	if (!selfDefenseThreatCurrent(index, threat))
+		return {};
+
+	const auto &enemy = threat.entity->v;
+	const auto toEnemy = enemy.origin - services_->service_managedBotHandles()[index].entity->v.origin;
+	const float distanceSquared = DotProduct(toEnemy, toEnemy);
+	const float distance = std::sqrt(distanceSquared);
+	constexpr float radiansPerDegree = .01745329251994329577f;
+	const float pitch = (enemy.v_angle.x + enemy.punchangle.x) * radiansPerDegree;
+	const float yaw = (enemy.v_angle.y + enemy.punchangle.y) * radiansPerDegree;
+	const float horizontal = std::cos(pitch);
+	// Normalize the full displacement, then use the world-horizontal dot as CSBot does.
+	const bool facing = distance > 0.0f &&
+		(horizontal * std::cos(yaw)) * (toEnemy.x / distance) +
+			(horizontal * std::sin(yaw)) * (toEnemy.y / distance) < -.9f;
+	const auto eye = enemy.origin + enemy.view_ofs;
+	const bool lookingAtUs = facing && canSeePoint(index, {eye.x, eye.y, eye.z}, receipt.frame, false);
+	constexpr float closeRangeSquared = 750.0f * 750.0f;
+	constexpr float retaliationWindow = 1.0f;
+	if (!selfDefenseThreatCurrent(index, threat) ||
+		(!lookingAtUs && !(distanceSquared < closeRangeSquared) &&
+			!actor.enemyReaction.recentlyDamaged(receipt, retaliationWindow)))
+		return {};
+	return threat;
+}
+
+void BotBehaviorRuntime::tryDefuseAttack(std::size_t index, const compat::StateUpdateContext &context)
+{
+	auto &actor = actors_[index];
+	auto &state = actor.managedBotStateMachines;
+	const auto &config = services_->service_compatibilitySurface().configuration();
+	const bool frozen = services_->service_roundFreezeGeneration() == context.frame.roundGeneration &&
+		context.timestamp < services_->service_roundFreezeUntil();
+	if (state.attackOverlayActive() || config.botEnable <= 0 || frozen ||
+		reactionDisposition(index) != compat::ReactionDisposition::SelfDefense)
+		return;
+
+	const auto receipt = reactionContext(index);
+	const auto execution = actor.executionRevision;
+	const auto normalEpoch = state.normalStateEpoch();
+	world::WorldSnapshot snapshot{};
+	world::ActorKey target{};
+	world::WorldPosition targetPosition{};
+	if (!prepareManagedPerception(index, &snapshot, &target, &targetPosition) ||
+		!executionCurrent(index, receipt, execution) || state.normalStateEpoch() != normalEpoch || !target.isValid() ||
+		!(actor.recognizedTargets == target) || state.state() != compat::CompatibilityStateId::DefuseBomb ||
+		state.attackOverlayActive())
+		return;
+	const world::ActorObservation *contact = nullptr;
+	const bool visible = snapshot.findActor(target, &contact) == world::ContactLookupResult::Found && contact &&
+		contact->visible;
+	auto threat = evaluateSelfDefense(index, target, visible);
+	if (!threat.entity)
+		return;
+
+	const auto &store = services_->observation_publicObservations();
+	compat::PublicActorState currentWeapon{};
+	if (!store.read(context.actor, context.frame, &currentWeapon) || !currentWeapon.weaponKnown ||
+		currentWeapon.weaponId <= 0 || currentWeapon.weaponId >= MAX_WEAPONS ||
+		compat::WeaponActionPlanner::isGrenade(static_cast<std::uint16_t>(currentWeapon.weaponId)) ||
+		currentWeapon.weaponId == 6)
+		return;
+	compat::CompatibilityObservation observation{};
+	if (services_->observation_observationAdapter().collectActor(
+			services_->service_managedBotHandles()[index].entity, context.actor, context.frame,
+			{services_->command_managedBotCommandSequences(index), 0U, context.fullUpdateSequence}, &observation) !=
+		ObservationAdapterResult::Accepted)
+		return;
+	const auto &reload = observation.weapon.reloadState;
+	const bool reloading = reload.isAvailable() && reload.value != combat::ReloadState::Unknown
+		? reload.value == combat::ReloadState::Reloading
+		: store.pendingReloadRequest(context.actor, context.frame, context.timestamp);
+	const auto *engine = services_->service_engineFunctions();
+	const auto getCvar = engine ? engine->pfnCVarGetFloat : nullptr;
+	if (reloading || (getCvar && (getCvar("bot_zombie") != 0 || getCvar("bot_mimic") != 0)) ||
+		!selfDefenseThreatCurrent(index, threat))
+		return;
+	if (state.beginAttack(context) != compat::StateResult::Transitioned)
+		return;
+	++threat.attackEpoch;
+	if (!selfDefenseThreatCurrent(index, threat) || !state.attackOverlayActive())
+		return;
+	const auto &origin = threat.entity->v.origin;
+	const world::WorldPosition position{origin.x, origin.y, origin.z};
+	actor.enemyReaction.rememberVisible(threat.receipt, target, threat.source, position);
+	actor.noiseEnemyContact = {target, threat.source, position, context.timestamp};
+}
+
 ActionProposal BotBehaviorRuntime::decideCombatAction(ManagedActionContext &ctx)
 {
 	constexpr int kP228 = 1;
@@ -648,59 +764,15 @@ ActionProposal BotBehaviorRuntime::decideCombatAction(ManagedActionContext &ctx)
 	const bool selfDefenseEntry = compatibility && !state.attackOverlayActive() &&
 		weapon.kind != combat::WeaponKind::Grenade && (combatVisible || delayedRecognition) &&
 		reactionDisposition(index) == compat::ReactionDisposition::SelfDefense;
-	const auto defenseReceipt = selfDefenseEntry ? reactionContext(index) : compat::ReactionContext{};
-	const auto defenseExecution = combatActor.executionRevision;
-	const auto defenseNormalEpoch = state.normalStateEpoch();
-	const auto defenseAttackEpoch = state.attackEntryEpoch();
-	const auto defenseSource = selfDefenseEntry ? combatActor.enemyReaction.source(defenseReceipt) : world::EntityKey{};
-	const edict_t *defenseEnemy = nullptr;
+	const auto defenseThreat = selfDefenseEntry
+		? evaluateSelfDefense(index, targetActor, combatVisible) : SelfDefenseThreat{};
 	const auto defenseCurrent = [&] {
-		return !selfDefenseEntry ||
-			(executionCurrent(index, defenseReceipt, defenseExecution) &&
-				state.normalStateEpoch() == defenseNormalEpoch && state.attackEntryEpoch() == defenseAttackEpoch &&
-				defenseEnemy && !defenseEnemy->free && defenseEnemy->serialnumber >= 0 &&
-				defenseEnemy->v.deadflag == DEAD_NO && defenseEnemy->v.health > 0 &&
-				(defenseEnemy->v.flags & (FL_CLIENT | FL_DORMANT | FL_SPECTATOR)) == FL_CLIENT &&
-				defenseSource == world::EntityKey{targetActor.slot,
-					static_cast<std::uint32_t>(defenseEnemy->serialnumber) + 1U} &&
-				reactionEnemyCurrent(targetActor) && combatActor.enemyReaction.enemy(defenseReceipt) == targetActor &&
-				combatActor.enemyReaction.source(defenseReceipt) == defenseSource &&
-				combatActor.enemyWeaponSource == defenseSource && !combatActor.enemyReaction.enemyDead(defenseReceipt));
+		return !selfDefenseEntry || selfDefenseThreatCurrent(index, defenseThreat);
 	};
-	if (selfDefenseEntry)
+	if (!defenseCurrent())
 	{
-		const auto *engine = services_->service_engineFunctions();
-		if (combatVisible && engine && engine->pfnPEntityOfEntIndex)
-			defenseEnemy = engine->pfnPEntityOfEntIndex(static_cast<int>(targetActor.slot));
-		else if (combatActor.occludedRecognition.frame == frame.tick &&
-			combatActor.occludedRecognition.source == defenseSource)
-			defenseEnemy = combatActor.occludedRecognition.entity;
-		if (!defenseCurrent())
-			return proposal;
-
-		const auto toEnemy = defenseEnemy->v.origin - handle.entity->v.origin;
-		const float distanceSquared = DotProduct(toEnemy, toEnemy);
-		const float distance = std::sqrt(distanceSquared);
-		const float pitch = (defenseEnemy->v.v_angle.x + defenseEnemy->v.punchangle.x) *
-			ASTRABOT_BOT_BEHAVIOR_COMBAT_DEGREES_TO_RADIANS;
-		const float yaw = (defenseEnemy->v.v_angle.y + defenseEnemy->v.punchangle.y) *
-			ASTRABOT_BOT_BEHAVIOR_COMBAT_DEGREES_TO_RADIANS;
-		const float horizontal = std::cos(pitch);
-		// Normalize the full displacement, then use the world-horizontal dot as CSBot does.
-		const bool facing = distance > 0.0f &&
-			(horizontal * std::cos(yaw)) * (toEnemy.x / distance) +
-				(horizontal * std::sin(yaw)) * (toEnemy.y / distance) < -.9f;
-		const auto enemyEye = defenseEnemy->v.origin + defenseEnemy->v.view_ofs;
-		const bool lookingAtUs = facing && canSeePoint(index, {enemyEye.x, enemyEye.y, enemyEye.z}, frame, false);
-		constexpr float closeSelfDefenseRange = 750.0f;
-		constexpr float retaliationWindow = 1.0f;
-		if (!defenseCurrent() ||
-			(!lookingAtUs && !(distanceSquared < closeSelfDefenseRange * closeSelfDefenseRange) &&
-				!combatActor.enemyReaction.recentlyDamaged(defenseReceipt, retaliationWindow)))
-		{
-			combatActor.managedBotCombat.stopMovement();
-			return proposal;
-		}
+		combatActor.managedBotCombat.stopMovement();
+		return proposal;
 	}
 	bool handledOccludedEntry = false;
 	if (delayedRecognition && !combatVisible && !state.attackOverlayActive() &&

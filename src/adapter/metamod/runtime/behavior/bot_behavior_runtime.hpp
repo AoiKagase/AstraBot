@@ -323,6 +323,19 @@ private:
 	BehaviorPhaseResult prepareManagedAction(ManagedActionContext &ctx);
 	BehaviorPhaseResult decideObjectiveAction(ManagedActionContext &ctx);
 	ActionProposal decideCombatAction(ManagedActionContext &ctx);
+	struct SelfDefenseThreat
+	{
+		const edict_t *entity = nullptr;
+		world::ActorKey actor{};
+		world::EntityKey source{};
+		compat::ReactionContext receipt{};
+		std::uint64_t execution = 0;
+		std::uint64_t normalEpoch = 0;
+		std::uint64_t attackEpoch = 0;
+	};
+	SelfDefenseThreat evaluateSelfDefense(std::size_t index, world::ActorKey target, bool visible);
+	bool selfDefenseThreatCurrent(std::size_t index, const SelfDefenseThreat &threat) const;
+	void tryDefuseAttack(std::size_t index, const compat::StateUpdateContext &context);
 	bool updateCombatRetreat(std::size_t index, int team);
 	bool turnToThreateningGunfire(const ManagedActionContext &ctx, const compat::StateUpdateContext &stateContext);
 	bool retaliateAgainstRecentAttacker(const ManagedActionContext &ctx, bool sniper);
