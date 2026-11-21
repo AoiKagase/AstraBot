@@ -10,6 +10,16 @@ using namespace astrabot;
 
 int gTraceMode = 0;
 int gTraceCount = 0;
+float gEngineForwardX = 0.5f;
+float gEngineModelPitch = 0.0f;
+
+void angleVectors(const float *angles, float *forward, float *, float *)
+{
+	gEngineModelPitch = angles[0];
+	forward[0] = gEngineForwardX;
+	forward[1] = 0.0f;
+	forward[2] = 0.0f;
+}
 
 void traceLine(const float *start, const float *end, int noMonsters, edict_t *skip, TraceResult *result)
 {
@@ -130,7 +140,56 @@ bool testAdapterPerceptionProductionFixture()
 				(visible.visibleParts & world::VisibleChest) != 0U && gTraceCount == 5,
 			"the tracked target's side is the only visible part inside the FOV at the edge"))
 		return false;
+
+	constexpr auto modelCone = metamod::PlayerVisionCone::ModelPitchAndYaw;
+	const auto collectWithModelCone = [&](bool checkFov, bool reportFovParts) {
+		gTraceCount = 0;
+		return adapter.collectVisibility(&observer, &target, {2U, 1U}, frame(11U), &visible,
+			checkFov, reportFovParts, metamod::PlayerVisionGlass::Occludes, modelCone) ==
+			metamod::ObservationAdapterResult::Accepted;
+	};
+	observer.v.v_angle[0] = 70.0f;
+	observer.v.v_angle[1] = 180.0f;
+	if (!check(collectWithModelCone(true, true) && visible.visibleParts == world::VisibleLeftSide &&
+			gTraceCount == 1, "the reference cone uses the model angles independently of command angles"))
+		return false;
+	observer.v.angles[0] = 30.0f;
+	if (!check(collectWithModelCone(true, true) && !visible.visible && !visible.fovPassed && gTraceCount == 0,
+			"model pitch narrows the horizontal cone before issuing any LOS traces") ||
+		!check(collectWithModelCone(false, true) && visible.visible && visible.visibleParts == clearParts &&
+			visible.visibleInFovParts == world::VisibleNone && gTraceCount == 5,
+			"tracked LOS retains its five probes while reporting the pitched candidate mask"))
+		return false;
+	gTraceCount = 0;
+	if (!check(adapter.collectVisibility(&observer, &target, {2U, 1U}, frame(11U), &visible) ==
+			metamod::ObservationAdapterResult::Accepted && visible.visibleParts == world::VisibleLeftSide &&
+			gTraceCount == 1, "yaw-only perception ignores model pitch"))
+		return false;
+
+	observer.v.angles[0] = 0.0f;
 	observer.v.angles[1] = 0.0f;
+	target.v.origin[0] = 0.0f;
+	target.v.origin[2] = 64.0f;
+	if (!check(collectWithModelCone(true, true) && !visible.visible && gTraceCount == 0,
+			"a zero horizontal direction fails the strict reference FOV test") ||
+		!check(collectWithModelCone(false, true) && visible.visible && visible.visibleInFovParts == world::VisibleNone &&
+			gTraceCount == 3, "a coincident horizontal position can still be traced for retained enemy LOS"))
+		return false;
+	target.v.origin[2] = 0.0f;
+
+	engine.pfnAngleVectors = angleVectors;
+	observer.v.angles[0] = 60.0f;
+	target.v.origin[0] = 128.0f;
+	gEngineForwardX = 0.5f;
+	if (!check(collectWithModelCone(true, true) && gEngineModelPitch == 60.0f && !visible.visible &&
+			gTraceCount == 0, "the engine model forward vector meets a strict 0.5 cutoff"))
+		return false;
+	gEngineForwardX = std::nextafter(0.5f, 1.0f);
+	if (!check(collectWithModelCone(true, true) && visible.visible && gTraceCount == 3,
+			"the smallest engine forward component above 0.5 admits the three center probes"))
+		return false;
+	engine.pfnAngleVectors = nullptr;
+	observer.v.angles[0] = 0.0f;
 
 	const float angle = 50.0f * 3.14159265358979323846f / 180.0f;
 	observer.v.fov = 15.0f;

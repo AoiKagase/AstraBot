@@ -280,9 +280,9 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 			}
 			std::vector<compat::RandomTraceRecord> draws;
 		} trace;
-		const auto tick = [&](float yaw = 61.5f)
+		const auto tick = [&](float yaw = 61.5f, float modelPitch = 0.0f)
 		{
-			gEntities[0].v.angles = Vector(0.0f, yaw, 0.0f);
+			gEntities[0].v.angles = Vector(modelPitch, yaw, 0.0f);
 			stepRifle(30, yaw);
 		};
 		auto &enemy = gEntities[1];
@@ -347,6 +347,12 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 		passed = check(trace.draws.size() == 7U, "blinded full updates do not draw for an exposed enemy") && passed;
 		tick();
 		passed = check(trace.draws.size() == 8U, "the first post-flash update draws again") && passed;
+		tick(61.5f, 30.0f);
+		contact = nullptr;
+		passed = check(behavior.observation_managedBotPerception(0U).snapshot().findActor(
+				{2U, 1U}, &contact) == world::ContactLookupResult::Found && contact &&
+				contact->visibleInFovParts == world::VisibleNone && trace.draws.size() == 8U,
+			"model pitch removes the edge part from the threat queue without a notice draw") && passed;
 		behavior.service_compatibilityRandomSource().setTraceSink(nullptr);
 		return passed;
 	}

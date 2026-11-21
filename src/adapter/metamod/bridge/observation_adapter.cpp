@@ -205,7 +205,8 @@ ObservationAdapterResult ObservationAdapter::collectActor(edict_t *entity, const
 
 ObservationAdapterResult ObservationAdapter::collectVisibility(edict_t *observer, const edict_t *target,
 	const world::ActorKey &targetActor, const world::FrameIdentity &frame,
-	perception::VisionObservation *observation, bool checkFov, bool reportFovParts, PlayerVisionGlass glass) const
+	perception::VisionObservation *observation, bool checkFov, bool reportFovParts, PlayerVisionGlass glass,
+	PlayerVisionCone cone) const
 {
 	if (observation == nullptr || !targetActor.isValid() || !frame.isValid())
 		return ObservationAdapterResult::InvalidArgument;
@@ -250,9 +251,31 @@ ObservationAdapterResult ObservationAdapter::collectVisibility(edict_t *observer
 	const float observerZ = observer->v.origin[2];
 	const float eye[3] = {
 		observerX + observer->v.view_ofs[0], observerY + observer->v.view_ofs[1], observerZ + observer->v.view_ofs[2]};
-	const float yawRadians = observer->v.angles[1] * ASTRABOT_OBSERVATION_ADAPTER_PI / kHalfTurnDegrees;
-	const float forwardX = std::cos(yawRadians);
-	const float forwardY = std::sin(yawRadians);
+	const bool modelCone = cone == PlayerVisionCone::ModelPitchAndYaw;
+	float forward[3] = {};
+	// CSBot normalizes the horizontal target direction and keeps the model forward vector's horizontal scale.
+	if (checkFov || reportFovParts)
+	{
+		if (modelCone && engineFunctions_->pfnAngleVectors)
+			engineFunctions_->pfnAngleVectors(observer->v.angles, forward, nullptr, nullptr);
+		else if (modelCone)
+		{
+			// Match scalar AngleVectors when the engine callback is unavailable.
+			constexpr double kDegreesToRadians = 3.14159265358979323846 / 180.0;
+			const float pitch = static_cast<float>(observer->v.angles[0] * kDegreesToRadians);
+			const float yaw = static_cast<float>(observer->v.angles[1] * kDegreesToRadians);
+			const float scale = std::cos(pitch);
+			forward[0] = scale * std::cos(yaw);
+			forward[1] = scale * std::sin(yaw);
+		}
+		else
+		{
+			const float yaw = observer->v.angles[1] * ASTRABOT_OBSERVATION_ADAPTER_PI / kHalfTurnDegrees;
+			forward[0] = std::cos(yaw);
+			forward[1] = std::sin(yaw);
+		}
+	}
+	const float minimumViewLength = modelCone ? 0.0f : ASTRABOT_OBSERVATION_ADAPTER_MINIMUM_VIEW_DIRECTION_LENGTH;
 	constexpr int kIgnoreActors = 0x01;
 	constexpr int kIgnoreGlass = 0x100;
 	const int traceFlags = glass == PlayerVisionGlass::IgnoreTransparent ? kIgnoreActors | kIgnoreGlass : kIgnoreActors;
@@ -262,9 +285,17 @@ ObservationAdapterResult ObservationAdapter::collectVisibility(edict_t *observer
 		const float dx = point[0] - observerX;
 		const float dy = point[1] - observerY;
 		const float length = std::sqrt(dx * dx + dy * dy);
-		if (!std::isfinite(length) || length <= ASTRABOT_OBSERVATION_ADAPTER_MINIMUM_VIEW_DIRECTION_LENGTH)
-			return true;
-		const float dot = (dx / length) * forwardX + (dy / length) * forwardY;
+		if (!std::isfinite(length) || length <= minimumViewLength)
+			return !modelCone;
+		if (modelCone)
+		{
+			const float inverseLength = 1.0f / length;
+			const float directionX = dx * inverseLength;
+			const float directionY = dy * inverseLength;
+			const float dot = directionX * forward[0] + directionY * forward[1];
+			return dot > kMinimumViewConeDot;
+		}
+		const float dot = (dx / length) * forward[0] + (dy / length) * forward[1];
 		return dot > kMinimumViewConeDot;
 	};
 

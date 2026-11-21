@@ -170,7 +170,8 @@ CombatUpkeepUpdate BotBehaviorRuntime::upkeepCombat(
 			handle.entity, enemy, tracked.target, frame, &visible,
 			!(currentEnemySource(index) == world::EntityKey{tracked.target.slot,
 				static_cast<std::uint32_t>(enemy->serialnumber) + 1U}), false,
-			compatibility ? PlayerVisionGlass::IgnoreTransparent : PlayerVisionGlass::Occludes) ==
+			compatibility ? PlayerVisionGlass::IgnoreTransparent : PlayerVisionGlass::Occludes,
+			compatibility ? PlayerVisionCone::ModelPitchAndYaw : PlayerVisionCone::YawOnly) ==
 			ObservationAdapterResult::Accepted && visible.visible;
 	const bool remembered = compatibility &&
 		validEnemy && state.enemyReaction.enemy(reaction) == tracked.target &&

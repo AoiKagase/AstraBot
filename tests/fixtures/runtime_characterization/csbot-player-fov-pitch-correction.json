@@ -1,0 +1,251 @@
+{
+  "reason": "The native FOV rejects the three central rays at identical XY in seven initial frames and six C4 frames. The latter frames place both players at the planted bomb origin, so they also skip six notice draws and target lookups. The 0 to 0.5 draw uses the restored eighteenth value of the fixture RNG stream.",
+  "base_commit": "e82a840db12586243b4b5b0d88c40a23dea316a7",
+  "native_reference_commit": "b0889847fe6d03898be88acc9e366660efb40ab5",
+  "platforms": {
+    "windows-x86": {
+      "baseline_sha256": "e7af4f39b40651c048586f1533db77e179adec43f57f1f52be4966e8236a2538",
+      "corrected_sha256": "72df24f4b99dd39feb40780b615e81e497b13028801b8f82f31180bbbc78b54d",
+      "records": 153517
+    },
+    "linux-x86": {
+      "baseline_sha256": "d2adf7763b18601b27c2996314c4c4d8c54684ca6a0676bcc2839edca93c18a1",
+      "corrected_sha256": "c2678f0c9c960400708565db2983e31ba7270509db29e82532106981bf6a2b97",
+      "records": 153517
+    }
+  },
+  "edits": [
+    [
+      1440,
+      0
+    ],
+    [
+      1592,
+      0
+    ],
+    [
+      1758,
+      0
+    ],
+    [
+      1935,
+      0
+    ],
+    [
+      2147,
+      0
+    ],
+    [
+      2342,
+      0
+    ],
+    [
+      2488,
+      0
+    ],
+    [
+      108404,
+      1
+    ],
+    [
+      108413,
+      2
+    ],
+    [
+      108560,
+      1
+    ],
+    [
+      108569,
+      3
+    ],
+    [
+      108729,
+      1
+    ],
+    [
+      108738,
+      4
+    ],
+    [
+      108882,
+      1
+    ],
+    [
+      108891,
+      5
+    ],
+    [
+      109035,
+      1
+    ],
+    [
+      109044,
+      6
+    ],
+    [
+      109152,
+      8
+    ],
+    [
+      109204,
+      1
+    ],
+    [
+      109213,
+      7
+    ]
+  ],
+  "patterns": [
+    {
+      "windows-x86": {
+        "before": [
+          "call traceObjectiveVisibility end=(0x0.0000000000000p+0,0x0.0000000000000p+0,0x0.0000000000000p+0)",
+          "call traceObjectiveVisibility end=(0x0.0000000000000p+0,0x0.0000000000000p+0,0x1.9000000000000p+4)",
+          "call traceObjectiveVisibility end=(0x0.0000000000000p+0,0x0.0000000000000p+0,-0x1.1000000000000p+5)"
+        ],
+        "after": []
+      },
+      "linux-x86": {
+        "before": [
+          "call traceObjectiveVisibility end=(0x0p+0,0x0p+0,0x0p+0)",
+          "call traceObjectiveVisibility end=(0x0p+0,0x0p+0,0x1.9p+4)",
+          "call traceObjectiveVisibility end=(0x0p+0,0x0p+0,-0x1.1p+5)"
+        ],
+        "after": []
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "call traceObjectiveVisibility end=(0x1.c000000000000p+7,0x1.0000000000000p+5,0x1.2000000000000p+5)",
+          "call traceObjectiveVisibility end=(0x1.c000000000000p+7,0x1.0000000000000p+5,0x1.e800000000000p+5)",
+          "call traceObjectiveVisibility end=(0x1.c000000000000p+7,0x1.0000000000000p+5,0x1.0000000000000p+1)"
+        ],
+        "after": []
+      },
+      "linux-x86": {
+        "before": [
+          "call traceObjectiveVisibility end=(0x1.cp+7,0x1p+5,0x1.2p+5)",
+          "call traceObjectiveVisibility end=(0x1.cp+7,0x1p+5,0x1.e8p+5)",
+          "call traceObjectiveVisibility end=(0x1.cp+7,0x1p+5,0x1p+1)"
+        ],
+        "after": []
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "call entityOfIndex index=2",
+          "rng float 0x0.0000000000000p+0 0x1.9000000000000p+6 0x1.1dd2240000000p+5"
+        ],
+        "after": []
+      },
+      "linux-x86": {
+        "before": [
+          "call entityOfIndex index=2",
+          "rng float 0x0p+0 0x1.9p+6 0x1.1dd224p+5"
+        ],
+        "after": []
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "call entityOfIndex index=2",
+          "rng float 0x0.0000000000000p+0 0x1.9000000000000p+6 0x1.bfa23c0000000p+4"
+        ],
+        "after": []
+      },
+      "linux-x86": {
+        "before": [
+          "call entityOfIndex index=2",
+          "rng float 0x0p+0 0x1.9p+6 0x1.bfa23cp+4"
+        ],
+        "after": []
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "call entityOfIndex index=2",
+          "rng float 0x0.0000000000000p+0 0x1.9000000000000p+6 0x1.e808660000000p+4"
+        ],
+        "after": []
+      },
+      "linux-x86": {
+        "before": [
+          "call entityOfIndex index=2",
+          "rng float 0x0p+0 0x1.9p+6 0x1.e80866p+4"
+        ],
+        "after": []
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "call entityOfIndex index=2",
+          "rng float 0x0.0000000000000p+0 0x1.9000000000000p+6 0x1.de7e240000000p+5"
+        ],
+        "after": []
+      },
+      "linux-x86": {
+        "before": [
+          "call entityOfIndex index=2",
+          "rng float 0x0p+0 0x1.9p+6 0x1.de7e24p+5"
+        ],
+        "after": []
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "call entityOfIndex index=2",
+          "rng float 0x0.0000000000000p+0 0x1.9000000000000p+6 0x1.704e980000000p+4"
+        ],
+        "after": []
+      },
+      "linux-x86": {
+        "before": [
+          "call entityOfIndex index=2",
+          "rng float 0x0p+0 0x1.9p+6 0x1.704e98p+4"
+        ],
+        "after": []
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "call entityOfIndex index=2",
+          "rng float 0x0.0000000000000p+0 0x1.9000000000000p+6 0x1.71d6f20000000p+5"
+        ],
+        "after": []
+      },
+      "linux-x86": {
+        "before": [
+          "call entityOfIndex index=2",
+          "rng float 0x0p+0 0x1.9p+6 0x1.71d6f2p+5"
+        ],
+        "after": []
+      }
+    },
+    {
+      "windows-x86": {
+        "before": [
+          "rng float 0x0.0000000000000p+0 0x1.0000000000000p-1 0x1.a4dfec0000000p-3"
+        ],
+        "after": [
+          "rng float 0x0.0000000000000p+0 0x1.0000000000000p-1 0x1.6dd9c80000000p-3"
+        ]
+      },
+      "linux-x86": {
+        "before": [
+          "rng float 0x0p+0 0x1p-1 0x1.a4dfecp-3"
+        ],
+        "after": [
+          "rng float 0x0p+0 0x1p-1 0x1.6dd9c8p-3"
+        ]
+      }
+    }
+  ]
+}

@@ -1473,7 +1473,8 @@ bool BotObservationRuntime::collectManagedPerception(
 			(!blinded && observationAdapter_.collectVisibility(handle.entity, entity, actor, frame, &visibility,
 				!(acquiredEnemy == world::EntityKey{static_cast<std::uint32_t>(slot),
 					static_cast<std::uint32_t>(entity->serialnumber) + 1U}), compatibility,
-				compatibility ? PlayerVisionGlass::IgnoreTransparent : PlayerVisionGlass::Occludes) ==
+				compatibility ? PlayerVisionGlass::IgnoreTransparent : PlayerVisionGlass::Occludes,
+				compatibility ? PlayerVisionCone::ModelPitchAndYaw : PlayerVisionCone::YawOnly) ==
 					ObservationAdapterResult::Accepted &&
 				visibility.visible);
 		world::ActorObservation observation = {};
