@@ -36,6 +36,7 @@ public:
 	void resetManagedBotCommandTemplate(std::size_t index);
 	void resetManagedBotCommandInputs(std::size_t index);
 	void advanceUpkeepLook(std::size_t index, FakeClientHandle &handle);
+	bool hasHuntApproachLook(std::size_t index) const { return actors_[index].huntApproachLookActive; }
 	const std::uint32_t &managedBotCommandSequences(std::size_t index) const
 	{
 		return actors_[index].managedBotCommandSequences;
@@ -119,8 +120,8 @@ private:
 		bool nativeLadderJump{};
 		compat::AimSpringState navigationLookSpring{};
 		float navigationLookYaw = std::numeric_limits<float>::quiet_NaN();
-		nav::NavVector huntWaitLookSpot{};
-		bool huntWaitLookActive = false;
+		nav::NavVector huntApproachLookSpot{};
+		bool huntApproachLookActive = false;
 		bool huntWaitNavigationLook = false;
 		float descentLookAt = std::numeric_limits<float>::quiet_NaN();
 		nav::NativeLadderPhase descentLookPhase = nav::NativeLadderPhase::None;
@@ -132,19 +133,23 @@ private:
 		world::EntityKey hostageUseTarget{};
 		float movementGateDiagnosticTimes = std::numeric_limits<float>::quiet_NaN();
 
-		void resetNavigationLook()
+		void resetPathLook()
 		{
 			navigationLookYaw = std::numeric_limits<float>::quiet_NaN();
 			navigationLookSpring = {};
-			huntWaitLookActive = false;
 			huntWaitNavigationLook = false;
 			descentLookAt = std::numeric_limits<float>::quiet_NaN();
 			descentLookPhase = nav::NativeLadderPhase::None;
 			descentFloorLook = false;
 			defusePathLook = false;
 		}
+		void resetNavigationLook()
+		{
+			resetPathLook();
+			huntApproachLookActive = false;
+		}
 	};
-	runtime::ViewAngles stepNavigationLook(const edict_t &entity, ActorState &actor, bool useHuntWaitLook);
+	runtime::ViewAngles stepNavigationLook(const edict_t &entity, ActorState &actor, bool useHuntApproachLook);
 	void advanceLadderDescentLook(std::size_t index, FakeClientHandle &handle);
 	void applyUseEntityLook(std::size_t index, const edict_t &entity, const ActionProposal &action,
 		runtime::BotCommand &command);

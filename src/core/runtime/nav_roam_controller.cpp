@@ -1200,14 +1200,17 @@ NavRoamController::NavigationPhaseResult NavRoamController::updateFriendWaiting(
 		!traversalState().specialTraversal.isActive() && !routeState().pathCostContext.attacking;
 	if (canWait)
 	{
+		nav::NavVector currentTarget{};
+		bool previewReady = false;
+		const auto routeRevision = routeRevision_;
 		if (friendWaitState().friendCheckAt < 0.0f || observedAt_ < friendWaitState().friendCheckAt ||
 			observedAt_ - friendWaitState().friendCheckAt >= kFriendCheckIntervalSeconds)
 		{
 			friendWaitState().friendCheckAt = observedAt_;
 			friendWaitState().friendInTheWay = false;
-			nav::NavVector currentTarget{};
-			const bool previewReady =
-				traversalState().locomotion.previewTarget(snapshot, observation.locomotion, &currentTarget);
+			previewReady = traversalState().locomotion.previewTarget(snapshot, observation.locomotion, &currentTarget);
+			if (routeRevision != routeRevision_)
+				return {true, NavRoamResult::ReplanRequired};
 			if (previewReady)
 				friendWaitState().friendPathTarget = currentTarget;
 			const auto &self =
@@ -1261,6 +1264,16 @@ NavRoamController::NavigationPhaseResult NavRoamController::updateFriendWaiting(
 				if (decision != nullptr)
 				{
 					decision->stage = NavRoamStage::MovementSuppressed;
+					if (decision->huntEndpointSteering && traversalState().locomotion.hasHuntWaypointSuccessor())
+					{
+						const auto &origin = observation.friendRayOriginAvailable ? observation.friendRayOrigin
+							: observation.locomotion.position;
+						if (!previewReady)
+							previewReady = traversalState().locomotion.previewTarget(snapshot, observation.locomotion, &currentTarget);
+						if (routeRevision != routeRevision_)
+							return {true, NavRoamResult::ReplanRequired};
+						decision->huntNearCorner = previewReady && nav::NavPathFollower::nearHuntCorner(origin, currentTarget);
+					}
 					decision->huntWaitingForFriend = decision->huntEndpointSteering;
 				}
 				return {true, NavRoamResult::MovementSuppressed};
@@ -2567,6 +2580,7 @@ NavRoamController::NavigationPhaseResult NavRoamController::updateGroundLocomoti
 			return {true, NavRoamResult::IntentReady};
 		}
 	}
+	const bool hadHuntWaypointSuccessor = traversalState().locomotion.hasHuntWaypointSuccessor();
 	nav::LocomotionResult locomotionResult =
 		traversalState().locomotion.update(snapshot, observation.locomotion, intent);
 	if (routeState().hasActiveRoute)
@@ -2603,6 +2617,8 @@ NavRoamController::NavigationPhaseResult NavRoamController::updateGroundLocomoti
 		if (locomotionResult == nav::LocomotionResult::IntentReady)
 		{
 			decision->intentDirection = intent->direction;
+			const auto &origin = observation.friendRayOriginAvailable ? observation.friendRayOrigin : observation.locomotion.position;
+			decision->huntNearCorner = hadHuntWaypointSuccessor && nav::NavPathFollower::nearHuntCorner(origin, intent->targetPosition);
 		}
 	}
 	if (locomotionResult == nav::LocomotionResult::IntentReady)

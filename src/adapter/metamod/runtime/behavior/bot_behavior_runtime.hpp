@@ -80,8 +80,11 @@ public:
 	void observeWeaponTouch(edict_t *box, edict_t *self);
 	void applyNativeLadderLookCommand(std::size_t index, runtime::BotCommand &command, bool localMovement);
 	void applyNoiseLookCommand(std::size_t index, runtime::BotCommand &command);
-	bool updateHuntWaitLook(std::size_t index, const runtime::MovementPhysicsState &before,
-		const nav::NavSnapshot &navigation, const std::function<bool()> &routeCurrent, NavigationUpdate &movement);
+	bool refreshHuntApproaches(std::size_t index, const runtime::MovementPhysicsState &before,
+		const nav::NavSnapshot &navigation);
+	bool updateHuntApproachLook(std::size_t index, const runtime::MovementPhysicsState &before,
+		const nav::NavSnapshot &navigation, const std::function<bool()> &routeCurrent, HuntApproachLook &look);
+	void inhibitHuntApproachLook(std::size_t index, HuntApproachLook &look);
 	void applyObstacleCommand(std::size_t index, runtime::BotCommand &command);
 	void resetObstacleMaterials();
 	void resetRoundRecognition(bool endingRound);
@@ -669,7 +672,16 @@ private:
 		std::uint32_t noiseLookUpdate = 0U;
 		compat::BombGuardPlanner bombGuardPlanners{};
 		compat::GuardLookPlanner guardLook{};
-		float nextHuntWaitLookAt = 0.0f;
+		struct HuntApproaches
+		{
+			nav::NavVector viewPosition{};
+			std::array<nav::NavVector, 16> points{};
+			std::int32_t count = 0;
+			std::uint64_t navRevision = 0;
+			float nextLookAt = 0.0f;
+			float inhibitUntil = 0.0f;
+		};
+		HuntApproaches huntApproaches{};
 		compat::WeaponEquipmentPlanner equipment{};
 		compat::FootstepEquipmentReceipt closeFootstep{};
 		VoiceFeedback outgoingVoiceFeedback{};

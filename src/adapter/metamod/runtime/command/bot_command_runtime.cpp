@@ -33,6 +33,12 @@ bool canAdvanceNavigationLook(compat::CompatibilityStateId state, bool grounded)
 	return state != compat::CompatibilityStateId::Hunt || grounded;
 }
 
+bool clearsHuntApproachLook(compat::CompatibilityStateId state)
+{
+	return state == compat::CompatibilityStateId::PlantBomb || state == compat::CompatibilityStateId::DefuseBomb ||
+		state == compat::CompatibilityStateId::UseEntity;
+}
+
 runtime::ViewAngles stepIdleLook(
 	const edict_t &entity, float desiredYaw, float desiredPitch, float now, compat::AimSpringState &spring)
 {
@@ -467,9 +473,11 @@ void BotCommandRuntime::finishNeutralCommand(std::size_t index, FakeClientHandle
 	// A throttled Hunt replan can temporarily stop movement while the ladder is retained.
 	const bool descentView = machine.state() == compat::CompatibilityStateId::Hunt && before.onLadder &&
 		actor.descentLookPhase != nav::NativeLadderPhase::None && actor.descentLookAt == services_->service_globals()->time;
-	if ((!defuseView && !descentView) ||
-		machine.attackOverlayActive() || requestedAction.hasCombatAim || requestedAction.hasGuardLook)
-		actor.resetNavigationLook();
+	const bool priorityLook = machine.attackOverlayActive() || requestedAction.hasCombatAim || requestedAction.hasGuardLook;
+	if (before.dead || priorityLook || clearsHuntApproachLook(machine.state()))
+		actor.huntApproachLookActive = false;
+	if ((!defuseView && !descentView) || priorityLook)
+		actor.resetPathLook();
 	const ActionProposal actionProposal = ActionAdapter::forLiveDispatch(
 		requestedAction, services_->observation_hasObservedActiveWeapon(index), command.viewAngles);
 	const ActionDispatch actionDispatch = ActionAdapter::translate(actionProposal);
@@ -488,13 +496,13 @@ void BotCommandRuntime::finishNeutralCommand(std::size_t index, FakeClientHandle
 }
 
 runtime::ViewAngles BotCommandRuntime::stepNavigationLook(
-	const edict_t &entity, ActorState &actor, bool useHuntWaitLook)
+	const edict_t &entity, ActorState &actor, bool useHuntApproachLook)
 {
 	float yaw = actor.navigationLookYaw, pitch = 0.0f;
-	if (useHuntWaitLook && actor.huntWaitLookActive)
+	if (useHuntApproachLook && actor.huntApproachLookActive)
 	{
 		const auto eye = entity.v.origin + entity.v.view_ofs;
-		const auto &spot = actor.huntWaitLookSpot;
+		const auto &spot = actor.huntApproachLookSpot;
 		const auto angles = ActionAdapter::useEntityView(spot.x - eye.x, spot.y - eye.y, spot.z - eye.z);
 		yaw = angles.yaw;
 		pitch = angles.pitch;
@@ -550,7 +558,7 @@ runtime::CommandReceipt BotCommandRuntime::executeManagedBotCommand(
 	}
 	command.movement.msec = services_->consumeCommandMsec(index, services_->service_globals()->time);
 	auto &actor = actors_[index];
-	if (actor.huntWaitNavigationLook)
+	if (actor.huntWaitNavigationLook || actor.huntApproachLookActive)
 	{
 		const auto config = services_->service_compatibilitySurface().configuration();
 		if (config.mode != compat::RuntimeMode::Compatibility || config.botEnable <= 0.0f || config.botStop != 0.0f)
@@ -564,6 +572,8 @@ runtime::CommandReceipt BotCommandRuntime::executeManagedBotCommand(
 	const bool explicitFrozen = (handle.entity->v.flags & FL_FROZEN) != 0;
 	const bool roundFreeze = services_->roundFreezeActive();
 	const auto &machine = services_->behavior_managedBotStateMachines(index);
+	const bool huntApproach = machine.state() == compat::CompatibilityStateId::Hunt && actor.huntApproachLookActive &&
+		!actor.nativeLadderControl;
 	const bool descentLookAdvanced = actor.descentLookAt == services_->service_globals()->time &&
 		machine.state() == compat::CompatibilityStateId::Hunt && !machine.attackOverlayActive();
 	if (descentLookAdvanced)
@@ -573,9 +583,9 @@ runtime::CommandReceipt BotCommandRuntime::executeManagedBotCommand(
 		command.synchronizeCombatView = true;
 	}
 	if (!navigationLookAdvanced && !descentLookAdvanced && !explicitFrozen && !roundFreeze &&
-		std::isfinite(actor.navigationLookYaw) &&
+		(std::isfinite(actor.navigationLookYaw) || huntApproach) &&
 		usesNavigationLook(machine.state()) && !machine.attackOverlayActive() &&
-		canAdvanceNavigationLook(machine.state(), (handle.entity->v.flags & FL_ONGROUND) != 0))
+		(huntApproach || canAdvanceNavigationLook(machine.state(), (handle.entity->v.flags & FL_ONGROUND) != 0)))
 	{
 		// CSBot's upkeep turns the view while keeping the axes from the last full decision.
 		command.viewAngles = stepNavigationLook(*handle.entity, actor,
@@ -1000,11 +1010,13 @@ MovementCommandDraft BotCommandRuntime::beginMovementCommand(std::size_t index, 
 	command.sequence = 0U;
 	command.issueFrame = 0U;
 	const auto &machine = services_->behavior_managedBotStateMachines(index);
+	auto &actor = actors_[index];
+	const bool huntApproach = machine.state() == compat::CompatibilityStateId::Hunt && actor.huntApproachLookActive;
 	const bool navigationLook =
 		services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility &&
 		!machine.attackOverlayActive() && !locomotionIntent.nativeLadderControl &&
 		usesNavigationLook(machine.state()) &&
-		(locomotionIntent.speed > 0.0f ||
+		(locomotionIntent.speed > 0.0f || huntApproach || movement.huntApproachLook.update == HuntApproachLookUpdate::Track ||
 			(machine.state() == compat::CompatibilityStateId::Hunt && movement.roamDecision.huntEndpointSteering));
 	const bool defuseLook = movement.observation.defuseApproach && isDefuseApproach(machine) &&
 		!machine.attackOverlayActive() && !locomotionIntent.nativeLadderControl && locomotionIntent.speed > 0.0f;
@@ -1012,11 +1024,10 @@ MovementCommandDraft BotCommandRuntime::beginMovementCommand(std::size_t index, 
 	command.viewAngles = (locomotionIntent.nativeLadderControl || command.synchronizeCombatView)
 		? runtime::ViewAngles{handle.entity->v.v_angle.x, handle.entity->v.v_angle.y, 0.0f}
 		: runtime::ViewAngles{0.0f, movementYaw(locomotionIntent.direction), 0.0f};
-	auto &actor = actors_[index];
-	if (navigationLook && std::isfinite(actor.navigationLookYaw) &&
+	if (navigationLook && (std::isfinite(actor.navigationLookYaw) || huntApproach) &&
 		actor.descentLookAt != services_->service_globals()->time &&
 		!(handle.entity->v.flags & FL_FROZEN) && !services_->roundFreezeActive() &&
-		canAdvanceNavigationLook(machine.state(), before.grounded))
+		(huntApproach || canAdvanceNavigationLook(machine.state(), before.grounded)))
 	{
 		command.viewAngles = stepNavigationLook(*handle.entity, actor, machine.state() == compat::CompatibilityStateId::Hunt);
 	}
@@ -1049,17 +1060,21 @@ void BotCommandRuntime::finishMovementCommand(std::size_t index, FakeClientHandl
 	const bool compatibilityMovement =
 		services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility;
 	const auto &machine = services_->behavior_managedBotStateMachines(index);
-	const bool canUseNavigationLook = compatibilityMovement && !machine.attackOverlayActive() &&
-		!locomotionIntent.nativeLadderControl && !requestedAction.hasCombatAim && !requestedAction.hasGuardLook;
+	const bool priorityLook = machine.attackOverlayActive() || requestedAction.hasCombatAim || requestedAction.hasGuardLook;
+	const bool canUseNavigationLook = compatibilityMovement && !priorityLook && !locomotionIntent.nativeLadderControl;
 	const bool huntEndpoint = canUseNavigationLook && roamDecision.huntEndpointSteering &&
 		machine.state() == compat::CompatibilityStateId::Hunt;
 	const bool defuseLook = canUseNavigationLook && observation.defuseApproach && isDefuseApproach(machine) &&
 		locomotionIntent.speed > 0.0f;
-	const bool navigationLook = huntEndpoint || defuseLook ||
-		(canUseNavigationLook && usesNavigationLook(machine.state()) && locomotionIntent.speed > 0.0f);
 	auto &actor = actors_[index];
+	const bool huntApproach = canUseNavigationLook && machine.state() == compat::CompatibilityStateId::Hunt &&
+		(actor.huntApproachLookActive || movement.huntApproachLook.update == HuntApproachLookUpdate::Track);
+	const bool navigationLook = huntEndpoint || defuseLook || huntApproach ||
+		(canUseNavigationLook && usesNavigationLook(machine.state()) && locomotionIntent.speed > 0.0f);
 	const bool descentLookAdvanced = actor.descentLookAt == services_->service_globals()->time &&
 		machine.state() == compat::CompatibilityStateId::Hunt && !machine.attackOverlayActive();
+	if (!compatibilityMovement || before.dead || priorityLook || clearsHuntApproachLook(machine.state()))
+		actor.huntApproachLookActive = false;
 	if (!navigationLook)
 	{
 		if (locomotionIntent.nativeLadderControl && descentLookAdvanced)
@@ -1069,22 +1084,12 @@ void BotCommandRuntime::finishMovementCommand(std::size_t index, FakeClientHandl
 			actor.descentFloorLook = false;
 		}
 		else
-			actor.resetNavigationLook();
+			actor.resetPathLook();
 	}
 	else if (locomotionIntent.speed > 0.0f || (huntEndpoint && roamDecision.huntWaitingForFriend))
 	{
 		// Set the next upkeep's look target after taking this decision's view.
 		actor.huntWaitNavigationLook = huntEndpoint && roamDecision.huntWaitingForFriend;
-		if (actor.huntWaitNavigationLook)
-		{
-			if (movement.huntWaitLookUpdate != HuntWaitLookUpdate::Unchanged)
-			{
-				actor.huntWaitLookActive = movement.huntWaitLookUpdate == HuntWaitLookUpdate::Track;
-				actor.huntWaitLookSpot = movement.huntWaitLookSpot;
-			}
-		}
-		else
-			actor.huntWaitLookActive = false;
 		actor.descentFloorLook = descentLookAdvanced &&
 			(actor.descentLookPhase == nav::NativeLadderPhase::MoveToDestination ||
 				(actor.descentLookPhase == nav::NativeLadderPhase::StoppedHuntLook && before.onLadder) ||
@@ -1103,6 +1108,12 @@ void BotCommandRuntime::finishMovementCommand(std::size_t index, FakeClientHandl
 		}
 		else
 			actor.navigationLookYaw = movementYaw(locomotionIntent.direction);
+	}
+	if (compatibilityMovement && !priorityLook && !before.dead && machine.state() == compat::CompatibilityStateId::Hunt &&
+		movement.huntApproachLook.update != HuntApproachLookUpdate::Unchanged)
+	{
+		actor.huntApproachLookActive = movement.huntApproachLook.update == HuntApproachLookUpdate::Track;
+		actor.huntApproachLookSpot = movement.huntApproachLook.spot;
 	}
 	const ActionProposal actionProposal = ActionAdapter::forLiveDispatch(
 		requestedAction, services_->observation_hasObservedActiveWeapon(index), draft.command.viewAngles);

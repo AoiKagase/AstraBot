@@ -1738,6 +1738,13 @@ std::size_t NavPathFollower::currentIndex() const
 	return currentIndex_;
 }
 
+bool NavPathFollower::nearHuntCorner(const NavVector &origin, const NavVector &target)
+{
+	constexpr float range = 100.0f;
+	const auto offset = displacement(origin, target);
+	return dotProduct(offset, offset) < range * range;
+}
+
 }
 }
 #undef ASTRABOT_NAV_QUERY_AGGRESSION_DANGER_REDUCTION

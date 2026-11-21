@@ -187,8 +187,9 @@ int main()
 	command.resetManagedBotCommandTemplate(0U);
 	handle.entity->v.v_angle = Vector(0, 35, 0);
 	const auto waitOrigin = handle.entity->v.origin;
-	endpoint.huntWaitLookUpdate = HuntWaitLookUpdate::Track;
-	endpoint.huntWaitLookSpot = nav::NavVector{waitOrigin.x, waitOrigin.y + 100.0f, waitOrigin.z};
+	endpoint.roamDecision.huntWaitingForFriend = false;
+	endpoint.huntApproachLook.update = HuntApproachLookUpdate::Track;
+	endpoint.huntApproachLook.spot = nav::NavVector{waitOrigin.x, waitOrigin.y + 100.0f, waitOrigin.z};
 	services.globals.time += runtime::BotTimingScheduler::kCommandInterval;
 	updateHunt();
 	if (!check(services.lastYaw == 35.0f && services.lastForward == 0.0f && services.lastSide == 0.0f,
@@ -201,9 +202,9 @@ int main()
 		command.executeManagedBotCommand(0U, handle);
 	}
 	if (!check(services.lastYaw > 70.0f && services.lastForward == 0.0f && services.lastSide == 0.0f,
-			"the stationary approach spot takes priority over the waiting path heading"))
+			"ordinary stationary Hunt uses its approach spot without a blocker"))
 		return 1;
-	endpoint.huntWaitLookUpdate = HuntWaitLookUpdate::Unchanged;
+	endpoint.huntApproachLook.update = HuntApproachLookUpdate::Unchanged;
 	endpoint.roamDecision.huntWaitingForFriend = false;
 	endpoint.locomotionIntent.direction = {1.0f, 0.0f, 0.0f};
 	endpoint.locomotionIntent.speed = 240.0f;
@@ -213,6 +214,21 @@ int main()
 	if (!check(services.lastYaw > 70.0f && services.lastForward == 0.0f && services.lastSide == 240.0f,
 			"the first resumed move projects into the already advanced approach-spot view"))
 		return 1;
+	for (int tick = 0; tick < 8; ++tick)
+	{
+		services.globals.time += runtime::BotTimingScheduler::kCommandInterval;
+		handle.entity->v.origin = waitOrigin;
+		command.executeManagedBotCommand(0U, handle);
+	}
+	if (!check(services.lastYaw > 75.0f && services.lastYaw < 105.0f && services.lastSide == 240.0f,
+			"continued walking keeps the approach spot and the cached local input"))
+		return 1;
+	endpoint.huntApproachLook.update = HuntApproachLookUpdate::Clear;
+	services.globals.time += runtime::BotTimingScheduler::kCommandInterval;
+	updateHunt();
+	if (!check(!command.hasHuntApproachLook(0U), "clearing the approach spot restores path look on the next upkeep"))
+		return 1;
+	endpoint.huntApproachLook.update = HuntApproachLookUpdate::Unchanged;
 
 	endpoint.roamDecision.huntWaitingForFriend = true;
 	endpoint.locomotionIntent = {};

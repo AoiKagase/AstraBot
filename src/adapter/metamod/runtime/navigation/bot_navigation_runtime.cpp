@@ -814,6 +814,14 @@ void BotNavigationRuntime::beginMovementUpdate(
 	}
 }
 
+bool BotNavigationRuntime::entersHuntWithoutUpdate(std::size_t index, float now) const
+{
+	const auto &machine = services_->behavior_managedBotStateMachines(index);
+	// Radio orders run before CSBot dispatches its current state's OnUpdate.
+	return machine.state() == compat::CompatibilityStateId::Hunt && machine.stateTimestamp() == now &&
+		!services_->behavior_scenarioDecisions(index).startedHuntFromRadio;
+}
+
 void BotNavigationRuntime::observeFullUpdateMotion(std::size_t index, const FakeClientHandle &handle,
 	const runtime::MovementPhysicsState &before, const compat::CvarSnapshot &configuration)
 {
@@ -1270,10 +1278,7 @@ NavigationUpdate BotNavigationRuntime::updateNavigation(std::size_t index, const
 			navigationState == compat::CompatibilityStateId::EscapeFromBomb) &&
 		!machine.attackOverlayActive();
 	// Hunt::OnEnter destroys the path. The first goal draw belongs to OnUpdate.
-	// The reference processes a radio order before dispatching the current state's OnUpdate.
-	const bool enteredHuntThisUpdate = navigationState == compat::CompatibilityStateId::Hunt &&
-		machine.stateTimestamp() == observation.locomotion.observedAt &&
-		!services_->behavior_scenarioDecisions(index).startedHuntFromRadio;
+	const bool enteredHuntThisUpdate = entersHuntWithoutUpdate(index, observation.locomotion.observedAt);
 	const bool enteredFollowCover = navigationState == compat::CompatibilityStateId::Hide &&
 		machine.task() == compat::CompatibilityTaskId::Follow && machine.stateTimestamp() == observation.locomotion.observedAt;
 	const bool stateHold =

@@ -1802,6 +1802,8 @@ void PluginRuntime::updateManagedBots()
 			++managedBotFullUpdateSequences_[index];
 		}
 		navigation_.observeFullUpdateMotion(index, handle, before, configuration);
+		if (!behavior_.refreshHuntApproaches(index, before, navigation))
+			continue;
 		BotBehaviorRuntime::PlantMoveChatter plantMove{};
 		// CSBot's full Update returns on bot_stop before it can choose a task.
 		const bool stateUpdatePaused =
@@ -1836,20 +1838,23 @@ void PluginRuntime::updateManagedBots()
 			navigation_.recordMovementPhysicsSample(index, before, receipt);
 			continue;
 		}
+		const auto routeRevision = navigation_.routeRevision(index);
+		const auto routeCurrent = [&] { return navigation_.routeRevision(index) == routeRevision; };
+		HuntApproachLook approach{};
+		if (!navigation_.entersHuntWithoutUpdate(index, globals_->time) &&
+			!behavior_.updateHuntApproachLook(index, before, navigation, routeCurrent, approach))
+			continue;
 		NavigationUpdate movement =
 			navigation_.updateNavigation(index, handle, before, navigation, performanceDisablePathSearch_);
+		movement.huntApproachLook = approach;
 		auto &locomotionIntent = movement.locomotionIntent;
 		auto &roamDecision = movement.roamDecision;
 		const auto roamResult = movement.roamResult;
-		const auto routeRevision = navigation_.routeRevision(index);
 		if (!behavior_.finishManagedBotNavigation(index, before, roamResult, roamDecision, &locomotionIntent))
 			continue;
-		if (roamDecision.huntWaitingForFriend)
-		{
-			const auto routeCurrent = [&] { return navigation_.routeRevision(index) == routeRevision; };
-			if (!routeCurrent() || !behavior_.updateHuntWaitLook(index, before, navigation, routeCurrent, movement))
-				continue;
-		}
+		if (roamDecision.huntNearCorner &&
+			behavior_.managedBotStateMachines(index).state() == compat::CompatibilityStateId::Hunt)
+			behavior_.inhibitHuntApproachLook(index, movement.huntApproachLook);
 		navigation_.recordNavigationUpdate(index, before, movement);
 		if (roamResult != runtime::NavRoamResult::IntentReady)
 		{
@@ -1862,7 +1867,9 @@ void PluginRuntime::updateManagedBots()
 				roamDecision.failureReason = runtime::NavFailureReason::MovementNotProduced;
 			}
 			navigation_.logMovementDiagnostic(index, "roam_no_intent", &roamDecision);
-			if (!roamDecision.huntWaitingForFriend)
+			const bool hunt = behavior_.managedBotStateMachines(index).state() == compat::CompatibilityStateId::Hunt;
+			if (!roamDecision.huntWaitingForFriend && !(hunt && (command_.hasHuntApproachLook(index) ||
+				movement.huntApproachLook.update == HuntApproachLookUpdate::Track)))
 			{
 				prepareNeutralManagedBotCommand(index, handle, before);
 				const runtime::CommandReceipt receipt = command_.executeManagedBotCommand(index, handle);

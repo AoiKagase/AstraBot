@@ -11,6 +11,11 @@ namespace
 bool testGuardPolicy()
 {
 	using namespace astrabot;
+	if (!check(!compat::approachViewPositionChanged({0, 0, 0}, {30, 0, 40}) &&
+			!compat::approachViewPositionChanged({170, 40, 20}, {170, 40, 69.99f}) &&
+			compat::approachViewPositionChanged({170, 40, 20}, {170, 40, 70.01f}),
+			"the approach scan requires strictly more than 50 units in three dimensions"))
+		return false;
 	nav::NavArea previous{}, here{};
 	previous.extent = {{0, 0, 0}, {100, 100, 0}};
 	here.extent = {{100, 20, 0}, {200, 80, 0}};

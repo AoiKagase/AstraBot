@@ -227,11 +227,16 @@ struct ObjectiveKnowledge
 	world::WorldVector position{};
 	float firstHeardAt = -1.0f;
 };
-enum class HuntWaitLookUpdate
+enum class HuntApproachLookUpdate
 {
 	Unchanged,
 	Clear,
 	Track
+};
+struct HuntApproachLook
+{
+	HuntApproachLookUpdate update = HuntApproachLookUpdate::Unchanged;
+	nav::NavVector spot{};
 };
 struct NavigationUpdate
 {
@@ -241,8 +246,7 @@ struct NavigationUpdate
 	nav::LocomotionIntent locomotionIntent{};
 	runtime::NavRoamDecision roamDecision{};
 	runtime::NavRoamResult roamResult = runtime::NavRoamResult::NoRoute;
-	HuntWaitLookUpdate huntWaitLookUpdate = HuntWaitLookUpdate::Unchanged;
-	nav::NavVector huntWaitLookSpot{};
+	HuntApproachLook huntApproachLook{};
 };
 // Stack-local command preparation; no owner state or observations are cached across updates.
 struct MovementCommandDraft

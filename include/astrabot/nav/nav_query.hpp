@@ -250,6 +250,8 @@ public:
 		float verticalTolerance, NavVector *target, AreaId *targetArea, NavHuntSteeringContext hunt = {});
 	bool isActive() const;
 	std::size_t currentIndex() const;
+	bool hasHuntWaypointSuccessor() const { return active_ && huntWaypointIndex_ + 1 < huntWaypoints_.size(); }
+	static bool nearHuntCorner(const NavVector &origin, const NavVector &target);
 	bool walkingToHuntEndpoint() const { return huntWalking_; }
 	bool followingProjectedHuntEndpoint() const
 	{

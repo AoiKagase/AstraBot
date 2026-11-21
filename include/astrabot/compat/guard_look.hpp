@@ -10,6 +10,13 @@ namespace astrabot
 {
 namespace compat
 {
+inline bool approachViewPositionChanged(const nav::NavVector &previous, const nav::NavVector &current)
+{
+	constexpr float range = 50.0f;
+	const float x = current.x - previous.x, y = current.y - previous.y, z = current.z - previous.z;
+	return x * x + y * y + z * z > range * range;
+}
+
 inline nav::NavVector guardApproachPoint(const nav::NavArea &previous, const nav::NavArea &here, unsigned how)
 {
 	constexpr int kLowYTransition = 0;

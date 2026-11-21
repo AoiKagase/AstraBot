@@ -142,6 +142,7 @@ public:
 		return config_.averageVelocityStuckMonitor ? referenceStuck_ : stuckFrames_ >= config_.stuckFrameLimit;
 	}
 	std::size_t currentCorridorIndex() const;
+	bool hasHuntWaypointSuccessor() const { return pathFollower_.hasHuntWaypointSuccessor(); }
 
 private:
 	static bool isValidConfig(const LocomotionConfig &config);

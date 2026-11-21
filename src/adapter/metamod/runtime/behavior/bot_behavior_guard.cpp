@@ -122,8 +122,71 @@ bool BotBehaviorRuntime::guardedBombPosition(std::size_t index, nav::NavVector *
 	return true;
 }
 
-bool BotBehaviorRuntime::updateHuntWaitLook(std::size_t index, const runtime::MovementPhysicsState &before,
-	const nav::NavSnapshot &navigation, const std::function<bool()> &routeCurrent, NavigationUpdate &movement)
+bool BotBehaviorRuntime::refreshHuntApproaches(std::size_t index, const runtime::MovementPhysicsState &before,
+	const nav::NavSnapshot &navigation)
+{
+	auto &actor = actors_[index];
+	const auto config = services_->service_compatibilitySurface().configuration();
+	auto *engine = services_->service_engineFunctions();
+	auto *self = services_->service_managedBotHandles()[index].entity;
+	if (config.mode != compat::RuntimeMode::Compatibility || config.botEnable <= 0.0f || config.botStop != 0.0f ||
+		before.dead || !navigation.isValid() || !self || !engine || !engine->pfnTraceLine)
+		return true;
+	const nav::NavVector origin{before.origin.x, before.origin.y, before.origin.z};
+	const bool sameRevision = actor.huntApproaches.navRevision == navigation.revision() && !actor.managedBotWasDead;
+	const auto previousView = sameRevision ? actor.huntApproaches.viewPosition : nav::NavVector{};
+	if (sameRevision && !compat::approachViewPositionChanged(previousView, origin))
+		return true;
+	auto next = sameRevision ? actor.huntApproaches : decltype(actor.huntApproaches){};
+	next.navRevision = navigation.revision();
+	if (!compat::approachViewPositionChanged(previousView, origin))
+	{
+		actor.huntApproaches = next;
+		return true;
+	}
+	const auto receipt = reactionContext(index);
+	const auto revision = actor.executionRevision;
+	const auto traceLine = engine->pfnTraceLine;
+	const std::function<bool()> current = [&] {
+		return executionCurrent(index, receipt, revision) &&
+			services_->service_engineFunctions() == engine && engine->pfnTraceLine == traceLine &&
+			services_->service_navPublisher().snapshot().revision() == navigation.revision();
+	};
+	const auto areaId = services_->navigation_knownArea(index, receipt.actor, receipt.frame, navigation.revision());
+	const auto &document = *navigation.document();
+	const auto *area = document.findArea(areaId);
+	next.viewPosition = origin;
+	next.count = 0;
+	if (area)
+	{
+		for (const auto &approach : area->approaches)
+		{
+			if (next.count == kMaximumApproachPoints)
+				break;
+			const auto *here = document.findArea(approach.here);
+			const auto *previous = document.findArea(approach.previous);
+			if (!here || !previous)
+				continue;
+			const auto point = compat::guardApproachPoint(*previous, *here, approach.previousToHereHow);
+			const bool visible = bendLookApproach(*engine, self, origin, point, &next.points[next.count], &current);
+			if (!current())
+				return false;
+			if (visible)
+				++next.count;
+		}
+	}
+	if (services_->service_runtimeProfiler().enabled())
+		runtime_detail::profiledLogConsole(services_->service_runtimeProfiler(), services_->service_pluginId(),
+			"hunt approach scan slot=%u update=%u origin=(%.3f %.3f %.3f) area=%u count=%d", receipt.actor.slot,
+			services_->service_managedBotFullUpdateSequences()[index], origin.x, origin.y, origin.z, areaId, next.count);
+	if (!current())
+		return false;
+	actor.huntApproaches = next;
+	return true;
+}
+
+bool BotBehaviorRuntime::updateHuntApproachLook(std::size_t index, const runtime::MovementPhysicsState &before,
+	const nav::NavSnapshot &navigation, const std::function<bool()> &routeCurrent, HuntApproachLook &look)
 {
 	auto &actor = actors_[index];
 	const auto config = services_->service_compatibilitySurface().configuration();
@@ -132,25 +195,25 @@ bool BotBehaviorRuntime::updateHuntWaitLook(std::size_t index, const runtime::Mo
 	const auto &machine = actor.managedBotStateMachines;
 	const auto receipt = reactionContext(index);
 	const float now = receipt.now;
-	if (config.mode != compat::RuntimeMode::Compatibility || machine.state() != compat::CompatibilityStateId::Hunt ||
+	if (config.mode != compat::RuntimeMode::Compatibility || config.botEnable <= 0.0f || config.botStop != 0.0f ||
+		machine.state() != compat::CompatibilityStateId::Hunt ||
 		machine.attackOverlayActive() || before.dead || (before.flags & FL_FROZEN) || !self || !engine ||
 		!engine->pfnTraceLine || !navigation.isValid() || !std::isfinite(now))
 		return true;
 	if (actor.noiseLook.active() || actor.noiseLook.inhibited(now) || actor.obstacleLook.entity ||
 		actor.weaponActions.grenadeInProgress())
 	{
-		movement.huntWaitLookUpdate = HuntWaitLookUpdate::Clear;
+		look.update = HuntApproachLookUpdate::Clear;
 		return true;
 	}
 	constexpr float kStationarySpeed = 10.0f;
 	const auto &velocity = before.velocity;
 	if (velocity.x * velocity.x + velocity.y * velocity.y + velocity.z * velocity.z >=
-			kStationarySpeed * kStationarySpeed || now < actor.nextHuntWaitLookAt)
+			kStationarySpeed * kStationarySpeed || now < actor.huntApproaches.nextLookAt ||
+		now < actor.huntApproaches.inhibitUntil)
 		return true;
 	const auto areaId = services_->navigation_knownArea(index, receipt.actor, receipt.frame, navigation.revision());
-	const auto &document = *navigation.document();
-	const auto *area = document.findArea(areaId);
-	if (!area)
+	if (areaId == 0)
 		return true;
 	const auto revision = actor.executionRevision;
 	const auto epoch = machine.normalStateEpoch();
@@ -178,28 +241,11 @@ bool BotBehaviorRuntime::updateHuntWaitLook(std::size_t index, const runtime::Mo
 	if (wait.status != compat::RandomStatus::Ok || !std::isfinite(wait.value) ||
 		wait.value < minimumInterval || wait.value > maximumInterval)
 		return true;
-	const nav::NavVector origin{before.origin.x, before.origin.y, before.origin.z};
-	std::array<nav::NavVector, kMaximumApproachPoints> points{};
-	std::int32_t count = 0;
-	for (const auto &approach : area->approaches)
-	{
-		if (count == kMaximumApproachPoints)
-			break;
-		const auto *here = document.findArea(approach.here);
-		const auto *previous = document.findArea(approach.previous);
-		if (!here || !previous)
-			continue;
-		const auto point = compat::guardApproachPoint(*previous, *here, approach.previousToHereHow);
-		const bool visible = bendLookApproach(*engine, self, origin, point, &points[count], &current);
-		if (!current())
-			return false;
-		if (visible)
-			++count;
-	}
+	const auto count = actor.huntApproaches.count;
 	if (count == 0)
 	{
-		actor.nextHuntWaitLookAt = now + wait.value;
-		movement.huntWaitLookUpdate = HuntWaitLookUpdate::Clear;
+		actor.huntApproaches.nextLookAt = now + wait.value;
+		look.update = HuntApproachLookUpdate::Clear;
 		return true;
 	}
 	const auto which = random.nextLong(
@@ -208,21 +254,27 @@ bool BotBehaviorRuntime::updateHuntWaitLook(std::size_t index, const runtime::Mo
 		return false;
 	if (which.status != compat::RandomStatus::Ok || which.value < 0 || which.value >= count)
 	{
-		actor.nextHuntWaitLookAt = now + wait.value;
+		actor.huntApproaches.nextLookAt = now + wait.value;
 		return true;
 	}
-	movement.huntWaitLookSpot = points[which.value];
-	movement.huntWaitLookSpot.z += 36.0f;
-	movement.huntWaitLookUpdate = HuntWaitLookUpdate::Track;
+	look.spot = actor.huntApproaches.points[which.value];
+	look.spot.z += 36.0f;
+	look.update = HuntApproachLookUpdate::Track;
 	if (services_->service_runtimeProfiler().enabled())
 		runtime_detail::profiledLogConsole(services_->service_runtimeProfiler(), services_->service_pluginId(),
-			"hunt wait approach slot=%u update=%u now=%.6f area=%u spot=(%.3f %.3f %.3f)", receipt.actor.slot,
-			timing.fullUpdateSequence, now, areaId, movement.huntWaitLookSpot.x, movement.huntWaitLookSpot.y,
-			movement.huntWaitLookSpot.z);
+			"hunt approach look slot=%u update=%u now=%.6f area=%u spot=(%.3f %.3f %.3f)", receipt.actor.slot,
+			timing.fullUpdateSequence, now, areaId, look.spot.x, look.spot.y, look.spot.z);
 	if (!current())
 		return false;
-	actor.nextHuntWaitLookAt = now + wait.value;
+	actor.huntApproaches.nextLookAt = now + wait.value;
 	return true;
+}
+
+void BotBehaviorRuntime::inhibitHuntApproachLook(std::size_t index, HuntApproachLook &look)
+{
+	constexpr float interval = 0.5f;
+	actors_[index].huntApproaches.inhibitUntil = services_->service_globals()->time + interval;
+	look.update = HuntApproachLookUpdate::Clear;
 }
 
 void BotBehaviorRuntime::updateGuardLook(ManagedActionContext &ctx)

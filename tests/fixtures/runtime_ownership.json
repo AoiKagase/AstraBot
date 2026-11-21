@@ -152,7 +152,7 @@
   {
     "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
     "scope": "ActorState",
-    "member": "nextHuntWaitLookAt"
+    "member": "huntApproaches"
   },
   {
     "header": "src/adapter/metamod/runtime/behavior/bot_behavior_runtime.hpp",
@@ -1397,12 +1397,12 @@
   {
     "header": "src/adapter/metamod/runtime/command/bot_command_runtime.hpp",
     "scope": "ActorState",
-    "member": "huntWaitLookSpot"
+    "member": "huntApproachLookSpot"
   },
   {
     "header": "src/adapter/metamod/runtime/command/bot_command_runtime.hpp",
     "scope": "ActorState",
-    "member": "huntWaitLookActive"
+    "member": "huntApproachLookActive"
   },
   {
     "header": "src/adapter/metamod/runtime/command/bot_command_runtime.hpp",

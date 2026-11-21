@@ -219,6 +219,7 @@ struct NavRoamDecision
 	std::uint8_t linkHow;
 	bool huntEndpointSteering = false;
 	bool huntWaitingForFriend = false;
+	bool huntNearCorner = false;
 	nav::NavVector huntEndpoint{};
 	nav::NavVector defuseLookPoint{};
 };

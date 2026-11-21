@@ -1377,8 +1377,10 @@ bool testDirectHuntStartsTowardTheNativePortal()
 	AreaId targetArea = 0U;
 	return check(follower.update(snapshot, {-638.5f, -881.2f, 128.0f}, 20.0f, 64.0f, &target, &targetArea) ==
 			NavFollowerResult::TargetReady && targetArea == 42U && target.x == -495.0f && target.y == -775.0f &&
-			corridor.endpoint.x == -250.0f && corridor.endpoint.y == -775.0f,
-		"direct Hunt approaches the portal used by the friend-wait test before steering to the endpoint");
+			corridor.endpoint.x == -250.0f && corridor.endpoint.y == -775.0f &&
+			follower.hasHuntWaypointSuccessor() && NavPathFollower::nearHuntCorner({target.x, target.y, target.z + 99.0f}, target) &&
+			!NavPathFollower::nearHuntCorner({target.x, target.y, target.z + 100.0f}, target),
+		"direct Hunt approaches the portal and inhibits look strictly inside the 3D corner radius");
 }
 
 bool testHuntFallbackKeepsPortalUntilItPasses()
