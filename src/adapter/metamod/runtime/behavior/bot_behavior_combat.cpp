@@ -645,6 +645,63 @@ ActionProposal BotBehaviorRuntime::decideCombatAction(ManagedActionContext &ctx)
 		services_->service_compatibilitySurface().configuration().mode == compat::RuntimeMode::Compatibility;
 	auto &combatActor = actors_[index];
 	const bool delayedRecognition = compatibility && targetActor.isValid() && combatActor.recognizedTargets == targetActor;
+	const bool selfDefenseEntry = compatibility && !state.attackOverlayActive() &&
+		weapon.kind != combat::WeaponKind::Grenade && (combatVisible || delayedRecognition) &&
+		reactionDisposition(index) == compat::ReactionDisposition::SelfDefense;
+	const auto defenseReceipt = selfDefenseEntry ? reactionContext(index) : compat::ReactionContext{};
+	const auto defenseExecution = combatActor.executionRevision;
+	const auto defenseNormalEpoch = state.normalStateEpoch();
+	const auto defenseAttackEpoch = state.attackEntryEpoch();
+	const auto defenseSource = selfDefenseEntry ? combatActor.enemyReaction.source(defenseReceipt) : world::EntityKey{};
+	const edict_t *defenseEnemy = nullptr;
+	const auto defenseCurrent = [&] {
+		return !selfDefenseEntry ||
+			(executionCurrent(index, defenseReceipt, defenseExecution) &&
+				state.normalStateEpoch() == defenseNormalEpoch && state.attackEntryEpoch() == defenseAttackEpoch &&
+				defenseEnemy && !defenseEnemy->free && defenseEnemy->serialnumber >= 0 &&
+				defenseEnemy->v.deadflag == DEAD_NO && defenseEnemy->v.health > 0 &&
+				(defenseEnemy->v.flags & (FL_CLIENT | FL_DORMANT | FL_SPECTATOR)) == FL_CLIENT &&
+				defenseSource == world::EntityKey{targetActor.slot,
+					static_cast<std::uint32_t>(defenseEnemy->serialnumber) + 1U} &&
+				reactionEnemyCurrent(targetActor) && combatActor.enemyReaction.enemy(defenseReceipt) == targetActor &&
+				combatActor.enemyReaction.source(defenseReceipt) == defenseSource &&
+				combatActor.enemyWeaponSource == defenseSource && !combatActor.enemyReaction.enemyDead(defenseReceipt));
+	};
+	if (selfDefenseEntry)
+	{
+		const auto *engine = services_->service_engineFunctions();
+		if (combatVisible && engine && engine->pfnPEntityOfEntIndex)
+			defenseEnemy = engine->pfnPEntityOfEntIndex(static_cast<int>(targetActor.slot));
+		else if (combatActor.occludedRecognition.frame == frame.tick &&
+			combatActor.occludedRecognition.source == defenseSource)
+			defenseEnemy = combatActor.occludedRecognition.entity;
+		if (!defenseCurrent())
+			return proposal;
+
+		const auto toEnemy = defenseEnemy->v.origin - handle.entity->v.origin;
+		const float distanceSquared = DotProduct(toEnemy, toEnemy);
+		const float distance = std::sqrt(distanceSquared);
+		const float pitch = (defenseEnemy->v.v_angle.x + defenseEnemy->v.punchangle.x) *
+			ASTRABOT_BOT_BEHAVIOR_COMBAT_DEGREES_TO_RADIANS;
+		const float yaw = (defenseEnemy->v.v_angle.y + defenseEnemy->v.punchangle.y) *
+			ASTRABOT_BOT_BEHAVIOR_COMBAT_DEGREES_TO_RADIANS;
+		const float horizontal = std::cos(pitch);
+		// Normalize the full displacement, then use the world-horizontal dot as CSBot does.
+		const bool facing = distance > 0.0f &&
+			(horizontal * std::cos(yaw)) * (toEnemy.x / distance) +
+				(horizontal * std::sin(yaw)) * (toEnemy.y / distance) < -.9f;
+		const auto enemyEye = defenseEnemy->v.origin + defenseEnemy->v.view_ofs;
+		const bool lookingAtUs = facing && canSeePoint(index, {enemyEye.x, enemyEye.y, enemyEye.z}, frame, false);
+		constexpr float closeSelfDefenseRange = 750.0f;
+		constexpr float retaliationWindow = 1.0f;
+		if (!defenseCurrent() ||
+			(!lookingAtUs && !(distanceSquared < closeSelfDefenseRange * closeSelfDefenseRange) &&
+				!combatActor.enemyReaction.recentlyDamaged(defenseReceipt, retaliationWindow)))
+		{
+			combatActor.managedBotCombat.stopMovement();
+			return proposal;
+		}
+	}
 	bool handledOccludedEntry = false;
 	if (delayedRecognition && !combatVisible && !state.attackOverlayActive() &&
 		weapon.kind != combat::WeaponKind::Grenade)
@@ -676,33 +733,27 @@ ActionProposal BotBehaviorRuntime::decideCombatAction(ManagedActionContext &ctx)
 			const float x = point.x - origin.x, y = point.y - origin.y, z = point.z - origin.z;
 			const float distanceSquared = x * x + y * y + z * z;
 			constexpr float hidingKnifeRange = 250.0f;
-			constexpr float closeSelfDefenseRange = 750.0f;
-			// Long-range self-defense has its own facing and eye-visibility rule in CSBot.
-			handledOccludedEntry = disposition != compat::ReactionDisposition::SelfDefense ||
-				distanceSquared < closeSelfDefenseRange * closeSelfDefenseRange;
-			if (handledOccludedEntry)
-			{
-				const bool reloading = weapon.reloadState == combat::ReloadState::Unknown
-					? services_->observation_publicObservations().pendingReloadRequest(actor, frame, receipt.now)
-					: weapon.reloadState == combat::ReloadState::Reloading;
-				const auto *engine = services_->service_engineFunctions();
-				const auto getCvar = engine ? engine->pfnCVarGetFloat : nullptr;
-				const bool prevented = reloading || (getCvar && (getCvar("bot_zombie") != 0 || getCvar("bot_mimic") != 0));
-				const bool distantKnife = knife && state.state() == compat::CompatibilityStateId::Hide &&
-					distanceSquared >= hidingKnifeRange * hidingKnifeRange;
-				if (prevented || distantKnife || !current() || state.attackEntryEpoch() != attackEpoch)
-					return proposal;
-				const auto entry = makeManagedBotStateContext(index, before);
-				if (!current() || state.attackOverlayActive() || state.attackEntryEpoch() != attackEpoch)
-					return proposal;
-				if (combatActor.managedBotStateMachines.beginAttack(entry) != compat::StateResult::Transitioned ||
-					!current() || !state.attackOverlayActive() || state.attackEntryEpoch() != attackEpoch + 1U)
-					return proposal;
-				// CSBot seeds its last enemy position on Attack entry, before this decision aims.
-				memory.rememberVisible(receipt, targetActor, acquisition.source, {point.x, point.y, point.z});
-				targetPosition = memory.position(receipt);
-				combatActor.noiseEnemyContact = {targetActor, acquisition.source, targetPosition, receipt.now};
-			}
+			const bool reloading = weapon.reloadState == combat::ReloadState::Unknown
+				? services_->observation_publicObservations().pendingReloadRequest(actor, frame, receipt.now)
+				: weapon.reloadState == combat::ReloadState::Reloading;
+			const auto *engine = services_->service_engineFunctions();
+			const auto getCvar = engine ? engine->pfnCVarGetFloat : nullptr;
+			const bool prevented = reloading || (getCvar && (getCvar("bot_zombie") != 0 || getCvar("bot_mimic") != 0));
+			const bool distantKnife = knife && state.state() == compat::CompatibilityStateId::Hide &&
+				distanceSquared >= hidingKnifeRange * hidingKnifeRange;
+			if (prevented || distantKnife || !current() || state.attackEntryEpoch() != attackEpoch)
+				return proposal;
+			const auto entry = makeManagedBotStateContext(index, before);
+			if (!current() || state.attackOverlayActive() || state.attackEntryEpoch() != attackEpoch)
+				return proposal;
+			if (combatActor.managedBotStateMachines.beginAttack(entry) != compat::StateResult::Transitioned ||
+				!current() || !state.attackOverlayActive() || state.attackEntryEpoch() != attackEpoch + 1U)
+				return proposal;
+			handledOccludedEntry = true;
+			// CSBot seeds its last enemy position on Attack entry, before this decision aims.
+			memory.rememberVisible(receipt, targetActor, acquisition.source, {point.x, point.y, point.z});
+			targetPosition = memory.position(receipt);
+			combatActor.noiseEnemyContact = {targetActor, acquisition.source, targetPosition, receipt.now};
 		}
 	}
 	if (combatVisible)
@@ -778,7 +829,8 @@ ActionProposal BotBehaviorRuntime::decideCombatAction(ManagedActionContext &ctx)
 	nav::NativeLadderLook ladder{};
 	const bool ladderLook = services_->navigation_nativeLadderLook(index, &ladder) && ladder.active;
 	if (!executionCurrent(index, lookReceipt, lookExecution) ||
-		actors_[index].managedBotStateMachines.normalStateEpoch() != lookEpoch)
+		actors_[index].managedBotStateMachines.normalStateEpoch() != lookEpoch ||
+		(!handledOccludedEntry && !defenseCurrent()))
 		return ctx.proposal;
 	if (ladderLook)
 	{
@@ -835,6 +887,8 @@ ActionProposal BotBehaviorRuntime::decideCombatAction(ManagedActionContext &ctx)
 	{
 		if (!handledOccludedEntry)
 		{
+			if (!defenseCurrent())
+				return proposal;
 			const auto receipt = reactionContext(index);
 			const auto execution = combatActor.executionRevision;
 			const auto normalEpoch = state.normalStateEpoch();

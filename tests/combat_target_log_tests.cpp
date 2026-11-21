@@ -37,6 +37,13 @@ unsigned attackDeadlineDraws = 0;
 unsigned retreatTimerDraws = 0;
 float forcedNoticeFixtureRoll = -1.0f;
 std::vector<Vector> *occludedAimTraces = nullptr;
+struct SelfDefenseTrace
+{
+	bool eyeVisible;
+	bool replaceEnemy;
+	unsigned eyeChecks = 0;
+};
+SelfDefenseTrace *selfDefenseTrace = nullptr;
 float combatRandomFloat(float low, float high)
 {
 	if (low == 7.0f && high == 10.0f)
@@ -62,6 +69,17 @@ void traceCombatVisibility(const float *start, const float *end, int ignoreMonst
 	if (enemyBehindCover && self == &gEntities[0] && (ignoreMonsters & 0xff) == 1 &&
 		std::fabs(end[0] - gEntities[1].v.origin.x) <= 24.0f)
 		result->flFraction = 0.0f;
+	if (selfDefenseTrace && self == &gEntities[0] && ignoreMonsters == 0x101)
+	{
+		const auto eye = gEntities[1].v.origin + gEntities[1].v.view_ofs;
+		if (end[0] == eye.x && end[1] == eye.y && end[2] == eye.z)
+		{
+			++selfDefenseTrace->eyeChecks;
+			result->flFraction = selfDefenseTrace->eyeVisible ? 1.0f : .5f;
+			if (selfDefenseTrace->replaceEnemy)
+				++gEntities[1].serialnumber;
+		}
+	}
 	if (coverBlocksEnemySight && ignoreMonsters == 0x101 && self == &gEntities[1])
 		result->flFraction = 0.5f;
 	if (humanFriendlyBlocks && ignoreMonsters == 0)
@@ -172,9 +190,105 @@ bool testCombatTargetLog(astrabot::metamod::PluginRuntime &runtime, enginefuncs_
 	const bool gunfireFixture = scenario && std::strcmp(scenario, "gunfire") == 0;
 	const bool noticeFixture = scenario && std::strcmp(scenario, "notice") == 0;
 	const bool occludedFixture = scenario && std::strcmp(scenario, "occluded") == 0;
+	const bool selfDefenseFixture = scenario && std::strcmp(scenario, "self-defense") == 0;
 #ifdef _MSC_VER
 	std::free(scenario);
 #endif
+	if (selfDefenseFixture)
+	{
+		using namespace astrabot;
+		using namespace astrabot::compat;
+		auto &ports = static_cast<metamod::BotBehaviorServices &>(runtime);
+		auto &enemy = gEntities[1];
+		runtime.onClientPutInServer(&enemy);
+		enemy.free = false;
+		enemy.v.flags = FL_CLIENT | FL_ONGROUND;
+		enemy.v.deadflag = DEAD_NO;
+		enemy.v.health = 100;
+		enemy.v.team = 2;
+		enemy.v.velocity = Vector(250, 0, 0);
+		enemy.v.view_ofs = Vector(0, 0, 19);
+		runtime.onMessageBegin(MSG_ALL, 86, nullptr, nullptr);
+		runtime.onWriteByte(2);
+		runtime.onWriteString("CT");
+		runtime.onMessageEnd();
+		const auto run = [&](float range, Vector angles, Vector punch, bool bodyVisible, bool eyeVisible,
+							 bool replaced, bool expectedAttack, unsigned expectedChecks, const char *description,
+							 float height = 0.0f, bool damaged = false) {
+			enemyBehindCover = false;
+			enemy.v.origin = gEntities[0].v.origin + Vector(range, 0, height);
+			enemy.v.v_angle = angles;
+			enemy.v.punchangle = punch;
+			runtime.beginRoundGeneration();
+			stepRifle(30);
+			auto behavior = std::make_unique<metamod::BotBehaviorRuntime>();
+			const auto &handle = ports.service_managedBotHandles()[0];
+			behavior->bindServices(ports);
+			behavior->onActorRemembered(0, handle);
+			auto profile = static_cast<metamod::BotNavigationServices &>(runtime).behavior_managedProfiles(0);
+			profile.csbotReactionSeconds = .1f;
+			behavior->assignProfile(0, profile);
+			auto &state = const_cast<CompatibilityStateMachine &>(behavior->managedBotStateMachines(0));
+			auto &scenario = const_cast<ScenarioBehaviorDecision &>(behavior->scenarioDecisions(0));
+			scenario.escortInferred = true;
+			StateUpdateContext context{};
+			context.actor = {handle.actor.slot, handle.actor.actorGeneration};
+			const auto &life = ports.service_lifecycle();
+			context.frame = {life.mapGeneration(), life.roundGeneration(), ports.service_adapterFrameCount()};
+			context.timestamp = globals.time;
+			context.fullUpdateSequence = ports.service_managedBotFullUpdateSequences()[0];
+			context.fullUpdate = true;
+			context.lifeAvailability = context.roundAvailability = ObservationAvailability::Available;
+			context.attackObservation = ObservationAvailability::Available;
+			context.alive = context.roundActive = true;
+			state.initialize(context);
+			if (!check(state.transition(CompatibilityStateId::MoveTo, StateTransitionReason::ExplicitRequest,
+					StateTransitionId::ExplicitStateChange, context) == StateResult::Transitioned,
+					"escort action starts in MoveTo"))
+				return false;
+			runtime::MovementPhysicsState before{};
+			before.grounded = true;
+			before.origin = {gEntities[0].v.origin.x, gEntities[0].v.origin.y, gEntities[0].v.origin.z};
+			(void)behavior->decideManagedBotAction(0, before, {}, 0);
+			if (!check(!state.attackOverlayActive(), "one sample is waiting in the reaction queue"))
+				return false;
+			enemyBehindCover = !bodyVisible;
+			stepRifle(30);
+			if (damaged)
+				behavior->observePlayerDamage(0, context.actor,
+					{life.mapGeneration(), life.roundGeneration(), ports.service_adapterFrameCount()}, &enemy,
+					enemy.serialnumber, {2U, life.slotGeneration(2U)});
+			SelfDefenseTrace trace{eyeVisible, replaced};
+			selfDefenseTrace = &trace;
+			const auto serial = enemy.serialnumber;
+			const auto deadlineDraws = attackDeadlineDraws;
+			const auto action = behavior->decideManagedBotAction(0, before, {}, 0);
+			selfDefenseTrace = nullptr;
+			enemyBehindCover = false;
+			enemy.serialnumber = serial;
+			if (state.attackOverlayActive() != expectedAttack || trace.eyeChecks != expectedChecks)
+				std::fprintf(stderr, "self-defense range=%.1f overlay=%d eye=%u expected=%d/%u\n",
+					range, state.attackOverlayActive(), trace.eyeChecks, expectedAttack, expectedChecks);
+			return check(state.attackOverlayActive() == expectedAttack && action.hasCombatAim == expectedAttack &&
+					trace.eyeChecks == expectedChecks &&
+					(replaced || behavior->currentEnemySource(0).id == 2U) &&
+					(expectedAttack || attackDeadlineDraws == deadlineDraws) &&
+					(bodyVisible || action.kind != metamod::ActionKind::Fire), description);
+		};
+		const Vector away(0, 0, 0), facing(0, 180, 0), none(0, 0, 0);
+		return run(950, away, none, true, true, false, false, 0, "visible and facing away cannot start ranged self-defense") &&
+			run(749, away, none, true, false, false, true, 0, "an enemy strictly inside 750 can trigger self-defense") &&
+			run(750, away, none, true, true, false, false, 0, "exactly 750 needs facing and a clear eye ray") &&
+			run(950, facing, none, true, false, false, false, 1, "visible body alone does not pass the eye test") &&
+			run(950, facing, none, false, false, false, false, 1, "a delayed threat with blocked eyes remains acquired") &&
+			run(950, facing, none, false, true, false, true, 1, "delayed hidden threat with an open eye ray starts without firing") &&
+			run(950, Vector(0, 145, 0), Vector(0, 35, 0), true, true, false, true, 1, "punch yaw contributes to facing") &&
+			run(950, Vector(35, 180, 0), none, true, true, false, false, 0, "pitch attenuates the enemy forward vector") &&
+			run(950, facing, none, true, true, false, false, 0, "height attenuates the full 3D displacement", 600.0f) &&
+			run(749, facing, none, true, false, false, true, 1, "the eye ray precedes even the close distance fallback") &&
+			run(950, away, none, true, true, false, true, 0, "recent damage still permits retaliation", 0.0f, true) &&
+			run(950, facing, none, true, true, true, false, 1, "edict replacement during the eye trace cancels attack");
+	}
 	if (occludedFixture)
 	{
 		using namespace astrabot;
